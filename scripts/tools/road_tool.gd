@@ -4,13 +4,16 @@ extends Node3D
 ##
 ## Straight: click start, click end (keeps going from the end).
 ## Curved: click start, click the bend, click end.
+## Grid: click a corner, click to set the first street, click to set how far
+## back the grid reaches. [ and ] change the block length.
+## Roundabout: click to place. [ and ] change the size.
 ## Bulldoze: click a road to remove it.
 ## Right click or Esc stops the current road.
 
 signal mode_changed(mode: int)
 signal hint_changed(text: String)
 
-enum Mode { NONE, STRAIGHT, CURVED, BULLDOZE }
+enum Mode { NONE, STRAIGHT, CURVED, BULLDOZE, GRID, ROUNDABOUT }
 
 const SNAP_NODE := 9.0
 const SNAP_ROAD := 7.0
@@ -21,6 +24,8 @@ var sim: CitySim
 var network: RoadNetwork
 var cam: CityCamera
 var mode := Mode.STRAIGHT
+var grid_block := 120.0
+var roundabout_radius := 20.0
 
 var _points: Array[Vector3] = []
 var _preview := MeshInstance3D.new()
@@ -28,6 +33,7 @@ var _cursor := MeshInstance3D.new()
 var _ok_mat := RoadStyle.material(Color(0.35, 0.65, 1.0, 0.55), true)
 var _bad_mat := RoadStyle.material(Color(1.0, 0.3, 0.25, 0.6), true)
 var _hover_seg := -1
+var _shown_problem := ""
 
 
 func setup(s: CitySim, camera: CityCamera) -> void:
@@ -64,6 +70,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_1: set_mode(Mode.STRAIGHT)
 			KEY_2: set_mode(Mode.CURVED)
 			KEY_3: set_mode(Mode.BULLDOZE)
+			KEY_G: set_mode(Mode.GRID)
+			KEY_O: set_mode(Mode.ROUNDABOUT)
+			KEY_BRACKETLEFT: _resize(1.0 / 1.2)
+			KEY_BRACKETRIGHT: _resize(1.2)
 			KEY_ESCAPE: _cancel()
 	if not (event is InputEventMouseButton and event.pressed):
 		return
@@ -86,11 +96,24 @@ func _process(_delta: float) -> void:
 	var p := _snapped(hit)
 	_cursor.position = p + Vector3.UP * 0.3
 	_cursor.material_override = _ok_mat
-	if _points.is_empty():
+	var curves := []
+	var ok := true
+	if mode == Mode.ROUNDABOUT:
+		curves = RoadShapes.roundabout(p, roundabout_radius)
+	elif _points.is_empty():
 		return
-	var curve := _pending_curve(p)
-	var ok := _is_valid(curve)
-	_preview.mesh = _preview_mesh(curve)
+	elif mode == Mode.GRID:
+		curves = _pending_grid(p)
+	else:
+		curves = [_pending_curve(p)]
+		var problem := _problem(curves[0])
+		ok = problem == ""
+		if problem != _shown_problem:
+			_shown_problem = problem
+			_update_hint()
+	if curves.is_empty():
+		return
+	_preview.mesh = _preview_mesh(curves)
 	_preview.material_override = _ok_mat if ok else _bad_mat
 	_preview.visible = true
 
@@ -115,6 +138,35 @@ func _click() -> void:
 						"start": _xz(curve[0]), "ctrl": _xz(curve[1]), "end": _xz(curve[2])}):
 					_points.clear()
 					_points.append(curve[2])
+		Mode.GRID:
+			var p := _snapped(hit)
+			if _points.size() == 1:
+				p = _pending_curve(p)[2]  # Shift snaps the first street's angle
+			if _points.size() < 2:
+				_points.append(p)
+			elif sim.apply({"type": "build_grid", "a": _xz(_points[0]), "b": _xz(_points[1]),
+					"c": _xz(p), "block": grid_block}):
+				_points.clear()
+		Mode.ROUNDABOUT:
+			sim.apply({"type": "build_roundabout", "center": _xz(_snapped(hit)),
+				"radius": roundabout_radius})
+	_update_hint()
+
+
+## The grid being placed: one street while picking its end, then the lot.
+func _pending_grid(p: Vector3) -> Array:
+	if _points.size() == 1:
+		return [_pending_curve(p)]
+	return RoadShapes.grid(_points[0], _points[1], p, grid_block)
+
+
+func _resize(f: float) -> void:
+	if mode == Mode.GRID:
+		grid_block = clampf(grid_block * f, RoadShapes.GRID_BLOCK_MIN, RoadShapes.GRID_BLOCK_MAX)
+	elif mode == Mode.ROUNDABOUT:
+		roundabout_radius = clampf(roundabout_radius * f, RoadShapes.ROUNDABOUT_MIN, RoadShapes.ROUNDABOUT_MAX)
+	else:
+		return
 	_update_hint()
 
 
@@ -132,7 +184,7 @@ func _pending_curve(p: Vector3) -> Array:
 	var a: Vector3 = _points[0]
 	if mode == Mode.CURVED and _points.size() >= 2:
 		return [a, _points[1], p]
-	if mode == Mode.STRAIGHT and Input.is_key_pressed(KEY_SHIFT):
+	if mode != Mode.CURVED and Input.is_key_pressed(KEY_SHIFT):
 		var d := p - a
 		var ang := snappedf(atan2(d.z, d.x), ANGLE_STEP)
 		p = a + Vector3(cos(ang), 0.0, sin(ang)) * d.length()
@@ -140,27 +192,32 @@ func _pending_curve(p: Vector3) -> Array:
 
 
 func _is_valid(curve: Array) -> bool:
+	return _problem(curve) == ""
+
+
+## Why a road can't be built, or "" if it can.
+func _problem(curve: Array) -> String:
 	if curve[0].distance_to(curve[2]) < RoadNetwork.MIN_LENGTH:
-		return false
-	# Very sharp bends make the road fold over itself.
-	var t0: Vector3 = curve[1] - curve[0]
-	var t1: Vector3 = curve[2] - curve[1]
-	return t0.length() < 0.5 or t1.length() < 0.5 or t0.angle_to(t1) < deg_to_rad(120.0)
+		return "Too short."
+	var r := RoadNetwork.min_radius(curve[0], curve[1], curve[2])
+	if r < RoadStyle.MIN_CURVE_RADIUS:
+		return "Bend too tight: %d m. Streets need at least %d m (42 ft) so trucks can turn (AASHTO)." \
+			% [int(r), int(RoadStyle.MIN_CURVE_RADIUS)]
+	return ""
 
 
 func _snapped(hit: Vector3) -> Vector3:
-	if mode == Mode.CURVED and _points.size() == 1:
-		return Vector3(hit.x, 0.0, hit.z)  # bend point floats freely
+	if (mode == Mode.CURVED and _points.size() == 1) or (mode == Mode.GRID and _points.size() == 2):
+		return Vector3(hit.x, 0.0, hit.z)  # bend point and grid depth float freely
 	return network.snap(hit, SNAP_NODE, SNAP_ROAD).pos
 
 
-func _preview_mesh(curve: Array) -> ArrayMesh:
-	var pts := RoadNetwork.sample_curve(curve[0], curve[1], curve[2])
-	for i in pts.size():
-		pts[i].y = 0.2
+func _preview_mesh(curves: Array) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	RoadMesh.add_strip(st, pts, -RoadStyle.half_width(), RoadStyle.half_width(), 0.2)
+	for curve in curves:
+		var pts := RoadNetwork.sample_curve(curve[0], curve[1], curve[2])
+		RoadMesh.add_strip(st, pts, -RoadStyle.half_width(), RoadStyle.half_width(), 0.2)
 	return st.commit()
 
 
@@ -188,6 +245,8 @@ func _update_hint() -> void:
 		Mode.STRAIGHT:
 			text = "Click to start a road." if _points.is_empty() \
 				else "Click to finish. Hold Shift to snap angles. Right click to stop."
+			if not _points.is_empty() and _shown_problem != "":
+				text = _shown_problem
 		Mode.CURVED:
 			if _points.is_empty():
 				text = "Click to start a curved road."
@@ -195,6 +254,17 @@ func _update_hint() -> void:
 				text = "Click where the road should bend."
 			else:
 				text = "Click to finish. Right click to stop."
+			if _points.size() == 2 and _shown_problem != "":
+				text = _shown_problem
+		Mode.GRID:
+			var size := "Blocks %d m long  [ ]" % int(grid_block)
+			match _points.size():
+				0: text = "Click a corner of the new neighborhood.  " + size
+				1: text = "Click to set the first street. Hold Shift to snap angles.  " + size
+				_: text = "Move out to size the grid, then click to build.  " + size
+		Mode.ROUNDABOUT:
+			text = "Click to place a roundabout. Roads it crosses join it.  Size %d m  [ ]" \
+				% int(roundabout_radius * 2.0)
 		Mode.BULLDOZE:
 			text = "Click a road to remove it."
 	hint_changed.emit(text)

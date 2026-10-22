@@ -34,7 +34,18 @@ func apply(cmd: Dictionary) -> bool:
 	var ok := false
 	match cmd.get("type", ""):
 		"build_road":
-			ok = network.build_road(_v(cmd.start), _v(cmd.ctrl), _v(cmd.end))
+			var c := [_v(cmd.start), _v(cmd.ctrl), _v(cmd.end)]
+			# The server checks real road rules too, not just the player's screen.
+			if RoadNetwork.min_radius(c[0], c[1], c[2]) >= RoadStyle.MIN_CURVE_RADIUS:
+				ok = network.build_road(c[0], c[1], c[2])
+		"build_grid":
+			var lines := RoadShapes.grid(_v(cmd.a), _v(cmd.b), _v(cmd.c), float(cmd.block))
+			network.begin_batch()
+			for l in lines:
+				ok = network.build_road(l[0], l[1], l[2]) or ok
+			network.end_batch()
+		"build_roundabout":
+			ok = _build_roundabout(_v(cmd.center), float(cmd.radius))
 		"remove_road":
 			ok = network.segments.has(int(cmd.seg))
 			network.remove_segment(int(cmd.seg))
@@ -91,6 +102,23 @@ func _refresh() -> void:
 			removed = true
 	if removed:
 		buildings_changed.emit()
+
+
+## Builds the ring, joining every road it crosses, then clears the roads
+## left inside it.
+func _build_roundabout(center: Vector3, radius: float) -> bool:
+	radius = clampf(radius, RoadShapes.ROUNDABOUT_MIN, RoadShapes.ROUNDABOUT_MAX)
+	network.begin_batch()
+	var ok := false
+	for arc in RoadShapes.roundabout(center, radius):
+		ok = network.build_road(arc[0], arc[1], arc[2]) or ok
+	for id in network.segments.keys():
+		var c := network.curve_of(id)
+		var mid := RoadNetwork.bezier(c[0], c[1], c[2], 0.5)
+		if mid.distance_to(center) < radius - 2.0:
+			network.remove_segment(id)
+	network.end_batch()
+	return ok
 
 
 func _grow_one() -> void:
