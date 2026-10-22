@@ -133,6 +133,14 @@ func _init() -> void:
 	_check(hub.hubs.hubs[hid].pos.is_equal_approx(gate[0] + Vector3(150, 0, 0)), "its gate lands where it was dragged")
 	_check(not hub.apply(MoveIt.command([{"type": "hub", "id": hid}], gate[0], Vector3(0, 0, -60))),
 		"a cemetery can't be dropped across the road")
+	var dock := Warehouses.site_near(hub.network, Vector3(100, 0, -60))
+	_check(hub.apply({"type": "place_warehouse", "kind": "small", "pos": [dock[0].x, dock[0].z], "dir": [dock[1].x, dock[1].z]}),
+		"warehouse placed")
+	var wid: int = hub.warehouses.buildings.keys()[0]
+	_check(MoveIt.pick(hub, Warehouses.center(hub.warehouses.buildings[wid])).get("type", "") == "warehouse",
+		"a warehouse can be picked up")
+	_check(hub.apply(MoveIt.command([{"type": "warehouse", "id": wid}], dock[0], Vector3(-120, 0, 0))),
+		"the warehouse slides along the road")
 	var ends := hub.build_county_road(Vector2(400, 0), Vector2(1200, 0), [1])
 	_check(not hub.apply(MoveIt.command([{"type": "node", "id": ends[1]}], Vector3.ZERO, Vector3(0, 0, 50))),
 		"the county highway's way out to the region stays put")
