@@ -54,6 +54,13 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
+	# Neighbors' cities are drawn moved over to their place on the land.
+	Terrain.shift = Terrain.shift_for(self)
+	_draw_cars(_delta)
+	Terrain.shift = Vector2.ZERO
+
+
+func _draw_cars(_delta: float) -> void:
 	for k in _xf:
 		_xf[k].clear()
 		_cu[k].clear()
@@ -62,7 +69,7 @@ func _process(_delta: float) -> void:
 	var frac: float = tick_fraction.call()
 	for car in traffic.cars:
 		var ahead: float = car.v * TrafficSim.DT * frac
-		var front: Vector3 = traffic.car_pose(car, ahead)[0]
+		var front: Vector3 = Terrain.lift(traffic.car_pose(car, ahead)[0])
 		var dist := front.distance_to(eye)
 		if dist > FAR:
 			continue
@@ -90,14 +97,12 @@ func _process(_delta: float) -> void:
 			_add(art.cab, lod, xf, custom)
 			# Trailer: kingpin on the fifth wheel, rear axles on the path.
 			var hitch: Vector3 = xf * Vector3(0, 0, art.hitch)
-			var back: Vector3 = _behind(car, ahead, art.hitch - art.pin + art.axle)
+			var back: Vector3 = Terrain.lift(_behind(car, ahead, art.hitch - art.pin + art.axle))
 			var dir := hitch - back
-			dir.y = 0.0
 			if dir.length() < 1.0:
 				dir = -xf.basis.z
 			dir = dir.normalized()
 			var origin: Vector3 = hitch + dir * float(art.pin)
-			origin.y = front.y
 			_add(art.trailer, lod, Transform3D(Basis.looking_at(dir, Vector3.UP), origin), Color(1, 1, 1, flags))
 		else:
 			_add(kind, lod, _place(car, ahead, front, VehicleModels.AXLE.get(kind, 3.5)), custom)
@@ -118,9 +123,9 @@ func _process(_delta: float) -> void:
 ## The body's transform: front bumper on the path, pointed back at the rear
 ## axle's point on the path.
 func _place(car: Dictionary, ahead: float, front: Vector3, axle: float) -> Transform3D:
-	var back := _behind(car, ahead, axle)
+	# Front and back on the road, so the body tips up and down the hills.
+	var back := Terrain.lift(_behind(car, ahead, axle))
 	var dir := front - back
-	dir.y = 0.0
 	if dir.length() < axle * 0.5:
 		dir = traffic.car_pose(car, ahead)[1]
 	return Transform3D(Basis.looking_at(dir.normalized(), Vector3.UP), front)

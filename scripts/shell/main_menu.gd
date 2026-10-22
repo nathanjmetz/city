@@ -77,8 +77,9 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_angle += delta * 0.03
-	_cam.position = Vector3(cos(_angle) * 320.0, 170.0, sin(_angle) * 320.0)
-	_cam.look_at(Vector3(0, 0, 0))
+	var ground := Terrain.ground_y(0.0, 0.0)
+	_cam.position = Vector3(cos(_angle) * 320.0, ground + 170.0, sin(_angle) * 320.0)
+	_cam.look_at(Vector3(0, ground, 0))
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -369,11 +370,15 @@ func _gap(h: int) -> Control:
 ## Your latest city slowly turning behind the menu (or a demo town).
 func _build_backdrop() -> void:
 	add_child(SkyLight.new())
-	add_child(Ground.new())
 	_cam.fov = 45.0
 	_cam.h_offset = -70.0  # keeps the town clear of the menu
 	_cam.far = 4000.0
 	add_child(_cam)
+	var land := TerrainView.new()
+	add_child(land)
+	var woods := TerrainForest.new()
+	woods.setup(_cam)
+	add_child(woods)
 	var sim := CitySim.new()
 	var saves := Session.list_saves()
 	var data := Session._read(saves[0].path) if not saves.is_empty() else {}
@@ -393,6 +398,7 @@ func _build_backdrop() -> void:
 	var roads := RoadView.new()
 	add_child(roads)
 	roads.setup(sim.network, sim)
+	land.setup(_cam, sim.network)
 	var buildings := BuildingView.new()
 	add_child(buildings)
 	buildings.setup(sim)

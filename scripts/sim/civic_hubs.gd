@@ -125,6 +125,9 @@ func _cell_problem(sim: CitySim, h: Dictionary, c: Vector2i, id: int, auto: bool
 	for q in poly:
 		pts.append(mid.lerp(Vector3(q.x, 0.0, q.y), 0.9))
 	for p in pts:
+		if not sim.land_ok(p):
+			return "Can't build in the water or on a slope that steep."
+	for p in pts:
 		if sim.reserves.kind_at(p) != "":
 			return "That land is reserved for %s." % Reserves.KINDS[sim.reserves.kind_at(p)]
 	if Services.road_clash(sim.network, poly):
@@ -144,6 +147,8 @@ func _cell_problem(sim: CitySim, h: Dictionary, c: Vector2i, id: int, auto: bool
 			return "That ground belongs to a company."
 		if sim.warehouses.covers(p):
 			return "That ground belongs to a warehouse."
+		if sim.education.covers(p):
+			return "That ground is a campus."
 	if auto:
 		for key in sim.lots:
 			var lot: Dictionary = sim.lots[key]

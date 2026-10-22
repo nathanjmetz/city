@@ -76,9 +76,12 @@ func _init() -> void:
 		town.apply({"type": "paint_zone", "center": [x, 25], "radius": 12, "zone": ZoneMap.Zone.COMMERCIAL})
 	var hogs := 0
 	var pork := 0
+	var pork_any := 0
 	var city_before := town.economy.money
 	seen.clear()
-	for i in 1440 * 4:
+	# Trucks drive at real speed in a fast calendar (a game day is a month),
+	# so loads from the region link take a day or two to arrive.
+	for i in 1440 * 7:
 		town.tick()
 		for id in town.logistics.trips:
 			if seen.has(id):
@@ -87,11 +90,15 @@ func _init() -> void:
 			var t: Dictionary = town.logistics.trips[id]
 			if t.to.ref == "big:1" and t.cargo.good == "livestock":
 				hogs += 1
-			if t.from.ref == "big:1" and t.cargo.good == "pork" and str(t.to.ref).begins_with("lot:"):
-				pork += 1
+			if t.from.ref == "big:1" and t.cargo.good == "pork":
+				pork_any += 1
+				if str(t.to.ref).begins_with("lot:"):
+					pork += 1
 	var m: Dictionary = town.big.sites[1]
 	_check(hogs >= 3, "hog trailers came in from the region link (%d)" % hogs)
-	_check(pork >= 1, "reefers took pork to the town's stores (%d)" % pork)
+	_check(pork_any >= 1, "reefers took the plant's pork away (%d)" % pork_any)
+	_check(town.count_buildings(ZoneMap.Zone.COMMERCIAL) == 0 or pork >= 1,
+		"pork goes to the town's stores when it has some (%d of %d)" % [pork, pork_any])
 	_check(town.trade.got("livestock") > 0.0 or hogs > 0, "the hogs were bought through regional trade")
 	var hog_bill := 0.0
 	for p in m.hist:

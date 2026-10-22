@@ -23,8 +23,13 @@ var _park_cards := {}  # Parks kind -> Button
 var _industry_cards := {}  # "oil"/"ore"/"forest"/"reserve"/"release" -> Button
 var _industry_kind := "oil"  # what the industry Reserve tool saves land for
 var warehouse_tool: WarehouseTool
+var campus_tool: CampusTool
+var _campus_cards := {}  # "high_school"/"college"/"university" -> Button
 var _warehouse_cards := {}  # Warehouses size -> Button
+var big_tool: BigFactoryTool
+var _big_cards := {}  # BigFactories kind -> Button
 var traffic_tool: TrafficTool
+var move_tool: MoveTool
 var info_view: InfoView
 var service_view: ServiceView
 var select_tool: SelectTool
@@ -108,11 +113,17 @@ func _ready() -> void:
 	industry_tool.hint_changed.connect(_show_hint)
 	warehouse_tool.kind_changed.connect(func(_k): _sync())
 	warehouse_tool.hint_changed.connect(_show_hint)
+	big_tool.kind_changed.connect(func(_k): _sync())
+	big_tool.hint_changed.connect(_show_hint)
+	campus_tool.kind_changed.connect(func(_k): _sync())
+	campus_tool.hint_changed.connect(_show_hint)
 	traffic_tool.mode_changed.connect(func(_m): _sync())
 	traffic_tool.hint_changed.connect(_show_hint)
 	park_tool.kind_changed.connect(func(_k): _sync())
 	park_tool.hint_changed.connect(_show_hint)
 	sim.parks_changed.connect(_sync)
+	move_tool.active_changed.connect(func(_on): _sync())
+	move_tool.hint_changed.connect(_show_hint)
 	sim.buildings_changed.connect(_update_stats)
 	sim.stats_changed.connect(_update_stats)
 	game.speed_changed.connect(func(_s): _sync_speed())
@@ -130,6 +141,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		road_tool.cancel()
 	elif farm_tool.is_drawing():
 		farm_tool.cancel()
+	elif move_tool.active and not move_tool.selection.is_empty():
+		move_tool.clear_selection()
 	elif anything_open():
 		close_all()
 	else:
@@ -143,7 +156,8 @@ func anything_open() -> bool:
 		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
-		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != ""
+		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or move_tool.active \
+		or big_tool.kind != ""
 
 
 ## Puts every tool away and closes every panel.
@@ -163,8 +177,11 @@ func close_all() -> void:
 	farm_tool.set_mode(FarmTool.Mode.NONE)
 	industry_tool.set_kind("")
 	warehouse_tool.set_kind("")
+	big_tool.set_kind("")
+	campus_tool.set_kind("")
 	traffic_tool.set_mode(TrafficTool.Mode.NONE)
 	park_tool.set_kind("")
+	move_tool.set_active(false)
 	_sync()
 
 
@@ -406,7 +423,7 @@ func _build_bottom_bar() -> void:
 	row.add_theme_constant_override("separation", 4)
 	bar.add_child(row)
 	for entry in [["roads", "Roads"], ["zones", "Zoning"], ["farms", "Farming"], ["industry", "Industry"], ["services", "Services"], ["parks", "Parks"], ["traffic", "Traffic"],
-			["bulldoze", "Bulldoze"],
+			["bulldoze", "Bulldoze"], ["move", "Move It"],
 			["budget", "Budget"]]:
 		var b := _category_button(entry[0], entry[1])
 		b.pressed.connect(func(): _open(entry[0]))
@@ -552,6 +569,17 @@ func _services_drawer() -> PanelContainer:
 		b.pressed.connect(func(): service_tool.set_kind(k))
 		hubs.add_child(b)
 		_service_cards[k] = b
+	# Campuses grow on their own once placed (Brawn's hub model).
+	row.add_child(VSeparator.new())
+	var campus := _section(row, "High school and college")
+	for k in ["high_school", "college", "university"]:
+		var e: Dictionary = Education.spec(k)
+		var b := _card("school", {"high_school": "High school", "college": "College", "university": "University"}[k], "")
+		b.tooltip_text = "%s: $%s to build, $%s a month. Its %s buys the free land next to it as it fills." % [
+			Education.KINDS[k].name, CitySim.money_text(e.cost), CitySim.money_text(e.funding), Education.KINDS[k].head.to_lower()]
+		b.pressed.connect(func(): campus_tool.set_kind(k))
+		campus.add_child(b)
+		_campus_cards[k] = b
 	return drawer
 
 
@@ -610,6 +638,15 @@ func _industry_drawer() -> PanelContainer:
 	var hq := _section(row, "Main building  ·  near the resource")
 	var area := _section(row, "Save land")
 	var stores := _section(row, "Warehouses  ·  beside a street")
+	var plants := _section(row, "Big factories  ·  one per town")
+	for k in BigFactories.ORDER:
+		var kk: Dictionary = BigFactories.KINDS[k]
+		var b := _card(kk.icon, kk.short, "")
+		b.tooltip_text = "%s ($%s): makes %s from what your farms and companies bring in" \
+			% [kk.name, CitySim.money_text(int(Balance.BIG_FACTORY[k].cost)), kk.makes]
+		b.pressed.connect(func(): big_tool.set_kind(k))
+		plants.add_child(b)
+		_big_cards[k] = b
 	for k in Warehouses.ORDER:
 		var spec: Dictionary = Balance.WAREHOUSE[k]
 		var b := _card("warehouse", ["Small", "Medium", "Large", "Distrib."][Warehouses.ORDER.find(k)], "")
@@ -718,6 +755,12 @@ func _budget_drawer() -> PanelContainer:
 	serv.add_child(Icon.new("services", 18))
 	serv.add_child(UiStyle.label("Services", 13))
 	_budget_rows["services"] = _value_label(serv, 112)
+	var schools := HBoxContainer.new()
+	schools.add_theme_constant_override("separation", 6)
+	costs.add_child(schools)
+	schools.add_child(Icon.new("school", 18))
+	schools.add_child(UiStyle.label("Schools and colleges", 13))
+	_budget_rows["education"] = _value_label(schools, 40)
 	var fees := HBoxContainer.new()
 	fees.add_theme_constant_override("separation", 6)
 	income.add_child(fees)
@@ -817,6 +860,8 @@ func _open(cat: String) -> void:
 				zone_tool.set_zone(ZoneMap.Zone.RESIDENTIAL)
 		"bulldoze":
 			road_tool.set_mode(RoadTool.Mode.BULLDOZE)
+		"move":
+			move_tool.set_active(true)
 		"farms":
 			if farm_tool.mode == FarmTool.Mode.NONE:
 				farm_tool.set_mode(FarmTool.Mode.CORN)
@@ -839,8 +884,11 @@ func _open(cat: String) -> void:
 			farm_tool.set_mode(FarmTool.Mode.NONE)
 			industry_tool.set_kind("")
 			warehouse_tool.set_kind("")
+			big_tool.set_kind("")
+			campus_tool.set_kind("")
 			traffic_tool.set_mode(TrafficTool.Mode.NONE)
 			park_tool.set_kind("")
+			move_tool.set_active(false)
 			_budget_open = true
 			_sync()
 
@@ -849,17 +897,19 @@ func _open(cat: String) -> void:
 func _sync() -> void:
 	if zone_tool.zone != ZoneTool.OFF:
 		_category = "zones"
-	elif service_tool.kind != ServiceTool.OFF:
+	elif service_tool.kind != ServiceTool.OFF or campus_tool.kind != "":
 		_category = "services"
 	elif park_tool.kind != "":
 		_category = "parks"
-	elif industry_tool.kind != "" or warehouse_tool.kind != "" or (farm_tool.mode in [FarmTool.Mode.RESERVE, FarmTool.Mode.CLEAR]
+	elif industry_tool.kind != "" or warehouse_tool.kind != "" or big_tool.kind != "" or (farm_tool.mode in [FarmTool.Mode.RESERVE, FarmTool.Mode.CLEAR]
 			and farm_tool.reserve_kind != "farm"):
 		_category = "industry"
 	elif farm_tool.mode != FarmTool.Mode.NONE:
 		_category = "farms"
 	elif traffic_tool.mode != TrafficTool.Mode.NONE:
 		_category = "traffic"
+	elif move_tool.active:
+		_category = "move"
 	elif road_tool.mode == RoadTool.Mode.BULLDOZE:
 		_category = "bulldoze"
 	elif road_tool.mode != RoadTool.Mode.NONE:
@@ -885,6 +935,8 @@ func _sync() -> void:
 	for k in _park_cards:
 		_park_cards[k].set_pressed_no_signal(k == park_tool.kind)
 		_park_cards[k].disabled = Parks.KINDS[k].landmark and sim.parks.has_kind(k)
+	for k in _campus_cards:
+		_campus_cards[k].set_pressed_no_signal(k == campus_tool.kind)
 	for m in _farm_cards:
 		_farm_cards[m].set_pressed_no_signal(m == farm_tool.mode and _category == "farms")
 	for k in _industry_cards:
@@ -896,6 +948,8 @@ func _sync() -> void:
 		_industry_cards[k].set_pressed_no_signal(on)
 	for k in _warehouse_cards:
 		_warehouse_cards[k].set_pressed_no_signal(k == warehouse_tool.kind)
+	for k in _big_cards:
+		_big_cards[k].set_pressed_no_signal(k == big_tool.kind)
 	for m in _traffic_cards:
 		_traffic_cards[m].set_pressed_no_signal(m == traffic_tool.mode)
 	_parallel_card.set_pressed_no_signal(road_tool.parallel)
@@ -920,6 +974,7 @@ func _update_stats() -> void:
 		_budget_rows[z].text = "$" + _thousands(int(e.budget.income.get(z, 0)))
 	_budget_rows.upkeep.text = "–$" + _thousands(int(e.budget.upkeep))
 	_budget_rows.services.text = "–$" + _thousands(int(e.budget.services))
+	_budget_rows.education.text = "–$" + _thousands(int(e.budget.get("education", 0)))
 	_budget_rows.fees.text = "$" + _thousands(int(e.budget.fees))
 	_budget_rows.grant.text = "" if e.milestone >= Economy.MILESTONES.size() else \
 		"Next grant: $%s at %s people" % [_thousands(Economy.MILESTONES[e.milestone][1]),

@@ -41,7 +41,7 @@ func _spawn(id: int, f: Dictionary) -> Node3D:
 	root.basis = Basis.looking_at(f.dir, Vector3.UP)
 	var to_curb := BigFactories.SETBACK + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
 	var seed := int(f.pos.x * 73.0) ^ int(f.pos.z * 151.0) ^ (id << 16)
-	var built := BigFactoryBuilder.build(f, seed, to_curb)
+	var built := BigFactoryBuilder.build_plant(f, seed, to_curb)
 	var building := MeshInstance3D.new()
 	building.mesh = built[0]
 	root.add_child(building)

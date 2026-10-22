@@ -28,7 +28,7 @@ const KINDS := {
 	"furniture": {"name": "Furniture maker", "short": "Furniture", "makes": "solid hardwood furniture",
 		"purpose": "goods", "to": "shop", "icon": "forest"},
 	"rv": {"name": "RV plant", "short": "RV plant", "makes": "travel trailers and fifth wheels",
-		"purpose": "goods", "to": "edge", "icon": "factory"},
+		"purpose": "goods", "to": "edge", "icon": "industry"},
 }
 const ORDER := ["ethanol", "meatpacker", "furniture", "rv"]
 ## Truck purpose for each input coming in (Vehicles picks the rig).
@@ -247,8 +247,7 @@ func site_problem(sim: CitySim, kind: String, pos: Vector3, dir: Vector3) -> Str
 			roundi(site_width(f)), roundi(site_depth(f))]
 	if overlaps(poly):
 		return "Overlaps another big factory."
-	var why := _ground(sim, poly, -1, true)
-	return why
+	return _ground(sim, poly, -1, true)
 
 
 ## What's on a piece of ground: "" when it's clear (empty unzoned roadside
@@ -270,6 +269,10 @@ func _ground(sim: CitySim, poly: PackedVector2Array, id: int, place := false) ->
 	if sim.parks.overlaps(Array(poly)):
 		return "That ground is a park."
 	for p in CitySim._grid_in(poly):
+		if not sim.land_ok(p):
+			return "Can't build in the water or on a slope that steep."
+		if sim.education.covers(p):
+			return "That ground is a campus."
 		if sim.farms.covers(p) or sim.farms.field_at(p) != -1:
 			return "That ground is farmland."
 		if sim.industry.covers(p):
@@ -445,6 +448,12 @@ func _decide(sim: CitySim, id: int, util: float, profit: float) -> void:
 	# Land the player said yes to: buy it, clear it and build on it.
 	for req in sim.permits.approved("big", id):
 		if float(f.cash) >= float(req.cost):
+			# The land as the player left it, and the bay itself.
+			var area := PackedVector2Array()
+			for q in req.route:
+				area.append(Vector2(float(q[0]), float(q[1])))
+			if area.size() >= 3:
+				_clear_for(sim, area)
 			_clear_for(sim, next_bay(f))
 			_spend(f, float(req.cost))
 			f.bays = int(f.bays) + 1
@@ -496,21 +505,23 @@ func _decide(sim: CitySim, id: int, util: float, profit: float) -> void:
 			f.changed = true
 
 
-## The player's homes or shops stand on the land it wants: ask first.
+## The player's homes or shops stand on the land it wants: ask first,
+## with the outline of the land (the player can drag its corners).
 func _ask_permit(sim: CitySim, id: int, poly: PackedVector2Array, grow_cost: float) -> void:
 	var f: Dictionary = sites[id]
-	var a := (poly[0] + poly[3]) * 0.5
-	var b := (poly[1] + poly[2]) * 0.5
 	var lots := 0
 	for key in sim.buildings:
 		if sim.lots.has(key) and not Geometry2D.intersect_polygons(poly, sim.lots[key].corners).is_empty():
 			lots += 1
+	var area := []
+	for q in poly:
+		area.append([q.x, q.y])
 	var rid: int = sim.permits.file(sim, {"hub": "big", "hub_id": id, "leader": leader_name(f),
 		"title": "%s wants the land behind it" % f.name,
-		"why": "The plant is running flat out and wants to grow onto the %d lot%s behind it, buying them at a fair price." \
+		"why": "The plant is running flat out and wants to grow onto the %d lot%s behind it, buying them out at a fair price." \
 			% [lots, "" if lots == 1 else "s"],
-		"route": [[a.x, a.y], [b.x, b.y]], "width": Balance.BIG_FACTORY_BAY, "per_m": 0,
-		"base": roundi(grow_cost + lots * Balance.BIG_FACTORY_LOT_PRICE), "budget": roundi(float(f.cash))})
+		"area": area, "change": "Homes and shops to factory", "per_m2": Balance.BIG_FACTORY_LAND_PER_M2,
+		"base": roundi(grow_cost), "budget": roundi(float(f.cash))})
 	f.why = "Asked you for the lots behind it (the bell up top)." if rid != -1 else "Waiting to ask for the land behind it."
 
 

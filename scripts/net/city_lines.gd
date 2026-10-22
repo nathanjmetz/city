@@ -16,7 +16,7 @@ const DASH := 6.0           # dash length, metres (a gap of STEP - DASH follows)
 const WIDTH := 1.5
 const BUCKET := 64.0        # spatial hash cell for nearest-point lookups
 ## Lines are drawn between cities whose closest points are this close.
-const MAX_GAP := 3000.0
+const MAX_GAP := 12000.0
 ## How often the lines are redrawn while cities change, seconds.
 const REFRESH := 3.0
 
@@ -133,7 +133,7 @@ static func trace(a: PointSet, b: PointSet, others: Array) -> Array:
 		var pts := PackedVector2Array([start])
 		var p := start
 		var heading: Vector2 = dir
-		for i in 600:
+		for i in 1500:
 			var q := _settle(a, b, p + heading * STEP)
 			var da := a.nearest_distance(q)
 			if da > reach or not _is_ours(q, da, others) or q.distance_to(p) < STEP * 0.3:
@@ -196,7 +196,9 @@ func _dashes(line: PackedVector2Array) -> Array:
 	for i in line.size() - 1:
 		var p0: Vector3 = to_world.call(line[i])
 		var p1: Vector3 = to_world.call(line[i + 1])
-		var mid := (p0 + p1) * 0.5 + Vector3(0, 0.12, 0)
+		p0.y = Terrain.ground_y(p0.x, p0.z)
+		p1.y = Terrain.ground_y(p1.x, p1.z)
+		var mid := (p0 + p1) * 0.5 + Vector3(0, 0.3, 0)
 		var basis := Basis.looking_at((p1 - p0).normalized(), Vector3.UP) if p0.distance_to(p1) > 0.01 else Basis()
 		out.append(Transform3D(basis.scaled_local(Vector3(_width, 1, 1)), mid))
 	return out

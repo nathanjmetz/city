@@ -103,11 +103,11 @@ func _process(_delta: float) -> void:
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
 		RoadMesh.add_strip(st, PackedVector3Array(Farms.make_drive(_hover, _dir, near.point)),
 			-Farms.DRIVE_WIDTH * 0.5, Farms.DRIVE_WIDTH * 0.5, 0.4)
-		_lane.mesh = st.commit()
+		_lane.mesh = Terrain.drape(st.commit(), true, 8.0)
 	var box := BoxMesh.new()
 	box.size = Vector3(Industry.HQ_SIZE.x, 8.0, Industry.HQ_SIZE.y)
 	_ghost.mesh = box
-	_ghost.transform = Transform3D(Basis.looking_at(_dir, Vector3.UP), _hover + Vector3(0, 4, 0))
+	_ghost.transform = Transform3D(Basis.looking_at(_dir, Vector3.UP), Vector3(_hover.x, Terrain.ground_y(_hover.x, _hover.z) + 4.0, _hover.z))
 	_ghost.material_override = _ok_mat if _ok else _bad_mat
 	_ghost.visible = true
 	var here := "%s within reach: %d%%." % [Industry.KINDS[kind].cargo.capitalize(),

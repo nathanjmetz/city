@@ -1,7 +1,7 @@
 extends SceneTree
 ## Pictures of the permit bell for checking the look, with a made-up railroad
 ## request across the starter road (no real hub files one yet).
-## Run: godot -s tools/permit_shot.gd -- list|edit|guide out.png
+## Run: godot -s tools/permit_shot.gd -- list|edit|land|guide out.png
 
 var _frames := 0
 var _mode := "list"
@@ -30,6 +30,11 @@ func _process(_delta: float) -> bool:
 		sim.permits.file(sim, {"hub": "rail", "hub_id": 1, "leader": "Dale Hoffman",
 			"title": "Rail spur to the grain elevator", "why": "Grain sits waiting on trucks. A spur would move it by the carload.",
 			"route": [[120, -120], [130, 20], [150, 140]], "width": 8.0, "per_m": 900, "budget": 900000})
+		if _mode == "land":
+			sim.permits.file(sim, {"hub": "bank", "hub_id": 1, "leader": "Ruth Ames",
+				"title": "Office park on the Miller farm", "why": "Town's growing a money crowd. We'd like room to build.",
+				"change": "Farmland to offices", "area": [[60, -140], [220, -120], [230, 10], [70, 20]],
+				"per_m2": 25, "budget": 900000})
 		sim.permits.file(sim, {"hub": "bus", "hub_id": 1, "leader": "Marcy Lindqvist",
 			"title": "Bus turnaround on Main", "why": "Riders wait too long at the far end of the line.",
 			"route": [[-60, -30], [-20, -10]], "width": 12.0, "per_m": 400, "budget": 120000})
@@ -47,7 +52,12 @@ func _process(_delta: float) -> bool:
 			sim.apply({"type": "guide", "hub": "road", "hub_id": sim.network.segments.keys()[-1], "stance": "grow", "grant": 500})
 		else:
 			hud.permits.open_panel()
-			hud.permits.call("_select", 1)
+			hud.permits.call("_select", 2 if _mode == "land" else 1)
+	if _frames == 30 and _mode == "land":
+		var hud: Hud = current_scene.get_children().filter(func(n): return n is Hud)[0]
+		hud.permits.set("_editing", true)
+		hud.permits.view.set_editing(true)
+		hud.permits.view.call("_changed")
 	if _frames == 30 and _mode == "edit":
 		var hud: Hud = current_scene.get_children().filter(func(n): return n is Hud)[0]
 		hud.permits.view.route.insert(1, [60, -40])

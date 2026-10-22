@@ -41,7 +41,7 @@ func _process(_delta: float) -> void:
 	if cam == null:
 		return
 	var focus := _ground_focus(cam)
-	var radius := clampf(cam.global_position.y * 3.0, MIN_RADIUS, MAX_RADIUS)
+	var radius := reach(cam.global_position.y)
 	var size := Vegetation.CHUNK
 	var day := sim.tick_count / REGROW_REDRAW
 	if day != _last_regrow:
@@ -104,9 +104,15 @@ func _draw_chunk(c: Vector2i, detail: bool) -> void:
 	_shade.append(_chunks[c])
 
 
-## Where and how big a plant is drawn.
+## How far out wild plants are drawn for a camera this high.
+static func reach(height: float) -> float:
+	return clampf(height * 3.0, MIN_RADIUS, MAX_RADIUS)
+
+
+## Where and how big a plant is drawn: standing on the land.
 static func placement(p: Dictionary) -> Transform3D:
 	var pos: Vector3 = p.pos
+	pos.y += Terrain.ground_y(pos.x, pos.z)
 	var s: float = p.size
 	var shape := Vector3.ONE * s
 	if p.kind == Vegetation.Kind.SHRUB:

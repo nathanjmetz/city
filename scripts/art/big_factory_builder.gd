@@ -36,10 +36,12 @@ const LAGOON := Color("#4f6b5c")
 const TRAILER := Color("#f1f0ec")
 const LUMBER := Color("#b88f5e")
 const BERM := Color("#8a8f6a")
+const YARD_GRAVEL := Color("#b5ad9c")  # crushed limestone, as FarmBuilder
+const STAVE := Color("#bdb7aa")
 
 
 ## [buildings mesh, ground mesh, trees] for plant `f` (see BigFactories).
-static func build(f: Dictionary, seed: int, to_curb: float) -> Array:
+static func build_plant(f: Dictionary, seed: int, to_curb: float) -> Array:
 	var b := BigFactoryBuilder.new()
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
@@ -162,6 +164,33 @@ func _trailer(back: Vector3, out: Vector3, col: Color, reefer := false) -> void:
 		_box("paint", Vector3(2.5, 1.0, 1.0), back + out * k + Vector3(0, 0.6, 0), DARK, basis)  # tandem axles
 	if reefer:
 		_box("paint", Vector3(2.2, 1.6, 0.6), back + out * (len + 0.3) + Vector3(0, 2.8, 0), Color("#d8d8d4"), basis)
+
+
+## A corrugated steel grain bin with a cone roof (as FarmBuilder's, bigger).
+func _grain_bin(base: Vector3, r: float, h: float) -> void:
+	_box("concrete", Vector3(r * 2.1, 0.3, r * 2.1), base + Vector3(0, 0.15, 0), FOUNDATION)
+	_cylinder("metal", base + Vector3(0, 0.3, 0), r, h, BIN_STEEL, 24)
+	_cone(base + Vector3(0, 0.3 + h, 0), r + 0.15, r * 0.6, BIN_STEEL.darkened(0.04), 24)
+	_box("paint", Vector3(0.45, h, 0.08), base + Vector3(0, 0.3 + h * 0.5, -r - 0.05), Color("#7d8082"))
+
+
+## A concrete stave silo with a dome.
+func _silo(base: Vector3, r: float, h: float) -> void:
+	_cylinder("paint", base, r, h, STAVE, 18)
+	_cone(base + Vector3(0, h, 0), r + 0.1, r * 0.8, GALV)
+
+
+## A cone from a ring at `base` (h < 0 points it down, for a cyclone).
+func _cone(base: Vector3, r: float, h: float, col: Color, segs := 20, mat := "metal") -> void:
+	var apex := base + Vector3(0, h, 0)
+	for i in segs:
+		var a0 := TAU * i / segs
+		var a1 := TAU * (i + 1) / segs
+		var p0 := base + Vector3(cos(a0) * r, 0, sin(a0) * r)
+		var p1 := base + Vector3(cos(a1) * r, 0, sin(a1) * r)
+		var out := ((p0 + p1) * 0.5 - base).normalized() + Vector3(0, 0.6 * signf(h), 0)
+		var tri := [p0, p1, apex] if h > 0.0 else [p1, p0, apex]
+		_tri(mat, tri[0], tri[1], tri[2], col, [], out)
 
 
 # ---------------------------------------------------------------- ethanol

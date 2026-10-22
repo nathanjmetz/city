@@ -170,7 +170,7 @@ func _draw_outline() -> void:
 		RoadMesh.add_strip(st, PackedVector3Array([line[i], line[i + 1]]), -0.8, 0.8, 0.5)
 	for n in _nodes:
 		RoadMesh.add_disc(st, n, 3.0 if n == _nodes[0] else 2.0, 0.55, 12)
-	_outline.mesh = st.commit()
+	_outline.mesh = Terrain.drape(st.commit(), true, 8.0)
 
 
 ## The farmhouse faces the nearest road, like a real farmstead lane.
@@ -190,14 +190,14 @@ func _place_ghost() -> void:
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
 		RoadMesh.add_strip(st, PackedVector3Array(Farms.make_drive(_hover, _ghost_dir, near.point)),
 			-Farms.DRIVE_WIDTH * 0.5, Farms.DRIVE_WIDTH * 0.5, 0.4)
-		_outline.mesh = st.commit()
+		_outline.mesh = Terrain.drape(st.commit(), true, 8.0)
 	if problem == "" and Farms.FARMHOUSE_COST > sim.economy.money:
 		problem = "Not enough money: costs $%s." % CitySim.money_text(Farms.FARMHOUSE_COST)
 	_ghost_ok = problem == ""
 	var box := BoxMesh.new()
 	box.size = Vector3(Farms.FARMHOUSE_SIZE.x, 6.0, Farms.FARMHOUSE_SIZE.y)
 	_ghost.mesh = box
-	_ghost.transform = Transform3D(Basis.looking_at(_ghost_dir, Vector3.UP), _hover + Vector3(0, 3, 0))
+	_ghost.transform = Transform3D(Basis.looking_at(_ghost_dir, Vector3.UP), Vector3(_hover.x, Terrain.ground_y(_hover.x, _hover.z) + 3.0, _hover.z))
 	_ghost.material_override = _ok_mat if _ghost_ok else _bad_mat
 	_ghost.visible = true
 	if problem != _problem:
