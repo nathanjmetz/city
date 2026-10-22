@@ -19,15 +19,15 @@ signal command_applied(cmd: Dictionary)
 
 const TICKS_PER_SECOND := 10
 ## A new building can start every this many ticks.
-const GROW_EVERY := 4
+const GROW_EVERY := Balance.GROW_EVERY
 ## People move in and stats update every this many ticks.
-const MOVE_EVERY := 10
+const MOVE_EVERY := Balance.MOVE_EVERY
 ## Game minutes per tick: at normal speed a day takes 2.4 real minutes.
 const MINUTES_PER_TICK := 1
 ## Tick 0 is 6:00 AM on Monday, January 4, 2027.
 const START_UNIX := 1799042400
 ## Share of residents who work (US labour force is about half of everyone).
-const WORKER_SHARE := 0.5
+const WORKER_SHARE := Balance.WORKER_SHARE
 const TICKS_PER_HOUR := 60 / MINUTES_PER_TICK
 
 var network := RoadNetwork.new()

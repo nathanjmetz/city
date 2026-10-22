@@ -9,45 +9,44 @@ extends RefCounted
 enum Kind { SUBSTATION, WATER_TOWER, FIRE, POLICE, CLINIC, SCHOOL, POWER_FEED, WELL }
 
 ## Each kind: name, icon, footprint (width along the road x depth, metres),
-## build cost, monthly upkeep, and either `reach` (metres by road) or
-## `capacity` (homes-equivalent it can serve).
+## and its build cost, monthly upkeep and `reach` or `capacity` from Balance.
 const KINDS := {
 	# Ties the town to the regional grid (homes buy power from the utility).
 	# A 20 MVA distribution substation carries about 13,000 homes.
 	Kind.SUBSTATION: {"name": "Substation", "icon": "power", "size": Vector2(30, 30),
-		"cost": 900_000, "upkeep": 6_000, "capacity": 13_000, "utility": "power"},
+		"cost": Balance.SERVICES["substation"]["cost"], "upkeep": Balance.SERVICES["substation"]["upkeep"], "capacity": Balance.SERVICES["substation"]["capacity"], "utility": "power"},
 	# Well, pump house and a 500,000 gallon elevated tank: about 1 million
 	# gallons a day, at 300 gallons per household.
 	Kind.WATER_TOWER: {"name": "Water tower", "icon": "water", "size": Vector2(30, 30),
-		"cost": 2_000_000, "upkeep": 12_000, "capacity": 3_300, "utility": "water"},
+		"cost": Balance.SERVICES["water_tower"]["cost"], "upkeep": Balance.SERVICES["water_tower"]["upkeep"], "capacity": Balance.SERVICES["water_tower"]["capacity"], "utility": "water"},
 	# Starter utilities for a village: an overhead feed with pole transformers
 	# from the regional utility, and a 150 gpm well with a pressure tank
 	# (about 200,000 gallons a day).
 	Kind.POWER_FEED: {"name": "Power line feed", "icon": "power", "size": Vector2(12, 12),
-		"cost": 120_000, "upkeep": 1_000, "capacity": 400, "utility": "power"},
+		"cost": Balance.SERVICES["power_feed"]["cost"], "upkeep": Balance.SERVICES["power_feed"]["upkeep"], "capacity": Balance.SERVICES["power_feed"]["capacity"], "utility": "power"},
 	Kind.WELL: {"name": "Well and pump house", "icon": "water", "size": Vector2(20, 20),
-		"cost": 300_000, "upkeep": 3_000, "capacity": 650, "utility": "water"},
+		"cost": Balance.SERVICES["well"]["cost"], "upkeep": Balance.SERVICES["well"]["upkeep"], "capacity": Balance.SERVICES["well"]["capacity"], "utility": "water"},
 	# Two-bay station. ISO rates homes within 1.5 road miles of a station.
 	Kind.FIRE: {"name": "Fire station", "icon": "fire", "size": Vector2(30, 36),
-		"cost": 2_500_000, "upkeep": 45_000, "reach": 2400.0},
+		"cost": Balance.SERVICES["fire"]["cost"], "upkeep": Balance.SERVICES["fire"]["upkeep"], "reach": Balance.SERVICES["fire"]["reach"]},
 	# A small department's station, patrols covering about 2 road miles.
 	Kind.POLICE: {"name": "Police station", "icon": "police", "size": Vector2(30, 36),
-		"cost": 1_800_000, "upkeep": 50_000, "reach": 3200.0},
+		"cost": Balance.SERVICES["police"]["cost"], "upkeep": Balance.SERVICES["police"]["upkeep"], "reach": Balance.SERVICES["police"]["reach"]},
 	# Walk-in clinic; most Americans live within a few miles of one.
 	Kind.CLINIC: {"name": "Clinic", "icon": "health", "size": Vector2(30, 30),
-		"cost": 1_500_000, "upkeep": 35_000, "reach": 4800.0},
+		"cost": Balance.SERVICES["clinic"]["cost"], "upkeep": Balance.SERVICES["clinic"]["upkeep"], "reach": Balance.SERVICES["clinic"]["reach"]},
 	# Elementary school for about 400 pupils on a 2 acre site.
 	Kind.SCHOOL: {"name": "Elementary school", "icon": "school", "size": Vector2(80, 100),
-		"cost": 9_000_000, "upkeep": 95_000, "reach": 3200.0},
+		"cost": Balance.SERVICES["school"]["cost"], "upkeep": Balance.SERVICES["school"]["upkeep"], "reach": Balance.SERVICES["school"]["reach"]},
 }
 ## Which kinds supply each utility.
 const UTILITIES := {"power": [Kind.SUBSTATION, Kind.POWER_FEED], "water": [Kind.WATER_TOWER, Kind.WELL]}
 ## Kinds that cover homes by distance (the rest are utilities).
 const COVERAGE := [Kind.FIRE, Kind.POLICE, Kind.CLINIC, Kind.SCHOOL]
 ## Water and sewer bills the city collects, per month.
-const WATER_FEE := {ZoneMap.Zone.RESIDENTIAL: 45, ZoneMap.Zone.COMMERCIAL: 120, ZoneMap.Zone.INDUSTRIAL: 300}
+const WATER_FEE := Balance.WATER_FEE
 ## How much each building draws, in homes-equivalent.
-const LOAD := {ZoneMap.Zone.RESIDENTIAL: 1, ZoneMap.Zone.COMMERCIAL: 4, ZoneMap.Zone.INDUSTRIAL: 12}
+const LOAD := Balance.UTILITY_LOAD
 ## Gap kept between a service's front and the road's edge.
 const SETBACK := 2.0
 
