@@ -14,6 +14,8 @@ signal zones_changed
 signal stats_changed
 ## Farmland or a farm's fields changed.
 signal farms_changed
+## A resource company opened, closed, or added or dropped a pad.
+signal industry_changed
 ## A player command went through (sounds and other feedback listen to this).
 signal command_applied(cmd: Dictionary)
 
@@ -36,6 +38,11 @@ var traffic := TrafficSim.new(network)
 var economy := Economy.new()
 var services := Services.new()
 var farms := Farms.new()
+## Oil, mining and forestry companies (Brawn's model: a main building whose
+## pads spread to where the resource is).
+var industry := Industry.new()
+## The trucks that carry every load (grain, crude, ore, logs, goods).
+var logistics := Logistics.new()
 ## Land saved for farming or an industry: no roads or zoning on it.
 var reserves := Reserves.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
@@ -64,6 +71,7 @@ var _usable_cache := {}  # field cell -> bool, cleared when roads or lots change
 
 func _init() -> void:
 	farms.reserves = reserves
+	industry.reserves = reserves
 	network.changed.connect(func(): _lots_dirty = true)
 
 
@@ -125,8 +133,9 @@ func apply_now(cmd: Dictionary) -> bool:
 			var cost: int = Services.KINDS[kind].cost
 			if cost > economy.money or services.site_problem(network, kind, pos, dir) != "":
 				return false
-			services.add(kind, pos, dir)
+			var sid := services.add(kind, pos, dir)
 			economy.money -= cost
+			_clear_zones_under(services.footprint(sid))
 			_lots_dirty = true
 			ok = true
 		"paint_reserve", "paint_farmland":
@@ -153,6 +162,23 @@ func apply_now(cmd: Dictionary) -> bool:
 			_lots_dirty = true
 			farms_changed.emit()
 			ok = true
+		"place_industry":
+			var kind := str(cmd.get("kind", ""))
+			var pos := _v(cmd.pos)
+			var dir := _v(cmd.dir).normalized()
+			if not Industry.KINDS.has(kind) or dir.length() < 0.5 or industry_problem(kind, pos, dir) != "" \
+					or int(Industry.KINDS[kind].cost) > economy.money:
+				return false
+			industry.add_site(kind, pos, dir, industry_drive(pos, dir))
+			economy.money -= int(Industry.KINDS[kind].cost)
+			_lots_dirty = true
+			industry_changed.emit()
+			ok = true
+		"remove_industry":
+			ok = industry.sites.has(int(cmd.id))
+			industry.sites.erase(int(cmd.id))
+			_lots_dirty = true
+			industry_changed.emit()
 		"remove_farm":
 			ok = farms.farms.has(int(cmd.id))
 			farms.farms.erase(int(cmd.id))
@@ -192,9 +218,13 @@ func apply_now(cmd: Dictionary) -> bool:
 			economy.set_difficulty(diff, true)
 			services = Services.new()
 			farms = Farms.new()
+			industry = Industry.new()
+			logistics = Logistics.new()
 			reserves = Reserves.new()
 			farms.reserves = reserves
+			industry.reserves = reserves
 			farms_changed.emit()
+			industry_changed.emit()
 			ok = true
 	if ok:
 		_refresh()
@@ -217,11 +247,17 @@ func tick() -> void:
 		if farms.decide(field_usable):
 			_lots_dirty = true  # lots under new fields go away
 			farms_changed.emit()
+	if tick_count % Industry.DECIDE_EVERY == 0 and not industry.sites.is_empty():
+		industry.tax_rate = economy.tax[ZoneMap.Zone.INDUSTRIAL]
+		if industry.decide(field_usable):
+			_lots_dirty = true
+			industry_changed.emit()
 	# Taxes come in and upkeep goes out every game hour, a day settling a month.
 	if tick_count % TICKS_PER_HOUR == 0:
 		economy.money += roundi(economy.monthly_net() / 24.0)
 	if not simulate_traffic:
 		return
+	logistics.tick(self)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([city_seed, tick_count, "traffic"])
 	traffic.step(self, rng)
@@ -253,7 +289,7 @@ func update_stats() -> void:
 				if _utilities_ok(key):
 					factory_jobs += b.cap
 	services.update(network, lots, buildings)
-	factory_jobs += farms.jobs()
+	factory_jobs += farms.jobs() + industry.jobs()
 	economy.reach_milestones(pop)
 	var workers := int(pop * WORKER_SHARE)
 	var jobs := shop_jobs + factory_jobs
@@ -330,7 +366,65 @@ func farmhouse_problem(pos: Vector3, dir: Vector3) -> String:
 	for id in farms.farms:
 		if farms.farms[id].pos.distance_to(pos) < Farms.FARMHOUSE_SIZE.length():
 			return "Too close to another farm."
+	for p in [pos] + Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y)):
+		if industry.covers(p):
+			return "That ground belongs to a company."
 	return ""
+
+
+## Why a company's main building can't go here, or "" if it can: it needs
+## the resource underground, clear ground and a road near enough for its lane.
+func industry_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
+	var spec: Dictionary = Industry.KINDS[kind]
+	var side := Vector3(-dir.z, 0.0, dir.x)
+	var poly := PackedVector2Array()
+	for sgn in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+		var p: Vector3 = pos + side * Industry.HQ_SIZE.x * 0.5 * sgn.x + dir * Industry.HQ_SIZE.y * 0.5 * sgn.y
+		poly.append(Vector2(p.x, p.z))
+	if not industry.reserved_ok(kind, pos):
+		return "That land is reserved for %s." % Reserves.KINDS[reserves.kind_at(pos)]
+	if industry_reach(kind, pos) < Industry.MIN_RICHNESS:
+		return "No %s near here. Open the %s view and build where it shows." % [spec.cargo,
+			{"oil": "Oil", "ore": "Ore", "forest": "Forest"}[kind]]
+	if industry_drive(pos, dir).is_empty():
+		return "Needs a road within %d m for its access road." % int(Industry.MAX_DRIVE)
+	if Services.road_clash(network, poly):
+		return "Too close to a road."
+	for id in services.buildings:
+		if not Geometry2D.intersect_polygons(poly, services.footprint(id)).is_empty():
+			return "Overlaps a service building."
+	for p in [pos] + Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y)):
+		if farms.covers(p) or farms.field_at(p) != -1:
+			return "That ground is farmland."
+		if industry.covers(p):
+			return "Too close to another company."
+	return ""
+
+
+## The best the resource gets within reach of a main building (its pads
+## spread up to about 400 m out).
+func industry_reach(kind: String, pos: Vector3) -> float:
+	var best := 0.0
+	for r in [0.0, 120.0, 240.0, 360.0]:
+		for i in (1 if r == 0.0 else 12):
+			var a := TAU * i / 12.0
+			best = maxf(best, Resources.at(Industry.KINDS[kind].resource, pos + Vector3(cos(a), 0.0, sin(a)) * r))
+	return best
+
+
+## The access road from a main building to the nearest public road, or [].
+func industry_drive(pos: Vector3, dir: Vector3) -> Array:
+	var near := network.find_segment_near(pos, Industry.MAX_DRIVE, 1.0)
+	if near.is_empty():
+		return []
+	return Farms.make_drive(pos, dir, near.point)
+
+
+## Zoning under a new building goes away, as in Cities: Skylines 2.
+func _clear_zones_under(poly: PackedVector2Array) -> void:
+	for c in zones.cells.keys():
+		if Geometry2D.is_point_in_polygon(Vector2((c.x + 0.5) * ZoneMap.CELL, (c.y + 0.5) * ZoneMap.CELL), poly):
+			zones.cells.erase(c)
 
 
 ## Zoning never stays on reserved land.
@@ -364,7 +458,7 @@ func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
 		pts.append(mid.lerp(Vector3(c.x, 0.0, c.y), 0.8))
 	if ok:
 		for p in pts:
-			if services.covers(p) or farms.covers(p):
+			if services.covers(p) or farms.covers(p) or industry.covers(p) or farms.field_at(p) != -1:
 				ok = false
 	if ok:
 		for key2 in lots:
@@ -390,14 +484,24 @@ func service_coverage() -> float:
 
 
 ## What keeps the town from growing for want of power or water, in plain
-## words (what's missing and what to build), or "" if nothing does.
+## words (what's missing, why, and what to build), or "" if nothing does.
 func utility_problem() -> String:
+	return _utility_report()[1]
+
+
+## The same, short enough for the top bar: "No power ($20,366 short)" or
+## "74 lots: no power · 71: no water".
+func utility_summary() -> String:
+	return _utility_report()[0]
+
+
+func _utility_report() -> Array:
 	var zoned := []
 	for key in lots:
 		if zones.zone_at(lots[key].zone_pt) != ZoneMap.Zone.NONE:
 			zoned.append(key)
 	if zoned.is_empty():
-		return ""
+		return ["", ""]
 	for u in ["power", "water"]:
 		var has_source := false
 		for id in services.buildings:
@@ -405,10 +509,12 @@ func utility_problem() -> String:
 		if not has_source:
 			var starter: int = Services.Kind.POWER_FEED if u == "power" else Services.Kind.WELL
 			var cost: int = Services.KINDS[starter].cost
-			var text := "No %s: build a %s in Services ($%s)" % [u, Services.KINDS[starter].name, money_text(cost)]
+			var full := "No %s: build a %s in Services ($%s)" % [u, Services.KINDS[starter].name, money_text(cost)]
+			var short := "No %s" % u
 			if cost > economy.money:
-				text += ". You need $%s more" % money_text(cost - economy.money)
-			return text
+				full += ". You need $%s more" % money_text(cost - economy.money)
+				short += " ($%s short)" % money_text(cost - economy.money)
+			return [short, full]
 	# Count zoned lots each utility misses, and why.
 	var missing := {"power": 0, "water": 0}
 	var unlinked := {"power": 0, "water": 0}
@@ -419,21 +525,21 @@ func utility_problem() -> String:
 				missing[u] += 1
 				if not s.get(u + "_linked", false):
 					unlinked[u] += 1
-	var worst := "power" if missing.power >= missing.water else "water"
-	if missing[worst] == 0:
-		return ""
-	var text := "%d zoned lots have no %s" % [missing[worst], worst]
-	var other := "water" if worst == "power" else "power"
-	if missing[other] > 0:
-		text += " and %d have no %s" % [missing[other], other]
-	if unlinked[worst] > 0:
-		var source := "power line" if worst == "power" else "water source"
-		text += ": their streets aren't joined by road to a %s" % source
-	else:
-		var use: Array = services.utility_use[worst]
-		text += ": %s is full (%s of %s homes), build a %s" % [worst, money_text(use[0]), money_text(use[1]),
-			"Substation" if worst == "power" else "Water tower"]
-	return text
+	var shorts := []
+	var fulls := []
+	for u in ["power", "water"]:
+		if missing[u] == 0:
+			continue
+		shorts.append("%d lots: no %s" % [missing[u], u] if shorts.is_empty() else "%d: no %s" % [missing[u], u])
+		var text := "%d zoned lots have no %s" % [missing[u], u]
+		if unlinked[u] > 0:
+			text += ": their streets aren't joined by road to a %s" % ("power line" if u == "power" else "water source")
+		else:
+			var use: Array = services.utility_use[u]
+			text += ": %s is full (%s of %s homes), build a %s" % [u, money_text(use[0]), money_text(use[1]),
+				"Substation" if u == "power" else "Water tower"]
+		fulls.append(text)
+	return [" · ".join(shorts), ". ".join(fulls)]
 
 
 ## Buildings on zoned lots that lack power or water.
@@ -469,7 +575,7 @@ func _refresh() -> void:
 			# No lots under a service building.
 			var blocked := false
 			for p in [lot.pos, lot.front, lot.zone_pt]:
-				blocked = blocked or services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 \
+				blocked = blocked or services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) \
 					or reserves.kind_at(p) != ""
 			if not blocked:
 				lots[lot.key] = lot
@@ -605,6 +711,8 @@ func to_dict() -> Dictionary:
 		"economy": economy.to_dict(),
 		"services": services.to_dict(),
 		"farms": farms.to_dict(),
+		"industry": industry.to_dict(),
+		"logistics": logistics.to_dict(),
 		"reserves": reserves.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
@@ -625,6 +733,8 @@ func from_dict(d: Dictionary) -> void:
 	economy.from_dict(d.get("economy", {}))
 	services.from_dict(d.get("services", {}))
 	farms.from_dict(d.get("farms", {}))
+	industry.from_dict(d.get("industry", {}))
+	logistics.from_dict(d.get("logistics", {}))
 	reserves.from_list(d.get("reserves", []))
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])

@@ -28,6 +28,7 @@ An open map where you draw roads, paint zones along them, and buildings grow, li
 | `8` Dezone | Erase zones (buildings on them go away). |
 | Right click | Stop drawing. |
 | Click (no tool in hand) | Select a building, lot, farm or road: a panel shows whether it works, what it serves, its numbers and any problem. Badges over lots show what lacks power or water. |
+| Industry | Place an oil, mining or forestry company's main building near the resource (its view opens) and within 250 m of a road. Over time it opens well pads, pits or logging stands wherever the resource is richest; Reserve saves land for it. Every load leaves on a real truck: to a factory in town, or out by the highway. Resources never run out. |
 | Esc | Stop drawing; press again to put every tool away and close panels. |
 
 | Space, or Pause / 1x / 2x / 4x | Pause and game speed. |
@@ -98,6 +99,7 @@ All sounds are built in code by `tools/audio/make_assets.py` (`python3 tools/aud
 | `scripts/sim/balance.gd` | Every gameplay number in one place (money, prices, upkeep, taxes, grants, growth, farm yields). Tune the game here. |
 | `scripts/sim/inspect.gd`, `scripts/ui/select_tool.gd`, `scripts/ui/info_panel.gd` | Click anything with no tool in hand: CS2-style info panel (status, numbers, problems). |
 | `scripts/zones/lot_alerts.gd` | "No power" and "no water" badges over lots. |
+| `scripts/sim/industry.gd`, `scripts/sim/logistics.gd`, `scripts/industry/` | Resource companies, and the freight that moves every load (Traffic's `dispatch`). |
 | `scripts/zones/zone_view.gd` | Draws lots and zone colours. |
 | `scripts/audio/` | Sound: world sources and the nearest-first picker, the spatial players, and interface sounds. |
 | `scripts/buildings/building_view.gd` | Draws placeholder homes, shops and factories. |

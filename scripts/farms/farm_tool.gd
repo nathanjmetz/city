@@ -59,18 +59,26 @@ func _ready() -> void:
 func set_mode(m: int) -> void:
 	mode = m
 	_nodes.clear()
-	if mode != Mode.NONE and info.mode == InfoView.Mode.NONE:
-		info.set_mode(InfoView.Mode.FERTILITY)
+	var view := _view()
+	if mode != Mode.NONE and info.mode != view:
+		info.set_mode(view)
 		_opened_view = true
 	elif mode == Mode.NONE and _opened_view:
 		_opened_view = false
-		if info.mode == InfoView.Mode.FERTILITY:
-			info.set_mode(InfoView.Mode.NONE)
+		info.set_mode(InfoView.Mode.NONE)
 	info.show_reserves = mode != Mode.NONE
 	_outline.visible = false
 	_ghost.visible = false
 	mode_changed.emit(mode)
 	_update_hint()
+
+
+## The view that shows the resource this land is saved for.
+func _view() -> int:
+	if mode == Mode.CORN or mode == Mode.SOYBEANS:
+		return InfoView.Mode.FERTILITY
+	return {"farm": InfoView.Mode.FERTILITY, "oil": InfoView.Mode.OIL, "ore": InfoView.Mode.ORE,
+		"forest": InfoView.Mode.FOREST}.get(reserve_kind, InfoView.Mode.FERTILITY)
 
 
 func is_drawing() -> bool:
@@ -140,6 +148,9 @@ func _process(_delta: float) -> void:
 	else:
 		_draw_outline()
 	var fert := "Soil here: %d%% fertile." % roundi(Farms.fertility_at(_hover) * 100.0)
+	if reserve_kind != "farm":
+		var res: int = Industry.KINDS[reserve_kind].resource
+		fert = "%s here: %d%%." % [Industry.KINDS[reserve_kind].cargo.capitalize(), roundi(Resources.at(res, _hover) * 100.0)]
 	if fert != _problem and _nodes.is_empty() and mode != Mode.CORN and mode != Mode.SOYBEANS:
 		_problem = fert
 		_update_hint()
@@ -200,7 +211,7 @@ func _update_hint() -> void:
 		Mode.NONE:
 			return
 		Mode.RESERVE, Mode.CLEAR:
-			var verb := "land to save for farming (no roads or zoning)" if mode == Mode.RESERVE \
+			var verb := "land to save for %s (no roads or zoning)" % Reserves.KINDS[reserve_kind] if mode == Mode.RESERVE \
 				else "reserved land to release"
 			if _nodes.is_empty():
 				text = "Click to start outlining %s. %s" % [verb, _problem]
