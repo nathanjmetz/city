@@ -49,7 +49,7 @@ static func build_block(art: String, levels: int, seed: int) -> Array:
 		"store": b._store()
 		"office": b._ops_center(levels)
 		"data": b._data_center(levels)
-		_: b._garage(levels)
+		_: b._crew_garage(levels)
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 
@@ -279,7 +279,7 @@ func _mimo(y: float, r: float) -> void:
 
 ## A pre-engineered metal line crew garage with three overhead doors, and
 ## bucket trucks in the yard.
-func _garage(levels: int) -> void:
+func _crew_garage(levels: int) -> void:
 	var wall := Color(_pick(METAL_WALL))
 	var zf := -S + 9.0
 	var h := 5.5 + 1.5 * (levels - 1)
