@@ -63,6 +63,34 @@ func _demo_town() -> void:
 					c.select({"type": "service", "id": id})
 		_aim_camera()
 		return
+	if args0.size() >= 5 and args0[4].begins_with("industry"):
+		# A resource company a few days after it opened: industry_oil, _ore or _forest.
+		var kind: String = args0[4].substr(9) if args0[4].length() > 9 else "oil"
+		var res: int = Industry.KINDS[kind].resource
+		var best := Vector3.ZERO
+		var best_v := 0.0
+		for x in range(-1500, 1501, 100):
+			for z in range(-1500, 1501, 100):
+				var v := Resources.at(res, Vector3(x, 0, z))
+				if v > best_v:
+					best_v = v
+					best = Vector3(x, 0, z)
+		sim.apply({"type": "build_road", "start": [best.x - 600, best.z - 60], "ctrl": [best.x, best.z - 60], "end": [best.x + 600, best.z - 60]})
+		sim.apply({"type": "place_industry", "kind": kind, "pos": [best.x, best.z + 20], "dir": [0, -1]})
+		for i in 1440 * 4:
+			sim.tick()
+		for c in _main.get_children():
+			if c is CityCamera:
+				c.look_at_point(best + Vector3(float(args0[5]) if args0.size() >= 7 else 0.0, 0, float(args0[6]) if args0.size() >= 7 else 120.0))
+				c.set_view(deg_to_rad(float(args0[1])), deg_to_rad(float(args0[2])), float(args0[3]))
+		if args0.size() >= 8:
+			for c in _main.get_children():
+				if c is Hud:
+					c.close_all()
+			for c in _main.get_children():
+				if c is SelectTool:
+					c.select({"type": "industry", "id": 1})
+		return
 	if args0.size() >= 5 and args0[4] == "farms":
 		_demo_farms(sim)
 		return

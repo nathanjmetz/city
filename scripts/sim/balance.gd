@@ -130,3 +130,40 @@ const FARM_RESERVE_BONUS := 40.0
 const FARM_PRICE_CYCLE_DAYS := 48.0
 ## Farms decide to buy or sell land this often, in ticks (6 game hours).
 const FARM_DECIDE_EVERY := 360
+
+# --- Resource industry -------------------------------------------------------
+
+## Each kind of company: what the player pays to open its main building, and
+## per pad (a well pad, pit or logging stand) at full richness: truck loads a
+## month, dollars a load, yearly running cost and jobs.
+## Oil: a Midwest pad of two pumpjacks makes about 200 barrels a month, one
+## tanker load, about $14,000 at $70 a barrel.
+## Ore: a pit fills about three 20 t dump trucks a month, ~$2,500 a load.
+## Forest: a logging stand cuts about 1.5 log-truck loads a month, ~$1,800 each.
+const INDUSTRY := {
+	"oil": {"cost": 600_000, "loads": 1.0, "price": 14_000.0, "pad_cost": 50_000.0, "jobs_hq": 12, "jobs_pad": 1},
+	"ore": {"cost": 500_000, "loads": 3.0, "price": 2_500.0, "pad_cost": 25_000.0, "jobs_hq": 15, "jobs_pad": 3},
+	"forest": {"cost": 300_000, "loads": 1.5, "price": 1_800.0, "pad_cost": 9_000.0, "jobs_hq": 8, "jobs_pad": 2},
+}
+## Hauling from a pad to the main building, dollars a year per km.
+const INDUSTRY_HAUL_PER_KM := 6_000.0
+## Assessed value of each pad, for the city's industrial property tax.
+const INDUSTRY_PAD_VALUE := 250_000.0
+## Dollars a year a pad is preferred per neighbouring pad, or on reserved land.
+const INDUSTRY_COMPACT_BONUS := 4_000.0
+const INDUSTRY_RESERVE_BONUS := 6_000.0
+## Pads go only where the deposit is at least this rich (0 to 1).
+const INDUSTRY_MIN_RICHNESS := 0.25
+## Loads a company stores before it stops producing (no truck got out).
+const INDUSTRY_STOCK_CAP := 12.0
+## Companies decide to open or close a pad this often, in ticks (6 game hours).
+const INDUSTRY_DECIDE_EVERY := 360
+
+# --- Freight -----------------------------------------------------------------
+
+## Grain a farm ships: bushels an acre a year at full fertility (USDA Iowa
+## yields), and one hopper semi's load.
+const FARM_BUSHELS_PER_ACRE := {"corn": 180.0, "soybeans": 55.0}
+const GRAIN_TRUCK_BUSHELS := 1_000.0
+## A factory ships one load of goods to the shops for this many loads in.
+const FACTORY_LOADS_PER_GOODS := 2.0

@@ -259,10 +259,65 @@ func _init() -> void:
 		split.apply({"type": "place_service", "kind": entry[0], "pos": [spot[0].x, spot[0].z], "dir": [spot[1].x, spot[1].z]})
 	for i in 50:
 		split.tick()
-	_check(split.utility_problem().contains("aren't joined by road"), "split networks are explained: " + split.utility_problem())
+	_check(split.utility_problem().contains("no power: their streets aren't joined by road to a power line")
+		and split.utility_problem().contains("no water: their streets aren't joined by road to a water source"),
+		"split networks: each utility's cause is named: " + split.utility_problem())
+	_check(split.utility_summary().length() < 40, "the top-bar chip stays short: " + split.utility_summary())
 	var rd := Inspect.describe(ws, Inspect.pick(ws, Vector3(60, 0, 0)))
 	_check(rd.get("title") == "Street" and rd.ok, "clicking a road shows the street")
 	_check(Inspect.pick(ws, Vector3(0, 0, -900)).is_empty(), "clicking open ground selects nothing")
+	# Resource industry (Brawn's model): a company's pads spread where the
+	# resource is, and every load leaves on a real truck.
+	var best := Vector3.ZERO
+	var best_v := 0.0
+	for x in range(-2000, 2001, 100):
+		for z in range(-2000, 2001, 100):
+			var v := Resources.at(Resources.Kind.OIL, Vector3(x, 0, z))
+			if v > best_v:
+				best_v = v
+				best = Vector3(x, 0, z)
+	var oil := CitySim.new()
+	oil.economy.money = 50_000_000
+	oil.apply({"type": "build_road", "start": [best.x - 400, best.z - 60], "ctrl": [best.x, best.z - 60], "end": [best.x + 400, best.z - 60]})
+	oil.apply({"type": "build_road", "start": [best.x + 400, best.z - 60], "ctrl": [best.x + 1200, best.z - 60], "end": [best.x + 2000, best.z - 60]})
+	_check(oil.industry_problem("oil", best + Vector3(0, 0, 900), Vector3(0, 0, -1)).begins_with("Needs a road")
+		or oil.industry_problem("oil", best + Vector3(0, 0, 900), Vector3(0, 0, -1)).begins_with("No crude"),
+		"a company needs a road and the resource nearby")
+	var dry := Vector3.ZERO
+	for x in range(-2000, 2001, 100):
+		if Resources.at(Resources.Kind.OIL, Vector3(x, 0, best.z)) < 0.05 and oil.industry_reach("oil", Vector3(x, 0, best.z + 20)) < Industry.MIN_RICHNESS:
+			dry = Vector3(x, 0, best.z + 20)
+			break
+	if dry != Vector3.ZERO:
+		oil.apply({"type": "build_road", "start": [dry.x - 100, dry.z - 80], "ctrl": [dry.x, dry.z - 80], "end": [dry.x + 100, dry.z - 80]})
+		_check(oil.industry_problem("oil", dry, Vector3(0, 0, -1)).begins_with("No crude oil"), "no oil company where there's no oil")
+	_check(oil.apply({"type": "place_industry", "kind": "oil", "pos": [best.x, best.z + 20], "dir": [0, -1]}), "an oil company opens on the oil field")
+	var twin := CitySim.new()
+	twin.from_dict(JSON.parse_string(JSON.stringify(oil.to_dict())))
+	for i in 1440 * 3:
+		oil.tick()
+		twin.tick()
+	var co: Dictionary = oil.industry.sites[1]
+	_check(co.pads.size() >= 3, "its pads spread over three days (%d)" % co.pads.size())
+	var rich := true
+	for c in co.pads:
+		rich = rich and Industry.richness(co, c) >= Industry.MIN_RICHNESS
+	_check(rich, "every pad sits on oil")
+	_check(oil.logistics.delivered > 0 and oil.logistics.exported > 0, "tankers drove crude out to the highway (%d delivered)" % oil.logistics.delivered)
+	var tankers := 0
+	for car in oil.traffic.cars:
+		if car.get("purpose", "") == "fuel":
+			tankers += 1
+	_check(tankers > 0 or not oil.logistics.trips.is_empty(), "crude rides in tankers")
+	_check(twin.industry.sites[1].pads == co.pads and twin.logistics.delivered == oil.logistics.delivered,
+		"two copies grow the same oil field (multiplayer)")
+	var back := CitySim.new()
+	back.from_dict(JSON.parse_string(JSON.stringify(oil.to_dict())))
+	_check(back.industry.sites[1].pads.size() == co.pads.size() and back.logistics.trips.size() == oil.logistics.trips.size(),
+		"save keeps the company and its trucks")
+	var oil_sel := Inspect.pick(oil, co.pos)
+	_check(oil_sel.get("type") == "industry" and Inspect.describe(oil, oil_sel).title == "Oil company", "clicking the company opens its panel")
+	_check(oil.stats.jobs >= Balance.INDUSTRY["oil"]["jobs_hq"], "the company's jobs count")
 	# Old saves (roads only) come back zoned as homes.
 	var old := CitySim.new()
 	old.from_dict({"version": 1, "next_id": 4, "nodes": {"1": [-100, 0], "2": [100, 0]},

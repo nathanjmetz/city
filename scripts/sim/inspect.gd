@@ -12,6 +12,11 @@ static func pick(sim: CitySim, p: Vector3) -> Dictionary:
 	var sid := sim.services.at(p)
 	if sid != -1:
 		return {"type": "service", "id": sid}
+	var iid := sim.industry.site_at(p)
+	if iid == -1:
+		iid = sim.industry.pad_at(p)
+	if iid != -1:
+		return {"type": "industry", "id": iid}
 	var fid := sim.farms.farm_at(p)
 	if fid == -1:
 		fid = sim.farms.field_at(p)
@@ -42,6 +47,8 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 		"service":
 			var b: Dictionary = sim.services.buildings[sel.id]
 			return [b.pos, Services.KINDS[b.kind].size.length() * 0.5 + 3.0]
+		"industry":
+			return [sim.industry.sites[sel.id].pos, Industry.HQ_SIZE.length() * 0.5 + 3.0]
 		"farm":
 			return [sim.farms.farms[sel.id].pos, Farms.FARMHOUSE_SIZE.length() * 0.5 + 3.0]
 		"lot":
@@ -56,6 +63,7 @@ static func exists(sim: CitySim, sel: Dictionary) -> bool:
 	match sel.get("type", ""):
 		"service": return sim.services.buildings.has(sel.id)
 		"farm": return sim.farms.farms.has(sel.id)
+		"industry": return sim.industry.sites.has(sel.id)
 		"lot": return sim.lots.has(sel.id)
 		"road": return sim.network.segments.has(sel.id)
 	return false
@@ -69,6 +77,7 @@ static func describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 	match sel.type:
 		"service": return _service(sim, sel.id)
 		"farm": return _farm(sim, sel.id)
+		"industry": return _industry(sim, sel.id)
 		"lot": return _lot(sim, sel.id)
 		"road": return _road(sim, sel.id)
 	return {}
@@ -149,6 +158,37 @@ static func _farm(sim: CitySim, id: int) -> Dictionary:
 		"status": status, "rows": rows, "problems": problems}
 
 
+static func _industry(sim: CitySim, id: int) -> Dictionary:
+	var s: Dictionary = sim.industry.sites[id]
+	var k: Dictionary = Industry.KINDS[s.kind]
+	var b: Dictionary = Balance.INDUSTRY[s.kind]
+	var rate := 0.0
+	for c in s.pads:
+		rate += b.loads * Industry.richness(s, c)
+	var profit := sim.industry.yearly_profit(id)
+	var ref := "site:%d" % id
+	var rows := [
+		["%s%ss" % [k.pad.substr(0, 1).to_upper(), k.pad.substr(1)], str(s.pads.size())],
+		["Output", "%.1f truckloads of %s / month" % [rate, k.cargo]],
+		["Waiting in the yard", "%d loads" % floori(s.stock)],
+		["Trucks on the road", str(sim.logistics.trucks_for(ref))],
+		["Jobs", str(b.jobs_hq + b.jobs_pad * s.pads.size())],
+		["Profit", "%s$%s / year" % ["" if profit >= 0.0 else "-", CitySim.money_text(absi(roundi(profit)))]],
+		["Property tax to town", "$%s / month" % CitySim.money_text(roundi((float(k.cost) + Industry.PAD_VALUE * s.pads.size())
+			* sim.economy.tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0))],
+	]
+	var problems := []
+	var status := "Working: opens %ss where the ground is richest" % k.pad
+	if s.pads.is_empty():
+		status = "Surveying for its first %s" % k.pad
+	if sim.logistics.stuck.has(ref):
+		problems.append("Its trucks can't reach a buyer or the highway. Connect its road to the rest of town.")
+	if s.stock >= Industry.STOCK_CAP:
+		problems.append("The yard is full, so it has stopped producing.")
+	return {"title": k.name, "kind": "Resource industry", "icon": s.kind, "ok": problems.is_empty(),
+		"status": status, "rows": rows, "problems": problems}
+
+
 static func _lot(sim: CitySim, key: String) -> Dictionary:
 	var lot: Dictionary = sim.lots[key]
 	var zone := sim.zones.zone_at(lot.zone_pt)
@@ -194,6 +234,9 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 		rows.append(["Services nearby", ", ".join(cover) if not cover.is_empty() else "None"])
 	else:
 		rows.push_front(["Jobs", str(b.cap)])
+		if z == ZoneMap.Zone.INDUSTRIAL:
+			rows.append(["Raw loads in the yard", "%d" % floori(sim.logistics.stock.get(key, 0.0))])
+		rows.append(["Trucks on the road", str(sim.logistics.trucks_for("lot:" + key))])
 		status = "Open for business" if problems.is_empty() else "Closed: no power or water"
 	var staffed := float(sim.stats.employed) / maxf(sim.stats.jobs, 1.0)
 	rows.append(["Property tax", "$%s / month" % CitySim.money_text(roundi(sim.economy.building_tax(b, staffed) / 12.0))])
