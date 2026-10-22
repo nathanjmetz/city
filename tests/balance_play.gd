@@ -192,6 +192,16 @@ func _road(a: Vector3, b: Vector3) -> void:
 	sim.apply({"type": "build_road", "start": [a.x, a.z], "ctrl": [m.x, m.z], "end": [b.x, b.z]})
 
 
+## Zones one side of the street at z, the way a player does: a click per
+## block face.
 func _zone(z: float, side: float, zone: int) -> void:
-	for x in range(-ROW_HALF + 10, ROW_HALF - 9, 8):
-		sim.apply({"type": "paint_zone", "center": [x, z + side * LOT_OFFSET], "radius": 10, "zone": zone})
+	var ids := sim.network.segments.keys()
+	ids.sort()
+	for id in ids:
+		var c := sim.network.curve_of(id)
+		if absf(c[0].z - z) > 1.0 or absf(c[2].z - z) > 1.0:
+			continue
+		# A street side is left (+1) of its a-to-b direction.
+		var dx: float = c[2].x - c[0].x
+		var s := 1 if (dx > 0.0) == (side > 0.0) else -1
+		sim.apply({"type": "zone_frontage", "seg": id, "side": s, "zone": zone})

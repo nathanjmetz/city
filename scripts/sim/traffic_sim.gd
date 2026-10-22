@@ -1237,11 +1237,13 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 				car.v = 0.0
 	for car in done:
 		cars.erase(car)
+	# Snapped so the value survives a save and load exactly (saves and region
+	# snapshots must give the same city).
 	for wid in _speed:
 		if way_sum.has(wid):
-			_speed[wid] = lerpf(_speed[wid], way_sum[wid][0] / way_sum[wid][1], 0.05)
+			_speed[wid] = snappedf(lerpf(_speed[wid], way_sum[wid][0] / way_sum[wid][1], 0.05), 0.000001)
 		else:
-			_speed[wid] = lerpf(_speed[wid], 1.0, 0.02)
+			_speed[wid] = snappedf(lerpf(_speed[wid], 1.0, 0.02), 0.000001)
 	flow = 1.0 if limit_sum == 0.0 else clampf(speed_sum / limit_sum, 0.0, 1.0)
 
 

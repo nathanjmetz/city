@@ -50,8 +50,9 @@ func _demo_town() -> void:
 	if args0.size() >= 5 and args0[4] == "nopower":
 		# Brawn's start: streets zoned, a well built, no power yet.
 		sim.apply({"type": "build_grid", "a": [-160, -40], "b": [120, -40], "c": [-160, -220], "block": 140})
-		for lot in sim.lots.values():
-			sim.apply({"type": "paint_zone", "center": [lot.zone_pt.x, lot.zone_pt.z], "radius": 3, "zone": ZoneMap.Zone.RESIDENTIAL})
+		for id in sim.network.segments.keys():
+			for side in [-1, 1]:
+				sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": ZoneMap.Zone.RESIDENTIAL})
 		var well := Services.site_near(sim.network, Services.Kind.WELL, Vector3(40, 0, -10))
 		sim.apply({"type": "place_service", "kind": Services.Kind.WELL, "pos": [well[0].x, well[0].z], "dir": [well[1].x, well[1].z]})
 		sim.economy.money = 100_000
@@ -103,14 +104,19 @@ func _demo_town() -> void:
 	sim.apply({"type": "build_roundabout", "center": [120, 0], "radius": 30, "road": 1})
 	sim.apply({"type": "build_grid", "a": [-240, -50], "b": [40, -50], "c": [-240, -220], "block": 140})
 	sim.apply({"type": "build_road", "start": [-100, -50], "ctrl": [-100, -25], "end": [-100, 0]})
-	for lot in sim.lots.values():
-		var p: Vector3 = lot.zone_pt
-		var zone := ZoneMap.Zone.RESIDENTIAL
-		if p.z > -20.0 and p.z < 40.0 and p.x < 100.0:
-			zone = ZoneMap.Zone.COMMERCIAL
-		elif p.x > 130.0:
-			zone = ZoneMap.Zone.INDUSTRIAL
-		sim.apply({"type": "paint_zone", "center": [p.x, p.z], "radius": 3, "zone": zone})
+	# Zone every street side, by where its middle is.
+	for id in sim.network.segments.keys():
+		for side in [-1, 1]:
+			var c := sim.network.curve_of(id)
+			var mid := RoadNetwork.bezier(c[0], c[1], c[2], 0.5)
+			var tan := RoadNetwork.bezier_tangent(c[0], c[1], c[2], 0.5)
+			var p: Vector3 = mid + Vector3(-tan.z, 0.0, tan.x).normalized() * float(side) * 15.0
+			var zone := ZoneMap.Zone.RESIDENTIAL
+			if p.z > -20.0 and p.z < 40.0 and p.x < 100.0:
+				zone = ZoneMap.Zone.COMMERCIAL
+			elif p.x > 130.0:
+				zone = ZoneMap.Zone.INDUSTRIAL
+			sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": zone})
 	# Power, water and a few services, placed beside the roads.
 	for entry in [[Services.Kind.SUBSTATION, Vector3(-260, 0, 40)], [Services.Kind.WATER_TOWER, Vector3(-215, 0, 40)],
 			[Services.Kind.FIRE, Vector3(60, 0, 40)], [Services.Kind.SCHOOL, Vector3(70, 0, -120)],
