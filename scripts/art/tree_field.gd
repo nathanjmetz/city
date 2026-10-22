@@ -9,17 +9,25 @@ extends Node3D
 ## Canopies are clusters of leaf cards with a generated leaf texture. Normals
 ## point out from the canopy centre, so a crown shades like a soft volume,
 ## and the inside of the crown is darker. Leaves sway a little in the wind.
+## Trees are grouped in square chunks. Each chunk has a full tree up close
+## and a light version (a few big cards) far away, so a big city stays cheap
+## for the web build.
 
 enum Species { MAPLE, OAK, LOCUST, SPRUCE, CRABAPPLE }
 
 ## Summer leaf colours (sRGB) and how much each tree can vary from them.
 const LEAF := [Color("#46661f"), Color("#3f5c1e"), Color("#627424"), Color("#2c4433"), Color("#4a6326")]
 
+## Chunk size, and the distance where the full tree gives way to the light one.
+const CHUNK := 256.0
+const NEAR := 380.0
+
 const LEAF_SHADER := """
 shader_type spatial;
 render_mode cull_disabled;
 uniform sampler2D leaf_tex : filter_linear_mipmap;
 varying float inner;
+varying float top;
 varying vec3 tint;
 varying vec3 crown_normal;
 vec3 lin(vec3 c) {
@@ -32,15 +40,19 @@ void vertex() {
 	VERTEX.x += sway;
 	VERTEX.z += sway * 0.6;
 	inner = COLOR.r;
+	top = COLOR.g;
 	// Keep the crown normal on both sides of each card (no back-face flip),
 	// so the whole crown shades like one soft volume.
 	crown_normal = normalize((MODELVIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
-	tint = lin(INSTANCE_CUSTOM.rgb);
+	// Each leaf cluster drifts a little toward yellow or blue-green.
+	tint = lin(INSTANCE_CUSTOM.rgb) * mix(vec3(0.9, 0.98, 1.08), vec3(1.1, 1.04, 0.86), COLOR.b);
 }
 void fragment() {
 	vec4 t = texture(leaf_tex, UV);
 	NORMAL = crown_normal;
-	ALBEDO = tint * t.rgb * mix(0.5, 1.15, inner) * 2.0;
+	// Inner leaves sit in the shade of outer ones; the top of the crown
+	// catches the open sky.
+	ALBEDO = tint * t.rgb * mix(0.6, 1.15, inner) * mix(0.85, 1.2, top) * 2.0;
 	ALPHA = t.a;
 	ALPHA_SCISSOR_THRESHOLD = 0.45;
 	ROUGHNESS = 0.75;
@@ -63,7 +75,7 @@ static var _leaf_mat: ShaderMaterial
 static var _bark_mat: ShaderMaterial
 
 var _trees := {}  # owner key -> Array of [Transform3D, species, tint]
-var _multis := {}  # species -> MultiMeshInstance3D
+var _multis := {}  # "cx,cz,species,far" -> MultiMeshInstance3D
 var _dirty := false
 
 
@@ -86,28 +98,51 @@ func _process(_delta: float) -> void:
 
 
 func _rebuild() -> void:
-	var by_species := {}
+	var groups := {}  # "cx,cz,species" -> Array of trees
 	for list in _trees.values():
 		for t in list:
-			if not by_species.has(t[1]):
-				by_species[t[1]] = []
-			by_species[t[1]].append(t)
-	for sp in Species.values():
-		var list: Array = by_species.get(sp, [])
-		if not _multis.has(sp):
-			var mmi := MultiMeshInstance3D.new()
-			var mm := MultiMesh.new()
-			mm.transform_format = MultiMesh.TRANSFORM_3D
-			mm.use_custom_data = true
-			mm.mesh = tree_mesh(sp)
-			mmi.multimesh = mm
-			add_child(mmi)
-			_multis[sp] = mmi
-		var multi: MultiMesh = _multis[sp].multimesh
-		multi.instance_count = list.size()
-		for i in list.size():
-			multi.set_instance_transform(i, list[i][0])
-			multi.set_instance_custom_data(i, list[i][2])
+			var o: Vector3 = t[0].origin
+			var g := "%d,%d,%d" % [floori(o.x / CHUNK), floori(o.z / CHUNK), t[1]]
+			if not groups.has(g):
+				groups[g] = []
+			groups[g].append(t)
+	for k in _multis:
+		_multis[k].multimesh.instance_count = 0
+	for g in groups:
+		var parts: PackedStringArray = g.split(",")
+		var centre := Vector3((int(parts[0]) + 0.5) * CHUNK, 0, (int(parts[1]) + 0.5) * CHUNK)
+		for far in [false, true]:
+			var multi := _chunk(g, int(parts[2]), far, centre).multimesh
+			var list: Array = groups[g]
+			multi.instance_count = list.size()
+			for i in list.size():
+				var xf: Transform3D = list[i][0]
+				multi.set_instance_transform(i, Transform3D(xf.basis, xf.origin - centre))
+				multi.set_instance_custom_data(i, list[i][2])
+
+
+## The MultiMesh for one species in one chunk, near or far. The node sits at
+## the chunk centre so its visibility range is measured from there.
+func _chunk(g: String, sp: int, far: bool, centre: Vector3) -> MultiMeshInstance3D:
+	var key := g + ("f" if far else "n")
+	if _multis.has(key):
+		return _multis[key]
+	var mmi := MultiMeshInstance3D.new()
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_custom_data = true
+	mm.mesh = tree_mesh(sp, far)
+	mmi.multimesh = mm
+	mmi.position = centre
+	if far:
+		mmi.visibility_range_begin = NEAR
+		mmi.visibility_range_begin_margin = 20.0
+	else:
+		mmi.visibility_range_end = NEAR
+		mmi.visibility_range_end_margin = 20.0
+	add_child(mmi)
+	_multis[key] = mmi
+	return mmi
 
 
 ## Picks a species and colour for a yard tree.
@@ -131,9 +166,11 @@ static func pick(rng: RandomNumberGenerator, front := false) -> Array:
 
 # ---------------------------------------------------------------- meshes
 
-static func tree_mesh(sp: int) -> ArrayMesh:
-	if _meshes.has(sp):
-		return _meshes[sp]
+## The mesh for a species; `far` is the light version for distant chunks.
+static func tree_mesh(sp: int, far := false) -> ArrayMesh:
+	var key := sp * 2 + (1 if far else 0)
+	if _meshes.has(key):
+		return _meshes[key]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 1000 + sp
 	var leaves := SurfaceTool.new()
@@ -141,25 +178,26 @@ static func tree_mesh(sp: int) -> ArrayMesh:
 	var wood := SurfaceTool.new()
 	wood.begin(Mesh.PRIMITIVE_TRIANGLES)
 	match sp:
-		Species.SPRUCE: _spruce(rng, leaves, wood)
-		_: _broadleaf(sp, rng, leaves, wood)
+		Species.SPRUCE: _spruce(rng, leaves, wood, far)
+		_: _broadleaf(sp, rng, leaves, wood, far)
 	var mesh := ArrayMesh.new()
 	leaves.commit(mesh)
 	mesh.surface_set_material(0, _leaf_material())
 	wood.commit(mesh)
 	mesh.surface_set_material(1, _bark_material())
-	_meshes[sp] = mesh
+	_meshes[key] = mesh
 	return mesh
 
 
-## Crown shape per species: height to crown centre, radii, cluster count,
-## card size and trunk radius. Sizes are mature trees, in metres.
-static func _broadleaf(sp: int, rng: RandomNumberGenerator, leaves: SurfaceTool, wood: SurfaceTool) -> void:
+## Crown shape per species: crown centre height, radii, cluster count,
+## card size and trunk radius. Sizes are mature trees, in metres. Real yard
+## maples and oaks fork low, around 3 m, into a few big limbs.
+static func _broadleaf(sp: int, rng: RandomNumberGenerator, leaves: SurfaceTool, wood: SurfaceTool, far := false) -> void:
 	var shape: Array = {
-		Species.MAPLE: [9.5, Vector3(6.0, 5.5, 6.0), 26, 2.4, 0.3],
-		Species.OAK: [9.0, Vector3(7.5, 4.8, 7.0), 22, 2.6, 0.38],
-		Species.LOCUST: [10.0, Vector3(6.0, 4.5, 5.5), 18, 1.9, 0.24],
-		Species.CRABAPPLE: [3.6, Vector3(3.0, 2.3, 3.0), 12, 1.5, 0.12],
+		Species.MAPLE: [8.5, Vector3(6.0, 5.2, 6.0), 16, 3.2, 0.3],
+		Species.OAK: [8.0, Vector3(7.5, 4.6, 7.0), 15, 3.4, 0.4],
+		Species.LOCUST: [9.0, Vector3(6.0, 4.3, 5.5), 13, 2.6, 0.24],
+		Species.CRABAPPLE: [3.4, Vector3(3.0, 2.2, 3.0), 9, 2.0, 0.12],
 	}[sp]
 	var hc: float = shape[0]
 	var rad: Vector3 = shape[1]
@@ -167,37 +205,44 @@ static func _broadleaf(sp: int, rng: RandomNumberGenerator, leaves: SurfaceTool,
 	var card: float = shape[3]
 	var trunk: float = shape[4]
 	var center := Vector3(0, hc, 0)
-	var fork := hc - rad.y * 0.45
-	_limb(wood, Vector3.ZERO, Vector3(0, fork, 0), trunk, trunk * 0.75)
-	var cards_per := 9 if sp == Species.LOCUST else 12
+	var fork := minf(hc - rad.y * 0.75, 3.2)
+	_limb(wood, Vector3.ZERO, Vector3(0, fork, 0), trunk, trunk * 0.8)
+	var cards_per := 6 if sp == Species.LOCUST else 7
+	if far:
+		# A few big cards keep the crown's outline and colour at a distance.
+		clusters = maxi(clusters / 2, 5)
+		cards_per = 3
+		card *= 1.9
 	for c in clusters:
 		var dir := Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.55, 1), rng.randf_range(-1, 1)).normalized()
-		var cc := center + dir * rad * rng.randf_range(0.45, 0.85)
-		if c % 3 == 0:
-			_limb(wood, Vector3(0, fork, 0), cc.lerp(center, 0.25), trunk * 0.55, trunk * 0.2)
+		var cc := center + dir * rad * rng.randf_range(0.4, 0.75)
+		if not far and c % 3 == 0:
+			_limb(wood, Vector3(0, fork, 0), cc.lerp(center, 0.3), trunk * 0.6, trunk * 0.2)
+		var hue := rng.randf()
 		for i in cards_per:
-			var p := cc + Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.7, 0.7), rng.randf_range(-1, 1)) * card * 0.75
-			_card(leaves, rng, p, center, rad, card * rng.randf_range(0.8, 1.2))
+			var p := cc + Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.7, 0.7), rng.randf_range(-1, 1)) * card * 0.6
+			_card(leaves, rng, p, center, rad, card * rng.randf_range(0.8, 1.2), hue)
 
 
-static func _spruce(rng: RandomNumberGenerator, leaves: SurfaceTool, wood: SurfaceTool) -> void:
+static func _spruce(rng: RandomNumberGenerator, leaves: SurfaceTool, wood: SurfaceTool, far := false) -> void:
 	var h := 13.0
 	var base_r := 3.6
 	_limb(wood, Vector3.ZERO, Vector3(0, h, 0), 0.25, 0.04)
-	var tiers := 16
+	var tiers := 6 if far else 11
 	for t in tiers:
 		var f := float(t) / tiers
 		var y := 1.2 + f * (h - 1.6)
 		var r := base_r * (1.0 - f) + 0.35
-		var n := int(4 + r * 3.0)
+		var n := int(3 + r * (1.0 if far else 2.0))
+		var hue := rng.randf() * 0.4
 		for i in n:
 			var a := TAU * (i + rng.randf()) / n
-			var p := Vector3(cos(a) * r * rng.randf_range(0.45, 0.85), y, sin(a) * r * rng.randf_range(0.45, 0.85))
-			_card(leaves, rng, p, Vector3(0, y + 0.8, 0), Vector3(r + 0.5, 1.5, r + 0.5), 1.4 + r * 0.35)
+			var p := Vector3(cos(a) * r * rng.randf_range(0.45, 0.8), y, sin(a) * r * rng.randf_range(0.45, 0.8))
+			_card(leaves, rng, p, Vector3(0, y + 0.8, 0), Vector3(r + 0.5, 1.5, r + 0.5), (1.8 + r * 0.45) * (1.5 if far else 1.0), hue)
 
 
 ## One leaf card, randomly turned, with normals out from the crown centre.
-static func _card(st: SurfaceTool, rng: RandomNumberGenerator, p: Vector3, center: Vector3, rad: Vector3, size: float) -> void:
+static func _card(st: SurfaceTool, rng: RandomNumberGenerator, p: Vector3, center: Vector3, rad: Vector3, size: float, hue: float) -> void:
 	var basis := Basis.from_euler(Vector3(rng.randf_range(-PI, PI), rng.randf_range(-PI, PI), rng.randf_range(-PI, PI)))
 	var u := basis.x * size * 0.5
 	var v := basis.y * size * 0.5
@@ -254,15 +299,18 @@ static func _bark_material() -> ShaderMaterial:
 
 ## A square of overlapping leaves on transparency, drawn once at start-up.
 static func _leaf_texture() -> ImageTexture:
-	var size := 128
+	var size := 256
 	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 77
-	for k in 70:
-		var c := Vector2(rng.randf_range(12, size - 12), rng.randf_range(12, size - 12))
+	# Leaves thin out toward the edge, so a card's outline is ragged.
+	for k in 380:
+		var c := Vector2(rng.randf_range(10, size - 10), rng.randf_range(10, size - 10))
+		if (c - Vector2(size, size) * 0.5).length() > size * rng.randf_range(0.3, 0.52):
+			continue
 		var ang := rng.randf_range(0, TAU)
-		var len := rng.randf_range(9.0, 15.0)
+		var len := rng.randf_range(8.0, 13.0)
 		var wid := len * rng.randf_range(0.45, 0.6)
 		var shade := rng.randf_range(0.62, 1.0)
 		var dir := Vector2(cos(ang), sin(ang))
