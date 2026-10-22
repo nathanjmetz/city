@@ -1517,7 +1517,8 @@ func _lane_changes() -> void:
 				continue
 			var last: bool = car.leg == car.route.size() - 1
 			var ds: float = (car.end_d if last else w.s1) - car.d
-			if ds < 8.0:
+			# No lane change it can't finish before turning into its driveway.
+			if ds < 8.0 + (DRIVEWAY_LEAD if last else 0.0):
 				continue
 			var desired := []
 			if last:
