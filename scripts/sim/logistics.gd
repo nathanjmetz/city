@@ -103,6 +103,8 @@ func tick(sim: CitySim) -> void:
 			if not edge.is_empty() and _send(sim, edge, {"ref": "lot:" + key, "pos": _xz(lot.front)},
 					purpose, {"good": input, "amount": 1}, "import"):
 				sent += 1
+	# Big local factories ship their products and fetch their inputs.
+	sent = sim.big.ship(sim, self, sent)
 	# Warehouses send their goods on to the shops.
 	ids = sim.warehouses.buildings.keys()
 	ids.sort()
@@ -145,6 +147,12 @@ func _produce(sim: CitySim) -> void:
 ## Goods go to the nearest shop, or a warehouse when one is nearer ("shop":
 ## shops only, for goods leaving a warehouse).
 func _buyer(sim: CitySim, from: Vector3, what: String, good := "") -> Dictionary:
+	# A big local factory that needs exactly this comes first (corn to the
+	# ethanol plant, logs to the furniture maker, parts to the RV plant).
+	if what != "shop":
+		var plant := sim.big.claim(good if good != "" else what, from)
+		if not plant.is_empty():
+			return plant
 	var zone := ZoneMap.Zone.INDUSTRIAL if what == "raw" else ZoneMap.Zone.COMMERCIAL
 	var best := ""
 	var best_d := INF
@@ -213,6 +221,8 @@ func _send(sim: CitySim, from: Dictionary, to: Dictionary, purpose: String, carg
 			if need.has(key):
 				need[key] += 1.0  # give the order back
 		_release(sim, to)
+		if str(to.ref).begins_with("big:") and kind in ["site", "farm", "factory"]:
+			sim.big.unpromise(int(str(to.ref).substr(4)), str(cargo.get("good", "")))
 		return false
 	trips[id] = {"from": from, "to": to, "purpose": purpose, "cargo": cargo, "kind": kind}
 	_left[from.ref] = true
@@ -222,6 +232,14 @@ func _send(sim: CitySim, from: Dictionary, to: Dictionary, purpose: String, carg
 func _arrive(sim: CitySim, t: Dictionary) -> void:
 	stuck.erase(t.from.ref)
 	var to: String = t.to.ref
+	if to.begins_with("big:") or str(t.from.ref).begins_with("big:"):
+		sim.big.arrive(sim, t)
+		if to == "edge":
+			exported += 1
+		elif t.kind == "import":
+			imported += 1
+		delivered += 1
+		return
 	if to == "edge":
 		exported += 1
 	elif to.begins_with("wh:"):
@@ -246,6 +264,14 @@ func _release(sim: CitySim, to: Dictionary) -> void:
 func _return(sim: CitySim, t: Dictionary) -> void:
 	stuck[t.from.ref] = true
 	var ref: String = t.from.ref
+	if ref.begins_with("big:") or str(t.to.ref).begins_with("big:"):
+		if t.kind in ["site", "farm", "factory"] and str(t.to.ref).begins_with("big:"):
+			# The farm or company takes its load back (below).
+			sim.big.unpromise(int(str(t.to.ref).substr(4)), str(t.cargo.get("good", "")))
+		else:
+			sim.big.returned(sim, t)
+			_release(sim, t.to)
+			return
 	if ref.begins_with("site:"):
 		var id := int(ref.substr(5))
 		if sim.industry.sites.has(id):

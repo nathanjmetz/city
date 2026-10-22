@@ -20,6 +20,8 @@ signal farms_changed
 signal industry_changed
 ## A warehouse was built, grew, shrank or went away.
 signal warehouses_changed
+## A big local factory was built, grew, built something new or went away.
+signal big_factories_changed
 ## A park or landmark was placed, filled in, grew, changed tier or went away.
 signal parks_changed
 ## A player command went through (sounds and other feedback listen to this).
@@ -49,6 +51,9 @@ var farms := Farms.new()
 var industry := Industry.new()
 ## Warehouses that buffer loads between them (hubs that grow in place).
 var warehouses := Warehouses.new()
+## Big local factories: the ethanol plant, meatpacker, furniture maker and
+## RV plant (one of each, hubs run by their owners).
+var big := BigFactories.new()
 ## The trucks that carry every load (grain, crude, ore, logs, goods).
 var logistics := Logistics.new()
 ## Land saved for farming or an industry: no roads or zoning on it.
@@ -232,6 +237,24 @@ func apply_now(cmd: Dictionary) -> bool:
 			_lots_dirty = true
 			warehouses_changed.emit()
 			ok = true
+		"place_big_factory":
+			var kind := str(cmd.get("kind", ""))
+			var pos := _v(cmd.pos)
+			var dir := _v(cmd.dir).normalized()
+			if not BigFactories.KINDS.has(kind) or dir.length() < 0.5 or big.site_problem(self, kind, pos, dir) != "" \
+					or int(Balance.BIG_FACTORY[kind].cost) > economy.money:
+				return false
+			var bid := big.add(self, kind, pos, dir)
+			economy.money -= int(Balance.BIG_FACTORY[kind].cost)
+			_clear_zones_under(BigFactories.corners(big.sites[bid]))
+			_lots_dirty = true
+			big_factories_changed.emit()
+			ok = true
+		"remove_big_factory":
+			ok = big.sites.has(int(cmd.id))
+			big.sites.erase(int(cmd.id))
+			_lots_dirty = true
+			big_factories_changed.emit()
 		"remove_warehouse":
 			ok = warehouses.buildings.has(int(cmd.id))
 			warehouses.buildings.erase(int(cmd.id))
@@ -333,6 +356,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			industry = Industry.new()
 			logistics = Logistics.new()
 			warehouses = Warehouses.new()
+			big = BigFactories.new()
+			big_factories_changed.emit()
 			reserves = Reserves.new()
 			permits.from_dict({})
 			hubs = CivicHubs.new()
@@ -450,6 +475,9 @@ func _road_wins() -> void:
 			economy.money += int(Balance.WAREHOUSE[warehouses.buildings[id].kind].cost)
 			warehouses.buildings.erase(id)
 			_lots_dirty = true
+	if big.road_wins(self, corr):
+		_lots_dirty = true
+		big_factories_changed.emit()
 	if parks.road_wins(self, corr):
 		_lots_dirty = true
 		parks_changed.emit()
@@ -499,6 +527,11 @@ func tick() -> void:
 	# Taxes come in and upkeep goes out every game hour, a day settling a month.
 	if tick_count % TICKS_PER_HOUR == 0:
 		economy.money += roundi(economy.monthly_net() / 24.0)
+	# Before trade settles: last month's deals, and this month's asks.
+	big.tick(self)
+	if big.take_changed():
+		_lots_dirty = true
+		big_factories_changed.emit()
 	# Before logistics, which clears Traffic's arrivals.
 	hubs.tick(self)
 	if not in_region and tick_count % (24 * TICKS_PER_HOUR) == 0:
@@ -542,7 +575,7 @@ func update_stats() -> void:
 					factory_jobs += b.cap
 	services.update(network, lots, buildings)
 	parks.update_effects(self)
-	factory_jobs += farms.jobs() + industry.jobs() + warehouses.jobs()
+	factory_jobs += farms.jobs() + industry.jobs() + warehouses.jobs() + big.jobs()
 	economy.reach_milestones(pop)
 	var workers := int(pop * WORKER_SHARE)
 	var jobs := shop_jobs + factory_jobs
@@ -688,6 +721,8 @@ func warehouse_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 			return "That ground belongs to a company."
 		if hubs.covers(p):
 			return "Overlaps a landfill, recycling center or cemetery."
+	if big.overlaps(poly):
+		return "Overlaps a big factory."
 	if parks.overlaps(Array(poly)):
 		return "That ground is a park."
 	return ""
@@ -706,7 +741,7 @@ func warehouse_ground_ok(poly: PackedVector2Array, id: int) -> bool:
 			return false
 	for p in _grid_in(poly):
 		if farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) or reserves.kind_at(p) != "" \
-				or hubs.covers(p):
+				or hubs.covers(p) or big.covers(p):
 			return false
 	for key in lots:
 		if not buildings.has(key) and zones.zone_at(lots[key].zone_pt) == ZoneMap.Zone.NONE:
@@ -838,7 +873,7 @@ func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
 	if ok:
 		for p in pts:
 			if services.covers(p) or farms.covers(p) or industry.covers(p) or farms.field_at(p) != -1 \
-					or hubs.covers(p) or warehouses.covers(p) or parks.covers(p):
+					or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or big.covers(p):
 				ok = false
 	if ok:
 		for key2 in lots:
@@ -1002,7 +1037,8 @@ func wealth_at(_p: Vector2) -> float:
 func _lot_blocked(lot: Dictionary) -> bool:
 	for p in [lot.pos, lot.front, lot.zone_pt]:
 		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) \
-				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p) or parks.covers(p):
+				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) \
+				or big.covers(p):
 			return true
 	return false
 
@@ -1271,6 +1307,7 @@ func to_dict() -> Dictionary:
 		"industry": industry.to_dict(),
 		"logistics": logistics.to_dict(),
 		"warehouses": warehouses.to_dict(),
+		"big_factories": big.to_dict(),
 		"reserves": reserves.to_dict(),
 		"permits": permits.to_dict(),
 		"hubs": hubs.to_dict(),
@@ -1309,6 +1346,7 @@ func from_dict(d: Dictionary) -> void:
 	industry.from_dict(d.get("industry", {}))
 	logistics.from_dict(d.get("logistics", {}))
 	warehouses.from_dict(d.get("warehouses", {}))
+	big.from_dict(d.get("big_factories", {}))
 	reserves.from_list(d.get("reserves", []))
 	permits.from_dict(d.get("permits", {}))
 	hubs.from_dict(d.get("hubs", {}))
