@@ -235,6 +235,13 @@ func _draw() -> void:
 			_poly([P.call(0.66, 0.36), P.call(0.77, 0.36), P.call(0.77, 0.58), P.call(0.66, 0.58)], color)
 			line.call(P.call(0.86, 0.5), P.call(0.86, 0.14), w)
 			_poly([P.call(0.86, 0.14), P.call(0.97, 0.14), P.call(0.97, 0.26), P.call(0.86, 0.26)], Color(0.95, 0.35, 0.35))
+		"bank":
+			# A temple-front bank: pediment, four columns, steps.
+			_poly([P.call(0.08, 0.32), P.call(0.5, 0.1), P.call(0.92, 0.32)], color)
+			draw_rect(Rect2(P.call(0.1, 0.34), Vector2(0.8, 0.07) * s), color)
+			for i in 4:
+				draw_rect(Rect2(P.call(0.17 + i * 0.19, 0.44), Vector2(0.09, 0.32) * s), color)
+			draw_rect(Rect2(P.call(0.08, 0.8), Vector2(0.84, 0.1) * s), color)
 		"cemetery":
 			# A rounded headstone on a lawn.
 			_poly([P.call(0.06, 0.9), P.call(0.94, 0.9), P.call(0.94, 0.8), P.call(0.06, 0.8)], Color(0.5, 0.7, 0.4))

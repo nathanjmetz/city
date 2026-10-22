@@ -969,3 +969,104 @@ const WATER_INTEREST := 0.004
 ## and beyond this many months' worth the surplus goes back to the city.
 const WATER_RESERVE_MONTHS := 2.0
 const WATER_SURPLUS_MONTHS := 18.0
+# --- Banks and lending ---------------------------------------------------------
+# Brawn (2026-10-22, Best of CS pitch #20): a bank is a hub that lends to the
+# other hubs. A farm borrows to buy the field next door, a company to put
+# down another pad, a builder to put up a house, shop or factory. A cautious
+# president lends slowly and safely; a bold one fuels fast growth and some
+# failures. The player never touches a loan.
+# Benchmarked against real small-town Indiana banking: a state-chartered
+# community bank on the courthouse square (like the First National Bank of
+# Petersburg, 1898, or German American Bank of Jasper) taking the town's
+# deposits and lending them back, and a Farm Credit Mid-America branch office
+# that lends only to farms and timber on the Farm Credit System's bonds.
+# FDIC figures: community banks lend about 80 cents of each deposit dollar,
+# need equity of 9% of assets to use the simple community bank leverage
+# ratio, earn about a 3.5% net interest margin and charge off about 0.3% of
+# loans in a normal year (several times that in a farm crisis).
+## Per kind: `capital` the founders put up (equity), `cost` the city pays
+## (the lot and a ribbon cutting; investors pay the rest), `block_cost` what
+## the bank pays to buy and build one more block of its own premises,
+## `max_blocks` the most it ever owns (a bank on the square is a building or
+## two, with a drive-up and a lot), `staff` at opening, and what it lends to.
+const BANKS := {
+	"community": {"cost": 150_000, "capital": 4_000_000, "block_cost": 600_000, "max_blocks": 7, "staff": 6,
+		"lends": ["farm", "company", "build"]},
+	"farm_credit": {"cost": 75_000, "capital": 1_500_000, "block_cost": 400_000, "max_blocks": 5, "staff": 4,
+		"lends": ["farm", "timber"]},
+}
+## Deposits a community bank can hope to gather: each resident keeps about
+## this much in local banks (rural Indiana, FDIC deposit data), and each job
+## brings business deposits too. Banks in town split it by reputation.
+const BANK_DEPOSITS_PER_RESIDENT := 28_000.0
+const BANK_DEPOSITS_PER_JOB := 12_000.0
+## Share of the town's deposits that stays in banks in town (the rest sits
+## in big-city banks and online).
+const BANK_LOCAL_SHARE := 0.75
+## Rates a year: loans, and what the bank pays on deposits. Farm Credit lends
+## a little cheaper (the System's bonds, plus patronage dividends back to
+## its borrowers), so farms borrow there first when both are in town.
+const BANK_LOAN_RATE := 0.0725
+const BANK_FARM_CREDIT_RATE := 0.0675
+const BANK_DEPOSIT_RATE := 0.0225
+## Farm Credit's lending limit: this share of the farmland value in reach
+## (it doesn't take deposits; the System funds it).
+const BANK_FARM_CREDIT_SHARE := 0.5
+## What Farm Credit pays the System for the money it lends, a year.
+const BANK_FARM_CREDIT_FUNDING := 0.045
+## Loan to value: how much of a purchase a bank lends (the borrower puts
+## down the rest). A cautious president lends the low end, a bold one the high.
+const BANK_LTV := [0.65, 0.85]
+## Loan-to-deposit ratio a president lends up to: cautious to bold.
+const BANK_LTD := [0.7, 0.95]
+## Equity the bank keeps against its loans (community bank leverage ratio),
+## the level where regulators put it under an order to stop lending, and
+## where the FDIC closes it and sells it to a healthier bank.
+const BANK_WELL_CAPITALIZED := 0.09
+const BANK_ORDER := 0.06
+const BANK_FAILED := 0.02
+## Debt service coverage (yearly profit over yearly loan payments) a
+## president wants before saying yes: a bold one 0.75, a cautious one the
+## textbook 1.25 or better. Short of that, a borrower can still borrow on the
+## equity in its land, up to LTV x (1 - caution) of what the land is worth:
+## a bold president lends most of it, a cautious one little (US farms
+## average about 13% debt to assets).
+const BANK_DSCR := [0.75, 1.3]
+## Years to pay off each kind of loan: farmland, a company's pad, a builder's
+## loan rolled into a mortgage or commercial mortgage.
+const BANK_TERM_YEARS := {"farm": 25, "company": 10, "build": 25, "timber": 15}
+## What one loan is for: a field or a pad (its value), or a building.
+const BANK_BUILD_VALUE := {ZoneMap.Zone.RESIDENTIAL: 260_000, ZoneMap.Zone.COMMERCIAL: 650_000,
+	ZoneMap.Zone.INDUSTRIAL: 1_800_000}
+## Chance each lending round that a healthy bank says yes to one more
+## purchase for a borrower who qualifies: bold to cautious. So a town with a
+## bank grows up to about twice as fast.
+const BANK_APPETITE := [0.8, 0.35]
+## Each round a builder can get a construction loan for one more house, shop
+## or factory on an empty zoned lot, at this chance times the zone's demand.
+const BANK_BUILD_CHANCE := 0.6
+## Default chance a month: the normal rate, plus this much for every point a
+## borrower's coverage falls short of 1 (a farm losing money in a bad price
+## year, or a builder with a house nobody wants).
+const BANK_DEFAULT_BASE := 0.0003
+const BANK_DEFAULT_STRESS := 0.01
+## Share of a defaulted loan the bank gets back selling the collateral.
+const BANK_RECOVERY := 0.6
+## Each employee costs this a year (salary and benefits), and the bank adds
+## one for about every this many dollars of loans (FDIC: ~$6M a head).
+const BANK_SALARY := 70_000.0
+const BANK_LOANS_PER_STAFF := 6_000_000.0
+## Other running costs a year, per block of premises.
+const BANK_PREMISES_COST := 45_000.0
+## Share of each year's profit paid out to shareholders (the rest builds capital).
+const BANK_DIVIDEND := 0.35
+## Reputation (0 to 1) a new bank starts with, and how much of the gap to
+## where its president and premises take it closes each month.
+const BANK_START_REPUTATION := 0.35
+const BANK_REPUTATION_PULL := 0.03
+## Lending rounds run with the farms (every 6 game hours); the books close
+## once a game day (a month).
+const BANK_LEND_EVERY := 360
+const BANK_DECIDE_EVERY := 1440
+## Assessed value of a block of bank premises, for commercial property tax.
+const BANK_PREMISES_VALUE := 900_000
