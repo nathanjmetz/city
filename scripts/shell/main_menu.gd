@@ -1,12 +1,13 @@
 extends Node3D
-## The title screen, laid out like Cities: Skylines 2: a menu docked down the
-## left edge over a slowly turning view of your latest city.
+## The title screen, laid out like Cities: Skylines 2 and the Neighbors
+## brand kit: the logo and a short menu docked down the left edge, over a
+## deep-ink fade into a slowly turning view of your latest city.
 ##
 ## Continue · New city · Load city · Play together · Quit
 
 var _panel := PanelContainer.new()
 var _pages := {}       # name -> Control
-var _status := UiStyle.label("", 14, UiStyle.MUTED)
+var _status := ShellStyle.text("", 14, 500, Brand.INK_MUTED)
 var _cam := Camera3D.new()
 var _angle := 0.4
 var _code := LineEdit.new()
@@ -14,7 +15,7 @@ var _server := LineEdit.new()
 var _name := LineEdit.new()
 var _city_name := LineEdit.new()
 var _saves_list := VBoxContainer.new()
-var _host_info := UiStyle.label("", 14)
+var _host_info := ShellStyle.text("", 14)
 var _joining := false
 
 
@@ -25,25 +26,34 @@ func _ready() -> void:
 	var root := Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.theme = UiStyle.theme()
+	root.theme = ShellStyle.theme()
 	ui.add_child(root)
+	root.add_child(_fade())
 
 	# Docked flush to the left edge, full height.
-	var box := UiStyle.panel(0)
+	var box := ShellStyle.panel()
 	box.content_margin_left = 36
 	box.content_margin_right = 36
-	box.content_margin_top = 48
-	box.content_margin_bottom = 28
+	box.content_margin_top = 44
+	box.content_margin_bottom = 24
 	_panel.add_theme_stylebox_override("panel", box)
 	_panel.set_anchors_and_offsets_preset(Control.PRESET_LEFT_WIDE)
-	_panel.custom_minimum_size = Vector2(380, 0)
+	_panel.custom_minimum_size = Vector2(400, 0)
 	root.add_child(_panel)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 10)
 	_panel.add_child(col)
-	col.add_child(UiStyle.label("Neighbors", 52))
-	col.add_child(UiStyle.label("A Midwestern town, built your way", 15, UiStyle.MUTED))
-	col.add_child(_gap(28))
+	var logo := TextureRect.new()
+	logo.texture = load(Brand.LOGO)
+	logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	logo.custom_minimum_size = Vector2(328, 94)
+	logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(logo)
+	var tag := ShellStyle.text("Build your town. Wave to the neighbors.", 16, 500, Brand.INK_MUTED)
+	tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(tag)
+	col.add_child(_gap(24))
 	for page in [_home_page(), _new_page(), _load_page(), _together_page()]:
 		col.add_child(page)
 	var spacer := Control.new()
@@ -51,7 +61,7 @@ func _ready() -> void:
 	col.add_child(spacer)
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(_status)
-	col.add_child(UiStyle.label("Build " + Hud._build_name(), 11, Color(UiStyle.MUTED, 0.7)))
+	col.add_child(ShellStyle.text("Build " + Hud._build_name(), 11, 500, Brand.INK_FAINT))
 
 	if not Session.pending_invite.is_empty():
 		# Opened from an invite link: straight to joining.
@@ -83,8 +93,12 @@ func _home_page() -> Control:
 		var latest: Dictionary = saves[0]
 		var b := _big_button("Continue", "%s  ·  %s people" % [latest.name, CitySim.money_text(latest.population)])
 		b.pressed.connect(func(): Session.play_solo(latest.path))
+		ShellStyle.primary(b)
 		col.add_child(b)
-	col.add_child(_big_button("New city", "Start fresh on open land", func(): _show("new")))
+	var fresh := _big_button("New city", "Start fresh on open land", func(): _show("new"))
+	if saves.is_empty():
+		ShellStyle.primary(fresh)
+	col.add_child(fresh)
 	if not saves.is_empty():
 		col.add_child(_big_button("Load city", "%d saved" % saves.size(), func(): _show("load")))
 	col.add_child(_big_button("Play together", "Build next to family and friends", func(): _show("together")))
@@ -95,19 +109,21 @@ func _home_page() -> Control:
 
 func _new_page() -> Control:
 	var col := _page("new")
-	col.add_child(UiStyle.label("Name your city", 18))
+	col.add_child(ShellStyle.title("Name your city"))
 	_city_name.placeholder_text = "Maple Falls"
 	_city_name.custom_minimum_size = Vector2(0, 40)
 	_city_name.text_submitted.connect(func(_t): _start_new())
 	col.add_child(_city_name)
-	col.add_child(_big_button("Start", "", _start_new))
+	var start := _big_button("Start", "", _start_new)
+	ShellStyle.primary(start)
+	col.add_child(start)
 	col.add_child(_back())
 	return col
 
 
 func _load_page() -> Control:
 	var col := _page("load")
-	col.add_child(UiStyle.label("Your cities", 18))
+	col.add_child(ShellStyle.title("Your cities"))
 	var scroll := ScrollContainer.new()
 	scroll.custom_minimum_size = Vector2(0, 340)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -121,26 +137,31 @@ func _load_page() -> Control:
 
 func _together_page() -> Control:
 	var col := _page("together")
-	col.add_child(UiStyle.label("Your name", 14, UiStyle.MUTED))
+	col.add_child(ShellStyle.title("Play together"))
+	col.add_child(_label("YOUR NAME"))
 	_name.text = Session.profile.name
 	_name.placeholder_text = "What neighbors see over your city"
 	_name.max_length = 24
 	_name.custom_minimum_size = Vector2(0, 38)
 	col.add_child(_name)
 	col.add_child(_gap(6))
-	col.add_child(UiStyle.label("Invite code", 14, UiStyle.MUTED))
+	col.add_child(_label("INVITE CODE"))
 	_code.text = Session.profile.code
 	_code.placeholder_text = "ABC123"
 	_code.max_length = 12
 	_code.custom_minimum_size = Vector2(0, 46)
+	# Invite codes are set in Overpass, like a street sign.
+	_code.add_theme_font_override("font", Brand.sign(700))
 	_code.add_theme_font_size_override("font_size", 24)
 	_code.text_submitted.connect(func(_t): _join())
 	col.add_child(_code)
 	var adv := Button.new()
-	adv.text = "Server address ▾"
+	adv.text = "Server address ›"
 	adv.flat = true
 	adv.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	adv.add_theme_color_override("font_color", UiStyle.MUTED)
+	adv.add_theme_color_override("font_color", Brand.INK_MUTED)
+	adv.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
+	adv.add_theme_stylebox_override("hover", StyleBoxEmpty.new())
 	col.add_child(adv)
 	_server.text = Session.profile.server
 	_server.placeholder_text = Session.LOCAL_SERVER
@@ -148,10 +169,12 @@ func _together_page() -> Control:
 	_server.visible = _server.text != ""
 	adv.pressed.connect(func(): _server.visible = not _server.visible)
 	col.add_child(_server)
-	col.add_child(_big_button("Join", "Your city starts next to theirs", _join))
+	var join := _big_button("Join", "Your city starts next to theirs", _join)
+	ShellStyle.primary(join)
+	col.add_child(join)
 	if not OS.has_feature("web"):
 		col.add_child(_gap(8))
-		col.add_child(UiStyle.label("Or host a region on this computer", 14, UiStyle.MUTED))
+		col.add_child(_label("OR HOST ONE ON THIS COMPUTER"))
 		col.add_child(_big_button("Host a region", "Friends join with your code", _host))
 		_host_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		col.add_child(_host_info)
@@ -183,7 +206,7 @@ func _fill_saves() -> void:
 		b.pressed.connect(func(): Session.play_solo(s.path))
 		row.add_child(b)
 		var del := Button.new()
-		del.text = "✕"
+		del.text = "×"
 		del.tooltip_text = "Delete this city (click twice)"
 		del.custom_minimum_size = Vector2(36, 0)
 		del.pressed.connect(func():
@@ -260,9 +283,18 @@ func _big_button(title: String, sub: String, action := Callable()) -> Button:
 	col.add_theme_constant_override("separation", 0)
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_child(col)
-	col.add_child(UiStyle.label(title, 19))
+	var t := ShellStyle.text(title, 17, 600)
+	col.add_child(t)
+	var st: Label = null
 	if sub != "":
-		col.add_child(UiStyle.label(sub, 12, UiStyle.MUTED))
+		st = ShellStyle.text(sub, 12, 500, Brand.INK_MUTED)
+		col.add_child(st)
+	# Text on coral turns dark, as the kit asks.
+	b.ready.connect(func():
+		if b.has_meta("primary"):
+			t.add_theme_color_override("font_color", Brand.ON_CORAL)
+			if st:
+				st.add_theme_color_override("font_color", Color(Brand.ON_CORAL, 0.75)))
 	if action.is_valid():
 		b.pressed.connect(action)
 	return b
@@ -272,10 +304,37 @@ func _back() -> Button:
 	var b := Button.new()
 	b.text = "‹ Back"
 	b.flat = true
+	b.add_theme_color_override("font_color", Brand.INK_MUTED)
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.focus_mode = Control.FOCUS_NONE
 	b.pressed.connect(func(): _show("home"))
 	return b
+
+
+## An uppercase label above a field, like the kit's "label" style.
+func _label(s: String) -> Label:
+	var l := ShellStyle.text(s, 11, 600, Brand.INK_MUTED)
+	return l
+
+
+## Deep ink behind the menu, fading out across the town.
+func _fade() -> TextureRect:
+	var g := Gradient.new()
+	g.set_color(0, Color(Brand.SURFACE, 0.92))
+	g.set_color(1, Color(Brand.SURFACE, 0.0))
+	g.set_offset(0, 0.18)
+	g.set_offset(1, 0.62)
+	var tex := GradientTexture2D.new()
+	tex.gradient = g
+	tex.width = 256
+	tex.height = 4
+	var r := TextureRect.new()
+	r.texture = tex
+	r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	r.stretch_mode = TextureRect.STRETCH_SCALE
+	r.set_anchors_preset(Control.PRESET_FULL_RECT)
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return r
 
 
 func _gap(h: int) -> Control:
