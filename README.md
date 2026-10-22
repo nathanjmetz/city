@@ -25,6 +25,10 @@ An open map where you draw roads, paint zones along them, and buildings grow, li
 | `8` Dezone | Erase zones (buildings on them go away). |
 | Right click / Esc | Stop drawing. |
 
+| Space, or Pause / 1x / 2x / 4x | Pause and game speed. |
+
+The city runs on a clock (a day takes about 2½ minutes at 1x). Homes, shops and industry only grow when there is demand, shown by the bars in the bottom-left corner: homes are wanted while there are jobs, industry while people need work, and shops while residents need places to shop. People move into new homes over time.
+
 The camera uses the Cities: Skylines 2 default keys:
 
 | Control | What it does |

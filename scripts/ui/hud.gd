@@ -5,20 +5,25 @@ extends CanvasLayer
 var road_tool: RoadTool
 var zone_tool: ZoneTool
 var sim: CitySim
+var game: Node  # main.gd: game speed
 
 var _road_buttons := {}
 var _zone_buttons := {}
 var _type_buttons := {}
 var _parallel_button: Button
 var _elevation := Label.new()
+var _clock := Label.new()
+var _speed_buttons := []
+var _demand_bars := {}
 var _hint := Label.new()
 var _stats := Label.new()
 
 
-func setup(rt: RoadTool, zt: ZoneTool, s: CitySim) -> void:
+func setup(rt: RoadTool, zt: ZoneTool, s: CitySim, g: Node) -> void:
 	road_tool = rt
 	zone_tool = zt
 	sim = s
+	game = g
 
 
 func _ready() -> void:
@@ -78,26 +83,27 @@ func _ready() -> void:
 	row.add_child(VSeparator.new())
 	_button(row, "Clear map", Color.WHITE, func(): sim.apply({"type": "clear"}), false)
 
+	_build_top_bar(root)
+	_build_demand(root)
+
 	var tips := Label.new()
 	tips.text = "WASD move   Q/E rotate   T/G tilt   R/F zoom   Shift faster   Middle or Option drag: rotate   Right drag: move"
-	tips.position = Vector2(16, 12)
 	_style(tips)
+	tips.add_theme_font_size_override("font_size", 13)
 	root.add_child(tips)
+	_pin(tips, Control.PRESET_BOTTOM_LEFT, Vector2(16, -160))
 
-	_hint.position = Vector2(16, 40)
+	_hint.position = Vector2(16, 12)
 	_style(_hint)
 	_hint.add_theme_font_size_override("font_size", 20)
 	root.add_child(_hint)
 
 	var build := Label.new()
 	build.text = "Build " + _build_name()
-	build.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	build.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	build.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	build.position = Vector2(-12, -8)
 	_style(build)
 	build.add_theme_font_size_override("font_size", 12)
 	root.add_child(build)
+	_pin(build, Control.PRESET_BOTTOM_RIGHT, Vector2(-12, -6))
 
 	_stats.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_stats.grow_horizontal = Control.GROW_DIRECTION_BEGIN
@@ -112,9 +118,90 @@ func _ready() -> void:
 	road_tool.hint_changed.connect(func(text): _hint.text = text)
 	zone_tool.hint_changed.connect(func(text): _hint.text = text)
 	sim.buildings_changed.connect(_update_stats)
+	sim.stats_changed.connect(_update_stats)
+	game.speed_changed.connect(func(_s): _sync_speed())
+	_sync_speed()
 	sim.lots_changed.connect(_update_stats)
 	_sync_buttons()
 	_update_stats()
+
+
+## Date, time, game speed and population, centred along the top.
+func _build_top_bar(root: Control) -> void:
+	var panel := PanelContainer.new()
+	panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	panel.position.y = 8
+	root.add_child(panel)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	panel.add_child(row)
+	_clock.custom_minimum_size = Vector2(230, 0)
+	_clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_clock.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(_clock)
+	for i in 4:
+		var b := _button(row, ["Pause", "1x", "2x", "4x"][i], Color.WHITE, func(): game.set_speed(i))
+		b.custom_minimum_size = Vector2(54, 32)
+		_speed_buttons.append(b)
+
+
+## Cities: Skylines style demand bars for homes, shops and industry.
+func _build_demand(root: Control) -> void:
+	var panel := PanelContainer.new()
+	root.add_child(panel)
+	var col := VBoxContainer.new()
+	panel.add_child(col)
+	var title := Label.new()
+	title.text = "Demand"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(title)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	col.add_child(row)
+	for entry in [[ZoneMap.Zone.RESIDENTIAL, "H"], [ZoneMap.Zone.COMMERCIAL, "S"], [ZoneMap.Zone.INDUSTRIAL, "I"]]:
+		var z: int = entry[0]
+		var c := VBoxContainer.new()
+		var bar := ProgressBar.new()
+		bar.fill_mode = ProgressBar.FILL_BOTTOM_TO_TOP
+		bar.show_percentage = false
+		bar.custom_minimum_size = Vector2(22, 90)
+		bar.max_value = 1.0
+		var fill := StyleBoxFlat.new()
+		fill.bg_color = ZoneMap.COLORS[z]
+		bar.add_theme_stylebox_override("fill", fill)
+		c.add_child(bar)
+		var l := Label.new()
+		l.text = entry[1]
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.add_theme_color_override("font_color", ZoneMap.COLORS[z])
+		c.add_child(l)
+		row.add_child(c)
+		_demand_bars[z] = bar
+	_pin(panel, Control.PRESET_BOTTOM_LEFT, Vector2(16, -16))
+
+
+## Pins a control to a corner of the screen, `offset` pixels in from it,
+## growing away from the corner as its content changes.
+static func _pin(c: Control, corner: int, offset: Vector2) -> void:
+	c.set_anchors_and_offsets_preset(corner, Control.PRESET_MODE_MINSIZE)
+	c.grow_horizontal = Control.GROW_DIRECTION_BEGIN if offset.x < 0 else Control.GROW_DIRECTION_END
+	c.grow_vertical = Control.GROW_DIRECTION_BEGIN if offset.y < 0 else Control.GROW_DIRECTION_END
+	c.position += offset
+
+
+func _sync_speed() -> void:
+	for i in _speed_buttons.size():
+		_speed_buttons[i].set_pressed_no_signal(i == game.speed)
+
+
+func _process(_delta: float) -> void:
+	var t := sim.clock()
+	var hour: int = t.hour % 12
+	_clock.text = "%s %s %d, %d   %d:%02d %s" % [
+		["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][t.weekday],
+		["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][t.month - 1],
+		t.day, t.year, 12 if hour == 0 else hour, t.minute, "AM" if t.hour < 12 else "PM"]
 
 
 func _button(row: HBoxContainer, text: String, tint: Color, action: Callable, toggle := true) -> Button:
@@ -143,11 +230,14 @@ func _sync_buttons() -> void:
 
 
 func _update_stats() -> void:
-	var homes := sim.count_buildings(ZoneMap.Zone.RESIDENTIAL)
-	_stats.text = "Roads: %.2f km\nHomes: %d   Shops: %d   Industry: %d\nEmpty zoned lots: %d" % [
-		sim.network.total_length() / 1000.0, homes,
-		sim.count_buildings(ZoneMap.Zone.COMMERCIAL), sim.count_buildings(ZoneMap.Zone.INDUSTRIAL),
-		sim.empty_zoned_lots().size()]
+	var s := sim.stats
+	var unemployed: float = 0.0 if s.workers == 0 else 100.0 * (s.workers - s.employed) / s.workers
+	_stats.text = "Population: %d\nJobs: %d   Unemployment: %d%%\nHomes: %d   Shops: %d   Industry: %d\nRoads: %.2f km" % [
+		s.population, s.jobs, roundi(unemployed),
+		sim.count_buildings(ZoneMap.Zone.RESIDENTIAL), sim.count_buildings(ZoneMap.Zone.COMMERCIAL),
+		sim.count_buildings(ZoneMap.Zone.INDUSTRIAL), sim.network.total_length() / 1000.0]
+	for z in _demand_bars:
+		_demand_bars[z].value = sim.demand[z]
 
 
 ## The build stamp written by the web preview workflow, or "dev" locally.
