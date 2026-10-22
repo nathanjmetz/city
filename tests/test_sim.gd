@@ -153,17 +153,38 @@ func _init() -> void:
 		"farmland outlined with nodes")
 	_check(not fm.apply({"type": "place_farmhouse", "pos": [0, -200], "dir": [0, -1]}), "farmhouse needs farmland")
 	_check(fm.apply({"type": "place_farmhouse", "pos": [0, 60], "dir": [0, -1], "crop": "corn"}), "farmhouse placed")
+	_check(not fm.apply({"type": "place_farmhouse", "pos": [0, 560], "dir": [0, -1]}), "farmhouse needs a road near")
+	var farm: Dictionary = fm.farms.farms.values()[0]
+	_check(farm.drive.size() >= 2 and absf(farm.drive[-1].z) < 1.0, "a farm lane runs out to the road")
+	fm.farms.decide(fm.field_usable)
+	_check(farm.barn and farm.cells.is_empty(), "the barn goes up before any fields")
+	fm.farms.decide(fm.field_usable)
+	_check(farm.cells.size() == 1 and absi(farm.cells[0].x) + absi(farm.cells[0].y) == 1,
+		"the first field is next to the farmyard (%s)" % [farm.cells])
 	for i in Farms.DECIDE_EVERY * 40:
 		fm.tick()
-	var farm: Dictionary = fm.farms.farms.values()[0]
 	var grown: int = farm.cells.size()
 	_check(grown >= 10, "the farm buys fields as it makes money (%d fields)" % grown)
 	var touches_road := false
 	for c in farm.cells:
-		touches_road = touches_road or absf(Farms.cell_center(c).z) < Farms.CELL * 0.5 + 4.0
+		touches_road = touches_road or absf(Farms.cell_center(farm, c).z) < Farms.CELL * 0.5 + 4.0
 	_check(not touches_road, "no fields on the road")
 	_check(fm.economy.budget.income[ZoneMap.Zone.INDUSTRIAL] > 0, "farmland pays property tax")
-	_check(Farms.fertility(Vector2i(3, 4)) == Farms.fertility(Vector2i(3, 4)), "soil never changes")
+	_check(Farms.fertility_at(Vector3(130, 0, 170)) == Farms.fertility_at(Vector3(130, 0, 170)), "soil never changes")
+	# A farm on a diagonal road lays its fields out square to that road.
+	var diag := CitySim.new()
+	diag.economy.money = 10_000_000
+	diag.apply({"type": "build_road", "start": [-400, -400], "ctrl": [0, 0], "end": [400, 400]})
+	diag.apply({"type": "paint_farmland", "points": [[-300, -200], [200, 300], [400, 100], [-100, -400]]})
+	var dir := Vector3(-1, 0, 1).normalized()
+	_check(diag.apply({"type": "place_farmhouse", "pos": [60, 0], "dir": [dir.x, dir.z]}), "farmhouse on a diagonal road")
+	for i in 20:
+		diag.farms.decide(diag.field_usable)
+	var dfarm: Dictionary = diag.farms.farms.values()[0]
+	var corners := Farms.cell_corners(dfarm, dfarm.cells[0])
+	var edge := (corners[1] - corners[0]).normalized()
+	_check(dfarm.cells.size() >= 5 and absf(absf(edge.dot(Vector2(1, 1).normalized())) - 1.0) < 0.01,
+		"fields run square to the road, not the world grid")
 	var fcopy := CitySim.new()
 	fcopy.from_dict(JSON.parse_string(JSON.stringify(fm.to_dict())))
 	_check(fcopy.farms.farms.values()[0].cells.size() == grown, "farms saved")
