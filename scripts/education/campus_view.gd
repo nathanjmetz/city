@@ -44,7 +44,7 @@ func _spawn(key: String, c: Dictionary, blk) -> Node3D:
 	# Local -Z faces the campus's street.
 	root.basis = Basis.looking_at(c.dir, Vector3.UP)
 	var cell: Vector2i = Vector2i.ZERO if blk == null else blk.c
-	root.position = Education.block_center(c, cell)
+	root.position = Terrain.lift(Education.block_center(c, cell))
 	var seed := absi(hash(key))
 	var built: Array
 	if blk == null:
@@ -56,7 +56,7 @@ func _spawn(key: String, c: Dictionary, blk) -> Node3D:
 	building.mesh = built[0]
 	root.add_child(building)
 	var ground := MeshInstance3D.new()
-	ground.mesh = built[1]
+	ground.mesh = Terrain.drape_local(built[1], Transform3D(root.basis, root.position))
 	ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(ground)
 	var frame := Transform3D(root.basis, root.position)

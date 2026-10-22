@@ -211,9 +211,9 @@ func _rebuild() -> void:
 	for l in place(network):
 		var dir: Vector3 = l[2]
 		var basis := Basis(Vector3.UP, atan2(dir.x, dir.z))
-		lists[l[0]].append(Transform3D(basis, l[1]))
+		lists[l[0]].append(Transform3D(basis, Terrain.lift(l[1])))
 		var under: Vector3 = l[1] + dir * (float(l[3]) + 1.5)
-		lists.pool.append(Transform3D(Basis.IDENTITY, Vector3(under.x, l[1].y + RoadStyle.Y_JUNCTION + 0.03, under.z)))
+		lists.pool.append(Transform3D(Basis.IDENTITY, Terrain.lift(Vector3(under.x, l[1].y + RoadStyle.Y_JUNCTION + 0.03, under.z))))
 	for k in lists:
 		var mm: MultiMesh = _multis[k].multimesh
 		mm.instance_count = lists[k].size()

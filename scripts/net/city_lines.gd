@@ -196,7 +196,9 @@ func _dashes(line: PackedVector2Array) -> Array:
 	for i in line.size() - 1:
 		var p0: Vector3 = to_world.call(line[i])
 		var p1: Vector3 = to_world.call(line[i + 1])
-		var mid := (p0 + p1) * 0.5 + Vector3(0, 0.12, 0)
+		p0.y = Terrain.ground_y(p0.x, p0.z)
+		p1.y = Terrain.ground_y(p1.x, p1.z)
+		var mid := (p0 + p1) * 0.5 + Vector3(0, 0.3, 0)
 		var basis := Basis.looking_at((p1 - p0).normalized(), Vector3.UP) if p0.distance_to(p1) > 0.01 else Basis()
 		out.append(Transform3D(basis.scaled_local(Vector3(_width, 1, 1)), mid))
 	return out

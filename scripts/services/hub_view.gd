@@ -34,7 +34,7 @@ func _process(_delta: float) -> void:
 func _spawn(id: int, h: Dictionary) -> Node3D:
 	var root := Node3D.new()
 	add_child(root)
-	root.position = h.pos
+	root.position = Terrain.lift(h.pos)
 	# Local -Z faces the road.
 	root.basis = Basis.looking_at(h.dir, Vector3.UP)
 	root.set_meta("ver", int(h.get("ver", 0)))
@@ -45,7 +45,7 @@ func _spawn(id: int, h: Dictionary) -> Node3D:
 	building.mesh = built[0]
 	root.add_child(building)
 	var ground := MeshInstance3D.new()
-	ground.mesh = built[1]
+	ground.mesh = Terrain.drape_local(built[1], Transform3D(root.basis, root.position))
 	ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(ground)
 	var frame := Transform3D(root.basis, root.position)

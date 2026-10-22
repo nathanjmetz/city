@@ -89,6 +89,13 @@ func _rural_segments() -> Dictionary:
 
 
 func rebuild() -> void:
+	# Neighbors' cities are drawn moved over to their place on the land.
+	Terrain.shift = Terrain.shift_for(self)
+	_rebuild_all()
+	Terrain.shift = Vector2.ZERO
+
+
+func _rebuild_all() -> void:
 	for child in get_children():
 		child.queue_free()
 	var piers := SurfaceTool.new()
@@ -135,6 +142,8 @@ func rebuild() -> void:
 			seg_gaps = moved
 		if pts.size() < 2:
 			continue
+		# Close enough points that the road follows the rise and fall of the land.
+		pts = Terrain.densify(pts, 6.0)
 		var mi := MeshInstance3D.new()
 		if _underground(pts):
 			# Tunnels show as a dark path on the ground above them.
@@ -144,17 +153,18 @@ func rebuild() -> void:
 			var st := SurfaceTool.new()
 			st.begin(Mesh.PRIMITIVE_TRIANGLES)
 			RoadMesh.add_strip(st, flat, -RoadStyle.half_width(type), RoadStyle.half_width(type), 0.1)
-			mi.mesh = st.commit()
+			mi.mesh = Terrain.drape(st.commit(), true)
 			mi.material_override = _mats.tunnel
 		else:
 			var rural: bool = _rural.has(id) and pts[pts.size() / 2].y < 1.0
-			mi.mesh = RoadMesh.street(pts, type, _mats, seg_gaps, rural)
+			mi.mesh = Terrain.drape(RoadMesh.street(pts, type, _mats, seg_gaps, rural))
 			if rural:
 				var side := 1.0 if hash(id) % 2 == 0 else -1.0
 				RoadMesh.add_poles(wood, wire, pts, side * (RoadStyle.half_width(type) + 4.0), drives)
 				any_pole = true
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			any_bridge = RoadMesh.bridge(pts, RoadStyle.right_of_way_half(type), piers) or any_bridge
+			any_bridge = RoadMesh.bridge(Terrain.lift_all(pts), RoadStyle.right_of_way_half(type), piers,
+				Terrain.ground_y) or any_bridge
 		add_child(mi)
 	if not merges.is_empty():
 		var layers := {"asphalt": SurfaceTool.new(), "white": SurfaceTool.new(), "cover": SurfaceTool.new(),
@@ -165,14 +175,14 @@ func rebuild() -> void:
 			RampMerge.draw(m, layers.asphalt, layers.white, layers.cover, layers.barrier)
 		for key in layers:
 			var mi := MeshInstance3D.new()
-			mi.mesh = layers[key].commit()
+			mi.mesh = Terrain.drape(layers[key].commit())
 			mi.material_override = {"white": _mats.white, "barrier": _mats.curb}.get(key, _mats.asphalt)
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(mi)
 	if any_pole:
 		for entry in [[wood, _mats.pole], [wire, _mats.wire]]:
 			var pm := MeshInstance3D.new()
-			pm.mesh = entry[0].commit()
+			pm.mesh = Terrain.drape(entry[0].commit(), true)
 			pm.material_override = entry[1]
 			add_child(pm)
 	if any_bridge:
@@ -197,7 +207,7 @@ func rebuild() -> void:
 		RoadMesh.add_disc(st, network.nodes[id], r, RoadStyle.Y_JUNCTION)
 	if not network.nodes.is_empty():
 		var mi := MeshInstance3D.new()
-		mi.mesh = st.commit()
+		mi.mesh = Terrain.drape(st.commit())
 		mi.material_override = _mats.asphalt
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mi)
@@ -252,7 +262,7 @@ func _build_roundabouts(ring_nodes: Dictionary) -> void:
 			_add_splitter(curb, pts, start, 15.0, 2.0)
 	for entry in [[grass, _mats.median], [apron, _mats.apron], [curb, _mats.curb]]:
 		var mi := MeshInstance3D.new()
-		mi.mesh = entry[0].commit()
+		mi.mesh = Terrain.drape(entry[0].commit())
 		mi.material_override = entry[1]
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mi)

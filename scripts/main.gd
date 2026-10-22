@@ -26,7 +26,8 @@ func _ready() -> void:
 	sim.require_utilities = true
 	var sky := SkyLight.new()
 	add_child(sky)
-	add_child(Ground.new())
+	var terrain := TerrainView.new()
+	add_child(terrain)
 
 	var roads := RoadView.new()
 	add_child(roads)
@@ -90,6 +91,13 @@ func _ready() -> void:
 
 	var cam := CityCamera.new()
 	add_child(cam)
+	terrain.setup(cam.camera, sim.network)
+	# Wild trees and brush (WildView) grow from the real land cover; past
+	# where they're drawn, the ground paints the woods' canopy.
+	Vegetation.cover_source = func(p: Vector3) -> Array:
+		return Terrain.wild_cover(p.x + sim.terrain_offset.x, p.z + sim.terrain_offset.y)
+	terrain.trees_drawn_to = func() -> float:
+		return WildView.reach(cam.camera.global_position.y)
 
 	var audio := CityAudio.new()
 	audio.setup(sim, cam.camera, func(): return _tick_time * CitySim.TICKS_PER_SECOND)
