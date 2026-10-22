@@ -24,7 +24,19 @@ func _init() -> void:
 	world.add_child(road)
 	var trees := TreeField.new()
 	world.add_child(trees)
-	for i in 5:
+	if kind in ["oil", "ore"]:
+		# A company's main yard on the left, one of its pads on the right.
+		var parts := [[IndustryBuilder.build_hq(kind, seed), Vector3(-25, 0, 20)],
+			[IndustryBuilder.build_pad(kind, seed), Vector3(30, 0, 20)]]
+		if kind == "oil":
+			parts.append([[IndustryBuilder.build_beam(seed)], Vector3(27, 5.6, 20)])
+		for part in parts:
+			for m in part[0]:
+				var mi := MeshInstance3D.new()
+				mi.mesh = m
+				mi.position = part[1]
+				world.add_child(mi)
+	for i in (0 if kind in ["oil", "ore"] else 5):
 		var meshes: Array
 		match kind:
 			"shop": meshes = CommercialBuilder.build_shop(seed * 100 + i, 3.9)

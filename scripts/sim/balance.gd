@@ -301,3 +301,17 @@ const HUB_GROW_BUSY_SHARE := 0.5
 const HUB_SHRINK_QUIET := 8
 ## A cemetery takes one more piece of land for every this many residents.
 const CEMETERY_PEOPLE_PER_PIECE := 1_200
+
+# --- Region and trade ----------------------------------------------------------
+
+## Price of a unit of each traded good or service, in dollars. Hubs add their
+## goods here (power in MWh, water in thousand gallons, garbage in tons...).
+const TRADE_PRICE := {}
+## Price for a good with no entry above.
+const TRADE_PRICE_DEFAULT := 100.0
+## What no neighbor covers is bought from the outside world at this many
+## times the price...
+const TRADE_IMPORT_MARKUP := 1.5
+## ...and what no neighbor buys is sold to it for this share of the price.
+## Trading with a neighbor is the better deal for both towns.
+const TRADE_EXPORT_SHARE := 0.6
