@@ -442,6 +442,17 @@ const BUS_SUBSIDY_MAX := 1_000_000
 ## level; each is a monthly subsidy (Standard runs about two buses).
 const BUS_FUNDING_LEVELS := [["None", 0], ["Lean", 20_000], ["Standard", 40_000], ["Generous", 80_000],
 	["Lavish", 160_000]]
+## Intercity coach to the neighboring towns (a development-tree option):
+## a one-way fare like rural intercity lines (FTA 5311(f)), its running cost
+## a month (about $90 an hour, 10 hours a day), and the share of townspeople
+## who take a trip to a neighboring town on a given day, per neighbor.
+const BUS_COACH_FARE := 15.0
+const BUS_COACH_MONTHLY := 90 * 10 * 30
+const BUS_COACH_DAILY_SHARE := 0.0015
+## Game ticks a coach spends in the neighboring town before coming back.
+const BUS_COACH_AWAY := 600
+## Seats on a 45-foot motorcoach (MCI J4500).
+const BUS_COACH_SEATS := 56
 ## The depot buys land next door at about $50,000 an acre (Midwest town
 ## edge), dollars per square metre.
 const BUS_LAND_PER_M2 := 12.0

@@ -1,7 +1,7 @@
 class_name BusView
 extends Node3D
 ## Draws what the bus depots run: a sign at every stop (and a shelter where
-## many people wait), and the buses standing still: in their bays, at the
+## many people wait, once its depot has built shelters), and the buses standing still: in their bays, at the
 ## curb while people get on, or parked at a school. Moving buses are drawn
 ## by TrafficView like any vehicle.
 ##
@@ -86,7 +86,7 @@ func _draw_buses() -> void:
 	var lists := {}
 	var labels := []
 	for entry in sim.buses.standing(sim):
-		var kind: String = entry[0]
+		var kind: String = "city_bus" if entry[0] == "coach" else entry[0]  # no coach model yet
 		var front: Vector3 = entry[1]
 		var dist := front.distance_to(eye)
 		if show_routes and entry[3] > 0 and dist < FAR:
@@ -162,7 +162,8 @@ func _draw_stops() -> void:
 		_box(st, frame, Vector3(0, 1.4, 0), Vector3(0.08, 2.8, 0.08), Color("#9aa0a2"))
 		_box(st, frame, Vector3(0, 2.5, 0.06), Vector3(0.46, 0.6, 0.04), Color("#f2f2ee"))
 		_box(st, frame, Vector3(0, 2.62, 0.09), Vector3(0.47, 0.18, 0.02), Color("#1f5fa8"))
-		if float(s.get("riders", 0.0)) >= SHELTER_RIDERS or s.res + s.jobs >= 600.0:
+		var kit: Array = sim.buses.depots.get(s.depot, {}).get("built", [])
+		if "shelters" in kit and (float(s.get("riders", 0.0)) >= SHELTER_RIDERS or s.res + s.jobs >= 600.0):
 			# On the sidewalk's far side: roof, back and end panels, bench.
 			var sh := frame * Transform3D(Basis.IDENTITY, Vector3(-3.0, 0.0, -(RoadStyle.PARKWAY_WIDTH * 0.5 + RoadStyle.SIDEWALK_WIDTH + 0.9)))
 			_box(st, sh, Vector3(0, 2.35, 0), Vector3(3.6, 0.1, 1.6), Color("#4a5357"))
