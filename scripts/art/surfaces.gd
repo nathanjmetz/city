@@ -60,7 +60,8 @@ void fragment() {
 	float c = texture(noise_soft, turn(p, 2.0) / 23.0 + 0.7).r;
 	float crack = 1.0 - smoothstep(0.0, fwidth(c) * 0.9 + 0.0008, abs(c - 0.5));
 	float cracked = smoothstep(0.66, 0.74, texture(noise_soft, p / 90.0 + 0.2).r);
-	col = mix(col, tar.rgb, crack * cracked * close * 0.6);
+	float footprint = length(fwidth(p));  // metres per pixel
+	col = mix(col, tar.rgb, crack * cracked * close * 0.6 * (1.0 - smoothstep(0.05, 0.2, footprint)));
 	// Oil drips and tyre grime.
 	float oil = smoothstep(0.70, 0.86, texture(noise_grain, turn(p, 1.4) / 3.3).r);
 	col *= 1.0 - oil * 0.1 * close;
@@ -82,6 +83,9 @@ void fragment() {
 	float along = UV.y * 4.0;
 	float slab = floor(along / %f);
 	float tint = fract(sin(slab * 12.9898 + 3.1) * 43758.5453);
+	// Slabs smaller than a few pixels blend to their average, so they don't
+	// shimmer while the camera moves.
+	tint = mix(tint, 0.5, smoothstep(0.1, 0.35, fwidth(along) / %f));
 	vec3 col = base.rgb * (0.94 + tint * 0.09);
 	// Weathering stains and grit.
 	float stain = texture(noise_soft, turn(p, 0.5) / 9.0).r;
@@ -90,12 +94,13 @@ void fragment() {
 	// A tooled joint line every slab.
 	float d = abs(fract(along / %f + 0.5) - 0.5) * %f;
 	float joint = 1.0 - smoothstep(0.012, 0.012 + fwidth(along) * 1.5, d);
+	joint *= clamp(0.024 / max(fwidth(along), 0.0001), 0.0, 1.0);  // thinner than a pixel: fade
 	col *= 1.0 - joint * joints * 0.45 * close;
 	ALBEDO = col;
 	ROUGHNESS = 0.88;
 	SPECULAR = 0.3;
 }
-""" % [SLAB, SLAB, SLAB]
+""" % [SLAB, SLAB, SLAB, SLAB]
 
 const PAINT := """
 uniform vec4 paint : source_color = vec4(0.88, 0.88, 0.86, 1.0);
@@ -108,6 +113,42 @@ void fragment() {
 	ALBEDO = col;
 	ROUGHNESS = 0.7;
 	SPECULAR = 0.35;
+}
+"""
+
+## Crop fields, benchmarked against aerial photos of Iowa and Illinois
+## farmland. UV is metres across and back from the farmhouse, / 16; the
+## vertex colour is this month's crop colour (sRGB). Vertex alpha 0 marks
+## the grassy, brushy fencerow verge along a farm's edge.
+##   - 30 in (0.76 m) crop rows that blend to an even tone before they get
+##     small enough to shimmer
+##   - big soft patches where the soil is wetter, drier or richer
+##   - a faint sprayer tramline every 36 m
+const FIELD := """
+vec3 lin(vec3 c) {
+	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
+}
+void fragment() {
+	vec2 p = world_pos.xz;
+	vec2 m = UV * 16.0;
+	float patch = texture(noise_soft, p / 160.0).r;
+	float mid = texture(noise_soft, turn(p, 1.1) / 38.0).r;
+	float grain = texture(noise_grain, p / 1.7).r;
+	// Rows: the gaps between them show more soil and shade.
+	float r = m.x / 0.76;
+	float gap = smoothstep(0.3, 0.95, abs(fract(r) - 0.5) * 2.0);
+	gap = mix(gap, 0.4, smoothstep(0.12, 0.45, fwidth(r)));
+	float t = abs(mod(m.x, 36.0) - 18.0);
+	float tram = (1.0 - smoothstep(0.25, 0.45, t)) * clamp(0.5 / max(fwidth(m.x), 0.001), 0.0, 1.0);
+	vec3 crop = lin(COLOR.rgb) * 1.45 * (0.8 + patch * 0.34 + (mid - 0.5) * 0.14);
+	crop *= 1.0 - gap * 0.22 - tram * 0.12;
+	crop *= 0.96 + grain * 0.08;
+	// Fencerow verge: rough grass with brushy darker clumps.
+	vec3 verge = mix(vec3(0.11, 0.16, 0.05), vec3(0.17, 0.17, 0.08), mid);
+	verge *= 0.75 + grain * 0.45;
+	ALBEDO = mix(verge, crop, COLOR.a);
+	ROUGHNESS = 0.95;
+	SPECULAR = 0.25;
 }
 """
 
@@ -124,6 +165,10 @@ static func asphalt() -> ShaderMaterial:
 static func concrete(color: Color, slabs := false) -> ShaderMaterial:
 	return _make("concrete %s %s" % [color, slabs], CONCRETE,
 			{"base": color, "joints": 1.0 if slabs else 0.0})
+
+
+static func field() -> ShaderMaterial:
+	return _make("field", FIELD, {})
 
 
 static func paint(color: Color) -> ShaderMaterial:

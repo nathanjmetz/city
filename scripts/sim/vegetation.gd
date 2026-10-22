@@ -42,6 +42,7 @@ var _touched := {}  # chunks the city has ever built in (the rest is all wild)
 var _dirty := true
 var _dirty_tick := 0
 var _sim: Object
+var _hubs_version := -1
 
 
 ## Follows the city: anything built or removed marks the land for a re-check.
@@ -75,6 +76,10 @@ func reset() -> void:
 ## Only things that were added or removed are looked at, so a big city stays
 ## cheap.
 func update(sim: Object) -> void:
+	# Landfills, recycling and cemeteries grow on their own, without a signal.
+	if sim.hubs.version != _hubs_version:
+		_hubs_version = sim.hubs.version
+		_mark()
 	if not _dirty:
 		return
 	_dirty = false
@@ -121,8 +126,8 @@ static func cell_of(p: Vector3) -> Vector2i:
 
 ## Everything the city has standing on the land, each under a key that
 ## changes when it moves, with a Callable that lists its cells: roads with
-## their sidewalks and verges, built lots, service buildings, farmyards and
-## fields, industry pads and lanes. Empty zoned lots keep their trees until
+## their sidewalks and verges, built lots, service buildings, landfills and cemeteries,
+## farmyards and fields, industry pads and lanes. Empty zoned lots keep their trees until
 ## something is built there.
 static func sources(sim: Object) -> Dictionary:
 	var out := {}
@@ -147,6 +152,10 @@ static func sources(sim: Object) -> Dictionary:
 		out["fd%d %d" % [id, f.drive.size()]] = _line_cells.bind(PackedVector3Array(f.drive), Farms.DRIVE_WIDTH * 0.5 + 1.5)
 		for cell in f.cells:
 			out["fc%d %s" % [id, cell]] = _poly_cells.bind(Farms.cell_corners(f, cell))
+	for id in sim.hubs.hubs:
+		var h: Dictionary = sim.hubs.hubs[id]
+		for cell in h.cells:
+			out["h%d %s %s" % [id, cell, h.pos]] = _poly_cells.bind(CivicHubs.cell_poly(h, cell))
 	for id in sim.industry.sites:
 		var s: Dictionary = sim.industry.sites[id]
 		out["iy%d" % id] = _poly_cells.bind(sim.industry._yard(s))

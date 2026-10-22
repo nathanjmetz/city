@@ -253,3 +253,34 @@ const WILD_MATURE_YEARS := 20.0
 ## trees are still young.
 const WILD_REGROW_TREES := 0.5
 const WILD_REGROW_BRUSH := 0.45
+## Trash, which garbage trucks carry to a landfill or recycling centre. A
+## game day here is a real day for trash (a month would bury a small town):
+## Americans throw out about 4.9 lb a person a day (EPA), and a business
+## about 2 lb per job.
+const GARBAGE_LB_PER_RESIDENT := 4.9
+const GARBAGE_LB_PER_JOB := 2.0
+## A rear-loader garbage truck carries about 10 tons when full.
+const GARBAGE_TRUCK_LB := 20_000.0
+## A street is worth a stop once this much trash is out at the curb (about a
+## week of trash for six or seven homes), and a truck makes at most this many
+## stops before it heads back.
+const GARBAGE_STOP_LB := 600.0
+const GARBAGE_STOPS_PER_RUN := 6
+## Trash left out past this much on a street lowers its land value by
+## GARBAGE_PILE_VALUE (-0.05 = 5% lower) until a truck comes.
+const GARBAGE_PILE_LB := 2_500.0
+const GARBAGE_PILE_VALUE := -0.05
+## Trucks each waste site keeps, plus one more for every two pieces of land
+## it has grown into.
+const HUB_TRUCKS := {"landfill": 3, "recycling_1": 2, "recycling_2": 3, "recycling_3": 4}
+## Each piece of land a hub grows into adds this share of its base upkeep.
+const HUB_PIECE_UPKEEP := 0.15
+## Hubs decide whether to grow this often, in ticks (6 game hours). A waste
+## site grows when its trucks were all out on at least this share of the
+## rounds it wanted to send one; it gives land back after this many quiet
+## decisions in a row.
+const HUB_DECIDE_EVERY := 360
+const HUB_GROW_BUSY_SHARE := 0.5
+const HUB_SHRINK_QUIET := 8
+## A cemetery takes one more piece of land for every this many residents.
+const CEMETERY_PEOPLE_PER_PIECE := 1_200

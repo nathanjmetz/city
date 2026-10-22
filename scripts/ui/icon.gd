@@ -1,26 +1,43 @@
 class_name Icon
 extends Control
-## Small line icons drawn in code, so they stay sharp at any size and need no
-## image files. Set `kind` to one of the names handled in _draw().
+## Small game icons by name. Common ones come from the brand's icon set
+## (Phosphor Bold, white SVGs in assets/brand/icons/, tinted with `color`);
+## road shapes, resources and other game-specific ones are drawn in code.
+## Set `kind` to a name in _FILES or one handled in _draw().
 
 @export var kind := "road":
 	set(v):
 		kind = v
 		queue_redraw()
-var color := Color(0.93, 0.95, 0.97):
+var color := Brand.INK:
 	set(v):
 		color = v
 		queue_redraw()
 ## Optional second colour (zone tints and the like).
-var accent := Color(0.45, 0.72, 0.95):
+var accent := Brand.BRAND_TEAL:
 	set(v):
 		accent = v
 		queue_redraw()
 
 
+## Names drawn from the brand icon set: kind -> file in assets/brand/icons/.
+const _FILES := {
+	"road": "road", "roads": "road", "bulldoze": "bulldoze", "homes": "homes", "zones": "zones",
+	"shops": "shops", "industry": "industry", "dezone": "dezone", "pause": "pause", "people": "people",
+	"jobs": "jobs", "car": "car", "money": "money", "budget": "money", "power": "power", "water": "water",
+	"fire": "fire", "police": "police", "health": "health", "school": "school", "services": "services",
+	"farms": "farms", "farmland": "farms", "traffic": "traffic", "signal": "signal", "views": "views",
+	"help": "help", "grid": "grid", "curve": "curve", "roundabout": "roundabout",
+}
+## These get a soft `accent` fill behind the line (zone tints and the like).
+const _DUOTONE := ["homes", "zones", "shops", "industry", "farms", "farmland"]
+static var _textures := {}
+
+
 func _init(k := "road", size_px := 40.0) -> void:
 	kind = k
 	custom_minimum_size = Vector2(size_px, size_px)
+	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
@@ -31,6 +48,12 @@ func _draw() -> void:
 	# Everything below is drawn on a 0..1 square, scaled by P().
 	var P := func(x: float, y: float) -> Vector2: return o + Vector2(x, y) * s
 	var line := func(a: Vector2, b: Vector2, width := w, col := color): draw_line(a, b, col, width, true)
+	if _FILES.has(kind):
+		var rect := Rect2(o, Vector2(s, s))
+		if kind in _DUOTONE:
+			draw_texture_rect(_texture(_FILES[kind] + "-fill"), rect, false, Color(accent, 0.45))
+		draw_texture_rect(_texture(_FILES[kind]), rect, false, color)
+		return
 	match kind:
 		"road", "roads":
 			_poly([P.call(0.3, 0.92), P.call(0.42, 0.08), P.call(0.58, 0.08), P.call(0.7, 0.92)], Color(color, 0.25))
@@ -170,6 +193,29 @@ func _draw() -> void:
 			_poly([P.call(0.5, 0.14), P.call(0.94, 0.36), P.call(0.5, 0.58), P.call(0.06, 0.36)], color)
 			draw_arc(P.call(0.5, 0.5), s * 0.24, 0.15, PI - 0.15, 16, color, w, true)
 			line.call(P.call(0.86, 0.38), P.call(0.86, 0.72))
+		"landfill":
+			# A grassed mound with a truck tipping at the working face.
+			_poly([P.call(0.04, 0.84), P.call(0.3, 0.42), P.call(0.66, 0.36), P.call(0.96, 0.84)], Color(0.55, 0.68, 0.36))
+			_poly([P.call(0.3, 0.42), P.call(0.48, 0.39), P.call(0.4, 0.62), P.call(0.22, 0.56)], Color(0.6, 0.48, 0.34))
+			draw_rect(Rect2(P.call(0.62, 0.62), Vector2(0.26, 0.14) * s), color)
+			draw_circle(P.call(0.67, 0.8), s * 0.05, color)
+			draw_circle(P.call(0.83, 0.8), s * 0.05, color)
+		"recycling":
+			# Three chasing arrows.
+			for i in 3:
+				var a0 := -PI * 0.5 + i * TAU / 3.0
+				draw_arc(P.call(0.5, 0.52), s * 0.3, a0 + 0.25, a0 + TAU / 3.0 - 0.25, 10, Color(0.45, 0.8, 0.5), w * 1.2, true)
+				var tip: Vector2 = P.call(0.5, 0.52) + Vector2(cos(a0 + TAU / 3.0 - 0.25), sin(a0 + TAU / 3.0 - 0.25)) * s * 0.3
+				var fwd := Vector2(-sin(a0 + TAU / 3.0 - 0.25), cos(a0 + TAU / 3.0 - 0.25))
+				var side := Vector2(cos(a0 + TAU / 3.0 - 0.25), sin(a0 + TAU / 3.0 - 0.25))
+				_poly([tip + fwd * s * 0.12, tip + side * s * 0.09, tip - side * s * 0.09], Color(0.45, 0.8, 0.5))
+		"cemetery":
+			# A rounded headstone on a lawn.
+			_poly([P.call(0.06, 0.9), P.call(0.94, 0.9), P.call(0.94, 0.8), P.call(0.06, 0.8)], Color(0.5, 0.7, 0.4))
+			draw_rect(Rect2(P.call(0.3, 0.38), Vector2(0.4, 0.42) * s), Color(0.78, 0.78, 0.76))
+			draw_circle(P.call(0.5, 0.38), s * 0.2, Color(0.78, 0.78, 0.76))
+			line.call(P.call(0.5, 0.3), P.call(0.5, 0.6), w * 0.8, Color(0.35, 0.35, 0.36))
+			line.call(P.call(0.4, 0.4), P.call(0.6, 0.4), w * 0.8, Color(0.35, 0.35, 0.36))
 		"services":
 			draw_rect(Rect2(P.call(0.14, 0.4), Vector2(0.72, 0.5) * s), color, false, w)
 			_poly([P.call(0.08, 0.42), P.call(0.5, 0.1), P.call(0.92, 0.42)], Color(color, 0.6))
@@ -278,6 +324,23 @@ func _draw() -> void:
 				P.call(0.5, 0.1)]), color, w, true)
 			line.call(P.call(0.5, 0.38), P.call(0.5, 0.6), w * 1.2)
 			draw_circle(P.call(0.5, 0.72), s * 0.05, color)
+		"daynight":
+			# A sun and a moon.
+			draw_arc(P.call(0.42, 0.55), s * 0.2, 0, TAU, 24, color, w, true)
+			for k in 8:
+				var a := TAU * k / 8.0
+				var d := Vector2(cos(a), sin(a))
+				line.call(P.call(0.42, 0.55) + d * s * 0.28, P.call(0.42, 0.55) + d * s * 0.36, w * 0.8)
+			draw_circle(P.call(0.72, 0.3), s * 0.2, accent)
+			draw_arc(P.call(0.72, 0.3), s * 0.2, PI * 0.35, PI * 1.6, 16, color, w, true)
+		"seasons":
+			# A maple leaf outline, with a stem.
+			var leaf := PackedVector2Array([P.call(0.5, 0.1), P.call(0.6, 0.32), P.call(0.86, 0.26),
+				P.call(0.74, 0.5), P.call(0.9, 0.62), P.call(0.6, 0.64), P.call(0.5, 0.8),
+				P.call(0.4, 0.64), P.call(0.1, 0.62), P.call(0.26, 0.5), P.call(0.14, 0.26),
+				P.call(0.4, 0.32), P.call(0.5, 0.1)])
+			draw_polyline(leaf, color, w, true)
+			line.call(P.call(0.5, 0.4), P.call(0.5, 0.94))
 		"help":
 			draw_arc(P.call(0.5, 0.5), s * 0.4, 0, TAU, 32, color, w, true)
 			draw_arc(P.call(0.5, 0.4), s * 0.13, PI * 1.1, PI * 2.4, 16, color, w, true)
@@ -319,6 +382,12 @@ func _dash(P: Callable, x: float, col: Color, width: float) -> void:
 	for i in 4:
 		var y0 := 0.1 + i * 0.23
 		draw_line(P.call(x, y0), P.call(x, y0 + 0.12), col, width, true)
+
+
+static func _texture(file: String) -> Texture2D:
+	if not _textures.has(file):
+		_textures[file] = load("res://assets/brand/icons/%s.svg" % file)
+	return _textures[file]
 
 
 func _poly(points: Array, col: Color) -> void:

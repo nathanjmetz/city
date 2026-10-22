@@ -53,6 +53,9 @@ var legacy_outlines: Array = []
 ## Farms: id -> {pos, dir, crop, cells: Array of Vector2i in the farm's own
 ## frame, loss_streak, barn: bool, drive: Array of Vector3}
 var farms := {}
+## Fields a road has trimmed: farm id -> {cell: Array of outlines}. Worked
+## out again from the roads after every change (see RoadWins), not saved.
+var trim := {}
 var _next_id := 1
 ## Set by the city each time farms decide: the industrial property tax rate
 ## (percent) the land pays.
@@ -154,10 +157,21 @@ func field_at(p: Vector3) -> int:
 
 ## Acres farmed in the whole town.
 func total_acres() -> float:
-	var n := 0
+	var n := 0.0
 	for id in farms:
-		n += farms[id].cells.size()
+		for c in farms[id].cells:
+			n += share(id, c)
 	return n * ACRES_PER_CELL
+
+
+## How much of a field cell is left to farm (1 unless a road trimmed it).
+func share(id: int, c: Vector2i) -> float:
+	if not trim.has(id) or not trim[id].has(c):
+		return 1.0
+	var a := 0.0
+	for piece in trim[id][c]:
+		a += RoadWins.area(piece)
+	return a / (CELL * CELL)
 
 
 func jobs() -> int:

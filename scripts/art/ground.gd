@@ -18,6 +18,10 @@ uniform vec4 lush : source_color = vec4(0.29, 0.38, 0.17, 1.0);
 uniform vec4 dry : source_color = vec4(0.46, 0.46, 0.27, 1.0);
 uniform vec4 dark : source_color = vec4(0.20, 0.28, 0.12, 1.0);
 uniform vec4 soil : source_color = vec4(0.46, 0.40, 0.29, 1.0);
+uniform vec4 dormant : source_color = vec4(0.55, 0.49, 0.34, 1.0);
+// Set by DayNight: snow cover, and the season as (autumn, bare, spring, dry).
+global uniform float snow;
+global uniform vec4 season_look;
 
 varying vec3 world_pos;
 
@@ -45,9 +49,18 @@ void fragment() {
 	// Blade grain fades with distance so far fields don't shimmer.
 	float fade = clamp(1.0 - length(VERTEX) / 180.0, 0.0, 1.0);
 	col *= 1.0 + (grain - 0.5) * 0.4 * fade + (blades - 0.5) * 0.3 * fade * fade;
+	// Seasons: fresh vivid green in spring, tan dormant turf after the
+	// frosts (driest patches first), and snow cover in winter that thins
+	// where clumps of grass poke through.
+	col = mix(col, col * vec3(0.92, 1.12, 0.78), season_look.z);
+	float brown = clamp(season_look.w * 1.1 - (1.0 - dryness) * 0.3, 0.0, 0.85);
+	col = mix(col, dormant.rgb * (0.85 + big * 0.3) * (1.0 + (grain - 0.5) * 0.3 * fade), brown);
+	float cover = smoothstep(0.05, 0.45, snow * 1.15 - clump * 0.35 - (1.0 - mid) * 0.15 + 0.1);
+	vec3 snowy = vec3(0.80, 0.83, 0.88) * (0.94 + big * 0.08) * (1.0 + (blades - 0.5) * 0.08 * fade);
+	col = mix(col, snowy, cover);
 
 	ALBEDO = col;
-	ROUGHNESS = 0.92;
+	ROUGHNESS = mix(0.92, 0.75, cover);
 	SPECULAR = 0.25;
 }
 """

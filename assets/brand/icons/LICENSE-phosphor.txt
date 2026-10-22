@@ -1,0 +1,2 @@
+Phosphor Icons (MIT) — https://phosphoricons.com — Copyright (c) 2020-2023 Phosphor Icons
+Bold weight for idle state, Fill weight for the active/selected state.

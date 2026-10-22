@@ -4,12 +4,7 @@ extends SceneTree
 func _init() -> void:
 	var sim := CitySim.new()
 	sim.apply({"type": "build_road", "start": [-100, 0], "ctrl": [0, 0], "end": [100, 0]})
-	_check(sim.lots.size() >= 16, "lots along a 200 m road (got %d)" % sim.lots.size())
-	for key in sim.lots:
-		var lot: Dictionary = sim.lots[key]
-		var d := absf(lot.pos.z)
-		_check(d > RoadStyle.right_of_way_half() + 10.0, "lot %s sits back from the road" % key)
-		break
+	_check(sim.lots.is_empty(), "no lots until the street is zoned (got %d)" % sim.lots.size())
 	# Nothing grows until zoned.
 	for i in 40:
 		sim.tick()
@@ -18,12 +13,22 @@ func _init() -> void:
 	for x in range(-100, 101, 10):
 		sim.apply({"type": "paint_zone", "center": [x, -25], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
 		sim.apply({"type": "paint_zone", "center": [x, 25], "radius": 12, "zone": ZoneMap.Zone.INDUSTRIAL})
+	_check(sim.lots.size() >= 10, "lots along a 200 m road once zoned (got %d)" % sim.lots.size())
+	for key in sim.lots:
+		var lot: Dictionary = sim.lots[key]
+		var d := absf(lot.pos.z)
+		_check(d > RoadStyle.right_of_way_half() + 10.0, "lot %s sits back from the road" % key)
+		break
 	var zoned := sim.empty_zoned_lots().size()
 	_check(zoned == sim.lots.size(), "every lot zoned (%d of %d)" % [zoned, sim.lots.size()])
+	var home_lots := 0
+	for key in sim.lots:
+		if sim.zones.zone_at(sim.lots[key].zone_pt) == ZoneMap.Zone.RESIDENTIAL:
+			home_lots += 1
 	for i in 4000:
 		sim.tick()
-	_check(sim.count_buildings(ZoneMap.Zone.RESIDENTIAL) * 2 == sim.lots.size(),
-		"homes grow on every home lot while there are jobs (%d of %d)" % [sim.count_buildings(ZoneMap.Zone.RESIDENTIAL), sim.lots.size() / 2])
+	_check(sim.count_buildings(ZoneMap.Zone.RESIDENTIAL) == home_lots,
+		"homes grow on every home lot while there are jobs (%d of %d)" % [sim.count_buildings(ZoneMap.Zone.RESIDENTIAL), home_lots])
 	_check(sim.stats.population > 0 and sim.stats.employed > 0,
 		"people moved in and found jobs (%s)" % str(sim.stats))
 	_check(sim.count_buildings(ZoneMap.Zone.RESIDENTIAL) > 0 and sim.count_buildings(ZoneMap.Zone.INDUSTRIAL) > 0,
@@ -279,7 +284,19 @@ func _init() -> void:
 	var oil := CitySim.new()
 	oil.economy.money = 50_000_000
 	oil.apply({"type": "build_road", "start": [best.x - 400, best.z - 60], "ctrl": [best.x, best.z - 60], "end": [best.x + 400, best.z - 60]})
-	oil.apply({"type": "build_road", "start": [best.x + 400, best.z - 60], "ctrl": [best.x + 1200, best.z - 60], "end": [best.x + 2000, best.z - 60]})
+	oil.build_county_road(Vector2(best.x + 400, best.z - 60), Vector2(best.x + 2000, best.z - 60), [1])
+	_check(oil.region_links.size() == 1 and oil.is_link_segment(oil.network.segments_at(oil.region_links[0])[0])
+		and not oil.apply({"type": "remove_road", "seg": oil.network.segments_at(oil.region_links[0])[0]}),
+		"the county highway's way out can't be bulldozed")
+	var stub := CitySim.new()
+	stub.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
+	_check(stub.logistics._edge(stub).is_empty(), "a dead-end street isn't a way out of town")
+	var old_save := stub.to_dict()
+	old_save.erase("links")
+	var upgraded := CitySim.new()
+	upgraded.from_dict(JSON.parse_string(JSON.stringify(old_save)))
+	_check(upgraded.region_links.size() == 1 and absf(upgraded.network.nodes[upgraded.region_links[0]].x) > 2100.0,
+		"an older town gets a county highway out to the region")
 	_check(oil.industry_problem("oil", best + Vector3(0, 0, 900), Vector3(0, 0, -1)).begins_with("Needs a road")
 		or oil.industry_problem("oil", best + Vector3(0, 0, 900), Vector3(0, 0, -1)).begins_with("No crude"),
 		"a company needs a road and the resource nearby")
@@ -343,6 +360,28 @@ func _init() -> void:
 	none.decide(func(_m, _c): return true)
 	_check(none.sites[1].pads.is_empty() and str(none.sites[1].get("idle", "")).begins_with("No crude oil"),
 		"a company with no oil around says why")
+	# The road wins (Brawn): a road through the fields trims them to its edge.
+	var rw := CitySim.new()
+	rw.from_dict(JSON.parse_string(JSON.stringify(fm.to_dict())))
+	var rw_farm: Dictionary = rw.farms.farms[1]
+	var cut_z: float = rw_farm.pos.z + Farms.CELL * 2.3
+	var cells_before: int = rw_farm.cells.size()
+	rw.apply({"type": "paint_reserve", "kind": "", "points": [[-600, 10], [600, 10], [600, 700], [-600, 700]]})
+	_check(rw.apply({"type": "build_road", "start": [-900, cut_z], "ctrl": [0, cut_z], "end": [900, cut_z]}),
+		"a road can go through a farm's fields")
+	var on_road := false
+	for c in rw_farm.cells:
+		for poly in rw.farms.trim.get(1, {}).get(c, [Farms.cell_corners(rw_farm, c)]):
+			for q in poly:
+				on_road = on_road or absf(q.y - cut_z) < RoadStyle.right_of_way_half(0) + 0.5
+	_check(rw.farms.farms.has(1) and not on_road and not rw.farms.trim.get(1, {}).is_empty(),
+		"the fields stop at the road's edge (%d of %d cells left, %d trimmed)" % [rw_farm.cells.size(), cells_before, rw.farms.trim.get(1, {}).size()])
+	var twin_farm := CitySim.new()
+	twin_farm.from_dict(JSON.parse_string(JSON.stringify(rw.to_dict())))
+	_check(twin_farm.farms.trim.get(1, {}).size() == rw.farms.trim.get(1, {}).size(), "a reload trims the same fields")
+	var cash: int = rw.economy.money
+	rw.apply({"type": "build_road", "start": [-300, rw_farm.pos.z], "ctrl": [0, rw_farm.pos.z], "end": [300, rw_farm.pos.z]})
+	_check(not rw.farms.farms.has(1) and rw.economy.money > cash, "a road through the farmyard bulldozes it and pays it back")
 	# Old saves (roads only) come back zoned as homes.
 	var old := CitySim.new()
 	old.from_dict({"version": 1, "next_id": 4, "nodes": {"1": [-100, 0], "2": [100, 0]},

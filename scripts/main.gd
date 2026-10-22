@@ -15,6 +15,8 @@ var _tick_time := 0.0
 var speed := 1
 var _resume_speed := 1
 var _save_wait := 0.0
+## True until the whole town is built and drawn; the clock waits for it.
+var loading := true
 
 
 func _ready() -> void:
@@ -22,7 +24,8 @@ func _ready() -> void:
 		sim = Session.client.my_sim()
 		sim.send_command = Session.client.send_command
 	sim.require_utilities = true
-	add_child(SkyLight.new())
+	var sky := SkyLight.new()
+	add_child(sky)
 	add_child(Ground.new())
 
 	var roads := RoadView.new()
@@ -61,6 +64,10 @@ func _ready() -> void:
 	cars.setup(sim.traffic, _tick_fraction)
 	add_child(cars)
 
+	var look := DayNight.new()
+	look.setup(sim, sky, _tick_fraction)
+	add_child(look)
+
 	var signals := JunctionView.new()
 	signals.setup(sim.traffic)
 	add_child(signals)
@@ -91,6 +98,10 @@ func _ready() -> void:
 	var zone_tool := ZoneTool.new()
 	zone_tool.setup(sim, cam, zone_view)
 	add_child(zone_tool)
+
+	var hub_view := HubView.new()
+	hub_view.setup(sim)
+	add_child(hub_view)
 
 	var service_tool := ServiceTool.new()
 	service_tool.setup(sim, cam, service_view)
@@ -156,6 +167,8 @@ func _ready() -> void:
 	menu.game = self
 	hud.nothing_to_close.connect(menu.toggle)
 	add_child(menu)
+	_progress(0.35, "Laying out the land")
+	await get_tree().process_frame
 	if Session.online():
 		var region := RegionView.new()
 		region.setup(Session.client, cam, road_tool)
@@ -163,14 +176,41 @@ func _ready() -> void:
 		var chat := ChatPanel.new()
 		chat.setup(cam, region)
 		add_child(chat)
+		await _settle()
 		return
+	_progress(0.5, "Opening your town")
+	await get_tree().process_frame
 	if not _load():
 		_starter_road()
+	await _settle()
 	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed, sim.industry_changed]:
 		sig.connect(func(): _save_pending = true)
 
 
+## The loading screen (the branding thread's LoadingScreen), if one is up.
+func _progress(fraction: float, status := "") -> void:
+	var screen := get_tree().root.get_node_or_null("LoadingScreen")
+	if screen != null and screen.has_method("set_progress"):
+		screen.set_progress(fraction, status)
+
+
+## Gives every view a few frames to finish drawing the town (houses, farms,
+## industry, trees), then lifts the loading screen and starts the clock.
+func _settle() -> void:
+	_progress(0.75, "Building the town")
+	await get_tree().process_frame
+	_progress(0.9, "Planting trees")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var screen := get_tree().root.get_node_or_null("LoadingScreen")
+	if screen != null and screen.has_method("finish"):
+		screen.finish()
+	loading = false
+
+
 func _process(delta: float) -> void:
+	if loading:
+		return
 	if Session.online():
 		return  # The region's server steps the city.
 	_tick_time += delta * SPEEDS[speed]
@@ -230,7 +270,8 @@ func _starter_road() -> void:
 	if Session.new_city_difficulty != "":
 		sim.apply({"type": "set_difficulty", "difficulty": Session.new_city_difficulty})
 		Session.new_city_difficulty = ""
+	# A county highway runs through town and on to the region both ways.
+	sim.apply({"type": "build_county_road", "a": [-2000, 0], "b": [2000, 0], "links": [0, 1]})
 	var money := sim.economy.money
-	sim.apply({"type": "build_road", "start": [-400, 0], "ctrl": [-250, 0], "end": [-100, 0]})
 	sim.apply({"type": "build_road", "start": [-100, 0], "ctrl": [-20, 0], "end": [40, 60]})
 	sim.economy.money = money

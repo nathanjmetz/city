@@ -9,6 +9,8 @@ extends RefCounted
 
 signal buildings_changed
 signal lots_changed
+## Buildings removed because a road now runs through their lot (for refunds).
+signal parcels_lost(keys: Array)
 signal zones_changed
 ## Population, jobs or demand changed (at most every MOVE_EVERY ticks).
 signal stats_changed
@@ -47,6 +49,8 @@ var logistics := Logistics.new()
 var reserves := Reserves.new()
 ## Wild trees and brush, and how far cleared land has grown back.
 var vegetation := Vegetation.new()
+## Landfills, recycling and cemeteries, and the garbage trucks' rounds.
+var hubs := CivicHubs.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -54,6 +58,9 @@ var require_utilities := false
 ## (traffic doesn't touch the budget yet).
 var simulate_traffic := true
 var lots := {}       # lot key -> lot Dictionary (from LotPlanner)
+## Surveys lots from the roads and zones; lots with buildings are saved
+## parcels that stay put.
+var planner := LotPlanner.new()
 var buildings := {}  # lot key -> {"zone", "seed", "built", "cap", "occ"}
 var tick_count := 0
 var city_seed := 1
@@ -67,14 +74,24 @@ var demand := {ZoneMap.Zone.RESIDENTIAL: 0.6, ZoneMap.Zone.COMMERCIAL: 0.0, Zone
 ## in a tick, so every player applies them at the same moment.
 var send_command := Callable()
 
+## Road ends that lead on to the rest of the region (there's no map edge):
+## the county highway's far ends. Trade, imports and through traffic come
+## and go here, and nowhere else. Node ids.
+var region_links: Array = []
+
 var _lots_dirty := true
+## Roads changed since the world last made way for them (see RoadWins).
+var _roads_moved := false
 var _usable_cache := {}  # field cell -> bool, cleared when roads or lots change
 
 
 func _init() -> void:
+	planner.wealth = wealth_at
 	farms.reserves = reserves
 	industry.reserves = reserves
-	network.changed.connect(func(): _lots_dirty = true)
+	network.changed.connect(func():
+		_lots_dirty = true
+		_roads_moved = true)
 	vegetation.watch(self)
 
 
@@ -196,6 +213,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			ok = services.buildings.has(int(cmd.id))
 			services.buildings.erase(int(cmd.id))
 			_lots_dirty = true
+		"place_hub", "upgrade_hub", "remove_hub":
+			ok = _hub_command(cmd)
 		"set_difficulty":
 			# A city that hasn't started yet also gets that difficulty's start money.
 			ok = economy.set_difficulty(str(cmd.difficulty), tick_count == 0 and network.segments.size() <= 2)
@@ -206,21 +225,44 @@ func apply_now(cmd: Dictionary) -> bool:
 			if economy.set_tax(int(cmd.zone), float(cmd.rate)):
 				update_stats()
 			return true
+		"build_county_road":
+			ok = not _county_road(Vector2(cmd.a[0], cmd.a[1]), Vector2(cmd.b[0], cmd.b[1]), cmd.get("links", [])).has(-1)
 		"remove_road":
-			ok = network.segments.has(int(cmd.seg))
-			network.remove_segment(int(cmd.seg))
+			ok = network.segments.has(int(cmd.seg)) and not is_link_segment(int(cmd.seg))
+			if ok:
+				network.remove_segment(int(cmd.seg))
 		"paint_zone":
 			zones.paint(_v(cmd.center), float(cmd.radius), int(cmd.zone))
 			_clear_reserved_zones(_v(cmd.center), float(cmd.radius) + ZoneMap.CELL)
 			_usable_cache.clear()
+			_lots_dirty = true
+			ok = true
+		"zone_frontage":
+			# Zones a whole block face: one side of a street from junction to
+			# junction ("both" does the other side too).
+			if not network.segments.has(int(cmd.seg)):
+				return false
+			planner.update(network)
+			var sides := [int(cmd.side)]
+			if bool(cmd.get("both", false)):
+				sides.append(-int(cmd.side))
+			for side in sides:
+				for part in frontage_chain(int(cmd.seg), side):
+					_paint_frontage(part[0], part[1], int(cmd.zone))
+			_clear_reserved_zones()
+			_usable_cache.clear()
+			_lots_dirty = true
 			ok = true
 		"set_junction":
 			# Traffic lights, stop signs or none at a junction (-1 = automatic).
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
 		"clear":
+			region_links.clear()
 			traffic.overrides.clear()
 			network.clear()
 			zones.cells.clear()
+			planner = LotPlanner.new()
+			planner.wealth = wealth_at
 			var diff := economy.difficulty
 			economy = Economy.new()
 			economy.set_difficulty(diff, true)
@@ -229,6 +271,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			industry = Industry.new()
 			logistics = Logistics.new()
 			reserves = Reserves.new()
+			hubs = CivicHubs.new()
 			farms.reserves = reserves
 			industry.reserves = reserves
 			vegetation.reset()
@@ -236,10 +279,105 @@ func apply_now(cmd: Dictionary) -> bool:
 			industry_changed.emit()
 			ok = true
 	if ok:
+		if _roads_moved:
+			_road_wins()
 		_refresh()
 		zones_changed.emit()
 		command_applied.emit(cmd)
 	return ok
+
+
+## Saves from before region links: trucks used to leave by the dead end
+## farthest from the middle of town, so a county highway now runs on from
+## there 2 km toward the region, and its far end is the town's way out.
+func _guess_link() -> void:
+	if network.nodes.is_empty():
+		return
+	var mid := Vector3.ZERO
+	for n in network.nodes:
+		mid += network.nodes[n]
+	mid /= network.nodes.size()
+	var best := -1
+	var best_d := -1.0
+	var ids := network.nodes.keys()
+	ids.sort()
+	for n in ids:
+		if network.segments_at(n).size() == 1 and network.nodes[n].distance_to(mid) > best_d + 0.01:
+			best_d = network.nodes[n].distance_to(mid)
+			best = n
+	if best == -1:
+		return
+	var seg: Dictionary = network.segments[network.segments_at(best)[0]]
+	var end: Vector3 = network.nodes[best]
+	var out: Vector3 = end - seg.ctrl
+	out.y = 0.0
+	if out.length() < 0.1:
+		out = end - mid
+	out = out.normalized() * 2000.0
+	_county_road(Vector2(end.x, end.z), Vector2(end.x + out.x, end.z + out.z), [1])
+
+
+## The road wins (Brawn): whatever a new road runs through makes way for it.
+## Buildings the player paid for are bulldozed and paid back, fields are
+## trimmed to the road's edge, cut lanes find the nearest road again, and
+## pads that are hit close (the company reopens them elsewhere).
+func _road_wins() -> void:
+	_roads_moved = false
+	_usable_cache.clear()
+	var corr := RoadWins.corridors(network, RoadWins.BUILDING_SLACK)
+	var field_corr := RoadWins.corridors(network, RoadWins.VERGE)
+	var ids := services.buildings.keys()
+	ids.sort()
+	for id in ids:
+		if RoadWins.hits(corr, services.footprint(id)):
+			economy.money += int(Services.KINDS[services.buildings[id].kind].cost)
+			services.buildings.erase(id)
+			_lots_dirty = true
+	var lane_end := RoadStyle.right_of_way_half(RoadStyle.Type.BOULEVARD) + RoadWins.VERGE + 4.0
+	ids = farms.farms.keys()
+	ids.sort()
+	farms.trim.clear()
+	for id in ids:
+		var f: Dictionary = farms.farms[id]
+		if RoadWins.hits(corr, farms._yard(f)):
+			economy.money += Farms.FARMHOUSE_COST
+			farms.farms.erase(id)
+			continue
+		for c in f.cells.duplicate():
+			var cell := Farms.cell_corners(f, c)
+			if not RoadWins.hits(field_corr, cell):
+				continue
+			var left := RoadWins.clip(field_corr, cell)
+			var kept := 0.0
+			for piece in left:
+				kept += RoadWins.area(piece)
+			if kept < RoadWins.MIN_FIELD_SHARE * Farms.CELL * Farms.CELL:
+				f.cells.erase(c)
+			else:
+				if not farms.trim.has(id):
+					farms.trim[id] = {}
+				farms.trim[id][c] = left
+		if RoadWins.cuts(corr, f.drive, lane_end):
+			var lane := farm_drive(f.pos, f.dir)
+			if not lane.is_empty():
+				f.drive = lane
+	ids = industry.sites.keys()
+	ids.sort()
+	for id in ids:
+		var s: Dictionary = industry.sites[id]
+		if RoadWins.hits(corr, industry._yard(s)):
+			economy.money += int(Industry.KINDS[s.kind].cost)
+			industry.sites.erase(id)
+			continue
+		for c in s.pads.duplicate():
+			if RoadWins.hits(corr, Industry.pad_corners(s, c)):
+				s.pads.erase(c)
+		if RoadWins.cuts(corr, s.drive, lane_end):
+			var lane := industry_drive(s.pos, s.dir)
+			if not lane.is_empty():
+				s.drive = lane
+	farms_changed.emit()
+	industry_changed.emit()
 
 
 func tick() -> void:
@@ -265,6 +403,8 @@ func tick() -> void:
 	# Taxes come in and upkeep goes out every game hour, a day settling a month.
 	if tick_count % TICKS_PER_HOUR == 0:
 		economy.money += roundi(economy.monthly_net() / 24.0)
+	# Before logistics, which clears Traffic's arrivals.
+	hubs.tick(self)
 	if not simulate_traffic:
 		return
 	logistics.tick(self)
@@ -274,8 +414,12 @@ func tick() -> void:
 
 
 ## Game time as a Dictionary (year, month, day, weekday, hour, minute).
+## A game day settles a month, so the month and year follow Seasons.
 func clock() -> Dictionary:
-	return Time.get_datetime_dict_from_unix_time(START_UNIX + tick_count * MINUTES_PER_TICK * 60)
+	var t := Time.get_datetime_dict_from_unix_time(START_UNIX + tick_count * MINUTES_PER_TICK * 60)
+	t.month = Seasons.month(tick_count)
+	t.year = Seasons.year(tick_count)
+	return t
 
 
 ## Recounts people and jobs, then works out demand the way Cities: Skylines
@@ -430,11 +574,42 @@ func industry_drive(pos: Vector3, dir: Vector3) -> Array:
 	return Farms.make_drive(pos, dir, near.point)
 
 
+## Places, upgrades or removes a landfill, recycling centre or cemetery.
+func _hub_command(cmd: Dictionary) -> bool:
+	if cmd.type == "place_hub":
+		var kind := str(cmd.get("kind", ""))
+		var pos := _v(cmd.pos)
+		var dir := _v(cmd.dir).normalized()
+		# Recycling starts as a drop-off yard; the bigger plants are upgrades.
+		if not kind in CivicHubs.TOOL_KINDS.values() or dir.length() < 0.5:
+			return false
+		var cost := int(Balance.WASTE_SITES[kind].cost)
+		if cost > economy.money or hubs.site_problem(self, kind, pos, dir) != "":
+			return false
+		var id := hubs.add(kind, pos, dir, tick_count)
+		economy.money -= cost
+		for c in hubs.hubs[id].cells:
+			_clear_zones_under(CivicHubs.cell_poly(hubs.hubs[id], c))
+	elif cmd.type == "upgrade_hub":
+		var id := int(cmd.id)
+		if not hubs.hubs.has(id):
+			return false
+		var cost := CivicHubs.upgrade_cost(hubs.hubs[id].kind)
+		if cost <= 0 or cost > economy.money or not hubs.upgrade(id):
+			return false
+		economy.money -= cost
+	else:
+		if not hubs.remove(int(cmd.id)):
+			return false
+	_lots_dirty = true
+	return true
+
+
 ## Zoning under a new building goes away, as in Cities: Skylines 2.
 func _clear_zones_under(poly: PackedVector2Array) -> void:
 	for c in zones.cells.keys():
 		if Geometry2D.is_point_in_polygon(Vector2((c.x + 0.5) * ZoneMap.CELL, (c.y + 0.5) * ZoneMap.CELL), poly):
-			zones.cells.erase(c)
+			zones.erase_cell(c)
 
 
 ## Zoning never stays on reserved land.
@@ -445,7 +620,7 @@ func _clear_reserved_zones(near := Vector3.INF, reach := 0.0) -> void:
 		if near != Vector3.INF and Vector2((c.x + 0.5) * ZoneMap.CELL - near.x, (c.y + 0.5) * ZoneMap.CELL - near.z).length() > reach:
 			continue
 		if reserves.kind_at(Vector3((c.x + 0.5) * ZoneMap.CELL, 0.0, (c.y + 0.5) * ZoneMap.CELL)) != "":
-			zones.cells.erase(c)
+			zones.erase_cell(c)
 
 
 ## The gravel lane from a farmhouse to the nearest road, or [] if no road is
@@ -468,7 +643,8 @@ func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
 		pts.append(mid.lerp(Vector3(c.x, 0.0, c.y), 0.8))
 	if ok:
 		for p in pts:
-			if services.covers(p) or farms.covers(p) or industry.covers(p) or farms.field_at(p) != -1:
+			if services.covers(p) or farms.covers(p) or industry.covers(p) or farms.field_at(p) != -1 \
+					or hubs.covers(p):
 				ok = false
 	if ok:
 		for key2 in lots:
@@ -577,17 +753,89 @@ func count_buildings(zone: int) -> int:
 	return n
 
 
+## The street sides that make one block face with this one: the same side,
+## followed through bends where only two roads meet, up to real junctions.
+## Returns [[seg, side], ...].
+func frontage_chain(seg: int, side: int) -> Array:
+	var out := [[seg, side]]
+	var seen := {seg: true}
+	for from_b in [true, false]:
+		var cur := seg
+		var cur_side := side
+		var at_b: bool = from_b
+		while true:
+			var node: int = network.segments[cur].b if at_b else network.segments[cur].a
+			var here := network.segments_at(node)
+			if here.size() != 2:
+				break
+			var nxt: int = here[0] if here[1] == cur else here[1]
+			if seen.has(nxt) or not RoadStyle.TYPES[network.segments[nxt].type].lots:
+				break
+			seen[nxt] = true
+			# Sides are left or right of a road's a-to-b direction, so they
+			# swap when the next road runs the other way.
+			var same_way: bool = (network.segments[nxt].a == node) == at_b
+			cur_side = cur_side if same_way else -cur_side
+			at_b = network.segments[nxt].a == node
+			cur = nxt
+			out.append([cur, cur_side])
+	return out
+
+
+## Paints a zone along one street side's frontage, where its lots read it.
+func _paint_frontage(seg: int, side: int, zone: int) -> void:
+	var s := planner.side_survey(network, seg, side)
+	if s.is_empty():
+		return
+	# A strip from the sidewalk back about 17 m, so the zone stays when the
+	# street is widened later (a Street to a Boulevard moves lots 8.5 m).
+	for r in s.rays:
+		if r[3] >= 3.0:
+			var p: Vector2 = (r[1] as Vector2) + (r[2] as Vector2) * LotPlanner.ZONE_PROBE
+			zones.paint(Vector3(p.x, 0.0, p.y), 4.5, zone)
+		if r[3] >= 18.0:
+			var q: Vector2 = (r[1] as Vector2) + (r[2] as Vector2) * 12.0
+			zones.paint(Vector3(q.x, 0.0, q.y), 5.5, zone)
+
+
+## How well-off the neighbourhood at a point is, 0 to 1. Lot platting reads
+## it (wealthier streets get wider lots). Neutral until land value and
+## neighbourhood success are simulated.
+func wealth_at(_p: Vector2) -> float:
+	return 0.5
+
+
+func _lot_blocked(lot: Dictionary) -> bool:
+	for p in [lot.pos, lot.front, lot.zone_pt]:
+		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) \
+				or reserves.kind_at(p) != "" or hubs.covers(p):
+			return true
+	return false
+
+
 func _refresh() -> void:
 	if _lots_dirty:
 		_lots_dirty = false
-		lots.clear()
-		for lot in LotPlanner.plan(network):
+		planner.update(network)
+		# Lots with buildings are parcels: they stay as they are unless a road
+		# now runs through them.
+		var frozen := {}
+		var lost := []
+		var keys := buildings.keys()
+		keys.sort()
+		for key in keys:
+			if lots.has(key):
+				var lot := planner.revalidate(network, lots[key])
+				if not lot.is_empty() and not _lot_blocked(lot):
+					frozen[key] = lot
+				else:
+					lost.append(key)
+		lots = frozen.duplicate()
+		if not lost.is_empty():
+			parcels_lost.emit(lost)
+		for lot in planner.plan(network, zones, frozen):
 			# No lots under a service building.
-			var blocked := false
-			for p in [lot.pos, lot.front, lot.zone_pt]:
-				blocked = blocked or services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) \
-					or reserves.kind_at(p) != ""
-			if not blocked:
+			if not _lot_blocked(lot):
 				lots[lot.key] = lot
 		_usable_cache.clear()
 		services.update(network, lots, buildings)
@@ -710,21 +958,69 @@ static func capacity(zone: int, bseed: int) -> int:
 
 # --- Saving (also the future network format) --------------------------------
 
+## True for the piece of county highway that runs off to the region: it
+## can't be bulldozed, or the town would lose its way out.
+func is_link_segment(seg_id: int) -> bool:
+	var s: Dictionary = network.segments.get(seg_id, {})
+	return not s.is_empty() and (s.a in region_links or s.b in region_links)
+
+
+## The county highway a new city starts on (no map edge): a two-lane road
+## from a to b (metres, city-local) in pieces of about 400 m, free of charge.
+## The ends listed in link_ends (0 for a, 1 for b) lead on to the region.
+## Returns the node ids at a and b. A command, so every copy builds it.
+func build_county_road(a: Vector2, b: Vector2, link_ends: Array) -> Array:
+	apply_now({"type": "build_county_road", "a": [a.x, a.y], "b": [b.x, b.y], "links": link_ends})
+	return [network.find_node_near(Vector3(a.x, 0, a.y), 1.0), network.find_node_near(Vector3(b.x, 0, b.y), 1.0)]
+
+
+func _county_road(a: Vector2, b: Vector2, link_ends: Array) -> Array:
+	var money := economy.money
+	var n := maxi(1, ceili(a.distance_to(b) / 400.0))
+	var pts := []
+	for i in n + 1:
+		var p := a.lerp(b, float(i) / n)
+		pts.append(Vector3(p.x, 0.0, p.y))
+	network.begin_batch()
+	for i in n:
+		network.build_road(pts[i], (pts[i] + pts[i + 1]) * 0.5, pts[i + 1], RoadStyle.Type.STREET)
+	network.end_batch()
+	economy.money = money
+	var ends := [network.find_node_near(pts[0], 1.0), network.find_node_near(pts[-1], 1.0)]
+	for i in link_ends:
+		if ends[int(i)] != -1 and not ends[int(i)] in region_links:
+			region_links.append(ends[int(i)])
+	return ends
+
+
+func _parcels_to_save() -> Dictionary:
+	var out := {}
+	var keys := buildings.keys()
+	keys.sort()
+	for key in keys:
+		if lots.has(key):
+			out[key] = LotPlanner.lot_to_save(lots[key])
+	return out
+
+
 func to_dict() -> Dictionary:
 	vegetation.update(self)  # land cleared since the last tick counts
 	return {
 		"version": 2,
+		"links": region_links,
 		"tick": tick_count,
 		"seed": city_seed,
 		"roads": network.to_dict(),
 		"zones": zones.to_dict(),
 		"buildings": buildings,
+		"parcels": _parcels_to_save(),
 		"economy": economy.to_dict(),
 		"services": services.to_dict(),
 		"farms": farms.to_dict(),
 		"industry": industry.to_dict(),
 		"logistics": logistics.to_dict(),
 		"reserves": reserves.to_dict(),
+		"hubs": hubs.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
 		"vegetation": vegetation.to_dict(),
@@ -733,15 +1029,24 @@ func to_dict() -> Dictionary:
 
 func from_dict(d: Dictionary) -> void:
 	vegetation.from_dict(d.get("vegetation", {}))
+	planner = LotPlanner.new()
+	planner.wealth = wealth_at
 	if d.has("roads"):
 		network.from_dict(d.roads)
 		zones.from_dict(d.get("zones", {}))
+		region_links.clear()
+		if d.has("links"):
+			for n in d.links:
+				region_links.append(int(n))
+		else:
+			_guess_link()
 	else:
 		# Version 1 saves were just roads, with houses on every lot.
 		network.from_dict(d)
-		_refresh()
-		for key in lots:
-			zones.paint(lots[key].zone_pt, 3.0, ZoneMap.Zone.RESIDENTIAL)
+		planner.update(network)
+		for id in network.segments:
+			for side in [-1, 1]:
+				_paint_frontage(id, side, ZoneMap.Zone.RESIDENTIAL)
 	_upgrade_old_rings()
 	economy.from_dict(d.get("economy", {}))
 	services.from_dict(d.get("services", {}))
@@ -749,6 +1054,7 @@ func from_dict(d: Dictionary) -> void:
 	industry.from_dict(d.get("industry", {}))
 	logistics.from_dict(d.get("logistics", {}))
 	reserves.from_list(d.get("reserves", []))
+	hubs.from_dict(d.get("hubs", {}))
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:
@@ -759,6 +1065,17 @@ func from_dict(d: Dictionary) -> void:
 	traffic.from_dict(d.get("traffic", {}))
 	tick_count = int(d.get("tick", 0))
 	city_seed = int(d.get("seed", 1))
+	# Parcels: the lots buildings stand on.
+	planner.update(network)
+	lots.clear()
+	var parcels: Dictionary = d.get("parcels", {})
+	for key in parcels:
+		lots[key] = LotPlanner.lot_from_save(parcels[key])
+	if not d.has("parcels"):
+		# Saves from before natural lots: their buildings keep the old lots.
+		for lot in LotPlanner.legacy_plan(network):
+			lot.sig = planner.sig_of(lot.seg)
+			lots[lot.key] = lot
 	buildings.clear()
 	for key in d.get("buildings", {}):
 		var b: Dictionary = d.buildings[key]
@@ -767,6 +1084,7 @@ func from_dict(d: Dictionary) -> void:
 		# Older saves had no residents yet: assume the homes were full.
 		buildings[key] = {"zone": z, "seed": int(b.seed), "built": int(b.built), "cap": cap,
 			"occ": int(b.get("occ", cap if z == ZoneMap.Zone.RESIDENTIAL else 0))}
+	_road_wins()
 	_lots_dirty = true
 	_refresh()
 	update_stats()

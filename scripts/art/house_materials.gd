@@ -11,7 +11,13 @@ shader_type spatial;
 render_mode cull_disabled;
 uniform sampler2D noise_soft : filter_linear_mipmap, repeat_enable;
 uniform sampler2D noise_grain : filter_linear_mipmap, repeat_enable;
+// Set by DayNight: how dark it is, how much snow lies, and the share of
+// rooms with a light on.
+global uniform float night;
+global uniform float snow;
+global uniform float windows_lit;
 varying vec3 world_pos;
+varying vec3 world_normal;
 vec3 lin(vec3 c) {
 	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
 }
@@ -20,6 +26,14 @@ float hash(vec2 p) {
 }
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
+}
+// Snow lying on anything that faces up: thickest on gentle slopes, thinning
+// in patches where it has slid or melted.
+float snow_cover(float slope_from, float slope_to) {
+	float up = smoothstep(slope_from, slope_to, world_normal.y);
+	float patchy = texture(noise_soft, world_pos.xz / 6.0).r;
+	return up * smoothstep(0.15, 0.55, snow * 0.9 + patchy * 0.35 - 0.1);
 }
 """
 
@@ -33,7 +47,9 @@ void fragment() {
 	float f = fract(t);
 	float s = mix(1.0 - depth * 0.5, 1.03, smoothstep(0.0, 0.85, f));
 	s *= 1.0 - depth * (1.0 - smoothstep(0.0, 0.07, f));
-	s = mix(s, 1.0 - depth * 0.4, clamp(fwidth(t) * 1.5, 0.0, 1.0));
+	// Fade the pattern out before it gets smaller than two pixels, so it
+	// never shimmers while the camera moves.
+	s = mix(s, 1.0 - depth * 0.4, smoothstep(0.12, 0.45, fwidth(t)));
 	// Dirt splashed up near the ground, and faint weathering.
 	float grime = 1.0 - 0.12 * (1.0 - smoothstep(0.3, 1.5, UV.y));
 	float n = texture(noise_soft, world_pos.xz / 9.0 + world_pos.y / 13.0).r;
@@ -52,7 +68,7 @@ void fragment() {
 	float x = UV.x / 0.2032 + 0.5 * mod(row, 2.0);
 	float fx = fract(x);
 	float fy = fract(t);
-	float aa = clamp(max(fwidth(t), fwidth(x)) * 1.5, 0.0, 1.0);
+	float aa = smoothstep(0.12, 0.45, max(fwidth(t), fwidth(x)));
 	float joint = max(1.0 - smoothstep(0.0, 0.14, fy), 1.0 - smoothstep(0.0, 0.05, min(fx, 1.0 - fx)));
 	joint = mix(joint, 0.16, aa);
 	float tint = mix(0.84 + hash(vec2(row, floor(x))) * 0.3, 1.0, aa);
@@ -73,7 +89,7 @@ void fragment() {
 	float x = UV.x / 0.333 + 0.5 * mod(row, 2.0) + hash(vec2(row, 3.0)) * 0.2;
 	float fx = fract(x);
 	float fy = fract(t);
-	float aa = clamp(max(fwidth(t), fwidth(x)) * 1.2, 0.0, 1.0);
+	float aa = smoothstep(0.12, 0.45, max(fwidth(t), fwidth(x)));
 	float tint = 0.86 + hash(vec2(row, floor(x))) * 0.26;
 	float edge = mix(0.62, 1.0, smoothstep(0.0, 0.16, fy));
 	float slot = 1.0 - (1.0 - smoothstep(0.0, 0.025, min(fx, 1.0 - fx))) * 0.35;
@@ -83,8 +99,11 @@ void fragment() {
 	float streak = smoothstep(0.62, 0.8, texture(noise_soft, vec2(world_pos.x / 2.0, world_pos.y / 30.0)).r);
 	vec3 col = lin(COLOR.rgb) * s * (0.9 + w * 0.2) * (1.0 - streak * 0.18);
 	col *= 0.94 + texture(noise_grain, UV * 3.0).r * 0.12 * (1.0 - aa);
+	// Winter: snow on the roof, with the tab lines showing faintly through.
+	float cover = snow_cover(0.35, 0.6);
+	col = mix(col, vec3(0.86, 0.88, 0.92) * (0.95 + s * 0.05), cover);
 	ALBEDO = col;
-	ROUGHNESS = 0.9;
+	ROUGHNESS = mix(0.9, 0.7, cover);
 	SPECULAR = 0.3;
 }
 """
@@ -99,9 +118,20 @@ void fragment() {
 	vec3 col = mix(room, lin(COLOR.rgb) * 0.3 * slat, blinds);
 	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
 	vec3 sky = mix(vec3(0.20, 0.26, 0.34), vec3(0.45, 0.52, 0.60), UV.y);
+	sky *= 1.0 - night * 0.85;
 	ALBEDO = mix(col, sky, 0.12 + 0.55 * fres);
 	ROUGHNESS = 0.08;
 	SPECULAR = 0.6;
+	// After dark some rooms have a light on: one pick per window-sized patch
+	// of wall and per floor, warm lamps mostly, the odd cool TV glow.
+	vec2 cell = vec2(floor(dot(world_pos.xz, vec2(0.7071, 0.7071)) / 2.6), floor(world_pos.y / 2.9));
+	cell += floor(dot(world_pos.xz, vec2(-0.7071, 0.7071)) / 2.6) * 17.0;
+	float pick = hash(cell);
+	float on = step(pick, windows_lit) * smoothstep(0.2, 0.6, night);
+	vec3 warm = mix(vec3(1.0, 0.62, 0.3), vec3(1.0, 0.78, 0.5), hash(cell + 3.1));
+	vec3 lamp = mix(warm, vec3(0.55, 0.7, 1.0), step(0.9, hash(cell + 7.7)));
+	// Light through blinds is dimmer and softer.
+	EMISSION = lamp * on * mix(2.2, 1.1, blinds) * (0.8 + 0.4 * UV.y);
 }
 """
 
@@ -116,6 +146,7 @@ void fragment() {
 	float along = UV.y * 4.0;
 	float d = abs(fract(along / 3.0 + 0.5) - 0.5) * 3.0;
 	float joint = 1.0 - smoothstep(0.01, 0.01 + fwidth(along) * 1.5, d);
+	joint *= clamp(0.02 / max(fwidth(along), 0.0001), 0.0, 1.0);  // thinner than a pixel: fade
 	float stain = smoothstep(0.55, 0.85, texture(noise_soft, p / 4.0).r);
 	float grain = texture(noise_grain, p / 0.6).r;
 	vec3 drive = concrete.rgb * (1.0 - stain * 0.12) * (1.0 - joint * 0.4 * close) * (0.95 + grain * 0.1);
@@ -143,11 +174,12 @@ void fragment() {
 	float f = fract(t);
 	float rib = smoothstep(0.0, 0.08, f) * (1.0 - smoothstep(0.16, 0.24, f));
 	float s = 1.0 - 0.18 * (1.0 - smoothstep(0.24, 0.3, f)) + rib * 0.12;
-	s = mix(s, 0.97, clamp(fwidth(t) * 1.5, 0.0, 1.0));
+	s = mix(s, 0.97, smoothstep(0.12, 0.45, fwidth(t)));
 	float streak = texture(noise_soft, vec2(world_pos.x + world_pos.z, world_pos.y * 0.15) / 6.0).r;
 	float grime = 1.0 - 0.1 * (1.0 - smoothstep(0.2, 1.2, world_pos.y));
-	ALBEDO = lin(COLOR.rgb) * s * grime * (0.93 + streak * 0.12);
-	ROUGHNESS = 0.45;
+	float cover = snow_cover(0.8, 0.95);
+	ALBEDO = mix(lin(COLOR.rgb) * s * grime * (0.93 + streak * 0.12), vec3(0.86, 0.88, 0.92), cover);
+	ROUGHNESS = mix(0.45, 0.7, cover);
 	SPECULAR = 0.5;
 }
 """
@@ -167,11 +199,25 @@ void fragment() {
 	float gap = step(0.12, hash(vec2(i, 3.3 + COLOR.g * 31.0)));
 	float band = step(0.12, nx) * step(nx, 0.88);
 	float text = inside * on * gap * band;
-	float aa = clamp(fwidth(UV.x / pitch) * 3.0, 0.0, 1.0);
+	float aa = smoothstep(0.08, 0.3, fwidth(UV.x / pitch));
 	text = mix(text, 0.3 * band * step(0.25, UV.y) * step(UV.y, 0.78), aa);
 	ALBEDO = mix(lin(COLOR.rgb), vec3(0.86, 0.84, 0.79), text);
 	ROUGHNESS = 0.4;
 	SPECULAR = 0.5;
+	// Lit signs after dark: bright letters on a softly glowing panel.
+	EMISSION = mix(lin(COLOR.rgb) * 0.5, vec3(1.0, 0.95, 0.85) * 2.0, text) * smoothstep(0.3, 0.6, night);
+}
+"""
+
+## Plain vertex colour (paint, trim, flat membrane roofs, shrubs), with snow
+## on whatever faces straight up.
+const PLAIN := """
+uniform float rough = 0.55;
+void fragment() {
+	float cover = snow_cover(0.88, 0.97);
+	ALBEDO = mix(lin(COLOR.rgb), vec3(0.86, 0.88, 0.92), cover);
+	ROUGHNESS = mix(rough, 0.7, cover);
+	SPECULAR = 0.4;
 }
 """
 
@@ -211,10 +257,7 @@ static func _shader(body: String) -> ShaderMaterial:
 	return mat
 
 
-static func _plain(roughness: float) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.vertex_color_use_as_albedo = true
-	m.vertex_color_is_srgb = true
-	m.roughness = roughness
-	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+static func _plain(roughness: float) -> ShaderMaterial:
+	var m := _shader(PLAIN)
+	m.set_shader_parameter("rough", roughness)
 	return m

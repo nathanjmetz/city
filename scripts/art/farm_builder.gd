@@ -15,6 +15,7 @@ const BARN_RED := ["#7d2a20", "#8a2f22", "#6f2620", "#933a2a"]
 const GALV := Color("#9a9fa2")
 const BIN := Color("#c3c7c8")
 const STAVE := Color("#bdb7aa")
+const YARD_GRAVEL := Color("#b5ad9c")  # crushed limestone, pale in the sun
 
 
 ## [house mesh, ground mesh, trees] for a farmstead at growth stage `look`
@@ -29,7 +30,7 @@ static func build_farmstead(seed: int, look: int) -> Array:
 
 
 func _farmstead(look: int) -> void:
-	_flat_rect("gravel", -18, 18, -20, 20, 0.08, GRAVEL)
+	_flat_rect("gravel", -18, 18, -20, 20, 0.08, YARD_GRAVEL)
 	_farmhouse(-10.0, -12.0)
 	if look >= 1:
 		_barn(6.0, 6.0, 14.0, 20.0)
