@@ -27,7 +27,7 @@ func _sync() -> void:
 			_nodes.erase(id)
 			_shapes.erase(id)
 	for id in sim.warehouses.buildings:
-		if not _nodes.has(id):
+		if not _nodes.has(id) and not Warehouses.is_store(sim.warehouses.buildings[id]):
 			var w: Dictionary = sim.warehouses.buildings[id]
 			_nodes[id] = _spawn(id, w)
 			_shapes[id] = [w.kind, w.level, w.bays]

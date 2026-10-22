@@ -49,7 +49,7 @@ var _hubs_version := -1
 func watch(sim: Object) -> void:
 	_sim = sim
 	for sig in [sim.buildings_changed, sim.lots_changed, sim.farms_changed, sim.industry_changed, sim.warehouses_changed,
-			sim.network.changed]:
+			sim.parks_changed, sim.network.changed]:
 		sig.connect(_mark)
 
 
@@ -127,9 +127,9 @@ static func cell_of(p: Vector3) -> Vector2i:
 
 ## Everything the city has standing on the land, each under a key that
 ## changes when it moves, with a Callable that lists its cells: roads with
-## their sidewalks and verges, built lots, service buildings, warehouses, landfills and cemeteries,
-## farmyards and fields, industry pads and lanes. Empty zoned lots keep their trees until
-## something is built there.
+## their sidewalks and verges, built lots, service buildings, warehouses,
+## parks, landfills and cemeteries, farmyards and fields, industry pads and
+## lanes. Empty zoned lots keep their trees until something is built there.
 static func sources(sim: Object) -> Dictionary:
 	var out := {}
 	var net: RoadNetwork = sim.network
@@ -156,6 +156,9 @@ static func sources(sim: Object) -> Dictionary:
 	for id in sim.warehouses.buildings:
 		var poly: PackedVector2Array = sim.warehouses.footprint(id)
 		out["w%d %s" % [id, poly]] = _poly_cells.bind(poly)
+	for id in sim.parks.sites:
+		var poly: PackedVector2Array = sim.parks.footprint(id)
+		out["p%d %s" % [id, poly]] = _poly_cells.bind(poly)
 	for id in sim.hubs.hubs:
 		var h: Dictionary = sim.hubs.hubs[id]
 		for cell in h.cells:
