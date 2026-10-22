@@ -20,9 +20,12 @@ func _init() -> void:
 		sim.apply({"type": "paint_zone", "center": [x, 25], "radius": 12, "zone": ZoneMap.Zone.INDUSTRIAL})
 	var zoned := sim.empty_zoned_lots().size()
 	_check(zoned == sim.lots.size(), "every lot zoned (%d of %d)" % [zoned, sim.lots.size()])
-	for i in 400:
+	for i in 4000:
 		sim.tick()
-	_check(sim.buildings.size() == sim.lots.size(), "buildings grow on every zoned lot")
+	_check(sim.count_buildings(ZoneMap.Zone.RESIDENTIAL) * 2 == sim.lots.size(),
+		"homes grow on every home lot while there are jobs (%d of %d)" % [sim.count_buildings(ZoneMap.Zone.RESIDENTIAL), sim.lots.size() / 2])
+	_check(sim.stats.population > 0 and sim.stats.employed > 0,
+		"people moved in and found jobs (%s)" % str(sim.stats))
 	_check(sim.count_buildings(ZoneMap.Zone.RESIDENTIAL) > 0 and sim.count_buildings(ZoneMap.Zone.INDUSTRIAL) > 0,
 		"both zone types grew")
 	# Dezoning removes buildings.
@@ -42,6 +45,22 @@ func _init() -> void:
 	sim.apply({"type": "build_road", "start": [0, -100], "ctrl": [0, 0], "end": [0, 100]})
 	for key in sim.buildings:
 		_check(absf(sim.lots[key].pos.x) > 5.0, "no building left on the new road")
+	# Demand: homes alone stall once people need work; jobs bring them back.
+	var d := CitySim.new()
+	d.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0]})
+	for x in range(-300, 301, 10):
+		d.apply({"type": "paint_zone", "center": [x, -15], "radius": 10, "zone": ZoneMap.Zone.RESIDENTIAL})
+	for i in 6000:
+		d.tick()
+	var stalled: int = d.stats.population
+	_check(d.demand[ZoneMap.Zone.RESIDENTIAL] < 0.2, "no jobs: demand for homes drops (%.2f)" % d.demand[ZoneMap.Zone.RESIDENTIAL])
+	_check(d.demand[ZoneMap.Zone.INDUSTRIAL] > 0.3, "jobless people want industry (%.2f)" % d.demand[ZoneMap.Zone.INDUSTRIAL])
+	for x in range(-300, 301, 10):
+		d.apply({"type": "paint_zone", "center": [x, 15], "radius": 10, "zone": ZoneMap.Zone.INDUSTRIAL})
+	for i in 6000:
+		d.tick()
+	_check(d.stats.population > stalled, "jobs bring more people (%d -> %d)" % [stalled, d.stats.population])
+	_check(CitySim.new().clock().weekday == 1 and CitySim.new().clock().hour == 6, "clock starts Monday 6 AM")
 	# Old saves (roads only) come back zoned as homes.
 	var old := CitySim.new()
 	old.from_dict({"version": 1, "next_id": 4, "nodes": {"1": [-100, 0], "2": [100, 0]},

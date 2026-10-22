@@ -3,11 +3,17 @@ extends Node3D
 ## toolbar, and steps the simulation in fixed ticks. The town saves itself
 ## automatically (in the browser too).
 
+signal speed_changed(speed: int)
+
 const SAVE_PATH := "user://town.json"
+## 0 = paused; 1, 2 and 3 run the clock at 1x, 2x and 4x.
+const SPEEDS := [0.0, 1.0, 2.0, 4.0]
 
 var sim := CitySim.new()
 var _save_pending := false
 var _tick_time := 0.0
+var speed := 1
+var _resume_speed := 1
 var _save_wait := 0.0
 
 
@@ -47,20 +53,20 @@ func _ready() -> void:
 			road_tool.set_mode(RoadTool.Mode.NONE))
 
 	var hud := Hud.new()
-	hud.setup(road_tool, zone_tool, sim)
+	hud.setup(road_tool, zone_tool, sim, self)
 	add_child(hud)
 
 	if not _load():
 		_starter_road()
-	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed]:
+	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed]:
 		sig.connect(func(): _save_pending = true)
 
 
 func _process(delta: float) -> void:
-	_tick_time += delta
+	_tick_time += delta * SPEEDS[speed]
 	var step := 1.0 / CitySim.TICKS_PER_SECOND
 	var guard := 0
-	while _tick_time >= step and guard < 10:
+	while _tick_time >= step and guard < 20:
 		_tick_time -= step
 		guard += 1
 		sim.tick()
@@ -72,6 +78,20 @@ func _process(delta: float) -> void:
 		var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 		if f:
 			f.store_string(JSON.stringify(sim.to_dict()))
+
+
+func set_speed(s: int) -> void:
+	speed = clampi(s, 0, SPEEDS.size() - 1)
+	if speed != 0:
+		_resume_speed = speed
+	speed_changed.emit(speed)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	# Space pauses and resumes, like Cities: Skylines.
+	if event is InputEventKey and event.pressed and not event.echo \
+			and (event as InputEventKey).keycode == KEY_SPACE:
+		set_speed(0 if speed != 0 else _resume_speed)
 
 
 func _load() -> bool:
