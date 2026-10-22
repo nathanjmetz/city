@@ -4,12 +4,7 @@ extends SceneTree
 func _init() -> void:
 	var sim := CitySim.new()
 	sim.apply({"type": "build_road", "start": [-100, 0], "ctrl": [0, 0], "end": [100, 0]})
-	_check(sim.lots.size() >= 16, "lots along a 200 m road (got %d)" % sim.lots.size())
-	for key in sim.lots:
-		var lot: Dictionary = sim.lots[key]
-		var d := absf(lot.pos.z)
-		_check(d > RoadStyle.right_of_way_half() + 10.0, "lot %s sits back from the road" % key)
-		break
+	_check(sim.lots.is_empty(), "no lots until the street is zoned (got %d)" % sim.lots.size())
 	# Nothing grows until zoned.
 	for i in 40:
 		sim.tick()
@@ -18,12 +13,22 @@ func _init() -> void:
 	for x in range(-100, 101, 10):
 		sim.apply({"type": "paint_zone", "center": [x, -25], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
 		sim.apply({"type": "paint_zone", "center": [x, 25], "radius": 12, "zone": ZoneMap.Zone.INDUSTRIAL})
+	_check(sim.lots.size() >= 10, "lots along a 200 m road once zoned (got %d)" % sim.lots.size())
+	for key in sim.lots:
+		var lot: Dictionary = sim.lots[key]
+		var d := absf(lot.pos.z)
+		_check(d > RoadStyle.right_of_way_half() + 10.0, "lot %s sits back from the road" % key)
+		break
 	var zoned := sim.empty_zoned_lots().size()
 	_check(zoned == sim.lots.size(), "every lot zoned (%d of %d)" % [zoned, sim.lots.size()])
+	var home_lots := 0
+	for key in sim.lots:
+		if sim.zones.zone_at(sim.lots[key].zone_pt) == ZoneMap.Zone.RESIDENTIAL:
+			home_lots += 1
 	for i in 4000:
 		sim.tick()
-	_check(sim.count_buildings(ZoneMap.Zone.RESIDENTIAL) * 2 == sim.lots.size(),
-		"homes grow on every home lot while there are jobs (%d of %d)" % [sim.count_buildings(ZoneMap.Zone.RESIDENTIAL), sim.lots.size() / 2])
+	_check(sim.count_buildings(ZoneMap.Zone.RESIDENTIAL) == home_lots,
+		"homes grow on every home lot while there are jobs (%d of %d)" % [sim.count_buildings(ZoneMap.Zone.RESIDENTIAL), home_lots])
 	_check(sim.stats.population > 0 and sim.stats.employed > 0,
 		"people moved in and found jobs (%s)" % str(sim.stats))
 	_check(sim.count_buildings(ZoneMap.Zone.RESIDENTIAL) > 0 and sim.count_buildings(ZoneMap.Zone.INDUSTRIAL) > 0,

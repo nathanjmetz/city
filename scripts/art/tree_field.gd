@@ -26,15 +26,24 @@ const LEAF_SHADER := """
 shader_type spatial;
 render_mode cull_disabled;
 uniform sampler2D leaf_tex : filter_linear_mipmap;
+// Set by DayNight: snow cover, and the season as (autumn, bare, spring, dry).
+global uniform float snow;
+global uniform vec4 season_look;
 varying float inner;
 varying float top;
 varying vec3 tint;
 varying vec3 crown_normal;
+varying vec3 leaf_pos;
+varying float species;
+varying float tree_rand;
 vec3 lin(vec3 c) {
 	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
 }
 void vertex() {
 	vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	leaf_pos = VERTEX;
+	species = floor(INSTANCE_CUSTOM.a * 8.0);
+	tree_rand = fract(sin(dot(origin.xz, vec2(12.9898, 78.233))) * 43758.5453);
 	float phase = TIME * 1.1 + origin.x * 0.31 + origin.z * 0.17;
 	float sway = sin(phase + VERTEX.y * 0.25) * 0.025 * VERTEX.y;
 	VERTEX.x += sway;
@@ -49,11 +58,44 @@ void vertex() {
 }
 void fragment() {
 	vec4 t = texture(leaf_tex, UV);
+	// Mipmaps average the leaf alpha toward the gaps, so distant cards
+	// would fall under the cut-off and vanish. Boost alpha with the mip level.
+	vec2 texel = UV * 256.0;
+	float lod = log2(max(max(length(dFdx(texel)), length(dFdy(texel))), 1.0));
+	t.a *= 1.0 + lod * 0.3;
 	NORMAL = crown_normal;
 	// Inner leaves sit in the shade of outer ones; the top of the crown
 	// catches the open sky.
-	ALBEDO = tint * t.rgb * mix(0.6, 1.15, inner) * mix(0.85, 1.2, top) * 2.0;
-	ALPHA = t.a;
+	vec3 leaf = tint;
+	float alpha = t.a;
+	// Seasons (spruce, species 3, stays green). Each tree turns, drops and
+	// leafs out a little earlier or later than its neighbours.
+	if (abs(species - 3.0) > 0.5) {
+		float turn = clamp(season_look.x * 1.5 - tree_rand * 0.5, 0.0, 1.0);
+		float bare = clamp(season_look.y * 1.4 - tree_rand * 0.4, 0.0, 1.0);
+		// Fall colour: sugar maples red to orange, bur oaks russet, honey
+		// locusts gold, crabapples orange-red.
+		vec3 fall = mix(vec3(0.5, 0.06, 0.01), vec3(0.78, 0.3, 0.02), tree_rand);
+		if (tree_rand > 0.75) fall = vec3(0.7, 0.46, 0.03);
+		if (species > 0.5) fall = vec3(0.24, 0.09, 0.02) * (0.8 + tree_rand * 0.4);
+		if (species > 1.5) fall = vec3(0.6, 0.4, 0.03);
+		if (species > 3.5) fall = vec3(0.55, 0.13, 0.015);
+		// Green goes to yellow first, then to the tree's own colour.
+		leaf = mix(leaf, vec3(0.32, 0.3, 0.03), smoothstep(0.0, 0.5, turn) * (1.0 - smoothstep(0.5, 1.0, turn)));
+		leaf = mix(leaf, fall, smoothstep(0.35, 1.0, turn));
+		// New leaves are a pale yellow-green; crabapples bloom pink first.
+		vec3 fresh = leaf * vec3(1.25, 1.3, 0.7);
+		if (species > 3.5) fresh = vec3(0.75, 0.32, 0.4);
+		leaf = mix(leaf, fresh, season_look.z);
+		// Leaves fall: the crown thins to a lace of bare twigs.
+		float h = fract(sin(dot(floor(leaf_pos * 2.5), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+		alpha *= step(bare * 0.88, h);
+		leaf = mix(leaf, vec3(0.05, 0.042, 0.036), smoothstep(0.3, 0.9, bare));
+	}
+	// Snow resting on the tops of the crowns.
+	leaf = mix(leaf, vec3(0.4, 0.42, 0.45), snow * smoothstep(0.35, 0.95, top) * 0.75);
+	ALBEDO = leaf * t.rgb * mix(0.6, 1.15, inner) * mix(0.85, 1.2, top) * 2.0;
+	ALPHA = alpha;
 	ALPHA_SCISSOR_THRESHOLD = 0.45;
 	// With MSAA, leaf edges become partial coverage instead of popping on
 	// and off as the camera moves.
@@ -122,7 +164,10 @@ func _rebuild() -> void:
 			for i in list.size():
 				var xf: Transform3D = list[i][0]
 				multi.set_instance_transform(i, Transform3D(xf.basis, xf.origin - centre))
-				multi.set_instance_custom_data(i, list[i][2])
+				# Alpha carries the species, for the season colours.
+				var custom: Color = list[i][2]
+				custom.a = (float(parts[2]) + 0.5) / 8.0
+				multi.set_instance_custom_data(i, custom)
 
 
 ## The MultiMesh for one species in one chunk, near or far. The node sits at

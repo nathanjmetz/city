@@ -36,7 +36,7 @@ FTA National Transit Database and TCRP reports (see `Balance`, "Buses").
   not built homes, farms, companies or reserves. It never opens a second site,
   and it grows to at most `HUB_MAX_GROWTH` times its first size.
 - **School buses:** each elementary school keeps Type C buses for pupils who
-  live more than about a mile away. On school days they leave at 6:40 am and
+  live more than about a mile away. On school days (not in June or July) they leave at 6:40 am and
   3:05 pm and park at the school.
 
 ## Code

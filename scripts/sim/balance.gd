@@ -172,6 +172,40 @@ const GRAIN_TRUCK_BUSHELS := 1_000.0
 ## A factory ships one load of goods to the shops for this many loads in.
 const FACTORY_LOADS_PER_GOODS := 2.0
 
+# --- Warehouses ----------------------------------------------------------------
+# Brawn (2026-10-22): warehouses in many real sizes, like Cities: Skylines'
+# storage buildings. They take loads nobody needs yet and send them on when a
+# factory or shop wants them. Every load still rides a real truck.
+
+## Each size when first built: building width along the road and depth
+## (metres), the truck court in front, dock doors, what the player pays, jobs
+## and assessed value. Sizes follow US industrial real estate: a 10,000 sq ft
+## flex building, a 32,000 sq ft bulk warehouse, a 100,000 sq ft regional
+## warehouse and a 270,000 sq ft distribution center. Truck courts run
+## 18-40 m (60-130 ft), enough for a 53 ft trailer to back in. About one
+## dock door per 10,000 sq ft, and one job per 2,500 sq ft.
+const WAREHOUSE := {
+	"small": {"w": 30.0, "d": 30.0, "court": 18.0, "docks": 3, "cost": 300_000, "jobs": 4, "value": 900_000.0},
+	"medium": {"w": 50.0, "d": 60.0, "court": 28.0, "docks": 6, "cost": 800_000, "jobs": 13, "value": 2_800_000.0},
+	"large": {"w": 90.0, "d": 100.0, "court": 36.0, "docks": 12, "cost": 1_800_000, "jobs": 40, "value": 8_500_000.0},
+	"dc": {"w": 140.0, "d": 180.0, "court": 40.0, "docks": 26, "cost": 4_000_000, "jobs": 100, "value": 24_000_000.0},
+}
+## Floor area one stored truckload takes, m² (26 pallets racked three high
+## with aisles), at the first clear height.
+const WAREHOUSE_M2_PER_LOAD := 40.0
+## Clear heights a warehouse builds up through before it buys land: 24, 32
+## and 40 ft. Taller racks hold more on the same floor.
+const WAREHOUSE_HEIGHTS := [7.3, 9.8, 12.2]
+## A back extension adds one structural bay this deep (50 ft column spacing).
+const WAREHOUSE_BAY := 15.0
+## Full this much at two decisions in a row, it builds up or out; nearly
+## empty and idle this many decisions in a row, it gives back a bay.
+const WAREHOUSE_BUSY := 0.8
+const WAREHOUSE_IDLE := 0.05
+const WAREHOUSE_IDLE_STREAK := 8
+## Warehouses decide to grow this often, in ticks (6 game hours).
+const WAREHOUSE_DECIDE_EVERY := 360
+
 # --- Neighborhood character --------------------------------------------------
 # Brawn's rule (2026-10-22): neighborhoods grow a culture of their own, and
 # anything that fills in by itself (parks, trees, shopfronts, upkeep) matches
@@ -310,3 +344,197 @@ const SCHOOL_PUPIL_SHARE := 0.08
 ## right after the afternoon bell (8:00 am and 3:00 pm), in game minutes.
 const SCHOOL_MORNING_RUN := 6 * 60 + 40
 const SCHOOL_AFTERNOON_RUN := 15 * 60 + 5
+# --- Wild trees and brush ----------------------------------------------------
+
+## Cleared land left alone grows back the way an abandoned lot in southern
+## Indiana does (old-field succession, USDA Forest Service): grass and weeds
+## the first season, brush (sumac, dogwood, blackberry) in a year or two,
+## pioneer trees (eastern red cedar, box elder, black locust) poking through
+## after a few years, and a young woodlot as tall as its neighbours in about
+## twenty. Years are game years: a game day is a month, so a year is 12 game
+## days (about half an hour at 1x, like the budget).
+const WILD_BRUSH_YEARS := 1.5
+const WILD_TREE_YEARS := 4.0
+const WILD_MATURE_YEARS := 20.0
+## Share of spots on an abandoned lot that end up as trees (most of an
+## untended Midwest lot is woods after twenty years), and as brush while the
+## trees are still young.
+const WILD_REGROW_TREES := 0.5
+const WILD_REGROW_BRUSH := 0.45
+## Trash, which garbage trucks carry to a landfill or recycling centre. A
+## game day here is a real day for trash (a month would bury a small town):
+## Americans throw out about 4.9 lb a person a day (EPA), and a business
+## about 2 lb per job.
+const GARBAGE_LB_PER_RESIDENT := 4.9
+const GARBAGE_LB_PER_JOB := 2.0
+## A rear-loader garbage truck carries about 10 tons when full.
+const GARBAGE_TRUCK_LB := 20_000.0
+## A street is worth a stop once this much trash is out at the curb (about a
+## week of trash for six or seven homes), and a truck makes at most this many
+## stops before it heads back.
+const GARBAGE_STOP_LB := 600.0
+const GARBAGE_STOPS_PER_RUN := 6
+## Trash left out past this much on a street lowers its land value by
+## GARBAGE_PILE_VALUE (-0.05 = 5% lower) until a truck comes.
+const GARBAGE_PILE_LB := 2_500.0
+const GARBAGE_PILE_VALUE := -0.05
+## Trucks each waste site keeps, plus one more for every two pieces of land
+## it has grown into.
+const HUB_TRUCKS := {"landfill": 3, "recycling_1": 2, "recycling_2": 3, "recycling_3": 4}
+## Each piece of land a hub grows into adds this share of its base upkeep.
+const HUB_PIECE_UPKEEP := 0.15
+## Hubs decide whether to grow this often, in ticks (6 game hours). A waste
+## site grows when its trucks were all out on at least this share of the
+## rounds it wanted to send one; it gives land back after this many quiet
+## decisions in a row.
+const HUB_DECIDE_EVERY := 360
+const HUB_GROW_BUSY_SHARE := 0.5
+const HUB_SHRINK_QUIET := 8
+## A cemetery takes one more piece of land for every this many residents.
+const CEMETERY_PEOPLE_PER_PIECE := 1_200
+
+# --- Region and trade ----------------------------------------------------------
+
+## Price of a unit of each traded good or service, in dollars. Hubs add their
+## goods here (power in MWh, water in thousand gallons, garbage in tons...).
+const TRADE_PRICE := {
+	# Wholesale power from landfill gas, per MWh.
+	"power": 60.0,
+	# Taking a town's trash, per ton: the US average landfill tipping fee.
+	"garbage": 55.0,
+	# Baled scrap metal and finished compost, per ton.
+	"scrap": 180.0,
+	"compost": 25.0,
+}
+## Price for a good with no entry above.
+const TRADE_PRICE_DEFAULT := 100.0
+## What no neighbor covers is bought from the outside world at this many
+## times the price...
+const TRADE_IMPORT_MARKUP := 1.5
+## ...and what no neighbor buys is sold to it for this share of the price.
+## Trading with a neighbor is the better deal for both towns.
+const TRADE_EXPORT_SHARE := 0.6
+
+# --- Parks and landmarks -------------------------------------------------------
+# Brawn's rules (2026-10-22): a park is a hub. You place it and it fills in by
+# itself over time (paths, a playground, a pavilion, a ball diamond), growing
+# only into free land right next to it, and how well kept it is follows the
+# neighborhood's tier. Landmarks are one-of-a-kind town buildings that lift
+# land value and happiness around them.
+
+## A new park: its first piece of ground (width along the road x depth,
+## metres; about 0.7 acre, a US "mini park") and what the city pays for it.
+const PARK_START_SIZE := Vector2(60, 50)
+const PARK_COST := 250_000
+## Town land a park buys when it grows, dollars an acre (Midwestern town
+## land outside downtown).
+const PARK_LAND_PER_ACRE := 15_000
+## Each growth step adds a strip this deep along one side, metres.
+const PARK_GROW_STEP := 20.0
+## Upkeep per acre per month: US parks departments spend about $7,000 an
+## acre a year (NRPA Park Metrics median), scaled by the tier's `upkeep`.
+const PARK_UPKEEP_PER_ACRE := 600
+## A park adds one thing (a path, a playground...) at most this often, in
+## game days (a day is a month: a park fills in over a couple of years).
+const PARK_FEATURE_DAYS := 2.0
+## A park only buys more land while at least this many people live within
+## the neighborhood radius (someone has to use it), and never in a
+## struggling neighborhood.
+const PARK_GROW_MIN_RESIDENTS := 30
+## Parks and landmarks decide what to do this often, in ticks (6 game hours).
+const PARK_DECIDE_EVERY := 360
+## What a park fills in with, in order, and the space each needs (width x
+## depth, metres). `tier` is the lowest neighborhood tier that gets it
+## (0 struggling .. 3 thriving). Real references: a Little League field
+## with 200 ft fences, a 30 x 40 ft picnic shelter, a half basketball court.
+const PARK_FEATURES := [
+	{"type": "paths", "size": Vector2.ZERO, "tier": 0},
+	{"type": "playground", "size": Vector2(18, 14), "tier": 0},
+	{"type": "pavilion", "size": Vector2(14, 11), "tier": 0},
+	{"type": "court", "size": Vector2(16, 15), "tier": 1},
+	{"type": "ball_diamond", "size": Vector2(70, 64), "tier": 0},
+	{"type": "flower_beds", "size": Vector2(12, 8), "tier": 2},
+	{"type": "fountain", "size": Vector2(10, 10), "tier": 3},
+]
+
+## Amenities: build cost, monthly upkeep, and their pull on the land around.
+## `value` is the lift in land value right next door (0.10 = 10% higher),
+## fading to nothing at `value_reach` metres; `happy` likewise for how much
+## nearby residents like living there. Real studies (Crompton, 2005) find
+## homes beside a neighborhood park sell for about 8-20% more, fading over
+## 500-2,000 ft. A park's pull also scales with how filled-in and kept it is.
+## Landmarks are one per town, like the signature buildings in CS2.
+const AMENITIES := {
+	"park": {"cost": PARK_COST, "upkeep": 0, "value": 0.10, "value_reach": 300.0, "happy": 0.10, "happy_reach": 600.0},
+	# An Indiana county seat's courthouse on a full block of lawn, with
+	# diagonal walks and a war memorial (about 300 ft square).
+	"courthouse": {"cost": 6_000_000, "upkeep": 30_000, "size": Vector2(90, 90),
+		"value": 0.12, "value_reach": 600.0, "happy": 0.15, "happy_reach": 900.0},
+	# The town's old multi-leg water tower, painted with the town name. It
+	# is a symbol, so it is seen and felt far away.
+	"water_tower": {"cost": 900_000, "upkeep": 4_000, "size": Vector2(30, 30),
+		"value": 0.04, "value_reach": 500.0, "happy": 0.10, "happy_reach": 1500.0},
+	# A farmers' co-op grain elevator: concrete silos and a headhouse.
+	"grain_elevator": {"cost": 2_500_000, "upkeep": 6_000, "size": Vector2(56, 40),
+		"value": 0.03, "value_reach": 400.0, "happy": 0.06, "happy_reach": 1200.0},
+	# The high school football field: a 120 yd field, bleachers, a press box
+	# and lights (Friday nights are a small-town institution).
+	"football": {"cost": 4_000_000, "upkeep": 15_000, "size": Vector2(140, 84),
+		"value": 0.06, "value_reach": 600.0, "happy": 0.12, "happy_reach": 1600.0},
+}
+## Most land value and happiness a home can get from parks and landmarks
+## together.
+const AMENITY_VALUE_CAP := 0.25
+const AMENITY_HAPPY_CAP := 0.4
+## How much the town's average amenity happiness raises demand for homes.
+const AMENITY_DEMAND := 0.3
+## In the neighborhood score, land value counts as this plus the amenity
+## lift times AMENITY_LAND_SCALE (0 to 1), until a land value model lands.
+const HOOD_LAND_BASE := 0.5
+const AMENITY_LAND_SCALE := 2.5
+# --- Hub development trees -------------------------------------------------------
+# Brawn (2026-10-22): every hub has a thick tree of buildings and options. Its
+# leader unlocks them from what the town can do (money, schools, size) and
+# what is around it, in town and in neighboring towns. Each: what it is for
+# ("landfill" options stay when a landfill becomes recycling, since a capped
+# landfill keeps its gas plant), build cost and monthly upkeep, plus its
+# effect. `needs` is read by CivicHubs.dev_problem.
+const HUB_DEVELOPMENTS := {
+	# Landfill gas to electricity: an engine plant burning the methane a
+	# big landfill gives off. Sells power (MWh a month) to neighbors or the grid.
+	"gas_plant": {"for": "landfill", "name": "Landfill gas plant", "cost": 2_200_000, "upkeep": 9_000,
+		"power": 700.0, "needs": {"pieces": 10, "tons": 20_000}},
+	# Yard waste and food scraps turned into compost for the farms around.
+	"compost": {"for": "landfill", "name": "Compost yard", "cost": 400_000, "upkeep": 4_000,
+		"compost": 300.0, "needs": {"farms": 1}},
+	# A transfer station takes in a neighbor town's trash for a fee (tons a
+	# month) and sends it up the mound.
+	"transfer": {"for": "landfill", "name": "Transfer station", "cost": 900_000, "upkeep": 7_000,
+		"garbage": 600.0, "needs": {"region": true}},
+	# Scrap metal yard: crushes and bales metal for factories here or nearby.
+	"scrap_yard": {"for": "recycling", "name": "Scrap metal yard", "cost": 600_000, "upkeep": 5_000,
+		"scrap": 60.0, "needs": {"factories": 3}},
+	# Extra sorting lines lift what recycling sells. They need trained
+	# workers: a school in town.
+	"glass_line": {"for": "recycling", "name": "Glass sorting line", "cost": 700_000, "upkeep": 4_000,
+		"sales": 0.35, "needs": {"level": 2, "school": true}},
+	"ewaste": {"for": "recycling", "name": "Electronics recycling", "cost": 1_200_000, "upkeep": 6_000,
+		"sales": 0.5, "needs": {"level": 3, "school": true, "population": 2_000}},
+	# Sorting a neighbor's recycling for a fee (tons a month).
+	"regional_mrf": {"for": "recycling", "name": "Regional sorting contract", "cost": 500_000, "upkeep": 3_000,
+		"garbage": 900.0, "needs": {"level": 3, "region": true}},
+	# Cemetery: each adds to the lift it gives the land around it.
+	"chapel": {"for": "cemetery", "name": "Chapel", "cost": 350_000, "upkeep": 2_000,
+		"value": 0.02, "reach": 100.0, "needs": {"population": 300}},
+	"garden": {"for": "cemetery", "name": "Memorial garden", "cost": 250_000, "upkeep": 2_500,
+		"value": 0.02, "reach": 50.0, "needs": {"dev": "chapel"}},
+	"veterans": {"for": "cemetery", "name": "Veterans memorial", "cost": 300_000, "upkeep": 1_000,
+		"value": 0.02, "reach": 150.0, "needs": {"population": 3_000}},
+	# Natural burial in the woods next door: lets the cemetery grow half
+	# again as far, under trees instead of lawn.
+	"woods": {"for": "cemetery", "name": "Natural burial woods", "cost": 200_000, "upkeep": 1_500,
+		"grow": 0.5, "needs": {"forest": 0.3}},
+}
+## A town with no landfill or recycling of its own pays a neighbor to take its
+## trash, if one will (otherwise it piles up).
+const GARBAGE_TONS_PER_RESIDENT_MONTH := 0.07

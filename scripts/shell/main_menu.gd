@@ -381,15 +381,18 @@ func _build_backdrop() -> void:
 		sim.from_dict(data)
 	else:
 		sim.apply({"type": "build_grid", "a": [-150, -120], "b": [150, -120], "c": [150, 120], "block": 80})
-		for x in range(-150, 151, 20):
-			for z in range(-120, 121, 20):
-				sim.apply({"type": "paint_zone", "center": [x, z], "radius": 14,
-					"zone": ZoneMap.Zone.RESIDENTIAL if absi(x) > 40 else ZoneMap.Zone.COMMERCIAL})
+		# Every street side zoned: shops down the middle, homes either side.
+		for id in sim.network.segments.keys():
+			var c := sim.network.curve_of(id)
+			var mid_x: float = (c[0].x + c[2].x) * 0.5
+			for side in [-1, 1]:
+				sim.apply({"type": "zone_frontage", "seg": id, "side": side,
+					"zone": ZoneMap.Zone.RESIDENTIAL if absf(mid_x) > 40.0 else ZoneMap.Zone.COMMERCIAL})
 		for i in 300:
 			sim.tick()
 	var roads := RoadView.new()
 	add_child(roads)
-	roads.setup(sim.network)
+	roads.setup(sim.network, sim)
 	var buildings := BuildingView.new()
 	add_child(buildings)
 	buildings.setup(sim)

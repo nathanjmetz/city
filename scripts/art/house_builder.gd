@@ -15,7 +15,9 @@ extends RefCounted
 ##   - double-hung windows with grids, blinds at different heights, shutters
 ##   - concrete driveways and walks, mulch beds and foundation shrubs
 ## Local space: x across the lot, y up, -z toward the street. z = 0 is the
-## lot's street edge (just behind the sidewalk). Lots are 20 m wide.
+## lot's street edge (just behind the sidewalk), or the rear pad of a flag
+## lot. Houses fit the lot they're given: narrow lots get a narrower house
+## and a one-car garage, wide ones a bigger house and sometimes three bays.
 ## Output is two meshes: the house (casts shadows) and the flat ground work.
 
 const SIDING := ["#c9c3b3", "#d8d2c2", "#9aa3a8", "#6f7f8c", "#e9e6dc", "#b8a98c",
@@ -29,7 +31,14 @@ const SOFFIT := Color("#b9b6ad")
 const FOUNDATION := Color("#9d9a92")
 const SHRUB := [Color("#2f4a24"), Color("#3a5a2a"), Color("#29401f"), Color("#4a5e2c")]
 const MULCH := Color("#4a3426")
-const LOT_HALF := 10.0
+const LOT_HALF := 10.0  # half a lot's width when no lot is given
+
+## The lot, in local space: half its width, how far back it runs, its
+## outline (x, z), and for a flag lot how far the pad sits behind the street.
+var half := LOT_HALF
+var depth := 32.0
+var outline := PackedVector2Array()
+var pad := 0.0
 
 var _st := {}  # material key -> SurfaceTool
 var _flat := SurfaceTool.new()
@@ -38,11 +47,39 @@ var trees := []
 var rng: RandomNumberGenerator
 
 
-static func build(seed: int, to_curb: float) -> Array:
+## `lot` (optional): width, depth, outline (local x/z points) and pad.
+static func build(seed: int, to_curb: float, lot := {}) -> Array:
 	var b := HouseBuilder.new()
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
+	b._fit(lot)
 	return b._house(to_curb)
+
+
+func _fit(lot: Dictionary) -> void:
+	half = float(lot.get("width", LOT_HALF * 2.0)) * 0.5
+	pad = float(lot.get("pad", 0.0))
+	outline = lot.get("outline", PackedVector2Array())
+	depth = float(lot.get("depth", 32.0)) - pad
+	if outline.size() >= 3:
+		depth = -INF
+		for q in outline:
+			depth = maxf(depth, q.y)
+
+
+## Room across the lot for the house and garage, leaving side yards.
+func _avail() -> float:
+	return half * 2.0 - 3.0
+
+
+## True when a spot, and a little room around it, is inside the lot.
+func _in_lot(p: Vector3, margin := 1.5) -> bool:
+	if outline.size() < 3:
+		return absf(p.x) < half - margin and p.z < depth - margin
+	for d in [Vector2.ZERO, Vector2(margin, 0), Vector2(-margin, 0), Vector2(0, margin), Vector2(0, -margin)]:
+		if not Geometry2D.is_point_in_polygon(Vector2(p.x, p.z) + d, outline):
+			return false
+	return true
 
 
 func _house(to_curb: float) -> Array:
@@ -54,15 +91,22 @@ func _house(to_curb: float) -> Array:
 	var brick_style: String = _pick(["none", "none", "wainscot", "wainscot", "full"])
 	var brick := Color(_pick(BRICK))
 	var gs := -1.0 if rng.randf() < 0.5 else 1.0  # which side the garage is on
-	var gw := 6.6 if rng.randf() < 0.85 else 3.8  # two-car or one-car garage
+	# Two-car garage mostly; one-car on narrow lots, three bays on wide ones.
+	var gw := 6.6 if rng.randf() < 0.85 else 3.8
+	if _avail() < 16.0:
+		gw = 3.8
+	elif _avail() >= 22.0 and rng.randf() < 0.4:
+		gw = 9.8
 	var zf := rng.randf_range(7.0, 9.5)  # front wall, back from the lot edge
+	if depth < 30.0:
+		zf = clampf(depth * 0.22, 4.5, zf)
 	var shutters := shutter_hex != ""
 	var shutter := Color(shutter_hex) if shutters else TRIM
 	var info: Dictionary
 	var kind := rng.randf()
 	if kind < 0.38:
 		info = _colonial(zf, gs, gw, siding, roof, shutters, shutter, door, brick_style, brick)
-	elif kind < 0.58:
+	elif kind < 0.58 and _avail() >= 15.0:
 		info = _split_level(zf, gs, siding, roof, shutters, shutter, door, brick_style, brick)
 	else:
 		info = _ranch(zf, gs, gw, siding, roof, shutters, shutter, door, brick_style, brick)
@@ -75,7 +119,8 @@ func _house(to_curb: float) -> Array:
 
 func _ranch(zf: float, gs: float, gw: float, siding: Color, roof: Color, shutters: bool,
 		shutter: Color, door: Color, brick_style: String, brick: Color) -> Dictionary:
-	var w := rng.randf_range(10.0, minf(13.0, 17.6 - gw))
+	var room := _avail() - gw
+	var w := rng.randf_range(minf(10.0, room), clampf(room, 7.0, 13.0 + clampf(room - 14.0, 0.0, 3.0)))
 	var d := rng.randf_range(8.4, 9.6)
 	var cx := -gs * gw * 0.5
 	var cz := zf + d * 0.5
@@ -126,7 +171,8 @@ func _ranch(zf: float, gs: float, gw: float, siding: Color, roof: Color, shutter
 
 func _colonial(zf: float, gs: float, gw: float, siding: Color, roof: Color, shutters: bool,
 		shutter: Color, door: Color, brick_style: String, brick: Color) -> Dictionary:
-	var w := rng.randf_range(9.0, minf(11.5, 17.6 - gw))
+	var room := _avail() - gw
+	var w := rng.randf_range(minf(9.0, room), clampf(room, 7.2, 11.5 + clampf(room - 12.0, 0.0, 2.5)))
 	var d := rng.randf_range(8.4, 9.6)
 	var rise := rng.randf_range(2.0, 2.8)
 	var cx := -gs * gw * 0.5
@@ -207,7 +253,7 @@ func _colonial(zf: float, gs: float, gw: float, siding: Color, roof: Color, shut
 func _split_level(zf: float, gs: float, siding: Color, roof: Color, shutters: bool,
 		shutter: Color, door: Color, brick_style: String, brick: Color) -> Dictionary:
 	var tw := rng.randf_range(7.0, 8.2)  # two-storey block
-	var ww := rng.randf_range(7.6, 9.2)  # raised wing
+	var ww := rng.randf_range(7.6, minf(9.2, _avail() - tw))  # raised wing
 	var d := rng.randf_range(8.4, 9.4)
 	var total := tw + ww
 	var tx := gs * (total * 0.5 - tw * 0.5)
@@ -271,10 +317,16 @@ func _split_level(zf: float, gs: float, siding: Color, roof: Color, shutters: bo
 func _yard(h: Dictionary, to_curb: float) -> void:
 	var dx: float = h.drive_x
 	var dw: float = h.drive_w
-	_flat_rect("drive", dx - dw * 0.5, dx + dw * 0.5, -to_curb, h.garage_z, 0.1)
+	if pad > 0.0:
+		# Flag lot: the drive runs out along the strip, then widens to the garage.
+		var sx := _strip_x(-pad * 0.5)
+		_flat_rect("drive", sx - 1.5, sx + 1.5, -to_curb, 0.5, 0.1)
+		_flat_rect("drive", minf(sx - 1.5, dx - dw * 0.5), maxf(sx + 1.5, dx + dw * 0.5), 0.0, h.garage_z, 0.1)
+	else:
+		_flat_rect("drive", dx - dw * 0.5, dx + dw * 0.5, -to_curb, h.garage_z, 0.1)
 	var door_x: float = h.door_x
 	var walk_z: float = h.walk_z
-	if rng.randf() < 0.55:
+	if rng.randf() < 0.55 and pad <= 0.0:
 		_flat_rect("drive", door_x - 0.6, door_x + 0.6, -0.3, walk_z, 0.06)
 	else:
 		_flat_rect("drive", minf(door_x, dx) - 0.6, maxf(door_x, dx), walk_z - 1.2, walk_z, 0.06)
@@ -314,18 +366,40 @@ func _yard_trees(h: Dictionary, to_curb: float) -> void:
 	var dx: float = h.drive_x
 	var clear: float = h.drive_w * 0.5 + 3.0
 	var spots := []
+	var span := half - 2.0
+	var back: float = h.front_z + 13.0
 	if rng.randf() < 0.7:
-		spots.append([Vector3(rng.randf_range(-8.0, 8.0), 0, rng.randf_range(1.5, h.front_z - 3.5)), true])
-	if rng.randf() < 0.55:
-		spots.append([Vector3(rng.randf_range(-8.0, 8.0), 0, -to_curb + 1.2), false])
-	for i in rng.randi_range(1, 2):
-		spots.append([Vector3(rng.randf_range(-8.0, 8.0), 0, rng.randf_range(24.0, 30.0)), false])
+		spots.append([Vector3(rng.randf_range(-span, span), 0, rng.randf_range(1.5, h.front_z - 3.5)), true])
+	if rng.randf() < 0.55 and pad <= 0.0:
+		spots.append([Vector3(rng.randf_range(-span, span), 0, -to_curb + 1.2), false])
+	if depth - 2.0 > back:
+		for i in rng.randi_range(1, 2):
+			spots.append([Vector3(rng.randf_range(-span, span), 0, rng.randf_range(back, depth - 2.0)), false])
 	for s in spots:
 		var p: Vector3 = s[0]
 		if p.z < h.front_z and absf(p.x - dx) < clear:
 			continue
+		# Street trees stand in the parkway, outside the lot itself.
+		if p.z > 0.0 and not _in_lot(p):
+			continue
 		var pick := TreeField.pick(rng, s[1])
 		trees.append([p, pick[0], pick[1], rng.randf_range(0.75, 1.15)])
+
+
+## The middle of a flag lot's drive strip, `z` metres along it.
+func _strip_x(z: float) -> float:
+	if outline.size() < 3:
+		return 0.0
+	var xs := []
+	for i in outline.size():
+		var a := outline[i]
+		var b := outline[(i + 1) % outline.size()]
+		if (a.y - z) * (b.y - z) < 0.0:
+			xs.append(lerpf(a.x, b.x, (z - a.y) / (b.y - a.y)))
+	if xs.size() < 2:
+		return 0.0
+	xs.sort()
+	return (xs[0] + xs[1]) * 0.5
 
 
 func _corners(x0: float, x1: float, z0: float, z1: float, y0: float, y1: float) -> void:
@@ -350,7 +424,9 @@ func _front_door(x: float, zf: float, sill: float, c: Color) -> void:
 
 func _garage(gx: float, gz0: float, gw: float, h: float) -> void:
 	var doors := [[gx, gw - 1.7]] if gw > 5.0 else [[gx, gw - 1.2]]
-	if gw > 5.0 and rng.randf() < 0.25:
+	if gw > 8.0:
+		doors = [[gx - gw * 0.17, gw * 0.6 - 1.2], [gx + gw * 0.33, gw * 0.3 - 0.6]]
+	elif gw > 5.0 and rng.randf() < 0.25:
 		doors = [[gx - gw * 0.25, gw * 0.5 - 1.0], [gx + gw * 0.25, gw * 0.5 - 1.0]]
 	for dd in doors:
 		# Garage doors share the siding surface; alpha 0 asks for wide panels.

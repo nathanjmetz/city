@@ -162,13 +162,23 @@ func _town() -> CitySim:
 	for x in range(-1000, 1001, 250):
 		sim.apply({"type": "build_road", "start": [x, 0], "ctrl": [x, 400], "end": [x, 800]})
 	sim.economy.money = 50_000_000
+	# Zone every block face: shops downtown, homes around.
+	var segs := sim.network.segments.keys()
+	segs.sort()
+	for seg in segs:
+		var c := sim.network.curve_of(seg)
+		var mid: Vector3 = (c[0] + c[2]) * 0.5
+		var z := ZoneMap.Zone.COMMERCIAL if absf(mid.x) < 300.0 and absf(mid.z - 400.0) < 250.0 else ZoneMap.Zone.RESIDENTIAL
+		sim.apply({"type": "zone_frontage", "seg": seg, "side": 1, "both": true, "zone": z})
+	sim.tick()
 	var keys := sim.lots.keys()
 	keys.sort()
 	var i := 0
 	for key in keys:
 		var lot: Dictionary = sim.lots[key]
-		var zone := ZoneMap.Zone.COMMERCIAL if absf(lot.pos.x) < 200.0 and i % 2 == 0 else ZoneMap.Zone.RESIDENTIAL
-		sim.zones.paint(lot.zone_pt, 3.0, zone)
+		var zone: int = sim.zones.zone_at(lot.zone_pt)
+		if zone == ZoneMap.Zone.NONE:
+			continue
 		var cap := CitySim.capacity(zone, i)
 		sim.buildings[key] = {"zone": zone, "seed": i, "built": 0, "cap": cap, "occ": cap if zone == ZoneMap.Zone.RESIDENTIAL else 0}
 		i += 1

@@ -177,3 +177,7 @@ func _apply() -> void:
 		cos(_yaw) * cos(_pitch)) * _dist
 	camera.global_position = _target + offset
 	camera.look_at(_target, Vector3.UP)
+	# Push the near plane out with height: depth precision goes with
+	# near / distance², and a 1 m near plane makes the thin ground layers
+	# (road paint, sidewalks, drives, fields) z-fight and flicker from high up.
+	camera.near = clampf(offset.y * 0.2, 0.5, 40.0)

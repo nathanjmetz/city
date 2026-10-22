@@ -1208,11 +1208,12 @@ func _plan_schools(sim: CitySim) -> void:
 			school.runs.append(run)
 
 
-## School days: weekdays, from late August to the end of May.
+## School days: weekdays outside the summer break (June and July; the
+## game's months follow Seasons).
 static func school_day(t: Dictionary) -> bool:
 	if t.weekday == 0 or t.weekday == 6:
 		return false
-	return not (t.month == 6 or t.month == 7 or t.month == 8 and t.day < 20)
+	return t.month != 6 and t.month != 7
 
 
 ## At the bell times, every school bus at home sets off on its run: in the

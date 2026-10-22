@@ -15,6 +15,7 @@ const BARN_RED := ["#7d2a20", "#8a2f22", "#6f2620", "#933a2a"]
 const GALV := Color("#9a9fa2")
 const BIN := Color("#c3c7c8")
 const STAVE := Color("#bdb7aa")
+const YARD_GRAVEL := Color("#b5ad9c")  # crushed limestone, pale in the sun
 
 
 ## [house mesh, ground mesh, trees] for a farmstead at growth stage `look`
@@ -29,7 +30,7 @@ static func build_farmstead(seed: int, look: int) -> Array:
 
 
 func _farmstead(look: int) -> void:
-	_flat_rect("gravel", -18, 18, -20, 20, 0.08, GRAVEL)
+	_flat_rect("gravel", -18, 18, -20, 20, 0.08, YARD_GRAVEL)
 	_farmhouse(-10.0, -12.0)
 	if look >= 1:
 		_barn(6.0, 6.0, 14.0, 20.0)
@@ -197,7 +198,7 @@ func _silo(base: Vector3, r: float, h: float) -> void:
 	_box("paint", Vector3(0.6, h - 1.0, 0.5), base + Vector3(0, (h - 1.0) * 0.5, -r - 0.2), STAVE.darkened(0.1))  # chute
 
 
-func _cone(base: Vector3, r: float, h: float, col: Color, segs := 20) -> void:
+func _cone(base: Vector3, r: float, h: float, col: Color, segs := 20, mat := "metal") -> void:
 	var apex := base + Vector3(0, h, 0)
 	for i in segs:
 		var a0 := TAU * i / segs
@@ -206,5 +207,4 @@ func _cone(base: Vector3, r: float, h: float, col: Color, segs := 20) -> void:
 		var p1 := base + Vector3(cos(a1) * r, 0, sin(a1) * r)
 		var out := ((p0 + p1) * 0.5 - base).normalized() + Vector3(0, 0.6, 0)
 		var slant := Vector2(r, h).length()
-		_tri("metal", p0, p1, apex, col, [Vector2(r * a0, 0), Vector2(r * a1, 0), Vector2(r * (a0 + a1) * 0.5, slant)], out)
-		_tri("paint", p0, p1, apex, col.darkened(0.5), [], -out)
+		_tri(mat, p0, p1, apex, col, [Vector2(r * a0, 0), Vector2(r * a1, 0), Vector2(r * (a0 + a1) * 0.5, slant)], out)

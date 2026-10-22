@@ -6,6 +6,11 @@ extends RefCounted
 ## with no local supply import theirs from the highway, and loads with no
 ## buyer in town leave by the highway for the region.
 ##
+## Warehouses ("wh:<id>", see Warehouses) sit in between: a raw load no
+## factory wants yet goes to the nearest one with room before it would leave
+## town, factories draw on their stock before importing, and goods stop at
+## one on the way to the shops when it is nearer than any shop.
+##
 ## Trucks are Traffic's dispatched trips: they drive the real roads, and the
 ## load counts only when the truck arrives.
 
@@ -59,7 +64,7 @@ func tick(sim: CitySim) -> void:
 		var s: Dictionary = sim.industry.sites[id]
 		if s.stock >= 1.0 and sent < MAX_PER_ROUND and not s.drive.is_empty():
 			var k: Dictionary = Industry.KINDS[s.kind]
-			if _send(sim, {"ref": "site:%d" % id, "pos": _xz(s.drive[-1]), "drive": _lane(s.drive)}, _buyer(sim, s.drive[-1], "raw"),
+			if _send(sim, {"ref": "site:%d" % id, "pos": _xz(s.drive[-1]), "drive": _lane(s.drive)}, _buyer(sim, s.drive[-1], "raw", Industry.KINDS[s.kind].cargo),
 					k.purpose, {"good": k.cargo, "amount": 1}, "site"):
 				s.stock -= 1.0
 				sent += 1
@@ -68,7 +73,7 @@ func tick(sim: CitySim) -> void:
 	for id in ids:
 		var f: Dictionary = sim.farms.farms[id]
 		if grain.get(id, 0.0) >= Balance.GRAIN_TRUCK_BUSHELS and sent < MAX_PER_ROUND and not f.drive.is_empty():
-			if _send(sim, {"ref": "farm:%d" % id, "pos": _xz(f.drive[-1]), "drive": _lane(f.drive)}, _buyer(sim, f.drive[-1], "raw"),
+			if _send(sim, {"ref": "farm:%d" % id, "pos": _xz(f.drive[-1]), "drive": _lane(f.drive)}, _buyer(sim, f.drive[-1], "raw", f.crop),
 					"grain", {"good": f.crop, "amount": int(Balance.GRAIN_TRUCK_BUSHELS)}, "farm"):
 				grain[id] -= Balance.GRAIN_TRUCK_BUSHELS
 				sent += 1
@@ -85,12 +90,29 @@ func tick(sim: CitySim) -> void:
 					"goods", {"good": "goods", "amount": 1}, "factory"):
 				stock[key] -= Balance.FACTORY_LOADS_PER_GOODS
 				sent += 1
-		# No local load on its way: import one from the region.
-		if need[key] >= 1.0 and sent < MAX_PER_ROUND and not _inbound(key):
+		# No local load on its way: take one from a warehouse, else import one from the region.
+		if need[key] >= 1.0 and sent < MAX_PER_ROUND and not _inbound(key) and _from_warehouse(sim, key, lot.front):
+			sent += 1
+		elif need[key] >= 1.0 and sent < MAX_PER_ROUND and not _inbound(key):
 			var edge := _edge(sim, lot.front)
 			if not edge.is_empty() and _send(sim, edge, {"ref": "lot:" + key, "pos": _xz(lot.front)},
 					"raw", {"good": "materials", "amount": 1}, "import"):
 				sent += 1
+	# Warehouses send their goods on to the shops.
+	ids = sim.warehouses.buildings.keys()
+	ids.sort()
+	for id in ids:
+		var w: Dictionary = sim.warehouses.buildings[id]
+		if sent >= MAX_PER_ROUND or Warehouses.stored(w, Warehouses.GOODS) < 1:
+			continue
+		var shop := _buyer(sim, w.pos, "shop")
+		if shop.is_empty() or shop.ref == "edge":
+			continue  # no shop yet: the goods wait
+		var cargo := sim.warehouses.take_load(id, Warehouses.GOODS)
+		if _send(sim, {"ref": "wh:%d" % id, "pos": _xz(w.pos)}, shop, "goods", cargo, "wh"):
+			sent += 1
+		else:
+			sim.warehouses.put_back(id, cargo, Warehouses.GOODS)
 
 
 ## Grain grows on the farms and companies fill their yards.
@@ -114,9 +136,11 @@ func _produce(sim: CitySim) -> void:
 
 
 ## Where a load goes: the nearest open factory that still wants raw
-## materials (or shop, for goods), else out by the highway.
-func _buyer(sim: CitySim, from: Vector3, what: String) -> Dictionary:
-	var zone := ZoneMap.Zone.COMMERCIAL if what == "goods" else ZoneMap.Zone.INDUSTRIAL
+## materials, else the nearest warehouse with room, else out by the highway.
+## Goods go to the nearest shop, or a warehouse when one is nearer ("shop":
+## shops only, for goods leaving a warehouse).
+func _buyer(sim: CitySim, from: Vector3, what: String, good := "") -> Dictionary:
+	var zone := ZoneMap.Zone.INDUSTRIAL if what == "raw" else ZoneMap.Zone.COMMERCIAL
 	var best := ""
 	var best_d := INF
 	var keys := sim.buildings.keys()
@@ -130,11 +154,32 @@ func _buyer(sim: CitySim, from: Vector3, what: String) -> Dictionary:
 		if d < best_d:
 			best_d = d
 			best = key
+	if what == "goods" or (what == "raw" and best == ""):
+		var wid := sim.warehouses.take_room(from, good if good != "" else what)  # promised; released below if a shop is nearer
+		if wid != -1:
+			var w: Dictionary = sim.warehouses.buildings[wid]
+			if best == "" or w.pos.distance_to(from) < best_d:
+				return {"ref": "wh:%d" % wid, "pos": _xz(w.pos)}
+			sim.warehouses.release_room(wid)
 	if best != "":
 		if zone == ZoneMap.Zone.INDUSTRIAL:
 			need[best] -= 1.0  # spoken for
 		return {"ref": "lot:" + best, "pos": _xz(sim.lots[best].front)}
 	return _edge(sim, from)
+
+
+## A factory's next raw load from the nearest warehouse holding one.
+func _from_warehouse(sim: CitySim, key: String, front: Vector3) -> bool:
+	var id := sim.warehouses.nearest_with(Warehouses.RAW, front, _left)
+	if id == -1:
+		return false
+	var w: Dictionary = sim.warehouses.buildings[id]
+	var cargo := sim.warehouses.take_load(id, Warehouses.RAW)
+	if _send(sim, {"ref": "wh:%d" % id, "pos": _xz(w.pos)}, {"ref": "lot:" + key, "pos": _xz(front)},
+			"raw", cargo, "wh"):
+		return true
+	sim.warehouses.put_back(id, cargo, Warehouses.RAW)
+	return false
 
 
 ## The outside connection: the nearest of the town's region links, where
@@ -162,6 +207,7 @@ func _send(sim: CitySim, from: Dictionary, to: Dictionary, purpose: String, carg
 			var key: String = str(to.ref).substr(4)
 			if need.has(key):
 				need[key] += 1.0  # give the order back
+		_release(sim, to)
 		return false
 	trips[id] = {"from": from, "to": to, "purpose": purpose, "cargo": cargo, "kind": kind}
 	_left[from.ref] = true
@@ -173,13 +219,22 @@ func _arrive(sim: CitySim, t: Dictionary) -> void:
 	var to: String = t.to.ref
 	if to == "edge":
 		exported += 1
+	elif to.begins_with("wh:"):
+		sim.warehouses.receive(int(to.substr(3)), t.cargo, Warehouses.GOODS if t.purpose == "goods" else Warehouses.RAW)
 	elif to.begins_with("lot:") and t.purpose != "goods":
 		var key := to.substr(4)
 		stock[key] = stock.get(key, 0.0) + 1.0
-		if t.kind == "import":
-			imported += 1
+		if t.kind in ["import", "wh"]:
+			if t.kind == "import":
+				imported += 1
 			need[key] = maxf(0.0, need.get(key, 0.0) - 1.0)
 	delivered += 1
+
+
+## Space a warehouse kept for a truck that never came.
+func _release(sim: CitySim, to: Dictionary) -> void:
+	if str(to.ref).begins_with("wh:"):
+		sim.warehouses.release_room(int(str(to.ref).substr(3)))
 
 
 ## A truck that found no way through takes its load back.
@@ -196,6 +251,9 @@ func _return(sim: CitySim, t: Dictionary) -> void:
 	elif ref.begins_with("lot:") and t.kind == "factory":
 		var key := ref.substr(4)
 		stock[key] = stock.get(key, 0.0) + Balance.FACTORY_LOADS_PER_GOODS
+	elif ref.begins_with("wh:"):
+		sim.warehouses.put_back(int(ref.substr(3)), t.cargo, Warehouses.GOODS if t.purpose == "goods" else Warehouses.RAW)
+	_release(sim, t.to)
 	if str(t.to.ref).begins_with("lot:") and t.kind in ["site", "farm"]:
 		var key: String = str(t.to.ref).substr(4)
 		if need.has(key):

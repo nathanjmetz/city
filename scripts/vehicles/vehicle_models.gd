@@ -27,14 +27,25 @@ const WHITE := Color(0.92, 0.92, 0.91, 0.4)
 const STEEL := Color(0.62, 0.63, 0.64, 0.2)
 const DARK := Color(0.16, 0.16, 0.17, 0.4)
 const RIM := Color(0.72, 0.72, 0.73, 0.2)
+## Loads: oak bark, freshly sawn log ends, iron ore, dunnage, ratchet straps.
+const BARK := Color(0.46, 0.37, 0.27, 0.4)
+## Unpainted aluminium trailer bodies read light grey from above.
+const ALUM := Color(0.74, 0.75, 0.77, 0.4)
+const WOOD_END := Color(0.94, 0.84, 0.64, 0.4)
+const ORE := Color(0.45, 0.28, 0.20, 0.4)
+const COIL := Color(0.62, 0.63, 0.65, 0.4)
+const WOOD_DARK := Color(0.42, 0.33, 0.22, 0.4)
+const STRAP := Color(0.85, 0.62, 0.08, 0.4)
 
 ## Articulated vehicles: the tractor unit is drawn as `cab`, the trailer as
 ## `trailer`, hitched at `hitch` metres behind the front bumper. The trailer's
 ## kingpin sits `pin` m behind its own front, and its rear axles `axle` m.
 const ARTIC := {
 	"semi": {"cab": "tractor_sleeper", "trailer": "trailer_box", "hitch": 6.6, "pin": 0.9, "axle": 14.4},
-	"flatbed": {"cab": "tractor_sleeper", "trailer": "trailer_flat", "hitch": 6.6, "pin": 0.9, "axle": 14.4},
+	"flatbed": {"cab": "tractor_sleeper", "trailer": "trailer_flat", "hitch": 6.6, "pin": 0.9, "axle": 12.9},
 	"grain_truck": {"cab": "tractor_day", "trailer": "trailer_hopper", "hitch": 5.0, "pin": 0.9, "axle": 14.4},
+	"log_truck": {"cab": "tractor_day", "trailer": "trailer_logs", "hitch": 5.0, "pin": 0.9, "axle": 13.4},
+	"ore_truck": {"cab": "tractor_day", "trailer": "trailer_end_dump", "hitch": 5.0, "pin": 0.9, "axle": 12.6},
 	"tanker": {"cab": "tractor_day", "trailer": "trailer_tank", "hitch": 5.0, "pin": 0.9, "axle": 13.4},
 }
 ## Where the (rear) axle that steers the body sits, metres behind the front.
@@ -571,7 +582,7 @@ func _trailer_hopper() -> void:  # 42 ft grain hopper (Wilson, Timpte)
 	_loft([
 		[0.0, 1.5, 2.6, 3.1, 1.25, 1.3, 1.3],
 		[L, 1.5, 2.6, 3.1, 1.25, 1.3, 1.3],
-	], [_edges(STEEL, STEEL)], STEEL, STEEL)
+	], [_edges(ALUM, ALUM)], ALUM, ALUM)
 	# Tarp over the grain, and the two hopper bins underneath.
 	_box(Vector3(0, 3.14, L * 0.5), Vector3(2.5, 0.08, L - 0.2), Color(0.14, 0.15, 0.16, 0.4))
 	for z in [5.0, 9.8]:
@@ -579,7 +590,7 @@ func _trailer_hopper() -> void:  # 42 ft grain hopper (Wilson, Timpte)
 			[z - 2.0, 1.5, 1.5, 1.52, 1.2, 1.2, 1.2],
 			[z, 0.75, 1.2, 1.5, 0.3, 0.6, 1.2],
 			[z + 2.0, 1.5, 1.5, 1.52, 1.2, 1.2, 1.2],
-		], [_edges(STEEL, STEEL)], STEEL, STEEL)
+		], [_edges(ALUM, ALUM)], ALUM, ALUM)
 	_trailer_base(L, [13.4, 14.65])
 
 
@@ -592,14 +603,68 @@ func _trailer_tank() -> void:  # stainless tanker (milk, fuel)
 	_trailer_base(L, [12.4, 13.65])
 
 
-func _trailer_flat() -> void:  # 48 ft flatbed with a lumber load
-	var L := 16.15
+func _trailer_flat() -> void:  # 48 ft flatbed with steel coils on cradles
+	var L := 14.6
 	_box(Vector3(0, 1.35, L * 0.5), Vector3(2.6, 0.2, L), STEEL)
-	_box(Vector3(0, 2.15, L * 0.5 - 0.5), Vector3(2.4, 1.4, L - 3.0), Color(0.78, 0.66, 0.46, 0.4))
-	if not _lo:
-		for i in 6:
-			_box(Vector3(0, 2.15, 2.0 + i * 2.4), Vector3(2.44, 1.44, 0.05), Color(0.2, 0.2, 0.22, 0.4))
-	_trailer_base(L, [13.9, 15.15])
+	_box(Vector3(0, 1.5, 0.15), Vector3(2.5, 0.12, 0.3), TRIM)
+	for i in 5:
+		var z := 2.0 + i * 2.5
+		_cyl(Vector3(-0.9, 2.15, z), Vector3(0.9, 2.15, z), 0.7, COIL, 12)
+		if not _lo:
+			_box(Vector3(0, 1.55, z), Vector3(1.6, 0.2, 1.3), WOOD_DARK)
+			_box(Vector3(0, 2.15, z), Vector3(1.84, 1.44, 0.04), STRAP)
+	_trailer_base(L, [12.4, 13.65])
+
+
+## A log trailer: skeletal frame, steel bunks with stakes, and a pyramid of
+## 40 ft logs with pale cut ends (benchmark: Midwest hardwood haulers).
+func _trailer_logs() -> void:
+	var L := 14.6
+	_box(Vector3(0, 1.3, L * 0.5), Vector3(0.9, 0.3, L), TRIM)
+	var bunks := [1.2, 5.0, 9.0, 13.0]
+	for z in bunks:
+		_box(Vector3(0, 1.55, z), Vector3(2.6, 0.2, 0.25), TRIM)
+		for x in [-1.22, 1.22]:
+			_box(Vector3(x, 2.5, z), Vector3(0.12, 1.9, 0.12), TRIM)
+	if _lo:
+		_box(Vector3(0, 2.4, L * 0.5), Vector3(2.3, 1.4, 13.2), BARK)
+		_box(Vector3(0, 2.4, L * 0.5 - 6.62), Vector3(2.2, 1.3, 0.02), WOOD_END)
+		_box(Vector3(0, 2.4, L * 0.5 + 6.62), Vector3(2.2, 1.3, 0.02), WOOD_END)
+	else:
+		# Rows from the bottom: 5, 4, 3 logs, nested in the gaps below.
+		var y := 1.65
+		for row in [5, 4, 3]:
+			for i in row:
+				var r: float = 0.2 + 0.035 * fmod(i * 3.7 + row * 1.3, 2.0)
+				var x: float = (i - (row - 1) * 0.5) * 0.47
+				var z0: float = 0.75 + 0.35 * fmod(i * 1.7 + row, 1.0)
+				var z1: float = z0 + 12.9 + 0.3 * fmod(i * 2.3, 1.0)
+				_cyl(Vector3(x, y + r, z0), Vector3(x, y + r, z1), r, BARK, 7)
+				_disc(Vector3(x, y + r, z0 - 0.01), Vector3(0, 0, -1), r * 0.92, WOOD_END)
+				_disc(Vector3(x, y + r, z1 + 0.01), Vector3(0, 0, 1), r * 0.92, WOOD_END)
+			y += 0.4
+		for z in bunks:
+			_box(Vector3(0, y + 0.02, z), Vector3(1.6, 0.03, 0.06), STRAP)
+	_trailer_base(L, [12.4, 13.65])
+
+
+## An end-dump trailer (half-round aluminium tub) heaped with iron ore.
+func _trailer_end_dump() -> void:
+	var L := 12.8
+	_loft([
+		[0.0, 1.35, 2.6, 3.5, 0.8, 1.25, 1.25],
+		[L - 0.3, 1.35, 2.6, 3.5, 0.8, 1.25, 1.25],
+		[L, 1.6, 2.7, 3.5, 0.75, 1.2, 1.2],
+	], [_edges(ALUM, ALUM)], ALUM, ALUM)
+	# The load heaps up above the rim in the middle.
+	_loft([
+		[0.4, 3.3, 3.45, 3.5, 1.15, 1.18, 1.0],
+		[3.0, 3.3, 3.6, 3.95, 1.15, 1.18, 0.6],
+		[L - 3.0, 3.3, 3.6, 3.95, 1.15, 1.18, 0.6],
+		[L - 0.6, 3.3, 3.45, 3.5, 1.1, 1.13, 1.0],
+	], [_edges(ORE, ORE)], ORE, ORE)
+	_box(Vector3(0, 1.2, L * 0.5), Vector3(1.0, 0.25, L), TRIM)
+	_trailer_base(L, [10.6, 11.85])
 
 
 # --- Farm -------------------------------------------------------------------

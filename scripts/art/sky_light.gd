@@ -8,18 +8,36 @@ extends Node3D
 ##   - shadow sides lit by blue skylight, about a third as bright as sunlit sides
 ##   - distant blocks fading into blue-grey air (aerial perspective)
 ## Works in the Compatibility renderer, so it runs on the web build too.
+##
+## That late-morning look is the default. When the player turns on the
+## day/night cycle, DayNight calls set_time() each frame and the sun follows
+## its real path over southern Indiana for the season: low in winter, high
+## and late in summer, golden at dusk, then moonlight and stars (Cities:
+## Skylines 2 lighting is the benchmark for how it plays, reality for how
+## it looks).
 
 ## Sun height above the horizon and compass direction, in degrees.
 const SUN_ELEVATION := 40.0
 const SUN_AZIMUTH := -38.0
 const HAZE := Color(0.74, 0.79, 0.84)
 
+## Night sky colours: deep navy overhead, a little city glow low down.
+const NIGHT_TOP := Color(0.012, 0.02, 0.05)
+const NIGHT_HORIZON := Color(0.05, 0.06, 0.1)
+## Sky low toward the sun at sunset and sunrise.
+const DUSK_HORIZON := Color(0.98, 0.56, 0.32)
+const DUSK_TOP := Color(0.16, 0.22, 0.45)
+const MOON_COLOR := Color(0.62, 0.72, 0.95)
+
 var sun := DirectionalLight3D.new()
 var env := Environment.new()
+var sky_mat := ProceduralSkyMaterial.new()
+## 0 in full daylight, 1 at full night. DayNight reads it.
+var darkness := 0.0
+var _day := {}  # the fixed late-morning look, to go back to
 
 
 func _ready() -> void:
-	var sky_mat := ProceduralSkyMaterial.new()
 	sky_mat.sky_top_color = Color(0.17, 0.36, 0.70)
 	sky_mat.sky_horizon_color = HAZE
 	sky_mat.sky_curve = 0.12
@@ -73,6 +91,113 @@ func _ready() -> void:
 	sun.directional_shadow_blend_splits = true
 	sun.directional_shadow_max_distance = 600.0
 	add_child(sun)
+	# Stars, faded in at night.
+	sky_mat.sky_cover = _stars()
+	sky_mat.sky_cover_modulate = Color(1, 1, 1, 0)
+	# Lamps, lit windows and headlights bloom a little; daylight never does.
+	env.glow_enabled = true
+	env.glow_hdr_threshold = 1.2
+	env.glow_intensity = 0.0
+	env.glow_bloom = 0.0
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
+	_day = {"top": sky_mat.sky_top_color, "horizon": sky_mat.sky_horizon_color,
+		"ambient": env.ambient_light_energy, "ambient_color": env.ambient_light_color,
+		"sun_color": sun.light_color, "sun_energy": sun.light_energy, "rot": sun.rotation_degrees}
+
+
+## Back to the fixed late-morning look (day/night cycle off).
+func set_fixed() -> void:
+	darkness = 0.0
+	sky_mat.sky_top_color = _day.top
+	sky_mat.sky_horizon_color = _day.horizon
+	sky_mat.ground_horizon_color = _day.horizon
+	sky_mat.sky_cover_modulate = Color(1, 1, 1, 0)
+	sky_mat.sky_energy_multiplier = 1.0
+	env.fog_light_color = _day.horizon
+	env.ambient_light_energy = _day.ambient
+	env.ambient_light_color = _day.ambient_color
+	env.ambient_light_sky_contribution = 0.6
+	env.glow_intensity = 0.0
+	sun.light_color = _day.sun_color
+	sun.light_energy = _day.sun_energy
+	sun.rotation_degrees = _day.rot
+
+
+## Where the sun is, in degrees: x its height above the horizon, y its
+## compass bearing (0 north, 90 east). `hour` is local clock time and `months`
+## comes from Seasons.months().
+static func sun_position(hour: float, months: float) -> Vector2:
+	var m := fposmod(months, 12.0)
+	var decl := deg_to_rad(23.44) * sin(TAU * (m * 30.44 - 80.0) / 365.0)
+	# Pike County is on Eastern time but west of its meridian, so the sun is
+	# highest at about 12:50, or 1:50 in summer on daylight saving time.
+	var noon := 13.8 if m > 2.4 and m < 10.2 else 12.8
+	var h := deg_to_rad((hour - noon) * 15.0)
+	var lat := deg_to_rad(Seasons.LATITUDE)
+	var elev := asin(sin(lat) * sin(decl) + cos(lat) * cos(decl) * cos(h))
+	var az := atan2(sin(h), cos(h) * sin(lat) - tan(decl) * cos(lat)) + PI
+	return Vector2(rad_to_deg(elev), rad_to_deg(az))
+
+
+## Light the town for a time of day (hours, 0 to 24) and time of year.
+func set_time(hour: float, months: float) -> void:
+	var pos := sun_position(hour, months)
+	var elev := pos.x
+	# Daylight fades out through civil twilight (sun 6 degrees below).
+	var day := smoothstep(-8.0, 5.0, elev)
+	var low := 1.0 - smoothstep(0.0, 22.0, absf(elev))  # sun near the horizon
+	darkness = 1.0 - smoothstep(-7.0, 3.0, elev)
+	var dusk := low * (1.0 - smoothstep(-1.0, 6.0, -elev))
+	var top: Color = NIGHT_TOP.lerp(_day.top, day).lerp(DUSK_TOP, dusk * 0.5)
+	var horizon: Color = NIGHT_HORIZON.lerp(_day.horizon, day).lerp(DUSK_HORIZON, dusk * 0.75)
+	sky_mat.sky_top_color = top
+	sky_mat.sky_horizon_color = horizon
+	sky_mat.ground_horizon_color = horizon
+	sky_mat.sky_cover_modulate = Color(1, 1, 1, smoothstep(0.5, 1.0, darkness) * 0.9)
+	# The air itself only takes a little of the sunset colour; the land
+	# under a dusk sky is lit by the blue of the open sky.
+	env.fog_light_color = NIGHT_HORIZON.lerp(_day.horizon, day).lerp(Color(0.62, 0.5, 0.5), dusk * 0.35)
+	env.ambient_light_color = Color(0.32, 0.42, 0.72).lerp(_day.ambient_color, day)
+	env.ambient_light_energy = lerpf(0.6, _day.ambient, day)
+	env.glow_intensity = 0.9 * darkness
+	if elev > -2.0:
+		# The sun, warming to orange as it gets low.
+		var dir := _toward(pos)
+		sun.look_at_from_position(Vector3.ZERO, -dir, Vector3.UP if absf(dir.y) < 0.99 else Vector3.FORWARD)
+		sun.light_color = Color(1.0, 0.52, 0.28).lerp(_day.sun_color, smoothstep(2.0, 28.0, elev))
+		sun.light_energy = _day.sun_energy * smoothstep(-2.0, 5.0, elev)
+	else:
+		# Moonlight: a full moon riding opposite the sun, at least 25 degrees up.
+		var moon := Vector2(maxf(-elev, 25.0), fposmod(pos.y + 180.0, 360.0))
+		var dir := _toward(moon)
+		sun.look_at_from_position(Vector3.ZERO, -dir, Vector3.UP)
+		sun.light_color = MOON_COLOR
+		sun.light_energy = 0.7 * smoothstep(-2.0, -10.0, elev)
+
+
+## A unit vector toward a point in the sky (height, bearing). North is -Z
+## and east is +X.
+static func _toward(p: Vector2) -> Vector3:
+	var e := deg_to_rad(p.x)
+	var a := deg_to_rad(p.y)
+	return Vector3(sin(a) * cos(e), sin(e), -cos(a) * cos(e))
+
+
+## A star field for the sky dome (equirectangular), brighter stars rarer.
+static func _stars() -> ImageTexture:
+	var w := 2048
+	var h := 1024
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	for i in 2600:
+		# Only the upper half is sky; spread evenly over the dome.
+		var y := int(acos(rng.randf()) / PI * h)
+		var x := rng.randi_range(0, w - 1)
+		var b := pow(rng.randf(), 3.0) * 0.85 + 0.15
+		var tint := Color(0.85, 0.9, 1.0).lerp(Color(1.0, 0.9, 0.78), rng.randf())
+		img.set_pixel(x, clampi(y, 0, h - 1), Color(tint.r, tint.g, tint.b, b))
+	return ImageTexture.create_from_image(img)
 
 
 func _process(_delta: float) -> void:

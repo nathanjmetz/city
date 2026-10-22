@@ -7,7 +7,6 @@ extends Node3D
 var sim: CitySim
 var _fields := MeshInstance3D.new()
 var _lanes := MeshInstance3D.new()
-var _field_mat := StandardMaterial3D.new()
 var _homes := {}  # farm id -> Node3D
 var _trees := TreeField.new()
 var _mats := {}
@@ -17,10 +16,7 @@ var _month := -1
 func setup(s: CitySim) -> void:
 	sim = s
 	sim.farms_changed.connect(_rebuild)
-	_field_mat.albedo_texture = _rows_texture()
-	_field_mat.roughness = 1.0
-	_field_mat.vertex_color_use_as_albedo = true
-	_fields.material_override = _field_mat
+	_fields.material_override = Surfaces.field()
 	_lanes.material_override = RoadStyle.material(Color(0.58, 0.47, 0.33))  # tan crushed limestone and dirt
 	for mi in [_fields, _lanes]:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -30,7 +26,7 @@ func setup(s: CitySim) -> void:
 
 
 func _process(_delta: float) -> void:
-	var month: int = sim.clock().month
+	var month: int = DayNight.visible_month(sim)
 	if month != _month:
 		_month = month
 		_draw_fields()
@@ -43,6 +39,7 @@ func _rebuild() -> void:
 			_homes[id].queue_free()
 			_homes.erase(id)
 			_trees.remove(str(id))
+			_trees.remove("rows %s" % str(id))
 	for id in sim.farms.farms:
 		if not _homes.has(id):
 			_homes[id] = _farmstead(id, sim.farms.farms[id])
@@ -59,7 +56,9 @@ static func _look(f: Dictionary) -> int:
 ## What a field looks like this month in the Midwest.
 func _season_color(crop: String) -> Color:
 	var m := maxi(_month, 1)
-	if m <= 3 or m == 12:
+	if m <= 2 or m == 12:
+		return Color(0.84, 0.85, 0.88)  # snow over the stubble
+	if m == 3:
 		return Color(0.6, 0.52, 0.38)  # winter stubble
 	if m == 4:
 		return Color(0.36, 0.27, 0.19)  # tilled black soil
@@ -92,6 +91,7 @@ func _draw_fields() -> void:
 			for poly in trimmed.get(c, [Farms.cell_corners(f, c)]):
 				_add_poly(st, f, poly, 0.06, col)
 			any = true
+		_fencerows(st, id, f)
 		if f.drive.size() >= 2:
 			var pts := PackedVector3Array()
 			for p in f.drive:
@@ -125,14 +125,31 @@ func _add_poly(st: SurfaceTool, f: Dictionary, poly: PackedVector2Array, y: floa
 			st.add_vertex(Vector3(p.x, y, p.y))
 
 
-## Crop rows: light and dark stripes, multiplied by the season's colour.
-static func _rows_texture() -> ImageTexture:
-	var img := Image.create(8, 8, false, Image.FORMAT_RGB8)
-	for x in 8:
-		for y in 8:
-			var v := 0.9 if x % 4 < 2 else 0.74
-			img.set_pixel(x, y, Color(v, v, v))
-	return ImageTexture.create_from_image(img)
+## A grassy, brushy fencerow along each outside edge of a farm's land, with
+## the odd volunteer tree in it, as on real section-line field edges.
+func _fencerows(st: SurfaceTool, id: Variant, f: Dictionary) -> void:
+	var verge := Color(0.5, 0.5, 0.3, 0.0)
+	var planted := []
+	# Neighbour offsets and the cell_corners() edge each one shares.
+	var sides := [[Vector2i(-1, 0), 0, 3], [Vector2i(1, 0), 1, 2], [Vector2i(0, -1), 0, 1], [Vector2i(0, 1), 3, 2]]
+	for c in f.cells:
+		var corners := Farms.cell_corners(f, c)
+		var mid := Farms.cell_center(f, c)
+		for s in sides:
+			if f.cells.has(c + s[0]):
+				continue
+			var a: Vector2 = corners[s[1]]
+			var b: Vector2 = corners[s[2]]
+			var out := ((a + b) * 0.5 - Vector2(mid.x, mid.z)).normalized()
+			var strip := PackedVector2Array([a - out * 2.5, b - out * 2.5, b + out * 1.0, a + out * 1.0])
+			_add_poly(st, f, strip, 0.07, verge)
+			var h := Farms._hash01(c * 4 + s[0], 7)
+			if h < 0.45:
+				var at := a.lerp(b, 0.15 + 0.7 * Farms._hash01(c * 4 + s[0], 11)) - out * 1.2
+				var sp: int = [TreeField.Species.OAK, TreeField.Species.MAPLE, TreeField.Species.LOCUST, TreeField.Species.CRABAPPLE][int(h * 8.9) % 4]
+				planted.append([Transform3D(Basis(Vector3.UP, h * 40.0).scaled(Vector3.ONE * (0.7 + h)), Vector3(at.x, 0, at.y)),
+					sp, TreeField.LEAF[sp]])
+	_trees.set_trees("rows %s" % str(id), planted)
 
 
 ## A Midwestern farmstead: white farmhouse first, then a red barn, grain

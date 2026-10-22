@@ -52,9 +52,10 @@ static func height_factor(c: Array) -> float:
 
 ## A building's yearly property tax: its value, less while it sits part
 ## empty, times the zone's rate.
-func building_tax(b: Dictionary, staffed: float) -> float:
+## `lift` is how much nearby parks and landmarks raise its value (0.1 = 10%).
+func building_tax(b: Dictionary, staffed: float, lift := 0.0) -> float:
 	var z := int(b.zone)
-	var value: float = VALUE_PER_PLACE[z] * b.cap
+	var value: float = VALUE_PER_PLACE[z] * b.cap * (1.0 + lift)
 	var used := staffed
 	if z == ZoneMap.Zone.RESIDENTIAL:
 		used = float(b.occ) / maxf(b.cap, 1.0)
@@ -71,12 +72,16 @@ func update_budget(sim: CitySim) -> void:
 		var b: Dictionary = sim.buildings[key]
 		if int(b.zone) != ZoneMap.Zone.RESIDENTIAL and not sim.utilities_ok(key):
 			continue  # a business with no power or water is closed
-		income[int(b.zone)] += building_tax(b, staffed) / 12.0
+		# Land near a landfill is worth less, near a cemetery a little more,
+		# and parks and landmarks lift it.
+		income[int(b.zone)] += building_tax(b, staffed, sim.parks.lot_value.get(key, 0.0)) * sim.hubs.lot_factor(sim, key) / 12.0
 	# Farmland pays property tax at the industrial rate.
 	income[ZoneMap.Zone.INDUSTRIAL] += sim.farms.total_acres() * Farms.LAND_PER_ACRE * Farms.AG_ASSESSMENT \
 		* tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
 	# Resource companies pay property tax on their main buildings and pads.
 	income[ZoneMap.Zone.INDUSTRIAL] += sim.industry.taxable_value() * tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
+	# So do warehouses.
+	income[ZoneMap.Zone.INDUSTRIAL] += sim.warehouses.taxable_value() * tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
 	var upkeep := 0.0
 	for id in sim.network.segments:
 		upkeep += road_upkeep(sim.network.curve_of(id), sim.network.segments[id].type)
@@ -91,7 +96,7 @@ func update_budget(sim: CitySim) -> void:
 	for z in income:
 		income[z] = roundi(income[z] * d.income)
 	budget = {"income": income, "upkeep": roundi(upkeep * d.upkeep), "fees": roundi(fees * d.income),
-		"services": roundi(sim.services.monthly_upkeep() * d.upkeep)}
+		"services": roundi((sim.services.monthly_upkeep() + sim.hubs.monthly_cost() + sim.parks.monthly_upkeep()) * d.upkeep)}
 
 
 func monthly_net() -> int:

@@ -13,6 +13,8 @@ func _initialize() -> void:
 
 func _run() -> void:
 	_test_region_in_step()
+	_test_crossroads()
+	_test_trade()
 	_test_city_lines()
 
 	var data := OS.get_user_data_dir().path_join("test-region.json")
@@ -125,6 +127,78 @@ func _test_region_in_step() -> void:
 	_check(a.cities.c1.origin != a.cities.c2.origin, "cities get their own spots")
 
 
+## New towns start on a county road that meets each neighbor's halfway.
+func _test_crossroads() -> void:
+	var r := Region.new()
+	r.add_city("p1", "Ann")
+	var ann: CitySim = r.cities.c1.sim
+	_check(ann.region_links.size() == 2, "the first town sits on a county highway, both ends out to the region")
+	_check(ann.economy.money == Economy.START_MONEY, "the county road is free")
+	r.add_city("p2", "Bob")
+	r.add_city("p3", "Cy")
+	var bob: CitySim = r.cities.c2.sim
+	_check(bob.economy.money == Economy.START_MONEY and ann.economy.money == Economy.START_MONEY, "nobody pays for the joining roads")
+	_check(r.joins.size() == 1 + 2, "Bob joins Ann; Cy joins both (%d joins)" % r.joins.size())
+	var met := true
+	for j in r.joins:
+		var a: Dictionary = r.cities[j.a]
+		var b: Dictionary = r.cities[j.b]
+		var pa: Vector3 = a.sim.network.nodes[j.a_node]
+		var pb: Vector3 = b.sim.network.nodes[j.b_node]
+		if (a.origin + Vector2(pa.x, pa.z)).distance_to(b.origin + Vector2(pb.x, pb.z)) > 1.0:
+			met = false
+		if not j.a_node in a.sim.region_links or not j.b_node in b.sim.region_links:
+			met = false
+	_check(met, "each pair of county roads meets at one spot on the city line")
+	var seg: int = bob.network.segments_at(r.joins[0].a_node)[0]
+	_check(not bob.apply_now({"type": "remove_road", "seg": seg}), "a county road can't be bulldozed")
+	var copy := Region.new()
+	copy.from_dict(JSON.parse_string(JSON.stringify(r.to_dict(), "", false, true)))
+	_check(copy.joins == r.joins, "the joins are saved")
+
+
+## Neighbors trade first, at a fair price; the outside fills the gaps for more.
+func _test_trade() -> void:
+	var r := Region.new()
+	for p in [["p1", "Ann"], ["p2", "Bob"], ["p3", "Cy"]]:
+		r.add_city(p[0], p[1])
+	var ann: CitySim = r.cities.c1.sim
+	var bob: CitySim = r.cities.c2.sim
+	var cy: CitySim = r.cities.c3.sim
+	var price := Trade.base_price("power")
+	bob.trade.offer("power", 50.0)
+	ann.trade.want("power", 30.0)
+	cy.trade.want("power", 40.0)
+	ann.trade.offer("water", 10.0)
+	var trucks := []
+	bob.trade.deal.connect(func(d): trucks.append(d))
+	var money := [ann.economy.money, bob.economy.money, cy.economy.money]
+	r.settle_trade()
+	_check(ann.trade.got("power") == 30.0 and bob.trade.sold("power") == 50.0, "Ann buys her power from Bob")
+	_check(cy.trade.got("power") == 40.0, "Cy gets the rest of Bob's power and the outside covers what's left")
+	_check(bob.economy.money - money[1] == roundi(50 * price), "Bob is paid for all he sold")
+	_check(money[2] - cy.economy.money == roundi(20 * price) + roundi(20 * price * Balance.TRADE_IMPORT_MARKUP),
+		"buying from outside costs Cy more than buying from a neighbor")
+	_check(ann.trade.sold("water") == 10.0 and ann.economy.money - money[0] == roundi(10 * Trade.base_price("water") * Balance.TRADE_EXPORT_SHARE) - roundi(30 * price),
+		"what no neighbor wants sells to the outside for less")
+	var to_ann = trucks.filter(func(d): return d.buyer == "c1")
+	_check(not to_ann.is_empty() and to_ann[0].link in bob.region_links, "each deal says which county road the trucks take")
+	var copy := Region.new()
+	copy.from_dict(JSON.parse_string(JSON.stringify(r.to_dict(), "", false, true)))
+	copy.settle_trade()
+	r.settle_trade()
+	_check(copy.checksums() == r.checksums(), "trade comes out the same on every copy")
+	# A solo city trades with the outside world once a game month.
+	var solo := CitySim.new()
+	solo.trade.want("power", 10.0)
+	var before := solo.economy.money
+	for i in 24 * CitySim.TICKS_PER_HOUR:
+		solo.tick()
+	_check(solo.trade.got("power") == 10.0 and solo.trade.net == -roundi(10 * price * Balance.TRADE_IMPORT_MARKUP),
+		"a solo city buys from the outside (%s)" % str(solo.trade.bought))
+	_check(before - solo.economy.money >= roundi(10 * price * Balance.TRADE_IMPORT_MARKUP) - 1000000, "and pays for it")
+
+
 ## The city line runs halfway between two towns, and stops where a third is nearer.
 func _test_city_lines() -> void:
 	var a := PackedVector2Array()
@@ -151,15 +225,22 @@ func _test_city_lines() -> void:
 	_check(max_y < 400.0, "the line stops where a third town is nearer (reaches y=%d)" % max_y)
 
 
-## Power, water and zones along a city's starter road: commands to grow a town.
+## Power, water and zones along a city's starter road (its county road out
+## to the first region link): commands to grow a town.
 func _starter_town(sim: CitySim) -> Array:
+	var link: Vector3 = sim.network.nodes[sim.region_links[0]]
+	var along := Vector2(link.x, link.z).normalized()
+	var side := along.orthogonal()
 	var out := []
-	for k in [[Services.Kind.SUBSTATION, -330], [Services.Kind.WATER_TOWER, -270]]:
-		var site := Services.site_near(sim.network, k[0], Vector3(k[1], 0, 40))
+	for k in [[Services.Kind.SUBSTATION, 330], [Services.Kind.WATER_TOWER, 270]]:
+		var p: Vector2 = along * k[1] + side * 40
+		var site := Services.site_near(sim.network, k[0], Vector3(p.x, 0, p.y))
 		out.append({"type": "place_service", "kind": k[0], "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})
-	for x in range(-380, -100, 10):
-		out.append({"type": "paint_zone", "center": [x, -25], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
-		out.append({"type": "paint_zone", "center": [x, 25], "radius": 12, "zone": ZoneMap.Zone.INDUSTRIAL})
+	for d in range(100, 380, 10):
+		var a: Vector2 = along * d - side * 25
+		var b: Vector2 = along * d + side * 25
+		out.append({"type": "paint_zone", "center": [a.x, a.y], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
+		out.append({"type": "paint_zone", "center": [b.x, b.y], "radius": 12, "zone": ZoneMap.Zone.INDUSTRIAL})
 	return out
 
 

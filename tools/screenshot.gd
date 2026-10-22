@@ -13,6 +13,9 @@ func _initialize() -> void:
 
 
 func _process(_delta: float) -> bool:
+	# Wait for the game to finish loading its own town first.
+	if _frames == 0 and _main.loading:
+		return false
 	_frames += 1
 	if _frames == 2:
 		_demo_town()
@@ -33,6 +36,19 @@ func _demo_town() -> void:
 	sim.apply({"type": "clear"})
 	sim.economy.money = 20_000_000  # a demo town, built in one go
 	var args0 := OS.get_cmdline_user_args()
+	if args0.size() >= 5 and args0[4] == "warehouses":
+		# Every warehouse size along an industrial avenue; the big one has grown.
+		sim.apply({"type": "build_road", "start": [-420, 0], "ctrl": [0, 0], "end": [420, 0], "road": 1})
+		var xs := {"small": -330.0, "medium": -230.0, "large": -70.0, "dc": 170.0}
+		for k in Warehouses.ORDER:
+			var site := Warehouses.site_near(sim.network, Vector3(xs[k], 0, 40))
+			sim.apply({"type": "place_warehouse", "kind": k, "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})
+		var big: Dictionary = sim.warehouses.buildings[3]
+		big.level = 2
+		big.bays = 2
+		sim.warehouses_changed.emit()
+		_aim_camera()
+		return
 	if args0.size() >= 5 and args0[4] == "highway":
 		_demo_interchange(sim)
 		return
@@ -44,11 +60,16 @@ func _demo_town() -> void:
 		sim.apply({"type": "build_road", "start": [-140, 90], "ctrl": [-50, 60], "end": [0, 40], "road": 4})
 		_aim_camera()
 		return
+	if args0.size() >= 5 and args0[4] == "hubs":
+		_demo_hubs(sim)
+		_aim_camera()
+		return
 	if args0.size() >= 5 and args0[4] == "nopower":
 		# Brawn's start: streets zoned, a well built, no power yet.
 		sim.apply({"type": "build_grid", "a": [-160, -40], "b": [120, -40], "c": [-160, -220], "block": 140})
-		for lot in sim.lots.values():
-			sim.apply({"type": "paint_zone", "center": [lot.zone_pt.x, lot.zone_pt.z], "radius": 3, "zone": ZoneMap.Zone.RESIDENTIAL})
+		for id in sim.network.segments.keys():
+			for side in [-1, 1]:
+				sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": ZoneMap.Zone.RESIDENTIAL})
 		var well := Services.site_near(sim.network, Services.Kind.WELL, Vector3(40, 0, -10))
 		sim.apply({"type": "place_service", "kind": Services.Kind.WELL, "pos": [well[0].x, well[0].z], "dir": [well[1].x, well[1].z]})
 		sim.economy.money = 100_000
@@ -94,20 +115,28 @@ func _demo_town() -> void:
 	if args0.size() >= 5 and args0[4] in ["farms", "roadwins"]:
 		_demo_farms(sim)
 		return
+	if args0.size() >= 5 and args0[4] == "forest":
+		_demo_forest(sim)
+		return
 	# A main road with a roundabout, and a grid neighborhood beside it.
 	sim.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0], "road": 2})
 	sim.apply({"type": "build_road", "start": [120, 0], "ctrl": [160, 80], "end": [120, 180], "road": 1})
 	sim.apply({"type": "build_roundabout", "center": [120, 0], "radius": 30, "road": 1})
 	sim.apply({"type": "build_grid", "a": [-240, -50], "b": [40, -50], "c": [-240, -220], "block": 140})
 	sim.apply({"type": "build_road", "start": [-100, -50], "ctrl": [-100, -25], "end": [-100, 0]})
-	for lot in sim.lots.values():
-		var p: Vector3 = lot.zone_pt
-		var zone := ZoneMap.Zone.RESIDENTIAL
-		if p.z > -20.0 and p.z < 40.0 and p.x < 100.0:
-			zone = ZoneMap.Zone.COMMERCIAL
-		elif p.x > 130.0:
-			zone = ZoneMap.Zone.INDUSTRIAL
-		sim.apply({"type": "paint_zone", "center": [p.x, p.z], "radius": 3, "zone": zone})
+	# Zone every street side, by where its middle is.
+	for id in sim.network.segments.keys():
+		for side in [-1, 1]:
+			var c := sim.network.curve_of(id)
+			var mid := RoadNetwork.bezier(c[0], c[1], c[2], 0.5)
+			var tan := RoadNetwork.bezier_tangent(c[0], c[1], c[2], 0.5)
+			var p: Vector3 = mid + Vector3(-tan.z, 0.0, tan.x).normalized() * float(side) * 15.0
+			var zone := ZoneMap.Zone.RESIDENTIAL
+			if p.z > -20.0 and p.z < 40.0 and p.x < 100.0:
+				zone = ZoneMap.Zone.COMMERCIAL
+			elif p.x > 130.0:
+				zone = ZoneMap.Zone.INDUSTRIAL
+			sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": zone})
 	# Power, water and a few services, placed beside the roads.
 	for entry in [[Services.Kind.SUBSTATION, Vector3(-260, 0, 40)], [Services.Kind.WATER_TOWER, Vector3(-215, 0, 40)],
 			[Services.Kind.FIRE, Vector3(60, 0, 40)], [Services.Kind.SCHOOL, Vector3(70, 0, -120)],
@@ -248,3 +277,69 @@ func _demo_farms(sim: CitySim) -> void:
 			c._views_button.button_pressed = true
 		elif va.size() >= 6 and va.size() < 8 and c is FarmTool:
 			c.set_mode(FarmTool.Mode.RESERVE)
+
+
+## A forestry company placed on the richest forest land near the origin,
+## grown until it has opened several logging stands.
+func _demo_forest(sim: CitySim) -> void:
+	var best := Vector3.ZERO
+	var rich := -1.0
+	for i in 61:
+		for j in 61:
+			var p := Vector3(-1500 + i * 50, 0, -1500 + j * 50)
+			var r := Resources.at(Resources.Kind.FOREST, p)
+			if r > rich:
+				rich = r
+				best = p
+	print("forest at ", best, " richness ", rich)
+	sim.apply({"type": "build_road", "start": [best.x - 600, best.z - 160], "ctrl": [best.x, best.z - 160], "end": [best.x + 600, best.z - 160]})
+	var ok := sim.apply({"type": "place_industry", "kind": "forest", "pos": [best.x, best.z - 60], "dir": [0, -1]})
+	print("placed ", ok, " ", sim.industry_problem("forest", Vector3(best.x, 0, best.z - 60), Vector3(0, 0, -1)))
+	for i in 40:
+		sim.industry.decide(sim.field_usable)
+	sim.industry_changed.emit()
+	for c in _main.get_children():
+		if c is CityCamera:
+			var args := OS.get_cmdline_user_args()
+			c.look_at_point(best + (Vector3(float(args[5]), 0, float(args[6])) if args.size() >= 7 else Vector3.ZERO))
+			c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
+
+
+## A landfill, a recycling plant and a cemetery that have grown for a while.
+func _demo_hubs(sim: CitySim) -> void:
+	sim.economy.money = 60_000_000
+	sim.apply({"type": "build_road", "start": [-700, 0], "ctrl": [0, 0], "end": [700, 0]})
+	var spots := [["landfill", Vector3(-300, 0, -60), 16], ["recycling_1", Vector3(250, 0, -60), 9],
+		["cemetery", Vector3(0, 0, 60), 12]]
+	for spot in spots:
+		var site := CivicHubs.site_near(sim.network, spot[1])
+		sim.apply({"type": "place_hub", "kind": spot[0], "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})
+	var ids := sim.hubs.hubs.keys()
+	ids.sort()
+	for i in ids.size():
+		var h: Dictionary = sim.hubs.hubs[ids[i]]
+		h.received = 3.0e7
+		while h.cells.size() < spots[i][2]:
+			if h.kind == "cemetery":
+				sim.stats.population = 100_000
+			else:
+				h.want = 4
+				h.short = 4
+			var n: int = h.cells.size()
+			sim.hubs._decide(sim)
+			if h.cells.size() == n:
+				break
+	sim.apply({"type": "upgrade_hub", "id": ids[1]})
+	sim.apply({"type": "upgrade_hub", "id": ids[1]})
+	# Every branch of each development tree, to see them all.
+	for i in ids.size():
+		var h: Dictionary = sim.hubs.hubs[ids[i]]
+		h.dev = CivicHubs.dev_options(h)
+		sim.hubs._touch(h)
+	sim.tick()
+	for c in _main.get_children():
+		if c is Hud:
+			c.close_all()
+	for c in _main.get_children():
+		if c is SelectTool:
+			c.select({"type": "hub", "id": ids[0]})
