@@ -61,6 +61,33 @@ func _init() -> void:
 		d.tick()
 	_check(d.stats.population > stalled, "jobs bring more people (%d -> %d)" % [stalled, d.stats.population])
 	_check(CitySim.new().clock().weekday == 1 and CitySim.new().clock().hour == 6, "clock starts Monday 6 AM")
+	# Money: roads cost real prices, taxes come in, upkeep goes out.
+	var m := CitySim.new()
+	var start: int = m.economy.money
+	m.apply({"type": "build_road", "start": [-100, 0], "ctrl": [0, 0], "end": [100, 0]})
+	_check(m.economy.money == start - 200_000, "200 m street costs $200,000 (spent %d)" % (start - m.economy.money))
+	var flat := [Vector3(0, 0, 0), Vector3(50, 0, 0), Vector3(100, 0, 0)]
+	var high := [Vector3(0, 7.5, 0), Vector3(50, 7.5, 0), Vector3(100, 7.5, 0)]
+	_check(Economy.road_cost(high, 0) > Economy.road_cost(flat, 0) * 3, "bridges cost more")
+	m.economy.money = 1000
+	_check(not m.apply({"type": "build_road", "start": [-100, 50], "ctrl": [0, 50], "end": [100, 50]}),
+		"can't build without the money")
+	_check(m.road_problem([Vector3(-100, 0, 50), Vector3(0, 0, 50), Vector3(100, 0, 50)], 0).begins_with("Not enough money"),
+		"says why")
+	_check(m.upgrade_cost(m.network.segments.keys()[0], RoadStyle.Type.AVENUE) == 200_000, "upgrade pays the difference")
+	_check(d.economy.budget.income[ZoneMap.Zone.RESIDENTIAL] > 0 and d.economy.budget.upkeep > 0,
+		"budget has taxes and upkeep (%s)" % str(d.economy.budget))
+	var before: int = d.economy.money
+	for i in 1440:
+		d.tick()
+	_check(d.economy.money > before, "a growing town earns money over a day (%d -> %d)" % [before, d.economy.money])
+	var r0: float = d.demand[ZoneMap.Zone.INDUSTRIAL]
+	d.apply({"type": "set_tax", "zone": ZoneMap.Zone.INDUSTRIAL, "rate": 3.0})
+	_check(d.demand[ZoneMap.Zone.INDUSTRIAL] < r0 or r0 == 0.0, "higher taxes cut demand")
+	var saved := CitySim.new()
+	saved.from_dict(JSON.parse_string(JSON.stringify(d.to_dict())))
+	_check(saved.economy.money == d.economy.money and saved.economy.tax[ZoneMap.Zone.INDUSTRIAL] == 3.0,
+		"money and taxes saved")
 	# Old saves (roads only) come back zoned as homes.
 	var old := CitySim.new()
 	old.from_dict({"version": 1, "next_id": 4, "nodes": {"1": [-100, 0], "2": [100, 0]},

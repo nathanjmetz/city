@@ -78,6 +78,7 @@ func _init() -> void:
 	_check(worst < 2.0, "parallel road stays about 30 m away (off by %.2f m)" % worst)
 	# Bridges: a road 7.5 m up passes over without a junction.
 	var o := CitySim.new()
+	o.economy.money = 100_000_000  # this test is about road rules, not money
 	o.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0], "road": 3})
 	_check(o.lots.is_empty(), "no lots along a highway")
 	# Ramps up at the AASHTO 8% max grade: 7.5 m needs ~94 m.

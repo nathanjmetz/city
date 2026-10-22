@@ -11,6 +11,9 @@ var zone_tool: ZoneTool
 var sim: CitySim
 var game: Node  # main.gd: game speed
 
+const GOOD := Color(0.5, 0.85, 0.5)
+const BAD := Color(0.95, 0.45, 0.4)
+
 var _root := Control.new()
 var _category := ""
 var _category_buttons := {}
@@ -28,6 +31,11 @@ var _pop := UiStyle.label("0", 20)
 var _jobs := UiStyle.label("", 14, UiStyle.MUTED)
 var _cars := UiStyle.label("", 14, UiStyle.MUTED)
 var _demand_bars := {}
+var _money := UiStyle.label("", 20)
+var _net := UiStyle.label("", 14)
+var _budget_open := false
+var _budget_rows := {}   # key -> value Label
+var _tax_labels := {}    # zone -> rate Label
 var _help := PanelContainer.new()
 
 
@@ -71,6 +79,8 @@ func _process(_delta: float) -> void:
 		["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][t.weekday],
 		["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][t.month - 1],
 		t.day, 12 if hour == 0 else hour, t.minute, "AM" if t.hour < 12 else "PM"]
+	_money.text = "$" + _thousands(sim.economy.money)
+	_money.add_theme_color_override("font_color", UiStyle.TEXT if sim.economy.money >= 0 else BAD)
 	_cars.text = "%d cars  ·  traffic flow %d%%" % [sim.traffic.cars.size(), roundi(sim.traffic.flow * 100.0)]
 
 
@@ -113,6 +123,13 @@ func _build_city_panel() -> void:
 		c.add_child(l)
 		bars.add_child(c)
 		_demand_bars[z] = bar
+	row.add_child(VSeparator.new())
+	var money := VBoxContainer.new()
+	money.add_theme_constant_override("separation", 0)
+	money.add_child(_money)
+	money.add_child(_net)
+	row.add_child(Icon.new("money", 30))
+	row.add_child(money)
 	_pin(panel, Control.PRESET_TOP_LEFT, Vector2(14, 14))
 
 
@@ -171,6 +188,7 @@ func _build_toolbar() -> void:
 
 	_drawers["roads"] = _roads_drawer()
 	_drawers["zones"] = _zones_drawer()
+	_drawers["budget"] = _budget_drawer()
 	for key in _drawers:
 		_drawers[key].size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		stack.add_child(_drawers[key])
@@ -182,13 +200,13 @@ func _build_toolbar() -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 	bar.add_child(row)
-	for entry in [["roads", "Roads"], ["zones", "Zoning"], ["bulldoze", "Bulldoze"]]:
+	for entry in [["roads", "Roads"], ["zones", "Zoning"], ["bulldoze", "Bulldoze"], ["budget", "Budget"]]:
 		var b := _card(entry[0], entry[1], "", 46)
 		b.custom_minimum_size = Vector2(84, 76)
 		b.pressed.connect(func(): _open(entry[0]))
 		row.add_child(b)
 		_category_buttons[entry[0]] = b
-		if entry[0] == "zones":
+		if entry[0] == "zones" or entry[0] == "bulldoze":
 			row.add_child(VSeparator.new())
 
 	stack.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM, Control.PRESET_MODE_MINSIZE)
@@ -268,6 +286,76 @@ func _zones_drawer() -> PanelContainer:
 	return drawer
 
 
+## Taxes and running costs per month, with a rate to set for each zone.
+func _budget_drawer() -> PanelContainer:
+	var drawer := PanelContainer.new()
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 22)
+	drawer.add_child(row)
+	var income := VBoxContainer.new()
+	income.add_theme_constant_override("separation", 6)
+	row.add_child(income)
+	income.add_child(UiStyle.label("PROPERTY TAX  ·  RATE PER YEAR, INCOME PER MONTH", 11, UiStyle.MUTED))
+	for entry in [[ZoneMap.Zone.RESIDENTIAL, "homes", "Homes"], [ZoneMap.Zone.COMMERCIAL, "shops", "Shops"],
+			[ZoneMap.Zone.INDUSTRIAL, "industry", "Industry"]]:
+		var z: int = entry[0]
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", 8)
+		income.add_child(line)
+		var ic := Icon.new(entry[1], 22)
+		ic.accent = ZoneMap.COLORS[z]
+		line.add_child(ic)
+		var title := UiStyle.label(entry[2], 15)
+		title.custom_minimum_size.x = 76
+		line.add_child(title)
+		for step in [-0.1, 0.1]:
+			var b := Button.new()
+			b.text = "–" if step < 0 else "+"
+			b.focus_mode = Control.FOCUS_NONE
+			b.custom_minimum_size = Vector2(30, 28)
+			b.tooltip_text = "Lower taxes bring more demand" if step < 0 else "Higher taxes bring in more but cut demand"
+			b.pressed.connect(func(): _change_tax(z, step))
+			line.add_child(b)
+			if step < 0:
+				var rate := UiStyle.label("", 15)
+				rate.custom_minimum_size.x = 48
+				rate.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+				line.add_child(rate)
+				_tax_labels[z] = rate
+		_budget_rows[z] = _value_label(line, 110)
+	var costs := VBoxContainer.new()
+	costs.add_theme_constant_override("separation", 6)
+	row.add_child(costs)
+	costs.add_child(UiStyle.label("COSTS PER MONTH", 11, UiStyle.MUTED))
+	var upkeep := HBoxContainer.new()
+	upkeep.add_theme_constant_override("separation", 8)
+	costs.add_child(upkeep)
+	upkeep.add_child(Icon.new("roads", 22))
+	upkeep.add_child(UiStyle.label("Road upkeep", 15))
+	_budget_rows["upkeep"] = _value_label(upkeep, 100)
+	costs.add_child(HSeparator.new())
+	var net := HBoxContainer.new()
+	net.add_theme_constant_override("separation", 8)
+	costs.add_child(net)
+	net.add_child(UiStyle.label("Balance", 15))
+	_budget_rows["net"] = _value_label(net, 132)
+	costs.add_child(UiStyle.label("One day settles one month's budget.", 12, UiStyle.MUTED))
+	return drawer
+
+
+func _value_label(parent: Container, width: int) -> Label:
+	var l := UiStyle.label("", 15)
+	l.custom_minimum_size.x = width
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	parent.add_child(l)
+	return l
+
+
+func _change_tax(zone: int, step: float) -> void:
+	sim.apply({"type": "set_tax", "zone": zone, "rate": sim.economy.tax[zone] + step})
+	_update_stats()
+
+
 ## A titled group of cards inside a drawer; returns the row to fill.
 func _section(parent: Container, title: String) -> HBoxContainer:
 	var col := VBoxContainer.new()
@@ -326,6 +414,7 @@ func _icon_button(icon: String, px: int, tip: String) -> Button:
 
 ## Opens a tool category (or closes it if it's already open).
 func _open(cat: String) -> void:
+	_budget_open = false
 	if cat == _category and cat != "bulldoze":
 		road_tool.set_mode(RoadTool.Mode.NONE)
 		zone_tool.set_zone(ZoneTool.OFF)
@@ -341,6 +430,11 @@ func _open(cat: String) -> void:
 				zone_tool.set_zone(ZoneMap.Zone.RESIDENTIAL)
 		"bulldoze":
 			road_tool.set_mode(RoadTool.Mode.BULLDOZE)
+		"budget":
+			road_tool.set_mode(RoadTool.Mode.NONE)
+			zone_tool.set_zone(ZoneTool.OFF)
+			_budget_open = true
+			_sync()
 
 
 ## Brings every button in line with the tools (keys change them too).
@@ -352,7 +446,8 @@ func _sync() -> void:
 	elif road_tool.mode != RoadTool.Mode.NONE:
 		_category = "roads"
 	else:
-		_category = ""
+		_category = "budget" if _budget_open else ""
+	_budget_open = _category == "budget"
 	for key in _category_buttons:
 		_category_buttons[key].set_pressed_no_signal(key == _category)
 	for key in _drawers:
@@ -376,6 +471,16 @@ func _update_stats() -> void:
 	_jobs.text = "%s jobs  ·  %d%% unemployed" % [_thousands(s.jobs), roundi(unemployed)]
 	for z in _demand_bars:
 		_demand_bars[z].value = sim.demand[z]
+	var e := sim.economy
+	var net := e.monthly_net()
+	_net.text = "%s$%s / month" % ["+" if net >= 0 else "–", _thousands(absi(net))]
+	_net.add_theme_color_override("font_color", GOOD if net >= 0 else BAD)
+	for z in _tax_labels:
+		_tax_labels[z].text = "%.1f%%" % e.tax[z]
+		_budget_rows[z].text = "$" + _thousands(int(e.budget.income.get(z, 0)))
+	_budget_rows.upkeep.text = "–$" + _thousands(int(e.budget.upkeep))
+	_budget_rows.net.text = _net.text
+	_budget_rows.net.add_theme_color_override("font_color", GOOD if net >= 0 else BAD)
 
 
 # --- Bottom corners: help and build ---------------------------------------
@@ -420,12 +525,7 @@ static func _build_name() -> String:
 
 
 static func _thousands(n: int) -> String:
-	var s := str(absi(n))
-	var out := ""
-	while s.length() > 3:
-		out = "," + s.right(3) + out
-		s = s.left(s.length() - 3)
-	return ("-" if n < 0 else "") + s + out
+	return CitySim.money_text(n)
 
 
 ## Pins a control to a corner of the screen, `offset` pixels in from it,
