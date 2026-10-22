@@ -11,7 +11,17 @@ extends CivicBuilder
 ##   - a glazed two-storey office at one front corner, car parking on the
 ##     side drive, and a fire lane around the back
 ## Taller racks (a higher level) mean a taller box; bays added at the back
-## make it deeper. Local space as CivicBuilder: centred on the site, -z
+## make it deeper. What the owner builds from its development tree stands
+## behind it in turn, each in its own strip (Warehouses.TREE "land"):
+##   - truck yard: striped 53 ft trailer stalls with parked trailers
+##   - repair shop: a pre-engineered metal shop with 14 ft doors
+##   - fuel island: a canopy over two diesel dispensers
+##   - cold storage / freezer: insulated white metal panel boxes with
+##     condenser units on the roof
+##   - tank farm: vertical steel tanks in a containment berm
+##   - cross-dock: dock doors in the back wall over a second truck court
+##   - co-packing: a single-storey production wing
+##   - regional DC: a trailer drop lot Local space as CivicBuilder: centred on the site, -z
 ## faces the road, the site's front is at -depth / 2.
 
 ## Tilt-up panel colours: off-white, warm grey, tan, light grey.
@@ -103,6 +113,7 @@ func _warehouse(w: Dictionary, to_curb: float) -> void:
 	for i in stalls + 1:
 		var z := pz + i * 2.75
 		_flat_rect("line", lane_x + 0.4, lane_x + 5.6, z - 0.06, z + 0.06, 0.07, LINE)
+	_annexes(w, cx, bw, lane_x - 5.6, zf + bd, h)
 	# A few street trees and a strip of shrubs by the office.
 	_bed(ox, zf - 1.6, ow * 0.6)
 	for i in rng.randi_range(1, 3):
@@ -144,3 +155,96 @@ func _skylights(cx: float, bw: float, zf: float, bd: float, h: float) -> void:
 		for j in zs:
 			var p := Vector3(cx - bw * 0.5 + (i + 0.5) * bw / xs, h + 0.12, zf + (j + 0.5) * bd / zs)
 			_box("paint", Vector3(1.4, 0.18, 2.4), p, col)
+
+
+## The owner's annexes behind the building, in tree order (see
+## Warehouses.annex_depth): x from the site's left edge to `x1` (the side
+## drive), z from the back wall `zb`.
+func _annexes(w: Dictionary, cx: float, bw: float, x1: float, zb: float, h: float) -> void:
+	var x0 := cx - bw * 0.5
+	var z := zb
+	for node in Warehouses.TREE:
+		if float(node.land) <= 0.0 or not node.id in w.get("built", []):
+			continue
+		var d := float(node.land)
+		match node.id:
+			"truck_yard", "regional_dc":
+				_trailer_lot(x0, x1, z + 1.0, z + d - 1.0, node.id == "regional_dc")
+			"repair_shop":
+				var sw := minf(24.0, x1 - x0 - 4.0)
+				var sx := x0 + 2.0 + sw * 0.5
+				_slab(sx, sw, z + 1.0, d - 3.0)
+				_flat_roofed_at("siding", sx, sw, d - 3.0, z + 1.0 + (d - 3.0) * 0.5, 6.2, 6.6, Color("#b9bdbf"))
+				for i in 2:
+					_overhead_door(sx - sw * 0.25 + i * sw * 0.5, z + 1.0 + (d - 3.0), 4.3, 4.3, Color("#9aa0a4"), true)
+				_flat_rect("drive", x0 + 1.0, x1, z + d - 2.0, z + d, 0.08)
+			"fuel_island":
+				var fx := x0 + 2.0 + 9.0
+				var fz := z + d * 0.5
+				_flat_rect("drive", fx - 9.0, fx + 9.0, z + 1.0, z + d - 1.0, 0.08)
+				for e in [-1.0, 1.0]:
+					_box("paint", Vector3(1.2, 0.2, 4.5), Vector3(fx + e * 4.0, 0.1, fz), CONCRETE)
+					_box("paint", Vector3(0.8, 1.6, 0.6), Vector3(fx + e * 4.0, 1.0, fz), Color("#d9dcdd"))
+					_box("paint", Vector3(0.3, 4.9, 0.3), Vector3(fx + e * 4.0, 2.45, fz + 2.0), Color("#d9dcdd"))
+				_box("paint", Vector3(16.0, 0.9, d - 4.0), Vector3(fx, 5.4, fz), Color("#eeeeea"))
+				_box("paint", Vector3(16.1, 0.25, d - 3.9), Vector3(fx, 5.0, fz), Color("#2c6b6a"))
+			"cold_storage", "freezer":
+				var tall := h + (3.0 if node.id == "freezer" else 0.0)
+				var cd := d - 2.0
+				_slab(cx, bw, z, cd)
+				_flat_roofed_at("siding", cx, bw, cd, z + cd * 0.5, tall, tall + 0.6, Color("#eef0ee"))
+				for i in maxi(1, int(bw / 25.0)):
+					_box("paint", Vector3(5.0, 1.8, 2.2), Vector3(x0 + 6.0 + i * 25.0, tall + 0.9, z + cd * 0.5), Color("#c9ccca"))
+					_cyl_y(Vector3(x0 + 4.8 + i * 25.0, tall + 1.9, z + cd * 0.5), 0.8, 0.2, DARK)
+					_cyl_y(Vector3(x0 + 7.2 + i * 25.0, tall + 1.9, z + cd * 0.5), 0.8, 0.2, DARK)
+			"tank_farm":
+				var r := minf(5.0, (d - 6.0) * 0.5)
+				var n := maxi(1, int((x1 - x0 - 4.0) / (r * 2.0 + 4.0)))
+				_flat_rect("drive", x0 + 1.0, x0 + 3.0 + n * (r * 2.0 + 4.0), z + 1.0, z + d - 1.0, 0.08)
+				_box("paint", Vector3(n * (r * 2.0 + 4.0), 1.2, 0.6), Vector3(x0 + 2.0 + n * (r * 2.0 + 4.0) * 0.5, 0.6, z + 1.3), CONCRETE)
+				_box("paint", Vector3(n * (r * 2.0 + 4.0), 1.2, 0.6), Vector3(x0 + 2.0 + n * (r * 2.0 + 4.0) * 0.5, 0.6, z + d - 1.3), CONCRETE)
+				for i in n:
+					var tc := Vector3(x0 + 4.0 + r + i * (r * 2.0 + 4.0), 0.0, z + d * 0.5)
+					_cyl_y(tc + Vector3(0, 4.5, 0), r, 9.0, Color("#e2e2dc"))
+					_cyl_y(tc + Vector3(0, 9.1, 0), r * 0.98, 0.2, Color("#c8c8c2"))
+			"cross_dock":
+				var docks := int((bw - 6.0) / DOCK_SPACING)
+				for i in docks:
+					var dx := x0 + 3.0 + (i + 0.5) * DOCK_SPACING
+					_box("siding", Vector3(2.7, 3.0, 0.08), Vector3(dx, DOCK_HEIGHT + 1.5, zb + 0.03), Color(WHITE, 0.0))
+					_box("paint", Vector3(3.5, 0.45, 0.35), Vector3(dx, DOCK_HEIGHT + 3.2, zb + 0.17), SEAL)
+				_flat_rect("drive", x0 + 2.0, x0 + bw - 2.0, zb, zb + minf(d, 15.0), 0.08)
+			"co_packing":
+				var cd := d - 2.0
+				_slab(cx, bw * 0.7, z, cd)
+				_flat_roofed_at("siding", cx - bw * 0.15, bw * 0.7, cd, z + cd * 0.5, 6.5, 7.2, Color("#c7c3b8"))
+				_rooftop_units(cx - bw * 0.15, bw * 0.7, z, cd, 6.5, 2)
+		z += d
+
+
+## Striped stalls for 53 ft trailers (16.2 m by 3.7 m), some taken.
+func _trailer_lot(x0: float, x1: float, z0: float, z1: float, full: bool) -> void:
+	_flat_rect("asphalt", x0, x1, z0, z1, 0.07)
+	var x := x0 + 1.0
+	while x + 3.7 < x1:
+		_flat_rect("line", x - 0.06, x + 0.06, z0 + 0.5, z1 - 0.5, 0.08, LINE)
+		if rng.randf() < (0.8 if full else 0.45):
+			var len := minf(16.2, z1 - z0 - 2.0)
+			var col: Color = [Color("#e8e8e4"), Color("#d8d9d6"), Color("#b23a2e"), Color("#2f4a6e")][rng.randi() % 4]
+			_box("paint", Vector3(2.6, 2.9, len), Vector3(x + 1.85, 1.25 + 1.45, (z0 + z1) * 0.5), col)
+			_box("paint", Vector3(2.2, 1.0, 0.3), Vector3(x + 1.85, 0.5, (z0 + z1) * 0.5 + len * 0.5 - 2.0), DARK)
+		x += 3.7
+
+
+## Flat ground work cut into cells about 8 m across, so a big truck court
+## follows the real terrain when it's draped instead of sinking under it.
+func _flat_rect(kind: String, x0: float, x1: float, z0: float, z1: float, y: float, col := MULCH) -> void:
+	var nx := maxi(1, ceili(absf(x1 - x0) / 8.0))
+	var nz := maxi(1, ceili(absf(z1 - z0) / 8.0))
+	if nx == 1 and nz == 1:
+		super(kind, x0, x1, z0, z1, y, col)
+		return
+	for i in nx:
+		for j in nz:
+			super(kind, lerpf(x0, x1, float(i) / nx), lerpf(x0, x1, float(i + 1) / nx),
+				lerpf(z0, z1, float(j) / nz), lerpf(z0, z1, float(j + 1) / nz), y, col)

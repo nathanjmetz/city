@@ -7,7 +7,7 @@ extends RefCounted
 
 ## Loops in assets/audio/world/, and how loud each sits in the mix (dB).
 const GAIN := {
-	"birds_day": -4.0, "crickets_night": -8.0, "leaves": -10.0, "rooftop_hvac": -9.0,
+	"birds_day": -2.0, "crickets_night": -8.0, "leaves": -7.0, "rooftop_hvac": -7.0,
 	"industry_hum": -3.0, "transformer": -12.0, "corn_field": -6.0,
 }
 ## Most players any one sound may use at once, so a street of houses does not
@@ -16,6 +16,9 @@ const CAPS := {
 	"birds_day": 4, "crickets_night": 4, "leaves": 2, "rooftop_hvac": 3,
 	"industry_hum": 3, "transformer": 2, "corn_field": 3,
 }
+## Loops that are not tied to one building: each car's engine, the wind
+## heard from high up, and the far-off roll of traffic in view.
+const BEDS := ["car_engine", "wind_high", "traffic_far"]
 const UTILITY_KINDS := [Services.Kind.SUBSTATION, Services.Kind.POWER_FEED,
 	Services.Kind.WATER_TOWER, Services.Kind.WELL]
 

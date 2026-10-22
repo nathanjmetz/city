@@ -163,6 +163,89 @@ const INDUSTRY_STOCK_CAP := 12.0
 ## Companies decide to open or close a pad this often, in ticks (6 game hours).
 const INDUSTRY_DECIDE_EVERY := 360
 
+# --- Power companies ----------------------------------------------------------
+# Brawn's hub-with-a-leader model (Best of CS pitch #6). A plant is built
+# unit by unit; each unit's numbers below. `homes` is the average output in
+# homes-equivalent at full quality (EIA: a US home uses about 10,500 kWh a
+# year). `capex` is what one unit costs to build, `opex` its fuel and upkeep
+# per MWh, `value`/`reach` how much it lowers land value next door and how
+# far that fades out (like WASTE_SITES), `smoke_weight` how much an educated
+# leader minds that, and `firm` whether it runs day and night.
+## Solar: a 0.3 MW block of panels on an 80 m cell (~1.6 acres), 22% capacity
+## factor, $1,100/kW. Wind: one 2.8 MW turbine at 38%, $1,300/kW, a
+## turbine every 240 m with the farm going on around its 40 m pad. Gas: one
+## 9 MW reciprocating engine run at 70%, $1,000/kW, burning the oil field's
+## own gas. Coal: an old 30 MW unit bought used and refitted, 48% (the
+## Petersburg, Indiana plant's story in miniature). Hydro: a 3 MW
+## run-of-river bay retrofitted into an old mill dam, $2,000/kW.
+## `carbon` is tonnes of CO2 per MWh, which educated leaders price in.
+const POWER_PLANTS := {
+	"coal": {"name": "Old coal plant", "unit": "boiler unit", "homes": 12_000.0, "capex": 4_000_000,
+		"opex": 46.0, "firm": true, "value": -0.2, "reach": 1200.0, "smoke_weight": 1500.0, "carbon": 1.0,
+		"jobs": 30, "max_cells": 2, "spacing": 80.0, "footprint": 80.0},
+	"gas": {"name": "Gas plant", "unit": "engine", "homes": 5_250.0, "capex": 9_000_000,
+		"opex": 40.0, "firm": true, "value": -0.04, "reach": 300.0, "smoke_weight": 600.0, "carbon": 0.45,
+		"jobs": 6, "max_cells": 4, "spacing": 80.0, "footprint": 80.0},
+	"solar": {"name": "Solar farm", "unit": "block of panels", "homes": 55.0, "capex": 330_000,
+		"opex": 8.0, "firm": false, "value": 0.0, "reach": 0.0, "smoke_weight": 0.0, "carbon": 0.0,
+		"jobs": 0.15, "max_cells": 48, "spacing": 80.0, "footprint": 80.0},
+	"wind": {"name": "Wind farm", "unit": "turbine", "homes": 885.0, "capex": 3_640_000,
+		"opex": 12.0, "firm": false, "value": 0.0, "reach": 0.0, "smoke_weight": 0.0, "carbon": 0.0,
+		"jobs": 0.5, "max_cells": 16, "spacing": 240.0, "footprint": 40.0},
+	"hydro": {"name": "River dam", "unit": "dam bay", "homes": 830.0, "capex": 6_000_000,
+		"opex": 10.0, "firm": true, "value": 0.0, "reach": 0.0, "smoke_weight": 0.0, "carbon": 0.0,
+		"jobs": 3, "max_cells": 4, "spacing": 80.0, "footprint": 80.0},
+}
+## Which plant wins a tie, cleanest first.
+const POWER_PLANT_ORDER := ["hydro", "wind", "solar", "gas", "coal"]
+## What the player pays for the yard (switchyard and control building), its
+## assessed value, and the jobs there.
+const POWER_YARD_COST := 1_200_000
+const POWER_YARD_VALUE := 1_200_000.0
+const POWER_YARD_JOBS := 6.0
+const POWER_MWH_PER_HOME := 10.5
+## Dollars per MWh: selling to the town's utility, and wholesale to the
+## region (MISO prices run about $30-45), and the gas price with the field's
+## own gas right there.
+const POWER_TOWN_PRICE := 55.0
+const POWER_EXPORT_PRICE := 38.0
+const POWER_GAS_LOCAL_OPEX := 24.0
+## Extra a plant that runs day and night is worth per MWh (capacity payments).
+const POWER_FIRM_BONUS := 6.0
+## Dollars per tonne of CO2 a leader with an engineering degree prices in
+## for the risk of carbon rules over the plant's life (scaled by education).
+const POWER_CARBON_PRICE := 20.0
+## Years a leader plans ahead, from no schooling to an engineering degree.
+const POWER_HORIZON_MIN := 3.0
+const POWER_HORIZON_MAX := 25.0
+## How far a leader's education can stray from the town's.
+const POWER_LEADER_SPREAD := 0.1
+## A unit goes only where wind, sun or river is at least this good.
+const POWER_MIN_QUALITY := 0.3
+const POWER_LOAN_YEARS := 20.0
+## Yearly profit above which a company is "doing well".
+const POWER_THRIVING_PROFIT := 250_000.0
+## Land value never drops more than this from power plants.
+const POWER_SMOKE_FLOOR := -0.3
+## A house is this much less likely to go up per point of land value lost.
+const POWER_SMOKE_GROWTH := 2.0
+## Companies decide to add or mothball a unit this often, in ticks.
+const POWER_DECIDE_EVERY := 360
+## The town's schooling (0 to 1) with no school, and what a school
+## covering every home adds. About a third of rural Midwest adults hold a
+## college degree.
+const TOWN_EDUCATION_BASE := 0.25
+const TOWN_EDUCATION_SCHOOLS := 0.5
+## Factories this close to a coal or gas plant can buy its steam, metres.
+const POWER_STEAM_REACH := 600.0
+## Steam sales and blade-yard work, dollars a year.
+const POWER_STEAM_SALES := 300_000.0
+const POWER_BLADE_YARD_SALES := 200_000.0
+## Leaders retire and a successor takes over this often, in game days.
+const POWER_LEADER_TERM_DAYS := 120.0
+## A training center lifts a successor's education by this much.
+const POWER_TRAINING_LIFT := 0.15
+
 # --- Freight -----------------------------------------------------------------
 
 ## Grain a farm ships: bushels an acre a year at full fertility (USDA Iowa
@@ -220,6 +303,21 @@ const WAREHOUSE_IDLE := 0.05
 const WAREHOUSE_IDLE_STREAK := 8
 ## Warehouses decide to grow this often, in ticks (6 game hours).
 const WAREHOUSE_DECIDE_EVERY := 360
+## What a warehouse earns per truckload it handles: a real 3PL charges
+## handling in and out plus monthly storage, about $150 to $350 a load.
+const WAREHOUSE_FEE := 250.0
+## Running a warehouse per m2 of floor a year (power, insurance, upkeep;
+## real US distribution space runs about $3 to $6 a square foot).
+const WAREHOUSE_UPKEEP_M2 := 4.0
+## A regional DC offers neighbouring towns up to this many loads a month.
+const WAREHOUSE_REGIONAL_LOADS := 8
+## Online orders a fulfillment center packs, per person in town a month:
+## Americans get about 5 parcels a month; a local center fills about a
+## tenth of them (the rest come in on the mail truck).
+const WAREHOUSE_PARCELS_PER_PERSON := 0.5
+## Parcels in a trailer from the fulfillment center to the post office
+## (a 53 ft trailer holds about 1,000 to 2,000 parcels).
+const WAREHOUSE_PARCEL_TRUCK := 1200
 
 # --- Neighborhood character --------------------------------------------------
 # Brawn's rule (2026-10-22): neighborhoods grow a culture of their own, and
@@ -423,6 +521,9 @@ const TRADE_PRICE := {
 	# Wholesale water between towns, per thousand gallons (Indiana wholesale
 	# rates run about $2.50 to $4).
 	"water": 3.0,
+	# A truckload of general merchandise from a regional DC: the
+	# distributor's margin on it.
+	"goods": 2500.0,
 }
 ## Price for a good with no entry above.
 const TRADE_PRICE_DEFAULT := 100.0

@@ -4,3 +4,4 @@ build/
 scripts/build_info.gd
 __pycache__/
 tools/terrain/out/
+tools/audio/.cache/

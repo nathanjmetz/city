@@ -47,6 +47,7 @@ var _bottom := VBoxContainer.new()
 var _tool_cards := {}    # RoadTool.Mode -> Button
 var _type_cards := {}    # RoadStyle.Type -> Button
 var _zone_cards := {}    # ZoneMap.Zone -> Button
+var _power_card: Button
 var _service_cards := {} # Services.Kind -> Button
 var _farm_cards := {}    # FarmTool.Mode -> Button
 var _warning := UiStyle.label("", 13, Color(1.0, 0.75, 0.3))
@@ -561,6 +562,14 @@ func _services_drawer() -> PanelContainer:
 			b.pressed.connect(func(): service_tool.set_kind(k))
 			cards.add_child(b)
 			_service_cards[k] = b
+		if group[0] == "Utilities":
+			# Brawn's hub model: a company whose leader picks and grows the plant.
+			var pc := _card("power", "Power co.", "")
+			pc.tooltip_text = "Power company: $%s. Its leader picks solar, wind, gas, a dam or an old coal plant, and grows it" \
+				% CitySim.money_text(Balance.POWER_YARD_COST)
+			pc.pressed.connect(func(): industry_tool.set_kind("power"))
+			cards.add_child(pc)
+			_power_card = pc
 	# Landfill, recycling and cemetery: hubs that grow on their own.
 	row.add_child(VSeparator.new())
 	var hubs := _section(row, "Trash and cemeteries")
@@ -903,7 +912,7 @@ func _open(cat: String) -> void:
 func _sync() -> void:
 	if zone_tool.zone != ZoneTool.OFF:
 		_category = "zones"
-	elif service_tool.kind != ServiceTool.OFF or campus_tool.kind != "":
+	elif service_tool.kind != ServiceTool.OFF or campus_tool.kind != "" or industry_tool.kind == "power":
 		_category = "services"
 	elif park_tool.kind != "":
 		_category = "parks"
@@ -941,6 +950,8 @@ func _sync() -> void:
 	for k in _park_cards:
 		_park_cards[k].set_pressed_no_signal(k == park_tool.kind)
 		_park_cards[k].disabled = Parks.KINDS[k].landmark and sim.parks.has_kind(k)
+	if _power_card != null:
+		_power_card.set_pressed_no_signal(industry_tool.kind == "power")
 	for k in _campus_cards:
 		_campus_cards[k].set_pressed_no_signal(k == campus_tool.kind)
 	for m in _farm_cards:
