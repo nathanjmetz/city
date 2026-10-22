@@ -3,15 +3,7 @@ extends SceneTree
 
 func _init() -> void:
 	# An L of streets with homes at one end and jobs at the other.
-	var sim := CitySim.new()
-	sim.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0]})
-	sim.apply({"type": "build_road", "start": [300, 0], "ctrl": [300, 150], "end": [300, 300]})
-	for x in range(-300, 0, 8):
-		sim.apply({"type": "paint_zone", "center": [x, -15], "radius": 10, "zone": ZoneMap.Zone.RESIDENTIAL})
-		sim.apply({"type": "paint_zone", "center": [x, 15], "radius": 10, "zone": ZoneMap.Zone.RESIDENTIAL})
-	for z in range(20, 300, 8):
-		sim.apply({"type": "paint_zone", "center": [315, z], "radius": 10, "zone": ZoneMap.Zone.INDUSTRIAL})
-		sim.apply({"type": "paint_zone", "center": [285, z], "radius": 10, "zone": ZoneMap.Zone.COMMERCIAL})
+	var sim := _l_town()
 	var t := sim.traffic
 	var most := 0
 	var finished := 0
@@ -33,7 +25,16 @@ func _init() -> void:
 	_check(finished > 3, "cars finish their trips (%d)" % finished)
 	_check(too_close == 0, "cars keep their distance (%d too close)" % too_close)
 
-	# One-way: a single highway loop only drives the way it was drawn.
+	# The same commands give the same cars (needed for multiplayer).
+	var a := _l_town()
+	var b := _l_town()
+	for i in 3000:
+		a.tick()
+		b.tick()
+	_check(_fingerprint(a.traffic) == _fingerprint(b.traffic) and a.traffic.cars.size() > 0,
+		"two copies drive exactly the same cars")
+
+	# One-way: a single highway only drives the way it was drawn.
 	var o := CitySim.new()
 	o.apply({"type": "build_road", "start": [0, 0], "ctrl": [100, 0], "end": [200, 0], "road": RoadStyle.Type.HIGHWAY})
 	o.tick()
@@ -41,15 +42,166 @@ func _init() -> void:
 	var lot_b := {"seg": lot_a.seg, "at_frac": 0.2}
 	_check(o.traffic._route(lot_b, lot_a).size() > 0, "can drive with the one-way")
 	_check(o.traffic._route(lot_a, lot_b).is_empty(), "cannot drive against the one-way")
+
+	# Lanes and lane arrows where two avenues cross.
+	var x := CitySim.new()
+	x.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0], "road": RoadStyle.Type.AVENUE})
+	x.apply({"type": "build_road", "start": [0, -200], "ctrl": [0, 0], "end": [0, 200], "road": RoadStyle.Type.AVENUE})
+	x.tick()
+	var tx := x.traffic
+	var centre := x.network.find_node_near(Vector3.ZERO, 1.0)
+	var east_in := -1
+	for wid in tx.ways_into(centre):
+		if tx.ways[wid].pts[0].x < -100.0:
+			east_in = wid
+	_check(east_in != -1 and tx.ways[east_in].lanes == 2, "an avenue has two lanes each way")
+	var lefts := []
+	var rights := []
+	for wo in tx._turns[east_in]:
+		match tx._kind[Vector2i(east_in, wo)]:
+			TrafficSim.Turn.LEFT: lefts = tx.lanes_for(east_in, wo)
+			TrafficSim.Turn.RIGHT: rights = tx.lanes_for(east_in, wo)
+	_check(lefts == [0] and rights == [1], "left lane turns left, right lane turns right (%s %s)" % [lefts, rights])
+	_check(tx.junctions[centre].control == TrafficSim.Rule.SIGNAL, "two avenues crossing get traffic lights")
+	var greens := 0
+	for wid in tx.ways_into(centre):
+		if tx.light(centre, wid) == TrafficSim.Light.GREEN:
+			greens += 1
+	_check(greens == 2, "lights give one road green at a time (%d green)" % greens)
+
+	# Two streets crossing get an all-way stop; a street meeting an avenue
+	# gets a stop sign on the street only.
+	var s := CitySim.new()
+	s.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
+	s.apply({"type": "build_road", "start": [0, -200], "ctrl": [0, 0], "end": [0, 200]})
+	s.apply({"type": "build_road", "start": [-200, 300], "ctrl": [0, 300], "end": [200, 300], "road": RoadStyle.Type.AVENUE})
+	s.apply({"type": "build_road", "start": [0, 200], "ctrl": [0, 250], "end": [0, 300]})
+	s.tick()
+	var c0 := s.network.find_node_near(Vector3.ZERO, 1.0)
+	var c1 := s.network.find_node_near(Vector3(0, 0, 300), 1.0)
+	_check(s.traffic.junctions[c0].control == TrafficSim.Rule.ALL_STOP, "two streets get an all-way stop")
+	var j1: Dictionary = s.traffic.junctions[c1]
+	_check(j1.control == TrafficSim.Rule.PRIORITY and j1.major.size() == 2 and j1.sign == "stop",
+		"a street meeting an avenue gets a stop sign")
+
+	# Busy crossroads: cars use both lanes, change lanes, and never share
+	# the junction with a car whose path crosses theirs.
+	var g := _crossroads()
+	g.tick()
+	var lots: Array = g.lots.keys()
+	lots.sort()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var changes := 0
+	var clashes := 0
+	var lanes_used := {}
+	var last_lane := {}
+	for i in 6000:
+		if i % 8 == 0 and i < 4000:
+			g.traffic.add_trip(g.lots[lots[rng.randi() % lots.size()]], g.lots[lots[rng.randi() % lots.size()]], rng)
+		g.tick()
+		for car in g.traffic.cars:
+			if car.j == null:
+				lanes_used[car.lane] = true
+				if last_lane.has(car.id) and last_lane[car.id][0] == car.route[car.leg] \
+						and last_lane[car.id][1] != car.lane:
+					changes += 1
+				last_lane[car.id] = [car.route[car.leg], car.lane]
+		if i % 10 == 0:
+			clashes += _clashes(g.traffic)
+	_check(lanes_used.size() >= 2, "cars drive in more than one lane")
+	_check(changes > 5, "cars change lanes (%d changes)" % changes)
+	_check(clashes == 0, "no crossing paths inside a junction at once (%d)" % clashes)
+	_check(g.traffic.gave_up < 5, "traffic keeps moving (%d gave up)" % g.traffic.gave_up)
+
+	# Roundabout: cars go round counter-clockwise with the island on their
+	# left, and cars coming in yield.
+	var r := CitySim.new()
+	r.economy.money = 1.0e9
+	r.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0], "road": RoadStyle.Type.AVENUE})
+	r.apply({"type": "build_roundabout", "center": [0, 0], "radius": 24, "road": RoadStyle.Type.AVENUE})
+	r.tick()
+	var ring_ok := true
+	var ring_ways := 0
+	var yields := 0
+	for wid in r.traffic.ways:
+		var w: Dictionary = r.traffic.ways[wid]
+		if RoadStyle.is_ring(w.type):
+			ring_ways += 1
+			var mid: Vector3 = w.pts[w.pts.size() / 2]
+			var sl := r.traffic.stop_line(wid)
+			if sl.right.dot(Vector3(mid.x, 0, mid.z).normalized()) < 0.5:
+				ring_ok = false
+	for n in r.traffic.junctions:
+		var jn: Dictionary = r.traffic.junctions[n]
+		if jn.control == TrafficSim.Rule.PRIORITY and jn.sign == "yield":
+			yields += 1
+	_check(ring_ways > 0 and ring_ok, "roundabout traffic keeps the island on its left (%d ring ways)" % ring_ways)
+	_check(yields == 2, "cars entering the roundabout yield (%d entries)" % yields)
+
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
+
+
+func _l_town() -> CitySim:
+	var sim := CitySim.new()
+	sim.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0]})
+	sim.apply({"type": "build_road", "start": [300, 0], "ctrl": [300, 150], "end": [300, 300]})
+	for x in range(-300, 0, 8):
+		sim.apply({"type": "paint_zone", "center": [x, -15], "radius": 10, "zone": ZoneMap.Zone.RESIDENTIAL})
+		sim.apply({"type": "paint_zone", "center": [x, 15], "radius": 10, "zone": ZoneMap.Zone.RESIDENTIAL})
+	for z in range(20, 300, 8):
+		sim.apply({"type": "paint_zone", "center": [315, z], "radius": 10, "zone": ZoneMap.Zone.INDUSTRIAL})
+		sim.apply({"type": "paint_zone", "center": [285, z], "radius": 10, "zone": ZoneMap.Zone.COMMERCIAL})
+	return sim
+
+
+## Two avenues crossing, homes on one, shops and factories on the other.
+func _crossroads() -> CitySim:
+	var sim := CitySim.new()
+	sim.apply({"type": "build_road", "start": [-400, 0], "ctrl": [0, 0], "end": [400, 0], "road": RoadStyle.Type.AVENUE})
+	sim.apply({"type": "build_road", "start": [0, -400], "ctrl": [0, 0], "end": [0, 400], "road": RoadStyle.Type.AVENUE})
+	for k in range(-380, 380, 8):
+		if absi(k) < 40:
+			continue
+		var zx := ZoneMap.Zone.RESIDENTIAL
+		var zz := ZoneMap.Zone.COMMERCIAL if k < 0 else ZoneMap.Zone.INDUSTRIAL
+		sim.apply({"type": "paint_zone", "center": [k, -18], "radius": 10, "zone": zx})
+		sim.apply({"type": "paint_zone", "center": [k, 18], "radius": 10, "zone": zx})
+		sim.apply({"type": "paint_zone", "center": [-18, k], "radius": 10, "zone": zz})
+		sim.apply({"type": "paint_zone", "center": [18, k], "radius": 10, "zone": zz})
+	return sim
+
+
+## Pairs of cars inside one junction on paths that cross.
+func _clashes(t: TrafficSim) -> int:
+	var by_node := {}
+	for car in t.cars:
+		if car.j != null:
+			if not by_node.has(car.j.node):
+				by_node[car.j.node] = []
+			by_node[car.j.node].append(car)
+	var bad := 0
+	for n in by_node:
+		var list: Array = by_node[n]
+		for i in list.size():
+			for k in range(i + 1, list.size()):
+				var a: Dictionary = list[i].j
+				var b: Dictionary = list[k].j
+				if a.wo == b.wo and a.lo == b.lo:
+					continue  # merging one after another is fine
+				if t._conflicts(a, b):
+					bad += 1
+	return bad
 
 
 ## Cars on the same lane nearer than a car length (should never happen).
 func _crowding(t: TrafficSim) -> int:
 	var lanes := {}
 	for car in t.cars:
-		var key = TrafficSim._lane_key(car.route[car.leg])
+		if car.j != null or car.lc_t < 1.0:
+			continue
+		var key = car.route[car.leg] * 8 + car.lane
 		if not lanes.has(key):
 			lanes[key] = []
 		lanes[key].append(car.d)
@@ -61,6 +213,14 @@ func _crowding(t: TrafficSim) -> int:
 			if ds[i] - ds[i - 1] < 4.0:
 				bad += 1
 	return bad
+
+
+func _fingerprint(t: TrafficSim) -> String:
+	var parts := []
+	for car in t.cars:
+		parts.append("%d:%d:%d:%.3f" % [car.id, car.route[car.leg], car.lane, car.d])
+	return ",".join(parts)
+
 
 var _failed := false
 
