@@ -192,7 +192,7 @@ func _process(_delta: float) -> void:
 		_preview_pick(hit)
 		return
 	var p := _snapped(hit)
-	_cursor.position = p + Vector3.UP * 0.3
+	_cursor.position = Terrain.lift(p) + Vector3.UP * 0.3
 	_cursor.material_override = _ok_mat
 	var curves := []
 	var ok := true
@@ -219,7 +219,7 @@ func _process(_delta: float) -> void:
 		var cost := CitySim.shapes_cost(curves, RoadStyle.ring_type(road_type))
 		ok = cost <= sim.economy.money
 		_label.text = "$" + CitySim.money_text(cost) + ("" if ok else "\nNot enough money")
-		_label.position = p + Vector3(0, 6, 0)
+		_label.position = Terrain.lift(p) + Vector3(0, 6, 0)
 		_label.visible = true
 	_preview.mesh = _preview_mesh(curves)
 	_preview.material_override = _ok_mat if ok else _bad_mat
@@ -247,6 +247,9 @@ func _click() -> void:
 			elif _hover_seg != -1:
 				sim.apply({"type": "remove_road", "seg": _hover_seg})
 				_hover_seg = -1
+			elif sim.education.covers(hit):
+				# One campus building at a time (its first building closes it).
+				sim.apply({"type": "remove_campus_block", "pos": [hit.x, hit.z]})
 		Mode.UPGRADE:
 			if _hover_seg != -1:
 				sim.apply({"type": "upgrade_road", "seg": _hover_seg, "road": road_type})
@@ -468,9 +471,9 @@ func _show_length(curve: Array) -> void:
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
 		var line := PackedVector3Array([curve[0] - dir * 400.0, curve[0] + dir * 400.0])
 		RoadMesh.add_strip(st, line, -0.25, 0.25, 0.3)
-		_guide.mesh = st.commit()
+		_guide.mesh = Terrain.drape(st.commit(), true, 8.0)
 		_guide.visible = true
-	_label.position = curve[2] + Vector3(0, 6, 0)
+	_label.position = Terrain.lift(curve[2]) + Vector3(0, 6, 0)
 	_label.visible = true
 
 
@@ -500,9 +503,9 @@ func _preview_mesh(curves: Array) -> ArrayMesh:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var hw := RoadStyle.half_width(RoadStyle.ring_type(road_type) if mode == Mode.ROUNDABOUT else road_type)
 	for curve in curves:
-		var pts := RoadNetwork.sample_curve(curve[0], curve[1], curve[2])
+		var pts := Terrain.densify(RoadNetwork.sample_curve(curve[0], curve[1], curve[2]), 6.0)
 		RoadMesh.add_strip(st, pts, -hw, hw, 0.2)
-	return st.commit()
+	return Terrain.drape(st.commit())
 
 
 ## Highlights the road under the mouse: red to bulldoze, blue to upgrade.
@@ -512,7 +515,7 @@ func _preview_pick(hit: Vector3) -> void:
 	if not near.is_empty() and near.dist <= RoadStyle.half_width(network.segments[near.seg].type) + 2.0:
 		_hover_seg = near.seg
 	var mat := _bad_mat if mode == Mode.BULLDOZE else _ok_mat
-	_cursor.position = hit + Vector3.UP * 0.3
+	_cursor.position = Terrain.lift(hit) + Vector3.UP * 0.3
 	_cursor.material_override = mat
 	# Service buildings can be bulldozed too.
 	_hover_service = sim.services.at(hit) if mode == Mode.BULLDOZE and _hover_seg == -1 else -1
@@ -538,7 +541,7 @@ func _preview_pick(hit: Vector3) -> void:
 		var box := BoxMesh.new()
 		box.size = Vector3(size.x + 1.0, 6.0, size.y + 1.0)
 		_preview.mesh = box
-		_preview.transform = Transform3D(Basis.looking_at(b.dir, Vector3.UP), b.pos + Vector3(0, 3, 0))
+		_preview.transform = Transform3D(Basis.looking_at(b.dir, Vector3.UP), Terrain.lift(b.pos) + Vector3(0, 3, 0))
 		_preview.material_override = mat
 		_preview.visible = true
 		return
@@ -547,8 +550,8 @@ func _preview_pick(hit: Vector3) -> void:
 	var w := RoadStyle.half_width(road_type if mode == Mode.UPGRADE else network.segments[_hover_seg].type)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	RoadMesh.add_strip(st, network.sample_segment(_hover_seg), -w - 0.5, w + 0.5, 0.2)
-	_preview.mesh = st.commit()
+	RoadMesh.add_strip(st, Terrain.densify(network.sample_segment(_hover_seg), 6.0), -w - 0.5, w + 0.5, 0.2)
+	_preview.mesh = Terrain.drape(st.commit())
 	_preview.material_override = mat
 	_preview.visible = true
 

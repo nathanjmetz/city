@@ -75,7 +75,7 @@ func _rebuild() -> void:
 			var db := minf(b[3], 8.0)
 			_quad(st, a[1], b[1], b[1] + b[2] * db, a[1] + a[2] * da, 0.08, Color(band, 0.45))
 			any = true
-	_mesh.mesh = st.commit() if any else null
+	_mesh.mesh = Terrain.drape(st.commit(), true) if any else null
 
 
 ## A lot: a filled inner area and a thin border just inside its edge.

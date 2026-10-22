@@ -5,6 +5,7 @@ extends Node3D
 ## its development tree. Real sizes: a 2.8 MW turbine's 90 m tower and
 ## 127 m rotor, a coal unit's 120 m stack, fixed-tilt panel rows. Turbine
 ## rotors turn; everything else is merged into one mesh per colour.
+## Each yard and unit stands on the real land; lanes drape over it.
 ## Placeholders until the art library has these.
 
 const GRAVEL := Color(0.6, 0.57, 0.5)
@@ -65,7 +66,7 @@ func _site(s: Dictionary) -> Node3D:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	if s.drive.size() >= 2:
-		RoadMesh.add_strip(st, PackedVector3Array(s.drive), -Farms.DRIVE_WIDTH * 0.5, Farms.DRIVE_WIDTH * 0.5, 0.12)
+		RoadMesh.add_strip(st, Terrain.densify(PackedVector3Array(s.drive), 6.0), -Farms.DRIVE_WIDTH * 0.5, Farms.DRIVE_WIDTH * 0.5, 0.12)
 	for c in s.cells:
 		var to := Vector2i.ZERO
 		for d in [Vector2i(-signi(c.x), 0), Vector2i(0, -signi(c.y))]:
@@ -74,7 +75,7 @@ func _site(s: Dictionary) -> Node3D:
 				break
 		RoadMesh.add_strip(st, PackedVector3Array([Power.cell_center(s, c), Power.cell_center(s, to)]), -2.0, 2.0, 0.1)
 	var flat := MeshInstance3D.new()
-	flat.mesh = st.commit()
+	flat.mesh = Terrain.drape(st.commit(), true, 8.0)
 	flat.material_override = _mat(LANE)
 	flat.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(flat)
@@ -104,7 +105,8 @@ func _site(s: Dictionary) -> Node3D:
 func _node(root: Node3D, at: Vector3, basis: Basis) -> Node3D:
 	var n := Node3D.new()
 	n.set_meta("static", true)
-	n.position = at
+	# Each piece stands level on the land at its middle.
+	n.position = Vector3(at.x, Terrain.ground_y(at.x, at.z), at.z)
 	n.basis = basis
 	root.add_child(n)
 	return n

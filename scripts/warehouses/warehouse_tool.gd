@@ -70,7 +70,7 @@ func _process(_delta: float) -> void:
 		var box := BoxMesh.new()
 		box.size = Vector3(Warehouses.site_width(w), h, Warehouses.site_depth(w))
 		_ghost.mesh = box
-		_ghost.position = Warehouses.center(w) + Vector3(0, h * 0.5, 0)
+		_ghost.position = Terrain.lift(Warehouses.center(w)) + Vector3(0, h * 0.5, 0)
 		_ghost.basis = Basis.looking_at(_site[1], Vector3.UP)
 		_ghost.material_override = _ok_mat if problem == "" else _bad_mat
 	if problem != _problem:

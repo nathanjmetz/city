@@ -63,7 +63,7 @@ func _site(id: int, s: Dictionary) -> Node3D:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	st.set_color(LANE)
 	if s.drive.size() >= 2:
-		RoadMesh.add_strip(st, PackedVector3Array(s.drive), -Farms.DRIVE_WIDTH * 0.5, Farms.DRIVE_WIDTH * 0.5, 0.12)
+		RoadMesh.add_strip(st, Terrain.densify(PackedVector3Array(s.drive), 6.0), -Farms.DRIVE_WIDTH * 0.5, Farms.DRIVE_WIDTH * 0.5, 0.12)
 	# Each pad's track runs to the neighbour nearer the main building.
 	for c in s.pads:
 		var to: Vector2i = c
@@ -76,7 +76,7 @@ func _site(id: int, s: Dictionary) -> Node3D:
 		RoadMesh.add_strip(st, PackedVector3Array([Industry.pad_center(s, c), Industry.pad_center(s, to)]),
 			-2.0, 2.0, 0.1)
 	var flat := MeshInstance3D.new()
-	flat.mesh = st.commit()
+	flat.mesh = Terrain.drape(st.commit(), true, 8.0)
 	flat.material_override = _mat(LANE)
 	flat.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(flat)
@@ -108,11 +108,13 @@ func _mine(id: int, s: Dictionary, root: Node3D) -> void:
 			var beam := MeshInstance3D.new()
 			beam.mesh = _beam_mesh
 			beam.transform = at * Transform3D(Basis.IDENTITY, Vector3(-3, 5.6, 0))
+			beam.position.y += Terrain.ground_y(beam.position.x, beam.position.z)
 			root.add_child(beam)
 			_beams.append(beam)
 	for mat in merged:
 		var mi := MeshInstance3D.new()
-		mi.mesh = (merged[mat][0] as SurfaceTool).commit()
+		# On the land: ground work drapes over it, the rest stands on it.
+		mi.mesh = Terrain.drape((merged[mat][0] as SurfaceTool).commit(), true, 8.0 if merged[mat][1] else 0.0)
 		mi.material_override = mat
 		if merged[mat][1]:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -171,7 +173,8 @@ func _forest(s: Dictionary, root: Node3D, trees: Array) -> void:
 			_put(merged, ForestryBuilder.woods(cseed, Industry.PAD, 1.0, clear, open), frame, trees)
 	for mat in merged:
 		var mi := MeshInstance3D.new()
-		mi.mesh = (merged[mat][0] as SurfaceTool).commit()
+		# On the land: ground work drapes over it, the rest stands on it.
+		mi.mesh = Terrain.drape((merged[mat][0] as SurfaceTool).commit(), true, 8.0 if merged[mat][1] else 0.0)
 		mi.material_override = mat
 		if merged[mat][1]:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -205,7 +208,9 @@ func _put(merged: Dictionary, built: Array, frame: Transform3D, trees: Array) ->
 			(merged[mat][0] as SurfaceTool).append_from(mesh, i, frame)
 	for t in built[2]:
 		var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
-		trees.append([frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0]), t[1], t[2]])
+		var at := frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])
+		at.origin.y += Terrain.ground_y(at.origin.x, at.origin.z)
+		trees.append([at, t[1], t[2]])
 
 
 func _mat(color: Color) -> Material:

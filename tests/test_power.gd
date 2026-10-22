@@ -13,12 +13,14 @@ func _init() -> void:
 	var windy := Vector3.INF
 	for i in 4000:
 		var at := Vector3((i % 64) * 157.0, 0.0, (i / 64) * 157.0)
-		if oily == Vector3.INF and Power.gas_supply(at) > 0.7:
+		if oily == Vector3.INF and p.gas(at) > 0.7 and p.reach_quality("hydro", at) < 0.3:
 			oily = at
-		if calm == Vector3.INF and Power.gas_supply(at) == 0.0 and p.reach_quality("wind", at) < 0.3 \
+		if calm == Vector3.INF and p.gas(at) == 0.0 and p.reach_quality("wind", at) < 0.3 \
+				and p.reach_quality("hydro", at) < 0.3 and Terrain.buildable(at.x, at.z, 250.0) \
 				and Resources.at(Resources.Kind.FOREST, at) < 0.1:
 			calm = at
-		if windy == Vector3.INF and Power.gas_supply(at) == 0.0 and p.reach_quality("wind", at) > 0.95:
+		if windy == Vector3.INF and p.gas(at) == 0.0 and p.reach_quality("wind", at) > 0.85 \
+				and p.reach_quality("hydro", at) < 0.3:
 			windy = at
 	_check(oily != Vector3.INF and calm != Vector3.INF and windy != Vector3.INF, "found test spots")
 	var low := {"name": "Earl Riggs", "education": 0.15}

@@ -44,14 +44,15 @@ func _spawn(id: int, fresh: bool) -> Node3D:
 	_stamps[id] = _stamp(id)
 	var root := Node3D.new()
 	add_child(root)
-	root.position = s.pos
+	root.position = Terrain.lift(s.pos)
 	root.basis = Basis.looking_at(s.dir, Vector3.UP)
 	var to_curb := Parks.SETBACK + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
 	var town_name := town if town != "" else (Session.current_name if Session.current_name != "" else "My Town")
 	var built := ParkBuilder.build_site(s, id * 7919 + int(s.built), to_curb, town_name)
 	for i in [0, 1, 4]:
 		var mi := MeshInstance3D.new()
-		mi.mesh = built[i]
+		# Paths and lawns lie on the land, following it.
+		mi.mesh = built[i] if i == 0 else Terrain.drape_local(built[i], Transform3D(root.basis, root.position))
 		if i != 0:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(mi)

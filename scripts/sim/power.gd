@@ -5,8 +5,8 @@ extends RefCounted
 ## default; instead the player can place a power company's yard (switchyard
 ## and control building). It hires a leader, and the leader picks how to make
 ## power from what the land offers:
-##   solar farm on open ground, wind farm where it's windy (the ridges once
-##   the real terrain lands), a gas plant near oil (the field's own gas), a
+##   solar farm on open ground, wind farm on windy ridges and bluffs, a gas
+##   plant near oil (the field's own gas), a
 ##   run-of-river dam on the White River, or an old coal plant bought cheap.
 ## How far ahead the leader plans comes from their education, which comes
 ## from the town's schools: a well-educated leader builds the plant that is
@@ -39,9 +39,11 @@ const LAST_NAMES := ["Kowalski", "Hendricks", "Schroeder", "Lindqvist", "McAllis
 var sites := {}
 ## Set by the city: the industrial tax rate (percent).
 var tax_rate := 1.5
-## Flow of the river at a point, 0 (dry land) to 1 (the main channel). The
-## terrain thread's White River plugs in here; until then there's no river
-## and no leader picks hydro.
+## Where the city sits in the region (CitySim.terrain_offset): the real
+## land is read there.
+var offset := Vector2.ZERO
+## Override for the river's flow at a point (tests); by default the real
+## White River and its water from Terrain.
 var river := Callable()
 ## Last decide step's sales, per company id: {"town": homes, "export": homes,
 ## "profit": $ a year}. Shown in the panel; worked out again each step.
@@ -51,15 +53,27 @@ var _next_id := 1
 
 # --- Where power comes from ---------------------------------------------------
 
-## How windy a spot is, 0 to 1. Stand-in for ridge exposure until the real
-## terrain lands: smooth, gridless, the same for every player.
-static func wind_at(p: Vector3) -> float:
-	var n := Resources._fbm(Vector2(p.x, p.z) / 900.0, 53)
-	return smoothstep(0.3, 0.75, n)
+## How windy a spot is, 0 to 1: open ridges and bluffs above the land
+## around them (the real terrain), with a little smooth variation, the
+## same for every player. Valley floors are calm.
+func wind_at(p: Vector3) -> float:
+	var x := p.x + offset.x
+	var z := p.z + offset.y
+	var h := Terrain.height(x, z)
+	var around := 0.0
+	for k in 8:
+		var a := TAU * k / 8.0
+		around += Terrain.height(x + cos(a) * 500.0, z + sin(a) * 500.0)
+	var exposure := smoothstep(-2.0, 14.0, h - around / 8.0)
+	var n := Resources.value_noise(Vector2(x, z) / 900.0, 53)
+	return clampf(0.75 * exposure + 0.35 * n, 0.0, 1.0)
 
 
+## The river at a point: 0 on dry land, 1 in the channel.
 func river_at(p: Vector3) -> float:
-	return 0.0 if not river.is_valid() else clampf(float(river.call(p)), 0.0, 1.0)
+	if river.is_valid():
+		return clampf(float(river.call(p)), 0.0, 1.0)
+	return clampf(Terrain.water(p.x + offset.x, p.z + offset.y), 0.0, 1.0)
 
 
 ## How well a plant of this kind works at a point, 0 to 1 (0 = can't).
@@ -67,7 +81,7 @@ func quality(plant: String, p: Vector3) -> float:
 	match plant:
 		"solar":
 			# Open ground. Woods have to be cleared and shade the panels.
-			return 1.0 - 0.5 * Resources.at(Resources.Kind.FOREST, p)
+			return 1.0 - 0.5 * Resources.at(Resources.Kind.FOREST, p, offset)
 		"wind":
 			return wind_at(p)
 		"hydro":
@@ -78,7 +92,7 @@ func quality(plant: String, p: Vector3) -> float:
 ## Best quality within reach of a yard (a plant spreads a few hundred metres).
 func reach_quality(plant: String, pos: Vector3) -> float:
 	if plant == "gas":
-		return gas_supply(pos)
+		return gas(pos)
 	if plant == "coal":
 		return 1.0
 	var best := 0.0
@@ -91,12 +105,12 @@ func reach_quality(plant: String, pos: Vector3) -> float:
 
 ## Local gas for a gas plant: the oil field's own gas, 0 to 1. A gas plant
 ## only goes near oil.
-static func gas_supply(pos: Vector3) -> float:
+func gas(pos: Vector3) -> float:
 	var best := 0.0
 	for r in [0.0, 200.0, 400.0]:
 		for i in (1 if r == 0.0 else 12):
 			var a := TAU * i / 12.0
-			best = maxf(best, Resources.at(Resources.Kind.OIL, pos + Vector3(cos(a), 0.0, sin(a)) * r))
+			best = maxf(best, Resources.at(Resources.Kind.OIL, pos + Vector3(cos(a), 0.0, sin(a)) * r, offset))
 	return 0.0 if best < Balance.INDUSTRY_MIN_RICHNESS else best
 
 
@@ -144,7 +158,7 @@ static func schooling(leader: Dictionary) -> String:
 ## here. Returns {plant: score}.
 func scores(leader: Dictionary, pos: Vector3) -> Dictionary:
 	var h := horizon(leader)
-	var gas := gas_supply(pos)
+	var gas_here := gas(pos)
 	var out := {}
 	for plant in PLANTS:
 		var k: Dictionary = PLANTS[plant]
@@ -153,7 +167,7 @@ func scores(leader: Dictionary, pos: Vector3) -> Dictionary:
 			out[plant] = -INF
 			continue
 		var mwh := unit_homes(plant, q) * Balance.POWER_MWH_PER_HOME
-		var margin: float = Balance.POWER_TOWN_PRICE - opex(plant, gas) + (Balance.POWER_FIRM_BONUS if k.firm else 0.0) \
+		var margin: float = Balance.POWER_TOWN_PRICE - opex(plant, gas_here) + (Balance.POWER_FIRM_BONUS if k.firm else 0.0) \
 			- float(leader.education) * Balance.POWER_CARBON_PRICE * float(k.carbon)
 		out[plant] = h * margin - float(k.capex) / mwh + float(leader.education) * k.smoke_weight * k.value
 	return out
@@ -232,8 +246,8 @@ static func _boost(s: Dictionary) -> float:
 
 
 ## A company's running cost per MWh, with its research lab.
-static func site_opex(s: Dictionary) -> float:
-	return opex(s.plant, gas_supply(s.pos)) * (0.9 if "lab" in s.upgrades else 1.0)
+func site_opex(s: Dictionary) -> float:
+	return opex(s.plant, gas(s.pos)) * (0.9 if "lab" in s.upgrades else 1.0)
 
 
 ## Homes-equivalent the company makes on average.
@@ -411,7 +425,7 @@ func unlock_problem(id: int, key: String, ctx: Dictionary) -> String:
 		return "Needs a leader with %s." % schooling({"education": u.edu})
 	match str(u.needs):
 		"oil":
-			if gas_supply(s.pos) <= 0.0:
+			if gas(s.pos) <= 0.0:
 				return "Needs an oil field nearby."
 		"school":
 			if not ctx.get("school", false):
@@ -529,7 +543,8 @@ func _free(id: int, s: Dictionary, c: Vector2i, usable: Callable) -> bool:
 			return false
 		if site_at(p) == id:
 			return false
-	return usable.call(mid, corners)
+	# A dam bay stands in the river itself, where nothing else can go.
+	return s.plant == "hydro" or usable.call(mid, corners)
 
 
 ## The company whose yard or access road holds this point.

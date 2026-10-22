@@ -57,6 +57,13 @@ func _process(_delta: float) -> void:
 
 
 func _rebuild() -> void:
+	# Neighbors' cities are drawn moved over to their place on the land.
+	Terrain.shift = Terrain.shift_for(self)
+	_rebuild_all()
+	Terrain.shift = Vector2.ZERO
+
+
+func _rebuild_all() -> void:
 	var poles := []
 	var arms := []
 	var heads := []
@@ -73,12 +80,12 @@ func _rebuild() -> void:
 			var sl := traffic.stop_line(wid)
 			var dir: Vector3 = sl.dir
 			var right: Vector3 = sl.right
-			var base: Vector3 = sl.pos + right * sl.curb - dir * 1.0
+			var base: Vector3 = Terrain.lift(sl.pos + right * sl.curb - dir * 1.0)
 			var face := Basis.looking_at(-dir, Vector3.UP)  # facing the drivers
 			if j.control == TrafficSim.Rule.SIGNAL:
 				poles.append(Transform3D(Basis().scaled(Vector3(1, POLE_H, 1)), base + Vector3(0, POLE_H * 0.5, 0)))
 				# Mast arm out over the lanes, head above the middle lane.
-				var head: Vector3 = sl.pos + right * sl.mid - dir * 1.0 + Vector3(0, POLE_H - 0.4, 0)
+				var head: Vector3 = Terrain.lift(sl.pos + right * sl.mid - dir * 1.0) + Vector3(0, POLE_H - 0.4, 0)
 				var span: float = sl.curb - sl.mid
 				arms.append(Transform3D(Basis(right, Vector3.UP, right.cross(Vector3.UP)).scaled(Vector3(span, 1, 1)),
 					base + right * (-span * 0.5) + Vector3(0, POLE_H - 0.1, 0)))

@@ -36,7 +36,7 @@ func _sync() -> void:
 func _spawn(id: int, w: Dictionary) -> Node3D:
 	var root := Node3D.new()
 	add_child(root)
-	root.position = Warehouses.center(w)
+	root.position = Terrain.lift(Warehouses.center(w))
 	# Local -Z faces the road.
 	root.basis = Basis.looking_at(w.dir, Vector3.UP)
 	var to_curb := Warehouses.SETBACK + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
@@ -46,7 +46,7 @@ func _spawn(id: int, w: Dictionary) -> Node3D:
 	building.mesh = built[0]
 	root.add_child(building)
 	var ground := MeshInstance3D.new()
-	ground.mesh = built[1]
+	ground.mesh = Terrain.drape_local(built[1], Transform3D(root.basis, root.position))
 	ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(ground)
 	var frame := Transform3D(root.basis, root.position)

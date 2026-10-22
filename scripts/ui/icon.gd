@@ -95,6 +95,14 @@ func _draw() -> void:
 				draw_circle(P.call(x, 0.75), s * 0.05, color)
 			line.call(P.call(0.08, 0.38), P.call(0.14, 0.86), w * 1.4)
 			line.call(P.call(0.14, 0.62), P.call(0.3, 0.55))
+		"move":
+			# Four arrows out from the middle, like Move It's icon.
+			for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+				var tip: Vector2 = Vector2(0.5, 0.5) + d * 0.4
+				var side: Vector2 = Vector2(-d.y, d.x) * 0.12
+				line.call(P.call(0.5 + d.x * 0.1, 0.5 + d.y * 0.1), P.call(tip.x, tip.y))
+				draw_polyline(PackedVector2Array([P.call(tip.x - d.x * 0.13 + side.x, tip.y - d.y * 0.13 + side.y),
+					P.call(tip.x, tip.y), P.call(tip.x - d.x * 0.13 - side.x, tip.y - d.y * 0.13 - side.y)]), color, w, true)
 		"homes", "zones":
 			var tint := accent if kind == "homes" else Color(0.35, 0.85, 0.35)
 			_poly([P.call(0.15, 0.48), P.call(0.5, 0.15), P.call(0.85, 0.48), P.call(0.78, 0.48),
