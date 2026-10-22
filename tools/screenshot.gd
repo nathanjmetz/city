@@ -47,7 +47,7 @@ func _demo_town() -> void:
 		sim.apply({"type": "paint_zone", "center": [p.x, p.z], "radius": 3, "zone": zone})
 	var args := OS.get_cmdline_user_args()
 	var overlay := args.size() >= 5 and args[4] == "zones"
-	for i in (60 if overlay else 600):
+	for i in (60 if overlay else 3000):
 		sim.tick()
 	if overlay:
 		for c in _main.get_children():

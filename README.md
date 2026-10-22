@@ -29,6 +29,8 @@ An open map where you draw roads, paint zones along them, and buildings grow, li
 
 The city runs on a clock (a day takes about 2½ minutes at 1x). Homes, shops and industry only grow when there is demand, shown by the bars in the bottom-left corner: homes are wanted while there are jobs, industry while people need work, and shops while residents need places to shop. People move into new homes over time.
 
+Cars drive between homes, jobs and shops: to work in the morning, home in the evening. They keep right, stick to the speed limit (25 mph streets up to 65 mph highways), slow down for curves, respect one-way roads, and queue behind each other. The top-right shows traffic flow, like Cities: Skylines.
+
 The camera uses the Cities: Skylines 2 default keys:
 
 | Control | What it does |
@@ -60,7 +62,7 @@ Your town saves automatically in the browser.
 | `scripts/camera/city_camera.gd` | The orbit camera. |
 | `scripts/tools/road_tool.gd` | Mouse tools for drawing and bulldozing. |
 | `scripts/ui/hud.gd` | Toolbar and stats. |
-| `tests/` | Headless tests: `godot --headless -s tests/test_roads.gd` and `tests/test_sim.gd` |
+| `tests/` | Headless tests: `godot --headless -s tests/test_roads.gd` and `tests/test_sim.gd`, `tests/test_traffic.gd` |
 | `tools/screenshot.gd` | Renders a demo town to a PNG: `godot -s tools/screenshot.gd -- out.png` |
 
 The game uses the Compatibility renderer so the same project runs in browsers and on modest Mac and Windows machines.

@@ -66,6 +66,8 @@ static func _make_lot(seg: int, side: int, index: int, pts: PackedVector3Array, 
 	return {
 		"key": "%d:%d:%d" % [seg, side, index],
 		"seg": seg, "side": side,
+		# Where the driveway meets the road, as a share of the road's length.
+		"at_frac": at / maxf(RoadNetwork.polyline_length(pts), 0.001),
 		"pos": pos, "front": front, "zone_pt": front + normal * 8.0, "dir": dir, "normal": normal,
 		"corners": corners,
 		# From the lot's street edge back out to the asphalt, for driveways.

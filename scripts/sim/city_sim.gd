@@ -27,6 +27,7 @@ const WORKER_SHARE := 0.5
 
 var network := RoadNetwork.new()
 var zones := ZoneMap.new()
+var traffic := TrafficSim.new(network)
 var lots := {}       # lot key -> lot Dictionary (from LotPlanner)
 var buildings := {}  # lot key -> {"zone", "seed", "built", "cap", "occ"}
 var tick_count := 0
@@ -87,6 +88,9 @@ func tick() -> void:
 		update_stats()
 	if tick_count % GROW_EVERY == 0:
 		_grow_one()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([city_seed, tick_count, "traffic"])
+	traffic.step(self, rng)
 
 
 ## Game time as a Dictionary (year, month, day, weekday, hour, minute).

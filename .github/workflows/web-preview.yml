@@ -55,6 +55,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_roads.gd
           ~/godot-cache/godot --headless -s tests/test_sim.gd
           ~/godot-cache/godot --headless -s tests/test_road_tools.gd
+          ~/godot-cache/godot --headless -s tests/test_traffic.gd
 
       - name: Stamp the build
         run: |

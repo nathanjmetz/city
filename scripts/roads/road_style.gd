@@ -6,20 +6,20 @@ enum Type { STREET, AVENUE, BOULEVARD, HIGHWAY, RAMP }
 
 ## Each type: name, lanes, paved width, planted median width, whether it is
 ## one-way (traffic runs the way it was drawn), whether buildings can face it,
-## and its steepest allowed grade (AASHTO maximum grades).
+## its steepest allowed grade (AASHTO maximum grades) and speed limit.
 ## Lanes are 3.6 m (12 ft, the AASHTO standard lane).
 const TYPES := [
 	# Local street: two lanes plus room to park along the gutters.
-	{"name": "Street", "lanes": 2, "width": 9.0, "median": 0.0, "oneway": false, "lots": true, "grade": 0.12},
+	{"name": "Street", "lanes": 2, "width": 9.0, "median": 0.0, "oneway": false, "lots": true, "grade": 0.12, "mph": 25},
 	# Collector: four lanes and gutters, double yellow line.
-	{"name": "Avenue", "lanes": 4, "width": 15.0, "median": 0.0, "oneway": false, "lots": true, "grade": 0.10},
+	{"name": "Avenue", "lanes": 4, "width": 15.0, "median": 0.0, "oneway": false, "lots": true, "grade": 0.10, "mph": 35},
 	# Arterial: six lanes split by a 4 m planted median.
-	{"name": "Boulevard", "lanes": 6, "width": 26.0, "median": 4.0, "oneway": false, "lots": true, "grade": 0.08},
+	{"name": "Boulevard", "lanes": 6, "width": 26.0, "median": 4.0, "oneway": false, "lots": true, "grade": 0.08, "mph": 45},
 	# Freeway, one direction: three lanes, 10 ft right and 4 ft left shoulders.
 	# Draw one each way (Parallel mode helps). No driveways.
-	{"name": "Highway", "lanes": 3, "width": 15.0, "median": 0.0, "oneway": true, "lots": false, "grade": 0.05},
+	{"name": "Highway", "lanes": 3, "width": 15.0, "median": 0.0, "oneway": true, "lots": false, "grade": 0.05, "mph": 65},
 	# Interchange ramp: one lane, 8 ft right and 4 ft left shoulders.
-	{"name": "Ramp", "lanes": 1, "width": 7.2, "median": 0.0, "oneway": true, "lots": false, "grade": 0.08},
+	{"name": "Ramp", "lanes": 1, "width": 7.2, "median": 0.0, "oneway": true, "lots": false, "grade": 0.08, "mph": 35},
 ]
 
 const CURB_WIDTH := 0.3
@@ -58,6 +58,9 @@ static func right_of_way_half(type := 0) -> float:
 	if TYPES[type].oneway:
 		return half_width(type) + 1.5  # barrier and clear zone, no sidewalk
 	return half_width(type) + CURB_WIDTH + PARKWAY_WIDTH + SIDEWALK_WIDTH
+
+
+const MPH := 0.44704  # metres per second
 
 
 ## Highest speed a curve of this radius is safe for, in mph (AASHTO:
