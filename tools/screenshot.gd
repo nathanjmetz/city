@@ -62,6 +62,8 @@ func _demo_town() -> void:
 		return
 	if args0.size() >= 5 and args0[4] == "mail":
 		_demo_mail(sim)
+		_aim_camera()
+		return
 	if args0.size() >= 5 and args0[4] == "junction":
 		# Brawn's junction repro: a crossroads, a T and a sharp Y, zoned so
 		# they get curbs and sidewalks.
