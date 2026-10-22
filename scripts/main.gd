@@ -99,8 +99,6 @@ func _ready() -> void:
 	# where they're drawn, the ground paints the woods' canopy.
 	Vegetation.cover_source = func(p: Vector3) -> Array:
 		return Terrain.wild_cover(p.x + sim.terrain_offset.x, p.z + sim.terrain_offset.y)
-	terrain.trees_drawn_to = func() -> float:
-		return WildView.reach(cam.camera.global_position.y)
 
 	var audio := CityAudio.new()
 	audio.setup(sim, cam.camera, func(): return _tick_time * CitySim.TICKS_PER_SECOND)

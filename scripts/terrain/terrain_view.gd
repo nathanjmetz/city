@@ -2,7 +2,11 @@ class_name TerrainView
 extends Node3D
 ## Draws the land: ground, rivers and lakes, in square chunks streamed in
 ## around the camera, finer up close and coarser far away, like Cities:
-## Skylines 2's terrain. The woods are TerrainForest's job.
+## Skylines 2's terrain. Detail falls off smoothly with distance, the way the
+## eye sees it: each vertex slides toward the next coarser level as it gets
+## farther from the camera (geomorphing), so by the time a chunk switches to
+## the coarser mesh it already looks exactly like it, and nothing pops.
+## Trees are WildView's; past them the ground paints the woods' canopy.
 ##
 ## Benchmark: aerial photos of the White River valley near Petersburg,
 ## Indiana: tan and green crop fields, dark wooded hills and creek bottoms,
@@ -13,8 +17,13 @@ extends Node3D
 
 const CHUNK := 512.0
 ## Grid spacing for each level of detail, and how far each one reaches.
-const STEPS := [8.0, 16.0, 32.0, 64.0]
-const REACH := [700.0, 1400.0, 2800.0, 5000.0]
+const STEPS := [8.0, 16.0, 32.0, 64.0, 128.0]
+const REACH := [700.0, 1400.0, 2800.0, 5600.0, 9000.0]
+## A chunk goes finer once it is MORPH_END of its reach away, and coarser
+## only past HYST_OUT; its vertices finish morphing by MORPH_END, so the
+## switch is seamless both ways.
+const MORPH_END := 0.9
+const HYST_OUT := 0.95
 ## Ground graded flat this far each side of a road with lots (curb, walk,
 ## and the 32 m lots), fading out over the next few metres.
 const LOT_GRADE := 34.0
@@ -40,7 +49,15 @@ uniform vec4 litter : source_color = vec4(0.22, 0.20, 0.12, 1.0);
 uniform vec4 canopy : source_color = vec4(0.13, 0.22, 0.09, 1.0);
 uniform vec4 spoil : source_color = vec4(0.52, 0.49, 0.43, 1.0);
 uniform vec4 mud : source_color = vec4(0.42, 0.37, 0.27, 1.0);
-uniform float forest_far = 1000.0;
+// Where wild trees are drawn (WildView): centre x, z and reach. Past them
+// the woods are painted as canopy.
+global uniform vec4 tree_fade;
+// The camera's x, height above the ground, z: level of detail is measured
+// from it the way TerrainView picks chunk detail.
+uniform vec3 lod_eye;
+// CUSTOM0: (height, normal x, normal z) on the next coarser level, and w the
+// reach of this chunk's level (0 for the coarsest): vertices slide to the
+// coarser level between MORPH_START and MORPH_END of that reach.
 
 varying vec3 world_pos;
 varying vec4 cover;
@@ -51,6 +68,11 @@ vec2 turn(vec2 p, float a) {
 }
 
 void vertex() {
+	vec2 d = VERTEX.xz - lod_eye.xz;
+	float morph = CUSTOM0.w > 0.0 ? smoothstep(CUSTOM0.w * 0.5, CUSTOM0.w * 0.9, sqrt(dot(d, d) + lod_eye.y * lod_eye.y)) : 0.0;
+	VERTEX.y = mix(VERTEX.y, CUSTOM0.x, morph);
+	vec3 coarse = vec3(CUSTOM0.y, sqrt(max(1.0 - CUSTOM0.y * CUSTOM0.y - CUSTOM0.z * CUSTOM0.z, 0.0)), CUSTOM0.z);
+	NORMAL = normalize(mix(NORMAL, coarse, morph));
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	cover = COLOR;
 	steep = 1.0 - NORMAL.y;
@@ -86,7 +108,8 @@ void fragment() {
 	// trees aren't drawn, the canopy itself, lumpy with crowns.
 	float crowns = texture(noise_soft, p / 11.0).r * 0.6 + clump * 0.4;
 	vec3 tops = canopy.rgb * (0.65 + 0.7 * crowns) * (0.85 + 0.3 * big);
-	vec3 woods = mix(litter.rgb * (0.8 + 0.4 * clump), tops, smoothstep(forest_far * 0.85, forest_far, dist));
+	float painted = smoothstep(tree_fade.z * 0.72, tree_fade.z * 0.97, distance(p, tree_fade.xy));
+	vec3 woods = mix(litter.rgb * (0.8 + 0.4 * clump), tops, painted);
 	col = mix(col, woods, smoothstep(0.3, 0.65, cover.r));
 
 	// Strip mine spoil and gravel.
@@ -142,8 +165,6 @@ static var _water_mat: ShaderMaterial
 ## The camera the chunks follow.
 var camera: Camera3D
 var network: RoadNetwork
-## How far out real trees are drawn (metres), or unset for the default.
-var trees_drawn_to := Callable()
 
 ## Vector2i chunk -> {lod, ground: MeshInstance3D, water: MeshInstance3D}
 var _chunks := {}
@@ -198,21 +219,26 @@ func focus() -> Vector2:
 
 
 func _process(_delta: float) -> void:
-	# The ground paints the woods' canopy past where trees are drawn.
+	var eye := _eye()
 	if _ground_mat != null:
-		_ground_mat.set_shader_parameter("forest_far", trees_drawn_to.call() * 0.95 if trees_drawn_to.is_valid() else 1000.0)
-	var f := focus()
+		_ground_mat.set_shader_parameter("lod_eye", Vector3(eye.x, eye.z, eye.y))
+	var flat_eye := Vector2(eye.x, eye.y)
 	var start := Time.get_ticks_msec()
-	# Wanted level of detail for every chunk in reach.
+	# Wanted level of detail for every chunk in reach: finer once well
+	# inside a level's reach, coarser only once well past it.
 	var want := {}
 	var r := ceili(REACH[REACH.size() - 1] / CHUNK)
-	var fc := Vector2i(floori(f.x / CHUNK), floori(f.y / CHUNK))
+	var fc := Vector2i(floori(eye.x / CHUNK), floori(eye.y / CHUNK))
 	for cz in range(fc.y - r, fc.y + r + 1):
 		for cx in range(fc.x - r, fc.x + r + 1):
 			var key := Vector2i(cx, cz)
-			var d := _chunk_distance(key, f)
+			var d := _chunk_distance(key, flat_eye, eye.z)
+			if d >= REACH[REACH.size() - 1]:
+				continue
+			var have = _chunks.get(key)
 			for lod in REACH.size():
-				if d < REACH[lod]:
+				var edge: float = REACH[lod] * (HYST_OUT if have != null and have.lod <= lod else MORPH_END)
+				if d < edge or lod == REACH.size() - 1:
 					want[key] = lod
 					break
 	for key in _chunks.keys():
@@ -223,7 +249,7 @@ func _process(_delta: float) -> void:
 	for key in want:
 		var have = _chunks.get(key)
 		if have == null or have.lod != want[key] or _dirty.has(key):
-			todo.append([_chunk_distance(key, f), key])
+			todo.append([_chunk_distance(key, flat_eye, eye.z), key])
 	todo.sort_custom(func(a, b): return a[0] < b[0])
 	for item in todo:
 		var key: Vector2i = item[1]
@@ -236,11 +262,20 @@ func _process(_delta: float) -> void:
 	_first = false
 
 
-func _chunk_distance(key: Vector2i, f: Vector2) -> float:
+## The camera's ground position and its height above the land: x, z, height.
+func _eye() -> Vector3:
+	if camera == null or not camera.is_inside_tree():
+		return Vector3.ZERO
+	var p := camera.global_position
+	return Vector3(p.x, p.z, maxf(p.y - Terrain.ground_y(p.x, p.z), 1.0))
+
+
+## How far a chunk's nearest point is from the camera, counting its height.
+func _chunk_distance(key: Vector2i, f: Vector2, height := 0.0) -> float:
 	var r := Rect2(Vector2(key) * CHUNK, Vector2(CHUNK, CHUNK))
 	var dx := maxf(maxf(r.position.x - f.x, f.x - r.end.x), 0.0)
 	var dz := maxf(maxf(r.position.y - f.y, f.y - r.end.y), 0.0)
-	return Vector2(dx, dz).length()
+	return sqrt(dx * dx + dz * dz + height * height)
 
 
 func _drop(key: Vector2i) -> void:
@@ -254,7 +289,7 @@ func _drop(key: Vector2i) -> void:
 func _build(key: Vector2i, lod: int) -> void:
 	if _chunks.has(key):
 		_drop(key)
-	var meshes := build_chunk(Vector2(key) * CHUNK, CHUNK, STEPS[lod])
+	var meshes := build_chunk(Vector2(key) * CHUNK, CHUNK, STEPS[lod], REACH[lod] if lod < STEPS.size() - 1 else 0.0)
 	var entry := {"lod": lod, "ground": null, "water": null}
 	var g := MeshInstance3D.new()
 	g.mesh = meshes[0]
@@ -272,24 +307,72 @@ func _build(key: Vector2i, lod: int) -> void:
 	_chunks[key] = entry
 
 
+## Where grid point (i, j) of a chunk sits on the next coarser level (twice
+## the step): its height there and that level's normal (x, z), as the
+## coarser mesh would draw it, including which way its squares are split.
+## `hs` holds heights with two extra samples all round, `m` wide.
+static func _coarse_at(hs: PackedFloat32Array, m: int, i: int, j: int, step: float) -> Vector3:
+	var odd_i := i % 2 == 1
+	var odd_j := j % 2 == 1
+	var pts := []
+	if not odd_i and not odd_j:
+		pts = [Vector2i(i, j)]
+	elif odd_i and not odd_j:
+		pts = [Vector2i(i - 1, j), Vector2i(i + 1, j)]
+	elif not odd_i and odd_j:
+		pts = [Vector2i(i, j - 1), Vector2i(i, j + 1)]
+	else:
+		var a := hs[(j + 1) * m + (i + 1)]
+		var b := hs[(j + 1) * m + (i + 3)]
+		var c := hs[(j + 3) * m + (i + 1)]
+		var d := hs[(j + 3) * m + (i + 3)]
+		if absf(a - d) < absf(b - c):
+			pts = [Vector2i(i - 1, j - 1), Vector2i(i + 1, j + 1)]
+		else:
+			pts = [Vector2i(i + 1, j - 1), Vector2i(i - 1, j + 1)]
+	var y := 0.0
+	var nrm := Vector3.ZERO
+	for qv in pts:
+		var q: Vector2i = qv
+		var at := (q.y + 2) * m + (q.x + 2)
+		y += hs[at]
+		# The coarse level's slope, from samples two steps apart (fewer at
+		# the edge of what was sampled).
+		var x := q.x + 2
+		var z := q.y + 2
+		var l := mini(2, x)
+		var r := mini(2, m - 1 - x)
+		var u := mini(2, z)
+		var dn := mini(2, m - 1 - z)
+		var sx := (hs[at + r] - hs[at - l]) / ((l + r) * step)
+		var sz := (hs[at + dn * m] - hs[at - u * m]) / ((u + dn) * step)
+		nrm += Vector3(-sx, 1.0, -sz).normalized()
+	nrm = nrm.normalized()
+	return Vector3(y / pts.size(), nrm.x, nrm.z)
+
+
 ## The ground mesh and the water mesh (or null) for one square chunk with
 ## its corner at `origin`, a grid `step` metres apart. View coordinates.
-static func build_chunk(origin: Vector2, size: float, step: float) -> Array:
+static func build_chunk(origin: Vector2, size: float, step: float, reach := 0.0) -> Array:
 	var n := int(size / step)
-	var m := n + 3  # one extra sample all round, for normals
+	var m := n + 5  # two extra samples all round, for normals at both levels
 	var hs := PackedFloat32Array()
 	hs.resize(m * m)
 	for j in m:
 		for i in m:
-			hs[j * m + i] = Terrain.ground_y(origin.x + (i - 1) * step, origin.y + (j - 1) * step)
+			hs[j * m + i] = Terrain.ground_y(origin.x + (i - 2) * step, origin.y + (j - 2) * step)
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colors := PackedColorArray()
+	# Each vertex also carries where it sits on the next coarser level (its
+	# height and normal there), for the shader to slide toward with distance.
+	var coarse := PackedFloat32Array()
 	var wet := PackedFloat32Array()
 	var count := (n + 1) * (n + 1)
 	verts.resize(count)
 	normals.resize(count)
 	colors.resize(count)
+	coarse.resize(count * 4)
 	wet.resize(count)
 	var any_water := false
 	for j in n + 1:
@@ -297,9 +380,14 @@ static func build_chunk(origin: Vector2, size: float, step: float) -> Array:
 			var k := j * (n + 1) + i
 			var x := origin.x + i * step
 			var z := origin.y + j * step
-			var c := (j + 1) * m + (i + 1)
+			var c := (j + 2) * m + (i + 2)
 			verts[k] = Vector3(x, hs[c], z)
 			normals[k] = Vector3(hs[c - 1] - hs[c + 1], 2.0 * step, hs[c - m] - hs[c + m]).normalized()
+			var lo := _coarse_at(hs, m, i, j, step)
+			coarse[k * 4] = lo.x
+			coarse[k * 4 + 1] = lo.y
+			coarse[k * 4 + 2] = lo.z
+			coarse[k * 4 + 3] = reach
 			var cov := Terrain.cover(x + Terrain.view_origin.x, z + Terrain.view_origin.y)
 			# r trees, g crops, b bare, a water (as the shader reads them).
 			var graded := Terrain.flat_weight(x, z)
@@ -325,6 +413,7 @@ static func build_chunk(origin: Vector2, size: float, step: float) -> Array:
 			verts.append(verts[k] - Vector3(0, drop, 0))
 			normals.append(normals[k])
 			colors.append(colors[k])
+			coarse.append_array([coarse[k * 4] - drop, coarse[k * 4 + 1], coarse[k * 4 + 2], reach])
 		for s in line.size() - 1:
 			var a: int = line[s]
 			var b: int = line[s + 1]
@@ -335,9 +424,11 @@ static func build_chunk(origin: Vector2, size: float, step: float) -> Array:
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_CUSTOM0] = coarse
 	arrays[Mesh.ARRAY_INDEX] = idx
 	var ground := ArrayMesh.new()
-	ground.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	ground.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {},
+		Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
 	if not any_water:
 		return [ground, null]
 	# Water: a sheet at the water level over every square that touches water.

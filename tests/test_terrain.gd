@@ -67,6 +67,22 @@ func _init() -> void:
 		var meshes := TerrainView.build_chunk(Vector2(-256, z * 512.0), 512.0, 32.0)
 		any_water = any_water or meshes[1] != null
 	_check(any_water, "the river gets a water surface")
+	# Each vertex knows where it sits on the next coarser level, so detail can
+	# slide off with distance instead of popping: on the coarse grid points it
+	# is the same height, and halfway along a coarse edge it is the average.
+	var fine: ArrayMesh = TerrainView.build_chunk(Vector2(-512, -512), 512.0, 8.0)[0]
+	var arr := fine.surface_get_arrays(0)
+	var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	var low: PackedFloat32Array = arr[Mesh.ARRAY_CUSTOM0]
+	var row := 65
+	var same := true
+	var halfway := true
+	for j in range(0, 64, 2):
+		for i in range(0, 64, 2):
+			var k := j * row + i
+			same = same and absf(low[k * 4] - v[k].y) < 0.01
+			halfway = halfway and absf(low[(k + 1) * 4] - (v[k].y + v[k + 2].y) * 0.5) < 0.01
+	_check(same and halfway, "ground detail slides smoothly to the coarser level")
 	print("ALL TESTS PASSED" if _failed == 0 else "SOME TESTS FAILED")
 	quit(1 if _failed > 0 else 0)
 

@@ -329,7 +329,7 @@ static func _flat_dist(a: Vector3, b: Vector3) -> float:
 ## Shows the shape being drawn and the streets it would get, with the price.
 func _show_grid(p: Vector3) -> void:
 	p = _grid_corner(p)
-	_cursor.position = p + Vector3.UP * 0.3
+	_cursor.position = Terrain.lift(p) + Vector3.UP * 0.3
 	var shape: Array = _points.duplicate()
 	var closing := shape.size() >= 3 and p.distance_to(shape[0]) < 0.01
 	if not closing:
@@ -347,17 +347,18 @@ func _show_grid(p: Vector3) -> void:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var hw := RoadStyle.half_width(road_type)
 	for c in plan:
-		RoadMesh.add_strip(st, RoadNetwork.sample_curve(c[0], c[1], c[2], 2), -hw, hw, 0.2)
+		RoadMesh.add_strip(st, Terrain.densify(RoadNetwork.sample_curve(c[0], c[1], c[2], 2), 6.0), -hw, hw, 0.2)
 	for c in GridFill.outline(shape, shape.size() >= 3):
-		RoadMesh.add_strip(st, RoadNetwork.sample_curve(c[0], c[1], c[2], 2), -0.4, 0.4, 0.35)
+		RoadMesh.add_strip(st, Terrain.densify(RoadNetwork.sample_curve(c[0], c[1], c[2], 2), 6.0), -0.4, 0.4, 0.35)
 	var cost := CitySim.shapes_cost(plan, road_type)
 	var ok := cost <= sim.economy.money
 	if not plan.is_empty():
 		_label.text = "%d streets  $%s" % [plan.size(), CitySim.money_text(cost)] \
 			+ ("" if ok else "\nNot enough money")
-		_label.position = p + Vector3(0, 6, 0)
+		_label.position = Terrain.lift(p) + Vector3(0, 6, 0)
 		_label.visible = true
-	_preview.mesh = st.commit()
+	# On the land, following it.
+	_preview.mesh = Terrain.drape(st.commit(), true)
 	_preview.material_override = _ok_mat if ok else _bad_mat
 	_preview.visible = true
 
