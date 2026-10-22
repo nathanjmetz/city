@@ -40,6 +40,12 @@ func _init() -> void:
 	sim.traffic.flow = 0.3
 	_check(not _ids(Advisor.tips(sim)).has("traffic"), "no traffic worry without cars")
 
+	# Industry: stuck trucks are a problem; the tool gets its own notes.
+	sim.logistics.stuck["site:1"] = true
+	_check(_ids(Advisor.tips(sim)).has("trucks_stuck"), "stuck trucks are flagged")
+	sim.logistics.stuck.clear()
+	_check(_ids(Advisor.tips(sim, "industry")).any(func(i): return i.begins_with("tool_industry")), "industry tool note")
+
 	# Every line is short enough to read at a glance and never empty.
 	for t in Advisor.tips(sim, "farms"):
 		_check(t.text.length() > 10 and t.text.length() <= 170, "tip %s reads short (%d chars)" % [t.id, t.text.length()])
