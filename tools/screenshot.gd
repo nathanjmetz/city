@@ -47,6 +47,10 @@ func _demo_town() -> void:
 		sim.apply({"type": "build_road", "start": [-140, 90], "ctrl": [-50, 60], "end": [0, 40], "road": 4})
 		_aim_camera()
 		return
+	if args0.size() >= 5 and args0[4] == "hubs":
+		_demo_hubs(sim)
+		_aim_camera()
+		return
 	if args0.size() >= 5 and args0[4] == "nopower":
 		# Brawn's start: streets zoned, a well built, no power yet.
 		sim.apply({"type": "build_grid", "a": [-160, -40], "b": [120, -40], "c": [-160, -220], "block": 140})
@@ -286,3 +290,38 @@ func _demo_forest(sim: CitySim) -> void:
 			var args := OS.get_cmdline_user_args()
 			c.look_at_point(best + (Vector3(float(args[5]), 0, float(args[6])) if args.size() >= 7 else Vector3.ZERO))
 			c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
+
+
+## A landfill, a recycling plant and a cemetery that have grown for a while.
+func _demo_hubs(sim: CitySim) -> void:
+	sim.economy.money = 60_000_000
+	sim.apply({"type": "build_road", "start": [-700, 0], "ctrl": [0, 0], "end": [700, 0]})
+	var spots := [["landfill", Vector3(-300, 0, -60), 16], ["recycling_1", Vector3(250, 0, -60), 9],
+		["cemetery", Vector3(0, 0, 60), 12]]
+	for spot in spots:
+		var site := CivicHubs.site_near(sim.network, spot[1])
+		sim.apply({"type": "place_hub", "kind": spot[0], "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})
+	var ids := sim.hubs.hubs.keys()
+	ids.sort()
+	for i in ids.size():
+		var h: Dictionary = sim.hubs.hubs[ids[i]]
+		h.received = 3.0e7
+		while h.cells.size() < spots[i][2]:
+			if h.kind == "cemetery":
+				sim.stats.population = 100_000
+			else:
+				h.want = 4
+				h.short = 4
+			var n: int = h.cells.size()
+			sim.hubs._decide(sim)
+			if h.cells.size() == n:
+				break
+	sim.apply({"type": "upgrade_hub", "id": ids[1]})
+	sim.apply({"type": "upgrade_hub", "id": ids[1]})
+	sim.tick()
+	for c in _main.get_children():
+		if c is Hud:
+			c.close_all()
+	for c in _main.get_children():
+		if c is SelectTool:
+			c.select({"type": "hub", "id": ids[0]})

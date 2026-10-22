@@ -520,6 +520,20 @@ func _services_drawer() -> PanelContainer:
 			b.pressed.connect(func(): service_tool.set_kind(k))
 			cards.add_child(b)
 			_service_cards[k] = b
+	# Landfill, recycling and cemetery: hubs that grow on their own.
+	row.add_child(VSeparator.new())
+	var hubs := _section(row, "Trash and cemeteries")
+	for k in CivicHubs.TOOL_KINDS:
+		var hk: String = CivicHubs.TOOL_KINDS[k]
+		var w: Dictionary = Balance.WASTE_SITES[hk]
+		var title: String = CivicHubs.KINDS[hk].name
+		var b := _card(CivicHubs.KINDS[hk].icon, {"recycling_1": "Recycling"}.get(hk, title),
+			"%s: $%s, $%s a month" % [title, CitySim.money_text(int(w.cost)), CitySim.money_text(int(w.upkeep))])
+		b.tooltip_text = "%s: $%s to build, $%s a month. Never fills up." % [title, CitySim.money_text(int(w.cost)),
+			CitySim.money_text(int(w.upkeep))]
+		b.pressed.connect(func(): service_tool.set_kind(k))
+		hubs.add_child(b)
+		_service_cards[k] = b
 	return drawer
 
 
