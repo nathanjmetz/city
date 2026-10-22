@@ -100,8 +100,13 @@ static func leader(sim: CitySim, seed: int) -> Dictionary:
 	# The town's own graduates raise the bar too (Education.leader_education).
 	var town := maxf(education(sim), sim.education.leader_education(maxi(int(sim.stats.workers), 1)))
 	var edu := clampf(town + rng.randf_range(-0.25, 0.25), 0.0, 1.0)
-	return {"edu": snappedf(edu, 0.01), "caution": snappedf(rng.randf(), 0.01),
-		"ambition": snappedf(rng.randf(), 0.01)}
+	return {"edu": _cents(edu), "caution": _cents(rng.randf()), "ambition": _cents(rng.randf())}
+
+
+## Two decimals, as the same float a save reads back (snappedf(0.35, 0.01)
+## is 35 * 0.01 = 0.35000000000000003, which JSON writes as 0.35).
+static func _cents(v: float) -> float:
+	return roundi(v * 100.0) / 100.0
 
 
 ## The town's education: the share of homes a school covers.
