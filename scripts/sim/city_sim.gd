@@ -65,14 +65,23 @@ var demand := {ZoneMap.Zone.RESIDENTIAL: 0.6, ZoneMap.Zone.COMMERCIAL: 0.0, Zone
 ## in a tick, so every player applies them at the same moment.
 var send_command := Callable()
 
+## Road ends that lead on to the rest of the region (there's no map edge):
+## the county highway's far ends. Trade, imports and through traffic come
+## and go here, and nowhere else. Node ids.
+var region_links: Array = []
+
 var _lots_dirty := true
+## Roads changed since the world last made way for them (see RoadWins).
+var _roads_moved := false
 var _usable_cache := {}  # field cell -> bool, cleared when roads or lots change
 
 
 func _init() -> void:
 	farms.reserves = reserves
 	industry.reserves = reserves
-	network.changed.connect(func(): _lots_dirty = true)
+	network.changed.connect(func():
+		_lots_dirty = true
+		_roads_moved = true)
 
 
 ## Applies one player command. Returns true if anything changed (online:
@@ -203,9 +212,12 @@ func apply_now(cmd: Dictionary) -> bool:
 			if economy.set_tax(int(cmd.zone), float(cmd.rate)):
 				update_stats()
 			return true
+		"build_county_road":
+			ok = not _county_road(Vector2(cmd.a[0], cmd.a[1]), Vector2(cmd.b[0], cmd.b[1]), cmd.get("links", [])).has(-1)
 		"remove_road":
-			ok = network.segments.has(int(cmd.seg))
-			network.remove_segment(int(cmd.seg))
+			ok = network.segments.has(int(cmd.seg)) and not is_link_segment(int(cmd.seg))
+			if ok:
+				network.remove_segment(int(cmd.seg))
 		"paint_zone":
 			zones.paint(_v(cmd.center), float(cmd.radius), int(cmd.zone))
 			_clear_reserved_zones(_v(cmd.center), float(cmd.radius) + ZoneMap.CELL)
@@ -215,6 +227,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			# Traffic lights, stop signs or none at a junction (-1 = automatic).
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
 		"clear":
+			region_links.clear()
 			traffic.overrides.clear()
 			network.clear()
 			zones.cells.clear()
@@ -232,10 +245,96 @@ func apply_now(cmd: Dictionary) -> bool:
 			industry_changed.emit()
 			ok = true
 	if ok:
+		if _roads_moved:
+			_road_wins()
 		_refresh()
 		zones_changed.emit()
 		command_applied.emit(cmd)
 	return ok
+
+
+## Saves from before region links: the dead end farthest from the middle of
+## town was where trucks left, so it becomes the town's way out.
+func _guess_link() -> void:
+	if network.nodes.is_empty():
+		return
+	var mid := Vector3.ZERO
+	for n in network.nodes:
+		mid += network.nodes[n]
+	mid /= network.nodes.size()
+	var best := -1
+	var best_d := -1.0
+	var ids := network.nodes.keys()
+	ids.sort()
+	for n in ids:
+		if network.segments_at(n).size() == 1 and network.nodes[n].distance_to(mid) > best_d + 0.01:
+			best_d = network.nodes[n].distance_to(mid)
+			best = n
+	if best != -1:
+		region_links.append(best)
+
+
+## The road wins (Brawn): whatever a new road runs through makes way for it.
+## Buildings the player paid for are bulldozed and paid back, fields are
+## trimmed to the road's edge, cut lanes find the nearest road again, and
+## pads that are hit close (the company reopens them elsewhere).
+func _road_wins() -> void:
+	_roads_moved = false
+	_usable_cache.clear()
+	var corr := RoadWins.corridors(network, RoadWins.BUILDING_SLACK)
+	var field_corr := RoadWins.corridors(network, RoadWins.VERGE)
+	var ids := services.buildings.keys()
+	ids.sort()
+	for id in ids:
+		if RoadWins.hits(corr, services.footprint(id)):
+			economy.money += int(Services.KINDS[services.buildings[id].kind].cost)
+			services.buildings.erase(id)
+			_lots_dirty = true
+	var lane_end := RoadStyle.right_of_way_half(RoadStyle.Type.BOULEVARD) + RoadWins.VERGE + 4.0
+	ids = farms.farms.keys()
+	ids.sort()
+	farms.trim.clear()
+	for id in ids:
+		var f: Dictionary = farms.farms[id]
+		if RoadWins.hits(corr, farms._yard(f)):
+			economy.money += Farms.FARMHOUSE_COST
+			farms.farms.erase(id)
+			continue
+		for c in f.cells.duplicate():
+			var cell := Farms.cell_corners(f, c)
+			if not RoadWins.hits(field_corr, cell):
+				continue
+			var left := RoadWins.clip(field_corr, cell)
+			var kept := 0.0
+			for piece in left:
+				kept += RoadWins.area(piece)
+			if kept < RoadWins.MIN_FIELD_SHARE * Farms.CELL * Farms.CELL:
+				f.cells.erase(c)
+			else:
+				if not farms.trim.has(id):
+					farms.trim[id] = {}
+				farms.trim[id][c] = left
+		if RoadWins.cuts(corr, f.drive, lane_end):
+			var lane := farm_drive(f.pos, f.dir)
+			if not lane.is_empty():
+				f.drive = lane
+	ids = industry.sites.keys()
+	ids.sort()
+	for id in ids:
+		var s: Dictionary = industry.sites[id]
+		if RoadWins.hits(corr, industry._yard(s)):
+			economy.money += int(Industry.KINDS[s.kind].cost)
+			industry.sites.erase(id)
+			continue
+		for c in s.pads.duplicate():
+			if RoadWins.hits(corr, Industry.pad_corners(s, c)):
+				s.pads.erase(c)
+		if RoadWins.cuts(corr, s.drive, lane_end):
+			var lane := industry_drive(s.pos, s.dir)
+			if not lane.is_empty():
+				s.drive = lane
+	farms_changed.emit()
+	industry_changed.emit()
 
 
 func tick() -> void:
@@ -705,9 +804,45 @@ static func capacity(zone: int, bseed: int) -> int:
 
 # --- Saving (also the future network format) --------------------------------
 
+## True for the piece of county highway that runs off to the region: it
+## can't be bulldozed, or the town would lose its way out.
+func is_link_segment(seg_id: int) -> bool:
+	var s: Dictionary = network.segments.get(seg_id, {})
+	return not s.is_empty() and (s.a in region_links or s.b in region_links)
+
+
+## The county highway a new city starts on (no map edge): a two-lane road
+## from a to b (metres, city-local) in pieces of about 400 m, free of charge.
+## The ends listed in link_ends (0 for a, 1 for b) lead on to the region.
+## Returns the node ids at a and b. A command, so every copy builds it.
+func build_county_road(a: Vector2, b: Vector2, link_ends: Array) -> Array:
+	apply_now({"type": "build_county_road", "a": [a.x, a.y], "b": [b.x, b.y], "links": link_ends})
+	return [network.find_node_near(Vector3(a.x, 0, a.y), 1.0), network.find_node_near(Vector3(b.x, 0, b.y), 1.0)]
+
+
+func _county_road(a: Vector2, b: Vector2, link_ends: Array) -> Array:
+	var money := economy.money
+	var n := maxi(1, ceili(a.distance_to(b) / 400.0))
+	var pts := []
+	for i in n + 1:
+		var p := a.lerp(b, float(i) / n)
+		pts.append(Vector3(p.x, 0.0, p.y))
+	network.begin_batch()
+	for i in n:
+		network.build_road(pts[i], (pts[i] + pts[i + 1]) * 0.5, pts[i + 1], RoadStyle.Type.STREET)
+	network.end_batch()
+	economy.money = money
+	var ends := [network.find_node_near(pts[0], 1.0), network.find_node_near(pts[-1], 1.0)]
+	for i in link_ends:
+		if ends[int(i)] != -1 and not ends[int(i)] in region_links:
+			region_links.append(ends[int(i)])
+	return ends
+
+
 func to_dict() -> Dictionary:
 	return {
 		"version": 2,
+		"links": region_links,
 		"tick": tick_count,
 		"seed": city_seed,
 		"roads": network.to_dict(),
@@ -728,6 +863,12 @@ func from_dict(d: Dictionary) -> void:
 	if d.has("roads"):
 		network.from_dict(d.roads)
 		zones.from_dict(d.get("zones", {}))
+		region_links.clear()
+		if d.has("links"):
+			for n in d.links:
+				region_links.append(int(n))
+		else:
+			_guess_link()
 	else:
 		# Version 1 saves were just roads, with houses on every lot.
 		network.from_dict(d)
@@ -759,6 +900,7 @@ func from_dict(d: Dictionary) -> void:
 		# Older saves had no residents yet: assume the homes were full.
 		buildings[key] = {"zone": z, "seed": int(b.seed), "built": int(b.built), "cap": cap,
 			"occ": int(b.get("occ", cap if z == ZoneMap.Zone.RESIDENTIAL else 0))}
+	_road_wins()
 	_lots_dirty = true
 	_refresh()
 	update_stats()

@@ -226,7 +226,8 @@ func _starter_road() -> void:
 	if Session.new_city_difficulty != "":
 		sim.apply({"type": "set_difficulty", "difficulty": Session.new_city_difficulty})
 		Session.new_city_difficulty = ""
+	# A county highway runs through town and on to the region both ways.
+	sim.apply({"type": "build_county_road", "a": [-2000, 0], "b": [2000, 0], "links": [0, 1]})
 	var money := sim.economy.money
-	sim.apply({"type": "build_road", "start": [-400, 0], "ctrl": [-250, 0], "end": [-100, 0]})
 	sim.apply({"type": "build_road", "start": [-100, 0], "ctrl": [-20, 0], "end": [40, 60]})
 	sim.economy.money = money
