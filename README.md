@@ -30,6 +30,7 @@ An open map where you draw roads, paint zones along them, and buildings grow, li
 | Esc | Stop drawing; press again to put every tool away and close panels. |
 
 | Space, or Pause / 1x / 2x / 4x | Pause and game speed. |
+| Advice (top right) | The town's advisor: a few words on what needs fixing and what might come next, based on your town and the tool in hand. A dot means something new. It never pops up unless you turn on "Pop open for problems"; "Tips on their own" turns the dot off. |
 
 The city runs on a clock (a day takes about 2½ minutes at 1x). Homes, shops and industry only grow when there is demand, shown by the bars in the bottom-left corner: homes are wanted while there are jobs, industry while people need work, and shops while residents need places to shop. People move into new homes over time.
 

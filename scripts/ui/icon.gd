@@ -265,6 +265,19 @@ func _draw() -> void:
 				for k in 3:
 					line.call(a2.lerp(b2, k / 3.0 + 0.05), a2.lerp(b2, k / 3.0 + 0.25), w * 0.8)
 				draw_circle(a2, s * 0.07, accent)
+		"advice":
+			# A speech bubble with three dots.
+			var bubble := PackedVector2Array([P.call(0.12, 0.18), P.call(0.88, 0.18), P.call(0.88, 0.68),
+				P.call(0.46, 0.68), P.call(0.26, 0.86), P.call(0.3, 0.68), P.call(0.12, 0.68), P.call(0.12, 0.18)])
+			draw_polyline(bubble, color, w, true)
+			for x in [0.32, 0.5, 0.68]:
+				draw_circle(P.call(x, 0.43), s * 0.055, color)
+		"warning":
+			# A triangle with an exclamation mark.
+			draw_polyline(PackedVector2Array([P.call(0.5, 0.1), P.call(0.92, 0.86), P.call(0.08, 0.86),
+				P.call(0.5, 0.1)]), color, w, true)
+			line.call(P.call(0.5, 0.38), P.call(0.5, 0.6), w * 1.2)
+			draw_circle(P.call(0.5, 0.72), s * 0.05, color)
 		"help":
 			draw_arc(P.call(0.5, 0.5), s * 0.4, 0, TAU, 32, color, w, true)
 			draw_arc(P.call(0.5, 0.4), s * 0.13, PI * 1.1, PI * 2.4, 16, color, w, true)
