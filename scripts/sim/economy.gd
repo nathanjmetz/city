@@ -8,35 +8,17 @@ extends RefCounted
 ## playable pace while every amount stays real. Money is whole dollars so
 ## every copy of the simulation agrees to the cent.
 
-const START_MONEY := 3_000_000
-## Building a road, dollars per metre (about $1.6M a mile for a two-lane
-## street and $9.7M a mile for a highway, in line with state DOT costs).
-const BUILD_PER_M := {
-	RoadStyle.Type.STREET: 1000, RoadStyle.Type.AVENUE: 2000,
-	RoadStyle.Type.BOULEVARD: 3500, RoadStyle.Type.HIGHWAY: 6000, RoadStyle.Type.RAMP: 3000,
-	RoadStyle.Type.RING: 2500, RoadStyle.Type.RING2: 4000,
-}
-## Road upkeep, dollars per lane-metre per month (about $10,000 a lane-mile
-## a year, typical of US city budgets).
-const UPKEEP_PER_LANE_M := 0.52
-## A full-height bridge costs this many times more, a tunnel more still.
-const BRIDGE_FACTOR := 4.0
-const TUNNEL_FACTOR := 8.0
-## Property tax, percent of value per year. Defaults are typical US rates.
-const DEFAULT_TAX := {
-	ZoneMap.Zone.RESIDENTIAL: 1.0, ZoneMap.Zone.COMMERCIAL: 1.5, ZoneMap.Zone.INDUSTRIAL: 1.5,
-}
-const TAX_MIN := 0.0
-const TAX_MAX := 3.0
-## Assessed value per resident a home holds, or per job a business offers.
-const VALUE_PER_PLACE := {
-	ZoneMap.Zone.RESIDENTIAL: 90_000, ZoneMap.Zone.COMMERCIAL: 150_000, ZoneMap.Zone.INDUSTRIAL: 100_000,
-}
-
-## Population milestones and the grant each one brings (like CS2's milestone
-## rewards; in real life, state and federal community development grants).
-const MILESTONES := [[100, 250_000], [250, 400_000], [500, 600_000], [1000, 1_000_000],
-	[2500, 2_000_000], [5000, 3_500_000], [10000, 6_000_000], [25000, 10_000_000]]
+## The numbers live in Balance, where the tuning happens.
+const START_MONEY := Balance.START_MONEY
+const BUILD_PER_M := Balance.ROAD_BUILD_PER_M
+const UPKEEP_PER_LANE_M := Balance.ROAD_UPKEEP_PER_LANE_M
+const BRIDGE_FACTOR := Balance.BRIDGE_FACTOR
+const TUNNEL_FACTOR := Balance.TUNNEL_FACTOR
+const DEFAULT_TAX := Balance.DEFAULT_TAX
+const TAX_MIN := Balance.TAX_MIN
+const TAX_MAX := Balance.TAX_MAX
+const VALUE_PER_PLACE := Balance.VALUE_PER_PLACE
+const MILESTONES := Balance.MILESTONES
 
 var money := START_MONEY
 ## How many milestones the city has reached.

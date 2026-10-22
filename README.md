@@ -86,6 +86,7 @@ How it stays in sync: the server owns the real region. Players send commands for
 | `scripts/roads/road_network.gd` | The road graph as plain data. All edits are commands, so a server can replay them later. |
 | `scripts/roads/` | Road sizes, mesh building and drawing. |
 | `scripts/sim/` | The simulation: plain data, fixed ticks, every change is a command (so a headless server can run it later). Lots, zones, growth. |
+| `scripts/sim/balance.gd` | Every gameplay number in one place (money, prices, upkeep, taxes, grants, growth, farm yields). Tune the game here. |
 | `scripts/zones/zone_view.gd` | Draws lots and zone colours. |
 | `scripts/buildings/building_view.gd` | Draws placeholder homes, shops and factories. |
 | `scripts/tools/zone_tool.gd` | The zone brush. |
