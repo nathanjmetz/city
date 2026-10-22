@@ -1,20 +1,13 @@
 class_name FarmView
 extends Node3D
-## Draws farmland: the fields each farm owns (crop rows that change with the
-## seasons), farmsteads, and while the farm tool is out, the painted area
-## tinted by how fertile its soil is.
+## Draws farms: the fields each farm owns (crop rows that change with the
+## seasons), farmsteads and their gravel lanes. (The Fertility view shows
+## the soil; see InfoView.)
 
 var sim: CitySim
-var show_area := false:
-	set(v):
-		show_area = v
-		_draw_area()
-
 var _fields := MeshInstance3D.new()
-var _area := MeshInstance3D.new()
 var _lanes := MeshInstance3D.new()
 var _field_mat := StandardMaterial3D.new()
-var _area_mat := StandardMaterial3D.new()
 var _homes := {}  # farm id -> Node3D
 var _mats := {}
 var _month := -1
@@ -26,13 +19,9 @@ func setup(s: CitySim) -> void:
 	_field_mat.albedo_texture = _rows_texture()
 	_field_mat.roughness = 1.0
 	_field_mat.vertex_color_use_as_albedo = true
-	_area_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_area_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_area_mat.vertex_color_use_as_albedo = true
 	_fields.material_override = _field_mat
-	_area.material_override = _area_mat
-	_lanes.material_override = RoadStyle.material(Color(0.6, 0.55, 0.46))  # crushed limestone
-	for mi in [_fields, _area, _lanes]:
+	_lanes.material_override = RoadStyle.material(Color(0.58, 0.47, 0.33))  # tan crushed limestone and dirt
+	for mi in [_fields, _lanes]:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mi)
 	_rebuild()
@@ -47,7 +36,6 @@ func _process(_delta: float) -> void:
 
 func _rebuild() -> void:
 	_draw_fields()
-	_draw_area()
 	for id in _homes.keys():
 		if not sim.farms.farms.has(id) or _homes[id].get_meta("look") != _look(sim.farms.farms[id]):
 			_homes[id].queue_free()
@@ -81,8 +69,8 @@ func _season_color(crop: String) -> Color:
 	return Color(0.66, 0.56, 0.36)  # harvested
 
 
-## Each farm's fields as one patch, square to its farmhouse and trimmed to
-## the painted outline, with crop rows running back from the road.
+## Each farm's fields as one patch, square to its farmhouse, with crop rows
+## running back from the road.
 func _draw_fields() -> void:
 	if sim == null:
 		return
@@ -92,19 +80,12 @@ func _draw_fields() -> void:
 	lanes.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var any := false
 	var any_lane := false
-	var outlines := []
-	for a in sim.farms.area:
-		if a.on:
-			outlines.append(a.points)
 	for id in sim.farms.farms:
 		var f: Dictionary = sim.farms.farms[id]
 		var col := _season_color(f.crop)
 		for c in f.cells:
-			var quad := Farms.cell_corners(f, c)
-			for outline in outlines:
-				for piece in Geometry2D.intersect_polygons(quad, outline):
-					_add_poly(st, f, piece, 0.06, col)
-					any = true
+			_add_poly(st, f, Farms.cell_corners(f, c), 0.06, col)
+			any = true
 		if f.drive.size() >= 2:
 			var pts := PackedVector3Array()
 			for p in f.drive:
@@ -136,52 +117,6 @@ func _add_poly(st: SurfaceTool, f: Dictionary, poly: PackedVector2Array, y: floa
 			var d: Vector2 = p - origin
 			st.set_uv(Vector2(d.dot(right), d.dot(back)) / 16.0)
 			st.add_vertex(Vector3(p.x, y, p.y))
-
-
-## While farming: the painted farmland, tinted by how fertile it is.
-func _draw_area() -> void:
-	if sim == null:
-		return
-	_area.visible = show_area and not sim.farms.area.is_empty()
-	if not _area.visible:
-		return
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var step := 20.0
-	var box := Rect2()
-	var first := true
-	for a in sim.farms.area:
-		for p in a.points:
-			box = Rect2(p, Vector2.ZERO) if first else box.expand(p)
-			first = false
-	var any := false
-	for x in range(floori(box.position.x / step), ceili(box.end.x / step)):
-		for z in range(floori(box.position.y / step), ceili(box.end.y / step)):
-			var mid := Vector3((x + 0.5) * step, 0.0, (z + 0.5) * step)
-			if not sim.farms.is_farmland(mid):
-				continue
-			# Poor soil shows brown, rich soil green.
-			var fert := Farms.fertility_at(mid)
-			var col := Color(0.62, 0.45, 0.25).lerp(Color(0.25, 0.75, 0.2), (fert - 0.45) / 0.55)
-			col.a = 0.35
-			var quad := PackedVector2Array([Vector2(x, z) * step, Vector2(x + 1, z) * step,
-				Vector2(x + 1, z + 1) * step, Vector2(x, z + 1) * step])
-			# Trim the square to the outline it sits in, so edges follow the nodes.
-			var pieces := [quad]
-			for a in sim.farms.area:
-				if a.on and Geometry2D.is_point_in_polygon(Vector2(mid.x, mid.z), a.points):
-					pieces = Geometry2D.intersect_polygons(quad, a.points)
-					break
-			for piece in pieces:
-				var tris := Geometry2D.triangulate_polygon(piece)
-				for k in tris:
-					st.set_color(col)
-					st.set_normal(Vector3.UP)
-					st.add_vertex(Vector3(piece[k].x, 0.3, piece[k].y))
-			any = true
-	_area.visible = any
-	if any:
-		_area.mesh = st.commit()
 
 
 ## Crop rows: light and dark stripes, multiplied by the season's colour.

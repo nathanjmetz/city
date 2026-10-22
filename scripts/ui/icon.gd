@@ -229,6 +229,42 @@ func _draw() -> void:
 			line.call(P.call(0.1, 0.8), P.call(0.4, 0.5), w * 1.8, Color(0.35, 0.85, 0.45))
 			line.call(P.call(0.4, 0.5), P.call(0.65, 0.35), w * 1.8, Color(1.0, 0.78, 0.25))
 			line.call(P.call(0.65, 0.35), P.call(0.92, 0.15), w * 1.8, Color(0.95, 0.3, 0.25))
+		"views":
+			# Stacked map layers.
+			for i in 3:
+				var y := 0.28 + i * 0.2
+				_poly([P.call(0.5, y - 0.16), P.call(0.92, y), P.call(0.5, y + 0.16), P.call(0.08, y)],
+					Color(color, 0.25 + i * 0.25))
+		"fertility":
+			_poly([P.call(0.08, 0.92), P.call(0.92, 0.92), P.call(0.92, 0.7), P.call(0.08, 0.7)], Color(0.55, 0.4, 0.25))
+			line.call(P.call(0.5, 0.7), P.call(0.5, 0.2), w, Color(0.4, 0.8, 0.3))
+			_poly([P.call(0.5, 0.42), P.call(0.22, 0.3), P.call(0.3, 0.18)], Color(0.4, 0.8, 0.3))
+			_poly([P.call(0.5, 0.34), P.call(0.8, 0.2), P.call(0.72, 0.1)], Color(0.4, 0.8, 0.3))
+		"oil":
+			_poly([P.call(0.5, 0.06), P.call(0.78, 0.55), P.call(0.72, 0.82), P.call(0.5, 0.94),
+				P.call(0.28, 0.82), P.call(0.22, 0.55)], Color(0.55, 0.5, 0.72))
+			draw_arc(P.call(0.5, 0.66), s * 0.28, 0, TAU, 24, color, w * 0.6, true)
+		"ore":
+			_poly([P.call(0.12, 0.85), P.call(0.25, 0.45), P.call(0.5, 0.25), P.call(0.8, 0.4),
+				P.call(0.9, 0.85)], Color(0.55, 0.5, 0.48))
+			draw_circle(P.call(0.45, 0.6), s * 0.08, Color(0.9, 0.5, 0.2))
+			draw_circle(P.call(0.66, 0.68), s * 0.06, Color(0.9, 0.5, 0.2))
+		"forest":
+			for t in [[0.32, 0.9], [0.66, 0.7]]:
+				var x: float = t[0]
+				var sc: float = t[1]
+				_poly([P.call(x, 0.92 - 0.82 * sc), P.call(x + 0.22 * sc, 0.8), P.call(x - 0.22 * sc, 0.8)],
+					Color(0.25, 0.6, 0.3))
+				line.call(P.call(x, 0.8), P.call(x, 0.94), w * 0.8, Color(0.45, 0.32, 0.2))
+		"reserve":
+			# A dashed outline with corner nodes.
+			var pts := [P.call(0.12, 0.2), P.call(0.86, 0.12), P.call(0.9, 0.84), P.call(0.16, 0.9)]
+			for i in 4:
+				var a2: Vector2 = pts[i]
+				var b2: Vector2 = pts[(i + 1) % 4]
+				for k in 3:
+					line.call(a2.lerp(b2, k / 3.0 + 0.05), a2.lerp(b2, k / 3.0 + 0.25), w * 0.8)
+				draw_circle(a2, s * 0.07, accent)
 		"help":
 			draw_arc(P.call(0.5, 0.5), s * 0.4, 0, TAU, 32, color, w, true)
 			draw_arc(P.call(0.5, 0.4), s * 0.13, PI * 1.1, PI * 2.4, 16, color, w, true)

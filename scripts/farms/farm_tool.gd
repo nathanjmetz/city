@@ -1,22 +1,26 @@
 class_name FarmTool
 extends Node3D
-## Farming tools, like Cities: Skylines 2's area tools:
-## - Farmland: click to drop nodes around an area; click the first node (or
-##   press Enter) to close it. Soil shows green where it's rich.
-## - Clear farmland: the same, to take land back out.
-## - Farmhouse: place it on farmland; the farm then buys the best fields
-##   around it as it makes money.
+## Farming tools. The Fertility view opens with them, so you can see where
+## the soil is rich:
+## - Farmhouse (corn or soybeans): place it near good soil, within reach of
+##   a road; the farmer picks and buys the best fields around it.
+## - Reserve: click to drop nodes around land to save for farming; click the
+##   first node (or press Enter) to close it. Roads and zoning stay off it.
+## - Clear reserve: the same, to release land.
 
 signal mode_changed(mode: int)
 signal hint_changed(text: String)
 
-enum Mode { NONE, FARMLAND, CLEAR, CORN, SOYBEANS }
+enum Mode { NONE, RESERVE, CLEAR, CORN, SOYBEANS }
 
 const CLOSE_DIST := 14.0
 
 var sim: CitySim
 var cam: CityCamera
-var view: FarmView
+var info: InfoView
+## What the Reserve tool saves land for.
+var reserve_kind := "farm"
+var _opened_view := false
 var mode := Mode.NONE
 
 var _nodes: Array[Vector3] = []
@@ -31,10 +35,10 @@ var _hover := Vector3.ZERO
 var _problem := ""
 
 
-func setup(s: CitySim, camera: CityCamera, v: FarmView) -> void:
+func setup(s: CitySim, camera: CityCamera, v: InfoView) -> void:
 	sim = s
 	cam = camera
-	view = v
+	info = v
 
 
 func _ready() -> void:
@@ -55,7 +59,14 @@ func _ready() -> void:
 func set_mode(m: int) -> void:
 	mode = m
 	_nodes.clear()
-	view.show_area = mode != Mode.NONE
+	if mode != Mode.NONE and info.mode == InfoView.Mode.NONE:
+		info.set_mode(InfoView.Mode.FERTILITY)
+		_opened_view = true
+	elif mode == Mode.NONE and _opened_view:
+		_opened_view = false
+		if info.mode == InfoView.Mode.FERTILITY:
+			info.set_mode(InfoView.Mode.NONE)
+	info.show_reserves = mode != Mode.NONE
 	_outline.visible = false
 	_ghost.visible = false
 	mode_changed.emit(mode)
@@ -112,7 +123,7 @@ func _close() -> void:
 		var pts := []
 		for n in _nodes:
 			pts.append([n.x, n.z])
-		sim.apply({"type": "paint_farmland", "points": pts, "on": mode == Mode.FARMLAND})
+		sim.apply({"type": "paint_reserve", "points": pts, "kind": reserve_kind if mode == Mode.RESERVE else ""})
 	_nodes.clear()
 	_update_hint()
 
@@ -188,16 +199,17 @@ func _update_hint() -> void:
 	match mode:
 		Mode.NONE:
 			return
-		Mode.FARMLAND, Mode.CLEAR:
-			var verb := "farmland" if mode == Mode.FARMLAND else "land to take out of farming"
+		Mode.RESERVE, Mode.CLEAR:
+			var verb := "land to save for farming (no roads or zoning)" if mode == Mode.RESERVE \
+				else "reserved land to release"
 			if _nodes.is_empty():
-				text = "Click to start outlining %s. Green soil is richest. %s" % [verb, _problem]
+				text = "Click to start outlining %s. %s" % [verb, _problem]
 			elif _nodes.size() < 3:
 				text = "Click to add corners."
 			else:
 				text = "Click to add corners. Click the first corner or press Enter to finish."
 		Mode.CORN, Mode.SOYBEANS:
-			text = "Farmhouse ($%s): place it on farmland near a road. It builds a barn, then plants fields out from the yard as it makes money." \
+			text = "Farmhouse ($%s): place it near rich (green) soil and a road. The farmer builds a barn, then picks the best fields around it." \
 				% CitySim.money_text(Farms.FARMHOUSE_COST)
 			if _problem != "":
 				text += "\n" + _problem

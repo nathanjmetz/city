@@ -23,7 +23,8 @@ An open map where you draw roads, paint zones along them, and buildings grow, li
 | `B` Bulldoze | Click a road or service building to remove it. |
 | `5` `6` `7` Zones | Homes, shops, industry. Hold the left mouse button and drag over the lots along a road. `[` `]` brush size. |
 | Services | Power line feed and a well first (a substation and water tower serve bigger towns): buildings only grow and fill with power and water, which flow along connected roads. Fire, police, clinic and school cover homes within real road distances (green roads while placing). Place beside a street; the building turns to face it. |
-| Farming | Click to drop nodes around farmland (green soil is richest), click the first node or press Enter to close. Place a corn or soybean farmhouse on it within 250 m of a road: it gets a winding gravel lane out to the road, builds its barn, then plants fields out from the yard, square to its road and trimmed to your outline. It buys more while they pay and sells losing ones in bad years. Soil never wears out. Crops change with the seasons. |
+| Farming | The Fertility view opens with it (green soil is richest). Place a corn or soybean farmhouse near good soil within 250 m of a road: it gets a winding gravel lane, builds its barn, then the farmer picks the best fields around it, square to its road, buying while they pay and selling losers in bad years. Reserve: outline land with nodes (Enter or click the first node to close) to save it for farming; roads and zoning stay off it. |
+| Views (top left) | See the map by fertility, oil, ore and forest (smooth, never run out), service coverage or traffic. Esc closes. |
 | `8` Dezone | Erase zones (buildings on them go away). |
 | Right click | Stop drawing. |
 | Esc | Stop drawing; press again to put every tool away and close panels. |

@@ -1,14 +1,14 @@
 class_name Farms
 extends RefCounted
-## Farmland, Cities: Skylines 2 style with one twist from Brawn: outline an
-## area as farmland with nodes, place a farmhouse in it, and the farm buys
-## the fields around it as it makes money (and sells them if it struggles).
+## Farms the way Brawn asked: open the Fertility view, place a farmhouse
+## near good soil, and the farmer does the rest, buying the best fields
+## around it as it makes money (and selling them if it struggles). The
+## player can only reserve land for farming so nothing else is built on it.
 ##
 ## No world grid: each farm lays its fields out square to its own farmhouse
 ## (which faces its road), the way Midwest fields follow the road they're
-## on, and they're drawn clipped to the painted outline. A new farm puts up
-## its barn first, then plants the fields next to the farmyard and works
-## outward. Every farmhouse gets a winding gravel lane out to its road.
+## on. A new farm puts up its barn first, then plants the fields next to
+## the farmyard and works outward. Every farmhouse gets a winding gravel lane out to its road.
 ##
 ## Soil never wears out: every spot keeps its own fertility forever.
 ## Prices follow Midwest figures: corn and soybeans, about $10,000 an acre.
@@ -38,14 +38,18 @@ const MAX_CELLS := 400
 ## How much a field next to more of the farm's own land is preferred, in
 ## dollars a year per neighbouring field.
 const COMPACT_BONUS := 25.0
+## And land the player reserved for farming, likewise.
+const RESERVE_BONUS := 40.0
 ## One crop price cycle, in game days (a game day settles a month: 4 years).
 const PRICE_CYCLE_DAYS := 48.0
 ## Farms decide to buy or sell land this often, in ticks (6 game hours).
 const DECIDE_EVERY := 360
 
-## Painted farmland: outlines in the order they were drawn, each
-## {points: PackedVector2Array, on: bool}. Later outlines win.
-var area: Array = []
+## Land the player has set aside (Reserves): farms stay off land saved for
+## other industries and favour land saved for farming.
+var reserves: Reserves
+## Farmland outlines from older saves, for the city to turn into reserves.
+var legacy_outlines: Array = []
 ## Farms: id -> {pos, dir, crop, cells: Array of Vector2i in the farm's own
 ## frame, loss_streak, barn: bool, drive: Array of Vector3}
 var farms := {}
@@ -58,17 +62,9 @@ var tax_rate := 1.5
 var price := 1.0
 
 
-## How good the soil is at a point, about 0.45 to 1 (mostly good Midwest
-## loam, with poorer patches). Fixed forever: soil never runs out.
+## How good the soil is at a point (see Resources). Fixed forever.
 static func fertility_at(p: Vector3) -> float:
-	var f := 0.0
-	var amp := 0.5
-	var scale := 9.0
-	for octave in 3:
-		f += amp * _value_noise(Vector2(p.x, p.z) / CELL / scale, octave)
-		amp *= 0.5
-		scale *= 0.5
-	return clampf(0.45 + f * 0.7, 0.35, 1.0)
+	return Resources.fertility(p)
 
 
 ## Crop price on a given game day: up to 15% above or below normal.
@@ -98,36 +94,6 @@ static func cell_corners(f: Dictionary, c: Vector2i) -> PackedVector2Array:
 		var p: Vector3 = mid + r * s.x + b * s.y
 		out.append(Vector2(p.x, p.z))
 	return out
-
-
-## True when a point is inside the painted farmland.
-func is_farmland(p: Vector3) -> bool:
-	var q := Vector2(p.x, p.z)
-	var on := false
-	for a in area:
-		if Geometry2D.is_point_in_polygon(q, a.points):
-			on = a.on
-	return on
-
-
-## Adds an outline as farmland (or takes it back out). Fields left outside
-## the farmland are given up. Returns true if it was a usable outline.
-func paint_polygon(points: Array, on: bool) -> bool:
-	if points.size() < 3:
-		return false
-	var poly := PackedVector2Array()
-	var box := Rect2(Vector2(points[0].x, points[0].z), Vector2.ZERO)
-	for p in points:
-		poly.append(Vector2(p.x, p.z))
-		box = box.expand(Vector2(p.x, p.z))
-	if box.size.x * box.size.y > 4_000_000.0 or absf(_area_of(poly)) < 100.0:  # 2 km square at most
-		return false
-	area.append({"points": poly, "on": on})
-	if not on:
-		for id in farms:
-			var f: Dictionary = farms[id]
-			f.cells = f.cells.filter(func(c): return is_farmland(cell_center(f, c)))
-	return true
 
 
 func add_farm(pos: Vector3, dir: Vector3, crop: String, drive: Array) -> int:
@@ -250,6 +216,8 @@ func decide(usable: Callable) -> bool:
 				# Farmers square off their fields: land that rounds out what
 				# they already work beats a slightly richer odd corner.
 				var score := p + COMPACT_BONUS * _owned_neighbors(f, c)
+				if reserves != null and reserves.kind_at(cell_center(f, c)) == "farm":
+					score += RESERVE_BONUS
 				if score > best_profit or (score == best_profit and best != Vector2i.MAX and _less(c, best)):
 					best = c
 					best_profit = score
@@ -275,7 +243,7 @@ func decide(usable: Callable) -> bool:
 ## anything the city has built?
 func _free(id: int, f: Dictionary, c: Vector2i, usable: Callable) -> bool:
 	var mid := cell_center(f, c)
-	if not is_farmland(mid):
+	if not reserved_ok(mid):
 		return false
 	var corners := cell_corners(f, c)
 	if _drive_crosses(f, corners):
@@ -295,6 +263,11 @@ func _free(id: int, f: Dictionary, c: Vector2i, usable: Callable) -> bool:
 			if field_at(pt) == other or farm_at(pt) == other:
 				return false
 	return usable.call(mid, corners)
+
+
+## False on land the player saved for another industry.
+func reserved_ok(p: Vector3) -> bool:
+	return reserves == null or reserves.kind_at(p) in ["", "farm"]
 
 
 ## Cells next to the farm's fields, or next to the farmyard to start, so
@@ -366,38 +339,11 @@ static func _drive_crosses(f: Dictionary, corners: PackedVector2Array) -> bool:
 	return false
 
 
-static func _area_of(poly: PackedVector2Array) -> float:
-	var a := 0.0
-	for i in poly.size():
-		a += poly[i].cross(poly[(i + 1) % poly.size()])
-	return a * 0.5
-
-
-## Smooth random value at a point, the same every time.
-static func _value_noise(p: Vector2, octave: int) -> float:
-	var i := Vector2i(floori(p.x), floori(p.y))
-	var f := p - Vector2(i)
-	var u := f * f * (Vector2(3, 3) - 2.0 * f)
-	var a := _hash01(i, octave)
-	var b := _hash01(i + Vector2i(1, 0), octave)
-	var c := _hash01(i + Vector2i(0, 1), octave)
-	var d := _hash01(i + Vector2i(1, 1), octave)
-	return lerpf(lerpf(a, b, u.x), lerpf(c, d, u.x), u.y)
-
-
 static func _hash01(i: Vector2i, salt: int) -> float:
-	var h := (i.x * 374761393 + i.y * 668265263 + salt * 1442695041) & 0x7fffffff
-	h = ((h ^ (h >> 13)) * 1274126177) & 0x7fffffff
-	return float(h % 10007) / 10006.0
+	return Resources.hash01(i, salt)
 
 
 func to_dict() -> Dictionary:
-	var outlines := []
-	for a in area:
-		var pts := []
-		for p in a.points:
-			pts.append([p.x, p.y])
-		outlines.append({"points": pts, "on": a.on})
 	var fs := {}
 	for id in farms:
 		var f: Dictionary = farms[id]
@@ -409,23 +355,23 @@ func to_dict() -> Dictionary:
 			lane.append([p.x, p.z])
 		fs[str(id)] = {"pos": [f.pos.x, f.pos.z], "dir": [f.dir.x, f.dir.z], "crop": f.crop,
 			"cells": owned, "loss": f.loss_streak, "barn": f.barn, "drive": lane, "frame": 2}
-	return {"outlines": outlines, "farms": fs, "next_id": _next_id}
+	return {"farms": fs, "next_id": _next_id}
 
 
 func from_dict(d: Dictionary) -> void:
-	area.clear()
 	farms.clear()
+	# Older saves painted farmland: it becomes land reserved for farming.
+	legacy_outlines.clear()
 	for a in d.get("outlines", []):
-		var poly := PackedVector2Array()
+		var pts := []
 		for p in a.points:
-			poly.append(Vector2(p[0], p[1]))
-		area.append({"points": poly, "on": bool(a.on)})
-	# Older saves painted farmland in 40 m world squares.
+			pts.append(Vector3(p[0], 0.0, p[1]))
+		legacy_outlines.append([pts, "farm" if a.on else ""])
 	for c in d.get("area", []):
 		var x := float(c[0]) * CELL
 		var z := float(c[1]) * CELL
-		area.append({"points": PackedVector2Array([Vector2(x, z), Vector2(x + CELL, z),
-			Vector2(x + CELL, z + CELL), Vector2(x, z + CELL)]), "on": true})
+		legacy_outlines.append([[Vector3(x, 0, z), Vector3(x + CELL, 0, z), Vector3(x + CELL, 0, z + CELL),
+			Vector3(x, 0, z + CELL)], "farm"])
 	for k in d.get("farms", {}):
 		var f: Dictionary = d.farms[k]
 		var owned := []
