@@ -14,7 +14,9 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  # Many threads merge minutes apart: let a running build finish and deploy
+  # (only the newest waiting one runs next), or nothing would ever ship.
+  cancel-in-progress: false
 
 env:
   GODOT_VERSION: 4.7.2
