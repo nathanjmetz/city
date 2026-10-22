@@ -10,8 +10,8 @@ var tool_in_hand: Callable
 
 var _shade := ColorRect.new()
 var _col := VBoxContainer.new()
-var _title := UiStyle.label("", 26)
-var _note := UiStyle.label("", 14, UiStyle.MUTED)
+var _title := ShellStyle.title("", 28)
+var _note := ShellStyle.text("", 14, 500, Brand.INK_MUTED)
 var _was_speed := 1
 var _tool_was_active := false
 
@@ -26,15 +26,15 @@ func _ready() -> void:
 	var root := Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.theme = UiStyle.theme()
+	root.theme = ShellStyle.theme()
 	add_child(root)
-	_shade.color = Color(0, 0, 0, 0.35)
+	_shade.color = Color(Brand.SURFACE, 0.45)
 	_shade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_shade.visible = false
 	root.add_child(_shade)
 	# Docked to the left edge, full height, like the title screen.
 	var panel := PanelContainer.new()
-	var box := UiStyle.panel(0)
+	var box := ShellStyle.panel()
 	box.content_margin_left = 32
 	box.content_margin_right = 32
 	box.content_margin_top = 40
@@ -84,7 +84,9 @@ func _fill() -> void:
 	_note.text = ""
 	_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_col.add_child(_note)
-	_col.add_child(_button("Resume", close))
+	var resume := _button("Resume", close)
+	ShellStyle.primary(resume)
+	_col.add_child(resume)
 	if Session.mode == Session.Mode.ONLINE:
 		var c := Session.client
 		_title.text = c.region.cities[c.my_city].name
@@ -136,6 +138,7 @@ func _button(text: String, action: Callable) -> Button:
 	b.focus_mode = Control.FOCUS_NONE
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.custom_minimum_size = Vector2(0, 44)
-	b.add_theme_font_size_override("font_size", 18)
+	b.add_theme_font_override("font", Brand.ui(600))
+	b.add_theme_font_size_override("font_size", 17)
 	b.pressed.connect(action)
 	return b

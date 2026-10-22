@@ -12,11 +12,6 @@ extends RefCounted
 const NEIGHBOR_GAP := 1600.0
 ## Chat lines kept and sent to players who join.
 const CHAT_KEEP := 100
-## Player colours for name tags and cursors.
-const COLORS := [
-	Color(0.33, 0.66, 0.93), Color(0.95, 0.55, 0.25), Color(0.45, 0.8, 0.45), Color(0.85, 0.4, 0.75),
-	Color(0.95, 0.8, 0.3), Color(0.4, 0.85, 0.85), Color(0.9, 0.4, 0.4), Color(0.7, 0.6, 0.95),
-]
 
 ## city id -> {"owner": player id, "player": player name, "name": city name,
 ## "origin": Vector2, "color": int, "sim": CitySim}
@@ -42,7 +37,7 @@ func add_city(player_id: String, player: String) -> String:
 	var sim := new_sim()
 	sim.city_seed = hash([region_seed, id])
 	cities[id] = {"owner": player_id, "player": player, "name": player + "ville", "origin": _free_spot(),
-		"color": cities.size() % COLORS.size(), "sim": sim}
+		"color": cities.size() % Brand.PLAYERS.size(), "sim": sim}
 	# Every city starts with a free road in from the edge of the map, like a highway exit.
 	sim.apply_now({"type": "build_road", "start": [-400, 0], "ctrl": [-250, 0], "end": [-100, 0]})
 	sim.apply_now({"type": "build_road", "start": [-100, 0], "ctrl": [-20, 0], "end": [40, 60]})
@@ -71,6 +66,14 @@ func tick() -> void:
 	ids.sort()
 	for id in ids:
 		cities[id].sim.tick()
+
+
+## A city's player color as one viewer sees it: coral for their own city,
+## otherwise the neighbor color it was given on joining (kept for good).
+func color_of(city_id: String, viewer_city: String) -> Color:
+	if not cities.has(city_id):
+		return Brand.INK
+	return Brand.player_color(cities[city_id].color, city_id == viewer_city)
 
 
 func add_chat(from: String, text: String) -> Dictionary:

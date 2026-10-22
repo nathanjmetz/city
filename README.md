@@ -63,7 +63,8 @@ The game opens on a title screen like Cities: Skylines 2: **Continue** your late
 - **Join:** type your name and the invite code. An invite link (`https://nathanjmetz.github.io/city/?join=CODE&server=wss://...`) fills both in for you.
 - **Host:** on Mac or Windows, *Host a region* runs one from your computer and shows the code. For an always-on region, run the server on its own (below).
 - **Chat:** the panel on the left. **Enter** to type, Enter to send, Esc to go back to building. Click a name to fly over and watch their city grow live; *Home* brings you back. *Invite* copies an invite.
-- You see where other players are pointing (a ring with their name), and a name tag over each neighbor's city.
+- You see where other players are pointing (a ring with their name), a name tag over each neighbor's city, and a cream dashed **city line** on the ground halfway between neighboring cities' closest buildings and roads.
+- Your city is always coral; each neighbor keeps the color they joined with (from the brand kit). A doorbell (E–C) rings when a neighbor joins or writes.
 - The region keeps running while you're away, so your city keeps growing.
 
 ### Running a region server
