@@ -142,6 +142,8 @@ static var _water_mat: ShaderMaterial
 ## The camera the chunks follow.
 var camera: Camera3D
 var network: RoadNetwork
+## How far out real trees are drawn (metres), or unset for the default.
+var trees_drawn_to := Callable()
 
 ## Vector2i chunk -> {lod, ground: MeshInstance3D, water: MeshInstance3D}
 var _chunks := {}
@@ -196,6 +198,9 @@ func focus() -> Vector2:
 
 
 func _process(_delta: float) -> void:
+	# The ground paints the woods' canopy past where trees are drawn.
+	if _ground_mat != null:
+		_ground_mat.set_shader_parameter("forest_far", trees_drawn_to.call() * 0.95 if trees_drawn_to.is_valid() else 1000.0)
 	var f := focus()
 	var start := Time.get_ticks_msec()
 	# Wanted level of detail for every chunk in reach.

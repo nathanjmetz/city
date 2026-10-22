@@ -95,6 +95,19 @@ static func _sample(name: String, x: float, z: float, ch := 0) -> float:
 	return lerpf(lerpf(a4, b4, fu), lerpf(c4, d4, fu), fv) / 255.0
 
 
+## Natural cover for wild plants (Vegetation): [tree share, brush share],
+## each 0 to 1, from real land cover. Brush is thickest on woodland edges and
+## in old fields, thin in crops and under closed canopy; none in the water.
+static func wild_cover(x: float, z: float) -> Array:
+	var c := cover(x, z)
+	if c.g > 0.5:
+		return [0.0, 0.0]
+	var trees := clampf(c.r * 0.95, 0.0, 0.95)
+	var open := clampf(1.0 - c.r - c.b - c.a, 0.0, 1.0)  # grass and old fields
+	var brush := clampf(0.03 + 1.4 * trees * (1.0 - trees) + 0.12 * open + 0.02 * c.b, 0.0, 0.6)
+	return [trees, brush]
+
+
 ## All four land cover fractions at once: r trees, g water, b crops, a bare.
 static func cover(x: float, z: float) -> Color:
 	_load()

@@ -88,16 +88,12 @@ func _ready() -> void:
 	var cam := CityCamera.new()
 	add_child(cam)
 	terrain.setup(cam.camera, sim.network)
-	var forest := TerrainForest.new()
-	forest.setup(cam.camera)
-	# Woods clear off farm fields, farmyards and service sites, and grow back
-	# when those go.
-	forest.blocked = func(x: float, z: float) -> bool:
-		var p := Vector3(x, 0.0, z)
-		return sim.farms.field_at(p) != -1 or sim.farms.covers(p) or sim.services.covers(p)
-	terrain.graded.connect(forest.refresh)
-	sim.farms_changed.connect(forest.refresh_soon)
-	add_child(forest)
+	# Wild trees and brush (WildView) grow from the real land cover; past
+	# where they're drawn, the ground paints the woods' canopy.
+	Vegetation.cover_source = func(p: Vector3) -> Array:
+		return Terrain.wild_cover(p.x + sim.terrain_offset.x, p.z + sim.terrain_offset.y)
+	terrain.trees_drawn_to = func() -> float:
+		return WildView.reach(cam.camera.global_position.y)
 
 	var audio := CityAudio.new()
 	audio.setup(sim, cam.camera, func(): return _tick_time * CitySim.TICKS_PER_SECOND)
