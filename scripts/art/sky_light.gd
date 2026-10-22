@@ -40,7 +40,7 @@ func _ready() -> void:
 	# reads blue-grey like in photos rather than saturated blue.
 	env.ambient_light_sky_contribution = 0.6
 	env.ambient_light_color = Color(0.66, 0.66, 0.64)
-	env.ambient_light_energy = 0.5
+	env.ambient_light_energy = 0.62
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	# AgX keeps bright roofs and concrete from clipping to flat white.
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
