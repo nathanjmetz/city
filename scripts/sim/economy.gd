@@ -36,7 +36,7 @@ const VALUE_PER_PLACE := {
 var money := START_MONEY
 var tax := DEFAULT_TAX.duplicate()
 ## This month's budget, per month: {"income": {zone: $}, "upkeep": $}.
-var budget := {"income": {}, "upkeep": 0}
+var budget := {"income": {}, "upkeep": 0, "fees": 0, "services": 0}
 
 
 ## What it costs to build a road along this curve.
@@ -83,11 +83,17 @@ func update_budget(sim: CitySim) -> void:
 		upkeep += road_upkeep(sim.network.curve_of(id), sim.network.segments[id].type)
 	for z in income:
 		income[z] = roundi(income[z])
-	budget = {"income": income, "upkeep": roundi(upkeep)}
+	# Water and sewer bills from every building on the water system.
+	var fees := 0
+	for key in sim.buildings:
+		if sim.services.served.has(key) and sim.services.served[key].get("water", false):
+			fees += int(Services.WATER_FEE[int(sim.buildings[key].zone)])
+	budget = {"income": income, "upkeep": roundi(upkeep), "fees": fees,
+		"services": sim.services.monthly_upkeep()}
 
 
 func monthly_net() -> int:
-	var total := -int(budget.upkeep)
+	var total := -int(budget.upkeep) - int(budget.services) + int(budget.fees)
 	for z in budget.income:
 		total += int(budget.income[z])
 	return total

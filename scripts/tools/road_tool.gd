@@ -52,6 +52,7 @@ var _cursor := MeshInstance3D.new()
 var _ok_mat := RoadStyle.material(Color(0.35, 0.65, 1.0, 0.55), true)
 var _bad_mat := RoadStyle.material(Color(1.0, 0.3, 0.25, 0.6), true)
 var _hover_seg := -1
+var _hover_service := -1
 var _shown_problem := ""
 var _guide := MeshInstance3D.new()
 var _label := Label3D.new()
@@ -147,6 +148,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(_delta: float) -> void:
 	var hit = cam.mouse_ground_point()
 	_preview.visible = false
+	_preview.transform = Transform3D.IDENTITY
 	_guide.visible = false
 	_label.visible = false
 	_cursor.visible = hit != null and mode != Mode.NONE
@@ -196,7 +198,10 @@ func _click() -> void:
 		return
 	match mode:
 		Mode.BULLDOZE:
-			if _hover_seg != -1:
+			if _hover_service != -1:
+				sim.apply({"type": "remove_service", "id": _hover_service})
+				_hover_service = -1
+			elif _hover_seg != -1:
 				sim.apply({"type": "remove_road", "seg": _hover_seg})
 				_hover_seg = -1
 		Mode.UPGRADE:
@@ -388,6 +393,18 @@ func _preview_pick(hit: Vector3) -> void:
 	var mat := _bad_mat if mode == Mode.BULLDOZE else _ok_mat
 	_cursor.position = hit + Vector3.UP * 0.3
 	_cursor.material_override = mat
+	# Service buildings can be bulldozed too.
+	_hover_service = sim.services.at(hit) if mode == Mode.BULLDOZE and _hover_seg == -1 else -1
+	if _hover_service != -1:
+		var b: Dictionary = sim.services.buildings[_hover_service]
+		var size: Vector2 = Services.KINDS[b.kind].size
+		var box := BoxMesh.new()
+		box.size = Vector3(size.x + 1.0, 6.0, size.y + 1.0)
+		_preview.mesh = box
+		_preview.transform = Transform3D(Basis.looking_at(b.dir, Vector3.UP), b.pos + Vector3(0, 3, 0))
+		_preview.material_override = mat
+		_preview.visible = true
+		return
 	if _hover_seg == -1:
 		return
 	var w := RoadStyle.half_width(road_type if mode == Mode.UPGRADE else network.segments[_hover_seg].type)
@@ -428,7 +445,7 @@ func _update_hint() -> void:
 			text = "Click to place a roundabout. Roads it crosses join it.  Size %d m  [ ]" \
 				% int(RoadShapes.roundabout_radius(roundabout_radius, road_type) * 2.0)
 		Mode.BULLDOZE:
-			text = "Click a road to remove it."
+			text = "Click a road or service building to remove it."
 		Mode.UPGRADE:
 			text = "Click a road to make it a %s." % RoadStyle.TYPES[road_type].name
 	if elevation != 0.0 and mode != Mode.BULLDOZE and mode != Mode.UPGRADE:

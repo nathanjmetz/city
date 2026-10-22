@@ -88,6 +88,45 @@ func _init() -> void:
 	saved.from_dict(JSON.parse_string(JSON.stringify(d.to_dict())))
 	_check(saved.economy.money == d.economy.money and saved.economy.tax[ZoneMap.Zone.INDUSTRIAL] == 3.0,
 		"money and taxes saved")
+	# Services: power and water flow along roads; nothing grows without them.
+	var u := CitySim.new()
+	u.require_utilities = true
+	u.economy.money = 50_000_000
+	u.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0]})
+	for x in range(-300, 301, 10):
+		u.apply({"type": "paint_zone", "center": [x, -15], "radius": 10, "zone": ZoneMap.Zone.RESIDENTIAL})
+		u.apply({"type": "paint_zone", "center": [x, 15], "radius": 10, "zone": ZoneMap.Zone.INDUSTRIAL})
+	for i in 400:
+		u.tick()
+	_check(u.buildings.is_empty(), "no power or water: nothing grows")
+	var site := Services.site_near(u.network, Services.Kind.SUBSTATION, Vector3(-280, 0, 40))
+	_check(not site.is_empty(), "substation finds a road to face")
+	var lots_before := u.lots.size()
+	_check(u.apply({"type": "place_service", "kind": Services.Kind.SUBSTATION,
+		"pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]}), "substation placed")
+	_check(u.lots.size() < lots_before, "lots under it are cleared")
+	_check(not u.apply({"type": "place_service", "kind": Services.Kind.WATER_TOWER,
+		"pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]}), "can't stack services")
+	_check(not u.apply({"type": "place_service", "kind": Services.Kind.WATER_TOWER,
+		"pos": [0, 2], "dir": [0, 1]}), "can't build on a road")
+	var w := Services.site_near(u.network, Services.Kind.WATER_TOWER, Vector3(-240, 0, 40))
+	_check(u.apply({"type": "place_service", "kind": Services.Kind.WATER_TOWER,
+		"pos": [w[0].x, w[0].z], "dir": [w[1].x, w[1].z]}), "water tower placed")
+	for i in 3000:
+		u.tick()
+	_check(u.count_buildings(ZoneMap.Zone.RESIDENTIAL) > 10 and u.stats.population > 0,
+		"with power and water the town grows (%d homes)" % u.count_buildings(ZoneMap.Zone.RESIDENTIAL))
+	_check(u.economy.budget.services == 18_000 and u.economy.budget.fees > 0, "utilities cost upkeep and earn water bills")
+	var f := Services.site_near(u.network, Services.Kind.FIRE, Vector3(0, 0, 60))
+	var cov0 := u.service_coverage()
+	u.apply({"type": "place_service", "kind": Services.Kind.FIRE, "pos": [f[0].x, f[0].z], "dir": [f[1].x, f[1].z]})
+	u.update_stats()
+	_check(u.service_coverage() > cov0, "a fire station covers homes (%.2f -> %.2f)" % [cov0, u.service_coverage()])
+	var us := CitySim.new()
+	us.from_dict(JSON.parse_string(JSON.stringify(u.to_dict())))
+	_check(us.services.buildings.size() == 3, "services saved")
+	u.apply({"type": "remove_service", "id": 1})
+	_check(u.services.buildings.size() == 2, "services can be removed")
 	# Old saves (roads only) come back zoned as homes.
 	var old := CitySim.new()
 	old.from_dict({"version": 1, "next_id": 4, "nodes": {"1": [-100, 0], "2": [100, 0]},

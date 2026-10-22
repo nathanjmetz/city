@@ -30,6 +30,10 @@ var network := RoadNetwork.new()
 var zones := ZoneMap.new()
 var traffic := TrafficSim.new(network)
 var economy := Economy.new()
+var services := Services.new()
+## Buildings only grow and fill with power and water, as in Cities: Skylines.
+## The game turns this on; tests about other things can leave it off.
+var require_utilities := false
 var lots := {}       # lot key -> lot Dictionary (from LotPlanner)
 var buildings := {}  # lot key -> {"zone", "seed", "built", "cap", "occ"}
 var tick_count := 0
@@ -87,6 +91,23 @@ func apply(cmd: Dictionary) -> bool:
 			ok = network.set_type(int(cmd.seg), _road(cmd))
 			if ok:
 				economy.money -= cost
+		"place_service":
+			var kind := int(cmd.kind)
+			if not Services.KINDS.has(kind):
+				return false
+			var pos := _v(cmd.pos)
+			var dir := _v(cmd.dir).normalized()
+			var cost: int = Services.KINDS[kind].cost
+			if cost > economy.money or services.site_problem(network, kind, pos, dir) != "":
+				return false
+			services.add(kind, pos, dir)
+			economy.money -= cost
+			_lots_dirty = true
+			ok = true
+		"remove_service":
+			ok = services.buildings.has(int(cmd.id))
+			services.buildings.erase(int(cmd.id))
+			_lots_dirty = true
 		"set_tax":
 			if economy.set_tax(int(cmd.zone), float(cmd.rate)):
 				update_stats()
@@ -101,6 +122,7 @@ func apply(cmd: Dictionary) -> bool:
 			network.clear()
 			zones.cells.clear()
 			economy = Economy.new()
+			services = Services.new()
 			ok = true
 	if ok:
 		_refresh()
@@ -147,6 +169,7 @@ func update_stats() -> void:
 				shop_jobs += b.cap
 			ZoneMap.Zone.INDUSTRIAL:
 				factory_jobs += b.cap
+	services.update(network, lots, buildings)
 	var workers := int(pop * WORKER_SHARE)
 	var jobs := shop_jobs + factory_jobs
 	var free := home_cap - pop
@@ -161,6 +184,10 @@ func update_stats() -> void:
 		+ 0.4 * (shop_jobs * 0.8 - factory_jobs) / maxf(factory_jobs, 20.0), 0.0, 1.0)
 	for z in demand:
 		demand[z] = clampf(demand[z] + economy.demand_shift(z), 0.0, 1.0)
+	# Past village size, people want fire, police, a clinic and a school nearby.
+	if pop > 300:
+		demand[ZoneMap.Zone.RESIDENTIAL] = clampf(
+			demand[ZoneMap.Zone.RESIDENTIAL] + 0.3 * (service_coverage() - 0.5), 0.0, 1.0)
 	economy.update_budget(self)
 	stats_changed.emit()
 
@@ -174,7 +201,7 @@ func _move_in() -> void:
 	keys.sort()
 	for key in keys:
 		var b: Dictionary = buildings[key]
-		if b.zone == ZoneMap.Zone.RESIDENTIAL and b.occ < b.cap:
+		if b.zone == ZoneMap.Zone.RESIDENTIAL and b.occ < b.cap and _utilities_ok(key):
 			b.occ += 1
 			arrivals -= 1
 			if arrivals == 0:
@@ -185,10 +212,35 @@ func _move_in() -> void:
 func empty_zoned_lots() -> Array:
 	var out := []
 	for key in lots:
-		if not buildings.has(key) and zones.zone_at(lots[key].zone_pt) != ZoneMap.Zone.NONE:
+		if not buildings.has(key) and zones.zone_at(lots[key].zone_pt) != ZoneMap.Zone.NONE \
+				and _utilities_ok(key):
 			out.append(key)
 	out.sort()
 	return out
+
+
+## Average share of fire, police, health and school cover across homes.
+func service_coverage() -> float:
+	var total := 0.0
+	var n := 0
+	for key in buildings:
+		if buildings[key].zone == ZoneMap.Zone.RESIDENTIAL:
+			total += services.coverage(key)
+			n += 1
+	return 0.0 if n == 0 else total / n
+
+
+## Buildings on zoned lots that lack power or water.
+func unserved_count() -> int:
+	var n := 0
+	for key in buildings:
+		if not services.has_utilities(key):
+			n += 1
+	return n
+
+
+func _utilities_ok(key: String) -> bool:
+	return not require_utilities or services.has_utilities(key)
 
 
 func count_buildings(zone: int) -> int:
@@ -204,7 +256,10 @@ func _refresh() -> void:
 		_lots_dirty = false
 		lots.clear()
 		for lot in LotPlanner.plan(network):
-			lots[lot.key] = lot
+			# No lots under a service building.
+			if not (services.covers(lot.pos) or services.covers(lot.front) or services.covers(lot.zone_pt)):
+				lots[lot.key] = lot
+		services.update(network, lots, buildings)
 		lots_changed.emit()
 	# Buildings go away when their lot disappears or its zone changes.
 	var removed := false
@@ -330,6 +385,7 @@ func to_dict() -> Dictionary:
 		"zones": zones.to_dict(),
 		"buildings": buildings,
 		"economy": economy.to_dict(),
+		"services": services.to_dict(),
 	}
 
 
@@ -344,6 +400,7 @@ func from_dict(d: Dictionary) -> void:
 		for key in lots:
 			zones.paint(lots[key].zone_pt, 3.0, ZoneMap.Zone.RESIDENTIAL)
 	economy.from_dict(d.get("economy", {}))
+	services.from_dict(d.get("services", {}))
 	tick_count = int(d.get("tick", 0))
 	city_seed = int(d.get("seed", 1))
 	buildings.clear()
