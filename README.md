@@ -27,9 +27,12 @@ An open map where you draw roads, paint zones along them, and buildings grow, li
 | Views (top left) | See the map by fertility, oil, ore and forest (smooth, never run out), service coverage or traffic. Esc closes. |
 | `8` Dezone | Erase zones (buildings on them go away). |
 | Right click | Stop drawing. |
+| Click (no tool in hand) | Select a building, lot, farm or road: a panel shows whether it works, what it serves, its numbers and any problem. Badges over lots show what lacks power or water. |
+| Industry | Place an oil, mining or forestry company's main building near the resource (its view opens) and within 250 m of a road. Over time it opens well pads, pits or logging stands wherever the resource is richest; Reserve saves land for it. Every load leaves on a real truck: to a factory in town, or out by the highway. Resources never run out. |
 | Esc | Stop drawing; press again to put every tool away and close panels. |
 
 | Space, or Pause / 1x / 2x / 4x | Pause and game speed. |
+| Advice (top right) | The town's advisor: a few words on what needs fixing and what might come next, based on your town and the tool in hand. A dot means something new. It never pops up unless you turn on "Pop open for problems"; "Tips on their own" turns the dot off. |
 
 The city runs on a clock (a day takes about 2½ minutes at 1x). Homes, shops and industry only grow when there is demand, shown by the bars in the bottom-left corner: homes are wanted while there are jobs, industry while people need work, and shops while residents need places to shop. People move into new homes over time.
 
@@ -62,7 +65,8 @@ The game opens on a title screen like Cities: Skylines 2: **Continue** your late
 - **Join:** type your name and the invite code. An invite link (`https://nathanjmetz.github.io/city/?join=CODE&server=wss://...`) fills both in for you.
 - **Host:** on Mac or Windows, *Host a region* runs one from your computer and shows the code. For an always-on region, run the server on its own (below).
 - **Chat:** the panel on the left. **Enter** to type, Enter to send, Esc to go back to building. Click a name to fly over and watch their city grow live; *Home* brings you back. *Invite* copies an invite.
-- You see where other players are pointing (a ring with their name), and a name tag over each neighbor's city.
+- You see where other players are pointing (a ring with their name), a name tag over each neighbor's city, and a cream dashed **city line** on the ground halfway between neighboring cities' closest buildings and roads.
+- Your city is always coral; each neighbor keeps the color they joined with (from the brand kit). A doorbell (E–C) rings when a neighbor joins or writes.
 - The region keeps running while you're away, so your city keeps growing.
 
 ### Running a region server
@@ -92,6 +96,10 @@ All sounds are built in code by `tools/audio/make_assets.py` (`python3 tools/aud
 | `scripts/roads/road_network.gd` | The road graph as plain data. All edits are commands, so a server can replay them later. |
 | `scripts/roads/` | Road sizes, mesh building and drawing. |
 | `scripts/sim/` | The simulation: plain data, fixed ticks, every change is a command (so a headless server can run it later). Lots, zones, growth. |
+| `scripts/sim/balance.gd` | Every gameplay number in one place (money, prices, upkeep, taxes, grants, growth, farm yields). Tune the game here. |
+| `scripts/sim/inspect.gd`, `scripts/ui/select_tool.gd`, `scripts/ui/info_panel.gd` | Click anything with no tool in hand: CS2-style info panel (status, numbers, problems). |
+| `scripts/zones/lot_alerts.gd` | "No power" and "no water" badges over lots. |
+| `scripts/sim/industry.gd`, `scripts/sim/logistics.gd`, `scripts/industry/` | Resource companies, and the freight that moves every load (Traffic's `dispatch`). |
 | `scripts/zones/zone_view.gd` | Draws lots and zone colours. |
 | `scripts/audio/` | Sound: world sources and the nearest-first picker, the spatial players, and interface sounds. |
 | `scripts/buildings/building_view.gd` | Draws placeholder homes, shops and factories. |

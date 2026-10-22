@@ -61,6 +61,33 @@ causes the famous one-lane queues. Here:
   100% even with stop signs, and queues pull it down (closer to CS than a
   raw speed average).
 
+## Trips with a purpose (loop 3)
+
+Like CS, every vehicle is a real agent with a job. Other systems send one:
+
+```gdscript
+var id := sim.traffic.dispatch({"ref": "farm:1", "pos": [x, z]}, {"ref": "mill:2", "pos": [x, z]},
+    "grain", {"good": "grain", "amount": 12})
+```
+
+- `purpose` picks the vehicle (`VehicleTypes.for_purpose`), and the car keeps
+  `purpose` and `cargo` for the view.
+- On arrival, `{id, purpose, cargo, from, to}` is appended to
+  `traffic.arrivals`; if no route exists, or a road edit strands it, to
+  `traffic.failed`. The caller reads and clears these lists.
+- A dispatched vehicle waits at its gate until there is room to pull out, so
+  it is never dropped.
+- `traffic.background_freight` (on by default) adds generic trucks until real
+  industry dispatches its own.
+- Cars pull out of and into driveways on smooth curves (CS2 benchmark).
+- Vehicle size, acceleration, top speed and lane preference come from
+  `VehicleTypes.spec(kind)` (owned by the Vehicles work).
+- Building or upgrading a road re-routes cars where they are instead of
+  removing them (CS2 behaviour).
+- In-flight trips are saved exactly (`"traffic"` in the save) and two copies
+  loaded from the same save drive identically, as multiplayer needs.
+
 ## Next
 
-- Loop 3: parking, delivery trucks, and hooks for buses.
+- Parking (CS2 style), bus and transit routes (`add_route_vehicle`), service
+  vehicles answering calls.

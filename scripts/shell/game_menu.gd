@@ -1,24 +1,18 @@
 class_name GameMenu
 extends CanvasLayer
-## The pause menu, like Cities: Skylines 2: Escape opens it when no tool is
-## in hand. Resume, save, back to the title screen, or quit. In a shared
-## region it shows the invite and lets you leave (the region keeps going).
+## The pause menu, like Cities: Skylines 2: a modal in the middle of the
+## screen. Escape puts tools down and closes panels first (the HUD does that);
+## once nothing is left, Escape opens this. Resume, save, back to the title
+## screen, or quit. In a shared region it shows the invite and lets you leave
+## (the region keeps going).
 
 var game: Node  # main.gd
-## Returns true while a tool is in hand (then Escape puts the tool down instead).
-var tool_in_hand: Callable
 
 var _shade := ColorRect.new()
 var _col := VBoxContainer.new()
-var _title := UiStyle.label("", 26)
-var _note := UiStyle.label("", 14, UiStyle.MUTED)
+var _title := ShellStyle.title("", 28)
+var _note := ShellStyle.text("", 14, 500, Brand.INK_MUTED)
 var _was_speed := 1
-var _tool_was_active := false
-
-
-func setup(g: Node, in_hand: Callable) -> void:
-	game = g
-	tool_in_hand = in_hand
 
 
 func _ready() -> void:
@@ -26,41 +20,42 @@ func _ready() -> void:
 	var root := Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.theme = UiStyle.theme()
+	root.theme = ShellStyle.theme()
 	add_child(root)
-	_shade.color = Color(0, 0, 0, 0.35)
+	_shade.color = Color(Brand.SURFACE, 0.6)
 	_shade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_shade.visible = false
 	root.add_child(_shade)
-	# Docked to the left edge, full height, like the title screen.
+	# A modal card in the middle of the screen.
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_shade.add_child(center)
 	var panel := PanelContainer.new()
-	var box := UiStyle.panel(0)
-	box.content_margin_left = 32
-	box.content_margin_right = 32
-	box.content_margin_top = 40
+	var box := ShellStyle.panel()
+	box.set_corner_radius_all(10)
+	box.set_border_width_all(1)
+	box.content_margin_left = 28
+	box.content_margin_right = 28
+	box.content_margin_top = 28
+	box.content_margin_bottom = 28
+	box.shadow_color = Color(0, 0, 0, 0.35)
+	box.shadow_size = 24
 	panel.add_theme_stylebox_override("panel", box)
-	panel.set_anchors_and_offsets_preset(Control.PRESET_LEFT_WIDE)
-	panel.custom_minimum_size = Vector2(320, 0)
-	_shade.add_child(panel)
+	panel.custom_minimum_size = Vector2(360, 0)
+	center.add_child(panel)
 	_col.add_theme_constant_override("separation", 10)
+	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	panel.add_child(_col)
 	if Session.client:
 		Session.client.disconnected.connect(_lost_connection)
 
 
-func _process(_delta: float) -> void:
-	_tool_was_active = tool_in_hand.call()
-
-
-func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo \
-			and (event as InputEventKey).keycode == KEY_ESCAPE:
-		if _shade.visible:
-			close()
-			get_viewport().set_input_as_handled()
-		elif not _tool_was_active:
-			open()
-			get_viewport().set_input_as_handled()
+func toggle() -> void:
+	if _shade.visible:
+		close()
+	else:
+		open()
 
 
 func open() -> void:
@@ -78,13 +73,18 @@ func close() -> void:
 
 
 func _fill() -> void:
+	# The title and note stay; only the buttons are rebuilt.
 	for c in _col.get_children():
-		c.queue_free()
-	_col.add_child(_title)
+		if c != _title and c != _note:
+			c.queue_free()
+	if not _title.get_parent():
+		_col.add_child(_title)
+		_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_col.add_child(_note)
 	_note.text = ""
-	_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_col.add_child(_note)
-	_col.add_child(_button("Resume", close))
+	var resume := _button("Resume", close)
+	ShellStyle.primary(resume)
+	_col.add_child(resume)
 	if Session.mode == Session.Mode.ONLINE:
 		var c := Session.client
 		_title.text = c.region.cities[c.my_city].name
@@ -134,8 +134,8 @@ func _button(text: String, action: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.focus_mode = Control.FOCUS_NONE
-	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.custom_minimum_size = Vector2(0, 44)
-	b.add_theme_font_size_override("font_size", 18)
+	b.add_theme_font_override("font", Brand.ui(600))
+	b.add_theme_font_size_override("font_size", 17)
 	b.pressed.connect(action)
 	return b

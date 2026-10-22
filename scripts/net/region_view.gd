@@ -1,7 +1,8 @@
 class_name RegionView
 extends Node3D
 ## Shows the shared region around your city: every neighbor's city, live,
-## with a name tag over it, and where each player online is pointing.
+## with a name tag over it, the city lines between cities, and where each
+## player online is pointing.
 ##
 ## Your city sits at the world's centre and the neighbors are placed around
 ## it at their spots on the shared map, so your tools work unchanged.
@@ -29,6 +30,9 @@ func _ready() -> void:
 	for id in client.region.cities:
 		_add_city(id)
 	client.city_added.connect(_add_city)
+	var lines := CityLines.new()
+	lines.setup(client, func(p: Vector2): return _to_world(p))
+	add_child(lines)
 	client.cursor_moved.connect(_move_cursor)
 	client.players_changed.connect(_drop_gone_cursors)
 
@@ -85,7 +89,7 @@ func _add_city(id: String) -> void:
 		cars.setup(c.sim.traffic, func(): return minf(client.since_tick * CitySim.TICKS_PER_SECOND, 1.0))
 		root.add_child(cars)
 	# Name tags over the neighbors' cities (not your own).
-	var tag := _label(Region.COLORS[c.color], 34)
+	var tag := _label(client.region.color_of(id, client.my_city), 34)
 	tag.position = Vector3(0, 70, 0)
 	tag.visible = id != client.my_city
 	root.add_child(tag)
@@ -94,10 +98,10 @@ func _add_city(id: String) -> void:
 
 func _move_cursor(player_id: String, p: Vector2) -> void:
 	if not _cursors.has(player_id):
-		var color := Color.WHITE
-		for c in client.region.cities.values():
-			if c.owner == player_id:
-				color = Region.COLORS[c.color]
+		var color := Brand.INK
+		for id in client.region.cities:
+			if client.region.cities[id].owner == player_id:
+				color = client.region.color_of(id, client.my_city)
 		var node := Node3D.new()
 		var ring := MeshInstance3D.new()
 		var mesh := TorusMesh.new()
@@ -137,13 +141,14 @@ func _is_online(player_id: String) -> bool:
 
 static func _label(color: Color, size: int) -> Label3D:
 	var l := Label3D.new()
+	l.font = Brand.sign()
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	l.fixed_size = true
 	l.pixel_size = 0.0006
 	l.font_size = size
 	l.outline_size = 10
 	l.modulate = color
-	l.outline_modulate = Color(0, 0, 0, 0.8)
+	l.outline_modulate = Color(Brand.BRAND_INK, 0.85)
 	l.no_depth_test = true
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	return l

@@ -65,7 +65,8 @@ func _init() -> void:
 	var m := CitySim.new()
 	var start: int = m.economy.money
 	m.apply({"type": "build_road", "start": [-100, 0], "ctrl": [0, 0], "end": [100, 0]})
-	_check(m.economy.money == start - 200_000, "200 m street costs $200,000 (spent %d)" % (start - m.economy.money))
+	var street_cost := 200 * int(Economy.BUILD_PER_M[RoadStyle.Type.STREET])
+	_check(m.economy.money == start - street_cost, "200 m street costs its price (spent %d)" % (start - m.economy.money))
 	var flat := [Vector3(0, 0, 0), Vector3(50, 0, 0), Vector3(100, 0, 0)]
 	var high := [Vector3(0, 7.5, 0), Vector3(50, 7.5, 0), Vector3(100, 7.5, 0)]
 	_check(Economy.road_cost(high, 0) > Economy.road_cost(flat, 0) * 3, "bridges cost more")
@@ -74,7 +75,8 @@ func _init() -> void:
 		"can't build without the money")
 	_check(m.road_problem([Vector3(-100, 0, 50), Vector3(0, 0, 50), Vector3(100, 0, 50)], 0).begins_with("Not enough money"),
 		"says why")
-	_check(m.upgrade_cost(m.network.segments.keys()[0], RoadStyle.Type.AVENUE) == 200_000, "upgrade pays the difference")
+	_check(m.upgrade_cost(m.network.segments.keys()[0], RoadStyle.Type.AVENUE) == 200 * int(
+		Economy.BUILD_PER_M[RoadStyle.Type.AVENUE] - Economy.BUILD_PER_M[RoadStyle.Type.STREET]), "upgrade pays the difference")
 	_check(d.economy.budget.income[ZoneMap.Zone.RESIDENTIAL] > 0 and d.economy.budget.upkeep > 0,
 		"budget has taxes and upkeep (%s)" % str(d.economy.budget))
 	var before: int = d.economy.money
@@ -206,6 +208,141 @@ func _init() -> void:
 	for i in 12:
 		fm.farms.decide(fm.field_usable)
 	_check(farm.cells.size() < grown, "a struggling farm sells fields (%d -> %d)" % [grown, farm.cells.size()])
+	# Brawn's case: a well but no power. The warning names what's missing,
+	# and clicking the well or a lot explains it.
+	var ws := CitySim.new()
+	ws.require_utilities = true
+	ws.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
+	ws.apply({"type": "paint_zone", "center": [0, 20], "radius": 40, "zone": ZoneMap.Zone.RESIDENTIAL})
+	ws.economy.money = 400_000
+	_check(ws.utility_problem().begins_with("No power: build a Power line feed"), "warning names power first: " + ws.utility_problem())
+	var well_site := Services.site_near(ws.network, Services.Kind.WELL, Vector3(120, 0, -30))
+	ws.apply({"type": "place_service", "kind": Services.Kind.WELL, "pos": [well_site[0].x, well_site[0].z],
+		"dir": [well_site[1].x, well_site[1].z]})
+	for i in 50:
+		ws.tick()
+	var why := ws.utility_problem()
+	_check(why.begins_with("No power") and why.contains("need $"), "without power the warning says so and the money short: " + why)
+	var well := Inspect.pick(ws, well_site[0])
+	_check(well.get("type") == "service", "clicking the well selects it")
+	var wd := Inspect.describe(ws, well)
+	_check(wd.title == "Well and pump house" and wd.status.begins_with("Working") and not wd.ok
+		and str(wd.problems).contains("no power"), "the well's panel: working, but the town lacks power (%s)" % str(wd))
+	var lot_key: String = ws.empty_zoned_lots()[0] if not ws.empty_zoned_lots().is_empty() else ""
+	var some_lot := ""
+	for key in ws.lots:
+		if ws.zones.zone_at(ws.lots[key].zone_pt) != ZoneMap.Zone.NONE:
+			some_lot = key
+			break
+	var ld := Inspect.describe(ws, Inspect.pick(ws, ws.lots[some_lot].pos))
+	_check(ld.get("title") == "Empty lot" and str(ld.problems).contains("No power") and not str(ld.problems).contains("No water"),
+		"a zoned lot says it lacks power, not water (%s)" % str(ld))
+	_check(lot_key == "", "nothing can grow without power")
+	ws.economy.money = 400_000
+	var feed := Services.site_near(ws.network, Services.Kind.POWER_FEED, Vector3(-120, 0, -30))
+	ws.apply({"type": "place_service", "kind": Services.Kind.POWER_FEED, "pos": [feed[0].x, feed[0].z],
+		"dir": [feed[1].x, feed[1].z]})
+	for i in 50:
+		ws.tick()
+	_check(ws.utility_problem() == "", "power and water: no warning")
+	# The Critic's case: power reaches one street, water another, so no lot
+	# has both. The warning has to say so.
+	var split := CitySim.new()
+	split.require_utilities = true
+	split.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
+	split.apply({"type": "build_road", "start": [-200, 300], "ctrl": [0, 300], "end": [200, 300]})
+	split.apply({"type": "paint_zone", "center": [0, 20], "radius": 40, "zone": ZoneMap.Zone.RESIDENTIAL})
+	split.apply({"type": "paint_zone", "center": [0, 320], "radius": 40, "zone": ZoneMap.Zone.RESIDENTIAL})
+	split.economy.money = 1_000_000
+	for entry in [[Services.Kind.POWER_FEED, Vector3(150, 0, -30)], [Services.Kind.WELL, Vector3(150, 0, 270)]]:
+		var spot := Services.site_near(split.network, entry[0], entry[1])
+		split.apply({"type": "place_service", "kind": entry[0], "pos": [spot[0].x, spot[0].z], "dir": [spot[1].x, spot[1].z]})
+	for i in 50:
+		split.tick()
+	_check(split.utility_problem().contains("no power: their streets aren't joined by road to a power line")
+		and split.utility_problem().contains("no water: their streets aren't joined by road to a water source"),
+		"split networks: each utility's cause is named: " + split.utility_problem())
+	_check(split.utility_summary().length() < 40, "the top-bar chip stays short: " + split.utility_summary())
+	var rd := Inspect.describe(ws, Inspect.pick(ws, Vector3(60, 0, 0)))
+	_check(rd.get("title") == "Street" and rd.ok, "clicking a road shows the street")
+	_check(Inspect.pick(ws, Vector3(0, 0, -900)).is_empty(), "clicking open ground selects nothing")
+	# Resource industry (Brawn's model): a company's pads spread where the
+	# resource is, and every load leaves on a real truck.
+	var best := Vector3.ZERO
+	var best_v := 0.0
+	for x in range(-2000, 2001, 100):
+		for z in range(-2000, 2001, 100):
+			var v := Resources.at(Resources.Kind.OIL, Vector3(x, 0, z))
+			if v > best_v:
+				best_v = v
+				best = Vector3(x, 0, z)
+	var oil := CitySim.new()
+	oil.economy.money = 50_000_000
+	oil.apply({"type": "build_road", "start": [best.x - 400, best.z - 60], "ctrl": [best.x, best.z - 60], "end": [best.x + 400, best.z - 60]})
+	oil.apply({"type": "build_road", "start": [best.x + 400, best.z - 60], "ctrl": [best.x + 1200, best.z - 60], "end": [best.x + 2000, best.z - 60]})
+	_check(oil.industry_problem("oil", best + Vector3(0, 0, 900), Vector3(0, 0, -1)).begins_with("Needs a road")
+		or oil.industry_problem("oil", best + Vector3(0, 0, 900), Vector3(0, 0, -1)).begins_with("No crude"),
+		"a company needs a road and the resource nearby")
+	var dry := Vector3.ZERO
+	for x in range(-2000, 2001, 100):
+		if Resources.at(Resources.Kind.OIL, Vector3(x, 0, best.z)) < 0.05 and oil.industry_reach("oil", Vector3(x, 0, best.z + 20)) < Industry.MIN_RICHNESS:
+			dry = Vector3(x, 0, best.z + 20)
+			break
+	if dry != Vector3.ZERO:
+		oil.apply({"type": "build_road", "start": [dry.x - 100, dry.z - 80], "ctrl": [dry.x, dry.z - 80], "end": [dry.x + 100, dry.z - 80]})
+		_check(oil.industry_problem("oil", dry, Vector3(0, 0, -1)).begins_with("No crude oil"), "no oil company where there's no oil")
+	_check(oil.apply({"type": "place_industry", "kind": "oil", "pos": [best.x, best.z + 20], "dir": [0, -1]}), "an oil company opens on the oil field")
+	var twin := CitySim.new()
+	twin.from_dict(JSON.parse_string(JSON.stringify(oil.to_dict())))
+	for i in 1440 * 3:
+		oil.tick()
+		twin.tick()
+	var co: Dictionary = oil.industry.sites[1]
+	_check(co.pads.size() >= 3, "its pads spread over three days (%d)" % co.pads.size())
+	var rich := true
+	for c in co.pads:
+		rich = rich and Industry.richness(co, c) >= Industry.MIN_RICHNESS
+	_check(rich, "every pad sits on oil")
+	_check(oil.logistics.delivered > 0 and oil.logistics.exported > 0, "tankers drove crude out to the highway (%d delivered)" % oil.logistics.delivered)
+	var tankers := 0
+	for car in oil.traffic.cars:
+		if car.get("purpose", "") == "fuel":
+			tankers += 1
+	_check(tankers > 0 or not oil.logistics.trips.is_empty(), "crude rides in tankers")
+	_check(twin.industry.sites[1].pads == co.pads and twin.logistics.delivered == oil.logistics.delivered,
+		"two copies grow the same oil field (multiplayer)")
+	var back := CitySim.new()
+	back.from_dict(JSON.parse_string(JSON.stringify(oil.to_dict())))
+	_check(back.industry.sites[1].pads.size() == co.pads.size() and back.logistics.trips.size() == oil.logistics.trips.size(),
+		"save keeps the company and its trucks")
+	var oil_sel := Inspect.pick(oil, co.pos)
+	_check(oil_sel.get("type") == "industry" and Inspect.describe(oil, oil_sel).title == "Oil company", "clicking the company opens its panel")
+	_check(oil.stats.jobs >= Balance.INDUSTRY["oil"]["jobs_hq"], "the company's jobs count")
+	# Critic round 7: a company whose yard isn't on the deposit itself still
+	# finds the rich ground within reach for its first pad.
+	var edge_spot := Vector3.INF
+	for r in [240.0, 280.0, 320.0]:
+		for i in 16:
+			var p: Vector3 = best + Vector3(cos(TAU * i / 16.0), 0, sin(TAU * i / 16.0)) * r
+			var probe := {"kind": "oil", "pos": p, "dir": Vector3(0, 0, -1)}
+			var poor := true
+			for c in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
+					Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1)]:
+				poor = poor and Industry.richness(probe, c) < Industry.MIN_RICHNESS
+			if poor and edge_spot == Vector3.INF:
+				edge_spot = p
+	_check(edge_spot != Vector3.INF, "found a spot off the deposit's edge")
+	if edge_spot != Vector3.INF:
+		var off := Industry.new()
+		off.add_site("oil", edge_spot, Vector3(0, 0, -1), [])
+		off.decide(func(_m, _c): return true)
+		_check(off.sites[1].pads.size() == 1 and off.sites[1].get("idle", "") == "",
+			"a company beside the deposit opens its first pad on it (%d)" % off.sites[1].pads.size())
+	var none := Industry.new()
+	none.add_site("oil", Vector3(best.x + 50000, 0, best.z + 50000), Vector3(0, 0, -1), [])
+	none.decide(func(_m, _c): return true)
+	_check(none.sites[1].pads.is_empty() and str(none.sites[1].get("idle", "")).begins_with("No crude oil"),
+		"a company with no oil around says why")
 	# Old saves (roads only) come back zoned as homes.
 	var old := CitySim.new()
 	old.from_dict({"version": 1, "next_id": 4, "nodes": {"1": [-100, 0], "2": [100, 0]},

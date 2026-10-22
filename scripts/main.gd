@@ -37,6 +37,10 @@ func _ready() -> void:
 	add_child(buildings)
 	buildings.setup(sim)
 
+	var lot_alerts := LotAlerts.new()
+	lot_alerts.setup(sim)
+	add_child(lot_alerts)
+
 	var service_view := ServiceView.new()
 	add_child(service_view)
 	service_view.setup(sim)
@@ -44,6 +48,10 @@ func _ready() -> void:
 	var farm_view := FarmView.new()
 	add_child(farm_view)
 	farm_view.setup(sim)
+
+	var industry_view := IndustryView.new()
+	add_child(industry_view)
+	industry_view.setup(sim)
 
 	var cars := TrafficView.new()
 	cars.setup(sim.traffic, _tick_fraction)
@@ -88,6 +96,10 @@ func _ready() -> void:
 	farm_tool.setup(sim, cam, info_view)
 	add_child(farm_tool)
 
+	var industry_tool := IndustryTool.new()
+	industry_tool.setup(sim, cam, info_view)
+	add_child(industry_tool)
+
 	var traffic_tool := TrafficTool.new()
 	traffic_tool.setup(sim, cam, flow_view)
 	add_child(traffic_tool)
@@ -102,6 +114,8 @@ func _ready() -> void:
 			service_tool.set_kind(ServiceTool.OFF)
 		if keep != farm_tool and farm_tool.mode != FarmTool.Mode.NONE:
 			farm_tool.set_mode(FarmTool.Mode.NONE)
+		if keep != industry_tool and industry_tool.kind != "":
+			industry_tool.set_kind("")
 		if keep != traffic_tool and traffic_tool.mode != TrafficTool.Mode.NONE:
 			traffic_tool.set_mode(TrafficTool.Mode.NONE)
 	# Picking a tool also plays the tool sound.
@@ -113,21 +127,30 @@ func _ready() -> void:
 	service_tool.kind_changed.connect(func(k): if k != ServiceTool.OFF: picked.call(service_tool))
 	farm_tool.mode_changed.connect(func(m): if m != FarmTool.Mode.NONE: picked.call(farm_tool))
 	traffic_tool.mode_changed.connect(func(m): if m != TrafficTool.Mode.NONE: picked.call(traffic_tool))
+	industry_tool.kind_changed.connect(func(k): if k != "": picked.call(industry_tool))
+
+	var select_tool := SelectTool.new()
+	select_tool.setup(sim, cam, func(): return road_tool.mode != RoadTool.Mode.NONE \
+		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
+		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
+		or industry_tool.kind != "")
+	add_child(select_tool)
 
 	var hud := Hud.new()
 	hud.setup(road_tool, zone_tool, sim, self)
 	hud.service_tool = service_tool
 	hud.farm_tool = farm_tool
+	hud.industry_tool = industry_tool
 	hud.traffic_tool = traffic_tool
 	hud.info_view = info_view
 	hud.service_view = service_view
+	hud.select_tool = select_tool
+	hud.lot_alerts = lot_alerts
 	add_child(hud)
 
 	var menu := GameMenu.new()
-	menu.setup(self, func(): return road_tool.mode != RoadTool.Mode.NONE \
-		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
-		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
-		or info_view.mode != InfoView.Mode.NONE or hud.views_open())
+	menu.game = self
+	hud.nothing_to_close.connect(menu.toggle)
 	add_child(menu)
 	if Session.online():
 		var region := RegionView.new()
@@ -139,7 +162,7 @@ func _ready() -> void:
 		return
 	if not _load():
 		_starter_road()
-	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed]:
+	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed, sim.industry_changed]:
 		sig.connect(func(): _save_pending = true)
 
 
@@ -200,6 +223,9 @@ func _load() -> bool:
 ## A road coming in from the edge of the map, like a highway exit.
 ## The highway link is free, as in Cities: Skylines.
 func _starter_road() -> void:
+	if Session.new_city_difficulty != "":
+		sim.apply({"type": "set_difficulty", "difficulty": Session.new_city_difficulty})
+		Session.new_city_difficulty = ""
 	var money := sim.economy.money
 	sim.apply({"type": "build_road", "start": [-400, 0], "ctrl": [-250, 0], "end": [-100, 0]})
 	sim.apply({"type": "build_road", "start": [-100, 0], "ctrl": [-20, 0], "end": [40, 60]})

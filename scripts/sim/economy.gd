@@ -8,37 +8,22 @@ extends RefCounted
 ## playable pace while every amount stays real. Money is whole dollars so
 ## every copy of the simulation agrees to the cent.
 
-const START_MONEY := 3_000_000
-## Building a road, dollars per metre (about $1.6M a mile for a two-lane
-## street and $9.7M a mile for a highway, in line with state DOT costs).
-const BUILD_PER_M := {
-	RoadStyle.Type.STREET: 1000, RoadStyle.Type.AVENUE: 2000,
-	RoadStyle.Type.BOULEVARD: 3500, RoadStyle.Type.HIGHWAY: 6000, RoadStyle.Type.RAMP: 3000,
-	RoadStyle.Type.RING: 2500, RoadStyle.Type.RING2: 4000,
-}
-## Road upkeep, dollars per lane-metre per month (about $10,000 a lane-mile
-## a year, typical of US city budgets).
-const UPKEEP_PER_LANE_M := 0.52
-## A full-height bridge costs this many times more, a tunnel more still.
-const BRIDGE_FACTOR := 4.0
-const TUNNEL_FACTOR := 8.0
-## Property tax, percent of value per year. Defaults are typical US rates.
-const DEFAULT_TAX := {
-	ZoneMap.Zone.RESIDENTIAL: 1.0, ZoneMap.Zone.COMMERCIAL: 1.5, ZoneMap.Zone.INDUSTRIAL: 1.5,
-}
-const TAX_MIN := 0.0
-const TAX_MAX := 3.0
-## Assessed value per resident a home holds, or per job a business offers.
-const VALUE_PER_PLACE := {
-	ZoneMap.Zone.RESIDENTIAL: 90_000, ZoneMap.Zone.COMMERCIAL: 150_000, ZoneMap.Zone.INDUSTRIAL: 100_000,
-}
-
-## Population milestones and the grant each one brings (like CS2's milestone
-## rewards; in real life, state and federal community development grants).
-const MILESTONES := [[100, 250_000], [250, 400_000], [500, 600_000], [1000, 1_000_000],
-	[2500, 2_000_000], [5000, 3_500_000], [10000, 6_000_000], [25000, 10_000_000]]
+## The numbers live in Balance, where the tuning happens.
+const START_MONEY := Balance.START_MONEY
+const BUILD_PER_M := Balance.ROAD_BUILD_PER_M
+const UPKEEP_PER_LANE_M := Balance.ROAD_UPKEEP_PER_LANE_M
+const BRIDGE_FACTOR := Balance.BRIDGE_FACTOR
+const TUNNEL_FACTOR := Balance.TUNNEL_FACTOR
+const DEFAULT_TAX := Balance.DEFAULT_TAX
+const TAX_MIN := Balance.TAX_MIN
+const TAX_MAX := Balance.TAX_MAX
+const VALUE_PER_PLACE := Balance.VALUE_PER_PLACE
+const MILESTONES := Balance.MILESTONES
+const DIFFICULTIES := Balance.DIFFICULTIES
 
 var money := START_MONEY
+## "easy", "normal" or "hard": scales start money, income, upkeep and grants.
+var difficulty := "normal"
 ## How many milestones the city has reached.
 var milestone := 0
 var tax := DEFAULT_TAX.duplicate()
@@ -90,6 +75,8 @@ func update_budget(sim: CitySim) -> void:
 	# Farmland pays property tax at the industrial rate.
 	income[ZoneMap.Zone.INDUSTRIAL] += sim.farms.total_acres() * Farms.LAND_PER_ACRE * Farms.AG_ASSESSMENT \
 		* tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
+	# Resource companies pay property tax on their main buildings and pads.
+	income[ZoneMap.Zone.INDUSTRIAL] += sim.industry.taxable_value() * tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
 	var upkeep := 0.0
 	for id in sim.network.segments:
 		upkeep += road_upkeep(sim.network.curve_of(id), sim.network.segments[id].type)
@@ -100,8 +87,11 @@ func update_budget(sim: CitySim) -> void:
 	for key in sim.buildings:
 		if sim.services.served.has(key) and sim.services.served[key].get("water", false):
 			fees += int(Services.WATER_FEE[int(sim.buildings[key].zone)])
-	budget = {"income": income, "upkeep": roundi(upkeep), "fees": fees,
-		"services": sim.services.monthly_upkeep()}
+	var d: Dictionary = DIFFICULTIES[difficulty]
+	for z in income:
+		income[z] = roundi(income[z] * d.income)
+	budget = {"income": income, "upkeep": roundi(upkeep * d.upkeep), "fees": roundi(fees * d.income),
+		"services": roundi(sim.services.monthly_upkeep() * d.upkeep)}
 
 
 func monthly_net() -> int:
@@ -120,7 +110,7 @@ func demand_shift(zone: int) -> float:
 func reach_milestones(population: int) -> int:
 	var paid := 0
 	while milestone < MILESTONES.size() and population >= MILESTONES[milestone][0]:
-		paid += int(MILESTONES[milestone][1])
+		paid += roundi(MILESTONES[milestone][1] * DIFFICULTIES[difficulty].grants)
 		milestone += 1
 	money += paid
 	return paid
@@ -136,16 +126,34 @@ func set_tax(zone: int, rate: float) -> bool:
 	return true
 
 
+## Cash a new city starts with on this difficulty.
+static func start_money(diff: String) -> int:
+	return int(DIFFICULTIES.get(diff, DIFFICULTIES.normal).start)
+
+
+## Picks the difficulty. A city that hasn't started yet gets its start money.
+func set_difficulty(diff: String, fresh: bool) -> bool:
+	if not DIFFICULTIES.has(diff) or diff == difficulty and not fresh:
+		return false
+	difficulty = diff
+	if fresh:
+		money = start_money(diff)
+	return true
+
+
 func to_dict() -> Dictionary:
 	var t := {}
 	for z in tax:
 		t[str(z)] = tax[z]
-	return {"money": money, "tax": t, "milestone": milestone}
+	return {"money": money, "tax": t, "milestone": milestone, "difficulty": difficulty}
 
 
 func from_dict(d: Dictionary) -> void:
 	money = int(d.get("money", START_MONEY))
 	milestone = int(d.get("milestone", 0))
+	difficulty = str(d.get("difficulty", "normal"))
+	if not DIFFICULTIES.has(difficulty):
+		difficulty = "normal"
 	tax = DEFAULT_TAX.duplicate()
 	var t: Dictionary = d.get("tax", {})
 	for z in t:

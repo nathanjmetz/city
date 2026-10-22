@@ -37,18 +37,24 @@ void fragment() {
 	vec2 p = world_pos.xz;
 	float close = clamp(1.0 - length(VERTEX) / 220.0, 0.0, 1.0);
 	// Streets were paved in different years, so the grey drifts block to block.
-	float age = texture(noise_soft, p / 170.0).r;
-	vec3 col = mix(fresh.rgb, faded.rgb, smoothstep(0.2, 0.8, age) * 0.8 + 0.1);
-	// Utility cuts: the odd newer, darker rectangle across part of the road.
+	float age = texture(noise_soft, p / 320.0).r;
+	vec3 col = mix(fresh.rgb, faded.rgb, smoothstep(0.15, 0.85, age) * 0.5 + 0.3);
+	// Patches: the odd strip across part of the road, only a little darker
+	// than the pavement around it, with ragged sealed edges.
 	float along = UV.y * 4.0;
 	float across = UV.x * 4.0;
-	float cell = floor(along / 9.0);
-	vec2 block = floor(p / 60.0);
+	float cell = floor(along / 14.0);
+	vec2 block = floor(p / 80.0);
 	float h = fract(sin(cell * 78.233 + block.x * 12.989 + block.y * 4.141) * 43758.5453);
 	float h2 = fract(h * 91.7);
-	float in_cut = step(0.86, h) * step(h2 * 0.6, across) * step(across, h2 * 0.6 + 0.35)
-		* step(2.0, mod(along, 9.0)) * step(mod(along, 9.0), 2.0 + 1.5 + h2 * 3.0);
-	col = mix(col, fresh.rgb * 0.92, in_cut * 0.8);
+	float ragged = (texture(noise_grain, p / 0.9).r - 0.5) * 0.12;
+	float a0 = h2 * 0.7;
+	float s0 = 3.0 + h2 * 4.0;
+	float in_patch = step(0.93, h)
+		* smoothstep(a0, a0 + 0.02, across + ragged) * smoothstep(a0 + 0.3, a0 + 0.28, across + ragged)
+		* smoothstep(s0, s0 + 0.1, mod(along, 14.0) + ragged * 4.0)
+		* smoothstep(s0 + 2.5 + h2 * 2.0, s0 + 2.4 + h2 * 2.0, mod(along, 14.0) + ragged * 4.0);
+	col *= 1.0 - in_patch * 0.13;
 	// Crack sealer: thin black squiggles along noise contour lines, only in
 	// older stretches.
 	float c = texture(noise_soft, turn(p, 2.0) / 23.0 + 0.7).r;

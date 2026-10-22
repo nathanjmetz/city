@@ -19,31 +19,31 @@ const MAX_DRIVE := 250.0
 const DRIVE_WIDTH := 4.0           # a one-lane gravel farm lane
 const ACRES_PER_CELL := CELL * CELL / 4046.86
 const FARMHOUSE_SIZE := Vector2(36, 40)  # house, barn and silo yard
-const FARMHOUSE_COST := 350_000
-const LAND_PER_ACRE := 10_000      # Iowa farmland is about $11,000 an acre
+const FARMHOUSE_COST := Balance.FARMHOUSE_COST
+const LAND_PER_ACRE := Balance.FARM_LAND_PER_ACRE
 ## Farmland is taxed on what it produces, not its sale price (US "use value"
 ## assessment), roughly a quarter of market value.
-const AG_ASSESSMENT := 0.25
+const AG_ASSESSMENT := Balance.FARM_AG_ASSESSMENT
 ## Yearly gross per acre at full fertility: corn about 180 bu x $4.50.
-const GROSS_PER_ACRE := {"corn": 810.0, "soybeans": 600.0}
+const GROSS_PER_ACRE := Balance.FARM_GROSS_PER_ACRE
 ## Yearly cost per acre (seed, fuel, fertiliser, machinery), plus more the
 ## farther a field is from the farmhouse (driving the combine out to it).
 ## USDA operating costs per acre (land already owned): soybeans need no
 ## nitrogen, so they cost less to grow.
-const COST_PER_ACRE := {"corn": 420.0, "soybeans": 280.0}
-const COST_PER_ACRE_PER_KM := 260.0
+const COST_PER_ACRE := Balance.FARM_COST_PER_ACRE
+const COST_PER_ACRE_PER_KM := Balance.FARM_COST_PER_ACRE_PER_KM
 ## Jobs: the farm family (2) plus a hired hand per this many cells (~40 acres).
-const CELLS_PER_WORKER := 100
-const MAX_CELLS := 400
+const CELLS_PER_WORKER := Balance.FARM_CELLS_PER_WORKER
+const MAX_CELLS := Balance.FARM_MAX_CELLS
 ## How much a field next to more of the farm's own land is preferred, in
 ## dollars a year per neighbouring field.
-const COMPACT_BONUS := 25.0
+const COMPACT_BONUS := Balance.FARM_COMPACT_BONUS
 ## And land the player reserved for farming, likewise.
-const RESERVE_BONUS := 40.0
+const RESERVE_BONUS := Balance.FARM_RESERVE_BONUS
 ## One crop price cycle, in game days (a game day settles a month: 4 years).
-const PRICE_CYCLE_DAYS := 48.0
+const PRICE_CYCLE_DAYS := Balance.FARM_PRICE_CYCLE_DAYS
 ## Farms decide to buy or sell land this often, in ticks (6 game hours).
-const DECIDE_EVERY := 360
+const DECIDE_EVERY := Balance.FARM_DECIDE_EVERY
 
 ## Land the player has set aside (Reserves): farms stay off land saved for
 ## other industries and favour land saved for farming.

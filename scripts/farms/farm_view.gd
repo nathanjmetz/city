@@ -9,6 +9,7 @@ var _fields := MeshInstance3D.new()
 var _lanes := MeshInstance3D.new()
 var _field_mat := StandardMaterial3D.new()
 var _homes := {}  # farm id -> Node3D
+var _trees := TreeField.new()
 var _mats := {}
 var _month := -1
 
@@ -24,6 +25,7 @@ func setup(s: CitySim) -> void:
 	for mi in [_fields, _lanes]:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mi)
+	add_child(_trees)
 	_rebuild()
 
 
@@ -40,9 +42,10 @@ func _rebuild() -> void:
 		if not sim.farms.farms.has(id) or _homes[id].get_meta("look") != _look(sim.farms.farms[id]):
 			_homes[id].queue_free()
 			_homes.erase(id)
+			_trees.remove(str(id))
 	for id in sim.farms.farms:
 		if not _homes.has(id):
-			_homes[id] = _farmstead(sim.farms.farms[id])
+			_homes[id] = _farmstead(id, sim.farms.farms[id])
 
 
 ## What the farmstead has built so far: house, then barn, then grain bins
@@ -130,88 +133,41 @@ static func _rows_texture() -> ImageTexture:
 
 
 ## A Midwestern farmstead: white farmhouse first, then a red barn, grain
-## bins and a concrete silo as the farm grows. Its gravel lane is lined
-## with a few shade trees.
-func _farmstead(f: Dictionary) -> Node3D:
+## bins and a concrete silo as the farm grows (see FarmBuilder). Its gravel
+## lane is lined with a few shade trees.
+func _farmstead(id: Variant, f: Dictionary) -> Node3D:
 	var look := _look(f)
 	var root := Node3D.new()
 	root.set_meta("look", look)
 	add_child(root)
 	root.position = f.pos
 	root.basis = Basis.looking_at(f.dir, Vector3.UP)
-	_box(root, Vector3(36, 0.1, 40), Vector3.ZERO, Color(0.55, 0.52, 0.45))  # gravel yard
-	# House: two storeys, white siding, dark roof.
-	_box(root, Vector3(9, 6, 8), Vector3(-10, 3, -12), Color(0.93, 0.92, 0.88))
-	_roof(root, Vector3(9.6, 2.6, 8.6), Vector3(-10, 6, -12), Color(0.25, 0.25, 0.27))
-	if look >= 1:
-		# Barn: red with a white-trimmed roof.
-		_box(root, Vector3(14, 7, 20), Vector3(6, 3.5, 6), Color(0.58, 0.16, 0.13))
-		_roof(root, Vector3(14.6, 4.5, 20.4), Vector3(6, 7, 6), Color(0.3, 0.3, 0.32))
-		_box(root, Vector3(5, 5, 0.2), Vector3(6, 2.5, -4.1), Color(0.92, 0.9, 0.86))
-	if look >= 2:
-		for i in 2:
-			_cyl(root, 3.2, 7.0, Vector3(-12 + i * 7.5, 3.5, 10), Color(0.75, 0.77, 0.78))
-			_cone(root, 3.4, 2.4, Vector3(-12 + i * 7.5, 8.2, 10), Color(0.75, 0.77, 0.78))
-	if look >= 3:
-		_cyl(root, 2.6, 18.0, Vector3(15.5, 9.0, -6), Color(0.76, 0.74, 0.7))
+	var built := FarmBuilder.build_farmstead(hash(str(id)), look)
+	var house := MeshInstance3D.new()
+	house.mesh = built[0]
+	root.add_child(house)
+	var ground := MeshInstance3D.new()
+	ground.mesh = built[1]
+	ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(ground)
+	var xf := Transform3D(root.basis, root.position)
+	var planted := []
+	for t in built[2]:
+		planted.append([xf * Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * t[3]), t[0]), t[1], t[2]])
 	# Shade trees along the lane, alternating sides, the same every time.
 	var drive: Array = f.drive
-	var inv := root.transform.affine_inverse()
 	var k := 0
 	for i in range(2, drive.size() - 2, maxi(2, drive.size() / 4)):
 		var a: Vector3 = drive[i]
 		var b: Vector3 = drive[i + 1]
 		var side := Vector3(-(b - a).z, 0.0, (b - a).x).normalized() * (5.5 if k % 2 == 0 else -5.5)
-		_tree(root, inv * (a + side), 0.8 + 0.4 * Farms._hash01(Vector2i(roundi(a.x), roundi(a.z)), 3))
+		var h := Farms._hash01(Vector2i(roundi(a.x), roundi(a.z)), 3)
+		var sp: int = TreeField.Species.OAK if h < 0.5 else TreeField.Species.MAPLE
+		var size := 0.9 + 0.35 * h
+		planted.append([Transform3D(Basis(Vector3.UP, h * TAU).scaled(Vector3.ONE * size), a + side), sp, TreeField.LEAF[sp]])
 		k += 1
+	_trees.set_trees(str(id), planted)
 	root.scale = Vector3(1.0, 0.01, 1.0)
 	create_tween().tween_property(root, "scale", Vector3.ONE, 0.45) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	return root
-
-
-## A broadleaf shade tree (oak or maple), placeholder until the art library.
-func _tree(root: Node3D, at: Vector3, size: float) -> void:
-	_cyl(root, 0.35 * size, 4.0 * size, at + Vector3(0, 2.0 * size, 0), Color(0.36, 0.27, 0.2))
-	var crown := SphereMesh.new()
-	crown.radius = 4.2 * size
-	crown.height = 7.0 * size
-	_add(root, crown, at + Vector3(0, 6.5 * size, 0), Color(0.24, 0.38, 0.17))
-
-
-func _box(root: Node3D, size: Vector3, pos: Vector3, color: Color) -> void:
-	var m := BoxMesh.new()
-	m.size = size
-	_add(root, m, pos, color)
-
-
-func _roof(root: Node3D, size: Vector3, pos: Vector3, color: Color) -> void:
-	var m := PrismMesh.new()
-	m.size = size
-	_add(root, m, pos + Vector3(0, size.y * 0.5, 0), color)
-
-
-func _cyl(root: Node3D, r: float, h: float, pos: Vector3, color: Color) -> void:
-	var m := CylinderMesh.new()
-	m.top_radius = r
-	m.bottom_radius = r
-	m.height = h
-	_add(root, m, pos, color)
-
-
-func _cone(root: Node3D, r: float, h: float, pos: Vector3, color: Color) -> void:
-	var m := CylinderMesh.new()
-	m.top_radius = 0.3
-	m.bottom_radius = r
-	m.height = h
-	_add(root, m, pos, color)
-
-
-func _add(root: Node3D, mesh: Mesh, pos: Vector3, color: Color) -> void:
-	var mi := MeshInstance3D.new()
-	mi.mesh = mesh
-	mi.position = pos
-	if not _mats.has(color):
-		_mats[color] = RoadStyle.material(color)
-	mi.material_override = _mats[color]
-	root.add_child(mi)

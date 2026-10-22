@@ -43,6 +43,12 @@ enum Rule { NONE, SIGNAL, ALL_STOP, PRIORITY }
 enum Turn { STRAIGHT, RIGHT, LEFT, UTURN }
 enum Light { GREEN, YELLOW, RED }
 
+## Metres along the street a car takes to swing into or out of a driveway.
+const DRIVEWAY_LEAD := 6.0
+## Seconds a driver would rather spend than turn left across traffic into
+## or out of a driveway.
+const CROSS_PEN := 6.0
+
 ## Turning speeds: about 15 mph for a right, 20 mph for a left.
 const TURN_V := [0.0, 6.7, 9.0, 4.0]
 
@@ -57,6 +63,14 @@ var cars := []
 var flow := 1.0
 ## Cars that gave up stuck in traffic.
 var gave_up := 0
+## Trips with a job that got there, and ones that couldn't, since the
+## caller last cleared these: [{id, purpose, cargo, from, to}].
+var arrivals := []
+var failed := []
+var _waiting := []  # vehicles with a job waiting to pull out
+## Stand-in deliveries from factories to shops, until the economy sends real
+## shipments with dispatch(); switch off then.
+var background_freight := true
 ## Seconds of driving so far.
 var time := 0.0
 ## Goes up each time the lanes are rebuilt, so views know to redraw.
@@ -90,6 +104,10 @@ var _lanes := {}     # way * 8 + lane -> cars, front first
 var _box := {}       # node -> cars crossing it
 var _committed := {} # node -> cars about to cross it
 var _approach := {}  # node -> [{car, conn, ds}] for the first car in each lane
+var _merging := {}   # lane key -> cars pulling out of a driveway into it
+var _acc := ACCEL    # acceleration of the vehicle being worked out
+var _restoring := false   # just loaded: junction paths still saved as keys
+var _keep_routes := false
 
 
 func _init(net: RoadNetwork) -> void:
@@ -108,31 +126,67 @@ func step(sim: CitySim, rng: RandomNumberGenerator) -> void:
 
 # --- Public helpers -----------------------------------------------------------
 
-## Where a car is and which way it faces: [position, direction]. `ahead`
-## moves it on by that many metres, for smooth drawing between ticks.
+## Where a car's front bumper is and which way it faces: [position,
+## direction]. `ahead` moves it on by that many metres, for smooth drawing
+## between ticks.
 func car_pose(car: Dictionary, ahead := 0.0) -> Array:
 	if car.j != null:
-		var c: Dictionary = car.j
-		var jd := minf(car.jd + ahead, c.len)
-		var p := _poly_point(c.pts, c.cum, jd)
-		var q := _poly_point(c.pts, c.cum, minf(jd + 0.5, c.len))
-		var dir := q - p
-		if jd + 0.5 > c.len:
-			dir = p - _poly_point(c.pts, c.cum, maxf(jd - 0.5, 0.0))
-		return [p, _flat_dir(dir)]
+		return _conn_pose(car.j, minf(car.jd + ahead, car.j.len))
 	var w: Dictionary = ways[car.route[car.leg]]
 	var d := minf(car.d + ahead, w.len)
-	var base := _poly_point(w.pts, w.cum, d)
-	var fwd := _way_dir(w, d)
-	var right := Vector3(-fwd.z, 0.0, fwd.x)
-	var lat: float = w.offs[car.lane]
+	var pose := _way_pose(w, car.lane, d)
 	if car.lc_t < 1.0:
+		# Mid lane change: slide across, angled into the new lane.
+		var fwd: Vector3 = pose[1]
+		var right := Vector3(-fwd.z, 0.0, fwd.x)
 		var s := smoothstep(0.0, 1.0, car.lc_t)
-		lat = lerpf(car.lc_from, lat, s)
-		# Angle the car into its new lane while it moves across.
+		var lat: float = lerpf(car.lc_from, w.offs[car.lane], s) - w.offs[car.lane]
 		var slide: float = (w.offs[car.lane] - car.lc_from) * 6.0 * car.lc_t * (1.0 - car.lc_t) / LC_TIME
-		fwd = (fwd + right * slide / maxf(car.v, 2.0)).normalized()
-	return [base + right * lat, fwd]
+		pose = [pose[0] + right * lat, (fwd + right * slide / maxf(car.v, 2.0)).normalized()]
+	return pose
+
+
+## The point `m` metres behind a car's front bumper along the path it came
+## by, back through junctions and driveways: [position, direction]. For
+## trailers and long vehicles that have to follow the turns.
+func car_pose_behind(car: Dictionary, m: float) -> Array:
+	if car.j != null:
+		var c: Dictionary = car.j
+		if car.jd - m >= 0.0:
+			return _conn_pose(c, car.jd - m)
+		return _before_conn(c, m - car.jd)
+	var w: Dictionary = ways[car.route[car.leg]]
+	var dd: float = car.d - m
+	var pj = car.get("pj")
+	if pj != null and pj.wo == w.id and dd < pj.exit_d:
+		var back: float = pj.exit_d - dd
+		if back <= pj.len:
+			return _conn_pose(pj, pj.len - back)
+		return _before_conn(pj, back - pj.len)
+	return _way_pose(w, car.lane, maxf(dd, 0.0))
+
+
+func _before_conn(c: Dictionary, back: float) -> Array:
+	if c.wi >= 0 and ways.has(c.wi):
+		var w: Dictionary = ways[c.wi]
+		return _way_pose(w, mini(c.li, w.lanes - 1), maxf(w.s1 - back, 0.0))
+	return [c.pts[0], c.d0]
+
+
+func _conn_pose(c: Dictionary, jd: float) -> Array:
+	var p := _poly_point(c.pts, c.cum, jd)
+	var pts: PackedVector3Array = c.pts
+	# Heading follows the path's own tangent (exact for the curve).
+	var tan: Vector3 = RoadNetwork.bezier_tangent(pts[0], c.ctrl, pts[pts.size() - 1], jd / c.len)
+	tan.y = 0.0
+	if tan.length() < 0.2:
+		tan = c.d0.slerp(c.d1, jd / c.len)
+	return [p, _flat_dir(tan)]
+
+
+func _way_pose(w: Dictionary, lane: int, d: float) -> Array:
+	var fwd := _way_dir(w, d)
+	return [_poly_point(w.pts, w.cum, d) + Vector3(-fwd.z, 0.0, fwd.x) * w.offs[lane], fwd]
 
 
 ## Sets how a junction is controlled (a Rule, or -1 for automatic).
@@ -241,11 +295,87 @@ static func lane_offsets(type: int, oneway_flag: bool) -> PackedFloat32Array:
 	return offs
 
 
-# --- Building the lanes -----------------------------------------------------
+# --- Saving -------------------------------------------------------------------
+
+## Every vehicle exactly as it is, mid-trip and mid-junction, so a loaded
+## city (or a player joining a region) carries on tick for tick the same,
+## and cargo on its way is never lost or doubled. Stored as Godot's exact
+## text format, since JSON would round the numbers.
+func to_dict() -> Dictionary:
+	var list := []
+	for car in cars + _waiting:
+		var e: Dictionary = car.duplicate()
+		for k in ["j", "conn", "pj"]:
+			e[k] = _conn_key(car.get(k))
+		e.erase("at")
+		e.erase("facing")
+		list.append(e)
+	var state := {"cars": list, "waiting": _waiting.size(), "next_id": _next_id, "time": time,
+		"gave_up": gave_up, "speed": _speed, "dirty": _dirty, "arrivals": arrivals, "failed": failed}
+	return {"state": var_to_str(state)}
+
+
+func from_dict(d: Dictionary) -> void:
+	cars.clear()
+	_waiting.clear()
+	_dirty = true
+	if not d.has("state"):
+		return
+	var state = str_to_var(str(d.state))
+	if typeof(state) != TYPE_DICTIONARY:
+		return
+	var list: Array = state.cars
+	var n_waiting: int = state.waiting
+	for i in list.size():
+		if i < list.size() - n_waiting:
+			cars.append(list[i])
+		else:
+			_waiting.append(list[i])
+	_next_id = state.next_id
+	time = state.time
+	gave_up = state.gave_up
+	_speed = state.speed
+	arrivals = state.arrivals
+	failed = state.failed
+	# Junction paths are rebuilt from the roads; keep every car's plan as it
+	# was unless the saved city still had road changes to take in.
+	_restoring = true
+	_keep_routes = not state.dirty
+
+
+## A junction or driveway path as plain data for saving.
+static func _conn_key(c):
+	if c == null or c is Array or c.has("drive"):
+		return c  # still saved form (loaded, roads not rebuilt yet)
+	if c.id >= 0:
+		return [c.wi, c.li, c.wo, c.lo]
+	return {"drive": [c.pts[0], c.ctrl, c.pts[c.pts.size() - 1]], "wo": c.wo, "lo": c.lo,
+		"exit_d": c.exit_d, "vt": c.vt}
+
+
+func _from_key(k):
+	if k == null:
+		return null
+	if k is Array:
+		if not ways.has(k[0]) or not ways.has(k[2]):
+			return null
+		return _connector(k[0], k[1], k[2], k[3])
+	return _path({"node": -1, "wi": -1, "li": -1, "wo": k.wo, "lo": k.lo, "turn": Turn.RIGHT,
+		"vt": k.vt, "exit_d": k.exit_d}, k.drive[0], k.drive[1], k.drive[2])
+
+
+# --- Building the lanes -----------------------------------------------------# --- Building the lanes -----------------------------------------------------
 
 func _rebuild() -> void:
 	_dirty = false
 	version += 1
+	# Remember where every car is, so it can carry on from the same spot
+	# on whatever roads replace the old ones.
+	for car in ([] if _restoring else cars):
+		if car.j != null or ways.has(car.route[car.leg]):
+			var pose := car_pose(car)
+			car.at = pose[0]
+			car.facing = pose[1]
 	ways.clear()
 	junctions.clear()
 	_in.clear()
@@ -318,6 +448,13 @@ func _rebuild() -> void:
 	for wid in ways:
 		if not _speed.has(wid):
 			_speed[wid] = 1.0
+	if _restoring:
+		_restoring = false
+		for car in cars + _waiting:
+			for k in ["j", "conn", "pj"]:
+				car[k] = _from_key(car[k])
+		if _keep_routes:
+			return
 	_reroute_all()
 
 
@@ -504,6 +641,8 @@ func _connector(wi: int, li: int, wo: int, lo: int) -> Dictionary:
 			var t := ((p2.x - p0.x) * db.z - (p2.z - p0.z) * db.x) / den
 			if t > 0.0 and t < chord * 1.5:
 				ctrl = Vector3(p0.x + da.x * t, (p0.y + p2.y) * 0.5, p0.z + da.z * t)
+	if chord < 1.0:
+		ctrl = (p0 + p2) * 0.5  # lanes line up: no bend to draw
 	var pts := RoadNetwork.sample_curve(p0, ctrl, p2, 10)
 	var cum := PackedFloat32Array([0.0])
 	for i in range(1, pts.size()):
@@ -512,7 +651,8 @@ func _connector(wi: int, li: int, wo: int, lo: int) -> Dictionary:
 	if kind == Turn.STRAIGHT:
 		vt = minf(a.vmax, b.vmax)
 	var c := {"id": _next_conn, "node": a.to, "wi": wi, "li": li, "wo": wo, "lo": lo,
-		"turn": kind, "pts": pts, "cum": cum, "len": maxf(cum[cum.size() - 1], 0.5), "vt": vt}
+		"turn": kind, "pts": pts, "cum": cum, "len": maxf(cum[cum.size() - 1], 0.5), "vt": vt,
+		"exit_d": b.s0, "ctrl": ctrl, "d0": da, "d1": db}
 	_next_conn += 1
 	_conns[key] = c
 	return c
@@ -570,12 +710,13 @@ func _turn_cost(wi: int, wo: int) -> float:
 ## Fastest route from any start [way, d] to any target way (value: where on
 ## it to stop). Returns the ways in order, or [] if none. `lane` >= 0 limits
 ## the first turn to ones that lane is allowed to make.
-func _plan(starts: Array, targets: Dictionary, lane := -1) -> Array:
+func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 	var best := INF
 	var best_route := []
 	for s in starts:
 		if targets.has(s[0]) and targets[s[0]] > s[1] + 1.0:
-			var cost: float = (targets[s[0]] - s[1]) / ways[s[0]].vmax
+			var cost: float = (targets[s[0]] - s[1]) / ways[s[0]].vmax + pen.get(s[0], 0.0) \
+				+ (s[2] if s.size() > 2 else 0.0)
 			if cost < best:
 				best = cost
 				best_route = [s[0]]
@@ -584,7 +725,7 @@ func _plan(starts: Array, targets: Dictionary, lane := -1) -> Array:
 	var heap := []
 	for s in starts:
 		var w: Dictionary = ways[s[0]]
-		var g: float = maxf(w.len - s[1], 0.0) / w.vmax
+		var g: float = maxf(w.len - s[1], 0.0) / w.vmax + (s[2] if s.size() > 2 else 0.0)
 		if g < dist.get(s[0], INF):
 			dist[s[0]] = g
 			_push(heap, [g, s[0]])
@@ -604,7 +745,7 @@ func _plan(starts: Array, targets: Dictionary, lane := -1) -> Array:
 				continue
 			var e: float = g + _turn_cost(u, nx)
 			if targets.has(nx):
-				var cand: float = e + targets[nx] / ways[nx].vmax
+				var cand: float = e + targets[nx] / ways[nx].vmax + pen.get(nx, 0.0)
 				if cand < best:
 					best = cand
 					end = nx
@@ -682,21 +823,32 @@ func _targets(goal: Dictionary) -> Dictionary:
 	return out
 
 
+## Seconds added for reaching a lot on the far side of the road (a left turn
+## across oncoming traffic), so drivers prefer to arrive with it on the right.
+func _side_pen(seg: int, side: int) -> Dictionary:
+	var out := {}
+	for fwd in [true, false]:
+		var on_right: bool = (side > 0) == fwd
+		out[seg * 2 + (1 if fwd else 0)] = 0.0 if on_right else CROSS_PEN
+	return out
+
+
 ## A car driving from one lot's driveway to another's, or {} if no route.
 func _route(from: Dictionary, to: Dictionary) -> Dictionary:
 	if _dirty:
 		_rebuild()
 	var starts := []
+	var out_pen := _side_pen(from.seg, from.get("side", 1))
 	for fwd in [true, false]:
 		var wid: int = from.seg * 2 + (1 if fwd else 0)
 		if ways.has(wid):
 			var len: float = ways[wid].len
-			starts.append([wid, from.at_frac * len if fwd else len - from.at_frac * len])
-	var goal := {"seg": to.seg, "frac": to.at_frac}
+			starts.append([wid, from.at_frac * len if fwd else len - from.at_frac * len, out_pen[wid]])
+	var goal := {"seg": to.seg, "frac": to.at_frac, "side": to.get("side", 1)}
 	var targets := _targets(goal)
 	if starts.is_empty() or targets.is_empty():
 		return {}
-	var route := _plan(starts, targets)
+	var route := _plan(starts, targets, -1, _side_pen(goal.seg, goal.side))
 	if route.is_empty():
 		return {}
 	var d := 0.0
@@ -707,7 +859,17 @@ func _route(from: Dictionary, to: Dictionary) -> Dictionary:
 	if route.size() > 1:
 		d = minf(d, w0.s1 - 0.5)
 	return {"route": route, "leg": 0, "d": d, "end_d": targets[route[route.size() - 1]],
-		"goal": goal, "dest": to.get("front", Vector3.ZERO), "lane": w0.lanes - 1, "v": 0.0}
+		"goal": goal, "dest": to.get("front", Vector3.ZERO), "lane": w0.lanes - 1, "v": 0.0,
+		"park": _park_point(to), "home": _park_point(from)}
+
+
+## Where a car parks on a lot: up its driveway, off the street.
+static func _park_point(lot: Dictionary):
+	if lot.has("park_pt"):
+		return lot.park_pt
+	if not lot.has("front") or not lot.has("normal"):
+		return null
+	return lot.front + lot.normal * 7.0
 
 
 ## Re-plans the rest of a car's trip from where it is now.
@@ -716,7 +878,7 @@ func _replan(car: Dictionary, lane := -1) -> bool:
 	if targets.is_empty():
 		return false
 	var wid: int = car.route[car.leg]
-	var route := _plan([[wid, car.d]], targets, lane)
+	var route := _plan([[wid, car.d]], targets, lane, _side_pen(car.goal.seg, car.goal.get("side", 1)))
 	if route.is_empty():
 		return false
 	car.route = route
@@ -725,37 +887,98 @@ func _replan(car: Dictionary, lane := -1) -> bool:
 	return true
 
 
+## The way under a point that runs the way a car is facing: [way, d], or [].
+func _locate(at, facing: Vector3) -> Array:
+	if at == null:
+		return []
+	var near := network.find_segment_near(at, 25.0, 3.0)
+	if near.is_empty():
+		return []
+	var best := []
+	var best_dot := -2.0
+	for fwd in [true, false]:
+		var wid: int = near.seg * 2 + (1 if fwd else 0)
+		if not ways.has(wid):
+			continue
+		var d := _nearest_d(ways[wid], at)
+		var dot := _way_dir(ways[wid], d).dot(facing)
+		if dot > best_dot:
+			best_dot = dot
+			best = [wid, d]
+	return best
+
+
+## How far along a way the point nearest `p` is.
+func _nearest_d(w: Dictionary, p: Vector3) -> float:
+	var pts: PackedVector3Array = w.pts
+	var best := 0.0
+	var best_dist := INF
+	for i in pts.size() - 1:
+		var a := Vector2(pts[i].x, pts[i].z)
+		var b := Vector2(pts[i + 1].x, pts[i + 1].z)
+		var q := Geometry2D.get_closest_point_to_segment(Vector2(p.x, p.z), a, b)
+		var dist := q.distance_to(Vector2(p.x, p.z))
+		if dist < best_dist:
+			best_dist = dist
+			best = w.cum[i] + a.distance_to(q)
+	return best
+
+
+## Tells whoever sent a vehicle with a job how it went.
+static func _report(car: Dictionary, into: Array) -> void:
+	if car.get("to_ref", "") != "":
+		into.append({"id": car.id, "purpose": car.purpose, "cargo": car.cargo,
+			"from": car.from_ref, "to": car.to_ref})
+
+
 ## After the roads change, every car finds its way again (or gives up).
 func _reroute_all() -> void:
 	var kept := []
 	for car in cars:
 		var wid: int = car.route[car.leg]
-		if not ways.has(wid):
-			continue
+		if car.j != null and car.j.wo < 0:
+			_report(car, arrivals)
+			continue  # was parking: it has arrived
+		if car.j != null or not ways.has(wid):
+			# Its road was split or replaced: find the new piece under it.
+			var found := _locate(car.get("at", null), car.get("facing", Vector3.ZERO))
+			if found.is_empty():
+				continue
+			wid = found[0]
+			car.route = [wid]
+			car.leg = 0
+			car.d = found[1]
+			car.j = null
+			car.lc_t = 1.0
 		var w: Dictionary = ways[wid]
 		car.lane = mini(car.lane, w.lanes - 1)
+		car.pj = null
 		car.commit = false
 		car.conn = null
 		car.lc_t = 1.0
-		if car.j != null:
-			car.j = null
-			car.d = w.s0
 		car.d = clampf(car.d, 0.0, w.len)
 		if not network.segments.has(car.goal.seg):
 			var near := network.find_segment_near(car.dest, 60.0)
 			if near.is_empty():
 				continue
-			car.goal = {"seg": near.seg, "frac": near.t}
+			var fw: int = near.seg * 2 + 1
+			var frac: float = near.t
+			if ways.has(fw):
+				frac = _nearest_d(ways[fw], near.point) / maxf(ways[fw].len, 0.001)
+			car.goal = {"seg": near.seg, "frac": frac, "side": car.goal.get("side", 1)}
 		if not _replan(car):
 			continue
 		kept.append(car)
+	for car in cars:
+		if not kept.has(car) and not (car.j != null and car.j.wo < 0):
+			_report(car, failed)
 	cars = kept
 
 
 # --- Trips ------------------------------------------------------------------
 
 ## Trips follow the time of day: to work in the morning, home in the evening,
-## to the shops in between.
+## to the shops in between. Factories send box trucks to the shops by day.
 func _spawn(sim: CitySim, rng: RandomNumberGenerator) -> void:
 	if cars.size() >= MAX_CARS or sim.stats.population == 0:
 		return
@@ -768,52 +991,179 @@ func _spawn(sim: CitySim, rng: RandomNumberGenerator) -> void:
 	# At rush hour, about one trip a second for every 200 people.
 	if rng.randf() > rate * sim.stats.population / 1200.0:
 		return
-	var homes := []
-	var dests := []
+	var by_zone := {ZoneMap.Zone.RESIDENTIAL: [], ZoneMap.Zone.COMMERCIAL: [], ZoneMap.Zone.INDUSTRIAL: []}
 	for key in sim.buildings:
-		if not sim.lots.has(key):
-			continue
-		if sim.buildings[key].zone == ZoneMap.Zone.RESIDENTIAL:
-			homes.append(key)
-		else:
-			dests.append(key)
+		if sim.lots.has(key) and by_zone.has(sim.buildings[key].zone):
+			by_zone[sim.buildings[key].zone].append(key)
+	for z in by_zone:
+		by_zone[z].sort()
+	var homes: Array = by_zone[ZoneMap.Zone.RESIDENTIAL]
+	var shops: Array = by_zone[ZoneMap.Zone.COMMERCIAL]
+	var plants: Array = by_zone[ZoneMap.Zone.INDUSTRIAL]
+	if background_freight and hour >= 6 and hour < 20 and not shops.is_empty() and not plants.is_empty() \
+			and rng.randf() < 0.12:
+		add_trip(sim.lots[plants[rng.randi() % plants.size()]], sim.lots[shops[rng.randi() % shops.size()]],
+			rng, "", "goods")
+		return
+	var dests := shops + plants
 	if homes.is_empty() or dests.is_empty():
 		return
-	homes.sort()
-	dests.sort()
 	var a: Dictionary = sim.lots[homes[rng.randi() % homes.size()]]
-	var b: Dictionary = sim.lots[dests[rng.randi() % dests.size()]]
+	var dest_key: String = dests[rng.randi() % dests.size()]
+	var b: Dictionary = sim.lots[dest_key]
+	var purpose := "shopping" if sim.buildings[dest_key].zone == ZoneMap.Zone.COMMERCIAL else "commute"
 	if hour >= 15:
 		var t := a
 		a = b
 		b = t
-	add_trip(a, b, rng)
+	add_trip(a, b, rng, "", purpose)
 
 
-## Sends a car from one lot to another. Returns false if there's no route or
-## no gap to pull out into.
-func add_trip(a: Dictionary, b: Dictionary, rng: RandomNumberGenerator) -> bool:
+## Sends a vehicle from one lot to another: it backs out of the driveway,
+## drives, and pulls into the other lot's driveway. Returns false if there's
+## no route or no gap in traffic to pull out into.
+func add_trip(a: Dictionary, b: Dictionary, rng: RandomNumberGenerator, kind := "",
+		purpose := "", cargo := {}) -> bool:
 	if cars.size() >= MAX_CARS:
 		return false
 	var car := _route(a, b)
 	if car.is_empty():
 		return false
+	if purpose == "":
+		purpose = "commute"
+	if kind == "":
+		kind = VehicleTypes.for_purpose(purpose, rng)
+	var spec := VehicleTypes.spec(kind)
+	car.merge({"id": _next_id, "kind": kind, "len": float(spec.len), "acc": float(spec.acc),
+		"top": float(spec.top_speed), "pj": null,
+		"color": rng.randi() % 8, "pref": float(spec.pref) * (0.9 + rng.randf() * 0.2),
+		"purpose": purpose, "cargo": cargo, "from_ref": a.get("ref", ""), "to_ref": b.get("ref", ""),
+		"j": null, "jd": 0.0, "commit": false, "conn": null, "arrive": -1.0, "stuck": 0.0,
+		"lc_from": 0.0, "lc_t": 1.0, "lc_cool": 2.0, "a": 0.0, "held": false})
+	_next_id += 1
+	if not _launch(car):
+		if car.to_ref == "":
+			return false
+		_waiting.append(car)  # goods always go: wait for a gap
+	return true
+
+
+## Sends a vehicle with a job: goods, a delivery, a service call. `from` and
+## `to` are {"ref": any id the caller wants back, "pos": [x, z]}; the vehicle
+## leaves from the road nearest `from`, parks at `to`, and its trip shows up
+## in `arrivals` when it gets there (or in `failed` if it can't). Returns the
+## trip id, or -1 if no road leads there.
+func dispatch(from: Dictionary, to: Dictionary, purpose: String, cargo := {}) -> int:
+	if _dirty:
+		_rebuild()
+	var a := _endpoint(from)
+	var b := _endpoint(to)
+	if a.is_empty() or b.is_empty():
+		return -1
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([_next_id, purpose, "dispatch"])
+	var id := _next_id
+	if not add_trip(a, b, rng, "", purpose, cargo):
+		return -1
+	return id
+
+
+## A place given as {"ref", "pos": [x, z]}, as a lot-like stop on the nearest road.
+func _endpoint(e: Dictionary) -> Dictionary:
+	var pos := Vector3(float(e.pos[0]), 0.0, float(e.pos[1]))
+	var near := network.find_segment_near(pos, 80.0)
+	if near.is_empty():
+		return {}
+	var wid: int = near.seg * 2 + 1
+	if not ways.has(wid):
+		wid = near.seg * 2
+	if not ways.has(wid):
+		return {}
+	var w: Dictionary = ways[wid]
+	var d := _nearest_d(w, pos)
+	var dir := _way_dir(w, d)
+	var off := pos - _poly_point(w.pts, w.cum, d)
+	var side := 1 if off.dot(Vector3(-dir.z, 0.0, dir.x)) >= 0.0 else -1
+	if not w.fwd:
+		side = -side
+	var frac := d / maxf(w.len, 0.001)
+	if not w.fwd:
+		frac = 1.0 - frac
+	return {"ref": e.get("ref", ""), "seg": near.seg, "at_frac": frac, "side": side, "front": pos,
+		"park_pt": pos}
+
+
+## Puts a new vehicle on the road if there's a gap. Returns false if not.
+func _launch(car: Dictionary) -> bool:
+	var w: Dictionary = ways[car.route[0]]
+	var last: bool = car.route.size() == 1
+	var limit: float = car.end_d - 4.0 if last else w.s1 - 0.5
+	var exit_d := minf(car.d + DRIVEWAY_LEAD + 2.0, limit)
+	if exit_d <= car.d + 1.0 and last:
+		return false  # next door: walk
 	# Pull out only when there's a gap in the traffic.
 	for other in cars:
-		if other.j == null and other.route[other.leg] == car.route[0] \
-				and other.lane == car.lane and absf(other.d - car.d) < 12.0:
+		var lane_way: int = other.route[other.leg]
+		if other.j != null:
+			if other.j.wo != car.route[0] or other.j.lo != car.lane:
+				continue
+			lane_way = car.route[0]
+		elif lane_way != car.route[0] or other.lane != car.lane:
+			continue
+		var od: float = other.d if other.j == null else other.j.exit_d
+		if od > car.d - 30.0 and od < exit_d + 12.0:
 			return false
-	car.merge({"id": _next_id, "color": rng.randi() % 8, "pref": 0.88 + rng.randf() * 0.24,
-		"j": null, "jd": 0.0, "commit": false, "conn": null, "arrive": -1.0, "stuck": 0.0,
-		"lc_from": 0.0, "lc_t": 1.0, "lc_cool": 2.0, "a": 0.0})
-	_next_id += 1
+	if car.home != null:
+		car.j = _driveway_out(car, exit_d)
+	else:
+		car.d = exit_d
 	cars.append(car)
 	return true
+
+
+## The path out of a driveway into the nearest lane.
+func _driveway_out(car: Dictionary, exit_d: float) -> Dictionary:
+	var w: Dictionary = ways[car.route[0]]
+	var corner := _lane_point(w, car.lane, car.d)
+	var p2 := _lane_point(w, car.lane, exit_d)
+	return _path({"node": -1, "wi": -1, "li": -1, "wo": w.id, "lo": car.lane, "turn": Turn.RIGHT,
+		"vt": 5.0, "exit_d": exit_d}, car.home, corner, p2)
+
+
+## The path from the lane into the parking spot up a driveway.
+func _driveway_in(car: Dictionary) -> Dictionary:
+	var w: Dictionary = ways[car.route[car.leg]]
+	var p0 := _lane_point(w, car.lane, car.d)
+	var ahead := _lane_point(w, car.lane, minf(maxf(car.end_d, car.d + 2.0), w.len))
+	return _path({"node": -1, "wi": -1, "li": -1, "wo": -1, "lo": -1, "turn": Turn.RIGHT,
+		"vt": 4.0, "exit_d": 0.0}, p0, ahead, car.park)
+
+
+func _path(c: Dictionary, p0: Vector3, ctrl: Vector3, p2: Vector3) -> Dictionary:
+	var pts := RoadNetwork.sample_curve(p0, ctrl, p2, 10)
+	var cum := PackedFloat32Array([0.0])
+	for i in range(1, pts.size()):
+		cum.append(cum[i - 1] + pts[i].distance_to(pts[i - 1]))
+	c.merge({"id": -1, "pts": pts, "cum": cum, "len": maxf(cum[cum.size() - 1], 0.5), "ctrl": ctrl,
+		"d0": _flat_dir(ctrl - p0), "d1": _flat_dir(p2 - ctrl)})
+	return c
+
+
+func _lane_point(w: Dictionary, lane: int, d: float) -> Vector3:
+	var f := _way_dir(w, d)
+	return _poly_point(w.pts, w.cum, d) + Vector3(-f.z, 0.0, f.x) * w.offs[lane]
 
 
 # --- Driving ----------------------------------------------------------------
 
 func _drive(_rng: RandomNumberGenerator) -> void:
+	# Vehicles with a job that were waiting for a gap to pull out.
+	for car in _waiting.duplicate():
+		if not ways.has(car.route[0]):
+			_waiting.erase(car)
+			_report(car, failed)
+		elif cars.size() < MAX_CARS and _launch(car):
+			_waiting.erase(car)
 	_snapshot()
 	for key in _lanes:
 		var list: Array = _lanes[key]
@@ -837,14 +1187,20 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 		if car.stuck > STUCK_LIMIT:
 			gave_up += 1
 			done.append(car)
+			_report(car, failed)
 			continue
 		if car.j != null:
 			car.jd += car.v * DT
 			speed_sum += 1.0
 			limit_sum += 1.0
 			if car.jd >= car.j.len:
-				car.d = ways[car.route[car.leg]].s0 + car.jd - car.j.len
-				car.j = null
+				if car.j.wo < 0:
+					done.append(car)  # parked
+					_report(car, arrivals)
+				else:
+					car.d = car.j.exit_d + car.jd - car.j.len
+					car.pj = car.j  # remembered for trailers
+					car.j = null
 			continue
 		var w: Dictionary = ways[car.route[car.leg]]
 		car.d += car.v * DT
@@ -856,8 +1212,14 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 		way_sum[w.id][0] += share
 		way_sum[w.id][1] += 1
 		if car.leg == car.route.size() - 1:
-			if car.d >= car.end_d - 1.0:
-				done.append(car)
+			# Start turning in a few metres early, so the driveway is a smooth arc.
+			if car.d >= car.end_d - (1.0 if car.park == null else DRIVEWAY_LEAD):
+				if car.park == null or car_pose(car)[0].distance_to(car.park) < 9.0:
+					done.append(car)  # no room for a driveway turn: just stop here
+					_report(car, arrivals)
+				else:
+					car.j = _driveway_in(car)
+					car.jd = 0.0
 		elif car.d >= w.s1:
 			if car.commit:
 				# Into the junction, on the curved path to the next lane.
@@ -888,8 +1250,14 @@ func _snapshot() -> void:
 	_box.clear()
 	_committed.clear()
 	_approach.clear()
+	_merging.clear()
 	for car in cars:
 		if car.j != null:
+			if car.j.node == -1 and car.j.wo >= 0:
+				var mk: int = car.j.wo * 8 + car.j.lo
+				if not _merging.has(mk):
+					_merging[mk] = []
+				_merging[mk].append(car)
 			if not _box.has(car.j.node):
 				_box[car.j.node] = []
 			_box[car.j.node].append(car)
@@ -909,7 +1277,7 @@ func _snapshot() -> void:
 		var list: Array = _lanes[key]
 		list[0].held = false
 		for i in range(1, list.size()):
-			list[i].held = list[i - 1].d - list[i].d - CAR_LEN < 12.0 + list[i].v * 2.0
+			list[i].held = list[i - 1].d - list[i].d - list[i - 1].len < 12.0 + list[i].v * 2.0
 		var front: Dictionary = _lanes[key][0]
 		if front.leg == front.route.size() - 1:
 			continue
@@ -937,25 +1305,37 @@ func _conn_for(car: Dictionary) -> Dictionary:
 
 ## Intelligent Driver Model: acceleration for speed v wanting v0, with a gap
 ## to the car (or stop line) ahead that is moving at vl.
-static func _idm(v: float, v0: float, gap: float, vl: float) -> float:
+func _idm(v: float, v0: float, gap: float, vl: float, acc := -1.0) -> float:
+	if acc < 0.0:
+		acc = _acc
 	var free := 1.0 - pow(v / maxf(v0, 0.1), 4.0)
 	if gap == INF:
-		return clampf(ACCEL * free, -MAX_BRAKE, ACCEL)
-	var s_star := JAM_GAP + maxf(0.0, v * HEADWAY + v * (v - vl) / (2.0 * sqrt(ACCEL * BRAKE)))
-	var a := ACCEL * (free - pow(s_star / maxf(gap, 0.1), 2.0))
-	return clampf(a, -MAX_BRAKE, ACCEL)
+		return clampf(acc * free, -MAX_BRAKE, acc)
+	var s_star := JAM_GAP + maxf(0.0, v * HEADWAY + v * (v - vl) / (2.0 * sqrt(acc * BRAKE)))
+	var a := acc * (free - pow(s_star / maxf(gap, 0.1), 2.0))
+	return clampf(a, -MAX_BRAKE, acc)
 
 
 func _accel_on_way(car: Dictionary, list: Array, i: int) -> float:
+	_acc = car.acc
 	var w: Dictionary = ways[car.route[car.leg]]
-	var v0: float = w.vmax * car.pref
+	var v0: float = minf(w.vmax * car.pref, car.top)
 	var gap := INF
 	var vl := 0.0
 	if i > 0:
-		gap = list[i - 1].d - car.d - CAR_LEN
+		gap = list[i - 1].d - car.d - list[i - 1].len
 		vl = list[i - 1].v
+	# A car pulling out of a driveway ahead counts as a leader once it has
+	# started its turn, so the lane makes room as it merges (CS2 yields the
+	# same way). Its place is measured along the lane, like a junction exit.
+	for m in _merging.get(w.id * 8 + car.lane, []):
+		var pos: float = m.j.exit_d - (m.j.len - m.jd)
+		if pos > car.d and pos - car.d - m.len < gap:
+			gap = pos - car.d - m.len
+			vl = m.v
 	if car.leg == car.route.size() - 1:
-		return minf(_idm(car.v, v0, gap, vl), _idm(car.v, v0, car.end_d - car.d + 1.5, 0.0))
+		# Slow to turn into the driveway.
+		return minf(_idm(car.v, v0, gap, vl), _idm(car.v, v0, car.end_d - car.d + JAM_GAP + 4.0 * HEADWAY, 4.0))
 	var ds: float = w.s1 - car.d
 	var wo: int = car.route[car.leg + 1]
 	if not lanes_for(w.id, wo).has(car.lane):
@@ -998,6 +1378,7 @@ func _accel_on_way(car: Dictionary, list: Array, i: int) -> float:
 
 
 func _accel_in_box(car: Dictionary) -> float:
+	_acc = car.acc
 	var c: Dictionary = car.j
 	var lead := _through_leader(c, -car.jd, car)
 	return _idm(car.v, c.vt, lead[0], lead[1])
@@ -1007,26 +1388,30 @@ func _accel_in_box(car: Dictionary) -> float:
 ## Positions are measured along the lane being turned into, so cars still
 ## on the junction path count as just behind its start.
 func _through_leader(c: Dictionary, ds: float, me: Dictionary) -> Array:
-	var wo: Dictionary = ways[c.wo]
-	var mine: float = wo.s0 - c.len - ds
+	if c.wo < 0:
+		return [INF, 0.0]  # into a driveway
+	var mine: float = c.exit_d - c.len - ds
 	var best := INF
 	var bv := 0.0
+	var blen := CAR_LEN
 	var list: Array = _lanes.get(c.wo * 8 + c.lo, [])
 	for k in range(list.size() - 1, -1, -1):
 		if list[k] != me and list[k].d > mine:
 			best = list[k].d
 			bv = list[k].v
+			blen = list[k].len
 			break
 	for b in _box.get(c.node, []):
 		if b == me or b.j.wo != c.wo or b.j.lo != c.lo:
 			continue
-		var pos: float = wo.s0 - (b.j.len - b.jd)
+		var pos: float = b.j.exit_d - (b.j.len - b.jd)
 		if pos > mine and pos < best:
 			best = pos
 			bv = b.v
+			blen = b.len
 	if best == INF:
 		return [INF, 0.0]
-	return [best - mine - CAR_LEN, bv]
+	return [best - mine - blen, bv]
 
 
 ## Whether a car at the stop line may go now.
@@ -1043,7 +1428,7 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 	var list: Array = _lanes.get(c.wo * 8 + c.lo, [])
 	if not list.is_empty():
 		var room: float = list[list.size() - 1].d - ways[c.wo].s0
-		if room < (queued + 1) * (CAR_LEN + JAM_GAP):
+		if room < (queued + 1) * (car.len + JAM_GAP):
 			return false
 	# Nothing crossing our path in the junction.
 	for b in occupants:
@@ -1148,7 +1533,7 @@ func _lane_changes() -> void:
 				continue
 			var blocked := false
 			for cd in claims.get(w.id * 8 + t, []):
-				if absf(cd - car.d) < CAR_LEN * 3.0:
+				if absf(cd - car.d) < car.len + CAR_LEN * 2.0:
 					blocked = true
 			if blocked:
 				continue
@@ -1161,22 +1546,23 @@ func _lane_changes() -> void:
 				else:
 					foll = o
 					break
-			var gl: float = INF if lead == null else lead.d - car.d - CAR_LEN
-			var gf: float = INF if foll == null else car.d - foll.d - CAR_LEN
+			var gl: float = INF if lead == null else lead.d - car.d - lead.len
+			var gf: float = INF if foll == null else car.d - foll.d - car.len
 			if gl < 1.5 or gf < 1.5:
 				continue
-			var v0: float = w.vmax * car.pref
+			_acc = car.acc
+			var v0: float = minf(w.vmax * car.pref, car.top)
 			var line := INF if last else ds - 0.5
 			var a_new := _idm(car.v, v0, minf(gl, line), 0.0 if lead == null or gl > line else lead.v)
 			var a_follow := 0.0
 			if foll != null:
-				a_follow = _idm(foll.v, w.vmax * foll.pref, gf, car.v)
+				a_follow = _idm(foll.v, minf(w.vmax * foll.pref, foll.top), gf, car.v, foll.acc)
 			if must:
 				if a_follow < -4.0 or a_new < -MAX_BRAKE * 0.6:
 					continue
 			else:
-				var a_old := _idm(car.v, v0, minf(list[i - 1].d - car.d - CAR_LEN, line) if i > 0 else line,
-					list[i - 1].v if i > 0 and list[i - 1].d - car.d - CAR_LEN < line else 0.0)
+				var a_old := _idm(car.v, v0, minf(list[i - 1].d - car.d - list[i - 1].len, line) if i > 0 else line,
+					list[i - 1].v if i > 0 and list[i - 1].d - car.d - list[i - 1].len < line else 0.0)
 				# MOBIL: go if I gain more than I cost the car behind me.
 				var gain := a_new - a_old - 0.3 * maxf(-a_follow, 0.0) + (0.1 if side > 0 else 0.0)
 				if a_follow < -2.0 or gain < 0.5:

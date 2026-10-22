@@ -175,7 +175,7 @@ def shaker(dur=0.12):
 # ---------------------------------------------------------------- UI sound palettes
 # Each palette returns the same set of named sounds so the game can swap them.
 
-UI_NAMES = ["click", "tool", "road", "build", "bulldoze", "money", "milestone"]
+UI_NAMES = ["click", "tool", "road", "build", "bulldoze", "money", "milestone", "doorbell"]
 
 
 def mix(*layers):
@@ -234,6 +234,10 @@ def ui_palette(style):
         s["milestone"] = mix((steel([64, 68, 71, 76], 2.2), 0, 1.4), *[(tone(n, 1.5), i * 0.3, 0.25) for i, n in enumerate([76, 80, 83, 88])])
         hi = 2000
     s["bulldoze"] = mix((crumble(0.7, hi), 0, 1.0), (thud(0.4, 110, 40), 0, 0.8))
+    # Neighbor events (someone joins, writes, connects a road): the brand's
+    # two-note doorbell, E then C, on a soft bell with a long ring.
+    bell = lambda n, d: mix((mallet(midi(n), d, hard=0.25), 0, 1.0), (mallet(midi(n + 12), d * 0.6, hard=0.2), 0, 0.18))
+    s["doorbell"] = mix((bell(76, 1.4), 0, 0.6), (bell(72, 1.9), 0.42, 0.6))
     for k in s:
         f = int(0.015 * SR)
         s[k][-f:] *= np.linspace(1, 0, f)  # no click at the tail

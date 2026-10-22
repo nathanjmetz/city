@@ -7,6 +7,9 @@ extends CanvasLayer
 ## Esc cancels what's being drawn, then puts every tool away.
 ## All colours and shapes come from UiStyle, so the look can be re-themed.
 
+## Escape was pressed with nothing left to close.
+signal nothing_to_close
+
 const GOOD := Color(0.5, 0.85, 0.5)
 const BAD := Color(0.95, 0.45, 0.4)
 
@@ -14,9 +17,15 @@ var road_tool: RoadTool
 var zone_tool: ZoneTool
 var service_tool: ServiceTool
 var farm_tool: FarmTool
+var industry_tool: IndustryTool
+var _industry_cards := {}  # "oil"/"ore"/"forest"/"reserve"/"release" -> Button
+var _industry_kind := "oil"  # what the industry Reserve tool saves land for
 var traffic_tool: TrafficTool
 var info_view: InfoView
 var service_view: ServiceView
+var select_tool: SelectTool
+var lot_alerts: LotAlerts
+var _info_panel := InfoPanel.new()
 var _traffic_cards := {}  # TrafficTool.Mode -> Button
 var sim: CitySim
 var game: Node  # main.gd: game speed
@@ -55,6 +64,7 @@ var _views_button: Button
 var _view_cards := {}  # view key -> Button
 var _view := ""
 var _help_button: Button
+var advisor := AdvisorPanel.new()
 
 
 func setup(rt: RoadTool, zt: ZoneTool, s: CitySim, g: Node) -> void:
@@ -75,6 +85,9 @@ func _ready() -> void:
 	_build_bottom_bar()
 	_build_help()
 	_build_views()
+	_build_advisor()
+	_info_panel.setup(sim, select_tool)
+	_root.add_child(_info_panel)
 
 	road_tool.mode_changed.connect(func(_m): _sync())
 	road_tool.options_changed.connect(_sync)
@@ -85,6 +98,8 @@ func _ready() -> void:
 	service_tool.hint_changed.connect(_show_hint)
 	farm_tool.mode_changed.connect(func(_m): _sync())
 	farm_tool.hint_changed.connect(_show_hint)
+	industry_tool.kind_changed.connect(func(_k): _sync())
+	industry_tool.hint_changed.connect(_show_hint)
 	traffic_tool.mode_changed.connect(func(_m): _sync())
 	traffic_tool.hint_changed.connect(_show_hint)
 	sim.buildings_changed.connect(_update_stats)
@@ -104,9 +119,20 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		road_tool.cancel()
 	elif farm_tool.is_drawing():
 		farm_tool.cancel()
-	else:
+	elif anything_open():
 		close_all()
+	else:
+		nothing_to_close.emit()  # the pause menu opens
 	get_viewport().set_input_as_handled()
+
+
+## True while a tool is in hand, a panel or view is open, or something is selected.
+func anything_open() -> bool:
+	return _budget_open or _view != "" or _views_panel.visible or _help.visible or advisor.visible \
+		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
+		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
+		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
+		or industry_tool.kind != ""
 
 
 ## Puts every tool away and closes every panel.
@@ -115,18 +141,23 @@ func close_all() -> void:
 	_show_view("")
 	_views_panel.visible = false
 	_views_button.set_pressed_no_signal(false)
+	select_tool.select({})
 	_help.visible = false
 	_help_button.set_pressed_no_signal(false)
+	advisor.close_panel()
 	road_tool.set_mode(RoadTool.Mode.NONE)
 	zone_tool.set_zone(ZoneTool.OFF)
 	service_tool.set_kind(ServiceTool.OFF)
 	farm_tool.set_mode(FarmTool.Mode.NONE)
+	industry_tool.set_kind("")
 	traffic_tool.set_mode(TrafficTool.Mode.NONE)
 	_sync()
 
 
 func _process(_delta: float) -> void:
 	_views_panel.position = Vector2(0, _top_bar.size.y)
+	# The info panel sits beside the Views column when that's open.
+	_info_panel.position = Vector2(_views_panel.size.x if _views_panel.visible else 0.0, _top_bar.size.y)
 	var t := sim.clock()
 	var hour: int = t.hour % 12
 	_clock.text = "%s %s %d  %d:%02d %s" % [
@@ -248,7 +279,11 @@ func _build_top_bar() -> void:
 	row.add_child(_net)
 	_warning.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_warning.mouse_filter = Control.MOUSE_FILTER_PASS
-	_warning.tooltip_text = "Buildings need power and water to grow and fill. Open Services."
+	# Never push the clock and speed buttons off the bar.
+	_warning.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_warning.clip_text = true
+	_warning.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_warning.tooltip_text = "Buildings need power and water to grow and fill. Click a lot or building to see what it lacks."
 	row.add_child(_warning)
 
 	var spacer := Control.new()
@@ -264,8 +299,13 @@ func _build_top_bar() -> void:
 		row.add_child(b)
 		_speed_buttons.append(b)
 	row.add_child(VSeparator.new())
+	advisor.setup(sim, func(): return _category if _category != "" or _view == "" else "view_" + _view)
+	row.add_child(advisor.make_button())
 	_help_button = _icon_button("help", 24, "Controls")
-	_help_button.toggled.connect(func(on): _help.visible = on)
+	_help_button.toggled.connect(func(on):
+		_help.visible = on
+		if on:
+			advisor.close_panel())
 	row.add_child(_help_button)
 
 
@@ -320,6 +360,7 @@ func _build_bottom_bar() -> void:
 	_drawers["zones"] = _zones_drawer()
 	_drawers["services"] = _services_drawer()
 	_drawers["farms"] = _farms_drawer()
+	_drawers["industry"] = _industry_drawer()
 	_drawers["traffic"] = _traffic_drawer()
 	_drawers["budget"] = _budget_drawer()
 	for key in _drawers:
@@ -333,7 +374,7 @@ func _build_bottom_bar() -> void:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 4)
 	bar.add_child(row)
-	for entry in [["roads", "Roads"], ["zones", "Zoning"], ["farms", "Farming"], ["services", "Services"], ["traffic", "Traffic"],
+	for entry in [["roads", "Roads"], ["zones", "Zoning"], ["farms", "Farming"], ["industry", "Industry"], ["services", "Services"], ["traffic", "Traffic"],
 			["bulldoze", "Bulldoze"],
 			["budget", "Budget"]]:
 		var b := _category_button(entry[0], entry[1])
@@ -483,9 +524,44 @@ func _farms_drawer() -> PanelContainer:
 		var m: int = entry[0]
 		var b := _card(entry[1], entry[2], "")
 		b.tooltip_text = entry[3]
-		b.pressed.connect(func(): farm_tool.set_mode(m))
+		b.pressed.connect(func():
+			farm_tool.reserve_kind = "farm"
+			farm_tool.set_mode(m))
 		(entry[4] as HBoxContainer).add_child(b)
 		_farm_cards[m] = b
+	return drawer
+
+
+## Resource industry (Brawn's model): place a company's main building near
+## the resource; its pads spread on their own. Reserve saves land for it.
+func _industry_drawer() -> PanelContainer:
+	var drawer := PanelContainer.new()
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	drawer.add_child(row)
+	var hq := _section(row, "Main building  ·  near the resource")
+	var area := _section(row, "Save land")
+	for entry in [["oil", "oil", "Oil", "Oil company: pumpjacks spread over the oil field"],
+			["ore", "ore", "Mining", "Mining company: pits open where the ore is"],
+			["forest", "forest", "Forestry", "Forestry company: logging stands in the woods"]]:
+		var k: String = entry[0]
+		var b := _card(entry[1], entry[2], "")
+		b.tooltip_text = "%s ($%s)" % [entry[3], CitySim.money_text(int(Industry.KINDS[k].cost))]
+		b.pressed.connect(func():
+			_industry_kind = k
+			industry_tool.set_kind(k))
+		hq.add_child(b)
+		_industry_cards[k] = b
+	for entry in [["reserve", "reserve", "Reserve", FarmTool.Mode.RESERVE, "Outline land to save for this industry: no roads or zoning there"],
+			["release", "dezone", "Release", FarmTool.Mode.CLEAR, "Release reserved land"]]:
+		var m: int = entry[3]
+		var b := _card(entry[1], entry[2], "")
+		b.tooltip_text = entry[4]
+		b.pressed.connect(func():
+			farm_tool.reserve_kind = _industry_kind
+			farm_tool.set_mode(m))
+		area.add_child(b)
+		_industry_cards[entry[0]] = b
 	return drawer
 
 
@@ -658,7 +734,7 @@ func _open(cat: String) -> void:
 	match cat:
 		"roads":
 			if road_tool.mode in [RoadTool.Mode.NONE, RoadTool.Mode.BULLDOZE]:
-				road_tool.set_mode(RoadTool.Mode.STRAIGHT)
+				road_tool.set_mode(road_tool.last_draw)
 		"zones":
 			if zone_tool.zone == ZoneTool.OFF:
 				zone_tool.set_zone(ZoneMap.Zone.RESIDENTIAL)
@@ -667,6 +743,9 @@ func _open(cat: String) -> void:
 		"farms":
 			if farm_tool.mode == FarmTool.Mode.NONE:
 				farm_tool.set_mode(FarmTool.Mode.CORN)
+		"industry":
+			if industry_tool.kind == "":
+				industry_tool.set_kind(_industry_kind)
 		"traffic":
 			if traffic_tool.mode == TrafficTool.Mode.NONE:
 				traffic_tool.set_mode(TrafficTool.Mode.VIEW)
@@ -678,6 +757,7 @@ func _open(cat: String) -> void:
 			zone_tool.set_zone(ZoneTool.OFF)
 			service_tool.set_kind(ServiceTool.OFF)
 			farm_tool.set_mode(FarmTool.Mode.NONE)
+			industry_tool.set_kind("")
 			traffic_tool.set_mode(TrafficTool.Mode.NONE)
 			_budget_open = true
 			_sync()
@@ -689,6 +769,9 @@ func _sync() -> void:
 		_category = "zones"
 	elif service_tool.kind != ServiceTool.OFF:
 		_category = "services"
+	elif industry_tool.kind != "" or (farm_tool.mode in [FarmTool.Mode.RESERVE, FarmTool.Mode.CLEAR]
+			and farm_tool.reserve_kind != "farm"):
+		_category = "industry"
 	elif farm_tool.mode != FarmTool.Mode.NONE:
 		_category = "farms"
 	elif traffic_tool.mode != TrafficTool.Mode.NONE:
@@ -705,6 +788,7 @@ func _sync() -> void:
 	for key in _drawers:
 		_drawers[key].visible = key == _category
 	_drawer_dock.visible = _drawers.has(_category)
+	lot_alerts.show_empty = _category in ["zones", "services"]
 	_fit_bottom.call_deferred()
 	for m in _tool_cards:
 		_tool_cards[m].set_pressed_no_signal(m == road_tool.mode)
@@ -715,7 +799,14 @@ func _sync() -> void:
 	for k in _service_cards:
 		_service_cards[k].set_pressed_no_signal(k == service_tool.kind)
 	for m in _farm_cards:
-		_farm_cards[m].set_pressed_no_signal(m == farm_tool.mode)
+		_farm_cards[m].set_pressed_no_signal(m == farm_tool.mode and _category == "farms")
+	for k in _industry_cards:
+		var on: bool = k == industry_tool.kind
+		if k == "reserve":
+			on = _category == "industry" and farm_tool.mode == FarmTool.Mode.RESERVE
+		elif k == "release":
+			on = _category == "industry" and farm_tool.mode == FarmTool.Mode.CLEAR
+		_industry_cards[k].set_pressed_no_signal(on)
 	for m in _traffic_cards:
 		_traffic_cards[m].set_pressed_no_signal(m == traffic_tool.mode)
 	_parallel_card.set_pressed_no_signal(road_tool.parallel)
@@ -745,12 +836,35 @@ func _update_stats() -> void:
 		"Next grant: $%s at %s people" % [_thousands(Economy.MILESTONES[e.milestone][1]),
 		_thousands(Economy.MILESTONES[e.milestone][0])]
 	var unserved := sim.unserved_count()
-	var use := sim.services.utility_use
-	var no_utilities: bool = (use.power[1] == 0 or use.water[1] == 0) and not sim.zones.cells.is_empty()
-	_warning.text = "%d buildings without power or water: people are leaving" % unserved if unserved > 0 \
-		else ("Build power and water (Services) so the town can grow" if no_utilities else "")
+	# A short chip, like CS2's problem counter; the full story is in its tooltip.
+	var short := sim.utility_summary()
+	var full := sim.utility_problem()
+	if unserved > 0:
+		short = ("%s · %d leaving" % [short, unserved]) if short != "" else "%d buildings losing people" % unserved
+		full = ("%s. People are leaving %d buildings" % [full, unserved]) if full != "" else \
+			"%d buildings without power or water: people are leaving" % unserved
+	_warning.text = ("⚠ " + short) if short != "" else ""
+	_warning.tooltip_text = full + ". Click a lot or building to see what it lacks." if full != "" else ""
 	_budget_rows.net.text = "%s$%s / month" % ["+" if net >= 0 else "–", _thousands(absi(net))]
 	_budget_rows.net.add_theme_color_override("font_color", GOOD if net >= 0 else BAD)
+
+
+# --- Advisor (from the top bar) --------------------------------------------
+
+## Docked flush to the right edge, just under the top bar.
+func _build_advisor() -> void:
+	_root.add_child(advisor)
+	advisor.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	advisor.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	var place := func():
+		advisor.offset_right = 0
+		advisor.offset_left = 0
+		advisor.offset_top = _top_bar.size.y
+	_top_bar.resized.connect(place)
+	place.call_deferred()
+	advisor.opened.connect(func():
+		_help.visible = false
+		_help_button.set_pressed_no_signal(false))
 
 
 # --- Help (from the top bar) -----------------------------------------------

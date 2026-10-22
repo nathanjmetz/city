@@ -3,9 +3,12 @@ extends RefCounted
 ## Builds a realistic Midwestern house from a seed, so no two are the same.
 ## Ported from the art thread's house generator, which was tuned in rounds
 ## against real photos of Midwestern streets. What it copies:
-##   - two common types: the one-storey ranch (hip or gable roof, attached
-##     garage, picture window) and the two-storey colonial (centre door,
-##     evenly spaced windows, porch or portico)
+##   - three common types: the one-storey ranch (hip or gable roof, attached
+##     garage, picture window), the two-storey colonial (centre door, evenly
+##     spaced windows, porch or portico) and the 1960s-70s split-level (a
+##     raised one-storey wing beside a two-storey block with a tuck-under
+##     garage)
+##   - aluminium gutters on every eave, with downspouts at the corners
 ##   - vinyl lap siding in the muted colours real streets have, brick
 ##     wainscot or full brick fronts, asphalt shingle roofs in greys and browns
 ##   - white trim: corner boards, window casings, sills, fascia and soffits
@@ -30,6 +33,8 @@ const LOT_HALF := 10.0
 
 var _st := {}  # material key -> SurfaceTool
 var _flat := SurfaceTool.new()
+## Trees this lot plants: [local position, TreeField species, tint, scale].
+var trees := []
 var rng: RandomNumberGenerator
 
 
@@ -54,12 +59,16 @@ func _house(to_curb: float) -> Array:
 	var shutters := shutter_hex != ""
 	var shutter := Color(shutter_hex) if shutters else TRIM
 	var info: Dictionary
-	if rng.randf() < 0.45:
+	var kind := rng.randf()
+	if kind < 0.38:
 		info = _colonial(zf, gs, gw, siding, roof, shutters, shutter, door, brick_style, brick)
+	elif kind < 0.58:
+		info = _split_level(zf, gs, siding, roof, shutters, shutter, door, brick_style, brick)
 	else:
 		info = _ranch(zf, gs, gw, siding, roof, shutters, shutter, door, brick_style, brick)
 	_yard(info, to_curb)
-	return [_commit_house(), _commit_flat()]
+	_yard_trees(info, to_curb)
+	return [_commit_house(), _commit_flat(), trees]
 
 
 # ---------------------------------------------------------------- house types
@@ -154,7 +163,7 @@ func _colonial(zf: float, gs: float, gw: float, siding: Color, roof: Color, shut
 		_box("paint", Vector3(0.2, 2.85, 0.2), Vector3(x, 1.88, zf - pd + 0.2), TRIM)
 	_box("paint", Vector3(pw + 0.2, 0.3, 0.24), Vector3((px0 + px1) * 0.5, 3.42, zf - pd + 0.2), TRIM)
 	if porch == "portico":
-		_gable_roof(door_x, zf - pd * 0.5, 3.55, pw, 0.9, pd + 0.1, false, roof, TRIM)
+		_gable_roof(door_x, zf - pd * 0.5, 3.55, pw, 0.9, pd + 0.1, false, roof, TRIM, false)
 	else:
 		_shed_roof((px0 + px1) * 0.5, pw + 0.4, zf, pd + 0.2, 3.62, 0.5, roof)
 	var face := zf - (0.12 if brick_style == "full" else 0.0)  # window plane
@@ -191,6 +200,69 @@ func _colonial(zf: float, gs: float, gw: float, siding: Color, roof: Color, shut
 		_box("brick", Vector3(1.0, rise + 1.6, 0.7), Vector3(x0 + 0.5 if gs > 0 else x1 - 0.5, 6.3 + (rise + 1.6) * 0.5 - 0.8, cz + d * 0.15), brick)
 	return {"drive_x": gx, "drive_w": gw - 0.8, "garage_z": gz0, "door_x": door_x,
 		"walk_z": zf - pd - 1.0, "front_z": zf, "x0": minf(x0, gx - gw * 0.5), "x1": maxf(x1, gx + gw * 0.5), "gs": gs}
+
+
+## Split-level: a two-storey block with the garage tucked under it, beside a
+## one-storey wing whose floor sits half a level up, reached by a few steps.
+func _split_level(zf: float, gs: float, siding: Color, roof: Color, shutters: bool,
+		shutter: Color, door: Color, brick_style: String, brick: Color) -> Dictionary:
+	var tw := rng.randf_range(7.0, 8.2)  # two-storey block
+	var ww := rng.randf_range(7.6, 9.2)  # raised wing
+	var d := rng.randf_range(8.4, 9.4)
+	var total := tw + ww
+	var tx := gs * (total * 0.5 - tw * 0.5)
+	var wx := -gs * (total * 0.5 - ww * 0.5)
+	var cz := zf + d * 0.5
+	var t_top := 5.6
+	var w_floor := 1.2
+	var w_top := 3.95
+	# Two-storey block, its lower level a little below the wing's floor.
+	_box("concrete", Vector3(tw + 0.1, 0.3, d + 0.1), Vector3(tx, 0.15, cz), FOUNDATION)
+	_box("siding", Vector3(tw, t_top - 0.3, d), Vector3(tx, (t_top + 0.3) * 0.5, cz), siding)
+	_corners(tx - tw * 0.5, tx + tw * 0.5, zf, zf + d, 0.3, t_top)
+	# The wing: a high foundation, then one storey.
+	_box("concrete", Vector3(ww + 0.1, w_floor, d + 0.1), Vector3(wx, w_floor * 0.5, cz), FOUNDATION)
+	_box("siding", Vector3(ww, w_top - w_floor, d), Vector3(wx, (w_top + w_floor) * 0.5, cz), siding)
+	_corners(wx - ww * 0.5, wx + ww * 0.5, zf, zf + d, w_floor, w_top)
+	# Brick often wraps the lower level of the tall block.
+	if brick_style != "none":
+		_box("brick", Vector3(tw + 0.03, 2.75, 0.12), Vector3(tx, 0.3 + 1.375, zf - 0.06), brick)
+		_box("paint", Vector3(tw + 0.1, 0.07, 0.2), Vector3(tx, 3.08, zf - 0.08), Color("#cfc8b6"))
+	if rng.randf() < 0.5:
+		_gable_roof(tx, cz, t_top, d, rng.randf_range(1.6, 2.1), tw, true, roof, siding)
+	else:
+		_hip_roof(tx, cz, t_top, tw, d, rng.randf_range(1.4, 1.8), roof)
+	_gable_roof(wx, cz, w_top, d, rng.randf_range(1.2, 1.6), ww, true, roof, siding)
+	# Tuck-under garage, upstairs windows above it.
+	var gdw := minf(tw - 1.6, 4.9)
+	var face := zf - (0.12 if brick_style != "none" else 0.0)
+	_garage(tx, face, gdw + 1.6, 2.15)
+	for i in 2:
+		var x := tx + (i - 0.5) * tw * 0.45
+		_window(Vector3(x, 4.3, zf), Vector3(-1, 0, 0), 0.95, 1.35, true, shutters, shutter)
+	# Door at the inside end of the wing, up a few steps; windows along it.
+	var door_x := wx + gs * (ww * 0.5 - 1.1)
+	_stoop(door_x, zf, 1.9, 1.5, w_floor - 0.15)
+	for k in [1, 2]:
+		var h: float = (w_floor - 0.15) * (3 - k) / 3.0
+		_box("concrete", Vector3(1.4, h, 0.32), Vector3(door_x, h * 0.5, zf - 1.66 - (k - 1) * 0.32), FOUNDATION)
+	_front_door(door_x, zf, w_floor, door)
+	var pict_x := wx - gs * ww * 0.12
+	_window(Vector3(pict_x, w_floor + 1.5, zf), Vector3(-1, 0, 0), rng.randf_range(2.2, 2.8), 1.4,
+		rng.randf() < 0.5, false, shutter)
+	_window(Vector3(wx - gs * (ww * 0.5 - 1.0), w_floor + 1.55, zf), Vector3(-1, 0, 0), 0.9, 1.3, true, shutters, shutter)
+	# Side and back.
+	var sx := tx + gs * tw * 0.5
+	_window(Vector3(sx, 1.7, cz), Vector3(0, 0, -gs), 0.9, 1.0, false, false, shutter)
+	_window(Vector3(sx, 4.3, cz), Vector3(0, 0, -gs), 0.9, 1.3, true, false, shutter)
+	var ex := wx - gs * ww * 0.5
+	_window(Vector3(ex, w_floor + 1.55, cz), Vector3(0, 0, gs), 0.9, 1.3, true, false, shutter)
+	_back(minf(wx - ww * 0.5, wx + ww * 0.5), maxf(wx - ww * 0.5, wx + ww * 0.5), zf + d, [w_floor + 1.5], w_floor)
+	for i in 2:
+		_window(Vector3(tx + (i - 0.5) * tw * 0.45, 4.3, zf + d), Vector3(1, 0, 0), 0.9, 1.3, true, false, TRIM)
+	var x0 := -total * 0.5
+	return {"drive_x": tx, "drive_w": gdw + 0.8, "garage_z": zf, "door_x": door_x,
+		"walk_z": zf - 2.6, "front_z": zf, "x0": x0, "x1": x0 + total, "gs": gs}
 
 
 # ---------------------------------------------------------------- parts
@@ -234,6 +306,26 @@ func _back(x0: float, x1: float, zb: float, floors: Array, sill: float) -> void:
 				_box("concrete", Vector3(3.0, sill, 2.5), Vector3(x, sill * 0.5, zb + 1.25), FOUNDATION)
 			else:
 				_window(Vector3(x, floors[f], zb), Vector3(1, 0, 0), 0.9, 1.35, true, false, TRIM)
+
+
+## A front-yard tree, a street tree in the parkway, and one or two out back,
+## kept clear of the driveway and the house.
+func _yard_trees(h: Dictionary, to_curb: float) -> void:
+	var dx: float = h.drive_x
+	var clear: float = h.drive_w * 0.5 + 3.0
+	var spots := []
+	if rng.randf() < 0.7:
+		spots.append([Vector3(rng.randf_range(-8.0, 8.0), 0, rng.randf_range(1.5, h.front_z - 3.5)), true])
+	if rng.randf() < 0.55:
+		spots.append([Vector3(rng.randf_range(-8.0, 8.0), 0, -to_curb + 1.2), false])
+	for i in rng.randi_range(1, 2):
+		spots.append([Vector3(rng.randf_range(-8.0, 8.0), 0, rng.randf_range(24.0, 30.0)), false])
+	for s in spots:
+		var p: Vector3 = s[0]
+		if p.z < h.front_z and absf(p.x - dx) < clear:
+			continue
+		var pick := TreeField.pick(rng, s[1])
+		trees.append([p, pick[0], pick[1], rng.randf_range(0.75, 1.15)])
 
 
 func _corners(x0: float, x1: float, z0: float, z1: float, y0: float, y1: float) -> void:
@@ -294,7 +386,7 @@ func _window(c: Vector3, right: Vector3, w: float, h: float, grid: bool, shutter
 ## Gable roof. `ridge_x` true: the ridge runs along x and `span` is measured
 ## along z; false: the ridge runs along z (a gable facing the street).
 func _gable_roof(cx: float, cz: float, base: float, span: float, rise: float, length: float,
-		ridge_x: bool, roof: Color, gable: Color) -> void:
+		ridge_x: bool, roof: Color, gable: Color, gutters := true) -> void:
 	var over := 0.45
 	var rake := 0.3
 	var hs := span * 0.5 + over
@@ -357,6 +449,23 @@ func _hip_roof(cx: float, cz: float, base: float, w: float, d: float, rise: floa
 		var b: Vector3 = c[(i + 1) % 4]
 		_quad("paint", a, b, b + Vector3(0, 0.2, 0), a + Vector3(0, 0.2, 0), TRIM, [], (a + b) * 0.5 - center)
 	_quad("paint", c[0], c[1], c[2], c[3], SOFFIT, [], Vector3.DOWN)
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(hx * 2.0 + 0.14, 0.13, 0.13), Vector3(cx, y0 + 0.03, cz + s * (hz + 0.07)), TRIM)
+		_box("paint", Vector3(0.13, 0.13, hz * 2.0), Vector3(cx + s * (hx + 0.07), y0 + 0.03, cz), TRIM)
+		for e in [-1.0, 1.0]:
+			_downspout(Vector3(cx + e * (w * 0.5 - 0.15), 0, cz + s * (d * 0.5 + 0.06)),
+				Vector3(cx + e * (w * 0.5 - 0.15), 0, cz + s * (hz + 0.07)), y0)
+
+
+## A downspout down the wall at `wall` (y ignored), joined by an elbow to the
+## gutter above `eave`, `top` metres up.
+func _downspout(wall: Vector3, eave: Vector3, top: float) -> void:
+	_box("paint", Vector3(0.08, top, 0.08), Vector3(wall.x, top * 0.5, wall.z), TRIM)
+	var mid := (wall + eave) * 0.5
+	var run := eave - wall
+	_box("paint", Vector3(absf(run.x) + 0.08, 0.08, absf(run.z) + 0.08), Vector3(mid.x, top - 0.08, mid.z), TRIM)
+	# Splash block at the foot.
+	_box("concrete", Vector3(0.3, 0.05, 0.3), Vector3(wall.x + run.normalized().x * 0.3, 0.03, wall.z + run.normalized().z * 0.3), FOUNDATION)
 
 
 ## A porch roof sloping down toward the street.
@@ -483,9 +592,11 @@ func _glass(c: Vector3, right: Vector3, w: float, h: float, blinds: float) -> vo
 		[Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)])
 
 
-func _flat_rect(kind: String, x0: float, x1: float, z0: float, z1: float, y: float) -> void:
-	var col := MULCH if kind == "mulch" else Color.WHITE
-	col.a = 1.0 if kind == "mulch" else 0.0
+## Flat ground work. Kinds (packed into vertex alpha for the yard shader):
+## drive (concrete), asphalt, line (painted, in `col`), mulch or gravel (in `col`).
+func _flat_rect(kind: String, x0: float, x1: float, z0: float, z1: float, y: float, col := MULCH) -> void:
+	var alpha := {"drive": 0.0, "asphalt": 0.4, "line": 0.72, "mulch": 1.0, "gravel": 1.0}
+	col.a = alpha[kind]
 	var pts := [Vector3(x0, y, z0), Vector3(x1, y, z0), Vector3(x1, y, z1), Vector3(x0, y, z1)]
 	for i in [0, 1, 2, 0, 2, 3]:  # clockwise seen from above
 		_flat.set_normal(Vector3.UP)

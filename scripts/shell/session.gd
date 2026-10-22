@@ -19,6 +19,8 @@ var mode := Mode.SOLO
 var save_path := ""
 ## The name for a new city that hasn't been saved yet.
 var new_city_name := ""
+## The difficulty picked for a new city that hasn't started yet.
+var new_city_difficulty := ""
 ## Solo: the open city's name.
 var current_name := ""
 ## Online: the connection to the region (also there while joining).
@@ -98,8 +100,9 @@ func city_name(path := save_path) -> String:
 
 
 ## Starts a new city. Its file is written at the first save.
-func new_city(name: String) -> void:
+func new_city(name: String, difficulty := "normal") -> void:
 	new_city_name = name
+	new_city_difficulty = difficulty
 	play_solo(new_save_path(name))
 
 
