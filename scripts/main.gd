@@ -206,8 +206,8 @@ func _ready() -> void:
 	if not _load():
 		_starter_road()
 	await _settle()
-	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed, sim.industry_changed, sim.warehouses_changed]:
-	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed, sim.industry_changed, sim.parks_changed]:
+	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed,
+			sim.industry_changed, sim.warehouses_changed, sim.parks_changed]:
 		sig.connect(func(): _save_pending = true)
 
 
