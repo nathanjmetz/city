@@ -45,7 +45,7 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 	else:
 		rows.append(["Land value next door", "no change"])
 	var size := 1.0 + Balance.HUB_PIECE_UPKEEP * CivicHubs.extra_pieces(h)
-	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(roundi(float(s.upkeep) * size))])
+	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(roundi(float(s.upkeep) * hubs.policy_funding(id, Balance.POLICY_UPKEEP) * size))])
 	if s.has("sales"):
 		rows.append(["Materials sold", "$%s / month" % CitySim.money_text(roundi(CivicHubs.sales(h) * size))])
 	if h.get("boxed", false):

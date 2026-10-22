@@ -125,7 +125,7 @@ func _init() -> void:
 	var cost := sim.mail.monthly_cost()
 	_check(sim.apply({"type": "post_office_funding", "id": id, "level": 3}), "funding raised")
 	_check(sim.mail.monthly_cost() > cost, "more funding costs the city more")
-	_check(LeaderGuide.takes(sim, {"type": "post_office", "id": id}), "the player can guide the postmaster")
+	_check(HubSliders.takes(sim, {"type": "post_office", "id": id}), "the player can guide the postmaster")
 	_check(sim.apply({"type": "guide", "hub": "post_office", "hub_id": id, "stance": "hold", "grant": 0}), "told to hold off")
 	var held: int = h.cells.size()
 	for round in 4:

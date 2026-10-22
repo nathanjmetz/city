@@ -81,6 +81,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_education.gd
           ~/godot-cache/godot --headless -s tests/test_banks.gd
           ~/godot-cache/godot --headless -s tests/test_mail.gd
+          ~/godot-cache/godot --headless -s tests/test_economy.gd
 
       - name: Stamp the build
         run: |

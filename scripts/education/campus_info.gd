@@ -2,13 +2,13 @@ class_name CampusInfo
 extends RefCounted
 ## The info panel for a high school, college or university: its head and
 ## how they run it, students, books, its development tree (what it has
-## built, plans next, and what is still locked and why), and the one lever
-## the player holds, its funding. The leader guide below it (grow, your
-## call, hold off) comes from Permits.
+## built, plans next, and what is still locked and why). Its two levers,
+## Funding and Growth (your word to its head), are the sliders below it,
+## the same ones as on the Economy page (see HubSliders).
 
 
 ## A high school, college or university: who runs it, its students and
-## books, and buttons for the one thing the player sets, its funding.
+## books.
 static func describe(sim: CitySim, id: int) -> Dictionary:
 	var c: Dictionary = sim.education.campuses[id]
 	var k: Dictionary = Education.KINDS[c.kind]
@@ -58,10 +58,5 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 		status = "Full: %s turned away" % CitySim.money_text(c.applicants - c.enrolled)
 	if c.idle != "":
 		problems.append(c.idle)
-	var actions := []
-	actions.append({"label": "Less funding", "cmd": {"type": "set_campus_funding", "id": id, "level": level - 1},
-		"enabled": level > 0})
-	actions.append({"label": "More funding", "cmd": {"type": "set_campus_funding", "id": id, "level": level + 1},
-		"enabled": level < levels.size() - 1})
 	return {"title": k.name, "kind": "Education", "icon": k.icon, "ok": problems.is_empty(), "status": status,
-		"rows": rows, "problems": problems, "actions": actions}
+		"rows": rows, "problems": problems}

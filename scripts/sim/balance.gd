@@ -1077,3 +1077,45 @@ const BANK_LEND_EVERY := 360
 const BANK_DECIDE_EVERY := 1440
 ## Assessed value of a block of bank premises, for commercial property tax.
 const BANK_PREMISES_VALUE := 900_000
+
+# --- Town policy sliders --------------------------------------------------------
+# Brawn's rule (2026-10-22): money is a limiter, not the game. No tax sliders:
+# taxes run at the normal rates above on their own. Instead every area and hub
+# has two broad sliders, Funding (Lean to Generous) and Growth (Hold to
+# Expand), five steps each, with Standard and "Your call" in the middle.
+# Each list below has one value per step, Lean/Hold first.
+
+## City-run things (utilities, public services, waste, cemetery): what they
+## cost a month, times their upkeep...
+const POLICY_UPKEEP := [0.7, 0.85, 1.0, 1.2, 1.4]
+## ...and how far they reach, how much they serve and how many trucks they
+## run. A lean department stretches thin; a generous one has slack.
+const POLICY_EFFECT := [0.8, 0.9, 1.0, 1.1, 1.2]
+## Homes, shops and factories: what the town spends on each building a month
+## for street care, trees and inspections (negative: it saves that much)...
+const POLICY_CARE_PER_BUILDING := [-12, -6, 0, 15, 30]
+## ...and what that does to land value, and so to property tax.
+const POLICY_LAND_VALUE := [0.94, 0.97, 1.0, 1.03, 1.05]
+## Farms and resource companies are private. Funding is town support per acre
+## a year: a fee the town charges on Lean, aid it pays on Generous (real
+## counties do both: special assessments and ag or enterprise incentives).
+const POLICY_SUPPORT_PER_ACRE := [-20.0, -8.0, 0.0, 15.0, 30.0]
+## Growth for homes, shops and factories: how readily new buildings go up
+## (times demand). Hold stops new ones; what's built stays.
+const POLICY_BUILD_PACE := [0.0, 0.5, 1.0, 1.35, 1.7]
+## Growth for farms and companies: the yearly profit, per acre, a new field or
+## pad must clear before they buy it. Hold buys nothing; Expand takes thinner
+## land. They still sell what keeps losing money.
+const POLICY_BUY_MARGIN_PER_ACRE := [INF, 40.0, 0.0, -10.0, -20.0]
+## Growth for waste sites: the share of trash left waiting that makes them
+## take more land (HUB_GROW_BUSY_SHARE on "Your call")...
+const POLICY_HUB_BUSY := [INF, 0.7, 0.5, 0.4, 0.3]
+## ...and for the cemetery, times how much land it plans per resident.
+const POLICY_CEMETERY_PACE := [0.0, 0.7, 1.0, 1.3, 1.6]
+## Resource companies work in pads (80 m, about 1.6 acres) that earn far more
+## than a field, so their support and buying margin are per pad a year.
+const POLICY_SUPPORT_PER_PAD := [-4_000.0, -1_500.0, 0.0, 3_000.0, 6_000.0]
+const POLICY_BUY_MARGIN_PER_PAD := [INF, 8_000.0, 0.0, -2_000.0, -4_000.0]
+## Growth for parks: times how many people must live nearby before a park
+## buys the strip next door (PARK_GROW_MIN_RESIDENTS). Hold buys none.
+const POLICY_PARK_RESIDENTS := [INF, 2.0, 1.0, 0.7, 0.5]

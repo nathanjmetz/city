@@ -46,7 +46,17 @@ var sites := {}
 ## Lift in land value and in happiness each building's lot gets.
 var lot_value := {}
 var lot_happy := {}
+## The town's sliders: Funding sets upkeep and how much a site lifts the
+## land around it, Growth how soon a park buys more land (see Policies).
+var policies: Policies
 var _next_id := 1
+
+
+## A Balance list's value for site `id`'s step of a slider.
+func policy(id: int, slider: String, list: Array) -> float:
+	if policies == null:
+		return float(list[Policies.STANDARD])
+	return policies.pick(list, slider, "parks", "park:%d" % id)
 
 
 static func size_of(kind: String) -> Vector2:
@@ -200,9 +210,10 @@ func monthly_upkeep() -> int:
 ## A park costs more to keep the better kept it is.
 func site_upkeep(id: int) -> float:
 	var s: Dictionary = sites[id]
+	var funding := policy(id, "funding", Balance.POLICY_UPKEEP)
 	if s.kind != "park":
-		return float(Balance.AMENITIES[s.kind].upkeep)
-	return acres(id) * Balance.PARK_UPKEEP_PER_ACRE * float(Neighborhood.TIERS[maxi(s.tier, 0)].upkeep)
+		return float(Balance.AMENITIES[s.kind].upkeep) * funding
+	return acres(id) * Balance.PARK_UPKEEP_PER_ACRE * float(Neighborhood.TIERS[maxi(s.tier, 0)].upkeep) * funding
 
 
 func has_feature(id: int, type: String) -> bool:
@@ -225,14 +236,15 @@ func wanted_features(id: int) -> Array:
 ## by how filled-in it is and how well kept (its tier's finish).
 func quality(id: int) -> float:
 	var s: Dictionary = sites[id]
+	var funding := policy(id, "funding", Balance.POLICY_EFFECT)
 	if s.kind != "park":
-		return 1.0
+		return funding
 	var want := wanted_features(id).size()
 	var have := 0
 	for f in wanted_features(id):
 		if has_feature(id, f.type):
 			have += 1
-	return (0.4 + 0.6 * float(have) / maxf(want, 1.0)) * float(Neighborhood.TIERS[maxi(s.tier, 0)].finish)
+	return (0.4 + 0.6 * float(have) / maxf(want, 1.0)) * float(Neighborhood.TIERS[maxi(s.tier, 0)].finish) * funding
 
 
 ## Distance from a point to a site's ground (0 inside).
@@ -317,7 +329,8 @@ func _fill_in(sim: CitySim, id: int, residents: int) -> bool:
 			s.features.append({"type": f.type, "pos": spot, "size": f.size})
 			return true
 		# No room: buy the strip next door if people here use the park.
-		if s.tier > 0 and residents >= Balance.PARK_GROW_MIN_RESIDENTS and _grow(sim, id):
+		var need := Balance.PARK_GROW_MIN_RESIDENTS * policy(id, "growth", Balance.POLICY_PARK_RESIDENTS)
+		if s.tier > 0 and residents >= need and _grow(sim, id):
 			return true
 	return false
 

@@ -89,6 +89,9 @@ var hubs := CivicHubs.new()
 var parks := Parks.new()
 ## The post office, its postmaster, and the carriers on their routes.
 var mail := Mail.new()
+## The town's broad Funding and Growth sliders for every area and hub (no
+## tax fiddling: Brawn). Set on the Economy page or a hub's panel.
+var policies := Policies.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -154,6 +157,7 @@ func _init() -> void:
 		return Vector2(b.pos.x, b.pos.z)
 	farms.reserves = reserves
 	industry.reserves = reserves
+	_wire_policies()
 	network.changed.connect(func():
 		_lots_dirty = true
 		_roads_moved = true)
@@ -354,7 +358,10 @@ func apply_now(cmd: Dictionary) -> bool:
 		"set_campus_funding":
 			ok = education.campuses.has(int(cmd.id))
 			if ok:
-				education.campuses[int(cmd.id)].funding = clampi(int(cmd.level), 0, Balance.EDUCATION_FUNDING_LEVELS.size() - 1)
+				# A campus's funding is its Funding slider on the Economy page.
+				policies.set_step("campus:%d" % int(cmd.id), "funding",
+					clampi(int(cmd.level), 0, Balance.EDUCATION_FUNDING_LEVELS.size() - 1))
+				_sync_campus_funding()
 				update_stats()
 		"remove_industry":
 			ok = industry.sites.has(int(cmd.id))
@@ -444,6 +451,22 @@ func apply_now(cmd: Dictionary) -> bool:
 		"guide":
 			# The player's word to a hub's leader (grow, hold off, pre-approve).
 			ok = permits.guide(self, cmd)
+			var key := "%s:%d" % [str(cmd.get("hub", "")), int(cmd.get("hub_id", 0))]
+			if ok and hub_area(key) != "":
+				# Growth is the same word: keep the hub's slider in step.
+				var now := policies.step("growth", hub_area(key), key)
+				var want := Policies.growth_for(str(cmd.get("stance", "steady")), now)
+				if want != now:
+					policies.set_step(key, "growth", want)
+		"policy":
+			# A Funding or Growth slider for the town, an area or one hub.
+			ok = _set_policy(str(cmd.get("scope", "")), str(cmd.get("slider", "")), int(cmd.get("step", -1)))
+		"policy_reset":
+			# Everything under the town or an area follows it again.
+			ok = policies.reset_below(str(cmd.get("scope", "")), hub_area)
+			if ok:
+				_sync_stances()
+				_sync_campus_funding()
 		"set_junction":
 			# Traffic lights, stop signs or none at a junction (-1 = automatic).
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
@@ -479,9 +502,11 @@ func apply_now(cmd: Dictionary) -> bool:
 			parks = Parks.new()
 			parks_changed.emit()
 			mail = Mail.new()
+			policies.from_dict({})
 			farms.reserves = reserves
 			industry.reserves = reserves
 			vegetation.reset()
+			_wire_policies()
 			farms_changed.emit()
 			industry_changed.emit()
 			warehouses_changed.emit()
@@ -489,6 +514,11 @@ func apply_now(cmd: Dictionary) -> bool:
 			education_changed.emit()
 			ok = true
 	if ok:
+		if cmd.type in ["place_campus", "place_park", "place_bank", "place_hub", "place_service", "place_farmhouse",
+				"place_industry", "clear"]:
+			# A new hub takes its area's sliders (and its leader the stance).
+			_sync_campus_funding()
+			_sync_stances()
 		if _roads_moved:
 			_road_wins()
 		_refresh()
@@ -1122,6 +1152,92 @@ func _hub_command(cmd: Dictionary) -> bool:
 	return true
 
 
+## Hands the sliders to everything that reads them.
+func _wire_policies() -> void:
+	farms.policies = policies
+	industry.policies = policies
+	services.policies = policies
+	hubs.policies = policies
+	parks.policies = policies
+
+
+## A campus keeps its funding level as its Funding slider's step.
+func _sync_campus_funding() -> void:
+	for id in education.campuses:
+		education.campuses[id].funding = policies.step("funding", "schools", "campus:%d" % id)
+
+
+## The Economy page area of a hub key ("farm:3", "service:5", "hub:1"...),
+## or "" if there's no such hub.
+func hub_area(key: String) -> String:
+	var parts := key.split(":")
+	if parts.size() != 2 or not parts[1].is_valid_int():
+		return ""
+	var id := int(parts[1])
+	match parts[0]:
+		"farm":
+			return "farms" if farms.farms.has(id) else ""
+		"industry":
+			return "resources" if industry.sites.has(id) else ""
+		"service":
+			return Services.area_of(services.buildings[id].kind) if services.buildings.has(id) else ""
+		"hub":
+			return CivicHubs.area_of(hubs.hubs[id].kind) if hubs.hubs.has(id) else ""
+		"park":
+			return "parks" if parks.sites.has(id) else ""
+		"campus":
+			return "schools" if education.campuses.has(id) else ""
+		"bank":
+			return "banks" if banks.banks.has(id) else ""
+	return ""
+
+
+func _set_policy(scope: String, slider: String, s: int) -> bool:
+	if scope.begins_with("area:"):
+		var area := scope.trim_prefix("area:")
+		if Policies.AREAS.has(area) and not slider in Policies.AREAS[area].sliders:
+			return false
+	elif scope != "city":
+		# A hub with a leader always takes Growth: it's your word to them.
+		var area := hub_area(scope)
+		if area == "" or not (slider in Policies.AREAS[area].sliders
+				or slider == "growth" and permits.locators.has(scope.get_slice(":", 0))):
+			return false
+	if not policies.set_step(scope, slider, s):
+		return false
+	if slider == "growth":
+		_sync_stances()
+	_sync_campus_funding()
+	economy.update_budget(self)
+	return true
+
+
+## Leaders who signed up with Permits hear their hub's Growth as a stance.
+func _sync_stances() -> void:
+	for key in permits.guided.keys() + _leader_keys():
+		var parts: PackedStringArray = str(key).split(":")
+		# Hubs the Economy page doesn't list (rail...) keep their own stance.
+		if parts.size() != 2 or hub_area(key) == "":
+			continue
+		var want := Policies.stance(policies.step("growth", hub_area(key), key))
+		var g := permits.guidance(parts[0], int(parts[1]))
+		if g.stance != want:
+			permits.guide(self, {"hub": parts[0], "hub_id": int(parts[1]), "stance": want, "grant": int(g.grant)})
+
+
+## Hub keys of every hub whose kind has a leader (signed up with Permits).
+func _leader_keys() -> Array:
+	var out := []
+	for kind in ["farm", "industry", "service", "hub", "park", "campus", "bank"]:
+		if not permits.locators.has(kind):
+			continue
+		var ids: Array = {"farm": farms.farms, "industry": industry.sites, "service": services.buildings,
+			"hub": hubs.hubs, "park": parks.sites, "campus": education.campuses, "bank": banks.banks}[kind].keys()
+		for id in ids:
+			out.append("%s:%d" % [kind, id])
+	return out
+
+
 ## Zoning under a new building goes away, as in Cities: Skylines 2.
 func _clear_zones_under(poly: PackedVector2Array) -> void:
 	for c in zones.cells.keys():
@@ -1493,7 +1609,9 @@ func _grow_one(salt := 0) -> String:
 	var zone_order := by_zone.keys()
 	zone_order.sort()
 	for z in zone_order:
-		if rng.randf() >= demand[z]:
+		# Growth on the Economy page: Hold builds nothing new, Expand more.
+		var pace := policies.pick(Balance.POLICY_BUILD_PACE, "growth", Economy.ZONE_AREA.get(z, "homes"))
+		if rng.randf() >= demand[z] * pace:
 			continue
 		var list: Array = by_zone[z]
 		var key: String = list[rng.randi() % list.size()]
@@ -1670,6 +1788,7 @@ func to_dict() -> Dictionary:
 		"hubs": hubs.to_dict(),
 		"parks": parks.to_dict(),
 		"mail": mail.to_dict(),
+		"policies": policies.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
 		"buses": buses.to_dict(),
@@ -1713,6 +1832,12 @@ func from_dict(d: Dictionary) -> void:
 	hubs.from_dict(d.get("hubs", {}))
 	parks.from_dict(d.get("parks", {}))
 	mail.from_dict(d.get("mail", {}))
+	policies.from_dict(d.get("policies", {}))
+	# Campuses saved before the Economy page kept their own funding level.
+	for id in education.campuses:
+		var level := int(education.campuses[id].funding)
+		if level != policies.step("funding", "schools", "campus:%d" % id):
+			policies.set_step("campus:%d" % id, "funding", level)
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:
