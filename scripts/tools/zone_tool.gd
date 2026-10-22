@@ -54,8 +54,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_5: set_zone(ZoneMap.Zone.COMMERCIAL)
 			KEY_6: set_zone(ZoneMap.Zone.INDUSTRIAL)
 			KEY_7: set_zone(ZoneMap.Zone.NONE)
-			KEY_BRACKETLEFT: _resize(1.0 / 1.25)
-			KEY_BRACKETRIGHT: _resize(1.25)
+			KEY_BRACKETLEFT: if zone != OFF: _resize(1.0 / 1.25)
+			KEY_BRACKETRIGHT: if zone != OFF: _resize(1.25)
 	if zone == OFF:
 		return
 	if event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:

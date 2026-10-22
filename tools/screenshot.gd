@@ -27,21 +27,20 @@ func _process(_delta: float) -> bool:
 func _demo_town() -> void:
 	var sim: CitySim = _main.sim
 	sim.apply({"type": "clear"})
-	var roads := [
-		[[-200, 0], [0, 0], [200, 0]],
-		[[0, -150], [0, 0], [0, 150]],
-		[[-200, -90], [0, -90], [200, -90]],
-		[[100, 0], [140, 80], [60, 150]],
-	]
-	for r in roads:
-		sim.apply({"type": "build_road", "start": r[0], "ctrl": r[1], "end": r[2]})
-	for x in range(-190, 200, 8):
-		for z in [-15, -75, -105]:
-			sim.apply({"type": "paint_zone", "center": [x, z], "radius": 10, "zone": ZoneMap.Zone.RESIDENTIAL})
-	for x in range(-190, 0, 8):
-		sim.apply({"type": "paint_zone", "center": [x, 15], "radius": 10, "zone": ZoneMap.Zone.COMMERCIAL})
-	for x in range(10, 100, 8):
-		sim.apply({"type": "paint_zone", "center": [x, 15], "radius": 10, "zone": ZoneMap.Zone.INDUSTRIAL})
+	# A main road with a roundabout, and a grid neighborhood beside it.
+	sim.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0]})
+	sim.apply({"type": "build_road", "start": [120, 0], "ctrl": [160, 80], "end": [120, 180]})
+	sim.apply({"type": "build_roundabout", "center": [120, 0], "radius": 20})
+	sim.apply({"type": "build_grid", "a": [-240, -40], "b": [40, -40], "c": [-240, -210], "block": 140})
+	sim.apply({"type": "build_road", "start": [-100, -40], "ctrl": [-100, -20], "end": [-100, 0]})
+	for lot in sim.lots.values():
+		var p: Vector3 = lot.zone_pt
+		var zone := ZoneMap.Zone.RESIDENTIAL
+		if p.z > -10.0 and p.z < 30.0 and p.x < 100.0:
+			zone = ZoneMap.Zone.COMMERCIAL
+		elif p.x > 130.0:
+			zone = ZoneMap.Zone.INDUSTRIAL
+		sim.apply({"type": "paint_zone", "center": [p.x, p.z], "radius": 3, "zone": zone})
 	var args := OS.get_cmdline_user_args()
 	var overlay := args.size() >= 5 and args[4] == "zones"
 	for i in (60 if overlay else 600):
@@ -57,7 +56,7 @@ func _demo_town() -> void:
 	for c in _main.get_children():
 		if c is CityCamera:
 			cam = c
-	cam.look_at_point(Vector3(-20, 0, -30))
+	cam.look_at_point(Vector3(-40, 0, -60))
 	if args.size() >= 4:
 		cam._yaw = deg_to_rad(float(args[1]))
 		cam._pitch = deg_to_rad(float(args[2]))

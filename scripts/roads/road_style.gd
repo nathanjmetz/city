@@ -15,6 +15,11 @@ const Y_CURB := 0.07
 const Y_ASPHALT := 0.09
 const Y_JUNCTION := 0.11
 
+## Tightest bend allowed on a street's centre line: 42 ft, the AASHTO minimum
+## design turning radius of a single-unit truck (SU-30, a box or garbage
+## truck), which every local street has to serve.
+const MIN_CURVE_RADIUS := 12.8
+
 const ASPHALT_COLOR := Color(0.23, 0.23, 0.24)
 const CURB_COLOR := Color(0.62, 0.61, 0.58)
 const SIDEWALK_COLOR := Color(0.72, 0.71, 0.67)

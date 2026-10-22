@@ -16,6 +16,9 @@ const MERGE_DIST := 3.0
 var nodes := {}     # int -> Vector3
 var segments := {}  # int -> {"a": int, "b": int, "ctrl": Vector3}
 var _next_id := 1
+## While batching, edits don't emit `changed` until end_batch().
+var _batch := 0
+var _batch_dirty := false
 
 
 # --- Curve math -------------------------------------------------------------
@@ -34,6 +37,20 @@ static func sample_curve(p0: Vector3, p1: Vector3, p2: Vector3, n: int = SAMPLES
 	for i in n + 1:
 		pts.append(bezier(p0, p1, p2, float(i) / n))
 	return pts
+
+
+## Tightest radius along a curve (straight lines give INF).
+static func min_radius(p0: Vector3, p1: Vector3, p2: Vector3) -> float:
+	var second := (p0 - p1 * 2.0 + p2) * 2.0
+	second.y = 0.0
+	var best := INF
+	for i in 33:
+		var d := bezier_tangent(p0, p1, p2, i / 32.0)
+		d.y = 0.0
+		var cross := absf(d.x * second.z - d.z * second.x)
+		if cross > 0.000001:
+			best = minf(best, pow(d.length(), 3.0) / cross)
+	return best
 
 
 static func polyline_length(pts: PackedVector3Array) -> float:
@@ -153,7 +170,7 @@ func build_road(start: Vector3, ctrl: Vector3, end: Vector3) -> bool:
 		if na == nb or _has_segment(na, nb):
 			continue
 		_add_segment(na, nb, sub_control(p0, ctrl, p2, t0, t1))
-	changed.emit()
+	_changed()
 	return true
 
 
@@ -165,13 +182,13 @@ func remove_segment(seg_id: int) -> void:
 	for n in [s.a, s.b]:
 		if segments_at(n).is_empty():
 			nodes.erase(n)
-	changed.emit()
+	_changed()
 
 
 func clear() -> void:
 	nodes.clear()
 	segments.clear()
-	changed.emit()
+	_changed()
 
 
 ## Splits a segment at t and returns the new junction's id.
@@ -213,10 +230,29 @@ func from_dict(d: Dictionary) -> void:
 		var s: Array = d.segments[k]
 		segments[int(k)] = {"a": int(s[0]), "b": int(s[1]), "ctrl": Vector3(s[2], 0.0, s[3])}
 	_next_id = int(d.get("next_id", 1))
-	changed.emit()
+	_changed()
+
+
+## Groups many edits (a whole grid of roads) into one `changed` signal.
+func begin_batch() -> void:
+	_batch += 1
+
+
+func end_batch() -> void:
+	_batch -= 1
+	if _batch == 0 and _batch_dirty:
+		_batch_dirty = false
+		changed.emit()
 
 
 # --- Internals --------------------------------------------------------------
+
+func _changed() -> void:
+	if _batch > 0:
+		_batch_dirty = true
+	else:
+		changed.emit()
+
 
 func _resolve_endpoint(pos: Vector3) -> int:
 	var n := find_node_near(pos, 0.5)
@@ -260,8 +296,11 @@ func _first_crossing(p0: Vector3, p1: Vector3, p2: Vector3, cuts: Array, ends: A
 		avoid.append(nodes[e])
 	for c in cuts:
 		avoid.append(nodes[c[1]])
+	var box := _bounds(new_pts)
 	for id in segments:
 		var old_pts := sample_segment(id, n)
+		if not box.intersects(_bounds(old_pts), true):
+			continue
 		for i in n:
 			for j in n:
 				var hit = Geometry2D.segment_intersects_segment(
@@ -280,6 +319,13 @@ func _first_crossing(p0: Vector3, p1: Vector3, p2: Vector3, cuts: Array, ends: A
 				var fj := _v2(old_pts[j]).distance_to(hit) / maxf(_v2(old_pts[j]).distance_to(_v2(old_pts[j + 1])), 0.001)
 				return {"seg": id, "t_seg": (j + fj) / n, "t_new": (i + fi) / n}
 	return {}
+
+
+static func _bounds(pts: PackedVector3Array) -> Rect2:
+	var r := Rect2(_v2(pts[0]), Vector2.ZERO)
+	for p in pts:
+		r = r.expand(_v2(p))
+	return r.grow(0.5)
 
 
 static func _flat(v: Vector3) -> Vector3:

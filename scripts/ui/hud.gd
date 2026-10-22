@@ -36,6 +36,8 @@ func _ready() -> void:
 	for entry in [
 		[RoadTool.Mode.STRAIGHT, "Road  1"],
 		[RoadTool.Mode.CURVED, "Curve  2"],
+		[RoadTool.Mode.GRID, "Grid  G"],
+		[RoadTool.Mode.ROUNDABOUT, "Roundabout  O"],
 		[RoadTool.Mode.BULLDOZE, "Bulldoze  3"],
 	]:
 		var m: int = entry[0]
