@@ -44,6 +44,25 @@ func _demo_town() -> void:
 		sim.apply({"type": "build_road", "start": [-140, 90], "ctrl": [-50, 60], "end": [0, 40], "road": 4})
 		_aim_camera()
 		return
+	if args0.size() >= 5 and args0[4] == "nopower":
+		# Brawn's start: streets zoned, a well built, no power yet.
+		sim.apply({"type": "build_grid", "a": [-160, -40], "b": [120, -40], "c": [-160, -220], "block": 140})
+		for lot in sim.lots.values():
+			sim.apply({"type": "paint_zone", "center": [lot.zone_pt.x, lot.zone_pt.z], "radius": 3, "zone": ZoneMap.Zone.RESIDENTIAL})
+		var well := Services.site_near(sim.network, Services.Kind.WELL, Vector3(40, 0, -10))
+		sim.apply({"type": "place_service", "kind": Services.Kind.WELL, "pos": [well[0].x, well[0].z], "dir": [well[1].x, well[1].z]})
+		sim.economy.money = 100_000
+		for i in 30:
+			sim.tick()
+		for c in _main.get_children():
+			if c is Hud:
+				c.close_all()
+				c._open("zones")
+			if c is SelectTool:
+				for id in sim.services.buildings:
+					c.select({"type": "service", "id": id})
+		_aim_camera()
+		return
 	if args0.size() >= 5 and args0[4] == "farms":
 		_demo_farms(sim)
 		return
@@ -88,6 +107,26 @@ func _demo_town() -> void:
 		for c in _main.find_children("*", "", true, false):
 			if c.has_method("_budget_drawer"):
 				c._open("budget")
+	if args.size() >= 5 and args[4].begins_with("inspect"):
+		# Click-to-inspect: the water tower, or a home.
+		var sel := {}
+		if args[4] == "inspect_home":
+			var keys := sim.buildings.keys()
+			keys.sort()
+			for key in keys:
+				if sim.buildings[key].zone == ZoneMap.Zone.RESIDENTIAL:
+					sel = {"type": "lot", "id": key}
+					break
+		else:
+			for id in sim.services.buildings:
+				if sim.services.buildings[id].kind == Services.Kind.WATER_TOWER:
+					sel = {"type": "service", "id": id}
+		for c in _main.get_children():
+			if c is Hud:
+				c.close_all()  # put the road tool away first
+		for c in _main.get_children():
+			if c is SelectTool:
+				c.select(sel)
 	var cam: CityCamera
 	for c in _main.get_children():
 		if c is CityCamera:

@@ -389,6 +389,53 @@ func service_coverage() -> float:
 	return 0.0 if n == 0 else total / n
 
 
+## What keeps the town from growing for want of power or water, in plain
+## words (what's missing and what to build), or "" if nothing does.
+func utility_problem() -> String:
+	var zoned := []
+	for key in lots:
+		if zones.zone_at(lots[key].zone_pt) != ZoneMap.Zone.NONE:
+			zoned.append(key)
+	if zoned.is_empty():
+		return ""
+	for u in ["power", "water"]:
+		var has_source := false
+		for id in services.buildings:
+			has_source = has_source or services.buildings[id].kind in Services.UTILITIES[u]
+		if not has_source:
+			var starter: int = Services.Kind.POWER_FEED if u == "power" else Services.Kind.WELL
+			var cost: int = Services.KINDS[starter].cost
+			var text := "No %s: build a %s in Services ($%s)" % [u, Services.KINDS[starter].name, money_text(cost)]
+			if cost > economy.money:
+				text += ". You need $%s more" % money_text(cost - economy.money)
+			return text
+	# Count zoned lots each utility misses, and why.
+	var missing := {"power": 0, "water": 0}
+	var unlinked := {"power": 0, "water": 0}
+	for key in zoned:
+		var s: Dictionary = services.served.get(key, {})
+		for u in missing:
+			if not s.get(u, false):
+				missing[u] += 1
+				if not s.get(u + "_linked", false):
+					unlinked[u] += 1
+	var worst := "power" if missing.power >= missing.water else "water"
+	if missing[worst] == 0:
+		return ""
+	var text := "%d zoned lots have no %s" % [missing[worst], worst]
+	var other := "water" if worst == "power" else "power"
+	if missing[other] > 0:
+		text += " and %d have no %s" % [missing[other], other]
+	if unlinked[worst] > 0:
+		var source := "power line" if worst == "power" else "water source"
+		text += ": their streets aren't joined by road to a %s" % source
+	else:
+		var use: Array = services.utility_use[worst]
+		text += ": %s is full (%s of %s homes), build a %s" % [worst, money_text(use[0]), money_text(use[1]),
+			"Substation" if worst == "power" else "Water tower"]
+	return text
+
+
 ## Buildings on zoned lots that lack power or water.
 func unserved_count() -> int:
 	var n := 0
