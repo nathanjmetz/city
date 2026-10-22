@@ -89,6 +89,17 @@ func _init() -> void:
 	var g := CitySim.new()
 	g.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
 	_check(g.permits.guidance("airport", 1).stance == "hold", "guidance is saved")
+	# Land-use requests: an outline the player can reshape at every corner.
+	var land := [[-50, -60], [50, -60], [50, 60], [-50, 60]]
+	_check(p.check(sim, land, 0.0, true).roads.size() == 1, "land across a road takes it in")
+	var bank := p.file(sim, {"hub": "bank", "hub_id": 1, "leader": "Ruth Ames", "title": "Office park",
+		"why": "w", "change": "Farmland to offices", "area": land, "per_m2": 20, "budget": 1000000})
+	_check(bank > 0 and p.requests[bank].shape == "area", "a leader asks for land")
+	_check(p.requests[bank].cost == 100 * 120 * 20, "priced by the square metre (%d)" % p.requests[bank].cost)
+	sim.apply({"type": "permit", "id": bank, "answer": "edit", "route": [[-50, 10], [50, 10], [50, 60], [-50, 60]]})
+	var b: Dictionary = p.requests[bank]
+	_check(b.state == Permits.State.APPROVED and b.route[0] == [-50.0, 10.0], "every corner moves, and the leader goes ahead")
+	_check(b.hits.roads.is_empty() and b.cost == 100 * 50 * 20, "the smaller land leaves the road out and costs less")
 	sim.apply({"type": "clear"})
 	_check(sim.permits.requests.is_empty(), "clearing the map clears requests")
 

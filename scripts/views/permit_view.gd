@@ -5,8 +5,9 @@ extends Node3D
 ## anything of yours it would take outlined in critical pink.
 ##
 ## Editing: drag a round handle to move a bend, drag a small one to add a
-## bend there, right click a bend to take it out. The ends stay put: one is
-## the hub, the other is where it's going.
+## bend there, right click a bend to take it out. A route's ends stay put
+## (one is the hub, the other is where it's going); a land request's
+## boundary can move at every corner.
 
 signal route_edited(route: Array, hits: Dictionary)
 
@@ -120,10 +121,10 @@ func _input(event: InputEvent) -> void:
 				# A midpoint: a new bend goes in there.
 				var i := h - route.size() + 1
 				var a: Array = route[i - 1]
-				var b: Array = route[i]
+				var b: Array = route[i % route.size()]
 				route.insert(i, [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5])
 				h = i
-			if h > 0 and h < route.size() - 1:
+			if _movable(h):
 				_drag = h
 		else:
 			_drag = -1
@@ -131,15 +132,26 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
 		var h := _pick(mb.position)
-		if h > 0 and h < route.size() - 1:
+		if h < route.size() and _movable(h) and route.size() > (3 if _is_area() else 2):
 			route.remove_at(h)
 			_hover = -1
 			_changed()
 			get_viewport().set_input_as_handled()
 
 
+func _is_area() -> bool:
+	return str(request.get("shape", "route")) == "area"
+
+
+## Every corner of land moves; a route's two ends don't.
+func _movable(h: int) -> bool:
+	if h < 0 or h >= route.size():
+		return false
+	return _is_area() or (h > 0 and h < route.size() - 1)
+
+
 func _changed() -> void:
-	hits = sim.permits.check(sim, route, float(request.width))
+	hits = sim.permits.check(sim, route, float(request.width), _is_area())
 	_redraw()
 	route_edited.emit(route, hits)
 
@@ -168,8 +180,11 @@ func _handles() -> Array:
 	var out := []
 	for p in route:
 		out.append(Vector3(p[0], LIFT, p[1]))
-	for i in range(1, route.size()):
-		out.append(Vector3((route[i - 1][0] + route[i][0]) * 0.5, LIFT, (route[i - 1][1] + route[i][1]) * 0.5))
+	var n := route.size() + (1 if _is_area() else 0)
+	for i in range(1, n):
+		var a: Array = route[i - 1]
+		var b: Array = route[i % route.size()]
+		out.append(Vector3((a[0] + b[0]) * 0.5, LIFT, (a[1] + b[1]) * 0.5))
 	return out
 
 
@@ -182,15 +197,21 @@ func _redraw() -> void:
 	for p in route:
 		line.append(Vector2(p[0], p[1]))
 	var w := float(request.width)
-	# The ground it would take, then a solid centre line.
-	for poly in Geometry2D.offset_polyline(line, w * 0.5, Geometry2D.JOIN_ROUND, Geometry2D.END_BUTT):
-		_fill(poly, Color(Brand.BRAND_MINT, 0.32))
-	for i in range(1, line.size()):
-		_bar(line[i - 1], line[i], maxf(w * 0.18, 1.2), Color(Brand.BRAND_MINT, 0.95))
+	if _is_area():
+		# The land asked for, with its boundary.
+		_fill(line, Color(Brand.BRAND_MINT, 0.22))
+		for i in line.size():
+			_bar(line[i], line[(i + 1) % line.size()], 2.0, Color(Brand.BRAND_MINT, 0.95))
+	else:
+		# The ground it would take, then a solid centre line.
+		for poly in Geometry2D.offset_polyline(line, w * 0.5, Geometry2D.JOIN_ROUND, Geometry2D.END_BUTT):
+			_fill(poly, Color(Brand.BRAND_MINT, 0.32))
+		for i in range(1, line.size()):
+			_bar(line[i - 1], line[i], maxf(w * 0.18, 1.2), Color(Brand.BRAND_MINT, 0.95))
 	# Roads it crosses.
 	for seg in hits.get("roads", []):
 		if sim.network.segments.has(seg):
-			var at := _crossing(seg, line, w)
+			var at := _crossing(seg, line, w) if not _is_area() else _inside(seg, line)
 			if at.x != INF:
 				_ring(at, w * 0.5 + 6.0, 1.6, Color(Brand.WARNING, 0.95))
 	# Anything of yours it would take.
@@ -210,7 +231,7 @@ func _redraw() -> void:
 				scale = camera.global_position.distance_to(p) * tan(deg_to_rad(camera.fov * 0.5)) * 2.0 \
 					/ maxf(get_viewport().get_visible_rect().size.y, 1.0)
 			var bend := i < route.size()
-			var end := i == 0 or i == route.size() - 1
+			var end := bend and not _movable(i)
 			var r := HANDLE_PX * scale * (1.0 if bend else 0.6)
 			if i == _hover or i == _drag:
 				r *= 1.3
@@ -232,6 +253,17 @@ func _crossing(seg: int, line: PackedVector2Array, w: float) -> Vector2:
 				sum += q
 				n += 1
 				break
+	return sum / n if n > 0 else Vector2(INF, INF)
+
+
+## Where a road runs through a piece of land: the middle of its samples inside.
+func _inside(seg: int, poly: PackedVector2Array) -> Vector2:
+	var sum := Vector2.ZERO
+	var n := 0
+	for p in sim.network.sample_segment(seg, 64):
+		if Geometry2D.is_point_in_polygon(Vector2(p.x, p.z), poly):
+			sum += Vector2(p.x, p.z)
+			n += 1
 	return sum / n if n > 0 else Vector2(INF, INF)
 
 
