@@ -33,6 +33,10 @@ func _ready() -> void:
 	add_child(buildings)
 	buildings.setup(sim)
 
+	var cars := TrafficView.new()
+	cars.setup(sim.traffic, func(): return _tick_time * CitySim.TICKS_PER_SECOND)
+	add_child(cars)
+
 	var cam := CityCamera.new()
 	add_child(cam)
 

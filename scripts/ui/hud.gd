@@ -232,10 +232,11 @@ func _sync_buttons() -> void:
 func _update_stats() -> void:
 	var s := sim.stats
 	var unemployed: float = 0.0 if s.workers == 0 else 100.0 * (s.workers - s.employed) / s.workers
-	_stats.text = "Population: %d\nJobs: %d   Unemployment: %d%%\nHomes: %d   Shops: %d   Industry: %d\nRoads: %.2f km" % [
+	_stats.text = "Population: %d\nJobs: %d   Unemployment: %d%%\nHomes: %d   Shops: %d   Industry: %d\nRoads: %.2f km   Cars: %d   Traffic flow: %d%%" % [
 		s.population, s.jobs, roundi(unemployed),
 		sim.count_buildings(ZoneMap.Zone.RESIDENTIAL), sim.count_buildings(ZoneMap.Zone.COMMERCIAL),
-		sim.count_buildings(ZoneMap.Zone.INDUSTRIAL), sim.network.total_length() / 1000.0]
+		sim.count_buildings(ZoneMap.Zone.INDUSTRIAL), sim.network.total_length() / 1000.0,
+		sim.traffic.cars.size(), roundi(sim.traffic.flow * 100.0)]
 	for z in _demand_bars:
 		_demand_bars[z].value = sim.demand[z]
 
