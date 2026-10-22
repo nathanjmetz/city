@@ -32,7 +32,7 @@ static func build_shop(seed: int, to_curb: float) -> Array:
 		b._main_street(to_curb)
 	else:
 		b._retail(to_curb)
-	return [b._commit_house(), b._commit_flat()]
+	return [b._commit_house(), b._commit_flat(), b.trees]
 
 
 static func build_factory(seed: int, to_curb: float) -> Array:
@@ -41,7 +41,7 @@ static func build_factory(seed: int, to_curb: float) -> Array:
 	b.rng.seed = seed
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 	b._factory(to_curb)
-	return [b._commit_house(), b._commit_flat()]
+	return [b._commit_house(), b._commit_flat(), b.trees]
 
 
 # ---------------------------------------------------------------- shops
@@ -93,6 +93,10 @@ func _retail(to_curb: float) -> void:
 	while x <= lot1 + 0.01:
 		_flat_rect("line", x - 0.06, x + 0.06, zf - 2.2 - 5.5, zf - 2.2, 0.07, LINE)
 		x += stall
+	if rng.randf() < 0.6:
+		var pick := TreeField.pick(rng)
+		var tx := lot0 + 0.8 if rng.randf() < 0.5 else lot1 - 0.8
+		trees.append([Vector3(tx, 0, -to_curb + 1.2), pick[0], pick[1], rng.randf_range(0.7, 1.0)])
 	# A light pole near the street.
 	var lx := lot1 - 0.5 if rng.randf() < 0.5 else lot0 + 0.5
 	_box("paint", Vector3(0.6, 0.5, 0.6), Vector3(lx, 0.25, 0.8), FOUNDATION)
@@ -225,6 +229,9 @@ func _factory(to_curb: float) -> void:
 			_cylinder("metal", Vector3(w * 0.5 - 2.0 - i * 3.2, 0, zf + d + 2.2), 1.4, h + rng.randf_range(2.0, 5.0), Color("#c9cbc8"))
 	elif extra < 0.6:
 		_cylinder("brick", Vector3(w * 0.3, 0, cz + d * 0.3), 0.7, h + 7.0, brick, 10)
+	for i in rng.randi_range(0, 3):
+		var pick := TreeField.pick(rng)
+		trees.append([Vector3(rng.randf_range(-9.0, 9.0), 0, rng.randf_range(zf + d + 3.0, 31.0)), pick[0], pick[1], rng.randf_range(0.8, 1.1)])
 	# Parking along the front, gravel yard, the drive.
 	_flat_rect("asphalt", -LOT_HALF + 0.6, -w * 0.5 + ow + 0.5, 0.0, zf - od - 0.5, 0.06)
 	_flat_rect("gravel", -LOT_HALF + 0.4, LOT_HALF - 0.4, zf + d, 31.5, 0.04, GRAVEL)

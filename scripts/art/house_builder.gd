@@ -30,6 +30,8 @@ const LOT_HALF := 10.0
 
 var _st := {}  # material key -> SurfaceTool
 var _flat := SurfaceTool.new()
+## Trees this lot plants: [local position, TreeField species, tint, scale].
+var trees := []
 var rng: RandomNumberGenerator
 
 
@@ -59,7 +61,8 @@ func _house(to_curb: float) -> Array:
 	else:
 		info = _ranch(zf, gs, gw, siding, roof, shutters, shutter, door, brick_style, brick)
 	_yard(info, to_curb)
-	return [_commit_house(), _commit_flat()]
+	_yard_trees(info, to_curb)
+	return [_commit_house(), _commit_flat(), trees]
 
 
 # ---------------------------------------------------------------- house types
@@ -234,6 +237,26 @@ func _back(x0: float, x1: float, zb: float, floors: Array, sill: float) -> void:
 				_box("concrete", Vector3(3.0, sill, 2.5), Vector3(x, sill * 0.5, zb + 1.25), FOUNDATION)
 			else:
 				_window(Vector3(x, floors[f], zb), Vector3(1, 0, 0), 0.9, 1.35, true, false, TRIM)
+
+
+## A front-yard tree, a street tree in the parkway, and one or two out back,
+## kept clear of the driveway and the house.
+func _yard_trees(h: Dictionary, to_curb: float) -> void:
+	var dx: float = h.drive_x
+	var clear: float = h.drive_w * 0.5 + 3.0
+	var spots := []
+	if rng.randf() < 0.7:
+		spots.append([Vector3(rng.randf_range(-8.0, 8.0), 0, rng.randf_range(1.5, h.front_z - 3.5)), true])
+	if rng.randf() < 0.55:
+		spots.append([Vector3(rng.randf_range(-8.0, 8.0), 0, -to_curb + 1.2), false])
+	for i in rng.randi_range(1, 2):
+		spots.append([Vector3(rng.randf_range(-8.0, 8.0), 0, rng.randf_range(24.0, 30.0)), false])
+	for s in spots:
+		var p: Vector3 = s[0]
+		if p.z < h.front_z and absf(p.x - dx) < clear:
+			continue
+		var pick := TreeField.pick(rng, s[1])
+		trees.append([p, pick[0], pick[1], rng.randf_range(0.75, 1.15)])
 
 
 func _corners(x0: float, x1: float, z0: float, z1: float, y0: float, y1: float) -> void:

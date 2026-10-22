@@ -5,10 +5,12 @@ extends Node3D
 
 var sim: CitySim
 var _nodes := {}  # lot key -> Node3D
+var _trees := TreeField.new()
 
 
 func setup(s: CitySim) -> void:
 	sim = s
+	add_child(_trees)
 	sim.buildings_changed.connect(_sync)
 	sim.lots_changed.connect(_sync)
 	_sync()
@@ -21,12 +23,13 @@ func _sync() -> void:
 				or not _nodes[key].position.is_equal_approx(sim.lots[key].front):
 			_nodes[key].queue_free()
 			_nodes.erase(key)
+			_trees.remove(key)
 	for key in sim.buildings:
 		if not _nodes.has(key) and sim.lots.has(key):
-			_nodes[key] = _spawn(sim.lots[key], sim.buildings[key])
+			_nodes[key] = _spawn(key, sim.lots[key], sim.buildings[key])
 
 
-func _spawn(lot: Dictionary, b: Dictionary) -> Node3D:
+func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 	var root := Node3D.new()
 	add_child(root)
 	root.position = lot.front
@@ -34,10 +37,21 @@ func _spawn(lot: Dictionary, b: Dictionary) -> Node3D:
 	root.basis = Basis.looking_at(-lot.normal, Vector3.UP)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = b.seed
+	var built := []
 	match int(b.zone):
-		ZoneMap.Zone.RESIDENTIAL: _add_built(root, HouseBuilder.build(rng.randi(), lot.to_curb))
-		ZoneMap.Zone.COMMERCIAL: _add_built(root, CommercialBuilder.build_shop(rng.randi(), lot.to_curb))
-		ZoneMap.Zone.INDUSTRIAL: _add_built(root, CommercialBuilder.build_factory(rng.randi(), lot.to_curb))
+		ZoneMap.Zone.RESIDENTIAL: built = HouseBuilder.build(rng.randi(), lot.to_curb)
+		ZoneMap.Zone.COMMERCIAL: built = CommercialBuilder.build_shop(rng.randi(), lot.to_curb)
+		ZoneMap.Zone.INDUSTRIAL: built = CommercialBuilder.build_factory(rng.randi(), lot.to_curb)
+	if built.is_empty():
+		return root
+	_add_built(root, built)
+	# Trees go to the shared tree field, placed in world space.
+	var frame := Transform3D(root.basis, root.position)
+	var trees := []
+	for t in built[2]:
+		var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
+		trees.append([frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0]), t[1], t[2]])
+	_trees.set_trees(key, trees)
 	# Grow in, like a new building going up.
 	root.scale = Vector3(1.0, 0.01, 1.0)
 	create_tween().tween_property(root, "scale", Vector3.ONE, 0.45) \
