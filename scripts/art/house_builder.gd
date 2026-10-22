@@ -483,9 +483,11 @@ func _glass(c: Vector3, right: Vector3, w: float, h: float, blinds: float) -> vo
 		[Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)])
 
 
-func _flat_rect(kind: String, x0: float, x1: float, z0: float, z1: float, y: float) -> void:
-	var col := MULCH if kind == "mulch" else Color.WHITE
-	col.a = 1.0 if kind == "mulch" else 0.0
+## Flat ground work. Kinds (packed into vertex alpha for the yard shader):
+## drive (concrete), asphalt, line (painted, in `col`), mulch or gravel (in `col`).
+func _flat_rect(kind: String, x0: float, x1: float, z0: float, z1: float, y: float, col := MULCH) -> void:
+	var alpha := {"drive": 0.0, "asphalt": 0.4, "line": 0.72, "mulch": 1.0, "gravel": 1.0}
+	col.a = alpha[kind]
 	var pts := [Vector3(x0, y, z0), Vector3(x1, y, z0), Vector3(x1, y, z1), Vector3(x0, y, z1)]
 	for i in [0, 1, 2, 0, 2, 3]:  # clockwise seen from above
 		_flat.set_normal(Vector3.UP)

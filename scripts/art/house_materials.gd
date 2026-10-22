@@ -105,9 +105,11 @@ void fragment() {
 }
 """
 
-## Ground work: concrete drives and walks (alpha 0) or mulch beds (alpha 1).
+## Ground work, by vertex alpha: concrete drives and walks (0), asphalt
+## lots (0.4), painted lines (0.72, colour in rgb), mulch or gravel (1).
 const YARD := """
 uniform vec4 concrete : source_color = vec4(0.67, 0.66, 0.62, 1.0);
+uniform vec4 asphalt : source_color = vec4(0.30, 0.30, 0.30, 1.0);
 void fragment() {
 	vec2 p = world_pos.xz;
 	float close = clamp(1.0 - length(VERTEX) / 150.0, 0.0, 1.0);
@@ -115,13 +117,61 @@ void fragment() {
 	float d = abs(fract(along / 3.0 + 0.5) - 0.5) * 3.0;
 	float joint = 1.0 - smoothstep(0.01, 0.01 + fwidth(along) * 1.5, d);
 	float stain = smoothstep(0.55, 0.85, texture(noise_soft, p / 4.0).r);
-	vec3 drive = concrete.rgb * (1.0 - stain * 0.12) * (1.0 - joint * 0.4 * close);
-	drive *= 0.95 + texture(noise_grain, p / 0.6).r * 0.1;
+	float grain = texture(noise_grain, p / 0.6).r;
+	vec3 drive = concrete.rgb * (1.0 - stain * 0.12) * (1.0 - joint * 0.4 * close) * (0.95 + grain * 0.1);
+	vec3 lot = asphalt.rgb * (0.85 + texture(noise_soft, p / 20.0).r * 0.3) * (1.0 - stain * 0.15)
+		* (1.0 + (texture(noise_grain, p / 0.3).r - 0.5) * 0.25 * close);
+	float wear = smoothstep(0.4, 0.7, texture(noise_grain, p / 1.1).r);
+	vec3 line = mix(lin(COLOR.rgb), asphalt.rgb, wear * 0.45);
 	float chips = texture(noise_grain, p / 0.12).r;
-	vec3 mulch = lin(COLOR.rgb) * (0.6 + chips * 0.8);
-	ALBEDO = mix(drive, mulch, step(0.5, COLOR.a));
+	vec3 loose = lin(COLOR.rgb) * (0.6 + chips * 0.8);
+	vec3 col = drive;
+	col = mix(col, lot, step(0.2, COLOR.a));
+	col = mix(col, line, step(0.6, COLOR.a));
+	col = mix(col, loose, step(0.86, COLOR.a));
+	ALBEDO = col;
 	ROUGHNESS = 0.9;
 	SPECULAR = 0.25;
+}
+"""
+
+## Ribbed metal panels (walls and roofs of metal buildings): ribs every 12 in
+## across UV.x, catching light on one side.
+const METAL := """
+void fragment() {
+	float t = UV.x / 0.305;
+	float f = fract(t);
+	float rib = smoothstep(0.0, 0.08, f) * (1.0 - smoothstep(0.16, 0.24, f));
+	float s = 1.0 - 0.18 * (1.0 - smoothstep(0.24, 0.3, f)) + rib * 0.12;
+	s = mix(s, 0.97, clamp(fwidth(t) * 1.5, 0.0, 1.0));
+	float streak = texture(noise_soft, vec2(world_pos.x + world_pos.z, world_pos.y * 0.15) / 6.0).r;
+	float grime = 1.0 - 0.1 * (1.0 - smoothstep(0.2, 1.2, world_pos.y));
+	ALBEDO = lin(COLOR.rgb) * s * grime * (0.93 + streak * 0.12);
+	ROUGHNESS = 0.45;
+	SPECULAR = 0.5;
+}
+"""
+
+## Store signs: a coloured panel (vertex colour) with a line of pale block
+## letters that reads as a name from the street. UV.x is metres along the
+## sign, UV.y runs 0..1 up it, and vertex alpha carries the width / 30.
+const SIGN := """
+void fragment() {
+	float nx = UV.x / max(COLOR.a * 30.0, 0.1);
+	float pitch = 0.42;
+	float i = floor(UV.x / pitch);
+	vec2 q = (vec2(fract(UV.x / pitch), UV.y) - vec2(0.15, 0.25)) / vec2(0.7, 0.53);
+	float inside = step(0.0, q.x) * step(q.x, 1.0) * step(0.0, q.y) * step(q.y, 1.0);
+	vec2 cell = floor(q * vec2(3.0, 5.0));
+	float on = step(0.4, hash(vec2(i * 7.0 + cell.x, cell.y + COLOR.r * 97.0)));
+	float gap = step(0.12, hash(vec2(i, 3.3 + COLOR.g * 31.0)));
+	float band = step(0.12, nx) * step(nx, 0.88);
+	float text = inside * on * gap * band;
+	float aa = clamp(fwidth(UV.x / pitch) * 3.0, 0.0, 1.0);
+	text = mix(text, 0.3 * band * step(0.25, UV.y) * step(UV.y, 0.78), aa);
+	ALBEDO = mix(lin(COLOR.rgb), vec3(0.86, 0.84, 0.79), text);
+	ROUGHNESS = 0.4;
+	SPECULAR = 0.5;
 }
 """
 
@@ -140,6 +190,8 @@ static func get_mat(key: String) -> Material:
 		"roof": mat = _shader(ROOF)
 		"glass": mat = _shader(GLASS)
 		"yard": mat = _shader(YARD)
+		"metal": mat = _shader(METAL)
+		"sign": mat = _shader(SIGN)
 		"foliage": mat = _plain(1.0)
 		_: mat = _plain(0.55)  # paint, shutters, trim
 	_cache[key] = mat
