@@ -286,6 +286,12 @@ func _init() -> void:
 	var stub := CitySim.new()
 	stub.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
 	_check(stub.logistics._edge(stub).is_empty(), "a dead-end street isn't a way out of town")
+	var old_save := stub.to_dict()
+	old_save.erase("links")
+	var upgraded := CitySim.new()
+	upgraded.from_dict(JSON.parse_string(JSON.stringify(old_save)))
+	_check(upgraded.region_links.size() == 1 and absf(upgraded.network.nodes[upgraded.region_links[0]].x) > 2100.0,
+		"an older town gets a county highway out to the region")
 	_check(oil.industry_problem("oil", best + Vector3(0, 0, 900), Vector3(0, 0, -1)).begins_with("Needs a road")
 		or oil.industry_problem("oil", best + Vector3(0, 0, 900), Vector3(0, 0, -1)).begins_with("No crude"),
 		"a company needs a road and the resource nearby")
