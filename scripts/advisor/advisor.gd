@@ -18,7 +18,8 @@ const SHOWN := 3
 
 ## Every tip that applies right now, most urgent first:
 ## [{"id", "kind", "text"}]. `category` is the open tool category
-## ("roads", "zones", "farms", "services", "traffic", "bulldoze", "budget" or "").
+## ("roads", "zones", "farms", "services", "traffic", "bulldoze", "budget"),
+## an open info view ("view_fertility" and so on) or "".
 static func tips(sim: CitySim, category := "") -> Array:
 	var out := []
 	_problems(sim, out)
@@ -45,7 +46,7 @@ static func first_ideas(sim: CitySim) -> Array:
 	if sim.services.buildings.is_empty():
 		ideas.append("Nobody builds without power and water, so a power line and a well (Services) go a long way.")
 	if ideas.size() < 2:
-		ideas.append("Out past town, the green dirt grows the best corn. Farming is worth a look.")
+		ideas.append("Out past town, good dirt grows the best corn. The Fertility view shows where.")
 	return ideas.slice(0, 2)
 
 
@@ -137,7 +138,7 @@ static func _ideas(sim: CitySim, out: Array) -> void:
 	if s.population >= 40 and _free_lots(sim)[ZoneMap.Zone.COMMERCIAL] == 0 and sim.count_buildings(ZoneMap.Zone.COMMERCIAL) == 0:
 		_add(out, "first_shops", Kind.IDEA, "Town's big enough now that a little main street could do alright.")
 	if s.population >= 60 and sim.farms.farms.is_empty():
-		_add(out, "farms", Kind.IDEA, "Out past town, good dirt is steady money. The greenest soil grows the best corn.")
+		_add(out, "farms", Kind.IDEA, "Out past town, good dirt is steady money. Views up top shows where the soil is richest.")
 	if e.milestone < Economy.MILESTONES.size() and s.population > 0:
 		var goal: Array = Economy.MILESTONES[e.milestone]
 		var left: int = int(goal[0]) - s.population
@@ -171,8 +172,9 @@ const TOOL_NOTES := {
 		"Green roads while placing show how far a station covers.",
 	],
 	"farms": [
-		"Green soil is the richest. Corn likes it best; soybeans are steadier on poor ground.",
-		"A farmhouse needs a road within 250 m for its lane.",
+		"Views, top left, has Fertility: the greener the soil, the better the corn.",
+		"Place a farmhouse near good dirt within 250 m of a road, and the farmer picks the fields.",
+		"Reserve keeps roads and zoning off land you're saving for farming.",
 		"Farms buy more fields when they're doing well and sell off losers in bad years.",
 	],
 	"traffic": [
@@ -181,6 +183,21 @@ const TOOL_NOTES := {
 	],
 	"budget": [
 		"Lower taxes bring more demand, higher ones bring more money. A day settles a month.",
+	],
+	"view_fertility": [
+		"Corn likes the greenest dirt; soybeans hold up better on poorer ground.",
+	],
+	"view_oil": [
+		"Oil never runs out, so a good field stays good.",
+	],
+	"view_ore": [
+		"Ore never runs out either. Wherever it shows, it stays.",
+	],
+	"view_forest": [
+		"Woods grow back after they're cut.",
+	],
+	"view_traffic": [
+		"Red is stuck, green is moving. Busy corners are where lights or a roundabout earn their keep.",
 	],
 	"bulldoze": [
 		"Click a road or a service building to clear it. Esc puts the dozer away.",

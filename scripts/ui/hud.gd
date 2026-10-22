@@ -55,7 +55,6 @@ var _views_button: Button
 var _view_cards := {}  # view key -> Button
 var _view := ""
 var _help_button: Button
-var _top_bar := PanelContainer.new()
 var advisor := AdvisorPanel.new()
 
 
@@ -212,7 +211,7 @@ func _show_view(key: String) -> void:
 # --- Top bar ----------------------------------------------------------------
 
 func _build_top_bar() -> void:
-	var bar := _top_bar
+	var bar := PanelContainer.new()
 	bar.add_theme_stylebox_override("panel", UiStyle.dock(true))
 	_root.add_child(bar)
 	bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE, Control.PRESET_MODE_MINSIZE)
@@ -268,7 +267,7 @@ func _build_top_bar() -> void:
 		row.add_child(b)
 		_speed_buttons.append(b)
 	row.add_child(VSeparator.new())
-	advisor.setup(sim, func(): return _category)
+	advisor.setup(sim, func(): return _category if _category != "" or _view == "" else "view_" + _view)
 	row.add_child(advisor.make_button())
 	_help_button = _icon_button("help", 24, "Controls")
 	_help_button.toggled.connect(func(on):

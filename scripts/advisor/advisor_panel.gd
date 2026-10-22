@@ -13,10 +13,10 @@ const WIDTH := 320
 ## A tip has to stick around this long (game ticks) before it earns a dot,
 ## so numbers bobbing around a threshold don't nag.
 const SETTLE_TICKS := 120
-## Neighbors brand colours.
-const TEAL := Color("2f8f8c")
-const MINT := Color("8fcfbf")
-const CORAL := Color("ef6f51")
+## Neighbors brand colours. Coral means "you", so it's never used here.
+const MINT := Brand.BRAND_MINT
+## The mark beside each kind of tip.
+const KIND_COLORS := [Brand.CRITICAL, Brand.WARNING, Brand.BRAND_MINT, Brand.BRAND_TEAL]
 
 var sim: CitySim
 var category := func() -> String: return ""
@@ -96,6 +96,8 @@ func _ready() -> void:
 		cb.tooltip_text = entry[3]
 		cb.focus_mode = Control.FOCUS_NONE
 		cb.add_theme_font_size_override("font_size", 12)
+		for state in ["normal", "hover", "pressed", "hover_pressed"]:
+			cb.add_theme_stylebox_override(state, StyleBoxEmpty.new())
 		cb.button_pressed = settings[key]
 		cb.toggled.connect(func(on):
 			settings[key] = on
@@ -199,7 +201,7 @@ func _update_dot() -> void:
 		return
 	var problem := _fresh(Advisor.Kind.PROBLEM)
 	_dot.visible = settings.auto and not visible and (problem or _fresh(Advisor.Kind.IDEA))
-	_dot.color = CORAL if problem else MINT
+	_dot.color = Brand.CRITICAL if problem else MINT
 	_button.tooltip_text = "Advice" if _tips.is_empty() else "Advice: " + _tips[0].text
 
 
@@ -245,7 +247,7 @@ func _show_welcome() -> void:
 		_tips.filter(func(t): return t.kind != Advisor.Kind.TOOL).map(func(t): return t.text).slice(0, 2)
 	for idea in ideas:
 		_list.add_child(_row({"kind": Advisor.Kind.IDEA, "text": idea}))
-	_list.add_child(_text("I'll keep an eye on things and put a little dot on the Advice button up top when something's worth a look. Click it anytime. Rather I hush? Switch off \"Tips on their own\" down below. I won't pop up on you unless you turn that on too.", UiStyle.MUTED))
+	_list.add_child(_text("I'll put a little dot on Advice up top when something's worth a look. Click it anytime. Rather I hush? Switch off \"Tips on their own\" below.", UiStyle.MUTED))
 	var ok := Button.new()
 	ok.text = "Sounds good"
 	ok.focus_mode = Control.FOCUS_NONE
@@ -255,15 +257,23 @@ func _show_welcome() -> void:
 	_more.visible = false
 
 
-## One tip: a coloured mark for how much it matters, then the words.
+## One tip: a coloured mark for how much it matters (with the warning icon
+## for problems, as the brand asks), then the words.
 func _row(t: Dictionary) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	var mark := ColorRect.new()
 	mark.custom_minimum_size = Vector2(3, 0)
-	mark.color = [CORAL, Color(CORAL, 0.55), MINT, TEAL][t.kind]
+	mark.color = KIND_COLORS[t.kind]
 	mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(mark)
+	if t.kind <= Advisor.Kind.HEADS_UP:
+		var warn := Icon.new("warning", 16)
+		warn.color = KIND_COLORS[t.kind]
+		warn.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		warn.tooltip_text = "Needs fixing" if t.kind == Advisor.Kind.PROBLEM else "Heads up"
+		warn.mouse_filter = Control.MOUSE_FILTER_PASS
+		row.add_child(warn)
 	var l := _text(t.text)
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(l)
@@ -312,7 +322,7 @@ func _save_settings() -> void:
 
 ## The little "something new" dot on the button.
 class _Dot extends Control:
-	var color := Color("8fcfbf"):
+	var color := Brand.BRAND_MINT:
 		set(v):
 			color = v
 			queue_redraw()
