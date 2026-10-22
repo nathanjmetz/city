@@ -3,7 +3,7 @@ extends CanvasLayer
 ## The pause menu, like Cities: Skylines 2: a modal in the middle of the
 ## screen. Escape puts tools down and closes panels first (the HUD does that);
 ## once nothing is left, Escape opens this. Resume, save, back to the title
-## screen, or quit. In a shared region it shows the invite and lets you leave
+## screen, credits, or quit. In a shared region it shows the invite and lets you leave
 ## (the region keeps going).
 
 var game: Node  # main.gd
@@ -102,6 +102,7 @@ func _fill() -> void:
 		_col.add_child(_button("Main menu", func():
 			Session.save_city(game.sim)
 			Session.to_menu()))
+	_col.add_child(_button("Credits", func(): _note.text = SoundCredits.text()))
 	if not OS.has_feature("web"):
 		_col.add_child(_button("Quit to desktop", func():
 			if Session.mode == Session.Mode.SOLO:
