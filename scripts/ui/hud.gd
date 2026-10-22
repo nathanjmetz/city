@@ -15,6 +15,8 @@ var zone_tool: ZoneTool
 var service_tool: ServiceTool
 var farm_tool: FarmTool
 var traffic_tool: TrafficTool
+var info_view: InfoView
+var service_view: ServiceView
 var _traffic_cards := {}  # TrafficTool.Mode -> Button
 var sim: CitySim
 var game: Node  # main.gd: game speed
@@ -47,6 +49,11 @@ var _budget_open := false
 var _budget_rows := {}   # key -> value Label
 var _tax_labels := {}    # zone -> rate Label
 var _help := PanelContainer.new()
+var _top_bar: PanelContainer
+var _views_panel := PanelContainer.new()
+var _views_button: Button
+var _view_cards := {}  # view key -> Button
+var _view := ""
 var _help_button: Button
 
 
@@ -67,6 +74,7 @@ func _ready() -> void:
 	_build_hint()
 	_build_bottom_bar()
 	_build_help()
+	_build_views()
 
 	road_tool.mode_changed.connect(func(_m): _sync())
 	road_tool.options_changed.connect(_sync)
@@ -104,6 +112,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 ## Puts every tool away and closes every panel.
 func close_all() -> void:
 	_budget_open = false
+	_show_view("")
+	_views_panel.visible = false
+	_views_button.set_pressed_no_signal(false)
 	_help.visible = false
 	_help_button.set_pressed_no_signal(false)
 	road_tool.set_mode(RoadTool.Mode.NONE)
@@ -115,6 +126,7 @@ func close_all() -> void:
 
 
 func _process(_delta: float) -> void:
+	_views_panel.position = Vector2(0, _top_bar.size.y)
 	var t := sim.clock()
 	var hour: int = t.hour % 12
 	_clock.text = "%s %s %d  %d:%02d %s" % [
@@ -126,6 +138,73 @@ func _process(_delta: float) -> void:
 	_cars.text = "%d  ·  %d%% flow" % [sim.traffic.cars.size(), roundi(sim.traffic.flow * 100.0)]
 
 
+# --- Views (Cities: Skylines 2's info views) ---------------------------------
+
+const VIEWS := [
+	["fertility", "fertility", "Fertility", "Where the soil is richest for farms"],
+	["oil", "oil", "Oil", "Oil underground. It never runs out."],
+	["ore", "ore", "Ore", "Ore deposits. They never run out."],
+	["forest", "forest", "Forest", "Woodland for forestry. It grows back."],
+	["fire", "fire", "Fire", "Roads a fire station reaches"],
+	["police", "police", "Police", "Roads police patrol"],
+	["health", "health", "Health", "Roads a clinic reaches"],
+	["school", "school", "Schools", "Roads within reach of a school"],
+	["traffic", "flow", "Traffic", "How freely traffic moves"],
+]
+
+
+func views_open() -> bool:
+	return _views_panel.visible
+
+
+## A slim column docked under the top bar, flush to the left edge.
+func _build_views() -> void:
+	_views_panel.add_theme_stylebox_override("panel", UiStyle.dock(false))
+	_views_panel.visible = false
+	_root.add_child(_views_panel)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 2)
+	_views_panel.add_child(col)
+	col.add_child(UiStyle.label("VIEWS", 11, UiStyle.MUTED))
+	for v in VIEWS:
+		var key: String = v[0]
+		var b := Button.new()
+		b.toggle_mode = true
+		b.text = "  " + v[2]
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.tooltip_text = v[3]
+		b.custom_minimum_size = Vector2(132, 28)
+		var ic := Icon.new(v[1], 20)
+		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ic.position = Vector2(6, 4)
+		ic.size = Vector2(20, 20)
+		b.add_child(ic)
+		b.text = "       " + v[2]
+		b.pressed.connect(func(): _show_view("" if _view == key else key))
+		col.add_child(b)
+		_view_cards[key] = b
+
+
+## Turns one view on (or all off with "").
+func _show_view(key: String) -> void:
+	_view = key
+	var resource := {"fertility": InfoView.Mode.FERTILITY, "oil": InfoView.Mode.OIL,
+		"ore": InfoView.Mode.ORE, "forest": InfoView.Mode.FOREST}
+	info_view.set_mode(resource.get(key, InfoView.Mode.NONE))
+	var cover := {"fire": Services.Kind.FIRE, "police": Services.Kind.POLICE,
+		"health": Services.Kind.CLINIC, "school": Services.Kind.SCHOOL}
+	if cover.has(key):
+		service_view.show_kind = cover[key]
+	elif service_tool.kind == ServiceTool.OFF:
+		service_view.show_kind = -1
+	if key == "traffic":
+		traffic_tool.set_mode(TrafficTool.Mode.VIEW)
+	elif traffic_tool.mode == TrafficTool.Mode.VIEW:
+		traffic_tool.set_mode(TrafficTool.Mode.NONE)
+	for k in _view_cards:
+		_view_cards[k].set_pressed_no_signal(k == _view)
+
+
 # --- Top bar ----------------------------------------------------------------
 
 func _build_top_bar() -> void:
@@ -133,10 +212,15 @@ func _build_top_bar() -> void:
 	bar.add_theme_stylebox_override("panel", UiStyle.dock(true))
 	_root.add_child(bar)
 	bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE, Control.PRESET_MODE_MINSIZE)
+	_top_bar = bar
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	bar.add_child(row)
 
+	_views_button = _icon_button("views", 24, "Views: see the map by fertility, oil, ore, forest, services and traffic")
+	_views_button.toggled.connect(func(on): _views_panel.visible = on)
+	row.add_child(_views_button)
+	row.add_child(VSeparator.new())
 	_stat(row, "people", _pop, "Population")
 	_stat(row, "jobs", _jobs, "Jobs and unemployment")
 	_stat(row, "car", _cars, "Cars on the road and how freely traffic flows")
@@ -390,12 +474,12 @@ func _farms_drawer() -> PanelContainer:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	drawer.add_child(row)
-	var area := _section(row, "Outline with nodes")
-	var houses := _section(row, "Farmhouse  ·  buys fields as it profits")
-	for entry in [[FarmTool.Mode.FARMLAND, "farmland", "Farmland", "Outline an area as farmland", area],
-			[FarmTool.Mode.CLEAR, "dezone", "Clear", "Take land back out of farming", area],
-			[FarmTool.Mode.CORN, "corn", "Corn", "Corn farm: more income on rich soil", houses],
-			[FarmTool.Mode.SOYBEANS, "soybeans", "Soybeans", "Soybean farm: steadier on poorer soil", houses]]:
+	var houses := _section(row, "Farmhouse  ·  near green soil")
+	var area := _section(row, "Save land")
+	for entry in [[FarmTool.Mode.CORN, "corn", "Corn", "Corn farm: more income on rich soil", houses],
+			[FarmTool.Mode.SOYBEANS, "soybeans", "Soybeans", "Soybean farm: steadier on poorer soil", houses],
+			[FarmTool.Mode.RESERVE, "reserve", "Reserve", "Outline land to save for farming: no roads or zoning there", area],
+			[FarmTool.Mode.CLEAR, "dezone", "Release", "Release reserved land", area]]:
 		var m: int = entry[0]
 		var b := _card(entry[1], entry[2], "")
 		b.tooltip_text = entry[3]
@@ -582,7 +666,7 @@ func _open(cat: String) -> void:
 			road_tool.set_mode(RoadTool.Mode.BULLDOZE)
 		"farms":
 			if farm_tool.mode == FarmTool.Mode.NONE:
-				farm_tool.set_mode(FarmTool.Mode.FARMLAND)
+				farm_tool.set_mode(FarmTool.Mode.CORN)
 		"traffic":
 			if traffic_tool.mode == TrafficTool.Mode.NONE:
 				traffic_tool.set_mode(TrafficTool.Mode.VIEW)

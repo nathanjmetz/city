@@ -89,8 +89,9 @@ func _on_command(cmd: Dictionary) -> void:
 			play("build")
 		"remove_road", "remove_farm", "remove_service":
 			play("bulldoze")
-		"paint_farmland":
-			play("road" if cmd.get("on", true) else "bulldoze")
+		"paint_reserve", "paint_farmland":
+			var on: bool = str(cmd.get("kind", "farm" if bool(cmd.get("on", true)) else "")) != ""
+			play("road" if on else "bulldoze")
 		"paint_zone":
 			play("brush")
 		"set_junction":

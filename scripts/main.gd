@@ -68,6 +68,10 @@ func _ready() -> void:
 	ui_sounds.setup(sim)
 	add_child(ui_sounds)
 
+	var info_view := InfoView.new()
+	add_child(info_view)
+	info_view.setup(sim, cam)
+
 	var road_tool := RoadTool.new()
 	road_tool.setup(sim, cam)
 	add_child(road_tool)
@@ -81,7 +85,7 @@ func _ready() -> void:
 	add_child(service_tool)
 
 	var farm_tool := FarmTool.new()
-	farm_tool.setup(sim, cam, farm_view)
+	farm_tool.setup(sim, cam, info_view)
 	add_child(farm_tool)
 
 	var traffic_tool := TrafficTool.new()
@@ -115,12 +119,15 @@ func _ready() -> void:
 	hud.service_tool = service_tool
 	hud.farm_tool = farm_tool
 	hud.traffic_tool = traffic_tool
+	hud.info_view = info_view
+	hud.service_view = service_view
 	add_child(hud)
 
 	var menu := GameMenu.new()
 	menu.setup(self, func(): return road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
-		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE)
+		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
+		or info_view.mode != InfoView.Mode.NONE or hud.views_open())
 	add_child(menu)
 	if Session.online():
 		var region := RegionView.new()

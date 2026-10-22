@@ -151,7 +151,19 @@ func _init() -> void:
 	fm.apply({"type": "build_road", "start": [-600, 0], "ctrl": [0, 0], "end": [600, 0]})
 	_check(fm.apply({"type": "paint_farmland", "points": [[-500, 20], [500, 20], [500, 600], [-500, 600]]}),
 		"farmland outlined with nodes")
-	_check(not fm.apply({"type": "place_farmhouse", "pos": [0, -200], "dir": [0, -1]}), "farmhouse needs farmland")
+	_check(fm.apply({"type": "paint_reserve", "kind": "oil", "points": [[-500, -20], [500, -20], [500, -400], [-500, -400]]}),
+		"land reserved for oil")
+	_check(not fm.apply({"type": "place_farmhouse", "pos": [0, -200], "dir": [0, 1]}), "no farmhouse on oil land")
+	_check(not fm.apply({"type": "build_road", "start": [0, -100], "ctrl": [0, -200], "end": [0, -300]}),
+		"no roads across reserved land")
+	fm.apply({"type": "paint_zone", "center": [0, -60], "radius": 20, "zone": ZoneMap.Zone.RESIDENTIAL})
+	_check(fm.zones.zone_at(Vector3(0, 0, -60)) == ZoneMap.Zone.NONE, "no zoning on reserved land")
+	var oil_seen := 0.0
+	for k in 400:
+		var v := Resources.at(Resources.Kind.OIL, Vector3(k * 97.0, 0, k * 61.0))
+		_check(v >= 0.0 and v <= 1.0, "resource levels stay 0 to 1") if k == 0 else null
+		oil_seen = maxf(oil_seen, v)
+	_check(oil_seen > 0.5, "oil turns up somewhere on the map")
 	_check(fm.apply({"type": "place_farmhouse", "pos": [0, 60], "dir": [0, -1], "crop": "corn"}), "farmhouse placed")
 	_check(not fm.apply({"type": "place_farmhouse", "pos": [0, 560], "dir": [0, -1]}), "farmhouse needs a road near")
 	var farm: Dictionary = fm.farms.farms.values()[0]

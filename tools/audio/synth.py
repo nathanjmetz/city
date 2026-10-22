@@ -207,7 +207,8 @@ def ui_palette(style):
         s["road"] = mix((swish(0.35, 200, 1800, 9), 0, 0.35), (tone(67, 0.3, 0.5), 0.05, 0.5))
         s["build"] = mix((thud(0.4, 160, 60), 0, 0.7), (tone(79, 0.3), 0.08, 0.4))
         s["money"] = mix((tone(88, 0.3, 1.0), 0, 0.5), (tone(93, 0.6, 1.0), 0.08, 0.5))
-        s["milestone"] = mix(*[(pluck(midi(n), 1.6, 0.6), i * 0.11, 0.5) for i, n in enumerate([67, 71, 74, 79])])
+        # The brand's house motif, C-E-G, resolving up to C.
+        s["milestone"] = mix(*[(pluck(midi(n), 1.6, 0.6), i * 0.13, 0.5) for i, n in enumerate([60, 64, 67, 72])])
         hi = 2500
     elif style == "clean":  # soft glassy sines, modern UI
         def tone(n, d=0.3, dec=14):

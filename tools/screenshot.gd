@@ -21,6 +21,9 @@ func _process(_delta: float) -> bool:
 		var out := args[0] if args.size() > 0 else "shot.png"
 		root.get_viewport().get_texture().get_image().save_png(out)
 		print("saved ", out)
+		# Render cost, to keep an eye on the web build.
+		print("draw calls: ", Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+			"  primitives: ", Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
 		quit()
 	return false
 
@@ -165,7 +168,12 @@ func _demo_farms(sim: CitySim) -> void:
 			var args := OS.get_cmdline_user_args()
 			if args.size() >= 4:
 				c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
-	if OS.get_cmdline_user_args().size() >= 6:
-		for c in _main.get_children():
-			if c is FarmTool:
-				c.set_mode(FarmTool.Mode.FARMLAND)
+	# An eighth argument opens a map view (fertility, oil, ore, forest...);
+	# otherwise a look point shows the farm tool with its reserves.
+	var va := OS.get_cmdline_user_args()
+	for c in _main.get_children():
+		if va.size() >= 8 and c is Hud:
+			c._show_view(va[7])
+			c._views_button.button_pressed = true
+		elif va.size() >= 6 and va.size() < 8 and c is FarmTool:
+			c.set_mode(FarmTool.Mode.RESERVE)

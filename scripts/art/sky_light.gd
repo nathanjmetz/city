@@ -36,7 +36,10 @@ func _ready() -> void:
 	env.sky = sky
 	# Skylight fills the shadows; a little less than the sun so shadows read.
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_sky_contribution = 1.0
+	# Part sky, part neutral bounce light from lawns and pavement, so shade
+	# reads blue-grey like in photos rather than saturated blue.
+	env.ambient_light_sky_contribution = 0.6
+	env.ambient_light_color = Color(0.66, 0.66, 0.64)
 	env.ambient_light_energy = 0.5
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	# AgX keeps bright roofs and concrete from clipping to flat white.
