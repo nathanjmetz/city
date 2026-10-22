@@ -21,9 +21,9 @@ static func pick(sim: CitySim, p: Vector3) -> Dictionary:
 	var pid := sim.parks.at(p)
 	if pid != -1:
 		return {"type": "park", "id": pid}
-	var pid := sim.power.at(p)
-	if pid != -1:
-		return {"type": "power", "id": pid}
+	var pwid := sim.power.at(p)
+	if pwid != -1:
+		return {"type": "power", "id": pwid}
 	var iid := sim.industry.site_at(p)
 	if iid == -1:
 		iid = sim.industry.pad_at(p)

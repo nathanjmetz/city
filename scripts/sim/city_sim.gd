@@ -254,6 +254,8 @@ func apply_now(cmd: Dictionary) -> bool:
 		"remove_power":
 			ok = power.sites.has(int(cmd.id))
 			power.sites.erase(int(cmd.id))
+			if power.sites.is_empty():
+				trade.offer("power", 0.0)
 			_lots_dirty = true
 			power_changed.emit()
 		"remove_industry":
@@ -724,6 +726,8 @@ func warehouse_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 			return "That ground belongs to a company."
 		if hubs.covers(p):
 			return "Overlaps a landfill, recycling center or cemetery."
+		if power.covers(p):
+			return "That ground belongs to a power company."
 	if parks.overlaps(Array(poly)):
 		return "That ground is a park."
 	return ""
@@ -742,7 +746,7 @@ func warehouse_ground_ok(poly: PackedVector2Array, id: int) -> bool:
 			return false
 	for p in _grid_in(poly):
 		if farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) or reserves.kind_at(p) != "" \
-				or hubs.covers(p):
+				or hubs.covers(p) or power.covers(p):
 			return false
 	for key in lots:
 		if not buildings.has(key) and zones.zone_at(lots[key].zone_pt) == ZoneMap.Zone.NONE:
@@ -807,6 +811,12 @@ func power_problem(pos: Vector3, dir: Vector3) -> String:
 			return "That ground is farmland."
 		if industry.covers(p) or power.covers(p):
 			return "Too close to another company."
+		if hubs.covers(p):
+			return "Overlaps a landfill, recycling center or cemetery."
+	if _on_warehouse(pts):
+		return "Overlaps a warehouse."
+	if parks.overlaps(Array(poly)):
+		return "That ground is a park."
 	return ""
 
 
