@@ -22,6 +22,10 @@ func _init() -> void:
 	_check(tips[0].id == "no_utilities", "no power or water is the top worry (got %s)" % tips[0].id)
 	_check("power or water" in tips[0].text, "names both missing utilities")
 
+	sim.economy.money = 1000
+	_check(Advisor.tips(sim).any(func(t): return t.id == "no_utilities" and "short" in t.text), "says when the town can't afford power and water")
+	sim.economy.money = Economy.START_MONEY
+
 	# The tool in hand gets a note, right after the problems.
 	tips = Advisor.tips(sim, "roads")
 	_check(tips[1].kind == Advisor.Kind.TOOL and tips[1].id.begins_with("tool_roads"), "road tool note after problems")

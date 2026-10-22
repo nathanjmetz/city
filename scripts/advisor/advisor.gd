@@ -25,7 +25,10 @@ static func tips(sim: CitySim, category := "") -> Array:
 	_problems(sim, out)
 	_ideas(sim, out)
 	var tool := _tool_tips(sim, category)
-	out.sort_custom(func(a, b): return a.kind < b.kind)
+	# Sort by kind, keeping the order within a kind (most urgent rules come first).
+	for i in out.size():
+		out[i].order = i
+	out.sort_custom(func(a, b): return a.kind < b.kind or (a.kind == b.kind and a.order < b.order))
 	# The tool in hand goes right after any problems, so it's there when you need it.
 	var at := 0
 	while at < out.size() and out[at].kind == Kind.PROBLEM:
@@ -82,7 +85,14 @@ static func _problems(sim: CitySim, out: Array) -> void:
 		if not has:
 			missing.append(u)
 	if zoned and not missing.is_empty():
-		_add(out, "no_utilities", Kind.PROBLEM, "Folks won't build where there's no %s. You'll find that under Services." % " or ".join(missing))
+		var short := 0  # what the cheapest missing hookups cost beyond what's in the bank
+		for u in missing:
+			short += int(Services.KINDS[Services.Kind.POWER_FEED if u == "power" else Services.Kind.WELL].cost)
+		short -= e.money
+		var text := "Folks won't build where there's no %s. You'll find that under Services." % " or ".join(missing)
+		if short > 0:
+			text = "Folks won't build where there's no %s, and we're about $%s short for it. Budget's worth a look." % [" or ".join(missing), CitySim.money_text(short)]
+		_add(out, "no_utilities", Kind.PROBLEM, text)
 	elif missing.is_empty():
 		var unserved := sim.unserved_count()
 		var full := []
