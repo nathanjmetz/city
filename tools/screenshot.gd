@@ -36,6 +36,19 @@ func _demo_town() -> void:
 	sim.apply({"type": "clear"})
 	sim.economy.money = 20_000_000  # a demo town, built in one go
 	var args0 := OS.get_cmdline_user_args()
+	if args0.size() >= 5 and args0[4] == "warehouses":
+		# Every warehouse size along an industrial avenue; the big one has grown.
+		sim.apply({"type": "build_road", "start": [-420, 0], "ctrl": [0, 0], "end": [420, 0], "road": 1})
+		var xs := {"small": -330.0, "medium": -230.0, "large": -70.0, "dc": 170.0}
+		for k in Warehouses.ORDER:
+			var site := Warehouses.site_near(sim.network, Vector3(xs[k], 0, 40))
+			sim.apply({"type": "place_warehouse", "kind": k, "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})
+		var big: Dictionary = sim.warehouses.buildings[3]
+		big.level = 2
+		big.bays = 2
+		sim.warehouses_changed.emit()
+		_aim_camera()
+		return
 	if args0.size() >= 5 and args0[4] == "highway":
 		_demo_interchange(sim)
 		return

@@ -168,6 +168,40 @@ const GRAIN_TRUCK_BUSHELS := 1_000.0
 ## A factory ships one load of goods to the shops for this many loads in.
 const FACTORY_LOADS_PER_GOODS := 2.0
 
+# --- Warehouses ----------------------------------------------------------------
+# Brawn (2026-10-22): warehouses in many real sizes, like Cities: Skylines'
+# storage buildings. They take loads nobody needs yet and send them on when a
+# factory or shop wants them. Every load still rides a real truck.
+
+## Each size when first built: building width along the road and depth
+## (metres), the truck court in front, dock doors, what the player pays, jobs
+## and assessed value. Sizes follow US industrial real estate: a 10,000 sq ft
+## flex building, a 32,000 sq ft bulk warehouse, a 100,000 sq ft regional
+## warehouse and a 270,000 sq ft distribution center. Truck courts run
+## 18-40 m (60-130 ft), enough for a 53 ft trailer to back in. About one
+## dock door per 10,000 sq ft, and one job per 2,500 sq ft.
+const WAREHOUSE := {
+	"small": {"w": 30.0, "d": 30.0, "court": 18.0, "docks": 3, "cost": 300_000, "jobs": 4, "value": 900_000.0},
+	"medium": {"w": 50.0, "d": 60.0, "court": 28.0, "docks": 6, "cost": 800_000, "jobs": 13, "value": 2_800_000.0},
+	"large": {"w": 90.0, "d": 100.0, "court": 36.0, "docks": 12, "cost": 1_800_000, "jobs": 40, "value": 8_500_000.0},
+	"dc": {"w": 140.0, "d": 180.0, "court": 40.0, "docks": 26, "cost": 4_000_000, "jobs": 100, "value": 24_000_000.0},
+}
+## Floor area one stored truckload takes, m² (26 pallets racked three high
+## with aisles), at the first clear height.
+const WAREHOUSE_M2_PER_LOAD := 40.0
+## Clear heights a warehouse builds up through before it buys land: 24, 32
+## and 40 ft. Taller racks hold more on the same floor.
+const WAREHOUSE_HEIGHTS := [7.3, 9.8, 12.2]
+## A back extension adds one structural bay this deep (50 ft column spacing).
+const WAREHOUSE_BAY := 15.0
+## Full this much at two decisions in a row, it builds up or out; nearly
+## empty and idle this many decisions in a row, it gives back a bay.
+const WAREHOUSE_BUSY := 0.8
+const WAREHOUSE_IDLE := 0.05
+const WAREHOUSE_IDLE_STREAK := 8
+## Warehouses decide to grow this often, in ticks (6 game hours).
+const WAREHOUSE_DECIDE_EVERY := 360
+
 # --- Neighborhood character --------------------------------------------------
 # Brawn's rule (2026-10-22): neighborhoods grow a culture of their own, and
 # anything that fills in by itself (parks, trees, shopfronts, upkeep) matches

@@ -85,9 +85,9 @@ func _on_command(cmd: Dictionary) -> void:
 	match cmd.get("type", ""):
 		"build_road", "build_grid", "build_roundabout", "upgrade_road":
 			play("road")
-		"place_service", "place_farmhouse":
+		"place_service", "place_farmhouse", "place_warehouse":
 			play("build")
-		"remove_road", "remove_farm", "remove_service":
+		"remove_road", "remove_farm", "remove_service", "remove_warehouse":
 			play("bulldoze")
 		"paint_reserve", "paint_farmland":
 			var on: bool = str(cmd.get("kind", "farm" if bool(cmd.get("on", true)) else "")) != ""

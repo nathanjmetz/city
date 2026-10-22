@@ -121,6 +121,14 @@ func _draw() -> void:
 			_poly(Array(roof), Color(accent, 0.35))
 			roof.append(roof[0])
 			draw_polyline(roof, color, w, true)
+		"warehouse":
+			# A long low box with dock doors along its front.
+			_poly([P.call(0.06, 0.88), P.call(0.06, 0.4), P.call(0.94, 0.3), P.call(0.94, 0.88)], Color(accent, 0.35))
+			draw_polyline(PackedVector2Array([P.call(0.06, 0.88), P.call(0.06, 0.4), P.call(0.94, 0.3),
+				P.call(0.94, 0.88), P.call(0.06, 0.88)]), color, w, true)
+			for x in [0.3, 0.5, 0.7]:
+				draw_rect(Rect2(P.call(x - 0.07, 0.58), Vector2(0.14, 0.3) * s), color, false, w * 0.7)
+			draw_rect(Rect2(P.call(0.12, 0.56), Vector2(0.08, 0.1) * s), color)
 		"dezone":
 			draw_rect(Rect2(P.call(0.12, 0.12), Vector2(0.76, 0.76) * s), Color(color, 0.5), false, w * 0.6)
 			line.call(P.call(0.25, 0.25), P.call(0.75, 0.75), w * 1.3, Color(1, 0.45, 0.4))

@@ -140,6 +140,8 @@ func _cell_problem(sim: CitySim, h: Dictionary, c: Vector2i, id: int, auto: bool
 			return "That ground is farmland."
 		if sim.industry.covers(p):
 			return "That ground belongs to a company."
+		if sim.warehouses.covers(p):
+			return "That ground belongs to a warehouse."
 	if auto:
 		for key in sim.lots:
 			var lot: Dictionary = sim.lots[key]

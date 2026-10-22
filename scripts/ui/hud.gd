@@ -20,6 +20,8 @@ var farm_tool: FarmTool
 var industry_tool: IndustryTool
 var _industry_cards := {}  # "oil"/"ore"/"forest"/"reserve"/"release" -> Button
 var _industry_kind := "oil"  # what the industry Reserve tool saves land for
+var warehouse_tool: WarehouseTool
+var _warehouse_cards := {}  # Warehouses size -> Button
 var traffic_tool: TrafficTool
 var info_view: InfoView
 var service_view: ServiceView
@@ -100,6 +102,8 @@ func _ready() -> void:
 	farm_tool.hint_changed.connect(_show_hint)
 	industry_tool.kind_changed.connect(func(_k): _sync())
 	industry_tool.hint_changed.connect(_show_hint)
+	warehouse_tool.kind_changed.connect(func(_k): _sync())
+	warehouse_tool.hint_changed.connect(_show_hint)
 	traffic_tool.mode_changed.connect(func(_m): _sync())
 	traffic_tool.hint_changed.connect(_show_hint)
 	sim.buildings_changed.connect(_update_stats)
@@ -132,7 +136,7 @@ func anything_open() -> bool:
 		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
-		or industry_tool.kind != ""
+		or industry_tool.kind != "" or warehouse_tool.kind != ""
 
 
 ## Puts every tool away and closes every panel.
@@ -150,6 +154,7 @@ func close_all() -> void:
 	service_tool.set_kind(ServiceTool.OFF)
 	farm_tool.set_mode(FarmTool.Mode.NONE)
 	industry_tool.set_kind("")
+	warehouse_tool.set_kind("")
 	traffic_tool.set_mode(TrafficTool.Mode.NONE)
 	_sync()
 
@@ -568,6 +573,15 @@ func _industry_drawer() -> PanelContainer:
 	drawer.add_child(row)
 	var hq := _section(row, "Main building  ·  near the resource")
 	var area := _section(row, "Save land")
+	var stores := _section(row, "Warehouses  ·  beside a street")
+	for k in Warehouses.ORDER:
+		var spec: Dictionary = Balance.WAREHOUSE[k]
+		var b := _card("warehouse", ["Small", "Medium", "Large", "Distrib."][Warehouses.ORDER.find(k)], "")
+		b.tooltip_text = "%s, %s ($%s): stores raw loads and goods until a factory or shop needs them" \
+			% [Warehouses.KINDS[k].name, Warehouses.KINDS[k].area, CitySim.money_text(int(spec.cost))]
+		b.pressed.connect(func(): warehouse_tool.set_kind(k))
+		stores.add_child(b)
+		_warehouse_cards[k] = b
 	for entry in [["oil", "oil", "Oil", "Oil company: pumpjacks spread over the oil field"],
 			["ore", "ore", "Mining", "Mining company: pits open where the ore is"],
 			["forest", "forest", "Forestry", "Forestry company: logging stands in the woods"]]:
@@ -785,6 +799,7 @@ func _open(cat: String) -> void:
 			service_tool.set_kind(ServiceTool.OFF)
 			farm_tool.set_mode(FarmTool.Mode.NONE)
 			industry_tool.set_kind("")
+			warehouse_tool.set_kind("")
 			traffic_tool.set_mode(TrafficTool.Mode.NONE)
 			_budget_open = true
 			_sync()
@@ -796,7 +811,7 @@ func _sync() -> void:
 		_category = "zones"
 	elif service_tool.kind != ServiceTool.OFF:
 		_category = "services"
-	elif industry_tool.kind != "" or (farm_tool.mode in [FarmTool.Mode.RESERVE, FarmTool.Mode.CLEAR]
+	elif industry_tool.kind != "" or warehouse_tool.kind != "" or (farm_tool.mode in [FarmTool.Mode.RESERVE, FarmTool.Mode.CLEAR]
 			and farm_tool.reserve_kind != "farm"):
 		_category = "industry"
 	elif farm_tool.mode != FarmTool.Mode.NONE:
@@ -834,6 +849,8 @@ func _sync() -> void:
 		elif k == "release":
 			on = _category == "industry" and farm_tool.mode == FarmTool.Mode.CLEAR
 		_industry_cards[k].set_pressed_no_signal(on)
+	for k in _warehouse_cards:
+		_warehouse_cards[k].set_pressed_no_signal(k == warehouse_tool.kind)
 	for m in _traffic_cards:
 		_traffic_cards[m].set_pressed_no_signal(m == traffic_tool.mode)
 	_parallel_card.set_pressed_no_signal(road_tool.parallel)
