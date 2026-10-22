@@ -16,6 +16,9 @@ func _init() -> void:
 	rng.seed = 1
 	_check(VehicleTypes.for_purpose("fire", rng) == "fire_engine", "fire call sends a fire engine")
 	_check(VehicleTypes.for_purpose("milk", rng) == "tanker", "milk goes by tanker")
+	_check(VehicleTypes.for_purpose("raw", rng, {"good": "logs"}) == "log_truck", "logs go on a log truck")
+	_check(VehicleTypes.for_purpose("raw", rng, {"good": "ore"}) == "ore_truck", "ore goes in an end-dump")
+	_check(VehicleTypes.for_purpose("fuel", rng, {"good": "crude oil"}) == "tanker", "crude oil goes by tanker")
 	for p in VehicleTypes.PURPOSE:
 		for k in VehicleTypes.PURPOSE[p]:
 			_check(VehicleTypes.SPECS.has(k), "%s uses a real kind (%s)" % [p, k])

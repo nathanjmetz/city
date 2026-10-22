@@ -48,10 +48,11 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = b.seed
 	var built := []
+	var fit := _local_lot(lot, Transform3D(root.basis, root.position))
 	match int(b.zone):
-		ZoneMap.Zone.RESIDENTIAL: built = HouseBuilder.build(rng.randi(), lot.to_curb)
-		ZoneMap.Zone.COMMERCIAL: built = CommercialBuilder.build_shop(rng.randi(), lot.to_curb)
-		ZoneMap.Zone.INDUSTRIAL: built = CommercialBuilder.build_factory(rng.randi(), lot.to_curb)
+		ZoneMap.Zone.RESIDENTIAL: built = HouseBuilder.build(rng.randi(), lot.to_curb, fit)
+		ZoneMap.Zone.COMMERCIAL: built = CommercialBuilder.build_shop(rng.randi(), lot.to_curb, fit)
+		ZoneMap.Zone.INDUSTRIAL: built = CommercialBuilder.build_factory(rng.randi(), lot.to_curb, fit)
 	if built.is_empty():
 		return root
 	_add_built(root, built)
@@ -69,6 +70,21 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 	create_tween().tween_property(root, "scale", Vector3.ONE, 0.45) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	return root
+
+
+## The lot as the art builders want it: width, depth, flag pad, and the
+## outline in the building's own frame (x across, z back from the street).
+static func _local_lot(lot: Dictionary, frame: Transform3D) -> Dictionary:
+	var fit := {"width": lot.get("width", 20.0), "depth": lot.get("depth", 32.0), "pad": lot.get("pad", 0.0)}
+	var corners: PackedVector2Array = lot.get("corners", PackedVector2Array())
+	if corners.size() >= 3:
+		var inv := frame.affine_inverse()
+		var local := PackedVector2Array()
+		for c in corners:
+			var q := inv * Vector3(c.x, 0.0, c.y)
+			local.append(Vector2(q.x, q.z))
+		fit.outline = local
+	return fit
 
 
 ## Adds a building from the art builders: the building, then its flat ground

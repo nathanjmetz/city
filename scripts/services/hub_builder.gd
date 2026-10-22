@@ -25,6 +25,10 @@ const IRON := Color("#1d1e20")
 
 var cells := []
 var cell := 50.0
+## Buildings from the hub's development tree (Balance.HUB_DEVELOPMENTS keys).
+var dev := []
+## Ground kept clear of headstones (chapel, memorials): [Rect2 in x, z].
+var _clear := []
 
 
 static func build_hub(h: Dictionary, seed: int, to_curb: float) -> Array:
@@ -34,6 +38,7 @@ static func build_hub(h: Dictionary, seed: int, to_curb: float) -> Array:
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 	b.cells = h.cells
 	b.cell = h.cell
+	b.dev = h.get("dev", [])
 	match h.kind:
 		"landfill":
 			b._landfill(h, to_curb)
@@ -117,6 +122,40 @@ func _landfill(h: Dictionary, to_curb: float) -> void:
 	_box("paint", Vector3(3.6, 0.25, 21.0), Vector3(5.5, 0.12, 14.0), CONCRETE)
 	_flat_rect("gravel", -5.0, 3.5, 2.0, 32.0, 0.06, Color("#8d877c"))
 	_fence_edges(_edges(cells), 2.2, GALV, 4.0, 5.0)
+	_landfill_devs(0.0)
+
+
+## Gas plant, compost yard and transfer station, along the front of the site
+## (`back` metres further in on a capped landfill behind a recycling yard).
+func _landfill_devs(back: float) -> void:
+	if "gas_plant" in dev:
+		# Two engine-generator sets in containers, a flare and the gas header.
+		var p := Vector3(-cell * 1.1, 0, 12.0 + back)
+		_box("paint", Vector3(16.0, 0.3, 11.0), p + Vector3(0, 0.15, 0), CONCRETE)
+		for k in 2:
+			var e := p + Vector3(-3.5 + k * 7.0, 0, 0)
+			_box("metal", Vector3(2.8, 3.0, 9.0), e + Vector3(0, 1.8, 0), Color("#3d5a46"))
+			_cyl_y(e + Vector3(0, 4.6, -3.0), 0.3, 3.0, Color("#77797a"))
+		_cyl_y(p + Vector3(6.5, 4.3, 3.5), 0.45, 8.0, Color("#9a9c98"))
+		_box("paint", Vector3(0.3, 0.3, 20.0), p + Vector3(-5.0, 0.6, 14.0), Color("#e6e4dc"))
+	if "compost" in dev:
+		# Long windrows of dark compost on a gravel pad.
+		var x0 := cell * 0.75
+		_flat_rect("gravel", x0, x0 + 26.0, 4.0 + back, 30.0 + back, 0.07, Color("#7a7062"))
+		for k in 4:
+			var x := x0 + 3.0 + k * 6.5
+			var z0 := 6.0 + back
+			var z1 := 28.0 + back
+			var col := Color("#4a3a2a").lightened(k * 0.03)
+			_quad("paint", Vector3(x - 2.0, 0.1, z0), Vector3(x, 1.6, z0), Vector3(x, 1.6, z1), Vector3(x - 2.0, 0.1, z1), col, [], Vector3(-1, 1, 0))
+			_quad("paint", Vector3(x + 2.0, 0.1, z0), Vector3(x, 1.6, z0), Vector3(x, 1.6, z1), Vector3(x + 2.0, 0.1, z1), col, [], Vector3(1, 1, 0))
+	if "transfer" in dev:
+		# A tipping building where neighbor towns' trucks unload.
+		var p := Vector3(-cell * 0.45, 0, 14.0 + back)
+		_box("paint", Vector3(18.0, 0.3, 16.0), p + Vector3(0, 0.15, 0), CONCRETE)
+		_box("metal", Vector3(16.0, 8.0, 14.0), p + Vector3(0, 4.3, 0), Color("#b8b9b4"))
+		_metal_roof(p.x, p.z, 8.3, 16.0, 14.0, Color("#8e9496"))
+		_box("paint", Vector3(6.0, 5.5, 0.1), p + Vector3(0, 3.05, -7.05), Color("#2a2b2d"))
 
 
 ## A grassed mound over `set`, rising to `top` metres with 3:1 side slopes.
@@ -279,6 +318,37 @@ func _recycling(h: Dictionary, to_curb: float) -> void:
 		for r in 3:
 			_bale_row(c.x * cell - cell * 0.4, c.y * cell + 6.0 + r * cell * 0.3, level)
 	_fence_edges(_edges(front if capped else cells), 2.2, GALV, 4.0, 5.0)
+	if capped:
+		_landfill_devs(cell)
+	if "scrap_yard" in dev:
+		var p := Vector3(cell * 1.15, 0, 12.0)
+		for k in 6:
+			var q := p + Vector3(rng.randf_range(-6.0, 6.0), 0, rng.randf_range(-5.0, 5.0))
+			_box("paint", Vector3(rng.randf_range(3.0, 5.0), rng.randf_range(1.0, 2.2), rng.randf_range(3.0, 5.0)),
+				q + Vector3(0, 0.8, 0), Color("#6b625a").lerp(Color("#8a8f92"), rng.randf()),
+				Basis(Vector3.UP, rng.randf() * TAU))
+		_box("paint", Vector3(2.6, 2.4, 5.0), p + Vector3(8.0, 1.5, 0), Color("#d9a21b"))
+		_box("paint", Vector3(0.4, 0.4, 12.0), p + Vector3(8.0, 6.0, -4.0), Color("#d9a21b"),
+			Basis(Vector3.RIGHT, -0.6))
+	if "glass_line" in dev:
+		# Concrete bunkers of green, brown and clear glass.
+		var p := Vector3(-cell * 1.15, 0, 10.0)
+		for k in 3:
+			var x := p.x - 6.0 + k * 6.0
+			for side in [-2.6, 2.6]:
+				_box("paint", Vector3(0.4, 1.8, 6.0), Vector3(x + side, 0.9, p.z), CONCRETE)
+			_box("paint", Vector3(0.4, 1.8, 5.6), Vector3(x, 0.9, p.z + 2.8), CONCRETE, Basis(Vector3.UP, PI * 0.5))
+			_box("paint", Vector3(4.4, 0.8, 5.0), Vector3(x, 0.5, p.z),
+				[Color("#3e6b3a"), Color("#6b4a2a"), Color("#c9d3d2")][k])
+	if "ewaste" in dev:
+		var p := Vector3(14.0, 0, 12.0)
+		_box("brick", Vector3(12.0, 4.5, 9.0), p + Vector3(0, 2.25, 0), Color("#a49d8f"))
+		_box("paint", Vector3(12.6, 0.3, 9.6), p + Vector3(0, 4.6, 0), Color("#6f6d68"))
+		_overhead_door(p.x, p.z - 4.5, 3.6, 3.4, Color("#e9e7e0"))
+	if "regional_mrf" in dev:
+		# Transfer trailers waiting to haul a neighbor's sorted loads.
+		for k in 3:
+			_box("metal", Vector3(2.6, 3.6, 14.0), Vector3(-22.0 + k * 3.6, 2.2, 28.0), Color("#c9cbc6"))
 
 
 ## A steel sorting building with overhead doors facing the yard.
@@ -305,6 +375,13 @@ func _bale_row(x0: float, z: float, level: int) -> void:
 # ---------------------------------------------------------------- cemetery
 
 func _cemetery(to_curb: float) -> void:
+	_clear = [Rect2(-cell * 0.6 - 4.0, cell * 1.4 - 5.0, 8.0, 10.0)]
+	if "chapel" in dev:
+		_clear.append(Rect2(cell * 0.6 - 6.0, cell * 1.3 - 9.0, 12.0, 18.0))
+	if "garden" in dev:
+		_clear.append(Rect2(-cell * 0.6 - 8.0, 8.0, 16.0, 14.0))
+	if "veterans" in dev:
+		_clear.append(Rect2(cell * 0.6 - 8.0, 6.0, 16.0, 12.0))
 	var lane := Color("#b9b2a2")
 	_flat_rect("gravel", -2.0, 2.0, -to_curb, 2.0, 0.08, lane)
 	for i in cells.size():
@@ -321,7 +398,8 @@ func _cemetery(to_curb: float) -> void:
 		while z < z0 + cell - 2.5:
 			var x := x0 + 2.5
 			while x < x1 - 2.0:
-				if absf(x - c.x * cell) > 2.5 and rng.randf() < fill:
+				if absf(x - c.x * cell) > 2.5 and rng.randf() < fill and not _kept_clear(x, z) \
+						and not ("woods" in dev and i >= CivicHubs.BASE.size() and rng.randf() < 0.7):
 					_stone(Vector3(x + rng.randf_range(-0.1, 0.1), 0, z), i < CivicHubs.BASE.size())
 				x += 1.9
 			z += 3.4
@@ -350,6 +428,34 @@ func _cemetery(to_curb: float) -> void:
 		_box("paint", Vector3(0.85, 0.15, 0.85), Vector3(x, 2.27, 0.0), CONCRETE)
 	_flagpole(Vector3(7.0, 0, 5.0))
 	_mausoleum(Vector3(-cell * 0.6, 0, cell * 1.4))
+	if "chapel" in dev:
+		_chapel(Vector3(cell * 0.6, 0, cell * 1.3))
+	if "garden" in dev:
+		var g := Vector3(-cell * 0.6, 0, 15.0)
+		_flat_rect("gravel", g.x - 7.0, g.x + 7.0, g.z - 6.0, g.z + 6.0, 0.07, Color("#b9b2a2"))
+		_cyl_y(g + Vector3(0, 0.3, 0), 1.6, 0.6, Color("#bdb6a8"))
+		_cyl_y(g + Vector3(0, 0.9, 0), 0.25, 1.2, Color("#bdb6a8"))
+		for k in 6:
+			var a := TAU * k / 6.0
+			var q := g + Vector3(cos(a) * 4.5, 0, sin(a) * 4.0)
+			_box("paint", Vector3(2.2, 0.3, 1.2), q + Vector3(0, 0.15, 0), Color("#4a3426"))
+			for f in 4:
+				_box("paint", Vector3(0.35, 0.35, 0.35), q + Vector3(-0.8 + f * 0.55, 0.45, 0),
+					[Color("#c23b4a"), Color("#e8c547"), Color("#f2f0ea"), Color("#8a5bbf")][(k + f) % 4])
+	if "veterans" in dev:
+		var v := Vector3(cell * 0.6, 0, 12.0)
+		_box("paint", Vector3(7.0, 0.3, 7.0), v + Vector3(0, 0.15, 0), CONCRETE)
+		_box("paint", Vector3(1.2, 4.5, 1.2), v + Vector3(0, 2.55, 0), Color("#8d8a86"))
+		for k in 5:
+			var a := PI * (0.15 + k * 0.175)
+			_flagpole(v + Vector3(cos(a) * 6.0, 0, sin(a) * 6.0 - 1.0))
+	if "woods" in dev:
+		for i in range(CivicHubs.BASE.size(), cells.size()):
+			var c: Vector2i = cells[i]
+			for k in 4:
+				var sp := TreeField.Species.OAK if k % 2 == 0 else TreeField.Species.MAPLE
+				trees.append([Vector3(c.x * cell + rng.randf_range(-cell * 0.4, cell * 0.4), 0,
+					c.y * cell + rng.randf_range(5.0, cell - 4.0)), sp, TreeField.LEAF[sp], rng.randf_range(0.9, 1.25)])
 
 
 func _inward(a: Vector2, b: Vector2) -> Vector3:
@@ -394,3 +500,28 @@ func _mausoleum(p: Vector3) -> void:
 		_quad("roof", Vector3(p.x + side * 2.3, y, p.z - 2.8), Vector3(p.x + side * 2.3, y, p.z + 2.8),
 			Vector3(p.x, y + 1.0, p.z + 2.8), Vector3(p.x, y + 1.0, p.z - 2.8), roof, [], Vector3(side, 1, 0))
 	_box("paint", Vector3(1.2, 2.2, 0.08), p + Vector3(0, 1.5, -2.62), Color("#3b3a36"))
+
+
+func _kept_clear(x: float, z: float) -> bool:
+	for r in _clear:
+		if (r as Rect2).has_point(Vector2(x, z)):
+			return true
+	return false
+
+
+## A small white clapboard chapel with a steeple, facing the lane.
+func _chapel(p: Vector3) -> void:
+	var white := Color("#ece9e0")
+	_box("paint", Vector3(8.0, 0.5, 13.0), p + Vector3(0, 0.25, 0), CONCRETE)
+	_box("siding", Vector3(7.0, 4.5, 12.0), p + Vector3(0, 2.75, 0), white)
+	_gable_roof(p.x, p.z, 5.0, 7.0, 2.8, 12.0, false, Color("#5c5c5e"), white, false)
+	_box("siding", Vector3(2.6, 3.0, 2.6), p + Vector3(0, 9.3, -4.6), white)
+	for side in [Vector3(1, 0, 0), Vector3(-1, 0, 0), Vector3(0, 0, 1), Vector3(0, 0, -1)]:
+		var b := p + Vector3(0, 10.8, -4.6)
+		_tri("roof", b + Vector3(-1.4, 0, -1.4).rotated(Vector3.UP, atan2(side.x, side.z)),
+			b + Vector3(1.4, 0, -1.4).rotated(Vector3.UP, atan2(side.x, side.z)), b + Vector3(0, 4.0, 0),
+			Color("#5c5c5e"), [], side + Vector3(0, 0.3, 0))
+	_box("paint", Vector3(1.4, 2.4, 0.1), p + Vector3(0, 1.7, -6.05), Color("#6b2a22"))
+	for z in [-3.0, 0.0, 3.0]:
+		for x in [-3.55, 3.55]:
+			_glass(Vector3(p.x + x, 3.0, p.z + z), Vector3(0, 0, 1 if x > 0 else -1), 0.9, 1.8, 0.0)

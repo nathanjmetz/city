@@ -124,21 +124,71 @@ func _init() -> void:
 		copy.tick()
 	_check(JSON.stringify(copy.hubs.to_dict()) == JSON.stringify(sim.hubs.to_dict()), "copies stay in step")
 	_check(sim.apply({"type": "remove_hub", "id": cid}) and not sim.hubs.hubs.has(cid), "a hub can be demolished")
-	# Without any waste site, trash piles up and the panel says so.
+	# Without any waste site, trash piles up and the panel says so, until
+	# the town pays someone else (a neighbor, or a hauler from outside) to
+	# take it away.
 	var bare := CitySim.new()
 	bare.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
 	for x in range(-200, 201, 10):
 		bare.apply({"type": "paint_zone", "center": [x, -25], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
 		bare.apply({"type": "paint_zone", "center": [x, 25], "radius": 12, "zone": ZoneMap.Zone.INDUSTRIAL})
 	bare.simulate_traffic = false
-	for i in 20000:
+	for i in 6000:
 		bare.tick()
-	var piled := ""
-	for key in bare.buildings:
-		piled = bare.hubs.lot_problem(bare, key)
-		if piled != "":
-			break
-	_check(piled.contains("Build a landfill"), "with no landfill, trash piles up and says what to build")
+	var any_key: String = bare.buildings.keys()[0]
+	bare.hubs.trash[bare.lots[any_key].seg] = Balance.GARBAGE_PILE_LB * 2.0
+	_check(bare.hubs.lot_problem(bare, any_key).contains("Build a landfill"),
+		"with no landfill, trash piles up and says what to build")
+	for i in 3000:
+		bare.tick()
+	_check(bare.hubs.lot_problem(bare, any_key) == "", "a town with no landfill pays to have its trash hauled away")
+	# The development tree: options unlock from the town and its surroundings.
+	var dev := CitySim.new()
+	dev.economy.money = 50_000_000
+	dev.apply({"type": "build_road", "start": [-400, 0], "ctrl": [0, 0], "end": [400, 0]})
+	var ds := CivicHubs.site_near(dev.network, Vector3(0, 0, -60))
+	dev.apply({"type": "place_hub", "kind": "landfill", "pos": [ds[0].x, ds[0].z], "dir": [ds[1].x, ds[1].z]})
+	var did: int = dev.hubs.hubs.keys()[0]
+	var dh: Dictionary = dev.hubs.hubs[did]
+	_check(dev.hubs.dev_problem(dev, did, "gas_plant").begins_with("needs a bigger site"), "a small landfill can't run a gas plant")
+	_check(not dev.apply({"type": "develop_hub", "id": did, "dev": "gas_plant"}), "locked options can't be built")
+	_check(dev.hubs.dev_problem(dev, did, "compost").contains("farm"), "compost needs farms to sell to")
+	_check(dev.hubs.dev_problem(dev, did, "chapel") == "not for this site", "a landfill has no chapel")
+	for i in 10:
+		dh.want = 4
+		dh.short = 4
+		dev.hubs._decide(dev)
+	dh.received = 2000.0 * 30_000
+	money = dev.economy.money
+	_check(dev.apply({"type": "develop_hub", "id": did, "dev": "gas_plant"}), "a big landfill adds a gas plant")
+	_check(dev.economy.money == money - int(Balance.HUB_DEVELOPMENTS.gas_plant.cost), "the gas plant costs its price")
+	for i in 1440 * 2:
+		dev.tick()
+	_check(dev.trade.sold("power") > 0.0, "the gas plant sells power (%.0f MWh)" % dev.trade.sold("power"))
+	var tp := dev.hubs.dev_problem(dev, did, "transfer")
+	_check(tp.contains("neighbor") if dev.region_links.is_empty() else tp == "",
+		"taking a neighbor's trash needs a road out to neighbors (%s)" % tp)
+	_check(dev.apply({"type": "upgrade_hub", "id": did}) and "gas_plant" in dh.dev,
+		"a capped landfill keeps its gas plant under recycling")
+	_check("scrap_yard" in CivicHubs.dev_options(dh) and "gas_plant" in CivicHubs.dev_options(dh),
+		"recycling on an old landfill offers both trees")
+	var info := HubInfo.describe(dev, did)
+	_check(info.actions.any(func(a): return str(a.label).begins_with("Scrap metal yard: needs")),
+		"the panel says what a locked option needs")
+	var cem_site := CivicHubs.site_near(dev.network, Vector3(0, 0, 80))
+	dev.apply({"type": "place_hub", "kind": "cemetery", "pos": [cem_site[0].x, cem_site[0].z], "dir": [cem_site[1].x, cem_site[1].z]})
+	var cmid: int = dev.hubs.hubs.keys().max()
+	var ch: Dictionary = dev.hubs.hubs[cmid]
+	var spot: Vector3 = ch.pos + CivicHubs.right(ch) * 80.0
+	var plain := dev.hubs.value_factor(spot)
+	dev.stats.population = 500
+	_check(dev.apply({"type": "develop_hub", "id": cmid, "dev": "chapel"}), "a cemetery adds a chapel")
+	_check(dev.hubs.value_factor(spot) > plain, "the chapel lifts land value more")
+	_check(dev.hubs.dev_problem(dev, cmid, "garden") == "" and dev.hubs.dev_problem(dev, cmid, "veterans").contains("residents"),
+		"the garden follows the chapel; the veterans memorial waits for a bigger town")
+	var round := CitySim.new()
+	round.from_dict(JSON.parse_string(JSON.stringify(dev.to_dict())))
+	_check(round.hubs.hubs[cmid].dev == ["chapel"], "save keeps a hub's developments")
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 

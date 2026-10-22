@@ -41,6 +41,10 @@ func _ready() -> void:
 	add_child(buildings)
 	buildings.setup(sim)
 
+	var wild := WildView.new()
+	add_child(wild)
+	wild.setup(sim)
+
 	var lot_alerts := LotAlerts.new()
 	lot_alerts.setup(sim)
 	add_child(lot_alerts)

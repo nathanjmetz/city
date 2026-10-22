@@ -7,7 +7,8 @@ var _main: Node
 var _frames := 0
 
 
-func _init() -> void:
+func _initialize() -> void:
+	# After the Session autoload is up.
 	_main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(_main)
 
@@ -29,8 +30,9 @@ func _lineup() -> void:
 	var filter: String = args[7] if args.size() > 7 else ""
 	var sim: CitySim = _main.sim
 	sim.apply({"type": "clear"})
+	sim.traffic.cars.clear()
 	# Late morning sun.
-	sim.tick_count = int(5.0 * 60.0 / CitySim.MINUTES_PER_TICK)
+	sim.tick_count = int(8.0 * 60.0 / CitySim.MINUTES_PER_TICK)
 	var x := 0.0
 	var row := 0
 	var i := 0
@@ -65,6 +67,8 @@ func _lineup() -> void:
 	var cx := float(args[5]) if args.size() > 6 else 30.0
 	var cz := float(args[6]) if args.size() > 6 else 10.0
 	for c in _main.get_children():
+		if c is TrafficView:
+			c.process_mode = Node.PROCESS_MODE_DISABLED
 		if c is RoadTool:
 			c.process_mode = Node.PROCESS_MODE_DISABLED
 			for k in c.get_children():

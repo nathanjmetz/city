@@ -87,6 +87,10 @@ func _draw_cars(_delta: float) -> void:
 			flags += 2.0
 		var paint := VehicleTypes.paint(kind, car.id)
 		var custom := Color(paint.r, paint.g, paint.b, flags)
+		# A semi carrying a load that needs its own rig is drawn as that rig.
+		var rig := VehicleTypes.for_cargo(car.get("cargo", {}))
+		if rig != "" and VehicleModels.ARTIC.has(kind) and VehicleModels.ARTIC.has(rig):
+			kind = rig
 		if VehicleModels.ARTIC.has(kind):
 			var art: Dictionary = VehicleModels.ARTIC[kind]
 			var xf := _place(car, ahead, front, VehicleModels.AXLE[art.cab])

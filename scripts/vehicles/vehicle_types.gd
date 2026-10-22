@@ -32,8 +32,10 @@ const SPECS := {
 	"box_truck":     {"len": 10.40, "width": 2.60, "height": 3.90, "acc": 1.0, "brake": 2.5, "top_speed": 31.0, "pref": 0.95},
 	"semi":          {"len": 21.90, "width": 2.60, "height": 4.10, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"grain_truck":   {"len": 21.30, "width": 2.60, "height": 3.90, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
+	"log_truck":     {"len": 21.00, "width": 2.60, "height": 3.80, "acc": 0.6, "brake": 2.0, "top_speed": 29.0, "pref": 0.93},
+	"ore_truck":     {"len": 20.00, "width": 2.60, "height": 3.60, "acc": 0.6, "brake": 2.0, "top_speed": 29.0, "pref": 0.93},
 	"tanker":        {"len": 20.50, "width": 2.60, "height": 3.60, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
-	"flatbed":       {"len": 21.90, "width": 2.60, "height": 3.30, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
+	"flatbed":       {"len": 20.30, "width": 2.60, "height": 3.30, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"dump_truck":    {"len": 9.00, "width": 2.60, "height": 3.40, "acc": 0.9, "brake": 2.3, "top_speed": 29.0, "pref": 0.93},
 	"tow_truck":     {"len": 7.00, "width": 2.40, "height": 2.80, "acc": 1.3, "brake": 2.6, "top_speed": 36.0, "pref": 0.97},
 	"school_bus":    {"len": 12.20, "width": 2.44, "height": 3.20, "acc": 1.0, "brake": 2.3, "top_speed": 27.0, "pref": 0.92},
@@ -112,7 +114,7 @@ const PURPOSE := {
 	"milk": {"tanker": 1.0},
 	"fuel": {"tanker": 1.0},
 	"goods": {"semi": 6.0, "box_truck": 4.0},             # factory to shop or warehouse
-	"raw": {"flatbed": 4.0, "dump_truck": 3.0, "semi": 2.0},  # ore, logs, steel, gravel
+	"raw": {"log_truck": 3.0, "ore_truck": 3.0, "flatbed": 2.0, "dump_truck": 2.0},  # logs, ore, steel, gravel
 	"parcels": {"delivery_van": 7.0, "van": 3.0},
 	"food": {"box_truck": 5.0, "semi": 3.0},              # to grocery stores and restaurants
 	"construction": {"dump_truck": 4.0, "flatbed": 2.0, "work_pickup": 3.0},
@@ -129,8 +131,12 @@ const PURPOSE := {
 	"service_call": {"work_pickup": 3.0, "van": 2.0},     # plumbers, electricians
 }
 
-## Which kinds may carry their job's cargo (so the view can show loads).
-const CARGO_LOOK := {"grain": "grain", "goods": "boxes", "food": "boxes", "raw": "logs", "construction": "gravel"}
+## Some cargo needs its own rig, whatever the job is called: logs ride a
+## log trailer between stakes, ore an end-dump, crude oil a tanker.
+const CARGO_KIND := {
+	"logs": "log_truck", "ore": "ore_truck", "crude oil": "tanker", "fuel": "tanker",
+	"milk": "tanker", "grain": "grain_truck", "gravel": "dump_truck", "steel": "flatbed",
+}
 
 const FLEET := ["work_pickup", "van", "box_truck", "garbage_truck"]
 
@@ -161,8 +167,6 @@ static func pick(dest_zone: int, hour: int, rng: RandomNumberGenerator, ctx := {
 				_add(w, {"delivery_van": 4.0, "box_truck": 3.0, "semi": 1.5})
 			_:
 				_add(w, {"delivery_van": 2.0, "tow_truck": 0.3})
-	if hour >= 5 and hour < 15:
-		_add(w, {"garbage_truck": 0.8})
 	if ctx.get("police", false):
 		_add(w, {"police": 1.2})
 	if ctx.get("fire", false):
@@ -179,9 +183,19 @@ static func pick(dest_zone: int, hour: int, rng: RandomNumberGenerator, ctx := {
 
 
 ## The vehicle for a job, e.g. for_purpose("grain", rng) -> "grain_truck".
-## Unknown jobs get a household vehicle. One random number per call.
-static func for_purpose(purpose: String, rng: RandomNumberGenerator) -> String:
-	return _weighted(PURPOSE.get(purpose, PERSONAL), rng.randf())
+## Cargo with its own rig (see CARGO_KIND) wins over the job. Unknown jobs
+## get a household vehicle. One random number per call.
+static func for_purpose(purpose: String, rng: RandomNumberGenerator, cargo := {}) -> String:
+	var r := rng.randf()
+	var rig := for_cargo(cargo)
+	return rig if rig != "" else _weighted(PURPOSE.get(purpose, PERSONAL), r)
+
+
+## The rig a load needs ({"good": "logs", ...}), or "" if any truck will do.
+static func for_cargo(cargo) -> String:
+	if cargo is Dictionary:
+		return CARGO_KIND.get(str(cargo.get("good", "")), "")
+	return ""
 
 
 ## The jobs a kind can do (for tooltips and checks).
@@ -202,7 +216,7 @@ static func household(id: int) -> String:
 ## The sRGB body colour of one vehicle, fixed by its id so it never changes.
 static func paint(kind: String, id: int) -> Color:
 	var table: Array = LIVERY.get(kind, FLEET_COLORS if kind in FLEET else
-		SEMI_COLORS if kind in ["semi", "tanker", "flatbed"] else CAR_COLORS)
+		SEMI_COLORS if kind in ["semi", "tanker", "flatbed", "log_truck", "ore_truck"] else CAR_COLORS)
 	var total := 0.0
 	for e in table:
 		total += e[1]
