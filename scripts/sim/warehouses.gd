@@ -36,7 +36,13 @@ const GOODS := "goods"
 ## (unit, toward the road), level: 0.., bays: 0.., stock: {"raw": {good:
 ## loads}, "goods": {good: loads}}, units: {good: amount per load}, incoming:
 ## loads promised, handled: loads in and out since the last decision,
-## busy: decisions in a row it was full, idle: decisions in a row it sat empty}
+## busy: decisions in a row it was full, idle: decisions in a row it sat empty,
+## accepts: goods it takes, [] for anything}
+##
+## Other threads' buildings can store loads the same way (a grain elevator,
+## a cold store): add_store() registers one with kind "store", a fixed
+## capacity and its own accepts list. It is not drawn, placed or grown here;
+## its owner removes it with buildings.erase(id).
 var buildings := {}
 var _next_id := 1
 
@@ -45,12 +51,35 @@ func add(kind: String, pos: Vector3, dir: Vector3) -> int:
 	var id := _next_id
 	_next_id += 1
 	buildings[id] = {"kind": kind, "pos": pos, "dir": dir, "level": 0, "bays": 0,
-		"stock": {RAW: {}, GOODS: {}}, "units": {}, "incoming": 0, "handled": 0, "busy": 0, "idle": 0}
+		"stock": {RAW: {}, GOODS: {}}, "units": {}, "incoming": 0, "handled": 0, "busy": 0, "idle": 0, "accepts": []}
 	return id
 
 
+## Registers another thread's storage building. `pos` is its gate on the
+## road (where trucks stop), `accepts` the goods it takes (for example
+## ["corn", "soybeans"]), or [] for anything. Returns its id ("wh:<id>").
+func add_store(pos: Vector3, cap: int, accepts: Array) -> int:
+	var id := add("store", pos, Vector3.FORWARD)
+	buildings[id].cap = cap
+	buildings[id].accepts = accepts.duplicate()
+	return id
+
+
+static func is_store(w: Dictionary) -> bool:
+	return w.kind == "store"
+
+
+## True when it takes this good ("raw" or "goods" match anything with no list).
+static func takes(w: Dictionary, good: String) -> bool:
+	return w.get("accepts", []).is_empty() or good in w.accepts
+
+
+## A registered store has no footprint of its own here.
+const _NO_SITE := {"w": 0.0, "d": 1.0, "court": 0.0, "docks": 0, "cost": 0, "jobs": 0, "value": 0.0}
+
+
 static func spec(w: Dictionary) -> Dictionary:
-	return Balance.WAREHOUSE[w.kind]
+	return Balance.WAREHOUSE.get(w.kind, _NO_SITE)
 
 
 ## The building's depth now, with any bays added at the back.
@@ -115,6 +144,8 @@ static func site_near(network: RoadNetwork, hit: Vector3) -> Array:
 
 ## Loads it can hold at its height and floor area.
 static func capacity(w: Dictionary) -> int:
+	if is_store(w):
+		return int(w.cap)
 	var floor_m2: float = float(spec(w).w) * building_depth(w)
 	var tall: float = Balance.WAREHOUSE_HEIGHTS[int(w.level)] / Balance.WAREHOUSE_HEIGHTS[0]
 	return int(floor_m2 * tall / Balance.WAREHOUSE_M2_PER_LOAD)
@@ -136,16 +167,16 @@ static func fill(w: Dictionary) -> float:
 	return float(stored(w) + int(w.incoming)) / maxf(1.0, float(capacity(w)))
 
 
-## The nearest warehouse to `from` with room for one more load, or -1.
-## Promises the space: the truck is on its way.
-func take_room(from: Vector3) -> int:
+## The nearest warehouse to `from` with room for one more load of `good`,
+## or -1. Promises the space: the truck is on its way.
+func take_room(from: Vector3, good := "") -> int:
 	var best := -1
 	var best_d := INF
 	var ids := buildings.keys()
 	ids.sort()
 	for id in ids:
 		var w: Dictionary = buildings[id]
-		if free_space(w) < 1:
+		if free_space(w) < 1 or not takes(w, good):
 			continue
 		var d: float = w.pos.distance_to(from)
 		if d < best_d:
@@ -229,6 +260,8 @@ func decide(usable: Callable) -> bool:
 	ids.sort()
 	for id in ids:
 		var w: Dictionary = buildings[id]
+		if is_store(w):
+			continue  # its owner grows it
 		var f := fill(w)
 		w.busy = int(w.busy) + 1 if f >= Balance.WAREHOUSE_BUSY else 0
 		w.idle = int(w.idle) + 1 if f <= Balance.WAREHOUSE_IDLE and int(w.handled) == 0 else 0
@@ -267,7 +300,7 @@ static func can_extend(w: Dictionary) -> bool:
 func at(p: Vector3) -> int:
 	var q := Vector2(p.x, p.z)
 	for id in buildings:
-		if Geometry2D.is_point_in_polygon(q, corners(buildings[id])):
+		if not is_store(buildings[id]) and Geometry2D.is_point_in_polygon(q, corners(buildings[id])):
 			return id
 	return -1
 
@@ -308,7 +341,7 @@ func to_dict() -> Dictionary:
 		var w: Dictionary = buildings[id]
 		out[str(id)] = {"kind": w.kind, "pos": [w.pos.x, w.pos.z], "dir": [w.dir.x, w.dir.z], "level": w.level,
 			"bays": w.bays, "stock": w.stock, "units": w.units, "incoming": w.incoming, "handled": w.handled,
-			"busy": w.busy, "idle": w.idle}
+			"busy": w.busy, "idle": w.idle, "accepts": w.get("accepts", []), "cap": w.get("cap", 0)}
 	return {"buildings": out, "next_id": _next_id}
 
 
@@ -325,5 +358,7 @@ func from_dict(d: Dictionary) -> void:
 			"dir": Vector3(w.dir[0], 0.0, w.dir[1]).normalized(), "level": int(w.get("level", 0)),
 			"bays": int(w.get("bays", 0)), "stock": stock, "units": w.get("units", {}),
 			"incoming": int(w.get("incoming", 0)), "handled": int(w.get("handled", 0)),
-			"busy": int(w.get("busy", 0)), "idle": int(w.get("idle", 0))}
+			"busy": int(w.get("busy", 0)), "idle": int(w.get("idle", 0)), "accepts": w.get("accepts", []).duplicate()}
+		if str(w.kind) == "store":
+			buildings[int(k)].cap = int(w.get("cap", 0))
 	_next_id = int(d.get("next_id", 1))

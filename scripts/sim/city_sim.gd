@@ -414,7 +414,7 @@ func _road_wins() -> void:
 	ids = warehouses.buildings.keys()
 	ids.sort()
 	for id in ids:
-		if RoadWins.hits(corr, warehouses.footprint(id)):
+		if not Warehouses.is_store(warehouses.buildings[id]) and RoadWins.hits(corr, warehouses.footprint(id)):
 			economy.money += int(Balance.WAREHOUSE[warehouses.buildings[id].kind].cost)
 			warehouses.buildings.erase(id)
 			_lots_dirty = true
