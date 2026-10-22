@@ -167,6 +167,21 @@ const FARM_BUSHELS_PER_ACRE := {"corn": 180.0, "soybeans": 55.0}
 const GRAIN_TRUCK_BUSHELS := 1_000.0
 ## A factory ships one load of goods to the shops for this many loads in.
 const FACTORY_LOADS_PER_GOODS := 2.0
+## Factories in the industrial zone follow the town's industry (Brawn): each
+## one that moves in works whatever is produced most nearby. "input" is the
+## cargo it buys (grain covers corn and soybeans); "general" works materials
+## shipped in from the region when nothing local is near.
+const FACTORY_CHAINS := {
+	"mill": {"name": "Grain mill", "input": "grain", "makes": "flour and feed"},
+	"sawmill": {"name": "Sawmill", "input": "logs", "makes": "lumber"},
+	"refinery": {"name": "Plastics plant", "input": "crude oil", "makes": "plastics"},
+	"metal": {"name": "Metal works", "input": "ore", "makes": "steel parts"},
+	"general": {"name": "Factory", "input": "materials", "makes": "goods"},
+}
+## How far a new factory looks for local supply, in metres, and how much
+## nearby output it needs before it follows that chain (loads a month).
+const FACTORY_CHAIN_REACH := 3000.0
+const FACTORY_CHAIN_MIN := 0.5
 
 # --- Warehouses ----------------------------------------------------------------
 # Brawn (2026-10-22): warehouses in many real sizes, like Cities: Skylines'
