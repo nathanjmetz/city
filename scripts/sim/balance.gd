@@ -991,15 +991,18 @@ const RAIL_TURNOUT_COST := 150_000
 const RAIL_CROSSING_COST := 300_000
 ## Track upkeep, dollars per metre per month (about $20,000 a mile a year).
 const RAIL_TRACK_UPKEEP_PER_M := 1.0
-## The depot's crew, dispatcher and office, per month.
+## The depot's crew, dispatcher and office, per month, and its jobs.
 const RAIL_DEPOT_UPKEEP := 9_000
+const RAIL_DEPOT_JOBS := 12
 ## What the railroad earns for each loaded car it hands to the region
 ## (US average revenue is about $3,500 a carload, AAR).
 const RAIL_CAR_RATE := 3_500
 ## Truck loads that fill one rail car: a tank car holds about 3.5 tanker
 ## trucks of crude, an open hopper five dump trucks of ore, a bulkhead flat
-## three log trucks.
-const RAIL_LOADS_PER_CAR := {"crude oil": 3.5, "ore": 5.0, "logs": 3.0}
+## three log trucks, a covered hopper about 3,400 bushels of grain.
+const RAIL_LOADS_PER_CAR := {"crude oil": 3.5, "ore": 5.0, "logs": 3.0, "grain": 3.4}
+## Grain truck loads the co-op elevator holds for the railroad.
+const RAIL_ELEVATOR_LOADS := 60
 ## Running a train, dollars per train-km (fuel), plus the crew for each run.
 const RAIL_TRAIN_KM_COST := 60.0
 const RAIL_CREW_PER_RUN := 900.0

@@ -64,8 +64,9 @@ const STOCK := {
 	"hopper": {"len": 16.5, "cargo": "ore"},
 	"flat": {"len": 22.0, "cargo": "logs"},
 	"bilevel": {"len": 25.9, "cargo": "passengers"},
+	"covered": {"len": 18.0, "cargo": "grain"},
 }
-const CAR_FOR := {"crude oil": "tank", "ore": "hopper", "logs": "flat"}
+const CAR_FOR := {"crude oil": "tank", "ore": "hopper", "logs": "flat", "grain": "covered"}
 const DECIDE_EVERY := Balance.RAIL_DECIDE_EVERY
 const TICKS_PER_DAY := 24 * CitySim.TICKS_PER_HOUR
 
@@ -73,10 +74,49 @@ const FIRST := ["Ruth", "Walt", "June", "Earl", "Marge", "Dale", "Lois", "Gene",
 	"Clyde", "Darlene", "Floyd", "Hazel", "Roy", "Bev", "Merle", "Joan", "Lyle", "Doris", "Glen", "Faye", "Howard"]
 const LAST := ["Hale", "Lindqvist", "Brandt", "Osterhaus", "McCready", "Pruitt", "Vogel", "Dunbar", "Kessler",
 	"Ainsworth", "Bauer", "Tolliver", "Hartke", "Sowders", "Wampler", "Ellis", "Greenwell", "Kemper"]
+## The depot's development tree (Agency format), shown to Brawn 2026-10-22.
+## What opens depends on the leader (schooling, money), the town (people,
+## farms, factories) and the region (what neighbouring towns buy and make).
+## Effects: "rate*" freight earnings per car, "run*" running costs,
+## "riders*" and "fare*" passengers, "pax_every*" time between passenger
+## trains, "grain+" serves the town's grain elevator, "jobs+".
+const TREE := [
+	{"id": "team_track", "name": "Team track", "cost": 150_000, "needs": {},
+		"effects": {"rate*": 0.08, "jobs+": 3}, "note": "local businesses load their own cars by truck"},
+	{"id": "engine_house", "name": "Engine house", "cost": 400_000, "requires": ["team_track"],
+		"needs": {"profit": 60_000}, "effects": {"run*": -0.12, "jobs+": 6}, "note": "engines are serviced at home"},
+	{"id": "grain_spur", "name": "Grain elevator spur", "cost": 250_000, "requires": ["team_track"],
+		"needs": {"local:farm": 2}, "effects": {"grain+": 1.0, "jobs+": 2},
+		"note": "hopper cars load at the co-op elevator"},
+	{"id": "station", "name": "Station with a canopy", "cost": 300_000, "needs": {"population": 1500},
+		"effects": {"riders*": 0.2, "jobs+": 3}, "note": "riders wait out of the weather"},
+	{"id": "car_shop", "name": "Car repair shop", "cost": 800_000, "requires": ["engine_house"],
+		"needs": {"leader_edu": 0.4}, "effects": {"run*": -0.1, "jobs+": 25}},
+	{"id": "intercity", "name": "Intercity stop", "cost": 1_200_000, "requires": ["station"],
+		"needs": {"population": 4000, "link": 1}, "effects": {"riders*": 0.4, "fare*": 0.25, "jobs+": 6},
+		"note": "trains from across the state stop here"},
+	{"id": "commuter", "name": "Commuter trains", "cost": 1_500_000, "requires": ["intercity"],
+		"needs": {"leader_edu": 0.5, "population": 8000}, "effects": {"pax_every*": -0.5, "riders*": 0.3, "jobs+": 10},
+		"note": "trains every few hours to the next towns"},
+	{"id": "unit_loop", "name": "Unit-train loop", "cost": 4_000_000, "requires": ["grain_spur"],
+		"needs": {"leader_edu": 0.7, "profit": 600_000}, "effects": {"rate*": 0.2, "jobs+": 8},
+		"note": "whole 100-car trains of grain at a lower cost a car"},
+	{"id": "intermodal", "name": "Intermodal container yard", "cost": 3_000_000, "requires": ["team_track"],
+		"needs": {"leader_edu": 0.6, "region_buys:goods": 1, "link": 1}, "effects": {"rate*": 0.3, "jobs+": 30},
+		"note": "a neighbouring town buys the factories' goods by the container"},
+	{"id": "interchange", "name": "Interchange yard", "cost": 2_000_000, "requires": ["engine_house"],
+		"needs": {"link": 1, "region_makes:goods": 1}, "effects": {"rate*": 0.15, "jobs+": 12},
+		"note": "swaps cars with the neighbouring railroad and shares the haul"},
+	{"id": "classification", "name": "Classification yard", "cost": 6_000_000, "requires": ["interchange"],
+		"needs": {"leader_edu": 0.8, "profit": 1_500_000}, "effects": {"rate*": 0.2, "run*": -0.1, "jobs+": 60},
+		"note": "sorts the whole region's cars"},
+]
+
 const LINE_NAMES := ["Valley Railroad", "& Western", "Short Line", "Southern Railway", "Central Railroad"]
 
 ## Depots: id -> {pos, dir (toward the road), axis (along the tracks),
-## name, leader {name, education, ambition, caution}, money, subsidy,
+## name, leader {name, edu, ambition, caution} (Agency), built (its
+## development tree, Agency), money, subsidy,
 ## state ("open" | "closed"), why, ends [node A, node B], yard [piece ids],
 ## pax (passenger service on), pax_train, freight_train, riders, ledger
 ## {income, costs} (this month), last {income, costs} (last month),
@@ -182,7 +222,7 @@ func add_depot(sim: CitySim, pos: Vector3, dir: Vector3, axis: Vector3) -> int:
 		"why": "Just opened: %s is surveying for a main line out to the region." % leader.name,
 		"ends": [], "yard": [], "pax": false, "pax_train": -1, "freight_train": -1, "riders": 0.0,
 		"ledger": {"income": 0.0, "costs": 0.0}, "last": {"income": 0.0, "costs": 0.0},
-		"debt_days": 0, "skip": {}, "opened": sim.tick_count}
+		"debt_days": 0, "skip": {}, "opened": sim.tick_count, "built": []}
 	depots[id] = d
 	_build_yard(id)
 	return id
@@ -225,6 +265,46 @@ func attach(sim: CitySim) -> void:
 		return Vector2(d.pos.x, d.pos.z)
 
 
+## One effect of what a depot has built from its tree.
+func fx(id: int, key: String) -> float:
+	return Agency.effect(depots[id], TREE, key) if depots.has(id) else (1.0 if key.ends_with("*") else 0.0)
+
+
+## The depot's yearly profit, from last month's books.
+func yearly_profit(id: int) -> float:
+	var d: Dictionary = depots[id]
+	return (float(d.last.income) - float(d.last.costs)) * 12.0
+
+
+## Jobs at every depot: the yard crew and station staff, plus what the
+## tree added.
+func jobs() -> int:
+	var n := 0
+	for id in depots:
+		if depots[id].state == "open":
+			n += Balance.RAIL_DEPOT_JOBS + int(fx(id, "jobs+"))
+	return n
+
+
+## The leader builds the next thing on the depot's tree it can afford.
+func _develop(sim: CitySim, id: int) -> bool:
+	var d: Dictionary = depots[id]
+	var profit := yearly_profit(id)
+	var before: String = d.why
+	var node: Dictionary = Agency.develop(sim, d, TREE, d.pos, maxf(profit, 0.0))
+	if node.is_empty():
+		return false
+	if float(node.cost) > d.money - cushion(d.leader):
+		d.built.erase(node.id)  # can't pay for it yet after all
+		d.why = before
+		return false
+	d.money -= float(node.cost)
+	d.ledger.costs += float(node.cost)
+	d.why = "%s built %s%s." % [d.leader.name, str(node.name).to_lower(),
+		(": " + str(node.note)) if node.has("note") else ""]
+	return true
+
+
 func set_subsidy(id: int, monthly: int) -> bool:
 	if not depots.has(id):
 		return false
@@ -238,29 +318,18 @@ func set_subsidy(id: int, monthly: int) -> bool:
 ## follows how much of the town a school covers, ambition how much industry
 ## there is to serve, and caution the rest of their nature.
 func _make_leader(sim: CitySim, id: int, pos: Vector3) -> Dictionary:
+	var seed := hash([sim.city_seed, id, int(pos.x), int(pos.z), "leader"])
+	var lead: Dictionary = Agency.leader(sim, seed)
 	var rng := RandomNumberGenerator.new()
-	rng.seed = hash([sim.city_seed, id, int(pos.x), int(pos.z), "leader"])
-	var homes := 0
-	var schooled := 0
-	for key in sim.buildings:
-		if sim.buildings[key].zone == ZoneMap.Zone.RESIDENTIAL:
-			homes += 1
-			if sim.services.served.get(key, {}).get(Services.Kind.SCHOOL, false):
-				schooled += 1
-	var school := 0.3 if homes == 0 else float(schooled) / homes
-	# The town's schooling (the same pool campus heads come from).
-	var town: float = sim.education.leader_education(sim.stats.workers)
+	rng.seed = seed
+	# Ambition also follows how much industry there is to serve nearby.
 	var industry := 0
 	for sid in sim.industry.sites:
 		if sim.industry.sites[sid].pos.distance_to(pos) < SERVE_REACH:
 			industry += 1
-	var factories := sim.count_buildings(ZoneMap.Zone.INDUSTRIAL)
-	return {
-		"name": "%s %s" % [FIRST[rng.randi() % FIRST.size()], LAST[rng.randi() % LAST.size()]],
-		"education": clampf(0.5 * town + 0.4 * school + 0.1 + rng.randf_range(-0.1, 0.1), 0.05, 1.0),
-		"ambition": clampf(0.35 + 0.1 * industry + 0.004 * factories + rng.randf_range(-0.15, 0.15), 0.05, 1.0),
-		"caution": clampf(rng.randf_range(0.2, 0.85), 0.05, 1.0),
-	}
+	lead.ambition = snappedf(clampf(0.6 * float(lead.ambition) + 0.1 * industry + 0.2, 0.05, 1.0), 0.01)
+	lead.name = "%s %s" % [FIRST[rng.randi() % FIRST.size()], LAST[rng.randi() % LAST.size()]]
+	return lead
 
 
 static func education_text(e: float) -> String:
@@ -294,7 +363,7 @@ static func cushion(l: Dictionary) -> float:
 ## How much a leader over-guesses freight (schooling makes better guesses):
 ## a high-school leader expects about 25% more than really comes.
 static func optimism(l: Dictionary) -> float:
-	return 1.0 + 0.4 * (0.6 - l.education)
+	return 1.0 + 0.4 * (0.6 - l.edu)
 
 
 ## Every leader takes a step: watch the permit it asked for, or choose the
@@ -323,6 +392,8 @@ func decide(sim: CitySim) -> bool:
 		changed = _passengers(sim, id) or changed
 		if not busy:
 			changed = _next_project(sim, id) or changed
+		if not busy and sim.tick_count % (DECIDE_EVERY * 4) == 0:
+			changed = _develop(sim, id) or changed
 	return changed
 
 
@@ -365,23 +436,41 @@ func _next_project(sim: CitySim, id: int) -> bool:
 			continue
 		var cars: float = _cars_per_year(sim, s) * optimism(lead)
 		var guess: float = cars * Balance.RAIL_CAR_RATE - s.pos.distance_to(d.pos) * Balance.RAIL_TRACK_UPKEEP_PER_M * 12.0
-		ranked.append([-guess, sid])
+		ranked.append([-guess, "site", sid])
+	# The town's grain elevator, once the tree has a grain spur.
+	if fx(id, "grain+") >= 1.0:
+		var pids := sim.parks.sites.keys()
+		pids.sort()
+		for pid in pids:
+			var e: Dictionary = sim.parks.sites[pid]
+			var ref := "elev:%d" % pid
+			if e.kind != "grain_elevator" or e.pos.distance_to(d.pos) > SERVE_REACH or _serves(ref) != -1 \
+					or _skipped(sim, d, ref):
+				continue
+			ranked.append([-grain_cars_per_year(sim, e.pos) * Balance.RAIL_CAR_RATE, "elev", pid])
 	ranked.sort()
 	for entry in ranked:
 		if tried >= 2:
 			break  # surveys take time: a couple of candidates a step
-		var sid: int = entry[1]
-		var s: Dictionary = sim.industry.sites[sid]
-		var ref := "site:%d" % sid
 		tried += 1
-		var target := {"ref": ref, "name": Industry.KINDS[s.kind].name, "pos": s.pos + s.dir * 12.0,
-			"allow": [sim.industry._yard(s)]}
+		var target := {}
+		var cars := 0.0
+		if entry[1] == "elev":
+			var e: Dictionary = sim.parks.sites[int(entry[2])]
+			target = {"ref": "elev:%d" % int(entry[2]), "name": str(e.name), "pos": e.pos,
+				"allow": [sim.parks.footprint(int(entry[2]))]}
+			cars = grain_cars_per_year(sim, e.pos) * optimism(lead)
+		else:
+			var s: Dictionary = sim.industry.sites[int(entry[2])]
+			target = {"ref": "site:%d" % int(entry[2]), "name": Industry.KINDS[s.kind].name, "pos": s.pos + s.dir * 12.0,
+				"allow": [sim.industry._yard(s)]}
+			cars = _cars_per_year(sim, s) * optimism(lead)
+		var ref: String = target.ref
 		var plan: Dictionary = _plan(sim, id, "spur", target)
 		if plan.is_empty():
 			d.skip[ref] = sim.tick_count + TICKS_PER_DAY * 6
 			continue
-		var cars: float = _cars_per_year(sim, s) * optimism(lead)
-		var net: float = cars * Balance.RAIL_CAR_RATE - cars / 6.0 * _run_cost(plan.length * 2.0 + _main_length(id) * 2.0) \
+		var net: float = cars * Balance.RAIL_CAR_RATE * fx(id, "rate*") - cars / 6.0 * _run_cost(plan.length * 2.0 + _main_length(id) * 2.0) \
 			- plan.length * Balance.RAIL_TRACK_UPKEEP_PER_M * 12.0
 		if net <= 0.0:
 			d.skip[ref] = sim.tick_count + TICKS_PER_DAY * 6
@@ -419,7 +508,8 @@ func _passengers(sim: CitySim, id: int) -> bool:
 	if main == -1 or lines[main].state != "open":
 		return false
 	var pop: int = sim.stats.population
-	var fare_month: float = pop * Balance.RAIL_RIDES_PER_RESIDENT * Balance.RAIL_FARE * optimism(d.leader)
+	var fare_month: float = pop * Balance.RAIL_RIDES_PER_RESIDENT * Balance.RAIL_FARE * optimism(d.leader) \
+		* fx(id, "riders*") * fx(id, "fare*")
 	var runs := 24.0 / Balance.RAIL_PAX_EVERY_HOURS
 	var cost_month: float = Balance.RAIL_TRAINSET_LEASE + runs * _run_cost(_main_length(id) * 2.0, true)
 	var gain: float = fare_month + d.subsidy - cost_month
@@ -452,6 +542,17 @@ static func _cars_per_year(sim: CitySim, s: Dictionary) -> float:
 	return 12.0 * loads / float(Balance.RAIL_LOADS_PER_CAR[Industry.KINDS[s.kind].cargo])
 
 
+## Hopper cars of grain a year the farms near an elevator would fill.
+static func grain_cars_per_year(sim: CitySim, at: Vector3) -> float:
+	var bushels := 0.0
+	for fid in sim.farms.farms:
+		var f: Dictionary = sim.farms.farms[fid]
+		if f.pos.distance_to(at) > SERVE_REACH:
+			continue
+		bushels += f.cells.size() * Farms.ACRES_PER_CELL * float(Balance.FARM_BUSHELS_PER_ACRE.get(f.crop, 150.0)) * 0.8
+	return bushels / Balance.GRAIN_TRUCK_BUSHELS / float(Balance.RAIL_LOADS_PER_CAR["grain"])
+
+
 static func _run_cost(metres: float, pax := false) -> float:
 	return metres / 1000.0 * Balance.RAIL_TRAIN_KM_COST * (0.6 if pax else 1.0) + Balance.RAIL_CREW_PER_RUN
 
@@ -463,7 +564,7 @@ func _plan(sim: CitySim, id: int, kind: String, target: Dictionary) -> Dictionar
 	var pl: RailPlanner = RailPlanner.new()
 	pl.cost_per_m = Balance.RAIL_TRACK_PER_M[kind]
 	# A schooled leader steers around roads: fewer crossings to ask for.
-	pl.crossing_penalty = Balance.RAIL_CROSSING_COST * 1.5 * d.leader.education
+	pl.crossing_penalty = Balance.RAIL_CROSSING_COST * 1.5 * d.leader.edu
 	var allow := [yard_poly(id)]
 	allow.append_array(target.get("allow", []))
 	pl.setup(sim, kind, allow)
@@ -488,6 +589,10 @@ func _plan(sim: CitySim, id: int, kind: String, target: Dictionary) -> Dictionar
 		goal.heading = target.heading
 		goal.tol = 45.0
 	var plan: Dictionary = pl.plan(starts, goal)
+	if plan.is_empty() and pl.crossing_penalty > 0.0:
+		# No way around the roads within the survey: cross them after all.
+		pl.crossing_penalty = 0.0
+		plan = pl.plan(starts, goal)
 	if plan.is_empty():
 		return {}
 	plan.from = starts[plan.start]
@@ -892,7 +997,7 @@ func _money(sim: CitySim) -> void:
 		for pid in pieces:
 			if pieces[pid].depot == id and pieces[pid].built < 0.0 and pieces[pid].kind != "region":
 				track += _length(pid)
-		var month: float = Balance.RAIL_DEPOT_UPKEEP + track * Balance.RAIL_TRACK_UPKEEP_PER_M
+		var month: float = Balance.RAIL_DEPOT_UPKEEP * fx(id, "run*") + track * Balance.RAIL_TRACK_UPKEEP_PER_M
 		if d.pax:
 			month += Balance.RAIL_TRAINSET_LEASE
 		d.money -= month / 24.0
@@ -927,6 +1032,9 @@ func _load_sidings(sim: CitySim) -> void:
 		if l.state != "open" or l.kind != "spur":
 			continue
 		var ref: String = l.target.ref
+		if ref.begins_with("elev:"):
+			_load_elevator(sim, l)
+			continue
 		var sid := int(ref.substr(5))
 		if not sim.industry.sites.has(sid):
 			continue
@@ -942,6 +1050,32 @@ func _load_sidings(sim: CitySim) -> void:
 				l.cars += 1
 				if l.waiting_since == -1:
 					l.waiting_since = sim.tick_count
+
+
+## Grain trucks unload at the elevator (a store in Warehouses); what no
+## mill in town is waiting for goes into hopper cars on the spur.
+func _load_elevator(sim: CitySim, l: Dictionary) -> void:
+	var pid := int(str(l.target.ref).substr(5))
+	if not sim.parks.sites.has(pid):
+		return
+	var e: Dictionary = sim.parks.sites[pid]
+	if int(l.get("store", -1)) == -1 or not sim.warehouses.buildings.has(int(l.store)):
+		l.store = sim.warehouses.add_store(e.pos + e.dir * float(e.size.y) * 0.5, Balance.RAIL_ELEVATOR_LOADS,
+			["corn", "soybeans"])
+	for key in sim.logistics.need:
+		if sim.logistics.need[key] >= 0.5:
+			return  # a mill wants it: trucks take it there
+	var per: float = Balance.RAIL_LOADS_PER_CAR["grain"]
+	while l.cars < MAX_CARS:
+		var load := sim.warehouses.take_load(int(l.store), Warehouses.RAW)
+		if load.is_empty():
+			break
+		l.loads += 1.0
+		if l.loads >= per:
+			l.loads -= per
+			l.cars += 1
+			if l.waiting_since == -1:
+				l.waiting_since = sim.tick_count
 
 
 ## True when this place's loads go by rail (Logistics asks before sending
@@ -991,10 +1125,10 @@ func _step_train(sim: CitySim, tid: int) -> void:
 			if t.kind == "passenger":
 				if not d.pax:
 					return
-				if sim.tick_count - int(t.since) >= Balance.RAIL_PAX_EVERY_HOURS * CitySim.TICKS_PER_HOUR:
+				if sim.tick_count - int(t.since) >= Balance.RAIL_PAX_EVERY_HOURS * fx(t.depot, "pax_every*") * CitySim.TICKS_PER_HOUR:
 					t.riders = roundi(d.riders)
 					d.riders = 0.0
-					var fare: float = t.riders * Balance.RAIL_FARE
+					var fare: float = t.riders * Balance.RAIL_FARE * fx(t.depot, "fare*")
 					d.money += fare
 					d.ledger.income += fare
 					t.legs = ["region"]
@@ -1039,7 +1173,7 @@ func _step_train(sim: CitySim, tid: int) -> void:
 			if t.timer <= 0 and sim.tick_count % 10 == 0:
 				_come_back(sim, tid)
 	if d.pax and sim.tick_count % CitySim.TICKS_PER_HOUR == 0:
-		d.riders += sim.stats.population * Balance.RAIL_RIDES_PER_RESIDENT / 24.0
+		d.riders += sim.stats.population * Balance.RAIL_RIDES_PER_RESIDENT * fx(t.depot, "riders*") / 24.0
 
 
 ## The siding whose loaded cars should go out next: the fullest one with
@@ -1060,6 +1194,8 @@ func _freight_job(sim: CitySim, depot: int) -> int:
 
 
 func _cargo(sim: CitySim, l: Dictionary) -> String:
+	if str(l.target.ref).begins_with("elev:"):
+		return "grain"
 	var sid := int(str(l.target.ref).substr(5))
 	if sim.industry.sites.has(sid):
 		return Industry.KINDS[sim.industry.sites[sid].kind].cargo
@@ -1322,7 +1458,7 @@ func _arrive(sim: CitySim, tid: int) -> void:
 			if t.kind == "passenger":
 				t.since = sim.tick_count
 				# Riders from the next town get off here.
-				var fare: float = t.riders * Balance.RAIL_FARE
+				var fare: float = t.riders * Balance.RAIL_FARE * fx(t.depot, "fare*")
 				d.money += fare
 				d.ledger.income += fare
 				t.riders = 0
@@ -1330,7 +1466,7 @@ func _arrive(sim: CitySim, tid: int) -> void:
 		t.state = "away"
 		t.timer = roundi((Balance.RAIL_REGION_DAYS if t.kind == "freight" else Balance.RAIL_PAX_AWAY_DAYS) * TICKS_PER_DAY)
 		if t.kind == "freight" and t.cars > 0:
-			var pay: float = t.cars * Balance.RAIL_CAR_RATE
+			var pay: float = t.cars * Balance.RAIL_CAR_RATE * fx(t.depot, "rate*")
 			d.money += pay
 			d.ledger.income += pay
 			d.delivered = int(d.get("delivered", 0)) + t.cars
@@ -1343,7 +1479,7 @@ func _arrive(sim: CitySim, tid: int) -> void:
 		for lid in _lines_of(t.depot):
 			if lines[lid].kind == "spur" and t.has("job") and lid == t.job:
 				km += lines[lid].length * 2.0
-		var run := _run_cost(km, t.kind == "passenger")
+		var run := _run_cost(km, t.kind == "passenger") * fx(t.depot, "run*")
 		d.money -= run
 		d.ledger.costs += run
 		# The whole train is past the end of the map now: free its track.
@@ -1795,6 +1931,8 @@ func from_dict(d: Dictionary) -> void:
 		x.pax_train = int(x.pax_train)
 		x.freight_train = int(x.freight_train)
 		x.debt_days = int(x.debt_days)
+		if not x.has("built"):
+			x.built = []
 		x.subsidy = int(x.subsidy)
 		x.opened = int(x.get("opened", 0))
 		if x.has("delivered"):

@@ -68,7 +68,6 @@ func _init() -> void:
 	_check(l.state == "open", "the main line opens (%s, built %s)" % [l.state, str(sim.rail.pieces[l.pieces[0]].built)])
 	_check(d.money < rail_money - l.cost * 0.9, "the railroad paid for its own track")
 	_check(sim.rail.trains.size() == 1, "a local freight is in the yard")
-	print("DBG sites ", sim.industry.sites.keys(), " best ", best, " hq ", hq, " skip ", d.skip, " cars ", Rail._cars_per_year(sim, sim.industry.sites[sid]) if sim.industry.sites.has(sid) else -1)
 	_check(d.why.contains("years to pay off") or not sim.rail.open_requests().is_empty(),
 		"the leader weighs whether a spur pays (%s)" % d.why)
 	# A bold leader will take a longer payback.
@@ -155,6 +154,11 @@ func _init() -> void:
 				print("DBG diff after: ", a1.substr(maxi(0, i - 80), 140), " VS ", b1.substr(maxi(0, i - 80), 140))
 				break
 	_check(a1 == b1, "copies of the railroad stay in sync")
+	# The development tree: a leader with money builds the first step.
+	_check(d.built.size() >= 1 and d.built[0] == "team_track", "the leader built a team track first (%s)" % str(d.built))
+	_check(sim.rail.jobs() > Balance.RAIL_DEPOT_JOBS, "the tree adds jobs")
+	_check(sim.rail.fx(did, "rate*") > 1.0, "the team track earns more a car")
+	_check(not d.built.has("classification"), "the big yards wait for schooling and profit")
 	# Deny: the leader backs off.
 	var sim2 := CitySim.new()
 	sim2.simulate_traffic = false

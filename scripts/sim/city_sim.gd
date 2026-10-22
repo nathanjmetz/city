@@ -719,7 +719,7 @@ func update_stats() -> void:
 	services.plants = power.sources()
 	services.update(network, lots, buildings)
 	parks.update_effects(self)
-	factory_jobs += farms.jobs() + industry.jobs() + warehouses.jobs() + power.jobs()
+	factory_jobs += farms.jobs() + industry.jobs() + warehouses.jobs() + power.jobs() + rail.jobs()
 	# Teachers, and office and tech jobs for the town's graduates.
 	shop_jobs += education.jobs()
 	economy.reach_milestones(pop)
