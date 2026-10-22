@@ -16,6 +16,8 @@ const CHAT_KEEP := 100
 const COUNTY_REACH := 2000.0
 ## A new town is linked by county road to this many of its nearest towns.
 const LINK_TOWNS := 2
+## Trade settles once a game month (a game day).
+const TRADE_EVERY := 24 * CitySim.TICKS_PER_HOUR
 
 ## city id -> {"owner": player id, "player": player name, "name": city name,
 ## "origin": Vector2, "color": int, "sim": CitySim}
@@ -77,6 +79,7 @@ func add_city(player_id: String, player: String) -> String:
 static func new_sim() -> CitySim:
 	var sim := CitySim.new()
 	sim.require_utilities = true
+	sim.in_region = true
 	return sim
 
 
@@ -94,6 +97,30 @@ func tick() -> void:
 	ids.sort()
 	for id in ids:
 		cities[id].sim.tick()
+	if tick_count % TRADE_EVERY == 0:
+		settle_trade()
+
+
+## A month of trade between every city: neighbors joined by county road
+## first, then the outside world (see Trade).
+func settle_trade() -> void:
+	var sims := {}
+	for id in cities:
+		sims[id] = cities[id].sim
+	Trade.settle(sims, trade_links())
+
+
+## Who trades with whom, and where: city id -> {neighbor id: link node}.
+func trade_links() -> Dictionary:
+	var out := {}
+	for j in joins:
+		if not out.has(j.a):
+			out[j.a] = {}
+		if not out.has(j.b):
+			out[j.b] = {}
+		out[j.a][j.b] = j.a_node
+		out[j.b][j.a] = j.b_node
+	return out
 
 
 ## A city's player color as one viewer sees it: coral for their own city,
@@ -118,7 +145,7 @@ func checksums() -> Dictionary:
 	var out := {}
 	for id in cities:
 		var s: CitySim = cities[id].sim
-		out[id] = hash([s.tick_count, s.economy.money, s.buildings.size(),
+		out[id] = hash([s.tick_count, s.economy.money, s.trade.net, s.buildings.size(),
 			s.network.segments.size(), s.stats.population, s.traffic.cars.size()])
 	return out
 
