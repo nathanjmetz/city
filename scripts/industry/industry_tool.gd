@@ -5,6 +5,8 @@ extends Node3D
 ## resource and within reach of a road, and over the years it opens wells,
 ## pits or logging stands wherever the resource is richest around it.
 ## Saving land for it is the Reserve tool (FarmTool with that kind).
+## Kind "power" places a power company's yard instead (Power): no view, and
+## the hint says what its leader would likely build there.
 
 signal kind_changed(kind: String)
 signal hint_changed(text: String)
@@ -12,7 +14,7 @@ signal hint_changed(text: String)
 var sim: CitySim
 var cam: CityCamera
 var info: InfoView
-## "" when put away, else "oil", "ore" or "forest".
+## "" when put away, else "oil", "ore", "forest" or "power".
 var kind := ""
 
 var _ghost := MeshInstance3D.new()
@@ -54,7 +56,7 @@ static func view_for(k: String) -> int:
 
 func set_kind(k: String) -> void:
 	kind = k
-	if kind != "":
+	if kind != "" and kind != "power":
 		info.set_mode(view_for(kind))
 		_opened_view = true
 	elif _opened_view:
@@ -73,7 +75,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if mb.button_index == MOUSE_BUTTON_RIGHT and not mb.pressed and not cam.right_dragged:
 		set_kind("")
 	elif mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not mb.alt_pressed and _ok:
-		sim.apply({"type": "place_industry", "kind": kind, "pos": [_hover.x, _hover.z], "dir": [_dir.x, _dir.z]})
+		if kind == "power":
+			sim.apply({"type": "place_power", "pos": [_hover.x, _hover.z], "dir": [_dir.x, _dir.z]})
+		else:
+			sim.apply({"type": "place_industry", "kind": kind, "pos": [_hover.x, _hover.z], "dir": [_dir.x, _dir.z]})
 		_update_hint()
 
 
@@ -92,8 +97,9 @@ func _process(_delta: float) -> void:
 		to_road.y = 0.0
 		if to_road.length() > 0.1:
 			_dir = to_road.normalized()
-	var problem := sim.industry_problem(kind, _hover, _dir)
-	var cost: int = Industry.KINDS[kind].cost
+	var power := kind == "power"
+	var problem := sim.power_problem(_hover, _dir) if power else sim.industry_problem(kind, _hover, _dir)
+	var cost: int = Balance.POWER_YARD_COST if power else Industry.KINDS[kind].cost
 	if problem == "" and cost > sim.economy.money:
 		problem = "Not enough money: costs $%s." % CitySim.money_text(cost)
 	_ok = problem == ""
@@ -105,13 +111,20 @@ func _process(_delta: float) -> void:
 			-Farms.DRIVE_WIDTH * 0.5, Farms.DRIVE_WIDTH * 0.5, 0.4)
 		_lane.mesh = st.commit()
 	var box := BoxMesh.new()
-	box.size = Vector3(Industry.HQ_SIZE.x, 8.0, Industry.HQ_SIZE.y)
+	var hq: Vector2 = Power.HQ_SIZE if power else Industry.HQ_SIZE
+	box.size = Vector3(hq.x, 8.0, hq.y)
 	_ghost.mesh = box
 	_ghost.transform = Transform3D(Basis.looking_at(_dir, Vector3.UP), _hover + Vector3(0, 4, 0))
 	_ghost.material_override = _ok_mat if _ok else _bad_mat
 	_ghost.visible = true
-	var here := "%s within reach: %d%%." % [Industry.KINDS[kind].cargo.capitalize(),
-		roundi(sim.industry_reach(kind, _hover) * 100.0)]
+	var here := ""
+	if power:
+		var guess := sim.power.choose({"name": "A leader hired here", "education": sim.town_education()}, _hover)
+		here = "Likely: %s. Wind %d%%, oil gas %d%%." % [Power.PLANTS[guess[0]].name.to_lower(),
+			roundi(sim.power.reach_quality("wind", _hover) * 100.0), roundi(Power.gas_supply(_hover) * 100.0)]
+	else:
+		here = "%s within reach: %d%%." % [Industry.KINDS[kind].cargo.capitalize(),
+			roundi(sim.industry_reach(kind, _hover) * 100.0)]
 	problem = here if problem == "" else here + " " + problem
 	if problem != _problem:
 		_problem = problem
@@ -120,6 +133,11 @@ func _process(_delta: float) -> void:
 
 func _update_hint() -> void:
 	if kind == "":
+		return
+	if kind == "power":
+		var t := "Power company ($%s): place its yard within %d m of a road. Its leader picks the plant from the land around (sun, wind, oil, the river) and their schooling, then grows it next door." \
+			% [CitySim.money_text(Balance.POWER_YARD_COST), int(Power.MAX_DRIVE)]
+		hint_changed.emit(t if _problem == "" else t + "\n" + _problem)
 		return
 	var k: Dictionary = Industry.KINDS[kind]
 	var text := "%s ($%s): place it near rich ground and a road. Its %ss spread over time to where the %s is." \

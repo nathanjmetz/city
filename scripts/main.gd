@@ -59,6 +59,9 @@ func _ready() -> void:
 	var industry_view := IndustryView.new()
 	add_child(industry_view)
 	industry_view.setup(sim)
+	var power_view := PowerView.new()
+	add_child(power_view)
+	power_view.setup(sim)
 
 	var warehouse_view := WarehouseView.new()
 	add_child(warehouse_view)
@@ -202,8 +205,7 @@ func _ready() -> void:
 	if not _load():
 		_starter_road()
 	await _settle()
-	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed, sim.industry_changed, sim.warehouses_changed]:
-	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed, sim.industry_changed, sim.parks_changed]:
+	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed, sim.industry_changed, sim.warehouses_changed, sim.parks_changed, sim.power_changed]:
 		sig.connect(func(): _save_pending = true)
 
 

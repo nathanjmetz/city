@@ -82,6 +82,7 @@ func update_budget(sim: CitySim) -> void:
 	income[ZoneMap.Zone.INDUSTRIAL] += sim.industry.taxable_value() * tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
 	# So do warehouses.
 	income[ZoneMap.Zone.INDUSTRIAL] += sim.warehouses.taxable_value() * tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
+	income[ZoneMap.Zone.INDUSTRIAL] += sim.power.taxable_value() * tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
 	var upkeep := 0.0
 	for id in sim.network.segments:
 		upkeep += road_upkeep(sim.network.curve_of(id), sim.network.segments[id].type)

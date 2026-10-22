@@ -22,6 +22,8 @@ signal industry_changed
 signal warehouses_changed
 ## A park or landmark was placed, filled in, grew, changed tier or went away.
 signal parks_changed
+## A power company opened, closed, grew, mothballed a unit or built an add-on.
+signal power_changed
 ## A player command went through (sounds and other feedback listen to this).
 signal command_applied(cmd: Dictionary)
 
@@ -49,6 +51,9 @@ var farms := Farms.new()
 var industry := Industry.new()
 ## Warehouses that buffer loads between them (hubs that grow in place).
 var warehouses := Warehouses.new()
+## Power companies (Brawn's hub-with-a-leader model): a yard whose leader
+## picks the plant and grows it. The regional grid stays the default.
+var power := Power.new()
 ## The trucks that carry every load (grain, crude, ore, logs, goods).
 var logistics := Logistics.new()
 ## Land saved for farming or an industry: no roads or zoning on it.
@@ -91,6 +96,10 @@ var region_links: Array = []
 var trade := Trade.new()
 ## True in a shared region, which settles trade for every city at once.
 var in_region := false
+## Homes-equivalent of power neighbor towns bought from this town's power
+## companies last month (from Trade), which unlocks a line to a neighbor.
+## Tests can set it directly.
+var neighbor_power_short := 0.0
 
 var _lots_dirty := true
 ## Roads changed since the world last made way for them (see RoadWins).
@@ -231,6 +240,22 @@ func apply_now(cmd: Dictionary) -> bool:
 			warehouses.buildings.erase(int(cmd.id))
 			_lots_dirty = true
 			warehouses_changed.emit()
+		"place_power":
+			var pos := _v(cmd.pos)
+			var dir := _v(cmd.dir).normalized()
+			if dir.length() < 0.5 or power_problem(pos, dir) != "" or Balance.POWER_YARD_COST > economy.money:
+				return false
+			power.add_site(pos, dir, industry_drive(pos, dir), town_education(), city_seed, game_day())
+			economy.money -= Balance.POWER_YARD_COST
+			_lots_dirty = true
+			_decide_power()
+			power_changed.emit()
+			ok = true
+		"remove_power":
+			ok = power.sites.has(int(cmd.id))
+			power.sites.erase(int(cmd.id))
+			_lots_dirty = true
+			power_changed.emit()
 		"remove_industry":
 			ok = industry.sites.has(int(cmd.id))
 			industry.sites.erase(int(cmd.id))
@@ -325,6 +350,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			services = Services.new()
 			farms = Farms.new()
 			industry = Industry.new()
+			power = Power.new()
 			logistics = Logistics.new()
 			warehouses = Warehouses.new()
 			reserves = Reserves.new()
@@ -337,6 +363,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			farms_changed.emit()
 			industry_changed.emit()
 			warehouses_changed.emit()
+			power_changed.emit()
 			ok = true
 	if ok:
 		if _roads_moved:
@@ -446,9 +473,25 @@ func _road_wins() -> void:
 	if parks.road_wins(self, corr):
 		_lots_dirty = true
 		parks_changed.emit()
+	ids = power.sites.keys()
+	ids.sort()
+	for id in ids:
+		var s: Dictionary = power.sites[id]
+		if RoadWins.hits(corr, power.yard(s)):
+			economy.money += Balance.POWER_YARD_COST
+			power.sites.erase(id)
+			continue
+		for c in s.cells.duplicate():
+			if RoadWins.hits(corr, Power.cell_corners(s, c)):
+				s.cells.erase(c)
+		if RoadWins.cuts(corr, s.drive, lane_end):
+			var lane := industry_drive(s.pos, s.dir)
+			if not lane.is_empty():
+				s.drive = lane
 	farms_changed.emit()
 	industry_changed.emit()
 	warehouses_changed.emit()
+	power_changed.emit()
 
 
 func tick() -> void:
@@ -485,6 +528,9 @@ func tick() -> void:
 				_lots_dirty = true
 				zones_changed.emit()
 			parks_changed.emit()
+	if tick_count % Power.DECIDE_EVERY == 0 and not power.sites.is_empty():
+		if _decide_power():
+			power_changed.emit()
 	# Taxes come in and upkeep goes out every game hour, a day settling a month.
 	if tick_count % TICKS_PER_HOUR == 0:
 		economy.money += roundi(economy.monthly_net() / 24.0)
@@ -529,9 +575,10 @@ func update_stats() -> void:
 			ZoneMap.Zone.INDUSTRIAL:
 				if _utilities_ok(key):
 					factory_jobs += b.cap
+	services.plants = power.sources()
 	services.update(network, lots, buildings)
 	parks.update_effects(self)
-	factory_jobs += farms.jobs() + industry.jobs() + warehouses.jobs()
+	factory_jobs += farms.jobs() + industry.jobs() + warehouses.jobs() + power.jobs()
 	economy.reach_milestones(pop)
 	var workers := int(pop * WORKER_SHARE)
 	var jobs := shop_jobs + factory_jobs
@@ -612,7 +659,7 @@ func farmhouse_problem(pos: Vector3, dir: Vector3) -> String:
 		if farms.farms[id].pos.distance_to(pos) < Farms.FARMHOUSE_SIZE.length():
 			return "Too close to another farm."
 	for p in [pos] + Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y)):
-		if industry.covers(p):
+		if industry.covers(p) or power.covers(p):
 			return "That ground belongs to a company."
 	if _on_warehouse(Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y))):
 		return "Overlaps a warehouse."
@@ -645,7 +692,7 @@ func industry_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 	for p in [pos] + Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y)):
 		if farms.covers(p) or farms.field_at(p) != -1:
 			return "That ground is farmland."
-		if industry.covers(p):
+		if industry.covers(p) or power.covers(p):
 			return "Too close to another company."
 	if _on_warehouse(Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y))):
 		return "Overlaps a warehouse."
@@ -733,6 +780,91 @@ static func _grid_in(poly: PackedVector2Array) -> Array:
 			x += step
 		y += step
 	return out
+
+
+## Why a power company's yard can't go here, or "" if it can: clear ground
+## and a road near enough for its access road. Any ground will do; the
+## leader picks the plant from what's around.
+func power_problem(pos: Vector3, dir: Vector3) -> String:
+	var side := Vector3(-dir.z, 0.0, dir.x)
+	var poly := PackedVector2Array()
+	var pts := [pos]
+	for sgn in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+		var p: Vector3 = pos + side * Power.HQ_SIZE.x * 0.5 * sgn.x + dir * Power.HQ_SIZE.y * 0.5 * sgn.y
+		poly.append(Vector2(p.x, p.z))
+		pts.append(p)
+	if reserves.kind_at(pos) != "":
+		return "That land is reserved for %s." % Reserves.KINDS[reserves.kind_at(pos)]
+	if industry_drive(pos, dir).is_empty():
+		return "Needs a road within %d m for its access road." % int(Power.MAX_DRIVE)
+	if Services.road_clash(network, poly):
+		return "Too close to a road."
+	for id in services.buildings:
+		if not Geometry2D.intersect_polygons(poly, services.footprint(id)).is_empty():
+			return "Overlaps a service building."
+	for p in pts:
+		if farms.covers(p) or farms.field_at(p) != -1:
+			return "That ground is farmland."
+		if industry.covers(p) or power.covers(p):
+			return "Too close to another company."
+	return ""
+
+
+## The town's schooling, 0 to 1, which shapes the leaders it can hire: a
+## base for a small Midwest town, rising with the share of homes a school
+## covers.
+func town_education() -> float:
+	var homes := 0
+	var schooled := 0
+	for key in buildings:
+		if buildings[key].zone == ZoneMap.Zone.RESIDENTIAL:
+			homes += 1
+			if services.served.has(key) and services.served[key].get(Services.Kind.SCHOOL, false):
+				schooled += 1
+	return Balance.TOWN_EDUCATION_BASE + Balance.TOWN_EDUCATION_SCHOOLS * (0.0 if homes == 0 else float(schooled) / homes)
+
+
+func game_day() -> float:
+	return tick_count / float(24 * TICKS_PER_HOUR)
+
+
+## Power companies take a step (see Power.decide). The town's load is every
+## building's draw; the rest goes out the county highway to the region.
+func _decide_power() -> bool:
+	power.tax_rate = economy.tax[ZoneMap.Zone.INDUSTRIAL]
+	var load := 0.0
+	for key in buildings:
+		load += Services.LOAD[int(buildings[key].zone)]
+	neighbor_power_short = 0.0
+	for d in trade.last_deals:
+		# Power is only ever offered, so a deal with a neighbor is a sale.
+		if d.good == "power" and d.buyer != "outside" and d.seller != "outside":
+			neighbor_power_short += float(d.amount) * 12.0 / Balance.POWER_MWH_PER_HOME
+	var changed := power.decide(field_usable, load, not region_links.is_empty() or in_region, power_context())
+	# Spare power goes to the region through Trade, in MWh a month.
+	var spare := 0.0
+	for id in power.sales:
+		spare += float(power.sales[id].export) + float(power.sales[id].neighbor)
+	trade.offer("power", spare * Balance.POWER_MWH_PER_HOME / 12.0, Balance.POWER_EXPORT_PRICE)
+	if changed:
+		_lots_dirty = true
+	return changed
+
+
+## What a power company's leader can see around it (see Power.decide).
+func power_context() -> Dictionary:
+	var has_school := false
+	for id in services.buildings:
+		has_school = has_school or services.buildings[id].kind == Services.Kind.SCHOOL
+	var ctx := {"day": game_day(), "education": town_education(), "school": has_school,
+		"university": false, "neighbor_short": neighbor_power_short,
+		"industry_near": func(p: Vector3) -> bool:
+			for key in buildings:
+				if buildings[key].zone == ZoneMap.Zone.INDUSTRIAL and lots.has(key) \
+						and lots[key].pos.distance_to(p) < Balance.POWER_STEAM_REACH:
+					return true
+			return false}
+	return ctx
 
 
 ## The best the resource gets within reach of a main building (its pads
@@ -824,7 +956,7 @@ func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
 	if ok:
 		for p in pts:
 			if services.covers(p) or farms.covers(p) or industry.covers(p) or farms.field_at(p) != -1 \
-					or hubs.covers(p) or warehouses.covers(p) or parks.covers(p):
+					or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or power.covers(p):
 				ok = false
 	if ok:
 		for key2 in lots:
@@ -988,7 +1120,7 @@ func wealth_at(_p: Vector2) -> float:
 func _lot_blocked(lot: Dictionary) -> bool:
 	for p in [lot.pos, lot.front, lot.zone_pt]:
 		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) \
-				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p) or parks.covers(p):
+				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or power.covers(p):
 			return true
 	return false
 
@@ -1018,6 +1150,7 @@ func _refresh() -> void:
 			if not _lot_blocked(lot):
 				lots[lot.key] = lot
 		_usable_cache.clear()
+		services.plants = power.sources()
 		services.update(network, lots, buildings)
 		lots_changed.emit()
 	# Buildings go away when their lot disappears or its zone changes.
@@ -1120,6 +1253,10 @@ func _grow_one() -> void:
 			continue
 		var list: Array = by_zone[z]
 		var key: String = list[rng.randi() % list.size()]
+		# Nobody wants to build next to a smoky old power plant.
+		if z != ZoneMap.Zone.INDUSTRIAL and not power.sites.is_empty() \
+				and rng.randf() < -power.land_value_effect(lots[key].pos) * Balance.POWER_SMOKE_GROWTH:
+			continue
 		var bseed := rng.randi()
 		buildings[key] = {"zone": z, "seed": bseed, "built": tick_count,
 			"cap": capacity(z, bseed), "occ": 0}
@@ -1198,6 +1335,7 @@ func to_dict() -> Dictionary:
 		"services": services.to_dict(),
 		"farms": farms.to_dict(),
 		"industry": industry.to_dict(),
+		"power": power.to_dict(),
 		"logistics": logistics.to_dict(),
 		"warehouses": warehouses.to_dict(),
 		"reserves": reserves.to_dict(),
@@ -1234,6 +1372,7 @@ func from_dict(d: Dictionary) -> void:
 	services.from_dict(d.get("services", {}))
 	farms.from_dict(d.get("farms", {}))
 	industry.from_dict(d.get("industry", {}))
+	power.from_dict(d.get("power", {}))
 	logistics.from_dict(d.get("logistics", {}))
 	warehouses.from_dict(d.get("warehouses", {}))
 	reserves.from_list(d.get("reserves", []))
