@@ -45,6 +45,8 @@ var industry := Industry.new()
 var logistics := Logistics.new()
 ## Land saved for farming or an industry: no roads or zoning on it.
 var reserves := Reserves.new()
+## Wild trees and brush, and how far cleared land has grown back.
+var vegetation := Vegetation.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -73,6 +75,7 @@ func _init() -> void:
 	farms.reserves = reserves
 	industry.reserves = reserves
 	network.changed.connect(func(): _lots_dirty = true)
+	vegetation.watch(self)
 
 
 ## Applies one player command. Returns true if anything changed (online:
@@ -228,6 +231,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			reserves = Reserves.new()
 			farms.reserves = reserves
 			industry.reserves = reserves
+			vegetation.reset()
 			farms_changed.emit()
 			industry_changed.emit()
 			ok = true
@@ -241,6 +245,7 @@ func apply_now(cmd: Dictionary) -> bool:
 func tick() -> void:
 	tick_count += 1
 	_refresh()
+	vegetation.update(self)
 	if tick_count % MOVE_EVERY == 0:
 		_move_in()
 		update_stats()
@@ -706,6 +711,7 @@ static func capacity(zone: int, bseed: int) -> int:
 # --- Saving (also the future network format) --------------------------------
 
 func to_dict() -> Dictionary:
+	vegetation.update(self)  # land cleared since the last tick counts
 	return {
 		"version": 2,
 		"tick": tick_count,
@@ -721,10 +727,12 @@ func to_dict() -> Dictionary:
 		"reserves": reserves.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
+		"vegetation": vegetation.to_dict(),
 	}
 
 
 func from_dict(d: Dictionary) -> void:
+	vegetation.from_dict(d.get("vegetation", {}))
 	if d.has("roads"):
 		network.from_dict(d.roads)
 		zones.from_dict(d.get("zones", {}))
