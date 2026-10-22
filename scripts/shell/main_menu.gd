@@ -392,7 +392,7 @@ func _build_backdrop() -> void:
 			sim.tick()
 	var roads := RoadView.new()
 	add_child(roads)
-	roads.setup(sim.network)
+	roads.setup(sim.network, sim)
 	var buildings := BuildingView.new()
 	add_child(buildings)
 	buildings.setup(sim)

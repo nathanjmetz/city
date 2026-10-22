@@ -20,6 +20,8 @@ var _problems := VBoxContainer.new()
 var _actions := VBoxContainer.new()
 var _action_key := ""
 var _icon_name := ""
+var _guide: LeaderGuide
+var _guide_for := {}
 var _wait := 0.0
 
 
@@ -115,6 +117,7 @@ func _refresh() -> void:
 		l.custom_minimum_size = Vector2(236, 0)
 		_problems.add_child(l)
 	_show_actions(d.get("actions", []))
+	_sync_guide()
 	reset_size()
 
 
@@ -135,3 +138,17 @@ func _show_actions(actions: Array) -> void:
 			sim.apply(cmd)
 			_refresh())
 		_actions.add_child(b)
+
+
+## Hubs with a leader get your word to them at the bottom (see LeaderGuide).
+func _sync_guide() -> void:
+	if tool.selection == _guide_for:
+		return
+	_guide_for = tool.selection.duplicate()
+	if _guide:
+		_guide.queue_free()
+		_guide = null
+	if LeaderGuide.takes(sim, tool.selection):
+		_guide = LeaderGuide.new()
+		_guide.setup(sim, str(tool.selection.type), int(tool.selection.id))
+		get_child(0).add_child(_guide)

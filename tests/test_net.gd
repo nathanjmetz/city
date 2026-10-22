@@ -14,6 +14,7 @@ func _initialize() -> void:
 func _run() -> void:
 	_test_region_in_step()
 	_test_crossroads()
+	_test_trade()
 	_test_city_lines()
 
 	var data := OS.get_user_data_dir().path_join("test-region.json")
@@ -154,6 +155,48 @@ func _test_crossroads() -> void:
 	var copy := Region.new()
 	copy.from_dict(JSON.parse_string(JSON.stringify(r.to_dict(), "", false, true)))
 	_check(copy.joins == r.joins, "the joins are saved")
+
+
+## Neighbors trade first, at a fair price; the outside fills the gaps for more.
+func _test_trade() -> void:
+	var r := Region.new()
+	for p in [["p1", "Ann"], ["p2", "Bob"], ["p3", "Cy"]]:
+		r.add_city(p[0], p[1])
+	var ann: CitySim = r.cities.c1.sim
+	var bob: CitySim = r.cities.c2.sim
+	var cy: CitySim = r.cities.c3.sim
+	var price := Trade.base_price("power")
+	bob.trade.offer("power", 50.0)
+	ann.trade.want("power", 30.0)
+	cy.trade.want("power", 40.0)
+	ann.trade.offer("water", 10.0)
+	var trucks := []
+	bob.trade.deal.connect(func(d): trucks.append(d))
+	var money := [ann.economy.money, bob.economy.money, cy.economy.money]
+	r.settle_trade()
+	_check(ann.trade.got("power") == 30.0 and bob.trade.sold("power") == 50.0, "Ann buys her power from Bob")
+	_check(cy.trade.got("power") == 40.0, "Cy gets the rest of Bob's power and the outside covers what's left")
+	_check(bob.economy.money - money[1] == roundi(50 * price), "Bob is paid for all he sold")
+	_check(money[2] - cy.economy.money == roundi(20 * price) + roundi(20 * price * Balance.TRADE_IMPORT_MARKUP),
+		"buying from outside costs Cy more than buying from a neighbor")
+	_check(ann.trade.sold("water") == 10.0 and ann.economy.money - money[0] == roundi(10 * Trade.base_price("water") * Balance.TRADE_EXPORT_SHARE) - roundi(30 * price),
+		"what no neighbor wants sells to the outside for less")
+	var to_ann = trucks.filter(func(d): return d.buyer == "c1")
+	_check(not to_ann.is_empty() and to_ann[0].link in bob.region_links, "each deal says which county road the trucks take")
+	var copy := Region.new()
+	copy.from_dict(JSON.parse_string(JSON.stringify(r.to_dict(), "", false, true)))
+	copy.settle_trade()
+	r.settle_trade()
+	_check(copy.checksums() == r.checksums(), "trade comes out the same on every copy")
+	# A solo city trades with the outside world once a game month.
+	var solo := CitySim.new()
+	solo.trade.want("power", 10.0)
+	var before := solo.economy.money
+	for i in 24 * CitySim.TICKS_PER_HOUR:
+		solo.tick()
+	_check(solo.trade.got("power") == 10.0 and solo.trade.net == -roundi(10 * price * Balance.TRADE_IMPORT_MARKUP),
+		"a solo city buys from the outside (%s)" % str(solo.trade.bought))
+	_check(before - solo.economy.money >= roundi(10 * price * Balance.TRADE_IMPORT_MARKUP) - 1000000, "and pays for it")
 
 
 ## The city line runs halfway between two towns, and stops where a third is nearer.

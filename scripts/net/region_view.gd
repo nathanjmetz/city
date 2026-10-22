@@ -81,7 +81,7 @@ func _add_city(id: String) -> void:
 	if id != client.my_city:
 		var roads := RoadView.new()
 		root.add_child(roads)
-		roads.setup(c.sim.network)
+		roads.setup(c.sim.network, c.sim)
 		var buildings := BuildingView.new()
 		root.add_child(buildings)
 		buildings.setup(c.sim)

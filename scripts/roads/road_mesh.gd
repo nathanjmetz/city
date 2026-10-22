@@ -38,7 +38,7 @@ static func add_disc(st: SurfaceTool, center: Vector3, radius: float, y: float, 
 ## walk, median, yellow, white.
 ## `gaps` leaves a one-way road's barrier out where a ramp opens off it:
 ## {side (+1/-1): [from, to] metres along pts}.
-static func street(pts: PackedVector3Array, type: int, mats: Dictionary, gaps := {}) -> ArrayMesh:
+static func street(pts: PackedVector3Array, type: int, mats: Dictionary, gaps := {}, rural := false) -> ArrayMesh:
 	var spec: Dictionary = RoadStyle.TYPES[type]
 	var hw := RoadStyle.half_width(type)
 	var cw := RoadStyle.CURB_WIDTH
@@ -49,6 +49,8 @@ static func street(pts: PackedVector3Array, type: int, mats: Dictionary, gaps :=
 	var y_mark := RoadStyle.Y_ASPHALT + 0.01
 	if spec.oneway:
 		return _oneway(pts, spec, mats, gaps)
+	if rural and hm == 0.0:
+		return _rural(pts, spec, mats)
 	var layers := [
 		["asphalt", [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
 		["curb", [[-hw - cw, -hw], [hw, hw + cw]], RoadStyle.Y_CURB, ""],
@@ -69,6 +71,89 @@ static func street(pts: PackedVector3Array, type: int, mats: Dictionary, gaps :=
 	if not dashes.is_empty():
 		layers.append(["white", dashes, y_mark, "dashed"])
 	return _build_layers(pts, layers, trimmed(pts, hw + 2.0), mats)
+
+
+## A country road (MUTCD / Indiana county road photos): no curbs or
+## sidewalks, solid white edge lines, a yellow centre line (dashed on two
+## lanes) and gravel shoulders running off into the grass.
+static func _rural(pts: PackedVector3Array, spec: Dictionary, mats: Dictionary) -> ArrayMesh:
+	var hw: float = spec.width * 0.5
+	var y_mark := RoadStyle.Y_ASPHALT + 0.01
+	var edge: float = 3.6 * spec.lanes * 0.5 + 0.15
+	var layers := [
+		["asphalt", [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
+		["gravel", [[-hw - 1.8, -hw], [hw, hw + 1.8]], RoadStyle.Y_SIDEWALK, ""],
+		["white", [[-edge - 0.15, -edge], [edge, edge + 0.15]], y_mark, ""],
+	]
+	if spec.lanes > 2:
+		layers.append(["yellow", [[-0.25, -0.12], [0.12, 0.25]], y_mark, ""])
+		var dashes := []
+		for k in range(1, spec.lanes / 2):
+			dashes.append([3.6 * k - 0.06, 3.6 * k + 0.06])
+			dashes.append([-3.6 * k - 0.06, -3.6 * k + 0.06])
+		layers.append(["white", dashes, y_mark, "dashed"])
+	else:
+		layers.append(["yellow", [[-0.06, 0.06]], y_mark, "dashed"])
+	return _build_layers(pts, layers, pts, mats)
+
+
+## Wooden utility poles down one side of a country road, every 45 m, with a
+## crossarm, three insulators and the wires between them.
+static func add_poles(wood: SurfaceTool, wire: SurfaceTool, pts: PackedVector3Array, off: float, avoid := []) -> void:
+	var length := RoadNetwork.polyline_length(pts)
+	if length < 30.0:
+		return
+	var n := maxi(1, int((length - 20.0) / 45.0))
+	var tops := []
+	for k in n + 1:
+		var at := LotPlanner.point_at(pts, lerpf(10.0, length - 10.0, float(k) / n))
+		var p: Vector3 = at[0]
+		var dir: Vector3 = at[1] if at.size() > 1 else Vector3.FORWARD
+		dir.y = 0.0
+		dir = dir.normalized()
+		var side := Vector3(-dir.z, 0.0, dir.x)
+		var base := Vector3(p.x, maxf(p.y, 0.0), p.z) + side * off
+		for q in avoid:
+			if Vector2(q.x - base.x, q.z - base.z).length() < 7.0:
+				# Step along the road, clear of the driveway.
+				base += dir * 9.0
+				break
+		_post(wood, base + Vector3(0, 5.5, 0), Vector3(0.28, 11.0, 0.28), Basis.IDENTITY)
+		_post(wood, base + Vector3(0, 10.4, 0), Vector3(2.4, 0.14, 0.14), Basis(Vector3.UP, atan2(side.x, side.z) + PI * 0.5))
+		var row := []
+		for s in [-1.0, 0.0, 1.0]:
+			var q: Vector3 = base + side * (s * 1.0) + Vector3(0, 10.6, 0)
+			_post(wire, q - Vector3(0, 0.1, 0), Vector3(0.12, 0.25, 0.12), Basis.IDENTITY)
+			row.append(q)
+		if not tops.is_empty():
+			for i in 3:
+				var a: Vector3 = tops[i]
+				var b: Vector3 = row[i]
+				var mid := (a + b) * 0.5 - Vector3(0, 0.6, 0)
+				for seg in [[a, mid], [mid, b]]:
+					var d: Vector3 = seg[1] - seg[0]
+					var basis := Basis.looking_at(d.normalized(), Vector3.UP) if d.length() > 0.01 else Basis.IDENTITY
+					_post(wire, (seg[0] + seg[1]) * 0.5, Vector3(0.03, 0.03, d.length()), basis)
+		tops = row
+
+
+static func _post(st: SurfaceTool, c: Vector3, size: Vector3, basis: Basis) -> void:
+	var h := size * 0.5
+	var faces := [
+		[Vector3(-1, -1, 1), Vector3(1, -1, 1), Vector3(1, 1, 1), Vector3(-1, 1, 1)],
+		[Vector3(1, -1, -1), Vector3(-1, -1, -1), Vector3(-1, 1, -1), Vector3(1, 1, -1)],
+		[Vector3(1, -1, 1), Vector3(1, -1, -1), Vector3(1, 1, -1), Vector3(1, 1, 1)],
+		[Vector3(-1, -1, -1), Vector3(-1, -1, 1), Vector3(-1, 1, 1), Vector3(-1, 1, -1)],
+		[Vector3(-1, 1, 1), Vector3(1, 1, 1), Vector3(1, 1, -1), Vector3(-1, 1, -1)],
+	]
+	for f in faces:
+		var v := []
+		for k in f:
+			v.append(c + basis * (k * h))
+		var n: Vector3 = (v[1] - v[0]).cross(v[3] - v[0]).normalized()
+		for i in [0, 2, 1, 0, 3, 2]:
+			st.set_normal(n)
+			st.add_vertex(v[i])
 
 
 ## Highways and ramps: shoulders, a yellow line on the left edge, a white
