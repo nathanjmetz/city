@@ -1,38 +1,54 @@
 class_name UiStyle
 extends RefCounted
-## The game's look: dark glass panels, rounded tool cards and one blue
-## accent, in the spirit of Cities: Skylines 2.
+## The game's look, from the Neighbors brand kit (see Brand): deep teal glass
+## panels docked to the screen edges, Figtree for the interface, and coral
+## for the one thing that means "you" (the active tool, your selection).
 
-const ACCENT := Color(0.33, 0.66, 0.93)
-const TEXT := Color(0.93, 0.95, 0.97)
-const MUTED := Color(0.62, 0.67, 0.73)
-const PANEL := Color(0.075, 0.09, 0.115, 0.9)
+const ACCENT := Brand.BRAND_CORAL
+const TEXT := Brand.INK
+const MUTED := Brand.INK_MUTED
+const PANEL := Brand.SURFACE_PANEL
+const LINE := Brand.LINE
+
+## Brand radii: sm for buttons and tool cards, md for floating cards.
+const RADIUS_SM := 6
+const RADIUS_MD := 10
 
 
 static func theme() -> Theme:
 	var t := Theme.new()
+	t.default_font = Brand.ui(500)
 	t.default_font_size = 13
 	t.set_color("font_color", "Label", TEXT)
 	t.set_stylebox("panel", "PanelContainer", panel())
-	t.set_stylebox("normal", "Button", _box(Color(1, 1, 1, 0.045), 10))
-	t.set_stylebox("hover", "Button", _box(Color(1, 1, 1, 0.11), 10))
-	t.set_stylebox("pressed", "Button", _box(Color(ACCENT, 0.35), 10, ACCENT))
-	t.set_stylebox("hover_pressed", "Button", _box(Color(ACCENT, 0.45), 10, ACCENT))
-	t.set_stylebox("focus", "Button", StyleBoxEmpty.new())
-	t.set_stylebox("disabled", "Button", _box(Color(1, 1, 1, 0.02), 10))
-	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
+	t.set_stylebox("normal", "Button", _box(Color(Brand.SURFACE_RAISED, 0.55), RADIUS_SM))
+	t.set_stylebox("hover", "Button", _box(Brand.SURFACE_RAISED, RADIUS_SM))
+	# Active tool: a coral ring on a raised card (a coral wash over teal turns brown).
+	t.set_stylebox("pressed", "Button", _box(Brand.SURFACE_RAISED, RADIUS_SM, ACCENT))
+	t.set_stylebox("hover_pressed", "Button", _box(Brand.SURFACE_RAISED.lightened(0.08), RADIUS_SM, ACCENT))
+	var focus := _box(Color.TRANSPARENT, RADIUS_SM, Brand.FOCUS)
+	focus.draw_center = false
+	t.set_stylebox("focus", "Button", focus)
+	t.set_stylebox("disabled", "Button", _box(Color(Brand.SURFACE_RAISED, 0.25), RADIUS_SM))
+	t.set_font("font", "Button", Brand.ui(600))
+	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color", "font_focus_color"]:
 		t.set_color(state, "Button", TEXT)
-	t.set_color("font_disabled_color", "Button", Color(MUTED, 0.5))
-	t.set_stylebox("background", "ProgressBar", _box(Color(1, 1, 1, 0.08), 4))
+	t.set_color("font_disabled_color", "Button", Brand.INK_FAINT)
+	t.set_stylebox("background", "ProgressBar", _box(Brand.SURFACE_SUNKEN, 4))
+	t.set_stylebox("fill", "ProgressBar", _box(Brand.BRAND_TEAL, 4))
+	t.set_stylebox("normal", "LineEdit", _box(Brand.SURFACE_SUNKEN, RADIUS_SM, Brand.LINE_STRONG, 1))
+	t.set_stylebox("focus", "LineEdit", _box(Color.TRANSPARENT, RADIUS_SM, Brand.FOCUS))
+	t.set_color("font_color", "LineEdit", TEXT)
+	t.set_color("font_placeholder_color", "LineEdit", Brand.INK_FAINT)
+	t.set_color("caret_color", "LineEdit", ACCENT)
+	t.set_color("selection_color", "LineEdit", Color(ACCENT, 0.35))
+	t.set_stylebox("panel", "TooltipPanel", _box(Brand.SURFACE_RAISED, RADIUS_SM, LINE, 1))
+	t.set_color("font_color", "TooltipLabel", TEXT)
 	return t
 
 
-static func panel(radius := 14) -> StyleBoxFlat:
-	var b := _box(PANEL, radius, Color(1, 1, 1, 0.07))
-	b.border_width_left = 1
-	b.border_width_top = 1
-	b.border_width_right = 1
-	b.border_width_bottom = 1
+static func panel(radius := RADIUS_MD) -> StyleBoxFlat:
+	var b := _box(PANEL, radius, LINE, 1)
 	b.shadow_color = Color(0, 0, 0, 0.35)
 	b.shadow_size = 10
 	b.content_margin_left = 12
@@ -46,8 +62,8 @@ static func panel(radius := 14) -> StyleBoxFlat:
 ## its inner edge. `raised` is the lighter tool tray that sits on the bottom bar.
 static func dock(top: bool, raised := false) -> StyleBoxFlat:
 	var b := StyleBoxFlat.new()
-	b.bg_color = PANEL.lightened(0.06) if raised else PANEL
-	b.border_color = Color(1, 1, 1, 0.08)
+	b.bg_color = Color(Brand.SURFACE_RAISED, PANEL.a) if raised else PANEL
+	b.border_color = LINE
 	if top:
 		b.border_width_bottom = 1
 	else:
@@ -59,16 +75,29 @@ static func dock(top: bool, raised := false) -> StyleBoxFlat:
 	return b
 
 
-static func label(text: String, size := 15, color := TEXT) -> Label:
+## A label in the interface face. Bold weights for numbers and headings,
+## e.g. label("$12,400", 17, TEXT, 700). Small caps-style headings (all caps,
+## 10-11 px) get Figtree 600 automatically, as the kit's label style.
+static func label(text: String, size := 15, color := TEXT, weight := 0) -> Label:
 	var l := Label.new()
 	l.text = text
+	if weight == 0:
+		weight = 600 if size <= 11 and text == text.to_upper() and text != "" else 500
+	l.add_theme_font_override("font", Brand.ui(weight))
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", color)
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return l
 
 
-static func _box(bg: Color, radius: int, border := Color.TRANSPARENT) -> StyleBoxFlat:
+## A title in the display face (Outfit), for panel headers and menus.
+static func title(text: String, size := 16, color := TEXT) -> Label:
+	var l := label(text, size, color, 600)
+	l.add_theme_font_override("font", Brand.display(600))
+	return l
+
+
+static func _box(bg: Color, radius: int, border := Color.TRANSPARENT, border_px := 2) -> StyleBoxFlat:
 	var b := StyleBoxFlat.new()
 	b.bg_color = bg
 	b.set_corner_radius_all(radius)
@@ -79,5 +108,5 @@ static func _box(bg: Color, radius: int, border := Color.TRANSPARENT) -> StyleBo
 	b.anti_aliasing = true
 	if border.a > 0.0:
 		b.border_color = border
-		b.set_border_width_all(2)
+		b.set_border_width_all(border_px)
 	return b
