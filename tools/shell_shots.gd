@@ -56,7 +56,7 @@ func _process(_delta: float) -> bool:
 					n._goal_dist = float(OS.get_cmdline_user_args()[2])
 				else:
 					n.fly_to(target)
-	if _mode == "pause" and _frames in [100, 120]:
+	if _mode == "pause" and _frames in [100, 120, 130, 140, 150, 160]:
 		# Escape puts the road tool down, then with nothing to close opens the pause menu.
 		var esc := InputEventKey.new()
 		esc.keycode = KEY_ESCAPE
