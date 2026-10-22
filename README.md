@@ -79,6 +79,12 @@ Players on the web preview need a secure address (`wss://`), so put the server b
 
 How it stays in sync: the server owns the real region. Players send commands for their own city only; every tick (10 a second) the server applies what arrived, steps every city, and sends that tick to everyone, so every copy runs identically. Every 5 seconds players compare a checksum with the server and fetch a fresh copy if theirs drifted.
 
+## Sound
+
+Everything you hear is placed in the world. Each car carries its own engine sound (higher as it speeds up), homes have birds by day and crickets at night, shops have rooftop fans, factories hum, utilities buzz and farm fields rustle. Only the sources nearest the camera play, and they get quieter with distance, so you hear what you are looking at. Zoomed out, you hear wind and the far-off hum of the traffic in view. Interface sounds are wooden mallets and a plucked guitar.
+
+All sounds are built in code by `tools/audio/make_assets.py` (`python3 tools/audio/make_assets.py` rewrites `assets/audio/`). Sources and licenses are listed in `assets/audio/LICENSES.md`.
+
 ## Layout
 
 | Path | What's in it |
@@ -87,6 +93,7 @@ How it stays in sync: the server owns the real region. Players send commands for
 | `scripts/roads/` | Road sizes, mesh building and drawing. |
 | `scripts/sim/` | The simulation: plain data, fixed ticks, every change is a command (so a headless server can run it later). Lots, zones, growth. |
 | `scripts/zones/zone_view.gd` | Draws lots and zone colours. |
+| `scripts/audio/` | Sound: world sources and the nearest-first picker, the spatial players, and interface sounds. |
 | `scripts/buildings/building_view.gd` | Draws placeholder homes, shops and factories. |
 | `scripts/tools/zone_tool.gd` | The zone brush. |
 | `scripts/camera/city_camera.gd` | The orbit camera. |

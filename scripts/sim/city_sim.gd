@@ -14,6 +14,8 @@ signal zones_changed
 signal stats_changed
 ## Farmland or a farm's fields changed.
 signal farms_changed
+## A player command went through (sounds and other feedback listen to this).
+signal command_applied(cmd: Dictionary)
 
 const TICKS_PER_SECOND := 10
 ## A new building can start every this many ticks.
@@ -186,6 +188,7 @@ func apply_now(cmd: Dictionary) -> bool:
 	if ok:
 		_refresh()
 		zones_changed.emit()
+		command_applied.emit(cmd)
 	return ok
 
 

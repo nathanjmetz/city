@@ -60,6 +60,14 @@ func _ready() -> void:
 	var cam := CityCamera.new()
 	add_child(cam)
 
+	var audio := CityAudio.new()
+	audio.setup(sim, cam.camera, func(): return _tick_time * CitySim.TICKS_PER_SECOND)
+	add_child(audio)
+
+	var ui_sounds := UiSounds.new()
+	ui_sounds.setup(sim)
+	add_child(ui_sounds)
+
 	var info_view := InfoView.new()
 	add_child(info_view)
 	info_view.setup(sim, cam)
@@ -96,11 +104,15 @@ func _ready() -> void:
 			farm_tool.set_mode(FarmTool.Mode.NONE)
 		if keep != traffic_tool and traffic_tool.mode != TrafficTool.Mode.NONE:
 			traffic_tool.set_mode(TrafficTool.Mode.NONE)
-	road_tool.mode_changed.connect(func(m): if m != RoadTool.Mode.NONE: others.call(road_tool))
-	zone_tool.zone_changed.connect(func(z): if z != ZoneTool.OFF: others.call(zone_tool))
-	service_tool.kind_changed.connect(func(k): if k != ServiceTool.OFF: others.call(service_tool))
-	farm_tool.mode_changed.connect(func(m): if m != FarmTool.Mode.NONE: others.call(farm_tool))
-	traffic_tool.mode_changed.connect(func(m): if m != TrafficTool.Mode.NONE: others.call(traffic_tool))
+	# Picking a tool also plays the tool sound.
+	var picked := func(tool: Object):
+		others.call(tool)
+		ui_sounds.play("tool")
+	road_tool.mode_changed.connect(func(m): if m != RoadTool.Mode.NONE: picked.call(road_tool))
+	zone_tool.zone_changed.connect(func(z): if z != ZoneTool.OFF: picked.call(zone_tool))
+	service_tool.kind_changed.connect(func(k): if k != ServiceTool.OFF: picked.call(service_tool))
+	farm_tool.mode_changed.connect(func(m): if m != FarmTool.Mode.NONE: picked.call(farm_tool))
+	traffic_tool.mode_changed.connect(func(m): if m != TrafficTool.Mode.NONE: picked.call(traffic_tool))
 
 	var hud := Hud.new()
 	hud.setup(road_tool, zone_tool, sim, self)
