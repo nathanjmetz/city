@@ -9,6 +9,9 @@ extends RefCounted
 ## The thing under a ground point: {type: "service"|"farm"|"lot"|"road", id},
 ## or {} for open ground. Buildings win over the road they stand on.
 static func pick(sim: CitySim, p: Vector3) -> Dictionary:
+	var mid := sim.mail.at(p)
+	if mid != -1:
+		return {"type": "post_office", "id": mid}
 	var hid := sim.hubs.at(p)
 	if hid != -1:
 		return {"type": "hub", "id": hid}
@@ -61,7 +64,7 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 	match sel.type:
 		"service":
 			var b: Dictionary = sim.services.buildings[sel.id]
-			return [b.pos, Services.KINDS[b.kind].size.length() * 0.5 + 3.0]
+			return [b.pos, Services.size_of(b).length() * 0.5 + 3.0]
 		"park":
 			var s: Dictionary = sim.parks.sites[sel.id]
 			return [s.pos, s.size.length() * 0.5 + 3.0]
@@ -77,6 +80,8 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 			return [Warehouses.center(w), Vector2(Warehouses.site_width(w), Warehouses.site_depth(w)).length() * 0.5 + 3.0]
 		"campus":
 			return [sim.education.campuses[sel.id].pos, Education.CELL * 0.75]
+		"post_office":
+			return sim.mail.extent(sel.id)
 		"farm":
 			return [sim.farms.farms[sel.id].pos, Farms.FARMHOUSE_SIZE.length() * 0.5 + 3.0]
 		"lot":
@@ -91,6 +96,7 @@ static func exists(sim: CitySim, sel: Dictionary) -> bool:
 	match sel.get("type", ""):
 		"service": return sim.services.buildings.has(sel.id)
 		"hub": return sim.hubs.hubs.has(sel.id)
+		"post_office": return sim.mail.offices.has(sel.id)
 		"farm": return sim.farms.farms.has(sel.id)
 		"industry": return sim.industry.sites.has(sel.id)
 		"campus": return sim.education.campuses.has(sel.id)
@@ -110,6 +116,7 @@ static func describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 	match sel.type:
 		"service": return _service(sim, sel.id)
 		"hub": return HubInfo.describe(sim, sel.id)
+		"post_office": return MailInfo.describe(sim, sel.id)
 		"farm": return _farm(sim, sel.id)
 		"industry": return _industry(sim, sel.id)
 		"campus": return CampusInfo.describe(sim, sel.id)
@@ -123,6 +130,8 @@ static func describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 
 static func _service(sim: CitySim, id: int) -> Dictionary:
 	var b: Dictionary = sim.services.buildings[id]
+	if b.kind == Services.Kind.BUS_DEPOT:
+		return sim.buses.describe(sim, id)
 	var k: Dictionary = Services.KINDS[b.kind]
 	var rows := []
 	var problems := []
@@ -165,6 +174,7 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 		if not linked:
 			problems.append("Not beside a road, so it can't respond.")
 		status = "Working: covering %d homes" % covered if ok else "Not working"
+		rows.append_array(sim.buses.school_rows(id))
 	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(int(k.upkeep))])
 	rows.append(["Built for", "$%s" % CitySim.money_text(int(k.cost))])
 	return {"title": k.name, "kind": "Utility" if k.has("utility") else "City service", "icon": k.icon,
@@ -381,13 +391,18 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 		status = "Open for business" if problems.is_empty() else "Closed: no power or water"
 	var staffed := float(sim.stats.employed) / maxf(sim.stats.jobs, 1.0)
 	var lift: float = sim.parks.lot_value.get(key, 0.0)
-	var land := sim.hubs.lot_factor(sim, key) * (1.0 + lift)
+	var land := sim.hubs.lot_factor(sim, key) * sim.mail.lot_factor(sim, key) * (1.0 + lift)
 	if absf(land - 1.0) >= 0.005:
 		rows.append(["Land value nearby", "%+d%%" % roundi((land - 1.0) * 100.0)])
 	if lift > 0.005:
 		rows.append(["From parks and landmarks", "+%d%%" % roundi(lift * 100.0)])
+	if not sim.mail.offices.is_empty():
+		rows.append(["Mail", "Delivered" if sim.mail.served(sim, sim.lots[key].seg) else "Not lately"])
 	rows.append(["Property tax", "$%s / month" % CitySim.money_text(roundi(sim.economy.building_tax(b, staffed, lift)
-		* sim.hubs.lot_factor(sim, key) / 12.0))])
+		* sim.hubs.lot_factor(sim, key) * sim.mail.lot_factor(sim, key) / 12.0))])
+	var mail := sim.mail.lot_problem(sim, key)
+	if mail != "":
+		problems.append(mail)
 	var trash := sim.hubs.lot_problem(sim, key)
 	if trash != "":
 		problems.append(trash)

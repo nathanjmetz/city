@@ -66,6 +66,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_seasons.gd
           ~/godot-cache/godot --headless -s tests/test_balance.gd
           ~/godot-cache/godot --headless -s tests/test_audio.gd
+          ~/godot-cache/godot --headless -s tests/test_transit.gd
           ~/godot-cache/godot --headless -s tests/test_loading.gd
           ~/godot-cache/godot --headless -s tests/test_terrain.gd
           ~/godot-cache/godot --headless -s tests/test_permits.gd
@@ -76,6 +77,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_parks.gd
           ~/godot-cache/godot --headless -s tests/test_vegetation.gd
           ~/godot-cache/godot --headless -s tests/test_education.gd
+          ~/godot-cache/godot --headless -s tests/test_mail.gd
 
       - name: Stamp the build
         run: |

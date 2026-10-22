@@ -273,6 +273,8 @@ func _ground(sim: CitySim, poly: PackedVector2Array, id: int, place := false) ->
 			return "Can't build in the water or on a slope that steep."
 		if sim.education.covers(p):
 			return "That ground is a campus."
+		if sim.mail.covers(p):
+			return "That ground is a post office."
 		if sim.farms.covers(p) or sim.farms.field_at(p) != -1:
 			return "That ground is farmland."
 		if sim.industry.covers(p):

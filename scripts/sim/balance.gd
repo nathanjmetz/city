@@ -87,6 +87,10 @@ const SERVICES := {
 	"clinic": {"cost": 1_500_000, "upkeep": 35_000, "reach": 4800.0},
 	# Elementary school for about 400 pupils on a 2 acre site.
 	"school": {"cost": 9_000_000, "upkeep": 95_000, "reach": 3200.0},
+	# A small-town bus garage with two starter 40 ft buses. FTA Section 5339
+	# pays 80% of transit capital, so this is the city's 20% share. It has no
+	# fixed upkeep: the player sets a monthly subsidy instead (BusNet).
+	"bus_depot": {"cost": 1_400_000, "upkeep": 0},
 }
 ## Water and sewer bills the city collects, per building per month. The
 ## average US household pays about $100 a month for water and sewer
@@ -285,6 +289,76 @@ const WASTE_SITES := {
 ## many game days (the old mound is capped and grassed over).
 const LANDFILL_RECOVERY_DAYS := 24.0
 
+
+# --- Buses -------------------------------------------------------------------
+# Brawn's rule (2026-10-22): the player places a bus depot and gives it land
+# and a monthly subsidy; the depot plans its own stops, routes, fleet and fare
+# and tries to stay in business. Benchmark: CS2 buses, with line drawing
+# replaced by the depot's own planning. Numbers are real US transit figures
+# (FTA National Transit Database, TCRP reports).
+
+## Stops: the depot keeps them at least this far apart, metres (TCRP Report
+## 19 suggests 750 to 1,300 ft in suburbs; Brawn: "about every 2 to 3 blocks").
+const BUS_STOP_SPACING := 300.0
+## How far people walk to a stop, metres (the US planning quarter mile).
+const BUS_WALK := 400.0
+## People (residents plus 0.8 per job) a stop's walk must reach to be worth it.
+const BUS_STOP_MIN_PEOPLE := 80.0
+## A small-town route visits about this many stops before it's split in two.
+const BUS_STOPS_PER_ROUTE := 12
+const BUS_MAX_ROUTES := 8
+## Average speed with stops, km/h (US local buses: about 12 mph).
+const BUS_AVG_KMH := 19.0
+## Every 30 minutes is the small-town US standard the depot aims for.
+const BUS_TARGET_HEADWAY_MIN := 30.0
+## Service day, hours (6 am to 7 pm, typical of a small US system).
+const BUS_SERVICE_HOURS := 13.0
+## A 40 ft bus: 40 seats, about 60 with standees.
+const BUS_CAPACITY := 60
+## Operating cost per bus per hour of service (NTD: about $120 for small
+## urban systems), so one bus for a month of 30 service days:
+const BUS_MONTHLY_COST := 120 * 13 * 30
+## A new 40 ft diesel bus costs about $550,000; FTA pays 80%.
+const BUS_PRICE_LOCAL := 110_000
+## What a retired bus fetches at auction.
+const BUS_RESALE := 15_000
+## FTA Section 5307/5311 operating aid: up to half of the net operating
+## deficit (cost minus fares).
+const BUS_GRANT_SHARE := 0.5
+## Transit's share of trips in a small US city with half-hourly buses at a
+## $1.50 fare and a middle income (ACS: 1 to 2%; poorer areas ride more).
+const BUS_BASE_SHARE := 0.02
+## Riders change by this power of the fare and of the frequency (TCRP Report
+## 95: fare elasticity about -0.4, service elasticity about +0.5).
+const BUS_FARE_ELASTICITY := -0.4
+const BUS_SERVICE_ELASTICITY := 0.5
+## The highest fare a depot thinks its riders will bear: this plus up to
+## BUS_FARE_RICH_EXTRA in the best-off neighborhoods (US fares: $0.50-$3).
+const BUS_FARE_BASE_MAX := 1.0
+const BUS_FARE_RICH_EXTRA := 2.0
+## A new depot starts at a typical small-town fare and monthly subsidy.
+const BUS_START_FARE := 1.25
+const BUS_START_SUBSIDY := 40_000
+const BUS_SUBSIDY_MAX := 1_000_000
+## Brawn (2026-10-22): no penny-pinching. The player picks a broad funding
+## level; each is a monthly subsidy (Standard runs about two buses).
+const BUS_FUNDING_LEVELS := [["None", 0], ["Lean", 20_000], ["Standard", 40_000], ["Generous", 80_000],
+	["Lavish", 160_000]]
+## The depot buys land next door at about $50,000 an acre (Midwest town
+## edge), dollars per square metre.
+const BUS_LAND_PER_M2 := 12.0
+
+## School buses (Type C, 72 elementary pupils, 3 to a seat). Districts bus
+## pupils who live farther than about a mile by road; 0.8 mile straight-line
+## stands in for that. About 8% of people are of elementary age.
+const SCHOOL_BUS_LOAD := 66
+const SCHOOL_BUS_MAX := 8
+const SCHOOL_WALK := 1300.0
+const SCHOOL_PUPIL_SHARE := 0.08
+## Bell times: buses leave the school this long before the morning bell and
+## right after the afternoon bell (8:00 am and 3:00 pm), in game minutes.
+const SCHOOL_MORNING_RUN := 6 * 60 + 40
+const SCHOOL_AFTERNOON_RUN := 15 * 60 + 5
 # --- Wild trees and brush ----------------------------------------------------
 
 ## Cleared land left alone grows back the way an abandoned lot in southern
@@ -642,3 +716,107 @@ const EDUCATION_DOWN_PAYMENT := 0.3
 const EDUCATION_SELL_DEBT := 1.5
 ## Campuses decide once a game day (a month).
 const EDUCATION_DECIDE_EVERY := 1440
+
+# --- Post office and mail --------------------------------------------------------
+# Best of CS pitch #10, green-lit by Brawn (2026-10-22): a post office hub
+# whose postmaster plans the routes, real carrier trips, a sorting center
+# that grows next door, and a development tree (see Mail.TREE).
+
+## A small-town post office (about 4,000 sq ft on 0.6 acre) and what the city
+## pays a month to keep it open. Each piece of land it grows adds
+## HUB_PIECE_UPKEEP of this.
+const MAIL_COST := 1_200_000
+const MAIL_UPKEEP := 14_000
+## The city's funding levels, the player's lever: what goes to the postmaster
+## a month on top of postage, to spend on the development tree.
+const MAIL_FUNDING := [
+	{"name": "Postage only", "monthly": 0},
+	{"name": "Basic", "monthly": 6_000},
+	{"name": "Generous", "monthly": 15_000},
+	{"name": "Lavish", "monthly": 30_000},
+]
+## USPS handles about 116 billion pieces a year to 167 million delivery
+## points over about 300 delivery days: 2.3 pieces a household a day.
+## Businesses get several times that, and about 3 parcels a day each.
+const MAIL_PIECES_PER_HOME := 2.3
+const MAIL_PIECES_PER_BUSINESS := 9.0
+const MAIL_PARCELS_PER_BUSINESS := 3.0
+## Delivery days in a month, and what the postmaster keeps per piece after
+## running costs (USPS takes in about 68 cents a piece; most goes to wages).
+const MAIL_DAYS_PER_MONTH := 26.0
+const MAIL_MARGIN_PER_PIECE := 0.04
+## Neighbouring towns' postage a regional hub keeps, dollars a person a month.
+const MAIL_REGIONAL_PER_PERSON := 0.15
+## Offline, each road out to the region counts as one neighbouring town this
+## size (small towns around Petersburg, Indiana).
+const MAIL_OFFLINE_TOWN_POP := 1_800
+## A city carrier route is about 500 delivery points; a carrier's day also
+## tops out at this many streets. A parcel van makes this many business
+## stops and carries this many parcels.
+const MAIL_POINTS_PER_ROUTE := 500
+const MAIL_STOPS_PER_ROUTE := 30
+const MAIL_VAN_STOPS := 25
+const MAIL_VAN_PARCELS := 150
+## Carrier trucks and jeeps, and parcel vans, an office starts with. Each
+## piece of fleet lot it grows holds two more carriers.
+const MAIL_CARRIERS := 2
+const MAIL_VANS := 1
+## A street with fewer homes than one per this many metres is a rural route
+## (right-hand-drive jeeps and roadside boxes).
+const MAIL_RURAL_SPACING := 40.0
+## When the mail truck comes in from the region, when carriers and vans go
+## out (after the mail is cased), and when the outgoing truck leaves. Hours.
+const MAIL_FREIGHT_IN_HOUR := 5
+const MAIL_ROUNDS_HOUR := 9
+const MAIL_FREIGHT_OUT_HOUR := 17
+## A street counts as served while its mail came within this many ticks
+## (two days, so Sundays don't count against it).
+const MAIL_SERVED_TICKS := 2 * 24 * 60
+## Good mail makes a place a little better: land value on served streets
+## (homes +2%, shops +4%, factories +3%), and demand for homes and shops
+## (times the share served).
+const MAIL_VALUE := {ZoneMap.Zone.RESIDENTIAL: 0.02, ZoneMap.Zone.COMMERCIAL: 0.04, ZoneMap.Zone.INDUSTRIAL: 0.03}
+const MAIL_DEMAND_HOMES := 0.04
+const MAIL_DEMAND_SHOPS := 0.06
+## A neighbour's regional sorting hub speeds your mail too.
+const MAIL_REGION_HUB_VALUE := 0.01
+## What the tree's nodes do.
+const MAIL_PO_BOX_VALUE := 0.005
+const MAIL_PASSPORT_VALUE := 0.005
+const MAIL_LOCKER_VALUE := 0.01
+const MAIL_BUSINESS_MAIL_VALUE := 0.02
+const MAIL_MURAL_VALUE := 0.03
+const MAIL_MURAL_REACH := 300.0
+const MAIL_CLUSTER_BOOST := 1.3
+const MAIL_ELECTRIC_SAVING := 0.15
+## A regional hub runs one more truck each way for each neighbouring town,
+## up to this many.
+const MAIL_REGIONAL_TRUCKS := 4
+## A cautious postmaster keeps up to this many months of income in reserve.
+const MAIL_RESERVE_MONTHS := 3.0
+## The development tree's numbers: cost (from the postmaster's fund), land
+## (pieces next door), days to build (game days), weight (how much an
+## ambitious postmaster wants it), and gates: population, pieces (of mail a
+## day), shops, factories, towns and region_pop (neighbours), education
+## and ambition (the postmaster's own), town_school (service coverage).
+const MAIL_TREE := {
+	"po_boxes": {"cost": 40_000, "land": 0, "days": 1, "weight": 1, "population": 600},
+	"passports": {"cost": 25_000, "land": 0, "days": 1, "weight": 2, "population": 1_500, "education": 0.5},
+	"kiosk": {"cost": 60_000, "land": 0, "days": 1, "weight": 2, "population": 2_500, "town_school": 0.6},
+	"mural": {"cost": 80_000, "land": 0, "days": 2, "weight": 1, "population": 1_200, "ambition": 0.4},
+	"cluster_boxes": {"cost": 120_000, "land": 0, "days": 2, "weight": 3, "population": 3_000},
+	"more_vans": {"cost": 180_000, "land": 1, "days": 1, "weight": 3, "shops": 15, "vans": 2},
+	"electric_fleet": {"cost": 400_000, "land": 0, "days": 2, "weight": 2, "education": 0.6, "ambition": 0.6,
+		"population": 2_000},
+	"parcel_lockers": {"cost": 90_000, "land": 0, "days": 1, "weight": 2, "shops": 25},
+	"business_mail": {"cost": 150_000, "land": 1, "days": 2, "weight": 2, "factories": 8},
+	"parcel_depot": {"cost": 600_000, "land": 2, "days": 3, "weight": 4, "shops": 40, "vans": 3},
+	"parcel_ground_hub": {"cost": 2_500_000, "land": 4, "days": 4, "weight": 5, "shops": 60, "vans": 6,
+		"region_pop": 15_000},
+	"sorting_room": {"cost": 350_000, "land": 1, "days": 2, "weight": 4, "pieces": 3_000},
+	"sorting_center": {"cost": 1_800_000, "land": 3, "days": 4, "weight": 6, "pieces": 10_000},
+	"regional_hub": {"cost": 3_500_000, "land": 4, "days": 5, "weight": 7, "towns": 2, "region_pop": 6_000,
+		"education": 0.45},
+	"rail_mail": {"cost": 900_000, "land": 1, "days": 3, "weight": 3},
+	"air_mail": {"cost": 700_000, "land": 0, "days": 2, "weight": 3},
+}

@@ -32,6 +32,7 @@ var traffic_tool: TrafficTool
 var move_tool: MoveTool
 var info_view: InfoView
 var service_view: ServiceView
+var bus_view: BusView
 var select_tool: SelectTool
 var lot_alerts: LotAlerts
 var _info_panel := InfoPanel.new()
@@ -212,6 +213,7 @@ const VIEWS := [
 	["health", "health", "Health", "Roads a clinic reaches"],
 	["school", "school", "Schools", "Roads within reach of a school"],
 	["traffic", "flow", "Traffic", "How freely traffic moves"],
+	["bus", "bus", "Buses", "Bus routes and stops the depots planned, and how full the buses are"],
 ]
 
 
@@ -259,6 +261,8 @@ func _show_view(key: String) -> void:
 		service_view.show_kind = cover[key]
 	elif service_tool.kind == ServiceTool.OFF:
 		service_view.show_kind = -1
+	if bus_view:
+		bus_view.show_routes = key == "bus"
 	if key == "traffic":
 		traffic_tool.set_mode(TrafficTool.Mode.VIEW)
 	elif traffic_tool.mode == TrafficTool.Mode.VIEW:
@@ -541,7 +545,8 @@ func _services_drawer() -> PanelContainer:
 	drawer.add_child(row)
 	for group in [["Utilities", [Services.Kind.POWER_FEED, Services.Kind.WELL, Services.Kind.SUBSTATION,
 				Services.Kind.WATER_TOWER]],
-			["Safety, health and schools", [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.CLINIC, Services.Kind.SCHOOL]]]:
+			["Safety, health and schools", [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.CLINIC, Services.Kind.SCHOOL]],
+			["Transit", [Services.Kind.BUS_DEPOT]]]:
 		if row.get_child_count() > 0:
 			row.add_child(VSeparator.new())
 		var cards := _section(row, group[0])
@@ -552,6 +557,8 @@ func _services_drawer() -> PanelContainer:
 			var b := _card(s.icon, short.get(k, s.name.split(" ")[0]),
 				"%s: $%s, $%s a month" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)])
 			b.tooltip_text = "%s: $%s to build, $%s a month" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
+			if s.has("transit"):
+				b.tooltip_text = "%s: $%s to build, with two buses. It plans its own stops, routes and fare; you set its funding." % [s.name, CitySim.money_text(s.cost)]
 			b.pressed.connect(func(): service_tool.set_kind(k))
 			cards.add_child(b)
 			_service_cards[k] = b
@@ -580,6 +587,16 @@ func _services_drawer() -> PanelContainer:
 		b.pressed.connect(func(): campus_tool.set_kind(k))
 		campus.add_child(b)
 		_campus_cards[k] = b
+	# The post office: its postmaster plans the routes.
+	row.add_child(VSeparator.new())
+	var mail := _section(row, "Mail")
+	var pb := _card("mail", "Post office", "Post office: $%s, $%s a month" % [CitySim.money_text(Balance.MAIL_COST),
+		CitySim.money_text(Balance.MAIL_UPKEEP)])
+	pb.tooltip_text = "Post office: $%s to build, $%s a month. Its postmaster plans the routes." % [
+		CitySim.money_text(Balance.MAIL_COST), CitySim.money_text(Balance.MAIL_UPKEEP)]
+	pb.pressed.connect(func(): service_tool.set_kind(Mail.TOOL_KIND))
+	mail.add_child(pb)
+	_service_cards[Mail.TOOL_KIND] = pb
 	return drawer
 
 

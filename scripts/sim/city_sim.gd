@@ -60,6 +60,8 @@ var big := BigFactories.new()
 var logistics := Logistics.new()
 ## Land saved for farming or an industry: no roads or zoning on it.
 var reserves := Reserves.new()
+## Bus depots and school buses, which run themselves (scripts/transit/).
+var buses := BusNet.new()
 ## Where this city sits in the shared region (its own coordinates start at
 ## 0): the land under it is read there. 0 in solo play.
 var terrain_offset := Vector2.ZERO:
@@ -78,6 +80,8 @@ var vegetation := Vegetation.new()
 var hubs := CivicHubs.new()
 ## Parks (hubs that fill in by themselves) and one-per-town landmarks.
 var parks := Parks.new()
+## The post office, its postmaster, and the carriers on their routes.
+var mail := Mail.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -201,6 +205,8 @@ func apply_now(cmd: Dictionary) -> bool:
 				return false
 			var sid := services.add(kind, pos, dir)
 			economy.money -= cost
+			if kind == Services.Kind.BUS_DEPOT:
+				buses.on_placed(self, sid)
 			_clear_zones_under(services.footprint(sid))
 			_lots_dirty = true
 			ok = true
@@ -361,6 +367,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			_usable_cache.clear()
 			_lots_dirty = true
 			ok = true
+		"set_bus_subsidy":
+			ok = buses.apply(self, cmd)
 		"zone_frontage":
 			# Zones a whole block face: one side of a street from junction to
 			# junction ("both" does the other side too).
@@ -385,6 +393,10 @@ func apply_now(cmd: Dictionary) -> bool:
 		"set_junction":
 			# Traffic lights, stop signs or none at a junction (-1 = automatic).
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
+		"place_post_office", "remove_post_office", "post_office_funding":
+			ok = mail.command(self, cmd)
+			if ok and cmd.type != "post_office_funding":
+				_lots_dirty = true
 		"clear":
 			region_links.clear()
 			trade = Trade.new()
@@ -404,11 +416,13 @@ func apply_now(cmd: Dictionary) -> bool:
 			big = BigFactories.new()
 			big_factories_changed.emit()
 			reserves = Reserves.new()
+			buses = BusNet.new()
 			education = Education.new()
 			permits.from_dict({})
 			hubs = CivicHubs.new()
 			parks = Parks.new()
 			parks_changed.emit()
+			mail = Mail.new()
 			farms.reserves = reserves
 			industry.reserves = reserves
 			vegetation.reset()
@@ -591,8 +605,13 @@ func tick() -> void:
 	hubs.tick(self)
 	if not in_region and tick_count % (24 * TICKS_PER_HOUR) == 0:
 		Trade.settle({"me": self}, {})
+	mail.tick(self)
 	if not simulate_traffic:
 		return
+	# Before logistics, which clears Traffic's arrival list.
+	for id in buses.tick(self):
+		_clear_zones_under(services.footprint(id))
+		_lots_dirty = true
 	logistics.tick(self)
 	education.trips(self)
 	var rng := RandomNumberGenerator.new()
@@ -648,7 +667,7 @@ func update_stats() -> void:
 		0.1 + float(workers - jobs) / maxf(workers, 40.0)
 		+ 0.4 * (shop_jobs * 0.8 - factory_jobs) / maxf(factory_jobs, 20.0), 0.0, 1.0)
 	for z in demand:
-		demand[z] = clampf(demand[z] + economy.demand_shift(z), 0.0, 1.0)
+		demand[z] = clampf(demand[z] + economy.demand_shift(z) + mail.demand_shift(z), 0.0, 1.0)
 	# Past village size, people want fire, police, a clinic and a school nearby.
 	if pop > 300:
 		demand[ZoneMap.Zone.RESIDENTIAL] = clampf(
@@ -790,6 +809,8 @@ func warehouse_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 			return "That ground belongs to a company."
 		if hubs.covers(p):
 			return "Overlaps a landfill, recycling center or cemetery."
+		if mail.covers(p):
+			return "Overlaps the post office."
 		if education.covers(p):
 			return "That ground is a campus."
 	if big.overlaps(poly):
@@ -815,7 +836,7 @@ func warehouse_ground_ok(poly: PackedVector2Array, id: int) -> bool:
 			return false
 	for p in _grid_in(poly):
 		if farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) or reserves.kind_at(p) != "" \
-				or hubs.covers(p) or education.covers(p) or big.covers(p):
+				or hubs.covers(p) or education.covers(p) or mail.covers(p) or big.covers(p):
 			return false
 	for key in lots:
 		if not buildings.has(key) and zones.zone_at(lots[key].zone_pt) == ZoneMap.Zone.NONE:
@@ -947,8 +968,8 @@ func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
 	if ok:
 		for p in pts:
 			if services.covers(p) or farms.covers(p) or industry.covers(p) or farms.field_at(p) != -1 \
-					or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) or not land_ok(p) \
-					or big.covers(p):
+					or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
+					or mail.covers(p) or big.covers(p) or not land_ok(p):
 				ok = false
 	if ok:
 		for key2 in lots:
@@ -1113,7 +1134,7 @@ func _lot_blocked(lot: Dictionary) -> bool:
 	for p in [lot.pos, lot.front, lot.zone_pt]:
 		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) \
 				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
-				or big.covers(p):
+				or mail.covers(p) or big.covers(p):
 			return true
 	# No lots in the water or on ground too steep to build on.
 	return not land_ok(lot.pos, LotPlanner.FRONTAGE * 0.5)
@@ -1395,8 +1416,10 @@ func to_dict() -> Dictionary:
 		"permits": permits.to_dict(),
 		"hubs": hubs.to_dict(),
 		"parks": parks.to_dict(),
+		"mail": mail.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
+		"buses": buses.to_dict(),
 		"vegetation": vegetation.to_dict(),
 	}
 
@@ -1435,6 +1458,7 @@ func from_dict(d: Dictionary) -> void:
 	permits.from_dict(d.get("permits", {}))
 	hubs.from_dict(d.get("hubs", {}))
 	parks.from_dict(d.get("parks", {}))
+	mail.from_dict(d.get("mail", {}))
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:
@@ -1474,6 +1498,8 @@ func from_dict(d: Dictionary) -> void:
 		if buildings[key].zone == ZoneMap.Zone.INDUSTRIAL and not buildings[key].has("chain"):
 			buildings[key].chain = factory_chain(lots[key].pos) if lots.has(key) else "general"
 	update_stats()
+	buses = BusNet.new()
+	buses.from_dict(self, d.get("buses", {}))
 	buildings_changed.emit()
 
 

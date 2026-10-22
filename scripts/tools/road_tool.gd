@@ -536,7 +536,7 @@ func _preview_pick(hit: Vector3) -> void:
 	if _hover_service != -1 or _hover_farm != -1 or _hover_park != -1:
 		var b: Dictionary = sim.services.buildings[_hover_service] if _hover_service != -1 \
 			else (sim.farms.farms[_hover_farm] if _hover_farm != -1 else sim.parks.sites[_hover_park])
-		var size: Vector2 = Services.KINDS[b.kind].size if _hover_service != -1 \
+		var size: Vector2 = Services.size_of(b) if _hover_service != -1 \
 			else (Farms.FARMHOUSE_SIZE if _hover_farm != -1 else b.size)
 		var box := BoxMesh.new()
 		box.size = Vector3(size.x + 1.0, 6.0, size.y + 1.0)
