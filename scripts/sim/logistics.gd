@@ -129,7 +129,7 @@ func _produce(sim: CitySim) -> void:
 		for c in f.cells:
 			bushels += Balance.FARM_BUSHELS_PER_ACRE[f.crop] * Farms.ACRES_PER_CELL \
 				* sim.farms.fertility_at(Farms.cell_center(f, c)) * sim.farms.share(id, c)
-		grain[id] = grain.get(id, 0.0) + bushels * share
+		grain[id] = grain.get(id, 0.0) + bushels * share * Agency.effect(f, Agency.TREES.farm, "output*")
 	for id in grain.keys():
 		if not sim.farms.farms.has(id):
 			grain.erase(id)

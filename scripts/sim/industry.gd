@@ -81,8 +81,10 @@ static func richness(s: Dictionary, c: Vector2i) -> float:
 func pad_profit(s: Dictionary, c: Vector2i) -> float:
 	var k: Dictionary = Balance.INDUSTRY[s.kind]
 	var km := pad_center(s, c).distance_to(Vector3(s.pos.x, 0.0, s.pos.z)) / 1000.0
-	var gross: float = 12.0 * k.loads * k.price * richness(s, c) * price
-	return gross - k.pad_cost - HAUL_PER_KM * km - PAD_VALUE * tax_rate / 100.0
+	var tree: Array = Agency.TREES[s.kind]
+	var gross: float = 12.0 * k.loads * k.price * richness(s, c) * price \
+		* Agency.effect(s, tree, "output*") * Agency.effect(s, tree, "price*")
+	return gross - k.pad_cost - HAUL_PER_KM * km * Agency.effect(s, tree, "haul*") - PAD_VALUE * tax_rate / 100.0
 
 
 func yearly_profit(id: int) -> float:
@@ -168,13 +170,20 @@ static func _seeds() -> Array:
 func produce(hours: float) -> void:
 	for id in sites:
 		var s: Dictionary = sites[id]
-		if s.stock >= STOCK_CAP:
+		var cap := stock_cap(s)
+		if s.stock >= cap:
 			continue
 		var k: Dictionary = Balance.INDUSTRY[s.kind]
 		var rate := 0.0
 		for c in s.pads:
 			rate += k.loads * richness(s, c)
-		s.stock = minf(STOCK_CAP, s.stock + rate * hours / 24.0)
+		rate *= Agency.effect(s, Agency.TREES[s.kind], "output*")
+		s.stock = minf(cap, s.stock + rate * hours / 24.0)
+
+
+## Loads the yard holds (more with a tank battery or log yard).
+static func stock_cap(s: Dictionary) -> float:
+	return STOCK_CAP + Agency.effect(s, Agency.TREES[s.kind], "stock+")
 
 
 ## The company whose main building yard or access road holds this point.
@@ -209,7 +218,8 @@ func jobs() -> int:
 	var total := 0
 	for id in sites:
 		var k: Dictionary = Balance.INDUSTRY[sites[id].kind]
-		total += k.jobs_hq + k.jobs_pad * sites[id].pads.size()
+		total += k.jobs_hq + k.jobs_pad * sites[id].pads.size() \
+			+ int(Agency.effect(sites[id], Agency.TREES[sites[id].kind], "jobs+"))
 	return total
 
 
@@ -291,7 +301,8 @@ func to_dict() -> Dictionary:
 		for p in s.drive:
 			lane.append([p.x, p.z])
 		out[str(id)] = {"kind": s.kind, "pos": [s.pos.x, s.pos.z], "dir": [s.dir.x, s.dir.z],
-			"drive": lane, "pads": pads, "stock": s.stock, "loss": s.loss_streak}
+			"drive": lane, "pads": pads, "stock": s.stock, "loss": s.loss_streak,
+			"leader": s.get("leader", {}), "built": s.get("built", []), "why": s.get("why", "")}
 	return {"sites": out, "next_id": _next_id}
 
 
@@ -308,4 +319,8 @@ func from_dict(d: Dictionary) -> void:
 		sites[int(k)] = {"kind": str(s.kind), "pos": Vector3(s.pos[0], 0.0, s.pos[1]),
 			"dir": Vector3(s.dir[0], 0.0, s.dir[1]).normalized(), "drive": lane, "pads": pads,
 			"stock": float(s.get("stock", 0.0)), "loss_streak": int(s.get("loss", 0))}
+		if not s.get("leader", {}).is_empty():
+			sites[int(k)].leader = s.leader
+		sites[int(k)].built = Array(s.get("built", []))
+		sites[int(k)].why = str(s.get("why", ""))
 	_next_id = int(d.get("next_id", 1))
