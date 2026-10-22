@@ -93,6 +93,9 @@ var region_links: Array = []
 var trade := Trade.new()
 ## True in a shared region, which settles trade for every city at once.
 var in_region := false
+## What the neighbouring towns make and buy, kept up to date by the region
+## server (see Agency._region). Not saved: it comes from the neighbours.
+var region := {}
 
 var _lots_dirty := true
 ## Roads changed since the world last made way for them (see RoadWins).
@@ -490,6 +493,9 @@ func tick() -> void:
 				_lots_dirty = true
 				zones_changed.emit()
 			parks_changed.emit()
+	# Once a month every hub's leader looks at its development tree (Agency).
+	if tick_count % (24 * TICKS_PER_HOUR) == 12 * TICKS_PER_HOUR:
+		_develop_hubs()
 	# Taxes come in and upkeep goes out every game hour, a day settling a month.
 	if tick_count % TICKS_PER_HOUR == 0:
 		economy.money += roundi(economy.monthly_net() / 24.0)
@@ -1135,6 +1141,32 @@ func _grow_one() -> void:
 			buildings[key].chain = factory_chain(lots[key].pos)
 		buildings_changed.emit()
 		return
+
+
+## Each farm and company leader takes their next step up their tree.
+func _develop_hubs() -> void:
+	var ids := farms.farms.keys()
+	ids.sort()
+	var farm_built := false
+	for id in ids:
+		var f: Dictionary = farms.farms[id]
+		if not f.has("leader"):
+			f.leader = Agency.leader(self, hash([city_seed, "farm", id]))
+		if not Agency.develop(self, f, Agency.TREES.farm, f.pos, farms.yearly_profit(id)).is_empty():
+			farm_built = true
+	ids = industry.sites.keys()
+	ids.sort()
+	var site_built := false
+	for id in ids:
+		var s: Dictionary = industry.sites[id]
+		if not s.has("leader"):
+			s.leader = Agency.leader(self, hash([city_seed, "site", id]))
+		if not Agency.develop(self, s, Agency.TREES[s.kind], s.pos, industry.yearly_profit(id)).is_empty():
+			site_built = true
+	if farm_built:
+		farms_changed.emit()
+	if site_built:
+		industry_changed.emit()
 
 
 ## What a new factory here would make (a key of Balance.FACTORY_CHAINS):

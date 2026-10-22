@@ -177,6 +177,7 @@ static func _farm(sim: CitySim, id: int) -> Dictionary:
 		problems.append("No fertile free land near the farmhouse yet. Check the Fertility view.")
 	elif profit < 0.0:
 		status = "Losing money: will sell its worst field"
+	rows.append_array(_development(sim, f, Agency.TREES.farm, f.pos, profit))
 	return {"title": "Farm", "kind": "Farming", "icon": "farms", "ok": problems.is_empty() and profit >= 0.0,
 		"status": status, "rows": rows, "problems": problems}
 
@@ -188,6 +189,7 @@ static func _industry(sim: CitySim, id: int) -> Dictionary:
 	var rate := 0.0
 	for c in s.pads:
 		rate += b.loads * Industry.richness(s, c)
+	rate *= Agency.effect(s, Agency.TREES[s.kind], "output*")
 	var profit := sim.industry.yearly_profit(id)
 	var ref := "site:%d" % id
 	var rows := [
@@ -195,7 +197,7 @@ static func _industry(sim: CitySim, id: int) -> Dictionary:
 		["Output", "%.1f truckloads of %s / month" % [rate, k.cargo]],
 		["Waiting in the yard", "%d loads" % floori(s.stock)],
 		["Trucks on the road", str(sim.logistics.trucks_for(ref))],
-		["Jobs", str(b.jobs_hq + b.jobs_pad * s.pads.size())],
+		["Jobs", str(b.jobs_hq + b.jobs_pad * s.pads.size() + int(Agency.effect(s, Agency.TREES[s.kind], "jobs+")))],
 		["Profit", "%s$%s / year" % ["" if profit >= 0.0 else "-", CitySim.money_text(absi(roundi(profit)))]],
 		["Property tax to town", "$%s / month" % CitySim.money_text(roundi((float(k.cost) + Industry.PAD_VALUE * s.pads.size())
 			* sim.economy.tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0))],
@@ -209,7 +211,8 @@ static func _industry(sim: CitySim, id: int) -> Dictionary:
 			problems.append(s.idle)
 	if sim.logistics.stuck.has(ref):
 		problems.append("Its trucks can't reach a buyer or the highway. Connect its road to the rest of town.")
-	if s.stock >= Industry.STOCK_CAP:
+	rows.append_array(_development(sim, s, Agency.TREES[s.kind], s.pos, profit))
+	if s.stock >= Industry.stock_cap(s):
 		problems.append("The yard is full, so it has stopped producing.")
 	return {"title": k.name, "kind": "Resource industry", "icon": s.kind, "ok": problems.is_empty(),
 		"status": status, "rows": rows, "problems": problems}
@@ -285,6 +288,29 @@ static func _park(sim: CitySim, id: int) -> Dictionary:
 	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(roundi(sim.parks.site_upkeep(id)))])
 	return {"title": s.name, "kind": "Park" if s.kind == "park" else "Landmark  ·  " + k.name, "icon": k.icon,
 		"ok": true, "status": status, "rows": rows, "problems": []}
+
+
+## Rows on a hub's leader and development tree: who runs it, what they've
+## built, why they made their last move, and what's open to them next.
+static func _development(sim: CitySim, hub: Dictionary, tree: Array, at: Vector3, profit: float) -> Array:
+	var rows := []
+	var lead: Dictionary = hub.get("leader", {})
+	if not lead.is_empty():
+		var school := "college" if float(lead.edu) >= 0.6 else ("some college" if float(lead.edu) >= 0.4 else "high school")
+		var style := "careful" if float(lead.caution) > 0.6 else ("ambitious" if float(lead.ambition) > 0.6 else "steady")
+		rows.append(["Run by", "a %s owner, %s" % [style, school]])
+	var built := []
+	for node in tree:
+		if node.id in hub.get("built", []):
+			built.append(node.name)
+	rows.append(["Built", ", ".join(built) if not built.is_empty() else "Nothing extra yet"])
+	if str(hub.get("why", "")) != "":
+		rows.append(["Last move", hub.why])
+	var next := []
+	for node in Agency.open(sim, hub, tree, at, profit):
+		next.append(node.name)
+	rows.append(["Could build next", ", ".join(next) if not next.is_empty() else "Nothing yet: needs more profit, schooling or neighbours"])
+	return rows
 
 
 static func _lot(sim: CitySim, key: String) -> Dictionary:
