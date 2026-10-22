@@ -74,7 +74,9 @@ func update_budget(sim: CitySim) -> void:
 			continue  # a business with no power or water is closed
 		# Land near a landfill is worth less, near a cemetery a little more,
 		# and parks and landmarks lift it.
-		income[int(b.zone)] += building_tax(b, staffed, sim.parks.lot_value.get(key, 0.0)) * sim.hubs.lot_factor(sim, key) / 12.0
+		# Good mail service lifts it a little too.
+		income[int(b.zone)] += building_tax(b, staffed, sim.parks.lot_value.get(key, 0.0)) * sim.hubs.lot_factor(sim, key) \
+			* sim.mail.lot_factor(sim, key) / 12.0
 	# Farmland pays property tax at the industrial rate.
 	income[ZoneMap.Zone.INDUSTRIAL] += sim.farms.total_acres() * Farms.LAND_PER_ACRE * Farms.AG_ASSESSMENT \
 		* tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
@@ -100,7 +102,8 @@ func update_budget(sim: CitySim) -> void:
 	for z in income:
 		income[z] = roundi(income[z] * d.income)
 	budget = {"income": income, "upkeep": roundi(upkeep * d.upkeep), "fees": roundi(fees * d.income),
-		"services": roundi((sim.services.monthly_upkeep() + sim.hubs.monthly_cost() + sim.parks.monthly_upkeep()) * d.upkeep),
+		"services": roundi((sim.services.monthly_upkeep() + sim.hubs.monthly_cost() + sim.parks.monthly_upkeep()
+			+ sim.mail.monthly_cost()) * d.upkeep),
 		"education": roundi(sim.education.monthly_upkeep() * d.upkeep)}
 
 

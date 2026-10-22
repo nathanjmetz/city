@@ -226,6 +226,14 @@ func _draw() -> void:
 				var fwd := Vector2(-sin(a0 + TAU / 3.0 - 0.25), cos(a0 + TAU / 3.0 - 0.25))
 				var side := Vector2(cos(a0 + TAU / 3.0 - 0.25), sin(a0 + TAU / 3.0 - 0.25))
 				_poly([tip + fwd * s * 0.12, tip + side * s * 0.09, tip - side * s * 0.09], Color(0.45, 0.8, 0.5))
+		"mail":
+			# A curbside mailbox on its post, flag up.
+			line.call(P.call(0.42, 0.56), P.call(0.42, 0.94), w * 1.4)
+			_poly([P.call(0.14, 0.58), P.call(0.14, 0.36), P.call(0.66, 0.36), P.call(0.66, 0.58)], color)
+			draw_circle(P.call(0.66, 0.47), s * 0.11, color)
+			_poly([P.call(0.66, 0.36), P.call(0.77, 0.36), P.call(0.77, 0.58), P.call(0.66, 0.58)], color)
+			line.call(P.call(0.86, 0.5), P.call(0.86, 0.14), w)
+			_poly([P.call(0.86, 0.14), P.call(0.97, 0.14), P.call(0.97, 0.26), P.call(0.86, 0.26)], Color(0.95, 0.35, 0.35))
 		"cemetery":
 			# A rounded headstone on a lawn.
 			_poly([P.call(0.06, 0.9), P.call(0.94, 0.9), P.call(0.94, 0.8), P.call(0.06, 0.8)], Color(0.5, 0.7, 0.4))
