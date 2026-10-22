@@ -27,6 +27,7 @@ func _process(_delta: float) -> bool:
 func _demo_town() -> void:
 	var sim: CitySim = _main.sim
 	sim.apply({"type": "clear"})
+	sim.economy.money = 20_000_000  # a demo town, built in one go
 	var args0 := OS.get_cmdline_user_args()
 	if args0.size() >= 5 and args0[4] == "highway":
 		_demo_interchange(sim)
@@ -56,6 +57,10 @@ func _demo_town() -> void:
 	# Leave a few lots empty to show the zone tint.
 	sim.apply({"type": "paint_zone", "center": [-150, 15], "radius": 14, "zone": ZoneMap.Zone.NONE})
 	sim.apply({"type": "paint_zone", "center": [-150, 15], "radius": 14, "zone": ZoneMap.Zone.COMMERCIAL})
+	if args.size() >= 5 and args[4] == "budget":
+		for c in _main.find_children("*", "", true, false):
+			if c.has_method("_budget_drawer"):
+				c._open("budget")
 	var cam: CityCamera
 	for c in _main.get_children():
 		if c is CityCamera:

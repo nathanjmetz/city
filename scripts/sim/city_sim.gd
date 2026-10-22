@@ -24,10 +24,12 @@ const MINUTES_PER_TICK := 1
 const START_UNIX := 1799042400
 ## Share of residents who work (US labour force is about half of everyone).
 const WORKER_SHARE := 0.5
+const TICKS_PER_HOUR := 60 / MINUTES_PER_TICK
 
 var network := RoadNetwork.new()
 var zones := ZoneMap.new()
 var traffic := TrafficSim.new(network)
+var economy := Economy.new()
 var lots := {}       # lot key -> lot Dictionary (from LotPlanner)
 var buildings := {}  # lot key -> {"zone", "seed", "built", "cap", "occ"}
 var tick_count := 0
@@ -54,16 +56,37 @@ func apply(cmd: Dictionary) -> bool:
 			# The server checks real road rules too, not just the player's screen.
 			if road_problem(c, _road(cmd)) == "":
 				ok = network.build_road(c[0], c[1], c[2], _road(cmd))
+				if ok:
+					economy.money -= Economy.road_cost(c, _road(cmd))
 		"build_grid":
 			var lines := RoadShapes.grid(_v(cmd.a), _v(cmd.b), _v(cmd.c), float(cmd.block))
+			if not _can_afford(lines, _road(cmd)):
+				return false
 			network.begin_batch()
 			for l in lines:
 				ok = network.build_road(l[0], l[1], l[2], _road(cmd)) or ok
 			network.end_batch()
+			if ok:
+				economy.money -= shapes_cost(lines, _road(cmd))
 		"build_roundabout":
-			ok = _build_roundabout(_v(cmd.center), float(cmd.radius), _road(cmd))
+			var radius := clampf(float(cmd.radius), RoadShapes.ROUNDABOUT_MIN, RoadShapes.ROUNDABOUT_MAX)
+			var arcs := RoadShapes.roundabout(_v(cmd.center), radius)
+			if not _can_afford(arcs, _road(cmd)):
+				return false
+			ok = _build_roundabout(_v(cmd.center), radius, _road(cmd))
+			if ok:
+				economy.money -= shapes_cost(arcs, _road(cmd))
 		"upgrade_road":
+			var cost := upgrade_cost(int(cmd.seg), _road(cmd))
+			if cost < 0 or cost > economy.money:
+				return false
 			ok = network.set_type(int(cmd.seg), _road(cmd))
+			if ok:
+				economy.money -= cost
+		"set_tax":
+			if economy.set_tax(int(cmd.zone), float(cmd.rate)):
+				update_stats()
+			return true
 		"remove_road":
 			ok = network.segments.has(int(cmd.seg))
 			network.remove_segment(int(cmd.seg))
@@ -73,6 +96,7 @@ func apply(cmd: Dictionary) -> bool:
 		"clear":
 			network.clear()
 			zones.cells.clear()
+			economy = Economy.new()
 			ok = true
 	if ok:
 		_refresh()
@@ -88,6 +112,9 @@ func tick() -> void:
 		update_stats()
 	if tick_count % GROW_EVERY == 0:
 		_grow_one()
+	# Taxes come in and upkeep goes out every game hour, a day settling a month.
+	if tick_count % TICKS_PER_HOUR == 0:
+		economy.money += roundi(economy.monthly_net() / 24.0)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([city_seed, tick_count, "traffic"])
 	traffic.step(self, rng)
@@ -128,6 +155,9 @@ func update_stats() -> void:
 	demand[ZoneMap.Zone.INDUSTRIAL] = clampf(
 		0.1 + float(workers - jobs) / maxf(workers, 40.0)
 		+ 0.4 * (shop_jobs * 0.8 - factory_jobs) / maxf(factory_jobs, 20.0), 0.0, 1.0)
+	for z in demand:
+		demand[z] = clampf(demand[z] + economy.demand_shift(z), 0.0, 1.0)
+	economy.update_budget(self)
 	stats_changed.emit()
 
 
@@ -196,7 +226,41 @@ func road_problem(c: Array, type: int) -> String:
 	if grade > spec.grade + 0.0001:
 		return "Too steep: %d%% grade. A %s can climb at most %d%% (AASHTO)." \
 			% [roundi(grade * 100.0), spec.name, roundi(spec.grade * 100.0)]
-	return network.crossing_problem(c[0], c[1], c[2])
+	var problem := network.crossing_problem(c[0], c[1], c[2])
+	if problem == "" and Economy.road_cost(c, type) > economy.money:
+		return "Not enough money: this road costs $%s." % money_text(Economy.road_cost(c, type))
+	return problem
+
+
+## What it costs to build these road pieces.
+static func shapes_cost(curves: Array, type: int) -> int:
+	var total := 0
+	for c in curves:
+		total += Economy.road_cost(c, type)
+	return total
+
+
+## What upgrading a road costs: the difference in build price, nothing to
+## downgrade. -1 if there is no such road.
+func upgrade_cost(seg: int, type: int) -> int:
+	if not network.segments.has(seg):
+		return -1
+	var c := network.curve_of(seg)
+	return maxi(0, Economy.road_cost(c, type) - Economy.road_cost(c, network.segments[seg].type))
+
+
+func _can_afford(curves: Array, type: int) -> bool:
+	return shapes_cost(curves, type) <= economy.money
+
+
+## Dollars with thousands separators: 1234567 -> "1,234,567".
+static func money_text(n: int) -> String:
+	var s := str(absi(n))
+	var out := ""
+	while s.length() > 3:
+		out = "," + s.substr(s.length() - 3) + out
+		s = s.substr(0, s.length() - 3)
+	return ("-" if n < 0 else "") + s + out
 
 
 ## Builds the ring, joining every road it crosses, then clears the roads
@@ -262,6 +326,7 @@ func to_dict() -> Dictionary:
 		"roads": network.to_dict(),
 		"zones": zones.to_dict(),
 		"buildings": buildings,
+		"economy": economy.to_dict(),
 	}
 
 
@@ -275,6 +340,7 @@ func from_dict(d: Dictionary) -> void:
 		_refresh()
 		for key in lots:
 			zones.paint(lots[key].zone_pt, 3.0, ZoneMap.Zone.RESIDENTIAL)
+	economy.from_dict(d.get("economy", {}))
 	tick_count = int(d.get("tick", 0))
 	city_seed = int(d.get("seed", 1))
 	buildings.clear()

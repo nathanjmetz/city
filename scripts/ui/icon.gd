@@ -136,6 +136,16 @@ func _draw() -> void:
 				P.call(0.68, 0.3), P.call(0.82, 0.48), P.call(0.92, 0.52), P.call(0.92, 0.68)], color)
 			draw_circle(P.call(0.27, 0.7), s * 0.09, Color(0.12, 0.13, 0.15))
 			draw_circle(P.call(0.73, 0.7), s * 0.09, Color(0.12, 0.13, 0.15))
+		"money", "budget":
+			# A stack of coins with a dollar sign on the top one.
+			for i in 3:
+				var y := 0.78 - i * 0.14
+				draw_rect(Rect2(P.call(0.2, y - 0.07), Vector2(0.6, 0.14) * s), Color(color, 0.35 + i * 0.15))
+				draw_rect(Rect2(P.call(0.2, y - 0.07), Vector2(0.6, 0.14) * s), color, false, w * 0.6)
+			draw_circle(P.call(0.5, 0.28), s * 0.2, accent if kind == "budget" else Color(0.45, 0.8, 0.45))
+			line.call(P.call(0.5, 0.15), P.call(0.5, 0.41), w * 0.7, Color(0.08, 0.1, 0.12))
+			draw_arc(P.call(0.5, 0.23), s * 0.06, PI * 0.5, PI * 1.9, 10, Color(0.08, 0.1, 0.12), w * 0.6, true)
+			draw_arc(P.call(0.5, 0.33), s * 0.06, -PI * 0.5, PI * 0.9, 10, Color(0.08, 0.1, 0.12), w * 0.6, true)
 		"help":
 			draw_arc(P.call(0.5, 0.5), s * 0.4, 0, TAU, 32, color, w, true)
 			draw_arc(P.call(0.5, 0.4), s * 0.13, PI * 1.1, PI * 2.4, 16, color, w, true)

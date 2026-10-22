@@ -179,6 +179,12 @@ func _process(_delta: float) -> void:
 			_update_hint()
 	if curves.is_empty():
 		return
+	if mode == Mode.ROUNDABOUT or (mode == Mode.GRID and _points.size() == 2):
+		var cost := CitySim.shapes_cost(curves, road_type)
+		ok = cost <= sim.economy.money
+		_label.text = "$" + CitySim.money_text(cost) + ("" if ok else "\nNot enough money")
+		_label.position = p + Vector3(0, 6, 0)
+		_label.visible = true
 	_preview.mesh = _preview_mesh(curves)
 	_preview.material_override = _ok_mat if ok else _bad_mat
 	_preview.visible = true
@@ -313,6 +319,8 @@ func _show_length(curve: Array) -> void:
 	var pts := RoadNetwork.sample_curve(curve[0], curve[1], curve[2])
 	var m := RoadNetwork.polyline_length(pts)
 	_label.text = "%d m  (%d ft)" % [roundi(m), roundi(m * 3.28084)]
+	var cost := Economy.road_cost(curve, road_type) * (2 if parallel else 1)
+	_label.text += "\n$" + CitySim.money_text(cost)
 	var r := RoadNetwork.min_radius(curve[0], curve[1], curve[2])
 	if r < 2000.0:
 		_label.text += "\nCurve safe at %d mph" % RoadStyle.safe_speed_mph(r)
