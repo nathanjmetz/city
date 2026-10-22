@@ -152,26 +152,4 @@ func _build_environment() -> void:
 
 
 func _build_ground() -> void:
-	var noise := FastNoiseLite.new()
-	noise.frequency = 0.02
-	var tex := NoiseTexture2D.new()
-	tex.noise = noise
-	tex.seamless = true
-	tex.width = 256
-	tex.height = 256
-	var grad := Gradient.new()
-	grad.set_color(0, Color(0.20, 0.30, 0.12))
-	grad.set_color(1, Color(0.30, 0.40, 0.17))
-	tex.color_ramp = grad
-
-	var mat := StandardMaterial3D.new()
-	mat.albedo_texture = tex
-	mat.uv1_scale = Vector3(300, 300, 1)
-	mat.roughness = 1.0
-
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(8000, 8000)
-	var ground := MeshInstance3D.new()
-	ground.mesh = plane
-	ground.material_override = mat
-	add_child(ground)
+	add_child(Ground.new())
