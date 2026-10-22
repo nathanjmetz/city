@@ -60,6 +60,10 @@ func _demo_town() -> void:
 		sim.apply({"type": "build_road", "start": [-140, 90], "ctrl": [-50, 60], "end": [0, 40], "road": 4})
 		_aim_camera()
 		return
+	if args0.size() >= 5 and args0[4] == "mail":
+		_demo_mail(sim)
+		_aim_camera()
+		return
 	if args0.size() >= 5 and args0[4] == "hubs":
 		_demo_hubs(sim)
 		_aim_camera()
@@ -306,6 +310,42 @@ func _demo_forest(sim: CitySim) -> void:
 
 
 ## A landfill, a recycling plant and a cemetery that have grown for a while.
+## The post office on a street of homes, grown a sorting room, a sorting
+## center and more carrier lot.
+func _demo_mail(sim: CitySim) -> void:
+	sim.economy.money = 60_000_000
+	sim.apply({"type": "build_road", "start": [-500, 0], "ctrl": [0, 0], "end": [500, 0]})
+	for id in sim.network.segments.keys():
+		sim.apply({"type": "zone_frontage", "seg": id, "side": -1, "zone": ZoneMap.Zone.RESIDENTIAL})
+	var site := CivicHubs.site_near(sim.network, Vector3(0, 0, 60))
+	sim.apply({"type": "place_post_office", "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})
+	var id: int = sim.mail.offices.keys()[0]
+	var h: Dictionary = sim.mail.offices[id]
+	for node in ["sorting_room", "sorting_center", "more_vans"]:
+		var pieces := []
+		for k in int(Balance.MAIL_TREE[node].land):
+			var c: Vector2i = sim.mail._best_piece(sim, id, pieces)
+			if c != Vector2i.MAX:
+				pieces.append(c)
+		h.cells.append_array(pieces)
+		h.lands[node] = pieces
+		h.tree[node] = 1
+	var c2: Vector2i = sim.mail._best_piece(sim, id)
+	if c2 != Vector2i.MAX:
+		h.cells.append(c2)
+	sim.mail._touch(h)
+	sim.simulate_traffic = false
+	sim.require_utilities = false
+	for i in 1500:
+		sim.tick()
+	for c in _main.get_children():
+		if c is Hud:
+			c.close_all()
+	for c in _main.get_children():
+		if c is SelectTool:
+			c.select({"type": "post_office", "id": id})
+
+
 func _demo_hubs(sim: CitySim) -> void:
 	sim.economy.money = 60_000_000
 	sim.apply({"type": "build_road", "start": [-700, 0], "ctrl": [0, 0], "end": [700, 0]})

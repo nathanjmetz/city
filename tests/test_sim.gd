@@ -332,6 +332,22 @@ func _init() -> void:
 	back.from_dict(JSON.parse_string(JSON.stringify(oil.to_dict())))
 	_check(back.industry.sites[1].pads.size() == co.pads.size() and back.logistics.trips.size() == oil.logistics.trips.size(),
 		"save keeps the company and its trucks")
+	# Hub agency (Brawn): the company's leader builds up its own tree.
+	_check(not co.get("leader", {}).is_empty() and "tank_battery" in co.get("built", []),
+		"the oil company's owner builds a tank battery (%s)" % [co.get("built", [])])
+	_check(twin.industry.sites[1].get("built", []) == co.built, "both copies develop the same way")
+	_check(not Agency.holds(oil, co, co.pos, 1.0e6, "region_buys:crude oil", 1), "no neighbours buy crude yet")
+	oil.region = {"neighbors": [{"name": "Winslow", "imports": {"crude oil": 3}}]}
+	_check(Agency.holds(oil, co, co.pos, 1.0e6, "region_buys:crude oil", 1), "a neighbouring town that buys crude opens the terminal path")
+	oil.region = {}
+	var dev_rows: Array = Inspect.describe(oil, {"type": "industry", "id": 1}).rows
+	_check(str(dev_rows).contains("Could build next"), "the company panel shows its development tree")
+	_check(oil.factory_chain(co.pos + Vector3(600, 0, 0)) == "refinery"
+		and oil.factory_chain(co.pos + Vector3(40000, 0, 0)) == "general",
+		"factories near the oil field make plastics; far from any industry they're general")
+	oil.buildings["test"] = {"zone": ZoneMap.Zone.INDUSTRIAL, "seed": 1, "built": 0, "cap": 10, "occ": 0, "chain": "metal"}
+	_check(Logistics.input_of(oil, "test") == "ore", "a metal works buys ore")
+	oil.buildings.erase("test")
 	var oil_sel := Inspect.pick(oil, co.pos)
 	_check(oil_sel.get("type") == "industry" and Inspect.describe(oil, oil_sel).title == "Oil company", "clicking the company opens its panel")
 	_check(oil.stats.jobs >= Balance.INDUSTRY["oil"]["jobs_hq"], "the company's jobs count")

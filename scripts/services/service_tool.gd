@@ -2,7 +2,8 @@ class_name ServiceTool
 extends Node3D
 ## Places service buildings. Move the mouse beside a road and the building
 ## turns to face it, like Cities: Skylines 2; click to build. Also places
-## landfills, recycling centres and cemeteries (CivicHubs.TOOL_KINDS).
+## landfills, recycling centres and cemeteries (CivicHubs.TOOL_KINDS), and the
+## post office (Mail.TOOL_KIND).
 
 signal kind_changed(kind: int)
 signal hint_changed(text: String)
@@ -53,7 +54,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if mb.button_index == MOUSE_BUTTON_RIGHT and not mb.pressed and not cam.right_dragged:
 		set_kind(OFF)
 	elif mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not mb.alt_pressed and not _site.is_empty():
-		if CivicHubs.TOOL_KINDS.has(kind):
+		if kind == Mail.TOOL_KIND:
+			sim.apply({"type": "place_post_office", "pos": [_site[0].x, _site[0].z], "dir": [_site[1].x, _site[1].z]})
+		elif CivicHubs.TOOL_KINDS.has(kind):
 			sim.apply({"type": "place_hub", "kind": CivicHubs.TOOL_KINDS[kind], "pos": [_site[0].x, _site[0].z],
 				"dir": [_site[1].x, _site[1].z]})
 		elif sim.apply({"type": "place_service", "kind": kind, "pos": [_site[0].x, _site[0].z],
@@ -66,7 +69,7 @@ func _process(_delta: float) -> void:
 	if kind == OFF:
 		return
 	var hit = cam.mouse_ground_point()
-	if CivicHubs.TOOL_KINDS.has(kind):
+	if CivicHubs.TOOL_KINDS.has(kind) or kind == Mail.TOOL_KIND:
 		_hub_ghost(hit)
 		return
 	_site = [] if hit == null else Services.site_near(sim.network, kind, hit)
@@ -92,16 +95,18 @@ func _process(_delta: float) -> void:
 ## The ghost of a landfill, recycling centre or cemetery: its first six
 ## pieces of land behind the street.
 func _hub_ghost(hit) -> void:
-	var hk: String = CivicHubs.TOOL_KINDS[kind]
+	var post := kind == Mail.TOOL_KIND
+	var hk: String = "" if post else CivicHubs.TOOL_KINDS[kind]
 	_site = [] if hit == null else CivicHubs.site_near(sim.network, hit)
 	_ghost.visible = not _site.is_empty()
 	var problem := "Move next to a street or avenue." if _site.is_empty() else ""
 	if not _site.is_empty():
-		problem = sim.hubs.site_problem(sim, hk, _site[0], _site[1])
-		var cost := int(Balance.WASTE_SITES[hk].cost)
+		problem = sim.mail.site_problem(sim, _site[0], _site[1]) if post \
+			else sim.hubs.site_problem(sim, hk, _site[0], _site[1])
+		var cost := Balance.MAIL_COST if post else int(Balance.WASTE_SITES[hk].cost)
 		if problem == "" and cost > sim.economy.money:
 			problem = "Not enough money: costs $%s." % CitySim.money_text(cost)
-		var cell: float = CivicHubs.KINDS[hk].cell
+		var cell: float = Mail.CELL if post else CivicHubs.KINDS[hk].cell
 		var box := BoxMesh.new()
 		box.size = Vector3(cell * 3.0, 3.0, cell * 2.0)
 		_ghost.mesh = box
@@ -115,6 +120,15 @@ func _hub_ghost(hit) -> void:
 
 func _update_hint() -> void:
 	if kind == OFF:
+		return
+	if kind == Mail.TOOL_KIND:
+		var pt := "Post office: $%s to build, $%s a month. " % [CitySim.money_text(Balance.MAIL_COST),
+			CitySim.money_text(Balance.MAIL_UPKEEP)]
+		pt += "Its postmaster plans the routes and sends carriers to every street's mailboxes. Good mail makes" \
+			+ " homes and shops a little happier, and the office grows next door as the town gets busy."
+		if _problem != "":
+			pt += "\n" + _problem
+		hint_changed.emit(pt)
 		return
 	if CivicHubs.TOOL_KINDS.has(kind):
 		var hk: String = CivicHubs.TOOL_KINDS[kind]

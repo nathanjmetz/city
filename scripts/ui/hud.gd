@@ -581,6 +581,16 @@ func _services_drawer() -> PanelContainer:
 		b.pressed.connect(func(): campus_tool.set_kind(k))
 		campus.add_child(b)
 		_campus_cards[k] = b
+	# The post office: its postmaster plans the routes.
+	row.add_child(VSeparator.new())
+	var mail := _section(row, "Mail")
+	var pb := _card("mail", "Post office", "Post office: $%s, $%s a month" % [CitySim.money_text(Balance.MAIL_COST),
+		CitySim.money_text(Balance.MAIL_UPKEEP)])
+	pb.tooltip_text = "Post office: $%s to build, $%s a month. Its postmaster plans the routes." % [
+		CitySim.money_text(Balance.MAIL_COST), CitySim.money_text(Balance.MAIL_UPKEEP)]
+	pb.pressed.connect(func(): service_tool.set_kind(Mail.TOOL_KIND))
+	mail.add_child(pb)
+	_service_cards[Mail.TOOL_KIND] = pb
 	return drawer
 
 

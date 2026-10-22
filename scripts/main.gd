@@ -126,6 +126,10 @@ func _ready() -> void:
 	hub_view.setup(sim)
 	add_child(hub_view)
 
+	var mail_view := MailView.new()
+	mail_view.setup(sim)
+	add_child(mail_view)
+
 	var service_tool := ServiceTool.new()
 	service_tool.setup(sim, cam, service_view)
 	add_child(service_tool)

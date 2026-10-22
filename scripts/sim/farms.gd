@@ -196,7 +196,8 @@ func yearly_profit(id: int) -> float:
 func field_profit(f: Dictionary, c: Vector2i) -> float:
 	var mid := cell_center(f, c)
 	var km := mid.distance_to(Vector3(f.pos.x, 0.0, f.pos.z)) / 1000.0
-	var gross: float = GROSS_PER_ACRE[f.crop] * fertility_at(mid) * price
+	var gross: float = GROSS_PER_ACRE[f.crop] * fertility_at(mid) * price \
+		* Agency.effect(f, Agency.TREES.farm, "output*") * Agency.effect(f, Agency.TREES.farm, "price*")
 	var tax := LAND_PER_ACRE * AG_ASSESSMENT * tax_rate / 100.0
 	return (gross - COST_PER_ACRE[f.crop] - COST_PER_ACRE_PER_KM * km - tax) * ACRES_PER_CELL
 
@@ -368,7 +369,8 @@ func to_dict() -> Dictionary:
 		for p in f.drive:
 			lane.append([p.x, p.z])
 		fs[str(id)] = {"pos": [f.pos.x, f.pos.z], "dir": [f.dir.x, f.dir.z], "crop": f.crop,
-			"cells": owned, "loss": f.loss_streak, "barn": f.barn, "drive": lane, "frame": 2}
+			"cells": owned, "loss": f.loss_streak, "barn": f.barn, "drive": lane, "frame": 2,
+			"leader": f.get("leader", {}), "built": f.get("built", []), "why": f.get("why", "")}
 	return {"farms": fs, "next_id": _next_id}
 
 
@@ -399,5 +401,7 @@ func from_dict(d: Dictionary) -> void:
 		farms[int(k)] = {"pos": Vector3(f.pos[0], 0.0, f.pos[1]),
 			"dir": Vector3(f.dir[0], 0.0, f.dir[1]).normalized(), "crop": str(f.crop),
 			"cells": owned, "loss_streak": int(f.get("loss", 0)), "barn": bool(f.get("barn", true)),
-			"drive": lane}
+			"drive": lane, "built": Array(f.get("built", [])), "why": str(f.get("why", ""))}
+		if not f.get("leader", {}).is_empty():
+			farms[int(k)].leader = f.leader
 	_next_id = int(d.get("next_id", 1))
