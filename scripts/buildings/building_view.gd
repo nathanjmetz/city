@@ -1,7 +1,7 @@
 class_name BuildingView
 extends Node3D
-## Draws the buildings the simulation has grown. Placeholder shapes for now;
-## the realistic houses from the art library replace these later.
+## Draws the buildings the simulation has grown. Houses come from the art
+## library's HouseBuilder; shops and factories are still placeholder shapes.
 
 const SIDING := [
 	Color(0.93, 0.92, 0.88), Color(0.86, 0.82, 0.72), Color(0.70, 0.76, 0.80),
@@ -57,21 +57,15 @@ func _spawn(lot: Dictionary, b: Dictionary) -> Node3D:
 
 
 func _house(root: Node3D, rng: RandomNumberGenerator, lot: Dictionary) -> void:
-	var w := rng.randf_range(9.0, 13.0)
-	var d := rng.randf_range(8.0, 10.5)
-	var stories := 2 if rng.randf() < 0.35 else 1
-	var wall_h := 2.8 * stories + 0.4
-	var setback := 7.0
-	var z := setback + d * 0.5
-	_box(root, Vector3(w, wall_h, d), Vector3(0, wall_h * 0.5, z), _pick(rng, SIDING))
-	var roof := _part(root, _gable_roof(w + 0.8, d + 0.8, d * 0.28), _pick(rng, ROOFS))
-	roof.position = Vector3(0, wall_h, z)
-	_box(root, Vector3(1.0, 2.1, 0.1), Vector3(0, 1.05, setback - 0.04), Color(0.35, 0.22, 0.15))
-	# Driveway from the garage side out to the curb.
-	var to_curb: float = lot.to_curb
-	var drive_x := (w * 0.5 - 2.0) * (-1.0 if rng.randf() < 0.5 else 1.0)
-	_flat(root, Vector2(3.4, setback + to_curb), Vector3(drive_x, 0.12, (setback - to_curb) * 0.5),
-		Color(0.68, 0.67, 0.64))
+	# Realistic generated house (scripts/art/house_builder.gd).
+	var meshes := HouseBuilder.build(rng.randi(), lot.to_curb)
+	var house := MeshInstance3D.new()
+	house.mesh = meshes[0]
+	root.add_child(house)
+	var yard := MeshInstance3D.new()
+	yard.mesh = meshes[1]
+	yard.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(yard)
 
 
 func _shop(root: Node3D, rng: RandomNumberGenerator) -> void:
