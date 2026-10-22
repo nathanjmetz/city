@@ -24,7 +24,8 @@ func _ready() -> void:
 		sim = Session.client.my_sim()
 		sim.send_command = Session.client.send_command
 	sim.require_utilities = true
-	add_child(SkyLight.new())
+	var sky := SkyLight.new()
+	add_child(sky)
 	add_child(Ground.new())
 
 	var roads := RoadView.new()
@@ -58,6 +59,10 @@ func _ready() -> void:
 	var cars := TrafficView.new()
 	cars.setup(sim.traffic, _tick_fraction)
 	add_child(cars)
+
+	var look := DayNight.new()
+	look.setup(sim, sky, _tick_fraction)
+	add_child(look)
 
 	var signals := JunctionView.new()
 	signals.setup(sim.traffic)
