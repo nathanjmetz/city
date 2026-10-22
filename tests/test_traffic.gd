@@ -150,6 +150,82 @@ func _init() -> void:
 	_check(ring_ways > 0 and ring_ok, "roundabout traffic keeps the island on its left (%d ring ways)" % ring_ways)
 	_check(yields == 2, "cars entering the roundabout yield (%d entries)" % yields)
 
+	# Building a roundabout across busy roads doesn't wipe out the traffic.
+	var e := _crossroads()
+	e.economy.money = 1.0e9
+	e.tick()
+	var elots: Array = e.lots.keys()
+	elots.sort()
+	var erng := RandomNumberGenerator.new()
+	erng.seed = 11
+	for i in 1500:
+		if i % 4 == 0:
+			e.traffic.add_trip(e.lots[elots[erng.randi() % elots.size()]], e.lots[elots[erng.randi() % elots.size()]], erng)
+		e.tick()
+	var before := e.traffic.cars.size()
+	e.apply({"type": "build_roundabout", "center": [200, 0], "radius": 24, "road": RoadStyle.Type.AVENUE})
+	e.tick()
+	elots = e.lots.keys()
+	elots.sort()
+	_check(e.traffic.cars.size() >= before * 0.8, "cars keep driving when a roundabout is built (%d of %d)" % [e.traffic.cars.size(), before])
+
+	# Cars glide through junctions and roundabouts without snapping round.
+	var jumps := 0
+	var last := {}
+	for i in 2000:
+		if i % 6 == 0:
+			e.traffic.add_trip(e.lots[elots[erng.randi() % elots.size()]], e.lots[elots[erng.randi() % elots.size()]], erng)
+		e.tick()
+		for car in e.traffic.cars:
+			var pose := e.traffic.car_pose(car)
+			if last.has(car.id) and absf(last[car.id].signed_angle_to(pose[1], Vector3.UP)) > deg_to_rad(25.0):
+				jumps += 1
+			last[car.id] = pose[1]
+	_check(jumps == 0, "no car turns more than 25 degrees in a tenth of a second (%d)" % jumps)
+
+	# A truck with a job: grain from a farm gate to a mill, reported on arrival,
+	# and still delivered exactly once after a save and load mid-trip.
+	var f := CitySim.new()
+	f.economy.money = 1.0e9
+	f.apply({"type": "build_road", "start": [-400, 0], "ctrl": [0, 0], "end": [400, 0], "road": RoadStyle.Type.AVENUE})
+	f.tick()
+	var id := f.traffic.dispatch({"ref": "farm:1", "pos": [-380, 20]}, {"ref": "site:2", "pos": [380, -20]},
+		"grain", {"good": "grain", "amount": 12})
+	_check(id > 0, "a grain truck is sent")
+	for i in 150:
+		f.tick()
+	var mid: Dictionary = JSON.parse_string(JSON.stringify(f.to_dict()))
+	var f2 := CitySim.new()
+	f2.from_dict(mid)
+	var got := []
+	for i in 1500:
+		f2.tick()
+		got += f2.traffic.arrivals
+		f2.traffic.arrivals.clear()
+	_check(got.size() == 1 and got[0].to == "site:2" and got[0].cargo.amount == 12 and got[0].purpose == "grain",
+		"the grain arrives at the mill once, after a save and load (%s)" % [got])
+
+	# A saved city with busy traffic loads and carries on exactly the same.
+	# (Both copies load the same save, as every player joining a region does;
+	# the road save rounds coordinates, so the original is not the reference.)
+	var save_text := JSON.stringify(e.to_dict())
+	var copy := CitySim.new()
+	copy.from_dict(JSON.parse_string(save_text))
+	var copy2 := CitySim.new()
+	copy2.from_dict(JSON.parse_string(save_text))
+	var r1 := RandomNumberGenerator.new()
+	var r2 := RandomNumberGenerator.new()
+	r1.seed = 5
+	r2.seed = 5
+	for i in 600:
+		if i % 6 == 0:
+			copy.traffic.add_trip(copy.lots[elots[r1.randi() % elots.size()]], copy.lots[elots[r1.randi() % elots.size()]], r1)
+			copy2.traffic.add_trip(copy2.lots[elots[r2.randi() % elots.size()]], copy2.lots[elots[r2.randi() % elots.size()]], r2)
+		copy.tick()
+		copy2.tick()
+	_check(copy.traffic.cars.size() > 10 and JSON.stringify(copy.traffic.to_dict()) == JSON.stringify(copy2.traffic.to_dict()),
+		"loaded copies drive every car exactly the same (%d cars)" % copy.traffic.cars.size())
+
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
