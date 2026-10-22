@@ -23,10 +23,11 @@ const GRAVEL := Color("#8d877c")
 const LINE := Color("#e8e6df")
 
 
-static func build_shop(seed: int, to_curb: float) -> Array:
+static func build_shop(seed: int, to_curb: float, lot := {}) -> Array:
 	var b := CommercialBuilder.new()
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
+	b._fit(lot)
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 	if b.rng.randf() < 0.4:
 		b._main_street(to_curb)
@@ -35,10 +36,11 @@ static func build_shop(seed: int, to_curb: float) -> Array:
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 
-static func build_factory(seed: int, to_curb: float) -> Array:
+static func build_factory(seed: int, to_curb: float, lot := {}) -> Array:
 	var b := CommercialBuilder.new()
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
+	b._fit(lot)
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 	b._factory(to_curb)
 	return [b._commit_house(), b._commit_flat(), b.trees]
@@ -47,8 +49,8 @@ static func build_factory(seed: int, to_curb: float) -> Array:
 # ---------------------------------------------------------------- shops
 
 func _retail(to_curb: float) -> void:
-	var w := rng.randf_range(14.0, 17.5)
-	var d := rng.randf_range(12.0, 15.0)
+	var w := rng.randf_range(minf(14.0, half * 2.0 - 3.0), clampf(half * 2.0 - 2.5, 8.0, 17.5 + clampf(half * 2.0 - 22.0, 0.0, 8.0)))
+	var d := rng.randf_range(12.0, minf(15.0, maxf(depth - 15.0, 12.0)))
 	var h := rng.randf_range(4.8, 5.6)
 	var zf := rng.randf_range(12.0, 13.0)  # parking in front
 	var cz := zf + d * 0.5
@@ -84,8 +86,8 @@ func _retail(to_curb: float) -> void:
 	_box("paint", Vector3(1.0, 2.1, 0.06), Vector3(w * 0.3, 1.35, zf + d + 0.03), Color("#5a5e60"))
 	# Parking: a walk along the front, a row of stalls, the aisle and the curb cut.
 	_flat_rect("drive", -w * 0.5 - 0.5, w * 0.5 + 0.5, zf - 2.2, zf, 0.08)
-	var lot0 := -LOT_HALF + 0.6
-	var lot1 := LOT_HALF - 0.6
+	var lot0 := -half + 0.6
+	var lot1 := half - 0.6
 	_flat_rect("asphalt", lot0, lot1, 0.0, zf - 2.2, 0.06)
 	_flat_rect("asphalt", -3.6, 3.6, -to_curb, 0.0, 0.1)
 	var stall := 2.75  # 9 ft
@@ -105,8 +107,8 @@ func _retail(to_curb: float) -> void:
 
 
 func _main_street(to_curb: float) -> void:
-	var w := 2.0 * LOT_HALF - 0.4  # wall to wall with its neighbours
-	var d := rng.randf_range(16.0, 22.0)
+	var w := 2.0 * half - 0.4  # wall to wall with its neighbours
+	var d := rng.randf_range(16.0, minf(22.0, maxf(depth - 6.0, 16.0)))
 	var zf := 0.4
 	var cz := zf + d * 0.5
 	var floor_h := 4.2
@@ -143,7 +145,8 @@ func _main_street(to_curb: float) -> void:
 	_box("paint", Vector3(w + 0.1, 0.25, 0.4), Vector3(0, h - 0.15, zf - 0.15), trim)
 	# Rooftop unit and an alley drive at the back.
 	_box("metal", Vector3(1.8, 1.1, 1.2), Vector3(rng.randf_range(-4.0, 4.0), h - 0.6 + 0.55, cz + 2.0), Color("#b9bcbc"))
-	_flat_rect("asphalt", -LOT_HALF, LOT_HALF, zf + d, 32.0, 0.06)
+	if depth > zf + d + 1.0:
+		_flat_rect("asphalt", -half, half, zf + d, depth, 0.06)
 
 
 ## A flat-roofed box: walls up to the roof deck, a pale membrane roof, and a
@@ -193,8 +196,8 @@ func _awning(cx: float, w: float, zf: float, y: float, col: Color) -> void:
 # ---------------------------------------------------------------- factories
 
 func _factory(to_curb: float) -> void:
-	var w := rng.randf_range(15.0, 18.5)
-	var d := rng.randf_range(16.0, 21.0)
+	var w := rng.randf_range(minf(15.0, half * 2.0 - 2.0), clampf(half * 2.0 - 1.5, 8.0, 18.5 + clampf(half * 2.0 - 22.0, 0.0, 12.0)))
+	var d := rng.randf_range(16.0, minf(21.0, maxf(depth - 14.0, 16.0)))
 	var h := rng.randf_range(6.0, 8.0)
 	var zf := rng.randf_range(8.0, 9.5)
 	var cz := zf + d * 0.5
@@ -231,12 +234,15 @@ func _factory(to_curb: float) -> void:
 		_cylinder("brick", Vector3(w * 0.3, 0, cz + d * 0.3), 0.7, h + 7.0, brick, 10)
 	for i in rng.randi_range(0, 3):
 		var pick := TreeField.pick(rng)
-		trees.append([Vector3(rng.randf_range(-9.0, 9.0), 0, rng.randf_range(zf + d + 3.0, 31.0)), pick[0], pick[1], rng.randf_range(0.8, 1.1)])
+		var p := Vector3(rng.randf_range(-half + 1.0, half - 1.0), 0, rng.randf_range(zf + d + 3.0, maxf(depth - 1.0, zf + d + 3.0)))
+		if _in_lot(p):
+			trees.append([p, pick[0], pick[1], rng.randf_range(0.8, 1.1)])
 	# Parking along the front, gravel yard, the drive.
-	_flat_rect("asphalt", -LOT_HALF + 0.6, -w * 0.5 + ow + 0.5, 0.0, zf - od - 0.5, 0.06)
-	_flat_rect("gravel", -LOT_HALF + 0.4, LOT_HALF - 0.4, zf + d, 31.5, 0.04, GRAVEL)
+	_flat_rect("asphalt", -half + 0.6, -w * 0.5 + ow + 0.5, 0.0, zf - od - 0.5, 0.06)
+	if depth > zf + d + 1.0:
+		_flat_rect("gravel", -half + 0.4, half - 0.4, zf + d, depth - 0.5, 0.04, GRAVEL)
 	_flat_rect("asphalt", w * 0.12 - 3.6, w * 0.12 + 3.6, -to_curb, zf - 6.0, 0.1)
-	var x := -LOT_HALF + 0.6
+	var x := -half + 0.6
 	while x <= -w * 0.5 + ow + 0.51:
 		_flat_rect("line", x - 0.06, x + 0.06, 0.0, 5.5, 0.07, LINE)
 		x += 2.75
