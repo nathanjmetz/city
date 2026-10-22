@@ -33,14 +33,29 @@ func rebuild() -> void:
 	# Ramps joining highways start where they clear the through lanes.
 	var merges := RampMerge.merges(network)
 	var cuts := {}  # [seg, node] -> metres
+	var gaps := {}  # seg -> {side: [from, to]} where its barrier opens
 	for m in merges:
 		cuts[[m.ramp, m.node]] = RampMerge.ramp_cut(m)
+		var g := RampMerge.barrier_gaps(m, network)
+		for seg in g:
+			if not gaps.has(seg):
+				gaps[seg] = {}
+			for side in g[seg]:
+				gaps[seg][side] = g[seg][side]
 	for id in network.segments:
 		var pts := network.sample_segment(id)
 		var type: int = network.segments[id].type
 		var sg: Dictionary = network.segments[id]
-		pts = RampMerge.trim_ramp(pts, cuts.get([id, sg.a], 0.0), true)
+		var seg_gaps: Dictionary = gaps.get(id, {})
+		var cut_a: float = cuts.get([id, sg.a], 0.0)
+		pts = RampMerge.trim_ramp(pts, cut_a, true)
 		pts = RampMerge.trim_ramp(pts, cuts.get([id, sg.b], 0.0), false)
+		if cut_a > 0.0:
+			# The trimmed ramp starts later, so its gaps move back too.
+			var moved := {}
+			for side in seg_gaps:
+				moved[side] = [seg_gaps[side][0] - cut_a, seg_gaps[side][1] - cut_a]
+			seg_gaps = moved
 		if pts.size() < 2:
 			continue
 		var mi := MeshInstance3D.new()
@@ -55,20 +70,21 @@ func rebuild() -> void:
 			mi.mesh = st.commit()
 			mi.material_override = _mats.tunnel
 		else:
-			mi.mesh = RoadMesh.street(pts, type, _mats)
+			mi.mesh = RoadMesh.street(pts, type, _mats, seg_gaps)
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			any_bridge = RoadMesh.bridge(pts, RoadStyle.right_of_way_half(type), piers) or any_bridge
 		add_child(mi)
 	if not merges.is_empty():
-		var layers := {"asphalt": SurfaceTool.new(), "white": SurfaceTool.new(), "cover": SurfaceTool.new()}
+		var layers := {"asphalt": SurfaceTool.new(), "white": SurfaceTool.new(), "cover": SurfaceTool.new(),
+			"barrier": SurfaceTool.new()}
 		for st in layers.values():
 			st.begin(Mesh.PRIMITIVE_TRIANGLES)
 		for m in merges:
-			RampMerge.draw(m, layers.asphalt, layers.white, layers.cover)
+			RampMerge.draw(m, layers.asphalt, layers.white, layers.cover, layers.barrier)
 		for key in layers:
 			var mi := MeshInstance3D.new()
 			mi.mesh = layers[key].commit()
-			mi.material_override = _mats.white if key == "white" else _mats.asphalt
+			mi.material_override = {"white": _mats.white, "barrier": _mats.curb}.get(key, _mats.asphalt)
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(mi)
 	if any_bridge:

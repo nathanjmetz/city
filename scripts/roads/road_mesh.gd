@@ -36,7 +36,9 @@ static func add_disc(st: SurfaceTool, center: Vector3, radius: float, y: float, 
 ## A complete road of the given type (asphalt, median, markings, curbs and
 ## sidewalks) as one mesh. `mats` maps a name to a material: asphalt, curb,
 ## walk, median, yellow, white.
-static func street(pts: PackedVector3Array, type: int, mats: Dictionary) -> ArrayMesh:
+## `gaps` leaves a one-way road's barrier out where a ramp opens off it:
+## {side (+1/-1): [from, to] metres along pts}.
+static func street(pts: PackedVector3Array, type: int, mats: Dictionary, gaps := {}) -> ArrayMesh:
 	var spec: Dictionary = RoadStyle.TYPES[type]
 	var hw := RoadStyle.half_width(type)
 	var cw := RoadStyle.CURB_WIDTH
@@ -46,7 +48,7 @@ static func street(pts: PackedVector3Array, type: int, mats: Dictionary) -> Arra
 	var lane := 3.6
 	var y_mark := RoadStyle.Y_ASPHALT + 0.01
 	if spec.oneway:
-		return _oneway(pts, spec, mats)
+		return _oneway(pts, spec, mats, gaps)
 	var layers := [
 		["asphalt", [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
 		["curb", [[-hw - cw, -hw], [hw, hw + cw]], RoadStyle.Y_CURB, ""],
@@ -71,7 +73,7 @@ static func street(pts: PackedVector3Array, type: int, mats: Dictionary) -> Arra
 
 ## Highways and ramps: shoulders, a yellow line on the left edge, a white
 ## line on the right, dashed lanes, and a concrete barrier each side.
-static func _oneway(pts: PackedVector3Array, spec: Dictionary, mats: Dictionary) -> ArrayMesh:
+static func _oneway(pts: PackedVector3Array, spec: Dictionary, mats: Dictionary, gaps := {}) -> ArrayMesh:
 	var hw: float = spec.width * 0.5
 	var left := -hw + 1.2
 	var right: float = left + 3.6 * spec.lanes
@@ -84,11 +86,36 @@ static func _oneway(pts: PackedVector3Array, spec: Dictionary, mats: Dictionary)
 		["asphalt", [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
 		["yellow", [[left - 0.15, left]], y_mark, ""],
 		["white", [[right, right + 0.15]], y_mark, ""],
-		["curb", [[-hw - 0.6, -hw], [hw, hw + 0.6]], RoadStyle.Y_ASPHALT + 0.5, ""],
 	]
 	if not dashes.is_empty():
 		layers.append(["white", dashes, y_mark, "dashed"])
-	return _build_layers(pts, layers, pts, mats)
+	var mesh := _build_layers(pts, layers, pts, mats)
+	# Concrete barrier each side, broken where a ramp opens off the road.
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var length := RoadNetwork.polyline_length(pts)
+	for side in [-1.0, 1.0]:
+		var span: Array = gaps.get(side, [length + 1.0, length + 1.0])
+		var span_from: float = maxf(span[0], 0.0)
+		var span_to: float = minf(span[1], length)
+		var from := hw if side > 0.0 else -hw - 0.6
+		for piece in [[0.0, span_from], [span_to, length]]:
+			if piece[1] - piece[0] > 0.5:
+				add_strip(st, _between(pts, piece[0], piece[1]), from, from + 0.6, RoadStyle.Y_ASPHALT + 0.5)
+	st.commit(mesh)
+	mesh.surface_set_material(mesh.get_surface_count() - 1, mats.curb)
+	return mesh
+
+
+## The part of a polyline from `from` to `to` metres along it.
+static func _between(pts: PackedVector3Array, from: float, to: float) -> PackedVector3Array:
+	if from <= 0.0 and to >= RoadNetwork.polyline_length(pts):
+		return pts
+	var out := PackedVector3Array()
+	var n := maxi(2, int((to - from) / 3.0))
+	for k in n + 1:
+		out.append(LotPlanner.point_at(pts, lerpf(from, to, float(k) / n))[0])
+	return out
 
 
 static func _build_layers(pts: PackedVector3Array, layers: Array, inner: PackedVector3Array,

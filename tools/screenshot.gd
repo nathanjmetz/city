@@ -32,6 +32,14 @@ func _demo_town() -> void:
 	if args0.size() >= 5 and args0[4] == "highway":
 		_demo_interchange(sim)
 		return
+	if args0.size() >= 5 and args0[4] == "ramp":
+		# The Critic's repro: a straight exit ramp off a one-way highway.
+		sim.apply({"type": "build_road", "start": [-250, 200], "ctrl": [0, 200], "end": [250, 200], "road": 3})
+		sim.apply({"type": "build_road", "start": [0, 200], "ctrl": [45, 225], "end": [90, 250], "road": 4})
+		sim.apply({"type": "build_road", "start": [-250, 40], "ctrl": [0, 40], "end": [250, 40], "road": 3})
+		sim.apply({"type": "build_road", "start": [-140, 90], "ctrl": [-50, 60], "end": [0, 40], "road": 4})
+		_aim_camera()
+		return
 	if args0.size() >= 5 and args0[4] == "farms":
 		_demo_farms(sim)
 		return
@@ -115,6 +123,14 @@ func _demo_interchange(sim: CitySim) -> void:
 		var ok := sim.apply({"type": "build_road", "start": c[0], "ctrl": ctrl, "end": c[2], "road": c[3]})
 		if not ok:
 			print("demo road refused: ", c, " ", sim.road_problem([CitySim._v(c[0]), CitySim._v(ctrl), CitySim._v(c[2])], c[3]))
+	for c in _main.get_children():
+		if c is CityCamera:
+			var args := OS.get_cmdline_user_args()
+			c.look_at_point(Vector3(float(args[5]), 0, float(args[6])) if args.size() >= 7 else Vector3.ZERO)
+			c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
+
+
+func _aim_camera() -> void:
 	for c in _main.get_children():
 		if c is CityCamera:
 			var args := OS.get_cmdline_user_args()

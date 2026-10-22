@@ -13,15 +13,19 @@ extends RefCounted
 ## entrance (acceleration), AASHTO for 65 mph.
 const TAPER_EXIT := 70.0
 const TAPER_ENTRANCE := 90.0
-## How far the gore's painted chevrons run past the gore tip.
-const GORE_LENGTH := 45.0
 const LANE := 3.6
+## The ramp's 8 ft right shoulder, carried along the auxiliary lane.
+const SHOULDER := 2.4
+## The painted gore ends (and grass begins) where the two edge lines are
+## this far apart, and never more than GORE_MAX metres down the ramp.
+const GORE_NOSE := 6.0
+const GORE_MAX := 160.0
 
 
 ## Every ramp joining a highway: [{node, ramp, ramp_out: pts from the node,
 ## along: highway pts from the node beside the ramp, other: highway pts from
-## the node the other way, sign: +1 if the ramp is to the right of `along`,
-## exit: bool}]
+## the node the other way, along_seg, other_seg, sign: +1 if the ramp is to
+## the right of `along`, exit: bool}]
 static func merges(network: RoadNetwork) -> Array:
 	var out := []
 	for n in network.nodes:
@@ -38,28 +42,69 @@ static func merges(network: RoadNetwork) -> Array:
 			var rdir := _dir(ramp_pts)
 			var a := _from(network, highways[0], n)
 			var b := _from(network, highways[1], n)
-			var along := a if _dir(a).dot(rdir) >= _dir(b).dot(rdir) else b
-			var other := b if along == a else a
+			var first := _dir(a).dot(rdir) >= _dir(b).dot(rdir)
+			var along := a if first else b
 			var side := Vector3(-_dir(along).z, 0.0, _dir(along).x)
-			out.append({"node": n, "ramp": r, "ramp_out": ramp_pts, "along": along, "other": other,
-				"sign": 1.0 if side.dot(rdir) >= 0.0 else -1.0,
+			var along_seg: int = highways[0] if first else highways[1]
+			var sgn := 1.0 if side.dot(rdir) >= 0.0 else -1.0
+			# Only ramps on the right, the shoulder side, get the full
+			# treatment; a left-hand ramp just meets the highway.
+			var forward: bool = network.segments[along_seg].a == n
+			if (sgn > 0.0) != forward:
+				continue
+			out.append({"node": n, "ramp": r, "ramp_out": ramp_pts, "along": along, "other": b if first else a,
+				"along_seg": along_seg, "other_seg": highways[1] if first else highways[0], "sign": sgn,
 				"exit": network.segments[r].a == n})
 	return out
 
 
 ## How far from the highway node a ramp's drawing should start: where its
-## inner edge clears the highway's outside edge line. 0 if it isn't a merge.
+## lane lines up with the auxiliary lane beside the through lanes, so the
+## ramp carries straight on from it. 0 if it isn't a merge.
 static func ramp_cut(m: Dictionary) -> float:
-	var edge := _edge_offset()
-	var hw := RoadStyle.half_width(RoadStyle.Type.RAMP)
+	var target := _edge_offset() + _ramp_inner()
 	var pts: PackedVector3Array = m.ramp_out
 	var d := 0.0
 	for i in pts.size():
 		if i > 0:
 			d += pts[i].distance_to(pts[i - 1])
-		if _lateral(m.along, pts[i]) >= edge + LANE * 0.5 + hw - 1.2:
+		if _lateral(m.along, pts[i]) >= target:
 			return d
 	return d
+
+
+## Where the painted gore ends: the ramp distance at which its inner edge
+## line is GORE_NOSE metres from the highway's edge line (or GORE_MAX on).
+static func nose(m: Dictionary) -> float:
+	var edge := _edge_offset()
+	var length := RoadNetwork.polyline_length(m.ramp_out)
+	var s := ramp_cut(m)
+	while s < length - 1.0 and s < GORE_MAX:
+		if _lateral(m.along, _inner_line(m, s)) - edge >= GORE_NOSE:
+			return s
+		s += 1.0
+	return minf(s, length - 1.0)
+
+
+## Stretches of concrete barrier to leave out where the ramp opens off the
+## highway: {seg: {side: [from, to]}} in each segment's own distances.
+static func barrier_gaps(m: Dictionary, network: RoadNetwork) -> Dictionary:
+	var sgn: float = m.sign
+	var n: int = m.node
+	var s_nose := nose(m)
+	var gaps := {}
+	var hw_gap := _project(m.along, _inner_line(m, s_nose)) + 2.0
+	var taper := TAPER_EXIT if m.exit else TAPER_ENTRANCE
+	for entry in [[m.along_seg, sgn, hw_gap], [m.other_seg, -sgn, taper], [m.ramp, -sgn, s_nose + 2.0]]:
+		var seg: int = entry[0]
+		var forward: bool = network.segments[seg].a == n
+		var length := RoadNetwork.polyline_length(network.sample_segment(seg))
+		var side: float = entry[1] if forward else -entry[1]
+		var span: Array = [0.0, entry[2]] if forward else [length - entry[2], length]
+		if not gaps.has(seg):
+			gaps[seg] = {}
+		gaps[seg][side] = span
+	return gaps
 
 
 ## Ramp points with the part over the highway cut away.
@@ -78,12 +123,17 @@ static func trim_ramp(pts: PackedVector3Array, cut: float, at_start: bool) -> Pa
 	return out
 
 
-## Adds the auxiliary lane, taper, re-drawn edge lines and the gore.
-static func draw(m: Dictionary, asphalt: SurfaceTool, white: SurfaceTool, cover: SurfaceTool) -> void:
+## Adds the auxiliary lane, taper, re-drawn edge lines and barriers, and the
+## paved gore with its chevrons.
+static func draw(m: Dictionary, asphalt: SurfaceTool, white: SurfaceTool, cover: SurfaceTool,
+		barrier: SurfaceTool) -> void:
 	var sgn: float = m.sign
 	var edge := _edge_offset()
+	var hw := RoadStyle.half_width(RoadStyle.Type.HIGHWAY)
+	var outer := edge + LANE + SHOULDER  # the auxiliary lane's paved edge
 	var y_road := RoadStyle.Y_ASPHALT + 0.004
 	var y_mark := RoadStyle.Y_ASPHALT + 0.02
+	var y_wall := RoadStyle.Y_ASPHALT + 0.5
 	var cut := ramp_cut(m)
 	var along: PackedVector3Array = m.along
 	var other: PackedVector3Array = m.other
@@ -91,44 +141,98 @@ static func draw(m: Dictionary, asphalt: SurfaceTool, white: SurfaceTool, cover:
 	var peel := _project(along, LotPlanner.point_at(m.ramp_out, cut)[0])
 	var aux := _cut_to(along, peel)
 	# The auxiliary lane beside the through lanes, up to the gore.
-	var hw := RoadStyle.half_width(RoadStyle.Type.HIGHWAY)
-	_strip(asphalt, aux, sgn, hw - 0.5, edge + LANE + 1.0, y_road)
+	_strip(asphalt, aux, sgn, hw - 0.5, outer, y_road)
 	_strip(cover, aux, sgn, edge - 0.1, edge + 0.3, y_road + 0.01)  # hide the old edge line
 	RoadMesh.add_dashed_strip(white, _signed(aux, sgn), edge, edge + 0.3, y_mark)  # wide dotted lane line
 	_strip(white, aux, sgn, edge + LANE, edge + LANE + 0.15, y_mark)
+	_strip(barrier, aux, sgn, outer, outer + 0.6, y_wall)
 	# The taper on the far side of the node: the lane narrows into the
-	# highway (entrance) or opens out of it (exit).
+	# highway (entrance) or opens out of it (exit). Its paved edge never
+	# comes inside the highway's own shoulder.
 	var taper := _cut_to(other, TAPER_EXIT if m.exit else TAPER_ENTRANCE)
 	var osgn := -sgn  # `other` runs the opposite way, so its sides flip
-	_taper(asphalt, taper, osgn, hw - 0.5, edge, LANE + 1.0, y_road)
-	# The edge line swings out along the taper to meet the auxiliary lane.
-	var line := PackedVector3Array()
 	var tl := RoadNetwork.polyline_length(taper)
+	var in_edge := PackedVector3Array()
+	var out_edge := PackedVector3Array()
+	var line := PackedVector3Array()
+	var wall := PackedVector3Array()
 	var d := 0.0
 	for i in taper.size():
 		if i > 0:
 			d += taper[i].distance_to(taper[i - 1])
-		line.append(taper[i] + _side_at(taper, i) * osgn * (edge + 0.07 + LANE * (1.0 - d / tl)))
+		var f := 1.0 - d / tl
+		var side := _side_at(taper, i) * osgn
+		var paved := maxf(hw, edge + (LANE + SHOULDER) * f)
+		in_edge.append(taper[i] + side * (hw - 0.5))
+		out_edge.append(taper[i] + side * paved)
+		line.append(taper[i] + side * (edge + 0.07 + LANE * f))
+		wall.append(taper[i] + side * (paved + 0.3))
+	_fill(asphalt, in_edge, out_edge, y_road)
 	if line.size() >= 2:
 		RoadMesh.add_strip(white, line, -0.08, 0.08, y_mark)
-	# Gore: from the tip where ramp and highway part, chevrons between the
-	# highway edge line and the ramp's inner edge.
-	var gore_hw := _cut_to(_after(along, peel), GORE_LENGTH)
-	var ramp_after := _cut_to(_after(m.ramp_out, cut), GORE_LENGTH * 1.2)
-	if gore_hw.size() < 2 or ramp_after.size() < 2:
-		return
-	var rhw := RoadStyle.half_width(RoadStyle.Type.RAMP) - 1.2
-	for k in 6:
-		var f := (k + 1) / 7.0
-		var p := LotPlanner.point_at(gore_hw, f * RoadNetwork.polyline_length(gore_hw))
-		var hp: Vector3 = p[0] + _side(p[1]) * sgn * (edge + 0.3)
-		var q := LotPlanner.point_at(ramp_after, f * RoadNetwork.polyline_length(ramp_after))
-		var rp: Vector3 = q[0] - _side(q[1]) * sgn * rhw * (1.0 if m.exit else -1.0)
+		RoadMesh.add_strip(barrier, wall, -0.3, 0.3, y_wall)
+	# The gore: paved from the tip, where the ramp leaves the auxiliary
+	# lane, out to the nose, with chevrons between the two edge lines
+	# (MUTCD 3B.05).
+	var s_nose := nose(m)
+	var rhw := RoadStyle.half_width(RoadStyle.Type.RAMP)
+	var hw_side := PackedVector3Array()
+	var ramp_side := PackedVector3Array()
+	var steps := maxi(2, int((s_nose - cut) / 2.0))
+	for k in steps + 1:
+		var s := lerpf(cut, s_nose, float(k) / steps)
+		var q := LotPlanner.point_at(m.ramp_out, s)
+		var rp: Vector3 = q[0] + _inward(m, q[1]) * rhw
+		var h := LotPlanner.point_at(along, _project(along, rp))
+		hw_side.append(h[0] + _side(h[1]) * sgn * (edge - 0.2))
+		ramp_side.append(rp)
+	_fill(asphalt, hw_side, ramp_side, y_road)
+	var chevrons := maxi(2, int((s_nose - cut) / 9.0))
+	for k in chevrons:
+		var s := lerpf(cut, s_nose, (k + 1.0) / (chevrons + 1.0))
+		var rp := _inner_line(m, s)
+		var h := LotPlanner.point_at(along, _project(along, rp))
+		var hp: Vector3 = h[0] + _side(h[1]) * sgn * (edge + 0.3)
 		if hp.distance_to(rp) < 1.0:
 			continue
-		var back := (_dir(gore_hw) * (-1.0 if m.exit else 1.0)) * 4.0
-		RoadMesh.add_strip(white, PackedVector3Array([hp, (hp + rp) * 0.5 + back]), -0.2, 0.2, y_mark - p[0].y)
-		RoadMesh.add_strip(white, PackedVector3Array([(hp + rp) * 0.5 + back, rp]), -0.2, 0.2, y_mark - p[0].y)
+		var back := (_dir(along) * (-1.0 if m.exit else 1.0)) * 4.0
+		var mid := (hp + rp) * 0.5 + back
+		RoadMesh.add_strip(white, PackedVector3Array([hp, mid]), -0.2, 0.2, y_mark - hp.y)
+		RoadMesh.add_strip(white, PackedVector3Array([mid, rp]), -0.2, 0.2, y_mark - hp.y)
+
+
+## A paved band between two matching edge polylines, always facing up.
+static func _fill(st: SurfaceTool, a: PackedVector3Array, b: PackedVector3Array, y: float) -> void:
+	var lift := Vector3(0, y, 0)
+	for i in mini(a.size(), b.size()) - 1:
+		for tri in [[a[i], b[i], a[i + 1]], [b[i], b[i + 1], a[i + 1]]]:
+			var p0: Vector3 = tri[0] + lift
+			var p1: Vector3 = tri[1] + lift
+			var p2: Vector3 = tri[2] + lift
+			if (p1 - p0).cross(p2 - p0).y > 0.0:
+				var t := p1
+				p1 = p2
+				p2 = t
+			for v in [p0, p1, p2]:
+				st.set_normal(Vector3.UP)
+				st.set_uv(Vector2.ZERO)
+				st.add_vertex(v)
+
+
+## Toward the highway, seen from the ramp.
+static func _inward(m: Dictionary, ramp_dir: Vector3) -> Vector3:
+	return -_side(ramp_dir) * float(m.sign)
+
+
+## A point on the ramp's inner edge line (its 4 ft left shoulder side).
+static func _inner_line(m: Dictionary, s: float) -> Vector3:
+	var q := LotPlanner.point_at(m.ramp_out, s)
+	return q[0] + _inward(m, q[1]) * _ramp_inner()
+
+
+## Ramp centre to its inner edge line.
+static func _ramp_inner() -> float:
+	return RoadStyle.half_width(RoadStyle.Type.RAMP) - 1.2
 
 
 static func _edge_offset() -> float:
@@ -144,35 +248,6 @@ static func _strip(st: SurfaceTool, pts: PackedVector3Array, sgn: float, from: f
 		RoadMesh.add_strip(st, pts, from, to, y)
 	else:
 		RoadMesh.add_strip(st, pts, -to, -from, y)
-
-
-## A strip whose outer edge narrows from `width` to 0 over its length.
-static func _taper(st: SurfaceTool, pts: PackedVector3Array, sgn: float, inner: float, base: float,
-		width: float, y: float, line := false) -> void:
-	if pts.size() < 2:
-		return
-	var length := RoadNetwork.polyline_length(pts)
-	var d := 0.0
-	for i in pts.size() - 1:
-		var d1 := d + pts[i].distance_to(pts[i + 1])
-		var w0 := width * (1.0 - d / length)
-		var w1 := width * (1.0 - d1 / length)
-		var s0 := _side_at(pts, i) * sgn
-		var s1 := _side_at(pts, i + 1) * sgn
-		var lift := Vector3(0, y, 0)
-		var o0: float = base + (LANE * (1.0 - d / length) if line else w0)
-		var o1: float = base + (LANE * (1.0 - d1 / length) if line else w1)
-		var i0: float = o0 - 0.15 if line else inner
-		var i1: float = o1 - 0.15 if line else inner
-		var a := pts[i] + lift + s0 * i0
-		var b := pts[i] + lift + s0 * o0
-		var c := pts[i + 1] + lift + s1 * i1
-		var e := pts[i + 1] + lift + s1 * o1
-		for v in ([a, b, c, b, e, c] if sgn > 0.0 else [a, c, b, b, c, e]):
-			st.set_normal(Vector3.UP)
-			st.set_uv(Vector2.ZERO)
-			st.add_vertex(v)
-		d = d1
 
 
 static func _signed(pts: PackedVector3Array, sgn: float) -> PackedVector3Array:
