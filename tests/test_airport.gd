@@ -12,9 +12,9 @@ func _init() -> void:
 	# A runway across the road can't open; one beside it can.
 	var across := Airports.from_cmd({"pos": [0, 0], "dir": [0, 1], "side": 1})
 	_check(sim.airports.problem(sim, across, corr).begins_with("In the way"), "a road across the runway blocks it")
-	var far := Airports.from_cmd({"pos": [0, -900], "dir": [1, 0], "side": 1})
+	var far := Airports.from_cmd({"pos": [0, 400], "dir": [1, 0], "side": -1})
 	_check(sim.airports.problem(sim, far, corr).begins_with("Needs a road"), "needs a road near its hangars")
-	var cmd := {"type": "place_airport", "pos": [0, -150], "dir": [1, 0], "side": 1}
+	var cmd := {"type": "place_airport", "pos": [0, 150], "dir": [1, 0], "side": -1}
 	_check(sim.airports.problem(sim, Airports.from_cmd(cmd), corr) == "", "beside the road it can open")
 	var money := sim.economy.money
 	_check(sim.apply(cmd), "airport placed")
@@ -25,12 +25,12 @@ func _init() -> void:
 	_check(Airports.runway_name(a) == "9/27", "an east-west runway is 9/27 (got %s)" % Airports.runway_name(a))
 	# FAA sizes: 2,500 ft runway, protection zones off both ends.
 	_check(absf(Airports.half_len(0) * 2.0 - 762.0) < 1.0, "grass strip is 2,500 ft")
-	_check(sim.airports.covers(Vector3(Airports.half_len(0) + 200.0, 0, -150)), "protection zone past the runway end")
-	_check(not sim.airports.owns(Vector3(Airports.half_len(0) + 200.0, 0, -150)), "but the airport doesn't own it")
+	_check(sim.airports.covers(Vector3(Airports.half_len(0) + 200.0, 0, 150)), "protection zone past the runway end")
+	_check(not sim.airports.owns(Vector3(Airports.half_len(0) + 200.0, 0, 150)), "but the airport doesn't own it")
 	for key in sim.lots:
 		_check(not sim.airports.covers(sim.lots[key].pos), "no lots on airport land")
 	# A farm nearby brings a crop duster that sprays its fields in season.
-	var fid := sim.farms.add_farm(Vector3(900, 0, 120), Vector3(0, 0, -1), "corn", [])
+	var fid := sim.farms.add_farm(Vector3(900, 0, -120), Vector3(0, 0, 1), "corn", [])
 	for x in 6:
 		for y in range(1, 5):
 			sim.farms.farms[fid].cells.append(Vector2i(x, y))
@@ -70,7 +70,7 @@ func _init() -> void:
 	_check(info.title.ends_with("Field") and info.rows.size() > 5, "selection panel describes it")
 	# The road wins: a road across the strip closes it and pays it back.
 	money = sim.economy.money
-	sim.apply({"type": "build_road", "start": [0, -400], "ctrl": [0, -300], "end": [0, -130]})
+	sim.apply({"type": "build_road", "start": [0, 400], "ctrl": [0, 300], "end": [0, 130]})
 	_check(sim.airports.sites.is_empty(), "a road across the runway closes the airport")
 	print("ALL TESTS PASSED" if _fails == 0 else "%d FAILED" % _fails)
 	quit(1 if _fails > 0 else 0)

@@ -22,7 +22,7 @@ const ROOF := Color(0.45, 0.2, 0.17)
 
 var sim: CitySim
 var frac := Callable()  # how far through the current tick, 0 to 1
-var _sites := {}   # airport id -> MeshInstance3D
+var _sites := {}   # airport id -> Node3D
 var _planes := {}  # plane id -> MeshInstance3D
 var _paths := {}   # plane id -> [flight start tick, path]
 var _plane_meshes := {}
@@ -80,7 +80,7 @@ func _draw_plan() -> void:
 			var z := Airports.rpz(a, t, end)
 			AirportTool._fill(st, z, Color(col, 0.05), 0.3)
 			AirportTool._outline(st, z, Color(col, 0.5), 0.32, 1.0 + t)
-	_plan.mesh = st.commit()
+	_plan.mesh = Terrain.drape(st.commit(), true, 25.0)
 
 
 func _rebuild() -> void:
@@ -99,9 +99,12 @@ static func _key(a: Dictionary) -> String:
 	return "%d:%d" % [a.tier, a.drive.size()]
 
 
-func _site(a: Dictionary) -> MeshInstance3D:
+func _site(a: Dictionary) -> Node3D:
+	# Flat pieces bend over the land; solid ones stand on it.
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var solid := SurfaceTool.new()
+	solid.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var k := Airports.tier(a.tier)
 	var half := Airports.half_len(a.tier)
 	var hw: float = k.width * Airports.FT * 0.5
@@ -126,7 +129,7 @@ func _site(a: Dictionary) -> MeshInstance3D:
 		for i in n + 1:
 			var u := -half + i * (half * 2.0 / n)
 			for s in [-1.0, 1.0]:
-				_box(st, Transform3D(basis, Airports.at(a, u, s * (hw + 1.0)) + Vector3(0, 0.25, 0)),
+				_box(solid, Transform3D(basis, Airports.at(a, u, s * (hw + 1.0)) + Vector3(0, 0.25, 0)),
 					Vector3(0.6, 0.5, 1.4), PAINT)
 	else:
 		flat.call(-half, half, -hw, hw, 0.08, ASPHALT)
@@ -153,24 +156,24 @@ func _site(a: Dictionary) -> MeshInstance3D:
 	var hangar_len := bays * 13.0
 	var face := Basis.looking_at(right(a) * -a.side, Vector3.UP)
 	var hpos := Airports.at(a, side.x * 0.5 - hangar_len * 0.5 - 6.0, hangar_v)
-	_box(st, Transform3D(face, hpos + Vector3(0, 2.6, 0)), Vector3(hangar_len, 5.2, 18.0), METAL)
-	_box(st, Transform3D(face, hpos + Vector3(0, 5.5, 0)), Vector3(hangar_len + 0.6, 0.6, 18.6), METAL.darkened(0.25))
+	_box(solid, Transform3D(face, hpos + Vector3(0, 2.6, 0)), Vector3(hangar_len, 5.2, 18.0), METAL)
+	_box(solid, Transform3D(face, hpos + Vector3(0, 5.5, 0)), Vector3(hangar_len + 0.6, 0.6, 18.6), METAL.darkened(0.25))
 	for i in bays:  # a door per bay, facing the runway
 		var du := -hangar_len * 0.5 + 6.5 + i * 13.0
-		_box(st, Transform3D(face, hpos + face.x * du + face.z * -9.05 + Vector3(0, 2.0, 0)),
+		_box(solid, Transform3D(face, hpos + face.x * du + face.z * -9.05 + Vector3(0, 2.0, 0)),
 			Vector3(11.0, 4.0, 0.2), METAL.darkened(0.12))
 	var office := Airports.at(a, -side.x * 0.5 + 14.0, (rofa + side.y - 12.0) * a.side)
-	_box(st, Transform3D(face, office + Vector3(0, 1.6, 0)), Vector3(12.0, 3.2, 8.0), Color(0.86, 0.84, 0.78))
-	_box(st, Transform3D(face, office + Vector3(0, 3.5, 0)), Vector3(13.0, 0.6, 9.0), ROOF)
+	_box(solid, Transform3D(face, office + Vector3(0, 1.6, 0)), Vector3(12.0, 3.2, 8.0), Color(0.86, 0.84, 0.78))
+	_box(solid, Transform3D(face, office + Vector3(0, 3.5, 0)), Vector3(13.0, 0.6, 9.0), ROOF)
 	var tank := Airports.at(a, -side.x * 0.5 + 30.0, (rofa + side.y - 10.0) * a.side)
-	_box(st, Transform3D(basis, tank + Vector3(0, 0.8, 0)), Vector3(1.6, 1.6, 4.0), Color(0.3, 0.3, 0.3))
-	_box(st, Transform3D(basis, tank + Vector3(0, 2.2, 0)), Vector3(2.4, 1.8, 6.0), Color(0.92, 0.92, 0.9))
+	_box(solid, Transform3D(basis, tank + Vector3(0, 0.8, 0)), Vector3(1.6, 1.6, 4.0), Color(0.3, 0.3, 0.3))
+	_box(solid, Transform3D(basis, tank + Vector3(0, 2.2, 0)), Vector3(2.4, 1.8, 6.0), Color(0.92, 0.92, 0.9))
 	# Windsock beside the runway's middle, on the building side.
 	var sock := Airports.at(a, 0.0, (hw + 25.0) * a.side)
-	_box(st, Transform3D(Basis.IDENTITY, sock + Vector3(0, 3.0, 0)), Vector3(0.15, 6.0, 0.15), PAINT)
+	_box(solid, Transform3D(Basis.IDENTITY, sock + Vector3(0, 3.0, 0)), Vector3(0.15, 6.0, 0.15), PAINT)
 	var wind := Airports.bearing_dir(Airports.WIND_FROM + 180.0)
 	var sb := Basis.looking_at(wind, Vector3.UP)
-	_box(st, Transform3D(sb, sock + Vector3(0, 5.6, 0) + wind * 1.2), Vector3(0.7, 0.7, 2.4), Color(1.0, 0.45, 0.1))
+	_box(solid, Transform3D(sb, sock + Vector3(0, 5.6, 0) + wind * 1.2), Vector3(0.7, 0.7, 2.4), Color(1.0, 0.45, 0.1))
 	# Access road out to the public road.
 	if a.drive.size() >= 2:
 		st.set_color(LANE)
@@ -182,12 +185,15 @@ func _site(a: Dictionary) -> MeshInstance3D:
 			for j in [0, 1, 2, 0, 2, 3]:
 				st.set_normal(Vector3.UP)
 				st.add_vertex(q[j] + Vector3(0, 0.12, 0))
-	var mi := MeshInstance3D.new()
-	mi.mesh = st.commit()
-	mi.material_override = _mat
-	mi.set_meta("key", _key(a))
-	add_child(mi)
-	return mi
+	var root := Node3D.new()
+	root.set_meta("key", _key(a))
+	add_child(root)
+	for entry in [[st, 8.0], [solid, 0.0]]:
+		var mi := MeshInstance3D.new()
+		mi.mesh = Terrain.drape((entry[0] as SurfaceTool).commit(), true, entry[1])
+		mi.material_override = _mat
+		root.add_child(mi)
+	return root
 
 
 static func right(a: Dictionary) -> Vector3:
@@ -287,4 +293,5 @@ func _process(_delta: float) -> void:
 		var b := Basis.looking_at(flat.normalized(), Vector3.UP)
 		# Nose up in a climb, down on the glide path.
 		b = b.rotated(b.x, clampf(asin(clampf(fwd.y, -1.0, 1.0)), -0.35, 0.35))
-		mi.transform = Transform3D(b, pose[0])
+		var at: Vector3 = pose[0]
+		mi.transform = Transform3D(b, at + Vector3(0, Terrain.ground_y(at.x, at.z), 0))

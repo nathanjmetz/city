@@ -50,6 +50,9 @@ const TIERS := [
 		"rpz_out": 1750.0, "side": Vector2(2000, 800), "planes": 250, "code": "D-V",
 		"serves": "wide-body jets, overseas flights and cargo hubs"},
 ]
+## Extra end-to-end runway grade that grading can take out (a 4% rise over
+## a grass strip is about 30 m of cut and fill: a big but ordinary job).
+const GRADE_CUT := 0.02
 ## The tiers built so far; the rest come in later steps.
 const MAX_TIER := 1
 ## Wind most often blows from the south-west in southern Indiana, so planes
@@ -335,10 +338,43 @@ func blockers(sim: CitySim, a: Dictionary, t: int, corr: Array, skip := -1) -> D
 			if _hits_any(clear, poly):
 				add.call("airports")
 				break
+	out.merge(ground(sim.terrain_offset, a, t))
 	if reserves != null:
 		for o in reserves.outlines:
 			if o.kind != "airport" and o.kind != "" and _hits_any(land, o.points):
 				add.call("reserved land")
+	return out
+
+
+## What the land itself has against an airport of size t here: a river or
+## lake on its land, ground too steep to build on, or a runway that would
+## climb so much end to end that no sensible earthwork could grade it to
+## the FAA's limit (AC 150/5300-13B: 2% for small planes, 1.5% for
+## airliners, after grading). Cut and fill takes care of up to GRADE_CUT
+## more.
+static func ground(offset: Vector2, a: Dictionary, t: int) -> Dictionary:
+	var out := {}
+	var k := tier(t)
+	var step := 30.0
+	var areas := [[half_len(t) + k.beyond * FT, 0.0, k.rofa * FT * 0.5],
+		[k.side.x * 0.5, (k.rofa * FT * 0.5 + k.side.y * 0.5) * a.side, k.side.y * 0.5]]
+	for area in areas:
+		var nu := ceili(area[0] * 2.0 / step)
+		var nv := ceili(area[2] * 2.0 / step)
+		for i in nu + 1:
+			for j in nv + 1:
+				var p := at(a, -area[0] + i * area[0] * 2.0 / nu, area[1] - area[2] + j * area[2] * 2.0 / nv)
+				var x: float = p.x + offset.x
+				var z: float = p.z + offset.y
+				if Terrain.water(x, z) > 0.2:
+					out["water"] = 1
+				elif Terrain.slope(x, z) > Terrain.MAX_BUILD_SLOPE:
+					out["steep ground"] = 1
+	var e0 := at(a, -half_len(t), 0.0)
+	var e1 := at(a, half_len(t), 0.0)
+	var rise := absf(Terrain.base(e1.x + offset.x, e1.z + offset.y) - Terrain.base(e0.x + offset.x, e0.z + offset.y))
+	if rise / (half_len(t) * 2.0) > (0.02 if t < 2 else 0.015) + GRADE_CUT:
+		out["steep ground"] = 1
 	return out
 
 
@@ -360,14 +396,15 @@ static func _point_in_any(polys: Array, q: Vector2) -> bool:
 static func describe_blockers(b: Dictionary) -> String:
 	var one := {"roads": "a road", "homes": "a home", "shops": "a shop", "factories": "a factory",
 		"service buildings": "a service building", "farmyards": "a farmyard", "companies": "a company yard",
-		"airports": "another airport", "warehouses": "a warehouse", "landfills": "a landfill",
-		"recycling centers": "a recycling center", "cemeteries": "a cemetery", "post offices": "the post office",
-		"parks": "a park", "campuses": "a campus", "reserved land": "land reserved for something else"}
+		"airports": "another airport", "water": "a river or lake", "steep ground": "ground too steep to grade",
+		"warehouses": "a warehouse", "landfills": "a landfill", "recycling centers": "a recycling center",
+		"cemeteries": "a cemetery", "post offices": "the post office", "parks": "a park", "campuses": "a campus",
+		"reserved land": "land reserved for something else"}
 	var parts := []
 	var keys := b.keys()
 	keys.sort()
 	for k in keys:
-		parts.append(one.get(k, k) if b[k] == 1 or k == "reserved land" else "%d %s" % [b[k], k])
+		parts.append(one.get(k, k) if b[k] == 1 or k in ["reserved land", "water", "steep ground"] else "%d %s" % [b[k], k])
 	return ", ".join(parts)
 
 

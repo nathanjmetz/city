@@ -33,7 +33,7 @@ func _setup() -> void:
 	sim.apply({"type": "clear"})
 	sim.economy.money = 20_000_000
 	sim.apply({"type": "build_road", "start": [-1500, 0], "ctrl": [0, 0], "end": [1500, 0]})
-	sim.apply({"type": "build_road", "start": [-200, 0], "ctrl": [-200, 300], "end": [-200, 600]})
+	sim.apply({"type": "build_road", "start": [-700, 0], "ctrl": [-700, -300], "end": [-700, -600]})
 	for x in range(-180, 200, 20):
 		sim.apply({"type": "paint_zone", "center": [x - 600, 20], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
 	var cam: CityCamera
@@ -45,13 +45,13 @@ func _setup() -> void:
 			tool = c
 	if mode == "plan":
 		tool.set_active(true)
-		tool._site = {"pos": Vector3(200, 0, -150), "dir": Vector3.RIGHT, "side": 1, "tier": 0}
+		tool._site = {"pos": Vector3(0, 0, 150), "dir": Vector3.RIGHT, "side": -1, "tier": 0}
 		tool._check()
 		tool._draw_plan()
 		tool.set_process(false)
 	else:
-		sim.apply({"type": "place_airport", "pos": [200, -150], "dir": [1, 0], "side": 1})
-		var fid := sim.farms.add_farm(Vector3(-500, 0, 200), Vector3(0, 0, -1), "corn", [])
+		sim.apply({"type": "place_airport", "pos": [0, 150], "dir": [1, 0], "side": -1})
+		var fid := sim.farms.add_farm(Vector3(-500, 0, -200), Vector3(0, 0, 1), "corn", [])
 		for x in range(-6, 7):
 			for y in range(1, 9):
 				sim.farms.farms[fid].cells.append(Vector2i(x, y))
@@ -69,5 +69,5 @@ func _setup() -> void:
 			for c in _main.get_children():
 				if c is SelectTool:
 					c.select({"type": "airport", "id": sim.airports.sites.keys()[0]})
-	cam.look_at_point(Vector3(float(args[5]), 0, float(args[6])) if args.size() >= 7 else Vector3(200, 0, -150))
+	cam.look_at_point(Vector3(float(args[5]), 0, float(args[6])) if args.size() >= 7 else Vector3(0, 0, 150))
 	cam.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))

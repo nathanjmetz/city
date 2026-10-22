@@ -125,7 +125,7 @@ func _process(delta: float) -> void:
 		_last_key = key
 		_wait = 0.12
 		_check()
-	_draw_plan()
+		_draw_plan()
 
 
 ## What's in the way of each size here (the slow part, so not every frame).
@@ -164,7 +164,7 @@ func _draw_plan() -> void:
 			_outline(st, z, Color(col, 0.7), y + 0.02, 1.5 + t * 2.0)
 		var tip := Airports.at(_site, Airports.half_len(t) + Airports.TIERS[t].beyond * Airports.FT, 0.0)
 		var l := _labels[t]
-		l.position = tip + Vector3(0, 6, 0)
+		l.position = tip + Vector3(0, 6.0 + Terrain.ground_y(tip.x, tip.z), 0)
 		l.modulate = col
 		l.text = "%s · %s ft%s" % [Airports.TIERS[t].name, CitySim.money_text(int(Airports.TIERS[t].runway)),
 			"" if t == 0 else (" · room" if _status[t].is_empty() else " · blocked")]
@@ -174,7 +174,7 @@ func _draw_plan() -> void:
 	var hw: float = k.width * Airports.FT * 0.5
 	_fill(st, Airports._rect(_site, -Airports.half_len(0), Airports.half_len(0), -hw, hw),
 		Color(0.35, 0.75, 0.3, 0.75) if _ok else Color(BAD, 0.6), 0.6)
-	_mesh.mesh = st.commit()
+	_mesh.mesh = Terrain.drape(st.commit(), true, 25.0)
 	_mesh.visible = true
 	var drive := Airports.make_drive(sim.network, _site, 0)
 	_lane.visible = drive.size() >= 2
@@ -183,7 +183,7 @@ func _draw_plan() -> void:
 		ls.begin(Mesh.PRIMITIVE_TRIANGLES)
 		ls.set_color(Color(1.0, 0.9, 0.4, 0.9))
 		RoadMesh.add_strip(ls, PackedVector3Array(drive), -Farms.DRIVE_WIDTH * 0.5, Farms.DRIVE_WIDTH * 0.5, 0.7)
-		_lane.mesh = ls.commit()
+		_lane.mesh = Terrain.drape(ls.commit(), true, 8.0)
 
 
 static func _fill(st: SurfaceTool, poly: PackedVector2Array, col: Color, y: float) -> void:
