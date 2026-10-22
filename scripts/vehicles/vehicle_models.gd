@@ -23,6 +23,8 @@ const TAIL := Color(0.55, 0.03, 0.03, 0.6)
 const BEACON_RED := Color(1.0, 0.06, 0.04, 0.7)
 const BEACON_BLUE := Color(0.08, 0.25, 1.0, 0.7)
 const BEACON_AMBER := Color(1.0, 0.55, 0.05, 0.8)
+const USPS_BLUE := Color(0.08, 0.17, 0.42, 0.4)
+const USPS_RED := Color(0.75, 0.08, 0.12, 0.4)
 const WHITE := Color(0.92, 0.92, 0.91, 0.4)
 const STEEL := Color(0.62, 0.63, 0.64, 0.2)
 const DARK := Color(0.16, 0.16, 0.17, 0.4)
@@ -46,6 +48,7 @@ const ARTIC := {
 	"grain_truck": {"cab": "tractor_day", "trailer": "trailer_hopper", "hitch": 5.0, "pin": 0.9, "axle": 14.4},
 	"log_truck": {"cab": "tractor_day", "trailer": "trailer_logs", "hitch": 5.0, "pin": 0.9, "axle": 13.4},
 	"ore_truck": {"cab": "tractor_day", "trailer": "trailer_end_dump", "hitch": 5.0, "pin": 0.9, "axle": 12.6},
+	"mail_semi": {"cab": "tractor_day", "trailer": "trailer_usps", "hitch": 5.0, "pin": 0.9, "axle": 14.4},
 	"tanker": {"cab": "tractor_day", "trailer": "trailer_tank", "hitch": 5.0, "pin": 0.9, "axle": 13.4},
 }
 ## Where the (rear) axle that steers the body sits, metres behind the front.
@@ -54,7 +57,7 @@ const AXLE := {
 	"minivan": 4.0, "sports": 3.8, "motorcycle": 1.8, "van": 4.4, "delivery_van": 5.3,
 	"box_truck": 7.9, "dump_truck": 6.7, "tow_truck": 5.2, "school_bus": 8.9, "city_bus": 9.2,
 	"garbage_truck": 7.3, "fire_engine": 7.4, "police": 3.9, "ambulance": 5.1, "tractor": 4.2,
-	"combine": 7.0, "tractor_sleeper": 6.4, "tractor_day": 4.8,
+	"combine": 7.0, "tractor_sleeper": 6.4, "mail_truck": 4.3, "rural_mail": 3.9, "tractor_day": 4.8,
 }
 
 var _st := SurfaceTool.new()
@@ -300,6 +303,32 @@ func _van() -> void:  # Ford Transit high roof
 	_wheels([1.1, 4.4], 0.37, 1.035, 0.24)
 	if not _lo:
 		_box(Vector3(1.04, 1.8, 3.0), Vector3(0.004, 0.45, 0.9), GLASS, true)
+
+
+## Oshkosh NGDV, the Postal Service's new carrier truck: short sloping hood,
+## tall body, big windshield, postal white with the red and blue stripe.
+func _mail_truck() -> void:
+	_van_body(5.4, 2.05, 2.35, 1.9, 2.9, PAINT)
+	_wheels([0.95, 4.3], 0.38, 1.025, 0.26)
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * 1.027, 1.05, 3.6), Vector3(0.004, 0.12, 3.4), USPS_RED)
+		_box(Vector3(s * 1.027, 0.92, 3.6), Vector3(0.004, 0.12, 3.4), USPS_BLUE)
+	if not _lo:
+		# Eagle badge on the side and the sliding door's window.
+		_box(Vector3(1.028, 2.1, 3.2), Vector3(0.004, 0.45, 0.6), USPS_BLUE, true)
+		_box(Vector3(1.028, 1.75, 1.5), Vector3(0.004, 0.5, 0.5), GLASS, true)
+
+
+## A rural carrier's own right-hand-drive Jeep Wrangler, with the roof
+## beacon and U.S. MAIL sign rural routes use.
+func _rural_mail() -> void:
+	_car({"L": 4.88, "W": 1.89, "H": 1.85, "clear": 0.28, "hood": 1.1, "belt": 1.16, "a": 1.55,
+		"b": 1.75, "c": 4.55, "e": 4.75, "tail": 1.16, "wr": 0.4, "axles": [0.95, 3.95], "c_pillar": false,
+		"grille": Color(0.06, 0.06, 0.06, 0.3)})
+	_box(Vector3(0, 1.9, 2.4), Vector3(0.25, 0.1, 0.18), BEACON_AMBER)
+	if not _lo:
+		_box(Vector3(0, 1.98, 3.3), Vector3(0.9, 0.26, 0.04), WHITE)
+		_cyl(Vector3(0, 1.28, 4.9), Vector3(0, 1.28, 5.05), 0.38, TIRE, 10)  # spare on the tailgate
 
 
 func _ambulance() -> void:  # Type III module on a Ford E-450 cutaway
@@ -575,6 +604,16 @@ func _trailer_box() -> void:
 			_box(Vector3(s * 1.304, 1.3, L * 0.5), Vector3(0.006, 0.05, L), Color(0.85, 0.2, 0.05, 0.4))
 		_box(Vector3(0, 2.6, L + 0.01), Vector3(0.03, 2.6, 0.01), STEEL)
 	_trailer_base(L, [13.9, 15.15])
+
+
+## A 53 ft USPS contract trailer: white with the blue and red stripe.
+func _trailer_usps() -> void:
+	_trailer_box()
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * 1.305, 3.2, 8.0), Vector3(0.006, 0.22, 14.0), USPS_BLUE)
+		_box(Vector3(s * 1.305, 2.98, 8.0), Vector3(0.006, 0.1, 14.0), USPS_RED)
+		if not _lo:
+			_box(Vector3(s * 1.306, 2.3, 3.0), Vector3(0.006, 0.9, 1.6), USPS_BLUE)
 
 
 func _trailer_hopper() -> void:  # 42 ft grain hopper (Wilson, Timpte)

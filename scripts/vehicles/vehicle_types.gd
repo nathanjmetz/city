@@ -34,6 +34,9 @@ const SPECS := {
 	"grain_truck":   {"len": 21.30, "width": 2.60, "height": 3.90, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"log_truck":     {"len": 21.00, "width": 2.60, "height": 3.80, "acc": 0.6, "brake": 2.0, "top_speed": 29.0, "pref": 0.93},
 	"ore_truck":     {"len": 20.00, "width": 2.60, "height": 3.60, "acc": 0.6, "brake": 2.0, "top_speed": 29.0, "pref": 0.93},
+	"mail_truck":    {"len": 5.40, "width": 2.05, "height": 2.90, "acc": 1.6, "brake": 2.8, "top_speed": 31.0, "pref": 0.95},
+	"rural_mail":    {"len": 4.88, "width": 1.89, "height": 1.85, "acc": 1.9, "brake": 3.0, "top_speed": 45.0, "pref": 0.97},
+	"mail_semi":     {"len": 21.00, "width": 2.60, "height": 4.10, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"tanker":        {"len": 20.50, "width": 2.60, "height": 3.60, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"flatbed":       {"len": 20.30, "width": 2.60, "height": 3.30, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"dump_truck":    {"len": 9.00, "width": 2.60, "height": 3.40, "acc": 0.9, "brake": 2.3, "top_speed": 29.0, "pref": 0.93},
@@ -91,6 +94,8 @@ const LIVERY := {
 	"city_bus": [[Color(0.93, 0.93, 0.92), 1.0]],
 	"fire_engine": [[Color(0.72, 0.04, 0.06), 1.0]],
 	"ambulance": [[Color(0.95, 0.95, 0.94), 1.0]],
+	"mail_truck": [[Color(0.95, 0.95, 0.94), 1.0]],     # postal white
+	"mail_semi": [[Color(0.92, 0.92, 0.91), 3.0], [Color(0.10, 0.22, 0.50), 2.0], [Color(0.65, 0.07, 0.07), 1.0]],
 	"police": [[Color(0.05, 0.05, 0.06), 1.0], [Color(0.93, 0.93, 0.92), 1.0]],
 	"garbage_truck": [[Color(0.93, 0.93, 0.92), 3.0], [Color(0.16, 0.36, 0.20), 1.0]],
 	"delivery_van": [[Color(0.93, 0.93, 0.92), 3.0], [Color(0.33, 0.22, 0.13), 1.0]],
