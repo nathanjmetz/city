@@ -52,6 +52,9 @@ func _spawn(id: int, h: Dictionary) -> Node3D:
 	var trees := []
 	for t in built[2]:
 		var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
-		trees.append([frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0]), t[1], t[2]])
+		var at := frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])
+		# A hub spans a lot of land, so each tree stands on its own patch of ground.
+		at.origin.y = Terrain.ground_y(at.origin.x, at.origin.z) + t[0].y
+		trees.append([at, t[1], t[2]])
 	_trees.set_trees("hub:%d" % id, trees)
 	return root
