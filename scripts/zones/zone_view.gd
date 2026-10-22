@@ -52,7 +52,7 @@ func _rebuild() -> void:
 		var edge := 0.75 if show_all else 0.0
 		_lot(st, lot.corners, Color(c, fill), Color(c, maxf(edge, fill + 0.2)))
 		any = true
-	_mesh.mesh = st.commit() if any else null
+	_mesh.mesh = Terrain.drape(st.commit(), true) if any else null
 
 
 ## A lot: a filled inner area and a thin border just inside its edge.

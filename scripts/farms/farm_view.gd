@@ -96,14 +96,14 @@ func _draw_fields() -> void:
 			var pts := PackedVector3Array()
 			for p in f.drive:
 				pts.append(p)
-			RoadMesh.add_strip(lanes, pts, -Farms.DRIVE_WIDTH * 0.5, Farms.DRIVE_WIDTH * 0.5, 0.05)
+			RoadMesh.add_strip(lanes, Terrain.densify(pts, 6.0), -Farms.DRIVE_WIDTH * 0.5, Farms.DRIVE_WIDTH * 0.5, 0.05)
 			any_lane = true
 	_fields.visible = any
 	if any:
-		_fields.mesh = st.commit()
+		_fields.mesh = Terrain.drape(st.commit(), true, 10.0)
 	_lanes.visible = any_lane
 	if any_lane:
-		_lanes.mesh = lanes.commit()
+		_lanes.mesh = Terrain.drape(lanes.commit(), true, 8.0)
 
 
 func _add_poly(st: SurfaceTool, f: Dictionary, poly: PackedVector2Array, y: float, col: Color) -> void:
@@ -143,20 +143,32 @@ func _farmstead(id: Variant, f: Dictionary) -> Node3D:
 	var root := Node3D.new()
 	root.set_meta("look", look)
 	add_child(root)
-	root.position = f.pos
+	root.position = Vector3(f.pos.x, Terrain.ground_y(f.pos.x, f.pos.z), f.pos.z)
 	root.basis = Basis.looking_at(f.dir, Vector3.UP)
 	var built := FarmBuilder.build_farmstead(hash(str(id)), look)
 	var house := MeshInstance3D.new()
 	house.mesh = built[0]
 	root.add_child(house)
+	# A footing under the yard, for farmsteads on a slope.
+	var footing := MeshInstance3D.new()
+	var cube := BoxMesh.new()
+	cube.size = Vector3(34, 3.0, 38)
+	footing.mesh = cube
+	footing.position = Vector3(0, -1.55, 0)
+	footing.material_override = _footing_mat()
+	footing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(footing)
 	var ground := MeshInstance3D.new()
-	ground.mesh = built[1]
+	# The yard's gravel and grass lie on the ground, following it.
+	ground.mesh = Terrain.drape_local(built[1], root.transform)
 	ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(ground)
 	var xf := Transform3D(root.basis, root.position)
 	var planted := []
 	for t in built[2]:
-		planted.append([xf * Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * t[3]), t[0]), t[1], t[2]])
+		var at := xf * Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * t[3]), t[0])
+		at.origin.y = Terrain.ground_y(at.origin.x, at.origin.z) + t[0].y
+		planted.append([at, t[1], t[2]])
 	# Shade trees along the lane, alternating sides, the same every time.
 	var drive: Array = f.drive
 	var k := 0
@@ -167,10 +179,21 @@ func _farmstead(id: Variant, f: Dictionary) -> Node3D:
 		var h := Farms._hash01(Vector2i(roundi(a.x), roundi(a.z)), 3)
 		var sp: int = TreeField.Species.OAK if h < 0.5 else TreeField.Species.MAPLE
 		var size := 0.9 + 0.35 * h
-		planted.append([Transform3D(Basis(Vector3.UP, h * TAU).scaled(Vector3.ONE * size), a + side), sp, TreeField.LEAF[sp]])
+		var spot := a + side
+		spot.y = Terrain.ground_y(spot.x, spot.z)
+		planted.append([Transform3D(Basis(Vector3.UP, h * TAU).scaled(Vector3.ONE * size), spot), sp, TreeField.LEAF[sp]])
 		k += 1
 	_trees.set_trees(str(id), planted)
 	root.scale = Vector3(1.0, 0.01, 1.0)
 	create_tween().tween_property(root, "scale", Vector3.ONE, 0.45) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	return root
+
+
+static var _footing: Material
+
+
+static func _footing_mat() -> Material:
+	if _footing == null:
+		_footing = Surfaces.concrete(Color(0.5, 0.48, 0.44))
+	return _footing

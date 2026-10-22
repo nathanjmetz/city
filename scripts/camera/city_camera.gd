@@ -31,6 +31,8 @@ var _goal_dist := 260.0
 var _rotating := false
 var _panning := false
 var _pan_moved := 0.0
+## Height of the land under the orbit point, eased.
+var _ground := NAN
 
 
 func _ready() -> void:
@@ -123,14 +125,14 @@ func fly_to(p: Vector3) -> void:
 
 
 ## Where the mouse ray meets the ground, or null if it points at the sky.
+## The point comes back on the map (y = 0, the sim's ground level), wherever
+## the hills put it on screen.
 func mouse_ground_point():
 	var mouse := get_viewport().get_mouse_position()
-	var from := camera.project_ray_origin(mouse)
-	var dir := camera.project_ray_normal(mouse)
-	if dir.y > -0.001:
+	var hit = Terrain.ray_hit(camera.project_ray_origin(mouse), camera.project_ray_normal(mouse))
+	if hit == null:
 		return null
-	var t := -from.y / dir.y
-	return from + dir * t
+	return Vector3(hit.x, 0.0, hit.z)
 
 
 ## The point on the ground the camera is looking at.
@@ -175,5 +177,12 @@ func _apply() -> void:
 		sin(_yaw) * cos(_pitch),
 		sin(_pitch),
 		cos(_yaw) * cos(_pitch)) * _dist
-	camera.global_position = _target + offset
-	camera.look_at(_target, Vector3.UP)
+	# Orbit the spot on the land itself, following the hills smoothly.
+	var ground := Terrain.ground_y(_target.x, _target.z)
+	_ground = ground if is_nan(_ground) else lerpf(_ground, ground, 0.2)
+	var aim := Vector3(_target.x, _ground, _target.z)
+	var pos := aim + offset
+	# Never dip into a hillside.
+	pos.y = maxf(pos.y, Terrain.ground_y(pos.x, pos.z) + 6.0)
+	camera.global_position = pos
+	camera.look_at(aim, Vector3.UP)

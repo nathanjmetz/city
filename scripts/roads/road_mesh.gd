@@ -136,8 +136,9 @@ static func _build_layers(pts: PackedVector3Array, layers: Array, inner: PackedV
 
 
 ## Bridge parts under any part of the road raised above the ground: deck
-## sides and underside, and a pier every 30 m.
-static func bridge(pts: PackedVector3Array, half: float, st: SurfaceTool) -> bool:
+## sides and underside, and a pier every 30 m. `ground` gives the height of
+## the land at a point (flat ground at 0 when not given).
+static func bridge(pts: PackedVector3Array, half: float, st: SurfaceTool, ground := Callable()) -> bool:
 	var any := false
 	var deck := 1.5
 	var since := 15.0
@@ -145,7 +146,9 @@ static func bridge(pts: PackedVector3Array, half: float, st: SurfaceTool) -> boo
 		var a := pts[i]
 		var b := pts[i + 1]
 		var seg := a.distance_to(b)
-		if minf(a.y, b.y) < 1.5:
+		var ga := 0.0 if not ground.is_valid() else float(ground.call(a.x, a.z))
+		var gb := 0.0 if not ground.is_valid() else float(ground.call(b.x, b.z))
+		if minf(a.y - ga, b.y - gb) < 1.5:
 			since = 15.0
 			continue
 		any = true
@@ -161,7 +164,10 @@ static func bridge(pts: PackedVector3Array, half: float, st: SurfaceTool) -> boo
 		if since >= 30.0:
 			since = 0.0
 			var mid := a.lerp(b, 0.5)
-			add_box(st, Vector3(mid.x, (mid.y - deck) * 0.5, mid.z), Vector3(1.4, mid.y - deck, half * 1.2),
+			# Piers stand on the river bed (or the land), a little below it.
+			var foot := minf(ga, gb) - 1.0 if ground.is_valid() else 0.0
+			var top := mid.y - deck
+			add_box(st, Vector3(mid.x, (top + foot) * 0.5, mid.z), Vector3(1.4, top - foot, half * 1.2),
 				atan2(b.x - a.x, b.z - a.z))
 	return any
 

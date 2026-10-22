@@ -63,7 +63,7 @@ func _process(_delta: float) -> void:
 		var sp: Sprite3D = _pool[i]
 		sp.visible = i < wanted.size()
 		if sp.visible:
-			sp.position = wanted[i][0]
+			sp.position = Terrain.lift(wanted[i][0])
 			sp.texture = _tex[wanted[i][1]]
 
 

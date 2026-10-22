@@ -119,7 +119,7 @@ func _move_cursor(player_id: String, p: Vector2) -> void:
 		node.add_child(tag)
 		add_child(node)
 		_cursors[player_id] = node
-	var target := _to_world(p) + Vector3(0, 0.6, 0)
+	var target := Terrain.lift(_to_world(p)) + Vector3(0, 0.6, 0)
 	var node: Node3D = _cursors[player_id]
 	var tw := create_tween()
 	tw.tween_property(node, "position", target, 1.0 / CURSOR_RATE)

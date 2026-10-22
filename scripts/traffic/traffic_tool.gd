@@ -98,7 +98,7 @@ func _process(delta: float) -> void:
 	_ring.visible = node != -1
 	if node != -1:
 		var r := RoadStyle.half_width(sim.network.widest_at(node)) + 3.0
-		_ring.position = sim.network.nodes[node] + Vector3(0, 0.4, 0)
+		_ring.position = Terrain.lift(sim.network.nodes[node]) + Vector3(0, 0.4, 0)
 		_ring.scale = Vector3(r, 1.0, r)
 
 

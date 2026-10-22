@@ -83,6 +83,12 @@ Players on the web preview need a secure address (`wss://`), so put the server b
 
 How it stays in sync: the server owns the real region. Players send commands for their own city only; every tick (10 a second) the server applies what arrived, steps every city, and sends that tick to everyone, so every copy runs identically. Every 5 seconds players compare a checksum with the server and fetch a fresh copy if theirs drifted.
 
+## The land
+
+The map is a real place: the White River valley around Petersburg, Indiana, built from USGS elevation data and ESA land cover. Your town starts on a bluff above the river, with rolling farmland, wooded hills and creek bottoms, and old strip-mine lakes. Resources sit where they really are: rich soil in the river bottoms, coal under the uplands, oil in the Illinois Basin's pools to the south-west, and timber in the real woods. The land streams in around the camera, and past the real 32 km square it carries on as a mirror image, so it never ends.
+
+Roads follow the land, graded smooth, and cross water on bridges by themselves. Nothing is built in the water or on slopes over 25%. Sources and licenses are in `terrain/LICENSES.md`; `python3 tools/terrain/build_region.py` rebuilds the data.
+
 ## Sound
 
 Everything you hear is placed in the world. Each car carries its own engine sound (higher as it speeds up), homes have birds by day and crickets at night, shops have rooftop fans, factories hum, utilities buzz and farm fields rustle. Only the sources nearest the camera play, and they get quieter with distance, so you hear what you are looking at. Zoomed out, you hear wind and the far-off hum of the traffic in view. Interface sounds are wooden mallets and a plucked guitar.
@@ -105,6 +111,8 @@ All sounds are built in code by `tools/audio/make_assets.py` (`python3 tools/aud
 | `scripts/buildings/building_view.gd` | Draws placeholder homes, shops and factories. |
 | `scripts/tools/zone_tool.gd` | The zone brush. |
 | `scripts/camera/city_camera.gd` | The orbit camera. |
+| `scripts/terrain/` | The land: `terrain.gd` (heights, water, cover and resources from the baked real data), `terrain_view.gd` (streamed ground and water chunks, grading under roads), `terrain_forest.gd` (the woods). |
+| `terrain/`, `tools/terrain/` | The baked real-world map data and the script that builds it. |
 | `scripts/tools/road_tool.gd` | Mouse tools for drawing and bulldozing. |
 | `scripts/ui/hud.gd` | Toolbar and stats. |
 | `scripts/shell/` | The title screen, pause menu, save slots (`session.gd`, the Session autoload) and shared scenery. |

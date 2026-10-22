@@ -45,6 +45,13 @@ var industry := Industry.new()
 var logistics := Logistics.new()
 ## Land saved for farming or an industry: no roads or zoning on it.
 var reserves := Reserves.new()
+## Where this city sits in the shared region (its own coordinates start at
+## 0): the land under it is read there. 0 in solo play.
+var terrain_offset := Vector2.ZERO:
+	set(v):
+		terrain_offset = v
+		services.terrain_offset = v
+		_lots_dirty = true
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -467,6 +474,8 @@ func farmhouse_problem(pos: Vector3, dir: Vector3) -> String:
 	for sgn in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
 		var p: Vector3 = pos + side * Farms.FARMHOUSE_SIZE.x * 0.5 * sgn.x + dir * Farms.FARMHOUSE_SIZE.y * 0.5 * sgn.y
 		poly.append(Vector2(p.x, p.z))
+	if not land_ok(pos, Farms.FARMHOUSE_SIZE.length() * 0.5):
+		return "Can't build in the water or on a slope that steep."
 	if not farms.reserved_ok(pos):
 		return "That land is reserved for %s." % Reserves.KINDS[reserves.kind_at(pos)]
 	if farm_drive(pos, dir).is_empty():
@@ -571,7 +580,7 @@ func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
 		pts.append(mid.lerp(Vector3(c.x, 0.0, c.y), 0.8))
 	if ok:
 		for p in pts:
-			if services.covers(p) or farms.covers(p) or industry.covers(p) or farms.field_at(p) != -1:
+			if services.covers(p) or farms.covers(p) or industry.covers(p) or farms.field_at(p) != -1 or not land_ok(p):
 				ok = false
 	if ok:
 		for key2 in lots:
@@ -690,6 +699,8 @@ func _refresh() -> void:
 			for p in [lot.pos, lot.front, lot.zone_pt]:
 				blocked = blocked or services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) \
 					or reserves.kind_at(p) != ""
+			# No lots in the water or on ground too steep to build on.
+			blocked = blocked or not land_ok(lot.pos, LotPlanner.FRONTAGE * 0.5)
 			if not blocked:
 				lots[lot.key] = lot
 		_usable_cache.clear()
@@ -703,6 +714,12 @@ func _refresh() -> void:
 			removed = true
 	if removed:
 		buildings_changed.emit()
+
+
+## True when the land at a point (and `radius` around it) is dry and gentle
+## enough to build on.
+func land_ok(p: Vector3, radius := 0.0) -> bool:
+	return Terrain.buildable(p.x + terrain_offset.x, p.z + terrain_offset.y, radius)
 
 
 ## Why a road can't be built under real US road rules, or "" if it can.

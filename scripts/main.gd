@@ -23,7 +23,8 @@ func _ready() -> void:
 		sim.send_command = Session.client.send_command
 	sim.require_utilities = true
 	add_child(SkyLight.new())
-	add_child(Ground.new())
+	var terrain := TerrainView.new()
+	add_child(terrain)
 
 	var roads := RoadView.new()
 	add_child(roads)
@@ -67,6 +68,17 @@ func _ready() -> void:
 
 	var cam := CityCamera.new()
 	add_child(cam)
+	terrain.setup(cam.camera, sim.network)
+	var forest := TerrainForest.new()
+	forest.setup(cam.camera)
+	# Woods clear off farm fields, farmyards and service sites, and grow back
+	# when those go.
+	forest.blocked = func(x: float, z: float) -> bool:
+		var p := Vector3(x, 0.0, z)
+		return sim.farms.field_at(p) != -1 or sim.farms.covers(p) or sim.services.covers(p)
+	terrain.graded.connect(forest.refresh)
+	sim.farms_changed.connect(forest.refresh_soon)
+	add_child(forest)
 
 	var audio := CityAudio.new()
 	audio.setup(sim, cam.camera, func(): return _tick_time * CitySim.TICKS_PER_SECOND)

@@ -51,7 +51,7 @@ func _ready() -> void:
 	env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
 	env.fog_light_color = HAZE
 	env.fog_light_energy = 1.0
-	env.fog_density = 0.00045
+	env.fog_density = 0.00025
 	env.fog_sun_scatter = 0.15
 	env.fog_sky_affect = 0.25
 	# AgX mutes colour, so bring saturation and contrast back up to photo levels.

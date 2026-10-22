@@ -72,4 +72,4 @@ func _rebuild() -> void:
 			for k in [0, 1, 2, 2, 1, 3]:
 				st.add_vertex(q[k])
 			any = true
-	mesh = st.commit() if any else null
+	mesh = Terrain.drape(st.commit(), false, 8.0) if any else null
