@@ -22,17 +22,25 @@ func _init() -> void:
 	road.material_override = Surfaces.asphalt()
 	road.position = Vector3(0, 0.09, -8.4)
 	world.add_child(road)
+	var trees := TreeField.new()
+	world.add_child(trees)
 	for i in 5:
 		var meshes: Array
 		match kind:
 			"shop": meshes = CommercialBuilder.build_shop(seed * 100 + i, 3.9)
 			"factory": meshes = CommercialBuilder.build_factory(seed * 100 + i, 3.9)
 			_: meshes = HouseBuilder.build(seed * 100 + i, 3.9)
-		for m in meshes:
+		var at := Vector3((i - 2) * 20.0, 0, 0)
+		for m in meshes.slice(0, 2):
 			var mi := MeshInstance3D.new()
 			mi.mesh = m
-			mi.position = Vector3((i - 2) * 20.0, 0, 0)
+			mi.position = at
 			world.add_child(mi)
+		var planted := []
+		for t in meshes[2]:
+			var xf := Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * t[3]), at + t[0])
+			planted.append([xf, t[1], t[2]])
+		trees.set_trees(str(i), planted)
 	var cam := Camera3D.new()
 	cam.fov = 50.0
 	world.add_child(cam)
