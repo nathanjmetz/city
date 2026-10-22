@@ -166,7 +166,7 @@ func add(kind: String, pos: Vector3, dir: Vector3, tick: int) -> int:
 	var id := _next_id
 	_next_id += 1
 	var h := draft(kind, pos, dir)
-	h.merge({"built": tick, "scar": 0.0, "received": 0.0, "want": 0, "short": 0, "quiet": 0, "dev": [],
+	h.merge({"since": tick, "scar": 0.0, "received": 0.0, "want": 0, "short": 0, "quiet": 0, "built": [],
 		"boxed": false, "ver": 0})
 	hubs[id] = h
 	version += 1
@@ -264,18 +264,16 @@ func monthly_cost() -> int:
 		var s: Dictionary = Balance.WASTE_SITES[h.kind]
 		var size := 1.0 + Balance.HUB_PIECE_UPKEEP * extra_pieces(h)
 		total += (float(s.upkeep) - sales(h)) * size
-		for key in h.dev:
-			total += float(Balance.HUB_DEVELOPMENTS[key].upkeep)
+		for node in tree(h):
+			if node.id in h.built:
+				total += float(node.get("upkeep", 0))
 	return roundi(total)
 
 
 ## What a recycling hub sells a month (before its size), with any extra
 ## sorting lines.
 static func sales(h: Dictionary) -> float:
-	var lift := 1.0
-	for key in h.dev:
-		lift += float(Balance.HUB_DEVELOPMENTS[key].get("sales", 0.0))
-	return float(Balance.WASTE_SITES[h.kind].get("sales", 0)) * lift
+	return float(Balance.WASTE_SITES[h.kind].get("sales", 0)) * Agency.effect(h, tree(h), "sales*")
 
 
 # --- Land value ---------------------------------------------------------------
@@ -288,11 +286,11 @@ func value_factor(p: Vector3) -> float:
 		var h: Dictionary = hubs[id]
 		var d := distance(h, p)
 		total += _effect(h.kind, d)
-		for key in h.dev:
-			var dv: Dictionary = Balance.HUB_DEVELOPMENTS[key]
-			if dv.has("value"):
-				var reach := float(Balance.WASTE_SITES[h.kind].reach) + float(dv.reach)
-				total += float(dv.value) * maxf(0.0, 1.0 - d / reach)
+		for node in tree(h):
+			var fx: Dictionary = node.get("effects", {})
+			if node.id in h.built and fx.has("value"):
+				var reach := float(Balance.WASTE_SITES[h.kind].reach) + float(fx.reach)
+				total += float(fx.value) * maxf(0.0, 1.0 - d / reach)
 		if h.scar > 0.0:
 			total += _effect("landfill", d) * h.scar / Balance.LANDFILL_RECOVERY_DAYS
 	return clampf(1.0 + total, 0.5, 1.5)
@@ -561,81 +559,121 @@ func _stuck(sim: CitySim, t: Dictionary) -> void:
 # --- Development tree --------------------------------------------------------------
 # Brawn (2026-10-22): each hub has its own tree of buildings and options,
 # unlocked by what the town can do and what is around it, in town and in
-# neighboring towns (Balance.HUB_DEVELOPMENTS).
+# neighboring towns. The hub's leader picks from it on its own, through the
+# shared Agency API (Balance.HUB_TREES).
 
 ## landfill, recycling or cemetery.
 static func family(kind: String) -> String:
 	return "recycling" if kind.begins_with("recycling") else kind
 
 
-## The options this hub's tree offers, built or not, in order. A recycling
-## centre on an old landfill keeps the landfill's options (a capped
-## landfill still makes gas).
-static func dev_options(h: Dictionary) -> Array:
-	var out := []
-	for key in Balance.HUB_DEVELOPMENTS:
-		var f: String = Balance.HUB_DEVELOPMENTS[key]["for"]
-		if f == family(h.kind) or (f == "landfill" and h.get("capped", false)):
-			out.append(key)
+## This hub's whole tree, built or not. A recycling centre on an old
+## landfill keeps the landfill's tree too (a capped landfill still makes gas).
+static func tree(h: Dictionary) -> Array:
+	var out: Array = Balance.HUB_TREES[family(h.kind)].duplicate()
+	if h.get("capped", false) and family(h.kind) != "landfill":
+		out.append_array(Balance.HUB_TREES.landfill)
 	return out
 
 
-## Why this hub can't add `key` yet, in a few plain words, or "".
-func dev_problem(sim: CitySim, id: int, key: String) -> String:
-	if not hubs.has(id) or not key in dev_options(hubs[id]):
-		return "not for this site"
-	var h: Dictionary = hubs[id]
-	if key in h.dev:
-		return "built"
-	var dv: Dictionary = Balance.HUB_DEVELOPMENTS[key]
-	var n: Dictionary = dv.needs
-	if n.has("pieces") and h.cells.size() < int(n.pieces):
-		return "needs a bigger site (%d of %d pieces)" % [h.cells.size(), int(n.pieces)]
-	if n.has("tons") and h.received / 2000.0 < float(n.tons):
-		return "needs %s tons in the mound" % CitySim.money_text(int(n.tons))
-	if n.has("level") and (h.kind == "landfill" or h.kind == "cemetery" or int(str(h.kind).substr(10)) < int(n.level)):
-		return "needs the %s" % KINDS["recycling_%d" % int(n.level)].name.to_lower()
-	if n.has("dev") and not str(n.dev) in h.dev:
-		return "needs the %s first" % Balance.HUB_DEVELOPMENTS[n.dev].name.to_lower()
-	if n.has("farms") and sim.farms.farms.size() < int(n.farms):
-		return "needs a farm in town to buy it"
-	if n.has("factories") and sim.count_buildings(ZoneMap.Zone.INDUSTRIAL) < int(n.factories):
-		return "needs %d factories in town" % int(n.factories)
-	if n.has("school"):
-		var school := false
-		for sid in sim.services.buildings:
-			school = school or sim.services.buildings[sid].kind == Services.Kind.SCHOOL
-		if not school:
-			return "needs a school for trained workers"
-	if n.has("population") and sim.stats.population < int(n.population):
-		return "needs %s residents" % CitySim.money_text(int(n.population))
-	if n.has("region") and sim.region_links.is_empty():
-		return "needs a county road out to neighbor towns"
-	if n.has("forest"):
+## What the site itself lacks for a node ("site_" needs), in plain words, or "".
+func _site_problem(h: Dictionary, node: Dictionary) -> String:
+	var n: Dictionary = node.get("needs", {})
+	if n.has("site_pieces") and h.cells.size() < int(n.site_pieces):
+		return "needs a bigger site (%d of %d pieces)" % [h.cells.size(), int(n.site_pieces)]
+	if n.has("site_tons") and h.received / 2000.0 < float(n.site_tons):
+		return "needs %s tons in the mound" % CitySim.money_text(int(n.site_tons))
+	if n.has("site_level") and (family(h.kind) != "recycling" or int(str(h.kind).substr(10)) < int(n.site_level)):
+		return "needs the %s" % KINDS["recycling_%d" % int(n.site_level)].name.to_lower()
+	if n.has("site_forest"):
 		var best := 0.0
 		for c in h.cells:
 			best = maxf(best, Resources.at(Resources.Kind.FOREST, cell_center(h, c)))
-		if best < float(n.forest):
+		if best < float(n.site_forest):
 			return "needs woods next to it"
-	if int(dv.cost) > sim.economy.money:
-		return "costs $%s" % CitySim.money_text(int(dv.cost))
 	return ""
 
 
-func develop(sim: CitySim, id: int, key: String) -> bool:
-	if dev_problem(sim, id, key) != "":
-		return false
-	sim.economy.money -= int(Balance.HUB_DEVELOPMENTS[key].cost)
-	hubs[id].dev.append(key)
-	_touch(hubs[id])
-	return true
+## The tree as Agency sees it: nodes the site can't take yet are left out,
+## and the "site_" needs of the rest (already met) are dropped.
+func _open_tree(h: Dictionary) -> Array:
+	var out := []
+	for node in tree(h):
+		if _site_problem(h, node) != "":
+			continue
+		var n := {}
+		for k in node.get("needs", {}):
+			if not str(k).begins_with("site_"):
+				n[k] = node.needs[k]
+		var copy: Dictionary = node.duplicate()
+		copy.needs = n
+		out.append(copy)
+	return out
+
+
+## The city funds a civic hub: its leader plans against a few years of upkeep.
+static func funding(h: Dictionary) -> float:
+	return float(Balance.WASTE_SITES[h.kind].upkeep) * 12.0 * Balance.HUB_PLAN_YEARS
+
+
+## Why this hub's leader can't build `id` yet, in a few plain words, or "".
+func dev_problem(sim: CitySim, hub_id: int, id: String) -> String:
+	if not hubs.has(hub_id):
+		return "not for this site"
+	var h: Dictionary = hubs[hub_id]
+	var node := {}
+	for nd in tree(h):
+		if nd.id == id:
+			node = nd
+	if node.is_empty():
+		return "not for this site"
+	if id in h.built:
+		return "built"
+	for r in node.get("requires", []):
+		if not r in h.built:
+			for nd in tree(h):
+				if nd.id == r:
+					return "needs the %s first" % str(nd.name).to_lower()
+	var site := _site_problem(h, node)
+	if site != "":
+		return site
+	var n: Dictionary = node.get("needs", {})
+	for k in n:
+		if str(k).begins_with("site_") or Agency.holds(sim, h, h.pos, funding(h), k, n[k]):
+			continue
+		match str(k):
+			"local:farm": return "needs a farm nearby to buy it"
+			"local:metal": return "needs a metal works nearby"
+			"education": return "needs schools for trained workers"
+			"population": return "needs %s residents" % CitySim.money_text(int(n[k]))
+			"link": return "needs a county road out to neighbor towns"
+			"region_buys:garbage": return "needs a neighbor town that sends its trash out"
+		return "not yet"
+	if int(node.cost) > sim.economy.money:
+		return "the town needs $%s for it" % CitySim.money_text(int(node.cost))
+	return ""
+
+
+## The leader's next step up the tree, if any. The town pays for it.
+func _develop(sim: CitySim, id: int, stance: String) -> void:
+	var h: Dictionary = hubs[id]
+	if not h.has("leader"):
+		h.leader = Agency.leader(sim, hash([sim.city_seed, "civic", id]))
+	var plan := funding(h) * (1.5 if stance == "grow" else 1.0)
+	var why: String = h.get("why", "")
+	var node := Agency.develop(sim, h, _open_tree(h), h.pos, plan)
+	if node.is_empty():
+		return
+	if int(node.cost) > sim.economy.money:
+		h.built.erase(node.id)
+		h.why = why
+		return
+	sim.economy.money -= int(node.cost)
+	_touch(h)
 
 
 static func max_pieces(h: Dictionary) -> int:
-	var grow := 1.0
-	for key in h.dev:
-		grow += float(Balance.HUB_DEVELOPMENTS[key].get("grow", 0.0))
-	return int(BASE.size() * Balance.HUB_MAX_GROWTH * grow)
+	return int(BASE.size() * Balance.HUB_MAX_GROWTH * (1.0 + Agency.effect(h, tree(h), "grow")))
 
 
 ## Once a month, before trade settles: what the hubs can sell (power from
@@ -660,10 +698,9 @@ func _trade(sim: CitySim) -> void:
 		var h: Dictionary = hubs[id]
 		if is_waste(h.kind):
 			dumps.append(id)
-		for key in h.dev:
-			var dv: Dictionary = Balance.HUB_DEVELOPMENTS[key]
-			for g in totals:
-				totals[g] += float(dv.get(g, 0.0))
+			totals.garbage += Balance.GARBAGE_BASE_TAKE_TONS
+		for g in totals:
+			totals[g] += Agency.effect(h, tree(h), g)
 	if brought > 0.0 and not dumps.is_empty():
 		hubs[dumps[0]].received += brought * 2000.0
 	for g in ["power", "compost", "scrap"]:
@@ -707,6 +744,8 @@ func _decide(sim: CitySim) -> void:
 			grow = h.cells.size() < target
 		if stance == "hold":
 			grow = false
+		else:
+			_develop(sim, id, stance)
 		if grow and h.cells.size() < max_pieces(h):
 			var c := _best_piece(sim, id)
 			h.boxed = c == Vector2i.MAX
@@ -845,8 +884,9 @@ func to_dict() -> Dictionary:
 		for c in h.cells:
 			cells.append([c.x, c.y])
 		out[str(id)] = {"kind": h.kind, "pos": [h.pos.x, h.pos.z], "dir": [h.dir.x, h.dir.z], "cells": cells,
-			"built": h.built, "scar": h.scar, "received": h.received, "want": h.want, "short": h.short,
-			"quiet": h.quiet, "capped": h.get("capped", false), "dev": h.dev}
+			"since": h.since, "scar": h.scar, "received": h.received, "want": h.want, "short": h.short,
+			"quiet": h.quiet, "capped": h.get("capped", false), "built": h.built,
+			"leader": h.get("leader", {}), "why": h.get("why", "")}
 	var t := {}
 	for seg in trash:
 		t[str(seg)] = trash[seg]
@@ -868,11 +908,22 @@ func from_dict(d: Dictionary) -> void:
 			cells.append(Vector2i(int(c[0]), int(c[1])))
 		hubs[int(k)] = {"kind": str(s.kind), "pos": Vector3(s.pos[0], 0.0, s.pos[1]),
 			"dir": Vector3(s.dir[0], 0.0, s.dir[1]).normalized(), "cell": float(KINDS[str(s.kind)].cell),
-			"cells": cells, "built": int(s.get("built", 0)), "scar": float(s.get("scar", 0.0)),
+			"cells": cells, "since": int(s.get("since", 0)), "scar": float(s.get("scar", 0.0)),
 			"received": float(s.get("received", 0.0)), "want": int(s.get("want", 0)),
 			"short": int(s.get("short", 0)), "quiet": int(s.get("quiet", 0)), "boxed": false,
-			"capped": bool(s.get("capped", false)), "ver": 0,
-			"dev": Array(s.get("dev", [])).map(func(k): return str(k)).filter(func(k): return Balance.HUB_DEVELOPMENTS.has(k))}
+			"capped": bool(s.get("capped", false)), "ver": 0, "why": str(s.get("why", ""))}
+		var h: Dictionary = hubs[int(k)]
+		if s.get("leader", {}) is Dictionary and not s.get("leader", {}).is_empty():
+			h.leader = s.leader
+		# Older saves kept the build tick in "built" and the tree in "dev".
+		var built = s.get("built", [])
+		if not built is Array:
+			h.since = int(built)
+			built = s.get("dev", [])
+		var ids := []
+		for node in tree(h):
+			ids.append(node.id)
+		h.built = Array(built).map(func(x): return str(x)).filter(func(x): return x in ids)
 		# A recycling centre on an old landfill keeps the landfill's land size.
 		if hubs[int(k)].capped:
 			hubs[int(k)].cell = float(KINDS.landfill.cell)
