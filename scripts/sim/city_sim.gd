@@ -47,6 +47,8 @@ var industry := Industry.new()
 var logistics := Logistics.new()
 ## Land saved for farming or an industry: no roads or zoning on it.
 var reserves := Reserves.new()
+## Landfills, recycling and cemeteries, and the garbage trucks' rounds.
+var hubs := CivicHubs.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -208,6 +210,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			ok = services.buildings.has(int(cmd.id))
 			services.buildings.erase(int(cmd.id))
 			_lots_dirty = true
+		"place_hub", "upgrade_hub", "remove_hub":
+			ok = _hub_command(cmd)
 		"set_difficulty":
 			# A city that hasn't started yet also gets that difficulty's start money.
 			ok = economy.set_difficulty(str(cmd.difficulty), tick_count == 0 and network.segments.size() <= 2)
@@ -264,6 +268,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			industry = Industry.new()
 			logistics = Logistics.new()
 			reserves = Reserves.new()
+			hubs = CivicHubs.new()
 			farms.reserves = reserves
 			industry.reserves = reserves
 			farms_changed.emit()
@@ -393,6 +398,8 @@ func tick() -> void:
 	# Taxes come in and upkeep goes out every game hour, a day settling a month.
 	if tick_count % TICKS_PER_HOUR == 0:
 		economy.money += roundi(economy.monthly_net() / 24.0)
+	# Before logistics, which clears Traffic's arrivals.
+	hubs.tick(self)
 	if not simulate_traffic:
 		return
 	logistics.tick(self)
@@ -562,6 +569,37 @@ func industry_drive(pos: Vector3, dir: Vector3) -> Array:
 	return Farms.make_drive(pos, dir, near.point)
 
 
+## Places, upgrades or removes a landfill, recycling centre or cemetery.
+func _hub_command(cmd: Dictionary) -> bool:
+	if cmd.type == "place_hub":
+		var kind := str(cmd.get("kind", ""))
+		var pos := _v(cmd.pos)
+		var dir := _v(cmd.dir).normalized()
+		# Recycling starts as a drop-off yard; the bigger plants are upgrades.
+		if not kind in CivicHubs.TOOL_KINDS.values() or dir.length() < 0.5:
+			return false
+		var cost := int(Balance.WASTE_SITES[kind].cost)
+		if cost > economy.money or hubs.site_problem(self, kind, pos, dir) != "":
+			return false
+		var id := hubs.add(kind, pos, dir, tick_count)
+		economy.money -= cost
+		for c in hubs.hubs[id].cells:
+			_clear_zones_under(CivicHubs.cell_poly(hubs.hubs[id], c))
+	elif cmd.type == "upgrade_hub":
+		var id := int(cmd.id)
+		if not hubs.hubs.has(id):
+			return false
+		var cost := CivicHubs.upgrade_cost(hubs.hubs[id].kind)
+		if cost <= 0 or cost > economy.money or not hubs.upgrade(id):
+			return false
+		economy.money -= cost
+	else:
+		if not hubs.remove(int(cmd.id)):
+			return false
+	_lots_dirty = true
+	return true
+
+
 ## Zoning under a new building goes away, as in Cities: Skylines 2.
 func _clear_zones_under(poly: PackedVector2Array) -> void:
 	for c in zones.cells.keys():
@@ -600,7 +638,8 @@ func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
 		pts.append(mid.lerp(Vector3(c.x, 0.0, c.y), 0.8))
 	if ok:
 		for p in pts:
-			if services.covers(p) or farms.covers(p) or industry.covers(p) or farms.field_at(p) != -1:
+			if services.covers(p) or farms.covers(p) or industry.covers(p) or farms.field_at(p) != -1 \
+					or hubs.covers(p):
 				ok = false
 	if ok:
 		for key2 in lots:
@@ -764,7 +803,7 @@ func wealth_at(_p: Vector2) -> float:
 func _lot_blocked(lot: Dictionary) -> bool:
 	for p in [lot.pos, lot.front, lot.zone_pt]:
 		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) \
-				or reserves.kind_at(p) != "":
+				or reserves.kind_at(p) != "" or hubs.covers(p):
 			return true
 	return false
 
@@ -975,6 +1014,7 @@ func to_dict() -> Dictionary:
 		"industry": industry.to_dict(),
 		"logistics": logistics.to_dict(),
 		"reserves": reserves.to_dict(),
+		"hubs": hubs.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
 	}
@@ -1006,6 +1046,7 @@ func from_dict(d: Dictionary) -> void:
 	industry.from_dict(d.get("industry", {}))
 	logistics.from_dict(d.get("logistics", {}))
 	reserves.from_list(d.get("reserves", []))
+	hubs.from_dict(d.get("hubs", {}))
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:

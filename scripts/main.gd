@@ -95,6 +95,10 @@ func _ready() -> void:
 	zone_tool.setup(sim, cam, zone_view)
 	add_child(zone_tool)
 
+	var hub_view := HubView.new()
+	hub_view.setup(sim)
+	add_child(hub_view)
+
 	var service_tool := ServiceTool.new()
 	service_tool.setup(sim, cam, service_view)
 	add_child(service_tool)

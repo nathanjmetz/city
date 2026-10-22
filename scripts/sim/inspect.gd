@@ -9,6 +9,9 @@ extends RefCounted
 ## The thing under a ground point: {type: "service"|"farm"|"lot"|"road", id},
 ## or {} for open ground. Buildings win over the road they stand on.
 static func pick(sim: CitySim, p: Vector3) -> Dictionary:
+	var hid := sim.hubs.at(p)
+	if hid != -1:
+		return {"type": "hub", "id": hid}
 	var sid := sim.services.at(p)
 	if sid != -1:
 		return {"type": "service", "id": sid}
@@ -49,6 +52,8 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 			return [b.pos, Services.KINDS[b.kind].size.length() * 0.5 + 3.0]
 		"industry":
 			return [sim.industry.sites[sel.id].pos, Industry.HQ_SIZE.length() * 0.5 + 3.0]
+		"hub":
+			return sim.hubs.extent(sel.id)
 		"farm":
 			return [sim.farms.farms[sel.id].pos, Farms.FARMHOUSE_SIZE.length() * 0.5 + 3.0]
 		"lot":
@@ -62,6 +67,7 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 static func exists(sim: CitySim, sel: Dictionary) -> bool:
 	match sel.get("type", ""):
 		"service": return sim.services.buildings.has(sel.id)
+		"hub": return sim.hubs.hubs.has(sel.id)
 		"farm": return sim.farms.farms.has(sel.id)
 		"industry": return sim.industry.sites.has(sel.id)
 		"lot": return sim.lots.has(sel.id)
@@ -76,6 +82,7 @@ static func describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 		return {}
 	match sel.type:
 		"service": return _service(sim, sel.id)
+		"hub": return HubInfo.describe(sim, sel.id)
 		"farm": return _farm(sim, sel.id)
 		"industry": return _industry(sim, sel.id)
 		"lot": return _lot(sim, sel.id)
@@ -242,7 +249,13 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 		rows.append(["Trucks on the road", str(sim.logistics.trucks_for("lot:" + key))])
 		status = "Open for business" if problems.is_empty() else "Closed: no power or water"
 	var staffed := float(sim.stats.employed) / maxf(sim.stats.jobs, 1.0)
-	rows.append(["Property tax", "$%s / month" % CitySim.money_text(roundi(sim.economy.building_tax(b, staffed) / 12.0))])
+	var land := sim.hubs.lot_factor(sim, key)
+	if absf(land - 1.0) >= 0.005:
+		rows.append(["Land value nearby", "%+d%%" % roundi((land - 1.0) * 100.0)])
+	rows.append(["Property tax", "$%s / month" % CitySim.money_text(roundi(sim.economy.building_tax(b, staffed) * land / 12.0))])
+	var trash := sim.hubs.lot_problem(sim, key)
+	if trash != "":
+		problems.append(trash)
 	var icons := {ZoneMap.Zone.RESIDENTIAL: "homes", ZoneMap.Zone.COMMERCIAL: "shops", ZoneMap.Zone.INDUSTRIAL: "industry"}
 	return {"title": names[z], "kind": ZoneMap.NAMES[z], "icon": icons[z], "ok": problems.is_empty(),
 		"status": status, "rows": rows, "problems": problems}
