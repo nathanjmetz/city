@@ -53,6 +53,8 @@ const SETBACK := 2.0
 
 ## The service buildings: id -> {kind, pos: Vector3 (centre), dir: Vector3
 ## (unit, from the building toward its road)}.
+## Where the city sits in the shared region (set by CitySim).
+var terrain_offset := Vector2.ZERO
 var buildings := {}
 ## What each lot gets: lot key -> {"power": bool, "water": bool, Kind: bool...}
 var served := {}
@@ -99,6 +101,9 @@ static func site_near(network: RoadNetwork, kind: int, hit: Vector3) -> Array:
 ## Why a service can't go here, or "" if it can.
 func site_problem(network: RoadNetwork, kind: int, pos: Vector3, dir: Vector3) -> String:
 	var pts := corners(kind, pos, dir)
+	var size: Vector2 = KINDS[kind].size
+	if not Terrain.buildable(pos.x + terrain_offset.x, pos.z + terrain_offset.y, size.length() * 0.5):
+		return "Can't build in the water or on a slope that steep."
 	var poly := PackedVector2Array()
 	for p in pts:
 		poly.append(Vector2(p.x, p.z))

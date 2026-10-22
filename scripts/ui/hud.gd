@@ -27,6 +27,7 @@ var campus_tool: CampusTool
 var _campus_cards := {}  # "high_school"/"college"/"university" -> Button
 var _warehouse_cards := {}  # Warehouses size -> Button
 var traffic_tool: TrafficTool
+var move_tool: MoveTool
 var info_view: InfoView
 var service_view: ServiceView
 var select_tool: SelectTool
@@ -117,6 +118,8 @@ func _ready() -> void:
 	park_tool.kind_changed.connect(func(_k): _sync())
 	park_tool.hint_changed.connect(_show_hint)
 	sim.parks_changed.connect(_sync)
+	move_tool.active_changed.connect(func(_on): _sync())
+	move_tool.hint_changed.connect(_show_hint)
 	sim.buildings_changed.connect(_update_stats)
 	sim.stats_changed.connect(_update_stats)
 	game.speed_changed.connect(func(_s): _sync_speed())
@@ -134,6 +137,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		road_tool.cancel()
 	elif farm_tool.is_drawing():
 		farm_tool.cancel()
+	elif move_tool.active and not move_tool.selection.is_empty():
+		move_tool.clear_selection()
 	elif anything_open():
 		close_all()
 	else:
@@ -147,7 +152,7 @@ func anything_open() -> bool:
 		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
-		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != ""
+		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or move_tool.active
 
 
 ## Puts every tool away and closes every panel.
@@ -170,6 +175,7 @@ func close_all() -> void:
 	campus_tool.set_kind("")
 	traffic_tool.set_mode(TrafficTool.Mode.NONE)
 	park_tool.set_kind("")
+	move_tool.set_active(false)
 	_sync()
 
 
@@ -411,7 +417,7 @@ func _build_bottom_bar() -> void:
 	row.add_theme_constant_override("separation", 4)
 	bar.add_child(row)
 	for entry in [["roads", "Roads"], ["zones", "Zoning"], ["farms", "Farming"], ["industry", "Industry"], ["services", "Services"], ["parks", "Parks"], ["traffic", "Traffic"],
-			["bulldoze", "Bulldoze"],
+			["bulldoze", "Bulldoze"], ["move", "Move It"],
 			["budget", "Budget"]]:
 		var b := _category_button(entry[0], entry[1])
 		b.pressed.connect(func(): _open(entry[0]))
@@ -839,6 +845,8 @@ func _open(cat: String) -> void:
 				zone_tool.set_zone(ZoneMap.Zone.RESIDENTIAL)
 		"bulldoze":
 			road_tool.set_mode(RoadTool.Mode.BULLDOZE)
+		"move":
+			move_tool.set_active(true)
 		"farms":
 			if farm_tool.mode == FarmTool.Mode.NONE:
 				farm_tool.set_mode(FarmTool.Mode.CORN)
@@ -864,6 +872,7 @@ func _open(cat: String) -> void:
 			campus_tool.set_kind("")
 			traffic_tool.set_mode(TrafficTool.Mode.NONE)
 			park_tool.set_kind("")
+			move_tool.set_active(false)
 			_budget_open = true
 			_sync()
 
@@ -883,6 +892,8 @@ func _sync() -> void:
 		_category = "farms"
 	elif traffic_tool.mode != TrafficTool.Mode.NONE:
 		_category = "traffic"
+	elif move_tool.active:
+		_category = "move"
 	elif road_tool.mode == RoadTool.Mode.BULLDOZE:
 		_category = "bulldoze"
 	elif road_tool.mode != RoadTool.Mode.NONE:

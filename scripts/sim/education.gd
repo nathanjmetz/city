@@ -168,6 +168,8 @@ static func site_problem(sim: CitySim, kind: String, pos: Vector3, dir: Vector3)
 	if Services.road_clash(sim.network, poly):
 		return "Too close to a road."
 	for p in _probe_points(pos, poly):
+		if not sim.land_ok(p):
+			return "Can't build in the water or on a slope that steep."
 		if sim.education.covers(p):
 			return "Too close to another campus. Campuses grow on their own, so give it room."
 		if sim.services.covers(p):

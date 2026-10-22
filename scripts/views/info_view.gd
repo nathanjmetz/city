@@ -45,9 +45,6 @@ func setup(s: CitySim, camera: CityCamera) -> void:
 	sim = s
 	cam = camera
 	sim.lots_changed.connect(_draw_reserves)
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(EXTENT, EXTENT)
-	_wash.mesh = plane
 	_wash_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_wash_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_wash_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
@@ -95,7 +92,7 @@ func _paint() -> void:
 	for y in RES:
 		for x in RES:
 			var p := Vector3(origin.x + (x + 0.5) * step, 0.0, origin.y + (y + 0.5) * step)
-			var v := Resources.at(kind, p)
+			var v := Resources.at(kind, p, Terrain.view_origin)
 			if kind == Resources.Kind.FERTILITY:
 				v = (v - 0.5) / 0.4
 				img.set_pixel(x, y, (ramp[0] as Color).lerp(ramp[1], clampf(v, 0.0, 1.0)))
@@ -105,7 +102,25 @@ func _paint() -> void:
 				img.set_pixel(x, y, (ramp[1] as Color).lerp(ramp[2],
 					clampf((v - Industry.MIN_RICHNESS) / (1.0 - Industry.MIN_RICHNESS), 0.0, 1.0)))
 	_wash_mat.albedo_texture = ImageTexture.create_from_image(img)
-	_wash.position = Vector3(_center.x, 0.25, _center.y)
+	_wash.mesh = _land_sheet(_center)
+
+
+## A sheet over the land around `center`, a little above the ground and
+## following its hills, with UVs across the whole wash.
+static func _land_sheet(center: Vector2) -> ArrayMesh:
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(EXTENT, EXTENT)
+	plane.subdivide_width = int(EXTENT / 16.0)
+	plane.subdivide_depth = int(EXTENT / 16.0)
+	var arrays := plane.get_mesh_arrays()
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	for i in verts.size():
+		var v := verts[i] + Vector3(center.x, 0.0, center.y)
+		verts[i] = Vector3(v.x, Terrain.ground_y(v.x, v.z) + 1.2, v.z)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
 
 
 ## Reserved land: a tinted fill and a bright border in its industry's colour.
@@ -144,4 +159,4 @@ func _draw_reserves() -> void:
 		any = true
 	_reserves.visible = any
 	if any:
-		_reserves.mesh = st.commit()
+		_reserves.mesh = Terrain.drape(st.commit(), true, 12.0)

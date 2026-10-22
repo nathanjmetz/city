@@ -88,6 +88,9 @@ static func site_near(network: RoadNetwork, kind: String, hit: Vector3) -> Array
 ## Why this ground can't be taken, or "" if it can. `skip` is a site to
 ## leave out (the park that is growing).
 func ground_problem(sim: CitySim, poly: PackedVector2Array, skip := -1) -> String:
+	for q in poly:
+		if not sim.land_ok(Vector3(q.x, 0.0, q.y)):
+			return "Can't build in the water or on a slope that steep."
 	if Services.road_clash(sim.network, poly):
 		return "Too close to a road."
 	for id in sim.services.buildings:

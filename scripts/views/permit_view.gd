@@ -179,12 +179,12 @@ func _pick(at: Vector2) -> int:
 func _handles() -> Array:
 	var out := []
 	for p in route:
-		out.append(Vector3(p[0], LIFT, p[1]))
+		out.append(Terrain.lift(Vector3(p[0], LIFT, p[1])))
 	var n := route.size() + (1 if _is_area() else 0)
 	for i in range(1, n):
 		var a: Array = route[i - 1]
 		var b: Array = route[i % route.size()]
-		out.append(Vector3((a[0] + b[0]) * 0.5, LIFT, (a[1] + b[1]) * 0.5))
+		out.append(Terrain.lift(Vector3((a[0] + b[0]) * 0.5, LIFT, (a[1] + b[1]) * 0.5)))
 	return out
 
 
@@ -287,7 +287,7 @@ func _footprint(b: Dictionary) -> PackedVector2Array:
 func _tri(a: Vector2, b: Vector2, c: Vector2, col: Color) -> void:
 	for p in [a, b, c]:
 		_imm.surface_set_color(col)
-		_imm.surface_add_vertex(Vector3(p.x, LIFT, p.y))
+		_imm.surface_add_vertex(Vector3(p.x, LIFT + Terrain.ground_y(p.x, p.y), p.y))
 
 
 func _fill(poly: PackedVector2Array, col: Color) -> void:

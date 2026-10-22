@@ -73,7 +73,7 @@ func _process(_delta: float) -> void:
 		var cost: int = Education.spec(kind).cost
 		if problem == "" and cost > sim.economy.money:
 			problem = "Not enough money: costs $%s." % CitySim.money_text(cost)
-		_ghost.transform = Transform3D(Basis.looking_at(_site[1], Vector3.UP), _site[0] + Vector3(0, 5, 0))
+		_ghost.transform = Transform3D(Basis.looking_at(_site[1], Vector3.UP), Terrain.lift(_site[0]) + Vector3(0, 5, 0))
 		_ghost.material_override = _ok_mat if problem == "" else _bad_mat
 		_ghost.visible = true
 	if problem != _problem:

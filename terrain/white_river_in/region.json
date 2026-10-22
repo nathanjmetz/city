@@ -1,0 +1,29 @@
+{
+ "region": "white_river_in",
+ "name": "White River valley, near Petersburg, Indiana",
+ "lon0": -87.2844,
+ "lat0": 38.5038,
+ "size_m": 32768.0,
+ "layers": {
+  "ground": [
+   2048,
+   "dm LA"
+  ],
+  "base": [
+   1024,
+   "dm LA"
+  ],
+  "wlevel": [
+   1024,
+   "dm LA"
+  ],
+  "cover": [
+   2048,
+   "tree water crop bare"
+  ],
+  "resources": [
+   512,
+   "fertility oil ore forest"
+  ]
+ }
+}

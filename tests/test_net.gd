@@ -15,6 +15,7 @@ func _run() -> void:
 	_test_region_in_step()
 	_test_crossroads()
 	_test_trade()
+	_test_elbow_room()
 	_test_city_lines()
 
 	var data := OS.get_user_data_dir().path_join("test-region.json")
@@ -42,7 +43,7 @@ func _run() -> void:
 	await _until(func(): return bob.my_city != "" and ann.region.cities.size() == 2)
 	_check(bob.my_city != "" and bob.my_city != ann.my_city, "Bob gets his own city")
 	var gap: float = ann.region.cities[ann.my_city].origin.distance_to(bob.region.cities[bob.my_city].origin)
-	_check(gap >= Region.NEIGHBOR_GAP * 0.9, "Bob starts next to Ann, not on top of her (%d m)" % gap)
+	_check(gap >= Region.ELBOW_ROOM, "Bob starts 3 miles from Ann's town, with room to grow (%d m)" % gap)
 
 	# Ann builds through the server; both copies get it in the same tick.
 	var sim := ann.my_sim()
@@ -155,6 +156,31 @@ func _test_crossroads() -> void:
 	var copy := Region.new()
 	copy.from_dict(JSON.parse_string(JSON.stringify(r.to_dict(), "", false, true)))
 	_check(copy.joins == r.joins, "the joins are saved")
+
+
+## A new town keeps elbow room and stays out of the way a town is growing.
+func _test_elbow_room() -> void:
+	var r := Region.new()
+	r.add_city("p1", "Ann")
+	var ann: CitySim = r.cities.c1.sim
+	for cmd in _starter_town(ann):
+		ann.apply_now(cmd)
+	for i in 2000:
+		ann.tick()
+	var grow := Vector2.ZERO
+	var n := 0
+	for key in ann.buildings:
+		if ann.lots.has(key):
+			grow += Vector2(ann.lots[key].pos.x, ann.lots[key].pos.z)
+			n += 1
+	r.add_city("p2", "Bob")
+	var bob: Vector2 = r.cities.c2.origin
+	var nearest := INF
+	for key in ann.buildings:
+		if ann.lots.has(key):
+			nearest = minf(nearest, bob.distance_to(Vector2(ann.lots[key].pos.x, ann.lots[key].pos.z)))
+	_check(n > 0 and nearest >= Region.ELBOW_ROOM, "Bob starts 3 miles from Ann's nearest building (%d m)" % nearest)
+	_check(absf(rad_to_deg(bob.angle_to(grow))) >= Region.GROWTH_WEDGE, "and not where Ann is growing")
 
 
 ## Neighbors trade first, at a fair price; the outside fills the gaps for more.

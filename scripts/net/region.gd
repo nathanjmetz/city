@@ -7,9 +7,14 @@ extends RefCounted
 ## commands players sent, then steps every city, and sends players exactly
 ## that ("tick n, these commands") so their copies stay identical.
 
-## New cities start this far from the nearest city centre, in metres
-## (about a mile: close enough to see, far enough to grow).
-const NEIGHBOR_GAP := 1600.0
+## "Elbow room": a new town starts at least this far from the edge of
+## every other town, in metres (3 miles), so nobody is boxed in early.
+const ELBOW_ROOM := 4828.0
+## ...and never in the direction a town is growing: within this angle
+## either side of the way it has grown from its centre (degrees).
+const GROWTH_WEDGE := 30.0
+## A town centre needs this much dry, gentle land around it (metres).
+const SITE_RADIUS := 200.0
 ## Chat lines kept and sent to players who join.
 const CHAT_KEEP := 100
 ## The county highway runs this far out of a town toward open country.
@@ -50,6 +55,7 @@ func add_city(player_id: String, player: String) -> String:
 	var sim := new_sim()
 	sim.city_seed = hash([region_seed, id])
 	var origin := _free_spot()
+	sim.terrain_offset = origin
 	var near := _nearest_cities(origin, LINK_TOWNS)
 	cities[id] = {"owner": player_id, "player": player, "name": player + "ville", "origin": origin,
 		"color": cities.size() % Brand.PLAYERS.size(), "sim": sim}
@@ -150,30 +156,56 @@ func checksums() -> Dictionary:
 	return out
 
 
-## The nearest open spot to the existing cities, walking round them in rings.
+## The open spot nearest the middle of the region that keeps elbow room
+## from every town and stays out of each town's way of growth.
 func _free_spot() -> Vector2:
 	if cities.is_empty():
 		return Vector2.ZERO
+	var ids := cities.keys()
+	ids.sort()
 	var centre := Vector2.ZERO
-	for id in cities:
-		centre += cities[id].origin
-	centre /= cities.size()
+	var pts := PackedVector2Array()
+	var wedges := []  # [origin, growth direction]
+	for id in ids:
+		var c: Dictionary = cities[id]
+		centre += c.origin
+		pts.append(c.origin)
+		var built := Vector2.ZERO
+		var n := 0
+		for key in c.sim.buildings:
+			if c.sim.lots.has(key):
+				var p: Vector3 = c.sim.lots[key].pos
+				pts.append(c.origin + Vector2(p.x, p.z))
+				built += Vector2(p.x, p.z)
+				n += 1
+		if n > 0 and (built / n).length() > 150.0:
+			wedges.append([c.origin, (built / n).normalized()])
+	centre /= ids.size()
 	var ring := 1
-	while true:
-		var steps := 6 * ring
+	while ring < 200:
+		var steps := 12 * ring
 		for i in steps:
 			var a := TAU * i / steps + ring * 0.5
-			var p := centre + Vector2(cos(a), sin(a)) * NEIGHBOR_GAP * ring
-			p = p.snapped(Vector2(10, 10))
-			var clear := true
-			for id in cities:
-				if p.distance_to(cities[id].origin) < NEIGHBOR_GAP * 0.95:
-					clear = false
-					break
-			if clear:
+			var p := (centre + Vector2(cos(a), sin(a)) * ELBOW_ROOM * 0.5 * ring).snapped(Vector2(10, 10))
+			if _clear_of(p, pts) and not _in_growth_way(p, wedges) and Terrain.buildable(p.x, p.y, SITE_RADIUS):
 				return p
 		ring += 1
-	return Vector2.ZERO
+	return centre + Vector2(ELBOW_ROOM * 100.0, 0)
+
+
+static func _clear_of(p: Vector2, pts: PackedVector2Array) -> bool:
+	var room := ELBOW_ROOM * ELBOW_ROOM
+	for q in pts:
+		if p.distance_squared_to(q) < room:
+			return false
+	return true
+
+
+static func _in_growth_way(p: Vector2, wedges: Array) -> bool:
+	for w in wedges:
+		if absf(rad_to_deg((p - w[0]).angle_to(w[1]))) < GROWTH_WEDGE:
+			return true
+	return false
 
 
 ## The ids of up to `count` cities nearest a spot, nearest first.
@@ -222,6 +254,7 @@ func from_dict(d: Dictionary) -> void:
 	for id in cs:
 		var c: Dictionary = cs[id]
 		var sim := new_sim()
+		sim.terrain_offset = Vector2(float(c.origin[0]), float(c.origin[1]))
 		sim.from_dict(c.city)
 		cities[id] = {"owner": str(c.owner), "player": str(c.get("player", "")), "name": str(c.name),
 			"origin": Vector2(float(c.origin[0]), float(c.origin[1])), "color": int(c.color), "sim": sim}
