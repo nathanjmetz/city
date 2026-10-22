@@ -134,6 +134,10 @@ func _init() -> void:
 	permits.locators["campus"] = func(_sim, id: int) -> Vector2:
 		var c: Dictionary = education.campuses.get(id, {"pos": Vector3.ZERO})
 		return Vector2(c.pos.x, c.pos.z)
+	permits.locators["warehouse"] = func(_sim, id: int) -> Vector2:
+		var w = warehouses.buildings.get(id)
+		var c := Vector3.ZERO if w == null else Warehouses.center(w)
+		return Vector2(c.x, c.z)
 	farms.reserves = reserves
 	industry.reserves = reserves
 	network.changed.connect(func():
@@ -595,7 +599,7 @@ func tick() -> void:
 			_lots_dirty = true
 			education_changed.emit()
 	if tick_count % Balance.WAREHOUSE_DECIDE_EVERY == 0 and not warehouses.buildings.is_empty():
-		if warehouses.decide(warehouse_ground_ok):
+		if warehouses.decide(self):
 			_lots_dirty = true
 			warehouses_changed.emit()
 	permits.tick(self)

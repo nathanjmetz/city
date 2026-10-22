@@ -303,6 +303,21 @@ const WAREHOUSE_IDLE := 0.05
 const WAREHOUSE_IDLE_STREAK := 8
 ## Warehouses decide to grow this often, in ticks (6 game hours).
 const WAREHOUSE_DECIDE_EVERY := 360
+## What a warehouse earns per truckload it handles: a real 3PL charges
+## handling in and out plus monthly storage, about $150 to $350 a load.
+const WAREHOUSE_FEE := 250.0
+## Running a warehouse per m2 of floor a year (power, insurance, upkeep;
+## real US distribution space runs about $3 to $6 a square foot).
+const WAREHOUSE_UPKEEP_M2 := 4.0
+## A regional DC offers neighbouring towns up to this many loads a month.
+const WAREHOUSE_REGIONAL_LOADS := 8
+## Online orders a fulfillment center packs, per person in town a month:
+## Americans get about 5 parcels a month; a local center fills about a
+## tenth of them (the rest come in on the mail truck).
+const WAREHOUSE_PARCELS_PER_PERSON := 0.5
+## Parcels in a trailer from the fulfillment center to the post office
+## (a 53 ft trailer holds about 1,000 to 2,000 parcels).
+const WAREHOUSE_PARCEL_TRUCK := 1200
 
 # --- Neighborhood character --------------------------------------------------
 # Brawn's rule (2026-10-22): neighborhoods grow a culture of their own, and
@@ -503,6 +518,9 @@ const TRADE_PRICE := {
 	# Baled scrap metal and finished compost, per ton.
 	"scrap": 180.0,
 	"compost": 25.0,
+	# A truckload of general merchandise from a regional DC: the
+	# distributor's margin on it.
+	"goods": 2500.0,
 }
 ## Price for a good with no entry above.
 const TRADE_PRICE_DEFAULT := 100.0
