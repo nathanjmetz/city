@@ -730,8 +730,9 @@ func industry_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 func warehouse_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 	var w := {"kind": kind, "pos": pos, "dir": dir, "bays": 0}
 	var poly := Warehouses.corners(w)
-	if not land_ok(Warehouses.center(w), 10.0):
-		return "Can't build in the water or on a slope that steep."
+	for p in _grid_in(poly):
+		if not land_ok(p):
+			return "Can't build in the water or on a slope that steep."
 	if reserves.kind_at(Warehouses.center(w)) != "":
 		return "That land is reserved for %s." % Reserves.KINDS[reserves.kind_at(Warehouses.center(w))]
 	if Services.road_clash(network, poly):
@@ -762,6 +763,9 @@ func warehouse_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 func warehouse_ground_ok(poly: PackedVector2Array, id: int) -> bool:
 	if Services.road_clash(network, poly):
 		return false
+	for p in _grid_in(poly):
+		if not land_ok(p):
+			return false  # water or a slope too steep to grade
 	for sid in services.buildings:
 		if not Geometry2D.intersect_polygons(poly, services.footprint(sid)).is_empty():
 			return false
