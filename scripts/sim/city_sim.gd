@@ -95,9 +95,14 @@ func apply_now(cmd: Dictionary) -> bool:
 				ok = network.build_road(c[0], c[1], c[2], _road(cmd))
 				if ok:
 					economy.money -= Economy.road_cost(c, _road(cmd))
-		"build_grid":
-			var lines := RoadShapes.grid(_v(cmd.a), _v(cmd.b), _v(cmd.c), float(cmd.block))
-			if not _can_afford(lines, _road(cmd)):
+		"build_grid", "build_grid_shape":
+			# Old three-click grids are a rectangle; new ones any shape.
+			var shape: Array = GridFill.rect(_v(cmd.a), _v(cmd.b), _v(cmd.c)) if cmd.type == "build_grid" \
+				else cmd.points.map(_v)
+			var lines := GridFill.plan(network, shape, float(cmd.block), _road(cmd), int(cmd.get("side", 0)))
+			if shape.size() == 2:
+				lines = [[shape[0], shape[0].lerp(shape[1], 0.5), shape[1]]]
+			if lines.is_empty() or not _can_afford(lines, _road(cmd)):
 				return false
 			network.begin_batch()
 			for l in lines:
