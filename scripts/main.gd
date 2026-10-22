@@ -38,6 +38,10 @@ func _ready() -> void:
 	service_view.setup(sim)
 	sim.require_utilities = true
 
+	var farm_view := FarmView.new()
+	add_child(farm_view)
+	farm_view.setup(sim)
+
 	var cars := TrafficView.new()
 	cars.setup(sim.traffic, func(): return _tick_time * CitySim.TICKS_PER_SECOND)
 	add_child(cars)
@@ -57,6 +61,10 @@ func _ready() -> void:
 	service_tool.setup(sim, cam, service_view)
 	add_child(service_tool)
 
+	var farm_tool := FarmTool.new()
+	farm_tool.setup(sim, cam, farm_view)
+	add_child(farm_tool)
+
 	# Only one tool is active at a time.
 	var others := func(keep: Object):
 		if keep != road_tool and road_tool.mode != RoadTool.Mode.NONE:
@@ -65,18 +73,22 @@ func _ready() -> void:
 			zone_tool.set_zone(ZoneTool.OFF)
 		if keep != service_tool and service_tool.kind != ServiceTool.OFF:
 			service_tool.set_kind(ServiceTool.OFF)
+		if keep != farm_tool and farm_tool.mode != FarmTool.Mode.NONE:
+			farm_tool.set_mode(FarmTool.Mode.NONE)
 	road_tool.mode_changed.connect(func(m): if m != RoadTool.Mode.NONE: others.call(road_tool))
 	zone_tool.zone_changed.connect(func(z): if z != ZoneTool.OFF: others.call(zone_tool))
 	service_tool.kind_changed.connect(func(k): if k != ServiceTool.OFF: others.call(service_tool))
+	farm_tool.mode_changed.connect(func(m): if m != FarmTool.Mode.NONE: others.call(farm_tool))
 
 	var hud := Hud.new()
 	hud.setup(road_tool, zone_tool, sim, self)
 	hud.service_tool = service_tool
+	hud.farm_tool = farm_tool
 	add_child(hud)
 
 	if not _load():
 		_starter_road()
-	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed]:
+	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed]:
 		sig.connect(func(): _save_pending = true)
 
 
@@ -123,9 +135,12 @@ func _load() -> bool:
 
 
 ## A road coming in from the edge of the map, like a highway exit.
+## The highway link is free, as in Cities: Skylines.
 func _starter_road() -> void:
+	var money := sim.economy.money
 	sim.apply({"type": "build_road", "start": [-400, 0], "ctrl": [-250, 0], "end": [-100, 0]})
 	sim.apply({"type": "build_road", "start": [-100, 0], "ctrl": [-20, 0], "end": [40, 60]})
+	sim.economy.money = money
 
 
 func _build_environment() -> void:

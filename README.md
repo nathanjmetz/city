@@ -22,7 +22,8 @@ An open map where you draw roads, paint zones along them, and buildings grow, li
 | `P` Parallel | Draws a second road alongside. `[` `]` set the gap. |
 | `B` Bulldoze | Click a road or service building to remove it. |
 | `5` `6` `7` Zones | Homes, shops, industry. Hold the left mouse button and drag over the lots along a road. `[` `]` brush size. |
-| Services | Substation and water tower first: buildings only grow and fill with power and water, which flow along connected roads. Fire, police, clinic and school cover homes within real road distances (green roads while placing). Place beside a street; the building turns to face it. |
+| Services | Power line feed and a well first (a substation and water tower serve bigger towns): buildings only grow and fill with power and water, which flow along connected roads. Fire, police, clinic and school cover homes within real road distances (green roads while placing). Place beside a street; the building turns to face it. |
+| Farming | Click to drop nodes around farmland (green soil is richest), click the first node or press Enter to close. Place a corn or soybean farmhouse on it: the farm buys the best fields around it while they pay, and sells losing ones in bad years. Soil never wears out. Crops change with the seasons. |
 | `8` Dezone | Erase zones (buildings on them go away). |
 | Right click | Stop drawing. |
 | Esc | Stop drawing; press again to put every tool away and close panels. |

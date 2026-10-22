@@ -127,6 +127,52 @@ func _init() -> void:
 	_check(us.services.buildings.size() == 3, "services saved")
 	u.apply({"type": "remove_service", "id": 1})
 	_check(u.services.buildings.size() == 2, "services can be removed")
+	# A new game can afford a start: village utilities, a few streets, grants.
+	var ng := CitySim.new()
+	ng.require_utilities = true
+	ng.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0]})
+	for entry in [[Services.Kind.POWER_FEED, Vector3(-280, 0, 30)], [Services.Kind.WELL, Vector3(-250, 0, 30)]]:
+		var st := Services.site_near(ng.network, entry[0], entry[1])
+		_check(ng.apply({"type": "place_service", "kind": entry[0], "pos": [st[0].x, st[0].z], "dir": [st[1].x, st[1].z]}),
+			"starter utility placed")
+	for x in range(-300, 301, 10):
+		ng.apply({"type": "paint_zone", "center": [x, -15], "radius": 10, "zone": ZoneMap.Zone.RESIDENTIAL})
+		ng.apply({"type": "paint_zone", "center": [x, 15], "radius": 10, "zone": ZoneMap.Zone.INDUSTRIAL})
+	_check(ng.economy.money > 1_500_000, "still money left to build ($%d)" % ng.economy.money)
+	for i in 6000:
+		ng.tick()
+	_check(ng.stats.population >= 50, "the village grows (%d people)" % ng.stats.population)
+	var before_grant: int = ng.economy.money
+	_check(ng.economy.reach_milestones(260) == 650_000 and ng.economy.money == before_grant + 650_000
+		and ng.economy.reach_milestones(260) == 0, "milestone grants paid once each")
+	# Farms: outline farmland, place a farmhouse, watch it buy fields.
+	var fm := CitySim.new()
+	fm.economy.money = 10_000_000
+	fm.apply({"type": "build_road", "start": [-600, 0], "ctrl": [0, 0], "end": [600, 0]})
+	_check(fm.apply({"type": "paint_farmland", "points": [[-500, 20], [500, 20], [500, 600], [-500, 600]]}),
+		"farmland outlined with nodes")
+	_check(not fm.apply({"type": "place_farmhouse", "pos": [0, -200], "dir": [0, -1]}), "farmhouse needs farmland")
+	_check(fm.apply({"type": "place_farmhouse", "pos": [0, 60], "dir": [0, -1], "crop": "corn"}), "farmhouse placed")
+	for i in Farms.DECIDE_EVERY * 40:
+		fm.tick()
+	var farm: Dictionary = fm.farms.farms.values()[0]
+	var grown: int = farm.cells.size()
+	_check(grown >= 10, "the farm buys fields as it makes money (%d fields)" % grown)
+	var touches_road := false
+	for c in farm.cells:
+		touches_road = touches_road or absf(Farms.cell_center(c).z) < Farms.CELL * 0.5 + 4.0
+	_check(not touches_road, "no fields on the road")
+	_check(fm.economy.budget.income[ZoneMap.Zone.INDUSTRIAL] > 0, "farmland pays property tax")
+	_check(Farms.fertility(Vector2i(3, 4)) == Farms.fertility(Vector2i(3, 4)), "soil never changes")
+	var fcopy := CitySim.new()
+	fcopy.from_dict(JSON.parse_string(JSON.stringify(fm.to_dict())))
+	_check(fcopy.farms.farms.values()[0].cells.size() == grown, "farms saved")
+	grown = farm.cells.size()
+	fm.farms.price = 0.75  # a bad year for corn
+	fm.farms.tax_rate = 3.0
+	for i in 12:
+		fm.farms.decide(fm.field_usable)
+	_check(farm.cells.size() < grown, "a struggling farm sells fields (%d -> %d)" % [grown, farm.cells.size()])
 	# Old saves (roads only) come back zoned as homes.
 	var old := CitySim.new()
 	old.from_dict({"version": 1, "next_id": 4, "nodes": {"1": [-100, 0], "2": [100, 0]},

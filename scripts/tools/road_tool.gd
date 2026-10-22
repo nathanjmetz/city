@@ -53,6 +53,7 @@ var _ok_mat := RoadStyle.material(Color(0.35, 0.65, 1.0, 0.55), true)
 var _bad_mat := RoadStyle.material(Color(1.0, 0.3, 0.25, 0.6), true)
 var _hover_seg := -1
 var _hover_service := -1
+var _hover_farm := -1
 var _shown_problem := ""
 var _guide := MeshInstance3D.new()
 var _label := Label3D.new()
@@ -201,6 +202,9 @@ func _click() -> void:
 			if _hover_service != -1:
 				sim.apply({"type": "remove_service", "id": _hover_service})
 				_hover_service = -1
+			elif _hover_farm != -1:
+				sim.apply({"type": "remove_farm", "id": _hover_farm})
+				_hover_farm = -1
 			elif _hover_seg != -1:
 				sim.apply({"type": "remove_road", "seg": _hover_seg})
 				_hover_seg = -1
@@ -335,7 +339,7 @@ func _show_length(curve: Array) -> void:
 	var m := RoadNetwork.polyline_length(pts)
 	_label.text = "%d m  (%d ft)" % [roundi(m), roundi(m * 3.28084)]
 	var cost := Economy.road_cost(curve, road_type) * (2 if parallel else 1)
-	_label.text += "\n$" + CitySim.money_text(cost)
+	_label.text += "\n$%s  (you have $%s)" % [CitySim.money_text(cost), CitySim.money_text(sim.economy.money)]
 	var r := RoadNetwork.min_radius(curve[0], curve[1], curve[2])
 	if r < 2000.0:
 		_label.text += "\nCurve safe at %d mph" % RoadStyle.safe_speed_mph(r)
@@ -395,9 +399,11 @@ func _preview_pick(hit: Vector3) -> void:
 	_cursor.material_override = mat
 	# Service buildings can be bulldozed too.
 	_hover_service = sim.services.at(hit) if mode == Mode.BULLDOZE and _hover_seg == -1 else -1
-	if _hover_service != -1:
-		var b: Dictionary = sim.services.buildings[_hover_service]
-		var size: Vector2 = Services.KINDS[b.kind].size
+	_hover_farm = sim.farms.farm_at(hit) if mode == Mode.BULLDOZE and _hover_seg == -1 and _hover_service == -1 else -1
+	if _hover_service != -1 or _hover_farm != -1:
+		var b: Dictionary = sim.services.buildings[_hover_service] if _hover_service != -1 \
+			else sim.farms.farms[_hover_farm]
+		var size: Vector2 = Services.KINDS[b.kind].size if _hover_service != -1 else Farms.FARMHOUSE_SIZE
 		var box := BoxMesh.new()
 		box.size = Vector3(size.x + 1.0, 6.0, size.y + 1.0)
 		_preview.mesh = box
@@ -445,7 +451,7 @@ func _update_hint() -> void:
 			text = "Click to place a roundabout. Roads it crosses join it.  Size %d m  [ ]" \
 				% int(RoadShapes.roundabout_radius(roundabout_radius, road_type) * 2.0)
 		Mode.BULLDOZE:
-			text = "Click a road or service building to remove it."
+			text = "Click a road, service building or farmhouse to remove it."
 		Mode.UPGRADE:
 			text = "Click a road to make it a %s." % RoadStyle.TYPES[road_type].name
 	if elevation != 0.0 and mode != Mode.BULLDOZE and mode != Mode.UPGRADE:

@@ -86,6 +86,15 @@ func _spawn(b: Dictionary) -> Node3D:
 			_cyl(root, 1.4, 32.0, Vector3(0, 16, 0), Color(0.72, 0.74, 0.76))
 			_sphere(root, 9.0, Vector3(0, 37, 0), Color(0.82, 0.85, 0.88))
 			_box(root, Vector3(8, 4, 6), Vector3(8, 2, 8), Color(0.62, 0.36, 0.26))  # pump house
+		Services.Kind.POWER_FEED:
+			for x in [-4.0, 4.0]:
+				_cyl(root, 0.18, 11.0, Vector3(x, 5.5, 0), Color(0.42, 0.33, 0.24))  # wood poles
+				_cyl(root, 0.55, 1.4, Vector3(x, 8.5, 0.5), Color(0.55, 0.58, 0.6))   # transformers
+			_box(root, Vector3(9.5, 0.15, 0.15), Vector3(0, 10.6, 0), Color(0.42, 0.33, 0.24))
+		Services.Kind.WELL:
+			_box(root, Vector3(7, 3.5, 6), Vector3(-4, 1.75, 2), Color(0.62, 0.36, 0.26))
+			_roof_box(root, Vector3(7.4, 0.4, 6.4), Vector3(-4, 3.7, 2))
+			_cyl(root, 1.6, 5.0, Vector3(5, 2.5, 3), Color(0.8, 0.82, 0.84))  # pressure tank
 		Services.Kind.FIRE:
 			_box(root, Vector3(24, 8, 22), Vector3(0, 4, 2), Color(0.58, 0.24, 0.2))
 			for x in [-5.5, 5.5]:
@@ -107,6 +116,10 @@ func _spawn(b: Dictionary) -> Node3D:
 	create_tween().tween_property(root, "scale", Vector3.ONE, 0.45) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	return root
+
+
+func _roof_box(root: Node3D, size: Vector3, pos: Vector3) -> void:
+	_box(root, size, pos, Color(0.25, 0.25, 0.27))
 
 
 func _fence(root: Node3D, w: float, d: float) -> void:

@@ -12,6 +12,8 @@ signal lots_changed
 signal zones_changed
 ## Population, jobs or demand changed (at most every MOVE_EVERY ticks).
 signal stats_changed
+## Farmland or a farm's fields changed.
+signal farms_changed
 
 const TICKS_PER_SECOND := 10
 ## A new building can start every this many ticks.
@@ -31,6 +33,7 @@ var zones := ZoneMap.new()
 var traffic := TrafficSim.new(network)
 var economy := Economy.new()
 var services := Services.new()
+var farms := Farms.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -45,6 +48,7 @@ var stats := {"population": 0, "workers": 0, "jobs": 0, "employed": 0, "homes_fr
 var demand := {ZoneMap.Zone.RESIDENTIAL: 0.6, ZoneMap.Zone.COMMERCIAL: 0.0, ZoneMap.Zone.INDUSTRIAL: 0.1}
 
 var _lots_dirty := true
+var _usable_cache := {}  # field cell -> bool, cleared when roads or lots change
 
 
 func _init() -> void:
@@ -104,6 +108,28 @@ func apply(cmd: Dictionary) -> bool:
 			economy.money -= cost
 			_lots_dirty = true
 			ok = true
+		"paint_farmland":
+			var pts := []
+			for p in cmd.points:
+				pts.append(_v(p))
+			ok = farms.paint_polygon(pts, bool(cmd.get("on", true))) > 0
+			if ok:
+				farms_changed.emit()
+		"place_farmhouse":
+			var pos := _v(cmd.pos)
+			var dir := _v(cmd.dir).normalized()
+			if farmhouse_problem(pos, dir) != "" or Farms.FARMHOUSE_COST > economy.money:
+				return false
+			farms.add_farm(pos, dir, str(cmd.get("crop", "corn")))
+			economy.money -= Farms.FARMHOUSE_COST
+			_lots_dirty = true
+			farms_changed.emit()
+			ok = true
+		"remove_farm":
+			ok = farms.farms.has(int(cmd.id))
+			farms.farms.erase(int(cmd.id))
+			_lots_dirty = true
+			farms_changed.emit()
 		"remove_service":
 			ok = services.buildings.has(int(cmd.id))
 			services.buildings.erase(int(cmd.id))
@@ -117,12 +143,15 @@ func apply(cmd: Dictionary) -> bool:
 			network.remove_segment(int(cmd.seg))
 		"paint_zone":
 			zones.paint(_v(cmd.center), float(cmd.radius), int(cmd.zone))
+			_usable_cache.clear()
 			ok = true
 		"clear":
 			network.clear()
 			zones.cells.clear()
 			economy = Economy.new()
 			services = Services.new()
+			farms = Farms.new()
+			farms_changed.emit()
 			ok = true
 	if ok:
 		_refresh()
@@ -138,6 +167,12 @@ func tick() -> void:
 		update_stats()
 	if tick_count % GROW_EVERY == 0:
 		_grow_one()
+	if tick_count % Farms.DECIDE_EVERY == 0 and not farms.farms.is_empty():
+		farms.tax_rate = economy.tax[ZoneMap.Zone.INDUSTRIAL]
+		farms.price = Farms.price_on(tick_count / (24.0 * TICKS_PER_HOUR))
+		if farms.decide(field_usable):
+			_lots_dirty = true  # lots under new fields go away
+			farms_changed.emit()
 	# Taxes come in and upkeep goes out every game hour, a day settling a month.
 	if tick_count % TICKS_PER_HOUR == 0:
 		economy.money += roundi(economy.monthly_net() / 24.0)
@@ -170,6 +205,8 @@ func update_stats() -> void:
 			ZoneMap.Zone.INDUSTRIAL:
 				factory_jobs += b.cap
 	services.update(network, lots, buildings)
+	factory_jobs += farms.jobs()
+	economy.reach_milestones(pop)
 	var workers := int(pop * WORKER_SHARE)
 	var jobs := shop_jobs + factory_jobs
 	var free := home_cap - pop
@@ -219,6 +256,54 @@ func empty_zoned_lots() -> Array:
 	return out
 
 
+## Why a farmhouse can't go here, or "" if it can: it needs farmland under
+## or beside it and clear ground.
+func farmhouse_problem(pos: Vector3, dir: Vector3) -> String:
+	var home := Farms.cell_of(pos)
+	var near_land := false
+	for dx in range(-1, 2):
+		for dz in range(-1, 2):
+			near_land = near_land or farms.area.has(home + Vector2i(dx, dz))
+	if not near_land:
+		return "Place the farmhouse on farmland. Outline farmland first."
+	var side := Vector3(-dir.z, 0.0, dir.x)
+	var poly := PackedVector2Array()
+	for sgn in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+		var p: Vector3 = pos + side * Farms.FARMHOUSE_SIZE.x * 0.5 * sgn.x + dir * Farms.FARMHOUSE_SIZE.y * 0.5 * sgn.y
+		poly.append(Vector2(p.x, p.z))
+	if Services.road_clash(network, poly):
+		return "Too close to a road."
+	for id in services.buildings:
+		if not Geometry2D.intersect_polygons(poly, services.footprint(id)).is_empty():
+			return "Overlaps a service building."
+	for id in farms.farms:
+		if farms.farms[id].pos.distance_to(pos) < Farms.FARMHOUSE_SIZE.length():
+			return "Too close to another farm."
+	return ""
+
+
+## True when a field cell is clear: no road, lot, service or farmyard on it.
+func field_usable(c: Vector2i) -> bool:
+	if _usable_cache.has(c):
+		return _usable_cache[c]
+	var mid := Farms.cell_center(c)
+	var ok := network.find_segment_near(mid, Farms.CELL * 0.5 + RoadStyle.right_of_way_half(RoadStyle.Type.AVENUE), 2.0).is_empty()
+	if ok:
+		var half := Farms.CELL * 0.5
+		for p in [mid, mid + Vector3(half, 0, half) * 0.8, mid + Vector3(-half, 0, half) * 0.8,
+				mid + Vector3(half, 0, -half) * 0.8, mid + Vector3(-half, 0, -half) * 0.8]:
+			if services.covers(p) or farms.covers(p):
+				ok = false
+		for key in lots:
+			# Fields can take empty roadside lots, but not zoned or built ones.
+			if not buildings.has(key) and zones.zone_at(lots[key].zone_pt) == ZoneMap.Zone.NONE:
+				continue
+			if ok and absf(lots[key].pos.x - mid.x) < half + 16.0 and absf(lots[key].pos.z - mid.z) < half + 16.0:
+				ok = false
+	_usable_cache[c] = ok
+	return ok
+
+
 ## Average share of fire, police, health and school cover across homes.
 func service_coverage() -> float:
 	var total := 0.0
@@ -257,8 +342,13 @@ func _refresh() -> void:
 		lots.clear()
 		for lot in LotPlanner.plan(network):
 			# No lots under a service building.
-			if not (services.covers(lot.pos) or services.covers(lot.front) or services.covers(lot.zone_pt)):
+			var blocked := false
+			for p in [lot.pos, lot.front, lot.zone_pt]:
+				blocked = blocked or services.covers(p) or farms.covers(p) \
+					or farms.owner_of(Farms.cell_of(p)) != -1
+			if not blocked:
 				lots[lot.key] = lot
+		_usable_cache.clear()
 		services.update(network, lots, buildings)
 		lots_changed.emit()
 	# Buildings go away when their lot disappears or its zone changes.
@@ -386,6 +476,7 @@ func to_dict() -> Dictionary:
 		"buildings": buildings,
 		"economy": economy.to_dict(),
 		"services": services.to_dict(),
+		"farms": farms.to_dict(),
 	}
 
 
@@ -401,6 +492,7 @@ func from_dict(d: Dictionary) -> void:
 			zones.paint(lots[key].zone_pt, 3.0, ZoneMap.Zone.RESIDENTIAL)
 	economy.from_dict(d.get("economy", {}))
 	services.from_dict(d.get("services", {}))
+	farms.from_dict(d.get("farms", {}))
 	tick_count = int(d.get("tick", 0))
 	city_seed = int(d.get("seed", 1))
 	buildings.clear()
