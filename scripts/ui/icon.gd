@@ -192,6 +192,43 @@ func _draw() -> void:
 			for leaf in [Vector2(0.32, 0.36), Vector2(0.68, 0.42), Vector2(0.36, 0.6), Vector2(0.66, 0.66)]:
 				draw_circle(P.call(leaf.x, leaf.y), s * 0.12, Color(0.4, 0.7, 0.3))
 			draw_circle(P.call(0.5, 0.22), s * 0.1, Color(0.85, 0.8, 0.45))
+		"traffic", "signal":
+			# A traffic light: red, yellow and green lamps in a housing.
+			draw_rect(Rect2(P.call(0.32, 0.06), Vector2(0.36, 0.88) * s), Color(color, 0.25))
+			draw_rect(Rect2(P.call(0.32, 0.06), Vector2(0.36, 0.88) * s), color, false, w * 0.7)
+			draw_circle(P.call(0.5, 0.24), s * 0.1, Color(0.95, 0.3, 0.25))
+			draw_circle(P.call(0.5, 0.5), s * 0.1, Color(1.0, 0.78, 0.25))
+			draw_circle(P.call(0.5, 0.76), s * 0.1, Color(0.35, 0.85, 0.45))
+		"stop", "allstop":
+			var pts := []
+			var c: Vector2 = P.call(0.5, 0.5)
+			var r := s * (0.44 if kind == "stop" else 0.3)
+			for k in 8:
+				var a := TAU * k / 8.0 + PI / 8.0
+				pts.append(c + Vector2(cos(a), sin(a)) * r)
+			if kind == "allstop":
+				# Four small signs, one per corner.
+				for d in [Vector2(-0.2, -0.2), Vector2(0.2, -0.2), Vector2(-0.2, 0.2), Vector2(0.2, 0.2)]:
+					var moved := []
+					for q in pts:
+						moved.append((q - c) * 0.55 + c + d * s)
+					_poly(moved, Color(0.85, 0.2, 0.18))
+			else:
+				_poly(pts, Color(0.85, 0.2, 0.18))
+				line.call(P.call(0.3, 0.5), P.call(0.7, 0.5), w, Color.WHITE)
+		"nocontrol":
+			line.call(P.call(0.5, 0.06), P.call(0.5, 0.94), w * 1.6)
+			line.call(P.call(0.06, 0.5), P.call(0.94, 0.5), w * 1.6)
+		"auto":
+			line.call(P.call(0.5, 0.2), P.call(0.5, 0.94), w * 1.4)
+			line.call(P.call(0.2, 0.62), P.call(0.8, 0.62), w * 1.4)
+			_poly([P.call(0.5, 0.02), P.call(0.56, 0.14), P.call(0.68, 0.16), P.call(0.58, 0.24),
+				P.call(0.5, 0.3), P.call(0.42, 0.24), P.call(0.32, 0.16), P.call(0.44, 0.14)], accent)
+		"flow":
+			# Roads coloured by how well traffic moves.
+			line.call(P.call(0.1, 0.8), P.call(0.4, 0.5), w * 1.8, Color(0.35, 0.85, 0.45))
+			line.call(P.call(0.4, 0.5), P.call(0.65, 0.35), w * 1.8, Color(1.0, 0.78, 0.25))
+			line.call(P.call(0.65, 0.35), P.call(0.92, 0.15), w * 1.8, Color(0.95, 0.3, 0.25))
 		"help":
 			draw_arc(P.call(0.5, 0.5), s * 0.4, 0, TAU, 32, color, w, true)
 			draw_arc(P.call(0.5, 0.4), s * 0.13, PI * 1.1, PI * 2.4, 16, color, w, true)

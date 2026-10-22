@@ -51,3 +51,7 @@ func _town() -> void:
 			c.look_at_point(Vector3(float(args[4]), 0, float(args[5])))
 			c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
 	_main.set_speed(0)
+	if args.size() > 7 and args[7] == "flow":
+		for c in _main.get_children():
+			if c is TrafficTool:
+				c.set_mode(TrafficTool.Mode.SIGNAL)

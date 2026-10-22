@@ -46,10 +46,21 @@ causes the famous one-lane queues. Here:
 - `scripts/traffic/traffic_view.gd`: draws the cars.
 - `scripts/traffic/junction_view.gd`: traffic lights and signs.
 - `tests/test_traffic.gd`: tests.
+- `scripts/traffic/flow_view.gd`, `scripts/traffic/traffic_tool.gd`: the
+  traffic view and junction tool.
 - `tools/traffic_shot.gd`: renders a busy test town for visual checks.
+
+## Player tools
+
+- Traffic category (or J): roads coloured green to red by traffic flow, like
+  the CS2 traffic info view.
+- Junction cards: Auto, Lights, All-way stop, Stop signs (on the smaller
+  road), None. Click a junction to set it, like TM:PE. Saved with the city
+  (`set_junction` command, "junctions" in the save).
+- Traffic flow counts cars held up by the car ahead, so an empty road reads
+  100% even with stop signs, and queues pull it down (closer to CS than a
+  raw speed average).
 
 ## Next
 
-- Loop 2: traffic flow view (roads coloured by speed) and a junction tool to
-  choose lights, stop signs or none, like TM:PE.
 - Loop 3: parking, delivery trucks, and hooks for buses.

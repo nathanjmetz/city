@@ -145,7 +145,11 @@ func apply(cmd: Dictionary) -> bool:
 			zones.paint(_v(cmd.center), float(cmd.radius), int(cmd.zone))
 			_usable_cache.clear()
 			ok = true
+		"set_junction":
+			# Traffic lights, stop signs or none at a junction (-1 = automatic).
+			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
 		"clear":
+			traffic.overrides.clear()
 			network.clear()
 			zones.cells.clear()
 			economy = Economy.new()
@@ -477,6 +481,7 @@ func to_dict() -> Dictionary:
 		"economy": economy.to_dict(),
 		"services": services.to_dict(),
 		"farms": farms.to_dict(),
+		"junctions": traffic.rules_to_dict(),
 	}
 
 
@@ -494,6 +499,7 @@ func from_dict(d: Dictionary) -> void:
 	economy.from_dict(d.get("economy", {}))
 	services.from_dict(d.get("services", {}))
 	farms.from_dict(d.get("farms", {}))
+	traffic.rules_from_dict(d.get("junctions", {}))
 	tick_count = int(d.get("tick", 0))
 	city_seed = int(d.get("seed", 1))
 	buildings.clear()

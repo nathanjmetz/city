@@ -84,6 +84,17 @@ func _init() -> void:
 	_check(j1.control == TrafficSim.Rule.PRIORITY and j1.major.size() == 2 and j1.sign == "stop",
 		"a street meeting an avenue gets a stop sign")
 
+	# The player can choose lights or signs, and the choice is saved.
+	_check(s.apply({"type": "set_junction", "node": c0, "rule": TrafficSim.Rule.SIGNAL}), "set a junction to lights")
+	_check(s.traffic.junctions[c0].control == TrafficSim.Rule.SIGNAL, "the junction now has lights")
+	var saved := s.to_dict()
+	var s2 := CitySim.new()
+	s2.from_dict(JSON.parse_string(JSON.stringify(saved)))
+	s2.tick()
+	_check(s2.traffic.junctions[c0].control == TrafficSim.Rule.SIGNAL, "the choice survives saving")
+	s.apply({"type": "set_junction", "node": c0, "rule": -1})
+	_check(s.traffic.junctions[c0].control == TrafficSim.Rule.ALL_STOP, "auto puts the all-way stop back")
+
 	# Busy crossroads: cars use both lanes, change lanes, and never share
 	# the junction with a car whose path crosses theirs.
 	var g := _crossroads()

@@ -14,6 +14,8 @@ var road_tool: RoadTool
 var zone_tool: ZoneTool
 var service_tool: ServiceTool
 var farm_tool: FarmTool
+var traffic_tool: TrafficTool
+var _traffic_cards := {}  # TrafficTool.Mode -> Button
 var sim: CitySim
 var game: Node  # main.gd: game speed
 
@@ -75,6 +77,8 @@ func _ready() -> void:
 	service_tool.hint_changed.connect(_show_hint)
 	farm_tool.mode_changed.connect(func(_m): _sync())
 	farm_tool.hint_changed.connect(_show_hint)
+	traffic_tool.mode_changed.connect(func(_m): _sync())
+	traffic_tool.hint_changed.connect(_show_hint)
 	sim.buildings_changed.connect(_update_stats)
 	sim.stats_changed.connect(_update_stats)
 	game.speed_changed.connect(func(_s): _sync_speed())
@@ -106,6 +110,7 @@ func close_all() -> void:
 	zone_tool.set_zone(ZoneTool.OFF)
 	service_tool.set_kind(ServiceTool.OFF)
 	farm_tool.set_mode(FarmTool.Mode.NONE)
+	traffic_tool.set_mode(TrafficTool.Mode.NONE)
 	_sync()
 
 
@@ -231,6 +236,7 @@ func _build_bottom_bar() -> void:
 	_drawers["zones"] = _zones_drawer()
 	_drawers["services"] = _services_drawer()
 	_drawers["farms"] = _farms_drawer()
+	_drawers["traffic"] = _traffic_drawer()
 	_drawers["budget"] = _budget_drawer()
 	for key in _drawers:
 		_drawers[key].add_theme_stylebox_override("panel", StyleBoxEmpty.new())
@@ -243,7 +249,7 @@ func _build_bottom_bar() -> void:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 4)
 	bar.add_child(row)
-	for entry in [["roads", "Roads"], ["zones", "Zoning"], ["farms", "Farming"], ["services", "Services"],
+	for entry in [["roads", "Roads"], ["zones", "Zoning"], ["farms", "Farming"], ["services", "Services"], ["traffic", "Traffic"],
 			["bulldoze", "Bulldoze"],
 			["budget", "Budget"]]:
 		var b := _category_button(entry[0], entry[1])
@@ -396,6 +402,28 @@ func _farms_drawer() -> PanelContainer:
 		b.pressed.connect(func(): farm_tool.set_mode(m))
 		(entry[4] as HBoxContainer).add_child(b)
 		_farm_cards[m] = b
+	return drawer
+
+
+func _traffic_drawer() -> PanelContainer:
+	var drawer := PanelContainer.new()
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	drawer.add_child(row)
+	var view := _section(row, "View")
+	var junctions := _section(row, "Junctions  ·  click one to set it")
+	for entry in [[TrafficTool.Mode.VIEW, "flow", "Flow", "Roads coloured by traffic flow  (J)", view],
+			[TrafficTool.Mode.AUTO, "auto", "Auto", "Let the game choose, by US rules", junctions],
+			[TrafficTool.Mode.SIGNAL, "signal", "Lights", "Traffic lights", junctions],
+			[TrafficTool.Mode.ALL_STOP, "allstop", "All-way", "All-way stop: first to stop goes first", junctions],
+			[TrafficTool.Mode.STOP, "stop", "Stop signs", "Stop signs on the smaller road only", junctions],
+			[TrafficTool.Mode.NO_CONTROL, "nocontrol", "None", "No signs or lights", junctions]]:
+		var m: int = entry[0]
+		var b := _card(entry[1], entry[2], "")
+		b.tooltip_text = entry[3]
+		b.pressed.connect(func(): traffic_tool.set_mode(m))
+		(entry[4] as HBoxContainer).add_child(b)
+		_traffic_cards[m] = b
 	return drawer
 
 
@@ -555,6 +583,9 @@ func _open(cat: String) -> void:
 		"farms":
 			if farm_tool.mode == FarmTool.Mode.NONE:
 				farm_tool.set_mode(FarmTool.Mode.FARMLAND)
+		"traffic":
+			if traffic_tool.mode == TrafficTool.Mode.NONE:
+				traffic_tool.set_mode(TrafficTool.Mode.VIEW)
 		"services":
 			if service_tool.kind == ServiceTool.OFF:
 				service_tool.set_kind(Services.Kind.POWER_FEED)
@@ -563,6 +594,7 @@ func _open(cat: String) -> void:
 			zone_tool.set_zone(ZoneTool.OFF)
 			service_tool.set_kind(ServiceTool.OFF)
 			farm_tool.set_mode(FarmTool.Mode.NONE)
+			traffic_tool.set_mode(TrafficTool.Mode.NONE)
 			_budget_open = true
 			_sync()
 
@@ -575,6 +607,8 @@ func _sync() -> void:
 		_category = "services"
 	elif farm_tool.mode != FarmTool.Mode.NONE:
 		_category = "farms"
+	elif traffic_tool.mode != TrafficTool.Mode.NONE:
+		_category = "traffic"
 	elif road_tool.mode == RoadTool.Mode.BULLDOZE:
 		_category = "bulldoze"
 	elif road_tool.mode != RoadTool.Mode.NONE:
@@ -598,6 +632,8 @@ func _sync() -> void:
 		_service_cards[k].set_pressed_no_signal(k == service_tool.kind)
 	for m in _farm_cards:
 		_farm_cards[m].set_pressed_no_signal(m == farm_tool.mode)
+	for m in _traffic_cards:
+		_traffic_cards[m].set_pressed_no_signal(m == traffic_tool.mode)
 	_parallel_card.set_pressed_no_signal(road_tool.parallel)
 	_elevation.text = "Ground" if road_tool.elevation == 0.0 else "%+.1f m" % road_tool.elevation
 	if _category == "" or _category == "budget":
@@ -647,6 +683,7 @@ func _build_help() -> void:
 	for line in ["1 2 3 4  road, curve, grid, roundabout", "U upgrade   P parallel   B bulldoze",
 			"Page Up / Down  bridge or tunnel", "5 6 7 8  homes, shops, industry, dezone",
 			"Services: place beside a road; green roads show coverage",
+			"J  traffic view; Traffic: set lights or stop signs",
 			"Right click  stop drawing", "Esc  stop drawing, then close everything"]:
 		col.add_child(UiStyle.label(line, 12))
 	var clear := Button.new()
