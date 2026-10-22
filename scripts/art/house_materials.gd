@@ -33,7 +33,9 @@ void fragment() {
 	float f = fract(t);
 	float s = mix(1.0 - depth * 0.5, 1.03, smoothstep(0.0, 0.85, f));
 	s *= 1.0 - depth * (1.0 - smoothstep(0.0, 0.07, f));
-	s = mix(s, 1.0 - depth * 0.4, clamp(fwidth(t) * 1.5, 0.0, 1.0));
+	// Fade the pattern out before it gets smaller than two pixels, so it
+	// never shimmers while the camera moves.
+	s = mix(s, 1.0 - depth * 0.4, smoothstep(0.12, 0.45, fwidth(t)));
 	// Dirt splashed up near the ground, and faint weathering.
 	float grime = 1.0 - 0.12 * (1.0 - smoothstep(0.3, 1.5, UV.y));
 	float n = texture(noise_soft, world_pos.xz / 9.0 + world_pos.y / 13.0).r;
@@ -52,7 +54,7 @@ void fragment() {
 	float x = UV.x / 0.2032 + 0.5 * mod(row, 2.0);
 	float fx = fract(x);
 	float fy = fract(t);
-	float aa = clamp(max(fwidth(t), fwidth(x)) * 1.5, 0.0, 1.0);
+	float aa = smoothstep(0.12, 0.45, max(fwidth(t), fwidth(x)));
 	float joint = max(1.0 - smoothstep(0.0, 0.14, fy), 1.0 - smoothstep(0.0, 0.05, min(fx, 1.0 - fx)));
 	joint = mix(joint, 0.16, aa);
 	float tint = mix(0.84 + hash(vec2(row, floor(x))) * 0.3, 1.0, aa);
@@ -73,7 +75,7 @@ void fragment() {
 	float x = UV.x / 0.333 + 0.5 * mod(row, 2.0) + hash(vec2(row, 3.0)) * 0.2;
 	float fx = fract(x);
 	float fy = fract(t);
-	float aa = clamp(max(fwidth(t), fwidth(x)) * 1.2, 0.0, 1.0);
+	float aa = smoothstep(0.12, 0.45, max(fwidth(t), fwidth(x)));
 	float tint = 0.86 + hash(vec2(row, floor(x))) * 0.26;
 	float edge = mix(0.62, 1.0, smoothstep(0.0, 0.16, fy));
 	float slot = 1.0 - (1.0 - smoothstep(0.0, 0.025, min(fx, 1.0 - fx))) * 0.35;
@@ -116,6 +118,7 @@ void fragment() {
 	float along = UV.y * 4.0;
 	float d = abs(fract(along / 3.0 + 0.5) - 0.5) * 3.0;
 	float joint = 1.0 - smoothstep(0.01, 0.01 + fwidth(along) * 1.5, d);
+	joint *= clamp(0.02 / max(fwidth(along), 0.0001), 0.0, 1.0);  // thinner than a pixel: fade
 	float stain = smoothstep(0.55, 0.85, texture(noise_soft, p / 4.0).r);
 	float grain = texture(noise_grain, p / 0.6).r;
 	vec3 drive = concrete.rgb * (1.0 - stain * 0.12) * (1.0 - joint * 0.4 * close) * (0.95 + grain * 0.1);
@@ -143,7 +146,7 @@ void fragment() {
 	float f = fract(t);
 	float rib = smoothstep(0.0, 0.08, f) * (1.0 - smoothstep(0.16, 0.24, f));
 	float s = 1.0 - 0.18 * (1.0 - smoothstep(0.24, 0.3, f)) + rib * 0.12;
-	s = mix(s, 0.97, clamp(fwidth(t) * 1.5, 0.0, 1.0));
+	s = mix(s, 0.97, smoothstep(0.12, 0.45, fwidth(t)));
 	float streak = texture(noise_soft, vec2(world_pos.x + world_pos.z, world_pos.y * 0.15) / 6.0).r;
 	float grime = 1.0 - 0.1 * (1.0 - smoothstep(0.2, 1.2, world_pos.y));
 	ALBEDO = lin(COLOR.rgb) * s * grime * (0.93 + streak * 0.12);
@@ -167,7 +170,7 @@ void fragment() {
 	float gap = step(0.12, hash(vec2(i, 3.3 + COLOR.g * 31.0)));
 	float band = step(0.12, nx) * step(nx, 0.88);
 	float text = inside * on * gap * band;
-	float aa = clamp(fwidth(UV.x / pitch) * 3.0, 0.0, 1.0);
+	float aa = smoothstep(0.08, 0.3, fwidth(UV.x / pitch));
 	text = mix(text, 0.3 * band * step(0.25, UV.y) * step(UV.y, 0.78), aa);
 	ALBEDO = mix(lin(COLOR.rgb), vec3(0.86, 0.84, 0.79), text);
 	ROUGHNESS = 0.4;

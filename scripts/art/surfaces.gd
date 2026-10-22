@@ -60,7 +60,8 @@ void fragment() {
 	float c = texture(noise_soft, turn(p, 2.0) / 23.0 + 0.7).r;
 	float crack = 1.0 - smoothstep(0.0, fwidth(c) * 0.9 + 0.0008, abs(c - 0.5));
 	float cracked = smoothstep(0.66, 0.74, texture(noise_soft, p / 90.0 + 0.2).r);
-	col = mix(col, tar.rgb, crack * cracked * close * 0.6);
+	float footprint = length(fwidth(p));  // metres per pixel
+	col = mix(col, tar.rgb, crack * cracked * close * 0.6 * (1.0 - smoothstep(0.05, 0.2, footprint)));
 	// Oil drips and tyre grime.
 	float oil = smoothstep(0.70, 0.86, texture(noise_grain, turn(p, 1.4) / 3.3).r);
 	col *= 1.0 - oil * 0.1 * close;
@@ -82,6 +83,9 @@ void fragment() {
 	float along = UV.y * 4.0;
 	float slab = floor(along / %f);
 	float tint = fract(sin(slab * 12.9898 + 3.1) * 43758.5453);
+	// Slabs smaller than a few pixels blend to their average, so they don't
+	// shimmer while the camera moves.
+	tint = mix(tint, 0.5, smoothstep(0.1, 0.35, fwidth(along) / %f));
 	vec3 col = base.rgb * (0.94 + tint * 0.09);
 	// Weathering stains and grit.
 	float stain = texture(noise_soft, turn(p, 0.5) / 9.0).r;
@@ -90,12 +94,13 @@ void fragment() {
 	// A tooled joint line every slab.
 	float d = abs(fract(along / %f + 0.5) - 0.5) * %f;
 	float joint = 1.0 - smoothstep(0.012, 0.012 + fwidth(along) * 1.5, d);
+	joint *= clamp(0.024 / max(fwidth(along), 0.0001), 0.0, 1.0);  // thinner than a pixel: fade
 	col *= 1.0 - joint * joints * 0.45 * close;
 	ALBEDO = col;
 	ROUGHNESS = 0.88;
 	SPECULAR = 0.3;
 }
-""" % [SLAB, SLAB, SLAB]
+""" % [SLAB, SLAB, SLAB, SLAB]
 
 const PAINT := """
 uniform vec4 paint : source_color = vec4(0.88, 0.88, 0.86, 1.0);
