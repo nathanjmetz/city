@@ -51,6 +51,8 @@ var _service_cards := {} # Services.Kind -> Button
 var _farm_cards := {}    # FarmTool.Mode -> Button
 var _warning := UiStyle.label("", 13, Color(1.0, 0.75, 0.3))
 var _parallel_card: Button
+## Grid only: any shape instead of a rectangle.
+var _shape_card: Button
 var _elevation := UiStyle.label("Ground", 12)
 var _speed_buttons := []
 var _clock := UiStyle.label("", 14)
@@ -498,6 +500,9 @@ func _roads_drawer() -> PanelContainer:
 	_parallel_card = _card("parallel", "Parallel", "P")
 	_parallel_card.pressed.connect(func(): road_tool.set_parallel(not road_tool.parallel))
 	opts.add_child(_parallel_card)
+	_shape_card = _card("grid", "Any shape", "Tab: rectangle or any shape")
+	_shape_card.pressed.connect(func(): road_tool.set_grid_free(not road_tool.grid_free))
+	opts.add_child(_shape_card)
 	var lower := _card("lower", "Lower", "Page Down", false)
 	lower.pressed.connect(func(): road_tool.change_elevation(-1))
 	opts.add_child(lower)
@@ -952,6 +957,8 @@ func _sync() -> void:
 	for m in _traffic_cards:
 		_traffic_cards[m].set_pressed_no_signal(m == traffic_tool.mode)
 	_parallel_card.set_pressed_no_signal(road_tool.parallel)
+	_shape_card.set_pressed_no_signal(road_tool.grid_free)
+	_shape_card.visible = road_tool.mode == RoadTool.Mode.GRID
 	_elevation.text = "Ground" if road_tool.elevation == 0.0 else "%+.1f m" % road_tool.elevation
 	if _category == "" or _category == "budget":
 		_show_hint("")
