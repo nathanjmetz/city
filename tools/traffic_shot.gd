@@ -1,6 +1,6 @@
 extends SceneTree
 ## Renders a busy test town to check how traffic looks.
-## Run: godot -s tools/traffic_shot.gd -- out.png yaw pitch dist x z [ticks]
+## Run: godot -s tools/traffic_shot.gd -- out.png yaw pitch dist x z [ticks] [flow|town]
 
 var _main: Node
 var _frames := 0
@@ -42,11 +42,27 @@ func _town() -> void:
 	_rng.seed = 3
 	var args := OS.get_cmdline_user_args()
 	var ticks := int(args[6]) if args.size() > 6 else 1500
+	var town := args.size() > 7 and args[7] == "town"
+	if town:
+		# Homes and shops that grow, with their people driving and walking.
+		sim.economy.money = 1.0e9
+		for k in range(-380, 380, 8):
+			if absi(k) < 40:
+				continue
+			for side in [-18, 18]:
+				sim.apply({"type": "paint_zone", "center": [k, side], "radius": 10, "zone": ZoneMap.Zone.RESIDENTIAL})
+				sim.apply({"type": "paint_zone", "center": [side, k], "radius": 10,
+					"zone": ZoneMap.Zone.COMMERCIAL if k < 0 else ZoneMap.Zone.INDUSTRIAL})
+		for kind in [Services.Kind.POWER_FEED, Services.Kind.WELL]:
+			var site := Services.site_near(sim.network, kind, Vector3(-60 if kind == Services.Kind.WELL else -90, 0, -30))
+			sim.apply({"type": "place_service", "kind": kind, "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})
 	for i in ticks:
-		if i % 3 == 0:
+		if i % 3 == 0 and not town:
 			sim.traffic.add_trip(sim.lots[lots[_rng.randi() % lots.size()]], sim.lots[lots[_rng.randi() % lots.size()]], _rng)
 		sim.tick()
-	print("cars ", sim.traffic.cars.size(), " flow ", sim.traffic.flow, " gave up ", sim.traffic.gave_up)
+	print("cars ", sim.traffic.cars.size(), " flow ", sim.traffic.flow, " gave up ", sim.traffic.gave_up,
+		" parked ", sim.traffic.parked.size(), " walkers ", sim.traffic.walkers.size(), " people ", sim.people.people.size(),
+		" buildings ", sim.buildings.size())
 	for c in _main.get_children():
 		if c is CityCamera:
 			c.look_at_point(Vector3(float(args[4]), 0, float(args[5])))

@@ -99,6 +99,10 @@ func _ready() -> void:
 	var rail_view := RailView.new()
 	rail_view.setup(sim, terrain)
 	add_child(rail_view)
+	var walkers := WalkerView.new()
+	walkers.setup(sim.traffic, _tick_fraction)
+	add_child(walkers)
+
 	var look := DayNight.new()
 	look.setup(sim, sky, _tick_fraction)
 	add_child(look)

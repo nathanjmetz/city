@@ -49,9 +49,16 @@ enum Light { GREEN, YELLOW, RED }
 
 ## Metres along the street a car takes to swing into or out of a driveway.
 const DRIVEWAY_LEAD := 6.0
+## Metres before a lot's entrance a car starts its turn into it.
+const PARK_LEAD := 9.0
 ## Seconds a driver would rather spend than turn left across traffic into
 ## or out of a driveway.
 const CROSS_PEN := 6.0
+
+## People out walking at once, at most; and walking speed (1.4 m/s, the
+## MUTCD design walking speed is 3.5 ft/s for crossings, people stroll faster).
+const MAX_WALKERS := 800
+const WALK_V := 1.4
 
 ## Turning speeds: about 15 mph for a right, 20 mph for a left.
 const TURN_V := [0.0, 6.7, 9.0, 4.0]
@@ -72,6 +79,14 @@ var gave_up := 0
 var arrivals := []
 var failed := []
 var _waiting := []  # vehicles with a job waiting to pull out
+## Vehicles at rest: parked in a stall, driveway or at the curb, at a dock, or
+## out of sight inside a garage or factory bay. Each is a car with at_place,
+## spot, pos, face, hidden, until (tick it heads off, or -1), owner, base.
+var parked := []
+## People on foot: {id, person, pts, cum, len, d, v, then}.
+var walkers := []
+## Goes up whenever a vehicle parks or leaves, so views know to redraw.
+var parked_version := 0
 ## Stand-in deliveries from factories to shops, until the economy sends real
 ## shipments with dispatch(); switch off then.
 var background_freight := true
@@ -110,6 +125,12 @@ var _committed := {} # node -> cars about to cross it
 var _approach := {}  # node -> [{car, conn, ds}] for the first car in each lane
 var _merging := {}   # lane key -> cars pulling out of a driveway into it
 var _acc := ACCEL    # acceleration of the vehicle being worked out
+var _sim: CitySim
+var _places := {}     # place ref -> place (see place())
+var _sites := {}      # place ref -> dispatch endpoint, for places off the lots
+var _walk_lines := {} # segment * 2 + side -> sidewalk line
+var _next_trip := 1
+var _next_walker := 1
 var _restoring := false   # just loaded: junction paths still saved as keys
 var _keep_routes := false
 
@@ -126,9 +147,12 @@ func step(sim: CitySim, rng: RandomNumberGenerator) -> void:
 	if _dirty:
 		_rebuild()
 	_tick = sim.tick_count
+	_sim = sim
 	time += DT
+	_rest()
 	_spawn(sim, rng)
 	_drive(rng)
+	_step_walkers()
 
 
 # --- Public helpers -----------------------------------------------------------
@@ -183,6 +207,8 @@ func _before_conn(c: Dictionary, back: float) -> Array:
 
 
 func _conn_pose(c: Dictionary, jd: float) -> Array:
+	if c.has("rev"):
+		return _poly_pose(c, jd)
 	var p := _poly_point(c.pts, c.cum, jd)
 	var pts: PackedVector3Array = c.pts
 	# Heading follows the path's own tangent (exact for the curve).
@@ -311,8 +337,9 @@ static func lane_offsets(type: int, oneway_flag: bool) -> PackedFloat32Array:
 
 ## Every vehicle exactly as it is, mid-trip and mid-junction, so a loaded
 ## city (or a player joining a region) carries on tick for tick the same,
-## and cargo on its way is never lost or doubled. Stored as Godot's exact
-## text format, since JSON would round the numbers.
+## and cargo on its way is never lost or doubled. Stored as Godot's binary
+## format in base64, since JSON (and even Godot's text format) round the
+## numbers.
 func to_dict() -> Dictionary:
 	var list := []
 	for car in cars + _waiting:
@@ -323,7 +350,9 @@ func to_dict() -> Dictionary:
 		e.erase("facing")
 		list.append(e)
 	var state := {"cars": list, "waiting": _waiting.size(), "next_id": _next_id, "time": time,
-		"gave_up": gave_up, "speed": _speed, "dirty": _dirty, "arrivals": arrivals, "failed": failed}
+		"gave_up": gave_up, "speed": _speed, "dirty": _dirty, "arrivals": arrivals, "failed": failed,
+		"parked": parked, "walkers": walkers, "next_trip": _next_trip, "next_walker": _next_walker,
+		"sites": _sites}
 	# Binary, so every float comes back exactly and copies stay in step
 	# (var_to_str rounds to 15 digits).
 	return {"bin": Marshalls.variant_to_base64(state)}
@@ -332,12 +361,15 @@ func to_dict() -> Dictionary:
 func from_dict(d: Dictionary) -> void:
 	cars.clear()
 	_waiting.clear()
+	parked.clear()
+	walkers.clear()
+	_sites.clear()
+	_places.clear()
+	parked_version += 1
 	_dirty = true
-	var state
-	if d.has("bin"):
-		state = Marshalls.base64_to_variant(str(d.bin))
-	elif d.has("state"):
-		state = str_to_var(str(d.state))  # older saves
+	if not d.has("state") and not d.has("bin"):
+		return
+	var state = _unpack(d)
 	if typeof(state) != TYPE_DICTIONARY:
 		return
 	var list: Array = state.cars
@@ -353,18 +385,35 @@ func from_dict(d: Dictionary) -> void:
 	_speed = state.speed
 	arrivals = state.arrivals
 	failed = state.failed
+	parked = state.get("parked", [])
+	walkers = state.get("walkers", [])
+	_next_trip = state.get("next_trip", _next_id)
+	_next_walker = state.get("next_walker", 1)
+	_sites = state.get("sites", {})
+	_places.clear()
+	parked_version += 1
 	# Junction paths are rebuilt from the roads; keep every car's plan as it
 	# was unless the saved city still had road changes to take in.
 	_restoring = true
 	_keep_routes = not state.dirty
 
 
+## A saved state: binary (now) or Godot's text format (older saves).
+static func _unpack(d: Dictionary):
+	if d.has("bin"):
+		return Marshalls.base64_to_variant(str(d.bin))
+	return str_to_var(str(d.get("state", "")))
+
+
 ## A junction or driveway path as plain data for saving.
 static func _conn_key(c):
-	if c == null or c is Array or c.has("drive"):
+	if c == null or c is Array or c.has("drive") or c.has("poly"):
 		return c  # still saved form (loaded, roads not rebuilt yet)
 	if c.id >= 0:
 		return [c.wi, c.li, c.wo, c.lo]
+	if c.has("rev"):
+		return {"poly": c.pts, "rev": c.rev, "wi": c.wi, "li": c.li, "wo": c.wo, "lo": c.lo,
+			"exit_d": c.exit_d, "vt": c.vt}
 	return {"drive": [c.pts[0], c.ctrl, c.pts[c.pts.size() - 1]], "wo": c.wo, "lo": c.lo,
 		"exit_d": c.exit_d, "vt": c.vt}
 
@@ -376,6 +425,9 @@ func _from_key(k):
 		if not ways.has(k[0]) or not ways.has(k[2]):
 			return null
 		return _connector(k[0], k[1], k[2], k[3])
+	if k.has("poly"):
+		return _poly_path({"node": -1, "wi": k.wi, "li": k.li, "wo": k.wo, "lo": k.lo, "turn": Turn.RIGHT,
+			"vt": k.vt, "exit_d": k.exit_d}, k.poly, k.rev)
 	return _path({"node": -1, "wi": -1, "li": -1, "wo": k.wo, "lo": k.lo, "turn": Turn.RIGHT,
 		"vt": k.vt, "exit_d": k.exit_d}, k.drive[0], k.drive[1], k.drive[2])
 
@@ -393,6 +445,8 @@ func _rebuild() -> void:
 			car.at = pose[0]
 			car.facing = pose[1]
 	ways.clear()
+	_places.clear()
+	_walk_lines.clear()
 	junctions.clear()
 	_in.clear()
 	_out.clear()
@@ -844,6 +898,12 @@ func _targets(goal: Dictionary) -> Dictionary:
 	return out
 
 
+## How far along its road a lot or stop sits, to a micron: a saved city
+## keeps fewer digits, and a loaded copy must drive exactly the same.
+static func _frac(stop: Dictionary) -> float:
+	return float(roundi(float(stop.at_frac) * 1.0e6)) / 1.0e6
+
+
 ## Seconds added for reaching a lot on the far side of the road (a left turn
 ## across oncoming traffic), so drivers prefer to arrive with it on the right.
 func _side_pen(seg: int, side: int) -> Dictionary:
@@ -862,10 +922,10 @@ func _route(from: Dictionary, to: Dictionary) -> Dictionary:
 	var out_pen := _side_pen(from.seg, from.get("side", 1))
 	for fwd in [true, false]:
 		var wid: int = from.seg * 2 + (1 if fwd else 0)
-		if ways.has(wid):
+		if ways.has(wid) and from.get("only_way", wid) == wid:
 			var len: float = ways[wid].len
-			starts.append([wid, from.at_frac * len if fwd else len - from.at_frac * len, out_pen[wid]])
-	var goal := {"seg": to.seg, "frac": to.at_frac, "side": to.get("side", 1)}
+			starts.append([wid, _frac(from) * len if fwd else len - _frac(from) * len, out_pen[wid]])
+	var goal := {"seg": to.seg, "frac": _frac(to), "side": to.get("side", 1)}
 	var targets := _targets(goal)
 	if starts.is_empty() or targets.is_empty():
 		return {}
@@ -905,6 +965,7 @@ func _replan(car: Dictionary, lane := -1) -> bool:
 	car.route = route
 	car.leg = 0
 	car.end_d = targets[route[route.size() - 1]]
+	_fix_end(car, false)
 	return true
 
 
@@ -948,8 +1009,8 @@ func _nearest_d(w: Dictionary, p: Vector3) -> float:
 ## Tells whoever sent a vehicle with a job how it went.
 static func _report(car: Dictionary, into: Array) -> void:
 	if car.get("to_ref", "") != "":
-		into.append({"id": car.id, "purpose": car.purpose, "cargo": car.cargo,
-			"from": car.from_ref, "to": car.to_ref})
+		into.append({"id": car.get("trip", car.id), "vid": car.id, "purpose": car.purpose, "cargo": car.cargo,
+			"from": str(car.from_ref).get_slice("@", 0), "to": str(car.to_ref).get_slice("@", 0)})
 
 
 ## After the roads change, every car finds its way again (or gives up).
@@ -958,7 +1019,10 @@ func _reroute_all() -> void:
 	for car in cars:
 		var wid: int = car.route[car.leg]
 		if car.j != null and car.j.wo < 0:
-			_report(car, arrivals)
+			if car.has("to_place"):
+				_arrive(car)
+			else:
+				_report(car, arrivals)
 			continue  # was parking: it has arrived
 		if car.j != null or not ways.has(wid):
 			# Its road was split or replaced: find the new piece under it.
@@ -994,6 +1058,74 @@ func _reroute_all() -> void:
 		if not kept.has(car) and not (car.j != null and car.j.wo < 0):
 			_report(car, failed)
 	cars = kept
+	# Vehicles on a lot that was cleared away go with it.
+	for car in parked.duplicate():
+		if place(car.at_place).is_empty():
+			parked.erase(car)
+			parked_version += 1
+			_report(car, failed)
+	# Cars parked at a curb that was rebuilt move to the new curb.
+	for car in parked:
+		var pl := place(car.at_place)
+		var ok: bool = car.spot >= 0 and car.spot < pl.spots.size()
+		if ok:
+			var s: Dictionary = pl.spots[car.spot]
+			ok = (s.pos + s.face * car.len * 0.5).distance_to(car.pos) < 0.5
+		if ok:
+			continue
+		var curb := _curb_spots(pl.stop, 3)
+		for c in curb:
+			pl.spots.append(c)
+			pl.taken.append(-1)
+		var at := _reserve(pl, car.id, car.len > 6.5)
+		if at >= 0:
+			var s: Dictionary = pl.spots[at]
+			car.spot = at
+			car.pos = s.pos + s.face * car.len * 0.5
+			car.face = s.face
+			car.hidden = s.hidden
+			parked_version += 1
+	# Vehicles about to pull out plan again on the new roads.
+	for car in parked:
+		if car.get("pending", false) and not _replan_start(car, place(car.at_place).get("stop", {})):
+			_cancel(car)
+	for car in _waiting.duplicate():
+		if not _replan_start(car, car.get("start_stop", {})):
+			_waiting.erase(car)
+			_report(car, failed)
+
+
+## Plans a not-yet-started trip again from its start; false if it can't go.
+func _replan_start(car: Dictionary, from_stop: Dictionary) -> bool:
+	if from_stop.is_empty() or car.get("to_stop", {}).is_empty() or not car.has("to_place"):
+		return car.has("route") and ways.has(car.route[0])
+	if car.to_place != "edge":
+		var pl := place(car.to_place)
+		if pl.is_empty():
+			return false
+		car.to_stop = pl.stop
+	var trip := _route(from_stop, car.to_stop)
+	if trip.is_empty():
+		return false
+	car.merge(trip, true)
+	_fix_end(car)
+	return true
+
+
+## A parked vehicle that can't make its trip after all stays where it is.
+func _cancel(car: Dictionary) -> void:
+	_release(car.get("to_place", ""), car.get("to_spot", -1), car.id)
+	_report(car, failed)
+	car.erase("pending")
+	for k in ["route", "leg", "d", "end_d", "goal", "dest", "park", "home", "to_place", "to_spot", "lane",
+			"to_stop", "after"]:
+		car.erase(k)
+	var pid: int = car.get("driver", -1)
+	car.driver = -1
+	if pid != -1 and _sim != null and _sim.people.people.has(pid):
+		var p: Dictionary = _sim.people.people[pid]
+		p.at = "" if car.at_place == "lot:" + p.home else car.at_place
+		p.until = -1 if p.at == "" else _tick + 30
 
 
 # --- Trips ------------------------------------------------------------------
@@ -1026,6 +1158,8 @@ func _spawn(sim: CitySim, rng: RandomNumberGenerator) -> void:
 		add_trip(sim.lots[plants[rng.randi() % plants.size()]], sim.lots[shops[rng.randi() % shops.size()]],
 			rng, "", "goods")
 		return
+	if not sim.people.people.is_empty():
+		return  # real people make the trips (People.plan)
 	var dests := shops + plants
 	if homes.is_empty() or dests.is_empty():
 		return
@@ -1044,54 +1178,151 @@ func _spawn(sim: CitySim, rng: RandomNumberGenerator) -> void:
 	add_trip(a, b, rng, "", purpose)
 
 
-## Sends a vehicle from one lot to another: it backs out of the driveway,
-## drives, and pulls into the other lot's driveway. Returns false if there's
-## no route or no gap in traffic to pull out into.
+## Sends a vehicle from one lot to another and back: it pulls out of a spot
+## on the first lot, parks on the other a while, then drives home and parks
+## again. Returns false if there's no route.
 func add_trip(a: Dictionary, b: Dictionary, rng: RandomNumberGenerator, kind := "",
 		purpose := "", cargo := {}) -> bool:
 	if cars.size() >= MAX_CARS:
 		return false
-	var car := _route(a, b)
-	if car.is_empty():
-		return false
 	if purpose == "":
 		purpose = "commute"
-	if kind == "":
-		kind = VehicleTypes.for_purpose(purpose, rng)
-	var spec := VehicleTypes.spec(kind)
-	car.merge({"id": _next_id, "kind": kind, "len": float(spec.len), "acc": float(spec.acc),
-		"top": float(spec.top_speed), "pj": null,
-		"color": rng.randi() % 8, "pref": float(spec.pref) * (0.9 + rng.randf() * 0.2),
-		"purpose": purpose, "cargo": cargo, "from_ref": a.get("ref", ""), "to_ref": b.get("ref", ""),
-		"j": null, "jd": 0.0, "commit": false, "conn": null, "arrive": -1.0, "stuck": 0.0,
-		"lc_from": 0.0, "lc_t": 1.0, "lc_cool": 2.0, "a": 0.0, "held": false})
+	var any_kind := kind == ""
+	if any_kind:
+		kind = VehicleTypes.for_purpose(purpose, rng, cargo)
+	var ra := _ref_of(a)
+	var rb := _ref_of(b)
+	if ra == "" or rb == "" or place(rb).is_empty():
+		return false
+	var after := {"stay": 20 + rng.randi() % 60, "back": ra}
+	var vid := new_vehicle(kind, ra, -1)
+	if vid != -1:
+		if _send(_vehicle_parked(vid), rb, purpose, cargo, after):
+			return true
+		retire_vehicle(vid)
+		return false
+	# No room on the lot it leaves from: it pulls away from the curb.
+	var car := _make_vehicle(kind, -1, ra)
+	car.from_stop = a
+	return _send(car, rb, purpose, cargo, after)
+
+
+func _ref_of(lot: Dictionary) -> String:
+	if lot.has("ref") and str(lot.ref) != "":
+		return str(lot.ref)
+	if lot.has("key"):
+		return "lot:" + str(lot.key)
+	return ""
+
+
+func _make_vehicle(kind: String, owner: int, base: String) -> Dictionary:
+	var id := _next_id
 	_next_id += 1
-	if not _launch(car):
-		if car.to_ref == "":
-			return false
-		_waiting.append(car)  # goods always go: wait for a gap
-	return true
+	var spec := VehicleTypes.spec(kind)
+	return {"id": id, "kind": kind, "len": float(spec.len), "acc": float(spec.acc),
+		"top": float(spec.top_speed), "pref": float(roundi(float(spec.pref) * (90 + hash([id, kind]) % 21))) / 100.0,  # exact in saves
+		"color": hash(id) % 8, "owner": owner, "base": base, "driver": -1, "trip": -1, "purpose": "",
+		"cargo": {}, "from_ref": "", "to_ref": "", "until": -1}
 
 
 ## Sends a vehicle with a job: goods, a delivery, a service call. `from` and
-## `to` are {"ref": any id the caller wants back, "pos": [x, z]}; the vehicle
-## leaves from the road nearest `from`, parks at `to`, and its trip shows up
-## in `arrivals` when it gets there (or in `failed` if it can't). Returns the
-## trip id, or -1 if no road leads there. `kind` picks the vehicle (blank:
-## one fitting the purpose).
+## `to` are {"ref": any id the caller wants back, "pos": [x, z]}, plus
+## "drive": [[x, z], ...] for a place reached up its own lane (building end
+## first). The vehicle leaves from `from` (a truck from its depot, or off
+## the map edge), unloads at `to`, shows up in `arrivals` (or `failed`), and
+## then drives back and parks where it came from. Returns the trip id, or -1
+## if no road leads there. `kind` picks the vehicle (blank: one fitting the
+## purpose).
 func dispatch(from: Dictionary, to: Dictionary, purpose: String, cargo := {}, kind := "") -> int:
 	if _dirty:
 		_rebuild()
-	var a := _endpoint(from)
-	var b := _endpoint(to)
-	if a.is_empty() or b.is_empty():
+	var rf := _register(from)
+	var rt := _register(to)
+	if rf == "" or rt == "":
 		return -1
 	var rng := RandomNumberGenerator.new()
-	rng.seed = hash([_next_id, purpose, "dispatch"])
-	var id := _next_id
-	if not add_trip(a, b, rng, kind, purpose, cargo):
+	rng.seed = hash([_next_trip, purpose, "dispatch"])
+	var any_kind := kind == ""
+	if any_kind:
+		kind = VehicleTypes.for_purpose(purpose, rng, cargo)
+	var id := _next_trip
+	var edge_to := {} if rt != "edge" else _endpoint(to)
+	# Trucks head home soon after unloading; a car waits most of a day for
+	# its trip back (school, work), and anything is picked up sooner if the
+	# next job starts where it is.
+	var stay := 15 + rng.randi() % 20 if VehicleTypes.spec(kind).len > 6.5 else 600
+	if rf == "edge":
+		# Imports come in off the map and head back out after unloading.
+		var stop := _endpoint(from)
+		if stop.is_empty():
+			return -1
+		var car := _make_vehicle(kind, -1, "edge")
+		car.from_stop = stop
+		return id if _send(car, rt, purpose, cargo, {"stay": stay, "back": "edge", "back_stop": stop},
+			edge_to) else -1
+	# A vehicle already parked here that nobody owns (a depot's truck, or one
+	# that just finished the last leg of its round) takes the job.
+	var car := {}
+	for p in parked:
+		if p.at_place == rf and p.owner == -1 and not p.get("pending", false) and p.get("driver", -1) == -1 \
+				and (p.kind == kind or any_kind and p.get("job", "") == purpose):
+			car = p
+			break
+	if car.is_empty():
+		# A new one, based where vehicles are kept: a lot or yard with room
+		# for them, else wherever this trip ends.
+		var base := rf
+		var pl := place(rf)
+		if pl.lot.is_empty() and pl.drive.is_empty() and rt != "edge":
+			base = rt
+		var vid := new_vehicle(kind, rf, -1, base)
+		if vid != -1:
+			car = _vehicle_parked(vid)
+		else:
+			car = _make_vehicle(kind, -1, base)
+			car.from_stop = pl.stop
+	car.job = purpose
+	# After unloading it heads back to its base, unless that's where it is.
+	var after := {"stay": stay, "back": car.base}
+	if car.base == rt or rt == "edge":
+		after = {}
+	return id if _send(car, rt, purpose, cargo, after, edge_to) else -1
+
+
+## Sends a vehicle that's parked somewhere on one more leg, with no trip
+## back: a bus going stop to stop, a truck on a round of calls. `to` is a
+## dispatch endpoint. Returns the trip id (it shows up in `arrivals` with
+## this vehicle's "vid"), or -1 if the vehicle isn't parked or can't get there.
+func move(vid: int, to: Dictionary, purpose: String, cargo := {}) -> int:
+	if _dirty:
+		_rebuild()
+	var car := _vehicle_parked(vid)
+	if car.is_empty() or car.get("pending", false):
 		return -1
-	return id
+	var rt := _register(to)
+	if rt == "":
+		return -1
+	var id := _next_trip
+	return id if _send(car, rt, purpose, cargo, {}, {} if rt != "edge" else _endpoint(to)) else -1
+
+
+## Remembers a dispatch endpoint as a place; returns its ref ("" if no road).
+func _register(e: Dictionary) -> String:
+	var ref := str(e.get("ref", ""))
+	if ref == "edge":
+		return ref if not _endpoint(e).is_empty() else ""
+	if ref.begins_with("home:"):
+		ref = "lot:" + ref.substr(5)  # a home is its lot
+	if ref.begins_with("lot:") and not place(ref).is_empty():
+		return ref
+	# One caller ref can name many spots (a bus going stop to stop), so a
+	# site is also keyed by where it is; reports drop the "@x,z" again.
+	ref = "%s@%d,%d" % [ref if ref != "" else "at", roundi(float(e.pos[0])), roundi(float(e.pos[1]))]
+	if _sites.has(ref) and _places.has(ref):
+		return ref
+	_sites[ref] = e
+	_places.erase(ref)
+	return ref if not place(ref).is_empty() else ""
 
 
 ## A place given as {"ref", "pos": [x, z]}, as a lot-like stop on the nearest road.
@@ -1125,7 +1356,12 @@ func _launch(car: Dictionary) -> bool:
 	var last: bool = car.route.size() == 1
 	var limit: float = car.end_d - 4.0 if last else w.s1 - 0.5
 	var exit_d := minf(car.d + DRIVEWAY_LEAD + 2.0, limit)
-	if exit_d <= car.d + 1.0 and last:
+	var out := {}
+	var from_pl: Dictionary = _places.get(car.get("from_place", ""), {})
+	if not from_pl.is_empty() and car.get("from_spot", -1) >= 0 and car.from_spot < from_pl.spots.size():
+		out = _out_path(car, from_pl, car.from_spot, w, car.lane, car.d)
+		exit_d = out.exit_d
+	elif exit_d <= car.d + 1.0 and last:
 		return false  # next door: walk
 	# Pull out only when there's a gap in the traffic.
 	for other in cars:
@@ -1139,7 +1375,12 @@ func _launch(car: Dictionary) -> bool:
 		var od: float = other.d if other.j == null else other.j.exit_d
 		if od > car.d - 30.0 and od < exit_d + 12.0:
 			return false
-	if car.home != null:
+	if not out.is_empty():
+		car.j = out
+		car.jd = 0.0
+		car.d = exit_d
+		car.from_spot = -1
+	elif car.get("home") != null:
 		car.j = _driveway_out(car, exit_d)
 	else:
 		car.d = exit_d
@@ -1183,6 +1424,999 @@ func _lane_point(w: Dictionary, lane: int, d: float) -> Vector3:
 	return _poly_point(w.pts, w.cum, d) + Vector3(-f.z, 0.0, f.x) * w.offs[lane]
 
 
+# --- Places, parking and people on foot --------------------------------------
+#
+# No vehicle simply disappears (Brawn's rule, and what CS2 does): every trip
+# ends parked in a stall or driveway, at a loading dock, or inside a building
+# (a garage or a factory bay), and later the vehicle drives back out. Only
+# trips off the edge of the map end out of sight. People get out and walk
+# to the door, and walk back to their car when it is time to go.
+
+## The place a ref stands for: a lot ("lot:12:1:3"), a site reached by its
+## own lane (registered by dispatch), or the map edge. {} if it's gone.
+## {ref, stop (lot-like stop on the road, for routing), spots: [{pos, face,
+## kind, hidden, local}], taken: [vehicle id or -1], door, lot, lay, drive}
+func place(ref: String) -> Dictionary:
+	if _places.has(ref):
+		var pl: Dictionary = _places[ref]
+		if not pl.has("seed") or _place_seed(ref) == pl.seed:
+			return pl
+		_places.erase(ref)  # rebuilt with a different building
+	var pl := {}
+	if ref.begins_with("lot:"):
+		pl = _lot_place(ref)
+	elif _sites.has(ref):
+		pl = _site_place(_sites[ref])
+	if pl.is_empty():
+		return {}
+	_places[ref] = pl
+	_claim_spots(pl)
+	return pl
+
+
+func _place_seed(ref: String) -> int:
+	if _sim == null or not ref.begins_with("lot:"):
+		return 0
+	var b = _sim.buildings.get(ref.substr(4))
+	return 0 if b == null else int(b.seed) + 7 * int(b.zone)
+
+
+func _lot_place(ref: String) -> Dictionary:
+	if _sim == null or not _sim.lots.has(ref.substr(4)):
+		return {}
+	var lot: Dictionary = _sim.lots[ref.substr(4)]
+	var b = _sim.buildings.get(ref.substr(4))
+	var lay := SiteLayout.empty_lot() if b == null else SiteLayout.for_building(int(b.zone), int(b.seed), lot)
+	var spots := []
+	for s in lay.spots:
+		spots.append({"pos": SiteLayout.world(lot, s.pos), "face": SiteLayout.world_dir(lot, s.face),
+			"kind": s.kind, "hidden": s.kind == "garage" or s.kind == "bay", "local": s.pos})
+	var stop := lot.duplicate()
+	stop.ref = ref
+	return {"ref": ref, "stop": stop, "lot": lot, "lay": lay, "spots": spots, "taken": _fill(spots.size()),
+		"door": SiteLayout.world(lot, lay.door), "seed": _place_seed(ref), "drive": PackedVector3Array(),
+		"zone": -1 if b == null else int(b.zone)}
+
+
+## A place reached from the road by its own lane, like a farmyard or a mine:
+## trucks drive up the lane to the dock at its end.
+func _site_place(e: Dictionary) -> Dictionary:
+	var ref: String = str(e.get("ref", ""))
+	var drive := PackedVector3Array()
+	for p in e.get("drive", []):
+		drive.append(Vector3(float(p[0]), 0.0, float(p[1])))
+	var road_end := Vector3(float(e.pos[0]), 0.0, float(e.pos[1]))
+	if drive.size() >= 2:
+		road_end = drive[drive.size() - 1]
+	var stop := _endpoint({"ref": ref, "pos": [road_end.x, road_end.z]})
+	if stop.is_empty():
+		return {}
+	var spots := []
+	var door := road_end
+	if drive.size() >= 2:
+		var t := _flat_dir(drive[0] - drive[1])
+		var side := Vector3(-t.z, 0.0, t.x)
+		door = drive[0] + t * 2.0
+		# Inside the building (where its own trucks are kept), then two docks
+		# in front of it, side by side.
+		spots.append({"pos": drive[0] + t * 9.0, "face": t, "kind": "bay", "hidden": true, "local": Vector2.ZERO})
+		spots.append({"pos": drive[0] - t * 4.0, "face": t, "kind": "dock", "hidden": false, "local": Vector2.ZERO})
+		spots.append({"pos": drive[0] - t * 5.0 + side * 4.5, "face": t, "kind": "dock", "hidden": false,
+			"local": Vector2.ZERO})
+	else:
+		spots = _curb_spots(stop, 1)
+	return {"ref": ref, "stop": stop, "lot": {}, "lay": {}, "spots": spots, "taken": _fill(spots.size()),
+		"door": door, "drive": drive, "zone": -1}
+
+
+## A car at the curb pulls away the way it faces.
+func _curb_start(s: Dictionary, stop: Dictionary) -> Dictionary:
+	var a := stop.duplicate()
+	for fwd in [true, false]:
+		var wid: int = stop.seg * 2 + (1 if fwd else 0)
+		if not ways.has(wid):
+			continue
+		var w: Dictionary = ways[wid]
+		var d := _nearest_d(w, s.pos)
+		if _way_dir(w, d).dot(s.face) > 0.0:
+			a.only_way = wid
+			a.at_frac = (d if fwd else w.len - d) / maxf(w.len, 0.001)
+	return a
+
+
+## Places at the side of the road in front of a stop, as on a main street.
+func _curb_spots(stop: Dictionary, n: int) -> Array:
+	var out := []
+	var wid: int = stop.seg * 2 + 1
+	if not ways.has(wid):
+		wid = stop.seg * 2
+	if not ways.has(wid):
+		return out
+	var w: Dictionary = ways[wid]
+	if w.s1 - w.s0 < 24.0:
+		return out  # too short a piece of road to park along
+	var mid: float = _frac(stop) * w.len if w.fwd else w.len - _frac(stop) * w.len
+	var face := 1.0 if (stop.side > 0) == w.fwd else -1.0
+	var edge := RoadStyle.half_width(w.type) - 1.1
+	for k in n:
+		# Clear of the junctions at both ends, with room to pull away.
+		var d := clampf(mid + (k - (n - 1) * 0.5) * 7.0, w.s0 + 12.0, w.s1 - 12.0)
+		var dir := _way_dir(w, d) * face
+		var right := Vector3(-dir.z, 0.0, dir.x)
+		var p := _poly_point(w.pts, w.cum, d) + right * edge
+		out.append({"pos": p, "face": dir, "kind": "curb", "hidden": false, "local": Vector2.ZERO})
+	return out
+
+
+static func _fill(n: int) -> Array:
+	var a := []
+	a.resize(n)
+	a.fill(-1)
+	return a
+
+
+## Marks the spots of a freshly built place that vehicles already hold.
+func _claim_spots(pl: Dictionary) -> void:
+	for car in parked:
+		if car.at_place == pl.ref and car.spot >= 0 and car.spot < pl.taken.size():
+			pl.taken[car.spot] = car.id
+	for car in cars + _waiting:
+		if car.get("to_place", "") == pl.ref and car.get("to_spot", -1) >= 0 and car.to_spot < pl.taken.size():
+			pl.taken[car.to_spot] = car.id
+
+
+## A free spot for a vehicle: trucks take docks and bays first, cars their
+## garage or driveway, then a stall. -1 if the place is full.
+func _reserve(pl: Dictionary, vid: int, truck: bool) -> int:
+	var order := ["dock", "bay", "stall", "drive", "curb"] if truck else ["garage", "drive", "stall", "curb"]
+	for kind in order:
+		for i in pl.spots.size():
+			if pl.taken[i] == -1 and pl.spots[i].kind == kind:
+				pl.taken[i] = vid
+				return i
+	return -1
+
+
+func _release(ref: String, i: int, vid: int) -> void:
+	if not _places.has(ref):
+		return
+	var pl: Dictionary = _places[ref]
+	if i >= 0 and i < pl.taken.size() and pl.taken[i] == vid:
+		pl.taken[i] = -1
+
+
+## Where a car parks when its own destination is full: the nearest lot with
+## a free stall within a short walk, like CS2 drivers looking for parking.
+func _parking_near(pl: Dictionary, vid: int) -> Array:
+	if _sim == null:
+		return []
+	var best := []
+	var best_d := 250.0
+	var keys := _sim.buildings.keys()
+	keys.sort()
+	for key in keys:
+		if _sim.buildings[key].zone == ZoneMap.Zone.RESIDENTIAL or not _sim.lots.has(key):
+			continue
+		var d: float = _sim.lots[key].front.distance_to(pl.door)
+		if d >= best_d:
+			continue
+		var other := place("lot:" + key)
+		if other.is_empty() or other.ref == pl.ref:
+			continue
+		for i in other.spots.size():
+			if other.taken[i] == -1 and other.spots[i].kind == "stall":
+				best = [other.ref, i]
+				best_d = d
+				break
+	if not best.is_empty():
+		_places[best[0]].taken[best[1]] = vid
+	return best
+
+
+## A new vehicle at rest in a place (a household car in its driveway, a
+## truck in its depot). Returns its id, or -1 if there's no room there.
+func new_vehicle(kind: String, at_ref: String, owner: int, owner_place := "") -> int:
+	var pl := place(at_ref)
+	if pl.is_empty():
+		return -1
+	var spot := _reserve(pl, _next_id, VehicleTypes.spec(kind).len > 6.5)
+	if spot < 0:
+		return -1
+	var car := _make_vehicle(kind, owner, owner_place if owner_place != "" else at_ref)
+	_park(car, pl, spot)
+	return car.id
+
+
+## Takes a vehicle out of the town for good: it was sold, or its owner left.
+func retire_vehicle(vid: int) -> void:
+	for car in parked:
+		if car.id == vid:
+			_release(car.at_place, car.spot, vid)
+			parked.erase(car)
+			parked_version += 1
+			return
+	for car in cars + _waiting:
+		if car.id == vid:
+			car.owner = -1
+			car.retire = true  # gone once it gets where it's going
+			return
+
+
+## Someone left town: they stop walking and nobody waits for them.
+func forget_person(pid: int) -> void:
+	for w in walkers.duplicate():
+		if w.person == pid:
+			walkers.erase(w)
+	for car in parked:
+		if car.get("driver", -1) == pid:
+			car.driver = -1
+
+
+func _vehicle_parked(vid: int) -> Dictionary:
+	for car in parked:
+		if car.id == vid:
+			return car
+	return {}
+
+
+## Puts a vehicle at rest in a spot.
+func _park(car: Dictionary, pl: Dictionary, spot: int) -> void:
+	var s: Dictionary = pl.spots[spot]
+	car.at_place = pl.ref
+	car.spot = spot
+	car.pos = s.pos + s.face * car.len * 0.5  # front bumper, as when driving
+	car.face = s.face
+	car.hidden = s.hidden
+	car.v = 0.0
+	car.a = 0.0
+	car.j = null
+	car.conn = null
+	car.pj = null
+	for k in ["route", "leg", "d", "end_d", "goal", "dest", "park", "home", "to_place", "to_spot", "lane",
+			"commit", "arrive", "stuck", "lc_from", "lc_t", "lc_cool", "held", "jd", "at", "facing", "pulled_over"]:
+		car.erase(k)
+	if not car.has("until"):
+		car.until = -1
+	parked.append(car)
+	parked_version += 1
+
+
+## Sends a resting vehicle to another place, to park there and then do
+## `after` ({"stay": ticks, "back": ref to return to, "driver": person}).
+## Returns false if there's no road there.
+func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, after: Dictionary,
+		edge_stop := {}) -> bool:
+	var to_pl := place(to_ref) if to_ref != "edge" else {"ref": "edge", "edge": true, "stop": edge_stop}
+	if to_ref == "edge" and edge_stop.is_empty():
+		return false
+	var from_pl := place(car.at_place) if car.has("at_place") else {}
+	if to_pl.is_empty():
+		return false
+	var a: Dictionary = from_pl.stop if not from_pl.is_empty() else car.get("from_stop", {})
+	if a.is_empty():
+		return false
+	if not from_pl.is_empty() and car.spot < from_pl.spots.size() and from_pl.spots[car.spot].kind == "curb":
+		a = _curb_start(from_pl.spots[car.spot], a)
+	var trip := _route(a, to_pl.stop)
+	if trip.is_empty():
+		return false
+	var spot := -1
+	var park_ref: String = to_pl.ref
+	if not to_pl.get("edge", false):
+		spot = _reserve(to_pl, car.id, car.len > 6.5)
+		if spot < 0 and after.get("driver", -1) != -1:
+			var alt := _parking_near(to_pl, car.id)
+			if not alt.is_empty():
+				park_ref = alt[0]
+				spot = alt[1]
+				var alt_trip := _route(a, place(park_ref).stop)
+				if not alt_trip.is_empty():
+					trip = alt_trip
+		if spot < 0:
+			# Nowhere to park: double-park at the curb out front, as delivery
+			# trucks do, or (for a car) take a curb space anyway.
+			var curb := _curb_spots(to_pl.stop, 1)
+			if curb.is_empty():
+				return false
+			to_pl.spots.append(curb[0])
+			to_pl.taken.append(car.id)
+			spot = to_pl.spots.size() - 1
+	car.merge(trip, true)
+	car.to_stop = to_pl.stop
+	if not car.has("at_place"):
+		car.start_stop = a
+	car.merge({"trip": _next_trip, "purpose": purpose, "cargo": cargo,
+		"from_ref": car.get("at_place", ""), "to_ref": to_ref, "to_place": park_ref, "to_spot": spot,
+		"after": after, "pj": null, "j": null, "jd": 0.0, "commit": false, "conn": null, "arrive": -1.0,
+		"stuck": 0.0, "lc_from": 0.0, "lc_t": 1.0, "lc_cool": 2.0, "a": 0.0, "held": false,
+		"from_place": car.get("at_place", ""), "from_spot": car.get("spot", -1), "until": -1}, true)
+	_next_trip += 1
+	_fix_end(car)
+	if car.has("at_place"):
+		car.pending = true  # pulls out as soon as there's a gap
+		_try_launch(car)
+	elif not _launch(car):
+		_waiting.append(car)
+	return true
+
+
+## A parked vehicle with a trip pulls out if there's a gap in traffic.
+func _try_launch(car: Dictionary) -> bool:
+	if cars.size() >= MAX_CARS or not _launch(car):
+		return false
+	_release(car.at_place, car.spot, car.id)
+	parked.erase(car)
+	parked_version += 1
+	for k in ["at_place", "spot", "pos", "face", "hidden", "pending"]:
+		car.erase(k)
+	return true
+
+
+## The place a car is heading for, making sure it still holds a spot there
+## (places are rebuilt when roads or buildings change). {} if it's gone.
+func _dest(car: Dictionary) -> Dictionary:
+	if car.get("to_place", "") == "" or car.to_place == "edge":
+		return {}
+	var pl := place(car.to_place)
+	if pl.is_empty():
+		return {}
+	var i: int = car.get("to_spot", -1)
+	if i < 0 or i >= pl.spots.size() or (pl.taken[i] != car.id and pl.taken[i] != -1):
+		i = _reserve(pl, car.id, car.len > 6.5)
+		if i < 0:
+			var curb := _curb_spots(pl.stop, 1)
+			if curb.is_empty():
+				return {}
+			pl.spots.append(curb[0])
+			pl.taken.append(car.id)
+			i = pl.spots.size() - 1
+		car.to_spot = i
+	pl.taken[i] = car.id
+	return pl
+
+
+## Points a car's trip end at the entrance it will turn in at.
+## If the place has moved off this road (its lots were redrawn), the car
+## heads for where it is now.
+func _fix_end(car: Dictionary, may_replan := true) -> void:
+	if car.get("pulled_over", false):
+		return
+	var pl := _dest(car)
+	if pl.is_empty():
+		return
+	var w: Dictionary = ways[car.route[car.route.size() - 1]]
+	var e := _entrance(pl, car.to_spot)
+	var d := _nearest_d(w, e)
+	var stop: Dictionary = pl.get("stop", {})
+	if may_replan and not car.get("pulled_over", false) and _lane_point(w, 0, d).distance_to(e) > 30.0 \
+			and stop.has("seg"):
+		car.goal = {"seg": stop.seg, "frac": _frac(stop), "side": stop.get("side", 1)}
+		car.to_stop = stop
+		if _replan(car):
+			return
+	car.end_d = clampf(d, 0.5, w.len - 0.5)
+
+
+## A driver who can't get there from this lane parks at the curb just
+## ahead and walks the rest of the way, rather than stopping in the road.
+func _pull_over(car: Dictionary, w: Dictionary) -> void:
+	var pl := place(car.to_place)
+	if pl.is_empty():
+		return
+	var at := clampf(car.d + 14.0, 0.0, w.len)
+	var frac: float = at / w.len if w.fwd else 1.0 - at / w.len
+	var curb := _curb_spots({"seg": w.seg, "at_frac": frac, "side": 1 if w.fwd else -1}, 1)
+	if curb.is_empty():
+		return
+	_release(pl.ref, car.get("to_spot", -1), car.id)
+	pl.spots.append(curb[0])
+	pl.taken.append(car.id)
+	car.to_spot = pl.spots.size() - 1
+	car.pulled_over = true
+	car.end_d = clampf(_nearest_d(w, _entrance(pl, car.to_spot)), car.d + PARK_LEAD, w.len - 0.5)
+
+
+## Where cars leave the road for a spot: the curb cut, the lane's road end,
+## or the curb space itself.
+func _entrance(pl: Dictionary, spot: int) -> Vector3:
+	var s: Dictionary = pl.spots[spot]
+	if s.kind == "curb":
+		return s.pos - s.face * 9.0
+	if not pl.drive.is_empty():
+		return pl.drive[pl.drive.size() - 1]
+	return SiteLayout.world(pl.lot, Vector2(pl.lay.cut_x, -pl.lot.to_curb))
+
+
+## The way in, from the edge of the road to the spot, in local steps.
+func _approach_pts(pl: Dictionary, spot: int, car_len: float) -> Array:
+	var s: Dictionary = pl.spots[spot]
+	var front: Vector3 = s.pos + s.face * car_len * 0.5
+	if s.kind == "curb":
+		return [s.pos - s.face * (car_len * 0.5 + 1.0), front]
+	if not pl.drive.is_empty():
+		var out := []
+		for i in range(pl.drive.size() - 1, 0, -1):
+			out.append(pl.drive[i])
+		out.append(front)
+		return out
+	var lot: Dictionary = pl.lot
+	var lay: Dictionary = pl.lay
+	var cut: float = lay.cut_x
+	var sp: Vector2 = s.local
+	var pts := [Vector2(cut, -lot.to_curb)]
+	match s.kind:
+		"stall":
+			pts.append(Vector2(cut, lay.aisle_z))
+			pts.append(Vector2(sp.x, lay.aisle_z))
+		"bay":
+			pts.append(Vector2(cut, sp.y - 13.0))
+			pts.append(Vector2(sp.x, sp.y - 9.0))
+	var out := []
+	for p in pts:
+		out.append(SiteLayout.world(lot, p))
+	out.append(front)
+	return out
+
+
+## Path from the lane into a spot, starting where the car is now.
+func _in_path(car: Dictionary) -> Dictionary:
+	var pl := _dest(car)
+	if pl.is_empty():
+		var here := car_pose(car)
+		return _poly_path({"node": -1, "wi": -1, "li": -1, "wo": -1, "lo": -1, "turn": Turn.RIGHT,
+			"vt": 4.0, "exit_d": 0.0}, _smooth([here[0], here[0] + here[1] * 3.0]), 0.0)
+	car.spot_geo = pl.spots[car.to_spot].duplicate()  # where this path ends
+	var w: Dictionary = ways[car.route[car.leg]]
+	# Start along the car's own heading, so the turn in begins smoothly.
+	var here := car_pose(car)
+	var wps := [here[0], here[0] + here[1] * 2.0,
+		_lane_point(w, car.lane, clampf(car.end_d - 1.0, car.d + 2.5, w.len))]
+	wps.append_array(_approach_pts(pl, car.to_spot, car.len))
+	return _poly_path({"node": -1, "wi": w.id, "li": car.lane, "wo": -1, "lo": -1, "turn": Turn.RIGHT,
+		"vt": 4.0, "exit_d": 0.0}, _smooth(wps), 0.0)
+
+
+## Path out of a spot into lane `lane` of way `w`, starting at road position
+## `d`: backing out of the stall or driveway first, as drivers do.
+func _out_path(car: Dictionary, pl: Dictionary, spot: int, w: Dictionary, lane: int, d: float) -> Dictionary:
+	var s: Dictionary = pl.spots[spot]
+	var top: float = maxf(w.s1 - 0.5, 1.0)  # back in the lane before the junction
+	var front: Vector3 = s.pos + s.face * car.len * 0.5
+	var entry := _entrance(pl, spot)
+	var de := _nearest_d(w, entry)
+	if s.kind == "curb":
+		# Pull away from the curb into the lane.
+		var df := _nearest_d(w, front)
+		var go := clampf(df + 7.0, 0.5, top)
+		var pts := _smooth([front, front + s.face * 2.0, _lane_point(w, lane, minf(clampf(df + 4.0, 0.5, top), go - 3.0)),
+			_lane_point(w, lane, go)])
+		return _poly_path({"node": -1, "wi": -1, "li": -1, "wo": w.id, "lo": lane, "turn": Turn.RIGHT,
+			"vt": 4.0, "exit_d": go}, pts, 0.0)
+	if s.kind == "drive" or s.kind == "garage":
+		# Straight back down the driveway and out into the street, ending up
+		# pointed the way the car is going.
+		var back_d := clampf(de - 8.0, 0.5, top)
+		var rev := [front, entry]
+		rev.append(_lane_point(w, lane, clampf(de, 0.5, top)))
+		rev.append(_lane_point(w, lane, back_d))
+		var pts := _smooth(rev)
+		return _poly_path({"node": -1, "wi": -1, "li": -1, "wo": w.id, "lo": lane, "turn": Turn.RIGHT,
+			"vt": 4.0, "exit_d": back_d}, pts, _polylen(pts))
+	# Back out of the stall or dock, turning to face the way out, then drive
+	# forward to the street.
+	var side := Vector3(-s.face.z, 0.0, s.face.x)
+	var swing := side if side.dot(entry - s.pos) < 0.0 else -side
+	var back: float = car.len + (7.0 if s.kind == "bay" else 1.5)
+	var mid: Vector3 = front - s.face * back
+	var rev_pts := _smooth([front, mid, mid + swing * 4.5])
+	var fwd := [rev_pts[rev_pts.size() - 1], mid]
+	if not pl.drive.is_empty():
+		for i in range(1, pl.drive.size()):
+			fwd.append(pl.drive[i])
+	elif not pl.lay.is_empty():
+		if s.kind == "stall":
+			fwd.append(SiteLayout.world(pl.lot, Vector2(pl.lay.cut_x, pl.lay.aisle_z)))
+		fwd.append(entry)
+	var exit_d := clampf(de + DRIVEWAY_LEAD + 2.0, 0.5, top)
+	# The last few metres run along the lane, so it joins the traffic straight.
+	fwd.append(_lane_point(w, lane, minf(clampf(de + 2.0, 0.5, top), exit_d - 3.0)))
+	fwd.append(_lane_point(w, lane, exit_d))
+	var fwd_pts := _smooth(fwd)
+	var all := rev_pts.duplicate()
+	for i in range(1, fwd_pts.size()):
+		all.append(fwd_pts[i])
+	return _poly_path({"node": -1, "wi": -1, "li": -1, "wo": w.id, "lo": lane, "turn": Turn.RIGHT,
+		"vt": 4.0, "exit_d": exit_d}, all, _polylen(rev_pts))
+
+
+## A path through these points with the corners rounded off.
+static func _smooth(wps: Array) -> PackedVector3Array:
+	var p := []
+	for q in wps:
+		if p.is_empty() or Vector2(q.x - p[-1].x, q.z - p[-1].z).length() > 0.5:
+			p.append(Vector3(q.x, 0.0, q.z))
+	var out := PackedVector3Array([p[0]])
+	if p.size() == 1:
+		out.append(p[0] + Vector3(0, 0, 0.01))
+		return out
+	if p.size() == 2:
+		var n := maxi(2, int(p[0].distance_to(p[1]) / 0.8))
+		for k in range(1, n + 1):
+			out.append(p[0].lerp(p[1], float(k) / n))
+		return out
+	for i in range(1, p.size() - 1):
+		var a: Vector3 = p[0] if i == 1 else (p[i - 1] + p[i]) * 0.5
+		var b: Vector3 = p[p.size() - 1] if i == p.size() - 2 else (p[i] + p[i + 1]) * 0.5
+		if i > 1:
+			pass  # the straight run to `a` is the previous curve's end
+		var n := maxi(6, int((a.distance_to(p[i]) + p[i].distance_to(b)) / 0.3))
+		for k in range(1, n + 1):
+			out.append(RoadNetwork.bezier(a, p[i], b, float(k) / n))
+	return out
+
+
+static func _polylen(pts: PackedVector3Array) -> float:
+	var s := 0.0
+	for i in range(1, pts.size()):
+		s += pts[i].distance_to(pts[i - 1])
+	return s
+
+
+func _poly_path(c: Dictionary, pts: PackedVector3Array, rev: float) -> Dictionary:
+	var cum := PackedFloat32Array([0.0])
+	for i in range(1, pts.size()):
+		cum.append(cum[i - 1] + pts[i].distance_to(pts[i - 1]))
+	var d0 := _flat_dir(pts[mini(1, pts.size() - 1)] - pts[0])
+	c.merge({"id": -1, "pts": pts, "cum": cum, "len": maxf(cum[cum.size() - 1], 0.5), "rev": rev,
+		"ctrl": pts[0], "d0": -d0 if rev > 0.0 else d0, "d1": _flat_dir(pts[pts.size() - 1] - pts[maxi(pts.size() - 2, 0)])})
+	return c
+
+
+## Heading along a poly path: its own direction, reversed while backing up.
+func _poly_pose(c: Dictionary, jd: float) -> Array:
+	var p := _poly_point(c.pts, c.cum, jd)
+	# Heading from a short chord around the point, so it turns smoothly; the
+	# chord stays on one side of where a car stops backing up.
+	var lo := 0.0 if jd >= c.rev else 0.0
+	var hi: float = c.len
+	if c.rev > 0.0:
+		if jd < c.rev:
+			hi = c.rev
+		else:
+			lo = c.rev
+	var a := _poly_point(c.pts, c.cum, maxf(jd - 0.5, lo))
+	var b := _poly_point(c.pts, c.cum, minf(jd + 0.5, hi))
+	var dir := _flat_dir(b - a)
+	if b.distance_to(a) < 0.05:
+		dir = c.d1 if jd >= c.rev else -c.d0
+	if jd < c.rev:
+		dir = -dir
+	return [p, dir]
+
+
+## A car pulled in: it parks, its trip is reported, and the people in it
+## get out and walk in.
+func _arrive(car: Dictionary) -> void:
+	if car.get("to_ref", "") != "" and car.get("trip", -1) >= 0 and car.get("after", {}).get("report", true):
+		_report(car, arrivals)
+	if car.get("retire", false) or car.to_place == "edge":
+		return  # off the map, or gone for good
+	var pl := place(car.to_place)
+	if pl.is_empty():
+		return
+	# Park in the very spot the car drove into, even if the lot has been
+	# rebuilt around it since it turned in.
+	var geo: Dictionary = car.get("spot_geo", {})
+	car.erase("spot_geo")
+	if not geo.is_empty():
+		var at := -1
+		for i in pl.spots.size():
+			if pl.spots[i].pos.distance_to(geo.pos) < 1.0 and (pl.taken[i] == -1 or pl.taken[i] == car.id):
+				at = i
+				break
+		if at == -1:
+			pl.spots.append(geo)
+			pl.taken.append(car.id)
+			at = pl.spots.size() - 1
+		_release(pl.ref, car.to_spot, car.id)
+		pl.taken[at] = car.id
+		car.to_spot = at
+	elif _dest(car).is_empty():
+		return
+	var after: Dictionary = car.get("after", {})
+	var dest: String = car.to_ref
+	_park(car, pl, car.get("to_spot", 0))
+	var stay: int = after.get("stay", -1)
+	var driver: int = after.get("driver", -1)
+	car.after = {}
+	car.cargo = {} if after.has("back") else car.cargo
+	if driver != -1:
+		# The driver gets out and walks to the door; the car waits for them.
+		car.driver = driver
+		car.until = -1
+		_walk(driver, _walk_from_car(car, dest), {"enter": dest, "stay": stay})
+	elif after.has("back"):
+		car.until = _tick + maxi(stay, 1)
+		car.next = after.back
+		if after.has("back_stop"):
+			car.next_stop = after.back_stop
+	else:
+		car.until = -1
+
+
+## Vehicles whose time is up head off again.
+func _rest() -> void:
+	for car in parked.duplicate():
+		if car.get("pending", false):
+			_try_launch(car)
+			continue
+		if car.until < 0 or car.until > _tick:
+			continue
+		var back: String = car.get("next", "")
+		var stop: Dictionary = car.get("next_stop", {})
+		car.until = -1
+		car.erase("next")
+		car.erase("next_stop")
+		if back == "":
+			continue
+		if cars.size() >= MAX_CARS or not _send(car, back, "return", {}, {"report": false}, stop):
+			car.until = _tick + 20  # try again shortly
+			car.next = back
+			car.next_stop = stop
+
+
+
+
+# --- People -------------------------------------------------------------------
+
+## Sends a person somewhere: on foot if it's close or their car isn't here,
+## otherwise a walk to the car and a drive. False if they can't go now.
+func go(pid: int, to_ref: String, purpose: String, stay: int) -> bool:
+	if _sim == null or not _sim.people.people.has(pid):
+		return false
+	var p: Dictionary = _sim.people.people[pid]
+	var home_ref: String = "lot:" + p.home
+	var from_ref: String = home_ref if p.at == "" else p.at
+	if from_ref == to_ref or p.at == "travel":
+		return false
+	var from_pl := place(from_ref)
+	var to_pl := place(to_ref)
+	if from_pl.is_empty() or to_pl.is_empty():
+		return false
+	var car := _vehicle_parked(p.car)
+	var far: bool = from_pl.door.distance_to(to_pl.door) > People.WALK_MAX
+	if not car.is_empty() and (far or car.at_place != from_ref) and cars.size() < MAX_CARS:
+		var path := _walk_to_car(from_pl, car)
+		if path.is_empty():
+			return false
+		car.driver = pid
+		_walk(pid, path, {"drive": car.id, "to": to_ref, "purpose": purpose, "stay": stay})
+	else:
+		var path := _walk_between(from_pl, to_pl)
+		if path.is_empty() or walkers.size() >= MAX_WALKERS:
+			return false
+		_walk(pid, path, {"enter": to_ref, "stay": stay})
+	p.at = "travel"
+	p.until = -1
+	return true
+
+
+func _walk(pid: int, pts: PackedVector3Array, then: Dictionary) -> void:
+	var cum := PackedFloat32Array([0.0])
+	for i in range(1, pts.size()):
+		cum.append(cum[i - 1] + pts[i].distance_to(pts[i - 1]))
+	walkers.append({"id": _next_walker, "person": pid, "pts": pts, "cum": cum, "len": cum[cum.size() - 1],
+		"d": 0.0, "t": 0, "then": then,
+		# Walking pace in whole cm/s, and distance worked out from the ticks
+		# walked, so a saved and loaded walker is exactly where it was.
+		"v": float(roundi(WALK_V * (85 + hash([pid, _next_walker]) % 31))) / 100.0})
+	_next_walker += 1
+
+
+## Moves everyone on foot along, and lets them do what they set out to.
+func _step_walkers() -> void:
+	var done := []
+	for w in walkers:
+		w.t = int(w.get("t", 0)) + 1
+		w.d = w.t * w.v * DT
+		if w.d >= w.len:
+			done.append(w)
+	for w in done:
+		walkers.erase(w)
+		_walked(w)
+
+
+func _walked(w: Dictionary) -> void:
+	if _sim == null or not _sim.people.people.has(w.person):
+		return
+	var p: Dictionary = _sim.people.people[w.person]
+	var then: Dictionary = w.then
+	if then.has("enter"):
+		var home_ref: String = "lot:" + p.home
+		p.at = "" if then.enter == home_ref else then.enter
+		p.until = -1 if then.enter == home_ref else _tick + maxi(int(then.get("stay", 30)), 1)
+	elif then.has("drive"):
+		var car := _vehicle_parked(int(then.drive))
+		if car.is_empty() or not _send(car, then.to, then.purpose, {}, {"driver": w.person, "stay": then.stay}):
+			# Can't get there: back inside.
+			if not car.is_empty():
+				car.driver = -1
+			p.at = "" if car.is_empty() or car.at_place == "lot:" + p.home else car.at_place
+			p.until = _tick + 30 if p.at != "" else -1
+			return
+
+
+## From a place's door to a parked car (in this lot, or a short walk away).
+func _walk_to_car(from_pl: Dictionary, car: Dictionary) -> PackedVector3Array:
+	var car_pl := place(car.at_place)
+	if car_pl.is_empty():
+		return PackedVector3Array()
+	var out := PackedVector3Array()
+	if car_pl.ref != from_pl.ref:
+		out = _walk_between(from_pl, car_pl)
+		if out.is_empty():
+			return out
+		out.remove_at(out.size() - 1)  # not to the door: to the car
+	else:
+		out = _door_out(from_pl)
+	var side := _car_side(car)
+	out.append(side)
+	return out
+
+
+## From a parked car to the door of the place its people are going to.
+func _walk_from_car(car: Dictionary, dest: String) -> PackedVector3Array:
+	var car_pl := place(car.at_place)
+	var dest_pl := place(dest)
+	var out := PackedVector3Array([_car_side(car)])
+	if dest_pl.is_empty() or car_pl.is_empty():
+		return out
+	if dest_pl.ref == car_pl.ref:
+		var inward := _door_out(car_pl)
+		inward.reverse()
+		out.append_array(inward)
+		return out
+	var path := _walk_between(car_pl, dest_pl)
+	if path.size() > 1:
+		path.remove_at(0)
+	out.append_array(path)
+	return out
+
+
+## Beside the driver's door of a parked car.
+func _car_side(car: Dictionary) -> Vector3:
+	var back: Vector3 = car.pos - car.face * car.len * 0.55
+	return back + Vector3(car.face.z, 0.0, -car.face.x) * 1.4
+
+
+## From a place's door out along its front walk to the sidewalk.
+func _door_out(pl: Dictionary) -> PackedVector3Array:
+	var out := PackedVector3Array([pl.door])
+	if pl.lay.is_empty():
+		return out
+	var door: Vector2 = pl.lay.door
+	out.append(SiteLayout.world(pl.lot, Vector2(door.x, pl.lay.walk_z)))
+	return out
+
+
+## On foot from one place's door to another's, along the sidewalks and
+## across at the corners.
+func _walk_between(a: Dictionary, b: Dictionary) -> PackedVector3Array:
+	var out := _door_out(a)
+	if a.lot.is_empty() or b.lot.is_empty():
+		return PackedVector3Array()
+	var sa := SiteLayout.world(a.lot, Vector2(a.lay.door.x, SiteLayout.WALK_Z))
+	var sb := SiteLayout.world(b.lot, Vector2(b.lay.door.x, SiteLayout.WALK_Z))
+	out.append(sa)
+	var mid := _sidewalks(a.lot, b.lot)
+	if mid.is_empty() and a.lot.seg != b.lot.seg:
+		return PackedVector3Array()
+	out.append_array(mid)
+	out.append(sb)
+	var inward := _door_out(b)
+	inward.reverse()
+	out.append_array(inward)
+	return out
+
+
+## Sidewalk points between two lots' fronts (not including either end).
+func _sidewalks(la: Dictionary, lb: Dictionary) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	if la.seg == lb.seg and la.side == lb.side:
+		var line := _walk_line(la.seg, la.side)
+		_append_span(out, line, _frac(la), _frac(lb))
+		return out
+	# Shortest way over the street network, by node.
+	var seg_a: Dictionary = network.segments.get(la.seg, {})
+	var seg_b: Dictionary = network.segments.get(lb.seg, {})
+	if seg_a.is_empty() or seg_b.is_empty():
+		return out
+	var len_a := _seg_len(la.seg)
+	var len_b := _seg_len(lb.seg)
+	var dist := {seg_a.a: _frac(la) * len_a, seg_a.b: (1.0 - _frac(la)) * len_a}
+	var prev := {seg_a.a: [-1, -1], seg_a.b: [-1, -1]}
+	var goal := {seg_b.a: _frac(lb) * len_b, seg_b.b: (1.0 - _frac(lb)) * len_b}
+	var open := dist.keys()
+	var seen := {}
+	var best_end := -1
+	var best_cost := People.WALK_MAX * 2.0
+	while not open.is_empty():
+		var n: int = open[0]
+		for m in open:
+			if dist[m] < dist[n]:
+				n = m
+		open.erase(n)
+		if seen.has(n):
+			continue
+		seen[n] = true
+		if dist[n] > best_cost:
+			break
+		if goal.has(n) and dist[n] + goal[n] < best_cost:
+			best_cost = dist[n] + goal[n]
+			best_end = n
+		for sid in network.segments_at(n):
+			if not RoadStyle.TYPES[network.segments[sid].type].lots:
+				continue
+			var s: Dictionary = network.segments[sid]
+			var m: int = s.b if s.a == n else s.a
+			var nd: float = dist[n] + _seg_len(sid)
+			if nd < dist.get(m, INF):
+				dist[m] = nd
+				prev[m] = [n, sid]
+				open.append(m)
+	if best_end == -1:
+		return out
+	var chain := []  # [[from node, segment, to node]] from lot a's road
+	var n := best_end
+	while prev.has(n) and prev[n][0] != -1:
+		chain.push_front([prev[n][0], prev[n][1], n])
+		n = prev[n][0]
+	var start_node := n
+	# Along lot a's side to the first corner.
+	_append_span(out, _walk_line(la.seg, la.side), _frac(la), 0.0 if start_node == seg_a.a else 1.0)
+	for c in chain:
+		var s: Dictionary = network.segments[c[1]]
+		var fwd: bool = s.a == c[0]
+		var side := 1 if fwd else -1  # keep to the right
+		_append_span(out, _walk_line(c[1], side), 0.0 if fwd else 1.0, 1.0 if fwd else 0.0)
+	_append_span(out, _walk_line(lb.seg, lb.side), 0.0 if best_end == seg_b.a else 1.0, _frac(lb))
+	return out
+
+
+func _seg_len(sid: int) -> float:
+	return ways[sid * 2 + 1].len if ways.has(sid * 2 + 1) else (ways[sid * 2].len if ways.has(sid * 2) else 1.0)
+
+
+## The middle of the sidewalk along a road, on one side (seen from a to b).
+func _walk_line(sid: int, side: int) -> PackedVector3Array:
+	var key := sid * 2 + (1 if side > 0 else 0)
+	if _walk_lines.has(key):
+		return _walk_lines[key]
+	var pts := network.sample_segment(sid, 16)
+	var off := RoadStyle.half_width(network.segments[sid].type) + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH \
+		+ RoadStyle.SIDEWALK_WIDTH * 0.5
+	var out := PackedVector3Array()
+	for i in pts.size():
+		var a := pts[maxi(i - 1, 0)]
+		var b := pts[mini(i + 1, pts.size() - 1)]
+		var dir := _flat_dir(b - a)
+		out.append(Vector3(pts[i].x, 0.0, pts[i].z) + Vector3(-dir.z, 0.0, dir.x) * off * side)
+	_walk_lines[key] = out
+	return out
+
+
+## The part of a line between two shares of its length, in that order.
+static func _append_span(out: PackedVector3Array, line: PackedVector3Array, f0: float, f1: float) -> void:
+	var n := line.size() - 1
+	var i0 := f0 * n
+	var i1 := f1 * n
+	out.append(_line_at(line, i0))
+	if i1 > i0:
+		for i in range(int(floor(i0)) + 1, int(ceil(i1))):
+			out.append(line[i])
+	else:
+		for i in range(int(ceil(i0)) - 1, int(floor(i1)), -1):
+			out.append(line[i])
+	out.append(_line_at(line, i1))
+
+
+static func _line_at(line: PackedVector3Array, f: float) -> Vector3:
+	var i := clampi(int(floor(f)), 0, line.size() - 2)
+	return line[i].lerp(line[i + 1], clampf(f - i, 0.0, 1.0))
+
+
+## Where a person on foot is and which way they face.
+func walker_pose(w: Dictionary, ahead := 0.0) -> Array:
+	var d := minf(w.d + ahead, w.len)
+	var p := _poly_point(w.pts, w.cum, d)
+	var q := _poly_point(w.pts, w.cum, minf(d + 0.5, w.len))
+	if q.distance_to(p) < 0.01:
+		q = p + _flat_dir(w.pts[w.pts.size() - 1] - w.pts[maxi(w.pts.size() - 2, 0)]) * 0.5
+	return [p, _flat_dir(q - p)]
+
+
+## A vehicle by id, wherever it is: {"car", "state": "driving"|"waiting"|
+## "parked"}, or {} if it's gone.
+func find_vehicle(vid: int) -> Dictionary:
+	for car in cars:
+		if car.id == vid:
+			return {"car": car, "state": "driving"}
+	for car in parked:
+		if car.id == vid:
+			return {"car": car, "state": "parked"}
+	for car in _waiting:
+		if car.id == vid:
+			return {"car": car, "state": "waiting"}
+	return {}
+
+
+## The middle of a vehicle, for picking and following it.
+func vehicle_centre(car: Dictionary, parked_now: bool) -> Vector3:
+	var pose := parked_pose(car) if parked_now else car_pose(car)
+	return pose[0] - pose[1] * car.len * 0.5
+
+
+## The vehicle under a ground point (one in sight, not inside a building),
+## or -1.
+func vehicle_at(p: Vector3) -> int:
+	var best := -1
+	var best_d := INF
+	for list in [cars, parked]:
+		for car in list:
+			if list == parked and car.get("hidden", false):
+				continue
+			var pose := parked_pose(car) if list == parked else car_pose(car)
+			var dir: Vector3 = pose[1]
+			var rel: Vector3 = p - pose[0]
+			var along := -rel.dot(dir)  # metres back from the front bumper
+			var side := absf(rel.dot(Vector3(-dir.z, 0.0, dir.x)))
+			if along < -1.0 or along > car.len + 1.0 or side > 2.2:
+				continue
+			var d := absf(along - car.len * 0.5) + side
+			if d < best_d:
+				best_d = d
+				best = car.id
+	return best
+
+
+## The person walking at a ground point, or -1.
+func walker_at(p: Vector3) -> int:
+	var best := -1
+	var best_d := 1.6
+	for w in walkers:
+		var d: float = Vector2(p.x, p.z).distance_to(Vector2(walker_pose(w)[0].x, walker_pose(w)[0].z))
+		if d < best_d:
+			best_d = d
+			best = w.person
+	return best
+
+
+func walker_of(pid: int) -> Dictionary:
+	for w in walkers:
+		if w.person == pid:
+			return w
+	return {}
+
+
+## The vehicle type a car is drawn and listed as. Kinds from before vehicle
+## types existed: a plain "car" becomes a household vehicle from the real
+## fleet mix, fixed by its id.
+static func vehicle_kind(car: Dictionary) -> String:
+	var kind: String = car.get("kind", "car")
+	if kind == "car":
+		kind = VehicleTypes.household(car.id)
+	if kind == "truck":
+		kind = "box_truck"
+	if not VehicleTypes.SPECS.has(kind):
+		kind = "sedan"
+	return kind
+
+
+## Where a parked vehicle is: [front bumper, facing].
+static func parked_pose(car: Dictionary) -> Array:
+	return [car.pos, car.face]
+
+
 # --- Driving ----------------------------------------------------------------
 
 func _drive(_rng: RandomNumberGenerator) -> void:
@@ -1223,10 +2457,13 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 			car.jd += car.v * DT
 			speed_sum += 1.0
 			limit_sum += 1.0
-			if car.jd >= car.j.len:
+			if car.jd >= car.j.len - (0.3 if car.j.wo < 0 else 0.0):
 				if car.j.wo < 0:
 					done.append(car)  # parked
-					_report(car, arrivals)
+					if car.has("to_place"):
+						_arrive(car)
+					else:
+						_report(car, arrivals)
 				else:
 					car.d = car.j.exit_d + car.jd - car.j.len
 					car.pj = car.j  # remembered for trailers
@@ -1243,7 +2480,21 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 		way_sum[w.id][1] += 1
 		if car.leg == car.route.size() - 1:
 			# Start turning in a few metres early, so the driveway is a smooth arc.
-			if car.d >= car.end_d - (1.0 if car.park == null else DRIVEWAY_LEAD):
+			if car.has("to_place") and car.d >= car.end_d - 40.0 and car.to_place != "edge":
+				_fix_end(car)  # the lot may have been built on since the trip began
+			if car.has("to_place") and car.d >= car.end_d - PARK_LEAD:
+				if car.to_place == "edge":
+					done.append(car)  # off the edge of the map
+					_arrive(car)
+				elif not car.get("pulled_over", false) and not _dest(car).is_empty() \
+						and _entrance(_dest(car), car.to_spot).distance_to(car_pose(car)[0]) > 40.0:
+					_pull_over(car, w)  # the place isn't on this road any more
+				else:
+					car.j = _in_path(car)
+					car.jd = 0.0
+			elif car.has("to_place"):
+				pass
+			elif car.d >= car.end_d - (1.0 if car.park == null else DRIVEWAY_LEAD):
 				if car.park == null or car_pose(car)[0].distance_to(car.park) < 9.0:
 					done.append(car)  # no room for a driveway turn: just stop here
 					_report(car, arrivals)
@@ -1366,8 +2617,9 @@ func _accel_on_way(car: Dictionary, list: Array, i: int) -> float:
 			gap = pos - car.d - m.len
 			vl = m.v
 	if car.leg == car.route.size() - 1:
-		# Slow to turn into the driveway.
-		return minf(_idm(car.v, v0, gap, vl), _idm(car.v, v0, car.end_d - car.d + JAM_GAP + 4.0 * HEADWAY, 4.0))
+		# Slow to turn into the driveway (by where the turn starts).
+		var turn_at: float = car.end_d - (PARK_LEAD if car.has("to_place") else 0.0)
+		return minf(_idm(car.v, v0, gap, vl), _idm(car.v, v0, turn_at - car.d + JAM_GAP + 4.0 * HEADWAY, 3.5))
 	var ds: float = w.s1 - car.d
 	var wo: int = car.route[car.leg + 1]
 	if not lanes_for(w.id, wo).has(car.lane):
@@ -1383,6 +2635,8 @@ func _accel_on_way(car: Dictionary, list: Array, i: int) -> float:
 					car.end_d = car.d + 1.0  # nowhere to go: pull over here
 					car.route = [w.id]
 					car.leg = 0
+					if car.has("to_place") and car.to_place != "edge":
+						_pull_over(car, w)
 		return acc
 	var acc := _idm(car.v, v0, gap, vl)
 	if i > 0 or ds > LOOK:
@@ -1412,8 +2666,26 @@ func _accel_on_way(car: Dictionary, list: Array, i: int) -> float:
 func _accel_in_box(car: Dictionary) -> float:
 	_acc = car.acc
 	var c: Dictionary = car.j
+	if car.jd < c.get("rev", 0.0):
+		# Backing out: slowly, easing to a stop where it changes direction.
+		var want := clampf(sqrt(2.0 * (c.rev - car.jd)), 0.4, 1.6)
+		return clampf((want - car.v) * 2.0, -BRAKE, 1.0)
 	var lead := _through_leader(c, -car.jd, car)
-	return _idm(car.v, c.vt, lead[0], lead[1])
+	var acc := _idm(car.v, c.vt, lead[0], lead[1])
+	if c.wo < 0:
+		acc = minf(acc, _idm(car.v, c.vt, c.len - car.jd + JAM_GAP - 0.2, 0.0))  # stop in the spot
+		acc = maxf(acc, (0.5 - car.v) * 2.0) if c.len - car.jd > 0.4 else acc
+	if c.has("rev"):
+		# Slow for tight turns into and out of lots, as drivers do.
+		var h0: Vector3 = _poly_pose(c, car.jd)[1]
+		var bend := 0.0
+		for ahead in [1.5, 3.0, 4.5]:
+			bend = maxf(bend, absf(h0.signed_angle_to(_poly_pose(c, minf(car.jd + ahead, c.len))[1], Vector3.UP)) / ahead)
+		if bend > 0.01:
+			var safe := maxf(2.5 / bend, 1.2)  # about 15 degrees a tenth of a second at most
+			if car.v > safe:
+				acc = minf(acc, (safe - car.v) / DT)
+	return acc
 
 
 ## The nearest car ahead once across the junction: [gap, its speed].

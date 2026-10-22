@@ -6,9 +6,16 @@ extends RefCounted
 ## Plain data, so tests can read it and any interface can show it.
 
 
-## The thing under a ground point: {type: "service"|"farm"|"lot"|"road", id},
-## or {} for open ground. Buildings win over the road they stand on.
+## The thing under a ground point: {type: "vehicle"|"person"|"service"|
+## "farm"|"lot"|"road", id}, or {} for open ground. People and vehicles win
+## over what they're on; buildings win over the road they stand on.
 static func pick(sim: CitySim, p: Vector3) -> Dictionary:
+	var who := sim.traffic.walker_at(p)
+	if who != -1:
+		return {"type": "person", "id": who}
+	var vid := sim.traffic.vehicle_at(p)
+	if vid != -1:
+		return {"type": "vehicle", "id": vid}
 	if not sim.rail.trains.is_empty():
 		var tid := sim.rail.train_at(p)
 		if tid != -1:
@@ -81,6 +88,22 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 	if not exists(sim, sel):
 		return []
 	match sel.type:
+		"vehicle":
+			var f := sim.traffic.find_vehicle(sel.id)
+			return [sim.traffic.vehicle_centre(f.car, f.state == "parked"), f.car.len * 0.5 + 2.0]
+		"person":
+			var w := sim.traffic.walker_of(sel.id)
+			if not w.is_empty():
+				return [sim.traffic.walker_pose(w)[0], 1.5]
+			# In a car, or indoors.
+			var p: Dictionary = sim.people.people[sel.id]
+			for car in sim.traffic.cars:
+				if car.get("after", {}).get("driver", -1) == sel.id:
+					return [sim.traffic.vehicle_centre(car, false), car.len * 0.5 + 2.0]
+			var at: String = p.at if p.at != "" and p.at != "travel" else "lot:" + p.home
+			if at.begins_with("lot:") and sim.lots.has(at.substr(4)):
+				return [sim.lots[at.substr(4)].pos, LotPlanner.DEPTH * 0.5 + 2.0]
+			return []
 		"service", "water":
 			var b: Dictionary = sim.services.buildings[sel.id]
 			return [b.pos, Services.size_of(b).length() * 0.5 + 3.0]
@@ -127,6 +150,8 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 
 static func exists(sim: CitySim, sel: Dictionary) -> bool:
 	match sel.get("type", ""):
+		"vehicle": return not sim.traffic.find_vehicle(sel.id).is_empty()
+		"person": return sim.people.people.has(sel.id)
 		"service": return sim.services.buildings.has(sel.id)
 		"water": return sim.services.water.utilities.has(sel.id) and sim.services.buildings.has(sel.id)
 		"hub": return sim.hubs.hubs.has(sel.id)
@@ -150,7 +175,8 @@ static func exists(sim: CitySim, sel: Dictionary) -> bool:
 
 ## {title, kind (a line under the title), icon, ok: bool, status, rows:
 ## [[label, value]], problems: [text]}, and optionally notes: [text] and
-## actions (see HubInfo). Pollution is added to everything (PollutionInfo).
+## actions (see HubInfo), and "follow": true for something the camera can
+## follow. Pollution is added to everything (PollutionInfo).
 static func describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 	if not exists(sim, sel):
 		return {}
@@ -163,6 +189,8 @@ static func describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 
 static func _describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 	match sel.type:
+		"vehicle": return _vehicle(sim, sel.id)
+		"person": return _person(sim, sel.id)
 		"service": return _service(sim, sel.id)
 		"water": return WaterUtility.describe(sim, sel.id)
 		"hub": return HubInfo.describe(sim, sel.id)
@@ -675,6 +703,13 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 	elif z == ZoneMap.Zone.RESIDENTIAL:
 		rows.insert(0, ["Building", title])
 		title = Families.home_name(b)
+	elif sim.people.place_name(ref) != "":
+		title = sim.people.place_name(ref)
+	if z == ZoneMap.Zone.RESIDENTIAL and not sim.people.residents(key).is_empty():
+		var who := []
+		for id in sim.people.residents(key).slice(0, 4):
+			who.append(sim.people.person_name(id))
+		rows.insert(1, ["Who lives here", ", ".join(who) + ("…" if sim.people.residents(key).size() > 4 else "")])
 	return {"title": title, "kind": kind, "icon": icons[z], "ok": problems.is_empty(),
 		"status": status, "rows": rows, "problems": problems}
 
@@ -716,3 +751,116 @@ static func _road(sim: CitySim, seg: int) -> Dictionary:
 	return {"title": street if street != "" else spec.name, "kind": spec.name if street != "" else "Road", "icon": "road", "ok": problems.is_empty(),
 		"status": "Flowing freely" if flow >= 0.8 else ("Busy" if flow >= 0.5 else "Jammed"),
 		"rows": rows, "problems": problems}
+
+
+## Plain words for where a place ref is: its name, or what it is.
+static func place_name(sim: CitySim, ref: String) -> String:
+	if ref == "" :
+		return "—"
+	if ref == "edge":
+		return "Out of town, by the county highway"
+	var n := sim.people.place_name(ref)
+	if n != "":
+		return n
+	if ref.begins_with("lot:"):
+		var key := ref.substr(4)
+		if sim.buildings.has(key):
+			return {ZoneMap.Zone.RESIDENTIAL: "A home", ZoneMap.Zone.COMMERCIAL: "A shop",
+				ZoneMap.Zone.INDUSTRIAL: "A factory"}.get(int(sim.buildings[key].zone), "A lot")
+		return "An empty lot"
+	if ref.begins_with("farm:"):
+		return "A farm"
+	if ref.begins_with("site:"):
+		return "A company yard"
+	return ref.get_slice("@", 0).replace(":", " ").capitalize()
+
+
+## What a vehicle is, like the vehicle panel in Cities: Skylines 2: the
+## kind, who drives it, where it's coming from and going, why, and its load.
+static func _vehicle(sim: CitySim, vid: int) -> Dictionary:
+	var f := sim.traffic.find_vehicle(vid)
+	var car: Dictionary = f.car
+	var kind: String = TrafficSim.vehicle_kind(car)
+	var title := kind.replace("_", " ").capitalize()
+	var rows := []
+	var status := ""
+	var after: Dictionary = car.get("after", {})
+	var driver: int = after.get("driver", -1) if f.state != "parked" else -1
+	var purpose: String = car.get("purpose", "")
+	var why := _purpose_words(purpose)
+	match f.state:
+		"parked":
+			var at := place_name(sim, car.get("at_place", ""))
+			if car.get("pending", false):
+				status = "Pulling out of %s" % at
+			elif car.get("hidden", false):
+				status = "Inside %s" % at
+			elif car.get("driver", -1) != -1:
+				status = "Parked at %s while %s is inside" % [at, sim.people.person_name(car.driver)]
+			else:
+				status = "Parked at %s" % at
+		"waiting":
+			status = "Waiting for a gap to pull out"
+		_:
+			var to := place_name(sim, car.get("to_ref", ""))
+			status = ("Heading home to %s" % to) if purpose == "return" or purpose == "home" else "Driving to %s" % to
+	if f.state != "parked" or car.get("pending", false):
+		rows.append(["From", place_name(sim, car.get("from_ref", ""))])
+		rows.append(["To", place_name(sim, car.get("to_ref", ""))])
+		if why != "":
+			rows.append(["Why", why])
+	var cargo: Dictionary = car.get("cargo", {})
+	if not cargo.is_empty():
+		rows.append(["Carrying", "%s %s" % [str(cargo.get("amount", "")), str(cargo.get("good", ""))]
+			if cargo.has("good") else str(cargo)])
+	elif VehicleTypes.spec(kind).len > 6.5:
+		rows.append(["Carrying", "Empty"])
+	if driver != -1:
+		rows.append(["Driver", sim.people.person_name(driver)])
+	var owner: int = car.get("owner", -1)
+	if owner != -1 and sim.people.people.has(owner):
+		rows.append(["Owner", sim.people.person_name(owner)])
+	elif car.get("base", "") != "":
+		rows.append(["Based at", place_name(sim, car.base)])
+	if f.state == "driving":
+		rows.append(["Speed", "%d mph" % roundi(car.v * 2.237)])
+	return {"title": title, "kind": "Vehicle", "icon": "traffic", "ok": true, "status": status,
+		"rows": rows, "problems": [], "follow": true}
+
+
+## A person: name, age, home, work, and what they're doing now.
+static func _person(sim: CitySim, pid: int) -> Dictionary:
+	var p: Dictionary = sim.people.people[pid]
+	var rows := [["Age", str(p.age)], ["Lives at", place_name(sim, "lot:" + p.home)]]
+	rows.append(["Works at", place_name(sim, p.job) if p.job != "" else ("School" if p.age < 18 else
+		("Retired" if p.age > 66 else "Looking for work"))])
+	var status := "At home"
+	var w := sim.traffic.walker_of(pid)
+	if not w.is_empty():
+		var then: Dictionary = w.then
+		if then.has("enter"):
+			status = "Walking to %s" % place_name(sim, then.enter)
+		elif then.has("drive"):
+			status = "Walking to the car, off to %s" % place_name(sim, then.get("to", ""))
+		else:
+			status = "Out walking"
+	elif p.at == "travel":
+		status = "Driving"
+		for car in sim.traffic.cars:
+			if car.get("after", {}).get("driver", -1) == pid:
+				status = "Driving to %s" % place_name(sim, car.get("to_ref", ""))
+	elif p.at != "":
+		status = "At %s" % place_name(sim, p.at)
+	if p.car != -1:
+		var f := sim.traffic.find_vehicle(p.car)
+		if not f.is_empty():
+			rows.append(["Car", TrafficSim.vehicle_kind(f.car).replace("_", " ").capitalize()])
+	return {"title": sim.people.person_name(pid), "kind": "Resident", "icon": "homes", "ok": true,
+		"status": status, "rows": rows, "problems": [], "follow": true}
+
+
+static func _purpose_words(purpose: String) -> String:
+	return {"commute": "Going to work", "shopping": "Shopping", "home": "Going home", "return": "Heading back",
+		"grain": "Hauling grain", "raw": "Hauling raw goods", "fuel": "Hauling fuel", "goods": "Delivering goods",
+		"delivery": "Making a delivery", "export": "Shipping out of town", "import": "Bringing goods in",
+		"visit": "Visiting", "bus": "Bus route"}.get(purpose, purpose.capitalize())
