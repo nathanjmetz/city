@@ -13,6 +13,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	_test_region_in_step()
+	_test_crossroads()
 	_test_city_lines()
 
 	var data := OS.get_user_data_dir().path_join("test-region.json")
@@ -125,6 +126,36 @@ func _test_region_in_step() -> void:
 	_check(a.cities.c1.origin != a.cities.c2.origin, "cities get their own spots")
 
 
+## New towns start on a county road that meets each neighbor's halfway.
+func _test_crossroads() -> void:
+	var r := Region.new()
+	r.add_city("p1", "Ann")
+	var ann: CitySim = r.cities.c1.sim
+	_check(ann.region_links.size() == 2, "the first town sits on a county highway, both ends out to the region")
+	_check(ann.economy.money == Economy.START_MONEY, "the county road is free")
+	r.add_city("p2", "Bob")
+	r.add_city("p3", "Cy")
+	var bob: CitySim = r.cities.c2.sim
+	_check(bob.economy.money == Economy.START_MONEY and ann.economy.money == Economy.START_MONEY, "nobody pays for the joining roads")
+	_check(r.joins.size() == 1 + 2, "Bob joins Ann; Cy joins both (%d joins)" % r.joins.size())
+	var met := true
+	for j in r.joins:
+		var a: Dictionary = r.cities[j.a]
+		var b: Dictionary = r.cities[j.b]
+		var pa: Vector3 = a.sim.network.nodes[j.a_node]
+		var pb: Vector3 = b.sim.network.nodes[j.b_node]
+		if (a.origin + Vector2(pa.x, pa.z)).distance_to(b.origin + Vector2(pb.x, pb.z)) > 1.0:
+			met = false
+		if not j.a_node in a.sim.region_links or not j.b_node in b.sim.region_links:
+			met = false
+	_check(met, "each pair of county roads meets at one spot on the city line")
+	var seg: int = bob.network.segments_at(r.joins[0].a_node)[0]
+	_check(not bob.apply_now({"type": "remove_road", "seg": seg}), "a county road can't be bulldozed")
+	var copy := Region.new()
+	copy.from_dict(JSON.parse_string(JSON.stringify(r.to_dict(), "", false, true)))
+	_check(copy.joins == r.joins, "the joins are saved")
+
+
 ## The city line runs halfway between two towns, and stops where a third is nearer.
 func _test_city_lines() -> void:
 	var a := PackedVector2Array()
@@ -151,15 +182,22 @@ func _test_city_lines() -> void:
 	_check(max_y < 400.0, "the line stops where a third town is nearer (reaches y=%d)" % max_y)
 
 
-## Power, water and zones along a city's starter road: commands to grow a town.
+## Power, water and zones along a city's starter road (its county road out
+## to the first region link): commands to grow a town.
 func _starter_town(sim: CitySim) -> Array:
+	var link: Vector3 = sim.network.nodes[sim.region_links[0]]
+	var along := Vector2(link.x, link.z).normalized()
+	var side := along.orthogonal()
 	var out := []
-	for k in [[Services.Kind.SUBSTATION, -330], [Services.Kind.WATER_TOWER, -270]]:
-		var site := Services.site_near(sim.network, k[0], Vector3(k[1], 0, 40))
+	for k in [[Services.Kind.SUBSTATION, 330], [Services.Kind.WATER_TOWER, 270]]:
+		var p: Vector2 = along * k[1] + side * 40
+		var site := Services.site_near(sim.network, k[0], Vector3(p.x, 0, p.y))
 		out.append({"type": "place_service", "kind": k[0], "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})
-	for x in range(-380, -100, 10):
-		out.append({"type": "paint_zone", "center": [x, -25], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
-		out.append({"type": "paint_zone", "center": [x, 25], "radius": 12, "zone": ZoneMap.Zone.INDUSTRIAL})
+	for d in range(100, 380, 10):
+		var a: Vector2 = along * d - side * 25
+		var b: Vector2 = along * d + side * 25
+		out.append({"type": "paint_zone", "center": [a.x, a.y], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
+		out.append({"type": "paint_zone", "center": [b.x, b.y], "radius": 12, "zone": ZoneMap.Zone.INDUSTRIAL})
 	return out
 
 
