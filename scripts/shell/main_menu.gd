@@ -13,6 +13,9 @@ var _angle := 0.4
 var _code := LineEdit.new()
 var _server := LineEdit.new()
 var _name := LineEdit.new()
+var _password := LineEdit.new()
+var _signup := CheckButton.new()
+var _join_button: Button
 var _city_name := LineEdit.new()
 var _difficulty := "normal"
 var _diff_buttons := {}  # difficulty -> Button
@@ -169,6 +172,18 @@ func _together_page() -> Control:
 	_name.custom_minimum_size = Vector2(0, 38)
 	col.add_child(_name)
 	col.add_child(_gap(6))
+	col.add_child(_label("PASSWORD"))
+	_password.secret = true
+	_password.placeholder_text = "Saved on this device" if Session.has_login(Session.profile.server, Session.profile.code) else ""
+	_password.custom_minimum_size = Vector2(0, 38)
+	_password.text_submitted.connect(func(_t): _join())
+	col.add_child(_password)
+	_signup.text = "I'm new here: create my account"
+	_signup.focus_mode = Control.FOCUS_NONE
+	_signup.add_theme_color_override("font_color", Brand.INK_MUTED)
+	_signup.toggled.connect(func(on): _sync_join_button())
+	col.add_child(_signup)
+	col.add_child(_gap(6))
 	col.add_child(_label("INVITE CODE"))
 	_code.text = Session.profile.code
 	_code.placeholder_text = "ABC123"
@@ -193,9 +208,9 @@ func _together_page() -> Control:
 	_server.visible = _server.text != ""
 	adv.pressed.connect(func(): _server.visible = not _server.visible)
 	col.add_child(_server)
-	var join := _big_button("Join", "Your city starts next to theirs", _join)
-	ShellStyle.primary(join)
-	col.add_child(join)
+	_join_button = _big_button("Join", "Your city starts next to theirs", _join)
+	ShellStyle.primary(_join_button)
+	col.add_child(_join_button)
 	if not OS.has_feature("web"):
 		col.add_child(_gap(8))
 		col.add_child(_label("OR HOST ONE ON THIS COMPUTER"))
@@ -204,6 +219,12 @@ func _together_page() -> Control:
 		col.add_child(_host_info)
 	col.add_child(_back())
 	return col
+
+
+func _sync_join_button() -> void:
+	var title := _join_button.get_meta("title") as Label if _join_button.has_meta("title") else null
+	if title:
+		title.text = "Create account and join" if _signup.button_pressed else "Join"
 
 
 func _show(page: String) -> void:
@@ -264,27 +285,43 @@ func _join() -> void:
 		_status.text = "Type the invite code you were sent."
 		_code.grab_focus()
 		return
+	var new_account := _signup.button_pressed
+	if _password.text == "" and (new_account or not Session.has_login(_server.text, _code.text)):
+		_status.text = "Pick a password for your account." if new_account else "Type your password, or tick \"I'm new here\"."
+		_password.grab_focus()
+		return
 	Session.profile.name = n
 	Session.save_profile()
 	_joining = true
 	_status.text = "Joining..."
-	var c := Session.join_region(_server.text, _code.text)
+	var c := Session.join_region(_server.text, _code.text, _password.text, new_account)
+	_password.text = ""
 	c.joined.connect(func(): Session.enter_region())
+	c.waiting.connect(func(message):
+		_status.text = message
+		_signup.button_pressed = false)
 	c.failed.connect(func(reason):
 		_joining = false
 		_status.text = reason)
 
 
 func _host() -> void:
+	if _name.text.strip_edges() == "":
+		_status.text = "Pick your name first: you'll be the host."
+		_name.grab_focus()
+		return
+	Session.profile.name = _name.text.strip_edges()
+	Session.save_profile()
 	var code := Session.host_region()
 	if code == "":
 		_status.text = "Couldn't start a region: port 9080 is busy."
 		return
 	_code.text = code
 	_server.text = Session.LOCAL_SERVER
-	_host_info.text = "Region running. Invite code: %s\nFriends on your network join with this computer's address, port 9080." % code
-	if _name.text.strip_edges() != "":
-		_join()
+	_host_info.text = "Region running. Invite code: %s\nFriends on your network join with this computer's address, port 9080. You approve who gets in." % code
+	if not Session.has_login(_server.text, code):
+		_signup.button_pressed = true
+	_join()
 
 
 # --- Building blocks ---------------------------------------------------------
@@ -309,6 +346,7 @@ func _big_button(title: String, sub: String, action := Callable()) -> Button:
 	b.add_child(col)
 	var t := ShellStyle.text(title, 17, 600)
 	col.add_child(t)
+	b.set_meta("title", t)
 	var st: Label = null
 	if sub != "":
 		st = ShellStyle.text(sub, 12, 500, Brand.INK_MUTED)
