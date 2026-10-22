@@ -2,9 +2,9 @@
 
     python3 tools/audio/make_assets.py [porch|clean|wide]
 
-UI sounds come from the chosen palette in synth.py. World loops are built
-from code too, and stand in until curated field recordings replace them
-(see assets/audio/LICENSES.md). Every loop is made periodic, so it repeats
+UI sounds come from the chosen palette in synth.py. Most world loops are
+real field recordings made by field_recordings.py; the few with no good free
+recording yet (a passing car, a transformer's hum) are built here. Every loop is made periodic, so it repeats
 without a seam: noise is filtered in the frequency domain (which wraps
 around) and every slow wobble fits a whole number of times into the loop.
 """
@@ -129,14 +129,7 @@ def corn_field(dur=12.0):
 
 WORLD = {
     "car_engine": car_engine,
-    "wind_high": wind_high,
-    "leaves": leaves,
-    "birds_day": birds_day,
-    "crickets_night": crickets_night,
-    "industry_hum": industry_hum,
-    "rooftop_hvac": rooftop_hvac,
     "transformer": transformer,
-    "corn_field": corn_field,
 }
 
 
