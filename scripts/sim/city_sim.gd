@@ -18,6 +18,8 @@ signal stats_changed
 signal farms_changed
 ## A resource company opened, closed, or added or dropped a pad.
 signal industry_changed
+## A warehouse was built, grew, shrank or went away.
+signal warehouses_changed
 ## A player command went through (sounds and other feedback listen to this).
 signal command_applied(cmd: Dictionary)
 
@@ -43,6 +45,8 @@ var farms := Farms.new()
 ## Oil, mining and forestry companies (Brawn's model: a main building whose
 ## pads spread to where the resource is).
 var industry := Industry.new()
+## Warehouses that buffer loads between them (hubs that grow in place).
+var warehouses := Warehouses.new()
 ## The trucks that carry every load (grain, crude, ore, logs, goods).
 var logistics := Logistics.new()
 ## Land saved for farming or an industry: no roads or zoning on it.
@@ -167,7 +171,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			var pos := _v(cmd.pos)
 			var dir := _v(cmd.dir).normalized()
 			var cost: int = Services.KINDS[kind].cost
-			if cost > economy.money or services.site_problem(network, kind, pos, dir) != "":
+			if cost > economy.money or services.site_problem(network, kind, pos, dir) != "" \
+					or _on_warehouse(Services.corners(kind, pos, dir)):
 				return false
 			var sid := services.add(kind, pos, dir)
 			economy.money -= cost
@@ -210,6 +215,24 @@ func apply_now(cmd: Dictionary) -> bool:
 			_lots_dirty = true
 			industry_changed.emit()
 			ok = true
+		"place_warehouse":
+			var kind := str(cmd.get("kind", ""))
+			var pos := _v(cmd.pos)
+			var dir := _v(cmd.dir).normalized()
+			if not Warehouses.KINDS.has(kind) or dir.length() < 0.5 or warehouse_problem(kind, pos, dir) != "" \
+					or int(Balance.WAREHOUSE[kind].cost) > economy.money:
+				return false
+			var wid := warehouses.add(kind, pos, dir)
+			economy.money -= int(Balance.WAREHOUSE[kind].cost)
+			_clear_zones_under(warehouses.footprint(wid))
+			_lots_dirty = true
+			warehouses_changed.emit()
+			ok = true
+		"remove_warehouse":
+			ok = warehouses.buildings.has(int(cmd.id))
+			warehouses.buildings.erase(int(cmd.id))
+			_lots_dirty = true
+			warehouses_changed.emit()
 		"remove_industry":
 			ok = industry.sites.has(int(cmd.id))
 			industry.sites.erase(int(cmd.id))
@@ -287,6 +310,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			farms = Farms.new()
 			industry = Industry.new()
 			logistics = Logistics.new()
+			warehouses = Warehouses.new()
 			reserves = Reserves.new()
 			permits.from_dict({})
 			hubs = CivicHubs.new()
@@ -294,6 +318,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			industry.reserves = reserves
 			farms_changed.emit()
 			industry_changed.emit()
+			warehouses_changed.emit()
 			ok = true
 	if ok:
 		if _roads_moved:
@@ -393,8 +418,16 @@ func _road_wins() -> void:
 			var lane := industry_drive(s.pos, s.dir)
 			if not lane.is_empty():
 				s.drive = lane
+	ids = warehouses.buildings.keys()
+	ids.sort()
+	for id in ids:
+		if RoadWins.hits(corr, warehouses.footprint(id)):
+			economy.money += int(Balance.WAREHOUSE[warehouses.buildings[id].kind].cost)
+			warehouses.buildings.erase(id)
+			_lots_dirty = true
 	farms_changed.emit()
 	industry_changed.emit()
+	warehouses_changed.emit()
 
 
 func tick() -> void:
@@ -416,6 +449,10 @@ func tick() -> void:
 		if industry.decide(field_usable):
 			_lots_dirty = true
 			industry_changed.emit()
+	if tick_count % Balance.WAREHOUSE_DECIDE_EVERY == 0 and not warehouses.buildings.is_empty():
+		if warehouses.decide(warehouse_ground_ok):
+			_lots_dirty = true
+			warehouses_changed.emit()
 	permits.tick(self)
 	# Taxes come in and upkeep goes out every game hour, a day settling a month.
 	if tick_count % TICKS_PER_HOUR == 0:
@@ -462,7 +499,7 @@ func update_stats() -> void:
 				if _utilities_ok(key):
 					factory_jobs += b.cap
 	services.update(network, lots, buildings)
-	factory_jobs += farms.jobs() + industry.jobs()
+	factory_jobs += farms.jobs() + industry.jobs() + warehouses.jobs()
 	economy.reach_milestones(pop)
 	var workers := int(pop * WORKER_SHARE)
 	var jobs := shop_jobs + factory_jobs
@@ -544,6 +581,8 @@ func farmhouse_problem(pos: Vector3, dir: Vector3) -> String:
 	for p in [pos] + Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y)):
 		if industry.covers(p):
 			return "That ground belongs to a company."
+	if _on_warehouse(Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y))):
+		return "Overlaps a warehouse."
 	return ""
 
 
@@ -575,7 +614,90 @@ func industry_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 			return "That ground is farmland."
 		if industry.covers(p):
 			return "Too close to another company."
+	if _on_warehouse(Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y))):
+		return "Overlaps a warehouse."
 	return ""
+
+
+## Why a warehouse can't go here, or "" if it can: it needs clear ground
+## beside a street for its truck court and building.
+func warehouse_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
+	var w := {"kind": kind, "pos": pos, "dir": dir, "bays": 0}
+	var poly := Warehouses.corners(w)
+	if not land_ok(Warehouses.center(w), 10.0):
+		return "Can't build in the water or on a slope that steep."
+	if reserves.kind_at(Warehouses.center(w)) != "":
+		return "That land is reserved for %s." % Reserves.KINDS[reserves.kind_at(Warehouses.center(w))]
+	if Services.road_clash(network, poly):
+		return "Too close to a road. A %s needs %d × %d m." % [Warehouses.KINDS[kind].name.to_lower(),
+			roundi(Warehouses.site_width(w)), roundi(Warehouses.site_depth(w))]
+	for id in services.buildings:
+		if not Geometry2D.intersect_polygons(poly, services.footprint(id)).is_empty():
+			return "Overlaps a service building."
+	for id in warehouses.buildings:
+		if not Geometry2D.intersect_polygons(poly, warehouses.footprint(id)).is_empty():
+			return "Overlaps another warehouse."
+	for p in _grid_in(poly):
+		if farms.covers(p) or farms.field_at(p) != -1:
+			return "That ground is farmland."
+		if industry.covers(p):
+			return "That ground belongs to a company."
+		if hubs.covers(p):
+			return "Overlaps a landfill, recycling center or cemetery."
+	return ""
+
+
+## True when new ground for warehouse `id` is free: no road, building,
+## farm, company, other warehouse, reserve, or zoned or built lot on it.
+func warehouse_ground_ok(poly: PackedVector2Array, id: int) -> bool:
+	if Services.road_clash(network, poly):
+		return false
+	for sid in services.buildings:
+		if not Geometry2D.intersect_polygons(poly, services.footprint(sid)).is_empty():
+			return false
+	for wid in warehouses.buildings:
+		if wid != id and not Geometry2D.intersect_polygons(poly, warehouses.footprint(wid)).is_empty():
+			return false
+	for p in _grid_in(poly):
+		if farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) or reserves.kind_at(p) != "" \
+				or hubs.covers(p):
+			return false
+	for key in lots:
+		if not buildings.has(key) and zones.zone_at(lots[key].zone_pt) == ZoneMap.Zone.NONE:
+			continue  # an empty, unzoned roadside lot can be bought
+		if not Geometry2D.intersect_polygons(poly, lots[key].corners).is_empty():
+			return false
+	return true
+
+
+## True when any of these points (or the area between them) is on a warehouse.
+func _on_warehouse(pts: Array) -> bool:
+	var poly := PackedVector2Array()
+	for p in pts:
+		poly.append(Vector2(p.x, p.z))
+	for id in warehouses.buildings:
+		if not Geometry2D.intersect_polygons(poly, warehouses.footprint(id)).is_empty():
+			return true
+	return false
+
+
+## Sample points over a polygon, about every 10 m (corners and middle too).
+static func _grid_in(poly: PackedVector2Array) -> Array:
+	var out := []
+	var box := Rect2(poly[0], Vector2.ZERO)
+	for q in poly:
+		box = box.expand(q)
+		out.append(Vector3(q.x, 0.0, q.y))
+	var step := 10.0
+	var y := box.position.y + step * 0.5
+	while y < box.end.y:
+		var x := box.position.x + step * 0.5
+		while x < box.end.x:
+			if Geometry2D.is_point_in_polygon(Vector2(x, y), poly):
+				out.append(Vector3(x, 0.0, y))
+			x += step
+		y += step
+	return out
 
 
 ## The best the resource gets within reach of a main building (its pads
@@ -667,7 +789,7 @@ func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
 	if ok:
 		for p in pts:
 			if services.covers(p) or farms.covers(p) or industry.covers(p) or farms.field_at(p) != -1 \
-					or hubs.covers(p) or not land_ok(p):
+					or hubs.covers(p) or warehouses.covers(p) or not land_ok(p):
 				ok = false
 	if ok:
 		for key2 in lots:
@@ -831,7 +953,7 @@ func wealth_at(_p: Vector2) -> float:
 func _lot_blocked(lot: Dictionary) -> bool:
 	for p in [lot.pos, lot.front, lot.zone_pt]:
 		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) \
-				or reserves.kind_at(p) != "" or hubs.covers(p):
+				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p):
 			return true
 	# No lots in the water or on ground too steep to build on.
 	return not land_ok(lot.pos, LotPlanner.FRONTAGE * 0.5)
@@ -1049,6 +1171,7 @@ func to_dict() -> Dictionary:
 		"farms": farms.to_dict(),
 		"industry": industry.to_dict(),
 		"logistics": logistics.to_dict(),
+		"warehouses": warehouses.to_dict(),
 		"reserves": reserves.to_dict(),
 		"permits": permits.to_dict(),
 		"hubs": hubs.to_dict(),
@@ -1083,6 +1206,7 @@ func from_dict(d: Dictionary) -> void:
 	farms.from_dict(d.get("farms", {}))
 	industry.from_dict(d.get("industry", {}))
 	logistics.from_dict(d.get("logistics", {}))
+	warehouses.from_dict(d.get("warehouses", {}))
 	reserves.from_list(d.get("reserves", []))
 	permits.from_dict(d.get("permits", {}))
 	hubs.from_dict(d.get("hubs", {}))

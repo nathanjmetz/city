@@ -61,6 +61,7 @@ var _ok_mat := RoadStyle.material(Color(0.35, 0.65, 1.0, 0.55), true)
 var _bad_mat := RoadStyle.material(Color(1.0, 0.3, 0.25, 0.6), true)
 var _hover_seg := -1
 var _hover_service := -1
+var _hover_warehouse := -1
 var _hover_farm := -1
 var _shown_problem := ""
 var _guide := MeshInstance3D.new()
@@ -233,6 +234,9 @@ func _click() -> void:
 			if _hover_service != -1:
 				sim.apply({"type": "remove_service", "id": _hover_service})
 				_hover_service = -1
+			elif _hover_warehouse != -1:
+				sim.apply({"type": "remove_warehouse", "id": _hover_warehouse})
+				_hover_warehouse = -1
 			elif _hover_farm != -1:
 				sim.apply({"type": "remove_farm", "id": _hover_farm})
 				_hover_farm = -1
@@ -509,6 +513,17 @@ func _preview_pick(hit: Vector3) -> void:
 	# Service buildings can be bulldozed too.
 	_hover_service = sim.services.at(hit) if mode == Mode.BULLDOZE and _hover_seg == -1 else -1
 	_hover_farm = sim.farms.farm_at(hit) if mode == Mode.BULLDOZE and _hover_seg == -1 and _hover_service == -1 else -1
+	_hover_warehouse = sim.warehouses.at(hit) if mode == Mode.BULLDOZE and _hover_seg == -1 and _hover_service == -1 \
+		and _hover_farm == -1 else -1
+	if _hover_warehouse != -1:
+		var w: Dictionary = sim.warehouses.buildings[_hover_warehouse]
+		var wbox := BoxMesh.new()
+		wbox.size = Vector3(Warehouses.site_width(w) + 1.0, 6.0, Warehouses.site_depth(w) + 1.0)
+		_preview.mesh = wbox
+		_preview.transform = Transform3D(Basis.looking_at(w.dir, Vector3.UP), Warehouses.center(w) + Vector3(0, 3, 0))
+		_preview.material_override = mat
+		_preview.visible = true
+		return
 	if _hover_service != -1 or _hover_farm != -1:
 		var b: Dictionary = sim.services.buildings[_hover_service] if _hover_service != -1 \
 			else sim.farms.farms[_hover_farm]
