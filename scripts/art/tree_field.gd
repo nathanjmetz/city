@@ -55,6 +55,10 @@ void fragment() {
 	ALBEDO = tint * t.rgb * mix(0.6, 1.15, inner) * mix(0.85, 1.2, top) * 2.0;
 	ALPHA = t.a;
 	ALPHA_SCISSOR_THRESHOLD = 0.45;
+	// With MSAA, leaf edges become partial coverage instead of popping on
+	// and off as the camera moves.
+	ALPHA_ANTIALIASING_EDGE = 0.25;
+	ALPHA_TEXTURE_COORDINATE = UV * 128.0;
 	ROUGHNESS = 0.75;
 	SPECULAR = 0.3;
 }

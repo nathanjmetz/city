@@ -85,4 +85,9 @@ func _process(_delta: float) -> void:
 	var reach := 600.0
 	if dir.y < -0.05:
 		reach = cam.global_position.y / -dir.y
-	sun.directional_shadow_max_distance = clampf(reach * 2.0, 120.0, 2000.0)
+	# Change the range only in big steps: a shadow map that resizes every
+	# frame makes every shadow edge crawl while the camera moves.
+	var want := clampf(reach * 2.0, 120.0, 2000.0)
+	var cur := sun.directional_shadow_max_distance
+	if want > cur or want < cur * 0.55:
+		sun.directional_shadow_max_distance = minf(120.0 * pow(1.5, ceilf(log(want / 120.0) / log(1.5))), 2000.0)
