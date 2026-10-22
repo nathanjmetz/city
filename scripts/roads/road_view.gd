@@ -2,8 +2,18 @@ class_name RoadView
 extends Node3D
 ## Draws the road network. Rebuilds every mesh whenever the network changes,
 ## which is plenty fast for a small town.
+## Streets and avenues out in the country, with nothing built or zoned along
+## them, are drawn as rural roads: gravel shoulders and utility poles instead
+## of curbs and sidewalks. They get their curbs once the town reaches them.
+
+## How far from a road a home, shop or service makes it a town street.
+const TOWN_REACH := 60.0
 
 var network: RoadNetwork
+var sim: CitySim
+var _rural := {}  # segment id -> true
+var _recheck := -1.0  # seconds until the town edge is checked again, or -1
+var _redraw := false  # a new drive needs the poles moved
 
 var _mats := {
 	"asphalt": Surfaces.asphalt(),
@@ -12,16 +22,70 @@ var _mats := {
 	"median": Ground.grass(),
 	"yellow": Surfaces.paint(RoadStyle.MARKING_YELLOW),
 	"white": Surfaces.paint(RoadStyle.MARKING_WHITE),
+	"gravel": Surfaces.gravel(),
+	"pole": RoadStyle.material(Color(0.33, 0.27, 0.21)),
+	"wire": RoadStyle.material(Color(0.12, 0.12, 0.12)),
 	"concrete": Surfaces.concrete(Color(0.66, 0.65, 0.62)),
 	"apron": RoadStyle.material(Color(0.5, 0.44, 0.38)),  # tinted, textured-look concrete
 	"tunnel": RoadStyle.material(Color(0.1, 0.1, 0.12, 0.45), true),
 }
 
 
-func setup(net: RoadNetwork) -> void:
+func setup(net: RoadNetwork, s: CitySim = null) -> void:
 	network = net
+	sim = s
 	network.changed.connect(rebuild)
+	if sim != null:
+		for sig in [sim.lots_changed, sim.zones_changed, sim.buildings_changed]:
+			sig.connect(func(): if _recheck < 0.0: _recheck = 1.0)
+		for sig in [sim.farms_changed, sim.industry_changed]:
+			sig.connect(func():
+				_redraw = true
+				if _recheck < 0.0: _recheck = 1.0)
 	rebuild()
+
+
+## Rebuilds when a road has turned from country road to town street or back
+## (checked at most once a second while the town grows).
+func _process(delta: float) -> void:
+	if _recheck < 0.0:
+		return
+	_recheck -= delta
+	if _recheck < 0.0 and (_redraw or _rural_segments() != _rural):
+		rebuild()
+
+
+## Streets and avenues with no zoned lot, building or service near them.
+func _rural_segments() -> Dictionary:
+	var out := {}
+	if sim == null:
+		return out
+	var cell := TOWN_REACH
+	var town := {}  # Vector2i -> true where something is built or zoned
+	var mark := func(p: Vector3) -> void:
+		town[Vector2i(floori(p.x / cell), floori(p.z / cell))] = true
+	for key in sim.lots:
+		var lot: Dictionary = sim.lots[key]
+		if sim.buildings.has(key) or sim.zones.zone_at(lot.zone_pt) != ZoneMap.Zone.NONE:
+			mark.call(lot.front)
+	for id in sim.services.buildings:
+		mark.call(sim.services.buildings[id].pos)
+	for id in network.segments:
+		var type: int = network.segments[id].type
+		if type != RoadStyle.Type.STREET and type != RoadStyle.Type.AVENUE:
+			continue
+		var near := false
+		for p in network.sample_segment(id):
+			var c := Vector2i(floori(p.x / cell), floori(p.z / cell))
+			for dx in [-1, 0, 1]:
+				for dz in [-1, 0, 1]:
+					if town.has(c + Vector2i(dx, dz)):
+						near = true
+			if near:
+				break
+		if not near:
+			out[id] = true
+	return out
 
 
 func rebuild() -> void:
@@ -37,6 +101,19 @@ func _rebuild_all() -> void:
 	var piers := SurfaceTool.new()
 	piers.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var any_bridge := false
+	_rural = _rural_segments()
+	_redraw = false
+	var wood := SurfaceTool.new()
+	var wire := SurfaceTool.new()
+	wood.begin(Mesh.PRIMITIVE_TRIANGLES)
+	wire.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var any_pole := false
+	var drives := []  # farm lanes and company drives, kept clear of poles
+	if sim != null:
+		for f in sim.farms.farms.values():
+			drives.append_array(f.get("drive", []))
+		for c in sim.industry.sites.values():
+			drives.append_array(c.get("drive", []))
 	# Ramps joining highways start where they clear the through lanes.
 	var merges := RampMerge.merges(network)
 	var cuts := {}  # [seg, node] -> metres
@@ -79,7 +156,12 @@ func _rebuild_all() -> void:
 			mi.mesh = Terrain.drape(st.commit(), true)
 			mi.material_override = _mats.tunnel
 		else:
-			mi.mesh = Terrain.drape(RoadMesh.street(pts, type, _mats, seg_gaps))
+			var rural: bool = _rural.has(id) and pts[pts.size() / 2].y < 1.0
+			mi.mesh = Terrain.drape(RoadMesh.street(pts, type, _mats, seg_gaps, rural))
+			if rural:
+				var side := 1.0 if hash(id) % 2 == 0 else -1.0
+				RoadMesh.add_poles(wood, wire, pts, side * (RoadStyle.half_width(type) + 4.0), drives)
+				any_pole = true
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			any_bridge = RoadMesh.bridge(Terrain.lift_all(pts), RoadStyle.right_of_way_half(type), piers,
 				Terrain.ground_y) or any_bridge
@@ -97,6 +179,12 @@ func _rebuild_all() -> void:
 			mi.material_override = {"white": _mats.white, "barrier": _mats.curb}.get(key, _mats.asphalt)
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(mi)
+	if any_pole:
+		for entry in [[wood, _mats.pole], [wire, _mats.wire]]:
+			var pm := MeshInstance3D.new()
+			pm.mesh = Terrain.drape(entry[0].commit(), true)
+			pm.material_override = entry[1]
+			add_child(pm)
 	if any_bridge:
 		piers.generate_normals()
 		var mi := MeshInstance3D.new()

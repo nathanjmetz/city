@@ -28,6 +28,7 @@ const _FILES := {
 	"fire": "fire", "police": "police", "health": "health", "school": "school", "services": "services",
 	"farms": "farms", "farmland": "farms", "traffic": "traffic", "signal": "signal", "views": "views",
 	"help": "help", "grid": "grid", "curve": "curve", "roundabout": "roundabout",
+	"permits": "permits", "check": "check", "close": "close",
 }
 ## These get a soft `accent` fill behind the line (zone tints and the like).
 const _DUOTONE := ["homes", "zones", "shops", "industry", "farms", "farmland"]
@@ -193,6 +194,29 @@ func _draw() -> void:
 			_poly([P.call(0.5, 0.14), P.call(0.94, 0.36), P.call(0.5, 0.58), P.call(0.06, 0.36)], color)
 			draw_arc(P.call(0.5, 0.5), s * 0.24, 0.15, PI - 0.15, 16, color, w, true)
 			line.call(P.call(0.86, 0.38), P.call(0.86, 0.72))
+		"landfill":
+			# A grassed mound with a truck tipping at the working face.
+			_poly([P.call(0.04, 0.84), P.call(0.3, 0.42), P.call(0.66, 0.36), P.call(0.96, 0.84)], Color(0.55, 0.68, 0.36))
+			_poly([P.call(0.3, 0.42), P.call(0.48, 0.39), P.call(0.4, 0.62), P.call(0.22, 0.56)], Color(0.6, 0.48, 0.34))
+			draw_rect(Rect2(P.call(0.62, 0.62), Vector2(0.26, 0.14) * s), color)
+			draw_circle(P.call(0.67, 0.8), s * 0.05, color)
+			draw_circle(P.call(0.83, 0.8), s * 0.05, color)
+		"recycling":
+			# Three chasing arrows.
+			for i in 3:
+				var a0 := -PI * 0.5 + i * TAU / 3.0
+				draw_arc(P.call(0.5, 0.52), s * 0.3, a0 + 0.25, a0 + TAU / 3.0 - 0.25, 10, Color(0.45, 0.8, 0.5), w * 1.2, true)
+				var tip: Vector2 = P.call(0.5, 0.52) + Vector2(cos(a0 + TAU / 3.0 - 0.25), sin(a0 + TAU / 3.0 - 0.25)) * s * 0.3
+				var fwd := Vector2(-sin(a0 + TAU / 3.0 - 0.25), cos(a0 + TAU / 3.0 - 0.25))
+				var side := Vector2(cos(a0 + TAU / 3.0 - 0.25), sin(a0 + TAU / 3.0 - 0.25))
+				_poly([tip + fwd * s * 0.12, tip + side * s * 0.09, tip - side * s * 0.09], Color(0.45, 0.8, 0.5))
+		"cemetery":
+			# A rounded headstone on a lawn.
+			_poly([P.call(0.06, 0.9), P.call(0.94, 0.9), P.call(0.94, 0.8), P.call(0.06, 0.8)], Color(0.5, 0.7, 0.4))
+			draw_rect(Rect2(P.call(0.3, 0.38), Vector2(0.4, 0.42) * s), Color(0.78, 0.78, 0.76))
+			draw_circle(P.call(0.5, 0.38), s * 0.2, Color(0.78, 0.78, 0.76))
+			line.call(P.call(0.5, 0.3), P.call(0.5, 0.6), w * 0.8, Color(0.35, 0.35, 0.36))
+			line.call(P.call(0.4, 0.4), P.call(0.6, 0.4), w * 0.8, Color(0.35, 0.35, 0.36))
 		"services":
 			draw_rect(Rect2(P.call(0.14, 0.4), Vector2(0.72, 0.5) * s), color, false, w)
 			_poly([P.call(0.08, 0.42), P.call(0.5, 0.1), P.call(0.92, 0.42)], Color(color, 0.6))

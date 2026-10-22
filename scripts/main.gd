@@ -31,7 +31,7 @@ func _ready() -> void:
 
 	var roads := RoadView.new()
 	add_child(roads)
-	roads.setup(sim.network)
+	roads.setup(sim.network, sim)
 
 	var zone_view := ZoneView.new()
 	zone_view.setup(sim)
@@ -106,6 +106,10 @@ func _ready() -> void:
 	var zone_tool := ZoneTool.new()
 	zone_tool.setup(sim, cam, zone_view)
 	add_child(zone_tool)
+
+	var hub_view := HubView.new()
+	hub_view.setup(sim)
+	add_child(hub_view)
 
 	var service_tool := ServiceTool.new()
 	service_tool.setup(sim, cam, service_view)

@@ -65,6 +65,7 @@ var _view_cards := {}  # view key -> Button
 var _view := ""
 var _help_button: Button
 var advisor := AdvisorPanel.new()
+var permits := PermitPanel.new()
 
 
 func setup(rt: RoadTool, zt: ZoneTool, s: CitySim, g: Node) -> void:
@@ -86,6 +87,7 @@ func _ready() -> void:
 	_build_help()
 	_build_views()
 	_build_advisor()
+	_build_permits()
 	_info_panel.setup(sim, select_tool)
 	_root.add_child(_info_panel)
 
@@ -128,7 +130,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 ## True while a tool is in hand, a panel or view is open, or something is selected.
 func anything_open() -> bool:
-	return _budget_open or _view != "" or _views_panel.visible or _help.visible or advisor.visible \
+	return _budget_open or _view != "" or _views_panel.visible or _help.visible or advisor.visible or permits.visible \
 		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
@@ -145,6 +147,7 @@ func close_all() -> void:
 	_help.visible = false
 	_help_button.set_pressed_no_signal(false)
 	advisor.close_panel()
+	permits.close_panel()
 	road_tool.set_mode(RoadTool.Mode.NONE)
 	zone_tool.set_zone(ZoneTool.OFF)
 	service_tool.set_kind(ServiceTool.OFF)
@@ -312,13 +315,16 @@ func _build_top_bar() -> void:
 	seasons.toggled.connect(DayNight.set_seasons)
 	row.add_child(seasons)
 	row.add_child(VSeparator.new())
+	permits.setup(sim, game, info_view.cam)
+	row.add_child(permits.make_button())
 	advisor.setup(sim, func(): return _category if _category != "" or _view == "" else "view_" + _view)
 	row.add_child(advisor.make_button())
 	_help_button = _icon_button("help", 24, "Controls")
 	_help_button.toggled.connect(func(on):
 		_help.visible = on
 		if on:
-			advisor.close_panel())
+			advisor.close_panel()
+			permits.close_panel())
 	row.add_child(_help_button)
 
 
@@ -520,6 +526,20 @@ func _services_drawer() -> PanelContainer:
 			b.pressed.connect(func(): service_tool.set_kind(k))
 			cards.add_child(b)
 			_service_cards[k] = b
+	# Landfill, recycling and cemetery: hubs that grow on their own.
+	row.add_child(VSeparator.new())
+	var hubs := _section(row, "Trash and cemeteries")
+	for k in CivicHubs.TOOL_KINDS:
+		var hk: String = CivicHubs.TOOL_KINDS[k]
+		var w: Dictionary = Balance.WASTE_SITES[hk]
+		var title: String = CivicHubs.KINDS[hk].name
+		var b := _card(CivicHubs.KINDS[hk].icon, {"recycling_1": "Recycling"}.get(hk, title),
+			"%s: $%s, $%s a month" % [title, CitySim.money_text(int(w.cost)), CitySim.money_text(int(w.upkeep))])
+		b.tooltip_text = "%s: $%s to build, $%s a month. Never fills up." % [title, CitySim.money_text(int(w.cost)),
+			CitySim.money_text(int(w.upkeep))]
+		b.pressed.connect(func(): service_tool.set_kind(k))
+		hubs.add_child(b)
+		_service_cards[k] = b
 	return drawer
 
 
@@ -876,6 +896,24 @@ func _build_advisor() -> void:
 	_top_bar.resized.connect(place)
 	place.call_deferred()
 	advisor.opened.connect(func():
+		permits.close_panel()
+		_help.visible = false
+		_help_button.set_pressed_no_signal(false))
+
+
+## Permit requests: the bell's panel, docked where the advisor's is.
+func _build_permits() -> void:
+	_root.add_child(permits)
+	permits.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	permits.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	var place := func():
+		permits.offset_right = 0
+		permits.offset_left = 0
+		permits.offset_top = _top_bar.size.y
+	_top_bar.resized.connect(place)
+	place.call_deferred()
+	permits.opened.connect(func():
+		advisor.close_panel()
 		_help.visible = false
 		_help_button.set_pressed_no_signal(false))
 

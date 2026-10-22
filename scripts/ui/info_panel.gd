@@ -16,7 +16,12 @@ var _kind := UiStyle.label("", 11, UiStyle.MUTED)
 var _status := UiStyle.label("", 13)
 var _rows := GridContainer.new()
 var _problems := VBoxContainer.new()
+## Buttons for what the selection can do (upgrade, demolish), when it says.
+var _actions := VBoxContainer.new()
+var _action_key := ""
 var _icon_name := ""
+var _guide: LeaderGuide
+var _guide_for := {}
 var _wait := 0.0
 
 
@@ -58,6 +63,8 @@ func _ready() -> void:
 	col.add_child(_rows)
 	_problems.add_theme_constant_override("separation", 2)
 	col.add_child(_problems)
+	_actions.add_theme_constant_override("separation", 4)
+	col.add_child(_actions)
 
 
 func _process(delta: float) -> void:
@@ -109,4 +116,39 @@ func _refresh() -> void:
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		l.custom_minimum_size = Vector2(236, 0)
 		_problems.add_child(l)
+	_show_actions(d.get("actions", []))
+	_sync_guide()
 	reset_size()
+
+
+func _show_actions(actions: Array) -> void:
+	var key := str(actions)
+	if key == _action_key:
+		return
+	_action_key = key
+	for c in _actions.get_children():
+		_actions.remove_child(c)
+		c.queue_free()
+	for a in actions:
+		var b := Button.new()
+		b.text = a.label
+		b.disabled = not a.get("enabled", true)
+		var cmd: Dictionary = a.cmd
+		b.pressed.connect(func():
+			sim.apply(cmd)
+			_refresh())
+		_actions.add_child(b)
+
+
+## Hubs with a leader get your word to them at the bottom (see LeaderGuide).
+func _sync_guide() -> void:
+	if tool.selection == _guide_for:
+		return
+	_guide_for = tool.selection.duplicate()
+	if _guide:
+		_guide.queue_free()
+		_guide = null
+	if LeaderGuide.takes(sim, tool.selection):
+		_guide = LeaderGuide.new()
+		_guide.setup(sim, str(tool.selection.type), int(tool.selection.id))
+		get_child(0).add_child(_guide)
