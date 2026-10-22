@@ -38,6 +38,9 @@ const TICKS_PER_SECOND := 10
 const GROW_EVERY := Balance.GROW_EVERY
 ## People move in and stats update every this many ticks.
 const MOVE_EVERY := Balance.MOVE_EVERY
+## How each zone's buildings go up (see Construction).
+const PROFILE_OF_ZONE := {ZoneMap.Zone.RESIDENTIAL: "house", ZoneMap.Zone.COMMERCIAL: "shop",
+	ZoneMap.Zone.INDUSTRIAL: "factory"}
 ## Game minutes per tick: at normal speed a day takes 2.4 real minutes.
 const MINUTES_PER_TICK := 1
 ## Tick 0 is 6:00 AM on Monday, January 4, 2027.
@@ -92,6 +95,8 @@ var mail := Mail.new()
 ## The town's broad Funding and Growth sliders for every area and hub (no
 ## tax fiddling: Brawn). Set on the Economy page or a hub's panel.
 var policies := Policies.new()
+## Buildings going up, stage by stage, with their crews and deliveries.
+var construction := Construction.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -232,6 +237,8 @@ func apply_now(cmd: Dictionary) -> bool:
 					or education.covers(pos) or banks.covers(pos):
 				return false
 			var sid := services.add(kind, pos, dir)
+			construction.start("svc:%d" % sid, "civic", tick_count, pos, dir, Services.SETBACK
+				+ RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH)
 			economy.money -= cost
 			if kind == Services.Kind.BUS_DEPOT:
 				buses.on_placed(self, sid)
@@ -260,7 +267,13 @@ func apply_now(cmd: Dictionary) -> bool:
 			var dir := _v(cmd.dir).normalized()
 			if dir.length() < 0.5 or farmhouse_problem(pos, dir) != "" or Farms.FARMHOUSE_COST > economy.money:
 				return false
-			farms.add_farm(pos, dir, str(cmd.get("crop", "corn")), farm_drive(pos, dir))
+			var fid := farms.add_farm(pos, dir, str(cmd.get("crop", "corn")), farm_drive(pos, dir))
+			var lane: Array = farms.farms[fid].drive
+			if lane.size() >= 2:
+				# The farmhouse goes up first (FarmBuilder adds the barn as the
+				# farm grows). Trucks pull over where the lane meets the road.
+				construction.start("farm:%d" % fid, "house", tick_count, lane[-1],
+					(lane[-1] - lane[-2]).normalized(), 0.0)
 			economy.money -= Farms.FARMHOUSE_COST
 			_lots_dirty = true
 			farms_changed.emit()
@@ -285,6 +298,8 @@ func apply_now(cmd: Dictionary) -> bool:
 					or int(Balance.WAREHOUSE[kind].cost) > economy.money:
 				return false
 			var wid := warehouses.add(kind, pos, dir)
+			construction.start("wh:%d" % wid, "warehouse", tick_count, pos, dir, Warehouses.SETBACK
+				+ RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH)
 			economy.money -= int(Balance.WAREHOUSE[kind].cost)
 			_clear_zones_under(warehouses.footprint(wid))
 			_lots_dirty = true
@@ -491,6 +506,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			power = Power.new()
 			power.offset = terrain_offset
 			logistics = Logistics.new()
+			construction = Construction.new()
 			warehouses = Warehouses.new()
 			reserves = Reserves.new()
 			buses = BusNet.new()
@@ -721,6 +737,7 @@ func tick() -> void:
 		economy.money += roundi(economy.monthly_net() / 24.0)
 	# Before logistics, which clears Traffic's arrivals.
 	hubs.tick(self)
+	construction.tick(self)
 	if not in_region and tick_count % (24 * TICKS_PER_HOUR) == 0:
 		Trade.settle({"me": self}, {})
 	mail.tick(self)
@@ -754,12 +771,21 @@ func update_stats() -> void:
 	var home_cap := 0
 	var shop_jobs := 0
 	var factory_jobs := 0
+	# Shops and factories still going up count toward demand (they're
+	# coming) but nobody works there yet.
+	var unfinished_jobs := 0
+	var unfinished_homes := 0
 	for key in buildings:
 		var b: Dictionary = buildings[key]
+		if int(b.zone) != ZoneMap.Zone.RESIDENTIAL and _utilities_ok(key) \
+				and not construction.is_done("lot:" + key, tick_count):
+			unfinished_jobs += b.cap
 		match int(b.zone):
 			ZoneMap.Zone.RESIDENTIAL:
 				pop += b.occ
 				home_cap += b.cap
+				if not construction.is_done("lot:" + key, tick_count):
+					unfinished_homes += b.cap
 			ZoneMap.Zone.COMMERCIAL:
 				if _utilities_ok(key):  # closed without power or water
 					shop_jobs += b.cap
@@ -777,15 +803,21 @@ func update_stats() -> void:
 	economy.reach_milestones(pop)
 	var workers := int(pop * WORKER_SHARE)
 	var jobs := shop_jobs + factory_jobs
-	var free := home_cap - pop
-	stats = {"population": pop, "workers": workers, "jobs": jobs,
-		"employed": mini(workers, jobs), "homes_free": free}
+	# Demand plans ahead, as builders do: homes going up are people on the
+	# way, and jobs at shops and factories going up are jobs on the way.
+	var coming := pop + unfinished_homes
+	var coming_workers := int(coming * WORKER_SHARE)
+	var free := home_cap - unfinished_homes - pop
+	var open_jobs := maxi(jobs - unfinished_jobs, 0)
+	stats = {"population": pop, "workers": workers, "jobs": open_jobs,
+		"employed": mini(workers, open_jobs), "homes_free": free}
 	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(
-		0.6 + 0.6 * float(jobs - workers) / maxf(workers, 40.0) - float(free) / maxf(home_cap, 30.0), 0.0, 1.0)
+		0.6 + 0.6 * float(jobs - coming_workers) / maxf(coming_workers, 40.0)
+		- float(free) / maxf(home_cap - unfinished_homes, 30.0), 0.0, 1.0)
 	demand[ZoneMap.Zone.COMMERCIAL] = clampf(
-		0.05 + (pop * 0.12 - shop_jobs) / maxf(shop_jobs, 12.0), 0.0, 1.0)
+		0.05 + (coming * 0.12 - shop_jobs) / maxf(shop_jobs, 12.0), 0.0, 1.0)
 	demand[ZoneMap.Zone.INDUSTRIAL] = clampf(
-		0.1 + float(workers - jobs) / maxf(workers, 40.0)
+		0.1 + float(coming_workers - jobs) / maxf(coming_workers, 40.0)
 		+ 0.4 * (shop_jobs * 0.8 - factory_jobs) / maxf(factory_jobs, 20.0), 0.0, 1.0)
 	for z in demand:
 		demand[z] = clampf(demand[z] + economy.demand_shift(z) + mail.demand_shift(z), 0.0, 1.0)
@@ -811,6 +843,15 @@ func _move_in() -> void:
 			var home: Dictionary = buildings[key]
 			if home.zone == ZoneMap.Zone.RESIDENTIAL and home.occ > 0 and not _utilities_ok(key):
 				home.occ -= 1
+	# A new home is built for a buyer: they move in when it's finished.
+	var keys0 := buildings.keys()
+	keys0.sort()
+	for key in keys0:
+		var nb: Dictionary = buildings[key]
+		if nb.zone == ZoneMap.Zone.RESIDENTIAL and nb.occ == 0 and _utilities_ok(key):
+			var since: int = tick_count - int(nb.built) - Construction.duration("house")
+			if since >= 0 and since < MOVE_EVERY * 6:
+				nb.occ = mini(nb.cap, 2)
 	var arrivals := 1 + int(demand[ZoneMap.Zone.RESIDENTIAL] * 4.0)
 	if demand[ZoneMap.Zone.RESIDENTIAL] <= 0.05:
 		return
@@ -818,7 +859,8 @@ func _move_in() -> void:
 	keys.sort()
 	for key in keys:
 		var b: Dictionary = buildings[key]
-		if b.zone == ZoneMap.Zone.RESIDENTIAL and b.occ < b.cap and _utilities_ok(key):
+		if b.zone == ZoneMap.Zone.RESIDENTIAL and b.occ < b.cap and _utilities_ok(key) \
+				and construction.is_done("lot:" + key, tick_count):
 			b.occ += 1
 			arrivals -= 1
 			if arrivals == 0:
@@ -1624,6 +1666,8 @@ func _grow_one(salt := 0) -> String:
 			"cap": capacity(z, bseed), "occ": 0}
 		if z == ZoneMap.Zone.INDUSTRIAL:
 			buildings[key].chain = factory_chain(lots[key].pos)
+		var lot: Dictionary = lots[key]
+		construction.start("lot:" + key, PROFILE_OF_ZONE[z], tick_count, lot.front, -lot.normal, lot.to_curb)
 		buildings_changed.emit()
 		return key
 	return ""
@@ -1782,6 +1826,7 @@ func to_dict() -> Dictionary:
 		"education": education.to_dict(),
 		"banks": banks.to_dict(),
 		"logistics": logistics.to_dict(),
+		"construction": construction.to_dict(),
 		"warehouses": warehouses.to_dict(),
 		"reserves": reserves.to_dict(),
 		"permits": permits.to_dict(),
@@ -1826,6 +1871,7 @@ func from_dict(d: Dictionary) -> void:
 	education.from_dict(d.get("education", {}))
 	banks.from_dict(d.get("banks", {}))
 	logistics.from_dict(d.get("logistics", {}))
+	construction.from_dict(d.get("construction", {}))
 	warehouses.from_dict(d.get("warehouses", {}))
 	reserves.from_list(d.get("reserves", []))
 	permits.from_dict(d.get("permits", {}))
