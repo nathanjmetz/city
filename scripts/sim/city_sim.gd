@@ -490,6 +490,7 @@ func from_dict(d: Dictionary) -> void:
 		_refresh()
 		for key in lots:
 			zones.paint(lots[key].zone_pt, 3.0, ZoneMap.Zone.RESIDENTIAL)
+	_upgrade_old_rings()
 	economy.from_dict(d.get("economy", {}))
 	services.from_dict(d.get("services", {}))
 	farms.from_dict(d.get("farms", {}))
@@ -507,6 +508,40 @@ func from_dict(d: Dictionary) -> void:
 	_refresh()
 	update_stats()
 	buildings_changed.emit()
+
+
+## Saves from before real roundabouts drew rings as two-way roads of the
+## chosen type. Turn those into one-way counter-clockwise rings.
+func _upgrade_old_rings() -> void:
+	var groups := {}  # rounded centre -> [seg ids]
+	for id in network.segments:
+		var s: Dictionary = network.segments[id]
+		if RoadStyle.is_ring(s.type) or RoadStyle.TYPES[s.type].oneway:
+			continue
+		var c := network.curve_of(id)
+		var circle := RoadShapes.arc_circle(c)
+		if circle.is_empty() or circle[1] < RoadShapes.ROUNDABOUT_MIN - 1.0 or circle[1] > RoadShapes.ROUNDABOUT_MAX + 1.0:
+			continue
+		var key := Vector2i(roundi(circle[0].x / 2.0), roundi(circle[0].z / 2.0))
+		if not groups.has(key):
+			groups[key] = []
+		groups[key].append([id, circle[0]])
+	for key in groups:
+		if groups[key].size() < 6:
+			continue
+		for entry in groups[key]:
+			var id: int = entry[0]
+			var s: Dictionary = network.segments[id]
+			var c := network.curve_of(id)
+			# Counter-clockwise seen from above: the centre is on the driver's left.
+			var fwd: Vector3 = c[2] - c[0]
+			var to_centre: Vector3 = entry[1] - c[0]
+			if fwd.cross(to_centre).y < 0.0:
+				var a: int = s.a
+				s.a = s.b
+				s.b = a
+			s.type = RoadStyle.ring_type(s.type)
+			s.oneway = true
 
 
 ## The road type a command asks for (Street if it doesn't say).

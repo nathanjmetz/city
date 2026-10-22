@@ -30,9 +30,19 @@ func rebuild() -> void:
 	var piers := SurfaceTool.new()
 	piers.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var any_bridge := false
+	# Ramps joining highways start where they clear the through lanes.
+	var merges := RampMerge.merges(network)
+	var cuts := {}  # [seg, node] -> metres
+	for m in merges:
+		cuts[[m.ramp, m.node]] = RampMerge.ramp_cut(m)
 	for id in network.segments:
 		var pts := network.sample_segment(id)
 		var type: int = network.segments[id].type
+		var sg: Dictionary = network.segments[id]
+		pts = RampMerge.trim_ramp(pts, cuts.get([id, sg.a], 0.0), true)
+		pts = RampMerge.trim_ramp(pts, cuts.get([id, sg.b], 0.0), false)
+		if pts.size() < 2:
+			continue
 		var mi := MeshInstance3D.new()
 		if _underground(pts):
 			# Tunnels show as a dark path on the ground above them.
@@ -49,6 +59,18 @@ func rebuild() -> void:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			any_bridge = RoadMesh.bridge(pts, RoadStyle.right_of_way_half(type), piers) or any_bridge
 		add_child(mi)
+	if not merges.is_empty():
+		var layers := {"asphalt": SurfaceTool.new(), "white": SurfaceTool.new(), "cover": SurfaceTool.new()}
+		for st in layers.values():
+			st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for m in merges:
+			RampMerge.draw(m, layers.asphalt, layers.white, layers.cover)
+		for key in layers:
+			var mi := MeshInstance3D.new()
+			mi.mesh = layers[key].commit()
+			mi.material_override = _mats.white if key == "white" else _mats.asphalt
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(mi)
 	if any_bridge:
 		piers.generate_normals()
 		var mi := MeshInstance3D.new()
