@@ -1,6 +1,6 @@
 extends SceneTree
 ## Pictures of the game shell for checking the look.
-## Run: godot -s tools/shell_shots.gd -- menu|together|online out.png
+## Run: godot -s tools/shell_shots.gd -- menu|together|online|neighbor|pause out.png
 
 var _frames := 0
 var _mode := "menu"
@@ -14,6 +14,8 @@ func _initialize() -> void:
 	_out = args[1] if args.size() > 1 else "shot.png"
 	if _mode in ["online", "neighbor"]:
 		_start_online.call_deferred()
+	elif _mode == "pause":
+		(func(): root.get_node("Session").new_city("Shots")).call_deferred()
 	else:
 		change_scene_to_file("res://scenes/menu.tscn")
 
@@ -54,9 +56,15 @@ func _process(_delta: float) -> bool:
 					n._goal_dist = float(OS.get_cmdline_user_args()[2])
 				else:
 					n.fly_to(target)
+	if _mode == "pause" and _frames in [100, 120]:
+		# Escape puts the road tool down, then with nothing to close opens the pause menu.
+		var esc := InputEventKey.new()
+		esc.keycode = KEY_ESCAPE
+		esc.pressed = true
+		root.push_input(esc)
 	if _mode == "together" and _frames == 5:
 		current_scene.call("_show", "together")
-	if _frames == (900 if _mode in ["online", "neighbor"] else 60):
+	if _frames == (900 if _mode in ["online", "neighbor"] else 180 if _mode == "pause" else 60):
 		root.get_viewport().get_texture().get_image().save_png(_out)
 		print("saved ", _out)
 		quit()
