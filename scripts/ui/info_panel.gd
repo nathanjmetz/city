@@ -210,5 +210,5 @@ func _sync_guide() -> void:
 		_guide = null
 	if LeaderGuide.takes(sim, tool.selection):
 		_guide = LeaderGuide.new()
-		_guide.setup(sim, str(tool.selection.type), int(tool.selection.id))
+		_guide.setup(sim, LeaderGuide.hub_of(sim, tool.selection), int(tool.selection.id))
 		get_child(0).add_child(_guide)
