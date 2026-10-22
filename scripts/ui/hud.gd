@@ -55,6 +55,8 @@ var _views_button: Button
 var _view_cards := {}  # view key -> Button
 var _view := ""
 var _help_button: Button
+var _top_bar := PanelContainer.new()
+var advisor := AdvisorPanel.new()
 
 
 func setup(rt: RoadTool, zt: ZoneTool, s: CitySim, g: Node) -> void:
@@ -75,6 +77,7 @@ func _ready() -> void:
 	_build_bottom_bar()
 	_build_help()
 	_build_views()
+	_build_advisor()
 
 	road_tool.mode_changed.connect(func(_m): _sync())
 	road_tool.options_changed.connect(_sync)
@@ -117,6 +120,7 @@ func close_all() -> void:
 	_views_button.set_pressed_no_signal(false)
 	_help.visible = false
 	_help_button.set_pressed_no_signal(false)
+	advisor.close_panel()
 	road_tool.set_mode(RoadTool.Mode.NONE)
 	zone_tool.set_zone(ZoneTool.OFF)
 	service_tool.set_kind(ServiceTool.OFF)
@@ -208,7 +212,7 @@ func _show_view(key: String) -> void:
 # --- Top bar ----------------------------------------------------------------
 
 func _build_top_bar() -> void:
-	var bar := PanelContainer.new()
+	var bar := _top_bar
 	bar.add_theme_stylebox_override("panel", UiStyle.dock(true))
 	_root.add_child(bar)
 	bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE, Control.PRESET_MODE_MINSIZE)
@@ -264,8 +268,13 @@ func _build_top_bar() -> void:
 		row.add_child(b)
 		_speed_buttons.append(b)
 	row.add_child(VSeparator.new())
+	advisor.setup(sim, func(): return _category)
+	row.add_child(advisor.make_button())
 	_help_button = _icon_button("help", 24, "Controls")
-	_help_button.toggled.connect(func(on): _help.visible = on)
+	_help_button.toggled.connect(func(on):
+		_help.visible = on
+		if on:
+			advisor.close_panel())
 	row.add_child(_help_button)
 
 
@@ -751,6 +760,24 @@ func _update_stats() -> void:
 		else ("Build power and water (Services) so the town can grow" if no_utilities else "")
 	_budget_rows.net.text = "%s$%s / month" % ["+" if net >= 0 else "–", _thousands(absi(net))]
 	_budget_rows.net.add_theme_color_override("font_color", GOOD if net >= 0 else BAD)
+
+
+# --- Advisor (from the top bar) --------------------------------------------
+
+## Docked flush to the right edge, just under the top bar.
+func _build_advisor() -> void:
+	_root.add_child(advisor)
+	advisor.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	advisor.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	var place := func():
+		advisor.offset_right = 0
+		advisor.offset_left = 0
+		advisor.offset_top = _top_bar.size.y
+	_top_bar.resized.connect(place)
+	place.call_deferred()
+	advisor.opened.connect(func():
+		_help.visible = false
+		_help_button.set_pressed_no_signal(false))
 
 
 # --- Help (from the top bar) -----------------------------------------------
