@@ -76,6 +76,10 @@ var send_command := Callable()
 ## the county highway's far ends. Trade, imports and through traffic come
 ## and go here, and nowhere else. Node ids.
 var region_links: Array = []
+## Goods and services bought from and sold to neighbors and the outside.
+var trade := Trade.new()
+## True in a shared region, which settles trade for every city at once.
+var in_region := false
 
 var _lots_dirty := true
 ## Roads changed since the world last made way for them (see RoadWins).
@@ -255,6 +259,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
 		"clear":
 			region_links.clear()
+			trade = Trade.new()
 			traffic.overrides.clear()
 			network.clear()
 			zones.cells.clear()
@@ -400,6 +405,8 @@ func tick() -> void:
 		economy.money += roundi(economy.monthly_net() / 24.0)
 	# Before logistics, which clears Traffic's arrivals.
 	hubs.tick(self)
+	if not in_region and tick_count % (24 * TICKS_PER_HOUR) == 0:
+		Trade.settle({"me": self}, {})
 	if not simulate_traffic:
 		return
 	logistics.tick(self)
@@ -1002,6 +1009,7 @@ func to_dict() -> Dictionary:
 	return {
 		"version": 2,
 		"links": region_links,
+		"trade": trade.to_dict(),
 		"tick": tick_count,
 		"seed": city_seed,
 		"roads": network.to_dict(),
@@ -1032,6 +1040,7 @@ func from_dict(d: Dictionary) -> void:
 				region_links.append(int(n))
 		else:
 			_guess_link()
+		trade.from_dict(d.get("trade", {}))
 	else:
 		# Version 1 saves were just roads, with houses on every lot.
 		network.from_dict(d)
