@@ -147,16 +147,21 @@ func _demo_farms(sim: CitySim) -> void:
 	sim.apply({"type": "paint_farmland", "points": [[-800, 30], [-30, 30], [-30, 650], [-800, 650]]})
 	sim.apply({"type": "paint_farmland", "points": [[30, -650], [800, -650], [800, -30], [30, -30]]})
 	sim.apply({"type": "paint_farmland", "points": [[-800, -30], [-30, -30], [-30, -500], [-800, -500]]})
-	sim.apply({"type": "place_farmhouse", "pos": [-300, 70], "dir": [0, -1], "crop": "corn"})
-	sim.apply({"type": "place_farmhouse", "pos": [300, -70], "dir": [0, 1], "crop": "soybeans"})
-	sim.apply({"type": "place_farmhouse", "pos": [-70, -260], "dir": [1, 0], "crop": "corn"})
+	sim.apply({"type": "place_farmhouse", "pos": [-300, 180], "dir": [0, -1], "crop": "corn"})
+	sim.apply({"type": "place_farmhouse", "pos": [300, -150], "dir": [0, 1], "crop": "soybeans"})
+	sim.apply({"type": "place_farmhouse", "pos": [-200, -260], "dir": [1, 0], "crop": "corn"})
+	# A farm on a road that runs off at an angle, with farmland painted to match.
+	sim.apply({"type": "build_road", "start": [60, 60], "ctrl": [400, 260], "end": [800, 500]})
+	sim.apply({"type": "paint_farmland", "points": [[120, 200], [700, 560], [560, 760], [60, 420]]})
+	sim.apply({"type": "place_farmhouse", "pos": [380, 420], "dir": [0.5, -0.866], "crop": "soybeans"})
 	sim.farms.price = 1.1
 	for i in 60:
 		sim.farms.decide(sim.field_usable)
 	sim.farms_changed.emit()
 	for c in _main.get_children():
 		if c is CityCamera:
-			c.look_at_point(Vector3(0, 0, 0))
+			var la := OS.get_cmdline_user_args()
+			c.look_at_point(Vector3(float(la[5]), 0, float(la[6])) if la.size() >= 7 else Vector3.ZERO)
 			var args := OS.get_cmdline_user_args()
 			if args.size() >= 4:
 				c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))

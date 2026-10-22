@@ -128,7 +128,7 @@ func _process(_delta: float) -> void:
 		_place_ghost()
 	else:
 		_draw_outline()
-	var fert := "Soil here: %d%% fertile." % roundi(Farms.fertility(Farms.cell_of(_hover)) * 100.0)
+	var fert := "Soil here: %d%% fertile." % roundi(Farms.fertility_at(_hover) * 100.0)
 	if fert != _problem and _nodes.is_empty() and mode != Mode.CORN and mode != Mode.SOYBEANS:
 		_problem = fert
 		_update_hint()
@@ -161,6 +161,14 @@ func _place_ghost() -> void:
 		if to_road.length() > 0.1:
 			_ghost_dir = to_road.normalized()
 	var problem := sim.farmhouse_problem(_hover, _ghost_dir)
+	# Preview the farm lane out to the road.
+	_outline.visible = not near.is_empty()
+	if not near.is_empty():
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		RoadMesh.add_strip(st, PackedVector3Array(Farms.make_drive(_hover, _ghost_dir, near.point)),
+			-Farms.DRIVE_WIDTH * 0.5, Farms.DRIVE_WIDTH * 0.5, 0.4)
+		_outline.mesh = st.commit()
 	if problem == "" and Farms.FARMHOUSE_COST > sim.economy.money:
 		problem = "Not enough money: costs $%s." % CitySim.money_text(Farms.FARMHOUSE_COST)
 	_ghost_ok = problem == ""
@@ -189,7 +197,7 @@ func _update_hint() -> void:
 			else:
 				text = "Click to add corners. Click the first corner or press Enter to finish."
 		Mode.CORN, Mode.SOYBEANS:
-			text = "Farmhouse ($%s): place it on farmland. The farm buys the best fields around it as it makes money." \
+			text = "Farmhouse ($%s): place it on farmland near a road. It builds a barn, then plants fields out from the yard as it makes money." \
 				% CitySim.money_text(Farms.FARMHOUSE_COST)
 			if _problem != "":
 				text += "\n" + _problem
