@@ -30,6 +30,7 @@ An open map where you draw roads, paint zones along them, and buildings grow, li
 | Esc | Stop drawing; press again to put every tool away and close panels. |
 
 | Space, or Pause / 1x / 2x / 4x | Pause and game speed. |
+| Advice (top right) | The town's advisor: a few words on what needs fixing and what might come next, based on your town and the tool in hand. A dot means something new. It never pops up unless you turn on "Pop open for problems"; "Tips on their own" turns the dot off. |
 
 The city runs on a clock (a day takes about 2½ minutes at 1x). Homes, shops and industry only grow when there is demand, shown by the bars in the bottom-left corner: homes are wanted while there are jobs, industry while people need work, and shops while residents need places to shop. People move into new homes over time.
 
@@ -62,7 +63,8 @@ The game opens on a title screen like Cities: Skylines 2: **Continue** your late
 - **Join:** type your name and the invite code. An invite link (`https://nathanjmetz.github.io/city/?join=CODE&server=wss://...`) fills both in for you.
 - **Host:** on Mac or Windows, *Host a region* runs one from your computer and shows the code. For an always-on region, run the server on its own (below).
 - **Chat:** the panel on the left. **Enter** to type, Enter to send, Esc to go back to building. Click a name to fly over and watch their city grow live; *Home* brings you back. *Invite* copies an invite.
-- You see where other players are pointing (a ring with their name), and a name tag over each neighbor's city.
+- You see where other players are pointing (a ring with their name), a name tag over each neighbor's city, and a cream dashed **city line** on the ground halfway between neighboring cities' closest buildings and roads.
+- Your city is always coral; each neighbor keeps the color they joined with (from the brand kit). A doorbell (E–C) rings when a neighbor joins or writes.
 - The region keeps running while you're away, so your city keeps growing.
 
 ### Running a region server

@@ -46,7 +46,14 @@ func _process(_delta: float) -> bool:
 		for n in main.get_children():
 			if n is CityCamera:
 				var rv: RegionView = main.get_children().filter(func(x): return x is RegionView)[0]
-				n.fly_to(rv.city_position(_friend.my_city))
+				var target := rv.city_position(_friend.my_city)
+				if OS.get_cmdline_user_args().size() > 2:
+					# A wide view between the two cities, to see the city line.
+					target *= 0.5
+					n.fly_to(target)
+					n._goal_dist = float(OS.get_cmdline_user_args()[2])
+				else:
+					n.fly_to(target)
 	if _mode == "together" and _frames == 5:
 		current_scene.call("_show", "together")
 	if _frames == (900 if _mode in ["online", "neighbor"] else 60):

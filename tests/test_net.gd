@@ -13,6 +13,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	_test_region_in_step()
+	_test_city_lines()
 
 	var data := OS.get_user_data_dir().path_join("test-region.json")
 	DirAccess.remove_absolute(data)
@@ -122,6 +123,32 @@ func _test_region_in_step() -> void:
 	_check(a.checksums() == c.checksums(), "a copy sent to a joining player keeps in step")
 	_check(a.cities.c1.sim.buildings.size() > 0, "cities grow in a region")
 	_check(a.cities.c1.origin != a.cities.c2.origin, "cities get their own spots")
+
+
+## The city line runs halfway between two towns, and stops where a third is nearer.
+func _test_city_lines() -> void:
+	var a := PackedVector2Array()
+	var b := PackedVector2Array()
+	for x in range(0, 200, 20):
+		for y in range(-300, 301, 20):
+			a.append(Vector2(x, y))
+			b.append(Vector2(x + 800, y))
+	var lines := CityLines.trace(CityLines.PointSet.new(a), CityLines.PointSet.new(b), [])
+	_check(lines.size() == 1 and lines[0].size() > 20, "a city line between two towns (%d points)" % (lines[0].size() if lines.size() else 0))
+	var halfway := true
+	for p in lines[0]:
+		if absf(p.x - 490.0) > 3.0:
+			halfway = false
+	_check(halfway, "the line is halfway between the closest buildings")
+	var c := PackedVector2Array()
+	for x in range(400, 600, 20):
+		for y in range(400, 600, 20):
+			c.append(Vector2(x, y))
+	var cut := CityLines.trace(CityLines.PointSet.new(a), CityLines.PointSet.new(b), [CityLines.PointSet.new(c)])
+	var max_y := -INF
+	for p in cut[0]:
+		max_y = maxf(max_y, p.y)
+	_check(max_y < 400.0, "the line stops where a third town is nearer (reaches y=%d)" % max_y)
 
 
 ## Power, water and zones along a city's starter road: commands to grow a town.

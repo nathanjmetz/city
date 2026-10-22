@@ -158,9 +158,10 @@ static func font(family: String, weight := 500) -> Font:
 			base.multichannel_signed_distance_field = true
 		var f := FontVariation.new()
 		f.base_font = base
-		f.variation_opentype = {"wght": weight}
+		var ts := TextServerManager.get_primary_interface()
+		f.variation_opentype = {ts.name_to_tag("wght"): weight}
 		if family == "ui":
-			f.opentype_features = {"tnum": 1}
+			f.opentype_features = {ts.name_to_tag("tnum"): 1}
 		_cache[key] = f
 	return _cache[key]
 
