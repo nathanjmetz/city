@@ -16,6 +16,9 @@ An open map where you draw roads, paint zones along them, and buildings grow, li
 | `2` Curve | Click start, click where it bends, click the end. |
 | `3` Grid | Lay out a whole neighborhood: click a corner, click to set the first street, move out and click. `[` `]` change block length. |
 | `4` Roundabout | Click to place. Roads it crosses join it. `[` `]` change size. |
+| Road type buttons | Street (2 lanes), Avenue (4 lanes), Boulevard (6 lanes with a planted median). Real US sizes, 3.6 m (12 ft) lanes. |
+| `U` Upgrade | Click a road to change it to the chosen type. |
+| `P` Parallel | Draws a second road alongside. `[` `]` set the gap. |
 | `B` Bulldoze | Click a road to remove it. |
 | `5` `6` `7` Zones | Homes, shops, industry. Hold the left mouse button and drag over the lots along a road. `[` `]` brush size. |
 | `8` Dezone | Erase zones (buildings on them go away). |
@@ -32,6 +35,7 @@ The camera uses the Cities: Skylines 2 default keys:
 | Middle mouse drag, or Option (Alt) + drag on a Mac trackpad | Rotate and tilt. |
 
 Roads snap to junctions and to other roads, and crossing roads make a junction.
+While drawing, a straight road snaps straight on or at 90° to the road it starts from, with a guide line, and shows its length in metres and feet.
 Bends follow real US rules: no curve tighter than 12.8 m (42 ft), the AASHTO turning radius of a box truck.
 Each road gets 20 m wide, 32 m deep lots on both sides. Nothing grows until you zone them.
 Sizes are real US suburban sizes (1 unit = 1 metre): 9 m curb to curb, a grass strip and a sidewalk each side, 20 m wide house lots.

@@ -21,12 +21,15 @@ var _materials := {}
 func setup(s: CitySim) -> void:
 	sim = s
 	sim.buildings_changed.connect(_sync)
+	sim.lots_changed.connect(_sync)
 	_sync()
 
 
 func _sync() -> void:
 	for key in _nodes.keys():
-		if not sim.buildings.has(key):
+		# Gone, or its lot moved (the road was widened).
+		if not sim.buildings.has(key) or not sim.lots.has(key) \
+				or not _nodes[key].position.is_equal_approx(sim.lots[key].front):
 			_nodes[key].queue_free()
 			_nodes.erase(key)
 	for key in sim.buildings:
@@ -43,7 +46,7 @@ func _spawn(lot: Dictionary, b: Dictionary) -> Node3D:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = b.seed
 	match int(b.zone):
-		ZoneMap.Zone.RESIDENTIAL: _house(root, rng)
+		ZoneMap.Zone.RESIDENTIAL: _house(root, rng, lot)
 		ZoneMap.Zone.COMMERCIAL: _shop(root, rng)
 		ZoneMap.Zone.INDUSTRIAL: _factory(root, rng)
 	# Grow in, like a new building going up.
@@ -53,7 +56,7 @@ func _spawn(lot: Dictionary, b: Dictionary) -> Node3D:
 	return root
 
 
-func _house(root: Node3D, rng: RandomNumberGenerator) -> void:
+func _house(root: Node3D, rng: RandomNumberGenerator, lot: Dictionary) -> void:
 	var w := rng.randf_range(9.0, 13.0)
 	var d := rng.randf_range(8.0, 10.5)
 	var stories := 2 if rng.randf() < 0.35 else 1
@@ -65,7 +68,7 @@ func _house(root: Node3D, rng: RandomNumberGenerator) -> void:
 	roof.position = Vector3(0, wall_h, z)
 	_box(root, Vector3(1.0, 2.1, 0.1), Vector3(0, 1.05, setback - 0.04), Color(0.35, 0.22, 0.15))
 	# Driveway from the garage side out to the curb.
-	var to_curb := RoadStyle.right_of_way_half() + 0.3 - RoadStyle.half_width()
+	var to_curb: float = lot.to_curb
 	var drive_x := (w * 0.5 - 2.0) * (-1.0 if rng.randf() < 0.5 else 1.0)
 	_flat(root, Vector2(3.4, setback + to_curb), Vector3(drive_x, 0.12, (setback - to_curb) * 0.5),
 		Color(0.68, 0.67, 0.64))

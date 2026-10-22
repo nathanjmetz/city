@@ -14,7 +14,7 @@ const MIN_LENGTH := 4.0
 const MERGE_DIST := 3.0
 
 var nodes := {}     # int -> Vector3
-var segments := {}  # int -> {"a": int, "b": int, "ctrl": Vector3}
+var segments := {}  # int -> {"a": int, "b": int, "ctrl": Vector3, "type": RoadStyle.Type}
 var _next_id := 1
 ## While batching, edits don't emit `changed` until end_batch().
 var _batch := 0
@@ -130,6 +130,15 @@ func snap(pos: Vector3, node_dist: float, seg_dist: float) -> Dictionary:
 	return {"pos": Vector3(pos.x, 0.0, pos.z), "kind": "free"}
 
 
+## Widest road type meeting at a junction.
+func widest_at(node_id: int) -> int:
+	var best := 0
+	for id in segments_at(node_id):
+		if RoadStyle.half_width(segments[id].type) > RoadStyle.half_width(best):
+			best = segments[id].type
+	return best
+
+
 func total_length() -> float:
 	var total := 0.0
 	for id in segments:
@@ -141,7 +150,7 @@ func total_length() -> float:
 
 ## Builds a road from start to end bent toward ctrl. Joins existing junctions
 ## and roads it starts on, ends on, or crosses.
-func build_road(start: Vector3, ctrl: Vector3, end: Vector3) -> bool:
+func build_road(start: Vector3, ctrl: Vector3, end: Vector3, type := 0) -> bool:
 	if _flat(start).distance_to(_flat(end)) < MIN_LENGTH:
 		return false
 	var a := _resolve_endpoint(start)
@@ -169,7 +178,7 @@ func build_road(start: Vector3, ctrl: Vector3, end: Vector3) -> bool:
 		var nb: int = stops[i + 1][1]
 		if na == nb or _has_segment(na, nb):
 			continue
-		_add_segment(na, nb, sub_control(p0, ctrl, p2, t0, t1))
+		_add_segment(na, nb, sub_control(p0, ctrl, p2, t0, t1), type)
 	_changed()
 	return true
 
@@ -183,6 +192,15 @@ func remove_segment(seg_id: int) -> void:
 		if segments_at(n).is_empty():
 			nodes.erase(n)
 	_changed()
+
+
+## Changes a road to another type (an upgrade or downgrade).
+func set_type(seg_id: int, type: int) -> bool:
+	if not segments.has(seg_id) or segments[seg_id].type == type:
+		return false
+	segments[seg_id].type = type
+	_changed()
+	return true
 
 
 func clear() -> void:
@@ -201,8 +219,8 @@ func split_segment(seg_id: int, t: float) -> int:
 		return existing
 	segments.erase(seg_id)
 	var m := _add_node(mid)
-	_add_segment(s.a, m, c[0].lerp(c[1], t))
-	_add_segment(m, s.b, c[1].lerp(c[2], t))
+	_add_segment(s.a, m, c[0].lerp(c[1], t), s.type)
+	_add_segment(m, s.b, c[1].lerp(c[2], t), s.type)
 	return m
 
 
@@ -216,7 +234,7 @@ func to_dict() -> Dictionary:
 	var s := {}
 	for id in segments:
 		var seg: Dictionary = segments[id]
-		s[str(id)] = [seg.a, seg.b, seg.ctrl.x, seg.ctrl.z]
+		s[str(id)] = [seg.a, seg.b, seg.ctrl.x, seg.ctrl.z, seg.type]
 	return {"version": 1, "next_id": _next_id, "nodes": n, "segments": s}
 
 
@@ -228,7 +246,8 @@ func from_dict(d: Dictionary) -> void:
 		nodes[int(k)] = Vector3(p[0], 0.0, p[1])
 	for k in d.get("segments", {}):
 		var s: Array = d.segments[k]
-		segments[int(k)] = {"a": int(s[0]), "b": int(s[1]), "ctrl": Vector3(s[2], 0.0, s[3])}
+		segments[int(k)] = {"a": int(s[0]), "b": int(s[1]), "ctrl": Vector3(s[2], 0.0, s[3]),
+			"type": int(s[4]) if s.size() > 4 else 0}
 	_next_id = int(d.get("next_id", 1))
 	_changed()
 
@@ -271,10 +290,10 @@ func _add_node(pos: Vector3) -> int:
 	return id
 
 
-func _add_segment(a: int, b: int, ctrl: Vector3) -> int:
+func _add_segment(a: int, b: int, ctrl: Vector3, type := 0) -> int:
 	var id := _next_id
 	_next_id += 1
-	segments[id] = {"a": a, "b": b, "ctrl": ctrl}
+	segments[id] = {"a": a, "b": b, "ctrl": ctrl, "type": type}
 	return id
 
 

@@ -60,5 +60,34 @@ static func roundabout(center: Vector3, radius: float) -> Array:
 	return out
 
 
+## The same road shifted sideways by `gap` (to the right of its direction).
+static func offset(curve: Array, gap: float) -> Array:
+	var p0: Vector3 = curve[0]
+	var p1: Vector3 = curve[1]
+	var p2: Vector3 = curve[2]
+	var t0 := _flat_dir(p1 - p0, p2 - p0)
+	var t1 := _flat_dir(p2 - p1, p2 - p0)
+	var a := p0 + _right(t0) * gap
+	var b := p2 + _right(t1) * gap
+	# The new bend point is where the shifted end tangents meet.
+	var mid := a.lerp(b, 0.5)
+	var hit = Geometry2D.line_intersects_line(Vector2(a.x, a.z), Vector2(t0.x, t0.z),
+		Vector2(b.x, b.z), Vector2(t1.x, t1.z))
+	if hit == null or Vector2(mid.x, mid.z).distance_to(hit) > a.distance_to(b) * 2.0:
+		return [a, mid, b]
+	return [a, Vector3(hit.x, 0.0, hit.y), b]
+
+
+static func _flat_dir(d: Vector3, fallback: Vector3) -> Vector3:
+	d.y = 0.0
+	if d.length() < 0.01:
+		d = Vector3(fallback.x, 0.0, fallback.z)
+	return d.normalized()
+
+
+static func _right(d: Vector3) -> Vector3:
+	return Vector3(-d.z, 0.0, d.x)
+
+
 static func _line(s: Vector3, e: Vector3) -> Array:
 	return [s, s.lerp(e, 0.5), e]

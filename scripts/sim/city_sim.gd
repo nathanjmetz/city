@@ -37,15 +37,17 @@ func apply(cmd: Dictionary) -> bool:
 			var c := [_v(cmd.start), _v(cmd.ctrl), _v(cmd.end)]
 			# The server checks real road rules too, not just the player's screen.
 			if RoadNetwork.min_radius(c[0], c[1], c[2]) >= RoadStyle.MIN_CURVE_RADIUS:
-				ok = network.build_road(c[0], c[1], c[2])
+				ok = network.build_road(c[0], c[1], c[2], _road(cmd))
 		"build_grid":
 			var lines := RoadShapes.grid(_v(cmd.a), _v(cmd.b), _v(cmd.c), float(cmd.block))
 			network.begin_batch()
 			for l in lines:
-				ok = network.build_road(l[0], l[1], l[2]) or ok
+				ok = network.build_road(l[0], l[1], l[2], _road(cmd)) or ok
 			network.end_batch()
 		"build_roundabout":
-			ok = _build_roundabout(_v(cmd.center), float(cmd.radius))
+			ok = _build_roundabout(_v(cmd.center), float(cmd.radius), _road(cmd))
+		"upgrade_road":
+			ok = network.set_type(int(cmd.seg), _road(cmd))
 		"remove_road":
 			ok = network.segments.has(int(cmd.seg))
 			network.remove_segment(int(cmd.seg))
@@ -106,12 +108,12 @@ func _refresh() -> void:
 
 ## Builds the ring, joining every road it crosses, then clears the roads
 ## left inside it.
-func _build_roundabout(center: Vector3, radius: float) -> bool:
+func _build_roundabout(center: Vector3, radius: float, type: int) -> bool:
 	radius = clampf(radius, RoadShapes.ROUNDABOUT_MIN, RoadShapes.ROUNDABOUT_MAX)
 	network.begin_batch()
 	var ok := false
 	for arc in RoadShapes.roundabout(center, radius):
-		ok = network.build_road(arc[0], arc[1], arc[2]) or ok
+		ok = network.build_road(arc[0], arc[1], arc[2], type) or ok
 	for id in network.segments.keys():
 		var c := network.curve_of(id)
 		var mid := RoadNetwork.bezier(c[0], c[1], c[2], 0.5)
@@ -168,6 +170,11 @@ func from_dict(d: Dictionary) -> void:
 	_lots_dirty = true
 	_refresh()
 	buildings_changed.emit()
+
+
+## The road type a command asks for (Street if it doesn't say).
+static func _road(cmd: Dictionary) -> int:
+	return clampi(int(cmd.get("road", 0)), 0, RoadStyle.TYPES.size() - 1)
 
 
 static func _v(a) -> Vector3:
