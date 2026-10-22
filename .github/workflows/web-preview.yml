@@ -62,6 +62,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_vehicles.gd
           ~/godot-cache/godot --headless -s tests/test_balance.gd
           ~/godot-cache/godot --headless -s tests/test_audio.gd
+          ~/godot-cache/godot --headless -s tests/test_loading.gd
 
       - name: Stamp the build
         run: |
