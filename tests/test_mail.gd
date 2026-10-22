@@ -18,6 +18,11 @@ func _init() -> void:
 		sim.apply({"type": "paint_zone", "center": [x, 25], "radius": 12, "zone": ZoneMap.Zone.COMMERCIAL})
 	for z in range(-400, -40, 10):
 		sim.apply({"type": "paint_zone", "center": [25, z], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
+	# The road's west end runs on to the region (the county highway's link).
+	for n in sim.network.nodes:
+		if sim.network.nodes[n].distance_to(Vector3(-400, 0, 0)) < 1.0:
+			sim.region_links.append(n)
+	_check(not sim.region_links.is_empty(), "the town has a way out to the region")
 	var site := CivicHubs.site_near(sim.network, Vector3(300, 0, 60))
 	_check(not site.is_empty(), "a post office finds a spot beside the street")
 	var money := sim.economy.money
@@ -27,7 +32,7 @@ func _init() -> void:
 	_check(not sim.apply(place), "one post office per town")
 	var id: int = sim.mail.offices.keys()[0]
 	var h: Dictionary = sim.mail.offices[id]
-	_check(str(h.postmaster.name).contains(" "), "a named postmaster runs it (%s)" % h.postmaster.name)
+	_check(str(h.leader.name).contains(" ") and h.leader.has("edu"), "a named postmaster runs it (%s)" % h.leader.name)
 	for key in sim.lots:
 		_check(not sim.mail.covers(sim.lots[key].pos), "no lot left on the post office's land")
 	_check(Inspect.pick(sim, h.pos - h.dir * 20.0).get("type", "") == "post_office", "clicking it selects it")
@@ -41,14 +46,16 @@ func _init() -> void:
 			kinds[sim.mail.trips[t].kind] = true
 			saw_stop = saw_stop or sim.mail.trips[t].prev >= 0
 		if i % 97 == 0 and not sim.mail.trips.is_empty():
-			var ids := (sim.traffic.cars + sim.traffic._waiting).map(func(c): return c.id)
+			# Cars on the road or pulling out, or just arrived (handled next tick).
+			var ids := (sim.traffic.cars + sim.traffic._waiting + sim.traffic.arrivals + sim.traffic.failed).map(
+				func(c): return c.id)
 			for t in sim.mail.trips:
 				if not t in ids:
 					cars_seen = false
 	_check(sim.stats.population > 50, "people moved in (%d)" % sim.stats.population)
 	_check(kinds.has("carrier") or kinds.has("rural"), "carriers went out on routes (%s)" % str(kinds.keys()))
 	_check(kinds.has("van"), "parcel vans went out to the businesses")
-	_check(kinds.has("freight_in") or kinds.has("freight_out") or sim.region_links.is_empty(), "the mail truck runs to the region")
+	_check(kinds.has("freight_in") or kinds.has("freight_out"), "the mail truck runs to and from the region")
 	_check(saw_stop, "carriers went from street to street")
 	_check(cars_seen, "every mail trip is a real vehicle")
 	_check(int(h.get("routes", 0)) >= 1, "the postmaster planned routes (%d)" % int(h.get("routes", 0)))
@@ -82,26 +89,28 @@ func _init() -> void:
 	for c in h.cells:
 		_check(c.y >= 0 and not Services.road_clash(sim.network, CivicHubs.cell_poly(h, c, 1.0)), "no piece on a road")
 	# The tree: gates read the postmaster, town and region.
-	h.postmaster.education = 0.1
+	h.leader.edu = 0.1
 	_check(sim.mail.locked(sim, id, "passports") != "", "passports wait for po boxes or schooling")
-	h.tree["po_boxes"] = sim.tick_count
+	h.built.append("po_boxes")
 	_check(sim.mail.locked(sim, id, "passports").contains("schooling") or sim.stats.population < 1500,
 		"an unschooled postmaster can't run passports")
 	_check(sim.mail.locked(sim, id, "regional_hub").contains("first"), "the regional hub needs a sorting center first")
-	h.tree["sorting_room"] = 1
-	h.tree["sorting_center"] = 1
-	h.postmaster.education = 0.9
-	sim.mail.region = {"towns": 0, "population": 0}
+	h.built.append_array(["sorting_room", "sorting_center"])
+	h.leader.edu = 0.9
+	sim.region = {}
 	sim.mail._decide(sim)
-	_check(sim.mail.locked(sim, id, "regional_hub").contains("neighboring"), "the regional hub needs neighbor towns")
-	sim.mail.region = {"towns": 3, "population": 9000}
+	var why := sim.mail.locked(sim, id, "regional_hub")
+	_check(why.contains("neighboring"), "the regional hub needs neighbor towns (%s)" % why)
+	sim.region = {"neighbors": [{"name": "Oakland City", "population": 2400}, {"name": "Winslow", "population": 800},
+		{"name": "Jasper", "population": 16000}]}
 	sim.mail._decide(sim)
 	_check(sim.mail.locked(sim, id, "regional_hub") == "", "with neighbors around, the regional hub opens up")
 	# The postmaster builds from their own fund; a big step takes land.
 	h.project = {}
 	h.fund = 10_000_000.0
-	h.postmaster.ambition = 0.9
-	h.postmaster.caution = 0.1
+	h.leader.ambition = 0.9
+	h.leader.caution = 0.1
+	h.funding = 3  # Agency spends from a few years' income: lavish funding
 	var cells_before: int = h.cells.size()
 	sim.mail._choose(sim, id)
 	_check(not h.project.is_empty() and h.project.node == "regional_hub",
@@ -110,18 +119,27 @@ func _init() -> void:
 		"it takes land next door for it")
 	h.project.done = sim.tick_count
 	sim.mail._decide(sim)
-	_check(h.tree.has("regional_hub") and sim.mail.serves_region(), "the regional hub opens and serves the region")
+	_check(Mail.done(h, "regional_hub") and sim.mail.serves_region(), "the regional hub opens and serves the region")
 	# Funding is the player's lever.
+	_check(sim.apply({"type": "post_office_funding", "id": id, "level": 1}), "funding lowered")
 	var cost := sim.mail.monthly_cost()
 	_check(sim.apply({"type": "post_office_funding", "id": id, "level": 3}), "funding raised")
 	_check(sim.mail.monthly_cost() > cost, "more funding costs the city more")
+	_check(LeaderGuide.takes(sim, {"type": "post_office", "id": id}), "the player can guide the postmaster")
+	_check(sim.apply({"type": "guide", "hub": "post_office", "hub_id": id, "stance": "hold", "grant": 0}), "told to hold off")
+	var held: int = h.cells.size()
+	for round in 4:
+		h.want = 10
+		h.short = 10
+		sim.mail._decide(sim)
+	_check(h.cells.size() == held, "a postmaster told to hold off takes no new land")
 	var info := Inspect.describe(sim, {"type": "post_office", "id": id})
 	_check(info.title == "Post Office" and info.rows.size() > 8, "the info panel describes it")
 	# Save and load keep it.
 	var saved := sim.to_dict()
 	var sim2 := CitySim.new()
 	sim2.from_dict(JSON.parse_string(JSON.stringify(saved)))
-	_check(sim2.mail.offices.size() == 1 and sim2.mail.offices.values()[0].tree.has("regional_hub"), "saves keep the post office and its tree")
+	_check(sim2.mail.offices.size() == 1 and "regional_hub" in sim2.mail.offices.values()[0].built, "saves keep the post office and its tree")
 	_check(sim2.mail.offices.values()[0].cells.size() == h.cells.size(), "saves keep its land")
 	_check(sim2.mail.trips.size() == sim.mail.trips.size(), "saves keep the mail on the road")
 	# Roads win: a road through it cuts it back to one piece.

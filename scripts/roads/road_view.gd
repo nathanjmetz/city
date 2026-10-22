@@ -28,6 +28,7 @@ var _mats := {
 	"concrete": Surfaces.concrete(Color(0.66, 0.65, 0.62)),
 	"apron": RoadStyle.material(Color(0.5, 0.44, 0.38)),  # tinted, textured-look concrete
 	"tunnel": RoadStyle.material(Color(0.1, 0.1, 0.12, 0.45), true),
+	"domes": Surfaces.concrete(Junction.DOMES_COLOR),
 }
 
 
@@ -126,10 +127,16 @@ func _rebuild_all() -> void:
 				gaps[seg] = {}
 			for side in g[seg]:
 				gaps[seg][side] = g[seg][side]
+	# Town street junctions get real corners; their roads stop short of them.
+	var junctions := Junction.plan(network, _rural)
 	for id in network.segments:
 		var pts := network.sample_segment(id)
 		var type: int = network.segments[id].type
 		var sg: Dictionary = network.segments[id]
+		var ja := Junction.trim(junctions, sg.a, id)
+		var jb := Junction.trim(junctions, sg.b, id)
+		if ja > 0.0 or jb > 0.0:
+			pts = RoadMesh._between(pts, ja, RoadNetwork.polyline_length(pts) - jb)
 		var seg_gaps: Dictionary = gaps.get(id, {})
 		var cut_a: float = cuts.get([id, sg.a], 0.0)
 		pts = RampMerge.trim_ramp(pts, cut_a, true)
@@ -201,7 +208,7 @@ func _rebuild_all() -> void:
 			ring_nodes[network.segments[id].a] = hw
 			ring_nodes[network.segments[id].b] = hw
 	for id in network.nodes:
-		if network.nodes[id].y < -1.0 or ring_nodes.has(id):
+		if network.nodes[id].y < -1.0 or ring_nodes.has(id) or junctions.has(id):
 			continue  # rings meet their roads without a pad over the island
 		var r := RoadStyle.half_width(network.widest_at(id))
 		RoadMesh.add_disc(st, network.nodes[id], r, RoadStyle.Y_JUNCTION)
@@ -211,7 +218,18 @@ func _rebuild_all() -> void:
 		mi.material_override = _mats.asphalt
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mi)
-
+	if not junctions.is_empty():
+		var parts := {"asphalt": SurfaceTool.new(), "curb": SurfaceTool.new(), "walk": SurfaceTool.new(),
+			"domes": SurfaceTool.new()}
+		for p in parts.values():
+			p.begin(Mesh.PRIMITIVE_TRIANGLES)
+		Junction.draw(junctions, parts.asphalt, parts.curb, parts.walk, parts.domes)
+		for key in parts:
+			var mi := MeshInstance3D.new()
+			mi.mesh = Terrain.drape(parts[key].commit(), false, 6.0)
+			mi.material_override = _mats[key]
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(mi)
 
 	_build_roundabouts(ring_nodes)
 

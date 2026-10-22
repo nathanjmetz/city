@@ -19,6 +19,7 @@ var _who := HFlowContainer.new()
 var _log := RichTextLabel.new()
 var _line := LineEdit.new()
 var _body := VBoxContainer.new()
+var _requests := VBoxContainer.new()
 var _toggle := Button.new()
 var _unread := 0
 var _bell := AudioStreamPlayer.new()
@@ -71,6 +72,9 @@ func _ready() -> void:
 
 	col.add_child(_body)
 	_body.add_theme_constant_override("separation", 6)
+	# The host lets new players in from here.
+	_requests.add_theme_constant_override("separation", 4)
+	_body.add_child(_requests)
 	_who.add_theme_constant_override("h_separation", 4)
 	_who.add_theme_constant_override("v_separation", 4)
 	_body.add_child(_who)
@@ -108,6 +112,12 @@ func _ready() -> void:
 			_unread += 1
 			_update_title())
 	client.players_changed.connect(_update_who)
+	client.requests_changed.connect(func():
+		_update_requests()
+		if not client.requests.is_empty() and _bell_wait <= 0.0:
+			_bell_wait = DOORBELL_GAP
+			_bell.play())
+	_update_requests()
 	client.city_added.connect(func(_id): _update_who())
 	_update_who()
 	_set_open(true)
@@ -115,6 +125,31 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_bell_wait -= delta
+
+
+## (Host) everyone waiting to be let in, with a yes and a no.
+func _update_requests() -> void:
+	for c in _requests.get_children():
+		c.queue_free()
+	for name in Session.client.requests:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 4)
+		var l := ShellStyle.text("%s wants to join" % name, 14, 600)
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		l.clip_text = true
+		row.add_child(l)
+		var yes := Button.new()
+		yes.text = "Let in"
+		yes.focus_mode = Control.FOCUS_NONE
+		ShellStyle.primary(yes)
+		yes.pressed.connect(func(): Session.client.approve(name, true))
+		row.add_child(yes)
+		var no := Button.new()
+		no.text = "No"
+		no.focus_mode = Control.FOCUS_NONE
+		no.pressed.connect(func(): Session.client.approve(name, false))
+		row.add_child(no)
+		_requests.add_child(row)
 
 
 ## Rings when someone else writes or a neighbor joins (never for your own lines).

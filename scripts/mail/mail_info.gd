@@ -10,13 +10,13 @@ extends RefCounted
 static func describe(sim: CitySim, id: int) -> Dictionary:
 	var mail := sim.mail
 	var h: Dictionary = mail.offices[id]
-	var pm: Dictionary = h.postmaster
+	var pm: Dictionary = h.leader
 	var rows := []
 	var problems := []
 	var linked := not sim.network.find_segment_near(h.pos, 80.0, 1.0).is_empty()
 	rows.append(["Postmaster", pm.name])
-	rows.append(["", "%s, %s" % [_trait(pm.education, ["little schooling", "some college", "a degree"]),
-		_trait(pm.ambition - pm.caution, ["careful with money", "steady", "ambitious"], -0.2, 0.2)]])
+	rows.append(["", "%s, %s" % [_trait(float(pm.edu), ["little schooling", "some college", "a degree"]),
+		_trait(float(pm.ambition) - float(pm.caution), ["careful with money", "steady", "ambitious"], -0.2, 0.2)]])
 	rows.append(["Routes", "%d today" % int(h.get("routes", 0))])
 	rows.append(["Carriers", "%d of %d out" % [mail.out(id, ["carrier", "rural"]), mail.carriers(id)]])
 	rows.append(["Parcel vans", "%d of %d out, %d parcels waiting" % [mail.out(id, ["van"]), mail.vans(id),
@@ -43,11 +43,11 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 			if Mail.TREE[node].branch != branch:
 				continue
 			var needs: String = Mail.TREE[node].needs
-			if h.tree.has(node):
+			if Mail.done(h, node):
 				built.append(Mail.TREE[node].name)
 			elif not h.project.is_empty() and h.project.node == node:
 				next = "building %s" % Mail.lower(Mail.TREE[node].name)
-			elif next == "" and (needs == "" or h.tree.has(needs)):
+			elif next == "" and (needs == "" or Mail.done(h, needs)):
 				var why := mail.locked(sim, id, node)
 				next = "next: %s%s" % [Mail.lower(Mail.TREE[node].name), "" if why == "" else " (%s)" % Mail.lower(why.trim_suffix("."))]
 		var text := ", ".join(built)

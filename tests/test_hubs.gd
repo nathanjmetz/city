@@ -150,45 +150,63 @@ func _init() -> void:
 	dev.apply({"type": "place_hub", "kind": "landfill", "pos": [ds[0].x, ds[0].z], "dir": [ds[1].x, ds[1].z]})
 	var did: int = dev.hubs.hubs.keys()[0]
 	var dh: Dictionary = dev.hubs.hubs[did]
+	# A bold leader, so the test doesn't hang on temperament.
+	dh.leader = {"edu": 0.7, "caution": 0.0, "ambition": 1.0}
 	_check(dev.hubs.dev_problem(dev, did, "gas_plant").begins_with("needs a bigger site"), "a small landfill can't run a gas plant")
-	_check(not dev.apply({"type": "develop_hub", "id": did, "dev": "gas_plant"}), "locked options can't be built")
 	_check(dev.hubs.dev_problem(dev, did, "compost").contains("farm"), "compost needs farms to sell to")
 	_check(dev.hubs.dev_problem(dev, did, "chapel") == "not for this site", "a landfill has no chapel")
 	for i in 10:
 		dh.want = 4
 		dh.short = 4
 		dev.hubs._decide(dev)
+	_check(not "gas_plant" in dh.built, "no gas plant before the mound is big enough")
 	dh.received = 2000.0 * 30_000
 	money = dev.economy.money
-	_check(dev.apply({"type": "develop_hub", "id": did, "dev": "gas_plant"}), "a big landfill adds a gas plant")
-	_check(dev.economy.money == money - int(Balance.HUB_DEVELOPMENTS.gas_plant.cost), "the gas plant costs its price")
+	dev.hubs._decide(dev)
+	_check("gas_plant" in dh.built, "the leader adds a gas plant to a big, old landfill by itself (%s)" % [dh.built])
+	_check(dev.economy.money == money - 2_200_000, "the town pays for the gas plant")
+	_check(str(dh.get("why", "")).contains("gas plant"), "the panel can say why it built it")
 	for i in 1440 * 2:
 		dev.tick()
 	_check(dev.trade.sold("power") > 0.0, "the gas plant sells power (%.0f MWh)" % dev.trade.sold("power"))
 	var tp := dev.hubs.dev_problem(dev, did, "transfer")
-	_check(tp.contains("neighbor") if dev.region_links.is_empty() else tp == "",
-		"taking a neighbor's trash needs a road out to neighbors (%s)" % tp)
-	_check(dev.apply({"type": "upgrade_hub", "id": did}) and "gas_plant" in dh.dev,
+	_check(tp.contains("neighbor"), "taking a neighbor's trash needs a neighbor that sends trash out (%s)" % tp)
+	_check(dev.apply({"type": "upgrade_hub", "id": did}) and "gas_plant" in dh.built,
 		"a capped landfill keeps its gas plant under recycling")
-	_check("scrap_yard" in CivicHubs.dev_options(dh) and "gas_plant" in CivicHubs.dev_options(dh),
-		"recycling on an old landfill offers both trees")
+	var ids := CivicHubs.tree(dh).map(func(n): return n.id)
+	_check("scrap_yard" in ids and "gas_plant" in ids, "recycling on an old landfill keeps both trees")
 	var info := HubInfo.describe(dev, did)
-	_check(info.actions.any(func(a): return str(a.label).begins_with("Scrap metal yard: needs")),
+	_check(info.rows.any(func(r): return r[0] == "Scrap metal yard" and str(r[1]).contains("metal works")),
 		"the panel says what a locked option needs")
+	_check(info.rows.any(func(r): return r[0] == "Run by"), "the panel names who runs it")
+	# A held hub's leader builds nothing.
+	dev.apply({"type": "guide", "hub": "hub", "hub_id": did, "stance": "hold", "grant": 0})
+	var had: int = dh.built.size()
+	dev.stats.population = 5000
+	dev.hubs._decide(dev)
+	_check(dh.built.size() == had, "hold off stops the leader building")
 	var cem_site := CivicHubs.site_near(dev.network, Vector3(0, 0, 80))
 	dev.apply({"type": "place_hub", "kind": "cemetery", "pos": [cem_site[0].x, cem_site[0].z], "dir": [cem_site[1].x, cem_site[1].z]})
 	var cmid: int = dev.hubs.hubs.keys().max()
 	var ch: Dictionary = dev.hubs.hubs[cmid]
+	ch.leader = {"edu": 0.5, "caution": 0.0, "ambition": 1.0}
 	var spot: Vector3 = ch.pos + CivicHubs.right(ch) * 80.0
 	var plain := dev.hubs.value_factor(spot)
 	dev.stats.population = 500
-	_check(dev.apply({"type": "develop_hub", "id": cmid, "dev": "chapel"}), "a cemetery adds a chapel")
+	_check(dev.hubs.dev_problem(dev, cmid, "garden").contains("chapel"), "the garden waits for the chapel")
+	dev.hubs._decide(dev)
+	_check("chapel" in ch.built, "a cemetery's leader adds a chapel once the town has people (%s)" % [ch.built])
 	_check(dev.hubs.value_factor(spot) > plain, "the chapel lifts land value more")
-	_check(dev.hubs.dev_problem(dev, cmid, "garden") == "" and dev.hubs.dev_problem(dev, cmid, "veterans").contains("residents"),
+	_check(dev.hubs.dev_problem(dev, cmid, "garden") != "needs the chapel first" and dev.hubs.dev_problem(dev, cmid, "veterans").contains("residents"),
 		"the garden follows the chapel; the veterans memorial waits for a bigger town")
 	var round := CitySim.new()
 	round.from_dict(JSON.parse_string(JSON.stringify(dev.to_dict())))
-	_check(round.hubs.hubs[cmid].dev == ["chapel"], "save keeps a hub's developments")
+	_check(round.hubs.hubs[cmid].built == ch.built and not round.hubs.hubs[cmid].get("leader", {}).is_empty(),
+		"save keeps a hub's leader and what it built")
+	var old := {"hubs": {"1": {"kind": "cemetery", "pos": [0, 0], "dir": [0, 1], "cells": [[0, 0]], "built": 50, "dev": ["chapel"]}}}
+	var legacy := CivicHubs.new()
+	legacy.from_dict(old)
+	_check(legacy.hubs[1].built == ["chapel"] and legacy.hubs[1].since == 50, "old saves keep their developments")
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
