@@ -3,7 +3,7 @@ extends RefCounted
 ## Road and pavement materials, benchmarked against photos of real
 ## Midwestern residential streets:
 ##   - asphalt is a mid grey that varies by age from block to block, with
-##     darker repair patches, black crack-sealer squiggles, oil drips and a
+##     darker repair patches, crack sealer across the lanes, oil drips and a
 ##     speckled aggregate grain up close
 ##   - sidewalks are pale concrete slabs with a joint every 5 ft and slightly
 ##     different tints from slab to slab
@@ -32,7 +32,7 @@ void vertex() {
 const ASPHALT := """
 uniform vec4 fresh : source_color = vec4(0.28, 0.27, 0.27, 1.0);
 uniform vec4 faded : source_color = vec4(0.42, 0.41, 0.39, 1.0);
-uniform vec4 tar : source_color = vec4(0.10, 0.10, 0.10, 1.0);
+uniform vec4 tar : source_color = vec4(0.13, 0.13, 0.13, 1.0);
 void fragment() {
 	vec2 p = world_pos.xz;
 	float close = clamp(1.0 - length(VERTEX) / 220.0, 0.0, 1.0);
@@ -55,13 +55,33 @@ void fragment() {
 		* smoothstep(s0, s0 + 0.1, mod(along, 14.0) + ragged * 4.0)
 		* smoothstep(s0 + 2.5 + h2 * 2.0, s0 + 2.4 + h2 * 2.0, mod(along, 14.0) + ragged * 4.0);
 	col *= 1.0 - in_patch * 0.13;
-	// Crack sealer: thin black squiggles along noise contour lines, only in
-	// older stretches.
-	float c = texture(noise_soft, turn(p, 2.0) / 23.0 + 0.7).r;
-	float crack = 1.0 - smoothstep(0.0, fwidth(c) * 0.9 + 0.0008, abs(c - 0.5));
-	float cracked = smoothstep(0.66, 0.74, texture(noise_soft, p / 90.0 + 0.2).r);
+	// Crack sealer ("tar snakes"), an inch or two wide whatever the view:
+	// the straight, branching block cracks of an ageing street, sealed in
+	// some places and not others. Sealant is dark and a little glossy, not
+	// ink black. Drawn in world space from a jittered cell pattern.
 	float footprint = length(fwidth(p));  // metres per pixel
-	col = mix(col, tar.rgb, crack * cracked * close * 0.6 * (1.0 - smoothstep(0.05, 0.2, footprint)));
+	float cracked = smoothstep(0.35, 0.55, texture(noise_soft, p / 90.0 + 0.2).r);
+	vec2 q = turn(p, 0.6) / 4.5;
+	vec2 qi = floor(q);
+	float f1 = 9.0;
+	float f2 = 9.0;
+	vec2 c1 = vec2(0.0);
+	for (int j = -1; j <= 1; j++) {
+		for (int i = -1; i <= 1; i++) {
+			vec2 g = qi + vec2(float(i), float(j));
+			vec2 o = fract(sin(vec2(dot(g, vec2(127.1, 311.7)), dot(g, vec2(269.5, 183.3)))) * 43758.5453);
+			vec2 d = g + 0.15 + o * 0.7 - q;
+			float l = dot(d, d);
+			if (l < f1) { f2 = f1; f1 = l; c1 = d; } else if (l < f2) { f2 = l; }
+		}
+	}
+	float edge = (sqrt(f2) - sqrt(f1)) * 0.5 * 4.5;  // metres to the nearest cell edge
+	edge += (texture(noise_grain, p / 1.7).r - 0.5) * 0.05;
+	float run = smoothstep(0.46, 0.52, texture(noise_soft, p / 7.0 + 0.5).r);
+	float wide = 0.025;
+	float crack = (1.0 - smoothstep(wide, wide + footprint, edge)) * run * cracked;
+	crack *= close * clamp(wide * 2.0 / max(footprint, 1e-4), 0.0, 1.0);  // thins out with distance
+	col = mix(col, tar.rgb, crack * 0.75);
 	// Oil drips and tyre grime.
 	float oil = smoothstep(0.70, 0.86, texture(noise_grain, turn(p, 1.4) / 3.3).r);
 	col *= 1.0 - oil * 0.1 * close;
@@ -69,7 +89,7 @@ void fragment() {
 	float g = texture(noise_grain, p / 0.31).r;
 	col *= 1.0 + (g - 0.5) * 0.28 * close;
 	ALBEDO = col;
-	ROUGHNESS = 0.9;
+	ROUGHNESS = 0.9 - crack * 0.4;
 	SPECULAR = 0.3;
 }
 """
