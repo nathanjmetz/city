@@ -27,6 +27,10 @@ func _process(_delta: float) -> bool:
 func _demo_town() -> void:
 	var sim: CitySim = _main.sim
 	sim.apply({"type": "clear"})
+	var args0 := OS.get_cmdline_user_args()
+	if args0.size() >= 5 and args0[4] == "highway":
+		_demo_interchange(sim)
+		return
 	# A main road with a roundabout, and a grid neighborhood beside it.
 	sim.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0], "road": 2})
 	sim.apply({"type": "build_road", "start": [120, 0], "ctrl": [160, 80], "end": [120, 180], "road": 1})
@@ -59,3 +63,40 @@ func _demo_town() -> void:
 	cam.look_at_point(Vector3(-40, 0, -60))
 	if args.size() >= 4:
 		cam.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
+
+
+## A diamond interchange: a divided highway under a street bridge, with ramps.
+func _demo_interchange(sim: CitySim) -> void:
+	var cmds := [
+		# Highway, one carriageway each way.
+		[[-400, 12], [0, 12], [400, 12], 3],
+		[[400, -12], [0, -12], [-400, -12], 3],
+		# Street climbing to a bridge over it, and back down.
+		[[0, -260], [0, -180], [0, -100, 7.5], 0],
+		[[0, -100, 7.5], [0, 0, 7.5], [0, 100, 7.5], 0],
+		[[0, 100, 7.5], [0, 180], [0, 260], 0],
+		# Ramps: off the highway, up to the street; and back down.
+		[[-260, 12], [-120, 30], [-25, 95, 6.75], 4],
+		[[25, 95, 6.75], [120, 30], [260, 12], 4],
+		[[260, -12], [120, -30], [25, -95, 6.75], 4],
+		[[-25, -95, 6.75], [-120, -30], [-260, -12], 4],
+		# Short links from the ramp ends onto the bridge street.
+		[[-25, 95, 6.75], [-12, 97], [0, 98.6, 7.4], 4],
+		[[0, 98.6, 7.4], [12, 97], [25, 95, 6.75], 4],
+		[[25, -95, 6.75], [12, -97], [0, -98.6, 7.4], 4],
+		[[0, -98.6, 7.4], [-12, -97], [-25, -95, 6.75], 4],
+	]
+	for c in cmds:
+		var ctrl: Array = c[1]
+		if ctrl.size() == 2:
+			var a: Array = c[0]
+			var b: Array = c[2]
+			ctrl = [ctrl[0], ctrl[1], ((a[2] if a.size() > 2 else 0.0) + (b[2] if b.size() > 2 else 0.0)) * 0.5]
+		var ok := sim.apply({"type": "build_road", "start": c[0], "ctrl": ctrl, "end": c[2], "road": c[3]})
+		if not ok:
+			print("demo road refused: ", c, " ", sim.road_problem([CitySim._v(c[0]), CitySim._v(ctrl), CitySim._v(c[2])], c[3]))
+	for c in _main.get_children():
+		if c is CityCamera:
+			c.look_at_point(Vector3(0, 0, 0))
+			var args := OS.get_cmdline_user_args()
+			c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))

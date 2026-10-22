@@ -16,7 +16,8 @@ An open map where you draw roads, paint zones along them, and buildings grow, li
 | `2` Curve | Click start, click where it bends, click the end. |
 | `3` Grid | Lay out a whole neighborhood: click a corner, click to set the first street, move out and click. `[` `]` change block length. |
 | `4` Roundabout | Click to place. Roads it crosses join it. `[` `]` change size. |
-| Road type buttons | Street (2 lanes), Avenue (4 lanes), Boulevard (6 lanes with a planted median). Real US sizes, 3.6 m (12 ft) lanes. |
+| Road type buttons | Street (2 lanes), Avenue (4 lanes), Boulevard (6 lanes with a planted median), Highway (3 lanes one way; draw one each way) and Ramp (1 lane one way). Real US sizes, 3.6 m (12 ft) lanes. |
+| Page Up / Page Down, or Raise / Lower | Build new roads above or below ground in 2.5 m steps, for bridges, overpasses and tunnels. |
 | `U` Upgrade | Click a road to change it to the chosen type. |
 | `P` Parallel | Draws a second road alongside. `[` `]` set the gap. |
 | `B` Bulldoze | Click a road to remove it. |
@@ -35,6 +36,7 @@ The camera uses the Cities: Skylines 2 default keys:
 | Middle mouse drag, or Option (Alt) + drag on a Mac trackpad | Rotate and tilt. |
 
 Roads snap to junctions and to other roads, and crossing roads make a junction.
+Road rules come from US standards (AASHTO): grades up to 12% on streets, 8% on ramps and 5% on highways, and 16.5 ft (5 m) of clearance where one road passes over another. The drawing label shows the safe speed of each curve.
 While drawing, a straight road snaps straight on or at 90° to the road it starts from, with a guide line, and shows its length in metres and feet.
 Bends follow real US rules: no curve tighter than 12.8 m (42 ft), the AASHTO turning radius of a box truck.
 Each road gets 20 m wide, 32 m deep lots on both sides. Nothing grows until you zone them.

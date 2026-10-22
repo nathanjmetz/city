@@ -12,7 +12,7 @@ static func add_strip(st: SurfaceTool, pts: PackedVector3Array, from: float, to:
 	var rights := PackedVector3Array()
 	for i in pts.size():
 		var side := _side(pts, i)
-		var p := Vector3(pts[i].x, y, pts[i].z)
+		var p := Vector3(pts[i].x, pts[i].y + y, pts[i].z)
 		lefts.append(p + side * from)
 		rights.append(p + side * to)
 	var dist := 0.0
@@ -24,7 +24,7 @@ static func add_strip(st: SurfaceTool, pts: PackedVector3Array, from: float, to:
 
 ## A flat disc, used to fill road junctions.
 static func add_disc(st: SurfaceTool, center: Vector3, radius: float, y: float, steps := 24) -> void:
-	var c := Vector3(center.x, y, center.z)
+	var c := Vector3(center.x, center.y + y, center.z)
 	for i in steps:
 		var a0 := TAU * i / steps
 		var a1 := TAU * (i + 1) / steps
@@ -45,6 +45,8 @@ static func street(pts: PackedVector3Array, type: int, mats: Dictionary) -> Arra
 	var hm: float = spec.median * 0.5
 	var lane := 3.6
 	var y_mark := RoadStyle.Y_ASPHALT + 0.01
+	if spec.oneway:
+		return _oneway(pts, spec, mats)
 	var layers := [
 		["asphalt", [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
 		["curb", [[-hw - cw, -hw], [hw, hw + cw]], RoadStyle.Y_CURB, ""],
@@ -64,8 +66,34 @@ static func street(pts: PackedVector3Array, type: int, mats: Dictionary) -> Arra
 		dashes.append([-off - 0.06, -off + 0.06])
 	if not dashes.is_empty():
 		layers.append(["white", dashes, y_mark, "dashed"])
+	return _build_layers(pts, layers, trimmed(pts, hw + 2.0), mats)
+
+
+## Highways and ramps: shoulders, a yellow line on the left edge, a white
+## line on the right, dashed lanes, and a concrete barrier each side.
+static func _oneway(pts: PackedVector3Array, spec: Dictionary, mats: Dictionary) -> ArrayMesh:
+	var hw: float = spec.width * 0.5
+	var left := -hw + 1.2
+	var right: float = left + 3.6 * spec.lanes
+	var y_mark := RoadStyle.Y_ASPHALT + 0.01
+	var dashes := []
+	for k in range(1, spec.lanes):
+		var off := left + 3.6 * k
+		dashes.append([off - 0.075, off + 0.075])
+	var layers := [
+		["asphalt", [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
+		["yellow", [[left - 0.15, left]], y_mark, ""],
+		["white", [[right, right + 0.15]], y_mark, ""],
+		["curb", [[-hw - 0.6, -hw], [hw, hw + 0.6]], RoadStyle.Y_ASPHALT + 0.5, ""],
+	]
+	if not dashes.is_empty():
+		layers.append(["white", dashes, y_mark, "dashed"])
+	return _build_layers(pts, layers, pts, mats)
+
+
+static func _build_layers(pts: PackedVector3Array, layers: Array, inner: PackedVector3Array,
+		mats: Dictionary) -> ArrayMesh:
 	# Medians stop short of the junctions so turning cars can cross.
-	var inner := trimmed(pts, hw + 2.0)
 	var mesh := ArrayMesh.new()
 	for layer in layers:
 		var st := SurfaceTool.new()
@@ -78,6 +106,55 @@ static func street(pts: PackedVector3Array, type: int, mats: Dictionary) -> Arra
 		st.commit(mesh)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, mats[layer[0]])
 	return mesh
+
+
+## Bridge parts under any part of the road raised above the ground: deck
+## sides and underside, and a pier every 30 m.
+static func bridge(pts: PackedVector3Array, half: float, st: SurfaceTool) -> bool:
+	var any := false
+	var deck := 1.5
+	var since := 15.0
+	for i in range(pts.size() - 1):
+		var a := pts[i]
+		var b := pts[i + 1]
+		var seg := a.distance_to(b)
+		if minf(a.y, b.y) < 1.5:
+			since = 15.0
+			continue
+		any = true
+		var side_a := _side(pts, i) * half
+		var side_b := _side(pts, i + 1) * half
+		var down := Vector3(0, -deck, 0)
+		for sgn in [-1.0, 1.0]:
+			var ta: Vector3 = a + side_a * sgn
+			var tb: Vector3 = b + side_b * sgn
+			_wall(st, ta, tb, ta + down, tb + down)
+		_wall(st, a - side_a + down, b - side_b + down, a + side_a + down, b + side_b + down)
+		since += seg
+		if since >= 30.0:
+			since = 0.0
+			var mid := a.lerp(b, 0.5)
+			add_box(st, Vector3(mid.x, (mid.y - deck) * 0.5, mid.z), Vector3(1.4, mid.y - deck, half * 1.2),
+				atan2(b.x - a.x, b.z - a.z))
+	return any
+
+
+## A box standing on its centre, turned `yaw` radians about the vertical.
+static func add_box(st: SurfaceTool, c: Vector3, size: Vector3, yaw: float) -> void:
+	var basis := Basis(Vector3.UP, yaw)
+	var h := size * 0.5
+	var corners := []
+	for k in 8:
+		var v := Vector3(h.x if k & 1 else -h.x, h.y if k & 2 else -h.y, h.z if k & 4 else -h.z)
+		corners.append(c + basis * v)
+	for f in [[0, 1, 3, 2], [4, 6, 7, 5], [0, 4, 5, 1], [2, 3, 7, 6], [0, 2, 6, 4], [1, 5, 7, 3]]:
+		_wall(st, corners[f[0]], corners[f[1]], corners[f[3]], corners[f[2]])
+
+
+## A four-sided panel a0-b0 over a1-b1 (any orientation, both faces drawn).
+static func _wall(st: SurfaceTool, a0: Vector3, b0: Vector3, a1: Vector3, b1: Vector3) -> void:
+	for v in [a0, b0, a1, b0, b1, a1]:
+		st.add_vertex(v)
 
 
 ## The polyline with `cut` metres taken off each end.

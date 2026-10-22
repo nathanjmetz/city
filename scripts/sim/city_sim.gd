@@ -36,7 +36,7 @@ func apply(cmd: Dictionary) -> bool:
 		"build_road":
 			var c := [_v(cmd.start), _v(cmd.ctrl), _v(cmd.end)]
 			# The server checks real road rules too, not just the player's screen.
-			if RoadNetwork.min_radius(c[0], c[1], c[2]) >= RoadStyle.MIN_CURVE_RADIUS:
+			if road_problem(c, _road(cmd)) == "":
 				ok = network.build_road(c[0], c[1], c[2], _road(cmd))
 		"build_grid":
 			var lines := RoadShapes.grid(_v(cmd.a), _v(cmd.b), _v(cmd.c), float(cmd.block))
@@ -104,6 +104,23 @@ func _refresh() -> void:
 			removed = true
 	if removed:
 		buildings_changed.emit()
+
+
+## Why a road can't be built under real US road rules, or "" if it can.
+func road_problem(c: Array, type: int) -> String:
+	var flat := Vector2(c[2].x - c[0].x, c[2].z - c[0].z).length()
+	if flat < RoadNetwork.MIN_LENGTH:
+		return "Too short."
+	var r := RoadNetwork.min_radius(c[0], c[1], c[2])
+	if r < RoadStyle.MIN_CURVE_RADIUS:
+		return "Bend too tight: %d m. Roads need at least %d m (42 ft) so trucks can turn (AASHTO)." \
+			% [int(r), int(RoadStyle.MIN_CURVE_RADIUS)]
+	var spec: Dictionary = RoadStyle.TYPES[type]
+	var grade := absf(c[2].y - c[0].y) / flat
+	if grade > spec.grade + 0.0001:
+		return "Too steep: %d%% grade. A %s can climb at most %d%% (AASHTO)." \
+			% [roundi(grade * 100.0), spec.name, roundi(spec.grade * 100.0)]
+	return network.crossing_problem(c[0], c[1], c[2])
 
 
 ## Builds the ring, joining every road it crosses, then clears the roads
@@ -177,7 +194,8 @@ static func _road(cmd: Dictionary) -> int:
 	return clampi(int(cmd.get("road", 0)), 0, RoadStyle.TYPES.size() - 1)
 
 
+## A point from a command: [x, z] or [x, z, height].
 static func _v(a) -> Vector3:
 	if a is Vector3:
 		return a
-	return Vector3(float(a[0]), 0.0, float(a[1]))
+	return Vector3(float(a[0]), float(a[2]) if a.size() > 2 else 0.0, float(a[1]))

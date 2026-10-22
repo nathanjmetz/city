@@ -34,6 +34,9 @@ static func plan(network: RoadNetwork) -> Array:
 	seg_ids.sort()
 	for id in seg_ids:
 		var pts: PackedVector3Array = lines[id]
+		# Highways, ramps, bridges and tunnels have no driveways.
+		if not RoadStyle.TYPES[types[id]].lots or absf(pts[0].y) > 0.5 or absf(pts[pts.size() - 1].y) > 0.5:
+			continue
 		var usable := RoadNetwork.polyline_length(pts) - END_MARGIN * 2.0
 		if usable < FRONTAGE * 0.5:
 			continue

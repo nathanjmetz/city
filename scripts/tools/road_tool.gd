@@ -9,6 +9,8 @@ extends Node3D
 ## Roundabout: click to place. [ and ] change the size.
 ## Upgrade: click a road to change it to the chosen road type.
 ## Bulldoze: click a road to remove it.
+## Page Up / Page Down (or the buttons): raise or lower new roads, for
+## bridges, overpasses and tunnels.
 ## P: parallel mode, which draws a second road alongside ([ ] set the gap).
 ## Straight roads snap to right angles and straight-on with the road they
 ## start from, and show a guide line and their length while drawing.
@@ -28,6 +30,9 @@ const ANGLE_STEP := deg_to_rad(15.0)
 ## Guide lines catch the mouse within this angle.
 const GUIDE_SNAP := deg_to_rad(4.0)
 const PARALLEL_MAX := 200.0
+const ELEVATION_STEP := 2.5
+const ELEVATION_MIN := -20.0
+const ELEVATION_MAX := 30.0
 
 var sim: CitySim
 var network: RoadNetwork
@@ -38,6 +43,8 @@ var roundabout_radius := 20.0
 var road_type := 0
 var parallel := false
 var parallel_gap := RoadShapes.GRID_ACROSS
+## Height new road points are placed at, in metres above the ground.
+var elevation := 0.0
 
 var _points: Array[Vector3] = []
 var _preview := MeshInstance3D.new()
@@ -84,6 +91,12 @@ func _ready() -> void:
 	set_mode(mode)
 
 
+func change_elevation(steps: int) -> void:
+	elevation = clampf(elevation + steps * ELEVATION_STEP, ELEVATION_MIN, ELEVATION_MAX)
+	options_changed.emit()
+	_update_hint()
+
+
 func set_parallel(on: bool) -> void:
 	parallel = on
 	parallel_gap = maxf(parallel_gap, _min_gap())
@@ -117,6 +130,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_B: set_mode(Mode.BULLDOZE)
 			KEY_U: set_mode(Mode.UPGRADE)
 			KEY_P: set_parallel(not parallel)
+			KEY_PAGEUP: change_elevation(1)
+			KEY_PAGEDOWN: change_elevation(-1)
 			KEY_BRACKETLEFT: _resize(1.0 / 1.2)
 			KEY_BRACKETRIGHT: _resize(1.2)
 			KEY_ESCAPE: _cancel()
@@ -238,7 +253,7 @@ func _min_gap() -> float:
 
 
 static func _xz(v: Vector3) -> Array:
-	return [v.x, v.z]
+	return [v.x, v.z, v.y]
 
 
 func _cancel() -> void:
@@ -250,7 +265,9 @@ func _cancel() -> void:
 func _pending_curve(p: Vector3) -> Array:
 	var a: Vector3 = _points[0]
 	if mode == Mode.CURVED and _points.size() >= 2:
-		return [a, _points[1], p]
+		var bend: Vector3 = _points[1]
+		bend.y = lerpf(a.y, p.y, 0.5)
+		return [a, bend, p]
 	var d := p - a
 	_guide_angle = NAN
 	if mode != Mode.CURVED and Input.is_key_pressed(KEY_SHIFT):
@@ -296,6 +313,13 @@ func _show_length(curve: Array) -> void:
 	var pts := RoadNetwork.sample_curve(curve[0], curve[1], curve[2])
 	var m := RoadNetwork.polyline_length(pts)
 	_label.text = "%d m  (%d ft)" % [roundi(m), roundi(m * 3.28084)]
+	var r := RoadNetwork.min_radius(curve[0], curve[1], curve[2])
+	if r < 2000.0:
+		_label.text += "\nCurve safe at %d mph" % RoadStyle.safe_speed_mph(r)
+	if absf(curve[2].y) > 0.1 or absf(curve[0].y) > 0.1:
+		var flat := Vector2(curve[2].x - curve[0].x, curve[2].z - curve[0].z).length()
+		_label.text += "\nHeight %+.1f m, grade %d%%" % [curve[2].y,
+			roundi(absf(curve[2].y - curve[0].y) / maxf(flat, 0.1) * 100.0)]
 	if not is_nan(_guide_angle):
 		_label.text += "\n" + _guide_kind
 		var dir := Vector3(cos(_guide_angle), 0.0, sin(_guide_angle))
@@ -313,21 +337,18 @@ func _is_valid(curve: Array) -> bool:
 	return _problem(curve) == ""
 
 
-## Why a road can't be built, or "" if it can.
+## Why a road can't be built, or "" if it can (the simulation's own rules).
 func _problem(curve: Array) -> String:
-	if curve[0].distance_to(curve[2]) < RoadNetwork.MIN_LENGTH:
-		return "Too short."
-	var r := RoadNetwork.min_radius(curve[0], curve[1], curve[2])
-	if r < RoadStyle.MIN_CURVE_RADIUS:
-		return "Bend too tight: %d m. Streets need at least %d m (42 ft) so trucks can turn (AASHTO)." \
-			% [int(r), int(RoadStyle.MIN_CURVE_RADIUS)]
-	return ""
+	return sim.road_problem(curve, road_type)
 
 
 func _snapped(hit: Vector3) -> Vector3:
 	if (mode == Mode.CURVED and _points.size() == 1) or (mode == Mode.GRID and _points.size() == 2):
 		return Vector3(hit.x, 0.0, hit.z)  # bend point and grid depth float freely
-	return network.snap(hit, SNAP_NODE, SNAP_ROAD).pos
+	var snap := network.snap(hit, SNAP_NODE, SNAP_ROAD)
+	if snap.kind == "free":
+		return Vector3(hit.x, elevation, hit.z)
+	return snap.pos
 
 
 func _preview_mesh(curves: Array) -> ArrayMesh:
@@ -392,6 +413,9 @@ func _update_hint() -> void:
 			text = "Click a road to remove it."
 		Mode.UPGRADE:
 			text = "Click a road to make it a %s." % RoadStyle.TYPES[road_type].name
+	if elevation != 0.0 and mode != Mode.BULLDOZE and mode != Mode.UPGRADE:
+		text += "\n%s: new roads at %+.1f m  (Page Up / Page Down)" \
+			% ["Bridge" if elevation > 0.0 else "Tunnel", elevation]
 	if parallel and (mode == Mode.STRAIGHT or mode == Mode.CURVED):
 		text += "\nParallel on (P): second road %d m away  [ ]" % int(parallel_gap)
 	hint_changed.emit(text)
