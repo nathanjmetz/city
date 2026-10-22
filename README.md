@@ -32,6 +32,7 @@ An open map where you draw roads, paint zones along them, and buildings grow, li
 | Esc | Stop drawing; press again to put every tool away and close panels. |
 
 | Space, or Pause / 1x / 2x / 4x | Pause and game speed. |
+| Bell (top right) | Permit requests. Leaders of hubs (the railroad, the bus company...) build freely on their own land, but ask here before they cross your roads, lay track through town or take anything you built. Click one to see its plan on the map, then Approve, Deny, or Edit route (drag the bends; they re-cost your way and go ahead if they can afford it). It never pops up; a request nobody answers is shelved after a week. It works both ways: a hub's info panel lets you tell its leader to grow, use their own judgment, or hold off, and pre-approve permits near it. |
 | Advice (top right) | The town's advisor: a few words on what needs fixing and what might come next, based on your town and the tool in hand. A dot means something new. It never pops up unless you turn on "Pop open for problems"; "Tips on their own" turns the dot off. |
 
 The city runs on a clock (a day takes about 2½ minutes at 1x). Homes, shops and industry only grow when there is demand, shown by the bars in the bottom-left corner: homes are wanted while there are jobs, industry while people need work, and shops while residents need places to shop. People move into new homes over time.

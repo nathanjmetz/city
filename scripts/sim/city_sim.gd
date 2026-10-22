@@ -47,6 +47,9 @@ var industry := Industry.new()
 var logistics := Logistics.new()
 ## Land saved for farming or an industry: no roads or zoning on it.
 var reserves := Reserves.new()
+## Requests from hub leaders for big moves (track through town, crossing
+## your roads), answered from the bell up top. See Permits.
+var permits := Permits.new()
 ## Landfills, recycling and cemeteries, and the garbage trucks' rounds.
 var hubs := CivicHubs.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
@@ -250,6 +253,11 @@ func apply_now(cmd: Dictionary) -> bool:
 			_usable_cache.clear()
 			_lots_dirty = true
 			ok = true
+		"permit":
+			ok = permits.answer(self, cmd)
+		"guide":
+			# The player's word to a hub's leader (grow, hold off, pre-approve).
+			ok = permits.guide(self, cmd)
 		"set_junction":
 			# Traffic lights, stop signs or none at a junction (-1 = automatic).
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
@@ -268,6 +276,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			industry = Industry.new()
 			logistics = Logistics.new()
 			reserves = Reserves.new()
+			permits.from_dict({})
 			hubs = CivicHubs.new()
 			farms.reserves = reserves
 			industry.reserves = reserves
@@ -395,6 +404,7 @@ func tick() -> void:
 		if industry.decide(field_usable):
 			_lots_dirty = true
 			industry_changed.emit()
+	permits.tick(self)
 	# Taxes come in and upkeep goes out every game hour, a day settling a month.
 	if tick_count % TICKS_PER_HOUR == 0:
 		economy.money += roundi(economy.monthly_net() / 24.0)
@@ -1014,6 +1024,7 @@ func to_dict() -> Dictionary:
 		"industry": industry.to_dict(),
 		"logistics": logistics.to_dict(),
 		"reserves": reserves.to_dict(),
+		"permits": permits.to_dict(),
 		"hubs": hubs.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
@@ -1046,6 +1057,7 @@ func from_dict(d: Dictionary) -> void:
 	industry.from_dict(d.get("industry", {}))
 	logistics.from_dict(d.get("logistics", {}))
 	reserves.from_list(d.get("reserves", []))
+	permits.from_dict(d.get("permits", {}))
 	hubs.from_dict(d.get("hubs", {}))
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
