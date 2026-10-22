@@ -340,7 +340,9 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 	else:
 		rows.push_front(["Jobs", str(b.cap)])
 		if z == ZoneMap.Zone.INDUSTRIAL:
-			rows.append(["Raw loads in the yard", "%d" % floori(sim.logistics.stock.get(key, 0.0))])
+			var chain: Dictionary = Balance.FACTORY_CHAINS[b.get("chain", "general")]
+			rows.push_front(["Makes", "%s from %s" % [chain.makes.capitalize(), chain.input]])
+			rows.append(["%s in the yard" % chain.input.capitalize(), "%d loads" % floori(sim.logistics.stock.get(key, 0.0))])
 		rows.append(["Trucks on the road", str(sim.logistics.trucks_for("lot:" + key))])
 		status = "Open for business" if problems.is_empty() else "Closed: no power or water"
 	var staffed := float(sim.stats.employed) / maxf(sim.stats.jobs, 1.0)
@@ -356,7 +358,10 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 	if trash != "":
 		problems.append(trash)
 	var icons := {ZoneMap.Zone.RESIDENTIAL: "homes", ZoneMap.Zone.COMMERCIAL: "shops", ZoneMap.Zone.INDUSTRIAL: "industry"}
-	return {"title": names[z], "kind": ZoneMap.NAMES[z], "icon": icons[z], "ok": problems.is_empty(),
+	var title: String = names[z]
+	if z == ZoneMap.Zone.INDUSTRIAL:
+		title = Balance.FACTORY_CHAINS[b.get("chain", "general")].name
+	return {"title": title, "kind": ZoneMap.NAMES[z], "icon": icons[z], "ok": problems.is_empty(),
 		"status": status, "rows": rows, "problems": problems}
 
 

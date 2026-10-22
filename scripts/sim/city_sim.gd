@@ -1212,8 +1212,38 @@ func _grow_one() -> void:
 		var bseed := rng.randi()
 		buildings[key] = {"zone": z, "seed": bseed, "built": tick_count,
 			"cap": capacity(z, bseed), "occ": 0}
+		if z == ZoneMap.Zone.INDUSTRIAL:
+			buildings[key].chain = factory_chain(lots[key].pos)
 		buildings_changed.emit()
 		return
+
+
+## What a new factory here would make (a key of Balance.FACTORY_CHAINS):
+## the chain with the most output nearby, counting closer supply more, or
+## "general" when nothing local is near enough (Brawn: factories follow the
+## town's industry).
+func factory_chain(at: Vector3) -> String:
+	var score := {"mill": 0.0, "sawmill": 0.0, "refinery": 0.0, "metal": 0.0}
+	var reach := Balance.FACTORY_CHAIN_REACH
+	for id in farms.farms:
+		var f: Dictionary = farms.farms[id]
+		var d: float = f.pos.distance_to(at)
+		if d < reach:
+			# A 1,000-bushel truck a month for about every 15 acres of corn.
+			score.mill += f.cells.size() * Farms.ACRES_PER_CELL / 15.0 * (1.0 - d / reach)
+	var by_kind := {"forest": "sawmill", "oil": "refinery", "ore": "metal"}
+	for id in industry.sites:
+		var s: Dictionary = industry.sites[id]
+		var d: float = s.pos.distance_to(at)
+		if d < reach:
+			score[by_kind[s.kind]] += Balance.INDUSTRY[s.kind].loads * s.pads.size() * (1.0 - d / reach)
+	var best := "general"
+	var best_v := Balance.FACTORY_CHAIN_MIN
+	for k in ["mill", "sawmill", "refinery", "metal"]:
+		if score[k] > best_v:
+			best_v = score[k]
+			best = k
+	return best
 
 
 ## People a home holds, or jobs a shop or factory offers.
@@ -1363,9 +1393,15 @@ func from_dict(d: Dictionary) -> void:
 		# Older saves had no residents yet: assume the homes were full.
 		buildings[key] = {"zone": z, "seed": int(b.seed), "built": int(b.built), "cap": cap,
 			"occ": int(b.get("occ", cap if z == ZoneMap.Zone.RESIDENTIAL else 0))}
+		if z == ZoneMap.Zone.INDUSTRIAL and b.has("chain"):
+			buildings[key].chain = str(b.chain)
 	_road_wins()
 	_lots_dirty = true
 	_refresh()
+	# Factories from before industry chains take up the local one.
+	for key in buildings:
+		if buildings[key].zone == ZoneMap.Zone.INDUSTRIAL and not buildings[key].has("chain"):
+			buildings[key].chain = factory_chain(lots[key].pos) if lots.has(key) else "general"
 	update_stats()
 	buildings_changed.emit()
 
