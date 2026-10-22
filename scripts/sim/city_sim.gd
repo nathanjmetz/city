@@ -303,6 +303,9 @@ func apply_now(cmd: Dictionary) -> bool:
 			_lots_dirty = true
 		"place_hub", "upgrade_hub", "remove_hub", "develop_hub":
 			ok = _hub_command(cmd)
+		"move":
+			# Move It: slide, turn or raise what the player placed (MoveIt).
+			ok = MoveIt.apply(self, cmd)
 		"set_difficulty":
 			# A city that hasn't started yet also gets that difficulty's start money.
 			ok = economy.set_difficulty(str(cmd.difficulty), tick_count == 0 and network.segments.size() <= 2)
