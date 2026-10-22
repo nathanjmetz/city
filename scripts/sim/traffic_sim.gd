@@ -149,6 +149,11 @@ func _spawn(sim: CitySim, rng: RandomNumberGenerator) -> void:
 	var car := _route(a, b)
 	if car.is_empty():
 		return
+	# Pull out only when there's a gap in the traffic.
+	var key := _lane_key(car.route[0])
+	for other in cars:
+		if _lane_key(other.route[other.leg]) == key and absf(other.d - car.d) < STOP_GAP * 2.0:
+			return
 	car.id = _next_id
 	_next_id += 1
 	car.color = rng.randi() % 8
@@ -267,8 +272,19 @@ func _drive() -> void:
 			if last_leg and car.d >= car.end_d - 0.5:
 				done.append(car)
 			elif not last_leg and car.d >= seg_length(seg):
-				car.d -= seg_length(seg)
-				car.leg += 1
+				var next: Array = car.route[car.leg + 1]
+				var over: float = car.d - seg_length(seg)
+				if _space_at_start(next, lanes) < over:
+					# Another car just took the gap: wait at the junction.
+					car.d = seg_length(seg)
+					car.v = 0.0
+				else:
+					car.d = over
+					car.leg += 1
+					var nkey := _lane_key(next)
+					if not lanes.has(nkey):
+						lanes[nkey] = []
+					lanes[nkey].append(car)
 	for car in done:
 		cars.erase(car)
 	flow = 1.0 if limit_sum == 0.0 else clampf(speed_sum / limit_sum, 0.0, 1.0)
