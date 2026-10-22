@@ -201,3 +201,37 @@ const HOOD_DECLINE_SPEED := 0.75
 ## How far apart homes can be and still count as one neighborhood, metres
 ## (about a quarter-mile walk, the usual US planning radius).
 const HOOD_RADIUS := 400.0
+
+# --- Hubs, waste and cemeteries -----------------------------------------------
+# Brawn's rules (2026-10-22): a hub never opens a second location. It grows
+# only into free land directly next to what it already has. Landfills and
+# cemeteries never fill up (CS1 and CS2 players modded that away), but they
+# change the land around them.
+
+## A hub's new piece must touch its current footprint, within this gap in
+## metres (room for a fence or a service lane, never a separate site).
+const HUB_ADJACENT_GAP := 10.0
+## A hub's footprint can grow to at most this many times its first building's.
+const HUB_MAX_GROWTH := 6.0
+
+## Waste and burial sites: build cost, monthly upkeep, and how they change
+## nearby land value. `value` is the change right next door (-0.15 = 15%
+## lower), fading to nothing at `reach` metres. Real studies find homes next
+## to a large landfill sell for roughly 10-15% less, fading over about half a
+## mile; recycling plants have a much smaller effect, and enclosed ones none.
+## A cemetery is open green space and a place of meaning, so it lifts the
+## area around it a little.
+const WASTE_SITES := {
+	"landfill": {"cost": 1_500_000, "upkeep": 20_000, "value": -0.15, "reach": 800.0},
+	# Recycling replaces a landfill and can be upgraded twice: a drop-off
+	# yard, then a sorting plant, then an enclosed materials recovery plant.
+	# Sold materials offset part of the upkeep (`sales`, dollars a month).
+	"recycling_1": {"cost": 2_500_000, "upkeep": 25_000, "sales": 8_000, "value": -0.06, "reach": 400.0},
+	"recycling_2": {"cost": 2_000_000, "upkeep": 32_000, "sales": 18_000, "value": -0.03, "reach": 250.0},
+	"recycling_3": {"cost": 4_000_000, "upkeep": 40_000, "sales": 32_000, "value": 0.0, "reach": 0.0},
+	"cemetery": {"cost": 800_000, "upkeep": 8_000, "value": 0.05, "reach": 300.0},
+}
+## Upgrade costs are what you pay to step up from the level below; going
+## from landfill to recycling_1 also clears the landfill's effect over this
+## many game days (the old mound is capped and grassed over).
+const LANDFILL_RECOVERY_DAYS := 24.0
