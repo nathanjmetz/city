@@ -90,7 +90,7 @@ func _process(_delta: float) -> void:
 		_update_hover(hit)
 	if zone == OFF or hit == null:
 		return
-	_ring.position = Vector3(hit.x, 0.4, hit.z)
+	_ring.position = Vector3(hit.x, Terrain.ground_y(hit.x, hit.z) + 0.4, hit.z)
 	if _painting and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 		_painting = false
 	if _painting:

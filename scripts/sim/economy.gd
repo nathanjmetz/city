@@ -28,7 +28,7 @@ var difficulty := "normal"
 var milestone := 0
 var tax := DEFAULT_TAX.duplicate()
 ## This month's budget, per month: {"income": {zone: $}, "upkeep": $}.
-var budget := {"income": {}, "upkeep": 0, "fees": 0, "services": 0}
+var budget := {"income": {}, "upkeep": 0, "fees": 0, "services": 0, "education": 0}
 
 
 ## What it costs to build a road along this curve.
@@ -82,6 +82,10 @@ func update_budget(sim: CitySim) -> void:
 	income[ZoneMap.Zone.INDUSTRIAL] += sim.industry.taxable_value() * tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
 	# So do warehouses.
 	income[ZoneMap.Zone.INDUSTRIAL] += sim.warehouses.taxable_value() * tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
+	# Offices that opened for the town's graduates pay commercial property tax
+	# (campuses themselves are tax-exempt, as in real life).
+	income[ZoneMap.Zone.COMMERCIAL] += sim.education.office_jobs() * Balance.EDUCATION_OFFICE_VALUE \
+		* tax[ZoneMap.Zone.COMMERCIAL] / 100.0 / 12.0
 	var upkeep := 0.0
 	for id in sim.network.segments:
 		upkeep += road_upkeep(sim.network.curve_of(id), sim.network.segments[id].type)
@@ -96,11 +100,12 @@ func update_budget(sim: CitySim) -> void:
 	for z in income:
 		income[z] = roundi(income[z] * d.income)
 	budget = {"income": income, "upkeep": roundi(upkeep * d.upkeep), "fees": roundi(fees * d.income),
-		"services": roundi((sim.services.monthly_upkeep() + sim.hubs.monthly_cost() + sim.parks.monthly_upkeep()) * d.upkeep)}
+		"services": roundi((sim.services.monthly_upkeep() + sim.hubs.monthly_cost() + sim.parks.monthly_upkeep()) * d.upkeep),
+		"education": roundi(sim.education.monthly_upkeep() * d.upkeep)}
 
 
 func monthly_net() -> int:
-	var total := -int(budget.upkeep) - int(budget.services) + int(budget.fees)
+	var total := -int(budget.upkeep) - int(budget.services) - int(budget.get("education", 0)) + int(budget.fees)
 	for z in budget.income:
 		total += int(budget.income[z])
 	return total

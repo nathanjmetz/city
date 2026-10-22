@@ -81,7 +81,7 @@ func _process(_delta: float) -> void:
 		var box := BoxMesh.new()
 		box.size = Vector3(size.x, 4.0, size.y)
 		_ghost.mesh = box
-		_ghost.position = _site[0] + Vector3(0, 2.0, 0)
+		_ghost.position = Terrain.lift(_site[0]) + Vector3(0, 2.0, 0)
 		_ghost.basis = Basis.looking_at(_site[1], Vector3.UP)
 		_ghost.material_override = _ok_mat if problem == "" else _bad_mat
 	if problem != _problem:
@@ -105,7 +105,7 @@ func _hub_ghost(hit) -> void:
 		var box := BoxMesh.new()
 		box.size = Vector3(cell * 3.0, 3.0, cell * 2.0)
 		_ghost.mesh = box
-		_ghost.position = _site[0] - _site[1] * cell + Vector3(0, 1.5, 0)
+		_ghost.position = Terrain.lift(_site[0] - _site[1] * cell) + Vector3(0, 1.5, 0)
 		_ghost.basis = Basis.looking_at(_site[1], Vector3.UP)
 		_ghost.material_override = _ok_mat if problem == "" else _bad_mat
 	if problem != _problem:

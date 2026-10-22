@@ -920,6 +920,9 @@ func _land_free(sim: CitySim, id: int, pos: Vector3, dir: Vector3, size: Vector2
 		poly.append(Vector2(p.x, p.z))
 	if Services.road_clash(sim.network, poly):
 		return false
+	var off: Vector2 = sim.services.terrain_offset
+	if not Terrain.buildable(pos.x + off.x, pos.z + off.y, size.length() * 0.5):
+		return false  # water or a steep slope
 	for oid in sim.services.buildings:
 		if oid != id and not Geometry2D.intersect_polygons(poly, sim.services.footprint(oid)).is_empty():
 			return false

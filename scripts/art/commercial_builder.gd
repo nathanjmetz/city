@@ -58,7 +58,7 @@ func _retail(to_curb: float) -> void:
 	var wall := Color(_pick(FACADE_BRICK)) if brick else Color(_pick(BLOCK))
 	var mat := "brick" if brick else "paint"
 	var mull: Color = MULLION[rng.randi() % 2]
-	_box("paint", Vector3(w, 0.3, d), Vector3(0, 0.15, cz), FOUNDATION)
+	_box("paint", Vector3(w + 0.1, 0.3, d + 0.1), Vector3(0, 0.15, cz), FOUNDATION)
 	_flat_roofed(mat, w, d, cz, h, h + 0.9, wall)
 	# Storefront: glass bays between mullions, with a double door.
 	var sw := w * rng.randf_range(0.6, 0.8)
@@ -260,11 +260,20 @@ func _metal_roof(cx: float, cz: float, base: float, w: float, d: float, col: Col
 		var e1 := Vector3(cx + hw, base - drop, cz + side * hd)
 		var r0 := Vector3(cx - hw, base + rise, cz)
 		var r1 := Vector3(cx + hw, base + rise, cz)
-		_quad("metal", e0, e1, r1, r0, col, [Vector2(-hw, 0), Vector2(hw, 0), Vector2(hw, slope), Vector2(-hw, slope)], Vector3.UP)
+		# Sheeting on purlins a hand above the ceiling, not in its plane.
+		var up := Vector3(0, 0.1, 0)
+		_quad("metal", e0 + up, e1 + up, r1 + up, r0 + up, col, [Vector2(-hw, 0), Vector2(hw, 0), Vector2(hw, slope), Vector2(-hw, slope)], Vector3.UP)
 		_quad("paint", e0, e1, r1, r0, SOFFIT.darkened(0.3), [], Vector3.DOWN)
+		_quad("metal", e0, e1, e1 + up, e0 + up, col.darkened(0.15), [], Vector3(0, 0, side))
 	for end in [-1.0, 1.0]:
 		var x: float = cx + end * w * 0.5
 		_tri("metal", Vector3(x, base, cz - d * 0.5), Vector3(x, base, cz + d * 0.5), Vector3(x, base + rise, cz), col.lightened(0.1), [], Vector3(end, 0, 0))
+		# Rake trim closing the gap at the gable ends.
+		var xe: float = cx + end * hw
+		for side in [-1.0, 1.0]:
+			var e := Vector3(xe, base - drop, cz + side * hd)
+			var r := Vector3(xe, base + rise, cz)
+			_quad("metal", e, r, r + Vector3(0, 0.1, 0), e + Vector3(0, 0.1, 0), col.darkened(0.15), [], Vector3(end, 0, 0))
 
 
 func _cylinder(mat: String, base: Vector3, r: float, h: float, col: Color, segs := 14) -> void:

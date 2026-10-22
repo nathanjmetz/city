@@ -538,3 +538,70 @@ const HUB_DEVELOPMENTS := {
 ## A town with no landfill or recycling of its own pays a neighbor to take its
 ## trash, if one will (otherwise it piles up).
 const GARBAGE_TONS_PER_RESIDENT_MONTH := 0.07
+# --- Schools and universities -------------------------------------------------
+# Brawn's model (2026-10-22): the player places a high school, community
+# college or university and sets its funding. Its principal or president
+# runs it like a real institution trying to stay solvent: it fills its
+# seats, saves, and buys the free land next to it for new buildings, never
+# a second site. Graduates who stay make the town better educated, and
+# office and tech jobs open only for the graduates the town has.
+
+## Each kind of campus. `cost` is what the player pays for the first
+## building; `funding` is the city's standard monthly contribution (the
+## player can set it from half to one and a half times). Per student a
+## year: `aid` (state money, which follows the student), `tuition` and
+## `spend` (what teaching a student costs). `seats` the first building
+## holds and `block_seats` each campus block adds (a block is a CELL
+## square of campus), `block_cost` what buying and building one costs, and
+## `max_blocks` the most it will ever own (real campus acreage). `years` to
+## graduate, `grad_rate` of those who finish, and `stay` the share of
+## graduates who settle in town. `staff` is students per job.
+## Real figures: an Indiana high school costs about $30,000 a seat to build
+## and $10,000 a student a year to run, mostly paid by the state; Ivy Tech
+## community college tuition is about $4,500 a year and about a third
+## finish; a regional state university charges about $10,000 in-state and
+## graduates about 60% in six years.
+const EDUCATION := {
+	"high_school": {"cost": 14_000_000, "funding": 60_000, "aid": 8_500.0, "tuition": 0.0, "spend": 8_000.0,
+		"seats": 500, "block_seats": 250, "block_cost": 2_500_000, "max_blocks": 14,
+		"years": 4, "grad_rate": 0.88, "stay": 0.6, "staff": 14},
+	"college": {"cost": 9_000_000, "funding": 40_000, "aid": 4_000.0, "tuition": 4_500.0, "spend": 8_000.0,
+		"seats": 600, "block_seats": 400, "block_cost": 3_500_000, "max_blocks": 12,
+		"years": 2, "grad_rate": 0.35, "stay": 0.75, "staff": 18},
+	"university": {"cost": 35_000_000, "funding": 120_000, "aid": 6_000.0, "tuition": 10_500.0, "spend": 15_500.0,
+		"seats": 1_500, "block_seats": 900, "block_cost": 9_000_000, "max_blocks": 40,
+		"years": 4, "grad_rate": 0.6, "stay": 0.3, "staff": 9},
+}
+## Funding levels the player can pick, as a share of the standard funding.
+const EDUCATION_FUNDING_LEVELS := [0.5, 0.75, 1.0, 1.25, 1.5]
+## Share of the town who are high-school age (US: about 5.3% are 14 to 17).
+const EDUCATION_TEEN_SHARE := 0.053
+## Share of the town who would take community college classes (about 2.5%
+## of a US county's people are enrolled at one).
+const EDUCATION_COLLEGE_SHARE := 0.025
+## Students a college or university draws from the county and region beyond
+## the town, at full reputation.
+const EDUCATION_REGION_DRAW := {"college": 400, "university": 6_000}
+## Reputation (0 to 1) a new university starts with, and how much of the gap
+## to where funding and its president would take it closes each month.
+const EDUCATION_START_REPUTATION := 0.3
+const EDUCATION_REPUTATION_PULL := 0.02
+## Graduates who stay leave town or retire at this share a year.
+const EDUCATION_ATTRITION := 0.03
+## Office and tech jobs each local graduate supports: a bachelor's degree
+## brings one; an associate degree about half a job (the rest take the jobs
+## that were already there).
+const EDUCATION_OFFICE_JOBS := {"degree": 1.0, "associate": 0.5}
+## Assessed value of an office job, for the city's commercial property tax.
+const EDUCATION_OFFICE_VALUE := 150_000
+## A president buys the next block only while applicants outnumber the seats
+## by more than this share (an ambitious one sooner, a cautious one later),
+## and only with a down payment saved: this share of the block's cost, plus
+## up to as much again for a cautious president. The rest is borrowed (a
+## bond) and paid back from the yearly surplus before the next purchase.
+const EDUCATION_CROWDING := 0.05
+const EDUCATION_DOWN_PAYMENT := 0.3
+## A campus whose debt passes this many block costs sells its newest block.
+const EDUCATION_SELL_DEBT := 1.5
+## Campuses decide once a game day (a month).
+const EDUCATION_DECIDE_EVERY := 1440

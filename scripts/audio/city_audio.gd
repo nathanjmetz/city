@@ -174,7 +174,7 @@ func _move_cars() -> void:
 			s.want = 0.0  # arrived; let it fade where it stopped
 			continue
 		var p: AudioStreamPlayer3D = s.player
-		p.position = sim.traffic.car_pose(car, car.v * TrafficSim.DT * frac)[0] + Vector3.UP * 0.6
+		p.position = Terrain.lift(sim.traffic.car_pose(car, car.v * TrafficSim.DT * frac)[0]) + Vector3.UP * 0.6
 		# Engine note rises with speed: idling at a light up to 65 mph.
 		p.pitch_scale = clampf(0.65 + car.v / 28.0, 0.6, 1.7)
 		s.speed_db = lerpf(-10.0, 0.0, clampf(car.v / 25.0, 0.0, 1.0))
@@ -226,7 +226,7 @@ func _fade_area(s: Dictionary, step: float) -> void:
 		s.sound = c.sound
 		s.want = 1.0
 		p.stream = _streams[c.sound]
-		p.position = c.pos
+		p.position = Terrain.lift(c.pos)
 		p.play(randf() * 4.0)
 	s.amp = move_toward(s.amp, s.want, step)
 	p.volume_db = linear_to_db(maxf(s.amp, 0.0001)) + SoundSources.GAIN.get(s.get("sound", ""), 0.0)
@@ -279,7 +279,7 @@ func _on_buildings() -> void:
 			plays += 1
 			var p := _spatial(12.0, 350.0)
 			p.stream = _build_sound
-			p.position = pos
+			p.position = Terrain.lift(pos)
 			p.volume_db = -10.0
 			p.finished.connect(p.queue_free)
 			p.play()

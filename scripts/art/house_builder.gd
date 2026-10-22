@@ -551,9 +551,14 @@ func _shed_roof(cx: float, w: float, z0: float, run: float, y: float, drop: floa
 	var c := Vector3(cx + w * 0.5, y, z0 - run)
 	var d := Vector3(cx - w * 0.5, y, z0 - run)
 	var len := Vector2(run, drop).length()
-	_quad("roof", d, c, b, a, roof, [Vector2(-w * 0.5, 0), Vector2(w * 0.5, 0), Vector2(w * 0.5, len), Vector2(-w * 0.5, len)], Vector3.UP)
+	# The roofing sits on rafters above the ceiling, never in its plane:
+	# building materials are two-sided, so two faces in one plane flicker.
+	var up := Vector3(0, 0.12, 0)
+	_quad("roof", d + up, c + up, b + up, a + up, roof, [Vector2(-w * 0.5, 0), Vector2(w * 0.5, 0), Vector2(w * 0.5, len), Vector2(-w * 0.5, len)], Vector3.UP)
 	_quad("paint", a, b, c, d, SOFFIT, [], Vector3.DOWN)
-	_quad("paint", d, c, c + Vector3(0, -0.2, 0), d + Vector3(0, -0.2, 0), TRIM, [], Vector3.FORWARD)
+	_quad("paint", d + up, c + up, c + Vector3(0, -0.2, 0), d + Vector3(0, -0.2, 0), TRIM, [], Vector3.FORWARD)
+	for e in [[a, d, Vector3.LEFT], [b, c, Vector3.RIGHT]]:
+		_quad("paint", e[0], e[1], e[1] + up, e[0] + up, TRIM, [], e[2])
 
 
 func _shrub(p: Vector3, r: float) -> void:
