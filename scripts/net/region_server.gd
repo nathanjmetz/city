@@ -157,8 +157,13 @@ func _hello(from: int, msg: Dictionary) -> void:
 	elif region.cities[city].player != name:
 		region.cities[city].player = name
 	_log("%s joined" % name)
-	# The full region as it is now; ticks from here on keep it in step.
-	_send(from, {"t": "welcome", "you": pid, "code": invite_code, "region": region.to_dict()})
+	# The full region as it is now; ticks from here on keep it in step. The
+	# server and everyone already here reload the same copy too, so nothing a
+	# save rounds off (road coordinates, say) can make one copy drift.
+	var snapshot = JSON.parse_string(JSON.stringify(region.to_dict(), "", false, true))
+	region.from_dict(snapshot)
+	_broadcast({"t": "region", "region": snapshot}, from)
+	_send(from, {"t": "welcome", "you": pid, "code": invite_code, "region": snapshot})
 	_send_players()
 	var line := region.add_chat("", "%s joined the region" % name)
 	_broadcast({"t": "chat", "line": line})
