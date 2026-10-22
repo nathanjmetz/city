@@ -318,6 +318,31 @@ func _init() -> void:
 	var oil_sel := Inspect.pick(oil, co.pos)
 	_check(oil_sel.get("type") == "industry" and Inspect.describe(oil, oil_sel).title == "Oil company", "clicking the company opens its panel")
 	_check(oil.stats.jobs >= Balance.INDUSTRY["oil"]["jobs_hq"], "the company's jobs count")
+	# Critic round 7: a company whose yard isn't on the deposit itself still
+	# finds the rich ground within reach for its first pad.
+	var edge_spot := Vector3.INF
+	for r in [240.0, 280.0, 320.0]:
+		for i in 16:
+			var p: Vector3 = best + Vector3(cos(TAU * i / 16.0), 0, sin(TAU * i / 16.0)) * r
+			var probe := {"kind": "oil", "pos": p, "dir": Vector3(0, 0, -1)}
+			var poor := true
+			for c in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
+					Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1)]:
+				poor = poor and Industry.richness(probe, c) < Industry.MIN_RICHNESS
+			if poor and edge_spot == Vector3.INF:
+				edge_spot = p
+	_check(edge_spot != Vector3.INF, "found a spot off the deposit's edge")
+	if edge_spot != Vector3.INF:
+		var off := Industry.new()
+		off.add_site("oil", edge_spot, Vector3(0, 0, -1), [])
+		off.decide(func(_m, _c): return true)
+		_check(off.sites[1].pads.size() == 1 and off.sites[1].get("idle", "") == "",
+			"a company beside the deposit opens its first pad on it (%d)" % off.sites[1].pads.size())
+	var none := Industry.new()
+	none.add_site("oil", Vector3(best.x + 50000, 0, best.z + 50000), Vector3(0, 0, -1), [])
+	none.decide(func(_m, _c): return true)
+	_check(none.sites[1].pads.is_empty() and str(none.sites[1].get("idle", "")).begins_with("No crude oil"),
+		"a company with no oil around says why")
 	# Old saves (roads only) come back zoned as homes.
 	var old := CitySim.new()
 	old.from_dict({"version": 1, "next_id": 4, "nodes": {"1": [-100, 0], "2": [100, 0]},

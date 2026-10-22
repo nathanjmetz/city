@@ -181,6 +181,9 @@ static func _industry(sim: CitySim, id: int) -> Dictionary:
 	var status := "Working: opens %ss where the ground is richest" % k.pad
 	if s.pads.is_empty():
 		status = "Surveying for its first %s" % k.pad
+		if s.get("idle", "") != "":
+			status = "Idle: no ground worth a %s" % k.pad
+			problems.append(s.idle)
 	if sim.logistics.stuck.has(ref):
 		problems.append("Its trucks can't reach a buyer or the highway. Connect its road to the rest of town.")
 	if s.stock >= Industry.STOCK_CAP:

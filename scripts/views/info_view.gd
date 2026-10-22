@@ -17,9 +17,11 @@ const KIND := {Mode.FERTILITY: Resources.Kind.FERTILITY, Mode.OIL: Resources.Kin
 ## Low and high colours for each view.
 const RAMPS := {
 	Mode.FERTILITY: [Color(0.75, 0.38, 0.16, 0.55), Color(0.12, 0.7, 0.1, 0.55)],
-	Mode.OIL: [Color(0.2, 0.2, 0.2, 0.08), Color(0.12, 0.08, 0.2, 0.85)],
-	Mode.ORE: [Color(0.4, 0.35, 0.3, 0.08), Color(0.85, 0.4, 0.15, 0.85)],
-	Mode.FOREST: [Color(0.3, 0.35, 0.25, 0.08), Color(0.08, 0.4, 0.12, 0.85)],
+	# Resource views, after CS2: the map greys out and the deposit shows in a
+	# strong tint, with a clear step where the ground starts to pay.
+	Mode.OIL: [Color(0.82, 0.82, 0.8, 0.5), Color(0.62, 0.38, 0.95, 0.8), Color(0.14, 0.03, 0.3, 0.94)],
+	Mode.ORE: [Color(0.82, 0.82, 0.8, 0.5), Color(1.0, 0.64, 0.2, 0.8), Color(0.62, 0.18, 0.04, 0.94)],
+	Mode.FOREST: [Color(0.82, 0.82, 0.8, 0.5), Color(0.42, 0.85, 0.32, 0.8), Color(0.02, 0.3, 0.08, 0.94)],
 }
 
 signal mode_changed(mode: int)
@@ -96,7 +98,12 @@ func _paint() -> void:
 			var v := Resources.at(kind, p)
 			if kind == Resources.Kind.FERTILITY:
 				v = (v - 0.5) / 0.4
-			img.set_pixel(x, y, (ramp[0] as Color).lerp(ramp[1], clampf(v, 0.0, 1.0)))
+				img.set_pixel(x, y, (ramp[0] as Color).lerp(ramp[1], clampf(v, 0.0, 1.0)))
+			elif v < Industry.MIN_RICHNESS:
+				img.set_pixel(x, y, (ramp[0] as Color).lerp(ramp[1], 0.35 * v / Industry.MIN_RICHNESS))
+			else:
+				img.set_pixel(x, y, (ramp[1] as Color).lerp(ramp[2],
+					clampf((v - Industry.MIN_RICHNESS) / (1.0 - Industry.MIN_RICHNESS), 0.0, 1.0)))
 	_wash_mat.albedo_texture = ImageTexture.create_from_image(img)
 	_wash.position = Vector3(_center.x, 0.25, _center.y)
 
