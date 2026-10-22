@@ -342,7 +342,7 @@ func _demo_mail(sim: CitySim) -> void:
 				pieces.append(c)
 		h.cells.append_array(pieces)
 		h.lands[node] = pieces
-		h.tree[node] = 1
+		h.built.append(node)
 	var c2: Vector2i = sim.mail._best_piece(sim, id)
 	if c2 != Vector2i.MAX:
 		h.cells.append(c2)

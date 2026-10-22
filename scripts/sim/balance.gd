@@ -669,8 +669,8 @@ const MAIL_DAYS_PER_MONTH := 26.0
 const MAIL_MARGIN_PER_PIECE := 0.04
 ## Neighbouring towns' postage a regional hub keeps, dollars a person a month.
 const MAIL_REGIONAL_PER_PERSON := 0.15
-## Offline, each road out to the region counts as one neighbouring town this
-## size (small towns around Petersburg, Indiana).
+## A neighbouring town whose size the region doesn't report counts as this
+## many people (small towns around Petersburg, Indiana).
 const MAIL_OFFLINE_TOWN_POP := 1_800
 ## A city carrier route is about 500 delivery points; a carrier's day also
 ## tops out at this many streets. A parcel van makes this many business
@@ -714,30 +714,30 @@ const MAIL_ELECTRIC_SAVING := 0.15
 ## A regional hub runs one more truck each way for each neighbouring town,
 ## up to this many.
 const MAIL_REGIONAL_TRUCKS := 4
-## A cautious postmaster keeps up to this many months of income in reserve.
-const MAIL_RESERVE_MONTHS := 3.0
 ## The development tree's numbers: cost (from the postmaster's fund), land
-## (pieces next door), days to build (game days), weight (how much an
-## ambitious postmaster wants it), and gates: population, pieces (of mail a
-## day), shops, factories, towns and region_pop (neighbours), education
-## and ambition (the postmaster's own), town_school (service coverage).
+## (pieces next door), days to build (game days), weight (how much it does,
+## which Agency weighs against cost by the postmaster's temperament), and
+## gates: population, pieces (of mail a day), shops, factories, towns and
+## region_pop (neighbours), link (a road out to the region), education and
+## ambition (the postmaster's own), town_school (share of homes near a
+## school, Agency's "education"). Agency spends up to a few years' income.
 const MAIL_TREE := {
 	"po_boxes": {"cost": 40_000, "land": 0, "days": 1, "weight": 1, "population": 600},
 	"passports": {"cost": 25_000, "land": 0, "days": 1, "weight": 2, "population": 1_500, "education": 0.5},
-	"kiosk": {"cost": 60_000, "land": 0, "days": 1, "weight": 2, "population": 2_500, "town_school": 0.6},
+	"kiosk": {"cost": 60_000, "land": 0, "days": 1, "weight": 2, "population": 2_500, "town_school": 0.5},
 	"mural": {"cost": 80_000, "land": 0, "days": 2, "weight": 1, "population": 1_200, "ambition": 0.4},
 	"cluster_boxes": {"cost": 120_000, "land": 0, "days": 2, "weight": 3, "population": 3_000},
 	"more_vans": {"cost": 180_000, "land": 1, "days": 1, "weight": 3, "shops": 15, "vans": 2},
-	"electric_fleet": {"cost": 400_000, "land": 0, "days": 2, "weight": 2, "education": 0.6, "ambition": 0.6,
+	"electric_fleet": {"cost": 300_000, "land": 0, "days": 2, "weight": 2, "education": 0.6, "ambition": 0.6,
 		"population": 2_000},
 	"parcel_lockers": {"cost": 90_000, "land": 0, "days": 1, "weight": 2, "shops": 25},
 	"business_mail": {"cost": 150_000, "land": 1, "days": 2, "weight": 2, "factories": 8},
-	"parcel_depot": {"cost": 600_000, "land": 2, "days": 3, "weight": 4, "shops": 40, "vans": 3},
-	"parcel_ground_hub": {"cost": 2_500_000, "land": 4, "days": 4, "weight": 5, "shops": 60, "vans": 6,
+	"parcel_depot": {"cost": 400_000, "land": 2, "days": 3, "weight": 4, "shops": 40, "vans": 3},
+	"parcel_ground_hub": {"cost": 1_400_000, "land": 4, "days": 4, "weight": 5, "shops": 60, "vans": 6,
 		"region_pop": 15_000},
-	"sorting_room": {"cost": 350_000, "land": 1, "days": 2, "weight": 4, "pieces": 3_000},
-	"sorting_center": {"cost": 1_800_000, "land": 3, "days": 4, "weight": 6, "pieces": 10_000},
-	"regional_hub": {"cost": 3_500_000, "land": 4, "days": 5, "weight": 7, "towns": 2, "region_pop": 6_000,
+	"sorting_room": {"cost": 250_000, "land": 1, "days": 2, "weight": 4, "pieces": 3_000},
+	"sorting_center": {"cost": 900_000, "land": 3, "days": 4, "weight": 6, "pieces": 10_000},
+	"regional_hub": {"cost": 1_600_000, "land": 4, "days": 5, "weight": 7, "towns": 2, "region_pop": 6_000, "link": 1,
 		"education": 0.45},
 	"rail_mail": {"cost": 900_000, "land": 1, "days": 3, "weight": 3},
 	"air_mail": {"cost": 700_000, "land": 0, "days": 2, "weight": 3},
