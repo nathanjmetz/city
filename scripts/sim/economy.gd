@@ -90,6 +90,8 @@ func update_budget(sim: CitySim) -> void:
 	income[ZoneMap.Zone.INDUSTRIAL] += sim.power.taxable_value() * tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
 	# Offices that opened for the town's graduates pay commercial property tax
 	# (campuses themselves are tax-exempt, as in real life).
+	# Bank buildings pay commercial property tax too.
+	income[ZoneMap.Zone.COMMERCIAL] += sim.banks.taxable_value() * tax[ZoneMap.Zone.COMMERCIAL] / 100.0 / 12.0
 	income[ZoneMap.Zone.COMMERCIAL] += sim.education.office_jobs() * Balance.EDUCATION_OFFICE_VALUE \
 		* tax[ZoneMap.Zone.COMMERCIAL] / 100.0 / 12.0
 	var upkeep := 0.0

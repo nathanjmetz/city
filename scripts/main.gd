@@ -76,6 +76,10 @@ func _ready() -> void:
 	add_child(campus_view)
 	campus_view.setup(sim)
 
+	var bank_view := BankView.new()
+	add_child(bank_view)
+	bank_view.setup(sim)
+
 	var cars := TrafficView.new()
 	cars.setup(sim.traffic, _tick_fraction)
 	add_child(cars)
@@ -156,6 +160,10 @@ func _ready() -> void:
 	campus_tool.setup(sim, cam)
 	add_child(campus_tool)
 
+	var bank_tool := BankTool.new()
+	bank_tool.setup(sim, cam)
+	add_child(bank_tool)
+
 	var traffic_tool := TrafficTool.new()
 	traffic_tool.setup(sim, cam, flow_view)
 	add_child(traffic_tool)
@@ -178,6 +186,8 @@ func _ready() -> void:
 			industry_tool.set_kind("")
 		if keep != campus_tool and campus_tool.kind != "":
 			campus_tool.set_kind("")
+		if keep != bank_tool and bank_tool.kind != "":
+			bank_tool.set_kind("")
 		if keep != warehouse_tool and warehouse_tool.kind != "":
 			warehouse_tool.set_kind("")
 		if keep != traffic_tool and traffic_tool.mode != TrafficTool.Mode.NONE:
@@ -197,6 +207,7 @@ func _ready() -> void:
 	traffic_tool.mode_changed.connect(func(m): if m != TrafficTool.Mode.NONE: picked.call(traffic_tool))
 	industry_tool.kind_changed.connect(func(k): if k != "": picked.call(industry_tool))
 	campus_tool.kind_changed.connect(func(k): if k != "": picked.call(campus_tool))
+	bank_tool.kind_changed.connect(func(k): if k != "": picked.call(bank_tool))
 	warehouse_tool.kind_changed.connect(func(k): if k != "": picked.call(warehouse_tool))
 	park_tool.kind_changed.connect(func(k): if k != "": picked.call(park_tool))
 	move_tool.active_changed.connect(func(on): if on: picked.call(move_tool))
@@ -205,7 +216,7 @@ func _ready() -> void:
 	select_tool.setup(sim, cam, func(): return road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
-		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or move_tool.active)
+		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or bank_tool.kind != "" or move_tool.active)
 	add_child(select_tool)
 
 	var water_view := WaterView.new()
@@ -218,6 +229,7 @@ func _ready() -> void:
 	hud.farm_tool = farm_tool
 	hud.industry_tool = industry_tool
 	hud.campus_tool = campus_tool
+	hud.bank_tool = bank_tool
 	hud.warehouse_tool = warehouse_tool
 	hud.park_tool = park_tool
 	hud.traffic_tool = traffic_tool
@@ -250,7 +262,7 @@ func _ready() -> void:
 		_starter_road()
 	await _settle()
 	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed, sim.water_changed,
-			sim.industry_changed, sim.warehouses_changed, sim.parks_changed, sim.education_changed, sim.power_changed]:
+			sim.industry_changed, sim.warehouses_changed, sim.parks_changed, sim.education_changed, sim.power_changed, sim.banks_changed]:
 		sig.connect(func(): _save_pending = true)
 
 

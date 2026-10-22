@@ -270,6 +270,9 @@ func _click() -> void:
 			elif _hover_seg != -1:
 				sim.apply({"type": "remove_road", "seg": _hover_seg})
 				_hover_seg = -1
+			elif sim.banks.covers(hit):
+				# One block of the bank at a time (its first building closes it).
+				sim.apply({"type": "remove_bank_block", "pos": [hit.x, hit.z]})
 			elif sim.education.covers(hit):
 				# One campus building at a time (its first building closes it).
 				sim.apply({"type": "remove_campus_block", "pos": [hit.x, hit.z]})

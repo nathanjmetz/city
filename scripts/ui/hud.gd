@@ -24,6 +24,8 @@ var _industry_cards := {}  # "oil"/"ore"/"forest"/"reserve"/"release" -> Button
 var _industry_kind := "oil"  # what the industry Reserve tool saves land for
 var warehouse_tool: WarehouseTool
 var campus_tool: CampusTool
+var bank_tool: BankTool
+var _bank_cards := {}  # "community"/"farm_credit" -> Button
 var _campus_cards := {}  # "high_school"/"college"/"university" -> Button
 var _warehouse_cards := {}  # Warehouses size -> Button
 var traffic_tool: TrafficTool
@@ -117,6 +119,8 @@ func _ready() -> void:
 	warehouse_tool.hint_changed.connect(_show_hint)
 	campus_tool.kind_changed.connect(func(_k): _sync())
 	campus_tool.hint_changed.connect(_show_hint)
+	bank_tool.kind_changed.connect(func(_k): _sync())
+	bank_tool.hint_changed.connect(_show_hint)
 	traffic_tool.mode_changed.connect(func(_m): _sync())
 	traffic_tool.hint_changed.connect(_show_hint)
 	park_tool.kind_changed.connect(func(_k): _sync())
@@ -156,7 +160,7 @@ func anything_open() -> bool:
 		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
-		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or move_tool.active
+		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or bank_tool.kind != "" or move_tool.active
 
 
 ## Puts every tool away and closes every panel.
@@ -177,6 +181,7 @@ func close_all() -> void:
 	industry_tool.set_kind("")
 	warehouse_tool.set_kind("")
 	campus_tool.set_kind("")
+	bank_tool.set_kind("")
 	traffic_tool.set_mode(TrafficTool.Mode.NONE)
 	park_tool.set_kind("")
 	move_tool.set_active(false)
@@ -605,6 +610,17 @@ func _services_drawer() -> PanelContainer:
 	pb.pressed.connect(func(): service_tool.set_kind(Mail.TOOL_KIND))
 	mail.add_child(pb)
 	_service_cards[Mail.TOOL_KIND] = pb
+	# Banks lend to the farms, companies and builders (Brawn's hub model).
+	row.add_child(VSeparator.new())
+	var bank := _section(row, "Banks")
+	for k in ["community", "farm_credit"]:
+		var b := _card("bank", {"community": "Bank", "farm_credit": "Farm Credit"}[k], "")
+		b.tooltip_text = "%s: $%s for the lot. Its %s lends to %s, and buys the land next door as it grows." % [
+			Banks.KINDS[k].name, CitySim.money_text(int(Banks.spec(k).cost)), Banks.KINDS[k].head.to_lower(),
+			{"community": "farms, companies and builders", "farm_credit": "farms and timber"}[k]]
+		b.pressed.connect(func(): bank_tool.set_kind(k))
+		bank.add_child(b)
+		_bank_cards[k] = b
 	return drawer
 
 
@@ -901,6 +917,7 @@ func _open(cat: String) -> void:
 			industry_tool.set_kind("")
 			warehouse_tool.set_kind("")
 			campus_tool.set_kind("")
+			bank_tool.set_kind("")
 			traffic_tool.set_mode(TrafficTool.Mode.NONE)
 			park_tool.set_kind("")
 			move_tool.set_active(false)
@@ -912,7 +929,8 @@ func _open(cat: String) -> void:
 func _sync() -> void:
 	if zone_tool.zone != ZoneTool.OFF:
 		_category = "zones"
-	elif service_tool.kind != ServiceTool.OFF or campus_tool.kind != "" or industry_tool.kind == "power":
+	elif service_tool.kind != ServiceTool.OFF or campus_tool.kind != "" or industry_tool.kind == "power" \
+			or bank_tool.kind != "":
 		_category = "services"
 	elif park_tool.kind != "":
 		_category = "parks"
@@ -954,6 +972,8 @@ func _sync() -> void:
 		_power_card.set_pressed_no_signal(industry_tool.kind == "power")
 	for k in _campus_cards:
 		_campus_cards[k].set_pressed_no_signal(k == campus_tool.kind)
+	for k in _bank_cards:
+		_bank_cards[k].set_pressed_no_signal(k == bank_tool.kind)
 	for m in _farm_cards:
 		_farm_cards[m].set_pressed_no_signal(m == farm_tool.mode and _category == "farms")
 	for k in _industry_cards:
