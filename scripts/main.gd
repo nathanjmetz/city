@@ -50,6 +50,10 @@ func _ready() -> void:
 	signals.setup(sim.traffic)
 	add_child(signals)
 
+	var flow_view := FlowView.new()
+	flow_view.setup(sim.traffic)
+	add_child(flow_view)
+
 	var cam := CityCamera.new()
 	add_child(cam)
 
@@ -69,6 +73,10 @@ func _ready() -> void:
 	farm_tool.setup(sim, cam, farm_view)
 	add_child(farm_tool)
 
+	var traffic_tool := TrafficTool.new()
+	traffic_tool.setup(sim, cam, flow_view)
+	add_child(traffic_tool)
+
 	# Only one tool is active at a time.
 	var others := func(keep: Object):
 		if keep != road_tool and road_tool.mode != RoadTool.Mode.NONE:
@@ -79,15 +87,19 @@ func _ready() -> void:
 			service_tool.set_kind(ServiceTool.OFF)
 		if keep != farm_tool and farm_tool.mode != FarmTool.Mode.NONE:
 			farm_tool.set_mode(FarmTool.Mode.NONE)
+		if keep != traffic_tool and traffic_tool.mode != TrafficTool.Mode.NONE:
+			traffic_tool.set_mode(TrafficTool.Mode.NONE)
 	road_tool.mode_changed.connect(func(m): if m != RoadTool.Mode.NONE: others.call(road_tool))
 	zone_tool.zone_changed.connect(func(z): if z != ZoneTool.OFF: others.call(zone_tool))
 	service_tool.kind_changed.connect(func(k): if k != ServiceTool.OFF: others.call(service_tool))
 	farm_tool.mode_changed.connect(func(m): if m != FarmTool.Mode.NONE: others.call(farm_tool))
+	traffic_tool.mode_changed.connect(func(m): if m != TrafficTool.Mode.NONE: others.call(traffic_tool))
 
 	var hud := Hud.new()
 	hud.setup(road_tool, zone_tool, sim, self)
 	hud.service_tool = service_tool
 	hud.farm_tool = farm_tool
+	hud.traffic_tool = traffic_tool
 	add_child(hud)
 
 	if not _load():

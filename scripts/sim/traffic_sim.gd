@@ -52,7 +52,8 @@ var network: RoadNetwork
 ## driver likes), j (junction path while crossing one, else null), jd,
 ## commit, conn, arrive, stuck, lc_from, lc_t, lc_cool, color, a}
 var cars := []
-## Share of the speed limit cars are managing, 0 to 1 (like CS traffic flow).
+## Traffic flow, 0 to 1, like CS: the share of cars moving freely, with cars
+## stuck behind others counted by how close to the limit they manage.
 var flow := 1.0
 ## Cars that gave up stuck in traffic.
 var gave_up := 0
@@ -132,6 +133,36 @@ func car_pose(car: Dictionary, ahead := 0.0) -> Array:
 		var slide: float = (w.offs[car.lane] - car.lc_from) * 6.0 * car.lc_t * (1.0 - car.lc_t) / LC_TIME
 		fwd = (fwd + right * slide / maxf(car.v, 2.0)).normalized()
 	return [base + right * lat, fwd]
+
+
+## Sets how a junction is controlled (a Rule, or -1 for automatic).
+func set_rule(node: int, rule: int) -> bool:
+	if not network.nodes.has(node) or network.segments_at(node).size() < 3:
+		return false
+	if rule < 0:
+		if not overrides.has(node):
+			return false
+		overrides.erase(node)
+	else:
+		if overrides.get(node, -1) == rule:
+			return false
+		overrides[node] = clampi(rule, 0, Rule.PRIORITY)
+	_rebuild()
+	return true
+
+
+func rules_to_dict() -> Dictionary:
+	var out := {}
+	for n in overrides:
+		out[str(n)] = overrides[n]
+	return out
+
+
+func rules_from_dict(d: Dictionary) -> void:
+	overrides.clear()
+	for k in d:
+		overrides[int(k)] = int(d[k])
+	_dirty = true
 
 
 ## Whether a light shows green, yellow or red to cars arriving on a way.
@@ -278,6 +309,9 @@ func _rebuild() -> void:
 		var w: Dictionary = ways[wid]
 		w.s0 = minf(setback[w.from], w.len * 0.4)
 		w.s1 = maxf(w.len - setback[w.to], w.len * 0.6)
+	for n in overrides.keys():
+		if not at_node.has(n) or at_node[n].size() < 3:
+			overrides.erase(n)
 	for n in node_ids:
 		_build_turns(n)
 		_build_control(n, at_node[n])
@@ -806,19 +840,20 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 			continue
 		if car.j != null:
 			car.jd += car.v * DT
-			speed_sum += car.v
-			limit_sum += maxf(car.j.vt, 1.0)
+			speed_sum += 1.0
+			limit_sum += 1.0
 			if car.jd >= car.j.len:
 				car.d = ways[car.route[car.leg]].s0 + car.jd - car.j.len
 				car.j = null
 			continue
 		var w: Dictionary = ways[car.route[car.leg]]
 		car.d += car.v * DT
-		speed_sum += car.v
-		limit_sum += w.vmax
+		var share: float = minf(car.v / w.vmax, 1.0) if car.get("held", false) else 1.0
+		speed_sum += share
+		limit_sum += 1.0
 		if not way_sum.has(w.id):
 			way_sum[w.id] = [0.0, 0]
-		way_sum[w.id][0] += minf(car.v / w.vmax, 1.0)
+		way_sum[w.id][0] += share
 		way_sum[w.id][1] += 1
 		if car.leg == car.route.size() - 1:
 			if car.d >= car.end_d - 1.0:
@@ -869,6 +904,12 @@ func _snapshot() -> void:
 			_committed[car.conn.node].append(car)
 	for key in _lanes:
 		_lanes[key].sort_custom(func(x, y): return x.d > y.d or (x.d == y.d and x.id < y.id))
+		# Cars held up by the car in front count against traffic flow; a car
+		# slowing on an open road for a turn, sign or light does not.
+		var list: Array = _lanes[key]
+		list[0].held = false
+		for i in range(1, list.size()):
+			list[i].held = list[i - 1].d - list[i].d - CAR_LEN < 12.0 + list[i].v * 2.0
 		var front: Dictionary = _lanes[key][0]
 		if front.leg == front.route.size() - 1:
 			continue
