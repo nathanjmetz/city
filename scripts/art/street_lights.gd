@@ -109,14 +109,16 @@ static func place(net: RoadNetwork) -> Array:
 	for id in net.segments:
 		var seg: Dictionary = net.segments[id]
 		var type: int = seg.type
-		if not KINDS.has(type):
+		# Variants light like their menu's road; country roads and alleys go unlit.
+		var kind := RoadStyle.group(type) if not RoadStyle.is_ring(type) else type
+		if not KINDS.has(kind) or RoadStyle.TYPES[type].get("rural", false):
 			continue
-		var spec: Array = KINDS[type]
+		var spec: Array = KINDS[kind]
 		var pts := net.sample_segment(id)
 		if pts[pts.size() / 2].y < -1.0:
 			continue  # tunnel
 		var length := RoadNetwork.polyline_length(pts)
-		var out_by := RoadStyle.half_width(type) + (1.2 if RoadStyle.TYPES[type].oneway else RoadStyle.CURB_WIDTH + 0.6)
+		var out_by := RoadStyle.half_width(type) + (1.2 if RoadStyle.is_freeway(type) else RoadStyle.CURB_WIDTH + 0.6)
 		# Start half a gap in, so corners get a lamp from one road or the
 		# other but never one standing in the crossing street.
 		var n := maxi(int(floorf(length / spec[0])), 1)
@@ -135,7 +137,7 @@ static func place(net: RoadNetwork) -> Array:
 			if not taken.has(cell):
 				taken[cell] = []
 			taken[cell].append(base)
-			out.append([mesh_key(type), base, -right * side, spec[3]])
+			out.append([mesh_key(kind), base, -right * side, spec[3]])
 	return out
 
 
