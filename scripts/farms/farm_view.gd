@@ -86,8 +86,11 @@ func _draw_fields() -> void:
 	for id in sim.farms.farms:
 		var f: Dictionary = sim.farms.farms[id]
 		var col := _season_color(f.crop)
+		var trimmed: Dictionary = sim.farms.trim.get(id, {})
 		for c in f.cells:
-			_add_poly(st, f, Farms.cell_corners(f, c), 0.06, col)
+			# A field a road ran through stops at the road's edge.
+			for poly in trimmed.get(c, [Farms.cell_corners(f, c)]):
+				_add_poly(st, f, poly, 0.06, col)
 			any = true
 		if f.drive.size() >= 2:
 			var pts := PackedVector3Array()

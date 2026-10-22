@@ -87,7 +87,7 @@ func tick(sim: CitySim) -> void:
 				sent += 1
 		# No local load on its way: import one from the region.
 		if need[key] >= 1.0 and sent < MAX_PER_ROUND and not _inbound(key):
-			var edge := _edge(sim)
+			var edge := _edge(sim, lot.front)
 			if not edge.is_empty() and _send(sim, edge, {"ref": "lot:" + key, "pos": _xz(lot.front)},
 					"raw", {"good": "materials", "amount": 1}, "import"):
 				sent += 1
@@ -101,7 +101,7 @@ func _produce(sim: CitySim) -> void:
 		var bushels := 0.0
 		for c in f.cells:
 			bushels += Balance.FARM_BUSHELS_PER_ACRE[f.crop] * Farms.ACRES_PER_CELL \
-				* sim.farms.fertility_at(Farms.cell_center(f, c))
+				* sim.farms.fertility_at(Farms.cell_center(f, c)) * sim.farms.share(id, c)
 		grain[id] = grain.get(id, 0.0) + bushels * share
 	for id in grain.keys():
 		if not sim.farms.farms.has(id):
@@ -134,33 +134,22 @@ func _buyer(sim: CitySim, from: Vector3, what: String) -> Dictionary:
 		if zone == ZoneMap.Zone.INDUSTRIAL:
 			need[best] -= 1.0  # spoken for
 		return {"ref": "lot:" + best, "pos": _xz(sim.lots[best].front)}
-	return _edge(sim)
+	return _edge(sim, from)
 
 
-## The outside connection: the dead end of the road network farthest from the
-## middle of town, where the highway comes in.
-func _edge(sim: CitySim) -> Dictionary:
-	var net := sim.network
-	if net.nodes.is_empty():
-		return {}
-	var mid := Vector3.ZERO
-	for n in net.nodes:
-		mid += net.nodes[n]
-	mid /= net.nodes.size()
+## The outside connection: the nearest of the town's region links, where
+## the county highway runs on to the rest of the region. A town without one
+## has no way out yet, so loads wait in the yard and nothing is imported.
+func _edge(sim: CitySim, near := Vector3.ZERO) -> Dictionary:
 	var best := -1
-	var best_d := -1.0
-	var ids := net.nodes.keys()
-	ids.sort()
-	for n in ids:
-		if net.segments_at(n).size() != 1:
-			continue
-		var d: float = net.nodes[n].distance_to(mid)
-		if d > best_d + 0.01:
-			best_d = d
+	var best_d := INF
+	for n in sim.region_links:
+		if sim.network.nodes.has(n) and sim.network.nodes[n].distance_to(near) < best_d - 0.01:
+			best_d = sim.network.nodes[n].distance_to(near)
 			best = n
 	if best == -1:
 		return {}
-	return {"ref": "edge", "pos": _xz(net.nodes[best])}
+	return {"ref": "edge", "pos": _xz(sim.network.nodes[best])}
 
 
 func _send(sim: CitySim, from: Dictionary, to: Dictionary, purpose: String, cargo: Dictionary, kind: String) -> bool:

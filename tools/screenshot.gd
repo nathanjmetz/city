@@ -91,7 +91,7 @@ func _demo_town() -> void:
 				if c is SelectTool:
 					c.select({"type": "industry", "id": 1})
 		return
-	if args0.size() >= 5 and args0[4] == "farms":
+	if args0.size() >= 5 and args0[4] in ["farms", "roadwins"]:
 		_demo_farms(sim)
 		return
 	# A main road with a roundabout, and a grid neighborhood beside it.
@@ -227,6 +227,10 @@ func _demo_farms(sim: CitySim) -> void:
 	sim.farms.price = 1.1
 	for i in 60:
 		sim.farms.decide(sim.field_usable)
+	if OS.get_cmdline_user_args()[4] == "roadwins":
+		# The road wins: a curving county road cut through the corn.
+		sim.apply({"type": "paint_reserve", "kind": "", "points": [[-850, 30], [-20, 30], [-20, 700], [-850, 700]]})
+		sim.apply({"type": "build_road", "start": [-850, 520], "ctrl": [-350, 200], "end": [-20, 480]})
 	sim.farms_changed.emit()
 	for c in _main.get_children():
 		if c is CityCamera:

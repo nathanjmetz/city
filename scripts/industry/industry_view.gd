@@ -4,6 +4,10 @@ extends Node3D
 ## and every pad it has opened. Oil pads get a working pumpjack, ore pads a
 ## terraced pit with a stockpile, logging stands a ring of pines around a
 ## cut with a log deck. Placeholders until the art library has these.
+##
+## Each company is drawn as a handful of merged meshes (one per colour) and
+## its pines go in the shared TreeField, so a big oil field or forest builds
+## as fast as a street of houses.
 
 const GRAVEL := Color(0.6, 0.57, 0.5)
 const LANE := Color(0.58, 0.47, 0.33)
@@ -13,12 +17,19 @@ var _sites := {}  # site id -> Node3D
 var _beams := []  # pumpjack walking beams, rocked in _process
 var _mats := {}
 var _time := 0.0
+var _trees := TreeField.new()
+## While a site is built: colour -> SurfaceTool, every static piece merged.
+var _batch := {}
+## Companies already drawn once, so a reload doesn't replay the grow-in.
+var _loaded := false
 
 
 func setup(s: CitySim) -> void:
 	sim = s
+	add_child(_trees)
 	sim.industry_changed.connect(_rebuild)
 	_rebuild()
+	_loaded = true
 
 
 func _process(delta: float) -> void:
@@ -35,13 +46,16 @@ func _rebuild() -> void:
 		if s == null or _sites[id].get_meta("pads") != s.pads.size():
 			_sites[id].queue_free()
 			_sites.erase(id)
+			_trees.remove("site:%d" % id)
 	_beams = _beams.filter(func(b): return is_instance_valid(b) and not b.is_queued_for_deletion())
 	for id in sim.industry.sites:
 		if not _sites.has(id):
-			_sites[id] = _site(sim.industry.sites[id])
+			_sites[id] = _site(id, sim.industry.sites[id])
 
 
-func _site(s: Dictionary) -> Node3D:
+func _site(id: int, s: Dictionary) -> Node3D:
+	_batch = {}
+	var pines := []
 	var root := Node3D.new()
 	root.set_meta("pads", s.pads.size())
 	add_child(root)
@@ -68,6 +82,7 @@ func _site(s: Dictionary) -> Node3D:
 	flat.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(flat)
 	var hq := Node3D.new()
+	hq.set_meta("static", true)
 	hq.position = s.pos
 	hq.basis = Basis.looking_at(s.dir, Vector3.UP)
 	root.add_child(hq)
@@ -86,6 +101,7 @@ func _site(s: Dictionary) -> Node3D:
 			_logs(hq, Vector3(-10, 0, 10))
 	for c in s.pads:
 		var pad := Node3D.new()
+		pad.set_meta("static", true)
 		pad.position = Industry.pad_center(s, c)
 		pad.basis = hq.basis
 		root.add_child(pad)
@@ -108,7 +124,21 @@ func _site(s: Dictionary) -> Node3D:
 				for i in 14:
 					var a := TAU * (i + h) / 14.0
 					var r := 30.0 + 6.0 * sin(i * 2.3 + h * 7.0)
-					_pine(pad, Vector3(cos(a) * r, 0, sin(a) * r), 0.8 + 0.4 * fmod(i * 0.37 + h, 1.0))
+					var size := 0.8 + 0.4 * fmod(i * 0.37 + h, 1.0)
+					var at: Vector3 = pad.transform * Vector3(cos(a) * r, 0, sin(a) * r)
+					var tint: Color = TreeField.LEAF[TreeField.Species.SPRUCE].darkened(0.1 * fmod(i * 0.61 + h, 1.0))
+					pines.append([Transform3D(Basis.from_scale(Vector3.ONE * size * 1.3).rotated(Vector3.UP, a), at),
+						TreeField.Species.SPRUCE, tint])
+	# Merge every static piece: one mesh per colour for the whole company.
+	for color in _batch:
+		var mi := MeshInstance3D.new()
+		mi.mesh = (_batch[color] as SurfaceTool).commit()
+		mi.material_override = _mat(color)
+		root.add_child(mi)
+	_batch = {}
+	_trees.set_trees("site:%d" % id, pines)
+	if not _loaded:
+		return root
 	root.scale = Vector3(1.0, 0.01, 1.0)
 	create_tween().tween_property(root, "scale", Vector3.ONE, 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	return root
@@ -134,18 +164,8 @@ func _logs(root: Node3D, at: Vector3) -> void:
 		m.top_radius = 0.6
 		m.bottom_radius = 0.6
 		m.height = 12.0
-		var mi := MeshInstance3D.new()
-		mi.mesh = m
-		mi.position = at + Vector3(0, 0.6 + (i / 3) * 1.1, (i % 3) * 1.25 - 1.25 + (0.6 if i == 3 else 0.0))
-		mi.rotation = Vector3(0, 0, PI * 0.5)
-		mi.material_override = _mat(Color(0.5, 0.36, 0.24))
-		root.add_child(mi)
-
-
-## A white pine, the Upper Midwest's timber tree.
-func _pine(root: Node3D, at: Vector3, size: float) -> void:
-	_cyl(root, 0.4 * size, 3.0 * size, at + Vector3(0, 1.5 * size, 0), Color(0.36, 0.27, 0.2))
-	_cone(root, 3.4 * size, 9.0 * size, at + Vector3(0, 6.5 * size, 0), Color(0.16, 0.3, 0.17))
+		_add(root, m, at + Vector3(0, 0.6 + (i / 3) * 1.1, (i % 3) * 1.25 - 1.25 + (0.6 if i == 3 else 0.0)),
+			Color(0.5, 0.36, 0.24), Vector3(0, 0, PI * 0.5))
 
 
 func _box(root: Node3D, size: Vector3, pos: Vector3, color: Color) -> void:
@@ -170,10 +190,18 @@ func _cone(root: Node3D, r: float, h: float, pos: Vector3, color: Color) -> void
 	_add(root, m, pos, color)
 
 
-func _add(root: Node3D, mesh: Mesh, pos: Vector3, color: Color) -> void:
+func _add(root: Node3D, mesh: Mesh, pos: Vector3, color: Color, rot := Vector3.ZERO) -> void:
+	if root.has_meta("static"):
+		if not _batch.has(color):
+			var st := SurfaceTool.new()
+			st.begin(Mesh.PRIMITIVE_TRIANGLES)
+			_batch[color] = st
+		(_batch[color] as SurfaceTool).append_from(mesh, 0, root.transform * Transform3D(Basis.from_euler(rot), pos))
+		return
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	mi.position = pos
+	mi.rotation = rot
 	mi.material_override = _mat(color)
 	root.add_child(mi)
 
