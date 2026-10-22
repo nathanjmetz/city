@@ -186,3 +186,7 @@ func _apply() -> void:
 	pos.y = maxf(pos.y, Terrain.ground_y(pos.x, pos.z) + 6.0)
 	camera.global_position = pos
 	camera.look_at(aim, Vector3.UP)
+	# Push the near plane out with height: depth precision goes with
+	# near / distance², and a 1 m near plane makes the thin ground layers
+	# (road paint, sidewalks, drives, fields) z-fight and flicker from high up.
+	camera.near = clampf((pos.y - ground) * 0.2, 0.5, 40.0)
