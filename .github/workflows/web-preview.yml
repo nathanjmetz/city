@@ -60,10 +60,12 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_traffic.gd
           ~/godot-cache/godot --headless -s tests/test_net.gd
           ~/godot-cache/godot --headless -s tests/test_vehicles.gd
+          ~/godot-cache/godot --headless -s tests/test_seasons.gd
           ~/godot-cache/godot --headless -s tests/test_balance.gd
           ~/godot-cache/godot --headless -s tests/test_audio.gd
           ~/godot-cache/godot --headless -s tests/test_loading.gd
           ~/godot-cache/godot --headless -s tests/test_terrain.gd
+          ~/godot-cache/godot --headless -s tests/test_lots.gd
 
       - name: Stamp the build
         run: |

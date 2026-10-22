@@ -26,7 +26,7 @@ func setup(s: CitySim) -> void:
 
 
 func _process(_delta: float) -> void:
-	var month: int = sim.clock().month
+	var month: int = DayNight.visible_month(sim)
 	if month != _month:
 		_month = month
 		_draw_fields()
@@ -56,7 +56,9 @@ static func _look(f: Dictionary) -> int:
 ## What a field looks like this month in the Midwest.
 func _season_color(crop: String) -> Color:
 	var m := maxi(_month, 1)
-	if m <= 3 or m == 12:
+	if m <= 2 or m == 12:
+		return Color(0.84, 0.85, 0.88)  # snow over the stubble
+	if m == 3:
 		return Color(0.6, 0.52, 0.38)  # winter stubble
 	if m == 4:
 		return Color(0.36, 0.27, 0.19)  # tilled black soil

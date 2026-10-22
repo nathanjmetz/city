@@ -24,3 +24,22 @@ window/size/viewport_height=900
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 anti_aliasing/quality/msaa_3d=2
+
+[shader_globals]
+
+night={
+"type": "float",
+"value": 0.0
+}
+snow={
+"type": "float",
+"value": 0.0
+}
+season_look={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+windows_lit={
+"type": "float",
+"value": 0.0
+}

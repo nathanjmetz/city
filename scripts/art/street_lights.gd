@@ -1,0 +1,299 @@
+class_name StreetLights
+extends Node3D
+## Streetlights along every road, the way a Midwestern town lights them:
+##   - local streets: a cobra-head LED on a 30 ft wooden utility pole, one
+##     side of the street, about every 200 ft and at corners
+##   - avenues and boulevards: galvanised steel davit poles, staggered from
+##     side to side about every 150 ft
+##   - highways and ramps: 40 ft steel poles on the outside shoulder
+## (Spacing and mounting heights follow common US municipal practice and
+## the IES RP-8 roadway lighting guide.) The poles stand all day; at night
+## the heads glow and each throws a soft warm pool on the street below.
+## One MultiMesh per pole kind and one for the pools, so a whole town of
+## lights is a handful of draw calls.
+
+## 3000 K LED, the warm white most US towns chose when they replaced the
+## old orange sodium lamps.
+const LAMP := Color(1.0, 0.78, 0.52)
+## Per road type: spacing in metres, pole kind, mounting height, arm reach,
+## and whether lamps alternate sides.
+const KINDS := {
+	RoadStyle.Type.STREET: [62.0, "wood", 9.0, 1.8, false],
+	RoadStyle.Type.AVENUE: [46.0, "steel", 10.0, 2.6, true],
+	RoadStyle.Type.BOULEVARD: [46.0, "steel", 11.0, 3.0, true],
+	RoadStyle.Type.HIGHWAY: [70.0, "tall", 12.0, 3.6, false],
+	RoadStyle.Type.RAMP: [55.0, "tall", 12.0, 3.0, false],
+	RoadStyle.Type.RING: [30.0, "steel", 9.0, 2.0, false],
+	RoadStyle.Type.RING2: [30.0, "steel", 10.0, 2.4, false],
+}
+## No two lamps closer than this (where roads meet).
+const MIN_GAP := 22.0
+## How big a lamp's pool of light is on the ground, in metres across.
+const POOL := 26.0
+
+const POOL_SHADER := """
+shader_type spatial;
+render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
+global uniform float night;
+uniform vec4 lamp : source_color;
+void fragment() {
+	float d = length(UV * 2.0 - 1.0);
+	float f = pow(clamp(1.0 - d, 0.0, 1.0), 2.2);
+	ALBEDO = lamp.rgb * f * 0.8 * smoothstep(0.25, 0.6, night);
+}
+"""
+
+const HEAD_SHADER := """
+shader_type spatial;
+global uniform float night;
+uniform vec4 lamp : source_color;
+void fragment() {
+	float on = smoothstep(0.25, 0.6, night);
+	ALBEDO = mix(vec3(0.55, 0.55, 0.52), vec3(0.2), on);
+	ROUGHNESS = 0.3;
+	EMISSION = lamp.rgb * on * 6.0;
+}
+"""
+
+var network: RoadNetwork
+## Kept for DayNight; the shaders read `night` themselves.
+var visible_amount := 0.0
+var _multis := {}  # mesh key or "pool" -> MultiMeshInstance3D
+var _dirty := true
+
+
+func setup(net: RoadNetwork) -> void:
+	network = net
+	network.changed.connect(func(): _dirty = true)
+
+
+func _ready() -> void:
+	for type in KINDS:
+		var key := mesh_key(type)
+		if not _multis.has(key):
+			var spec: Array = KINDS[type]
+			_multis[key] = _multi(_pole_mesh(spec[1], spec[2], spec[3]), true)
+	var quad := QuadMesh.new()
+	quad.size = Vector2(POOL, POOL)
+	quad.orientation = PlaneMesh.FACE_Y
+	quad.material = _shader_mat(POOL_SHADER)
+	_multis["pool"] = _multi(quad, false)
+
+
+func _process(_delta: float) -> void:
+	if _dirty:
+		_dirty = false
+		_rebuild()
+	# The pools cost nothing to hide by day.
+	_multis["pool"].visible = visible_amount > 0.0
+
+
+func _multi(mesh: Mesh, shadows: bool) -> MultiMeshInstance3D:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	var mi := MultiMeshInstance3D.new()
+	mi.multimesh = mm
+	if not shadows:
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+	return mi
+
+
+## Where every lamp goes: [mesh key, base position, direction to the road,
+## arm reach].
+static func place(net: RoadNetwork) -> Array:
+	var out := []
+	var taken := {}  # coarse cell -> positions, to keep lamps apart
+	var pieces := _pieces(net)
+	for id in net.segments:
+		var seg: Dictionary = net.segments[id]
+		var type: int = seg.type
+		if not KINDS.has(type):
+			continue
+		var spec: Array = KINDS[type]
+		var pts := net.sample_segment(id)
+		if pts[pts.size() / 2].y < -1.0:
+			continue  # tunnel
+		var length := RoadNetwork.polyline_length(pts)
+		var out_by := RoadStyle.half_width(type) + (1.2 if RoadStyle.TYPES[type].oneway else RoadStyle.CURB_WIDTH + 0.6)
+		# Start half a gap in, so corners get a lamp from one road or the
+		# other but never one standing in the crossing street.
+		var n := maxi(int(floorf(length / spec[0])), 1)
+		for i in n:
+			var along := (i + 0.5) * length / n
+			var p := _at(pts, along)
+			var side := 1.0
+			if spec[4] and i % 2 == 1:
+				side = -1.0
+			var fwd: Vector3 = p[1]
+			var right := Vector3(-fwd.z, 0.0, fwd.x)
+			var base: Vector3 = p[0] + right * side * out_by
+			if _near(taken, base) or _on_other_road(pieces, base, id):
+				continue
+			var cell := Vector2i(floori(base.x / MIN_GAP), floori(base.z / MIN_GAP))
+			if not taken.has(cell):
+				taken[cell] = []
+			taken[cell].append(base)
+			out.append([mesh_key(type), base, -right * side, spec[3]])
+	return out
+
+
+static func mesh_key(type: int) -> String:
+	var spec: Array = KINDS[type]
+	return "%s_%d_%d" % [spec[1], roundi(spec[2] * 10.0), roundi(spec[3] * 10.0)]
+
+
+## Point and direction `along` metres down a polyline.
+static func _at(pts: PackedVector3Array, along: float) -> Array:
+	var left := along
+	for i in range(1, pts.size()):
+		var d := pts[i].distance_to(pts[i - 1])
+		if left <= d or i == pts.size() - 1:
+			var f := clampf(left / maxf(d, 0.001), 0.0, 1.0)
+			var dir := pts[i] - pts[i - 1]
+			dir.y = 0.0
+			return [pts[i - 1].lerp(pts[i], f), dir.normalized() if dir.length() > 0.001 else Vector3.FORWARD]
+		left -= d
+	return [pts[pts.size() - 1], Vector3.FORWARD]
+
+
+static func _near(taken: Dictionary, p: Vector3) -> bool:
+	var c := Vector2i(floori(p.x / MIN_GAP), floori(p.z / MIN_GAP))
+	for dx in range(-1, 2):
+		for dz in range(-1, 2):
+			for q in taken.get(c + Vector2i(dx, dz), []):
+				if Vector2(q.x - p.x, q.z - p.z).length() < MIN_GAP:
+					return true
+	return false
+
+
+const PIECE_CELL := 32.0
+
+
+## Every road as short straight pieces in a coarse grid: [a, b, segment,
+## half width], for quick "is this spot on a road" checks.
+static func _pieces(net: RoadNetwork) -> Dictionary:
+	var grid := {}
+	for id in net.segments:
+		var hw := RoadStyle.half_width(net.segments[id].type)
+		var pts := net.sample_segment(id)
+		for i in range(1, pts.size()):
+			var a := Vector2(pts[i - 1].x, pts[i - 1].z)
+			var b := Vector2(pts[i].x, pts[i].z)
+			var lo := Vector2i(floori((minf(a.x, b.x) - hw) / PIECE_CELL), floori((minf(a.y, b.y) - hw) / PIECE_CELL))
+			var hi := Vector2i(floori((maxf(a.x, b.x) + hw) / PIECE_CELL), floori((maxf(a.y, b.y) + hw) / PIECE_CELL))
+			for x in range(lo.x, hi.x + 1):
+				for z in range(lo.y, hi.y + 1):
+					var c := Vector2i(x, z)
+					if not grid.has(c):
+						grid[c] = []
+					grid[c].append([a, b, id, hw])
+	return grid
+
+
+## True when a pole would stand on another road's pavement or curb.
+static func _on_other_road(grid: Dictionary, p: Vector3, own: int) -> bool:
+	var q := Vector2(p.x, p.z)
+	for piece in grid.get(Vector2i(floori(q.x / PIECE_CELL), floori(q.y / PIECE_CELL)), []):
+		if piece[2] == own:
+			continue
+		var c := Geometry2D.get_closest_point_to_segment(q, piece[0], piece[1])
+		if c.distance_to(q) < piece[3] + 1.0:
+			return true
+	return false
+
+
+func _rebuild() -> void:
+	var lists := {}
+	for k in _multis:
+		lists[k] = []
+	for l in place(network):
+		var dir: Vector3 = l[2]
+		var basis := Basis(Vector3.UP, atan2(dir.x, dir.z))
+		lists[l[0]].append(Transform3D(basis, Terrain.lift(l[1])))
+		var under: Vector3 = l[1] + dir * (float(l[3]) + 1.5)
+		lists.pool.append(Transform3D(Basis.IDENTITY, Terrain.lift(Vector3(under.x, l[1].y + RoadStyle.Y_JUNCTION + 0.03, under.z))))
+	for k in lists:
+		var mm: MultiMesh = _multis[k].multimesh
+		mm.instance_count = lists[k].size()
+		for i in lists[k].size():
+			mm.set_instance_transform(i, lists[k][i])
+
+
+## A pole `h` metres to the lamp with an arm reaching `reach` metres out
+## along +Z, and the lamp head at the arm's end as a second surface.
+static func _pole_mesh(kind: String, h: float, reach: float) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var wood := kind == "wood"
+	var top := h + (1.2 if wood else 0.2)
+	_prism(st, Vector3.ZERO, Vector3(0, top, 0), 0.15 if wood else 0.11, 0.11 if wood else 0.08)
+	# The arm rises gently out over the road.
+	_prism(st, Vector3(0, h - 0.35, 0), Vector3(0, h, reach), 0.05, 0.05)
+	if wood:
+		# A crossarm near the top carrying the power lines.
+		_prism(st, Vector3(-1.2, h + 0.9, 0), Vector3(1.2, h + 0.9, 0), 0.06, 0.06)
+	var mesh := ArrayMesh.new()
+	st.generate_normals()
+	st.commit(mesh)
+	mesh.surface_set_material(0, _pole_material(kind))
+	# Cobra head: a flat, rounded box at the arm's end.
+	var head := SurfaceTool.new()
+	head.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_box(head, Vector3(0, h - 0.06, reach + 0.25), Vector3(0.36, 0.16, 0.75))
+	head.generate_normals()
+	head.commit(mesh)
+	mesh.surface_set_material(1, _shader_mat(HEAD_SHADER))
+	return mesh
+
+
+## An eight-sided post from a to b, tapering from radius r0 to r1.
+static func _prism(st: SurfaceTool, a: Vector3, b: Vector3, r0: float, r1: float) -> void:
+	var axis := (b - a).normalized()
+	var u := Vector3(1, 0, 0) if absf(axis.x) < 0.9 else Vector3(0, 1, 0)
+	var v := axis.cross(u).normalized()
+	u = v.cross(axis).normalized()
+	for k in 8:
+		var a0 := TAU * k / 8.0
+		var a1 := TAU * (k + 1) / 8.0
+		var o0 := u * cos(a0) + v * sin(a0)
+		var o1 := u * cos(a1) + v * sin(a1)
+		for p in [a + o0 * r0, b + o0 * r1, b + o1 * r1, a + o0 * r0, b + o1 * r1, a + o1 * r0]:
+			st.add_vertex(p)
+
+
+static func _box(st: SurfaceTool, c: Vector3, size: Vector3) -> void:
+	var h := size * 0.5
+	var faces := [
+		[Vector3(-1, -1, -1), Vector3(1, -1, -1), Vector3(1, -1, 1), Vector3(-1, -1, 1)],
+		[Vector3(-1, 1, -1), Vector3(-1, 1, 1), Vector3(1, 1, 1), Vector3(1, 1, -1)],
+		[Vector3(-1, -1, -1), Vector3(-1, 1, -1), Vector3(1, 1, -1), Vector3(1, -1, -1)],
+		[Vector3(-1, -1, 1), Vector3(1, -1, 1), Vector3(1, 1, 1), Vector3(-1, 1, 1)],
+		[Vector3(-1, -1, -1), Vector3(-1, -1, 1), Vector3(-1, 1, 1), Vector3(-1, 1, -1)],
+		[Vector3(1, -1, -1), Vector3(1, 1, -1), Vector3(1, 1, 1), Vector3(1, -1, 1)],
+	]
+	for f in faces:
+		for i in [0, 1, 2, 0, 2, 3]:
+			st.add_vertex(c + f[i] * h)
+
+
+static func _pole_material(kind: String) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	if kind == "wood":
+		m.albedo_color = Color(0.29, 0.22, 0.16)  # creosote-treated pine, weathered
+		m.roughness = 0.95
+	else:
+		m.albedo_color = Color(0.6, 0.61, 0.6)  # galvanised steel
+		m.roughness = 0.5
+		m.metallic = 0.5
+	return m
+
+
+static func _shader_mat(code: String) -> ShaderMaterial:
+	var sh := Shader.new()
+	sh.code = code
+	var m := ShaderMaterial.new()
+	m.shader = sh
+	m.set_shader_parameter("lamp", LAMP)
+	return m
