@@ -13,6 +13,16 @@ extends RefCounted
 ## Cash a new city starts with.
 const START_MONEY := 3_000_000
 
+## Difficulty, picked when a city starts: cash to start with, and how much
+## income (taxes and water bills), upkeep (roads and services) and milestone
+## grants are scaled. Normal is real prices; Easy and Hard bend the budget the
+## way Cities: Skylines' hard mode does, without changing what things cost.
+const DIFFICULTIES := {
+	"easy": {"name": "Easy", "start": 5_000_000, "income": 1.25, "upkeep": 0.8, "grants": 1.5},
+	"normal": {"name": "Normal", "start": 3_000_000, "income": 1.0, "upkeep": 1.0, "grants": 1.0},
+	"hard": {"name": "Hard", "start": 1_500_000, "income": 0.85, "upkeep": 1.25, "grants": 0.75},
+}
+
 ## Population milestones and the grant each one brings (like CS2's milestone
 ## rewards; in real life, state and federal community development grants).
 const MILESTONES := [[100, 250_000], [250, 400_000], [500, 600_000], [1000, 1_000_000],
@@ -20,12 +30,19 @@ const MILESTONES := [[100, 250_000], [250, 400_000], [500, 600_000], [1000, 1_00
 
 # --- Roads -------------------------------------------------------------------
 
-## Building a road, dollars per metre (about $1.6M a mile for a two-lane
-## street and $9.7M a mile for a highway, in line with state DOT costs).
+## Building a road: what the city pays, dollars per metre. A full new
+## two-lane street costs about $1,000 a metre ($1.6M a mile, state DOT
+## figures), but in US towns developers build most local streets and hand
+## them to the city, and state and federal aid pays most of a highway. So the
+## city's share is about a fifth (CS2 likewise prices a starter grid at a
+## small slice of the opening funds).
+## (Tuned 2026-10-22: at full price a starter street cost $16,000 a home and
+## took five game years to pay back; CS2 pays back a first neighborhood in
+## minutes.)
 const ROAD_BUILD_PER_M := {
-	RoadStyle.Type.STREET: 1000, RoadStyle.Type.AVENUE: 2000,
-	RoadStyle.Type.BOULEVARD: 3500, RoadStyle.Type.HIGHWAY: 6000, RoadStyle.Type.RAMP: 3000,
-	RoadStyle.Type.RING: 2500, RoadStyle.Type.RING2: 4000,
+	RoadStyle.Type.STREET: 200, RoadStyle.Type.AVENUE: 450,
+	RoadStyle.Type.BOULEVARD: 800, RoadStyle.Type.HIGHWAY: 1200, RoadStyle.Type.RAMP: 700,
+	RoadStyle.Type.RING: 550, RoadStyle.Type.RING2: 900,
 }
 ## Road upkeep, dollars per lane-metre per month (about $10,000 a lane-mile
 ## a year, typical of US city budgets).
@@ -71,8 +88,10 @@ const SERVICES := {
 	# Elementary school for about 400 pupils on a 2 acre site.
 	"school": {"cost": 9_000_000, "upkeep": 95_000, "reach": 3200.0},
 }
-## Water and sewer bills the city collects, per building per month.
-const WATER_FEE := {ZoneMap.Zone.RESIDENTIAL: 45, ZoneMap.Zone.COMMERCIAL: 120, ZoneMap.Zone.INDUSTRIAL: 300}
+## Water and sewer bills the city collects, per building per month. The
+## average US household pays about $100 a month for water and sewer
+## together (AWWA/EPA surveys); businesses and plants use far more.
+const WATER_FEE := {ZoneMap.Zone.RESIDENTIAL: 100, ZoneMap.Zone.COMMERCIAL: 250, ZoneMap.Zone.INDUSTRIAL: 600}
 ## How much power and water each building draws, in homes-equivalent.
 const UTILITY_LOAD := {ZoneMap.Zone.RESIDENTIAL: 1, ZoneMap.Zone.COMMERCIAL: 4, ZoneMap.Zone.INDUSTRIAL: 12}
 

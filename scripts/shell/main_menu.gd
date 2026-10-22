@@ -13,6 +13,8 @@ var _code := LineEdit.new()
 var _server := LineEdit.new()
 var _name := LineEdit.new()
 var _city_name := LineEdit.new()
+var _difficulty := "normal"
+var _diff_buttons := {}  # difficulty -> Button
 var _saves_list := VBoxContainer.new()
 var _host_info := UiStyle.label("", 14)
 var _joining := false
@@ -100,6 +102,27 @@ func _new_page() -> Control:
 	_city_name.custom_minimum_size = Vector2(0, 40)
 	_city_name.text_submitted.connect(func(_t): _start_new())
 	col.add_child(_city_name)
+	col.add_child(_gap(4))
+	col.add_child(UiStyle.label("Difficulty", 14, UiStyle.MUTED))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	var group := ButtonGroup.new()
+	for diff in Economy.DIFFICULTIES:
+		var d: Dictionary = Economy.DIFFICULTIES[diff]
+		var b := Button.new()
+		b.text = "%s\n$%s" % [d.name, CitySim.money_text(d.start)]
+		b.toggle_mode = true
+		b.button_group = group
+		b.button_pressed = diff == _difficulty
+		b.focus_mode = Control.FOCUS_NONE
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.custom_minimum_size = Vector2(0, 50)
+		b.tooltip_text = "Start with $%s. Income x%.2f, upkeep x%.2f, grants x%.2f." \
+			% [CitySim.money_text(d.start), d.income, d.upkeep, d.grants]
+		b.pressed.connect(func(): _difficulty = diff)
+		row.add_child(b)
+	col.add_child(row)
+	col.add_child(_gap(4))
 	col.add_child(_big_button("Start", "", _start_new))
 	col.add_child(_back())
 	return col
@@ -202,7 +225,7 @@ func _start_new() -> void:
 	var n := _city_name.text.strip_edges()
 	if n == "":
 		n = _city_name.placeholder_text
-	Session.new_city(n)
+	Session.new_city(n, _difficulty)
 
 
 func _join() -> void:
