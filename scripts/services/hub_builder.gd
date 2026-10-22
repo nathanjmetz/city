@@ -25,7 +25,7 @@ const IRON := Color("#1d1e20")
 
 var cells := []
 var cell := 50.0
-## Buildings from the hub's development tree (Balance.HUB_DEVELOPMENTS keys).
+## Buildings from the hub's development tree (Balance.HUB_TREES ids).
 var dev := []
 ## Ground kept clear of headstones (chapel, memorials): [Rect2 in x, z].
 var _clear := []
@@ -38,7 +38,7 @@ static func build_hub(h: Dictionary, seed: int, to_curb: float) -> Array:
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 	b.cells = h.cells
 	b.cell = h.cell
-	b.dev = h.get("dev", [])
+	b.dev = h.get("built", [])
 	match h.kind:
 		"landfill":
 			b._landfill(h, to_curb)

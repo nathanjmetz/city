@@ -311,7 +311,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			ok = services.buildings.has(int(cmd.id))
 			services.buildings.erase(int(cmd.id))
 			_lots_dirty = true
-		"place_hub", "upgrade_hub", "remove_hub", "develop_hub":
+		"place_hub", "upgrade_hub", "remove_hub":
 			ok = _hub_command(cmd)
 		"move":
 			# Move It: slide, turn or raise what the player placed (MoveIt).
@@ -863,9 +863,6 @@ func _hub_command(cmd: Dictionary) -> bool:
 		if cost <= 0 or cost > economy.money or not hubs.upgrade(id):
 			return false
 		economy.money -= cost
-	elif cmd.type == "develop_hub":
-		# Adds a building or option from the hub's development tree.
-		return hubs.develop(self, int(cmd.id), str(cmd.get("dev", "")))
 	else:
 		if not hubs.remove(int(cmd.id)):
 			return false

@@ -334,7 +334,7 @@ func _demo_hubs(sim: CitySim) -> void:
 	# Every branch of each development tree, to see them all.
 	for i in ids.size():
 		var h: Dictionary = sim.hubs.hubs[ids[i]]
-		h.dev = CivicHubs.dev_options(h)
+		h.built = CivicHubs.tree(h).map(func(n): return n.id)
 		sim.hubs._touch(h)
 	sim.tick()
 	for c in _main.get_children():
