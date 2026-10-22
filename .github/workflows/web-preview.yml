@@ -53,6 +53,7 @@ jobs:
         run: |
           ~/godot-cache/godot --headless --import
           ~/godot-cache/godot --headless -s tests/test_roads.gd
+          ~/godot-cache/godot --headless -s tests/test_sim.gd
 
       - name: Export for the web
         run: |

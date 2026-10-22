@@ -1,11 +1,14 @@
 extends Node3D
-## Sets up the world: sky, sun, ground, roads, houses, camera and toolbar.
-## The town saves itself automatically (in the browser too).
+## Sets up the world: sky, sun, ground, roads, zones, buildings, camera and
+## toolbar, and steps the simulation in fixed ticks. The town saves itself
+## automatically (in the browser too).
 
 const SAVE_PATH := "user://town.json"
 
-var network := RoadNetwork.new()
+var sim := CitySim.new()
 var _save_pending := false
+var _tick_time := 0.0
+var _save_wait := 0.0
 
 
 func _ready() -> void:
@@ -14,50 +17,77 @@ func _ready() -> void:
 
 	var roads := RoadView.new()
 	add_child(roads)
-	roads.setup(network)
+	roads.setup(sim.network)
 
-	var houses := HouseSpawner.new()
-	add_child(houses)
-	houses.setup(network)
+	var zone_view := ZoneView.new()
+	zone_view.setup(sim)
+	add_child(zone_view)
+
+	var buildings := BuildingView.new()
+	add_child(buildings)
+	buildings.setup(sim)
 
 	var cam := CityCamera.new()
 	add_child(cam)
 
-	var tool := RoadTool.new()
-	tool.setup(network, cam)
-	add_child(tool)
+	var road_tool := RoadTool.new()
+	road_tool.setup(sim, cam)
+	add_child(road_tool)
+
+	var zone_tool := ZoneTool.new()
+	zone_tool.setup(sim, cam, zone_view)
+	add_child(zone_tool)
+
+	# Only one tool is active at a time.
+	road_tool.mode_changed.connect(func(m):
+		if m != RoadTool.Mode.NONE and zone_tool.zone != ZoneTool.OFF:
+			zone_tool.set_zone(ZoneTool.OFF))
+	zone_tool.zone_changed.connect(func(z):
+		if z != ZoneTool.OFF and road_tool.mode != RoadTool.Mode.NONE:
+			road_tool.set_mode(RoadTool.Mode.NONE))
 
 	var hud := Hud.new()
-	hud.setup(tool, network, houses)
+	hud.setup(road_tool, zone_tool, sim)
 	add_child(hud)
 
 	if not _load():
 		_starter_road()
-	network.changed.connect(func(): _save_pending = true)
+	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed]:
+		sig.connect(func(): _save_pending = true)
 
 
-func _process(_delta: float) -> void:
-	if _save_pending:
+func _process(delta: float) -> void:
+	_tick_time += delta
+	var step := 1.0 / CitySim.TICKS_PER_SECOND
+	var guard := 0
+	while _tick_time >= step and guard < 10:
+		_tick_time -= step
+		guard += 1
+		sim.tick()
+	_tick_time = minf(_tick_time, step)
+	_save_wait -= delta
+	if _save_pending and _save_wait <= 0.0:
 		_save_pending = false
+		_save_wait = 2.0
 		var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 		if f:
-			f.store_string(JSON.stringify(network.to_dict()))
+			f.store_string(JSON.stringify(sim.to_dict()))
 
 
 func _load() -> bool:
 	if not FileAccess.file_exists(SAVE_PATH):
 		return false
 	var data = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
-	if typeof(data) != TYPE_DICTIONARY or data.get("segments", {}).is_empty():
+	if typeof(data) != TYPE_DICTIONARY:
 		return false
-	network.from_dict(data)
-	return true
+	sim.from_dict(data)
+	return not sim.network.segments.is_empty()
 
 
 ## A road coming in from the edge of the map, like a highway exit.
 func _starter_road() -> void:
-	network.build_road(Vector3(-400, 0, 0), Vector3(-250, 0, 0), Vector3(-100, 0, 0))
-	network.build_road(Vector3(-100, 0, 0), Vector3(-20, 0, 0), Vector3(40, 0, 60))
+	sim.apply({"type": "build_road", "start": [-400, 0], "ctrl": [-250, 0], "end": [-100, 0]})
+	sim.apply({"type": "build_road", "start": [-100, 0], "ctrl": [-20, 0], "end": [40, 60]})
 
 
 func _build_environment() -> void:

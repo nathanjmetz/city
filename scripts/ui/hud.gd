@@ -2,19 +2,20 @@ class_name Hud
 extends CanvasLayer
 ## Toolbar along the bottom, tips and town stats in the corners.
 
-var tool: RoadTool
-var network: RoadNetwork
-var houses: HouseSpawner
+var road_tool: RoadTool
+var zone_tool: ZoneTool
+var sim: CitySim
 
-var _buttons := {}
+var _road_buttons := {}
+var _zone_buttons := {}
 var _hint := Label.new()
 var _stats := Label.new()
 
 
-func setup(t: RoadTool, net: RoadNetwork, h: HouseSpawner) -> void:
-	tool = t
-	network = net
-	houses = h
+func setup(rt: RoadTool, zt: ZoneTool, s: CitySim) -> void:
+	road_tool = rt
+	zone_tool = zt
+	sim = s
 
 
 func _ready() -> void:
@@ -30,28 +31,27 @@ func _ready() -> void:
 	bar.position.y -= 16
 	root.add_child(bar)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
+	row.add_theme_constant_override("separation", 6)
 	bar.add_child(row)
 	for entry in [
-		[RoadTool.Mode.STRAIGHT, "Straight road  [1]"],
-		[RoadTool.Mode.CURVED, "Curved road  [2]"],
-		[RoadTool.Mode.BULLDOZE, "Bulldoze  [3]"],
+		[RoadTool.Mode.STRAIGHT, "Road  1"],
+		[RoadTool.Mode.CURVED, "Curve  2"],
+		[RoadTool.Mode.BULLDOZE, "Bulldoze  3"],
 	]:
-		var b := Button.new()
-		b.text = entry[1]
-		b.toggle_mode = true
-		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(150, 40)
 		var m: int = entry[0]
-		b.pressed.connect(func(): tool.set_mode(m))
-		row.add_child(b)
-		_buttons[m] = b
-	var clear := Button.new()
-	clear.text = "Clear map"
-	clear.focus_mode = Control.FOCUS_NONE
-	clear.custom_minimum_size = Vector2(110, 40)
-	clear.pressed.connect(network.clear)
-	row.add_child(clear)
+		_road_buttons[m] = _button(row, entry[1], Color.WHITE, func(): road_tool.set_mode(m))
+	row.add_child(VSeparator.new())
+	for entry in [
+		[ZoneMap.Zone.RESIDENTIAL, "Homes  4"],
+		[ZoneMap.Zone.COMMERCIAL, "Shops  5"],
+		[ZoneMap.Zone.INDUSTRIAL, "Industry  6"],
+		[ZoneMap.Zone.NONE, "Dezone  7"],
+	]:
+		var z: int = entry[0]
+		var tint: Color = ZoneMap.COLORS[z] if z != ZoneMap.Zone.NONE else Color(1, 0.6, 0.55)
+		_zone_buttons[z] = _button(row, entry[1], tint, func(): zone_tool.set_zone(z))
+	row.add_child(VSeparator.new())
+	_button(row, "Clear map", Color.WHITE, func(): sim.apply({"type": "clear"}), false)
 
 	var tips := Label.new()
 	tips.text = "WASD move   Q/E rotate   R/F tilt   Scroll zoom   Middle drag rotate"
@@ -71,21 +71,43 @@ func _ready() -> void:
 	_style(_stats)
 	root.add_child(_stats)
 
-	tool.mode_changed.connect(_on_mode)
-	tool.hint_changed.connect(func(text): _hint.text = text)
-	network.changed.connect(_update_stats)
-	houses.house_count_changed.connect(func(_n): _update_stats())
-	_on_mode(tool.mode)
+	road_tool.mode_changed.connect(func(_m): _sync_buttons())
+	zone_tool.zone_changed.connect(func(_z): _sync_buttons())
+	road_tool.hint_changed.connect(func(text): _hint.text = text)
+	zone_tool.hint_changed.connect(func(text): _hint.text = text)
+	sim.buildings_changed.connect(_update_stats)
+	sim.lots_changed.connect(_update_stats)
+	_sync_buttons()
 	_update_stats()
 
 
-func _on_mode(mode: int) -> void:
-	for m in _buttons:
-		_buttons[m].set_pressed_no_signal(m == mode)
+func _button(row: HBoxContainer, text: String, tint: Color, action: Callable, toggle := true) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.toggle_mode = toggle
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(104, 40)
+	if tint != Color.WHITE:
+		b.add_theme_color_override("font_color", tint)
+		b.add_theme_color_override("font_pressed_color", tint.lightened(0.4))
+	b.pressed.connect(action)
+	row.add_child(b)
+	return b
+
+
+func _sync_buttons() -> void:
+	for m in _road_buttons:
+		_road_buttons[m].set_pressed_no_signal(m == road_tool.mode)
+	for z in _zone_buttons:
+		_zone_buttons[z].set_pressed_no_signal(z == zone_tool.zone)
 
 
 func _update_stats() -> void:
-	_stats.text = "Roads: %.2f km\nHouses: %d" % [network.total_length() / 1000.0, houses.count()]
+	var homes := sim.count_buildings(ZoneMap.Zone.RESIDENTIAL)
+	_stats.text = "Roads: %.2f km\nHomes: %d   Shops: %d   Industry: %d\nEmpty zoned lots: %d" % [
+		sim.network.total_length() / 1000.0, homes,
+		sim.count_buildings(ZoneMap.Zone.COMMERCIAL), sim.count_buildings(ZoneMap.Zone.INDUSTRIAL),
+		sim.empty_zoned_lots().size()]
 
 
 static func _style(l: Label) -> void:
