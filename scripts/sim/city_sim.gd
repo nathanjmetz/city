@@ -24,6 +24,8 @@ signal education_changed
 signal warehouses_changed
 ## A park or landmark was placed, filled in, grew, changed tier or went away.
 signal parks_changed
+## A water utility laid pipe, built a piece of its yard, or its troubles changed.
+signal water_changed
 ## A power company opened, closed, grew, mothballed a unit or built an add-on.
 signal power_changed
 ## A player command went through (sounds and other feedback listen to this).
@@ -129,6 +131,10 @@ var _usable_cache := {}  # field cell -> bool, cleared when roads or lots change
 
 
 func _init() -> void:
+	# The water utility's manager takes the player's word (Permits guidance).
+	permits.locators["water"] = func(c: CitySim, id: int) -> Vector2:
+		var b: Dictionary = c.services.buildings.get(id, {})
+		return Vector2(b.pos.x, b.pos.z) if not b.is_empty() else Vector2.INF
 	planner.wealth = wealth_at
 	# Campus heads take the player's word (grow, your call, hold off).
 	permits.locators["campus"] = func(_sim, id: int) -> Vector2:
@@ -216,6 +222,9 @@ func apply_now(cmd: Dictionary) -> bool:
 			economy.money -= cost
 			if kind == Services.Kind.BUS_DEPOT:
 				buses.on_placed(self, sid)
+			if kind == Services.Kind.WATER_UTILITY:
+				services.water.found(self, sid)
+				water_changed.emit()
 			_clear_zones_under(services.footprint(sid))
 			_lots_dirty = true
 			ok = true
@@ -345,6 +354,12 @@ func apply_now(cmd: Dictionary) -> bool:
 			parks.sites.erase(int(cmd.id))
 			_lots_dirty = true
 			parks_changed.emit()
+		"set_water_subsidy":
+			# The player's one lever on the water utility: its monthly subsidy.
+			ok = services.water.set_subsidy(int(cmd.id), int(cmd.amount))
+			if ok:
+				update_stats()
+			return ok
 		"remove_service":
 			ok = services.buildings.has(int(cmd.id))
 			services.buildings.erase(int(cmd.id))
@@ -619,6 +634,12 @@ func tick() -> void:
 	# Once a month every hub's leader looks at its development tree (Agency).
 	if tick_count % (24 * TICKS_PER_HOUR) == 12 * TICKS_PER_HOUR:
 		_develop_hubs()
+	if tick_count % WaterUtility.DECIDE_EVERY == 0 and not services.water.utilities.is_empty():
+		var res := services.water.decide(self, yard_usable)
+		economy.money += int(res[1])
+		if res[0]:
+			_lots_dirty = true  # lots under new yard pieces go away
+			water_changed.emit()
 	# Taxes come in and upkeep goes out every game hour, a day settling a month.
 	if tick_count % TICKS_PER_HOUR == 0:
 		economy.money += roundi(economy.monthly_net() / 24.0)
@@ -690,6 +711,9 @@ func update_stats() -> void:
 		+ 0.4 * (shop_jobs * 0.8 - factory_jobs) / maxf(factory_jobs, 20.0), 0.0, 1.0)
 	for z in demand:
 		demand[z] = clampf(demand[z] + economy.demand_shift(z) + mail.demand_shift(z), 0.0, 1.0)
+	# A boil-water notice, or a steep water bill, puts people off moving in.
+	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL]
+		- Balance.WATER_BOIL_DEMAND * services.water.boil_share(self) - services.water.rate_penalty(self), 0.0, 1.0)
 	# Past village size, people want fire, police, a clinic and a school nearby.
 	if pop > 300:
 		demand[ZoneMap.Zone.RESIDENTIAL] = clampf(
@@ -1098,6 +1122,31 @@ func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
 	return ok
 
 
+## Whether a water utility can put a piece of its yard on this square: no
+## roads, other buildings, farms, industry, reserved land or built lots.
+func yard_usable(corners: PackedVector2Array) -> bool:
+	if Services.road_clash(network, corners):
+		return false
+	var mid := Vector3.ZERO
+	for c in corners:
+		mid += Vector3(c.x, 0.0, c.y) / corners.size()
+	if not land_ok(mid, WaterUtility.CELL * 0.5):
+		return false
+	var pts := [mid]
+	for c in corners:
+		pts.append(mid.lerp(Vector3(c.x, 0.0, c.y), 0.9))
+	for p in pts:
+		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) or reserves.kind_at(p) != "":
+			return false
+	for id in services.buildings:
+		if not Geometry2D.intersect_polygons(corners, services.footprint(id)).is_empty():
+			return false
+	for key in buildings:
+		if lots.has(key) and Geometry2D.is_point_in_polygon(Vector2(lots[key].pos.x, lots[key].pos.z), corners):
+			return false
+	return true
+
+
 ## Average share of fire, police, health and school cover across homes.
 func service_coverage() -> float:
 	var total := 0.0
@@ -1131,7 +1180,8 @@ func _utility_report() -> Array:
 	for u in ["power", "water"]:
 		var has_source := false
 		for id in services.buildings:
-			has_source = has_source or services.buildings[id].kind in Services.UTILITIES[u]
+			has_source = has_source or services.buildings[id].kind in Services.UTILITIES[u] \
+				or (u == "water" and services.buildings[id].kind == Services.Kind.WATER_UTILITY)
 		if not has_source:
 			var starter: int = Services.Kind.POWER_FEED if u == "power" else Services.Kind.WELL
 			var cost: int = Services.KINDS[starter].cost
@@ -1158,7 +1208,9 @@ func _utility_report() -> Array:
 			continue
 		shorts.append("%d lots: no %s" % [missing[u], u] if shorts.is_empty() else "%d: no %s" % [missing[u], u])
 		var text := "%d zoned lots have no %s" % [missing[u], u]
-		if unlinked[u] > 0:
+		if unlinked[u] > 0 and u == "water" and not services.water.utilities.is_empty():
+			text += ": the water utility hasn't laid mains under their streets yet"
+		elif unlinked[u] > 0:
 			text += ": their streets aren't joined by road to a %s" % ("power line" if u == "power" else "water source")
 		else:
 			var use: Array = services.utility_use[u]

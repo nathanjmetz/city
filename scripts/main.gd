@@ -208,6 +208,10 @@ func _ready() -> void:
 		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or move_tool.active)
 	add_child(select_tool)
 
+	var water_view := WaterView.new()
+	add_child(water_view)
+	water_view.setup(sim, select_tool, service_tool)
+
 	var hud := Hud.new()
 	hud.setup(road_tool, zone_tool, sim, self)
 	hud.service_tool = service_tool
@@ -245,7 +249,7 @@ func _ready() -> void:
 	if not _load():
 		_starter_road()
 	await _settle()
-	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed,
+	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed, sim.water_changed,
 			sim.industry_changed, sim.warehouses_changed, sim.parks_changed, sim.education_changed, sim.power_changed]:
 		sig.connect(func(): _save_pending = true)
 
