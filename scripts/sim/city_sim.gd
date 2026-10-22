@@ -1700,6 +1700,8 @@ func power_problem(pos: Vector3, dir: Vector3) -> String:
 			return "Too close to another company."
 		if hubs.covers(p):
 			return "Overlaps a landfill, recycling center or cemetery."
+		if airports.covers(p):
+			return "That's airport land."
 	if _on_warehouse(pts):
 		return "Overlaps a warehouse."
 	if parks.overlaps(Array(poly)):
@@ -2323,7 +2325,8 @@ func yard_usable(corners: PackedVector2Array) -> bool:
 	for c in corners:
 		pts.append(mid.lerp(Vector3(c.x, 0.0, c.y), 0.9))
 	for p in pts:
-		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) or reserves.kind_at(p) != "":
+		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) or reserves.kind_at(p) != "" \
+				or airports.covers(p):
 			return false
 	for id in services.buildings:
 		if not Geometry2D.intersect_polygons(corners, services.footprint(id)).is_empty():

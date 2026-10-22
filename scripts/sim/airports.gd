@@ -321,6 +321,23 @@ func blockers(sim: CitySim, a: Dictionary, t: int, corr: Array, skip := -1) -> D
 			if box.has_point(Vector2(m.x, m.z)) and _point_in_any(clear, Vector2(m.x, m.z)):
 				add.call("post offices")
 				break
+	for id in sim.power.sites:
+		var s: Dictionary = sim.power.sites[id]
+		var hit := _hits_any(clear, sim.power.yard(s))
+		for c in s.cells:
+			hit = hit or _hits_any(clear, Power.cell_corners(s, c))
+		if hit:
+			add.call("power plants")
+	var water: WaterUtility = sim.services.water
+	for id in water.utilities:
+		if not sim.services.buildings.has(id):
+			continue
+		for w in water.utilities[id].works:
+			var c: Vector2i = w[1]
+			if c != Vector2i.ZERO and c.x > -99 \
+					and _hits_any(clear, WaterUtility.cell_corners(sim.services.buildings[id], c)):
+				add.call("water works")
+				break
 	for id in sim.parks.sites:
 		if _hits_any(clear, sim.parks.footprint(id)):
 			add.call("parks")
@@ -398,7 +415,8 @@ static func describe_blockers(b: Dictionary) -> String:
 		"service buildings": "a service building", "farmyards": "a farmyard", "companies": "a company yard",
 		"airports": "another airport", "water": "a river or lake", "steep ground": "ground too steep to grade",
 		"warehouses": "a warehouse", "landfills": "a landfill", "recycling centers": "a recycling center",
-		"cemeteries": "a cemetery", "post offices": "the post office", "parks": "a park", "campuses": "a campus",
+		"cemeteries": "a cemetery", "post offices": "the post office",
+		"power plants": "a power plant", "water works": "the water works", "parks": "a park", "campuses": "a campus",
 		"reserved land": "land reserved for something else"}
 	var parts := []
 	var keys := b.keys()
