@@ -205,6 +205,8 @@ static func site_problem(sim: CitySim, kind: String, pos: Vector3, dir: Vector3)
 			return "That land is reserved for %s." % Reserves.KINDS[sim.reserves.kind_at(p)]
 		if sim.hubs.covers(p) or sim.warehouses.covers(p) or sim.parks.covers(p) or sim.mail.covers(p):
 			return "Overlaps a landfill, cemetery, warehouse, park or the post office."
+		if sim.airports.covers(p):
+			return "That's airport land."
 	return ""
 
 
@@ -591,7 +593,7 @@ func usable(sim: CitySim, id: int, c: Dictionary, cell: Vector2i, corr: Array, l
 			return false
 		if not sim.land_ok(p) or sim.services.covers(p) or sim.farms.covers(p) or sim.farms.field_at(p) != -1 \
 				or sim.industry.covers(p) or sim.reserves.kind_at(p) != "" or sim.hubs.covers(p) \
-				or sim.warehouses.covers(p) or sim.parks.covers(p) or sim.mail.covers(p) or sim.banks.covers(p) or sim.telecom.covers(p):
+				or sim.warehouses.covers(p) or sim.parks.covers(p) or sim.mail.covers(p) or sim.banks.covers(p) or sim.telecom.covers(p) or sim.airports.covers(p):
 			return false
 	if lots_ok:
 		return true
