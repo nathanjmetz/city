@@ -10,12 +10,15 @@ func _init() -> void:
 	_check(changes[0] == 1, "a grid is one change (got %d)" % changes[0])
 	_check(sim.network.nodes.size() == 12, "grid junctions (got %d)" % sim.network.nodes.size())
 	_check(sim.network.segments.size() == 17, "grid street pieces (got %d)" % sim.network.segments.size())
+	for id in sim.network.segments.keys():
+		for side in [-1, 1]:
+			sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": ZoneMap.Zone.RESIDENTIAL})
 	_check(sim.lots.size() > 40, "grid has lots (got %d)" % sim.lots.size())
 	# Lots back to back between streets don't clash.
 	var rows := {}
 	for key in sim.lots:
 		if absf(sim.lots[key].normal.z) > 0.9:
-			rows[snappedf(sim.lots[key].pos.z, 1.0)] = true
+			rows["%d %d" % [roundi(sim.lots[key].road.z), signi(roundi(sim.lots[key].normal.z))]] = true
 	_check(rows.size() == 6, "lots on both sides of all 3 streets (got %s)" % str(rows.keys()))
 
 	# A roundabout on a crossroads joins all four roads and clears the middle.
@@ -49,9 +52,10 @@ func _init() -> void:
 	var w := CitySim.new()
 	w.apply({"type": "build_road", "start": [-100, 0], "ctrl": [0, 0], "end": [100, 0]})
 	var seg: int = w.network.segments.keys()[0]
-	var before: float = absf(w.lots.values()[0].pos.z)
+	w.apply({"type": "zone_frontage", "seg": seg, "side": 1, "zone": ZoneMap.Zone.RESIDENTIAL, "both": true})
+	var before: float = absf(w.lots.values()[0].front.z)
 	_check(w.apply({"type": "upgrade_road", "seg": seg, "road": RoadStyle.Type.BOULEVARD}), "upgrade to boulevard")
-	var after: float = absf(w.lots.values()[0].pos.z)
+	var after: float = absf(w.lots.values()[0].front.z)
 	_check(is_equal_approx(after - before, RoadStyle.half_width(2) - RoadStyle.half_width(0)),
 		"lots move back by the extra width (%.1f -> %.1f)" % [before, after])
 	var back := CitySim.new()

@@ -15,6 +15,8 @@ const COLORS := [
 ]
 
 var cells := {}  # Vector2i -> Zone
+## Areas whose zoning changed since lots were last planned (Rect2 in x/z).
+var dirty: Array = []
 
 
 func zone_at(pos: Vector3) -> int:
@@ -23,6 +25,7 @@ func zone_at(pos: Vector3) -> int:
 
 ## Paints every cell whose middle is inside the circle. Zone.NONE erases.
 func paint(center: Vector3, radius: float, zone: int) -> void:
+	dirty.append(Rect2(center.x - radius - CELL, center.z - radius - CELL, radius * 2 + CELL * 2, radius * 2 + CELL * 2))
 	var lo := _cell(center - Vector3(radius, 0, radius))
 	var hi := _cell(center + Vector3(radius, 0, radius))
 	for x in range(lo.x, hi.x + 1):
@@ -36,6 +39,12 @@ func paint(center: Vector3, radius: float, zone: int) -> void:
 				cells[Vector2i(x, y)] = zone
 
 
+## Clears one cell's zone, noting the change for lot planning.
+func erase_cell(c: Vector2i) -> void:
+	if cells.erase(c):
+		dirty.append(Rect2(c.x * CELL - CELL, c.y * CELL - CELL, CELL * 3, CELL * 3))
+
+
 func to_dict() -> Dictionary:
 	# One string per zone type: "x,y;x,y;..." keeps saves small.
 	var out := {}
@@ -47,6 +56,7 @@ func to_dict() -> Dictionary:
 
 func from_dict(d: Dictionary) -> void:
 	cells.clear()
+	dirty.clear()
 	for key in d:
 		for pair in String(d[key]).split(";", false):
 			var xy := pair.split(",")

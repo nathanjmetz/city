@@ -469,7 +469,7 @@ func _zones_drawer() -> PanelContainer:
 	var drawer := PanelContainer.new()
 	var row := HBoxContainer.new()
 	drawer.add_child(row)
-	var zones := _section(row, "Paint zones along roads  ·  brush size [ ]")
+	var zones := _section(row, "Zone street sides  ·  Shift both sides  ·  Tab brush")
 	for entry in [
 		[ZoneMap.Zone.RESIDENTIAL, "homes", "Homes", "5"],
 		[ZoneMap.Zone.COMMERCIAL, "shops", "Shops", "6"],
