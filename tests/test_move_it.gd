@@ -119,6 +119,24 @@ func _init() -> void:
 	_check(not fm.apply(MoveIt.command([{"type": "farm", "id": fid}], Vector3(120, 0, 60), Vector3(0, 0, 500))),
 		"a farmhouse can't go far from any road")
 
+	# A cemetery (a hub) moves whole; the county highway out to the region stays put.
+	var hub := CitySim.new()
+	hub.economy.money = 10_000_000
+	hub.apply({"type": "build_road", "start": [-400, 0], "ctrl": [0, 0], "end": [400, 0]})
+	var gate := CivicHubs.site_near(hub.network, Vector3(-100, 0, 40))
+	_check(hub.apply({"type": "place_hub", "kind": "cemetery", "pos": [gate[0].x, gate[0].z], "dir": [gate[1].x, gate[1].z]}),
+		"cemetery placed")
+	var hid: int = hub.hubs.hubs.keys()[0]
+	_check(MoveIt.pick(hub, CivicHubs.cell_center(hub.hubs.hubs[hid], Vector2i(0, 1))).get("type", "") == "hub",
+		"a cemetery can be picked up")
+	_check(hub.apply(MoveIt.command([{"type": "hub", "id": hid}], gate[0], Vector3(150, 0, 0))), "the cemetery slides along the road")
+	_check(hub.hubs.hubs[hid].pos.is_equal_approx(gate[0] + Vector3(150, 0, 0)), "its gate lands where it was dragged")
+	_check(not hub.apply(MoveIt.command([{"type": "hub", "id": hid}], gate[0], Vector3(0, 0, -60))),
+		"a cemetery can't be dropped across the road")
+	var ends := hub.build_county_road(Vector2(400, 0), Vector2(1200, 0), [1])
+	_check(not hub.apply(MoveIt.command([{"type": "node", "id": ends[1]}], Vector3.ZERO, Vector3(0, 0, 50))),
+		"the county highway's way out to the region stays put")
+
 	# Same commands, same city (multiplayer).
 	var a := _town()
 	var b := _town()

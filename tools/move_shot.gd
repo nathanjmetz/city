@@ -7,7 +7,6 @@ extends SceneTree
 var _main: Node
 var _frames := 0
 var _tool: MoveTool
-var _seg := -1
 
 
 func _initialize() -> void:
@@ -20,7 +19,7 @@ func _process(_delta: float) -> bool:
 	var args := OS.get_cmdline_user_args()
 	var out: String = args[0] if args.size() > 0 else "move"
 	var sim: CitySim = _main.sim
-	if _frames == 2:
+	if _frames == 30:
 		_main.set_speed(0)
 		sim.apply({"type": "clear"})
 		sim.economy.money = 20_000_000
@@ -37,11 +36,11 @@ func _process(_delta: float) -> bool:
 			sim.tick()
 		_tool = _find(_main)
 		_tool.set_active(true)
-		_seg = sim.network.find_segment_near(Vector3(0, 0, 0), 2.0).seg
-		_tool.selection = [{"type": "road", "id": _seg}]
+		_tool.selection = [{"type": "road", "id": sim.network.find_segment_near(Vector3(0, 0, 0), 2.0).seg}]
 		_aim(Vector3(0, 0, 50), 15.0, 55.0, 420.0)
-	if _frames == 40:
+	if _frames == 70:
 		_save(out + "_picked.png")
+		_tool.selection = [{"type": "road", "id": sim.network.find_segment_near(Vector3(0, 0, 0), 2.0).seg}]
 		# Mid-drag: 70 m south, onto the fire station's block.
 		_tool.set_process(false)
 		_tool._drag_from = Vector3.ZERO
@@ -49,14 +48,14 @@ func _process(_delta: float) -> bool:
 		_tool._plan = MoveIt.plan(sim, MoveIt.command(_tool.selection, MoveIt.centre(sim, _tool.selection), _tool._offset, 10.0))
 		_tool._problem = _tool._plan.problem
 		_tool._redraw()
-	if _frames == 70:
+	if _frames == 100:
 		_save(out + "_drag.png")
 		_tool._drag_from = null
 		_tool._commit(Vector3(0, 0, 70), 0.0, 0.0)
 		_tool._commit(Vector3.ZERO, 10.0, 0.0)
 		print("problem: ", _tool._problem)
 		_tool._redraw()
-	if _frames == 110:
+	if _frames == 140:
 		_save(out + "_after.png")
 		quit()
 	return false
