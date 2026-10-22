@@ -67,6 +67,9 @@ var served := {}
 var utility_use := {"power": [0, 0], "water": [0, 0]}
 ## Distance by road from the nearest service of each kind to every road node.
 var reach_by_kind := {}
+## Power companies' plants (Power.sources(), set by the city): more power
+## sources, each feeding the lines from its yard gate.
+var plants := []
 var _next_id := 1
 
 
@@ -198,6 +201,9 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 			if buildings[id].kind == kind:
 				_spread(network, lengths, buildings[id], dist)
 		reach_by_kind[kind] = dist
+	var plant_dist := {}
+	for pl in plants:
+		_spread_from(network, lengths, pl.front, plant_dist)
 	var keys := lots.keys()
 	keys.sort()
 	# Utilities serve the nearest buildings first, up to their capacity.
@@ -213,6 +219,8 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 			var d := INF
 			for kind in UTILITIES[u]:
 				d = minf(d, _lot_distance(network, lengths, reach_by_kind[kind], lot))
+			if u == "power":
+				d = minf(d, _lot_distance(network, lengths, plant_dist, lot))
 			# Joined to a source by road at all (before capacity is shared out).
 			s[u + "_linked"] = d < INF
 			if d < INF:
@@ -222,6 +230,9 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 		for id in buildings:
 			if buildings[id].kind in UTILITIES[u]:
 				cap += int(KINDS[buildings[id].kind].capacity)
+		if u == "power":
+			for pl in plants:
+				cap += int(pl.capacity)
 		var used := 0
 		by_dist[u].sort()
 		for entry in by_dist[u]:
@@ -254,7 +265,11 @@ func coverage(key: String) -> float:
 
 ## Road distance from each service's front door to every node (Dijkstra).
 func _spread(network: RoadNetwork, lengths: Dictionary, b: Dictionary, dist: Dictionary) -> void:
-	var near := network.find_segment_near(b.pos + b.dir * size_of(b).y * 0.5, 80.0, 1.0)
+	_spread_from(network, lengths, b.pos + b.dir * size_of(b).y * 0.5, dist)
+
+
+func _spread_from(network: RoadNetwork, lengths: Dictionary, front: Vector3, dist: Dictionary) -> void:
+	var near := network.find_segment_near(front, 80.0, 1.0)
 	if near.is_empty():
 		return
 	var s: Dictionary = network.segments[near.seg]
