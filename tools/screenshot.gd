@@ -13,6 +13,9 @@ func _initialize() -> void:
 
 
 func _process(_delta: float) -> bool:
+	# Wait for the game to finish loading its own town first.
+	if _frames == 0 and _main.loading:
+		return false
 	_frames += 1
 	if _frames == 2:
 		_demo_town()

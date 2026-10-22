@@ -15,6 +15,8 @@ var _tick_time := 0.0
 var speed := 1
 var _resume_speed := 1
 var _save_wait := 0.0
+## True until the whole town is built and drawn; the clock waits for it.
+var loading := true
 
 
 func _ready() -> void:
@@ -152,6 +154,8 @@ func _ready() -> void:
 	menu.game = self
 	hud.nothing_to_close.connect(menu.toggle)
 	add_child(menu)
+	_progress(0.35, "Laying out the land")
+	await get_tree().process_frame
 	if Session.online():
 		var region := RegionView.new()
 		region.setup(Session.client, cam, road_tool)
@@ -159,14 +163,41 @@ func _ready() -> void:
 		var chat := ChatPanel.new()
 		chat.setup(cam, region)
 		add_child(chat)
+		await _settle()
 		return
+	_progress(0.5, "Opening your town")
+	await get_tree().process_frame
 	if not _load():
 		_starter_road()
+	await _settle()
 	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed, sim.industry_changed]:
 		sig.connect(func(): _save_pending = true)
 
 
+## The loading screen (the branding thread's LoadingScreen), if one is up.
+func _progress(fraction: float, status := "") -> void:
+	var screen := get_tree().root.get_node_or_null("LoadingScreen")
+	if screen != null and screen.has_method("set_progress"):
+		screen.set_progress(fraction, status)
+
+
+## Gives every view a few frames to finish drawing the town (houses, farms,
+## industry, trees), then lifts the loading screen and starts the clock.
+func _settle() -> void:
+	_progress(0.75, "Building the town")
+	await get_tree().process_frame
+	_progress(0.9, "Planting trees")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var screen := get_tree().root.get_node_or_null("LoadingScreen")
+	if screen != null and screen.has_method("finish"):
+		screen.finish()
+	loading = false
+
+
 func _process(delta: float) -> void:
+	if loading:
+		return
 	if Session.online():
 		return  # The region's server steps the city.
 	_tick_time += delta * SPEEDS[speed]
