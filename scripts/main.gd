@@ -149,10 +149,8 @@ func _ready() -> void:
 	add_child(hud)
 
 	var menu := GameMenu.new()
-	menu.setup(self, func(): return road_tool.mode != RoadTool.Mode.NONE \
-		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
-		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
-		or industry_tool.kind != "" or info_view.mode != InfoView.Mode.NONE or hud.views_open() or not select_tool.selection.is_empty())
+	menu.game = self
+	hud.nothing_to_close.connect(menu.toggle)
 	add_child(menu)
 	if Session.online():
 		var region := RegionView.new()

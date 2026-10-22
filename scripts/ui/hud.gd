@@ -7,6 +7,9 @@ extends CanvasLayer
 ## Esc cancels what's being drawn, then puts every tool away.
 ## All colours and shapes come from UiStyle, so the look can be re-themed.
 
+## Escape was pressed with nothing left to close.
+signal nothing_to_close
+
 const GOOD := Color(0.5, 0.85, 0.5)
 const BAD := Color(0.95, 0.45, 0.4)
 
@@ -116,9 +119,20 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		road_tool.cancel()
 	elif farm_tool.is_drawing():
 		farm_tool.cancel()
-	else:
+	elif anything_open():
 		close_all()
+	else:
+		nothing_to_close.emit()  # the pause menu opens
 	get_viewport().set_input_as_handled()
+
+
+## True while a tool is in hand, a panel or view is open, or something is selected.
+func anything_open() -> bool:
+	return _budget_open or _view != "" or _views_panel.visible or _help.visible or advisor.visible \
+		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
+		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
+		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
+		or industry_tool.kind != ""
 
 
 ## Puts every tool away and closes every panel.
