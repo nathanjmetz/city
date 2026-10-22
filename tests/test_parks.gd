@@ -124,6 +124,7 @@ func _init() -> void:
 	_check(not RoadWins.hits(RoadWins.corridors(s.network, RoadWins.BUILDING_SLACK), s.parks.footprint(s.parks.sites.keys()[0])),
 		"nothing of the park is left on the road")
 	var tw := Parks.site_near(s.network, "football", Vector3(-80, 0, -60))
+	s.economy.money = 20_000_000
 	var m0 := s.economy.money
 	_check(s.apply({"type": "place_park", "kind": "football", "pos": [tw[0].x, tw[0].z], "dir": [tw[1].x, tw[1].z]}), "football field placed")
 	var fx: float = tw[0].x
