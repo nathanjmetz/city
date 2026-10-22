@@ -17,6 +17,7 @@ const SNAP_ROAD := 7.0
 ## Straight roads snap to 15 degree steps while Shift is held.
 const ANGLE_STEP := deg_to_rad(15.0)
 
+var sim: CitySim
 var network: RoadNetwork
 var cam: CityCamera
 var mode := Mode.STRAIGHT
@@ -29,8 +30,9 @@ var _bad_mat := RoadStyle.material(Color(1.0, 0.3, 0.25, 0.6), true)
 var _hover_seg := -1
 
 
-func setup(net: RoadNetwork, camera: CityCamera) -> void:
-	network = net
+func setup(s: CitySim, camera: CityCamera) -> void:
+	sim = s
+	network = s.network
 	cam = camera
 
 
@@ -100,7 +102,7 @@ func _click() -> void:
 	match mode:
 		Mode.BULLDOZE:
 			if _hover_seg != -1:
-				network.remove_segment(_hover_seg)
+				sim.apply({"type": "remove_road", "seg": _hover_seg})
 				_hover_seg = -1
 		Mode.STRAIGHT, Mode.CURVED:
 			var p := _snapped(hit)
@@ -109,10 +111,15 @@ func _click() -> void:
 				_points.append(p)
 			else:
 				var curve := _pending_curve(p)
-				if _is_valid(curve) and network.build_road(curve[0], curve[1], curve[2]):
+				if _is_valid(curve) and sim.apply({"type": "build_road",
+						"start": _xz(curve[0]), "ctrl": _xz(curve[1]), "end": _xz(curve[2])}):
 					_points.clear()
 					_points.append(curve[2])
 	_update_hint()
+
+
+static func _xz(v: Vector3) -> Array:
+	return [v.x, v.z]
 
 
 func _cancel() -> void:
@@ -174,6 +181,8 @@ func _preview_bulldoze(hit: Vector3) -> void:
 
 
 func _update_hint() -> void:
+	if mode == Mode.NONE:
+		return
 	var text := ""
 	match mode:
 		Mode.STRAIGHT:
