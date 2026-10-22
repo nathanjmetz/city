@@ -111,6 +111,8 @@ func play_solo(path: String) -> void:
 	mode = Mode.SOLO
 	save_path = path
 	current_name = city_name(path)
+	Terrain.view_origin = Vector2.ZERO
+	LoadingScreen.open("Opening your town")
 	get_tree().change_scene_to_file(GAME_SCENE)
 
 
@@ -126,6 +128,8 @@ func join_region(server: String, code: String) -> RegionClient:
 	save_profile()
 	client = RegionClient.new()
 	add_child(client)
+	LoadingScreen.open("Connecting to the region")
+	client.failed.connect(func(_reason): LoadingScreen.close())
 	client.join(server, code, profile.id, profile.name)
 	return client
 
@@ -146,6 +150,9 @@ func host_region(port := 9080) -> String:
 func enter_region() -> void:
 	mode = Mode.ONLINE
 	save_path = ""
+	# The land is drawn around your own town, which sits at the world's centre.
+	Terrain.view_origin = client.region.cities[client.my_city].origin
+	LoadingScreen.progress(0.3, "Meeting the neighbors")
 	get_tree().change_scene_to_file(GAME_SCENE)
 
 
