@@ -3,10 +3,14 @@ config_version=5
 
 [application]
 
-config/name="City"
+config/name="Neighbors"
 config/description="A cozy 3D city builder."
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/menu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
+
+[autoload]
+
+Session="*res://scripts/shell/session.gd"
 
 [display]
 

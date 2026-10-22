@@ -1,0 +1,38 @@
+extends SceneTree
+## Runs a shared region with no window, for a home computer or a cloud server.
+##
+##   godot --headless -s scripts/net/server_main.gd -- --port 9080 --data region.json
+##
+## Options (or the same names as environment variables):
+##   --port N      CITY_PORT    port to listen on (default 9080)
+##   --code ABC123 CITY_CODE    invite code (default: made up once, then kept in the data file)
+##   --data FILE   CITY_DATA    where the region is saved (default user://region.json)
+
+var server: RegionServer
+
+
+func _init() -> void:
+	var opts := {
+		"port": OS.get_environment("CITY_PORT"),
+		"code": OS.get_environment("CITY_CODE"),
+		"data": OS.get_environment("CITY_DATA"),
+	}
+	var args := OS.get_cmdline_user_args()
+	for i in args.size() - 1:
+		if args[i].begins_with("--") and opts.has(args[i].substr(2)):
+			opts[args[i].substr(2)] = args[i + 1]
+	var port := int(opts.port) if opts.port != "" else 9080
+	var data: String = opts.data if opts.data != "" else "user://region.json"
+	if not data.begins_with("user://") and not data.begins_with("/"):
+		data = OS.get_environment("PWD").path_join(data)
+	server = RegionServer.new()
+	root.add_child.call_deferred(server)
+	var err := server.start(port, opts.code, data)
+	if err != OK:
+		printerr("Couldn't open port %d (error %d)" % [port, err])
+		quit(1)
+
+
+func _finalize() -> void:
+	if server:
+		server.stop()
