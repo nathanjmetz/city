@@ -33,6 +33,11 @@ func _ready() -> void:
 	add_child(buildings)
 	buildings.setup(sim)
 
+	var service_view := ServiceView.new()
+	add_child(service_view)
+	service_view.setup(sim)
+	sim.require_utilities = true
+
 	var cars := TrafficView.new()
 	cars.setup(sim.traffic, func(): return _tick_time * CitySim.TICKS_PER_SECOND)
 	add_child(cars)
@@ -48,16 +53,25 @@ func _ready() -> void:
 	zone_tool.setup(sim, cam, zone_view)
 	add_child(zone_tool)
 
+	var service_tool := ServiceTool.new()
+	service_tool.setup(sim, cam, service_view)
+	add_child(service_tool)
+
 	# Only one tool is active at a time.
-	road_tool.mode_changed.connect(func(m):
-		if m != RoadTool.Mode.NONE and zone_tool.zone != ZoneTool.OFF:
-			zone_tool.set_zone(ZoneTool.OFF))
-	zone_tool.zone_changed.connect(func(z):
-		if z != ZoneTool.OFF and road_tool.mode != RoadTool.Mode.NONE:
-			road_tool.set_mode(RoadTool.Mode.NONE))
+	var others := func(keep: Object):
+		if keep != road_tool and road_tool.mode != RoadTool.Mode.NONE:
+			road_tool.set_mode(RoadTool.Mode.NONE)
+		if keep != zone_tool and zone_tool.zone != ZoneTool.OFF:
+			zone_tool.set_zone(ZoneTool.OFF)
+		if keep != service_tool and service_tool.kind != ServiceTool.OFF:
+			service_tool.set_kind(ServiceTool.OFF)
+	road_tool.mode_changed.connect(func(m): if m != RoadTool.Mode.NONE: others.call(road_tool))
+	zone_tool.zone_changed.connect(func(z): if z != ZoneTool.OFF: others.call(zone_tool))
+	service_tool.kind_changed.connect(func(k): if k != ServiceTool.OFF: others.call(service_tool))
 
 	var hud := Hud.new()
 	hud.setup(road_tool, zone_tool, sim, self)
+	hud.service_tool = service_tool
 	add_child(hud)
 
 	if not _load():

@@ -146,6 +146,34 @@ func _draw() -> void:
 			line.call(P.call(0.5, 0.15), P.call(0.5, 0.41), w * 0.7, Color(0.08, 0.1, 0.12))
 			draw_arc(P.call(0.5, 0.23), s * 0.06, PI * 0.5, PI * 1.9, 10, Color(0.08, 0.1, 0.12), w * 0.6, true)
 			draw_arc(P.call(0.5, 0.33), s * 0.06, -PI * 0.5, PI * 0.9, 10, Color(0.08, 0.1, 0.12), w * 0.6, true)
+		"power":
+			_poly([P.call(0.58, 0.06), P.call(0.22, 0.56), P.call(0.48, 0.56), P.call(0.4, 0.94),
+				P.call(0.78, 0.4), P.call(0.52, 0.4)], Color(1.0, 0.82, 0.3))
+		"water":
+			# Water tower: a round tank on legs.
+			draw_circle(P.call(0.5, 0.32), s * 0.24, Color(0.55, 0.78, 0.95))
+			line.call(P.call(0.34, 0.5), P.call(0.24, 0.94))
+			line.call(P.call(0.66, 0.5), P.call(0.76, 0.94))
+			line.call(P.call(0.5, 0.56), P.call(0.5, 0.94))
+		"fire":
+			_poly([P.call(0.5, 0.06), P.call(0.78, 0.5), P.call(0.74, 0.76), P.call(0.5, 0.94),
+				P.call(0.26, 0.76), P.call(0.22, 0.5), P.call(0.38, 0.34)], Color(0.95, 0.42, 0.25))
+			_poly([P.call(0.5, 0.46), P.call(0.62, 0.7), P.call(0.5, 0.86), P.call(0.38, 0.7)], Color(1.0, 0.82, 0.35))
+		"police":
+			_poly([P.call(0.5, 0.06), P.call(0.86, 0.2), P.call(0.8, 0.6), P.call(0.5, 0.94),
+				P.call(0.2, 0.6), P.call(0.14, 0.2)], Color(0.4, 0.58, 0.9))
+			draw_circle(P.call(0.5, 0.45), s * 0.12, Color(1.0, 0.85, 0.4))
+		"health":
+			draw_rect(Rect2(P.call(0.38, 0.12), Vector2(0.24, 0.76) * s), Color(0.95, 0.35, 0.35))
+			draw_rect(Rect2(P.call(0.12, 0.38), Vector2(0.76, 0.24) * s), Color(0.95, 0.35, 0.35))
+		"school":
+			_poly([P.call(0.5, 0.14), P.call(0.94, 0.36), P.call(0.5, 0.58), P.call(0.06, 0.36)], color)
+			draw_arc(P.call(0.5, 0.5), s * 0.24, 0.15, PI - 0.15, 16, color, w, true)
+			line.call(P.call(0.86, 0.38), P.call(0.86, 0.72))
+		"services":
+			draw_rect(Rect2(P.call(0.14, 0.4), Vector2(0.72, 0.5) * s), color, false, w)
+			_poly([P.call(0.08, 0.42), P.call(0.5, 0.1), P.call(0.92, 0.42)], Color(color, 0.6))
+			draw_rect(Rect2(P.call(0.42, 0.62), Vector2(0.16, 0.28) * s), color)
 		"help":
 			draw_arc(P.call(0.5, 0.5), s * 0.4, 0, TAU, 32, color, w, true)
 			draw_arc(P.call(0.5, 0.4), s * 0.13, PI * 1.1, PI * 2.4, 16, color, w, true)

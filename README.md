@@ -20,8 +20,9 @@ An open map where you draw roads, paint zones along them, and buildings grow, li
 | Page Up / Page Down, or Raise / Lower | Build new roads above or below ground in 2.5 m steps, for bridges, overpasses and tunnels. |
 | `U` Upgrade | Click a road to change it to the chosen type. |
 | `P` Parallel | Draws a second road alongside. `[` `]` set the gap. |
-| `B` Bulldoze | Click a road to remove it. |
+| `B` Bulldoze | Click a road or service building to remove it. |
 | `5` `6` `7` Zones | Homes, shops, industry. Hold the left mouse button and drag over the lots along a road. `[` `]` brush size. |
+| Services | Substation and water tower first: buildings only grow and fill with power and water, which flow along connected roads. Fire, police, clinic and school cover homes within real road distances (green roads while placing). Place beside a street; the building turns to face it. |
 | `8` Dezone | Erase zones (buildings on them go away). |
 | Right click | Stop drawing. |
 | Esc | Stop drawing; press again to put every tool away and close panels. |

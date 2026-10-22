@@ -12,6 +12,7 @@ const BAD := Color(0.95, 0.45, 0.4)
 
 var road_tool: RoadTool
 var zone_tool: ZoneTool
+var service_tool: ServiceTool
 var sim: CitySim
 var game: Node  # main.gd: game speed
 
@@ -24,6 +25,8 @@ var _bottom := VBoxContainer.new()
 var _tool_cards := {}    # RoadTool.Mode -> Button
 var _type_cards := {}    # RoadStyle.Type -> Button
 var _zone_cards := {}    # ZoneMap.Zone -> Button
+var _service_cards := {} # Services.Kind -> Button
+var _warning := UiStyle.label("", 13, Color(1.0, 0.75, 0.3))
 var _parallel_card: Button
 var _elevation := UiStyle.label("Ground", 12)
 var _speed_buttons := []
@@ -66,6 +69,8 @@ func _ready() -> void:
 	zone_tool.zone_changed.connect(func(_z): _sync())
 	road_tool.hint_changed.connect(_show_hint)
 	zone_tool.hint_changed.connect(_show_hint)
+	service_tool.kind_changed.connect(func(_k): _sync())
+	service_tool.hint_changed.connect(_show_hint)
 	sim.buildings_changed.connect(_update_stats)
 	sim.stats_changed.connect(_update_stats)
 	game.speed_changed.connect(func(_s): _sync_speed())
@@ -93,6 +98,7 @@ func close_all() -> void:
 	_help_button.set_pressed_no_signal(false)
 	road_tool.set_mode(RoadTool.Mode.NONE)
 	zone_tool.set_zone(ZoneTool.OFF)
+	service_tool.set_kind(ServiceTool.OFF)
 	_sync()
 
 
@@ -144,6 +150,10 @@ func _build_top_bar() -> void:
 	_stat(row, "money", _money, "City funds")
 	_net.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(_net)
+	_warning.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_warning.mouse_filter = Control.MOUSE_FILTER_PASS
+	_warning.tooltip_text = "Buildings need power and water to grow and fill. Open Services."
+	row.add_child(_warning)
 
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -212,6 +222,7 @@ func _build_bottom_bar() -> void:
 	_drawer_dock.add_child(holder)
 	_drawers["roads"] = _roads_drawer()
 	_drawers["zones"] = _zones_drawer()
+	_drawers["services"] = _services_drawer()
 	_drawers["budget"] = _budget_drawer()
 	for key in _drawers:
 		_drawers[key].add_theme_stylebox_override("panel", StyleBoxEmpty.new())
@@ -224,7 +235,8 @@ func _build_bottom_bar() -> void:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 4)
 	bar.add_child(row)
-	for entry in [["roads", "Roads"], ["zones", "Zoning"], ["bulldoze", "Bulldoze"], ["budget", "Budget"]]:
+	for entry in [["roads", "Roads"], ["zones", "Zoning"], ["services", "Services"], ["bulldoze", "Bulldoze"],
+			["budget", "Budget"]]:
 		var b := _category_button(entry[0], entry[1])
 		b.pressed.connect(func(): _open(entry[0]))
 		row.add_child(b)
@@ -334,6 +346,27 @@ func _zones_drawer() -> PanelContainer:
 	return drawer
 
 
+func _services_drawer() -> PanelContainer:
+	var drawer := PanelContainer.new()
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	drawer.add_child(row)
+	for group in [["Utilities", [Services.Kind.SUBSTATION, Services.Kind.WATER_TOWER]],
+			["Safety, health and schools", [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.CLINIC, Services.Kind.SCHOOL]]]:
+		if row.get_child_count() > 0:
+			row.add_child(VSeparator.new())
+		var cards := _section(row, group[0])
+		for k in group[1]:
+			var s: Dictionary = Services.KINDS[k]
+			var b := _card(s.icon, s.name.split(" ")[0] if k != Services.Kind.WATER_TOWER else "Water",
+				"%s: $%s, $%s a month" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)])
+			b.tooltip_text = "%s: $%s to build, $%s a month" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
+			b.pressed.connect(func(): service_tool.set_kind(k))
+			cards.add_child(b)
+			_service_cards[k] = b
+	return drawer
+
+
 ## Taxes and running costs per month, with a rate to set for each zone.
 func _budget_drawer() -> PanelContainer:
 	var drawer := PanelContainer.new()
@@ -382,6 +415,20 @@ func _budget_drawer() -> PanelContainer:
 	upkeep.add_child(Icon.new("roads", 18))
 	upkeep.add_child(UiStyle.label("Road upkeep", 13))
 	_budget_rows["upkeep"] = _value_label(upkeep, 84)
+	var serv := HBoxContainer.new()
+	serv.add_theme_constant_override("separation", 6)
+	costs.add_child(serv)
+	serv.add_child(Icon.new("services", 18))
+	serv.add_child(UiStyle.label("Services", 13))
+	_budget_rows["services"] = _value_label(serv, 112)
+	var fees := HBoxContainer.new()
+	fees.add_theme_constant_override("separation", 6)
+	income.add_child(fees)
+	fees.add_child(Icon.new("water", 18))
+	var fee_title := UiStyle.label("Water and sewer bills", 13)
+	fee_title.custom_minimum_size.x = 64 + 24 * 2 + 40 + 18
+	fees.add_child(fee_title)
+	_budget_rows["fees"] = _value_label(fees, 84)
 	var net := HBoxContainer.new()
 	net.add_theme_constant_override("separation", 6)
 	costs.add_child(net)
@@ -471,9 +518,13 @@ func _open(cat: String) -> void:
 				zone_tool.set_zone(ZoneMap.Zone.RESIDENTIAL)
 		"bulldoze":
 			road_tool.set_mode(RoadTool.Mode.BULLDOZE)
+		"services":
+			if service_tool.kind == ServiceTool.OFF:
+				service_tool.set_kind(Services.Kind.SUBSTATION)
 		"budget":
 			road_tool.set_mode(RoadTool.Mode.NONE)
 			zone_tool.set_zone(ZoneTool.OFF)
+			service_tool.set_kind(ServiceTool.OFF)
 			_budget_open = true
 			_sync()
 
@@ -482,6 +533,8 @@ func _open(cat: String) -> void:
 func _sync() -> void:
 	if zone_tool.zone != ZoneTool.OFF:
 		_category = "zones"
+	elif service_tool.kind != ServiceTool.OFF:
+		_category = "services"
 	elif road_tool.mode == RoadTool.Mode.BULLDOZE:
 		_category = "bulldoze"
 	elif road_tool.mode != RoadTool.Mode.NONE:
@@ -501,6 +554,8 @@ func _sync() -> void:
 		_type_cards[t].set_pressed_no_signal(t == road_tool.road_type)
 	for z in _zone_cards:
 		_zone_cards[z].set_pressed_no_signal(z == zone_tool.zone)
+	for k in _service_cards:
+		_service_cards[k].set_pressed_no_signal(k == service_tool.kind)
 	_parallel_card.set_pressed_no_signal(road_tool.parallel)
 	_elevation.text = "Ground" if road_tool.elevation == 0.0 else "%+.1f m" % road_tool.elevation
 	if _category == "" or _category == "budget":
@@ -522,6 +577,13 @@ func _update_stats() -> void:
 		_tax_labels[z].text = "%.1f%%" % e.tax[z]
 		_budget_rows[z].text = "$" + _thousands(int(e.budget.income.get(z, 0)))
 	_budget_rows.upkeep.text = "–$" + _thousands(int(e.budget.upkeep))
+	_budget_rows.services.text = "–$" + _thousands(int(e.budget.services))
+	_budget_rows.fees.text = "$" + _thousands(int(e.budget.fees))
+	var unserved := sim.unserved_count()
+	var use := sim.services.utility_use
+	var no_utilities: bool = (use.power[1] == 0 or use.water[1] == 0) and not sim.zones.cells.is_empty()
+	_warning.text = "%d buildings without power or water" % unserved if unserved > 0 \
+		else ("Build a substation and a water tower (Services) so the town can grow" if no_utilities else "")
 	_budget_rows.net.text = "%s$%s / month" % ["+" if net >= 0 else "–", _thousands(absi(net))]
 	_budget_rows.net.add_theme_color_override("font_color", GOOD if net >= 0 else BAD)
 
@@ -539,6 +601,7 @@ func _build_help() -> void:
 	col.add_child(UiStyle.label("TOOLS", 10, UiStyle.MUTED))
 	for line in ["1 2 3 4  road, curve, grid, roundabout", "U upgrade   P parallel   B bulldoze",
 			"Page Up / Down  bridge or tunnel", "5 6 7 8  homes, shops, industry, dezone",
+			"Services: place beside a road; green roads show coverage",
 			"Right click  stop drawing", "Esc  stop drawing, then close everything"]:
 		col.add_child(UiStyle.label(line, 12))
 	var clear := Button.new()

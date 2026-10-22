@@ -46,6 +46,14 @@ func _demo_town() -> void:
 		elif p.x > 130.0:
 			zone = ZoneMap.Zone.INDUSTRIAL
 		sim.apply({"type": "paint_zone", "center": [p.x, p.z], "radius": 3, "zone": zone})
+	# Power, water and a few services, placed beside the roads.
+	for entry in [[Services.Kind.SUBSTATION, Vector3(-260, 0, 40)], [Services.Kind.WATER_TOWER, Vector3(-215, 0, 40)],
+			[Services.Kind.FIRE, Vector3(60, 0, 40)], [Services.Kind.SCHOOL, Vector3(70, 0, -120)],
+			[Services.Kind.CLINIC, Vector3(-10, 0, 40)]]:
+		var site := Services.site_near(sim.network, entry[0], entry[1])
+		if not site.is_empty():
+			sim.apply({"type": "place_service", "kind": entry[0], "pos": [site[0].x, site[0].z],
+				"dir": [site[1].x, site[1].z]})
 	var args := OS.get_cmdline_user_args()
 	var overlay := args.size() >= 5 and args[4] == "zones"
 	for i in (60 if overlay else 3000):
@@ -57,6 +65,10 @@ func _demo_town() -> void:
 	# Leave a few lots empty to show the zone tint.
 	sim.apply({"type": "paint_zone", "center": [-150, 15], "radius": 14, "zone": ZoneMap.Zone.NONE})
 	sim.apply({"type": "paint_zone", "center": [-150, 15], "radius": 14, "zone": ZoneMap.Zone.COMMERCIAL})
+	if args.size() >= 5 and args[4] == "services":
+		for c in _main.get_children():
+			if c is ServiceTool:
+				c.set_kind(Services.Kind.FIRE)
 	if args.size() >= 5 and args[4] == "budget":
 		for c in _main.find_children("*", "", true, false):
 			if c.has_method("_budget_drawer"):
