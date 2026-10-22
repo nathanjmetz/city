@@ -261,19 +261,21 @@ static func _warehouse(sim: CitySim, id: int) -> Dictionary:
 		["On the way in", "%d loads" % int(w.incoming)],
 		["Trucks on the road", str(sim.logistics.trucks_for(ref))],
 		["Dock doors", str(int(Warehouses.spec(w).docks))],
-		["Jobs", str(roundi(float(Warehouses.spec(w).jobs) * Warehouses.building_depth(w) / float(Warehouses.spec(w).d)))],
+		["Jobs", str(Warehouses.job_count(w))],
+		["Profit", "$%s / year" % CitySim.money_text(roundi(Warehouses.yearly_profit(w)))],
 		["Property tax to town", "$%s / month" % CitySim.money_text(roundi(Warehouses.value(w)
 			* sim.economy.tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0))],
 	]
+	rows.append_array(_development(sim, w, Warehouses.TREE, w.pos, Warehouses.yearly_profit(w)))
 	var problems := []
 	var status := "Storing loads until a factory or shop needs them"
 	if Warehouses.stored(w) == 0 and int(w.incoming) == 0:
 		status = "Waiting for its first load"
 	elif Warehouses.fill(w) >= Balance.WAREHOUSE_BUSY:
 		status = "Nearly full: it will build up or out"
-		if w.get("why", "") != "":
+		if w.get("boxed", "") != "":
 			status = "Full, and can't grow"
-			problems.append(w.why)
+			problems.append(w.boxed)
 	if int(w.bays) > 0:
 		status += " · grown %d bay%s" % [w.bays, "" if int(w.bays) == 1 else "s"]
 	if sim.logistics.stuck.has(ref):
