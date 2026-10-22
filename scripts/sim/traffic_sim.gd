@@ -104,6 +104,7 @@ var _lanes := {}     # way * 8 + lane -> cars, front first
 var _box := {}       # node -> cars crossing it
 var _committed := {} # node -> cars about to cross it
 var _approach := {}  # node -> [{car, conn, ds}] for the first car in each lane
+var _merging := {}   # lane key -> cars pulling out of a driveway into it
 var _acc := ACCEL    # acceleration of the vehicle being worked out
 var _restoring := false   # just loaded: junction paths still saved as keys
 var _keep_routes := false
@@ -1249,8 +1250,14 @@ func _snapshot() -> void:
 	_box.clear()
 	_committed.clear()
 	_approach.clear()
+	_merging.clear()
 	for car in cars:
 		if car.j != null:
+			if car.j.node == -1 and car.j.wo >= 0:
+				var mk: int = car.j.wo * 8 + car.j.lo
+				if not _merging.has(mk):
+					_merging[mk] = []
+				_merging[mk].append(car)
 			if not _box.has(car.j.node):
 				_box[car.j.node] = []
 			_box[car.j.node].append(car)
@@ -1318,6 +1325,14 @@ func _accel_on_way(car: Dictionary, list: Array, i: int) -> float:
 	if i > 0:
 		gap = list[i - 1].d - car.d - list[i - 1].len
 		vl = list[i - 1].v
+	# A car pulling out of a driveway ahead counts as a leader once it has
+	# started its turn, so the lane makes room as it merges (CS2 yields the
+	# same way). Its place is measured along the lane, like a junction exit.
+	for m in _merging.get(w.id * 8 + car.lane, []):
+		var pos: float = m.j.exit_d - (m.j.len - m.jd)
+		if pos > car.d and pos - car.d - m.len < gap:
+			gap = pos - car.d - m.len
+			vl = m.v
 	if car.leg == car.route.size() - 1:
 		# Slow to turn into the driveway.
 		return minf(_idm(car.v, v0, gap, vl), _idm(car.v, v0, car.end_d - car.d + JAM_GAP + 4.0 * HEADWAY, 4.0))
