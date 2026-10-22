@@ -76,7 +76,7 @@ func _redraw() -> void:
 func _spawn(id: int, h: Dictionary) -> Node3D:
 	var root := Node3D.new()
 	add_child(root)
-	root.position = h.pos
+	root.position = Terrain.lift(h.pos)
 	root.basis = Basis.looking_at(h.dir, Vector3.UP)
 	root.set_meta("ver", int(h.get("ver", 0)))
 	var to_curb := CivicHubs.SETBACK + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
@@ -86,19 +86,23 @@ func _spawn(id: int, h: Dictionary) -> Node3D:
 	building.mesh = built[0]
 	root.add_child(building)
 	var ground := MeshInstance3D.new()
-	ground.mesh = built[1]
+	ground.mesh = Terrain.drape_local(built[1], Transform3D(root.basis, root.position))
 	ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(ground)
 	var frame := Transform3D(root.basis, root.position)
 	var trees := []
 	for t in built[2]:
 		var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
-		trees.append([frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0]), t[1], t[2]])
+		var at := frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])
+		at.origin.y = Terrain.ground_y(at.origin.x, at.origin.z) + t[0].y
+		trees.append([at, t[1], t[2]])
 	_trees.set_trees("mail:%d" % id, trees)
 	var stalls := []
 	for s in built[3]:
 		# Model origin is the front bumper; nose toward the stall's end.
-		stalls.append(frame * Transform3D(Basis(Vector3.UP, s[1]), s[0]))
+		var at := frame * Transform3D(Basis(Vector3.UP, s[1]), s[0])
+		at.origin.y = Terrain.ground_y(at.origin.x, at.origin.z)
+		stalls.append(at)
 	_stalls[id] = stalls
 	return root
 
@@ -138,7 +142,7 @@ func _mailboxes() -> void:
 		var along: Vector3 = lot.dir
 		var p: Vector3 = lot.front - n * maxf(float(lot.get("to_curb", 4.0)) - 0.5, 0.3) \
 			+ along * float(lot.get("width", 15.0)) * 0.3
-		xs.append(Transform3D(Basis.looking_at(-n, Vector3.UP), Vector3(p.x, 0.0, p.z)))
+		xs.append(Transform3D(Basis.looking_at(-n, Vector3.UP), Terrain.lift(Vector3(p.x, 0.0, p.z))))
 	var mm := _boxes.multimesh
 	mm.instance_count = xs.size()
 	for i in xs.size():
