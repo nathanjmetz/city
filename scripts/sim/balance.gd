@@ -270,6 +270,23 @@ const WASTE_SITES := {
 ## many game days (the old mound is capped and grassed over).
 const LANDFILL_RECOVERY_DAYS := 24.0
 
+# --- Wild trees and brush ----------------------------------------------------
+
+## Cleared land left alone grows back the way an abandoned lot in southern
+## Indiana does (old-field succession, USDA Forest Service): grass and weeds
+## the first season, brush (sumac, dogwood, blackberry) in a year or two,
+## pioneer trees (eastern red cedar, box elder, black locust) poking through
+## after a few years, and a young woodlot as tall as its neighbours in about
+## twenty. Years are game years: a game day is a month, so a year is 12 game
+## days (about half an hour at 1x, like the budget).
+const WILD_BRUSH_YEARS := 1.5
+const WILD_TREE_YEARS := 4.0
+const WILD_MATURE_YEARS := 20.0
+## Share of spots on an abandoned lot that end up as trees (most of an
+## untended Midwest lot is woods after twenty years), and as brush while the
+## trees are still young.
+const WILD_REGROW_TREES := 0.5
+const WILD_REGROW_BRUSH := 0.45
 ## Trash, which garbage trucks carry to a landfill or recycling centre. A
 ## game day here is a real day for trash (a month would bury a small town):
 ## Americans throw out about 4.9 lb a person a day (EPA), and a business
