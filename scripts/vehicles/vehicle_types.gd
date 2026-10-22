@@ -134,11 +134,10 @@ const PURPOSE := {
 	"transit": {"city_bus": 1.0},
 	"tow": {"tow_truck": 1.0},
 	"service_call": {"work_pickup": 3.0, "van": 2.0},     # plumbers, electricians
-	# Mail (Mail in scripts/sim/mail.gd). Stand-ins until the Vehicles thread
-	# adds the carrier truck and the right-hand-drive jeep.
-	"mail": {"van": 1.0},
-	"rural_mail": {"crossover": 1.0},
-	"mail_freight": {"semi": 1.0},
+	# Mail (Mail in scripts/sim/mail.gd).
+	"mail": {"mail_truck": 1.0},                         # Oshkosh NGDV
+	"rural_mail": {"rural_mail": 1.0},                   # carrier's own RHD Jeep
+	"mail_freight": {"mail_semi": 1.0},                  # USPS 53 ft trailer
 }
 
 ## Some cargo needs its own rig, whatever the job is called: logs ride a
