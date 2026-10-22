@@ -7,7 +7,8 @@ var _frames := 0
 var _rng := RandomNumberGenerator.new()
 
 
-func _init() -> void:
+func _initialize() -> void:
+	# After the Session autoload is up.
 	_main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(_main)
 

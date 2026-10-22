@@ -560,6 +560,7 @@ func to_dict() -> Dictionary:
 		"farms": farms.to_dict(),
 		"reserves": reserves.to_dict(),
 		"junctions": traffic.rules_to_dict(),
+		"traffic": traffic.to_dict(),
 	}
 
 
@@ -585,6 +586,7 @@ func from_dict(d: Dictionary) -> void:
 		if f.drive.is_empty():
 			f.drive = farm_drive(f.pos, f.dir)
 	traffic.rules_from_dict(d.get("junctions", {}))
+	traffic.from_dict(d.get("traffic", {}))
 	tick_count = int(d.get("tick", 0))
 	city_seed = int(d.get("seed", 1))
 	buildings.clear()
