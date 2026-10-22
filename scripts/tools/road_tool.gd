@@ -247,6 +247,9 @@ func _click() -> void:
 			elif _hover_seg != -1:
 				sim.apply({"type": "remove_road", "seg": _hover_seg})
 				_hover_seg = -1
+			elif sim.education.covers(hit):
+				# One campus building at a time (its first building closes it).
+				sim.apply({"type": "remove_campus_block", "pos": [hit.x, hit.z]})
 		Mode.UPGRADE:
 			if _hover_seg != -1:
 				sim.apply({"type": "upgrade_road", "seg": _hover_seg, "road": road_type})
