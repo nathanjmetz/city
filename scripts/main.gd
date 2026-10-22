@@ -148,34 +148,7 @@ func _starter_road() -> void:
 
 
 func _build_environment() -> void:
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.36, 0.56, 0.85)
-	sky_mat.sky_horizon_color = Color(0.72, 0.80, 0.88)
-	sky_mat.ground_horizon_color = Color(0.72, 0.80, 0.88)
-	sky_mat.ground_bottom_color = Color(0.30, 0.34, 0.28)
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
-
-	var env := Environment.new()
-	env.background_mode = Environment.BG_SKY
-	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.35
-	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.72, 0.80, 0.88)
-	env.fog_density = 0.0004
-	var we := WorldEnvironment.new()
-	we.environment = env
-	add_child(we)
-
-	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-50, -35, 0)
-	sun.light_energy = 0.8
-	sun.light_color = Color(1.0, 0.96, 0.88)
-	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 600.0
-	add_child(sun)
+	add_child(SkyLight.new())
 
 
 func _build_ground() -> void:
