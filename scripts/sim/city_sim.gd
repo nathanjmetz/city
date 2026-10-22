@@ -298,7 +298,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			if not Education.KINDS.has(kind) or dir.length() < 0.5 or Education.site_problem(self, kind, pos, dir) != "" \
 					or int(Education.spec(kind).cost) > economy.money:
 				return false
-			education.add(kind, pos, dir, education.leader_education(stats.workers), city_seed, tick_count)
+			education.add(self, kind, pos, dir, city_seed, tick_count)
 			economy.money -= int(Education.spec(kind).cost)
 			_clear_zones_under(Education.block_corners({"pos": pos, "dir": dir}, Vector2i.ZERO))
 			_lots_dirty = true

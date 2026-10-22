@@ -97,7 +97,9 @@ const TREES := {
 static func leader(sim: CitySim, seed: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
-	var edu := clampf(education(sim) + rng.randf_range(-0.25, 0.25), 0.0, 1.0)
+	# The town's own graduates raise the bar too (Education.leader_education).
+	var town := maxf(education(sim), sim.education.leader_education(maxi(int(sim.stats.workers), 1)))
+	var edu := clampf(town + rng.randf_range(-0.25, 0.25), 0.0, 1.0)
 	return {"edu": snappedf(edu, 0.01), "caution": snappedf(rng.randf(), 0.01),
 		"ambition": snappedf(rng.randf(), 0.01)}
 

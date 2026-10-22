@@ -19,7 +19,7 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 	var level := clampi(int(c.funding), 0, levels.size() - 1)
 	var rows := [
 		[k.head, Education.leader_name(l)],
-		["", "%s, %s" % [Education.degree_name(l.education), Education.leader_style(l)]],
+		["", "%s, %s" % [Education.degree_name(l.edu), Education.leader_style(l)]],
 		["Students", "%s of %s seats" % [CitySim.money_text(c.enrolled), CitySim.money_text(Education.seats(c))]],
 		["Applying", CitySim.money_text(c.applicants)],
 		["Campus", "%d block%s (%.0f acres)" % [c.blocks.size() + 1, "" if c.blocks.is_empty() else "s",
@@ -34,23 +34,21 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 	# Its development tree: what it has, what's open next, what's still locked.
 	var facts := Education.town_facts(sim)
 	var built := []
-	for blk in c.blocks:
-		var n: String = Education.dev(c.kind, blk.use).get("name", blk.use)
-		if not n in built:
-			built.append(n)
+	for use in c.built:
+		built.append(Education.dev(c.kind, use).get("name", use))
 	if not built.is_empty():
 		rows.append(["Built", ", ".join(built)])
-	var next := Education.pick_next(c, facts, true)
+	var next := Education.pick_next(sim, c, facts, true)
 	if next != "":
 		rows.append(["Plans next", Education.dev(c.kind, next).name])
 	var shown := 0
-	var uses: Array = Education.TREE[c.kind].keys()
-	uses.sort()
-	for use in uses:
-		var why := Education.locked_by(c, use, facts)
+	for node in Education.TREE[c.kind]:
+		var why := Education.locked_by(sim, c, node.id, facts)
 		if why != "" and why != "built" and shown < 3:
-			rows.append([Education.dev(c.kind, use).name, why])
+			rows.append([node.name, why])
 			shown += 1
+	if c.why != "":
+		rows.append(["Latest", c.why])
 	var problems := []
 	var status := "Growing: room for everyone who applies"
 	if c.applicants == 0:
