@@ -301,6 +301,23 @@ func _draw() -> void:
 				P.call(0.5, 0.1)]), color, w, true)
 			line.call(P.call(0.5, 0.38), P.call(0.5, 0.6), w * 1.2)
 			draw_circle(P.call(0.5, 0.72), s * 0.05, color)
+		"daynight":
+			# A sun and a moon.
+			draw_arc(P.call(0.42, 0.55), s * 0.2, 0, TAU, 24, color, w, true)
+			for k in 8:
+				var a := TAU * k / 8.0
+				var d := Vector2(cos(a), sin(a))
+				line.call(P.call(0.42, 0.55) + d * s * 0.28, P.call(0.42, 0.55) + d * s * 0.36, w * 0.8)
+			draw_circle(P.call(0.72, 0.3), s * 0.2, accent)
+			draw_arc(P.call(0.72, 0.3), s * 0.2, PI * 0.35, PI * 1.6, 16, color, w, true)
+		"seasons":
+			# A maple leaf outline, with a stem.
+			var leaf := PackedVector2Array([P.call(0.5, 0.1), P.call(0.6, 0.32), P.call(0.86, 0.26),
+				P.call(0.74, 0.5), P.call(0.9, 0.62), P.call(0.6, 0.64), P.call(0.5, 0.8),
+				P.call(0.4, 0.64), P.call(0.1, 0.62), P.call(0.26, 0.5), P.call(0.14, 0.26),
+				P.call(0.4, 0.32), P.call(0.5, 0.1)])
+			draw_polyline(leaf, color, w, true)
+			line.call(P.call(0.5, 0.4), P.call(0.5, 0.94))
 		"help":
 			draw_arc(P.call(0.5, 0.5), s * 0.4, 0, TAU, 32, color, w, true)
 			draw_arc(P.call(0.5, 0.4), s * 0.13, PI * 1.1, PI * 2.4, 16, color, w, true)

@@ -8,6 +8,7 @@ extends RefCounted
 const SHADER := """
 shader_type spatial;
 render_mode cull_back;
+global uniform float night;
 varying vec4 v_custom;
 varying float v_side;
 vec3 lin(vec3 c) { return pow(c, vec3(2.2)); }
@@ -38,13 +39,13 @@ void fragment() {
 		spec = 0.25;
 	} else if (code < 0.45) {   // fixed colours (decals, liveries)
 		rough = 0.45;
-	} else if (code < 0.55) {   // headlights
+	} else if (code < 0.55) {   // headlights, on full after dark
 		rough = 0.1;
-		emit = col * 0.35;
+		emit = col * (0.35 + smoothstep(0.3, 0.7, night) * 5.0);
 	} else if (code < 0.65) {   // tail lights, bright when braking
 		float brake = mod(v_custom.a, 2.0);
 		rough = 0.2;
-		emit = vec3(1.0, 0.04, 0.02) * (0.15 + brake * 2.5);
+		emit = vec3(1.0, 0.04, 0.02) * (0.15 + smoothstep(0.3, 0.7, night) * 1.2 + brake * 2.5);
 	} else if (code < 0.75) {   // red and blue emergency lights
 		float on = step(1.5, v_custom.a);
 		float flash = step(0.5, fract(TIME * 1.6 + (v_side > 0.0 ? 0.5 : 0.0)));

@@ -160,10 +160,10 @@ func _process(_delta: float) -> void:
 	_info_panel.position = Vector2(_views_panel.size.x if _views_panel.visible else 0.0, _top_bar.size.y)
 	var t := sim.clock()
 	var hour: int = t.hour % 12
-	_clock.text = "%s %s %d  %d:%02d %s" % [
-		["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][t.weekday],
+	# A game day is a month (see Seasons), so the date is month and year.
+	_clock.text = "%s, Year %d  %d:%02d %s" % [
 		["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][t.month - 1],
-		t.day, 12 if hour == 0 else hour, t.minute, "AM" if t.hour < 12 else "PM"]
+		t.year, 12 if hour == 0 else hour, t.minute, "AM" if t.hour < 12 else "PM"]
 	_money.text = "$" + _thousands(sim.economy.money)
 	_money.add_theme_color_override("font_color", UiStyle.TEXT if sim.economy.money >= 0 else BAD)
 	_cars.text = "%d  ·  %d%% flow" % [sim.traffic.cars.size(), roundi(sim.traffic.flow * 100.0)]
@@ -298,6 +298,19 @@ func _build_top_bar() -> void:
 		b.pressed.connect(func(): game.set_speed(i))
 		row.add_child(b)
 		_speed_buttons.append(b)
+	row.add_child(VSeparator.new())
+	# How the town looks (Cities: Skylines 2 keeps these in its settings):
+	# the day/night cycle (off: always late morning) and seasons (off:
+	# always summer). Each player picks for themselves.
+	DayNight.load_settings()
+	var cycle := _icon_button("daynight", 24, "Day and night: let the sun set and the streetlights come on")
+	cycle.set_pressed_no_signal(DayNight.cycle_on)
+	cycle.toggled.connect(DayNight.set_cycle)
+	row.add_child(cycle)
+	var seasons := _icon_button("seasons", 24, "Seasons: spring, summer, fall colour and winter snow (no weather)")
+	seasons.set_pressed_no_signal(DayNight.seasons_on)
+	seasons.toggled.connect(DayNight.set_seasons)
+	row.add_child(seasons)
 	row.add_child(VSeparator.new())
 	advisor.setup(sim, func(): return _category if _category != "" or _view == "" else "view_" + _view)
 	row.add_child(advisor.make_button())

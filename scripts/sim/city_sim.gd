@@ -402,8 +402,12 @@ func tick() -> void:
 
 
 ## Game time as a Dictionary (year, month, day, weekday, hour, minute).
+## A game day settles a month, so the month and year follow Seasons.
 func clock() -> Dictionary:
-	return Time.get_datetime_dict_from_unix_time(START_UNIX + tick_count * MINUTES_PER_TICK * 60)
+	var t := Time.get_datetime_dict_from_unix_time(START_UNIX + tick_count * MINUTES_PER_TICK * 60)
+	t.month = Seasons.month(tick_count)
+	t.year = Seasons.year(tick_count)
+	return t
 
 
 ## Recounts people and jobs, then works out demand the way Cities: Skylines
