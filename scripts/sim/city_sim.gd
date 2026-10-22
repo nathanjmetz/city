@@ -20,6 +20,8 @@ signal farms_changed
 signal industry_changed
 ## A warehouse was built, grew, shrank or went away.
 signal warehouses_changed
+## A park or landmark was placed, filled in, grew, changed tier or went away.
+signal parks_changed
 ## A player command went through (sounds and other feedback listen to this).
 signal command_applied(cmd: Dictionary)
 
@@ -56,6 +58,8 @@ var reserves := Reserves.new()
 var permits := Permits.new()
 ## Landfills, recycling and cemeteries, and the garbage trucks' rounds.
 var hubs := CivicHubs.new()
+## Parks (hubs that fill in by themselves) and one-per-town landmarks.
+var parks := Parks.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -165,7 +169,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			var dir := _v(cmd.dir).normalized()
 			var cost: int = Services.KINDS[kind].cost
 			if cost > economy.money or services.site_problem(network, kind, pos, dir) != "" \
-					or _on_warehouse(Services.corners(kind, pos, dir)):
+					or _on_warehouse(Services.corners(kind, pos, dir)) \
+					or parks.overlaps(Services.corners(kind, pos, dir).map(func(q): return Vector2(q.x, q.z))):
 				return false
 			var sid := services.add(kind, pos, dir)
 			economy.money -= cost
@@ -236,6 +241,24 @@ func apply_now(cmd: Dictionary) -> bool:
 			farms.farms.erase(int(cmd.id))
 			_lots_dirty = true
 			farms_changed.emit()
+		"place_park":
+			var kind := str(cmd.get("kind", ""))
+			var pos := _v(cmd.pos)
+			var dir := _v(cmd.dir).normalized()
+			if not Parks.KINDS.has(kind) or dir.length() < 0.5 or Parks.cost_of(kind) > economy.money \
+					or parks.site_problem(self, kind, pos, dir) != "":
+				return false
+			var pid := parks.add(self, kind, pos, dir)
+			economy.money -= Parks.cost_of(kind)
+			_clear_zones_under(parks.footprint(pid))
+			_lots_dirty = true
+			parks_changed.emit()
+			ok = true
+		"remove_park":
+			ok = parks.sites.has(int(cmd.id))
+			parks.sites.erase(int(cmd.id))
+			_lots_dirty = true
+			parks_changed.emit()
 		"remove_service":
 			ok = services.buildings.has(int(cmd.id))
 			services.buildings.erase(int(cmd.id))
@@ -307,6 +330,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			reserves = Reserves.new()
 			permits.from_dict({})
 			hubs = CivicHubs.new()
+			parks = Parks.new()
+			parks_changed.emit()
 			farms.reserves = reserves
 			industry.reserves = reserves
 			farms_changed.emit()
@@ -418,6 +443,9 @@ func _road_wins() -> void:
 			economy.money += int(Balance.WAREHOUSE[warehouses.buildings[id].kind].cost)
 			warehouses.buildings.erase(id)
 			_lots_dirty = true
+	if parks.road_wins(self, corr):
+		_lots_dirty = true
+		parks_changed.emit()
 	farms_changed.emit()
 	industry_changed.emit()
 	warehouses_changed.emit()
@@ -447,6 +475,16 @@ func tick() -> void:
 			_lots_dirty = true
 			warehouses_changed.emit()
 	permits.tick(self)
+	if tick_count % Balance.PARK_DECIDE_EVERY == 0 and not parks.sites.is_empty():
+		var sizes := parks.sites.values().map(func(s): return s.size)
+		if parks.decide(self):
+			if parks.sites.values().map(func(s): return s.size) != sizes:
+				# A park bought land: lots and zoning under it go away.
+				for id in parks.sites:
+					_clear_zones_under(parks.footprint(id))
+				_lots_dirty = true
+				zones_changed.emit()
+			parks_changed.emit()
 	# Taxes come in and upkeep goes out every game hour, a day settling a month.
 	if tick_count % TICKS_PER_HOUR == 0:
 		economy.money += roundi(economy.monthly_net() / 24.0)
@@ -492,6 +530,7 @@ func update_stats() -> void:
 				if _utilities_ok(key):
 					factory_jobs += b.cap
 	services.update(network, lots, buildings)
+	parks.update_effects(self)
 	factory_jobs += farms.jobs() + industry.jobs() + warehouses.jobs()
 	economy.reach_milestones(pop)
 	var workers := int(pop * WORKER_SHARE)
@@ -512,6 +551,9 @@ func update_stats() -> void:
 	if pop > 300:
 		demand[ZoneMap.Zone.RESIDENTIAL] = clampf(
 			demand[ZoneMap.Zone.RESIDENTIAL] + 0.3 * (service_coverage() - 0.5), 0.0, 1.0)
+	# Parks and landmarks make a town nicer to live in.
+	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL]
+		+ Balance.AMENITY_DEMAND * parks.average_happiness(self), 0.0, 1.0)
 	economy.update_budget(self)
 	stats_changed.emit()
 
@@ -574,6 +616,8 @@ func farmhouse_problem(pos: Vector3, dir: Vector3) -> String:
 			return "That ground belongs to a company."
 	if _on_warehouse(Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y))):
 		return "Overlaps a warehouse."
+	if parks.overlaps(Array(poly)):
+		return "That ground is a park."
 	return ""
 
 
@@ -605,6 +649,8 @@ func industry_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 			return "Too close to another company."
 	if _on_warehouse(Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y))):
 		return "Overlaps a warehouse."
+	if parks.overlaps(Array(poly)):
+		return "That ground is a park."
 	return ""
 
 
@@ -631,6 +677,8 @@ func warehouse_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 			return "That ground belongs to a company."
 		if hubs.covers(p):
 			return "Overlaps a landfill, recycling center or cemetery."
+	if parks.overlaps(Array(poly)):
+		return "That ground is a park."
 	return ""
 
 
@@ -776,7 +824,7 @@ func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
 	if ok:
 		for p in pts:
 			if services.covers(p) or farms.covers(p) or industry.covers(p) or farms.field_at(p) != -1 \
-					or hubs.covers(p) or warehouses.covers(p):
+					or hubs.covers(p) or warehouses.covers(p) or parks.covers(p):
 				ok = false
 	if ok:
 		for key2 in lots:
@@ -940,7 +988,7 @@ func wealth_at(_p: Vector2) -> float:
 func _lot_blocked(lot: Dictionary) -> bool:
 	for p in [lot.pos, lot.front, lot.zone_pt]:
 		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) \
-				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p):
+				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p) or parks.covers(p):
 			return true
 	return false
 
@@ -1155,6 +1203,7 @@ func to_dict() -> Dictionary:
 		"reserves": reserves.to_dict(),
 		"permits": permits.to_dict(),
 		"hubs": hubs.to_dict(),
+		"parks": parks.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
 	}
@@ -1190,6 +1239,7 @@ func from_dict(d: Dictionary) -> void:
 	reserves.from_list(d.get("reserves", []))
 	permits.from_dict(d.get("permits", {}))
 	hubs.from_dict(d.get("hubs", {}))
+	parks.from_dict(d.get("parks", {}))
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:

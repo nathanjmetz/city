@@ -18,6 +18,8 @@ var zone_tool: ZoneTool
 var service_tool: ServiceTool
 var farm_tool: FarmTool
 var industry_tool: IndustryTool
+var park_tool: ParkTool
+var _park_cards := {}  # Parks kind -> Button
 var _industry_cards := {}  # "oil"/"ore"/"forest"/"reserve"/"release" -> Button
 var _industry_kind := "oil"  # what the industry Reserve tool saves land for
 var warehouse_tool: WarehouseTool
@@ -108,6 +110,9 @@ func _ready() -> void:
 	warehouse_tool.hint_changed.connect(_show_hint)
 	traffic_tool.mode_changed.connect(func(_m): _sync())
 	traffic_tool.hint_changed.connect(_show_hint)
+	park_tool.kind_changed.connect(func(_k): _sync())
+	park_tool.hint_changed.connect(_show_hint)
+	sim.parks_changed.connect(_sync)
 	sim.buildings_changed.connect(_update_stats)
 	sim.stats_changed.connect(_update_stats)
 	game.speed_changed.connect(func(_s): _sync_speed())
@@ -138,7 +143,7 @@ func anything_open() -> bool:
 		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
-		or industry_tool.kind != "" or warehouse_tool.kind != ""
+		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != ""
 
 
 ## Puts every tool away and closes every panel.
@@ -159,6 +164,7 @@ func close_all() -> void:
 	industry_tool.set_kind("")
 	warehouse_tool.set_kind("")
 	traffic_tool.set_mode(TrafficTool.Mode.NONE)
+	park_tool.set_kind("")
 	_sync()
 
 
@@ -383,6 +389,7 @@ func _build_bottom_bar() -> void:
 	_drawers["roads"] = _roads_drawer()
 	_drawers["zones"] = _zones_drawer()
 	_drawers["services"] = _services_drawer()
+	_drawers["parks"] = _parks_drawer()
 	_drawers["farms"] = _farms_drawer()
 	_drawers["industry"] = _industry_drawer()
 	_drawers["traffic"] = _traffic_drawer()
@@ -398,7 +405,7 @@ func _build_bottom_bar() -> void:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 4)
 	bar.add_child(row)
-	for entry in [["roads", "Roads"], ["zones", "Zoning"], ["farms", "Farming"], ["industry", "Industry"], ["services", "Services"], ["traffic", "Traffic"],
+	for entry in [["roads", "Roads"], ["zones", "Zoning"], ["farms", "Farming"], ["industry", "Industry"], ["services", "Services"], ["parks", "Parks"], ["traffic", "Traffic"],
 			["bulldoze", "Bulldoze"],
 			["budget", "Budget"]]:
 		var b := _category_button(entry[0], entry[1])
@@ -545,6 +552,29 @@ func _services_drawer() -> PanelContainer:
 		b.pressed.connect(func(): service_tool.set_kind(k))
 		hubs.add_child(b)
 		_service_cards[k] = b
+	return drawer
+
+
+func _parks_drawer() -> PanelContainer:
+	var drawer := PanelContainer.new()
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	drawer.add_child(row)
+	var parks := _section(row, "Park  ·  fills in by itself")
+	var marks := _section(row, "Landmarks  ·  one per town")
+	for k in Parks.KINDS:
+		var spec: Dictionary = Parks.KINDS[k]
+		var a: Dictionary = Balance.AMENITIES[k]
+		var short := {"park": "Park", "courthouse": "Courthouse", "water_tower": "Water tower",
+			"grain_elevator": "Elevator", "football": "Football"}
+		var tip := "%s: $%s" % [spec.name, CitySim.money_text(int(a.cost))]
+		if spec.landmark:
+			tip += ", $%s a month" % CitySim.money_text(int(a.upkeep))
+		var b := _card(spec.icon, short[k], tip)
+		b.tooltip_text = tip + ". Raises land value and happiness nearby."
+		b.pressed.connect(func(): park_tool.set_kind(k))
+		(marks if spec.landmark else parks).add_child(b)
+		_park_cards[k] = b
 	return drawer
 
 
@@ -799,6 +829,9 @@ func _open(cat: String) -> void:
 		"services":
 			if service_tool.kind == ServiceTool.OFF:
 				service_tool.set_kind(Services.Kind.POWER_FEED)
+		"parks":
+			if park_tool.kind == "":
+				park_tool.set_kind("park")
 		"budget":
 			road_tool.set_mode(RoadTool.Mode.NONE)
 			zone_tool.set_zone(ZoneTool.OFF)
@@ -807,6 +840,7 @@ func _open(cat: String) -> void:
 			industry_tool.set_kind("")
 			warehouse_tool.set_kind("")
 			traffic_tool.set_mode(TrafficTool.Mode.NONE)
+			park_tool.set_kind("")
 			_budget_open = true
 			_sync()
 
@@ -817,6 +851,8 @@ func _sync() -> void:
 		_category = "zones"
 	elif service_tool.kind != ServiceTool.OFF:
 		_category = "services"
+	elif park_tool.kind != "":
+		_category = "parks"
 	elif industry_tool.kind != "" or warehouse_tool.kind != "" or (farm_tool.mode in [FarmTool.Mode.RESERVE, FarmTool.Mode.CLEAR]
 			and farm_tool.reserve_kind != "farm"):
 		_category = "industry"
@@ -846,6 +882,9 @@ func _sync() -> void:
 		_zone_cards[z].set_pressed_no_signal(z == zone_tool.zone)
 	for k in _service_cards:
 		_service_cards[k].set_pressed_no_signal(k == service_tool.kind)
+	for k in _park_cards:
+		_park_cards[k].set_pressed_no_signal(k == park_tool.kind)
+		_park_cards[k].disabled = Parks.KINDS[k].landmark and sim.parks.has_kind(k)
 	for m in _farm_cards:
 		_farm_cards[m].set_pressed_no_signal(m == farm_tool.mode and _category == "farms")
 	for k in _industry_cards:

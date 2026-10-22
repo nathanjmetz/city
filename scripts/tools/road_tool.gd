@@ -63,6 +63,7 @@ var _hover_seg := -1
 var _hover_service := -1
 var _hover_warehouse := -1
 var _hover_farm := -1
+var _hover_park := -1
 var _shown_problem := ""
 var _guide := MeshInstance3D.new()
 var _label := Label3D.new()
@@ -240,6 +241,9 @@ func _click() -> void:
 			elif _hover_farm != -1:
 				sim.apply({"type": "remove_farm", "id": _hover_farm})
 				_hover_farm = -1
+			elif _hover_park != -1:
+				sim.apply({"type": "remove_park", "id": _hover_park})
+				_hover_park = -1
 			elif _hover_seg != -1:
 				sim.apply({"type": "remove_road", "seg": _hover_seg})
 				_hover_seg = -1
@@ -513,6 +517,8 @@ func _preview_pick(hit: Vector3) -> void:
 	# Service buildings can be bulldozed too.
 	_hover_service = sim.services.at(hit) if mode == Mode.BULLDOZE and _hover_seg == -1 else -1
 	_hover_farm = sim.farms.farm_at(hit) if mode == Mode.BULLDOZE and _hover_seg == -1 and _hover_service == -1 else -1
+	_hover_park = sim.parks.at(hit) if mode == Mode.BULLDOZE and _hover_seg == -1 and _hover_service == -1 \
+		and _hover_farm == -1 else -1
 	_hover_warehouse = sim.warehouses.at(hit) if mode == Mode.BULLDOZE and _hover_seg == -1 and _hover_service == -1 \
 		and _hover_farm == -1 else -1
 	if _hover_warehouse != -1:
@@ -524,10 +530,11 @@ func _preview_pick(hit: Vector3) -> void:
 		_preview.material_override = mat
 		_preview.visible = true
 		return
-	if _hover_service != -1 or _hover_farm != -1:
+	if _hover_service != -1 or _hover_farm != -1 or _hover_park != -1:
 		var b: Dictionary = sim.services.buildings[_hover_service] if _hover_service != -1 \
-			else sim.farms.farms[_hover_farm]
-		var size: Vector2 = Services.KINDS[b.kind].size if _hover_service != -1 else Farms.FARMHOUSE_SIZE
+			else (sim.farms.farms[_hover_farm] if _hover_farm != -1 else sim.parks.sites[_hover_park])
+		var size: Vector2 = Services.KINDS[b.kind].size if _hover_service != -1 \
+			else (Farms.FARMHOUSE_SIZE if _hover_farm != -1 else b.size)
 		var box := BoxMesh.new()
 		box.size = Vector3(size.x + 1.0, 6.0, size.y + 1.0)
 		_preview.mesh = box

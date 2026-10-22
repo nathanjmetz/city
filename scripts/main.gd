@@ -48,6 +48,10 @@ func _ready() -> void:
 	add_child(service_view)
 	service_view.setup(sim)
 
+	var park_view := ParkView.new()
+	add_child(park_view)
+	park_view.setup(sim)
+
 	var farm_view := FarmView.new()
 	add_child(farm_view)
 	farm_view.setup(sim)
@@ -118,6 +122,9 @@ func _ready() -> void:
 	var warehouse_tool := WarehouseTool.new()
 	warehouse_tool.setup(sim, cam)
 	add_child(warehouse_tool)
+	var park_tool := ParkTool.new()
+	park_tool.setup(sim, cam)
+	add_child(park_tool)
 
 	var traffic_tool := TrafficTool.new()
 	traffic_tool.setup(sim, cam, flow_view)
@@ -139,6 +146,8 @@ func _ready() -> void:
 			warehouse_tool.set_kind("")
 		if keep != traffic_tool and traffic_tool.mode != TrafficTool.Mode.NONE:
 			traffic_tool.set_mode(TrafficTool.Mode.NONE)
+		if keep != park_tool and park_tool.kind != "":
+			park_tool.set_kind("")
 	# Picking a tool also plays the tool sound.
 	var picked := func(tool: Object):
 		others.call(tool)
@@ -150,12 +159,13 @@ func _ready() -> void:
 	traffic_tool.mode_changed.connect(func(m): if m != TrafficTool.Mode.NONE: picked.call(traffic_tool))
 	industry_tool.kind_changed.connect(func(k): if k != "": picked.call(industry_tool))
 	warehouse_tool.kind_changed.connect(func(k): if k != "": picked.call(warehouse_tool))
+	park_tool.kind_changed.connect(func(k): if k != "": picked.call(park_tool))
 
 	var select_tool := SelectTool.new()
 	select_tool.setup(sim, cam, func(): return road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
-		or industry_tool.kind != "" or warehouse_tool.kind != "")
+		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "")
 	add_child(select_tool)
 
 	var hud := Hud.new()
@@ -164,6 +174,7 @@ func _ready() -> void:
 	hud.farm_tool = farm_tool
 	hud.industry_tool = industry_tool
 	hud.warehouse_tool = warehouse_tool
+	hud.park_tool = park_tool
 	hud.traffic_tool = traffic_tool
 	hud.info_view = info_view
 	hud.service_view = service_view
@@ -192,6 +203,7 @@ func _ready() -> void:
 		_starter_road()
 	await _settle()
 	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed, sim.industry_changed, sim.warehouses_changed]:
+	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed, sim.industry_changed, sim.parks_changed]:
 		sig.connect(func(): _save_pending = true)
 
 

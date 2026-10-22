@@ -315,3 +315,81 @@ const TRADE_IMPORT_MARKUP := 1.5
 ## ...and what no neighbor buys is sold to it for this share of the price.
 ## Trading with a neighbor is the better deal for both towns.
 const TRADE_EXPORT_SHARE := 0.6
+
+# --- Parks and landmarks -------------------------------------------------------
+# Brawn's rules (2026-10-22): a park is a hub. You place it and it fills in by
+# itself over time (paths, a playground, a pavilion, a ball diamond), growing
+# only into free land right next to it, and how well kept it is follows the
+# neighborhood's tier. Landmarks are one-of-a-kind town buildings that lift
+# land value and happiness around them.
+
+## A new park: its first piece of ground (width along the road x depth,
+## metres; about 0.7 acre, a US "mini park") and what the city pays for it.
+const PARK_START_SIZE := Vector2(60, 50)
+const PARK_COST := 250_000
+## Town land a park buys when it grows, dollars an acre (Midwestern town
+## land outside downtown).
+const PARK_LAND_PER_ACRE := 15_000
+## Each growth step adds a strip this deep along one side, metres.
+const PARK_GROW_STEP := 20.0
+## Upkeep per acre per month: US parks departments spend about $7,000 an
+## acre a year (NRPA Park Metrics median), scaled by the tier's `upkeep`.
+const PARK_UPKEEP_PER_ACRE := 600
+## A park adds one thing (a path, a playground...) at most this often, in
+## game days (a day is a month: a park fills in over a couple of years).
+const PARK_FEATURE_DAYS := 2.0
+## A park only buys more land while at least this many people live within
+## the neighborhood radius (someone has to use it), and never in a
+## struggling neighborhood.
+const PARK_GROW_MIN_RESIDENTS := 30
+## Parks and landmarks decide what to do this often, in ticks (6 game hours).
+const PARK_DECIDE_EVERY := 360
+## What a park fills in with, in order, and the space each needs (width x
+## depth, metres). `tier` is the lowest neighborhood tier that gets it
+## (0 struggling .. 3 thriving). Real references: a Little League field
+## with 200 ft fences, a 30 x 40 ft picnic shelter, a half basketball court.
+const PARK_FEATURES := [
+	{"type": "paths", "size": Vector2.ZERO, "tier": 0},
+	{"type": "playground", "size": Vector2(18, 14), "tier": 0},
+	{"type": "pavilion", "size": Vector2(14, 11), "tier": 0},
+	{"type": "court", "size": Vector2(16, 15), "tier": 1},
+	{"type": "ball_diamond", "size": Vector2(70, 64), "tier": 0},
+	{"type": "flower_beds", "size": Vector2(12, 8), "tier": 2},
+	{"type": "fountain", "size": Vector2(10, 10), "tier": 3},
+]
+
+## Amenities: build cost, monthly upkeep, and their pull on the land around.
+## `value` is the lift in land value right next door (0.10 = 10% higher),
+## fading to nothing at `value_reach` metres; `happy` likewise for how much
+## nearby residents like living there. Real studies (Crompton, 2005) find
+## homes beside a neighborhood park sell for about 8-20% more, fading over
+## 500-2,000 ft. A park's pull also scales with how filled-in and kept it is.
+## Landmarks are one per town, like the signature buildings in CS2.
+const AMENITIES := {
+	"park": {"cost": PARK_COST, "upkeep": 0, "value": 0.10, "value_reach": 300.0, "happy": 0.10, "happy_reach": 600.0},
+	# An Indiana county seat's courthouse on a full block of lawn, with
+	# diagonal walks and a war memorial (about 300 ft square).
+	"courthouse": {"cost": 6_000_000, "upkeep": 30_000, "size": Vector2(90, 90),
+		"value": 0.12, "value_reach": 600.0, "happy": 0.15, "happy_reach": 900.0},
+	# The town's old multi-leg water tower, painted with the town name. It
+	# is a symbol, so it is seen and felt far away.
+	"water_tower": {"cost": 900_000, "upkeep": 4_000, "size": Vector2(30, 30),
+		"value": 0.04, "value_reach": 500.0, "happy": 0.10, "happy_reach": 1500.0},
+	# A farmers' co-op grain elevator: concrete silos and a headhouse.
+	"grain_elevator": {"cost": 2_500_000, "upkeep": 6_000, "size": Vector2(56, 40),
+		"value": 0.03, "value_reach": 400.0, "happy": 0.06, "happy_reach": 1200.0},
+	# The high school football field: a 120 yd field, bleachers, a press box
+	# and lights (Friday nights are a small-town institution).
+	"football": {"cost": 4_000_000, "upkeep": 15_000, "size": Vector2(140, 84),
+		"value": 0.06, "value_reach": 600.0, "happy": 0.12, "happy_reach": 1600.0},
+}
+## Most land value and happiness a home can get from parks and landmarks
+## together.
+const AMENITY_VALUE_CAP := 0.25
+const AMENITY_HAPPY_CAP := 0.4
+## How much the town's average amenity happiness raises demand for homes.
+const AMENITY_DEMAND := 0.3
+## In the neighborhood score, land value counts as this plus the amenity
+## lift times AMENITY_LAND_SCALE (0 to 1), until a land value model lands.
+const HOOD_LAND_BASE := 0.5
+const AMENITY_LAND_SCALE := 2.5
