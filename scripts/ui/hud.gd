@@ -54,6 +54,9 @@ var _warning := UiStyle.label("", 13, Color(1.0, 0.75, 0.3))
 var _parallel_card: Button
 ## Grid only: any shape instead of a rectangle.
 var _shape_card: Button
+## Grid only: a row of real-world grid sizes above the road tools.
+var _grid_sizes: Control
+var _grid_size_cards := []
 var _elevation := UiStyle.label("Ground", 12)
 var _speed_buttons := []
 var _clock := UiStyle.label("", 14)
@@ -466,9 +469,22 @@ func _category_button(icon: String, title: String) -> Button:
 
 func _roads_drawer() -> PanelContainer:
 	var drawer := PanelContainer.new()
+	var stack := VBoxContainer.new()
+	drawer.add_child(stack)
+	var sizes_row := HBoxContainer.new()
+	sizes_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	stack.add_child(sizes_row)
+	var sizes := _section(sizes_row, "Grid size  ·  largest to smallest  ·  [ ] fine-tune")
+	for i in GridFill.PRESETS.size():
+		var p: Dictionary = GridFill.PRESETS[i]
+		var b := _card("grid", p.name, "%s, %d × %d m" % [p.about, int(p.block), int(p.across)])
+		b.pressed.connect(func(): road_tool.set_grid_preset(i))
+		sizes.add_child(b)
+		_grid_size_cards.append(b)
+	_grid_sizes = sizes_row
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
-	drawer.add_child(row)
+	stack.add_child(row)
 
 	var tools := _section(row, "Draw")
 	for entry in [
@@ -970,6 +986,9 @@ func _sync() -> void:
 	_parallel_card.set_pressed_no_signal(road_tool.parallel)
 	_shape_card.set_pressed_no_signal(road_tool.grid_free)
 	_shape_card.visible = road_tool.mode == RoadTool.Mode.GRID
+	_grid_sizes.visible = road_tool.mode == RoadTool.Mode.GRID
+	for i in _grid_size_cards.size():
+		_grid_size_cards[i].set_pressed_no_signal(i == road_tool.grid_preset)
 	_elevation.text = "Ground" if road_tool.elevation == 0.0 else "%+.1f m" % road_tool.elevation
 	if _category == "" or _category == "budget":
 		_show_hint("")

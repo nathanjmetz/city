@@ -51,6 +51,10 @@ var mode := Mode.STRAIGHT
 ## with the same road type and options, as in CS2 (Brawn's ask).
 var last_draw := Mode.STRAIGHT
 var grid_block := 120.0
+## Spacing of the streets parallel to the first side.
+var grid_across := RoadShapes.GRID_ACROSS
+## Index into GridFill.PRESETS, or -1 once [ ] has changed the size.
+var grid_preset := -1
 ## Which side of the shape the grid runs square to.
 var grid_side := 0
 ## Any shape instead of a rectangle.
@@ -168,6 +172,17 @@ func _input(event: InputEvent) -> void:
 	else:
 		return
 	get_viewport().set_input_as_handled()
+
+
+## Picks one of the real-world grid sizes (GridFill.PRESETS).
+func set_grid_preset(i: int) -> void:
+	grid_preset = i
+	grid_block = GridFill.PRESETS[i].block
+	grid_across = GridFill.PRESETS[i].across
+	if mode != Mode.GRID:
+		set_mode(Mode.GRID)
+	options_changed.emit()
+	_update_hint()
 
 
 ## Switches the grid between a rectangle and any shape.
@@ -311,7 +326,7 @@ func _finish_grid(shape: Array = _points) -> void:
 	var pts := []
 	for q in shape:
 		pts.append(_xz(q))
-	if sim.apply({"type": "build_grid_shape", "points": pts, "block": grid_block,
+	if sim.apply({"type": "build_grid_shape", "points": pts, "block": grid_block, "across": grid_across,
 			"side": 0 if not grid_free else grid_side, "road": road_type}):
 		_points.clear()
 	_update_hint()
@@ -414,11 +429,12 @@ func _show_grid(p: Vector3) -> void:
 	_show_guide(_points[_points.size() - 1] if not grid_free and _points.size() == 2 else _points[0])
 	var plan := []
 	if shape.size() >= 3:
-		var key := "%s|%s|%d|%d|%d" % [str(shape), str(grid_block), grid_side, road_type, sim.network.segments.size()]
+		var key := "%s|%s|%s|%d|%d|%d" % [str(shape), str(grid_block), str(grid_across), grid_side, road_type,
+			sim.network.segments.size()]
 		# Big towns take a moment to plan, so replan at most a few times a second.
 		if key != _grid_key and Time.get_ticks_msec() - _grid_planned_at > 120:
 			_grid_key = key
-			_grid_plan = GridFill.plan(network, shape, grid_block, road_type, grid_side)
+			_grid_plan = GridFill.plan(network, shape, grid_block, road_type, grid_side, grid_across)
 			_grid_planned_at = Time.get_ticks_msec()
 		plan = _grid_plan
 	var st := SurfaceTool.new()
@@ -463,7 +479,10 @@ func _show_guide(at: Vector3) -> void:
 
 func _resize(f: float) -> void:
 	if mode == Mode.GRID:
-		grid_block = clampf(grid_block * f, RoadShapes.GRID_BLOCK_MIN, RoadShapes.GRID_BLOCK_MAX)
+		grid_block = clampf(grid_block * f, GridFill.BLOCK_MIN, GridFill.BLOCK_MAX)
+		grid_across = clampf(grid_across * f, GridFill.ACROSS_MIN, GridFill.BLOCK_MAX)
+		grid_preset = -1
+		options_changed.emit()
 	elif mode == Mode.ROUNDABOUT:
 		roundabout_radius = clampf(roundabout_radius * f, RoadShapes.ROUNDABOUT_MIN, RoadShapes.ROUNDABOUT_MAX)
 	elif parallel and (mode == Mode.STRAIGHT or mode == Mode.CURVED):
@@ -675,7 +694,9 @@ func _update_hint() -> void:
 			if _points.size() == 2 and _shown_problem != "":
 				text = _shown_problem
 		Mode.GRID:
-			var size := "Blocks %d m long  [ ]" % int(grid_block)
+			var size := "Blocks %d × %d m  [ ]" % [int(grid_block), int(grid_across)]
+			if grid_preset >= 0:
+				size = "%s, %s" % [GridFill.PRESETS[grid_preset].name, size]
 			if not grid_free:
 				match _points.size():
 					0: text = "Rectangle: click the first corner. Tab for any shape.  " + size
