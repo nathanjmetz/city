@@ -23,7 +23,7 @@ An open map where you draw roads, paint zones along them, and buildings grow, li
 | `B` Bulldoze | Click a road or service building to remove it. |
 | `5` `6` `7` Zones | Homes, shops, industry. Hold the left mouse button and drag over the lots along a road. `[` `]` brush size. |
 | Services | Power line feed and a well first (a substation and water tower serve bigger towns): buildings only grow and fill with power and water, which flow along connected roads. Fire, police, clinic and school cover homes within real road distances (green roads while placing). Place beside a street; the building turns to face it. |
-| Farming | Click to drop nodes around farmland (green soil is richest), click the first node or press Enter to close. Place a corn or soybean farmhouse on it: the farm buys the best fields around it while they pay, and sells losing ones in bad years. Soil never wears out. Crops change with the seasons. |
+| Farming | Click to drop nodes around farmland (green soil is richest), click the first node or press Enter to close. Place a corn or soybean farmhouse on it within 250 m of a road: it gets a winding gravel lane out to the road, builds its barn, then plants fields out from the yard, square to its road and trimmed to your outline. It buys more while they pay and sells losing ones in bad years. Soil never wears out. Crops change with the seasons. |
 | `8` Dezone | Erase zones (buildings on them go away). |
 | Right click | Stop drawing. |
 | Esc | Stop drawing; press again to put every tool away and close panels. |
@@ -50,7 +50,33 @@ While drawing, a straight road snaps straight on or at 90° to the road it start
 Bends follow real US rules: no curve tighter than 12.8 m (42 ft), the AASHTO turning radius of a box truck.
 Each road gets 20 m wide, 32 m deep lots on both sides. Nothing grows until you zone them.
 Sizes are real US suburban sizes (1 unit = 1 metre): 9 m curb to curb, a grass strip and a sidewalk each side, 20 m wide house lots.
-Your town saves automatically in the browser.
+Your town saves automatically (in the browser too).
+
+## Menus, saves and playing together
+
+The game opens on a title screen like Cities: Skylines 2: **Continue** your latest city, start a **New city**, **Load city** (every city you've made, with its population and money), or **Play together**. In the game, **Esc** (with no tool in hand) opens the pause menu: Resume, Save, Main menu.
+
+**Play together** puts everyone's city on one shared map. Each player has their own city, budget and economy. A new player's city starts on open land about a mile from the others, so neighbors are in sight.
+
+- **Join:** type your name and the invite code. An invite link (`https://nathanjmetz.github.io/city/?join=CODE&server=wss://...`) fills both in for you.
+- **Host:** on Mac or Windows, *Host a region* runs one from your computer and shows the code. For an always-on region, run the server on its own (below).
+- **Chat:** the panel on the left. **Enter** to type, Enter to send, Esc to go back to building. Click a name to fly over and watch their city grow live; *Home* brings you back. *Invite* copies an invite.
+- You see where other players are pointing (a ring with their name), and a name tag over each neighbor's city.
+- The region keeps running while you're away, so your city keeps growing.
+
+### Running a region server
+
+The server is the same game with no window. It runs anywhere Godot runs (a Mac mini now, a cheap Linux cloud server later):
+
+```
+godot --headless -s scripts/net/server_main.gd -- --port 9080 --data region.json
+```
+
+It prints the invite code (made once and kept in the data file; `--code` sets your own). The region saves to the data file every 10 seconds. Options can also be set with the environment variables `CITY_PORT`, `CITY_CODE` and `CITY_DATA`.
+
+Players on the web preview need a secure address (`wss://`), so put the server behind an HTTPS tunnel or proxy (for example a free Cloudflare Tunnel) and share `wss://your-address` as the server. On the same home network, `ws://computer-name:9080` works from the Mac and Windows versions.
+
+How it stays in sync: the server owns the real region. Players send commands for their own city only; every tick (10 a second) the server applies what arrived, steps every city, and sends that tick to everyone, so every copy runs identically. Every 5 seconds players compare a checksum with the server and fetch a fresh copy if theirs drifted.
 
 ## Sound
 
@@ -72,8 +98,11 @@ All sounds are built in code by `tools/audio/make_assets.py` (`python3 tools/aud
 | `scripts/camera/city_camera.gd` | The orbit camera. |
 | `scripts/tools/road_tool.gd` | Mouse tools for drawing and bulldozing. |
 | `scripts/ui/hud.gd` | Toolbar and stats. |
-| `tests/` | Headless tests: `godot --headless -s tests/test_roads.gd` and `tests/test_sim.gd`, `tests/test_traffic.gd` |
+| `scripts/shell/` | The title screen, pause menu, save slots (`session.gd`, the Session autoload) and shared scenery. |
+| `scripts/net/` | Shared regions: `region.gd` (every city on one map, plus chat), `region_server.gd`, `region_client.gd`, `region_view.gd` (neighbors, name tags, cursors) and `server_main.gd` (headless server). |
+| `scripts/ui/chat_panel.gd` | The region chat. |
+| `tests/` | Headless tests: `godot --headless -s tests/test_roads.gd` and `tests/test_sim.gd`, `tests/test_traffic.gd`, `tests/test_net.gd` (a real server with two players) |
 | `tools/screenshot.gd` | Renders a demo town to a PNG: `godot -s tools/screenshot.gd -- out.png` |
 
 The game uses the Compatibility renderer so the same project runs in browsers and on modest Mac and Windows machines.
-Mac and Windows exports and multiplayer (each player's own city in a shared region, hosted on a Mac mini) come later.
+Mac and Windows downloads come later.

@@ -47,9 +47,10 @@ static func gather(sim: CitySim, hour: int) -> Array:
 		if int(b.kind) in UTILITY_KINDS:
 			out.append({"key": "s%d" % id, "sound": "transformer", "pos": b.pos + Vector3.UP * 2.0})
 	for id in sim.farms.farms:
-		for c in sim.farms.farms[id].cells:
+		var f: Dictionary = sim.farms.farms[id]
+		for c in f.cells:
 			out.append({"key": "f%d_%d_%d" % [id, c.x, c.y], "sound": "corn_field",
-				"pos": Farms.cell_center(c) + Vector3.UP * 1.5})
+				"pos": Farms.cell_center(f, c) + Vector3.UP * 1.5})
 	return out
 
 

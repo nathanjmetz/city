@@ -663,7 +663,7 @@ func _update_stats() -> void:
 	var unserved := sim.unserved_count()
 	var use := sim.services.utility_use
 	var no_utilities: bool = (use.power[1] == 0 or use.water[1] == 0) and not sim.zones.cells.is_empty()
-	_warning.text = "%d buildings without power or water" % unserved if unserved > 0 \
+	_warning.text = "%d buildings without power or water: people are leaving" % unserved if unserved > 0 \
 		else ("Build power and water (Services) so the town can grow" if no_utilities else "")
 	_budget_rows.net.text = "%s$%s / month" % ["+" if net >= 0 else "–", _thousands(absi(net))]
 	_budget_rows.net.add_theme_color_override("font_color", GOOD if net >= 0 else BAD)

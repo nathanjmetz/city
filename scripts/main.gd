@@ -1,11 +1,11 @@
 extends Node3D
 ## Sets up the world: sky, sun, ground, roads, zones, buildings, camera and
-## toolbar, and steps the simulation in fixed ticks. The town saves itself
-## automatically (in the browser too).
+## toolbar, and steps the simulation in fixed ticks. A solo city saves itself
+## automatically (in the browser too). In a shared region the server steps
+## the city instead, and neighbors' cities and the chat appear.
 
 signal speed_changed(speed: int)
 
-const SAVE_PATH := "user://town.json"
 ## 0 = paused; 1, 2 and 3 run the clock at 1x, 2x and 4x.
 const SPEEDS := [0.0, 1.0, 2.0, 4.0]
 
@@ -18,8 +18,12 @@ var _save_wait := 0.0
 
 
 func _ready() -> void:
-	_build_environment()
-	_build_ground()
+	if Session.online():
+		sim = Session.client.my_sim()
+		sim.send_command = Session.client.send_command
+	sim.require_utilities = true
+	add_child(SkyLight.new())
+	add_child(Ground.new())
 
 	var roads := RoadView.new()
 	add_child(roads)
@@ -36,14 +40,13 @@ func _ready() -> void:
 	var service_view := ServiceView.new()
 	add_child(service_view)
 	service_view.setup(sim)
-	sim.require_utilities = true
 
 	var farm_view := FarmView.new()
 	add_child(farm_view)
 	farm_view.setup(sim)
 
 	var cars := TrafficView.new()
-	cars.setup(sim.traffic, func(): return _tick_time * CitySim.TICKS_PER_SECOND)
+	cars.setup(sim.traffic, _tick_fraction)
 	add_child(cars)
 
 	var signals := JunctionView.new()
@@ -114,6 +117,19 @@ func _ready() -> void:
 	hud.traffic_tool = traffic_tool
 	add_child(hud)
 
+	var menu := GameMenu.new()
+	menu.setup(self, func(): return road_tool.mode != RoadTool.Mode.NONE \
+		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
+		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE)
+	add_child(menu)
+	if Session.online():
+		var region := RegionView.new()
+		region.setup(Session.client, cam, road_tool)
+		add_child(region)
+		var chat := ChatPanel.new()
+		chat.setup(cam, region)
+		add_child(chat)
+		return
 	if not _load():
 		_starter_road()
 	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed]:
@@ -121,6 +137,8 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	if Session.online():
+		return  # The region's server steps the city.
 	_tick_time += delta * SPEEDS[speed]
 	var step := 1.0 / CitySim.TICKS_PER_SECOND
 	var guard := 0
@@ -133,12 +151,19 @@ func _process(delta: float) -> void:
 	if _save_pending and _save_wait <= 0.0:
 		_save_pending = false
 		_save_wait = 2.0
-		var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-		if f:
-			f.store_string(JSON.stringify(sim.to_dict()))
+		Session.save_city(sim)
+
+
+## How far through the current tick the clock is, 0 to 1.
+func _tick_fraction() -> float:
+	if Session.online():
+		return minf(Session.client.since_tick * CitySim.TICKS_PER_SECOND, 1.0)
+	return _tick_time * CitySim.TICKS_PER_SECOND
 
 
 func set_speed(s: int) -> void:
+	if Session.online():
+		return  # Everyone in a region shares one clock.
 	speed = clampi(s, 0, SPEEDS.size() - 1)
 	if speed != 0:
 		_resume_speed = speed
@@ -153,10 +178,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _load() -> bool:
-	if not FileAccess.file_exists(SAVE_PATH):
-		return false
-	var data = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
-	if typeof(data) != TYPE_DICTIONARY:
+	if Session.save_path == "":
+		# Started straight into the game (not from the title screen).
+		var saves := Session.list_saves()
+		Session.save_path = saves[0].path if not saves.is_empty() else Session.new_save_path("My Town")
+		Session.current_name = Session.city_name()
+	var data := Session._read(Session.save_path)
+	if data.is_empty():
 		return false
 	sim.from_dict(data)
 	return not sim.network.segments.is_empty()
@@ -169,11 +197,3 @@ func _starter_road() -> void:
 	sim.apply({"type": "build_road", "start": [-400, 0], "ctrl": [-250, 0], "end": [-100, 0]})
 	sim.apply({"type": "build_road", "start": [-100, 0], "ctrl": [-20, 0], "end": [40, 60]})
 	sim.economy.money = money
-
-
-func _build_environment() -> void:
-	add_child(SkyLight.new())
-
-
-func _build_ground() -> void:
-	add_child(Ground.new())

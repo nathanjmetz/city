@@ -49,6 +49,10 @@ var stats := {"population": 0, "workers": 0, "jobs": 0, "employed": 0, "homes_fr
 ## How much each zone wants to grow, 0 to 1, like the CS demand bars.
 var demand := {ZoneMap.Zone.RESIDENTIAL: 0.6, ZoneMap.Zone.COMMERCIAL: 0.0, ZoneMap.Zone.INDUSTRIAL: 0.1}
 
+## In a shared region, your commands go to the server instead and come back
+## in a tick, so every player applies them at the same moment.
+var send_command := Callable()
+
 var _lots_dirty := true
 var _usable_cache := {}  # field cell -> bool, cleared when roads or lots change
 
@@ -57,8 +61,17 @@ func _init() -> void:
 	network.changed.connect(func(): _lots_dirty = true)
 
 
-## Applies one player command. Returns true if anything changed.
+## Applies one player command. Returns true if anything changed (online:
+## true once it's sent).
 func apply(cmd: Dictionary) -> bool:
+	if send_command.is_valid():
+		send_command.call(cmd)
+		return true
+	return apply_now(cmd)
+
+
+## Applies a command right away, even online (the region does this).
+func apply_now(cmd: Dictionary) -> bool:
 	var ok := false
 	match cmd.get("type", ""):
 		"build_road":
@@ -114,15 +127,16 @@ func apply(cmd: Dictionary) -> bool:
 			var pts := []
 			for p in cmd.points:
 				pts.append(_v(p))
-			ok = farms.paint_polygon(pts, bool(cmd.get("on", true))) > 0
+			ok = farms.paint_polygon(pts, bool(cmd.get("on", true)))
 			if ok:
+				_lots_dirty = true
 				farms_changed.emit()
 		"place_farmhouse":
 			var pos := _v(cmd.pos)
 			var dir := _v(cmd.dir).normalized()
 			if farmhouse_problem(pos, dir) != "" or Farms.FARMHOUSE_COST > economy.money:
 				return false
-			farms.add_farm(pos, dir, str(cmd.get("crop", "corn")))
+			farms.add_farm(pos, dir, str(cmd.get("crop", "corn")), farm_drive(pos, dir))
 			economy.money -= Farms.FARMHOUSE_COST
 			_lots_dirty = true
 			farms_changed.emit()
@@ -208,9 +222,11 @@ func update_stats() -> void:
 				pop += b.occ
 				home_cap += b.cap
 			ZoneMap.Zone.COMMERCIAL:
-				shop_jobs += b.cap
+				if _utilities_ok(key):  # closed without power or water
+					shop_jobs += b.cap
 			ZoneMap.Zone.INDUSTRIAL:
-				factory_jobs += b.cap
+				if _utilities_ok(key):
+					factory_jobs += b.cap
 	services.update(network, lots, buildings)
 	factory_jobs += farms.jobs()
 	economy.reach_milestones(pop)
@@ -238,6 +254,12 @@ func update_stats() -> void:
 
 ## New residents move into homes with room, faster when homes are in demand.
 func _move_in() -> void:
+	# Without power or water, people move away (one household at a time).
+	if require_utilities:
+		for key in buildings:
+			var home: Dictionary = buildings[key]
+			if home.zone == ZoneMap.Zone.RESIDENTIAL and home.occ > 0 and not _utilities_ok(key):
+				home.occ -= 1
 	var arrivals := 1 + int(demand[ZoneMap.Zone.RESIDENTIAL] * 4.0)
 	if demand[ZoneMap.Zone.RESIDENTIAL] <= 0.05:
 		return
@@ -263,21 +285,20 @@ func empty_zoned_lots() -> Array:
 	return out
 
 
-## Why a farmhouse can't go here, or "" if it can: it needs farmland under
-## or beside it and clear ground.
+## Why a farmhouse can't go here, or "" if it can: it needs farmland, clear
+## ground and a road near enough for its lane.
 func farmhouse_problem(pos: Vector3, dir: Vector3) -> String:
-	var home := Farms.cell_of(pos)
-	var near_land := false
-	for dx in range(-1, 2):
-		for dz in range(-1, 2):
-			near_land = near_land or farms.area.has(home + Vector2i(dx, dz))
-	if not near_land:
-		return "Place the farmhouse on farmland. Outline farmland first."
 	var side := Vector3(-dir.z, 0.0, dir.x)
 	var poly := PackedVector2Array()
+	var on_land := farms.is_farmland(pos)
 	for sgn in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
 		var p: Vector3 = pos + side * Farms.FARMHOUSE_SIZE.x * 0.5 * sgn.x + dir * Farms.FARMHOUSE_SIZE.y * 0.5 * sgn.y
 		poly.append(Vector2(p.x, p.z))
+		on_land = on_land or farms.is_farmland(p)
+	if not on_land:
+		return "Place the farmhouse on farmland. Outline farmland first."
+	if farm_drive(pos, dir).is_empty():
+		return "Needs a road within %d m for its farm lane." % int(Farms.MAX_DRIVE)
 	if Services.road_clash(network, poly):
 		return "Too close to a road."
 	for id in services.buildings:
@@ -289,25 +310,37 @@ func farmhouse_problem(pos: Vector3, dir: Vector3) -> String:
 	return ""
 
 
-## True when a field cell is clear: no road, lot, service or farmyard on it.
-func field_usable(c: Vector2i) -> bool:
-	if _usable_cache.has(c):
-		return _usable_cache[c]
-	var mid := Farms.cell_center(c)
-	var ok := network.find_segment_near(mid, Farms.CELL * 0.5 + RoadStyle.right_of_way_half(RoadStyle.Type.AVENUE), 2.0).is_empty()
+## The gravel lane from a farmhouse to the nearest road, or [] if no road is
+## near enough.
+func farm_drive(pos: Vector3, dir: Vector3) -> Array:
+	var near := network.find_segment_near(pos, Farms.MAX_DRIVE, 1.0)
+	if near.is_empty():
+		return []
+	return Farms.make_drive(pos, dir, near.point)
+
+
+## True when ground for a field is clear: no road, lot, service or farmyard.
+func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
+	var key := Vector2i(roundi(mid.x), roundi(mid.z))
+	if _usable_cache.has(key):
+		return _usable_cache[key]
+	var ok := network.find_segment_near(mid, Farms.CELL * 0.6 + RoadStyle.right_of_way_half(RoadStyle.Type.AVENUE), 2.0).is_empty()
+	var pts := [mid]
+	for c in corners:
+		pts.append(mid.lerp(Vector3(c.x, 0.0, c.y), 0.8))
 	if ok:
-		var half := Farms.CELL * 0.5
-		for p in [mid, mid + Vector3(half, 0, half) * 0.8, mid + Vector3(-half, 0, half) * 0.8,
-				mid + Vector3(half, 0, -half) * 0.8, mid + Vector3(-half, 0, -half) * 0.8]:
+		for p in pts:
 			if services.covers(p) or farms.covers(p):
 				ok = false
-		for key in lots:
+	if ok:
+		for key2 in lots:
 			# Fields can take empty roadside lots, but not zoned or built ones.
-			if not buildings.has(key) and zones.zone_at(lots[key].zone_pt) == ZoneMap.Zone.NONE:
+			if not buildings.has(key2) and zones.zone_at(lots[key2].zone_pt) == ZoneMap.Zone.NONE:
 				continue
-			if ok and absf(lots[key].pos.x - mid.x) < half + 16.0 and absf(lots[key].pos.z - mid.z) < half + 16.0:
+			if lots[key2].pos.distance_to(mid) < Farms.CELL * 0.71 + 16.0:
 				ok = false
-	_usable_cache[c] = ok
+				break
+	_usable_cache[key] = ok
 	return ok
 
 
@@ -331,6 +364,10 @@ func unserved_count() -> int:
 	return n
 
 
+func utilities_ok(key: String) -> bool:
+	return _utilities_ok(key)
+
+
 func _utilities_ok(key: String) -> bool:
 	return not require_utilities or services.has_utilities(key)
 
@@ -351,8 +388,7 @@ func _refresh() -> void:
 			# No lots under a service building.
 			var blocked := false
 			for p in [lot.pos, lot.front, lot.zone_pt]:
-				blocked = blocked or services.covers(p) or farms.covers(p) \
-					or farms.owner_of(Farms.cell_of(p)) != -1
+				blocked = blocked or services.covers(p) or farms.covers(p) or farms.field_at(p) != -1
 			if not blocked:
 				lots[lot.key] = lot
 		_usable_cache.clear()
@@ -502,6 +538,10 @@ func from_dict(d: Dictionary) -> void:
 	economy.from_dict(d.get("economy", {}))
 	services.from_dict(d.get("services", {}))
 	farms.from_dict(d.get("farms", {}))
+	for id in farms.farms:
+		var f: Dictionary = farms.farms[id]
+		if f.drive.is_empty():
+			f.drive = farm_drive(f.pos, f.dir)
 	traffic.rules_from_dict(d.get("junctions", {}))
 	tick_count = int(d.get("tick", 0))
 	city_seed = int(d.get("seed", 1))

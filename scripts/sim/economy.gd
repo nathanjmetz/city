@@ -84,6 +84,8 @@ func update_budget(sim: CitySim) -> void:
 	var staffed := float(sim.stats.employed) / maxf(sim.stats.jobs, 1.0)
 	for key in sim.buildings:
 		var b: Dictionary = sim.buildings[key]
+		if int(b.zone) != ZoneMap.Zone.RESIDENTIAL and not sim.utilities_ok(key):
+			continue  # a business with no power or water is closed
 		income[int(b.zone)] += building_tax(b, staffed) / 12.0
 	# Farmland pays property tax at the industrial rate.
 	income[ZoneMap.Zone.INDUSTRIAL] += sim.farms.total_acres() * Farms.LAND_PER_ACRE * Farms.AG_ASSESSMENT \
