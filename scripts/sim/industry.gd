@@ -11,6 +11,9 @@ extends RefCounted
 const PAD := 80.0               # one well pad, pit or logging stand, square
 const MAX_DRIVE := 250.0        # longest access road out to a public road
 const MAX_PADS := 60
+## How far out (in pads) a new company looks for its first one: 400 m, the
+## same reach the placing tool reports.
+const SEED_REACH := 5
 ## The main building's yard.
 const HQ_SIZE := Vector2(40, 40)
 ## Names, the resource each works and its cargo; the numbers are in Balance.
@@ -91,7 +94,10 @@ func yearly_profit(id: int) -> float:
 
 ## Every company takes a step: it adds the best paying pad next to what it
 ## has (on rich enough ground the city leaves free), or closes its worst
-## if that keeps losing money. `usable(centre, corners)` comes from the city.
+## if that keeps losing money. A new company opens its first pad on the best
+## ground within reach, with a haul track back, and grows out from there.
+## `usable(centre, corners)` comes from the city. When a new company finds
+## nothing, `idle` on the site says why (not saved; set again each step).
 func decide(usable: Callable) -> bool:
 	var changed := false
 	var ids := sites.keys()
@@ -100,12 +106,18 @@ func decide(usable: Callable) -> bool:
 		var s: Dictionary = sites[id]
 		var best := Vector2i.MAX
 		var best_score := 0.0
+		# What stopped a new company, for its panel: 0 nothing rich, 1 nothing pays, 2 all taken.
+		var why := 0
 		if s.pads.size() < MAX_PADS:
-			for c in _frontier(s):
-				if richness(s, c) < MIN_RICHNESS or not _free(id, s, c, usable):
+			for c in (_frontier(s) if not s.pads.is_empty() else _seeds()):
+				if richness(s, c) < MIN_RICHNESS:
 					continue
 				var p := pad_profit(s, c)
 				if p <= 0.0:
+					why = maxi(why, 1)
+					continue
+				if not _free(id, s, c, usable):
+					why = 2
 					continue
 				var score := p + COMPACT_BONUS * _neighbors(s, c)
 				if reserves != null and reserves.kind_at(pad_center(s, c)) == s.kind:
@@ -127,7 +139,29 @@ func decide(usable: Callable) -> bool:
 			s.pads.append(best)
 			s.loss_streak = 0
 			changed = true
+		var idle := ""
+		if s.pads.is_empty():
+			var k: Dictionary = KINDS[s.kind]
+			idle = ["No %s rich enough within 400 m. Move it closer to the dark ground in the view.",
+				"The %s within 400 m is too thin to pay for a pad yet.",
+				"Every rich spot within 400 m is built on, farmed or reserved for something else."][why]
+			if why < 2:
+				idle = idle % k.cargo
+		if s.get("idle", "") != idle:
+			s.idle = idle
+			changed = true
 	return changed
+
+
+## Cells a new company may open its first pad on.
+static func _seeds() -> Array:
+	var out := []
+	for y in range(-SEED_REACH, SEED_REACH + 1):
+		for x in range(-SEED_REACH, SEED_REACH + 1):
+			var c := Vector2i(x, y)
+			if c != Vector2i.ZERO and c.length_squared() <= SEED_REACH * SEED_REACH:
+				out.append(c)
+	return out
 
 
 ## Loads produced over `hours` of game time (a game day is a month).

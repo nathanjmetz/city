@@ -59,7 +59,7 @@ func tick(sim: CitySim) -> void:
 		var s: Dictionary = sim.industry.sites[id]
 		if s.stock >= 1.0 and sent < MAX_PER_ROUND and not s.drive.is_empty():
 			var k: Dictionary = Industry.KINDS[s.kind]
-			if _send(sim, {"ref": "site:%d" % id, "pos": _xz(s.drive[-1])}, _buyer(sim, s.drive[-1], "raw"),
+			if _send(sim, {"ref": "site:%d" % id, "pos": _xz(s.drive[-1]), "drive": _lane(s.drive)}, _buyer(sim, s.drive[-1], "raw"),
 					k.purpose, {"good": k.cargo, "amount": 1}, "site"):
 				s.stock -= 1.0
 				sent += 1
@@ -68,7 +68,7 @@ func tick(sim: CitySim) -> void:
 	for id in ids:
 		var f: Dictionary = sim.farms.farms[id]
 		if grain.get(id, 0.0) >= Balance.GRAIN_TRUCK_BUSHELS and sent < MAX_PER_ROUND and not f.drive.is_empty():
-			if _send(sim, {"ref": "farm:%d" % id, "pos": _xz(f.drive[-1])}, _buyer(sim, f.drive[-1], "raw"),
+			if _send(sim, {"ref": "farm:%d" % id, "pos": _xz(f.drive[-1]), "drive": _lane(f.drive)}, _buyer(sim, f.drive[-1], "raw"),
 					"grain", {"good": f.crop, "amount": int(Balance.GRAIN_TRUCK_BUSHELS)}, "farm"):
 				grain[id] -= Balance.GRAIN_TRUCK_BUSHELS
 				sent += 1
@@ -227,6 +227,14 @@ func trucks_for(ref: String) -> int:
 		if trips[id].from.ref == ref or trips[id].to.ref == ref:
 			n += 1
 	return n
+
+
+## A private lane for Traffic, building end first: trucks drive up it and dock.
+static func _lane(drive: Array) -> Array:
+	var out := []
+	for p in drive:
+		out.append(_xz(p))
+	return out
 
 
 static func _xz(p: Vector3) -> Array:

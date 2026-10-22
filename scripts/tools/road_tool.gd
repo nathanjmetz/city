@@ -38,6 +38,10 @@ var sim: CitySim
 var network: RoadNetwork
 var cam: CityCamera
 var mode := Mode.STRAIGHT
+## The last drawing mode picked (straight, curve, grid, roundabout or
+## upgrade). Putting the tool away and taking it out again brings it back,
+## with the same road type and options, as in CS2 (Brawn's ask).
+var last_draw := Mode.STRAIGHT
 var grid_block := 120.0
 var roundabout_radius := 20.0
 var road_type := 0
@@ -110,12 +114,14 @@ func set_road_type(t: int) -> void:
 	road_type = t
 	options_changed.emit()
 	if mode == Mode.NONE or mode == Mode.BULLDOZE:
-		set_mode(Mode.STRAIGHT)
+		set_mode(last_draw)
 	_update_hint()
 
 
 func set_mode(m: int) -> void:
 	mode = m
+	if m != Mode.NONE and m != Mode.BULLDOZE:
+		last_draw = m
 	_points.clear()
 	_hover_seg = -1
 	mode_changed.emit(mode)

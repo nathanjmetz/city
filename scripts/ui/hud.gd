@@ -734,7 +734,7 @@ func _open(cat: String) -> void:
 	match cat:
 		"roads":
 			if road_tool.mode in [RoadTool.Mode.NONE, RoadTool.Mode.BULLDOZE]:
-				road_tool.set_mode(RoadTool.Mode.STRAIGHT)
+				road_tool.set_mode(road_tool.last_draw)
 		"zones":
 			if zone_tool.zone == ZoneTool.OFF:
 				zone_tool.set_zone(ZoneMap.Zone.RESIDENTIAL)
