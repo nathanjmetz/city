@@ -174,6 +174,24 @@ func _draw() -> void:
 			draw_rect(Rect2(P.call(0.14, 0.4), Vector2(0.72, 0.5) * s), color, false, w)
 			_poly([P.call(0.08, 0.42), P.call(0.5, 0.1), P.call(0.92, 0.42)], Color(color, 0.6))
 			draw_rect(Rect2(P.call(0.42, 0.62), Vector2(0.16, 0.28) * s), color)
+		"farms", "farmland":
+			# Field rows in perspective under a barn roof line.
+			for i in 4:
+				var y := 0.5 + i * 0.12
+				line.call(P.call(0.1 + i * 0.02, y), P.call(0.9 - i * 0.02, y), w * 0.7,
+					Color(0.55, 0.78, 0.35) if kind == "farmland" else color)
+			_poly([P.call(0.3, 0.42), P.call(0.3, 0.22), P.call(0.5, 0.08), P.call(0.7, 0.22), P.call(0.7, 0.42)],
+				Color(0.85, 0.3, 0.25))
+		"corn":
+			line.call(P.call(0.5, 0.95), P.call(0.5, 0.2), w, Color(0.45, 0.75, 0.35))
+			_poly([P.call(0.42, 0.62), P.call(0.5, 0.28), P.call(0.58, 0.62), P.call(0.5, 0.72)], Color(0.98, 0.82, 0.3))
+			line.call(P.call(0.5, 0.7), P.call(0.22, 0.42), w, Color(0.45, 0.75, 0.35))
+			line.call(P.call(0.5, 0.8), P.call(0.8, 0.5), w, Color(0.45, 0.75, 0.35))
+		"soybeans":
+			line.call(P.call(0.5, 0.95), P.call(0.5, 0.3), w, Color(0.45, 0.75, 0.35))
+			for leaf in [Vector2(0.32, 0.36), Vector2(0.68, 0.42), Vector2(0.36, 0.6), Vector2(0.66, 0.66)]:
+				draw_circle(P.call(leaf.x, leaf.y), s * 0.12, Color(0.4, 0.7, 0.3))
+			draw_circle(P.call(0.5, 0.22), s * 0.1, Color(0.85, 0.8, 0.45))
 		"help":
 			draw_arc(P.call(0.5, 0.5), s * 0.4, 0, TAU, 32, color, w, true)
 			draw_arc(P.call(0.5, 0.4), s * 0.13, PI * 1.1, PI * 2.4, 16, color, w, true)

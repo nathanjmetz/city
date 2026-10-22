@@ -6,7 +6,7 @@ extends RefCounted
 ##
 ## Sizes, prices and reach follow real US practice for a small town.
 
-enum Kind { SUBSTATION, WATER_TOWER, FIRE, POLICE, CLINIC, SCHOOL }
+enum Kind { SUBSTATION, WATER_TOWER, FIRE, POLICE, CLINIC, SCHOOL, POWER_FEED, WELL }
 
 ## Each kind: name, icon, footprint (width along the road x depth, metres),
 ## build cost, monthly upkeep, and either `reach` (metres by road) or
@@ -20,6 +20,13 @@ const KINDS := {
 	# gallons a day, at 300 gallons per household.
 	Kind.WATER_TOWER: {"name": "Water tower", "icon": "water", "size": Vector2(30, 30),
 		"cost": 2_000_000, "upkeep": 12_000, "capacity": 3_300, "utility": "water"},
+	# Starter utilities for a village: an overhead feed with pole transformers
+	# from the regional utility, and a 150 gpm well with a pressure tank
+	# (about 200,000 gallons a day).
+	Kind.POWER_FEED: {"name": "Power line feed", "icon": "power", "size": Vector2(12, 12),
+		"cost": 120_000, "upkeep": 1_000, "capacity": 400, "utility": "power"},
+	Kind.WELL: {"name": "Well and pump house", "icon": "water", "size": Vector2(20, 20),
+		"cost": 300_000, "upkeep": 3_000, "capacity": 650, "utility": "water"},
 	# Two-bay station. ISO rates homes within 1.5 road miles of a station.
 	Kind.FIRE: {"name": "Fire station", "icon": "fire", "size": Vector2(30, 36),
 		"cost": 2_500_000, "upkeep": 45_000, "reach": 2400.0},
@@ -33,6 +40,8 @@ const KINDS := {
 	Kind.SCHOOL: {"name": "Elementary school", "icon": "school", "size": Vector2(80, 100),
 		"cost": 9_000_000, "upkeep": 95_000, "reach": 3200.0},
 }
+## Which kinds supply each utility.
+const UTILITIES := {"power": [Kind.SUBSTATION, Kind.POWER_FEED], "water": [Kind.WATER_TOWER, Kind.WELL]}
 ## Kinds that cover homes by distance (the rest are utilities).
 const COVERAGE := [Kind.FIRE, Kind.POLICE, Kind.CLINIC, Kind.SCHOOL]
 ## Water and sewer bills the city collects, per month.
@@ -94,16 +103,8 @@ func site_problem(network: RoadNetwork, kind: int, pos: Vector3, dir: Vector3) -
 	var poly := PackedVector2Array()
 	for p in pts:
 		poly.append(Vector2(p.x, p.z))
-	# Clear of every road (sampled along each road, with its width).
-	for id in network.segments:
-		var hw := RoadStyle.right_of_way_half(network.segments[id].type)
-		for p in network.sample_segment(id, 24):
-			var q := Vector2(p.x, p.z)
-			if Geometry2D.is_point_in_polygon(q, poly):
-				return "Too close to a road."
-			for i in 4:
-				if Geometry2D.get_closest_point_to_segment(q, poly[i], poly[(i + 1) % 4]).distance_to(q) < hw - 0.5:
-					return "Too close to a road."
+	if road_clash(network, poly):
+		return "Too close to a road."
 	for id in buildings:
 		var b: Dictionary = buildings[id]
 		var other := PackedVector2Array()
@@ -112,6 +113,29 @@ func site_problem(network: RoadNetwork, kind: int, pos: Vector3, dir: Vector3) -
 		if not Geometry2D.intersect_polygons(poly, other).is_empty():
 			return "Overlaps the %s." % KINDS[b.kind].name.to_lower()
 	return ""
+
+
+## True when a footprint (four corners) runs onto any road.
+static func road_clash(network: RoadNetwork, poly: PackedVector2Array) -> bool:
+	for id in network.segments:
+		var hw := RoadStyle.right_of_way_half(network.segments[id].type)
+		for p in network.sample_segment(id, 24):
+			var q := Vector2(p.x, p.z)
+			if Geometry2D.is_point_in_polygon(q, poly):
+				return true
+			for i in poly.size():
+				if Geometry2D.get_closest_point_to_segment(q, poly[i], poly[(i + 1) % poly.size()]).distance_to(q) < hw - 0.5:
+					return true
+	return false
+
+
+## The ground a service covers, as a polygon.
+func footprint(id: int) -> PackedVector2Array:
+	var b: Dictionary = buildings[id]
+	var out := PackedVector2Array()
+	for p in corners(b.kind, b.pos, b.dir):
+		out.append(Vector2(p.x, p.z))
+	return out
 
 
 func add(kind: int, pos: Vector3, dir: Vector3) -> int:
@@ -168,17 +192,18 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 		for kind in COVERAGE:
 			s[kind] = _lot_distance(network, lengths, reach_by_kind[kind], lot) <= KINDS[kind].reach
 		served[key] = s
-		for kind in [Kind.SUBSTATION, Kind.WATER_TOWER]:
-			var d := _lot_distance(network, lengths, reach_by_kind[kind], lot)
-			s[KINDS[kind].utility] = false
+		for u in ["power", "water"]:
+			s[u] = false
+			var d := INF
+			for kind in UTILITIES[u]:
+				d = minf(d, _lot_distance(network, lengths, reach_by_kind[kind], lot))
 			if d < INF:
-				by_dist[KINDS[kind].utility].append([d, key])
-	for kind in [Kind.SUBSTATION, Kind.WATER_TOWER]:
-		var u: String = KINDS[kind].utility
+				by_dist[u].append([d, key])
+	for u in ["power", "water"]:
 		var cap := 0
 		for id in buildings:
-			if buildings[id].kind == kind:
-				cap += int(KINDS[kind].capacity)
+			if buildings[id].kind in UTILITIES[u]:
+				cap += int(KINDS[buildings[id].kind].capacity)
 		var used := 0
 		by_dist[u].sort()
 		for entry in by_dist[u]:

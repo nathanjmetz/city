@@ -33,7 +33,14 @@ const VALUE_PER_PLACE := {
 	ZoneMap.Zone.RESIDENTIAL: 90_000, ZoneMap.Zone.COMMERCIAL: 150_000, ZoneMap.Zone.INDUSTRIAL: 100_000,
 }
 
+## Population milestones and the grant each one brings (like CS2's milestone
+## rewards; in real life, state and federal community development grants).
+const MILESTONES := [[100, 250_000], [250, 400_000], [500, 600_000], [1000, 1_000_000],
+	[2500, 2_000_000], [5000, 3_500_000], [10000, 6_000_000], [25000, 10_000_000]]
+
 var money := START_MONEY
+## How many milestones the city has reached.
+var milestone := 0
 var tax := DEFAULT_TAX.duplicate()
 ## This month's budget, per month: {"income": {zone: $}, "upkeep": $}.
 var budget := {"income": {}, "upkeep": 0, "fees": 0, "services": 0}
@@ -78,6 +85,9 @@ func update_budget(sim: CitySim) -> void:
 	for key in sim.buildings:
 		var b: Dictionary = sim.buildings[key]
 		income[int(b.zone)] += building_tax(b, staffed) / 12.0
+	# Farmland pays property tax at the industrial rate.
+	income[ZoneMap.Zone.INDUSTRIAL] += sim.farms.total_acres() * Farms.LAND_PER_ACRE * Farms.AG_ASSESSMENT \
+		* tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
 	var upkeep := 0.0
 	for id in sim.network.segments:
 		upkeep += road_upkeep(sim.network.curve_of(id), sim.network.segments[id].type)
@@ -104,6 +114,16 @@ func demand_shift(zone: int) -> float:
 	return -0.3 * (tax[zone] - DEFAULT_TAX[zone]) / DEFAULT_TAX[zone]
 
 
+## Pays any grants the population has earned. Returns the total paid.
+func reach_milestones(population: int) -> int:
+	var paid := 0
+	while milestone < MILESTONES.size() and population >= MILESTONES[milestone][0]:
+		paid += int(MILESTONES[milestone][1])
+		milestone += 1
+	money += paid
+	return paid
+
+
 func set_tax(zone: int, rate: float) -> bool:
 	if not tax.has(zone):
 		return false
@@ -118,11 +138,12 @@ func to_dict() -> Dictionary:
 	var t := {}
 	for z in tax:
 		t[str(z)] = tax[z]
-	return {"money": money, "tax": t}
+	return {"money": money, "tax": t, "milestone": milestone}
 
 
 func from_dict(d: Dictionary) -> void:
 	money = int(d.get("money", START_MONEY))
+	milestone = int(d.get("milestone", 0))
 	tax = DEFAULT_TAX.duplicate()
 	var t: Dictionary = d.get("tax", {})
 	for z in t:

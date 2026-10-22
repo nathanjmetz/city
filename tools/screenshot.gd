@@ -32,6 +32,9 @@ func _demo_town() -> void:
 	if args0.size() >= 5 and args0[4] == "highway":
 		_demo_interchange(sim)
 		return
+	if args0.size() >= 5 and args0[4] == "farms":
+		_demo_farms(sim)
+		return
 	# A main road with a roundabout, and a grid neighborhood beside it.
 	sim.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0], "road": 2})
 	sim.apply({"type": "build_road", "start": [120, 0], "ctrl": [160, 80], "end": [120, 180], "road": 1})
@@ -117,3 +120,30 @@ func _demo_interchange(sim: CitySim) -> void:
 			c.look_at_point(Vector3(0, 0, 0))
 			var args := OS.get_cmdline_user_args()
 			c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
+
+
+## Two farms on a county road in July, grown for a few years.
+func _demo_farms(sim: CitySim) -> void:
+	sim.tick_count = 190 * 1440  # mid July
+	sim.apply({"type": "build_road", "start": [-900, 0], "ctrl": [0, 0], "end": [900, 0]})
+	sim.apply({"type": "build_road", "start": [0, -700], "ctrl": [0, 0], "end": [0, 700]})
+	sim.apply({"type": "paint_farmland", "points": [[-800, 30], [-30, 30], [-30, 650], [-800, 650]]})
+	sim.apply({"type": "paint_farmland", "points": [[30, -650], [800, -650], [800, -30], [30, -30]]})
+	sim.apply({"type": "paint_farmland", "points": [[-800, -30], [-30, -30], [-30, -500], [-800, -500]]})
+	sim.apply({"type": "place_farmhouse", "pos": [-300, 70], "dir": [0, -1], "crop": "corn"})
+	sim.apply({"type": "place_farmhouse", "pos": [300, -70], "dir": [0, 1], "crop": "soybeans"})
+	sim.apply({"type": "place_farmhouse", "pos": [-70, -260], "dir": [1, 0], "crop": "corn"})
+	sim.farms.price = 1.1
+	for i in 60:
+		sim.farms.decide(sim.field_usable)
+	sim.farms_changed.emit()
+	for c in _main.get_children():
+		if c is CityCamera:
+			c.look_at_point(Vector3(0, 0, 0))
+			var args := OS.get_cmdline_user_args()
+			if args.size() >= 4:
+				c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
+	if OS.get_cmdline_user_args().size() >= 6:
+		for c in _main.get_children():
+			if c is FarmTool:
+				c.set_mode(FarmTool.Mode.FARMLAND)
