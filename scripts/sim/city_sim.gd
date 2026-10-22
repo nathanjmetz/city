@@ -41,6 +41,9 @@ var reserves := Reserves.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
+## The balance harness turns cars off to play years of a city in seconds
+## (traffic doesn't touch the budget yet).
+var simulate_traffic := true
 var lots := {}       # lot key -> lot Dictionary (from LotPlanner)
 var buildings := {}  # lot key -> {"zone", "seed", "built", "cap", "occ"}
 var tick_count := 0
@@ -159,6 +162,12 @@ func apply_now(cmd: Dictionary) -> bool:
 			ok = services.buildings.has(int(cmd.id))
 			services.buildings.erase(int(cmd.id))
 			_lots_dirty = true
+		"set_difficulty":
+			# A city that hasn't started yet also gets that difficulty's start money.
+			ok = economy.set_difficulty(str(cmd.difficulty), tick_count == 0 and network.segments.size() <= 2)
+			if ok:
+				update_stats()
+			return ok
 		"set_tax":
 			if economy.set_tax(int(cmd.zone), float(cmd.rate)):
 				update_stats()
@@ -178,7 +187,9 @@ func apply_now(cmd: Dictionary) -> bool:
 			traffic.overrides.clear()
 			network.clear()
 			zones.cells.clear()
+			var diff := economy.difficulty
 			economy = Economy.new()
+			economy.set_difficulty(diff, true)
 			services = Services.new()
 			farms = Farms.new()
 			reserves = Reserves.new()
@@ -209,6 +220,8 @@ func tick() -> void:
 	# Taxes come in and upkeep goes out every game hour, a day settling a month.
 	if tick_count % TICKS_PER_HOUR == 0:
 		economy.money += roundi(economy.monthly_net() / 24.0)
+	if not simulate_traffic:
+		return
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([city_seed, tick_count, "traffic"])
 	traffic.step(self, rng)

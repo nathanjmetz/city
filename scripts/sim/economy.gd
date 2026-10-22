@@ -19,8 +19,11 @@ const TAX_MIN := Balance.TAX_MIN
 const TAX_MAX := Balance.TAX_MAX
 const VALUE_PER_PLACE := Balance.VALUE_PER_PLACE
 const MILESTONES := Balance.MILESTONES
+const DIFFICULTIES := Balance.DIFFICULTIES
 
 var money := START_MONEY
+## "easy", "normal" or "hard": scales start money, income, upkeep and grants.
+var difficulty := "normal"
 ## How many milestones the city has reached.
 var milestone := 0
 var tax := DEFAULT_TAX.duplicate()
@@ -82,8 +85,11 @@ func update_budget(sim: CitySim) -> void:
 	for key in sim.buildings:
 		if sim.services.served.has(key) and sim.services.served[key].get("water", false):
 			fees += int(Services.WATER_FEE[int(sim.buildings[key].zone)])
-	budget = {"income": income, "upkeep": roundi(upkeep), "fees": fees,
-		"services": sim.services.monthly_upkeep()}
+	var d: Dictionary = DIFFICULTIES[difficulty]
+	for z in income:
+		income[z] = roundi(income[z] * d.income)
+	budget = {"income": income, "upkeep": roundi(upkeep * d.upkeep), "fees": roundi(fees * d.income),
+		"services": roundi(sim.services.monthly_upkeep() * d.upkeep)}
 
 
 func monthly_net() -> int:
@@ -102,7 +108,7 @@ func demand_shift(zone: int) -> float:
 func reach_milestones(population: int) -> int:
 	var paid := 0
 	while milestone < MILESTONES.size() and population >= MILESTONES[milestone][0]:
-		paid += int(MILESTONES[milestone][1])
+		paid += roundi(MILESTONES[milestone][1] * DIFFICULTIES[difficulty].grants)
 		milestone += 1
 	money += paid
 	return paid
@@ -118,16 +124,34 @@ func set_tax(zone: int, rate: float) -> bool:
 	return true
 
 
+## Cash a new city starts with on this difficulty.
+static func start_money(diff: String) -> int:
+	return int(DIFFICULTIES.get(diff, DIFFICULTIES.normal).start)
+
+
+## Picks the difficulty. A city that hasn't started yet gets its start money.
+func set_difficulty(diff: String, fresh: bool) -> bool:
+	if not DIFFICULTIES.has(diff) or diff == difficulty and not fresh:
+		return false
+	difficulty = diff
+	if fresh:
+		money = start_money(diff)
+	return true
+
+
 func to_dict() -> Dictionary:
 	var t := {}
 	for z in tax:
 		t[str(z)] = tax[z]
-	return {"money": money, "tax": t, "milestone": milestone}
+	return {"money": money, "tax": t, "milestone": milestone, "difficulty": difficulty}
 
 
 func from_dict(d: Dictionary) -> void:
 	money = int(d.get("money", START_MONEY))
 	milestone = int(d.get("milestone", 0))
+	difficulty = str(d.get("difficulty", "normal"))
+	if not DIFFICULTIES.has(difficulty):
+		difficulty = "normal"
 	tax = DEFAULT_TAX.duplicate()
 	var t: Dictionary = d.get("tax", {})
 	for z in t:

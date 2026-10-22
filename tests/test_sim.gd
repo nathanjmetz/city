@@ -65,7 +65,8 @@ func _init() -> void:
 	var m := CitySim.new()
 	var start: int = m.economy.money
 	m.apply({"type": "build_road", "start": [-100, 0], "ctrl": [0, 0], "end": [100, 0]})
-	_check(m.economy.money == start - 200_000, "200 m street costs $200,000 (spent %d)" % (start - m.economy.money))
+	var street_cost := 200 * int(Economy.BUILD_PER_M[RoadStyle.Type.STREET])
+	_check(m.economy.money == start - street_cost, "200 m street costs its price (spent %d)" % (start - m.economy.money))
 	var flat := [Vector3(0, 0, 0), Vector3(50, 0, 0), Vector3(100, 0, 0)]
 	var high := [Vector3(0, 7.5, 0), Vector3(50, 7.5, 0), Vector3(100, 7.5, 0)]
 	_check(Economy.road_cost(high, 0) > Economy.road_cost(flat, 0) * 3, "bridges cost more")
@@ -74,7 +75,8 @@ func _init() -> void:
 		"can't build without the money")
 	_check(m.road_problem([Vector3(-100, 0, 50), Vector3(0, 0, 50), Vector3(100, 0, 50)], 0).begins_with("Not enough money"),
 		"says why")
-	_check(m.upgrade_cost(m.network.segments.keys()[0], RoadStyle.Type.AVENUE) == 200_000, "upgrade pays the difference")
+	_check(m.upgrade_cost(m.network.segments.keys()[0], RoadStyle.Type.AVENUE) == 200 * int(
+		Economy.BUILD_PER_M[RoadStyle.Type.AVENUE] - Economy.BUILD_PER_M[RoadStyle.Type.STREET]), "upgrade pays the difference")
 	_check(d.economy.budget.income[ZoneMap.Zone.RESIDENTIAL] > 0 and d.economy.budget.upkeep > 0,
 		"budget has taxes and upkeep (%s)" % str(d.economy.budget))
 	var before: int = d.economy.money

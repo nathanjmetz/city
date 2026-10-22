@@ -200,6 +200,9 @@ func _load() -> bool:
 ## A road coming in from the edge of the map, like a highway exit.
 ## The highway link is free, as in Cities: Skylines.
 func _starter_road() -> void:
+	if Session.new_city_difficulty != "":
+		sim.apply({"type": "set_difficulty", "difficulty": Session.new_city_difficulty})
+		Session.new_city_difficulty = ""
 	var money := sim.economy.money
 	sim.apply({"type": "build_road", "start": [-400, 0], "ctrl": [-250, 0], "end": [-100, 0]})
 	sim.apply({"type": "build_road", "start": [-100, 0], "ctrl": [-20, 0], "end": [40, 60]})
