@@ -142,6 +142,10 @@ func _ready() -> void:
 	traffic_tool.setup(sim, cam, flow_view)
 	add_child(traffic_tool)
 
+	var move_tool := MoveTool.new()
+	move_tool.setup(sim, cam)
+	add_child(move_tool)
+
 	# Only one tool is active at a time.
 	var others := func(keep: Object):
 		if keep != road_tool and road_tool.mode != RoadTool.Mode.NONE:
@@ -162,6 +166,8 @@ func _ready() -> void:
 			traffic_tool.set_mode(TrafficTool.Mode.NONE)
 		if keep != park_tool and park_tool.kind != "":
 			park_tool.set_kind("")
+		if keep != move_tool and move_tool.active:
+			move_tool.set_active(false)
 	# Picking a tool also plays the tool sound.
 	var picked := func(tool: Object):
 		others.call(tool)
@@ -175,12 +181,13 @@ func _ready() -> void:
 	campus_tool.kind_changed.connect(func(k): if k != "": picked.call(campus_tool))
 	warehouse_tool.kind_changed.connect(func(k): if k != "": picked.call(warehouse_tool))
 	park_tool.kind_changed.connect(func(k): if k != "": picked.call(park_tool))
+	move_tool.active_changed.connect(func(on): if on: picked.call(move_tool))
 
 	var select_tool := SelectTool.new()
 	select_tool.setup(sim, cam, func(): return road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
-		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "")
+		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or move_tool.active)
 	add_child(select_tool)
 
 	var hud := Hud.new()
@@ -192,6 +199,7 @@ func _ready() -> void:
 	hud.warehouse_tool = warehouse_tool
 	hud.park_tool = park_tool
 	hud.traffic_tool = traffic_tool
+	hud.move_tool = move_tool
 	hud.info_view = info_view
 	hud.service_view = service_view
 	hud.select_tool = select_tool

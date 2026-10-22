@@ -33,7 +33,9 @@ func setup(s: CitySim) -> void:
 
 func _sync() -> void:
 	for id in _nodes.keys():
-		if not sim.services.buildings.has(id):
+		# Gone, or moved with Move It.
+		if not sim.services.buildings.has(id) or not _nodes[id].get_meta("at").is_equal_approx(
+				Transform3D(Basis.looking_at(sim.services.buildings[id].dir, Vector3.UP), sim.services.buildings[id].pos)):
 			_trees.remove(_nodes[id].get_meta("tree_key"))
 			_nodes[id].queue_free()
 			_nodes.erase(id)
@@ -71,6 +73,7 @@ func _spawn(b: Dictionary) -> Node3D:
 	root.position = b.pos
 	# Local -Z faces the road.
 	root.basis = Basis.looking_at(b.dir, Vector3.UP)
+	root.set_meta("at", root.transform)
 	var size: Vector2 = Services.KINDS[b.kind].size
 	var to_curb := Services.SETBACK + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
 	var seed := int(b.pos.x * 73.0) ^ int(b.pos.z * 151.0) ^ (int(b.kind) << 20)
