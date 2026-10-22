@@ -61,6 +61,8 @@ var reserves := Reserves.new()
 ## Requests from hub leaders for big moves (track through town, crossing
 ## your roads), answered from the bell up top. See Permits.
 var permits := Permits.new()
+## Wild trees and brush, and how far cleared land has grown back.
+var vegetation := Vegetation.new()
 ## Landfills, recycling and cemeteries, and the garbage trucks' rounds.
 var hubs := CivicHubs.new()
 ## Parks (hubs that fill in by themselves) and one-per-town landmarks.
@@ -114,6 +116,7 @@ func _init() -> void:
 	network.changed.connect(func():
 		_lots_dirty = true
 		_roads_moved = true)
+	vegetation.watch(self)
 
 
 ## Applies one player command. Returns true if anything changed (online:
@@ -290,7 +293,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			ok = services.buildings.has(int(cmd.id))
 			services.buildings.erase(int(cmd.id))
 			_lots_dirty = true
-		"place_hub", "upgrade_hub", "remove_hub":
+		"place_hub", "upgrade_hub", "remove_hub", "develop_hub":
 			ok = _hub_command(cmd)
 		"set_difficulty":
 			# A city that hasn't started yet also gets that difficulty's start money.
@@ -362,6 +365,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			parks_changed.emit()
 			farms.reserves = reserves
 			industry.reserves = reserves
+			vegetation.reset()
 			farms_changed.emit()
 			industry_changed.emit()
 			warehouses_changed.emit()
@@ -499,6 +503,7 @@ func _road_wins() -> void:
 func tick() -> void:
 	tick_count += 1
 	_refresh()
+	vegetation.update(self)
 	if tick_count % MOVE_EVERY == 0:
 		_move_in()
 		update_stats()
@@ -920,6 +925,9 @@ func _hub_command(cmd: Dictionary) -> bool:
 		if cost <= 0 or cost > economy.money or not hubs.upgrade(id):
 			return false
 		economy.money -= cost
+	elif cmd.type == "develop_hub":
+		# Adds a building or option from the hub's development tree.
+		return hubs.develop(self, int(cmd.id), str(cmd.get("dev", "")))
 	else:
 		if not hubs.remove(int(cmd.id)):
 			return false
@@ -1331,6 +1339,7 @@ func _parcels_to_save() -> Dictionary:
 
 
 func to_dict() -> Dictionary:
+	vegetation.update(self)  # land cleared since the last tick counts
 	return {
 		"version": 2,
 		"links": region_links,
@@ -1354,10 +1363,12 @@ func to_dict() -> Dictionary:
 		"parks": parks.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
+		"vegetation": vegetation.to_dict(),
 	}
 
 
 func from_dict(d: Dictionary) -> void:
+	vegetation.from_dict(d.get("vegetation", {}))
 	planner = LotPlanner.new()
 	planner.wealth = wealth_at
 	if d.has("roads"):

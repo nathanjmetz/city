@@ -331,6 +331,11 @@ func _demo_hubs(sim: CitySim) -> void:
 				break
 	sim.apply({"type": "upgrade_hub", "id": ids[1]})
 	sim.apply({"type": "upgrade_hub", "id": ids[1]})
+	# Every branch of each development tree, to see them all.
+	for i in ids.size():
+		var h: Dictionary = sim.hubs.hubs[ids[i]]
+		h.dev = CivicHubs.dev_options(h)
+		sim.hubs._touch(h)
 	sim.tick()
 	for c in _main.get_children():
 		if c is Hud:

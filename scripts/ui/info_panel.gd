@@ -133,6 +133,8 @@ func _show_actions(actions: Array) -> void:
 		var b := Button.new()
 		b.text = a.label
 		b.disabled = not a.get("enabled", true)
+		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		b.custom_minimum_size = Vector2(236, 0)
 		var cmd: Dictionary = a.cmd
 		b.pressed.connect(func():
 			sim.apply(cmd)
