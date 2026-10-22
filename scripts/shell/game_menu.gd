@@ -73,12 +73,15 @@ func close() -> void:
 
 
 func _fill() -> void:
+	# The title and note stay; only the buttons are rebuilt.
 	for c in _col.get_children():
-		c.queue_free()
-	_col.add_child(_title)
+		if c != _title and c != _note:
+			c.queue_free()
+	if not _title.get_parent():
+		_col.add_child(_title)
+		_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_col.add_child(_note)
 	_note.text = ""
-	_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_col.add_child(_note)
 	var resume := _button("Resume", close)
 	ShellStyle.primary(resume)
 	_col.add_child(resume)
