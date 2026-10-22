@@ -16,6 +16,9 @@ extends CommercialBuilder
 ##   - the multi-leg water tower: braced legs, an ellipsoidal tank with a
 ##     catwalk and a cone roof
 ##   - the well house and the pole-mounted power feed
+##   - the small-town bus garage: a tall metal maintenance building with
+##     14 ft doors onto the yard, a brick office in front, and a fenced
+##     asphalt yard of striped bus stalls (the buses are drawn by BusView)
 ## Local space: centred on the site, -z faces the road; the site runs from
 ## -size.y / 2 (front) to +size.y / 2. `to_curb` is how far the curb lies in
 ## front of the site.
@@ -43,6 +46,7 @@ static func build_service(kind: int, seed: int, size: Vector2, to_curb: float) -
 		Services.Kind.WATER_TOWER: b._water_tower(front, to_curb)
 		Services.Kind.WELL: b._well(front, to_curb)
 		Services.Kind.POWER_FEED: b._power_feed()
+		Services.Kind.BUS_DEPOT: b._bus_depot(size, front, to_curb)
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 
@@ -525,6 +529,55 @@ func _power_feed() -> void:
 			_cyl_y(Vector3(x + 0.35, 7.6 - k * 1.4, 0.45), 0.36, 1.1, Color("#8a9094"))
 	for k in 3:
 		_box("paint", Vector3(8.0, 0.03, 0.03), Vector3(-1.0 + k * 1.0, 10.55, 0), DARK)
+
+
+# ---------------------------------------------------------------- bus depot
+
+func _bus_depot(size: Vector2, front: float, to_curb: float) -> void:
+	var w := size.x
+	var back := size.y * 0.5
+	var trim := Color(_pick(["#d9d3c3", "#cfc8b6", "#3a3530"]))
+	var metal := Color(_pick(["#c9ccc8", "#b8c0c4", "#d6d2c4"]))
+	var brick := Color(_pick(["#8a4a38", "#a8775c", "#b59a7c"]))
+	var drive_x := w * 0.5 - 5.0
+	# The driveway in along one side, the yard behind the garage.
+	var yard_z := front + BusNet.GARAGE_D
+	_flat_rect("asphalt", drive_x - 4.0, drive_x + 4.0, front - to_curb, yard_z, 0.1)
+	_flat_rect("asphalt", -w * 0.5 + 0.5, w * 0.5 - 0.5, yard_z, back - 0.5, 0.07)
+	for slot in BusNet.bay_slots(size):
+		var p: Vector3 = slot[0]
+		for e in [-1.0, 1.0]:
+			var x: float = p.x + e * BusNet.STALL_W * 0.5
+			_flat_rect("line", x - 0.06, x + 0.06, p.z - 0.6, p.z - 0.6 + BusNet.STALL_D, 0.08, LINE)
+	# Maintenance garage: two drive-through bays, doors onto the yard.
+	var gw := minf(w - 10.0, 26.0)
+	var gx := drive_x - 4.5 - gw * 0.5
+	var gd := BusNet.GARAGE_D - 3.0
+	var gz := front + 1.0
+	_slab(gx, gw, gz, gd)
+	_flat_roofed_at("metal", gx, gw, gd, gz + gd * 0.5, 7.6, 8.2, metal)
+	for i in 2:
+		var x := gx - gw * 0.25 + i * gw * 0.5
+		_overhead_door(x, gz + gd, 4.3, 4.3, WHITE, true)
+	_rooftop_units(gx, gw, gz, gd, 8.2, 2)
+	# A brick office and drivers' room at the street end, with the sign.
+	var ow := minf(12.0, gw * 0.5)
+	var ox := gx - gw * 0.5 + ow * 0.5 + 0.5
+	_box("brick", Vector3(ow, 3.6, 3.2), Vector3(ox, 1.8, gz - 1.0), brick)
+	_box("paint", Vector3(ow + 0.2, 0.25, 3.4), Vector3(ox, 3.7, gz - 1.0), trim)
+	_entry(ox, gz - 2.6, trim)
+	_sign(Vector3(gx + gw * 0.2, 5.2, gz - 0.04), gw * 0.4, 0.9)
+	# Fuel and wash island by the yard gate.
+	var fz := yard_z + 1.5
+	_box("paint", Vector3(1.2, 0.9, 3.0), Vector3(drive_x, 0.45, fz + 1.5), CONCRETE)
+	for e in [-1.0, 1.0]:
+		_box("paint", Vector3(0.25, 4.6, 0.25), Vector3(drive_x + e * 3.2, 2.3, fz + 1.5), GALV)
+	_box("metal", Vector3(7.4, 0.35, 5.0), Vector3(drive_x, 4.75, fz + 1.5), WHITE)
+	# Chain-link along the sides and back of the yard (thin strips, so the
+	# gate side stays open).
+	_fence(Vector2(-w * 0.5 + 0.2, yard_z), Vector2(-w * 0.5 + 0.4, back - 0.3), 2.1)
+	_fence(Vector2(w * 0.5 - 0.4, yard_z), Vector2(w * 0.5 - 0.2, back - 0.3), 2.1)
+	_fence(Vector2(-w * 0.5 + 0.2, back - 0.5), Vector2(w * 0.5 - 0.2, back - 0.3), 2.1)
 
 
 # ---------------------------------------------------------------- shared parts

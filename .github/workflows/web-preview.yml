@@ -66,6 +66,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_seasons.gd
           ~/godot-cache/godot --headless -s tests/test_balance.gd
           ~/godot-cache/godot --headless -s tests/test_audio.gd
+          ~/godot-cache/godot --headless -s tests/test_transit.gd
           ~/godot-cache/godot --headless -s tests/test_loading.gd
           ~/godot-cache/godot --headless -s tests/test_terrain.gd
           ~/godot-cache/godot --headless -s tests/test_permits.gd
