@@ -34,14 +34,16 @@ func _ready() -> void:
 
 	# Flush with the left edge, under the city stats.
 	var box := UiStyle.panel(0)
-	box.corner_radius_top_right = 12
+	box.corner_radius_top_right = 0
+	box.corner_radius_top_left = 0
+	box.corner_radius_bottom_left = 0
 	box.corner_radius_bottom_right = 12
 	box.border_width_left = 0
 	_panel.add_theme_stylebox_override("panel", box)
 	_panel.custom_minimum_size = Vector2(WIDTH, 0)
 	root.add_child(_panel)
 	_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT, Control.PRESET_MODE_MINSIZE)
-	_panel.position.y = 112
+	_panel.position.y = 32  # just under the top bar
 
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 6)
