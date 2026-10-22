@@ -130,6 +130,18 @@ static func _problems(sim: CitySim, out: Array) -> void:
 	if s.population > 300 and sim.service_coverage() < 0.5:
 		_add(out, "coverage", Kind.HEADS_UP, "Folks are starting to ask about fire, police, a clinic and a school. Homes without 'em fill slower now.")
 
+	# Resource industry: trucks that can't get out, and yards filled up.
+	var stuck := 0
+	for ref in sim.logistics.stuck:
+		if str(ref).begins_with("site:") or str(ref).begins_with("farm:"):
+			stuck += 1
+	if stuck > 0:
+		_add(out, "trucks_stuck", Kind.PROBLEM, "%s can't get %s trucks out to a buyer. Might be a lane that doesn't join up with the rest of town." % ["A company" if stuck == 1 else "%d places" % stuck, "its" if stuck == 1 else "their"])
+	for id in sim.industry.sites:
+		var site: Dictionary = sim.industry.sites[id]
+		if site.stock >= Industry.STOCK_CAP and not sim.logistics.stuck.has("site:%d" % id):
+			_add(out, "yard_full", Kind.HEADS_UP, "The %s's yard is full up, so it's quit producing till trucks haul some off. Clicking it tells you more." % Industry.KINDS[site.kind].name.to_lower())
+			break
 	for id in sim.farms.farms:
 		if sim.farms.farms[id].cells.size() > 0 and sim.farms.yearly_profit(id) < 0.0:
 			_add(out, "farm_losing", Kind.HEADS_UP, "One of the farms is losing money this year. Prices swing with the seasons, and richer soil helps.")
@@ -154,6 +166,8 @@ static func _ideas(sim: CitySim, out: Array) -> void:
 		var left: int = int(goal[0]) - s.population
 		if left <= maxi(40, int(goal[0]) / 4):
 			_add(out, "grant", Kind.IDEA, "Another %d folks and the state sends a $%s grant." % [left, CitySim.money_text(int(goal[1]))])
+	if s.population >= 120 and sim.industry.sites.is_empty():
+		_add(out, "industry", Kind.IDEA, "There's oil, ore and timber out there that never runs dry. The Views up top show where it's richest.")
 	if s.population >= 150 and sim.services.buildings.size() <= 2:
 		_add(out, "safety", Kind.IDEA, "Once the town's a few hundred strong, people start wanting a fire station and the like nearby.")
 	if sim.traffic.cars.size() >= 15 and sim.traffic.flow >= 0.7:
@@ -176,6 +190,11 @@ const TOOL_NOTES := {
 		"Zones only fill in along roads, and only when there's demand.",
 		"Brackets [ and ] make the brush bigger or smaller.",
 		"The bars up top show what folks want: homes, shops or industry.",
+	],
+	"industry": [
+		"Open the Oil, Ore or Forest view first: a company does best set down where its view is richest.",
+		"The company lays out its own wells, pits or stands as they pay. Reserve keeps roads off that land.",
+		"Every load leaves on a real truck, so a company needs a road out to town or the highway.",
 	],
 	"services": [
 		"Power and water travel along connected roads, so build 'em where the streets reach.",
