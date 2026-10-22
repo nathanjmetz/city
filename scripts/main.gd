@@ -30,7 +30,7 @@ func _ready() -> void:
 
 	var roads := RoadView.new()
 	add_child(roads)
-	roads.setup(sim.network)
+	roads.setup(sim.network, sim)
 
 	var zone_view := ZoneView.new()
 	zone_view.setup(sim)

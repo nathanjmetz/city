@@ -116,6 +116,25 @@ void fragment() {
 }
 """
 
+## Gravel road shoulders on rural roads, benchmarked against photos of
+## Indiana county roads: crushed grey-tan limestone, darker where it's worn
+## into the soil, with grass creeping in at random.
+const GRAVEL := """
+void fragment() {
+	vec2 p = world_pos.xz;
+	float close = clamp(1.0 - length(VERTEX) / 180.0, 0.0, 1.0);
+	float patch = texture(noise_soft, p / 11.0).r;
+	float grain = texture(noise_grain, p / 0.35).r;
+	vec3 col = mix(vec3(0.42, 0.39, 0.34), vec3(0.55, 0.52, 0.46), patch);
+	col *= 1.0 + (grain - 0.5) * 0.35 * close;
+	float weeds = smoothstep(0.62, 0.78, texture(noise_soft, turn(p, 1.7) / 4.0).r);
+	col = mix(col, vec3(0.16, 0.22, 0.08) * (0.8 + grain * 0.4), weeds * 0.85);
+	ALBEDO = col;
+	ROUGHNESS = 0.95;
+	SPECULAR = 0.2;
+}
+"""
+
 ## Crop fields, benchmarked against aerial photos of Iowa and Illinois
 ## farmland. UV is metres across and back from the farmhouse, / 16; the
 ## vertex colour is this month's crop colour (sRGB). Vertex alpha 0 marks
@@ -165,6 +184,10 @@ static func asphalt() -> ShaderMaterial:
 static func concrete(color: Color, slabs := false) -> ShaderMaterial:
 	return _make("concrete %s %s" % [color, slabs], CONCRETE,
 			{"base": color, "joints": 1.0 if slabs else 0.0})
+
+
+static func gravel() -> ShaderMaterial:
+	return _make("gravel", GRAVEL, {})
 
 
 static func field() -> ShaderMaterial:
