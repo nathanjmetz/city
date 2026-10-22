@@ -32,6 +32,12 @@ extends RefCounted
 ## acts on it over time with its own money and judgment. For "grant" to
 ## work it tells permits where it is: sim.permits.locators["airport"] =
 ## func(sim, id) -> Vector2.
+## Land-use requests (Brawn: a city's identity can shift, say financial
+## leaders buying up farmland, but only with the player's say-so): file
+## with "area": [[x, z], ...] (an outline) instead of "route", plus
+## "change": "Farmland to offices" and "per_m2". The player can drag every
+## corner of the boundary; the leader re-prices the land it now covers.
+## Check land with check(sim, outline, 0.0, true).
 ## A hub can price routes its own way: sim.permits.costers["rail"] =
 ## func(sim, req, route, hits) -> int. Filing and carrying out happen inside
 ## tick(), and the player's answers come through CitySim.apply, so every
@@ -81,8 +87,9 @@ func file(sim, plan: Dictionary) -> int:
 	var hub_id := int(plan.get("hub_id", 0))
 	if not can_file(sim, hub, hub_id):
 		return -1
-	var route := _route(plan.get("route", []))
-	if route.size() < 2:
+	var shape := "area" if plan.has("area") else "route"
+	var route := _route(plan.get("area", plan.get("route", [])))
+	if route.size() < (3 if shape == "area" else 2):
 		return -1
 	var req := {
 		"id": next_id,
@@ -91,10 +98,13 @@ func file(sim, plan: Dictionary) -> int:
 		"leader": str(plan.get("leader", "")),
 		"title": str(plan.get("title", "")),
 		"why": str(plan.get("why", "")),
+		"shape": shape,
+		"change": str(plan.get("change", "")),
 		"route": route,
 		"asked": route.duplicate(true),
 		"width": float(plan.get("width", 8.0)),
 		"per_m": int(plan.get("per_m", 0)),
+		"per_m2": int(plan.get("per_m2", 0)),
 		"base": int(plan.get("base", 0)),
 		"budget": int(plan.get("budget", 0)),
 		"cost": 0,
@@ -176,15 +186,15 @@ func can_file(sim, hub: String, hub_id: int) -> bool:
 ## What a route would run through: {"roads": [segment ids], "buildings":
 ## [{"what", "id", "name"}]}. Anything in it is the player's, so a request
 ## with any hit needs a permit (see needs()).
-func check(sim, route: Array, width: float) -> Dictionary:
+func check(sim, route: Array, width: float, area := false) -> Dictionary:
 	var line := PackedVector2Array()
 	for p in route:
 		line.append(Vector2(float(p[0]), float(p[1])))
 	var out := {"roads": [], "buildings": []}
-	if line.size() < 2:
+	if line.size() < (3 if area else 2):
 		return out
 	var corr := [{"bounds": RoadWins._bounds(line).grow(width * 0.5),
-		"polys": Geometry2D.offset_polyline(line, width * 0.5, Geometry2D.JOIN_ROUND, Geometry2D.END_BUTT)}]
+		"polys": [line] if area else Geometry2D.offset_polyline(line, width * 0.5, Geometry2D.JOIN_ROUND, Geometry2D.END_BUTT)}]
 	var ids: Array = sim.network.segments.keys()
 	ids.sort()
 	for seg in ids:
@@ -226,11 +236,22 @@ static func needs(hits: Dictionary) -> bool:
 
 
 ## What the hub would pay for this route: its own pricing if it has one,
-## otherwise base + per_m for every metre + PER_CROSSING per road crossed.
+## otherwise base + per_m for every metre + PER_CROSSING per road crossed,
+## or for land, base + per_m2 for every square metre.
 func cost_of(sim, req: Dictionary, route: Array, hits: Dictionary) -> int:
 	if costers.has(req.hub) and (costers[req.hub] as Callable).is_valid():
 		return int(costers[req.hub].call(sim, req, route, hits))
+	if req.shape == "area":
+		return int(req.base) + roundi(area_of(route) * float(req.per_m2))
 	return int(req.base) + roundi(length(route) * float(req.per_m)) + hits.roads.size() * PER_CROSSING
+
+
+## Square metres inside an outline.
+static func area_of(outline: Array) -> float:
+	var poly := PackedVector2Array()
+	for p in outline:
+		poly.append(Vector2(p[0], p[1]))
+	return RoadWins.area(poly) if poly.size() >= 3 else 0.0
 
 
 static func length(route: Array) -> float:
@@ -256,11 +277,12 @@ func answer(sim, cmd: Dictionary) -> bool:
 			wait_until[_key(req.hub, req.hub_id)] = int(sim.tick_count) + DENY_WAIT
 		"edit":
 			var route := _route(cmd.get("route", []))
-			if route.size() < 2:
+			if route.size() < (3 if req.shape == "area" else 2):
 				return false
-			# The ends are where the hub starts and where it's going.
-			route[0] = req.route[0]
-			route[-1] = req.route[-1]
+			if req.shape == "route":
+				# The ends are where the hub starts and where it's going.
+				route[0] = req.route[0]
+				route[-1] = req.route[-1]
 			req.edits += 1
 			req.route = route
 			_price(sim, req, route)
@@ -335,7 +357,7 @@ func tick(sim) -> void:
 
 ## Re-prices a request for a route and records what it runs through.
 func _price(sim, req: Dictionary, route: Array) -> void:
-	var hits := check(sim, route, req.width)
+	var hits := check(sim, route, req.width, req.shape == "area")
 	req.hits = hits
 	req.cost = cost_of(sim, req, route, hits)
 
@@ -384,6 +406,8 @@ func from_dict(d: Dictionary) -> void:
 		var req := {
 			"id": int(r.id), "hub": str(r.hub), "hub_id": int(r.hub_id), "leader": str(r.leader),
 			"title": str(r.title), "why": str(r.why), "route": _route(r.route),
+			"shape": str(r.get("shape", "route")), "change": str(r.get("change", "")),
+			"per_m2": int(r.get("per_m2", 0)),
 			"asked": _route(r.get("asked", r.route)), "width": float(r.width), "per_m": int(r.per_m),
 			"base": int(r.get("base", 0)), "budget": int(r.budget), "cost": int(r.cost),
 			"hits": {"roads": hits.get("roads", []).map(func(s): return int(s)),

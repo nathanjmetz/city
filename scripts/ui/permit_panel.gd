@@ -225,9 +225,14 @@ func _card(req: Dictionary) -> Control:
 		money += "  ·  they can spend $" + CitySim.money_text(req.budget)
 	var over: bool = req.budget > 0 and cost > req.budget
 	col.add_child(_fact("money", money, Brand.WARNING if over else UiStyle.MUTED, over))
+	if req.get("shape", "route") == "area":
+		var acres := Permits.area_of(view.route if picked and _editing else req.route) / 4046.86
+		var what: String = req.change if req.change != "" else "Land"
+		col.add_child(_fact("zones", "%s, %s acres" % [what, _acres(acres)], UiStyle.TEXT, false))
 	var roads: int = hits.get("roads", []).size()
 	if roads > 0:
-		col.add_child(_fact("road", "Crosses %d of your road%s" % [roads, "" if roads == 1 else "s"], Brand.WARNING, true))
+		var verb := "Takes in" if req.get("shape", "route") == "area" else "Crosses"
+		col.add_child(_fact("road", "%s %d of your road%s" % [verb, roads, "" if roads == 1 else "s"], Brand.WARNING, true))
 	var gone: Array = hits.get("buildings", [])
 	if not gone.is_empty():
 		col.add_child(_fact("bulldoze", "Removes your " + _names(gone), Brand.CRITICAL, true))
@@ -246,7 +251,9 @@ func _card(req: Dictionary) -> Control:
 	col.add_child(row)
 	if _editing:
 		col.move_child(row, col.get_child_count() - 1)
-		col.add_child(_text("Drag a bend on the map. Drag a small dot to add one; right click a bend to take it out.",
+		col.add_child(_text(("Drag a corner of the land on the map. Drag a small dot to add a corner; right click one to take it out."
+			if req.get("shape", "route") == "area" else
+			"Drag a bend on the map. Drag a small dot to add one; right click a bend to take it out."),
 			UiStyle.MUTED, 500, 11))
 		var first := str(req.leader).get_slice(" ", 0)
 		row.add_child(_action("Send to " + (first if first != "" else "them"), true, func(): _answer("edit")))
@@ -258,7 +265,7 @@ func _card(req: Dictionary) -> Control:
 			_rebuild(true)))
 	else:
 		row.add_child(_action("Approve", true, func(): _answer("approve")))
-		row.add_child(_action("Edit route", false, func():
+		row.add_child(_action("Edit area" if req.get("shape", "route") == "area" else "Edit route", false, func():
 			_editing = true
 			view.set_editing(true)
 			_rebuild(true)))
@@ -279,6 +286,10 @@ static func _names(list: Array) -> String:
 	if parts.size() == 1:
 		return parts[0]
 	return ", ".join(parts.slice(0, -1)) + " and " + parts[-1]
+
+
+static func _acres(a: float) -> String:
+	return "%.1f" % a if a < 10.0 else str(roundi(a))
 
 
 static func _days(ticks: int) -> String:

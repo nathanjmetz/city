@@ -43,7 +43,7 @@ func _process(delta: float) -> void:
 
 ## A company is redrawn when its plant, units or add-ons change.
 static func _stamp(s: Dictionary) -> String:
-	return "%s|%s|%s" % [s.plant, str(s.cells), str(s.upgrades)]
+	return "%s|%s|%s" % [s.plant, str(s.cells), str(s.built)]
 
 
 func _rebuild() -> void:
@@ -88,7 +88,7 @@ func _site(s: Dictionary) -> Node3D:
 			"solar": _solar(unit)
 			"wind": _turbine(root, unit)
 			"gas": _gas(unit)
-			"coal": _coal(unit, "scrubbers" in s.upgrades)
+			"coal": _coal(unit, "scrubbers" in s.built)
 			"hydro": _dam(unit)
 	for color in _batch:
 		var mi := MeshInstance3D.new()
@@ -126,7 +126,7 @@ func _yard(n: Node3D, s: Dictionary) -> void:
 		_box(n, Vector3(6.4, 0.4, 0.4), Vector3(x, 12, -8), STEEL)
 	var spots := [Vector3(-16, 0, -12), Vector3(18, 0, 14), Vector3(-2, 0, 15)]
 	var k := 0
-	for key in s.upgrades:
+	for key in s.built:
 		if k >= spots.size():
 			break
 		var at: Vector3 = spots[k]

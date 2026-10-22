@@ -149,6 +149,8 @@ func _cell_problem(sim: CitySim, h: Dictionary, c: Vector2i, id: int, auto: bool
 			return "That ground belongs to a warehouse."
 		if sim.education.covers(p):
 			return "That ground is a campus."
+		if id != -2 and sim.mail.covers(p):
+			return "Overlaps the post office."
 	if auto:
 		for key in sim.lots:
 			var lot: Dictionary = sim.lots[key]

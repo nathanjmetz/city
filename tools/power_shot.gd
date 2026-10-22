@@ -26,11 +26,11 @@ func _process(_delta: float) -> bool:
 		var a: Dictionary = sim.power.sites[ids[0]]
 		a.plant = "coal"
 		a.cells = [Vector2i(0, 1), Vector2i(1, 1)]
-		a.upgrades = ["scrubbers", "training"]
+		a.built = ["scrubbers", "training"]
 		var b: Dictionary = sim.power.sites[ids[1]]
 		b.plant = "wind"
 		b.cells = [Vector2i(0, 1), Vector2i(1, 1), Vector2i(-1, 1), Vector2i(0, 2)]
-		b.upgrades = ["battery"]
+		b.built = ["battery"]
 		sim.power_changed.emit()
 		var cam: CityCamera
 		for c in _main.get_children():

@@ -43,6 +43,7 @@ var _dirty := true
 var _dirty_tick := 0
 var _sim: Object
 var _hubs_version := -1
+var _mail_version := -1
 
 
 ## Follows the city: anything built or removed marks the land for a re-check.
@@ -80,6 +81,10 @@ func update(sim: Object) -> void:
 	# Landfills, recycling and cemeteries grow on their own, without a signal.
 	if sim.hubs.version != _hubs_version:
 		_hubs_version = sim.hubs.version
+		_mark()
+	# So does the post office.
+	if sim.mail.version != _mail_version:
+		_mail_version = sim.mail.version
 		_mark()
 	if not _dirty:
 		return
@@ -163,6 +168,10 @@ static func sources(sim: Object) -> Dictionary:
 		var h: Dictionary = sim.hubs.hubs[id]
 		for cell in h.cells:
 			out["h%d %s %s" % [id, cell, h.pos]] = _poly_cells.bind(CivicHubs.cell_poly(h, cell))
+	for id in sim.mail.offices:
+		var o: Dictionary = sim.mail.offices[id]
+		for cell in o.cells:
+			out["m%d %s %s" % [id, cell, o.pos]] = _poly_cells.bind(CivicHubs.cell_poly(o, cell))
 	for id in sim.industry.sites:
 		var s: Dictionary = sim.industry.sites[id]
 		out["iy%d" % id] = _poly_cells.bind(sim.industry._yard(s))

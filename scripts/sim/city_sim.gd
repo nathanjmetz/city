@@ -79,6 +79,8 @@ var vegetation := Vegetation.new()
 var hubs := CivicHubs.new()
 ## Parks (hubs that fill in by themselves) and one-per-town landmarks.
 var parks := Parks.new()
+## The post office, its postmaster, and the carriers on their routes.
+var mail := Mail.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -114,6 +116,9 @@ var in_region := false
 ## companies last month (from Trade), which unlocks a line to a neighbor.
 ## Tests can set it directly.
 var neighbor_power_short := 0.0
+## What the neighbouring towns make and buy, kept up to date by the region
+## server (see Agency._region). Not saved: it comes from the neighbours.
+var region := {}
 
 var _lots_dirty := true
 ## Roads changed since the world last made way for them (see RoadWins).
@@ -387,6 +392,10 @@ func apply_now(cmd: Dictionary) -> bool:
 		"set_junction":
 			# Traffic lights, stop signs or none at a junction (-1 = automatic).
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
+		"place_post_office", "remove_post_office", "post_office_funding":
+			ok = mail.command(self, cmd)
+			if ok and cmd.type != "post_office_funding":
+				_lots_dirty = true
 		"clear":
 			region_links.clear()
 			trade = Trade.new()
@@ -411,6 +420,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			hubs = CivicHubs.new()
 			parks = Parks.new()
 			parks_changed.emit()
+			mail = Mail.new()
 			farms.reserves = reserves
 			industry.reserves = reserves
 			vegetation.reset()
@@ -595,6 +605,9 @@ func tick() -> void:
 	if tick_count % Power.DECIDE_EVERY == 0 and not power.sites.is_empty():
 		if _decide_power():
 			power_changed.emit()
+	# Once a month every hub's leader looks at its development tree (Agency).
+	if tick_count % (24 * TICKS_PER_HOUR) == 12 * TICKS_PER_HOUR:
+		_develop_hubs()
 	# Taxes come in and upkeep goes out every game hour, a day settling a month.
 	if tick_count % TICKS_PER_HOUR == 0:
 		economy.money += roundi(economy.monthly_net() / 24.0)
@@ -602,6 +615,7 @@ func tick() -> void:
 	hubs.tick(self)
 	if not in_region and tick_count % (24 * TICKS_PER_HOUR) == 0:
 		Trade.settle({"me": self}, {})
+	mail.tick(self)
 	if not simulate_traffic:
 		return
 	logistics.tick(self)
@@ -660,7 +674,7 @@ func update_stats() -> void:
 		0.1 + float(workers - jobs) / maxf(workers, 40.0)
 		+ 0.4 * (shop_jobs * 0.8 - factory_jobs) / maxf(factory_jobs, 20.0), 0.0, 1.0)
 	for z in demand:
-		demand[z] = clampf(demand[z] + economy.demand_shift(z), 0.0, 1.0)
+		demand[z] = clampf(demand[z] + economy.demand_shift(z) + mail.demand_shift(z), 0.0, 1.0)
 	# Past village size, people want fire, police, a clinic and a school nearby.
 	if pop > 300:
 		demand[ZoneMap.Zone.RESIDENTIAL] = clampf(
@@ -781,8 +795,9 @@ func industry_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 func warehouse_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 	var w := {"kind": kind, "pos": pos, "dir": dir, "bays": 0}
 	var poly := Warehouses.corners(w)
-	if not land_ok(Warehouses.center(w), 10.0):
-		return "Can't build in the water or on a slope that steep."
+	for p in _grid_in(poly):
+		if not land_ok(p):
+			return "Can't build in the water or on a slope that steep."
 	if reserves.kind_at(Warehouses.center(w)) != "":
 		return "That land is reserved for %s." % Reserves.KINDS[reserves.kind_at(Warehouses.center(w))]
 	if Services.road_clash(network, poly):
@@ -803,6 +818,8 @@ func warehouse_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 			return "Overlaps a landfill, recycling center or cemetery."
 		if power.covers(p):
 			return "That ground belongs to a power company."
+		if mail.covers(p):
+			return "Overlaps the post office."
 		if education.covers(p):
 			return "That ground is a campus."
 	if parks.overlaps(Array(poly)):
@@ -815,6 +832,9 @@ func warehouse_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 func warehouse_ground_ok(poly: PackedVector2Array, id: int) -> bool:
 	if Services.road_clash(network, poly):
 		return false
+	for p in _grid_in(poly):
+		if not land_ok(p):
+			return false  # water or a slope too steep to grade
 	for sid in services.buildings:
 		if not Geometry2D.intersect_polygons(poly, services.footprint(sid)).is_empty():
 			return false
@@ -823,7 +843,7 @@ func warehouse_ground_ok(poly: PackedVector2Array, id: int) -> bool:
 			return false
 	for p in _grid_in(poly):
 		if farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) or reserves.kind_at(p) != "" \
-				or hubs.covers(p) or education.covers(p) or power.covers(p):
+				or hubs.covers(p) or education.covers(p) or mail.covers(p) or power.covers(p):
 			return false
 	for key in lots:
 		if not buildings.has(key) and zones.zone_at(lots[key].zone_pt) == ZoneMap.Zone.NONE:
@@ -1051,7 +1071,8 @@ func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
 	if ok:
 		for p in pts:
 			if services.covers(p) or farms.covers(p) or industry.covers(p) or farms.field_at(p) != -1 \
-					or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) or power.covers(p) or not land_ok(p):
+					or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
+					or mail.covers(p) or power.covers(p) or not land_ok(p):
 				ok = false
 	if ok:
 		for key2 in lots:
@@ -1215,7 +1236,8 @@ func wealth_at(_p: Vector2) -> float:
 func _lot_blocked(lot: Dictionary) -> bool:
 	for p in [lot.pos, lot.front, lot.zone_pt]:
 		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) \
-				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) or power.covers(p):
+				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
+				or mail.covers(p) or power.covers(p):
 			return true
 	# No lots in the water or on ground too steep to build on.
 	return not land_ok(lot.pos, LotPlanner.FRONTAGE * 0.5)
@@ -1362,8 +1384,74 @@ func _grow_one() -> void:
 		var bseed := rng.randi()
 		buildings[key] = {"zone": z, "seed": bseed, "built": tick_count,
 			"cap": capacity(z, bseed), "occ": 0}
+		if z == ZoneMap.Zone.INDUSTRIAL:
+			buildings[key].chain = factory_chain(lots[key].pos)
 		buildings_changed.emit()
 		return
+
+
+## Each farm and company leader takes their next step up their tree.
+func _develop_hubs() -> void:
+	var ids := farms.farms.keys()
+	ids.sort()
+	var farm_built := false
+	for id in ids:
+		var f: Dictionary = farms.farms[id]
+		if not f.has("leader"):
+			f.leader = Agency.leader(self, hash([city_seed, "farm", id]))
+		if not Agency.develop(self, f, Agency.TREES.farm, f.pos, farms.yearly_profit(id)).is_empty():
+			farm_built = true
+	ids = industry.sites.keys()
+	ids.sort()
+	var site_built := false
+	for id in ids:
+		var s: Dictionary = industry.sites[id]
+		if not s.has("leader"):
+			s.leader = Agency.leader(self, hash([city_seed, "site", id]))
+		if not Agency.develop(self, s, Agency.TREES[s.kind], s.pos, industry.yearly_profit(id)).is_empty():
+			site_built = true
+	if farm_built:
+		farms_changed.emit()
+	if site_built:
+		industry_changed.emit()
+	ids = power.sites.keys()
+	ids.sort()
+	var power_built := false
+	var ctx := power_context()
+	for id in ids:
+		if power.develop(self, id, ctx):
+			power_built = true
+	if power_built:
+		_lots_dirty = true
+		power_changed.emit()
+
+
+## What a new factory here would make (a key of Balance.FACTORY_CHAINS):
+## the chain with the most output nearby, counting closer supply more, or
+## "general" when nothing local is near enough (Brawn: factories follow the
+## town's industry).
+func factory_chain(at: Vector3) -> String:
+	var score := {"mill": 0.0, "sawmill": 0.0, "refinery": 0.0, "metal": 0.0}
+	var reach := Balance.FACTORY_CHAIN_REACH
+	for id in farms.farms:
+		var f: Dictionary = farms.farms[id]
+		var d: float = f.pos.distance_to(at)
+		if d < reach:
+			# A 1,000-bushel truck a month for about every 15 acres of corn.
+			score.mill += f.cells.size() * Farms.ACRES_PER_CELL / 15.0 * (1.0 - d / reach)
+	var by_kind := {"forest": "sawmill", "oil": "refinery", "ore": "metal"}
+	for id in industry.sites:
+		var s: Dictionary = industry.sites[id]
+		var d: float = s.pos.distance_to(at)
+		if d < reach:
+			score[by_kind[s.kind]] += Balance.INDUSTRY[s.kind].loads * s.pads.size() * (1.0 - d / reach)
+	var best := "general"
+	var best_v := Balance.FACTORY_CHAIN_MIN
+	for k in ["mill", "sawmill", "refinery", "metal"]:
+		if score[k] > best_v:
+			best_v = score[k]
+			best = k
+	return best
 
 
 ## People a home holds, or jobs a shop or factory offers.
@@ -1446,6 +1534,7 @@ func to_dict() -> Dictionary:
 		"permits": permits.to_dict(),
 		"hubs": hubs.to_dict(),
 		"parks": parks.to_dict(),
+		"mail": mail.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
 		"vegetation": vegetation.to_dict(),
@@ -1486,6 +1575,7 @@ func from_dict(d: Dictionary) -> void:
 	permits.from_dict(d.get("permits", {}))
 	hubs.from_dict(d.get("hubs", {}))
 	parks.from_dict(d.get("parks", {}))
+	mail.from_dict(d.get("mail", {}))
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:
@@ -1515,9 +1605,15 @@ func from_dict(d: Dictionary) -> void:
 		# Older saves had no residents yet: assume the homes were full.
 		buildings[key] = {"zone": z, "seed": int(b.seed), "built": int(b.built), "cap": cap,
 			"occ": int(b.get("occ", cap if z == ZoneMap.Zone.RESIDENTIAL else 0))}
+		if z == ZoneMap.Zone.INDUSTRIAL and b.has("chain"):
+			buildings[key].chain = str(b.chain)
 	_road_wins()
 	_lots_dirty = true
 	_refresh()
+	# Factories from before industry chains take up the local one.
+	for key in buildings:
+		if buildings[key].zone == ZoneMap.Zone.INDUSTRIAL and not buildings[key].has("chain"):
+			buildings[key].chain = factory_chain(lots[key].pos) if lots.has(key) else "general"
 	update_stats()
 	buildings_changed.emit()
 

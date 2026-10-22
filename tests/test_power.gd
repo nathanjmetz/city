@@ -51,7 +51,7 @@ func _init() -> void:
 	_check(sim.apply({"type": "place_power", "pos": [at.x, at.z], "dir": [dir.x, dir.z]}), "place a power company")
 	var id: int = sim.power.sites.keys()[0]
 	var s: Dictionary = sim.power.sites[id]
-	print("  leader: ", s.leader, " -> ", s.plant, ": ", s.why)
+	print("  leader: ", s.leader, " -> ", s.plant, ": ", s.reason)
 	_check(s.cells.size() == 1, "the first unit goes up right away")
 	_check(sim.services.utility_use.power[1] > 0, "the plant adds power capacity (%s)" % str(sim.services.utility_use.power))
 	for x in range(-380, 120, 10):
@@ -68,36 +68,42 @@ func _init() -> void:
 		if sim.services.served[key].power:
 			powered += 1
 	_check(powered > 0, "homes grow on the company's power alone (%d)" % powered)
-	print("  cells %d, capacity %d, sales %s, savings %d, upgrades %s" % [s.cells.size(), sim.power.capacity(id),
-		str(sim.power.sales.get(id)), int(s.savings), str(s.upgrades)])
+	print("  cells %d, capacity %d, sales %s, built %s" % [s.cells.size(), sim.power.capacity(id),
+		str(sim.power.sales.get(id)), str(s.built)])
 	if s.plant == "coal":
 		_check(sim.power.land_value_effect(Power.cell_center(s, s.cells[0])) < -0.1, "coal smoke lowers land value next door")
 		_check(sim.power.land_value_effect(Power.cell_center(s, s.cells[0]) + Vector3(3000, 0, 0)) == 0.0, "but not far away")
 
-	# A coal company's tree: scrubbers with money; a schooled successor with
-	# oil nearby switches to gas.
-	var t := Power.new()
-	var tid := t.add_site(oily, Vector3(0, 0, -1), [], 0.1, 7)
-	var ts: Dictionary = t.sites[tid]
+	# A coal company's tree (Agency): nothing while it loses money;
+	# scrubbers once it profits; a schooled leader near oil switches to gas.
+	var t := CitySim.new()
+	var tid := t.power.add_site(oily, Vector3(0, 0, -1), [], 0.1, 7)
+	var ts: Dictionary = t.power.sites[tid]
 	ts.plant = "coal"
 	ts.cells = [Vector2i(0, 1)]
-	ts.savings = 0.0
-	_check(not t.grow_tree(tid, {"day": 1.0}), "no money, no add-ons")
-	ts.savings = 3_000_000.0
-	ts.leader.education = 0.35
-	t.grow_tree(tid, {"day": 2.0})
-	_check("scrubbers" in ts.upgrades, "scrubbers once it can afford them")
-	ts.savings = 10_000_000.0
-	ts.leader.education = 0.6
-	t.grow_tree(tid, {"day": 3.0})
-	_check(ts.plant == "gas" and "repower" in ts.upgrades, "a schooled leader switches coal to gas near oil (%s)" % ts.plant)
-	_check(t.unlock_problem(tid, "tie_line", {}) != "", "line to a neighbor waits for a neighbor short of power")
-	_check(t.unlock_problem(tid, "tie_line", {"neighbor_short": 500.0}) == "", "and unlocks when one is")
+	ts.leader.edu = 0.35
+	ts.leader.caution = 0.0
+	ts.leader.ambition = 1.0
+	t.power.sales[tid] = {"profit": -100_000.0}
+	_check(not t.power.develop(t, tid, {"day": 1.0}), "a losing plant builds nothing")
+	t.power.sales[tid] = {"profit": 1_000_000.0}
+	t.power.develop(t, tid, {"day": 2.0})
+	_check("scrubbers" in ts.built, "scrubbers once it makes money (%s)" % str(ts.built))
+	ts.leader.edu = 0.6
+	t.power.sales[tid] = {"profit": 3_000_000.0}
+	for i in 3:
+		t.power.develop(t, tid, {"day": 3.0 + i})
+	_check(ts.plant == "gas" and "repower" in ts.built, "a schooled leader switches coal to gas near oil (%s %s)" % [ts.plant, str(ts.built)])
+	var tie: Dictionary = Power.TREE.filter(func(n): return n.id == "tie_line")[0]
+	_check(not Agency.open(t, ts, [tie], ts.pos, 3_000_000.0).size(), "line to a neighbor waits for a neighbor buying power")
+	t.region_links.append(0)
+	t.trade.last_deals = [{"good": "power", "amount": 100.0, "seller": "me", "buyer": "Bob", "price": 38.0}]
+	_check(Agency.open(t, ts, [tie], ts.pos, 3_000_000.0).size() == 1, "and opens when one is")
 	# A successor takes over when the term is up, better schooled with training.
-	ts.upgrades.append("training")
+	ts.built.append("training")
 	var before: String = ts.leader.name
-	t.grow_tree(tid, {"day": 3.0 + Balance.POWER_LEADER_TERM_DAYS, "education": 0.5})
-	_check(ts.hired > 3.0, "a successor takes over (%s -> %s)" % [before, ts.leader.name])
+	t.power.develop(t, tid, {"day": 10.0 + Balance.POWER_LEADER_TERM_DAYS, "education": 0.5})
+	_check(ts.hired > 10.0 and ts.leader.edu >= 0.5, "a better-schooled successor takes over (%s -> %s)" % [before, ts.leader.name])
 
 	# Saves and copies stay in step.
 	var copy := CitySim.new()

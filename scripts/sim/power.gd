@@ -27,15 +27,42 @@ const SEED_REACH := 3
 const PLANTS := Balance.POWER_PLANTS
 const DECIDE_EVERY := Balance.POWER_DECIDE_EVERY
 
+## The development tree (Agency format; Brawn: every hub gets a thick tree
+## that depends on its leader, the town and the neighbors). `plants` limits
+## a node to some plants; `gate` is a check Agency has no condition for
+## (see gate_problem). Costs come out of the company's profit (Agency).
+const TREE := [
+	{"id": "training", "name": "Training center", "cost": 800_000, "needs": {"education": 0.3},
+		"effects": {"jobs+": 4}, "note": "trains the next leader, who starts better schooled"},
+	{"id": "scrubbers", "name": "Smokestack scrubbers", "cost": 2_000_000, "plants": ["coal"],
+		"needs": {"leader_edu": 0.3}, "effects": {"smoke*": -0.5}, "note": "halves the smoke"},
+	{"id": "repower", "name": "Switch to gas", "cost": 6_000_000, "plants": ["coal"], "gate": "oil",
+		"needs": {"leader_edu": 0.45}, "effects": {}, "note": "the coal units become gas engines on the oil field's gas"},
+	{"id": "battery", "name": "Battery yard", "cost": 1_500_000, "plants": ["solar", "wind"],
+		"needs": {"leader_edu": 0.6}, "effects": {"output*": 0.25}, "note": "stores power for the evening"},
+	{"id": "steam", "name": "Waste-heat line", "cost": 1_000_000, "plants": ["coal", "gas"], "gate": "industry",
+		"needs": {"leader_edu": 0.35}, "effects": {"sales+": Balance.POWER_STEAM_SALES, "jobs+": 3},
+		"note": "sells steam to the factories next door"},
+	{"id": "blade_yard", "name": "Wind blade service yard", "cost": 1_200_000, "plants": ["wind"], "gate": "turbines",
+		"needs": {"leader_edu": 0.5}, "effects": {"sales+": Balance.POWER_BLADE_YARD_SALES, "jobs+": 8},
+		"note": "services its turbines and the region's"},
+	{"id": "tie_line", "name": "Line to a neighbor", "cost": 3_000_000,
+		"needs": {"leader_edu": 0.4, "region_buys:power": 1, "link": 1}, "effects": {"tie+": 1.0},
+		"note": "sells spare power straight to a neighbor that's short, at the town price"},
+	{"id": "lab", "name": "Grid research lab", "cost": 2_500_000, "requires": ["training"], "gate": "university",
+		"needs": {"leader_edu": 0.7}, "effects": {"opex*": -0.1, "jobs+": 6}, "note": "cuts running costs by a tenth"},
+]
+
 const FIRST_NAMES := ["Dale", "Linda", "Gary", "Karen", "Ray", "Donna", "Curt", "Janet", "Wayne", "Peggy",
 	"Doug", "Sheila", "Lyle", "Marcy", "Arnie", "Joanne", "Earl", "Deb", "Vern", "Lori"]
 const LAST_NAMES := ["Kowalski", "Hendricks", "Schroeder", "Lindqvist", "McAllister", "Brandt", "Yoder",
 	"Riggs", "Halvorsen", "Pruitt", "Gerber", "Dunlap", "Voss", "Tate", "Becker", "Ostrander"]
 
 ## Companies: id -> {plant, pos, dir, drive, cells: Array of Vector2i in its
-## own frame (0,0 is the yard), leader: {name, education}, why, loss_streak,
-## savings ($), upgrades: Array of Balance.POWER_UPGRADES keys, hired (game
-## day the leader took over)}
+## own frame (0,0 is the yard), leader: Agency.leader plus a name and
+## "education" (= edu), reason (why this plant), why (Agency's last move),
+## loss_streak, built: Array of TREE ids (Agency),
+## hired (game day the leader took over)}
 var sites := {}
 ## Set by the city: the industrial tax rate (percent).
 var tax_rate := 1.5
@@ -132,12 +159,15 @@ static func opex(plant: String, gas := 0.0) -> float:
 
 ## A leader for a new company, from the town's education (0 to 1) and a
 ## little luck. Deterministic from the city seed and the company id.
+## Shaped like Agency.leader ({edu, caution, ambition}) with a name, and
+## "education" kept equal to edu for the plant choice.
 static func hire(town_education: float, city_seed: int, id: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([city_seed, id, "power leader"])
 	var name := "%s %s" % [FIRST_NAMES[rng.randi() % FIRST_NAMES.size()], LAST_NAMES[rng.randi() % LAST_NAMES.size()]]
-	var edu := clampf(town_education + rng.randf_range(-1.0, 1.0) * Balance.POWER_LEADER_SPREAD, 0.0, 1.0)
-	return {"name": name, "education": snappedf(edu, 0.01)}
+	var edu := snappedf(clampf(town_education + rng.randf_range(-1.0, 1.0) * Balance.POWER_LEADER_SPREAD, 0.0, 1.0), 0.01)
+	return {"name": name, "education": edu, "edu": edu, "caution": snappedf(rng.randf(), 0.01),
+		"ambition": snappedf(rng.randf(), 0.01)}
 
 
 ## Years ahead a leader plans: a payback-in-three-years owner to a 25-year
@@ -204,7 +234,7 @@ func add_site(pos: Vector3, dir: Vector3, drive: Array, town_education: float, c
 	var leader := hire(town_education, city_seed, id)
 	var pick := choose(leader, pos)
 	sites[id] = {"plant": pick[0], "pos": pos, "dir": dir, "drive": drive, "cells": [], "leader": leader,
-		"why": pick[1], "loss_streak": 0, "savings": Balance.POWER_START_SAVINGS, "upgrades": [], "hired": day}
+		"reason": pick[1], "why": "", "loss_streak": 0, "built": [], "hired": day}
 	return id
 
 
@@ -242,12 +272,12 @@ func cell_homes(s: Dictionary, c: Vector2i) -> float:
 
 ## A battery yard lets panels and turbines cover more homes.
 static func _boost(s: Dictionary) -> float:
-	return 1.25 if "battery" in s.upgrades else 1.0
+	return Agency.effect(s, TREE, "output*")
 
 
 ## A company's running cost per MWh, with its research lab.
 func site_opex(s: Dictionary) -> float:
-	return opex(s.plant, gas(s.pos)) * (0.9 if "lab" in s.upgrades else 1.0)
+	return opex(s.plant, gas(s.pos)) * Agency.effect(s, TREE, "opex*")
 
 
 ## Homes-equivalent the company makes on average.
@@ -290,11 +320,7 @@ func _profit(s: Dictionary, town: float, export: float, neighbor := 0.0) -> floa
 	var mwh_t := (town + neighbor) * Balance.POWER_MWH_PER_HOME
 	var mwh_x := export * Balance.POWER_MWH_PER_HOME
 	var built: float = float(k.capex) * s.cells.size()
-	var extra := 0.0
-	if "steam" in s.upgrades:
-		extra += Balance.POWER_STEAM_SALES
-	if "blade_yard" in s.upgrades:
-		extra += Balance.POWER_BLADE_YARD_SALES
+	var extra := Agency.effect(s, TREE, "sales+")
 	return mwh_t * (Balance.POWER_TOWN_PRICE - op) + mwh_x * (Balance.POWER_EXPORT_PRICE - op) + extra \
 		- built / Balance.POWER_LOAN_YEARS - (built + Balance.POWER_YARD_VALUE) * tax_rate / 100.0
 
@@ -323,7 +349,7 @@ func decide(usable: Callable, load: float, can_export: bool, ctx := {}) -> bool:
 		var cap := float(capacity(id))
 		var town := minf(cap, left)
 		var neighbor := 0.0
-		if "tie_line" in s.upgrades:
+		if Agency.effect(s, TREE, "tie+") > 0.0:
 			neighbor = minf(cap - town, short)
 			short -= neighbor
 		var export := 0.0
@@ -331,9 +357,6 @@ func decide(usable: Callable, load: float, can_export: bool, ctx := {}) -> bool:
 			export = cap - town - neighbor
 		var profit := _profit(s, town, export, neighbor)
 		sales[id] = {"town": roundi(town), "export": roundi(export), "neighbor": roundi(neighbor), "profit": profit}
-		s.savings += profit * DECIDE_EVERY / float(CitySim.TICKS_PER_HOUR * 24 * 12)
-		if grow_tree(id, ctx):
-			changed = true
 		# What one more unit would earn over the leader's horizon, per year.
 		var best := Vector2i.MAX
 		var best_q := 0.0
@@ -380,59 +403,55 @@ func decide(usable: Callable, load: float, can_export: bool, ctx := {}) -> bool:
 	return changed
 
 
-## The leader looks over the development tree: a successor takes over when
-## the term is up (better schooled with a training center), and the leader
-## builds the first add-on it can, has the money for and that pays. Returns
-## true if anything changed.
-func grow_tree(id: int, ctx: Dictionary) -> bool:
+## Once a month the leader looks over the development tree (Agency): a
+## successor takes over when the term is up (better schooled with a
+## training center), then the leader builds what it values most of what's
+## open, paid from profit. `ctx` as in decide. Returns true if anything
+## changed.
+func develop(sim: CitySim, id: int, ctx: Dictionary) -> bool:
 	var s: Dictionary = sites[id]
 	var changed := false
 	var day := float(ctx.get("day", 0.0))
 	if day - float(s.hired) >= Balance.POWER_LEADER_TERM_DAYS:
 		var edu := float(ctx.get("education", s.leader.education))
-		if "training" in s.upgrades:
+		if "training" in s.built:
 			edu += Balance.POWER_TRAINING_LIFT
-		var successor := hire(edu, int(s.leader.name.hash()), id + int(day))
-		s.leader = successor
+		s.leader = hire(edu, int(s.leader.name.hash()), id + int(day))
 		s.hired = day
 		changed = true
-	for key in Balance.POWER_UPGRADE_ORDER:
-		if key in s.upgrades or unlock_problem(id, key, ctx) != "":
-			continue
-		var u: Dictionary = Balance.POWER_UPGRADES[key]
-		if s.savings < float(u.cost):
-			continue
-		s.savings -= float(u.cost)
-		s.upgrades.append(key)
-		if key == "repower":
-			s.plant = "gas"
-			while s.cells.size() > int(PLANTS.gas.max_cells):
-				s.cells.pop_back()
-			s.upgrades.erase("scrubbers")
-			s.why = "%s switched the old coal units to gas from the oil field next door." % s.leader.name
-		return true
-	return changed
+	var built := Agency.develop(sim, s, tree_for(id, ctx), s.pos, float(sales.get(id, {}).get("profit", 0.0)))
+	if built.is_empty():
+		return changed
+	if built.id == "repower":
+		s.plant = "gas"
+		while s.cells.size() > int(PLANTS.gas.max_cells):
+			s.cells.pop_back()
+		s.built.erase("scrubbers")
+		s.reason = "%s switched the old coal units to gas from the oil field next door." % s.leader.name
+	return true
 
 
-## Why the leader can't build an add-on yet, in plain words, or "" if it can
-## (money aside). Shown in the company's panel as its development tree.
-func unlock_problem(id: int, key: String, ctx: Dictionary) -> String:
+## The tree as this company sees it: only nodes for its plant whose own
+## checks (gate_problem) pass, so Agency weighs the rest.
+func tree_for(id: int, ctx: Dictionary) -> Array:
+	return TREE.filter(func(n): return gate_problem(id, n, ctx) == "")
+
+
+## Why a node is closed to this company for reasons Agency has no condition
+## for (its plant, oil nearby, factories nearby, turbines, a university), or
+## "".
+func gate_problem(id: int, node: Dictionary, ctx: Dictionary) -> String:
 	var s: Dictionary = sites[id]
-	var u: Dictionary = Balance.POWER_UPGRADES[key]
-	if not u.plants.is_empty() and not s.plant in u.plants:
-		return "Only for a %s." % " or ".join(u.plants.map(func(p): return PLANTS[p].name.to_lower()))
-	if float(s.leader.education) < float(u.edu):
-		return "Needs a leader with %s." % schooling({"education": u.edu})
-	match str(u.needs):
+	var plants: Array = node.get("plants", [])
+	if not plants.is_empty() and not s.plant in plants:
+		return "Only for a %s." % " or ".join(plants.map(func(p): return PLANTS[p].name.to_lower()))
+	match str(node.get("gate", "")):
 		"oil":
-			if gas(s.pos) <= 0.0:
+			if gas(s.pos) <= 0.0 or s.cells.is_empty():
 				return "Needs an oil field nearby."
-		"school":
-			if not ctx.get("school", false):
-				return "Needs a school in town."
 		"university":
 			if not ctx.get("university", false):
-				return "Needs a university in town or next door."
+				return "Needs a university in town."
 		"industry":
 			var near: Callable = ctx.get("industry_near", Callable())
 			if not near.is_valid() or not near.call(s.pos):
@@ -440,11 +459,6 @@ func unlock_problem(id: int, key: String, ctx: Dictionary) -> String:
 		"turbines":
 			if s.cells.size() < 6:
 				return "Needs 6 turbines."
-		"neighbor_short":
-			if float(ctx.get("neighbor_short", 0.0)) <= 0.0:
-				return "Needs a neighbor town short of power."
-	if "repower" == key and s.cells.is_empty():
-		return "Needs a running plant."
 	return ""
 
 
@@ -474,7 +488,7 @@ func land_value_effect(p: Vector3) -> float:
 			d = minf(d, cell_center(s, c).distance_to(Vector3(p.x, 0.0, p.z)))
 		if d < float(k.reach):
 			total += float(k.value) * (1.0 - d / float(k.reach)) * minf(1.0, s.cells.size() / 2.0 + 0.5) \
-				* (0.5 if "scrubbers" in s.upgrades else 1.0)
+				* Agency.effect(s, TREE, "smoke*")
 	return maxf(total, Balance.POWER_SMOKE_FLOOR)
 
 
@@ -585,7 +599,7 @@ func jobs() -> int:
 	var total := 0.0
 	for id in sites:
 		var k: Dictionary = PLANTS[sites[id].plant]
-		total += Balance.POWER_YARD_JOBS + float(k.jobs) * sites[id].cells.size()
+		total += Balance.POWER_YARD_JOBS + float(k.jobs) * sites[id].cells.size() + Agency.effect(sites[id], TREE, "jobs+")
 	return roundi(total)
 
 
@@ -617,8 +631,8 @@ func to_dict() -> Dictionary:
 		for p in s.drive:
 			lane.append([p.x, p.z])
 		out[str(id)] = {"plant": s.plant, "pos": [s.pos.x, s.pos.z], "dir": [s.dir.x, s.dir.z],
-			"drive": lane, "cells": cells, "leader": s.leader, "why": s.why, "loss": s.loss_streak,
-			"savings": s.savings, "upgrades": s.upgrades, "hired": s.hired}
+			"drive": lane, "cells": cells, "leader": s.leader, "reason": s.reason, "why": s.get("why", ""), "loss": s.loss_streak,
+			"built": s.built, "hired": s.hired}
 	return {"sites": out, "next_id": _next_id}
 
 
@@ -634,10 +648,12 @@ func from_dict(d: Dictionary) -> void:
 		for p in s.drive:
 			lane.append(Vector3(p[0], 0.0, p[1]))
 		var leader: Dictionary = s.get("leader", {"name": "", "education": 0.5})
+		var edu := float(leader.get("edu", leader.get("education", 0.5)))
 		sites[int(k)] = {"plant": str(s.plant), "pos": Vector3(s.pos[0], 0.0, s.pos[1]),
 			"dir": Vector3(s.dir[0], 0.0, s.dir[1]).normalized(), "drive": lane, "cells": cells,
-			"leader": {"name": str(leader.name), "education": float(leader.education)},
-			"why": str(s.get("why", "")), "loss_streak": int(s.get("loss", 0)),
-			"savings": float(s.get("savings", 0.0)), "upgrades": Array(s.get("upgrades", [])).map(func(u): return str(u)),
+			"leader": {"name": str(leader.name), "education": edu, "edu": edu,
+				"caution": float(leader.get("caution", 0.5)), "ambition": float(leader.get("ambition", 0.5))},
+			"reason": str(s.get("reason", "")), "why": str(s.get("why", "")), "loss_streak": int(s.get("loss", 0)),
+			"built": Array(s.get("built", [])).map(func(u): return str(u)),
 			"hired": float(s.get("hired", 0.0))}
 	_next_id = int(d.get("next_id", 1))

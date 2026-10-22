@@ -234,36 +234,9 @@ const TOWN_EDUCATION_BASE := 0.25
 const TOWN_EDUCATION_SCHOOLS := 0.5
 ## Factories this close to a coal or gas plant can buy its steam, metres.
 const POWER_STEAM_REACH := 600.0
-## The development tree: add-ons a leader builds on its own once it has the
-## skill, the money and the surroundings (Brawn 2026-10-22: every hub gets a
-## thick tree that depends on the town and its neighbors). `edu` is the
-## leader's minimum education, `cost` comes out of the company's savings.
-const POWER_UPGRADES := {
-	"scrubbers": {"name": "Smokestack scrubbers", "cost": 2_000_000, "edu": 0.3, "plants": ["coal"],
-		"needs": "", "about": "Halves the smoke."},
-	"repower": {"name": "Switch to gas", "cost": 6_000_000, "edu": 0.45, "plants": ["coal"],
-		"needs": "oil", "about": "Turns the coal units into gas engines on the oil field's gas."},
-	"battery": {"name": "Battery yard", "cost": 1_500_000, "edu": 0.6, "plants": ["solar", "wind"],
-		"needs": "", "about": "Stores power for the evening: each unit covers a quarter more homes."},
-	"training": {"name": "Training center", "cost": 800_000, "edu": 0.0, "plants": [],
-		"needs": "school", "about": "Trains the next leader: they start better educated."},
-	"steam": {"name": "Waste-heat line", "cost": 1_000_000, "edu": 0.35, "plants": ["coal", "gas"],
-		"needs": "industry", "about": "Sells steam to factories next door."},
-	"blade_yard": {"name": "Wind blade service yard", "cost": 1_200_000, "edu": 0.5, "plants": ["wind"],
-		"needs": "turbines", "about": "Services turbines, its own and the region's."},
-	"tie_line": {"name": "Line to a neighbor", "cost": 3_000_000, "edu": 0.4, "plants": [],
-		"needs": "neighbor_short", "about": "Sells spare power straight to a neighbor that's short, at the town price."},
-	"lab": {"name": "Grid research lab", "cost": 2_500_000, "edu": 0.7, "plants": [],
-		"needs": "university", "about": "Cuts running costs by a tenth."},
-}
-## Order the leader considers the tree in.
-const POWER_UPGRADE_ORDER := ["training", "scrubbers", "repower", "battery", "steam", "blade_yard", "tie_line", "lab"]
 ## Steam sales and blade-yard work, dollars a year.
 const POWER_STEAM_SALES := 300_000.0
 const POWER_BLADE_YARD_SALES := 200_000.0
-## Savings a new company starts with (its investors), and the share of
-## profit it keeps toward the tree.
-const POWER_START_SAVINGS := 500_000.0
 ## Leaders retire and a successor takes over this often, in game days.
 const POWER_LEADER_TERM_DAYS := 120.0
 ## A training center lifts a successor's education by this much.
@@ -277,6 +250,21 @@ const FARM_BUSHELS_PER_ACRE := {"corn": 180.0, "soybeans": 55.0}
 const GRAIN_TRUCK_BUSHELS := 1_000.0
 ## A factory ships one load of goods to the shops for this many loads in.
 const FACTORY_LOADS_PER_GOODS := 2.0
+## Factories in the industrial zone follow the town's industry (Brawn): each
+## one that moves in works whatever is produced most nearby. "input" is the
+## cargo it buys (grain covers corn and soybeans); "general" works materials
+## shipped in from the region when nothing local is near.
+const FACTORY_CHAINS := {
+	"mill": {"name": "Grain mill", "input": "grain", "makes": "flour and feed"},
+	"sawmill": {"name": "Sawmill", "input": "logs", "makes": "lumber"},
+	"refinery": {"name": "Plastics plant", "input": "crude oil", "makes": "plastics"},
+	"metal": {"name": "Metal works", "input": "ore", "makes": "steel parts"},
+	"general": {"name": "Factory", "input": "materials", "makes": "goods"},
+}
+## How far a new factory looks for local supply, in metres, and how much
+## nearby output it needs before it follows that chain (loads a month).
+const FACTORY_CHAIN_REACH := 3000.0
+const FACTORY_CHAIN_MIN := 0.5
 
 # --- Warehouses ----------------------------------------------------------------
 # Brawn (2026-10-22): warehouses in many real sizes, like Cities: Skylines'
@@ -641,3 +629,107 @@ const EDUCATION_DOWN_PAYMENT := 0.3
 const EDUCATION_SELL_DEBT := 1.5
 ## Campuses decide once a game day (a month).
 const EDUCATION_DECIDE_EVERY := 1440
+
+# --- Post office and mail --------------------------------------------------------
+# Best of CS pitch #10, green-lit by Brawn (2026-10-22): a post office hub
+# whose postmaster plans the routes, real carrier trips, a sorting center
+# that grows next door, and a development tree (see Mail.TREE).
+
+## A small-town post office (about 4,000 sq ft on 0.6 acre) and what the city
+## pays a month to keep it open. Each piece of land it grows adds
+## HUB_PIECE_UPKEEP of this.
+const MAIL_COST := 1_200_000
+const MAIL_UPKEEP := 14_000
+## The city's funding levels, the player's lever: what goes to the postmaster
+## a month on top of postage, to spend on the development tree.
+const MAIL_FUNDING := [
+	{"name": "Postage only", "monthly": 0},
+	{"name": "Basic", "monthly": 6_000},
+	{"name": "Generous", "monthly": 15_000},
+	{"name": "Lavish", "monthly": 30_000},
+]
+## USPS handles about 116 billion pieces a year to 167 million delivery
+## points over about 300 delivery days: 2.3 pieces a household a day.
+## Businesses get several times that, and about 3 parcels a day each.
+const MAIL_PIECES_PER_HOME := 2.3
+const MAIL_PIECES_PER_BUSINESS := 9.0
+const MAIL_PARCELS_PER_BUSINESS := 3.0
+## Delivery days in a month, and what the postmaster keeps per piece after
+## running costs (USPS takes in about 68 cents a piece; most goes to wages).
+const MAIL_DAYS_PER_MONTH := 26.0
+const MAIL_MARGIN_PER_PIECE := 0.04
+## Neighbouring towns' postage a regional hub keeps, dollars a person a month.
+const MAIL_REGIONAL_PER_PERSON := 0.15
+## Offline, each road out to the region counts as one neighbouring town this
+## size (small towns around Petersburg, Indiana).
+const MAIL_OFFLINE_TOWN_POP := 1_800
+## A city carrier route is about 500 delivery points; a carrier's day also
+## tops out at this many streets. A parcel van makes this many business
+## stops and carries this many parcels.
+const MAIL_POINTS_PER_ROUTE := 500
+const MAIL_STOPS_PER_ROUTE := 30
+const MAIL_VAN_STOPS := 25
+const MAIL_VAN_PARCELS := 150
+## Carrier trucks and jeeps, and parcel vans, an office starts with. Each
+## piece of fleet lot it grows holds two more carriers.
+const MAIL_CARRIERS := 2
+const MAIL_VANS := 1
+## A street with fewer homes than one per this many metres is a rural route
+## (right-hand-drive jeeps and roadside boxes).
+const MAIL_RURAL_SPACING := 40.0
+## When the mail truck comes in from the region, when carriers and vans go
+## out (after the mail is cased), and when the outgoing truck leaves. Hours.
+const MAIL_FREIGHT_IN_HOUR := 5
+const MAIL_ROUNDS_HOUR := 9
+const MAIL_FREIGHT_OUT_HOUR := 17
+## A street counts as served while its mail came within this many ticks
+## (two days, so Sundays don't count against it).
+const MAIL_SERVED_TICKS := 2 * 24 * 60
+## Good mail makes a place a little better: land value on served streets
+## (homes +2%, shops +4%, factories +3%), and demand for homes and shops
+## (times the share served).
+const MAIL_VALUE := {ZoneMap.Zone.RESIDENTIAL: 0.02, ZoneMap.Zone.COMMERCIAL: 0.04, ZoneMap.Zone.INDUSTRIAL: 0.03}
+const MAIL_DEMAND_HOMES := 0.04
+const MAIL_DEMAND_SHOPS := 0.06
+## A neighbour's regional sorting hub speeds your mail too.
+const MAIL_REGION_HUB_VALUE := 0.01
+## What the tree's nodes do.
+const MAIL_PO_BOX_VALUE := 0.005
+const MAIL_PASSPORT_VALUE := 0.005
+const MAIL_LOCKER_VALUE := 0.01
+const MAIL_BUSINESS_MAIL_VALUE := 0.02
+const MAIL_MURAL_VALUE := 0.03
+const MAIL_MURAL_REACH := 300.0
+const MAIL_CLUSTER_BOOST := 1.3
+const MAIL_ELECTRIC_SAVING := 0.15
+## A regional hub runs one more truck each way for each neighbouring town,
+## up to this many.
+const MAIL_REGIONAL_TRUCKS := 4
+## A cautious postmaster keeps up to this many months of income in reserve.
+const MAIL_RESERVE_MONTHS := 3.0
+## The development tree's numbers: cost (from the postmaster's fund), land
+## (pieces next door), days to build (game days), weight (how much an
+## ambitious postmaster wants it), and gates: population, pieces (of mail a
+## day), shops, factories, towns and region_pop (neighbours), education
+## and ambition (the postmaster's own), town_school (service coverage).
+const MAIL_TREE := {
+	"po_boxes": {"cost": 40_000, "land": 0, "days": 1, "weight": 1, "population": 600},
+	"passports": {"cost": 25_000, "land": 0, "days": 1, "weight": 2, "population": 1_500, "education": 0.5},
+	"kiosk": {"cost": 60_000, "land": 0, "days": 1, "weight": 2, "population": 2_500, "town_school": 0.6},
+	"mural": {"cost": 80_000, "land": 0, "days": 2, "weight": 1, "population": 1_200, "ambition": 0.4},
+	"cluster_boxes": {"cost": 120_000, "land": 0, "days": 2, "weight": 3, "population": 3_000},
+	"more_vans": {"cost": 180_000, "land": 1, "days": 1, "weight": 3, "shops": 15, "vans": 2},
+	"electric_fleet": {"cost": 400_000, "land": 0, "days": 2, "weight": 2, "education": 0.6, "ambition": 0.6,
+		"population": 2_000},
+	"parcel_lockers": {"cost": 90_000, "land": 0, "days": 1, "weight": 2, "shops": 25},
+	"business_mail": {"cost": 150_000, "land": 1, "days": 2, "weight": 2, "factories": 8},
+	"parcel_depot": {"cost": 600_000, "land": 2, "days": 3, "weight": 4, "shops": 40, "vans": 3},
+	"parcel_ground_hub": {"cost": 2_500_000, "land": 4, "days": 4, "weight": 5, "shops": 60, "vans": 6,
+		"region_pop": 15_000},
+	"sorting_room": {"cost": 350_000, "land": 1, "days": 2, "weight": 4, "pieces": 3_000},
+	"sorting_center": {"cost": 1_800_000, "land": 3, "days": 4, "weight": 6, "pieces": 10_000},
+	"regional_hub": {"cost": 3_500_000, "land": 4, "days": 5, "weight": 7, "towns": 2, "region_pop": 6_000,
+		"education": 0.45},
+	"rail_mail": {"cost": 900_000, "land": 1, "days": 3, "weight": 3},
+	"air_mail": {"cost": 700_000, "land": 0, "days": 2, "weight": 3},
+}

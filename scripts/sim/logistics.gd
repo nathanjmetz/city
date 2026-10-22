@@ -90,13 +90,18 @@ func tick(sim: CitySim) -> void:
 					"goods", {"good": "goods", "amount": 1}, "factory"):
 				stock[key] -= Balance.FACTORY_LOADS_PER_GOODS
 				sent += 1
-		# No local load on its way: take one from a warehouse, else import one from the region.
-		if need[key] >= 1.0 and sent < MAX_PER_ROUND and not _inbound(key) and _from_warehouse(sim, key, lot.front):
+		# No local load on its way: take one from a warehouse, else import one
+		# from the region. Warehouses hold mixed raw loads, so only a general
+		# factory takes from them; the others import their own input.
+		var input := input_of(sim, key)
+		if need[key] >= 1.0 and sent < MAX_PER_ROUND and not _inbound(key) and input == "materials" \
+				and _from_warehouse(sim, key, lot.front):
 			sent += 1
 		elif need[key] >= 1.0 and sent < MAX_PER_ROUND and not _inbound(key):
 			var edge := _edge(sim, lot.front)
+			var purpose := "grain" if input == "grain" else ("fuel" if input == "crude oil" else "raw")
 			if not edge.is_empty() and _send(sim, edge, {"ref": "lot:" + key, "pos": _xz(lot.front)},
-					"raw", {"good": "materials", "amount": 1}, "import"):
+					purpose, {"good": input, "amount": 1}, "import"):
 				sent += 1
 	# Warehouses send their goods on to the shops.
 	ids = sim.warehouses.buildings.keys()
@@ -124,7 +129,7 @@ func _produce(sim: CitySim) -> void:
 		for c in f.cells:
 			bushels += Balance.FARM_BUSHELS_PER_ACRE[f.crop] * Farms.ACRES_PER_CELL \
 				* sim.farms.fertility_at(Farms.cell_center(f, c)) * sim.farms.share(id, c)
-		grain[id] = grain.get(id, 0.0) + bushels * share
+		grain[id] = grain.get(id, 0.0) + bushels * share * Agency.effect(f, Agency.TREES.farm, "output*")
 	for id in grain.keys():
 		if not sim.farms.farms.has(id):
 			grain.erase(id)
@@ -148,7 +153,7 @@ func _buyer(sim: CitySim, from: Vector3, what: String, good := "") -> Dictionary
 	for key in keys:
 		if sim.buildings[key].zone != zone or not sim.lots.has(key) or not sim.utilities_ok(key):
 			continue
-		if zone == ZoneMap.Zone.INDUSTRIAL and need.get(key, 0.0) < 0.5:
+		if zone == ZoneMap.Zone.INDUSTRIAL and (need.get(key, 0.0) < 0.5 or input_of(sim, key) != cargo_class(good)):
 			continue
 		var d: float = sim.lots[key].front.distance_to(from)
 		if d < best_d:
@@ -258,6 +263,16 @@ func _return(sim: CitySim, t: Dictionary) -> void:
 		var key: String = str(t.to.ref).substr(4)
 		if need.has(key):
 			need[key] += 1.0
+
+
+## The factory input a raw good counts as: crops are "grain".
+static func cargo_class(good: String) -> String:
+	return "grain" if Balance.FARM_BUSHELS_PER_ACRE.has(good) else good
+
+
+## The cargo a factory works (see Balance.FACTORY_CHAINS).
+static func input_of(sim: CitySim, key: String) -> String:
+	return Balance.FACTORY_CHAINS[sim.buildings[key].get("chain", "general")].input
 
 
 func _inbound(key: String) -> bool:
