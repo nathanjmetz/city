@@ -164,6 +164,9 @@ func site_problem(sim: CitySim, pos: Vector3, dir: Vector3, axis: Vector3) -> St
 		var q := Vector3(p.x, 0.0, p.y)
 		if sim.farms.covers(q) or sim.farms.field_at(q) != -1 or sim.industry.covers(q):
 			return "That ground belongs to a farm or company."
+	for p in [pos] + Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y)):
+		if not sim.land_ok(p, 20.0):
+			return "The yard needs dry, fairly level ground."
 	if sim.reserves.kind_at(pos) != "":
 		return "That land is reserved for %s." % Reserves.KINDS[sim.reserves.kind_at(pos)]
 	return ""
@@ -476,7 +479,7 @@ func _plan(sim: CitySim, id: int, kind: String, target: Dictionary) -> Dictionar
 			if pc.kind == "region":
 				continue
 			var pts: Array = pc.pts
-			for k in range(10, pts.size() - 10, 8):
+			for k in range(10, pts.size() - 10, 16):
 				var t: Vector3 = pts[k + 1] - pts[k]
 				starts.append({"pos": Vector2(pts[k].x, pts[k].z), "heading": atan2(t.z, t.x),
 					"cost": Balance.RAIL_TURNOUT_COST, "piece": pid, "index": k})

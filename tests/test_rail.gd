@@ -30,10 +30,10 @@ func _init() -> void:
 	# A mining company about a kilometre off on rich ore, across a side street.
 	var hq := Vector3.ZERO
 	var best := 0.0
-	for x in range(900, 1700, 50):
-		for z in range(300, 1400, 50):
+	for x in range(900, 2400, 50):
+		for z in range(300, 2400, 50):
 			var r := Resources.at(Resources.Kind.ORE, Vector3(x, 0, z))
-			if r > best:
+			if r > best and sim.land_ok(Vector3(x, 0, z), 60.0):
 				best = r
 				hq = Vector3(x, 0, z)
 	var street_x := hq.x - 400.0
@@ -68,6 +68,7 @@ func _init() -> void:
 	_check(l.state == "open", "the main line opens (%s, built %s)" % [l.state, str(sim.rail.pieces[l.pieces[0]].built)])
 	_check(d.money < rail_money - l.cost * 0.9, "the railroad paid for its own track")
 	_check(sim.rail.trains.size() == 1, "a local freight is in the yard")
+	print("DBG sites ", sim.industry.sites.keys(), " best ", best, " hq ", hq, " skip ", d.skip, " cars ", Rail._cars_per_year(sim, sim.industry.sites[sid]) if sim.industry.sites.has(sid) else -1)
 	_check(d.why.contains("years to pay off") or not sim.rail.open_requests().is_empty(),
 		"the leader weighs whether a spur pays (%s)" % d.why)
 	# A bold leader will take a longer payback.
@@ -103,7 +104,7 @@ func _init() -> void:
 	var gates_down := false
 	var moved := false
 	var start_pos = null
-	for i in 24 * 60 * 5:
+	for i in 24 * 60 * 9:
 		sim.tick()
 		if sim.industry.sites[sid].stock < 6.0:
 			sim.industry.sites[sid].stock = 12.0

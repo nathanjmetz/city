@@ -22,7 +22,7 @@ const CELL := 10.0         # obstacle map cell, metres
 const STEP := 40.0         # one arc of new track
 const XY := 20.0           # search memory cell
 const BINS := 36           # heading buckets (10° each)
-const MAX_EXPAND := 30000
+const MAX_EXPAND := 40000
 ## Half the width of ground the track needs (ballast, ditches, clearance).
 const CLEAR := 6.0
 ## Crossings: the angle a road must be crossed at, and how far from a junction.
@@ -36,8 +36,12 @@ const LIMITS := {
 
 enum Cell { FREE, BLOCKED, ZONED, TRACK, JUNCTION }
 
-## Ground height at a point; flat until the terrain lands.
-static var height_at := Callable()
+## The deepest cut or highest fill new track may take, metres, and what
+## each metre of it costs per metre of track (earthwork).
+const MAX_CUT := 8.0
+const CUT_PER_M := 250.0
+## Track over water goes on a bridge, this many times dearer.
+const BRIDGE_FACTOR := 4.0
 
 var sim: CitySim
 var kind := "spur"
@@ -49,8 +53,13 @@ var _road := {}   # Vector2i -> seg id (road right of way)
 var _own := {}    # Vector2i -> true where this depot's own track may be joined
 
 
-static func height(p: Vector3) -> float:
-	return height_at.call(p) if height_at.is_valid() else 0.0
+## The level the land is graded to at a point (city coordinates).
+func height(p: Vector3) -> float:
+	return Terrain.base(p.x + sim.terrain_offset.x, p.z + sim.terrain_offset.y)
+
+
+func _wet(p: Vector2) -> bool:
+	return Terrain.is_water(p.x + sim.terrain_offset.x, p.y + sim.terrain_offset.y)
 
 
 ## Builds the map of what new track must avoid. `allow` is a list of
@@ -165,16 +174,22 @@ func plan(starts: Array, goal: Dictionary) -> Dictionary:
 			var check := _check(st, step[1], step[2])
 			if check.is_empty():
 				continue
-			var z := height(_v3(end))
-			if absf(z - float(st[8])) / STEP > LIMITS[kind].grade + 0.0001:
+			# The track keeps to its grade, cutting into rises and filling hollows.
+			var ground := height(_v3(end))
+			var rise: float = LIMITS[kind].grade * STEP
+			var z := clampf(ground, float(st[8]) - rise, float(st[8]) + rise)
+			var dz := absf(z - ground)
+			if dz > MAX_CUT:
 				continue
-			var g: float = st[2] + STEP * cost_per_m * (1.04 if k != 0.0 else 1.0) + check.cost
+			var g: float = st[2] + STEP * cost_per_m * (1.04 if k != 0.0 else 1.0) + check.cost + dz * STEP * CUT_PER_M
+			if _wet(end):
+				g += STEP * cost_per_m * (BRIDGE_FACTOR - 1.0)
 			# Reversing a curve straight away makes an S that trains hate.
 			if k != 0.0 and st[7] == -k:
 				g += STEP * cost_per_m * 0.5
 			var crossings: Array = st[4] + check.crossings
 			states.append([end, head, g, idx, crossings, int(st[5]) + check.zoned, st[6], k, z])
-			_push(heap, [g + _h(end, gpos) * 1.3, states.size() - 1])
+			_push(heap, [g + _h(end, gpos) * 1.8, states.size() - 1])
 	if found == -1:
 		return {}
 	# Walk back up the chain and draw each arc.
@@ -218,7 +233,8 @@ func problem(pts: Array) -> String:
 		if absf(ang) > 0.0001 and s / (2.0 * sin(absf(ang) * 0.5)) < R - 1.0:
 			return "A curve is too tight: %s track needs at least %d m (%d°), AREMA." % [
 				"Industry" if kind == "spur" else "Main line", int(R), LIMITS[kind].degree]
-		if absf(height(pts[i + 1]) - height(pts[i])) / maxf(Vector2(b.x, b.z).length(), 0.1) > LIMITS[kind].grade + 0.0001:
+		var reach: float = pts[i + 1].distance_to(pts[0])
+		if absf(height(pts[i + 1]) - height(pts[0])) > reach * LIMITS[kind].grade + MAX_CUT * 2.0:
 			return "Too steep for trains: %s track climbs at most %.1f%%." % [
 				"industry" if kind == "spur" else "main line", LIMITS[kind].grade * 100.0]
 	for i in range(1, pts.size()):
