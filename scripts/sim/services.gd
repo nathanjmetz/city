@@ -196,6 +196,8 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 			var d := INF
 			for kind in UTILITIES[u]:
 				d = minf(d, _lot_distance(network, lengths, reach_by_kind[kind], lot))
+			# Joined to a source by road at all (before capacity is shared out).
+			s[u + "_linked"] = d < INF
 			if d < INF:
 				by_dist[u].append([d, key])
 	for u in ["power", "water"]:

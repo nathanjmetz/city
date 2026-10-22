@@ -27,6 +27,7 @@ An open map where you draw roads, paint zones along them, and buildings grow, li
 | Views (top left) | See the map by fertility, oil, ore and forest (smooth, never run out), service coverage or traffic. Esc closes. |
 | `8` Dezone | Erase zones (buildings on them go away). |
 | Right click | Stop drawing. |
+| Click (no tool in hand) | Select a building, lot, farm or road: a panel shows whether it works, what it serves, its numbers and any problem. Badges over lots show what lacks power or water. |
 | Esc | Stop drawing; press again to put every tool away and close panels. |
 
 | Space, or Pause / 1x / 2x / 4x | Pause and game speed. |
@@ -95,6 +96,8 @@ All sounds are built in code by `tools/audio/make_assets.py` (`python3 tools/aud
 | `scripts/roads/` | Road sizes, mesh building and drawing. |
 | `scripts/sim/` | The simulation: plain data, fixed ticks, every change is a command (so a headless server can run it later). Lots, zones, growth. |
 | `scripts/sim/balance.gd` | Every gameplay number in one place (money, prices, upkeep, taxes, grants, growth, farm yields). Tune the game here. |
+| `scripts/sim/inspect.gd`, `scripts/ui/select_tool.gd`, `scripts/ui/info_panel.gd` | Click anything with no tool in hand: CS2-style info panel (status, numbers, problems). |
+| `scripts/zones/lot_alerts.gd` | "No power" and "no water" badges over lots. |
 | `scripts/zones/zone_view.gd` | Draws lots and zone colours. |
 | `scripts/audio/` | Sound: world sources and the nearest-first picker, the spatial players, and interface sounds. |
 | `scripts/buildings/building_view.gd` | Draws placeholder homes, shops and factories. |

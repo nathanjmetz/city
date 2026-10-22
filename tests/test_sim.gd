@@ -208,6 +208,61 @@ func _init() -> void:
 	for i in 12:
 		fm.farms.decide(fm.field_usable)
 	_check(farm.cells.size() < grown, "a struggling farm sells fields (%d -> %d)" % [grown, farm.cells.size()])
+	# Brawn's case: a well but no power. The warning names what's missing,
+	# and clicking the well or a lot explains it.
+	var ws := CitySim.new()
+	ws.require_utilities = true
+	ws.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
+	ws.apply({"type": "paint_zone", "center": [0, 20], "radius": 40, "zone": ZoneMap.Zone.RESIDENTIAL})
+	ws.economy.money = 400_000
+	_check(ws.utility_problem().begins_with("No power: build a Power line feed"), "warning names power first: " + ws.utility_problem())
+	var well_site := Services.site_near(ws.network, Services.Kind.WELL, Vector3(120, 0, -30))
+	ws.apply({"type": "place_service", "kind": Services.Kind.WELL, "pos": [well_site[0].x, well_site[0].z],
+		"dir": [well_site[1].x, well_site[1].z]})
+	for i in 50:
+		ws.tick()
+	var why := ws.utility_problem()
+	_check(why.begins_with("No power") and why.contains("need $"), "without power the warning says so and the money short: " + why)
+	var well := Inspect.pick(ws, well_site[0])
+	_check(well.get("type") == "service", "clicking the well selects it")
+	var wd := Inspect.describe(ws, well)
+	_check(wd.title == "Well and pump house" and wd.status.begins_with("Working") and not wd.ok
+		and str(wd.problems).contains("no power"), "the well's panel: working, but the town lacks power (%s)" % str(wd))
+	var lot_key: String = ws.empty_zoned_lots()[0] if not ws.empty_zoned_lots().is_empty() else ""
+	var some_lot := ""
+	for key in ws.lots:
+		if ws.zones.zone_at(ws.lots[key].zone_pt) != ZoneMap.Zone.NONE:
+			some_lot = key
+			break
+	var ld := Inspect.describe(ws, Inspect.pick(ws, ws.lots[some_lot].pos))
+	_check(ld.get("title") == "Empty lot" and str(ld.problems).contains("No power") and not str(ld.problems).contains("No water"),
+		"a zoned lot says it lacks power, not water (%s)" % str(ld))
+	_check(lot_key == "", "nothing can grow without power")
+	ws.economy.money = 400_000
+	var feed := Services.site_near(ws.network, Services.Kind.POWER_FEED, Vector3(-120, 0, -30))
+	ws.apply({"type": "place_service", "kind": Services.Kind.POWER_FEED, "pos": [feed[0].x, feed[0].z],
+		"dir": [feed[1].x, feed[1].z]})
+	for i in 50:
+		ws.tick()
+	_check(ws.utility_problem() == "", "power and water: no warning")
+	# The Critic's case: power reaches one street, water another, so no lot
+	# has both. The warning has to say so.
+	var split := CitySim.new()
+	split.require_utilities = true
+	split.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
+	split.apply({"type": "build_road", "start": [-200, 300], "ctrl": [0, 300], "end": [200, 300]})
+	split.apply({"type": "paint_zone", "center": [0, 20], "radius": 40, "zone": ZoneMap.Zone.RESIDENTIAL})
+	split.apply({"type": "paint_zone", "center": [0, 320], "radius": 40, "zone": ZoneMap.Zone.RESIDENTIAL})
+	split.economy.money = 1_000_000
+	for entry in [[Services.Kind.POWER_FEED, Vector3(150, 0, -30)], [Services.Kind.WELL, Vector3(150, 0, 270)]]:
+		var spot := Services.site_near(split.network, entry[0], entry[1])
+		split.apply({"type": "place_service", "kind": entry[0], "pos": [spot[0].x, spot[0].z], "dir": [spot[1].x, spot[1].z]})
+	for i in 50:
+		split.tick()
+	_check(split.utility_problem().contains("aren't joined by road"), "split networks are explained: " + split.utility_problem())
+	var rd := Inspect.describe(ws, Inspect.pick(ws, Vector3(60, 0, 0)))
+	_check(rd.get("title") == "Street" and rd.ok, "clicking a road shows the street")
+	_check(Inspect.pick(ws, Vector3(0, 0, -900)).is_empty(), "clicking open ground selects nothing")
 	# Old saves (roads only) come back zoned as homes.
 	var old := CitySim.new()
 	old.from_dict({"version": 1, "next_id": 4, "nodes": {"1": [-100, 0], "2": [100, 0]},

@@ -17,6 +17,9 @@ var farm_tool: FarmTool
 var traffic_tool: TrafficTool
 var info_view: InfoView
 var service_view: ServiceView
+var select_tool: SelectTool
+var lot_alerts: LotAlerts
+var _info_panel := InfoPanel.new()
 var _traffic_cards := {}  # TrafficTool.Mode -> Button
 var sim: CitySim
 var game: Node  # main.gd: game speed
@@ -77,6 +80,8 @@ func _ready() -> void:
 	_build_help()
 	_build_views()
 	_build_advisor()
+	_info_panel.setup(sim, select_tool)
+	_root.add_child(_info_panel)
 
 	road_tool.mode_changed.connect(func(_m): _sync())
 	road_tool.options_changed.connect(_sync)
@@ -117,6 +122,7 @@ func close_all() -> void:
 	_show_view("")
 	_views_panel.visible = false
 	_views_button.set_pressed_no_signal(false)
+	select_tool.select({})
 	_help.visible = false
 	_help_button.set_pressed_no_signal(false)
 	advisor.close_panel()
@@ -130,6 +136,8 @@ func close_all() -> void:
 
 func _process(_delta: float) -> void:
 	_views_panel.position = Vector2(0, _top_bar.size.y)
+	# The info panel sits beside the Views column when that's open.
+	_info_panel.position = Vector2(_views_panel.size.x if _views_panel.visible else 0.0, _top_bar.size.y)
 	var t := sim.clock()
 	var hour: int = t.hour % 12
 	_clock.text = "%s %s %d  %d:%02d %s" % [
@@ -251,7 +259,7 @@ func _build_top_bar() -> void:
 	row.add_child(_net)
 	_warning.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_warning.mouse_filter = Control.MOUSE_FILTER_PASS
-	_warning.tooltip_text = "Buildings need power and water to grow and fill. Open Services."
+	_warning.tooltip_text = "Buildings need power and water to grow and fill. Click a lot or building to see what it lacks."
 	row.add_child(_warning)
 
 	var spacer := Control.new()
@@ -713,6 +721,7 @@ func _sync() -> void:
 	for key in _drawers:
 		_drawers[key].visible = key == _category
 	_drawer_dock.visible = _drawers.has(_category)
+	lot_alerts.show_empty = _category in ["zones", "services"]
 	_fit_bottom.call_deferred()
 	for m in _tool_cards:
 		_tool_cards[m].set_pressed_no_signal(m == road_tool.mode)
@@ -753,10 +762,11 @@ func _update_stats() -> void:
 		"Next grant: $%s at %s people" % [_thousands(Economy.MILESTONES[e.milestone][1]),
 		_thousands(Economy.MILESTONES[e.milestone][0])]
 	var unserved := sim.unserved_count()
-	var use := sim.services.utility_use
-	var no_utilities: bool = (use.power[1] == 0 or use.water[1] == 0) and not sim.zones.cells.is_empty()
-	_warning.text = "%d buildings without power or water: people are leaving" % unserved if unserved > 0 \
-		else ("Build power and water (Services) so the town can grow" if no_utilities else "")
+	var problem := sim.utility_problem()
+	if unserved > 0:
+		problem += ". People are leaving %d buildings" % unserved if problem != "" else \
+			"%d buildings without power or water: people are leaving" % unserved
+	_warning.text = problem
 	_budget_rows.net.text = "%s$%s / month" % ["+" if net >= 0 else "–", _thousands(absi(net))]
 	_budget_rows.net.add_theme_color_override("font_color", GOOD if net >= 0 else BAD)
 

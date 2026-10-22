@@ -37,6 +37,10 @@ func _ready() -> void:
 	add_child(buildings)
 	buildings.setup(sim)
 
+	var lot_alerts := LotAlerts.new()
+	lot_alerts.setup(sim)
+	add_child(lot_alerts)
+
 	var service_view := ServiceView.new()
 	add_child(service_view)
 	service_view.setup(sim)
@@ -114,6 +118,12 @@ func _ready() -> void:
 	farm_tool.mode_changed.connect(func(m): if m != FarmTool.Mode.NONE: picked.call(farm_tool))
 	traffic_tool.mode_changed.connect(func(m): if m != TrafficTool.Mode.NONE: picked.call(traffic_tool))
 
+	var select_tool := SelectTool.new()
+	select_tool.setup(sim, cam, func(): return road_tool.mode != RoadTool.Mode.NONE \
+		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
+		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE)
+	add_child(select_tool)
+
 	var hud := Hud.new()
 	hud.setup(road_tool, zone_tool, sim, self)
 	hud.service_tool = service_tool
@@ -121,13 +131,15 @@ func _ready() -> void:
 	hud.traffic_tool = traffic_tool
 	hud.info_view = info_view
 	hud.service_view = service_view
+	hud.select_tool = select_tool
+	hud.lot_alerts = lot_alerts
 	add_child(hud)
 
 	var menu := GameMenu.new()
 	menu.setup(self, func(): return road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
-		or info_view.mode != InfoView.Mode.NONE or hud.views_open())
+		or info_view.mode != InfoView.Mode.NONE or hud.views_open() or not select_tool.selection.is_empty())
 	add_child(menu)
 	if Session.online():
 		var region := RegionView.new()
