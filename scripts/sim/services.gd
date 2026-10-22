@@ -6,7 +6,7 @@ extends RefCounted
 ##
 ## Sizes, prices and reach follow real US practice for a small town.
 
-enum Kind { SUBSTATION, WATER_TOWER, FIRE, POLICE, CLINIC, SCHOOL, POWER_FEED, WELL }
+enum Kind { SUBSTATION, WATER_TOWER, FIRE, POLICE, CLINIC, SCHOOL, POWER_FEED, WELL, BUS_DEPOT }
 
 ## Each kind: name, icon, footprint (width along the road x depth, metres),
 ## and its build cost, monthly upkeep and `reach` or `capacity` from Balance.
@@ -38,6 +38,11 @@ const KINDS := {
 	# Elementary school for about 400 pupils on a 2 acre site.
 	Kind.SCHOOL: {"name": "Elementary school", "icon": "school", "size": Vector2(80, 100),
 		"cost": Balance.SERVICES["school"]["cost"], "upkeep": Balance.SERVICES["school"]["upkeep"], "reach": Balance.SERVICES["school"]["reach"]},
+	# A small-town bus garage: two maintenance bays, an office and a fenced
+	# yard of bus stalls. It runs itself (BusNet) and grows into the land
+	# next door; its monthly cost is the subsidy the player sets.
+	Kind.BUS_DEPOT: {"name": "Bus depot", "icon": "bus", "size": Vector2(36, 44),
+		"cost": Balance.SERVICES["bus_depot"]["cost"], "upkeep": Balance.SERVICES["bus_depot"]["upkeep"], "transit": true},
 }
 ## Which kinds supply each utility.
 const UTILITIES := {"power": [Kind.SUBSTATION, Kind.POWER_FEED], "water": [Kind.WATER_TOWER, Kind.WELL]}
@@ -67,9 +72,11 @@ static func spec(kind: int) -> Dictionary:
 	return KINDS[kind]
 
 
-## The four corners of a service's footprint, on the ground.
-static func corners(kind: int, pos: Vector3, dir: Vector3) -> Array:
-	var size: Vector2 = KINDS[kind].size
+## The four corners of a service's footprint, on the ground. `size` is for
+## hubs that have grown past their kind's first size.
+static func corners(kind: int, pos: Vector3, dir: Vector3, size := Vector2.ZERO) -> Array:
+	if size == Vector2.ZERO:
+		size = KINDS[kind].size
 	var side := Vector3(-dir.z, 0.0, dir.x)
 	var out := []
 	for s in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
@@ -107,7 +114,7 @@ func site_problem(network: RoadNetwork, kind: int, pos: Vector3, dir: Vector3) -
 	for id in buildings:
 		var b: Dictionary = buildings[id]
 		var other := PackedVector2Array()
-		for p in corners(b.kind, b.pos, b.dir):
+		for p in corners(b.kind, b.pos, b.dir, size_of(b)):
 			other.append(Vector2(p.x, p.z))
 		if not Geometry2D.intersect_polygons(poly, other).is_empty():
 			return "Overlaps the %s." % KINDS[b.kind].name.to_lower()
@@ -128,11 +135,16 @@ static func road_clash(network: RoadNetwork, poly: PackedVector2Array) -> bool:
 	return false
 
 
+## A building's size now (a bus depot grows into the land next door).
+static func size_of(b: Dictionary) -> Vector2:
+	return b.get("size", KINDS[b.kind].size)
+
+
 ## The ground a service covers, as a polygon.
 func footprint(id: int) -> PackedVector2Array:
 	var b: Dictionary = buildings[id]
 	var out := PackedVector2Array()
-	for p in corners(b.kind, b.pos, b.dir):
+	for p in corners(b.kind, b.pos, b.dir, size_of(b)):
 		out.append(Vector2(p.x, p.z))
 	return out
 
@@ -149,7 +161,7 @@ func at(p: Vector3) -> int:
 	for id in buildings:
 		var b: Dictionary = buildings[id]
 		var poly := PackedVector2Array()
-		for c in corners(b.kind, b.pos, b.dir):
+		for c in corners(b.kind, b.pos, b.dir, size_of(b)):
 			poly.append(Vector2(c.x, c.z))
 		if Geometry2D.is_point_in_polygon(Vector2(p.x, p.z), poly):
 			return id
@@ -164,7 +176,7 @@ func covers(p: Vector3) -> bool:
 func monthly_upkeep() -> int:
 	var total := 0
 	for id in buildings:
-		total += int(KINDS[buildings[id].kind].upkeep)
+		total += int(KINDS[buildings[id].kind].upkeep) + int(buildings[id].get("subsidy", 0))
 	return total
 
 
@@ -237,7 +249,7 @@ func coverage(key: String) -> float:
 
 ## Road distance from each service's front door to every node (Dijkstra).
 func _spread(network: RoadNetwork, lengths: Dictionary, b: Dictionary, dist: Dictionary) -> void:
-	var near := network.find_segment_near(b.pos + b.dir * KINDS[b.kind].size.y * 0.5, 80.0, 1.0)
+	var near := network.find_segment_near(b.pos + b.dir * size_of(b).y * 0.5, 80.0, 1.0)
 	if near.is_empty():
 		return
 	var s: Dictionary = network.segments[near.seg]
@@ -286,6 +298,8 @@ func to_dict() -> Dictionary:
 	for id in buildings:
 		var b: Dictionary = buildings[id]
 		out[str(id)] = [b.kind, b.pos.x, b.pos.z, b.dir.x, b.dir.z]
+		if b.has("size") or b.has("subsidy"):
+			out[str(id)].append_array([size_of(b).x, size_of(b).y, int(b.get("subsidy", 0))])
 	return {"next_id": _next_id, "buildings": out}
 
 
@@ -295,4 +309,7 @@ func from_dict(d: Dictionary) -> void:
 		var a: Array = d.buildings[k]
 		buildings[int(k)] = {"kind": int(a[0]), "pos": Vector3(a[1], 0.0, a[2]),
 			"dir": Vector3(a[3], 0.0, a[4]).normalized()}
+		if a.size() >= 8:
+			buildings[int(k)].size = Vector2(a[5], a[6])
+			buildings[int(k)].subsidy = int(a[7])
 	_next_id = int(d.get("next_id", 1))

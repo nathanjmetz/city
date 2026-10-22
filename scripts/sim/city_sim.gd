@@ -45,6 +45,8 @@ var industry := Industry.new()
 var logistics := Logistics.new()
 ## Land saved for farming or an industry: no roads or zoning on it.
 var reserves := Reserves.new()
+## Bus depots and school buses, which run themselves (scripts/transit/).
+var buses := BusNet.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -149,6 +151,8 @@ func apply_now(cmd: Dictionary) -> bool:
 				return false
 			var sid := services.add(kind, pos, dir)
 			economy.money -= cost
+			if kind == Services.Kind.BUS_DEPOT:
+				buses.on_placed(self, sid)
 			_clear_zones_under(services.footprint(sid))
 			_lots_dirty = true
 			ok = true
@@ -223,6 +227,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			_clear_reserved_zones(_v(cmd.center), float(cmd.radius) + ZoneMap.CELL)
 			_usable_cache.clear()
 			ok = true
+		"set_bus_subsidy":
+			ok = buses.apply(self, cmd)
 		"set_junction":
 			# Traffic lights, stop signs or none at a junction (-1 = automatic).
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
@@ -239,6 +245,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			industry = Industry.new()
 			logistics = Logistics.new()
 			reserves = Reserves.new()
+			buses = BusNet.new()
 			farms.reserves = reserves
 			industry.reserves = reserves
 			farms_changed.emit()
@@ -370,6 +377,10 @@ func tick() -> void:
 		economy.money += roundi(economy.monthly_net() / 24.0)
 	if not simulate_traffic:
 		return
+	# Before logistics, which clears Traffic's arrival list.
+	for id in buses.tick(self):
+		_clear_zones_under(services.footprint(id))
+		_lots_dirty = true
 	logistics.tick(self)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([city_seed, tick_count, "traffic"])
@@ -865,6 +876,7 @@ func to_dict() -> Dictionary:
 		"reserves": reserves.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
+		"buses": buses.to_dict(),
 	}
 
 
@@ -913,6 +925,8 @@ func from_dict(d: Dictionary) -> void:
 	_lots_dirty = true
 	_refresh()
 	update_stats()
+	buses = BusNet.new()
+	buses.from_dict(self, d.get("buses", {}))
 	buildings_changed.emit()
 
 

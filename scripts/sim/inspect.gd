@@ -46,7 +46,7 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 	match sel.type:
 		"service":
 			var b: Dictionary = sim.services.buildings[sel.id]
-			return [b.pos, Services.KINDS[b.kind].size.length() * 0.5 + 3.0]
+			return [b.pos, Services.size_of(b).length() * 0.5 + 3.0]
 		"industry":
 			return [sim.industry.sites[sel.id].pos, Industry.HQ_SIZE.length() * 0.5 + 3.0]
 		"farm":
@@ -85,6 +85,8 @@ static func describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 
 static func _service(sim: CitySim, id: int) -> Dictionary:
 	var b: Dictionary = sim.services.buildings[id]
+	if b.kind == Services.Kind.BUS_DEPOT:
+		return sim.buses.describe(sim, id)
 	var k: Dictionary = Services.KINDS[b.kind]
 	var rows := []
 	var problems := []
@@ -127,6 +129,7 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 		if not linked:
 			problems.append("Not beside a road, so it can't respond.")
 		status = "Working: covering %d homes" % covered if ok else "Not working"
+		rows.append_array(sim.buses.school_rows(id))
 	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(int(k.upkeep))])
 	rows.append(["Built for", "$%s" % CitySim.money_text(int(k.cost))])
 	return {"title": k.name, "kind": "Utility" if k.has("utility") else "City service", "icon": k.icon,

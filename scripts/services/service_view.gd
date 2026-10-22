@@ -33,7 +33,12 @@ func setup(s: CitySim) -> void:
 
 func _sync() -> void:
 	for id in _nodes.keys():
-		if not sim.services.buildings.has(id):
+		# A hub that bought land next door is rebuilt at its new size.
+		if sim.services.buildings.has(id) and _nodes[id].get_meta("size") != Services.size_of(sim.services.buildings[id]):
+			_trees.remove(_nodes[id].get_meta("tree_key"))
+			_nodes[id].queue_free()
+			_nodes.erase(id)
+		elif not sim.services.buildings.has(id):
 			_trees.remove(_nodes[id].get_meta("tree_key"))
 			_nodes[id].queue_free()
 			_nodes.erase(id)
@@ -71,7 +76,8 @@ func _spawn(b: Dictionary) -> Node3D:
 	root.position = b.pos
 	# Local -Z faces the road.
 	root.basis = Basis.looking_at(b.dir, Vector3.UP)
-	var size: Vector2 = Services.KINDS[b.kind].size
+	var size: Vector2 = Services.size_of(b)
+	root.set_meta("size", size)
 	var to_curb := Services.SETBACK + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
 	var seed := int(b.pos.x * 73.0) ^ int(b.pos.z * 151.0) ^ (int(b.kind) << 20)
 	var built := CivicBuilder.build_service(int(b.kind), seed, size, to_curb)

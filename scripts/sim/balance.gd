@@ -87,6 +87,10 @@ const SERVICES := {
 	"clinic": {"cost": 1_500_000, "upkeep": 35_000, "reach": 4800.0},
 	# Elementary school for about 400 pupils on a 2 acre site.
 	"school": {"cost": 9_000_000, "upkeep": 95_000, "reach": 3200.0},
+	# A small-town bus garage with two starter 40 ft buses. FTA Section 5339
+	# pays 80% of transit capital, so this is the city's 20% share. It has no
+	# fixed upkeep: the player sets a monthly subsidy instead (BusNet).
+	"bus_depot": {"cost": 1_400_000, "upkeep": 0},
 }
 ## Water and sewer bills the city collects, per building per month. The
 ## average US household pays about $100 a month for water and sewer
@@ -235,3 +239,74 @@ const WASTE_SITES := {
 ## from landfill to recycling_1 also clears the landfill's effect over this
 ## many game days (the old mound is capped and grassed over).
 const LANDFILL_RECOVERY_DAYS := 24.0
+
+
+# --- Buses -------------------------------------------------------------------
+# Brawn's rule (2026-10-22): the player places a bus depot and gives it land
+# and a monthly subsidy; the depot plans its own stops, routes, fleet and fare
+# and tries to stay in business. Benchmark: CS2 buses, with line drawing
+# replaced by the depot's own planning. Numbers are real US transit figures
+# (FTA National Transit Database, TCRP reports).
+
+## Stops: the depot keeps them at least this far apart, metres (TCRP Report
+## 19 suggests 750 to 1,300 ft in suburbs; Brawn: "about every 2 to 3 blocks").
+const BUS_STOP_SPACING := 300.0
+## How far people walk to a stop, metres (the US planning quarter mile).
+const BUS_WALK := 400.0
+## People (residents plus 0.8 per job) a stop's walk must reach to be worth it.
+const BUS_STOP_MIN_PEOPLE := 80.0
+## A small-town route visits about this many stops before it's split in two.
+const BUS_STOPS_PER_ROUTE := 12
+const BUS_MAX_ROUTES := 8
+## Average speed with stops, km/h (US local buses: about 12 mph).
+const BUS_AVG_KMH := 19.0
+## Every 30 minutes is the small-town US standard the depot aims for.
+const BUS_TARGET_HEADWAY_MIN := 30.0
+## Service day, hours (6 am to 7 pm, typical of a small US system).
+const BUS_SERVICE_HOURS := 13.0
+## A 40 ft bus: 40 seats, about 60 with standees.
+const BUS_CAPACITY := 60
+## Operating cost per bus per hour of service (NTD: about $120 for small
+## urban systems), so one bus for a month of 30 service days:
+const BUS_MONTHLY_COST := 120 * 13 * 30
+## A new 40 ft diesel bus costs about $550,000; FTA pays 80%.
+const BUS_PRICE_LOCAL := 110_000
+## What a retired bus fetches at auction.
+const BUS_RESALE := 15_000
+## FTA Section 5307/5311 operating aid: up to half of the net operating
+## deficit (cost minus fares).
+const BUS_GRANT_SHARE := 0.5
+## Transit's share of trips in a small US city with half-hourly buses at a
+## $1.50 fare and a middle income (ACS: 1 to 2%; poorer areas ride more).
+const BUS_BASE_SHARE := 0.02
+## Riders change by this power of the fare and of the frequency (TCRP Report
+## 95: fare elasticity about -0.4, service elasticity about +0.5).
+const BUS_FARE_ELASTICITY := -0.4
+const BUS_SERVICE_ELASTICITY := 0.5
+## The highest fare a depot thinks its riders will bear: this plus up to
+## BUS_FARE_RICH_EXTRA in the best-off neighborhoods (US fares: $0.50-$3).
+const BUS_FARE_BASE_MAX := 1.0
+const BUS_FARE_RICH_EXTRA := 2.0
+## A new depot starts at a typical small-town fare and monthly subsidy.
+const BUS_START_FARE := 1.25
+const BUS_START_SUBSIDY := 40_000
+const BUS_SUBSIDY_MAX := 1_000_000
+## Brawn (2026-10-22): no penny-pinching. The player picks a broad funding
+## level; each is a monthly subsidy (Standard runs about two buses).
+const BUS_FUNDING_LEVELS := [["None", 0], ["Lean", 20_000], ["Standard", 40_000], ["Generous", 80_000],
+	["Lavish", 160_000]]
+## The depot buys land next door at about $50,000 an acre (Midwest town
+## edge), dollars per square metre.
+const BUS_LAND_PER_M2 := 12.0
+
+## School buses (Type C, 72 elementary pupils, 3 to a seat). Districts bus
+## pupils who live farther than about a mile by road; 0.8 mile straight-line
+## stands in for that. About 8% of people are of elementary age.
+const SCHOOL_BUS_LOAD := 66
+const SCHOOL_BUS_MAX := 8
+const SCHOOL_WALK := 1300.0
+const SCHOOL_PUPIL_SHARE := 0.08
+## Bell times: buses leave the school this long before the morning bell and
+## right after the afternoon bell (8:00 am and 3:00 pm), in game minutes.
+const SCHOOL_MORNING_RUN := 6 * 60 + 40
+const SCHOOL_AFTERNOON_RUN := 15 * 60 + 5

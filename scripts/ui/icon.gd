@@ -28,6 +28,7 @@ const _FILES := {
 	"fire": "fire", "police": "police", "health": "health", "school": "school", "services": "services",
 	"farms": "farms", "farmland": "farms", "traffic": "traffic", "signal": "signal", "views": "views",
 	"help": "help", "grid": "grid", "curve": "curve", "roundabout": "roundabout",
+	"bus": "bus", "transit": "bus",
 }
 ## These get a soft `accent` fill behind the line (zone tints and the like).
 const _DUOTONE := ["homes", "zones", "shops", "industry", "farms", "farmland"]
