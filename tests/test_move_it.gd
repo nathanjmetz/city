@@ -141,6 +141,12 @@ func _init() -> void:
 		"a warehouse can be picked up")
 	_check(hub.apply(MoveIt.command([{"type": "warehouse", "id": wid}], dock[0], Vector3(-120, 0, 0))),
 		"the warehouse slides along the road")
+	var spot := Parks.site_near(hub.network, "park", Vector3(250, 0, -60))
+	_check(hub.apply({"type": "place_park", "kind": "park", "pos": [spot[0].x, spot[0].z], "dir": [spot[1].x, spot[1].z]}),
+		"park placed")
+	var pid: int = hub.parks.sites.keys()[0]
+	_check(MoveIt.pick(hub, hub.parks.sites[pid].pos).get("type", "") == "park", "a park can be picked up")
+	_check(hub.apply(MoveIt.command([{"type": "park", "id": pid}], spot[0], Vector3(60, 0, 0))), "the park slides along the road")
 	var ends := hub.build_county_road(Vector2(400, 0), Vector2(1200, 0), [1])
 	_check(not hub.apply(MoveIt.command([{"type": "node", "id": ends[1]}], Vector3.ZERO, Vector3(0, 0, 50))),
 		"the county highway's way out to the region stays put")

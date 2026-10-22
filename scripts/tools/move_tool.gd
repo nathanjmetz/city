@@ -248,6 +248,9 @@ func _outline(item: Dictionary, col: Color, offset: Vector3) -> bool:
 		"service":
 			var b: Dictionary = sim.services.buildings[item.id]
 			_poly(MoveIt.footprint("service", b.kind, b.pos + offset, b.dir), col)
+		"park":
+			var park: Dictionary = sim.parks.sites[item.id]
+			_poly(MoveIt.footprint("park", park, park.pos + offset, park.dir), col)
 		"warehouse":
 			var w: Dictionary = sim.warehouses.buildings[item.id]
 			_poly(MoveIt.footprint("warehouse", w, w.pos + offset, w.dir), col)

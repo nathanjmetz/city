@@ -4,7 +4,7 @@ extends RefCounted
 ## anything the player placed and slide it, turn it, or raise it.
 ##
 ## The player can move roads, junctions, service buildings, landfills,
-## recycling and cemeteries, warehouses, farmhouses and companies' main
+## recycling and cemeteries, parks and landmarks, warehouses, farmhouses and companies' main
 ## buildings. What grew on its own (homes, shops, factories,
 ## fields and pads) is never picked up: it follows its owner or adapts.
 ##
@@ -19,8 +19,8 @@ extends RefCounted
 ## trims fields and pads).
 
 ## The kinds of thing that can be picked up.
-const KINDS := ["road", "node", "service", "hub", "warehouse", "farm", "industry"]
-const BUILDINGS := ["service", "hub", "warehouse", "farm", "industry"]
+const KINDS := ["road", "node", "service", "hub", "park", "warehouse", "farm", "industry"]
+const BUILDINGS := ["service", "hub", "park", "warehouse", "farm", "industry"]
 ## A junction's grab radius beyond the road's half width.
 const NODE_GRAB := 3.0
 ## How far a building in the way of a moved road may be shifted to clear it.
@@ -36,6 +36,9 @@ static func pick(sim: CitySim, p: Vector3) -> Dictionary:
 	var hid := sim.hubs.at(p)
 	if hid != -1:
 		return {"type": "hub", "id": hid}
+	var pid := sim.parks.at(p)
+	if pid != -1:
+		return {"type": "park", "id": pid}
 	var wid := sim.warehouses.at(p)
 	if wid != -1:
 		return {"type": "warehouse", "id": wid}
@@ -61,6 +64,7 @@ static func exists(sim: CitySim, item: Dictionary) -> bool:
 		"node": return sim.network.nodes.has(item.id)
 		"service": return sim.services.buildings.has(item.id)
 		"hub": return sim.hubs.hubs.has(item.id)
+		"park": return sim.parks.sites.has(item.id)
 		"warehouse":
 			# Other threads' stores (silos and the like) move with their owner.
 			return sim.warehouses.buildings.has(item.id) and not Warehouses.is_store(sim.warehouses.buildings[item.id])
@@ -83,6 +87,7 @@ static func centre(sim: CitySim, items: Array) -> Vector3:
 			"node": total += sim.network.nodes[it.id]
 			"service": total += sim.services.buildings[it.id].pos
 			"hub": total += sim.hubs.extent(it.id)[0]
+			"park": total += sim.parks.sites[it.id].pos
 			"warehouse": total += Warehouses.center(sim.warehouses.buildings[it.id])
 			"farm": total += sim.farms.farms[it.id].pos
 			"industry": total += sim.industry.sites[it.id].pos
@@ -121,7 +126,7 @@ static func plan(sim: CitySim, cmd: Dictionary) -> Dictionary:
 	var turn := deg_to_rad(float(cmd.get("turn", 0.0)))
 	var raise := float(cmd.get("raise", 0.0))
 	var out := {"problem": "", "nodes": {}, "ctrls": {}, "curves": {}, "rejoin": [], "merge": [],
-		"services": {}, "hubs": {}, "warehouses": {}, "farms": {}, "industry": {}, "zones": [], "parcels": []}
+		"services": {}, "hubs": {}, "parks": {}, "warehouses": {}, "farms": {}, "industry": {}, "zones": [], "parcels": []}
 	var items := []
 	for entry in cmd.get("items", []):
 		var it := {"type": str(entry[0]), "id": int(entry[1])}
@@ -230,8 +235,8 @@ static func plan(sim: CitySim, cmd: Dictionary) -> Dictionary:
 	if not moved_curves.is_empty():
 		for i in still.size():
 			var entry: Array = still[i]
-			# Hubs cut their own land back to the gate when a road runs through.
-			if entry[0] == "hub" or not _clash(entry[2], moved_curves):
+			# Hubs and parks cut their own land back when a road runs through.
+			if entry[0] in ["hub", "park"] or not _clash(entry[2], moved_curves):
 				continue
 			var b := _building(sim, entry[0], entry[1])
 			var others := []
@@ -292,6 +297,16 @@ static func apply(sim: CitySim, cmd: Dictionary) -> bool:
 		sim.hubs._touch(h)
 		for c in h.cells:
 			sim._clear_zones_under(CivicHubs.cell_poly(h, c))
+	for id in p.parks:
+		var park: Dictionary = sim.parks.sites[id]
+		park.pos = p.parks[id][0]
+		park.dir = p.parks[id][1]
+		# Its paths, playgrounds and fields come along.
+		for f in park.features:
+			f.pos = p.xf.call(MoveIt._flat(f.pos))
+		sim._clear_zones_under(sim.parks.footprint(id))
+	if not p.parks.is_empty():
+		sim.parks_changed.emit()
 	for id in p.warehouses:
 		var w: Dictionary = sim.warehouses.buildings[id]
 		w.pos = p.warehouses[id][0]
@@ -537,6 +552,8 @@ static func _carried_zones(sim: CitySim, whole: Dictionary, xf: Callable) -> Arr
 
 ## The ground a building covers at a spot.
 static func footprint(type: String, kind, pos: Vector3, dir: Vector3) -> PackedVector2Array:
+	if type == "park":
+		return Parks.corners(pos, dir, kind.size)
 	if type == "warehouse":
 		# `kind` is the warehouse: its site grows deeper with each bay.
 		return Warehouses.corners({"kind": kind.kind, "pos": pos, "dir": dir, "bays": kind.bays})
@@ -615,6 +632,10 @@ static func _building_problem(sim: CitySim, type: String, id: int, pos: Vector3,
 					var other := sim.hubs.at(q)
 					if other != -1 and other != id:
 						return "Overlaps the %s." % CivicHubs.KINDS[sim.hubs.hubs[other].kind].name.to_lower()
+		"park":
+			var problem := sim.parks.ground_problem(sim, poly, id)
+			if problem != "" and problem != "Too close to a road.":
+				return problem
 		"warehouse":
 			var w: Dictionary = sim.warehouses.buildings[id]
 			var mid := Warehouses.center({"kind": w.kind, "pos": pos, "dir": dir, "bays": w.bays})
@@ -691,13 +712,14 @@ static func _nearest_road(curves: Array, pos: Vector3) -> float:
 
 
 static func _group(type: String) -> String:
-	return {"service": "services", "hub": "hubs", "warehouse": "warehouses", "farm": "farms", "industry": "industry"}[type]
+	return {"service": "services", "hub": "hubs", "park": "parks", "warehouse": "warehouses", "farm": "farms", "industry": "industry"}[type]
 
 
 static func _dict(sim: CitySim, type: String) -> Dictionary:
 	match type:
 		"service": return sim.services.buildings
 		"hub": return sim.hubs.hubs
+		"park": return sim.parks.sites
 		"warehouse": return sim.warehouses.buildings
 		"farm": return sim.farms.farms
 	return sim.industry.sites
@@ -711,6 +733,7 @@ static func _kind(sim: CitySim, type: String, id: int):
 	match type:
 		"service": return sim.services.buildings[id].kind
 		"hub": return sim.hubs.hubs[id]
+		"park": return sim.parks.sites[id]
 		"warehouse": return sim.warehouses.buildings[id]
 	return null
 
@@ -719,6 +742,7 @@ static func _name(sim: CitySim, type: String, id: int) -> String:
 	match type:
 		"service": return Services.KINDS[sim.services.buildings[id].kind].name.to_lower()
 		"hub": return CivicHubs.KINDS[sim.hubs.hubs[id].kind].name.to_lower()
+		"park": return sim.parks.sites[id].name
 		"warehouse": return Warehouses.KINDS[sim.warehouses.buildings[id].kind].name.to_lower()
 		"farm": return "farmhouse"
 	return Industry.KINDS[sim.industry.sites[id].kind].name.to_lower()
