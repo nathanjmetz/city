@@ -40,7 +40,7 @@ func setup(s: CitySim, cam: Camera3D, fraction: Callable) -> void:
 
 func _ready() -> void:
 	setup_buses()
-	for f in SoundSources.GAIN.keys() + ["car_engine", "wind_high"]:
+	for f in SoundSources.GAIN.keys() + SoundSources.BEDS:
 		_streams[f] = load_loop("res://assets/audio/world/%s.ogg" % f)
 	_build_sound = load("res://assets/audio/ui/build.ogg")
 	for i in CAR_SLOTS:
@@ -50,8 +50,7 @@ func _ready() -> void:
 	for i in AREA_SLOTS:
 		_areas.append({"player": _spatial(14.0, AREA_RANGE), "key": "", "amp": 0.0, "want": 0.0, "next": null})
 	_wind = _flat(_streams.wind_high, "Ambience")
-	_hum = _flat(_streams.car_engine, "Distant")
-	_hum.pitch_scale = 0.7
+	_hum = _flat(_streams.traffic_far, "Distant")
 	for sig in [sim.buildings_changed, sim.lots_changed, sim.farms_changed, sim.zones_changed]:
 		sig.connect(func(): _sources_dirty = true)
 	sim.buildings_changed.connect(_on_buildings)

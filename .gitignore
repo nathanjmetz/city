@@ -3,3 +3,4 @@ build/
 *.tmp
 scripts/build_info.gd
 __pycache__/
+tools/audio/.cache/

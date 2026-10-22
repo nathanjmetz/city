@@ -16,6 +16,9 @@ const CAPS := {
 	"birds_day": 4, "crickets_night": 4, "leaves": 2, "rooftop_hvac": 3,
 	"industry_hum": 3, "transformer": 2, "corn_field": 3,
 }
+## Loops that are not tied to one building: each car's engine, the wind
+## heard from high up, and the far-off roll of traffic in view.
+const BEDS := ["car_engine", "wind_high", "traffic_far"]
 const UTILITY_KINDS := [Services.Kind.SUBSTATION, Services.Kind.POWER_FEED,
 	Services.Kind.WATER_TOWER, Services.Kind.WELL]
 

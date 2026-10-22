@@ -40,7 +40,7 @@ func _init() -> void:
 	_check(fields.is_empty(), "painted land without a farm is quiet")
 
 	# Every sound file the game asks for exists.
-	for f in SoundSources.GAIN.keys() + ["car_engine", "wind_high"]:
+	for f in SoundSources.GAIN.keys() + SoundSources.BEDS:
 		_check(ResourceLoader.exists("res://assets/audio/world/%s.ogg" % f), "world sound %s exists" % f)
 	for f in UiSounds.VOLUME.keys():
 		if f != "brush":
