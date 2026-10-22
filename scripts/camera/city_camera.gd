@@ -133,6 +133,11 @@ func mouse_ground_point():
 	return from + dir * t
 
 
+## The point on the ground the camera is looking at.
+func focus() -> Vector3:
+	return _target
+
+
 func look_at_point(p: Vector3) -> void:
 	_target = Vector3(p.x, 0.0, p.z)
 	_goal_target = _target

@@ -34,6 +34,8 @@ var traffic := TrafficSim.new(network)
 var economy := Economy.new()
 var services := Services.new()
 var farms := Farms.new()
+## Land saved for farming or an industry: no roads or zoning on it.
+var reserves := Reserves.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -56,6 +58,7 @@ var _usable_cache := {}  # field cell -> bool, cleared when roads or lots change
 
 
 func _init() -> void:
+	farms.reserves = reserves
 	network.changed.connect(func(): _lots_dirty = true)
 
 
@@ -121,18 +124,24 @@ func apply_now(cmd: Dictionary) -> bool:
 			economy.money -= cost
 			_lots_dirty = true
 			ok = true
-		"paint_farmland":
+		"paint_reserve", "paint_farmland":
+			# Older clients sent paint_farmland {points, on}.
 			var pts := []
 			for p in cmd.points:
 				pts.append(_v(p))
-			ok = farms.paint_polygon(pts, bool(cmd.get("on", true)))
+			var kind := str(cmd.get("kind", "farm" if bool(cmd.get("on", true)) else ""))
+			ok = reserves.paint(pts, kind)
 			if ok:
 				_lots_dirty = true
+				_usable_cache.clear()
+				_clear_reserved_zones()
+				zones_changed.emit()
+				farms_changed.emit()
 				farms_changed.emit()
 		"place_farmhouse":
 			var pos := _v(cmd.pos)
 			var dir := _v(cmd.dir).normalized()
-			if farmhouse_problem(pos, dir) != "" or Farms.FARMHOUSE_COST > economy.money:
+			if dir.length() < 0.5 or farmhouse_problem(pos, dir) != "" or Farms.FARMHOUSE_COST > economy.money:
 				return false
 			farms.add_farm(pos, dir, str(cmd.get("crop", "corn")), farm_drive(pos, dir))
 			economy.money -= Farms.FARMHOUSE_COST
@@ -157,6 +166,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			network.remove_segment(int(cmd.seg))
 		"paint_zone":
 			zones.paint(_v(cmd.center), float(cmd.radius), int(cmd.zone))
+			_clear_reserved_zones(_v(cmd.center), float(cmd.radius) + ZoneMap.CELL)
 			_usable_cache.clear()
 			ok = true
 		"set_junction":
@@ -169,6 +179,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			economy = Economy.new()
 			services = Services.new()
 			farms = Farms.new()
+			reserves = Reserves.new()
+			farms.reserves = reserves
 			farms_changed.emit()
 			ok = true
 	if ok:
@@ -287,13 +299,11 @@ func empty_zoned_lots() -> Array:
 func farmhouse_problem(pos: Vector3, dir: Vector3) -> String:
 	var side := Vector3(-dir.z, 0.0, dir.x)
 	var poly := PackedVector2Array()
-	var on_land := farms.is_farmland(pos)
 	for sgn in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
 		var p: Vector3 = pos + side * Farms.FARMHOUSE_SIZE.x * 0.5 * sgn.x + dir * Farms.FARMHOUSE_SIZE.y * 0.5 * sgn.y
 		poly.append(Vector2(p.x, p.z))
-		on_land = on_land or farms.is_farmland(p)
-	if not on_land:
-		return "Place the farmhouse on farmland. Outline farmland first."
+	if not farms.reserved_ok(pos):
+		return "That land is reserved for %s." % Reserves.KINDS[reserves.kind_at(pos)]
 	if farm_drive(pos, dir).is_empty():
 		return "Needs a road within %d m for its farm lane." % int(Farms.MAX_DRIVE)
 	if Services.road_clash(network, poly):
@@ -305,6 +315,17 @@ func farmhouse_problem(pos: Vector3, dir: Vector3) -> String:
 		if farms.farms[id].pos.distance_to(pos) < Farms.FARMHOUSE_SIZE.length():
 			return "Too close to another farm."
 	return ""
+
+
+## Zoning never stays on reserved land.
+func _clear_reserved_zones(near := Vector3.INF, reach := 0.0) -> void:
+	if reserves.outlines.is_empty():
+		return
+	for c in zones.cells.keys():
+		if near != Vector3.INF and Vector2((c.x + 0.5) * ZoneMap.CELL - near.x, (c.y + 0.5) * ZoneMap.CELL - near.z).length() > reach:
+			continue
+		if reserves.kind_at(Vector3((c.x + 0.5) * ZoneMap.CELL, 0.0, (c.y + 0.5) * ZoneMap.CELL)) != "":
+			zones.cells.erase(c)
 
 
 ## The gravel lane from a farmhouse to the nearest road, or [] if no road is
@@ -385,7 +406,8 @@ func _refresh() -> void:
 			# No lots under a service building.
 			var blocked := false
 			for p in [lot.pos, lot.front, lot.zone_pt]:
-				blocked = blocked or services.covers(p) or farms.covers(p) or farms.field_at(p) != -1
+				blocked = blocked or services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 \
+					or reserves.kind_at(p) != ""
 			if not blocked:
 				lots[lot.key] = lot
 		_usable_cache.clear()
@@ -416,6 +438,9 @@ func road_problem(c: Array, type: int) -> String:
 		return "Too steep: %d%% grade. A %s can climb at most %d%% (AASHTO)." \
 			% [roundi(grade * 100.0), spec.name, roundi(spec.grade * 100.0)]
 	var problem := network.crossing_problem(c[0], c[1], c[2])
+	var saved := reserves.crosses(RoadNetwork.sample_curve(c[0], c[1], c[2], 24))
+	if problem == "" and saved != "":
+		problem = "That land is reserved for %s. Clear the reserve first." % Reserves.KINDS[saved]
 	if problem == "" and Economy.road_cost(c, type) > economy.money:
 		return "Not enough money: this road costs $%s." % money_text(Economy.road_cost(c, type))
 	return problem
@@ -517,6 +542,7 @@ func to_dict() -> Dictionary:
 		"economy": economy.to_dict(),
 		"services": services.to_dict(),
 		"farms": farms.to_dict(),
+		"reserves": reserves.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 	}
 
@@ -535,6 +561,9 @@ func from_dict(d: Dictionary) -> void:
 	economy.from_dict(d.get("economy", {}))
 	services.from_dict(d.get("services", {}))
 	farms.from_dict(d.get("farms", {}))
+	reserves.from_list(d.get("reserves", []))
+	for legacy in farms.legacy_outlines:
+		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:
 		var f: Dictionary = farms.farms[id]
 		if f.drive.is_empty():
