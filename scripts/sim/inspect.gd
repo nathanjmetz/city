@@ -16,7 +16,13 @@ static func pick(sim: CitySim, p: Vector3) -> Dictionary:
 	if hid != -1:
 		return {"type": "hub", "id": hid}
 	var sid := sim.services.at(p)
+	var yard := sim.services.water.work_at(sim.services.buildings, p)
+	if sid == -1 and not yard.is_empty():
+		sid = yard[0]  # a piece of the water utility's yard
 	if sid != -1:
+		# The water utility is a hub with a leader, so it gets its own panel.
+		if sim.services.buildings[sid].kind == Services.Kind.WATER_UTILITY and sim.services.water.utilities.has(sid):
+			return {"type": "water", "id": sid}
 		return {"type": "service", "id": sid}
 	var wid := sim.warehouses.at(p)
 	if wid != -1:
@@ -59,7 +65,7 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 	if not exists(sim, sel):
 		return []
 	match sel.type:
-		"service":
+		"service", "water":
 			var b: Dictionary = sim.services.buildings[sel.id]
 			return [b.pos, Services.size_of(b).length() * 0.5 + 3.0]
 		"park":
@@ -89,6 +95,7 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 static func exists(sim: CitySim, sel: Dictionary) -> bool:
 	match sel.get("type", ""):
 		"service": return sim.services.buildings.has(sel.id)
+		"water": return sim.services.water.utilities.has(sel.id) and sim.services.buildings.has(sel.id)
 		"hub": return sim.hubs.hubs.has(sel.id)
 		"post_office": return sim.mail.offices.has(sel.id)
 		"farm": return sim.farms.farms.has(sel.id)
@@ -108,6 +115,7 @@ static func describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 		return {}
 	match sel.type:
 		"service": return _service(sim, sel.id)
+		"water": return WaterUtility.describe(sim, sel.id)
 		"hub": return HubInfo.describe(sim, sel.id)
 		"post_office": return MailInfo.describe(sim, sel.id)
 		"farm": return _farm(sim, sel.id)
@@ -341,11 +349,21 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 	if not power:
 		problems.append("No power. " + ("The power line can't carry more homes." if s.get("power_linked", false)
 			else "Build a Power line feed on a connected street."))
+	var by: int = s.get("water_by", -1)
 	if not water:
 		problems.append("No water. " + ("The water system is full." if s.get("water_linked", false)
+			else "The water utility hasn't laid a main under this street yet." if not sim.services.water.utilities.is_empty()
 			else "Build a Well on a connected street."))
 	rows.append(["Power", "Yes" if power else "No"])
 	rows.append(["Water", "Yes" if water else "No"])
+	if by != -1 and sim.services.water.utilities.has(by):
+		rows.append(["Sewer", "Yes" if s.get("sewer", false) else "Septic tank"])
+		if sim.services.water.utilities[by].boil and water:
+			problems.append("Boil-water notice: the water utility's pipes are in poor repair.")
+	var smell := sim.services.water.odor_at(sim.services.buildings, lot.pos)
+	if smell > 0.1:
+		problems.append("The sewer plant smells here, so the land is worth %d%% less." % roundi(
+			100.0 * (1.0 - sim.services.water.land_value_factor(sim.services.buildings, lot.pos))))
 	var names := {ZoneMap.Zone.RESIDENTIAL: "Home", ZoneMap.Zone.COMMERCIAL: "Shop", ZoneMap.Zone.INDUSTRIAL: "Factory"}
 	if not sim.buildings.has(key):
 		var status := "Empty lot, waiting to be built"

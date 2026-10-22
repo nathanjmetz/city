@@ -73,10 +73,13 @@ func update_budget(sim: CitySim) -> void:
 		if int(b.zone) != ZoneMap.Zone.RESIDENTIAL and not sim.utilities_ok(key):
 			continue  # a business with no power or water is closed
 		# Land near a landfill is worth less, near a cemetery a little more,
-		# and parks and landmarks lift it.
-		# Good mail service lifts it a little too.
-		income[int(b.zone)] += building_tax(b, staffed, sim.parks.lot_value.get(key, 0.0)) * sim.hubs.lot_factor(sim, key) \
+		# and parks and landmarks lift it. Good mail service lifts it a little
+		# too; a smelly sewer plant lowers it.
+		var tax_due := building_tax(b, staffed, sim.parks.lot_value.get(key, 0.0)) * sim.hubs.lot_factor(sim, key) \
 			* sim.mail.lot_factor(sim, key) / 12.0
+		if sim.lots.has(key):
+			tax_due *= sim.services.water.land_value_factor(sim.services.buildings, sim.lots[key].pos)
+		income[int(b.zone)] += tax_due
 	# Farmland pays property tax at the industrial rate.
 	income[ZoneMap.Zone.INDUSTRIAL] += sim.farms.total_acres() * Farms.LAND_PER_ACRE * Farms.AG_ASSESSMENT \
 		* tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
@@ -96,7 +99,9 @@ func update_budget(sim: CitySim) -> void:
 	# Water and sewer bills from every building on the water system.
 	var fees := 0
 	for key in sim.buildings:
-		if sim.services.served.has(key) and sim.services.served[key].get("water", false):
+		# Water utilities collect their own bills (see WaterUtility).
+		if sim.services.served.has(key) and sim.services.served[key].get("water", false) \
+				and sim.services.served[key].get("water_by", -1) == -1:
 			fees += int(Services.WATER_FEE[int(sim.buildings[key].zone)])
 	var d: Dictionary = DIFFICULTIES[difficulty]
 	for z in income:

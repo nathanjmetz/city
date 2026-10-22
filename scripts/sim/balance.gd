@@ -420,6 +420,9 @@ const TRADE_PRICE := {
 	# Baled scrap metal and finished compost, per ton.
 	"scrap": 180.0,
 	"compost": 25.0,
+	# Wholesale water between towns, per thousand gallons (Indiana wholesale
+	# rates run about $2.50 to $4).
+	"water": 3.0,
 }
 ## Price for a good with no entry above.
 const TRADE_PRICE_DEFAULT := 100.0
@@ -742,3 +745,111 @@ const MAIL_TREE := {
 	"rail_mail": {"cost": 900_000, "land": 1, "days": 3, "weight": 3},
 	"air_mail": {"cost": 700_000, "land": 0, "days": 2, "weight": 3},
 }
+
+# --- Water and sewer utility ---------------------------------------------------
+# Brawn's green (2026-10-22): the player places a water utility and sets its
+# subsidy; its superintendent runs it like a small business and climbs a
+# development tree on their own. Water and sewer bills go to the utility (a
+# real US enterprise fund), not the city's general fund.
+
+## Placing the utility: the office, its first well, and start-up capital
+## (in real life a revenue bond) for the first water mains.
+const WATER_UTILITY := {"cost": 900_000, "start_cash": 600_000}
+## The manager decides this often, in ticks (6 game hours, a quarter month).
+const WATER_DECIDE_EVERY := 360
+## The player's subsidy, dollars a month: where a new utility starts, the
+## most it can be, and each click of the panel's buttons.
+const WATER_SUBSIDY := {"start": 5_000, "max": 60_000, "step": 1_000}
+## Operators' wages and the office, dollars a month: a part-time certified
+## operator for a village, plus more staff as the system grows (per home's
+## worth served).
+const WATER_STAFF := {"base": 4_000, "per_home": 8.0}
+## The manager sets the water rate as a share of the usual bill, like a
+## council-approved rate case: up when it loses money, down when it has a
+## surplus, a step at a time and within these bounds. Each 10% over the usual
+## bill cuts demand for homes by `demand` x 0.1.
+const WATER_RATE := {"min": 0.7, "max": 1.6, "step": 0.02, "demand": 0.3}
+## Share of sewer and treatment projects (and new sewer lines) paid by state
+## and federal grants
+## (USDA Rural Development and state revolving fund forgiveness for small towns).
+const WATER_GRANT_SHARE := 0.5
+## Laying pipe under an existing street, dollars a metre: an 8 inch ductile
+## iron water main and an 8 inch PVC gravity sewer (US bid prices).
+const WATER_MAIN_PER_M := 400
+const SEWER_PER_M := 500
+## Pipe upkeep, dollars a month per metre (flushing, valves, breaks).
+const WATER_PIPE_UPKEEP_PER_M := 0.4
+## How much water a town can draw without an elevated tower, in homes:
+## pressure tanks only cover a village's peak hour.
+const WATER_STORAGE_NO_TOWER := 800
+## Most wells one wellfield holds before the aquifer is drawn down.
+const WATER_MAX_WELLS := 6
+## The development tree. `cost` and monthly `upkeep` in dollars, `edu` the
+## manager's education (0 to 1) needed to take it on. `capacity` is homes of
+## water (wells, tower, intake) or of sewage (lagoon, plant).
+## Real practice: a 150 gpm well serves ~650 homes at 300 gal a day; a
+## 500,000 gal tower stores a day for ~3,300; Indiana groundwater carries
+## iron, so towns past a couple of wells add a filtration plant; small towns
+## start with a facultative lagoon and move to an activated sludge plant.
+const WATER_WORKS := {
+	"well": {"cost": 300_000, "upkeep": 3_000, "edu": 0.0, "capacity": 650},
+	"tower": {"cost": 2_000_000, "upkeep": 2_000, "edu": 0.0, "capacity": 3_300},
+	"filtration": {"cost": 3_500_000, "upkeep": 12_000, "edu": 0.35},
+	"intake": {"cost": 14_000_000, "upkeep": 45_000, "edu": 0.6, "capacity": 12_000},
+	"lagoon": {"cost": 900_000, "upkeep": 3_000, "edu": 0.0, "capacity": 1_500},
+	"plant": {"cost": 8_000_000, "upkeep": 25_000, "edu": 0.45, "capacity": 9_000},
+	"nutrient": {"cost": 4_000_000, "upkeep": 10_000, "edu": 0.75},
+	"meters": {"cost": 250_000, "upkeep": 1_500, "edu": 0.55},
+	"training": {"cost": 900_000, "upkeep": 4_000, "edu": 0.5},
+	"industrial_main": {"cost": 600_000, "upkeep": 1_000, "edu": 0.3},
+	"wholesale": {"cost": 1_500_000, "upkeep": 2_000, "edu": 0.5},
+	"biosolids": {"cost": 300_000, "upkeep": -2_000, "edu": 0.4},
+	"reuse": {"cost": 5_000_000, "upkeep": 6_000, "edu": 0.8},
+}
+## Smart meters find leaks and slow meters: this much more billed water.
+const WATER_METER_GAIN := 0.08
+## The industrial main serves plants at a large-meter rate, this much more.
+const WATER_INDUSTRY_GAIN := 0.5
+## The interconnect with the next town: at most this many homes' worth of
+## water offered to the region; a home uses about 9,000 gallons a month.
+const WATER_WHOLESALE_MAX := 2_000
+const WATER_KGAL_PER_HOME := 9.0
+## Tap (connection) fees each new hookup pays the utility once, dollars per
+## home's worth: typical small-town Indiana water and sewer tap fees.
+const WATER_TAP_FEE := 4_000
+const SEWER_TAP_FEE := 4_000
+## Reclaimed water sold to farms within reach, dollars a month per farm.
+const WATER_REUSE_PER_FARM := 1_500
+## Farms within this many metres count as neighbours for biosolids and reuse.
+const WATER_FARM_REACH := 3_000.0
+## The water bill is half water, half sewer; homes on septic pay only half.
+const WATER_SEWER_SHARE := 0.5
+## Homes' worth of sewage before the town builds its first lagoon.
+const WATER_SEWER_START := 40
+## The manager's education follows the leaders the town can hire (its local
+## graduates, Education.leader_education); a training center adds `training`.
+## It drifts this share of the gap each step, as staff turn over.
+const WATER_EDU := {"start": 0.25, "training": 0.12, "drift": 0.04}
+## Condition (0 to 1) of pipes and plants. Full maintenance costs this share
+## of running costs; a fully paid, fully educated manager keeps condition at
+## 1, an uneducated one at `low` even fully paid; it moves this share of the
+## way each step.
+const WATER_MAINT := {"share": 0.25, "low": 0.45, "speed": 0.15}
+## Under this condition the state orders a boil-water notice; overload adds to
+## it (low pressure lets contamination in).
+const WATER_BOIL_AT := 0.35
+## Boil orders cut demand for homes by this much while they last.
+const WATER_BOIL_DEMAND := 0.25
+## Odor from a struggling sewer plant reaches this far and lowers land value
+## (property tax) next door by up to this share.
+const WATER_ODOR_REACH := 600.0
+const WATER_ODOR_VALUE := 0.2
+## Borrowing (revenue bonds, state revolving fund loans): a manager may owe up
+## to this many months of bills and subsidy, times 0.3 to 1.0 by education;
+## interest per month on what is owed.
+const WATER_BOND_MONTHS := 60
+const WATER_INTEREST := 0.004
+## Cash kept in reserve, months of running costs (more for a cautious manager),
+## and beyond this many months' worth the surplus goes back to the city.
+const WATER_RESERVE_MONTHS := 2.0
+const WATER_SURPLUS_MONTHS := 18.0

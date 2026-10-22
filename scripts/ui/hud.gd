@@ -543,7 +543,7 @@ func _services_drawer() -> PanelContainer:
 	row.add_theme_constant_override("separation", 10)
 	drawer.add_child(row)
 	for group in [["Utilities", [Services.Kind.POWER_FEED, Services.Kind.WELL, Services.Kind.SUBSTATION,
-				Services.Kind.WATER_TOWER]],
+				Services.Kind.WATER_TOWER, Services.Kind.WATER_UTILITY]],
 			["Safety, health and schools", [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.CLINIC, Services.Kind.SCHOOL]],
 			["Transit", [Services.Kind.BUS_DEPOT]]]:
 		if row.get_child_count() > 0:
@@ -552,7 +552,7 @@ func _services_drawer() -> PanelContainer:
 		for k in group[1]:
 			var s: Dictionary = Services.KINDS[k]
 			var short := {Services.Kind.WATER_TOWER: "Water tower", Services.Kind.POWER_FEED: "Power line",
-				Services.Kind.WELL: "Well", Services.Kind.SCHOOL: "School"}
+				Services.Kind.WELL: "Well", Services.Kind.SCHOOL: "School", Services.Kind.WATER_UTILITY: "Water utility"}
 			var b := _card(s.icon, short.get(k, s.name.split(" ")[0]),
 				"%s: $%s, $%s a month" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)])
 			b.tooltip_text = "%s: $%s to build, $%s a month" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
