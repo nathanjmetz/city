@@ -95,6 +95,20 @@ func _init() -> void:
 	_check(absf((rect[1] - rect[0]).normalized().dot((rect[2] - rect[1]).normalized())) < 0.0001, "rectangle corners are square")
 	t.free()
 
+	# Every size preset plans a clean grid quickly, from a farm section
+	# down to a city block, with the long side and the short side kept.
+	for pr in GridFill.PRESETS:
+		var g := CitySim.new()
+		g.economy.money = 100000000
+		var w: float = pr.block * 2.0
+		var h: float = pr.across * 2.0
+		var t0 := Time.get_ticks_msec()
+		g.apply({"type": "build_grid_shape", "points": [[0, 0], [w, 0], [w, h], [0, h]],
+			"block": pr.block, "across": pr.across})
+		var ms := Time.get_ticks_msec() - t0
+		_check(g.network.segments.size() >= 8 and _dead_ends(g.network) == 0 and ms < 3000,
+			"%s preset: %d streets, %d dead ends, %d ms" % [pr.name, g.network.segments.size(), _dead_ends(g.network), ms])
+
 	print("ALL TESTS PASSED" if not failed else "TESTS FAILED")
 	quit(1 if failed else 0)
 

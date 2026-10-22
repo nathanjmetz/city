@@ -184,7 +184,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			# Old three-click grids are a rectangle; new ones any shape.
 			var shape: Array = GridFill.rect(_v(cmd.a), _v(cmd.b), _v(cmd.c)) if cmd.type == "build_grid" \
 				else cmd.points.map(_v)
-			var lines := GridFill.plan(network, shape, float(cmd.block), _road(cmd), int(cmd.get("side", 0)))
+			var lines := GridFill.plan(network, shape, float(cmd.block), _road(cmd), int(cmd.get("side", 0)),
+				clampf(float(cmd.get("across", RoadShapes.GRID_ACROSS)), GridFill.ACROSS_MIN, GridFill.BLOCK_MAX))
 			if shape.size() == 2:
 				lines = [[shape[0], shape[0].lerp(shape[1], 0.5), shape[1]]]
 			if lines.is_empty() or not _can_afford(lines, _road(cmd)):
