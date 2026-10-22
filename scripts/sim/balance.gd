@@ -739,6 +739,10 @@ const EDUCATION_DOWN_PAYMENT := 0.3
 const EDUCATION_SELL_DEBT := 1.5
 ## Campuses decide once a game day (a month).
 const EDUCATION_DECIDE_EVERY := 1440
+## What a campus pays per square metre to buy out the homes and shops next
+## door (land plus the houses on it): a 120 m block of small-town Indiana
+## homes, about a dozen at $120k-150k, comes to roughly $1.5M.
+const EDUCATION_LAND_PER_M2 := 100
 
 # --- Post office and mail --------------------------------------------------------
 # Best of CS pitch #10, green-lit by Brawn (2026-10-22): a post office hub

@@ -63,7 +63,9 @@ func _spawn(key: String, c: Dictionary, blk) -> Node3D:
 	var trees := []
 	for t in built[2]:
 		var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
-		trees.append([frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0]), t[1], t[2]])
+		var at := frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])
+		at.origin.y = Terrain.ground_y(at.origin.x, at.origin.z)
+		trees.append([at, t[1], t[2]])
 	_trees.set_trees(key, trees)
 	root.scale = Vector3(1.0, 0.01, 1.0)
 	create_tween().tween_property(root, "scale", Vector3.ONE, 0.45) \

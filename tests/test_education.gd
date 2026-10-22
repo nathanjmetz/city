@@ -25,7 +25,7 @@ func _init() -> void:
 	_check(money - sim.economy.money == int(Education.spec("high_school").cost), "the city pays for the first building")
 	var id: int = sim.education.campuses.keys()[0]
 	var c: Dictionary = sim.education.campuses[id]
-	_check(str(c.leader.name) != "" and c.leader.education >= 0.0, "it hires a principal (%s)" % Education.leader_name(c.leader))
+	_check(str(c.leader.name) != "" and c.leader.edu >= 0.0, "it hires a principal (%s)" % Education.leader_name(c.leader))
 	_check(sim.education.covers(site[0]), "the campus covers its first block")
 	_check(not sim.apply({"type": "place_campus", "kind": "college", "pos": [site[0].x, site[0].z],
 		"dir": [site[1].x, site[1].z]}), "no campus on top of another")
@@ -45,7 +45,7 @@ func _init() -> void:
 		"dir": [usite[1].x, usite[1].z]}), "placing a university")
 	var uid: int = sim.education.campuses.keys().max()
 	var u: Dictionary = sim.education.campuses[uid]
-	_check(u.leader.education >= 0.7, "a university hires a president with a doctorate")
+	_check(u.leader.edu >= 0.7, "a university hires a president with a doctorate")
 	for i in 4:
 		_grow(sim, u)
 	_check(u.blocks.size() >= 3, "a full campus buys land next to it (%d blocks)" % u.blocks.size())
@@ -62,13 +62,24 @@ func _init() -> void:
 	# The tree: farm country unlocks an ag college; a town with no clinic can't
 	# grow a medical school.
 	var facts := Education.town_facts(sim)
-	_check(Education.locked_by(u, "ag_extension", facts) != "", "no ag college without farms around")
-	_check(Education.locked_by(u, "med_school", facts) != "", "no medical school without a clinic")
-	sim.education.region = {"farms": 10}
-	_check(Education.locked_by(u, "ag_extension", Education.town_facts(sim)) == "", "neighbors' farms open the ag college")
-	sim.education.region = {}
-	var fresh := {"kind": "university", "blocks": [], "leader": u.leader, "reputation": 0.3, "enrolled": 0, "funding": 2}
-	_check(Education.pick_next(fresh, facts, true) == "hall", "a new university builds a hall first")
+	_check(Education.locked_by(sim, u, "ag_extension", facts) != "", "no ag college without farms around")
+	_check(Education.locked_by(sim, u, "med_school", facts) != "", "no medical school without a clinic")
+	_check(u.built.size() > 0 and u.why != "", "the tree records what it built and why (%s)" % u.why)
+	# Neighbours (Agency's region conditions): a farm town that sells grain
+	# opens a community college's agribusiness program.
+	var csite := Education.site_near(sim.network, Vector3(900, 0, 90))
+	_check(sim.apply({"type": "place_campus", "kind": "college", "pos": [csite[0].x, csite[0].z],
+		"dir": [csite[1].x, csite[1].z]}), "placing a community college")
+	var col: Dictionary = sim.education.campuses[sim.education.campuses.keys().max()]
+	col.built = ["classrooms"]
+	_check(Education.locked_by(sim, col, "agribusiness", facts) != "", "no agribusiness program without farm neighbours")
+	sim.region = {"neighbors": [{"name": "Oakland City", "exports": {"grain": 40.0}}]}
+	_check(Education.locked_by(sim, col, "agribusiness", facts) == "", "a neighbouring farm town opens it")
+	sim.region = {}
+	col.built = []
+	var fresh := {"kind": "university", "pos": u.pos, "blocks": [], "built": [], "leader": u.leader,
+		"reputation": 0.3, "enrolled": 0, "funding": 2, "savings": 0.0}
+	_check(Education.pick_next(sim, fresh, facts, true) == "hall", "a new university builds a hall first")
 
 	# Funding is the player's lever.
 	_check(sim.apply({"type": "set_campus_funding", "id": id, "level": 4}), "funding raised")
@@ -102,6 +113,10 @@ func _init() -> void:
 			back = back or b2.c == blk.c
 		_check(not back, "it doesn't buy back what the player cleared")
 
+	# Boxed in by homes: an ambitious head asks the player (Permits) to buy
+	# the block next door, and builds there once the player says yes.
+	_land_request(sim)
+
 	# Saves round-trip, and the same commands give the same campus.
 	var copy := CitySim.new()
 	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
@@ -129,6 +144,60 @@ func _grow(sim: CitySim, c: Dictionary) -> void:
 	c.savings = 50_000_000.0
 	sim.education.decide(sim)
 	sim.education.region = {}
+
+
+## A packed high school with an ambitious principal, boxed in by homes on
+## every side: it files a land request, and builds once the player agrees.
+func _land_request(sim: CitySim) -> void:
+	var hs := Education.site_near(sim.network, Vector3(1500, 0, 90))
+	_check(sim.apply({"type": "place_campus", "kind": "high_school", "pos": [hs[0].x, hs[0].z],
+		"dir": [hs[1].x, hs[1].z]}), "placing a high school out east")
+	var id: int = sim.education.campuses.keys().max()
+	var c: Dictionary = sim.education.campuses[id]
+	c.leader.ambition = 0.9
+	c.leader.caution = 0.1
+	# The player told its principal to grow (the leader guide).
+	_check(sim.apply({"type": "guide", "hub": "campus", "hub_id": id, "stance": "grow"}), "telling it to grow")
+	# Homes on the three blocks around it (copies of a real home's lot).
+	var home := ""
+	for key in sim.buildings:
+		if sim.buildings[key].zone == ZoneMap.Zone.RESIDENTIAL and sim.lots.has(key):
+			home = key
+			break
+	for cell in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, 1)]:
+		var mid := Education.block_center(c, cell)
+		var lot: Dictionary = sim.lots[home].duplicate(true)
+		var shift: Vector3 = mid - lot.pos
+		lot.pos = mid
+		lot.zone_pt = mid
+		var corners := PackedVector2Array()
+		for p in sim.lots[home].corners:
+			corners.append(p + Vector2(shift.x, shift.z))
+		lot.corners = corners
+		var key := "test_home_%d_%d" % [cell.x, cell.y]
+		lot.key = key
+		sim.lots[key] = lot
+		sim.buildings[key] = sim.buildings[home].duplicate(true)
+	c.savings = 50_000_000.0
+	c.reputation = 1.0
+	sim.education.region = {"population": 50_000_000}
+	sim.education.decide(sim)
+	_check(c.blocks.is_empty(), "it never builds on homes without asking")
+	_check(not c.asking.is_empty(), "a boxed-in high school asks you for the homes next door")
+	if c.asking.is_empty():
+		sim.education.region = {}
+		return
+	var req: Dictionary = sim.permits.requests[c.asking.req]
+	_check(req.shape == "area" and req.change != "" and req.cost > 0, "a land-use request with a boundary and a price")
+	var cell: Vector2i = c.asking.cell
+	_check(sim.apply({"type": "permit", "id": req.id, "answer": "approve"}), "you say yes")
+	sim.education.decide(sim)
+	sim.education.region = {}
+	var there := false
+	for blk in c.blocks:
+		there = there or blk.c == cell
+	_check(there, "it builds on the land you gave it")
+	_check(c.asking.is_empty() and sim.permits.state_of(req.id) == Permits.State.DONE, "and the request is done")
 
 
 var _failed := false
