@@ -49,6 +49,11 @@ void vertex() {
 }
 void fragment() {
 	vec4 t = texture(leaf_tex, UV);
+	// Mipmaps average the leaf alpha toward the gaps, so distant cards
+	// would fall under the cut-off and vanish. Boost alpha with the mip level.
+	vec2 texel = UV * 256.0;
+	float lod = log2(max(max(length(dFdx(texel)), length(dFdy(texel))), 1.0));
+	t.a *= 1.0 + lod * 0.3;
 	NORMAL = crown_normal;
 	// Inner leaves sit in the shade of outer ones; the top of the crown
 	// catches the open sky.
