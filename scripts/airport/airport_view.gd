@@ -11,13 +11,13 @@ extends Node3D
 ## airport is one merged mesh, and each plane one small mesh, so a busy
 ## airfield costs a handful of draw calls.
 
-const TURF := Color(0.36, 0.52, 0.25)
-const MOWN := Color(0.42, 0.58, 0.29)
-const GRAVEL := Color(0.62, 0.59, 0.53)
+const TURF := Color(0.2, 0.3, 0.12)
+const MOWN := Color(0.25, 0.36, 0.15)
+const GRAVEL := Color(0.46, 0.44, 0.4)
 const ASPHALT := Color(0.2, 0.2, 0.21)
 const PAINT := Color(0.94, 0.94, 0.92)
 const LANE := Color(0.58, 0.47, 0.33)
-const METAL := Color(0.72, 0.74, 0.76)
+const METAL := Color(0.58, 0.6, 0.62)
 const ROOF := Color(0.45, 0.2, 0.17)
 
 var sim: CitySim

@@ -318,6 +318,15 @@ func blockers(sim: CitySim, a: Dictionary, t: int, corr: Array, skip := -1) -> D
 			if box.has_point(Vector2(m.x, m.z)) and _point_in_any(clear, Vector2(m.x, m.z)):
 				add.call("post offices")
 				break
+	for id in sim.parks.sites:
+		if _hits_any(clear, sim.parks.footprint(id)):
+			add.call("parks")
+	for id in sim.education.campuses:
+		var c: Dictionary = sim.education.campuses[id]
+		for blk in c.blocks:
+			if _hits_any(clear, Education.block_corners(c, blk.c)):
+				add.call("campuses")
+				break
 	for id in sites:
 		if id == skip:
 			continue
@@ -352,7 +361,8 @@ static func describe_blockers(b: Dictionary) -> String:
 	var one := {"roads": "a road", "homes": "a home", "shops": "a shop", "factories": "a factory",
 		"service buildings": "a service building", "farmyards": "a farmyard", "companies": "a company yard",
 		"airports": "another airport", "warehouses": "a warehouse", "landfills": "a landfill",
-		"recycling centers": "a recycling center", "cemeteries": "a cemetery", "post offices": "the post office", "reserved land": "land reserved for something else"}
+		"recycling centers": "a recycling center", "cemeteries": "a cemetery", "post offices": "the post office",
+		"parks": "a park", "campuses": "a campus", "reserved land": "land reserved for something else"}
 	var parts := []
 	var keys := b.keys()
 	keys.sort()
