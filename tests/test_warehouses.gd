@@ -111,6 +111,19 @@ func _init() -> void:
 	money = grow.economy.money
 	grow.apply({"type": "build_road", "start": [c.x - 100, c.z - 1], "ctrl": [c.x, c.z], "end": [c.x + 100, c.z + 1]})
 	_check(grow.warehouses.buildings.is_empty() and grow.economy.money > money, "a road through it bulldozes it and pays it back")
+	# Another thread's building (a grain elevator) can store loads too.
+	var region := CitySim.new()
+	region.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0]})
+	var elevator := region.warehouses.add_store(Vector3(0, 0, 14), 40, ["corn", "soybeans"])
+	_check(region.warehouses.take_room(Vector3.ZERO, "logs") == -1, "a grain elevator won't take logs")
+	_check(region.warehouses.take_room(Vector3.ZERO, "corn") == elevator, "it takes corn")
+	var saved := CitySim.new()
+	saved.from_dict(JSON.parse_string(JSON.stringify(region.to_dict())))
+	var st: Dictionary = saved.warehouses.buildings[elevator]
+	_check(Warehouses.capacity(st) == 40 and st.accepts == ["corn", "soybeans"] and st.incoming == 1,
+		"a save keeps what it takes and its size")
+	_check(region.warehouses.at(Vector3(0, 0, 14)) == -1 and region.warehouses.decide(region.warehouse_ground_ok) == false,
+		"it isn't drawn, picked or grown as a warehouse")
 	if _failed == 0:
 		print("ALL TESTS PASSED")
 	quit(1 if _failed > 0 else 0)

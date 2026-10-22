@@ -141,6 +141,8 @@ func _cell_problem(sim: CitySim, h: Dictionary, c: Vector2i, id: int, auto: bool
 			return "Overlaps the %s." % KINDS[hubs[other].kind].name.to_lower()
 		if sim.farms.covers(p) or sim.farms.field_at(p) != -1:
 			return "That ground is farmland."
+		if sim.parks.covers(p):
+			return "That ground is a park."
 		if sim.industry.covers(p):
 			return "That ground belongs to a company."
 		if sim.warehouses.covers(p):

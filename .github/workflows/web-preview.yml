@@ -69,6 +69,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_lots.gd
           ~/godot-cache/godot --headless -s tests/test_hubs.gd
           ~/godot-cache/godot --headless -s tests/test_warehouses.gd
+          ~/godot-cache/godot --headless -s tests/test_parks.gd
 
       - name: Stamp the build
         run: |
