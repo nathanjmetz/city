@@ -107,6 +107,26 @@ func _init() -> void:
 		"avenue roundabout is two lanes, at least 150 ft across (FHWA)")
 	_check(not rb.apply({"type": "upgrade_road", "seg": rb.network.segments.keys()[0], "road": RoadStyle.Type.RING}),
 		"no upgrading to ring types")
+	# Old saves: two-way rings become real roundabouts on load.
+	var old_save := rb.to_dict()
+	for k in old_save.roads.segments:
+		var arr: Array = old_save.roads.segments[k]
+		if RoadStyle.is_ring(int(arr[4])):
+			arr[4] = RoadStyle.Type.STREET
+			arr.resize(6)
+			var a0 = arr[0]
+			arr[0] = arr[1]
+			arr[1] = a0
+	var migrated := CitySim.new()
+	migrated.from_dict(JSON.parse_string(JSON.stringify(old_save)))
+	var ok_rings := 0
+	for id in migrated.network.segments:
+		var sg: Dictionary = migrated.network.segments[id]
+		if RoadStyle.is_ring(sg.type):
+			var c := migrated.network.curve_of(id)
+			if (c[2] - c[0]).cross(-c[0]).y > 0.0 and migrated.network.is_oneway(id):
+				ok_rings += 1
+	_check(ok_rings >= 8, "old saves get real roundabouts (%d arcs)" % ok_rings)
 	var circ := RoadShapes.arc_circle(RoadShapes.roundabout(Vector3(5, 0, 7), 30.0)[3])
 	_check(circ[0].distance_to(Vector3(5, 0, 7)) < 0.5 and absf(circ[1] - 30.0) < 0.5, "arc circle found")
 	# Bridges: a road 7.5 m up passes over without a junction.

@@ -117,8 +117,8 @@ func _demo_interchange(sim: CitySim) -> void:
 			print("demo road refused: ", c, " ", sim.road_problem([CitySim._v(c[0]), CitySim._v(ctrl), CitySim._v(c[2])], c[3]))
 	for c in _main.get_children():
 		if c is CityCamera:
-			c.look_at_point(Vector3(0, 0, 0))
 			var args := OS.get_cmdline_user_args()
+			c.look_at_point(Vector3(float(args[5]), 0, float(args[6])) if args.size() >= 7 else Vector3.ZERO)
 			c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
 
 
