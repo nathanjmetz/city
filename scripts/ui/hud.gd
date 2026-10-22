@@ -8,6 +8,8 @@ var sim: CitySim
 
 var _road_buttons := {}
 var _zone_buttons := {}
+var _type_buttons := {}
+var _parallel_button: Button
 var _hint := Label.new()
 var _stats := Label.new()
 
@@ -30,9 +32,23 @@ func _ready() -> void:
 	bar.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	bar.position.y -= 16
 	root.add_child(bar)
+	var rows := VBoxContainer.new()
+	bar.add_child(rows)
+	var options := HBoxContainer.new()
+	options.add_theme_constant_override("separation", 6)
+	rows.add_child(options)
+	for t in RoadStyle.TYPES.size():
+		var spec: Dictionary = RoadStyle.TYPES[t]
+		var label := "%s  %d lanes" % [spec.name, spec.lanes]
+		_type_buttons[t] = _button(options, label, Color.WHITE, func(): road_tool.set_road_type(t))
+	options.add_child(VSeparator.new())
+	_road_buttons[RoadTool.Mode.UPGRADE] = _button(options, "Upgrade  U", Color.WHITE,
+		func(): road_tool.set_mode(RoadTool.Mode.UPGRADE))
+	_parallel_button = _button(options, "Parallel  P", Color.WHITE,
+		func(): road_tool.set_parallel(not road_tool.parallel))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
-	bar.add_child(row)
+	rows.add_child(row)
 	for entry in [
 		[RoadTool.Mode.STRAIGHT, "Road  1"],
 		[RoadTool.Mode.CURVED, "Curve  2"],
@@ -74,6 +90,7 @@ func _ready() -> void:
 	root.add_child(_stats)
 
 	road_tool.mode_changed.connect(func(_m): _sync_buttons())
+	road_tool.options_changed.connect(_sync_buttons)
 	zone_tool.zone_changed.connect(func(_z): _sync_buttons())
 	road_tool.hint_changed.connect(func(text): _hint.text = text)
 	zone_tool.hint_changed.connect(func(text): _hint.text = text)
@@ -100,6 +117,9 @@ func _button(row: HBoxContainer, text: String, tint: Color, action: Callable, to
 func _sync_buttons() -> void:
 	for m in _road_buttons:
 		_road_buttons[m].set_pressed_no_signal(m == road_tool.mode)
+	for t in _type_buttons:
+		_type_buttons[t].set_pressed_no_signal(t == road_tool.road_type)
+	_parallel_button.set_pressed_no_signal(road_tool.parallel)
 	for z in _zone_buttons:
 		_zone_buttons[z].set_pressed_no_signal(z == zone_tool.zone)
 

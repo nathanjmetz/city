@@ -5,9 +5,14 @@ extends Node3D
 
 var network: RoadNetwork
 
-var _asphalt := RoadStyle.material(RoadStyle.ASPHALT_COLOR)
-var _curb := RoadStyle.material(RoadStyle.CURB_COLOR)
-var _walk := RoadStyle.material(RoadStyle.SIDEWALK_COLOR)
+var _mats := {
+	"asphalt": RoadStyle.material(RoadStyle.ASPHALT_COLOR),
+	"curb": RoadStyle.material(RoadStyle.CURB_COLOR),
+	"walk": RoadStyle.material(RoadStyle.SIDEWALK_COLOR),
+	"median": RoadStyle.material(RoadStyle.MEDIAN_COLOR),
+	"yellow": RoadStyle.material(RoadStyle.MARKING_YELLOW),
+	"white": RoadStyle.material(RoadStyle.MARKING_WHITE),
+}
 
 
 func setup(net: RoadNetwork) -> void:
@@ -21,17 +26,18 @@ func rebuild() -> void:
 		child.queue_free()
 	for id in network.segments:
 		var mi := MeshInstance3D.new()
-		mi.mesh = RoadMesh.street(network.sample_segment(id), _asphalt, _curb, _walk)
+		mi.mesh = RoadMesh.street(network.sample_segment(id), network.segments[id].type, _mats)
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mi)
 	# Fill each junction and road end so curves meet cleanly.
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for id in network.nodes:
-		RoadMesh.add_disc(st, network.nodes[id], RoadStyle.half_width(), RoadStyle.Y_JUNCTION)
+		var r := RoadStyle.half_width(network.widest_at(id))
+		RoadMesh.add_disc(st, network.nodes[id], r, RoadStyle.Y_JUNCTION)
 	if not network.nodes.is_empty():
 		var mi := MeshInstance3D.new()
 		mi.mesh = st.commit()
-		mi.material_override = _asphalt
+		mi.material_override = _mats.asphalt
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mi)

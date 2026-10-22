@@ -28,15 +28,15 @@ func _demo_town() -> void:
 	var sim: CitySim = _main.sim
 	sim.apply({"type": "clear"})
 	# A main road with a roundabout, and a grid neighborhood beside it.
-	sim.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0]})
-	sim.apply({"type": "build_road", "start": [120, 0], "ctrl": [160, 80], "end": [120, 180]})
-	sim.apply({"type": "build_roundabout", "center": [120, 0], "radius": 20})
-	sim.apply({"type": "build_grid", "a": [-240, -40], "b": [40, -40], "c": [-240, -210], "block": 140})
-	sim.apply({"type": "build_road", "start": [-100, -40], "ctrl": [-100, -20], "end": [-100, 0]})
+	sim.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0], "road": 2})
+	sim.apply({"type": "build_road", "start": [120, 0], "ctrl": [160, 80], "end": [120, 180], "road": 1})
+	sim.apply({"type": "build_roundabout", "center": [120, 0], "radius": 30, "road": 1})
+	sim.apply({"type": "build_grid", "a": [-240, -50], "b": [40, -50], "c": [-240, -220], "block": 140})
+	sim.apply({"type": "build_road", "start": [-100, -50], "ctrl": [-100, -25], "end": [-100, 0]})
 	for lot in sim.lots.values():
 		var p: Vector3 = lot.zone_pt
 		var zone := ZoneMap.Zone.RESIDENTIAL
-		if p.z > -10.0 and p.z < 30.0 and p.x < 100.0:
+		if p.z > -20.0 and p.z < 40.0 and p.x < 100.0:
 			zone = ZoneMap.Zone.COMMERCIAL
 		elif p.x > 130.0:
 			zone = ZoneMap.Zone.INDUSTRIAL

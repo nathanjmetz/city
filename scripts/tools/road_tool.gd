@@ -7,18 +7,27 @@ extends Node3D
 ## Grid: click a corner, click to set the first street, click to set how far
 ## back the grid reaches. [ and ] change the block length.
 ## Roundabout: click to place. [ and ] change the size.
+## Upgrade: click a road to change it to the chosen road type.
 ## Bulldoze: click a road to remove it.
+## P: parallel mode, which draws a second road alongside ([ ] set the gap).
+## Straight roads snap to right angles and straight-on with the road they
+## start from, and show a guide line and their length while drawing.
 ## Right click or Esc stops the current road.
 
 signal mode_changed(mode: int)
 signal hint_changed(text: String)
+## Road type or parallel mode changed.
+signal options_changed
 
-enum Mode { NONE, STRAIGHT, CURVED, BULLDOZE, GRID, ROUNDABOUT }
+enum Mode { NONE, STRAIGHT, CURVED, BULLDOZE, GRID, ROUNDABOUT, UPGRADE }
 
 const SNAP_NODE := 9.0
 const SNAP_ROAD := 7.0
 ## Straight roads snap to 15 degree steps while Shift is held.
 const ANGLE_STEP := deg_to_rad(15.0)
+## Guide lines catch the mouse within this angle.
+const GUIDE_SNAP := deg_to_rad(4.0)
+const PARALLEL_MAX := 200.0
 
 var sim: CitySim
 var network: RoadNetwork
@@ -26,6 +35,9 @@ var cam: CityCamera
 var mode := Mode.STRAIGHT
 var grid_block := 120.0
 var roundabout_radius := 20.0
+var road_type := 0
+var parallel := false
+var parallel_gap := RoadShapes.GRID_ACROSS
 
 var _points: Array[Vector3] = []
 var _preview := MeshInstance3D.new()
@@ -34,6 +46,12 @@ var _ok_mat := RoadStyle.material(Color(0.35, 0.65, 1.0, 0.55), true)
 var _bad_mat := RoadStyle.material(Color(1.0, 0.3, 0.25, 0.6), true)
 var _hover_seg := -1
 var _shown_problem := ""
+var _guide := MeshInstance3D.new()
+var _label := Label3D.new()
+var _guide_mat := RoadStyle.material(Color(1, 1, 1, 0.45), true)
+## Angle of the guide the current road snapped to, or NAN.
+var _guide_angle := NAN
+var _guide_kind := ""
 
 
 func setup(s: CitySim, camera: CityCamera) -> void:
@@ -53,7 +71,32 @@ func _ready() -> void:
 	_cursor.material_override = _ok_mat
 	_cursor.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_cursor)
+	_guide.material_override = _guide_mat
+	_guide.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_guide)
+	_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_label.fixed_size = true
+	_label.pixel_size = 0.0012
+	_label.font_size = 28
+	_label.outline_size = 8
+	_label.no_depth_test = true
+	add_child(_label)
 	set_mode(mode)
+
+
+func set_parallel(on: bool) -> void:
+	parallel = on
+	parallel_gap = maxf(parallel_gap, _min_gap())
+	options_changed.emit()
+	_update_hint()
+
+
+func set_road_type(t: int) -> void:
+	road_type = t
+	options_changed.emit()
+	if mode == Mode.NONE or mode == Mode.BULLDOZE:
+		set_mode(Mode.STRAIGHT)
+	_update_hint()
 
 
 func set_mode(m: int) -> void:
@@ -72,6 +115,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_3: set_mode(Mode.GRID)
 			KEY_4: set_mode(Mode.ROUNDABOUT)
 			KEY_B: set_mode(Mode.BULLDOZE)
+			KEY_U: set_mode(Mode.UPGRADE)
+			KEY_P: set_parallel(not parallel)
 			KEY_BRACKETLEFT: _resize(1.0 / 1.2)
 			KEY_BRACKETRIGHT: _resize(1.2)
 			KEY_ESCAPE: _cancel()
@@ -88,11 +133,13 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(_delta: float) -> void:
 	var hit = cam.mouse_ground_point()
 	_preview.visible = false
+	_guide.visible = false
+	_label.visible = false
 	_cursor.visible = hit != null and mode != Mode.NONE
 	if hit == null or mode == Mode.NONE:
 		return
-	if mode == Mode.BULLDOZE:
-		_preview_bulldoze(hit)
+	if mode == Mode.BULLDOZE or mode == Mode.UPGRADE:
+		_preview_pick(hit)
 		return
 	var p := _snapped(hit)
 	_cursor.position = p + Vector3.UP * 0.3
@@ -107,6 +154,9 @@ func _process(_delta: float) -> void:
 		curves = _pending_grid(p)
 	else:
 		curves = [_pending_curve(p)]
+		_show_length(curves[0])
+		if parallel:
+			curves.append(RoadShapes.offset(curves[0], parallel_gap))
 		var problem := _problem(curves[0])
 		ok = problem == ""
 		if problem != _shown_problem:
@@ -128,6 +178,9 @@ func _click() -> void:
 			if _hover_seg != -1:
 				sim.apply({"type": "remove_road", "seg": _hover_seg})
 				_hover_seg = -1
+		Mode.UPGRADE:
+			if _hover_seg != -1:
+				sim.apply({"type": "upgrade_road", "seg": _hover_seg, "road": road_type})
 		Mode.STRAIGHT, Mode.CURVED:
 			var p := _snapped(hit)
 			var needed := 2 if mode == Mode.STRAIGHT else 3
@@ -135,8 +188,9 @@ func _click() -> void:
 				_points.append(p)
 			else:
 				var curve := _pending_curve(p)
-				if _is_valid(curve) and sim.apply({"type": "build_road",
-						"start": _xz(curve[0]), "ctrl": _xz(curve[1]), "end": _xz(curve[2])}):
+				if _is_valid(curve) and _build(curve):
+					if parallel:
+						_build(RoadShapes.offset(curve, parallel_gap))
 					_points.clear()
 					_points.append(curve[2])
 		Mode.GRID:
@@ -146,11 +200,11 @@ func _click() -> void:
 			if _points.size() < 2:
 				_points.append(p)
 			elif sim.apply({"type": "build_grid", "a": _xz(_points[0]), "b": _xz(_points[1]),
-					"c": _xz(p), "block": grid_block}):
+					"c": _xz(p), "block": grid_block, "road": road_type}):
 				_points.clear()
 		Mode.ROUNDABOUT:
 			sim.apply({"type": "build_roundabout", "center": _xz(_snapped(hit)),
-				"radius": roundabout_radius})
+				"radius": roundabout_radius, "road": road_type})
 	_update_hint()
 
 
@@ -166,9 +220,21 @@ func _resize(f: float) -> void:
 		grid_block = clampf(grid_block * f, RoadShapes.GRID_BLOCK_MIN, RoadShapes.GRID_BLOCK_MAX)
 	elif mode == Mode.ROUNDABOUT:
 		roundabout_radius = clampf(roundabout_radius * f, RoadShapes.ROUNDABOUT_MIN, RoadShapes.ROUNDABOUT_MAX)
+	elif parallel and (mode == Mode.STRAIGHT or mode == Mode.CURVED):
+		parallel_gap = clampf(parallel_gap * f, _min_gap(), PARALLEL_MAX)
 	else:
 		return
 	_update_hint()
+
+
+func _build(curve: Array) -> bool:
+	return sim.apply({"type": "build_road", "start": _xz(curve[0]), "ctrl": _xz(curve[1]),
+		"end": _xz(curve[2]), "road": road_type})
+
+
+## Closest two roads can run side by side: sidewalk to sidewalk.
+func _min_gap() -> float:
+	return RoadStyle.right_of_way_half(road_type) * 2.0
 
 
 static func _xz(v: Vector3) -> Array:
@@ -185,11 +251,62 @@ func _pending_curve(p: Vector3) -> Array:
 	var a: Vector3 = _points[0]
 	if mode == Mode.CURVED and _points.size() >= 2:
 		return [a, _points[1], p]
+	var d := p - a
+	_guide_angle = NAN
 	if mode != Mode.CURVED and Input.is_key_pressed(KEY_SHIFT):
-		var d := p - a
 		var ang := snappedf(atan2(d.z, d.x), ANGLE_STEP)
 		p = a + Vector3(cos(ang), 0.0, sin(ang)) * d.length()
+	elif mode != Mode.CURVED and d.length() > 2.0:
+		# Snap to straight on or square with the road we start from.
+		var ang := atan2(d.z, d.x)
+		for ref in _reference_angles(a):
+			for k in 4:
+				var g: float = ref + k * PI * 0.5
+				if absf(angle_difference(ang, g)) < GUIDE_SNAP:
+					_guide_angle = g
+					_guide_kind = "straight on" if k % 2 == 0 else "90°"
+					p = a + Vector3(cos(g), 0.0, sin(g)) * d.length()
+					break
+			if not is_nan(_guide_angle):
+				break
 	return [a, a.lerp(p, 0.5), p]
+
+
+## Directions of the roads at a point, for guide lines.
+func _reference_angles(at: Vector3) -> Array:
+	var out := []
+	var n := network.find_node_near(at, 0.5)
+	if n != -1:
+		for id in network.segments_at(n):
+			var c := network.curve_of(id)
+			var t := 0.0 if network.segments[id].a == n else 1.0
+			var tan := RoadNetwork.bezier_tangent(c[0], c[1], c[2], t)
+			out.append(atan2(tan.z, tan.x))
+		return out
+	var s := network.find_segment_near(at, 0.5)
+	if not s.is_empty():
+		var c := network.curve_of(s.seg)
+		var tan := RoadNetwork.bezier_tangent(c[0], c[1], c[2], s.t)
+		out.append(atan2(tan.z, tan.x))
+	return out
+
+
+## Shows the road's length by the cursor, and the guide line it snapped to.
+func _show_length(curve: Array) -> void:
+	var pts := RoadNetwork.sample_curve(curve[0], curve[1], curve[2])
+	var m := RoadNetwork.polyline_length(pts)
+	_label.text = "%d m  (%d ft)" % [roundi(m), roundi(m * 3.28084)]
+	if not is_nan(_guide_angle):
+		_label.text += "\n" + _guide_kind
+		var dir := Vector3(cos(_guide_angle), 0.0, sin(_guide_angle))
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var line := PackedVector3Array([curve[0] - dir * 400.0, curve[0] + dir * 400.0])
+		RoadMesh.add_strip(st, line, -0.25, 0.25, 0.3)
+		_guide.mesh = st.commit()
+		_guide.visible = true
+	_label.position = curve[2] + Vector3(0, 6, 0)
+	_label.visible = true
 
 
 func _is_valid(curve: Array) -> bool:
@@ -216,25 +333,30 @@ func _snapped(hit: Vector3) -> Vector3:
 func _preview_mesh(curves: Array) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var hw := RoadStyle.half_width(road_type)
 	for curve in curves:
 		var pts := RoadNetwork.sample_curve(curve[0], curve[1], curve[2])
-		RoadMesh.add_strip(st, pts, -RoadStyle.half_width(), RoadStyle.half_width(), 0.2)
+		RoadMesh.add_strip(st, pts, -hw, hw, 0.2)
 	return st.commit()
 
 
-func _preview_bulldoze(hit: Vector3) -> void:
-	var near := network.find_segment_near(hit, RoadStyle.half_width() + 2.0)
-	_hover_seg = near.seg if not near.is_empty() else -1
+## Highlights the road under the mouse: red to bulldoze, blue to upgrade.
+func _preview_pick(hit: Vector3) -> void:
+	var near := network.find_segment_near(hit, RoadStyle.half_width(RoadStyle.Type.BOULEVARD))
+	_hover_seg = -1
+	if not near.is_empty() and near.dist <= RoadStyle.half_width(network.segments[near.seg].type) + 2.0:
+		_hover_seg = near.seg
+	var mat := _bad_mat if mode == Mode.BULLDOZE else _ok_mat
 	_cursor.position = hit + Vector3.UP * 0.3
-	_cursor.material_override = _bad_mat
+	_cursor.material_override = mat
 	if _hover_seg == -1:
 		return
+	var w := RoadStyle.half_width(road_type if mode == Mode.UPGRADE else network.segments[_hover_seg].type)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	RoadMesh.add_strip(st, network.sample_segment(_hover_seg), -RoadStyle.half_width() - 0.5,
-		RoadStyle.half_width() + 0.5, 0.2)
+	RoadMesh.add_strip(st, network.sample_segment(_hover_seg), -w - 0.5, w + 0.5, 0.2)
 	_preview.mesh = st.commit()
-	_preview.material_override = _bad_mat
+	_preview.material_override = mat
 	_preview.visible = true
 
 
@@ -268,4 +390,8 @@ func _update_hint() -> void:
 				% int(roundabout_radius * 2.0)
 		Mode.BULLDOZE:
 			text = "Click a road to remove it."
+		Mode.UPGRADE:
+			text = "Click a road to make it a %s." % RoadStyle.TYPES[road_type].name
+	if parallel and (mode == Mode.STRAIGHT or mode == Mode.CURVED):
+		text += "\nParallel on (P): second road %d m away  [ ]" % int(parallel_gap)
 	hint_changed.emit(text)

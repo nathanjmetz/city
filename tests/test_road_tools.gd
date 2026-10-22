@@ -45,6 +45,37 @@ func _init() -> void:
 	var u := CitySim.new()
 	_check(u.apply({"type": "build_road", "start": [0, 0], "ctrl": [40, 30], "end": [0, 60]}), "gentle bend allowed")
 	_check(not u.apply({"type": "build_road", "start": [100, 0], "ctrl": [140, 3], "end": [100, 6]}), "hairpin refused")
+	# Road types: an upgrade widens the road and pushes its lots back.
+	var w := CitySim.new()
+	w.apply({"type": "build_road", "start": [-100, 0], "ctrl": [0, 0], "end": [100, 0]})
+	var seg: int = w.network.segments.keys()[0]
+	var before: float = absf(w.lots.values()[0].pos.z)
+	_check(w.apply({"type": "upgrade_road", "seg": seg, "road": RoadStyle.Type.BOULEVARD}), "upgrade to boulevard")
+	var after: float = absf(w.lots.values()[0].pos.z)
+	_check(is_equal_approx(after - before, RoadStyle.half_width(2) - RoadStyle.half_width(0)),
+		"lots move back by the extra width (%.1f -> %.1f)" % [before, after])
+	var back := CitySim.new()
+	back.from_dict(JSON.parse_string(JSON.stringify(w.to_dict())))
+	_check(back.network.segments.values()[0].type == RoadStyle.Type.BOULEVARD, "road type saved")
+	# A crossing street keeps its own type on both halves.
+	w.apply({"type": "build_road", "start": [0, -100], "ctrl": [0, 0], "end": [0, 100], "road": 1})
+	var avenues := 0
+	for id in w.network.segments:
+		if w.network.segments[id].type == 1:
+			avenues += 1
+	_check(avenues == 2, "split avenue keeps its type (got %d)" % avenues)
+	# Parallel: the offset of a curve stays the same distance away.
+	var curve := [Vector3(0, 0, 0), Vector3(50, 0, 0), Vector3(80, 0, 40)]
+	var off := RoadShapes.offset(curve, 30.0)
+	var a := RoadNetwork.sample_curve(curve[0], curve[1], curve[2], 16)
+	var b := RoadNetwork.sample_curve(off[0], off[1], off[2], 16)
+	var worst := 0.0
+	for p in b:
+		var best := INF
+		for i in a.size() - 1:
+			best = minf(best, Geometry3D.get_closest_point_to_segment(p, a[i], a[i + 1]).distance_to(p))
+		worst = maxf(worst, absf(best - 30.0))
+	_check(worst < 2.0, "parallel road stays about 30 m away (off by %.2f m)" % worst)
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 

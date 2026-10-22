@@ -19,9 +19,11 @@ const NEAR := DEPTH + 30.0
 static func plan(network: RoadNetwork) -> Array:
 	var lines := {}
 	var bounds := {}
+	var types := {}
 	for id in network.segments:
 		var pts := network.sample_segment(id, 32)
 		lines[id] = pts
+		types[id] = network.segments[id].type
 		var r := Rect2(Vector2(pts[0].x, pts[0].z), Vector2.ZERO)
 		for p in pts:
 			r = r.expand(Vector2(p.x, p.z))
@@ -39,18 +41,19 @@ static func plan(network: RoadNetwork) -> Array:
 		var start := END_MARGIN + (usable - (n - 1) * FRONTAGE) * 0.5
 		for side in [-1, 1]:
 			for i in n:
-				var lot := _make_lot(id, side, i, pts, start + i * FRONTAGE)
-				if _clear_of_roads(lot, lines, bounds) and _clear_of_lots(lot, placed):
+				var lot := _make_lot(id, side, i, pts, start + i * FRONTAGE, types[id])
+				if _clear_of_roads(lot, lines, bounds, types) and _clear_of_lots(lot, placed):
 					placed.append(lot)
 					lots.append(lot)
 	return lots
 
 
-static func _make_lot(seg: int, side: int, index: int, pts: PackedVector3Array, at: float) -> Dictionary:
+static func _make_lot(seg: int, side: int, index: int, pts: PackedVector3Array, at: float, type: int) -> Dictionary:
 	var road := point_at(pts, at)
 	var dir: Vector3 = road[1]
 	var normal := Vector3(-dir.z, 0.0, dir.x) * side
-	var front: Vector3 = road[0] + normal * (RoadStyle.right_of_way_half() + 0.3)
+	var front_off := RoadStyle.right_of_way_half(type) + 0.3
+	var front: Vector3 = road[0] + normal * front_off
 	var pos := front + normal * (DEPTH * 0.5)
 	var hw := dir * (FRONTAGE * 0.5)
 	var back := normal * DEPTH
@@ -62,11 +65,12 @@ static func _make_lot(seg: int, side: int, index: int, pts: PackedVector3Array, 
 		"seg": seg, "side": side,
 		"pos": pos, "front": front, "zone_pt": front + normal * 8.0, "dir": dir, "normal": normal,
 		"corners": corners,
+		# From the lot's street edge back out to the asphalt, for driveways.
+		"to_curb": front_off - RoadStyle.half_width(type),
 	}
 
 
-static func _clear_of_roads(lot: Dictionary, lines: Dictionary, bounds: Dictionary) -> bool:
-	var min_d := RoadStyle.right_of_way_half()
+static func _clear_of_roads(lot: Dictionary, lines: Dictionary, bounds: Dictionary, types: Dictionary) -> bool:
 	var c: PackedVector2Array = lot.corners
 	var mid := Vector2(lot.pos.x, lot.pos.z)
 	var probes := [c[0].lerp(c[1], 0.15), c[0].lerp(c[1], 0.85), c[2], c[3], mid,
@@ -75,6 +79,7 @@ static func _clear_of_roads(lot: Dictionary, lines: Dictionary, bounds: Dictiona
 		if not (bounds[id] as Rect2).has_point(mid):
 			continue
 		var pts: PackedVector3Array = lines[id]
+		var min_d := RoadStyle.right_of_way_half(types[id])
 		for i in range(pts.size() - 1):
 			var a := Vector2(pts[i].x, pts[i].z)
 			var b := Vector2(pts[i + 1].x, pts[i + 1].z)
