@@ -77,6 +77,8 @@ var education := Education.new()
 ## Requests from hub leaders for big moves (track through town, crossing
 ## your roads), answered from the bell up top. See Permits.
 var permits := Permits.new()
+## Rail depots, their leaders, track and trains (see Rail).
+var rail := Rail.new()
 ## Wild trees and brush, and how far cleared land has grown back.
 var vegetation := Vegetation.new()
 ## Landfills, recycling and cemeteries, and the garbage trucks' rounds.
@@ -144,11 +146,13 @@ func _init() -> void:
 		var w = warehouses.buildings.get(id)
 		var c := Vector3.ZERO if w == null else Warehouses.center(w)
 		return Vector2(c.x, c.z)
+	rail.attach(self)
 	farms.reserves = reserves
 	industry.reserves = reserves
 	network.changed.connect(func():
 		_lots_dirty = true
-		_roads_moved = true)
+		_roads_moved = true
+		rail.roads_changed())
 	vegetation.watch(self)
 
 
@@ -411,6 +415,25 @@ func apply_now(cmd: Dictionary) -> bool:
 			ok = true
 		"permit":
 			ok = permits.answer(self, cmd)
+		"place_rail_depot":
+			var pos := _v(cmd.pos)
+			var dir := _v(cmd.dir).normalized()
+			var axis := _v(cmd.axis).normalized()
+			if dir.length() < 0.5 or rail.site_problem(self, pos, dir, axis) != "" \
+					or Balance.RAIL_DEPOT_COST > economy.money:
+				return false
+			rail.add_depot(self, pos, dir, axis)
+			economy.money -= Balance.RAIL_DEPOT_COST
+			_clear_zones_under(Rail.yard_corners(pos, dir, axis))
+			_lots_dirty = true
+			ok = true
+		"remove_rail_depot":
+			ok = rail.depots.has(int(cmd.id))
+			if ok:
+				rail.remove_depot(self, int(cmd.id))
+				_lots_dirty = true
+		"rail_subsidy":
+			ok = rail.set_subsidy(int(cmd.id), int(cmd.monthly))
 		"guide":
 			# The player's word to a hub's leader (grow, hold off, pre-approve).
 			ok = permits.guide(self, cmd)
@@ -443,6 +466,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			buses = BusNet.new()
 			education = Education.new()
 			permits.from_dict({})
+			rail = Rail.new()
+			rail.attach(self)
 			hubs = CivicHubs.new()
 			parks = Parks.new()
 			parks_changed.emit()
@@ -648,6 +673,7 @@ func tick() -> void:
 	if not in_region and tick_count % (24 * TICKS_PER_HOUR) == 0:
 		Trade.settle({"me": self}, {})
 	mail.tick(self)
+	rail.tick(self)
 	if not simulate_traffic:
 		return
 	# Before logistics, which clears Traffic's arrival list.
@@ -783,6 +809,8 @@ func farmhouse_problem(pos: Vector3, dir: Vector3) -> String:
 	for p in [pos] + Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y)):
 		if industry.covers(p) or power.covers(p):
 			return "That ground belongs to a company."
+		if rail.covers(p):
+			return "That ground belongs to the railroad."
 		if education.covers(p):
 			return "That ground is a campus."
 	if _on_warehouse(Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y))):
@@ -820,6 +848,8 @@ func industry_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 			return "That ground is farmland."
 		if industry.covers(p) or power.covers(p):
 			return "Too close to another company."
+		if rail.covers(p):
+			return "That ground belongs to the railroad."
 		if education.covers(p):
 			return "That ground is a campus."
 	if _on_warehouse(Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y))):
@@ -853,6 +883,8 @@ func warehouse_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 			return "That ground is farmland."
 		if industry.covers(p):
 			return "That ground belongs to a company."
+		if rail.covers(p):
+			return "That ground belongs to the railroad."
 		if hubs.covers(p):
 			return "Overlaps a landfill, recycling center or cemetery."
 		if power.covers(p):
@@ -882,7 +914,7 @@ func warehouse_ground_ok(poly: PackedVector2Array, id: int) -> bool:
 			return false
 	for p in _grid_in(poly):
 		if farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) or reserves.kind_at(p) != "" \
-				or hubs.covers(p) or education.covers(p) or mail.covers(p) or power.covers(p):
+				or hubs.covers(p) or education.covers(p) or mail.covers(p) or power.covers(p) or rail.covers(p):
 			return false
 	for key in lots:
 		if not buildings.has(key) and zones.zone_at(lots[key].zone_pt) == ZoneMap.Zone.NONE:
@@ -1068,6 +1100,11 @@ func _hub_command(cmd: Dictionary) -> bool:
 	return true
 
 
+## Lots are worked out again on the next refresh (new track took some).
+func mark_lots_dirty() -> void:
+	_lots_dirty = true
+
+
 ## Zoning under a new building goes away, as in Cities: Skylines 2.
 func _clear_zones_under(poly: PackedVector2Array) -> void:
 	for c in zones.cells.keys():
@@ -1108,7 +1145,8 @@ func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
 		for p in pts:
 			if services.covers(p) or farms.covers(p) or industry.covers(p) or farms.field_at(p) != -1 \
 					or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
-					or mail.covers(p) or power.covers(p) or not land_ok(p):
+					or mail.covers(p) or power.covers(p) or not land_ok(p) \
+					or rail.covers(p):
 				ok = false
 	if ok:
 		for key2 in lots:
@@ -1301,7 +1339,7 @@ func _lot_blocked(lot: Dictionary) -> bool:
 	for p in [lot.pos, lot.front, lot.zone_pt]:
 		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) \
 				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
-				or mail.covers(p) or power.covers(p):
+				or mail.covers(p) or power.covers(p) or rail.covers(p):
 			return true
 	# No lots in the water or on ground too steep to build on.
 	return not land_ok(lot.pos, LotPlanner.FRONTAGE * 0.5)
@@ -1595,6 +1633,7 @@ func to_dict() -> Dictionary:
 		"logistics": logistics.to_dict(),
 		"warehouses": warehouses.to_dict(),
 		"reserves": reserves.to_dict(),
+		"rail": rail.to_dict(),
 		"permits": permits.to_dict(),
 		"hubs": hubs.to_dict(),
 		"parks": parks.to_dict(),
@@ -1637,6 +1676,7 @@ func from_dict(d: Dictionary) -> void:
 	logistics.from_dict(d.get("logistics", {}))
 	warehouses.from_dict(d.get("warehouses", {}))
 	reserves.from_list(d.get("reserves", []))
+	rail.from_dict(d.get("rail", {}))
 	permits.from_dict(d.get("permits", {}))
 	hubs.from_dict(d.get("hubs", {}))
 	parks.from_dict(d.get("parks", {}))
