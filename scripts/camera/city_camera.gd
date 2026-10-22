@@ -116,6 +116,12 @@ func _process(delta: float) -> void:
 	_apply()
 
 
+## Glides over to look at a spot on the ground (a neighbor's city, say).
+func fly_to(p: Vector3) -> void:
+	_goal_target = Vector3(p.x, 0.0, p.z)
+	_goal_dist = maxf(_goal_dist, 420.0)
+
+
 ## Where the mouse ray meets the ground, or null if it points at the sky.
 func mouse_ground_point():
 	var mouse := get_viewport().get_mouse_position()

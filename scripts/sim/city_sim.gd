@@ -47,6 +47,10 @@ var stats := {"population": 0, "workers": 0, "jobs": 0, "employed": 0, "homes_fr
 ## How much each zone wants to grow, 0 to 1, like the CS demand bars.
 var demand := {ZoneMap.Zone.RESIDENTIAL: 0.6, ZoneMap.Zone.COMMERCIAL: 0.0, ZoneMap.Zone.INDUSTRIAL: 0.1}
 
+## In a shared region, your commands go to the server instead and come back
+## in a tick, so every player applies them at the same moment.
+var send_command := Callable()
+
 var _lots_dirty := true
 var _usable_cache := {}  # field cell -> bool, cleared when roads or lots change
 
@@ -55,8 +59,17 @@ func _init() -> void:
 	network.changed.connect(func(): _lots_dirty = true)
 
 
-## Applies one player command. Returns true if anything changed.
+## Applies one player command. Returns true if anything changed (online:
+## true once it's sent).
 func apply(cmd: Dictionary) -> bool:
+	if send_command.is_valid():
+		send_command.call(cmd)
+		return true
+	return apply_now(cmd)
+
+
+## Applies a command right away, even online (the region does this).
+func apply_now(cmd: Dictionary) -> bool:
 	var ok := false
 	match cmd.get("type", ""):
 		"build_road":

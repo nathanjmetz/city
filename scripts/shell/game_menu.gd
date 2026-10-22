@@ -1,0 +1,141 @@
+class_name GameMenu
+extends CanvasLayer
+## The pause menu, like Cities: Skylines 2: Escape opens it when no tool is
+## in hand. Resume, save, back to the title screen, or quit. In a shared
+## region it shows the invite and lets you leave (the region keeps going).
+
+var game: Node  # main.gd
+## Returns true while a tool is in hand (then Escape puts the tool down instead).
+var tool_in_hand: Callable
+
+var _shade := ColorRect.new()
+var _col := VBoxContainer.new()
+var _title := UiStyle.label("", 26)
+var _note := UiStyle.label("", 14, UiStyle.MUTED)
+var _was_speed := 1
+var _tool_was_active := false
+
+
+func setup(g: Node, in_hand: Callable) -> void:
+	game = g
+	tool_in_hand = in_hand
+
+
+func _ready() -> void:
+	layer = 5
+	var root := Control.new()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.theme = UiStyle.theme()
+	add_child(root)
+	_shade.color = Color(0, 0, 0, 0.35)
+	_shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_shade.visible = false
+	root.add_child(_shade)
+	# Docked to the left edge, full height, like the title screen.
+	var panel := PanelContainer.new()
+	var box := UiStyle.panel(0)
+	box.content_margin_left = 32
+	box.content_margin_right = 32
+	box.content_margin_top = 40
+	panel.add_theme_stylebox_override("panel", box)
+	panel.set_anchors_and_offsets_preset(Control.PRESET_LEFT_WIDE)
+	panel.custom_minimum_size = Vector2(320, 0)
+	_shade.add_child(panel)
+	_col.add_theme_constant_override("separation", 10)
+	panel.add_child(_col)
+	if Session.client:
+		Session.client.disconnected.connect(_lost_connection)
+
+
+func _process(_delta: float) -> void:
+	_tool_was_active = tool_in_hand.call()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo \
+			and (event as InputEventKey).keycode == KEY_ESCAPE:
+		if _shade.visible:
+			close()
+			get_viewport().set_input_as_handled()
+		elif not _tool_was_active:
+			open()
+			get_viewport().set_input_as_handled()
+
+
+func open() -> void:
+	_fill()
+	_shade.visible = true
+	if Session.mode == Session.Mode.SOLO:
+		_was_speed = game.speed
+		game.set_speed(0)
+
+
+func close() -> void:
+	_shade.visible = false
+	if Session.mode == Session.Mode.SOLO:
+		game.set_speed(_was_speed)
+
+
+func _fill() -> void:
+	for c in _col.get_children():
+		c.queue_free()
+	_col.add_child(_title)
+	_note.text = ""
+	_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_col.add_child(_note)
+	_col.add_child(_button("Resume", close))
+	if Session.mode == Session.Mode.ONLINE:
+		var c := Session.client
+		_title.text = c.region.cities[c.my_city].name
+		_note.text = "Shared region  ·  invite code %s\nYour city keeps growing while you're away." % c.invite_code
+		_col.add_child(_button("Copy invite", func():
+			DisplayServer.clipboard_set(Session.invite_link(c.url, c.invite_code) if c.url.begins_with("wss://") \
+				else "Invite code %s, server %s" % [c.invite_code, c.url])
+			_note.text = "Invite copied. Paste it to family and friends."))
+		_col.add_child(_button("Leave region", Session.to_menu))
+	else:
+		_title.text = Session.current_name
+		_col.add_child(_button("Save", func():
+			Session.save_city(game.sim)
+			_note.text = "Saved."))
+		_col.add_child(_button("Main menu", func():
+			Session.save_city(game.sim)
+			Session.to_menu()))
+	if not OS.has_feature("web"):
+		_col.add_child(_button("Quit to desktop", func():
+			if Session.mode == Session.Mode.SOLO:
+				Session.save_city(game.sim)
+			get_tree().quit()))
+
+
+func _lost_connection() -> void:
+	_fill()
+	_shade.visible = true
+	_title.text = "Connection lost"
+	_note.text = "The region's server stopped answering. Your city is safe on the server."
+	for c in _col.get_children():
+		if c is Button and c.text == "Resume":
+			c.text = "Rejoin"
+			for conn in c.pressed.get_connections():
+				c.pressed.disconnect(conn.callable)
+			c.pressed.connect(_rejoin)
+
+
+func _rejoin() -> void:
+	var old := Session.client
+	_note.text = "Rejoining..."
+	var c := Session.join_region(old.url, old.invite_code)
+	c.joined.connect(Session.enter_region)
+	c.failed.connect(func(reason): _note.text = reason)
+
+
+func _button(text: String, action: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.focus_mode = Control.FOCUS_NONE
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.custom_minimum_size = Vector2(0, 44)
+	b.add_theme_font_size_override("font_size", 18)
+	b.pressed.connect(action)
+	return b
