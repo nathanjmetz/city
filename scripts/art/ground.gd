@@ -10,7 +10,7 @@ extends MeshInstance3D
 
 const SHADER := """
 shader_type spatial;
-render_mode specular_schlick_ggx;
+render_mode specular_schlick_ggx, cull_disabled;
 
 uniform sampler2D noise_soft : filter_linear_mipmap, repeat_enable;
 uniform sampler2D noise_grain : filter_linear_mipmap, repeat_enable;
@@ -53,21 +53,29 @@ void fragment() {
 """
 
 
+static var _grass: ShaderMaterial
+
+
+## The grass material, shared with anything else that is lawn (medians, verges).
+static func grass() -> ShaderMaterial:
+	if _grass == null:
+		_grass = ShaderMaterial.new()
+		var shader := Shader.new()
+		shader.code = SHADER
+		_grass.shader = shader
+		_grass.set_shader_parameter("noise_soft", noise(512, 0.012, 4, 11))
+		_grass.set_shader_parameter("noise_grain", noise(256, 0.09, 2, 23))
+	return _grass
+
+
 func _ready() -> void:
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(8000, 8000)
 	mesh = plane
-
-	var mat := ShaderMaterial.new()
-	var shader := Shader.new()
-	shader.code = SHADER
-	mat.shader = shader
-	mat.set_shader_parameter("noise_soft", _noise(512, 0.012, 4, 11))
-	mat.set_shader_parameter("noise_grain", _noise(256, 0.09, 2, 23))
-	material_override = mat
+	material_override = grass()
 
 
-func _noise(size: int, freq: float, octaves: int, seed: int) -> NoiseTexture2D:
+static func noise(size: int, freq: float, octaves: int, seed: int) -> NoiseTexture2D:
 	var n := FastNoiseLite.new()
 	n.seed = seed
 	n.frequency = freq

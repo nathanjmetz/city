@@ -6,13 +6,13 @@ extends Node3D
 var network: RoadNetwork
 
 var _mats := {
-	"asphalt": RoadStyle.material(RoadStyle.ASPHALT_COLOR),
-	"curb": RoadStyle.material(RoadStyle.CURB_COLOR),
-	"walk": RoadStyle.material(RoadStyle.SIDEWALK_COLOR),
-	"median": RoadStyle.material(RoadStyle.MEDIAN_COLOR),
-	"yellow": RoadStyle.material(RoadStyle.MARKING_YELLOW),
-	"white": RoadStyle.material(RoadStyle.MARKING_WHITE),
-	"concrete": RoadStyle.material(Color(0.66, 0.65, 0.62)),
+	"asphalt": Surfaces.asphalt(),
+	"curb": Surfaces.concrete(RoadStyle.CURB_COLOR),
+	"walk": Surfaces.concrete(RoadStyle.SIDEWALK_COLOR, true),
+	"median": Ground.grass(),
+	"yellow": Surfaces.paint(RoadStyle.MARKING_YELLOW),
+	"white": Surfaces.paint(RoadStyle.MARKING_WHITE),
+	"concrete": Surfaces.concrete(Color(0.66, 0.65, 0.62)),
 	"apron": RoadStyle.material(Color(0.5, 0.44, 0.38)),  # tinted, textured-look concrete
 	"tunnel": RoadStyle.material(Color(0.1, 0.1, 0.12, 0.45), true),
 }
