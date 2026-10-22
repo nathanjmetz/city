@@ -45,9 +45,9 @@ func _run() -> void:
 	var sim := ann.my_sim()
 	sim.send_command = ann.send_command
 	var roads_before := sim.network.segments.size()
-	sim.apply({"type": "build_road", "start": [40, 60], "ctrl": [80, 120], "end": [120, 180]})
-	for x in range(-80, 0, 10):
-		sim.apply({"type": "paint_zone", "center": [x, -25], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
+	sim.apply({"type": "build_road", "start": [40, 60], "ctrl": [50, 80], "end": [60, 100]})
+	for cmd in _starter_town(sim):
+		sim.apply(cmd)
 	await _until(func(): return bob.region.cities[ann.my_city].sim.network.segments.size() > roads_before)
 	_check(bob.region.cities[ann.my_city].sim.network.segments.size() > roads_before, "Bob sees Ann's new road")
 	_check(sim.network.segments.size() > roads_before, "Ann's road comes back to her from the server")
@@ -68,7 +68,7 @@ func _run() -> void:
 	_check(bob.players.size() == 2, "both players listed online")
 
 	# Let the cities grow a while: everyone's copy stays identical.
-	await _until(func(): return server.region.tick_count >= 250, 40.0)
+	await _until(func(): return server.region.cities[ann.my_city].sim.buildings.size() > 3, 60.0)
 	await _frames(10)
 	var t: int = server.region.tick_count
 	await _until(func(): return ann.region.tick_count == t and bob.region.tick_count == t)
@@ -107,9 +107,10 @@ func _test_region_in_step() -> void:
 		r.add_city("p1", "Ann")
 		r.add_city("p2", "Bob")
 	for r in [a, b]:
-		for x in range(-80, 0, 10):
-			r.apply("c1", {"type": "paint_zone", "center": [x, -25], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
-			r.apply("c2", {"type": "paint_zone", "center": [x, 25], "radius": 12, "zone": ZoneMap.Zone.INDUSTRIAL})
+		for cmd in _starter_town(r.cities.c1.sim):
+			r.apply("c1", cmd)
+		for cmd in _starter_town(r.cities.c2.sim):
+			r.apply("c2", cmd)
 		for i in 300:
 			r.tick()
 	_check(a.checksums() == b.checksums(), "two copies of a region stay in step")
@@ -121,6 +122,18 @@ func _test_region_in_step() -> void:
 	_check(a.checksums() == c.checksums(), "a copy sent to a joining player keeps in step")
 	_check(a.cities.c1.sim.buildings.size() > 0, "cities grow in a region")
 	_check(a.cities.c1.origin != a.cities.c2.origin, "cities get their own spots")
+
+
+## Power, water and zones along a city's starter road: commands to grow a town.
+func _starter_town(sim: CitySim) -> Array:
+	var out := []
+	for k in [[Services.Kind.SUBSTATION, -330], [Services.Kind.WATER_TOWER, -270]]:
+		var site := Services.site_near(sim.network, k[0], Vector3(k[1], 0, 40))
+		out.append({"type": "place_service", "kind": k[0], "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})
+	for x in range(-380, -100, 10):
+		out.append({"type": "paint_zone", "center": [x, -25], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
+		out.append({"type": "paint_zone", "center": [x, 25], "radius": 12, "zone": ZoneMap.Zone.INDUSTRIAL})
+	return out
 
 
 func _client() -> RegionClient:

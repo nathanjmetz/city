@@ -41,7 +41,7 @@ func _ready() -> void:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 10)
 	_panel.add_child(col)
-	col.add_child(UiStyle.label("CITY", 52))
+	col.add_child(UiStyle.label("Neighbors", 52))
 	col.add_child(UiStyle.label("A Midwestern town, built your way", 15, UiStyle.MUTED))
 	col.add_child(_gap(28))
 	for page in [_home_page(), _new_page(), _load_page(), _together_page()]:
