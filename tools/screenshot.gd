@@ -64,6 +64,19 @@ func _demo_town() -> void:
 		_demo_mail(sim)
 		_aim_camera()
 		return
+	if args0.size() >= 5 and args0[4] == "junction":
+		# Brawn's junction repro: a crossroads, a T and a sharp Y, zoned so
+		# they get curbs and sidewalks.
+		sim.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
+		sim.apply({"type": "build_road", "start": [0, -150], "ctrl": [0, 0], "end": [0, 150]})
+		sim.apply({"type": "build_road", "start": [120, 0], "ctrl": [120, 70], "end": [120, 150]})
+		sim.apply({"type": "build_road", "start": [-80, 0], "ctrl": [-130, 60], "end": [-180, 120]})
+		sim.apply({"type": "build_road", "start": [-80, 0], "ctrl": [-30, 60], "end": [-10, 150], "road": 1})
+		for id in sim.network.segments.keys():
+			for side in [-1, 1]:
+				sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": ZoneMap.Zone.RESIDENTIAL})
+		_aim_camera()
+		return
 	if args0.size() >= 5 and args0[4] == "hubs":
 		_demo_hubs(sim)
 		_aim_camera()
