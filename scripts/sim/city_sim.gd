@@ -104,6 +104,9 @@ var region_links: Array = []
 var trade := Trade.new()
 ## True in a shared region, which settles trade for every city at once.
 var in_region := false
+## What the neighbouring towns make and buy, kept up to date by the region
+## server (see Agency._region). Not saved: it comes from the neighbours.
+var region := {}
 
 var _lots_dirty := true
 ## Roads changed since the world last made way for them (see RoadWins).
@@ -545,6 +548,9 @@ func tick() -> void:
 				_lots_dirty = true
 				zones_changed.emit()
 			parks_changed.emit()
+	# Once a month every hub's leader looks at its development tree (Agency).
+	if tick_count % (24 * TICKS_PER_HOUR) == 12 * TICKS_PER_HOUR:
+		_develop_hubs()
 	# Taxes come in and upkeep goes out every game hour, a day settling a month.
 	if tick_count % TICKS_PER_HOUR == 0:
 		economy.money += roundi(economy.monthly_net() / 24.0)
@@ -1212,8 +1218,64 @@ func _grow_one() -> void:
 		var bseed := rng.randi()
 		buildings[key] = {"zone": z, "seed": bseed, "built": tick_count,
 			"cap": capacity(z, bseed), "occ": 0}
+		if z == ZoneMap.Zone.INDUSTRIAL:
+			buildings[key].chain = factory_chain(lots[key].pos)
 		buildings_changed.emit()
 		return
+
+
+## Each farm and company leader takes their next step up their tree.
+func _develop_hubs() -> void:
+	var ids := farms.farms.keys()
+	ids.sort()
+	var farm_built := false
+	for id in ids:
+		var f: Dictionary = farms.farms[id]
+		if not f.has("leader"):
+			f.leader = Agency.leader(self, hash([city_seed, "farm", id]))
+		if not Agency.develop(self, f, Agency.TREES.farm, f.pos, farms.yearly_profit(id)).is_empty():
+			farm_built = true
+	ids = industry.sites.keys()
+	ids.sort()
+	var site_built := false
+	for id in ids:
+		var s: Dictionary = industry.sites[id]
+		if not s.has("leader"):
+			s.leader = Agency.leader(self, hash([city_seed, "site", id]))
+		if not Agency.develop(self, s, Agency.TREES[s.kind], s.pos, industry.yearly_profit(id)).is_empty():
+			site_built = true
+	if farm_built:
+		farms_changed.emit()
+	if site_built:
+		industry_changed.emit()
+
+
+## What a new factory here would make (a key of Balance.FACTORY_CHAINS):
+## the chain with the most output nearby, counting closer supply more, or
+## "general" when nothing local is near enough (Brawn: factories follow the
+## town's industry).
+func factory_chain(at: Vector3) -> String:
+	var score := {"mill": 0.0, "sawmill": 0.0, "refinery": 0.0, "metal": 0.0}
+	var reach := Balance.FACTORY_CHAIN_REACH
+	for id in farms.farms:
+		var f: Dictionary = farms.farms[id]
+		var d: float = f.pos.distance_to(at)
+		if d < reach:
+			# A 1,000-bushel truck a month for about every 15 acres of corn.
+			score.mill += f.cells.size() * Farms.ACRES_PER_CELL / 15.0 * (1.0 - d / reach)
+	var by_kind := {"forest": "sawmill", "oil": "refinery", "ore": "metal"}
+	for id in industry.sites:
+		var s: Dictionary = industry.sites[id]
+		var d: float = s.pos.distance_to(at)
+		if d < reach:
+			score[by_kind[s.kind]] += Balance.INDUSTRY[s.kind].loads * s.pads.size() * (1.0 - d / reach)
+	var best := "general"
+	var best_v := Balance.FACTORY_CHAIN_MIN
+	for k in ["mill", "sawmill", "refinery", "metal"]:
+		if score[k] > best_v:
+			best_v = score[k]
+			best = k
+	return best
 
 
 ## People a home holds, or jobs a shop or factory offers.
@@ -1363,9 +1425,15 @@ func from_dict(d: Dictionary) -> void:
 		# Older saves had no residents yet: assume the homes were full.
 		buildings[key] = {"zone": z, "seed": int(b.seed), "built": int(b.built), "cap": cap,
 			"occ": int(b.get("occ", cap if z == ZoneMap.Zone.RESIDENTIAL else 0))}
+		if z == ZoneMap.Zone.INDUSTRIAL and b.has("chain"):
+			buildings[key].chain = str(b.chain)
 	_road_wins()
 	_lots_dirty = true
 	_refresh()
+	# Factories from before industry chains take up the local one.
+	for key in buildings:
+		if buildings[key].zone == ZoneMap.Zone.INDUSTRIAL and not buildings[key].has("chain"):
+			buildings[key].chain = factory_chain(lots[key].pos) if lots.has(key) else "general"
 	update_stats()
 	buildings_changed.emit()
 
