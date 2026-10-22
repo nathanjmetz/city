@@ -350,8 +350,21 @@ func _init() -> void:
 		off.decide(func(_m, _c): return true)
 		_check(off.sites[1].pads.size() == 1 and off.sites[1].get("idle", "") == "",
 			"a company beside the deposit opens its first pad on it (%d)" % off.sites[1].pads.size())
+	# Somewhere on the real map with no oil anywhere in a company's reach.
+	var no_oil := Vector3.INF
+	for k in 400:
+		var p := Vector3(-16000.0 + (k % 20) * 1600.0, 0, -16000.0 + (k / 20) * 1600.0)
+		var probe := {"kind": "oil", "pos": p, "dir": Vector3(0, 0, -1)}
+		var empty := true
+		for y in range(-Industry.SEED_REACH, Industry.SEED_REACH + 1):
+			for x in range(-Industry.SEED_REACH, Industry.SEED_REACH + 1):
+				empty = empty and Industry.richness(probe, Vector2i(x, y)) < Industry.MIN_RICHNESS
+		if empty:
+			no_oil = p
+			break
+	_check(no_oil != Vector3.INF, "the map has land with no oil")
 	var none := Industry.new()
-	none.add_site("oil", Vector3(best.x + 50000, 0, best.z + 50000), Vector3(0, 0, -1), [])
+	none.add_site("oil", no_oil, Vector3(0, 0, -1), [])
 	none.decide(func(_m, _c): return true)
 	_check(none.sites[1].pads.is_empty() and str(none.sites[1].get("idle", "")).begins_with("No crude oil"),
 		"a company with no oil around says why")

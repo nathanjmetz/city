@@ -64,7 +64,7 @@ func _site(id: int, s: Dictionary) -> Node3D:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	st.set_color(LANE)
 	if s.drive.size() >= 2:
-		RoadMesh.add_strip(st, PackedVector3Array(s.drive), -Farms.DRIVE_WIDTH * 0.5, Farms.DRIVE_WIDTH * 0.5, 0.12)
+		RoadMesh.add_strip(st, Terrain.densify(PackedVector3Array(s.drive), 6.0), -Farms.DRIVE_WIDTH * 0.5, Farms.DRIVE_WIDTH * 0.5, 0.12)
 	# Each pad's track runs to the neighbour nearer the main building.
 	for c in s.pads:
 		var to: Vector2i = c
@@ -77,16 +77,17 @@ func _site(id: int, s: Dictionary) -> Node3D:
 		RoadMesh.add_strip(st, PackedVector3Array([Industry.pad_center(s, c), Industry.pad_center(s, to)]),
 			-2.0, 2.0, 0.1)
 	var flat := MeshInstance3D.new()
-	flat.mesh = st.commit()
+	flat.mesh = Terrain.drape(st.commit(), true, 8.0)
 	flat.material_override = _mat(LANE)
 	flat.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(flat)
 	var hq := Node3D.new()
 	hq.set_meta("static", true)
-	hq.position = s.pos
+	hq.position = Vector3(s.pos.x, Terrain.ground_y(s.pos.x, s.pos.z), s.pos.z)
 	hq.basis = Basis.looking_at(s.dir, Vector3.UP)
 	root.add_child(hq)
-	_box(hq, Vector3(Industry.HQ_SIZE.x, 0.1, Industry.HQ_SIZE.y), Vector3.ZERO, GRAVEL)
+	# Gravel yard, graded level; its edge runs down into the ground on a slope.
+	_box(hq, Vector3(Industry.HQ_SIZE.x, 3.0, Industry.HQ_SIZE.y), Vector3(0, -1.45, 0), GRAVEL)
 	_box(hq, Vector3(14, 4.5, 10), Vector3(-8, 2.25, -10), Color(0.82, 0.8, 0.74))  # office
 	_box(hq, Vector3(14.6, 0.5, 10.6), Vector3(-8, 4.75, -10), Color(0.3, 0.3, 0.32))
 	match s.kind:
@@ -102,13 +103,14 @@ func _site(id: int, s: Dictionary) -> Node3D:
 	for c in s.pads:
 		var pad := Node3D.new()
 		pad.set_meta("static", true)
-		pad.position = Industry.pad_center(s, c)
+		var spot := Industry.pad_center(s, c)
+		pad.position = Vector3(spot.x, Terrain.ground_y(spot.x, spot.z), spot.z)
 		pad.basis = hq.basis
 		root.add_child(pad)
 		var h := Resources.hash01(c, 11)
 		match s.kind:
 			"oil":
-				_box(pad, Vector3(26, 0.1, 22), Vector3.ZERO, GRAVEL)
+				_box(pad, Vector3(26, 2.0, 22), Vector3(0, -0.95, 0), GRAVEL)
 				_pumpjack(pad, Vector3(-3, 0, 0))
 				_cyl(pad, 2.0, 5.0, Vector3(8, 2.5, 6), Color(0.55, 0.5, 0.36))
 			"ore":
@@ -119,7 +121,7 @@ func _site(id: int, s: Dictionary) -> Node3D:
 						Color(0.52, 0.44, 0.36).darkened(i * 0.16))
 				_cone(pad, 6.0, 5.0, Vector3(26, 2.5, -26), Color(0.4, 0.36, 0.33))
 			"forest":
-				_box(pad, Vector3(46, 0.1, 46), Vector3.ZERO, Color(0.45, 0.4, 0.27))  # the cut
+				_box(pad, Vector3(46, 2.0, 46), Vector3(0, -0.95, 0), Color(0.45, 0.4, 0.27))  # the cut
 				_logs(pad, Vector3(-6, 0, 4))
 				for i in 14:
 					var a := TAU * (i + h) / 14.0

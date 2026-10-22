@@ -34,7 +34,7 @@ uniform vec4 dark : source_color = vec4(0.20, 0.28, 0.12, 1.0);
 uniform vec4 soil : source_color = vec4(0.46, 0.40, 0.29, 1.0);
 uniform vec4 crop_green : source_color = vec4(0.36, 0.45, 0.17, 1.0);
 uniform vec4 crop_corn : source_color = vec4(0.25, 0.37, 0.13, 1.0);
-uniform vec4 crop_tan : source_color = vec4(0.62, 0.55, 0.36, 1.0);
+uniform vec4 crop_tan : source_color = vec4(0.55, 0.47, 0.30, 1.0);
 uniform vec4 tilled : source_color = vec4(0.40, 0.33, 0.24, 1.0);
 uniform vec4 litter : source_color = vec4(0.22, 0.20, 0.12, 1.0);
 uniform vec4 canopy : source_color = vec4(0.13, 0.22, 0.09, 1.0);
@@ -76,7 +76,7 @@ void fragment() {
 	// (the township grid) that fade with distance.
 	vec2 field = floor(p / 402.0);
 	float pick = fract(sin(dot(field, vec2(12.9898, 78.233))) * 43758.5453);
-	vec3 crop = pick < 0.45 ? crop_green.rgb : (pick < 0.75 ? crop_corn.rgb : (pick < 0.9 ? crop_tan.rgb : tilled.rgb));
+	vec3 crop = pick < 0.45 ? crop_green.rgb : (pick < 0.8 ? crop_corn.rgb : (pick < 0.92 ? crop_tan.rgb : tilled.rgb));
 	crop *= 0.9 + 0.2 * mid;
 	float rows = sin(p.x * 8.27) * 0.5 + 0.5;
 	crop *= 1.0 - rows * 0.12 * clamp(1.0 - dist / 300.0, 0.0, 1.0);

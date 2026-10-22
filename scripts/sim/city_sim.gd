@@ -503,6 +503,8 @@ func industry_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 	for sgn in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
 		var p: Vector3 = pos + side * Industry.HQ_SIZE.x * 0.5 * sgn.x + dir * Industry.HQ_SIZE.y * 0.5 * sgn.y
 		poly.append(Vector2(p.x, p.z))
+	if not land_ok(pos, Industry.HQ_SIZE.length() * 0.5):
+		return "Can't build in the water or on a slope that steep."
 	if not industry.reserved_ok(kind, pos):
 		return "That land is reserved for %s." % Reserves.KINDS[reserves.kind_at(pos)]
 	if industry_reach(kind, pos) < Industry.MIN_RICHNESS:

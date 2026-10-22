@@ -18,7 +18,7 @@ const SPACING := 9.5
 
 const SHADER := """
 shader_type spatial;
-render_mode specular_schlick_ggx;
+render_mode specular_schlick_ggx, cull_disabled;
 uniform sampler2D noise_soft : filter_linear_mipmap, repeat_enable;
 varying vec3 tint;
 varying vec3 world_pos;
@@ -35,7 +35,8 @@ void fragment() {
 	// Clumps of leaves catch the light; gaps between them are dark.
 	float leaves = texture(noise_soft, world_pos.xz / 2.3 + world_pos.y / 3.1).r;
 	float fine = texture(noise_soft, world_pos.xy / 0.9 + world_pos.z / 1.7).r;
-	ALBEDO = tint * shade * (0.7 + 0.45 * leaves + 0.2 * fine) * 2.2;
+	ALBEDO = tint * shade * (0.7 + 0.45 * leaves + 0.2 * fine) * 2.6;
+	BACKLIGHT = ALBEDO * 0.45;
 	ROUGHNESS = 0.85;
 	SPECULAR = 0.2;
 }
@@ -151,7 +152,7 @@ func _build(key: Vector2i, near: bool) -> void:
 			xforms.append(Transform3D(b, Vector3(x, y - 0.3, z)))
 			# Summer greens, from deep oak to the yellower green of sycamore.
 			var g := _hash(gx, gz, 8)
-			var tint := Color("#3b5320").lerp(Color("#5a6e27"), g) if not conifer else Color("#2a3d2a")
+			var tint := Color("#47662a").lerp(Color("#6b8530"), g) if not conifer else Color("#33503a")
 			tints.append(tint.darkened(0.15 * _hash(gx, gz, 9)))
 			kinds.append(conifer)
 	var node := Node3D.new()
@@ -227,7 +228,6 @@ static func tree_mesh(conifer: bool, near: bool) -> ArrayMesh:
 			lumps.append([Vector3(0, 14.5, 0), Vector3(3.0, 2.6, 3.0)])
 		for l in lumps:
 			_blob(st, l[0], l[1], 1)
-	st.generate_normals()
 	var mesh := st.commit()
 	_meshes[key] = mesh
 	return mesh
@@ -254,6 +254,7 @@ static func _blob(st: SurfaceTool, c: Vector3, r: Vector3, subdiv: int) -> void:
 			var bump := 1.0 + 0.12 * sin(d.x * 7.0 + d.z * 5.0) * cos(d.y * 6.0)
 			# Darker underneath, where the crown shades itself.
 			st.set_color(Color(lerpf(0.55, 1.05, clampf(d.y * 0.5 + 0.5, 0.0, 1.0)), 0, 0))
+			st.set_normal(Vector3(d.x / r.x, d.y / r.y, d.z / r.z).normalized())
 			st.add_vertex(c + Vector3(d.x * r.x, d.y * r.y, d.z * r.z) * bump)
 
 
@@ -264,6 +265,8 @@ static func _cone(st: SurfaceTool, base: Vector3, h: float, r: float, sides: int
 		var a1 := TAU * (k + 1) / sides
 		var p0 := base + Vector3(cos(a0) * r, 0, sin(a0) * r)
 		var p1 := base + Vector3(cos(a1) * r, 0, sin(a1) * r)
+		var n := Vector3(cos((a0 + a1) * 0.5), r / h, sin((a0 + a1) * 0.5)).normalized()
+		st.set_normal(n)
 		st.set_color(Color(1.0, 0, 0))
 		st.add_vertex(top)
 		st.set_color(Color(0.6, 0, 0))
@@ -281,5 +284,6 @@ static func _prism(st: SurfaceTool, a: Vector3, b: Vector3, r0: float, r1: float
 		var d0 := Vector3(cos(a0), 0, sin(a0))
 		var d1 := Vector3(cos(a1), 0, sin(a1))
 		st.set_color(Color(shade, 0, 0))
+		st.set_normal((d0 + d1).normalized())
 		for v in [a + d0 * r0, b + d0 * r1, a + d1 * r0, a + d1 * r0, b + d0 * r1, b + d1 * r1]:
 			st.add_vertex(v)
