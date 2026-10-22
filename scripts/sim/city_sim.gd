@@ -253,8 +253,9 @@ func apply_now(cmd: Dictionary) -> bool:
 	return ok
 
 
-## Saves from before region links: the dead end farthest from the middle of
-## town was where trucks left, so it becomes the town's way out.
+## Saves from before region links: trucks used to leave by the dead end
+## farthest from the middle of town, so a county highway now runs on from
+## there 2 km toward the region, and its far end is the town's way out.
 func _guess_link() -> void:
 	if network.nodes.is_empty():
 		return
@@ -270,8 +271,16 @@ func _guess_link() -> void:
 		if network.segments_at(n).size() == 1 and network.nodes[n].distance_to(mid) > best_d + 0.01:
 			best_d = network.nodes[n].distance_to(mid)
 			best = n
-	if best != -1:
-		region_links.append(best)
+	if best == -1:
+		return
+	var seg: Dictionary = network.segments[network.segments_at(best)[0]]
+	var end: Vector3 = network.nodes[best]
+	var out: Vector3 = end - seg.ctrl
+	out.y = 0.0
+	if out.length() < 0.1:
+		out = end - mid
+	out = out.normalized() * 2000.0
+	_county_road(Vector2(end.x, end.z), Vector2(end.x + out.x, end.z + out.z), [1])
 
 
 ## The road wins (Brawn): whatever a new road runs through makes way for it.
