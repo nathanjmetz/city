@@ -69,15 +69,19 @@ func apply(cmd: Dictionary) -> bool:
 			if ok:
 				economy.money -= shapes_cost(lines, _road(cmd))
 		"build_roundabout":
-			var radius := clampf(float(cmd.radius), RoadShapes.ROUNDABOUT_MIN, RoadShapes.ROUNDABOUT_MAX)
+			var ring := RoadStyle.ring_type(_road(cmd))
+			var radius := RoadShapes.roundabout_radius(float(cmd.radius), _road(cmd))
 			var arcs := RoadShapes.roundabout(_v(cmd.center), radius)
-			if not _can_afford(arcs, _road(cmd)):
+			if not _can_afford(arcs, ring):
 				return false
-			ok = _build_roundabout(_v(cmd.center), radius, _road(cmd))
+			ok = _build_roundabout(_v(cmd.center), radius, ring)
 			if ok:
-				economy.money -= shapes_cost(arcs, _road(cmd))
+				economy.money -= shapes_cost(arcs, ring)
 		"upgrade_road":
 			var cost := upgrade_cost(int(cmd.seg), _road(cmd))
+			if network.segments.has(int(cmd.seg)) and (RoadStyle.is_ring(network.segments[int(cmd.seg)].type)
+					or RoadStyle.is_ring(_road(cmd))):
+				return false  # rings change only by rebuilding the roundabout
 			if cost < 0 or cost > economy.money:
 				return false
 			ok = network.set_type(int(cmd.seg), _road(cmd))
@@ -266,11 +270,10 @@ static func money_text(n: int) -> String:
 ## Builds the ring, joining every road it crosses, then clears the roads
 ## left inside it.
 func _build_roundabout(center: Vector3, radius: float, type: int) -> bool:
-	radius = clampf(radius, RoadShapes.ROUNDABOUT_MIN, RoadShapes.ROUNDABOUT_MAX)
 	network.begin_batch()
 	var ok := false
 	for arc in RoadShapes.roundabout(center, radius):
-		ok = network.build_road(arc[0], arc[1], arc[2], type) or ok
+		ok = network.build_road(arc[0], arc[1], arc[2], type, true) or ok
 	for id in network.segments.keys():
 		var c := network.curve_of(id)
 		var mid := RoadNetwork.bezier(c[0], c[1], c[2], 0.5)

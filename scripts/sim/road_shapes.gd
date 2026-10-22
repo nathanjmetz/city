@@ -11,6 +11,14 @@ const GRID_BLOCK_MIN := 60.0
 const GRID_BLOCK_MAX := 240.0
 const ROUNDABOUT_MIN := 14.0
 const ROUNDABOUT_MAX := 45.0
+## FHWA: two-lane roundabouts need at least a 150 ft inscribed circle.
+const ROUNDABOUT_MIN_2LANE := 23.0
+
+
+## The ring radius actually used for a roundabout of this road type.
+static func roundabout_radius(radius: float, type: int) -> float:
+	var lo := ROUNDABOUT_MIN if RoadStyle.ring_type(type) == RoadStyle.Type.RING else ROUNDABOUT_MIN_2LANE
+	return clampf(radius, lo, ROUNDABOUT_MAX)
 
 
 ## A grid of streets. a to b sets the direction and length of the first
@@ -48,9 +56,11 @@ static func roundabout(center: Vector3, radius: float) -> Array:
 	var out := []
 	var n := 8
 	var ctrl_r := radius / cos(PI / n)
+	# Arcs run with falling angle: counter-clockwise seen from above, so
+	# traffic keeps the island on its left as in the US.
 	for i in n:
-		var a0 := TAU * i / n
-		var a1 := TAU * (i + 1) / n
+		var a0 := -TAU * i / n
+		var a1 := -TAU * (i + 1) / n
 		var am := (a0 + a1) * 0.5
 		out.append([
 			center + Vector3(cos(a0), 0.0, sin(a0)) * radius,
@@ -91,3 +101,16 @@ static func _right(d: Vector3) -> Vector3:
 
 static func _line(s: Vector3, e: Vector3) -> Array:
 	return [s, s.lerp(e, 0.5), e]
+
+
+## Centre and radius of the circle a curve follows, or [] if it is straight.
+static func arc_circle(c: Array) -> Array:
+	var p0 := Vector3(c[0].x, 0.0, c[0].z)
+	var t := Vector3(c[1].x - c[0].x, 0.0, c[1].z - c[0].z).normalized()
+	var chord := Vector3(c[2].x, 0.0, c[2].z) - p0
+	var side := chord - t * chord.dot(t)
+	var theta := t.angle_to(chord)
+	if theta < 0.01 or side.length() < 0.001:
+		return []
+	var r := chord.length() * 0.5 / sin(theta)
+	return [p0 + side.normalized() * r, r]

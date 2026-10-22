@@ -2,7 +2,7 @@ class_name RoadStyle
 extends RefCounted
 ## Road types and their real US sizes, in metres.
 
-enum Type { STREET, AVENUE, BOULEVARD, HIGHWAY, RAMP }
+enum Type { STREET, AVENUE, BOULEVARD, HIGHWAY, RAMP, RING, RING2 }
 
 ## Each type: name, lanes, paved width, planted median width, whether it is
 ## one-way (traffic runs the way it was drawn), whether buildings can face it,
@@ -20,7 +20,15 @@ const TYPES := [
 	{"name": "Highway", "lanes": 3, "width": 15.0, "median": 0.0, "oneway": true, "lots": false, "grade": 0.05, "mph": 65},
 	# Interchange ramp: one lane, 8 ft right and 4 ft left shoulders.
 	{"name": "Ramp", "lanes": 1, "width": 7.2, "median": 0.0, "oneway": true, "lots": false, "grade": 0.08, "mph": 35},
+	# Roundabout rings, built by the roundabout tool rather than picked.
+	# FHWA (NCHRP 672): a single-lane circulatory roadway is 16-20 ft wide.
+	{"name": "Roundabout", "lanes": 1, "width": 6.0, "median": 0.0, "oneway": true, "lots": false, "grade": 0.05, "mph": 20, "menu": false},
+	# Two-lane (multilane) ring, about 32 ft.
+	{"name": "Roundabout, 2 lanes", "lanes": 2, "width": 9.6, "median": 0.0, "oneway": true, "lots": false, "grade": 0.05, "mph": 25, "menu": false},
 ]
+## Raised concrete ring inside a roundabout that long trucks can ride over
+## with their back wheels (FHWA: typically 10-15 ft).
+const TRUCK_APRON := 3.5
 
 const CURB_WIDTH := 0.3
 ## Grass strip between curb and sidewalk ("parkway").
@@ -46,6 +54,16 @@ const SIDEWALK_COLOR := Color(0.72, 0.71, 0.67)
 const MARKING_YELLOW := Color(0.85, 0.68, 0.18)
 const MARKING_WHITE := Color(0.88, 0.88, 0.86)
 const MEDIAN_COLOR := Color(0.26, 0.36, 0.17)
+
+
+## The ring a roundabout gets when built with this road type: one lane for
+## streets and ramps, two for bigger roads.
+static func ring_type(type: int) -> int:
+	return Type.RING if type == Type.STREET or type == Type.RAMP else Type.RING2
+
+
+static func is_ring(type: int) -> bool:
+	return type == Type.RING or type == Type.RING2
 
 
 ## Half the curb-to-curb width.

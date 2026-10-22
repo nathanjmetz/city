@@ -134,7 +134,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_PAGEDOWN: change_elevation(-1)
 			KEY_BRACKETLEFT: _resize(1.0 / 1.2)
 			KEY_BRACKETRIGHT: _resize(1.2)
-			KEY_ESCAPE: _cancel()
 	if not event is InputEventMouseButton:
 		return
 	var mb := event as InputEventMouseButton
@@ -162,7 +161,7 @@ func _process(_delta: float) -> void:
 	var curves := []
 	var ok := true
 	if mode == Mode.ROUNDABOUT:
-		curves = RoadShapes.roundabout(p, roundabout_radius)
+		curves = RoadShapes.roundabout(p, RoadShapes.roundabout_radius(roundabout_radius, road_type))
 	elif _points.is_empty():
 		return
 	elif mode == Mode.GRID:
@@ -180,7 +179,8 @@ func _process(_delta: float) -> void:
 	if curves.is_empty():
 		return
 	if mode == Mode.ROUNDABOUT or (mode == Mode.GRID and _points.size() == 2):
-		var cost := CitySim.shapes_cost(curves, road_type)
+		var cost := CitySim.shapes_cost(curves,
+			RoadStyle.ring_type(road_type) if mode == Mode.ROUNDABOUT else road_type)
 		ok = cost <= sim.economy.money
 		_label.text = "$" + CitySim.money_text(cost) + ("" if ok else "\nNot enough money")
 		_label.position = p + Vector3(0, 6, 0)
@@ -260,6 +260,16 @@ func _min_gap() -> float:
 
 static func _xz(v: Vector3) -> Array:
 	return [v.x, v.z, v.y]
+
+
+## True while a road is half drawn.
+func is_drawing() -> bool:
+	return not _points.is_empty()
+
+
+## Drops the road being drawn (Esc and right click).
+func cancel() -> void:
+	_cancel()
 
 
 func _cancel() -> void:
@@ -362,7 +372,7 @@ func _snapped(hit: Vector3) -> Vector3:
 func _preview_mesh(curves: Array) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var hw := RoadStyle.half_width(road_type)
+	var hw := RoadStyle.half_width(RoadStyle.ring_type(road_type) if mode == Mode.ROUNDABOUT else road_type)
 	for curve in curves:
 		var pts := RoadNetwork.sample_curve(curve[0], curve[1], curve[2])
 		RoadMesh.add_strip(st, pts, -hw, hw, 0.2)
@@ -416,7 +426,7 @@ func _update_hint() -> void:
 				_: text = "Move out to size the grid, then click to build.  " + size
 		Mode.ROUNDABOUT:
 			text = "Click to place a roundabout. Roads it crosses join it.  Size %d m  [ ]" \
-				% int(roundabout_radius * 2.0)
+				% int(RoadShapes.roundabout_radius(roundabout_radius, road_type) * 2.0)
 		Mode.BULLDOZE:
 			text = "Click a road to remove it."
 		Mode.UPGRADE:

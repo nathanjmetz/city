@@ -76,6 +76,39 @@ func _init() -> void:
 			best = minf(best, Geometry3D.get_closest_point_to_segment(p, a[i], a[i + 1]).distance_to(p))
 		worst = maxf(worst, absf(best - 30.0))
 	_check(worst < 2.0, "parallel road stays about 30 m away (off by %.2f m)" % worst)
+	# Roundabouts: a one-way ring turning counter-clockwise seen from above.
+	var rb := CitySim.new()
+	rb.apply({"type": "build_road", "start": [-100, 0], "ctrl": [0, 0], "end": [100, 0]})
+	rb.apply({"type": "build_roundabout", "center": [0, 0], "radius": 20})
+	var rings := 0
+	var ccw := true
+	for id in rb.network.segments:
+		var sg: Dictionary = rb.network.segments[id]
+		if sg.type == RoadStyle.Type.RING:
+			rings += 1
+			var c := rb.network.curve_of(id)
+			# Seen from above (x east, z south), counter-clockwise means the
+			# centre sits to the driver's left: cross product y > 0.
+			var fwd: Vector3 = c[2] - c[0]
+			var to_centre: Vector3 = -c[0]
+			ccw = ccw and fwd.cross(to_centre).y > 0.0 and rb.network.is_oneway(id)
+		else:
+			_check(not RoadStyle.is_ring(sg.type), "approach roads keep their type")
+	_check(rings >= 8, "street roundabout is a one-lane ring (%d arcs)" % rings)
+	_check(ccw, "ring is one-way, counter-clockwise from above")
+	var rb2 := RoadNetwork.new()
+	rb2.from_dict(JSON.parse_string(JSON.stringify(rb.network.to_dict())))
+	_check(rb2.is_oneway(rb2.segments.keys()[rb2.segments.size() - 1]) == rb.network.is_oneway(rb.network.segments.keys()[rb.network.segments.size() - 1]),
+		"one-way flag saved")
+	var big := CitySim.new()
+	big.apply({"type": "build_roundabout", "center": [0, 0], "radius": 14, "road": RoadStyle.Type.AVENUE})
+	var c0: Array = big.network.curve_of(big.network.segments.keys()[0])
+	_check(big.network.segments.values()[0].type == RoadStyle.Type.RING2 and absf(c0[0].length() - 23.0) < 0.5,
+		"avenue roundabout is two lanes, at least 150 ft across (FHWA)")
+	_check(not rb.apply({"type": "upgrade_road", "seg": rb.network.segments.keys()[0], "road": RoadStyle.Type.RING}),
+		"no upgrading to ring types")
+	var circ := RoadShapes.arc_circle(RoadShapes.roundabout(Vector3(5, 0, 7), 30.0)[3])
+	_check(circ[0].distance_to(Vector3(5, 0, 7)) < 0.5 and absf(circ[1] - 30.0) < 0.5, "arc circle found")
 	# Bridges: a road 7.5 m up passes over without a junction.
 	var o := CitySim.new()
 	o.economy.money = 100_000_000  # this test is about road rules, not money

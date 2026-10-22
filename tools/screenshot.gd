@@ -65,7 +65,7 @@ func _demo_town() -> void:
 	for c in _main.get_children():
 		if c is CityCamera:
 			cam = c
-	cam.look_at_point(Vector3(-40, 0, -60))
+	cam.look_at_point(Vector3(-40, 0, -60) if args.size() < 6 else Vector3(float(args[5]), 0, float(args[6])))
 	if args.size() >= 4:
 		cam.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
 

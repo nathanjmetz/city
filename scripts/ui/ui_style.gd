@@ -11,7 +11,7 @@ const PANEL := Color(0.075, 0.09, 0.115, 0.9)
 
 static func theme() -> Theme:
 	var t := Theme.new()
-	t.default_font_size = 15
+	t.default_font_size = 13
 	t.set_color("font_color", "Label", TEXT)
 	t.set_stylebox("panel", "PanelContainer", panel())
 	t.set_stylebox("normal", "Button", _box(Color(1, 1, 1, 0.045), 10))
@@ -39,6 +39,23 @@ static func panel(radius := 14) -> StyleBoxFlat:
 	b.content_margin_right = 12
 	b.content_margin_top = 8
 	b.content_margin_bottom = 8
+	return b
+
+
+## A bar docked flush to the top or bottom edge: square, with a hairline on
+## its inner edge. `raised` is the lighter tool tray that sits on the bottom bar.
+static func dock(top: bool, raised := false) -> StyleBoxFlat:
+	var b := StyleBoxFlat.new()
+	b.bg_color = PANEL.lightened(0.06) if raised else PANEL
+	b.border_color = Color(1, 1, 1, 0.08)
+	if top:
+		b.border_width_bottom = 1
+	else:
+		b.border_width_top = 1
+	b.content_margin_left = 10
+	b.content_margin_right = 10
+	b.content_margin_top = 4
+	b.content_margin_bottom = 4
 	return b
 
 
