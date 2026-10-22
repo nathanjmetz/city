@@ -1,26 +1,43 @@
 class_name Icon
 extends Control
-## Small line icons drawn in code, so they stay sharp at any size and need no
-## image files. Set `kind` to one of the names handled in _draw().
+## Small game icons by name. Common ones come from the brand's icon set
+## (Phosphor Bold, white SVGs in assets/brand/icons/, tinted with `color`);
+## road shapes, resources and other game-specific ones are drawn in code.
+## Set `kind` to a name in _FILES or one handled in _draw().
 
 @export var kind := "road":
 	set(v):
 		kind = v
 		queue_redraw()
-var color := Color(0.93, 0.95, 0.97):
+var color := Brand.INK:
 	set(v):
 		color = v
 		queue_redraw()
 ## Optional second colour (zone tints and the like).
-var accent := Color(0.45, 0.72, 0.95):
+var accent := Brand.BRAND_TEAL:
 	set(v):
 		accent = v
 		queue_redraw()
 
 
+## Names drawn from the brand icon set: kind -> file in assets/brand/icons/.
+const _FILES := {
+	"road": "road", "roads": "road", "bulldoze": "bulldoze", "homes": "homes", "zones": "zones",
+	"shops": "shops", "industry": "industry", "dezone": "dezone", "pause": "pause", "people": "people",
+	"jobs": "jobs", "car": "car", "money": "money", "budget": "money", "power": "power", "water": "water",
+	"fire": "fire", "police": "police", "health": "health", "school": "school", "services": "services",
+	"farms": "farms", "farmland": "farms", "traffic": "traffic", "signal": "signal", "views": "views",
+	"help": "help", "grid": "grid", "curve": "curve", "roundabout": "roundabout",
+}
+## These get a soft `accent` fill behind the line (zone tints and the like).
+const _DUOTONE := ["homes", "zones", "shops", "industry", "farms", "farmland"]
+static var _textures := {}
+
+
 func _init(k := "road", size_px := 40.0) -> void:
 	kind = k
 	custom_minimum_size = Vector2(size_px, size_px)
+	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
@@ -31,6 +48,12 @@ func _draw() -> void:
 	# Everything below is drawn on a 0..1 square, scaled by P().
 	var P := func(x: float, y: float) -> Vector2: return o + Vector2(x, y) * s
 	var line := func(a: Vector2, b: Vector2, width := w, col := color): draw_line(a, b, col, width, true)
+	if _FILES.has(kind):
+		var rect := Rect2(o, Vector2(s, s))
+		if kind in _DUOTONE:
+			draw_texture_rect(_texture(_FILES[kind] + "-fill"), rect, false, Color(accent, 0.45))
+		draw_texture_rect(_texture(_FILES[kind]), rect, false, color)
+		return
 	match kind:
 		"road", "roads":
 			_poly([P.call(0.3, 0.92), P.call(0.42, 0.08), P.call(0.58, 0.08), P.call(0.7, 0.92)], Color(color, 0.25))
@@ -319,6 +342,12 @@ func _dash(P: Callable, x: float, col: Color, width: float) -> void:
 	for i in 4:
 		var y0 := 0.1 + i * 0.23
 		draw_line(P.call(x, y0), P.call(x, y0 + 0.12), col, width, true)
+
+
+static func _texture(file: String) -> Texture2D:
+	if not _textures.has(file):
+		_textures[file] = load("res://assets/brand/icons/%s.svg" % file)
+	return _textures[file]
 
 
 func _poly(points: Array, col: Color) -> void:

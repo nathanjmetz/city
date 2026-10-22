@@ -7,6 +7,8 @@ config/name="Neighbors"
 config/description="A cozy 3D city builder."
 run/main_scene="res://scenes/menu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
+config/icon="res://assets/brand/app-icons/icon-256.png"
+config/windows_native_icon="res://assets/brand/app-icons/neighbors.ico"
 
 [autoload]
 
