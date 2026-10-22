@@ -320,6 +320,39 @@ func _draw() -> void:
 				for k in 3:
 					line.call(a2.lerp(b2, k / 3.0 + 0.05), a2.lerp(b2, k / 3.0 + 0.25), w * 0.8)
 				draw_circle(a2, s * 0.07, accent)
+		"park", "parks":
+			# A round shade tree over a bench.
+			draw_circle(P.call(0.5, 0.36), s * 0.27, Color(0.35, 0.68, 0.35))
+			line.call(P.call(0.5, 0.6), P.call(0.5, 0.9), w * 1.2, Color(0.55, 0.4, 0.28))
+			line.call(P.call(0.14, 0.82), P.call(0.4, 0.82), w)
+			line.call(P.call(0.6, 0.82), P.call(0.86, 0.82), w)
+		"courthouse":
+			# Columns under a pediment, a clock tower above.
+			_poly([P.call(0.12, 0.42), P.call(0.5, 0.26), P.call(0.88, 0.42)], Color(color, 0.7))
+			draw_rect(Rect2(P.call(0.4, 0.06), Vector2(0.2, 0.22) * s), color, false, w * 0.7)
+			draw_circle(P.call(0.5, 0.16), s * 0.05, color)
+			for x in [0.2, 0.4, 0.6, 0.8]:
+				line.call(P.call(x, 0.46), P.call(x, 0.84), w)
+			line.call(P.call(0.1, 0.9), P.call(0.9, 0.9), w * 1.2)
+		"water_landmark":
+			draw_circle(P.call(0.5, 0.3), s * 0.26, Color(0.55, 0.78, 0.95))
+			draw_rect(Rect2(P.call(0.3, 0.26), Vector2(0.4, 0.08) * s), Color(0.12, 0.23, 0.43))
+			line.call(P.call(0.32, 0.52), P.call(0.22, 0.94))
+			line.call(P.call(0.68, 0.52), P.call(0.78, 0.94))
+			line.call(P.call(0.27, 0.74), P.call(0.73, 0.74), w * 0.7)
+		"elevator":
+			# Concrete silos and a tall headhouse.
+			for x in [0.14, 0.34, 0.54]:
+				draw_rect(Rect2(P.call(x, 0.34), Vector2(0.18, 0.58) * s), Color(0.82, 0.8, 0.74))
+			draw_rect(Rect2(P.call(0.72, 0.08), Vector2(0.18, 0.84) * s), color)
+		"football":
+			# A goalpost over field lines.
+			for i in 3:
+				line.call(P.call(0.12, 0.66 + i * 0.12), P.call(0.88, 0.66 + i * 0.12), w * 0.6, Color(0.55, 0.8, 0.45))
+			line.call(P.call(0.5, 0.92), P.call(0.5, 0.5), w, Color(1.0, 0.82, 0.3))
+			line.call(P.call(0.26, 0.5), P.call(0.74, 0.5), w, Color(1.0, 0.82, 0.3))
+			line.call(P.call(0.26, 0.5), P.call(0.26, 0.1), w, Color(1.0, 0.82, 0.3))
+			line.call(P.call(0.74, 0.5), P.call(0.74, 0.1), w, Color(1.0, 0.82, 0.3))
 		"advice":
 			# A speech bubble with three dots.
 			var bubble := PackedVector2Array([P.call(0.12, 0.18), P.call(0.88, 0.18), P.call(0.88, 0.68),
