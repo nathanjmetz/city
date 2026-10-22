@@ -58,7 +58,4 @@ func _demo_town() -> void:
 			cam = c
 	cam.look_at_point(Vector3(-40, 0, -60))
 	if args.size() >= 4:
-		cam._yaw = deg_to_rad(float(args[1]))
-		cam._pitch = deg_to_rad(float(args[2]))
-		cam._dist = float(args[3])
-		cam._goal_dist = cam._dist
+		cam.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))

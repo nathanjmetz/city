@@ -69,18 +69,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		match (event as InputEventKey).keycode:
 			KEY_1: set_mode(Mode.STRAIGHT)
 			KEY_2: set_mode(Mode.CURVED)
-			KEY_3: set_mode(Mode.BULLDOZE)
-			KEY_G: set_mode(Mode.GRID)
-			KEY_O: set_mode(Mode.ROUNDABOUT)
+			KEY_3: set_mode(Mode.GRID)
+			KEY_4: set_mode(Mode.ROUNDABOUT)
+			KEY_B: set_mode(Mode.BULLDOZE)
 			KEY_BRACKETLEFT: _resize(1.0 / 1.2)
 			KEY_BRACKETRIGHT: _resize(1.2)
 			KEY_ESCAPE: _cancel()
-	if not (event is InputEventMouseButton and event.pressed):
+	if not event is InputEventMouseButton:
 		return
 	var mb := event as InputEventMouseButton
-	if mb.button_index == MOUSE_BUTTON_RIGHT:
+	# Right click cancels on release, unless it was a drag to move the camera.
+	if mb.button_index == MOUSE_BUTTON_RIGHT and not mb.pressed and not cam.right_dragged:
 		_cancel()
-	elif mb.button_index == MOUSE_BUTTON_LEFT:
+	elif mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not mb.alt_pressed:
 		_click()
 
 

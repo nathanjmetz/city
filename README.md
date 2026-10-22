@@ -12,18 +12,24 @@ An open map where you draw roads, paint zones along them, and buildings grow, li
 
 | Control | What it does |
 | --- | --- |
-| `1` Straight road | Click to start, click to finish. Keeps going from the end. Hold Shift to snap angles. |
-| `2` Curved road | Click start, click where it bends, click the end. |
-| `G` Grid | Lay out a whole neighborhood: click a corner, click to set the first street, move out and click. `[` `]` change block length. |
-| `O` Roundabout | Click to place. Roads it crosses join it. `[` `]` change size. |
-| `3` Bulldoze | Click a road to remove it. |
-| `4` `5` `6` Zones | Homes, shops, industry. Hold the left mouse button and drag over the lots along a road. |
-| `7` Dezone | Erase zones (buildings on them go away). |
-| `[` `]` | Brush size, grid block length or roundabout size. |
+| `1` Road | Click to start, click to finish. Keeps going from the end. Hold Shift to snap angles. |
+| `2` Curve | Click start, click where it bends, click the end. |
+| `3` Grid | Lay out a whole neighborhood: click a corner, click to set the first street, move out and click. `[` `]` change block length. |
+| `4` Roundabout | Click to place. Roads it crosses join it. `[` `]` change size. |
+| `B` Bulldoze | Click a road to remove it. |
+| `5` `6` `7` Zones | Homes, shops, industry. Hold the left mouse button and drag over the lots along a road. `[` `]` brush size. |
+| `8` Dezone | Erase zones (buildings on them go away). |
 | Right click / Esc | Stop drawing. |
-| WASD / arrows | Move the camera. |
-| Q / E, R / F | Rotate, tilt. Middle mouse drag does both. |
-| Scroll / pinch | Zoom. |
+
+The camera uses the Cities: Skylines 2 default keys:
+
+| Control | What it does |
+| --- | --- |
+| WASD / arrows, or right mouse drag | Move. Hold Shift to go faster. |
+| Q / E | Rotate. |
+| T / G | Tilt. |
+| R / F, scroll, or pinch | Zoom. |
+| Middle mouse drag, or Option (Alt) + drag on a Mac trackpad | Rotate and tilt. |
 
 Roads snap to junctions and to other roads, and crossing roads make a junction.
 Bends follow real US rules: no curve tighter than 12.8 m (42 ft), the AASHTO turning radius of a box truck.

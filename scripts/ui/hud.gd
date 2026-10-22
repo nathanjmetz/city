@@ -36,18 +36,18 @@ func _ready() -> void:
 	for entry in [
 		[RoadTool.Mode.STRAIGHT, "Road  1"],
 		[RoadTool.Mode.CURVED, "Curve  2"],
-		[RoadTool.Mode.GRID, "Grid  G"],
-		[RoadTool.Mode.ROUNDABOUT, "Roundabout  O"],
-		[RoadTool.Mode.BULLDOZE, "Bulldoze  3"],
+		[RoadTool.Mode.GRID, "Grid  3"],
+		[RoadTool.Mode.ROUNDABOUT, "Roundabout  4"],
+		[RoadTool.Mode.BULLDOZE, "Bulldoze  B"],
 	]:
 		var m: int = entry[0]
 		_road_buttons[m] = _button(row, entry[1], Color.WHITE, func(): road_tool.set_mode(m))
 	row.add_child(VSeparator.new())
 	for entry in [
-		[ZoneMap.Zone.RESIDENTIAL, "Homes  4"],
-		[ZoneMap.Zone.COMMERCIAL, "Shops  5"],
-		[ZoneMap.Zone.INDUSTRIAL, "Industry  6"],
-		[ZoneMap.Zone.NONE, "Dezone  7"],
+		[ZoneMap.Zone.RESIDENTIAL, "Homes  5"],
+		[ZoneMap.Zone.COMMERCIAL, "Shops  6"],
+		[ZoneMap.Zone.INDUSTRIAL, "Industry  7"],
+		[ZoneMap.Zone.NONE, "Dezone  8"],
 	]:
 		var z: int = entry[0]
 		var tint: Color = ZoneMap.COLORS[z] if z != ZoneMap.Zone.NONE else Color(1, 0.6, 0.55)
@@ -56,7 +56,7 @@ func _ready() -> void:
 	_button(row, "Clear map", Color.WHITE, func(): sim.apply({"type": "clear"}), false)
 
 	var tips := Label.new()
-	tips.text = "WASD move   Q/E rotate   R/F tilt   Scroll zoom   Middle drag rotate"
+	tips.text = "WASD move   Q/E rotate   T/G tilt   R/F zoom   Shift faster   Middle or Option drag: rotate   Right drag: move"
 	tips.position = Vector2(16, 12)
 	_style(tips)
 	root.add_child(tips)

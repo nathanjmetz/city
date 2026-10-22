@@ -50,21 +50,21 @@ func set_zone(z: int) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		match (event as InputEventKey).keycode:
-			KEY_4: set_zone(ZoneMap.Zone.RESIDENTIAL)
-			KEY_5: set_zone(ZoneMap.Zone.COMMERCIAL)
-			KEY_6: set_zone(ZoneMap.Zone.INDUSTRIAL)
-			KEY_7: set_zone(ZoneMap.Zone.NONE)
+			KEY_5: set_zone(ZoneMap.Zone.RESIDENTIAL)
+			KEY_6: set_zone(ZoneMap.Zone.COMMERCIAL)
+			KEY_7: set_zone(ZoneMap.Zone.INDUSTRIAL)
+			KEY_8: set_zone(ZoneMap.Zone.NONE)
 			KEY_BRACKETLEFT: if zone != OFF: _resize(1.0 / 1.25)
 			KEY_BRACKETRIGHT: if zone != OFF: _resize(1.25)
 	if zone == OFF:
 		return
 	if event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
-		_painting = event.pressed
+		_painting = event.pressed and not (event as InputEventMouseButton).alt_pressed
 		_last_paint = Vector3.INF
 		if _painting:
 			_paint()
-	elif event is InputEventMouseButton and event.pressed \
-			and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_RIGHT:
+	elif event is InputEventMouseButton and not event.pressed \
+			and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_RIGHT and not cam.right_dragged:
 		set_zone(OFF)
 
 
