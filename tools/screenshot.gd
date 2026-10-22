@@ -64,6 +64,19 @@ func _demo_town() -> void:
 		_demo_mail(sim)
 		_aim_camera()
 		return
+	if args0.size() >= 5 and args0[4] == "junction":
+		# Brawn's junction repro: a crossroads, a T and a sharp Y, zoned so
+		# they get curbs and sidewalks.
+		sim.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
+		sim.apply({"type": "build_road", "start": [0, -150], "ctrl": [0, 0], "end": [0, 150]})
+		sim.apply({"type": "build_road", "start": [120, 0], "ctrl": [120, 70], "end": [120, 150]})
+		sim.apply({"type": "build_road", "start": [-80, 0], "ctrl": [-130, 60], "end": [-180, 120]})
+		sim.apply({"type": "build_road", "start": [-80, 0], "ctrl": [-30, 60], "end": [-10, 150], "road": 1})
+		for id in sim.network.segments.keys():
+			for side in [-1, 1]:
+				sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": ZoneMap.Zone.RESIDENTIAL})
+		_aim_camera()
+		return
 	if args0.size() >= 5 and args0[4] == "hubs":
 		_demo_hubs(sim)
 		_aim_camera()
@@ -329,7 +342,7 @@ func _demo_mail(sim: CitySim) -> void:
 				pieces.append(c)
 		h.cells.append_array(pieces)
 		h.lands[node] = pieces
-		h.tree[node] = 1
+		h.built.append(node)
 	var c2: Vector2i = sim.mail._best_piece(sim, id)
 	if c2 != Vector2i.MAX:
 		h.cells.append(c2)
@@ -374,7 +387,7 @@ func _demo_hubs(sim: CitySim) -> void:
 	# Every branch of each development tree, to see them all.
 	for i in ids.size():
 		var h: Dictionary = sim.hubs.hubs[ids[i]]
-		h.dev = CivicHubs.dev_options(h)
+		h.built = CivicHubs.tree(h).map(func(n): return n.id)
 		sim.hubs._touch(h)
 	sim.tick()
 	for c in _main.get_children():

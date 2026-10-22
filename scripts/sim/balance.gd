@@ -510,46 +510,64 @@ const AMENITY_LAND_SCALE := 2.5
 # --- Hub development trees -------------------------------------------------------
 # Brawn (2026-10-22): every hub has a thick tree of buildings and options. Its
 # leader unlocks them from what the town can do (money, schools, size) and
-# what is around it, in town and in neighboring towns. Each: what it is for
-# ("landfill" options stay when a landfill becomes recycling, since a capped
-# landfill keeps its gas plant), build cost and monthly upkeep, plus its
-# effect. `needs` is read by CivicHubs.dev_problem.
-const HUB_DEVELOPMENTS := {
-	# Landfill gas to electricity: an engine plant burning the methane a
-	# big landfill gives off. Sells power (MWh a month) to neighbors or the grid.
-	"gas_plant": {"for": "landfill", "name": "Landfill gas plant", "cost": 2_200_000, "upkeep": 9_000,
-		"power": 700.0, "needs": {"pieces": 10, "tons": 20_000}},
-	# Yard waste and food scraps turned into compost for the farms around.
-	"compost": {"for": "landfill", "name": "Compost yard", "cost": 400_000, "upkeep": 4_000,
-		"compost": 300.0, "needs": {"farms": 1}},
-	# A transfer station takes in a neighbor town's trash for a fee (tons a
-	# month) and sends it up the mound.
-	"transfer": {"for": "landfill", "name": "Transfer station", "cost": 900_000, "upkeep": 7_000,
-		"garbage": 600.0, "needs": {"region": true}},
-	# Scrap metal yard: crushes and bales metal for factories here or nearby.
-	"scrap_yard": {"for": "recycling", "name": "Scrap metal yard", "cost": 600_000, "upkeep": 5_000,
-		"scrap": 60.0, "needs": {"factories": 3}},
-	# Extra sorting lines lift what recycling sells. They need trained
-	# workers: a school in town.
-	"glass_line": {"for": "recycling", "name": "Glass sorting line", "cost": 700_000, "upkeep": 4_000,
-		"sales": 0.35, "needs": {"level": 2, "school": true}},
-	"ewaste": {"for": "recycling", "name": "Electronics recycling", "cost": 1_200_000, "upkeep": 6_000,
-		"sales": 0.5, "needs": {"level": 3, "school": true, "population": 2_000}},
-	# Sorting a neighbor's recycling for a fee (tons a month).
-	"regional_mrf": {"for": "recycling", "name": "Regional sorting contract", "cost": 500_000, "upkeep": 3_000,
-		"garbage": 900.0, "needs": {"level": 3, "region": true}},
-	# Cemetery: each adds to the lift it gives the land around it.
-	"chapel": {"for": "cemetery", "name": "Chapel", "cost": 350_000, "upkeep": 2_000,
-		"value": 0.02, "reach": 100.0, "needs": {"population": 300}},
-	"garden": {"for": "cemetery", "name": "Memorial garden", "cost": 250_000, "upkeep": 2_500,
-		"value": 0.02, "reach": 50.0, "needs": {"dev": "chapel"}},
-	"veterans": {"for": "cemetery", "name": "Veterans memorial", "cost": 300_000, "upkeep": 1_000,
-		"value": 0.02, "reach": 150.0, "needs": {"population": 3_000}},
-	# Natural burial in the woods next door: lets the cemetery grow half
-	# again as far, under trees instead of lawn.
-	"woods": {"for": "cemetery", "name": "Natural burial woods", "cost": 200_000, "upkeep": 1_500,
-		"grow": 0.5, "needs": {"forest": 0.3}},
+# what is around it, in town and in neighboring towns. A capped landfill
+# under a recycling centre keeps the landfill tree (it still makes gas).
+## Development trees for landfills, recycling and cemeteries, in the shared
+## Agency format (see agency.gd): the hub's leader picks what to build next
+## on its own. `upkeep` is extra dollars a month. Needs starting "site_"
+## are about the hub itself (CivicHubs checks them): site_pieces (land),
+## site_tons (trash in the mound), site_level (recycling plant level),
+## site_forest (woods next to it). Effects: power, compost, scrap and garbage
+## are what it sells a month (MWh or tons), "sales*" lifts materials sold,
+## value/reach lift land value nearby, grow lets the hub grow further.
+const HUB_TREES := {
+	"landfill": [
+		# Landfill gas to electricity: an engine plant burning the methane a
+		# big, old landfill gives off.
+		{"id": "gas_plant", "name": "Landfill gas plant", "cost": 2_200_000, "upkeep": 9_000,
+			"needs": {"site_pieces": 10, "site_tons": 20_000}, "effects": {"power": 700.0},
+			"note": "sells power to the neighbors or the grid"},
+		# Yard waste and food scraps turned into compost for nearby farms.
+		{"id": "compost", "name": "Compost yard", "cost": 400_000, "upkeep": 4_000,
+			"needs": {"local:farm": 1}, "effects": {"compost": 300.0}, "note": "farms nearby buy the compost"},
+		# A transfer station takes in a neighbor town's trash for a fee.
+		{"id": "transfer", "name": "Transfer station", "cost": 900_000, "upkeep": 7_000,
+			"needs": {"link": 1, "region_buys:garbage": 1}, "effects": {"garbage": 600.0},
+			"note": "a neighbor town pays to send its trash here"},
+	],
+	"recycling": [
+		# Scrap metal yard: crushes and bales metal for the metal works.
+		{"id": "scrap_yard", "name": "Scrap metal yard", "cost": 600_000, "upkeep": 5_000,
+			"needs": {"local:metal": 1}, "effects": {"scrap": 60.0}, "note": "the metal works nearby buys scrap"},
+		# Extra sorting lines need trained workers.
+		{"id": "glass_line", "name": "Glass sorting line", "cost": 700_000, "upkeep": 4_000,
+			"needs": {"site_level": 2, "education": 0.3}, "effects": {"sales*": 0.35}},
+		{"id": "ewaste", "name": "Electronics recycling", "cost": 1_200_000, "upkeep": 6_000,
+			"requires": ["glass_line"], "needs": {"site_level": 3, "education": 0.5, "population": 2_000},
+			"effects": {"sales*": 0.5}},
+		# Sorting a neighbor town's recycling for a fee.
+		{"id": "regional_mrf", "name": "Regional sorting contract", "cost": 500_000, "upkeep": 3_000,
+			"needs": {"site_level": 3, "link": 1, "region_buys:garbage": 1}, "effects": {"garbage": 900.0}},
+	],
+	"cemetery": [
+		{"id": "chapel", "name": "Chapel", "cost": 350_000, "upkeep": 2_000,
+			"needs": {"population": 300}, "effects": {"value": 0.02, "reach": 100.0}},
+		{"id": "garden", "name": "Memorial garden", "cost": 250_000, "upkeep": 2_500,
+			"requires": ["chapel"], "needs": {}, "effects": {"value": 0.02, "reach": 50.0}},
+		{"id": "veterans", "name": "Veterans memorial", "cost": 300_000, "upkeep": 1_000,
+			"needs": {"population": 3_000}, "effects": {"value": 0.02, "reach": 150.0}},
+		# Natural burial in the woods next door: room to grow half again as
+		# far, under trees instead of lawn.
+		{"id": "woods", "name": "Natural burial woods", "cost": 200_000, "upkeep": 1_500,
+			"needs": {"site_forest": 0.3}, "effects": {"grow": 0.5}},
+	],
 }
+## The town funds its landfills, recycling and cemeteries: their leaders plan
+## projects against this many years of the hub's upkeep (Agency's "profit").
+const HUB_PLAN_YEARS := 3.0
+## Every waste site has room for this much of a neighbor's trash a month
+## (tons) before any transfer station, so towns without one can trade.
+const GARBAGE_BASE_TAKE_TONS := 150.0
 ## A town with no landfill or recycling of its own pays a neighbor to take its
 ## trash, if one will (otherwise it piles up).
 const GARBAGE_TONS_PER_RESIDENT_MONTH := 0.07
@@ -651,8 +669,8 @@ const MAIL_DAYS_PER_MONTH := 26.0
 const MAIL_MARGIN_PER_PIECE := 0.04
 ## Neighbouring towns' postage a regional hub keeps, dollars a person a month.
 const MAIL_REGIONAL_PER_PERSON := 0.15
-## Offline, each road out to the region counts as one neighbouring town this
-## size (small towns around Petersburg, Indiana).
+## A neighbouring town whose size the region doesn't report counts as this
+## many people (small towns around Petersburg, Indiana).
 const MAIL_OFFLINE_TOWN_POP := 1_800
 ## A city carrier route is about 500 delivery points; a carrier's day also
 ## tops out at this many streets. A parcel van makes this many business
@@ -696,30 +714,30 @@ const MAIL_ELECTRIC_SAVING := 0.15
 ## A regional hub runs one more truck each way for each neighbouring town,
 ## up to this many.
 const MAIL_REGIONAL_TRUCKS := 4
-## A cautious postmaster keeps up to this many months of income in reserve.
-const MAIL_RESERVE_MONTHS := 3.0
 ## The development tree's numbers: cost (from the postmaster's fund), land
-## (pieces next door), days to build (game days), weight (how much an
-## ambitious postmaster wants it), and gates: population, pieces (of mail a
-## day), shops, factories, towns and region_pop (neighbours), education
-## and ambition (the postmaster's own), town_school (service coverage).
+## (pieces next door), days to build (game days), weight (how much it does,
+## which Agency weighs against cost by the postmaster's temperament), and
+## gates: population, pieces (of mail a day), shops, factories, towns and
+## region_pop (neighbours), link (a road out to the region), education and
+## ambition (the postmaster's own), town_school (share of homes near a
+## school, Agency's "education"). Agency spends up to a few years' income.
 const MAIL_TREE := {
 	"po_boxes": {"cost": 40_000, "land": 0, "days": 1, "weight": 1, "population": 600},
 	"passports": {"cost": 25_000, "land": 0, "days": 1, "weight": 2, "population": 1_500, "education": 0.5},
-	"kiosk": {"cost": 60_000, "land": 0, "days": 1, "weight": 2, "population": 2_500, "town_school": 0.6},
+	"kiosk": {"cost": 60_000, "land": 0, "days": 1, "weight": 2, "population": 2_500, "town_school": 0.5},
 	"mural": {"cost": 80_000, "land": 0, "days": 2, "weight": 1, "population": 1_200, "ambition": 0.4},
 	"cluster_boxes": {"cost": 120_000, "land": 0, "days": 2, "weight": 3, "population": 3_000},
 	"more_vans": {"cost": 180_000, "land": 1, "days": 1, "weight": 3, "shops": 15, "vans": 2},
-	"electric_fleet": {"cost": 400_000, "land": 0, "days": 2, "weight": 2, "education": 0.6, "ambition": 0.6,
+	"electric_fleet": {"cost": 300_000, "land": 0, "days": 2, "weight": 2, "education": 0.6, "ambition": 0.6,
 		"population": 2_000},
 	"parcel_lockers": {"cost": 90_000, "land": 0, "days": 1, "weight": 2, "shops": 25},
 	"business_mail": {"cost": 150_000, "land": 1, "days": 2, "weight": 2, "factories": 8},
-	"parcel_depot": {"cost": 600_000, "land": 2, "days": 3, "weight": 4, "shops": 40, "vans": 3},
-	"parcel_ground_hub": {"cost": 2_500_000, "land": 4, "days": 4, "weight": 5, "shops": 60, "vans": 6,
+	"parcel_depot": {"cost": 400_000, "land": 2, "days": 3, "weight": 4, "shops": 40, "vans": 3},
+	"parcel_ground_hub": {"cost": 1_400_000, "land": 4, "days": 4, "weight": 5, "shops": 60, "vans": 6,
 		"region_pop": 15_000},
-	"sorting_room": {"cost": 350_000, "land": 1, "days": 2, "weight": 4, "pieces": 3_000},
-	"sorting_center": {"cost": 1_800_000, "land": 3, "days": 4, "weight": 6, "pieces": 10_000},
-	"regional_hub": {"cost": 3_500_000, "land": 4, "days": 5, "weight": 7, "towns": 2, "region_pop": 6_000,
+	"sorting_room": {"cost": 250_000, "land": 1, "days": 2, "weight": 4, "pieces": 3_000},
+	"sorting_center": {"cost": 900_000, "land": 3, "days": 4, "weight": 6, "pieces": 10_000},
+	"regional_hub": {"cost": 1_600_000, "land": 4, "days": 5, "weight": 7, "towns": 2, "region_pop": 6_000, "link": 1,
 		"education": 0.45},
 	"rail_mail": {"cost": 900_000, "land": 1, "days": 3, "weight": 3},
 	"air_mail": {"cost": 700_000, "land": 0, "days": 2, "weight": 3},

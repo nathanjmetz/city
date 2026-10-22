@@ -14,10 +14,11 @@ extends RefCounted
 ##     roads always win.
 ##   - Good mail service makes a town a little happier and better for
 ##     business.
-## Like every hub, it has a thick development tree (Brawn's standing rule):
-## the postmaster unlocks branches from what they can do (savings, schooling,
-## nerve) and from the town and the neighbouring towns around it. The
-## player's levers are the land and the funding, as for every hub.
+## Like every hub, it has a leader and a thick development tree (Brawn's
+## standing rule), on the shared Agency model: the postmaster unlocks
+## branches from what they can do (savings, schooling, nerve) and from the
+## town and the neighbouring towns around it. The player's levers are the
+## land, the funding, and their word to the postmaster (Permits guidance).
 ##
 ## Plain data stepped by the city, so every copy of the simulation agrees.
 ## Numbers live in Balance (MAIL_*).
@@ -33,8 +34,9 @@ const TICKS_PER_DAY := 24 * CitySim.TICKS_PER_HOUR
 ## route; streets farther apart start a new route.
 const ROUTE_REACH := 1200.0
 
-## The development tree. `needs` is the node before it on the branch;
-## numbers (cost, land, build time, thresholds) are in Balance.MAIL_TREE.
+## The development tree's words. `needs` is the node before it on the
+## branch; numbers (cost, land, build time, thresholds) are in
+## Balance.MAIL_TREE, and agency_tree() joins the two into Agency's shape.
 ## Every node gets a plain-words line for the info panel.
 const TREE := {
 	# Counter: what the front of the post office offers the town.
@@ -82,10 +84,11 @@ const LAST := ["Hadley", "Schroeder", "Kessler", "Pruitt", "Lindqvist", "Overton
 	"Stoll", "Huffman", "Albright", "Dearing", "Voss", "Pennington", "Kemper", "Rademacher", "Tolliver", "Yoder"]
 
 ## id -> {pos (gate: middle of the front edge), dir (unit, toward the road),
-## cell, cells: [Vector2i], built (tick), zip, postmaster {name, education,
-## caution, ambition}, fund (the postmaster's own money), funding (the city's
-## level, an index into Balance.MAIL_FUNDING), tree {node: tick done},
-## project {node, done (tick)} or {}, plan (why it's waiting, plain words),
+## cell, cells: [Vector2i], opened (tick), zip, leader (Agency.leader plus
+## the postmaster's name), built: [tree node ids] and why (Agency), fund (the
+## postmaster's own money), funding (the city's level, an index into
+## Balance.MAIL_FUNDING), lands {node: [pieces]}, project {node, done
+## (tick)} or {} (a node still going up), plan (what's next, plain words),
 ## want, short (fleet counters), boxed, pieces_today, parcels_waiting,
 ## delivered (pieces so far), ver}
 var offices := {}
@@ -99,10 +102,6 @@ var parcels := {}
 var trips := {}
 ## Vehicles that couldn't find a way; they try for home next round.
 var parked := []
-## Neighbouring towns, as the region reports them: {towns, population,
-## hub (a neighbour runs a regional sorting hub)}. Empty offline: every
-## region link then counts as one small town (Balance.MAIL_OFFLINE_TOWN_POP).
-var region := {}
 ## Bumped whenever any office's land or tree changes (the view redraws).
 var version := 0
 ## Shares of homes and businesses whose mail came recently, 0 to 1.
@@ -154,30 +153,15 @@ func add(sim: CitySim, pos: Vector3, dir: Vector3) -> int:
 	var h := draft(pos, dir)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([sim.city_seed, id, "postmaster"])
-	h.merge({"built": sim.tick_count, "zip": 47500 + rng.randi_range(1, 99),
-		"postmaster": _postmaster(sim, rng), "fund": 0.0, "funding": 1, "tree": {}, "lands": {}, "project": {},
+	var lead := Agency.leader(sim, hash([sim.city_seed, "mail", id]))
+	lead.name = "%s %s" % [FIRST[rng.randi() % FIRST.size()], LAST[rng.randi() % LAST.size()]]
+	h.merge({"opened": sim.tick_count, "zip": 47500 + rng.randi_range(1, 99),
+		"leader": lead, "built": [], "why": "", "fund": 0.0, "funding": 1, "lands": {}, "project": {},
 		"plan": "", "want": 0, "short": 0, "boxed": false, "pieces_today": 0, "parcels_waiting": 0,
 		"delivered": 0, "ver": 0})
 	offices[id] = h
 	version += 1
 	return id
-
-
-## The postmaster is hired from the town: schooling follows how many homes
-## have a school nearby, nerve and drive are their own.
-func _postmaster(sim: CitySim, rng: RandomNumberGenerator) -> Dictionary:
-	var schooled := 0
-	var homes := 0
-	for key in sim.buildings:
-		if int(sim.buildings[key].zone) == ZoneMap.Zone.RESIDENTIAL:
-			homes += 1
-			if sim.services.served.has(key) and sim.services.served[key].get(Services.Kind.SCHOOL, false):
-				schooled += 1
-	var share := 0.0 if homes == 0 else float(schooled) / homes
-	return {"name": "%s %s" % [FIRST[rng.randi() % FIRST.size()], LAST[rng.randi() % LAST.size()]],
-		"education": snappedf(clampf(0.25 + 0.5 * share + rng.randf_range(0.0, 0.25), 0.0, 1.0), 0.01),
-		"caution": snappedf(rng.randf_range(0.2, 0.8), 0.01),
-		"ambition": snappedf(rng.randf_range(0.2, 0.9), 0.01)}
 
 
 func remove(id: int) -> bool:
@@ -217,8 +201,13 @@ func extent(id: int) -> Array:
 	return [mid, r]
 
 
+## True once a tree node is built and open (not still going up).
+static func done(h: Dictionary, node: String) -> bool:
+	return node in h.built and not (not h.project.is_empty() and h.project.node == node)
+
+
 func has_node(id: int, node: String) -> bool:
-	return offices.has(id) and offices[id].tree.has(node)
+	return offices.has(id) and done(offices[id], node)
 
 
 ## The pieces of fleet lot the office has grown (beyond the first six and
@@ -251,8 +240,9 @@ func carriers(id: int) -> int:
 func vans(id: int) -> int:
 	var h: Dictionary = offices[id]
 	var n := Balance.MAIL_VANS
-	for node in h.tree:
-		n += int(Balance.MAIL_TREE[node].get("vans", 0))
+	for node in h.built:
+		if done(h, node):
+			n += int(Balance.MAIL_TREE[node].get("vans", 0))
 	return n
 
 
@@ -277,7 +267,7 @@ func monthly_cost() -> int:
 		var h: Dictionary = offices[id]
 		var size := 1.0 + Balance.HUB_PIECE_UPKEEP * maxi(0, h.cells.size() - BASE.size())
 		var upkeep := float(Balance.MAIL_UPKEEP)
-		if h.tree.has("electric_fleet"):
+		if done(h, "electric_fleet"):
 			upkeep *= 1.0 - Balance.MAIL_ELECTRIC_SAVING
 		total += upkeep * size + float(Balance.MAIL_FUNDING[h.funding].monthly)
 	return roundi(total)
@@ -288,18 +278,31 @@ func monthly_cost() -> int:
 func monthly_income(id: int) -> float:
 	var h: Dictionary = offices[id]
 	var income := float(h.pieces_today) * Balance.MAIL_DAYS_PER_MONTH * Balance.MAIL_MARGIN_PER_PIECE
-	if h.tree.has("regional_hub"):
+	if done(h, "regional_hub"):
 		income += neighbors().population * Balance.MAIL_REGIONAL_PER_PERSON
 	return income + float(Balance.MAIL_FUNDING[h.funding].monthly)
 
 
-## Neighbouring towns: what the region says, or one small town per link.
+## Neighbouring towns, from the same sources as Agency's region conditions:
+## last month's trade partners (Trade) and what the region server reports
+## in sim.region.neighbors ({name, population, mail_hub}). A solo town has
+## no neighbours. A neighbour of unknown size counts as
+## Balance.MAIL_OFFLINE_TOWN_POP people.
 func neighbors_of(sim: CitySim) -> Dictionary:
-	if not region.is_empty():
-		return {"towns": int(region.get("towns", 0)), "population": int(region.get("population", 0)),
-			"hub": bool(region.get("hub", false))}
-	return {"towns": sim.region_links.size(), "population": sim.region_links.size() * Balance.MAIL_OFFLINE_TOWN_POP,
-		"hub": false}
+	var towns := {}
+	for d in sim.trade.last_deals:
+		for side in ["buyer", "seller"]:
+			var who := str(d.get(side, "outside"))
+			if who != "outside" and who != "" and who != str(sim.region.get("me", "")):
+				towns[who] = towns.get(who, -1)
+	var hub := false
+	for town in sim.region.get("neighbors", []):
+		towns[str(town.get("name", ""))] = int(town.get("population", -1))
+		hub = hub or bool(town.get("mail_hub", false))
+	var pop := 0
+	for t in towns:
+		pop += Balance.MAIL_OFFLINE_TOWN_POP if towns[t] < 0 else towns[t]
+	return {"towns": towns.size(), "population": pop, "hub": hub}
 
 
 var _last_neighbors := {"towns": 0, "population": 0, "hub": false}
@@ -313,7 +316,7 @@ func neighbors() -> Dictionary:
 ## give them faster mail).
 func serves_region() -> bool:
 	for id in offices:
-		if offices[id].tree.has("regional_hub"):
+		if done(offices[id], "regional_hub"):
 			return true
 	return false
 
@@ -334,16 +337,16 @@ func lot_factor(sim: CitySim, key: String) -> float:
 	var id: int = offices.keys()[0]
 	var h: Dictionary = offices[id]
 	if zone == ZoneMap.Zone.RESIDENTIAL:
-		if h.tree.has("po_boxes"):
+		if done(h, "po_boxes"):
 			f += Balance.MAIL_PO_BOX_VALUE
-		if h.tree.has("passports"):
+		if done(h, "passports"):
 			f += Balance.MAIL_PASSPORT_VALUE
 	elif zone == ZoneMap.Zone.COMMERCIAL:
-		if h.tree.has("parcel_lockers") and parcel_served(sim, seg):
+		if done(h, "parcel_lockers") and parcel_served(sim, seg):
 			f += Balance.MAIL_LOCKER_VALUE
-	elif h.tree.has("business_mail"):
+	elif done(h, "business_mail"):
 		f += Balance.MAIL_BUSINESS_MAIL_VALUE
-	if h.tree.has("mural"):
+	if done(h, "mural"):
 		var d := CivicHubs.distance(h, sim.lots[key].pos)
 		if d < Balance.MAIL_MURAL_REACH:
 			f += Balance.MAIL_MURAL_VALUE * (1.0 - d / Balance.MAIL_MURAL_REACH)
@@ -374,7 +377,7 @@ func demand_shift(zone: int) -> float:
 func lot_problem(sim: CitySim, key: String) -> String:
 	if offices.is_empty() or not sim.lots.has(key) or served(sim, sim.lots[key].seg):
 		return ""
-	if sim.tick_count - int(offices[offices.keys()[0]].built) < Balance.MAIL_SERVED_TICKS:
+	if sim.tick_count - int(offices[offices.keys()[0]].opened) < Balance.MAIL_SERVED_TICKS:
 		return ""  # the first rounds haven't gone out yet
 	return "The mail hasn't come lately: every carrier is busy or no route reaches this street."
 
@@ -382,6 +385,11 @@ func lot_problem(sim: CitySim, key: String) -> String:
 # --- Stepping -------------------------------------------------------------------
 
 func tick(sim: CitySim) -> void:
+	if not sim.permits.locators.has("post_office"):
+		# Lets the player guide the postmaster from the office's panel.
+		sim.permits.locators["post_office"] = func(s: CitySim, id: int) -> Vector2:
+			var at: Vector3 = s.mail.extent(id)[0] if s.mail.offices.has(id) else Vector3.ZERO
+			return Vector2(at.x, at.z)
 	if offices.is_empty() and trips.is_empty():
 		return
 	if _hooked != sim.network:
@@ -534,7 +542,7 @@ func _rounds(sim: CitySim, weekday: int) -> void:
 	for id in ids:
 		var h: Dictionary = offices[id]
 		var per_route := Balance.MAIL_POINTS_PER_ROUTE
-		if h.tree.has("cluster_boxes"):
+		if done(h, "cluster_boxes"):
 			per_route = roundi(per_route * Balance.MAIL_CLUSTER_BOOST)
 		if weekday != 0:
 			var routes := plan_routes(sim, id, s[0], per_route, Balance.MAIL_STOPS_PER_ROUTE)
@@ -545,7 +553,7 @@ func _rounds(sim: CitySim, weekday: int) -> void:
 					h.short += 1
 					continue
 				_start(sim, id, "rural" if r.rural else "carrier", r.stops, curb)
-		if weekday != 0 or h.tree.has("more_vans"):
+		if weekday != 0 or done(h, "more_vans"):
 			var van_routes := plan_routes(sim, id, s[1], 1 << 20, Balance.MAIL_VAN_STOPS)
 			for r in van_routes:
 				if out(id, ["van"]) >= vans(id):
@@ -696,7 +704,7 @@ func _freight(sim: CitySim, inbound: bool) -> void:
 		if edge == Vector3.INF:
 			continue
 		var n := 1
-		if h.tree.has("regional_hub"):
+		if done(h, "regional_hub"):
 			n += mini(_last_neighbors.towns, Balance.MAIL_REGIONAL_TRUCKS)
 		for i in n:
 			if inbound:
@@ -779,14 +787,16 @@ func _decide(sim: CitySim) -> void:
 	for id in ids:
 		var h: Dictionary = offices[id]
 		if not h.project.is_empty() and sim.tick_count >= int(h.project.done):
-			h.tree[h.project.node] = sim.tick_count
 			h.project = {}
 			_touch(h)
+		# The player's word to the postmaster: grow sooner, or hold off.
+		var stance: String = sim.permits.guidance("post_office", id).stance
 		# Carriers all out on half the routes they wanted: a bigger lot.
-		var short: bool = h.want > 0 and float(h.short) / h.want >= Balance.HUB_GROW_BUSY_SHARE
+		var share := Balance.HUB_GROW_BUSY_SHARE * (0.5 if stance == "grow" else 1.0)
+		var short: bool = h.want > 0 and float(h.short) / h.want >= share
 		h.want = 0
 		h.short = 0
-		if short and h.cells.size() < int(BASE.size() * Balance.HUB_MAX_GROWTH):
+		if short and stance != "hold" and h.cells.size() < int(BASE.size() * Balance.HUB_MAX_GROWTH):
 			var c := _best_piece(sim, id)
 			h.boxed = c == Vector2i.MAX
 			if not h.boxed:
@@ -794,7 +804,7 @@ func _decide(sim: CitySim) -> void:
 				_touch(h)
 				sim.zones_changed.emit()
 		if h.project.is_empty():
-			_choose(sim, id)
+			_choose(sim, id, stance)
 
 
 ## Why a node isn't open to this postmaster yet, or "" if it is. Gates are
@@ -803,16 +813,19 @@ func locked(sim: CitySim, id: int, node: String) -> String:
 	var h: Dictionary = offices[id]
 	var n: Dictionary = TREE[node]
 	var b: Dictionary = Balance.MAIL_TREE[node]
-	if n.needs != "" and not h.tree.has(n.needs):
+	if n.needs != "" and not done(h, n.needs):
 		return "Needs %s first." % lower(TREE[n.needs].name)
-	var pm: Dictionary = h.postmaster
-	if pm.education < float(b.get("education", 0.0)):
+	# Agency's shared conditions first.
+	if not Agency.holds(sim, h, h.pos, yearly(id), "leader_edu", float(b.get("education", 0.0))):
 		return "Needs a postmaster with more schooling."
-	if pm.ambition < float(b.get("ambition", 0.0)):
+	if float(h.leader.ambition) < float(b.get("ambition", 0.0)):
 		return "This postmaster isn't one to push for it."
-	var pop := int(sim.stats.population)
-	if pop < int(b.get("population", 0)):
+	if not Agency.holds(sim, h, h.pos, yearly(id), "population", int(b.get("population", 0))):
 		return "Needs %s people in town." % CitySim.money_text(int(b.population))
+	if b.has("town_school") and not Agency.holds(sim, h, h.pos, yearly(id), "education", float(b.town_school)):
+		return "Needs more of the town's homes near a school."
+	if b.has("link") and not Agency.holds(sim, h, h.pos, yearly(id), "link", 1):
+		return "Needs a road out to the region."
 	if h.pieces_today < int(b.get("pieces", 0)):
 		return "Needs %s pieces of mail a day (now %s)." % [CitySim.money_text(int(b.pieces)),
 			CitySim.money_text(int(h.pieces_today))]
@@ -821,8 +834,6 @@ func locked(sim: CitySim, id: int, node: String) -> String:
 		return "Needs %d shops in town." % int(b.shops)
 	if counts[1] < int(b.get("factories", 0)):
 		return "Needs %d factories in town." % int(b.factories)
-	if b.has("town_school") and sim.service_coverage() < float(b.town_school):
-		return "Needs more of the town covered by schools and services."
 	var nb := _last_neighbors
 	if nb.towns < int(b.get("towns", 0)):
 		return "Needs %d neighboring towns linked by road." % int(b.towns)
@@ -860,39 +871,44 @@ func _business_counts(sim: CitySim) -> Array:
 	return [shops, factories]
 
 
-## Picks the next thing to build. An ambitious postmaster goes for the
-## biggest step open to them, a cautious one for the cheapest, and keeps
-## some savings back.
-func _choose(sim: CitySim, id: int) -> void:
-	var h: Dictionary = offices[id]
-	var pm: Dictionary = h.postmaster
-	var open := []
-	var nodes := TREE.keys()
-	nodes.sort()
-	for node in nodes:
-		if h.tree.has(node) or locked(sim, id, node) != "":
-			continue
-		open.append(node)
-	if open.is_empty():
-		h.plan = "Running the routes. Nothing new to build until the town or its neighbors grow."
-		return
-	var bold: bool = pm.ambition >= pm.caution
-	open.sort_custom(func(a, b):
-		var ca := float(Balance.MAIL_TREE[a].cost)
-		var cb := float(Balance.MAIL_TREE[b].cost)
-		var wa := float(Balance.MAIL_TREE[a].weight)
-		var wb := float(Balance.MAIL_TREE[b].weight)
-		if bold and wa != wb:
-			return wa > wb
-		if ca != cb:
-			return ca < cb
-		return a < b)
-	var reserve := float(pm.caution) * monthly_income(id) * Balance.MAIL_RESERVE_MONTHS
-	for node in open:
+## The tree in Agency's shape: {id, name, cost, requires, needs, effects,
+## note}. Mail's own gates (mail volume, shops, neighbours) are checked by
+## locked() before Agency sees a node; "weight" is how much a node does,
+## which Agency weighs against its cost by the postmaster's temperament.
+static func agency_tree() -> Array:
+	var out := []
+	for node in TREE:
 		var b: Dictionary = Balance.MAIL_TREE[node]
-		if h.fund - float(b.cost) < reserve:
-			h.plan = "Saving up for %s ($%s)." % [lower(TREE[node].name), CitySim.money_text(int(b.cost))]
-			return
+		out.append({"id": node, "name": TREE[node].name, "cost": int(b.cost),
+			"requires": [] if TREE[node].needs == "" else [TREE[node].needs], "needs": {},
+			"effects": {"service*": 0.05 * float(b.weight)}, "note": TREE[node].text})
+	return out
+
+
+## What the office takes in a year, as Agency reads a hub's profit.
+func yearly(id: int) -> float:
+	return monthly_income(id) * 12.0
+
+
+## The postmaster's next move, through Agency: of the nodes open to them
+## that the fund covers and that have land next door, the one they value
+## most (ambition reaches for the big step, caution keeps a cushion).
+func _choose(sim: CitySim, id: int, stance := "steady") -> void:
+	var h: Dictionary = offices[id]
+	var open := []
+	var saving := ""
+	var boxed := ""
+	var lands := {}
+	for node in agency_tree():
+		if node.id in h.built or locked(sim, id, node.id) != "":
+			continue
+		var b: Dictionary = Balance.MAIL_TREE[node.id]
+		if float(b.cost) > h.fund:
+			if saving == "":
+				saving = "Saving up for %s ($%s)." % [lower(node.name), CitySim.money_text(int(b.cost))]
+			continue
+		if int(b.land) > 0 and stance == "hold":
+			continue
 		var pieces := []
 		for k in int(b.land):
 			var c := _best_piece(sim, id, pieces)
@@ -900,19 +916,29 @@ func _choose(sim: CitySim, id: int) -> void:
 				break
 			pieces.append(c)
 		if pieces.size() < int(b.land):
-			h.plan = "Wants to build %s but there's no free land next door." % lower(TREE[node].name)
-			h.boxed = true
+			if boxed == "":
+				boxed = "Wants to build %s but there's no free land next door." % lower(node.name)
 			continue
-		h.cells.append_array(pieces)
-		h.lands[node] = pieces
-		h.fund -= float(b.cost)
-		h.project = {"node": node, "done": sim.tick_count + int(float(b.days) * TICKS_PER_DAY)}
-		h.plan = "Building %s." % lower(TREE[node].name)
-		h.boxed = false
-		_touch(h)
-		if not pieces.is_empty():
-			sim.zones_changed.emit()
+		lands[node.id] = pieces
+		open.append(node)
+	h.boxed = boxed != "" and open.is_empty()
+	var pick := Agency.develop(sim, h, open, h.pos, yearly(id))
+	if pick.is_empty():
+		h.plan = boxed if boxed != "" else saving if saving != "" else \
+			"Running the routes. Nothing new to build until the town or its neighbors grow."
+		if open.size() > 0 and saving == "":
+			h.plan = "Saving up before the next step."
 		return
+	var b: Dictionary = Balance.MAIL_TREE[pick.id]
+	var pieces: Array = lands[pick.id]
+	h.cells.append_array(pieces)
+	h.lands[pick.id] = pieces
+	h.fund -= float(b.cost)
+	h.project = {"node": pick.id, "done": sim.tick_count + int(float(b.days) * TICKS_PER_DAY)}
+	h.plan = "Building %s." % lower(pick.name)
+	_touch(h)
+	if not pieces.is_empty():
+		sim.zones_changed.emit()
 
 
 ## The free piece touching the office that keeps it most compact.
@@ -1059,7 +1085,7 @@ func to_dict() -> Dictionary:
 	for seg in parcels:
 		p[str(seg)] = parcels[seg]
 	return {"offices": out_offices, "next_id": _next_id, "trips": tr, "parked": parked, "letters": l,
-		"parcels": p, "region": region}
+		"parcels": p}
 
 
 func from_dict(d: Dictionary) -> void:
@@ -1080,13 +1106,16 @@ func from_dict(d: Dictionary) -> void:
 		h.boxed = false
 		h.funding = int(s.get("funding", 1))
 		h.fund = float(s.get("fund", 0.0))
-		for n in ["built", "zip", "want", "short", "pieces_today", "parcels_waiting", "delivered", "routes"]:
+		for n in ["opened", "zip", "want", "short", "pieces_today", "parcels_waiting", "delivered", "routes"]:
 			h[n] = int(s.get(n, 0))
-		var tree := {}
-		for n in s.get("tree", {}):
-			if TREE.has(n):
-				tree[str(n)] = int(s.tree[n])
-		h.tree = tree
+		var built := []
+		var saved_built = s.get("built", [])
+		# The first saves kept the tree as {node: tick}.
+		for n in (saved_built if saved_built is Array else []) + s.get("tree", {}).keys():
+			if TREE.has(str(n)) and not str(n) in built:
+				built.append(str(n))
+		h.built = built
+		h.why = str(s.get("why", ""))
 		var lands := {}
 		for n in s.get("lands", {}):
 			if TREE.has(n):
@@ -1096,8 +1125,8 @@ func from_dict(d: Dictionary) -> void:
 		h.project = {} if pr.is_empty() or not TREE.has(str(pr.get("node", ""))) else \
 			{"node": str(pr.node), "done": int(pr.done)}
 		h.plan = str(s.get("plan", ""))
-		var pm: Dictionary = s.get("postmaster", {})
-		h.postmaster = {"name": str(pm.get("name", "Ruth Hadley")), "education": float(pm.get("education", 0.5)),
+		var pm: Dictionary = s.get("leader", s.get("postmaster", {}))
+		h.leader = {"name": str(pm.get("name", "Ruth Hadley")), "edu": float(pm.get("edu", pm.get("education", 0.5))),
 			"caution": float(pm.get("caution", 0.5)), "ambition": float(pm.get("ambition", 0.5))}
 		offices[int(k)] = h
 	_next_id = int(d.get("next_id", 1))
@@ -1113,7 +1142,6 @@ func from_dict(d: Dictionary) -> void:
 	parcels.clear()
 	for seg in d.get("parcels", {}):
 		parcels[int(seg)] = int(d.parcels[seg])
-	region = d.get("region", {})
 	_net_dirty = true
 	version += 1
 

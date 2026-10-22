@@ -76,6 +76,25 @@ func _init() -> void:
 		s.apply({"type": "build_grid_shape", "points": shape, "block": 90})
 	_check(JSON.stringify(x.network.to_dict()) == JSON.stringify(y.network.to_dict()), "same result on every copy")
 
+	# Rectangle mode: a side dragged a few degrees off a diagonal county road
+	# snaps exactly parallel, and the depth keeps every corner square.
+	var r := CitySim.new()
+	r.apply({"type": "build_road", "start": [-300, -200], "ctrl": [0, 0], "end": [300, 200]})
+	var t := RoadTool.new()
+	t.sim = r
+	t.network = r.network
+	t.mode = RoadTool.Mode.GRID
+	var a0 := Vector3(0, 0, 30)
+	t._points.append(a0)
+	var road := atan2(200.0, 300.0)
+	var off := road + deg_to_rad(6.0)
+	var b0 := t._grid_corner(a0 + Vector3(cos(off), 0, sin(off)) * 300.0)
+	_check(absf(angle_difference(atan2(b0.z - a0.z, b0.x - a0.x), road)) < 0.0001, "rectangle side snaps parallel to the road")
+	t._points.append(b0)
+	var rect := t._rect(t._grid_corner(b0 + Vector3(-40, 0, 170)))
+	_check(absf((rect[1] - rect[0]).normalized().dot((rect[2] - rect[1]).normalized())) < 0.0001, "rectangle corners are square")
+	t.free()
+
 	print("ALL TESTS PASSED" if not failed else "TESTS FAILED")
 	quit(1 if failed else 0)
 
