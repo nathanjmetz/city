@@ -323,7 +323,15 @@ const CEMETERY_PEOPLE_PER_PIECE := 1_200
 
 ## Price of a unit of each traded good or service, in dollars. Hubs add their
 ## goods here (power in MWh, water in thousand gallons, garbage in tons...).
-const TRADE_PRICE := {}
+const TRADE_PRICE := {
+	# Wholesale power from landfill gas, per MWh.
+	"power": 60.0,
+	# Taking a town's trash, per ton: the US average landfill tipping fee.
+	"garbage": 55.0,
+	# Baled scrap metal and finished compost, per ton.
+	"scrap": 180.0,
+	"compost": 25.0,
+}
 ## Price for a good with no entry above.
 const TRADE_PRICE_DEFAULT := 100.0
 ## What no neighbor covers is bought from the outside world at this many
@@ -410,3 +418,49 @@ const AMENITY_DEMAND := 0.3
 ## lift times AMENITY_LAND_SCALE (0 to 1), until a land value model lands.
 const HOOD_LAND_BASE := 0.5
 const AMENITY_LAND_SCALE := 2.5
+# --- Hub development trees -------------------------------------------------------
+# Brawn (2026-10-22): every hub has a thick tree of buildings and options. Its
+# leader unlocks them from what the town can do (money, schools, size) and
+# what is around it, in town and in neighboring towns. Each: what it is for
+# ("landfill" options stay when a landfill becomes recycling, since a capped
+# landfill keeps its gas plant), build cost and monthly upkeep, plus its
+# effect. `needs` is read by CivicHubs.dev_problem.
+const HUB_DEVELOPMENTS := {
+	# Landfill gas to electricity: an engine plant burning the methane a
+	# big landfill gives off. Sells power (MWh a month) to neighbors or the grid.
+	"gas_plant": {"for": "landfill", "name": "Landfill gas plant", "cost": 2_200_000, "upkeep": 9_000,
+		"power": 700.0, "needs": {"pieces": 10, "tons": 20_000}},
+	# Yard waste and food scraps turned into compost for the farms around.
+	"compost": {"for": "landfill", "name": "Compost yard", "cost": 400_000, "upkeep": 4_000,
+		"compost": 300.0, "needs": {"farms": 1}},
+	# A transfer station takes in a neighbor town's trash for a fee (tons a
+	# month) and sends it up the mound.
+	"transfer": {"for": "landfill", "name": "Transfer station", "cost": 900_000, "upkeep": 7_000,
+		"garbage": 600.0, "needs": {"region": true}},
+	# Scrap metal yard: crushes and bales metal for factories here or nearby.
+	"scrap_yard": {"for": "recycling", "name": "Scrap metal yard", "cost": 600_000, "upkeep": 5_000,
+		"scrap": 60.0, "needs": {"factories": 3}},
+	# Extra sorting lines lift what recycling sells. They need trained
+	# workers: a school in town.
+	"glass_line": {"for": "recycling", "name": "Glass sorting line", "cost": 700_000, "upkeep": 4_000,
+		"sales": 0.35, "needs": {"level": 2, "school": true}},
+	"ewaste": {"for": "recycling", "name": "Electronics recycling", "cost": 1_200_000, "upkeep": 6_000,
+		"sales": 0.5, "needs": {"level": 3, "school": true, "population": 2_000}},
+	# Sorting a neighbor's recycling for a fee (tons a month).
+	"regional_mrf": {"for": "recycling", "name": "Regional sorting contract", "cost": 500_000, "upkeep": 3_000,
+		"garbage": 900.0, "needs": {"level": 3, "region": true}},
+	# Cemetery: each adds to the lift it gives the land around it.
+	"chapel": {"for": "cemetery", "name": "Chapel", "cost": 350_000, "upkeep": 2_000,
+		"value": 0.02, "reach": 100.0, "needs": {"population": 300}},
+	"garden": {"for": "cemetery", "name": "Memorial garden", "cost": 250_000, "upkeep": 2_500,
+		"value": 0.02, "reach": 50.0, "needs": {"dev": "chapel"}},
+	"veterans": {"for": "cemetery", "name": "Veterans memorial", "cost": 300_000, "upkeep": 1_000,
+		"value": 0.02, "reach": 150.0, "needs": {"population": 3_000}},
+	# Natural burial in the woods next door: lets the cemetery grow half
+	# again as far, under trees instead of lawn.
+	"woods": {"for": "cemetery", "name": "Natural burial woods", "cost": 200_000, "upkeep": 1_500,
+		"grow": 0.5, "needs": {"forest": 0.3}},
+}
+## A town with no landfill or recycling of its own pays a neighbor to take its
+## trash, if one will (otherwise it piles up).
+const GARBAGE_TONS_PER_RESIDENT_MONTH := 0.07
