@@ -82,6 +82,16 @@ func _ready() -> void:
 	_hint.add_theme_font_size_override("font_size", 20)
 	root.add_child(_hint)
 
+	var build := Label.new()
+	build.text = "Build " + _build_name()
+	build.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	build.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	build.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	build.position = Vector2(-12, -8)
+	_style(build)
+	build.add_theme_font_size_override("font_size", 12)
+	root.add_child(build)
+
 	_stats.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_stats.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_stats.position = Vector2(-16, 12)
@@ -130,6 +140,13 @@ func _update_stats() -> void:
 		sim.network.total_length() / 1000.0, homes,
 		sim.count_buildings(ZoneMap.Zone.COMMERCIAL), sim.count_buildings(ZoneMap.Zone.INDUSTRIAL),
 		sim.empty_zoned_lots().size()]
+
+
+## The build stamp written by the web preview workflow, or "dev" locally.
+static func _build_name() -> String:
+	if ResourceLoader.exists("res://scripts/build_info.gd"):
+		return load("res://scripts/build_info.gd").BUILD
+	return "dev"
 
 
 static func _style(l: Label) -> void:
