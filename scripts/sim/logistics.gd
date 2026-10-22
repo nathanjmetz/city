@@ -64,7 +64,7 @@ func tick(sim: CitySim) -> void:
 		var s: Dictionary = sim.industry.sites[id]
 		if s.stock >= 1.0 and sent < MAX_PER_ROUND and not s.drive.is_empty():
 			var k: Dictionary = Industry.KINDS[s.kind]
-			if _send(sim, {"ref": "site:%d" % id, "pos": _xz(s.drive[-1]), "drive": _lane(s.drive)}, _buyer(sim, s.drive[-1], "raw"),
+			if _send(sim, {"ref": "site:%d" % id, "pos": _xz(s.drive[-1]), "drive": _lane(s.drive)}, _buyer(sim, s.drive[-1], "raw", Industry.KINDS[s.kind].cargo),
 					k.purpose, {"good": k.cargo, "amount": 1}, "site"):
 				s.stock -= 1.0
 				sent += 1
@@ -73,7 +73,7 @@ func tick(sim: CitySim) -> void:
 	for id in ids:
 		var f: Dictionary = sim.farms.farms[id]
 		if grain.get(id, 0.0) >= Balance.GRAIN_TRUCK_BUSHELS and sent < MAX_PER_ROUND and not f.drive.is_empty():
-			if _send(sim, {"ref": "farm:%d" % id, "pos": _xz(f.drive[-1]), "drive": _lane(f.drive)}, _buyer(sim, f.drive[-1], "raw"),
+			if _send(sim, {"ref": "farm:%d" % id, "pos": _xz(f.drive[-1]), "drive": _lane(f.drive)}, _buyer(sim, f.drive[-1], "raw", f.crop),
 					"grain", {"good": f.crop, "amount": int(Balance.GRAIN_TRUCK_BUSHELS)}, "farm"):
 				grain[id] -= Balance.GRAIN_TRUCK_BUSHELS
 				sent += 1
@@ -139,7 +139,7 @@ func _produce(sim: CitySim) -> void:
 ## materials, else the nearest warehouse with room, else out by the highway.
 ## Goods go to the nearest shop, or a warehouse when one is nearer ("shop":
 ## shops only, for goods leaving a warehouse).
-func _buyer(sim: CitySim, from: Vector3, what: String) -> Dictionary:
+func _buyer(sim: CitySim, from: Vector3, what: String, good := "") -> Dictionary:
 	var zone := ZoneMap.Zone.INDUSTRIAL if what == "raw" else ZoneMap.Zone.COMMERCIAL
 	var best := ""
 	var best_d := INF
@@ -155,7 +155,7 @@ func _buyer(sim: CitySim, from: Vector3, what: String) -> Dictionary:
 			best_d = d
 			best = key
 	if what == "goods" or (what == "raw" and best == ""):
-		var wid := sim.warehouses.take_room(from)  # promised; released below if a shop is nearer
+		var wid := sim.warehouses.take_room(from, good if good != "" else what)  # promised; released below if a shop is nearer
 		if wid != -1:
 			var w: Dictionary = sim.warehouses.buildings[wid]
 			if best == "" or w.pos.distance_to(from) < best_d:
