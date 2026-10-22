@@ -111,7 +111,7 @@ func _demo_town() -> void:
 	# Power, water and a few services, placed beside the roads.
 	for entry in [[Services.Kind.SUBSTATION, Vector3(-260, 0, 40)], [Services.Kind.WATER_TOWER, Vector3(-215, 0, 40)],
 			[Services.Kind.FIRE, Vector3(60, 0, 40)], [Services.Kind.SCHOOL, Vector3(70, 0, -120)],
-			[Services.Kind.CLINIC, Vector3(-10, 0, 40)]]:
+			[Services.Kind.CLINIC, Vector3(-10, 0, 40)], [Services.Kind.POLICE, Vector3(-60, 0, 40)]]:
 		var site := Services.site_near(sim.network, entry[0], entry[1])
 		if not site.is_empty():
 			sim.apply({"type": "place_service", "kind": entry[0], "pos": [site[0].x, site[0].z],
