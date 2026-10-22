@@ -98,6 +98,9 @@ func _demo_town() -> void:
 	if args0.size() >= 5 and args0[4] in ["farms", "roadwins"]:
 		_demo_farms(sim)
 		return
+	if args0.size() >= 5 and args0[4] == "forest":
+		_demo_forest(sim)
+		return
 	# A main road with a roundabout, and a grid neighborhood beside it.
 	sim.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0], "road": 2})
 	sim.apply({"type": "build_road", "start": [120, 0], "ctrl": [160, 80], "end": [120, 180], "road": 1})
@@ -257,3 +260,29 @@ func _demo_farms(sim: CitySim) -> void:
 			c._views_button.button_pressed = true
 		elif va.size() >= 6 and va.size() < 8 and c is FarmTool:
 			c.set_mode(FarmTool.Mode.RESERVE)
+
+
+## A forestry company placed on the richest forest land near the origin,
+## grown until it has opened several logging stands.
+func _demo_forest(sim: CitySim) -> void:
+	var best := Vector3.ZERO
+	var rich := -1.0
+	for i in 61:
+		for j in 61:
+			var p := Vector3(-1500 + i * 50, 0, -1500 + j * 50)
+			var r := Resources.at(Resources.Kind.FOREST, p)
+			if r > rich:
+				rich = r
+				best = p
+	print("forest at ", best, " richness ", rich)
+	sim.apply({"type": "build_road", "start": [best.x - 600, best.z - 160], "ctrl": [best.x, best.z - 160], "end": [best.x + 600, best.z - 160]})
+	var ok := sim.apply({"type": "place_industry", "kind": "forest", "pos": [best.x, best.z - 60], "dir": [0, -1]})
+	print("placed ", ok, " ", sim.industry_problem("forest", Vector3(best.x, 0, best.z - 60), Vector3(0, 0, -1)))
+	for i in 40:
+		sim.industry.decide(sim.field_usable)
+	sim.industry_changed.emit()
+	for c in _main.get_children():
+		if c is CityCamera:
+			var args := OS.get_cmdline_user_args()
+			c.look_at_point(best + (Vector3(float(args[5]), 0, float(args[6])) if args.size() >= 7 else Vector3.ZERO))
+			c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
