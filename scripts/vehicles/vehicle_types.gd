@@ -138,6 +138,7 @@ const PURPOSE := {
 	"mail": {"mail_truck": 1.0},                         # Oshkosh NGDV
 	"rural_mail": {"rural_mail": 1.0},                   # carrier's own RHD Jeep
 	"mail_freight": {"mail_semi": 1.0},                  # USPS 53 ft trailer
+	"telecom": {"van": 4.0, "work_pickup": 3.0, "box_truck": 1.0},  # splicing vans, line crews, reel trucks
 }
 
 ## Some cargo needs its own rig, whatever the job is called: logs ride a

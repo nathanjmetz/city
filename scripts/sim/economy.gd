@@ -28,7 +28,7 @@ var difficulty := "normal"
 var milestone := 0
 var tax := DEFAULT_TAX.duplicate()
 ## This month's budget, per month: {"income": {zone: $}, "upkeep": $}.
-var budget := {"income": {}, "upkeep": 0, "fees": 0, "services": 0, "education": 0}
+var budget := {"income": {}, "upkeep": 0, "fees": 0, "services": 0, "education": 0, "telecom": 0}
 
 
 ## What it costs to build a road along this curve.
@@ -74,8 +74,8 @@ func update_budget(sim: CitySim) -> void:
 			continue  # a business with no power or water is closed
 		# Land near a landfill is worth less, near a cemetery a little more,
 		# and parks and landmarks lift it. Good mail service lifts it a little
-		# too; a smelly sewer plant lowers it.
-		var tax_due := building_tax(b, staffed, sim.parks.lot_value.get(key, 0.0)) * sim.hubs.lot_factor(sim, key) \
+		# too, and so do fiber and cell service; a smelly sewer plant lowers it.
+		var tax_due := building_tax(b, staffed, sim.parks.lot_value.get(key, 0.0) + sim.telecom.lot_lift(key)) * sim.hubs.lot_factor(sim, key) \
 			* sim.mail.lot_factor(sim, key) / 12.0
 		if sim.lots.has(key):
 			tax_due *= sim.services.water.land_value_factor(sim.services.buildings, sim.lots[key].pos)
@@ -92,6 +92,8 @@ func update_budget(sim: CitySim) -> void:
 	# (campuses themselves are tax-exempt, as in real life).
 	income[ZoneMap.Zone.COMMERCIAL] += sim.education.office_jobs() * Balance.EDUCATION_OFFICE_VALUE \
 		* tax[ZoneMap.Zone.COMMERCIAL] / 100.0 / 12.0
+	# The phone company pays property tax on its towers and fiber.
+	income[ZoneMap.Zone.COMMERCIAL] += sim.telecom.taxable_value() * tax[ZoneMap.Zone.COMMERCIAL] / 100.0 / 12.0
 	var upkeep := 0.0
 	for id in sim.network.segments:
 		upkeep += road_upkeep(sim.network.curve_of(id), sim.network.segments[id].type)
@@ -110,11 +112,12 @@ func update_budget(sim: CitySim) -> void:
 	budget = {"income": income, "upkeep": roundi(upkeep * d.upkeep), "fees": roundi(fees * d.income),
 		"services": roundi((sim.services.monthly_upkeep() + sim.hubs.monthly_cost() + sim.parks.monthly_upkeep()
 			+ sim.mail.monthly_cost()) * d.upkeep),
-		"education": roundi(sim.education.monthly_upkeep() * d.upkeep)}
+		"education": roundi(sim.education.monthly_upkeep() * d.upkeep),
+		"telecom": roundi(sim.telecom.monthly_upkeep() * d.upkeep)}
 
 
 func monthly_net() -> int:
-	var total := -int(budget.upkeep) - int(budget.services) - int(budget.get("education", 0)) + int(budget.fees)
+	var total := -int(budget.upkeep) - int(budget.services) - int(budget.get("education", 0)) - int(budget.get("telecom", 0)) + int(budget.fees)
 	for z in budget.income:
 		total += int(budget.income[z])
 	return total

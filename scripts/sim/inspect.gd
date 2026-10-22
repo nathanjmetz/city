@@ -41,6 +41,9 @@ static func pick(sim: CitySim, p: Vector3) -> Dictionary:
 	var cid := sim.education.at(p) if not sim.education.campuses.is_empty() else -1
 	if cid != -1:
 		return {"type": "campus", "id": cid}
+	var tid := sim.telecom.at(p) if not sim.telecom.companies.is_empty() else -1
+	if tid != -1:
+		return {"type": "telecom", "id": tid}
 	var fid := sim.farms.farm_at(p)
 	if fid == -1:
 		fid = sim.farms.field_at(p)
@@ -87,6 +90,8 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 			return [sim.education.campuses[sel.id].pos, Education.CELL * 0.75]
 		"post_office":
 			return sim.mail.extent(sel.id)
+		"telecom":
+			return [sim.telecom.companies[sel.id].pos, Telecom.CELL * 0.75]
 		"farm":
 			return [sim.farms.farms[sel.id].pos, Farms.FARMHOUSE_SIZE.length() * 0.5 + 3.0]
 		"lot":
@@ -106,6 +111,7 @@ static func exists(sim: CitySim, sel: Dictionary) -> bool:
 		"farm": return sim.farms.farms.has(sel.id)
 		"industry": return sim.industry.sites.has(sel.id)
 		"campus": return sim.education.campuses.has(sel.id)
+		"telecom": return sim.telecom.companies.has(sel.id)
 		"warehouse": return sim.warehouses.buildings.has(sel.id)
 		"park": return sim.parks.sites.has(sel.id)
 		"power": return sim.power.sites.has(sel.id)
@@ -127,6 +133,7 @@ static func describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 		"farm": return _farm(sim, sel.id)
 		"industry": return _industry(sim, sel.id)
 		"campus": return CampusInfo.describe(sim, sel.id)
+		"telecom": return TelecomInfo.describe(sim, sel.id)
 		"warehouse": return _warehouse(sim, sel.id)
 		"park": return _park(sim, sel.id)
 		"power": return _power(sim, sel.id)

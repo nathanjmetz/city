@@ -190,6 +190,17 @@ func _draw() -> void:
 		"power":
 			_poly([P.call(0.58, 0.06), P.call(0.22, 0.56), P.call(0.48, 0.56), P.call(0.4, 0.94),
 				P.call(0.78, 0.4), P.call(0.52, 0.4)], Color(1.0, 0.82, 0.3))
+		"tower":
+			# A lattice cell tower sending out signal arcs.
+			line.call(P.call(0.5, 0.22), P.call(0.3, 0.94))
+			line.call(P.call(0.5, 0.22), P.call(0.7, 0.94))
+			line.call(P.call(0.36, 0.72), P.call(0.64, 0.72), w * 0.7)
+			line.call(P.call(0.42, 0.5), P.call(0.58, 0.5), w * 0.7)
+			draw_circle(P.call(0.5, 0.2), s * 0.06, accent)
+			for k in 2:
+				var r := s * (0.17 + k * 0.12)
+				draw_arc(P.call(0.5, 0.2), r, -PI * 0.85, -PI * 0.55, 8, color, w * 0.7, true)
+				draw_arc(P.call(0.5, 0.2), r, -PI * 0.45, -PI * 0.15, 8, color, w * 0.7, true)
 		"water":
 			# Water tower: a round tank on legs.
 			draw_circle(P.call(0.5, 0.32), s * 0.24, Color(0.55, 0.78, 0.95))
