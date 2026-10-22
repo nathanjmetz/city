@@ -167,3 +167,37 @@ const FARM_BUSHELS_PER_ACRE := {"corn": 180.0, "soybeans": 55.0}
 const GRAIN_TRUCK_BUSHELS := 1_000.0
 ## A factory ships one load of goods to the shops for this many loads in.
 const FACTORY_LOADS_PER_GOODS := 2.0
+
+# --- Neighborhood character --------------------------------------------------
+# Brawn's rule (2026-10-22): neighborhoods grow a culture of their own, and
+# anything that fills in by itself (parks, trees, shopfronts, upkeep) matches
+# how well the neighborhood is doing.
+
+## How a neighborhood's wealth score (0 to 1) is made up. Land value is the
+## biggest part, as in real assessments; the rest is how well it is served
+## and whether its people have work.
+const HOOD_WEALTH_WEIGHTS := {"land_value": 0.4, "services": 0.25, "employment": 0.2, "occupancy": 0.15}
+## Wealth tiers, lowest first: the score a neighborhood needs to reach each
+## one, and how lavish the things that fill in there are (1.0 = a plain,
+## well-kept town standard). A thriving area gets a curated park with
+## flowerbeds and a fountain; a struggling one a worn lawn and a rusty swing.
+const HOOD_TIERS := [
+	{"key": "struggling", "name": "Struggling", "min": 0.0, "finish": 0.6, "upkeep": 0.6},
+	{"key": "working", "name": "Working class", "min": 0.3, "finish": 0.85, "upkeep": 0.85},
+	{"key": "comfortable", "name": "Comfortable", "min": 0.55, "finish": 1.0, "upkeep": 1.0},
+	{"key": "thriving", "name": "Thriving", "min": 0.8, "finish": 1.4, "upkeep": 1.3},
+]
+## A neighborhood moves up or down a tier only once its score passes the
+## line by this much, so it doesn't flicker back and forth.
+const HOOD_TIER_MARGIN := 0.05
+## How slowly character follows the numbers: half the gap between the score a
+## neighborhood has and the one its conditions call for closes in this many
+## game days (a game day is a month, so about a year; real neighborhoods
+## change over years, and at 1x a year is about half an hour of play).
+const HOOD_HALF_LIFE_DAYS := 12.0
+## Declining is faster than improving (disinvestment shows sooner than
+## gentrification does): the half-life is multiplied by this on the way down.
+const HOOD_DECLINE_SPEED := 0.75
+## How far apart homes can be and still count as one neighborhood, metres
+## (about a quarter-mile walk, the usual US planning radius).
+const HOOD_RADIUS := 400.0
