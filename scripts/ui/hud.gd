@@ -10,6 +10,7 @@ var _road_buttons := {}
 var _zone_buttons := {}
 var _type_buttons := {}
 var _parallel_button: Button
+var _elevation := Label.new()
 var _hint := Label.new()
 var _stats := Label.new()
 
@@ -39,13 +40,19 @@ func _ready() -> void:
 	rows.add_child(options)
 	for t in RoadStyle.TYPES.size():
 		var spec: Dictionary = RoadStyle.TYPES[t]
-		var label := "%s  %d lanes" % [spec.name, spec.lanes]
+		var label := "%s  %d lane%s" % [spec.name, spec.lanes, "" if spec.lanes == 1 else "s"]
 		_type_buttons[t] = _button(options, label, Color.WHITE, func(): road_tool.set_road_type(t))
 	options.add_child(VSeparator.new())
 	_road_buttons[RoadTool.Mode.UPGRADE] = _button(options, "Upgrade  U", Color.WHITE,
 		func(): road_tool.set_mode(RoadTool.Mode.UPGRADE))
 	_parallel_button = _button(options, "Parallel  P", Color.WHITE,
 		func(): road_tool.set_parallel(not road_tool.parallel))
+	options.add_child(VSeparator.new())
+	_button(options, "Lower", Color.WHITE, func(): road_tool.change_elevation(-1), false)
+	_elevation.custom_minimum_size = Vector2(70, 0)
+	_elevation.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	options.add_child(_elevation)
+	_button(options, "Raise", Color.WHITE, func(): road_tool.change_elevation(1), false)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 	rows.add_child(row)
@@ -115,7 +122,7 @@ func _button(row: HBoxContainer, text: String, tint: Color, action: Callable, to
 	b.text = text
 	b.toggle_mode = toggle
 	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = Vector2(104, 40)
+	b.custom_minimum_size = Vector2(88, 40)
 	if tint != Color.WHITE:
 		b.add_theme_color_override("font_color", tint)
 		b.add_theme_color_override("font_pressed_color", tint.lightened(0.4))
@@ -130,6 +137,7 @@ func _sync_buttons() -> void:
 	for t in _type_buttons:
 		_type_buttons[t].set_pressed_no_signal(t == road_tool.road_type)
 	_parallel_button.set_pressed_no_signal(road_tool.parallel)
+	_elevation.text = "Ground" if road_tool.elevation == 0.0 else "%+.1f m" % road_tool.elevation
 	for z in _zone_buttons:
 		_zone_buttons[z].set_pressed_no_signal(z == zone_tool.zone)
 

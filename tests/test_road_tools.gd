@@ -76,6 +76,32 @@ func _init() -> void:
 			best = minf(best, Geometry3D.get_closest_point_to_segment(p, a[i], a[i + 1]).distance_to(p))
 		worst = maxf(worst, absf(best - 30.0))
 	_check(worst < 2.0, "parallel road stays about 30 m away (off by %.2f m)" % worst)
+	# Bridges: a road 7.5 m up passes over without a junction.
+	var o := CitySim.new()
+	o.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0], "road": 3})
+	_check(o.lots.is_empty(), "no lots along a highway")
+	# Ramps up at the AASHTO 8% max grade: 7.5 m needs ~94 m.
+	_check(not o.apply({"type": "build_road", "start": [0, -150], "ctrl": [0, -125], "end": [0, -100, 7.5], "road": 1}),
+		"too steep refused")
+	_check(o.apply({"type": "build_road", "start": [0, -200], "ctrl": [0, -125], "end": [0, -50, 7.5], "road": 1}),
+		"ramp up at a legal grade")
+	_check(o.apply({"type": "build_road", "start": [0, -50, 7.5], "ctrl": [0, 0, 7.5], "end": [0, 50, 7.5], "road": 1}),
+		"overpass built")
+	var crossings := 0
+	for n in o.network.nodes:
+		if o.network.segments_at(n).size() > 2:
+			crossings += 1
+	_check(crossings == 0, "overpass makes no junction (got %d)" % crossings)
+	_check(not o.apply({"type": "build_road", "start": [50, -50, 3], "ctrl": [50, 0, 3], "end": [50, 50, 3]}),
+		"too low to pass over refused")
+	var o2 := CitySim.new()
+	o2.from_dict(JSON.parse_string(JSON.stringify(o.to_dict())))
+	var high := 0
+	for n in o2.network.nodes:
+		if o2.network.nodes[n].y > 7.0:
+			high += 1
+	_check(high == 2, "heights saved (got %d)" % high)
+	_check(RoadStyle.safe_speed_mph(46.0) >= 20 and RoadStyle.safe_speed_mph(46.0) <= 30, "a 150 ft loop ramp is a ~25 mph curve")
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 

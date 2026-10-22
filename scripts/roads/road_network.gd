@@ -12,6 +12,11 @@ const SAMPLES := 24
 const MIN_LENGTH := 4.0
 ## Crossings closer than this to an existing junction reuse that junction.
 const MERGE_DIST := 3.0
+## Roads closer in height than this meet; farther apart they pass over.
+const SAME_LEVEL := 1.0
+## Height between road surfaces where one crosses over another: 16.5 ft
+## (5.0 m) AASHTO vertical clearance plus a 1.5 m bridge deck.
+const CLEARANCE := 6.5
 
 var nodes := {}     # int -> Vector3
 var segments := {}  # int -> {"a": int, "b": int, "ctrl": Vector3, "type": RoadStyle.Type}
@@ -85,10 +90,13 @@ func segments_at(node_id: int) -> Array:
 	return out
 
 
-func find_node_near(pos: Vector3, max_dist: float) -> int:
+## Closest junction within max_dist across the ground and max_dy up or down.
+func find_node_near(pos: Vector3, max_dist: float, max_dy := INF) -> int:
 	var best := -1
 	var best_d := max_dist
 	for id in nodes:
+		if absf(nodes[id].y - pos.y) > max_dy:
+			continue
 		var d: float = _flat(nodes[id]).distance_to(_flat(pos))
 		if d <= best_d:
 			best_d = d
@@ -97,7 +105,7 @@ func find_node_near(pos: Vector3, max_dist: float) -> int:
 
 
 ## Closest point on any segment. Returns {} or {"seg", "t", "point", "dist"}.
-func find_segment_near(pos: Vector3, max_dist: float) -> Dictionary:
+func find_segment_near(pos: Vector3, max_dist: float, max_dy := INF) -> Dictionary:
 	var best := {}
 	var best_d := max_dist
 	var p := _flat(pos)
@@ -113,6 +121,9 @@ func find_segment_near(pos: Vector3, max_dist: float) -> Dictionary:
 				var seg_len := _flat(prev).distance_to(_flat(cur))
 				var f := 0.0 if seg_len < 0.001 else _flat(prev).distance_to(q) / seg_len
 				var t := (float(i - 1) + f) / n
+				if absf(bezier(c[0], c[1], c[2], t).y - pos.y) > max_dy:
+					prev = cur
+					continue
 				best_d = d
 				best = {"seg": id, "t": t, "point": bezier(c[0], c[1], c[2], t), "dist": d}
 			prev = cur
@@ -214,7 +225,7 @@ func split_segment(seg_id: int, t: float) -> int:
 	var s: Dictionary = segments[seg_id]
 	var c := curve_of(seg_id)
 	var mid := bezier(c[0], c[1], c[2], t)
-	var existing := find_node_near(mid, MERGE_DIST)
+	var existing := find_node_near(mid, MERGE_DIST, SAME_LEVEL)
 	if existing == s.a or existing == s.b:
 		return existing
 	segments.erase(seg_id)
@@ -230,11 +241,11 @@ func to_dict() -> Dictionary:
 	var n := {}
 	for id in nodes:
 		var p: Vector3 = nodes[id]
-		n[str(id)] = [p.x, p.z]
+		n[str(id)] = [p.x, p.z, p.y]
 	var s := {}
 	for id in segments:
 		var seg: Dictionary = segments[id]
-		s[str(id)] = [seg.a, seg.b, seg.ctrl.x, seg.ctrl.z, seg.type]
+		s[str(id)] = [seg.a, seg.b, seg.ctrl.x, seg.ctrl.z, seg.type, seg.ctrl.y]
 	return {"version": 1, "next_id": _next_id, "nodes": n, "segments": s}
 
 
@@ -243,10 +254,11 @@ func from_dict(d: Dictionary) -> void:
 	segments.clear()
 	for k in d.get("nodes", {}):
 		var p: Array = d.nodes[k]
-		nodes[int(k)] = Vector3(p[0], 0.0, p[1])
+		nodes[int(k)] = Vector3(p[0], p[2] if p.size() > 2 else 0.0, p[1])
 	for k in d.get("segments", {}):
 		var s: Array = d.segments[k]
-		segments[int(k)] = {"a": int(s[0]), "b": int(s[1]), "ctrl": Vector3(s[2], 0.0, s[3]),
+		segments[int(k)] = {"a": int(s[0]), "b": int(s[1]),
+			"ctrl": Vector3(s[2], s[5] if s.size() > 5 else 0.0, s[3]),
 			"type": int(s[4]) if s.size() > 4 else 0}
 	_next_id = int(d.get("next_id", 1))
 	_changed()
@@ -274,13 +286,13 @@ func _changed() -> void:
 
 
 func _resolve_endpoint(pos: Vector3) -> int:
-	var n := find_node_near(pos, 0.5)
+	var n := find_node_near(pos, 0.5, SAME_LEVEL)
 	if n != -1:
 		return n
-	var s := find_segment_near(pos, 0.5)
+	var s := find_segment_near(pos, 0.5, SAME_LEVEL)
 	if not s.is_empty():
 		return split_segment(s.seg, s.t)
-	return _add_node(Vector3(pos.x, 0.0, pos.z))
+	return _add_node(pos)
 
 
 func _add_node(pos: Vector3) -> int:
@@ -305,6 +317,30 @@ func _has_segment(a: int, b: int) -> bool:
 	return false
 
 
+## Why a new road can't cross the roads already there, or "" if it can:
+## it must meet them level or clear them by CLEARANCE.
+func crossing_problem(p0: Vector3, p1: Vector3, p2: Vector3) -> String:
+	var n := 32
+	var new_pts := sample_curve(p0, p1, p2, n)
+	var box := _bounds(new_pts)
+	for id in segments:
+		var old_pts := sample_segment(id, n)
+		if not box.intersects(_bounds(old_pts), true):
+			continue
+		for i in n:
+			for j in n:
+				var hit = Geometry2D.segment_intersects_segment(
+					_v2(new_pts[i]), _v2(new_pts[i + 1]), _v2(old_pts[j]), _v2(old_pts[j + 1]))
+				if hit == null:
+					continue
+				var fi := _v2(new_pts[i]).distance_to(hit) / maxf(_v2(new_pts[i]).distance_to(_v2(new_pts[i + 1])), 0.001)
+				var fj := _v2(old_pts[j]).distance_to(hit) / maxf(_v2(old_pts[j]).distance_to(_v2(old_pts[j + 1])), 0.001)
+				var dy := absf(lerpf(new_pts[i].y, new_pts[i + 1].y, fi) - lerpf(old_pts[j].y, old_pts[j + 1].y, fj))
+				if dy >= SAME_LEVEL and dy < CLEARANCE:
+					return "Not enough room to pass: %.1f m. Crossings need 16.5 ft (5 m) clearance under the deck (AASHTO)." % dy
+	return ""
+
+
 ## The first place the new curve crosses an existing road away from any known
 ## junction. Returns {} or {"seg", "t_seg", "t_new"}.
 func _first_crossing(p0: Vector3, p1: Vector3, p2: Vector3, cuts: Array, ends: Array) -> Dictionary:
@@ -327,6 +363,11 @@ func _first_crossing(p0: Vector3, p1: Vector3, p2: Vector3, cuts: Array, ends: A
 				if hit == null:
 					continue
 				var hp := Vector3(hit.x, 0.0, hit.y)
+				var fi0 := _v2(new_pts[i]).distance_to(hit) / maxf(_v2(new_pts[i]).distance_to(_v2(new_pts[i + 1])), 0.001)
+				var fj0 := _v2(old_pts[j]).distance_to(hit) / maxf(_v2(old_pts[j]).distance_to(_v2(old_pts[j + 1])), 0.001)
+				var dy := lerpf(new_pts[i].y, new_pts[i + 1].y, fi0) - lerpf(old_pts[j].y, old_pts[j + 1].y, fj0)
+				if absf(dy) >= SAME_LEVEL:
+					continue  # passes over or under
 				var near_known := false
 				for q in avoid:
 					if _flat(q).distance_to(hp) < MERGE_DIST:
