@@ -16,6 +16,11 @@ var _kind := UiStyle.label("", 11, UiStyle.MUTED)
 var _status := UiStyle.label("", 13)
 var _rows := GridContainer.new()
 var _problems := VBoxContainer.new()
+## The one lever a bus depot has: the city's monthly subsidy.
+var _subsidy := HBoxContainer.new()
+var _subsidy_value := UiStyle.label("", 12)
+var _subsidy_for := -1
+var _log := VBoxContainer.new()
 ## Buttons for what the selection can do (upgrade, demolish), when it says.
 var _actions := VBoxContainer.new()
 var _action_key := ""
@@ -63,6 +68,25 @@ func _ready() -> void:
 	col.add_child(_rows)
 	_problems.add_theme_constant_override("separation", 2)
 	col.add_child(_problems)
+	_subsidy.add_theme_constant_override("separation", 6)
+	var lab := UiStyle.label("City funding", 12, UiStyle.MUTED)
+	lab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_subsidy.add_child(lab)
+	for step in [-1, 1]:
+		var b := Button.new()
+		b.text = "−" if step < 0 else "+"
+		b.custom_minimum_size = Vector2(26, 22)
+		b.tooltip_text = "Less funding from the city" if step < 0 else "More funding from the city"
+		b.pressed.connect(func(): _nudge_subsidy(step))
+		_subsidy.add_child(b)
+		if step < 0:
+			_subsidy_value.custom_minimum_size = Vector2(84, 0)
+			_subsidy_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			_subsidy.add_child(_subsidy_value)
+	_subsidy.visible = false
+	col.add_child(_subsidy)
+	_log.add_theme_constant_override("separation", 1)
+	col.add_child(_log)
 	_actions.add_theme_constant_override("separation", 4)
 	col.add_child(_actions)
 
@@ -116,9 +140,43 @@ func _refresh() -> void:
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		l.custom_minimum_size = Vector2(236, 0)
 		_problems.add_child(l)
+	_subsidy.visible = d.has("subsidy")
+	if _subsidy.visible:
+		_subsidy_for = int(d.subsidy.id)
+		var lv: Array = Balance.BUS_FUNDING_LEVELS[_level(int(d.subsidy.amount))]
+		_subsidy_value.text = lv[0]
+		_subsidy_value.tooltip_text = "$%s a month" % CitySim.money_text(int(d.subsidy.amount))
+		_subsidy_value.mouse_filter = Control.MOUSE_FILTER_PASS
+	# What the hub decided lately, and why.
+	for c in _log.get_children():
+		_log.remove_child(c)
+		c.queue_free()
+	for line in d.get("log", []):
+		var l := UiStyle.label("·  " + line, 11, UiStyle.MUTED)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size = Vector2(236, 0)
+		_log.add_child(l)
 	_show_actions(d.get("actions", []))
 	_sync_guide()
 	reset_size()
+
+
+func _nudge_subsidy(step: int) -> void:
+	var b: Dictionary = sim.services.buildings.get(_subsidy_for, {})
+	if b.is_empty():
+		return
+	var i := clampi(_level(int(b.get("subsidy", 0))) + step, 0, Balance.BUS_FUNDING_LEVELS.size() - 1)
+	sim.apply({"type": "set_bus_subsidy", "id": _subsidy_for, "amount": Balance.BUS_FUNDING_LEVELS[i][1]})
+	_refresh()
+
+
+## The funding level nearest a monthly amount.
+static func _level(amount: int) -> int:
+	var best := 0
+	for i in Balance.BUS_FUNDING_LEVELS.size():
+		if absi(Balance.BUS_FUNDING_LEVELS[i][1] - amount) < absi(Balance.BUS_FUNDING_LEVELS[best][1] - amount):
+			best = i
+	return best
 
 
 func _show_actions(actions: Array) -> void:

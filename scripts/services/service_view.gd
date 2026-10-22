@@ -34,9 +34,10 @@ func setup(s: CitySim) -> void:
 
 func _sync() -> void:
 	for id in _nodes.keys():
-		# Gone, or moved with Move It.
+		# Gone, moved with Move It, or grown onto the land next door.
 		if not sim.services.buildings.has(id) or not _nodes[id].get_meta("at").is_equal_approx(
-				Transform3D(Basis.looking_at(sim.services.buildings[id].dir, Vector3.UP), sim.services.buildings[id].pos)):
+				Transform3D(Basis.looking_at(sim.services.buildings[id].dir, Vector3.UP), sim.services.buildings[id].pos)) \
+				or _nodes[id].get_meta("size") != Services.size_of(sim.services.buildings[id]):
 			_trees.remove(_nodes[id].get_meta("tree_key"))
 			_nodes[id].queue_free()
 			_nodes.erase(id)
@@ -75,7 +76,8 @@ func _spawn(b: Dictionary) -> Node3D:
 	# Local -Z faces the road.
 	root.basis = Basis.looking_at(b.dir, Vector3.UP)
 	root.set_meta("at", root.transform)
-	var size: Vector2 = Services.KINDS[b.kind].size
+	var size: Vector2 = Services.size_of(b)
+	root.set_meta("size", size)
 	# Paved footing under the site, its edge running down into the ground on a slope.
 	var footing := MeshInstance3D.new()
 	var box := BoxMesh.new()

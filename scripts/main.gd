@@ -77,6 +77,9 @@ func _ready() -> void:
 	cars.setup(sim.traffic, _tick_fraction)
 	add_child(cars)
 
+	var bus_view := BusView.new()
+	bus_view.setup(sim)
+	add_child(bus_view)
 	var look := DayNight.new()
 	look.setup(sim, sky, _tick_fraction)
 	add_child(look)
@@ -214,6 +217,7 @@ func _ready() -> void:
 	hud.move_tool = move_tool
 	hud.info_view = info_view
 	hud.service_view = service_view
+	hud.bus_view = bus_view
 	hud.select_tool = select_tool
 	hud.lot_alerts = lot_alerts
 	add_child(hud)

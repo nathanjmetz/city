@@ -55,6 +55,8 @@ var warehouses := Warehouses.new()
 var logistics := Logistics.new()
 ## Land saved for farming or an industry: no roads or zoning on it.
 var reserves := Reserves.new()
+## Bus depots and school buses, which run themselves (scripts/transit/).
+var buses := BusNet.new()
 ## Where this city sits in the shared region (its own coordinates start at
 ## 0): the land under it is read there. 0 in solo play.
 var terrain_offset := Vector2.ZERO:
@@ -198,6 +200,8 @@ func apply_now(cmd: Dictionary) -> bool:
 				return false
 			var sid := services.add(kind, pos, dir)
 			economy.money -= cost
+			if kind == Services.Kind.BUS_DEPOT:
+				buses.on_placed(self, sid)
 			_clear_zones_under(services.footprint(sid))
 			_lots_dirty = true
 			ok = true
@@ -340,6 +344,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			_usable_cache.clear()
 			_lots_dirty = true
 			ok = true
+		"set_bus_subsidy":
+			ok = buses.apply(self, cmd)
 		"zone_frontage":
 			# Zones a whole block face: one side of a street from junction to
 			# junction ("both" does the other side too).
@@ -385,6 +391,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			logistics = Logistics.new()
 			warehouses = Warehouses.new()
 			reserves = Reserves.new()
+			buses = BusNet.new()
 			education = Education.new()
 			permits.from_dict({})
 			hubs = CivicHubs.new()
@@ -568,6 +575,10 @@ func tick() -> void:
 	mail.tick(self)
 	if not simulate_traffic:
 		return
+	# Before logistics, which clears Traffic's arrival list.
+	for id in buses.tick(self):
+		_clear_zones_under(services.footprint(id))
+		_lots_dirty = true
 	logistics.tick(self)
 	education.trips(self)
 	var rng := RandomNumberGenerator.new()
@@ -1372,6 +1383,7 @@ func to_dict() -> Dictionary:
 		"mail": mail.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
+		"buses": buses.to_dict(),
 		"vegetation": vegetation.to_dict(),
 	}
 
@@ -1449,6 +1461,8 @@ func from_dict(d: Dictionary) -> void:
 		if buildings[key].zone == ZoneMap.Zone.INDUSTRIAL and not buildings[key].has("chain"):
 			buildings[key].chain = factory_chain(lots[key].pos) if lots.has(key) else "general"
 	update_stats()
+	buses = BusNet.new()
+	buses.from_dict(self, d.get("buses", {}))
 	buildings_changed.emit()
 
 

@@ -145,7 +145,9 @@ func _update_hint() -> void:
 		return
 	var s: Dictionary = Services.KINDS[kind]
 	var text := "%s: $%s to build, $%s a month." % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
-	if s.has("reach"):
+	if s.has("transit"):
+		text = "%s: $%s to build, with two buses. You set how much the city funds it (click it); it plans its own stops, routes, fleet and fare, and buys the land next door as it grows." % [s.name, CitySim.money_text(s.cost)]
+	elif s.has("reach"):
 		text += " Covers homes within %.1f road miles (green)." % (s.reach / 1609.0)
 	else:
 		text += " Serves about %s homes along connected roads." % CitySim.money_text(s.capacity)
