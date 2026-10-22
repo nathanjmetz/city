@@ -56,11 +56,31 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_sim.gd
           ~/godot-cache/godot --headless -s tests/test_road_tools.gd
 
+      - name: Stamp the build
+        run: |
+          # Shown in the game's corner so you can tell which version you're playing.
+          printf 'const BUILD := "%s  %s"\n' "${GITHUB_SHA::7}" "$(date -u '+%b %d %H:%M UTC')" > scripts/build_info.gd
+
       - name: Export for the web
         run: |
           mkdir -p build/web
           ~/godot-cache/godot --headless --export-release "Web" build/web/index.html
           test -f build/web/index.wasm
+
+      - name: Give files versioned names
+        run: |
+          # Browsers cache the game files, so each build gets new file names
+          # and a refresh always loads the latest version.
+          v=${GITHUB_SHA::8}
+          cd build/web
+          for f in index.*; do
+            [ "$f" = index.html ] && continue
+            mv "$f" "index-$v.${f#index.}"
+          done
+          sed -i -E "s/index\.(js|pck|wasm|audio|icon|apple-touch-icon|png)/index-$v.\1/g; s/\"executable\":\"index\"/\"executable\":\"index-$v\"/" index.html
+          grep -q "index-$v.js" index.html
+          grep -q "\"executable\":\"index-$v\"" index.html
+          ls
 
       - uses: actions/upload-pages-artifact@v3
         with:
