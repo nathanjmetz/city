@@ -98,6 +98,7 @@ func _ready() -> void:
 
 	var signals := JunctionView.new()
 	signals.setup(sim.traffic)
+	signals.roads = roads
 	add_child(signals)
 
 	var flow_view := FlowView.new()

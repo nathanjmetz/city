@@ -47,7 +47,8 @@ func _init() -> void:
 	var built: String = sim.buildings.keys()[0]
 	var shape: PackedVector2Array = sim.lots[built].corners
 	var copy := CitySim.new()
-	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
+	# Full precision, as the region server sends it.
+	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict(), "", false, true)))
 	_check(copy.lots.has(built) and copy.lots[built].corners == shape, "save keeps a parcel's exact shape")
 	_check(copy.buildings.size() == sim.buildings.size(), "save keeps every building")
 	for i in 30:

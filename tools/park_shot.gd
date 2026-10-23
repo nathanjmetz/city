@@ -55,6 +55,22 @@ func _build() -> void:
 			var id := _place(sim, "park", Vector3(0, 0, 60))
 			_fill_tree(sim, id, ["field_lights", "youth_complex", "tournament", "aquatic_center"])
 			look = sim.parks.sites[id].pos
+		"fair", "fair_on", "stadium":
+			# The fairgrounds and the football field with their trees built,
+			# and the businesses visitors bring.
+			var on := scene != "fair"
+			var f := _place(sim, "fairgrounds", Vector3(0, 0, 60))
+			var fb := _place(sim, "football", Vector3(260, 0, 60))
+			for id in [f, fb]:
+				var v: Dictionary = sim.parks.tourism.venues[id]
+				for node in Balance.VENUE_TREES[v.kind]:
+					v.built.append(node.id)
+				if on:
+					v.crowd = {"name": "Event", "visitors": 9000, "outside": 3000, "cars": 0, "start": 0, "end": 0}
+			sim.parks.tourism.venues[f].outside_last = 40_000.0
+			for i in 3:
+				sim.parks.tourism._open_businesses(sim)
+			look = sim.parks.sites[fb if scene == "stadium" else f].pos
 		"all":
 			_place(sim, "courthouse", Vector3(-320, 0, 60))
 			_place(sim, "water_tower", Vector3(-200, 0, 60))

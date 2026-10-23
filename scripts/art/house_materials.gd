@@ -198,9 +198,10 @@ void fragment() {
 	float on = step(0.4, hash(vec2(i * 7.0 + cell.x, cell.y + COLOR.r * 97.0)));
 	float gap = step(0.12, hash(vec2(i, 3.3 + COLOR.g * 31.0)));
 	float band = step(0.12, nx) * step(nx, 0.88);
-	float text = inside * on * gap * band;
+	// Alpha 0: the business's real name is lettered on (SignText).
+	float text = inside * on * gap * band * step(0.0001, COLOR.a);
 	float aa = smoothstep(0.08, 0.3, fwidth(UV.x / pitch));
-	text = mix(text, 0.3 * band * step(0.25, UV.y) * step(UV.y, 0.78), aa);
+	text = mix(text, 0.3 * band * step(0.25, UV.y) * step(UV.y, 0.78) * step(0.0001, COLOR.a), aa);
 	ALBEDO = mix(lin(COLOR.rgb), vec3(0.86, 0.84, 0.79), text);
 	ROUGHNESS = 0.4;
 	SPECULAR = 0.5;

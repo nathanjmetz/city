@@ -94,6 +94,8 @@ var hubs := CivicHubs.new()
 var parks := Parks.new()
 ## The post office, its postmaster, and the carriers on their routes.
 var mail := Mail.new()
+## Who owns each business, its name and its family's brand (Families).
+var families := Families.new()
 ## The town's broad Funding and Growth sliders for every area and hub (no
 ## tax fiddling: Brawn). Set on the Economy page or a hub's panel.
 var policies := Policies.new()
@@ -165,6 +167,14 @@ func _init() -> void:
 		return Vector2(b.pos.x, b.pos.z)
 	farms.reserves = reserves
 	industry.reserves = reserves
+	# New businesses get their names before any view draws them, so signs go
+	# up with the building (connected ahead of the views).
+	for sig in [buildings_changed, farms_changed, industry_changed]:
+		sig.connect(func(): families.sync(self))
+	permits.costers[Families.HUB] = func(_sim, req: Dictionary, _route, _hits) -> int:
+		return int(req.base)
+	permits.locators[Families.HUB] = func(_sim, id: int) -> Vector2:
+		return families.locate(self, id)
 	_wire_policies()
 	network.changed.connect(func():
 		_lots_dirty = true
@@ -543,6 +553,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			permits.from_dict({})
 			rail = Rail.new()
 			rail.attach(self)
+			families.from_dict({})
+			families.changed.emit()
 			hubs = CivicHubs.new()
 			parks = Parks.new()
 			parks_changed.emit()
@@ -741,6 +753,9 @@ func tick() -> void:
 			_lots_dirty = true
 			warehouses_changed.emit()
 	permits.tick(self)
+	# Events at the fairgrounds and the football field, and their visitors.
+	if not parks.tourism.venues.is_empty():
+		parks.tourism.tick(self)
 	if tick_count % Balance.PARK_DECIDE_EVERY == 0 and not parks.sites.is_empty():
 		var sizes := parks.sites.values().map(func(s): return s.size)
 		if parks.decide(self):
@@ -757,6 +772,9 @@ func tick() -> void:
 	# Once a month every hub's leader looks at its development tree (Agency).
 	if tick_count % (24 * TICKS_PER_HOUR) == 12 * TICKS_PER_HOUR:
 		_develop_hubs()
+	# ...and every family looks at what it owns, and whether to branch out.
+	if tick_count % (24 * TICKS_PER_HOUR) == 13 * TICKS_PER_HOUR:
+		families.month(self)
 	if tick_count % WaterUtility.DECIDE_EVERY == 0 and not services.water.utilities.is_empty():
 		var res := services.water.decide(self, yard_usable)
 		economy.money += int(res[1])
@@ -806,7 +824,7 @@ func update_stats() -> void:
 	# Shops and factories still going up count toward demand (they're
 	# coming) but nobody works there yet.
 	var unfinished_jobs := 0
-	var unfinished_homes := 0
+	var presold := 0  # buyers waiting on homes going up (see _move_in)
 	for key in buildings:
 		var b: Dictionary = buildings[key]
 		if int(b.zone) != ZoneMap.Zone.RESIDENTIAL and _utilities_ok(key) \
@@ -817,7 +835,7 @@ func update_stats() -> void:
 				pop += b.occ
 				home_cap += b.cap
 				if not construction.is_done("lot:" + key, tick_count):
-					unfinished_homes += b.cap
+					presold += mini(b.cap, 2)
 			ZoneMap.Zone.COMMERCIAL:
 				# Flats above a shop count as homes.
 				pop += int(b.get("focc", 0))
@@ -834,22 +852,25 @@ func update_stats() -> void:
 	# Teachers, and office and tech jobs for the town's graduates (less the
 	# ones already counted in office buildings, which house those jobs).
 	shop_jobs += education.jobs() - mini(BuildingTypes.office_jobs(self), education.office_jobs())
+	# The gas station, diner and motel that opened for visitors.
+	shop_jobs += Tourism.jobs(self)
 	# Tellers and loan officers.
 	shop_jobs += banks.jobs()
 	economy.reach_milestones(pop)
 	var workers := int(pop * WORKER_SHARE)
 	var jobs := shop_jobs + factory_jobs
 	# Demand plans ahead, as builders do: homes going up are people on the
-	# way, and jobs at shops and factories going up are jobs on the way.
-	var coming := pop + unfinished_homes
+	# way (their pre-sold buyers; the rest of a new home is still for sale),
+	# and jobs at shops and factories going up are jobs on the way.
+	var coming := pop + presold
 	var coming_workers := int(coming * WORKER_SHARE)
-	var free := home_cap - unfinished_homes - pop
+	var free := home_cap - presold - pop
 	var open_jobs := maxi(jobs - unfinished_jobs, 0)
 	stats = {"population": pop, "workers": workers, "jobs": open_jobs,
 		"employed": mini(workers, open_jobs), "homes_free": free}
 	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(
 		0.6 + 0.6 * float(jobs - coming_workers) / maxf(coming_workers, 40.0)
-		- float(free) / maxf(home_cap - unfinished_homes, 30.0), 0.0, 1.0)
+		- float(free) / maxf(home_cap, 30.0), 0.0, 1.0)
 	demand[ZoneMap.Zone.COMMERCIAL] = clampf(
 		0.05 + (coming * 0.12 - shop_jobs) / maxf(shop_jobs, 12.0), 0.0, 1.0)
 	demand[ZoneMap.Zone.INDUSTRIAL] = clampf(
@@ -1742,6 +1763,22 @@ func _bank_changes(c: Dictionary) -> void:
 		banks_changed.emit()
 
 
+## A family opens a business on an empty zoned lot (Families, after the
+## player approved its permit): a shop, or a factory making `chain`.
+func found_business(key: String, zone: int, chain := "") -> bool:
+	if buildings.has(key) or not lots.has(key):
+		return false
+	var bseed := hash([city_seed, key, tick_count, "family"])
+	buildings[key] = {"zone": zone, "seed": bseed, "built": tick_count, "cap": capacity(zone, bseed), "occ": 0}
+	if zone == ZoneMap.Zone.INDUSTRIAL:
+		buildings[key].chain = chain if Balance.FACTORY_CHAINS.has(chain) else factory_chain(lots[key].pos)
+	# It goes up like any other building, crew and all.
+	var lot: Dictionary = lots[key]
+	construction.start("lot:" + key, PROFILE_OF_ZONE[zone], tick_count, lot.front, -lot.normal, lot.to_curb)
+	buildings_changed.emit()
+	return true
+
+
 ## Each farm and company leader takes their next step up their tree.
 func _develop_hubs() -> void:
 	var ids := farms.farms.keys()
@@ -1928,6 +1965,7 @@ func to_dict() -> Dictionary:
 		"hubs": hubs.to_dict(),
 		"parks": parks.to_dict(),
 		"mail": mail.to_dict(),
+		"families": families.to_dict(),
 		"policies": policies.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
@@ -1959,6 +1997,7 @@ func from_dict(d: Dictionary) -> void:
 				_paint_frontage(id, side, ZoneMap.Zone.RESIDENTIAL)
 	_upgrade_old_rings()
 	economy.from_dict(d.get("economy", {}))
+	families.from_dict(d.get("families", {}))
 	services.from_dict(d.get("services", {}))
 	farms.from_dict(d.get("farms", {}))
 	industry.from_dict(d.get("industry", {}))
