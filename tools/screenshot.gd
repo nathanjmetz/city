@@ -167,6 +167,9 @@ func _demo_town() -> void:
 	if args0.size() >= 5 and args0[4] == "forest":
 		_demo_forest(sim)
 		return
+	if args0.size() >= 5 and args0[4] == "county":
+		_demo_county(sim)
+		return
 	# A main road with a roundabout, and a grid neighborhood beside it.
 	sim.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0], "road": 2})
 	sim.apply({"type": "build_road", "start": [120, 0], "ctrl": [160, 80], "end": [120, 180], "road": 1})
@@ -352,6 +355,26 @@ func _demo_forest(sim: CitySim) -> void:
 			var args := OS.get_cmdline_user_args()
 			c.look_at_point(best + (Vector3(float(args[5]), 0, float(args[6])) if args.size() >= 7 else Vector3.ZERO))
 			c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
+
+
+## A street drawn out to a county road, which joins that mile to town; the
+## camera looks at the join.
+func _demo_county(sim: CitySim) -> void:
+	for line in range(1, 4):
+		var x := line * CountyGrid.SECTION
+		for seg in range(-2, 2):
+			var z := (seg + 0.5) * CountyGrid.SECTION
+			if not CountyGrid.clears(x, z):
+				continue
+			sim.apply({"type": "build_road", "start": [x - 300, z], "ctrl": [x - 150, z], "end": [x, z], "road": 1})
+			sim.apply({"type": "join_county", "at": [x, z]})
+			print("joined ", sim.county_joined.keys())
+			for c in _main.get_children():
+				if c is CityCamera:
+					var args := OS.get_cmdline_user_args()
+					c.look_at_point(Vector3(x, 0, z))
+					c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
+			return
 
 
 ## A landfill, a recycling plant and a cemetery that have grown for a while.

@@ -177,6 +177,9 @@ var send_command := Callable()
 ## the county highway's far ends. Trade, imports and through traffic come
 ## and go here, and nowhere else. Node ids.
 var region_links: Array = []
+## Miles of county road this town has joined (CountyGrid keys), now its own
+## roads; the rest are scenery.
+var county_joined := {}
 ## Goods and services bought from and sold to neighbors and the outside.
 var trade := Trade.new()
 ## True in a shared region, which settles trade for every city at once.
@@ -311,6 +314,9 @@ func apply_now(cmd: Dictionary) -> bool:
 				ok = network.build_road(c[0], c[1], c[2], _road(cmd))
 				if ok:
 					economy.money -= Economy.road_cost(c, _road(cmd))
+		"join_county":
+			# The road tool sends it for a road drawn onto a county road.
+			ok = _join_county(_v(cmd.at))
 		"build_grid", "build_grid_shape":
 			# Old three-click grids are a rectangle; new ones any shape.
 			var shape: Array = GridFill.rect(_v(cmd.a), _v(cmd.b), _v(cmd.c)) if cmd.type == "build_grid" \
@@ -2915,6 +2921,57 @@ func build_county_road(a: Vector2, b: Vector2, link_ends: Array) -> Array:
 	return [network.find_node_near(Vector3(a.x, 0, a.y), 1.0), network.find_node_near(Vector3(b.x, 0, b.y), 1.0)]
 
 
+## How near a road's end must come to a county road to join it, metres.
+const COUNTY_JOIN := 6.0
+
+
+## Joins the mile of county road at `p` (if one runs there) to the town: it
+## becomes a gravel road of the town's own, free, from the road at `p` out
+## both ways as far as the mile goes, the water or a bluff allows, or the
+## town's land reaches. True if it joined.
+func _join_county(p: Vector3) -> bool:
+	if absf(p.y) > 1.0:
+		return false  # a bridge or tunnel end
+	var o := terrain_offset
+	var mile := CountyGrid.mile_at(p.x + o.x, p.z + o.y, COUNTY_JOIN)
+	if mile.is_empty() or county_joined.has(mile.key):
+		return false
+	var on: Vector2 = mile.on - o
+	var here := Vector2(p.x, p.z)
+	var pieces := []
+	for end in [mile.a, mile.b]:
+		var stop: Vector2 = CountyGrid.run(mile.on, end) - o
+		var length := on.distance_to(stop)
+		var n := ceili(length / 400.0)
+		var prev := on
+		for i in n:
+			var q := on.lerp(stop, float(i + 1) / n)
+			var c := [Vector3(prev.x, 0, prev.y), Vector3((prev.x + q.x) * 0.5, 0, (prev.y + q.y) * 0.5), Vector3(q.x, 0, q.y)]
+			# Only as far as the town may build (its land, in a region).
+			if prev.distance_to(q) < 20.0 or land_problem([c]) != "" \
+					or road_problem(c, RoadStyle.Type.GRAVEL) != "":
+				break
+			pieces.append(c)
+			prev = q
+	if pieces.is_empty():
+		return false
+	var before := network.segments.keys()
+	var money := economy.money
+	network.begin_batch()
+	if here.distance_to(on) > 0.5:
+		var m := (here + on) * 0.5
+		network.build_road(p, Vector3(m.x, 0, m.y), Vector3(on.x, 0, on.y), RoadStyle.Type.GRAVEL)
+	for c in pieces:
+		network.build_road(c[0], c[1], c[2], RoadStyle.Type.GRAVEL)
+	network.end_batch()
+	economy.money = money  # the county hands it over
+	county_joined[mile.key] = true
+	streets.name_road(self, network.segments.keys().filter(func(id): return not id in before),
+		CountyGrid.road_name(mile.key))
+	streets.sync(self)
+	return true
+
+
 func _county_road(a: Vector2, b: Vector2, link_ends: Array) -> Array:
 	var money := economy.money
 	var n := maxi(1, ceili(a.distance_to(b) / 400.0))
@@ -3050,6 +3107,7 @@ func to_dict() -> Dictionary:
 	return {
 		"version": 2,
 		"links": region_links,
+		"county": county_joined.keys(),
 		"trade": trade.to_dict(),
 		"tick": tick_count,
 		"seed": city_seed,
@@ -3114,6 +3172,9 @@ func from_dict(d: Dictionary) -> void:
 				region_links.append(int(n))
 		else:
 			_guess_link()
+		county_joined.clear()
+		for k in d.get("county", []):
+			county_joined[str(k)] = true
 		trade.from_dict(d.get("trade", {}))
 	else:
 		# Version 1 saves were just roads, with houses on every lot.
