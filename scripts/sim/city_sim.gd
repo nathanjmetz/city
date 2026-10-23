@@ -1115,33 +1115,40 @@ func update_stats(budget := true) -> void:
 	# coming) but nobody works there yet.
 	var unfinished_jobs := 0
 	var presold := 0  # buyers waiting on homes going up (see _move_in)
+	var office_cap := 0  # BuildingTypes.office_jobs, in the same pass
 	for key in buildings:
 		var b: Dictionary = buildings[key]
-		if int(b.zone) != ZoneMap.Zone.RESIDENTIAL and _utilities_ok(key) \
-				and not construction.is_done("lot:" + key, tick_count):
+		var zone := int(b.zone)
+		if zone == ZoneMap.Zone.RESIDENTIAL:
+			pop += b.occ
+			home_cap += b.cap
+			if not construction.is_done("lot:" + key, tick_count):
+				presold += mini(b.cap, 2)
+			continue
+		if BuildingTypes.type_of(b) == "office":
+			office_cap += int(b.cap)
+		# Closed without power or water.
+		var ok := _utilities_ok(key)
+		if ok and not construction.is_done("lot:" + key, tick_count):
 			unfinished_jobs += b.cap
-		match int(b.zone):
-			ZoneMap.Zone.RESIDENTIAL:
-				pop += b.occ
-				home_cap += b.cap
-				if not construction.is_done("lot:" + key, tick_count):
-					presold += mini(b.cap, 2)
+		match zone:
 			ZoneMap.Zone.COMMERCIAL:
 				# Flats above a shop count as homes.
 				pop += int(b.get("focc", 0))
 				home_cap += int(b.get("flats", 0))
-				if _utilities_ok(key):  # closed without power or water
+				if ok:
 					shop_jobs += b.cap
 			ZoneMap.Zone.INDUSTRIAL:
-				if _utilities_ok(key):
+				if ok:
 					factory_jobs += b.cap
 	services.plants = power.sources()
 	services.update(network, lots, buildings)
 	parks.update_effects(self)
+	var homes := _home_scan()
 	factory_jobs += farms.jobs() + industry.jobs() + warehouses.jobs() + power.jobs() + rail.jobs()
 	# Teachers, and office and tech jobs for the town's graduates (less the
 	# ones already counted in office buildings, which house those jobs).
-	shop_jobs += education.jobs() - mini(BuildingTypes.office_jobs(self), education.office_jobs())
+	shop_jobs += education.jobs() - mini(office_cap, education.office_jobs())
 	# The gas station, diner and motel that opened for visitors.
 	shop_jobs += Tourism.jobs(self)
 	# The phone company's staff, and remote workers who bring their jobs.
@@ -1176,16 +1183,16 @@ func update_stats(budget := true) -> void:
 		+ LeaderAsks.festival_demand(self), 0.0, 1.0)
 	# A boil-water notice, or a steep water bill, puts people off moving in.
 	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL]
-		- Balance.WATER_BOIL_DEMAND * services.water.boil_share(self) - services.water.rate_penalty(self), 0.0, 1.0)
+		- Balance.WATER_BOIL_DEMAND * homes.boil - services.water.rate_penalty(self), 0.0, 1.0)
 	# Good care keeps people in town and draws families.
-	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL] + healthcare.demand_shift(self), 0.0, 1.0)
+	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL] + healthcare.demand_shift(self, homes.care), 0.0, 1.0)
 	# Past village size, people want fire, police, a clinic and a school nearby.
 	if pop > 300:
 		demand[ZoneMap.Zone.RESIDENTIAL] = clampf(
-			demand[ZoneMap.Zone.RESIDENTIAL] + 0.3 * (service_coverage() - 0.5), 0.0, 1.0)
+			demand[ZoneMap.Zone.RESIDENTIAL] + 0.3 * (homes.cover - 0.5), 0.0, 1.0)
 	# Parks and landmarks make a town nicer to live in.
 	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL]
-		+ Balance.AMENITY_DEMAND * parks.average_happiness(self), 0.0, 1.0)
+		+ Balance.AMENITY_DEMAND * homes.happy, 0.0, 1.0)
 	# Good cell service and internet draw people, and fiber draws offices.
 	if not telecom.companies.is_empty():
 		demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL]
@@ -1194,6 +1201,33 @@ func update_stats(budget := true) -> void:
 	if budget:
 		economy.update_budget(self)
 	stats_changed.emit()
+
+
+## The town's homes in one pass, as their own functions would each work
+## them out: share under a boil notice (water.boil_share), care
+## (healthcare.care), service coverage (service_coverage) and park
+## happiness (parks.average_happiness).
+func _home_scan() -> Dictionary:
+	var n := 0
+	var boil := 0
+	var care := 0.0
+	var cover := 0.0
+	var happy := 0.0
+	for key in buildings:
+		if int(buildings[key].zone) != ZoneMap.Zone.RESIDENTIAL:
+			continue
+		n += 1
+		var s: Dictionary = services.served.get(key, {})
+		if services.water.boils(s):
+			boil += 1
+		care += Healthcare.care_of(s)
+		if not s.is_empty():
+			cover += Services.coverage_of(s)
+		happy += float(parks.lot_happy.get(key, 0.0))
+	if n == 0:
+		return {"boil": 0.0, "care": 0.0, "cover": 0.0, "happy": 0.0}
+	return {"boil": float(boil) / n, "care": clampf(care / n + healthcare.region_care, 0.0, 1.0),
+		"cover": cover / n, "happy": happy / n}
 
 
 ## New residents move into homes with room, faster when homes are in demand.
@@ -2489,6 +2523,21 @@ func _parcels_to_save() -> Dictionary:
 	return out
 
 
+## The empty lots and the planner's state, so a loaded copy has exactly the
+## town's lots without planning it all again (see LotPlanner.cuts_to_save).
+func _plan_to_save() -> Dictionary:
+	var out := planner.cuts_to_save(zones)
+	var empty := []
+	var keys := lots.keys()
+	keys.sort()
+	for key in keys:
+		if not buildings.has(key):
+			empty.append(LotPlanner.lot_to_save(lots[key]))
+	out.empty = empty
+	out.flags = [_lots_dirty, _lots_light, _roads_moved]
+	return out
+
+
 func to_dict() -> Dictionary:
 	vegetation.update(self)  # land cleared since the last tick counts
 	return {
@@ -2501,6 +2550,7 @@ func to_dict() -> Dictionary:
 		"zones": zones.to_dict(),
 		"buildings": buildings,
 		"parcels": _parcels_to_save(),
+		"plan": _plan_to_save(),
 		"economy": economy.to_dict(),
 		"services": services.to_dict(),
 		"farms": farms.to_dict(),
@@ -2632,9 +2682,27 @@ func from_dict(d: Dictionary) -> void:
 			buildings[key].fabric = int(b.fabric)
 		if z == ZoneMap.Zone.INDUSTRIAL and b.has("chain"):
 			buildings[key].chain = str(b.chain)
-	_road_wins()
-	_lots_dirty = true
-	_refresh()
+	if d.has("plan") and d.has("parcels"):
+		# The town's own lots and planning state, as saved: no need to plan
+		# the whole town again, and a copy re-plans just when the town does.
+		planner.restore(network, zones, d.plan)
+		for e in d.plan.get("empty", []):
+			var lot := LotPlanner.lot_from_save(e)
+			lots[lot.key] = lot
+		# Fields trimmed by roads aren't saved: work them out again.
+		_road_wins()
+		var flags: Array = d.plan.get("flags", [false, false, false])
+		_lots_dirty = bool(flags[0])
+		_lots_light = bool(flags[1])
+		_roads_moved = bool(flags[2])
+		_usable_cache.clear()
+		services.plants = power.sources()
+		services.update(network, lots, buildings)
+		lots_changed.emit()
+	else:
+		_road_wins()
+		_lots_dirty = true
+		_refresh()
 	# Factories from before industry chains take up the local one.
 	for key in buildings:
 		if buildings[key].zone == ZoneMap.Zone.INDUSTRIAL and not buildings[key].has("chain"):

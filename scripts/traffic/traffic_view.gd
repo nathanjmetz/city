@@ -6,9 +6,10 @@ extends Node3D
 ## Each vehicle is placed by two points on its path: the front bumper and
 ## the rear axle, so long vehicles swing wide through turns like real ones.
 ## Semis draw the tractor and trailer apart, hitched at the fifth wheel.
-## Close vehicles get the detailed model, far ones a simple one, and very far
-## ones aren't drawn. Parked vehicles in stalls, driveways and at docks
-## are drawn too; ones inside a garage or bay are out of sight.
+## Close vehicles get the detailed model (the close-up one on the desktop
+## Ultra tier), far ones a simple one, and very far ones aren't drawn.
+## Parked vehicles in stalls, driveways and at docks are drawn too; ones
+## inside a garage or bay are out of sight.
 
 ## Metres from the camera where models switch to the simple version, and
 ## where they stop being drawn.
@@ -16,6 +17,9 @@ const NEAR := 240.0
 const FAR := 2600.0
 ## Cars and pickups shrink to a few pixels sooner than trucks do.
 const FAR_SMALL := 1800.0
+## On the desktop Ultra tier, vehicles this close (metres) get the close-up
+## model: rounded body, alloy wheels, seams and clear-coat paint.
+const ULTRA_NEAR := 75.0
 ## Kinds whose emergency lights run.
 const EMERGENCY := ["fire_engine", "ambulance"]
 ## Bodies longer than this (metres) track their rear axle on the path up
@@ -30,7 +34,8 @@ var tick_fraction: Callable
 var parked := Callable()
 
 var _snow := 0.0
-var _batches := {}  # mesh key -> [near MultiMeshInstance3D, far one]
+var _batches := {}  # mesh key -> [near MultiMeshInstance3D, far one, Ultra one]
+var _ultra := false
 var _xf := {}       # mesh key * lod -> [transforms]
 var _cu := {}       # mesh key * lod -> [custom colours]
 var _info := {}     # car id -> what _describe() worked out
@@ -64,6 +69,35 @@ func _ready() -> void:
 		_batches[key] = pair
 
 
+## Ultra close-ups are hidden when the tier turns off. Each model's is built
+## the first time one comes close (about 5 ms), so other tiers and the
+## browser never pay for them and turning Ultra on doesn't stall a frame.
+func _set_ultra(on: bool) -> void:
+	_ultra = on
+	for key in _batches:
+		var list: Array = _batches[key]
+		if list.size() > 2:
+			list[2].visible = on
+
+
+func _add_ultra_batch(key: String) -> void:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_custom_data = true
+	mm.use_colors = true
+	mm.mesh = VehicleModels.build(key, VehicleModels.LOD_ULTRA)
+	var mi := MultiMeshInstance3D.new()
+	mi.multimesh = mm
+	mi.material_override = VehicleMaterial.get_material(true)
+	add_child(mi)
+	_batches[key].append(mi)
+
+
+static func _ultra_wanted() -> bool:
+	var q := GraphicsQuality.current
+	return q != null and q.active and q.tier >= GraphicsQuality.ULTRA
+
+
 func _process(_delta: float) -> void:
 	# Neighbors' cities are drawn moved over to their place on the land.
 	Terrain.shift = Terrain.shift_for(self)
@@ -80,6 +114,9 @@ func _draw_cars(_delta: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	var eye := cam.global_position if cam else Vector3.ZERO
 	var frac: float = tick_fraction.call()
+	if _ultra_wanted() != _ultra:
+		_set_ultra(not _ultra)
+	var ultra2 := ULTRA_NEAR * ULTRA_NEAR if _ultra else -1.0
 	# Snow cover (from DayNight). Plows go on and come off with it.
 	if (Seasons.snow_now > 0.4) != (_snow > 0.4):
 		_info.clear()
@@ -92,7 +129,7 @@ func _draw_cars(_delta: float) -> void:
 		var dist: float = item[0].distance_to(eye)
 		if dist <= FAR:
 			if dist < NEAR:
-				_add(item[1], 0, item[2], item[3])
+				_add(item[1], 2 if dist * dist < ultra2 else 0, item[2], item[3])
 			else:
 				_add(item[4], 1, item[2], item[3])
 	var far2 := FAR * FAR
@@ -121,6 +158,8 @@ func _draw_cars(_delta: float) -> void:
 		if d2 > small2 and not info[6]:
 			continue
 		var lod := 0 if d2 < near2 else 1
+		if d2 < ultra2:
+			lod = 2
 		var kind: String = info[1]
 		var flags: float = info[4]
 		if car.a < -1.2:
@@ -145,7 +184,7 @@ func _draw_cars(_delta: float) -> void:
 			dir = dir.normalized()
 			var origin: Vector3 = hitch + dir * float(art.pin)
 			_add(art.trailer, lod, Transform3D(Basis.looking_at(dir, Vector3.UP), origin), Color(1, 1, 1, flags))
-		elif lod == 0 and info[6]:
+		elif lod != 1 and info[6]:
 			# Long bodies up close: rear axle on the path, so they swing wide.
 			_add(info[2], lod, _place(car, ahead, front, info[7]), custom)
 		else:
@@ -156,18 +195,22 @@ func _draw_cars(_delta: float) -> void:
 			if dir.length_squared() < 1e-6:
 				dir = Vector3.FORWARD
 			dir = dir.normalized()
-			if lod == 0:
+			if lod != 1:
 				var back := Terrain.lift(p0 - dir * info[7])
 				dir = (front - back).normalized()
-			_add(info[2] if lod == 0 else info[8], lod, Transform3D(Basis.looking_at(dir, Vector3.UP), front), custom)
+			_add(info[8] if lod == 1 else info[2], lod, Transform3D(Basis.looking_at(dir, Vector3.UP), front), custom)
 	if parked.is_valid():
 		for p in parked.call():
-			_add_parked(p[0], p[1], p[2], eye)
+			_add_parked(p[0], p[1], p[2], eye, ultra2)
 	for key in _batches:
-		for lod in 2:
+		for lod in 3:
 			var k: String = key + str(lod)
 			var list: Array = _xf.get(k, _NONE)
 			var n := list.size()
+			if lod == 2 and _batches[key].size() < 3:
+				if n == 0:
+					continue
+				_add_ultra_batch(key)
 			var mm: MultiMesh = _batches[key][lod].multimesh
 			if n == 0:
 				if mm.visible_instance_count != 0:
@@ -212,11 +255,13 @@ static func _far(kind: String, model: String) -> String:
 	return kind if VehicleModels.VARIANTS.has(kind) else model
 
 
-func _add_parked(kind: String, xf: Transform3D, id: int, eye: Vector3) -> void:
+func _add_parked(kind: String, xf: Transform3D, id: int, eye: Vector3, ultra2: float) -> void:
 	var dist := xf.origin.distance_to(eye)
 	if dist > FAR or not VehicleTypes.SPECS.has(kind):
 		return
 	var lod := 0 if dist < NEAR else 1
+	if dist * dist < ultra2:
+		lod = 2
 	var paint := VehicleTypes.paint(kind, id)
 	if VehicleModels.ARTIC.has(kind):
 		var art: Dictionary = VehicleModels.ARTIC[kind]

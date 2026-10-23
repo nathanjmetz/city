@@ -15,6 +15,7 @@ func _run() -> void:
 	_test_hunts()
 	_test_stuck()
 	_test_insights()
+	_test_replays()
 	_test_perf_window()
 	await _test_server()
 	print("SOME TESTS FAILED" if _failed else "ALL TESTS PASSED")
@@ -76,6 +77,47 @@ func _test_stuck() -> void:
 		t.command("place_service", false, 30.0 + i)
 	_check(t.events.any(func(e): return e.k == "refused_streak" and e.cmd == "place_service"),
 		"the game saying no three times running is caught")
+
+
+func _test_replays() -> void:
+	var t := TelemetryTracker.new()
+	t.click(Vector2(0.3, 0.95), "Roads", true, false, 1.0)
+	t.click(Vector2(0.3, 0.9), "Grid", true, false, 2.0)
+	t.hint("Click the first corner.  Blocks 394 x 269 ft", 2.1)
+	t.hint("Click the first corner.  Blocks 400 x 270 ft", 2.2)   # same hint, other numbers
+	t.click(Vector2(0.5, 0.5), "", false, false, 3.0, Vector2(120, -40))
+	t.release(Vector2(0.6, 0.55), 3.5, Vector2(300, 20))
+	t.command("build_grid_shape", true, 4.0, "block=120")
+	t.command("remove_road", true, 10.0)
+	t.command("build_grid_shape", true, 20.0)
+	t.command("remove_road", true, 25.0)
+	var redo := t.events.filter(func(e): return e.k == "redo_loop")
+	_check(redo.size() == 1 and redo[0].cmd == "build_grid_shape", "building and tearing down twice is a redo loop")
+	_check(redo[0].has("replay") and redo[0].replay.size() >= 6, "a flagged moment carries what led up to it")
+	var kinds: Array = redo[0].replay.map(func(a): return a[1])
+	_check(kinds.count("h") == 1 and kinds.has("d") and kinds.has("x"), "replays hold hints once, drags and commands (%s)" % str(kinds))
+	var drag: Array = redo[0].replay.filter(func(a): return a[1] == "d")[0]
+	_check(drag.slice(2) == [120.0, -40.0, 300.0, 20.0], "drags are kept in town meters")
+	# Pick a tool, back out, three times.
+	for i in 3:
+		t.click(Vector2(0.4, 0.95), "Zoning", true, false, 40.0 + i * 5)
+		t.click(Vector2(0.5, 0.5), "", false, false, 41.0 + i * 5)
+		t.key("Escape", false, 42.0 + i * 5)
+	_check(t.events.any(func(e): return e.k == "cancel_loop" and e.ctx == "Zoning"), "picking a tool and backing out three times is caught")
+	# Clicking and clicking with nothing to show for it.
+	t.click(Vector2(0.4, 0.95), "Water", true, false, 80.0)
+	for i in TelemetryTracker.NO_PROGRESS_CLICKS:
+		t.click(Vector2(0.1 + i * 0.05, 0.5), "", false, false, 81.0 + i)
+	_check(t.events.any(func(e): return e.k == "no_progress" and e.ctx == "Water"), "lots of clicks and nothing built is caught")
+	var out := t.take(120.0)
+	var acts: Array = out.filter(func(e): return e.k == "actions")
+	_check(acts.size() == 1 and acts[0].a.size() > 20, "every action goes out for full replays")
+	var r := Insights.analyze([{"from": "Ann", "session": "a1", "build": "b", "events": out}])
+	var f: Array = r.fixes.filter(func(x): return x.title.begins_with("Players build"))
+	_check(not f.is_empty() and f[0].has("replay"), "the fix list carries the replay")
+	var md := Insights.to_markdown(r)
+	_check(md.contains("What Ann did") and md.contains("build_grid_shape done (block=120)") and md.contains("dragged 120, -40 to 300, 20"),
+		"the report shows the moment step by step")
 
 
 func _test_insights() -> void:

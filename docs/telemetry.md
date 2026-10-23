@@ -22,6 +22,12 @@ are no outside services, and typed text and chat are never recorded.
   every 15 s; how long each loading screen stays up; how long the web page
   takes to reach the first frame (the download included).
 - **Joining.** Failed joins (with the reason the player saw) and drops.
+- **Replays.** Every action in order: buttons pressed, map clicks and
+  drags (in town meters), keys, what the tool's hint line said, and every
+  command with its settings and whether the game took it. Stuck moments
+  carry the last 90 s of this, and new ones are caught too: building
+  something and tearing it down again, picking a tool and backing out
+  three times, and 15 clicks on the map with nothing built.
 
 ## Where it goes
 
@@ -45,5 +51,9 @@ That writes `report.md` and `report.json`: fixes ranked so that problems
 more players hit come first, broken beats slow, and slow beats hard to find.
 Each fix names the thread that owns it. The ranking rules live in
 `scripts/telemetry/insights.gd`.
+
+To read back what one player did:
+
+    godot --headless -s tools/telemetry_replay.gd -- ~/neighbors-region-telemetry Brawn 30
 
 Other systems can add their own events with `Telemetry.event("kind", {...})`.

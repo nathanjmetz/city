@@ -19,8 +19,12 @@ extends Node
 ## reflections, the biggest shadow maps and the longest detail. Ultra and
 ## below drop those one by one.
 ##
-## The browser build keeps its fixed look (Compatibility renderer); only the
-## desktop app (Forward+) changes tier. This only touches drawing, never the
+## Every device scales to what it can do (Brawn, 2026-10-23): the desktop
+## app goes as high as the machine allows, up to Cinematic, and is never
+## held back for the browser. The browser (and a desktop whose graphics
+## chip only runs the Compatibility renderer) gets the same governor over
+## the tiers that renderer can draw, Low and Medium, starting at Low with
+## fewer pixels on a phone or tablet. This only touches drawing, never the
 ## simulation, so every computer in a region still steps towns the same way.
 ## `--quality low|medium|high|ultra|cinematic` on the command line pins a
 ## tier (for screenshots).
@@ -63,9 +67,11 @@ const ROOM_FRAME_MS := 18.0
 const ROOM_PART_MS := 8.0
 const MIN_SCALE := 0.7
 
-## False in the browser, the editor, headless runs and the Compatibility
-## renderer: the look stays as the project sets it.
+## False in headless runs (servers, tests): the look stays as the project sets it.
 var active := false
+## Running on the Compatibility renderer (the browser, or an old graphics
+## chip): only Low and Medium, upscaled bilinearly.
+var browser := false
 var tier := HIGH
 ## AUTO, or the tier the player picked (the governor then leaves it alone).
 var mode := AUTO
@@ -93,21 +99,22 @@ var _ceiling := CINEMATIC
 func _ready() -> void:
 	current = self
 	adapter = RenderingServer.get_video_adapter_name()
-	active = not OS.has_feature("web") and DisplayServer.get_name() != "headless" \
-		and RenderingServer.get_current_rendering_method() != "gl_compatibility"
+	active = DisplayServer.get_name() != "headless"
 	if not active:
 		return
+	browser = RenderingServer.get_current_rendering_method() == "gl_compatibility"
+	if browser:
+		_ceiling = MEDIUM
 	process_priority = 1000  # after the frame's own work
 	var saved := _read()
-	mode = clampi(int(saved.get("mode", AUTO)), AUTO, CINEMATIC)
+	mode = clampi(int(saved.get("mode", AUTO)), AUTO, _ceiling)
 	if mode != AUTO:
 		tier = mode
 	elif str(saved.get("adapter", "")) == adapter and saved.has("tier"):
-		tier = clampi(int(saved.tier), LOW, CINEMATIC)
-		scale = clampf(float(saved.get("scale", 1.0)), MIN_SCALE, 1.0)
+		tier = clampi(int(saved.tier), LOW, _ceiling)
+		scale = clampf(float(saved.get("scale", 1.0)), min_scale(), 1.0)
 	else:
-		tier = guess_tier(adapter, RenderingServer.get_video_adapter_type(),
-			OS.get_processor_count(), float(OS.get_memory_info().get("physical", 0)) / 1e9)
+		_first_guess()
 		_save()
 	var args := OS.get_cmdline_user_args() + OS.get_cmdline_args()
 	for i in args.size():
@@ -119,12 +126,37 @@ func _ready() -> void:
 			want = args[i + 1]
 		var t := NAMES.map(func(n): return n.to_lower()).find(want.to_lower())
 		if t >= 0:
-			mode = t
-			tier = t
+			mode = mini(t, _ceiling)
+			tier = mode
 			scale = 1.0
 	_rid = get_tree().root.get_viewport_rid()
-	RenderingServer.viewport_set_measure_render_time(_rid, true)
+	if not browser:
+		RenderingServer.viewport_set_measure_render_time(_rid, true)
 	apply()
+	print("Graphics: ", describe())
+
+
+## A phone or tablet: a small, touch-first screen in the browser.
+static func is_handheld() -> bool:
+	return OS.has_feature("web_android") or OS.has_feature("web_ios") \
+		or (OS.has_feature("web") and DisplayServer.is_touchscreen_available() and not OS.has_feature("web_macos") \
+			and not OS.has_feature("web_windows") and not OS.has_feature("web_linuxbsd"))
+
+
+func min_scale() -> float:
+	return 0.5 if browser else MIN_SCALE
+
+
+func _first_guess() -> void:
+	if browser:
+		# Phones start low and with fewer pixels; a computer's browser
+		# starts on the browser's full look. Either way the governor moves.
+		tier = LOW if is_handheld() else MEDIUM
+		scale = 0.75 if is_handheld() else 1.0
+	else:
+		tier = guess_tier(adapter, RenderingServer.get_video_adapter_type(),
+			OS.get_processor_count(), float(OS.get_memory_info().get("physical", 0)) / 1e9)
+		scale = 1.0
 
 
 ## A first guess from the hardware alone; in Auto the governor corrects it
@@ -156,6 +188,8 @@ func settings() -> Dictionary:
 func describe() -> String:
 	if not active:
 		return "fixed (%s)" % RenderingServer.get_current_rendering_method()
+	if browser:
+		return "%s %s, %d%% scale (browser)" % ["Auto:" if mode == AUTO else "Fixed:", NAMES[tier], roundi(scale * 100.0)]
 	return "%s %s, %d%% scale" % ["Auto:" if mode == AUTO else "Fixed:", NAMES[tier], roundi(scale * 100.0)]
 
 
@@ -166,14 +200,14 @@ func label() -> String:
 
 ## The pause menu's Graphics button: Auto, then each tier, then Auto again.
 func cycle() -> void:
-	mode = AUTO if mode == CINEMATIC else mode + 1
-	_ceiling = CINEMATIC
+	var top := MEDIUM if browser else CINEMATIC
+	mode = AUTO if mode >= top else mode + 1
+	_ceiling = top
 	if mode == AUTO:
-		tier = guess_tier(adapter, RenderingServer.get_video_adapter_type(),
-			OS.get_processor_count(), float(OS.get_memory_info().get("physical", 0)) / 1e9)
+		_first_guess()
 	else:
 		tier = mode
-	scale = 1.0
+		scale = 1.0
 	_reset()
 	apply()
 	_save()
@@ -184,10 +218,11 @@ func cycle() -> void:
 func apply() -> void:
 	var t: Dictionary = TIERS[tier]
 	var vp := get_tree().root
-	vp.msaa_3d = t.msaa
+	# The browser's Medium keeps the 4x MSAA it has always had.
+	vp.msaa_3d = 2 if browser and tier == MEDIUM else t.msaa
 	vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if t.fxaa else Viewport.SCREEN_SPACE_AA_DISABLED
 	vp.mesh_lod_threshold = t.lod
-	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if scale < 0.99 else Viewport.SCALING_3D_MODE_BILINEAR
+	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if scale < 0.99 and not browser else Viewport.SCALING_3D_MODE_BILINEAR
 	vp.scaling_3d_scale = scale
 	RenderingServer.directional_shadow_atlas_set_size(t.shadow_size, true)
 	RenderingServer.directional_soft_shadow_filter_set_quality(t.soft)
@@ -212,10 +247,13 @@ func _process(delta: float) -> void:
 		Perf.add("frame.quality", t0)
 		return
 	var frame_ms := _time * 1000.0 / _frames
+	# The browser judges against 30 fps (its budget, PerfBudget.RENDER) and
+	# can't time the graphics chip, so frame time alone decides there.
+	var slow_ms := 34.0 if browser else SLOW_MS
 	var gpu_ms := _gpu / _frames
 	var cpu_ms := _cpu / _frames
 	_reset()
-	if frame_ms > SLOW_MS:
+	if frame_ms > slow_ms:
 		_room = 0
 		_slow += 1
 		if _slow >= 2:
@@ -252,8 +290,8 @@ func _reset() -> void:
 ## The graphics chip is the bottleneck: fewer pixels first. Otherwise (or
 ## once pixels are as low as they go) a lower tier draws less.
 func _step_down(gpu_bound: bool) -> void:
-	if gpu_bound and scale > MIN_SCALE + 0.01:
-		scale = maxf(MIN_SCALE, scale - 0.15)
+	if (gpu_bound or browser) and scale > min_scale() + 0.01:
+		scale = maxf(min_scale(), scale - 0.15)
 	elif tier > LOW:
 		_ceiling = tier - 1
 		tier -= 1

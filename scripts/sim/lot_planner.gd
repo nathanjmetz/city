@@ -83,18 +83,7 @@ var changed_boxes: Array = []
 ## `frozen` maps key -> lot for parcels that must stay as they are.
 ## Call update(network) first.
 func plan(network: RoadNetwork, zones: ZoneMap, frozen: Dictionary) -> Array:
-	var parcels := []
-	var keys := frozen.keys()
-	keys.sort()
-	for key in keys:
-		var c: PackedVector2Array = frozen[key].corners
-		if c.size() < 3:
-			continue
-		var h := hash([key, c])
-		if not _grown.has(h):
-			var grown := Geometry2D.offset_polygon(c, 0.3)
-			_grown[h] = [_box(c).grow(0.5), grown[0] if not grown.is_empty() else c, h, c, key]
-		parcels.append(_grown[h])
+	var parcels := _parcels(frozen)
 	# Parcels that came, went or changed mark their ground for re-cutting.
 	var now := {}
 	for p in parcels:
@@ -143,6 +132,71 @@ func plan(network: RoadNetwork, zones: ZoneMap, frozen: Dictionary) -> Array:
 			lot.erase("corner_by")
 			out.append(lot)
 	return out
+
+
+## The parcels as the planner keeps them: [box, outline grown 0.3 m, hash,
+## outline, key], in key order.
+func _parcels(frozen: Dictionary) -> Array:
+	var parcels := []
+	var keys := frozen.keys()
+	keys.sort()
+	for key in keys:
+		var c: PackedVector2Array = frozen[key].corners
+		if c.size() < 3:
+			continue
+		var h := hash([key, c])
+		if not _grown.has(h):
+			var grown := Geometry2D.offset_polygon(c, 0.3)
+			_grown[h] = [_box(c).grow(0.5), grown[0] if not grown.is_empty() else c, h, c, key]
+		parcels.append(_grown[h])
+	return parcels
+
+
+## Every planned street side's lots (before corners are joined), for a save:
+## loading them back skips planning the whole town again.
+## With them go the parcels the last plan knew and zoning changes not yet
+## planned, so a loaded copy re-cuts exactly where the town itself would.
+func cuts_to_save(zones: ZoneMap) -> Dictionary:
+	var cuts := {}
+	var keys := _sides.keys()
+	keys.sort()
+	for key in keys:
+		var s: Dictionary = _sides[key]
+		if s.cut_sig != 0:
+			cuts[key] = (s.cut as Array).map(func(l): return lot_to_save(l))
+	var known := []
+	var hs := _last_parcels.keys()
+	hs.sort()
+	for h in hs:
+		var r: Rect2 = _last_parcels[h]
+		known.append([h, r.position.x, r.position.y, r.size.x, r.size.y])
+	var dirty := []
+	for r in zones.dirty:
+		dirty.append([r.position.x, r.position.y, r.size.x, r.size.y])
+	return {"cuts": cuts, "known": known, "zones_dirty": dirty}
+
+
+## Takes back a save's planned sides (see cuts_to_save) for a town whose
+## roads, zones and parcels are as they were saved; plan() then only redoes
+## sides where something changes, just where the town itself would. Call
+## update(network) first.
+func restore(network: RoadNetwork, zones: ZoneMap, saved: Dictionary) -> void:
+	var cuts: Dictionary = saved.get("cuts", {})
+	for key in cuts:
+		var parts: PackedStringArray = str(key).split(":")
+		var id := int(parts[0])
+		if not network.segments.has(id) or not _sig.has(id) or not _lot_road(network, id):
+			continue
+		var s := _side(network, id, int(parts[1]))
+		s.cut = (cuts[key] as Array).map(func(d): return lot_from_save(d))
+		s.cut_sig = -1  # trusted until something near it changes
+	_last_parcels.clear()
+	for k in saved.get("known", []):
+		_last_parcels[int(k[0])] = Rect2(float(k[1]), float(k[2]), float(k[3]), float(k[4]))
+	_dirty.clear()
+	for r in saved.get("zones_dirty", []):
+		zones.dirty.append(Rect2(float(r[0]), float(r[1]), float(r[2]), float(r[3])))
+	_fresh = false
 
 
 ## Lots never cross a saved parcel: trims them, or drops them if little is
@@ -252,6 +306,9 @@ func _resurvey(s: Dictionary, hits: Array) -> void:
 	# Which roads can claim its land is worked out again when next needed.
 	s.claim_stale = true
 	if s.rays.is_empty():
+		# Lots taken back from a save, with no survey to compare: cut again.
+		if s.cut_sig == -1:
+			s.cut_sig = 0
 		return
 	var raw: Array = s.raw
 	var moved := false
@@ -292,9 +349,8 @@ func _side(network: RoadNetwork, id: int, side: int) -> Dictionary:
 		"len": RoadNetwork.polyline_length(pts),
 		"off": RoadStyle.right_of_way_half(type) + 0.3,
 		"to_curb": RoadStyle.right_of_way_half(type) + 0.3 - RoadStyle.half_width(type),
-		"box": _seg_box[id], "curve": network.curve_of(id),
+		"box": _seg_box[id], "curve": network.curve_of(id), "claim_stale": true,
 	}
-	_claims(s)
 	# Where each survey line meets the street; depths come later, only for
 	# sides that are zoned.
 	var fronts := []
@@ -531,7 +587,7 @@ func _plan_side(s: Dictionary, zones: ZoneMap, all_parcels: Array) -> Array:
 	# that same plat (the usual case: homes went up on the lots offered),
 	# the rest of it stands as it is, so a city and a reloaded copy of it
 	# agree on every empty lot whatever order things were built in.
-	var free_sig := hash([free_kinds, rich])
+	var free_sig := hash([free_kinds, rich, zones.revision])
 	if free_sig != s.get("free_sig", 0):
 		s.free_sig = free_sig
 		s.free = _cut_side(s, zones, rays, free_kinds, [])
@@ -833,6 +889,19 @@ static func _lot(s: Dictionary, key: String, poly: PackedVector2Array, mid: Arra
 	return lot
 
 
+## A lot's measures on a fine binary grid (about a micron), so they come
+## back exactly from a save even though saves print numbers to 15-16 digits:
+## a reloaded copy of the city then matches the city itself bit for bit.
+const SNAP := 1.0 / 1048576.0
+const SNAPPED := ["pad", "at_frac", "to_curb", "width", "depth", "area"]
+
+
+static func _snap_lot(lot: Dictionary) -> void:
+	for f in SNAPPED:
+		if lot.has(f):
+			lot[f] = snappedf(float(lot[f]), SNAP)
+
+
 ## Sets a lot's outline, middle and area.
 static func _set_shape(lot: Dictionary, poly: PackedVector2Array) -> void:
 	if _area(poly) < 0.0:
@@ -840,6 +909,7 @@ static func _set_shape(lot: Dictionary, poly: PackedVector2Array) -> void:
 	lot.corners = poly
 	lot.area = _area(poly)
 	lot.pos = _v3(_centroid(poly))
+	_snap_lot(lot)
 
 
 # -------------------------------------------------------------- corner lots
@@ -876,6 +946,7 @@ func _join_corners(all: Array, corners: Array) -> void:
 			_set_shape(keep, merged)
 			keep.corner = true
 			keep.depth = maxf(keep.depth, drop.width)
+			_snap_lot(keep)
 			gone[drop.key] = true
 			break
 	if gone.is_empty():
@@ -963,6 +1034,7 @@ func revalidate(network: RoadNetwork, lot: Dictionary) -> Dictionary:
 	out.normal = Vector3(n.x, 0.0, n.y)
 	out.front = lot.front + out.normal * shift
 	out.to_curb = edge + shift + pad - RoadStyle.half_width(type)
+	_snap_lot(out)
 	return out
 
 
@@ -1067,6 +1139,7 @@ static func enlarge_lot(sim, key: String, extra: PackedVector2Array) -> bool:
 		return false
 	_set_shape(lot, poly)
 	lot.depth = maxf(lot.depth, (lot.pos - lot.front).dot(lot.normal) * 2.0)
+	_snap_lot(lot)
 	sim.lots_changed.emit()
 	return true
 
@@ -1165,8 +1238,11 @@ static func lot_from_save(d: Dictionary) -> Dictionary:
 			out[k] = Vector3(float(v[0]), float(v[1]), float(v[2]))
 		elif k in ["seg", "side", "plat_zone"]:
 			out[k] = int(v)
+		elif k == "corner_by":
+			out[k] = (v as Array).map(func(x): return int(x))
 		else:
 			out[k] = v
+	_snap_lot(out)
 	return out
 
 

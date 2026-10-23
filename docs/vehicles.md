@@ -47,3 +47,7 @@ engine). `pick()` is the fallback for background trips.
   Bodies point from the front bumper to the rear axle, so long vehicles
   swing wide in turns; semi trailers hinge at the fifth wheel.
 - `tools/vehicle_shot.gd`: lines up every model for photo checks.
+
+## Ultra close-ups
+
+On the desktop Ultra and Cinematic tiers (`GraphicsQuality`), vehicles within 75 m use `VehicleModels.LOD_ULTRA`. These have rounded bodies, alloy wheels with brake discs, door seams, handles and plates, and use the clear-coat material (`VehicleMaterial.get_material(true)`). Each model's close-up mesh is built the first time one comes close, so the browser and the lower tiers never pay for it. Bench: `godot --headless -s tools/vehicle_bench.gd -- small 200 ultra`.

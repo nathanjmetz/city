@@ -94,7 +94,9 @@ func _site(s: Dictionary) -> Node3D:
 			"wind": _turbine(root, unit)
 			"gas": _gas(unit)
 			"coal": _coal(unit, "scrubbers" in s.built)
-			"hydro": _dam(unit)
+			"hydro": pass
+	if s.plant == "hydro" and not s.cells.is_empty():
+		_dam(root, s)
 	_line(root, _tie(s))
 	for color in _batch:
 		var mi := MeshInstance3D.new()
@@ -267,10 +269,46 @@ func _coal(n: Node3D, scrubbed: bool) -> void:
 	_add(n, pile, Vector3(20, 4.5, -26), COAL)
 
 
-## A low run-of-river dam bay with its powerhouse.
-func _dam(n: Node3D) -> void:
-	_box(n, Vector3(80, 8, 10), Vector3(0, 2, 0), CONCRETE)
-	_box(n, Vector3(22, 10, 14), Vector3(-24, 5, 12), Color(0.66, 0.64, 0.6))
+## A low-head run-of-river dam, like Norway Dam on the Tippecanoe: a
+## concrete weir bank to bank across the flow with piers every 12 m, and
+## the powerhouse on the bank nearer the yard, one turbine bay per unit.
+func _dam(root: Node3D, s: Dictionary) -> void:
+	var span: Array = sim.power.dam_span(Power.cell_center(s, s.cells[0]))
+	if span.size() < 2:
+		return
+	var a: Vector3 = span[0]
+	var b: Vector3 = span[1]
+	if b.distance_to(s.pos) < a.distance_to(s.pos):
+		var t := a
+		a = b
+		b = t
+	var length := maxf(a.distance_to(b), 20.0)
+	var along := (b - a).normalized() if a.distance_to(b) > 1.0 else Vector3.RIGHT
+	var n := _node(root, (a + b) * 0.5, Basis.looking_at(Vector3(-along.z, 0.0, along.x), Vector3.UP))
+	# The weir sits on the river's surface, not its bed (as rail bridges do).
+	var m := (a + b) * 0.5
+	n.position.y = maxf(n.position.y, Terrain.water_level(m.x + Terrain.shift.x + Terrain.view_origin.x,
+		m.z + Terrain.shift.y + Terrain.view_origin.y))
+	# An overflow weir from bank to bank, its crest a little over the pool,
+	# with white water spilling down its face; a gated section with piers
+	# beside the powerhouse.
+	_box(n, Vector3(length + 8.0, 3.2, 7.0), Vector3(0, 0.4, 0), CONCRETE)
+	_box(n, Vector3(length, 0.3, 5.0), Vector3(0, 0.15, 5.5), WHITE)
+	var gates := mini(4, maxi(1, int(length / 30.0)))
+	for i in gates + 1:
+		var px := length * 0.5 - i * 10.0
+		_box(n, Vector3(1.8, 7.0, 10.0), Vector3(px, 2.5, 0), CONCRETE)
+		if i < gates:
+			_box(n, Vector3(8.2, 1.0, 1.2), Vector3(px - 5.0, 5.4, -1.0), STEEL)  # gate leaf, raised
+	_box(n, Vector3(gates * 10.0 + 1.8, 0.8, 4.0), Vector3(length * 0.5 - gates * 5.0, 6.4, 0), CONCRETE)  # hoist deck
+	# Powerhouse on the yard's bank: one bay per unit.
+	var bays: int = s.cells.size()
+	var house := 10.0 + 9.0 * bays
+	var hx := length * 0.5 + house * 0.5 - 4.0  # +x runs toward the yard bank
+	_box(n, Vector3(house, 11.0, 18.0), Vector3(hx, 4.5, 3.0), Color(0.66, 0.64, 0.6))
+	_box(n, Vector3(house + 0.6, 0.6, 18.6), Vector3(hx, 10.3, 3.0), Color(0.3, 0.3, 0.32))
+	for i in bays:
+		_box(n, Vector3(6.0, 2.0, 2.0), Vector3(hx - house * 0.5 + 9.0 * i + 9.5, 9.0, -6.5), STEEL)  # gate hoists
 
 
 func _box(root: Node3D, size: Vector3, pos: Vector3, color: Color) -> void:

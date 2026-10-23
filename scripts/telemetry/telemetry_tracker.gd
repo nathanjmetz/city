@@ -27,6 +27,23 @@ const REFUSED_STREAK := 3
 const REFUSED_SECONDS := 20.0
 ## Most labels kept in one hunt's path.
 const PATH_MAX := 10
+## Build something, then tear the same kind of thing down this soon: a redo.
+const REDO_SECONDS := 30.0
+## Redos this many times this fast: the tool keeps doing the wrong thing.
+const REDO_STREAK := 2
+const REDO_WINDOW := 120.0
+## Pick a tool and back out without doing anything, this many times this fast.
+const CANCEL_STREAK := 3
+const CANCEL_SECONDS := 90.0
+## This many clicks on the map with a tool in hand and nothing built.
+const NO_PROGRESS_CLICKS := 15
+## A flagged moment carries the actions of the last this-many seconds...
+const REPLAY_SECONDS := 90.0
+const REPLAY_MAX := 120
+## ...and moments are kept at most this often.
+const REPLAY_GAP := 20.0
+## Most actions kept between take()s (the oldest go first).
+const ACTIONS_MAX := 4000
 
 ## Finished events, oldest first. Telemetry takes them with take().
 var events: Array = []
@@ -42,6 +59,11 @@ var disabled := {}
 var dead := {}
 ## The last button pressed: the tool or menu the player is in, as context.
 var context := ""
+## Everything the player did, in order, for replays: [time, kind, ...].
+## kinds: "b" button (label), "c" map click (screen x, y, world x, z),
+## "d" map drag (from x, z, to x, z), "k" key, "x" command (type, ok, brief),
+## "h" what the tool's hint said.
+var actions: Array = []
 
 var _hunt := {}
 ## When the player started looking (first mouse move after the last world
@@ -54,6 +76,18 @@ var _rage_until := -1.0
 var _escapes: Array = []
 var _undos: Array = []
 var _refusals: Array = []
+var _recent: Array = []      # actions of the last REPLAY_SECONDS
+var _last_replay := -1000.0
+var _builds: Array = []      # [time, type] of recent builds and placements
+var _redos: Array = []
+var _cancels: Array = []     # [time, tool]
+var _tool_done := true       # the tool in hand has done something
+var _idle_clicks := 0        # map clicks since the last command that went through
+var _press := {}             # where the last map press was
+var _last_hint := ""
+## A tool is in hand (its hint line is showing). Before any hint arrives
+## (tests, scenes without tools) a picked button counts as a tool.
+var _tool_on := true
 
 
 ## Mouse moved by rel (screen diagonals). Drags (a button held) are camera
@@ -68,10 +102,16 @@ func motion(rel: float, held: bool, now: float) -> void:
 
 ## A left click. over: label of the control under the mouse ("" over the
 ## world); button: it's a button; off: that button is disabled.
-func click(pos: Vector2, over: String, button: bool, off: bool, now: float) -> void:
+func click(pos: Vector2, over: String, button: bool, off: bool, now: float, world := Vector2.INF) -> void:
 	_check_idle(now)
 	_rage(pos, over, now)
 	if over == "":
+		_act(now, ["c", _r(pos.x), _r(pos.y)] + _xz(world))
+		_press = {"t": now, "pos": pos, "world": world}
+		if context != "" and _tool_on:
+			_idle_clicks += 1
+			if _idle_clicks == NO_PROGRESS_CLICKS:
+				_flag({"k": "no_progress", "n": NO_PROGRESS_CLICKS, "ctx": context}, now)
 		_world_click(now)
 		return
 	_clicks += 1
@@ -82,6 +122,8 @@ func click(pos: Vector2, over: String, button: bool, off: bool, now: float) -> v
 		_bump(disabled, over)
 		return
 	_bump(buttons, over)
+	_act(now, ["b", over])
+	_tool_done = false
 	context = over
 	if _hunt.is_empty():
 		_hunt = {"start": _look_start if _look_start >= 0.0 else now, "path": []}
@@ -93,6 +135,7 @@ func click(pos: Vector2, over: String, button: bool, off: bool, now: float) -> v
 ## A key press that isn't typing. undo: Ctrl/Cmd+Z.
 func key(name: String, undo: bool, now: float) -> void:
 	_check_idle(now)
+	_act(now, ["k", name])
 	if name == "Escape":
 		_escape(now)
 		return
@@ -100,20 +143,68 @@ func key(name: String, undo: bool, now: float) -> void:
 	if undo:
 		_undos = _streak(_undos, now, UNDO_SECONDS)
 		if _undos.size() == UNDO_STREAK:
-			events.append({"k": "undo_streak", "t": _r(now), "n": UNDO_STREAK, "ctx": context})
+			_flag({"k": "undo_streak", "n": UNDO_STREAK, "ctx": context}, now)
 
 
 ## The player's action reached the game; ok is false when it was refused.
-func command(type: String, ok: bool, now: float) -> void:
+## brief: the command's settings, short (see Telemetry.brief).
+func command(type: String, ok: bool, now: float, brief := "") -> void:
 	if not commands.has(type):
 		commands[type] = [0, 0]
 	commands[type][0 if ok else 1] += 1
+	_act(now, ["x", type, ok, brief])
 	if ok:
 		_refusals.clear()
+		_tool_done = true
+		_idle_clicks = 0
+		_redo_check(type, now)
 		return
 	_refusals = _streak(_refusals, now, REFUSED_SECONDS)
 	if _refusals.size() == REFUSED_STREAK:
-		events.append({"k": "refused_streak", "t": _r(now), "n": REFUSED_STREAK, "cmd": type, "ctx": context})
+		_flag({"k": "refused_streak", "n": REFUSED_STREAK, "cmd": type, "ctx": context}, now)
+
+
+## The left button came up. A press that moved on the map was a drag.
+func release(pos: Vector2, now: float, world := Vector2.INF) -> void:
+	if _press.is_empty():
+		return
+	if pos.distance_to(_press.pos) > 0.01:
+		_act(now, ["d"] + _xz(_press.world) + _xz(world))
+	_press = {}
+
+
+## The tool's hint line changed: what the game is telling the player.
+## Numbers are blanked, so a size readout changing isn't a new hint.
+func hint(text: String, now: float) -> void:
+	var on := text.strip_edges() != ""
+	if _tool_on and not on:
+		_cancel(now)   # the tool was put down (Escape, right click)
+	_tool_on = on
+	if not on:
+		_last_hint = ""
+	var t := RegEx.create_from_string("[0-9][0-9,.]*").sub(text.strip_edges(), "#", true).left(120)
+	if t == _last_hint or t == "":
+		return
+	_last_hint = t
+	_act(now, ["h", t])
+
+
+## Built then torn down: building or placing something, then removing
+## the same kind of thing soon after.
+func _redo_check(type: String, now: float) -> void:
+	if type.begins_with("build_") or type.begins_with("place_") or type.begins_with("paint_") or type == "zone_frontage":
+		_builds.append([now, type])
+		_builds = _builds.filter(func(b): return now - b[0] <= REDO_SECONDS)
+		return
+	if not (type.begins_with("remove_") or type == "clear" or type.begins_with("bulldoze")):
+		return
+	var built := _builds.filter(func(b): return now - b[0] <= REDO_SECONDS)
+	if built.is_empty():
+		return
+	_builds.clear()
+	_redos = _streak(_redos, now, REDO_WINDOW)
+	if _redos.size() == REDO_STREAK:
+		_flag({"k": "redo_loop", "n": REDO_STREAK, "cmd": built.back()[1], "ctx": context}, now)
 
 
 ## Called now and then so a hunt left hanging gets closed.
@@ -125,6 +216,9 @@ func tick(now: float) -> void:
 func take(now: float) -> Array:
 	var out := events
 	events = []
+	if not actions.is_empty():
+		out.append({"k": "actions", "t": _r(now), "a": actions})
+		actions = []
 	if not (buttons.is_empty() and keys.is_empty() and commands.is_empty() and disabled.is_empty() and dead.is_empty()):
 		out.append({"k": "use", "t": _r(now), "buttons": buttons, "keys": keys, "cmds": commands,
 			"disabled": disabled, "dead": dead})
@@ -144,7 +238,20 @@ func _escape(now: float) -> void:
 	_end_hunt("escape", now)
 	_escapes = _streak(_escapes, now, ESC_SECONDS)
 	if _escapes.size() == ESC_SPAM:
-		events.append({"k": "esc_spam", "t": _r(now), "n": ESC_SPAM, "ctx": context})
+		_flag({"k": "esc_spam", "n": ESC_SPAM, "ctx": context}, now)
+	_cancel(now)
+
+
+## The tool in hand was put down; with nothing done, that's a cancel.
+func _cancel(now: float) -> void:
+	if context != "" and not _tool_done:
+		_cancels.append([now, context])
+		_cancels = _cancels.filter(func(c): return now - c[0] <= CANCEL_SECONDS and c[1] == context)
+		if _cancels.size() == CANCEL_STREAK:
+			_flag({"k": "cancel_loop", "n": CANCEL_STREAK, "ctx": context}, now)
+			_cancels.clear()
+	_tool_done = true
+	_idle_clicks = 0
 
 
 func _check_idle(now: float) -> void:
@@ -173,9 +280,32 @@ func _rage(pos: Vector2, over: String, now: float) -> void:
 	keep.append([now, pos])
 	_recent_clicks = keep
 	if keep.size() >= RAGE_CLICKS and now > _rage_until:
-		events.append({"k": "rage", "t": _r(now), "at": [_r(pos.x), _r(pos.y)], "over": over, "ctx": context})
+		_flag({"k": "rage", "at": [_r(pos.x), _r(pos.y)], "over": over, "ctx": context}, now)
 		_rage_until = now + RAGE_SECONDS
 		_recent_clicks = []
+
+
+## A stuck moment: the event, with the last REPLAY_SECONDS of actions
+## attached (unless one was kept moments ago).
+func _flag(e: Dictionary, now: float) -> void:
+	e["t"] = _r(now)
+	if now - _last_replay >= REPLAY_GAP:
+		_last_replay = now
+		e["replay"] = _recent.slice(maxi(_recent.size() - REPLAY_MAX, 0))
+	events.append(e)
+
+
+func _act(now: float, a: Array) -> void:
+	a.insert(0, _r(now))
+	if actions.size() < ACTIONS_MAX:
+		actions.append(a)
+	_recent.append(a)
+	while not _recent.is_empty() and now - float(_recent[0][0]) > REPLAY_SECONDS:
+		_recent.pop_front()
+
+
+static func _xz(p: Vector2) -> Array:
+	return [] if p == Vector2.INF else [snappedf(p.x, 0.1), snappedf(p.y, 0.1)]
 
 
 static func _streak(times: Array, now: float, window: float) -> Array:
