@@ -35,10 +35,24 @@ static func add_disc(st: SurfaceTool, center: Vector3, radius: float, y: float, 
 
 ## A complete road of the given type (asphalt, median, markings, curbs and
 ## sidewalks) as one mesh. `mats` maps a name to a material: asphalt, curb,
-## walk, median, yellow, white.
+## walk, median, yellow, white, gravel, concrete.
 ## `gaps` leaves a one-way road's barrier out where a ramp opens off it:
 ## {side (+1/-1): [from, to] metres along pts}.
 static func street(pts: PackedVector3Array, type: int, mats: Dictionary, gaps := {}, rural := false) -> ArrayMesh:
+	var spec: Dictionary = RoadStyle.TYPES[type]
+	if RoadStyle.is_freeway(type):
+		return _oneway(pts, spec, mats, gaps)
+	if spec.get("rural", false) or (rural and spec.median == 0.0):
+		return _rural(pts, type, mats)
+	return _town(pts, type, mats)
+
+
+## A town street with curbs and sidewalks. Markings follow MUTCD Part 3B:
+## a double yellow centre line on multi-lane roads, a solid-and-dashed
+## yellow pair each side of a two-way left-turn lane, white dashes between
+## lanes going the same way, a solid white bike lane line, and white stall
+## marks where parking is metered downtown.
+static func _town(pts: PackedVector3Array, type: int, mats: Dictionary) -> ArrayMesh:
 	var spec: Dictionary = RoadStyle.TYPES[type]
 	var hw := RoadStyle.half_width(type)
 	var cw := RoadStyle.CURB_WIDTH
@@ -47,54 +61,132 @@ static func street(pts: PackedVector3Array, type: int, mats: Dictionary, gaps :=
 	var hm: float = spec.median * 0.5
 	var lane := 3.6
 	var y_mark := RoadStyle.Y_ASPHALT + 0.01
-	if spec.oneway:
-		return _oneway(pts, spec, mats, gaps)
-	if rural and hm == 0.0:
-		return _rural(pts, spec, mats)
 	var layers := [
 		["asphalt", [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
 		["curb", [[-hw - cw, -hw], [hw, hw + cw]], RoadStyle.Y_CURB, ""],
-		["walk", [[-w1, -w0], [w0, w1]], RoadStyle.Y_SIDEWALK, ""],
 	]
-	if hm > 0.0:
-		layers.append(["curb", [[-hm - cw, -hm], [hm, hm + cw]], y_mark + 0.02, "median"])
-		layers.append(["median", [[-hm, hm]], y_mark + 0.03, "median"])
-	elif spec.lanes > 2:
-		# Double yellow centre line.
-		layers.append(["yellow", [[-0.25, -0.12], [0.12, 0.25]], y_mark, ""])
-	# Dashed white lines between lanes going the same way.
+	if spec.get("walk", true):
+		layers.append(["walk", [[-w1, -w0], [w0, w1]], RoadStyle.Y_SIDEWALK, ""])
 	var dashes := []
-	for k in range(1, spec.lanes / 2):
-		var off := hm + (cw if hm > 0.0 else 0.0) + lane * k
-		dashes.append([off - 0.06, off + 0.06])
-		dashes.append([-off - 0.06, -off + 0.06])
+	var inner := 0.0  # centre line to the first lane
+	var lane_edge := 0.0  # centre line to the outside of the outer lane
+	if spec.oneway:
+		# One-way street: every lane goes the drawn way, centred.
+		lane_edge = lane * spec.lanes * 0.5
+		for k in range(1, spec.lanes):
+			var off := -lane_edge + lane * k
+			dashes.append([off - 0.06, off + 0.06])
+	else:
+		if RoadStyle.raised_median(type):
+			inner = hm + cw
+			layers.append(["curb", [[-hm - cw, -hm], [hm, hm + cw]], y_mark + 0.02, "median"])
+			layers.append(["median", [[-hm, hm]], y_mark + 0.03, "median"])
+		elif spec.get("turn", false):
+			inner = hm
+			layers.append(["yellow", [[-hm + 0.01, -hm + 0.13], [hm - 0.13, hm - 0.01]], y_mark, ""])
+			layers.append(["yellow", [[-hm + 0.25, -hm + 0.37], [hm - 0.37, hm - 0.25]], y_mark, "dashed"])
+		elif spec.lanes > 2 or spec.get("bike", false) or spec.get("angle", false):
+			# Double yellow centre line.
+			layers.append(["yellow", [[-0.25, -0.12], [0.12, 0.25]], y_mark, ""])
+		lane_edge = inner + lane * (spec.lanes / 2)
+		for k in range(1, spec.lanes / 2):
+			var off := inner + lane * k
+			dashes.append([off - 0.06, off + 0.06])
+			dashes.append([-off - 0.06, -off + 0.06])
 	if not dashes.is_empty():
 		layers.append(["white", dashes, y_mark, "dashed"])
-	return _build_layers(pts, layers, trimmed(pts, hw + 2.0), mats)
+	if spec.get("bike", false):
+		layers.append(["white", [[-lane_edge - 0.15, -lane_edge], [lane_edge, lane_edge + 0.15]], y_mark, ""])
+	var mesh := _build_layers(pts, layers, trimmed(pts, hw + 2.0), mats)
+	# Downtown stall marks: T marks every 22 ft along parallel parking, and
+	# 45-degree stall lines 9 ft wide for angled parking.
+	var stalls := SurfaceTool.new()
+	stalls.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var any := false
+	var length := RoadNetwork.polyline_length(pts)
+	if spec.get("angle", false):
+		var step := 2.74 / sin(PI * 0.25)
+		for side in [-1.0, 1.0]:
+			var at := hw + 4.0
+			while at + RoadStyle.ANGLE_STALL < length - hw - 4.0:
+				# Cars pull forward into the stall in their direction of travel.
+				var s0 := at if side > 0.0 else at + RoadStyle.ANGLE_STALL
+				var s1 := at + RoadStyle.ANGLE_STALL if side > 0.0 else at
+				_slant(stalls, pts, s0, side * lane_edge, s1, side * (hw - 0.1), y_mark)
+				at += step
+				any = true
+	elif spec.get("parking", 0) > 0 and spec.oneway:
+		for side in [-1.0, 1.0]:
+			var at := hw + 4.0
+			while at < length - hw - 4.0:
+				_slant(stalls, pts, at, side * lane_edge, at, side * (lane_edge + 2.1), y_mark)
+				at += 6.7
+				any = true
+		add_strip(stalls, trimmed(pts, hw + 3.0), -lane_edge - 0.1, -lane_edge, y_mark)
+		add_strip(stalls, trimmed(pts, hw + 3.0), lane_edge, lane_edge + 0.1, y_mark)
+	if any:
+		stalls.commit(mesh)
+		mesh.surface_set_material(mesh.get_surface_count() - 1, mats.white)
+	return mesh
+
+
+## A painted line 0.1 m wide from offset o0 at s0 metres along the road to
+## offset o1 at s1 (a slanted stall line, or a tick across when s0 == s1).
+static func _slant(st: SurfaceTool, pts: PackedVector3Array, s0: float, o0: float, s1: float, o1: float, y: float) -> void:
+	var a := LotPlanner.point_at(pts, s0)
+	var b := LotPlanner.point_at(pts, s1)
+	var pa: Vector3 = a[0] + _flat_side(a) * o0 + Vector3(0, y, 0)
+	var pb: Vector3 = b[0] + _flat_side(b) * o1 + Vector3(0, y, 0)
+	var dir := pb - pa
+	dir.y = 0.0
+	if dir.length() < 0.01:
+		return
+	var across := Vector3(-dir.z, 0.0, dir.x).normalized() * 0.05
+	_quad(st, pa - across, pa + across, pb - across, pb + across, 0.0, 1.0)
+
+
+static func _flat_side(at: Array) -> Vector3:
+	var dir: Vector3 = at[1] if at.size() > 1 else Vector3.FORWARD
+	dir.y = 0.0
+	dir = dir.normalized()
+	return Vector3(-dir.z, 0.0, dir.x)
 
 
 ## A country road (MUTCD / Indiana county road photos): no curbs or
 ## sidewalks, solid white edge lines, a yellow centre line (dashed on two
-## lanes) and gravel shoulders running off into the grass.
-static func _rural(pts: PackedVector3Array, spec: Dictionary, mats: Dictionary) -> ArrayMesh:
+## lanes) and gravel shoulders running off into the grass. A divided
+## highway gets a grass median with a yellow left edge line each side.
+## Gravel roads and alleys have no lines at all.
+static func _rural(pts: PackedVector3Array, type: int, mats: Dictionary) -> ArrayMesh:
+	var spec: Dictionary = RoadStyle.TYPES[type]
 	var hw: float = spec.width * 0.5
 	var y_mark := RoadStyle.Y_ASPHALT + 0.01
-	var edge: float = 3.6 * spec.lanes * 0.5 + 0.15
+	var surface: String = spec.get("surface", "asphalt")
+	if surface != "asphalt":
+		return _build_layers(pts, [[surface, [[-hw, hw]], RoadStyle.Y_ASPHALT, ""]], pts, mats)
+	var hm: float = spec.median * 0.5
+	var per_side: int = spec.lanes / 2
+	var edge: float = hm + 3.6 * per_side
 	var layers := [
 		["asphalt", [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
 		["gravel", [[-hw - 1.8, -hw], [hw, hw + 1.8]], RoadStyle.Y_SIDEWALK, ""],
-		["white", [[-edge - 0.15, -edge], [edge, edge + 0.15]], y_mark, ""],
+		["white", [[-edge - 0.2, -edge - 0.05], [edge + 0.05, edge + 0.2]], y_mark, ""],
 	]
-	if spec.lanes > 2:
+	if hm > 0.0:
+		var grass := hm - 1.2
+		layers.append(["yellow", [[-hm - 0.05, -hm + 0.1], [hm - 0.1, hm + 0.05]], y_mark, ""])
+		layers.append(["median", [[-grass, grass]], y_mark + 0.03, "median"])
+	elif spec.lanes > 2:
 		layers.append(["yellow", [[-0.25, -0.12], [0.12, 0.25]], y_mark, ""])
-		var dashes := []
-		for k in range(1, spec.lanes / 2):
-			dashes.append([3.6 * k - 0.06, 3.6 * k + 0.06])
-			dashes.append([-3.6 * k - 0.06, -3.6 * k + 0.06])
-		layers.append(["white", dashes, y_mark, "dashed"])
 	else:
 		layers.append(["yellow", [[-0.06, 0.06]], y_mark, "dashed"])
-	return _build_layers(pts, layers, pts, mats)
+	var dashes := []
+	for k in range(1, per_side):
+		dashes.append([hm + 3.6 * k - 0.06, hm + 3.6 * k + 0.06])
+		dashes.append([-hm - 3.6 * k - 0.06, -hm - 3.6 * k + 0.06])
+	if not dashes.is_empty():
+		layers.append(["white", dashes, y_mark, "dashed"])
+	return _build_layers(pts, layers, trimmed(pts, hw + 2.0), mats)
 
 
 ## Wooden utility poles down one side of a country road, every 45 m, with a

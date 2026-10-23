@@ -155,6 +155,29 @@ func decide(usable: Callable) -> bool:
 	return changed
 
 
+## The pad a company would put down next: the best paying free one next to
+## what it has, or Vector2i.MAX.
+func best_pad(id: int, usable: Callable) -> Vector2i:
+	if not sites.has(id) or sites[id].pads.is_empty() or sites[id].pads.size() >= MAX_PADS:
+		return Vector2i.MAX
+	var s: Dictionary = sites[id]
+	var best := Vector2i.MAX
+	var best_score := 0.0
+	for c in _frontier(s):
+		if richness(s, c) < MIN_RICHNESS:
+			continue
+		var p := pad_profit(s, c)
+		if p <= 0.0 or not _free(id, s, c, usable):
+			continue
+		var score := p + COMPACT_BONUS * _neighbors(s, c)
+		if reserves != null and reserves.kind_at(pad_center(s, c)) == s.kind:
+			score += RESERVE_BONUS
+		if score > best_score or (score == best_score and best != Vector2i.MAX and _less(c, best)):
+			best = c
+			best_score = score
+	return best
+
+
 ## Cells a new company may open its first pad on.
 static func _seeds() -> Array:
 	var out := []

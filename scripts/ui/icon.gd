@@ -145,6 +145,8 @@ func _draw() -> void:
 			line.call(P.call(0.75, 0.25), P.call(0.25, 0.75), w * 1.3, Color(1, 0.45, 0.4))
 		"street", "avenue", "boulevard", "highway", "ramp":
 			_road_section(P, w)
+		_ when kind.begins_with("road:"):
+			_road_type(P, w, int(kind.substr(5)))
 		"raise", "lower":
 			var up := kind == "raise"
 			line.call(P.call(0.08, 0.72), P.call(0.92, 0.72))
@@ -235,6 +237,13 @@ func _draw() -> void:
 			_poly([P.call(0.66, 0.36), P.call(0.77, 0.36), P.call(0.77, 0.58), P.call(0.66, 0.58)], color)
 			line.call(P.call(0.86, 0.5), P.call(0.86, 0.14), w)
 			_poly([P.call(0.86, 0.14), P.call(0.97, 0.14), P.call(0.97, 0.26), P.call(0.86, 0.26)], Color(0.95, 0.35, 0.35))
+		"bank":
+			# A temple-front bank: pediment, four columns, steps.
+			_poly([P.call(0.08, 0.32), P.call(0.5, 0.1), P.call(0.92, 0.32)], color)
+			draw_rect(Rect2(P.call(0.1, 0.34), Vector2(0.8, 0.07) * s), color)
+			for i in 4:
+				draw_rect(Rect2(P.call(0.17 + i * 0.19, 0.44), Vector2(0.09, 0.32) * s), color)
+			draw_rect(Rect2(P.call(0.08, 0.8), Vector2(0.84, 0.1) * s), color)
 		"cemetery":
 			# A rounded headstone on a lawn.
 			_poly([P.call(0.06, 0.9), P.call(0.94, 0.9), P.call(0.94, 0.8), P.call(0.06, 0.8)], Color(0.5, 0.7, 0.4))
@@ -435,6 +444,84 @@ func _road_section(P: Callable, w: float) -> void:
 		"ramp":
 			draw_polyline(PackedVector2Array([P.call(0.42, 0.42), P.call(0.5, 0.28), P.call(0.58, 0.42)]),
 				color, w * 0.6, true)
+
+
+## Any road type seen from above, drawn from its spec: its width, surface,
+## median or turn lane, lane lines, bike lanes, parking and trees.
+func _road_type(P: Callable, w: float, type: int) -> void:
+	var spec: Dictionary = RoadStyle.TYPES[type]
+	var yellow := Color(0.95, 0.8, 0.3)
+	var half := clampf(spec.width / 44.0, 0.12, 0.44)
+	var k: float = half / (spec.width * 0.5)  # icon units per metre
+	var l: float = 0.5 - half
+	var r: float = 0.5 + half
+	var surface: Dictionary = {"gravel": Color(0.62, 0.56, 0.45), "concrete": Color(0.58, 0.58, 0.56)}
+	var rural: bool = spec.get("rural", false)
+	if rural:
+		_poly([P.call(0.0, 0.05), P.call(1.0, 0.05), P.call(1.0, 0.95), P.call(0.0, 0.95)], Color(0.35, 0.55, 0.3, 0.5))
+	_poly([P.call(l, 0.05), P.call(r, 0.05), P.call(r, 0.95), P.call(l, 0.95)],
+		surface.get(spec.get("surface", ""), Color(0.32, 0.34, 0.37)))
+	if not rural:
+		draw_line(P.call(l, 0.05), P.call(l, 0.95), color, w * 0.6, true)
+		draw_line(P.call(r, 0.05), P.call(r, 0.95), color, w * 0.6, true)
+	if spec.get("surface", "asphalt") != "asphalt":
+		return
+	var hm: float = spec.median * 0.5 * k
+	var lane: float = 3.6 * k
+	if spec.median > 0.0 and not spec.get("turn", false):
+		var g: float = hm - (1.2 * k if rural else 0.0)
+		_poly([P.call(0.5 - g, 0.05), P.call(0.5 + g, 0.05), P.call(0.5 + g, 0.95), P.call(0.5 - g, 0.95)], Color(0.35, 0.6, 0.3))
+		if spec.get("trees", false):
+			for y in [0.22, 0.5, 0.78]:
+				draw_circle(P.call(0.5, y), maxf(g, 0.05) * s_of(P) * 0.9, Color(0.2, 0.42, 0.18))
+	elif spec.get("turn", false):
+		for x in [0.5 - hm, 0.5 + hm]:
+			draw_line(P.call(x, 0.05), P.call(x, 0.95), yellow, w * 0.4)
+	elif spec.oneway:
+		pass
+	elif spec.lanes > 2 or spec.get("bike", false) or spec.get("angle", false):
+		draw_line(P.call(0.485, 0.05), P.call(0.485, 0.95), yellow, w * 0.35)
+		draw_line(P.call(0.515, 0.05), P.call(0.515, 0.95), yellow, w * 0.35)
+	elif rural:
+		_dash(P, 0.5, yellow, w * 0.45)
+	var edge: float
+	if spec.oneway:
+		edge = lane * spec.lanes * 0.5
+		if RoadStyle.is_freeway(type):
+			edge = half - 1.2 * k
+			for i in range(1, spec.lanes):
+				_dash(P, 0.5 - half + 1.2 * k + lane * i, color, w * 0.4)
+		else:
+			for i in range(1, spec.lanes):
+				_dash(P, 0.5 - edge + lane * i, color, w * 0.4)
+		draw_polyline(PackedVector2Array([P.call(0.42, 0.42), P.call(0.5, 0.28), P.call(0.58, 0.42)]), color, w * 0.6, true)
+	else:
+		var inner: float = hm + (RoadStyle.CURB_WIDTH * k if RoadStyle.raised_median(type) else 0.0)
+		edge = inner + lane * (spec.lanes / 2)
+		for i in range(1, spec.lanes / 2):
+			_dash(P, 0.5 - inner - lane * i, color, w * 0.4)
+			_dash(P, 0.5 + inner + lane * i, color, w * 0.4)
+	if spec.get("bike", false) or (rural and not RoadStyle.is_freeway(type)):
+		for x in [0.5 - edge, 0.5 + edge]:
+			draw_line(P.call(x, 0.05), P.call(x, 0.95), color, w * 0.35)
+	if spec.get("bike", false):
+		for x in [0.5 - edge - 0.75 * 1.5 * k, 0.5 + edge + 0.75 * 1.5 * k]:
+			draw_circle(P.call(x, 0.5), s_of(P) * 0.025, color)
+	if spec.get("angle", false):
+		for x0 in [l, r]:
+			var dx: float = (0.5 - edge) - l if x0 == l else (0.5 + edge) - r
+			for y in [0.15, 0.35, 0.55, 0.75]:
+				draw_line(P.call(x0, y), P.call(x0 + dx, y + 0.12), color, w * 0.3, true)
+	elif spec.get("parking", 0) > 0:
+		for x0 in [l + 0.02, r - 0.02 - 2.0 * k]:
+			for y in [0.12, 0.42, 0.72]:
+				_poly([P.call(x0, y), P.call(x0 + 2.0 * k, y), P.call(x0 + 2.0 * k, y + 0.18), P.call(x0, y + 0.18)],
+					Color(color, 0.55))
+
+
+## The icon's side in pixels, from its scaling callable.
+func s_of(P: Callable) -> float:
+	return (P.call(1.0, 0.0) - P.call(0.0, 0.0)).x
 
 
 func _dash(P: Callable, x: float, col: Color, width: float) -> void:

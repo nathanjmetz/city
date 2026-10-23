@@ -61,6 +61,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_road_tools.gd
           ~/godot-cache/godot --headless -s tests/test_grid_fill.gd
           ~/godot-cache/godot --headless -s tests/test_move_it.gd
+          ~/godot-cache/godot --headless -s tests/test_road_variants.gd
           ~/godot-cache/godot --headless -s tests/test_traffic.gd
           ~/godot-cache/godot --headless -s tests/test_net.gd
           ~/godot-cache/godot --headless -s tests/test_vehicles.gd
@@ -78,6 +79,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_power.gd
           ~/godot-cache/godot --headless -s tests/test_vegetation.gd
           ~/godot-cache/godot --headless -s tests/test_education.gd
+          ~/godot-cache/godot --headless -s tests/test_banks.gd
           ~/godot-cache/godot --headless -s tests/test_mail.gd
 
       - name: Stamp the build
