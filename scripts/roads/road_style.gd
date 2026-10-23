@@ -131,6 +131,8 @@ const TRUCK_APRON := 3.5
 const CURB_WIDTH := 0.3
 ## Grass strip between curb and sidewalk ("parkway").
 const PARKWAY_WIDTH := 1.8
+## The concrete gutter pan inside the curb (2 ft), part of the pavement width.
+const GUTTER_WIDTH := 0.6
 const SIDEWALK_WIDTH := 1.5
 
 ## Height of each layer above the ground, to keep them from flickering.
