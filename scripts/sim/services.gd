@@ -6,7 +6,7 @@ extends RefCounted
 ##
 ## Sizes, prices and reach follow real US practice for a small town.
 
-enum Kind { SUBSTATION, WATER_TOWER, FIRE, POLICE, CLINIC, SCHOOL, POWER_FEED, WELL, BUS_DEPOT }
+enum Kind { SUBSTATION, WATER_TOWER, FIRE, POLICE, CLINIC, SCHOOL, POWER_FEED, WELL, BUS_DEPOT, WATER_UTILITY }
 
 ## Each kind: name, icon, footprint (width along the road x depth, metres),
 ## and its build cost, monthly upkeep and `reach` or `capacity` from Balance.
@@ -26,6 +26,11 @@ const KINDS := {
 		"cost": Balance.SERVICES["power_feed"]["cost"], "upkeep": Balance.SERVICES["power_feed"]["upkeep"], "capacity": Balance.SERVICES["power_feed"]["capacity"], "utility": "power"},
 	Kind.WELL: {"name": "Well and pump house", "icon": "water", "size": Vector2(20, 20),
 		"cost": Balance.SERVICES["well"]["cost"], "upkeep": Balance.SERVICES["well"]["upkeep"], "capacity": Balance.SERVICES["well"]["capacity"], "utility": "water"},
+	# The water and sewer utility (Brawn's hub with a manager): an office and
+	# its first well. It pays its own way from water bills plus the city's
+	# subsidy, so the city pays no upkeep for it (see WaterUtility).
+	Kind.WATER_UTILITY: {"name": "Water and sewer utility", "icon": "water", "size": Vector2(30, 30),
+		"cost": Balance.WATER_UTILITY["cost"], "upkeep": 0, "capacity": Balance.WATER_WORKS["well"]["capacity"], "utility": "water", "hub": true},
 	# Two-bay station. ISO rates homes within 1.5 road miles of a station.
 	Kind.FIRE: {"name": "Fire station", "icon": "fire", "size": Vector2(30, 36),
 		"cost": Balance.SERVICES["fire"]["cost"], "upkeep": Balance.SERVICES["fire"]["upkeep"], "reach": Balance.SERVICES["fire"]["reach"]},
@@ -67,6 +72,11 @@ var served := {}
 var utility_use := {"power": [0, 0], "water": [0, 0]}
 ## Distance by road from the nearest service of each kind to every road node.
 var reach_by_kind := {}
+## The water and sewer utilities' managers, works and pipes.
+var water := WaterUtility.new()
+## Power companies' plants (Power.sources(), set by the city): more power
+## sources, each feeding the lines from its yard gate.
+var plants := []
 var _next_id := 1
 
 
@@ -123,6 +133,9 @@ func site_problem(network: RoadNetwork, kind: int, pos: Vector3, dir: Vector3) -
 			other.append(Vector2(p.x, p.z))
 		if not Geometry2D.intersect_polygons(poly, other).is_empty():
 			return "Overlaps the %s." % KINDS[b.kind].name.to_lower()
+	for p in pts:
+		if water.covers(buildings, p):
+			return "Overlaps the water utility's yard."
 	return ""
 
 
@@ -173,22 +186,25 @@ func at(p: Vector3) -> int:
 	return -1
 
 
-## True when a point sits on any service's footprint (lots there are dropped).
+## True when a point sits on any service's footprint or a water utility's
+## yard (lots there are dropped).
 func covers(p: Vector3) -> bool:
-	return at(p) != -1
+	return at(p) != -1 or water.covers(buildings, p)
 
 
 func monthly_upkeep() -> int:
 	var total := 0
 	for id in buildings:
 		total += int(KINDS[buildings[id].kind].upkeep) + int(buildings[id].get("subsidy", 0))
-	return total
+	return total + water.monthly_subsidy()
 
 
 ## Works out what every lot gets, from distances along the roads.
 func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) -> void:
 	served.clear()
 	reach_by_kind.clear()
+	water.prune(buildings)
+	water.refresh(network)
 	var lengths := {}
 	for id in network.segments:
 		lengths[id] = RoadNetwork.polyline_length(network.sample_segment(id, 16))
@@ -198,21 +214,36 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 			if buildings[id].kind == kind:
 				_spread(network, lengths, buildings[id], dist)
 		reach_by_kind[kind] = dist
+	var plant_dist := {}
+	for pl in plants:
+		_spread_from(network, lengths, pl.front, plant_dist)
 	var keys := lots.keys()
 	keys.sort()
 	# Utilities serve the nearest buildings first, up to their capacity.
 	var by_dist := {"power": [], "water": []}
+	# Lots on a utility's mains get their water from it: id -> [[dist, key]].
+	var on_mains := {}
 	for key in keys:
 		var lot: Dictionary = lots[key]
 		var s := {}
 		for kind in COVERAGE:
 			s[kind] = _lot_distance(network, lengths, reach_by_kind[kind], lot) <= KINDS[kind].reach
 		served[key] = s
+		var owner := water.main_owner(lot.seg)
+		if owner != -1:
+			s["water_linked"] = true
+			if not on_mains.has(owner):
+				on_mains[owner] = []
+			on_mains[owner].append([lot.pos.distance_to(buildings[owner].pos), key, lot.seg])
 		for u in ["power", "water"]:
 			s[u] = false
+			if u == "water" and owner != -1:
+				continue
 			var d := INF
 			for kind in UTILITIES[u]:
 				d = minf(d, _lot_distance(network, lengths, reach_by_kind[kind], lot))
+			if u == "power":
+				d = minf(d, _lot_distance(network, lengths, plant_dist, lot))
 			# Joined to a source by road at all (before capacity is shared out).
 			s[u + "_linked"] = d < INF
 			if d < INF:
@@ -222,6 +253,9 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 		for id in buildings:
 			if buildings[id].kind in UTILITIES[u]:
 				cap += int(KINDS[buildings[id].kind].capacity)
+		if u == "power":
+			for pl in plants:
+				cap += int(pl.capacity)
 		var used := 0
 		by_dist[u].sort()
 		for entry in by_dist[u]:
@@ -234,6 +268,57 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 				used += load
 			served[key][u] = used <= cap
 		utility_use[u] = [used, cap]
+	_serve_from_utilities(on_mains, city_buildings)
+
+
+## Shares each utility's water (and sewer) among the lots on its pipes,
+## nearest first, and adds up its bills.
+func _serve_from_utilities(on_mains: Dictionary, city_buildings: Dictionary) -> void:
+	for id in water.live:
+		var l: Dictionary = water.live[id]
+		var list: Array = on_mains.get(id, [])
+		list.sort()
+		var cap := water.water_capacity(id) + int(l.get("bought", 0))
+		var scap := water.sewer_capacity(id)
+		var used := 0
+		var sused := 0
+		var fees := 0.0
+		var homes := 0
+		var meters := (1.0 + (Balance.WATER_METER_GAIN if water.has_work(id, "meters") else 0.0)) * float(water.utilities[id].get("rate", 1.0))
+		for entry in list:
+			var key: String = entry[1]
+			var s: Dictionary = served[key]
+			s["water_by"] = id
+			var load := 1
+			if city_buildings.has(key):
+				load = LOAD[int(city_buildings[key].zone)]
+				if used + load > cap:
+					continue
+				used += load
+			s["water"] = used <= cap
+			var sewer := false
+			if scap > 0 and l.sewers.has(entry[2]):
+				if not city_buildings.has(key):
+					sewer = true
+				elif sused + load <= scap:
+					sused += load
+					sewer = true
+			s["sewer"] = sewer
+			if city_buildings.has(key):
+				var z := int(city_buildings[key].zone)
+				var fee: float = WATER_FEE[z] * (1.0 - Balance.WATER_SEWER_SHARE * (0.0 if sewer else 1.0))
+				if z == ZoneMap.Zone.INDUSTRIAL and water.has_work(id, "industrial_main"):
+					fee *= 1.0 + Balance.WATER_INDUSTRY_GAIN
+				fees += fee * meters
+				if z == ZoneMap.Zone.RESIDENTIAL:
+					homes += 1
+		l.homes_eq = used
+		l.load = used
+		l.sewer_load = sused
+		l.fees = roundi(fees)
+		l.homes = homes
+		utility_use.water[0] += used
+		utility_use.water[1] += cap
 
 
 ## True when the lot has power and water, so a building can grow there.
@@ -254,7 +339,11 @@ func coverage(key: String) -> float:
 
 ## Road distance from each service's front door to every node (Dijkstra).
 func _spread(network: RoadNetwork, lengths: Dictionary, b: Dictionary, dist: Dictionary) -> void:
-	var near := network.find_segment_near(b.pos + b.dir * size_of(b).y * 0.5, 80.0, 1.0)
+	_spread_from(network, lengths, b.pos + b.dir * size_of(b).y * 0.5, dist)
+
+
+func _spread_from(network: RoadNetwork, lengths: Dictionary, front: Vector3, dist: Dictionary) -> void:
+	var near := network.find_segment_near(front, 80.0, 1.0)
 	if near.is_empty():
 		return
 	var s: Dictionary = network.segments[near.seg]
@@ -305,7 +394,7 @@ func to_dict() -> Dictionary:
 		out[str(id)] = [b.kind, b.pos.x, b.pos.z, b.dir.x, b.dir.z]
 		if b.has("size") or b.has("subsidy"):
 			out[str(id)].append_array([size_of(b).x, size_of(b).y, int(b.get("subsidy", 0))])
-	return {"next_id": _next_id, "buildings": out}
+	return {"next_id": _next_id, "buildings": out, "water": water.to_dict()}
 
 
 func from_dict(d: Dictionary) -> void:
@@ -318,3 +407,4 @@ func from_dict(d: Dictionary) -> void:
 			buildings[int(k)].size = Vector2(a[5], a[6])
 			buildings[int(k)].subsidy = int(a[7])
 	_next_id = int(d.get("next_id", 1))
+	water.from_dict(d.get("water", {}))

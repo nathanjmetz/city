@@ -48,22 +48,19 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(roundi(float(s.upkeep) * size))])
 	if s.has("sales"):
 		rows.append(["Materials sold", "$%s / month" % CitySim.money_text(roundi(CivicHubs.sales(h) * size))])
-	# What its development tree has added, and what it traded last month.
-	for key in h.dev:
-		var dv: Dictionary = Balance.HUB_DEVELOPMENTS[key]
-		rows.append([dv.name, _dev_note(sim, dv)])
 	if h.get("boxed", false):
 		problems.append("No free land next to it to grow into.")
+	# Its leader and development tree: built, last move, next, and what's locked.
+	rows.append_array(Inspect._development(sim, h, CivicHubs.tree(h), h.pos, CivicHubs.funding(h)).filter(
+		func(r): return r[0] != "Built" and r[0] != "Could build next"))
+	for node in CivicHubs.tree(h):
+		if node.id in h.built:
+			rows.append([node.name, _dev_note(sim, node.effects)])
+	for node in CivicHubs.tree(h):
+		var why := hubs.dev_problem(sim, id, node.id)
+		if why != "built":
+			rows.append([node.name, "next up" if why == "" else why])
 	var actions := []
-	for key in CivicHubs.dev_options(h):
-		if key in h.dev:
-			continue
-		var dv: Dictionary = Balance.HUB_DEVELOPMENTS[key]
-		var why := hubs.dev_problem(sim, id, key)
-		var label := "Add %s ($%s)" % [dv.name.to_lower(), CitySim.money_text(int(dv.cost))]
-		if why != "":
-			label = "%s: %s" % [dv.name, why]
-		actions.append({"label": label, "cmd": {"type": "develop_hub", "id": id, "dev": key}, "enabled": why == ""})
 	var next: String = k.next
 	if next != "":
 		var cost := CivicHubs.upgrade_cost(h.kind)
@@ -83,6 +80,8 @@ static func _tons(lb: float) -> String:
 
 ## One line on what a development does, with last month's trade.
 static func _dev_note(sim: CitySim, dv: Dictionary) -> String:
+	if dv.has("sales*"):
+		return "+%d%% materials sold" % roundi(float(dv["sales*"]) * 100.0)
 	if dv.has("power"):
 		return "%s MWh sold last month" % CitySim.money_text(roundi(sim.trade.sold("power")))
 	if dv.has("compost"):
@@ -91,8 +90,6 @@ static func _dev_note(sim: CitySim, dv: Dictionary) -> String:
 		return "%s tons of scrap sold" % CitySim.money_text(roundi(sim.trade.sold("scrap")))
 	if dv.has("garbage"):
 		return "%s tons taken in from neighbors" % CitySim.money_text(roundi(sim.trade.sold("garbage")))
-	if dv.has("sales"):
-		return "+%d%% materials sold" % roundi(float(dv.sales) * 100.0)
 	if dv.has("value"):
 		return "+%d%% land value nearby" % roundi(float(dv.value) * 100.0)
 	if dv.has("grow"):

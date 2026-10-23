@@ -38,16 +38,19 @@ func _process(_delta: float) -> bool:
 		_aim(Vector3(170, 0, -60), 35.0, 35.0, 260.0)
 	if _frames == 70:
 		_save(out + "_close.png")
-		# The tool's live preview of an odd shape next to the town.
+		# Rectangle mode beside a diagonal county road, like Brawn's try:
+		# the side is dragged a little off and still lines up exactly.
 		sim.apply({"type": "clear"})
-		sim.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 30], "end": [300, 0]})
+		sim.apply({"type": "build_road", "start": [-400, -260], "ctrl": [0, 0], "end": [400, 260]})
 		_tool.set_mode(RoadTool.Mode.GRID)
-		for p in [Vector3(-200, 0, 6), Vector3(150, 0, 12), Vector3(260, 0, 220)]:
-			_tool._points.append(p)
+		_tool.set_grid_free(false)
+		var a := Vector3(-150, 0, -60)
+		_tool._points.append(a)
+		_tool._points.append(_tool._grid_corner(a + Vector3(cos(0.62), 0, sin(0.62)) * 320.0))
+		_tool._update_hint()
 		_tool.set_process(false)
-		_tool._preview.visible = true
-		_tool._show_grid(Vector3(-120, 0, 300))
-		_aim(Vector3(20, 0, 150), 20.0, 55.0, 650.0)
+		_tool._show_grid(_tool._points[1] + Vector3(-120, 0, 200))
+		_aim(Vector3(0, 0, 60), 20.0, 55.0, 650.0)
 	if _frames == 100:
 		_save(out + "_preview.png")
 		quit()

@@ -24,6 +24,14 @@ var _log := VBoxContainer.new()
 ## Buttons for what the selection can do (upgrade, demolish), when it says.
 var _actions := VBoxContainer.new()
 var _action_key := ""
+## A hub's development tree (built, next up, locked), when it has one.
+var _tree := VBoxContainer.new()
+var _tree_text := ""
+## A hub's money lever (the water utility's subsidy): - and + buttons.
+var _lever := HBoxContainer.new()
+var _lever_label := UiStyle.label("", 12, UiStyle.MUTED)
+var _lever_value := UiStyle.label("", 12)
+var _lever_cmds := [{}, {}]
 var _icon_name := ""
 var _guide: LeaderGuide
 var _guide_for := {}
@@ -66,6 +74,24 @@ func _ready() -> void:
 	_rows.add_theme_constant_override("h_separation", 12)
 	_rows.add_theme_constant_override("v_separation", 2)
 	col.add_child(_rows)
+	_tree.add_theme_constant_override("separation", 2)
+	col.add_child(_tree)
+	_lever.add_theme_constant_override("separation", 6)
+	_lever_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_lever.add_child(_lever_label)
+	for i in 2:
+		var btn := Button.new()
+		btn.text = "−" if i == 0 else "+"
+		btn.custom_minimum_size = Vector2(26, 0)
+		btn.pressed.connect(func():
+			if not _lever_cmds[i].is_empty():
+				sim.apply(_lever_cmds[i])
+				_refresh())
+		_lever.add_child(btn)
+		if i == 0:
+			_lever.add_child(_lever_value)
+	_lever.visible = false
+	col.add_child(_lever)
 	_problems.add_theme_constant_override("separation", 2)
 	col.add_child(_problems)
 	_subsidy.add_theme_constant_override("separation", 6)
@@ -132,6 +158,23 @@ func _refresh() -> void:
 	for i in d.rows.size():
 		labels[i * 2].text = d.rows[i][0]
 		labels[i * 2 + 1].text = d.rows[i][1]
+	var tree_text := JSON.stringify(d.get("tree", []))
+	if tree_text != _tree_text:
+		_tree_text = tree_text
+		for c in _tree.get_children():
+			_tree.remove_child(c)
+			c.queue_free()
+		for t in d.get("tree", []):
+			var l := UiStyle.label("%s: %s" % [t[0], t[1]], 11, UiStyle.MUTED)
+			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			l.custom_minimum_size = Vector2(236, 0)
+			_tree.add_child(l)
+	var lever: Dictionary = d.get("lever", {})
+	_lever.visible = not lever.is_empty()
+	if not lever.is_empty():
+		_lever_label.text = lever.label
+		_lever_value.text = lever.value
+		_lever_cmds = [lever.down, lever.up]
 	for c in _problems.get_children():
 		_problems.remove_child(c)
 		c.queue_free()
@@ -210,5 +253,5 @@ func _sync_guide() -> void:
 		_guide = null
 	if LeaderGuide.takes(sim, tool.selection):
 		_guide = LeaderGuide.new()
-		_guide.setup(sim, str(tool.selection.type), int(tool.selection.id))
+		_guide.setup(sim, LeaderGuide.hub_of(sim, tool.selection), int(tool.selection.id))
 		get_child(0).add_child(_guide)

@@ -4,10 +4,12 @@ extends Node3D
 ##
 ## Straight: click start, click end (keeps going from the end).
 ## Curved: click start, click the bend, click end.
-## Grid: click the corners of any shape, then click the first corner again
-## (or press Enter) to fill it with streets. The grid fits the roads already
-## there (see GridFill). Tab turns the grid square to the next side, Backspace
-## takes back a corner, [ and ] change the block length.
+## Grid: a rectangle by default, like CS2: click a corner, click the end of
+## the first side (it snaps parallel or square to the nearest road), then
+## move out and click to set the depth. Tab switches to Any shape: click the
+## corners of any shape, then the first corner again (or Enter). Either way
+## the grid fits the roads already there (see GridFill). Backspace takes back
+## a corner, Shift+Tab turns a free shape's grid, [ and ] set the block length.
 ## Roundabout: click to place. [ and ] change the size.
 ## Upgrade: click a road to change it to the chosen road type.
 ## Bulldoze: click a road to remove it.
@@ -26,6 +28,10 @@ signal options_changed
 enum Mode { NONE, STRAIGHT, CURVED, BULLDOZE, GRID, ROUNDABOUT, UPGRADE }
 
 const SNAP_NODE := 9.0
+## A rectangle's first side snaps parallel or square to a road within this
+## angle, and looks this far for the road to line up with.
+const RECT_SNAP := deg_to_rad(10.0)
+const RECT_ALIGN_REACH := 250.0
 const SNAP_ROAD := 7.0
 ## Straight roads snap to 15 degree steps while Shift is held.
 const ANGLE_STEP := deg_to_rad(15.0)
@@ -47,6 +53,8 @@ var last_draw := Mode.STRAIGHT
 var grid_block := 120.0
 ## Which side of the shape the grid runs square to.
 var grid_side := 0
+## Any shape instead of a rectangle.
+var grid_free := false
 var roundabout_radius := 20.0
 var road_type := 0
 var parallel := false
@@ -141,18 +149,33 @@ func set_mode(m: int) -> void:
 ## Grid keys come before the chat's Enter, while a grid shape is being drawn
 ## and nobody is typing.
 func _input(event: InputEvent) -> void:
-	if mode != Mode.GRID or _points.is_empty() or get_viewport().gui_get_focus_owner() != null:
+	if mode != Mode.GRID or get_viewport().gui_get_focus_owner() != null:
 		return
 	if not (event is InputEventKey and event.pressed and not event.echo):
 		return
-	match (event as InputEventKey).keycode:
-		KEY_ENTER, KEY_KP_ENTER: _finish_grid()
-		KEY_BACKSPACE:
-			_points.pop_back()
-			_update_hint()
-		KEY_TAB: grid_side += 1
-		_: return
+	var key := event as InputEventKey
+	if key.keycode == KEY_TAB and key.shift_pressed:
+		grid_side += 1
+	elif key.keycode == KEY_TAB:
+		set_grid_free(not grid_free)
+	elif _points.is_empty():
+		return
+	elif key.keycode == KEY_ENTER or key.keycode == KEY_KP_ENTER:
+		_finish_grid()
+	elif key.keycode == KEY_BACKSPACE:
+		_points.pop_back()
+		_update_hint()
+	else:
+		return
 	get_viewport().set_input_as_handled()
+
+
+## Switches the grid between a rectangle and any shape.
+func set_grid_free(on: bool) -> void:
+	grid_free = on
+	_points.clear()
+	options_changed.emit()
+	_update_hint()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -267,7 +290,11 @@ func _click() -> void:
 					_points.append(curve[2])
 		Mode.GRID:
 			var p := _grid_corner(_snapped(hit))
-			if _points.size() >= 3 and p.distance_to(_points[0]) < 0.01:
+			if not grid_free and _points.size() == 2:
+				_finish_grid(_rect(p))
+			elif not grid_free:
+				_points.append(p)
+			elif _points.size() >= 3 and p.distance_to(_points[0]) < 0.01:
 				_finish_grid()
 			elif _points.is_empty() or p.distance_to(_points[_points.size() - 1]) > 1.0:
 				_points.append(p)
@@ -278,14 +305,14 @@ func _click() -> void:
 
 
 ## Builds the grid inside the shape drawn so far.
-func _finish_grid() -> void:
-	if _points.size() < 3:
+func _finish_grid(shape: Array = _points) -> void:
+	if shape.size() < 3:
 		return
 	var pts := []
-	for q in _points:
+	for q in shape:
 		pts.append(_xz(q))
 	if sim.apply({"type": "build_grid_shape", "points": pts, "block": grid_block,
-			"side": grid_side, "road": road_type}):
+			"side": 0 if not grid_free else grid_side, "road": road_type}):
 		_points.clear()
 	_update_hint()
 
@@ -297,6 +324,8 @@ func _grid_corner(p: Vector3) -> Vector3:
 	_guide_angle = NAN
 	if _points.is_empty():
 		return p
+	if not grid_free:
+		return _rect_corner(p)
 	if _points.size() >= 3 and _flat_dist(p, _points[0]) < SNAP_NODE:
 		return _points[0]
 	if _points.size() == 3:
@@ -322,6 +351,52 @@ func _grid_corner(p: Vector3) -> Vector3:
 	return p
 
 
+## Rectangle mode. Second corner: the first side snaps parallel or square to
+## the road it starts on, or else the nearest road, so it lines up exactly.
+## Third point: only the depth counts, the sides stay square.
+func _rect_corner(p: Vector3) -> Vector3:
+	var a: Vector3 = _points[0]
+	if _points.size() == 2:
+		var b: Vector3 = _points[1]
+		var u := Vector3(b.x - a.x, 0.0, b.z - a.z).normalized()
+		var v := Vector3(-u.z, 0.0, u.x)
+		_guide_angle = atan2(v.z, v.x)
+		_guide_kind = "square"
+		return b + v * (p - b).dot(v)
+	var d := Vector3(p.x - a.x, 0.0, p.z - a.z)
+	var length := d.length()
+	if length < 1.0:
+		return p
+	var ang := atan2(d.z, d.x)
+	if Input.is_key_pressed(KEY_SHIFT):
+		ang = snappedf(ang, ANGLE_STEP)
+		return a + Vector3(cos(ang), 0.0, sin(ang)) * length
+	var refs := _reference_angles(a)
+	if refs.is_empty():
+		var near := network.find_segment_near(a, RECT_ALIGN_REACH, RoadNetwork.SAME_LEVEL)
+		if not near.is_empty():
+			var c := network.curve_of(near.seg)
+			var tan := RoadNetwork.bezier_tangent(c[0], c[1], c[2], near.t)
+			refs.append(atan2(tan.z, tan.x))
+	if refs.is_empty():
+		refs.append(0.0)  # out in the open, line up with the compass
+	for ref in refs:
+		for k in 4:
+			var g: float = ref + k * PI * 0.5
+			if absf(angle_difference(ang, g)) < RECT_SNAP:
+				_guide_angle = g
+				_guide_kind = "parallel to the road" if k % 2 == 0 else "square to the road"
+				return a + Vector3(cos(g), 0.0, sin(g)) * length
+	return p
+
+
+## The full rectangle from the two clicked corners and the depth point.
+func _rect(p: Vector3) -> Array:
+	var a: Vector3 = _points[0]
+	var b: Vector3 = _points[1]
+	return [a, b, p, a + (p - b)]
+
+
 static func _flat_dist(a: Vector3, b: Vector3) -> float:
 	return Vector2(a.x - b.x, a.z - b.z).length()
 
@@ -332,8 +407,11 @@ func _show_grid(p: Vector3) -> void:
 	_cursor.position = Terrain.lift(p) + Vector3.UP * 0.3
 	var shape: Array = _points.duplicate()
 	var closing := shape.size() >= 3 and p.distance_to(shape[0]) < 0.01
-	if not closing:
+	if not grid_free and shape.size() == 2:
+		shape = _rect(p)
+	elif not closing:
 		shape.append(p)
+	_show_guide(_points[_points.size() - 1] if not grid_free and _points.size() == 2 else _points[0])
 	var plan := []
 	if shape.size() >= 3:
 		var key := "%s|%s|%d|%d|%d" % [str(shape), str(grid_block), grid_side, road_type, sim.network.segments.size()]
@@ -352,15 +430,36 @@ func _show_grid(p: Vector3) -> void:
 		RoadMesh.add_strip(st, Terrain.densify(RoadNetwork.sample_curve(c[0], c[1], c[2], 2), 6.0), -0.4, 0.4, 0.35)
 	var cost := CitySim.shapes_cost(plan, road_type)
 	var ok := cost <= sim.economy.money
-	if not plan.is_empty():
-		_label.text = "%d streets  $%s" % [plan.size(), CitySim.money_text(cost)] \
-			+ ("" if ok else "\nNot enough money")
+	var dims := ""
+	if shape.size() >= 2:
+		dims = "%d m" % roundi(_flat_dist(shape[0], shape[1]))
+	if not grid_free and shape.size() == 4:
+		dims += " × %d m" % roundi(_flat_dist(shape[1], shape[2]))
+	if not is_nan(_guide_angle):
+		dims += "  " + _guide_kind
+	if not plan.is_empty() or dims != "":
+		_label.text = dims
+		if not plan.is_empty():
+			_label.text += "\n%d streets  $%s" % [plan.size(), CitySim.money_text(cost)] \
+				+ ("" if ok else "\nNot enough money")
 		_label.position = Terrain.lift(p) + Vector3(0, 6, 0)
 		_label.visible = true
 	# On the land, following it.
 	_preview.mesh = Terrain.drape(st.commit(), true)
 	_preview.material_override = _ok_mat if ok else _bad_mat
 	_preview.visible = true
+
+
+## Draws the guide line the grid's side snapped to, through `at`.
+func _show_guide(at: Vector3) -> void:
+	if is_nan(_guide_angle):
+		return
+	var dir := Vector3(cos(_guide_angle), 0.0, sin(_guide_angle))
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	RoadMesh.add_strip(st, Terrain.densify(PackedVector3Array([at - dir * 400.0, at + dir * 400.0]), 6.0), -0.25, 0.25, 0.3)
+	_guide.mesh = Terrain.drape(st.commit(), true)
+	_guide.visible = true
 
 
 func _resize(f: float) -> void:
@@ -578,10 +677,16 @@ func _update_hint() -> void:
 				text = _shown_problem
 		Mode.GRID:
 			var size := "Blocks %d m long  [ ]" % int(grid_block)
-			match _points.size():
-				0: text = "Click the first corner of the new neighborhood. Any shape works.  " + size
-				1, 2: text = "Click the next corner. Shift snaps angles, Backspace undoes.  " + size
-				_: text = "Click the first corner or press Enter to build. Tab turns the grid.  " + size
+			if not grid_free:
+				match _points.size():
+					0: text = "Rectangle: click the first corner. Tab for any shape.  " + size
+					1: text = "Click the end of the first side. It snaps parallel or square to the road (Shift: 15° steps).  " + size
+					_: text = "Move out to set the depth, then click to build. Backspace undoes.  " + size
+			else:
+				match _points.size():
+					0: text = "Any shape: click the first corner. Tab for a rectangle.  " + size
+					1, 2: text = "Click the next corner. Shift snaps angles, Backspace undoes.  " + size
+					_: text = "Click the first corner or press Enter to build. Shift+Tab turns the grid.  " + size
 		Mode.ROUNDABOUT:
 			text = "Click to place a roundabout. Roads it crosses join it.  Size %d m  [ ]" \
 				% int(RoadShapes.roundabout_radius(roundabout_radius, road_type) * 2.0)

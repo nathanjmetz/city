@@ -163,6 +163,89 @@ const INDUSTRY_STOCK_CAP := 12.0
 ## Companies decide to open or close a pad this often, in ticks (6 game hours).
 const INDUSTRY_DECIDE_EVERY := 360
 
+# --- Power companies ----------------------------------------------------------
+# Brawn's hub-with-a-leader model (Best of CS pitch #6). A plant is built
+# unit by unit; each unit's numbers below. `homes` is the average output in
+# homes-equivalent at full quality (EIA: a US home uses about 10,500 kWh a
+# year). `capex` is what one unit costs to build, `opex` its fuel and upkeep
+# per MWh, `value`/`reach` how much it lowers land value next door and how
+# far that fades out (like WASTE_SITES), `smoke_weight` how much an educated
+# leader minds that, and `firm` whether it runs day and night.
+## Solar: a 0.3 MW block of panels on an 80 m cell (~1.6 acres), 22% capacity
+## factor, $1,100/kW. Wind: one 2.8 MW turbine at 38%, $1,300/kW, a
+## turbine every 240 m with the farm going on around its 40 m pad. Gas: one
+## 9 MW reciprocating engine run at 70%, $1,000/kW, burning the oil field's
+## own gas. Coal: an old 30 MW unit bought used and refitted, 48% (the
+## Petersburg, Indiana plant's story in miniature). Hydro: a 3 MW
+## run-of-river bay retrofitted into an old mill dam, $2,000/kW.
+## `carbon` is tonnes of CO2 per MWh, which educated leaders price in.
+const POWER_PLANTS := {
+	"coal": {"name": "Old coal plant", "unit": "boiler unit", "homes": 12_000.0, "capex": 4_000_000,
+		"opex": 46.0, "firm": true, "value": -0.2, "reach": 1200.0, "smoke_weight": 1500.0, "carbon": 1.0,
+		"jobs": 30, "max_cells": 2, "spacing": 80.0, "footprint": 80.0},
+	"gas": {"name": "Gas plant", "unit": "engine", "homes": 5_250.0, "capex": 9_000_000,
+		"opex": 40.0, "firm": true, "value": -0.04, "reach": 300.0, "smoke_weight": 600.0, "carbon": 0.45,
+		"jobs": 6, "max_cells": 4, "spacing": 80.0, "footprint": 80.0},
+	"solar": {"name": "Solar farm", "unit": "block of panels", "homes": 55.0, "capex": 330_000,
+		"opex": 8.0, "firm": false, "value": 0.0, "reach": 0.0, "smoke_weight": 0.0, "carbon": 0.0,
+		"jobs": 0.15, "max_cells": 48, "spacing": 80.0, "footprint": 80.0},
+	"wind": {"name": "Wind farm", "unit": "turbine", "homes": 885.0, "capex": 3_640_000,
+		"opex": 12.0, "firm": false, "value": 0.0, "reach": 0.0, "smoke_weight": 0.0, "carbon": 0.0,
+		"jobs": 0.5, "max_cells": 16, "spacing": 240.0, "footprint": 40.0},
+	"hydro": {"name": "River dam", "unit": "dam bay", "homes": 830.0, "capex": 6_000_000,
+		"opex": 10.0, "firm": true, "value": 0.0, "reach": 0.0, "smoke_weight": 0.0, "carbon": 0.0,
+		"jobs": 3, "max_cells": 4, "spacing": 80.0, "footprint": 80.0},
+}
+## Which plant wins a tie, cleanest first.
+const POWER_PLANT_ORDER := ["hydro", "wind", "solar", "gas", "coal"]
+## What the player pays for the yard (switchyard and control building), its
+## assessed value, and the jobs there.
+const POWER_YARD_COST := 1_200_000
+const POWER_YARD_VALUE := 1_200_000.0
+const POWER_YARD_JOBS := 6.0
+const POWER_MWH_PER_HOME := 10.5
+## Dollars per MWh: selling to the town's utility, and wholesale to the
+## region (MISO prices run about $30-45), and the gas price with the field's
+## own gas right there.
+const POWER_TOWN_PRICE := 55.0
+const POWER_EXPORT_PRICE := 38.0
+const POWER_GAS_LOCAL_OPEX := 24.0
+## Extra a plant that runs day and night is worth per MWh (capacity payments).
+const POWER_FIRM_BONUS := 6.0
+## Dollars per tonne of CO2 a leader with an engineering degree prices in
+## for the risk of carbon rules over the plant's life (scaled by education).
+const POWER_CARBON_PRICE := 20.0
+## Years a leader plans ahead, from no schooling to an engineering degree.
+const POWER_HORIZON_MIN := 3.0
+const POWER_HORIZON_MAX := 25.0
+## How far a leader's education can stray from the town's.
+const POWER_LEADER_SPREAD := 0.1
+## A unit goes only where wind, sun or river is at least this good.
+const POWER_MIN_QUALITY := 0.3
+const POWER_LOAN_YEARS := 20.0
+## Yearly profit above which a company is "doing well".
+const POWER_THRIVING_PROFIT := 250_000.0
+## Land value never drops more than this from power plants.
+const POWER_SMOKE_FLOOR := -0.3
+## A house is this much less likely to go up per point of land value lost.
+const POWER_SMOKE_GROWTH := 2.0
+## Companies decide to add or mothball a unit this often, in ticks.
+const POWER_DECIDE_EVERY := 360
+## The town's schooling (0 to 1) with no school, and what a school
+## covering every home adds. About a third of rural Midwest adults hold a
+## college degree.
+const TOWN_EDUCATION_BASE := 0.25
+const TOWN_EDUCATION_SCHOOLS := 0.5
+## Factories this close to a coal or gas plant can buy its steam, metres.
+const POWER_STEAM_REACH := 600.0
+## Steam sales and blade-yard work, dollars a year.
+const POWER_STEAM_SALES := 300_000.0
+const POWER_BLADE_YARD_SALES := 200_000.0
+## Leaders retire and a successor takes over this often, in game days.
+const POWER_LEADER_TERM_DAYS := 120.0
+## A training center lifts a successor's education by this much.
+const POWER_TRAINING_LIFT := 0.15
+
 # --- Freight -----------------------------------------------------------------
 
 ## Grain a farm ships: bushels an acre a year at full fertility (USDA Iowa
@@ -220,6 +303,21 @@ const WAREHOUSE_IDLE := 0.05
 const WAREHOUSE_IDLE_STREAK := 8
 ## Warehouses decide to grow this often, in ticks (6 game hours).
 const WAREHOUSE_DECIDE_EVERY := 360
+## What a warehouse earns per truckload it handles: a real 3PL charges
+## handling in and out plus monthly storage, about $150 to $350 a load.
+const WAREHOUSE_FEE := 250.0
+## Running a warehouse per m2 of floor a year (power, insurance, upkeep;
+## real US distribution space runs about $3 to $6 a square foot).
+const WAREHOUSE_UPKEEP_M2 := 4.0
+## A regional DC offers neighbouring towns up to this many loads a month.
+const WAREHOUSE_REGIONAL_LOADS := 8
+## Online orders a fulfillment center packs, per person in town a month:
+## Americans get about 5 parcels a month; a local center fills about a
+## tenth of them (the rest come in on the mail truck).
+const WAREHOUSE_PARCELS_PER_PERSON := 0.5
+## Parcels in a trailer from the fulfillment center to the post office
+## (a 53 ft trailer holds about 1,000 to 2,000 parcels).
+const WAREHOUSE_PARCEL_TRUCK := 1200
 
 # --- Neighborhood character --------------------------------------------------
 # Brawn's rule (2026-10-22): neighborhoods grow a culture of their own, and
@@ -344,6 +442,17 @@ const BUS_SUBSIDY_MAX := 1_000_000
 ## level; each is a monthly subsidy (Standard runs about two buses).
 const BUS_FUNDING_LEVELS := [["None", 0], ["Lean", 20_000], ["Standard", 40_000], ["Generous", 80_000],
 	["Lavish", 160_000]]
+## Intercity coach to the neighboring towns (a development-tree option):
+## a one-way fare like rural intercity lines (FTA 5311(f)), its running cost
+## a month (about $90 an hour, 10 hours a day), and the share of townspeople
+## who take a trip to a neighboring town on a given day, per neighbor.
+const BUS_COACH_FARE := 15.0
+const BUS_COACH_MONTHLY := 90 * 10 * 30
+const BUS_COACH_DAILY_SHARE := 0.0015
+## Game ticks a coach spends in the neighboring town before coming back.
+const BUS_COACH_AWAY := 600
+## Seats on a 45-foot motorcoach (MCI J4500).
+const BUS_COACH_SEATS := 56
 ## The depot buys land next door at about $50,000 an acre (Midwest town
 ## edge), dollars per square metre.
 const BUS_LAND_PER_M2 := 12.0
@@ -420,6 +529,12 @@ const TRADE_PRICE := {
 	# Baled scrap metal and finished compost, per ton.
 	"scrap": 180.0,
 	"compost": 25.0,
+	# Wholesale water between towns, per thousand gallons (Indiana wholesale
+	# rates run about $2.50 to $4).
+	"water": 3.0,
+	# A truckload of general merchandise from a regional DC: the
+	# distributor's margin on it.
+	"goods": 2500.0,
 }
 ## Price for a good with no entry above.
 const TRADE_PRICE_DEFAULT := 100.0
@@ -510,46 +625,64 @@ const AMENITY_LAND_SCALE := 2.5
 # --- Hub development trees -------------------------------------------------------
 # Brawn (2026-10-22): every hub has a thick tree of buildings and options. Its
 # leader unlocks them from what the town can do (money, schools, size) and
-# what is around it, in town and in neighboring towns. Each: what it is for
-# ("landfill" options stay when a landfill becomes recycling, since a capped
-# landfill keeps its gas plant), build cost and monthly upkeep, plus its
-# effect. `needs` is read by CivicHubs.dev_problem.
-const HUB_DEVELOPMENTS := {
-	# Landfill gas to electricity: an engine plant burning the methane a
-	# big landfill gives off. Sells power (MWh a month) to neighbors or the grid.
-	"gas_plant": {"for": "landfill", "name": "Landfill gas plant", "cost": 2_200_000, "upkeep": 9_000,
-		"power": 700.0, "needs": {"pieces": 10, "tons": 20_000}},
-	# Yard waste and food scraps turned into compost for the farms around.
-	"compost": {"for": "landfill", "name": "Compost yard", "cost": 400_000, "upkeep": 4_000,
-		"compost": 300.0, "needs": {"farms": 1}},
-	# A transfer station takes in a neighbor town's trash for a fee (tons a
-	# month) and sends it up the mound.
-	"transfer": {"for": "landfill", "name": "Transfer station", "cost": 900_000, "upkeep": 7_000,
-		"garbage": 600.0, "needs": {"region": true}},
-	# Scrap metal yard: crushes and bales metal for factories here or nearby.
-	"scrap_yard": {"for": "recycling", "name": "Scrap metal yard", "cost": 600_000, "upkeep": 5_000,
-		"scrap": 60.0, "needs": {"factories": 3}},
-	# Extra sorting lines lift what recycling sells. They need trained
-	# workers: a school in town.
-	"glass_line": {"for": "recycling", "name": "Glass sorting line", "cost": 700_000, "upkeep": 4_000,
-		"sales": 0.35, "needs": {"level": 2, "school": true}},
-	"ewaste": {"for": "recycling", "name": "Electronics recycling", "cost": 1_200_000, "upkeep": 6_000,
-		"sales": 0.5, "needs": {"level": 3, "school": true, "population": 2_000}},
-	# Sorting a neighbor's recycling for a fee (tons a month).
-	"regional_mrf": {"for": "recycling", "name": "Regional sorting contract", "cost": 500_000, "upkeep": 3_000,
-		"garbage": 900.0, "needs": {"level": 3, "region": true}},
-	# Cemetery: each adds to the lift it gives the land around it.
-	"chapel": {"for": "cemetery", "name": "Chapel", "cost": 350_000, "upkeep": 2_000,
-		"value": 0.02, "reach": 100.0, "needs": {"population": 300}},
-	"garden": {"for": "cemetery", "name": "Memorial garden", "cost": 250_000, "upkeep": 2_500,
-		"value": 0.02, "reach": 50.0, "needs": {"dev": "chapel"}},
-	"veterans": {"for": "cemetery", "name": "Veterans memorial", "cost": 300_000, "upkeep": 1_000,
-		"value": 0.02, "reach": 150.0, "needs": {"population": 3_000}},
-	# Natural burial in the woods next door: lets the cemetery grow half
-	# again as far, under trees instead of lawn.
-	"woods": {"for": "cemetery", "name": "Natural burial woods", "cost": 200_000, "upkeep": 1_500,
-		"grow": 0.5, "needs": {"forest": 0.3}},
+# what is around it, in town and in neighboring towns. A capped landfill
+# under a recycling centre keeps the landfill tree (it still makes gas).
+## Development trees for landfills, recycling and cemeteries, in the shared
+## Agency format (see agency.gd): the hub's leader picks what to build next
+## on its own. `upkeep` is extra dollars a month. Needs starting "site_"
+## are about the hub itself (CivicHubs checks them): site_pieces (land),
+## site_tons (trash in the mound), site_level (recycling plant level),
+## site_forest (woods next to it). Effects: power, compost, scrap and garbage
+## are what it sells a month (MWh or tons), "sales*" lifts materials sold,
+## value/reach lift land value nearby, grow lets the hub grow further.
+const HUB_TREES := {
+	"landfill": [
+		# Landfill gas to electricity: an engine plant burning the methane a
+		# big, old landfill gives off.
+		{"id": "gas_plant", "name": "Landfill gas plant", "cost": 2_200_000, "upkeep": 9_000,
+			"needs": {"site_pieces": 10, "site_tons": 20_000}, "effects": {"power": 700.0},
+			"note": "sells power to the neighbors or the grid"},
+		# Yard waste and food scraps turned into compost for nearby farms.
+		{"id": "compost", "name": "Compost yard", "cost": 400_000, "upkeep": 4_000,
+			"needs": {"local:farm": 1}, "effects": {"compost": 300.0}, "note": "farms nearby buy the compost"},
+		# A transfer station takes in a neighbor town's trash for a fee.
+		{"id": "transfer", "name": "Transfer station", "cost": 900_000, "upkeep": 7_000,
+			"needs": {"link": 1, "region_buys:garbage": 1}, "effects": {"garbage": 600.0},
+			"note": "a neighbor town pays to send its trash here"},
+	],
+	"recycling": [
+		# Scrap metal yard: crushes and bales metal for the metal works.
+		{"id": "scrap_yard", "name": "Scrap metal yard", "cost": 600_000, "upkeep": 5_000,
+			"needs": {"local:metal": 1}, "effects": {"scrap": 60.0}, "note": "the metal works nearby buys scrap"},
+		# Extra sorting lines need trained workers.
+		{"id": "glass_line", "name": "Glass sorting line", "cost": 700_000, "upkeep": 4_000,
+			"needs": {"site_level": 2, "education": 0.3}, "effects": {"sales*": 0.35}},
+		{"id": "ewaste", "name": "Electronics recycling", "cost": 1_200_000, "upkeep": 6_000,
+			"requires": ["glass_line"], "needs": {"site_level": 3, "education": 0.5, "population": 2_000},
+			"effects": {"sales*": 0.5}},
+		# Sorting a neighbor town's recycling for a fee.
+		{"id": "regional_mrf", "name": "Regional sorting contract", "cost": 500_000, "upkeep": 3_000,
+			"needs": {"site_level": 3, "link": 1, "region_buys:garbage": 1}, "effects": {"garbage": 900.0}},
+	],
+	"cemetery": [
+		{"id": "chapel", "name": "Chapel", "cost": 350_000, "upkeep": 2_000,
+			"needs": {"population": 300}, "effects": {"value": 0.02, "reach": 100.0}},
+		{"id": "garden", "name": "Memorial garden", "cost": 250_000, "upkeep": 2_500,
+			"requires": ["chapel"], "needs": {}, "effects": {"value": 0.02, "reach": 50.0}},
+		{"id": "veterans", "name": "Veterans memorial", "cost": 300_000, "upkeep": 1_000,
+			"needs": {"population": 3_000}, "effects": {"value": 0.02, "reach": 150.0}},
+		# Natural burial in the woods next door: room to grow half again as
+		# far, under trees instead of lawn.
+		{"id": "woods", "name": "Natural burial woods", "cost": 200_000, "upkeep": 1_500,
+			"needs": {"site_forest": 0.3}, "effects": {"grow": 0.5}},
+	],
 }
+## The town funds its landfills, recycling and cemeteries: their leaders plan
+## projects against this many years of the hub's upkeep (Agency's "profit").
+const HUB_PLAN_YEARS := 3.0
+## Every waste site has room for this much of a neighbor's trash a month
+## (tons) before any transfer station, so towns without one can trade.
+const GARBAGE_BASE_TAKE_TONS := 150.0
 ## A town with no landfill or recycling of its own pays a neighbor to take its
 ## trash, if one will (otherwise it piles up).
 const GARBAGE_TONS_PER_RESIDENT_MONTH := 0.07
@@ -620,6 +753,10 @@ const EDUCATION_DOWN_PAYMENT := 0.3
 const EDUCATION_SELL_DEBT := 1.5
 ## Campuses decide once a game day (a month).
 const EDUCATION_DECIDE_EVERY := 1440
+## What a campus pays per square metre to buy out the homes and shops next
+## door (land plus the houses on it): a 120 m block of small-town Indiana
+## homes, about a dozen at $120k-150k, comes to roughly $1.5M.
+const EDUCATION_LAND_PER_M2 := 100
 
 # --- Post office and mail --------------------------------------------------------
 # Best of CS pitch #10, green-lit by Brawn (2026-10-22): a post office hub
@@ -651,8 +788,8 @@ const MAIL_DAYS_PER_MONTH := 26.0
 const MAIL_MARGIN_PER_PIECE := 0.04
 ## Neighbouring towns' postage a regional hub keeps, dollars a person a month.
 const MAIL_REGIONAL_PER_PERSON := 0.15
-## Offline, each road out to the region counts as one neighbouring town this
-## size (small towns around Petersburg, Indiana).
+## A neighbouring town whose size the region doesn't report counts as this
+## many people (small towns around Petersburg, Indiana).
 const MAIL_OFFLINE_TOWN_POP := 1_800
 ## A city carrier route is about 500 delivery points; a carrier's day also
 ## tops out at this many streets. A parcel van makes this many business
@@ -696,31 +833,139 @@ const MAIL_ELECTRIC_SAVING := 0.15
 ## A regional hub runs one more truck each way for each neighbouring town,
 ## up to this many.
 const MAIL_REGIONAL_TRUCKS := 4
-## A cautious postmaster keeps up to this many months of income in reserve.
-const MAIL_RESERVE_MONTHS := 3.0
 ## The development tree's numbers: cost (from the postmaster's fund), land
-## (pieces next door), days to build (game days), weight (how much an
-## ambitious postmaster wants it), and gates: population, pieces (of mail a
-## day), shops, factories, towns and region_pop (neighbours), education
-## and ambition (the postmaster's own), town_school (service coverage).
+## (pieces next door), days to build (game days), weight (how much it does,
+## which Agency weighs against cost by the postmaster's temperament), and
+## gates: population, pieces (of mail a day), shops, factories, towns and
+## region_pop (neighbours), link (a road out to the region), education and
+## ambition (the postmaster's own), town_school (share of homes near a
+## school, Agency's "education"). Agency spends up to a few years' income.
 const MAIL_TREE := {
 	"po_boxes": {"cost": 40_000, "land": 0, "days": 1, "weight": 1, "population": 600},
 	"passports": {"cost": 25_000, "land": 0, "days": 1, "weight": 2, "population": 1_500, "education": 0.5},
-	"kiosk": {"cost": 60_000, "land": 0, "days": 1, "weight": 2, "population": 2_500, "town_school": 0.6},
+	"kiosk": {"cost": 60_000, "land": 0, "days": 1, "weight": 2, "population": 2_500, "town_school": 0.5},
 	"mural": {"cost": 80_000, "land": 0, "days": 2, "weight": 1, "population": 1_200, "ambition": 0.4},
 	"cluster_boxes": {"cost": 120_000, "land": 0, "days": 2, "weight": 3, "population": 3_000},
 	"more_vans": {"cost": 180_000, "land": 1, "days": 1, "weight": 3, "shops": 15, "vans": 2},
-	"electric_fleet": {"cost": 400_000, "land": 0, "days": 2, "weight": 2, "education": 0.6, "ambition": 0.6,
+	"electric_fleet": {"cost": 300_000, "land": 0, "days": 2, "weight": 2, "education": 0.6, "ambition": 0.6,
 		"population": 2_000},
 	"parcel_lockers": {"cost": 90_000, "land": 0, "days": 1, "weight": 2, "shops": 25},
 	"business_mail": {"cost": 150_000, "land": 1, "days": 2, "weight": 2, "factories": 8},
-	"parcel_depot": {"cost": 600_000, "land": 2, "days": 3, "weight": 4, "shops": 40, "vans": 3},
-	"parcel_ground_hub": {"cost": 2_500_000, "land": 4, "days": 4, "weight": 5, "shops": 60, "vans": 6,
+	"parcel_depot": {"cost": 400_000, "land": 2, "days": 3, "weight": 4, "shops": 40, "vans": 3},
+	"parcel_ground_hub": {"cost": 1_400_000, "land": 4, "days": 4, "weight": 5, "shops": 60, "vans": 6,
 		"region_pop": 15_000},
-	"sorting_room": {"cost": 350_000, "land": 1, "days": 2, "weight": 4, "pieces": 3_000},
-	"sorting_center": {"cost": 1_800_000, "land": 3, "days": 4, "weight": 6, "pieces": 10_000},
-	"regional_hub": {"cost": 3_500_000, "land": 4, "days": 5, "weight": 7, "towns": 2, "region_pop": 6_000,
+	"sorting_room": {"cost": 250_000, "land": 1, "days": 2, "weight": 4, "pieces": 3_000},
+	"sorting_center": {"cost": 900_000, "land": 3, "days": 4, "weight": 6, "pieces": 10_000},
+	"regional_hub": {"cost": 1_600_000, "land": 4, "days": 5, "weight": 7, "towns": 2, "region_pop": 6_000, "link": 1,
 		"education": 0.45},
 	"rail_mail": {"cost": 900_000, "land": 1, "days": 3, "weight": 3},
 	"air_mail": {"cost": 700_000, "land": 0, "days": 2, "weight": 3},
 }
+
+# --- Water and sewer utility ---------------------------------------------------
+# Brawn's green (2026-10-22): the player places a water utility and sets its
+# subsidy; its superintendent runs it like a small business and climbs a
+# development tree on their own. Water and sewer bills go to the utility (a
+# real US enterprise fund), not the city's general fund.
+
+## Placing the utility: the office, its first well, and start-up capital
+## (in real life a revenue bond) for the first water mains.
+const WATER_UTILITY := {"cost": 900_000, "start_cash": 600_000}
+## The manager decides this often, in ticks (6 game hours, a quarter month).
+const WATER_DECIDE_EVERY := 360
+## The player's subsidy, dollars a month: where a new utility starts, the
+## most it can be, and each click of the panel's buttons.
+const WATER_SUBSIDY := {"start": 5_000, "max": 60_000, "step": 1_000}
+## Operators' wages and the office, dollars a month: a part-time certified
+## operator for a village, plus more staff as the system grows (per home's
+## worth served).
+const WATER_STAFF := {"base": 4_000, "per_home": 8.0}
+## The manager sets the water rate as a share of the usual bill, like a
+## council-approved rate case: up when it loses money, down when it has a
+## surplus, a step at a time and within these bounds. Each 10% over the usual
+## bill cuts demand for homes by `demand` x 0.1.
+const WATER_RATE := {"min": 0.7, "max": 1.6, "step": 0.02, "demand": 0.3}
+## Share of sewer and treatment projects (and new sewer lines) paid by state
+## and federal grants
+## (USDA Rural Development and state revolving fund forgiveness for small towns).
+const WATER_GRANT_SHARE := 0.5
+## Laying pipe under an existing street, dollars a metre: an 8 inch ductile
+## iron water main and an 8 inch PVC gravity sewer (US bid prices).
+const WATER_MAIN_PER_M := 400
+const SEWER_PER_M := 500
+## Pipe upkeep, dollars a month per metre (flushing, valves, breaks).
+const WATER_PIPE_UPKEEP_PER_M := 0.4
+## How much water a town can draw without an elevated tower, in homes:
+## pressure tanks only cover a village's peak hour.
+const WATER_STORAGE_NO_TOWER := 800
+## Most wells one wellfield holds before the aquifer is drawn down.
+const WATER_MAX_WELLS := 6
+## The development tree. `cost` and monthly `upkeep` in dollars, `edu` the
+## manager's education (0 to 1) needed to take it on. `capacity` is homes of
+## water (wells, tower, intake) or of sewage (lagoon, plant).
+## Real practice: a 150 gpm well serves ~650 homes at 300 gal a day; a
+## 500,000 gal tower stores a day for ~3,300; Indiana groundwater carries
+## iron, so towns past a couple of wells add a filtration plant; small towns
+## start with a facultative lagoon and move to an activated sludge plant.
+const WATER_WORKS := {
+	"well": {"cost": 300_000, "upkeep": 3_000, "edu": 0.0, "capacity": 650},
+	"tower": {"cost": 2_000_000, "upkeep": 2_000, "edu": 0.0, "capacity": 3_300},
+	"filtration": {"cost": 3_500_000, "upkeep": 12_000, "edu": 0.35},
+	"intake": {"cost": 14_000_000, "upkeep": 45_000, "edu": 0.6, "capacity": 12_000},
+	"lagoon": {"cost": 900_000, "upkeep": 3_000, "edu": 0.0, "capacity": 1_500},
+	"plant": {"cost": 8_000_000, "upkeep": 25_000, "edu": 0.45, "capacity": 9_000},
+	"nutrient": {"cost": 4_000_000, "upkeep": 10_000, "edu": 0.75},
+	"meters": {"cost": 250_000, "upkeep": 1_500, "edu": 0.55},
+	"training": {"cost": 900_000, "upkeep": 4_000, "edu": 0.5},
+	"industrial_main": {"cost": 600_000, "upkeep": 1_000, "edu": 0.3},
+	"wholesale": {"cost": 1_500_000, "upkeep": 2_000, "edu": 0.5},
+	"biosolids": {"cost": 300_000, "upkeep": -2_000, "edu": 0.4},
+	"reuse": {"cost": 5_000_000, "upkeep": 6_000, "edu": 0.8},
+}
+## Smart meters find leaks and slow meters: this much more billed water.
+const WATER_METER_GAIN := 0.08
+## The industrial main serves plants at a large-meter rate, this much more.
+const WATER_INDUSTRY_GAIN := 0.5
+## The interconnect with the next town: at most this many homes' worth of
+## water offered to the region; a home uses about 9,000 gallons a month.
+const WATER_WHOLESALE_MAX := 2_000
+const WATER_KGAL_PER_HOME := 9.0
+## Tap (connection) fees each new hookup pays the utility once, dollars per
+## home's worth: typical small-town Indiana water and sewer tap fees.
+const WATER_TAP_FEE := 4_000
+const SEWER_TAP_FEE := 4_000
+## Reclaimed water sold to farms within reach, dollars a month per farm.
+const WATER_REUSE_PER_FARM := 1_500
+## Farms within this many metres count as neighbours for biosolids and reuse.
+const WATER_FARM_REACH := 3_000.0
+## The water bill is half water, half sewer; homes on septic pay only half.
+const WATER_SEWER_SHARE := 0.5
+## Homes' worth of sewage before the town builds its first lagoon.
+const WATER_SEWER_START := 40
+## The manager's education follows the leaders the town can hire (its local
+## graduates, Education.leader_education); a training center adds `training`.
+## It drifts this share of the gap each step, as staff turn over.
+const WATER_EDU := {"start": 0.25, "training": 0.12, "drift": 0.04}
+## Condition (0 to 1) of pipes and plants. Full maintenance costs this share
+## of running costs; a fully paid, fully educated manager keeps condition at
+## 1, an uneducated one at `low` even fully paid; it moves this share of the
+## way each step.
+const WATER_MAINT := {"share": 0.25, "low": 0.45, "speed": 0.15}
+## Under this condition the state orders a boil-water notice; overload adds to
+## it (low pressure lets contamination in).
+const WATER_BOIL_AT := 0.35
+## Boil orders cut demand for homes by this much while they last.
+const WATER_BOIL_DEMAND := 0.25
+## Odor from a struggling sewer plant reaches this far and lowers land value
+## (property tax) next door by up to this share.
+const WATER_ODOR_REACH := 600.0
+const WATER_ODOR_VALUE := 0.2
+## Borrowing (revenue bonds, state revolving fund loans): a manager may owe up
+## to this many months of bills and subsidy, times 0.3 to 1.0 by education;
+## interest per month on what is owed.
+const WATER_BOND_MONTHS := 60
+const WATER_INTEREST := 0.004
+## Cash kept in reserve, months of running costs (more for a cautious manager),
+## and beyond this many months' worth the surplus goes back to the city.
+const WATER_RESERVE_MONTHS := 2.0
+const WATER_SURPLUS_MONTHS := 18.0

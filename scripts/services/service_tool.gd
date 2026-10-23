@@ -147,6 +147,8 @@ func _update_hint() -> void:
 	var text := "%s: $%s to build, $%s a month." % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
 	if s.has("transit"):
 		text = "%s: $%s to build, with two buses. You set how much the city funds it (click it); it plans its own stops, routes, fleet and fare, and buys the land next door as it grows." % [s.name, CitySim.money_text(s.cost)]
+	elif s.get("hub", false):
+		text += " Its superintendent lays mains and sewers, drills wells and builds plants on their own. You set its subsidy."
 	elif s.has("reach"):
 		text += " Covers homes within %.1f road miles (green)." % (s.reach / 1609.0)
 	else:

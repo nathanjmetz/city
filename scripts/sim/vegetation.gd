@@ -50,7 +50,7 @@ var _mail_version := -1
 func watch(sim: Object) -> void:
 	_sim = sim
 	for sig in [sim.buildings_changed, sim.lots_changed, sim.farms_changed, sim.industry_changed, sim.warehouses_changed,
-			sim.parks_changed, sim.network.changed]:
+			sim.parks_changed, sim.water_changed, sim.network.changed]:
 		sig.connect(_mark)
 
 
@@ -152,6 +152,14 @@ static func sources(sim: Object) -> Dictionary:
 			out["b%s %s" % [key, poly[0].snapped(Vector2.ONE * 0.1)]] = _poly_cells.bind(poly)
 	for id in sim.services.buildings:
 		out["s%d" % id] = _poly_cells.bind(sim.services.footprint(id))
+	# The water utility's yard (wells, tower, plants) as it grows.
+	for id in sim.services.water.utilities:
+		if not sim.services.buildings.has(id):
+			continue
+		var b: Dictionary = sim.services.buildings[id]
+		for wk in sim.services.water.utilities[id].works:
+			if wk[1] != Vector2i.ZERO and wk[1].x > -99:
+				out["wy%d %s %s" % [id, wk[1], b.pos]] = _poly_cells.bind(WaterUtility.cell_corners(b, wk[1]))
 	for id in sim.farms.farms:
 		var f: Dictionary = sim.farms.farms[id]
 		out["fy%d" % id] = _poly_cells.bind(sim.farms._yard(f))

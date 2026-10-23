@@ -44,7 +44,7 @@ static func build_service(kind: int, seed: int, size: Vector2, to_curb: float) -
 		Services.Kind.SCHOOL: b._school(front, to_curb)
 		Services.Kind.SUBSTATION: b._substation(front, to_curb)
 		Services.Kind.WATER_TOWER: b._water_tower(front, to_curb)
-		Services.Kind.WELL: b._well(front, to_curb)
+		Services.Kind.WELL, Services.Kind.WATER_UTILITY: b._well(front, to_curb)
 		Services.Kind.POWER_FEED: b._power_feed()
 		Services.Kind.BUS_DEPOT: b._bus_depot(size, front, to_curb)
 	return [b._commit_house(), b._commit_flat(), b.trees]

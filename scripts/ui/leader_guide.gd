@@ -23,7 +23,16 @@ var _said := UiStyle.label("", 11, UiStyle.MUTED)
 
 ## True if this kind of selection is a hub that takes guidance.
 static func takes(s: CitySim, selection: Dictionary) -> bool:
-	return not selection.is_empty() and s.permits.locators.has(str(selection.get("type", "")))
+	return not selection.is_empty() and s.permits.locators.has(hub_of(s, selection))
+
+
+## The Permits hub kind for a selection: its type, except for services that
+## run themselves as a hub (a bus depot is a "service" you can select).
+static func hub_of(s: CitySim, selection: Dictionary) -> String:
+	var type := str(selection.get("type", ""))
+	if type == "service" and s.buses.depots.has(int(selection.get("id", -1))):
+		return "bus_depot"
+	return type
 
 
 func setup(s: CitySim, kind: String, id: int) -> void:

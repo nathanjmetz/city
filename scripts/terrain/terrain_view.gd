@@ -28,6 +28,8 @@ const HYST_OUT := 0.95
 ## and the 32 m lots), fading out over the next few metres.
 const LOT_GRADE := 34.0
 const GRADE_FADE := 14.0
+## Mowed grass past a road's right of way before the wild cover starts.
+const MOW_VERGE := 3.0
 ## Milliseconds per frame spent building chunks after the first frame.
 const BUDGET_MS := 6
 
@@ -110,7 +112,8 @@ void fragment() {
 	vec3 tops = canopy.rgb * (0.65 + 0.7 * crowns) * (0.85 + 0.3 * big);
 	float painted = smoothstep(tree_fade.z * 0.72, tree_fade.z * 0.97, distance(p, tree_fade.xy));
 	vec3 woods = mix(litter.rgb * (0.8 + 0.4 * clump), tops, painted);
-	col = mix(col, woods, smoothstep(0.3, 0.65, cover.r));
+	// A ragged edge, as real woods have, not the straight line between samples.
+	col = mix(col, woods, smoothstep(0.3, 0.65, cover.r + (clump - 0.5) * 0.45 + (mid - 0.5) * 0.25));
 
 	// Strip mine spoil and gravel.
 	col = mix(col, spoil.rgb * (0.85 + 0.3 * clump), smoothstep(0.3, 0.7, cover.a));
@@ -389,9 +392,10 @@ static func build_chunk(origin: Vector2, size: float, step: float, reach := 0.0)
 			coarse[k * 4 + 2] = lo.z
 			coarse[k * 4 + 3] = reach
 			var cov := Terrain.cover(x + Terrain.view_origin.x, z + Terrain.view_origin.y)
-			# r trees, g crops, b bare, a water (as the shader reads them).
-			var graded := Terrain.flat_weight(x, z)
-			colors[k] = Color(cov.r * (1.0 - graded), cov.b * (1.0 - graded), cov.a * (1.0 - graded), cov.g)
+			# r trees, g water, b crops, a bare (as the shader reads them),
+			# cleared off the road and its mowed verge.
+			var keep := 1.0 - Terrain.mow_weight(x, z)
+			colors[k] = Color(cov.r * keep, cov.g, cov.b * keep, cov.a * keep)
 			wet[k] = cov.g
 			any_water = any_water or cov.g > 0.02
 	var idx := PackedInt32Array()
@@ -477,7 +481,8 @@ func _regrade() -> void:
 		if absf(pts[0].y) > 3.0 and absf(pts[pts.size() - 1].y) > 3.0 and absf(pts[pts.size() / 2].y) > 3.0:
 			continue  # bridges and tunnels leave the ground alone
 		var inner := RoadStyle.right_of_way_half(type) + (LOT_GRADE if RoadStyle.TYPES[type].lots else 2.0)
-		now[id] = [pts, inner, inner + GRADE_FADE]
+		# The verge is mowed a few metres past the shoulder; woods start there.
+		now[id] = [pts, inner, inner + GRADE_FADE, RoadStyle.right_of_way_half(type) + MOW_VERGE]
 	var changed := []
 	for id in _graded:
 		if not now.has(id) or not _same(now[id], _graded[id]):
@@ -495,7 +500,7 @@ func _regrade() -> void:
 		var b := _bounds(g)
 		for box in changed:
 			if b.intersects(box):
-				Terrain.stamp_flat(g[0], g[1], g[2], box)
+				Terrain.stamp_flat(g[0], g[1], g[2], box, g[3])
 	for box in changed:
 		graded.emit(box)
 		var c0 := Vector2i(floori(box.position.x / CHUNK), floori(box.position.y / CHUNK))

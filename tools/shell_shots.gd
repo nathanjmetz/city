@@ -23,8 +23,12 @@ func _initialize() -> void:
 func _start_online() -> void:
 	var session := root.get_node("Session")
 	session.profile.name = "Brawn"
+	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://hosted-region.json"))
 	var code: String = session.host_region(19580)
-	var c: RegionClient = session.join_region("ws://127.0.0.1:19580", code)
+	var c: RegionClient = session.join_region("ws://127.0.0.1:19580", code, "secret1", true)
+	c.requests_changed.connect(func():
+		for n in c.requests:
+			c.approve(n, true))
 	c.joined.connect(func():
 		# A friend joins too and says hello.
 		_friend = RegionClient.new()
@@ -37,7 +41,7 @@ func _start_online() -> void:
 					_friend.send_command({"type": "paint_zone", "center": [x, z], "radius": 14, "zone": 1})
 			_friend.send_chat("Hey! I started my town just east of yours")
 			_friend.send_cursor(c.region.cities[c.my_city].origin + Vector2(60, 40)))
-		_friend.join("ws://127.0.0.1:19580", code, "friend-1", "Sam")
+		_friend.join("ws://127.0.0.1:19580", code, "friend-1", "Sam", "secret2", true)
 		session.enter_region())
 
 

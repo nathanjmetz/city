@@ -16,7 +16,13 @@ static func pick(sim: CitySim, p: Vector3) -> Dictionary:
 	if hid != -1:
 		return {"type": "hub", "id": hid}
 	var sid := sim.services.at(p)
+	var yard := sim.services.water.work_at(sim.services.buildings, p)
+	if sid == -1 and not yard.is_empty():
+		sid = yard[0]  # a piece of the water utility's yard
 	if sid != -1:
+		# The water utility is a hub with a leader, so it gets its own panel.
+		if sim.services.buildings[sid].kind == Services.Kind.WATER_UTILITY and sim.services.water.utilities.has(sid):
+			return {"type": "water", "id": sid}
 		return {"type": "service", "id": sid}
 	var wid := sim.warehouses.at(p)
 	if wid != -1:
@@ -24,6 +30,9 @@ static func pick(sim: CitySim, p: Vector3) -> Dictionary:
 	var pid := sim.parks.at(p)
 	if pid != -1:
 		return {"type": "park", "id": pid}
+	var pwid := sim.power.at(p)
+	if pwid != -1:
+		return {"type": "power", "id": pwid}
 	var iid := sim.industry.site_at(p)
 	if iid == -1:
 		iid = sim.industry.pad_at(p)
@@ -59,7 +68,7 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 	if not exists(sim, sel):
 		return []
 	match sel.type:
-		"service":
+		"service", "water":
 			var b: Dictionary = sim.services.buildings[sel.id]
 			return [b.pos, Services.size_of(b).length() * 0.5 + 3.0]
 		"park":
@@ -72,6 +81,8 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 		"warehouse":
 			var w: Dictionary = sim.warehouses.buildings[sel.id]
 			return [Warehouses.center(w), Vector2(Warehouses.site_width(w), Warehouses.site_depth(w)).length() * 0.5 + 3.0]
+		"power":
+			return [sim.power.sites[sel.id].pos, Power.HQ_SIZE.length() * 0.5 + 3.0]
 		"campus":
 			return [sim.education.campuses[sel.id].pos, Education.CELL * 0.75]
 		"post_office":
@@ -89,6 +100,7 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 static func exists(sim: CitySim, sel: Dictionary) -> bool:
 	match sel.get("type", ""):
 		"service": return sim.services.buildings.has(sel.id)
+		"water": return sim.services.water.utilities.has(sel.id) and sim.services.buildings.has(sel.id)
 		"hub": return sim.hubs.hubs.has(sel.id)
 		"post_office": return sim.mail.offices.has(sel.id)
 		"farm": return sim.farms.farms.has(sel.id)
@@ -96,6 +108,7 @@ static func exists(sim: CitySim, sel: Dictionary) -> bool:
 		"campus": return sim.education.campuses.has(sel.id)
 		"warehouse": return sim.warehouses.buildings.has(sel.id)
 		"park": return sim.parks.sites.has(sel.id)
+		"power": return sim.power.sites.has(sel.id)
 		"lot": return sim.lots.has(sel.id)
 		"road": return sim.network.segments.has(sel.id)
 	return false
@@ -108,6 +121,7 @@ static func describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 		return {}
 	match sel.type:
 		"service": return _service(sim, sel.id)
+		"water": return WaterUtility.describe(sim, sel.id)
 		"hub": return HubInfo.describe(sim, sel.id)
 		"post_office": return MailInfo.describe(sim, sel.id)
 		"farm": return _farm(sim, sel.id)
@@ -115,6 +129,7 @@ static func describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 		"campus": return CampusInfo.describe(sim, sel.id)
 		"warehouse": return _warehouse(sim, sel.id)
 		"park": return _park(sim, sel.id)
+		"power": return _power(sim, sel.id)
 		"lot": return _lot(sim, sel.id)
 		"road": return _road(sim, sel.id)
 	return {}
@@ -254,19 +269,21 @@ static func _warehouse(sim: CitySim, id: int) -> Dictionary:
 		["On the way in", "%d loads" % int(w.incoming)],
 		["Trucks on the road", str(sim.logistics.trucks_for(ref))],
 		["Dock doors", str(int(Warehouses.spec(w).docks))],
-		["Jobs", str(roundi(float(Warehouses.spec(w).jobs) * Warehouses.building_depth(w) / float(Warehouses.spec(w).d)))],
+		["Jobs", str(Warehouses.job_count(w))],
+		["Profit", "$%s / year" % CitySim.money_text(roundi(Warehouses.yearly_profit(w)))],
 		["Property tax to town", "$%s / month" % CitySim.money_text(roundi(Warehouses.value(w)
 			* sim.economy.tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0))],
 	]
+	rows.append_array(_development(sim, w, Warehouses.TREE, w.pos, Warehouses.yearly_profit(w)))
 	var problems := []
 	var status := "Storing loads until a factory or shop needs them"
 	if Warehouses.stored(w) == 0 and int(w.incoming) == 0:
 		status = "Waiting for its first load"
 	elif Warehouses.fill(w) >= Balance.WAREHOUSE_BUSY:
 		status = "Nearly full: it will build up or out"
-		if w.get("why", "") != "":
+		if w.get("boxed", "") != "":
 			status = "Full, and can't grow"
-			problems.append(w.why)
+			problems.append(w.boxed)
 	if int(w.bays) > 0:
 		status += " · grown %d bay%s" % [w.bays, "" if int(w.bays) == 1 else "s"]
 	if sim.logistics.stuck.has(ref):
@@ -307,6 +324,40 @@ static func _park(sim: CitySim, id: int) -> Dictionary:
 		"ok": true, "status": status, "rows": rows, "problems": []}
 
 
+## A power company: its leader and why they built what they did, what it
+## makes and sells, and its development tree (built, saving up, or what it
+## still needs).
+static func _power(sim: CitySim, id: int) -> Dictionary:
+	var s: Dictionary = sim.power.sites[id]
+	var k: Dictionary = Power.PLANTS[s.plant]
+	var sold: Dictionary = sim.power.sales.get(id, {})
+	var profit: float = sold.get("profit", 0.0)
+	var rows := [
+		["Leader", "%s (%s)" % [s.leader.name, Power.schooling(s.leader)]],
+		["%s%ss" % [k.unit.substr(0, 1).to_upper(), k.unit.substr(1)], "%d of %d" % [s.cells.size(), int(k.max_cells)]],
+		["Makes", "power for %s homes" % CitySim.money_text(sim.power.capacity(id))],
+		["Sold in town", "%s homes" % CitySim.money_text(int(sold.get("town", 0)))],
+		["Sold to the region", "%s homes" % CitySim.money_text(int(sold.get("export", 0)) + int(sold.get("neighbor", 0)))],
+		["Jobs", str(roundi(Balance.POWER_YARD_JOBS + float(k.jobs) * s.cells.size()))],
+		["Profit", "%s$%s / year" % ["" if profit >= 0.0 else "-", CitySim.money_text(absi(roundi(profit)))]],
+	]
+	var ctx := sim.power_context()
+	rows += _development(sim, s, sim.power.tree_for(id, ctx), s.pos, profit)
+	# What the tree still needs that the town or land can't give yet.
+	for node in Power.TREE:
+		var why := sim.power.gate_problem(id, node, ctx)
+		if not node.id in s.built and why != "" and not why.begins_with("Only for"):
+			rows.append([node.name, why])
+	var problems := []
+	if s.get("idle", "") != "":
+		problems.append(s.idle)
+	if float(k.value) < 0.0:
+		problems.append("Its smoke lowers land value up to %d m away." % int(k.reach))
+	var title: String = "%s %s" % [s.leader.name.split(" ")[-1], k.name.to_lower()]
+	return {"title": title, "kind": "Power company: " + sim.power.status(id), "icon": "power",
+		"ok": s.get("idle", "") == "", "status": s.reason, "rows": rows, "problems": problems}
+
+
 ## Rows on a hub's leader and development tree: who runs it, what they've
 ## built, why they made their last move, and what's open to them next.
 static func _development(sim: CitySim, hub: Dictionary, tree: Array, at: Vector3, profit: float) -> Array:
@@ -341,11 +392,25 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 	if not power:
 		problems.append("No power. " + ("The power line can't carry more homes." if s.get("power_linked", false)
 			else "Build a Power line feed on a connected street."))
+	var by: int = s.get("water_by", -1)
 	if not water:
 		problems.append("No water. " + ("The water system is full." if s.get("water_linked", false)
+			else "The water utility hasn't laid a main under this street yet." if not sim.services.water.utilities.is_empty()
 			else "Build a Well on a connected street."))
 	rows.append(["Power", "Yes" if power else "No"])
+	var smoke := sim.power.smoke_from(lot.pos)
+	if smoke != -1:
+		rows.append(["Land value", "%d%% (smoke from the %s)" % [roundi(sim.power.land_value_effect(lot.pos) * 100.0),
+			Power.PLANTS[sim.power.sites[smoke].plant].name.to_lower()]])
 	rows.append(["Water", "Yes" if water else "No"])
+	if by != -1 and sim.services.water.utilities.has(by):
+		rows.append(["Sewer", "Yes" if s.get("sewer", false) else "Septic tank"])
+		if sim.services.water.utilities[by].boil and water:
+			problems.append("Boil-water notice: the water utility's pipes are in poor repair.")
+	var smell := sim.services.water.odor_at(sim.services.buildings, lot.pos)
+	if smell > 0.1:
+		problems.append("The sewer plant smells here, so the land is worth %d%% less." % roundi(
+			100.0 * (1.0 - sim.services.water.land_value_factor(sim.services.buildings, lot.pos))))
 	var names := {ZoneMap.Zone.RESIDENTIAL: "Home", ZoneMap.Zone.COMMERCIAL: "Shop", ZoneMap.Zone.INDUSTRIAL: "Factory"}
 	if not sim.buildings.has(key):
 		var status := "Empty lot, waiting to be built"

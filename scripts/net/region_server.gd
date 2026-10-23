@@ -10,7 +10,7 @@ extends Node
 
 signal log_line(text: String)
 
-const PROTOCOL := 1
+const PROTOCOL := 2
 ## How often the region is written to disk, in seconds (a server that's
 ## switched off loses at most this much).
 const SAVE_EVERY := 10.0
@@ -20,9 +20,18 @@ const CHECK_EVERY := 50
 var region := Region.new()
 var invite_code := ""
 var data_path := ""
+## Player accounts, kept on the server only (never sent to players):
+## lowercase name -> {"name", "salt", "hash", "status": "pending" | "approved"
+## | "declined", "player": player id, "host": bool, "tokens": [token hashes]}.
+## Only players the host approves can play.
+var accounts := {}
+## The host's player name: their account is approved from the start and
+## they approve everyone else. Empty means the first account made.
+var host_name := ""
 
 var _peer := WebSocketMultiplayerPeer.new()
-var _players := {}   # peer id -> {"id": player id, "name", "city"}
+var _players := {}   # peer id -> {"id": player id, "name", "city", "host"}
+var _waiting := {}   # peer id -> account key, signed up but not approved yet
 var _events := []    # waiting for the next tick: ["city", id, name] or ["cmd", city, cmd]
 var _tick_time := 0.0
 var _save_time := 0.0
@@ -30,9 +39,10 @@ var _dirty := false
 
 
 ## Starts listening. Returns an error code (OK when it worked).
-func start(port: int, code: String, path: String) -> int:
+func start(port: int, code: String, path: String, host := "") -> int:
 	data_path = path
 	invite_code = code.to_upper()
+	host_name = host.strip_edges()
 	_load()
 	if invite_code == "":
 		invite_code = new_code()
@@ -52,6 +62,7 @@ func stop() -> void:
 	save()
 	_peer.close()
 	_players.clear()
+	_waiting.clear()
 	set_process(false)
 
 
@@ -132,6 +143,9 @@ func _handle(from: int, msg: Dictionary) -> void:
 		"resync":
 			_log("%s's copy drifted; sending a fresh one" % p.name)
 			_send(from, {"t": "region", "region": region.to_dict()})
+		"approve":
+			if p.host:
+				approve(str(msg.get("name", "")), bool(msg.get("ok", false)))
 
 
 func _hello(from: int, msg: Dictionary) -> void:
@@ -141,17 +155,122 @@ func _hello(from: int, msg: Dictionary) -> void:
 	if str(msg.get("code", "")).to_upper().replace("-", "").strip_edges() != invite_code:
 		_reject(from, "That invite code doesn't match this region.")
 		return
-	var pid := str(msg.get("id", "")).left(64)
 	var name := str(msg.get("name", "")).strip_edges().left(24)
-	if pid == "" or name == "":
+	if name == "":
 		_reject(from, "Pick a name first.")
 		return
+	var key := name.to_lower()
+	var password := str(msg.get("password", ""))
+	var token := str(msg.get("token", ""))
+	var account: Dictionary
+	if bool(msg.get("new", false)):
+		if accounts.has(key):
+			_reject(from, "Someone here already goes by %s. Log in, or pick another name." % name)
+			return
+		if password.length() < 6:
+			_reject(from, "Pick a password of at least 6 letters.")
+			return
+		account = _new_account(name, password, str(msg.get("id", "")).left(64))
+		_log("New player %s (%s)" % [name, account.status])
+	else:
+		if not accounts.has(key):
+			_reject(from, "Nobody called %s plays here yet. Create an account first." % name)
+			return
+		account = accounts[key]
+		var by_token: bool = token != "" and token.sha256_text() in account.tokens
+		if not by_token and _hash(password, account.salt) != account.hash:
+			_reject(from, "That password isn't right.")
+			return
+	if token == "" or not token.sha256_text() in account.tokens:
+		token = _issue_token(account)
+	match account.status:
+		"declined":
+			_reject(from, "The host hasn't let %s into this region." % account.name)
+		"pending":
+			_waiting[from] = key
+			_send(from, {"t": "waiting", "token": token,
+				"reason": "Asked the host to let you in. You'll be in as soon as they say yes."})
+			_send_requests()
+		_:
+			_admit(from, account, token)
+
+
+## Lets a waiting player in, or turns them away. Only the host can.
+func approve(name: String, ok: bool) -> void:
+	var key := name.to_lower()
+	if not accounts.has(key) or accounts[key].host:
+		return
+	accounts[key].status = "approved" if ok else "declined"
+	_dirty = true
+	_log("%s %s" % [accounts[key].name, "approved" if ok else "turned away"])
+	for peer in _waiting.keys():
+		if _waiting[peer] == key:
+			_waiting.erase(peer)
+			if ok:
+				_admit(peer, accounts[key], "")
+			else:
+				_reject(peer, "The host hasn't let %s into this region." % accounts[key].name)
+	_send_requests()
+
+
+## Players who signed up and are waiting for the host, by name.
+func requests() -> Array:
+	var out := []
+	for key in accounts:
+		if accounts[key].status == "pending":
+			out.append(accounts[key].name)
+	out.sort()
+	return out
+
+
+func _new_account(name: String, password: String, device_id: String) -> Dictionary:
+	var is_host := (host_name == "" and accounts.is_empty()) or name.to_lower() == host_name.to_lower()
+	# The device's id is the player id, so a city made before accounts stays theirs.
+	var pid := device_id
+	for a in accounts.values():
+		if a.player == pid:
+			pid = ""
+	if pid == "":
+		pid = Crypto.new().generate_random_bytes(8).hex_encode()
+	var salt := Crypto.new().generate_random_bytes(16).hex_encode()
+	var a := {"name": name, "salt": salt, "hash": _hash(password, salt),
+		"status": "approved" if is_host else "pending", "player": pid, "host": is_host, "tokens": []}
+	accounts[name.to_lower()] = a
+	_dirty = true
+	return a
+
+
+## A token the player's device keeps, so they don't type the password every time.
+func _issue_token(account: Dictionary) -> String:
+	var token := Crypto.new().generate_random_bytes(24).hex_encode()
+	account.tokens.append(token.sha256_text())
+	while account.tokens.size() > 5:
+		account.tokens.pop_front()
+	_dirty = true
+	return token
+
+
+## A slow salted hash, so a copied save file doesn't give passwords away.
+static func _hash(password: String, salt: String) -> String:
+	var bytes := (salt + password).to_utf8_buffer()
+	for i in 4000:
+		var ctx := HashingContext.new()
+		ctx.start(HashingContext.HASH_SHA256)
+		ctx.update(bytes)
+		ctx.update(salt.to_utf8_buffer())
+		bytes = ctx.finish()
+	return bytes.hex_encode()
+
+
+func _admit(from: int, account: Dictionary, token: String) -> void:
+	var pid: String = account.player
+	var name: String = account.name
 	for peer in _players:
 		if _players[peer].id == pid:
 			_reject(from, "You're already playing in this region in another window.")
 			return
 	var city := region.city_of(pid)
-	_players[from] = {"id": pid, "name": name, "city": city}
+	_players[from] = {"id": pid, "name": name, "city": city, "host": account.host}
 	if city == "":
 		_events.append(["city", pid, name])
 	elif region.cities[city].player != name:
@@ -163,13 +282,24 @@ func _hello(from: int, msg: Dictionary) -> void:
 	var snapshot = JSON.parse_string(JSON.stringify(region.to_dict(), "", false, true))
 	region.from_dict(snapshot)
 	_broadcast({"t": "region", "region": snapshot}, from)
-	_send(from, {"t": "welcome", "you": pid, "code": invite_code, "region": snapshot})
+	_send(from, {"t": "welcome", "you": pid, "name": name, "code": invite_code, "region": snapshot,
+		"token": token, "host": account.host})
 	_send_players()
+	_send_requests()
 	var line := region.add_chat("", "%s joined the region" % name)
 	_broadcast({"t": "chat", "line": line})
 
 
+## Tells the host who is waiting to join.
+func _send_requests() -> void:
+	var list := requests()
+	for peer in _players:
+		if _players[peer].host:
+			_send(peer, {"t": "requests", "list": list})
+
+
 func _on_left(peer: int) -> void:
+	_waiting.erase(peer)
 	if not _players.has(peer):
 		return
 	var name: String = _players[peer].name
@@ -209,6 +339,7 @@ func save() -> void:
 		return
 	var d := region.to_dict()
 	d["code"] = invite_code
+	d["accounts"] = accounts
 	var f := FileAccess.open(data_path + ".tmp", FileAccess.WRITE)
 	if f == null:
 		_log("Couldn't save to %s" % data_path)
@@ -227,6 +358,12 @@ func _load() -> void:
 		_log("Couldn't read %s, starting a new region" % data_path)
 		return
 	region.from_dict(d)
+	accounts = {}
+	var saved: Dictionary = d.get("accounts", {})
+	for key in saved:
+		var a: Dictionary = saved[key]
+		accounts[key] = {"name": str(a.name), "salt": str(a.salt), "hash": str(a.hash), "status": str(a.status),
+			"player": str(a.player), "host": bool(a.host), "tokens": Array(a.get("tokens", []))}
 	if invite_code == "":
 		invite_code = str(d.get("code", ""))
 	_log("Loaded %d cities from %s" % [region.cities.size(), data_path])

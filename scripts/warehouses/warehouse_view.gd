@@ -1,7 +1,7 @@
 class_name WarehouseView
 extends Node3D
 ## Draws warehouses (built by the art library's WarehouseBuilder). A
-## warehouse is rebuilt when it builds up or adds a bay.
+## warehouse is rebuilt when it builds up, adds a bay or an annex.
 
 var sim: CitySim
 
@@ -21,7 +21,7 @@ func setup(s: CitySim) -> void:
 func _sync() -> void:
 	for id in _nodes.keys():
 		var w = sim.warehouses.buildings.get(id)
-		if w == null or _shapes[id] != [w.kind, w.level, w.bays]:
+		if w == null or _shapes[id] != [w.kind, w.level, w.bays, w.get("built", []).size()]:
 			_trees.remove(_nodes[id].get_meta("tree_key"))
 			_nodes[id].queue_free()
 			_nodes.erase(id)
@@ -30,7 +30,7 @@ func _sync() -> void:
 		if not _nodes.has(id) and not Warehouses.is_store(sim.warehouses.buildings[id]):
 			var w: Dictionary = sim.warehouses.buildings[id]
 			_nodes[id] = _spawn(id, w)
-			_shapes[id] = [w.kind, w.level, w.bays]
+			_shapes[id] = [w.kind, w.level, w.bays, w.get("built", []).size()]
 
 
 func _spawn(id: int, w: Dictionary) -> Node3D:
