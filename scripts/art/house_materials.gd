@@ -165,7 +165,7 @@ void fragment() {
 	// the low patches and wheel-polished bare ground between.
 	float is_loose = step(0.86, COLOR.a);
 	float cover = snow_cover(0.8, 0.95);
-	float packed = smoothstep(0.55, 0.75, texture(noise_soft, p / 3.0).r) * 0.6;
+	float packed = smoothstep(0.68, 0.88, texture(noise_soft, p / 9.0).r) * 0.45;
 	cover *= mix(packed, 0.85 + chips * 0.15, is_loose);
 	vec3 snowy = vec3(0.80, 0.83, 0.88) * mix(0.82, 0.97, is_loose) * (0.95 + grain * 0.07);
 	ALBEDO = mix(col, snowy, cover);
