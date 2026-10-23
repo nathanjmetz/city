@@ -41,6 +41,7 @@ func _init() -> void:
 	_services()
 	_telecom()
 	_warehouse()
+	_water()
 	_oil_company()
 	_done()
 
@@ -191,6 +192,21 @@ func _warehouse() -> void:
 		if _mesh_verts(WarehouseBuilder.build_warehouse(w, 7, 3.9)) == before:
 			missing.append(id)
 	_check(missing.is_empty(), "a warehouse's automation shows%s" % ["" if missing.is_empty() else ": missing " + str(missing)])
+
+
+## The water utility's meters and big main at the tower, nutrient removal
+## and biosolids at the plant.
+func _water() -> void:
+	var view := WaterView.new()
+	var b := {"pos": Vector3(500, 0, 500), "dir": Vector3(0, 0, -1)}
+	var missing := []
+	for pair in [["tower", "meters"], ["tower", "industrial_main"], ["plant", "nutrient"], ["plant", "biosolids"]]:
+		var bare := view._spawn(b, pair[0], Vector2i(1, 0), [])
+		var with := view._spawn(b, pair[0], Vector2i(1, 0), [pair[1]])
+		if with.get_child_count() <= bare.get_child_count():
+			missing.append(pair[1])
+	view.free()
+	_check(missing.is_empty(), "the water utility's upgrades show%s" % ["" if missing.is_empty() else ": missing " + str(missing)])
 
 
 func _mesh_verts(parts: Array) -> int:

@@ -58,18 +58,19 @@ func _sync() -> void:
 			var c: Vector2i = wk[1]
 			if c == Vector2i.ZERO or c.x <= -99:
 				continue
-			want["%d:%s:%d:%d" % [id, wk[0], c.x, c.y]] = [b, wk[0], c]
+			var built: Array = w.utilities[id].get("built", [])
+			want["%d:%s:%d:%d:%d" % [id, wk[0], c.x, c.y, built.size()]] = [b, wk[0], c, built]
 	for k in _pieces.keys():
 		if not want.has(k):
 			_pieces[k].queue_free()
 			_pieces.erase(k)
 	for k in want:
 		if not _pieces.has(k):
-			_pieces[k] = _spawn(want[k][0], want[k][1], want[k][2])
+			_pieces[k] = _spawn(want[k][0], want[k][1], want[k][2], want[k][3])
 	_pipe_for = -2
 
 
-func _spawn(b: Dictionary, key: String, c: Vector2i) -> Node3D:
+func _spawn(b: Dictionary, key: String, c: Vector2i, built := []) -> Node3D:
 	var root := Node3D.new()
 	add_child(root)
 	root.position = Terrain.lift(WaterUtility.cell_center(b, c))
@@ -81,6 +82,18 @@ func _spawn(b: Dictionary, key: String, c: Vector2i) -> Node3D:
 			_civic(root, Services.Kind.WELL, seed, Vector2(20, 20))
 		"tower":
 			_civic(root, Services.Kind.WATER_TOWER, seed, Vector2(30, 30))
+			if "meters" in built:
+				# Smart meters read by radio (AMI): the collector's antenna on
+				# the tank's catwalk rail and its cabinet at the foot.
+				_box(root, Vector3(0.12, 3.0, 0.12), Vector3(10.3, 37.0, 0), Color("#9ea3a6"))
+				_box(root, Vector3(0.5, 0.7, 0.3), Vector3(10.3, 35.4, 0.3), Color("#d8dadb"))
+				_box(root, Vector3(0.8, 1.4, 0.5), Vector3(3.0, 0.7, -3.0), Color("#8d918f"))
+			if "industrial_main" in built:
+				# The big main to industry leaves through a valve vault and an
+				# above-ground backflow preventer in an insulated "hot box".
+				_box(root, Vector3(2.6, 0.12, 2.0), Vector3(-9.0, 0.06, -11.0), Color("#8d8f8c"))
+				_box(root, Vector3(3.6, 1.6, 1.6), Vector3(-9.0, 0.9, -7.5), Color("#c9b98f"))
+				_box(root, Vector3(0.8, 0.8, 9.0), Vector3(-9.0, 0.4, -1.5), Color("#3a5a8a"))
 		"lagoon":
 			# Two cells of a facultative lagoon behind a grassed berm.
 			_box(root, Vector3(36, 1.2, 36), Vector3(0, 0.6, 0), Color("#6f8a4a"))
@@ -95,6 +108,19 @@ func _spawn(b: Dictionary, key: String, c: Vector2i) -> Node3D:
 				_cyl(root, 6.5, 2.2, Vector3(x, 1.1, 8), Color("#aaa69c"))
 				_cyl(root, 6.0, 0.05, Vector3(x, 2.22, 8), Color("#62746a"))
 			_box(root, Vector3(7, 4, 6), Vector3(13, 2, -11), Color("#c9c2b2"))
+			if "nutrient" in built:
+				# Nutrient removal: an anoxic tank ahead of the aeration
+				# basins, and a covered UV disinfection channel at the outfall.
+				_box(root, Vector3(22, 2.5, 3.4), Vector3(-5, 1.25, -3.2), Color("#a9a59a"))
+				_box(root, Vector3(21, 0.05, 2.8), Vector3(-5, 2.52, -3.2), Color("#4f6a5e"))
+				_box(root, Vector3(1.8, 1.4, 8.0), Vector3(15.5, 0.7, -2.0), Color("#b9b5ab"))
+				_box(root, Vector3(2.0, 0.15, 8.2), Vector3(15.5, 1.5, -2.0), Color("#7d8a93"))
+			if "biosolids" in built:
+				# Biosolids: a covered sludge holding tank with a truck
+				# loading spout, for the farms' spreader trucks.
+				_cyl(root, 2.4, 5.0, Vector3(15.0, 2.5, 14.0), Color("#c9c6bb"))
+				_cyl(root, 2.5, 0.4, Vector3(15.0, 5.2, 14.0), Color("#8e9aa3"))
+				_box(root, Vector3(0.4, 0.4, 3.0), Vector3(15.0, 3.6, 10.8), Color("#6b6f73"))
 		"filtration", "intake":
 			# A brick treatment building with filter tanks beside it.
 			_box(root, Vector3(36, 0.2, 36), Vector3(0, 0.1, 0), Color("#b9b5ab"))
