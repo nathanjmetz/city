@@ -1383,6 +1383,9 @@ func farmhouse_problem(pos: Vector3, dir: Vector3) -> String:
 		return "Overlaps a warehouse."
 	if parks.overlaps(Array(poly)):
 		return "That ground is a park."
+	# Nobody sets up a farmstead where no field would pay.
+	if farms.start_profit(pos, dir) <= 0.0:
+		return "Soil here is too poor to farm: %d%% fertile." % roundi(Farms.fertility_at(pos - dir * Farms.CELL) * 100.0)
 	return ""
 
 

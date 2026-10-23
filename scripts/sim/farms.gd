@@ -243,6 +243,18 @@ func field_profit(f: Dictionary, c: Vector2i) -> float:
 	return (gross - COST_PER_ACRE[f.crop] - COST_PER_ACRE_PER_KM * km - tax) * ACRES_PER_CELL + lease
 
 
+## The best a new farm here could make a year from a field beside its yard,
+## over every crop it could grow ($; 0 or less means no field would pay, as
+## on poor, wooded ground nobody farms).
+func start_profit(pos: Vector3, dir: Vector3) -> float:
+	var best := -INF
+	for crop in GROSS_PER_ACRE:
+		var f := {"pos": pos, "dir": dir, "crop": crop, "cells": []}
+		for c in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 1), Vector2i(1, 1)]:
+			best = maxf(best, field_profit(f, c))
+	return best
+
+
 ## Every farm takes its next step. A new farm puts up its barn first. Then
 ## it buys the best field next to its land (if that field would pay and the
 ## farm is making money) or sells its worst one (if it keeps losing money).
