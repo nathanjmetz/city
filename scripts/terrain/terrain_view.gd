@@ -609,15 +609,22 @@ static func build_chunk(origin: Vector2, size: float, step: float, reach := 0.0)
 			var a := j * (n + 1) + i
 			if maxf(maxf(wet[a], wet[a + 1]), maxf(wet[a + n + 1], wet[a + n + 2])) < 0.02:
 				continue
+			# Flat at the level of the wettest corner. The level is only known
+			# on or by the water, so a dry corner read on its own could tilt
+			# the sheet tens of metres up into the air on the coarser levels.
 			var corners := [a, a + 1, a + n + 2, a + n + 1]
-			var ids := []
+			var wettest: int = corners[0]
 			for c in corners:
-				if not index.has(c):
-					index[c] = wverts.size()
-					var v := verts[c]
-					wverts.append(Vector3(v.x, Terrain.water_level(v.x + Terrain.view_origin.x, v.z + Terrain.view_origin.y), v.z))
-				ids.append(index[c])
-			widx.append_array([ids[0], ids[1], ids[2], ids[0], ids[2], ids[3]])
+				if wet[c] > wet[wettest]:
+					wettest = c
+			if not index.has(wettest):
+				var v := verts[wettest]
+				index[wettest] = Terrain.water_level(v.x + Terrain.view_origin.x, v.z + Terrain.view_origin.y)
+			var level: float = index[wettest]
+			var base := wverts.size()
+			for c in corners:
+				wverts.append(Vector3(verts[c].x, level, verts[c].z))
+			widx.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
 	if widx.is_empty():
 		return [ground, null]
 	var wn := PackedVector3Array()
