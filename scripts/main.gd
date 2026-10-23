@@ -15,6 +15,7 @@ var _tick_time := 0.0
 var speed := 1
 var _resume_speed := 1
 var _save_wait := 0.0
+var _snapshot: TownSnapshot  # an autosave under way
 ## Online, a copy of your town goes to the region this often, in seconds.
 const TOWN_SEND_EVERY := 10.0
 ## Played offline, the town saves itself this often, in seconds, when it
@@ -388,7 +389,8 @@ func _process(delta: float) -> void:
 	var step := 1.0 / CitySim.TICKS_PER_SECOND
 	var guard := 0
 	var t := Perf.now()
-	while _tick_time >= step and guard < 20:
+	# (A town being saved holds still for a few frames: see TownSnapshot.)
+	while _tick_time >= step and guard < 20 and not sim.held:
 		_tick_time -= step
 		guard += 1
 		sim.tick()
@@ -400,10 +402,15 @@ func _process(delta: float) -> void:
 		if _save_wait <= 0.0:
 			_save_wait = TOWN_SEND_EVERY
 			Session.client.send_town()
+	elif _snapshot:
+		# A save a few parts per frame, so a big town never freezes.
+		if _snapshot.step():
+			Session.save_city(sim, Session.save_path, _snapshot.bytes())
+			_snapshot = null
 	elif _save_pending and _save_wait <= 0.0:
 		_save_pending = false
 		_save_wait = SAVE_EVERY
-		Session.save_city(sim)
+		_snapshot = TownSnapshot.new(sim)
 
 
 ## How far through the current tick the clock is, 0 to 1.

@@ -280,14 +280,24 @@ static func _parcels_in(index: Dictionary, area: Rect2) -> Array:
 ## loading them back skips planning the whole town again.
 ## With them go the parcels the last plan knew and zoning changes not yet
 ## planned, so a loaded copy re-cuts exactly where the town itself would.
+var _cuts_saved := {}  # side key -> [hash of its lots, their saved form]
+
+
 func cuts_to_save(zones: ZoneMap) -> Dictionary:
 	var cuts := {}
 	var keys := _sides.keys()
 	keys.sort()
+	var cache := {}
 	for key in keys:
 		var s: Dictionary = _sides[key]
 		if s.cut_sig != 0:
-			cuts[key] = (s.cut as Array).map(func(l): return lot_to_save(l))
+			# A side whose lots haven't changed keeps its saved form (saving
+			# every side's lots afresh took a fifth of a second in a big town).
+			var h: int = (s.cut as Array).hash()
+			var was: Array = _cuts_saved.get(key, [])
+			cuts[key] = was[1] if not was.is_empty() and was[0] == h else (s.cut as Array).map(func(l): return lot_to_save(l))
+			cache[key] = [h, cuts[key]]
+	_cuts_saved = cache
 	var known := []
 	var hs := _last_parcels.keys()
 	hs.sort()

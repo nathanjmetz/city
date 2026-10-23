@@ -302,6 +302,9 @@ func _init() -> void:
 ## Applies one player command. Returns true if anything changed (online:
 ## true once it's sent).
 func apply(cmd: Dictionary) -> bool:
+	if held:
+		_held_cmds.append(cmd)
+		return true
 	if send_command.is_valid():
 		send_command.call(cmd)
 		return true
@@ -3658,6 +3661,15 @@ func _plan_to_save() -> Dictionary:
 
 
 var _parcel_cache := {}  # lot key -> [hash of the lot, its saved form] (see _parcels_to_save)
+var _zones_saved := [-1, {}]  # [ZoneMap.revision, its saved form]
+
+
+## The zoning as saved, made again only when it changed (a big town's
+## zoning takes a fifth of a second to write out).
+func _zones_to_save() -> Dictionary:
+	if int(_zones_saved[0]) != zones.revision:
+		_zones_saved = [zones.revision, zones.to_dict()]
+	return _zones_saved[1]
 
 
 ## What a postcard leaves out (see to_dict).
@@ -3670,67 +3682,98 @@ const POSTCARD_SKIP := ["plan", "zones", "families", "timelapse", "history", "tr
 ## town's size and saving time (see from_dict).
 func to_dict(postcard := false) -> Dictionary:
 	vegetation.update(self)  # land cleared since the last tick counts
-	var d := {
-		"version": 2,
-		"links": region_links,
-		"county": county_joined.keys(),
-		"county_removed": county_removed.keys(),
-		"trade": trade.to_dict(),
-		"tick": tick_count,
-		"seed": city_seed,
-		"roads": network.to_dict(),
-		"buildings": buildings,
-		"parcels": _parcels_to_save(),
-		"economy": economy.to_dict(),
-		"home_parts": _home_parts,
-		"services": services.to_dict(),
-		"farms": farms.to_dict(),
-		"industry": industry.to_dict(),
-		"power": power.to_dict(),
-		"education": education.to_dict(),
-		"telecom": telecom.to_dict(),
-		"banks": banks.to_dict(),
-		"logistics": logistics.to_dict(),
-		"construction": construction.to_dict(),
-		"warehouses": warehouses.to_dict(),
-		"big_factories": big.to_dict(),
-		"reserves": reserves.to_dict(),
-		"rail": rail.to_dict(),
-		"permits": permits.to_dict(),
-		"hubs": hubs.to_dict(),
-		"parks": parks.to_dict(),
-		"neighborhoods": neighborhoods.to_dict(),
-		"mail": mail.to_dict(),
-		"interlocal": interlocal.to_dict(),
-		"regional": regional.to_dict(),
-		"streets": streets.to_dict(),
-		"policies": policies.to_dict(),
-		"culture": culture.to_dict(),
-		"pollution": pollution.to_dict(),
-		"healthcare": healthcare.to_dict(),
-		"nicknames": nicknames.to_dict(),
-		"heritage": heritage.to_dict(),
-		"markers": markers.to_dict(),
-		"leaders": leaders.to_dict(),
-		"care": care.to_dict(),
-		"redevelopment": redevelopment.to_dict(),
-		"subdivisions": subdivisions.to_dict(),
-		"junctions": traffic.rules_to_dict(),
-		"vegetation": vegetation.to_dict(),
-	}
+	var d := {}
+	for step in save_steps(postcard):
+		d[step[0]] = step[1].call()
 	if postcard:
 		d.postcard = true
-		return d
-	d.zones = zones.to_dict()
-	d.plan = _plan_to_save()
-	d.families = families.to_dict()
-	d.timelapse = timelapse.to_dict()
-	d.history = history.to_dict()
-	d.traffic = traffic.to_dict()
-	d.buses = buses.to_dict()
-	d.taxis = taxis.to_dict()
-	d.people = people.to_dict()
 	return d
+
+
+## Holds the town still while a TownSnapshot saves it: no ticks (the game
+## checks `held`), and player commands wait their turn.
+var held := false
+var _held_cmds := []
+
+
+func hold() -> void:
+	held = true
+
+
+func release() -> void:
+	held = false
+	var cmds := _held_cmds
+	_held_cmds = []
+	for cmd in cmds:
+		apply(cmd)
+
+
+## to_dict as steps, [key, Callable], so a big town can be saved a few at
+## a time over several frames while it holds still (see hold and
+## TownSnapshot). The heavy ones (people, plans, cars) come last and only
+## in a full copy.
+func save_steps(postcard := false) -> Array:
+	var steps := [
+		["version", func(): return 2],
+		["links", func(): return region_links],
+		["county", func(): return county_joined.keys()],
+		["county_removed", func(): return county_removed.keys()],
+		["trade", func(): return trade.to_dict()],
+		["tick", func(): return tick_count],
+		["seed", func(): return city_seed],
+		["roads", func(): return network.to_dict()],
+		["buildings", func(): return buildings],
+		["parcels", func(): return _parcels_to_save()],
+		["economy", func(): return economy.to_dict()],
+		["home_parts", func(): return _home_parts],
+		["services", func(): return services.to_dict()],
+		["farms", func(): return farms.to_dict()],
+		["industry", func(): return industry.to_dict()],
+		["power", func(): return power.to_dict()],
+		["education", func(): return education.to_dict()],
+		["telecom", func(): return telecom.to_dict()],
+		["banks", func(): return banks.to_dict()],
+		["logistics", func(): return logistics.to_dict()],
+		["construction", func(): return construction.to_dict()],
+		["warehouses", func(): return warehouses.to_dict()],
+		["big_factories", func(): return big.to_dict()],
+		["reserves", func(): return reserves.to_dict()],
+		["rail", func(): return rail.to_dict()],
+		["permits", func(): return permits.to_dict()],
+		["hubs", func(): return hubs.to_dict()],
+		["parks", func(): return parks.to_dict()],
+		["neighborhoods", func(): return neighborhoods.to_dict()],
+		["mail", func(): return mail.to_dict()],
+		["interlocal", func(): return interlocal.to_dict()],
+		["regional", func(): return regional.to_dict()],
+		["streets", func(): return streets.to_dict()],
+		["policies", func(): return policies.to_dict()],
+		["culture", func(): return culture.to_dict()],
+		["pollution", func(): return pollution.to_dict()],
+		["healthcare", func(): return healthcare.to_dict()],
+		["nicknames", func(): return nicknames.to_dict()],
+		["heritage", func(): return heritage.to_dict()],
+		["markers", func(): return markers.to_dict()],
+		["leaders", func(): return leaders.to_dict()],
+		["care", func(): return care.to_dict()],
+		["redevelopment", func(): return redevelopment.to_dict()],
+		["subdivisions", func(): return subdivisions.to_dict()],
+		["junctions", func(): return traffic.rules_to_dict()],
+		["vegetation", func(): return vegetation.to_dict()],
+	]
+	if not postcard:
+		steps.append_array([
+			["zones", func(): return _zones_to_save()],
+			["plan", func(): return _plan_to_save()],
+			["families", func(): return families.to_dict()],
+			["timelapse", func(): return timelapse.to_dict()],
+			["history", func(): return history.to_dict()],
+			["traffic", func(): return traffic.to_dict()],
+			["buses", func(): return buses.to_dict()],
+			["taxis", func(): return taxis.to_dict()],
+			["people", func(): return people.to_dict()],
+		])
+	return steps
 
 
 func from_dict(d: Dictionary) -> void:
