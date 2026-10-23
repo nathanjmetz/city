@@ -122,7 +122,8 @@ func _stand(size: float, track_dir: Vector2, extra: Array, open: Array) -> void:
 	var td := track_dir.normalized() if track_dir.length() > 0.1 else Vector2(0, -1)
 	# The landing sits toward the haul track; skid trails wind back into the cut.
 	var land := td * rng.randf_range(8.0, 14.0)
-	var clear := [[Vector2.ZERO, td * h, 4.0], [land, land, 15.0]]
+	# (The haul road out of the stand comes in with the extra clearings.)
+	var clear := [[Vector2.ZERO, td * 16.0, 4.0], [land, land, 15.0]]
 	var trail_pts := []
 	for k in rng.randi_range(3, 4):
 		var a := atan2(-td.y, -td.x) + rng.randf_range(-1.3, 1.3)

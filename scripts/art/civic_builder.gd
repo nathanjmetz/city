@@ -734,6 +734,8 @@ func _fence(a: Vector2, b: Vector2, h: float, barbed := false) -> void:
 		var p: Vector3 = corners[i]
 		var q: Vector3 = corners[(i + 1) % 4]
 		var len := p.distance_to(q)
+		if len < 0.01:
+			continue  # a zero-length side would put NaNs in the mesh and hide all of it
 		var dir := (q - p) / len
 		var yaw := Basis(Vector3.UP, atan2(dir.x, dir.z))
 		var n := maxi(1, int(len / 3.0))

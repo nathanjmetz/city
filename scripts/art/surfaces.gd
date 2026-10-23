@@ -155,6 +155,40 @@ void fragment() {
 }
 """
 
+## Dirt and crushed-limestone lanes (logging roads, lease roads), benchmarked
+## against photos of Indiana farm lanes and skid roads: two darker packed
+## wheel paths 1.8 m apart, a looser crown between them with weeds coming
+## through, and ragged grassy edges. Snow lies on them in winter, packed
+## thin in the wheel paths. UV.x runs 0..0.25 across (RoadMesh ribbons).
+const LANE := """
+uniform vec4 base : source_color = vec4(0.58, 0.47, 0.33, 1.0);
+global uniform float snow;
+global uniform vec4 season_look;
+void fragment() {
+	vec2 p = world_pos.xz;
+	float close = clamp(1.0 - length(VERTEX) / 160.0, 0.0, 1.0);
+	float x = UV.x * 4.0 - 0.5;
+	float grain = texture(noise_grain, p / 0.4).r;
+	float patch = texture(noise_soft, p / 9.0).r;
+	float drift = (texture(noise_soft, p / 23.0).r - 0.5) * 0.08;
+	float rut = 1.0 - smoothstep(0.05, 0.12, abs(abs(x + drift) - 0.22));
+	float crown = 1.0 - smoothstep(0.05, 0.13, abs(x + drift));
+	float edge = smoothstep(0.34, 0.5, abs(x) + (patch - 0.5) * 0.14);
+	vec3 col = base.rgb * (0.85 + patch * 0.3) * (1.0 + (grain - 0.5) * 0.3 * close);
+	col = mix(col, base.rgb * 0.66, rut * 0.7);
+	// Weeds: green in summer, dead tan after frost.
+	vec3 weed = mix(vec3(0.20, 0.25, 0.11), vec3(0.42, 0.37, 0.25), max(season_look.w, season_look.y));
+	weed *= 0.8 + grain * 0.4;
+	float weeds = smoothstep(0.45, 0.7, texture(noise_soft, turn(p, 1.3) / 3.0).r);
+	col = mix(col, weed, max(edge, crown * weeds * 0.8) * 0.85);
+	float cover = smoothstep(0.15, 0.55, snow * 0.9 + patch * 0.35 - 0.1) * mix(1.0, 0.45, rut);
+	col = mix(col, vec3(0.80, 0.83, 0.88) * (0.93 + grain * 0.07), cover);
+	ALBEDO = col;
+	ROUGHNESS = 0.95;
+	SPECULAR = 0.2;
+}
+"""
+
 ## Crop fields, benchmarked against aerial photos of Iowa and Illinois
 ## farmland. UV is metres across and back from the farmhouse, / 16; the
 ## vertex colour is this month's crop colour (sRGB). Vertex alpha 0 marks
@@ -280,6 +314,10 @@ static func gravel() -> ShaderMaterial:
 
 static func quarry() -> ShaderMaterial:
 	return _make("quarry", QUARRY, {})
+
+
+static func lane(color: Color) -> ShaderMaterial:
+	return _make("lane %s" % color, LANE, {"base": color})
 
 
 static func field() -> ShaderMaterial:
