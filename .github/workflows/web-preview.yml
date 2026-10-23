@@ -83,6 +83,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_warehouses.gd
           ~/godot-cache/godot --headless -s tests/test_parks.gd
           ~/godot-cache/godot --headless -s tests/test_tourism.gd
+          ~/godot-cache/godot --headless -s tests/test_trails.gd
           ~/godot-cache/godot --headless -s tests/test_power.gd
           ~/godot-cache/godot --headless -s tests/test_vegetation.gd
           ~/godot-cache/godot --headless -s tests/test_education.gd

@@ -907,6 +907,11 @@ const AMENITIES := {
 	"motel": {"cost": 0, "upkeep": 0, "size": Vector2(46, 30), "value": 0.0, "value_reach": 1.0, "happy": 0.0, "happy_reach": 1.0},
 	"diner": {"cost": 0, "upkeep": 0, "size": Vector2(26, 30), "value": 0.0, "value_reach": 1.0, "happy": 0.0, "happy_reach": 1.0},
 	"gas_station": {"cost": 0, "upkeep": 0, "size": Vector2(40, 36), "value": 0.0, "value_reach": 1.0, "happy": 0.0, "happy_reach": 1.0},
+	# A trailhead: a gravel lot for about 20 cars, a map kiosk, a bike rack
+	# and a vault toilet, where the town's trails start (typical Indiana
+	# rail-trail and greenway trailheads; about $300k to $500k built).
+	"trailhead": {"cost": 350_000, "upkeep": 2_500, "size": Vector2(50, 36),
+		"value": 0.01, "value_reach": 300.0, "happy": 0.03, "happy_reach": 1500.0},
 }
 # --- Tourism and events --------------------------------------------------------
 # Brawn green-lit (2026-10-22): a fairgrounds hub whose fair board grows it
@@ -986,6 +991,48 @@ const VENUE_TREES := {
 }
 ## Months the tree's extra events fall in, in order: spring then summer.
 const VENUE_EXTRA_MONTHS := [5, 6, 8, 4, 10]
+
+# --- Walking and biking ----------------------------------------------------------
+# A trailhead hub run by a parks-and-trails director grows the town's trails
+# a month at a time: a greenway along the creek, connector trails out to the
+# parks, bike lanes on nearby streets (through the permit bell, since they
+# restripe the player's streets), and a longer county greenway once there
+# is a road out to the region. Built like a 10 ft (3 m) shared-use path
+# (AASHTO bike guide), about $1M a mile paved.
+const TRAIL_TREE := [
+	{"id": "greenway", "name": "Creek greenway", "cost": 600_000, "needs": {},
+		"effects": {"length+": 1_600.0}, "note": "a paved path along the creek, about a mile"},
+	{"id": "connectors", "name": "Park connector trails", "cost": 400_000, "needs": {"population": 1_000},
+		"effects": {}, "note": "paths out to the town's parks"},
+	{"id": "bike_lanes", "name": "Bike lanes", "cost": 150_000, "requires": ["greenway"],
+		"needs": {"population": 1_500}, "effects": {"lanes+": 8.0}, "note": "restriped streets from the trail into town"},
+	{"id": "county_greenway", "name": "County greenway extension", "cost": 1_500_000, "requires": ["greenway"],
+		"needs": {"population": 3_000, "link": 1}, "effects": {"length+": 3_400.0},
+		"note": "the creek path runs on toward the towns around"},
+]
+## Width of a trail (10 ft shared-use path) and the strip kept clear for it.
+const TRAIL_WIDTH := 3.0
+const TRAIL_CLEAR := 6.0
+## How far a greenway grows each month, and its step along the bank.
+const TRAIL_GROW_MONTH := 400.0
+const TRAIL_STEP := 30.0
+## How far from the trailhead a creek can be for a greenway.
+const TRAIL_CREEK_REACH := 800.0
+## Homes near a trail are worth more: about 3 to 5% within a few hundred feet
+## in hedonic price studies of US trails. Value and happiness at the path,
+## fading to nothing at the reach.
+const TRAIL_VALUE := 0.03
+const TRAIL_HAPPY := 0.04
+const TRAIL_REACH := 200.0
+## A trip between two places near the trails or bike lanes, shorter than
+## WALK_MAX, goes on foot or by bike this often instead of by car (small
+## towns with good trails see 10 to 20% of short trips walked or biked).
+const WALK_NEAR := 400.0
+const WALK_MAX := 3_000.0
+const WALK_SHARE := 0.12
+const WALK_SHARE_BIKE := 0.08
+## Trail upkeep: about $3k to $5k a mile a year (sweeping, patching, mowing).
+const TRAIL_UPKEEP_KM := 250.0
 
 ## Most land value and happiness a home can get from parks and landmarks
 ## together.
