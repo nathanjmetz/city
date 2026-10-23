@@ -105,7 +105,9 @@ func _ready() -> void:
 	# Wild trees and brush (WildView) grow from the real land cover; past
 	# where they're drawn, the ground paints the woods' canopy.
 	Vegetation.cover_source = func(p: Vector3) -> Array:
-		return Terrain.wild_cover(p.x + sim.terrain_offset.x, p.z + sim.terrain_offset.y)
+		var x := p.x + sim.terrain_offset.x
+		var z := p.z + sim.terrain_offset.y
+		return Terrain.wild_cover(x, z) + [Terrain.crops(x, z)]
 	terrain.trees_drawn_to = func() -> float:
 		return WildView.reach(cam.camera.global_position.y)
 
