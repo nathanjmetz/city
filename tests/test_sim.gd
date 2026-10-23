@@ -421,10 +421,56 @@ func _init() -> void:
 	old.from_dict({"version": 1, "next_id": 4, "nodes": {"1": [-100, 0], "2": [100, 0]},
 		"segments": {"3": [1, 2, 0, 0]}})
 	_check(old.empty_zoned_lots().size() == old.lots.size() and old.lots.size() > 0, "old saves get zoned")
+	_real_layouts()
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
 var _failed := false
+
+## Industry spreads like the real thing: spaced oil pads, one quarry,
+## timber cut in rotation.
+func _real_layouts() -> void:
+	var any := func(_mid, _corners): return true
+	for kind in ["oil", "ore", "forest"]:
+		var res: int = Industry.KINDS[kind].resource
+		var best := Vector3.ZERO
+		var best_v := 0.0
+		for x in range(-3000, 3001, 150):
+			for z in range(-3000, 3001, 150):
+				var v := Resources.at(res, Vector3(x, 0, z))
+				if v > best_v:
+					best_v = v
+					best = Vector3(x, 0, z)
+		var ind := Industry.new()
+		ind.price = 3.0  # rich enough that every good cell pays
+		var id := ind.add_site(kind, best, Vector3(0, 0, -1), [])
+		for i in 40:
+			ind.day = i * 1.5
+			ind.decide(any)
+		var pads: Array = ind.sites[id].pads
+		if kind == "oil":
+			var spaced := pads.size() >= 2
+			for a in pads:
+				for b in pads:
+					if a != b and maxi(absi(a.x - b.x), absi(a.y - b.y)) < Balance.OIL_SPACING_CELLS:
+						spaced = false
+			_check(spaced, "oil pads keep their well spacing (%d pads)" % pads.size())
+		elif kind == "ore":
+			var joined := pads.size() >= 3
+			for c in pads:
+				var touches: bool = c.length_squared() == 1
+				for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+					touches = touches or (c + d) in pads
+				joined = joined and touches
+			_check(joined, "the quarry grows as one pit (%d benches)" % pads.size())
+		else:
+			_check(pads.size() <= Balance.FOREST_ACTIVE_UNITS and not ind.sites[id].get("regrow", {}).is_empty(),
+				"timber is cut a few units at a time and left to regrow (%d cutting, %d resting)"
+				% [pads.size(), ind.sites[id].get("regrow", {}).size()])
+			var back := Industry.new()
+			back.from_dict(JSON.parse_string(JSON.stringify(ind.to_dict())))
+			_check(back.sites[id].regrow.size() == ind.sites[id].regrow.size(), "resting units are saved")
+
 
 func _check(ok: bool, what: String) -> void:
 	if not ok:

@@ -711,6 +711,7 @@ func tick() -> void:
 			farms_changed.emit()
 	if tick_count % Industry.DECIDE_EVERY == 0 and not industry.sites.is_empty():
 		industry.tax_rate = economy.tax[ZoneMap.Zone.INDUSTRIAL]
+		industry.day = tick_count / (24.0 * TICKS_PER_HOUR)
 		if industry.decide(field_usable):
 			_lots_dirty = true
 			industry_changed.emit()

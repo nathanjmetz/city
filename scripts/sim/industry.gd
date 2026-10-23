@@ -6,6 +6,11 @@ extends RefCounted
 ## or logging stands wherever the resource is richest around it, as long as
 ## they pay. Deposits never run out. The player can only reserve land.
 ##
+## Each kind spreads the way the real thing does (see Balance OIL_SPACING_CELLS
+## and on): oil pads spaced out and offset across the lease, one quarry that
+## widens from the plant, and timber cut a few harvest units at a time, each
+## left to regrow before it's cut again.
+##
 ## Every load it produces leaves on a real truck (see Logistics).
 
 const PAD := 80.0               # one well pad, pit or logging stand, square
@@ -43,6 +48,8 @@ var policies: Policies
 ## Set by the city: the industrial tax rate (percent) and a price factor.
 var tax_rate := 1.5
 var price := 1.0
+## Game days since the start, set by the city (harvest units regrow).
+var day := 0.0
 var _next_id := 1
 
 
@@ -60,13 +67,19 @@ static func _right(s: Dictionary) -> Vector3:
 
 static func pad_center(s: Dictionary, c: Vector2i) -> Vector3:
 	var p: Vector3 = s.pos + _right(s) * (c.x * PAD) - s.dir * (c.y * PAD)
+	if s.kind != "ore" and c != Vector2i.ZERO:
+		# Wells and harvest units sit where the ground suits, not on a grid.
+		var h := hash([c.x, c.y, roundi(s.pos.x), roundi(s.pos.z)])
+		p += _right(s) * float(h % 25 - 12) - s.dir * float((h / 25) % 25 - 12)
 	return Vector3(p.x, 0.0, p.z)
 
 
 static func pad_corners(s: Dictionary, c: Vector2i) -> PackedVector2Array:
 	var mid := pad_center(s, c)
-	var r: Vector3 = _right(s) * PAD * 0.5
-	var b: Vector3 = -s.dir * PAD * 0.5
+	# A producing well pad is about an acre of gravel (64 m square).
+	var half := 32.0 if s.kind == "oil" else PAD * 0.5
+	var r: Vector3 = _right(s) * half
+	var b: Vector3 = -s.dir * half
 	var out := PackedVector2Array()
 	for k in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
 		var p: Vector3 = mid + r * k.x + b * k.y
@@ -137,8 +150,10 @@ func decide(usable: Callable) -> bool:
 		var best_score := -INF
 		# What stopped a new company, for its panel: 0 nothing rich, 1 nothing pays, 2 all taken.
 		var why := 0
-		if s.pads.size() < MAX_PADS and margin < INF:
-			for c in (_frontier(s) if not s.pads.is_empty() else _seeds()):
+		if s.kind == "forest":
+			changed = _rotate(s) or changed
+		if s.pads.size() < _max_pads(s) and margin < INF:
+			for c in _candidates(s):
 				if richness(s, c) < MIN_RICHNESS:
 					continue
 				var p := pad_profit(s, c) + sup
@@ -149,7 +164,7 @@ func decide(usable: Callable) -> bool:
 				if not _free(id, s, c, usable):
 					why = 2
 					continue
-				var score := p + COMPACT_BONUS * _neighbors(s, c)
+				var score := p + (COMPACT_BONUS * _neighbors(s, c) if s.kind == "ore" else 0.0)
 				if reserves != null and reserves.kind_at(pad_center(s, c)) == s.kind:
 					score += RESERVE_BONUS
 				if score > best_score or (score == best_score and best != Vector2i.MAX and _less(c, best)):
@@ -188,24 +203,87 @@ func decide(usable: Callable) -> bool:
 ## The pad a company would put down next: the best paying free one next to
 ## what it has, or Vector2i.MAX.
 func best_pad(id: int, usable: Callable) -> Vector2i:
-	if not sites.has(id) or sites[id].pads.is_empty() or sites[id].pads.size() >= MAX_PADS:
+	if not sites.has(id) or sites[id].pads.is_empty() or sites[id].pads.size() >= _max_pads(sites[id]):
 		return Vector2i.MAX
 	var s: Dictionary = sites[id]
 	var best := Vector2i.MAX
 	var best_score := 0.0
-	for c in _frontier(s):
+	for c in _candidates(s):
 		if richness(s, c) < MIN_RICHNESS:
 			continue
 		var p := pad_profit(s, c)
 		if p <= 0.0 or not _free(id, s, c, usable):
 			continue
-		var score := p + COMPACT_BONUS * _neighbors(s, c)
+		var score := p + (COMPACT_BONUS * _neighbors(s, c) if s.kind == "ore" else 0.0)
 		if reserves != null and reserves.kind_at(pad_center(s, c)) == s.kind:
 			score += RESERVE_BONUS
 		if score > best_score or (score == best_score and best != Vector2i.MAX and _less(c, best)):
 			best = c
 			best_score = score
 	return best
+
+
+## Where a company may open its next pad. Oil: anywhere on its lease at
+## least the well spacing from its other pads. Ore: the first bench beside
+## the plant, then only cells touching the quarry, so it grows as one pit.
+## Forest: any timber on its land that isn't being cut or regrowing.
+func _candidates(s: Dictionary) -> Array:
+	if s.kind == "ore":
+		return _frontier(s) if not s.pads.is_empty() else _seeds()
+	var out := []
+	var r := Balance.LEASE_REACH_CELLS if not s.pads.is_empty() else SEED_REACH
+	var resting: Dictionary = s.get("regrow", {})
+	for y in range(-r, r + 1):
+		for x in range(-r, r + 1):
+			var c := Vector2i(x, y)
+			if c == Vector2i.ZERO or c.length_squared() > r * r or c in s.pads or resting.has(c):
+				continue
+			if s.kind == "oil" and not _spaced(s, c):
+				continue
+			out.append(c)
+	return out
+
+
+## True when a new well pad here keeps the spacing from the company's others.
+static func _spaced(s: Dictionary, c: Vector2i) -> bool:
+	for o in s.pads:
+		if maxi(absi(o.x - c.x), absi(o.y - c.y)) < Balance.OIL_SPACING_CELLS:
+			return false
+	return true
+
+
+static func _max_pads(s: Dictionary) -> int:
+	return Balance.FOREST_ACTIVE_UNITS if s.kind == "forest" else MAX_PADS
+
+
+## Harvest units cut long enough are left to regrow, and regrown ones open
+## again. True when anything changed.
+func _rotate(s: Dictionary) -> bool:
+	if not s.has("cut"):
+		s.cut = {}
+	if not s.has("regrow"):
+		s.regrow = {}
+	var changed := false
+	for c in s.pads.duplicate():
+		if not s.cut.has(c):
+			s.cut[c] = day
+		elif day - float(s.cut[c]) >= Balance.FOREST_CUT_DAYS:
+			s.pads.erase(c)
+			s.cut.erase(c)
+			s.regrow[c] = day
+			changed = true
+	for c in s.regrow.keys():
+		if day - float(s.regrow[c]) >= Balance.FOREST_REGROW_DAYS:
+			s.regrow.erase(c)
+			changed = true
+	return changed
+
+
+## How grown back a resting harvest unit is, 0 (just cut) to 1 (mature).
+static func regrowth(s: Dictionary, c: Vector2i, now: float) -> float:
+	if not s.get("regrow", {}).has(c):
+		return 1.0
+	return clampf((now - float(s.regrow[c])) / Balance.FOREST_REGROW_DAYS, 0.0, 1.0)
 
 
 ## Cells a new company may open its first pad on.
@@ -257,9 +335,13 @@ func pad_at(p: Vector3) -> int:
 	for id in sites:
 		var s: Dictionary = sites[id]
 		var d: Vector3 = p - s.pos
-		var c := Vector2i(roundi(d.dot(_right(s)) / PAD), roundi(-d.dot(s.dir) / PAD))
-		if c in s.pads and Geometry2D.is_point_in_polygon(q, pad_corners(s, c)):
-			return id
+		var near := Vector2i(roundi(d.dot(_right(s)) / PAD), roundi(-d.dot(s.dir) / PAD))
+		# Pads sit off the grid a little, so look at the cells around too.
+		for dx in [0, -1, 1]:
+			for dy in [0, -1, 1]:
+				var c: Vector2i = near + Vector2i(dx, dy)
+				if c in s.pads and Geometry2D.is_point_in_polygon(q, pad_corners(s, c)):
+					return id
 	return -1
 
 
@@ -313,8 +395,8 @@ func _frontier(s: Dictionary) -> Array:
 	var from: Array = s.pads.duplicate()
 	from.append(Vector2i.ZERO)
 	for c in from:
-		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
-				Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1)]:
+		# Edge neighbours only: the quarry widens, it doesn't skip across.
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 			var n: Vector2i = c + d
 			if not seen.has(n):
 				seen[n] = true
@@ -355,7 +437,8 @@ func to_dict() -> Dictionary:
 			lane.append([p.x, p.z])
 		out[str(id)] = {"kind": s.kind, "pos": [s.pos.x, s.pos.z], "dir": [s.dir.x, s.dir.z],
 			"drive": lane, "pads": pads, "stock": s.stock, "loss": s.loss_streak,
-			"leader": s.get("leader", {}), "built": s.get("built", []), "why": s.get("why", "")}
+			"leader": s.get("leader", {}), "built": s.get("built", []), "why": s.get("why", ""),
+			"cut": _cells_out(s.get("cut", {})), "regrow": _cells_out(s.get("regrow", {}))}
 	return {"sites": out, "next_id": _next_id}
 
 
@@ -376,4 +459,20 @@ func from_dict(d: Dictionary) -> void:
 			sites[int(k)].leader = s.leader
 		sites[int(k)].built = Array(s.get("built", []))
 		sites[int(k)].why = str(s.get("why", ""))
+		sites[int(k)].cut = _cells_in(s.get("cut", []))
+		sites[int(k)].regrow = _cells_in(s.get("regrow", []))
 	_next_id = int(d.get("next_id", 1))
+
+
+static func _cells_out(d: Dictionary) -> Array:
+	var out := []
+	for c in d:
+		out.append([c.x, c.y, d[c]])
+	return out
+
+
+static func _cells_in(a: Array) -> Dictionary:
+	var out := {}
+	for e in a:
+		out[Vector2i(int(e[0]), int(e[1]))] = float(e[2])
+	return out
