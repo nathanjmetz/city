@@ -31,7 +31,10 @@ const TYPE := RoadStyle.Type.STREET
 ## Open proposals: permit id -> true (the sites live on the permit).
 var pending := {}
 ## Subdivisions being built: id -> {"site": Dictionary, "phase": int (phases
-## built), "opened": tick of the last phase, "builder": String, "name": String}.
+## built), "opened": tick of the last phase, "builder": String, "name": String,
+## "needs": what the last phase needed (ProjectNeeds.check), "extra": $ the
+## builder has paid for shortages so far, "slow": how much longer the
+## current phase is taking (0 on time, 1 twice as long)}.
 var active := {}
 var next_id := 1
 ## The last search for land, for checking: what stopped each candidate.
@@ -93,9 +96,11 @@ func carry_out(sim) -> bool:
 		var sid := next_id
 		next_id += 1
 		active[sid] = {"site": site, "phase": 0, "opened": int(sim.tick_count), "builder": str(req.leader),
-			"name": str(site.get("name", "Subdivision"))}
+			"name": str(site.get("name", "Subdivision")), "needs": {}, "extra": 0, "slow": 0.0}
 		_buy_land(sim, site)
-		if not _build_phase(sim, sid):
+		# In winter or under a hookup moratorium the first phase waits too
+		# (the monthly check starts it).
+		if _ready(sim, sid) and not _build_phase(sim, sid):
 			active.erase(sid)
 		did = true
 		changed.emit()
@@ -156,6 +161,7 @@ func _ask(sim, sites: Array) -> void:
 	for i in sites.size():
 		sites[i].name = "%s %s" % [_place_name(seed + i), ["Estates", "Meadows", "Crossing", "Farms", "Ridge"][absi(seed + i) % 5]]
 		sites[i].letter = letters[i]
+		sites[i].needs = ProjectNeeds.check(sim, _per_phase(sites[i]))
 	var homes := int(sites[0].homes)
 	var free := _free_homes(sim)
 	var why := "The town needs homes and %s. %s holds options on %s at the edge of town. Pick the one you want built, or say no." % [
@@ -623,10 +629,16 @@ func _phases(sim) -> bool:
 		var a: Dictionary = active[sid]
 		if int(a.phase) >= int(a.site.phases):
 			continue
-		if int(sim.tick_count) - int(a.opened) < Balance.SUBDIV_PHASE_MIN_MONTHS * _month_ticks():
-			continue
-		var fill := sold(sim, sid)
-		if fill.y <= 0 or float(fill.x) / fill.y < Balance.SUBDIV_NEXT_PHASE_FILL:
+		if int(a.phase) > 0:
+			# Shortages on the last phase make it take longer.
+			var wait := roundi(Balance.SUBDIV_PHASE_MIN_MONTHS * (1.0 + float(a.get("slow", 0.0))) * _month_ticks())
+			if int(sim.tick_count) - int(a.opened) < wait:
+				continue
+			var fill := sold(sim, sid)
+			if fill.y <= 0 or float(fill.x) / fill.y < Balance.SUBDIV_NEXT_PHASE_FILL:
+				continue
+		if not _ready(sim, sid):
+			changed.emit()
 			continue
 		if _build_phase(sim, sid):
 			did = true
@@ -635,6 +647,25 @@ func _phases(sim) -> bool:
 			a.site.phases = int(a.phase)
 		changed.emit()
 	return did
+
+
+## Asks the other leaders what the next phase needs and records it. False
+## when it has to wait (winter, or water or power full); otherwise the
+## builder pays for any shortage and the phase will take longer.
+func _ready(sim, sid: int) -> bool:
+	var a: Dictionary = active[sid]
+	var needs := ProjectNeeds.check(sim, _per_phase(a.site))
+	a.needs = needs
+	if needs.hold:
+		return false
+	a.extra = int(a.get("extra", 0)) + int(needs.extra)
+	a.slow = float(needs.slow)
+	return true
+
+
+## Homes in one phase of a site.
+static func _per_phase(site: Dictionary) -> int:
+	return int(site.homes) / maxi(int(site.phases), 1)
 
 
 ## (homes built, lots) in a subdivision's built phases so far.
@@ -723,7 +754,8 @@ func from_dict(d: Dictionary) -> void:
 	for k in d.get("active", {}):
 		var a: Dictionary = d.active[k]
 		active[int(k)] = {"site": site_from(a.site), "phase": int(a.phase), "opened": int(a.opened),
-			"builder": str(a.get("builder", "")), "name": str(a.get("name", ""))}
+			"builder": str(a.get("builder", "")), "name": str(a.get("name", "")),
+			"needs": ProjectNeeds.from_dict(a.get("needs", {})), "extra": int(a.get("extra", 0)), "slow": float(a.get("slow", 0.0))}
 	changed.emit()
 
 
@@ -737,4 +769,6 @@ static func site_from(s: Dictionary) -> Dictionary:
 		for k in out.effects:
 			if not k in ["acres", "years"]:
 				out.effects[k] = int(out.effects[k])
+	if out.has("needs"):
+		out.needs = ProjectNeeds.from_dict(out.needs)
 	return out

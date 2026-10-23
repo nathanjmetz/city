@@ -1,8 +1,9 @@
 extends SceneTree
 ## Pictures of the permit bell for checking the look, with a made-up railroad
 ## request across the starter road (no real hub files one yet).
-## Run: godot -s tools/permit_shot.gd -- list|edit|land|guide|deal|homes out.png
-## ("homes" is a real home builder's subdivision, with its choice of sites.)
+## Run: godot -s tools/permit_shot.gd -- list|edit|land|guide|deal|homes|projects out.png
+## ("homes" is a real home builder's subdivision, with its choice of sites;
+## "projects" is one under way.)
 
 var _frames := 0
 var _mode := "list"
@@ -28,7 +29,7 @@ func _process(_delta: float) -> bool:
 			sim.apply({"type": "paint_zone", "center": [x, 35], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
 		for i in 600:
 			sim.tick()
-		if _mode == "homes":
+		if _mode == "homes" or _mode == "projects":
 			for key in sim.lots:
 				if sim.buildings.has(key) or sim.zones.zone_at(sim.lots[key].zone_pt) != ZoneMap.Zone.RESIDENTIAL:
 					continue
@@ -37,6 +38,12 @@ func _process(_delta: float) -> bool:
 			sim.stats.population = 2500
 			sim.demand[ZoneMap.Zone.RESIDENTIAL] = 1.0
 			sim.subdivisions.month(sim)
+			for h in 48:
+				sim.subdivisions.hour(sim)
+			if _mode == "projects":
+				# Approved: the builder is under way, and the bell lists it.
+				sim.apply({"type": "permit", "id": sim.subdivisions.pending.keys()[0], "answer": "approve", "pick": 0})
+				sim.subdivisions.carry_out(sim)
 			var hud0: Hud = main.get_children().filter(func(n): return n is Hud)[0]
 			hud0.advisor.settings.welcomed = true
 			hud0.advisor.close_panel()

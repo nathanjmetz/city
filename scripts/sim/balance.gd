@@ -276,6 +276,30 @@ const SUBDIV_KIDS_PER_HOME := 0.6
 const SUBDIV_TRIPS_PER_HOME := 9.4
 const SUBDIV_PEAK_PER_HOME := 1.0
 
+## What a building project needs from the other leaders (ProjectNeeds).
+## About 400 tons of aggregate a home with its share of the street (NSSGA),
+## about $16 a ton at the quarry (USGS 2023), its delivered price doubling
+## every 30 miles. A town quarry is a few miles off; without one, gravel
+## comes from the nearest outside quarry, about 40 miles, and slows the job.
+const NEEDS_TONS_PER_HOME := 400
+const NEEDS_STONE_PER_TON := 16.0
+const NEEDS_DOUBLE_MILES := 30.0
+const NEEDS_LOCAL_MILES := 5.0
+const NEEDS_IMPORT_MILES := 40.0
+const NEEDS_IMPORT_SLOW := 0.25
+## Builders: about one crew per 1,500 people (at least 2), each with about
+## 6 houses going up at once; past that, labor costs climb about $15,000 a
+## home at double the load.
+const NEEDS_MIN_CREWS := 2
+const NEEDS_PEOPLE_PER_CREW := 1500
+const NEEDS_HOMES_PER_CREW := 6
+const NEEDS_LABOR_PER_HOME := 15_000
+## Utilities: warn past 90% of what the town has (Texas 75/90 rule); at
+## 100% no new hookups (a moratorium) and the next phase waits.
+const NEEDS_WARN_PCT := 90
+## Winter: Indiana's paving season closes about December through February.
+const NEEDS_WINTER_MONTHS := [12, 1, 2]
+
 ## Floor-area ratio (floor space ÷ lot area) zoning allows, the way US codes
 ## cap a building's bulk. The steps are Chicago Zoning Ordinance districts:
 ## homes RS-3 0.9, RT-4 1.2, RM-5 2.0, RM-6 4.4, RM-6.5 6.6; shops B3-2

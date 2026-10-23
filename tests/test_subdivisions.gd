@@ -60,6 +60,7 @@ func _init() -> void:
 			CitySim.money_text(o.effects.taxes), o.effects.water])
 		_check(int(o.homes) > 30 and not o.ghost.is_empty() and not o.streets.is_empty(), "site %s has a ghost of its homes and streets" % o.letter)
 		_check(int(o.effects.kids) > 0 and int(o.effects.trips) > int(o.homes), "site %s says what a yes means" % o.letter)
+		_check(not o.get("needs", {}).is_empty() and o.needs.lines.size() >= 4, "site %s says what it needs from the other leaders" % o.letter)
 	var other_site: Dictionary = opts[0]
 	for i in range(1, opts.size()):
 		_check(Vector2(opts[i].o[0], opts[i].o[1]).distance_to(Vector2(other_site.o[0], other_site.o[1])) >= Balance.SUBDIV_SITE_APART - 0.1,
@@ -100,8 +101,15 @@ func _init() -> void:
 	print("  phase 1 lots: ", fill)
 	_check(fill.y >= 10, "the new streets were platted into home lots (%d)" % fill.y)
 
-	# --- Phase 2 waits for the first to sell.
-	sim.tick_count += Balance.SUBDIV_PHASE_MIN_MONTHS * MONTH
+	var a1: Dictionary = sim.subdivisions.active[sid]
+	print("  phase 1 needs: extra $", a1.extra, ", slow ", a1.slow, " | ", a1.needs.lines.map(func(l): return l[2]))
+	_check(int(a1.extra) > 0 and float(a1.slow) > 0.0, "no quarry in town: the builder pays more and goes slower")
+	_check(sim.economy.money == money, "shortages cost the builder, not the town")
+
+	# --- Phase 2 waits for the first to sell (and longer for the shortages).
+	sim.tick_count += roundi(Balance.SUBDIV_PHASE_MIN_MONTHS * (1.0 + float(a1.slow))) * MONTH + MONTH
+	while Seasons.month(sim.tick_count) in Balance.NEEDS_WINTER_MONTHS:
+		sim.tick_count += MONTH
 	sim.subdivisions.month(sim)
 	_check(int(sim.subdivisions.active[sid].phase) == 1, "the next phase waits until the first has sold")
 	for key in sim.lots:
@@ -111,12 +119,41 @@ func _init() -> void:
 	sim.subdivisions.month(sim)
 	_check(int(sim.subdivisions.active[sid].phase) == 2, "once it has sold, the next phase opens")
 
+	# --- What the other leaders say.
+	var n := ProjectNeeds.check(sim, 20)
+	_check(_line(n, "ore") == ProjectNeeds.State.SLOW and int(n.extra) > 0, "no quarry: gravel is trucked in at a cost")
+	var q := sim.industry.add_site("ore", Vector3(2000, 0, 2000), Vector3.FORWARD, [])
+	n = ProjectNeeds.check(sim, 20)
+	_check(_line(n, "ore") == ProjectNeeds.State.OK, "a town quarry supplies the gravel")
+	sim.industry.sites.erase(q)
+	var use: Dictionary = sim.services.utility_use.duplicate(true)
+	sim.services.utility_use = {"water": [1000, 1000], "power": [10, 1000]}
+	n = ProjectNeeds.check(sim, 20)
+	_check(n.hold and _line(n, "water") == ProjectNeeds.State.STOPPED, "full water system: no new hookups")
+	_check(_line(n, "power") == ProjectNeeds.State.OK, "power has room")
+	sim.services.utility_use = {"water": [880, 1000], "power": [10, 1000]}
+	_check(_line(ProjectNeeds.check(sim, 40), "water") == ProjectNeeds.State.SLOW, "water near full: a warning")
+	sim.services.utility_use = use
+	var t0: int = sim.tick_count
+	while not Seasons.month(sim.tick_count) in Balance.NEEDS_WINTER_MONTHS:
+		sim.tick_count += MONTH
+	_check(ProjectNeeds.check(sim, 20).hold, "winter: new streets wait for spring")
+	sim.tick_count = t0
+
 	# --- A save keeps it.
 	var copy := CitySim.new()
 	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
 	_check(copy.subdivisions.active.size() == 1 and int(copy.subdivisions.active[sid].phase) == 2, "a save keeps the subdivision")
 	_check(JSON.stringify(copy.subdivisions.to_dict()) == JSON.stringify(sim.subdivisions.to_dict()), "the loaded copy matches")
 	_finish()
+
+
+## The state of a needs line by its icon (-1 if none).
+func _line(n: Dictionary, icon: String) -> int:
+	for l in n.lines:
+		if l[1] == icon:
+			return int(l[0])
+	return -1
 
 
 ## A month's check, then a game day of scouting.
