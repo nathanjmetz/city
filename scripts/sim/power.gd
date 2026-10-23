@@ -75,6 +75,10 @@ var river := Callable()
 ## Last decide step's sales, per company id: {"town": homes, "export": homes,
 ## "profit": $ a year}. Shown in the panel; worked out again each step.
 var sales := {}
+## Set by the city: true when a point is in a farmer's field. Wind pads
+## may stand there on a lease (pad_usable), paying POWER_WIND_LEASE a year.
+var on_farm := Callable()
+var pad_usable := Callable()
 ## Line crews out on the road: trip id -> {"site", "home"} (home: on the
 ## way back to the yard).
 var crews := {}
@@ -331,7 +335,7 @@ func _profit(s: Dictionary, town: float, export: float, neighbor := 0.0) -> floa
 	var mwh_t := (town + neighbor) * Balance.POWER_MWH_PER_HOME
 	var mwh_x := export * Balance.POWER_MWH_PER_HOME
 	var built: float = float(k.capex) * s.cells.size()
-	var extra := Agency.effect(s, TREE, "sales+")
+	var extra := Agency.effect(s, TREE, "sales+") - leased(s) * Balance.POWER_WIND_LEASE
 	return mwh_t * (Balance.POWER_TOWN_PRICE - op) + mwh_x * (Balance.POWER_EXPORT_PRICE - op) + extra \
 		- built / Balance.POWER_LOAN_YEARS - (built + Balance.POWER_YARD_VALUE) * tax_rate / 100.0
 
@@ -534,6 +538,8 @@ func _free(id: int, s: Dictionary, c: Vector2i, usable: Callable) -> bool:
 		if site_at(p) == id:
 			return false
 	# A dam bay stands in the river itself, where nothing else can go.
+	if s.plant == "wind" and pad_usable.is_valid():
+		return pad_usable.call(mid, corners)
 	return s.plant == "hydro" or usable.call(mid, corners)
 
 
@@ -737,6 +743,32 @@ func _send(sim: Object, id: int, from: Vector3, to: Vector3, home: bool) -> void
 		{"ref": "power:%d" % id if home else "line:%d" % id, "pos": [to.x, to.z]}, "power_line")
 	if trip != -1:
 		crews[trip] = {"site": id, "home": home, "at": to}
+
+
+## How many of a company's turbines stand on leased farmland.
+func leased(s: Dictionary) -> int:
+	if s.plant != "wind" or not on_farm.is_valid():
+		return 0
+	var n := 0
+	for c in s.cells:
+		if on_farm.call(cell_center(s, c)):
+			n += 1
+	return n
+
+
+## What the power companies pay a year in leases for turbines inside this
+## field outline (for the farm that owns it).
+func lease_in(poly: PackedVector2Array) -> float:
+	var total := 0.0
+	for id in sites:
+		var s: Dictionary = sites[id]
+		if s.plant != "wind":
+			continue
+		for c in s.cells:
+			var p := cell_center(s, c)
+			if Geometry2D.is_point_in_polygon(Vector2(p.x, p.z), poly):
+				total += Balance.POWER_WIND_LEASE
+	return total
 
 
 func yard(s: Dictionary) -> PackedVector2Array:

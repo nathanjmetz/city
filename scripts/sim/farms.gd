@@ -51,6 +51,9 @@ var reserves: Reserves
 ## The town's sliders: Funding is support per acre, Growth how eagerly a
 ## farm buys more fields (see Policies).
 var policies: Policies
+## Set by the city: what power companies pay a year to lease ground in a
+## field outline (wind turbines in the corn). Callable(poly) -> float.
+var lease_of := Callable()
 ## The town's character: a farm town's farmers buy land more readily.
 var culture: TownCulture
 ## Farmland outlines from older saves, for the city to turn into reserves.
@@ -229,7 +232,10 @@ func field_profit(f: Dictionary, c: Vector2i) -> float:
 	var gross: float = GROSS_PER_ACRE[f.crop] * fertility_at(mid) * price \
 		* Agency.effect(f, Agency.TREES.farm, "output*") * Agency.effect(f, Agency.TREES.farm, "price*")
 	var tax := LAND_PER_ACRE * AG_ASSESSMENT * tax_rate / 100.0
-	return (gross - COST_PER_ACRE[f.crop] - COST_PER_ACRE_PER_KM * km - tax) * ACRES_PER_CELL
+	var lease := 0.0
+	if lease_of.is_valid():
+		lease = lease_of.call(cell_corners(f, c))
+	return (gross - COST_PER_ACRE[f.crop] - COST_PER_ACRE_PER_KM * km - tax) * ACRES_PER_CELL + lease
 
 
 ## Every farm takes its next step. A new farm puts up its barn first. Then

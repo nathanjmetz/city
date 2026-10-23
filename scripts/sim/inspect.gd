@@ -342,6 +342,12 @@ static func _farm(sim: CitySim, id: int) -> Dictionary:
 		["Property tax to town", "$%s / month" % CitySim.money_text(roundi(acres * Farms.LAND_PER_ACRE
 			* Farms.AG_ASSESSMENT * sim.economy.tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0))],
 	]
+	var lease := 0.0
+	for c in f.cells:
+		lease += sim.power.lease_in(Farms.cell_corners(f, c))
+	if lease > 0.0:
+		rows.insert(4, ["Wind leases", "$%s / year (%d turbines in its fields)" % [CitySim.money_text(roundi(lease)),
+			roundi(lease / Balance.POWER_WIND_LEASE)]])
 	var problems := []
 	var status := "Growing: buying land where the soil pays"
 	if not f.barn:
@@ -556,6 +562,10 @@ static func _power(sim: CitySim, id: int) -> Dictionary:
 		["Jobs", str(roundi(Balance.POWER_YARD_JOBS + float(k.jobs) * s.cells.size()))],
 		["Profit", "%s$%s / year" % ["" if profit >= 0.0 else "-", CitySim.money_text(absi(roundi(profit)))]],
 	]
+	var leased := sim.power.leased(s)
+	if leased > 0:
+		rows.append(["Farm leases", "%d turbines in farmers' fields ($%s / year)" % [leased,
+			CitySim.money_text(roundi(leased * Balance.POWER_WIND_LEASE))]])
 	var ctx := sim.power_context()
 	rows += _development(sim, s, sim.power.tree_for(id, ctx), s.pos, profit)
 	# What the tree still needs that the town or land can't give yet.

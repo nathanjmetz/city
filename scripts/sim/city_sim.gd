@@ -1512,6 +1512,10 @@ func _wire_policies() -> void:
 	hubs.policies = policies
 	parks.policies = policies
 	power.policies = policies
+	# Wind leases: turbines stand in farmers' fields, which pay the farm.
+	power.on_farm = func(p: Vector3) -> bool: return farms.field_at(p) != -1
+	power.pad_usable = pad_usable
+	farms.lease_of = power.lease_in
 
 
 ## Hubs with their own money lever (a campus's funding level, a post
@@ -1709,7 +1713,17 @@ func road_between(a: Vector3, b: Vector3) -> bool:
 
 
 func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
-	var key := Vector2i(roundi(mid.x), roundi(mid.z))
+	return _ground_free(mid, corners, false)
+
+
+## Where a wind turbine's pad may go: the same free ground, or inside a
+## farm's field, which the farmer leases out and keeps farming around.
+func pad_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
+	return _ground_free(mid, corners, true)
+
+
+func _ground_free(mid: Vector3, corners: PackedVector2Array, in_fields: bool) -> bool:
+	var key := Vector3i(roundi(mid.x), roundi(mid.z), int(in_fields))
 	if _usable_cache.has(key):
 		return _usable_cache[key]
 	var ok := network.find_segment_near(mid, Farms.CELL * 0.6 + RoadStyle.right_of_way_half(RoadStyle.Type.AVENUE), 2.0).is_empty()
@@ -1718,7 +1732,7 @@ func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
 		pts.append(mid.lerp(Vector3(c.x, 0.0, c.y), 0.8))
 	if ok:
 		for p in pts:
-			if services.covers(p) or farms.covers(p) or industry.covers(p) or farms.field_at(p) != -1 \
+			if services.covers(p) or farms.covers(p) or industry.covers(p) or (not in_fields and farms.field_at(p) != -1) \
 					or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
 					or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p) \
 					or not land_ok(p):
