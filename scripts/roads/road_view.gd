@@ -15,6 +15,9 @@ var sim: CitySim
 ## running on past the town to the horizon).
 var all_rural := false
 var _rural := {}  # segment id -> true
+## Streets that have been town streets, so they keep their curbs while lots
+## are replanned around them (segment id -> true).
+var _town_ever := {}
 var _recheck := -1.0  # seconds until the town edge is checked again, or -1
 var _redraw := false  # a new drive needs the poles moved
 var _drawn_drives := []
@@ -104,6 +107,8 @@ func _rural_segments() -> Dictionary:
 			mark.call(lot.front)
 	for id in sim.services.buildings:
 		mark.call(sim.services.buildings[id].pos)
+	var in_town := {}
+	var eligible := []
 	for id in network.segments:
 		var type: int = network.segments[id].type
 		if type != RoadStyle.Type.STREET and type != RoadStyle.Type.AVENUE:
@@ -117,9 +122,87 @@ func _rural_segments() -> Dictionary:
 						near = true
 			if near:
 				break
-		if not near:
+		if near:
+			in_town[id] = true
+		else:
+			eligible.append(id)
+	# A street keeps its curbs once it has them (as real curbs stay while a
+	# block is replatted), and a run of street that's town at both ends is
+	# town all along: one style per street, no country stretch mid-block.
+	for id in _town_ever:
+		if network.segments.has(id):
+			in_town[id] = true
+	for run in _runs():
+		var first := -1
+		var last := -1
+		for i in run.size():
+			if in_town.has(run[i]):
+				if first == -1:
+					first = i
+				last = i
+		for i in range(first + 1, last):
+			in_town[run[i]] = true
+	_town_ever = in_town
+	for id in eligible:
+		if not in_town.has(id):
 			out[id] = true
 	return out
+
+
+## Streets and avenues as runs of segments that carry straight on through
+## their nodes (a side street meeting a road doesn't break it), each in
+## order along the road.
+func _runs() -> Array:
+	var next := {}  # segment id -> segments it carries straight on into
+	for n in network.nodes:
+		var here := []
+		for id in network.segments_at(n):
+			var s: Dictionary = network.segments[id]
+			if int(s.type) != RoadStyle.Type.STREET and int(s.type) != RoadStyle.Type.AVENUE:
+				continue
+			var at: Vector3 = network.nodes[n]
+			var t: Vector3 = s.ctrl - at
+			t.y = 0.0
+			if t.length() > 0.01:
+				here.append([id, t.normalized(), int(s.type)])
+		# Pair the straightest continuations first.
+		var pairs := []
+		for i in here.size():
+			for j in range(i + 1, here.size()):
+				var d: float = here[i][1].dot(here[j][1])
+				if d < -0.8 and here[i][2] == here[j][2]:
+					pairs.append([d, here[i][0], here[j][0]])
+		pairs.sort()
+		var used := {}
+		for p in pairs:
+			if used.has(p[1]) or used.has(p[2]):
+				continue
+			used[p[1]] = true
+			used[p[2]] = true
+			next[p[1]] = next.get(p[1], []) + [p[2]]
+			next[p[2]] = next.get(p[2], []) + [p[1]]
+	var runs := []
+	var seen := {}
+	var ids := network.segments.keys()
+	ids.sort()
+	for id in ids:
+		if seen.has(id) or not next.has(id) or next[id].size() > 1:
+			continue
+		# Walk from one end of the run to the other.
+		var run := []
+		var cur: int = id
+		var prev := -1
+		while cur != -1 and not seen.has(cur):
+			seen[cur] = true
+			run.append(cur)
+			var go := -1
+			for o in next.get(cur, []):
+				if o != prev:
+					go = o
+			prev = cur
+			cur = go
+		runs.append(run)
+	return runs
 
 
 ## Farm lanes and company drives, kept clear of poles.
