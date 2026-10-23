@@ -1198,11 +1198,26 @@ func _build_help() -> void:
 	_pin(_help, Control.PRESET_TOP_RIGHT, Vector2(-6, 42))
 
 
-## The build stamp written by the web preview workflow, or "dev" locally.
+## The build stamp written by the web preview workflow, or "dev" locally:
+## the commit and when it was built, in the player's own time zone.
 static func _build_name() -> String:
-	if ResourceLoader.exists("res://scripts/build_info.gd"):
-		return load("res://scripts/build_info.gd").BUILD
-	return "dev"
+	if not ResourceLoader.exists("res://scripts/build_info.gd"):
+		return "dev"
+	var info: Script = load("res://scripts/build_info.gd")
+	var consts := info.get_script_constant_map()
+	if not consts.has("BUILT_AT"):
+		return str(consts.get("BUILD", "dev"))
+	return "%s  %s" % [consts.BUILD, local_time_text(int(consts.BUILT_AT))]
+
+
+## A moment as the player's clock shows it, e.g. "Oct 22, 9:06 PM".
+static func local_time_text(unix: int) -> String:
+	var bias: int = int(Time.get_time_zone_from_system().get("bias", 0))
+	var t := Time.get_datetime_dict_from_unix_time(unix + bias * 60)
+	var months := ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+	var h: int = int(t.hour) % 12
+	return "%s %d, %d:%02d %s" % [months[int(t.month) - 1], int(t.day), 12 if h == 0 else h, int(t.minute),
+		"PM" if int(t.hour) >= 12 else "AM"]
 
 
 static func _thousands(n: int) -> String:
