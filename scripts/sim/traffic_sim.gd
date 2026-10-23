@@ -132,6 +132,13 @@ var _box := {}       # node -> cars crossing it
 var _committed := {} # node -> cars about to cross it
 var _approach := {}  # node -> [{car, conn, ds}] for the first car in each lane
 var _xings := {}     # way -> [[s along the way, rail crossing]] (_find_xings)
+var _by_vid := {}    # vehicle id -> its record in `parked`
+var _due := {}       # tick -> parked vehicles due to head off then (_due_at)
+var _pend := {}      # vehicle id -> parked vehicle waiting for a gap to pull out
+var _slow := {}      # ways whose _speed is below 1 (or has cars), kept up to date each tick
+var _slow_ok := -1   # the lane version _slow was gathered on
+var _pseq := {}      # vehicle id -> its place in `parked` order (for _rest)
+var _next_pseq := 0
 var _xing_key := []
 var _merging := {}   # lane key -> cars pulling out of a driveway into it
 var _acc := ACCEL    # acceleration of the vehicle being worked out
@@ -410,6 +417,10 @@ func from_dict(d: Dictionary) -> void:
 	cars.clear()
 	_waiting.clear()
 	parked.clear()
+	_by_vid.clear()
+	_due.clear()
+	_pend.clear()
+	_pseq.clear()
 	walkers.clear()
 	_sites.clear()
 	_extra.clear()
@@ -433,9 +444,11 @@ func from_dict(d: Dictionary) -> void:
 	time = state.time
 	gave_up = state.gave_up
 	_speed = state.speed
+	_slow_ok = -1
 	arrivals = state.arrivals
 	failed = state.failed
 	parked = state.get("parked", [])
+	_index_parked()
 	walkers = state.get("walkers", [])
 	_next_trip = state.get("next_trip", _next_id)
 	_next_walker = state.get("next_walker", 1)
@@ -1154,8 +1167,7 @@ func _reroute_all() -> void:
 	# Vehicles on a lot that was cleared away go with it.
 	for car in parked.duplicate():
 		if place(car.at_place).is_empty():
-			parked.erase(car)
-			parked_version += 1
+			_unpark(car)
 			_report(car, failed)
 	# Cars parked at a curb that was rebuilt move to the new curb.
 	for car in parked:
@@ -1211,6 +1223,7 @@ func _cancel(car: Dictionary) -> void:
 	_release(car.get("to_place", ""), car.get("to_spot", -1), car.id)
 	_report(car, failed)
 	car.erase("pending")
+	_pend.erase(car.id)
 	for k in ["route", "leg", "d", "end_d", "goal", "dest", "park", "home", "to_place", "to_spot", "lane",
 			"to_stop", "after"]:
 		car.erase(k)
@@ -1826,8 +1839,7 @@ func retire_vehicle(vid: int) -> void:
 	for car in parked:
 		if car.id == vid:
 			_release(car.at_place, car.spot, vid)
-			parked.erase(car)
-			parked_version += 1
+			_unpark(car)
 			return
 	for car in cars + _waiting:
 		if car.id == vid:
@@ -1847,10 +1859,40 @@ func forget_person(pid: int) -> void:
 
 
 func _vehicle_parked(vid: int) -> Dictionary:
+	return _by_vid.get(vid, {})
+
+
+## A parked vehicle is due to head off at `tick`.
+func _due_at(car: Dictionary, tick: int) -> void:
+	car.until = tick
+	if not _due.has(tick):
+		_due[tick] = []
+	_due[tick].append(car)
+
+
+## Rebuilds the due list from the parked vehicles (after a load).
+func _index_parked() -> void:
+	_by_vid.clear()
+	_due.clear()
+	_pend.clear()
+	_pseq.clear()
+	_next_pseq = 0
 	for car in parked:
-		if car.id == vid:
-			return car
-	return {}
+		_by_vid[car.id] = car
+		_pseq[car.id] = _next_pseq
+		_next_pseq += 1
+		if car.has("pending"):
+			_pend[car.id] = car
+		if car.until >= 0:
+			_due_at(car, car.until)
+
+
+func _unpark(car: Dictionary) -> void:
+	parked.erase(car)
+	_by_vid.erase(car.id)
+	_pend.erase(car.id)
+	_pseq.erase(car.id)
+	parked_version += 1
 
 
 ## Puts a vehicle at rest in a spot.
@@ -1872,6 +1914,9 @@ func _park(car: Dictionary, pl: Dictionary, spot: int) -> void:
 	if not car.has("until"):
 		car.until = -1
 	parked.append(car)
+	_by_vid[car.id] = car
+	_pseq[car.id] = _next_pseq
+	_next_pseq += 1
 	parked_version += 1
 
 
@@ -1944,6 +1989,7 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 	_fix_end(car)
 	if car.has("at_place"):
 		car.pending = true  # pulls out as soon as there's a gap
+		_pend[car.id] = car
 		_try_launch(car)
 	elif not _launch(car):
 		_waiting.append(car)
@@ -1955,8 +2001,7 @@ func _try_launch(car: Dictionary) -> bool:
 	if cars.size() >= MAX_CARS or not _launch(car):
 		return false
 	_release(car.at_place, car.spot, car.id)
-	parked.erase(car)
-	parked_version += 1
+	_unpark(car)
 	for k in ["at_place", "spot", "pos", "face", "hidden", "pending"]:
 		car.erase(k)
 	return true
@@ -2263,7 +2308,7 @@ func _arrive(car: Dictionary) -> void:
 		car.until = -1
 		_walk(driver, _walk_from_car(car, dest), {"enter": dest, "stay": stay})
 	elif after.has("back"):
-		car.until = _tick + maxi(stay, 1)
+		_due_at(car, _tick + maxi(stay, 1))
 		car.next = after.back
 		if after.has("back_stop"):
 			car.next_stop = after.back_stop
@@ -2275,13 +2320,34 @@ func _arrive(car: Dictionary) -> void:
 func _rest() -> void:
 	# Most parked vehicles are just parked: pick out the few with somewhere
 	# to be first, without copying the whole list.
+	# Each is filed under the tick it's due; entries a vehicle has since
+	# outgrown (it left, or its time changed) are dropped. Taken in the
+	# order they parked, as a loaded town would.
 	var due := []
-	for car in parked:
-		if car.has("pending") or (car.until >= 0 and car.until <= _tick):
+	var ticks := []
+	for t in _due:
+		if t <= _tick:
+			ticks.append(t)
+	for t in ticks:
+		for car in _due[t]:
+			if car.until == t and is_same(_by_vid.get(car.id), car):
+				due.append(car)
+		_due.erase(t)
+	for vid in _pend:
+		var car: Dictionary = _pend[vid]
+		if car.has("pending") and is_same(_by_vid.get(vid), car):
 			due.append(car)
+	if due.is_empty():
+		return
+	due.sort_custom(func(a, b): return _pseq[a.id] < _pseq[b.id])
+	var last := -1
 	for car in due:
+		if car.id == last:
+			continue
+		last = car.id
 		if car.get("pending", false):
-			_try_launch(car)
+			if _try_launch(car):
+				_pend.erase(car.id)
 			continue
 		var back: String = car.get("next", "")
 		var stop: Dictionary = car.get("next_stop", {})
@@ -2291,7 +2357,7 @@ func _rest() -> void:
 		if back == "":
 			continue
 		if cars.size() >= MAX_CARS or not _send(car, back, "return", {}, {"report": false}, stop):
-			car.until = _tick + 20  # try again shortly
+			_due_at(car, _tick + 20)  # try again shortly
 			car.next = back
 			car.next_stop = stop
 
@@ -2762,14 +2828,30 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 		cars.erase(car)
 	# Snapped so the value survives a save and load exactly (saves and region
 	# snapshots must give the same city).
-	for wid in _speed:
+	# Only roads with cars on them or still recovering from a jam change;
+	# the rest are at the limit already.
+	if _slow_ok != version:
+		_slow_ok = version
+		_slow.clear()
+		for wid in _speed:
+			if _speed[wid] < 1.0:
+				_slow[wid] = true
+	for wid in way_sum:
+		if _speed.has(wid):
+			_slow[wid] = true
+	for wid in _slow.keys():
+		var sp: float
 		if way_sum.has(wid):
-			_speed[wid] = snappedf(lerpf(_speed[wid], way_sum[wid][0] / way_sum[wid][1], 0.05), 0.000001)
+			sp = snappedf(lerpf(_speed[wid], way_sum[wid][0] / way_sum[wid][1], 0.05), 0.000001)
 		else:
-			_speed[wid] = snappedf(lerpf(_speed[wid], 1.0, 0.02), 0.000001)
+			sp = snappedf(lerpf(_speed[wid], 1.0, 0.02), 0.000001)
+		if sp > 0.9999:
+			sp = 1.0  # all but recovered (snapping would leave it just short)
+			_slow.erase(wid)
+		_speed[wid] = sp
 		if ways.has(wid):
 			var sw: Dictionary = ways[wid]
-			_wcost[wid] = sw.len / (sw.vmax * maxf(_speed[wid], 0.15))
+			_wcost[wid] = sw.len / (sw.vmax * maxf(sp, 0.15))
 	flow = 1.0 if limit_sum == 0.0 else clampf(speed_sum / limit_sum, 0.0, 1.0)
 
 
