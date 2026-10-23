@@ -51,8 +51,8 @@ func _shop(to_curb: float, lot: Dictionary, main_street := true) -> void:
 	match kind:
 		"main_street": _main_street(to_curb)
 		"strip": _strip_center(to_curb)
-		"gas": _gas_station(to_curb)
-		"diner": _diner(to_curb)
+		"gas": _shop_gas_station(to_curb)
+		"diner": _shop_diner(to_curb)
 		"bank": _bank(to_curb)
 		"church": _church(to_curb)
 		_: _retail(to_curb)
@@ -289,7 +289,7 @@ func _strip_center(to_curb: float) -> void:
 
 ## A gas station: a lit canopy over two or three pump islands, a
 ## convenience store behind it, a price sign on a pole by the street.
-func _gas_station(to_curb: float) -> void:
+func _shop_gas_station(to_curb: float) -> void:
 	var sw := minf(16.0, half * 2.0 - 4.0)
 	var sd := 10.0
 	var zf := minf(24.0, depth - sd - 2.0)
@@ -332,7 +332,7 @@ func _gas_station(to_curb: float) -> void:
 
 ## A diner or family restaurant: one storey, a long band of windows with a
 ## stainless or coloured band above and below, a big pole sign.
-func _diner(to_curb: float) -> void:
+func _shop_diner(to_curb: float) -> void:
 	var w := minf(rng.randf_range(14.0, 18.0), half * 2.0 - 4.0)
 	var d := 11.0
 	var zf := rng.randf_range(13.0, 15.0)
