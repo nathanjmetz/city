@@ -95,6 +95,13 @@ const FRAME_CARGO := {"wood": "framing lumber", "steel": "structural steel", "ti
 const EVERY := 10
 ## Most vehicles parked at one site's curb at once.
 const MAX_PARKED := 3
+## Trips the sites send out in one round at most (each one routes a car).
+## A site past its budget waits for the next round, so a street of homes
+## changing stage together doesn't hitch the game.
+const MAX_SENDS := 4
+## New sites that get their first trucks in one round. The first trip to a
+## lot makes Traffic lay out its driveway and parking (a few ms each).
+const MAX_NEW := 1
 
 ## ref -> {profile, start (tick), front [x, z], out [x, z] (toward the street),
 ## to_curb, stage (last stage it sent trucks for), parked: [{kind, job, cargo}]}
@@ -169,9 +176,22 @@ func is_done(ref: String, tick: int) -> bool:
 
 
 static var _durations := {}  # profile -> duration(profile)
+## Worked out once per round: trips left to send, the contractor's yard,
+## and which sites have trips coming (ref -> true).
+var _budget := 0
+var _fresh := 0
+var _yard = null
+var _coming := {}
+var _crew_coming := {}
 
 
 func tick(sim: CitySim) -> void:
+	var t0 := Perf.now()
+	_tick(sim)
+	Perf.add("sim.construction", t0)
+
+
+func _tick(sim: CitySim) -> void:
 	for a in sim.traffic.arrivals:
 		if trips.has(a.id):
 			_arrive(trips[a.id])
@@ -180,6 +200,17 @@ func tick(sim: CitySim) -> void:
 		trips.erase(f.id)  # it never got there: nothing to park
 	if sim.tick_count % EVERY != 0:
 		return
+	_budget = MAX_SENDS
+	_fresh = MAX_NEW
+	_yard = null
+	_coming.clear()
+	_crew_coming.clear()
+	for id in trips:
+		var t: Dictionary = trips[id]
+		if t.inbound:
+			_coming[t.ref] = true
+			if t.job == "crew":
+				_crew_coming[t.ref] = true
 	var refs := sites.keys()
 	refs.sort()
 	for ref in refs:
@@ -193,6 +224,10 @@ func tick(sim: CitySim) -> void:
 		var st := state_at(s.profile, int(s.start), sim.tick_count)
 		var stage: int = STAGES.size() if st.is_empty() else int(st.stage)
 		if stage != int(s.stage):
+			if sim.simulate_traffic and (_budget < _sends_for(s, stage) or int(s.stage) < 0 and _fresh <= 0):
+				continue  # its trucks go next round
+			if int(s.stage) < 0:
+				_fresh -= 1
 			s.stage = stage
 			_leave(sim, ref, "delivery")  # the last stage's trucks head off
 			if stage >= STAGES.size():
@@ -209,8 +244,17 @@ func tick(sim: CitySim) -> void:
 			_leave(sim, ref, "delivery")  # dropped off: back out halfway through
 		if stage >= STAGES.size():
 			_leave_all(sim, ref)
-			if s.parked.is_empty() and not _inbound(ref):
+			if s.parked.is_empty() and not _coming.has(ref):
 				sites.erase(ref)
+
+
+## How many trips a site sends on reaching `stage`: its parked trucks
+## leaving, a crew if it has none, and the stage's deliveries.
+func _sends_for(s: Dictionary, stage: int) -> int:
+	var n: int = s.parked.size()
+	if stage < STAGES.size():
+		n += PROFILES[s.profile].get("deliveries", DELIVERIES).get(STAGES[stage], []).size() + 1
+	return mini(n, MAX_SENDS)
 
 
 ## Vehicles standing at a site's curb: [[kind, Transform3D, id], ...] for
@@ -239,10 +283,14 @@ func _send(sim: CitySim, ref: String, kind: String, job: String, cargo: String, 
 		return
 	kind = _kind(kind)
 	var s: Dictionary = sites[ref]
-	var to := {"ref": ref, "pos": s.front}
+	var to := _curb(ref, s)
+	_budget -= 1
 	var id: int = sim.traffic.dispatch(base, to, "construction", {"good": cargo, "amount": 1}, kind)
 	if id != -1:
 		trips[id] = {"ref": ref, "kind": kind, "job": job, "cargo": cargo, "inbound": true}
+		_coming[ref] = true
+		if job == "crew":
+			_crew_coming[ref] = true
 
 
 func _arrive(t: Dictionary) -> void:
@@ -261,10 +309,14 @@ func _leave(sim: CitySim, ref: String, job: String) -> void:
 		if p.job != job:
 			keep.append(p)
 			continue
+		if _budget <= 0 and sim.simulate_traffic:
+			keep.append(p)  # it pulls out next round
+			continue
 		var dest := _crew_base(sim, s) if job == "crew" else sim.logistics._edge(sim, _pos(s))
 		var id := -1
 		if not dest.is_empty() and sim.simulate_traffic:
-			id = sim.traffic.dispatch({"ref": ref, "pos": s.front}, dest, "construction",
+			_budget -= 1
+			id = sim.traffic.dispatch(_curb(ref, s), dest, "construction",
 				{"good": "empty" if job != "crew" else "crew going home", "amount": 0}, p.kind)
 		if id == -1:
 			keep.append(p)  # no way out yet: it waits at the curb
@@ -282,10 +334,7 @@ func _has_crew(ref: String) -> bool:
 	for p in sites[ref].parked:
 		if p.job == "crew":
 			return true
-	for id in trips:
-		if trips[id].ref == ref and trips[id].job == "crew" and trips[id].inbound:
-			return true
-	return false
+	return _crew_coming.has(ref)
 
 
 func _inbound(ref: String) -> bool:
@@ -298,6 +347,15 @@ func _inbound(ref: String) -> bool:
 ## The contractor's yard: the town's oldest shop if it has one (a local
 ## builder), otherwise a crew from the next town over, by the highway.
 func _crew_base(sim: CitySim, s: Dictionary) -> Dictionary:
+	if _yard == null:
+		_yard = _find_yard(sim)
+	if not _yard.is_empty():
+		return _yard
+	return sim.logistics._edge(sim, _pos(s))
+
+
+## The town's oldest finished shop, as a trip end ({} if it has none).
+func _find_yard(sim: CitySim) -> Dictionary:
 	var best := ""
 	var best_t := 1 << 62
 	for key in sim.buildings:
@@ -309,7 +367,12 @@ func _crew_base(sim: CitySim, s: Dictionary) -> Dictionary:
 	if best != "":
 		var f: Vector3 = sim.lots[best].front
 		return {"ref": "lot:" + best, "pos": [snappedf(f.x, 0.01), snappedf(f.z, 0.01)]}
-	return sim.logistics._edge(sim, _pos(s))
+	return {}
+
+
+## Where trucks stop: the site's own lot.
+static func _curb(ref: String, s: Dictionary) -> Dictionary:
+	return {"ref": ref, "pos": s.front}
 
 
 static func _kind(kind: String) -> String:
