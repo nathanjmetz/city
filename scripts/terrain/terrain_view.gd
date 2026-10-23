@@ -376,6 +376,15 @@ static func build_chunk(origin: Vector2, size: float, step: float) -> Array:
 
 # --- Grading under roads ----------------------------------------------------
 
+## More strips to grade besides roads (the railroad's track): returns
+## {key: [PackedVector3Array, inner, outer]}. Call regrade() when they change.
+var extra_grades := Callable()
+
+
+func regrade() -> void:
+	_regrade()
+
+
 ## Grades the ground under every road that changed, and marks those chunks
 ## to be rebuilt.
 func _regrade() -> void:
@@ -387,6 +396,8 @@ func _regrade() -> void:
 			continue  # bridges and tunnels leave the ground alone
 		var inner := RoadStyle.right_of_way_half(type) + (LOT_GRADE if RoadStyle.TYPES[type].lots else 2.0)
 		now[id] = [pts, inner, inner + GRADE_FADE]
+	if extra_grades.is_valid():
+		now.merge(extra_grades.call())
 	var changed := []
 	for id in _graded:
 		if not now.has(id) or not _same(now[id], _graded[id]):
