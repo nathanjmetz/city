@@ -80,9 +80,8 @@ func _update_hint() -> void:
 	if kind == "":
 		return
 	var n := sim.neighborhoods
-	var text := "New neighborhood ($%s; %d of %d earned): click open land a mile or more from other towns. A free county road links it to town. Build there within %d game days or the site is let go." \
-		% [CitySim.money_text(n.fee()), n.slots_free(int(sim.stats.population)),
-			Neighborhoods.slots_for(int(sim.stats.population)), Balance.NEIGHBORHOOD_USE_DAYS]
+	var text := "New neighborhood, $%s (%d left): click open land a mile from other towns. Build there within %d game days." \
+		% [CitySim.money_text(n.fee()), n.slots_free(int(sim.stats.population)), Balance.NEIGHBORHOOD_USE_DAYS]
 	if _problem != "":
 		text += "\n" + _problem
 	hint_changed.emit(text)
