@@ -41,7 +41,9 @@ func _process(_delta: float) -> void:
 	if cam == null:
 		return
 	var height := maxf(cam.global_position.y - Terrain.ground_y(cam.global_position.x, cam.global_position.z), 1.0)
-	var radius := reach(height)
+	# Lower graphics tiers draw the woods less far; the ground's painted
+	# canopy carries on past them.
+	var radius := reach(height) * clampf(GraphicsQuality.detail, 0.6, 1.0)
 	var focus := _ground_focus(cam, radius)
 	# Trees thin out and shrink toward the edge (TreeField's shader), where
 	# the ground's painted canopy takes over.
