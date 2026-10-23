@@ -48,6 +48,9 @@ const DECIDE_EVERY := Balance.FARM_DECIDE_EVERY
 ## Land the player has set aside (Reserves): farms stay off land saved for
 ## other industries and favour land saved for farming.
 var reserves: Reserves
+## The town's sliders: Funding is support per acre, Growth how eagerly a
+## farm buys more fields (see Policies).
+var policies: Policies
 ## Farmland outlines from older saves, for the city to turn into reserves.
 var legacy_outlines: Array = []
 ## Farms: id -> {pos, dir, crop, cells: Array of Vector2i in the farm's own
@@ -187,6 +190,28 @@ func yearly_profit(id: int) -> float:
 	var total := 0.0
 	for c in f.cells:
 		total += field_profit(f, c)
+	return total + f.cells.size() * support(id)
+
+
+## What the town pays a farm per field a year (a fee when negative).
+func support(id: int) -> float:
+	if policies == null:
+		return 0.0
+	return policies.pick(Balance.POLICY_SUPPORT_PER_ACRE, "funding", "farms", "farm:%d" % id) * ACRES_PER_CELL
+
+
+## The yearly profit a new field must clear before farm `id` buys it (INF: none).
+func buy_margin(id: int) -> float:
+	if policies == null:
+		return 0.0
+	return policies.pick(Balance.POLICY_BUY_MARGIN_PER_ACRE, "growth", "farms", "farm:%d" % id) * ACRES_PER_CELL
+
+
+## What the town pays all its farms a year (negative: what it collects).
+func yearly_support() -> float:
+	var total := 0.0
+	for id in farms:
+		total += farms[id].cells.size() * support(id)
 	return total
 
 
@@ -219,28 +244,15 @@ func decide(usable: Callable) -> bool:
 			changed = true
 			continue
 		var profit := yearly_profit(id)
-		var best := Vector2i.MAX
-		var best_profit := 0.0
-		if f.cells.size() < MAX_CELLS:
-			for c in _frontier(f):
-				if not _free(id, f, c, usable):
-					continue
-				var p := field_profit(f, c)
-				if p <= 0.0:
-					continue
-				# Farmers square off their fields: land that rounds out what
-				# they already work beats a slightly richer odd corner.
-				var score := p + COMPACT_BONUS * _owned_neighbors(f, c)
-				if reserves != null and reserves.kind_at(cell_center(f, c)) == "farm":
-					score += RESERVE_BONUS
-				if score > best_profit or (score == best_profit and best != Vector2i.MAX and _less(c, best)):
-					best = c
-					best_profit = score
+		var sup := support(id)
+		var margin := buy_margin(id)
+		var best := best_field(id, usable)
 		var worst := Vector2i.MAX
 		for c in f.cells:
 			if worst == Vector2i.MAX or field_profit(f, c) < field_profit(f, worst):
 				worst = c
-		if worst != Vector2i.MAX and field_profit(f, worst) < 0.0:
+		# A farm told to expand keeps thin fields a little longer.
+		if worst != Vector2i.MAX and field_profit(f, worst) + sup < minf(margin, 0.0):
 			# A field that loses money twice running is sold off.
 			f.loss_streak += 1
 			if f.loss_streak >= 2:
@@ -252,6 +264,35 @@ func decide(usable: Callable) -> bool:
 			f.loss_streak = 0
 			changed = true
 	return changed
+
+
+## The field a farm would buy next: the best paying free one next to its
+## land, or Vector2i.MAX if none pays or it has all it will ever farm.
+func best_field(id: int, usable: Callable) -> Vector2i:
+	var f: Dictionary = farms[id]
+	var best := Vector2i.MAX
+	var best_profit := -INF
+	# Town aid or fees count, and Growth sets how much a field must pay.
+	var sup := support(id)
+	var margin := buy_margin(id)
+	if f.cells.size() >= MAX_CELLS or margin == INF:
+		return best
+	for c in _frontier(f):
+		if not _free(id, f, c, usable):
+			continue
+		var p := field_profit(f, c) + sup
+		# A new farm's first field has to pay, whatever it's told.
+		if p <= (maxf(margin, 0.0) if f.cells.is_empty() else margin):
+			continue
+		# Farmers square off their fields: land that rounds out what
+		# they already work beats a slightly richer odd corner.
+		var score := p + COMPACT_BONUS * _owned_neighbors(f, c)
+		if reserves != null and reserves.kind_at(cell_center(f, c)) == "farm":
+			score += RESERVE_BONUS
+		if score > best_profit or (score == best_profit and best != Vector2i.MAX and _less(c, best)):
+			best = c
+			best_profit = score
+	return best
 
 
 ## Can farm `id` plant cell c: farmland, clear of its lane, other farms and

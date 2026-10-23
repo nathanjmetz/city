@@ -25,6 +25,10 @@ const MAX_CARS := 400
 const DT := 0.1
 const CAR_LEN := 4.6
 const LANE_W := 3.6
+## Trips that may drive in bus lanes, and how far before a corner or
+## driveway other traffic may cross into one (about a block's last third).
+const BUS_PURPOSES := ["transit", "school"]
+const BUS_LANE_ENTRY := 60.0
 ## Intelligent Driver Model: bumper gap when stopped, time gap at speed,
 ## gentle acceleration and comfortable braking (AASHTO uses 3.4 m/s^2).
 const JAM_GAP := 2.0
@@ -112,7 +116,10 @@ var _keep_routes := false
 
 func _init(net: RoadNetwork) -> void:
 	network = net
-	network.changed.connect(func(): _dirty = true)
+	# A road change before a loaded city has run a tick drops the saved plans.
+	network.changed.connect(func():
+		_dirty = true
+		_keep_routes = false)
 
 
 func step(sim: CitySim, rng: RandomNumberGenerator) -> void:
@@ -130,6 +137,8 @@ func step(sim: CitySim, rng: RandomNumberGenerator) -> void:
 ## direction]. `ahead` moves it on by that many metres, for smooth drawing
 ## between ticks.
 func car_pose(car: Dictionary, ahead := 0.0) -> Array:
+	if _dirty:
+		_rebuild()  # a loaded city that hasn't run yet (a neighbor's, say)
 	if car.j != null:
 		return _conn_pose(car.j, minf(car.jd + ahead, car.j.len))
 	var w: Dictionary = ways[car.route[car.leg]]
@@ -280,18 +289,21 @@ static func limit(type: int) -> float:
 static func lane_offsets(type: int, oneway_flag: bool) -> PackedFloat32Array:
 	var spec: Dictionary = RoadStyle.TYPES[type]
 	var offs := PackedFloat32Array()
-	if spec.oneway:
+	if RoadStyle.is_freeway(type):
 		# Highways and ramps: 4 ft shoulder on the left.
 		for k in spec.lanes:
 			offs.append(-spec.width * 0.5 + 1.2 + LANE_W * (k + 0.5))
-	elif oneway_flag:
+	elif oneway_flag or spec.oneway:
 		# A one-way street (a roundabout ring): every lane goes one way.
 		for k in spec.lanes:
 			offs.append(-LANE_W * spec.lanes * 0.5 + LANE_W * (k + 0.5))
 	else:
-		var inner: float = spec.median * 0.5 + (RoadStyle.CURB_WIDTH if spec.median > 0.0 else 0.0)
+		var inner: float = spec.median * 0.5 + (RoadStyle.CURB_WIDTH if RoadStyle.raised_median(type) else 0.0)
+		# Gravel roads and alleys have no lane lines: cars share what width
+		# there is and squeeze by each other.
+		var lane: float = LANE_W if spec.get("surface", "asphalt") == "asphalt" else minf(LANE_W, spec.width * 0.5 - inner)
 		for k in spec.lanes / 2:
-			offs.append(inner + LANE_W * (k + 0.5))
+			offs.append(inner + lane * (k + 0.5))
 	return offs
 
 
@@ -601,7 +613,8 @@ func _build_control(n: int, segs: Array) -> void:
 
 
 func _rank(seg: int) -> int:
-	return [0, 1, 2, 3, 1, 1, 1][mini(network.segments[seg].type, 6)]
+	var type: int = network.segments[seg].type
+	return [0, 1, 2, 3, 1, 1, 1][mini(type if RoadStyle.is_ring(type) else RoadStyle.group(type), 6)]
 
 
 ## Roundabout ring pieces: one-way roads that aren't highways or ramps.
@@ -688,12 +701,16 @@ func _conflicts(c1: Dictionary, c2: Dictionary) -> bool:
 
 ## Expected seconds to drive a whole way, from live speeds there.
 func _way_cost(wid: int) -> float:
+	if not ways.has(wid):
+		return INF  # the road was rebuilt under this route
 	var w: Dictionary = ways[wid]
 	return w.len / (w.vmax * maxf(_speed.get(wid, 1.0), 0.15))
 
 
 ## Expected seconds lost turning from one way into another.
 func _turn_cost(wi: int, wo: int) -> float:
+	if not ways.has(wi) or not _kind.has(Vector2i(wi, wo)):
+		return INF  # the road was rebuilt under this route
 	var j: Dictionary = junctions[ways[wi].to]
 	var cost := 0.0
 	match j.control:
@@ -1052,8 +1069,9 @@ func add_trip(a: Dictionary, b: Dictionary, rng: RandomNumberGenerator, kind := 
 ## `to` are {"ref": any id the caller wants back, "pos": [x, z]}; the vehicle
 ## leaves from the road nearest `from`, parks at `to`, and its trip shows up
 ## in `arrivals` when it gets there (or in `failed` if it can't). Returns the
-## trip id, or -1 if no road leads there.
-func dispatch(from: Dictionary, to: Dictionary, purpose: String, cargo := {}) -> int:
+## trip id, or -1 if no road leads there. `kind` picks the vehicle (blank:
+## one fitting the purpose).
+func dispatch(from: Dictionary, to: Dictionary, purpose: String, cargo := {}, kind := "") -> int:
 	if _dirty:
 		_rebuild()
 	var a := _endpoint(from)
@@ -1063,7 +1081,7 @@ func dispatch(from: Dictionary, to: Dictionary, purpose: String, cargo := {}) ->
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([_next_id, purpose, "dispatch"])
 	var id := _next_id
-	if not add_trip(a, b, rng, "", purpose, cargo):
+	if not add_trip(a, b, rng, kind, purpose, cargo):
 		return -1
 	return id
 
@@ -1124,7 +1142,10 @@ func _launch(car: Dictionary) -> bool:
 ## The path out of a driveway into the nearest lane.
 func _driveway_out(car: Dictionary, exit_d: float) -> Dictionary:
 	var w: Dictionary = ways[car.route[0]]
-	var corner := _lane_point(w, car.lane, car.d)
+	# A drive right by the end of the street can't swing forward its usual
+	# distance: it swings back a little, so the car still meets the lane
+	# heading the lane's way.
+	var corner := _lane_point(w, car.lane, maxf(minf(car.d, exit_d - 3.0), 0.0))
 	var p2 := _lane_point(w, car.lane, exit_d)
 	return _path({"node": -1, "wi": -1, "li": -1, "wo": w.id, "lo": car.lane, "turn": Turn.RIGHT,
 		"vt": 5.0, "exit_d": exit_d}, car.home, corner, p2)
@@ -1159,7 +1180,8 @@ func _lane_point(w: Dictionary, lane: int, d: float) -> Vector3:
 func _drive(_rng: RandomNumberGenerator) -> void:
 	# Vehicles with a job that were waiting for a gap to pull out.
 	for car in _waiting.duplicate():
-		if not ways.has(car.route[0]):
+		if not ways.has(car.route[0]) or car.route.any(func(w): return not ways.has(w)) and not _replan(car):
+			# Its road went, or was rebuilt and there's no way through now.
 			_waiting.erase(car)
 			_report(car, failed)
 		elif cars.size() < MAX_CARS and _launch(car):
@@ -1527,6 +1549,17 @@ func _lane_changes() -> void:
 				desired = [w.lanes - 1] if ds < 80.0 else range(w.lanes)
 			else:
 				desired = lanes_for(w.id, car.route[car.leg + 1])
+			# Bus lanes: other traffic keeps out of them, except to turn
+			# right at the next corner or reach a driveway close ahead.
+			var bus := RoadStyle.bus_lane(w.type)
+			if bus != -1 and not car.purpose in BUS_PURPOSES:
+				var others: Array = desired.filter(func(l): return l != bus)
+				if not others.is_empty():
+					desired = others
+				elif ds > BUS_LANE_ENTRY:
+					desired = [bus - 1]
+				if t == bus and not desired.has(bus):
+					continue
 			var must := false
 			if not desired.has(car.lane):
 				if _lane_dist(t, desired) >= _lane_dist(car.lane, desired):

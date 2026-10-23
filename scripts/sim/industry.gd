@@ -37,6 +37,9 @@ const DECIDE_EVERY := Balance.INDUSTRY_DECIDE_EVERY
 ## own frame (0,0 is the main building), stock, loss_streak}
 var sites := {}
 var reserves: Reserves
+## The town's sliders: Funding is support per pad, Growth how eagerly a
+## company opens more pads (see Policies).
+var policies: Policies
 ## Set by the city: the industrial tax rate (percent) and a price factor.
 var tax_rate := 1.5
 var price := 1.0
@@ -91,6 +94,28 @@ func yearly_profit(id: int) -> float:
 	var total := 0.0
 	for c in sites[id].pads:
 		total += pad_profit(sites[id], c)
+	return total + sites[id].pads.size() * support(id)
+
+
+## What the town pays a company per pad a year (a fee when negative).
+func support(id: int) -> float:
+	if policies == null:
+		return 0.0
+	return policies.pick(Balance.POLICY_SUPPORT_PER_PAD, "funding", "resources", "industry:%d" % id)
+
+
+## The yearly profit a new pad must clear before company `id` opens it (INF: none).
+func buy_margin(id: int) -> float:
+	if policies == null:
+		return 0.0
+	return policies.pick(Balance.POLICY_BUY_MARGIN_PER_PAD, "growth", "resources", "industry:%d" % id)
+
+
+## What the town pays all its companies a year (negative: what it collects).
+func yearly_support() -> float:
+	var total := 0.0
+	for id in sites:
+		total += sites[id].pads.size() * support(id)
 	return total
 
 
@@ -106,16 +131,19 @@ func decide(usable: Callable) -> bool:
 	ids.sort()
 	for id in ids:
 		var s: Dictionary = sites[id]
+		var sup := support(id)
+		var margin := buy_margin(id)
 		var best := Vector2i.MAX
-		var best_score := 0.0
+		var best_score := -INF
 		# What stopped a new company, for its panel: 0 nothing rich, 1 nothing pays, 2 all taken.
 		var why := 0
-		if s.pads.size() < MAX_PADS:
+		if s.pads.size() < MAX_PADS and margin < INF:
 			for c in (_frontier(s) if not s.pads.is_empty() else _seeds()):
 				if richness(s, c) < MIN_RICHNESS:
 					continue
-				var p := pad_profit(s, c)
-				if p <= 0.0:
+				var p := pad_profit(s, c) + sup
+				# A new company's first pad has to pay, whatever it's told.
+				if p <= (maxf(margin, 0.0) if s.pads.is_empty() else margin):
 					why = maxi(why, 1)
 					continue
 				if not _free(id, s, c, usable):
@@ -131,7 +159,7 @@ func decide(usable: Callable) -> bool:
 		for c in s.pads:
 			if worst == Vector2i.MAX or pad_profit(s, c) < pad_profit(s, worst):
 				worst = c
-		if worst != Vector2i.MAX and pad_profit(s, worst) < 0.0:
+		if worst != Vector2i.MAX and pad_profit(s, worst) + sup < minf(margin, 0.0):
 			s.loss_streak += 1
 			if s.loss_streak >= 2:
 				s.pads.erase(worst)
@@ -149,10 +177,35 @@ func decide(usable: Callable) -> bool:
 				"Every rich spot within 400 m is built on, farmed or reserved for something else."][why]
 			if why < 2:
 				idle = idle % k.cargo
+			if margin == INF:
+				idle = "On hold: it opens no pads until its Growth is raised."
 		if s.get("idle", "") != idle:
 			s.idle = idle
 			changed = true
 	return changed
+
+
+## The pad a company would put down next: the best paying free one next to
+## what it has, or Vector2i.MAX.
+func best_pad(id: int, usable: Callable) -> Vector2i:
+	if not sites.has(id) or sites[id].pads.is_empty() or sites[id].pads.size() >= MAX_PADS:
+		return Vector2i.MAX
+	var s: Dictionary = sites[id]
+	var best := Vector2i.MAX
+	var best_score := 0.0
+	for c in _frontier(s):
+		if richness(s, c) < MIN_RICHNESS:
+			continue
+		var p := pad_profit(s, c)
+		if p <= 0.0 or not _free(id, s, c, usable):
+			continue
+		var score := p + COMPACT_BONUS * _neighbors(s, c)
+		if reserves != null and reserves.kind_at(pad_center(s, c)) == s.kind:
+			score += RESERVE_BONUS
+		if score > best_score or (score == best_score and best != Vector2i.MAX and _less(c, best)):
+			best = c
+			best_score = score
+	return best
 
 
 ## Cells a new company may open its first pad on.

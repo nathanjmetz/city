@@ -43,6 +43,13 @@ const ROAD_BUILD_PER_M := {
 	RoadStyle.Type.STREET: 200, RoadStyle.Type.AVENUE: 450,
 	RoadStyle.Type.BOULEVARD: 800, RoadStyle.Type.HIGHWAY: 1200, RoadStyle.Type.RAMP: 700,
 	RoadStyle.Type.RING: 550, RoadStyle.Type.RING2: 900,
+	# Variants, priced by their paved width against the roads above.
+	RoadStyle.Type.STREET_NARROW: 180, RoadStyle.Type.STREET_BIKE: 250, RoadStyle.Type.STREET_ONEWAY: 260,
+	RoadStyle.Type.MAIN_STREET: 380, RoadStyle.Type.ALLEY: 90, RoadStyle.Type.GRAVEL: 40, RoadStyle.Type.COUNTY: 150,
+	RoadStyle.Type.AVENUE_TURN: 320, RoadStyle.Type.AVENUE_BIKE: 520, RoadStyle.Type.AVENUE_DIVIDED: 600,
+	RoadStyle.Type.AVENUE_ONEWAY: 420, RoadStyle.Type.STRIP: 600, RoadStyle.Type.PARKWAY: 750,
+	RoadStyle.Type.FREEWAY2: 900, RoadStyle.Type.FREEWAY4: 1500, RoadStyle.Type.DIVIDED_HWY: 1100,
+	RoadStyle.Type.STATE_HWY: 300, RoadStyle.Type.RAMP2: 950, RoadStyle.Type.AVENUE_BUS: 480,
 }
 ## Road upkeep, dollars per lane-metre per month (about $10,000 a lane-mile
 ## a year, typical of US city budgets).
@@ -105,8 +112,40 @@ const UTILITY_LOAD := {ZoneMap.Zone.RESIDENTIAL: 1, ZoneMap.Zone.COMMERCIAL: 4, 
 const GROW_EVERY := 4
 ## People move in and stats update every this many ticks.
 const MOVE_EVERY := 10
+## Game ticks per real week of construction (see Construction). A real week
+## is about 330 ticks on the calendar (a game day settles a month), which
+## would leave a house going up for a quarter of an hour; this keeps real
+## proportions between stages and kinds, about 11 times quicker than the
+## calendar: a house takes about a minute and a half at normal speed.
+const BUILD_TICKS_PER_WEEK := 30
 ## Share of residents who work (US labour force is about half of everyone).
 const WORKER_SHARE := 0.5
+
+# --- Building types ----------------------------------------------------------
+# Brawn's "bright green" (2026-10-22): each lot's owner picks what to build
+# from its surroundings, and each type has its own growth path (see
+# scripts/sim/building_types.gd for the types themselves).
+
+## Buildings counted within this many metres tell an owner how built-up and
+## pricey the land is (about a two-minute walk).
+const CORE_RADIUS := 200.0
+## Row homes appear once this many buildings stand within CORE_RADIUS (land
+## too dear for a detached house on every lot), apartments from DENSE_CORE.
+const ROW_HOME_DENSITY := 30
+const DENSE_CORE := 20
+## A street side becomes a Main Street once this many shops line it, and
+## new shops there get flats upstairs (the classic Midwestern main street).
+const MAIN_STREET_SHOPS := 2
+## How often a grown building may move up its growth path (ticks), how long
+## it must stand first (ticks; 4320 = three game days, a season), and the chance
+## per check that the owner goes ahead.
+const DEVELOP_EVERY := 40
+const DEVELOP_AGE := 4320
+const DEVELOP_CHANCE := 0.35
+## Share of owners keen to build on: DEVELOP_KEEN plus DEVELOP_KEEN_WEALTH
+## times the neighborhood's wealth (0 to 1), so about half at 0.5.
+const DEVELOP_KEEN := 0.25
+const DEVELOP_KEEN_WEALTH := 0.6
 
 # --- Farms -------------------------------------------------------------------
 
@@ -587,6 +626,57 @@ const PARK_FEATURES := [
 	{"type": "fountain", "size": Vector2(10, 10), "tier": 3},
 ]
 
+## A park's development tree (Brawn, 2026-10-22), in the shared Agency
+## node format: past the basics above, its park board adds what the park
+## can support, from what it already has, its neighborhood, the town and
+## the region. Five branches. Each node: `branch`, `name`, `size` (width x
+## depth, metres; ZERO for things that run through the whole park), build
+## `cost` (a park is public: the board spends town money, keeping
+## PARK_TREE_RESERVE in hand), `requires` (built first; basics count),
+## `needs` and `effects` (`upkeep+` a month, `value+` and `happy+` added to
+## the park's pull). Needs beyond Agency's own (population, link): `tier`
+## (lowest neighborhood tier), `water` / `power` (town utilities), `school`
+## (a school or high school within that many metres), `forest` (woods next
+## to the park, 0 to 1, or a creek).
+## Real costs: a splash pad $300-500k; an inclusive playground about $1M; a
+## municipal pool $2-4M; a regional aquatic center $8-12M; ball-field
+## lights about $300k a field (Indiana park department bids).
+const PARK_TREE := [
+	{"id": "splash_pad", "branch": "Play", "name": "Splash pad", "size": Vector2(16, 16), "cost": 400_000,
+		"requires": ["playground"], "needs": {"tier": 2, "water": 1, "population": 1_000},
+		"effects": {"upkeep+": 2_500, "value+": 0.01, "happy+": 0.03}},
+	{"id": "all_abilities", "branch": "Play", "name": "All-abilities playground", "size": Vector2(30, 22),
+		"cost": 1_000_000, "requires": ["splash_pad"], "needs": {"tier": 3, "population": 3_000},
+		"effects": {"upkeep+": 3_000, "value+": 0.02, "happy+": 0.04}},
+	{"id": "field_lights", "branch": "Sports", "name": "Field lights", "size": Vector2.ZERO, "cost": 300_000,
+		"requires": ["ball_diamond"], "needs": {"power": 1}, "effects": {"upkeep+": 1_500, "happy+": 0.02}},
+	{"id": "youth_complex", "branch": "Sports", "name": "Four-field youth complex", "size": Vector2(140, 136),
+		"cost": 3_500_000, "requires": ["field_lights"], "needs": {"population": 2_500, "school": 1_600.0},
+		"effects": {"upkeep+": 12_000, "value+": 0.02, "happy+": 0.05}},
+	{"id": "tournament", "branch": "Sports", "name": "Tournament concessions and parking", "size": Vector2(44, 30),
+		"cost": 1_500_000, "requires": ["youth_complex"], "needs": {"population": 5_000, "link": 1},
+		"effects": {"upkeep+": 6_000, "happy+": 0.03}, "note": "teams drive in from neighbor towns"},
+	{"id": "bandstand", "branch": "Gathering", "name": "Bandstand", "size": Vector2(12, 12), "cost": 200_000,
+		"requires": ["pavilion"], "needs": {"tier": 1, "population": 800},
+		"effects": {"upkeep+": 800, "value+": 0.01, "happy+": 0.03}},
+	{"id": "walking_loop", "branch": "Nature", "name": "Walking loop", "size": Vector2.ZERO, "cost": 120_000,
+		"requires": ["paths"], "needs": {"tier": 1}, "effects": {"upkeep+": 500, "value+": 0.01, "happy+": 0.02}},
+	{"id": "pond", "branch": "Nature", "name": "Fishing pond", "size": Vector2(44, 30), "cost": 400_000,
+		"requires": ["walking_loop"], "needs": {"tier": 1, "population": 1_200},
+		"effects": {"upkeep+": 1_500, "value+": 0.02, "happy+": 0.02}},
+	{"id": "nature_trail", "branch": "Nature", "name": "Nature trail", "size": Vector2.ZERO, "cost": 150_000,
+		"requires": ["walking_loop"], "needs": {"forest": 0.3}, "effects": {"upkeep+": 600, "value+": 0.01, "happy+": 0.02}},
+	{"id": "pool", "branch": "Water", "name": "Swimming pool", "size": Vector2(50, 36), "cost": 2_500_000,
+		"needs": {"tier": 1, "population": 1_500, "water": 1}, "effects": {"upkeep+": 9_000, "happy+": 0.05}},
+	{"id": "aquatic_center", "branch": "Water", "name": "Aquatic center", "size": Vector2(80, 60), "cost": 8_000_000,
+		"requires": ["pool"], "needs": {"population": 6_000, "link": 1},
+		"effects": {"upkeep+": 25_000, "value+": 0.02, "happy+": 0.06}, "note": "families come from neighbor towns"},
+]
+## Money a park board leaves in the town's account when it builds from its
+## tree, scaled by how cautious its chair is (0.5x to 1.5x). Told to grow,
+## it keeps only half.
+const PARK_TREE_RESERVE := 500_000
+
 ## Amenities: build cost, monthly upkeep, and their pull on the land around.
 ## `value` is the lift in land value right next door (0.10 = 10% higher),
 ## fading to nothing at `value_reach` metres; `happy` likewise for how much
@@ -1039,3 +1129,146 @@ const RAIL_DENIED_DAYS := 24
 const RAIL_BANKRUPT_DAYS := 6
 ## Most the town can subsidize a depot, per month.
 const RAIL_MAX_SUBSIDY := 100_000
+# --- Banks and lending ---------------------------------------------------------
+# Brawn (2026-10-22, Best of CS pitch #20): a bank is a hub that lends to the
+# other hubs. A farm borrows to buy the field next door, a company to put
+# down another pad, a builder to put up a house, shop or factory. A cautious
+# president lends slowly and safely; a bold one fuels fast growth and some
+# failures. The player never touches a loan.
+# Benchmarked against real small-town Indiana banking: a state-chartered
+# community bank on the courthouse square (like the First National Bank of
+# Petersburg, 1898, or German American Bank of Jasper) taking the town's
+# deposits and lending them back, and a Farm Credit Mid-America branch office
+# that lends only to farms and timber on the Farm Credit System's bonds.
+# FDIC figures: community banks lend about 80 cents of each deposit dollar,
+# need equity of 9% of assets to use the simple community bank leverage
+# ratio, earn about a 3.5% net interest margin and charge off about 0.3% of
+# loans in a normal year (several times that in a farm crisis).
+## Per kind: `capital` the founders put up (equity), `cost` the city pays
+## (the lot and a ribbon cutting; investors pay the rest), `block_cost` what
+## the bank pays to buy and build one more block of its own premises,
+## `max_blocks` the most it ever owns (a bank on the square is a building or
+## two, with a drive-up and a lot), `staff` at opening, and what it lends to.
+const BANKS := {
+	"community": {"cost": 150_000, "capital": 4_000_000, "block_cost": 600_000, "max_blocks": 7, "staff": 6,
+		"lends": ["farm", "company", "build"]},
+	"farm_credit": {"cost": 75_000, "capital": 1_500_000, "block_cost": 400_000, "max_blocks": 5, "staff": 4,
+		"lends": ["farm", "timber"]},
+}
+## Deposits a community bank can hope to gather: each resident keeps about
+## this much in local banks (rural Indiana, FDIC deposit data), and each job
+## brings business deposits too. Banks in town split it by reputation.
+const BANK_DEPOSITS_PER_RESIDENT := 28_000.0
+const BANK_DEPOSITS_PER_JOB := 12_000.0
+## Share of the town's deposits that stays in banks in town (the rest sits
+## in big-city banks and online).
+const BANK_LOCAL_SHARE := 0.75
+## Rates a year: loans, and what the bank pays on deposits. Farm Credit lends
+## a little cheaper (the System's bonds, plus patronage dividends back to
+## its borrowers), so farms borrow there first when both are in town.
+const BANK_LOAN_RATE := 0.0725
+const BANK_FARM_CREDIT_RATE := 0.0675
+const BANK_DEPOSIT_RATE := 0.0225
+## Farm Credit's lending limit: this share of the farmland value in reach
+## (it doesn't take deposits; the System funds it).
+const BANK_FARM_CREDIT_SHARE := 0.5
+## What Farm Credit pays the System for the money it lends, a year.
+const BANK_FARM_CREDIT_FUNDING := 0.045
+## Loan to value: how much of a purchase a bank lends (the borrower puts
+## down the rest). A cautious president lends the low end, a bold one the high.
+const BANK_LTV := [0.65, 0.85]
+## Loan-to-deposit ratio a president lends up to: cautious to bold.
+const BANK_LTD := [0.7, 0.95]
+## Equity the bank keeps against its loans (community bank leverage ratio),
+## the level where regulators put it under an order to stop lending, and
+## where the FDIC closes it and sells it to a healthier bank.
+const BANK_WELL_CAPITALIZED := 0.09
+const BANK_ORDER := 0.06
+const BANK_FAILED := 0.02
+## Debt service coverage (yearly profit over yearly loan payments) a
+## president wants before saying yes: a bold one 0.75, a cautious one the
+## textbook 1.25 or better. Short of that, a borrower can still borrow on the
+## equity in its land, up to LTV x (1 - caution) of what the land is worth:
+## a bold president lends most of it, a cautious one little (US farms
+## average about 13% debt to assets).
+const BANK_DSCR := [0.75, 1.3]
+## Years to pay off each kind of loan: farmland, a company's pad, a builder's
+## loan rolled into a mortgage or commercial mortgage.
+const BANK_TERM_YEARS := {"farm": 25, "company": 10, "build": 25, "timber": 15}
+## What one loan is for: a field or a pad (its value), or a building.
+const BANK_BUILD_VALUE := {ZoneMap.Zone.RESIDENTIAL: 260_000, ZoneMap.Zone.COMMERCIAL: 650_000,
+	ZoneMap.Zone.INDUSTRIAL: 1_800_000}
+## Chance each lending round that a healthy bank says yes to one more
+## purchase for a borrower who qualifies: bold to cautious. So a town with a
+## bank grows up to about twice as fast.
+const BANK_APPETITE := [0.8, 0.35]
+## Each round a builder can get a construction loan for one more house, shop
+## or factory on an empty zoned lot, at this chance times the zone's demand.
+const BANK_BUILD_CHANCE := 0.6
+## Default chance a month: the normal rate, plus this much for every point a
+## borrower's coverage falls short of 1 (a farm losing money in a bad price
+## year, or a builder with a house nobody wants).
+const BANK_DEFAULT_BASE := 0.0003
+const BANK_DEFAULT_STRESS := 0.01
+## Share of a defaulted loan the bank gets back selling the collateral.
+const BANK_RECOVERY := 0.6
+## Each employee costs this a year (salary and benefits), and the bank adds
+## one for about every this many dollars of loans (FDIC: ~$6M a head).
+const BANK_SALARY := 70_000.0
+const BANK_LOANS_PER_STAFF := 6_000_000.0
+## Other running costs a year, per block of premises.
+const BANK_PREMISES_COST := 45_000.0
+## Share of each year's profit paid out to shareholders (the rest builds capital).
+const BANK_DIVIDEND := 0.35
+## Reputation (0 to 1) a new bank starts with, and how much of the gap to
+## where its president and premises take it closes each month.
+const BANK_START_REPUTATION := 0.35
+const BANK_REPUTATION_PULL := 0.03
+## Lending rounds run with the farms (every 6 game hours); the books close
+## once a game day (a month).
+const BANK_LEND_EVERY := 360
+const BANK_DECIDE_EVERY := 1440
+## Assessed value of a block of bank premises, for commercial property tax.
+const BANK_PREMISES_VALUE := 900_000
+
+# --- Town policy sliders --------------------------------------------------------
+# Brawn's rule (2026-10-22): money is a limiter, not the game. No tax sliders:
+# taxes run at the normal rates above on their own. Instead every area and hub
+# has two broad sliders, Funding (Lean to Generous) and Growth (Hold to
+# Expand), five steps each, with Standard and "Your call" in the middle.
+# Each list below has one value per step, Lean/Hold first.
+
+## City-run things (utilities, public services, waste, cemetery): what they
+## cost a month, times their upkeep...
+const POLICY_UPKEEP := [0.7, 0.85, 1.0, 1.2, 1.4]
+## ...and how far they reach, how much they serve and how many trucks they
+## run. A lean department stretches thin; a generous one has slack.
+const POLICY_EFFECT := [0.8, 0.9, 1.0, 1.1, 1.2]
+## Homes, shops and factories: what the town spends on each building a month
+## for street care, trees and inspections (negative: it saves that much)...
+const POLICY_CARE_PER_BUILDING := [-12, -6, 0, 15, 30]
+## ...and what that does to land value, and so to property tax.
+const POLICY_LAND_VALUE := [0.94, 0.97, 1.0, 1.03, 1.05]
+## Farms and resource companies are private. Funding is town support per acre
+## a year: a fee the town charges on Lean, aid it pays on Generous (real
+## counties do both: special assessments and ag or enterprise incentives).
+const POLICY_SUPPORT_PER_ACRE := [-20.0, -8.0, 0.0, 15.0, 30.0]
+## Growth for homes, shops and factories: how readily new buildings go up
+## (times demand). Hold stops new ones; what's built stays.
+const POLICY_BUILD_PACE := [0.0, 0.5, 1.0, 1.35, 1.7]
+## Growth for farms and companies: the yearly profit, per acre, a new field or
+## pad must clear before they buy it. Hold buys nothing; Expand takes thinner
+## land. They still sell what keeps losing money.
+const POLICY_BUY_MARGIN_PER_ACRE := [INF, 40.0, 0.0, -10.0, -20.0]
+## Growth for waste sites: the share of trash left waiting that makes them
+## take more land (HUB_GROW_BUSY_SHARE on "Your call")...
+const POLICY_HUB_BUSY := [INF, 0.7, 0.5, 0.4, 0.3]
+## ...and for the cemetery, times how much land it plans per resident.
+const POLICY_CEMETERY_PACE := [0.0, 0.7, 1.0, 1.3, 1.6]
+## Resource companies work in pads (80 m, about 1.6 acres) that earn far more
+## than a field, so their support and buying margin are per pad a year.
+const POLICY_SUPPORT_PER_PAD := [-4_000.0, -1_500.0, 0.0, 3_000.0, 6_000.0]
+const POLICY_BUY_MARGIN_PER_PAD := [INF, 8_000.0, 0.0, -2_000.0, -4_000.0]
+## Growth for parks: times how many people must live nearby before a park
+## buys the strip next door (PARK_GROW_MIN_RESIDENTS). Hold buys none.
+const POLICY_PARK_RESIDENTS := [INF, 2.0, 1.0, 0.7, 0.5]

@@ -33,12 +33,11 @@ const REAR_CAP := 40.0
 
 ## Real lot sizes in metres (zone ints match ZoneMap.Zone: 1 homes, 2 shops,
 ## 3 industry). w: width range along the street; cap: usual depth;
-## min_d: shallowest buildable lot. Homes are post-war Midwestern suburban
-## lots (60 to 85 ft wide, 130 ft deep), shops and plants the sizes the
-## current building art fits.
+## min_d: shallowest buildable lot. Homes and shops run 50 to 80 ft wide
+## (real Midwestern town and suburban lots, 130 ft deep); plants are wider.
 const SIZES := {
-	1: {"w": [18.0, 26.0], "cap": 40.0, "min_d": 18.0, "flags": true},
-	2: {"w": [18.0, 24.0], "cap": 38.0, "min_d": 18.0, "flags": false},
+	1: {"w": [15.0, 24.0], "cap": 40.0, "min_d": 18.0, "flags": true},
+	2: {"w": [15.0, 24.0], "cap": 38.0, "min_d": 18.0, "flags": false},
 	3: {"w": [26.0, 44.0], "cap": 60.0, "min_d": 26.0, "flags": false},
 }
 ## The most a lot can grow to by merging: [frontage m, area m²], from typical
@@ -92,7 +91,7 @@ func plan(network: RoadNetwork, zones: ZoneMap, frozen: Dictionary) -> Array:
 		var h := hash([key, c])
 		if not _grown.has(h):
 			var grown := Geometry2D.offset_polygon(c, 0.3)
-			_grown[h] = [_box(c).grow(0.5), grown[0] if not grown.is_empty() else c, h]
+			_grown[h] = [_box(c).grow(0.5), grown[0] if not grown.is_empty() else c, h, c, key]
 		parcels.append(_grown[h])
 	# Parcels that came, went or changed mark their ground for re-cutting.
 	var now := {}
@@ -440,15 +439,61 @@ func _plan_side(s: Dictionary, zones: ZoneMap, all_parcels: Array) -> Array:
 	var rays := _survey(s)
 	# What each survey line is: its zone, or 0 when it can't hold a lot.
 	var kinds := []
+	var free_kinds := []
 	for r in rays:
 		var k := 0
-		if r[3] >= 0.0 and not _in_parcel(r[1], parcels):
+		if r[3] >= 0.0:
 			k = zones.zone_at(_v3((r[1] as Vector2) + (r[2] as Vector2) * ZONE_PROBE))
-		kinds.append(k)
+		free_kinds.append(k)
+		kinds.append(0 if k != 0 and _in_parcel(r[1], parcels) else k)
 	var mid: Vector2 = s.fronts[s.fronts.size() / 2][1]
-	var sig := hash([kinds, near_keys, wealth.call(mid) if wealth.is_valid() else 0.5])
+	var rich: float = wealth.call(mid) if wealth.is_valid() else 0.5
+	var sig := hash([kinds, near_keys, rich])
 	if sig == s.cut_sig:
 		return s.cut
+	# The plat as if nothing were built yet. Where the parcels are lots of
+	# that same plat (the usual case: homes went up on the lots offered),
+	# the rest of it stands as it is, so a city and a reloaded copy of it
+	# agree on every empty lot whatever order things were built in.
+	var free_sig := hash([free_kinds, rich])
+	if free_sig != s.get("free_sig", 0):
+		s.free_sig = free_sig
+		s.free = _cut_side(s, zones, rays, free_kinds, [])
+	var out := _fit_parcels(s.free, parcels)
+	if out.size() == 1 and out[0] == null:
+		# Parcels from another plat (an older road or zoning): cut around them.
+		out = _clear_of_parcels(_cut_side(s, zones, rays, kinds, parcels), parcels)
+	s.cut_sig = sig
+	s.cut = out
+	return out
+
+
+## The free plat's lots that aren't parcels, or [null] if a parcel cuts into
+## one of them (the parcels came from a different plat).
+static func _fit_parcels(free: Array, parcels: Array) -> Array:
+	if parcels.is_empty():
+		return free
+	var keys := {}
+	for p in parcels:
+		keys[p[4]] = true
+	var out := []
+	for lot in free:
+		if keys.has(lot.key):
+			continue
+		var box := _box(lot.corners)
+		for p in parcels:
+			if not (p[0] as Rect2).intersects(box):
+				continue
+			var inter := Geometry2D.intersect_polygons(lot.corners, p[3])
+			for q in inter:
+				if absf(_area(q)) > 2.0:
+					return [null]
+		out.append(lot)
+	return out
+
+
+## Cuts the runs of one zone along a street side into lots.
+func _cut_side(s: Dictionary, zones: ZoneMap, rays: Array, kinds: Array, parcels: Array) -> Array:
 	var out := []
 	var i := 0
 	while i < rays.size():
@@ -475,9 +520,6 @@ func _plan_side(s: Dictionary, zones: ZoneMap, all_parcels: Array) -> Array:
 			end_corner = true
 		out.append_array(_cut_run(s, kinds[i], a0, a1, start_corner, end_corner))
 		i = j + 1
-	out = _clear_of_parcels(out, parcels)
-	s.cut_sig = sig
-	s.cut = out
 	return out
 
 

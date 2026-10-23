@@ -191,6 +191,74 @@ void fragment() {
 }
 """
 
+## Limestone quarries, benchmarked against aerial photos of Indiana crushed
+## stone quarries. UV.x is metres in from the pit's rim (negative out on
+## the berm); COLOR.r is where the floor starts (/ 100 m) and COLOR.g how
+## far off the haul ramp's centre line (/ 14 m).
+##   - near-vertical faces every 15 m, lit or in shadow by which way they
+##     face, with thin bedding lines and a pale lip along the top
+##   - benches greyer and dustier the deeper they are
+##   - a floor of blasted rock with rain water standing in the low spots
+##   - a grassed berm of stripped overburden round the rim
+const QUARRY := """
+void fragment() {
+	vec2 p = world_pos.xz;
+	float s = UV.x;
+	float floor_at = COLOR.r * 100.0;
+	if (s < -9.0) {
+		discard;
+	}
+	float close = clamp(1.0 - length(VERTEX) / 400.0, 0.0, 1.0);
+	float grain = texture(noise_grain, p / 0.9).r;
+	float patch = texture(noise_soft, p / 25.0).r;
+	// Which way the ground falls, in world space, from the slope of s.
+	vec2 dx = dFdx(p);
+	vec2 dy = dFdy(p);
+	float sx = dFdx(s);
+	float sy = dFdy(s);
+	float det = dx.x * dy.y - dx.y * dy.x;
+	vec2 g = vec2(0.0);
+	if (abs(det) > 1e-9) {
+		g = vec2(sx * dy.y - sy * dx.y, dx.x * sy - dy.x * sx) / det;
+	}
+	vec3 stone = vec3(0.60, 0.57, 0.50);
+	vec3 col;
+	if (s < 0.0) {
+		col = mix(vec3(0.27, 0.23, 0.16), vec3(0.17, 0.21, 0.08), smoothstep(0.3, 0.7, patch));
+	} else {
+		float cycle = 15.0;
+		float level = min(floor(s / cycle), 5.0);
+		float t = s - floor(s / cycle) * cycle;
+		vec3 bench = stone * (1.0 - level * 0.05) * (0.92 + patch * 0.16);
+		{
+			float aa = fwidth(s);
+			float face = 1.0 - smoothstep(5.0 - aa, 5.0 + aa, t);
+			float lit = 0.0;
+			if (length(g) > 0.01) {
+				lit = dot(-normalize(g), normalize(vec2(0.55, 0.83)));
+			}
+			vec3 wall = vec3(0.46, 0.42, 0.35) * (0.62 + lit * 0.3) * (1.0 - level * 0.04);
+			float bed = smoothstep(0.35, 0.65, fract(t * 1.4 + texture(noise_soft, p / 30.0).r * 2.0));
+			wall *= 0.9 + bed * 0.12;
+			float lip = 1.0 - smoothstep(0.0, 0.7 + aa, t);
+			col = mix(bench, wall, face);
+			col = mix(col, stone * 1.08, lip * 0.6);
+		}
+		// The floor: blasted rock, with rain water standing in the low spots.
+		vec3 rock = bench * 0.85;
+		float wet = smoothstep(0.56, 0.62, texture(noise_soft, p / 60.0 + 0.3).r);
+		rock = mix(rock, vec3(0.14, 0.22, 0.20), wet);
+		col = mix(col, rock, smoothstep(floor_at, floor_at + 3.0, s));
+	}
+	float ramp = (1.0 - step(0.5, COLOR.g)) * step(s, floor_at + 4.0);
+	col = mix(col, vec3(0.56, 0.53, 0.46) * (0.95 + patch * 0.1), ramp);
+	col *= 1.0 + (grain - 0.5) * 0.25 * close;
+	ALBEDO = col;
+	ROUGHNESS = 0.95;
+	SPECULAR = 0.2;
+}
+"""
+
 static var _cache := {}
 static var _soft: NoiseTexture2D
 static var _grain: NoiseTexture2D
@@ -208,6 +276,10 @@ static func concrete(color: Color, slabs := false) -> ShaderMaterial:
 
 static func gravel() -> ShaderMaterial:
 	return _make("gravel", GRAVEL, {})
+
+
+static func quarry() -> ShaderMaterial:
+	return _make("quarry", QUARRY, {})
 
 
 static func field() -> ShaderMaterial:
