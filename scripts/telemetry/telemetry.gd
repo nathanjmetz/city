@@ -42,6 +42,9 @@ var _perf_time := 0.0
 var _frames := 0
 var _worst := 0.0
 var _last_us := 0
+## Shader pipelines compiled so far: at the last frame and the last sample.
+var _pipes_frame := 0
+var _pipes_sample := 0
 ## Neighbor towns loaded this perf window (see RegionClient.town_loaded).
 var _towns := {}
 var _town_at := -1.0
@@ -230,6 +233,9 @@ func _process(delta: float) -> void:
 	var us := Time.get_ticks_usec()
 	var dt := delta if _last_us == 0 else (us - _last_us) / 1000000.0
 	_last_us = us
+	var pipes := _pipelines()
+	var compiled := pipes - _pipes_frame
+	_pipes_frame = pipes
 	_frames += 1
 	if not LoadingScreen.is_open():
 		_worst = maxf(_worst, dt)
@@ -237,7 +243,7 @@ func _process(delta: float) -> void:
 		if dt > HITCH:
 			_hitches += 1
 		if dt > STALL:
-			_stall(dt)
+			_stall(dt, compiled)
 	_perf_time += dt
 	if _perf_time >= PERF_EVERY:
 		_perf_sample()
@@ -262,6 +268,8 @@ func _perf_sample() -> void:
 	_frame_ms.clear()
 	e.merge(_quality_now())
 	_perf_systems(e)
+	e["pipelines"] = _pipes_frame - _pipes_sample
+	_pipes_sample = _pipes_frame
 	if not _towns.is_empty():
 		e["towns"] = _towns
 		_towns = {}
@@ -278,7 +286,7 @@ func _perf_sample() -> void:
 ## A freeze: how long, where the player was, and the Perf stages with the
 ## longest single run since the last sample (the freeze is among them when
 ## the code that froze is timed). Flushed at once in case it happens again.
-func _stall(dt: float) -> void:
+func _stall(dt: float, compiled: int) -> void:
 	var stages := []
 	for key in Perf.stats:
 		if (key.begins_with("frame.") or key.begins_with("sim.")) and Perf.stats[key].n > 0:
@@ -287,12 +295,26 @@ func _stall(dt: float) -> void:
 	var top := {}
 	for st in stages.slice(0, 5):
 		top[st[0]] = snappedf(st[1], 0.1)
-	var e := {"ms": int(dt * 1000.0), "scene": _scene, "ctx": tracker.context, "stages": top}
+	var e := {"ms": int(dt * 1000.0), "scene": _scene, "ctx": tracker.context, "stages": top,
+		"pipelines": compiled}
 	# Whether a neighbor's town had just been loaded (seconds before the freeze ended).
 	if _town_at >= 0.0:
 		e["since_town_s"] = snappedf(_now() - _town_at, 0.1)
 	event("stall", e)
 	flush()
+
+
+## Shader pipelines compiled since start (first use of a material, a light
+## or a graphics tier): compiling stalls the frame, on Metal for seconds.
+static func _pipelines() -> int:
+	var n := 0
+	for info in [RenderingServer.RENDERING_INFO_PIPELINE_COMPILATIONS_CANVAS,
+			RenderingServer.RENDERING_INFO_PIPELINE_COMPILATIONS_MESH,
+			RenderingServer.RENDERING_INFO_PIPELINE_COMPILATIONS_SURFACE,
+			RenderingServer.RENDERING_INFO_PIPELINE_COMPILATIONS_DRAW,
+			RenderingServer.RENDERING_INFO_PIPELINE_COMPILATIONS_SPECIALIZATION]:
+		n += RenderingServer.get_rendering_info(info)
+	return n
 
 
 ## Per-system timings from Perf for this window: the sim tick (mean and
