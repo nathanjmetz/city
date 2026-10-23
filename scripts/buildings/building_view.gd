@@ -56,7 +56,7 @@ func _sync_all() -> void:
 		# Gone, or its lot moved (the road was widened), or its sign changed.
 		if not sim.buildings.has(key) or not sim.lots.has(key) \
 				or not _nodes[key].get_meta("front").is_equal_approx(sim.lots[key].front) \
-				or _nodes[key].get_meta("look") != _look(sim.buildings[key]) \
+				or _nodes[key].get_meta("look") != _look(sim.buildings[key], key) \
 				or _nodes[key].get_meta("sign") != sim.families.sign_key(sim, "lot:" + key) \
 				or _nodes[key].get_meta("chain") != sim.buildings[key].get("chain", ""):
 			_far_dirty[_far_chunk(_nodes[key])] = true
@@ -75,14 +75,14 @@ func _sync_all() -> void:
 			_link_far(_nodes[key])
 
 
-## What the drawing depends on: type, stage and size.
-static func _look(b: Dictionary) -> Array:
-	return [BuildingTypes.type_of(b), int(b.get("level", 0)), int(b.get("units", 1))]
+## What the drawing depends on: type, stage, size and how well it's kept.
+func _look(b: Dictionary, key: String) -> Array:
+	return [BuildingTypes.type_of(b), int(b.get("level", 0)), int(b.get("units", 1)), sim.care.tier_of(key)]
 
 
 func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 	var root := Node3D.new()
-	root.set_meta("look", _look(b))
+	root.set_meta("look", _look(b, key))
 	add_child(root)
 	root.set_meta("front", lot.front)
 	root.set_meta("sign", sim.families.sign_key(sim, "lot:" + key))
@@ -98,6 +98,7 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 	var fit := _local_lot(lot, Transform3D(root.basis, root.position))
 	var s := rng.randi()
 	var storeys := BuildingTypes.storeys(b)
+	HouseBuilder.care = sim.care.tier_of(key)
 	match BuildingTypes.type_of(b):
 		"house": built = HouseBuilder.build(s, lot.to_curb, fit, storeys)
 		"row_home": built = MetroBuilder.build_row(s, lot.to_curb, fit, int(b.get("units", 2)), storeys)
@@ -109,6 +110,10 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 			else:
 				built = MetroBuilder.build_apartments(s, lot.to_curb, fit, storeys)
 		"shop": built = DenseBuilder.build_retail(s, lot.to_curb, fit, spec)
+		"shopping_center":
+			CommercialBuilder.force_shop = "strip"
+			built = DenseBuilder.build_retail(s, lot.to_curb, fit, spec)
+			CommercialBuilder.force_shop = ""
 		"mixed_use": built = DenseBuilder.build_mixed(s, lot.to_curb, fit, storeys, spec)
 		"office":
 			# Eight storeys and up is a downtown tower, built for its era.
@@ -117,6 +122,7 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 			else:
 				built = DenseBuilder.build_office(s, lot.to_curb, fit, storeys, spec)
 		_: built = FactoryBuilder.build_chain(b.get("chain", "general"), s, lot.to_curb, fit, spec)
+	HouseBuilder.care = 0
 	if built.is_empty():
 		return root
 	root.set_meta("box", built[0].get_aabb())

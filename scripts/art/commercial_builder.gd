@@ -270,7 +270,7 @@ func _strip_center(to_curb: float) -> void:
 	var mull: Color = MULLION[rng.randi() % 2]
 	_box("paint", Vector3(w + 0.1, 0.3, d + 0.1), Vector3(0, 0.15, cz), FOUNDATION)
 	_flat_roofed("paint", w, d, cz, h, h + 1.2, wall)
-	var n := clampi(int(w / 7.0), 3, 5)
+	var n := clampi(int(w / 7.0), 3, 14)
 	var bay := w / n
 	for i in n:
 		var x := -w * 0.5 + (i + 0.5) * bay

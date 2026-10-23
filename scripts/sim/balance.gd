@@ -170,6 +170,58 @@ const DEVELOP_CHANCE := 0.35
 const DEVELOP_KEEN := 0.25
 const DEVELOP_KEEN_WEALTH := 0.6
 
+## Property care (PropertyCare): each owner's condition, 0 (derelict) to 1
+## (showpiece), moves toward what the town gives it once a game month: up
+## slowly (a project a season), down faster when it goes without.
+const CARE_START := 0.6
+const CARE_UP := 0.03
+const CARE_DOWN := 0.09
+## Each month it closes this share of the gap to its target (within the
+## steps above).
+const CARE_PULL := 0.35
+## Where each tier starts: run-down, kept up, improved, showpiece (below the
+## first is derelict); and how far past a line it must go to change.
+const CARE_TIERS := [0.18, 0.38, 0.7, 0.88]
+const CARE_STICKY := 0.02
+## The most target an owner without power or water can reach.
+const CARE_NO_UTILITY := 0.1
+## How much owners differ in keeping their place up (target +/- half this).
+const CARE_OWNER_SPREAD := 0.12
+## Neighbours within this many metres count toward a street's condition.
+const CARE_NEAR := 70.0
+## Land value from a property's own condition, by tier -2..2. A boarded
+## house is worth far less; a showpiece a little more.
+const CARE_LAND := [0.75, 0.9, 1.0, 1.04, 1.08]
+## Buildings that change look per slice of the month (each redraw costs
+## about 9 ms on the main thread; spread out, never a whole street at once).
+const CARE_REDRAWS_PER_SLICE := 12
+## Months a vacant derelict building stands before it's ordered down as
+## unsafe (Indiana Code 36-7-9).
+const CARE_UNSAFE_MONTHS := 24
+
+## Developers' asks to build denser (Redevelopment): the chance a month,
+## months between asks of one kind, and the demand that must be there.
+const REDEV_CHANCE := 0.5
+const REDEV_COOLDOWN_MONTHS := 3
+const REDEV_DEMAND := 0.45
+## Towns this size see houses bought for a walk-up (small Indiana county
+## seats have a few), a 12-storey apartment tower (a city's core) and a
+## shopping center on a busy road (an ICSC strip center serves a few
+## thousand people).
+const REDEV_APT_TOWN := 2500
+const REDEV_HIGHRISE_TOWN := 25_000
+const REDEV_SHOP_TOWN := 5000
+## A high-rise site is rezoned to Chicago RM-6 (FAR 4.4).
+const REDEV_HIGHRISE_FAR := 4.4
+## Houses in a row (at least) a shopping center buys, and the site (m², about 3 acres)
+## past which it's a neighborhood center with a grocery anchor.
+const REDEV_SHOP_LOTS := 4
+const REDEV_CENTER_AREA := 12_000.0
+## ITE Trip Generation (10th ed.): low-rise multifamily (220) about 6.7
+## weekday trips per unit; shopping center (820) about 37.75 per 1,000 sq ft.
+const REDEV_TRIPS_PER_FLAT := 6.7
+const REDEV_TRIPS_PER_KSQFT := 37.75
+
 ## Floor-area ratio (floor space ÷ lot area) zoning allows, the way US codes
 ## cap a building's bulk. The steps are Chicago Zoning Ordinance districts:
 ## homes RS-3 0.9, RT-4 1.2, RM-5 2.0, RM-6 4.4, RM-6.5 6.6; shops B3-2

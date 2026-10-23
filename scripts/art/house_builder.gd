@@ -56,9 +56,26 @@ var pad := 0.0
 var era := "recent"
 ## Set by the art gallery to draw one type.
 static var force_kind := ""
+## How well the owner keeps the place (PropertyCare's tier, set by
+## BuildingView around a build): -2 derelict (boarded ground-floor windows,
+## weeds, faded and grimy paint), -1 run-down, 0 kept up, 1 improved (fresh
+## paint, a new roof, a shed out back), 2 showpiece (an in-ground pool and a
+## privacy fence too). Every builder extends this one, so shops, offices,
+## apartments and factories weather the same way. It costs no draw calls:
+## colours ride in the vertex colours and add-ons join the shared surfaces.
+static var care := 0
+const PLYWOOD := Color("#b59a6c")
+## Unmown lawn: tall grass gone to seed, dandelion and plantain, dead patches.
+const WEEDS := [Color("#8e9a55"), Color("#9ba05f"), Color("#7f8f4b"), Color("#a29f6a")]
+const FENCE := Color("#a58a63")
+const POOL := Color("#3a9cc2")
 
 var _st := {}  # material key -> SurfaceTool
 var _flat := SurfaceTool.new()
+## How far back the house reaches (local z), for what the yard gets.
+var _reach := 0.0
+## Ground an improvement took, so trees keep off it.
+var _improved := Rect2()
 ## Trees this lot plants: [local position, TreeField species, tint, scale].
 var trees := []
 var rng: RandomNumberGenerator
@@ -159,8 +176,45 @@ func _house(to_curb: float, storeys := 0) -> Array:
 		"midcentury": info = _midcentury(zf, gs, gw, roof, door, brick)
 		_: info = _ranch(zf, gs, gw, siding, roof, shutters, shutter, door, brick_style, brick)
 	_yard(info, to_curb)
+	if care >= 1:
+		_improve()
 	_yard_trees(info, to_curb)
 	return [_commit_house(), _commit_flat(), trees]
+
+
+## What a thriving owner adds out back (care 1 and up): a 10 by 8 ft shed;
+## at 2 a 16 by 32 ft in-ground pool on a concrete deck behind a 6 ft
+## privacy fence (pools need a barrier of at least 4 ft: ISPSC 305).
+func _improve() -> void:
+	var zb := _reach + 1.5
+	var zend := depth - 0.8
+	if outline.size() >= 3 or zend - zb < 4.0 or half < 6.0:
+		return
+	var side := -1.0 if rng.randf() < 0.5 else 1.0
+	var sx := side * (half - 2.2)
+	var sz := zend - 1.7
+	var shed_col := Color(_pick(SIDING))
+	_box("concrete", Vector3(3.2, 0.12, 2.6), Vector3(sx, 0.06, sz), FOUNDATION)
+	_box("siding", Vector3(3.0, 2.1, 2.4), Vector3(sx, 1.17, sz), shed_col)
+	_gable_roof(sx, sz, 2.22, 2.4, 0.75, 3.0, true, Color(_pick(ROOF)), shed_col, false)
+	_box("paint", Vector3(1.2, 1.85, 0.05), Vector3(sx, 1.05, sz - 1.22), TRIM)
+	_improved = Rect2(sx - 1.8, sz - 1.5, 3.6, 3.0)
+	if care < 2:
+		return
+	# The fence runs from the back corners of the house to the back line.
+	var fh := 1.8
+	_box("paint", Vector3(half * 2.0 - 0.6, fh, 0.05), Vector3(0, fh * 0.5, zend + 0.4), FENCE)
+	for fx in [-half + 0.3, half - 0.3]:
+		_box("paint", Vector3(0.05, fh, zend + 0.4 - zb + 1.0), Vector3(fx, fh * 0.5, (zb - 1.0 + zend + 0.4) * 0.5), FENCE)
+	var pw := minf(9.8, half * 2.0 - 7.5)
+	if zend - zb < 9.0 or pw < 6.0:
+		return
+	var pz := zb + 1.4 + 2.45
+	var px := -side * (half * 2.0 - pw) * 0.25
+	_flat_rect("drive", px - pw * 0.5 - 1.2, px + pw * 0.5 + 1.2, pz - 3.65, pz + 3.65, 0.09)
+	_box("concrete", Vector3(pw + 0.6, 0.12, 5.5), Vector3(px, 0.07, pz), FOUNDATION.lightened(0.12))
+	_box("paint", Vector3(pw, 0.03, 4.9), Vector3(px, 0.14, pz), POOL)
+	_improved = _improved.merge(Rect2(px - pw * 0.5 - 1.5, pz - 4.0, pw + 3.0, 8.0))
 
 
 # ---------------------------------------------------------------- house types
@@ -761,6 +815,8 @@ func _yard_trees(h: Dictionary, to_curb: float) -> void:
 			continue
 		if h.has("keep_out") and (h.keep_out as Rect2).grow(2.0).has_point(Vector2(p.x, p.z)):
 			continue
+		if _improved.has_area() and _improved.grow(1.5).has_point(Vector2(p.x, p.z)):
+			continue
 		var pick := TreeField.pick(rng, s[1])
 		trees.append([p, pick[0], pick[1], rng.randf_range(0.75, 1.15)])
 
@@ -1149,6 +1205,9 @@ func _quad(mat: String, a: Vector3, b: Vector3, c: Vector3, d: Vector3, col: Col
 			uvs = [uvs[0], uvs[3], uvs[2], uvs[1]]
 	if uvs.is_empty():
 		uvs = [_auto_uv(a, n), _auto_uv(b, n), _auto_uv(c, n), _auto_uv(d, n)]
+	_reach = maxf(_reach, maxf(maxf(a.z, b.z), maxf(c.z, d.z)))
+	if care != 0:
+		col = _weather(mat, col)
 	var st := _tool(mat)
 	for i in [0, 2, 1, 0, 3, 2]:
 		st.set_normal(n)
@@ -1169,6 +1228,9 @@ func _tri(mat: String, a: Vector3, b: Vector3, c: Vector3, col: Color, uvs := []
 			uvs = [uvs[0], uvs[2], uvs[1]]
 	if uvs.is_empty():
 		uvs = [_auto_uv(a, n), _auto_uv(b, n), _auto_uv(c, n)]
+	_reach = maxf(_reach, maxf(a.z, maxf(b.z, c.z)))
+	if care != 0:
+		col = _weather(mat, col)
 	var st := _tool(mat)
 	for i in [0, 2, 1]:
 		st.set_normal(n)
@@ -1183,11 +1245,39 @@ static func _auto_uv(p: Vector3, n: Vector3) -> Vector2:
 	return Vector2(p.z if absf(n.x) > absf(n.z) else p.x, p.y)
 
 
+## How the owner's care shows on a colour. Run-down and derelict: paint
+## fades toward a chalky grey and grime darkens it, shingles bleach and
+## blotch, brick dulls. Improved: fresh paint a touch brighter, new
+## shingles a touch darker. Glass and signs keep theirs. Alpha (the shaders'
+## pattern data) is kept.
+func _weather(mat: String, col: Color) -> Color:
+	if mat in ["glass", "sign", "foliage", "far"] or col == PLYWOOD:
+		return col
+	var out := col
+	if care < 0:
+		var k := 0.4 if care == -1 else 0.8
+		var l := col.get_luminance()
+		match mat:
+			"roof": out = col.lerp(Color("#a09783"), k * 0.75)
+			"brick", "concrete": out = col.lerp(Color(l, l, l), k * 0.35).darkened(k * 0.25)
+			_: out = col.lerp(Color(l * 0.9, l * 0.88, l * 0.8), k).darkened(k * 0.3)
+	elif mat == "roof":
+		out = col.darkened(0.06 * care)
+	else:
+		out = Color.from_hsv(col.h, minf(col.s * (1.0 + 0.06 * care), 1.0), minf(col.v * (1.0 + 0.025 * care), 1.0))
+	out.a = col.a
+	return out
+
+
 ## A window pane: UV runs 0..1 so the glass shader can draw blinds; the
-## blind height rides in the vertex colour's alpha.
+## blind height rides in the vertex colour's alpha. A derelict building's
+## ground-floor windows are boarded over with plywood.
 func _glass(c: Vector3, right: Vector3, w: float, h: float, blinds: float) -> void:
 	var r := right * w * 0.5
 	var u := Vector3(0, h * 0.5, 0)
+	if care <= -2 and c.y < 3.6:
+		var out := right.cross(Vector3.UP).normalized()
+		_box("paint", Vector3(w + 0.12, h + 0.12, 0.05), c + out * 0.07, PLYWOOD, Basis(right.normalized(), Vector3.UP, out))
 	_quad("glass", c - r - u, c + r - u, c + r + u, c - r + u, Color(0.85, 0.82, 0.74, blinds),
 		[Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)])
 
@@ -1207,6 +1297,8 @@ func _flat_rect(kind: String, x0: float, x1: float, z0: float, z1: float, y: flo
 
 
 func _commit_house() -> ArrayMesh:
+	if care < 0:
+		_weeds()
 	var mesh := ArrayMesh.new()
 	for mat in _st:
 		_st[mat].commit(mesh)
@@ -1219,6 +1311,51 @@ func _commit_flat() -> ArrayMesh:
 	if mesh.get_surface_count() > 0:
 		mesh.surface_set_material(0, HouseMaterials.get_mat("yard"))
 	return mesh
+
+
+## A neglected lot: the lawn gone to tall grass and weeds in ragged
+## patches up to the drive's edges (the drive sits a little higher), and on
+## a derelict one, volunteer brush along the house and the lot lines.
+func _weeds() -> void:
+	var was := rng
+	rng = RandomNumberGenerator.new()
+	rng.seed = hash([was.seed, "weeds"])
+	# Run-down: ragged patches; derelict: the whole lawn, every 3 m or so.
+	var share := 0.3 if care == -1 else 0.85
+	var z := 1.2
+	while z < depth - 0.5:
+		var x := -half + 1.2
+		while x < half - 0.5:
+			if rng.randf() < share:
+				_blob(Vector2(x + rng.randf_range(-0.8, 0.8), z + rng.randf_range(-0.8, 0.8)), rng.randf_range(1.5, 2.6),
+					WEEDS[rng.randi() % WEEDS.size()])
+			x += 3.0
+		z += 3.0
+	if care <= -2:
+		for i in 6:
+			var side := -1.0 if i % 2 == 0 else 1.0
+			var p := Vector3(side * (half - rng.randf_range(0.4, 1.2)), 0.0, rng.randf_range(1.0, maxf(depth - 1.0, 1.0)))
+			_shrub(p, rng.randf_range(0.5, 0.9), 2)
+	rng = was
+
+
+## A ragged round patch of ground cover, flat on the yard.
+func _blob(c: Vector2, r: float, col: Color) -> void:
+	col.a = 1.0  # loose ground (the yard shader's gravel and mulch)
+	var n := 12
+	var pts := []
+	for k in n:
+		var a := TAU * k / n
+		var rr := r * rng.randf_range(0.55, 1.0)
+		var q := Vector2(clampf(c.x + cos(a) * rr, -half, half), clampf(c.y + sin(a) * rr, 0.0, depth))
+		pts.append(Vector3(q.x, 0.08, q.y))
+	var mid := Vector3(c.x, 0.08, clampf(c.y, 0.0, depth))
+	for k in n:
+		for v in [mid, pts[k], pts[(k + 1) % n]]:  # as _flat_rect winds
+			_flat.set_normal(Vector3.UP)
+			_flat.set_color(col)
+			_flat.set_uv(Vector2(v.x, v.z) * 0.25)
+			_flat.add_vertex(v)
 
 
 func _pick(list: Array) -> Variant:
