@@ -197,9 +197,10 @@ static func site_problem(sim: CitySim, kind: String, pos: Vector3, dir: Vector3)
 			return "That ground belongs to the phone company."
 		if sim.services.covers(p):
 			return "Overlaps a service building."
-		if sim.farms.covers(p) or sim.farms.field_at(p) != -1:
+		var owner := Capital.owner_of(sim, p)
+		if owner.begins_with("farm:"):
 			return "That ground is farmland."
-		if sim.industry.covers(p):
+		if owner.begins_with("site:"):
 			return "That ground belongs to a company."
 		if sim.reserves.kind_at(p) != "":
 			return "That land is reserved for %s." % Reserves.KINDS[sim.reserves.kind_at(p)]
@@ -589,8 +590,8 @@ func usable(sim: CitySim, id: int, c: Dictionary, cell: Vector2i, corr: Array, l
 		var other := at(p)
 		if other != -1 and other != id:
 			return false
-		if not sim.land_ok(p) or sim.services.covers(p) or sim.farms.covers(p) or sim.farms.field_at(p) != -1 \
-				or sim.industry.covers(p) or sim.reserves.kind_at(p) != "" or sim.hubs.covers(p) \
+		if not sim.land_ok(p) or sim.services.covers(p) or Capital.owner_of(sim, p) != "" \
+				or sim.reserves.kind_at(p) != "" or sim.hubs.covers(p) \
 				or sim.warehouses.covers(p) or sim.parks.covers(p) or sim.mail.covers(p) or sim.banks.covers(p) or sim.telecom.covers(p):
 			return false
 	if lots_ok:

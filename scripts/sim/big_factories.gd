@@ -297,9 +297,10 @@ func _ground(sim: CitySim, poly: PackedVector2Array, id: int, place := false) ->
 			return "That ground belongs to the railroad."
 		if sim.telecom.covers(p):
 			return "That ground belongs to the phone company."
-		if sim.farms.covers(p) or sim.farms.field_at(p) != -1:
+		var owner := Capital.owner_of(sim, p)
+		if owner.begins_with("farm:"):
 			return "That ground is farmland."
-		if sim.industry.covers(p):
+		if owner.begins_with("site:"):
 			return "That ground belongs to a company."
 		if sim.hubs.covers(p):
 			return "Overlaps a landfill, recycling center or cemetery."

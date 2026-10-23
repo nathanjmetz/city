@@ -368,7 +368,7 @@ func _blocked(sim: CitySim, q: Vector2, roads := true) -> bool:
 	var pid := sim.parks.at(p)
 	if pid != -1 and not sim.parks.sites[pid].kind in ["park", "trailhead"]:
 		return true
-	if sim.farms.covers(p) or sim.farms.field_at(p) != -1 or sim.industry.covers(p) or sim.warehouses.covers(p) \
+	if Capital.owner_of(sim, p) != "" or sim.warehouses.covers(p) \
 			or sim.education.covers(p) or sim.banks.covers(p) or sim.services.covers(p) or sim.hubs.covers(p) \
 			or sim.mail.covers(p) or sim.power.covers(p) or sim.reserves.kind_at(p) != "":
 		return true
