@@ -34,6 +34,7 @@ var _retrying := false
 
 
 func _ready() -> void:
+	GameMusic.play(get_tree(), GameMusic.Mode.MENU)
 	_build_backdrop()
 	var ui := CanvasLayer.new()
 	add_child(ui)

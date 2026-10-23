@@ -20,4 +20,4 @@ CC BY recordings are also credited in the game, under Credits in the pause
 menu (`scripts/audio/sound_credits.gd`). Only public domain, CC0 and CC BY
 sources are used: never share-alike or non-commercial.
 
-Music is made separately by the project owner.
+Music is made separately by the project owner: `music/theme.ogg` (title screen and menus) and `music/gameplay/*.ogg` (in town) are by metzguy, made with Suno and converted to Ogg Vorbis.
