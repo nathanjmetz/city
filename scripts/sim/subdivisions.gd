@@ -14,6 +14,9 @@ extends RefCounted
 ## them from then on (Strong Towns: the town inherits the upkeep). The next
 ## phase opens once most of the last one has sold; small Midwest markets
 ## absorb a few home sales a month, so a big subdivision takes years.
+## A subdivision of SUBDIV_PARK_HOMES homes or more sets aside a pocket park
+## halfway through, at the builder's cost, as Indiana subdivision rules ask
+## (park land dedication, or a fee in lieu); the town keeps it up after.
 ## Layout: a ladder of streets off the road, with two entrances from the
 ## start, because the fire code asks for two separate access roads once a
 ## development passes 30 homes (International Fire Code, Appendix D107).
@@ -601,9 +604,26 @@ func _build_phase(sim, sid: int) -> bool:
 	sim.economy.money = money
 	var made: Array = sim.network.segments.keys().filter(func(id): return not id in before)
 	sim.zone_new_streets(made, ZoneMap.Zone.RESIDENTIAL)
+	if k == int(site.phases) / 2 and int(site.homes) >= Balance.SUBDIV_PARK_HOMES and not a.has("park"):
+		_dedicate_park(sim, a, k)
 	a.phase = k + 1
 	a.opened = int(sim.tick_count)
 	return true
+
+
+## The builder's park: a pocket park on phase k's cross street, in the
+## middle, on whichever side is clear.
+func _dedicate_park(sim, a: Dictionary, k: int) -> void:
+	for side in [1.0, -1.0]:
+		var spot := Parks.site_near(sim.network, "park", local(a.site, 0.0, row_v(k) + side * 30.0))
+		if spot.is_empty() or sim.parks.site_problem(sim, "park", spot[0], spot[1]) != "":
+			continue
+		var pid: int = sim.parks.add(sim, "park", spot[0], spot[1])
+		sim._clear_zones_under(sim.parks.footprint(pid))
+		sim._lots_dirty = true
+		sim.parks_changed.emit()
+		a.park = pid
+		return
 
 
 ## True when a new street from a to b crosses no road and no zoning and
@@ -773,6 +793,8 @@ func from_dict(d: Dictionary) -> void:
 		active[int(k)] = {"site": site_from(a.site), "phase": int(a.phase), "opened": int(a.opened),
 			"builder": str(a.get("builder", "")), "name": str(a.get("name", "")),
 			"needs": ProjectNeeds.from_dict(a.get("needs", {})), "extra": int(a.get("extra", 0)), "slow": float(a.get("slow", 0.0))}
+		if a.has("park"):
+			active[int(k)].park = int(a.park)
 	changed.emit()
 
 
