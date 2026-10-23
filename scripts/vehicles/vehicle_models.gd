@@ -47,6 +47,7 @@ const STRAP := Color(0.85, 0.62, 0.08, 0.4)
 const ARTIC := {
 	"semi": {"cab": "tractor_sleeper", "trailer": "trailer_box", "hitch": 6.6, "pin": 0.9, "axle": 14.4},
 	"flatbed": {"cab": "tractor_sleeper", "trailer": "trailer_flat", "hitch": 6.6, "pin": 0.9, "axle": 12.9},
+	"lumber_truck": {"cab": "tractor_day", "trailer": "trailer_lumber", "hitch": 5.0, "pin": 0.9, "axle": 12.9},
 	"grain_truck": {"cab": "tractor_day", "trailer": "trailer_hopper", "hitch": 5.0, "pin": 0.9, "axle": 14.4},
 	"log_truck": {"cab": "tractor_day", "trailer": "trailer_logs", "hitch": 5.0, "pin": 0.9, "axle": 13.4},
 	"ore_truck": {"cab": "tractor_day", "trailer": "trailer_end_dump", "hitch": 5.0, "pin": 0.9, "axle": 12.6},
@@ -888,6 +889,28 @@ func _trailer_flat() -> void:  # 48 ft flatbed with steel coils on cradles
 		if not _lo:
 			_box(Vector3(0, 1.55, z), Vector3(1.6, 0.2, 1.3), WOOD_DARK)
 			_box(Vector3(0, 2.15, z), Vector3(1.84, 1.44, 0.04), STRAP)
+	_trailer_base(L, [12.4, 13.65])
+
+
+## A 48 ft flatbed of sawmill lumber: banded units two high on dunnage,
+## pale pine ends showing, strapped down (benchmark: mill loads on I-69).
+func _trailer_lumber() -> void:
+	var L := 14.6
+	_box(Vector3(0, 1.35, L * 0.5), Vector3(2.6, 0.2, L), STEEL)
+	_box(Vector3(0, 1.5, 0.15), Vector3(2.5, 0.12, 0.3), TRIM)
+	var pine := Color(0.80, 0.71, 0.55, 0.4)
+	var ends := Color(0.93, 0.83, 0.62, 0.4)
+	for row in 2:
+		var y0 := 1.5 + row * 1.12
+		for i in 3:
+			var z0 := 0.5 + i * 4.75
+			_box(Vector3(0, y0 + 0.05, z0 + 2.2), Vector3(2.3, 0.1, 0.12), WOOD_DARK)
+			_box(Vector3(0, y0 + 0.55, z0 + 2.2), Vector3(2.4, 0.9, 4.5), pine)
+			if not _lo:
+				_box(Vector3(0, y0 + 0.55, z0 - 0.06), Vector3(2.36, 0.86, 0.01), ends)
+				_box(Vector3(0, y0 + 0.55, z0 + 4.46), Vector3(2.36, 0.86, 0.01), ends)
+				for k in 3:
+					_box(Vector3(0, y0 + 0.55, z0 + 0.7 + k * 1.5), Vector3(2.42, 0.92, 0.04), STRAP if row == 1 else STEEL)
 	_trailer_base(L, [12.4, 13.65])
 
 
