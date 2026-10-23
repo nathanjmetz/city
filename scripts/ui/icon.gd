@@ -444,6 +444,13 @@ func _draw() -> void:
 			line.call(P.call(0.66, 0.4), P.call(0.74, 0.66), w * 0.8)
 			line.call(P.call(0.62, 0.3), P.call(0.72, 0.3), w * 0.8)
 			line.call(P.call(0.38, 0.4), P.call(0.35, 0.32), w * 0.8)
+		"town":
+			# A state historical marker: a sign with a crest on top, on a post.
+			line.call(P.call(0.5, 0.62), P.call(0.5, 0.94), w * 1.2)
+			_poly([P.call(0.16, 0.24), P.call(0.36, 0.24), P.call(0.5, 0.08), P.call(0.64, 0.24),
+				P.call(0.84, 0.24), P.call(0.84, 0.64), P.call(0.16, 0.64)], color)
+			for y in [0.36, 0.46, 0.54]:
+				line.call(P.call(0.26, y), P.call(0.74, y), w * 0.5, Color(accent, 0.9))
 		"advice":
 			# A speech bubble with three dots.
 			var bubble := PackedVector2Array([P.call(0.12, 0.18), P.call(0.88, 0.18), P.call(0.88, 0.68),

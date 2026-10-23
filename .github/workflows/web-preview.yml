@@ -112,6 +112,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_interlocal.gd
           ~/godot-cache/godot --headless -s tests/test_regional.gd
           ~/godot-cache/godot --headless -s tests/test_desktop.gd
+          ~/godot-cache/godot --headless -s tests/test_heritage.gd
 
       - name: Stamp the build
         run: |

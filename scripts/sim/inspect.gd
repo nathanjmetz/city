@@ -685,7 +685,11 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 	var next := []
 	for o in BuildingTypes.options(sim, key):
 		next.append(BuildingTypes.TYPES[o[0]].stages[o[1]].name)
-	rows.append(["Can grow into", ", ".join(next) if not next.is_empty() else "Nothing yet"])
+	if sim.heritage.protected(key):
+		rows.append(["Can grow into", "Nothing: it's kept as it is"])
+	else:
+		rows.append(["Can grow into", ", ".join(next) if not next.is_empty() else "Nothing yet"])
+	rows.append_array(sim.heritage.rows(sim, key))
 	var going_up := sim.construction.describe("lot:" + key, sim.tick_count)
 	if going_up != "":
 		status = going_up
@@ -728,7 +732,7 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 			who.append(sim.people.person_name(id))
 		rows.insert(1, ["Who lives here", ", ".join(who) + ("…" if sim.people.residents(key).size() > 4 else "")])
 	return {"title": title, "kind": kind, "icon": icons[z], "ok": problems.is_empty(),
-		"status": status, "rows": rows, "problems": problems}
+		"status": status, "rows": rows, "problems": problems, "actions": sim.heritage.actions(sim, key)}
 
 
 ## A business's own name if it has one ("Miller Farms"), else `plain`.

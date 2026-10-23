@@ -322,6 +322,21 @@ func title() -> String:
 	return SECTORS[identity].name if identity != "" else ""
 
 
+## A player's answer to a leader on the bell leans the town's reputation
+## (LeaderAsks, Heritage): say yes to the merchants and it is a little more
+## a market town. It fades as the reputation follows the jobs again.
+func nudge(sector: String, amount: float) -> void:
+	if shares.is_empty() or not shares.has(sector):
+		return
+	shares[sector] = maxf(0.0, float(shares[sector]) + amount)
+	var total := 0.0
+	for k in shares:
+		total += float(shares[k])
+	for k in shares:
+		shares[k] = float(shares[k]) / total
+	changed.emit()
+
+
 ## The sector a resource company works in.
 static func sector_of_kind(kind: String) -> String:
 	return "timber" if kind == "forest" else "mining"
