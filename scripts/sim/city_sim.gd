@@ -329,8 +329,9 @@ func apply_now(cmd: Dictionary) -> bool:
 			if ok:
 				economy.money -= shapes_cost(lines, _road(cmd))
 		"build_roundabout":
-			var ring := RoadStyle.ring_type(_road(cmd))
-			var radius := RoadShapes.roundabout_radius(float(cmd.radius), _road(cmd))
+			# The size row picks the lanes; older commands took them from the road type.
+			var ring := RoadShapes.ring_for_lanes(int(cmd.lanes)) if cmd.has("lanes") else RoadStyle.ring_type(_road(cmd))
+			var radius := RoadShapes.roundabout_radius(float(cmd.radius), ring)
 			var arcs := RoadShapes.roundabout(_v(cmd.center), radius)
 			if not _can_afford(arcs, ring) or land_problem(arcs) != "":
 				return false
@@ -583,11 +584,12 @@ func apply_now(cmd: Dictionary) -> bool:
 			var kind := str(cmd.get("kind", ""))
 			var pos := _v(cmd.pos)
 			var dir := _v(cmd.dir).normalized()
-			if not Parks.KINDS.has(kind) or dir.length() < 0.5 or Parks.cost_of(kind) > economy.money \
-					or parks.site_problem(self, kind, pos, dir) != "":
+			var size_class := int(cmd.get("size", 0))  # Balance.PARK_SIZES, parks only
+			if not Parks.KINDS.has(kind) or dir.length() < 0.5 or Parks.cost_of(kind, size_class) > economy.money \
+					or parks.site_problem(self, kind, pos, dir, size_class) != "":
 				return false
-			var pid := parks.add(self, kind, pos, dir)
-			economy.money -= Parks.cost_of(kind)
+			var pid := parks.add(self, kind, pos, dir, size_class)
+			economy.money -= Parks.cost_of(kind, size_class)
 			_clear_zones_under(parks.footprint(pid))
 			_lots_dirty = true
 			parks_changed.emit()
@@ -3260,7 +3262,8 @@ func _upgrade_old_rings() -> void:
 			continue
 		var c := network.curve_of(id)
 		var circle := RoadShapes.arc_circle(c)
-		if circle.is_empty() or circle[1] < RoadShapes.ROUNDABOUT_MIN - 1.0 or circle[1] > RoadShapes.ROUNDABOUT_MAX + 1.0:
+		# 14-45 m: the only ring radii the old roundabout tool could build.
+		if circle.is_empty() or circle[1] < 13.0 or circle[1] > 46.0:
 			continue
 		var key := Vector2i(roundi(circle[0].x / 2.0), roundi(circle[0].z / 2.0))
 		if not groups.has(key):

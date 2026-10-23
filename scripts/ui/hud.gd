@@ -23,6 +23,8 @@ var farm_tool: FarmTool
 var industry_tool: IndustryTool
 var park_tool: ParkTool
 var _park_cards := {}  # Parks kind -> Button
+var _park_sizes: Control
+var _park_size_cards := []
 var _industry_cards := {}  # "oil"/"ore"/"forest"/"reserve"/"release" -> Button
 var _industry_kind := "oil"  # what the industry Reserve tool saves land for
 var warehouse_tool: WarehouseTool
@@ -78,6 +80,8 @@ var _exact_card: Button
 ## Grid only: a row of real-world grid sizes above the road tools.
 var _grid_sizes: Control
 var _grid_size_cards := []
+var _ring_sizes: Control
+var _ring_size_cards := []
 var _elevation := UiStyle.label("Ground", 12)
 var _speed_buttons := []
 var _clock := UiStyle.label("", 14)
@@ -669,6 +673,11 @@ func _build_bottom_bar() -> void:
 	_fit_bottom()
 
 
+## Acres for a card: "3/4" under one, whole acres above.
+static func _acres_text(acres: float) -> String:
+	return "3/4" if acres < 1.0 else str(roundi(acres))
+
+
 ## Keeps the bottom dock flush with the screen edge as its height changes.
 func _fit_bottom() -> void:
 	_bottom.offset_left = 0
@@ -716,6 +725,19 @@ func _roads_drawer() -> PanelContainer:
 		sizes.add_child(b)
 		_grid_size_cards.append(b)
 	_grid_sizes = sizes_row
+	# Roundabout sizes share the same spot: only one row of options at a time.
+	var rings_row := HBoxContainer.new()
+	rings_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	stack.add_child(rings_row)
+	var rings := _section(rings_row, "Roundabout size  ·  FHWA sizes, curb to curb  ·  [ ] fine-tune")
+	for i in RoadShapes.ROUNDABOUT_SIZES.size():
+		var p: Dictionary = RoadShapes.ROUNDABOUT_SIZES[i]
+		var b := _card("roundabout", p.name, "%d ft, %d %s" % [roundi(p.icd), p.lanes, "lane" if p.lanes == 1 else "lanes"])
+		b.tooltip_text = p.about
+		b.pressed.connect(func(): road_tool.set_roundabout_preset(i))
+		rings.add_child(b)
+		_ring_size_cards.append(b)
+	_ring_sizes = rings_row
 
 	var upper := VBoxContainer.new()
 	upper.add_theme_constant_override("separation", 2)
@@ -986,9 +1008,25 @@ func _services_drawer() -> PanelContainer:
 
 func _parks_drawer() -> PanelContainer:
 	var drawer := PanelContainer.new()
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 6)
+	drawer.add_child(stack)
+	# The park size, in the one row above the tools while a park is in hand.
+	_park_sizes = HBoxContainer.new()
+	_park_sizes.alignment = BoxContainer.ALIGNMENT_CENTER
+	stack.add_child(_park_sizes)
+	var sizes := _section(_park_sizes, "Park size  ·  NRPA park classes  ·  grows by itself")
+	for i in Balance.PARK_SIZES.size():
+		var ps: Dictionary = Balance.PARK_SIZES[i]
+		var b := _card("park", ps.name, "%s acres, $%s" % [_acres_text(ps.size.x * ps.size.y / 4046.86), CitySim.money_text(int(ps.cost))])
+		b.tooltip_text = ps.about
+		b.custom_minimum_size.x = 96
+		b.pressed.connect(func(): park_tool.set_size(i))
+		sizes.add_child(b)
+		_park_size_cards.append(b)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
-	drawer.add_child(row)
+	stack.add_child(row)
 	var parks := _section(row, "Park  ·  fills in by itself")
 	var marks := _section(row, "Landmarks  ·  one per town")
 	for k in Parks.KINDS:
@@ -1283,6 +1321,9 @@ func _sync() -> void:
 		_zone_cards[z].set_pressed_no_signal(z == zone_tool.zone)
 	for k in _service_cards:
 		_service_cards[k].set_pressed_no_signal(k == service_tool.kind)
+	_park_sizes.visible = park_tool.kind == "park"
+	for i in _park_size_cards.size():
+		_park_size_cards[i].set_pressed_no_signal(park_tool.kind == "park" and i == park_tool.size_class)
 	for k in _park_cards:
 		_park_cards[k].set_pressed_no_signal(k == park_tool.kind)
 		_park_cards[k].disabled = Parks.KINDS[k].landmark and sim.parks.has_kind(k)
@@ -1319,6 +1360,9 @@ func _sync() -> void:
 	_grid_sizes.visible = road_tool.mode == RoadTool.Mode.GRID and not _kinds_open and not in_traffic
 	for i in _grid_size_cards.size():
 		_grid_size_cards[i].set_pressed_no_signal(i == road_tool.grid_preset)
+	_ring_sizes.visible = road_tool.mode == RoadTool.Mode.ROUNDABOUT and not _kinds_open and not in_traffic
+	for i in _ring_size_cards.size():
+		_ring_size_cards[i].set_pressed_no_signal(i == road_tool.roundabout_preset)
 	_elevation.text = "Ground" if road_tool.elevation == 0.0 else "%+d ft" % roundi(road_tool.elevation * RoadTool.FT)
 	if _category == "" or _category == "budget":
 		_show_hint("")

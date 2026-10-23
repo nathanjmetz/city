@@ -342,7 +342,8 @@ func _build_roundabouts(ring_nodes: Dictionary) -> void:
 		if circle.is_empty():
 			continue
 		var key := Vector2i(roundi(circle[0].x), roundi(circle[0].z))
-		circles[key] = [Vector3(circle[0].x, c[0].y, circle[0].z), circle[1], RoadStyle.half_width(type)]
+		circles[key] = [Vector3(circle[0].x, c[0].y, circle[0].z), circle[1], RoadStyle.half_width(type),
+			RoadShapes.is_mini(circle[1], type)]
 	if circles.is_empty():
 		return
 	var grass := SurfaceTool.new()
@@ -353,6 +354,12 @@ func _build_roundabouts(ring_nodes: Dictionary) -> void:
 	for key in circles:
 		var center: Vector3 = circles[key][0]
 		var inner: float = circles[key][1] - circles[key][2]
+		if circles[key][3]:
+			# Mini roundabout (FHWA): no planting, the whole centre is a low
+			# concrete dome that buses and trucks drive over.
+			RoadMesh.add_disc(apron, center, inner, RoadStyle.Y_JUNCTION + 0.05, 48)
+			_add_ring(curb, center, inner - 0.3, inner, RoadStyle.Y_JUNCTION + 0.06)
+			continue
 		var island := maxf(inner - RoadStyle.TRUCK_APRON, 2.0)
 		_add_ring(apron, center, island, inner, RoadStyle.Y_JUNCTION + 0.03)
 		_add_ring(curb, center, island - 0.3, island, RoadStyle.Y_JUNCTION + 0.08)

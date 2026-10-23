@@ -15,7 +15,7 @@ An open map where you draw roads, paint zones along them, and buildings grow, li
 | `1` Road | Click to start, click to finish. Keeps going from the end. Hold Shift to snap angles. |
 | `2` Curve | Click start, click where it bends, click the end. |
 | `3` Grid | Lay out a whole neighborhood: click a corner, click to set the first street, move out and click. `[` `]` change block length. |
-| `4` Roundabout | Click to place. Roads it crosses join it. `[` `]` change size. One-way, counter-clockwise, with a planted island, truck apron and splitter islands (FHWA roundabout guide); one lane for streets, two lanes (150 ft or wider) for bigger roads. |
+| `4` Roundabout | Pick a size from the row above the tools (FHWA / NCHRP 672 sizes, curb to curb): Mini 80 ft, Compact 110 ft and Single lane 150 ft with one lane; Two lane 180 ft and Two lane, large 220 ft with two. Click to place; roads it crosses join it. `[` `]` fine-tune within the real range for its lanes. One-way, counter-clockwise, with a planted island, truck apron and splitter islands; a mini roundabout gets a drive-over concrete dome instead. |
 | Road type buttons | Street (2 lanes), Avenue (4 lanes), Boulevard (6 lanes with a planted median), Highway (3 lanes one way; draw one each way) and Ramp (1 lane one way). Real US sizes, 3.6 m (12 ft) lanes. |
 | Page Up / Page Down, or Raise / Lower | Build new roads above or below ground in 2.5 m steps, for bridges, overpasses and tunnels. |
 | `U` Upgrade | Click a road to change it to the chosen type. |

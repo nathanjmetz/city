@@ -9,16 +9,60 @@ extends RefCounted
 const GRID_ACROSS := 82.0
 const GRID_BLOCK_MIN := 60.0
 const GRID_BLOCK_MAX := 240.0
-const ROUNDABOUT_MIN := 14.0
-const ROUNDABOUT_MAX := 45.0
+## Smallest ring centre-line radius, metres (a 72 ft mini roundabout).
+const ROUNDABOUT_MIN := 8.0
 ## FHWA: two-lane roundabouts need at least a 150 ft inscribed circle.
-const ROUNDABOUT_MIN_2LANE := 23.0
+const ROUNDABOUT_MIN_ICD_2LANE := 150.0 / 3.28084
+## Largest inscribed circles [ ] can reach: 180 ft for one lane (NCHRP 672),
+## 250 ft for two (the old FHWA 2000 guide's rural double-lane top end).
+const ROUNDABOUT_MAX_ICD_1LANE := 180.0 / 3.28084
+const ROUNDABOUT_MAX_ICD_2LANE := 250.0 / 3.28084
+## At or under this inscribed diameter (90 ft) it is a mini roundabout: the
+## whole central island is a low domed apron that trucks drive over.
+const MINI_ICD := 90.0 / 3.28084
+## Sizes the player picks from, by inscribed circle diameter (curb to curb
+## across the outside of the ring) and lane count. FHWA Roundabouts: An
+## Informational Guide (NCHRP Report 672, Exhibit 6-9): mini 45-90 ft,
+## single-lane 90-180 ft, two-lane 150-220 ft.
+const ROUNDABOUT_SIZES := [
+	{"name": "Mini", "icd": 80.0, "lanes": 1,
+		"about": "Mini roundabout, 80 ft: a drive-over island for tight town corners (FHWA 45-90 ft)"},
+	{"name": "Compact", "icd": 110.0, "lanes": 1,
+		"about": "Compact single-lane, 110 ft: neighborhood and downtown streets (FHWA 90-180 ft)"},
+	{"name": "Single lane", "icd": 150.0, "lanes": 1,
+		"about": "Single-lane, 150 ft: collectors and country roads, room for semis (FHWA 90-180 ft)"},
+	{"name": "Two lane", "icd": 180.0, "lanes": 2,
+		"about": "Two-lane, 180 ft: busy avenues meeting (FHWA 150-220 ft)"},
+	{"name": "Two lane, large", "icd": 220.0, "lanes": 2,
+		"about": "Two-lane, 220 ft: boulevards and highways at speed (FHWA 150-220 ft)"},
+]
 
 
-## The ring radius actually used for a roundabout of this road type.
-static func roundabout_radius(radius: float, type: int) -> float:
-	var lo := ROUNDABOUT_MIN if RoadStyle.ring_type(type) == RoadStyle.Type.RING else ROUNDABOUT_MIN_2LANE
-	return clampf(radius, lo, ROUNDABOUT_MAX)
+## The ring type of a roundabout with this many lanes.
+static func ring_for_lanes(lanes: int) -> int:
+	return RoadStyle.Type.RING2 if lanes >= 2 else RoadStyle.Type.RING
+
+
+## The ring centre-line radius for an inscribed diameter, in metres.
+static func radius_for_icd(icd_m: float, ring: int) -> float:
+	return icd_m * 0.5 - RoadStyle.half_width(ring)
+
+
+## The inscribed diameter of a ring, metres.
+static func icd_of(radius: float, ring: int) -> float:
+	return (radius + RoadStyle.half_width(ring)) * 2.0
+
+
+## The ring radius actually used for a roundabout of this ring type.
+static func roundabout_radius(radius: float, ring: int) -> float:
+	if ring == RoadStyle.Type.RING2:
+		return clampf(radius, radius_for_icd(ROUNDABOUT_MIN_ICD_2LANE, ring), radius_for_icd(ROUNDABOUT_MAX_ICD_2LANE, ring))
+	return clampf(radius, ROUNDABOUT_MIN, radius_for_icd(ROUNDABOUT_MAX_ICD_1LANE, ring))
+
+
+## True for a mini roundabout (a drive-over centre).
+static func is_mini(radius: float, ring: int) -> bool:
+	return icd_of(radius, ring) <= MINI_ICD + 0.5
 
 
 ## A grid of streets. a to b sets the direction and length of the first

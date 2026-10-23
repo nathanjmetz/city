@@ -10,7 +10,8 @@ extends Node3D
 ## corners of any shape, then the first corner again (or Enter). Either way
 ## the grid fits the roads already there (see GridFill). Backspace takes back
 ## a corner, Shift+Tab turns a free shape's grid, [ and ] set the block length.
-## Roundabout: click to place. [ and ] change the size.
+## Roundabout: pick a real size from the row above the tools, then click to
+## place. [ and ] fine-tune the size.
 ## Upgrade: click a road to change it to the chosen road type.
 ## Bulldoze: click a road to remove it.
 ## Page Up / Page Down (or the buttons): raise or lower new roads, for
@@ -65,7 +66,11 @@ var grid_free := false
 var grid_exact := true
 var _exact_next := ""  # how much further to drag for the next whole block
 var _exact_past := [false, false]  # the cursor is past the last whole block along, across
-var roundabout_radius := 20.0
+## Index into RoadShapes.ROUNDABOUT_SIZES, or -1 once [ ] has changed the
+## size. Kept while the tool is away, like the grid size.
+var roundabout_preset := 2
+var roundabout_lanes := 1
+var roundabout_radius := RoadShapes.radius_for_icd(150.0 / FT, RoadStyle.Type.RING)
 var road_type := 0
 var parallel := false
 var parallel_gap := RoadShapes.GRID_ACROSS
@@ -217,6 +222,28 @@ func set_grid_preset(i: int) -> void:
 	_update_hint()
 
 
+## Picks one of the real roundabout sizes (RoadShapes.ROUNDABOUT_SIZES).
+func set_roundabout_preset(i: int) -> void:
+	var p: Dictionary = RoadShapes.ROUNDABOUT_SIZES[i]
+	roundabout_preset = i
+	roundabout_lanes = int(p.lanes)
+	roundabout_radius = RoadShapes.radius_for_icd(float(p.icd) / FT, _ring())
+	if mode != Mode.ROUNDABOUT:
+		set_mode(Mode.ROUNDABOUT)
+	options_changed.emit()
+	_update_hint()
+
+
+## The ring type the roundabout tool builds.
+func _ring() -> int:
+	return RoadShapes.ring_for_lanes(roundabout_lanes)
+
+
+## The ring radius the roundabout tool builds.
+func _ring_radius() -> float:
+	return RoadShapes.roundabout_radius(roundabout_radius, _ring())
+
+
 ## How the planner fits blocks: exact in an Exact rectangle, else never
 ## bigger than the chosen size.
 func _fit() -> int:
@@ -293,7 +320,7 @@ func _process(_delta: float) -> void:
 	var curves := []
 	var ok := true
 	if mode == Mode.ROUNDABOUT:
-		curves = RoadShapes.roundabout(p, RoadShapes.roundabout_radius(roundabout_radius, road_type))
+		curves = RoadShapes.roundabout(p, _ring_radius())
 	elif _points.is_empty():
 		return
 	elif mode == Mode.GRID:
@@ -312,7 +339,7 @@ func _process(_delta: float) -> void:
 	if curves.is_empty():
 		return
 	if mode == Mode.ROUNDABOUT:
-		var cost := CitySim.shapes_cost(curves, RoadStyle.ring_type(road_type))
+		var cost := CitySim.shapes_cost(curves, _ring())
 		ok = cost <= sim.economy.money
 		_label.text = "$" + CitySim.money_text(cost) + ("" if ok else "\nNot enough money")
 		_label.position = Terrain.lift(p) + Vector3(0, 6, 0)
@@ -382,7 +409,7 @@ func _click() -> void:
 				_points.append(p)
 		Mode.ROUNDABOUT:
 			sim.apply({"type": "build_roundabout", "center": _xz(_snapped(hit)),
-				"radius": roundabout_radius, "road": road_type})
+				"radius": _ring_radius(), "lanes": roundabout_lanes, "road": road_type})
 	_update_hint()
 
 
@@ -631,7 +658,9 @@ func _resize(f: float) -> void:
 		grid_preset = -1
 		options_changed.emit()
 	elif mode == Mode.ROUNDABOUT:
-		roundabout_radius = clampf(roundabout_radius * f, RoadShapes.ROUNDABOUT_MIN, RoadShapes.ROUNDABOUT_MAX)
+		roundabout_radius = RoadShapes.roundabout_radius(_ring_radius() * f, _ring())
+		roundabout_preset = -1
+		options_changed.emit()
 	elif parallel and (mode == Mode.STRAIGHT or mode == Mode.CURVED):
 		parallel_gap = clampf(parallel_gap * f, _min_gap(), PARALLEL_MAX)
 	else:
@@ -766,7 +795,7 @@ func _snapped(hit: Vector3) -> Vector3:
 func _preview_mesh(curves: Array) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var hw := RoadStyle.half_width(RoadStyle.ring_type(road_type) if mode == Mode.ROUNDABOUT else road_type)
+	var hw := RoadStyle.half_width(_ring() if mode == Mode.ROUNDABOUT else road_type)
 	hw = maxf(hw, GHOST_PX * 0.5 * _px)
 	var line := LINE_PX * 0.5 * _px
 	for curve in curves:
@@ -890,8 +919,11 @@ func _update_hint() -> void:
 					1, 2: text = "Click the next corner. Shift snaps angles, Backspace undoes.  " + size
 					_: text = "Click the first corner or press Enter to build. Shift+Tab turns the grid.  " + size
 		Mode.ROUNDABOUT:
-			text = "Click to place a roundabout. Roads it crosses join it.  Size %d ft  [ ]" \
-				% roundi(RoadShapes.roundabout_radius(roundabout_radius, road_type) * 2.0 * FT)
+			var size := "%d ft across, %d %s" % [roundi(RoadShapes.icd_of(_ring_radius(), _ring()) * FT),
+				roundabout_lanes, "lane" if roundabout_lanes == 1 else "lanes"]
+			if roundabout_preset >= 0:
+				size = "%s, %s" % [RoadShapes.ROUNDABOUT_SIZES[roundabout_preset].name, size]
+			text = "Click to place a roundabout. Roads it crosses join it.  %s  [ ]" % size
 		Mode.BULLDOZE:
 			text = "Click a road, service building or farmhouse to remove it."
 		Mode.UPGRADE:

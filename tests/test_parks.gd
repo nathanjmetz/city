@@ -136,7 +136,33 @@ func _init() -> void:
 	_check(s.parks.sites.is_empty(), "park removed")
 	_tree()
 	print("ALL TESTS PASSED" if not _failed else "SOME TESTS FAILED")
+	_park_sizes()
 	quit(1 if _failed else 0)
+
+
+## The size row: each NRPA class places at its own acreage, cost and reach.
+func _park_sizes() -> void:
+	var reach := []
+	for i in Balance.PARK_SIZES.size():
+		var ps: Dictionary = Balance.PARK_SIZES[i]
+		var sim := CitySim.new()
+		sim.economy.money = 10_000_000
+		sim.apply({"type": "build_road", "start": [-600, 0], "ctrl": [0, 0], "end": [600, 0]})
+		var site := Parks.site_near(sim.network, "park", Vector3(0, 0, 40), i)
+		var money := sim.economy.money
+		_check(sim.apply({"type": "place_park", "kind": "park", "pos": [site[0].x, site[0].z],
+			"dir": [site[1].x, site[1].z], "size": i}), "%s park placed" % ps.name)
+		var pid: int = sim.parks.sites.keys()[0]
+		_check(sim.economy.money == money - int(ps.cost), "%s park paid for" % ps.name)
+		_check(absf(sim.parks.acres(pid) - ps.size.x * ps.size.y / 4046.86) < 0.01, "%s park is %.1f acres" % [ps.name, sim.parks.acres(pid)])
+		reach.append(sim.parks.reach_of(pid))
+		var copy := CitySim.new()
+		copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
+		_check(int(copy.parks.sites[pid].get("class", -1)) == i, "%s park's size saved" % ps.name)
+	_check(reach[0] < reach[1] and reach[1] < reach[2], "bigger parks draw from further off")
+	var acres: Array = Balance.PARK_SIZES.map(func(ps): return ps.size.x * ps.size.y / 4046.86)
+	_check(acres[0] < 1.0 and absf(acres[1] - 5.0) < 0.3 and absf(acres[2] - 20.0) < 0.5,
+		"sizes follow NRPA: under an acre, about 5, about 20 (%s)" % str(acres))
 
 
 func _near_poly(p: Vector2, poly: PackedVector2Array) -> bool:
