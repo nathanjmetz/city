@@ -128,6 +128,7 @@ var _acc := ACCEL    # acceleration of the vehicle being worked out
 var _sim: CitySim
 var _places := {}     # place ref -> place (see place())
 var _sites := {}      # place ref -> dispatch endpoint, for places off the lots
+var _extra := {}      # place ref -> spots added beyond its layout, in order (_add_spot)
 var _walk_lines := {} # segment * 2 + side -> sidewalk line
 var _next_trip := 1
 var _next_walker := 1
@@ -352,7 +353,7 @@ func to_dict() -> Dictionary:
 	var state := {"cars": list, "waiting": _waiting.size(), "next_id": _next_id, "time": time,
 		"gave_up": gave_up, "speed": _speed, "dirty": _dirty, "arrivals": arrivals, "failed": failed,
 		"parked": parked, "walkers": walkers, "next_trip": _next_trip, "next_walker": _next_walker,
-		"sites": _sites}
+		"sites": _sites, "extra": _extra}
 	# Binary, so every float comes back exactly and copies stay in step
 	# (var_to_str rounds to 15 digits).
 	return {"bin": Marshalls.variant_to_base64(state)}
@@ -364,6 +365,7 @@ func from_dict(d: Dictionary) -> void:
 	parked.clear()
 	walkers.clear()
 	_sites.clear()
+	_extra.clear()
 	_places.clear()
 	parked_version += 1
 	_dirty = true
@@ -390,6 +392,7 @@ func from_dict(d: Dictionary) -> void:
 	_next_trip = state.get("next_trip", _next_id)
 	_next_walker = state.get("next_walker", 1)
 	_sites = state.get("sites", {})
+	_extra = state.get("extra", {})
 	_places.clear()
 	parked_version += 1
 	# Junction paths are rebuilt from the roads; keep every car's plan as it
@@ -1085,8 +1088,7 @@ func _reroute_all() -> void:
 			continue
 		var curb := _curb_spots(pl.stop, 3)
 		for c in curb:
-			pl.spots.append(c)
-			pl.taken.append(-1)
+			_add_spot(pl, c)
 		var at := _reserve(pl, car.id, car.len > 6.5)
 		if at >= 0:
 			var s: Dictionary = pl.spots[at]
@@ -1475,6 +1477,9 @@ func place(ref: String) -> Dictionary:
 		pl = _site_place(_sites[ref])
 	if pl.is_empty():
 		return {}
+	for e in _extra.get(ref, []):
+		pl.spots.append(e)
+		pl.taken.append(-1)
 	_places[ref] = pl
 	_claim_spots(pl)
 	return pl
@@ -1604,6 +1609,18 @@ static func _fill(n: int) -> Array:
 
 
 ## Marks the spots of a freshly built place that vehicles already hold.
+## Adds a spot to a place beyond its own layout (a curb space out front, or
+## the very spot a car turned into before its lot was rebuilt). Remembered
+## and saved, so a loaded copy has the same spots in the same order.
+func _add_spot(pl: Dictionary, s: Dictionary, vid := -1) -> int:
+	pl.spots.append(s)
+	pl.taken.append(vid)
+	if not _extra.has(pl.ref):
+		_extra[pl.ref] = []
+	_extra[pl.ref].append(s)
+	return pl.spots.size() - 1
+
+
 func _claim_spots(pl: Dictionary) -> void:
 	for car in parked:
 		if car.at_place == pl.ref and car.spot >= 0 and car.spot < pl.taken.size():
@@ -1769,9 +1786,7 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 			var curb := _curb_spots(to_pl.stop, 1)
 			if curb.is_empty():
 				return false
-			to_pl.spots.append(curb[0])
-			to_pl.taken.append(car.id)
-			spot = to_pl.spots.size() - 1
+			spot = _add_spot(to_pl, curb[0], car.id)
 	car.merge(trip, true)
 	car.to_stop = to_pl.stop
 	if not car.has("at_place"):
@@ -1818,9 +1833,7 @@ func _dest(car: Dictionary) -> Dictionary:
 			var curb := _curb_spots(pl.stop, 1)
 			if curb.is_empty():
 				return {}
-			pl.spots.append(curb[0])
-			pl.taken.append(car.id)
-			i = pl.spots.size() - 1
+			i = _add_spot(pl, curb[0], car.id)
 		car.to_spot = i
 	pl.taken[i] = car.id
 	return pl
@@ -1869,9 +1882,7 @@ func _pull_over(car: Dictionary, w: Dictionary) -> void:
 	if curb.is_empty():
 		return
 	_release(pl.ref, car.get("to_spot", -1), car.id)
-	pl.spots.append(curb[0])
-	pl.taken.append(car.id)
-	car.to_spot = pl.spots.size() - 1
+	car.to_spot = _add_spot(pl, curb[0], car.id)
 	car.pulled_over = true
 	car.end_d = clampf(_nearest_d(w, _entrance(pl, car.to_spot)), car.d + PARK_LEAD, w.len - 0.5)
 
@@ -2089,9 +2100,7 @@ func _arrive(car: Dictionary) -> void:
 				at = i
 				break
 		if at == -1:
-			pl.spots.append(geo)
-			pl.taken.append(car.id)
-			at = pl.spots.size() - 1
+			at = _add_spot(pl, geo, car.id)
 		_release(pl.ref, car.to_spot, car.id)
 		pl.taken[at] = car.id
 		car.to_spot = at
