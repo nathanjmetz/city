@@ -34,6 +34,11 @@ const RECT_ALIGN_REACH := 250.0
 ## A rectangle needs both sides at least this long to be built.
 const RECT_MIN := 20.0
 const SNAP_ROAD := 7.0
+## Points snap onto roads and junctions within this many pixels too, so the
+## pull is felt zoomed out as well as up close.
+const SNAP_PX := 14.0
+## A press and release further apart than this on screen is a drag.
+const DRAG_PX := 8.0
 ## Straight roads snap to 15 degree steps while Shift is held.
 const ANGLE_STEP := deg_to_rad(15.0)
 ## Guide lines catch the mouse within this angle.
@@ -61,7 +66,6 @@ var grid_preset := -1
 ## Which side of the shape the grid runs square to.
 var grid_side := 0
 ## Any shape instead of a rectangle.
-var grid_free := false
 ## Exact: a rectangle grows only in whole blocks of the chosen size, so a
 ## section is a true mile. Adaptive: blocks flex to fit what was dragged,
 ## never bigger than the chosen size.
@@ -86,6 +90,9 @@ var _cursor := MeshInstance3D.new()
 ## screen than GHOST_PX however far out the camera is (as in CS2).
 var _ok_mat := RoadStyle.material(Color(0.3, 0.85, 1.0, 0.85), true)
 var _bad_mat := RoadStyle.material(Color(1.0, 0.3, 0.25, 0.75), true)
+var _snap_mat := RoadStyle.material(Color(1.0, 0.85, 0.2, 0.95), true)  # on a road
+var _snap_kind := "free"  # what the last point snapped to: node, segment or free
+var _square := false  # Shift squared the third grid point: a rectangle
 var _dot_mat := RoadStyle.material(Color(1.0, 1.0, 1.0, 0.95), true)
 const FT := 3.28084  # feet in a metre: the readouts are in US units
 const GHOST_PX := 14.0  # least on-screen width of the ghost road
@@ -109,6 +116,7 @@ var _guide_mat := RoadStyle.material(Color(1, 1, 1, 0.45), true)
 var _guide_angle := NAN
 var _guide_kind := ""
 var _left_down := false  # the left button went down on the map, not on a panel
+var _press_at := Vector2.ZERO  # where on screen it went down
 ## The last grid plan, kept while the shape and cursor stay put.
 var _grid_key := ""
 var _grid_plan := []
@@ -197,10 +205,8 @@ func _input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed and not event.echo):
 		return
 	var key := event as InputEventKey
-	if key.keycode == KEY_TAB and key.shift_pressed:
+	if key.keycode == KEY_TAB:
 		grid_side += 1
-	elif key.keycode == KEY_TAB:
-		set_grid_free(not grid_free)
 	elif _points.is_empty():
 		return
 	elif key.keycode == KEY_ENTER or key.keycode == KEY_KP_ENTER:
@@ -246,23 +252,15 @@ func _ring_radius() -> float:
 	return RoadShapes.roundabout_radius(roundabout_radius, _ring())
 
 
-## How the planner fits blocks: exact in an Exact rectangle, else never
-## bigger than the chosen size.
+## How the planner fits blocks: whole blocks in Exact, else never bigger
+## than the chosen size.
 func _fit() -> int:
-	return GridFill.FIT_EXACT if grid_exact and not grid_free else GridFill.FIT_AT_MOST
+	return GridFill.FIT_EXACT if grid_exact else GridFill.FIT_AT_MOST
 
 
 ## Switches the grid between exact whole blocks and blocks that flex to fit.
 func set_grid_exact(on: bool) -> void:
 	grid_exact = on
-	options_changed.emit()
-	_update_hint()
-
-
-## Switches the grid between a rectangle and any shape.
-func set_grid_free(on: bool) -> void:
-	grid_free = on
-	_points.clear()
 	options_changed.emit()
 	_update_hint()
 
@@ -289,11 +287,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		_cancel()
 	elif mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not mb.alt_pressed:
 		_left_down = true
+		_press_at = mb.position
 		_click()
 	elif mb.button_index == MOUSE_BUTTON_LEFT and not mb.pressed:
 		# The first side can be dragged out as well as clicked; letting go
 		# after an Alt-drag of the camera sets nothing.
-		if _left_down and mode == Mode.GRID and not grid_free and _points.size() == 1:
+		# Only a real drag counts: in Exact a plain click's release would
+		# otherwise set a whole first block at once.
+		if _left_down and mode == Mode.GRID and _points.size() == 1 and mb.position.distance_to(_press_at) > DRAG_PX:
 			_click()
 		_left_down = false
 
@@ -318,7 +319,7 @@ func _process(_delta: float) -> void:
 		return
 	var p := _snapped(hit)
 	_cursor.position = Terrain.lift(p) + Vector3.UP * 0.3
-	_cursor.material_override = _ok_mat
+	_show_snap(_snap_kind != "free")
 	var curves := []
 	var ok := true
 	if mode == Mode.ROUNDABOUT:
@@ -398,17 +399,13 @@ func _click() -> void:
 					_points.append(curve[2])
 		Mode.GRID:
 			var p := _grid_corner(_snapped(hit))
-			if not grid_free and _points.size() == 2:
-				var shape := _three(p, Input.is_key_pressed(KEY_SHIFT))
-				if absf(_dist_off_side(p)) > RECT_MIN:
-					_finish_grid(shape)
-			elif not grid_free:
-				# A click without a drag only sets the first corner.
-				if _points.is_empty() or _flat_dist(p, _points[0]) > RECT_MIN:
-					_points.append(p)
-			elif _points.size() >= 3 and p.distance_to(_points[0]) < 0.01:
-				_finish_grid()
-			elif _points.is_empty() or p.distance_to(_points[_points.size() - 1]) > 1.0:
+			if _points.size() >= 3 and p.distance_to(_points[0]) < 0.01:
+				_finish_grid()  # back on the first corner closes the shape
+			elif _points.size() == 2 and _square:
+				_points.append(p)  # Shift on the third point: a rectangle
+				_points.append(_points[0] + p - _points[1])
+			# A click without a drag only sets the first corner.
+			elif _points.is_empty() or _flat_dist(p, _points[_points.size() - 1]) > RECT_MIN:
 				_points.append(p)
 		Mode.ROUNDABOUT:
 			sim.apply({"type": "build_roundabout", "center": _xz(_snapped(hit)),
@@ -424,36 +421,37 @@ func _finish_grid(shape: Array = _points) -> void:
 	for q in shape:
 		pts.append(_xz(q))
 	if sim.apply({"type": "build_grid_shape", "points": pts, "block": grid_block, "across": grid_across,
-			"side": 0 if not grid_free else grid_side, "road": road_type, "fit": _fit()}):
+			"side": grid_side, "road": road_type, "fit": _fit()}):
 		_points.clear()
 	_update_hint()
 
 
-## Where the next corner of a grid shape goes: back on the first corner to
-## close the shape, the fourth corner of a rectangle, square with the last
-## side, or Shift for 15 degree steps.
+## Where the next corner of a grid shape goes. An old road or junction
+## under the cursor wins, then the first corner (to close the shape), the
+## fourth corner of a parallelogram, Shift square off the last side, or a
+## side near square with the last one.
 func _grid_corner(p: Vector3) -> Vector3:
 	_guide_angle = NAN
+	_square = false
+	_exact_past = [false, false]
+	_exact_next = ""
 	if _points.is_empty():
 		return p
-	if not grid_free:
-		return _side_end(p) if _points.size() == 1 else _third(p, Input.is_key_pressed(KEY_SHIFT))
-	if _points.size() >= 3 and _flat_dist(p, _points[0]) < SNAP_NODE:
+	if _points.size() >= 3 and _flat_dist(p, _points[0]) < _snap_reach(SNAP_NODE):
 		return _points[0]
+	if _snap_kind != "free":
+		return p
+	if _points.size() == 1:
+		return _side_end(p)
 	if _points.size() == 3:
 		var q: Vector3 = _points[0] + _points[2] - _points[1]
-		if _flat_dist(p, q) < SNAP_NODE:
+		if _flat_dist(p, q) < _snap_reach(SNAP_NODE):
 			return q
-	if network.find_node_near(p, 0.5) != -1:
-		return p  # an old junction wins
-	var last: Vector3 = _points[_points.size() - 1]
-	var d := p - last
 	if Input.is_key_pressed(KEY_SHIFT):
-		var ang := snappedf(atan2(d.z, d.x), ANGLE_STEP)
-		return last + Vector3(cos(ang), 0.0, sin(ang)) * Vector2(d.x, d.z).length()
-	if _points.size() == 1:
-		return _pending_curve(p)[2]  # square with the road it starts on
+		return _square_off(p)
+	var last: Vector3 = _points[_points.size() - 1]
 	var prev: Vector3 = _points[_points.size() - 2]
+	var d := p - last
 	var ref := atan2(last.z - prev.z, last.x - prev.x)
 	var ang := atan2(d.z, d.x)
 	for k in 4:
@@ -513,42 +511,31 @@ func _side_angles(a: Vector3) -> Array:
 	return refs
 
 
-## The third click: any point makes a triangle; `square` (Shift) puts it
-## square off the first side's end for a rectangle, whole blocks deep in
-## Exact.
-func _third(p: Vector3, square: bool) -> Vector3:
-	var a: Vector3 = _points[0]
-	var b: Vector3 = _points[1]
-	var u := Vector3(b.x - a.x, 0.0, b.z - a.z).normalized()
+## Shift: the next point square off the end of the last side. On the third
+## point it makes a rectangle, whole blocks deep in Exact.
+func _square_off(p: Vector3) -> Vector3:
+	var last: Vector3 = _points[_points.size() - 1]
+	var prev: Vector3 = _points[_points.size() - 2]
+	var u := Vector3(last.x - prev.x, 0.0, last.z - prev.z).normalized()
 	var v := Vector3(-u.z, 0.0, u.x)
-	_exact_past = [false, false]
-	_exact_next = ""
-	if not square:
-		var n := network.find_node_near(p, SNAP_NODE)
-		return network.nodes[n] if n != -1 else p
-	var dv := (p - b).dot(v)
-	if grid_exact:
-		dv = _whole(dv, grid_across, 1)
-	else:
-		var n := network.find_node_near(b + v * dv, SNAP_NODE)
-		if n != -1 and absf((network.nodes[n] - b).dot(u)) < 1.0:
-			dv = (network.nodes[n] - b).dot(v)
-	return b + v * dv
+	var dv := (p - last).dot(v)
+	if _points.size() == 2:
+		_square = true
+		if grid_exact:
+			dv = _whole(dv, grid_across, 1)
+	return last + v * dv
 
 
-## The shape from the three clicks: a triangle, or with `square` the
-## rectangle on the first side.
-func _three(c: Vector3, square: bool) -> Array:
-	var a: Vector3 = _points[0]
-	var b: Vector3 = _points[1]
-	return [a, b, c, a + (c - b)] if square else [a, b, c]
-
-
-## How far `c` lies off the line of the first side.
-func _dist_off_side(c: Vector3) -> float:
-	var a: Vector3 = _points[0]
-	var u := Vector3(_points[1].x - a.x, 0.0, _points[1].z - a.z).normalized()
-	return (c - a).dot(Vector3(-u.z, 0.0, u.x))
+## The shape drawn so far with `p` as its next point (a rectangle's fourth
+## corner too, when Shift squares the third).
+func _pending_shape(p: Vector3) -> Array:
+	var shape: Array = _points.duplicate()
+	if shape.size() >= 3 and p.distance_to(shape[0]) < 0.01:
+		return shape
+	shape.append(p)
+	if _square and _points.size() == 2:
+		shape.append(_points[0] + p - _points[1])
+	return shape
 
 
 ## Exact mode: `d` cut back to whole blocks of `size` (one at least),
@@ -626,12 +613,8 @@ static func _flat_dist(a: Vector3, b: Vector3) -> float:
 func _show_grid(p: Vector3) -> void:
 	p = _grid_corner(p)
 	_cursor.position = Terrain.lift(p) + Vector3.UP * 0.3
-	var shape: Array = _points.duplicate()
-	var closing := shape.size() >= 3 and p.distance_to(shape[0]) < 0.01
-	if not grid_free:
-		shape = _three(p, Input.is_key_pressed(KEY_SHIFT)) if _points.size() == 2 else [_points[0], p]
-	elif not closing:
-		shape.append(p)
+	var shape := _pending_shape(p)
+	_show_snap(_snap_kind != "free" or (_points.size() >= 3 and p.distance_to(_points[0]) < 0.01))
 	_show_guide(_points[0])
 	var plan := []
 	if shape.size() >= 3:
@@ -640,7 +623,7 @@ func _show_grid(p: Vector3) -> void:
 		# Big towns take a moment to plan, so replan at most a few times a second.
 		if key != _grid_key and Time.get_ticks_msec() - _grid_planned_at > 120:
 			_grid_key = key
-			_grid_plan = GridFill.plan(network, shape, grid_block, road_type, grid_side if grid_free else 0, grid_across, _fit())
+			_grid_plan = GridFill.plan(network, shape, grid_block, road_type, grid_side, grid_across, _fit())
 			_grid_planned_at = Time.get_ticks_msec()
 		plan = _grid_plan
 	var st := SurfaceTool.new()
@@ -649,16 +632,16 @@ func _show_grid(p: Vector3) -> void:
 	var edge := maxf(0.4, LINE_PX * 0.5 * _px)
 	for c in plan:
 		RoadMesh.add_strip(st, Terrain.densify(RoadNetwork.sample_curve(c[0], c[1], c[2], 2), 6.0), -hw, hw, 0.2)
-	if not grid_free and shape.size() == 2:  # the first side is a street of its own
+	if shape.size() == 2:  # the first side is a street of its own
 		RoadMesh.add_strip(st, Terrain.densify(PackedVector3Array([shape[0], shape[1]]), 6.0), -hw, hw, 0.2)
 	for c in GridFill.outline(shape, shape.size() >= 3):
 		RoadMesh.add_strip(st, Terrain.densify(RoadNetwork.sample_curve(c[0], c[1], c[2], 2), 6.0), -edge, edge, 0.35)
 	var ghost := []  # Exact: where the next whole block would reach
-	if grid_exact and not grid_free and shape.size() == 2 and _exact_past[0]:
+	if grid_exact and shape.size() == 2 and _exact_past[0]:
 		var r0: Vector3 = shape[0]
 		var r1: Vector3 = shape[1]
 		ghost.append([r1, r1 + (r1 - r0).normalized() * grid_block])
-	if grid_exact and not grid_free and shape.size() == 4:
+	if grid_exact and _square and shape.size() == 4:
 		var r: Array = shape
 		for axis in 2:
 			if _exact_past[axis]:
@@ -678,14 +661,14 @@ func _show_grid(p: Vector3) -> void:
 	var dims := ""
 	if shape.size() >= 2:
 		dims = "%s ft" % CitySim.money_text(roundi(_flat_dist(shape[0], shape[1]) * FT))
-	if not grid_free and shape.size() == 2 and grid_exact:
+	if shape.size() == 2 and grid_exact:
 		dims = "Exact: %d blocks, %s" % [roundi(_flat_dist(shape[0], shape[1]) / grid_block),
 			_distance_text(_flat_dist(shape[0], shape[1]))]
 		if _exact_next != "":
 			dims += "\n" + _exact_next
-	if not grid_free and shape.size() == 3:
+	if shape.size() == 3:
 		dims = "Triangle, %s side  (Shift for a rectangle)" % _distance_text(_flat_dist(shape[0], shape[1]))
-	if not grid_free and shape.size() == 4:
+	if _square and shape.size() == 4:
 		dims += " × %s ft" % CitySim.money_text(roundi(_flat_dist(shape[1], shape[2]) * FT))
 		if grid_exact:
 			dims = "Exact: %d × %d blocks, %s × %s" % [roundi(_flat_dist(shape[0], shape[1]) / grid_block),
@@ -870,12 +853,13 @@ func _problem(curve: Array) -> String:
 
 
 func _snapped(hit: Vector3) -> Vector3:
+	_snap_kind = "free"
 	if mode == Mode.CURVED and _points.size() == 1:
 		return Vector3(hit.x, 0.0, hit.z)  # the bend point floats freely
+	var snap := network.snap(hit, _snap_reach(SNAP_NODE, SNAP_PX * 1.3), _snap_reach(SNAP_ROAD + 5.0, SNAP_PX))
+	_snap_kind = snap.kind
 	if mode == Mode.GRID:
-		var snap := network.snap(hit, SNAP_NODE, SNAP_ROAD)
 		return Vector3(snap.pos.x, 0.0, snap.pos.z)  # grids are built on the ground
-	var snap := network.snap(hit, SNAP_NODE, SNAP_ROAD)
 	if snap.kind == "free":
 		# Onto a county road out in the country, which joins it to town.
 		var mile := _county_at(Vector3(hit.x, elevation, hit.z), SNAP_ROAD)
@@ -884,6 +868,18 @@ func _snapped(hit: Vector3) -> Vector3:
 			return Vector3(mile.on.x - o.x, 0.0, mile.on.y - o.y)
 		return Vector3(hit.x, elevation, hit.z)
 	return snap.pos
+
+
+## How far a point reaches to snap: `m` metres, or `px` pixels when zoomed
+## out.
+func _snap_reach(m: float, px := SNAP_PX) -> float:
+	return maxf(m, px * _px)
+
+
+## The cursor turns gold on a road or junction it has snapped to.
+func _show_snap(on_road: bool) -> void:
+	_cursor.material_override = _snap_mat if on_road else _ok_mat
+	_cursor.scale = Vector3.ONE * maxf(1.0, CURSOR_PX * _px / 3.0) * (1.4 if on_road else 1.0)
 
 
 func _preview_mesh(curves: Array) -> ArrayMesh:
@@ -1002,17 +998,12 @@ func _update_hint() -> void:
 			var size := "Blocks %s × %s  [ ]" % [_distance_text(grid_block), _distance_text(grid_across)]
 			if grid_preset >= 0:
 				size = "%s, %s" % [GridFill.PRESETS[grid_preset].name, size]
-			if not grid_free:
-				size = ("Exact, whole blocks only. " if grid_exact else "Adaptive, blocks up to ") + size
-				match _points.size():
-					0: text = "Click where the grid starts. Tab for any shape.  " + size
-					1: text = "Click the end of the first side; it sets the grid's direction. Shift steps 15°.  " + size
-					_: text = "Click the third point for a triangle, or hold Shift for a rectangle. Backspace undoes.  " + size
-			else:
-				match _points.size():
-					0: text = "Any shape: click the first corner. Tab for a rectangle.  " + size
-					1, 2: text = "Click the next corner. Shift snaps angles, Backspace undoes.  " + size
-					_: text = "Click the first corner or press Enter to build. Shift+Tab turns the grid.  " + size
+			size = ("Exact, whole blocks only. " if grid_exact else "Adaptive, blocks up to ") + size
+			match _points.size():
+				0: text = "Click where the grid starts. Points snap onto roads.  " + size
+				1: text = "Click the end of the first side; it sets the grid's direction. Shift steps 15°.  " + size
+				2: text = "Click the next point, or hold Shift for a rectangle. Backspace undoes.  " + size
+				_: text = "Press Enter to build, or keep clicking points for any shape. Tab turns the grid.  " + size
 		Mode.ROUNDABOUT:
 			var size := "%d ft across, %d %s" % [roundi(RoadShapes.icd_of(_ring_radius(), _ring()) * FT),
 				roundabout_lanes, "lane" if roundabout_lanes == 1 else "lanes"]
