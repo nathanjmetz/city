@@ -30,6 +30,18 @@ func _init() -> void:
 				bad.append("lot %d: %s %.1f m from the house, crown %.1f m" % [i, TreeField.Species.keys()[t[1]], b._wall_gap(p), need])
 	_check(trees > 100 and bad.is_empty(), "yard trees keep their crowns off the walls (%d trees) %s" % [trees, bad.slice(0, 3)])
 
+	# The foundation and far-off block cover the house and garage, not the
+	# whole lot out to the back-yard fences (critic round 25: concrete slabs
+	# across yards on sloping lots).
+	var slabs := []
+	for i in lots.size():
+		var built: Array = HouseBuilder.build(i * 31 + 7, 6.0, lots[i], 0)
+		var box := BuildingView._mass_box(built[0].get_aabb(), HouseBuilder.last_masses)
+		var area: float = box.size.x * box.size.z
+		if HouseBuilder.last_masses.is_empty() or area > lots[i].width * lots[i].depth * 0.6:
+			slabs.append("lot %d: %.0f of %.0f m2" % [i, area, lots[i].width * lots[i].depth])
+	_check(slabs.is_empty(), "foundations stay under the house %s" % [slabs.slice(0, 3)])
+
 	# The traffic sim lays a plan out without drawing it: the drive, garage
 	# and door come out exactly as when the plan is drawn.
 	var differ := []

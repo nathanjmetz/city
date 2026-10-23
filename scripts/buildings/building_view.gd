@@ -252,7 +252,8 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 	HouseBuilder.restored = false
 	if built.is_empty():
 		return root
-	root.set_meta("box", built[0].get_aabb())
+	var masses: Array = HouseBuilder.last_masses
+	root.set_meta("box", _mass_box(built[0].get_aabb(), masses))
 	root.set_meta("wall", _wall_colour(int(b.zone), rng))
 	var pitched: bool = BuildingTypes.type_of(b) in ["house", "row_home"]
 	root.set_meta("pitched", pitched)
@@ -265,7 +266,7 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 	var labels: Array = built[3] if built.size() > 3 else []
 	ConstructionSite.add_to(root, built, CitySim.PROFILE_OF_ZONE.get(int(b.zone), "house"),
 		func(): return sim.construction.state(ref, sim.tick_count), _plant.bind(key, root, built[2], labels),
-		_footing(built[0]))
+		_footing(masses))
 	return root
 
 
@@ -507,16 +508,42 @@ static func _local_lot(lot: Dictionary, frame: Transform3D) -> Dictionary:
 	return fit
 
 
-## A foundation down into the ground, for lots on a slope (or null).
-func _footing(building: Mesh) -> MeshInstance3D:
-	var box := building.get_aabb()
-	if box.size.x <= 0.5:
+## The building's own bulk: its masses' footprint, as tall as the mesh
+## (the mesh's bounds alone take in fences and sheds out to the lot lines).
+static func _mass_box(mesh_box: AABB, masses: Array) -> AABB:
+	if masses.is_empty():
+		return mesh_box
+	var r: Rect2 = masses[0]
+	for m: Rect2 in masses:
+		r = r.merge(m)
+	return AABB(Vector3(r.position.x, mesh_box.position.y, r.position.y), Vector3(r.size.x, mesh_box.size.y, r.size.y))
+
+
+## A foundation down into the ground under each building mass, for lots on
+## a slope (or null): just under the walls, as a real one is, never a slab
+## across the yard.
+func _footing(masses: Array) -> MeshInstance3D:
+	if masses.is_empty():
 		return null
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for m: Rect2 in masses:
+		var r := m.grow(-0.15)
+		if r.size.x <= 0.3 or r.size.y <= 0.3:
+			continue
+		var lo := Vector3(r.position.x, -2.95, r.position.y)
+		var hi := Vector3(r.end.x, 0.05, r.end.y)
+		var c := [Vector3(lo.x, lo.y, lo.z), Vector3(hi.x, lo.y, lo.z), Vector3(hi.x, lo.y, hi.z), Vector3(lo.x, lo.y, hi.z),
+			Vector3(lo.x, hi.y, lo.z), Vector3(hi.x, hi.y, lo.z), Vector3(hi.x, hi.y, hi.z), Vector3(lo.x, hi.y, hi.z)]
+		for f in [[0, 1, 5, 4, Vector3.FORWARD], [1, 2, 6, 5, Vector3.RIGHT], [2, 3, 7, 6, Vector3.BACK],
+				[3, 0, 4, 7, Vector3.LEFT], [4, 5, 6, 7, Vector3.UP]]:
+			for i in [0, 1, 2, 0, 2, 3]:
+				st.set_normal(f[4])
+				st.add_vertex(c[f[i]])
 	var footing := MeshInstance3D.new()
-	var cube := BoxMesh.new()
-	cube.size = Vector3(box.size.x * 0.96, 3.0, box.size.z * 0.96)
-	footing.mesh = cube
-	footing.position = Vector3(box.get_center().x, -1.45, box.get_center().z)
+	footing.mesh = st.commit()
+	if footing.mesh.get_surface_count() == 0:
+		return null
 	if _footing_mat == null:
 		_footing_mat = Surfaces.concrete(Color(0.55, 0.54, 0.51))
 	footing.material_override = _footing_mat
