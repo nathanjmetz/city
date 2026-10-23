@@ -2,6 +2,13 @@ extends SceneTree
 ## Run: godot --headless -s tests/test_audio.gd
 
 func _init() -> void:
+	# The buses come from default_bus_layout.tres at startup, never added
+	# while running (the browser build can't route buses added later).
+	for bus in ["UI", "World", "Ambience", "Music", "Distant"]:
+		_check(AudioServer.get_bus_index(bus) != -1, "bus %s is in the startup layout" % bus)
+	var buses_before := AudioServer.bus_count
+	CityAudio.setup_buses()
+	_check(AudioServer.bus_count == buses_before, "no bus is added while running")
 	var sim := CitySim.new()
 	sim.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
 	for x in range(-200, 201, 10):

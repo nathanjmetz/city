@@ -62,10 +62,14 @@ func _ready() -> void:
 
 
 ## UI, World (effects), Ambience and Music buses under Master, plus a
-## muffled "Distant" bus for far-off traffic. Made in code so there is no
-## bus layout file to keep. The player's volumes (SoundSettings) go on them.
+## muffled "Distant" bus for far-off traffic. They live in
+## default_bus_layout.tres: buses added while the game runs never reach the
+## speakers in the browser build (Godot's web audio wires their sends
+## wrong), so this only fills them in if that file is missing. The player's
+## volumes (SoundSettings) go on them.
 static func setup_buses() -> void:
 	if AudioServer.get_bus_index("World") != -1:
+		SoundSettings.apply()
 		return
 	for name in ["UI", "World", "Ambience", "Music", "Distant"]:
 		AudioServer.add_bus()
