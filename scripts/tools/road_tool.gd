@@ -91,7 +91,7 @@ var _cursor := MeshInstance3D.new()
 var _ok_mat := RoadStyle.material(Color(0.3, 0.85, 1.0, 0.85), true)
 var _bad_mat := RoadStyle.material(Color(1.0, 0.3, 0.25, 0.75), true)
 var _snap_mat := RoadStyle.material(Color(1.0, 0.85, 0.2, 0.95), true)  # on a road
-var _snap_kind := "free"  # what the last point snapped to: node, segment or free
+var _snap_kind := "free"  # what the last point snapped to: node, segment, county or free
 var _square := false  # Shift squared the third grid point: a rectangle
 var _dot_mat := RoadStyle.material(Color(1.0, 1.0, 1.0, 0.95), true)
 const FT := 3.28084  # feet in a metre: the readouts are in US units
@@ -403,8 +403,11 @@ func _click() -> void:
 					_points.clear()
 					_points.append(curve[2])
 		Mode.GRID:
-			var p := _grid_corner(_snapped(hit))
-			if _points.size() >= 3 and p.distance_to(_points[0]) < 0.01:
+			var raw := _snapped(hit)
+			var p := _grid_corner(raw)
+			if _points.size() == 1 and _flat_dist(raw, _points[0]) <= RECT_MIN:
+				pass  # a second click on the first point (or its release) adds nothing
+			elif _points.size() >= 3 and p.distance_to(_points[0]) < 0.01:
 				_finish_grid()  # back on the first corner closes the shape
 			elif _points.size() == 2 and _square:
 				_points.append(p)  # Shift on the third point: a rectangle
@@ -863,15 +866,17 @@ func _snapped(hit: Vector3) -> Vector3:
 		return Vector3(hit.x, 0.0, hit.z)  # the bend point floats freely
 	var snap := network.snap(hit, _snap_reach(SNAP_NODE, SNAP_PX * 1.3), _snap_reach(SNAP_ROAD + 5.0, SNAP_PX))
 	_snap_kind = snap.kind
-	if mode == Mode.GRID:
-		return Vector3(snap.pos.x, 0.0, snap.pos.z)  # grids are built on the ground
 	if snap.kind == "free":
 		# Onto a county road out in the country, which joins it to town.
-		var mile := _county_at(Vector3(hit.x, elevation, hit.z), SNAP_ROAD)
+		var mile := _county_at(Vector3(hit.x, 0.0 if mode == Mode.GRID else elevation, hit.z),
+			_snap_reach(SNAP_ROAD + 5.0, SNAP_PX))
 		if not mile.is_empty():
+			_snap_kind = "county"
 			var o := sim.terrain_offset
 			return Vector3(mile.on.x - o.x, 0.0, mile.on.y - o.y)
-		return Vector3(hit.x, elevation, hit.z)
+		return Vector3(hit.x, 0.0 if mode == Mode.GRID else elevation, hit.z)
+	if mode == Mode.GRID:
+		return Vector3(snap.pos.x, 0.0, snap.pos.z)  # grids are built on the ground
 	return snap.pos
 
 
