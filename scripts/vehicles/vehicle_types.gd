@@ -39,6 +39,7 @@ const SPECS := {
 	"mail_semi":     {"len": 21.00, "width": 2.60, "height": 4.10, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"livestock_truck": {"len": 21.90, "width": 2.60, "height": 4.10, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"tanker":        {"len": 20.50, "width": 2.60, "height": 3.60, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
+	"lumber_truck":  {"len": 20.30, "width": 2.60, "height": 3.90, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"flatbed":       {"len": 20.30, "width": 2.60, "height": 3.30, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"dump_truck":    {"len": 9.00, "width": 2.60, "height": 3.40, "acc": 0.9, "brake": 2.3, "top_speed": 29.0, "pref": 0.93},
 	"concrete_mixer": {"len": 10.40, "width": 2.60, "height": 3.95, "acc": 0.8, "brake": 2.2, "top_speed": 29.0, "pref": 0.92},
@@ -176,7 +177,8 @@ const PURPOSE := {
 ## log trailer between stakes, ore an end-dump, crude oil a tanker.
 const CARGO_KIND := {
 	"logs": "log_truck", "ore": "ore_truck", "crude oil": "tanker", "fuel": "tanker",
-	"milk": "tanker", "grain": "grain_truck", "cattle": "livestock_truck", "hogs": "livestock_truck",
+	"milk": "tanker", "grain": "grain_truck", "corn": "grain_truck", "soybeans": "grain_truck",
+	"lumber": "lumber_truck", "cattle": "livestock_truck", "hogs": "livestock_truck",
 	"livestock": "livestock_truck", "gravel": "dump_truck", "steel": "flatbed",
 }
 
@@ -260,7 +262,7 @@ static func household(id: int) -> String:
 ## The sRGB body colour of one vehicle, fixed by its id so it never changes.
 static func paint(kind: String, id: int) -> Color:
 	var table: Array = LIVERY.get(kind, FLEET_COLORS if kind in FLEET else
-		SEMI_COLORS if kind in ["semi", "tanker", "flatbed", "log_truck", "ore_truck", "livestock_truck"] else CAR_COLORS)
+		SEMI_COLORS if kind in ["semi", "tanker", "flatbed", "lumber_truck", "log_truck", "ore_truck", "livestock_truck"] else CAR_COLORS)
 	var total := 0.0
 	for e in table:
 		total += e[1]

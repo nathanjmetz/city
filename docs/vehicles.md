@@ -13,7 +13,8 @@ sedans, crew and mid-size pickups, wagon, EV crossover and more); a car's id
 picks its style (`VehicleModels.variant()`), so it never changes.
 Freight: delivery (step) van, 26 ft box truck, dump truck, concrete mixer,
 tow truck, and semis with a 53 ft dry van, flatbed, grain hopper, tanker,
-log trailer, end dump, USPS trailer or pot-belly livestock trailer.
+log trailer, end dump, USPS trailer, pot-belly livestock trailer or a
+flatbed of sawmill lumber.
 Utility: bucket truck (Altec AT40G) for phone and power line crews.
 Camping: Class C RV, Class A motorhome and a pickup with a slide-in camper,
 used by out-of-town visitors (purpose "visitor").
