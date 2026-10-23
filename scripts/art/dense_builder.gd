@@ -129,6 +129,12 @@ func _apartments(to_curb: float, width: float, storeys: int) -> void:
 			for i in bays:
 				var x: float = s * (2.4 + (i + 0.5) * (w * 0.5 - 2.6) / bays)
 				_window(Vector3(x, y, zf), Vector3(-1, 0, 0), 1.2, 1.5, false, false, trim)
+		# Side walls have windows too: the end flats are corner flats.
+		var nside := maxi(2, int((d - 3.0) / 3.6))
+		for s in [-1.0, 1.0]:
+			for i in nside:
+				var z := zf + 1.8 + (i + 0.5) * (d - 3.6) / nside
+				_window(Vector3(s * w * 0.5, y, z), Vector3(0, 0, -s), 1.1, 1.5, false, false, trim)
 		if f > 0:
 			# Stair-hall window over the door.
 			_glass(Vector3(0, y, zf - 0.02), Vector3(-1, 0, 0), 1.0, 1.6, 0.0)

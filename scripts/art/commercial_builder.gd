@@ -414,7 +414,7 @@ func _church(to_curb: float) -> void:
 	for s in [-1.0, 1.0]:
 		for i in 4:
 			var z := zf + 4.0 + i * (d - 6.0) / 3.0
-			_window(Vector3(s * w * 0.5, 3.8, z), Vector3(0, 0, s), 1.1, 3.2, false, false, TRIM)
+			_window(Vector3(s * w * 0.5, 3.8, z), Vector3(0, 0, -s), 1.1, 3.2, false, false, TRIM)
 	# Tower and spire, centred on the front.
 	var tw := 3.6
 	var tz := zf - tw * 0.5 + 0.5

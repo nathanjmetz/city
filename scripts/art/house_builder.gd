@@ -449,7 +449,7 @@ func _foursquare(zf: float, gs: float, siding: Color, roof: Color, shutter: Colo
 		_window(Vector3(x - 0.5, 4.9, zf), Vector3(-1, 0, 0), 0.8, 1.45, false, false, shutter)
 		_window(Vector3(x + 0.5, 4.9, zf), Vector3(-1, 0, 0), 0.8, 1.45, false, false, shutter)
 		for f in [2.3, 4.9]:
-			_window(Vector3(cx + s * w * 0.5, f, cz + d * 0.2 * s), Vector3(0, 0, s), 0.85, 1.5, false, false, shutter)
+			_window(Vector3(cx + s * w * 0.5, f, cz + d * 0.2 * s), Vector3(0, 0, -s), 0.85, 1.5, false, false, shutter)
 	_back(x0, x1, zf + d, [2.3, 4.9], 0.7)
 	var g := _back_garage(at[1], zf + d, siding, roof)
 	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": door_x,
@@ -500,7 +500,7 @@ func _bungalow(zf: float, gs: float, siding: Color, roof: Color, door: Color, br
 		_window(Vector3(wx + k, 2.25, zf), Vector3(-1, 0, 0), 0.95, 1.5, false, false, trim)
 	for s in [-1.0, 1.0]:
 		for z in [cz - d * 0.28, cz, cz + d * 0.28]:
-			_window(Vector3(cx + s * w * 0.5, 2.25, z), Vector3(0, 0, s), 0.9, 1.4, false, false, trim)
+			_window(Vector3(cx + s * w * 0.5, 2.25, z), Vector3(0, 0, -s), 0.9, 1.4, false, false, trim)
 	_back(x0, x1, zf + d, [2.25], 0.75)
 	var g := _back_garage(at[1], zf + d, siding, roof)
 	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": door_x,
@@ -594,7 +594,7 @@ func _ell_farmhouse(zf: float, gs: float, roof: Color, door: Color) -> Dictionar
 		_window(Vector3(ux + s * uw * 0.22, 4.8, zf), Vector3(-1, 0, 0), 0.8, 1.6, false, false, trim)
 	_window(Vector3(ux, 7.0, zf), Vector3(-1, 0, 0), 0.6, 0.9, false, false, trim)
 	for f in [2.2, 4.8]:
-		_window(Vector3(ux + gs * uw * 0.5, f, zf + ud * 0.5), Vector3(0, 0, gs), 0.8, 1.6, false, false, trim)
+		_window(Vector3(ux + gs * uw * 0.5, f, zf + ud * 0.5), Vector3(0, 0, -gs), 0.8, 1.6, false, false, trim)
 	_back(minf(ux, wx) - (uw if gs < 0 else ww) * 0.5, maxf(ux, wx) + (uw if gs > 0 else ww) * 0.5, zf + ud, [2.2], 0.6)
 	var g := _back_garage(at[1], zf + ud, wall, roof)
 	var x0 := cx - total * 0.5
@@ -629,7 +629,7 @@ func _cape(zf: float, gs: float, siding: Color, roof: Color, shutters: bool, shu
 	for s in [-1.0, 1.0]:
 		for k in [0.2, 0.36]:
 			_window(Vector3(cx + s * w * k, 1.95, zf), Vector3(-1, 0, 0), 0.85, 1.35, true, shutters, shutter)
-		_window(Vector3(cx + s * w * 0.5, 4.2, cz), Vector3(0, 0, s), 0.7, 0.9, true, false, shutter)
+		_window(Vector3(cx + s * w * 0.5, 4.2, cz), Vector3(0, 0, -s), 0.7, 0.9, true, false, shutter)
 	_back(x0, x1, zf + d, [1.95], 0.5)
 	var g := _back_garage(at[1], zf + d, siding, roof)
 	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": cx,
