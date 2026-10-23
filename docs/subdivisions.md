@@ -24,12 +24,23 @@ Brawn (2026-10-23): the game starts as a classic city builder, and as the town g
   - 9.4 car trips a day and 1 at rush hour per house (ITE Trip Generation, code 210)
 - Builder size by town size: a local builder (2 phases), a regional developer (4 phases), then a master-planned builder (6 phases).
 
+## What a project needs (ProjectNeeds)
+
+Every phase checks with the town's other leaders before it starts. Shortages cost the builder and slow the job, never the town's money.
+
+- **Gravel:** about 400 tons a home (NSSGA) at about $16 a ton (USGS), with the price doubling every 30 miles. With a quarry (an ore company) in town it's local. Without one it's trucked about 40 miles: the builder pays more and the job takes 25% longer.
+- **Builders:** about one crew per 1,500 people (at least 2), each with about 6 houses going up. Past that, labor costs climb and the phase takes longer.
+- **Water and power:** a warning past 90% of capacity (the Texas 75/90 rule). At 100% there are no new hookups, a moratorium, and the next phase waits.
+- **Winter:** paving season closes December through February, so new phases wait for spring.
+
+The card shows these needs for each phase. The bell's PROJECTS list shows each subdivision still building, what it is waiting on, and what shortages have cost the builder so far. The numbers are the `NEEDS_*` constants in Balance. A phase that ran short waits that much longer before the next one opens. It is a handful of sums once a month per project, so there is no per-frame work.
+
 ## Code
 
 - Logic is in `scripts/sim/subdivisions.gd` (`Subdivisions`, `sim.subdivisions`). Numbers are in Balance under `SUBDIV_*`. The test is `tests/test_subdivisions.gd`.
 - Permits gained `options` (sites), `pick` (the site approved, sent with the `permit` command), `effects` (the "If you say yes" lines, shown for any request that has them) and `who`. A request with options can't be redrawn.
 - `PermitView` draws a request's `ghost` (`[x, z, angle, w, d, h]` houses with gable roofs) and `streets`, only while the card is open.
-- The screenshot is `tools/permit_shot.gd -- homes out.png`.
+- The screenshots are `tools/permit_shot.gd -- homes out.png` (the card) and `-- projects out.png` (one under way).
 
 ## Performance
 

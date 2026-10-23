@@ -212,6 +212,7 @@ func _rebuild(force := false) -> void:
 			for req in shelved:
 				_list.add_child(_card(req))
 	_agreements()
+	_projects()
 	_update_badge()
 
 
@@ -396,6 +397,8 @@ func _sites(col: VBoxContainer, req: Dictionary, picked: bool) -> void:
 	col.add_child(_fact("money", "The builder pays $%s for %s acres and the streets" % [CitySim.money_text(int(o.cost)),
 		_acres(float(e.get("acres", 0)))], UiStyle.MUTED, false))
 	effects(col, e)
+	# (Water and power are in the lines above.)
+	needs(col, o.get("needs", {}), "EACH PHASE NEEDS", ["water", "power"])
 	if req.state == Permits.State.OPEN:
 		var left := Permits.SHELVE_AFTER - (sim.tick_count - int(req.filed))
 		col.add_child(_text("Shelved in " + _days(left) + " if you don't answer", Brand.INK_FAINT, 500, 11))
@@ -435,6 +438,53 @@ func effects(col: VBoxContainer, e: Dictionary) -> void:
 	if e.has("taxes"):
 		col.add_child(_fact("money", "About $%s a year in property tax once it's built out" % CitySim.money_text(int(e.taxes)),
 			Brand.POSITIVE, false))
+
+
+## What a project needs from the town's other leaders, each line marked
+## fine, slower and dearer, or stopped (see ProjectNeeds), leaving out the
+## lines for `skip` (icons) and the sum when `total` is false.
+func needs(col: VBoxContainer, n: Dictionary, heading: String, skip := [], total := true) -> void:
+	if n.is_empty():
+		return
+	col.add_child(UiStyle.label(heading, 10, UiStyle.MUTED))
+	for l in n.lines:
+		if str(l[1]) in skip:
+			continue
+		var st := int(l[0])
+		var color: Color = UiStyle.TEXT if st == ProjectNeeds.State.OK else (Brand.WARNING if st == ProjectNeeds.State.SLOW else Brand.CRITICAL)
+		col.add_child(_fact(str(l[1]), str(l[2]), color, st != ProjectNeeds.State.OK))
+	if total and (int(n.extra) > 0 or float(n.slow) > 0.0):
+		col.add_child(_text("The builder pays $%s more and it takes about %d%% longer. Not the town's money." % [
+			CitySim.money_text(int(n.extra)), roundi(100.0 * float(n.slow))], Brand.INK_FAINT, 500, 11))
+
+
+## Subdivisions still building: where each one is and what it's waiting on.
+func _projects() -> void:
+	var ids := sim.subdivisions.active.keys()
+	ids.sort()
+	var going := ids.filter(func(id): return int(sim.subdivisions.active[id].phase) < int(sim.subdivisions.active[id].site.phases))
+	if going.is_empty():
+		return
+	_list.add_child(UiStyle.label("PROJECTS", 11, UiStyle.MUTED))
+	for id in going:
+		var a: Dictionary = sim.subdivisions.active[id]
+		var card := PanelContainer.new()
+		card.add_theme_stylebox_override("panel", _card_style(false))
+		var col := VBoxContainer.new()
+		col.add_theme_constant_override("separation", 4)
+		card.add_child(col)
+		col.add_child(_text("%s: phase %d of %d" % [a.name, int(a.phase), int(a.site.phases)], UiStyle.TEXT, 600))
+		var n: Dictionary = a.get("needs", {})
+		if not n.is_empty() and n.hold:
+			col.add_child(_fact("seasons", "Waiting: " + str(n.hold_why), Brand.WARNING, true))
+		elif int(a.phase) > 0:
+			var fill: Vector2i = sim.subdivisions.sold(sim, id)
+			col.add_child(_fact("homes", "%d of %d lots built; the next phase starts at %d%%" % [fill.x, fill.y,
+				roundi(Balance.SUBDIV_NEXT_PHASE_FILL * 100)], UiStyle.MUTED, false))
+		needs(col, n, "LAST CHECK WITH YOUR LEADERS", [], false)
+		if int(a.get("extra", 0)) > 0:
+			col.add_child(_text("Shortages have cost the builder $%s so far" % CitySim.money_text(int(a.extra)), Brand.INK_FAINT, 500, 11))
+		_list.add_child(card)
 
 
 static func _count(n: int) -> String:
