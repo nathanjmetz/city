@@ -297,7 +297,11 @@ const FARM_DECIDE_EVERY := 360
 ## Startup cash a new hub brings (its owners' savings and a start-up loan),
 ## by kind. A farm family starts with its first 80 acres paid for, and
 ## this much more to buy into the next.
-const CAPITAL_START := {"farm": 40_000.0, "company": 250_000.0}
+## A resource company starts with enough for its first few pads, part of
+## each on a land loan: an oil company its first two wells, a quarry its
+## first benches, a timber company its first harvest units.
+const CAPITAL_START := {"farm": 40_000.0, "company": 250_000.0, "oil": 750_000.0, "ore": 250_000.0,
+	"forest": 100_000.0}
 ## Share of a year's profit a hub keeps to grow on, by kind, for a leader of
 ## middling ambition (0.75x to 1.25x from cautious to bold). A farm family
 ## lives off the farm first (USDA: family living about $70,000 a year); a
@@ -463,6 +467,17 @@ const INDUSTRY := {
 const INDUSTRY_HAUL_PER_KM := 6_000.0
 ## Assessed value of each pad, for the city's industrial property tax.
 const INDUSTRY_PAD_VALUE := 250_000.0
+## What a company spends to open a pad, besides the ground (Capital pays
+## for it from the company's own money and land loans):
+##   oil     drilling and completing a shallow Illinois Basin well (about
+##           $350,000; Indiana DNR Oil and Gas permits and operator costs)
+##   ore     stripping a bench's overburden (about $60,000)
+##   forest  a log landing and skid trails for a harvest unit (about $8,000)
+const INDUSTRY_PAD_CAPEX := {"oil": 350_000.0, "ore": 60_000.0, "forest": 8_000.0}
+## Oil ground is leased, not bought: a signing bonus an acre over the well's
+## 10-acre spacing unit (Illinois Basin leases pay about $100 to $500).
+const INDUSTRY_OIL_BONUS_PER_ACRE := 250.0
+const INDUSTRY_OIL_UNIT_ACRES := 10.0
 ## Dollars a year a pad is preferred per neighbouring pad, or on reserved land.
 const INDUSTRY_COMPACT_BONUS := 4_000.0
 const INDUSTRY_RESERVE_BONUS := 6_000.0
@@ -480,6 +495,12 @@ const INDUSTRY_DECIDE_EVERY := 360
 const OIL_SPACING_CELLS := 3  # pads at least this many 80 m cells apart
 ## How far out a company's lease or timber reaches, in 80 m cells.
 const LEASE_REACH_CELLS := 12
+## A field is drilled out from what's there: each new well is an offset to
+## one already drilled, at most this many cells from it (Indiana DNR
+## spacing units: offsets 200-400 m apart, along the lease roads). A timber
+## company cuts the next unit beside woods it has already worked.
+const OIL_OFFSET_CELLS := 4
+const FOREST_NEXT_CELLS := 2
 ## An oil or timber company that has worked out its lease takes on the next
 ## tract with a gravel lease or logging road it pays for, once it makes this
 ## much a year; at most this many extra tracts, a road at most this long (m),
@@ -488,6 +509,8 @@ const INDUSTRY_ROAD_MIN_PROFIT := 50_000.0
 const INDUSTRY_MAX_LEASES := 3
 const INDUSTRY_ROAD_MAX := 1_600.0
 const INDUSTRY_ROAD_WAIT_DAYS := 12.0
+## Longest lease road a company lays out to one new pad (m).
+const INDUSTRY_PAD_ROAD_MAX := 600.0
 ## Ore: one quarry that widens bench by bench beside its plant, never
 ## separate holes (Indiana limestone quarries, Iron Range pits).
 ## Forest: a few harvest units worked at a time inside the woods, each cut

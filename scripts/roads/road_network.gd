@@ -263,8 +263,11 @@ func split_segment(seg_id: int, t: float) -> int:
 		return existing
 	segments.erase(seg_id)
 	var m := _add_node(mid)
-	_add_segment(s.a, m, c[0].lerp(c[1], t), s.type, s.oneway)
-	_add_segment(m, s.b, c[1].lerp(c[2], t), s.type, s.oneway)
+	var p := _add_segment(s.a, m, c[0].lerp(c[1], t), s.type, s.oneway)
+	var q := _add_segment(m, s.b, c[1].lerp(c[2], t), s.type, s.oneway)
+	if s.has("built_by"):
+		segments[p].built_by = s.built_by
+		segments[q].built_by = s.built_by
 	return m
 
 
@@ -279,6 +282,8 @@ func to_dict() -> Dictionary:
 	for id in segments:
 		var seg: Dictionary = segments[id]
 		s[str(id)] = [seg.a, seg.b, seg.ctrl.x, seg.ctrl.z, seg.type, seg.ctrl.y, 1 if seg.oneway else 0]
+		if seg.has("built_by"):
+			s[str(id)].append(seg.built_by)
 	return {"version": 1, "next_id": _next_id, "nodes": n, "segments": s}
 
 
@@ -294,6 +299,8 @@ func from_dict(d: Dictionary) -> void:
 			"ctrl": Vector3(s[2], s[5] if s.size() > 5 else 0.0, s[3]),
 			"type": int(s[4]) if s.size() > 4 else 0,
 			"oneway": s.size() > 6 and int(s[6]) == 1}
+		if s.size() > 7:
+			segments[int(k)].built_by = str(s[7])
 	_next_id = int(d.get("next_id", 1))
 	_changed()
 

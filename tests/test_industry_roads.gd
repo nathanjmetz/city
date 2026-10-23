@@ -12,6 +12,8 @@ func _init() -> void:
 	for kind in ["oil", "forest"]:
 		_lease_road(kind)
 	_quarry_never()
+	_grows_from_profit()
+	_field_drilled_out()
 	_done()
 
 
@@ -104,6 +106,80 @@ func _lease_road(kind: String) -> void:
 	var copy := Industry.new()
 	copy.from_dict(JSON.parse_string(JSON.stringify(ind.to_dict())))
 	_check(copy.sites[id].leases == s.leases, "%s: its tracts survive a save" % kind)
+
+
+## A company grows from its own money (Brawn, 2026-10-23): its startup
+## cash opens its first pads, then it grows only as fast as it keeps
+## profit, and dearer ground near town costs it more.
+func _grows_from_profit() -> void:
+	var best := _best(Resources.Kind.OIL)
+	var ind := Industry.new()
+	var id := ind.add_site("oil", best, Vector3(0, 0, -1), [])
+	var s: Dictionary = ind.sites[id]
+	var any := func(_m, _c): return true
+	var unlimited := Industry.new()
+	var uid := unlimited.add_site("oil", best, Vector3(0, 0, -1), [])
+	unlimited.sites[uid].cash = 1.0e12
+	for i in 40:
+		unlimited.decide(any)
+	ind.day = 1.0
+	for i in 40:
+		ind.decide(any)
+	var first: int = s.pads.size()
+	_check(first >= 1 and first < unlimited.sites[uid].pads.size(),
+		"startup cash opens its first wells, not the whole field (%d of %d)" % [first, unlimited.sites[uid].pads.size()])
+	_check(float(s.cash) >= 0.0, "it never spends more than it has ($%d)" % s.cash)
+	# A month later: hardly any more saved, so no new wells.
+	ind.day = 2.0
+	ind.decide(any)
+	_check(s.pads.size() <= first + 1, "a month's profit doesn't drill another field")
+	# Years of kept profit pay for more.
+	for m in 120:
+		ind.day = 2.0 + m
+		ind.decide(any)
+	_check(s.pads.size() > first, "over ten years it drills more from what it kept (%d wells)" % s.pads.size())
+	# Ground by a growing town costs a quarry more to take on.
+	var q := Industry.new()
+	var qid := q.add_site("ore", Vector3.ZERO, Vector3(0, 0, -1), [])
+	var cheap := q.pad_price(q.sites[qid], Vector2i(0, 1))
+	q.land_price_of = func(_p): return Balance.CAPITAL_LAND_PER_ACRE * 3.0
+	_check(q.pad_price(q.sites[qid], Vector2i(0, 1)) > cheap, "a bench by town costs more than one out in the country")
+	var copy := Industry.new()
+	copy.from_dict(JSON.parse_string(JSON.stringify(ind.to_dict())))
+	_check(is_equal_approx(float(copy.sites[id].cash), float(s.cash)), "its money survives a save")
+
+
+## An oil field is drilled out from the tank battery, offset by offset, and
+## each new well gets a lease road branching back to the main road (Brawn,
+## 2026-10-23: like someone is laying it out).
+func _field_drilled_out() -> void:
+	var sim := CitySim.new()
+	sim.simulate_traffic = false
+	var id := _company(sim, "oil")
+	if id == -1:
+		return
+	var ind := sim.industry
+	ind.price = 2.0
+	var s: Dictionary = ind.sites[id]
+	s.cash = 50_000_000.0
+	var roads := sim.network.segments.size()
+	for i in 30:
+		ind.day = 1.0 + i
+		ind.decide(sim.field_usable)
+	_check(s.pads.size() >= 3, "it drills several wells (%d)" % s.pads.size())
+	var joined := true
+	for c in s.pads:
+		var near: bool = maxi(absi(c.x), absi(c.y)) <= Balance.OIL_OFFSET_CELLS
+		for o in s.pads:
+			if o != c and maxi(absi(o.x - c.x), absi(o.y - c.y)) <= Balance.OIL_OFFSET_CELLS:
+				near = true
+		joined = joined and near
+	_check(joined, "every well is an offset to another, none a mile off (%s)" % str(s.pads))
+	var reached := true
+	for c in s.pads:
+		reached = reached and not sim.network.find_segment_near(Industry.pad_center(s, c), Industry.PAD * 0.9, 2.0).is_empty()
+	_check(reached, "every well has a road to it")
+	_check(sim.network.segments.size() > roads, "the company laid lease roads (%d pieces)" % (sim.network.segments.size() - roads))
 
 
 ## A quarry widens from its plant; it never leases far ground.

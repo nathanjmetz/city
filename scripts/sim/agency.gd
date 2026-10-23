@@ -190,6 +190,11 @@ static func develop(sim: CitySim, hub: Dictionary, tree: Array, at: Vector3, pro
 	var lead: Dictionary = hub.get("leader", {"edu": 0.5, "caution": 0.5, "ambition": 0.5})
 	# A cautious leader keeps up to a year's profit in hand before spending.
 	var budget := profit * (2.0 + 3.0 * float(lead.ambition)) - profit * float(lead.caution)
+	# A hub with its own money (Capital) spends only what it has saved, less
+	# a cushion a cautious leader keeps bigger (Brawn: growth from profit).
+	var saved := hub.has("cap_day")  # run by Capital (hubs paying their own way do it themselves)
+	if saved:
+		budget = float(hub.cash) - Balance.CAPITAL_RESERVE * (0.5 + float(lead.caution))
 	var best := {}
 	var best_v := -INF
 	for node in open(sim, hub, tree, at, profit):
@@ -208,6 +213,8 @@ static func develop(sim: CitySim, hub: Dictionary, tree: Array, at: Vector3, pro
 	if not hub.has("built"):
 		hub.built = []
 	hub.built.append(best.id)
+	if saved:
+		hub.cash = float(hub.cash) - float(best.cost)
 	hub.why = "%s built %s%s." % ["Its owner" if float(lead.edu) < 0.5 else "Its college-educated owner",
 		str(best.name).to_lower(), (": " + str(best.note)) if best.has("note") else ""]
 	return best

@@ -82,6 +82,8 @@ var parallel := false
 var parallel_gap := RoadShapes.GRID_ACROSS
 ## Height new road points are placed at, in metres above the ground.
 var elevation := 0.0
+var _plan_key := []
+var _plan_memo := {}
 
 var _points: Array[Vector3] = []
 var _preview := MeshInstance3D.new()
@@ -332,11 +334,14 @@ func _process(_delta: float) -> void:
 		_show_grid(p)
 		return
 	else:
-		curves = [_pending_curve(p)]
-		_show_length(curves[0])
+		var curve := _pending_curve(p)
+		curves = _plan(curve).pieces.duplicate()
+		if curves.is_empty():
+			curves = [curve]
+		_show_length(curve)
 		if parallel:
-			curves.append(RoadShapes.offset(curves[0], parallel_gap))
-		var problem := _problem(curves[0])
+			curves.append(RoadShapes.offset(curve, parallel_gap))
+		var problem := _problem(curve)
 		ok = problem == ""
 		if problem != _shown_problem:
 			_shown_problem = problem
@@ -734,8 +739,21 @@ func _resize(f: float) -> void:
 
 func _build(curve: Array) -> bool:
 	# Drawn onto or across a county road, the town takes over that mile.
+	# Raised: the road climbs over the roads and track it crosses.
 	return sim.apply({"type": "build_road", "start": _xz(curve[0]), "ctrl": _xz(curve[1]),
-		"end": _xz(curve[2]), "road": road_type, "join": true})
+		"end": _xz(curve[2]), "road": road_type, "join": true, "over": elevation > 0.0})
+
+
+## The pieces a raised road is built as (Overpass), worked out once per
+## change of the drawn road.
+func _plan(curve: Array) -> Dictionary:
+	if elevation <= 0.0:
+		return {"ok": true, "pieces": [curve], "crossed": 0, "why": ""}
+	var key := [curve, road_type, sim.network.revision, sim.rail.version]
+	if _plan_key != key:
+		_plan_key = key
+		_plan_memo = Overpass.plan(sim, curve, road_type)
+	return _plan_memo
 
 
 ## The county road (CountyGrid.mile_at) a point is on, out in the country
@@ -826,7 +844,8 @@ func _show_length(curve: Array) -> void:
 	var pts := RoadNetwork.sample_curve(curve[0], curve[1], curve[2])
 	var m := RoadNetwork.polyline_length(pts)
 	_label.text = "%s ft  ·  $%s" % [CitySim.money_text(roundi(m * FT)),
-		CitySim.money_text(Economy.road_cost(curve, road_type) * (2 if parallel else 1))]
+		CitySim.money_text(CitySim.shapes_cost(_plan(curve).pieces if _plan(curve).ok else [curve], road_type)
+			* (2 if parallel else 1))]
 	var r := RoadNetwork.min_radius(curve[0], curve[1], curve[2])
 	if r < 2000.0:
 		_label.text += "\nCurve safe at %d mph" % RoadStyle.safe_speed_mph(r)
@@ -834,6 +853,13 @@ func _show_length(curve: Array) -> void:
 		var flat := Vector2(curve[2].x - curve[0].x, curve[2].z - curve[0].z).length()
 		_label.text += "\nHeight %+d ft, grade %d%%" % [roundi(curve[2].y * FT),
 			roundi(absf(curve[2].y - curve[0].y) / maxf(flat, 0.1) * 100.0)]
+	var plan := _plan(curve)
+	if plan.ok and plan.crossed > 0:
+		var top := 0.0
+		for q in plan.pieces:
+			top = maxf(top, maxf(q[0].y, q[2].y))
+		_label.text += "\nOverpass: clears %d crossing%s, deck %d ft up" \
+			% [plan.crossed, "" if plan.crossed == 1 else "s", roundi(top * FT)]
 	if not is_nan(_guide_angle):
 		_label.text += "\n" + _guide_kind
 		var dir := Vector3(cos(_guide_angle), 0.0, sin(_guide_angle))
@@ -854,7 +880,10 @@ func _is_valid(curve: Array) -> bool:
 
 ## Why a road can't be built, or "" if it can (the simulation's own rules).
 func _problem(curve: Array) -> String:
-	return sim.road_problem(curve, road_type)
+	var plan := _plan(curve)
+	if not plan.ok:
+		return plan.why
+	return sim.pieces_problem(plan.pieces, road_type)
 
 
 func _snapped(hit: Vector3) -> Vector3:
@@ -1038,6 +1067,8 @@ func _update_hint() -> void:
 	if elevation != 0.0 and mode != Mode.BULLDOZE and mode != Mode.UPGRADE:
 		text += "\n%s: new roads at %+d ft  (Page Up / Page Down)" \
 			% ["Bridge" if elevation > 0.0 else "Tunnel", roundi(elevation * FT)]
+		if elevation > 0.0:
+			text += "\nRoads and track it crosses: it climbs over them, piers and all."
 	if parallel and (mode == Mode.STRAIGHT or mode == Mode.CURVED):
 		text += "\nParallel on (P): second road %d ft away  [ ]" % roundi(parallel_gap * FT)
 	hint_changed.emit(text)
