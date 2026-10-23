@@ -9,6 +9,8 @@ extends Node
 signal joined
 signal failed(reason: String)
 signal disconnected
+## Back in the region after a dropped connection (the town kept running).
+signal reconnected
 signal chat_received(line: Dictionary)
 signal players_changed
 signal cursor_moved(player_id: String, pos: Vector2)
@@ -39,6 +41,14 @@ var _peer: WebSocketMultiplayerPeer
 var _connected := false
 var _password := ""
 var _new_account := false
+## Your town keeps running when the connection drops (the host's computer
+## restarting for an update, say); the game reconnects in the background.
+const RECONNECT_EVERY := 5.0
+## Gives up (and says so) after this long without the region.
+const RECONNECT_FOR := 300.0
+var reconnecting := false
+var _retry_in := 0.0
+var _lost_for := 0.0
 
 
 ## Connects and logs in (or, with new_account, signs up). Watch the joined,
@@ -52,12 +62,17 @@ func join(server_url: String, code: String, id: String, name: String, password :
 	_password = password
 	_new_account = new_account
 	token = saved_token
+	if _connect() != OK:
+		failed.emit("Couldn't reach %s." % server_url)
+
+
+func _connect() -> int:
 	_peer = WebSocketMultiplayerPeer.new()
 	RegionServer.use_big_buffers(_peer)
-	var err := _peer.create_client(server_url)
+	var err := _peer.create_client(url)
 	if err != OK:
-		failed.emit("Couldn't reach %s." % server_url)
 		_peer = null
+	return err
 
 
 func leave() -> void:
@@ -105,7 +120,17 @@ func name_of(id: String) -> String:
 	return "Someone"
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if reconnecting:
+		_lost_for += delta
+		_retry_in -= delta
+		if _peer == null and _retry_in <= 0.0:
+			if _lost_for > RECONNECT_FOR:
+				reconnecting = false
+				disconnected.emit()
+				return
+			_retry_in = RECONNECT_EVERY
+			_connect()
 	if _peer == null:
 		return
 	_peer.poll()
@@ -120,8 +145,11 @@ func _process(_delta: float) -> void:
 		_peer = null
 		_connected = false
 		is_joined = false
-		if was_joined:
-			disconnected.emit()
+		if was_joined or reconnecting:
+			if not reconnecting:
+				reconnecting = true
+				_lost_for = 0.0
+				_retry_in = RECONNECT_EVERY
 		else:
 			failed.emit("Couldn't connect to the region. Check the address, and that the server is running.")
 		return
@@ -144,6 +172,19 @@ func _handle(msg: Dictionary) -> void:
 				leave()
 				failed.emit("The region sent something this game can't read. Refresh to update.")
 				return
+			if reconnecting and region.cities.has(my_city):
+				# Back after a dropped connection: this computer's copy of your
+				# town is the newest, so keep it and send it.
+				reconnecting = false
+				var old_ids := region.cities.keys()
+				_replace_region(d)
+				is_joined = true
+				for id in region.cities:
+					if not id in old_ids:
+						city_added.emit(id)
+				send_town()
+				reconnected.emit()
+				return
 			region.from_dict(d)
 			my_city = region.city_of(player_id)
 			is_joined = true
@@ -156,6 +197,17 @@ func _handle(msg: Dictionary) -> void:
 			requests_changed.emit()
 		"reject":
 			var reason := str(msg.get("reason", "The region turned you away."))
+			if reconnecting and "version" in reason and OS.has_feature("web"):
+				# The host's computer updated to a new version of the game:
+				# load it (the invite link in the address bar brings you back).
+				JavaScriptBridge.eval("location.reload()")
+				return
+			if reconnecting:
+				# Say the server still holds the old connection: try again soon.
+				_peer.close()
+				_peer = null
+				_connected = false
+				return
 			leave()
 			failed.emit(reason)
 		"region":

@@ -303,10 +303,11 @@ static func _hash(password: String, salt: String) -> String:
 func _admit(from: int, account: Dictionary, token: String) -> void:
 	var pid: String = account.player
 	var name: String = account.name
-	for peer in _players:
+	# Back from a dropped connection (or another window): the new one wins.
+	for peer in _players.keys():
 		if _players[peer].id == pid:
-			_reject(from, "You're already playing in this region in another window.")
-			return
+			_players.erase(peer)
+			_peer.disconnect_peer(peer)
 	var city := region.city_of(pid)
 	if city == "":
 		# A new town, on its county roads; the neighbors' halves of those
