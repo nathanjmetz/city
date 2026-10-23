@@ -11,7 +11,9 @@ extends Node3D
 ## the pad cursor moves the map at the screen edge.
 
 const MIN_DIST := 25.0
-const MAX_DIST := 1200.0
+## Far enough out to lay a whole one-mile section grid (1,609 m) with
+## room around it, as CS2 lets you see a whole tile.
+const MAX_DIST := 3000.0
 const MIN_PITCH := deg_to_rad(10.0)
 const MAX_PITCH := deg_to_rad(88.0)
 const FAST := 3.0

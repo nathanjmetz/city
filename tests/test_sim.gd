@@ -431,6 +431,7 @@ func _init() -> void:
 	_check(old.empty_zoned_lots().size() == old.lots.size() and old.lots.size() > 0, "old saves get zoned")
 	_real_layouts()
 	_town_culture()
+	_clear_keeps_links()
 	_identity_shift()
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
@@ -497,6 +498,22 @@ func _identity_shift() -> void:
 	_check(farm.cells.size() < fields and not sim.zones.cells.is_empty(),
 		"approved: the fields along the road are sold and zoned (%d of %d fields left)" % [farm.cells.size(), fields])
 	_check(sim.zones.cells.values().all(func(z): return z == ZoneMap.Zone.COMMERCIAL), "zoned for offices")
+
+
+## Starting over keeps the county highway out to the region, and gives a
+## crossroads to begin from (Brawn, 2026-10-23).
+func _clear_keeps_links() -> void:
+	var sim := CitySim.new()
+	sim.apply({"type": "build_county_road", "a": [-2000, 0], "b": [2000, 0], "links": [0, 1]})
+	sim.apply({"type": "build_road", "start": [0, 0], "ctrl": [0, 100], "end": [0, 200]})
+	sim.apply({"type": "build_road", "start": [-300, 0], "ctrl": [-300, -100], "end": [-300, -200]})
+	sim.apply({"type": "clear"})
+	_check(sim.region_links.size() == 2, "starting over keeps both ways out to the region (%d)" % sim.region_links.size())
+	var far_ok := sim.network.find_node_near(Vector3(-2000, 0, 0), 2.0) != -1 and sim.network.find_node_near(Vector3(2000, 0, 0), 2.0) != -1
+	_check(far_ok and sim.network.find_segment_near(Vector3(-300, 0, 0), 2.0).size() > 0, "the county highway runs right through")
+	var hub := sim.network.find_node_near(Vector3.ZERO, 60.0)
+	_check(hub != -1 and sim.network.segments_at(hub).size() == 4, "with a crossroads to start the town from")
+	_check(sim.network.find_segment_near(Vector3(-300, 0, -150), 5.0).is_empty(), "the player's own roads are gone")
 
 
 func _real_layouts() -> void:

@@ -690,6 +690,10 @@ func apply_now(cmd: Dictionary) -> bool:
 			elif ok:
 				_adopt_levers("post_office:%d" % int(cmd.id))
 		"clear":
+			# Starting over keeps the way out: the county highways to the
+			# neighbouring towns (trade comes and goes on them), rebuilt
+			# after the wipe, with a crossroads to start the town from.
+			var links_kept := _link_roads()
 			region_links.clear()
 			trade = Trade.new()
 			traffic.overrides.clear()
@@ -751,6 +755,9 @@ func apply_now(cmd: Dictionary) -> bool:
 			power_changed.emit()
 			education_changed.emit()
 			telecom_changed.emit()
+			for road in links_kept:
+				_county_road(road[0], road[1], road[2])
+			_start_crossroads()
 			ok = true
 	if ok:
 		if cmd.type in ["place_campus", "place_park", "place_bank", "place_hub", "place_service", "place_farmhouse",
@@ -2773,6 +2780,84 @@ func _county_road(a: Vector2, b: Vector2, link_ends: Array) -> Array:
 		if ends[int(i)] != -1 and not ends[int(i)] in region_links:
 			region_links.append(ends[int(i)])
 	return ends
+
+
+## The roads out to the region, as straight county highways to rebuild:
+## [[a, b, link_ends], ...]. Each runs from one region link along the road,
+## straight on through any junctions, to the other link or the road's end.
+func _link_roads() -> Array:
+	var out := []
+	var done := {}
+	var links := region_links.duplicate()
+	links.sort()
+	for start in links:
+		if done.has(start) or not network.nodes.has(start):
+			continue
+		done[start] = true
+		var at: int = start
+		var came := -1
+		var heading := Vector3.ZERO
+		var steps := 0
+		while steps < 200:
+			steps += 1
+			var next := -1
+			var best := -1.0
+			for seg in network.segments_at(at):
+				if seg == came:
+					continue
+				var sd: Dictionary = network.segments[seg]
+				var other: int = sd.b if sd.a == at else sd.a
+				var dir: Vector3 = network.nodes[other] - network.nodes[at]
+				dir.y = 0.0
+				dir = dir.normalized()
+				# The first step takes the only road; then straight on (within 25°).
+				var straight := 1.0 if heading == Vector3.ZERO else dir.dot(heading)
+				if straight > best and (heading == Vector3.ZERO or straight > 0.9):
+					best = straight
+					next = seg
+			if next == -1:
+				break
+			var nd: Dictionary = network.segments[next]
+			var to: int = nd.b if nd.a == at else nd.a
+			heading = network.nodes[to] - network.nodes[at]
+			heading.y = 0.0
+			heading = heading.normalized()
+			came = next
+			at = to
+			if at in region_links:
+				break
+		var a: Vector3 = network.nodes[start]
+		var b: Vector3 = network.nodes[at]
+		var ends := [0]
+		if at in region_links and at != start:
+			done[at] = true
+			ends.append(1)
+		if a.distance_to(b) >= RoadNetwork.MIN_LENGTH:
+			out.append([Vector2(a.x, a.z), Vector2(b.x, b.z), ends])
+	return out
+
+
+## A fresh start gets a crossroads on its county highway, nearest the
+## town's middle: a street across it, 300 m each way, to grow from.
+func _start_crossroads() -> void:
+	var near := network.find_segment_near(Vector3.ZERO, 5000.0)
+	if near.is_empty():
+		return
+	var at: Vector3 = near.point
+	var hub := network.find_node_near(at, 60.0)
+	if hub != -1 and network.segments_at(hub).size() >= 3:
+		return
+	var sd: Dictionary = network.segments[int(near.seg)]
+	var along: Vector3 = network.nodes[sd.b] - network.nodes[sd.a]
+	along.y = 0.0
+	var across := Vector3(-along.z, 0.0, along.x).normalized() * 300.0
+	var a := at - across
+	var b := at + across
+	if not land_ok(a) or not land_ok(b) or not land_ok(at):
+		return
+	var money := economy.money
+	network.build_road(a, at, b, RoadStyle.Type.STREET)
+	economy.money = money
 
 
 func _parcels_to_save() -> Dictionary:
