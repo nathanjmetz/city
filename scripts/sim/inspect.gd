@@ -870,6 +870,26 @@ static func place_name(sim: CitySim, ref: String) -> String:
 	return ref.get_slice("@", 0).replace(":", " ").capitalize()
 
 
+## Where a vehicle is headed. Off the map, it says which way, since a
+## county highway leaves town at both ends and the far one can be through
+## town.
+static func _to_words(sim: CitySim, car: Dictionary) -> String:
+	var ref: String = car.get("to_ref", "")
+	var stop = car.get("to_stop", {})
+	if ref != "edge" or not stop is Dictionary or not stop.get("front") is Vector3:
+		return place_name(sim, ref)
+	var from_ref: String = car.get("from_ref", "")
+	var from_pl: Dictionary = sim.traffic.place(from_ref) if from_ref != "" else {}
+	if from_pl.is_empty() or not from_pl.get("stop", {}).get("front") is Vector3:
+		return place_name(sim, ref)
+	var d: Vector3 = stop.front - from_pl.stop.front
+	if d.length() < 1.0:
+		return place_name(sim, ref)
+	# North is -Z.
+	var way := ("east" if d.x > 0.0 else "west") if absf(d.x) > absf(d.z) else ("south" if d.z > 0.0 else "north")
+	return "Out of town to the %s, by the county highway" % way
+
+
 ## What a vehicle is, like the vehicle panel in Cities: Skylines 2: the
 ## kind, who drives it, where it's coming from and going, why, and its load.
 static func _vehicle(sim: CitySim, vid: int) -> Dictionary:
@@ -897,18 +917,22 @@ static func _vehicle(sim: CitySim, vid: int) -> Dictionary:
 		"waiting":
 			status = "Waiting for a gap to pull out"
 		_:
-			var to := place_name(sim, car.get("to_ref", ""))
+			var to := _to_words(sim, car)
 			status = ("Heading home to %s" % to) if purpose == "return" or purpose == "home" else "Driving to %s" % to
 	if f.state != "parked" or car.get("pending", false):
 		rows.append(["From", place_name(sim, car.get("from_ref", ""))])
-		rows.append(["To", place_name(sim, car.get("to_ref", ""))])
+		rows.append(["To", _to_words(sim, car)])
 		if why != "":
 			rows.append(["Why", why])
 	var cargo: Dictionary = car.get("cargo", {})
-	if not cargo.is_empty():
-		rows.append(["Carrying", "%s %s" % [str(cargo.get("amount", "")), str(cargo.get("good", ""))]
-			if cargo.has("good") else str(cargo)])
-	elif VehicleTypes.spec(kind).len > 6.5:
+	if VehicleTypes.is_loaded(cargo):
+		var amount := str(cargo.get("amount", ""))
+		var good := str(cargo.get("good", ""))
+		rows.append(["Carrying", str(cargo) if not cargo.has("good")
+			else good.capitalize() if amount == "" else "%s %s" % [amount, good]])
+	elif str(cargo.get("good", "empty")) != "empty":
+		rows.append(["Carrying", str(cargo.good).capitalize()])  # a crew going home
+	elif VehicleTypes.spec(kind).len > 6.5 or not cargo.is_empty():
 		rows.append(["Carrying", "Empty"])
 	if driver != -1:
 		rows.append(["Driver", sim.people.person_name(driver)])
