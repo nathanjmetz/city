@@ -89,6 +89,9 @@ var _reval := {}
 var _reval_rev := -1
 var _reval_todo := []
 var _reval_n := 0
+## The lots plan() last handed back: key -> [lot, its outline then, the
+## street side's cut lot it came from].
+var _out := {}
 ## Each parcel's last outline and entry, by lot key (see _parcels).
 var _by_key := {}
 
@@ -124,7 +127,10 @@ func plan(network: RoadNetwork, zones: ZoneMap, frozen: Dictionary) -> Array:
 		for p in parcels:
 			keep[p[2]] = _grown[p[2]]
 		_grown = keep
-	var index := _index(parcels)
+	# The parcels warm() indexed, if they're still the ones standing.
+	var index := _warm_parcels
+	if index.is_empty() or index.sig != _parcels_sig(parcels):
+		index = _index(parcels)
 	var all := []
 	var corners := []
 	var ids := network.segments.keys()
@@ -145,7 +151,17 @@ func plan(network: RoadNetwork, zones: ZoneMap, frozen: Dictionary) -> Array:
 					s.free_sig = 0
 				lots_here = _plan_side(s, zones, index)
 			for cached in lots_here:
+				# A lot cut the same as last time is handed back as the same
+				# Dictionary, so callers can tell what changed by identity.
+				if not cached.has("corner_by"):
+					if frozen.has(cached.key):
+						continue  # built on: the parcel stands instead
+					var prev: Array = _out.get(cached.key, [])
+					if not prev.is_empty() and is_same(prev[2], cached) and is_same(prev[1], prev[0].corners):
+						all.append(prev[0])
+						continue
 				var lot: Dictionary = cached.duplicate()
+				lot.src = cached
 				all.append(lot)
 				if lot.has("corner_by"):
 					corners.append(lot)
@@ -154,13 +170,27 @@ func plan(network: RoadNetwork, zones: ZoneMap, frozen: Dictionary) -> Array:
 	_fresh = false
 	_warm_list.clear()
 	_warm_next = []
+	_warm_parcels = {}
 	_warm_rev = -1  # every side is planned now
 	_join_corners(all, corners)
 	var out := []
+	var was := _out
+	_out = {}
 	for lot in all:
-		if not frozen.has(lot.key):
+		if frozen.has(lot.key):
+			continue
+		if lot.has("src"):
+			var src: Dictionary = lot.src
+			lot.erase("src")
 			lot.erase("corner_by")
-			out.append(lot)
+			# A corner joined again the same way: the same Dictionary too.
+			var prev: Array = was.get(lot.key, [])
+			if not prev.is_empty() and is_same(prev[1], prev[0].corners) and prev[0] == lot:
+				lot = prev[0]
+			_out[lot.key] = [lot, lot.corners, src]
+		else:
+			_out[lot.key] = was[lot.key]
+		out.append(lot)
 	return out
 
 
@@ -205,7 +235,11 @@ static func _index(parcels: Array) -> Dictionary:
 				if not cells.has(c):
 					cells[c] = []
 				cells[c].append(i)
-	return {"list": parcels, "cells": cells, "sig": hash(parcels.map(func(p): return p[2]))}
+	return {"list": parcels, "cells": cells, "sig": _parcels_sig(parcels)}
+
+
+static func _parcels_sig(parcels: Array) -> int:
+	return hash(parcels.map(func(p): return p[2]))
 
 
 ## The parcels whose box meets `area`, in key order.
@@ -1327,6 +1361,7 @@ static func merge_lots(sim, a: String, b: String) -> String:
 	_set_shape(la, poly)
 	sim.lots.erase(b)
 	sim.buildings.erase(b)
+	sim.note_lots([a, b])
 	sim.lots_changed.emit()
 	sim.buildings_changed.emit()
 	return a
@@ -1366,6 +1401,7 @@ static func enlarge_lot(sim, key: String, extra: PackedVector2Array) -> bool:
 	_set_shape(lot, poly)
 	lot.depth = maxf(lot.depth, (lot.pos - lot.front).dot(lot.normal) * 2.0)
 	_snap_lot(lot)
+	sim.note_lots([key])
 	sim.lots_changed.emit()
 	return true
 
@@ -1406,6 +1442,7 @@ static func split_lot(sim, key: String) -> Array:
 	lot.width = w
 	_set_shape(lot, pa)
 	sim.lots[b.key] = b
+	sim.note_lots([key, b.key])
 	sim.lots_changed.emit()
 	return [key, b.key]
 

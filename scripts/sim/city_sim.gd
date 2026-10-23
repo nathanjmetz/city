@@ -193,6 +193,11 @@ const REPLAN_TICKS := 15
 const REPLAN_ROAD_TICKS := 50
 const REPLAN_WARM := 32
 var _replan_at := 0
+## What the last lots_changed changed: the keys of lots added, removed or
+## reshaped. lots_delta_full is true when every lot should be treated as new
+## (a load, or a full replan), though the keys are still listed.
+var lots_delta := []
+var lots_delta_full := true
 ## Only zoning or roads changed: built parcels need checking only where a
 ## road moved (the rest can't have changed), which keeps edits in a big
 ## town quick.
@@ -2117,6 +2122,28 @@ func _lot_blocked(lot: Dictionary) -> bool:
 	return not land_ok(lot.pos, LotPlanner.FRONTAGE * 0.5)
 
 
+## Notes which lots changed (for lots_changed listeners), when only these did.
+func note_lots(keys: Array) -> void:
+	lots_delta = keys
+	lots_delta_full = false
+
+
+## Works out lots_delta: lots added, gone or changed since `was`. Unchanged
+## lots are the same Dictionary (LotPlanner hands back a lot cut the same way
+## as before as the same one), so this is a quick identity check.
+func _lots_delta(was: Dictionary, full: bool) -> void:
+	var keys := []
+	for key in lots:
+		if not is_same(was.get(key), lots[key]):
+			keys.append(key)
+	for key in was:
+		if not lots.has(key):
+			keys.append(key)
+	keys.sort()
+	lots_delta = keys
+	lots_delta_full = full
+
+
 ## The lots buildings stand on, by key.
 func _parcel_lots() -> Dictionary:
 	var out := {}
@@ -2137,6 +2164,7 @@ func _refresh() -> void:
 	if _lots_dirty or _lots_light:
 		var tr := Perf.now()
 		var full := _lots_dirty
+		var was := lots
 		_lots_dirty = false
 		_lots_light = false
 		planner.update(network)
@@ -2146,6 +2174,12 @@ func _refresh() -> void:
 		var lost := []
 		var keys := buildings.keys()
 		keys.sort()
+		if not full and planner.changed_boxes.is_empty():
+			# No road changed: every parcel stands as it is.
+			for key in keys:
+				if lots.has(key):
+					frozen[key] = lots[key]
+			keys = []
 		for key in keys:
 			if lots.has(key):
 				var lot := planner.revalidate(network, lots[key])
@@ -2166,6 +2200,7 @@ func _refresh() -> void:
 			if not _lot_blocked(lot):
 				lots[lot.key] = lot
 		_usable_cache.clear()
+		_lots_delta(was, full)
 		Perf.add("sim.lots.plan", tr)
 		tr = Perf.now()
 		services.plants = power.sources()
@@ -2751,6 +2786,8 @@ func from_dict(d: Dictionary) -> void:
 		_roads_moved = bool(flags[2])
 		_replan_at = int(d.plan.get("replan_at", 0))
 		_usable_cache.clear()
+		lots_delta = lots.keys()
+		lots_delta_full = true
 		services.plants = power.sources()
 		services.update(network, lots, buildings)
 		lots_changed.emit()
