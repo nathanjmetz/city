@@ -41,7 +41,8 @@ func _process(_delta: float) -> void:
 func _rebuild() -> void:
 	_draw_fields()
 	for id in _homes.keys():
-		if not sim.farms.farms.has(id) or _homes[id].get_meta("look") != _look(sim.farms.farms[id]):
+		if not sim.farms.farms.has(id) or _homes[id].get_meta("look") != _look(sim.farms.farms[id]) \
+				or _homes[id].get_meta("built") != sim.farms.farms[id].get("built", []).size():
 			_homes[id].queue_free()
 			_homes.erase(id)
 			_trees.remove(str(id))
@@ -264,10 +265,11 @@ func _farmstead(id: Variant, f: Dictionary) -> Node3D:
 	var look := _look(f)
 	var root := Node3D.new()
 	root.set_meta("look", look)
+	root.set_meta("built", f.get("built", []).size())
 	add_child(root)
 	root.position = Vector3(f.pos.x, Terrain.ground_y(f.pos.x, f.pos.z), f.pos.z)
 	root.basis = Basis.looking_at(f.dir, Vector3.UP)
-	var built := FarmBuilder.build_farmstead(hash(str(id)), look)
+	var built := FarmBuilder.build_farmstead(hash(str(id)), look, f.get("built", []))
 	# A footing under the yard, for farmsteads on a slope.
 	var footing := MeshInstance3D.new()
 	var cube := BoxMesh.new()

@@ -53,7 +53,7 @@ func _process(delta: float) -> void:
 func _rebuild() -> void:
 	for id in _sites.keys():
 		var s = sim.industry.sites.get(id)
-		if s == null or _sites[id].get_meta("pads") != s.pads.size() or _sites[id].get_meta("built") != s.get("built", []).size():
+		if s == null or _sites[id].get_meta("pads") != s.pads.size() or _sites[id].get_meta("built") != _look(s):
 			_sites[id].queue_free()
 			_sites.erase(id)
 			_trees.remove("site:%d" % id)
@@ -107,12 +107,17 @@ func _sync_signs() -> void:
 	SignText.sync_lanes(self, _signs, sim, lanes, true)
 
 
+## What a company's yard shows: rebuilt when it builds or places something.
+static func _look(s: Dictionary) -> String:
+	return "%d:%s" % [s.get("built", []).size(), ",".join(s.get("addons", {}).keys())]
+
+
 func _site(id: int, s: Dictionary) -> Node3D:
 	sim.vegetation.update(sim)
 	var pines := []
 	var root := Node3D.new()
 	root.set_meta("pads", s.pads.size())
-	root.set_meta("built", s.get("built", []).size())
+	root.set_meta("built", _look(s))
 	add_child(root)
 	# Lanes in one mesh, in world space.
 	var st := SurfaceTool.new()
@@ -153,7 +158,7 @@ func _mine(id: int, s: Dictionary, root: Node3D) -> void:
 	var merged := {}
 	var none := []
 	var hq := Transform3D(Basis.looking_at(s.dir, Vector3.UP), s.pos)
-	_hq(id, s, root, IndustryBuilder.build_hq(s.kind, id), [])
+	_hq(id, s, root, IndustryBuilder.build_hq(s.kind, id, s.get("built", []), s.get("addons", {})), [])
 	if s.kind == "ore" and not s.pads.is_empty():
 		_strip_mine(s, hq, root)
 	for c in s.pads:
@@ -187,7 +192,7 @@ func _forest(id: int, s: Dictionary, root: Node3D, trees: Array) -> void:
 	var basis := Basis.looking_at(s.dir, Vector3.UP)
 	var merged := {}  # material -> SurfaceTool, every cell merged
 	var seed0 := hash([roundi(s.pos.x), roundi(s.pos.z)])
-	_hq(id, s, root, ForestryBuilder.mill(seed0, Industry.HQ_SIZE, s.get("built", [])), trees)
+	_hq(id, s, root, ForestryBuilder.mill(seed0, Industry.HQ_SIZE, s.get("built", []), s.get("addons", {})), trees)
 	# Which cells are wooded: the stands, the mill's own cell, and every free
 	# forest cell next to them.
 	var wooded := {Vector2i.ZERO: true}
@@ -235,10 +240,18 @@ func _forest(id: int, s: Dictionary, root: Node3D, trees: Array) -> void:
 		if c == Vector2i.ZERO:
 			# The mill's clearing.
 			clear.append([Vector2(-6, 0), Vector2(6, 0), 34.0])
+			# And the ground its kilns, mills and decks stand on.
+			for node in s.get("addons", {}):
+				var r := Industry.addon_rect(s, node).grow(4.0)
+				var m := r.get_center()
+				var half := minf(r.size.x, r.size.y) * 0.5
+				var run := Vector2(r.size.x * 0.5 - half, 0) if r.size.x >= r.size.y else Vector2(0, r.size.y * 0.5 - half)
+				clear.append([m - run, m + run, half])
 			_put(merged, ForestryBuilder.woods(cseed, Industry.PAD, 1.0, clear, open), frame, trees, built)
 		elif c in s.pads:
 			var dir: Vector3 = basis.inverse() * (Industry.pad_center(s, Industry.track_to(s, c)) - Industry.pad_center(s, c))
-			_put(merged, ForestryBuilder.stand(cseed, Industry.PAD, Vector2(dir.x, dir.z), clear, open), frame, trees, built)
+			_put(merged, ForestryBuilder.stand(cseed, Industry.PAD, Vector2(dir.x, dir.z), clear, open,
+				"replanting" in s.get("built", [])), frame, trees, built)
 		else:
 			_put(merged, ForestryBuilder.woods(cseed, Industry.PAD, 1.0, clear, open), frame, trees, built)
 	for mat in merged:

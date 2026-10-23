@@ -3237,6 +3237,14 @@ func found_business(key: String, zone: int, chain := "") -> bool:
 	return true
 
 
+## Ground beside a company's yard it may build an add-on on: buildable,
+## unzoned, clear of roads, and nobody else's (Capital.land_free).
+func _addon_free(p: Vector3, who: String) -> bool:
+	return land_ok(p) and zones.zone_at(p) == ZoneMap.Zone.NONE \
+		and network.find_segment_near(p, 12.0).is_empty() and not big.covers(p) \
+		and Capital.land_free(self, [p], who)
+
+
 ## Each farm and company leader takes their next step up their tree.
 func _develop_hubs() -> void:
 	var ids := farms.farms.keys()
@@ -3255,8 +3263,24 @@ func _develop_hubs() -> void:
 		var s: Dictionary = industry.sites[id]
 		if not s.has("leader"):
 			s.leader = Agency.leader(self, hash([city_seed, "site", id]))
-		if not Agency.develop(self, s, Agency.TREES[s.kind], s.pos, industry.yearly_profit(id)).is_empty():
+		var who := "site:%d" % id
+		var free := func(p: Vector3) -> bool: return _addon_free(p, who)
+		# Upgrades from before they took ground find theirs now.
+		for had in s.get("built", []):
+			if Industry.ADDONS.get(s.kind, {}).has(had) and not s.get("addons", {}).has(had):
+				site_built = industry.place_addon(id, had, free) or site_built
+		var node := Agency.develop(self, s, Agency.TREES[s.kind], s.pos, industry.yearly_profit(id))
+		if node.is_empty():
+			continue
+		if industry.place_addon(id, node.id, free):
 			site_built = true
+			continue
+		# No ground for it beside the yard: it isn't built after all.
+		s.built.erase(node.id)
+		if s.has("cap_day"):
+			s.cash = float(s.cash) + float(node.cost)
+		s.why = "%s wanted to build %s, but there's no free ground beside the yard." % [
+			"Its owner", str(node.name).to_lower()]
 	if farm_built:
 		farms_changed.emit()
 	if site_built:

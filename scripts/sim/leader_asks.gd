@@ -377,6 +377,8 @@ func _yes(sim, a: Dictionary) -> bool:
 				if n.id == str(a.node):
 					node = n
 			s.why = "Built a %s with a tax abatement from the town." % str(node.get("name", "it")).to_lower()
+			var who := "site:%d" % int(a.site)
+			sim.industry.place_addon(int(a.site), str(a.node), func(p: Vector3) -> bool: return sim._addon_free(p, who))
 			abatements.append({"who": "site:%d" % int(a.site), "monthly": int(a.monthly),
 				"until": sim.tick_count + Balance.ASK_ABATE_YEARS * 12 * TICKS_PER_MONTH})
 			sim.industry_changed.emit()
