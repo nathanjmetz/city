@@ -36,6 +36,12 @@ const REAR_CAP := 40.0
 ## right back to the lane, and a gravel road gets lots of its own only
 ## beyond this far (a deep town lot, about 150 ft) from any paved street.
 const REAR_LANE_DEPTH := 45.0
+## Two streets closer than this lot depth each way leave room for one row of
+## lots, not two half-depth rows back to back (real plats are 30-45 m deep):
+## homes and industry front the quieter street and back onto the busier one
+## ("reverse frontage" along arterials), shops front the busier one.
+const FACE_MIN := 27.0
+const FACE_MARGIN := 3.0
 ## How each road's land claim works: a paved street claims land halfway to
 ## the next; a gravel road gives way to a paved street; an alley claims
 ## only its own right of way.
@@ -426,7 +432,8 @@ func update(network: RoadNetwork) -> void:
 			var a := Vector2(pts[i].x, pts[i].z)
 			var b := Vector2(pts[i + 1].x, pts[i + 1].z)
 			# The last two: whether a, b are the street's own ends.
-			pieces.append([a, b, half, Rect2(a, Vector2.ZERO).expand(b), id, rank, i == 0, i == pts.size() - 2])
+			pieces.append([a, b, half, Rect2(a, Vector2.ZERO).expand(b), id, rank, i == 0, i == pts.size() - 2,
+				network.segments[id].type])
 			box = box.expand(b)
 		_pieces[id] = pieces
 		_seg_box[id] = box
@@ -716,6 +723,13 @@ static func _ray(s: Dictionary, a: float) -> Array:
 	var lanes := {}
 	var stop := INF
 	for ru in rules:
+		if ru.get("face", false):
+			if r[5] == ru.seg and r[3] < FACE_MIN + (0.0 if ru.win else FACE_MARGIN):
+				if not ru.win:
+					# The other street keeps this one row of lots.
+					return [a, r[1], r[2], -1.0, ru.k, ru.seg]
+				lanes[ru.seg] = ru  # the row runs back to the other street
+			continue
 		var d := _dist_to(r[1], ru.pieces)
 		if not ru.win:
 			var band: float = ru.k + 0.3 + ru.depth + 0.5
@@ -955,6 +969,10 @@ static func _first_touch(f: Vector2, n: Vector2, a: Vector2, b: Vector2, k: floa
 func _corner_rules(s: Dictionary, rays: Array, zones: ZoneMap) -> Array:
 	var rules := []
 	var seen := {}
+	var shallow := {}
+	for r in rays:
+		if r[3] >= 0.0 and r[3] < FACE_MIN + FACE_MARGIN and r[5] >= 0:
+			shallow[r[5]] = true
 	for r in rays:
 		var o: int = r[5]
 		if o < 0 or r[3] < 0.0 or seen.has(o) or not _pieces.has(o):
@@ -966,8 +984,11 @@ func _corner_rules(s: Dictionary, rays: Array, zones: ZoneMap) -> Array:
 			continue
 		var piece: Array = _nearest_piece(r[1], _pieces[o])
 		var d: Vector2 = (piece[1] - piece[0]).normalized()
-		# Only a street running along the survey lines is a cross street.
-		if absf(d.dot(r[2])) < 0.7:
+		# Only a street running along the survey lines is a cross street; one
+		# running across them faces this one over the block.
+		var along := absf(d.dot(r[2]))
+		var face := along < 0.3 and shallow.has(o)
+		if not face and along < 0.7:
 			continue
 		var k: float = piece[2]
 		var inside: Vector2 = r[1] + r[2] * 20.0
@@ -981,6 +1002,13 @@ func _corner_rules(s: Dictionary, rays: Array, zones: ZoneMap) -> Array:
 		for q in _pieces[o]:
 			len_o += (q[0] as Vector2).distance_to(q[1])
 		var win: bool = zone_o == 0 or s.len > len_o + 1.0 or absf(s.len - len_o) <= 1.0 and s.seg < o
+		if face:
+			var pref_s := _face_pref(s.type, zone_s)
+			var pref_o := _face_pref(piece[8], zone_o)
+			win = zone_o == 0 or zone_s != 0 and (pref_s > pref_o or pref_s == pref_o and win)
+			rules.append({"seg": o, "win": win, "depth": REACH, "k": k, "face": true,
+				"pieces": _pieces[o].map(func(q): return [q[0], q[1]])})
+			continue
 		var holder := zone_s if win else zone_o
 		if not SIZES.has(holder):
 			continue
@@ -990,19 +1018,27 @@ func _corner_rules(s: Dictionary, rays: Array, zones: ZoneMap) -> Array:
 
 
 ## Whether this side holds the squared corner at cross street `seg`, or
-## starts behind the corner lot of a cross street that holds it.
+## starts behind the corner lot of a cross street that holds it (a facing
+## street's lots end a row, never make a corner).
 static func _holds_corner(s: Dictionary, seg: int) -> bool:
 	for ru in s.get("sq", []):
 		if ru.seg == seg:
-			return ru.win
+			return ru.win and not ru.get("face", false)
 	return false
 
 
 static func _behind_corner(s: Dictionary, seg: int) -> bool:
 	for ru in s.get("sq", []):
 		if ru.seg == seg:
-			return not ru.win
+			return not ru.win or ru.get("face", false)
 	return false
+
+
+## Which of two facing streets keeps the one row of lots between them:
+## shops want the busier street, homes and industry the quieter one.
+static func _face_pref(type: int, zone: int) -> int:
+	var lanes: int = RoadStyle.TYPES[type].get("lanes", 2)
+	return lanes if zone == ZoneMap.Zone.COMMERCIAL else -lanes
 
 
 ## Whether the road (its pieces) runs on from one of this side's street's
