@@ -60,6 +60,10 @@ const DEPTHS := [24.0, 28.0, 32.0, 36.0, 42.0, 50.0]
 ## browser, where memory is tighter.
 static var _plan_cap := 64 if OS.has_feature("web") else 192
 static var _plans := {}
+## The footprints (Rect2, lot x/z) of the building masses of the last thing
+## built, for its foundation and far-off block: the mesh's own bounds also
+## take in fences and sheds out to the lot lines.
+static var last_masses := []
 ## Plan info alone (where the drive, garage and door are), by plan without
 ## the care tier or paint: what the traffic sim asks for, worked out without drawing.
 static var _infos := {}
@@ -1635,6 +1639,7 @@ func _flat_rect(kind: String, x0: float, x1: float, z0: float, z1: float, y: flo
 func _commit_house() -> ArrayMesh:
 	if owner_care < 0:
 		_weeds()
+	last_masses = _masses.duplicate()
 	var mesh := ArrayMesh.new()
 	var mats: Array = _body.keys()
 	for mat in _st:
