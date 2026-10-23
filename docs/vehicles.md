@@ -44,10 +44,19 @@ engine). `pick()` is the fallback for background trips.
 - `scripts/vehicles/vehicle_material.gd`: one shader for all of them: paint,
   glass, chrome, lights that brighten when braking, flashing beacons.
 - `scripts/traffic/traffic_view.gd`: one batch per model and detail level.
-  Bodies point from the front bumper to the rear axle, so long vehicles
-  swing wide in turns; semi trailers hinge at the fifth wheel.
+  Bodies move by the kinematic bicycle model (the one behind AASHTO's
+  turning templates): the front axle follows the simulation's path and the
+  rear axle runs in its tracks a wheelbase back, so a body turns about its
+  middle, not its bumper, lines up again once round a corner and eases
+  through lane changes; buses swing their fronts wide; semi trailers hinge
+  at the fifth wheel with their axles in the same tracks. Backing out of a drive, the rear leads along the
+  path. The view samples each vehicle once a simulation step and glides
+  between samples one step behind, so it stays smooth at any step rate.
+  Up close, bodies dip a little under braking and lean out in turns.
 - `tools/vehicle_shot.gd`: lines up every model for photo checks.
+- `tools/motion_clip.gd`: films one car backing out or turning in the real
+  game; `tools/motion_check.gd` counts bodies that overlap.
 
 ## Ultra close-ups
 
-On the desktop Ultra and Cinematic tiers (`GraphicsQuality`), vehicles within 75 m use `VehicleModels.LOD_ULTRA`. These have rounded bodies, alloy wheels with brake discs, door seams, handles and plates, and use the clear-coat material (`VehicleMaterial.get_material(true)`). Each model's close-up mesh is built the first time one comes close, so the browser and the lower tiers never pay for it. Bench: `godot --headless -s tools/vehicle_bench.gd -- small 200 ultra`.
+On the desktop Ultra and Cinematic tiers (`GraphicsQuality`), vehicles within 75 m use `VehicleModels.LOD_ULTRA`. These have rounded bodies, alloy wheels with brake discs, door seams, handles and plates, and use the clear-coat material (`VehicleMaterial.get_material(true)`). Each model's close-up mesh is built the first time one comes close, so the browser and the lower tiers never pay for it. Bench: `godot --headless -s tools/vehicle_bench.gd -- small 200 ultra` (add `live` to tick the town between frames, as the game does).

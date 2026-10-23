@@ -3,9 +3,19 @@ extends Node3D
 ## Draws every vehicle, one batch per model and level of detail, moved on
 ## smoothly between simulation ticks.
 ##
-## Each vehicle is placed by two points on its path: the front bumper and
-## the rear axle, so long vehicles swing wide through turns like real ones.
-## Semis draw the tractor and trailer apart, hitched at the fifth wheel.
+## Bodies move the way real ones do (the kinematic bicycle model, the same
+## one AASHTO's turning templates come from): the front axle follows the
+## path the simulation drives, and the rear axle trails it, always one
+## wheelbase behind and pointed at it. So a car turns about its rear wheels,
+## not its bumper, cuts a little inside on a corner and eases into a lane
+## change, and a long bus swings its front wide. Semis draw the tractor and
+## trailer apart, hitched at the fifth wheel, the trailer's axles trailing
+## the kingpin the same way. Backing out of a driveway, the rear leads.
+##
+## The simulation is sampled once a tick and the view glides between the
+## samples (one tick behind), so motion stays smooth however coarse the
+## simulation's steps are, and the costly path lookups run once a tick, not
+## once a frame. None of this feeds back into the simulation.
 ## Close vehicles get the detailed model (the close-up one on the desktop
 ## Ultra tier), far ones a simple one, and very far ones aren't drawn.
 ## Parked vehicles in stalls, driveways and at docks are drawn too; ones
@@ -26,9 +36,17 @@ var _flow_frames := 0
 const ULTRA_NEAR := 75.0
 ## Kinds whose emergency lights run.
 const EMERGENCY := ["fire_engine", "ambulance"]
-## Bodies longer than this (metres) track their rear axle on the path up
-## close; shorter ones just follow the path at the front bumper.
+## Bodies longer than this (metres) are drawn further out than cars.
 const LONG := 6.5
+## Front axle, metres behind the front bumper, where it isn't about a metre
+## (buses and motorhomes set it well back, behind the door).
+const FRONT := {"city_bus": 2.4, "coach": 2.2, "motorhome": 2.0, "school_bus": 1.0}
+## How much a body dips under braking and leans in a turn, in radians per
+## m/s^2, and at most. A family car pitches and rolls about a degree at
+## a comfortable 3 m/s^2.
+const PITCH := 0.005
+const ROLL := 0.006
+const LEAN_MAX := 0.03
 
 var traffic: TrafficSim
 ## Returns how far through the current tick the clock is, 0 to 1.
@@ -43,9 +61,49 @@ var _ultra := false
 var _xf := {}       # mesh key * lod -> [transforms]
 var _cu := {}       # mesh key * lod -> [custom colours]
 var _info := {}     # car id -> what _describe() worked out
+var _sampled := -1.0  # the clock time the vehicles were last sampled at
 const _NONE := []
 var _parked := []   # [front, mesh key, transform, custom, far mesh key], for parked vehicles in sight
 var _parked_version := -1
+## The simulation's clock when it was last sampled, the one before, and the
+## time the view is drawing (a step behind, so it always has two samples to
+## glide between). _rate is simulated seconds per real second.
+var _t1 := -1.0
+var _t0 := -1.0
+var _step := TrafficSim.DT
+var _rt := 0.0
+var _rate := 1.0
+var _win_real := 0.0
+var _win_t := 0.0
+
+
+## How one vehicle is moving, for drawing: two samples of its front axle
+## (time, point, heading), where its rear axle and trailer axles are now, and
+## how far its body is pitched and leaning.
+class Motion:
+	var t0 := -1.0
+	var a0 := Vector3.ZERO
+	var h0 := Vector3.FORWARD
+	var t1 := -1.0
+	var a1 := Vector3.ZERO
+	var h1 := Vector3.FORWARD
+	## Backing up at the last sample, with where the path puts the rear axle
+	## (the rear leads when reversing, so it is taken from the path).
+	var rev1 := false
+	var r0 := Vector3.ZERO
+	var r1 := Vector3.ZERO
+	var tr0 := Vector3.ZERO
+	var tr1 := Vector3.ZERO
+	var a := Vector3.ZERO
+	## Where the front axle has been lately (oldest first): the rear axle and
+	## a trailer's axles run in these tracks.
+	var trail := PackedVector3Array()
+	var rear := Vector3.ZERO
+	var trailer := Vector3.ZERO
+	var started := false
+	var heading := Vector3.FORWARD
+	var pitch := 0.0
+	var roll := 0.0
 
 
 func setup(t: TrafficSim, fraction: Callable) -> void:
@@ -136,7 +194,6 @@ func _draw_cars(_delta: float) -> void:
 		_cu[k].clear()
 	var cam := get_viewport().get_camera_3d()
 	var eye := cam.global_position if cam else Vector3.ZERO
-	var frac: float = tick_fraction.call()
 	if _ultra_wanted() != _ultra:
 		_set_ultra(not _ultra)
 	var ultra2 := ULTRA_NEAR * ULTRA_NEAR if _ultra else -1.0
@@ -160,24 +217,34 @@ func _draw_cars(_delta: float) -> void:
 	var small2 := FAR_SMALL * FAR_SMALL
 	if _info.size() > traffic.cars.size() * 2 + 256:
 		_info.clear()  # vehicles long gone
-	for car in traffic.cars + _flow_near(eye):
-		var ahead: float = car.get("flow_v", car.v) * TrafficSim.DT * frac
-		var pose: Array = traffic.car_pose(car, ahead)
-		var p0: Vector3 = pose[0]
+	_clock(_delta)
+	var cars: Array = traffic.cars + _flow_near(eye)
+	if _sampled != _t1:
+		_sampled = _t1
+		for car in cars:
+			_sample(car, _info_of(car))
+	var blend := 1.0 - exp(-_delta * 4.0)
+	for car in cars:
+		var info: Array = _info_of(car)
+		var m: Motion = info[9]
+		if m.t1 < 0.0:
+			_sample(car, info)
+		var fo: float = info[10]
+		var a := _axle_at(m)
 		# Ground height can't bring a car back inside the range, so test the
 		# flat distance before lifting it onto the terrain.
-		var dx := p0.x - eye.x
-		var dz := p0.z - eye.z
+		var dx := a.x - eye.x
+		var dz := a.z - eye.z
 		if dx * dx + dz * dz > far2:
+			m.started = false  # out of sight: it picks up afresh when back
 			continue
-		var front := Terrain.lift(p0)
+		var wb: float = info[11]
+		var h := _steer(m, a, wb, info[12])
+		var flat_front := a + h * fo
+		var front := Terrain.lift(flat_front)
 		var d2 := front.distance_squared_to(eye)
 		if d2 > far2:
 			continue
-		var info: Array = _info.get(car.id, _NONE)
-		if info.is_empty() or info[0] != car.get("kind", "car"):
-			info = _describe(car)
-			_info[car.id] = info
 		if d2 > small2 and not info[6]:
 			continue
 		var lod := 0 if d2 < near2 else 1
@@ -194,34 +261,23 @@ func _draw_cars(_delta: float) -> void:
 			var rig := VehicleTypes.for_cargo(car.get("cargo", {}))
 			if rig != "" and VehicleModels.ARTIC.has(rig) and not kind in VehicleTypes.CARGO_ALT.get(rig, []):
 				kind = rig
+		var basis := _body(m, car, h, front, lod, blend, _delta)
+		var xf := Transform3D(basis, front)
 		if VehicleModels.ARTIC.has(kind):
 			var art: Dictionary = VehicleModels.ARTIC[kind]
-			var xf := _place(car, ahead, front, VehicleModels.AXLE[art.cab])
 			_add(art.cab, lod, xf, custom)
-			# Trailer: kingpin on the fifth wheel, rear axles on the path.
+			# Trailer: kingpin on the fifth wheel, its axles trailing it.
 			var hitch: Vector3 = xf * Vector3(0, 0, art.hitch)
-			var back: Vector3 = Terrain.lift(_behind(car, ahead, art.hitch - art.pin + art.axle))
-			var dir := hitch - back
+			var tl: float = float(art.axle) - float(art.pin)
+			var back := _trail(m, Vector3(hitch.x, a.y, hitch.z), tl)
+			var dir := hitch - (Terrain.lift(back) if lod != 1 else Vector3(back.x, hitch.y, back.z))
 			if dir.length() < 1.0:
 				dir = -xf.basis.z
 			dir = dir.normalized()
 			var origin: Vector3 = hitch + dir * float(art.pin)
 			_add(art.trailer, lod, Transform3D(Basis.looking_at(dir, Vector3.UP), origin), Color(1, 1, 1, flags))
-		elif lod != 1 and info[6]:
-			# Long bodies up close: rear axle on the path, so they swing wide.
-			_add(info[2], lod, _place(car, ahead, front, info[7]), custom)
 		else:
-			# Short ones, and anything far off: along the path at the front,
-			# tipped to the ground under the rear axle.
-			var dir: Vector3 = pose[1]
-			dir.y = 0.0
-			if dir.length_squared() < 1e-6:
-				dir = Vector3.FORWARD
-			dir = dir.normalized()
-			if lod != 1:
-				var back := Terrain.lift(p0 - dir * info[7])
-				dir = (front - back).normalized()
-			_add(info[8] if lod == 1 else info[2], lod, Transform3D(Basis.looking_at(dir, Vector3.UP), front), custom)
+			_add(info[8] if lod == 1 else info[2], lod, xf, custom)
 	if parked.is_valid():
 		for p in parked.call():
 			_add_parked(p[0], p[1], p[2], eye, ultra2)
@@ -252,8 +308,10 @@ func _draw_cars(_delta: float) -> void:
 
 ## What doesn't change over a vehicle's life, worked out once:
 ## [sim kind, kind, model, paint, emergency flag, may haul a rig's load,
-## long body, rear axle, far model]. Far away every body style of a kind
-## shares one simple model, so the distance costs one draw per kind.
+## long body, rear axle, far model, Motion, front axle, wheelbase, track to
+## keep]. Far away
+## every body style of a kind shares one simple model, so the distance costs
+## one draw per kind.
 func _describe(car: Dictionary) -> Array:
 	var kind := _kind(car)
 	var flags := 0.0
@@ -261,8 +319,25 @@ func _describe(car: Dictionary) -> Array:
 		flags = 2.0
 	var model := _model(kind, car.id)
 	var long: bool = float(VehicleTypes.spec(kind).len) > LONG
+	# A rig steers by its tractor's axles.
+	var body: String = VehicleModels.ARTIC[kind].cab if VehicleModels.ARTIC.has(kind) else model
+	var rear := float(VehicleModels.AXLE.get(body, 3.5))
+	var fo := float(FRONT.get(body, 1.0))
+	var wb := maxf(rear - fo, 1.0)
+	var need := wb + 1.0
+	if VehicleModels.ARTIC.has(kind):
+		var art: Dictionary = VehicleModels.ARTIC[kind]
+		need = float(art.hitch) - fo + float(art.axle) - float(art.pin) + 1.0
 	return [car.get("kind", "car"), kind, model, VehicleTypes.paint(kind, car.id), flags,
-		VehicleModels.ARTIC.has(kind), long, float(VehicleModels.AXLE.get(model, 3.5)), _far(kind, model)]
+		VehicleModels.ARTIC.has(kind), long, rear, _far(kind, model), Motion.new(), fo, wb, need]
+
+
+func _info_of(car: Dictionary) -> Array:
+	var info: Array = _info.get(car.id, _NONE)
+	if info.is_empty() or info[0] != car.get("kind", "car"):
+		info = _describe(car)
+		_info[car.id] = info
+	return info
 
 
 ## The body style a vehicle keeps for life, plowing in snow: dump trucks
@@ -297,22 +372,203 @@ func _add_parked(kind: String, xf: Transform3D, id: int, eye: Vector3, ultra2: f
 		_add(kind, lod, xf, Color(paint.r, paint.g, paint.b, 0.0))
 
 
-## The body's transform: front bumper on the path, pointed back at the rear
-## axle's point on the path.
-func _place(car: Dictionary, ahead: float, front: Vector3, axle: float) -> Transform3D:
-	# Front and back on the road, so the body tips up and down the hills.
-	var back := Terrain.lift(_behind(car, ahead, axle))
-	var dir := front - back
-	if dir.length() < axle * 0.5:
-		dir = traffic.car_pose(car, ahead)[1]
-	return Transform3D(Basis.looking_at(dir.normalized(), Vector3.UP), front)
+## Keeps the drawing clock a step behind the simulation's, running at the
+## simulation's own pace (worked out from how fast its clock moves), so it
+## can glide between the last two samples whatever the step size.
+func _clock(delta: float) -> void:
+	var now: float = traffic.time
+	if now < _t1 or _t1 < 0.0 or now - _t1 > 30.0:
+		# A fresh start, a loaded town or a neighbor's long-awaited update.
+		_t0 = now
+		_t1 = now
+		_rt = now
+		_win_t = now
+		_win_real = 0.0
+		_info.clear()
+	elif now > _t1:
+		_step = now - _t1
+		_t0 = _t1
+		_t1 = now
+	_win_real += delta
+	if _win_real >= 0.5:
+		_rate = lerpf(_rate, (now - _win_t) / _win_real, 0.5)
+		_win_t = now
+		_win_real = 0.0
+	_rt += delta * _rate
+	# Drift back toward a step behind, gently enough not to be seen.
+	_rt += (_t1 - _step - _rt) * minf(delta * 0.5, 1.0)
+	_rt = clampf(_rt, _t1 - _step * 2.0, _t1)
 
 
-## The point on the car's path `m` metres behind its front bumper.
-func _behind(car: Dictionary, ahead: float, m: float) -> Vector3:
-	if traffic.has_method("car_pose_behind"):
-		return traffic.call("car_pose_behind", car, m - ahead)[0]
-	return traffic.car_pose(car, ahead - m)[0]
+## Takes a sample of where a vehicle's front axle is now.
+func _sample(car: Dictionary, info: Array) -> void:
+	var m: Motion = info[9]
+	var pose: Array = traffic.car_pose(car)
+	var fo: float = info[10]
+	var h: Vector3 = pose[1]
+	h.y = 0.0
+	h = h.normalized() if h.length_squared() > 1e-6 else Vector3.FORWARD
+	var a: Vector3 = pose[0] - h * fo
+	var c = car.get("j")
+	var rev: bool = c != null and car.jd < float(c.get("rev", 0.0))
+	var r := Vector3.ZERO
+	var tr := Vector3.ZERO
+	if rev:
+		# Backing up: the path the front bumper backs along is where the
+		# rear has just been, so both axles sit on it.
+		a = _rev_point(car, fo)
+		r = _rev_point(car, info[7])
+		if info[5]:
+			var art: Dictionary = VehicleModels.ARTIC[info[1]]
+			tr = _rev_point(car, float(art.hitch) - float(art.pin) + float(art.axle))
+	if m.t1 < 0.0 or a.distance_to(m.a1) > maxf(float(car.get("flow_v", car.v)), 8.0) * maxf(_t1 - m.t1, _step) * 2.0 + 6.0:
+		# New, or moved too far to have driven there: starts here.
+		m.t0 = _t1 - _step
+		m.a0 = a
+		m.h0 = h
+		m.started = false
+	else:
+		m.t0 = m.t1
+		m.a0 = m.a1
+		m.h0 = m.h1
+	m.t1 = _t1
+	m.a1 = a
+	m.h1 = h
+	if rev or m.rev1:
+		m.r0 = m.r1 if m.rev1 else (m.rear if m.started else r)
+		m.tr0 = m.tr1 if m.rev1 else (m.trailer if m.started and m.trailer.is_finite() else tr)
+		m.r1 = r
+		m.tr1 = tr
+	m.rev1 = rev
+
+
+## A point `x` metres further along the path a car is backing along: on the
+## path up to where it stops backing, then straight on past it.
+func _rev_point(car: Dictionary, x: float) -> Vector3:
+	var room: float = float(car.j.rev) - float(car.jd)
+	if x <= room:
+		return traffic.car_pose(car, x)[0]
+	var p: Vector3 = traffic.car_pose(car, room)[0]
+	var q: Vector3 = traffic.car_pose(car, maxf(room - 0.6, 0.0))[0]
+	var go := p - q
+	go.y = 0.0
+	if go.length_squared() < 1e-6:
+		return p
+	return p + go.normalized() * (x - room)
+
+
+## The front axle now: a curve through the two samples that leaves and
+## arrives along the way the vehicle was heading (a cubic Hermite), so it
+## follows the bends between samples.
+func _axle_at(m: Motion) -> Vector3:
+	var span := m.t1 - m.t0
+	var u := 1.0 if span <= 0.0 else clampf((_rt - m.t0) / span, 0.0, 1.0)
+	var chord := m.a1 - m.a0
+	var len := chord.length()
+	if len < 0.01:
+		return m.a1
+	var d0 := m.h0 if m.h0.dot(chord) >= 0.0 else -m.h0
+	var d1 := m.h1 if m.h1.dot(chord) >= 0.0 else -m.h1
+	var u2 := u * u
+	var u3 := u2 * u
+	return m.a0 * (2.0 * u3 - 3.0 * u2 + 1.0) + d0 * (len * (u3 - 2.0 * u2 + u)) \
+		+ m.a1 * (3.0 * u2 - 2.0 * u3) + d1 * (len * (u3 - u2))
+
+
+## Moves the rear axle on behind the front axle `a` and returns the body's
+## heading. Driving forward the rear axle runs in the front axle's own
+## tracks, a wheelbase back (the front wheels steer along the lane, the rear
+## ones follow them), so the body turns about its middle, not its bumper,
+## and lines up again once the rear wheels are round the corner. Backing up
+## the rear leads, so it comes from the path. `need` is how much track to
+## keep: a wheelbase, or back to a trailer's axles.
+func _steer(m: Motion, a: Vector3, wb: float, need: float) -> Vector3:
+	if m.rev1:
+		var span := m.t1 - m.t0
+		var u := 1.0 if span <= 0.0 else clampf((_rt - m.t0) / span, 0.0, 1.0)
+		var r := m.r0.lerp(m.r1, u)
+		m.rear = Vector3(r.x, a.y, r.z)
+		var t := m.tr0.lerp(m.tr1, u)
+		m.trailer = Vector3(t.x, a.y, t.z)
+		m.trail.clear()  # starts afresh, from the rear, once it drives off
+	else:
+		var flat := Vector2(a.x - m.a.x, a.z - m.a.z).length()
+		if not m.started or flat > need * 2.0:
+			m.heading = m.h1
+			m.roll = 0.0
+			m.trail = PackedVector3Array([a - m.h1 * need, a])
+		elif m.trail.size() < 2:
+			# Just stopped backing: the track runs back through the rear axle,
+			# as the body stands.
+			var hh := Vector3(a.x - m.rear.x, 0.0, a.z - m.rear.z).normalized()
+			m.trail = PackedVector3Array([m.rear - hh * maxf(need - wb, 1.0), m.rear, a])
+		else:
+			var last := m.trail[m.trail.size() - 1]
+			if Vector2(a.x - last.x, a.z - last.z).length() > 0.3:
+				m.trail.append(a)
+				# Drop track that's further back than the body reaches.
+				while m.trail.size() > 3 and Vector2(a.x - m.trail[1].x, a.z - m.trail[1].z).length() > need:
+					m.trail.remove_at(0)
+		m.rear = _on_trail(m.trail, a, wb)
+	m.started = true
+	m.a = a
+	var h := Vector3(a.x - m.rear.x, 0.0, a.z - m.rear.z)
+	if h.length_squared() < 1e-6:
+		return m.heading
+	return h.normalized()
+
+
+## The point on a track `l` metres in a straight line from `from`, searching
+## back from the newest end (past it, straight on from the oldest piece).
+static func _on_trail(trail: PackedVector3Array, from: Vector3, l: float) -> Vector3:
+	var near := 0.0
+	var i := trail.size() - 1
+	var l2 := l * l
+	while i >= 0:
+		var p := trail[i]
+		var d2 := (p.x - from.x) * (p.x - from.x) + (p.z - from.z) * (p.z - from.z)
+		if d2 >= l2 and i < trail.size() - 1:
+			# Between this point and the newer one: where it's `l` away.
+			var q := trail[i + 1]
+			var far := sqrt(d2)
+			var t := clampf((l - near) / maxf(far - near, 1e-4), 0.0, 1.0)
+			return Vector3(lerpf(q.x, p.x, t), from.y, lerpf(q.z, p.z, t))
+		near = sqrt(d2)
+		i -= 1
+	var o := trail[0]
+	var back := Vector3(o.x - from.x, 0.0, o.z - from.z)
+	if back.length_squared() < 1e-6:
+		return from
+	return from + back.normalized() * l
+
+
+## The trailer's axles, `l` metres behind the kingpin `k`, in the tracks
+## the tractor laid down.
+func _trail(m: Motion, k: Vector3, l: float) -> Vector3:
+	if m.rev1:
+		return m.trailer
+	m.trailer = _on_trail(m.trail, k, l)
+	return m.trailer
+
+
+## The body's orientation: along its heading, tipped to the ground under
+## the rear axle, and up close dipping a little under braking and leaning
+## out in a turn.
+func _body(m: Motion, car: Dictionary, h: Vector3, front: Vector3, lod: int, blend: float, delta: float) -> Basis:
+	var dir := h
+	if lod != 1:
+		var back := Terrain.lift(m.rear)
+		dir = (front - back).normalized() if (front - back).length_squared() > 0.25 else h
+	var basis := Basis.looking_at(dir, Vector3.UP)
+	if lod != 1 and delta > 0.0:
+		var yaw := m.heading.signed_angle_to(h, Vector3.UP) / delta
+		var v: float = float(car.get("flow_v", car.v))
+		m.pitch = lerpf(m.pitch, clampf(float(car.a) * PITCH, -LEAN_MAX, LEAN_MAX), blend)
+		m.roll = lerpf(m.roll, clampf(-v * yaw * ROLL, -LEAN_MAX, LEAN_MAX), blend)
+		if absf(m.pitch) + absf(m.roll) > 0.002:
+			basis = basis * Basis.from_euler(Vector3(m.pitch, 0.0, m.roll))
+	m.heading = h
+	return basis
 
 
 func _add(key: String, lod: int, xf: Transform3D, custom: Color) -> void:

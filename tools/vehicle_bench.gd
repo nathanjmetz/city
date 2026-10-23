@@ -1,9 +1,11 @@
 extends SceneTree
 ## Times TrafficView's per-frame work (placing and batching every vehicle)
 ## on the big test town (PerfTown), with the camera over the middle of town.
-## Run: godot --headless -s tools/vehicle_bench.gd -- [size] [frames] [ultra]
+## Run: godot --headless -s tools/vehicle_bench.gd -- [size] [frames] [ultra] [live]
 ## "ultra" turns on the desktop Ultra tier and drops the camera low over a
-## car, so close vehicles use the close-up models.
+## car, so close vehicles use the close-up models. "live" ticks the town
+## between frames as the game does (a tick every 6 frames at 60 fps), so the
+## per-tick sampling counts too; only the drawing is timed.
 
 func _initialize() -> void:
 	var args := OS.get_cmdline_user_args()
@@ -16,7 +18,8 @@ func _initialize() -> void:
 	var cam := Camera3D.new()
 	root.add_child(cam)
 	cam.position = Vector3(0, 300, 200)
-	if args.size() > 2 and args[2] == "ultra":
+	_live = "live" in args
+	if "ultra" in args:
 		_ultra = true
 		var at: Vector3 = sim.traffic.car_pose(sim.traffic.cars[0], 0.0)[0] if sim.traffic.cars.size() > 0 else Vector3.ZERO
 		cam.position = Terrain.lift(at) + Vector3(0, 25, 30)
@@ -33,6 +36,7 @@ var _sim: CitySim
 var _frames := 0
 var _f := 0
 var _ultra := false
+var _live := false
 
 
 func _process(_d: float) -> bool:
@@ -48,10 +52,14 @@ func _process(_d: float) -> bool:
 	var view := _view
 	var sim := _sim
 	var frames := _frames
-	var t := Time.get_ticks_usec()
+	var spent := 0
 	for i in frames:
+		if _live and i % 6 == 0:
+			sim.tick()
+		var t := Time.get_ticks_usec()
 		view._draw_cars(1.0 / 60.0)
-	var per := (Time.get_ticks_usec() - t) / float(frames) / 1000.0
+		spent += Time.get_ticks_usec() - t
+	var per := spent / float(frames) / 1000.0
 	var n := 0
 	for k in view._xf:
 		n += view._xf[k].size()
