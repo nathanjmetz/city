@@ -360,6 +360,9 @@ func crossing_problem(p0: Vector3, p1: Vector3, p2: Vector3) -> String:
 	var new_pts := sample_curve(p0, p1, p2, n)
 	var box := _bounds(new_pts)
 	for id in segments:
+		# A curve lies inside its control points: most roads are far off.
+		if not box.intersects(_bounds(PackedVector3Array(curve_of(id))), true):
+			continue
 		var old_pts := sample_segment(id, n)
 		if not box.intersects(_bounds(old_pts), true):
 			continue
@@ -389,6 +392,9 @@ func _first_crossing(p0: Vector3, p1: Vector3, p2: Vector3, cuts: Array, ends: A
 		avoid.append(nodes[c[1]])
 	var box := _bounds(new_pts)
 	for id in segments:
+		# A curve lies inside its control points: most roads are far off.
+		if not box.intersects(_bounds(PackedVector3Array(curve_of(id))), true):
+			continue
 		var old_pts := sample_segment(id, n)
 		if not box.intersects(_bounds(old_pts), true):
 			continue

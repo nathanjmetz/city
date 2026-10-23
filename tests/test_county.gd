@@ -44,6 +44,7 @@ func _init() -> void:
 	_check(dry, "found a county road on dry level land")
 	_test_join()
 	_test_remove()
+	_test_adopt()
 	print("ALL TESTS PASSED" if _failed == 0 else "SOME TESTS FAILED")
 	quit(1 if _failed > 0 else 0)
 
@@ -156,6 +157,78 @@ func _test_remove() -> void:
 	_check(img.get_pixel(61, 2).r > 0.5 and img.get_pixel(61, 2).g < 0.5, "the ground hides the bulldozed north-south mile")
 	_check(img.get_pixel(5, 6).g > 0.5 and img.get_pixel(5, 6).r < 0.5, "and an east-west one, wrapped")
 	_check(img.get_pixel(0, 0).r < 0.5, "and leaves the rest")
+
+
+## A road or a grid drawn onto a county road takes it over where it runs:
+## the county road isn't moved, doubled or laid through the town's blocks.
+func _test_adopt() -> void:
+	var x := 0.0
+	var z := 0.0
+	var found := false
+	for line in range(-6, 6):
+		for seg in range(-6, 6):
+			if found or not CountyGrid.has_mile(line, seg):
+				continue
+			var cx := line * CountyGrid.SECTION
+			var cz := (seg + 0.5) * CountyGrid.SECTION
+			var level := true
+			for k in range(-12, 13):
+				var q := cz + k * 60.0
+				level = level and CountyGrid.clears(cx, q) and Terrain.water(cx + 300, q) < 0.05 \
+					and Terrain.water(cx - 300, q) < 0.05
+			if level:
+				x = cx
+				z = cz
+				found = true
+	_check(found, "found a long dry county road")
+	if not found:
+		return
+	# A street drawn across it.
+	var sim := CitySim.new()
+	sim.apply({"type": "build_road", "start": [x - 150, z], "ctrl": [x, z], "end": [x + 150, z],
+		"road": RoadStyle.Type.STREET, "join": true})
+	var gravel := _gravel(sim)
+	_check(gravel.size() >= 2, "a street across a county road takes it over (%d pieces)" % gravel.size())
+	var on_line := true
+	for c in gravel:
+		on_line = on_line and absf(c[0].x - x) < 0.5 and absf(c[2].x - x) < 0.5
+	_check(on_line, "right where the county road ran, not moved")
+	var meets := false
+	for c in gravel:
+		meets = meets or c[0].distance_to(Vector3(x, 0, z)) < 0.5 or c[2].distance_to(Vector3(x, 0, z)) < 0.5
+	_check(meets, "and it meets the street there")
+	# A grid laid across it: the county road runs on from its edges, but not
+	# through its blocks.
+	sim = CitySim.new()
+	sim.apply({"type": "build_grid_shape", "points": [[x - 250, z - 250], [x + 250, z - 250], [x + 250, z + 250],
+		[x - 250, z + 250]], "block": 100, "road": RoadStyle.Type.STREET, "join": true})
+	gravel = _gravel(sim)
+	var inside := 0
+	var outside := 0
+	for c in gravel:
+		var mid: Vector3 = (c[0] + c[2]) * 0.5
+		if absf(mid.z - z) < 249.0:
+			inside += 1
+		else:
+			outside += 1
+	_check(outside >= 2 and inside == 0, "a grid takes the county road on from its edges, not through its blocks (%d out, %d in)" % [outside, inside])
+	# It stops short of zoned lots.
+	sim = CitySim.new()
+	sim.apply({"type": "paint_zone", "center": [x, z + 300], "radius": 30, "zone": ZoneMap.Zone.RESIDENTIAL})
+	sim.apply({"type": "build_road", "start": [x - 150, z], "ctrl": [x, z], "end": [x + 150, z],
+		"road": RoadStyle.Type.STREET, "join": true})
+	var past := false
+	for c in _gravel(sim):
+		past = past or c[0].z > z + 265.0 or c[2].z > z + 265.0
+	_check(not past, "and stops short of zoned lots")
+
+
+func _gravel(sim: CitySim) -> Array:
+	var out := []
+	for id in sim.network.segments:
+		if sim.network.segments[id].type == RoadStyle.Type.GRAVEL:
+			out.append(sim.network.curve_of(id))
+	return out
 
 
 func _check(ok: bool, what: String) -> void:

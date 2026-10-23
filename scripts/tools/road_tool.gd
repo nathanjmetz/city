@@ -429,7 +429,7 @@ func _finish_grid(shape: Array = _points) -> void:
 	for q in shape:
 		pts.append(_xz(q))
 	if sim.apply({"type": "build_grid_shape", "points": pts, "block": grid_block, "across": grid_across,
-			"side": grid_side, "road": road_type, "fit": _fit()}):
+			"side": grid_side, "road": road_type, "fit": _fit(), "join": true}):
 		_points.clear()
 	_update_hint()
 
@@ -733,14 +733,9 @@ func _resize(f: float) -> void:
 
 
 func _build(curve: Array) -> bool:
-	var ok := sim.apply({"type": "build_road", "start": _xz(curve[0]), "ctrl": _xz(curve[1]),
-		"end": _xz(curve[2]), "road": road_type})
-	if ok:
-		# An end drawn onto a county road joins that mile to town.
-		for p: Vector3 in [curve[0], curve[2]]:
-			if _county_at(p) != {}:
-				sim.apply({"type": "join_county", "at": _xz(p)})
-	return ok
+	# Drawn onto or across a county road, the town takes over that mile.
+	return sim.apply({"type": "build_road", "start": _xz(curve[0]), "ctrl": _xz(curve[1]),
+		"end": _xz(curve[2]), "road": road_type, "join": true})
 
 
 ## The county road (CountyGrid.mile_at) a point is on, out in the country
@@ -750,7 +745,7 @@ func _county_at(p: Vector3, reach := 0.5) -> Dictionary:
 		return {}
 	var o := sim.terrain_offset
 	var mile := CountyGrid.mile_at(p.x + o.x, p.z + o.y, reach)
-	if mile.is_empty() or sim.county_joined.has(mile.key) or sim.county_removed.has(mile.key) or not CountyGrid.clears(mile.on.x, mile.on.y):
+	if mile.is_empty() or sim.county_removed.has(mile.key) or not CountyGrid.clears(mile.on.x, mile.on.y):
 		return {}
 	return mile
 
