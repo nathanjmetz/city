@@ -97,6 +97,13 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary) -> Array
 		layers.append(["white", dashes, y_mark, "dashed"])
 	if spec.get("bike", false):
 		layers.append(["white", [[-lane_edge - 0.15, -lane_edge], [lane_edge, lane_edge + 0.15]], y_mark, ""])
+	if spec.get("bus", false) and mats.has("bus"):
+		# Red curb lanes behind a wide solid white line (8 in, MUTCD 3D.02),
+		# in place of the dashed line between the two lanes.
+		var inside := lane_edge - lane
+		layers = layers.filter(func(l): return l[3] != "dashed" or l[0] != "white")
+		layers.append(["bus", [[-lane_edge, -inside - 0.2], [inside + 0.2, lane_edge]], y_mark - 0.004, ""])
+		layers.append(["white", [[-inside - 0.2, -inside], [inside, inside + 0.2]], y_mark, ""])
 	var mesh := _build_layers(pts, layers, trimmed(pts, hw + 2.0), mats)
 	# Downtown stall marks: T marks every 22 ft along parallel parking, and
 	# 45-degree stall lines 9 ft wide for angled parking.

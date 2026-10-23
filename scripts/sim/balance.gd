@@ -49,7 +49,7 @@ const ROAD_BUILD_PER_M := {
 	RoadStyle.Type.AVENUE_TURN: 320, RoadStyle.Type.AVENUE_BIKE: 520, RoadStyle.Type.AVENUE_DIVIDED: 600,
 	RoadStyle.Type.AVENUE_ONEWAY: 420, RoadStyle.Type.STRIP: 600, RoadStyle.Type.PARKWAY: 750,
 	RoadStyle.Type.FREEWAY2: 900, RoadStyle.Type.FREEWAY4: 1500, RoadStyle.Type.DIVIDED_HWY: 1100,
-	RoadStyle.Type.STATE_HWY: 300, RoadStyle.Type.RAMP2: 950,
+	RoadStyle.Type.STATE_HWY: 300, RoadStyle.Type.RAMP2: 950, RoadStyle.Type.AVENUE_BUS: 480,
 }
 ## Road upkeep, dollars per lane-metre per month (about $10,000 a lane-mile
 ## a year, typical of US city budgets).

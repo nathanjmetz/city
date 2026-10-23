@@ -25,6 +25,10 @@ const MAX_CARS := 400
 const DT := 0.1
 const CAR_LEN := 4.6
 const LANE_W := 3.6
+## Trips that may drive in bus lanes, and how far before a corner or
+## driveway other traffic may cross into one (about a block's last third).
+const BUS_PURPOSES := ["transit", "school"]
+const BUS_LANE_ENTRY := 60.0
 ## Intelligent Driver Model: bumper gap when stopped, time gap at speed,
 ## gentle acceleration and comfortable braking (AASHTO uses 3.4 m/s^2).
 const JAM_GAP := 2.0
@@ -1531,6 +1535,17 @@ func _lane_changes() -> void:
 				desired = [w.lanes - 1] if ds < 80.0 else range(w.lanes)
 			else:
 				desired = lanes_for(w.id, car.route[car.leg + 1])
+			# Bus lanes: other traffic keeps out of them, except to turn
+			# right at the next corner or reach a driveway close ahead.
+			var bus := RoadStyle.bus_lane(w.type)
+			if bus != -1 and not car.purpose in BUS_PURPOSES:
+				var others: Array = desired.filter(func(l): return l != bus)
+				if not others.is_empty():
+					desired = others
+				elif ds > BUS_LANE_ENTRY:
+					desired = [bus - 1]
+				if t == bus and not desired.has(bus):
+					continue
 			var must := false
 			if not desired.has(car.lane):
 				if _lane_dist(t, desired) >= _lane_dist(car.lane, desired):

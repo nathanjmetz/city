@@ -612,6 +612,8 @@ static func _road_tip(t: int) -> String:
 		bits.append("parking")
 	if spec.get("bike", false):
 		bits.append("bike lanes")
+	if spec.get("bus", false):
+		bits.append("curb lanes for buses only")
 	if spec.get("surface", "asphalt") != "asphalt":
 		bits.append(spec.surface)
 	if not spec.lots:
