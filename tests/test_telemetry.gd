@@ -164,6 +164,7 @@ func _test_insights() -> void:
 		if who == "Ann":
 			events.append({"k": "perf", "fps": 50.0, "worst_ms": 40, "hitches": 0, "scene": "main",
 				"free_mb": 180, "vram_mb": 2900})
+			events.append({"k": "stall", "ms": 4350, "scene": "main", "ctx": "Grid", "stages": {"frame.roads": 4200.0}})
 		if who != "Cy":
 			events.append({"k": "error", "sig": "x:1 boom", "file": "res://scripts/traffic/traffic_sim.gd", "line": 1,
 				"msg": "Invalid access to key 'lane'", "type": "script", "trace": "", "ctx": "Roads"})
@@ -181,6 +182,8 @@ func _test_insights() -> void:
 	_check(titles.any(func(x): return x.begins_with("Slow loading screen")), "slow loads become fixes")
 	_check(titles.any(func(x): return x.begins_with("Low frame rate")), "low frame rate becomes a fix")
 	_check(titles.has("Machine nearly out of memory: 180 MB free"), "low free memory becomes a fix")
+	var stall: Array = r.fixes.filter(func(f): return f.title.begins_with("Freezes: 1 frames"))
+	_check(not stall.is_empty() and "frame.roads" in stall[0].detail, "freezes become a fix naming the stage")
 	_check(titles.any(func(x): return x.begins_with("The download takes")) \
 		and not titles.any(func(x): return x.begins_with("The engine takes")), "a slow line is told apart from a slow start")
 	var tick: Array = r.fixes.filter(func(f): return f.title.begins_with("Sim ticks"))

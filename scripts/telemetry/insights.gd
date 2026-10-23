@@ -206,6 +206,18 @@ static func _speed_fixes(ev: Dictionary, fixes: Array) -> void:
 		_fix(fixes, 55 + 2 * per_min, "Stutters: %.1f hitches a minute" % per_min,
 			"Frames over 100 ms while playing (worst %d ms)." % perf.map(func(p): return int(p.get("worst_ms", 0))).max(),
 			PERF_OWNER, "speed", _who(perf))
+	# Whole-second freezes: the game looks hung to the player.
+	var stalls: Array = ev.get("stall", [])
+	if not stalls.is_empty():
+		var longest: Dictionary = stalls[0]
+		for one in stalls:
+			if int(one.ms) > int(longest.ms):
+				longest = one
+		_fix(fixes, 90 + 3 * _who(stalls) + mini(stalls.size(), 10), "Freezes: %d frames over a second (longest %.1f s)" \
+			% [stalls.size(), int(longest.ms) / 1000.0],
+			"Longest in %s while using %s. Slowest timed stages then: %s." \
+			% [longest.get("scene", "?"), longest.get("ctx", "") if longest.get("ctx", "") != "" else "nothing", str(longest.get("stages", {}))],
+			PERF_OWNER, "speed", _who(stalls))
 	# Desktop only: memory left on the machine. Near zero means macOS starts
 	# swapping, which looks like a freeze to the player.
 	var tight: Array = ev.get("perf", []).filter(func(p): return int(p.get("free_mb", 0)) > 0 and int(p.free_mb) < LOW_FREE_MB)
