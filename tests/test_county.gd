@@ -12,7 +12,7 @@ func _init() -> void:
 			if CountyGrid.has_mile(line, seg):
 				have += 1
 	var share := have / 1600.0
-	_check(share > 0.65 and share < 0.8, "most miles of section line have a county road (%.2f)" % share)
+	_check(share > 0.9 and share < 0.99, "nearly every mile of section line has a county road (%.2f)" % share)
 	_check(CountyGrid.mix(3, -7) == CountyGrid.mix(3, -7) and CountyGrid.mix(3, -7) != CountyGrid.mix(-7, 3),
 		"the road layout is the same on every computer")
 	_check(CountyGrid.mix(-123456, 98765) >= 0 and CountyGrid.mix(-123456, 98765) <= 0xffffffff,
@@ -43,6 +43,7 @@ func _init() -> void:
 				dry = true
 	_check(dry, "found a county road on dry level land")
 	_test_join()
+	_test_remove()
 	print("ALL TESTS PASSED" if _failed == 0 else "SOME TESTS FAILED")
 	quit(1 if _failed > 0 else 0)
 
@@ -117,6 +118,28 @@ func _named(sim: CitySim, name: String) -> bool:
 		if sim.streets.name_of(id) == name:
 			return true
 	return false
+
+
+## Bulldozing a scenery mile takes it off the map for good.
+func _test_remove() -> void:
+	var sim := CitySim.new()
+	var heard := [0]
+	sim.county_changed.connect(func() -> void: heard[0] += 1)
+	_check(not sim.apply({"type": "remove_county", "key": "nonsense"}), "only real county miles can be bulldozed")
+	_check(sim.apply({"type": "remove_county", "key": "ns:-3:2"}), "a county mile can be bulldozed")
+	_check(heard[0] == 1, "the ground hears a mile was bulldozed")
+	_check(not sim.apply({"type": "remove_county", "key": "ns:-3:2"}), "a mile is only bulldozed once")
+	_check(not sim.apply({"type": "join_county", "at": [-3 * CountyGrid.SECTION, 2.5 * CountyGrid.SECTION]}),
+		"a bulldozed mile can't be joined")
+	var copy := CitySim.new()
+	copy.from_dict(sim.to_dict())
+	_check(copy.county_removed.has("ns:-3:2"), "bulldozed county roads are saved")
+	sim.apply({"type": "clear"})
+	_check(sim.county_removed.is_empty() and heard[0] == 2, "starting over brings the county roads back")
+	var img := CountyGrid.hidden_texture(["ns:-3:2", "ew:5:70"]).get_image()
+	_check(img.get_pixel(61, 2).r > 0.5 and img.get_pixel(61, 2).g < 0.5, "the ground hides the bulldozed north-south mile")
+	_check(img.get_pixel(5, 6).g > 0.5 and img.get_pixel(5, 6).r < 0.5, "and an east-west one, wrapped")
+	_check(img.get_pixel(0, 0).r < 0.5, "and leaves the rest")
 
 
 func _check(ok: bool, what: String) -> void:

@@ -82,6 +82,9 @@ uniform vec3 lod_eye;
 // Where this town sits in the region (Terrain.view_origin): the field and
 // county road grid is the region's.
 uniform vec2 region_origin;
+// County road miles not painted (CountyGrid.hidden_texture): joined to a
+// town, which draws its own road there, or bulldozed. r north-south, g east-west.
+uniform sampler2D county_hidden : hint_default_black, filter_nearest, repeat_enable;
 // The far land (TerrainView's far sheet) is cut away nearer than this, where
 // the chunks draw the ground; 0 for the chunks themselves.
 uniform float far_cut = 0.0;
@@ -123,7 +126,7 @@ uint county_mix(int a, int b) {
 }
 
 float county_has(int line, int seg) {
-	return float(county_mix(line, seg) & 0xffffu) / 65536.0 < 0.73 ? 1.0 : 0.0;
+	return float(county_mix(line, seg) & 0xffffu) / 65536.0 < 0.95 ? 1.0 : 0.0;
 }
 
 // Coverage, 0 to 1, of a strip `half_w` metres each side of the county
@@ -134,9 +137,13 @@ float county_road(vec2 r, float half_w, float px) {
 	float soft = max(0.5, px * 0.5);
 	float ns_line = floor(r.x / 1608.0 + 0.5);
 	float ew_line = floor(r.y / 1608.0 + 0.5);
-	float ns = county_has(int(ns_line), int(floor(r.y / 1608.0)))
+	int ns_seg = int(floor(r.y / 1608.0));
+	int ew_seg = int(floor(r.x / 1608.0));
+	float ns = county_has(int(ns_line), ns_seg)
+		* (1.0 - texelFetch(county_hidden, ivec2(int(ns_line) & 63, ns_seg & 63), 0).r)
 		* (1.0 - smoothstep(w - soft, w + soft, abs(r.x - ns_line * 1608.0)));
-	float ew = county_has(int(ew_line) + 1048576, int(floor(r.x / 1608.0)))
+	float ew = county_has(int(ew_line) + 1048576, ew_seg)
+		* (1.0 - texelFetch(county_hidden, ivec2(int(ew_line) & 63, ew_seg & 63), 0).g)
 		* (1.0 - smoothstep(w - soft, w + soft, abs(r.y - ew_line * 1608.0)));
 	return max(ns, ew) * clamp(half_w / w, 0.0, 1.0);
 }
@@ -427,6 +434,13 @@ func _update_far(flat_eye: Vector2, all_now := false) -> void:
 	_far.mesh = _far_job.mesh
 	_far_centre = _far_job.centre
 	_far_job = {}
+
+
+## Hides the county road miles a town has joined or bulldozed.
+static func set_county_hidden(keys: Array) -> void:
+	var tex := CountyGrid.hidden_texture(keys)
+	ground_material().set_shader_parameter("county_hidden", tex)
+	far_material().set_shader_parameter("county_hidden", tex)
 
 
 static func far_material() -> ShaderMaterial:

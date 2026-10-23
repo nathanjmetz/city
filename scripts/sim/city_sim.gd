@@ -8,6 +8,8 @@ extends RefCounted
 ## server can run this exact class later and send commands to players.
 
 signal buildings_changed
+## County roads joined to town or bulldozed (county_joined, county_removed).
+signal county_changed
 signal lots_changed
 ## Buildings removed because a road now runs through their lot (for refunds).
 signal parcels_lost(keys: Array)
@@ -184,6 +186,8 @@ var region_links: Array = []
 ## Miles of county road this town has joined (CountyGrid keys), now its own
 ## roads; the rest are scenery.
 var county_joined := {}
+## Miles of scenery county road the player has bulldozed away.
+var county_removed := {}
 ## Goods and services bought from and sold to neighbors and the outside.
 var trade := Trade.new()
 ## True in a shared region, which settles trade for every city at once.
@@ -323,6 +327,13 @@ func apply_now(cmd: Dictionary) -> bool:
 		"join_county":
 			# The road tool sends it for a road drawn onto a county road.
 			ok = _join_county(_v(cmd.at))
+		"remove_county":
+			# Bulldozing a mile of county road that isn't the town's.
+			var key := str(cmd.key)
+			ok = CountyGrid.valid_key(key) and not county_removed.has(key) and not county_joined.has(key)
+			if ok:
+				county_removed[key] = true
+				county_changed.emit()
 		"build_grid", "build_grid_shape":
 			# Old three-click grids are a rectangle; new ones any shape.
 			var shape: Array = GridFill.rect(_v(cmd.a), _v(cmd.b), _v(cmd.c)) if cmd.type == "build_grid" \
@@ -741,6 +752,10 @@ func apply_now(cmd: Dictionary) -> bool:
 			traffic.from_dict({})
 			people = People.new()
 			network.clear()
+			# The county has its roads back.
+			county_joined.clear()
+			county_removed.clear()
+			county_changed.emit()
 			zones.cells.clear()
 			planner = LotPlanner.new()
 			planner.wealth = wealth_at
@@ -2962,7 +2977,7 @@ func _join_county(p: Vector3) -> bool:
 		return false  # a bridge or tunnel end
 	var o := terrain_offset
 	var mile := CountyGrid.mile_at(p.x + o.x, p.z + o.y, COUNTY_JOIN)
-	if mile.is_empty() or county_joined.has(mile.key):
+	if mile.is_empty() or county_joined.has(mile.key) or county_removed.has(mile.key):
 		return false
 	var on: Vector2 = mile.on - o
 	var here := Vector2(p.x, p.z)
@@ -2994,6 +3009,7 @@ func _join_county(p: Vector3) -> bool:
 	network.end_batch()
 	economy.money = money  # the county hands it over
 	county_joined[mile.key] = true
+	county_changed.emit()
 	streets.name_road(self, network.segments.keys().filter(func(id): return not id in before),
 		streets.grid_name(mile.key))
 	streets.sync(self)
@@ -3136,6 +3152,7 @@ func to_dict() -> Dictionary:
 		"version": 2,
 		"links": region_links,
 		"county": county_joined.keys(),
+		"county_removed": county_removed.keys(),
 		"trade": trade.to_dict(),
 		"tick": tick_count,
 		"seed": city_seed,
@@ -3205,6 +3222,10 @@ func from_dict(d: Dictionary) -> void:
 		county_joined.clear()
 		for k in d.get("county", []):
 			county_joined[str(k)] = true
+		county_removed.clear()
+		for k in d.get("county_removed", []):
+			county_removed[str(k)] = true
+		county_changed.emit()
 		trade.from_dict(d.get("trade", {}))
 	else:
 		# Version 1 saves were just roads, with houses on every lot.
