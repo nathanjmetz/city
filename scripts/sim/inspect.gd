@@ -68,7 +68,7 @@ static func pick(sim: CitySim, p: Vector3) -> Dictionary:
 	if fid == -1:
 		fid = sim.farms.field_at(p)
 	if fid != -1:
-		return {"type": "farm", "id": fid}
+		return {"type": "farm", "id": fid, "at": [p.x, p.z]}
 	var q := Vector2(p.x, p.z)
 	var keys := sim.lots.keys()
 	keys.sort()
@@ -204,7 +204,7 @@ static func _describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 		"post_office": return MailInfo.describe(sim, sel.id)
 		"rail": return RailInfo.depot(sim, sel.id)
 		"train": return RailInfo.train(sim, sel.id)
-		"farm": return _farm(sim, sel.id)
+		"farm": return _farm(sim, sel.id, sel.get("at", []))
 		"industry": return _industry(sim, sel.id)
 		"campus": return CampusInfo.describe(sim, sel.id)
 		"telecom": return TelecomInfo.describe(sim, sel.id)
@@ -338,12 +338,14 @@ static func _hospital(sim: CitySim, id: int) -> Dictionary:
 		"ok": net >= 0.0, "status": status, "rows": rows, "problems": problems}
 
 
-static func _farm(sim: CitySim, id: int) -> Dictionary:
+## `at` is where the player clicked: on a field, the panel says what that
+## field grows this year and why the farmer chose it (CropPlan).
+static func _farm(sim: CitySim, id: int, at := []) -> Dictionary:
 	var f: Dictionary = sim.farms.farms[id]
 	var acres: float = f.cells.size() * Farms.ACRES_PER_CELL
 	var profit := sim.farms.yearly_profit(id)
 	var rows := [
-		["Crop", str(f.crop).capitalize()],
+		["Crops this year", _crops(f)],
 		["Fields", "%d (%.0f acres)" % [f.cells.size(), acres]],
 		["Jobs", str(2 + f.cells.size() / Farms.CELLS_PER_WORKER)],
 		["Profit", "%s$%s / year" % ["" if profit >= 0.0 else "-", CitySim.money_text(absi(roundi(profit)))]],
@@ -368,6 +370,19 @@ static func _farm(sim: CitySim, id: int) -> Dictionary:
 		problems.append("No fertile free land near the farmhouse yet. Check the Fertility view.")
 	elif profit < 0.0:
 		status = "Losing money: will sell its worst field"
+	if at.size() == 2:
+		var p := Vector3(float(at[0]), 0.0, float(at[1]))
+		var local := Farms._local(f, p)
+		var c := Vector2i(roundi(local.x / Farms.CELL), roundi(local.y / Farms.CELL))
+		if c in f.cells:
+			var fl := CropPlan.field(f, c)
+			var note := "%s%s" % [str(fl.crop).capitalize(), " after %s" % fl.prev if str(fl.prev) != "" else ""]
+			if fl.cover:
+				note += ", rye cover crop after harvest"
+			rows.insert(1, ["This field", note])
+			rows.insert(2, ["Why", str(fl.why) if str(fl.why) != "" else "The crop the farm started with; the farmer plans each field in January."])
+			rows.insert(3, ["Soil health", "%d%% (fertility %d%%)" % [roundi(float(fl.health) * 100.0),
+				roundi(Farms.fertility_at(Farms.cell_center(f, c)) * 100.0)]])
 	rows.append_array(_development(sim, f, Agency.TREES.farm, f.pos, profit))
 	rows.append_array(sim.families.rows(sim, "farm:%d" % id))
 	return {"title": _named(sim, "farm:%d" % id, "Farm"), "kind": "Farming", "icon": "farms", "ok": problems.is_empty() and profit >= 0.0,
@@ -602,6 +617,23 @@ static func _power(sim: CitySim, id: int) -> Dictionary:
 
 ## Rows on a hub's leader and development tree: who runs it, what they've
 ## built, why they made their last move, and what's open to them next.
+## A farm's crops this year by acres, most first: "Corn 60 acres, soybeans 40".
+static func _crops(f: Dictionary) -> String:
+	var by := {}
+	for c in f.cells:
+		var crop := CropPlan.crop_at(f, c)
+		by[crop] = by.get(crop, 0.0) + Farms.ACRES_PER_CELL
+	var order := by.keys()
+	order.sort_custom(func(a, b): return by[a] > by[b] or (by[a] == by[b] and a < b))
+	var parts := []
+	for crop in order:
+		parts.append("%s %d acres" % [crop, roundi(by[crop])])
+	if parts.is_empty():
+		return str(f.crop).capitalize()
+	var text := ", ".join(parts)
+	return text.substr(0, 1).to_upper() + text.substr(1)
+
+
 static func _development(sim: CitySim, hub: Dictionary, tree: Array, at: Vector3, profit: float) -> Array:
 	var rows := []
 	var lead: Dictionary = hub.get("leader", {})

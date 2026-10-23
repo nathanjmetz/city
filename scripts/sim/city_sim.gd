@@ -148,6 +148,8 @@ var heritage := Heritage.new()
 var markers := HistoricMarkers.new()
 var leaders := LeaderAsks.new()
 var timelapse := Timelapse.new()
+## The town's numbers over time, for the top bar's charts (StatHistory).
+var history := StatHistory.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -245,6 +247,9 @@ func _init() -> void:
 		return Vector2(b.pos.x, b.pos.z)
 	farms.reserves = reserves
 	industry.reserves = reserves
+	permits.locators["farm"] = func(_sim, id: int) -> Vector2:
+		var f: Dictionary = farms.farms.get(id, {"pos": Vector3.ZERO})
+		return Vector2(f.pos.x, f.pos.z)
 	# New businesses get their names before any view draws them, so signs go
 	# up with the building (connected ahead of the views).
 	for sig in [buildings_changed, farms_changed, industry_changed]:
@@ -708,6 +713,10 @@ func apply_now(cmd: Dictionary) -> bool:
 			elif ok:
 				_adopt_levers("post_office:%d" % int(cmd.id))
 		"clear":
+			# Starting over keeps the way out: the county highways to the
+			# neighbouring towns (trade comes and goes on them), rebuilt
+			# after the wipe, with a crossroads to start the town from.
+			var links_kept := _link_roads()
 			region_links.clear()
 			trade = Trade.new()
 			traffic.overrides.clear()
@@ -756,6 +765,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			markers.from_dict({})
 			leaders.from_dict({})
 			timelapse.from_dict(self, {})
+			history.from_dict({})
 			_lever_steps.clear()
 			pollution = Pollution.new()
 			_hook_pollution()
@@ -770,6 +780,9 @@ func apply_now(cmd: Dictionary) -> bool:
 			power_changed.emit()
 			education_changed.emit()
 			telecom_changed.emit()
+			for road in links_kept:
+				_county_road(road[0], road[1], road[2])
+			_start_crossroads()
 			ok = true
 	if ok:
 		if cmd.type in ["place_campus", "place_park", "place_bank", "place_hub", "place_service", "place_farmhouse",
@@ -974,6 +987,15 @@ func tick() -> void:
 	if tick_count % Farms.DECIDE_EVERY == 0 and not farms.farms.is_empty():
 		farms.tax_rate = economy.tax[ZoneMap.Zone.INDUSTRIAL]
 		farms.price = Farms.price_on(tick_count / (24.0 * TICKS_PER_HOUR))
+		farms.day = game_day()
+		# Each January the farm leaders plan the year's crops (CropPlan).
+		var crop_year := Seasons.year(tick_count)
+		if crop_year != farms.year:
+			farms.demand = CropPlan.demand(self)
+			if not farms.slope_of.is_valid():
+				farms.slope_of = func(p: Vector3) -> float:
+					return Terrain.slope(p.x + terrain_offset.x, p.z + terrain_offset.y)
+			farms.year = crop_year
 		if farms.decide(field_usable):
 			_lots_dirty = true  # lots under new fields go away
 			farms_changed.emit()
@@ -1076,6 +1098,8 @@ func tick() -> void:
 		leaders.month(self)
 	elif hour == 18 * TICKS_PER_HOUR:
 		timelapse.month(self)
+	if tick_count % TICKS_PER_HOUR == 0:
+		history.hour(self)
 	if tick_count % TICKS_PER_HOUR == 30:
 		heritage.carry_out(self)
 		leaders.carry_out(self)
@@ -1759,6 +1783,9 @@ func _wire_policies() -> void:
 	power.pad_usable = pad_usable
 	farms.lease_of = power.lease_in
 	farms.rent_of = power.farm_rent
+	# A farm whose block is full builds a road to the next (HubRoads), and
+	# asks on the bell when that road would cross the player's things.
+	farms.expand = _farm_road
 
 
 ## Hubs with their own money lever (a campus's funding level, a post
@@ -1997,6 +2024,122 @@ func _ground_free(mid: Vector3, corners: PackedVector2Array, in_fields: bool) ->
 				break
 	_usable_cache[key] = ok
 	return ok
+
+
+## Whose land a point is: "farm:<id>" for a farm's yard, lane or fields,
+## "site:<id>" for an industry company's, "hub" for any other hub or
+## service, or "" for open land.
+func land_owner(p: Vector3) -> String:
+	var id := farms.farm_at(p)
+	if id == -1:
+		id = farms.field_at(p)
+	if id != -1:
+		return "farm:%d" % id
+	id = industry.site_at(p)
+	if id == -1:
+		id = industry.pad_at(p)
+	if id != -1:
+		return "site:%d" % id
+	if services.covers(p) or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
+			or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p):
+		return "hub"
+	return ""
+
+
+## Farm `id` has filled its block: it builds a gravel road along the survey
+## line to the next block (Brawn: hubs grow to a real size, then build a
+## road, which joins the town's network). It picks the next block with the
+## most good free soil for the shortest road. Roads that would cross the
+## player's roads, lots or buildings go to the bell first. True when
+## anything changed.
+func _farm_road(id: int) -> bool:
+	var f: Dictionary = farms.farms[id]
+	var name := families.name_of("farm:%d" % id)
+	var leader := name if name != "" else "The farm"
+	var pending: Dictionary = f.get("pending", {})
+	if not pending.is_empty():
+		var state := permits.state_of(int(pending.req))
+		if state == Permits.State.APPROVED:
+			var route := HubRoads.from_flat(self, permits.requests[int(pending.req)].route)
+			permits.done(int(pending.req))
+			f.pending = {}
+			return _farm_open(id, Vector2i(int(pending.block[0]), int(pending.block[1])), route, leader)
+		if state != Permits.State.OPEN:
+			# Told no, shelved or withdrawn: try again later, maybe elsewhere.
+			f.pending = {}
+			f.road_wait = farms.day + Balance.FARM_ROAD_WAIT_DAYS
+		return false
+	var best := {}
+	var best_score := -INF
+	for pair in Farms.next_blocks(f):
+		var soil := _block_soil(id, pair[1])
+		if soil <= 0:
+			continue
+		for line in Farms.road_lines(f, pair[0], pair[1]):
+			var far: Vector3 = line[0]
+			var start := HubRoads.reach(self, far, line[1], Balance.FARM_ROAD_MAX)
+			if start == Vector3.INF:
+				continue
+			var route := [start, far] if start.distance_to(far) > HubRoads.SNAP else [start]
+			route.append_array(line[2])
+			var end := HubRoads.on_road(self, route[-1])
+			if route.size() >= 2 and end != Vector3.INF and end.distance_to(route[0]) > HubRoads.SNAP:
+				route[-1] = end
+			var plan := HubRoads.check(self, route, "farm:%d" % id)
+			if not plan.ok or plan.length > Balance.FARM_ROAD_MAX:
+				continue
+			# Good soil it can farm, less the road it has to build (and a
+			# road through the player's things is a last resort).
+			var score: float = soil * 100.0 - plan.length - (2000.0 if plan.permit else 0.0)
+			if score > best_score:
+				best_score = score
+				best = {"block": pair[1], "plan": plan}
+	if best.is_empty():
+		f.road_wait = farms.day + Balance.FARM_ROAD_WAIT_DAYS
+		return false
+	if not best.plan.permit:
+		return _farm_open(id, best.block, best.plan.route, leader)
+	var req := permits.file(self, {"hub": "farm", "hub_id": id, "leader": leader,
+		"title": "A gravel road to farm the next 80 acres",
+		"why": "%s has filled its 80 acres and wants the next block. The road would join the town's roads." \
+			% leader,
+		"route": HubRoads.flat(best.plan.route), "width": RoadStyle.right_of_way_half(HubRoads.TYPE) * 2.0,
+		"per_m": int(Economy.BUILD_PER_M[HubRoads.TYPE]), "base": 0, "budget": 0})
+	if req == -1:
+		f.road_wait = farms.day + Balance.FARM_ROAD_WAIT_DAYS
+		return false
+	f.pending = {"req": req, "block": [best.block.x, best.block.y]}
+	return false
+
+
+## Builds a farm's road and opens the block beyond it.
+func _farm_open(id: int, block: Vector2i, route: Array, leader: String) -> bool:
+	var f: Dictionary = farms.farms[id]
+	if route.size() < 2 or HubRoads.build(self, route).is_empty():
+		f.road_wait = farms.day + Balance.FARM_ROAD_WAIT_DAYS
+		return false
+	f.blocks.append(block)
+	f.why = "%s filled its 80 acres, so it built a gravel road on the survey line to farm the next 80. It's a town road now." % leader
+	_lots_dirty = true
+	_usable_cache.clear()
+	return true
+
+
+## How many cells of block b farm `id` could plant: free ground worth farming.
+func _block_soil(id: int, b: Vector2i) -> int:
+	var f: Dictionary = farms.farms[id]
+	var n := 0
+	var x0 := b.x * (Farms.BLOCK.x + 1) - Farms.BLOCK.x / 2
+	var y0 := 0 if b.y == 0 else b.y * (Farms.BLOCK.y + 1)
+	# Every other cell is enough to judge it.
+	for i in range(0, Farms.BLOCK.x, 2):
+		for j in range(0, Farms.BLOCK.y, 2):
+			var c := Vector2i(x0 + i, y0 + j)
+			var mid := Farms.cell_center(f, c)
+			if farms.reserved_ok(mid) and farms.field_profit(f, c) + farms.support(id) > maxf(farms.buy_margin(id), 0.0) \
+					and field_usable(mid, Farms.cell_corners(f, c)):
+				n += 4
+	return n
 
 
 ## Whether a water utility can put a piece of its yard on this square: no
@@ -2676,6 +2819,84 @@ func _county_road(a: Vector2, b: Vector2, link_ends: Array) -> Array:
 	return ends
 
 
+## The roads out to the region, as straight county highways to rebuild:
+## [[a, b, link_ends], ...]. Each runs from one region link along the road,
+## straight on through any junctions, to the other link or the road's end.
+func _link_roads() -> Array:
+	var out := []
+	var done := {}
+	var links := region_links.duplicate()
+	links.sort()
+	for start in links:
+		if done.has(start) or not network.nodes.has(start):
+			continue
+		done[start] = true
+		var at: int = start
+		var came := -1
+		var heading := Vector3.ZERO
+		var steps := 0
+		while steps < 200:
+			steps += 1
+			var next := -1
+			var best := -1.0
+			for seg in network.segments_at(at):
+				if seg == came:
+					continue
+				var sd: Dictionary = network.segments[seg]
+				var other: int = sd.b if sd.a == at else sd.a
+				var dir: Vector3 = network.nodes[other] - network.nodes[at]
+				dir.y = 0.0
+				dir = dir.normalized()
+				# The first step takes the only road; then straight on (within 25°).
+				var straight := 1.0 if heading == Vector3.ZERO else dir.dot(heading)
+				if straight > best and (heading == Vector3.ZERO or straight > 0.9):
+					best = straight
+					next = seg
+			if next == -1:
+				break
+			var nd: Dictionary = network.segments[next]
+			var to: int = nd.b if nd.a == at else nd.a
+			heading = network.nodes[to] - network.nodes[at]
+			heading.y = 0.0
+			heading = heading.normalized()
+			came = next
+			at = to
+			if at in region_links:
+				break
+		var a: Vector3 = network.nodes[start]
+		var b: Vector3 = network.nodes[at]
+		var ends := [0]
+		if at in region_links and at != start:
+			done[at] = true
+			ends.append(1)
+		if a.distance_to(b) >= RoadNetwork.MIN_LENGTH:
+			out.append([Vector2(a.x, a.z), Vector2(b.x, b.z), ends])
+	return out
+
+
+## A fresh start gets a crossroads on its county highway, nearest the
+## town's middle: a street across it, 300 m each way, to grow from.
+func _start_crossroads() -> void:
+	var near := network.find_segment_near(Vector3.ZERO, 5000.0)
+	if near.is_empty():
+		return
+	var at: Vector3 = near.point
+	var hub := network.find_node_near(at, 60.0)
+	if hub != -1 and network.segments_at(hub).size() >= 3:
+		return
+	var sd: Dictionary = network.segments[int(near.seg)]
+	var along: Vector3 = network.nodes[sd.b] - network.nodes[sd.a]
+	along.y = 0.0
+	var across := Vector3(-along.z, 0.0, along.x).normalized() * 300.0
+	var a := at - across
+	var b := at + across
+	if not land_ok(a) or not land_ok(b) or not land_ok(at):
+		return
+	var money := economy.money
+	network.build_road(a, at, b, RoadStyle.Type.STREET)
+	economy.money = money
+
+
 func _parcels_to_save() -> Dictionary:
 	var out := {}
 	var keys := buildings.keys()
@@ -2748,6 +2969,7 @@ func to_dict() -> Dictionary:
 		"markers": markers.to_dict(),
 		"leaders": leaders.to_dict(),
 		"timelapse": timelapse.to_dict(),
+		"history": history.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
 		"buses": buses.to_dict(),
@@ -2886,6 +3108,7 @@ func from_dict(d: Dictionary) -> void:
 	pollution.after_load(self)
 	heritage.ensure(self)
 	timelapse.from_dict(self, d.get("timelapse", {}))
+	history.from_dict(d.get("history", {}))
 	update_stats(true, -2)
 	buses = BusNet.new()
 	buses.from_dict(self, d.get("buses", {}))

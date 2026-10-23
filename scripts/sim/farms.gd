@@ -10,6 +10,12 @@ extends RefCounted
 ## on. A new farm puts up its barn first, then plants the fields next to
 ## the farmyard and works outward. Every farmhouse gets a winding gravel lane out to its road.
 ##
+## A farm grows to a real size and then builds a road (Brawn, 2026-10-23):
+## it works one 80-acre block between roads at a time (see Balance
+## FARM_BLOCK_CELLS), and when that is full and paying it lays a gravel road
+## along the survey line to the next block, which becomes an ordinary city
+## road (see HubRoads). Fields are 40-acre "forties", two to a block.
+##
 ## Soil never wears out: every spot keeps its own fertility forever.
 ## Prices follow Midwest figures: corn and soybeans, about $10,000 an acre.
 
@@ -44,6 +50,8 @@ const RESERVE_BONUS := Balance.FARM_RESERVE_BONUS
 const PRICE_CYCLE_DAYS := Balance.FARM_PRICE_CYCLE_DAYS
 ## Farms decide to buy or sell land this often, in ticks (6 game hours).
 const DECIDE_EVERY := Balance.FARM_DECIDE_EVERY
+## One block of land between roads, in cells (along the road, back from it).
+const BLOCK := Balance.FARM_BLOCK_CELLS
 
 ## Land the player has set aside (Reserves): farms stay off land saved for
 ## other industries and favour land saved for farming.
@@ -74,6 +82,16 @@ var tax_rate := 1.5
 ## Crop prices against normal (1.0). They rise and fall over the years like
 ## real commodity cycles, so farms grow in good years and sell in bad ones.
 var price := 1.0
+## Set by the city: the game day (for each crop's own price swing), the
+## year (farms plan their crops each new year), what buyers around town
+## want (CropPlan.demand) and the ground's steepness at a point.
+var day := 0.0
+var year := 0
+var demand := {}
+var slope_of := Callable()
+## Set by the city: farm `id` has filled its open blocks and wants to build a
+## road to another. Callable(id) -> bool (true when anything changed).
+var expand := Callable()
 
 
 ## How good the soil is at a point (see Resources). Fixed forever.
@@ -110,12 +128,87 @@ static func cell_corners(f: Dictionary, c: Vector2i) -> PackedVector2Array:
 	return out
 
 
+## The land survey in the farm's own frame. Blocks are BLOCK.x cells along
+## the road by BLOCK.y back, with one cell between them for a road: road
+## columns at x = 10, -11, 31... and road rows at y = 10, 21, 32... (the
+## farmhouse's own block runs all the way out to its road). True when cell
+## c lies on one of those lines, where only a road goes.
+static func on_line(c: Vector2i) -> bool:
+	if posmod(c.x - BLOCK.x / 2, BLOCK.x + 1) == 0:
+		return true
+	return c.y >= BLOCK.y and posmod(c.y - BLOCK.y, BLOCK.y + 1) == 0
+
+
+## Which block cell c is in: (0, 0) is the farmhouse's.
+static func block_of(c: Vector2i) -> Vector2i:
+	var bx := floori(float(c.x + BLOCK.x / 2 + 1) / (BLOCK.x + 1))
+	var by := 0 if c.y < BLOCK.y else floori(float(c.y + 1) / (BLOCK.y + 1))
+	return Vector2i(bx, by)
+
+
+## Which 40-acre field cell c is in: each block holds two, side by side.
+static func forty_of(c: Vector2i) -> Vector2i:
+	var b := block_of(c)
+	var half := 1 if posmod(c.x + BLOCK.x / 2, BLOCK.x + 1) >= BLOCK.x / 2 else 0
+	return Vector2i(b.x * 2 + half, b.y)
+
+
+## The first row of cells on the farm's side of its own road: the road its
+## lane comes out on is the front edge of its land.
+static func front_row(f: Dictionary) -> int:
+	var drive: Array = f.get("drive", [])
+	if drive.is_empty():
+		return -BLOCK.y
+	return ceili(_local(f, drive[-1]).y / CELL + 0.5)
+
+
+## A point in the farm's frame, in cells (x along, y back), on the ground.
+static func local_point(f: Dictionary, u: float, v: float) -> Vector3:
+	var p: Vector3 = f.pos + _right(f) * (u * CELL) - f.dir * (v * CELL)
+	return Vector3(p.x, 0.0, p.z)
+
+
+## The road a farm builds to open block `to` from its block `from`, as
+## [far end, line direction toward the road network, the rest of the line
+## (Vector3 points from the far end)] candidates: a road along the survey
+## line between them, joined to the nearest road it can reach.
+static func road_lines(f: Dictionary, from: Vector2i, to: Vector2i) -> Array:
+	var out := []
+	var toward_road: Vector3 = f.dir  # back toward the farm's own road
+	var back := float(BLOCK.y + (BLOCK.y + 1) * from.y)  # the row line behind `from`
+	if to.y == from.y:
+		# Beside it: a road down the column line between them, from the back
+		# line out to whatever road it meets.
+		var u := float(from.x * (BLOCK.x + 1) + (BLOCK.x / 2 if to.x > from.x else -BLOCK.x / 2 - 1))
+		out.append([local_point(f, u, back), toward_road, []])
+	elif to.y == from.y + 1 and to.x == from.x:
+		# Behind it: a road along the row line, joined at one corner to a road
+		# there, or run out along that side's column line to one.
+		var u0 := float(from.x * (BLOCK.x + 1) - BLOCK.x / 2 - 1)
+		var u1 := float(from.x * (BLOCK.x + 1) + BLOCK.x / 2)
+		for ends in [[u0, u1], [u1, u0]]:
+			out.append([local_point(f, ends[0], back), toward_road, [local_point(f, ends[1], back)]])
+	return out
+
+
 func add_farm(pos: Vector3, dir: Vector3, crop: String, drive: Array) -> int:
 	var id := _next_id
 	_next_id += 1
 	farms[id] = {"pos": pos, "dir": dir, "crop": crop, "cells": [], "loss_streak": 0,
-		"barn": false, "drive": drive}
+		"barn": false, "drive": drive, "fields": {}, "plan_year": year, "blocks": [Vector2i.ZERO], "road_wait": 0.0,
+		"pending": {}, "why": ""}
 	return id
+
+
+## The blocks next to farm f's open ones that it could open with a road.
+static func next_blocks(f: Dictionary) -> Array:
+	var out := []
+	for b in f.blocks:
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1)]:
+			var n: Vector2i = b + d
+			if not n in f.blocks and not n in out:
+				out.append([b, n])
+	return out
 
 
 ## A winding gravel lane from the farmhouse's front door out to a point on
@@ -234,13 +327,16 @@ func yearly_support() -> float:
 func field_profit(f: Dictionary, c: Vector2i) -> float:
 	var mid := cell_center(f, c)
 	var km := mid.distance_to(Vector3(f.pos.x, 0.0, f.pos.z)) / 1000.0
-	var gross: float = GROSS_PER_ACRE[f.crop] * fertility_at(mid) * price \
-		* Agency.effect(f, Agency.TREES.farm, "output*") * Agency.effect(f, Agency.TREES.farm, "price*")
+	# This year's crop on the field, after last year's (CropPlan).
+	var fl := CropPlan.field(f, c)
+	var net := CropPlan.net_per_acre(fl.crop, fl.prev, fl.health, fertility_at(mid),
+		price * CropPlan.relative_price(fl.crop, day),
+		Agency.effect(f, Agency.TREES.farm, "output*") * Agency.effect(f, Agency.TREES.farm, "price*"))
 	var tax := LAND_PER_ACRE * AG_ASSESSMENT * tax_rate / 100.0
 	var lease := 0.0
 	if lease_of.is_valid():
 		lease = lease_of.call(cell_corners(f, c))
-	return (gross - COST_PER_ACRE[f.crop] - COST_PER_ACRE_PER_KM * km - tax) * ACRES_PER_CELL + lease
+	return (net - COST_PER_ACRE_PER_KM * km - tax) * ACRES_PER_CELL + lease
 
 
 ## The best a new farm here could make a year from a field beside its yard,
@@ -271,6 +367,13 @@ func decide(usable: Callable) -> bool:
 			f.barn = true
 			changed = true
 			continue
+		# Each new year the leader picks every field's crop (CropPlan).
+		if year > int(f.get("plan_year", 0)):
+			f.plan_year = year
+			if not f.cells.is_empty():
+				CropPlan.plan(f, demand, price, day, func(c): return fertility_at(cell_center(f, c)),
+					func(c): return slope_of.call(cell_center(f, c)) if slope_of.is_valid() else 0.0)
+				changed = true
 		var profit := yearly_profit(id)
 		var sup := support(id)
 		var margin := buy_margin(id)
@@ -291,7 +394,29 @@ func decide(usable: Callable) -> bool:
 			f.cells.append(best)
 			f.loss_streak = 0
 			changed = true
+		elif best == Vector2i.MAX and expand.is_valid() and wants_road(id):
+			# Its block is full and paying: time for a road to the next one.
+			if expand.call(id):
+				changed = true
 	return changed
+
+
+## True when farm `id` has filled what its open blocks hold, makes good money
+## and would keep growing: then it builds a road to more land.
+func wants_road(id: int) -> bool:
+	var f: Dictionary = farms[id]
+	if f.cells.size() >= MAX_CELLS or buy_margin(id) == INF or day < float(f.get("road_wait", 0.0)):
+		return false
+	if not f.get("pending", {}).is_empty():
+		return true  # a road it asked the player for
+	if yearly_profit(id) < Balance.FARM_ROAD_MIN_PROFIT:
+		return false
+	# Full: most of its open blocks are planted (woods, creeks and the
+	# farmyard leave the rest).
+	var room := 0
+	for b in f.blocks:
+		room += BLOCK.x * BLOCK.y
+	return f.cells.size() >= room * 0.5
 
 
 ## The field a farm would buy next: the best paying free one next to its
@@ -355,7 +480,8 @@ func reserved_ok(p: Vector3) -> bool:
 
 
 ## Cells next to the farm's fields, or next to the farmyard to start, so
-## the fields always spread out from the farmhouse.
+## the fields always spread out from the farmhouse. Only in the blocks the
+## farm has opened, and across its roads (the survey lines) into the next.
 func _frontier(f: Dictionary) -> Array:
 	var out := []
 	var seen := {Vector2i.ZERO: true}
@@ -363,12 +489,17 @@ func _frontier(f: Dictionary) -> Array:
 		seen[c] = true
 	var from: Array = f.cells.duplicate()
 	from.append(Vector2i.ZERO)
+	var blocks: Array = f.get("blocks", [Vector2i.ZERO])
+	var front := front_row(f)
 	for c in from:
 		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 			var n: Vector2i = c + d
+			if on_line(n):
+				n += d  # over the road to the field beyond
 			if not seen.has(n):
 				seen[n] = true
-				out.append(n)
+				if block_of(n) in blocks and not on_line(n) and n.y >= front:
+					out.append(n)
 	return out
 
 
@@ -439,8 +570,22 @@ func to_dict() -> Dictionary:
 			lane.append([p.x, p.z])
 		fs[str(id)] = {"pos": [f.pos.x, f.pos.z], "dir": [f.dir.x, f.dir.z], "crop": f.crop,
 			"cells": owned, "loss": f.loss_streak, "barn": f.barn, "drive": lane, "frame": 2,
-			"leader": f.get("leader", {}), "built": f.get("built", []), "why": f.get("why", "")}
+			"leader": f.get("leader", {}), "built": f.get("built", []), "why": f.get("why", ""),
+			"blocks": f.get("blocks", [Vector2i.ZERO]).map(func(b): return [b.x, b.y]),
+			"road_wait": f.get("road_wait", 0.0), "pending": f.get("pending", {}),
+			"plan_year": f.get("plan_year", 0), "fields": _fields_out(f)}
 	return {"farms": fs, "next_id": _next_id}
+
+
+## Each field's crop record as [x, y, crop, prev, years, health, cover, cover_prev, why].
+static func _fields_out(f: Dictionary) -> Array:
+	var out := []
+	var keys: Array = f.get("fields", {}).keys()
+	keys.sort()
+	for k in keys:
+		var r: Dictionary = f.fields[k]
+		out.append([k.x, k.y, r.crop, r.prev, r.years, r.health, r.cover, r.cover_prev, r.why])
+	return out
 
 
 func from_dict(d: Dictionary) -> void:
@@ -470,7 +615,21 @@ func from_dict(d: Dictionary) -> void:
 		farms[int(k)] = {"pos": Vector3(f.pos[0], 0.0, f.pos[1]),
 			"dir": Vector3(f.dir[0], 0.0, f.dir[1]).normalized(), "crop": str(f.crop),
 			"cells": owned, "loss_streak": int(f.get("loss", 0)), "barn": bool(f.get("barn", true)),
-			"drive": lane, "built": Array(f.get("built", [])), "why": str(f.get("why", ""))}
+			"drive": lane, "built": Array(f.get("built", [])), "why": str(f.get("why", "")),
+			"road_wait": float(f.get("road_wait", 0.0)), "pending": Dictionary(f.get("pending", {})),
+			"plan_year": int(f.get("plan_year", 0)), "fields": {}}
+		for r in f.get("fields", []):
+			farms[int(k)].fields[Vector2i(int(r[0]), int(r[1]))] = {"crop": str(r[2]), "prev": str(r[3]),
+				"years": int(r[4]), "health": float(r[5]), "cover": bool(r[6]), "cover_prev": bool(r[7]), "why": str(r[8])}
+		# Farms from before blocks keep every field they had.
+		var blocks := [Vector2i.ZERO]
+		for b in f.get("blocks", []):
+			if not Vector2i(int(b[0]), int(b[1])) in blocks:
+				blocks.append(Vector2i(int(b[0]), int(b[1])))
+		for c in owned:
+			if not block_of(c) in blocks:
+				blocks.append(block_of(c))
+		farms[int(k)].blocks = blocks
 		if not f.get("leader", {}).is_empty():
 			farms[int(k)].leader = f.leader
 	_next_id = int(d.get("next_id", 1))

@@ -11,8 +11,10 @@ func _init() -> void:
 	var igpu := RenderingDevice.DEVICE_TYPE_INTEGRATED_GPU
 	_check(GraphicsQuality.guess_tier("Apple M2 Max", igpu, 12, 48.0) == GraphicsQuality.CINEMATIC,
 		"a Mac Studio with 48 GB starts on Cinematic")
-	_check(GraphicsQuality.guess_tier("Apple M2", igpu, 8, 8.0) == GraphicsQuality.MEDIUM,
-		"an 8 GB Mac mini starts on Medium")
+	_check(GraphicsQuality.guess_tier("Apple M2", igpu, 8, 8.0) == GraphicsQuality.LOW,
+		"an 8 GB Mac mini starts on Low")
+	_check(GraphicsQuality.guess_tier("Apple M4", igpu, 10, 16.0) == GraphicsQuality.MEDIUM,
+		"a 16 GB base Mac starts on Medium")
 	_check(GraphicsQuality.guess_tier("Apple M4 Pro", igpu, 12, 24.0) == GraphicsQuality.HIGH, "a Pro chip starts on High")
 	_check(GraphicsQuality.guess_tier("NVIDIA GeForce RTX 4070", dgpu, 16, 32.0) == GraphicsQuality.CINEMATIC,
 		"a gaming PC starts on Cinematic")

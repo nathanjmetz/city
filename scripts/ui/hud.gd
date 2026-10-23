@@ -88,6 +88,7 @@ var _cars := UiStyle.label("", 13, UiStyle.MUTED)
 var _demand_bars := {}
 var _money := UiStyle.label("", 14)
 var _net := UiStyle.label("", 13)
+var _warning_box: PanelContainer
 ## The Economy page (the bottom bar's Economy button) is open.
 var _budget_open := false
 var economy_page := EconomyPage.new()
@@ -105,6 +106,13 @@ var region_panel := RegionPanel.new()
 ## The town's nickname, history, districts and markers, and its timelapse.
 var town := TownPanel.new()
 var timelapse := TimelapseView.new()
+## What's behind each top bar readout: a chart and its numbers.
+var stats_panel := StatsPanel.new()
+## Back to your town centre, or to a neighbor's.
+var jump: TownJump
+var _towns_panel := PanelContainer.new()
+var _towns_list := VBoxContainer.new()
+var _towns_button: Button
 
 
 func setup(rt: RoadTool, zt: ZoneTool, s: CitySim, g: Node) -> void:
@@ -133,6 +141,7 @@ func _ready() -> void:
 	_info_panel.setup(sim, select_tool)
 	_root.add_child(_info_panel)
 	_build_economy()
+	_build_stats()
 
 	road_tool.mode_changed.connect(func(_m): _sync())
 	road_tool.options_changed.connect(_sync)
@@ -176,6 +185,10 @@ func _ready() -> void:
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	var k := event as InputEventKey
+	if k != null and k.pressed and not k.echo and k.keycode == KEY_HOME:
+		jump.go_home()
+		get_viewport().set_input_as_handled()
+		return
 	if k == null or not k.pressed or k.echo or k.keycode != KEY_ESCAPE:
 		return
 	if road_tool.is_drawing():
@@ -212,7 +225,7 @@ func pad_bottom_height() -> float:
 ## True while a tool is in hand, a panel or view is open, or something is selected.
 func anything_open() -> bool:
 	return _budget_open or _view != "" or _views_panel.visible or _help.visible or advisor.visible or permits.visible or region_panel.visible \
-		or town.visible or timelapse.visible \
+		or town.visible or timelapse.visible or stats_panel.visible or _towns_panel.visible \
 		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
@@ -234,6 +247,8 @@ func close_all() -> void:
 	region_panel.close_panel()
 	town.close_panel()
 	timelapse.close_view()
+	stats_panel.close_panel()
+	_show_towns(false)
 	road_tool.set_mode(RoadTool.Mode.NONE)
 	zone_tool.set_zone(ZoneTool.OFF)
 	service_tool.set_kind(ServiceTool.OFF)
@@ -258,6 +273,10 @@ func _process(_delta: float) -> void:
 	economy_page.size = Vector2(EconomyPage.WIDTH, _root.size.y - _top_bar.size.y - _bottom.size.y)
 	# The info panel sits beside the Views column or Economy page when open.
 	var left := _views_panel.size.x if _views_panel.visible else 0.0
+	# A stat's panel sits beside the Views column, the info panel beside it.
+	stats_panel.position = Vector2(left, _top_bar.size.y)
+	if stats_panel.visible:
+		left += stats_panel.size.x
 	if economy_page.visible:
 		left = economy_page.size.x
 	_info_panel.position = Vector2(left, _top_bar.size.y)
@@ -374,16 +393,36 @@ func _build_top_bar() -> void:
 	_views_button = _icon_button("views", 24, "Views: see the map by fertility, oil, ore, forest, services, traffic and pollution")
 	_views_button.toggled.connect(func(on): _views_panel.visible = on)
 	row.add_child(_views_button)
+	# Home: back to your town centre (Home key); the arrow lists every town.
+	jump = TownJump.new(sim, info_view.cam)
+	var home := _icon_button("homes", 24, "Back to your town centre  (Home)")
+	home.toggle_mode = false
+	home.pressed.connect(func():
+		_show_towns(false)
+		jump.go_home())
+	row.add_child(home)
+	_towns_button = Button.new()
+	_towns_button.text = "▾"
+	_towns_button.toggle_mode = true
+	_towns_button.focus_mode = Control.FOCUS_NONE
+	_towns_button.custom_minimum_size = Vector2(18, 24)
+	_towns_button.tooltip_text = "Go to a town: yours or a neighbor's"
+	_towns_button.toggled.connect(_show_towns)
+	row.add_child(_towns_button)
 	row.add_child(VSeparator.new())
-	_stat(row, "people", _pop, "Population")
-	_stat(row, "jobs", _jobs, "Jobs and unemployment")
-	_stat(row, "car", _cars, "Cars on the road and how freely traffic flows")
+	_stat(row, "people", _pop, "Population: click for its chart and where people live", "population")
+	_stat(row, "jobs", _jobs, "Jobs and unemployment: click for the chart and where people work", "jobs")
+	_stat(row, "car", _cars, "Cars on the road and how freely traffic flows: click for the chart and the slowest roads", "traffic")
 	row.add_child(VSeparator.new())
+	var demand_row := HBoxContainer.new()
+	demand_row.add_theme_constant_override("separation", 8)
+	demand_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(_clickable(demand_row, "Demand for homes, shops and industry: click for the chart and why", "demand"))
 	for entry in [[ZoneMap.Zone.RESIDENTIAL, "H"], [ZoneMap.Zone.COMMERCIAL, "S"], [ZoneMap.Zone.INDUSTRIAL, "I"]]:
 		var z: int = entry[0]
 		var l := UiStyle.label(entry[1], 11, ZoneMap.COLORS[z])
 		l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		row.add_child(l)
+		demand_row.add_child(l)
 		var bar_z := ProgressBar.new()
 		bar_z.show_percentage = false
 		bar_z.custom_minimum_size = Vector2(34, 7)
@@ -393,28 +432,30 @@ func _build_top_bar() -> void:
 		fill.bg_color = ZoneMap.COLORS[z]
 		fill.set_corner_radius_all(3)
 		bar_z.add_theme_stylebox_override("fill", fill)
-		bar_z.tooltip_text = "Demand for " + ["", "homes", "shops", "industry"][z]
-		row.add_child(bar_z)
+		bar_z.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		demand_row.add_child(bar_z)
 		_demand_bars[z] = bar_z
 	row.add_child(VSeparator.new())
-	_stat(row, "money", _money, "City funds")
+	var money_row := _stat(row, "money", _money, "City funds: click for the chart and this month's money in and out", "money")
 	_net.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(_net)
+	_net.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	money_row.add_child(_net)
 	_warning.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_warning.mouse_filter = Control.MOUSE_FILTER_PASS
+	_warning.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# Never push the clock and speed buttons off the bar.
 	_warning.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_warning.clip_text = true
 	_warning.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	_warning.tooltip_text = "Buildings need power and water to grow and fill. Click a lot or building to see what it lacks."
-	row.add_child(_warning)
+	_warning_box = _clickable(_warning, "", "problems")
+	_warning_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(_warning_box)
 
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(spacer)
 	_clock.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(_clock)
+	row.add_child(_clickable(_clock, "The date: click for the town's years", "date"))
 	for i in 4:
 		var b := _icon_button(["pause", "play", "fast", "faster"][i], 24,
 			["Pause (Space)", "Normal speed", "2x speed", "4x speed"][i])
@@ -458,16 +499,106 @@ func _build_top_bar() -> void:
 	row.add_child(_help_button)
 
 
-## An icon and a value, side by side.
-func _stat(row: HBoxContainer, icon: String, value: Label, tip: String) -> void:
+## An icon and a value, side by side; a click opens the stat's panel.
+## Returns the row, so more can go in it.
+func _stat(row: HBoxContainer, icon: String, value: Label, tip: String, key: String) -> HBoxContainer:
+	var inner := HBoxContainer.new()
+	inner.add_theme_constant_override("separation", 8)
+	inner.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var ic := Icon.new(icon, 16)
 	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	ic.tooltip_text = tip
-	row.add_child(ic)
+	inner.add_child(ic)
 	value.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	value.tooltip_text = tip
-	value.mouse_filter = Control.MOUSE_FILTER_PASS
-	row.add_child(value)
+	value.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	inner.add_child(value)
+	row.add_child(_clickable(inner, tip, key))
+	return inner
+
+
+## Wraps a top bar readout so it lights up under the mouse and a click opens
+## its panel in StatsPanel (Cities: Skylines 2's top bar works the same way).
+func _clickable(content: Control, tip: String, key: String) -> PanelContainer:
+	var box := PanelContainer.new()
+	var idle := StyleBoxFlat.new()
+	idle.bg_color = Color.TRANSPARENT
+	idle.set_corner_radius_all(UiStyle.RADIUS_SM)
+	idle.content_margin_left = 4
+	idle.content_margin_right = 4
+	var lit := idle.duplicate() as StyleBoxFlat
+	lit.bg_color = Color(Brand.SURFACE_RAISED, 0.9)
+	box.add_theme_stylebox_override("panel", idle)
+	box.mouse_filter = Control.MOUSE_FILTER_STOP
+	box.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	box.tooltip_text = tip
+	box.mouse_entered.connect(func(): box.add_theme_stylebox_override("panel", lit))
+	box.mouse_exited.connect(func(): box.add_theme_stylebox_override("panel", idle))
+	box.gui_input.connect(func(e: InputEvent):
+		var mb := e as InputEventMouseButton
+		if mb != null and mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			open_stat(key)
+			box.accept_event())
+	box.add_child(content)
+	return box
+
+
+## Opens (or closes) a top bar stat's panel: "population", "jobs", "traffic",
+## "demand", "money", "date" or "problems".
+func open_stat(key: String) -> void:
+	if _budget_open:
+		_budget_open = false
+		_sync()
+	_show_towns(false)
+	stats_panel.toggle(key)
+
+
+func _build_stats() -> void:
+	stats_panel.setup(sim, info_view.cam, select_tool.select)
+	_root.add_child(stats_panel)
+	stats_panel.show_view.connect(func(k: String):
+		_views_button.button_pressed = true
+		_show_view(k))
+	stats_panel.open_economy.connect(func():
+		stats_panel.close_panel()
+		if not _budget_open:
+			_open("budget"))
+	stats_panel.pick_zone.connect(func(z: int):
+		if _category != "zones":
+			_open("zones")
+		zone_tool.set_zone(z))
+	# The list of towns drops down under its arrow.
+	_towns_panel.add_theme_stylebox_override("panel", UiStyle.dock(true))
+	_towns_panel.visible = false
+	_towns_list.add_theme_constant_override("separation", 2)
+	_towns_panel.add_child(_towns_list)
+	_root.add_child(_towns_panel)
+
+
+## Shows or hides the list of towns to go to, under the top bar's arrow.
+func _show_towns(on: bool) -> void:
+	_towns_panel.visible = on
+	if _towns_button:
+		_towns_button.set_pressed_no_signal(on)
+	if not on:
+		return
+	for c in _towns_list.get_children():
+		c.queue_free()
+	_towns_list.add_child(UiStyle.label("GO TO A TOWN", 10, UiStyle.MUTED, 600))
+	for t in jump.towns():
+		var b := Button.new()
+		b.flat = true
+		b.focus_mode = Control.FOCUS_NONE
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.add_theme_font_size_override("font_size", 13)
+		b.text = "%s%s  ·  %s people%s" % [t.name, ("" if t.name == "Your town" else "  (yours)") if t.mine else ("  ·  " + t.player if t.player != "" else ""),
+			_thousands(t.people), "" if t.online else "  ·  away"]
+		b.add_theme_color_override("font_color", Brand.CORAL_TEXT if t.mine else (Brand.INK if t.online else Brand.INK_FAINT))
+		b.tooltip_text = "Fly to the middle of " + t.name + ("  (Home)" if t.mine else "")
+		var at: Vector3 = t.at
+		b.pressed.connect(func():
+			_show_towns(false)
+			jump.go(at))
+		_towns_list.add_child(b)
+	_towns_panel.position = Vector2(_towns_button.global_position.x - 40.0, _top_bar.size.y)
 
 
 func _sync_speed() -> void:
@@ -1054,6 +1185,7 @@ func _open(cat: String) -> void:
 			_views_panel.visible = false
 			_views_button.set_pressed_no_signal(false)
 			select_tool.select({})
+			stats_panel.close_panel()
 			_budget_open = true
 			economy_page.refresh()
 			_sync()
@@ -1179,7 +1311,9 @@ func _update_stats() -> void:
 		full = ("%s. People are leaving %d buildings" % [full, unserved]) if full != "" else \
 			"%d buildings without power or water: people are leaving" % unserved
 	_warning.text = ("⚠ " + short) if short != "" else ""
-	_warning.tooltip_text = full + ". Click a lot or building to see what it lacks." if full != "" else ""
+	# Only clickable while there's a problem to show.
+	_warning_box.mouse_filter = Control.MOUSE_FILTER_STOP if short != "" else Control.MOUSE_FILTER_IGNORE
+	_warning_box.tooltip_text = full + ". Click for the list, or click a lot or building to see what it lacks." if full != "" else ""
 
 
 # --- Economy page (the bottom bar's Economy button) ------------------------
