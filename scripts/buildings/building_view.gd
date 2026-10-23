@@ -28,6 +28,21 @@ const FAR_CHUNK := 128.0
 const FAR_FROM := 600.0
 var _far := {}  # Vector2i -> MeshInstance3D
 var _far_dirty := {}  # Vector2i -> true
+var _by_chunk := {}  # Vector2i -> {lot key: true}, the buildings in each square
+
+## The town changes many times a second while it grows, so a change only
+## marks the view dirty: the next frame finds what was added or removed,
+## builds new buildings a few at a time (nearest the camera first, within
+## SPAWN_MS; a big batch such as a load goes in at once), and rechecks the
+## rest for a new look or sign in slices of RECHECK_MS.
+const SPAWN_MS := 4
+const RECHECK_MS := 2
+const SPAWN_ALL := 300
+var _dirty := false
+var _pending: Array = []  # lot keys waiting to be built, nearest last
+var _recheck: Array = []  # lot keys still to look over since the last change
+var _recheck_again := false  # changed again while a look-over was under way
+var _first := true  # the town as it loads goes in at once
 
 
 func setup(s: CitySim) -> void:
@@ -37,11 +52,21 @@ func setup(s: CitySim) -> void:
 		GraphicsQuality.current.changed.connect(func():
 			for c in _far:
 				_far[c].visibility_range_begin = _far_from())
-	sim.buildings_changed.connect(_sync)
-	sim.lots_changed.connect(_sync)
+	sim.buildings_changed.connect(_mark)
+	sim.lots_changed.connect(_mark)
 	# A business renamed, bought or with a new look gets new signs.
-	sim.families.changed.connect(_sync)
+	sim.families.changed.connect(_mark)
+	_dirty = true
 	_sync()
+
+
+func _mark() -> void:
+	_dirty = true
+
+
+func _process(_delta: float) -> void:
+	if _dirty or not _pending.is_empty() or not _recheck.is_empty():
+		_sync()
 
 
 func _sync() -> void:
@@ -54,27 +79,98 @@ func _sync() -> void:
 
 
 func _sync_all() -> void:
-	for key in _nodes.keys():
-		# Gone, or its lot moved (the road was widened), or its sign changed.
-		if not sim.buildings.has(key) or not sim.lots.has(key) \
-				or not _nodes[key].get_meta("front").is_equal_approx(sim.lots[key].front) \
-				or _nodes[key].get_meta("look") != _look(sim.buildings[key], key) \
-				or _nodes[key].get_meta("sign") != sim.families.sign_key(sim, "lot:" + key) \
-				or _nodes[key].get_meta("chain") != sim.buildings[key].get("chain", ""):
-			_far_dirty[_far_chunk(_nodes[key])] = true
-			_nodes[key].queue_free()
-			_nodes.erase(key)
-			_trees.remove(key)
-	for key in sim.buildings:
-		if not _nodes.has(key) and sim.lots.has(key):
-			_nodes[key] = _spawn(key, sim.lots[key], sim.buildings[key])
-			_far_dirty[_far_chunk(_nodes[key])] = true
+	var start := Time.get_ticks_usec()
+	if _dirty:
+		_dirty = false
+		for key in _nodes.keys():
+			if not sim.buildings.has(key) or not sim.lots.has(key):
+				_unspawn(key)
+		var fresh := []
+		for key in sim.buildings:
+			if not _nodes.has(key) and sim.lots.has(key):
+				fresh.append(key)
+		var have := {}
+		for key in _pending:
+			have[key] = true
+		for key in fresh:
+			if not have.has(key):
+				_pending.append(key)
+		_sort_pending()
+		if _recheck.is_empty():
+			_recheck = _nodes.keys()
+		else:
+			_recheck_again = true
+	# Look the rest over for a moved lot (a road widened), a new look or a
+	# new sign, a slice at a time.
+	while not _recheck.is_empty() and Time.get_ticks_usec() - start < RECHECK_MS * 1000:
+		var key: String = _recheck.pop_back()
+		if _nodes.has(key) and _stale(key):
+			_unspawn(key)
+			_pending.append(key)
+	if _recheck.is_empty() and _recheck_again:
+		_recheck_again = false
+		_recheck = _nodes.keys()
+	# Build: everything at once for a big batch (loading a town), otherwise
+	# nearest first until the frame's share is used.
+	var all_now := _first or _pending.size() > SPAWN_ALL
+	_first = false
+	while not _pending.is_empty():
+		var key: String = _pending.pop_back()
+		if _nodes.has(key) or not sim.buildings.has(key) or not sim.lots.has(key):
+			continue
+		var root := _spawn(key, sim.lots[key], sim.buildings[key])
+		_nodes[key] = root
+		var c := _far_chunk(root)
+		if not _by_chunk.has(c):
+			_by_chunk[c] = {}
+		_by_chunk[c][key] = true
+		_far_dirty[c] = true
+		if not all_now and Time.get_ticks_usec() - start > SPAWN_MS * 1000:
+			break
 	for c in _far_dirty:
+		var had := _far.has(c)
 		_build_far(c)
+		# A square's far boxes just appeared: point its buildings at them.
+		if not had and _far.has(c):
+			for key in _by_chunk.get(c, {}):
+				_link_far(_nodes[key])
 	_far_dirty.clear()
-	for key in _nodes:
-		if _nodes[key].get_meta("far", Vector2i(1 << 30, 0)) != _far_chunk(_nodes[key]):
-			_link_far(_nodes[key])
+
+
+## Whether a building's drawing is out of date.
+func _stale(key: String) -> bool:
+	var n: Node3D = _nodes[key]
+	var b: Dictionary = sim.buildings[key]
+	return not n.get_meta("front").is_equal_approx(sim.lots[key].front) \
+			or n.get_meta("look") != _look(b, key) \
+			or n.get_meta("sign") != sim.families.sign_key(sim, "lot:" + key) \
+			or n.get_meta("chain") != b.get("chain", "")
+
+
+func _unspawn(key: String) -> void:
+	var c := _far_chunk(_nodes[key])
+	_far_dirty[c] = true
+	if _by_chunk.has(c):
+		_by_chunk[c].erase(key)
+		if _by_chunk[c].is_empty():
+			_by_chunk.erase(c)
+	_nodes[key].queue_free()
+	_nodes.erase(key)
+	_trees.remove(key)
+
+
+## Nearest the camera last, so pop_back takes it first.
+func _sort_pending() -> void:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam == null or _pending.size() < 2:
+		return
+	var eye := cam.global_position
+	var shift := Terrain.shift
+	_pending.sort_custom(func(a, b):
+		var pa: Vector3 = sim.lots[a].pos if sim.lots.has(a) else Vector3.INF
+		var pb: Vector3 = sim.lots[b].pos if sim.lots.has(b) else Vector3.INF
+		return Vector2(pa.x + shift.x - eye.x, pa.z + shift.y - eye.z).length_squared() \
+				> Vector2(pb.x + shift.x - eye.x, pb.z + shift.y - eye.z).length_squared())
 
 
 ## What the drawing depends on: type, stage, size and how well it's kept.
@@ -197,9 +293,9 @@ func _build_far(c: Vector2i) -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var any := false
-	for key in _nodes:
+	for key in _by_chunk.get(c, {}):
 		var root: Node3D = _nodes[key]
-		if not root.has_meta("box") or _far_chunk(root) != c:
+		if not root.has_meta("box"):
 			continue
 		any = true
 		_box(st, Transform3D(root.basis, root.position - centre), root.get_meta("box"), root.get_meta("wall"),

@@ -174,24 +174,47 @@ var fades := false
 
 var _trees := {}  # owner key -> Array of [Transform3D, species, tint]
 var _multis := {}  # "cx,cz,species,far" -> MultiMeshInstance3D
-var _dirty := false
+## Which owners have trees in each chunk, and the chunks whose batches are
+## out of date: one lot's trees changing redraws only the chunks they
+## stand in, not every tree in town.
+var _owners := {}  # Vector2i chunk -> {owner key: true}
+var _dirty := {}  # Vector2i chunk -> true
 
 
 ## Replaces the trees that belong to `key` (a lot). Each tree is
 ## [Transform3D (world), species, tint Color].
 func set_trees(key: String, trees: Array) -> void:
+	_unfile(key)
 	_trees[key] = trees
-	_dirty = true
+	for c in _chunks_of(trees):
+		if not _owners.has(c):
+			_owners[c] = {}
+		_owners[c][key] = true
+		_dirty[c] = true
 
 
 func remove(key: String) -> void:
-	if _trees.erase(key):
-		_dirty = true
+	if _trees.has(key):
+		_unfile(key)
+		_trees.erase(key)
+
+
+func _unfile(key: String) -> void:
+	for c in _chunks_of(_trees.get(key, [])):
+		_owners[c].erase(key)
+		_dirty[c] = true
+
+
+static func _chunks_of(trees: Array) -> Dictionary:
+	var out := {}
+	for t in trees:
+		var o: Vector3 = t[0].origin
+		out[Vector2i(floori(o.x / CHUNK), floori(o.z / CHUNK))] = true
+	return out
 
 
 func _process(_delta: float) -> void:
-	if _dirty:
-		_dirty = false
+	if not _dirty.is_empty():
 		_rebuild()
 
 
@@ -202,30 +225,38 @@ func _rebuild() -> void:
 
 
 func _rebuild_now() -> void:
-	var groups := {}  # "cx,cz,species" -> Array of trees
-	for list in _trees.values():
-		for t in list:
-			var o: Vector3 = t[0].origin
-			var g := "%d,%d,%d" % [floori(o.x / CHUNK), floori(o.z / CHUNK), t[1]]
-			if not groups.has(g):
-				groups[g] = []
-			groups[g].append(t)
-	for k in _multis:
-		_multis[k].multimesh.instance_count = 0
-	for g in groups:
-		var parts: PackedStringArray = g.split(",")
-		var centre := Vector3((int(parts[0]) + 0.5) * CHUNK, 0, (int(parts[1]) + 0.5) * CHUNK)
-		for far in [false, true]:
-			var multi := _chunk(g, int(parts[2]), far, centre).multimesh
-			var list: Array = groups[g]
-			multi.instance_count = list.size()
-			for i in list.size():
-				var xf: Transform3D = list[i][0]
-				multi.set_instance_transform(i, Transform3D(xf.basis, xf.origin - centre))
-				# Alpha carries the species, for the season colours.
-				var custom: Color = list[i][2]
-				custom.a = (float(parts[2]) + 0.5) / 8.0
-				multi.set_instance_custom_data(i, custom)
+	for c in _dirty:
+		var groups := {}  # species -> Array of trees in this chunk
+		for key in _owners.get(c, {}):
+			for t in _trees[key]:
+				var o: Vector3 = t[0].origin
+				if Vector2i(floori(o.x / CHUNK), floori(o.z / CHUNK)) != c:
+					continue
+				if not groups.has(t[1]):
+					groups[t[1]] = []
+				groups[t[1]].append(t)
+		if _owners.has(c) and _owners[c].is_empty():
+			_owners.erase(c)
+		var centre := Vector3((c.x + 0.5) * CHUNK, 0, (c.y + 0.5) * CHUNK)
+		for sp in 8:  # every species the custom alpha can carry
+			var g := "%d,%d,%d" % [c.x, c.y, sp]
+			var list: Array = groups.get(sp, [])
+			for far in [false, true]:
+				if list.is_empty():
+					var key: String = g + ("f" if far else "n")
+					if _multis.has(key):
+						_multis[key].multimesh.instance_count = 0
+					continue
+				var multi := _chunk(g, sp, far, centre).multimesh
+				multi.instance_count = list.size()
+				for i in list.size():
+					var xf: Transform3D = list[i][0]
+					multi.set_instance_transform(i, Transform3D(xf.basis, xf.origin - centre))
+					# Alpha carries the species, for the season colours.
+					var custom: Color = list[i][2]
+					custom.a = (float(sp) + 0.5) / 8.0
+					multi.set_instance_custom_data(i, custom)
+	_dirty.clear()
 
 
 ## The MultiMesh for one species in one chunk, near or far. The node sits at

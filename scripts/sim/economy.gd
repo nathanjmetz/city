@@ -128,9 +128,7 @@ func _slice_sums(sim: CitySim, slice: int) -> Dictionary:
 	# The sliders are per area, so each is read once rather than per building.
 	var care_of := {}
 	var land_of := {}
-	for key in sim.buildings:
-		if slice >= 0 and key.hash() % SLICES != slice:
-			continue
+	for key in (sim.ledger().slices[slice] if slice >= 0 else sim.buildings.keys()):
 		var b: Dictionary = sim.buildings[key]
 		# Water and sewer bills from every building on the water system;
 		# water utilities collect their own bills (see WaterUtility).

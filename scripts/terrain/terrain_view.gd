@@ -45,6 +45,9 @@ const MOW_VERGE := 3.0
 const YARD_THIN := 0.6
 ## Milliseconds per frame spent building chunks after the first frame.
 const BUDGET_MS := 6
+## How far the camera moves (metres, height counted) before the chunks'
+## detail levels are worked out again; far smaller than any level's reach.
+const SETTLE_MOVE := 8.0
 
 const SHADER := """
 shader_type spatial;
@@ -341,6 +344,9 @@ var _first := true
 var _far: MeshInstance3D
 static var _far_mat: ShaderMaterial
 var _far_centre := Vector2(INF, INF)
+## Where the camera was when every chunk last reached its wanted detail:
+## until it moves SETTLE_MOVE or ground is graded, nothing needs redoing.
+var _settled_eye := Vector3(INF, INF, INF)
 ## The far land being built (see far_job), or empty.
 var _far_job := {}
 
@@ -400,7 +406,12 @@ func _process(_delta: float) -> void:
 		_far_mat.set_shader_parameter("lod_eye", Vector3(eye.x, eye.z, eye.y))
 		_far_mat.set_shader_parameter("region_origin", Terrain.view_origin)
 	var flat_eye := Vector2(eye.x, eye.y)
+	if _dirty.is_empty() and eye.distance_to(_settled_eye) < SETTLE_MOVE:
+		_update_far(flat_eye)
+		Perf.add("frame.terrain", t0)
+		return
 	var start := Time.get_ticks_msec()
+	var done := true
 	# Wanted level of detail for every chunk in reach: finer once well
 	# inside a level's reach, coarser only once well past it.
 	var want := {}
@@ -441,7 +452,9 @@ func _process(_delta: float) -> void:
 		# Build everything at once the first time, so the land is there
 		# when the game opens; then a little each frame.
 		if not _first and Time.get_ticks_msec() - start > BUDGET_MS:
+			done = false
 			break
+	_settled_eye = eye if done else Vector3(INF, INF, INF)
 	_update_far(flat_eye, _first)
 	_first = false
 	Perf.add("frame.terrain", t0)
@@ -566,6 +579,7 @@ func _drop(key: Vector2i) -> void:
 		if c[k] != null:
 			c[k].queue_free()
 	_chunks.erase(key)
+	_dirty.erase(key)
 
 
 func _build(key: Vector2i, lod: int) -> void:
@@ -1014,6 +1028,9 @@ func _mark_dirty(g: Array) -> void:
 		for cz in range(c0.y, c1.y + 1):
 			for cx in range(c0.x, c1.x + 1):
 				var key := Vector2i(cx, cz)
+				# A chunk not built yet gets the grading when it is built.
+				if not _chunks.has(key):
+					continue
 				if not _dirty.has(key):
 					_dirty[key] = []
 				_dirty[key].append(box)

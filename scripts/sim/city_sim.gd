@@ -1414,9 +1414,7 @@ func _home_part(slice: int) -> Dictionary:
 	var care := 0.0
 	var cover := 0.0
 	var happy := 0.0
-	for key in buildings:
-		if int(buildings[key].zone) != ZoneMap.Zone.RESIDENTIAL or key.hash() % Economy.SLICES != slice:
-			continue
+	for key in ledger().home_slices[slice]:
 		n += 1
 		var s: Dictionary = services.served.get(key, {})
 		if services.water.boils(s):
@@ -1426,6 +1424,38 @@ func _home_part(slice: int) -> Dictionary:
 			cover += Services.coverage_of(s)
 		happy += float(parks.lot_happy.get(key, 0.0))
 	return {"n": n, "boil": boil, "care": care, "cover": cover, "happy": happy}
+
+
+## The town's ledger: lists of the buildings that systems would otherwise
+## sort or filter out of the whole town on every pass. Worked out again only
+## when a building is added or removed (homes and shops keep their zone).
+##   sorted: every building's key, sorted
+##   slices: every building's key in each Economy slice, in building order
+##   home_slices: the homes' keys in each Economy slice, in building order
+var _ledger := {}
+var _ledger_sig := 0
+
+
+func ledger() -> Dictionary:
+	var keys := buildings.keys()
+	var sig := hash(keys)
+	if sig == _ledger_sig and not _ledger.is_empty():
+		return _ledger
+	_ledger_sig = sig
+	var slices := []
+	var homes := []
+	for i in Economy.SLICES:
+		slices.append([])
+		homes.append([])
+	for key in keys:
+		var i: int = key.hash() % Economy.SLICES
+		slices[i].append(key)
+		if int(buildings[key].zone) == ZoneMap.Zone.RESIDENTIAL:
+			homes[i].append(key)
+	var sorted := keys.duplicate()
+	sorted.sort()
+	_ledger = {"sorted": sorted, "slices": slices, "home_slices": homes}
+	return _ledger
 
 
 ## New residents move into homes with room, faster when homes are in demand.
