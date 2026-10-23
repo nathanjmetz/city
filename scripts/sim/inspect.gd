@@ -523,6 +523,9 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 		rows.insert(1, ["Flats upstairs", "%d of %d residents" % [int(b.focc), int(b.flats)]])
 	if BuildingTypes.storeys(b) > 0:
 		rows.insert(0, ["Storeys", str(BuildingTypes.storeys(b))])
+	var address := sim.streets.address(sim, key)
+	if address != "":
+		rows.insert(0, ["Address", address])
 	if str(b.get("why", "")) != "":
 		rows.append(["Why this", b.why])
 	var next := []
