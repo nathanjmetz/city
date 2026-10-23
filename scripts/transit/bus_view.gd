@@ -37,7 +37,7 @@ func setup(s: CitySim) -> void:
 
 func _ready() -> void:
 	var mat := VehicleMaterial.get_material()
-	for kind in ["city_bus", "coach", "school_bus", "taxi"]:
+	for kind in ["city_bus", "coach", "school_bus", "taxi", "taxi_old"]:
 		var pair := []
 		for lod in 2:
 			var mm := MultiMesh.new()
@@ -91,7 +91,7 @@ func _draw_buses() -> void:
 		var kind: String = entry[0]
 		var front: Vector3 = entry[1]
 		var dist := front.distance_to(eye)
-		if show_routes and entry[3] > 0 and dist < FAR and kind != "taxi":
+		if show_routes and entry[3] > 0 and dist < FAR and not kind.begins_with("taxi"):
 			labels.append([front - (entry[2] as Vector3) * 6.0 + Vector3(0, 5.0, 0), entry[3]])
 		if dist > FAR or entry.size() > 4 and entry[4]:
 			continue  # parked on the road: TrafficView draws it
@@ -171,6 +171,26 @@ func _draw_stops() -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var any := false
+	# Per depot, its busiest stop (the downtown transfer center) and the
+	# stop farthest out from it (the park-and-ride).
+	var hubs := {}
+	var best := {}
+	for sid in sim.buses.stops:
+		var s: Dictionary = sim.buses.stops[sid]
+		var dep := int(s.get("depot", -1))
+		if not s.has("pos") or dep == -1 or not sim.services.buildings.has(dep):
+			continue
+		var riders: float = s.res + s.jobs
+		var far: float = (s.pos as Vector3).distance_to(sim.services.buildings[dep].pos)
+		if not hubs.has(dep):
+			hubs[dep] = [sid, sid]
+			best[dep] = [riders, far]
+		if riders > best[dep][0] or riders == best[dep][0] and sid < hubs[dep][0]:
+			hubs[dep][0] = sid
+			best[dep][0] = riders
+		if far > best[dep][1]:
+			hubs[dep][1] = sid
+			best[dep][1] = far
 	for sid in sim.buses.stops:
 		var s: Dictionary = sim.buses.stops[sid]
 		if not s.has("pos") or s.get("depot", -1) == -1:
@@ -185,6 +205,15 @@ func _draw_stops() -> void:
 		_box(st, frame, Vector3(0, 2.5, 0.06), Vector3(0.46, 0.6, 0.04), Color("#f2f2ee"))
 		_box(st, frame, Vector3(0, 2.62, 0.09), Vector3(0.47, 0.18, 0.02), Color("#1f5fa8"))
 		var kit: Array = sim.buses.depots.get(s.depot, {}).get("built", [])
+		if sid == hubs.get(s.depot, [-1, -1])[0] and "transfer_center" in kit:
+			_transfer_center(st, frame)
+			continue
+		if sid == hubs.get(s.depot, [-1, -1])[1] and "park_ride" in kit:
+			# A shared-use park-and-ride (a church or store lot the depot
+			# leases): the blue MUTCD D4-2 "Park & Ride" sign at the stop.
+			_box(st, frame, Vector3(0.9, 1.6, 0), Vector3(0.08, 3.2, 0.08), Color("#9aa0a2"))
+			_box(st, frame, Vector3(0.9, 2.75, 0.06), Vector3(0.75, 0.75, 0.04), Color("#1d4f91"))
+			_box(st, frame, Vector3(0.9, 2.75, 0.09), Vector3(0.5, 0.12, 0.02), Color("#f2f2ee"))
 		if "shelters" in kit and (float(s.get("riders", 0.0)) >= SHELTER_RIDERS or s.res + s.jobs >= 600.0):
 			# On the sidewalk's far side: roof, back and end panels, bench.
 			var sh := frame * Transform3D(Basis.IDENTITY, Vector3(-3.0, 0.0, -(RoadStyle.PARKWAY_WIDTH * 0.5 + RoadStyle.SIDEWALK_WIDTH + 0.9)))
@@ -197,6 +226,26 @@ func _draw_stops() -> void:
 	_stops.visible = any
 	if any:
 		_stops.mesh = st.commit()
+
+
+## A small city's downtown transfer center, where every route meets: a long
+## canopy over the sidewalk's back edge with benches, a route map and a
+## real-time departures sign (like Columbus, Indiana's ColumBUS transfer
+## point).
+func _transfer_center(st: SurfaceTool, frame: Transform3D) -> void:
+	_box(st, frame, Vector3(0, 1.4, 0), Vector3(0.08, 2.8, 0.08), Color("#9aa0a2"))
+	_box(st, frame, Vector3(0, 2.5, 0.06), Vector3(0.46, 0.6, 0.04), Color("#f2f2ee"))
+	_box(st, frame, Vector3(0, 2.62, 0.09), Vector3(0.47, 0.18, 0.02), Color("#1f5fa8"))
+	var c := frame * Transform3D(Basis.IDENTITY, Vector3(-4.5, 0.0, -(RoadStyle.PARKWAY_WIDTH * 0.5 + RoadStyle.SIDEWALK_WIDTH + 1.2)))
+	_box(st, c, Vector3(0, 3.0, 0), Vector3(12.0, 0.22, 2.4), Color("#2f4a5a"))
+	for x in [-5.6, 0.0, 5.6]:
+		_box(st, c, Vector3(x, 1.5, -0.95), Vector3(0.2, 3.0, 0.2), Color("#2f4a5a"))
+	_box(st, c, Vector3(0, 1.2, -1.1), Vector3(11.4, 2.2, 0.05), Color(0.72, 0.8, 0.84))
+	for x in [-3.0, 3.0]:
+		_box(st, c, Vector3(x, 0.45, -0.7), Vector3(2.4, 0.06, 0.45), Color("#6b5a48"))
+	_box(st, c, Vector3(5.6, 1.2, 0.7), Vector3(0.8, 2.4, 0.28), Color("#2e3438"))
+	_box(st, c, Vector3(5.6, 1.75, 0.85), Vector3(0.62, 0.8, 0.02), Color("#f0c23a"))
+	_box(st, c, Vector3(0, 1.4, -1.06), Vector3(1.4, 1.2, 0.03), Color("#e9e7e0"))
 
 
 func _draw_routes() -> void:

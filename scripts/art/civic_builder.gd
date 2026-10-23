@@ -31,7 +31,7 @@ const POLE := Color("#5b4a38")
 const DIRT := Color("#9a7a58")
 
 
-static func build_service(kind: int, seed: int, size: Vector2, to_curb: float) -> Array:
+static func build_service(kind: int, seed: int, size: Vector2, to_curb: float, built := []) -> Array:
 	var b := CivicBuilder.new()
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
@@ -46,8 +46,12 @@ static func build_service(kind: int, seed: int, size: Vector2, to_curb: float) -
 		Services.Kind.WATER_TOWER: b._water_tower(front, to_curb)
 		Services.Kind.WELL, Services.Kind.WATER_UTILITY: b._well(front, to_curb)
 		Services.Kind.POWER_FEED: b._power_feed()
-		Services.Kind.BUS_DEPOT: b._bus_depot(size, front, to_curb)
-		Services.Kind.TAXI_COMPANY: b._taxi_company(size, front, to_curb)
+		Services.Kind.BUS_DEPOT:
+			b._bus_depot(size, front, to_curb)
+			b._bus_upgrades(size, front, built)
+		Services.Kind.TAXI_COMPANY:
+			b._taxi_company(size, front, to_curb)
+			b._taxi_upgrades(size, front, built)
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 
@@ -579,6 +583,153 @@ func _bus_depot(size: Vector2, front: float, to_curb: float) -> void:
 	_fence(Vector2(-w * 0.5 + 0.2, yard_z), Vector2(-w * 0.5 + 0.4, back - 0.3), 2.1)
 	_fence(Vector2(w * 0.5 - 0.4, yard_z), Vector2(w * 0.5 - 0.2, back - 0.3), 2.1)
 	_fence(Vector2(-w * 0.5 + 0.2, back - 0.5), Vector2(w * 0.5 - 0.2, back - 0.3), 2.1)
+
+
+## The depot's development tree (BusNet.TREE) at the depot itself, each as
+## a real small-city transit garage has it. Most go in the strip between the
+## back of the bus stalls and the back fence; the coach stop is on the
+## office front. Shelters, the transfer center and park-and-ride are at the
+## stops (BusView).
+func _bus_upgrades(size: Vector2, front: float, built: Array) -> void:
+	if built.is_empty():
+		return
+	var w := size.x
+	var back := size.y * 0.5
+	var slots := BusNet.bay_slots(size)
+	var z0 := front + BusNet.GARAGE_D
+	for slot in slots:
+		z0 = maxf(z0, slot[0].z - 0.6 + BusNet.STALL_D)
+	z0 += 0.4
+	var z1 := back - 0.9
+	var zm := (z0 + z1) * 0.5
+	var gw := minf(w - 10.0, 26.0)
+	var gx := w * 0.5 - 5.0 - 4.5 - gw * 0.5
+	var ow := minf(12.0, gw * 0.5)
+	var ox := gx - gw * 0.5 + ow * 0.5 + 0.5
+	var gz := front + 1.0
+	if "cng" in built:
+		# A CNG fueling station: a sound-walled compressor package, a frame
+		# of ASME storage tubes, and a CNG dispenser by the fuel island.
+		var cx := w * 0.5 - 2.6
+		_box("metal", Vector3(3.6, 2.6, 2.4), Vector3(cx, 1.3, zm), Color("#d8d6cf"))
+		_box("paint", Vector3(3.7, 0.15, 2.5), Vector3(cx, 2.68, zm), Color("#8e9aa3"))
+		for k in 3:
+			UpgradeKits._drum(self, Vector3(cx - 4.6, 0.6 + k * 0.85, zm), 0.38, 4.2, Color("#c9c6bb"))
+		for e in [-1.0, 1.0]:
+			_box("paint", Vector3(0.15, 2.7, 1.0), Vector3(cx - 4.6 + e * 1.8, 1.35, zm), UpgradeKits.STEEL)
+		var dx := w * 0.5 - 5.0
+		_box("paint", Vector3(0.8, 2.0, 0.5), Vector3(dx + 1.6, 1.0, front + BusNet.GARAGE_D + 3.0), Color("#2f6d9a"))
+	if "electric" in built:
+		# Depot charging: a pad-mounted transformer and a charger pedestal at
+		# the head of every other stall (one charger serves two buses).
+		_box("paint", Vector3(1.8, 1.7, 1.6), Vector3(w * 0.5 - 10.4, 0.85, zm), Color("#4d6b4f"))
+		_box("paint", Vector3(2.2, 0.15, 2.0), Vector3(w * 0.5 - 10.4, 0.07, zm), CONCRETE)
+		for i in range(0, slots.size(), 2):
+			var p: Vector3 = slots[i][0]
+			var at := Vector3(p.x + BusNet.STALL_W * 0.5, 0, p.z - 0.6 + BusNet.STALL_D + 0.05)
+			_box("paint", Vector3(0.6, 0.15, 0.6), at + Vector3(0, 0.07, 0), CONCRETE)
+			_box("paint", Vector3(0.55, 1.9, 0.4), at + Vector3(0, 1.1, 0), Color("#e4e6e3"))
+			_box("paint", Vector3(0.3, 0.3, 0.05), at + Vector3(0, 1.5, -0.22), Color("#2b2f33"))
+	if "dial_a_ride" in built:
+		# Paratransit vans park under a carport along the back fence, with
+		# the 8 ft striped access aisle a lift van needs (ADA 502).
+		var x0 := -w * 0.5 + 0.8
+		var x1 := minf(x0 + 13.0, -1.0)
+		var top := 3.4
+		for x in [x0 + 0.2, (x0 + x1) * 0.5, x1 - 0.2]:
+			for z in [z0 + 0.2, z1 - 0.2]:
+				_box("paint", Vector3(0.15, top, 0.15), Vector3(x, top * 0.5, z), GALV)
+		_box("metal", Vector3(x1 - x0 + 0.4, 0.18, z1 - z0 + 0.6), Vector3((x0 + x1) * 0.5, top + 0.09, zm), Color("#cfd2d0"))
+		var ax := (x0 + x1) * 0.5
+		for k in 6:
+			_flat_rect("line", ax - 1.2 + k * 0.45, ax - 1.05 + k * 0.45, z0 + 0.3, z1 - 0.3, 0.09, Color("#2a5aa8"))
+	if "school_contract" in built:
+		# The contractor's drivers work out of a modular office trailer on
+		# blocks, with wooden steps up to the door.
+		var tx := 1.0
+		_box("paint", Vector3(9.8, 0.6, 3.2), Vector3(tx, 0.3, zm), Color("#6c6a64"))
+		_box("metal", Vector3(10.0, 2.6, 3.4), Vector3(tx, 1.9, zm), Color("#efeae0"))
+		_box("paint", Vector3(10.1, 0.12, 3.5), Vector3(tx, 3.25, zm), Color("#b5b2aa"))
+		_box("paint", Vector3(0.9, 2.0, 0.05), Vector3(tx + 2.5, 1.6, zm - 1.73), Color("#8a8f93"))
+		_box("paint", Vector3(1.2, 0.6, 1.0), Vector3(tx + 2.5, 0.3, zm - 2.2), Color("#9a7f60"))
+		for k in 3:
+			_box("paint", Vector3(1.0, 0.05, 0.6), Vector3(tx - 2.0 + k * 1.4, 2.2, zm - 1.72), Color("#6e8592"))
+	if "intercity" in built:
+		# Intercity coaches (Indiana's Miller/Hoosier Ride) stop at the
+		# depot: an awning and bench by the office door and a blue
+		# coach-stop sign at the curb.
+		_box("paint", Vector3(ow * 0.7, 0.15, 1.5), Vector3(ox, 2.9, gz - 3.3), Color("#2b4a6b"))
+		for e in [-1.0, 1.0]:
+			_box("paint", Vector3(0.1, 0.1, 1.5), Vector3(ox + e * ow * 0.33, 2.7, gz - 3.3), Color("#2b4a6b"))
+		_box("paint", Vector3(1.8, 0.45, 0.45), Vector3(ox + 2.0, 0.45, gz - 3.1), Color("#6b5a48"))
+		var sx := ox + ow * 0.5 - 0.6
+		_box("paint", Vector3(0.08, 2.9, 0.08), Vector3(sx, 1.45, front - 1.3), GALV)
+		_box("paint", Vector3(0.6, 0.75, 0.04), Vector3(sx, 2.55, front - 1.34), Color("#1d4f91"))
+	if "regional" in built:
+		# Shared regional routes: a real-time departures totem with the
+		# region's route map, by the drive.
+		var tx2 := ox - ow * 0.5 + 0.8
+		_box("paint", Vector3(0.8, 2.4, 0.3), Vector3(tx2, 1.2, front - 0.9), Color("#2e3438"))
+		_box("paint", Vector3(0.6, 0.9, 0.02), Vector3(tx2, 1.75, front - 1.06), Color("#f0c23a"))
+		_box("paint", Vector3(0.6, 0.6, 0.02), Vector3(tx2, 0.85, front - 1.06), Color("#e9e7e0"))
+
+
+## The cab company's tree (TaxiCo.TREE) on its own lot and storefront. The
+## hybrid cabs themselves show on the street (VehicleModels).
+func _taxi_upgrades(size: Vector2, front: float, built: Array) -> void:
+	if built.is_empty():
+		return
+	var w := size.x
+	var back := size.y * 0.5
+	var z0 := front + TaxiCo.OFFICE_D
+	for slot in TaxiCo.stall_slots(size):
+		z0 = maxf(z0, slot[0].z - 0.3 + TaxiCo.STALL_D)
+	var drive_x := w * 0.5 - 4.0
+	var ow := minf(w - 9.0, 16.0)
+	var ox := drive_x - 3.8 - ow * 0.5
+	var od := TaxiCo.OFFICE_D - 3.0
+	var oz := front + 1.0
+	if "radio" in built:
+		# Two-way radio: a base-station antenna mast on the roof.
+		var m := Vector3(ox - ow * 0.5 + 1.0, 4.8, oz + od - 1.0)
+		_box("paint", Vector3(0.1, 7.0, 0.1), m + Vector3(0, 3.5, 0), GALV)
+		_box("paint", Vector3(0.06, 2.6, 0.06), m + Vector3(0, 8.3, 0), Color("#efede6"))
+		for e in [-1.0, 1.0]:
+			UpgradeKits._strut(self, m + Vector3(0, 5.0, 0), m + Vector3(e * 2.2, 0.0, -1.2), 0.03, GALV)
+	if "late_night" in built:
+		# Lot lights for the night shift: two poles with shoebox heads.
+		for x in [-w * 0.5 + 1.0, drive_x - 3.4]:
+			_box("paint", Vector3(0.18, 7.0, 0.18), Vector3(x, 3.5, back - 1.0), Color("#2b2f33"))
+			_box("paint", Vector3(0.6, 0.18, 0.9), Vector3(x, 7.0, back - 1.5), Color("#2b2f33"))
+	if "wheelchair_van" in built:
+		# A van-accessible space behind the cab row: the 8 ft striped access
+		# aisle for the lift and the blue sign (MUTCD R7-8 with "van
+		# accessible").
+		var vx := -w * 0.5 + 4.5
+		_flat_rect("line", vx - 1.25, vx - 1.15, z0 + 0.4, z0 + 6.2, 0.09, LINE)
+		_flat_rect("line", vx + 1.15, vx + 1.25, z0 + 0.4, z0 + 6.2, 0.09, LINE)
+		for k in 5:
+			_flat_rect("line", vx - 1.0 + k * 0.45, vx - 0.85 + k * 0.45, z0 + 0.6, z0 + 6.0, 0.09, Color("#2a5aa8"))
+		_box("paint", Vector3(0.07, 2.4, 0.07), Vector3(vx + 3.5, 1.2, z0 + 6.6), GALV)
+		_box("paint", Vector3(0.45, 0.6, 0.03), Vector3(vx + 3.5, 2.1, z0 + 6.56), Color("#1d4f91"))
+	if "campus" in built:
+		# The campus contract's cab stand sign by the door, with the
+		# school's colours, and a bench for students waiting on a ride.
+		_box("paint", Vector3(0.07, 2.5, 0.07), Vector3(ox + ow * 0.5 - 0.5, 1.25, front - 1.2), GALV)
+		_box("paint", Vector3(0.6, 0.45, 0.03), Vector3(ox + ow * 0.5 - 0.5, 2.2, front - 1.24), Color("#7a1f2b"))
+		_box("paint", Vector3(1.8, 0.45, 0.45), Vector3(ox + ow * 0.5 - 2.4, 0.45, oz - 1.0), Color("#6b5a48"))
+	if "app" in built:
+		# The ride app's window graphic and QR code on the storefront glass.
+		_box("paint", Vector3(1.4, 1.0, 0.02), Vector3(ox - ow * 0.2, 1.7, oz - 0.06), Color("#f2c21b"))
+		_box("paint", Vector3(0.45, 0.45, 0.01), Vector3(ox - ow * 0.2 + 0.3, 1.6, oz - 0.08), Color("#1e1e1e"))
+	if "airport" in built:
+		# An "Airport service" blade sign off the storefront, with the
+		# airplane symbol (MUTCD I-5) in white on blue.
+		var bx := ox + ow * 0.5 - 0.6
+		_box("paint", Vector3(0.05, 0.08, 1.0), Vector3(bx, 3.4, oz - 0.5), Color("#2b2f33"))
+		_box("paint", Vector3(0.06, 0.8, 0.8), Vector3(bx, 2.9, oz - 0.7), Color("#1d4f91"))
+		_box("paint", Vector3(0.07, 0.08, 0.5), Vector3(bx, 2.95, oz - 0.7), Color("#f2f2ee"))
+		_box("paint", Vector3(0.07, 0.4, 0.08), Vector3(bx, 2.95, oz - 0.7), Color("#f2f2ee"))
 
 
 ## A small-town cab company: a one-story brick storefront for the dispatch
