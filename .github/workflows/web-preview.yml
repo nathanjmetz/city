@@ -126,6 +126,7 @@ jobs:
           run_test tests/test_construction.gd
           run_test tests/test_telemetry.gd
           run_test tests/test_pollution.gd
+          run_test tests/test_placement_hints.gd
           run_test tests/test_health.gd
           run_test tests/test_interlocal.gd
           run_test tests/test_regional.gd

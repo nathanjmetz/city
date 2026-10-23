@@ -919,8 +919,11 @@ const CEMETERY_PEOPLE_PER_PIECE := 1_200
 # one up finds the same thing.
 
 ## Which way the wind blows from, compass degrees. Indiana's prevailing wind
-## is from the southwest (NOAA wind roses for Evansville and Indianapolis),
-## so smoke drifts northeast.
+## is from the southwest (NOAA wind roses for Evansville and Indianapolis;
+## the Illinois State Water Survey's monthly roses for Evansville Regional
+## Airport lean south to southwest most of the year), so smoke drifts
+## northeast. PlacementHints shows it on the map while a polluting tool is
+## in hand.
 const WIND_FROM_DEG := 225.0
 ## What each kind of source puts out:
 ## - smoke: fine particles (PM2.5) it adds 100 m downwind, in micrograms per

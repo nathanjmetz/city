@@ -16,6 +16,8 @@ var cam: CityCamera
 var info: InfoView
 ## "" when put away, else "oil", "ore", "forest" or "power".
 var kind := ""
+## For "power": the plant its leader would likely build under the cursor.
+var likely := ""
 
 var _ghost := MeshInstance3D.new()
 var _lane := MeshInstance3D.new()
@@ -120,6 +122,7 @@ func _process(_delta: float) -> void:
 	var here := ""
 	if power:
 		var guess := sim.power.choose({"name": "A leader hired here", "education": sim.town_education()}, _hover)
+		likely = str(guess[0])
 		here = "Likely: %s. Wind %d%%, oil gas %d%%." % [Power.PLANTS[guess[0]].name.to_lower(),
 			roundi(sim.power.reach_quality("wind", _hover) * 100.0), roundi(sim.power.gas(_hover) * 100.0)]
 	else:

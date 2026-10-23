@@ -272,6 +272,26 @@ func _ready() -> void:
 	move_tool.active_changed.connect(func(on): if on: picked.call(move_tool))
 	neighborhood_tool.kind_changed.connect(func(k): if k != "": picked.call(neighborhood_tool))
 
+	# Consequences before you commit: a polluting tool shows the wind and the
+	# smoke and noise it would make; zoning homes or shops shows what is
+	# already in the air there (PlacementHints).
+	var hints := PlacementHints.new()
+	hints.setup(sim, cam, func() -> Dictionary:
+		if industry_tool.kind == "power":
+			return {"source": "power_" + industry_tool.likely} if industry_tool.likely != "" else {"wind": true}
+		if industry_tool.kind != "":
+			return {"source": industry_tool.kind}
+		if zone_tool.zone == ZoneMap.Zone.INDUSTRIAL:
+			return {"source": "factory"}
+		if zone_tool.zone == ZoneMap.Zone.RESIDENTIAL or zone_tool.zone == ZoneMap.Zone.COMMERCIAL:
+			return {"spot": true}
+		if Balance.POLLUTION_SOURCES.has(CivicHubs.TOOL_KINDS.get(service_tool.kind, "")):
+			return {"source": CivicHubs.TOOL_KINDS[service_tool.kind]}
+		if info_view.mode == InfoView.Mode.SMOKE:
+			return {"wind": true}
+		return {})
+	add_child(hints)
+
 	var select_tool := SelectTool.new()
 	select_tool.setup(sim, cam, func(): return road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
