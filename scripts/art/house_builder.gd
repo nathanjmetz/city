@@ -32,6 +32,20 @@ const FOUNDATION := Color("#9d9a92")
 const SHRUB := [Color("#2f4a24"), Color("#3a5a2a"), Color("#29401f"), Color("#4a5e2c")]
 const MULCH := Color("#4a3426")
 const LOT_HALF := 10.0  # half a lot's width when no lot is given
+## House types by the era a street was built in. Before the war: American
+## four-squares, Craftsman bungalows, I-houses, gabled-ell farmhouses and the
+## first Cape Cods, with detached garages out back. Postwar: Capes, ranches,
+## split-levels and mid-century moderns. Recent: colonials, ranches, splits.
+const ERA_TYPES := {
+	"prewar": ["foursquare", "foursquare", "bungalow", "bungalow", "bungalow", "i_house", "farmhouse", "cape"],
+	"postwar": ["cape", "cape", "ranch", "ranch", "ranch", "split", "midcentury", "midcentury"],
+	"recent": ["colonial", "colonial", "colonial", "ranch", "ranch", "split"],
+}
+## Lot room (see _avail) each old type needs beside its side drive.
+## Types with one storey (or a storey and a half under the roof).
+const ONE_STOREY := ["ranch", "midcentury", "bungalow", "cape"]
+const OLD_MIN_WIDTH := {"foursquare": 11.5, "bungalow": 11.0, "i_house": 15.5, "farmhouse": 17.0, "cape": 12.0}
+const CLAPBOARD_WHITE := Color("#f1efe8")
 
 ## The lot, in local space: half its width, how far back it runs, its
 ## outline (x, z), and for a flag lot how far the pad sits behind the street.
@@ -39,6 +53,9 @@ var half := LOT_HALF
 var depth := 32.0
 var outline := PackedVector2Array()
 var pad := 0.0
+var era := "recent"
+## Set by the art gallery to draw one type.
+static var force_kind := ""
 
 var _st := {}  # material key -> SurfaceTool
 var _flat := SurfaceTool.new()
@@ -63,6 +80,13 @@ func _fit(lot: Dictionary) -> void:
 	pad = float(lot.get("pad", 0.0))
 	outline = lot.get("outline", PackedVector2Array())
 	depth = float(lot.get("depth", 32.0)) - pad
+	# The era comes from where the lot is, in blocks of about a quarter mile.
+	if lot.has("at"):
+		var at: Vector2 = lot.at
+		var cell := Vector2i(floori(at.x / 400.0), floori(at.y / 400.0))
+		era = ["prewar", "postwar", "postwar", "recent", "recent"][posmod(hash(cell), 5)]
+	else:
+		era = _pick(["prewar", "postwar", "recent"])
 	if outline.size() >= 3:
 		depth = -INF
 		for q in outline:
@@ -105,17 +129,33 @@ func _house(to_curb: float, storeys := 0) -> Array:
 	var shutters := shutter_hex != ""
 	var shutter := Color(shutter_hex) if shutters else TRIM
 	var info: Dictionary
-	var kind := rng.randf()
+	# Streets are built in one era, so neighbours share a family of types.
+	# A lot owner who asked for one or two storeys gets a type that has them.
+	var pool: Array = ERA_TYPES[era]
 	if storeys == 1:
-		kind = 0.99
+		pool = pool.filter(func(k): return k in ONE_STOREY)
+		if pool.is_empty():
+			pool = ["ranch"]
 	elif storeys >= 2:
-		kind *= 0.58
-	if kind < 0.38:
-		info = _colonial(zf, gs, gw, siding, roof, shutters, shutter, door, brick_style, brick)
-	elif kind < 0.58 and _avail() >= 15.0:
-		info = _split_level(zf, gs, siding, roof, shutters, shutter, door, brick_style, brick)
-	else:
-		info = _ranch(zf, gs, gw, siding, roof, shutters, shutter, door, brick_style, brick)
+		pool = pool.filter(func(k): return not k in ONE_STOREY)
+		if pool.is_empty():
+			pool = ["colonial"]
+	var kind: String = force_kind if force_kind != "" else _pick(pool)
+	var old_house := kind in ["foursquare", "bungalow", "i_house", "farmhouse", "cape"]
+	if old_house and _avail() < OLD_MIN_WIDTH.get(kind, 0.0):
+		kind = "colonial" if storeys >= 2 else ("cape" if _avail() >= OLD_MIN_WIDTH.cape else "ranch")
+	if kind == "split" and _avail() < 15.0:
+		kind = "colonial" if storeys >= 2 else "ranch"
+	match kind:
+		"colonial": info = _colonial(zf, gs, gw, siding, roof, shutters, shutter, door, brick_style, brick)
+		"split": info = _split_level(zf, gs, siding, roof, shutters, shutter, door, brick_style, brick)
+		"foursquare": info = _foursquare(zf, gs, siding, roof, shutter, door, brick)
+		"bungalow": info = _bungalow(zf, gs, siding, roof, door, brick)
+		"i_house": info = _i_house(zf, gs, roof, shutter, door, brick)
+		"farmhouse": info = _ell_farmhouse(zf, gs, roof, door)
+		"cape": info = _cape(zf, gs, siding, roof, shutters, shutter, door)
+		"midcentury": info = _midcentury(zf, gs, gw, roof, door, brick)
+		_: info = _ranch(zf, gs, gw, siding, roof, shutters, shutter, door, brick_style, brick)
 	_yard(info, to_curb)
 	_yard_trees(info, to_curb)
 	return [_commit_house(), _commit_flat(), trees]
@@ -145,7 +185,7 @@ func _ranch(zf: float, gs: float, gw: float, siding: Color, roof: Color, shutter
 	_corners(gx - gw * 0.5, gx + gw * 0.5, gz0, gz0 + gd, 0.15, top)
 	if brick_style != "none":
 		var bh := 2.65 if brick_style == "full" else 1.0
-		_box("brick", Vector3(w + 0.03, bh, 0.12), Vector3(cx, 0.4 + bh * 0.5, zf - 0.06), brick)
+		_box("brick", Vector3(w + 0.03, bh, 0.14), Vector3(cx, 0.4 + bh * 0.5, zf - 0.05), brick)
 		_box("paint", Vector3(w + 0.1, 0.07, 0.2), Vector3(cx, 0.4 + bh + 0.035, zf - 0.08), Color("#cfc8b6"))
 	var rise := rng.randf_range(1.1, 1.7)
 	if rng.randf() < 0.5:
@@ -202,8 +242,8 @@ func _colonial(zf: float, gs: float, gw: float, siding: Color, roof: Color, shut
 		var bh := 3.15 if brick_style == "full" else 1.15
 		for span in [[x0, px0 - 0.05], [px1 + 0.05, x1]]:
 			if span[1] - span[0] > 0.3:
-				_box("brick", Vector3(span[1] - span[0] + 0.03, bh, 0.12),
-					Vector3((span[0] + span[1]) * 0.5, 0.5 + bh * 0.5, zf - 0.06), brick)
+				_box("brick", Vector3(span[1] - span[0] + 0.03, bh, 0.14),
+					Vector3((span[0] + span[1]) * 0.5, 0.5 + bh * 0.5, zf - 0.05), brick)
 	_stoop((px0 + px1) * 0.5, zf, pw, pd, 0.45)
 	for i in 2:
 		var h := 0.3 if i == 0 else 0.15
@@ -249,7 +289,7 @@ func _colonial(zf: float, gs: float, gw: float, siding: Color, roof: Color, shut
 	_garage(gx, gz0, gw, 2.2)
 	_back(x0, x1, zf + d, [2.45, 5.0], 0.5)
 	if rng.randf() < 0.35:
-		_box("brick", Vector3(1.0, rise + 1.6, 0.7), Vector3(x0 + 0.5 if gs > 0 else x1 - 0.5, 6.3 + (rise + 1.6) * 0.5 - 0.8, cz + d * 0.15), brick)
+		_box("brick", Vector3(1.0, rise + 1.6, 0.7), Vector3(x0 + 0.53 if gs > 0 else x1 - 0.53, 6.3 + (rise + 1.6) * 0.5 - 0.8, cz + d * 0.15), brick)
 	return {"drive_x": gx, "drive_w": gw - 0.8, "garage_z": gz0, "door_x": door_x,
 		"walk_z": zf - pd - 1.0, "front_z": zf, "x0": minf(x0, gx - gw * 0.5), "x1": maxf(x1, gx + gw * 0.5), "gs": gs}
 
@@ -278,7 +318,7 @@ func _split_level(zf: float, gs: float, siding: Color, roof: Color, shutters: bo
 	_corners(wx - ww * 0.5, wx + ww * 0.5, zf, zf + d, w_floor, w_top)
 	# Brick often wraps the lower level of the tall block.
 	if brick_style != "none":
-		_box("brick", Vector3(tw + 0.03, 2.75, 0.12), Vector3(tx, 0.3 + 1.375, zf - 0.06), brick)
+		_box("brick", Vector3(tw + 0.03, 2.75, 0.14), Vector3(tx, 0.3 + 1.375, zf - 0.05), brick)
 		_box("paint", Vector3(tw + 0.1, 0.07, 0.2), Vector3(tx, 3.08, zf - 0.08), Color("#cfc8b6"))
 	if rng.randf() < 0.5:
 		_gable_roof(tx, cz, t_top, d, rng.randf_range(1.6, 2.1), tw, true, roof, siding)
@@ -317,6 +357,326 @@ func _split_level(zf: float, gs: float, siding: Color, roof: Color, shutters: bo
 		"walk_z": zf - 2.6, "front_z": zf, "x0": x0, "x1": x0 + total, "gs": gs}
 
 
+# ---------------------------------------------------------------- older and postwar types
+
+## Where an older house sits: pushed to one side, leaving a side drive on
+## `gs` that runs past it to a detached garage out back (or a parking pad
+## when the lot is too shallow). Returns [house centre x, drive centre x].
+func _side_drive(w: float, gs: float) -> Array:
+	var room := _avail()
+	var cx := -gs * minf(1.9, (room - w) * 0.5 - 0.2)
+	var dx := cx + gs * (w * 0.5 + 1.9)
+	return [cx, dx]
+
+
+## A detached garage at the back of the lot, door to the street, on the
+## drive. Older garages are smaller: one bay, or two on a wide lot.
+func _back_garage(dx: float, zb: float, siding: Color, roof: Color) -> Dictionary:
+	var gw := 3.6 if _avail() < 14.0 or rng.randf() < 0.45 else 6.2
+	var gd := 6.4
+	var gz0 := zb + rng.randf_range(2.5, 4.0)
+	if gz0 + gd > depth - 1.0:
+		# No room out back: the drive just ends beside the house.
+		return {"garage_z": zb - 1.0, "keep_out": Rect2(dx - 1.6, zb - 1.0, 3.2, 1.0)}
+	var gx := clampf(dx, -half + gw * 0.5 + 0.6, half - gw * 0.5 - 0.6)
+	var gcz := gz0 + gd * 0.5
+	_box("concrete", Vector3(gw + 0.1, 0.15, gd + 0.1), Vector3(gx, 0.075, gcz), FOUNDATION)
+	_box("siding", Vector3(gw, 2.5, gd), Vector3(gx, 1.4, gcz), siding)
+	_corners(gx - gw * 0.5, gx + gw * 0.5, gz0, gz0 + gd, 0.15, 2.65)
+	_gable_roof(gx, gcz, 2.65, gw, rng.randf_range(1.3, 1.8), gd, false, roof, siding)
+	_garage(gx, gz0, gw, 2.0)
+	return {"garage_z": gz0, "keep_out": Rect2(gx - gw * 0.5, gz0, gw, gd)}
+
+
+## A gabled dormer standing on a roof whose eave wall top is `base`, its
+## face `zd`, reaching back to `zr` (the ridge line).
+func _dormer(x: float, zd: float, zr: float, base: float, top: float, w: float,
+		siding: Color, roof: Color, shutter: Color) -> void:
+	_box("siding", Vector3(w, top - base, zr - zd), Vector3(x, (base + top) * 0.5, (zd + zr) * 0.5), siding)
+	_corners(x - w * 0.5, x + w * 0.5, zd, zd + 0.2, top - 1.2, top)
+	_gable_roof(x, (zd + zr) * 0.5 - 0.15, top, w, w * 0.42, zr - zd + 0.3, false, roof, siding, false)
+	_window(Vector3(x, top - 0.75, zd), Vector3(-1, 0, 0), minf(0.8, w - 0.6), 1.0, true, false, shutter)
+
+
+## A brick chimney up the outside of a gable end.
+func _chimney(x: float, z: float, top: float, brick: Color, outward: float) -> void:
+	_box("brick", Vector3(0.6, top, 1.0), Vector3(x + outward * 0.28, top * 0.5, z), brick)
+	_box("paint", Vector3(0.7, 0.1, 1.1), Vector3(x + outward * 0.3, top + 0.05, z), FOUNDATION)
+
+
+## American four-square, 1900-1930: a two-storey box nearly as deep as it is
+## wide, a hipped roof with a front dormer, a full-width porch with square
+## columns, the door off to one side. Clapboard or brick.
+func _foursquare(zf: float, gs: float, siding: Color, roof: Color, shutter: Color,
+		door: Color, brick: Color) -> Dictionary:
+	var w := rng.randf_range(8.4, minf(9.6, _avail() - 3.6))
+	var d := rng.randf_range(8.6, 9.6)
+	var at := _side_drive(w, gs)
+	var cx: float = at[0]
+	var cz := zf + d * 0.5
+	var x0 := cx - w * 0.5
+	var x1 := cx + w * 0.5
+	var top := 6.5
+	var wall := "brick" if rng.randf() < 0.35 else "siding"
+	var wall_col := brick if wall == "brick" else siding
+	_box("concrete", Vector3(w + 0.1, 0.7, d + 0.1), Vector3(cx, 0.35, cz), FOUNDATION)
+	_box(wall, Vector3(w, top - 0.7, d), Vector3(cx, (top + 0.7) * 0.5, cz), wall_col)
+	if wall == "siding":
+		_corners(x0, x1, zf, zf + d, 0.7, top)
+	var rise := rng.randf_range(2.4, 2.9)
+	_hip_roof(cx, cz, top, w, d, rise, roof)
+	# Hipped roofs: the front slope starts at the eave and climbs toward the
+	# middle; the dormer sits on it, centred.
+	_dormer(cx, zf + 0.9, cz, top - 0.2, top + 1.6, 2.6, siding if wall == "siding" else TRIM, roof, shutter)
+	# Full-width porch on brick piers.
+	var pd := rng.randf_range(2.4, 2.8)
+	var door_x := cx + gs * w * 0.27
+	_stoop(cx, zf, w, pd, 0.65)
+	for i in 2:
+		_box("concrete", Vector3(1.6, 0.65 - 0.22 * (i + 1), 0.35),
+			Vector3(door_x, (0.65 - 0.22 * (i + 1)) * 0.5, zf - pd - 0.17 - i * 0.35), FOUNDATION)
+	for x in [x0 + 0.25, cx - w * 0.17, cx + w * 0.17, x1 - 0.25]:
+		_box("brick", Vector3(0.5, 0.9, 0.5), Vector3(x, 1.1, zf - pd + 0.3), brick)
+		_box("paint", Vector3(0.3, 1.9, 0.3), Vector3(x, 2.5, zf - pd + 0.3), TRIM)
+	_box("paint", Vector3(w + 0.2, 0.3, 0.3), Vector3(cx, 3.6, zf - pd + 0.3), TRIM)
+	_box("paint", Vector3(w - 0.3, 0.08, 0.08), Vector3(cx, 1.55, zf - pd + 0.3), TRIM)  # porch rail
+	_shed_roof(cx, w + 0.4, zf, pd + 0.3, 3.75, 0.45, roof)
+	_front_door(door_x, zf, 0.7, door)
+	# Downstairs a wide window beside the door; upstairs two pairs.
+	_window(Vector3(cx - gs * w * 0.18, 2.3, zf), Vector3(-1, 0, 0), 1.8, 1.6, false, false, shutter)
+	for s in [-1.0, 1.0]:
+		var x: float = cx + s * w * 0.25
+		_window(Vector3(x - 0.5, 4.9, zf), Vector3(-1, 0, 0), 0.8, 1.45, false, false, shutter)
+		_window(Vector3(x + 0.5, 4.9, zf), Vector3(-1, 0, 0), 0.8, 1.45, false, false, shutter)
+		for f in [2.3, 4.9]:
+			_window(Vector3(cx + s * w * 0.5, f, cz + d * 0.2 * s), Vector3(0, 0, s), 0.85, 1.5, false, false, shutter)
+	_back(x0, x1, zf + d, [2.3, 4.9], 0.7)
+	var g := _back_garage(at[1], zf + d, siding, roof)
+	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": door_x,
+		"walk_z": zf - pd - 0.9, "front_z": zf - pd, "x0": x0, "x1": x1, "gs": gs,
+		"bed": [x0 + 0.3, x1 - 0.3], "keep_out": g.keep_out}
+
+
+## Craftsman bungalow, 1910-1930: one and a half storeys with the gable to
+## the street, a deep front porch under its own gable on tapered columns
+## standing on brick piers, exposed rafter tails, paired windows.
+func _bungalow(zf: float, gs: float, siding: Color, roof: Color, door: Color, brick: Color) -> Dictionary:
+	var w := rng.randf_range(7.6, minf(9.0, _avail() - 3.6))
+	var d := rng.randf_range(11.5, minf(13.5, depth - zf - 9.0))
+	var at := _side_drive(w, gs)
+	var cx: float = at[0]
+	var cz := zf + d * 0.5
+	var x0 := cx - w * 0.5
+	var x1 := cx + w * 0.5
+	var top := 3.6
+	var trim := Color(_pick(["#efede6", "#d9cfb6", "#5b4a38", "#2f4632"]))
+	_box("brick", Vector3(w + 0.1, 0.75, d + 0.1), Vector3(cx, 0.375, cz), brick)
+	_box("siding", Vector3(w, top - 0.75, d), Vector3(cx, (top + 0.75) * 0.5, cz), siding)
+	_corners(x0, x1, zf, zf + d, 0.75, top)
+	var rise := w * 0.5 * rng.randf_range(0.5, 0.62)
+	_gable_roof(cx, cz, top, w, rise, d, false, roof, siding)
+	# Knee braces under the gable eaves.
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(0.12, 0.12, 0.7), Vector3(cx + s * w * 0.32, top - 0.25, zf - 0.3), trim)
+	_window(Vector3(cx, top + rise * 0.45, zf), Vector3(-1, 0, 0), 1.4, 0.8, true, false, trim)
+	# Porch: full width or most of it, gable to the street.
+	var pw := w if rng.randf() < 0.6 else w * 0.65
+	var pcx := cx if pw >= w else cx + gs * (w - pw) * 0.5
+	var pd := rng.randf_range(2.6, 3.0)
+	_stoop(pcx, zf, pw, pd, 0.75)
+	var door_x := pcx + gs * pw * 0.12
+	for i in 3:
+		var h := 0.75 - 0.2 * (i + 1)
+		_box("concrete", Vector3(1.5, h, 0.32), Vector3(door_x, h * 0.5, zf - pd - 0.16 - i * 0.32), FOUNDATION)
+	for x in [pcx - pw * 0.5 + 0.35, pcx + pw * 0.5 - 0.35]:
+		_box("brick", Vector3(0.7, 1.0, 0.7), Vector3(x, 1.25, zf - pd + 0.4), brick)
+		_box("paint", Vector3(0.42, 1.5, 0.42), Vector3(x, 2.5, zf - pd + 0.4), trim)
+	_box("paint", Vector3(pw, 0.32, 0.32), Vector3(pcx, 3.4, zf - pd + 0.4), trim)
+	_gable_roof(pcx, zf - pd * 0.5 + 0.1, 3.56, pw, pw * 0.5 * 0.5, pd + 0.4, false, roof, siding, false)
+	_front_door(door_x, zf, 0.75, door)
+	# Paired double-hungs (a "ribbon") beside the door.
+	var wx := cx - gs * w * 0.22
+	for k in [-0.55, 0.55]:
+		_window(Vector3(wx + k, 2.25, zf), Vector3(-1, 0, 0), 0.95, 1.5, false, false, trim)
+	for s in [-1.0, 1.0]:
+		for z in [cz - d * 0.28, cz, cz + d * 0.28]:
+			_window(Vector3(cx + s * w * 0.5, 2.25, z), Vector3(0, 0, s), 0.9, 1.4, false, false, trim)
+	_back(x0, x1, zf + d, [2.25], 0.75)
+	var g := _back_garage(at[1], zf + d, siding, roof)
+	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": door_x,
+		"walk_z": zf - pd - 1.0, "front_z": zf - pd, "x0": x0, "x1": x1, "gs": gs,
+		"bed": [x0 + 0.3, x1 - 0.3], "keep_out": g.keep_out}
+
+
+## I-house, 1850-1910: two storeys, wide and only one room deep, side gables
+## with chimneys, five bays across with the door in the middle, a small
+## porch, and a one-and-a-half-storey kitchen ell behind. Mostly white.
+func _i_house(zf: float, gs: float, roof: Color, shutter: Color, door: Color, brick: Color) -> Dictionary:
+	var w := rng.randf_range(11.0, minf(13.0, _avail() - 3.6))
+	var d := rng.randf_range(5.4, 6.0)
+	var at := _side_drive(w, gs)
+	var cx: float = at[0]
+	var cz := zf + d * 0.5
+	var x0 := cx - w * 0.5
+	var x1 := cx + w * 0.5
+	var top := 6.3
+	var wall := CLAPBOARD_WHITE if rng.randf() < 0.7 else Color(_pick(SIDING))
+	_box("concrete", Vector3(w + 0.1, 0.6, d + 0.1), Vector3(cx, 0.3, cz), FOUNDATION)
+	_box("siding", Vector3(w, top - 0.6, d), Vector3(cx, (top + 0.6) * 0.5, cz), wall)
+	_corners(x0, x1, zf, zf + d, 0.6, top)
+	var rise := rng.randf_range(1.8, 2.2)
+	_gable_roof(cx, cz, top, d, rise, w, true, roof, wall)
+	for s in [-1.0, 1.0]:
+		_chimney(cx + s * w * 0.5, cz, top + rise + 0.6, brick, s)
+	# Rear ell.
+	var ew := w * 0.42
+	var ex := cx - gs * (w * 0.5 - ew * 0.5)
+	var ed := rng.randf_range(5.5, 7.0)
+	var ez := zf + d + ed * 0.5
+	_box("concrete", Vector3(ew + 0.1, 0.5, ed), Vector3(ex, 0.25, ez), FOUNDATION)
+	_box("siding", Vector3(ew, 3.3, ed), Vector3(ex, 2.15, ez), wall)
+	_gable_roof(ex, ez + 0.2, 3.8, ew, rng.randf_range(1.6, 2.0), ed + 0.4, false, roof, wall)
+	# Five bays; the door in the middle under a small porch.
+	for i in 5:
+		var x := lerpf(x0 + 1.3, x1 - 1.3, i / 4.0)
+		_window(Vector3(x, 4.7, zf), Vector3(-1, 0, 0), 0.85, 1.55, false, true, shutter)
+		if i != 2:
+			_window(Vector3(x, 2.2, zf), Vector3(-1, 0, 0), 0.85, 1.6, false, true, shutter)
+	_stoop(cx, zf, 3.4, 2.0, 0.6)
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(0.18, 2.8, 0.18), Vector3(cx + s * 1.5, 2.0, zf - 1.8), TRIM)
+	_box("paint", Vector3(3.6, 0.25, 0.25), Vector3(cx, 3.5, zf - 1.8), TRIM)
+	_shed_roof(cx, 3.8, zf, 2.2, 3.65, 0.4, roof)
+	_front_door(cx, zf, 0.6, door)
+	_back(x0, x1, zf + d, [2.2, 4.7], 0.6)
+	var g := _back_garage(at[1], zf + d + ed, wall, roof)
+	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": cx,
+		"walk_z": zf - 2.6, "front_z": zf, "x0": x0, "x1": x1, "gs": gs,
+		"bed": [x0 + 0.3, x1 - 0.3], "keep_out": g.keep_out}
+
+
+## Gabled-ell (upright-and-wing) farmhouse, 1870-1920: a two-storey wing with
+## its gable to the street, and a lower side wing set back, a porch tucked in
+## the corner between them. White clapboard, tall narrow windows.
+func _ell_farmhouse(zf: float, gs: float, roof: Color, door: Color) -> Dictionary:
+	var uw := rng.randf_range(6.4, 7.2)  # upright
+	var ud := rng.randf_range(8.5, 9.5)
+	var ww := rng.randf_range(5.6, minf(7.0, _avail() - 3.6 - uw))  # wing
+	var wd := ud - 2.0
+	var total := uw + ww
+	var at := _side_drive(total, gs)
+	var cx: float = at[0]
+	# Upright on the drive side, wing on the other.
+	var ux := cx + gs * (total * 0.5 - uw * 0.5)
+	var wx := cx - gs * (total * 0.5 - ww * 0.5)
+	var wz0 := zf + 2.0
+	var wall := CLAPBOARD_WHITE if rng.randf() < 0.75 else Color(_pick(["#e9e0c8", "#c9c3b3", "#9aa3a8"]))
+	var trim := TRIM
+	_box("concrete", Vector3(uw + 0.1, 0.6, ud + 0.1), Vector3(ux, 0.3, zf + ud * 0.5), FOUNDATION)
+	_box("siding", Vector3(uw, 5.5, ud), Vector3(ux, 3.35, zf + ud * 0.5), wall)
+	_corners(ux - uw * 0.5, ux + uw * 0.5, zf, zf + ud, 0.6, 6.1)
+	_gable_roof(ux, zf + ud * 0.5, 6.1, uw, uw * 0.5 * 0.85, ud, false, roof, wall)
+	_box("concrete", Vector3(ww, 0.6, wd + 0.1), Vector3(wx, 0.3, wz0 + wd * 0.5), FOUNDATION)
+	_box("siding", Vector3(ww, 3.6, wd), Vector3(wx, 2.4, wz0 + wd * 0.5), wall)
+	_gable_roof(wx - gs * 0.01, wz0 + wd * 0.5, 4.2, wd, wd * 0.5 * 0.75, ww, true, roof, wall)
+	# Porch along the wing's front, in the crook of the L.
+	_stoop(wx, wz0, ww, 2.0, 0.6)
+	for x in [wx - ww * 0.5 + 0.25, wx, wx + ww * 0.5 - 0.25]:
+		_box("paint", Vector3(0.16, 2.8, 0.16), Vector3(x, 2.0, wz0 - 1.8), trim)
+	_box("paint", Vector3(ww, 0.24, 0.24), Vector3(wx, 3.45, wz0 - 1.8), trim)
+	_shed_roof(wx, ww + 0.1, wz0, 2.2, 3.6, 0.45, roof)
+	var door_x := wx + gs * ww * 0.2
+	_front_door(door_x, wz0, 0.6, door)
+	_window(Vector3(wx - gs * ww * 0.2, 2.2, wz0), Vector3(-1, 0, 0), 0.8, 1.7, false, false, trim)
+	# Upright: two tall windows down, two up, one in the gable.
+	for s in [-1.0, 1.0]:
+		_window(Vector3(ux + s * uw * 0.22, 2.2, zf), Vector3(-1, 0, 0), 0.8, 1.7, false, false, trim)
+		_window(Vector3(ux + s * uw * 0.22, 4.8, zf), Vector3(-1, 0, 0), 0.8, 1.6, false, false, trim)
+	_window(Vector3(ux, 7.0, zf), Vector3(-1, 0, 0), 0.6, 0.9, false, false, trim)
+	for f in [2.2, 4.8]:
+		_window(Vector3(ux + gs * uw * 0.5, f, zf + ud * 0.5), Vector3(0, 0, gs), 0.8, 1.6, false, false, trim)
+	_back(minf(ux, wx) - (uw if gs < 0 else ww) * 0.5, maxf(ux, wx) + (uw if gs > 0 else ww) * 0.5, zf + ud, [2.2], 0.6)
+	var g := _back_garage(at[1], zf + ud, wall, roof)
+	var x0 := cx - total * 0.5
+	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": door_x,
+		"walk_z": wz0 - 2.8, "front_z": zf, "x0": x0, "x1": x0 + total, "gs": gs,
+		"bed": [ux - uw * 0.5 + 0.3, ux + uw * 0.5 - 0.3], "keep_out": g.keep_out}
+
+
+## Cape Cod, 1935-1955: one and a half storeys, steep side gables, two gabled
+## dormers, a centre door with a pediment, shutters. Small and symmetrical.
+func _cape(zf: float, gs: float, siding: Color, roof: Color, shutters: bool, shutter: Color, door: Color) -> Dictionary:
+	var w := rng.randf_range(8.6, minf(10.4, _avail() - 3.6))
+	var d := rng.randf_range(7.4, 8.2)
+	var at := _side_drive(w, gs)
+	var cx: float = at[0]
+	var cz := zf + d * 0.5
+	var x0 := cx - w * 0.5
+	var x1 := cx + w * 0.5
+	var top := 3.1
+	_box("concrete", Vector3(w + 0.1, 0.5, d + 0.1), Vector3(cx, 0.25, cz), FOUNDATION)
+	_box("siding", Vector3(w, top - 0.5, d), Vector3(cx, (top + 0.5) * 0.5, cz), siding)
+	_corners(x0, x1, zf, zf + d, 0.5, top)
+	var rise := d * 0.5 * rng.randf_range(0.95, 1.1)
+	_gable_roof(cx, cz, top, d, rise, w, true, roof, siding)
+	for s in [-1.0, 1.0]:
+		_dormer(cx + s * w * 0.25, zf + 1.2, cz, top, top + 1.75, 1.6, siding, roof, shutter)
+	_chimney(cx - gs * w * 0.5, cz, top + rise + 0.5, Color(_pick(BRICK)), -gs)
+	_stoop(cx, zf, 1.9, 1.3, 0.5)
+	_front_door(cx, zf, 0.5, door)
+	# Pediment over the door.
+	_tri("paint", Vector3(cx - 0.75, 2.75, zf - 0.1), Vector3(cx + 0.75, 2.75, zf - 0.1), Vector3(cx, 3.1, zf - 0.1), TRIM, [], Vector3.FORWARD)
+	for s in [-1.0, 1.0]:
+		for k in [0.2, 0.36]:
+			_window(Vector3(cx + s * w * k, 1.95, zf), Vector3(-1, 0, 0), 0.85, 1.35, true, shutters, shutter)
+		_window(Vector3(cx + s * w * 0.5, 4.2, cz), Vector3(0, 0, s), 0.7, 0.9, true, false, shutter)
+	_back(x0, x1, zf + d, [1.95], 0.5)
+	var g := _back_garage(at[1], zf + d, siding, roof)
+	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": cx,
+		"walk_z": zf - 1.9, "front_z": zf, "x0": x0, "x1": x1, "gs": gs,
+		"bed": [x0 + 0.3, x1 - 0.3], "keep_out": g.keep_out}
+
+
+## Mid-century modern ranch, 1950-1965: long and low under one shallow gable
+## that runs over the attached garage too, wide eaves, a band of tall glass
+## by the door, vertical board accents and a stone or brick planter wall.
+func _midcentury(zf: float, gs: float, gw: float, roof: Color, door: Color, brick: Color) -> Dictionary:
+	var room := _avail() - gw
+	var w := rng.randf_range(minf(10.0, room), clampf(room, 7.5, 14.0))
+	var d := rng.randf_range(8.6, 9.6)
+	var cx := -gs * gw * 0.5
+	var cz := zf + d * 0.5
+	var x0 := cx - w * 0.5
+	var x1 := cx + w * 0.5
+	var gx := cx + gs * (w + gw) * 0.5
+	var top := 2.9
+	var wall := Color(_pick(["#d8cfb8", "#c9c3b3", "#7a8a84", "#b8a98c", "#e9e6dc"]))
+	var board := Color(_pick(["#5b4a38", "#3b4a3a", "#2e3a44", "#7a5a3a"]))
+	var total := w + gw
+	var mx := (minf(x0, gx - gw * 0.5) + maxf(x1, gx + gw * 0.5)) * 0.5
+	_box("concrete", Vector3(total + 0.1, 0.25, d + 0.1), Vector3(mx, 0.125, cz), FOUNDATION)
+	_box("siding", Vector3(total, top - 0.25, d), Vector3(mx, (top + 0.25) * 0.5, cz), wall)
+	_gable_roof(mx, cz, top, d, rng.randf_range(0.7, 1.0), total, true, roof, wall)
+	# Vertical board panels and a long low planter wall in front.
+	var door_x := cx + gs * w * 0.3
+	_box("paint", Vector3(2.4, top - 0.3, 0.1), Vector3(door_x, (top + 0.25) * 0.5, zf - 0.03), board)
+	_box("paint", Vector3(1.0, 2.1, 0.06), Vector3(door_x - gs * 0.5, 1.3, zf - 0.1), door)
+	_glass(Vector3(door_x + gs * 0.65, 1.4, zf - 0.1), Vector3(-1, 0, 0), 0.6, 2.2, 0.0)
+	_glass(Vector3(cx - gs * w * 0.05, 1.55, zf - 0.01), Vector3(-1, 0, 0), minf(4.2, w * 0.35), 2.2, rng.randf_range(0.0, 0.3))
+	_box("paint", Vector3(minf(4.2, w * 0.35) + 0.2, 0.1, 0.14), Vector3(cx - gs * w * 0.05, 2.7, zf - 0.05), board)
+	# High strip windows toward the bedroom end.
+	for i in 3:
+		var x := cx - gs * (w * 0.5 - 1.0 - i * 1.4)
+		_glass(Vector3(x, 2.2, zf - 0.01), Vector3(-1, 0, 0), 1.2, 0.6, 0.6)
+		_box("paint", Vector3(1.3, 0.06, 0.12), Vector3(x, 1.87, zf - 0.04), board)
+	_box("brick", Vector3(w * 0.5, 0.6, 0.35), Vector3(cx - gs * w * 0.22, 0.3, zf - 1.3), brick)
+	_stoop(door_x, zf, 2.6, 1.4, 0.2)
+	_garage(gx, zf, gw, 2.15)
+	_back(x0, x1, zf + d, [1.8], 0.25)
+	return {"drive_x": gx, "drive_w": gw - 0.8, "garage_z": zf, "door_x": door_x,
+		"walk_z": zf - 1.4, "front_z": zf, "x0": minf(x0, gx - gw * 0.5), "x1": maxf(x1, gx + gw * 0.5), "gs": gs}
+
+
 # ---------------------------------------------------------------- parts
 
 ## Driveway, front walk, mulch beds and shrubs.
@@ -341,6 +701,9 @@ func _yard(h: Dictionary, to_curb: float) -> void:
 	var gs: float = h.gs
 	var bed0: float = h.x0 + (7.0 if gs < 0 else 0.3)
 	var bed1: float = h.x1 - (7.0 if gs > 0 else 0.3)
+	if h.has("bed"):
+		bed0 = h.bed[0]
+		bed1 = h.bed[1]
 	if bed1 - bed0 > 1.0:
 		_flat_rect("mulch", bed0, bed1, fz - 1.4, fz, 0.05)
 		var x := bed0 + 0.5
@@ -387,6 +750,8 @@ func _yard_trees(h: Dictionary, to_curb: float) -> void:
 			continue
 		# Street trees stand in the parkway, outside the lot itself.
 		if p.z > 0.0 and not _in_lot(p):
+			continue
+		if h.has("keep_out") and (h.keep_out as Rect2).grow(2.0).has_point(Vector2(p.x, p.z)):
 			continue
 		var pick := TreeField.pick(rng, s[1])
 		trees.append([p, pick[0], pick[1], rng.randf_range(0.75, 1.15)])
