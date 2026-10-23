@@ -234,17 +234,28 @@ static func _stuck_fixes(ev: Dictionary, fixes: Array) -> void:
 		var ctx := _common(g, "ctx")
 		_fix(fixes, 45 + 6 * _who(g) + 2 * g.size(), "Rage clicks on %s" % thing,
 			"%d bursts of fast clicks in one spot%s: it doesn't respond the way players expect." \
-			% [g.size(), (" while in " + ctx) if ctx != "" else ""], UI_OWNER, "stuck", _who(g))
+			% [g.size(), (" while in " + ctx) if ctx != "" else ""], UI_OWNER, "stuck", _who(g), g)
 	for e in _group(ev.get("esc_spam", []), "ctx").values():
 		_fix(fixes, 40 + 5 * _who(e) + e.size(), "Hard to get out of %s" % _or_game(e[0].ctx),
-			"Players hit Escape again and again (%d times)." % e.size(), UI_OWNER, "stuck", _who(e))
+			"Players hit Escape again and again (%d times)." % e.size(), UI_OWNER, "stuck", _who(e), e)
 	for e in _group(ev.get("undo_streak", []), "ctx").values():
 		_fix(fixes, 35 + 5 * _who(e) + e.size(), "Players keep undoing in %s" % _or_game(e[0].ctx),
-			"%d undo streaks: the tool does something they didn't mean." % e.size(), UI_OWNER, "stuck", _who(e))
+			"%d undo streaks: the tool does something they didn't mean." % e.size(), UI_OWNER, "stuck", _who(e), e)
 	for e in _group(ev.get("refused_streak", []), "cmd").values():
 		_fix(fixes, 45 + 6 * _who(e) + e.size(), "The game keeps turning down \"%s\"" % e[0].cmd,
 			"%d times in a row-ish (in %s). Show why before they click, not after." % [e.size(), _or_game(_common(e, "ctx"))],
-			UI_OWNER, "stuck", _who(e))
+			UI_OWNER, "stuck", _who(e), e)
+	for e in _group(ev.get("redo_loop", []), "cmd").values():
+		_fix(fixes, 45 + 6 * _who(e) + 2 * e.size(), "Players build \"%s\" and tear it down again" % e[0].cmd,
+			"%d times they built, removed and rebuilt within a minute or two (in %s): the preview doesn't match what gets built, or it's hard to aim." \
+			% [e.size(), _or_game(_common(e, "ctx"))], UI_OWNER, "stuck", _who(e), e)
+	for e in _group(ev.get("cancel_loop", []), "ctx").values():
+		_fix(fixes, 40 + 6 * _who(e) + 2 * e.size(), "Players pick %s and back out without using it" % _or_game(e[0].ctx),
+			"%d times they opened it, tried, and pressed Escape with nothing built." % e.size(), UI_OWNER, "stuck", _who(e), e)
+	for e in _group(ev.get("no_progress", []), "ctx").values():
+		_fix(fixes, 45 + 6 * _who(e) + 2 * e.size(), "Lots of clicking with %s and nothing gets built" % _or_game(e[0].ctx),
+			"%d times: %d+ clicks on the map with the tool in hand and no result." % [e.size(), TelemetryTracker.NO_PROGRESS_CLICKS],
+			UI_OWNER, "stuck", _who(e), e)
 	# From the feature-use summaries.
 	var disabled := {}
 	var dead := {}
@@ -309,6 +320,8 @@ static func to_markdown(r: Dictionary) -> String:
 	for f in r.fixes.slice(0, 20):
 		i += 1
 		md += "%d. **%s** (%s, score %d)\n   %s\n" % [i, f.title, f.owner, int(f.score), str(f.detail).replace("\n", "\n   ")]
+		if f.has("replay"):
+			md += "\n   What %s did:\n\n   ```\n   %s\n   ```\n" % [f.replay.who, "\n   ".join(replay_lines(f.replay, 25))]
 	if not s.find_seconds_by_build.is_empty():
 		md += "\n## Time to find, by build\n\n"
 		for b in s.find_seconds_by_build:
@@ -329,9 +342,36 @@ static func median(xs: Array) -> float:
 	return float(a[m]) if a.size() % 2 == 1 else (float(a[m - 1]) + float(a[m])) / 2.0
 
 
-static func _fix(fixes: Array, score: float, title: String, detail: String, owner: String, kind: String, players: int) -> void:
-	fixes.append({"score": snappedf(score, 0.1), "title": title, "detail": detail, "owner": owner, "kind": kind,
-		"players": players})
+## events: the moments behind it; the first with a replay goes along.
+static func _fix(fixes: Array, score: float, title: String, detail: String, owner: String, kind: String, players: int,
+		events := []) -> void:
+	var f := {"score": snappedf(score, 0.1), "title": title, "detail": detail, "owner": owner, "kind": kind,
+		"players": players}
+	for e in events:
+		if e.has("replay") and not e.replay.is_empty():
+			f["replay"] = {"who": e.get("_who", ""), "t": e.t, "a": e.replay}
+			break
+	fixes.append(f)
+
+
+## A replay as readable lines, seconds before the moment it was flagged.
+static func replay_lines(rep: Dictionary, most := 30) -> PackedStringArray:
+	var out := PackedStringArray()
+	var acts: Array = rep.a
+	for a in acts.slice(maxi(acts.size() - most, 0)):
+		out.append("%6.1fs  %s" % [float(a[0]) - float(rep.t), action_text(a)])
+	return out
+
+
+static func action_text(a: Array) -> String:
+	match str(a[1]):
+		"b": return "pressed %s" % a[2]
+		"c": return "clicked the map" + (" at %d, %d" % [a[4], a[5]] if a.size() >= 6 else "")
+		"d": return "dragged" + (" %d, %d to %d, %d" % [a[2], a[3], a[4], a[5]] if a.size() >= 6 else "")
+		"k": return "key %s" % a[2]
+		"x": return "%s %s%s" % [a[2], "done" if a[3] else "TURNED DOWN", (" (%s)" % a[4]) if a.size() > 4 and str(a[4]) != "" else ""]
+		"h": return "hint: \"%s\"" % a[2]
+	return str(a)
 
 
 ## Events grouped by a field (by its first entry, for a list like path).
