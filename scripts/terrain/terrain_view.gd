@@ -23,6 +23,17 @@ const REACH := [700.0, 1400.0, 2800.0, 5600.0, 9000.0]
 ## only past HYST_OUT; its vertices finish morphing by MORPH_END, so the
 ## switch is seamless both ways.
 const MORPH_END := 0.9
+## Past the last level the land goes on, one square per chunk, out to here,
+## so from high up it fades into the haze instead of ending at an edge.
+const FAR_REACH := 20000.0
+## The far land is rebuilt once the camera has moved this far from where it
+## was last built, a few rows each frame.
+const FAR_MOVE := 2048.0
+## The far land is cut away inside this share of the last level's reach,
+## where the chunks are, and sits this far lower so they win where both draw.
+const FAR_CUT := 0.97
+const FAR_DROP := 3.0
+const FAR_BUDGET_MS := 2
 const HYST_OUT := 0.95
 ## Ground graded flat this far each side of a road with lots (curb, walk,
 ## and the 32 m lots), fading out over the next few metres.
@@ -65,6 +76,9 @@ uniform vec4 fall_leaves : source_color = vec4(0.42, 0.27, 0.11, 1.0);
 // The camera's x, height above the ground, z: level of detail is measured
 // from it the way TerrainView picks chunk detail.
 uniform vec3 lod_eye;
+// The far land (TerrainView's far sheet) is cut away nearer than this, where
+// the chunks draw the ground; 0 for the chunks themselves.
+uniform float far_cut = 0.0;
 // CUSTOM0: (height, normal x, normal z) on the next coarser level, and w the
 // reach of this chunk's level (0 for the coarsest): vertices slide to the
 // coarser level between MORPH_START and MORPH_END of that reach.
@@ -90,6 +104,12 @@ void vertex() {
 
 void fragment() {
 	vec2 p = world_pos.xz;
+	if (far_cut > 0.0) {
+		vec2 e = p - lod_eye.xz;
+		if (dot(e, e) + lod_eye.y * lod_eye.y < far_cut * far_cut) {
+			discard;
+		}
+	}
 	float dist = length(VERTEX);
 	float big = texture(noise_soft, p / 900.0).r;
 	float mid = texture(noise_soft, turn(p, 1.1) / 210.0 + 0.31).r;
@@ -220,6 +240,11 @@ var _chunks := {}
 var _dirty := {}  # Vector2i chunks to rebuild for grading
 var _graded := {}  # segment id -> [points, inner, outer, bounds]
 var _first := true
+var _far: MeshInstance3D
+static var _far_mat: ShaderMaterial
+var _far_centre := Vector2(INF, INF)
+## The far land being built (see far_job), or empty.
+var _far_job := {}
 
 
 static func ground_material() -> ShaderMaterial:
@@ -271,6 +296,8 @@ func _process(_delta: float) -> void:
 	var eye := _eye()
 	if _ground_mat != null:
 		_ground_mat.set_shader_parameter("lod_eye", Vector3(eye.x, eye.z, eye.y))
+	if _far_mat != null:
+		_far_mat.set_shader_parameter("lod_eye", Vector3(eye.x, eye.z, eye.y))
 	var flat_eye := Vector2(eye.x, eye.y)
 	var start := Time.get_ticks_msec()
 	# Wanted level of detail for every chunk in reach: finer once well
@@ -308,7 +335,98 @@ func _process(_delta: float) -> void:
 		# when the game opens; then a little each frame.
 		if not _first and Time.get_ticks_msec() - start > BUDGET_MS:
 			break
+	_update_far(flat_eye, _first)
 	_first = false
+
+
+## The far land: one coarse sheet around the camera out to FAR_REACH, cut
+## away in the shader where the chunks are. Rebuilt in slices of
+## FAR_BUDGET_MS a frame (all at once the first time), with no threads, so
+## it runs the same on the web.
+func _update_far(flat_eye: Vector2, all_now := false) -> void:
+	var start := Time.get_ticks_msec()
+	if _far_job.is_empty():
+		if flat_eye.distance_to(_far_centre) < FAR_MOVE:
+			return
+		var c := (flat_eye / CHUNK).round()
+		_far_job = far_job(c * CHUNK, ceili((FAR_REACH + FAR_MOVE) / CHUNK))
+	while not far_step(_far_job):
+		if not all_now and Time.get_ticks_msec() - start > FAR_BUDGET_MS:
+			return
+	if _far == null:
+		_far = MeshInstance3D.new()
+		_far.material_override = far_material()
+		_far.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(_far)
+	_far.mesh = _far_job.mesh
+	_far_centre = _far_job.centre
+	_far_job = {}
+
+
+static func far_material() -> ShaderMaterial:
+	if _far_mat == null:
+		_far_mat = ground_material().duplicate()
+		_far_mat.set_shader_parameter("far_cut", REACH[REACH.size() - 1] * FAR_CUT)
+	return _far_mat
+
+
+## A job building the far sheet: (2r + 1) squares of CHUNK a side around
+## `centre`. Run it with far_step until that returns true; the mesh is then
+## in job.mesh.
+static func far_job(centre: Vector2, r: int) -> Dictionary:
+	var n := 2 * r + 1
+	return {"centre": centre, "origin": centre - Vector2(r + 0.5, r + 0.5) * CHUNK, "n": n,
+		"row": 0, "hs": PackedFloat32Array(), "verts": PackedVector3Array(),
+		"normals": PackedVector3Array(), "colors": PackedColorArray(), "coarse": PackedFloat32Array()}
+
+
+## One slice of a far job: a row of heights, then once they are all in, a
+## row of vertices, then the mesh.
+## True once the mesh is made.
+static func far_step(job: Dictionary) -> bool:
+	var n: int = job.n
+	var m := n + 3
+	var origin: Vector2 = job.origin
+	var off := Terrain.shift + Terrain.view_origin
+	if job.hs.size() < m * m:
+		# A row of heights, with one extra all round for the normals. The raw
+		# ground, not ground_y: grading near town is the chunks' to draw, and
+		# none of it shows from 9 km.
+		var j: int = job.hs.size() / m
+		for i in m:
+			job.hs.append(Terrain.height(origin.x + (i - 1) * CHUNK + off.x, origin.y + (j - 1) * CHUNK + off.y) - FAR_DROP)
+		return false
+	if job.row <= n:
+		var hs: PackedFloat32Array = job.hs
+		var j: int = job.row
+		for i in n + 1:
+			var x := origin.x + i * CHUNK
+			var z := origin.y + j * CHUNK
+			var c := (j + 1) * m + (i + 1)
+			var nrm := Vector3(hs[c - 1] - hs[c + 1], 2.0 * CHUNK, hs[c - m] - hs[c + m]).normalized()
+			job.verts.append(Vector3(x, hs[c], z))
+			job.normals.append(nrm)
+			job.coarse.append_array([hs[c], nrm.x, nrm.z, 0.0])
+			job.colors.append(Terrain.cover(x + Terrain.view_origin.x, z + Terrain.view_origin.y))
+		job.row += 1
+		return false
+	var idx := PackedInt32Array()
+	for j in n:
+		for i in n:
+			var a := j * (n + 1) + i
+			idx.append_array([a, a + 1, a + n + 2, a, a + n + 2, a + n + 1])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = job.verts
+	arrays[Mesh.ARRAY_NORMAL] = job.normals
+	arrays[Mesh.ARRAY_COLOR] = job.colors
+	arrays[Mesh.ARRAY_CUSTOM0] = job.coarse
+	arrays[Mesh.ARRAY_INDEX] = idx
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {},
+		Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
+	job.mesh = mesh
+	return true
 
 
 ## The camera's ground position and its height above the land: x, z, height.
