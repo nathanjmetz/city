@@ -44,8 +44,23 @@ const AREAS := {
 	"resources": {"name": "Oil, ore and timber", "icon": "industry", "sliders": ["funding", "growth"],
 		"funding": "A fee on the companies (Lean) or business aid (Generous).",
 		"growth": "How eagerly companies open new pads."},
-	"utilities": {"name": "Power and water", "icon": "power", "sliders": ["funding"],
+	"warehouses": {"name": "Warehouses", "icon": "warehouse", "sliders": ["growth"],
+		"growth": "Your word to their owners: how readily they add bays. They're private, so the town doesn't fund them."},
+	"big": {"name": "Big factories", "icon": "industry", "sliders": ["growth"],
+		"growth": "Your word to their owners: how readily they add lines and buy the land behind them. They're private, so the town doesn't fund them."},
+	"power": {"name": "Power companies", "icon": "power", "sliders": ["growth"],
+		"growth": "Your word to their owners: Hold adds no new units. They sell power, so the town doesn't fund them."},
+	"utilities": {"name": "Substations and wells", "icon": "power", "sliders": ["funding"],
 		"funding": "Upkeep, and how many homes each one serves."},
+	"water": {"name": "Water and sewer", "icon": "water", "sliders": ["funding", "growth"],
+		"funding": "The town's monthly subsidy to the utility, on top of water bills.",
+		"growth": "Your word to the manager: hold off, their call, or grow."},
+	"mail": {"name": "Post offices", "icon": "mail", "sliders": ["funding", "growth"],
+		"funding": "What the town adds to postage each month, for the postmaster to build with.",
+		"growth": "Your word to the postmaster: hold off, their call, or grow."},
+	"transit": {"name": "Bus depots", "icon": "bus", "sliders": ["funding", "growth"],
+		"funding": "The town's monthly subsidy. It decides how many buses run.",
+		"growth": "Your word to the depot manager: hold off, their call, or grow."},
 	"public": {"name": "Public services", "icon": "services", "sliders": ["funding"],
 		"funding": "Upkeep, and how far each one reaches."},
 	"waste": {"name": "Garbage and recycling", "icon": "landfill", "sliders": ["funding", "growth"],
@@ -65,7 +80,7 @@ const AREAS := {
 
 ## What the player has set: scope -> {slider: step}. Scope is "city",
 ## "area:<key>" or a hub, "<kind>:<id>" (farm:3, industry:2, service:5, hub:1,
-## park:2, campus:1).
+## park:2, campus:1, post_office:1, water:4, bus_depot:6, power:2, warehouse:3).
 var levels := {}
 
 

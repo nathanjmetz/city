@@ -62,6 +62,10 @@ func _init() -> void:
 	_check(sel.get("type") == "big" and str(info.get("title", "")) == f.name, "clicking it opens its panel")
 	_check(sim.stats.jobs >= int(Balance.BIG_FACTORY.ethanol.jobs), "its jobs count")
 	_check(sim.permits.locators.has("big"), "the player can give its owner their word")
+	_check(sim.hub_area("big:1") == "big" and sim.apply({"type": "policy", "scope": "big:1", "slider": "growth", "step": 0})
+		and sim.permits.guidance("big", 1).stance == "hold", "the Economy page's Growth slider reaches the owner")
+	_check(not sim.apply({"type": "policy", "scope": "big:1", "slider": "funding", "step": 3}), "but the town doesn't fund it")
+	sim.apply({"type": "policy", "scope": "big:1", "slider": "growth", "step": 2})
 
 	# A meatpacker with no hog farms in town buys hogs from outside: trade
 	# money is the plant's, not the town's.

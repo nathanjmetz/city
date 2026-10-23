@@ -47,13 +47,20 @@ func _init() -> void:
 	var built: String = sim.buildings.keys()[0]
 	var shape: PackedVector2Array = sim.lots[built].corners
 	var copy := CitySim.new()
-	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
+	# Full precision, as the region server sends it.
+	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict(), "", false, true)))
 	_check(copy.lots.has(built) and copy.lots[built].corners == shape, "save keeps a parcel's exact shape")
 	_check(copy.buildings.size() == sim.buildings.size(), "save keeps every building")
 	for i in 30:
 		sim.tick()
 		copy.tick()
-	_check(JSON.stringify(copy.to_dict()) == JSON.stringify(sim.to_dict()), "copies stay in sync")
+	var da := copy.to_dict()
+	var db := sim.to_dict()
+	var diff := []
+	for k in da:
+		if JSON.stringify(da[k]) != JSON.stringify(db.get(k)):
+			diff.append(k)
+	_check(diff.is_empty(), "copies stay in sync %s" % str(diff))
 	# Merge two neighbours, then split them again (business agency).
 	var face := LotPlanner.block_face(sim, built)
 	_check(face.size() >= 2, "block face lists the street's lots (%d)" % face.size())

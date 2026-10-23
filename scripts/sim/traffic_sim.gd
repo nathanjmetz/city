@@ -116,7 +116,10 @@ var _keep_routes := false
 
 func _init(net: RoadNetwork) -> void:
 	network = net
-	network.changed.connect(func(): _dirty = true)
+	# A road change before a loaded city has run a tick drops the saved plans.
+	network.changed.connect(func():
+		_dirty = true
+		_keep_routes = false)
 
 
 func step(sim: CitySim, rng: RandomNumberGenerator) -> void:
@@ -134,6 +137,8 @@ func step(sim: CitySim, rng: RandomNumberGenerator) -> void:
 ## direction]. `ahead` moves it on by that many metres, for smooth drawing
 ## between ticks.
 func car_pose(car: Dictionary, ahead := 0.0) -> Array:
+	if _dirty:
+		_rebuild()  # a loaded city that hasn't run yet (a neighbor's, say)
 	if car.j != null:
 		return _conn_pose(car.j, minf(car.jd + ahead, car.j.len))
 	var w: Dictionary = ways[car.route[car.leg]]
@@ -319,16 +324,20 @@ func to_dict() -> Dictionary:
 		list.append(e)
 	var state := {"cars": list, "waiting": _waiting.size(), "next_id": _next_id, "time": time,
 		"gave_up": gave_up, "speed": _speed, "dirty": _dirty, "arrivals": arrivals, "failed": failed}
-	return {"state": var_to_str(state)}
+	# Binary, so every float comes back exactly and copies stay in step
+	# (var_to_str rounds to 15 digits).
+	return {"bin": Marshalls.variant_to_base64(state)}
 
 
 func from_dict(d: Dictionary) -> void:
 	cars.clear()
 	_waiting.clear()
 	_dirty = true
-	if not d.has("state"):
-		return
-	var state = str_to_var(str(d.state))
+	var state
+	if d.has("bin"):
+		state = Marshalls.base64_to_variant(str(d.bin))
+	elif d.has("state"):
+		state = str_to_var(str(d.state))  # older saves
 	if typeof(state) != TYPE_DICTIONARY:
 		return
 	var list: Array = state.cars
@@ -1137,7 +1146,10 @@ func _launch(car: Dictionary) -> bool:
 ## The path out of a driveway into the nearest lane.
 func _driveway_out(car: Dictionary, exit_d: float) -> Dictionary:
 	var w: Dictionary = ways[car.route[0]]
-	var corner := _lane_point(w, car.lane, car.d)
+	# A drive right by the end of the street can't swing forward its usual
+	# distance: it swings back a little, so the car still meets the lane
+	# heading the lane's way.
+	var corner := _lane_point(w, car.lane, maxf(minf(car.d, exit_d - 3.0), 0.0))
 	var p2 := _lane_point(w, car.lane, exit_d)
 	return _path({"node": -1, "wi": -1, "li": -1, "wo": w.id, "lo": car.lane, "turn": Turn.RIGHT,
 		"vt": 5.0, "exit_d": exit_d}, car.home, corner, p2)

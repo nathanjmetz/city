@@ -150,7 +150,11 @@ func _init() -> void:
 		ng.tick()
 	_check(ng.stats.population >= 50, "the village grows (%d people)" % ng.stats.population)
 	var before_grant: int = ng.economy.money
-	_check(ng.economy.reach_milestones(260) == 650_000 and ng.economy.money == before_grant + 650_000
+	var owed := 0
+	for i in range(ng.economy.milestone, Economy.MILESTONES.size()):
+		if Economy.MILESTONES[i][0] <= 260:
+			owed += Economy.MILESTONES[i][1]
+	_check(owed > 0 and ng.economy.reach_milestones(260) == owed and ng.economy.money == before_grant + owed
 		and ng.economy.reach_milestones(260) == 0, "milestone grants paid once each")
 	# Farms: outline farmland, place a farmhouse, watch it buy fields.
 	var fm := CitySim.new()
@@ -349,7 +353,8 @@ func _init() -> void:
 	_check(Logistics.input_of(oil, "test") == "ore", "a metal works buys ore")
 	oil.buildings.erase("test")
 	var oil_sel := Inspect.pick(oil, co.pos)
-	_check(oil_sel.get("type") == "industry" and Inspect.describe(oil, oil_sel).title == "Oil company", "clicking the company opens its panel")
+	_check(oil_sel.get("type") == "industry" and Inspect.describe(oil, oil_sel).kind == "Oil company"
+		and Inspect.describe(oil, oil_sel).title == oil.families.name_of("site:%d" % oil_sel.id), "clicking the company opens its panel, under its own name")
 	_check(oil.stats.jobs >= Balance.INDUSTRY["oil"]["jobs_hq"], "the company's jobs count")
 	# Critic round 7: a company whose yard isn't on the deposit itself still
 	# finds the rich ground within reach for its first pad.

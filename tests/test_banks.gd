@@ -86,6 +86,12 @@ func _init() -> void:
 	town.banks.decide(town)
 	_check(cb.deposits > 0.0, "the town's savings come in ($%d)" % roundi(cb.deposits))
 	_check(town.banks.room(town, bid) > 0.0, "so it has money to lend")
+	# Construction stages fill the first street before the bank opens, so the
+	# town zones a new one: homes on one side, shops (jobs) on the other.
+	town.apply({"type": "build_road", "start": [-600, 0], "ctrl": [-600, -150], "end": [-600, -300]})
+	for z in range(-290, -10, 10):
+		town.apply({"type": "paint_zone", "center": [-575, z], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
+		town.apply({"type": "paint_zone", "center": [-625, z], "radius": 12, "zone": ZoneMap.Zone.COMMERCIAL})
 	var before := town.buildings.size()
 	for i in 4000:
 		town.tick()

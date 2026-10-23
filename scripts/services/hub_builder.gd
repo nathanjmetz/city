@@ -29,6 +29,10 @@ var cell := 50.0
 var dev := []
 ## Ground kept clear of headstones (chapel, memorials): [Rect2 in x, z].
 var _clear := []
+## The hub's own building (scale house, booth, sorting plant, mausoleum and
+## chapel), kept apart from the rest of the site so it can go up stage by
+## stage (ConstructionSite): material key -> SurfaceTool.
+var _own := {}
 
 
 static func build_hub(h: Dictionary, seed: int, to_curb: float) -> Array:
@@ -46,7 +50,19 @@ static func build_hub(h: Dictionary, seed: int, to_curb: float) -> Array:
 			b._cemetery(to_curb)
 		_:
 			b._recycling(h, to_curb)
-	return [b._commit_house(), b._commit_flat(), b.trees]
+	var site := b._commit_house()
+	b._st = b._own
+	# [building, ground, trees, the rest of the site: mound, yard, fences, stones].
+	return [b._commit_house(), b._commit_flat(), b.trees, site]
+
+
+## Draws `draw` into the hub's own building instead of the site.
+func _building(draw: Callable) -> void:
+	var keep := _st
+	_st = _own
+	draw.call()
+	_own = _st
+	_st = keep
 
 
 func _has(c: Vector2i) -> bool:
@@ -115,10 +131,11 @@ func _landfill(h: Dictionary, to_curb: float) -> void:
 	_mound(cells, top, true, cells[-1])
 	_gate(to_curb)
 	# Scale house and truck scale by the gate.
-	_box("paint", Vector3(7.0, 0.3, 5.0), Vector3(12.0, 0.15, 9.0), CONCRETE)
-	_box("siding", Vector3(6.0, 3.0, 4.0), Vector3(12.0, 1.8, 9.0), Color("#d8d4c8"))
-	_box("paint", Vector3(6.6, 0.25, 4.6), Vector3(12.0, 3.4, 9.0), Color("#6f6d68"))
-	_glass(Vector3(12.0, 1.9, 6.95), Vector3(-1, 0, 0), 2.4, 1.0, 0.3)
+	_building(func():
+		_box("paint", Vector3(7.0, 0.3, 5.0), Vector3(12.0, 0.15, 9.0), CONCRETE)
+		_box("siding", Vector3(6.0, 3.0, 4.0), Vector3(12.0, 1.8, 9.0), Color("#d8d4c8"))
+		_box("paint", Vector3(6.6, 0.25, 4.6), Vector3(12.0, 3.4, 9.0), Color("#6f6d68"))
+		_glass(Vector3(12.0, 1.9, 6.95), Vector3(-1, 0, 0), 2.4, 1.0, 0.3))
 	_box("paint", Vector3(3.6, 0.25, 21.0), Vector3(5.5, 0.12, 14.0), CONCRETE)
 	_flat_rect("gravel", -5.0, 3.5, 2.0, 32.0, 0.06, Color("#8d877c"))
 	_fence_edges(_edges(cells), 2.2, GALV, 4.0, 5.0)
@@ -295,12 +312,13 @@ func _recycling(h: Dictionary, to_curb: float) -> void:
 				var col: Color = BINS[i % BINS.size()]
 				_box("metal", Vector3(2.5, 1.9, 6.8), Vector3(x, 1.05, yard_back - 10.0), col)
 				_box("paint", Vector3(2.6, 0.12, 6.9), Vector3(x, 2.05, yard_back - 10.0), col.darkened(0.25))
-			_box("siding", Vector3(3.0, 2.6, 2.4), Vector3(cell * 0.9, 1.3, 8.0), Color("#d8d4c8"))
-			_box("paint", Vector3(3.4, 0.2, 2.8), Vector3(cell * 0.9, 2.7, 8.0), Color("#6f6d68"))
+			_building(func():
+				_box("siding", Vector3(3.0, 2.6, 2.4), Vector3(cell * 0.9, 1.3, 8.0), Color("#d8d4c8"))
+				_box("paint", Vector3(3.4, 0.2, 2.8), Vector3(cell * 0.9, 2.7, 8.0), Color("#6f6d68")))
 		2:
-			_plant(0.0, yard_back - 14.0, 40.0, 24.0, 9.0, Color("#c9cbc6"))
+			_building(func(): _plant(0.0, yard_back - 14.0, 40.0, 24.0, 9.0, Color("#c9cbc6")))
 		3:
-			_plant(-8.0, yard_back - 18.0, 64.0, 32.0, 12.0, Color("#bfc4c3"))
+			_building(func(): _plant(-8.0, yard_back - 18.0, 64.0, 32.0, 12.0, Color("#bfc4c3")))
 			_box("metal", Vector3(18.0, 16.0, 18.0), Vector3(30.0, 8.0, yard_back - 18.0), Color("#a9b0b0"))
 			# Infeed conveyor up the side.
 			var a := Vector3(-36.0, 1.0, 6.0)
@@ -427,9 +445,10 @@ func _cemetery(to_curb: float) -> void:
 		_box("brick", Vector3(0.7, 2.2, 0.7), Vector3(x, 1.1, 0.0), Color("#8a4a38"))
 		_box("paint", Vector3(0.85, 0.15, 0.85), Vector3(x, 2.27, 0.0), CONCRETE)
 	_flagpole(Vector3(7.0, 0, 5.0))
-	_mausoleum(Vector3(-cell * 0.6, 0, cell * 1.4))
-	if "chapel" in dev:
-		_chapel(Vector3(cell * 0.6, 0, cell * 1.3))
+	_building(func():
+		_mausoleum(Vector3(-cell * 0.6, 0, cell * 1.4))
+		if "chapel" in dev:
+			_chapel(Vector3(cell * 0.6, 0, cell * 1.3)))
 	if "garden" in dev:
 		var g := Vector3(-cell * 0.6, 0, 15.0)
 		_flat_rect("gravel", g.x - 7.0, g.x + 7.0, g.z - 6.0, g.z + 6.0, 0.07, Color("#b9b2a2"))

@@ -1,7 +1,8 @@
 extends SceneTree
 ## Run: godot --headless -s tests/test_net.gd
 ## A real region server and two players on this computer: joining, invite
-## codes, building in step, chat and the server's save.
+## codes, accounts, each town running on its own computer and reaching the
+## neighbors, trade, chat and the server's save.
 
 const PORT := 19480
 var _failed := false
@@ -12,7 +13,7 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	_test_region_in_step()
+	_test_region_copies()
 	_test_crossroads()
 	_test_trade()
 	_test_elbow_room()
@@ -23,6 +24,7 @@ func _run() -> void:
 	var server := RegionServer.new()
 	root.add_child(server)
 	_check(server.start(PORT, "abc123", data) == OK, "server starts")
+	server.require_approval = true
 	_check(server.invite_code == "ABC123", "invite code is kept, in capitals")
 	var url := "ws://127.0.0.1:%d" % PORT
 
@@ -36,7 +38,7 @@ func _run() -> void:
 
 	# The first account is the host's: in at once.
 	var ann := _client()
-	ann.join(url, "abc-123", "p-ann", "Ann", "secret1", true)
+	ann.join(url, "abc-123", "p-ann", "Ann")
 	await _until(func(): return ann.my_city != "")
 	_check(ann.my_city != "" and ann.is_host, "Ann makes the first account, hosts and gets a city")
 	_check(not JSON.stringify(server.region.to_dict()).contains(server.accounts.ann.hash), "passwords never go out with the region")
@@ -44,20 +46,20 @@ func _run() -> void:
 	var bob := _client()
 	var told := []
 	bob.waiting.connect(func(m): told.append(m))
-	bob.join(url, "ABC123", "p-bob", "Bob", "hunter22", true)
+	bob.join(url, "ABC123", "p-bob", "Bob")
 	await _until(func(): return not told.is_empty() and ann.requests == ["Bob"])
 	_check(not told.is_empty() and bob.my_city == "", "Bob signs up and waits for the host")
 	_check(ann.requests == ["Bob"], "the host sees Bob waiting (%s)" % str(ann.requests))
 	var sneaky := _client()
 	var sneaky_told := []
 	sneaky.failed.connect(func(r): sneaky_told.append(r))
-	sneaky.join(url, "ABC123", "p-sneak", "Bob", "guess123")
+	sneaky.join(url, "ABC123", "p-sneak", "Ann")
 	await _until(func(): return not sneaky_told.is_empty())
-	_check(not sneaky_told.is_empty() and "password" in sneaky_told[0], "a wrong password is turned away")
+	_check(not sneaky_told.is_empty() and "host" in sneaky_told[0], "nobody else can play as the host")
 	var eve := _client()
 	var eve_told := []
 	eve.failed.connect(func(r): eve_told.append(r))
-	eve.join(url, "ABC123", "p-eve", "Eve", "letmein", true)
+	eve.join(url, "ABC123", "p-eve", "Eve")
 	await _until(func(): return ann.requests.size() == 2)
 	ann.approve("Eve", false)
 	await _until(func(): return not eve_told.is_empty())
@@ -68,22 +70,44 @@ func _run() -> void:
 	var gap: float = ann.region.cities[ann.my_city].origin.distance_to(bob.region.cities[bob.my_city].origin)
 	_check(gap >= Region.ELBOW_ROOM, "Bob starts 3 miles from Ann's town, with room to grow (%d m)" % gap)
 
-	# Ann builds through the server; both copies get it in the same tick.
+	# Bob's county road reached Ann's town on her own computer.
+	await _until(func(): return ann.my_sim().region_links.size() >= 3)
+	_check(ann.my_sim().region_links.size() >= 3, "Ann's computer builds her half of the road to Bob (%d links)" % ann.my_sim().region_links.size())
+
+	# Ann's town runs on her computer; Bob sees it once a copy is sent.
 	var sim := ann.my_sim()
-	sim.send_command = ann.send_command
-	var roads_before := sim.network.segments.size()
+	var roads_before: int = bob.region.cities[ann.my_city].sim.network.segments.size()
 	sim.apply({"type": "build_road", "start": [40, 60], "ctrl": [50, 80], "end": [60, 100]})
 	for cmd in _starter_town(sim):
 		sim.apply(cmd)
+	for i in 3000:
+		sim.tick()
+	_check(sim.buildings.size() > 0, "homes grow in Ann's town on her own computer")
+	ann.send_town()
 	await _until(func(): return bob.region.cities[ann.my_city].sim.network.segments.size() > roads_before)
 	_check(bob.region.cities[ann.my_city].sim.network.segments.size() > roads_before, "Bob sees Ann's new road")
-	_check(sim.network.segments.size() > roads_before, "Ann's road comes back to her from the server")
+	_check(bob.region.cities[ann.my_city].sim.buildings.size() == sim.buildings.size(), "and her homes")
+	_check(server.region.cities[ann.my_city].sim.buildings.size() == sim.buildings.size(), "the server keeps a copy")
 
-	# Bob can't build in Ann's city: commands only go to your own.
+	# Bob's copy only ever updates Bob's own town.
 	var ann_roads: int = server.region.cities[ann.my_city].sim.network.segments.size()
-	bob.send_command({"type": "remove_road", "seg": server.region.cities[ann.my_city].sim.network.segments.keys()[0]})
+	bob.my_sim().apply({"type": "clear"})
+	bob.send_town()
 	await _frames(20)
-	_check(server.region.cities[ann.my_city].sim.network.segments.size() == ann_roads, "Bob can't bulldoze Ann's roads")
+	_check(server.region.cities[ann.my_city].sim.network.segments.size() == ann_roads, "Bob can't change Ann's town")
+
+	# Trade between the two computers, settled by the server.
+	sim.trade.offer("power", 50.0)
+	bob.my_sim().trade.want("power", 30.0)
+	ann.send_town()
+	bob.send_town()
+	await _frames(20)
+	var bob_money := bob.my_sim().economy.money
+	server.settle_trade()
+	await _until(func(): return bob.my_sim().trade.got("power") > 0.0)
+	_check(bob.my_sim().trade.got("power") == 30.0 and bob.my_sim().economy.money < bob_money, "Bob buys Ann's power and pays on his computer")
+	await _until(func(): return sim.trade.sold("power") > 0.0)
+	_check(sim.trade.sold("power") == 50.0, "Ann is paid on hers")
 
 	# Chat reaches everyone, with the sender's name.
 	var heard := []
@@ -93,15 +117,6 @@ func _run() -> void:
 	var line = heard.filter(func(l): return l.text == "Hi neighbor!")
 	_check(not line.is_empty() and line[0].from == "Ann", "Bob gets Ann's chat message")
 	_check(bob.players.size() == 2, "both players listed online")
-
-	# Let the cities grow a while: everyone's copy stays identical.
-	await _until(func(): return server.region.cities[ann.my_city].sim.buildings.size() > 3, 60.0)
-	await _frames(10)
-	var t: int = server.region.tick_count
-	await _until(func(): return ann.region.tick_count == t and bob.region.tick_count == t)
-	_check(ann.region.checksums() == server.region.checksums(), "Ann's copy matches the server")
-	_check(bob.region.checksums() == server.region.checksums(), "Bob's copy matches the server")
-	_check(server.region.cities[ann.my_city].sim.buildings.size() > 0, "homes grew in Ann's city")
 
 	# The region is saved, and Ann gets the same city back when she returns.
 	var ann_city: String = ann.my_city
@@ -117,6 +132,24 @@ func _run() -> void:
 	ann2.join("ws://127.0.0.1:%d" % (PORT + 1), "ABC123", "p-other-device", "Ann", "", false, ann.token)
 	await _until(func(): return ann2.my_city != "")
 	_check(ann2.my_city == ann_city, "Ann logs back in with her saved token and gets her own city back")
+	_check(ann2.my_sim().buildings.size() == sim.buildings.size(), "with everything she built (sent as she left)")
+	var bob2 := _client()
+	bob2.join("ws://127.0.0.1:%d" % (PORT + 1), "ABC123", "p-bobs-laptop", "Bob")
+	await _until(func(): return bob2.my_city != "")
+	_check(bob2.my_city != "" and bob2.my_city != ann_city, "Bob comes back on another computer with just his name and the code")
+	# By default the invite code is the only key: no name, no password, no wait.
+	var kid := _client()
+	kid.join("ws://127.0.0.1:%d" % (PORT + 1), "ABC123", "p-kid", "")
+	await _until(func(): return kid.my_city != "")
+	_check(kid.my_city != "" and again.region.cities[kid.my_city].player.begins_with("Neighbor"), "a device with just the code plays at once, as a Neighbor")
+	var kid_city: String = kid.my_city
+	var kid_token: String = kid.token
+	kid.leave()
+	await _frames(20)
+	var kid2 := _client()
+	kid2.join("ws://127.0.0.1:%d" % (PORT + 1), "ABC123", "p-kid", "Sammy", "", false, kid_token)
+	await _until(func(): return kid2.my_city != "")
+	_check(kid2.my_city == kid_city and again.region.cities[kid_city].player == "Sammy", "back by its sign-in, with the name picked in Profile")
 	_check(ann2.region.chat.any(func(l): return l.text == "Hi neighbor!"), "chat history kept")
 	again.stop()
 	DirAccess.remove_absolute(data)
@@ -125,30 +158,23 @@ func _run() -> void:
 	quit(1 if _failed else 0)
 
 
-## Two copies of a region fed the same events stay identical, and a copy
-## made from a snapshot keeps in step too.
-func _test_region_in_step() -> void:
-	var a := Region.new()
-	var b := Region.new()
-	for r in [a, b]:
-		r.add_city("p1", "Ann")
-		r.add_city("p2", "Bob")
-	for r in [a, b]:
-		for cmd in _starter_town(r.cities.c1.sim):
-			r.apply("c1", cmd)
-		for cmd in _starter_town(r.cities.c2.sim):
-			r.apply("c2", cmd)
-		for i in 300:
-			r.tick()
-	_check(a.checksums() == b.checksums(), "two copies of a region stay in step")
+## A region copied for the wire comes back the same, and a town's newer
+## copy replaces the old one.
+func _test_region_copies() -> void:
+	var r := Region.new()
+	r.add_city("p1", "Ann")
+	r.add_city("p2", "Bob")
 	var c := Region.new()
-	c.from_dict(JSON.parse_string(JSON.stringify(a.to_dict(), "", false, true)))
-	for i in 300:
-		a.tick()
-		c.tick()
-	_check(a.checksums() == c.checksums(), "a copy sent to a joining player keeps in step")
-	_check(a.cities.c1.sim.buildings.size() > 0, "cities grow in a region")
-	_check(a.cities.c1.origin != a.cities.c2.origin, "cities get their own spots")
+	c.from_dict(RegionServer.unpack(RegionServer.pack(r.to_dict())))
+	_check(c.cities.size() == 2 and c.cities.c2.origin == r.cities.c2.origin, "a packed region comes back the same")
+	var ann: CitySim = r.cities.c1.sim
+	for cmd in _starter_town(ann):
+		ann.apply_now(cmd)
+	for i in 2000:
+		ann.tick()
+	c.update_city("c1", JSON.parse_string(JSON.stringify(ann.to_dict(), "", false, true)))
+	_check(c.cities.c1.sim.buildings.size() == ann.buildings.size() and ann.buildings.size() > 0, "a town's new copy replaces the old")
+	_check(not r.to_dict_without("c1").cities.c1.has("city"), "a player isn't sent their own town while it runs")
 
 
 ## New towns start on a county road that meets each neighbor's halfway.
@@ -167,14 +193,20 @@ func _test_crossroads() -> void:
 	for j in r.joins:
 		var a: Dictionary = r.cities[j.a]
 		var b: Dictionary = r.cities[j.b]
-		var pa: Vector3 = a.sim.network.nodes[j.a_node]
-		var pb: Vector3 = b.sim.network.nodes[j.b_node]
+		var na: int = r._node_at(j.a, j.a_at)
+		var nb: int = r._node_at(j.b, j.b_at)
+		if na == -1 or nb == -1:
+			met = false
+			continue
+		var pa: Vector3 = a.sim.network.nodes[na]
+		var pb: Vector3 = b.sim.network.nodes[nb]
 		if (a.origin + Vector2(pa.x, pa.z)).distance_to(b.origin + Vector2(pb.x, pb.z)) > 1.0:
 			met = false
-		if not j.a_node in a.sim.region_links or not j.b_node in b.sim.region_links:
+		if not na in a.sim.region_links or not nb in b.sim.region_links:
 			met = false
 	_check(met, "each pair of county roads meets at one spot on the city line")
-	var seg: int = bob.network.segments_at(r.joins[0].a_node)[0]
+	_check(r.handed.has("c1") and r.handed.has("c2"), "Cy's roads into Ann's and Bob's towns are handed to their computers")
+	var seg: int = bob.network.segments_at(r._node_at("c2", r.joins[0].a_at))[0]
 	_check(not bob.apply_now({"type": "remove_road", "seg": seg}), "a county road can't be bulldozed")
 	var copy := Region.new()
 	copy.from_dict(JSON.parse_string(JSON.stringify(r.to_dict(), "", false, true)))
@@ -222,7 +254,7 @@ func _test_trade() -> void:
 	var trucks := []
 	bob.trade.deal.connect(func(d): trucks.append(d))
 	var money := [ann.economy.money, bob.economy.money, cy.economy.money]
-	r.settle_trade()
+	r.settle_trade(["c1", "c2", "c3"])
 	_check(ann.trade.got("power") == 30.0 and bob.trade.sold("power") == 50.0, "Ann buys her power from Bob")
 	_check(cy.trade.got("power") == 40.0, "Cy gets the rest of Bob's power and the outside covers what's left")
 	_check(bob.economy.money - money[1] == roundi(50 * price), "Bob is paid for all he sold")
@@ -232,11 +264,16 @@ func _test_trade() -> void:
 		"what no neighbor wants sells to the outside for less")
 	var to_ann = trucks.filter(func(d): return d.buyer == "c1")
 	_check(not to_ann.is_empty() and to_ann[0].link in bob.region_links, "each deal says which county road the trucks take")
-	var copy := Region.new()
-	copy.from_dict(JSON.parse_string(JSON.stringify(r.to_dict(), "", false, true)))
-	copy.settle_trade()
-	r.settle_trade()
-	_check(copy.checksums() == r.checksums(), "trade comes out the same on every copy")
+	# A deal reaches the player's own computer, which moves the money.
+	var home := Region.new_sim()
+	var home_before := home.economy.money
+	home.trade.receive(home, cy.trade.last_deals)
+	_check(home.trade.got("power") == 40.0 and home_before - home.economy.money == -cy.trade.net, "a town's computer takes its deals")
+	# Only towns that are running trade.
+	bob.trade.offer("power", 50.0)
+	r.settle_trade(["c1"])
+	_check(bob.trade.sold("power") == 50.0 and ann.trade.got("power") == 30.0 and ann.trade.last_deals.all(func(d): return d.seller == "outside" or d.buyer == "outside"),
+		"a town whose player is away doesn't trade")
 	# A solo city trades with the outside world once a game month.
 	var solo := CitySim.new()
 	solo.trade.want("power", 10.0)

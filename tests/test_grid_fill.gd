@@ -92,8 +92,8 @@ func _init() -> void:
 		s.apply({"type": "build_grid_shape", "points": shape, "block": 90})
 	_check(JSON.stringify(x.network.to_dict()) == JSON.stringify(y.network.to_dict()), "same result on every copy")
 
-	# Rectangle mode: a side dragged a few degrees off a diagonal county road
-	# snaps exactly parallel, and the depth keeps every corner square.
+	# Rectangle mode: dragged corner to corner in any direction off a
+	# diagonal county road, the sides stay parallel and square to the road.
 	var r := CitySim.new()
 	r.apply({"type": "build_road", "start": [-300, -200], "ctrl": [0, 0], "end": [300, 200]})
 	var t := RoadTool.new()
@@ -101,15 +101,32 @@ func _init() -> void:
 	t.network = r.network
 	t.mode = RoadTool.Mode.GRID
 	var a0 := Vector3(0, 0, 30)
-	t._points.append(a0)
 	var road := atan2(200.0, 300.0)
-	var off := road + deg_to_rad(6.0)
-	var b0 := t._grid_corner(a0 + Vector3(cos(off), 0, sin(off)) * 300.0)
-	_check(absf(angle_difference(atan2(b0.z - a0.z, b0.x - a0.x), road)) < 0.0001, "rectangle side snaps parallel to the road")
-	t._points.append(b0)
-	var rect := t._rect(t._grid_corner(b0 + Vector3(-40, 0, 170)))
-	_check(absf((rect[1] - rect[0]).normalized().dot((rect[2] - rect[1]).normalized())) < 0.0001, "rectangle corners are square")
+	for drag in [Vector3(250, 0, 120), Vector3(-260, 0, 40), Vector3(-90, 0, -230), Vector3(150, 0, -200)]:
+		t._points.clear()
+		t._points.append(a0)
+		var rect := t._rect(t._grid_corner(a0 + drag))
+		var side := atan2(rect[1].z - rect[0].z, rect[1].x - rect[0].x)
+		_check(absf(sin(angle_difference(side, road))) < 0.0001, "rectangle dragged %s is parallel to the road" % drag)
+		_check(absf((rect[1] - rect[0]).normalized().dot((rect[2] - rect[1]).normalized())) < 0.0001,
+			"rectangle dragged %s has square corners" % drag)
+		_check(rect[2].distance_to(a0 + drag) < 0.01, "rectangle dragged %s ends at the cursor" % drag)
 	t.free()
+
+	# Brawn's street: a rectangle started on a side street, dragged up past
+	# its top end, stops exactly on that end.
+	var q := CitySim.new()
+	q.apply({"type": "build_road", "start": [-500, 0], "ctrl": [0, 0], "end": [500, 0]})
+	q.apply({"type": "build_road", "start": [200, 0], "ctrl": [200, -125], "end": [200, -250]})
+	var tq := RoadTool.new()
+	tq.sim = q
+	tq.network = q.network
+	tq.mode = RoadTool.Mode.GRID
+	tq._points.append(Vector3(200, 0, 0))
+	var rq := tq._rect(tq._grid_corner(Vector3(-150, 0, -255)))
+	_check(rq[2].distance_to(Vector3(-150, 0, -250)) < 0.01 or rq[1].distance_to(Vector3(200, 0, -250)) < 0.01,
+		"rectangle side stops on the street's end (got %s)" % str(rq))
+	tq.free()
 
 	# Every size preset plans a clean grid quickly, from a farm section
 	# down to a city block, with the long side and the short side kept.

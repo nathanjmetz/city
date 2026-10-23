@@ -22,28 +22,36 @@ const WAINSCOT := ["#4a4c4f", "#5a2a26", "#2f3b4a", "#6b6458"]
 const GRAVEL := Color("#8d877c")
 const LINE := Color("#e8e6df")
 
+## The business's sign, from Families.sign_of ({text, style, panel, letter,
+## since}); empty paints generic lettering. Every sign band then carries it.
+var sign_spec := {}
+## Lettering for SignText: [{pos, normal, text, height, width, color, style}].
+var labels := []
 
-static func build_shop(seed: int, to_curb: float, lot := {}) -> Array:
+
+static func build_shop(seed: int, to_curb: float, lot := {}, spec := {}) -> Array:
 	var b := CommercialBuilder.new()
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
+	b.sign_spec = spec
 	b._fit(lot)
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 	if b.rng.randf() < 0.4:
 		b._main_street(to_curb)
 	else:
 		b._retail(to_curb)
-	return [b._commit_house(), b._commit_flat(), b.trees]
+	return [b._commit_house(), b._commit_flat(), b.trees, b.labels]
 
 
-static func build_factory(seed: int, to_curb: float, lot := {}) -> Array:
+static func build_factory(seed: int, to_curb: float, lot := {}, spec := {}) -> Array:
 	var b := CommercialBuilder.new()
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
+	b.sign_spec = spec
 	b._fit(lot)
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 	b._factory(to_curb)
-	return [b._commit_house(), b._commit_flat(), b.trees]
+	return [b._commit_house(), b._commit_flat(), b.trees, b.labels]
 
 
 # ---------------------------------------------------------------- shops
@@ -176,6 +184,12 @@ func _coping(w: float, d: float, cz: float, top: float) -> void:
 func _sign(c: Vector3, w: float, h: float) -> void:
 	var col := Color(_pick(SIGNS))
 	col.a = w / 30.0
+	if not sign_spec.is_empty():
+		# The business's own name in its family's colours; alpha 0 tells the
+		# sign shader there's real lettering, so it paints no stand-in.
+		col = sign_spec.panel
+		col.a = 0.0
+		labels.append_array(SignText.on_panel(sign_spec, c + Vector3(0, 0, -0.01), w, h, Vector3.FORWARD))
 	var r := Vector3(-w * 0.5, 0, 0)
 	var u := Vector3(0, h, 0)
 	# Faces the street (-z); x runs right to left as seen from the street.

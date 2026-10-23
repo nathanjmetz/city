@@ -55,6 +55,7 @@ var _variant_row := HBoxContainer.new()
 var _variant_title := UiStyle.label("", 10, UiStyle.MUTED)
 var _variant_group := -1  # the menu whose variants the row shows
 var _variant_of := {}     # road menu -> the variant last picked in it
+var _kinds_open := false  # the road kinds row is up instead of grid sizes
 var _traffic_row := HBoxContainer.new()
 var _traffic_card: Button
 var _zone_cards := {}    # ZoneMap.Zone -> Button
@@ -218,9 +219,10 @@ func _process(_delta: float) -> void:
 	var t := sim.clock()
 	var hour: int = t.hour % 12
 	# A game day is a month (see Seasons), so the date is month and year.
-	_clock.text = "%s, Year %d  %d:%02d %s" % [
+	# Calendar years, matching the "since" on business signs.
+	_clock.text = "%s %d  %d:%02d %s" % [
 		["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][t.month - 1],
-		t.year, 12 if hour == 0 else hour, t.minute, "AM" if t.hour < 12 else "PM"]
+		Families.calendar(t.year), 12 if hour == 0 else hour, t.minute, "AM" if t.hour < 12 else "PM"]
 	_money.text = "$" + _thousands(sim.economy.money)
 	_money.add_theme_color_override("font_color", UiStyle.TEXT if sim.economy.money >= 0 else BAD)
 	_cars.text = "%d  ·  %d%% flow" % [sim.traffic.cars.size(), roundi(sim.traffic.flow * 100.0)]
@@ -538,16 +540,21 @@ func _roads_drawer() -> PanelContainer:
 	]:
 		var m: int = entry[0]
 		var b := _card(entry[1], entry[2], entry[3])
-		b.pressed.connect(func(): road_tool.set_mode(m))
+		b.pressed.connect(func():
+			_kinds_open = false
+			road_tool.set_mode(m))
 		tools.add_child(b)
 		_tool_cards[m] = b
 
 	row.add_child(VSeparator.new())
-	var types := _section(row, "Road type  ·  pick a kind above")
+	var types := _section(row, "Road type  ·  click for its kinds")
 	for g in RoadStyle.GROUPS:
 		var spec: Dictionary = RoadStyle.TYPES[g]
 		var b := _card(spec.name.to_lower(), spec.name, "%d kinds" % RoadStyle.variants(g).size())
-		b.pressed.connect(func(): _pick_road(_variant_of.get(g, g)))
+		b.pressed.connect(func():
+			# One row above the tools at a time: the kinds open over the grid sizes.
+			_kinds_open = not (_kinds_open and RoadStyle.group(road_tool.road_type) == g)
+			_pick_road(_variant_of.get(g, g)))
 		types.add_child(b)
 		_type_cards[g] = b
 
@@ -603,7 +610,9 @@ func _show_variants(menu: int) -> void:
 		var b := _card("road:%d" % t, spec.get("short", "Standard" if t == menu else spec.name), "")
 		b.custom_minimum_size = Vector2(72, 50)
 		b.tooltip_text = _road_tip(t)
-		b.pressed.connect(func(): _pick_road(t))
+		b.pressed.connect(func():
+			_kinds_open = false
+			_pick_road(t))
 		_variant_row.add_child(b)
 		_variant_cards[t] = b
 
@@ -722,6 +731,15 @@ func _services_drawer() -> PanelContainer:
 	pb.pressed.connect(func(): service_tool.set_kind(Mail.TOOL_KIND))
 	mail.add_child(pb)
 	_service_cards[Mail.TOOL_KIND] = pb
+	# The railroad: its leader plans the track and asks before building.
+	row.add_child(VSeparator.new())
+	var rail := _section(row, "Rail")
+	var rb := _card("train", "Rail depot", "")
+	rb.tooltip_text = "Rail depot: $%s. Its leader lays track to the region and to industry, by your permit." % \
+		CitySim.money_text(Balance.RAIL_DEPOT_COST)
+	rb.pressed.connect(func(): service_tool.set_kind(Rail.TOOL_KIND))
+	rail.add_child(rb)
+	_service_cards[Rail.TOOL_KIND] = rb
 	# Banks lend to the farms, companies and builders (Brawn's hub model).
 	row.add_child(VSeparator.new())
 	var bank := _section(row, "Banks")
@@ -745,9 +763,11 @@ func _parks_drawer() -> PanelContainer:
 	var marks := _section(row, "Landmarks  ·  one per town")
 	for k in Parks.KINDS:
 		var spec: Dictionary = Parks.KINDS[k]
+		if spec.get("auto", false):
+			continue
 		var a: Dictionary = Balance.AMENITIES[k]
 		var short := {"park": "Park", "courthouse": "Courthouse", "water_tower": "Water tower",
-			"grain_elevator": "Elevator", "football": "Football"}
+			"grain_elevator": "Elevator", "football": "Football", "fairgrounds": "Fairgrounds"}
 		var tip := "%s: $%s" % [spec.name, CitySim.money_text(int(a.cost))]
 		if spec.landmark:
 			tip += ", $%s a month" % CitySim.money_text(int(a.upkeep))
@@ -998,7 +1018,7 @@ func _sync() -> void:
 	_show_variants(menu)
 	for t in _variant_cards:
 		_variant_cards[t].set_pressed_no_signal(t == road_tool.road_type and not in_traffic)
-	_variant_row.get_parent().visible = not in_traffic
+	_variant_row.get_parent().visible = not in_traffic and _kinds_open
 	_traffic_row.visible = in_traffic
 	_traffic_card.set_pressed_no_signal(in_traffic)
 	for z in _zone_cards:
@@ -1032,7 +1052,7 @@ func _sync() -> void:
 	_parallel_card.set_pressed_no_signal(road_tool.parallel)
 	_shape_card.set_pressed_no_signal(road_tool.grid_free)
 	_shape_card.visible = road_tool.mode == RoadTool.Mode.GRID
-	_grid_sizes.visible = road_tool.mode == RoadTool.Mode.GRID
+	_grid_sizes.visible = road_tool.mode == RoadTool.Mode.GRID and not _kinds_open and not in_traffic
 	for i in _grid_size_cards.size():
 		_grid_size_cards[i].set_pressed_no_signal(i == road_tool.grid_preset)
 	_elevation.text = "Ground" if road_tool.elevation == 0.0 else "%+d ft" % roundi(road_tool.elevation * RoadTool.FT)

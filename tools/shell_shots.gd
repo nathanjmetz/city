@@ -25,7 +25,7 @@ func _start_online() -> void:
 	session.profile.name = "Brawn"
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://hosted-region.json"))
 	var code: String = session.host_region(19580)
-	var c: RegionClient = session.join_region("ws://127.0.0.1:19580", code, "secret1", true)
+	var c: RegionClient = session.join_region("ws://127.0.0.1:19580", code)
 	c.requests_changed.connect(func():
 		for n in c.requests:
 			c.approve(n, true))
@@ -35,13 +35,14 @@ func _start_online() -> void:
 		root.add_child(_friend)
 		_friend.joined.connect(func():
 			var fs := _friend.my_sim()
-			_friend.send_command({"type": "build_grid", "a": [-150, -100], "b": [150, -100], "c": [150, 120], "block": 80})
+			fs.apply_now({"type": "build_grid", "a": [-150, -100], "b": [150, -100], "c": [150, 120], "block": 80})
 			for x in range(-150, 151, 20):
 				for z in range(-100, 121, 20):
-					_friend.send_command({"type": "paint_zone", "center": [x, z], "radius": 14, "zone": 1})
+					fs.apply_now({"type": "paint_zone", "center": [x, z], "radius": 14, "zone": 1})
+			_friend.send_town()
 			_friend.send_chat("Hey! I started my town just east of yours")
 			_friend.send_cursor(c.region.cities[c.my_city].origin + Vector2(60, 40)))
-		_friend.join("ws://127.0.0.1:19580", code, "friend-1", "Sam", "secret2", true)
+		_friend.join("ws://127.0.0.1:19580", code, "friend-1", "Sam")
 		session.enter_region())
 
 
@@ -67,7 +68,7 @@ func _process(_delta: float) -> bool:
 		esc.pressed = true
 		root.push_input(esc)
 	if _mode == "together" and _frames == 5:
-		current_scene.call("_show", "together")
+		current_scene.call("_show", "code")
 	if _frames == (900 if _mode in ["online", "neighbor"] else 180 if _mode == "pause" else 60):
 		root.get_viewport().get_texture().get_image().save_png(_out)
 		print("saved ", _out)

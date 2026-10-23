@@ -3,7 +3,7 @@ extends Node3D
 ## Places service buildings. Move the mouse beside a road and the building
 ## turns to face it, like Cities: Skylines 2; click to build. Also places
 ## landfills, recycling centres and cemeteries (CivicHubs.TOOL_KINDS), and the
-## post office (Mail.TOOL_KIND).
+## post office (Mail.TOOL_KIND) and rail depots (Rail.TOOL_KIND).
 
 signal kind_changed(kind: int)
 signal hint_changed(text: String)
@@ -54,7 +54,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if mb.button_index == MOUSE_BUTTON_RIGHT and not mb.pressed and not cam.right_dragged:
 		set_kind(OFF)
 	elif mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not mb.alt_pressed and not _site.is_empty():
-		if kind == Mail.TOOL_KIND:
+		if kind == Rail.TOOL_KIND:
+			sim.apply({"type": "place_rail_depot", "pos": [_site[0].x, _site[0].z], "dir": [_site[1].x, _site[1].z],
+				"axis": [_site[2].x, _site[2].z]})
+		elif kind == Mail.TOOL_KIND:
 			sim.apply({"type": "place_post_office", "pos": [_site[0].x, _site[0].z], "dir": [_site[1].x, _site[1].z]})
 		elif CivicHubs.TOOL_KINDS.has(kind):
 			sim.apply({"type": "place_hub", "kind": CivicHubs.TOOL_KINDS[kind], "pos": [_site[0].x, _site[0].z],
@@ -69,6 +72,9 @@ func _process(_delta: float) -> void:
 	if kind == OFF:
 		return
 	var hit = cam.mouse_ground_point()
+	if kind == Rail.TOOL_KIND:
+		_rail_ghost(hit)
+		return
 	if CivicHubs.TOOL_KINDS.has(kind) or kind == Mail.TOOL_KIND:
 		_hub_ghost(hit)
 		return
@@ -118,8 +124,38 @@ func _hub_ghost(hit) -> void:
 		_update_hint()
 
 
+## The ghost of a rail yard: its tracks' whole length beside the road.
+func _rail_ghost(hit) -> void:
+	_site = [] if hit == null else Rail.site_near(sim.network, hit)
+	_ghost.visible = not _site.is_empty()
+	var problem := "Move next to a street or road." if _site.is_empty() else ""
+	if not _site.is_empty():
+		problem = sim.rail.site_problem(sim, _site[0], _site[1], _site[2])
+		if problem == "" and Balance.RAIL_DEPOT_COST > sim.economy.money:
+			problem = "Not enough money: costs $%s." % CitySim.money_text(Balance.RAIL_DEPOT_COST)
+		var box := BoxMesh.new()
+		box.size = Vector3(Rail.YARD_LEN + Rail.LADDER * 2.0, 2.0, Rail.YARD_DEPTH)
+		_ghost.mesh = box
+		_ghost.position = Terrain.lift(_site[0]) + Vector3(0, 1.0, 0)
+		_ghost.basis = Basis(_site[2], Vector3.UP, -_site[1])
+		_ghost.material_override = _ok_mat if problem == "" else _bad_mat
+	if problem != _problem:
+		_problem = problem
+		_update_hint()
+
+
 func _update_hint() -> void:
 	if kind == OFF:
+		return
+	if kind == Rail.TOOL_KIND:
+		var rt := "Rail depot: $%s. A railroad with its own money and leader: it plans track to the region and to" \
+			% CitySim.money_text(Balance.RAIL_DEPOT_COST)
+		rt += " the companies that ship by rail, and asks your permission (the bell) before it builds. Needs %d m of" \
+			% int(Rail.YARD_LEN + Rail.LADDER * 2.0)
+		rt += " fairly straight road frontage."
+		if _problem != "":
+			rt += "\n" + _problem
+		hint_changed.emit(rt)
 		return
 	if kind == Mail.TOOL_KIND:
 		var pt := "Post office: $%s to build, $%s a month. " % [CitySim.money_text(Balance.MAIL_COST),
