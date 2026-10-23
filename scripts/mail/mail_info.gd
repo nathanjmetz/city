@@ -64,14 +64,6 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 	if h.get("boxed", false):
 		problems.append("No free land next to it to grow into.")
 	var actions := []
-	if h.funding < Balance.MAIL_FUNDING.size() - 1:
-		var up: Dictionary = Balance.MAIL_FUNDING[h.funding + 1]
-		actions.append({"label": "More funding: %s ($%s / month)" % [up.name, CitySim.money_text(int(up.monthly))],
-			"cmd": {"type": "post_office_funding", "id": id, "level": h.funding + 1}, "enabled": true})
-	if h.funding > 0:
-		var down: Dictionary = Balance.MAIL_FUNDING[h.funding - 1]
-		actions.append({"label": "Less funding: %s" % down.name,
-			"cmd": {"type": "post_office_funding", "id": id, "level": h.funding - 1}, "enabled": true})
 	actions.append({"label": "Demolish", "cmd": {"type": "remove_post_office", "id": id}, "enabled": true})
 	return {"title": "Post Office", "kind": "Mail · ZIP %d" % int(h.zip), "icon": "mail",
 		"ok": problems.is_empty() and linked, "status": status, "rows": rows, "problems": problems,

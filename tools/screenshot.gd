@@ -68,6 +68,28 @@ func _demo_town() -> void:
 		_demo_mail(sim)
 		_aim_camera()
 		return
+	if args0.size() >= 5 and args0[4] == "factories":
+		# One factory of each chain along an industrial street.
+		sim.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0], "road": 1})
+		for id in sim.network.segments.keys():
+			for side in [-1, 1]:
+				sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": ZoneMap.Zone.INDUSTRIAL})
+		for entry in [[Services.Kind.SUBSTATION, Vector3(-280, 0, 40)], [Services.Kind.WATER_TOWER, Vector3(-250, 0, -40)]]:
+			var site := Services.site_near(sim.network, entry[0], entry[1])
+			if not site.is_empty():
+				sim.apply({"type": "place_service", "kind": entry[0], "pos": [site[0].x, site[0].z],
+					"dir": [site[1].x, site[1].z]})
+		for key in sim.empty_zoned_lots():
+			sim.buildings[key] = {"zone": ZoneMap.Zone.INDUSTRIAL, "seed": hash(key), "built": 0,
+				"cap": sim.capacity(ZoneMap.Zone.INDUSTRIAL, hash(key)), "occ": 0}
+		var chains := ["mill", "sawmill", "refinery", "metal", "general", "general"]
+		var keys := sim.buildings.keys()
+		keys.sort()
+		for i in keys.size():
+			sim.buildings[keys[i]].chain = chains[i % chains.size()]
+		sim.buildings_changed.emit()
+		_aim_camera()
+		return
 	if args0.size() >= 5 and args0[4] == "junction":
 		# Brawn's junction repro: a crossroads, a T and a sharp Y, zoned so
 		# they get curbs and sidewalks.

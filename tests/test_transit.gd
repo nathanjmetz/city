@@ -63,7 +63,12 @@ func _init() -> void:
 	_check(dep.month.grant > 0 and dep.month.cost > 0, "the federal grant pays part of the costs (%s)" % str(dep.month))
 	_check(dep.fare >= 0.0 and dep.fare <= Balance.BUS_FARE_BASE_MAX + Balance.BUS_FARE_RICH_EXTRA, "the depot set a fare its riders can bear ($%.2f)" % dep.fare)
 	var d := sim.buses.describe(sim, id)
-	_check(d.has("subsidy") and d.rows.size() >= 5, "the panel shows the depot and its subsidy")
+	_check(d.rows.any(func(r): return r[0] == "City funding") and d.rows.size() >= 5, "the panel shows the depot and its subsidy")
+	# The subsidy is the depot's Funding slider on the Economy page.
+	_check(sim.apply({"type": "policy", "scope": "bus_depot:%d" % id, "slider": "funding", "step": 4})
+		and int(sim.services.buildings[id].subsidy) == Balance.BUS_FUNDING_LEVELS[4][1], "Generous funds the depot")
+	_check(sim.apply({"type": "policy", "scope": "bus_depot:%d" % id, "slider": "funding", "step": -1})
+		and int(sim.services.buildings[id].subsidy) == Balance.BUS_FUNDING_LEVELS[2][1], "following the town again: Standard")
 	# Fares follow what riders earn: a poor area gets at most the base fare.
 	sim.buses.depots[id].wealth = 0.0
 	sim.buses.depots[id].education = 0.8

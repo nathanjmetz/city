@@ -908,11 +908,10 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 		tree.append(["Next up", ", ".join(open)])
 	if not locked.is_empty():
 		tree.append(["Locked", "; ".join(locked)])
+	# Set by the utility's Funding slider (Economy page).
+	rows.append(["City subsidy", "$%s / month" % CitySim.money_text(int(u.subsidy))])
 	var status := "Working: %s" % str(u.last).to_lower() if u.last != "" else "Working"
 	if u.boil:
 		status = "Boil-water notice in effect"
 	return {"title": "%s Water and Sewer" % str(u.name).get_slice(" ", 1), "kind": "Utility hub", "icon": "water",
-		"ok": problems.is_empty(), "status": status, "rows": rows, "problems": problems, "tree": tree,
-		"lever": {"label": "City subsidy", "value": "$%s / month" % CitySim.money_text(int(u.subsidy)),
-			"down": {"type": "set_water_subsidy", "id": id, "amount": int(u.subsidy) - int(Balance.WATER_SUBSIDY.step)},
-			"up": {"type": "set_water_subsidy", "id": id, "amount": int(u.subsidy) + int(Balance.WATER_SUBSIDY.step)}}}
+		"ok": problems.is_empty(), "status": status, "rows": rows, "problems": problems, "tree": tree}

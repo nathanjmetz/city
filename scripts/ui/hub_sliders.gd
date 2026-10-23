@@ -22,7 +22,8 @@ static func takes(s: CitySim, selection: Dictionary) -> bool:
 	if selection.is_empty():
 		return false
 	var kind := str(selection.get("type", ""))
-	return s.hub_area("%s:%d" % [kind, int(selection.get("id", 0))]) != "" or s.permits.locators.has(hub_of(s, selection))
+	return s.hub_area("%s:%d" % [hub_of(s, selection), int(selection.get("id", 0))]) != "" \
+		or s.permits.locators.has(hub_of(s, selection))
 
 
 ## The Permits hub kind for a selection: its type, except for services that
@@ -45,7 +46,7 @@ func setup(s: CitySim, kind: String, id: int) -> void:
 
 
 func _key() -> String:
-	return "%s:%d" % [hub, hub_id]
+	return "%s:%d" % [leader, hub_id]
 
 
 func _ready() -> void:
@@ -73,7 +74,7 @@ func _ready() -> void:
 		if sl == "growth" and sim.permits.locators.has(leader):
 			tip += " Hold also tells its leader to stop asking for permits."
 		var row := StepSlider.new(sl, sl.capitalize(), tip)
-		if area == "" or leader != hub and sl == "growth":
+		if area == "":
 			# A leader the Economy page doesn't list on its own: Growth is just their stance.
 			row.picked.connect(func(step): sim.apply({"type": "guide", "hub": leader, "hub_id": hub_id,
 				"stance": Policies.stance(maxi(step, 0) if step >= 0 else 2),
@@ -112,7 +113,7 @@ func _sync() -> void:
 	var follows: String = Policies.AREAS[area].name if area != "" else "the town"
 	var g := sim.permits.guidance(leader, hub_id)
 	for sl in _sliders:
-		if area == "" or leader != hub and sl == "growth":
+		if area == "":
 			_sliders[sl].show_step(Policies.growth_for(str(g.stance), Policies.STANDARD), false)
 		else:
 			_sliders[sl].show_step(sim.policies.step(sl, area, key), sim.policies.own(key, sl) >= 0, follows)

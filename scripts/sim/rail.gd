@@ -504,8 +504,8 @@ func _next_project(sim: CitySim, id: int) -> bool:
 		d.why = "Saving up for a spur to the %s ($%s)." % [best.target.name.to_lower(), CitySim.money_text(cost)]
 		return false
 	_propose(sim, id, "spur", best.target, best.plan,
-		"A spur to the %s: about %d carloads a year, paying for itself in %.0f years" % [
-			best.target.name.to_lower(), roundi(best.cars), best.years])
+		"A spur to the %s: about %d carloads a year, paying for itself in %s" % [
+			best.target.name.to_lower(), roundi(best.cars), "about a year" if best.years < 1.5 else "%d years" % roundi(best.years)])
 	return true
 
 

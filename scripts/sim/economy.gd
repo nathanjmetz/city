@@ -72,6 +72,10 @@ func building_tax(b: Dictionary, staffed: float, lift := 0.0) -> float:
 	return (value * (0.5 + 0.5 * used) + homes) * tax[z] / 100.0
 
 
+var _roads_rev := []
+var _roads_upkeep := 0.0
+
+
 ## Works out this month's budget from the buildings and roads.
 func update_budget(sim: CitySim) -> void:
 	var income := {}
@@ -114,9 +118,13 @@ func update_budget(sim: CitySim) -> void:
 	income[ZoneMap.Zone.COMMERCIAL] += maxi(0, sim.education.office_jobs() - BuildingTypes.office_jobs(sim)) \
 		* Balance.EDUCATION_OFFICE_VALUE \
 		* tax[ZoneMap.Zone.COMMERCIAL] / 100.0 / 12.0
-	var upkeep := 0.0
-	for id in sim.network.segments:
-		upkeep += road_upkeep(sim.network.curve_of(id), sim.network.segments[id].type)
+	# Road upkeep only changes with the roads.
+	if _roads_rev != [sim.network.get_instance_id(), sim.network.revision]:
+		_roads_rev = [sim.network.get_instance_id(), sim.network.revision]
+		_roads_upkeep = 0.0
+		for id in sim.network.segments:
+			_roads_upkeep += road_upkeep(sim.network.curve_of(id), sim.network.segments[id].type)
+	var upkeep := _roads_upkeep
 	for z in income:
 		income[z] = roundi(income[z])
 	# Water and sewer bills from every building on the water system.

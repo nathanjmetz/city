@@ -1,9 +1,9 @@
 class_name RegionClient
 extends Node
-## A player's connection to a shared region. Keeps a copy of the whole
-## region in step with the server: it gets the region once on joining, then
-## every tick with the commands applied in it. Your own commands go to the
-## server and come back in a tick, like everyone else's.
+## A player's connection to a shared region. Your own town runs here, on
+## this computer, and a copy goes to the server every few seconds (see
+## send_town); the neighbors' towns arrive the same way from their
+## computers, to be drawn. The server settles trade and places new towns.
 
 ## In the region, with your city ready to play.
 signal joined
@@ -34,20 +34,9 @@ var token := ""
 var is_host := false
 ## (Host only) names waiting to be let in.
 var requests := []
-## Seconds since the last tick arrived, for smooth car movement.
-var since_tick := 0.0
-
-## Only your own town runs on this computer; the neighbors' copies are
-## refreshed from the server this often, in seconds. (Running every town in
-## every browser made the game lag with four players.)
-const REFRESH_EVERY := 60.0
-## A town whose copy drifts asks for a fresh one at most this often.
-const RESYNC_GAP := 30.0
 
 var _peer: WebSocketMultiplayerPeer
 var _connected := false
-var _since_refresh := 0.0
-var _since_resync := RESYNC_GAP
 var _password := ""
 var _new_account := false
 
@@ -73,15 +62,19 @@ func join(server_url: String, code: String, id: String, name: String, password :
 
 func leave() -> void:
 	if _peer:
+		send_town()
+		_peer.poll()
 		_peer.close()
 	_peer = null
 	_connected = false
 	is_joined = false
 
 
-## Sends one of your commands to the server. It applies in a coming tick.
-func send_command(cmd: Dictionary) -> void:
-	_send({"t": "cmd", "cmd": cmd})
+## Sends the server a copy of your town, for the neighbors and to keep.
+func send_town() -> void:
+	var sim := my_sim()
+	if sim and is_joined:
+		_send({"t": "city", "z": RegionServer.pack(sim.to_dict())})
 
 
 ## (Host only) lets a waiting player in, or turns them away.
@@ -112,14 +105,9 @@ func name_of(id: String) -> String:
 	return "Someone"
 
 
-func _process(delta: float) -> void:
-	since_tick += delta
-	_since_refresh += delta
-	_since_resync += delta
+func _process(_delta: float) -> void:
 	if _peer == null:
 		return
-	if is_joined and _since_refresh >= REFRESH_EVERY:
-		_ask_fresh_copy()
 	_peer.poll()
 	var state := _peer.get_connection_status()
 	if state == MultiplayerPeer.CONNECTION_CONNECTED and not _connected:
@@ -151,12 +139,15 @@ func _handle(msg: Dictionary) -> void:
 			is_host = bool(msg.get("host", false))
 			if str(msg.get("token", "")) != "":
 				token = str(msg.token)
-			region.from_dict(msg.region)
+			var d = RegionServer.unpack(str(msg.get("z", "")))
+			if typeof(d) != TYPE_DICTIONARY:
+				leave()
+				failed.emit("The region sent something this game can't read. Refresh to update.")
+				return
+			region.from_dict(d)
 			my_city = region.city_of(player_id)
 			is_joined = true
-			# New players get their city in the next tick.
-			if my_city != "":
-				joined.emit()
+			joined.emit()
 		"waiting":
 			token = str(msg.get("token", token))
 			waiting.emit(str(msg.get("reason", "")))
@@ -167,19 +158,26 @@ func _handle(msg: Dictionary) -> void:
 			var reason := str(msg.get("reason", "The region turned you away."))
 			leave()
 			failed.emit(reason)
-		"tick":
-			_tick(msg)
-		"sums":
-			# Our copy drifted from the server's: ask for a fresh one.
-			if int(msg.n) == region.tick_count and _since_resync >= RESYNC_GAP \
-					and msg.sums.get(my_city) != _sums_as_json().get(my_city):
-				_ask_fresh_copy()
 		"region":
-			var old_ids := region.cities.keys()
-			_replace_region(msg.region)
-			for id in region.cities:
-				if not id in old_ids:
-					city_added.emit(id)
+			var d = RegionServer.unpack(str(msg.get("z", "")))
+			if typeof(d) == TYPE_DICTIONARY:
+				var old_ids := region.cities.keys()
+				_replace_region(d)
+				for id in region.cities:
+					if not id in old_ids:
+						city_added.emit(id)
+		"city":
+			# A neighbor's town, fresh from their computer.
+			var id := str(msg.get("id", ""))
+			var d = RegionServer.unpack(str(msg.get("z", "")))
+			if id != my_city and region.cities.has(id) and typeof(d) == TYPE_DICTIONARY:
+				region.update_city(id, d)
+		"apply":
+			# Roads the region built in your town (a new neighbor's county road).
+			for cmd in msg.get("cmds", []):
+				my_sim().apply_now(cmd)
+		"trade":
+			my_sim().trade.receive(my_sim(), msg.get("deals", []))
 		"chat":
 			region.chat.append(msg.line)
 			chat_received.emit(msg.line)
@@ -191,57 +189,26 @@ func _handle(msg: Dictionary) -> void:
 				cursor_moved.emit(str(msg.id), Vector2(float(msg.p[0]), float(msg.p[1])))
 
 
-func _tick(msg: Dictionary) -> void:
-	if int(msg.n) != region.tick_count + 1:
-		return  # Already counted in the region we were sent.
-	for e in msg.ev:
-		match e[0]:
-			"city":
-				if region.city_of(e[1]) != "":
-					continue  # The server skips these too.
-				var id := region.add_city(e[1], e[2])
-				city_added.emit(id)
-				if e[1] == player_id:
-					my_city = id
-					joined.emit()
-			"cmd":
-				region.apply(e[1], e[2])
-	if region.cities.has(my_city):
-		region.tick_count += 1
-		region.cities[my_city].sim.tick()
-		if region.tick_count % Region.TRADE_EVERY == 0:
-			region.settle_trade()
-	else:
-		region.tick()
-	since_tick = 0.0
-
-
-func _ask_fresh_copy() -> void:
-	_since_refresh = 0.0
-	_since_resync = 0.0
-	_send({"t": "resync"})
-
-
 ## Loads a fresh copy into the existing city sims, so the views drawing them
-## keep working.
+## keep working. Your own town runs here, so it is never replaced.
 func _replace_region(d: Dictionary) -> void:
-	region.tick_count = int(d.tick)
 	region.chat = d.get("chat", [])
+	var r := Region.new()
+	r.from_dict({"joins": d.get("joins", [])})
+	region.joins = r.joins
 	for id in d.cities:
 		var c: Dictionary = d.cities[id]
+		if id == my_city or not c.has("city"):
+			continue
 		if region.cities.has(id):
-			region.cities[id].sim.from_dict(c.city)
+			region.update_city(id, c.city)
 		else:
 			var sim := Region.new_sim()
+			sim.terrain_offset = Vector2(float(c.origin[0]), float(c.origin[1]))
 			sim.from_dict(c.city)
 			region.cities[id] = {"owner": str(c.owner), "player": str(c.get("player", "")),
 				"name": str(c.name), "origin": Vector2(float(c.origin[0]), float(c.origin[1])),
 				"color": int(c.color), "sim": sim}
-
-
-## Checksums the way they arrive over the wire (JSON numbers are floats).
-func _sums_as_json() -> Dictionary:
-	return JSON.parse_string(JSON.stringify(region.checksums()))
 
 
 func _send(msg: Dictionary) -> void:
