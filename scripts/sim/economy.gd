@@ -128,6 +128,7 @@ func _slice_sums(sim: CitySim, slice: int) -> Dictionary:
 	# The sliders are per area, so each is read once rather than per building.
 	var care_of := {}
 	var land_of := {}
+	var odors := sim.services.water.odor_sources(sim.services.buildings)
 	for key in (sim.ledger().slices[slice] if slice >= 0 else sim.buildings.keys()):
 		var b: Dictionary = sim.buildings[key]
 		# Water and sewer bills from every building on the water system;
@@ -148,8 +149,8 @@ func _slice_sums(sim: CitySim, slice: int) -> Dictionary:
 		# a smelly sewer plant and pollution lower it.
 		var tax_due := building_tax(b, staffed, sim.parks.lot_value.get(key, 0.0) + sim.telecom.lot_lift(key)) * sim.land_factor(key) \
 			* sim.mail.lot_factor(sim, key) * float(land_of[area]) / 12.0
-		if sim.lots.has(key):
-			tax_due *= sim.services.water.land_value_factor(sim.services.buildings, sim.lots[key].pos)
+		if sim.lots.has(key) and not odors.is_empty():
+			tax_due *= WaterUtility.value_from(odors, sim.lots[key].pos)
 		income[int(b.zone)] += tax_due
 	out.care = care
 	out.fees = fees

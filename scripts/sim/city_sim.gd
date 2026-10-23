@@ -1301,15 +1301,12 @@ func update_stats(budget := true, slice := -1) -> void:
 		if zone == ZoneMap.Zone.RESIDENTIAL:
 			pop += b.occ
 			home_cap += b.cap
-			if not construction.is_done("lot:" + key, tick_count):
-				presold += mini(b.cap, 2)
 			continue
-		if BuildingTypes.type_of(b) == "office":
+		# (BuildingTypes.type_of: no zone defaults to an office.)
+		if b.get("type", "") == "office":
 			office_cap += int(b.cap)
 		# Closed without power or water.
 		var ok := _utilities_ok(key)
-		if ok and not construction.is_done("lot:" + key, tick_count):
-			unfinished_jobs += b.cap
 		match zone:
 			ZoneMap.Zone.COMMERCIAL:
 				# Flats above a shop count as homes.
@@ -1320,6 +1317,19 @@ func update_stats(budget := true, slice := -1) -> void:
 			ZoneMap.Zone.INDUSTRIAL:
 				if ok:
 					factory_jobs += b.cap
+	# Only the buildings with a site still open can be going up, so those are
+	# the ones asked about rather than every building in town.
+	for ref in construction.sites:
+		if not ref.begins_with("lot:"):
+			continue
+		var key: String = ref.substr(4)
+		if not buildings.has(key) or construction.is_done(ref, tick_count):
+			continue
+		var b: Dictionary = buildings[key]
+		if int(b.zone) == ZoneMap.Zone.RESIDENTIAL:
+			presold += mini(b.cap, 2)
+		elif _utilities_ok(key):
+			unfinished_jobs += b.cap
 	_update_services()
 	parks.update_effects(self)
 	var homes := _home_scan(slice)
