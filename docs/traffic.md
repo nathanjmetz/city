@@ -145,6 +145,16 @@ When the gates are down (`sim.rail.crossings[i].closed`), cars stop at a line
 at a hard brake goes on through, as a driver would at a late signal. Traffic
 finds where each crossing sits on each way again when track or roads change.
 
+## Walks on the trail
+
+People at home go out for a walk on the trail now and then. In the daytime,
+20% of outings are walks for people whose street the trail crosses or runs
+beside (within 40 m of the sidewalk). They walk along their own sidewalk to
+where the trail meets the street, follow it for 400 to 1,200 m, and come back
+the same way, like neighbours on an Indiana greenway (the Monon Trail or a
+small-town riverwalk). Each walk counts toward the trails' "walked" figure,
+and the person panel says "Out for a walk on the trail".
+
 ## Performance
 
 `tools/perf_run.gd -- big 300` is the benchmark (budget in `scripts/perf/perf_budget.gd`).

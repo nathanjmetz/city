@@ -30,6 +30,9 @@ var _homes := {}   # lot key -> [person ids], oldest first
 var _staff := {}   # job ref -> number of people working there
 var _next := 1
 var _families: Families  # names on the signs, set each sync
+## Share of daytime outings that are a walk on the trail, for people who
+## live where it crosses or runs along their street.
+const STROLL_SHARE := 0.2
 var _due := {}   # tick -> ids of people who may head off then (set_until)
 var _ids := []  # people.keys(), kept until someone moves in or out
 var _ids_sig := []
@@ -156,6 +159,10 @@ func plan(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void
 			return
 		if hour < 7 or hour >= 21:
 			continue
+		# Out for a walk on the trail, if it comes by (greenway counts in
+		# Indiana run highest in the daytime on nice days).
+		if not sim.parks.trails.paths.is_empty() and rng.randf() < STROLL_SHARE and traffic.stroll(p.id):
+			return
 		var shop := _shop_for(sim, p, rng)
 		if shop != "":
 			traffic.go(p.id, shop, "shopping", rng.randi_range(20, 90))

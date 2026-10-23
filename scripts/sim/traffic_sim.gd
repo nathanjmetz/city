@@ -64,6 +64,8 @@ const CROSS_PEN := 6.0
 ## MUTCD design walking speed is 3.5 ft/s for crossings, people stroll faster).
 const MAX_WALKERS := 800
 const WALK_V := 1.4
+## How close a trail must pass a home's sidewalk to be walked to from it.
+const TRAIL_ACCESS := 40.0
 
 ## Turning speeds: about 15 mph for a right, 20 mph for a left.
 const TURN_V := [0.0, 6.7, 9.0, 4.0]
@@ -2575,6 +2577,84 @@ func _door_out(pl: Dictionary) -> PackedVector3Array:
 	var door: Vector2 = pl.lay.door
 	out.append(SiteLayout.world(pl.lot, Vector2(door.x, pl.lay.walk_z)))
 	return out
+
+
+## A walk on the town's trail from home and back, like neighbours on an
+## Indiana greenway (the Monon, a small-town riverwalk): out the front, along
+## the sidewalk to where the trail meets the street, along the trail for a
+## stretch and back the same way. False if the trail doesn't come by.
+func stroll(pid: int) -> bool:
+	if _sim == null or not _sim.people.people.has(pid) or walkers.size() >= MAX_WALKERS:
+		return false
+	var p: Dictionary = _sim.people.people[pid]
+	if p.at != "":
+		return false
+	var trails: Array = _sim.parks.trails.paths
+	if trails.is_empty():
+		return false
+	var pl := place("lot:" + p.home)
+	if pl.is_empty() or pl.lay.is_empty() or pl.lot.is_empty() or not network.segments.has(int(pl.lot.seg)):
+		return false
+	# Where the trail comes closest to this side of the street: it crosses
+	# or runs beside it within a few metres of the sidewalk.
+	var line := _walk_line(int(pl.lot.seg), int(pl.lot.side))
+	var best := TRAIL_ACCESS
+	var line_i := -1
+	var path_i := -1
+	var seg_i := 0
+	var hit := Vector2.ZERO
+	for li in line.size():
+		var at := Vector2(line[li].x, line[li].z)
+		for i in trails.size():
+			var pts: Array = trails[i].pts
+			for k in pts.size() - 1:
+				var q := Geometry2D.get_closest_point_to_segment(at,
+					Vector2(float(pts[k][0]), float(pts[k][1])), Vector2(float(pts[k + 1][0]), float(pts[k + 1][1])))
+				if q.distance_to(at) < best:
+					best = q.distance_to(at)
+					line_i = li
+					path_i = i
+					seg_i = k
+					hit = q
+	if path_i < 0:
+		return false
+	# Along it for 400 to 1,200 m (a 15 to 30 minute walk there and back),
+	# whichever way has more trail.
+	var pts: Array = trails[path_i].pts
+	var want := 400.0 + float(hash([pid, _tick]) % 800)
+	var legs := []
+	for dir in [1, -1]:
+		var leg := [hit]
+		var left := want
+		var cur := hit
+		var k := seg_i + 1 if dir > 0 else seg_i
+		while k >= 0 and k < pts.size() and left > 0.0:
+			var q := Vector2(float(pts[k][0]), float(pts[k][1]))
+			var d := cur.distance_to(q)
+			if d >= left:
+				leg.append(cur + (q - cur) / maxf(d, 0.001) * left)
+				left = 0.0
+			else:
+				left -= d
+				leg.append(q)
+				cur = q
+			k += dir
+		legs.append([left, leg])
+	var leg: Array = legs[0][1] if legs[0][0] <= legs[1][0] else legs[1][1]
+	if leg.size() < 2:
+		return false
+	var there := _door_out(pl)
+	_append_span(there, line, _frac(pl.lot), float(line_i) / (line.size() - 1))
+	for q in leg:
+		there.append(Vector3(q.x, 0.0, q.y))
+	var home := there.duplicate()
+	home.reverse()
+	there.append_array(home.slice(1))
+	_walk(pid, there, {"enter": "lot:" + p.home, "stroll": true})
+	_sim.parks.trails.walked += 1
+	p.at = "travel"
+	_sim.people.set_until(p, -1)
+	return true
 
 
 ## On foot from one place's door to another's, along the sidewalks and
