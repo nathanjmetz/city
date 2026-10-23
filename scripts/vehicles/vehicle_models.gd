@@ -85,12 +85,21 @@ const AXLE := {
 
 var _st := SurfaceTool.new()
 var _lo := false
+## Close-up detail for the desktop Ultra tier: rounder wheels with spokes,
+## door seams and handles, wipers, plates.
+var _hi := false
+
+## Levels of detail build() takes: normal close range, far, and Ultra close-up.
+const LOD_NEAR := 0
+const LOD_FAR := 1
+const LOD_ULTRA := 2
 
 
 ## The mesh for one kind (or one part, like "trailer_box") at a level of detail.
 static func build(kind: String, lod := 0) -> ArrayMesh:
 	var b := VehicleModels.new()
-	b._lo = lod > 0
+	b._lo = lod == LOD_FAR
+	b._hi = lod == LOD_ULTRA
 	b._st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	if b.has_method("_" + kind):
 		b.call("_" + kind)
@@ -188,6 +197,8 @@ func _car(p: Dictionary) -> void:
 	_box(Vector3(0, c + 0.12, L - 0.1), Vector3(p.W - 0.3, 0.14, 0.16), TRIM)
 	_box(Vector3(0, tail - 0.3, L + 0.005), Vector3(0.3, 0.15, 0.02), WHITE)
 	_box(Vector3(hw + 0.07, belt + 0.07, p.a + 0.2), Vector3(0.14, 0.11, 0.08), PAINT, true)
+	if _hi:
+		_car_detail(p)
 
 
 func _sedan() -> void:  # Toyota Camry
@@ -356,6 +367,34 @@ func _police_tahoe() -> void:  # Chevrolet Tahoe PPV, the county sheriff's usual
 	_patrol_gear(2.06, 1.93, 2.6, [0.85, 2.7, 0.65, 2.0])
 
 
+## Ultra close-up detail on a car body: door seams and handles, mirror
+## glass, wipers, a front plate, side markers and the maker's badge.
+func _car_detail(p: Dictionary) -> void:
+	var hw: float = p.W * 0.5
+	var belt: float = p.belt
+	var c: float = p.clear
+	var seam := Color(0.04, 0.04, 0.04, 0.3)
+	var doors: Array = [p.a + 0.08, (p.b + p.c) * 0.5]
+	if p.c - p.b > 1.2:
+		doors.append(p.c - 0.05)
+	for s in [-1.0, 1.0]:
+		var x: float = s * (hw + 0.003)
+		for z in doors:
+			_box(Vector3(x, (c + belt) * 0.5 + 0.1, z), Vector3(0.004, belt - c - 0.15, 0.012), seam)
+		_box(Vector3(x, c + 0.2, (doors[0] + doors[doors.size() - 1]) * 0.5),
+			Vector3(0.004, 0.012, doors[doors.size() - 1] - doors[0]), seam)
+		for i in doors.size() - 1:
+			_box(Vector3(s * (hw + 0.012), belt - 0.12, doors[i + 1] - 0.25), Vector3(0.02, 0.035, 0.16), CHROME)
+		_box(Vector3(s * (hw + 0.115), belt + 0.07, p.a + 0.2), Vector3(0.006, 0.08, 0.06), GLASS)
+		_box(Vector3(s * (hw - 0.02), p.hood - 0.15, 0.35), Vector3(0.02, 0.04, 0.1), Color(0.95, 0.55, 0.05, 0.5))
+		_box(Vector3(s * (hw - 0.02), p.tail - 0.15, p.L - 0.35), Vector3(0.02, 0.04, 0.1), TAIL)
+	# Wipers parked at the foot of the windshield.
+	for x in [-0.35, 0.3]:
+		_box(Vector3(x, belt + 0.03, p.a + 0.1), Vector3(0.5, 0.015, 0.02), seam)
+	_box(Vector3(0, p.hood - 0.42, -0.005), Vector3(0.3, 0.15, 0.02), WHITE)
+	_box(Vector3(0, p.hood - 0.24, -0.005), Vector3(0.09, 0.06, 0.02), CHROME)
+
+
 # --- Pickups ----------------------------------------------------------------
 
 ## A body-on-frame pickup: hood, cab (crew or regular) and an open bed.
@@ -392,6 +431,21 @@ func _truck(L: float, cab_end: float, wb: Array, work: bool, W := 2.03, H := 1.9
 	_box(Vector3(0, c + 0.12, 0.05), Vector3(W - 0.1, 0.2, 0.14), CHROME if work else TRIM)
 	_box(Vector3(0, c + 0.12, L - 0.02), Vector3(W - 0.1, 0.18, 0.12), CHROME)
 	_box(Vector3(hw + 0.1, belt + 0.12, 1.95), Vector3(0.16, 0.2, 0.1), TRIM, true)
+	if _hi:
+		# Cab door seams and handles, the bed's tailgate seam, plates.
+		var seam := Color(0.04, 0.04, 0.04, 0.3)
+		for s in [-1.0, 1.0]:
+			var x: float = s * (hw + 0.003)
+			var doors: Array = [1.8, cab_end - 0.05] if cab_end - 1.8 < 1.6 else [1.8, (1.8 + cab_end) * 0.5, cab_end - 0.05]
+			for z in doors:
+				_box(Vector3(x, (c + belt) * 0.5 + 0.12, z), Vector3(0.004, belt - c - 0.2, 0.012), seam)
+			for i in doors.size() - 1:
+				_box(Vector3(s * (hw + 0.012), belt - 0.15, doors[i + 1] - 0.25), Vector3(0.02, 0.035, 0.16), CHROME)
+		_box(Vector3(0, belt - 0.1, L + 0.004), Vector3(W - 0.3, 0.012, 0.004), seam)
+		_box(Vector3(0, 0.62, L + 0.005), Vector3(0.3, 0.15, 0.02), WHITE)
+		_box(Vector3(0, 0.62, -0.01), Vector3(0.3, 0.15, 0.02), WHITE)
+		for x in [-0.4, 0.35]:
+			_box(Vector3(x, belt + 0.03, 1.85), Vector3(0.55, 0.015, 0.02), seam)
 	if work:
 		# Diamond-plate toolbox across the front of the bed, and a ladder rack.
 		_box(Vector3(0, belt + 0.15, cab_end + 0.35), Vector3(W - 0.1, 0.3, 0.5), STEEL)
@@ -1357,6 +1411,10 @@ static func _edges(sides: Color, bottom: Color, upper := Color(-1, 0, 0), top :=
 ## half width, shoulder half width, top half width]. codes holds the edge
 ## codes for each span (the last one repeats).
 func _loft(sections: Array, codes: Array, front: Color, back: Color) -> void:
+	if _hi:
+		var fine := _refine(sections, codes)
+		sections = fine[0]
+		codes = fine[1]
 	var rings := []
 	for s in sections:
 		var z: float = s[0]
@@ -1369,6 +1427,25 @@ func _loft(sections: Array, codes: Array, front: Color, back: Color) -> void:
 			Vector3(s[5], ys, z), Vector3(s[6], yt, z), Vector3(-s[6], yt, z),
 			Vector3(-s[5], ys, z), Vector3(-s[4], yb + ch, z),
 		])
+	var m := 8
+	if _hi:
+		# Ultra: cut each corner of the cross-section, so the sides and
+		# roof round over like pressed steel instead of meeting at a fold.
+		for r in rings.size():
+			rings[r] = _round_ring(rings[r])
+		var fine := []
+		for cs in codes:
+			var row := []
+			for e in 8:
+				# The bevel after edge e takes its code, unless that is
+				# glass: then it takes the next one, so roof and belt
+				# corners stay steel on both sides.
+				var nx: Color = cs[(e + 1) % 8]
+				row.append(cs[e])
+				row.append(nx if _is_glass(cs[e]) else cs[e])
+			fine.append(row)
+		codes = fine
+		m = 16
 	# Face normals, pointing out.
 	var fn := []
 	for i in rings.size() - 1:
@@ -1377,8 +1454,8 @@ func _loft(sections: Array, codes: Array, front: Color, back: Color) -> void:
 		var mid := Vector3(0, (sections[i][1] + sections[i][3] + sections[i + 1][1] + sections[i + 1][3]) * 0.25,
 			(sections[i][0] + sections[i + 1][0]) * 0.5)
 		var row := []
-		for e in 8:
-			var e2 := (e + 1) % 8
+		for e in m:
+			var e2 := (e + 1) % m
 			var n: Vector3 = (b[e2] - a[e]).cross(a[e2] - b[e])
 			if n.length_squared() < 1e-12:
 				row.append(Vector3.ZERO)
@@ -1393,11 +1470,11 @@ func _loft(sections: Array, codes: Array, front: Color, back: Color) -> void:
 		var a: Array = rings[i]
 		var b: Array = rings[i + 1]
 		var cs: Array = codes[mini(i, codes.size() - 1)]
-		for e in 8:
+		for e in m:
 			var n: Vector3 = fn[i][e]
 			if n == Vector3.ZERO:
 				continue
-			var e2 := (e + 1) % 8
+			var e2 := (e + 1) % m
 			var corners := [[a[e], i, e], [a[e2], i, e2], [b[e2], i + 1, e2], [b[e], i + 1, e]]
 			var pts := []
 			var nrm := []
@@ -1410,6 +1487,65 @@ func _loft(sections: Array, codes: Array, front: Color, back: Color) -> void:
 	_cap(rings[rings.size() - 1], back, Vector3(0, 0, -1))
 
 
+## Ultra: extra sections between the given ones on a smooth curve through
+## them, so hoods, roofs and noses round over instead of folding. Tangents
+## go flat where a value turns, so nothing bulges past the shape.
+static func _refine(sections: Array, codes: Array) -> Array:
+	var out := []
+	var out_codes := []
+	var n := sections.size()
+	for i in n - 1:
+		var a: Array = sections[i]
+		var b: Array = sections[i + 1]
+		var span: float = b[0] - a[0]
+		var steps := clampi(int(span / 0.35), 1, 4)
+		var cs: Array = codes[mini(i, codes.size() - 1)]
+		out.append(a)
+		for k in range(1, steps):
+			var t := float(k) / steps
+			var row := [lerpf(a[0], b[0], t)]
+			for f in range(1, a.size()):
+				var prev: float = sections[i - 1][f] if i > 0 else a[f]
+				var next: float = sections[i + 2][f] if i + 2 < n else b[f]
+				var m0 := _slope(prev, a[f], b[f])
+				var m1 := _slope(a[f], b[f], next)
+				var t2 := t * t
+				var t3 := t2 * t
+				row.append((2 * t3 - 3 * t2 + 1) * a[f] + (t3 - 2 * t2 + t) * m0
+					+ (-2 * t3 + 3 * t2) * b[f] + (t3 - t2) * m1)
+			out.append(row)
+		for k in steps:
+			out_codes.append(cs)
+	out.append(sections[n - 1])
+	return [out, out_codes]
+
+
+## One corner cut on a cross-section: each edge keeps its middle and a
+## short bevel (7 cm at most, so glass keeps its size) joins it to the next. Points 2e and 2e+1 lie on edge e.
+static func _round_ring(ring: Array) -> Array:
+	var out := []
+	var n := ring.size()
+	for e in n:
+		var a: Vector3 = ring[e]
+		var b: Vector3 = ring[(e + 1) % n]
+		var f := minf(0.16, 0.07 / maxf(a.distance_to(b), 0.001))
+		out.append(a.lerp(b, f))
+		out.append(a.lerp(b, 1.0 - f))
+	return out
+
+
+static func _is_glass(c: Color) -> bool:
+	return absf(c.a - GLASS.a) < 0.03
+
+
+static func _slope(p: float, c: float, n: float) -> float:
+	var d0 := c - p
+	var d1 := n - c
+	if d0 * d1 <= 0.0:
+		return 0.0
+	return 2.0 * d0 * d1 / (d0 + d1)
+
+
 ## The normal at ring r, point k, averaged over the faces around it that
 ## bend less than 60 degrees from face normal n.
 static func _smooth(fn: Array, n: Vector3, r: int, k: int) -> Vector3:
@@ -1417,7 +1553,8 @@ static func _smooth(fn: Array, n: Vector3, r: int, k: int) -> Vector3:
 	for i in [r - 1, r]:
 		if i < 0 or i >= fn.size():
 			continue
-		for e in [(k + 7) % 8, k]:
+		var cnt: int = fn[i].size()
+		for e in [(k + cnt - 1) % cnt, k]:
 			var m: Vector3 = fn[i][e]
 			if m.dot(n) > 0.5:
 				sum += m
@@ -1507,7 +1644,7 @@ func _wheel(c: Vector3, r: float, w: float, rim: Color, upright := false) -> voi
 	if _lo:
 		_box(Vector3(c.x, y, c.z), Vector3(w, r * 1.8, r * 1.8), TIRE)
 		return
-	var n := 12
+	var n := 24 if _hi else 12
 	var ax := Vector3(0, 0, 1) if upright else Vector3(1, 0, 0)
 	var a := Vector3(c.x, y, c.z) - ax * w * 0.5
 	var b := a + ax * w
@@ -1515,13 +1652,28 @@ func _wheel(c: Vector3, r: float, w: float, rim: Color, upright := false) -> voi
 	# Hubs on both faces, inset a little.
 	for side in [-1.0, 1.0]:
 		var face: Vector3 = Vector3(c.x, y, c.z) + ax * side * (w * 0.5 + 0.005)
-		_disc(face, ax * side, r * 0.58, rim)
+		if not _hi:
+			_disc(face, ax * side, r * 0.58, rim)
+			continue
+		# Sidewall, the rim lip, a dark barrel behind open spokes, the brake
+		# disc, five spokes and the centre cap.
+		_disc(face, ax * side, r * 0.66, Color(0.06, 0.06, 0.06, 0.3))
+		_disc(face + ax * side * 0.002, ax * side, r * 0.6, rim)
+		_disc(face + ax * side * 0.003, ax * side, r * 0.53, Color(0.03, 0.03, 0.03, 0.4))
+		_disc(face + ax * side * 0.004, ax * side, r * 0.36, STEEL)
+		var u := ax.cross(Vector3.UP).normalized() if absf(ax.y) < 0.9 else Vector3.RIGHT
+		var v := ax.cross(u)
+		for k in 5:
+			var ang := TAU * k / 5.0
+			var dir := u * cos(ang) + v * sin(ang)
+			_beam(face + ax * side * 0.012 + dir * r * 0.12, face + ax * side * 0.012 + dir * r * 0.56, 0.09, rim)
+		_disc(face + ax * side * 0.016, ax * side, r * 0.14, rim)
 
 
 func _disc(c: Vector3, normal: Vector3, r: float, col: Color) -> void:
 	var u := normal.cross(Vector3.UP if absf(normal.y) < 0.9 else Vector3.RIGHT).normalized()
 	var w := normal.cross(u)
-	var n := 8
+	var n := 20 if _hi else 8
 	for i in n:
 		var p1 := c + (u * cos(TAU * i / n) + w * sin(TAU * i / n)) * r
 		var p2 := c + (u * cos(TAU * (i + 1) / n) + w * sin(TAU * (i + 1) / n)) * r
