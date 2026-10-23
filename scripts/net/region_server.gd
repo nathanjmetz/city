@@ -232,8 +232,10 @@ func _hello(from: int, msg: Dictionary) -> void:
 		_reject(from, "That invite code doesn't match this region.")
 		return
 	# The invite code is the only key: no name or password to type. A device
-	# comes back by its token; a new one gets an account (named from its
-	# profile, or "Neighbor 2"). Only the host's own name is guarded.
+	# comes back by its token; a new device with a name already in the
+	# region is that player on another computer (the host's own name too:
+	# family only, so getting in beats guarding names); otherwise a new
+	# account (named from its profile, or "Neighbor 2").
 	var name := str(msg.get("name", "")).strip_edges().left(24)
 	var token := str(msg.get("token", ""))
 	var account := _account_by_token(token)
@@ -241,11 +243,7 @@ func _hello(from: int, msg: Dictionary) -> void:
 		_rename(account, name)
 	elif name != "" and accounts.has(name.to_lower()):
 		account = accounts[name.to_lower()]
-		var password := str(msg.get("password", ""))
-		var by_password: bool = password != "" and _hash(password, account.salt) == account.hash
-		if account.host and not account.tokens.is_empty() and not by_password:
-			_reject(from, "%s is the host's name. Pick another in your Profile." % account.name)
-			return
+		_log("%s is back on another computer" % account.name)
 	else:
 		account = _new_account(name if name != "" else _free_name(), str(msg.get("password", "")),
 			str(msg.get("id", "")).left(64))
@@ -370,11 +368,14 @@ static func _hash(password: String, salt: String) -> String:
 func _admit(from: int, account: Dictionary, token: String) -> void:
 	var pid: String = account.player
 	var name: String = account.name
-	# Back from a dropped connection (or another window): the new one wins.
+	# Back from a dropped connection (or another window or computer): the new
+	# one wins. The old one is told first, so it stops instead of reconnecting
+	# and taking the town back, then closed a moment later.
 	for peer in _players.keys():
 		if _players[peer].id == pid:
 			_players.erase(peer)
-			_peer.disconnect_peer(peer)
+			_send(peer, {"t": "elsewhere"})
+			get_tree().create_timer(2.0).timeout.connect(func(): if _peer: _peer.disconnect_peer(peer))
 	var city := region.city_of(pid)
 	if city == "":
 		# A new town, on its county roads; the neighbors' halves of those
