@@ -25,6 +25,8 @@ const SIDING := ["#c9c3b3", "#d8d2c2", "#9aa3a8", "#6f7f8c", "#e9e6dc", "#b8a98c
 const SHUTTER := ["#1c1d1f", "#22324a", "#2f4632", "#5a2626", "", ""]
 const DOOR := ["#1f2d3d", "#7a1f1f", "#1c1d1f", "#2f4632", "#6b4a2e", "#f3f1ea", "#3c5a6e"]
 const ROOF := ["#7a7874", "#86857f", "#8f8d88", "#6e6d6a", "#5c5c5e", "#76665a", "#6f6b66"]
+## How much brick a front shows: none, a wainscot or all of it.
+const BRICK_STYLES := ["none", "none", "wainscot", "wainscot", "full"]
 const BRICK := ["#8a4a38", "#9b5a42", "#7a4234", "#a8775c", "#b59a7c"]
 const TRIM := Color("#efede6")
 const SOFFIT := Color("#b9b6ad")
@@ -56,10 +58,14 @@ const SCHEMES := 16
 ## frontages, 80 to 165 ft deep. A plan sits on the widest class the lot holds.
 const WIDTHS := [12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 27.0, 30.0]
 const DEPTHS := [24.0, 28.0, 32.0, 36.0, 42.0, 50.0]
+## Room behind the front wall a plan is drawn for (m): lot depth less the setback.
+const ROOMS := [14.0, 17.0, 20.0, 22.5, 28.0, 36.0]
 ## Plans kept drawn (about 300 KB each), oldest dropped first; fewer in a
 ## browser, where memory is tighter.
 static var _plan_cap := 64 if OS.has_feature("web") else 192
 static var _plans := {}
+## Plans drawn so far (for the bench).
+static var drawn := 0
 ## The footprints (Rect2, lot x/z) of the building masses of the last thing
 ## built, for its foundation and far-off block: the mesh's own bounds also
 ## take in fences and sheds out to the lot lines.
@@ -83,6 +89,8 @@ var pad := 0.0
 var era := "recent"
 var _cell_seed := 0  # the street block this lot is in (its builder)
 var _body := {}  # the plan's surfaces, material -> arrays, merged at commit
+var _kinds := {}  # while a plan is drawn: surface -> how each vertex weathers (Weathers)
+var _drawing_plan := false
 ## Set by the art gallery to draw one type.
 static var force_kind := ""
 ## How well the owner keeps the place (PropertyCare's tier, set by
@@ -177,6 +185,8 @@ func _house(to_curb: float, storeys := 0) -> Array:
 	_mass_back_z = body.mass_back_z
 	_masses = body.masses.duplicate()
 	var info: Dictionary = body.info.duplicate()
+	if owner_care <= -2:
+		_board_up(body.arrays.get("glass", []))
 	_yard(info, to_curb)
 	if owner_care >= 1:
 		_improve()
@@ -186,8 +196,12 @@ func _house(to_curb: float, storeys := 0) -> Array:
 
 
 ## The plan this lot gets from its block's builder, drawn or from the
-## kept ones (see _house).
-func _plan(storeys: int, any_care := false, info_only := false) -> Dictionary:
+## kept ones (see _house). A plan is drawn once per shape: on the garage's
+## right, its front wall on the lot's front line, in stand-in paint and as
+## kept up. Each lot then gets it mirrored when its garage is on the left,
+## moved back to its builder's setback, and painted in its own scheme and
+## upkeep, so a whole town needs only a few dozen drawings.
+func _plan(storeys: int, info_only := false) -> Dictionary:
 	var crew := RandomNumberGenerator.new()
 	crew.seed = hash([_cell_seed, "builder"])
 	var book: Array = PLAN_BOOK[era]
@@ -206,34 +220,189 @@ func _plan(storeys: int, any_care := false, info_only := false) -> Dictionary:
 	var zf := setback
 	if deep < 30.0:
 		zf = snappedf(clampf(deep * 0.22, 4.5, zf), 0.5)
-	var key := [era, plan, scheme, gs, wide, deep, zf, storeys, owner_care, force_kind]
-	var body: Dictionary = _plans.get(key, {})
-	if any_care:
-		# Care only weathers the colours, so any tier's drawing will do.
-		for tier in [-2, -1, 0, 1, 2]:
-			key[8] = tier
-			if body.is_empty():
-				body = _plans.get(key, {})
-		key[8] = owner_care
-	if info_only:
-		# Nor does the paint scheme move the garage, drive or door, so one
-		# dry run serves all its schemes too.
-		var ik := key.duplicate()
-		ik[2] = 0
-		ik[8] = 0
-		if not body.is_empty():
-			return body
-		if not _infos.has(ik):
+	var paint := _paint(scheme)
+	# The room behind the front wall is what a plan is drawn for.
+	var room := _bucket(deep - zf, ROOMS)
+	var key := [era, plan, wide, room, storeys, force_kind]
+	if info_only and not _plans.has(key):
+		if not _infos.has(key):
 			_dry = true
-			_infos[ik] = _draw_plan(ik, wide, deep, zf, gs, storeys).info
+			_infos[key] = _draw_plan(key, wide, room, storeys).info
 			_dry = false
-		return {"info": _infos[ik]}
-	if body.is_empty():
-		body = _draw_plan(key, wide, deep, zf, gs, storeys)
+		return {"info": _placed_info(_infos[key], gs, zf)}
+	var body: Dictionary = _plans.get(key, {})
+	if not body.is_empty():
+		# Kept longest unused goes first: move this one to the back.
+		_plans.erase(key)
+		_plans[key] = body
+	else:
+		drawn += 1
+		body = _draw_plan(key, wide, room, storeys)
 		if _plans.size() >= _plan_cap:
 			_plans.erase(_plans.keys()[0])
 		_plans[key] = body
-	return body
+	if info_only:
+		return {"info": _placed_info(body.info, gs, zf)}
+	return _placed(body, gs, zf, paint)
+
+
+## A scheme's paint: siding, roof, shutters, door and brick. (Whether a
+## house has shutters and how much brick it shows are its plan's elevation,
+## as in a builder's plan book; see _draw_plan.)
+func _paint(scheme: int) -> Dictionary:
+	var paint := RandomNumberGenerator.new()
+	paint.seed = hash([era, "scheme", scheme])
+	var was := rng
+	rng = paint
+	var out := {"siding": Color(_pick(SIDING)), "roof": Color(_pick(ROOF))}
+	var shutter_hex: String = _pick(SHUTTER)
+	out.door = Color(_pick(DOOR))
+	_pick(BRICK_STYLES)  # once the scheme's; kept so schemes keep their colours
+	out.brick = Color(_pick(BRICK))
+	rng = was
+	out.shutter = Color(shutter_hex if shutter_hex != "" else SHUTTER[(scheme + 1) % 4])
+	out.door_panel = _panel_of(out.door)
+	return out
+
+
+## A kept plan as one lot builds it: mirrored for a garage on the left,
+## moved back to the setback `zf`, painted in `paint` and weathered by the
+## owner's care.
+func _placed(body: Dictionary, gs: float, zf: float, paint: Dictionary) -> Dictionary:
+	var xf := Transform3D(Basis.FLIP_X if gs < 0.0 else Basis.IDENTITY, Vector3(0.0, 0.0, zf))
+	var turn := Transform3D(xf.basis, Vector3.ZERO)
+	var arrays := {}
+	for mat in body.arrays:
+		var a: Array = (body.arrays[mat] as Array).duplicate()
+		a[Mesh.ARRAY_VERTEX] = xf * (a[Mesh.ARRAY_VERTEX] as PackedVector3Array)
+		a[Mesh.ARRAY_NORMAL] = turn * (a[Mesh.ARRAY_NORMAL] as PackedVector3Array)
+		if gs < 0.0:
+			# Mirrored, each triangle winds the other way round.
+			a[Mesh.ARRAY_INDEX] = _flipped((a[Mesh.ARRAY_VERTEX] as PackedVector3Array).size())
+		a[Mesh.ARRAY_COLOR] = _painted(a[Mesh.ARRAY_COLOR], body.kinds.get(mat, PackedByteArray()), body.parts[mat], paint)
+		arrays[mat] = a
+	var masses := []
+	for m: Rect2 in body.masses:
+		masses.append(Rect2(-m.end.x if gs < 0.0 else m.position.x, m.position.y + zf, m.size.x, m.size.y))
+	return {"arrays": arrays, "info": _placed_info(body.info, gs, zf), "reach": body.reach + zf,
+		"back_z": body.back_z + zf, "mass_back_z": body.mass_back_z + zf, "masses": masses}
+
+
+## A derelict house's ground-floor windows boarded over with plywood (see
+## _glass), from its placed plan's glass.
+func _board_up(glass: Array) -> void:
+	if glass.is_empty():
+		return
+	var v: PackedVector3Array = glass[Mesh.ARRAY_VERTEX]
+	var nr: PackedVector3Array = glass[Mesh.ARRAY_NORMAL]
+	# Each pane is one quad of six vertices: a, c, b, a, d, c.
+	for q in range(0, v.size() - 5, 6):
+		var a := v[q]
+		var c := v[q + 1]
+		var mid := (a + c) * 0.5
+		if mid.y >= 3.6:
+			continue
+		var w := a.distance_to(v[q + 2])
+		var h := a.distance_to(v[q + 4])
+		var out := nr[q]
+		_box("paint", Vector3(w + 0.12, h + 0.12, 0.05), mid + out * 0.07, PLYWOOD, Basis(Vector3.UP.cross(out), Vector3.UP, out))
+
+
+## A plan's info (see plan_info) for a lot: mirrored and moved back alike.
+static func _placed_info(info: Dictionary, gs: float, zf: float) -> Dictionary:
+	var out := {}
+	for k in info:
+		var v = info[k]
+		if k.ends_with("_z"):
+			v += zf
+		elif gs < 0.0 and k.ends_with("_x"):
+			v = -v
+		match k:
+			"gs": v = gs
+			"x0": v = -info.x1 if gs < 0.0 else v
+			"x1": v = -info.x0 if gs < 0.0 else v
+			"bed": v = [-v[1], -v[0]] if gs < 0.0 else v
+			"keep_out":
+				var r: Rect2 = v
+				v = Rect2(-r.end.x if gs < 0.0 else r.position.x, r.position.y + zf, r.size.x, r.size.y)
+		out[k] = v
+	return out
+
+
+## Index lists that turn every triangle of an unindexed surface the other
+## way, by vertex count.
+static var _flips := {}
+
+
+static func _flipped(n: int) -> PackedInt32Array:
+	if not _flips.has(n):
+		var idx := PackedInt32Array()
+		idx.resize(n)
+		for i in range(0, n - 2, 3):
+			idx[i] = i
+			idx[i + 1] = i + 2
+			idx[i + 2] = i + 1
+		if _flips.size() > 512:
+			_flips.clear()
+		_flips[n] = idx
+	return _flips[n]
+
+
+## Stand-in paint a plan is drawn in (see _plan), one per part of a
+## scheme; nothing else drawn has these exact colours.
+const STAND_IN := {"siding": Color(0.0137, 0.5021, 0.0071), "roof": Color(0.0241, 0.5021, 0.0071),
+	"shutter": Color(0.0359, 0.5021, 0.0071), "door": Color(0.0463, 0.5021, 0.0071),
+	"brick": Color(0.0571, 0.5021, 0.0071), "door_panel": Color(0.0683, 0.5021, 0.0071)}
+## How each vertex weathers with the owner's care (see _weather), by its
+## part: keeps its colour, roofing, masonry or paint.
+enum Weathers { KEEP, ROOF, MASONRY, PAINT }
+
+
+## A plan surface's colours in this lot's paint and upkeep. `parts` lists
+## the vertices drawn in each stand-in paint (see _stand_ins).
+func _painted(cols: PackedColorArray, kinds: PackedByteArray, parts: Dictionary, paint: Dictionary) -> PackedColorArray:
+	var out := cols.duplicate()
+	for part in parts:
+		var p: Color = paint[part]
+		for i: int in parts[part]:
+			p.a = out[i].a
+			out[i] = p
+	if owner_care == 0 or kinds.size() != out.size():
+		return out
+	# Most vertices share a few colours: weather each colour once.
+	var seen := {}
+	for i in out.size():
+		var k := kinds[i]
+		if k == Weathers.KEEP:
+			continue
+		var c := out[i]
+		var key := Vector4(c.r + k * 2.0, c.g, c.b, c.a)
+		if not seen.has(key):
+			seen[key] = _weathered(k, c)
+		out[i] = seen[key]
+	return out
+
+
+## Which vertices of each of a plan's surfaces are in which stand-in paint.
+static func _stand_ins(arrays: Dictionary) -> Dictionary:
+	var by_r := {}
+	for part in STAND_IN:
+		by_r[STAND_IN[part].r] = part
+	var sg: float = STAND_IN.siding.g
+	var sb: float = STAND_IN.siding.b
+	var out := {}
+	for mat in arrays:
+		var cols: PackedColorArray = arrays[mat][Mesh.ARRAY_COLOR]
+		var parts := {}
+		for i in cols.size():
+			var c := cols[i]
+			if c.g == sg and c.b == sb and by_r.has(c.r):
+				var part: String = by_r[c.r]
+				if not parts.has(part):
+					parts[part] = PackedInt32Array()
+				parts[part].append(i)
+		out[mat] = parts
+	return out
 
 
 ## The garage, drive and front door a house lot gets (the plan's info:
@@ -244,48 +413,51 @@ static func plan_info(seed: int, lot := {}, storeys := 0) -> Dictionary:
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
 	b._fit(lot)
-	return b._plan(storeys, true, true).info
+	return b._plan(storeys, true).info
 
 
 ## Draws one plan of the book on a lot of its width class, with its own
 ## random stream (so the same plan comes out the same on every lot), into
 ## its own surfaces, kept as arrays to merge into each lot's house.
-func _draw_plan(key: Array, wide: float, deep: float, zf: float, gs: float, storeys: int) -> Dictionary:
+func _draw_plan(key: Array, wide: float, room: float, storeys: int) -> Dictionary:
+	var zf := 0.0
+	var gs := 1.0
+	var was_care := owner_care
+	owner_care = 0
+	_kinds = {}
+	_drawing_plan = not _dry
 	var was_rng := rng
 	var was_st := _st
 	var was_half := half
 	var was_depth := depth
 	var was_outline := outline
 	rng = RandomNumberGenerator.new()
-	var paint := RandomNumberGenerator.new()
-	paint.seed = hash([era, "scheme", key[2]])
 	rng.seed = hash([era, "plan", key[1], wide, storeys, force_kind])
 	_st = {}
 	half = wide * 0.5
-	depth = deep
+	depth = room
 	outline = PackedVector2Array()
 	_reach = 0.0
 	_back_z = -INF
 	_mass_back_z = -INF
 	_masses = []
-	# The paint scheme: siding, roof, shutters, door and brick.
-	var colours := rng
-	rng = paint
-	var siding := Color(_pick(SIDING))
-	var roof := Color(_pick(ROOF))
-	var shutter_hex: String = _pick(SHUTTER)
-	var door := Color(_pick(DOOR))
-	var brick_style: String = _pick(["none", "none", "wainscot", "wainscot", "full"])
-	var brick := Color(_pick(BRICK))
-	rng = colours
+	# Drawn in stand-in paint (see _plan). The elevation, shutters or not
+	# and how much brick, comes with the plan.
+	var siding: Color = STAND_IN.siding
+	var roof: Color = STAND_IN.roof
+	var door: Color = STAND_IN.door
+	var elevation := RandomNumberGenerator.new()
+	elevation.seed = hash([era, "elevation", key[1]])
+	var brick_style: String = BRICK_STYLES[elevation.randi() % BRICK_STYLES.size()]
+	var brick: Color = STAND_IN.brick
 	# Two-car garage mostly; one-car on narrow lots, three bays on wide ones.
 	var gw := 6.6 if rng.randf() < 0.85 else 3.8
 	if _avail() < 16.0:
 		gw = 3.8
 	elif _avail() >= 22.0 and rng.randf() < 0.4:
 		gw = 9.8
-	var shutters := shutter_hex != ""
-	var shutter := Color(shutter_hex) if shutters else TRIM
+	var shutters := elevation.randf() < 0.67
+	var shutter: Color = STAND_IN.shutter if shutters else TRIM
 	var info: Dictionary
 	# Streets are built in one era, so neighbours share a family of types.
 	# A lot owner who asked for one or two storeys gets a type that has them.
@@ -318,7 +490,10 @@ func _draw_plan(key: Array, wide: float, deep: float, zf: float, gs: float, stor
 	for mat in _st:
 		arrays[mat] = _st[mat].commit_to_arrays()
 	var body := {"arrays": arrays, "info": info, "reach": _reach, "back_z": _back_z, "mass_back_z": _mass_back_z,
-		"masses": _masses}
+		"masses": _masses, "kinds": _kinds, "parts": _stand_ins(arrays)}
+	_kinds = {}
+	_drawing_plan = false
+	owner_care = was_care
 	rng = was_rng
 	_st = was_st
 	half = was_half
@@ -1252,6 +1427,13 @@ func _rear_deck(x: float, zb: float, sill: float) -> void:
 			_box("paint", Vector3(0.04, 0.86, 0.04), Vector3(p.x, top + 0.48, p.z), wood)
 
 
+## A door's raised panels: lighter on a dark door, darker on a light one.
+static func _panel_of(c: Color) -> Color:
+	if c == STAND_IN.door:
+		return STAND_IN.door_panel
+	return c.lightened(0.14) if c.get_luminance() < 0.3 else c.darkened(0.1)
+
+
 func _front_door(x: float, zf: float, sill: float, c: Color) -> void:
 	_box("paint", Vector3(0.95, 2.1, 0.06), Vector3(x, sill + 1.05, zf - 0.02), c)
 	_box("paint", Vector3(1.25, 0.14, 0.1), Vector3(x, sill + 2.17, zf - 0.05), TRIM)
@@ -1259,7 +1441,7 @@ func _front_door(x: float, zf: float, sill: float, c: Color) -> void:
 		_box("paint", Vector3(0.12, 2.2, 0.1), Vector3(x + s * 0.55, sill + 1.1, zf - 0.05), TRIM)
 	# Raised panels below the lite, a brass knob at 36 in, the aluminium
 	# sill; storm door glass and a porch light.
-	var panel := c.lightened(0.14) if c.get_luminance() < 0.3 else c.darkened(0.1)
+	var panel := _panel_of(c)
 	for s in [-1.0, 1.0]:
 		_box("paint", Vector3(0.3, 0.62, 0.02), Vector3(x + s * 0.2, sill + 0.5, zf - 0.055), panel)
 	_box("metal", Vector3(0.07, 0.07, 0.07), Vector3(x + 0.36, sill + 0.92, zf - 0.09), Color("#b08d48"))
@@ -1466,6 +1648,7 @@ func _shrub(p: Vector3, r: float, kind := 0) -> void:
 	# shrub rather than a cut stone; alpha marks it as foliage.
 	var mid := p + Vector3(0, height * 0.5, 0)
 	var st := _tool("foliage")
+	_note("foliage", Weathers.KEEP, rings * segs * 6)
 	for i in rings:
 		for j in segs:
 			var quad: Array = [pts[i][j], pts[i][(j + 1) % segs], pts[i + 1][(j + 1) % segs], pts[i + 1][j]]
@@ -1542,9 +1725,11 @@ func _quad(mat: String, a: Vector3, b: Vector3, c: Vector3, d: Vector3, col: Col
 	_reach = maxf(_reach, maxf(maxf(a.z, b.z), maxf(c.z, d.z)))
 	if _dry:
 		return
+	var kind := _kind_of(mat, col)
 	if owner_care != 0:
-		col = _weather(mat, col)
+		col = _weathered(kind, col)
 	var st := _tool(mat)
+	_note(mat, kind, 6)
 	for i in [0, 2, 1, 0, 3, 2]:
 		st.set_normal(n)
 		st.set_color(col)
@@ -1567,9 +1752,11 @@ func _tri(mat: String, a: Vector3, b: Vector3, c: Vector3, col: Color, uvs := []
 	_reach = maxf(_reach, maxf(a.z, maxf(b.z, c.z)))
 	if _dry:
 		return
+	var kind := _kind_of(mat, col)
 	if owner_care != 0:
-		col = _weather(mat, col)
+		col = _weathered(kind, col)
 	var st := _tool(mat)
+	_note(mat, kind, 3)
 	for i in [0, 2, 1]:
 		st.set_normal(n)
 		st.set_color(col)
@@ -1589,22 +1776,56 @@ static func _auto_uv(p: Vector3, n: Vector3) -> Vector2:
 ## shingles a touch darker. Glass and signs keep theirs. Alpha (the shaders'
 ## pattern data) is kept.
 func _weather(mat: String, col: Color) -> Color:
+	return _weathered(_kind_of(mat, col), col)
+
+
+## How a part weathers (see _weather): glass, signs, plants and plywood keep
+## their colour; roofing, masonry and everything painted each their own way.
+static func _kind_of(mat: String, col: Color) -> int:
 	if mat in ["glass", "sign", "foliage", "far"] or col == PLYWOOD:
+		return Weathers.KEEP
+	if mat == "roof":
+		return Weathers.ROOF
+	if mat == "brick" or mat == "concrete":
+		return Weathers.MASONRY
+	return Weathers.PAINT
+
+
+func _weathered(kind: int, col: Color) -> Color:
+	if kind == Weathers.KEEP:
 		return col
 	var out := col
 	if owner_care < 0:
 		var k := 0.4 if owner_care == -1 else 0.8
 		var l := col.get_luminance()
-		match mat:
-			"roof": out = col.lerp(Color("#a09783"), k * 0.75)
-			"brick", "concrete": out = col.lerp(Color(l, l, l), k * 0.35).darkened(k * 0.25)
+		match kind:
+			Weathers.ROOF: out = col.lerp(Color("#a09783"), k * 0.75)
+			Weathers.MASONRY: out = col.lerp(Color(l, l, l), k * 0.35).darkened(k * 0.25)
 			_: out = col.lerp(Color(l * 0.9, l * 0.88, l * 0.8), k).darkened(k * 0.3)
-	elif mat == "roof":
+	elif kind == Weathers.ROOF:
 		out = col.darkened(0.06 * owner_care)
 	else:
 		out = Color.from_hsv(col.h, minf(col.s * (1.0 + 0.06 * owner_care), 1.0), minf(col.v * (1.0 + 0.025 * owner_care), 1.0))
 	out.a = col.a
 	return out
+
+
+## While a plan is drawn, how the `count` vertices just added to `mat`'s
+## surface weather.
+func _note(mat: String, kind: int, count: int) -> void:
+	if not _drawing_plan:
+		return
+	if mat == "shutter" or mat == "foliage" or mat == "concrete":
+		mat = "paint"
+	if not _kinds.has(mat):
+		_kinds[mat] = PackedByteArray()
+	var k: PackedByteArray = _kinds[mat]
+	var n := k.size()
+	k.resize(n + count)
+	if kind != 0:
+		for i in range(n, n + count):
+			k[i] = kind
+	_kinds[mat] = k
 
 
 ## A window pane: UV runs 0..1 so the glass shader can draw blinds; the
@@ -1659,10 +1880,21 @@ static func _merged(plan: Array, own: Array) -> Array:
 	if own.is_empty() or own[Mesh.ARRAY_VERTEX] == null or own[Mesh.ARRAY_VERTEX].is_empty():
 		return plan
 	var out := plan.duplicate()
+	var n: int = (plan[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
 	for i in out.size():
+		if i == Mesh.ARRAY_INDEX:
+			continue
 		if out[i] != null and own[i] != null:
 			out[i] = out[i].duplicate()
 			out[i].append_array(own[i])
+	if out[Mesh.ARRAY_INDEX] != null:
+		# A mirrored plan is indexed; the lot's own parts follow it in order.
+		var idx: PackedInt32Array = (out[Mesh.ARRAY_INDEX] as PackedInt32Array).duplicate()
+		var m: int = (own[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+		idx.resize(n + m)
+		for i in m:
+			idx[n + i] = n + i
+		out[Mesh.ARRAY_INDEX] = idx
 	return out
 
 
