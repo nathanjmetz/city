@@ -209,19 +209,33 @@ func _flat_roofed(mat: String, w: float, d: float, cz: float, deck: float, top: 
 	_coping(w, d, cz, top)
 
 
-## Paves the rest of the lot behind the building out to the side and rear
-## lines, the way a shop's alley side or a plant's yard is: asphalt behind
-## newer shops, gravel behind older ones and factories, with a front-load
-## dumpster (2 yd, 6 ft wide) by the back door of a shop. Runs last, so its
-## random draws move nothing else.
-func _service_yard(gravel: bool, dumpster := true) -> void:
+## Paves the lot behind the building, the way a shop's alley side or a
+## plant's yard is: asphalt behind newer shops, gravel behind older ones
+## and factories, with a front-load dumpster (2 yd, 6 ft wide) by the back
+## door of a shop. A shop's lot is paved only as far as it uses it: a row of
+## 90-degree stalls and its aisle (5.5 + 6.7 m) and the dumpster pad, about
+## 15 m back and a few metres either side of the building, with lawn
+## beyond; a plant's yard (`reach` INF) runs out to the lot lines. Runs
+## last, so its random draws move nothing else.
+func _service_yard(gravel: bool, dumpster := true, reach := 15.0) -> void:
 	var pts := outline
 	if pts.size() < 3:
 		pts = PackedVector2Array([Vector2(-half, 0), Vector2(half, 0), Vector2(half, depth), Vector2(-half, depth)])
 	var z0 := _mass_back_z + 0.4
 	if depth - z0 < 2.0:
 		return
-	var back := PackedVector2Array([Vector2(-1000, z0), Vector2(1000, z0), Vector2(1000, depth + 1.0), Vector2(-1000, depth + 1.0)])
+	var z1 := minf(depth + 1.0, z0 + reach)
+	var x0 := -1000.0
+	var x1 := 1000.0
+	if reach < INF:
+		x0 = INF
+		x1 = -INF
+		for r: Rect2 in _masses:
+			x0 = minf(x0, r.position.x - 3.0)
+			x1 = maxf(x1, r.end.x + 3.0)
+		if x0 > x1:
+			return
+	var back := PackedVector2Array([Vector2(x0, z0), Vector2(x1, z0), Vector2(x1, z1), Vector2(x0, z1)])
 	var col := Color("#8d877c") if gravel else Color("#4a4a48")
 	for poly in Geometry2D.intersect_polygons(pts, back):
 		_flat_ground("gravel" if gravel else "asphalt", poly, 0.05, col)  # 1 cm under any parking already drawn

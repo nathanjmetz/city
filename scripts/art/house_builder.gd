@@ -68,6 +68,7 @@ var depth := 32.0
 var outline := PackedVector2Array()
 var _back_z := -INF  # the furthest back anything built so far reaches (for the back yard)
 var _mass_back_z := -INF  # the same for building masses only
+var _masses := []  # the building masses' footprints (Rect2 in lot x/z), for tree spacing
 var pad := 0.0
 var era := "recent"
 var _cell_seed := 0  # the street block this lot is in (its builder)
@@ -159,6 +160,24 @@ func _house(to_curb: float, storeys := 0) -> Array:
 	# setback, a few plans from its era's book and a few colour schemes;
 	# each lot takes one plan, built for the lot's width class, and one
 	# scheme. The same plan on the same width class is drawn once and kept.
+	var body := _plan(storeys)
+	_body = body.arrays
+	_reach = body.reach
+	_back_z = body.back_z
+	_mass_back_z = body.mass_back_z
+	_masses = body.masses.duplicate()
+	var info: Dictionary = body.info.duplicate()
+	_yard(info, to_curb)
+	if owner_care >= 1:
+		_improve()
+	_yard_trees(info, to_curb)
+	_back_yard(info)
+	return [_commit_house(), _commit_flat(), trees]
+
+
+## The plan this lot gets from its block's builder, drawn or from the
+## kept ones (see _house).
+func _plan(storeys: int, any_care := false) -> Dictionary:
 	var crew := RandomNumberGenerator.new()
 	crew.seed = hash([_cell_seed, "builder"])
 	var book: Array = PLAN_BOOK[era]
@@ -179,22 +198,30 @@ func _house(to_curb: float, storeys := 0) -> Array:
 		zf = snappedf(clampf(deep * 0.22, 4.5, zf), 0.5)
 	var key := [era, plan, scheme, gs, wide, deep, zf, storeys, owner_care, force_kind]
 	var body: Dictionary = _plans.get(key, {})
+	if any_care:
+		# Care only weathers the colours, so any tier's drawing will do.
+		for tier in [-2, -1, 0, 1, 2]:
+			key[8] = tier
+			if body.is_empty():
+				body = _plans.get(key, {})
+		key[8] = owner_care
 	if body.is_empty():
 		body = _draw_plan(key, wide, deep, zf, gs, storeys)
 		if _plans.size() >= _plan_cap:
 			_plans.erase(_plans.keys()[0])
 		_plans[key] = body
-	_body = body.arrays
-	_reach = body.reach
-	_back_z = body.back_z
-	_mass_back_z = body.mass_back_z
-	var info: Dictionary = body.info.duplicate()
-	_yard(info, to_curb)
-	if owner_care >= 1:
-		_improve()
-	_yard_trees(info, to_curb)
-	_back_yard(info)
-	return [_commit_house(), _commit_flat(), trees]
+	return body
+
+
+## The garage, drive and front door a house lot gets (the plan's info:
+## drive_x, drive_w, garage_z, door_x, walk_z, front_z, gs), so the traffic
+## sim parks cars on the very drive the art paints. Same arguments as build().
+static func plan_info(seed: int, lot := {}, storeys := 0) -> Dictionary:
+	var b := HouseBuilder.new()
+	b.rng = RandomNumberGenerator.new()
+	b.rng.seed = seed
+	b._fit(lot)
+	return b._plan(storeys, true).info
 
 
 ## Draws one plan of the book on a lot of its width class, with its own
@@ -217,6 +244,7 @@ func _draw_plan(key: Array, wide: float, deep: float, zf: float, gs: float, stor
 	_reach = 0.0
 	_back_z = -INF
 	_mass_back_z = -INF
+	_masses = []
 	# The paint scheme: siding, roof, shutters, door and brick.
 	var colours := rng
 	rng = paint
@@ -266,7 +294,8 @@ func _draw_plan(key: Array, wide: float, deep: float, zf: float, gs: float, stor
 	var arrays := {}
 	for mat in _st:
 		arrays[mat] = _st[mat].commit_to_arrays()
-	var body := {"arrays": arrays, "info": info, "reach": _reach, "back_z": _back_z, "mass_back_z": _mass_back_z}
+	var body := {"arrays": arrays, "info": info, "reach": _reach, "back_z": _back_z, "mass_back_z": _mass_back_z,
+		"masses": _masses}
 	rng = was_rng
 	_st = was_st
 	half = was_half
@@ -919,7 +948,30 @@ func _yard_trees(h: Dictionary, to_curb: float) -> void:
 		if _improved.has_area() and _improved.grow(1.5).has_point(Vector2(p.x, p.z)):
 			continue
 		var pick := TreeField.pick(rng, s[1])
-		trees.append([p, pick[0], pick[1], rng.randf_range(0.75, 1.15)])
+		var size := rng.randf_range(0.75, 1.15)
+		# A shade tree goes in clear of the house, as arborists plant them
+		# (big maples and oaks about 20 ft out), so its crown never passes
+		# through a wall; a front-yard tree that can't clear it is a
+		# crabapple instead, the small ornamental people put near the house.
+		if p.z > 0.0 and _wall_gap(p) < TreeField.SPREAD[pick[0]] * size * 0.9:
+			if not s[1]:
+				continue
+			pick[0] = TreeField.Species.CRABAPPLE
+			pick[1] = TreeField.LEAF[pick[0]]
+			size = minf(size, 0.9)
+			if _wall_gap(p) < TreeField.SPREAD[pick[0]] * size * 0.9:
+				continue
+		trees.append([p, pick[0], pick[1], size])
+
+
+## How far a spot on the lot is from the nearest building mass (m).
+func _wall_gap(p: Vector3) -> float:
+	var gap := INF
+	for r: Rect2 in _masses:
+		var dx := maxf(maxf(r.position.x - p.x, p.x - r.end.x), 0.0)
+		var dz := maxf(maxf(r.position.y - p.z, p.z - r.end.y), 0.0)
+		gap = minf(gap, Vector2(dx, dz).length())
+	return gap
 
 
 ## The back yard out to the lot lines, so a block reads as yards meeting at
@@ -1427,6 +1479,8 @@ func _box(mat: String, size: Vector3, center: Vector3, col: Color, basis := Basi
 	_back_z = maxf(_back_z, reach)
 	if size.y > 2.5 and minf(size.x, size.z) > 2.0:
 		_mass_back_z = maxf(_mass_back_z, reach)  # buildings, not poles or yard things
+		var foot := Vector2(h.x, h.z) if basis == Basis.IDENTITY else Vector2.ONE * h.length()
+		_masses.append(Rect2(center.x - foot.x, center.z - foot.y, foot.x * 2.0, foot.y * 2.0))
 	var p := func(x: float, y: float, z: float) -> Vector3:
 		return center + basis * Vector3(x * h.x, y * h.y, z * h.z)
 	var faces := [
