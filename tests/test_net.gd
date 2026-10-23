@@ -85,7 +85,8 @@ func _run() -> void:
 		sim.tick()
 	_check(sim.buildings.size() > 0, "homes grow in Ann's town on her own computer")
 	ann.send_town(true)
-	await _until(func(): return bob.region.stale_ids().has(ann.my_city))
+	await _until(func(): return bob.region.stale_ids().has(ann.my_city) \
+		and bob.region.city_data(ann.my_city).get("buildings", {}).size() == sim.buildings.size())
 	_check(server.region.stale_ids().has(ann.my_city), "the server keeps Ann's copy as data until it needs it")
 	# Copies are unpacked one town at a time, a few seconds apart; now, here.
 	bob.region.load_stale()

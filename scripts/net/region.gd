@@ -305,7 +305,9 @@ func to_dict() -> Dictionary:
 		"ledger": ledger.to_dict()}
 
 
-func from_dict(d: Dictionary) -> void:
+## With `first` set, only that town is unpacked now (a player's own, so
+## they can start playing at once); the others wait as data (load_stale).
+func from_dict(d: Dictionary, first := "") -> void:
 	region_seed = int(d.get("seed", 1))
 	chat = d.get("chat", [])
 	ledger = Ledger.new()
@@ -323,7 +325,11 @@ func from_dict(d: Dictionary) -> void:
 		var c: Dictionary = cs[id]
 		var sim := new_sim()
 		sim.terrain_offset = Vector2(float(c.origin[0]), float(c.origin[1]))
-		sim.from_dict(c.city)
+		if first == "" or id == first:
+			sim.from_dict(c.city)
+		else:
+			_data[id] = c.city
+			_stale[id] = true
 		cities[id] = {"owner": str(c.owner), "player": str(c.get("player", "")), "name": str(c.name),
 			"origin": Vector2(float(c.origin[0]), float(c.origin[1])), "color": int(c.color), "sim": sim}
 
