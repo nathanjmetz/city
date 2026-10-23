@@ -25,6 +25,10 @@ const MAX_CARS := 400
 const DT := 0.1
 ## Ticks between drivers' decisions (see _drive).
 const THINK_EVERY := 3
+## How far a road's running speed eases each decision: 5% (with cars on it)
+## and 2% (empty) a tenth of a second.
+const EASE_BUSY := 1.0 - 0.95 * 0.95 * 0.95
+const EASE_QUIET := 1.0 - 0.98 * 0.98 * 0.98
 const CAR_LEN := 4.6
 const LANE_W := 3.6
 ## Trips that may drive in bus lanes, and how far before a corner or
@@ -376,8 +380,12 @@ func car_pose(car: Dictionary, ahead := 0.0) -> Array:
 		_rebuild()  # a loaded city that hasn't run yet (a neighbor's, say)
 	if car.has("flow_end"):
 		return flow_pose(car, ahead)
-	if car.j != null:
+	if car.get("j") != null:
 		return _conn_pose(car.j, minf(car.jd + ahead, car.j.len))
+	if not car.has("route"):
+		# Parked since the caller last looked (a view holding on to it
+		# between frames): it stands where it stopped.
+		return parked_pose(car) if car.has("pos") else [Vector3.ZERO, Vector3.FORWARD]
 	var w: Dictionary = ways[car.route[car.leg]]
 	var d := minf(car.d + ahead, w.len)
 	var pose := _way_pose(w, car.lane, d)
@@ -3355,7 +3363,7 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 	# decided, so stop lines and parking stay exact.
 	var think := _tick % THINK_EVERY == 0
 	if not think:
-		_drive_move()
+		_drive_move(false)
 		_keep_gaps()
 		return
 	# Vehicles with a job that were waiting for a gap to pull out. Routes
@@ -3385,7 +3393,7 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 			car.a = _accel_in_box(car)
 	_lane_changes()
 	_replan_some(THINK_EVERY)
-	_drive_move()
+	_drive_move(true)
 
 
 ## Between decisions nobody runs into the car ahead: a follower closing in
@@ -3409,7 +3417,8 @@ func _keep_gaps() -> void:
 
 ## Moves every car on by its speed and does what it reached: a junction,
 ## its spot, the end of its road.
-func _drive_move() -> void:
+## `tally`: also measure how fast each road is going (on decision ticks).
+func _drive_move(tally: bool) -> void:
 	var done := []
 	var speed_sum := 0.0
 	var limit_sum := 0.0
@@ -3443,13 +3452,14 @@ func _drive_move() -> void:
 			continue
 		var w: Dictionary = ways[car.route[car.leg]]
 		car.d += car.v * DT
-		var share: float = minf(car.v / w.vmax, 1.0) if car.get("held", false) else 1.0
-		speed_sum += share
-		limit_sum += 1.0
-		if not way_sum.has(w.id):
-			way_sum[w.id] = [0.0, 0]
-		way_sum[w.id][0] += share
-		way_sum[w.id][1] += 1
+		if tally:
+			var share: float = minf(car.v / w.vmax, 1.0) if car.get("held", false) else 1.0
+			speed_sum += share
+			limit_sum += 1.0
+			if not way_sum.has(w.id):
+				way_sum[w.id] = [0.0, 0]
+			way_sum[w.id][0] += share
+			way_sum[w.id][1] += 1
 		if car.leg == car.route.size() - 1:
 			# Start turning in a few metres early, so the driveway is a smooth arc.
 			if car.has("to_place") and car.d >= car.end_d - 40.0 and car.to_place != "edge" \
@@ -3492,6 +3502,13 @@ func _drive_move() -> void:
 				car.v = 0.0
 	for car in done:
 		cars.erase(car)
+	if tally:
+		_tally_speeds(way_sum, speed_sum, limit_sum)
+
+
+## Each road's running speed (a share of its limit), eased toward what the
+## cars on it are doing; it feeds route costs and the flow figure.
+func _tally_speeds(way_sum: Dictionary, speed_sum: float, limit_sum: float) -> void:
 	# Snapped so the value survives a save and load exactly (saves and region
 	# snapshots must give the same city).
 	# Only roads with cars on them or still recovering from a jam change;
@@ -3512,9 +3529,9 @@ func _drive_move() -> void:
 		var sp: float
 		var fs: float = _fshare.get(wid, 1.0)
 		if way_sum.has(wid):
-			sp = snappedf(lerpf(_speed[wid], minf(way_sum[wid][0] / way_sum[wid][1], fs), 0.05), 0.000001)
+			sp = snappedf(lerpf(_speed[wid], minf(way_sum[wid][0] / way_sum[wid][1], fs), EASE_BUSY), 0.000001)
 		else:
-			sp = snappedf(lerpf(_speed[wid], fs, 0.02), 0.000001)
+			sp = snappedf(lerpf(_speed[wid], fs, EASE_QUIET), 0.000001)
 		if sp > 0.9999 and fs >= 1.0:
 			sp = 1.0  # all but recovered (snapping would leave it just short)
 			_slow.erase(wid)
