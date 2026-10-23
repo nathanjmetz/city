@@ -46,10 +46,10 @@ engine). `pick()` is the fallback for background trips.
 - `scripts/traffic/traffic_view.gd`: one batch per model and detail level.
   Bodies move by the kinematic bicycle model (the one behind AASHTO's
   turning templates): the front axle follows the simulation's path and the
-  rear axle trails it a wheelbase back, so cars turn about their rear
-  wheels, cut a little inside on corners and ease through lane changes;
-  buses swing their fronts wide; semi trailers hinge at the fifth wheel and
-  trail it the same way. Backing out of a drive, the rear leads along the
+  rear axle runs in its tracks a wheelbase back, so a body turns about its
+  middle, not its bumper, lines up again once round a corner and eases
+  through lane changes; buses swing their fronts wide; semi trailers hinge
+  at the fifth wheel with their axles in the same tracks. Backing out of a drive, the rear leads along the
   path. The view samples each vehicle once a simulation step and glides
   between samples one step behind, so it stays smooth at any step rate.
   Up close, bodies dip a little under braking and lean out in turns.
