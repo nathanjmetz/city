@@ -45,8 +45,16 @@ func _init() -> void:
 	var sparse := _picks(sim, key, ZoneMap.Zone.RESIDENTIAL, rng)
 	_check(sparse.keys() == ["house"], "a quiet street gets houses (%s)" % str(sparse))
 	var crowd := _crowd(sim, key, 70)
+	# A small town's crowded core: mostly houses, a few walk-ups, no rows
+	# (real small Midwestern towns).
+	var small := _picks(sim, key, ZoneMap.Zone.RESIDENTIAL, rng)
+	_check(not small.has("row_home") and small.get("house", 0) > small.get("apartments", 0),
+		"a small town's core stays mostly houses, no row homes (%s)" % str(small))
+	var people: int = sim.stats.population
+	sim.stats.population = 150_000
 	var dense := _picks(sim, key, ZoneMap.Zone.RESIDENTIAL, rng)
-	_check(dense.has("row_home") and dense.has("apartments"), "a dense core gets row homes and apartments (%s)" % str(dense))
+	_check(dense.has("row_home") and dense.has("apartments"), "a big city's dense core gets row homes and apartments (%s)" % str(dense))
+	sim.stats.population = people
 	var row := BuildingTypes.make(sim, key, sim.buildings[key], "row_home", 0)
 	var units: int = row.units
 	_check(units == maxi(2, floori(sim.lots[key].width / 7.5)) and row.cap == units * 3,
