@@ -14,6 +14,11 @@ const LOAD_BUDGET := {"Connecting to the region": 5.0, "Opening your town": 10.0
 const LOAD_BUDGET_DEFAULT := 10.0
 ## The web page should reach its first frame in this many seconds.
 const PAGE_BUDGET := 20.0
+## Of that, the download and the engine start (web/shell.html timings).
+const DOWNLOAD_BUDGET := 15.0
+const START_BUDGET := 5.0
+## A sim tick should take at most this long, on average (PerfBudget).
+const TICK_BUDGET_MS := 25.0
 const FPS_FLOOR := 30.0
 const HITCHES_PER_MINUTE := 2.0
 ## A thing is hard to find when it takes longer or more clicks than this.
@@ -156,16 +161,37 @@ static func _speed_fixes(ev: Dictionary, fixes: Array) -> void:
 			_fix(fixes, 75 + 3 * _who(boots), "The web page takes %.0f s to start" % med,
 				"From opening the link to the first frame, download included. Median of %d starts (budget %.0f s)." \
 				% [boots.size(), PAGE_BUDGET], PERF_OWNER, "speed", _who(boots))
+	var dl: Array = boots.filter(func(b): return int(b.get("download_ms", 0)) > 0)
+	if not dl.is_empty():
+		var med := median(dl.map(func(b): return b.download_ms / 1000.0))
+		var mb := median(dl.map(func(b): return float(b.get("bytes", 0)) / 1048576.0))
+		if med > DOWNLOAD_BUDGET:
+			_fix(fixes, 72 + 3 * _who(dl), "The download takes %.0f s" % med,
+				"%.0f MB at a median %.0f KB/s over %d starts (budget %.0f s). Make the download smaller or cache it." \
+				% [mb, mb * 1024.0 / maxf(med, 0.1), dl.size(), DOWNLOAD_BUDGET], PERF_OWNER, "speed", _who(dl))
+	var st: Array = boots.filter(func(b): return int(b.get("start_ms", 0)) > 0)
+	if not st.is_empty():
+		var med := median(st.map(func(b): return b.start_ms / 1000.0))
+		if med > START_BUDGET:
+			_fix(fixes, 65 + 3 * _who(st), "The engine takes %.1f s to start after the download" % med,
+				"Median of %d starts (budget %.0f s)." % [st.size(), START_BUDGET], PERF_OWNER, "speed", _who(st))
 	var perf: Array = ev.get("perf", []).filter(func(p): return p.get("scene") == "main")
 	if perf.is_empty():
 		return
+	var ticks: Array = perf.filter(func(p): return p.has("tick_ms"))
+	if not ticks.is_empty():
+		var med := median(ticks.map(func(p): return float(p.tick_ms)))
+		if med > TICK_BUDGET_MS:
+			_fix(fixes, 60 + med / TICK_BUDGET_MS * 5 + 3 * _who(ticks), "Sim ticks take %.0f ms" % med,
+				"Median over %d samples (budget %.0f ms, worst %.0f ms). Costliest: %s." % [ticks.size(), TICK_BUDGET_MS,
+				ticks.map(func(p): return float(p.get("tick_max_ms", 0))).max(), _costliest(ticks)], PERF_OWNER, "speed", _who(ticks))
 	var fps := median(perf.map(func(p): return float(p.fps)))
 	var slow: Array = perf.filter(func(p): return float(p.fps) < FPS_FLOOR)
 	if fps < FPS_FLOOR or slow.size() * 4 > perf.size():
 		var pops: Array = slow.map(func(p): return float(p.get("pop", 0)))
 		_fix(fixes, 70 + (FPS_FLOOR - minf(fps, FPS_FLOOR)) + 3 * _who(slow), "Low frame rate: median %.0f fps" % fps,
-			"%d%% of samples under %.0f fps, from %d players; median town size when slow: %d people." \
-			% [100 * slow.size() / perf.size(), FPS_FLOOR, _who(slow), int(median(pops))], PERF_OWNER, "speed", _who(slow))
+			"%d%% of samples under %.0f fps, from %d players; median town size when slow: %d people. Costliest systems then: %s." \
+			% [100 * slow.size() / perf.size(), FPS_FLOOR, _who(slow), int(median(pops)), _costliest(slow)], PERF_OWNER, "speed", _who(slow))
 	var hitches := 0
 	for p in perf:
 		hitches += int(p.get("hitches", 0))
@@ -246,6 +272,18 @@ static func _stuck_fixes(ev: Dictionary, fixes: Array) -> void:
 		if total >= 5 and cmds[t][1] * 10 >= total * 3:
 			_fix(fixes, 30 + 30.0 * cmds[t][1] / total, "\"%s\" fails %d%% of the time" % [t, 100 * cmds[t][1] / total],
 				"%d of %d tries turned down." % [cmds[t][1], total], UI_OWNER, "stuck", 0)
+
+
+## The sim systems that most often top the samples' top_sim lists.
+static func _costliest(samples: Array) -> String:
+	var n := {}
+	for p in samples:
+		for key in p.get("top_sim", {}):
+			n[key] = float(n.get(key, 0.0)) + float(p.top_sim[key])
+	var keys := n.keys()
+	keys.sort_custom(func(a, b): return n[a] > n[b])
+	return ", ".join(PackedStringArray(keys.slice(0, 3).map(func(k): return "%s %.1f ms" % [k, n[k] / samples.size()]))) \
+		if not keys.is_empty() else "not measured"
 
 
 static func _top_features(ev: Dictionary, n: int) -> Array:

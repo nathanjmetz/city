@@ -15,6 +15,7 @@ func _run() -> void:
 	_test_hunts()
 	_test_stuck()
 	_test_insights()
+	_test_perf_window()
 	await _test_server()
 	print("SOME TESTS FAILED" if _failed else "ALL TESTS PASSED")
 	quit(1 if _failed else 0)
@@ -85,7 +86,9 @@ func _test_insights() -> void:
 				"clicks": 6, "travel": 3.0, "end": "used"},
 			{"k": "hunt", "target": "Roads", "path": ["Roads"], "s": 1.0, "clicks": 1, "travel": 0.2, "end": "used"},
 			{"k": "load", "what": "Opening your town", "s": 25.0},
-			{"k": "perf", "fps": 22.0, "worst_ms": 300, "hitches": 3, "scene": "main", "pop": 900},
+			{"k": "perf", "fps": 22.0, "worst_ms": 300, "hitches": 3, "scene": "main", "pop": 900,
+				"tick_ms": 40.0, "tick_max_ms": 90.0, "top_sim": {"sim.traffic": 14.0, "sim.lots": 6.0}},
+			{"k": "boot", "page_ms": 70000, "download_ms": 65000, "start_ms": 3000, "bytes": 49 * 1048576},
 		]
 		if who != "Cy":
 			events.append({"k": "error", "sig": "x:1 boom", "file": "res://scripts/traffic/traffic_sim.gd", "line": 1,
@@ -103,9 +106,28 @@ func _test_insights() -> void:
 		"slow finds become fixes, quick ones don't")
 	_check(titles.any(func(x): return x.begins_with("Slow loading screen")), "slow loads become fixes")
 	_check(titles.any(func(x): return x.begins_with("Low frame rate")), "low frame rate becomes a fix")
+	_check(titles.any(func(x): return x.begins_with("The download takes")) \
+		and not titles.any(func(x): return x.begins_with("The engine takes")), "a slow line is told apart from a slow start")
+	var tick: Array = r.fixes.filter(func(f): return f.title.begins_with("Sim ticks"))
+	_check(not tick.is_empty() and "sim.traffic" in tick[0].detail, "slow ticks name the costliest system")
 	_check(r.summary.players == 4 and r.summary.find_seconds_by_build.has("abc1234"), "summary by player and build")
 	var md := Insights.to_markdown(r)
 	_check(md.contains("## Fix first") and md.contains("Water tower"), "the report reads as a fix list")
+
+
+func _test_perf_window() -> void:
+	Perf.record("sim.traffic", 10.0)
+	Perf.record("sim.traffic", 20.0)
+	Perf.record("sim.tick", 30.0)
+	var e := {}
+	var tel := root.get_node_or_null("Telemetry")
+	if tel:
+		tel._perf_systems(e)
+		_check(e.get("tick_ms") == 30.0 and e.top_sim.has("sim.traffic"), "perf samples carry the sim's timings (%s)" % str(e))
+	else:
+		Perf.reset_window()
+	_check(Perf.stats["sim.traffic"].n == 0 and Perf.stats["sim.traffic"].avg > 0.0,
+		"a new perf window keeps the overlay's smoothed numbers")
 
 
 func _test_server() -> void:
