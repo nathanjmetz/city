@@ -118,6 +118,12 @@ func _apply_quality() -> void:
 	if q == null or not q.active:
 		return
 	var t := q.settings()
+	shadow_reach = t.shadow_reach
+	sun.directional_shadow_max_distance = minf(sun.directional_shadow_max_distance, shadow_reach)
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS if t.splits == 4 \
+		else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	if q.browser:
+		return  # the effects below need Forward+
 	env.ssao_enabled = t.ssao
 	env.ssao_radius = 1.5
 	env.ssao_intensity = 1.6
@@ -146,10 +152,6 @@ func _apply_quality() -> void:
 	env.volumetric_fog_anisotropy = 0.6
 	env.volumetric_fog_length = 600.0
 	env.volumetric_fog_sky_affect = 0.0
-	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS if t.splits == 4 \
-		else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
-	shadow_reach = t.shadow_reach
-	sun.directional_shadow_max_distance = minf(sun.directional_shadow_max_distance, shadow_reach)
 
 
 ## Back to the fixed late-morning look (day/night cycle off).
