@@ -250,6 +250,9 @@ func _init() -> void:
 	permits.locators["farm"] = func(_sim, id: int) -> Vector2:
 		var f: Dictionary = farms.farms.get(id, {"pos": Vector3.ZERO})
 		return Vector2(f.pos.x, f.pos.z)
+	permits.locators["industry"] = func(_sim, id: int) -> Vector2:
+		var s: Dictionary = industry.sites.get(id, {"pos": Vector3.ZERO})
+		return Vector2(s.pos.x, s.pos.z)
 	# New businesses get their names before any view draws them, so signs go
 	# up with the building (connected ahead of the views).
 	for sig in [buildings_changed, farms_changed, industry_changed]:
@@ -1786,6 +1789,7 @@ func _wire_policies() -> void:
 	# A farm whose block is full builds a road to the next (HubRoads), and
 	# asks on the bell when that road would cross the player's things.
 	farms.expand = _farm_road
+	industry.expand = _industry_road
 
 
 ## Hubs with their own money lever (a campus's funding level, a post
@@ -2120,6 +2124,91 @@ func _farm_open(id: int, block: Vector2i, route: Array, leader: String) -> bool:
 		return false
 	f.blocks.append(block)
 	f.why = "%s filled its 80 acres, so it built a gravel road on the survey line to farm the next 80. It's a town road now." % leader
+	_lots_dirty = true
+	_usable_cache.clear()
+	return true
+
+
+## Oil or timber company `id` has worked out its lease: it leases the next
+## tract and builds a gravel lease (or logging) road to it from the nearest
+## public road, which then joins the town's network like a farm's road.
+## Real reference: Illinois Basin lease roads off Pike County's gravel
+## roads; logging roads into the next woods. Crossing the player's roads,
+## lots or buildings goes to the bell first. True when anything changed.
+func _industry_road(id: int) -> bool:
+	var s: Dictionary = industry.sites[id]
+	var leader := str(s.get("leader", {}).get("name", ""))
+	if leader == "":
+		leader = "The %s" % Industry.KINDS[s.kind].name.to_lower()
+	var pending: Dictionary = s.get("pending", {})
+	if not pending.is_empty():
+		var state := permits.state_of(int(pending.req))
+		if state == Permits.State.APPROVED:
+			var route := HubRoads.from_flat(self, permits.requests[int(pending.req)].route)
+			permits.done(int(pending.req))
+			s.pending = {}
+			return _industry_open(id, Vector2i(int(pending.cell[0]), int(pending.cell[1])), route, leader)
+		if state != Permits.State.OPEN:
+			s.pending = {}
+			s.road_wait = industry.day + Balance.INDUSTRY_ROAD_WAIT_DAYS
+		return false
+	var cell := industry.next_lease(id, field_usable)
+	if cell == Vector2i.MAX:
+		s.road_wait = industry.day + Balance.INDUSTRY_ROAD_WAIT_DAYS
+		return false
+	var mid := Industry.pad_center(s, cell)
+	var right := Vector3(-s.dir.z, 0.0, s.dir.x)
+	var home := Vector3(s.pos.x, 0.0, s.pos.z) - mid
+	# Toward the main building first, then square off to the nearest road.
+	var ways := [home.normalized(), s.dir, -s.dir, right, -right] if home.length() > 1.0 else [s.dir, -s.dir, right, -right]
+	var best := {}
+	var best_score := -INF
+	for d in ways:
+		var start := HubRoads.reach(self, mid, d, Balance.INDUSTRY_ROAD_MAX)
+		if start == Vector3.INF:
+			continue
+		var span := start.distance_to(mid)
+		# It stops at the edge of the new tract's first pad, not on it.
+		var end := mid + (start - mid) / maxf(span, 1.0) * Industry.PAD
+		if start.distance_to(end) <= HubRoads.SNAP:
+			continue
+		var plan := HubRoads.check(self, [start, end], "site:%d" % id)
+		if not plan.ok or plan.length > Balance.INDUSTRY_ROAD_MAX:
+			continue
+		var score: float = -plan.length - (2000.0 if plan.permit else 0.0)
+		if score > best_score:
+			best_score = score
+			best = plan
+	if best.is_empty():
+		s.road_wait = industry.day + Balance.INDUSTRY_ROAD_WAIT_DAYS
+		return false
+	if not best.permit:
+		return _industry_open(id, cell, best.route, leader)
+	var what := "logging road" if s.kind == "forest" else "lease road"
+	var req := permits.file(self, {"hub": "industry", "hub_id": id, "leader": leader,
+		"title": "A gravel %s to new ground" % what,
+		"why": "%s has worked out its lease and wants the next tract. The road would join the town's roads." \
+			% leader,
+		"route": HubRoads.flat(best.route), "width": RoadStyle.right_of_way_half(HubRoads.TYPE) * 2.0,
+		"per_m": int(Economy.BUILD_PER_M[HubRoads.TYPE]), "base": 0, "budget": 0})
+	if req == -1:
+		s.road_wait = industry.day + Balance.INDUSTRY_ROAD_WAIT_DAYS
+		return false
+	s.pending = {"req": req, "cell": [cell.x, cell.y]}
+	return false
+
+
+## Builds a company's lease road and takes on the tract beyond it.
+func _industry_open(id: int, cell: Vector2i, route: Array, leader: String) -> bool:
+	var s: Dictionary = industry.sites[id]
+	if route.size() < 2 or HubRoads.build(self, route).is_empty():
+		s.road_wait = industry.day + Balance.INDUSTRY_ROAD_WAIT_DAYS
+		return false
+	if not s.has("leases"):
+		s.leases = []
+	s.leases.append(cell)
+	var what := "a logging road into the next woods" if s.kind == "forest" else "a gravel lease road to the next tract"
+	s.why = "%s worked out its lease, so it built %s. It's a town road now." % [leader, what]
 	_lots_dirty = true
 	_usable_cache.clear()
 	return true
