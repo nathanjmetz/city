@@ -32,6 +32,14 @@ func _init() -> void:
 	var v: Dictionary = sim.parks.tourism.venues[fid]
 	_check(str(v.leader.get("name", "")).contains(" "), "the fair board has a named leader (%s)" % v.leader.get("name", ""))
 
+	# The grandstand goes up first: no fair while it's being built.
+	var ref := "park:%d" % fid
+	_check(sim.construction.sites.has(ref), "the fairgrounds goes up in stages")
+	sim.parks.tourism._crowd(sim, fid, 7, 9)
+	_check(v.crowd.is_empty(), "no fair while it's being built")
+	# (Building done; the game would get there in about a month.)
+	sim.construction.sites.erase(ref)
+
 	# Run to the fair in July: it opens at 9, people come and go by car.
 	var trips0: int = sim.traffic._next_id
 	var saw_crowd := false

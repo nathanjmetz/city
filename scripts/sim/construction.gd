@@ -305,6 +305,7 @@ static func _exists(sim: CitySim, ref: String) -> bool:
 		"wh": return sim.warehouses.buildings.has(int(id))
 		"farm": return sim.farms.farms.has(int(id))
 		"hub": return sim.hubs.hubs.has(int(id))
+		"park": return sim.parks.sites.has(int(id))
 	return false
 
 

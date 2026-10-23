@@ -90,6 +90,14 @@ static func size_of(kind: String) -> Vector2:
 	return Balance.PARK_START_SIZE if kind == "park" else Balance.AMENITIES[kind].size
 
 
+## How a site's building goes up (Construction.PROFILES), or "" for a park
+## or trailhead, which are laid out rather than built.
+static func profile_of(kind: String) -> String:
+	if kind in ["park", "trailhead"]:
+		return ""
+	return "shop" if KINDS.get(kind, {}).get("auto", false) else "civic"
+
+
 static func cost_of(kind: String) -> int:
 	return int(Balance.AMENITIES[kind].cost)
 
@@ -193,6 +201,10 @@ func add(sim: CitySim, kind: String, pos: Vector3, dir: Vector3) -> int:
 	var t := Neighborhood.target(sim, pos, lift_at(pos, "value", id))
 	s.score = _quantize(t.score)
 	s.tier = Neighborhood.tier_for(s.score, -1)
+	if Parks.profile_of(kind) != "":
+		# Its building goes up like any other (Construction).
+		sim.construction.start("park:%d" % id, Parks.profile_of(kind), sim.tick_count, pos, dir,
+			SETBACK + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH)
 	if Tourism.is_venue(kind):
 		tourism.sync(sim)
 	if kind == "trailhead":

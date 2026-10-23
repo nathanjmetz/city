@@ -83,20 +83,18 @@ func _spawn(id: int, fresh: bool) -> Node3D:
 		s["event_on"] = not v.get("crowd", {}).is_empty()
 	var built := ParkBuilder.build_site(s, id * 7919 + int(s.founded), to_curb, town_name)
 	var xform := Transform3D(root.basis, root.position)
-	for i in [0, 1, 4]:
-		var mi := MeshInstance3D.new()
-		# Paths and lawns lie on the land, following it, cut small enough
-		# to bend over a big park's rises. A park's things stand on the
-		# ground under them; a landmark stands level as one building.
-		# Everything rides LIFT above the drawn ground, so the land's own
-		# triangles never poke through a lawn.
-		if i == 0:
-			mi.mesh = Terrain.drape_local(_split(built[i], 8.0, LIFT), xform) if s.kind == "park" else built[i]
-		else:
-			mi.mesh = Terrain.drape_local(_split(built[i], 6.0, LIFT), xform)
-		if i != 0:
-			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		root.add_child(mi)
+	# Paths and lawns lie on the land, following it, cut small enough to
+	# bend over a big park's rises. A park's things stand on the ground under
+	# them; a landmark stands level as one building. Everything rides LIFT
+	# above the drawn ground, so the land's own triangles never poke through.
+	var house: Mesh = Terrain.drape_local(_split(built[0], 8.0, LIFT), xform) if s.kind == "park" else built[0]
+	var flat := Terrain.drape_local(_split(built[1], 6.0, LIFT), xform)
+	var lawn := MeshInstance3D.new()
+	lawn.mesh = Terrain.drape_local(_split(built[4], 6.0, LIFT), xform)
+	lawn.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(lawn)
+	var labels := Node3D.new()
+	root.add_child(labels)
 	for l in built[3]:
 		var label := Label3D.new()
 		label.text = l.text
@@ -108,20 +106,44 @@ func _spawn(id: int, fresh: bool) -> Node3D:
 		label.shaded = true
 		label.position = l.pos
 		label.basis = Basis.looking_at(-l.normal, Vector3.UP)
-		root.add_child(label)
-	var frame := Transform3D(root.basis, root.position)
-	var trees := []
-	for t in built[2]:
-		var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
-		var tf := frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])
-		tf.origin.y = Terrain.ground_y(tf.origin.x, tf.origin.z)
-		trees.append([tf, t[1], t[2]])
-	_trees.set_trees("park:%d" % id, trees)
+		labels.add_child(label)
+	var ref := "park:%d" % id
+	if sim.construction.sites.has(ref):
+		# A landmark or business goes up stage by stage (ConstructionSite);
+		# its lawn, signs and trees come in once it's done.
+		lawn.visible = false
+		labels.visible = false
+		ConstructionSite.add_to(root, [house, flat, built[2]], Parks.profile_of(s.kind),
+			func(): return sim.construction.state(ref, sim.tick_count), _open.bind(id, root, lawn, labels, built[2]))
+		return root
+	for m in [house, flat]:
+		var mi := MeshInstance3D.new()
+		mi.mesh = m
+		if m != house:
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(mi)
+	_open(id, root, lawn, labels, built[2])
 	if fresh:
 		root.scale = Vector3(1.0, 0.01, 1.0)
 		create_tween().tween_property(root, "scale", Vector3.ONE, 0.45) \
 			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	return root
+
+
+## The finished site: its lawn and signs show and its trees go in.
+func _open(id: int, root: Node3D, lawn: Node3D, labels: Node3D, planted: Array) -> void:
+	if not is_instance_valid(root) or _nodes.get(id, root) != root:
+		return
+	lawn.visible = true
+	labels.visible = true
+	var frame := Transform3D(root.basis, root.position)
+	var trees := []
+	for t in planted:
+		var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
+		var tf := frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])
+		tf.origin.y = Terrain.ground_y(tf.origin.x, tf.origin.z)
+		trees.append([tf, t[1], t[2]])
+	_trees.set_trees("park:%d" % id, trees)
 
 
 ## A copy of a mesh with no triangle edge longer than `edge` metres, raised
