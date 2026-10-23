@@ -276,6 +276,14 @@ const SUBDIV_KIDS_PER_HOME := 0.6
 const SUBDIV_TRIPS_PER_HOME := 9.4
 const SUBDIV_PEAK_PER_HOME := 1.0
 
+## The future land use map (LandPlan). Land planned for homes is looked at
+## before any other (as if this many metres nearer the middle of town), and
+## a subdivision inside the plan opens each phase in this share of the time:
+## a plat that matches the comprehensive plan is routine for the plan
+## commission, one that doesn't means hearings and objections.
+const PLAN_FIRST_M := 100_000.0
+const PLAN_FASTER := 0.75
+
 ## What a building project needs from the other leaders (ProjectNeeds).
 ## About 400 tons of aggregate a home with its share of the street (NSSGA),
 ## about $16 a ton at the quarry (USGS 2023), its delivered price doubling

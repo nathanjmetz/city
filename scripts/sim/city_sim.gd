@@ -18,6 +18,8 @@ signal zones_changed
 signal stats_changed
 ## Farmland or a farm's fields changed.
 signal farms_changed
+## The future land use map changed (LandPlan).
+signal plan_changed
 ## A resource company opened, closed, or added or dropped a pad.
 signal industry_changed
 ## A campus opened, closed, or bought, built up or sold a block.
@@ -82,6 +84,9 @@ var power := Power.new()
 var logistics := Logistics.new()
 ## Land saved for farming or an industry: no roads or zoning on it.
 var reserves := Reserves.new()
+## The town's future land use map: big soft areas the player outlines for
+## homes, shops, jobs or farming. Builders look inside it first (LandPlan).
+var land_plan := LandPlan.new()
 ## Bus depots and school buses, which run themselves (scripts/transit/).
 var buses := BusNet.new()
 ## Cab companies, which run themselves too.
@@ -458,6 +463,13 @@ func apply_now(cmd: Dictionary) -> bool:
 				zones_changed.emit()
 				farms_changed.emit()
 				farms_changed.emit()
+		"paint_plan":
+			var pts := []
+			for p in cmd.points:
+				pts.append(_v(p))
+			ok = land_plan.paint(pts, str(cmd.get("kind", "")))
+			if ok:
+				plan_changed.emit()
 		"place_farmhouse":
 			var pos := _v(cmd.pos)
 			var dir := _v(cmd.dir).normalized()
@@ -809,6 +821,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			big = BigFactories.new()
 			big_factories_changed.emit()
 			reserves = Reserves.new()
+			land_plan = LandPlan.new()
 			buses = BusNet.new()
 			taxis = TaxiCo.new()
 			education = Education.new()
@@ -3740,6 +3753,7 @@ func save_steps(postcard := false) -> Array:
 		["warehouses", func(): return warehouses.to_dict()],
 		["big_factories", func(): return big.to_dict()],
 		["reserves", func(): return reserves.to_dict()],
+		["land_plan", func(): return land_plan.to_dict()],
 		["rail", func(): return rail.to_dict()],
 		["permits", func(): return permits.to_dict()],
 		["hubs", func(): return hubs.to_dict()],
@@ -3831,6 +3845,8 @@ func from_dict(d: Dictionary) -> void:
 	warehouses.from_dict(d.get("warehouses", {}))
 	big.from_dict(d.get("big_factories", {}))
 	reserves.from_list(d.get("reserves", []))
+	land_plan.from_list(d.get("land_plan", []))
+	plan_changed.emit()
 	rail.from_dict(d.get("rail", {}))
 	permits.from_dict(d.get("permits", {}))
 	hubs.from_dict(d.get("hubs", {}))

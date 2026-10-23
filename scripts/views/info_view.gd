@@ -57,9 +57,16 @@ var show_reserves := false:
 		show_reserves = v
 		_draw_reserves()
 
+## Show the future land use map (while a plan tool is out).
+var show_plan := false:
+	set(v):
+		show_plan = v
+		_draw_plan()
+
 var _wash := MeshInstance3D.new()
 var _wash_mat := StandardMaterial3D.new()
 var _reserves := MeshInstance3D.new()
+var _plan := MeshInstance3D.new()
 var _center := Vector2(INF, INF)
 var _fiber := MeshInstance3D.new()
 ## Name pins over each pollution source.
@@ -74,6 +81,7 @@ func setup(s: CitySim, camera: CityCamera) -> void:
 	sim = s
 	cam = camera
 	sim.lots_changed.connect(_draw_reserves)
+	sim.plan_changed.connect(_draw_plan)
 	_wash_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_wash_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_wash_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
@@ -89,7 +97,8 @@ func setup(s: CitySim, camera: CityCamera) -> void:
 	res_mat.disable_fog = true
 	_reserves.material_override = res_mat
 	_fiber.material_override = res_mat
-	for mi in [_wash, _reserves, _fiber]:
+	_plan.material_override = res_mat
+	for mi in [_wash, _reserves, _fiber, _plan]:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mi.visible = false
 		add_child(mi)
@@ -380,14 +389,37 @@ func _draw_reserves() -> void:
 	_reserves.visible = (mode != Mode.NONE or show_reserves) and not sim.reserves.outlines.is_empty()
 	if not _reserves.visible:
 		return
+	var m := _outlines_mesh(sim.reserves.outlines, Reserves.COLORS)
+	_reserves.visible = m != null
+	if m != null:
+		_reserves.mesh = m
+
+
+## The land use plan: each area tinted in its colour with a bright border.
+func _draw_plan() -> void:
+	if sim == null:
+		return
+	_plan.visible = show_plan and not sim.land_plan.outlines.is_empty()
+	if not _plan.visible:
+		return
+	# Big areas seen from high up: bolder than reserves.
+	var m := _outlines_mesh(sim.land_plan.outlines, LandPlan.COLORS, 0.34, 3.0)
+	_plan.visible = m != null
+	if m != null:
+		_plan.mesh = m
+
+
+## Outlines ({points, kind}) as a tinted fill and a bright border, draped on
+## the ground; null when there are none to show.
+func _outlines_mesh(outlines: Array, colors: Dictionary, alpha := 0.22, border := 1.2) -> Mesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var any := false
-	for o in sim.reserves.outlines:
+	for o in outlines:
 		if o.kind == "":
 			continue
-		var col: Color = Reserves.COLORS[o.kind]
-		var fill := Color(col, 0.22)
+		var col: Color = colors[o.kind]
+		var fill := Color(col, alpha)
 		var poly: PackedVector2Array = o.points
 		var tris := Geometry2D.triangulate_polygon(poly)
 		for k in tris:
@@ -401,12 +433,10 @@ func _draw_reserves() -> void:
 		for i in ring.size() - 1:
 			var a := ring[i]
 			var b := ring[i + 1]
-			var side := Vector3(-(b - a).z, 0.0, (b - a).x).normalized() * 1.2
+			var side := Vector3(-(b - a).z, 0.0, (b - a).x).normalized() * border
 			for v in [a - side, a + side, b + side, a - side, b + side, b - side]:
 				st.set_color(Color(col, 0.9))
 				st.set_normal(Vector3.UP)
 				st.add_vertex(v + Vector3(0, 0.45, 0))
 		any = true
-	_reserves.visible = any
-	if any:
-		_reserves.mesh = Terrain.drape(st.commit(), true, 12.0)
+	return Terrain.drape(st.commit(), true, 12.0) if any else null

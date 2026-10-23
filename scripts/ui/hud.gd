@@ -69,6 +69,7 @@ var _traffic_row := HBoxContainer.new()
 var _traffic_card: Button
 var _neighborhood_card: Button
 var _zone_cards := {}    # ZoneMap.Zone -> Button
+var _plan_cards := {}    # LandPlan kind ("" erases) -> Button
 var _power_card: Button
 var _service_cards := {} # Services.Kind -> Button
 var _farm_cards := {}    # FarmTool.Mode -> Button
@@ -909,6 +910,23 @@ func _zones_drawer() -> PanelContainer:
 		b.pressed.connect(func(): zone_tool.set_zone(z))
 		zones.add_child(b)
 		_zone_cards[z] = b
+	# The future land use map: big soft areas, not zoning (LandPlan).
+	row.add_child(VSeparator.new())
+	var plan := _section(row, "Land use plan  ·  outline big areas")
+	for entry in [["homes", "homes", "Homes"], ["shops", "shops", "Shops"], ["jobs", "industry", "Jobs"],
+			["farms", "farms", "Farms"], ["", "dezone", "Erase"]]:
+		var k: String = entry[0]
+		var b := _card(entry[1], entry[2], "")
+		b.tooltip_text = ("Plan this area for %s: builders look here first, and plans that match move faster. Nothing is blocked." \
+			% LandPlan.KINDS[k]) if k != "" else "Take land out of your land use plan"
+		if k != "":
+			(b.get_meta("icon") as Icon).accent = LandPlan.COLORS[k]
+		b.pressed.connect(func():
+			if k != "":
+				farm_tool.plan_kind = k
+			farm_tool.set_mode(FarmTool.Mode.PLAN if k != "" else FarmTool.Mode.UNPLAN))
+		plan.add_child(b)
+		_plan_cards[k] = b
 	return drawer
 
 
@@ -1225,7 +1243,7 @@ func _open(cat: String) -> void:
 			if road_tool.mode in [RoadTool.Mode.NONE, RoadTool.Mode.BULLDOZE]:
 				road_tool.set_mode(road_tool.last_draw)
 		"zones":
-			if zone_tool.zone == ZoneTool.OFF:
+			if zone_tool.zone == ZoneTool.OFF and not farm_tool.mode in [FarmTool.Mode.PLAN, FarmTool.Mode.UNPLAN]:
 				zone_tool.set_zone(ZoneMap.Zone.RESIDENTIAL)
 		"bulldoze":
 			road_tool.set_mode(RoadTool.Mode.BULLDOZE)
@@ -1281,7 +1299,7 @@ func _advisor_key() -> String:
 
 ## Brings every button in line with the tools (keys change them too).
 func _sync() -> void:
-	if zone_tool.zone != ZoneTool.OFF:
+	if zone_tool.zone != ZoneTool.OFF or farm_tool.mode in [FarmTool.Mode.PLAN, FarmTool.Mode.UNPLAN]:
 		_category = "zones"
 	elif service_tool.kind != ServiceTool.OFF or campus_tool.kind != "" or industry_tool.kind == "power" \
 			or bank_tool.kind != "" or telecom_tool.kind != "":
@@ -1328,6 +1346,9 @@ func _sync() -> void:
 	_neighborhood_card.set_pressed_no_signal(neighborhood_tool.kind != "")
 	for z in _zone_cards:
 		_zone_cards[z].set_pressed_no_signal(z == zone_tool.zone)
+	for k in _plan_cards:
+		_plan_cards[k].set_pressed_no_signal((farm_tool.mode == FarmTool.Mode.PLAN and k == farm_tool.plan_kind)
+			or (farm_tool.mode == FarmTool.Mode.UNPLAN and k == ""))
 	for k in _service_cards:
 		_service_cards[k].set_pressed_no_signal(k == service_tool.kind)
 	_park_sizes.visible = park_tool.kind == "park"
