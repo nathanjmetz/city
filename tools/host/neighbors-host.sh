@@ -93,7 +93,10 @@ publish() {
 				&& git -C "$dir" checkout -q --orphan region; }
 	fi
 	git -C "$dir" pull -q origin region 2>/dev/null
-	printf '{"server": "%s"}\n' "$1" >"$dir/server.json"
+	# The invite code too, so players never type one (the server logs it).
+	local code
+	code=$(grep -o 'Invite code: [A-Z0-9]*' "$STATE/server.log" 2>/dev/null | tail -1 | sed 's/Invite code: //')
+	printf '{"server": "%s", "code": "%s"}\n' "$1" "$code" >"$dir/server.json"
 	git -C "$dir" add server.json
 	git -C "$dir" -c user.name="Neighbors host" -c user.email="host@neighbors.invalid" \
 		commit -q -m "Region address: $1" 2>/dev/null

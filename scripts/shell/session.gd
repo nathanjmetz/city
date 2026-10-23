@@ -16,6 +16,10 @@ const LOCAL_SERVER := "ws://localhost:9080"
 ## It lives on its own branch, so updating it doesn't rebuild the game, and
 ## is read through the API, which isn't cached for minutes like raw files.
 ## tools/host/neighbors-host.sh on the host's computer keeps it current.
+## The family region's invite code, so nobody has to type one (Brawn: the
+## game is for family and friends, and getting in must be simple). The
+## region's published config (REGION_CONFIG) overrides it if it changes.
+const FAMILY_CODE := "4WWMST"
 const REGION_CONFIG := "https://api.github.com/repos/nathanjmetz/city/contents/server.json?ref=region"
 
 enum Mode { SOLO, ONLINE }
