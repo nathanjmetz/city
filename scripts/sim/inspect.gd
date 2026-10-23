@@ -309,12 +309,11 @@ static func _park(sim: CitySim, id: int) -> Dictionary:
 	var rows := [["Neighborhood", "%s (%d%%)" % [tier.name, roundi(s.score * 100.0)]]]
 	var status := "A town landmark"
 	if s.kind == "park":
-		var names := {"paths": "paths", "playground": "playground", "pavilion": "picnic pavilion",
-			"court": "basketball court", "ball_diamond": "ball diamond", "flower_beds": "flower beds",
-			"fountain": "fountain"}
+		var names := Parks.FEATURE_NAMES
 		var has := []
 		for f in s.features:
-			has.append(names.get(f.type, f.type))
+			if names.has(f.type):
+				has.append(names[f.type])
 		var next := ""
 		for f in sim.parks.wanted_features(id):
 			if not sim.parks.has_feature(id, f.type):
@@ -325,8 +324,14 @@ static func _park(sim: CitySim, id: int) -> Dictionary:
 		status = ("Filling in: %s next" % next) if next != "" else "Filled in"
 		status += {"struggling": ", worn and patchy", "working": ", plain and tidy", "comfortable": ", well kept",
 			"thriving": ", lovingly curated"}.get(tier.key, "")
-	rows.append(["Land value nearby", "up to +%d%%" % roundi(float(a.value) * q * 100.0)])
-	rows.append(["Happiness nearby", "up to +%d%%" % roundi(float(a.happy) * q * 100.0)])
+		var l: Dictionary = s.leader
+		rows.append(["Park board", "chaired by %s, %s" % [l.name, Education.leader_style(l)]])
+		if str(s.get("why", "")) != "":
+			rows.append(["Last move", s.why])
+		# Its development tree, a branch a row.
+		rows.append_array(sim.parks.tree_status(sim, id))
+	rows.append(["Land value nearby", "up to +%d%%" % roundi((float(a.value) * q + sim.parks.tree_lift(id, "value")) * 100.0)])
+	rows.append(["Happiness nearby", "up to +%d%%" % roundi((float(a.happy) * q + sim.parks.tree_lift(id, "happy")) * 100.0)])
 	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(roundi(sim.parks.site_upkeep(id)))])
 	return {"title": s.name, "kind": "Park" if s.kind == "park" else "Landmark  ·  " + k.name, "icon": k.icon,
 		"ok": true, "status": status, "rows": rows, "problems": []}

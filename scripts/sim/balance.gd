@@ -594,6 +594,57 @@ const PARK_FEATURES := [
 	{"type": "fountain", "size": Vector2(10, 10), "tier": 3},
 ]
 
+## A park's development tree (Brawn, 2026-10-22), in the shared Agency
+## node format: past the basics above, its park board adds what the park
+## can support, from what it already has, its neighborhood, the town and
+## the region. Five branches. Each node: `branch`, `name`, `size` (width x
+## depth, metres; ZERO for things that run through the whole park), build
+## `cost` (a park is public: the board spends town money, keeping
+## PARK_TREE_RESERVE in hand), `requires` (built first; basics count),
+## `needs` and `effects` (`upkeep+` a month, `value+` and `happy+` added to
+## the park's pull). Needs beyond Agency's own (population, link): `tier`
+## (lowest neighborhood tier), `water` / `power` (town utilities), `school`
+## (a school or high school within that many metres), `forest` (woods next
+## to the park, 0 to 1, or a creek).
+## Real costs: a splash pad $300-500k; an inclusive playground about $1M; a
+## municipal pool $2-4M; a regional aquatic center $8-12M; ball-field
+## lights about $300k a field (Indiana park department bids).
+const PARK_TREE := [
+	{"id": "splash_pad", "branch": "Play", "name": "Splash pad", "size": Vector2(16, 16), "cost": 400_000,
+		"requires": ["playground"], "needs": {"tier": 2, "water": 1, "population": 1_000},
+		"effects": {"upkeep+": 2_500, "value+": 0.01, "happy+": 0.03}},
+	{"id": "all_abilities", "branch": "Play", "name": "All-abilities playground", "size": Vector2(30, 22),
+		"cost": 1_000_000, "requires": ["splash_pad"], "needs": {"tier": 3, "population": 3_000},
+		"effects": {"upkeep+": 3_000, "value+": 0.02, "happy+": 0.04}},
+	{"id": "field_lights", "branch": "Sports", "name": "Field lights", "size": Vector2.ZERO, "cost": 300_000,
+		"requires": ["ball_diamond"], "needs": {"power": 1}, "effects": {"upkeep+": 1_500, "happy+": 0.02}},
+	{"id": "youth_complex", "branch": "Sports", "name": "Four-field youth complex", "size": Vector2(140, 136),
+		"cost": 3_500_000, "requires": ["field_lights"], "needs": {"population": 2_500, "school": 1_600.0},
+		"effects": {"upkeep+": 12_000, "value+": 0.02, "happy+": 0.05}},
+	{"id": "tournament", "branch": "Sports", "name": "Tournament concessions and parking", "size": Vector2(44, 30),
+		"cost": 1_500_000, "requires": ["youth_complex"], "needs": {"population": 5_000, "link": 1},
+		"effects": {"upkeep+": 6_000, "happy+": 0.03}, "note": "teams drive in from neighbor towns"},
+	{"id": "bandstand", "branch": "Gathering", "name": "Bandstand", "size": Vector2(12, 12), "cost": 200_000,
+		"requires": ["pavilion"], "needs": {"tier": 1, "population": 800},
+		"effects": {"upkeep+": 800, "value+": 0.01, "happy+": 0.03}},
+	{"id": "walking_loop", "branch": "Nature", "name": "Walking loop", "size": Vector2.ZERO, "cost": 120_000,
+		"requires": ["paths"], "needs": {"tier": 1}, "effects": {"upkeep+": 500, "value+": 0.01, "happy+": 0.02}},
+	{"id": "pond", "branch": "Nature", "name": "Fishing pond", "size": Vector2(44, 30), "cost": 400_000,
+		"requires": ["walking_loop"], "needs": {"tier": 1, "population": 1_200},
+		"effects": {"upkeep+": 1_500, "value+": 0.02, "happy+": 0.02}},
+	{"id": "nature_trail", "branch": "Nature", "name": "Nature trail", "size": Vector2.ZERO, "cost": 150_000,
+		"requires": ["walking_loop"], "needs": {"forest": 0.3}, "effects": {"upkeep+": 600, "value+": 0.01, "happy+": 0.02}},
+	{"id": "pool", "branch": "Water", "name": "Swimming pool", "size": Vector2(50, 36), "cost": 2_500_000,
+		"needs": {"tier": 1, "population": 1_500, "water": 1}, "effects": {"upkeep+": 9_000, "happy+": 0.05}},
+	{"id": "aquatic_center", "branch": "Water", "name": "Aquatic center", "size": Vector2(80, 60), "cost": 8_000_000,
+		"requires": ["pool"], "needs": {"population": 6_000, "link": 1},
+		"effects": {"upkeep+": 25_000, "value+": 0.02, "happy+": 0.06}, "note": "families come from neighbor towns"},
+]
+## Money a park board leaves in the town's account when it builds from its
+## tree, scaled by how cautious its chair is (0.5x to 1.5x). Told to grow,
+## it keeps only half.
+const PARK_TREE_RESERVE := 500_000
+
 ## Amenities: build cost, monthly upkeep, and their pull on the land around.
 ## `value` is the lift in land value right next door (0.10 = 10% higher),
 ## fading to nothing at `value_reach` metres; `happy` likewise for how much
