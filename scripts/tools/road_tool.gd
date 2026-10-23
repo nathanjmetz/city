@@ -270,7 +270,8 @@ func set_grid_exact(on: bool) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo:
+	# Shift + a number opens a bottom bar menu instead (Hud.hotkey_category).
+	if event is InputEventKey and event.pressed and not event.echo and not (event as InputEventKey).shift_pressed:
 		match (event as InputEventKey).keycode:
 			KEY_1: set_mode(Mode.STRAIGHT)
 			KEY_2: set_mode(Mode.CURVED)

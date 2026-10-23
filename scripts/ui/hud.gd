@@ -132,6 +132,8 @@ var jump: TownJump
 var _towns_panel := PanelContainer.new()
 var _towns_list := VBoxContainer.new()
 var _towns_button: Button
+## The cards the pad wheel's second ring offers ("tool:<n>" picks one).
+var _wheel_tools: Array[Button] = []
 
 
 func setup(rt: RoadTool, zt: ZoneTool, s: CitySim, g: Node) -> void:
@@ -210,6 +212,20 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		jump.go_home()
 		get_viewport().set_input_as_handled()
 		return
+	if k != null and k.pressed and not k.echo and not (k.ctrl_pressed or k.meta_pressed or k.alt_pressed):
+		var cat := hotkey_category(k)
+		if cat != "":
+			_open(cat)
+			get_viewport().set_input_as_handled()
+			return
+		if k.keycode == KEY_V and not k.shift_pressed:
+			_views_button.button_pressed = not _views_button.button_pressed
+			get_viewport().set_input_as_handled()
+			return
+		if k.keycode == KEY_F1 or k.keycode == KEY_SLASH and k.shift_pressed:
+			_help_button.button_pressed = not _help_button.button_pressed
+			get_viewport().set_input_as_handled()
+			return
 	if k == null or not k.pressed or k.echo or k.keycode != KEY_ESCAPE:
 		return
 	if road_tool.is_drawing():
@@ -225,17 +241,100 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	get_viewport().set_input_as_handled()
 
 
+## The bottom bar menus Shift + 1 to 0 open, in bar order (Bulldoze and
+## Move It keep their own B and M).
+static func hotkey_categories() -> Array:
+	var keys := []
+	for entry in CATEGORIES:
+		if not entry[0] in ["bulldoze", "move"]:
+			keys.append(entry[0])
+	return keys.slice(0, 10)
+
+
+## The menu a key opens: Shift + a number key, or "".
+static func hotkey_category(k: InputEventKey) -> String:
+	if not k.shift_pressed:
+		return ""
+	var code := k.physical_keycode if k.physical_keycode != KEY_NONE else k.keycode
+	if code < KEY_0 or code > KEY_9:
+		return ""
+	var i := 9 if code == KEY_0 else code - KEY_1
+	var cats := hotkey_categories()
+	return cats[i] if i < cats.size() else ""
+
+
+## The key that opens a menu, for its tooltip.
+static func hotkey_text(cat: String) -> String:
+	if cat == "bulldoze":
+		return "B"
+	if cat == "move":
+		return "M"
+	var i := hotkey_categories().find(cat)
+	return "" if i < 0 else "Shift+%d" % ((i + 1) % 10)
+
+
 ## Game controllers (Pad): the tool wheel holds the bottom bar's categories
 ## and the Views.
 func pad_wheel_items() -> Array:
-	return CATEGORIES + [["views", "Views"]]
+	var items := []
+	for entry in CATEGORIES:
+		items.append([entry[2] if entry.size() > 2 else entry[0], entry[1], entry[0]])
+	return items + [["views", "Views", "views"]]
 
 
-func pad_wheel_pick(key: String) -> void:
+## Which first-ring slot starts lit: the open menu.
+func pad_category_index() -> int:
+	for i in CATEGORIES.size():
+		if CATEGORIES[i][0] == _category:
+			return i
+	return 0
+
+
+## Opens what the wheel picked. A menu with tools answers with its tools for
+## the second ring (like the console editions' radial sub-menus); picking
+## one of those presses its card. Empty means the wheel stays closed.
+func pad_wheel_pick(key: String) -> Array:
+	if key.begins_with("tool:"):
+		var i := int(key.substr(5))
+		if i < _wheel_tools.size() and is_instance_valid(_wheel_tools[i]) and not _wheel_tools[i].disabled:
+			_wheel_tools[i].pressed.emit()
+			if _wheel_tools[i].toggle_mode:
+				_sync()
+		return []
 	if key == "views":
 		_views_button.button_pressed = not _views_button.button_pressed
-	elif key != _category or key == "bulldoze":
+		return []
+	if key != _category or key == "bulldoze":
 		_open(key)
+	return pad_tool_items(key)
+
+
+## The cards in a menu's drawer, for the wheel's second ring.
+func pad_tool_items(cat: String) -> Array:
+	_wheel_tools.clear()
+	var items := []
+	if not _drawers.has(cat) or _category != cat:
+		return items
+	_collect_cards(_drawers[cat], items)
+	return items
+
+
+## Which second-ring slot starts lit: the tool already in hand.
+func pad_tool_selected() -> int:
+	for i in _wheel_tools.size():
+		if is_instance_valid(_wheel_tools[i]) and _wheel_tools[i].button_pressed:
+			return i
+	return 0
+
+
+func _collect_cards(n: Node, items: Array) -> void:
+	for c in n.get_children():
+		if c is Button and c.has_meta("title") and (c as Button).is_visible_in_tree():
+			var b := c as Button
+			_wheel_tools.append(b)
+			items.append([(b.get_meta("icon") as Icon).kind, (b.get_meta("title") as Label).text, "tool:%d" % (_wheel_tools.size() - 1)])
+		elif c is Control:
+			_collect_cards(c, items)
 
 
 ## A grid shape or an outline is being drawn, so Enter finishes it (the
@@ -417,7 +516,7 @@ func _build_top_bar() -> void:
 	row.add_theme_constant_override("separation", 8)
 	bar.add_child(row)
 
-	_views_button = _icon_button("views", 24, "Views: see the map by fertility, oil, ore, forest, services, traffic and pollution")
+	_views_button = _icon_button("views", 24, "Views: see the map by fertility, oil, ore, forest, services, traffic and pollution  (V)")
 	_views_button.toggled.connect(func(on): _views_panel.visible = on)
 	row.add_child(_views_button)
 	# Home: back to your town centre (Home key); the arrow lists every town.
@@ -516,7 +615,7 @@ func _build_top_bar() -> void:
 	row.add_child(permits.make_button())
 	advisor.setup(sim, func(): return _advisor_key() if _category != "" or _view == "" else "view_" + _view)
 	row.add_child(advisor.make_button())
-	_help_button = _icon_button("help", 24, "Controls")
+	_help_button = _icon_button("help", 24, "Controls  (F1)")
 	_help_button.toggled.connect(func(on):
 		_help.visible = on
 		if on:
@@ -695,6 +794,7 @@ func _build_bottom_bar() -> void:
 	# Traffic lives under Roads and Farming under Industry, as in CS2.
 	for entry in CATEGORIES:
 		var b := _category_button(entry[2] if entry.size() > 2 else entry[0], entry[1])
+		b.tooltip_text = "%s  (%s)" % [entry[1], hotkey_text(entry[0])]
 		b.pressed.connect(func(): _open(entry[0]))
 		row.add_child(b)
 		_category_buttons[entry[0]] = b

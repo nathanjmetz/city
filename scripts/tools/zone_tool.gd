@@ -59,7 +59,8 @@ func set_zone(z: int) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo:
+	# Shift + a number opens a bottom bar menu instead (Hud.hotkey_category).
+	if event is InputEventKey and event.pressed and not event.echo and not (event as InputEventKey).shift_pressed:
 		match (event as InputEventKey).keycode:
 			KEY_5: set_zone(ZoneMap.Zone.RESIDENTIAL)
 			KEY_6: set_zone(ZoneMap.Zone.COMMERCIAL)

@@ -37,6 +37,7 @@ An open map where you draw roads, paint zones along them, and buildings grow, li
 | Top bar readouts | Click population, jobs, traffic, the H S I demand bars, money, the date or the problem chip for its own panel, docked on the left like Cities: Skylines 2's info panels: a chart over the last month, year, ten years or the town's whole life (hover for the numbers, click the legend to hide a line), what makes it up (where people live and work, why cars are out, money in and out this month, why each zone is wanted), and links that take you there (the slowest roads, buildings without power or water, the Economy page, the zone brushes). |
 | Home key, or the house button (top left) | Glides back to the middle of your town (its Main Street). The arrow beside it lists every town in the region, yours and your neighbors', to fly to any of them. |
 | Esc | Stop drawing; press again to put every tool away and close panels. |
+| Shift + 1 to 0, V, F1 | Open a bottom bar menu (each button's tooltip names its key), the Views, or the controls list. |
 
 | Space, or Pause / 1x / 2x / 4x | Pause and game speed. |
 | Bell (top right) | Permit requests. Leaders of hubs (the railroad, the bus company...) build freely on their own land, but ask here before they cross your roads, lay track through town or take anything you built. Click one to see its plan on the map, then Approve, Deny, or Edit route (drag the bends; they re-cost your way and go ahead if they can afford it). It never pops up; a request nobody answers is shelved after a week. It works both ways: a hub's info panel lets you tell its leader to grow, use their own judgment, or hold off, and pre-approve permits near it. |
@@ -60,18 +61,20 @@ Any game controller works too (Xbox, PlayStation, Switch Pro and most others, wi
 
 | Controller | What it does |
 | --- | --- |
-| Left stick | Move the cursor. Push it against the screen edge to move the map. |
+| Left stick | Move the cursor. Push it against the screen edge to move the map. It slows over buttons so it's easy to land on one. |
 | Right stick | Rotate and tilt (scrolls a list when the cursor is over one). |
 | LT / RT | Zoom out / in. |
 | A | Click. Hold to drag or paint zones. |
 | B | Back, like Esc. |
 | X | Cancel, like a right click. |
-| Y | Tool wheel: point the left stick at a category, press A. |
-| LB / RB | Smaller / bigger, like `[` `]`. |
+| Y | Tool wheel: point the left stick at a menu, press A, then pick one of its tools from the second ring the same way. |
+| LB / RB | Smaller / bigger, like `[` `]`; turn what Move It holds. |
 | D-pad up / down | Raise / lower new roads. |
 | D-pad left / right | Slower / faster. |
+| D-pad over a menu | Step the cursor to the next button that way. |
 | Click the left stick | Hold for Shift (snap angles). |
-| Menu (Start) / View (Back) | Pause menu / pause the clock. |
+| Click the right stick | Finish a grid shape or outline (like Enter); otherwise fly back to your town. |
+| Menu (Start) / View (Back) | Pause menu / pause the clock. Hold View and press X to undo. |
 
 Roads snap to junctions and to other roads, and crossing roads make a junction.
 Road rules come from US standards (AASHTO): grades up to 12% on streets, 8% on ramps and 5% on highways, and 16.5 ft (5 m) of clearance where one road passes over another. The drawing label shows the safe speed of each curve.
