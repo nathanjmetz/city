@@ -352,6 +352,16 @@ static func _farm(sim: CitySim, id: int, at := []) -> Dictionary:
 		["Property tax to town", "$%s / month" % CitySim.money_text(roundi(acres * Farms.LAND_PER_ACRE
 			* Farms.AG_ASSESSMENT * sim.economy.tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0))],
 	]
+	# Its own money (Capital): what it has saved, owes, and rents.
+	var held := 0.0
+	for k in f.get("rent", []):
+		held += Farms.field_cells(f, k).size() * Farms.ACRES_PER_CELL
+	rows.insert(2, ["Savings", "$%s%s" % [CitySim.money_text(roundi(maxf(float(f.get("cash", 0.0)), 0.0))),
+		(", owes $%s on land" % CitySim.money_text(roundi(float(f.debt)))) if float(f.get("debt", 0.0)) > 0.0 else ""]])
+	if held > 0.0:
+		rows.insert(2, ["Rented ground", "%d acres from neighbours (they take %d%% of what it makes)" % [roundi(held),
+			roundi(Balance.CAPITAL_RENT_SHARE * 100.0)]])
+	rows.append(["Land here", "$%s an acre" % CitySim.money_text(roundi(Capital.land_price(sim, f.pos)))])
 	var lease := 0.0
 	for c in f.cells:
 		lease += sim.power.lease_in(Farms.cell_corners(f, c))
@@ -376,7 +386,11 @@ static func _farm(sim: CitySim, id: int, at := []) -> Dictionary:
 	if str(f.get("stock", {}).get("why", "")) != "":
 		rows.insert(2 if stock != "" else 1, ["Livestock plan", str(f.stock.why)])
 	var problems := []
-	var status := "Growing: buying land where the soil pays"
+	var status := "Growing: renting or buying land as its savings allow"
+	if str(f.get("why", "")).begins_with("It's saving"):
+		status = "Saving up to take on more land"
+	elif str(f.get("why", "")).contains("won't rent"):
+		status = "Priced out: land here is worth more to developers"
 	if not f.barn:
 		status = "Putting up the barn"
 	elif f.cells.is_empty():

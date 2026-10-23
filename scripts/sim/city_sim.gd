@@ -1053,6 +1053,11 @@ func tick() -> void:
 					return Terrain.slope(p.x + terrain_offset.x, p.z + terrain_offset.y)
 			farms.year = crop_year
 		var farmed := farms.decide(field_usable)
+		# Where the town has made the land worth far more to developers,
+		# a farm family may ask to sell out.
+		if _farm_sell_outs():
+			farmed = true
+			_usable_cache.clear()
 		# Hog, dairy and turkey barns and beef herds, picked by farm leaders.
 		if Livestock.step(self):
 			farmed = true
@@ -1895,6 +1900,8 @@ func _wire_policies() -> void:
 	# asks on the bell when that road would cross the player's things.
 	farms.expand = _farm_road
 	industry.expand = _industry_road
+	# What farmland sells for, nearby development included (Capital).
+	farms.land_price_of = func(p: Vector3) -> float: return Capital.land_price(self, p)
 
 
 ## Hubs with their own money lever (a campus's funding level, a post
@@ -2219,6 +2226,64 @@ func _farm_road(id: int) -> bool:
 		return false
 	f.pending = {"req": req, "block": [best.block.x, best.block.y]}
 	return false
+
+
+## Once a year each farm family looks at what its land would bring: where
+## the town has grown up around it and the land sells for at least
+## CAPITAL_SELL_RATIO times farm value, it asks on the bell to sell to a
+## developer (Brawn: a farmer priced out of growing may sell the family
+## farm). Yes: the farm closes and its land is open for the town. No: the
+## family farms on and won't ask again for a few years. True when a farm
+## closed.
+func _farm_sell_outs() -> bool:
+	var changed := false
+	var ids := farms.farms.keys()
+	ids.sort()
+	for id in ids:
+		var f: Dictionary = farms.farms[id]
+		var sale: Dictionary = f.get("sale", {})
+		if not sale.is_empty():
+			var state := permits.state_of(int(sale.req))
+			if state == Permits.State.OPEN:
+				continue
+			f.sale = {}
+			if state == Permits.State.APPROVED:
+				permits.done(int(sale.req))
+				farms.farms.erase(id)
+				changed = true
+				continue
+			f.sale_year = farms.year + Balance.CAPITAL_SELL_WAIT_YEARS
+			f.why = "The family turned down the developers and farms on."
+			continue
+		if not f.barn or farms.year <= int(f.get("sale_year", 0)) or f.cells.is_empty():
+			continue
+		f.sale_year = farms.year
+		if not Capital.sell_out(self, f.pos):
+			continue
+		var per_acre := Capital.land_price(self, f.pos)
+		var acres := 0.0
+		for k in f.get("own", Farms.start_fields()):
+			acres += Farms.field_cells(f, k).size() * Farms.ACRES_PER_CELL
+		var name := families.name_of("farm:%d" % id)
+		var who := name if name != "" else "The farm"
+		var ring := []
+		for c in f.cells:
+			ring.append_array(Farms.cell_corners(f, c))
+		var hull := Geometry2D.convex_hull(PackedVector2Array(ring))
+		var area := []
+		for q in hull:
+			area.append([q.x, q.y])
+		var req := permits.file(self, {"hub": "farm", "hub_id": id, "leader": who, "ask": "sell_farm",
+			"title": "%s wants to sell the family farm" % who,
+			"why": "Developers offer about $%s an acre, %.1f times what it is worth as farmland, for its %d acres. With the town grown up around it, the family can't buy more land here." % [
+				money_text(roundi(per_acre)), per_acre / Balance.CAPITAL_LAND_PER_ACRE, roundi(acres)],
+			"area": area, "change": "Family farm sold",
+			"yes": "The family sells. The farm closes and its land is open for the town to grow onto.",
+			"no": "The family keeps farming and won't ask again for %d years." % Balance.CAPITAL_SELL_WAIT_YEARS})
+		if req != -1:
+			f.sale = {"req": req}
+			f.why = "%s asked you about selling the farm (see the bell)." % who
+	return changed
 
 
 ## Builds a farm's road and opens the block beyond it.

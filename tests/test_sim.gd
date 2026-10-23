@@ -219,7 +219,8 @@ func _init() -> void:
 	grown = farm.cells.size()
 	fm.farms.price = 0.75  # a bad year for corn
 	fm.farms.tax_rate = 3.0
-	for i in 12:
+	# Farmers ride out a bad spell, then cut back after a season of losses.
+	for i in Balance.FARM_SELL_LOOKS + 12:
 		fm.farms.decide(fm.field_usable)
 	_check(farm.cells.size() < grown, "a struggling farm sells fields (%d -> %d)" % [grown, farm.cells.size()])
 	# Brawn's case: a well but no power. The warning names what's missing,
