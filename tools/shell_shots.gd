@@ -72,6 +72,11 @@ func _process(_delta: float) -> bool:
 		for n in current_scene.get_children():
 			if n is Hud:
 				n.neighborhood_tool.set_kind("found")
+	if _mode == "online" and _frames == 860 and "open" in OS.get_cmdline_user_args():
+		# The region chat opened from its top bar button.
+		for n in current_scene.get_children():
+			if n is CanvasLayer and n.has_method("make_button"):
+				n._set_open(true)
 	if _mode == "together" and _frames == 5:
 		current_scene.call("_show", "code")
 	if _frames == (900 if _mode in ["online", "neighbor", "neighborhood"] else 180 if _mode == "pause" else 60):

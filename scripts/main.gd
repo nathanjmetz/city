@@ -344,6 +344,7 @@ func _ready() -> void:
 		var chat := ChatPanel.new()
 		chat.setup(cam, region)
 		add_child(chat)
+		hud.add_top_button(chat.make_button())
 		await _settle()
 		return
 	_progress(0.5, "Opening your town")

@@ -1,9 +1,11 @@
 class_name ChatPanel
 extends CanvasLayer
-## The region chat, docked to the left edge: who's online (click a name to
-## fly over to their city), the last messages, and a line to type in. Enter
-## starts typing and sends, Escape goes back to building, like the chat in
-## Anno and Minecraft.
+## The region chat: a chat button in the top bar (with how many messages
+## came in since you last looked) opens a box docked to the left edge, under
+## the bar: who's online (click a name to fly over to their city), the last
+## messages, and a line to type in. Closed, it covers nothing (Brawn
+## 2026-10-23), like the chat in Cities: Skylines 2's mods and Anno. Enter
+## opens it and starts typing, Escape goes back to building.
 
 const WIDTH := 300
 ## The HUD's top bar height: the chat docks right under it.
@@ -24,6 +26,8 @@ var _toggle := Button.new()
 var _unread := 0
 var _bell := AudioStreamPlayer.new()
 var _bell_wait := 0.0
+var _button: Button  # in the top bar
+var _badge := Label.new()  # messages since you last looked
 
 
 func setup(camera: CityCamera, view: RegionView) -> void:
@@ -59,7 +63,7 @@ func _ready() -> void:
 	_toggle.focus_mode = Control.FOCUS_NONE
 	_toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_toggle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_toggle.pressed.connect(func(): _set_open(not _body.visible))
+	_toggle.pressed.connect(func(): _set_open(false))
 	head.add_child(_toggle)
 	var invite := Button.new()
 	invite.text = "Invite"
@@ -114,13 +118,42 @@ func _ready() -> void:
 	client.players_changed.connect(_update_who)
 	client.requests_changed.connect(func():
 		_update_requests()
+		if not client.requests.is_empty():
+			_set_open(true)
 		if not client.requests.is_empty() and _bell_wait <= 0.0:
 			_bell_wait = DOORBELL_GAP
 			_ring())
 	_update_requests()
 	client.city_added.connect(func(_id): _update_who())
 	_update_who()
-	_set_open(true)
+	_set_open(false)
+
+
+## The top bar's chat button: a speech bubble, and a count when new
+## messages came in while it was closed.
+func make_button() -> Button:
+	_button = Button.new()
+	_button.toggle_mode = true
+	_button.focus_mode = Control.FOCUS_NONE
+	_button.tooltip_text = "Region chat  (Enter)"
+	_button.custom_minimum_size = Vector2(34, 24)
+	var row := HBoxContainer.new()
+	row.set_anchors_preset(Control.PRESET_FULL_RECT)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 3)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_button.add_child(row)
+	var icon := Icon.new("chat", 16)
+	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(icon)
+	_badge.add_theme_font_override("font", Brand.ui(700))
+	_badge.add_theme_font_size_override("font_size", 12)
+	_badge.add_theme_color_override("font_color", Brand.BRAND_CORAL)
+	_badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(_badge)
+	_button.toggled.connect(func(on): _set_open(on))
+	_update_title()
+	return _button
 
 
 func _process(delta: float) -> void:
@@ -228,14 +261,21 @@ func _update_who() -> void:
 
 func _update_title() -> void:
 	var n := Session.client.players.size()
-	_toggle.text = "%s  Region chat  ·  %d online%s" % ["−" if _body.visible else "+", n,
-		"  ·  %d new" % _unread if _unread > 0 and not _body.visible else ""]
+	_toggle.text = "−  Region chat  ·  %d online" % n
+	_badge.text = str(_unread) if _unread > 0 else ""
+	_badge.visible = _unread > 0
+	if _button:
+		_button.custom_minimum_size.x = 34 + (14 if _unread > 0 else 0)
+		_button.tooltip_text = "Region chat  (Enter)  ·  %d online%s" % [n, ", %d new" % _unread if _unread > 0 else ""]
 
 
 func _set_open(open: bool) -> void:
 	_body.visible = open
+	_panel.visible = open
 	if open:
 		_unread = 0
+	if _button:
+		_button.set_pressed_no_signal(open)
 	_update_title()
 
 

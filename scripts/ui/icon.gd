@@ -67,6 +67,12 @@ func _draw() -> void:
 				var a := TAU * i / 32.0
 				pts.append(c + Vector2(cos(a) * s * 0.16, sin(a) * s * 0.38))
 			draw_polyline(pts, color, w, true)
+		"chat":
+			# A speech bubble: the region chat.
+			var box := PackedVector2Array([P.call(0.12, 0.16), P.call(0.88, 0.16), P.call(0.88, 0.66),
+				P.call(0.46, 0.66), P.call(0.26, 0.86), P.call(0.3, 0.66), P.call(0.12, 0.66), P.call(0.12, 0.16)])
+			_poly(box, Color(color, 0.25))
+			draw_polyline(box, color, w, true)
 		"road", "roads":
 			_poly([P.call(0.3, 0.92), P.call(0.42, 0.08), P.call(0.58, 0.08), P.call(0.7, 0.92)], Color(color, 0.25))
 			line.call(P.call(0.3, 0.92), P.call(0.42, 0.08))
