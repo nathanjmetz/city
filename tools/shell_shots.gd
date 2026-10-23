@@ -25,7 +25,7 @@ func _start_online() -> void:
 	session.profile.name = "Brawn"
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://hosted-region.json"))
 	var code: String = session.host_region(19580)
-	var c: RegionClient = session.join_region("ws://127.0.0.1:19580", code, "secret1", true)
+	var c: RegionClient = session.join_region("ws://127.0.0.1:19580", code)
 	c.requests_changed.connect(func():
 		for n in c.requests:
 			c.approve(n, true))

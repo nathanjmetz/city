@@ -13,8 +13,6 @@ var _angle := 0.4
 var _code := LineEdit.new()
 var _server := LineEdit.new()
 var _name := LineEdit.new()
-var _password := LineEdit.new()
-var _signup := CheckButton.new()
 var _join_button: Button
 var _city_name := LineEdit.new()
 var _difficulty := "normal"
@@ -73,9 +71,6 @@ func _ready() -> void:
 		_code.text = Session.pending_invite.get("join", "")
 		_server.text = Session.pending_invite.get("server", "")
 		Session.pending_invite = {}
-		# First time on this device: they're signing up, not logging in.
-		if not Session.has_login(_server.text, _code.text):
-			_signup.button_pressed = true
 		_show("together")
 	else:
 		_show("home")
@@ -175,18 +170,6 @@ func _together_page() -> Control:
 	_name.custom_minimum_size = Vector2(0, 38)
 	col.add_child(_name)
 	col.add_child(_gap(6))
-	col.add_child(_label("PASSWORD"))
-	_password.secret = true
-	_password.placeholder_text = "Saved on this device" if Session.has_login(Session.profile.server, Session.profile.code) else ""
-	_password.custom_minimum_size = Vector2(0, 38)
-	_password.text_submitted.connect(func(_t): _join())
-	col.add_child(_password)
-	_signup.text = "I'm new here: create my account"
-	_signup.focus_mode = Control.FOCUS_NONE
-	_signup.add_theme_color_override("font_color", Brand.INK_MUTED)
-	_signup.toggled.connect(func(on): _sync_join_button())
-	col.add_child(_signup)
-	col.add_child(_gap(6))
 	col.add_child(_label("INVITE CODE"))
 	_code.text = Session.profile.code
 	_code.placeholder_text = "ABC123"
@@ -197,19 +180,9 @@ func _together_page() -> Control:
 	_code.add_theme_font_size_override("font_size", 24)
 	_code.text_submitted.connect(func(_t): _join())
 	col.add_child(_code)
-	var adv := Button.new()
-	adv.text = "Server address ›"
-	adv.flat = true
-	adv.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	adv.add_theme_color_override("font_color", Brand.INK_MUTED)
-	adv.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
-	adv.add_theme_stylebox_override("hover", StyleBoxEmpty.new())
-	col.add_child(adv)
+	# The server comes from the invite link; there's nothing to type.
 	_server.text = Session.profile.server
-	_server.placeholder_text = Session.LOCAL_SERVER
-	_server.custom_minimum_size = Vector2(0, 36)
-	_server.visible = _server.text != ""
-	adv.pressed.connect(func(): _server.visible = not _server.visible)
+	_server.visible = false
 	col.add_child(_server)
 	_join_button = _big_button("Join", "Your city starts next to theirs", _join)
 	ShellStyle.primary(_join_button)
@@ -224,12 +197,6 @@ func _together_page() -> Control:
 	return col
 
 
-func _sync_join_button() -> void:
-	var title := _join_button.get_meta("title") as Label if _join_button.has_meta("title") else null
-	if title:
-		title.text = "Create account and join" if _signup.button_pressed else "Join"
-
-
 func _show(page: String) -> void:
 	for p in _pages:
 		_pages[p].visible = p == page
@@ -239,7 +206,7 @@ func _show(page: String) -> void:
 	elif page == "new":
 		_city_name.grab_focus.call_deferred()
 	elif page == "together":
-		(_name if _name.text == "" else (_password if _code.text != "" else _code)).grab_focus.call_deferred()
+		(_name if _name.text == "" else _code).grab_focus.call_deferred()
 
 
 func _fill_saves() -> void:
@@ -288,21 +255,13 @@ func _join() -> void:
 		_status.text = "Type the invite code you were sent."
 		_code.grab_focus()
 		return
-	var new_account := _signup.button_pressed
-	if _password.text == "" and (new_account or not Session.has_login(_server.text, _code.text)):
-		_status.text = "Pick a password for your account." if new_account else "Type your password, or tick \"I'm new here\"."
-		_password.grab_focus()
-		return
 	Session.profile.name = n
 	Session.save_profile()
 	_joining = true
 	_status.text = "Joining..."
-	var c := Session.join_region(_server.text, _code.text, _password.text, new_account)
-	_password.text = ""
+	var c := Session.join_region(_server.text, _code.text)
 	c.joined.connect(func(): Session.enter_region())
-	c.waiting.connect(func(message):
-		_status.text = message
-		_signup.button_pressed = false)
+	c.waiting.connect(func(message): _status.text = message)
 	c.failed.connect(func(reason):
 		_joining = false
 		_status.text = reason)
@@ -322,8 +281,6 @@ func _host() -> void:
 	_code.text = code
 	_server.text = Session.LOCAL_SERVER
 	_host_info.text = "Region running. Invite code: %s\nFriends on your network join with this computer's address, port 9080. You approve who gets in." % code
-	if not Session.has_login(_server.text, code):
-		_signup.button_pressed = true
 	_join()
 
 

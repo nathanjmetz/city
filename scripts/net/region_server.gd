@@ -160,26 +160,21 @@ func _hello(from: int, msg: Dictionary) -> void:
 		_reject(from, "Pick a name first.")
 		return
 	var key := name.to_lower()
-	var password := str(msg.get("password", ""))
 	var token := str(msg.get("token", ""))
 	var account: Dictionary
-	if bool(msg.get("new", false)):
-		if accounts.has(key):
-			_reject(from, "Someone here already goes by %s. Log in, or pick another name." % name)
-			return
-		if password.length() < 6:
-			_reject(from, "Pick a password of at least 6 letters.")
-			return
-		account = _new_account(name, password, str(msg.get("id", "")).left(64))
+	# The invite code is the only gate: a name is all a player picks, and a
+	# new name waits for the host to let it in. Only the host's own name is
+	# guarded, by the device it first signed in from.
+	if not accounts.has(key):
+		account = _new_account(name, str(msg.get("password", "")), str(msg.get("id", "")).left(64))
 		_log("New player %s (%s)" % [name, account.status])
 	else:
-		if not accounts.has(key):
-			_reject(from, "Nobody called %s plays here yet. Create an account first." % name)
-			return
 		account = accounts[key]
 		var by_token: bool = token != "" and token.sha256_text() in account.tokens
-		if not by_token and _hash(password, account.salt) != account.hash:
-			_reject(from, "That password isn't right.")
+		var password := str(msg.get("password", ""))
+		var by_password: bool = password != "" and _hash(password, account.salt) == account.hash
+		if account.host and not account.tokens.is_empty() and not by_token and not by_password:
+			_reject(from, "%s is the host's name. Pick another." % account.name)
 			return
 	if token == "" or not token.sha256_text() in account.tokens:
 		token = _issue_token(account)
