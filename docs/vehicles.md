@@ -8,8 +8,15 @@ more pickups because this is the Midwest.
 
 Household: sedan, hatchback, crossover, SUV, pickup (crew cab), work pickup
 (regular cab, toolbox, ladder rack), minivan, sports car, motorcycle, van.
-Freight: delivery (step) van, 26 ft box truck, dump truck, tow truck, and
-semis with a 53 ft dry van, flatbed, grain hopper or tanker.
+Most household kinds come in several body styles (compact and full-size
+sedans, crew and mid-size pickups, wagon, EV crossover and more); a car's id
+picks its style (`VehicleModels.variant()`), so it never changes.
+Freight: delivery (step) van, 26 ft box truck, dump truck, concrete mixer,
+tow truck, and semis with a 53 ft dry van, flatbed, grain hopper, tanker,
+log trailer, end dump, USPS trailer or pot-belly livestock trailer.
+Utility: bucket truck (Altec AT40G) for phone and power line crews.
+Camping: Class C RV, Class A motorhome and a pickup with a slide-in camper,
+used by out-of-town visitors (purpose "visitor").
 Services: school bus, city bus, garbage truck, fire engine, police
 interceptor, ambulance. Farm: row-crop tractor, combine.
 

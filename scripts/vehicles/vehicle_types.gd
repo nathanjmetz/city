@@ -37,15 +37,21 @@ const SPECS := {
 	"mail_truck":    {"len": 5.40, "width": 2.05, "height": 2.90, "acc": 1.6, "brake": 2.8, "top_speed": 31.0, "pref": 0.95},
 	"rural_mail":    {"len": 4.88, "width": 1.89, "height": 1.85, "acc": 1.9, "brake": 3.0, "top_speed": 45.0, "pref": 0.97},
 	"mail_semi":     {"len": 21.00, "width": 2.60, "height": 4.10, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
+	"livestock_truck": {"len": 21.90, "width": 2.60, "height": 4.10, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"tanker":        {"len": 20.50, "width": 2.60, "height": 3.60, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"flatbed":       {"len": 20.30, "width": 2.60, "height": 3.30, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"dump_truck":    {"len": 9.00, "width": 2.60, "height": 3.40, "acc": 0.9, "brake": 2.3, "top_speed": 29.0, "pref": 0.93},
 	"concrete_mixer": {"len": 10.40, "width": 2.60, "height": 3.95, "acc": 0.8, "brake": 2.2, "top_speed": 29.0, "pref": 0.92},
+	"bucket_truck":  {"len": 8.70, "width": 2.40, "height": 3.30, "acc": 1.2, "brake": 2.6, "top_speed": 33.0, "pref": 0.96},
+	"rv":            {"len": 9.40, "width": 2.45, "height": 3.45, "acc": 1.0, "brake": 2.4, "top_speed": 31.0, "pref": 0.93},
+	"motorhome":     {"len": 11.30, "width": 2.55, "height": 3.80, "acc": 0.9, "brake": 2.3, "top_speed": 31.0, "pref": 0.92},
+	"pickup_camper": {"len": 6.70, "width": 2.40, "height": 3.30, "acc": 1.3, "brake": 2.6, "top_speed": 36.0, "pref": 0.95},
 	"tow_truck":     {"len": 7.00, "width": 2.40, "height": 2.80, "acc": 1.3, "brake": 2.6, "top_speed": 36.0, "pref": 0.97},
 	"school_bus":    {"len": 12.20, "width": 2.44, "height": 3.20, "acc": 1.0, "brake": 2.3, "top_speed": 27.0, "pref": 0.92},
 	"city_bus":      {"len": 12.20, "width": 2.60, "height": 3.30, "acc": 1.0, "brake": 2.0, "top_speed": 27.0, "pref": 0.92},
 	"garbage_truck": {"len": 9.80, "width": 2.60, "height": 3.70, "acc": 0.9, "brake": 2.3, "top_speed": 25.0, "pref": 0.9},
 	"fire_engine":   {"len": 10.40, "width": 2.60, "height": 3.10, "acc": 1.2, "brake": 2.6, "top_speed": 30.0, "pref": 1.0},
+	"taxi":          {"len": 4.88, "width": 1.84, "height": 1.62, "acc": 2.0, "brake": 3.0, "top_speed": 50.0, "pref": 1.0},
 	"police":        {"len": 5.05, "width": 2.00, "height": 1.78, "acc": 2.4, "brake": 3.5, "top_speed": 66.0, "pref": 1.0},
 	"ambulance":     {"len": 7.00, "width": 2.40, "height": 3.00, "acc": 1.4, "brake": 2.8, "top_speed": 40.0, "pref": 1.0},
 	"tractor":       {"len": 5.60, "width": 2.60, "height": 3.30, "acc": 0.8, "brake": 2.0, "top_speed": 11.2, "pref": 1.0},
@@ -98,11 +104,17 @@ const LIVERY := {
 	"mail_truck": [[Color(0.95, 0.95, 0.94), 1.0]],     # postal white
 	"mail_semi": [[Color(0.92, 0.92, 0.91), 3.0], [Color(0.10, 0.22, 0.50), 2.0], [Color(0.65, 0.07, 0.07), 1.0]],
 	"police": [[Color(0.05, 0.05, 0.06), 1.0], [Color(0.93, 0.93, 0.92), 1.0]],
+	"taxi": [[Color(0.97, 0.76, 0.05), 3.0], [Color(0.91, 0.91, 0.90), 1.0]],  # cab yellow, or a white fleet
 	"garbage_truck": [[Color(0.93, 0.93, 0.92), 3.0], [Color(0.16, 0.36, 0.20), 1.0]],
 	"delivery_van": [[Color(0.93, 0.93, 0.92), 3.0], [Color(0.33, 0.22, 0.13), 1.0]],
 	# Ready-mix fleets: white drums with a coloured cab, or all one colour.
 	"concrete_mixer": [[Color(0.93, 0.93, 0.92), 3.0], [Color(0.92, 0.52, 0.05), 1.0], [Color(0.10, 0.22, 0.50), 1.0], [Color(0.70, 0.07, 0.07), 1.0]],
 	"dump_truck": [[Color(0.92, 0.92, 0.91), 2.0], [Color(0.92, 0.52, 0.05), 1.0], [Color(0.90, 0.72, 0.05), 1.0]],
+	# Utility fleets are nearly all white; some co-ops run yellow.
+	"bucket_truck": [[Color(0.92, 0.92, 0.91), 6.0], [Color(0.90, 0.72, 0.05), 1.0]],
+	# RVs are white or tan; the paint is the swoosh graphic down the side.
+	"rv": [[Color(0.38, 0.27, 0.18), 3.0], [Color(0.25, 0.27, 0.30), 3.0], [Color(0.12, 0.22, 0.40), 1.0], [Color(0.50, 0.10, 0.08), 1.0]],
+	"motorhome": [[Color(0.38, 0.27, 0.18), 3.0], [Color(0.25, 0.27, 0.30), 3.0], [Color(0.12, 0.22, 0.40), 1.0]],
 	"tow_truck": [[Color(0.92, 0.92, 0.91), 1.0], [Color(0.70, 0.07, 0.07), 1.0], [Color(0.05, 0.05, 0.06), 1.0]],
 	# John Deere green, Case IH red, New Holland blue.
 	"tractor": [[Color(0.21, 0.49, 0.17), 5.0], [Color(0.70, 0.08, 0.07), 3.0], [Color(0.10, 0.28, 0.58), 1.0]],
@@ -115,10 +127,16 @@ const LIVERY := {
 ## that can do it, with weights.
 const PURPOSE := {
 	"commute": PERSONAL,
+	# Out-of-town visitors: mostly ordinary cars, some on a camping trip.
+	"visitor": {
+		"pickup": 20.0, "work_pickup": 2.0, "crossover": 20.0, "suv": 12.0, "sedan": 15.0,
+		"hatchback": 4.0, "minivan": 7.0, "sports": 1.5, "motorcycle": 1.5, "van": 1.0,
+		"rv": 3.0, "motorhome": 1.5, "pickup_camper": 2.0,
+	},
 	"shopping": PERSONAL,
 	# Freight.
 	"grain": {"grain_truck": 8.0, "tractor": 2.0},       # hopper semis, tractors with wagons
-	"livestock": {"grain_truck": 1.0},
+	"livestock": {"livestock_truck": 1.0},  # pot-belly cattle and hog trailers
 	"milk": {"tanker": 1.0},
 	"fuel": {"tanker": 1.0},
 	"goods": {"semi": 6.0, "box_truck": 4.0},             # factory to shop or warehouse
@@ -135,19 +153,23 @@ const PURPOSE := {
 	"medical": {"ambulance": 1.0},
 	"school": {"school_bus": 1.0},
 	"transit": {"city_bus": 1.0},
+	"taxi": {"taxi": 1.0},                               # the cab company's own cars
 	"tow": {"tow_truck": 1.0},
 	"service_call": {"work_pickup": 3.0, "van": 2.0},     # plumbers, electricians
 	# Mail (Mail in scripts/sim/mail.gd).
 	"mail": {"mail_truck": 1.0},                         # Oshkosh NGDV
 	"rural_mail": {"rural_mail": 1.0},                   # carrier's own RHD Jeep
 	"mail_freight": {"mail_semi": 1.0},                  # USPS 53 ft trailer
+	"telecom": {"van": 4.0, "work_pickup": 3.0, "bucket_truck": 2.0, "box_truck": 1.0},  # splicing vans, line crews, reel trucks
+	"power_line": {"bucket_truck": 3.0, "work_pickup": 1.0},  # electric co-op line crews
 }
 
 ## Some cargo needs its own rig, whatever the job is called: logs ride a
 ## log trailer between stakes, ore an end-dump, crude oil a tanker.
 const CARGO_KIND := {
 	"logs": "log_truck", "ore": "ore_truck", "crude oil": "tanker", "fuel": "tanker",
-	"milk": "tanker", "grain": "grain_truck", "gravel": "dump_truck", "steel": "flatbed",
+	"milk": "tanker", "grain": "grain_truck", "cattle": "livestock_truck", "hogs": "livestock_truck",
+	"livestock": "livestock_truck", "gravel": "dump_truck", "steel": "flatbed",
 }
 
 const FLEET := ["work_pickup", "van", "box_truck", "garbage_truck"]
@@ -228,7 +250,7 @@ static func household(id: int) -> String:
 ## The sRGB body colour of one vehicle, fixed by its id so it never changes.
 static func paint(kind: String, id: int) -> Color:
 	var table: Array = LIVERY.get(kind, FLEET_COLORS if kind in FLEET else
-		SEMI_COLORS if kind in ["semi", "tanker", "flatbed", "log_truck", "ore_truck"] else CAR_COLORS)
+		SEMI_COLORS if kind in ["semi", "tanker", "flatbed", "log_truck", "ore_truck", "livestock_truck"] else CAR_COLORS)
 	var total := 0.0
 	for e in table:
 		total += e[1]

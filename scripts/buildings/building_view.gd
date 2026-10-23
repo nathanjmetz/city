@@ -1,7 +1,8 @@
 class_name BuildingView
 extends Node3D
 ## Draws the buildings the simulation has grown, using the art library's
-## HouseBuilder (homes), CommercialBuilder (shops and factories) and
+## HouseBuilder (homes), CommercialBuilder (shops), FactoryBuilder
+## (factories, one design per industry chain) and
 ## DenseBuilder (row homes, apartments, Main Street blocks, offices). Each
 ## building is drawn for its type and stage, and redrawn when it grows. New
 ## ones go up stage by stage (ConstructionSite).
@@ -25,7 +26,9 @@ func setup(s: CitySim) -> void:
 func _sync() -> void:
 	# Neighbors' cities are drawn moved over to their place on the land.
 	Terrain.shift = Terrain.shift_for(self)
+	var t := Perf.now()
 	_sync_all()
+	Perf.add("frame.buildings", t)
 	Terrain.shift = Vector2.ZERO
 
 
@@ -35,7 +38,8 @@ func _sync_all() -> void:
 		if not sim.buildings.has(key) or not sim.lots.has(key) \
 				or not _nodes[key].get_meta("front").is_equal_approx(sim.lots[key].front) \
 				or _nodes[key].get_meta("look") != _look(sim.buildings[key]) \
-				or _nodes[key].get_meta("sign") != sim.families.sign_key(sim, "lot:" + key):
+				or _nodes[key].get_meta("sign") != sim.families.sign_key(sim, "lot:" + key) \
+				or _nodes[key].get_meta("chain") != sim.buildings[key].get("chain", ""):
 			_nodes[key].queue_free()
 			_nodes.erase(key)
 			_trees.remove(key)
@@ -56,6 +60,7 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 	root.set_meta("front", lot.front)
 	root.set_meta("sign", sim.families.sign_key(sim, "lot:" + key))
 	var spec := sim.families.sign_of(sim, "lot:" + key)
+	root.set_meta("chain", b.get("chain", ""))  # a factory's look follows its chain
 	# On the land: the lot is graded level with the road at its middle.
 	root.position = Vector3(lot.front.x, Terrain.base_y(lot.pos.x, lot.pos.z), lot.front.z)
 	# Local -Z faces the street, +Z runs back into the lot.
@@ -73,7 +78,7 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 		"shop": built = DenseBuilder.build_retail(s, lot.to_curb, fit, spec)
 		"mixed_use": built = DenseBuilder.build_mixed(s, lot.to_curb, fit, storeys, spec)
 		"office": built = DenseBuilder.build_office(s, lot.to_curb, fit, storeys, spec)
-		_: built = CommercialBuilder.build_factory(s, lot.to_curb, fit, spec)
+		_: built = FactoryBuilder.build_chain(b.get("chain", "general"), s, lot.to_curb, fit, spec)
 	if built.is_empty():
 		return root
 	# Drives, walks and beds lie on the ground, following it.
@@ -110,7 +115,8 @@ func _plant(key: String, root: Node3D, planted: Array, labels := []) -> void:
 ## The lot as the art builders want it: width, depth, flag pad, and the
 ## outline in the building's own frame (x across, z back from the street).
 static func _local_lot(lot: Dictionary, frame: Transform3D) -> Dictionary:
-	var fit := {"width": lot.get("width", 20.0), "depth": lot.get("depth", 32.0), "pad": lot.get("pad", 0.0)}
+	var fit := {"width": lot.get("width", 20.0), "depth": lot.get("depth", 32.0), "pad": lot.get("pad", 0.0),
+		"at": Vector2(frame.origin.x, frame.origin.z), "corner": lot.get("corner", false)}
 	var corners: PackedVector2Array = lot.get("corners", PackedVector2Array())
 	if corners.size() >= 3:
 		var inv := frame.affine_inverse()

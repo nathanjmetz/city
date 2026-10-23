@@ -18,6 +18,9 @@ var _name := LineEdit.new()
 var _host_info := ShellStyle.text("", 14)
 var _joining := false
 var _published_server := ""  # from Session.REGION_CONFIG
+var _fetching := false
+var _join_after_fetch := false
+var _who := LineEdit.new()  # your name, on the invite code page
 
 
 func _ready() -> void:
@@ -70,6 +73,11 @@ func _ready() -> void:
 		_server.text = Session.pending_invite.get("server", "")
 		Session.pending_invite = {}
 		_show("code")
+		# One link and you're in: once this device knows your name, it plays.
+		if Session.profile.name != "" or Session.has_login("", _code.text):
+			_join.call_deferred()
+		else:
+			_who.grab_focus.call_deferred()
 	else:
 		_show("home")
 	_fetch_server()
@@ -115,7 +123,7 @@ func _code_page() -> Control:
 	col.add_child(_code)
 	col.add_child(_gap(6))
 	col.add_child(_label("YOUR NAME"))
-	var who := LineEdit.new()
+	var who := _who
 	who.text = Session.profile.name
 	who.placeholder_text = "Who you are, over your town"
 	who.max_length = 24
@@ -185,6 +193,10 @@ func _join() -> void:
 		_status.text = "Type the invite code the host sent you."
 		_code.grab_focus()
 		return
+	if _fetching and _server.text == "":
+		_status.text = "Finding the region..."
+		_join_after_fetch = true
+		return
 	_joining = true
 	_status.text = "Joining..."
 	var c := Session.join_region(_server_address(), _code.text)
@@ -209,14 +221,24 @@ func _fetch_server() -> void:
 	var http := HTTPRequest.new()
 	http.timeout = 8.0
 	add_child(http)
+	_fetching = true
 	http.request_completed.connect(func(result, code, _h, body):
 		if result == HTTPRequest.RESULT_SUCCESS and code == 200:
 			var d = JSON.parse_string(body.get_string_from_utf8())
 			if d is Dictionary and str(d.get("server", "")).begins_with("ws"):
 				_published_server = str(d.server)
-		http.queue_free())
-	if http.request(Session.REGION_CONFIG) != OK:
 		http.queue_free()
+		_fetched())
+	if http.request(Session.REGION_CONFIG, ["Accept: application/vnd.github.raw+json"]) != OK:
+		http.queue_free()
+		_fetched.call_deferred()
+
+
+func _fetched() -> void:
+	_fetching = false
+	if _join_after_fetch:
+		_join_after_fetch = false
+		_join()
 
 
 func _host() -> void:

@@ -9,6 +9,8 @@ extends Node
 signal joined
 signal failed(reason: String)
 signal disconnected
+## Back in the region after a dropped connection (the town kept running).
+signal reconnected
 signal chat_received(line: Dictionary)
 signal players_changed
 signal cursor_moved(player_id: String, pos: Vector2)
@@ -19,6 +21,8 @@ signal waiting(message: String)
 signal requests_changed
 ## The server has stored a telemetry batch (by its id), so it can be dropped here.
 signal telemetry_acked(id: String)
+## Regional projects or service agreements changed (region.ledger).
+signal ledger_changed
 
 var region := Region.new()
 var player_id := ""
@@ -41,6 +45,17 @@ var _peer: WebSocketMultiplayerPeer
 var _connected := false
 var _password := ""
 var _new_account := false
+## Your town keeps running when the connection drops (the host's computer
+## restarting for an update, say); the game reconnects in the background.
+const RECONNECT_EVERY := 5.0
+## Gives up (and says so) after this long without the region.
+const RECONNECT_FOR := 300.0
+var reconnecting := false
+## A game month (a game day) in ticks: agreements are paid once a month.
+const MONTH_TICKS := 24 * CitySim.TICKS_PER_HOUR
+var _booked_month := -1
+var _retry_in := 0.0
+var _lost_for := 0.0
 
 
 ## Connects and logs in (or, with new_account, signs up). Watch the joined,
@@ -54,12 +69,17 @@ func join(server_url: String, code: String, id: String, name: String, password :
 	_password = password
 	_new_account = new_account
 	token = saved_token
+	if _connect() != OK:
+		failed.emit("Couldn't reach %s." % server_url)
+
+
+func _connect() -> int:
 	_peer = WebSocketMultiplayerPeer.new()
 	RegionServer.use_big_buffers(_peer)
-	var err := _peer.create_client(server_url)
+	var err := _peer.create_client(url)
 	if err != OK:
-		failed.emit("Couldn't reach %s." % server_url)
 		_peer = null
+	return err
 
 
 func leave() -> void:
@@ -82,6 +102,45 @@ func send_town() -> void:
 ## Sends a batch of play telemetry (see Telemetry); telemetry_acked says when it's kept.
 func send_telemetry(batch: Dictionary) -> void:
 	_send({"t": "telemetry", "z": RegionServer.pack(batch)})
+
+
+## Chips in to a regional project's open stage. The server books what the
+## stage still needs, and this computer pays exactly that ("pledged").
+func pledge(project_id: String, amount: float, good := "money") -> void:
+	var sim := my_sim()
+	if sim == null or amount <= 0.0:
+		return
+	if good == "money":
+		amount = minf(amount, maxf(0.0, sim.economy.money))
+	_send({"t": "pledge", "project": project_id, "good": good, "amount": amount})
+
+
+## Offers a neighbor a service from your town for a monthly price.
+func offer_service(to_city: String, service: String, price_per_month: float, capacity: float) -> void:
+	_send({"t": "offer", "to": to_city, "service": service, "price": price_per_month, "capacity": capacity})
+
+
+## Says yes or no to a neighbor's offer.
+func answer_offer(agreement_id: String, yes: bool) -> void:
+	_send({"t": "answer", "id": agreement_id, "yes": yes})
+
+
+func end_agreement(agreement_id: String) -> void:
+	_send({"t": "end", "id": agreement_id})
+
+
+## Each game month of your own town, your side of every active agreement:
+## booked here, so it keeps going whoever is online.
+func _book_agreements() -> void:
+	var sim := my_sim()
+	if sim == null:
+		return
+	var month := int(sim.tick_count / MONTH_TICKS)
+	if _booked_month < 0 or month < _booked_month:
+		_booked_month = month
+	while _booked_month < month:
+		_booked_month += 1
+		sim.economy.money += region.ledger.book_month(my_city)
 
 
 ## (Host only) lets a waiting player in, or turns them away.
@@ -112,7 +171,19 @@ func name_of(id: String) -> String:
 	return "Someone"
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if reconnecting:
+		_lost_for += delta
+		_retry_in -= delta
+		if _peer == null and _retry_in <= 0.0:
+			if _lost_for > RECONNECT_FOR:
+				reconnecting = false
+				disconnected.emit()
+				return
+			_retry_in = RECONNECT_EVERY
+			_connect()
+	if is_joined:
+		_book_agreements()
 	if _peer == null:
 		return
 	_peer.poll()
@@ -127,8 +198,11 @@ func _process(_delta: float) -> void:
 		_peer = null
 		_connected = false
 		is_joined = false
-		if was_joined:
-			disconnected.emit()
+		if was_joined or reconnecting:
+			if not reconnecting:
+				reconnecting = true
+				_lost_for = 0.0
+				_retry_in = RECONNECT_EVERY
 		else:
 			failed.emit("Couldn't connect to the region. Check the address, and that the server is running.")
 		return
@@ -151,6 +225,19 @@ func _handle(msg: Dictionary) -> void:
 				leave()
 				failed.emit("The region sent something this game can't read. Refresh to update.")
 				return
+			if reconnecting and region.cities.has(my_city):
+				# Back after a dropped connection: this computer's copy of your
+				# town is the newest, so keep it and send it.
+				reconnecting = false
+				var old_ids := region.cities.keys()
+				_replace_region(d)
+				is_joined = true
+				for id in region.cities:
+					if not id in old_ids:
+						city_added.emit(id)
+				send_town()
+				reconnected.emit()
+				return
 			region.from_dict(d)
 			my_city = region.city_of(player_id)
 			is_joined = true
@@ -163,8 +250,29 @@ func _handle(msg: Dictionary) -> void:
 		"requests":
 			requests = msg.list
 			requests_changed.emit()
+		"ledger":
+			if msg.get("d") is Dictionary:
+				region.ledger.from_dict(msg.d)
+				ledger_changed.emit()
+		"pledged":
+			# The server booked our pledge: pay it from the town.
+			var sim := my_sim()
+			if sim and str(msg.get("good", "")) == "money":
+				sim.economy.money -= float(msg.get("amount", 0.0))
+				send_town()
 		"reject":
 			var reason := str(msg.get("reason", "The region turned you away."))
+			if reconnecting and "version" in reason and OS.has_feature("web"):
+				# The host's computer updated to a new version of the game:
+				# load it (the invite link in the address bar brings you back).
+				JavaScriptBridge.eval("location.reload()")
+				return
+			if reconnecting:
+				# Say the server still holds the old connection: try again soon.
+				_peer.close()
+				_peer = null
+				_connected = false
+				return
 			leave()
 			failed.emit(reason)
 		"region":
@@ -205,6 +313,7 @@ func _replace_region(d: Dictionary) -> void:
 	var r := Region.new()
 	r.from_dict({"joins": d.get("joins", [])})
 	region.joins = r.joins
+	region.ledger.from_dict(d.get("ledger", {}))
 	for id in d.cities:
 		var c: Dictionary = d.cities[id]
 		if id == my_city or not c.has("city"):

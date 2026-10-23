@@ -11,6 +11,9 @@ var cam: CityCamera
 ## Returns true while a tool is in hand (clicks belong to the tool then).
 var busy := Callable()
 var selection := {}
+## While a pollution view is on, a click on open ground shows the pollution
+## there and who makes it.
+var spot_clicks := false
 
 var _ring := MeshInstance3D.new()
 var _press := Vector2(-1, -1)
@@ -58,7 +61,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif _press.x >= 0.0 and mb.position.distance_to(_press) < 6.0:
 		_press = Vector2(-1, -1)
 		var hit = cam.mouse_ground_point()
-		select({} if hit == null else Inspect.pick(sim, hit))
+		var sel := {} if hit == null else Inspect.pick(sim, hit)
+		if sel.is_empty() and hit != null and spot_clicks:
+			sel = {"type": "spot", "id": [snappedf(hit.x, 0.1), snappedf(hit.z, 0.1)]}
+		select(sel)
 
 
 func _process(_delta: float) -> void:

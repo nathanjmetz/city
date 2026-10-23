@@ -14,6 +14,7 @@ config/windows_native_icon="res://assets/brand/app-icons/neighbors.ico"
 
 Session="*res://scripts/shell/session.gd"
 Telemetry="*res://scripts/telemetry/telemetry.gd"
+Pad="*res://scripts/shell/pad.gd"
 
 [display]
 
@@ -39,6 +40,10 @@ snow={
 season_look={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)
+}
+tree_fade={
+"type": "vec4",
+"value": Vector4(0, 0, 1e+09, 0)
 }
 windows_lit={
 "type": "float",

@@ -93,6 +93,7 @@ static func build_site(site: Dictionary, seed: int, to_curb: float, town: String
 		"motel": b._motel(size, to_curb, str(site.name))
 		"diner": b._diner(size, to_curb, str(site.name))
 		"gas_station": b._gas_station(size, to_curb, str(site.name))
+		"trailhead": b._trailhead(size, to_curb)
 	var lawn := b._lawn.commit()
 	if lawn.get_surface_count() > 0:
 		lawn.surface_set_material(0, lawn_material())
@@ -413,14 +414,14 @@ func _park_sign(p: Vector3, name: String) -> void:
 
 
 ## A flat strip of walk from a to b (on the ground), any direction.
-func _strip(a: Vector3, b: Vector3, w: float, kind: String, col: Color) -> void:
+func _strip(a: Vector3, b: Vector3, w: float, kind: String, col: Color, y := 0.045) -> void:
 	var alpha := {"drive": 0.0, "asphalt": 0.4, "line": 0.72, "mulch": 1.0, "gravel": 1.0}
 	col.a = alpha[kind]
 	var d := Vector3(b.x - a.x, 0, b.z - a.z)
 	if d.length() < 0.5:
 		return
 	var n := Vector3(-d.z, 0, d.x).normalized() * w * 0.5
-	var y := 0.045  # under mulch beds and courts, which sit on top of the walks
+	# y: under mulch beds and courts, which sit on top of the walks
 	var pts := [Vector3(a.x, y, a.z) - n, Vector3(b.x, y, b.z) - n, Vector3(b.x, y, b.z) + n, Vector3(a.x, y, a.z) + n]
 	var order := [0, 1, 2, 0, 2, 3]
 	if (pts[1] - pts[0]).cross(pts[2] - pts[0]).y > 0.0:
@@ -1177,3 +1178,73 @@ func _gas_station(size: Vector2, to_curb: float, name: String) -> void:
 	_box("paint", Vector3(2.4, 2.6, 0.3), sign + Vector3(0, 5.8, 0), Color("#2f5a8a"))
 	labels.append({"pos": sign + Vector3(0, 5.8, -0.17), "normal": Vector3(0, 0, -1), "text": "GAS\n3.19",
 		"height": 0.45, "color": Color("#ffffff")})
+
+
+# ----------------------------------------------------------------- trails
+
+## A trailhead: a gravel lot for about 20 cars off the street, a timber map
+## kiosk, a vault toilet, a bike rack and a bench, and the trail heading off
+## the back (typical Indiana greenway and rail-trail trailheads).
+func _trailhead(size: Vector2, to_curb: float) -> void:
+	var hx := size.x * 0.5
+	var hz := size.y * 0.5
+	var gravel := Color("#a39a88")
+	_flat_rect("gravel", -hx + 2.0, hx - 2.0, -hz, -hz + 17.0, 0.05, gravel)
+	_flat_rect("gravel", -3.0, 3.0, -hz - to_curb, -hz, 0.08, gravel)
+	# Timber wheel stops along the back of the lot.
+	var x := -hx + 4.0
+	while x < hx - 4.0:
+		_box("paint", Vector3(1.8, 0.15, 0.2), Vector3(x, 0.08, -hz + 15.8), WOOD)
+		x += 2.75
+	# The trail starts behind the lot.
+	_strip(Vector3(0, 0, -hz + 17.0), Vector3(0, 0, hz + 1.0), Balance.TRAIL_WIDTH, "asphalt", Color("#4a4a48"))
+	_strip(Vector3(0, 0, -hz + 17.0), Vector3(0, 0, hz + 1.0), 0.1, "line", Color("#d8b030"), 0.055)
+	# Map kiosk: two posts, a shingled roof, a board under it.
+	var k := Vector3(-5.0, 0, -hz + 19.5)
+	for sx in [-1.1, 1.1]:
+		_box("paint", Vector3(0.2, 2.6, 0.2), k + Vector3(sx, 1.3, 0), WOOD)
+	_box("paint", Vector3(2.0, 1.2, 0.08), k + Vector3(0, 1.4, 0), Color("#2f4632"))
+	_gable_roof(k.x, k.z, 2.6, 1.4, 0.5, 2.8, true, Color("#4a3a30"), WOOD, false)
+	labels.append({"pos": k + Vector3(0, 1.75, -0.05), "normal": Vector3(0, 0, -1), "text": "TRAIL MAP",
+		"height": 0.18, "color": Color("#efe6c8")})
+	# Vault toilet: a small concrete block with a roof.
+	var t := Vector3(hx - 7.0, 0, -hz + 20.5)
+	_box("brick", Vector3(3.0, 2.6, 2.4), t + Vector3(0, 1.3, 0), Color("#b8b2a4"))
+	_gable_roof(t.x, t.z, 2.6, 2.8, 0.6, 3.4, true, Color("#5a4a3e"), Color("#b8b2a4"), false)
+	_box("paint", Vector3(0.9, 2.0, 0.05), t + Vector3(0, 1.0, -1.23), Color("#4a5a4a"))
+	# Bike rack: inverted U hoops.
+	for i in 4:
+		var r := Vector3(3.0 + i * 0.9, 0, -hz + 18.5)
+		_box("metal", Vector3(0.05, 0.9, 0.05), r + Vector3(-0.3, 0.45, 0), DARK)
+		_box("metal", Vector3(0.05, 0.9, 0.05), r + Vector3(0.3, 0.45, 0), DARK)
+		_box("metal", Vector3(0.65, 0.05, 0.05), r + Vector3(0, 0.9, 0), DARK)
+	_bench(Vector3(-5.0, 0, -hz + 22.5), 0.0)
+	_park_sign(Vector3(hx - 5.0, 0, -hz + 1.5), "TRAILHEAD")
+
+
+## The town's trails as one flat mesh in world space (y = 0, to drape over
+## the land): a 10 ft asphalt path with a dashed yellow centre line, broken
+## where it crosses a street. `on_road` says whether a point is on a street.
+static func trails_mesh(paths: Array, on_road: Callable) -> ArrayMesh:
+	var b := ParkBuilder.new()
+	b.rng = RandomNumberGenerator.new()
+	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
+	b._lawn.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var w := Balance.TRAIL_WIDTH
+	for path in paths:
+		var pts: Array = path.pts
+		for i in pts.size() - 1:
+			var a := Vector3(float(pts[i][0]), 0, float(pts[i][1]))
+			var c := Vector3(float(pts[i + 1][0]), 0, float(pts[i + 1][1]))
+			var n := maxi(1, ceili(a.distance_to(c) / 4.0))
+			for k in n:
+				var p0 := a.lerp(c, float(k) / n)
+				var p1 := a.lerp(c, float(k + 1) / n)
+				if on_road.call((p0 + p1) * 0.5):
+					continue
+				# A little past each end so bends close up.
+				var d := (p1 - p0).normalized() * w * 0.25
+				b._strip(p0 - d, p1 + d, w, "asphalt", Color("#4a4a48"))
+				if k % 2 == 0:
+					b._strip(p0.lerp(p1, 0.15), p0.lerp(p1, 0.85), 0.1, "line", Color("#d8b030"), 0.055)
+	return b._commit_flat()

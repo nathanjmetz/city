@@ -33,11 +33,13 @@ func _done() -> Array:
 
 # ---------------------------------------------------------------- shops
 
-## A shop on its own lot with parking in front (Main Street blocks are the
-## mixed-use type now, chosen by the street rather than by chance).
+## A shop on its own lot: a store with parking in front, a diner, a bank,
+## a gas station on a corner, a strip center on a wide lot or a church,
+## picked for the street's era (Main Street blocks are the mixed-use type
+## now, chosen by the street rather than by chance).
 static func build_retail(seed: int, to_curb: float, lot := {}, spec := {}) -> Array:
 	var b := _start(seed, lot, spec)
-	b._retail(to_curb)
+	b._shop(to_curb, lot, false)
 	return b._done()
 
 

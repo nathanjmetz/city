@@ -11,6 +11,13 @@ var _frames := 0
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
 	var kind := args[1] if args.size() > 1 else "house"
+	# "house:bungalow" draws one house type.
+	if kind.begins_with("house:"):
+		HouseBuilder.force_kind = kind.get_slice(":", 1)
+		kind = "house"
+	elif kind.begins_with("shop:"):
+		CommercialBuilder.force_shop = kind.get_slice(":", 1)
+		kind = "shop"
 	var seed := int(args[2]) if args.size() > 2 else 1
 	var world := Node3D.new()
 	root.add_child(world)

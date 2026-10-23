@@ -59,7 +59,9 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	# Neighbors' cities are drawn moved over to their place on the land.
 	Terrain.shift = Terrain.shift_for(self)
+	var t := Perf.now()
 	_draw_cars(_delta)
+	Perf.add("frame.vehicles", t)
 	Terrain.shift = Vector2.ZERO
 
 
@@ -108,7 +110,8 @@ func _draw_cars(_delta: float) -> void:
 			var origin: Vector3 = hitch + dir * float(art.pin)
 			_add(art.trailer, lod, Transform3D(Basis.looking_at(dir, Vector3.UP), origin), Color(1, 1, 1, flags))
 		else:
-			_add(kind, lod, _place(car, ahead, front, VehicleModels.AXLE.get(kind, 3.5)), custom)
+			var model := VehicleModels.variant(kind, car.id)
+			_add(model, lod, _place(car, ahead, front, VehicleModels.AXLE.get(model, 3.5)), custom)
 	if parked.is_valid():
 		for p in parked.call():
 			_add_parked(p[0], p[1], p[2], eye)

@@ -68,6 +68,8 @@ var _last_parcels := {}  # parcel key -> hash, from the last plan
 ## again; the rest keep their lots (the same inputs give the same lots).
 var _dirty: Array = []
 var _fresh := true
+static var _kmax := -1.0  # the widest road's half right-of-way (see kmax)
+var _piece_ids := []  # _pieces' keys in order, rebuilt when roads change
 ## Areas where roads changed on the last plan (for saved parcels).
 var changed_boxes: Array = []
 
@@ -185,6 +187,7 @@ func side_survey(network: RoadNetwork, id: int, side: int) -> Dictionary:
 	if not network.segments.has(id) or not _lot_road(network, id):
 		return {}
 	var s := _side(network, id, side)
+	_fresh_claims(s)
 	_survey(s)
 	return s
 
@@ -222,7 +225,10 @@ func update(network: RoadNetwork) -> void:
 			_seg_box.erase(id)
 	if changed_boxes.is_empty():
 		return
-	# Any side whose survey could reach a changed road is surveyed again.
+	_piece_ids = []
+	# Sides whose survey could reach a changed road look again at the lines
+	# that road could touch; the rest of their survey (and their lots, if no
+	# line changed) stays as it is.
 	var reach := REACH * 2.0 + 30.0
 	for key in _sides.keys():
 		var s: Dictionary = _sides[key]
@@ -230,10 +236,40 @@ func update(network: RoadNetwork) -> void:
 			_sides.erase(key)
 			continue
 		var box: Rect2 = (s.box as Rect2).grow(reach)
+		var hits := []
 		for b in changed_boxes:
 			if box.intersects(b):
-				_sides.erase(key)
+				hits.append(b)
+		if not hits.is_empty():
+			_resurvey(s, hits)
+
+
+## Redoes the survey lines a changed road (its centre line within `hits`)
+## could reach. A road claims a line at t only within 2t + its half
+## right-of-way of the line's front, so lines farther than that from every
+## changed road come out the same and are kept.
+func _resurvey(s: Dictionary, hits: Array) -> void:
+	# Which roads can claim its land is worked out again when next needed.
+	s.claim_stale = true
+	if s.rays.is_empty():
+		return
+	var raw: Array = s.raw
+	var moved := false
+	for i in raw.size():
+		var r: Array = raw[i]
+		var near := 2.0 * maxf(r[3], 0.0) + _kmax_() + 1.0
+		for b in hits:
+			if _rect_dist(b, r[1]) <= near:
+				_fresh_claims(s)
+				var again := _ray(s, r[0])
+				if again != r:
+					raw[i] = again
+					moved = true
 				break
+	if moved:
+		s.rays = _converged(raw)
+		s.cut_sig = 0
+		s.free_sig = 0
 
 
 ## Straight roads need just their two ends; curves get more points.
@@ -258,19 +294,7 @@ func _side(network: RoadNetwork, id: int, side: int) -> Dictionary:
 		"to_curb": RoadStyle.right_of_way_half(type) + 0.3 - RoadStyle.half_width(type),
 		"box": _seg_box[id], "curve": network.curve_of(id),
 	}
-	# Roads that can claim this side's land.
-	var near := (s.box as Rect2).grow(REACH * 2.0 + 30.0)
-	var claim := []
-	var others := _pieces.keys()
-	others.sort()
-	var mid := (s.box as Rect2).get_center()
-	for o in others:
-		if o != id and near.intersects(_seg_box[o]):
-			for p in _pieces[o]:
-				claim.append([_rect_dist(p[3], mid), p])
-	# Nearest roads first, so most lines find their claim early.
-	claim.sort()
-	s.claim = claim.map(func(c): return c[1])
+	_claims(s)
 	# Where each survey line meets the street; depths come later, only for
 	# sides that are zoned.
 	var fronts := []
@@ -288,15 +312,59 @@ func _side(network: RoadNetwork, id: int, side: int) -> Dictionary:
 	return s
 
 
+func _fresh_claims(s: Dictionary) -> void:
+	if s.get("claim_stale", false):
+		_claims(s)
+
+
+## Roads that can claim this side's land.
+func _claims(s: Dictionary) -> void:
+	s.claim_stale = false
+	var near := (s.box as Rect2).grow(REACH * 2.0 + 30.0)
+	var claim := []
+	var others := _pieces.keys()
+	others.sort()
+	var mid := (s.box as Rect2).get_center()
+	for o in others:
+		if o != s.seg and near.intersects(_seg_box[o]):
+			var i := 0
+			for p in _pieces[o]:
+				claim.append([_rect_dist(p[3], mid), o, i, p])
+				i += 1
+	# Nearest roads first, so most lines find their claim early (and can
+	# stop looking once the rest are out of reach).
+	claim.sort_custom(func(x, y): return x[0] < y[0] or x[0] == y[0] and (x[1] < y[1] or x[1] == y[1] and x[2] < y[2]))
+	s.claim = claim.map(func(c): return c[3])
+	s.claim_d = claim.map(func(c): return c[0])
+	s.mid = mid
+
+
+## The widest road's half right-of-way: no road claims land farther off.
+static func _kmax_() -> float:
+	if _kmax < 0.0:
+		for t in RoadStyle.Type.values():
+			_kmax = maxf(_kmax, RoadStyle.right_of_way_half(t))
+	return _kmax
+
+
 ## The side's survey lines with their depths (worked out once).
 static func _survey(s: Dictionary) -> Array:
 	if s.rays.is_empty():
-		var rays := []
+		var raw := []
 		for f in s.fronts:
-			rays.append(_ray(s, f[0]))
-		_converge(rays)
-		s.rays = rays
+			raw.append(_ray(s, f[0]))
+		s.raw = raw
+		s.rays = _converged(raw)
 	return s.rays
+
+
+## A copy of the raw survey lines, stopped where they cross.
+static func _converged(raw: Array) -> Array:
+	var rays := []
+	for r in raw:
+		rays.append((r as Array).duplicate())
+	_converge(rays)
+	return rays
 
 
 ## A survey line at distance `a` along the street: [a, front Vector2,
@@ -312,7 +380,14 @@ static func _ray(s: Dictionary, a: float) -> Array:
 	var best := REACH
 	var by := -1.0
 	var by_seg := -1
-	for p in s.claim:
+	var claim: Array = s.claim
+	var claim_d: Array = s.claim_d
+	var off: float = f.distance_to(s.mid)
+	for i in claim.size():
+		# The rest are at least this far from f: none can claim it sooner.
+		if claim_d[i] - off > best * 2.0 + _kmax_() + 0.25:
+			break
+		var p: Array = claim[i]
 		var box: Rect2 = p[3]
 		var k: float = p[2] + 0.25
 		# Too far away to reach this line within `best`.
@@ -429,6 +504,7 @@ func _plan_side(s: Dictionary, zones: ZoneMap, all_parcels: Array) -> Array:
 		s.cut_sig = 1
 		s.cut = []
 		return []
+	_fresh_claims(s)
 	var area := (s.box as Rect2).grow(REACH + 10.0)
 	var parcels := []
 	var near_keys := []
@@ -892,9 +968,10 @@ func revalidate(network: RoadNetwork, lot: Dictionary) -> Dictionary:
 
 ## The outline minus every road right-of-way near it.
 func _clip_roads(poly: PackedVector2Array, box: Rect2) -> PackedVector2Array:
-	var ids := _pieces.keys()
-	ids.sort()
-	for o in ids:
+	if _piece_ids.size() != _pieces.size():
+		_piece_ids = _pieces.keys()
+		_piece_ids.sort()
+	for o in _piece_ids:
 		if not (_seg_box[o] as Rect2).grow(30.0).intersects(box):
 			continue
 		for p in _pieces[o]:

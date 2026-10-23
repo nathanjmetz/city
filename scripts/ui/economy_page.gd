@@ -246,10 +246,10 @@ func hubs_in(area: String) -> Array:
 		"resources":
 			for id in sim.industry.sites:
 				out.append("industry:%d" % id)
-		"utilities", "public":
+		"utilities", "public", "health":
 			for id in sim.services.buildings:
 				if Services.area_of(sim.services.buildings[id].kind) == area:
-					out.append("service:%d" % id)
+					out.append(sim.services.key_of(id))
 		"transit":
 			for id in sim.buses.depots:
 				if sim.services.buildings.has(id):
@@ -266,6 +266,13 @@ func hubs_in(area: String) -> Array:
 		"warehouses":
 			for id in sim.warehouses.buildings:
 				out.append("warehouse:%d" % id)
+		"taxis":
+			for id in sim.taxis.companies:
+				if sim.services.buildings.has(id):
+					out.append("taxi:%d" % id)
+		"telecom":
+			for id in sim.telecom.companies:
+				out.append("telecom:%d" % id)
 		"waste", "cemetery":
 			for id in sim.hubs.hubs:
 				if CivicHubs.area_of(sim.hubs.hubs[id].kind) == area:
@@ -312,6 +319,9 @@ func _fill_hubs(area: String) -> void:
 		card.add_child(title)
 		var rows := {}
 		for sl in Policies.AREAS[area].sliders:
+			# Growth is a word to a leader: a nursing home or daycare has none.
+			if sl == "growth" and key.begins_with("service:"):
+				continue
 			var row := StepSlider.new(sl, sl.capitalize(), Policies.AREAS[area][sl], 56.0)
 			row.picked.connect(func(step): sim.apply({"type": "policy", "scope": key, "slider": sl, "step": step}))
 			card.add_child(row)
@@ -347,6 +357,10 @@ func hub_name(key: String) -> String:
 			return "%s %d  ·  %d %s%s" % [k.name, id, p.cells.size(), k.unit, "" if p.cells.size() == 1 else "s"]
 		"warehouse":
 			return "%s %d" % [Warehouses.KINDS[sim.warehouses.buildings[id].kind].name, id]
+		"taxi":
+			return "Taxi company %d" % id
+		"telecom":
+			return "Phone company %d  ·  $%s a month" % [id, CitySim.money_text(Telecom.monthly_grant(sim.telecom.companies[id]))]
 		"hub":
 			return "%s %d  ·  $%s a month" % [CivicHubs.KINDS[sim.hubs.hubs[id].kind].name, id,
 				CitySim.money_text(sim.hubs.cost_of(id))]
@@ -356,6 +370,9 @@ func hub_name(key: String) -> String:
 			var c: Dictionary = sim.education.campuses[id]
 			return "%s %d  ·  $%s a month" % [Education.KINDS[c.kind].name, id,
 				CitySim.money_text(Education.monthly_funding(c))]
+		"hospital":
+			var h: Dictionary = sim.healthcare.hubs.get(id, {})
+			return "%s  ·  $%s a month" % [h.get("name", "Hospital %d" % id), CitySim.money_text(sim.services.upkeep_of(id))]
 		"bank":
 			var b: Dictionary = sim.banks.banks[id]
 			return "%s %d  ·  %s" % [Banks.KINDS[b.kind].name, id, {"well": "well run", "adequate": "doing all right",
@@ -398,6 +415,13 @@ func _summary(area: String) -> String:
 			return "%d companies" % sim.power.sites.size() if sim.power.sites.size() != 1 else "1 company"
 		"warehouses":
 			return "%d" % sim.warehouses.buildings.size()
+		"taxis":
+			return "%d" % hubs_in(area).size()
+		"telecom":
+			var grant := 0
+			for id in sim.telecom.companies:
+				grant += Telecom.monthly_grant(sim.telecom.companies[id])
+			return "%d  ·  $%s grant" % [sim.telecom.companies.size(), CitySim.money_text(grant)]
 		"waste", "cemetery":
 			var n := 0
 			var cost := 0

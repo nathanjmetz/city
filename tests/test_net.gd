@@ -18,6 +18,7 @@ func _run() -> void:
 	_test_trade()
 	_test_elbow_room()
 	_test_city_lines()
+	_test_ledger()
 
 	var data := OS.get_user_data_dir().path_join("test-region.json")
 	DirAccess.remove_absolute(data)
@@ -117,6 +118,18 @@ func _run() -> void:
 	var line = heard.filter(func(l): return l.text == "Hi neighbor!")
 	_check(not line.is_empty() and line[0].from == "Ann", "Bob gets Ann's chat message")
 	_check(bob.players.size() == 2, "both players listed online")
+	var bob_cash := bob.my_sim().economy.money
+	bob.pledge("airport", 250_000.0)
+	await _until(func(): return ann.region.ledger.projects.airport.stages[0].pledged.get("money", 0.0) > 0.0)
+	_check(is_equal_approx(server.region.ledger.projects.airport.stages[0].pledged.money, 250_000.0), "Bob pledges to the airport; the server books it")
+	_check(is_equal_approx(bob_cash - bob.my_sim().economy.money, 250_000.0), "and Bob's town pays it")
+	_check(ann.region.ledger.share("airport", bob.my_city) == 1.0, "Ann sees Bob's share")
+	ann.offer_service(bob.my_city, "garbage", 3000.0, 20.0)
+	await _until(func(): return not bob.region.ledger.agreements.is_empty())
+	var aid: String = bob.region.ledger.agreements.keys()[0]
+	bob.answer_offer(aid, true)
+	await _until(func(): return ann.region.ledger.agreements[aid].status == "active")
+	_check(ann.region.ledger.agreements_of(ann.my_city).size() == 1, "Bob signs Ann's trash pickup offer")
 
 	# The region is saved, and Ann gets the same city back when she returns.
 	var ann_city: String = ann.my_city
@@ -151,7 +164,25 @@ func _run() -> void:
 	await _until(func(): return kid2.my_city != "")
 	_check(kid2.my_city == kid_city and again.region.cities[kid_city].player == "Sammy", "back by its sign-in, with the name picked in Profile")
 	_check(ann2.region.chat.any(func(l): return l.text == "Hi neighbor!"), "chat history kept")
+	# The host's computer restarts (an update, say): Sammy's town keeps
+	# running, the game reconnects by itself and the server gets the latest.
+	var back := []
+	kid2.reconnected.connect(func(): back.append(true))
 	again.stop()
+	again.queue_free()
+	await _frames(10)
+	var kid_sim := kid2.my_sim()
+	var segs := kid_sim.network.segments.size()
+	kid_sim.apply_now({"type": "build_road", "start": [0, 0], "ctrl": [0, 60], "end": [0, 120]})
+	_check(kid2.reconnecting, "a dropped connection keeps the town running and tries again")
+	var third := RegionServer.new()
+	root.add_child(third)
+	_check(third.start(PORT + 1, "", data) == OK, "the host's server comes back")
+	await _until(func(): return not back.is_empty(), 20.0)
+	await _frames(20)
+	_check(not back.is_empty() and kid2.is_joined, "the game reconnects by itself")
+	_check(third.region.cities[kid_city].sim.network.segments.size() > segs, "and the road built while away reaches the server")
+	third.stop()
 	DirAccess.remove_absolute(data)
 
 	print("SOME TESTS FAILED" if _failed else "ALL TESTS PASSED")
@@ -328,6 +359,27 @@ func _starter_town(sim: CitySim) -> Array:
 		out.append({"type": "paint_zone", "center": [a.x, a.y], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
 		out.append({"type": "paint_zone", "center": [b.x, b.y], "radius": 12, "zone": ZoneMap.Zone.INDUSTRIAL})
 	return out
+
+
+func _test_ledger() -> void:
+	var l := Ledger.new()
+	_check(l.projects.has("i69") and l.projects.has("airport"), "regional projects are seeded at real sites")
+	var p: Dictionary = l.projects.i69
+	var goal: float = p.stages[0].goal.money
+	_check(l.pledge("c1", "i69", "money", goal * 0.25) == goal * 0.25, "a town chips in")
+	_check(l.pledge("c2", "i69", "money", goal * 10.0) == goal * 0.75, "nobody pays more than the stage still needs")
+	_check(p.stages[0].status == "funded" and p.stages[1].status == "open", "a funded stage opens the next one")
+	_check(is_equal_approx(l.share("i69", "c1"), 0.25) and is_equal_approx(l.share("i69", "c2"), 0.75), "shares follow what each town put in")
+	_check(l.pledge("c1", "nope", "money", 10.0) == 0.0, "no pledges to a project that isn't there")
+	var id := l.offer("c1", "c2", "garbage", 5000.0, 40.0)
+	_check(not l.answer(id, "c1", true), "only the town an offer was made to can take it")
+	_check(l.answer(id, "c2", true) and l.agreements[id].status == "active", "the neighbor signs")
+	_check(l.book_month("c1") == 5000.0 and l.book_month("c2") == -5000.0, "each side books its own half of a month")
+	var copy := Ledger.new()
+	copy.from_dict(JSON.parse_string(JSON.stringify(l.to_dict())))
+	_check(copy.projects.i69.stages[1].status == "open" and is_equal_approx(copy.share("i69", "c2"), 0.75) \
+		and copy.agreements[id].status == "active", "the ledger saves and loads")
+	_check(l.end(id, "c2") and l.book_month("c1") == 0.0, "either side can end it")
 
 
 func _client() -> RegionClient:

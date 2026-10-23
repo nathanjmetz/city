@@ -155,8 +155,67 @@ func _init() -> void:
 	for bid in sim.buses.buses:
 		_check(sim.buses.buses[bid].state == "driving", "only buses still on a trip remain after the depot goes")
 	_schools()
+	_taxis()
 	print("TESTS FAILED" if _fails > 0 else "ALL TESTS PASSED")
 	quit(1 if _fails > 0 else 0)
+
+
+## Taxis: the owner sizes the fleet to the rides people call for, sets the
+## meter, and each cab drives real fares and comes back to its stall.
+func _taxis() -> void:
+	var sim := _town()
+	var placed := false
+	for spot in [Vector3(260, 0, 420), Vector3(-260, 0, 380), Vector3(500, 0, 220), Vector3(-600, 0, 620)]:
+		var site := Services.site_near(sim.network, Services.Kind.TAXI_COMPANY, spot)
+		if not site.is_empty() and sim.apply({"type": "place_service", "kind": Services.Kind.TAXI_COMPANY,
+				"pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]}):
+			placed = true
+			break
+	_check(placed, "a taxi company can be placed beside the street")
+	var id: int = sim.services.buildings.keys().filter(func(k): return sim.services.buildings[k].kind == Services.Kind.TAXI_COMPANY)[0]
+	_check(sim.taxis.companies.has(id), "the company runs itself")
+	_check(sim.taxis.fleet_of(id) == 2, "it opens with two cabs")
+	var co: Dictionary = sim.taxis.companies[id]
+	_check(co.leader.has("edu"), "an owner runs it")
+	var stalls := TaxiCo.stalls_for(Services.size_of(sim.services.buildings[id]))
+	_check(stalls >= 6, "its lot holds a small-town fleet (%d stalls)" % stalls)
+	co.cash = 1_000_000
+	for i in 8:
+		sim.taxis._decide(sim, id)
+	_check(co.rides > 0, "people call for cabs (%d rides a day, pop %d)" % [co.rides, sim.stats.population])
+	_check(sim.taxis.fleet_of(id) == mini(co.wanted, stalls), "it runs the cabs the rides need (%d of %d)" % [sim.taxis.fleet_of(id), co.wanted])
+	_check(co.rate >= Balance.TAXI_RATE_MIN and co.rate <= Balance.TAXI_RATE_MAX, "it sets its own meter ($%.2f a mile)" % co.rate)
+	co.wealth = 0.1
+	var poor := sim.taxis.rides_wanted(sim, id, co.rate)
+	co.wealth = 0.9
+	var rich := sim.taxis.rides_wanted(sim, id, co.rate)
+	_check(poor > rich, "a poorer town, with fewer cars, calls more cabs (%.0f vs %.0f)" % [poor, rich])
+	_check(sim.taxis.rides_wanted(sim, id, 3.0) < sim.taxis.rides_wanted(sim, id, 2.0), "a dearer meter, fewer rides")
+	# A cab goes out on a call, carries the fare and comes back to its stall.
+	var legs := {}
+	var back := false
+	for i in 15000:
+		sim.tick()
+		for cid in sim.taxis.cabs:
+			var cab: Dictionary = sim.taxis.cabs[cid]
+			if cab.state == "dwell":
+				legs[cab.leg] = true
+			if legs.has("dropoff") and cab.state == "parked":
+				back = true
+		if back:
+			break
+	_check(legs.has("pickup"), "a cab picks up a fare (%s)" % str(legs.keys()))
+	_check(legs.has("dropoff"), "and drops them off")
+	_check(back, "then parks back in its stall")
+	_check(sim.taxis.describe(sim, id).rows.size() > 4, "the panel shows the company")
+	var copy := CitySim.new()
+	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
+	_check(copy.taxis.cabs.size() == sim.taxis.cabs.size(), "cabs saved")
+	_check(is_equal_approx(float(copy.taxis.companies[id].leader.edu), float(co.leader.edu)) and is_equal_approx(copy.taxis.companies[id].rate, co.rate), "the owner and meter saved")
+	sim.apply({"type": "remove_service", "id": id})
+	sim.tick()
+	for cid in sim.taxis.cabs:
+		_check(sim.taxis.cabs[cid].state == "driving", "only cabs still on a trip remain after the company goes")
 
 
 ## The intercity coach: with a neighbor and a road out of the region, it

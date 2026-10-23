@@ -7,6 +7,11 @@ extends RefCounted
 ## later receive the same commands from players and replay them.
 
 signal changed
+## Goes up on every change, so caches can tell when to work things out again.
+var revision := 0
+## Segments meeting at each node, kept until the roads change (segments_at).
+var _at := {}
+var _at_key := []
 
 const SAMPLES := 24
 const MIN_LENGTH := 4.0
@@ -83,6 +88,23 @@ func sample_segment(seg_id: int, n: int = SAMPLES) -> PackedVector3Array:
 
 
 func segments_at(node_id: int) -> Array:
+	# Mid-batch the roads are half edited, so look the slow way.
+	if _batch > 0 or _batch_dirty:
+		return _scan_at(node_id)
+	var key := [revision, segments.size(), nodes.size()]
+	if key != _at_key:
+		_at_key = key
+		_at.clear()
+		for id in segments:
+			for n in [segments[id].a, segments[id].b]:
+				if not _at.has(n):
+					_at[n] = []
+				if not _at[n].has(id):
+					_at[n].append(id)
+	return _at.get(node_id, []).duplicate()
+
+
+func _scan_at(node_id: int) -> Array:
 	var out := []
 	for id in segments:
 		if segments[id].a == node_id or segments[id].b == node_id:
@@ -111,6 +133,11 @@ func find_segment_near(pos: Vector3, max_dist: float, max_dy := INF) -> Dictiona
 	var p := _flat(pos)
 	for id in segments:
 		var c := curve_of(id)
+		# A curve stays inside its control points: skip the far ones.
+		var hull := Rect2(Vector2(c[0].x, c[0].z), Vector2.ZERO).expand(Vector2(c[1].x, c[1].z)) \
+			.expand(Vector2(c[2].x, c[2].z)).grow(best_d + 0.01)
+		if not hull.has_point(Vector2(p.x, p.z)):
+			continue
 		var n := 48
 		var prev := bezier(c[0], c[1], c[2], 0.0)
 		for i in range(1, n + 1):
@@ -280,6 +307,7 @@ func end_batch() -> void:
 	_batch -= 1
 	if _batch == 0 and _batch_dirty:
 		_batch_dirty = false
+		revision += 1
 		changed.emit()
 
 
@@ -289,6 +317,7 @@ func _changed() -> void:
 	if _batch > 0:
 		_batch_dirty = true
 	else:
+		revision += 1
 		changed.emit()
 
 

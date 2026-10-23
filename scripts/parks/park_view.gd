@@ -11,6 +11,8 @@ var town := ""
 var _nodes := {}  # site id -> Node3D
 var _stamps := {}  # site id -> what it was drawn from
 var _trees := TreeField.new()
+var _trail_mesh: MeshInstance3D
+var _trail_stamp := ""
 ## How far a park's ground cover rides above the drawn land, metres.
 const LIFT := 0.12
 
@@ -34,6 +36,28 @@ func _sync() -> void:
 	for id in sim.parks.sites:
 		if not _nodes.has(id):
 			_nodes[id] = _spawn(id, true)
+	_draw_trails()
+
+
+## The town's trails, laid over the land, redrawn when they grow.
+func _draw_trails() -> void:
+	var t := sim.parks.trails
+	var stamp := "%d|%d|%d" % [t.paths.size(), int(t.length()), sim.network.segments.size()]
+	if stamp == _trail_stamp:
+		return
+	_trail_stamp = stamp
+	if _trail_mesh == null:
+		_trail_mesh = MeshInstance3D.new()
+		_trail_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(_trail_mesh)
+	if t.paths.is_empty():
+		_trail_mesh.mesh = null
+		return
+	t._roads.clear()
+	var flat := ParkBuilder.trails_mesh(t.paths, func(p: Vector3) -> bool:
+		return t._on_road(sim, Vector2(p.x, p.z), 0.5))
+	t._roads.clear()
+	_trail_mesh.mesh = Terrain.drape_local(_split(flat, 4.0, LIFT), Transform3D.IDENTITY)
 
 
 func _stamp(id: int) -> String:

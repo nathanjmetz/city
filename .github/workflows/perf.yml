@@ -1,0 +1,62 @@
+# Plays the big test town after every merge to main and checks each system
+# against its budget (scripts/perf/perf_budget.gd). The table shows on the
+# run's summary page; the numbers are kept as an artifact.
+name: Performance
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf
+  # Merges land minutes apart and a run takes about 10 minutes: let a run
+  # finish (only the newest waiting one runs next), or none ever would.
+  cancel-in-progress: false
+
+env:
+  GODOT_VERSION: 4.7.2
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/godot-perf
+          key: godot-${{ env.GODOT_VERSION }}-perf
+
+      - name: Download Godot
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/godot-perf && cd ~/godot-perf
+          base=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          curl -fsSL -o godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip && rm godot.zip
+          mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 godot
+
+      - name: Play the big test town
+        run: |
+          ~/godot-perf/godot --headless --import >/dev/null 2>&1 || true
+          ~/godot-perf/godot --headless -s tools/perf_run.gd -- big 720 perf.json | tee perf.txt
+          {
+            echo '### Performance: big test town'
+            echo '```'
+            grep -A40 '^Town:' perf.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: perf-${{ github.sha }}
+          path: |
+            perf.json
+            perf.txt

@@ -325,6 +325,9 @@ func _click() -> void:
 			elif sim.education.covers(hit):
 				# One campus building at a time (its first building closes it).
 				sim.apply({"type": "remove_campus_block", "pos": [hit.x, hit.z]})
+			elif sim.telecom.covers(hit):
+				# One tower or block at a time (its office closes the company).
+				sim.apply({"type": "remove_telecom_at", "pos": [hit.x, hit.z]})
 		Mode.UPGRADE:
 			if _hover_seg != -1:
 				sim.apply({"type": "upgrade_road", "seg": _hover_seg, "road": road_type})
@@ -511,8 +514,8 @@ func _show_guide(at: Vector3) -> void:
 	var dir := Vector3(cos(_guide_angle), 0.0, sin(_guide_angle))
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	RoadMesh.add_strip(st, PackedVector3Array([at - dir * 400.0, at + dir * 400.0]), -0.25, 0.25, 0.3)
-	_guide.mesh = st.commit()
+	RoadMesh.add_strip(st, Terrain.densify(PackedVector3Array([at - dir * 400.0, at + dir * 400.0]), 6.0), -0.25, 0.25, 0.3)
+	_guide.mesh = Terrain.drape(st.commit(), true)
 	_guide.visible = true
 
 

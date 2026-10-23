@@ -56,6 +56,11 @@ const AREAS := {
 	"mail": {"name": "Post offices", "icon": "mail", "sliders": ["funding", "growth"],
 		"funding": "What the town adds to postage each month, for the postmaster to build with.",
 		"growth": "Your word to the postmaster: hold off, their call, or grow."},
+	"telecom": {"name": "Phone company", "icon": "tower", "sliders": ["funding", "growth"],
+		"funding": "The town's broadband grant. A bigger grant lets the manager plan further ahead.",
+		"growth": "Your word to the manager: hold off, their call, or grow."},
+	"taxis": {"name": "Taxis", "icon": "taxi", "sliders": ["growth"],
+		"growth": "Your word to the owners: how readily they add cabs and bays. They run on fares, so the town doesn't fund them."},
 	"transit": {"name": "Bus depots", "icon": "bus", "sliders": ["funding", "growth"],
 		"funding": "The town's monthly subsidy. It decides how many buses run.",
 		"growth": "Your word to the depot manager: hold off, their call, or grow."},
@@ -72,13 +77,16 @@ const AREAS := {
 	"schools": {"name": "Schools and colleges", "icon": "school", "sliders": ["funding", "growth"],
 		"funding": "What the town pays them each month. Better funded, they teach better.",
 		"growth": "Your word to their heads: hold off, their call, or grow."},
+	"health": {"name": "Health and care", "icon": "health", "sliders": ["funding", "growth"],
+		"funding": "The hospital levy and upkeep, and how far each one reaches.",
+		"growth": "Your word to the hospital's administrator: hold off, their call, or grow."},
 	"banks": {"name": "Banks", "icon": "bank", "sliders": ["growth"],
 		"growth": "Your word to their presidents: how freely they lend and grow. Banks are private, so the town doesn't fund them."},
 }
 
 ## What the player has set: scope -> {slider: step}. Scope is "city",
 ## "area:<key>" or a hub, "<kind>:<id>" (farm:3, industry:2, service:5, hub:1,
-## park:2, campus:1, post_office:1, water:4, bus_depot:6, power:2, warehouse:3).
+## park:2, campus:1, post_office:1, water:4, bus_depot:6, power:2, warehouse:3, hospital:4).
 var levels := {}
 
 
