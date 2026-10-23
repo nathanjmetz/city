@@ -747,9 +747,11 @@ func _parks_drawer() -> PanelContainer:
 	var marks := _section(row, "Landmarks  ·  one per town")
 	for k in Parks.KINDS:
 		var spec: Dictionary = Parks.KINDS[k]
+		if spec.get("auto", false):
+			continue
 		var a: Dictionary = Balance.AMENITIES[k]
 		var short := {"park": "Park", "courthouse": "Courthouse", "water_tower": "Water tower",
-			"grain_elevator": "Elevator", "football": "Football"}
+			"grain_elevator": "Elevator", "football": "Football", "fairgrounds": "Fairgrounds"}
 		var tip := "%s: $%s" % [spec.name, CitySim.money_text(int(a.cost))]
 		if spec.landmark:
 			tip += ", $%s a month" % CitySim.money_text(int(a.upkeep))

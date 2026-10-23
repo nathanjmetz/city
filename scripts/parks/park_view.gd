@@ -38,7 +38,9 @@ func _sync() -> void:
 
 func _stamp(id: int) -> String:
 	var s: Dictionary = sim.parks.sites[id]
-	return "%s|%s|%d|%d" % [s.pos, s.size, s.tier, s.features.size()]
+	var v: Dictionary = sim.parks.tourism.venues.get(id, {})
+	return "%s|%s|%d|%d|%s|%s|%s" % [s.pos, s.size, s.tier, s.features.size(), s.get("name", ""),
+		v.get("built", []), not v.get("crowd", {}).is_empty()]
 
 
 func _spawn(id: int, fresh: bool) -> Node3D:
@@ -50,6 +52,11 @@ func _spawn(id: int, fresh: bool) -> Node3D:
 	root.basis = Basis.looking_at(s.dir, Vector3.UP)
 	var to_curb := Parks.SETBACK + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
 	var town_name := town if town != "" else (Session.current_name if Session.current_name != "" else "My Town")
+	var v: Dictionary = sim.parks.tourism.venues.get(id, {})
+	if not v.is_empty():
+		s = s.duplicate()
+		s["venue_built"] = v.get("built", [])
+		s["event_on"] = not v.get("crowd", {}).is_empty()
 	var built := ParkBuilder.build_site(s, id * 7919 + int(s.founded), to_curb, town_name)
 	var xform := Transform3D(root.basis, root.position)
 	for i in [0, 1, 4]:
