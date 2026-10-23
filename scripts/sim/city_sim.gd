@@ -92,6 +92,8 @@ var hubs := CivicHubs.new()
 var parks := Parks.new()
 ## The post office, its postmaster, and the carriers on their routes.
 var mail := Mail.new()
+## Who owns each business, its name and its family's brand (Families).
+var families := Families.new()
 ## The town's broad Funding and Growth sliders for every area and hub (no
 ## tax fiddling: Brawn). Set on the Economy page or a hub's panel.
 var policies := Policies.new()
@@ -162,6 +164,14 @@ func _init() -> void:
 		return Vector2(b.pos.x, b.pos.z)
 	farms.reserves = reserves
 	industry.reserves = reserves
+	# New businesses get their names before any view draws them, so signs go
+	# up with the building (connected ahead of the views).
+	for sig in [buildings_changed, farms_changed, industry_changed]:
+		sig.connect(func(): families.sync(self))
+	permits.costers[Families.HUB] = func(_sim, req: Dictionary, _route, _hits) -> int:
+		return int(req.base)
+	permits.locators[Families.HUB] = func(_sim, id: int) -> Vector2:
+		return families.locate(self, id)
 	_wire_policies()
 	network.changed.connect(func():
 		_lots_dirty = true
@@ -518,6 +528,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			banks = Banks.new()
 			banks_changed.emit()
 			permits.from_dict({})
+			families.from_dict({})
+			families.changed.emit()
 			hubs = CivicHubs.new()
 			parks = Parks.new()
 			parks_changed.emit()
@@ -735,6 +747,9 @@ func tick() -> void:
 	# Once a month every hub's leader looks at its development tree (Agency).
 	if tick_count % (24 * TICKS_PER_HOUR) == 12 * TICKS_PER_HOUR:
 		_develop_hubs()
+	# ...and every family looks at what it owns, and whether to branch out.
+	if tick_count % (24 * TICKS_PER_HOUR) == 13 * TICKS_PER_HOUR:
+		families.month(self)
 	if tick_count % WaterUtility.DECIDE_EVERY == 0 and not services.water.utilities.is_empty():
 		var res := services.water.decide(self, yard_usable)
 		economy.money += int(res[1])
@@ -1711,6 +1726,22 @@ func _bank_changes(c: Dictionary) -> void:
 		banks_changed.emit()
 
 
+## A family opens a business on an empty zoned lot (Families, after the
+## player approved its permit): a shop, or a factory making `chain`.
+func found_business(key: String, zone: int, chain := "") -> bool:
+	if buildings.has(key) or not lots.has(key):
+		return false
+	var bseed := hash([city_seed, key, tick_count, "family"])
+	buildings[key] = {"zone": zone, "seed": bseed, "built": tick_count, "cap": capacity(zone, bseed), "occ": 0}
+	if zone == ZoneMap.Zone.INDUSTRIAL:
+		buildings[key].chain = chain if Balance.FACTORY_CHAINS.has(chain) else factory_chain(lots[key].pos)
+	# It goes up like any other building, crew and all.
+	var lot: Dictionary = lots[key]
+	construction.start("lot:" + key, PROFILE_OF_ZONE[zone], tick_count, lot.front, -lot.normal, lot.to_curb)
+	buildings_changed.emit()
+	return true
+
+
 ## Each farm and company leader takes their next step up their tree.
 func _develop_hubs() -> void:
 	var ids := farms.farms.keys()
@@ -1896,6 +1927,7 @@ func to_dict() -> Dictionary:
 		"hubs": hubs.to_dict(),
 		"parks": parks.to_dict(),
 		"mail": mail.to_dict(),
+		"families": families.to_dict(),
 		"policies": policies.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
@@ -1927,6 +1959,7 @@ func from_dict(d: Dictionary) -> void:
 				_paint_frontage(id, side, ZoneMap.Zone.RESIDENTIAL)
 	_upgrade_old_rings()
 	economy.from_dict(d.get("economy", {}))
+	families.from_dict(d.get("families", {}))
 	services.from_dict(d.get("services", {}))
 	farms.from_dict(d.get("farms", {}))
 	industry.from_dict(d.get("industry", {}))

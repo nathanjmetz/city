@@ -1043,6 +1043,44 @@ const MAIL_TREE := {
 	"air_mail": {"cost": 700_000, "land": 0, "days": 2, "weight": 3},
 }
 
+# --- Families and their businesses ---------------------------------------------
+# Brawn (2026-10-22): every business has a believable name, printed on its
+# sign, and a family behind it. A family that does well branches out the way
+# real small-town families do (the one with the grain elevator also buys the
+# diner and opens the hardware store), under one brand. It may only open on a
+# lot the player zoned or buy a business that's already there, each move is a
+# permit the player answers, and a family holds a few businesses at most in a
+# town. Each new business then follows the normal hub rules (grows next door
+# only).
+
+## Most businesses one family may own in a town (real small-town family
+## groups hold a handful: the elevator, the implement dealer, a restaurant).
+const FAMILY_MAX_HUBS := 4
+## Years in business before a family thinks of branching out.
+const FAMILY_EXPAND_AFTER := 2
+## Chance a month that a family ready to branch out asks, at full ambition.
+const FAMILY_EXPAND_CHANCE := 0.25
+## What the owners draw a month: a share of a farm's or company's profit,
+## and per job at an open shop or factory. A 10-job shop pays its owners
+## about $54,000 a year, near the median small-business owner's income (SBA).
+const FAMILY_PROFIT_SHARE := 0.3
+const FAMILY_PER_JOB := 450
+## A new family's savings when it opens its first business.
+const FAMILY_START_CASH := 50_000
+## Opening a business on an empty zoned lot: a small-town restaurant or
+## store costs about $175,000-$750,000 to open; a small plant more.
+const FAMILY_START_COST := {"shop": 250_000, "factory": 900_000}
+## Buying a going business: small businesses sell for 2-3x what they pay
+## their owners (BizBuySell). Farms sell for their land.
+const FAMILY_BUY_COST := {"shop": 180_000, "factory": 750_000, "company": 1_200_000}
+## A new generation takes over after this many years.
+const FAMILY_GENERATION_YEARS := 25
+## After this many years a family redoes its look (new signs, modern
+## lettering), for about this much.
+const FAMILY_REBRAND_YEARS := 20
+const FAMILY_REBRAND_COST := 40_000
+## Signs read "SINCE 2031" once a business is this many years old.
+const FAMILY_SINCE_SHOWN := 10
 # --- Water and sewer utility ---------------------------------------------------
 # Brawn's green (2026-10-22): the player places a water utility and sets its
 # subsidy; its superintendent runs it like a small business and climbs a

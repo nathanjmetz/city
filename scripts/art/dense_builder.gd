@@ -17,25 +17,26 @@ const SPANDREL := ["#c9c4b8", "#b8b2a6", "#8f8a80", "#d8d4ca", "#6e6a64"]
 const OFFICE_GLASS := Color(0.55, 0.62, 0.66, 0.35)
 
 
-static func _start(seed: int, lot: Dictionary) -> DenseBuilder:
+static func _start(seed: int, lot: Dictionary, spec := {}) -> DenseBuilder:
 	var b := DenseBuilder.new()
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
+	b.sign_spec = spec
 	b._fit(lot)
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 	return b
 
 
 func _done() -> Array:
-	return [_commit_house(), _commit_flat(), trees]
+	return [_commit_house(), _commit_flat(), trees, labels]
 
 
 # ---------------------------------------------------------------- shops
 
 ## A shop on its own lot with parking in front (Main Street blocks are the
 ## mixed-use type now, chosen by the street rather than by chance).
-static func build_retail(seed: int, to_curb: float, lot := {}) -> Array:
-	var b := _start(seed, lot)
+static func build_retail(seed: int, to_curb: float, lot := {}, spec := {}) -> Array:
+	var b := _start(seed, lot, spec)
 	b._retail(to_curb)
 	return b._done()
 
@@ -148,8 +149,8 @@ func _apartments(to_curb: float, width: float, storeys: int) -> void:
 
 # ---------------------------------------------------------------- Main Street
 
-static func build_mixed(seed: int, to_curb: float, lot: Dictionary, storeys: int) -> Array:
-	var b := _start(seed, lot)
+static func build_mixed(seed: int, to_curb: float, lot: Dictionary, storeys: int, spec := {}) -> Array:
+	var b := _start(seed, lot, spec)
 	b._mixed(to_curb, b.half * 2.0, storeys)
 	return b._done()
 
@@ -181,7 +182,13 @@ func _mixed(_to_curb: float, width: float, storeys: int) -> void:
 		_box("paint", Vector3(0.1, 3.0, 0.14), Vector3(fx + sw * 0.5, 1.75, zf - 0.07), mull)
 		_box("paint", Vector3(sw + 0.3, 0.6, 0.16), Vector3(fx, 0.4, zf - 0.08), trim)
 		_box("paint", Vector3(sw + 0.3, 0.12, 0.18), Vector3(fx, 3.25, zf - 0.09), trim)
+		# The lot's own business takes the middle shopfront; its neighbours
+		# in the block keep their own painted signs.
+		var own := sign_spec
+		if k != fronts / 2:
+			sign_spec = {}
 		_sign(Vector3(fx, 3.4, zf - 0.1), sw * 0.8, 0.7)
+		sign_spec = own
 		if rng.randf() < 0.5:
 			_awning(fx, sw, zf, 3.15, Color(_pick(AWNING)))
 		# Brick piers between the shopfronts.
@@ -212,8 +219,8 @@ func _mixed(_to_curb: float, width: float, storeys: int) -> void:
 
 # ---------------------------------------------------------------- offices
 
-static func build_office(seed: int, to_curb: float, lot: Dictionary, storeys: int) -> Array:
-	var b := _start(seed, lot)
+static func build_office(seed: int, to_curb: float, lot: Dictionary, storeys: int, spec := {}) -> Array:
+	var b := _start(seed, lot, spec)
 	b._office(to_curb, b.half * 2.0, storeys)
 	return b._done()
 

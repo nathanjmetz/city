@@ -30,6 +30,7 @@ An open map where you draw roads, paint zones along them, and buildings grow, li
 | Right click | Stop drawing. |
 | Click (no tool in hand) | Select a building, lot, farm or road: a panel shows whether it works, what it serves, its numbers and any problem. Badges over lots show what lacks power or water. |
 | Industry | Place an oil, mining or forestry company's main building near the resource (its view opens) and within 250 m of a road. Over time it opens well pads, pits or logging stands wherever the resource is richest; Reserve saves land for it. Every load leaves on a real truck: to a factory in town, or out by the highway. Resources never run out. |
+| Names and signs | Every shop, factory, farm and company has a believable southern Indiana name, lettered on its sign in its own style (slab serif feed stores, script diners, condensed garages...), and a family behind it. Click one to see who owns it, since when, and what else the family owns. A family that does well may ask (through the bell) to open on a lot you zoned or to buy out another business, under the family's name and look, up to 4 businesses in a town. Over the years signs add "SINCE 2031", businesses change hands, a new generation takes over, and old families redo their look. |
 | Esc | Stop drawing; press again to put every tool away and close panels. |
 
 | Space, or Pause / 1x / 2x / 4x | Pause and game speed. |
