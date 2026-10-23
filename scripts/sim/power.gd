@@ -335,7 +335,8 @@ func _profit(s: Dictionary, town: float, export: float, neighbor := 0.0) -> floa
 	var mwh_t := (town + neighbor) * Balance.POWER_MWH_PER_HOME
 	var mwh_x := export * Balance.POWER_MWH_PER_HOME
 	var built: float = float(k.capex) * s.cells.size()
-	var extra := Agency.effect(s, TREE, "sales+") - leased(s) * Balance.POWER_WIND_LEASE
+	var extra := Agency.effect(s, TREE, "sales+") - leased(s) * Balance.POWER_WIND_LEASE \
+		- _acres_leased(s) * Balance.POWER_SOLAR_LEASE_PER_ACRE
 	return mwh_t * (Balance.POWER_TOWN_PRICE - op) + mwh_x * (Balance.POWER_EXPORT_PRICE - op) + extra \
 		- built / Balance.POWER_LOAN_YEARS - (built + Balance.POWER_YARD_VALUE) * tax_rate / 100.0
 
@@ -386,6 +387,17 @@ func decide(usable: Callable, load: float, can_export: bool, ctx := {}) -> bool:
 					continue
 				best = c
 				best_q = q
+		# A solar company boxed in by cornfields remembers which ones it
+		# could lease; it asks the player before turning farmland to panels.
+		var want := []
+		if best == Vector2i.MAX and s.plant == "solar" and not s.cells.is_empty() \
+				and s.cells.size() < int(k.max_cells) and pad_usable.is_valid() and on_farm.is_valid():
+			for c in _frontier(s):
+				var mid := cell_center(s, c)
+				if quality(s.plant, mid) >= Balance.POWER_MIN_QUALITY and on_farm.call(mid) \
+						and _free(id, s, c, pad_usable):
+					want.append(c)
+		s.farm_want = want
 		if best != Vector2i.MAX:
 			var add := unit_homes(s.plant, best_q) * _boost(s)
 			var to_town := clampf(left - cap, 0.0, add)
@@ -745,6 +757,118 @@ func _send(sim: Object, id: int, from: Vector3, to: Vector3, home: bool) -> void
 		crews[trip] = {"site": id, "home": home, "at": to}
 
 
+## Acres of former cropland a solar company rents from farmers.
+static func _acres_leased(s: Dictionary) -> float:
+	var total := 0.0
+	for fid in s.get("leases", {}):
+		total += float(s.leases[fid])
+	return total
+
+
+## What the solar companies pay farm `fid` a year for land it leased them.
+func farm_rent(fid: int) -> float:
+	var total := 0.0
+	for id in sites:
+		total += float(sites[id].get("leases", {}).get(str(fid), 0.0)) * Balance.POWER_SOLAR_LEASE_PER_ACRE
+	return total
+
+
+## Solar on farmland, through a land-use permit (it changes what the town
+## is: cropland to panels). Once a month: carry out what the player
+## approved (the outline may have been redrawn), or, when the company is
+## boxed in by fields it would pay to lease, ask. True if anything changed.
+func farmland(sim: CitySim, id: int) -> bool:
+	var s: Dictionary = sites[id]
+	var did := false
+	for req in sim.permits.approved("power", id):
+		did = _lease_fields(sim, id, req.route) or did
+		sim.permits.done(int(req.id))
+	var want: Array = s.get("farm_want", [])
+	if want.is_empty() or on_hold(id) or not sim.permits.can_file(sim, "power", id):
+		return did
+	# Ask for a block of up to 2 x 2 cells around the best one, all fields.
+	want.sort_custom(func(a, b): return quality(s.plant, cell_center(s, a)) > quality(s.plant, cell_center(s, b)))
+	var c0: Vector2i = want[0]
+	var block := [c0]
+	for d in [Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(-1, 0), Vector2i(0, -1), Vector2i(-1, -1)]:
+		if block.size() >= 4:
+			break
+		if (c0 + d) in want:
+			block.append(c0 + d)
+	var lo := c0
+	var hi := c0
+	for c in block:
+		lo = Vector2i(mini(lo.x, c.x), mini(lo.y, c.y))
+		hi = Vector2i(maxi(hi.x, c.x), maxi(hi.y, c.y))
+	var sp := spacing(s)
+	var half := float(PLANTS[s.plant].footprint) * 0.5
+	var outline := []
+	for corner in [Vector2(lo.x, lo.y), Vector2(hi.x, lo.y), Vector2(hi.x, hi.y), Vector2(lo.x, hi.y)]:
+		var sx := -1.0 if corner.x == lo.x else 1.0
+		var sy := -1.0 if corner.y == lo.y else 1.0
+		var p: Vector3 = s.pos + _right(s) * (corner.x * sp + sx * half) - s.dir * (corner.y * sp + sy * half)
+		outline.append([p.x, p.z])
+	var acres := float((hi.x - lo.x + 1) * (hi.y - lo.y + 1)) * sp * sp / 4046.86
+	var farm_id: int = sim.farms.field_at(cell_center(s, c0))
+	var owner: String = sim.families.name_of("farm:%d" % farm_id) if farm_id != -1 else ""
+	sim.permits.file(sim, {"hub": "power", "hub_id": id, "leader": s.leader.name,
+		"title": "Solar panels on %d acres of farmland" % roundi(acres),
+		"why": "%s has run out of open ground next to the panels. %s would lease the field for $%s an acre a year instead of growing %s." % [
+			s.leader.name, owner if owner != "" else "The farmer", CitySim.money_text(roundi(Balance.POWER_SOLAR_LEASE_PER_ACRE)),
+			str(sim.farms.farms[farm_id].crop) if farm_id != -1 else "crops"],
+		"change": "Farmland to solar panels", "area": outline, "per_m2": 0,
+		"base": int(PLANTS[s.plant].capex) * block.size()})
+	return true
+
+
+## The farmers hand over their fields inside `route` (an outline) and the
+## company fills the ground with panel rows.
+func _lease_fields(sim: CitySim, id: int, route: Array) -> bool:
+	var s: Dictionary = sites[id]
+	var poly := PackedVector2Array()
+	for p in route:
+		poly.append(Vector2(float(p[0]), float(p[1])))
+	if poly.size() < 3:
+		return false
+	if not s.has("leases"):
+		s.leases = {}
+	var took := false
+	var fids: Array = sim.farms.farms.keys()
+	fids.sort()
+	for fid in fids:
+		var f: Dictionary = sim.farms.farms[fid]
+		for c in f.cells.duplicate():
+			var m: Vector3 = Farms.cell_center(f, c)
+			if Geometry2D.is_point_in_polygon(Vector2(m.x, m.z), poly):
+				f.cells.erase(c)
+				s.leases[str(fid)] = float(s.leases.get(str(fid), 0.0)) + Farms.ACRES_PER_CELL
+				took = true
+	if took:
+		sim.farms_changed.emit()
+		sim.clear_usable_cache()
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	for q in poly:
+		var d: Vector3 = Vector3(q.x, 0.0, q.y) - s.pos
+		var g := Vector2(d.dot(_right(s)), -d.dot(s.dir)) / spacing(s)
+		lo = lo.min(g)
+		hi = hi.max(g)
+	var added := false
+	for y in range(floori(lo.y), ceili(hi.y) + 1):
+		for x in range(floori(lo.x), ceili(hi.x) + 1):
+			var c := Vector2i(x, y)
+			var m := cell_center(s, c)
+			if c in s.cells or c == Vector2i.ZERO or s.cells.size() >= int(PLANTS[s.plant].max_cells):
+				continue
+			if not Geometry2D.is_point_in_polygon(Vector2(m.x, m.z), poly) or not _free(id, s, c, pad_usable):
+				continue
+			s.cells.append(c)
+			added = true
+	if added:
+		s.reason = "%s leased farmland for more panels, with your permit." % s.leader.name
+	return took or added
+
+
 ## How many of a company's turbines stand on leased farmland.
 func leased(s: Dictionary) -> int:
 	if s.plant != "wind" or not on_farm.is_valid():
@@ -792,7 +916,7 @@ func to_dict() -> Dictionary:
 			lane.append([p.x, p.z])
 		out[str(id)] = {"plant": s.plant, "pos": [s.pos.x, s.pos.z], "dir": [s.dir.x, s.dir.z],
 			"drive": lane, "cells": cells, "leader": s.leader, "reason": s.reason, "why": s.get("why", ""), "loss": s.loss_streak,
-			"built": s.built, "hired": s.hired}
+			"built": s.built, "hired": s.hired, "leases": s.get("leases", {})}
 	return {"sites": out, "next_id": _next_id}
 
 
@@ -817,4 +941,8 @@ func from_dict(d: Dictionary) -> void:
 			"reason": str(s.get("reason", "")), "why": str(s.get("why", "")), "loss_streak": int(s.get("loss", 0)),
 			"built": Array(s.get("built", [])).map(func(u): return str(u)),
 			"hired": float(s.get("hired", 0.0))}
+		var leases := {}
+		for fid in s.get("leases", {}):
+			leases[str(fid)] = float(s.leases[fid])
+		sites[int(k)].leases = leases
 	_next_id = int(d.get("next_id", 1))

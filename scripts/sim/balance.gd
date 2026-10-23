@@ -333,6 +333,9 @@ const POWER_TIE_SAG := 1.5
 ## A wind company pays the farmer a lease for each turbine in a field, about
 ## $8,000 a year (Benton County, Indiana leases run $7,000 to $10,000).
 const POWER_WIND_LEASE := 8000.0
+## Solar developers lease whole fields, about $1,000 an acre a year in
+## Indiana (well above what corn or beans net).
+const POWER_SOLAR_LEASE_PER_ACRE := 1000.0
 
 # --- Freight -----------------------------------------------------------------
 

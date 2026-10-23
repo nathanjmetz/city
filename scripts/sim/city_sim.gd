@@ -206,6 +206,9 @@ func _init() -> void:
 		return int(req.base)
 	rail.attach(self)
 	# Bank presidents take the player's word too.
+	permits.locators["power"] = func(_sim, id: int) -> Vector2:
+		var s: Dictionary = power.sites.get(id, {"pos": Vector3.ZERO})
+		return Vector2(s.pos.x, s.pos.z)
 	permits.locators["bank"] = func(_sim, id: int) -> Vector2:
 		var b: Dictionary = banks.banks.get(id, {"pos": Vector3.ZERO})
 		return Vector2(b.pos.x, b.pos.z)
@@ -1547,6 +1550,7 @@ func _wire_policies() -> void:
 	power.on_farm = func(p: Vector3) -> bool: return farms.field_at(p) != -1
 	power.pad_usable = pad_usable
 	farms.lease_of = power.lease_in
+	farms.rent_of = power.farm_rent
 
 
 ## Hubs with their own money lever (a campus's funding level, a post
@@ -1730,7 +1734,6 @@ func farm_drive(pos: Vector3, dir: Vector3) -> Array:
 	return Farms.make_drive(pos, dir, near.point)
 
 
-## True when ground for a field is clear: no road, lot, service or farmyard.
 ## True when a public road runs between a and b on the ground.
 func road_between(a: Vector3, b: Vector3) -> bool:
 	var a2 := Vector3(a.x, 0.0, a.z)
@@ -1743,6 +1746,12 @@ func road_between(a: Vector3, b: Vector3) -> bool:
 	return false
 
 
+## Fields and lots changed outside a command (a farm leased fields away).
+func clear_usable_cache() -> void:
+	_usable_cache.clear()
+
+
+## True when ground for a field is clear: no road, lot, service or farmyard.
 func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
 	return _ground_free(mid, corners, false)
 
@@ -2267,6 +2276,8 @@ func _develop_hubs() -> void:
 	var ctx := power_context()
 	for id in ids:
 		if power.develop(self, id, ctx):
+			power_built = true
+		if power.farmland(self, id):
 			power_built = true
 	if power_built:
 		_lots_dirty = true
