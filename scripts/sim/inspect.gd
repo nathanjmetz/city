@@ -232,7 +232,19 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 	var linked := not sim.network.find_segment_near(b.pos + b.dir * k.size.y * 0.5, 80.0, 1.0).is_empty()
 	var ok := linked
 	var status := ""
-	if k.has("utility"):
+	if k.get("parking", false):
+		# Parking serves the blocks around it, not homes by road reach.
+		var lay := Services.parking_layout(b)
+		var ada := 0
+		for spot in lay.get("spots", []):
+			ada += int(spot.get("ada", false))
+		rows.append(["Stalls", "%d (%d accessible)" % [lay.get("spots", []).size(), ada]])
+		if int(lay.get("levels", 1)) > 1:
+			rows.append(["Levels", str(lay.levels)])
+		if not linked:
+			problems.append("Not beside a road, so no one can drive in.")
+		status = "Open: drivers park here and walk on" if ok else "Closed"
+	elif k.has("utility"):
 		var u: String = k.utility
 		var use: Array = sim.services.utility_use[u]
 		var reached := 0
