@@ -47,6 +47,24 @@ static func build(sim: CitySim, scene: String) -> void:
 			sim.apply({"type": "build_road", "start": [80, 200], "ctrl": [200, 260], "end": [300, 160]})
 			sim.apply({"type": "build_road", "start": [300, 160], "ctrl": [330, 80], "end": [300, 0]})
 			sim.apply({"type": "build_road", "start": [150, -30], "ctrl": [150, 60], "end": [150, 120]})
+		"rounded":
+			# Blocks bounded by streets drawn with rounded corners, as players
+			# draw them with the curve tool: a loop 280 x 160 with 40 m bends,
+			# split by a street down the middle.
+			var r := 40.0
+			var pts := [Vector2(0, 0), Vector2(280, 0), Vector2(280, 160), Vector2(0, 160)]
+			for i in 4:
+				var a: Vector2 = pts[i]
+				var b: Vector2 = pts[(i + 1) % 4]
+				var c: Vector2 = pts[(i + 2) % 4]
+				var d1 := (b - a).normalized()
+				var d2 := (c - b).normalized()
+				var s0 := a + d1 * r
+				var s1 := b - d1 * r
+				sim.apply({"type": "build_road", "start": [s0.x, s0.y], "ctrl": [(s0.x + s1.x) / 2, (s0.y + s1.y) / 2], "end": [s1.x, s1.y]})
+				var e := b + d2 * r
+				sim.apply({"type": "build_road", "start": [s1.x, s1.y], "ctrl": [b.x, b.y], "end": [e.x, e.y]})
+			sim.apply({"type": "build_road", "start": [140, 0], "ctrl": [140, 80], "end": [140, 160]})
 		"mixed":
 			sim.apply({"type": "build_grid", "a": [0, 0], "b": [240, 0], "c": [240, 200], "block": 100.0})
 			sim.apply({"type": "build_road", "start": [0, 200], "ctrl": [120, 330], "end": [240, 200], "road": 1})
