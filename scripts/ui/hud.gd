@@ -313,7 +313,11 @@ func _show_view(key: String) -> void:
 	info_view.set_mode(resource.get(key, InfoView.Mode.NONE))
 	# In a pollution view any click on the map says who pollutes that spot.
 	select_tool.spot_clicks = key in ["smoke", "noise", "ground"]
-	if not select_tool.spot_clicks and select_tool.selection.get("type", "") == "spot":
+	var sel_type: String = select_tool.selection.get("type", "")
+	if select_tool.spot_clicks and sel_type in ["", "spot", "pollution"]:
+		# The town's worst sources for this view, until a click picks a spot.
+		select_tool.select({"type": "pollution", "id": key})
+	elif not select_tool.spot_clicks and sel_type in ["spot", "pollution"]:
 		select_tool.select({})
 	var cover := {"fire": Services.Kind.FIRE, "police": Services.Kind.POLICE,
 		"health": Services.Kind.CLINIC, "school": Services.Kind.SCHOOL}

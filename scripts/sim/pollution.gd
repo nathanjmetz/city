@@ -56,7 +56,8 @@ var owners := {}
 var lots := {}
 ## How worn each home has become from living with pollution, 0 to 1.
 var wear := {}
-## How many homes and people each source hurts: ref -> {homes, people}.
+## How many homes and people each source hurts: ref -> {homes, people,
+## kinds: {kind: homes where it is the worst of that kind}}.
 var hurts := {}
 ## Ambulance calls for breathing trouble blamed on each source's smoke.
 var calls := {}
@@ -627,6 +628,7 @@ func measure_lots(sim: CitySim, slice := -1) -> void:
 			continue
 		# Who hurts it: the biggest share of each kind that is over the line.
 		var hurt := {}
+		var worst := {}
 		for k in [["smoke", 0, Balance.HURT_SMOKE], ["noise", 1, Balance.HURT_NOISE_DB], ["ground", 2, Balance.HURT_GROUND]]:
 			if e[k[0]] < k[2]:
 				continue
@@ -639,9 +641,11 @@ func measure_lots(sim: CitySim, slice := -1) -> void:
 					best = ref
 			if best != "":
 				hurt[best] = true
+				worst[k[0]] = best
 		var h := hurt.keys()
 		h.sort()
 		e.hurt = h
+		e.by = worst
 		lots[key] = e
 	if slice < 0 or slice == SLICES - 1:
 		count_hurts(sim)
@@ -655,9 +659,13 @@ func count_hurts(sim: CitySim) -> void:
 			continue
 		for ref in lots[key].hurt:
 			if not hurts.has(ref):
-				hurts[ref] = {"homes": 0, "people": 0}
+				hurts[ref] = {"homes": 0, "people": 0, "kinds": {}}
 			hurts[ref].homes += 1
 			hurts[ref].people += int(b.occ)
+		for kind in lots[key].get("by", {}):
+			var ref: String = lots[key].by[kind]
+			if hurts.has(ref):
+				hurts[ref].kinds[kind] = int(hurts[ref].kinds.get(kind, 0)) + 1
 
 
 # --- Effects ---------------------------------------------------------------------
@@ -893,7 +901,8 @@ func to_dict() -> Dictionary:
 	var lot_out := {}
 	for key in lots:
 		var e: Dictionary = lots[key]
-		lot_out[key] = [snappedf(e.smoke, 0.001), snappedf(e.noise, 0.001), snappedf(e.ground, 0.0001), e.hurt]
+		lot_out[key] = [snappedf(e.smoke, 0.001), snappedf(e.noise, 0.001), snappedf(e.ground, 0.0001), e.hurt,
+			e.get("by", {})]
 	var wear_out := {}
 	for key in wear:
 		wear_out[key] = snappedf(wear[key], 0.0001)
@@ -959,7 +968,8 @@ func from_dict(d: Dictionary) -> void:
 	var l: Dictionary = d.get("lots", {})
 	for key in l:
 		var e: Array = l[key]
-		lots[key] = {"smoke": float(e[0]), "noise": float(e[1]), "ground": float(e[2]), "hurt": Array(e[3])}
+		lots[key] = {"smoke": float(e[0]), "noise": float(e[1]), "ground": float(e[2]), "hurt": Array(e[3]),
+			"by": Dictionary(e[4]) if e.size() > 4 else {}}
 	wear.clear()
 	var w: Dictionary = d.get("wear", {})
 	for key in w:
