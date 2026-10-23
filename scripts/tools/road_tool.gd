@@ -415,7 +415,7 @@ func _grid_corner(p: Vector3) -> Vector3:
 ## junction on its line stops exactly on it.
 func _rect_corner(p: Vector3) -> Vector3:
 	var a: Vector3 = _points[0]
-	var g := _rect_angle(a)
+	var g := _rect_angle(a, p)
 	_guide_angle = g
 	_guide_kind = ""
 	var u := Vector3(cos(g), 0.0, sin(g))
@@ -431,9 +431,42 @@ func _rect_corner(p: Vector3) -> Vector3:
 	return a + u * du + v * dv
 
 
-## Which way a rectangle starting at `a` lines up.
-func _rect_angle(a: Vector3) -> float:
+## Which way a rectangle from `a` toward `p` lines up. At a junction it
+## lines up with the road that lets its sides run along roads there, rather
+## than one that would cut across it from the corner.
+func _rect_angle(a: Vector3, p: Vector3) -> float:
 	var refs := _reference_angles(a)
+	var n := network.find_node_near(a, 0.5)
+	if refs.size() > 1 and n != -1 and grid_side == 0:
+		var outs := []  # the ways roads leave the corner
+		for id in network.segments_at(n):
+			var c := network.curve_of(id)
+			var at_a: bool = network.segments[id].a == n
+			var tan := RoadNetwork.bezier_tangent(c[0], c[1], c[2], 0.0 if at_a else 1.0)
+			outs.append(Vector2(tan.x, tan.z).normalized() * (1.0 if at_a else -1.0))
+		var d := Vector2(p.x - a.x, p.z - a.z)
+		var best := -INF
+		var pick: float = refs[0]
+		for g in refs:
+			var u := Vector2(cos(g), sin(g))
+			var v := Vector2(-u.y, u.x)
+			var su := u * signf(d.dot(u))
+			var sv := v * signf(d.dot(v))
+			# A rectangle squeezed thin along a road is not what was dragged.
+			var du := absf(d.dot(u))
+			var dv := absf(d.dot(v))
+			var score := minf(du, dv) / maxf(maxf(du, dv), 1.0) * 0.5
+			if minf(du, dv) < minf(grid_block, grid_across) * 0.5:
+				score -= 1.0
+			for o in outs:
+				if o.dot(su) > 0.999 or o.dot(sv) > 0.999:
+					score += 1.0  # a side runs along it
+				elif o.dot(su) > 0.0 and o.dot(sv) > 0.0:
+					score -= 1.0  # it would cut across the grid
+			if score > best:
+				best = score
+				pick = g
+		return pick
 	if refs.is_empty():
 		var near := network.find_segment_near(a, RECT_ALIGN_REACH, RoadNetwork.SAME_LEVEL)
 		if not near.is_empty():

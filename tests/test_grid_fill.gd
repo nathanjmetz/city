@@ -128,6 +128,49 @@ func _init() -> void:
 		"rectangle side stops on the street's end (got %s)" % str(rq))
 	tq.free()
 
+	# Brawn's junction: county roads bend and cross at odd angles, with an
+	# old street running off the bend on a diagonal. A grid dragged from the
+	# bend lines up with the road its sides can run along, and leaves no
+	# sharp wedges or shallow strips against the old roads.
+	var jn := CitySim.new()
+	jn.economy.money = 100000000
+	for rd in [[[-800, 80], [-300, 120]], [[-300, 120], [0, 0]], [[0, 0], [700, -320]], [[40, -700], [0, 0]],
+			[[0, 0], [-60, 700]], [[-300, 120], [-33, 380]]]:
+		jn.apply({"type": "build_road", "start": rd[0], "ctrl": [(rd[0][0] + rd[1][0]) * 0.5, (rd[0][1] + rd[1][1]) * 0.5], "end": rd[1]})
+	var old_segs := jn.network.segments.keys()
+	var tj := RoadTool.new()
+	tj.sim = jn
+	tj.network = jn.network
+	tj.mode = RoadTool.Mode.GRID
+	tj._points.append(Vector3(-300, 0, 120))
+	tj._grid_corner(Vector3(-600, 0, 450))
+	_check(absf(sin(tj._guide_angle - atan2(40.0, 500.0))) < 0.001, "dragged west, the grid lines up with the west road")
+	var rj := tj._rect(tj._grid_corner(Vector3(-20, 0, 420)))
+	_check(absf(sin(tj._guide_angle - atan2(-120.0, 300.0))) < 0.001, "dragged into the junction, it lines up with the road to it")
+	tj.free()
+	var pts_j := []
+	for corner in rj:
+		pts_j.append([corner.x, corner.z])
+	_check(jn.apply({"type": "build_grid_shape", "points": pts_j, "block": 120, "across": 82}), "junction grid built")
+	var sharp := 0
+	var strips := 0
+	for id in jn.network.segments:
+		if id in old_segs:
+			continue
+		var sg: Dictionary = jn.network.segments[id]
+		for n in [sg.a, sg.b]:
+			var mine := _leaving(jn.network, id, n)
+			for other in jn.network.segments_at(n):
+				var od := _leaving(jn.network, other, n)
+				if other != id and mine.dot(od) > 0.0 and absf(mine.cross(od)) < 0.5:
+					sharp += 1
+		var cv := jn.network.curve_of(id)
+		if Vector2(cv[2].x - cv[0].x, cv[2].z - cv[0].z).length() < 41.0:
+			strips += 1
+	_check(sharp == 0, "junction grid: no streets meet under 30 degrees (got %d)" % sharp)
+	_check(strips == 0, "junction grid: no shallow strips (got %d)" % strips)
+	_check(_overlaps(jn.network) == "", "junction grid: no overlaps " + _overlaps(jn.network))
+
 	# Every size preset plans a clean grid quickly, from a farm section
 	# down to a city block, with the long side and the short side kept.
 	for pr in GridFill.PRESETS:
@@ -144,6 +187,14 @@ func _init() -> void:
 
 	print("ALL TESTS PASSED" if not failed else "TESTS FAILED")
 	quit(1 if failed else 0)
+
+
+## The way segment `id` leaves node `n`.
+func _leaving(net: RoadNetwork, id: int, n: int) -> Vector2:
+	var c := net.curve_of(id)
+	var t := 0.0 if net.segments[id].a == n else 1.0
+	var tan := RoadNetwork.bezier_tangent(c[0], c[1], c[2], t)
+	return Vector2(tan.x, tan.z).normalized() * (1.0 if t == 0.0 else -1.0)
 
 
 func _check(ok: bool, what: String) -> void:
