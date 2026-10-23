@@ -98,6 +98,7 @@ var _budget_open := false
 var economy_page := EconomyPage.new()
 var _help := PanelContainer.new()
 var _top_bar: PanelContainer
+var _town_button: Button  # top bar buttons from elsewhere go just before it
 var _views_panel := PanelContainer.new()
 var _views_button: Button
 var _view_cards := {}  # view key -> Button
@@ -491,7 +492,8 @@ func _build_top_bar() -> void:
 		region_panel.setup(sim, c.region, c.my_city, c.pledge)
 		row.add_child(region_panel.make_button())
 	town.setup(sim, info_view.cam)
-	row.add_child(town.make_button())
+	_town_button = town.make_button()
+	row.add_child(_town_button)
 	permits.setup(sim, game, info_view.cam)
 	row.add_child(permits.make_button())
 	advisor.setup(sim, func(): return _advisor_key() if _category != "" or _view == "" else "view_" + _view)
@@ -505,6 +507,14 @@ func _build_top_bar() -> void:
 			town.close_panel()
 			region_panel.close_panel())
 	row.add_child(_help_button)
+
+
+## Puts a button from outside the HUD (the region chat's) in the top bar,
+## with the other panel buttons.
+func add_top_button(b: Control) -> void:
+	var row := _town_button.get_parent()
+	row.add_child(b)
+	row.move_child(b, _town_button.get_index())
 
 
 ## An icon and a value, side by side; a click opens the stat's panel.
