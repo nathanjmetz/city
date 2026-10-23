@@ -1134,6 +1134,8 @@ func tick() -> void:
 	# The town's character drifts toward where its jobs are.
 	if tick_count % (24 * TICKS_PER_HOUR) == 11 * TICKS_PER_HOUR:
 		culture.update(self, tick_count / (24 * TICKS_PER_HOUR))
+	# A developer looks for land an hour later, so no tick carries both.
+	elif tick_count % (24 * TICKS_PER_HOUR) == 12 * TICKS_PER_HOUR:
 		if culture.develop(self):
 			_usable_cache.clear()
 			_lots_dirty = true

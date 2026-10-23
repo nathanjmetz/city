@@ -229,13 +229,20 @@ static func _farm_frontage(sim) -> Dictionary:
 	if n == 0:
 		return {}
 	centre /= n
+	# Farm fields on the same grid, so only roads beside a field are looked
+	# at closely (finding the field under a point is the slow part).
+	var fields := {}
+	for id in sim.farms.farms:
+		var f: Dictionary = sim.farms.farms[id]
+		for c in f.cells:
+			var q := Farms.cell_center(f, c)
+			fields[Vector2i(floori(q.x / 100.0), floori(q.z / 100.0))] = true
+	if fields.is_empty():
+		return {}
 	var by_town := func(p: Vector3) -> bool:
-		var c := Vector2i(floori(p.x / 100.0), floori(p.z / 100.0))
-		for dx in [-1, 0, 1]:
-			for dz in [-1, 0, 1]:
-				if built.has(c + Vector2i(dx, dz)):
-					return true
-		return false
+		return _near(built, p, 1)
+	var by_field := func(p: Vector3, r: int) -> bool:
+		return _near(fields, p, r)
 	var best := {}
 	var best_score := -INF
 	var ids: Array = sim.network.segments.keys()
@@ -247,6 +254,13 @@ static func _farm_frontage(sim) -> Dictionary:
 				RoadStyle.Type.FREEWAY4, RoadStyle.Type.ALLEY, RoadStyle.Type.GRAVEL]:
 			continue
 		var rough: PackedVector3Array = sim.network.sample_segment(seg, 8)
+		var near_town := false
+		var near_field := false
+		for q in rough:
+			near_town = near_town or _near(built, q, 2)
+			near_field = near_field or by_field.call(q, 2)
+		if not (near_town and near_field):
+			continue
 		var length := 0.0
 		for i in range(1, rough.size()):
 			length += rough[i].distance_to(rough[i - 1])
@@ -262,7 +276,7 @@ static func _farm_frontage(sim) -> Dictionary:
 				t.y = 0.0
 				var nrm: Vector3 = Vector3(-t.z, 0.0, t.x).normalized() * side
 				var probe: Vector3 = pts[i] + nrm * (hw + Balance.CULTURE_FRONTAGE_DEPTH * 0.75)
-				var f: int = sim.farms.field_at(probe)
+				var f: int = sim.farms.field_at(probe) if by_field.call(probe, 1) else -1
 				var ok: bool = f != -1 and (farm == -1 or f == farm) and sim.zones.zone_at(probe) == ZoneMap.Zone.NONE
 				if ok:
 					farm = f
@@ -293,6 +307,16 @@ static func _farm_frontage(sim) -> Dictionary:
 					if farm != -1:
 						run.append([pts[i], nrm])
 	return best
+
+
+## True when a grid square within r squares of p is in `grid` (100 m squares).
+static func _near(grid: Dictionary, p: Vector3, r: int) -> bool:
+	var c := Vector2i(floori(p.x / 100.0), floori(p.z / 100.0))
+	for dx in range(-r, r + 1):
+		for dz in range(-r, r + 1):
+			if grid.has(c + Vector2i(dx, dz)):
+				return true
+	return false
 
 
 ## The part of a run of frontage a developer would take: it starts where
