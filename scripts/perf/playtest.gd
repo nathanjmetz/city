@@ -14,6 +14,9 @@ extends Node
 ## as one line starting with RESULT_TAG, and to `--playtest-out=path`.
 ## To play in a region instead of alone (neighbors, syncing), add
 ## `--playtest-region=ws://host:port/CODE` (`&region=` in the browser).
+## Several bots in one region each need their own `--playtest-name=`
+## (`&name=`); a region bot also keeps building while it runs, so its
+## neighbors have something new to sync (tools/playtest/soak.sh).
 
 const RESULT_TAG := "PLAYTEST_RESULT "
 ## A frame over this long is a hitch; over FREEZE_MS a freeze.
@@ -27,6 +30,9 @@ var run_seconds := 600.0
 var out_path := ""
 ## "ws://host:port/CODE" to join a region, or "" to play alone.
 var region := ""
+var bot_name := "Playtest"
+var _tries := 0
+var _net := {"disconnected": 0, "reconnected": 0, "failed": []}
 var _main: Node
 var _t0 := 0
 var _last := 0
@@ -89,15 +95,20 @@ func _ready() -> void:
 			out_path = a.get_slice("=", 1)
 		elif a.begins_with("--playtest-region="):
 			region = a.get_slice("=", 1)
+		elif a.begins_with("--playtest-name="):
+			bot_name = a.get_slice("=", 1)
 		elif a == "--playtest-inline":
 			RegionClient.inline_jobs = true  # one core, like the browser
 	if OS.has_feature("web"):
 		var r = JavaScriptBridge.eval("new URLSearchParams(window.location.search).get('region') || ''", true)
 		region = str(r) if typeof(r) == TYPE_STRING else ""
+		var nm = JavaScriptBridge.eval("new URLSearchParams(window.location.search).get('name') || ''", true)
+		if typeof(nm) == TYPE_STRING and nm != "":
+			bot_name = nm
 	if region != "":
 		# Joins like an invite link, under a name of its own.
 		var cut := region.rfind("/")
-		Session.profile.name = "Playtest"
+		Session.profile.name = bot_name
 		Session.pending_invite = {"server": region.left(cut), "join": region.substr(cut + 1)}
 	_t0 = Time.get_ticks_usec()
 	_last = _t0
@@ -285,7 +296,18 @@ func _play() -> void:
 	var end := Time.get_ticks_usec() + int(run_seconds * 1e6)
 	var stop := 0
 	var mid_town := g0 + (along + out) * BLOCK * BLOCKS * 0.5
+	var grow_at := Time.get_ticks_usec() + 60_000_000
+	var grown := 0
+	_watch_client()
 	while Time.get_ticks_usec() < end:
+		if region != "" and Time.get_ticks_usec() > grow_at:
+			grow_at = Time.get_ticks_usec() + 60_000_000
+			for k in 6:  # the first spot may be taken or blocked
+				if _grow(sim, g0, along, out, _tries):
+					grown += 1
+					break
+				_tries += 1
+			_tries += 1
 		var ang := stop * 1.3
 		var spot := mid_town + Vector3(cos(ang), 0, sin(ang)) * BLOCK * (1.0 + stop % 3)
 		cam.glide_to(spot, [180.0, 450.0, 1100.0][stop % 3])
@@ -297,7 +319,51 @@ func _play() -> void:
 	_result["buildings"] = sim.buildings.size()
 	_result["segments"] = sim.network.segments.size()
 	_result["vehicles"] = sim.traffic.cars.size()
+	if region != "":
+		_result["grown"] = grown
+		_result["region"] = _region_view()
 	_finish("")
+
+
+## A player adding to the town now and then: a street off the far side of
+## the grid, zoned for homes.
+func _grow(sim: CitySim, g0: Vector3, along: Vector3, out: Vector3, n: int) -> bool:
+	# Streets off the far side, then the near ends, longer each time round.
+	var side: Vector3 = [out, along, -along][(n / (BLOCKS + 1)) % 3]
+	var edge: Vector3 = g0 + out * BLOCK * BLOCKS if side == out else (g0 + along * BLOCK * BLOCKS if side == along else g0)
+	var across: Vector3 = along if side == out else out
+	var from := edge + across * BLOCK * float(n % (BLOCKS + 1))
+	var to := from + side * (BLOCK * (1 + n / (3 * (BLOCKS + 1))))
+	var before := sim.network.segments.size()
+	if not _act("grow", {"type": "build_road", "start": [from.x, from.z], "ctrl": [(from.x + to.x) * 0.5, (from.z + to.z) * 0.5],
+			"end": [to.x, to.z], "join": true}):
+		return false
+	for id in sim.network.segments.keys().slice(before):
+		sim.apply({"type": "zone_frontage", "seg": id, "side": 1, "zone": ZoneMap.Zone.RESIDENTIAL, "both": true})
+	return true
+
+
+func _watch_client() -> void:
+	var c: RegionClient = Session.client
+	if c == null:
+		return
+	c.disconnected.connect(func(): _net.disconnected += 1)
+	c.reconnected.connect(func(): _net.reconnected += 1)
+	c.failed.connect(func(why): _net.failed.append(why))
+
+
+## What this player sees of the region at the end: its own town and each
+## neighbor's copy, to compare with what their owners have
+## (tools/playtest/soak_check.py).
+func _region_view() -> Dictionary:
+	var c: RegionClient = Session.client
+	if c == null:
+		return {"error": "no region client"}
+	var towns := {}
+	for id in c.region.cities:
+		var s: CitySim = c.region.cities[id].sim
+		towns[id] = {"name": c.region.cities[id].name, "buildings": s.buildings.size(), "segments": s.network.segments.size()}
+	return {"me": c.my_city, "joined": c.is_joined, "players": c.players.size(), "towns": towns, "net": _net}
 
 
 ## The nearest county road mile to town that can be joined.
@@ -349,4 +415,6 @@ func _finish(error: String) -> void:
 			f.store_string(JSON.stringify(_result, "  "))
 			f.close()
 	if not OS.has_feature("web"):
+		# Closes like a player closing the window (a region gets the town).
+		get_tree().root.propagate_notification(NOTIFICATION_WM_CLOSE_REQUEST)
 		get_tree().quit(0 if error == "" else 1)

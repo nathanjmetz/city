@@ -203,6 +203,19 @@ func _run() -> void:
 	third.region.load_stale()
 	_check(third.region.cities[kid_city].sim.network.segments.size() > segs, "and the road built while away reaches the server")
 	third.stop()
+	# A first try that doesn't get through (the region still starting, a slow
+	# link) is tried again before the player hears about it.
+	var late := _client()
+	var late_told := []
+	late.failed.connect(func(r): late_told.append(r))
+	late.join("ws://127.0.0.1:%d" % (PORT + 2), "ABC123", "p-late", "Late")
+	await _frames(30)
+	var fourth := RegionServer.new()
+	root.add_child(fourth)
+	_check(fourth.start(PORT + 2, "", data) == OK, "the region starts after the first try")
+	await _until(func(): return late.my_city != "", 20.0)
+	_check(late.my_city != "" and late_told.is_empty(), "a join that didn't get through tries again by itself (%s)" % str(late_told))
+	fourth.stop()
 	DirAccess.remove_absolute(data)
 
 	print("SOME TESTS FAILED" if _failed else "ALL TESTS PASSED")

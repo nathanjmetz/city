@@ -181,6 +181,8 @@ func _fill() -> void:
 		_col.add_child(_button("Quit to desktop", func():
 			if Session.mode == Session.Mode.SOLO:
 				Session.save_city(game.sim)
+			else:
+				Session.leave_region()  # the town goes to the region first
 			get_tree().quit()))
 
 
