@@ -105,6 +105,10 @@ var hubs := CivicHubs.new()
 var parks := Parks.new()
 ## The post office, its postmaster, and the carriers on their routes.
 var mail := Mail.new()
+## Services shared with neighbor towns under signed deals (Interlocal).
+var interlocal := Interlocal.new()
+## What the region's shared projects do in this town (Regional).
+var regional := Regional.new()
 ## Who owns each business, its name and its family's brand (Families).
 var families := Families.new()
 var streets := Streets.new()
@@ -587,6 +591,9 @@ func apply_now(cmd: Dictionary) -> bool:
 				var want := Policies.growth_for(str(cmd.get("stance", "steady")), now)
 				if want != now:
 					policies.set_step(key, "growth", want)
+		"end_deal":
+			# Notice to end a service deal with a neighbor town.
+			ok = interlocal.end(self, str(cmd.get("id", "")))
 		"policy":
 			# A Funding or Growth slider for the town, an area or one hub.
 			ok = _set_policy(str(cmd.get("scope", "")), str(cmd.get("slider", "")), int(cmd.get("step", -1)))
@@ -943,6 +950,9 @@ func tick() -> void:
 	mail.tick(self)
 	Perf.add("sim.mail", t)
 	t = Perf.now()
+	interlocal.tick(self)
+	Perf.add("sim.interlocal", t)
+	t = Perf.now()
 	rail.tick(self)
 	Perf.add("sim.rail", t)
 	# After rail, so a loaded copy has its grade crossings back first.
@@ -1060,7 +1070,7 @@ func update_stats(budget := true) -> void:
 		0.1 + float(coming_workers - jobs) / maxf(coming_workers, 40.0)
 		+ 0.4 * (shop_jobs * 0.8 - factory_jobs) / maxf(factory_jobs, 20.0), 0.0, 1.0)
 	for z in demand:
-		demand[z] = clampf(demand[z] + economy.demand_shift(z) + mail.demand_shift(z), 0.0, 1.0)
+		demand[z] = clampf(demand[z] + economy.demand_shift(z) + mail.demand_shift(z) + regional.demand_shift(z), 0.0, 1.0)
 	# A boil-water notice, or a steep water bill, puts people off moving in.
 	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL]
 		- Balance.WATER_BOIL_DEMAND * services.water.boil_share(self) - services.water.rate_penalty(self), 0.0, 1.0)
@@ -2313,6 +2323,8 @@ func to_dict() -> Dictionary:
 		"hubs": hubs.to_dict(),
 		"parks": parks.to_dict(),
 		"mail": mail.to_dict(),
+		"interlocal": interlocal.to_dict(),
+		"regional": regional.to_dict(),
 		"families": families.to_dict(),
 		"streets": streets.to_dict(),
 		"policies": policies.to_dict(),
@@ -2369,6 +2381,9 @@ func from_dict(d: Dictionary) -> void:
 	hubs.from_dict(d.get("hubs", {}))
 	parks.from_dict(d.get("parks", {}))
 	mail.from_dict(d.get("mail", {}))
+	interlocal.from_dict(d.get("interlocal", {}))
+	regional.from_dict(d.get("regional", {}))
+	services.contracts = interlocal.coverage()
 	policies.from_dict(d.get("policies", {}))
 	culture.from_dict(d.get("culture", {}))
 	pollution.from_dict(d.get("pollution", {}))

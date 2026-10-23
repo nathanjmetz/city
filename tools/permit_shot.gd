@@ -1,7 +1,7 @@
 extends SceneTree
 ## Pictures of the permit bell for checking the look, with a made-up railroad
 ## request across the starter road (no real hub files one yet).
-## Run: godot -s tools/permit_shot.gd -- list|edit|land|guide out.png
+## Run: godot -s tools/permit_shot.gd -- list|edit|land|guide|deal out.png
 
 var _frames := 0
 var _mode := "list"
@@ -35,6 +35,15 @@ func _process(_delta: float) -> bool:
 				"title": "Office park on the Miller farm", "why": "Town's growing a money crowd. We'd like room to build.",
 				"change": "Farmland to offices", "area": [[60, -140], [220, -120], [230, 10], [70, 20]],
 				"per_m2": 25, "budget": 900000})
+		if _mode == "deal":
+			# A neighbor's offer, and a deal already signed (Interlocal).
+			sim.permits.file(sim, {"hub": "interlocal", "hub_id": 7, "leader": "Fire Chief Gary Brandt (Bobville)",
+				"title": "Bobville offers us fire protection",
+				"why": "We'd serve your town from Bobville over the county road, for $12,400 a month: your share of our cost, by homes.",
+				"route": [[200, 60]], "deal": {"kind": "fire", "fee": 12400, "other": "c2", "pays": true}})
+			sim.interlocal.deals["a3"] = {"id": "a3", "kind": "trash", "role": "served", "other": "c2", "other_name": "Bobville",
+				"fee": 5600, "link": sim.network.nodes.keys()[0], "offset": 0, "left": -1, "picked": 0.0, "haul": 0.0,
+				"homes": 40}
 		sim.permits.file(sim, {"hub": "bus", "hub_id": 1, "leader": "Marcy Lindqvist",
 			"title": "Bus turnaround on Main", "why": "Riders wait too long at the far end of the line.",
 			"route": [[-60, -30], [-20, -10]], "width": 12.0, "per_m": 400, "budget": 120000})
@@ -52,7 +61,7 @@ func _process(_delta: float) -> bool:
 			sim.apply({"type": "guide", "hub": "road", "hub_id": sim.network.segments.keys()[-1], "stance": "grow", "grant": 500})
 		else:
 			hud.permits.open_panel()
-			hud.permits.call("_select", 2 if _mode == "land" else 1)
+			hud.permits.call("_select", 2 if _mode in ["land", "deal"] else 1)
 	if _frames == 30 and _mode == "land":
 		var hud: Hud = current_scene.get_children().filter(func(n): return n is Hud)[0]
 		hud.permits.set("_editing", true)

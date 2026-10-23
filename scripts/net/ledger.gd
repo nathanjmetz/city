@@ -179,10 +179,13 @@ func agreements_of(city: String) -> Array:
 
 
 ## A month of a town's agreements, booked on its own computer: the host is
-## paid, the client pays. Returns the change in the town's money.
-func book_month(city: String) -> float:
+## paid, the client pays. Returns the change in the town's money. Services
+## in `skip` are booked by the town's own budget (Interlocal deals are).
+func book_month(city: String, skip := []) -> float:
 	var net := 0.0
 	for a in agreements_of(city):
+		if a.service in skip:
+			continue
 		net += float(a.price_per_month) if a.host == city else -float(a.price_per_month)
 	return net
 

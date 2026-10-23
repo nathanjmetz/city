@@ -96,6 +96,8 @@ var _view := ""
 var _help_button: Button
 var advisor := AdvisorPanel.new()
 var permits := PermitPanel.new()
+## The region's shared projects and services (only in a region).
+var region_panel := RegionPanel.new()
 
 
 func setup(rt: RoadTool, zt: ZoneTool, s: CitySim, g: Node) -> void:
@@ -119,6 +121,7 @@ func _ready() -> void:
 	_build_views()
 	_build_advisor()
 	_build_permits()
+	_build_region_panel()
 	_info_panel.setup(sim, select_tool)
 	_root.add_child(_info_panel)
 	_build_economy()
@@ -196,7 +199,7 @@ func pad_bottom_height() -> float:
 
 ## True while a tool is in hand, a panel or view is open, or something is selected.
 func anything_open() -> bool:
-	return _budget_open or _view != "" or _views_panel.visible or _help.visible or advisor.visible or permits.visible \
+	return _budget_open or _view != "" or _views_panel.visible or _help.visible or advisor.visible or permits.visible or region_panel.visible \
 		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
@@ -214,6 +217,7 @@ func close_all() -> void:
 	_help_button.set_pressed_no_signal(false)
 	advisor.close_panel()
 	permits.close_panel()
+	region_panel.close_panel()
 	road_tool.set_mode(RoadTool.Mode.NONE)
 	zone_tool.set_zone(ZoneTool.OFF)
 	service_tool.set_kind(ServiceTool.OFF)
@@ -413,6 +417,12 @@ func _build_top_bar() -> void:
 	seasons.toggled.connect(DayNight.set_seasons)
 	row.add_child(seasons)
 	row.add_child(VSeparator.new())
+	# (The Session autoload by path: tools and tests load the HUD before it exists.)
+	var session := get_node_or_null("/root/Session")
+	if session and session.online():
+		var c: RegionClient = session.client
+		region_panel.setup(sim, c.region, c.my_city, c.pledge)
+		row.add_child(region_panel.make_button())
 	permits.setup(sim, game, info_view.cam)
 	row.add_child(permits.make_button())
 	advisor.setup(sim, func(): return _advisor_key() if _category != "" or _view == "" else "view_" + _view)
@@ -422,7 +432,8 @@ func _build_top_bar() -> void:
 		_help.visible = on
 		if on:
 			advisor.close_panel()
-			permits.close_panel())
+			permits.close_panel()
+			region_panel.close_panel())
 	row.add_child(_help_button)
 
 
@@ -1155,6 +1166,7 @@ func _build_advisor() -> void:
 	place.call_deferred()
 	advisor.opened.connect(func():
 		permits.close_panel()
+		region_panel.close_panel()
 		_help.visible = false
 		_help_button.set_pressed_no_signal(false))
 
@@ -1172,6 +1184,26 @@ func _build_permits() -> void:
 	place.call_deferred()
 	permits.opened.connect(func():
 		advisor.close_panel()
+		region_panel.close_panel()
+		_help.visible = false
+		_help_button.set_pressed_no_signal(false))
+
+
+
+## The region panel: docked where the bell's is.
+func _build_region_panel() -> void:
+	_root.add_child(region_panel)
+	region_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	region_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	var place := func():
+		region_panel.offset_right = 0
+		region_panel.offset_left = 0
+		region_panel.offset_top = _top_bar.size.y
+	_top_bar.resized.connect(place)
+	place.call_deferred()
+	region_panel.opened.connect(func():
+		advisor.close_panel()
+		permits.close_panel()
 		_help.visible = false
 		_help_button.set_pressed_no_signal(false))
 

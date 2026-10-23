@@ -151,12 +151,16 @@ func update_budget(sim: CitySim) -> void:
 			+ sim.mail.monthly_cost()) * d.upkeep),
 		"education": roundi(sim.education.monthly_upkeep() * d.upkeep),
 		"care": roundi(care * d.upkeep), "support": roundi(support),
-		"telecom": roundi(sim.telecom.monthly_upkeep() * d.upkeep)}
+		"telecom": roundi(sim.telecom.monthly_upkeep() * d.upkeep),
+		# Service deals with neighbor towns: fees in as host, out as served.
+		"deals": sim.interlocal.monthly_net(),
+		# The region's projects: air visitors' spending and co-op capital credits.
+		"region": sim.regional.monthly_income(sim)}
 
 
 func monthly_net() -> int:
 	var total := -int(budget.upkeep) - int(budget.services) - int(budget.get("education", 0)) + int(budget.fees) \
-		- int(budget.get("care", 0)) - int(budget.get("support", 0)) - int(budget.get("telecom", 0))
+		- int(budget.get("care", 0)) - int(budget.get("support", 0)) - int(budget.get("telecom", 0)) + int(budget.get("deals", 0)) + int(budget.get("region", 0))
 	for z in budget.income:
 		total += int(budget.income[z])
 	return total

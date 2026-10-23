@@ -109,7 +109,7 @@ static func settle(cities: Dictionary, links: Dictionary) -> void:
 				var price := float(cities[s].trade.offers[g].price)
 				_book(cities, s, id, g, amount, price, links)
 			if need > 0.0:
-				_book(cities, "outside", id, g, need, base_price(g) * Balance.TRADE_IMPORT_MARKUP, links)
+				_book(cities, "outside", id, g, need, base_price(g) * cities[id].regional.import_markup(g), links)
 	# What no neighbor bought goes out to the wider world, for less.
 	for id in ids:
 		var goods: Array = left[id].keys()

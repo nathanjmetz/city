@@ -103,6 +103,12 @@ var _dist_key := []
 var _lengths := {}
 var _reach := {}
 var _plant_dist := {}
+## Coverage a neighbor town gives under a signed deal (Interlocal): kind ->
+## [{"node": county road end, "offset": road metres from their station to
+## it, "reach": metres}]. Set by Interlocal, never saved.
+var contracts := {}
+## ...and the road distances from it: kind -> [[node -> metres, reach]].
+var _by_contract := {}
 var _geo := []
 var _geo_lots := {}
 var _by_dist := {"power": [], "water": []}  # lots with a road to each utility, nearest first
@@ -286,7 +292,8 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 	for id in buildings:
 		effects[id] = funding(id, Balance.POLICY_EFFECT)
 	var dist_key := [network.get_instance_id(), network.revision, buildings.keys(), effects.values(),
-		buildings.values().map(func(b): return [b.kind, b.pos, b.dir, b.get("size")]), plants.map(func(pl): return pl.front)]
+		buildings.values().map(func(b): return [b.kind, b.pos, b.dir, b.get("size")]), plants.map(func(pl): return pl.front),
+		contracts]
 	if dist_key != _dist_key:
 		_dist_key = dist_key
 		_lengths = {}
@@ -302,6 +309,15 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 		_plant_dist = {}
 		for pl in plants:
 			_spread_from(network, _lengths, pl.front, _plant_dist)
+		# A neighbor's station under contract reaches in over the county road.
+		_by_contract = {}
+		for kind in contracts:
+			_by_contract[kind] = []
+			for c in contracts[kind]:
+				var dist := {}
+				if network.nodes.has(c.node):
+					_spread_nodes(network, _lengths, {c.node: c.offset}, dist)
+				_by_contract[kind].append([dist, c.reach])
 	reach_by_kind = _reach.duplicate()
 	# Which utility's mains run along each street (as water.main_owner does).
 	var owners := {}
@@ -401,6 +417,10 @@ func _update_reach(network: RoadNetwork, lots: Dictionary, owners: Dictionary) -
 			_lot_rows[key] = row
 		var base: Dictionary = row[1]
 		var s: Dictionary = base.s.duplicate()
+		# Coverage a neighbor gives this town under a service deal (Interlocal).
+		for kind in _by_contract:
+			for c in _by_contract[kind]:
+				s[kind] = s[kind] or _lot_distance(network, _lengths, c[0], lot) <= c[1]
 		served[key] = s
 		var owner: int = base.owner
 		if owner != -1:
@@ -527,6 +547,12 @@ func _spread_from(network: RoadNetwork, lengths: Dictionary, front: Vector3, dis
 	var k := 1.0 / maxf(effect, 0.01)
 	frontier[s.a] = near.t * l * k
 	frontier[s.b] = (1.0 - near.t) * l * k
+	_spread_nodes(network, lengths, frontier, dist, k)
+
+
+## Road distance out from the starting nodes (node -> metres already
+## travelled), keeping the shortest in `dist`. Each road metre counts `k`.
+func _spread_nodes(network: RoadNetwork, lengths: Dictionary, frontier: Dictionary, dist: Dictionary, k := 1.0) -> void:
 	var done := {}
 	while not frontier.is_empty():
 		var best := -1

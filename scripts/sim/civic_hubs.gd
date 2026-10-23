@@ -757,7 +757,8 @@ func _trade(sim: CitySim) -> void:
 		sim.trade.offer(g, totals[g])
 	sim.trade.offer("garbage", totals.garbage if not dumps.is_empty() else 0.0)
 	var need := 0.0
-	if dumps.is_empty():
+	# A neighbor's trucks under a signed deal take it instead (Interlocal).
+	if dumps.is_empty() and not sim.interlocal.serves("trash"):
 		var out := 0.0
 		for seg in trash:
 			out += trash[seg]

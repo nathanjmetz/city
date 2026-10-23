@@ -64,6 +64,8 @@ var _unseen := []  # neighbors not unpacked since joining
 ## A game month (a game day) in ticks: agreements are paid once a month.
 const MONTH_TICKS := 24 * CitySim.TICKS_PER_HOUR
 var _booked_month := -1
+## The game hour this town last went over its shared-service deals.
+var _deals_hour := -1
 var _retry_in := 0.0
 var _lost_for := 0.0
 
@@ -161,7 +163,28 @@ func _book_agreements() -> void:
 		_booked_month = month
 	while _booked_month < month:
 		_booked_month += 1
-		sim.economy.money += region.ledger.book_month(my_city)
+		sim.economy.money += region.ledger.book_month(my_city, Interlocal.KINDS.keys())
+
+
+## Shared services with neighbors (Interlocal): this town's half of each
+## agreement in the ledger, and the offers and answers its bell sends out.
+func _sync_deals() -> void:
+	var sim := my_sim()
+	if sim == null:
+		return
+	var hour := int(sim.tick_count / CitySim.TICKS_PER_HOUR)
+	if hour == _deals_hour:
+		return
+	_deals_hour = hour
+	sim.regional.sync(region, my_city)
+	for act in sim.interlocal.sync(region, my_city, sim):
+		match act.op:
+			"offer":
+				offer_service(act.to, act.service, act.price, act.capacity)
+			"answer":
+				answer_offer(act.id, act.yes)
+			"end":
+				end_agreement(act.id)
 
 
 ## (Host only) lets a waiting player in, or turns them away.
@@ -211,6 +234,7 @@ func _process(delta: float) -> void:
 			var next: String = _unseen.pop_front() if not _unseen.is_empty() else region.stale_ids()[0]
 			_neighbor_wait = NEIGHBOR_FIRST if not _unseen.is_empty() else NEIGHBOR_EVERY
 			region.load_stale(next)
+		_sync_deals()
 	if _peer == null:
 		return
 	_peer.poll()
@@ -287,6 +311,7 @@ func _handle(msg: Dictionary) -> void:
 		"ledger":
 			if msg.get("d") is Dictionary:
 				region.ledger.from_dict(msg.d)
+				_deals_hour = -1
 				ledger_changed.emit()
 		"pledged":
 			# The server booked our pledge: pay it from the town.

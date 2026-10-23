@@ -89,7 +89,7 @@ func _ready() -> void:
 	for entry in [["taxes", "Property taxes"], ["fees", "Water and sewer bills"], ["upkeep", "Road upkeep"],
 			["services", "Services, parks, garbage, cemeteries"], ["education", "Schools and colleges"],
 			["care", "Street care"],
-			["support", "Farm and business aid"]]:
+			["support", "Farm and business aid"], ["deals", "Services shared with neighbors"], ["region", "Regional projects"]]:
 		var l := UiStyle.label(entry[1], 12, UiStyle.MUTED)
 		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		grid.add_child(l)
@@ -173,6 +173,8 @@ func refresh() -> void:
 	_money_line("education", -int(e.budget.get("education", 0)))
 	_money_line("care", -int(e.budget.get("care", 0)))
 	_money_line("support", -int(e.budget.get("support", 0)))
+	_money_line("deals", int(e.budget.get("deals", 0)))
+	_money_line("region", int(e.budget.get("region", 0)))
 	_grant.text = "" if e.milestone >= Economy.MILESTONES.size() else \
 		"Next grant: $%s at %s people" % [CitySim.money_text(Economy.MILESTONES[e.milestone][1]),
 		CitySim.money_text(Economy.MILESTONES[e.milestone][0])]
