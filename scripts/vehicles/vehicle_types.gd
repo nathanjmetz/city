@@ -37,6 +37,7 @@ const SPECS := {
 	"mail_truck":    {"len": 5.40, "width": 2.05, "height": 2.90, "acc": 1.6, "brake": 2.8, "top_speed": 31.0, "pref": 0.95},
 	"rural_mail":    {"len": 4.88, "width": 1.89, "height": 1.85, "acc": 1.9, "brake": 3.0, "top_speed": 45.0, "pref": 0.97},
 	"mail_semi":     {"len": 21.00, "width": 2.60, "height": 4.10, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
+	"livestock_truck": {"len": 21.90, "width": 2.60, "height": 4.10, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"tanker":        {"len": 20.50, "width": 2.60, "height": 3.60, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"flatbed":       {"len": 20.30, "width": 2.60, "height": 3.30, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"dump_truck":    {"len": 9.00, "width": 2.60, "height": 3.40, "acc": 0.9, "brake": 2.3, "top_speed": 29.0, "pref": 0.93},
@@ -120,7 +121,7 @@ const PURPOSE := {
 	"shopping": PERSONAL,
 	# Freight.
 	"grain": {"grain_truck": 8.0, "tractor": 2.0},       # hopper semis, tractors with wagons
-	"livestock": {"grain_truck": 1.0},
+	"livestock": {"livestock_truck": 1.0},  # pot-belly cattle and hog trailers
 	"milk": {"tanker": 1.0},
 	"fuel": {"tanker": 1.0},
 	"goods": {"semi": 6.0, "box_truck": 4.0},             # factory to shop or warehouse
@@ -151,7 +152,8 @@ const PURPOSE := {
 ## log trailer between stakes, ore an end-dump, crude oil a tanker.
 const CARGO_KIND := {
 	"logs": "log_truck", "ore": "ore_truck", "crude oil": "tanker", "fuel": "tanker",
-	"milk": "tanker", "grain": "grain_truck", "gravel": "dump_truck", "steel": "flatbed",
+	"milk": "tanker", "grain": "grain_truck", "cattle": "livestock_truck", "hogs": "livestock_truck",
+	"livestock": "livestock_truck", "gravel": "dump_truck", "steel": "flatbed",
 }
 
 const FLEET := ["work_pickup", "van", "box_truck", "garbage_truck"]
@@ -232,7 +234,7 @@ static func household(id: int) -> String:
 ## The sRGB body colour of one vehicle, fixed by its id so it never changes.
 static func paint(kind: String, id: int) -> Color:
 	var table: Array = LIVERY.get(kind, FLEET_COLORS if kind in FLEET else
-		SEMI_COLORS if kind in ["semi", "tanker", "flatbed", "log_truck", "ore_truck"] else CAR_COLORS)
+		SEMI_COLORS if kind in ["semi", "tanker", "flatbed", "log_truck", "ore_truck", "livestock_truck"] else CAR_COLORS)
 	var total := 0.0
 	for e in table:
 		total += e[1]

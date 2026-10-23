@@ -51,6 +51,7 @@ const ARTIC := {
 	"log_truck": {"cab": "tractor_day", "trailer": "trailer_logs", "hitch": 5.0, "pin": 0.9, "axle": 13.4},
 	"ore_truck": {"cab": "tractor_day", "trailer": "trailer_end_dump", "hitch": 5.0, "pin": 0.9, "axle": 12.6},
 	"mail_semi": {"cab": "tractor_day", "trailer": "trailer_usps", "hitch": 5.0, "pin": 0.9, "axle": 14.4},
+	"livestock_truck": {"cab": "tractor_sleeper", "trailer": "trailer_livestock", "hitch": 6.6, "pin": 0.9, "axle": 14.4},
 	"tanker": {"cab": "tractor_day", "trailer": "trailer_tank", "hitch": 5.0, "pin": 0.9, "axle": 13.4},
 }
 ## Body styles within one kind, all close to its length (see VehicleTypes).
@@ -822,6 +823,38 @@ func _trailer_end_dump() -> void:
 	], [_edges(ORE, ORE)], ORE, ORE)
 	_box(Vector3(0, 1.2, L * 0.5), Vector3(1.0, 0.25, L), TRIM)
 	_trailer_base(L, [10.6, 11.85])
+
+
+## A 53 ft aluminium "pot belly" livestock trailer (Wilson Silverstar):
+## raised decks over the kingpin and the axles, a deep drop belly between,
+## and rows of air slots down the sides where the cattle look out.
+func _trailer_livestock() -> void:
+	var L := 16.15
+	_loft([
+		[0.0, 1.35, 4.0, 4.1, 1.3, 1.3, 1.28],
+		[3.4, 1.35, 4.0, 4.1, 1.3, 1.3, 1.28],
+		[3.9, 0.55, 4.0, 4.1, 1.3, 1.3, 1.28],
+		[11.3, 0.55, 4.0, 4.1, 1.3, 1.3, 1.28],
+		[11.8, 1.35, 4.0, 4.1, 1.3, 1.3, 1.28],
+		[L, 1.35, 4.0, 4.1, 1.3, 1.3, 1.28],
+	], [_edges(ALUM, ALUM)], ALUM, ALUM)
+	var slot := Color(0.07, 0.07, 0.07, 0.4)
+	for s in [-1.0, 1.0]:
+		if _lo:
+			_box(Vector3(s * 1.302, 2.9, L * 0.5), Vector3(0.006, 1.0, L - 1.0), Color(0.3, 0.3, 0.3, 0.4))
+			continue
+		# Upper deck slots run the full length; the belly gets lower rows too.
+		for y in [3.6, 3.3, 3.0, 2.7, 2.4]:
+			for i in 12:
+				_box(Vector3(s * 1.302, y, 0.9 + i * 1.22), Vector3(0.006, 0.09, 0.95), slot)
+		for y in [1.8, 1.5, 1.2]:
+			for i in 6:
+				_box(Vector3(s * 1.302, y, 4.6 + i * 1.12), Vector3(0.006, 0.09, 0.85), slot)
+	if not _lo:
+		# Rear swing gates and a nose vent.
+		_box(Vector3(0, 2.75, L + 0.01), Vector3(0.04, 2.7, 0.01), STEEL)
+		_box(Vector3(0, 3.6, -0.01), Vector3(1.6, 0.4, 0.01), slot)
+	_trailer_base(L, [13.9, 15.15])
 
 
 # --- Farm -------------------------------------------------------------------
