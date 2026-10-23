@@ -349,7 +349,8 @@ func _init() -> void:
 	_check(Logistics.input_of(oil, "test") == "ore", "a metal works buys ore")
 	oil.buildings.erase("test")
 	var oil_sel := Inspect.pick(oil, co.pos)
-	_check(oil_sel.get("type") == "industry" and Inspect.describe(oil, oil_sel).title == "Oil company", "clicking the company opens its panel")
+	_check(oil_sel.get("type") == "industry" and Inspect.describe(oil, oil_sel).kind == "Oil company"
+		and Inspect.describe(oil, oil_sel).title == oil.families.name_of("site:%d" % oil_sel.id), "clicking the company opens its panel, under its own name")
 	_check(oil.stats.jobs >= Balance.INDUSTRY["oil"]["jobs_hq"], "the company's jobs count")
 	# Critic round 7: a company whose yard isn't on the deposit itself still
 	# finds the rich ground within reach for its first pad.

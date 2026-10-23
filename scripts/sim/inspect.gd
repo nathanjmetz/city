@@ -202,7 +202,8 @@ static func _farm(sim: CitySim, id: int) -> Dictionary:
 	elif profit < 0.0:
 		status = "Losing money: will sell its worst field"
 	rows.append_array(_development(sim, f, Agency.TREES.farm, f.pos, profit))
-	return {"title": "Farm", "kind": "Farming", "icon": "farms", "ok": problems.is_empty() and profit >= 0.0,
+	rows.append_array(sim.families.rows(sim, "farm:%d" % id))
+	return {"title": _named(sim, "farm:%d" % id, "Farm"), "kind": "Farming", "icon": "farms", "ok": problems.is_empty() and profit >= 0.0,
 		"status": status, "rows": rows, "problems": problems}
 
 
@@ -238,7 +239,8 @@ static func _industry(sim: CitySim, id: int) -> Dictionary:
 	rows.append_array(_development(sim, s, Agency.TREES[s.kind], s.pos, profit))
 	if s.stock >= Industry.stock_cap(s):
 		problems.append("The yard is full, so it has stopped producing.")
-	return {"title": k.name, "kind": "Resource industry", "icon": s.kind, "ok": problems.is_empty(),
+	rows.append_array(sim.families.rows(sim, ref))
+	return {"title": _named(sim, ref, k.name), "kind": k.name if sim.families.owned.has(ref) else "Resource industry", "icon": s.kind, "ok": problems.is_empty(),
 		"status": status, "rows": rows, "problems": problems}
 
 
@@ -445,10 +447,24 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 		problems.append(trash)
 	var icons := {ZoneMap.Zone.RESIDENTIAL: "homes", ZoneMap.Zone.COMMERCIAL: "shops", ZoneMap.Zone.INDUSTRIAL: "industry"}
 	var title: String = names[z]
+	var kind: String = ZoneMap.NAMES[z]
 	if z == ZoneMap.Zone.INDUSTRIAL:
 		title = Balance.FACTORY_CHAINS[b.get("chain", "general")].name
-	return {"title": title, "kind": ZoneMap.NAMES[z], "icon": icons[z], "ok": problems.is_empty(),
+	var ref := "lot:" + key
+	if sim.families.owned.has(ref):
+		kind = Names.trade_word(sim.families.owned[ref].what).capitalize() if z == ZoneMap.Zone.COMMERCIAL else title
+		title = sim.families.name_of(ref)
+		rows.append_array(sim.families.rows(sim, ref))
+	elif z == ZoneMap.Zone.RESIDENTIAL:
+		title = Families.home_name(b)
+	return {"title": title, "kind": kind, "icon": icons[z], "ok": problems.is_empty(),
 		"status": status, "rows": rows, "problems": problems}
+
+
+## A business's own name if it has one ("Miller Farms"), else `plain`.
+static func _named(sim: CitySim, ref: String, plain: String) -> String:
+	var n := sim.families.name_of(ref)
+	return n if n != "" else plain
 
 
 static func _road(sim: CitySim, seg: int) -> Dictionary:

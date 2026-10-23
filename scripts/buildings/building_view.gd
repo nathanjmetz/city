@@ -14,6 +14,8 @@ func setup(s: CitySim) -> void:
 	add_child(_trees)
 	sim.buildings_changed.connect(_sync)
 	sim.lots_changed.connect(_sync)
+	# A business renamed, bought or with a new look gets new signs.
+	sim.families.changed.connect(_sync)
 	_sync()
 
 
@@ -25,22 +27,28 @@ func _sync() -> void:
 
 
 func _sync_all() -> void:
+	var resign := {}
 	for key in _nodes.keys():
-		# Gone, or its lot moved (the road was widened).
-		if not sim.buildings.has(key) or not sim.lots.has(key) \
-				or not _nodes[key].get_meta("front").is_equal_approx(sim.lots[key].front):
+		# Gone, or its lot moved (the road was widened), or its sign changed.
+		var gone: bool = not sim.buildings.has(key) or not sim.lots.has(key) \
+				or not _nodes[key].get_meta("front").is_equal_approx(sim.lots[key].front)
+		if gone or _nodes[key].get_meta("sign") != sim.families.sign_key(sim, "lot:" + key):
+			if not gone:
+				resign[key] = true
 			_nodes[key].queue_free()
 			_nodes.erase(key)
 			_trees.remove(key)
 	for key in sim.buildings:
 		if not _nodes.has(key) and sim.lots.has(key):
-			_nodes[key] = _spawn(key, sim.lots[key], sim.buildings[key])
+			_nodes[key] = _spawn(key, sim.lots[key], sim.buildings[key], not resign.has(key))
 
 
-func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
+func _spawn(key: String, lot: Dictionary, b: Dictionary, fresh := true) -> Node3D:
 	var root := Node3D.new()
 	add_child(root)
 	root.set_meta("front", lot.front)
+	root.set_meta("sign", sim.families.sign_key(sim, "lot:" + key))
+	var spec := sim.families.sign_of(sim, "lot:" + key)
 	# On the land: the lot is graded level with the road at its middle.
 	root.position = Vector3(lot.front.x, Terrain.base_y(lot.pos.x, lot.pos.z), lot.front.z)
 	# Local -Z faces the street, +Z runs back into the lot.
@@ -51,11 +59,13 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 	var fit := _local_lot(lot, Transform3D(root.basis, root.position))
 	match int(b.zone):
 		ZoneMap.Zone.RESIDENTIAL: built = HouseBuilder.build(rng.randi(), lot.to_curb, fit)
-		ZoneMap.Zone.COMMERCIAL: built = CommercialBuilder.build_shop(rng.randi(), lot.to_curb, fit)
-		ZoneMap.Zone.INDUSTRIAL: built = CommercialBuilder.build_factory(rng.randi(), lot.to_curb, fit)
+		ZoneMap.Zone.COMMERCIAL: built = CommercialBuilder.build_shop(rng.randi(), lot.to_curb, fit, spec)
+		ZoneMap.Zone.INDUSTRIAL: built = CommercialBuilder.build_factory(rng.randi(), lot.to_curb, fit, spec)
 	if built.is_empty():
 		return root
 	_add_built(root, built)
+	if built.size() > 3:
+		SignText.add(root, built[3])
 	# Trees go to the shared tree field, placed in world space.
 	var frame := Transform3D(root.basis, root.position)
 	var trees := []
@@ -65,6 +75,8 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 		at.origin.y = Terrain.ground_y(at.origin.x, at.origin.z) + t[0].y
 		trees.append([at, t[1], t[2]])
 	_trees.set_trees(key, trees)
+	if not fresh:
+		return root
 	# Grow in, like a new building going up.
 	root.scale = Vector3(1.0, 0.01, 1.0)
 	create_tween().tween_property(root, "scale", Vector3.ONE, 0.45) \

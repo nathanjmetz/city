@@ -11,11 +11,13 @@ var _homes := {}  # farm id -> Node3D
 var _trees := TreeField.new()
 var _mats := {}
 var _month := -1
+var _signs := {}  # "farm:<id>" -> the farm's sign by the road
 
 
 func setup(s: CitySim) -> void:
 	sim = s
 	sim.farms_changed.connect(_rebuild)
+	sim.families.changed.connect(_sync_signs)
 	_fields.material_override = Surfaces.field()
 	_lanes.material_override = RoadStyle.material(Color(0.58, 0.47, 0.33))  # tan crushed limestone and dirt
 	for mi in [_fields, _lanes]:
@@ -43,6 +45,16 @@ func _rebuild() -> void:
 	for id in sim.farms.farms:
 		if not _homes.has(id):
 			_homes[id] = _farmstead(id, sim.farms.farms[id])
+	_sync_signs()
+
+
+## A farm sign at the end of each lane with the farm's name, the way Indiana
+## farms mark theirs.
+func _sync_signs() -> void:
+	var lanes := {}
+	for id in sim.farms.farms:
+		lanes["farm:%d" % id] = sim.farms.farms[id].drive
+	SignText.sync_lanes(self, _signs, sim, lanes, false)
 
 
 ## What the farmstead has built so far: house, then barn, then grain bins
