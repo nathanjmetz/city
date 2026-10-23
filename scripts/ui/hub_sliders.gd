@@ -31,6 +31,8 @@ static func hub_of(s: CitySim, selection: Dictionary) -> String:
 	var type := str(selection.get("type", ""))
 	if type == "service" and s.buses.depots.has(int(selection.get("id", -1))):
 		return "bus_depot"
+	if type == "service" and s.taxis.companies.has(int(selection.get("id", -1))):
+		return "taxi"
 	return type
 
 

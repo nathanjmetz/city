@@ -746,7 +746,98 @@ const AMENITIES := {
 	# and lights (Friday nights are a small-town institution).
 	"football": {"cost": 4_000_000, "upkeep": 15_000, "size": Vector2(140, 84),
 		"value": 0.06, "value_reach": 600.0, "happy": 0.12, "happy_reach": 1600.0},
+	# The county fairgrounds: show barns, an exhibit hall, a grandstand and
+	# open ground for the midway, about 40 acres at the start (Indiana
+	# county fairgrounds run 30 to 100 acres).
+	"fairgrounds": {"cost": 3_000_000, "upkeep": 12_000, "size": Vector2(240, 170),
+		"value": 0.02, "value_reach": 500.0, "happy": 0.10, "happy_reach": 2500.0},
+	# Businesses that open by themselves for visitors (Tourism): a motel, a
+	# diner and a gas station on free road frontage near a venue. They are
+	# private, so the town pays nothing for them and gets nothing back when
+	# a road takes one.
+	"motel": {"cost": 0, "upkeep": 0, "size": Vector2(46, 30), "value": 0.0, "value_reach": 1.0, "happy": 0.0, "happy_reach": 1.0},
+	"diner": {"cost": 0, "upkeep": 0, "size": Vector2(26, 30), "value": 0.0, "value_reach": 1.0, "happy": 0.0, "happy_reach": 1.0},
+	"gas_station": {"cost": 0, "upkeep": 0, "size": Vector2(40, 36), "value": 0.0, "value_reach": 1.0, "happy": 0.0, "happy_reach": 1.0},
 }
+# --- Tourism and events --------------------------------------------------------
+# Brawn green-lit (2026-10-22): a fairgrounds hub whose fair board grows it
+# and runs a county fair each summer, and the football field as a stadium
+# hub for Friday-night football and concerts. Visitors drive in from the
+# neighboring towns as real trips, and once enough come, a gas station, a
+# diner and a motel open on their own nearby.
+
+## What each venue puts on. `months` (1 to 12) it runs in, the `hours` of
+## the day, `local` (share of the town who come) and `region` (share of the
+## people in the neighboring towns), and the `ticket` price. `seats` caps a
+## single event before the tree adds room. Real figures: an Indiana county
+## fair draws 30,000 to 100,000 over a week in a county of 20,000 to 40,000;
+## a small-town Friday game 1,000 to 3,000; gate about $5 to $10.
+const VENUES := {
+	"fairgrounds": {"seats": 15_000, "events": [
+		{"name": "County fair", "months": [7], "hours": [9, 23], "local": 0.6, "region": 0.25, "ticket": 8.0}]},
+	"football": {"seats": 2_500, "events": [
+		{"name": "Friday night football", "months": [9, 10, 11], "hours": [18, 22], "local": 0.15, "region": 0.03,
+			"ticket": 6.0}]},
+}
+## People in the county around a town that has no neighbors yet (solo
+## play): Pike County, Indiana has about 12,000.
+const TOURISM_COUNTY_POP := 12_000
+## What a visitor from out of town spends in town (food, gas, a room), and
+## the share the town keeps as its food-and-beverage and innkeeper's taxes
+## (Indiana counties levy 1% to 5% each).
+const TOURISM_SPEND := 35.0
+const TOURISM_LOCAL_TAX := 0.04
+## Visitors each car on the road stands for (about 2.5 to a car, and only a
+## sample of the cars is driven, to keep the game light), and the most cars
+## a venue sends out in an hour.
+const TOURISM_VISITORS_PER_CAR := 120
+const TOURISM_MAX_CARS_HOUR := 6
+## What opens by itself for out-of-town visitors, in order, once a year's
+## visitors from outside reach `visitors`: assessed value and jobs.
+const TOURISM_BUSINESSES := [
+	{"kind": "gas_station", "visitors": 4_000, "value": 900_000, "jobs": 6},
+	{"kind": "diner", "visitors": 8_000, "value": 700_000, "jobs": 14},
+	{"kind": "motel", "visitors": 15_000, "value": 2_000_000, "jobs": 8},
+]
+## How far from a venue they open, metres.
+const TOURISM_BUSINESS_REACH := 900.0
+## Venue development trees, in the Agency format (see agency.gd). The fair
+## board or the boosters pay from the venue's own gate money. Effects:
+## `draw+` (more come), `seats+` (room), `months+` (an extra event month).
+const VENUE_TREES := {
+	"fairgrounds": [
+		{"id": "show_barns", "name": "4-H show barns", "cost": 400_000, "needs": {"local:farm": 1},
+			"effects": {"draw+": 0.1}, "note": "farm kids show their animals"},
+		{"id": "grandstand", "name": "Grandstand", "cost": 900_000, "needs": {"population": 1_500},
+			"effects": {"seats+": 5_000.0, "draw+": 0.05}},
+		{"id": "midway", "name": "Carnival midway contract", "cost": 250_000, "needs": {"link": 1},
+			"effects": {"draw+": 0.15}, "note": "a traveling carnival brings rides"},
+		{"id": "derby", "name": "Demolition derby pit", "cost": 300_000, "requires": ["grandstand"],
+			"needs": {"profit": 60_000}, "effects": {"draw+": 0.1}},
+		{"id": "harness", "name": "Harness racing track", "cost": 1_200_000, "requires": ["grandstand"],
+			"needs": {"local:farm": 3, "region_makes:grain": 1}, "effects": {"draw+": 0.1, "months+": 1.0},
+			"note": "spring races for the farm towns around"},
+		{"id": "expo_hall", "name": "Exposition hall", "cost": 2_000_000, "requires": ["show_barns"],
+			"needs": {"population": 4_000, "leader_edu": 0.4}, "effects": {"months+": 2.0, "seats+": 3_000.0},
+			"note": "shows and auctions all year"},
+	],
+	"football": [
+		{"id": "home_stands", "name": "Home grandstand", "cost": 800_000, "needs": {"population": 2_000},
+			"effects": {"seats+": 2_000.0}},
+		{"id": "turf", "name": "Artificial turf", "cost": 900_000, "needs": {"profit": 40_000},
+			"effects": {"draw+": 0.05}},
+		{"id": "track", "name": "Running track", "cost": 600_000, "needs": {"education": 0.3},
+			"effects": {"months+": 1.0}, "note": "spring track meets"},
+		{"id": "concerts", "name": "Summer concert stage", "cost": 500_000, "requires": ["home_stands"],
+			"needs": {"link": 1}, "effects": {"months+": 1.0, "draw+": 0.1}, "note": "bands tour the county"},
+		{"id": "playoffs", "name": "Regional playoff host", "cost": 1_500_000, "requires": ["home_stands", "turf"],
+			"needs": {"population": 5_000, "link": 1}, "effects": {"draw+": 0.2, "seats+": 2_000.0},
+			"note": "teams and fans from towns around"},
+	],
+}
+## Months the tree's extra events fall in, in order: spring then summer.
+const VENUE_EXTRA_MONTHS := [5, 6, 8, 4, 10]
+
 ## Most land value and happiness a home can get from parks and landmarks
 ## together.
 const AMENITY_VALUE_CAP := 0.25
@@ -997,6 +1088,44 @@ const MAIL_TREE := {
 	"air_mail": {"cost": 700_000, "land": 0, "days": 2, "weight": 3},
 }
 
+# --- Families and their businesses ---------------------------------------------
+# Brawn (2026-10-22): every business has a believable name, printed on its
+# sign, and a family behind it. A family that does well branches out the way
+# real small-town families do (the one with the grain elevator also buys the
+# diner and opens the hardware store), under one brand. It may only open on a
+# lot the player zoned or buy a business that's already there, each move is a
+# permit the player answers, and a family holds a few businesses at most in a
+# town. Each new business then follows the normal hub rules (grows next door
+# only).
+
+## Most businesses one family may own in a town (real small-town family
+## groups hold a handful: the elevator, the implement dealer, a restaurant).
+const FAMILY_MAX_HUBS := 4
+## Years in business before a family thinks of branching out.
+const FAMILY_EXPAND_AFTER := 2
+## Chance a month that a family ready to branch out asks, at full ambition.
+const FAMILY_EXPAND_CHANCE := 0.25
+## What the owners draw a month: a share of a farm's or company's profit,
+## and per job at an open shop or factory. A 10-job shop pays its owners
+## about $54,000 a year, near the median small-business owner's income (SBA).
+const FAMILY_PROFIT_SHARE := 0.3
+const FAMILY_PER_JOB := 450
+## A new family's savings when it opens its first business.
+const FAMILY_START_CASH := 50_000
+## Opening a business on an empty zoned lot: a small-town restaurant or
+## store costs about $175,000-$750,000 to open; a small plant more.
+const FAMILY_START_COST := {"shop": 250_000, "factory": 900_000}
+## Buying a going business: small businesses sell for 2-3x what they pay
+## their owners (BizBuySell). Farms sell for their land.
+const FAMILY_BUY_COST := {"shop": 180_000, "factory": 750_000, "company": 1_200_000}
+## A new generation takes over after this many years.
+const FAMILY_GENERATION_YEARS := 25
+## After this many years a family redoes its look (new signs, modern
+## lettering), for about this much.
+const FAMILY_REBRAND_YEARS := 20
+const FAMILY_REBRAND_COST := 40_000
+## Signs read "SINCE 2031" once a business is this many years old.
+const FAMILY_SINCE_SHOWN := 10
 # --- Water and sewer utility ---------------------------------------------------
 # Brawn's green (2026-10-22): the player places a water utility and sets its
 # subsidy; its superintendent runs it like a small business and climbs a
@@ -1104,6 +1233,76 @@ const WATER_INTEREST := 0.004
 ## and beyond this many months' worth the surplus goes back to the city.
 const WATER_RESERVE_MONTHS := 2.0
 const WATER_SURPLUS_MONTHS := 18.0
+
+# --- Rail -----------------------------------------------------------------------
+# Brawn's model (2026-10-22): a rail depot is a hub whose leader runs it as a
+# business on its own money. The town only places it and can subsidize it.
+
+## What the town pays to place a depot (the land, station and yard grading).
+const RAIL_DEPOT_COST := 400_000
+## Money the railroad's investors put in when it opens.
+const RAIL_START_CAPITAL := 6_000_000
+## New track, dollars per metre: about $1M a mile for industry track and
+## $1.5M a mile for main line (US short-line construction costs).
+const RAIL_TRACK_PER_M := {"main": 930, "spur": 620}
+## Share of new track that state and federal rail grants pay (Indiana's
+## Industrial Rail Service Fund, federal CRISI grants), as public money pays
+## for most new roads. The railroad pays the rest.
+const RAIL_GRANT_SHARE := 0.75
+## A turnout where a spur leaves the main line (a #10 turnout, installed).
+const RAIL_TURNOUT_COST := 150_000
+## A grade crossing's lights, bells and gates, about $300,000 (FHWA).
+const RAIL_CROSSING_COST := 300_000
+## Track upkeep, dollars per metre per month (about $20,000 a mile a year).
+const RAIL_TRACK_UPKEEP_PER_M := 1.0
+## The depot's crew, dispatcher and office, per month, and its jobs.
+const RAIL_DEPOT_UPKEEP := 9_000
+const RAIL_DEPOT_JOBS := 12
+## What the railroad earns for each loaded car it hands to the region
+## (US average revenue is about $3,500 a carload, AAR).
+const RAIL_CAR_RATE := 3_500
+## Truck loads that fill one rail car: a tank car holds about 3.5 tanker
+## trucks of crude, an open hopper five dump trucks of ore, a bulkhead flat
+## three log trucks, a covered hopper about 3,400 bushels of grain.
+const RAIL_LOADS_PER_CAR := {"crude oil": 3.5, "ore": 5.0, "logs": 3.0, "grain": 3.4}
+## Grain truck loads the co-op elevator holds for the railroad.
+const RAIL_ELEVATOR_LOADS := 60
+## Running a train, dollars per train-km (fuel), plus the crew for each run.
+const RAIL_TRAIN_KM_COST := 60.0
+const RAIL_CREW_PER_RUN := 900.0
+## Passenger trains: rides each resident takes a month, the fare, the town
+## size a leader starts them at, the trainset's lease and how often one runs.
+const RAIL_RIDES_PER_RESIDENT := 0.3
+const RAIL_FARE := 12
+const RAIL_PASSENGER_MIN_POP := 800
+const RAIL_TRAINSET_LEASE := 6_000
+const RAIL_PAX_EVERY_HOURS := 6
+## Game days a train spends in the region before it comes back.
+const RAIL_REGION_DAYS := 0.4
+const RAIL_PAX_AWAY_DAYS := 0.25
+## A local freight leaves once this many cars wait at a siding, or once the
+## first has waited this many game days.
+const RAIL_TRAIN_MIN_CARS := 3
+const RAIL_TRAIN_MAX_WAIT_DAYS := 2.0
+## Metres of track a crew lays in a game day.
+const RAIL_BUILD_M_PER_DAY := 600.0
+## Leaders decide this often, in ticks (6 game hours).
+const RAIL_DECIDE_EVERY := 360
+## Years a leader waits for new track to pay off: a bold one, a modest one.
+## Track lasts 40 years or more, so railroads accept long paybacks.
+const RAIL_PAYBACK_YEARS := [25.0, 10.0]
+## Share of a spur's cost the company it serves pays (in the US the shipper
+## usually pays for its industry track; the railroad pays the rest).
+const RAIL_SHIPPER_SHARE := 0.5
+## Money a leader keeps in hand (scaled by caution).
+const RAIL_CUSHION := 500_000.0
+## Game days before a leader asks again about something the town turned
+## down or never answered (the permit bell has its own waits too).
+const RAIL_DENIED_DAYS := 24
+## Game days in the red before a railroad closes.
+const RAIL_BANKRUPT_DAYS := 6
+## Most the town can subsidize a depot, per month.
+const RAIL_MAX_SUBSIDY := 100_000
 # --- Banks and lending ---------------------------------------------------------
 # Brawn (2026-10-22, Best of CS pitch #20): a bank is a hub that lends to the
 # other hubs. A farm borrows to buy the field next door, a company to put

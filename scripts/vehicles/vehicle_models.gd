@@ -23,6 +23,8 @@ const TAIL := Color(0.55, 0.03, 0.03, 0.6)
 const BEACON_RED := Color(1.0, 0.06, 0.04, 0.7)
 const BEACON_BLUE := Color(0.08, 0.25, 1.0, 0.7)
 const BEACON_AMBER := Color(1.0, 0.55, 0.05, 0.8)
+## Ready-mix drums are white with coloured fins.
+const MIXER := Color(0.93, 0.93, 0.91, 0.4)
 const USPS_BLUE := Color(0.08, 0.17, 0.42, 0.4)
 const USPS_RED := Color(0.75, 0.08, 0.12, 0.4)
 const WHITE := Color(0.92, 0.92, 0.91, 0.4)
@@ -57,7 +59,7 @@ const AXLE := {
 	"minivan": 4.0, "sports": 3.8, "motorcycle": 1.8, "van": 4.4, "delivery_van": 5.3,
 	"box_truck": 7.9, "dump_truck": 6.7, "tow_truck": 5.2, "school_bus": 8.9, "city_bus": 9.2,
 	"garbage_truck": 7.3, "fire_engine": 7.4, "police": 3.9, "taxi": 3.9, "ambulance": 5.1, "tractor": 4.2,
-	"combine": 7.0, "tractor_sleeper": 6.4, "mail_truck": 4.3, "rural_mail": 3.9, "tractor_day": 4.8,
+	"combine": 7.0, "tractor_sleeper": 6.4, "mail_truck": 4.3, "concrete_mixer": 7.0, "rural_mail": 3.9, "tractor_day": 4.8,
 }
 
 var _st := SurfaceTool.new()
@@ -425,6 +427,41 @@ func _dump_truck() -> void:  # tandem dump on a conventional chassis
 	_box(Vector3(0, 2.75, 6.2), Vector3(2.3, 0.004, 5.5), DARK)
 	_wheels([1.2, 6.2, 7.6], 0.52, 1.25, 0.3)
 	_box(Vector3(1.1, 1.2, L + 0.01), Vector3(0.12, 0.2, 0.04), TAIL, true)
+
+
+## A rear-discharge ready-mix truck (Kenworth T880 with a McNeilus drum):
+## a white 11 yd drum tilted up toward the back, water tank, rear chutes,
+## tridem axles. The cab takes the fleet colour.
+func _concrete_mixer() -> void:
+	var L := 10.4
+	_md_cab(2.5)
+	_box(Vector3(0, 0.8, 6.0), Vector3(1.0, 0.3, 7.6), TRIM)
+	# The drum: wide in the middle, narrow at both ends, rising to the rear.
+	var drum := [[3.4, 1.7, 0.55], [4.3, 1.95, 1.05], [6.4, 2.3, 1.2], [8.6, 2.75, 0.85], [9.6, 3.05, 0.45]]
+	var sections := []
+	for d in drum:
+		var r: float = d[2]
+		sections.append([d[0], d[1] - r, d[1] - r * 0.1, d[1] + r, r * 0.7, r, r * 0.7])
+	_loft(sections, [_edges(MIXER, MIXER)], MIXER, DARK)
+	if not _lo:
+		# Spiral fins painted on the drum, the water tank and the chutes.
+		for k in [1, 2, 3]:
+			var a: Array = drum[k]
+			var b: Array = drum[k + 1]
+			for f in [0.3, 0.7]:
+				var z: float = lerpf(a[0], b[0], f)
+				var y: float = lerpf(a[1], b[1], f)
+				var r: float = lerpf(a[2], b[2], f) + 0.03
+				var band := []
+				for dz in [-0.12, 0.12]:
+					band.append([z + dz, y - r, y - r * 0.1, y + r, r * 0.7, r, r * 0.7])
+				_loft(band, [_edges(PAINT, PAINT)], PAINT, PAINT)
+		_cyl(Vector3(0, 2.0, 3.1), Vector3(0, 2.9, 3.1), 0.35, STEEL, 10)
+		_beam(Vector3(0, 2.4, 9.7), Vector3(0, 1.6, 10.3), 0.35, TRIM)
+		_box(Vector3(0, 1.4, 9.9), Vector3(0.9, 0.5, 0.5), STEEL)
+		_box(Vector3(0, 1.15, 10.38), Vector3(0.5, 0.06, 0.6), BEACON_AMBER)
+	_wheels([1.2, 7.0, 8.4], 0.52, 1.25, 0.3)
+	_box(Vector3(1.1, 1.0, L - 0.05), Vector3(0.12, 0.2, 0.06), TAIL, true)
 
 
 func _garbage_truck() -> void:  # rear loader on a Mack LR cab-over

@@ -72,11 +72,14 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_loading.gd
           ~/godot-cache/godot --headless -s tests/test_terrain.gd
           ~/godot-cache/godot --headless -s tests/test_permits.gd
+          ~/godot-cache/godot --headless -s tests/test_rail.gd
+          ~/godot-cache/godot --headless -s tests/test_families.gd
           ~/godot-cache/godot --headless -s tests/test_lots.gd
           ~/godot-cache/godot --headless -s tests/test_building_types.gd
           ~/godot-cache/godot --headless -s tests/test_hubs.gd
           ~/godot-cache/godot --headless -s tests/test_warehouses.gd
           ~/godot-cache/godot --headless -s tests/test_parks.gd
+          ~/godot-cache/godot --headless -s tests/test_tourism.gd
           ~/godot-cache/godot --headless -s tests/test_power.gd
           ~/godot-cache/godot --headless -s tests/test_vegetation.gd
           ~/godot-cache/godot --headless -s tests/test_education.gd

@@ -324,16 +324,20 @@ func to_dict() -> Dictionary:
 		list.append(e)
 	var state := {"cars": list, "waiting": _waiting.size(), "next_id": _next_id, "time": time,
 		"gave_up": gave_up, "speed": _speed, "dirty": _dirty, "arrivals": arrivals, "failed": failed}
-	return {"state": var_to_str(state)}
+	# Binary, so every float comes back exactly and copies stay in step
+	# (var_to_str rounds to 15 digits).
+	return {"bin": Marshalls.variant_to_base64(state)}
 
 
 func from_dict(d: Dictionary) -> void:
 	cars.clear()
 	_waiting.clear()
 	_dirty = true
-	if not d.has("state"):
-		return
-	var state = str_to_var(str(d.state))
+	var state
+	if d.has("bin"):
+		state = Marshalls.base64_to_variant(str(d.bin))
+	elif d.has("state"):
+		state = str_to_var(str(d.state))  # older saves
 	if typeof(state) != TYPE_DICTIONARY:
 		return
 	var list: Array = state.cars
