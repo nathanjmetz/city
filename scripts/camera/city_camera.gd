@@ -44,7 +44,9 @@ var following := false
 func _ready() -> void:
 	_pad = Gamepad.find()
 	camera.near = 1.0
-	camera.far = 8000.0
+	# Out past the far land (TerrainView.FAR_REACH), so from high up the land
+	# runs on into the haze rather than stopping at a line.
+	camera.far = 24000.0
 	camera.fov = 50.0
 	add_child(camera)
 	_apply()

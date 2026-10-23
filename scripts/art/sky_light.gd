@@ -45,7 +45,9 @@ func _ready() -> void:
 	sky_mat.sky_curve = 0.12
 	sky_mat.sky_energy_multiplier = 1.0
 	sky_mat.ground_horizon_color = HAZE
-	sky_mat.ground_bottom_color = Color(0.32, 0.34, 0.30)
+	# Below the horizon the sky shows only past the farthest land: the same
+	# haze, so there is no grey band where the land runs out.
+	sky_mat.ground_bottom_color = HAZE
 	sky_mat.ground_curve = 0.05
 	sky_mat.sun_angle_max = 20.0
 	sky_mat.sun_curve = 0.08
@@ -71,7 +73,10 @@ func _ready() -> void:
 	env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
 	env.fog_light_color = HAZE
 	env.fog_light_energy = 1.0
-	env.fog_density = 0.00025
+	# About 24 km visibility, a clear Midwestern day (extinction 3.9 / range):
+	# fields 2-3 km off keep their colour, and the land 20 km out, where it is
+	# last drawn, is all but haze.
+	env.fog_density = 0.00016
 	env.fog_sun_scatter = 0.15
 	env.fog_sky_affect = 0.25
 	# AgX mutes colour, so bring saturation and contrast back up to photo levels.
@@ -163,6 +168,7 @@ func set_fixed() -> void:
 	sky_mat.sky_top_color = _day.top
 	sky_mat.sky_horizon_color = _day.horizon
 	sky_mat.ground_horizon_color = _day.horizon
+	sky_mat.ground_bottom_color = _day.horizon
 	sky_mat.sky_cover_modulate = Color(1, 1, 1, 0)
 	sky_mat.sky_energy_multiplier = 1.0
 	env.fog_light_color = _day.horizon
@@ -205,6 +211,7 @@ func set_time(hour: float, months: float) -> void:
 	sky_mat.sky_top_color = top
 	sky_mat.sky_horizon_color = horizon
 	sky_mat.ground_horizon_color = horizon
+	sky_mat.ground_bottom_color = horizon
 	sky_mat.sky_cover_modulate = Color(1, 1, 1, smoothstep(0.5, 1.0, darkness) * 0.9)
 	# The air itself only takes a little of the sunset colour; the land
 	# under a dusk sky is lit by the blue of the open sky.
