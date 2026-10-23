@@ -39,6 +39,9 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 	var profit := big.yearly_profit(f)
 	rows.append(["Profit", "%s$%s / year" % ["" if profit >= 0.0 else "-", CitySim.money_text(absi(roundi(profit)))]])
 	rows.append(["Owner's money", "$%s" % CitySim.money_text(roundi(float(f.cash)))])
+	if float(f.get("debt", 0.0)) > 0.0:
+		rows.append(["Owes on land", "$%s" % CitySim.money_text(roundi(float(f.debt)))])
+	rows.append(["Land here", "$%s an acre" % CitySim.money_text(roundi(Capital.land_price(sim, BigFactories.center(f))))])
 	rows.append(["Jobs", str(big.jobs_at(f))])
 	rows.append(["Property tax to town", "$%s / month" % CitySim.money_text(roundi(BigFactories.value(f)
 		* sim.economy.tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0))])

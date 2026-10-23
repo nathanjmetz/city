@@ -112,17 +112,46 @@ func _init() -> void:
 	# Busy and paying: it builds up, then buys the land right behind it.
 	var g: Dictionary = sim.big.sites[1]
 	g.cash = 50_000_000.0
-	g.busy = 5
+	g.hist = []
+	for i in 12:
+		g.hist.append(400_000)
+	g.avg_profit = 4_800_000.0
+	var now := BigFactories.today(sim)
+	g.busy = Balance.BIG_FACTORY_BUSY_MONTHS
+	g.grown = now
+	sim.big._decide(sim, 1, 1.0, 400_000.0)
+	_check(int(g.level) == 0, "growth takes years: not the month after it opened")
 	for i in 4:
-		sim.big._decide(sim, 1, 1.0, 100_000.0)
-		g.busy = 5
+		g.busy = Balance.BIG_FACTORY_BUSY_MONTHS
+		g.grown = now - Balance.BIG_FACTORY_GROW_YEARS * 12.0
+		sim.big._decide(sim, 1, 1.0, 400_000.0)
 	_check(int(g.level) == Balance.BIG_FACTORY_LEVELS - 1 and int(g.bays) >= 1,
 		"a busy plant builds up first, then out (level %d, bays %d)" % [g.level, g.bays])
+	_check(float(g.debt) > 0.0, "it bought the land behind it partly on a loan ($%d owed)" % roundi(float(g.debt)))
+	g.busy = Balance.BIG_FACTORY_BUSY_MONTHS
+	var bays := int(g.bays)
+	sim.big._decide(sim, 1, 1.0, 400_000.0)
+	_check(int(g.bays) == bays, "and waits years before the next bay")
+	# Broke, it can't buy land however busy it is.
+	var poor: Dictionary = g.duplicate(true)
+	sim.big.sites[99] = poor
+	poor.cash = 0.0
+	poor.busy = Balance.BIG_FACTORY_BUSY_MONTHS
+	poor.grown = now - 100.0
+	sim.big._decide(sim, 99, 1.0, 400_000.0)
+	_check(int(poor.bays) == bays, "growth comes from its own money, not the town's")
+	sim.big.sites.erase(99)
+	# Out in the country, a losing plant doesn't get offers from developers.
+	g.loss = 5
+	g.hist = [-50_000, -50_000, -50_000]
+	sim.big._decide(sim, 1, 0.2, -50_000.0)
+	_check(sim.big.sites.has(1) and g.get("sale", {}).is_empty(), "land far from town isn't worth selling out")
 	var poly := BigFactories.corners(g)
 	_check(Geometry2D.is_point_in_polygon(Vector2(site[0].x, site[0].z - 1.0), poly) or
 		Geometry2D.is_point_in_polygon(Vector2(site[0].x, site[0].z + 1.0), poly), "it stays one site, grown from the back")
-	var tree := Agency.open(sim, g, BigFactories.TREES.ethanol, BigFactories.center(g), 500_000.0)
-	_check(not tree.is_empty(), "its development tree has steps open")
+	var fresh := {"leader": g.leader, "built": [], "kind": "ethanol"}
+	var tree := Agency.open(sim, fresh, BigFactories.TREES.ethanol, BigFactories.center(g), 500_000.0)
+	_check(not tree.is_empty() and not g.built.is_empty(), "its owner develops its tree from its savings (%s)" % str(g.built))
 
 	# A road through it bulldozes it and pays the town back.
 	var before := sim.economy.money

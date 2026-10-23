@@ -1708,6 +1708,13 @@ const BIG_FACTORY_GROW_COST := 0.08
 ## a level.
 const BIG_FACTORY_BUSY := 0.85
 const BIG_FACTORY_LOSS_STREAK := 4
+## Growth takes years (Brawn, 2026-10-23): months running near capacity
+## before the owner commits to growing, and the least time between one
+## expansion and the next (a real plant expansion is a year or two of
+## planning, financing and building). Paid from the plant's own savings
+## and a commercial loan (Capital), never the town's.
+const BIG_FACTORY_BUSY_MONTHS := 6
+const BIG_FACTORY_GROW_YEARS := 2.0
 ## What it pays to buy out homes and shops on land it grows onto (with a
 ## permit), per m² of lot: a small-town Indiana home of about $150,000 on a
 ## 700 m² lot.

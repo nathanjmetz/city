@@ -123,6 +123,8 @@ var sites := {}
 ## Last month's region wants per good: good -> {id: loads}.
 var asked := {}
 var _next_id := 1
+## A plant closed this month (its owner sold out).
+var _closed := false
 
 
 static func spec(f: Dictionary) -> Dictionary:
@@ -141,7 +143,19 @@ func add(sim: CitySim, kind: String, pos: Vector3, dir: Vector3) -> int:
 		"cash": float(Balance.BIG_FACTORY[kind].cash), "stock": stock, "promised": stock.duplicate(),
 		"due": stock.duplicate(), "out": {}, "shipped": {}, "local": {}, "month": _blank_month(), "hist": [],
 		"busy": 0, "loss": 0, "progress": 0.0, "boxed": false, "why": ""}
+	# Its own money (Capital): startup cash builds and runs it at first,
+	# then it grows only from what it keeps of its profit.
+	var f: Dictionary = sites[id]
+	Capital.start(f, "company")
+	f.cash = float(Balance.BIG_FACTORY[kind].cash)
+	f.cap_day = today(sim)
+	f.grown = today(sim)
 	return id
+
+
+## The game day (a month).
+static func today(sim: CitySim) -> float:
+	return float(sim.tick_count) / TICKS_PER_DAY
 
 
 ## A name like the real ones: a place or family name and the trade.
@@ -445,19 +459,36 @@ func _month(sim: CitySim) -> void:
 		f.last = {"made": f.month.made, "revenue": roundi(f.month.revenue), "cost": roundi(f.month.cost),
 			"util": snappedf(util, 0.01)}
 		f.month = _blank_month()
+		# The month's books already went through its cash: Capital keeps the
+		# owner's share of a profit (the rest is paid out), takes losses in
+		# full, and pays the loan on land it bought.
+		f.cash = float(f.cash) - profit
+		Capital.step(f, "company", profit * 12.0, today(sim))
 		_decide(sim, id, util, profit)
+		if not sites.has(id):
+			continue
 	_ask_region(sim)
 
 
 ## The owner's moves for the month (the player's word comes first).
+## Growth comes from its own money, over years: it builds up with savings,
+## and buys the land behind it with a down payment and a loan its profit
+## can carry, at what land sells for there. Where the town has driven land
+## prices up past what the plant earns on it, an owner losing money may ask
+## to sell out instead (Brawn, 2026-10-23).
 func _decide(sim: CitySim, id: int, util: float, profit: float) -> void:
 	var f: Dictionary = sites[id]
 	var stance: String = sim.permits.guidance("big", id).stance
 	f.busy = int(f.busy) + 1 if util >= Balance.BIG_FACTORY_BUSY * (0.7 if stance == "grow" else 1.0) else 0
 	f.loss = int(f.loss) + 1 if profit < 0.0 else 0
+	if _selling(sim, id):
+		return
+	var income := Capital.steady(f, yearly_profit(f))
 	# Land the player said yes to: buy it, clear it and build on it.
 	for req in sim.permits.approved("big", id):
-		if float(f.cash) >= float(req.cost):
+		if str(req.get("ask", "")) != "":
+			continue
+		if Capital.can_buy(f, float(req.cost), income):
 			# The land as the player left it, and the bay itself.
 			var area := PackedVector2Array()
 			for q in req.route:
@@ -465,54 +496,153 @@ func _decide(sim: CitySim, id: int, util: float, profit: float) -> void:
 			if area.size() >= 3:
 				_clear_for(sim, area)
 			_clear_for(sim, next_bay(f))
-			_spend(f, float(req.cost))
+			Capital.buy(f, float(req.cost), income)
 			f.bays = int(f.bays) + 1
+			f.grown = today(sim)
 			sim.permits.done(req.id)
 			f.why = "Bought the land behind it, with your permit."
 			f.changed = true
 	if stance == "hold":
 		return
 	if float(f.cash) > 0.0:
+		# Agency spends the plant's own savings (it has Capital).
 		var node := Agency.develop(sim, f, TREES[f.kind], center(f), yearly_profit(f))
 		if not node.is_empty():
-			_spend(f, float(node.cost))
 			f.why = str(f.get("why", ""))
 			f.changed = true
 	var grow_cost := float(spec(f).value) * Balance.BIG_FACTORY_GROW_COST
-	if int(f.busy) >= 2 and profit > 0.0 and float(f.cash) >= grow_cost:
-		f.busy = 0
-		f.boxed = false
+	var years := (today(sim) - float(f.get("grown", 0.0))) / 12.0
+	var wait := Balance.BIG_FACTORY_GROW_YEARS * (0.5 if stance == "grow" else 1.0)
+	if int(f.busy) >= Balance.BIG_FACTORY_BUSY_MONTHS and income > 0.0 and years >= wait:
+		var lead: Dictionary = f.leader
+		var cushion := Balance.CAPITAL_RESERVE * (0.5 + float(lead.get("caution", 0.5)))
 		if int(f.level) < Balance.BIG_FACTORY_LEVELS - 1:
-			f.level = int(f.level) + 1
-			_spend(f, grow_cost)
-			f.why = "Busy, so it built up: %s." % ["a second line", "a third line"][int(f.level) - 1]
-			f.changed = true
+			# Building up needs no land: savings pay for the new line.
+			if float(f.cash) - cushion >= grow_cost:
+				f.cash = float(f.cash) - grow_cost
+				f.level = int(f.level) + 1
+				f.busy = 0
+				f.boxed = false
+				f.grown = today(sim)
+				f.why = "Busy for months, so it saved up and built %s." % ["a second line", "a third line"][int(f.level) - 1]
+				f.changed = true
+			else:
+				f.why = "Busy, and saving up for another line."
 		elif not can_extend(f):
 			f.boxed = true
 			f.why = "It's as big as industrial zoning allows."
 		else:
 			var poly := next_bay(f)
+			var price := bay_price(sim, f) + grow_cost
 			var ground := _ground(sim, poly, id)
-			if ground == "":
-				f.bays = int(f.bays) + 1
-				_spend(f, grow_cost)
-				f.why = "Busy, so it bought the land right behind it."
-				f.changed = true
-			elif ground == "lots":
-				_ask_permit(sim, id, poly, grow_cost)
-			else:
+			if ground != "" and ground != "lots":
 				f.boxed = true
 				f.why = "No free land behind it to grow into."
+			elif not Capital.can_buy(f, price, income):
+				f.why = "Busy, but the land behind it costs about $%s an acre, more than its profit can pay for yet." \
+					% CitySim.money_text(roundi(Capital.land_price(sim, _mid(poly))))
+			elif ground == "":
+				Capital.buy(f, price, income)
+				f.bays = int(f.bays) + 1
+				f.busy = 0
+				f.boxed = false
+				f.grown = today(sim)
+				f.why = "Busy for months, so it bought the land right behind it (part on a loan)."
+				f.changed = true
+			else:
+				_ask_permit(sim, id, poly, price)
 	elif int(f.loss) >= Balance.BIG_FACTORY_LOSS_STREAK:
 		f.loss = 0
 		if int(f.bays) > 0:
 			f.bays = int(f.bays) - 1
+			# The land goes back on the market and pays down the loan.
+			var back := bay_price(sim, f)
+			var owed := minf(float(f.get("debt", 0.0)), back)
+			f.debt = float(f.get("debt", 0.0)) - owed
+			f.cash = float(f.cash) + back - owed
 			f.why = "Losing money, so it sold the back bay."
 			f.changed = true
 		elif int(f.level) > 0:
 			f.level = int(f.level) - 1
 			f.why = "Losing money, so it shut a line."
 			f.changed = true
+
+
+## What the next bay of land behind the site sells for.
+func bay_price(sim: CitySim, f: Dictionary) -> float:
+	var poly := next_bay(f)
+	var m2 := absf(_area(poly))
+	return m2 / M2_PER_ACRE * Capital.land_price(sim, _mid(poly))
+
+
+## What the site's own ground would fetch.
+func site_land_value(sim: CitySim, f: Dictionary) -> float:
+	var poly := corners(f)
+	return absf(_area(poly)) / M2_PER_ACRE * Capital.land_price(sim, center(f))
+
+
+const M2_PER_ACRE := 4046.86
+
+
+static func _area(poly: PackedVector2Array) -> float:
+	var a := 0.0
+	for i in poly.size():
+		var p := poly[i]
+		var q := poly[(i + 1) % poly.size()]
+		a += p.x * q.y - q.x * p.y
+	return a * 0.5
+
+
+static func _mid(poly: PackedVector2Array) -> Vector3:
+	var m := Vector2.ZERO
+	for q in poly:
+		m += q
+	m /= maxf(1.0, float(poly.size()))
+	return Vector3(m.x, 0.0, m.y)
+
+
+## Selling out: a plant that keeps losing money on ground the town has made
+## worth far more to developers asks on the bell to sell. Yes: it closes and
+## its land is open for the town. No: it carries on and won't ask again for
+## a few years. True when it is waiting on the answer or just closed.
+func _selling(sim: CitySim, id: int) -> bool:
+	var f: Dictionary = sites[id]
+	var sale: Dictionary = f.get("sale", {})
+	if not sale.is_empty():
+		var state := sim.permits.state_of(int(sale.req))
+		if state == Permits.State.OPEN:
+			return true
+		f.sale = {}
+		if state == Permits.State.APPROVED:
+			sim.permits.done(int(sale.req))
+			sites.erase(id)
+			_closed = true
+			return true
+		f.sale_day = today(sim) + Balance.CAPITAL_SELL_WAIT_YEARS * 12.0
+		f.why = "Its owner turned down the developers and kept the plant running."
+		return false
+	if today(sim) < float(f.get("sale_day", 0.0)) or yearly_profit(f) >= 0.0 or int(f.loss) < 2:
+		return false
+	var at := center(f)
+	if not Capital.sell_out(sim, at):
+		return false
+	var per_acre := Capital.land_price(sim, at)
+	var area := []
+	for q in corners(f):
+		area.append([q.x, q.y])
+	var req: int = sim.permits.file(sim, {"hub": "big", "hub_id": id, "leader": leader_name(f), "ask": "sell_plant",
+		"title": "%s wants to sell the plant" % f.name,
+		"why": "It has been losing money, and developers offer about $%s an acre for its ground, %.1f times what it's worth as industrial land." % [
+			CitySim.money_text(roundi(per_acre)), per_acre / Balance.CAPITAL_LAND_PER_ACRE],
+		"area": area, "change": "Plant sold",
+		"yes": "The owner sells. The plant closes, its jobs go, and its land is open for the town.",
+		"no": "The plant keeps running and won't ask again for %d years." % Balance.CAPITAL_SELL_WAIT_YEARS})
+	f.sale_day = today(sim) + 12.0
+	if req != -1:
+		f.sale = {"req": req}
+		f.why = "Its owner asked you about selling the plant (see the bell)."
+		return true
+	return false
 
 
 ## The player's homes or shops stand on the land it wants: ask first,
@@ -863,7 +993,8 @@ static func value(f: Dictionary) -> float:
 
 ## True once, after a plant changed shape or built something (for drawing).
 func take_changed() -> bool:
-	var any := false
+	var any := _closed
+	_closed = false
 	for id in sites:
 		if sites[id].get("changed", false):
 			sites[id].erase("changed")
