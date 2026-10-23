@@ -47,6 +47,10 @@ const FRONT := {"city_bus": 2.4, "coach": 2.2, "motorhome": 2.0, "school_bus": 1
 const PITCH := 0.005
 const ROLL := 0.006
 const LEAN_MAX := 0.03
+## How fast a body may swing round when the path doubles back tighter than
+## its rear wheels can follow (a turn-around on the shoulder), in radians a
+## second: about what a truck's three-point turn looks like sped up.
+const SWING := 1.6
 
 var traffic: TrafficSim
 ## Returns how far through the current tick the clock is, 0 to 1.
@@ -105,6 +109,7 @@ class Motion:
 	var heading := Vector3.FORWARD
 	var pitch := 0.0
 	var roll := 0.0
+	var swing := false  # swinging round where the path doubled back
 
 
 func setup(t: TrafficSim, fraction: Callable) -> void:
@@ -240,7 +245,7 @@ func _draw_cars(_delta: float) -> void:
 			m.started = false  # out of sight: it picks up afresh when back
 			continue
 		var wb: float = info[11]
-		var h := _steer(m, a, wb, info[12])
+		var h := _steer(m, a, wb, info[12], _delta)
 		var flat_front := a + h * fo
 		var front := Terrain.lift(flat_front)
 		var d2 := front.distance_squared_to(eye)
@@ -495,8 +500,11 @@ func _axle_at(m: Motion) -> Vector3:
 ## ones follow them), so the body turns about its middle, not its bumper,
 ## and lines up again once the rear wheels are round the corner. Backing up
 ## the rear leads, so it comes from the path. `need` is how much track to
-## keep: a wheelbase, or back to a trailer's axles.
-func _steer(m: Motion, a: Vector3, wb: float, need: float) -> Vector3:
+## keep: a wheelbase, or back to a trailer's axles. Where the path doubles
+## back tighter than the rear wheels could follow, the body swings round
+## onto the new way at a steady rate rather than facing back along the old
+## one and then snapping.
+func _steer(m: Motion, a: Vector3, wb: float, need: float, delta := 0.0) -> Vector3:
 	if m.rev1:
 		var span := m.t1 - m.t0
 		var u := 1.0 if span <= 0.0 else clampf((_rt - m.t0) / span, 0.0, 1.0)
@@ -524,6 +532,26 @@ func _steer(m: Motion, a: Vector3, wb: float, need: float) -> Vector3:
 				while m.trail.size() > 3 and Vector2(a.x - m.trail[1].x, a.z - m.trail[1].z).length() > need:
 					m.trail.remove_at(0)
 		m.rear = _on_trail(m.trail, a, wb)
+		var path := Vector3(m.h1.x, 0.0, m.h1.z)
+		var body := Vector3(a.x - m.rear.x, 0.0, a.z - m.rear.z)
+		if path.length_squared() > 1e-6 and body.length_squared() > 1e-6:
+			path = path.normalized()
+			body = body.normalized()
+			if body.dot(path) < 0.0:
+				m.swing = true
+			if m.swing:
+				var off := body.signed_angle_to(path, Vector3.UP)
+				if absf(off) < 0.2:
+					m.swing = false
+				else:
+					var was := Vector3(m.heading.x, 0.0, m.heading.z).normalized()
+					if was.length_squared() < 0.5:
+						was = body
+					var step := clampf(was.signed_angle_to(path, Vector3.UP), -SWING * delta, SWING * delta)
+					var hb := was.rotated(Vector3.UP, step)
+					m.rear = Vector3(a.x, m.rear.y, a.z) - hb * wb
+					# Its tracks start again behind it, as it now stands.
+					m.trail = PackedVector3Array([m.rear - hb * maxf(need - wb, 1.0), m.rear, a])
 	m.started = true
 	m.a = a
 	var h := Vector3(a.x - m.rear.x, 0.0, a.z - m.rear.z)
