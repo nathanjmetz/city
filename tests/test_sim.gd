@@ -463,6 +463,11 @@ func _real_layouts() -> void:
 					touches = touches or (c + d) in pads
 				joined = joined and touches
 			_check(joined, "the quarry grows as one pit (%d benches)" % pads.size())
+			var way := signi(pads[0].y)
+			var one_way: bool = way != 0
+			for c in pads:
+				one_way = one_way and c.y * way >= pads[0].y * way
+			_check(one_way, "the strip mine advances one way, away from its plant")
 			# A county road one cell east of the yard: the pit never jumps it.
 			var walled := Industry.new()
 			walled.price = 3.0

@@ -1641,7 +1641,7 @@ func road_between(a: Vector3, b: Vector3) -> bool:
 	var n := maxi(2, ceili(a2.distance_to(b2) / 6.0))
 	for i in range(1, n):
 		var p := a2.lerp(b2, float(i) / n)
-		if not network.find_segment_near(Vector3(p.x, Terrain.ground_y(p.x, p.z), p.z), 4.0, 3.0).is_empty():
+		if not network.find_segment_near(p, 4.0).is_empty():
 			return true
 	return false
 
