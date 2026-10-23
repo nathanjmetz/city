@@ -36,6 +36,8 @@ var chat := []  # [{"from", "text", "at"}]
 ## "b_at": [x, z]}], each end in its own town's coordinates.
 var joins := []
 var region_seed := 1
+## Regional projects and service agreements between towns (see Ledger).
+var ledger := Ledger.new()
 ## Roads the last add_city built in existing towns (their halves of the new
 ## county roads): city id -> [commands]. Their owners, if online, run them
 ## on their own computers too.
@@ -239,12 +241,15 @@ func to_dict() -> Dictionary:
 		var c: Dictionary = cities[id]
 		cs[id] = {"owner": c.owner, "player": c.player, "name": c.name, "origin": [c.origin.x, c.origin.y],
 			"color": c.color, "city": c.sim.to_dict()}
-	return {"version": 2, "seed": region_seed, "cities": cs, "chat": chat, "joins": joins}
+	return {"version": 2, "seed": region_seed, "cities": cs, "chat": chat, "joins": joins,
+		"ledger": ledger.to_dict()}
 
 
 func from_dict(d: Dictionary) -> void:
 	region_seed = int(d.get("seed", 1))
 	chat = d.get("chat", [])
+	ledger = Ledger.new()
+	ledger.from_dict(d.get("ledger", {}))
 	joins = []
 	for j in d.get("joins", []):
 		if j.has("a_at"):
