@@ -128,6 +128,12 @@ func send_town(now := false, leaving := false) -> void:
 	var sim := my_sim()
 	if sim == null or not is_joined:
 		return
+	var t0 := Perf.now()
+	_send_town(sim, now, leaving)
+	Perf.add("net.send_town", t0)
+
+
+func _send_town(sim: CitySim, now: bool, leaving: bool) -> void:
 	var t := Time.get_ticks_msec() / 1000.0
 	var sig := [sim.network.segments.size(), sim.buildings.size(), sim.zones.cells.size(),
 		sim.stats.population / 25]
@@ -250,6 +256,12 @@ func name_of(id: String) -> String:
 
 
 func _process(delta: float) -> void:
+	var t_all := Perf.now()
+	_poll(delta)
+	Perf.add("net.client", t_all)
+
+
+func _poll(delta: float) -> void:
 	if reconnecting:
 		_lost_for += delta
 		_retry_in -= delta
@@ -260,9 +272,13 @@ func _process(delta: float) -> void:
 				return
 			_retry_in = RECONNECT_EVERY
 			_connect()
+	var t := Perf.now()
 	_finish_packing()
+	Perf.add("net.packing", t)
 	if is_joined:
+		t = Perf.now()
 		_book_agreements()
+		Perf.add("net.agreements", t)
 		_neighbor_wait -= delta
 		if _neighbor_wait <= 0.0 and not region.stale_ids().is_empty():
 			# Towns never drawn yet come first, and quicker.
@@ -270,6 +286,7 @@ func _process(delta: float) -> void:
 			_neighbor_wait = NEIGHBOR_FIRST if not _unseen.is_empty() else NEIGHBOR_EVERY
 			var t0 := Time.get_ticks_usec()
 			region.load_stale(next)
+			Perf.add("net.neighbor_load", t0)
 			var got: Array = _unpacked.get(next, [0, 0.0])
 			_unpacked.erase(next)
 			town_loaded.emit(next, got[0], got[1], (Time.get_ticks_usec() - t0) / 1000.0)
@@ -277,7 +294,9 @@ func _process(delta: float) -> void:
 				_drawn_look[next] = _look_waiting[next]
 				_look_waiting.erase(next)
 			_drawn_at[next] = Time.get_ticks_msec() / 1000.0
+		t = Perf.now()
 		_sync_deals()
+		Perf.add("net.deals", t)
 	if _peer == null:
 		return
 	_peer.poll()
@@ -301,9 +320,13 @@ func _process(delta: float) -> void:
 			failed.emit("The region isn't answering. The host's computer may be off, asleep or restarting: try again in a minute.")
 		return
 	while _peer and _peer.get_available_packet_count() > 0:
+		t = Perf.now()
 		var msg = JSON.parse_string(_peer.get_packet().get_string_from_utf8())
+		Perf.add("net.parse", t)
 		if typeof(msg) == TYPE_DICTIONARY:
+			t = Perf.now()
 			_handle(msg)
+			Perf.add("net.msg." + str(msg.get("t", "")), t)
 
 
 func _handle(msg: Dictionary) -> void:
@@ -463,10 +486,15 @@ func _finish_packing() -> void:
 		_unpacked[id] = [str(job.msg.get("z", "")).length(), job.unpack_ms]
 
 
+## Runs every job at once, like the browser does (the play-through check
+## sets it to time the browser's work on the desktop).
+static var inline_jobs := false
+
+
 ## Runs `job` on a worker thread; the browser build without threads runs it
 ## at once. Returns a task id, or -1 when it's already done.
 static func _on_another_core(job: Callable) -> int:
-	if OS.has_feature("web") and not OS.has_feature("threads"):
+	if (OS.has_feature("web") and not OS.has_feature("threads")) or inline_jobs:
 		job.call()
 		return -1
 	return WorkerThreadPool.add_task(job)

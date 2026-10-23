@@ -9,16 +9,24 @@ extends MultiMeshInstance3D
 ## far from both cities, until it is far from both or a third city is
 ## nearer. Drawing only; who may build where is a later rule.
 
-const STEP := 10.0          # metres between traced points
+const STEP := 10.0          # metres between traced points, near the cities
+## Out where the line is far from both cities it takes longer steps, this
+## share of the distance (up to STEP_MAX): the line is smooth out there.
+const STEP_SHARE := 0.08
+const STEP_MAX := 120.0
 const DASH := 6.0           # dash length, metres (a gap of STEP - DASH follows)
 ## Width on the ground up close; it widens as the camera pulls back so the
 ## line stays visible from far away, like a map overlay.
 const WIDTH := 1.5
 const BUCKET := 64.0        # spatial hash cell for nearest-point lookups
+## Coarser cells over the fine ones, so a lookup from kilometres away checks
+## a few dozen cells, not thousands (towns sit miles apart).
+const COARSE := 1024.0
 ## Lines are drawn between cities whose closest points are this close.
 const MAX_GAP := 12000.0
-## How often the lines are redrawn while cities change, seconds.
-const REFRESH := 3.0
+## How often the lines are redrawn while cities change, seconds. They follow
+## the outermost buildings, which move slowly.
+const REFRESH := 15.0
 
 var client: RegionClient
 ## Region coordinates -> this world.
@@ -66,7 +74,9 @@ func _process(delta: float) -> void:
 	if _dirty and _wait <= 0.0:
 		_dirty = false
 		_wait = REFRESH
+		var t := Perf.now()
 		_rebuild()
+		Perf.add("frame.city_lines", t)
 	var cam := get_viewport().get_camera_3d()
 	if cam:
 		var w := maxf(WIDTH, cam.global_position.y * 0.004)
@@ -133,11 +143,13 @@ static func trace(a: PointSet, b: PointSet, others: Array) -> Array:
 		var pts := PackedVector2Array([start])
 		var p := start
 		var heading: Vector2 = dir
+		var step := STEP
 		for i in 1500:
-			var q := _settle(a, b, p + heading * STEP)
+			var q := _settle(a, b, p + heading * step)
 			var da := a.nearest_distance(q)
-			if da > reach or not _is_ours(q, da, others) or q.distance_to(p) < STEP * 0.3:
+			if da > reach or not _is_ours(q, da, others) or q.distance_to(p) < step * 0.3:
 				break
+			step = clampf(da * STEP_SHARE, STEP, STEP_MAX)
 			heading = (q - p).normalized()
 			pts.append(q)
 			p = q
@@ -177,25 +189,45 @@ static func _is_ours(p: Vector2, d: float, others: Array) -> bool:
 
 
 static func _closest_pair(a: PointSet, b: PointSet) -> Array:
+	# Each of a's cells first, by how near b comes to its centre; then the
+	# points of only the cells that could still hold the closest pair.
+	var half_diag := BUCKET * 0.7072
+	var order := []
+	for c: Vector2i in a.cells:
+		var centre := (Vector2(c) + Vector2(0.5, 0.5)) * BUCKET
+		order.append([centre.distance_to(b.nearest(centre)) - half_diag, c])
+	order.sort_custom(func(x, y): return x[0] < y[0])
 	var best := INF
 	var pa := Vector2.ZERO
 	var pb := Vector2.ZERO
-	for p in a.points:
-		var q := b.nearest(p)
-		var d := p.distance_squared_to(q)
-		if d < best:
-			best = d
-			pa = p
-			pb = q
+	for entry in order:
+		if entry[0] >= best:
+			break
+		var pts: PackedVector2Array = a.cells[entry[1]]
+		for p in pts:
+			var q := b.nearest(p)
+			var d := p.distance_to(q)
+			if d < best:
+				best = d
+				pa = p
+				pb = q
 	return [pa, pb]
 
 
 ## Dashes laid along a line, flat on the ground.
 func _dashes(line: PackedVector2Array) -> Array:
-	var out := []
+	# One dash every STEP metres, the long steps out in the country split up.
+	var even := PackedVector2Array()
 	for i in line.size() - 1:
-		var p0: Vector3 = to_world.call(line[i])
-		var p1: Vector3 = to_world.call(line[i + 1])
+		var n := maxi(1, roundi(line[i].distance_to(line[i + 1]) / STEP))
+		for k in n:
+			even.append(line[i].lerp(line[i + 1], float(k) / n))
+	if not line.is_empty():
+		even.append(line[line.size() - 1])
+	var out := []
+	for i in even.size() - 1:
+		var p0: Vector3 = to_world.call(even[i])
+		var p1: Vector3 = to_world.call(even[i + 1])
 		p0.y = Terrain.ground_y(p0.x, p0.z)
 		p1.y = Terrain.ground_y(p1.x, p1.z)
 		var mid := (p0 + p1) * 0.5 + Vector3(0, 0.3, 0)
@@ -204,40 +236,74 @@ func _dashes(line: PackedVector2Array) -> Array:
 	return out
 
 
-## Points with a spatial hash, for quick nearest-point lookups.
+## Points with a spatial hash, for quick nearest-point lookups: fine cells
+## for nearby points and coarse cells over them for faraway ones.
 class PointSet:
 	var points: PackedVector2Array
-	var _cells := {}  # Vector2i -> PackedVector2Array
+	var cells := {}  # Vector2i -> PackedVector2Array (fine, BUCKET)
+	var _coarse := {}  # Vector2i -> Array of fine cell keys (COARSE)
 
 	func _init(pts: PackedVector2Array) -> void:
 		points = pts
+		var per := int(COARSE / BUCKET)
 		for p in pts:
 			var c := Vector2i(floori(p.x / BUCKET), floori(p.y / BUCKET))
-			if not _cells.has(c):
-				_cells[c] = PackedVector2Array()
-			_cells[c].append(p)
+			if not cells.has(c):
+				cells[c] = PackedVector2Array()
+				var k := Vector2i(floori(float(c.x) / per), floori(float(c.y) / per))
+				if not _coarse.has(k):
+					_coarse[k] = []
+				_coarse[k].append(c)
+			cells[c].append(p)
 
 	func nearest(p: Vector2) -> Vector2:
-		var c := Vector2i(floori(p.x / BUCKET), floori(p.y / BUCKET))
 		var best := INF
 		var out := p
-		var ring := 0
-		# Search rings of cells outwards; stop once a ring can't beat the best.
-		while ring < 200:
-			if best < INF and (ring - 1) * BUCKET > sqrt(best):
-				break
+		# Nearby first: the fine cells around the point.
+		var c := Vector2i(floori(p.x / BUCKET), floori(p.y / BUCKET))
+		for ring in 3:
 			for x in range(c.x - ring, c.x + ring + 1):
 				for y in range(c.y - ring, c.y + ring + 1):
 					if ring > 0 and absi(x - c.x) != ring and absi(y - c.y) != ring:
 						continue
-					var cell: PackedVector2Array = _cells.get(Vector2i(x, y), PackedVector2Array())
+					var cell: PackedVector2Array = cells.get(Vector2i(x, y), PackedVector2Array())
 					for q in cell:
 						var d := p.distance_squared_to(q)
 						if d < best:
 							best = d
 							out = q
-			ring += 1
+			# Cells further out are at least `ring` cells away.
+			if best < INF and ring * BUCKET >= sqrt(best):
+				return out
+		# Far away: rings of coarse cells, skipping any cell (coarse or
+		# fine) that can't hold anything nearer than the best so far.
+		var k := Vector2i(floori(p.x / COARSE), floori(p.y / COARSE))
+		for ring in 64:
+			if best < INF and (ring - 1) * COARSE >= sqrt(best):
+				break
+			for x in range(k.x - ring, k.x + ring + 1):
+				for y in range(k.y - ring, k.y + ring + 1):
+					if ring > 0 and absi(x - k.x) != ring and absi(y - k.y) != ring:
+						continue
+					var fine: Array = _coarse.get(Vector2i(x, y), [])
+					if fine.is_empty() or _box_d2(p, Vector2(x, y) * COARSE, COARSE) >= best:
+						continue
+					for f: Vector2i in fine:
+						if _box_d2(p, Vector2(f) * BUCKET, BUCKET) >= best:
+							continue
+						var pts: PackedVector2Array = cells[f]
+						for q in pts:
+							var d := p.distance_squared_to(q)
+							if d < best:
+								best = d
+								out = q
 		return out
 
 	func nearest_distance(p: Vector2) -> float:
 		return p.distance_to(nearest(p))
+
+	## Squared distance from p to the square at `corner` with side `size`.
+	static func _box_d2(p: Vector2, corner: Vector2, size: float) -> float:
+		var dx := maxf(maxf(corner.x - p.x, 0.0), p.x - corner.x - size)
+		var dy := maxf(maxf(corner.y - p.y, 0.0), p.y - corner.y - size)
+		return dx * dx + dy * dy
