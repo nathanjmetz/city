@@ -2465,6 +2465,21 @@ func _parcels_to_save() -> Dictionary:
 	return out
 
 
+## The empty lots and the planner's state, so a loaded copy has exactly the
+## town's lots without planning it all again (see LotPlanner.cuts_to_save).
+func _plan_to_save() -> Dictionary:
+	var out := planner.cuts_to_save(zones)
+	var empty := []
+	var keys := lots.keys()
+	keys.sort()
+	for key in keys:
+		if not buildings.has(key):
+			empty.append(LotPlanner.lot_to_save(lots[key]))
+	out.empty = empty
+	out.flags = [_lots_dirty, _lots_light, _roads_moved]
+	return out
+
+
 func to_dict() -> Dictionary:
 	vegetation.update(self)  # land cleared since the last tick counts
 	return {
@@ -2477,6 +2492,7 @@ func to_dict() -> Dictionary:
 		"zones": zones.to_dict(),
 		"buildings": buildings,
 		"parcels": _parcels_to_save(),
+		"plan": _plan_to_save(),
 		"economy": economy.to_dict(),
 		"services": services.to_dict(),
 		"farms": farms.to_dict(),
@@ -2597,9 +2613,27 @@ func from_dict(d: Dictionary) -> void:
 			"changed": int(b.get("changed", b.built)), "why": str(b.get("why", ""))}
 		if z == ZoneMap.Zone.INDUSTRIAL and b.has("chain"):
 			buildings[key].chain = str(b.chain)
-	_road_wins()
-	_lots_dirty = true
-	_refresh()
+	if d.has("plan") and d.has("parcels"):
+		# The town's own lots and planning state, as saved: no need to plan
+		# the whole town again, and a copy re-plans just when the town does.
+		planner.restore(network, zones, d.plan)
+		for e in d.plan.get("empty", []):
+			var lot := LotPlanner.lot_from_save(e)
+			lots[lot.key] = lot
+		# Fields trimmed by roads aren't saved: work them out again.
+		_road_wins()
+		var flags: Array = d.plan.get("flags", [false, false, false])
+		_lots_dirty = bool(flags[0])
+		_lots_light = bool(flags[1])
+		_roads_moved = bool(flags[2])
+		_usable_cache.clear()
+		services.plants = power.sources()
+		services.update(network, lots, buildings)
+		lots_changed.emit()
+	else:
+		_road_wins()
+		_lots_dirty = true
+		_refresh()
 	# Factories from before industry chains take up the local one.
 	for key in buildings:
 		if buildings[key].zone == ZoneMap.Zone.INDUSTRIAL and not buildings[key].has("chain"):
