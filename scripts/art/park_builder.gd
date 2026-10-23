@@ -87,7 +87,12 @@ static func build_site(site: Dictionary, seed: int, to_curb: float, town: String
 		"courthouse": b._courthouse(size, to_curb)
 		"water_tower": b._town_tower(size, to_curb, town)
 		"grain_elevator": b._elevator(size, to_curb)
-		"football": b._football(size, to_curb)
+		"football": b._football(size, to_curb, site.get("venue_built", []), bool(site.get("event_on", false)))
+		"fairgrounds": b._fairgrounds(size, to_curb, str(site.name), site.get("venue_built", []),
+			bool(site.get("event_on", false)))
+		"motel": b._motel(size, to_curb, str(site.name))
+		"diner": b._diner(size, to_curb, str(site.name))
+		"gas_station": b._gas_station(size, to_curb, str(site.name))
 	var lawn := b._lawn.commit()
 	if lawn.get_surface_count() > 0:
 		lawn.surface_set_material(0, lawn_material())
@@ -605,7 +610,7 @@ func _elevator(size: Vector2, to_curb: float) -> void:
 
 # ---------------------------------------------------------------- football
 
-func _football(size: Vector2, to_curb: float) -> void:
+func _football(size: Vector2, to_curb: float, built := [], on := false) -> void:
 	var hx := size.x * 0.5
 	var hz := size.y * 0.5
 	_lawn_rect(-hx, hx, -hz, hz, Color("#557a36"), maxf(care, 0.75))
@@ -640,8 +645,21 @@ func _football(size: Vector2, to_curb: float) -> void:
 		ring.append(Vector3(cos(TAU * i / 20.0) * 4.0, 0, sin(TAU * i / 20.0) * 4.0))
 	_flat_poly(ring, 0.065, Color("#6e1f2a"))
 	# Home bleachers on the far side, a press box on top; visitors near the street.
-	_bleachers(Vector3(0, 0, fz + 5.0), 60.0, 10, true)
+	# The boosters' home grandstand doubles the home side.
+	_bleachers(Vector3(0, 0, fz + 5.0), 80.0 if "home_stands" in built else 60.0, 14 if "home_stands" in built else 10, true)
 	_bleachers(Vector3(0, 0, -fz - 5.0), 30.0, 5, false)
+	if "concerts" in built:
+		# A summer stage at the west end zone, its roof on four trusses.
+		var st := Vector3(-fx - 6.0, 0, 0)
+		_box("paint", Vector3(6.0, 1.2, 14.0), st + Vector3(0, 0.6, 0), DARK)
+		for u in [-1.0, 1.0]:
+			for v in [-1.0, 1.0]:
+				_box("paint", Vector3(0.4, 7.0, 0.4), st + Vector3(u * 2.6, 4.2, v * 6.8), GALV)
+		_box("paint", Vector3(6.6, 0.5, 14.6), st + Vector3(0, 7.9, 0), DARK)
+	if on:
+		# Game night: a crowd in the stands (bands of colour on the seats).
+		for i in 3:
+			_box("paint", Vector3(50.0, 0.5, 0.5), Vector3(0, 1.2 + i * 1.1, fz + 6.0 + i * 1.5), Color("#6e1f2a").lerp(WHITE, 0.3 * i))
 	_box("siding", Vector3(14.0, 3.0, 3.6), Vector3(0, 6.6, fz + 5.0 + 10 * 0.75 + 1.4), Color("#d8d2c2"))
 	_flat_roofed_at("siding", 0.0, 14.0, 3.6, fz + 5.0 + 10 * 0.75 + 1.4, 8.1, 8.4, Color("#d8d2c2"))
 	_glass(Vector3(0, 7.0, fz + 5.0 + 10 * 0.75 - 0.42), Vector3(-1, 0, 0), 12.0, 1.4, 0.0)
@@ -936,3 +954,226 @@ func _nature_trail(size: Vector2, spots: Array) -> void:
 	var sign := Vector3(-hx + 1.0, 0, hz * 0.2)
 	_box("paint", Vector3(0.15, 1.3, 0.15), sign + Vector3(0, 0.65, 0), WOOD)
 	_box("paint", Vector3(0.9, 0.5, 0.08), sign + Vector3(0, 1.1, 0), Color("#5a3e2a"))
+
+
+# ---------------------------------------------------------------- tourism
+
+## A county fairgrounds, benchmarked against Indiana county fairs: a
+## gravel lot and an entrance arch at the road, a steel exhibit building,
+## long open-sided livestock barns, a covered grandstand facing a dirt
+## arena or a half-mile harness track, and open ground where the midway
+## sets up for fair week.
+func _fairgrounds(size: Vector2, to_curb: float, name: String, built: Array, on: bool) -> void:
+	var hx := size.x * 0.5
+	var hz := size.y * 0.5
+	_lawn_rect(-hx, hx, -hz, hz, Color("#6a8a40"), 0.35)
+	var gravel := Color("#b5ad9c")
+	# The way in: a gravel drive, an arch with the fair's name, the lot.
+	_flat_rect("gravel", -4.0, 4.0, -hz - to_curb, -hz + 30.0, 0.05, gravel)
+	for sx in [-1.0, 1.0]:
+		_box("paint", Vector3(0.6, 6.0, 0.6), Vector3(sx * 5.5, 3.0, -hz + 6.0), WHITE)
+	_box("paint", Vector3(12.0, 1.4, 0.3), Vector3(0, 6.2, -hz + 6.0), Color("#2f5a3a"))
+	labels.append({"pos": Vector3(0, 6.2, -hz + 5.8), "normal": Vector3(0, 0, -1), "text": name.to_upper(),
+		"height": 0.7, "color": Color("#f2ecd8")})
+	_flat_rect("gravel", -hx + 4.0, -14.0, -hz + 4.0, -hz + 50.0, 0.05, gravel)
+	if on:
+		# Fair week: the lot fills with cars and pickups.
+		var x := -hx + 7.0
+		while x < -18.0:
+			for row in 4:
+				if rng.randf() < 0.85:
+					var col: Color = [Color("#8a1f1f"), Color("#e8e6df"), Color("#2f3d55"), Color("#4a4d52"),
+						Color("#6a6e30"), Color("#b0b4b6")][rng.randi() % 6]
+					_box("paint", Vector3(1.9, 1.5, 4.8), Vector3(x, 0.75, -hz + 10.0 + row * 10.0), col)
+			x += 2.8
+	_fence(Vector2(-hx + 1.0, -hz + 1.0), Vector2(hx - 1.0, hz - 1.0), 1.5)
+	# The exhibit building: a steel hall with a gable roof.
+	var ex := Vector3(40.0, 0, -hz + 32.0)
+	_box("metal", Vector3(40.0, 5.0, 18.0), ex + Vector3(0, 2.5, 0), Color("#c9ccc8"))
+	_gable_roof(ex.x, ex.z, 5.0, 18.0, 2.4, 40.0, true, Color("#8a2a24"), Color("#c9ccc8"))
+	_overhead_door(ex.x - 8.0, ex.z - 9.0, 4.0, 3.6, Color("#e2e0d8"))
+	# Livestock barns: long, low, open-sided pole barns.
+	var barns := 5 if "show_barns" in built else 2
+	for i in barns:
+		var bz := -20.0 + i * 18.0
+		_barn_shed(Vector3(-hx + 40.0, 0, bz), 52.0, 12.0)
+	if "show_barns" in built:
+		_box("paint", Vector3(10.0, 0.2, 6.0), Vector3(-hx + 80.0, 0.1, -20.0), CONCRETE)  # wash rack
+	if "expo_hall" in built:
+		var eh := Vector3(-30.0, 0, hz - 26.0)
+		_box("metal", Vector3(60.0, 8.0, 30.0), eh + Vector3(0, 4.0, 0), Color("#d8d6cc"))
+		_gable_roof(eh.x, eh.z, 8.0, 30.0, 3.0, 60.0, true, Color("#3f4a52"), Color("#d8d6cc"))
+		_overhead_door(eh.x, eh.z - 15.0, 6.0, 5.0, Color("#e8e6df"))
+	# The grandstand faces a track or a dirt arena.
+	var arena := Vector3(55.0, 0, 30.0)
+	if "harness" in built:
+		# An oval of packed clay with a white rail, the infield in grass.
+		_oval(arena, 150.0, 70.0, 12.0, Color("#a07a54"))
+		_oval(arena, 124.0, 44.0, 0.6, WHITE, 0.07)
+	else:
+		_flat_rect("gravel", arena.x - 35.0, arena.x + 35.0, arena.z - 18.0, arena.z + 14.0, 0.05, Color("#9a7a58"))
+	if "derby" in built:
+		# Concrete barriers round the pit.
+		for sx in [-1.0, 1.0]:
+			_box("paint", Vector3(0.6, 0.8, 30.0), arena + Vector3(sx * 22.0, 0.4, -2.0), CONCRETE)
+		_box("paint", Vector3(44.0, 0.8, 0.6), arena + Vector3(0, 0.4, -17.0), CONCRETE)
+		if on:
+			for i in 6:
+				_box("paint", Vector3(2.0, 1.4, 5.0), arena + Vector3(-15.0 + i * 6.0, 0.7, -6.0 + (i % 2) * 6.0),
+					[Color("#c23a3a"), Color("#e8c23a"), Color("#2f7ac0"), Color("#4aa86a")][i % 4], Basis(Vector3.UP, i * 0.7))
+	var gs := arena + Vector3(0, 0, 26.0 if "harness" not in built else 44.0)
+	var long := 70.0 if "grandstand" in built else 30.0
+	_bleachers(gs, long, 12 if "grandstand" in built else 6, true)
+	if "grandstand" in built:
+		# A steel roof over the seats on posts at the back.
+		for i in 6:
+			_box("paint", Vector3(0.3, 9.0, 0.3), gs + Vector3(-long * 0.5 + i * long / 5.0, 4.5, 9.5), GALV)
+		_box("metal", Vector3(long + 2.0, 0.3, 11.0), gs + Vector3(0, 9.2, 5.0), Color("#8a8f94"),
+			Basis(Vector3.RIGHT, -0.08))
+	# The midway: open gravel ground, with the carnival only in fair week.
+	var mid := Vector3(-20.0, 0, 10.0)
+	_flat_rect("gravel", mid.x - 30.0, mid.x + 30.0, mid.z - 25.0, mid.z + 25.0, 0.05, gravel)
+	if on and "midway" in built:
+		_ferris_wheel(mid + Vector3(-14.0, 0, 8.0))
+		_ride(mid + Vector3(10.0, 0, 10.0))
+		for i in 6:
+			# Food stands: white trailers with coloured awnings.
+			var p := mid + Vector3(-24.0 + i * 9.0, 0, -18.0)
+			_box("paint", Vector3(6.0, 2.8, 2.6), p + Vector3(0, 1.6, 0), WHITE)
+			_box("paint", Vector3(6.4, 0.1, 1.6), p + Vector3(0, 2.7, -1.9), [Color("#c23a3a"), Color("#e8c23a"),
+				Color("#2f7ac0")][i % 3], Basis(Vector3.RIGHT, 0.25))
+	for i in 6:
+		var p := Vector3(rng.randf_range(-hx + 10.0, hx - 10.0), 0, rng.randf_range(hz - 20.0, hz - 6.0))
+		var pick := TreeField.pick(rng)
+		trees.append([p, pick[0], pick[1], rng.randf_range(0.9, 1.2)])
+
+
+## A long open-sided livestock barn: posts, a gable roof, pens of gates.
+func _barn_shed(c: Vector3, length: float, depth: float) -> void:
+	var n := int(length / 6.0)
+	for i in n + 1:
+		for sz in [-1.0, 1.0]:
+			_box("paint", Vector3(0.25, 3.2, 0.25), c + Vector3(-length * 0.5 + i * length / n, 1.6, sz * depth * 0.5), WOOD)
+	_gable_roof(c.x, c.z, 3.2, depth, 1.8, length, true, Color("#9a9fa2"), Color("#c9c4b4"))
+	_flat_rect("gravel", c.x - length * 0.5, c.x + length * 0.5, c.z - depth * 0.5, c.z + depth * 0.5, 0.055, Color("#a08a64"))
+
+
+## A flat ring (an oval track or rail) of `width`.
+func _oval(c: Vector3, w: float, d: float, width: float, col: Color, y := 0.055) -> void:
+	var segs := 40
+	for i in segs:
+		var a0 := TAU * i / segs
+		var a1 := TAU * (i + 1) / segs
+		var pts := []
+		for e in [[a0, 0.5], [a1, 0.5], [a1, -0.5], [a0, -0.5]]:
+			var a: float = e[0]
+			var k: float = e[1] * width
+			pts.append(c + Vector3(cos(a) * (w * 0.5 + k), 0, sin(a) * (d * 0.5 + k)))
+		_flat_poly(pts, y, col)
+
+
+func _ferris_wheel(c: Vector3) -> void:
+	var r := 9.0
+	var hub := c + Vector3(0, r + 1.5, 0)
+	for sz in [-0.8, 0.8]:
+		_strut(c + Vector3(-4.0, 0, sz), hub + Vector3(0, 0, sz), 0.25, WHITE)
+		_strut(c + Vector3(4.0, 0, sz), hub + Vector3(0, 0, sz), 0.25, WHITE)
+	var prev := Vector3.ZERO
+	for i in 17:
+		var a := TAU * i / 16.0
+		var p := hub + Vector3(cos(a) * r, sin(a) * r, 0)
+		if i > 0:
+			_strut(prev, p, 0.15, Color("#e8c23a"))
+			_strut(hub, p, 0.06, WHITE)
+			_box("paint", Vector3(1.2, 1.0, 1.0), p + Vector3(0, -0.7, 0),
+				[Color("#c23a3a"), Color("#2f7ac0"), Color("#4aa86a")][i % 3])
+		prev = p
+
+
+func _ride(c: Vector3) -> void:
+	# A swing ride: a tower, a spinning crown and seats on chains.
+	_cyl_y(c + Vector3(0, 5.0, 0), 0.5, 10.0, Color("#d8d2c2"))
+	_cylinder("paint", c + Vector3(0, 9.0, 0), 5.0, 0.8, Color("#c23a3a"), 16)
+	for i in 12:
+		var a := TAU * i / 12.0
+		var p := c + Vector3(cos(a) * 6.5, 5.0, sin(a) * 6.5)
+		_strut(c + Vector3(cos(a) * 5.0, 9.0, sin(a) * 5.0), p, 0.04, GALV)
+		_box("paint", Vector3(0.6, 0.4, 0.6), p, Color("#e8c23a"))
+	_cylinder("paint", c, 7.5, 0.3, CONCRETE, 20)
+
+
+## A one-storey roadside motel: a row of rooms under a low roof with a
+## walkway, a lobby at the end, a pole sign and parking in front.
+func _motel(size: Vector2, to_curb: float, name: String) -> void:
+	var hx := size.x * 0.5
+	var hz := size.y * 0.5
+	_parking(-hx + 1.0, hx - 1.0, -hz, -hz + 14.0, to_curb, 0.0)
+	var wall := Color("#d9cdb4")
+	var z := hz - 8.0
+	_box("brick", Vector3(size.x - 6.0, 3.2, 10.0), Vector3(0, 1.6, z), wall)
+	_hip_roof(0.0, z, 3.2, size.x - 6.0, 10.0, 1.4, Color("#5a4038"))
+	_box("paint", Vector3(size.x - 6.0, 0.15, 2.2), Vector3(0, 3.0, z - 6.1), Color("#e8e2d0"))
+	var n := int((size.x - 10.0) / 3.6)
+	for i in n:
+		var x := -hx + 5.0 + i * 3.6
+		_box("paint", Vector3(0.95, 2.1, 0.05), Vector3(x, 1.05, z - 5.03), [Color("#3a6a8a"), Color("#8a3a2a")][i % 2])
+		_glass(Vector3(x + 1.4, 1.5, z - 5.03), Vector3(1, 0, 0), 1.2, 1.0, 0.6)
+	var sign := Vector3(hx - 4.0, 0, -hz + 2.0)
+	_cyl_y(sign + Vector3(0, 4.0, 0), 0.15, 8.0, DARK)
+	_box("paint", Vector3(4.6, 1.8, 0.3), sign + Vector3(0, 7.4, 0), Color("#b8342a"))
+	labels.append({"pos": sign + Vector3(0, 7.4, -0.17), "normal": Vector3(0, 0, -1), "text": name.to_upper(),
+		"height": 0.35, "color": Color("#fff6d8")})
+	labels.append({"pos": sign + Vector3(0, 6.2, -0.17), "normal": Vector3(0, 0, -1), "text": "VACANCY",
+		"height": 0.3, "color": Color("#ff6a4a")})
+
+
+## A small-town diner: brick and stainless with a band of windows, a pole
+## sign and a lot.
+func _diner(size: Vector2, to_curb: float, name: String) -> void:
+	var hx := size.x * 0.5
+	var hz := size.y * 0.5
+	_parking(-hx + 1.0, hx - 1.0, -hz, -hz + 12.0, to_curb, hx - 5.0)
+	var c := Vector3(-1.0, 0, hz - 9.0)
+	_box("brick", Vector3(18.0, 1.1, 11.0), c + Vector3(0, 0.55, 0), Color("#8a3a2a"))
+	_box("metal", Vector3(18.0, 2.6, 11.0), c + Vector3(0, 2.4, 0), Color("#c8ccce"))
+	_glass(c + Vector3(0, 2.2, -5.53), Vector3(1, 0, 0), 15.0, 1.4, 0.2)
+	_box("paint", Vector3(18.6, 0.4, 11.6), c + Vector3(0, 3.9, 0), Color("#b8342a"))
+	labels.append({"pos": c + Vector3(0, 3.9, -5.82), "normal": Vector3(0, 0, -1), "text": name.to_upper(),
+		"height": 0.32, "color": Color("#fff6d8")})
+	var sign := Vector3(-hx + 3.0, 0, -hz + 2.0)
+	_cyl_y(sign + Vector3(0, 3.5, 0), 0.15, 7.0, DARK)
+	_box("paint", Vector3(3.6, 1.6, 0.3), sign + Vector3(0, 6.6, 0), Color("#f2ecd8"))
+	labels.append({"pos": sign + Vector3(0, 6.6, -0.17), "normal": Vector3(0, 0, -1), "text": "EAT",
+		"height": 0.8, "color": Color("#b8342a")})
+
+
+## A gas station: a canopy over two islands of pumps, a convenience store
+## at the back and a price sign by the road.
+func _gas_station(size: Vector2, to_curb: float, name: String) -> void:
+	var hx := size.x * 0.5
+	var hz := size.y * 0.5
+	_flat_rect("asphalt", -hx + 1.0, hx - 1.0, -hz, hz - 1.0, 0.05)
+	for x in [-hx + 7.0, hx - 7.0]:
+		_flat_rect("asphalt", x - 4.0, x + 4.0, -hz - to_curb, -hz, 0.06)
+	var cz := -hz + 13.0
+	for i in 2:
+		var ix := -6.0 + i * 12.0
+		_box("paint", Vector3(1.2, 0.2, 7.0), Vector3(ix, 0.1, cz), CONCRETE)
+		for j in 2:
+			_box("paint", Vector3(0.7, 1.7, 1.0), Vector3(ix, 0.95, cz - 1.8 + j * 3.6), Color("#e8e6df"))
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			_box("paint", Vector3(0.5, 5.0, 0.5), Vector3(sx * 7.0, 2.5, cz + sz * 3.0), WHITE)
+	_box("paint", Vector3(26.0, 1.0, 12.0), Vector3(0, 5.4, cz), WHITE)
+	_box("paint", Vector3(26.1, 0.35, 12.1), Vector3(0, 5.2, cz), Color("#2f5a8a"))
+	var st := Vector3(0, 0, hz - 8.0)
+	_box("brick", Vector3(18.0, 4.0, 11.0), st + Vector3(0, 2.0, 0), Color("#b8ad98"))
+	_box("paint", Vector3(18.4, 0.6, 11.4), st + Vector3(0, 4.3, 0), Color("#2f5a8a"))
+	_glass(st + Vector3(-2.0, 1.6, -5.53), Vector3(1, 0, 0), 10.0, 2.2, 0.3)
+	labels.append({"pos": st + Vector3(0, 4.3, -5.72), "normal": Vector3(0, 0, -1), "text": name.to_upper(),
+		"height": 0.3, "color": Color("#ffffff")})
+	var sign := Vector3(hx - 3.0, 0, -hz + 2.0)
+	_cyl_y(sign + Vector3(0, 3.0, 0), 0.15, 6.0, DARK)
+	_box("paint", Vector3(2.4, 2.6, 0.3), sign + Vector3(0, 5.8, 0), Color("#2f5a8a"))
+	labels.append({"pos": sign + Vector3(0, 5.8, -0.17), "normal": Vector3(0, 0, -1), "text": "GAS\n3.19",
+		"height": 0.45, "color": Color("#ffffff")})

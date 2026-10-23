@@ -26,6 +26,7 @@ const LEAF_SHADER := """
 shader_type spatial;
 render_mode cull_disabled;
 uniform sampler2D leaf_tex : filter_linear_mipmap;
+uniform sampler2D twig_tex : filter_linear_mipmap;
 // Set by DayNight: snow cover, and the season as (autumn, bare, spring, dry).
 global uniform float snow;
 global uniform vec4 season_look;
@@ -97,10 +98,19 @@ void fragment() {
 		vec3 fresh = leaf * vec3(1.25, 1.3, 0.7);
 		if (species > 3.5) fresh = vec3(0.75, 0.32, 0.4);
 		leaf = mix(leaf, fresh, season_look.z);
-		// Leaves fall: the crown thins to a lace of bare twigs.
-		float h = fract(sin(dot(floor(leaf_pos * 2.5), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
-		alpha *= step(bare * 0.88, h);
-		leaf = mix(leaf, vec3(0.05, 0.042, 0.036), smoothstep(0.3, 0.9, bare));
+		// Leaves fall and the crown becomes a lace of fine grey-brown twigs:
+		// each card switches to a branching twig texture. Up close it reads
+		// as twigs; far off its mipmaps blur it to a soft haze, never black
+		// speckle. Benchmark: aerial and oblique photos of Indiana woods in
+		// November to March.
+		float b = smoothstep(0.3, 0.9, bare);
+		vec4 tw = texture(twig_tex, UV);
+		tw.a *= 1.0 + lod * 0.35;
+		float h = fract(sin(dot(floor(leaf_pos * 0.55), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+		alpha = mix(alpha, tw.a * step(bare * 0.3, h), b);
+		t.rgb = mix(t.rgb, tw.rgb, b);
+		vec3 twig = vec3(0.15, 0.13, 0.11) * (0.85 + tree_rand * 0.3);
+		leaf = mix(leaf, twig, b);
 	}
 	// Snow resting on the tops of the crowns.
 	leaf = mix(leaf, vec3(0.4, 0.42, 0.45), snow * smoothstep(0.35, 0.95, top) * 0.75);
@@ -361,6 +371,7 @@ static func _leaf_material(fades := false) -> ShaderMaterial:
 		_leaf_mat = ShaderMaterial.new()
 		_leaf_mat.shader = shader
 		_leaf_mat.set_shader_parameter("leaf_tex", _leaf_texture())
+		_leaf_mat.set_shader_parameter("twig_tex", _twig_texture())
 		_wild_leaf_mat = _leaf_mat.duplicate()
 		_wild_leaf_mat.set_shader_parameter("fade_on", true)
 	return _wild_leaf_mat if fades else _leaf_mat
@@ -405,5 +416,43 @@ static func _leaf_texture() -> ImageTexture:
 					# Lighter toward the tip on the sunny side, a faint midrib.
 					var l := shade * (0.88 + 0.12 * along) * (0.9 if absf(across) < 0.08 else 1.0)
 					img.set_pixel(x, y, Color(l, l, l, 1.0))
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+## Bare winter twigs on transparency: a few limbs branch outward from near
+## the middle, forking and thinning to fine twigs at the edge.
+static func _twig_texture() -> ImageTexture:
+	var size := 256
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 91
+	var stack := []
+	for k in 7:
+		var a := rng.randf_range(0, TAU)
+		var start := Vector2(size, size) * 0.5 + Vector2(cos(a), sin(a)) * rng.randf_range(0, 30)
+		stack.append([start, a + rng.randf_range(-0.4, 0.4), 34.0, 2.4])
+	while not stack.is_empty():
+		var br: Array = stack.pop_back()
+		var p: Vector2 = br[0]
+		var ang: float = br[1]
+		var len: float = br[2]
+		var w: float = br[3]
+		var e := p + Vector2(cos(ang), sin(ang)) * len
+		var steps := int(len * 2.0)
+		for i in steps + 1:
+			var q := p.lerp(e, float(i) / steps)
+			var r := int(ceil(w))
+			for y in range(int(q.y) - r, int(q.y) + r + 1):
+				for x in range(int(q.x) - r, int(q.x) + r + 1):
+					if x < 0 or y < 0 or x >= size or y >= size:
+						continue
+					if Vector2(x, y).distance_to(q) <= w * 0.5 + 0.35:
+						var l := rng.randf_range(0.8, 1.0)
+						img.set_pixel(x, y, Color(l, l * 0.97, l * 0.94, 1.0))
+		if len > 6.0 and (e - Vector2(size, size) * 0.5).length() < size * 0.48:
+			for f in 2 + (1 if rng.randf() < 0.4 else 0):
+				stack.append([e, ang + rng.randf_range(-0.75, 0.75), len * rng.randf_range(0.6, 0.78), maxf(w * 0.7, 1.0)])
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
