@@ -211,6 +211,10 @@ func _tick(msg: Dictionary) -> void:
 		region.cities[my_city].sim.tick()
 		if region.tick_count % Region.TRADE_EVERY == 0:
 			region.settle_trade()
+			# Service deals, against the neighbors' latest copies. The server's
+			# step is the real one: if this one comes out different, the
+			# money drifts and the town asks for a fresh copy.
+			Interlocal.region_step(region)
 	else:
 		region.tick()
 	since_tick = 0.0

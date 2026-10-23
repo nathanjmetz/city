@@ -160,7 +160,7 @@ func checksums() -> Dictionary:
 	for id in cities:
 		var s: CitySim = cities[id].sim
 		out[id] = hash([s.tick_count, s.economy.money, s.trade.net, s.buildings.size(),
-			s.network.segments.size(), s.stats.population, s.traffic.cars.size()])
+			s.network.segments.size(), s.stats.population, s.traffic.cars.size(), s.interlocal.deals.keys()])
 	return out
 
 
