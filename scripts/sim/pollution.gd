@@ -142,6 +142,7 @@ func rebuild(sim: CitySim) -> void:
 			pts.append([CivicHubs.cell_center(h, c), w])
 		var name: String = "Town " + CivicHubs.KINDS[h.kind].name.to_lower()
 		_add(sim, "hub:%d" % id, _unique(used_names, name), h.kind, "", {"type": "hub", "id": id}, pts)
+	_add_power(sim, used_names)
 	ids = sim.farms.farms.keys()
 	ids.sort()
 	for id in ids:
@@ -230,6 +231,34 @@ func _add_roads(sim: CitySim, used_names: Dictionary) -> void:
 				{"type": "road", "id": group[0]}, [], lines, 0.0, 0.0, 0.0, 0.0)
 			s.segs = group
 			_finish(s)
+
+
+## Power companies that burn fuel or spin turbines: one point per unit, with
+## the fixes the company's own development tree offers.
+func _add_power(sim: CitySim, used_names: Dictionary) -> void:
+	var ids := sim.power.sites.keys()
+	ids.sort()
+	for id in ids:
+		var site: Dictionary = sim.power.sites[id]
+		var kind := "power_" + str(site.plant)
+		if site.cells.is_empty() or not Balance.POLLUTION_SOURCES.has(kind):
+			continue
+		var spec: Dictionary = Balance.POLLUTION_SOURCES[kind]
+		var pts := []
+		for c in site.cells:
+			pts.append([Power.cell_center(site, c), 1.0])
+		var ref := "power:%d" % id
+		var plain: String = Power.PLANTS[site.plant].name
+		var s := _make(ref, _unique(used_names, _named(sim, ref, plain)), kind, "", {"type": "power", "id": id}, pts, [],
+			float(spec.smoke) * Agency.effect(site, Power.TREE, "smoke*"), float(spec.noise), float(spec.ground),
+			float(spec.reach))
+		for node in Power.TREE:
+			if node.id in ["scrubbers", "repower"] and site.plant in node.get("plants", []) and not node.id in site.built:
+				s.fixes.append("%s (%s): %s. Its leader picks it up once the company can afford it." % [
+					node.name, "$" + CitySim.money_text(int(node.cost)), node.note])
+		if site.plant == "coal":
+			s.fixes.append("Power companies run by better-schooled leaders build clean plants: schools in town help the next one.")
+		_finish(s)
 
 
 static func road_pieces(net: RoadNetwork, id: int) -> int:

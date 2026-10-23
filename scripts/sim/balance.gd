@@ -667,6 +667,14 @@ const POLLUTION_SOURCES := {
 	"recycling_1": {"smoke": 1.0, "noise": 64.0, "ground": 0.1, "reach": 80.0},
 	"recycling_2": {"smoke": 0.6, "noise": 62.0, "ground": 0.05, "reach": 60.0},
 	"recycling_3": {"smoke": 0.3, "noise": 58.0, "ground": 0.0, "reach": 0.0},
+	# Power companies (see Power), per unit. An old coal boiler: stack soot
+	# and the ash pond leaching into groundwater (Petersburg Generating
+	# Station's real coal-ash problem), belts and fans about 70 dBA. A gas
+	# engine hall is loud but burns clean. A wind turbine is about 45 dBA at
+	# 300 m (the usual US siting limit); panels and dams are quiet.
+	"power_coal": {"smoke": 14.0, "noise": 70.0, "ground": 0.4, "reach": 250.0},
+	"power_gas": {"smoke": 1.5, "noise": 72.0, "ground": 0.0, "reach": 0.0},
+	"power_wind": {"smoke": 0.0, "noise": 70.0, "ground": 0.0, "reach": 0.0},
 	# Fertilizer washing off fields: nitrate in wells is a real Indiana issue.
 	# Per field cell, so a big farm adds up.
 	"farm": {"smoke": 0.0, "noise": 0.0, "ground": 0.03, "reach": 70.0},

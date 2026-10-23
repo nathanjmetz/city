@@ -249,6 +249,9 @@ static func quick_fix(sim: CitySim, s: Dictionary, kind: String) -> String:
 				return "Noise walls on it would help."
 		"landfill":
 			return "Replacing it with recycling would help."
+		"power_coal":
+			if not s.fixes.is_empty():
+				return "Smokestack scrubbers or a switch to gas there would help."
 	if s.owner != "" and not sim.pollution.next_equipment(s.ref, s.owner).is_empty():
 		return "Cleaner equipment there would help."
 	return "Homes farther away would be spared."
