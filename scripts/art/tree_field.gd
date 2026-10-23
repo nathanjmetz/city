@@ -50,9 +50,12 @@ void vertex() {
 	vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 	fade = 1.0;
 	if (fade_on) {
-		fade = 1.0 - smoothstep(tree_fade.z * 0.72, tree_fade.z * 0.97, distance(origin.xz, tree_fade.xy));
+		// Toward the edge of the woods drawn, and from high up, where each
+		// tree is a speck and the ground's painted canopy reads better.
+		fade = (1.0 - smoothstep(tree_fade.z * 0.55, tree_fade.z * 0.97, distance(origin.xz, tree_fade.xy)))
+			* (1.0 - smoothstep(1200.0, 1700.0, tree_fade.w));
 	}
-	VERTEX *= mix(0.4, 1.0, fade);
+	VERTEX *= mix(0.4, 1.0, fade) * step(0.001, fade);
 	leaf_pos = VERTEX;
 	species = floor(INSTANCE_CUSTOM.a * 8.0);
 	tree_rand = fract(sin(dot(origin.xz, vec2(12.9898, 78.233))) * 43758.5453);
@@ -144,7 +147,8 @@ void vertex() {
 	float fade = 1.0;
 	if (fade_on) {
 		vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-		fade = 1.0 - smoothstep(tree_fade.z * 0.72, tree_fade.z * 0.97, distance(origin.xz, tree_fade.xy));
+		fade = (1.0 - smoothstep(tree_fade.z * 0.55, tree_fade.z * 0.97, distance(origin.xz, tree_fade.xy)))
+			* (1.0 - smoothstep(1200.0, 1700.0, tree_fade.w));
 	}
 	VERTEX *= fade;
 }

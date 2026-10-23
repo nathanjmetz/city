@@ -158,7 +158,10 @@ void fragment() {
 	vec3 leaves = mix(canopy.rgb, fall_leaves.rgb * (0.8 + 0.5 * mid), season_look.x);
 	leaves = mix(leaves, twigs.rgb, season_look.y);
 	vec3 tops = leaves * (0.65 + 0.7 * crowns) * (0.85 + 0.3 * big);
-	float painted = smoothstep(tree_fade.z * 0.72, tree_fade.z * 0.97, distance(p, tree_fade.xy));
+	// Painted past the trees drawn (fading in as they thin out), and under
+	// them too from high up, as the woods look from a plane: all canopy.
+	float painted = max(smoothstep(tree_fade.z * 0.55, tree_fade.z * 0.97, distance(p, tree_fade.xy)),
+		smoothstep(250.0, 1100.0, tree_fade.w));
 	vec3 woods = mix(litter.rgb * (0.8 + 0.4 * clump), tops, painted);
 	// A ragged edge, as real woods have, not the straight line between samples.
 	col = mix(col, woods, smoothstep(0.3, 0.65, cover.r + (clump - 0.5) * 0.45 + (mid - 0.5) * 0.25));

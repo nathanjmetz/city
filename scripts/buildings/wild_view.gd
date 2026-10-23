@@ -12,6 +12,9 @@ const MIN_RADIUS := 700.0
 const MAX_RADIUS := 1600.0
 ## Brush is only drawn this close; past it, it is too small to see.
 const DETAIL_RADIUS := 560.0
+## Above this height the wild trees are gone (faded out by then): the
+## painted canopy carries the woods.
+const TREES_OFF := 1750.0
 ## Milliseconds a frame may spend laying out new chunks.
 const BUDGET_MS := 4
 ## Land that is growing back is redrawn once a game day (a month of growth).
@@ -57,7 +60,16 @@ func _process(_delta: float) -> void:
 	var focus := _ground_focus(cam, radius)
 	# Trees thin out and shrink toward the edge (TreeField's shader), where
 	# the ground's painted canopy takes over.
-	RenderingServer.global_shader_parameter_set("tree_fade", Vector4(focus.x, focus.y, radius, 0.0))
+	# w is the camera's height: from high up the trees fade out and the
+	# ground's painted canopy covers the woods (TreeField and TerrainView).
+	RenderingServer.global_shader_parameter_set("tree_fade", Vector4(focus.x, focus.y, radius, height))
+	if height > TREES_OFF:
+		for c in _chunks:
+			_chunks[c].queue_free()
+		_chunks.clear()
+		_detail.clear()
+		_stale.clear()
+		return
 	var size := Vegetation.CHUNK
 	var day := sim.tick_count / REGROW_REDRAW
 	if day != _last_regrow:
