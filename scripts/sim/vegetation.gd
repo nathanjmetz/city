@@ -220,6 +220,7 @@ static func sources(sim: Object) -> Dictionary:
 		var tie: PackedVector3Array = sim.power.tie_route(sim.network, sim.region_links, s)
 		if tie.size() >= 2:
 			out["et%d %d %s" % [id, tie.size(), tie[-1]]] = _line_cells.bind(tie, Balance.POWER_TIE_CLEAR)
+			out["es%d %s" % [id, tie[-1]]] = _poly_cells.bind(Power.substation_corners(tie))
 	for id in sim.industry.sites:
 		var s: Dictionary = sim.industry.sites[id]
 		out["iy%d" % id] = _poly_cells.bind(sim.industry._yard(s))
