@@ -13,6 +13,10 @@ extends Node
 ##   Telemetry.event("kind", {...})   # anything else worth knowing
 
 const OUTBOX := "user://telemetry/outbox.json"
+## What hasn't gone into the outbox yet, saved every SPILL_EVERY seconds: if
+## the game dies, the next launch sends it as the end of that session.
+const SPILL := "user://telemetry/last.json"
+const SPILL_EVERY := 2.0
 ## Gathered events go into the outbox this often, in seconds.
 const FLUSH_EVERY := 30.0
 const PERF_EVERY := 15.0
@@ -56,6 +60,7 @@ var _load_status := ""
 var _booted := false
 var _errors := {}   # signature -> count this flush
 var _batch_n := 0
+var _spill_time := 0.0
 
 
 func _ready() -> void:
@@ -70,6 +75,7 @@ func _ready() -> void:
 	_logger = TelemetryLogger.new()
 	OS.add_logger(_logger)
 	_load_outbox()
+	_recover_spill()
 	var size := DisplayServer.screen_get_size()
 	event("start", {"os": OS.get_name(), "build": build(), "screen": [size.x, size.y],
 		"window": [get_viewport().get_visible_rect().size.x, get_viewport().get_visible_rect().size.y],
@@ -249,8 +255,11 @@ func _process(delta: float) -> void:
 		_perf_sample()
 	tracker.tick(now, _camera_height())
 	_flush_time += dt
+	_spill_time += dt
 	if _flush_time >= FLUSH_EVERY:
 		flush()
+	elif _spill_time >= SPILL_EVERY:
+		_spill()
 
 
 func _perf_sample() -> void:
@@ -472,7 +481,45 @@ func flush() -> void:
 		while _outbox.size() > OUTBOX_MAX:
 			_outbox.pop_front()
 		_save_outbox()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(SPILL))
 	_send()
+
+
+## Saves what's gathered since the last flush (and the recent actions), so a
+## crash or a force quit loses at most SPILL_EVERY seconds.
+func _spill() -> void:
+	_spill_time = 0.0
+	var events := _events.duplicate()
+	if not tracker.actions.is_empty():
+		events.append({"k": "actions", "t": snappedf(_now(), 0.01), "a": tracker.actions.duplicate()})
+	if events.is_empty():
+		return
+	DirAccess.make_dir_recursive_absolute(SPILL.get_base_dir())
+	var f := FileAccess.open(SPILL, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify({"session": session_id, "build": build(), "player": _player_id(),
+			"t": snappedf(_now(), 0.01), "events": events}))
+
+
+## The last session didn't close: it crashed, hung and was force quit, or the
+## machine went down. Its saved tail goes out as that session's last batch,
+## marked so the report counts it.
+func _recover_spill() -> void:
+	if not FileAccess.file_exists(SPILL):
+		return
+	var d = JSON.parse_string(FileAccess.get_file_as_string(SPILL))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(SPILL))
+	if typeof(d) != TYPE_DICTIONARY or not d.get("events") is Array:
+		return
+	var events: Array = d.events
+	var last := []
+	for e in events:
+		if e is Dictionary and e.get("k") == "actions" and e.get("a") is Array:
+			last = e.a
+	events.append({"k": "crashed", "t": d.get("t", 0.0), "replay": last.slice(-TelemetryTracker.REPLAY_MAX)})
+	_outbox.append({"id": "%s-end" % str(d.get("session", "")), "session": str(d.get("session", "")),
+		"build": str(d.get("build", "")), "player": str(d.get("player", "")), "events": events})
+	_save_outbox()
 
 
 func _player_id() -> String:

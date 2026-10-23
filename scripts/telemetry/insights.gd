@@ -206,6 +206,12 @@ static func _speed_fixes(ev: Dictionary, fixes: Array) -> void:
 		_fix(fixes, 55 + 2 * per_min, "Stutters: %.1f hitches a minute" % per_min,
 			"Frames over 100 ms while playing (worst %d ms)." % perf.map(func(p): return int(p.get("worst_ms", 0))).max(),
 			PERF_OWNER, "speed", _who(perf))
+	# Sessions that never closed: a crash, or a hang the player force quit.
+	var crashes: Array = ev.get("crashed", [])
+	if not crashes.is_empty():
+		_fix(fixes, 120 + 5 * _who(crashes) + mini(crashes.size(), 10), "Crashes: %d sessions ended without closing" % crashes.size(),
+			"The game died or hung and was force quit; each session's last actions are in its replay.",
+			PERF_OWNER, "speed", _who(crashes), crashes)
 	# Whole-second freezes: the game looks hung to the player.
 	var stalls: Array = ev.get("stall", [])
 	if not stalls.is_empty():
