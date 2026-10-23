@@ -23,9 +23,10 @@ extends Node
 ## app goes as high as the machine allows, up to Cinematic, and is never
 ## held back for the browser. The browser (and a desktop whose graphics
 ## chip only runs the Compatibility renderer) gets the same governor over
-## the tiers that renderer can draw, Low and Medium, starting at Low with
-## fewer pixels on a phone or tablet. This only touches drawing, never the
-## simulation, so every computer in a region still steps towns the same way.
+## the tiers that renderer can draw, Low to High, starting at Low with
+## fewer pixels on a phone or tablet and climbing while frames have room.
+## This only touches drawing, never the simulation, so every computer in a
+## region still steps towns the same way.
 ## `--quality low|medium|high|ultra|cinematic` on the command line pins a
 ## tier (for screenshots).
 
@@ -76,6 +77,11 @@ const SLOW_MS := 22.0
 const ROOM_FRAME_MS := 18.0
 const ROOM_PART_MS := 8.0
 const MIN_SCALE := 0.7
+## The browser (Compatibility renderer) climbs as far as High: its longer
+## detail, trees and shadows draw there; SSAO and the rest are desktop only.
+## Browser frames have room under this many ms (it can't time the parts).
+const BROWSER_TOP := HIGH
+const ROOM_BROWSER_MS := 20.0
 ## A single frame longer than this is a stall (a town loading, a shader
 ## compiling), not drawing load: it's left out rather than lowering the look.
 const STALL_MS := 250.0
@@ -123,7 +129,7 @@ func _ready() -> void:
 		return
 	browser = RenderingServer.get_current_rendering_method() == "gl_compatibility"
 	if browser:
-		_ceiling = MEDIUM
+		_ceiling = BROWSER_TOP
 	process_priority = 1000  # after the frame's own work
 	_guess = MEDIUM if browser else guess_tier(adapter, RenderingServer.get_video_adapter_type(),
 		OS.get_processor_count(), float(OS.get_memory_info().get("physical", 0)) / 1e9)
@@ -229,16 +235,16 @@ func label() -> String:
 ## The highest tier the Graphics menu offers here: one above the hardware
 ## guess, so a small computer can try a step up but is never handed a tier
 ## that's far beyond it (Cinematic on an 8 GB Mac mini runs it out of
-## memory). The browser draws Low and Medium only.
+## memory). The browser climbs as far as High (see BROWSER_TOP).
 func top() -> int:
-	return MEDIUM if browser else mini(_guess + 1, CINEMATIC)
+	return BROWSER_TOP if browser else mini(_guess + 1, CINEMATIC)
 
 
 ## What the Graphics menu picked: AUTO, or a fixed tier up to top().
 func choose(m: int) -> void:
 	m = clampi(m, AUTO, top())
 	mode = m
-	_ceiling = MEDIUM if browser else CINEMATIC
+	_ceiling = BROWSER_TOP if browser else CINEMATIC
 	if mode == AUTO:
 		_first_guess()
 	else:
@@ -311,7 +317,8 @@ func _process(_delta: float) -> void:
 		if _slow >= 2 or frame_ms > slow_ms * 2.0:
 			_slow = 0
 			_step_down(gpu_ms > cpu_ms)
-	elif frame_ms < ROOM_FRAME_MS and gpu_ms < ROOM_PART_MS and cpu_ms < ROOM_PART_MS:
+	elif (frame_ms < ROOM_BROWSER_MS) if browser \
+			else (frame_ms < ROOM_FRAME_MS and gpu_ms < ROOM_PART_MS and cpu_ms < ROOM_PART_MS):
 		_slow = 0
 		_room += 1
 		if _room >= 4:
