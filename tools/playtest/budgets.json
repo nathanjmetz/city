@@ -1,0 +1,15 @@
+{
+  "_about": "Budgets for tools/playtest/check.py, per result file (alone.json, region.json, web.json). A run over a fail value turns the check red; over a target it shows a warning. Desktop runs are headless (no drawing), so their frames are the game's own work on one CI core; the browser run draws in software, so only its memory and very long freezes mean much.",
+  "default": {
+    "freeze_fail_ms": 10000, "freeze_target_ms": 500,
+    "hitches_fail_per_min": 200, "hitches_target_per_min": 3,
+    "load_fail_s": 60, "load_target_s": 10,
+    "memory_fail_mb": 2500, "memory_target_mb": 1200
+  },
+  "web": {
+    "freeze_fail_ms": 30000, "freeze_target_ms": 5000,
+    "hitches_fail_per_min": 1000000, "hitches_target_per_min": 1000000,
+    "load_fail_s": 240, "load_target_s": 90,
+    "memory_fail_mb": 2000, "memory_target_mb": 800
+  }
+}

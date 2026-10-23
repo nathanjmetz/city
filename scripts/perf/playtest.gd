@@ -42,6 +42,8 @@ var _mem_start := 0.0
 var _result := {}
 var _actions := {}
 var _done := false
+var _causes := {}  # biggest stage -> ms of hitches it led
+var _step_hitches := 0
 
 
 ## Whether this run asked for a play-through, and for how long.
@@ -113,13 +115,19 @@ func _process(_delta: float) -> void:
 	_frames.append(ms)
 	_step_frames.append(ms)
 	var stages := _stage_diff()
-	if ms >= FREEZE_MS or (ms >= HITCH_MS and _freezes.size() < 40):
-		var top := {}
+	if ms >= HITCH_MS:
 		var keys := stages.keys()
 		keys.sort_custom(func(a, b): return stages[a] > stages[b])
-		for k in keys.slice(0, 6):
-			top[k] = snappedf(stages[k], 0.1)
-		_freezes.append({"ms": snappedf(ms, 0.1), "step": _step, "at_s": snappedf((now - _t0) / 1e6, 0.1), "stages": top})
+		# What the hitches spent most on, summed up by their biggest stage
+		# (the frame's untimed rest when no stage explains half of it).
+		var cause: String = keys[0] if not keys.is_empty() and stages[keys[0]] >= ms * 0.5 else "untimed"
+		_causes[cause] = _causes.get(cause, 0.0) + ms
+		_step_hitches += 1
+		if ms >= FREEZE_MS or _step_hitches <= 12:
+			var top := {}
+			for k in keys.slice(0, 6):
+				top[k] = snappedf(stages[k], 0.1)
+			_freezes.append({"ms": snappedf(ms, 0.1), "step": _step, "at_s": snappedf((now - _t0) / 1e6, 0.1), "stages": top})
 	if _frames.size() % 30 == 0:
 		_mem_peak = maxf(_mem_peak, memory_mb())
 
@@ -142,6 +150,7 @@ func _stage_diff() -> Dictionary:
 func _begin(step: String) -> void:
 	_end_step()
 	_step = step
+	_step_hitches = 0
 	_step_frames = PackedFloat32Array()
 	_step_t0 = Time.get_ticks_usec()
 
@@ -226,21 +235,25 @@ func _play() -> void:
 
 	_begin("road")
 	var far := g0 + out * (BLOCK * BLOCKS + 300.0)
-	_act("road", {"type": "build_road", "start": [g0.x, g0.z], "ctrl": [(g0.x + far.x) * 0.5, (g0.z + far.z) * 0.5], "end": [far.x, far.z]})
+	_act("road", {"type": "build_road", "start": [g0.x, g0.z], "ctrl": [(g0.x + far.x) * 0.5, (g0.z + far.z) * 0.5], "end": [far.x, far.z], "join": true})
 	await _seconds_wait(3.0)
 
 	_begin("grid")
 	var a := g0
 	var b := g0 + along * BLOCK * BLOCKS
 	var c := g0 + out * BLOCK * BLOCKS
-	_act("grid", {"type": "build_grid", "a": [a.x, a.z], "b": [b.x, b.z], "c": [c.x, c.z], "block": BLOCK})
+	_act("grid", {"type": "build_grid", "a": [a.x, a.z], "b": [b.x, b.z], "c": [c.x, c.z], "block": BLOCK, "join": true})
 	await _seconds_wait(3.0)
 
 	_begin("join_county")
 	var j := g0 + along * BLOCK * 2.0
 	var on_j := on + along * BLOCK * 2.0
-	if _act("county_road", {"type": "build_road", "start": [j.x, j.z], "ctrl": [(j.x + on_j.x) * 0.5, (j.z + on_j.z) * 0.5], "end": [on_j.x, on_j.z]}):
-		_act("join_county", {"type": "join_county", "at": [on_j.x, on_j.z]})
+	# Like the road tool: a road drawn onto a county road joins that mile.
+	var joined := sim.county_joined.size()
+	_act("county_road", {"type": "build_road", "start": [j.x, j.z], "ctrl": [(j.x + on_j.x) * 0.5, (j.z + on_j.z) * 0.5],
+		"end": [on_j.x, on_j.z], "join": true})
+	_actions["join_county"] = sim.county_joined.size() > joined
+	print("Playtest: join_county %s" % ("ok" if _actions.join_county else "REFUSED"))
 	await _seconds_wait(3.0)
 
 	_begin("zone")
@@ -299,6 +312,10 @@ func _find_mile(sim: CitySim) -> Dictionary:
 			var mile := CountyGrid.mile_at(p.x + o.x, p.y + o.y, 60.0)
 			if mile.is_empty() or sim.county_joined.has(mile.key) or not CountyGrid.clears(mile.on.x, mile.on.y):
 				continue
+			# Not one the town's own highway already runs along.
+			var at := Vector3(mile.on.x - o.x, 0.0, mile.on.y - o.y)
+			if not sim.network.find_segment_near(at, 40.0, 1.0).is_empty():
+				continue
 			var d: float = (mile.on - o).length()
 			if d < best_d and d > 500.0:
 				best_d = d
@@ -319,7 +336,7 @@ func _finish(error: String) -> void:
 	_result.merge({"ok": error == "", "error": error, "platform": OS.get_name(),
 		"renderer": str(ProjectSettings.get_setting_with_override("rendering/renderer/rendering_method")),
 		"tier": GraphicsQuality.NAMES[GraphicsQuality.current.tier] if GraphicsQuality.current != null else "",
-		"run_seconds": run_seconds, "online": region != "", "total": all, "steps": _steps, "freezes": _freezes,
+		"run_seconds": run_seconds, "online": region != "", "total": all, "steps": _steps, "freezes": _freezes, "hitch_causes": _causes,
 		"actions": _actions, "memory_start_mb": snappedf(_mem_start, 0.1),
 		"memory_peak_mb": snappedf(_mem_peak, 0.1), "memory_end_mb": snappedf(memory_mb(), 0.1),
 		"vram_mb": snappedf(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0, 0.1),
