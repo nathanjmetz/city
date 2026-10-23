@@ -59,7 +59,9 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	# Neighbors' cities are drawn moved over to their place on the land.
 	Terrain.shift = Terrain.shift_for(self)
+	var t := Perf.now()
 	_draw_cars(_delta)
+	Perf.add("frame.vehicles", t)
 	Terrain.shift = Vector2.ZERO
 
 
