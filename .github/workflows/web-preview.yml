@@ -93,6 +93,7 @@ jobs:
           run_test tests/test_road_variants.gd
           run_test tests/test_traffic.gd
           run_test tests/test_net.gd
+          run_test tests/test_postcard.gd
           run_test tests/test_vehicles.gd
           run_test tests/test_seasons.gd
           run_test tests/test_balance.gd

@@ -7,6 +7,8 @@ const PROFILE_PATH := "user://player.json"
 const SAVE_DIR := "user://cities"
 ## The town from before there were save slots.
 const OLD_SAVE := "user://town.json"
+## The first bytes of a saved town (see save_city).
+const SAVE_MAGIC := "NBT1"
 const MENU_SCENE := "res://scenes/menu.tscn"
 const GAME_SCENE := "res://scenes/main.tscn"
 ## Address used when an invite has none: a region on this computer.
@@ -68,15 +70,14 @@ func list_saves() -> Array:
 	if dir == null:
 		return out
 	for f in dir.get_files():
-		if not f.ends_with(".json"):
+		if not (f.ends_with(".city") or f.ends_with(".json")):
 			continue
 		var path := SAVE_DIR.path_join(f)
-		var data = JSON.parse_string(FileAccess.get_file_as_string(path))
-		if typeof(data) != TYPE_DICTIONARY:
+		var meta := _read_meta(path)
+		if meta.is_empty():
 			continue
-		var meta: Dictionary = data.get("meta", {})
 		out.append({"path": path, "name": meta.get("name", f.get_basename()),
-			"population": int(meta.get("population", 0)), "money": int(data.get("economy", {}).get("money", 0)),
+			"population": int(meta.get("population", 0)), "money": int(meta.get("money", 0)),
 			"saved": int(meta.get("saved", FileAccess.get_modified_time(path)))})
 	out.sort_custom(func(a, b): return a.saved > b.saved)
 	return out
@@ -88,10 +89,10 @@ func new_save_path(city_name: String) -> String:
 	var slug := city_name.to_lower().validate_filename().replace(" ", "-")
 	if slug == "":
 		slug = "city"
-	var path := SAVE_DIR.path_join(slug + ".json")
+	var path := SAVE_DIR.path_join(slug + ".city")
 	var n := 2
-	while FileAccess.file_exists(path):
-		path = SAVE_DIR.path_join("%s-%d.json" % [slug, n])
+	while FileAccess.file_exists(path) or FileAccess.file_exists(path.get_basename() + ".json"):
+		path = SAVE_DIR.path_join("%s-%d.city" % [slug, n])
 		n += 1
 	return path
 
@@ -99,12 +100,20 @@ func new_save_path(city_name: String) -> String:
 func save_city(sim: CitySim, path := save_path) -> void:
 	if path == "":
 		return
-	var d := sim.to_dict()
-	d["meta"] = {"name": current_name if path == save_path else city_name(path),
-		"population": sim.stats.population, "saved": int(Time.get_unix_time_from_system())}
+	var meta := {"name": current_name if path == save_path else city_name(path),
+		"population": sim.stats.population, "money": int(sim.economy.money),
+		"saved": int(Time.get_unix_time_from_system())}
+	var raw := var_to_bytes(sim.to_dict())
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify(d))
+		# Godot's binary form, compressed: several times faster than JSON
+		# for a grown town. The name and size come first, readable alone.
+		var head := JSON.stringify(meta).to_utf8_buffer()
+		f.store_buffer(SAVE_MAGIC.to_ascii_buffer())
+		f.store_32(head.size())
+		f.store_buffer(head)
+		f.store_32(raw.size())
+		f.store_buffer(raw.compress(FileAccess.COMPRESSION_ZSTD))
 
 
 func delete_save(path: String) -> void:
@@ -112,7 +121,7 @@ func delete_save(path: String) -> void:
 
 
 func city_name(path := save_path) -> String:
-	return _read(path).get("meta", {}).get("name", new_city_name if new_city_name != "" else "My Town")
+	return _read_meta(path).get("name", new_city_name if new_city_name != "" else "My Town")
 
 
 ## Starts a new city. Its file is written at the first save.
@@ -301,8 +310,36 @@ func _keep_page_invite(code: String) -> void:
 	JavaScriptBridge.eval("history.replaceState(null, '', window.location.pathname + %s)" % JSON.stringify(query))
 
 
+## A saved file: a town (binary, see save_city, or older JSON), or JSON.
 static func _read(path: String) -> Dictionary:
 	if not FileAccess.file_exists(path):
 		return {}
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f and f.get_length() > 8 and f.get_buffer(4).get_string_from_ascii() == SAVE_MAGIC:
+		var meta = JSON.parse_string(f.get_buffer(f.get_32()).get_string_from_utf8())
+		var size := f.get_32()
+		var raw := f.get_buffer(f.get_length() - f.get_position()).decompress(size, FileAccess.COMPRESSION_ZSTD)
+		var town = bytes_to_var(raw) if raw.size() == size else null
+		if typeof(town) != TYPE_DICTIONARY:
+			return {}
+		town["meta"] = meta if meta is Dictionary else {}
+		return town
 	var d = JSON.parse_string(FileAccess.get_file_as_string(path))
 	return d if typeof(d) == TYPE_DICTIONARY else {}
+
+
+## Just a saved town's name, size and date, without loading the town.
+static func _read_meta(path: String) -> Dictionary:
+	if not FileAccess.file_exists(path):
+		return {}
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f and f.get_length() > 8 and f.get_buffer(4).get_string_from_ascii() == SAVE_MAGIC:
+		var meta = JSON.parse_string(f.get_buffer(f.get_32()).get_string_from_utf8())
+		return meta if meta is Dictionary else {}
+	# An older JSON save: the whole thing has to be read.
+	var d := _read(path)
+	if d.is_empty():
+		return {}
+	var meta: Dictionary = d.get("meta", {}).duplicate()
+	meta.money = int(d.get("economy", {}).get("money", 0))
+	return meta

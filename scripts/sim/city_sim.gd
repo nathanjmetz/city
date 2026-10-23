@@ -3576,9 +3576,18 @@ func _parcels_to_save() -> Dictionary:
 	var out := {}
 	var keys := buildings.keys()
 	keys.sort()
+	var cache := {}
 	for key in keys:
 		if lots.has(key):
-			out[key] = LotPlanner.lot_to_save(lots[key])
+			# A lot that hasn't changed (the same contents) keeps its saved
+			# form, so saving a big town stays quick.
+			var lot: Dictionary = lots[key]
+			var h := lot.hash()
+			var was: Array = _parcel_cache.get(key, [])
+			var saved: Dictionary = was[1] if not was.is_empty() and was[0] == h else LotPlanner.lot_to_save(lot)
+			cache[key] = [h, saved]
+			out[key] = saved
+	_parcel_cache = cache
 	return out
 
 
@@ -3617,9 +3626,20 @@ func _plan_to_save() -> Dictionary:
 	return out
 
 
-func to_dict() -> Dictionary:
+var _parcel_cache := {}  # lot key -> [hash of the lot, its saved form] (see _parcels_to_save)
+
+
+## What a postcard leaves out (see to_dict).
+const POSTCARD_SKIP := ["plan", "zones", "families", "timelapse", "history", "traffic", "buses", "taxis", "people"]
+
+
+## The town as saved data. A postcard is what a neighbor's computer needs
+## to draw it and trade with it: everything but who lives where, the cars
+## and buses, and the planner's working state, which are most of a grown
+## town's size and saving time (see from_dict).
+func to_dict(postcard := false) -> Dictionary:
 	vegetation.update(self)  # land cleared since the last tick counts
-	return {
+	var d := {
 		"version": 2,
 		"links": region_links,
 		"county": county_joined.keys(),
@@ -3628,10 +3648,8 @@ func to_dict() -> Dictionary:
 		"tick": tick_count,
 		"seed": city_seed,
 		"roads": network.to_dict(),
-		"zones": zones.to_dict(),
 		"buildings": buildings,
 		"parcels": _parcels_to_save(),
-		"plan": _plan_to_save(),
 		"economy": economy.to_dict(),
 		"home_parts": _home_parts,
 		"services": services.to_dict(),
@@ -3654,7 +3672,6 @@ func to_dict() -> Dictionary:
 		"mail": mail.to_dict(),
 		"interlocal": interlocal.to_dict(),
 		"regional": regional.to_dict(),
-		"families": families.to_dict(),
 		"streets": streets.to_dict(),
 		"policies": policies.to_dict(),
 		"culture": culture.to_dict(),
@@ -3666,19 +3683,30 @@ func to_dict() -> Dictionary:
 		"leaders": leaders.to_dict(),
 		"care": care.to_dict(),
 		"redevelopment": redevelopment.to_dict(),
-		"timelapse": timelapse.to_dict(),
-		"history": history.to_dict(),
 		"junctions": traffic.rules_to_dict(),
-		"traffic": traffic.to_dict(),
-		"buses": buses.to_dict(),
-		"taxis": taxis.to_dict(),
-		"people": people.to_dict(),
 		"vegetation": vegetation.to_dict(),
 	}
+	if postcard:
+		d.postcard = true
+		return d
+	d.zones = zones.to_dict()
+	d.plan = _plan_to_save()
+	d.families = families.to_dict()
+	d.timelapse = timelapse.to_dict()
+	d.history = history.to_dict()
+	d.traffic = traffic.to_dict()
+	d.buses = buses.to_dict()
+	d.taxis = taxis.to_dict()
+	d.people = people.to_dict()
+	return d
 
 
 func from_dict(d: Dictionary) -> void:
 	vegetation.from_dict(d.get("vegetation", {}))
+	# Streets get their saved names below: don't name every road afresh as
+	# the network comes in (a quarter of a second in a big town).
+	var held := streets.hold
+	streets.hold = true
 	planner = LotPlanner.new()
 	planner.wealth = wealth_at
 	if d.has("roads"):
@@ -3712,6 +3740,7 @@ func from_dict(d: Dictionary) -> void:
 		_home_parts.append({"n": int(part.n), "boil": int(part.boil), "care": float(part.care),
 			"cover": float(part.cover), "happy": float(part.happy)})
 	families.from_dict(d.get("families", {}))
+	streets.hold = held
 	streets.from_dict(self, d.get("streets", {}))
 	services.from_dict(d.get("services", {}))
 	farms.from_dict(d.get("farms", {}))
@@ -3755,8 +3784,11 @@ func from_dict(d: Dictionary) -> void:
 	people.from_dict(d.get("people", {}))
 	tick_count = int(d.get("tick", 0))
 	city_seed = int(d.get("seed", 1))
-	# Parcels: the lots buildings stand on.
-	planner.update(network)
+	var postcard := bool(d.get("postcard", false))
+	# Parcels: the lots buildings stand on. (A neighbor's postcard has no
+	# planner state: it is drawn, never planned, here.)
+	if not postcard:
+		planner.update(network)
 	lots.clear()
 	var parcels: Dictionary = d.get("parcels", {})
 	for key in parcels:
@@ -3782,7 +3814,13 @@ func from_dict(d: Dictionary) -> void:
 			buildings[key].fabric = int(b.fabric)
 		if z == ZoneMap.Zone.INDUSTRIAL and b.has("chain"):
 			buildings[key].chain = str(b.chain)
-	if d.has("plan") and d.has("parcels"):
+	if postcard:
+		# Drawn, not run: no service coverage to work out.
+		_usable_cache.clear()
+		lots_delta = lots.keys()
+		lots_delta_full = true
+		lots_changed.emit()
+	elif d.has("plan") and d.has("parcels"):
 		# The town's own lots and planning state, as saved: no need to plan
 		# the whole town again, and a copy re-plans just when the town does.
 		planner.restore(network, zones, d.plan)
@@ -3823,7 +3861,16 @@ func from_dict(d: Dictionary) -> void:
 	heritage.ensure(self)
 	timelapse.from_dict(self, d.get("timelapse", {}))
 	history.from_dict(d.get("history", {}))
-	update_stats(true, -2)
+	if postcard:
+		# Just its size: a neighbor's jobs and services are worked out on
+		# its own computer.
+		var pop := 0
+		for key in buildings:
+			pop += int(buildings[key].occ) if int(buildings[key].zone) == ZoneMap.Zone.RESIDENTIAL \
+				else int(buildings[key].focc)
+		stats.population = pop
+	else:
+		update_stats(true, -2)
 	buses = BusNet.new()
 	buses.from_dict(self, d.get("buses", {}))
 	taxis = TaxiCo.new()

@@ -51,8 +51,13 @@ var handed := {}
 ## Sent with each town's copy, so nobody needs a neighbor's whole town to
 ## know where its land is.
 var land := {}
-var _data := {}   # city id -> saved data, the same as sim.to_dict()
+var _data := {}   # city id -> its newest copy: a postcard or a full copy (sim.to_dict())
 var _stale := {}  # city ids whose simulation is older than _data
+## city id -> its newest full copy (people, cars and plans too): what its
+## player gets back on another computer, and what the region saves. Players
+## send a full copy every few minutes and postcards in between (see
+## CitySim.to_dict).
+var _full := {}
 
 
 ## The city a player owns, or "" if they have none yet.
@@ -91,6 +96,8 @@ func add_city(player_id: String, player: String) -> String:
 			away -= (meet - origin).normalized()
 			sim.build_county_road(Vector2.ZERO, meet - origin, [1])
 			# Their half starts from their nearest road, so it joins their town.
+			# Their newest full copy, so the road goes into a whole town.
+			_load_full(other)
 			var their: CitySim = o.sim
 			var to: Vector2 = meet - o.origin
 			var from := _nearest_road_point(their, to)
@@ -106,9 +113,9 @@ func add_city(player_id: String, player: String) -> String:
 		sim.build_county_road(Vector2.ZERO, away.normalized() * COUNTY_REACH, [1])
 	sim.economy.money = Economy.START_MONEY
 	take_land(id, land_of_sim(id))
-	_data.erase(id)
+	touched(id)
 	for other in handed:
-		_data.erase(other)
+		touched(other)
 	return id
 
 
@@ -120,11 +127,26 @@ static func new_sim() -> CitySim:
 	return sim
 
 
-## Takes the latest copy of a town from its player's computer.
+## Takes the latest copy of a town from its player's computer: a postcard
+## or a full copy.
 func update_city(id: String, d: Dictionary) -> void:
 	if cities.has(id):
 		_data[id] = d
 		_stale[id] = true
+		if not d.get("postcard", false):
+			_full[id] = d
+
+
+## Loads a town's simulation from its newest full copy, for changing it
+## here (a postcard has no people or plans to keep).
+func _load_full(id: String) -> void:
+	var d: Dictionary = _full.get(id, {})
+	if d.is_empty():
+		load_stale(id)
+		return
+	cities[id].sim.terrain_offset = cities[id].origin
+	cities[id].sim.from_dict(d)
+	_stale.erase(id)
 
 
 ## Unpacks the waiting copies into their simulations: all of them, or just
@@ -149,17 +171,38 @@ func stale_ids() -> Array:
 	return _stale.keys()
 
 
-## A town's saved data, made from its simulation only when there's no copy.
+## A town's full saved data, made from its simulation only when there's no
+## copy (a town made or changed here).
 func city_data(id: String) -> Dictionary:
-	if not _data.has(id):
-		_data[id] = cities[id].sim.to_dict()
-	return _data[id]
+	if not _full.has(id):
+		_full[id] = cities[id].sim.to_dict()
+		_data[id] = _full[id]
+	return _full[id]
+
+
+## A town as its neighbors need it: its newest postcard.
+func postcard_data(id: String) -> Dictionary:
+	if _data.has(id) and _data[id].get("postcard", false):
+		return _data[id]
+	return postcard_of(city_data(id))
+
+
+## A full copy cut down to a postcard (it shares the full copy's parts).
+static func postcard_of(d: Dictionary) -> Dictionary:
+	if d.get("postcard", false):
+		return d
+	var p := d.duplicate()
+	for key in CitySim.POSTCARD_SKIP:
+		p.erase(key)
+	p.postcard = true
+	return p
 
 
 ## Call after changing a town's simulation directly, so its saved data is
 ## made afresh.
 func touched(id: String) -> void:
 	_data.erase(id)
+	_full.erase(id)
 	_stale.erase(id)
 
 
@@ -397,12 +440,16 @@ static func _nearest_road_point(sim: CitySim, to: Vector2) -> Vector2:
 
 # --- Saving (also what a joining player is sent) ----------------------------
 
-func to_dict() -> Dictionary:
+## Everything, to save. With `full_for` set to a town's id, only that town
+## is a full copy and the others are postcards (for its player); "" sends
+## postcards only.
+func to_dict(full_for := "*") -> Dictionary:
 	var cs := {}
 	for id in cities:
 		var c: Dictionary = cities[id]
+		var data := city_data(id) if full_for == "*" or full_for == id else postcard_data(id)
 		cs[id] = {"owner": c.owner, "player": c.player, "name": c.name, "origin": [c.origin.x, c.origin.y],
-			"color": c.color, "city": city_data(id), "land": land_flat(id)}
+			"color": c.color, "city": data, "land": land_flat(id)}
 	return {"version": 2, "seed": region_seed, "cities": cs, "chat": chat, "joins": joins,
 		"ledger": ledger.to_dict()}
 
@@ -422,6 +469,7 @@ func from_dict(d: Dictionary, first := "") -> void:
 	cities.clear()
 	land = {}
 	_data = {}
+	_full = {}
 	_stale = {}
 	var cs: Dictionary = d.get("cities", {})
 	for id in cs:
@@ -430,9 +478,13 @@ func from_dict(d: Dictionary, first := "") -> void:
 		sim.terrain_offset = Vector2(float(c.origin[0]), float(c.origin[1]))
 		if first == "" or id == first:
 			sim.from_dict(c.city)
+			if not c.city.get("postcard", false):
+				_full[id] = c.city
 		else:
 			_data[id] = c.city
 			_stale[id] = true
+			if not c.city.get("postcard", false):
+				_full[id] = c.city
 		cities[id] = {"owner": str(c.owner), "player": str(c.get("player", "")), "name": str(c.name),
 			"origin": Vector2(float(c.origin[0]), float(c.origin[1])), "color": int(c.color), "sim": sim}
 		if c.get("land") is Array and not c.land.is_empty():
@@ -444,7 +496,7 @@ func from_dict(d: Dictionary, first := "") -> void:
 ## The region with every town in it but the one listed, whose own computer
 ## has the newer copy (sent to a player whose town is running).
 func to_dict_without(skip: String) -> Dictionary:
-	var d := to_dict()
+	var d := to_dict("")
 	if d.cities.has(skip):
 		d.cities[skip].erase("city")
 	return d
@@ -453,7 +505,7 @@ func to_dict_without(skip: String) -> Dictionary:
 ## The region with only the listed towns' data (the others just named and
 ## placed), for players who already have the rest.
 func to_dict_with(ids: Array) -> Dictionary:
-	var d := to_dict()
+	var d := to_dict("")
 	for id in d.cities:
 		if not id in ids:
 			d.cities[id].erase("city")
