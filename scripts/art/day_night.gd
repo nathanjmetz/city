@@ -51,6 +51,7 @@ func _process(_delta: float) -> void:
 	var months: float = Seasons.months(sim.tick_count) + frac / Seasons.TICKS_PER_DAY
 	var look := Seasons.look(months) if seasons_on else Seasons.summer()
 	RenderingServer.global_shader_parameter_set("snow", look.snow)
+	Seasons.snow_now = look.snow
 	RenderingServer.global_shader_parameter_set("season_look",
 		Vector4(look.autumn, look.bare, look.spring, look.dry))
 	var night := 0.0
