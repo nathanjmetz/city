@@ -132,6 +132,24 @@ static func _problems(sim: CitySim, out: Array) -> void:
 	if s.population > 300 and sim.service_coverage() < 0.5:
 		_add(out, "coverage", Kind.HEADS_UP, "Folks are starting to ask about fire, police, a clinic and a school. Homes without 'em fill slower now.")
 
+	# Pollution: the one source bothering the most homes, by name, and where to look.
+	var worst_ref := ""
+	var worst_homes := 0
+	var refs := sim.pollution.hurts.keys()
+	refs.sort()
+	for ref in refs:
+		var homes: int = sim.pollution.hurts[ref].homes
+		if homes > worst_homes and sim.pollution.sources.has(ref):
+			worst_ref = ref
+			worst_homes = homes
+	if worst_homes >= 3:
+		var src: Dictionary = sim.pollution.sources[worst_ref]
+		var what := _pollution_kind(sim, worst_ref)
+		_add(out, "pollution", Kind.PROBLEM if worst_homes >= 25 else Kind.HEADS_UP,
+			"%s %s is botherin' %d homes. Open the %s view and click it to see how it could clean up." % [
+			src.name + ("'" if str(src.name).ends_with("s") else "'s"), {"noise": "noise", "smoke": "smoke", "ground": "runoff"}[what], worst_homes,
+			{"noise": "Noise", "smoke": "Smoke", "ground": "Dirty ground"}[what]])
+
 	# Resource industry: trucks that can't get out, and yards filled up.
 	var stuck := 0
 	for ref in sim.logistics.stuck:
@@ -228,6 +246,17 @@ const TOOL_NOTES := {
 	"view_forest": [
 		"Woods grow back after they're cut.",
 	],
+	"view_smoke": [
+		"Smoke drifts with the wind, from the southwest here, so homes upwind of a plant stay clear.",
+		"Click any spot to see who's making the smoke there and what each one could do about it.",
+	],
+	"view_noise": [
+		"Noise falls off fast from a single spot, slower along a busy highway. Noise walls take a good bite out of it.",
+		"Click any home or spot to see what's making the racket there.",
+	],
+	"view_ground": [
+		"Dirty ground runs downhill, so wells and homes below a landfill or plant get the worst of it.",
+	],
 	"view_traffic": [
 		"Red is stuck, green is moving. Busy corners are where lights or a roundabout earn their keep.",
 	],
@@ -247,6 +276,21 @@ static func _tool_tips(sim: CitySim, category: String) -> Array:
 
 
 # --- Helpers --------------------------------------------------------------------
+
+## What a source mostly bothers homes with: "noise", "smoke" or "ground",
+## read at the first home it hurts.
+static func _pollution_kind(sim: CitySim, ref: String) -> String:
+	var keys: Array = sim.pollution.lots.keys()
+	keys.sort()
+	for key in keys:
+		if ref in sim.pollution.lots[key].hurt and sim.lots.has(key):
+			var at := sim.pollution.sample(sim.lots[key].pos)
+			for kind in ["smoke", "noise", "ground"]:
+				var by: Array = at.by[kind]
+				if not by.is_empty() and by[0][0] == ref and PollutionInfo.hurts(kind, at[kind]):
+					return kind
+	return "smoke"
+
 
 static func _add(out: Array, id: String, kind: int, text: String) -> void:
 	out.append({"id": id, "kind": kind, "text": text})
