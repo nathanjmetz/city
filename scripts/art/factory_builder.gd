@@ -12,8 +12,10 @@ extends CommercialBuilder
 ##     a pipe rack, a tall blending tower and a tanker loading canopy
 ##   - metal: a metal fabricator. Long high-bay steel building with a roof
 ##     monitor, an outdoor gantry crane over a yard of steel coils
-##   - general: either the metal building with silos or a stack
-##     (CommercialBuilder) or a tilt-up concrete plant with dock doors
+##   - general: the metal building with silos or a stack (CommercialBuilder),
+##     a tilt-up concrete plant with dock doors, an old multi-storey brick
+##     works with a smokestack and a rooftop water tank, a sawtooth-roof
+##     brick shop, or a machine shop in a steel Quonset hut
 ## Same local space and output as HouseBuilder (-z faces the street).
 
 const CONCRETE := Color("#cfcac0")
@@ -41,10 +43,12 @@ static func build_chain(chain: String, seed: int, to_curb: float, lot := {}, spe
 		"refinery": b._plastics(to_curb)
 		"metal": b._metal_works(to_curb)
 		_:
-			if b.rng.randf() < 0.5:
-				b._factory(to_curb)
-			else:
-				b._tilt_up(to_curb)
+			match b.rng.randi() % 5:
+				0: b._factory(to_curb)
+				1: b._tilt_up(to_curb)
+				2: b._brick_works(to_curb)
+				3: b._sawtooth(to_curb)
+				_: b._quonset_shop(to_curb)
 	return [b._commit_house(), b._commit_flat(), b.trees, b.labels]
 
 
@@ -282,3 +286,91 @@ func _tilt_up(to_curb: float) -> void:
 		_box("siding", Vector3(0.08, 3.0, 2.8), Vector3(cx + w * 0.5 + 0.36, 2.4, z), Color(TRIM, 0.0))
 		_box("paint", Vector3(0.3, 3.4, 3.2), Vector3(cx + w * 0.5 + 0.16, 2.4, z), Color("#2a2a2c"))
 	_flat_rect("drive", cx + w * 0.5, minf(cx + w * 0.5 + 20.0, half - 0.5), zf, zf + d, 0.08)
+
+
+## The old brick works near the tracks: three or four storeys of red brick,
+## rows of tall windows, a corbelled parapet, a round brick stack and a
+## wooden water tank on the roof (1900s-1920s Midwest factory towns).
+func _brick_works(to_curb: float) -> void:
+	var zf := rng.randf_range(6.0, 9.0)
+	var w := clampf(half * 2.0 - 8.0, 18.0, 48.0)
+	var d := clampf(depth - zf - 14.0, 14.0, 22.0)
+	var floors := rng.randi_range(3, 4)
+	var fh := 4.2
+	var h := floors * fh
+	var brick := Color(_pick(FACADE_BRICK))
+	var cz := zf + d * 0.5
+	_box("brick", Vector3(w, h, d), Vector3(0, h * 0.5, cz), brick)
+	_box("paint", Vector3(w + 0.3, 0.5, d + 0.3), Vector3(0, h + 0.25, cz), brick.darkened(0.2))
+	_box("paint", Vector3(w - 0.4, 0.1, d - 0.4), Vector3(0, h + 0.05, cz), Color("#3a3a3c"))  # tar roof inside the parapet
+	var n := int(w / 3.2)
+	for f in floors:
+		for i in n:
+			var x := -w * 0.5 + 1.6 + i * (w - 3.2) / maxf(n - 1, 1)
+			_glass(Vector3(x, 0.9 + f * fh + 1.3, zf - 0.06), Vector3(-1, 0, 0), 1.6, 2.6, 0.2)
+			_box("paint", Vector3(1.9, 0.18, 0.2), Vector3(x, 0.9 + f * fh - 0.05, zf - 0.1), Color("#c9c1ae"))
+	_flat_rect("drive", -3.0, 3.0, -to_curb, zf, 0.1)
+	# The stack and the water tank on its steel legs.
+	var sx := w * 0.5 - 3.0
+	if _in_lot(Vector3(sx, 0, zf + d + 4.0), 2.0):
+		_cylinder("brick", Vector3(sx, 0, zf + d + 4.0), 1.3, h + 14.0, brick.darkened(0.1), 12)
+	var tx := -w * 0.25
+	for p in [Vector3(-1.4, 0, -1.4), Vector3(1.4, 0, -1.4), Vector3(-1.4, 0, 1.4), Vector3(1.4, 0, 1.4)]:
+		_box("paint", Vector3(0.2, 4.0, 0.2), Vector3(tx, h + 2.1, cz) + p, PIPE.darkened(0.3))
+	_cylinder("siding", Vector3(tx, h + 4.1, cz), 2.2, 3.6, Color("#7a5a3c"), 14)
+	_cone_top(Vector3(tx, h + 7.7, cz), 2.4, 1.6, Color("#5a5e60"))
+	_yard_gravel(zf + d)
+
+
+## A sawtooth-roof shop: one tall storey of brick with north-facing roof
+## glazing in a row of saw teeth (Midwest machine and assembly plants).
+func _sawtooth(to_curb: float) -> void:
+	var zf := rng.randf_range(9.0, 11.0)
+	var x0 := -half + 1.0
+	_front(zf, x0, x0 + 12.0, to_curb)
+	_yard_gravel(zf)
+	var w := clampf(half * 2.0 - 22.0, 18.0, 56.0)
+	var d := clampf(depth - zf - 16.0, 16.0, 36.0)
+	var h := 6.5
+	var cx := x0 + 10.0 + w * 0.5
+	var cz := zf + d * 0.5
+	var brick := Color(_pick(FACADE_BRICK))
+	_box("brick", Vector3(w, h, d), Vector3(cx, h * 0.5, cz), brick)
+	_box("paint", Vector3(w + 0.2, 0.4, d + 0.2), Vector3(cx, h + 0.2, cz), brick.darkened(0.2))
+	var teeth := int(d / 6.0)
+	var roof := Color("#5a5e60")
+	for t in teeth:
+		var z0 := zf + t * d / teeth
+		var z1 := z0 + d / teeth
+		var top := h + 0.4 + 2.6
+		# Glazed upright face toward the street side, sloping roof back.
+		_quad("glass", Vector3(cx - w * 0.5, h + 0.4, z0 + 0.05), Vector3(cx + w * 0.5, h + 0.4, z0 + 0.05),
+			Vector3(cx + w * 0.5, top, z0 + 0.05), Vector3(cx - w * 0.5, top, z0 + 0.05), Color(0.55, 0.6, 0.62, 0.3), [], Vector3(0, 0, -1))
+		_quad("metal", Vector3(cx - w * 0.5, top + 0.05, z0), Vector3(cx + w * 0.5, top + 0.05, z0),
+			Vector3(cx + w * 0.5, h + 0.45, z1), Vector3(cx - w * 0.5, h + 0.45, z1), roof, [], Vector3(0, 1, 0.4))
+	for i in 2:
+		_door(cx - w * 0.25 + i * w * 0.5, zf)
+
+
+## A machine shop in a steel Quonset hut with a block end wall and a
+## lean-to office (post-war farm-town shops).
+func _quonset_shop(to_curb: float) -> void:
+	var zf := rng.randf_range(9.0, 11.0)
+	var x0 := -half + 1.0
+	_front(zf, x0, x0 + 12.0, to_curb)
+	_yard_gravel(zf)
+	var r := rng.randf_range(6.0, 8.0)
+	var len := clampf(depth - zf - 14.0, 16.0, 36.0)
+	var cx := x0 + 12.0 + r
+	var steel := Color("#a7aba9")
+	var segs := 10
+	for i in segs:
+		var a0 := PI * i / segs
+		var a1 := PI * (i + 1) / segs
+		var p0 := Vector3(cx + cos(a0) * r, sin(a0) * r, zf)
+		var p1 := Vector3(cx + cos(a1) * r, sin(a1) * r, zf)
+		_quad("metal", p0, p1, p1 + Vector3(0, 0, len), p0 + Vector3(0, 0, len), steel.darkened(0.03 * (i % 2)),
+			[], Vector3(cos((a0 + a1) * 0.5), sin((a0 + a1) * 0.5), 0))
+		# Block end wall facing the street.
+		_tri("paint", Vector3(cx, 0, zf - 0.06), p0 - Vector3(0, 0, 0.06), p1 - Vector3(0, 0, 0.06), Color(_pick(BLOCK)), [], Vector3(0, 0, -1))
+	_door(cx, zf - 0.08, 4.0, 4.4)
