@@ -213,6 +213,10 @@ func _init() -> void:
 	copy.from_dict(JSON.parse_string(save_text))
 	var copy2 := CitySim.new()
 	copy2.from_dict(JSON.parse_string(save_text))
+	# The copies' own lots: empty lots are re-platted on load from the
+	# rounded roads, so their keys can differ from the original's.
+	elots = copy.lots.keys()
+	elots.sort()
 	var r1 := RandomNumberGenerator.new()
 	var r2 := RandomNumberGenerator.new()
 	r1.seed = 5

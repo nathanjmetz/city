@@ -281,7 +281,7 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 			var key: String = entry[1]
 			var load := 1
 			if city_buildings.has(key):
-				load = LOAD[int(city_buildings[key].zone)]
+				load = LOAD[int(city_buildings[key].zone)] * BuildingTypes.load_of(city_buildings[key])
 				if used + load > cap:
 					continue
 				used += load
