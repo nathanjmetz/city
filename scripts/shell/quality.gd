@@ -36,6 +36,9 @@ enum { LOW, MEDIUM, HIGH, ULTRA, CINEMATIC }
 const NAMES := ["Low", "Medium", "High", "Ultra", "Cinematic"]
 const AUTO := -1
 const SAVE_PATH := "user://quality.json"
+## There while the game runs, removed on a clean exit: found at launch, the
+## last run crashed (or was force quit), and the look steps back to safety.
+const RUNNING_PATH := "user://quality_running"
 ## Bumped when guess_tier changes, so Auto guesses again on machines that
 ## were first guessed by an older version.
 const GUESS_VERSION := 2
@@ -149,6 +152,12 @@ func _ready() -> void:
 	else:
 		_first_guess()
 		_save()
+	if FileAccess.file_exists(RUNNING_PATH):
+		_after_crash(int(saved.get("tier", tier)))
+	var f := FileAccess.open(RUNNING_PATH, FileAccess.WRITE)
+	if f:
+		f.store_string(str(Time.get_unix_time_from_system()))
+		f.close()
 	var args := OS.get_cmdline_user_args() + OS.get_cmdline_args()
 	for i in args.size():
 		var a: String = args[i]
@@ -271,7 +280,7 @@ func apply() -> void:
 	vp.msaa_3d = 2 if browser and tier == MEDIUM else t.msaa
 	vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if t.fxaa else Viewport.SCREEN_SPACE_AA_DISABLED
 	vp.mesh_lod_threshold = t.lod
-	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if scale < 0.99 and not browser else Viewport.SCALING_3D_MODE_BILINEAR
+	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if scale < 0.99 and _fsr_ok() else Viewport.SCALING_3D_MODE_BILINEAR
 	vp.scaling_3d_scale = scale
 	RenderingServer.directional_shadow_atlas_set_size(t.shadow_size, true)
 	RenderingServer.directional_soft_shadow_filter_set_quality(t.soft)
@@ -369,6 +378,37 @@ func _step_up() -> void:
 		return
 	apply()
 	_save()
+
+
+## FSR upscaling, for fewer pixels than the screen. Not in the browser, and
+## not on the Mac's Metal driver: Brawn's Mac Studio crashed within seconds
+## each time it drew below 100% there (2026-10-23), so a Mac upscales
+## plainly instead.
+func _fsr_ok() -> bool:
+	return not browser and RenderingServer.get_current_rendering_driver_name() != "metal"
+
+
+## The last run ended without a clean exit. Whatever the cause, start this
+## one safe: Auto, full pixels, one tier below where it died, and no higher
+## for this session (the governor climbs back next time if there's room).
+func _after_crash(died_on: int) -> void:
+	mode = AUTO
+	scale = 1.0
+	tier = clampi(mini(died_on - 1, _guess), LOW, _ceiling)
+	_ceiling = maxi(tier, LOW)
+	_save()
+	print("Graphics: the last run didn't close cleanly; starting safe at ", NAMES[tier])
+	# Telemetry comes up after this autoload.
+	(func():
+		var t := get_node_or_null("/root/Telemetry")
+		if t:
+			t.event("gfx_after_crash", {"died_on": NAMES[clampi(died_on, LOW, CINEMATIC)], "now": NAMES[tier]})
+	).call_deferred()
+
+
+func _exit_tree() -> void:
+	if active:
+		DirAccess.remove_absolute(RUNNING_PATH)
 
 
 func _save() -> void:

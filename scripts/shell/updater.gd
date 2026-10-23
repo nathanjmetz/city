@@ -91,6 +91,7 @@ func _ready() -> void:
 	active = true
 	mounted = str(ProjectSettings.get_setting(MOUNTED_KEY, ""))
 	_tidy()
+	_tell.call_deferred("update_launch", {"mounted": mounted.get_file(), "app": int(ProjectSettings.get_setting(APP_KEY).built)})
 	if mounted != "":
 		# It got this far: count the pack as good once the title screen is up.
 		get_tree().create_timer(10.0).timeout.connect(func():
@@ -158,6 +159,7 @@ func on_version_mismatch() -> void:
 func _on_manifest(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	_done()
 	if result != HTTPRequest.RESULT_SUCCESS or code != 200:
+		_tell("update_check_failed", {"result": result, "code": code})
 		return
 	var m = JSON.parse_string(body.get_string_from_utf8())
 	if typeof(m) != TYPE_DICTIONARY:
@@ -168,6 +170,7 @@ func _on_manifest(result: int, code: int, _headers: PackedStringArray, body: Pac
 		_restart_when_ready = false
 		return
 	if not _fits(m):
+		_tell("update_needs_app", {"engine": str(m.get("engine", "")), "settings": str(m.get("settings", ""))})
 		new_app = true
 		_say("A new version of the app is out.")
 		return
@@ -185,6 +188,7 @@ func _on_manifest(result: int, code: int, _headers: PackedStringArray, body: Pac
 	add_child(_http)
 	_http.request_completed.connect(_on_pack.bind(pack))
 	if _http.request(str(pack.url)) != OK:
+		_tell("update_download_failed", {"request": str(pack.url)})
 		_done()
 
 
@@ -193,17 +197,23 @@ func _on_pack(result: int, code: int, _headers: PackedStringArray, _body: Packed
 	_done()
 	if result != HTTPRequest.RESULT_SUCCESS or code != 200 \
 			or FileAccess.get_sha256(part) != str(pack.get("sha256", "")):
+		var got := FileAccess.open(part, FileAccess.READ)
+		_tell("update_download_failed", {"result": result, "code": code, "size": got.get_length() if got else -1,
+			"want": int(pack.get("size", 0))})
+		got = null
 		DirAccess.remove_absolute(part)
 		_say("")
 		return
 	var path := DIR.path_join("game-%s.pck" % str(_manifest.get("commit", "new")).left(10))
 	DirAccess.remove_absolute(path)
 	if DirAccess.rename_absolute(part, path) != OK:
+		_tell("update_download_failed", {"rename": path})
 		return
 	_write({"pack": path, "built": int(_manifest.built), "commit": str(_manifest.get("commit", "")),
 		"engine": str(_manifest.engine), "settings": str(_manifest.get("settings", "")),
 		"globals": _manifest.get("globals", {}), "tries": 0})
 	ready_pack = path
+	_tell("update_ready", {"commit": str(_manifest.get("commit", "")).left(7)})
 	_say("Updated. It'll be ready next time you open Neighbors.")
 	# On the title screen nothing is lost by restarting now.
 	if _restart_when_ready or _on_title_screen():
@@ -250,6 +260,13 @@ func _done() -> void:
 	if _http:
 		_http.queue_free()
 		_http = null
+
+
+## Into the play notes (Telemetry), so a stuck update shows up there.
+func _tell(kind: String, data: Dictionary) -> void:
+	var t := get_node_or_null("/root/Telemetry")
+	if t:
+		t.event(kind, data)
 
 
 func _say(text: String) -> void:
