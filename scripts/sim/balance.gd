@@ -112,6 +112,12 @@ const UTILITY_LOAD := {ZoneMap.Zone.RESIDENTIAL: 1, ZoneMap.Zone.COMMERCIAL: 4, 
 const GROW_EVERY := 4
 ## People move in and stats update every this many ticks.
 const MOVE_EVERY := 10
+## Game ticks per real week of construction (see Construction). A real week
+## is about 330 ticks on the calendar (a game day settles a month), which
+## would leave a house going up for a quarter of an hour; this keeps real
+## proportions between stages and kinds, about 11 times quicker than the
+## calendar: a house takes about a minute and a half at normal speed.
+const BUILD_TICKS_PER_WEEK := 30
 ## Share of residents who work (US labour force is about half of everyone).
 const WORKER_SHARE := 0.5
 

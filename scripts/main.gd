@@ -82,6 +82,7 @@ func _ready() -> void:
 
 	var cars := TrafficView.new()
 	cars.setup(sim.traffic, _tick_fraction)
+	cars.parked = func(): return sim.construction.parked_poses()
 	add_child(cars)
 
 	var bus_view := BusView.new()
