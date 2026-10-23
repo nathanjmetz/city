@@ -239,6 +239,13 @@ func farm_at(p: Vector3) -> int:
 			return id
 		if _near_drive(farms[id], p, DRIVE_WIDTH * 0.5 + 2.0):
 			return id
+		if farms[id].has("stock") and not farms[id].stock.sites.is_empty():
+			# Its livestock barns (Livestock), on ground it took from its fields.
+			var f: Dictionary = farms[id]
+			var local := _local(f, p)
+			var c := Vector2i(roundi(local.x / CELL), roundi(local.y / CELL))
+			if c in Livestock.site_cells(f) and Geometry2D.is_point_in_polygon(Vector2(p.x, p.z), cell_corners(f, c)):
+				return id
 	return -1
 
 
@@ -281,7 +288,7 @@ func share(id: int, c: Vector2i) -> float:
 func jobs() -> int:
 	var total := 0
 	for id in farms:
-		total += 2 + farms[id].cells.size() / CELLS_PER_WORKER
+		total += 2 + farms[id].cells.size() / CELLS_PER_WORKER + Livestock.jobs(farms[id])
 	return total
 
 
@@ -293,6 +300,8 @@ func yearly_profit(id: int) -> float:
 		total += field_profit(f, c)
 	if rent_of.is_valid():
 		total += rent_of.call(id)
+	# Hog, dairy or turkey barns, manure included (Livestock).
+	total += Livestock.yearly(f, day)
 	return total + f.cells.size() * support(id)
 
 
@@ -344,7 +353,7 @@ func field_profit(f: Dictionary, c: Vector2i) -> float:
 ## on poor, wooded ground nobody farms).
 func start_profit(pos: Vector3, dir: Vector3) -> float:
 	var best := -INF
-	for crop in GROSS_PER_ACRE:
+	for crop in CropPlan.CROPS:
 		var f := {"pos": pos, "dir": dir, "crop": crop, "cells": []}
 		for c in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 1), Vector2i(1, 1)]:
 			best = maxf(best, field_profit(f, c))
@@ -487,6 +496,8 @@ func _frontier(f: Dictionary) -> Array:
 	var seen := {Vector2i.ZERO: true}
 	for c in f.cells:
 		seen[c] = true
+	for c in Livestock.site_cells(f):
+		seen[c] = true
 	var from: Array = f.cells.duplicate()
 	from.append(Vector2i.ZERO)
 	var blocks: Array = f.get("blocks", [Vector2i.ZERO])
@@ -573,7 +584,7 @@ func to_dict() -> Dictionary:
 			"leader": f.get("leader", {}), "built": f.get("built", []), "why": f.get("why", ""),
 			"blocks": f.get("blocks", [Vector2i.ZERO]).map(func(b): return [b.x, b.y]),
 			"road_wait": f.get("road_wait", 0.0), "pending": f.get("pending", {}),
-			"plan_year": f.get("plan_year", 0), "fields": _fields_out(f)}
+			"plan_year": f.get("plan_year", 0), "fields": _fields_out(f), "stock": Livestock.to_save(f)}
 	return {"farms": fs, "next_id": _next_id}
 
 
@@ -632,4 +643,6 @@ func from_dict(d: Dictionary) -> void:
 		farms[int(k)].blocks = blocks
 		if not f.get("leader", {}).is_empty():
 			farms[int(k)].leader = f.leader
+		if not f.get("stock", {}).is_empty():
+			farms[int(k)].stock = Livestock.from_save(f.stock)
 	_next_id = int(d.get("next_id", 1))

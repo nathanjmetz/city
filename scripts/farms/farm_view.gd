@@ -8,6 +8,8 @@ var sim: CitySim
 var _fields := MeshInstance3D.new()
 var _lanes := MeshInstance3D.new()
 var _homes := {}  # farm id -> Node3D
+var _barns := {}  # "id:x:y:kind" -> Node3D, one per livestock barn group
+var _cows := MultiMeshInstance3D.new()  # beef herds on pasture
 var _trees := TreeField.new()
 var _mats := {}
 var _month := -1
@@ -24,6 +26,8 @@ func setup(s: CitySim) -> void:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mi)
 	add_child(_trees)
+	_cows.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_cows)
 	_rebuild()
 
 
@@ -45,6 +49,8 @@ func _rebuild() -> void:
 	for id in sim.farms.farms:
 		if not _homes.has(id):
 			_homes[id] = _farmstead(id, sim.farms.farms[id])
+	_sync_barns()
+	_draw_cows()
 	_sync_signs()
 
 
@@ -84,6 +90,12 @@ func _season_color(crop: String, cover_prev := false, cover := false, when := 0.
 			return [Color(0.34, 0.47, 0.2), Color(0.3, 0.5, 0.18), Color(0.4, 0.5, 0.22), Color(0.78, 0.66, 0.32),
 				Color(0.44, 0.43, 0.25), Color(0.3, 0.44, 0.2), Color(0.32, 0.45, 0.19), Color(0.68, 0.6, 0.25),
 				Color(0.66, 0.56, 0.36)][m - 3]
+		"pasture":
+			# Cool-season grass: greens in March, lush May and June, brown
+			# in a dry August, green again in fall.
+			return [Color(0.46, 0.48, 0.3), Color(0.34, 0.5, 0.22), Color(0.3, 0.5, 0.2), Color(0.32, 0.49, 0.2),
+				Color(0.4, 0.48, 0.24), Color(0.5, 0.48, 0.28), Color(0.4, 0.49, 0.25), Color(0.38, 0.47, 0.24),
+				Color(0.48, 0.46, 0.3)][m - 3]
 		"hay":
 			return [Color(0.5, 0.5, 0.3), Color(0.36, 0.5, 0.22), Color(0.45, 0.52, 0.25), Color(0.36, 0.5, 0.22),
 				Color(0.42, 0.5, 0.24), Color(0.38, 0.5, 0.23), Color(0.45, 0.48, 0.25), Color(0.5, 0.5, 0.3),
@@ -137,7 +149,9 @@ func _draw_fields() -> void:
 			if trimmed.has(c):
 				# A field a road ran through stops at the road's edge.
 				for poly in trimmed[c]:
-					_add_poly(st, f, poly, 0.06, col)
+					_add_poly(st, f, poly, 0.06, col, false, fl.crop != "pasture")
+			elif fl.crop == "pasture":
+				_add_poly(st, f, Farms.cell_corners(f, c), 0.06, col, false, false)  # grass, no rows
 			else:
 				_add_cell(st, f, c, owned, col)
 			any = true
@@ -182,7 +196,8 @@ func _add_cell(st: SurfaceTool, f: Dictionary, c: Vector2i, owned: Dictionary, c
 		_add_poly(st, f, PackedVector2Array([mid[3], mid[2], corners[2], corners[3]]), 0.06, col.darkened(0.04), true)
 
 
-func _add_poly(st: SurfaceTool, f: Dictionary, poly: PackedVector2Array, y: float, col: Color, across := false) -> void:
+func _add_poly(st: SurfaceTool, f: Dictionary, poly: PackedVector2Array, y: float, col: Color, across := false,
+		rows := true) -> void:
 	var tris := Geometry2D.triangulate_polygon(poly)
 	var right := Vector2(-f.dir.z, f.dir.x)
 	var back := Vector2(-f.dir.x, -f.dir.z)
@@ -198,6 +213,10 @@ func _add_poly(st: SurfaceTool, f: Dictionary, poly: PackedVector2Array, y: floa
 			# Rows run back from the road: about one stripe per 2 m. Turn rows
 			# at a field's ends run across it.
 			var d: Vector2 = p - origin
+			if not rows:
+				st.set_uv(Vector2(0.38 / 16.0, 0.0))  # mid-row everywhere: one shade, no crop rows
+				st.add_vertex(Vector3(p.x, y, p.y))
+				continue
 			st.set_uv((Vector2(d.dot(back), d.dot(right)) if across else Vector2(d.dot(right), d.dot(back))) / 16.0)
 			st.add_vertex(Vector3(p.x, y, p.y))
 
@@ -295,3 +314,112 @@ static func _footing_mat() -> Material:
 	if _footing == null:
 		_footing = Surfaces.concrete(Color(0.5, 0.48, 0.44))
 	return _footing
+
+
+## Livestock barns on their pads beside the farmyards (Livestock, FarmBuilder).
+func _sync_barns() -> void:
+	var want := {}
+	for id in sim.farms.farms:
+		var f: Dictionary = sim.farms.farms[id]
+		var kind := Livestock.kind(f)
+		for site in Livestock.sites(f):
+			want["%d:%d:%d:%s" % [id, site.x, site.y, kind]] = [f, site, kind]
+	for key in _barns.keys():
+		if not want.has(key):
+			_barns[key].queue_free()
+			_barns.erase(key)
+	for key in want:
+		if _barns.has(key):
+			continue
+		var f: Dictionary = want[key][0]
+		var mid := Livestock.site_center(f, want[key][1])
+		var root := Node3D.new()
+		add_child(root)
+		root.position = Vector3(mid.x, Terrain.ground_y(mid.x, mid.z), mid.z)
+		root.basis = Basis.looking_at(f.dir, Vector3.UP)
+		var built := FarmBuilder.build_barns(want[key][2], hash(key))
+		var footing := MeshInstance3D.new()
+		var cube := BoxMesh.new()
+		cube.size = Vector3(78, 3.0, 38)
+		footing.mesh = cube
+		footing.position = Vector3(0, -1.55, 0)
+		footing.material_override = _footing_mat()
+		footing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(footing)
+		var barns := MeshInstance3D.new()
+		barns.mesh = built[0]
+		root.add_child(barns)
+		var ground := MeshInstance3D.new()
+		ground.mesh = Terrain.drape_local(built[1], root.transform)
+		ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(ground)
+		_barns[key] = root
+
+
+## Most cows drawn at once, across every herd.
+const MAX_COWS := 3000
+## Angus black, Hereford red and the odd black baldy: the beef breeds on
+## southern Indiana pasture.
+const COW_COLORS := [Color("#1c1a19"), Color("#1c1a19"), Color("#6e3420"), Color("#2a2522")]
+
+
+## Every beef herd grazing its pasture, one cow per 2 acres (Livestock).
+func _draw_cows() -> void:
+	var spots := []
+	for id in sim.farms.farms:
+		var f: Dictionary = sim.farms.farms[id]
+		if Livestock.kind(f) != "cattle":
+			continue
+		var grass := []
+		for c in f.cells:
+			if CropPlan.crop_at(f, c) == "pasture":
+				grass.append(c)
+		var n := mini(Livestock.head(f), MAX_COWS - spots.size())
+		for i in n:
+			var c: Vector2i = grass[int(Farms._hash01(Vector2i(int(id), i), 31) * grass.size()) % grass.size()]
+			var corners := Farms.cell_corners(f, c)
+			var u := Farms._hash01(c + Vector2i(i, 0), 37)
+			var v := Farms._hash01(c + Vector2i(0, i), 41)
+			var p := corners[0].lerp(corners[1], 0.1 + 0.8 * u).lerp(corners[3].lerp(corners[2], 0.1 + 0.8 * u), 0.1 + 0.8 * v)
+			spots.append([Vector3(p.x, Terrain.ground_y(p.x, p.y), p.y), Farms._hash01(c + Vector2i(i, i), 43)])
+	if spots.is_empty():
+		_cows.visible = false
+		return
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = _cow_mesh()
+	mm.instance_count = spots.size()
+	for i in spots.size():
+		var h: float = spots[i][1]
+		mm.set_instance_transform(i, Transform3D(Basis(Vector3.UP, h * TAU), spots[i][0]))
+		mm.set_instance_color(i, COW_COLORS[int(h * 97.0) % COW_COLORS.size()])
+	_cows.multimesh = mm
+	_cows.visible = true
+
+
+static var _cow: Mesh
+
+
+## A beef cow, about 2.4 m nose to tail and 1.3 m at the shoulder.
+static func _cow_mesh() -> Mesh:
+	if _cow != null:
+		return _cow
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var parts := [[Vector3(0.75, 0.75, 1.7), Vector3(0, 0.95, 0)],    # body
+		[Vector3(0.42, 0.45, 0.55), Vector3(0, 1.05, -1.05)],           # head
+		[Vector3(0.6, 0.35, 0.6), Vector3(0, 1.25, -0.55)]]             # shoulders
+	for x in [-0.25, 0.25]:
+		for z in [-0.6, 0.6]:
+			parts.append([Vector3(0.14, 0.62, 0.14), Vector3(x, 0.31, z)])  # legs
+	for part in parts:
+		var box := BoxMesh.new()
+		box.size = part[0]
+		st.append_from(box, 0, Transform3D(Basis.IDENTITY, part[1]))
+	_cow = st.commit()
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.roughness = 0.9
+	_cow.surface_set_material(0, mat)
+	return _cow
