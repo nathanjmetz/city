@@ -13,8 +13,10 @@ const GAME_SCENE := "res://scenes/main.tscn"
 const LOCAL_SERVER := "ws://localhost:9080"
 ## Where the region publishes its current address ({"server": "wss://..."}),
 ## so Play works with just the invite code even after the host restarts.
-## It lives on its own branch, so updating it doesn't rebuild the game.
-const REGION_CONFIG := "https://raw.githubusercontent.com/nathanjmetz/city/region/server.json"
+## It lives on its own branch, so updating it doesn't rebuild the game, and
+## is read through the API, which isn't cached for minutes like raw files.
+## tools/host/neighbors-host.sh on the host's computer keeps it current.
+const REGION_CONFIG := "https://api.github.com/repos/nathanjmetz/city/contents/server.json?ref=region"
 
 enum Mode { SOLO, ONLINE }
 
