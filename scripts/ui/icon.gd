@@ -379,6 +379,15 @@ func _draw() -> void:
 			line.call(P.call(0.26, 0.5), P.call(0.74, 0.5), w, Color(1.0, 0.82, 0.3))
 			line.call(P.call(0.26, 0.5), P.call(0.26, 0.1), w, Color(1.0, 0.82, 0.3))
 			line.call(P.call(0.74, 0.5), P.call(0.74, 0.1), w, Color(1.0, 0.82, 0.3))
+		"fairgrounds":
+			# A Ferris wheel on its legs.
+			draw_arc(P.call(0.5, 0.42), s * 0.3, 0, TAU, 24, color, w, true)
+			for k in 4:
+				var a := PI * k / 4.0
+				var d := Vector2(cos(a), sin(a)) * s * 0.3
+				line.call(P.call(0.5, 0.42) - d, P.call(0.5, 0.42) + d, w * 0.6)
+			line.call(P.call(0.5, 0.42), P.call(0.3, 0.92), w)
+			line.call(P.call(0.5, 0.42), P.call(0.7, 0.92), w)
 		"advice":
 			# A speech bubble with three dots.
 			var bubble := PackedVector2Array([P.call(0.12, 0.18), P.call(0.88, 0.18), P.call(0.88, 0.68),
