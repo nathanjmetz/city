@@ -29,7 +29,7 @@ const BRICK := ["#8a4a38", "#9b5a42", "#7a4234", "#a8775c", "#b59a7c"]
 const TRIM := Color("#efede6")
 const SOFFIT := Color("#b9b6ad")
 const FOUNDATION := Color("#9d9a92")
-const SHRUB := [Color("#41633a"), Color("#4c6f35"), Color("#3a5a32"), Color("#5c7238")]  # yew, boxwood, arborvitae, spirea
+const SHRUB := [Color("#41633a"), Color("#4c6f35"), Color("#3a5a32"), Color("#5c7238")]  # yew, boxwood, holly, spirea
 const MULCH := Color("#4a3426")
 const LOT_HALF := 10.0  # half a lot's width when no lot is given
 ## House types by the era a street was built in. Before the war: American
@@ -708,10 +708,16 @@ func _yard(h: Dictionary, to_curb: float) -> void:
 		bed1 = h.bed[1]
 	if bed1 - bed0 > 1.0:
 		_flat_rect("mulch", bed0, bed1, fz - 1.4, fz, 0.05)
+		# One species per bed, picked from where the bed lies (no random
+		# draw): mostly yews, some juniper beds, often arborvitae at the corners.
+		var pick := int(absf(bed0 * 7.3 + fz * 3.1 + bed1) * 10.0) % 20
+		var bed_kind := 2 if pick < 4 else 0
+		var corners := pick >= 4 and pick < 12 and bed1 - bed0 > 4.0
 		var x := bed0 + 0.5
 		while x < bed1 - 0.4:
 			if absf(x - door_x) > 1.3:
-				_shrub(Vector3(x, 0.0, fz - 0.7), rng.randf_range(0.45, 0.65))
+				var at_corner := corners and (x < bed0 + 0.6 or x > bed1 - 1.4)
+				_shrub(Vector3(x, 0.0, fz - 0.7), rng.randf_range(0.45, 0.65), 1 if at_corner else bed_kind)
 			x += rng.randf_range(0.9, 1.5)
 
 
@@ -1045,22 +1051,42 @@ func _shed_roof(cx: float, w: float, z0: float, run: float, y: float, drop: floa
 		_quad("paint", e[0], e[1], e[1] + up, e[0] + up, TRIM, [], e[2])
 
 
-func _shrub(p: Vector3, r: float) -> void:
+## A foundation shrub. `kind` 0 is a clipped yew or boxwood (most Indiana
+## beds), 1 an arborvitae ('Emerald Green' Thuja) standing as a narrow
+## column at a corner, 2 a spreading juniper hugging the ground blue-green.
+## Every kind makes the same random draws, so the sequence doesn't move.
+func _shrub(p: Vector3, r: float, kind := 0) -> void:
 	var col: Color = SHRUB[rng.randi() % SHRUB.size()]
-	var rings := 4
+	var height := r * 1.6
+	var wide := r
+	var column := kind == 1
+	if column:
+		height = r * 3.6
+		wide = r * 0.75
+		col = Color("#3b5833")
+	elif kind == 2:
+		height = r * 0.55
+		wide = r * 1.5
+		col = Color("#4d6a5a")
+	var rings := 4  # same random draws as before for every species
 	var segs := 7
 	var pts := []
 	for i in rings + 1:
 		var row := []
 		var t := PI * i / rings
+		var up := (1.0 - cos(t)) * 0.5
+		var round_ := sin(t)
+		if column:
+			# Full to near the top, then a blunt point.
+			round_ = pow(sin(t), 0.5) * (1.0 - 0.35 * up)
 		for j in segs:
 			var a := TAU * j / segs
-			var k := r * rng.randf_range(0.82, 1.12)
-			row.append(p + Vector3(sin(t) * cos(a) * k, (1.0 - cos(t)) * k * 0.8, sin(t) * sin(a) * k))
+			var k := rng.randf_range(0.82, 1.12)
+			row.append(p + Vector3(round_ * cos(a) * k * wide, up * height * (0.92 + k * 0.08), round_ * sin(a) * k * wide))
 		pts.append(row)
 	# Smooth normals from the middle, so it shades as a rounded clipped
-	# yew or boxwood rather than a cut stone; alpha marks it as foliage.
-	var mid := p + Vector3(0, r * 0.8, 0)
+	# shrub rather than a cut stone; alpha marks it as foliage.
+	var mid := p + Vector3(0, height * 0.5, 0)
 	var st := _tool("foliage")
 	for i in rings:
 		for j in segs:
@@ -1069,9 +1095,11 @@ func _shrub(p: Vector3, r: float) -> void:
 			var order := [0, 2, 1, 0, 3, 2] if face_n.dot((quad[0] + quad[2]) * 0.5 - mid) >= 0.0 else [0, 1, 2, 0, 2, 3]
 			for k in order:
 				var v: Vector3 = quad[k]
-				var shade := col.darkened(0.25 * (1.0 - (v.y - p.y) / (r * 1.6)))
+				var shade := col.darkened(0.25 * (1.0 - (v.y - p.y) / height))
 				shade.a = 0.3
-				st.set_normal(((v - mid).normalized() + Vector3(0, 0.4, 0)).normalized())
+				var n := v - mid
+				n.y *= wide / maxf(height * 0.5, 0.01)
+				st.set_normal((n.normalized() + Vector3(0, 0.4, 0)).normalized())
 				st.set_color(shade)
 				st.set_uv(Vector2(v.x, v.z))
 				st.add_vertex(v)
