@@ -109,6 +109,31 @@ func name_road(sim, segs: Array, name: String) -> void:
 	changed.emit()
 
 
+## A lot's street address ("412 West Walnut Street"), counted the way a grid
+## town counts them: a hundred numbers to the block, measured along the
+## street from the middle of town, odd numbers on one side and even on the
+## other. Empty for a lot on an unnamed road.
+func address(sim, key: String) -> String:
+	var lot: Dictionary = sim.lots.get(key, {})
+	var seg := int(lot.get("seg", -1))
+	var street := name_of(seg)
+	if street == "" or not sim.network.segments.has(seg):
+		return ""
+	var c: Array = sim.network.curve_of(seg)
+	var dir := Vector2(c[2].x - c[0].x, c[2].z - c[0].z).normalized()
+	var front: Vector3 = lot.front
+	var along := (Vector2(front.x, front.z) - main_at).dot(dir)
+	var d := absf(along)
+	# Which way from the middle of town: "412 West Main Street".
+	var v := dir * signf(along)
+	var way := ("East" if v.x > 0.0 else "West") if absf(v.x) >= absf(v.y) else ("South" if v.y > 0.0 else "North")
+	var n := floori(d / BLOCK) * 100 + clampi(floori(fmod(d, BLOCK) / BLOCK * 50.0) * 2, 0, 98)
+	n = maxi(n, 2)
+	if int(lot.get("side", 1)) < 0:
+		n += 1
+	return "%d %s %s" % [n, way, street]
+
+
 ## The name of a road out of town toward a neighbouring town.
 func town_road(seed: int) -> String:
 	return _first_free(TOWNS.map(func(t): return t + " Road"), seed, "Road")

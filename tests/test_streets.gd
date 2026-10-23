@@ -51,6 +51,27 @@ func _init() -> void:
 	fresh.build_county_road(Vector2(-800, 0), Vector2(800, 0), [0, 1])
 	var hw := fresh.streets.name_of(fresh.network.segments.keys()[0])
 	_check(hw.ends_with(" Road") and hw != "Main Street", "the highway a town starts on leads to a real town (%s)" % hw)
+	# Lots along Main get addresses: odd on one side, even on the other.
+	for x in range(-140, 141, 10):
+		for z in [-25, 25]:
+			sim.apply({"type": "paint_zone", "center": [x, z], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
+	for i in 5:
+		sim.tick()
+	var odd := 0
+	var even := 0
+	var seen := {}
+	for key in sim.lots:
+		var a := st.address(sim, key)
+		if not a.ends_with("Main Street"):
+			continue
+		var n := int(a.split(" ")[0])
+		_check(n > 0 and not seen.has(a), "each lot has its own address (%s)" % a)
+		seen[a] = true
+		if n % 2 == 1:
+			odd += 1
+		else:
+			even += 1
+	_check(odd > 0 and even > 0, "odd numbers on one side of Main, even on the other (%d, %d)" % [odd, even])
 	print("FAIL" if _failed else "PASS")
 	quit(1 if _failed else 0)
 
