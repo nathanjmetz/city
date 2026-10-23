@@ -101,6 +101,9 @@ var slope_of := Callable()
 ## Set by the city: farm `id` has filled its open blocks and wants to build a
 ## road to another. Callable(id) -> bool (true when anything changed).
 var expand := Callable()
+## What an acre sells for at a point, nearby development included
+## (Capital.land_price). Callable(pos) -> float; unset, farm value.
+var land_price_of := Callable()
 
 
 ## How good the soil is at a point (see Resources). Fixed forever.
@@ -215,8 +218,42 @@ func add_farm(pos: Vector3, dir: Vector3, crop: String, drive: Array) -> int:
 	_next_id += 1
 	farms[id] = {"pos": pos, "dir": dir, "crop": crop, "cells": [], "loss_streak": 0,
 		"barn": false, "drive": drive, "fields": {}, "plan_year": year, "blocks": [Vector2i.ZERO], "road_wait": 0.0,
-		"pending": {}, "why": ""}
+		"pending": {}, "why": "", "own": start_fields(), "rent": []}
+	# The family starts with its first 80 acres paid for, and some savings
+	# toward the next (Capital).
+	Capital.start(farms[id], "farm")
 	return id
+
+
+## Acres the town's farms own or rent, planted or not.
+func held_acres() -> float:
+	var total := 0
+	for id in farms:
+		var f: Dictionary = farms[id]
+		for k in f.get("own", []) + f.get("rent", []):
+			total += field_cells(f, k).size()
+	return total * ACRES_PER_CELL
+
+
+## The fields a new farm family owns from the start: its first block, 80
+## acres beside the farmyard.
+static func start_fields() -> Array:
+	var out := []
+	for q in 4:
+		out.append(Vector2i(q, 0))
+	return out
+
+
+## What field k of farm f would cost to buy: every acre of it, woods and all,
+## at what land sells for there.
+func field_price(f: Dictionary, k: Vector2i) -> float:
+	var cells := field_cells(f, k)
+	var mid := Vector3.ZERO
+	for c in cells:
+		mid += cell_center(f, c)
+	mid /= maxi(cells.size(), 1)
+	var per_acre: float = land_price_of.call(mid) if land_price_of.is_valid() else Balance.CAPITAL_LAND_PER_ACRE
+	return cells.size() * ACRES_PER_CELL * per_acre
 
 
 ## The blocks next to farm f's open ones that it could open with a road.
@@ -365,7 +402,11 @@ func field_profit(f: Dictionary, c: Vector2i, crop := "") -> float:
 	var lease := 0.0
 	if lease_of.is_valid():
 		lease = lease_of.call(cell_corners(f, c))
-	return (net - COST_PER_ACRE_PER_KM * km - tax) * ACRES_PER_CELL + lease
+	var crop_net := (net - COST_PER_ACRE_PER_KM * km - tax) * ACRES_PER_CELL
+	# Rented ground: the landowner takes a share of what it makes.
+	if crop_net > 0.0 and f.has("rent") and field_of(c) in f.rent:
+		crop_net *= 1.0 - Balance.CAPITAL_RENT_SHARE
+	return crop_net + lease
 
 
 ## The best a new farm here could make a year from a field beside its yard,
@@ -410,6 +451,9 @@ func decide(usable: Callable) -> bool:
 					func(c): return slope_of.call(cell_center(f, c)) if slope_of.is_valid() else 0.0)
 				changed = true
 		var profit := yearly_profit(id)
+		# The farm's own money: it keeps part of the year's profit and pays
+		# on the land it bought (Capital).
+		Capital.step(f, "farm", profit, day)
 		var sup := support(id)
 		var margin := buy_margin(id)
 		# A field part way through planting is finished first.
@@ -461,10 +505,11 @@ func decide(usable: Callable) -> bool:
 			worst_avg = avg
 		# A farm told to expand keeps thin fields a little longer.
 		if not worst.is_empty() and worst_avg + sup < minf(margin, 0.0):
-			# A row that loses money for a month running (four looks) is sold
-			# off: ten cells at once, so it waits longer than one would.
+			# A field that loses money through a whole season (or that the
+			# farm can't carry, its savings gone) is cut back: farmers ride
+			# out a bad price year rather than give up ground.
 			f.loss_streak += 1
-			if f.loss_streak >= 4:
+			if f.loss_streak >= Balance.FARM_SELL_LOOKS or (f.loss_streak >= 4 and float(f.get("cash", 0.0)) < 0.0):
 				# A field cut back to less than its opening depth isn't worth
 				# working: it goes whole.
 				var gone: Array = row_cells(f, worst[0], worst[1]) \
@@ -472,9 +517,16 @@ func decide(usable: Callable) -> bool:
 				f.cells = f.cells.filter(func(c): return not c in gone)
 				f.loss_streak = 0
 				changed = true
+				# Rented ground it no longer works goes back to its owner.
+				if f.has("rent") and worst[0] in f.rent and not f.cells.any(func(c): return field_of(c) == worst[0]):
+					f.rent.erase(worst[0])
 		elif best != Vector2i.MAX and (f.cells.is_empty() or profit >= 0.0):
-			f.cells.append(best)
-			f.loss_streak = 0
+			# Ground it doesn't own yet is bought first, out of savings.
+			if _buy(f, field_of(best), profit):
+				f.cells.append(best)
+				f.loss_streak = 0
+				changed = true
+		elif not f.get("rent", []).is_empty() and _buy_out(f, profit):
 			changed = true
 		elif best == Vector2i.MAX and expand.is_valid() and wants_road(id):
 			# Its block is full and paying: time for a road to the next one.
@@ -491,7 +543,11 @@ func wants_road(id: int) -> bool:
 		return false
 	if not f.get("pending", {}).is_empty():
 		return true  # a road it asked the player for
-	if yearly_profit(id) < Balance.FARM_ROAD_MIN_PROFIT:
+	var profit := yearly_profit(id)
+	if profit < Balance.FARM_ROAD_MIN_PROFIT:
+		return false
+	# It only opens more land when it has saved enough to take on a field.
+	if float(f.get("cash", 0.0)) < BLOCK.x / 4 * BLOCK.y * ACRES_PER_CELL * Balance.CAPITAL_OPEN_PER_ACRE:
 		return false
 	# Full: most of its open blocks are planted (woods, creeks and the
 	# farmyard leave the rest).
@@ -499,6 +555,80 @@ func wants_road(id: int) -> bool:
 	for b in f.blocks:
 		room += BLOCK.x * BLOCK.y
 	return f.cells.size() >= room * 0.5
+
+
+## Farm f works field k: one it owns or rents, or one it takes on now out
+## of its savings (Capital). Most Indiana farms grow by renting ground
+## (about half the state's cropland is rented); a farm buys when its savings
+## and income can carry the loan. Either way taking on a field costs the
+## equipment and a season's inputs for it up front. Ground near town whose
+## owner is holding it for developers isn't rented out, and selling it costs
+## its development price, so a growing town can price a farm out. False,
+## saying why, when it can't.
+func _buy(f: Dictionary, k: Vector2i, profit: float) -> bool:
+	if not f.has("own"):
+		f.own = start_fields()
+	if not f.has("rent"):
+		f.rent = []
+	if k in f.own or k in f.rent:
+		return true
+	var price := field_price(f, k)
+	var acres := field_cells(f, k).size() * ACRES_PER_CELL
+	var per_acre := price / acres
+	var start := acres * Balance.CAPITAL_OPEN_PER_ACRE
+	var cash := float(f.get("cash", 0.0))
+	var income := Capital.kept(f, "farm", Capital.steady(f, profit) + field_gain(f, k))
+	if cash >= Capital.cash_needed(f, price, income) + start + Balance.CAPITAL_RESERVE:
+		var put := Capital.cash_needed(f, price, income)
+		Capital.buy(f, price, income)
+		f.cash = float(f.cash) - start
+		f.own.append(k)
+		f.why = "It bought %d more acres for $%s ($%s an acre), $%s down out of its savings." % [roundi(acres),
+			CitySim.money_text(roundi(price)), CitySim.money_text(roundi(per_acre)), CitySim.money_text(roundi(put))]
+		return true
+	if per_acre > Balance.CAPITAL_LAND_PER_ACRE * (1.0 + Balance.CAPITAL_RENT_MAX_PREMIUM):
+		f.why = "Land next door sells for $%s an acre with the town so close: its owner won't rent it out, and the farm can't afford to buy it." % \
+			CitySim.money_text(roundi(per_acre))
+		return false
+	if cash < start:
+		f.why = "It's saving to rent the next %d acres: $%s for equipment and a season's seed and fertiliser (it has $%s)." % [
+			roundi(acres), CitySim.money_text(roundi(start)), CitySim.money_text(roundi(maxf(cash, 0.0)))]
+		return false
+	f.cash = cash - start
+	f.rent.append(k)
+	f.why = "It rented %d more acres from a neighbour and put $%s of its savings into equipment and inputs for them." % [
+		roundi(acres), CitySim.money_text(roundi(start))]
+	return true
+
+
+## A farm with savings to spare buys a field it rents from its landowner
+## (Capital), and keeps all it makes there after. True when it bought.
+func _buy_out(f: Dictionary, profit: float) -> bool:
+	for k in f.get("rent", []):
+		var price := field_price(f, k)
+		var income := Capital.kept(f, "farm", Capital.steady(f, profit) + field_gain(f, k) * Balance.CAPITAL_RENT_SHARE)
+		if float(f.get("cash", 0.0)) < Capital.cash_needed(f, price, income) + Balance.CAPITAL_RESERVE:
+			continue
+		var acres := field_cells(f, k).size() * ACRES_PER_CELL
+		Capital.buy(f, price, income)
+		f.rent.erase(k)
+		f.own.append(k)
+		f.why = "It bought the %d acres it rented, for $%s ($%s an acre)." % [roundi(acres),
+			CitySim.money_text(roundi(price)), CitySim.money_text(roundi(price / acres))]
+		return true
+	return false
+
+
+## What field k would add to farm f's yearly profit, planted whole in the
+## crop it pays best in.
+func field_gain(f: Dictionary, k: Vector2i) -> float:
+	var best := 0.0
+	for crop in CropPlan.CROPS:
+		var total := 0.0
+		for c in field_cells(f, k):
+			total += field_profit(f, c, crop)
+		best = maxf(best, total)
+	return best
 
 
 ## The field a farm would buy next: the best paying free one next to its
@@ -800,7 +930,10 @@ func to_dict() -> Dictionary:
 			"leader": f.get("leader", {}), "built": f.get("built", []), "why": f.get("why", ""),
 			"blocks": f.get("blocks", [Vector2i.ZERO]).map(func(b): return [b.x, b.y]),
 			"road_wait": f.get("road_wait", 0.0), "pending": f.get("pending", {}),
-			"plan_year": f.get("plan_year", 0), "fields": _fields_out(f), "stock": Livestock.to_save(f)}
+			"plan_year": f.get("plan_year", 0), "fields": _fields_out(f), "stock": Livestock.to_save(f),
+			"own": f.get("own", start_fields()).map(func(k): return [k.x, k.y]),
+			"rent": f.get("rent", []).map(func(k): return [k.x, k.y]), "capital": Capital.save(f),
+			"sale": f.get("sale", {}), "sale_year": f.get("sale_year", 0)}
 	return {"farms": fs, "next_id": _next_id}
 
 
@@ -861,4 +994,22 @@ func from_dict(d: Dictionary) -> void:
 			farms[int(k)].leader = f.leader
 		if not f.get("stock", {}).is_empty():
 			farms[int(k)].stock = Livestock.from_save(f.stock)
+		# Older saves: the farm owns what it works, and starts saving now.
+		var own := start_fields()
+		for o in f.get("own", []):
+			if not Vector2i(int(o[0]), int(o[1])) in own:
+				own.append(Vector2i(int(o[0]), int(o[1])))
+		for c in owned:
+			if not field_of(c) in own:
+				own.append(field_of(c))
+		farms[int(k)].own = own
+		farms[int(k)].rent = Array(f.get("rent", [])).map(func(r): return Vector2i(int(r[0]), int(r[1])))
+		for r in farms[int(k)].rent:
+			own.erase(r)
+		farms[int(k)].sale = Dictionary(f.get("sale", {}))
+		farms[int(k)].sale_year = int(f.get("sale_year", 0))
+		if f.has("capital"):
+			Capital.load(farms[int(k)], f.capital)
+		else:
+			Capital.start(farms[int(k)], "farm")
 	_next_id = int(d.get("next_id", 1))

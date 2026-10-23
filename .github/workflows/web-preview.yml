@@ -104,6 +104,7 @@ jobs:
           run_test tests/test_rail.gd
           run_test tests/test_rail_grain.gd
           run_test tests/test_farm_roads.gd
+          run_test tests/test_capital.gd
           run_test tests/test_livestock.gd
           run_test tests/test_families.gd
           run_test tests/test_streets.gd

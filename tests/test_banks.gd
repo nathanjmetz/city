@@ -23,6 +23,11 @@ func _init() -> void:
 	# A bold manager, so the comparison isn't left to chance.
 	b.leader.caution = 0.1
 	b.leader.ambition = 0.8
+	# Two young families starting out on one field of their own and little
+	# cash: one can only rent more as its savings allow, the other borrows.
+	for town in [plain, lent]:
+		town.farms.farms.values()[0].own = [Vector2i(2, 0)]
+		town.farms.farms.values()[0].cash = 5_000.0
 	# Farms buy and sell whole rows, so sizes step; compare them over the run.
 	var f0 := 0
 	var f1 := 0
