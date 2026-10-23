@@ -28,6 +28,9 @@ var accounts := {}
 ## The host's player name: their account is approved from the start and
 ## they approve everyone else. Empty means the first account made.
 var host_name := ""
+## Whether the host must let each new player in. Off: the invite code is
+## the key (Brawn: "if you have the invite code, you can play").
+var require_approval := false
 
 var _peer := WebSocketMultiplayerPeer.new()
 var _players := {}   # peer id -> {"id": player id, "name", "city", "host"}
@@ -155,34 +158,32 @@ func _hello(from: int, msg: Dictionary) -> void:
 	if str(msg.get("code", "")).to_upper().replace("-", "").strip_edges() != invite_code:
 		_reject(from, "That invite code doesn't match this region.")
 		return
+	# The invite code is the only key: no name or password to type. A device
+	# comes back by its token; a new one gets an account (named from its
+	# profile, or "Neighbor 2"). Only the host's own name is guarded.
 	var name := str(msg.get("name", "")).strip_edges().left(24)
-	if name == "":
-		_reject(from, "Pick a name first.")
-		return
-	var key := name.to_lower()
 	var token := str(msg.get("token", ""))
-	var account: Dictionary
-	# The invite code is the only gate: a name is all a player picks, and a
-	# new name waits for the host to let it in. Only the host's own name is
-	# guarded, by the device it first signed in from.
-	if not accounts.has(key):
-		account = _new_account(name, str(msg.get("password", "")), str(msg.get("id", "")).left(64))
-		_log("New player %s (%s)" % [name, account.status])
-	else:
-		account = accounts[key]
-		var by_token: bool = token != "" and token.sha256_text() in account.tokens
+	var account := _account_by_token(token)
+	if not account.is_empty():
+		_rename(account, name)
+	elif name != "" and accounts.has(name.to_lower()):
+		account = accounts[name.to_lower()]
 		var password := str(msg.get("password", ""))
 		var by_password: bool = password != "" and _hash(password, account.salt) == account.hash
-		if account.host and not account.tokens.is_empty() and not by_token and not by_password:
-			_reject(from, "%s is the host's name. Pick another." % account.name)
+		if account.host and not account.tokens.is_empty() and not by_password:
+			_reject(from, "%s is the host's name. Pick another in your Profile." % account.name)
 			return
+	else:
+		account = _new_account(name if name != "" else _free_name(), str(msg.get("password", "")),
+			str(msg.get("id", "")).left(64))
+		_log("New player %s (%s)" % [account.name, account.status])
 	if token == "" or not token.sha256_text() in account.tokens:
 		token = _issue_token(account)
 	match account.status:
 		"declined":
 			_reject(from, "The host hasn't let %s into this region." % account.name)
 		"pending":
-			_waiting[from] = key
+			_waiting[from] = account.name.to_lower()
 			_send(from, {"t": "waiting", "token": token,
 				"reason": "Asked the host to let you in. You'll be in as soon as they say yes."})
 			_send_requests()
@@ -229,7 +230,7 @@ func _new_account(name: String, password: String, device_id: String) -> Dictiona
 		pid = Crypto.new().generate_random_bytes(8).hex_encode()
 	var salt := Crypto.new().generate_random_bytes(16).hex_encode()
 	var a := {"name": name, "salt": salt, "hash": _hash(password, salt),
-		"status": "approved" if is_host else "pending", "player": pid, "host": is_host, "tokens": []}
+		"status": "pending" if require_approval and not is_host else "approved", "player": pid, "host": is_host, "tokens": []}
 	accounts[name.to_lower()] = a
 	_dirty = true
 	return a
@@ -243,6 +244,36 @@ func _issue_token(account: Dictionary) -> String:
 		account.tokens.pop_front()
 	_dirty = true
 	return token
+
+
+func _account_by_token(token: String) -> Dictionary:
+	if token == "":
+		return {}
+	var h := token.sha256_text()
+	for a in accounts.values():
+		if h in a.tokens:
+			return a
+	return {}
+
+
+func _free_name() -> String:
+	var n := accounts.size() + 1
+	while accounts.has("neighbor %d" % n):
+		n += 1
+	return "Neighbor %d" % n
+
+
+## A player picked a new name in their Profile: take it if nobody has it.
+func _rename(account: Dictionary, name: String) -> void:
+	var key := name.to_lower()
+	if name == "" or key == account.name.to_lower() or accounts.has(key):
+		return
+	accounts.erase(account.name.to_lower())
+	if account.host and host_name.to_lower() == account.name.to_lower():
+		host_name = name
+	account.name = name
+	accounts[key] = account
+	_dirty = true
 
 
 ## A slow salted hash, so a copied save file doesn't give passwords away.

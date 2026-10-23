@@ -67,7 +67,7 @@ func _process(_delta: float) -> bool:
 		esc.pressed = true
 		root.push_input(esc)
 	if _mode == "together" and _frames == 5:
-		current_scene.call("_show", "together")
+		current_scene.call("_show", "code")
 	if _frames == (900 if _mode in ["online", "neighbor"] else 180 if _mode == "pause" else 60):
 		root.get_viewport().get_texture().get_image().save_png(_out)
 		print("saved ", _out)

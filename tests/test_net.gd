@@ -23,6 +23,7 @@ func _run() -> void:
 	var server := RegionServer.new()
 	root.add_child(server)
 	_check(server.start(PORT, "abc123", data) == OK, "server starts")
+	server.require_approval = true
 	_check(server.invite_code == "ABC123", "invite code is kept, in capitals")
 	var url := "ws://127.0.0.1:%d" % PORT
 
@@ -121,6 +122,19 @@ func _run() -> void:
 	bob2.join("ws://127.0.0.1:%d" % (PORT + 1), "ABC123", "p-bobs-laptop", "Bob")
 	await _until(func(): return bob2.my_city != "")
 	_check(bob2.my_city != "" and bob2.my_city != ann_city, "Bob comes back on another computer with just his name and the code")
+	# By default the invite code is the only key: no name, no password, no wait.
+	var kid := _client()
+	kid.join("ws://127.0.0.1:%d" % (PORT + 1), "ABC123", "p-kid", "")
+	await _until(func(): return kid.my_city != "")
+	_check(kid.my_city != "" and again.region.cities[kid.my_city].player.begins_with("Neighbor"), "a device with just the code plays at once, as a Neighbor")
+	var kid_city: String = kid.my_city
+	var kid_token: String = kid.token
+	kid.leave()
+	await _frames(20)
+	var kid2 := _client()
+	kid2.join("ws://127.0.0.1:%d" % (PORT + 1), "ABC123", "p-kid", "Sammy", "", false, kid_token)
+	await _until(func(): return kid2.my_city != "")
+	_check(kid2.my_city == kid_city and again.region.cities[kid_city].player == "Sammy", "back by its sign-in, with the name picked in Profile")
 	_check(ann2.region.chat.any(func(l): return l.text == "Hi neighbor!"), "chat history kept")
 	again.stop()
 	DirAccess.remove_absolute(data)
