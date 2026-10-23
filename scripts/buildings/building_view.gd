@@ -79,7 +79,8 @@ func _sync_all() -> void:
 
 ## What the drawing depends on: type, stage, size and how well it's kept.
 func _look(b: Dictionary, key: String) -> Array:
-	return [BuildingTypes.type_of(b), int(b.get("level", 0)), int(b.get("units", 1)), sim.care.tier_of(key)]
+	return [BuildingTypes.type_of(b), int(b.get("level", 0)), int(b.get("units", 1)), sim.care.tier_of(key),
+		sim.heritage.protected(key)]
 
 
 func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
@@ -101,6 +102,7 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 	var s := rng.randi()
 	var storeys := BuildingTypes.storeys(b)
 	HouseBuilder.owner_care = sim.care.tier_of(key)
+	HouseBuilder.restored = sim.heritage.protected(key)
 	match BuildingTypes.type_of(b):
 		"house": built = HouseBuilder.build(s, lot.to_curb, fit, storeys)
 		"row_home": built = MetroBuilder.build_row(s, lot.to_curb, fit, int(b.get("units", 2)), storeys)
@@ -125,6 +127,7 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 				built = DenseBuilder.build_office(s, lot.to_curb, fit, storeys, spec)
 		_: built = FactoryBuilder.build_chain(b.get("chain", "general"), s, lot.to_curb, fit, spec)
 	HouseBuilder.owner_care = 0
+	HouseBuilder.restored = false
 	if built.is_empty():
 		return root
 	root.set_meta("box", built[0].get_aabb())

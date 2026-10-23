@@ -66,6 +66,9 @@ static var force_kind := ""
 ## apartments and factories weather the same way. It costs no draw calls:
 ## colours ride in the vertex colours and add-ons join the shared surfaces.
 static var owner_care := 0
+## True for a building in a protected historic district (or under an
+## easement): its front is restored, as the rehab tax credit's standards ask.
+static var restored := false
 const PLYWOOD := Color("#b59a6c")
 ## Unmown lawn: tall grass gone to seed, dandelion and plantain, dead patches.
 const WEEDS := [Color("#8e9a55"), Color("#9ba05f"), Color("#7f8f4b"), Color("#a29f6a")]

@@ -198,6 +198,15 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 	# hooded window caps; later commercial-style fronts a plain corbelled top.
 	var italianate := rng.randf() < 0.55
 	var mull: Color = MULLION[rng.randi() % 2]
+	# Picked from the seed, not drawn, so protection moves no random draws.
+	var mark := posmod(hash(rng.seed), 1000)
+	# Many prewar fronts got a 1960s "modernization": an aluminium slipcover
+	# hung over the upper floors and cornice. Restoration takes it off and
+	# repaints the woodwork and cornice in period colours (Main Street
+	# rehabs in Washington, Jasper or Madison, Indiana).
+	var slipcover := not restored and era == "prewar" and storeys >= 2 and mark < 220
+	if restored:
+		trim = Color(["#3d4a3a", "#5a2626", "#e6dcc0", "#6b5038", "#2f3a4a"][mark % 5])
 	_block("brick", 0.0, w, d, cz, deck, top, wall)
 	# One storefront every 7-8 m, each with its own sign and maybe an awning.
 	var fronts := maxi(1, roundi(w / 7.5))
@@ -222,13 +231,24 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 		sign_spec = own
 		if rng.randf() < 0.5:
 			_awning(fx, sw, zf, 3.15, Color(_pick(AWNING)))
+		elif restored:
+			_awning(fx, sw, zf, 3.15, Color(AWNING[(mark + k) % AWNING.size()]))
 		# Brick piers between the shopfronts.
 		_box("brick", Vector3(0.6, shop_h, 0.2), Vector3(fx - fw * 0.5 + 0.3, shop_h * 0.5, zf - 0.1), wall.darkened(0.06))
 	_box("brick", Vector3(0.6, shop_h, 0.2), Vector3(w * 0.5 - 0.3, shop_h * 0.5, zf - 0.1), wall.darkened(0.06))
 	_box("paint", Vector3(w, 0.18, 0.3), Vector3(0, shop_h + 0.1, zf - 0.15), trim)
+	if slipcover:
+		# Ribbed anodised aluminium from the storefront cornice to the roof.
+		var panel := Color("#b8b4a8") if mark % 2 == 0 else Color("#c4b78f")
+		var ph := top - shop_h - 0.2
+		_box("metal", Vector3(w - 0.2, ph, 0.12), Vector3(0, shop_h + 0.2 + ph * 0.5, zf - 0.12), panel)
+		var ribs := maxi(4, int(w / 0.6))
+		for i in ribs:
+			_box("metal", Vector3(0.05, ph, 0.06), Vector3(lerpf(-w * 0.5 + 0.3, w * 0.5 - 0.3, float(i) / (ribs - 1)),
+				shop_h + 0.2 + ph * 0.5, zf - 0.21), panel.darkened(0.12))
 	# Flats above: tall windows with sills and lintels.
 	var n := maxi(2, int(w / 2.6))
-	for f in range(1, storeys):
+	for f in range(1, storeys if not slipcover else 1):
 		var y := shop_h + (f - 1) * floor_h + 1.6
 		for i in n:
 			var x := lerpf(-w * 0.5 + 1.4, w * 0.5 - 1.4, float(i) / (n - 1))
@@ -241,7 +261,9 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 				_box("paint", Vector3(0.7, 0.16, 0.18), Vector3(x, y + wh * 0.5 + 0.38, zf - 0.09), trim)
 			else:
 				_box("paint", Vector3(1.4, 0.26, 0.12), Vector3(x, y + wh * 0.5 + 0.13, zf - 0.06), trim)
-	if italianate:
+	if slipcover:
+		pass
+	elif italianate:
 		# Bracketed cornice: a deep frieze, paired brackets, a projecting crown.
 		_box("paint", Vector3(w, 0.7, 0.2), Vector3(0, top - 0.55, zf - 0.1), trim)
 		var nb := maxi(3, int(w / 1.3))
@@ -258,6 +280,9 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 	# The flats' stair door at one end, and the alley at the back.
 	var sx := (w * 0.5 - 0.9) * (-1.0 if rng.randf() < 0.5 else 1.0)
 	_box("paint", Vector3(1.0, 2.2, 0.06), Vector3(sx, 1.1, zf - 0.05), Color(_pick(DOOR)))
+	if restored:
+		# A bronze plaque on the end pier by the stair door: the district's listing.
+		_box("metal", Vector3(0.45, 0.32, 0.04), Vector3(sx + signf(sx) * 0.62, 1.55, zf - 0.23), Color("#6b5428"))
 	if depth > zf + d + 3.0:
 		_flat_rect("asphalt", -width * 0.5, width * 0.5, zf + d, minf(depth, zf + d + 10.0), 0.06)
 	_downtown_walk(to_curb, width, zf)

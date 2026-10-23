@@ -55,7 +55,7 @@ func _init() -> void:
 			k = ["house", "row", "apartments", "mixed", "office"][i]
 		if kind in ["care", "careshop"]:
 			HouseBuilder.owner_care = i - 2
-		var w: float = {"care": 24.0, "careshop": 26.0, "row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "office": 40.0, "towers": 44.0, "hometowers": 54.0, "towerfar": 44.0, "flats": 24.0, "courtyard": 48.0, "walkup": 26.0, "garage": 44.0}.get(k, 20.0)
+		var w: float = {"care": 24.0, "careshop": 26.0, "row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "mainold": 16.0 + 4.0 * (i % 3), "mainrestored": 16.0 + 4.0 * (i % 3), "office": 40.0, "towers": 44.0, "hometowers": 54.0, "towerfar": 44.0, "flats": 24.0, "courtyard": 48.0, "walkup": 26.0, "garage": 44.0}.get(k, 20.0)
 		var sd := seed * 100 + i
 		match k:
 			"shop": meshes = CommercialBuilder.build_shop(sd, 3.9)
@@ -63,6 +63,10 @@ func _init() -> void:
 			"row": meshes = DenseBuilder.build_row(sd, 3.9, {"width": w, "depth": 45.0}, 3, 2 + i % 2)
 			"apartments": meshes = DenseBuilder.build_apartments(sd, 3.9, {"width": w, "depth": 45.0}, [2, 3, 5][i % 3])
 			"mixed", "main": meshes = DenseBuilder.build_mixed(sd, 3.9, {"width": w, "depth": 45.0}, 2 + i % 3)
+			"mainold", "mainrestored":
+				HouseBuilder.restored = k == "mainrestored"
+				meshes = DenseBuilder.build_mixed(sd, 3.9, {"width": w, "depth": 45.0, "era": "prewar"}, 2 + i % 3)
+				HouseBuilder.restored = false
 			"office": meshes = DenseBuilder.build_office(sd, 3.9, {"width": w, "depth": 55.0}, [3, 5, 8][i % 3])
 			"towers": meshes = TowerBuilder.build_tower(sd, 3.9, {"width": w, "depth": 55.0}, [12, 22, 24, 10, 16][i],
 				{}, ["chicago", "deco", "glass", "chicago", "glass"][i])
