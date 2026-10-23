@@ -17,10 +17,10 @@ extends RefCounted
 ## Which stage a site is in follows from its start tick and the clock alone,
 ## so every player in a region sees the same thing and nothing per-frame is
 ## saved. Crews and deliveries are real trips (Traffic's dispatch): a crew
-## pickup comes for the whole job, each stage brings its own truck (a dump
-## truck to dig, concrete for the footings, lumber or steel on a flatbed,
-## roofing, siding, the trades' vans, topsoil), and each one parks at the
-## curb in front of the site and later drives back out. Nothing vanishes.
+## pickup comes for the whole job, and the two big loads come on their own
+## trucks (concrete for the footings, then lumber or steel on a flatbed).
+## Each one parks at the curb in front of the site and later drives back
+## out. Nothing vanishes.
 ##
 ## Benchmark: Cities: Skylines 2's construction (a scaffold box that hides
 ## the building, then a pop). Timelines: US Census Survey of Construction
@@ -60,14 +60,16 @@ const PROFILES := {
 }
 ## What each stage sends: [vehicle kind, cargo] (the crew's pickup comes for
 ## the whole job). A kind the fleet doesn't have yet falls back to the next.
+## The big loads only, so a street of new homes doesn't jam the town: the
+## crew's pickup brings the rest.
 const DELIVERIES := {
-	"clear": [["dump_truck", "fill dirt"]],
-	"foundation": [["concrete_mixer", "ready-mix concrete"], ["dump_truck", "gravel"]],
+	"clear": [],
+	"foundation": [["concrete_mixer", "ready-mix concrete"]],
 	"frame": [["flatbed", "framing package"]],
-	"dry_in": [["box_truck", "roofing and sheathing"]],
-	"exterior": [["box_truck", "siding and windows"]],
-	"interior": [["van", "trades"]],
-	"landscape": [["dump_truck", "topsoil and sod"]],
+	"dry_in": [],
+	"exterior": [],
+	"interior": [],
+	"landscape": [],
 }
 const FALLBACK := {"concrete_mixer": "dump_truck"}
 ## The steel goes up on a flatbed too, but a different load.
@@ -128,6 +130,14 @@ func state(ref: String, tick: int) -> Dictionary:
 	if not sites.has(ref):
 		return {}
 	return state_at(sites[ref].profile, int(sites[ref].start), tick)
+
+
+## For the info panel: "Under construction: Framing (40% done)", or "".
+func describe(ref: String, tick: int) -> String:
+	var st := state(ref, tick)
+	if st.is_empty():
+		return ""
+	return "Under construction: %s (%d%% done)" % [st.words, roundi(float(st.total) * 100.0)]
 
 
 func is_done(ref: String, tick: int) -> bool:

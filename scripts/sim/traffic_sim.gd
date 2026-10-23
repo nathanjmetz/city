@@ -1172,7 +1172,8 @@ func _lane_point(w: Dictionary, lane: int, d: float) -> Vector3:
 func _drive(_rng: RandomNumberGenerator) -> void:
 	# Vehicles with a job that were waiting for a gap to pull out.
 	for car in _waiting.duplicate():
-		if not ways.has(car.route[0]):
+		if not ways.has(car.route[0]) or car.route.any(func(w): return not ways.has(w)) and not _replan(car):
+			# Its road went, or was rebuilt and there's no way through now.
 			_waiting.erase(car)
 			_report(car, failed)
 		elif cars.size() < MAX_CARS and _launch(car):

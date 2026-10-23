@@ -174,17 +174,20 @@ func _show(st: Dictionary) -> void:
 		if shell_on:
 			var colors: Array = SHELL[_profile]
 			var span := _height - _found_h
+			# Never in the same plane as anything else drawn: the stand-in
+			# starts above the foundation, and the wrap stands proud of the
+			# frame and then of the finished walls.
 			if stage == "frame":
 				_shell_look(FRAME_FAR[_frame_kind], FRAME_FAR[_frame_kind], 0.0)
 				_param(_shell, "cut", _found_h + span * t)
-				_param(_shell, "floor_cut", -1000.0)
+				_param(_shell, "floor_cut", _found_h)
 			elif stage == "dry_in":
-				_shell_look(colors[0], colors[1], 0.02)
+				_shell_look(colors[0], colors[1], 0.04)
 				_param(_shell, "cut", _found_h + span * t)
-				_param(_shell, "floor_cut", -1000.0)
+				_param(_shell, "floor_cut", _found_h)
 			else:
 				# The roof was shingled while it was dried in: only walls are wrapped.
-				_shell_look(colors[0], colors[1], 0.05)
+				_shell_look(colors[0], colors[1], 0.08)
 				_param(_shell, "cut", 1000.0)
 				_param(_shell, "floor_cut", _found_h + span * t)
 	_final.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
@@ -238,7 +241,7 @@ func _clipped(wall: Color, roof: Color) -> MeshInstance3D:
 
 func _shell_look(wall: Color, roof: Color, inflate: float) -> void:
 	var mat: ShaderMaterial = _shell.material_override
-	mat.set_shader_parameter("walls_only", inflate > 0.04)
+	mat.set_shader_parameter("walls_only", inflate > 0.06)
 	mat.set_shader_parameter("wall_color", wall)
 	mat.set_shader_parameter("roof_color", roof)
 	mat.set_shader_parameter("inflate", inflate)
@@ -292,18 +295,18 @@ func _make_pad() -> void:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	st.set_normal(Vector3.UP)
 	var n := 6
-	var y := 0.07
+	var y := 0.1  # above the lot tint (0.06) and the yard it replaces
+	var at := func(i: int, j: int) -> Vector3:
+		return Vector3(_box.position.x + _box.size.x * i / n, y, _box.position.z + _box.size.z * j / n)
+	# A soft blotch of lighter and darker dirt, smooth across the corners.
+	var tint := func(i: int, j: int) -> Color:
+		var h := fposmod(sin(i * 12.9898 + j * 78.233) * 43758.5453, 1.0)
+		return DIRT.lightened(h * 0.06) if h > 0.5 else DIRT.darkened((0.5 - h) * 0.08)
 	for i in n:
 		for j in n:
-			var x0 := _box.position.x + _box.size.x * i / n
-			var x1 := _box.position.x + _box.size.x * (i + 1) / n
-			var z0 := _box.position.z + _box.size.z * j / n
-			var z1 := _box.position.z + _box.size.z * (j + 1) / n
-			var h := fposmod(sin(i * 12.9898 + j * 78.233) * 43758.5453, 1.0)
-			st.set_color(DIRT.lightened(h * 0.04) if h > 0.5 else DIRT.darkened(h * 0.05))
-			for p in [Vector3(x0, y, z0), Vector3(x1, y, z0), Vector3(x1, y, z1),
-					Vector3(x0, y, z0), Vector3(x1, y, z1), Vector3(x0, y, z1)]:
-				st.add_vertex(p)
+			for c in [[i, j], [i + 1, j], [i + 1, j + 1], [i, j], [i + 1, j + 1], [i, j + 1]]:
+				st.set_color(tint.call(c[0], c[1]))
+				st.add_vertex(at.call(c[0], c[1]))
 	_pad = MeshInstance3D.new()
 	_pad.mesh = st.commit()
 	var root := get_parent() as Node3D

@@ -395,8 +395,10 @@ func _member_on(g: Dictionary, c: float, from: float, to: float, along: int, su:
 	_members.append([p0, p1, u, su, g.n, sv, col, key])
 
 
+## A point on the face, `inset` behind it, and a little more so no member's
+## face lies in the plane of the wrap that goes over it (no flicker).
 func _point(g: Dictionary, x: float, y: float, inset: float) -> Vector3:
-	return g.a * x + g.b * y + g.n * (g.d - inset)
+	return g.a * x + g.b * y + g.n * (g.d - inset - 0.015)
 
 
 ## 0-1 around the building, so pieces go up in turn rather than all at once.

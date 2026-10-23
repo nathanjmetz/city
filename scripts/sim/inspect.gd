@@ -192,6 +192,9 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 		rows.append_array(sim.buses.school_rows(id))
 	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(sim.services.upkeep_of(id))])
 	rows.append(["Built for", "$%s" % CitySim.money_text(int(k.cost))])
+	var going_up := sim.construction.describe("svc:%d" % id, sim.tick_count)
+	if going_up != "":
+		rows.append(["Building", going_up.trim_prefix("Under construction: ")])
 	return {"title": k.name, "kind": "Utility" if k.has("utility") else "City service", "icon": k.icon,
 		"ok": ok and problems.is_empty(), "status": status, "rows": rows, "problems": problems}
 
@@ -454,6 +457,9 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 			rows.append(["%s in the yard" % chain.input.capitalize(), "%d loads" % floori(sim.logistics.stock.get(key, 0.0))])
 		rows.append(["Trucks on the road", str(sim.logistics.trucks_for("lot:" + key))])
 		status = "Open for business" if problems.is_empty() else "Closed: no power or water"
+	var going_up := sim.construction.describe("lot:" + key, sim.tick_count)
+	if going_up != "":
+		status = going_up
 	var staffed := float(sim.stats.employed) / maxf(sim.stats.jobs, 1.0)
 	var lift: float = sim.parks.lot_value.get(key, 0.0)
 	var land := sim.hubs.lot_factor(sim, key) * sim.mail.lot_factor(sim, key) * (1.0 + lift)
