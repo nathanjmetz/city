@@ -54,6 +54,14 @@ uniform vec4 mud : source_color = vec4(0.42, 0.37, 0.27, 1.0);
 // Where wild trees are drawn (WildView): centre x, z and reach. Past them
 // the woods are painted as canopy.
 global uniform vec4 tree_fade;
+// The season (Seasons.look, set by DayNight): snow cover, and (autumn, bare,
+// spring, dry) for leaves, harvest, green-up and dormant grass.
+global uniform float snow;
+global uniform vec4 season_look;
+uniform vec4 dormant : source_color = vec4(0.55, 0.49, 0.34, 1.0);
+uniform vec4 stubble : source_color = vec4(0.56, 0.48, 0.32, 1.0);
+uniform vec4 twigs : source_color = vec4(0.30, 0.27, 0.24, 1.0);
+uniform vec4 fall_leaves : source_color = vec4(0.42, 0.27, 0.11, 1.0);
 // The camera's x, height above the ground, z: level of detail is measured
 // from it the way TerrainView picks chunk detail.
 uniform vec3 lod_eye;
@@ -94,6 +102,11 @@ void fragment() {
 	float dryness = smoothstep(0.42, 0.78, big * 0.55 + mid * 0.45);
 	vec3 col = mix(lush.rgb, dry.rgb, dryness * 0.75);
 	col = mix(col, dark.rgb, smoothstep(0.35, 0.9, clump) * 0.35);
+	// Spring green-up, then cool-season grass going tan and dormant in the
+	// late-summer dry spell and over winter (Indiana pasture).
+	col = mix(col, col * vec3(0.92, 1.12, 0.78), season_look.z);
+	float brown = clamp(season_look.w * 1.1 - (1.0 - dryness) * 0.3, 0.0, 0.85);
+	col = mix(col, dormant.rgb * (0.85 + big * 0.3), brown);
 
 	// Crop fields: whole fields of one crop, a quarter mile across, in green
 	// beans, tan corn stubble or tilled soil, with rows running north-south
@@ -101,6 +114,15 @@ void fragment() {
 	vec2 field = floor(p / 402.0);
 	float pick = fract(sin(dot(field, vec2(12.9898, 78.233))) * 43758.5453);
 	vec3 crop = pick < 0.45 ? crop_green.rgb : (pick < 0.8 ? crop_corn.rgb : (pick < 0.92 ? crop_tan.rgb : tilled.rgb));
+	// The crop year: corn and beans ripen gold in the fall; after harvest
+	// (November to April) fields lie in stubble, about a third fall-tilled;
+	// spring planting turns the rest to bare soil before it greens again.
+	vec3 ripe = pick < 0.45 ? vec3(0.58, 0.50, 0.27) : vec3(0.62, 0.53, 0.33);
+	crop = mix(crop, ripe, season_look.x * step(pick, 0.8));
+	float worked = fract(pick * 7.31);
+	vec3 after = worked < 0.33 ? tilled.rgb : stubble.rgb * (pick < 0.45 ? vec3(0.9, 0.92, 0.95) : vec3(1.0));
+	crop = mix(crop, after, season_look.y);
+	crop = mix(crop, tilled.rgb, season_look.z * (1.0 - season_look.y) * 0.6);
 	crop *= 0.9 + 0.2 * mid;
 	float rows = sin(p.x * 8.27) * 0.5 + 0.5;
 	crop *= 1.0 - rows * 0.12 * clamp(1.0 - dist / 300.0, 0.0, 1.0);
@@ -109,7 +131,9 @@ void fragment() {
 	// Woods: leaf litter under the trees up close; from far off, where the
 	// trees aren't drawn, the canopy itself, lumpy with crowns.
 	float crowns = texture(noise_soft, p / 11.0).r * 0.6 + clump * 0.4;
-	vec3 tops = canopy.rgb * (0.65 + 0.7 * crowns) * (0.85 + 0.3 * big);
+	vec3 leaves = mix(canopy.rgb, fall_leaves.rgb * (0.8 + 0.5 * mid), season_look.x);
+	leaves = mix(leaves, twigs.rgb, season_look.y);
+	vec3 tops = leaves * (0.65 + 0.7 * crowns) * (0.85 + 0.3 * big);
 	float painted = smoothstep(tree_fade.z * 0.72, tree_fade.z * 0.97, distance(p, tree_fade.xy));
 	vec3 woods = mix(litter.rgb * (0.8 + 0.4 * clump), tops, painted);
 	// A ragged edge, as real woods have, not the straight line between samples.
@@ -123,8 +147,23 @@ void fragment() {
 	col = mix(col, soil.rgb * 0.9, smoothstep(0.2, 0.45, steep) * 0.6);
 
 	col *= 1.0 + (grain - 0.5) * 0.4 * fade + (blades - 0.5) * 0.3 * fade * fade;
+	// Snow lies thinner under the woods and on steep banks, and drifts in
+	// patches before it covers everything.
+	float under = smoothstep(0.3, 0.65, cover.r) * (1.0 - painted) * 0.45 + smoothstep(0.2, 0.45, steep) * 0.4;
+	float lies = smoothstep(0.05, 0.45, snow * 1.15 - clump * 0.35 - (1.0 - mid) * 0.15 + 0.1 - under);
+	lies *= 1.0 - smoothstep(0.03, 0.3, cover.g) * 0.5;
+	vec3 snowy = vec3(0.80, 0.83, 0.88) * (0.94 + big * 0.08) * (1.0 + (blades - 0.5) * 0.08 * fade);
+	// Fields read through the snow from the air: corn stubble and tilled
+	// clods poke through, and each field drifts a little differently.
+	float in_field = smoothstep(0.3, 0.7, cover.b);
+	vec3 poking = worked < 0.33 ? tilled.rgb : stubble.rgb;
+	float through = (worked < 0.33 ? 0.22 : (pick < 0.8 && pick >= 0.45 ? 0.3 : 0.12)) * (0.6 + 0.8 * clump);
+	snowy = mix(snowy * (0.95 + 0.06 * fract(pick * 3.7)), poking, through * in_field);
+	// Far canopy shows dark trunks through the snow.
+	snowy = mix(snowy, twigs.rgb * 1.3, smoothstep(0.3, 0.65, cover.r) * painted * 0.45);
+	col = mix(col, snowy, lies);
 	ALBEDO = col;
-	ROUGHNESS = 0.93;
+	ROUGHNESS = mix(0.93, 0.75, lies);
 	SPECULAR = 0.25;
 }
 """
