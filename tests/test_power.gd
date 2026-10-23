@@ -132,6 +132,27 @@ func _init() -> void:
 	t.power.develop(t, tid, {"day": 10.0 + Balance.POWER_LEADER_TERM_DAYS, "education": 0.5})
 	_check(ts.hired > 10.0 and ts.leader.edu >= 0.5, "a better-schooled successor takes over (%s -> %s)" % [before, ts.leader.name])
 
+	# Wind on farmland: a turbine may stand in a farmer's field, which stays
+	# farmed; the wind company pays the farm a lease.
+	var w := CitySim.new()
+	var fid := w.farms.add_farm(windy, Vector3(0, 0, -1), "corn", [])
+	var farm: Dictionary = w.farms.farms[fid]
+	farm.cells = [Vector2i(0, 1)]
+	var field_mid: Vector3 = Farms.cell_center(farm, Vector2i(0, 1))
+	var before_lease := w.farms.field_profit(farm, Vector2i(0, 1))
+	var wid := w.power.add_site(field_mid + Vector3(0, 0, -300), Vector3(0, 0, -1), [], 0.8, 3)
+	var ws: Dictionary = w.power.sites[wid]
+	ws.plant = "wind"
+	_check(not w.field_usable(field_mid, Farms.cell_corners(farm, Vector2i(0, 1))) and w.pad_usable(field_mid, Farms.cell_corners(farm, Vector2i(0, 1))),
+		"a turbine pad may go in a field where nothing else can")
+	ws.pos = field_mid - ws.dir * -Power.spacing(ws)  # cell (0, 1) lands on the field
+	ws.cells = [Vector2i(0, 1)]
+	_check(Power.cell_center(ws, Vector2i(0, 1)).distance_to(field_mid) < 1.0, "the test turbine stands in the field")
+	_check(w.power.leased(ws) == 1, "the company leases that ground")
+	_check(is_equal_approx(w.farms.field_profit(farm, Vector2i(0, 1)) - before_lease, Balance.POWER_WIND_LEASE),
+		"the farm earns the lease on top of its crop")
+	_check(farm.cells.size() == 1, "and keeps farming the field")
+
 	# Saves and copies stay in step.
 	var copy := CitySim.new()
 	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
