@@ -60,6 +60,9 @@ var _quality_hooked := false
 var _hitches := 0
 var _load_start := -1.0
 var _load_status := ""
+var _load_steps := {}
+var _step_status := ""
+var _step_start := 0.0
 var _booted := false
 var _errors := {}   # signature -> count this flush
 var _batch_n := 0
@@ -430,9 +433,28 @@ func _watch_loading(now: float) -> void:
 	if open and _load_start < 0.0:
 		_load_start = now
 		_load_status = LoadingScreen.current._status
+		_load_steps = {}
+		_step_status = _load_status
+		_step_start = now
+	elif open and LoadingScreen.current._status != _step_status:
+		_end_step(now)
+		_step_status = LoadingScreen.current._status
 	elif not open and _load_start >= 0.0:
-		event("load", {"what": _load_status, "s": snappedf(now - _load_start, 0.01)})
+		_end_step(now)
+		var e := {"what": _load_status, "s": snappedf(now - _load_start, 0.01), "steps": _load_steps}
+		# Joining a region: how long the link took to open, and the welcome
+		# to arrive and be unpacked.
+		if Session.client and not Session.client.join_marks.is_empty():
+			e["net"] = Session.client.join_marks.duplicate()
+		event("load", e)
 		_load_start = -1.0
+
+
+## Each status the loading screen showed, and how long it showed it.
+func _end_step(now: float) -> void:
+	if _step_status != "":
+		_load_steps[_step_status] = snappedf(float(_load_steps.get(_step_status, 0.0)) + now - _step_start, 0.01)
+	_step_start = now
 
 
 ## Follows the region connection: join failures, drops, and the server's
