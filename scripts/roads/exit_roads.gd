@@ -35,6 +35,8 @@ var terrain: TerrainView
 var stop := Callable()
 var _name := ""
 var _ends := []
+var _drawn := {}  # an end, as _open_ends gives it -> the node drawing it
+var _pole_side := {}  # link node -> the side its poles were first drawn on
 var _mats := {
 	"asphalt": Surfaces.asphalt(),
 	"gravel": Surfaces.gravel(),
@@ -53,6 +55,10 @@ func setup(s: CitySim, t: TerrainView, name: String, stop_at := Callable()) -> v
 	_name = name
 	stop = stop_at
 	sim.network.changed.connect(refresh)
+	# A town loaded after this was set up (the game draws before it loads)
+	# has its links only then: draw them while the loading screen is up,
+	# not on the first road built.
+	sim.buildings_changed.connect(refresh)
 	refresh()
 
 
@@ -63,20 +69,21 @@ func refresh() -> void:
 	if ends == _ends:
 		return
 	_ends = ends
-	for child in get_children():
-		child.queue_free()
+	# Only the roads that changed are drawn again: each runs on for miles,
+	# and a road built onto the county highway in town splits it, which
+	# redrew them all (a second's freeze, more in the browser).
+	for e in _drawn.keys():
+		if not e in ends:
+			_drawn[e].queue_free()
+			_drawn.erase(e)
 	# Drawn moved over with the town it belongs to (a neighbor's).
 	Terrain.shift = Terrain.shift_for(self)
 	var strips := {}
-	var parts := {}
-	for k in _mats:
-		parts[k] = SurfaceTool.new()
-		parts[k].begin(Mesh.PRIMITIVE_TRIANGLES)
-	var piers: SurfaceTool = parts.concrete
 	var offset := Vector3(Terrain.shift.x, 0.0, Terrain.shift.y)
 	for e in ends:
 		var type: int = e[3]
-		_draw(parts, e[0], e[1], e[2], type, e[4])
+		if not _drawn.has(e):
+			_drawn[e] = _draw_end(e)
 		# The land under it is graded and mowed, as under any road.
 		var row := RoadStyle.right_of_way_half(type)
 		var n := maxi(1, ceili(e[2] / PIECE))
@@ -85,17 +92,29 @@ func refresh() -> void:
 			var b: Vector3 = e[0] + e[1] * (e[2] * (i + 1) / n)
 			strips["%d:%d" % [_ends.find(e), i]] = [PackedVector3Array([a + offset, b + offset]), row + 2.0,
 				row + 2.0 + TerrainView.GRADE_FADE, row + TerrainView.MOW_VERGE]
-	piers.generate_normals()
+	Terrain.shift = Vector2.ZERO
+	if terrain != null:
+		terrain.add_strips(_name, strips)
+
+
+## One end's road as a node of its own.
+func _draw_end(e: Array) -> Node3D:
+	var root := Node3D.new()
+	add_child(root)
+	var parts := {}
+	for k in _mats:
+		parts[k] = SurfaceTool.new()
+		parts[k].begin(Mesh.PRIMITIVE_TRIANGLES)
+	_draw(parts, e[0], e[1], e[2], e[3], e[4])
+	parts.concrete.generate_normals()
 	for k in parts:
 		var mi := MeshInstance3D.new()
 		mi.mesh = parts[k].commit()
 		mi.material_override = _mats[k]
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if k in ["pole", "wire"] \
 			else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(mi)
-	Terrain.shift = Vector2.ZERO
-	if terrain != null:
-		terrain.add_strips(_name, strips)
+		root.add_child(mi)
+	return root
 
 
 func _exit_tree() -> void:
@@ -167,6 +186,10 @@ func _open_ends() -> Array:
 		if net.segments[seg].b != node:
 			pts.reverse()
 			poles = -poles
+		# A road built onto the highway in town splits it into new
+		# segments; the poles out to the horizon stay where they were.
+		poles = _pole_side.get(node, poles)
+		_pole_side[node] = poles
 		var at: Vector3 = net.nodes[node]
 		var dir := pts[pts.size() - 1] - pts[pts.size() - 2]
 		dir.y = 0.0
