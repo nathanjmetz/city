@@ -92,8 +92,8 @@ func _draw_buses() -> void:
 		var dist := front.distance_to(eye)
 		if show_routes and entry[3] > 0 and dist < FAR and kind != "taxi":
 			labels.append([front - (entry[2] as Vector3) * 6.0 + Vector3(0, 5.0, 0), entry[3]])
-		if dist > FAR:
-			continue
+		if dist > FAR or entry.size() > 4 and entry[4]:
+			continue  # parked on the road: TrafficView draws it
 		var lod := 0 if dist < NEAR else 1
 		var key := kind + str(lod)
 		if not lists.has(key):
@@ -108,10 +108,10 @@ func _draw_buses() -> void:
 				aboard[tid] = bus.load
 		if not aboard.is_empty():
 			for car in sim.traffic.cars:
-				if aboard.has(car.id):
+				if aboard.has(int(car.get("trip", car.id))):
 					var p: Vector3 = sim.traffic.car_pose(car)[0]
 					if p.distance_to(eye) < FAR:
-						labels.append([p + Vector3(0, 5.0, 0), aboard[car.id]])
+						labels.append([p + Vector3(0, 5.0, 0), aboard[int(car.get("trip", car.id))]])
 	for kind in _batches:
 		for lod in 2:
 			var mm: MultiMesh = _batches[kind][lod].multimesh

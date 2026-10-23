@@ -156,6 +156,7 @@ func _init() -> void:
 		_check(sim.buses.buses[bid].state == "driving", "only buses still on a trip remain after the depot goes")
 	_schools()
 	_taxis()
+	_bus_lanes()
 	print("TESTS FAILED" if _fails > 0 else "ALL TESTS PASSED")
 	quit(1 if _fails > 0 else 0)
 
@@ -218,6 +219,25 @@ func _taxis() -> void:
 		_check(sim.taxis.cabs[cid].state == "driving", "only cabs still on a trip remain after the company goes")
 
 
+## Two equal ways round a block, one along an avenue with bus lanes: the
+## depot routes its buses that way, and still measures the real distance.
+func _bus_lanes() -> void:
+	var sim := CitySim.new()
+	sim.economy.money = 50_000_000
+	sim.apply({"type": "build_road", "start": [0, 0], "ctrl": [200, 0], "end": [400, 0]})
+	sim.apply({"type": "build_road", "start": [400, 0], "ctrl": [400, 100], "end": [400, 200]})
+	sim.apply({"type": "build_road", "start": [0, 0], "ctrl": [0, 100], "end": [0, 200]})
+	sim.apply({"type": "build_road", "start": [0, 200], "ctrl": [200, 200], "end": [400, 200], "road": RoadStyle.Type.AVENUE_BUS})
+	var g := sim.buses._graph(sim.network)
+	var p := sim.buses._path(sim.network, g, BusNet._spot(sim.network, Vector3(0, 0, 100)),
+		BusNet._spot(sim.network, Vector3(400, 0, 100)))
+	var top := 0.0
+	for q in p.get("pts", []):
+		top = maxf(top, q.z)
+	_check(top > 190.0, "a route takes the avenue with bus lanes over an equal plain street")
+	_check(absf(float(p.get("len", 0.0)) - 600.0) < 30.0, "and measures the real distance (%.0f m)" % float(p.get("len", 0.0)))
+
+
 ## The intercity coach: with a neighbor and a road out of the region, it
 ## drives to the county highway's link, spends a while away, and comes home.
 func _coach(sim: CitySim, id: int) -> void:
@@ -235,7 +255,7 @@ func _coach(sim: CitySim, id: int) -> void:
 	_check(sim.buses._has_coach(id), "it buys a coach")
 	var seen := {}
 	var loaded := 0
-	for i in 9000:
+	for i in 15000:
 		sim.tick()
 		for bid in sim.buses.buses:
 			var bus: Dictionary = sim.buses.buses[bid]
