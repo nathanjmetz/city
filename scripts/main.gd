@@ -115,8 +115,6 @@ func _ready() -> void:
 		var x := p.x + sim.terrain_offset.x
 		var z := p.z + sim.terrain_offset.y
 		return Terrain.wild_cover(x, z) + [Terrain.crops(x, z)]
-	terrain.trees_drawn_to = func() -> float:
-		return WildView.reach(cam.camera.global_position.y)
 
 	var audio := CityAudio.new()
 	audio.setup(sim, cam.camera, func(): return _tick_time * CitySim.TICKS_PER_SECOND)

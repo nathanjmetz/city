@@ -30,6 +30,11 @@ uniform sampler2D twig_tex : filter_linear_mipmap;
 // Set by DayNight: snow cover, and the season as (autumn, bare, spring, dry).
 global uniform float snow;
 global uniform vec4 season_look;
+// Wild trees thin out and shrink toward the edge of where they're drawn
+// (set by WildView as centre x, z and reach), so they never pop in or out.
+global uniform vec4 tree_fade;
+uniform bool fade_on = false;
+varying float fade;
 varying float inner;
 varying float top;
 varying vec3 tint;
@@ -42,6 +47,11 @@ vec3 lin(vec3 c) {
 }
 void vertex() {
 	vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	fade = 1.0;
+	if (fade_on) {
+		fade = 1.0 - smoothstep(tree_fade.z * 0.72, tree_fade.z * 0.97, distance(origin.xz, tree_fade.xy));
+	}
+	VERTEX *= mix(0.4, 1.0, fade);
 	leaf_pos = VERTEX;
 	species = floor(INSTANCE_CUSTOM.a * 8.0);
 	tree_rand = fract(sin(dot(origin.xz, vec2(12.9898, 78.233))) * 43758.5453);
@@ -105,7 +115,7 @@ void fragment() {
 	// Snow resting on the tops of the crowns.
 	leaf = mix(leaf, vec3(0.4, 0.42, 0.45), snow * smoothstep(0.35, 0.95, top) * 0.75);
 	ALBEDO = leaf * t.rgb * mix(0.6, 1.15, inner) * mix(0.85, 1.2, top) * 2.0;
-	ALPHA = alpha;
+	ALPHA = alpha * mix(0.3, 1.0, fade);
 	ALPHA_SCISSOR_THRESHOLD = 0.45;
 	// With MSAA, leaf edges become partial coverage instead of popping on
 	// and off as the camera moves.
@@ -119,6 +129,16 @@ void fragment() {
 const BARK_SHADER := """
 shader_type spatial;
 render_mode cull_disabled;
+global uniform vec4 tree_fade;
+uniform bool fade_on = false;
+void vertex() {
+	float fade = 1.0;
+	if (fade_on) {
+		vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+		fade = 1.0 - smoothstep(tree_fade.z * 0.72, tree_fade.z * 0.97, distance(origin.xz, tree_fade.xy));
+	}
+	VERTEX *= fade;
+}
 void fragment() {
 	float ridges = 0.85 + 0.15 * sin(UV.x * 40.0 + sin(UV.y * 6.0) * 2.0);
 	ALBEDO = vec3(0.085, 0.07, 0.058) * ridges;
@@ -129,6 +149,9 @@ void fragment() {
 static var _meshes := {}
 static var _leaf_mat: ShaderMaterial
 static var _bark_mat: ShaderMaterial
+
+## True for wild trees: they fade out toward the edge of WildView's reach.
+var fades := false
 
 var _trees := {}  # owner key -> Array of [Transform3D, species, tint]
 var _multis := {}  # "cx,cz,species,far" -> MultiMeshInstance3D
@@ -196,7 +219,7 @@ func _chunk(g: String, sp: int, far: bool, centre: Vector3) -> MultiMeshInstance
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_custom_data = true
-	mm.mesh = tree_mesh(sp, far)
+	mm.mesh = tree_mesh(sp, far, fades)
 	mmi.multimesh = mm
 	mmi.position = centre
 	if far:
@@ -232,8 +255,8 @@ static func pick(rng: RandomNumberGenerator, front := false) -> Array:
 # ---------------------------------------------------------------- meshes
 
 ## The mesh for a species; `far` is the light version for distant chunks.
-static func tree_mesh(sp: int, far := false) -> ArrayMesh:
-	var key := sp * 2 + (1 if far else 0)
+static func tree_mesh(sp: int, far := false, fades := false) -> ArrayMesh:
+	var key := sp * 2 + (1 if far else 0) + (100 if fades else 0)
 	if _meshes.has(key):
 		return _meshes[key]
 	var rng := RandomNumberGenerator.new()
@@ -247,9 +270,9 @@ static func tree_mesh(sp: int, far := false) -> ArrayMesh:
 		_: _broadleaf(sp, rng, leaves, wood, far)
 	var mesh := ArrayMesh.new()
 	leaves.commit(mesh)
-	mesh.surface_set_material(0, _leaf_material())
+	mesh.surface_set_material(0, _leaf_material(fades))
 	wood.commit(mesh)
-	mesh.surface_set_material(1, _bark_material())
+	mesh.surface_set_material(1, _bark_material(fades))
 	_meshes[key] = mesh
 	return mesh
 
@@ -343,7 +366,11 @@ static func _limb(st: SurfaceTool, a: Vector3, b: Vector3, r0: float, r1: float)
 			st.add_vertex(quad[k][0])
 
 
-static func _leaf_material() -> ShaderMaterial:
+static var _wild_leaf_mat: ShaderMaterial
+static var _wild_bark_mat: ShaderMaterial
+
+
+static func _leaf_material(fades := false) -> ShaderMaterial:
 	if _leaf_mat == null:
 		var shader := Shader.new()
 		shader.code = LEAF_SHADER
@@ -351,16 +378,20 @@ static func _leaf_material() -> ShaderMaterial:
 		_leaf_mat.shader = shader
 		_leaf_mat.set_shader_parameter("leaf_tex", _leaf_texture())
 		_leaf_mat.set_shader_parameter("twig_tex", _twig_texture())
-	return _leaf_mat
+		_wild_leaf_mat = _leaf_mat.duplicate()
+		_wild_leaf_mat.set_shader_parameter("fade_on", true)
+	return _wild_leaf_mat if fades else _leaf_mat
 
 
-static func _bark_material() -> ShaderMaterial:
+static func _bark_material(fades := false) -> ShaderMaterial:
 	if _bark_mat == null:
 		var shader := Shader.new()
 		shader.code = BARK_SHADER
 		_bark_mat = ShaderMaterial.new()
 		_bark_mat.shader = shader
-	return _bark_mat
+		_wild_bark_mat = _bark_mat.duplicate()
+		_wild_bark_mat.set_shader_parameter("fade_on", true)
+	return _wild_bark_mat if fades else _bark_mat
 
 
 ## A square of overlapping leaves on transparency, drawn once at start-up.

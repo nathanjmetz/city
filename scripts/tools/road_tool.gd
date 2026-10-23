@@ -511,8 +511,8 @@ func _show_guide(at: Vector3) -> void:
 	var dir := Vector3(cos(_guide_angle), 0.0, sin(_guide_angle))
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	RoadMesh.add_strip(st, PackedVector3Array([at - dir * 400.0, at + dir * 400.0]), -0.25, 0.25, 0.3)
-	_guide.mesh = st.commit()
+	RoadMesh.add_strip(st, Terrain.densify(PackedVector3Array([at - dir * 400.0, at + dir * 400.0]), 6.0), -0.25, 0.25, 0.3)
+	_guide.mesh = Terrain.drape(st.commit(), true)
 	_guide.visible = true
 
 
