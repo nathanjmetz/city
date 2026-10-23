@@ -109,6 +109,10 @@ var _by_dist := {"power": [], "water": []}  # lots with a road to each utility, 
 var _on_mains := {}
 var _lot_rows := {}  # lot key -> [where it is, _lot_reach]
 var _rows_key := []
+var _loads := {}  # building key -> [its dictionary, power and water draw]
+var _alloc_dirty := true
+var _alloc_caps := {}
+var _alloc_use := {"power": [0, 0], "water": [0, 0]}
 
 
 ## The Economy page area a service kind belongs to.
@@ -315,7 +319,11 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 		_geo = geo
 		_geo_lots = lots
 		_update_reach(network, lots, owners)
-	# Power and water go to the nearest lots first, up to capacity.
+		_alloc_dirty = true
+	# Power and water go to the nearest lots first, up to capacity. The
+	# shares only change with the lots in reach, the capacity, or a building
+	# going up, coming down or changing (which replaces its dictionary).
+	var caps := {}
 	for u in ["power", "water"]:
 		var cap := 0
 		for id in buildings:
@@ -324,19 +332,44 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 		if u == "power":
 			for pl in plants:
 				cap += int(pl.capacity)
-		var used := 0
-		for entry in _by_dist[u]:
-			var key: String = entry[1]
-			var load := 1
-			if city_buildings.has(key):
-				load = LOAD[int(city_buildings[key].zone)] * BuildingTypes.load_of(city_buildings[key])
-				if used + load > cap:
-					served[key][u] = false
-					continue
-				used += load
-			served[key][u] = used <= cap
-		utility_use[u] = [used, cap]
+		caps[u] = cap
+	if _sync_loads(city_buildings) or _alloc_dirty or caps != _alloc_caps:
+		_alloc_dirty = false
+		_alloc_caps = caps
+		for u in ["power", "water"]:
+			var cap: int = caps[u]
+			var used := 0
+			for entry in _by_dist[u]:
+				var key: String = entry[1]
+				var row: Array = _loads.get(key, [])
+				if not row.is_empty():
+					var load: int = row[1]
+					if used + load > cap:
+						served[key][u] = false
+						continue
+					used += load
+				served[key][u] = used <= cap
+			_alloc_use[u] = [used, cap]
+	utility_use = {"power": _alloc_use.power.duplicate(), "water": _alloc_use.water.duplicate()}
 	_serve_from_utilities(_on_mains, city_buildings)
+
+
+## Keeps each building's draw, worked out again only for buildings that
+## are new or were replaced. True when any changed.
+func _sync_loads(city_buildings: Dictionary) -> bool:
+	var changed := false
+	for key in city_buildings:
+		var b: Dictionary = city_buildings[key]
+		var row: Array = _loads.get(key, [])
+		if row.is_empty() or not is_same(row[0], b):
+			_loads[key] = [b, LOAD[int(b.zone)] * BuildingTypes.load_of(b)]
+			changed = true
+	if _loads.size() != city_buildings.size():
+		for key in _loads.keys():
+			if not city_buildings.has(key):
+				_loads.erase(key)
+		changed = true
+	return changed
 
 
 ## Works out what every lot is in reach of: the four coverage services by

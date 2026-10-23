@@ -146,6 +146,25 @@ func _init() -> void:
 	copy.apply({"type": "clear"})
 	_check(copy.policies.levels.is_empty() and copy.farms.policies == copy.policies, "a new map starts at Standard")
 
+	# The town's character on the page, and the advisor's word when it changes.
+	var tc := TownCulture.new()
+	_check(EconomyPage.character(tc)[0].begins_with("Too small"), "a new town has no reputation yet")
+	for k in TownCulture.SECTORS:
+		tc.shares[k] = TownCulture.SECTORS[k].us
+		tc.now[k] = TownCulture.SECTORS[k].us
+	tc.shares.mining = 0.05
+	tc.now.mining = 0.08
+	tc.identity = "mining"
+	var who := EconomyPage.character(tc)
+	_check(who[0] == "Coal and oil town" and who[1].begins_with("Coal and oil: 12.5×") and who[1].contains("▲ rising"),
+		"the page names the town and its strongest trade (%s / %s)" % who)
+	var adv := CitySim.new()
+	adv.culture.identity = "mining"
+	adv.culture.since = 0
+	_check(Advisor.tips(adv).any(func(t): return t.id == "identity_mining"), "the advisor mentions a new reputation")
+	adv.tick_count = (Balance.CULTURE_NEWS_DAYS + 1) * 24 * CitySim.TICKS_PER_HOUR
+	_check(not Advisor.tips(adv).any(func(t): return t.id == "identity_mining"), "and lets it rest after a year")
+
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 

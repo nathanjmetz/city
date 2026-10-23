@@ -2010,3 +2010,6 @@ const CULTURE_FARMLAND_PER_M2 := 3
 ## industrial lot, metres) and the least road frontage worth asking for.
 const CULTURE_FRONTAGE_DEPTH := 60.0
 const CULTURE_FRONTAGE_MIN := 80.0
+## How long (game days; a day is a month) the advisor mentions that the town
+## has a new reputation (TownCulture identity).
+const CULTURE_NEWS_DAYS := 12
