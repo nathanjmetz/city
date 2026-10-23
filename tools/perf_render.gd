@@ -46,6 +46,11 @@ func _process(_delta: float) -> bool:
 		row.objects = maxf(row.objects, Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME))
 		row.process_ms += Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0 / 30.0
 	if _view_frames == 60:
+		# --shots DIR saves each view as a picture, to check what was drawn.
+		var args := OS.get_cmdline_user_args()
+		var at := args.find("--shots")
+		if at >= 0 and at + 1 < args.size():
+			root.get_texture().get_image().save_png(args[at + 1].path_join(VIEWS[_view][0] + ".png"))
 		_next_view()
 	return false
 
