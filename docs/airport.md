@@ -11,9 +11,11 @@ Brawn's airport hub (green-lit 2026-10-22). The player places a grass strip and 
 | Regional | 6,500 x 150 ft | C-III | 800 ft wide, 1,000 ft past ends | 1,700 ft, 500 to 1,010 ft |
 | International | 10,000 x 150 ft | D-V | 800 ft wide, 1,000 ft past ends | 2,500 ft, 1,000 to 1,750 ft |
 
+A town's airport grows as far as regional. An international airport is a regional asset (Brawn, 2026-10-23): it sits on open land, its own board runs it, and every town pays in. Its sizes are kept in `Airports.TIERS` for that work, which the Player interaction design thread leads.
+
 The airport owns the runway's object free area plus a building area beside it. No buildings or lots may sit in the protection zones; farming may, as at real airports. Brawn's concern that a new player can't know how much room an airport needs is handled in three ways:
 
-1. **See it.** While placing, every size's land is drawn: green if clear today, amber with what's in the way.
+1. **See it.** While placing, the land for every size up to regional is drawn: green if clear today, amber with what's in the way.
 2. **Give it land.** Reserve (kind `airport`) keeps roads and zoning off land for it.
 3. **Tell the manager.** The selection panel's "Your word to the leader" (Permits) sets grow / your call / hold off. Buying land through the player's things with permits is step 2.
 

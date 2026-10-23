@@ -210,6 +210,7 @@ func _ready() -> void:
 
 	var airport_view := AirportView.new()
 	add_child(airport_view)
+	airport_view.terrain = terrain
 	airport_view.setup(sim, _tick_fraction)
 
 	var airport_tool := AirportTool.new()

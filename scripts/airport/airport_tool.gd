@@ -56,7 +56,7 @@ func _ready() -> void:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mi.visible = false
 		add_child(mi)
-	for t in Airports.TIERS.size():
+	for t in Airports.TOWN_TIERS:
 		var l := RegionView._label(Color.WHITE, 30)
 		l.visible = false
 		add_child(l)
@@ -134,7 +134,7 @@ func _check() -> void:
 		_corr = RoadWins.corridors(sim.network, RoadWins.BUILDING_SLACK)
 		_corr_dirty = false
 	_status = []
-	for t in Airports.TIERS.size():
+	for t in Airports.TOWN_TIERS:
 		_status.append(sim.airports.blockers(sim, _site, t, _corr))
 	var problem := sim.airports.problem(sim, _site, _corr)
 	if problem == "" and Balance.AIRPORT_COST > sim.economy.money:
@@ -146,12 +146,12 @@ func _check() -> void:
 
 
 func _draw_plan() -> void:
-	if _status.size() != Airports.TIERS.size():
+	if _status.size() != Airports.TOWN_TIERS:
 		return
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	# Biggest first, so the smaller ones draw on top.
-	for t in range(Airports.TIERS.size() - 1, -1, -1):
+	for t in range(Airports.TOWN_TIERS - 1, -1, -1):
 		var col: Color = (OK if _ok else BAD) if t == 0 else (ROOM if _status[t].is_empty() else BLOCKED)
 		var y := 0.3 + (3 - t) * 0.05
 		var fill := 0.35 if t == 0 else 0.12
@@ -209,9 +209,9 @@ func _update_hint() -> void:
 		return
 	var text := "Airport ($%s): a grass strip for crop dusters and private planes. Its manager paves it and grows it when it pays and the land is clear. [ ] turn the runway." \
 		% CitySim.money_text(Balance.AIRPORT_COST)
-	if not _site.is_empty() and _status.size() == Airports.TIERS.size():
+	if not _site.is_empty() and _status.size() == Airports.TOWN_TIERS:
 		var room := []
-		for t in range(1, Airports.TIERS.size()):
+		for t in range(1, Airports.TOWN_TIERS):
 			var b: Dictionary = _status[t]
 			room.append("%s: %s" % [Airports.TIERS[t].name, "room" if b.is_empty() else Airports.describe_blockers(b)])
 		text += "\nRunway %s. Room to grow: %s." % [Airports.runway_name(_site), " · ".join(room)]

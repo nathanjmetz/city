@@ -21,6 +21,8 @@ const METAL := Color(0.58, 0.6, 0.62)
 const ROOF := Color(0.45, 0.2, 0.17)
 
 var sim: CitySim
+## Grades and mows the ground under each runway and its building area.
+var terrain: TerrainView
 var frac := Callable()  # how far through the current tick, 0 to 1
 var _sites := {}   # airport id -> Node3D
 var _planes := {}  # plane id -> MeshInstance3D
@@ -69,7 +71,7 @@ func _draw_plan() -> void:
 	var corr := RoadWins.corridors(sim.network, RoadWins.BUILDING_SLACK)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for t in range(Airports.TIERS.size() - 1, a.tier - 1, -1):
+	for t in range(Airports.TOWN_TIERS - 1, a.tier - 1, -1):
 		var col := AirportTool.OK
 		if t > a.tier:
 			col = AirportTool.ROOM if sim.airports.blockers(sim, a, t, corr, _plan_id).is_empty() else AirportTool.BLOCKED
@@ -84,6 +86,8 @@ func _draw_plan() -> void:
 
 
 func _rebuild() -> void:
+	# Graded first, so the strip is laid on the graded ground.
+	_grade()
 	for id in _sites.keys():
 		var a = sim.airports.sites.get(id)
 		if a == null or _sites[id].get_meta("key") != _key(a):
@@ -93,6 +97,29 @@ func _rebuild() -> void:
 		if not _sites.has(id):
 			_sites[id] = _site(sim.airports.sites[id])
 	_draw_plan()
+
+
+## The runway's clear area and the building area are graded flat and mowed,
+## as an airfield is, so the turf lies on smooth ground with no brush on it.
+func _grade() -> void:
+	if terrain == null:
+		return
+	var shift := Terrain.shift_for(self)
+	var offset := Vector3(shift.x, 0.0, shift.y)
+	var strips := {}
+	for id in sim.airports.sites:
+		var a: Dictionary = sim.airports.sites[id]
+		var k := Airports.tier(a.tier)
+		var u: float = Airports.half_len(a.tier) + k.beyond * Airports.FT
+		var rofa: float = k.rofa * Airports.FT * 0.5
+		strips["%d:field" % id] = [PackedVector3Array([Airports.at(a, -u, 0.0) + offset, Airports.at(a, u, 0.0) + offset]),
+			rofa, rofa + TerrainView.GRADE_FADE, rofa + TerrainView.MOW_VERGE]
+		var side: Vector2 = k.side
+		var v: float = (rofa + side.y * 0.5) * a.side
+		strips["%d:side" % id] = [PackedVector3Array([Airports.at(a, -side.x * 0.5, v) + offset,
+			Airports.at(a, side.x * 0.5, v) + offset]), side.y * 0.5, side.y * 0.5 + TerrainView.GRADE_FADE,
+			side.y * 0.5 + TerrainView.MOW_VERGE]
+	terrain.add_strips("airports", strips)
 
 
 static func _key(a: Dictionary) -> String:

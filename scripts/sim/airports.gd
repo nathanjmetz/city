@@ -55,6 +55,10 @@ const TIERS := [
 const GRADE_CUT := 0.02
 ## The tiers built so far; the rest come in later steps.
 const MAX_TIER := 1
+## A town's airport grows as far as regional. An international airport is a
+## regional asset on open land, run by its own board with every town paying
+## in (Brawn, 2026-10-23), so it isn't one of a town airport's sizes.
+const TOWN_TIERS := 3
 ## Wind most often blows from the south-west in southern Indiana, so planes
 ## take off and land heading into it. Compass degrees it blows from.
 const WIND_FROM := 220.0
@@ -637,7 +641,7 @@ func _month(sim: CitySim) -> void:
 		a.idle = ""
 		if stance == "hold":
 			a.idle = "Holding off on growing, as you asked."
-		elif a.tier < MAX_TIER and a.tier + 1 < TIERS.size():
+		elif a.tier < MAX_TIER and a.tier + 1 < TOWN_TIERS:
 			var cost: int = Balance.AIRPORT_UPGRADE[a.tier + 1]
 			var busy := float(based(id).size()) / float(tier(a.tier).planes)
 			if a.bank < cost:
@@ -970,7 +974,7 @@ func describe(sim: CitySim, id: int) -> Dictionary:
 	if sim.tick_count - int(room[0]) >= 60 or room[0] > sim.tick_count:
 		var corr := RoadWins.corridors(sim.network, RoadWins.BUILDING_SLACK)
 		var lines := []
-		for t in range(a.tier + 1, TIERS.size()):
+		for t in range(a.tier + 1, TOWN_TIERS):
 			var b := blockers(sim, a, t, corr, id)
 			lines.append([TIERS[t].name, "Room to grow" if b.is_empty() else "Blocked: " + describe_blockers(b)])
 		room = [sim.tick_count, lines]
