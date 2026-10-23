@@ -2661,8 +2661,8 @@ func _file_walker(w: Dictionary) -> void:
 
 
 ## Metres a walker has gone (worked out from the steps, not stored).
-func _walker_d(w: Dictionary) -> float:
-	var steps := float(_wstep - int(w.t0))
+func _walker_d(w: Dictionary, frac := 0.0) -> float:
+	var steps := float(_wstep - int(w.t0)) + frac
 	if not w.has("holds"):
 		return steps * w.v * DT
 	var step_m: float = w.v * DT
@@ -3139,14 +3139,15 @@ static func _line_at(line: PackedVector3Array, f: float) -> Vector3:
 	return line[i].lerp(line[i + 1], clampf(f - i, 0.0, 1.0))
 
 
-## Where a person on foot is and which way they face.
-func walker_pose(w: Dictionary, ahead := 0.0) -> Array:
-	var d := minf(_walker_d(w) + ahead, w.len)
+## Where a person on foot is, which way they face and how far they've
+## walked, `frac` of a step after the last one (a kerb wait holds them).
+func walker_pose(w: Dictionary, frac := 0.0) -> Array:
+	var d := minf(_walker_d(w, frac), w.len)
 	var p := _poly_point(w.pts, w.cum, d)
 	var q := _poly_point(w.pts, w.cum, minf(d + 0.5, w.len))
 	if q.distance_to(p) < 0.01:
 		q = p + _flat_dir(w.pts[w.pts.size() - 1] - w.pts[maxi(w.pts.size() - 2, 0)]) * 0.5
-	return [p, _flat_dir(q - p)]
+	return [p, _flat_dir(q - p), d]
 
 
 ## A vehicle by id, wherever it is: {"car", "state": "driving"|"waiting"|
