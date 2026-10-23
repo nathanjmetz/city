@@ -35,8 +35,9 @@ const OWNERS := [
 	["scripts/buildings", "Art style and asset library"], ["scripts/power", "Power"],
 	["scripts/banks", "Banks"], ["scripts/sim/balance", "Game balance"],
 	["construction", "Construction"], ["scripts/perf", "Performance budget"],
-	["scripts/telemetry", "Player telemetry"],
+	["scripts/telemetry", "Player telemetry"], ["scripts/audio", "Sound and music"],
 ]
+const SOUND_OWNER := "Sound and music"
 const UI_OWNER := "Build roadmap and loop"
 const PERF_OWNER := "Performance budget"
 const NET_OWNER := "Multiplayer and game shell"
@@ -93,6 +94,7 @@ static func analyze(batches: Array) -> Dictionary:
 	_error_fixes(ev, fixes)
 	_speed_fixes(ev, fixes)
 	_finding_fixes(ev, fixes)
+	_sound_fixes(ev, fixes)
 	_stuck_fixes(ev, fixes)
 	fixes.sort_custom(func(a, b): return a.score > b.score)
 	var hunts: Array = ev.get("hunt", []).filter(func(h): return h.end == "used")
@@ -359,6 +361,27 @@ static func median(xs: Array) -> float:
 
 
 ## events: the moments behind it; the first with a replay goes along.
+## Sounds players flagged as bad (pause menu > Audio, or N). The latest flag
+## from each player counts, so taking a flag back clears it.
+static func _sound_fixes(ev: Dictionary, fixes: Array) -> void:
+	var last := {}   # "sound|who" -> event
+	for e in ev.get("sound_flag", []):
+		last["%s|%s" % [e.sound, e._who]] = e
+	var bad := {}    # sound -> events still flagged
+	for e in last.values():
+		if bool(e.get("on", true)):
+			if not bad.has(e.sound):
+				bad[e.sound] = []
+			bad[e.sound].append(e)
+	for sound in bad:
+		var g: Array = bad[sound]
+		var who := _who(g)
+		var just := g.filter(func(e): return e.get("how", "") == "just_heard").size()
+		_fix(fixes, 55 + 10 * who, "Bad sound: \"%s\" (assets/audio/%s.ogg)" % [str(g[0].get("label", sound)), sound],
+			"Flagged by %d players%s. Muted for them; replace it with a better real recording or remove it." \
+			% [who, " (%d right after hearing it)" % just if just > 0 else ""], SOUND_OWNER, "sound", who)
+
+
 static func _fix(fixes: Array, score: float, title: String, detail: String, owner: String, kind: String, players: int,
 		events := []) -> void:
 	var f := {"score": snappedf(score, 0.1), "title": title, "detail": detail, "owner": owner, "kind": kind,

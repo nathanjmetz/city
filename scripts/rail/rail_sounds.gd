@@ -62,6 +62,7 @@ func _ready() -> void:
 func _player(stream: String, unit: float, range_m: float) -> AudioStreamPlayer3D:
 	var p := AudioStreamPlayer3D.new()
 	p.stream = _streams[stream]
+	p.set_meta("sound", "world/rail/" + stream)
 	p.bus = "World"
 	p.unit_size = unit
 	p.max_distance = range_m
@@ -275,7 +276,10 @@ func _apply(s: Dictionary, gain_db: float) -> void:
 		return
 	if not p.playing:
 		p.play()
+	var cam := get_viewport().get_camera_3d()
 	p.volume_db = linear_to_db(amp) + gain_db
+	if cam:
+		p.volume_db = SoundSettings.level3d(p.get_meta("sound"), p, p.volume_db, cam.global_position)
 
 
 ## Where a train's lead engine is, with the rails' height (INF if it's away).

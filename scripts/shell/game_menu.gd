@@ -4,7 +4,8 @@ extends CanvasLayer
 ## screen. Escape puts tools down and closes panels first (the HUD does that);
 ## once nothing is left, Escape opens this. Resume, save, back to the title
 ## screen, credits, or quit. In a shared region it shows the invite and lets you leave
-## (the region keeps going).
+## (the region keeps going). Graphics and Audio have their own pages; N
+## opens Audio at "Just heard" to flag a bad sound.
 
 var game: Node  # main.gd
 
@@ -13,6 +14,11 @@ var _col := VBoxContainer.new()
 var _title := ShellStyle.title("", 28)
 var _note := ShellStyle.text("", 14, 500, Brand.INK_MUTED)
 var _was_speed := 1
+## What was heard just before the menu opened (SoundSettings.recent), so the
+## menu's own clicks don't crowd it.
+var _just_heard := []
+var _preview := AudioStreamPlayer.new()
+var _preview_stop: SceneTreeTimer
 
 
 func _ready() -> void:
@@ -49,6 +55,18 @@ func _ready() -> void:
 	panel.add_child(_col)
 	if Session.client:
 		Session.client.disconnected.connect(_lost_connection)
+	add_child(_preview)
+
+
+## N: "that sound was bad". Opens the Audio page with what just played.
+func _unhandled_key_input(event: InputEvent) -> void:
+	var k := event as InputEventKey
+	if k == null or not k.pressed or k.echo or k.keycode != KEY_N or k.ctrl_pressed or k.meta_pressed:
+		return
+	if not _shade.visible:
+		open()
+	_audio()
+	get_viewport().set_input_as_handled()
 
 
 func toggle() -> void:
@@ -59,6 +77,7 @@ func toggle() -> void:
 
 
 func open() -> void:
+	_just_heard = SoundSettings.recent()
 	_fill()
 	_shade.visible = true
 	_was_speed = game.speed
@@ -66,6 +85,7 @@ func open() -> void:
 
 
 func close() -> void:
+	_preview.stop()
 	_shade.visible = false
 	game.set_speed(_was_speed)
 
@@ -103,6 +123,7 @@ func _fill() -> void:
 	var q := GraphicsQuality.current
 	if q and q.active:
 		_col.add_child(_button("Graphics: " + q.label(), _graphics))
+	_col.add_child(_button("Audio" + ("  ·  muted" if SoundSettings.muted else ""), _audio))
 	_col.add_child(_button("Credits", func(): _note.text = SoundCredits.text()))
 	if not OS.has_feature("web"):
 		_col.add_child(_button("Quit to desktop", func():
@@ -153,6 +174,123 @@ func _graphics() -> void:
 			row.add_child(b)
 		_col.add_child(row)
 	_col.add_child(_button("Back", _fill))
+
+
+## The Audio page: a volume for each channel and mute (like CS2's Audio
+## tab), then every sound with Play and Flag. A flagged sound goes quiet
+## right away and the flag is sent to us so it gets replaced. "Just heard"
+## lists what played in the seconds before the menu opened.
+func _audio() -> void:
+	for c in _col.get_children():
+		if c != _title and c != _note:
+			c.queue_free()
+	_title.text = "Audio"
+	_note.text = "Hear a bad sound? Flag it. It goes quiet right away, and we replace it."
+	for ch in SoundSettings.CHANNELS:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		var name := ShellStyle.text(ch[1], 15, 600)
+		name.custom_minimum_size = Vector2(96, 0)
+		row.add_child(name)
+		var slider := HSlider.new()
+		slider.min_value = 0
+		slider.max_value = 100
+		slider.step = 5
+		slider.value = roundf(SoundSettings.volume[ch[0]] * 100.0)
+		slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		slider.focus_mode = Control.FOCUS_NONE
+		var pct := ShellStyle.text("%d%%" % slider.value, 14, 500, Brand.INK_MUTED)
+		pct.custom_minimum_size = Vector2(44, 0)
+		pct.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		slider.value_changed.connect(func(v: float):
+			pct.text = "%d%%" % v
+			SoundSettings.set_volume(ch[0], v / 100.0))
+		row.add_child(slider)
+		row.add_child(pct)
+		_col.add_child(row)
+	_col.add_child(ShellStyle.text("Music is for your own songs; none are in the game yet.", 13, 500, Brand.INK_MUTED))
+	var mute := _button("Unmute all sounds" if SoundSettings.muted else "Mute all sounds", func():
+		SoundSettings.set_muted(not SoundSettings.muted)
+		_audio())
+	_col.add_child(mute)
+
+	var list := VBoxContainer.new()
+	list.add_theme_constant_override("separation", 4)
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var heard := _just_heard.filter(func(h): return not SoundSettings.is_flagged(h.id))
+	if not heard.is_empty():
+		list.add_child(ShellStyle.text("Just heard", 15, 600))
+		for h in heard.slice(0, 6):
+			list.add_child(_sound_row(h.id, "just_heard"))
+	var flagged := SoundSettings.CATALOG.filter(func(c): return SoundSettings.is_flagged(c[0]))
+	if not flagged.is_empty():
+		list.add_child(ShellStyle.text("Flagged (muted, being replaced)", 15, 600))
+		for c in flagged:
+			list.add_child(_sound_row(c[0], "list"))
+	for ch in SoundSettings.CHANNELS.slice(2):
+		list.add_child(ShellStyle.text(ch[1], 15, 600))
+		for c in SoundSettings.CATALOG:
+			if c[2] == ch[0] and not SoundSettings.is_flagged(c[0]):
+				list.add_child(_sound_row(c[0], "list"))
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.custom_minimum_size = Vector2(480, 300)
+	scroll.add_child(list)
+	_col.add_child(scroll)
+	_col.add_child(ShellStyle.text("Press N any time to flag what you just heard.", 13, 500, Brand.INK_MUTED))
+	_col.add_child(_button("Back", func():
+		_preview.stop()
+		_fill()))
+
+
+## One sound: its name, Play (always plays, even when flagged, so you can
+## hear what you flagged) and Flag or Unflag.
+func _sound_row(id: String, how: String) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	var bad := SoundSettings.is_flagged(id)
+	var name := ShellStyle.text(SoundSettings.info(id)[1], 14, 500, Brand.INK_MUTED if bad else Brand.INK)
+	name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	row.add_child(name)
+	var play := _button("Play", func(): _play(id))
+	_small(play)
+	row.add_child(play)
+	var flag := _button("Unflag" if bad else "Flag bad", func():
+		SoundSettings.flag(id, not bad, how)
+		_note.text = ("Flagged \"%s\". It's muted now, and it's on the list to replace." if not bad \
+			else "\"%s\" is back on.") % SoundSettings.info(id)[1]
+		var keep := _note.text
+		_audio()
+		_note.text = keep)
+	_small(flag)
+	row.add_child(flag)
+	# Room for the scroll bar.
+	row.add_child(Control.new())
+	row.get_child(-1).custom_minimum_size = Vector2(6, 0)
+	return row
+
+
+func _small(b: Button) -> void:
+	b.custom_minimum_size = Vector2(86, 32)
+	b.add_theme_font_size_override("font_size", 14)
+
+
+## Plays a sound on its own (loops for 4 seconds), whatever its flag.
+func _play(id: String) -> void:
+	var stream = load("res://assets/audio/%s.ogg" % id)
+	if stream == null:
+		return
+	_preview.stop()
+	_preview.stream = stream
+	_preview.bus = "Master"
+	_preview.play()
+	var t := get_tree().create_timer(4.0)
+	_preview_stop = t
+	t.timeout.connect(func():
+		if _preview_stop == t:
+			_preview.stop())
 
 
 func _lost_connection() -> void:

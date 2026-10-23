@@ -116,7 +116,7 @@ func _ready() -> void:
 		_update_requests()
 		if not client.requests.is_empty() and _bell_wait <= 0.0:
 			_bell_wait = DOORBELL_GAP
-			_bell.play())
+			_ring())
 	_update_requests()
 	client.city_added.connect(func(_id): _update_who())
 	_update_who()
@@ -161,7 +161,7 @@ func _ring_for(line: Dictionary) -> void:
 	if (from != "" and from != me) or neighbor_joined:
 		if _bell_wait <= 0.0:
 			_bell_wait = DOORBELL_GAP
-			_bell.play()
+			_ring()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -266,3 +266,11 @@ func _invite_text() -> String:
 	if c.url.begins_with("wss://"):
 		return Session.invite_link(c.url, c.invite_code)
 	return "Invite code %s, server %s" % [c.invite_code, c.url]
+
+
+## The doorbell, unless the player flagged it as a bad sound.
+func _ring() -> void:
+	if SoundSettings.is_flagged("ui/doorbell"):
+		return
+	SoundSettings.heard("ui/doorbell", db_to_linear(_bell.volume_db))
+	_bell.play()
