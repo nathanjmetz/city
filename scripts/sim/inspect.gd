@@ -9,6 +9,13 @@ extends RefCounted
 ## The thing under a ground point: {type: "service"|"farm"|"lot"|"road", id},
 ## or {} for open ground. Buildings win over the road they stand on.
 static func pick(sim: CitySim, p: Vector3) -> Dictionary:
+	if not sim.rail.trains.is_empty():
+		var tid := sim.rail.train_at(p)
+		if tid != -1:
+			return {"type": "train", "id": tid}
+	var rid := sim.rail.depot_at(p)
+	if rid != -1:
+		return {"type": "rail", "id": rid}
 	var mid := sim.mail.at(p)
 	if mid != -1:
 		return {"type": "post_office", "id": mid}
@@ -87,6 +94,13 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 			return [sim.education.campuses[sel.id].pos, Education.CELL * 0.75]
 		"post_office":
 			return sim.mail.extent(sel.id)
+		"rail":
+			return [sim.rail.depots[sel.id].pos, Rail.YARD_LEN * 0.5 + Rail.LADDER]
+		"train":
+			var cars := sim.rail.car_poses(sel.id)
+			if cars.is_empty():
+				return []
+			return [(cars[0][1] + cars[-1][2]) * 0.5, maxf(12.0, (cars[0][1] as Vector3).distance_to(cars[-1][2]) * 0.5 + 4.0)]
 		"farm":
 			return [sim.farms.farms[sel.id].pos, Farms.FARMHOUSE_SIZE.length() * 0.5 + 3.0]
 		"lot":
@@ -103,6 +117,8 @@ static func exists(sim: CitySim, sel: Dictionary) -> bool:
 		"water": return sim.services.water.utilities.has(sel.id) and sim.services.buildings.has(sel.id)
 		"hub": return sim.hubs.hubs.has(sel.id)
 		"post_office": return sim.mail.offices.has(sel.id)
+		"rail": return sim.rail.depots.has(sel.id)
+		"train": return sim.rail.trains.has(sel.id)
 		"farm": return sim.farms.farms.has(sel.id)
 		"industry": return sim.industry.sites.has(sel.id)
 		"campus": return sim.education.campuses.has(sel.id)
@@ -124,6 +140,8 @@ static func describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 		"water": return WaterUtility.describe(sim, sel.id)
 		"hub": return HubInfo.describe(sim, sel.id)
 		"post_office": return MailInfo.describe(sim, sel.id)
+		"rail": return RailInfo.depot(sim, sel.id)
+		"train": return RailInfo.train(sim, sel.id)
 		"farm": return _farm(sim, sel.id)
 		"industry": return _industry(sim, sel.id)
 		"campus": return CampusInfo.describe(sim, sel.id)

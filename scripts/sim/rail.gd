@@ -68,6 +68,8 @@ const STOCK := {
 }
 const CAR_FOR := {"crude oil": "tank", "ore": "hopper", "logs": "flat", "grain": "covered"}
 const DECIDE_EVERY := Balance.RAIL_DECIDE_EVERY
+## The place tool's kind for a rail depot (ServiceTool, next to Mail.TOOL_KIND).
+const TOOL_KIND := 120
 const TICKS_PER_DAY := 24 * CitySim.TICKS_PER_HOUR
 
 const FIRST := ["Ruth", "Walt", "June", "Earl", "Marge", "Dale", "Lois", "Gene", "Opal", "Vern", "Irene",
@@ -141,6 +143,9 @@ var region_nodes := {}
 var crossings := []
 ## Pieces held by a train's track warrant: piece -> train id.
 var held := {}
+
+## Goes up whenever track or yards change (trees, views).
+var version := 0
 
 var _next := {"depot": 1, "line": 1, "node": 1, "piece": 1, "train": 1}
 var _cum := {}        # piece -> [cumulative metres at each point]
@@ -255,6 +260,10 @@ func remove_depot(sim: CitySim, id: int) -> void:
 ## player can pre-approve land around it.
 func attach(sim: CitySim) -> void:
 	sim.permits.costers["rail"] = func(_s, req: Dictionary, route: Array, hits: Dictionary) -> int:
+		if not depots.has(int(req.hub_id)):
+			# Not one of ours (another rail hub, or a test): the bell's own pricing.
+			return int(req.get("base", 0)) + roundi(Permits.length(route) * float(req.get("per_m", 0))) \
+				+ hits.get("roads", []).size() * Permits.PER_CROSSING
 		var kind := _filing_kind
 		for lid in lines:
 			if int(lines[lid].permit) == int(req.id):
@@ -1716,6 +1725,7 @@ func _measure(pid: int) -> void:
 
 func _rebuild(sim: CitySim) -> void:
 	_dirty = false
+	version += 1
 	_cum.clear()
 	_lim.clear()
 	for pid in pieces:

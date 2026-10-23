@@ -605,6 +605,15 @@ func _services_drawer() -> PanelContainer:
 	pb.pressed.connect(func(): service_tool.set_kind(Mail.TOOL_KIND))
 	mail.add_child(pb)
 	_service_cards[Mail.TOOL_KIND] = pb
+	# The railroad: its leader plans the track and asks before building.
+	row.add_child(VSeparator.new())
+	var rail := _section(row, "Rail")
+	var rb := _card("train", "Rail depot", "")
+	rb.tooltip_text = "Rail depot: $%s. Its leader lays track to the region and to industry, by your permit." % \
+		CitySim.money_text(Balance.RAIL_DEPOT_COST)
+	rb.pressed.connect(func(): service_tool.set_kind(Rail.TOOL_KIND))
+	rail.add_child(rb)
+	_service_cards[Rail.TOOL_KIND] = rb
 	return drawer
 
 
