@@ -130,6 +130,10 @@ static func new_sim() -> CitySim:
 ## Takes the latest copy of a town from its player's computer: a postcard
 ## or a full copy.
 func update_city(id: String, d: Dictionary) -> void:
+	# A full copy without roads is broken (a cut-short save): never let it
+	# replace a town.
+	if not d.get("postcard", false) and not d.has("roads"):
+		return
 	if cities.has(id):
 		_data[id] = d
 		_stale[id] = true

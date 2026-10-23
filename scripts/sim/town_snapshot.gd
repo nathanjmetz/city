@@ -29,7 +29,8 @@ func _init(s: CitySim) -> void:
 func step(budget_ms := BUDGET_MS) -> bool:
 	if _done:
 		return true
-	var end := Time.get_ticks_usec() + int(budget_ms * 1000.0)
+	# (INF, from finish, would overflow to a deadline in the past.)
+	var end := Time.get_ticks_usec() + int(minf(budget_ms, 1e9) * 1000.0)
 	while _i < _steps.size():
 		var st: Array = _steps[_i]
 		_i += 1
