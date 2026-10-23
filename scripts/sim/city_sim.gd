@@ -331,11 +331,9 @@ func apply_now(cmd: Dictionary) -> bool:
 			var c := [_v(cmd.start), _v(cmd.ctrl), _v(cmd.end)]
 			# The server checks real road rules too, not just the player's screen.
 			if road_problem(c, _road(cmd)) == "":
-				ok = network.build_road(c[0], c[1], c[2], _road(cmd))
-				if ok:
-					economy.money -= Economy.road_cost(c, _road(cmd))
-					if cmd.get("join", false):
-						_join_crossings([c])
+				ok = _build_over(c, _road(cmd))
+				if ok and cmd.get("join", false):
+					_join_crossings([c])
 		"join_county":
 			# A road drawn onto a county road (hub roads too).
 			ok = _join_county(_v(cmd.at), int(cmd.get("way", 0)))
@@ -2856,6 +2854,113 @@ static func shapes_cost(curves: Array, type: int) -> int:
 
 ## What upgrading a road costs: the difference in build price, nothing to
 ## downgrade. -1 if there is no such road.
+## Builds a road, but where it runs along a road already there (a county
+## road it follows, a street drawn over again) it takes that road's place
+## instead of being laid on top: that stretch becomes the new type, as an
+## upgrade, and only the rest is new road. True if anything changed.
+func _build_over(c: Array, type: int) -> bool:
+	var n := maxi(2, ceili(Vector2(c[2].x - c[0].x, c[2].z - c[0].z).length() / OVERLAY_STEP))
+	var along := []  # per sample: the segment it runs along, or -1
+	var any := false
+	for i in n + 1:
+		var t := float(i) / n
+		var p := RoadNetwork.bezier(c[0], c[1], c[2], t)
+		var hit := network.find_segment_near(p, OVERLAY_NEAR, RoadNetwork.SAME_LEVEL)
+		var seg := -1
+		if not hit.is_empty():
+			var sc := network.curve_of(hit.seg)
+			var a := RoadNetwork.bezier_tangent(c[0], c[1], c[2], t)
+			var b := RoadNetwork.bezier_tangent(sc[0], sc[1], sc[2], hit.t)
+			if absf(Vector2(a.x, a.z).normalized().dot(Vector2(b.x, b.z).normalized())) > OVERLAY_PARALLEL:
+				seg = hit.seg
+				any = true
+		along.append(seg)
+	if not any:
+		var built := network.build_road(c[0], c[1], c[2], type)
+		if built:
+			economy.money -= Economy.road_cost(c, type)
+		return built
+	# Runs of new road between the stretches along old ones. Each run ends
+	# on the old road where it meets it, so the two join.
+	var ok := false
+	var runs := []
+	var i := 0
+	while i <= n:
+		if along[i] != -1:
+			i += 1
+			continue
+		var j := i
+		while j < n and along[j + 1] == -1:
+			j += 1
+		runs.append([maxi(i - 1, 0), mini(j + 1, n)])
+		i = j + 1
+	network.begin_batch()
+	for r in runs:
+		var t0 := float(r[0]) / n
+		var t1 := float(r[1]) / n
+		var a := RoadNetwork.bezier(c[0], c[1], c[2], t0)
+		var b := RoadNetwork.bezier(c[0], c[1], c[2], t1)
+		for k in [0, 1]:
+			var idx: int = r[k]
+			if along[idx] != -1 and network.segments.has(along[idx]):
+				var on := network.find_segment_near(a if k == 0 else b, OVERLAY_NEAR * 2.0, RoadNetwork.SAME_LEVEL)
+				if not on.is_empty():
+					if k == 0:
+						a = on.point
+					else:
+						b = on.point
+		var sub := [a, RoadNetwork.sub_control(c[0], c[1], c[2], t0, t1), b]
+		if network.build_road(sub[0], sub[1], sub[2], type):
+			economy.money -= Economy.road_cost(sub, type)
+			ok = true
+	# Where the new road starts or ends partway along an old one, the old
+	# one is cut there, so only the stretch it covers changes.
+	for k in [0, n]:
+		if along[k] != -1:
+			var end := network.find_segment_near(c[0] if k == 0 else c[2], OVERLAY_NEAR, RoadNetwork.SAME_LEVEL)
+			if not end.is_empty() and end.t > 0.02 and end.t < 0.98:
+				network.split_segment(end.seg, end.t)
+	network.end_batch()
+	# The stretches along old roads: those roads take the new type.
+	var seen := {}
+	var line := RoadNetwork.sample_curve(c[0], c[1], c[2], n)
+	for p in line:
+		var hit := network.find_segment_near(p, OVERLAY_NEAR, RoadNetwork.SAME_LEVEL)
+		if hit.is_empty() or seen.has(hit.seg) or int(network.segments[hit.seg].type) == type:
+			continue
+		var sc := network.curve_of(hit.seg)
+		var mid := RoadNetwork.bezier(sc[0], sc[1], sc[2], 0.5)
+		# Only a road the new one runs along, not one it merely meets.
+		if _off_line(line, mid) > OVERLAY_NEAR:
+			continue
+		seen[hit.seg] = true
+		if RoadStyle.is_ring(int(network.segments[hit.seg].type)) or RoadStyle.is_ring(type):
+			continue
+		var cost := upgrade_cost(hit.seg, type)
+		if cost >= 0 and cost <= economy.money and network.set_type(hit.seg, type):
+			economy.money -= cost
+			ok = true
+	return ok
+
+
+## How far a point is from a polyline, across the ground.
+static func _off_line(line: PackedVector3Array, p: Vector3) -> float:
+	var best := INF
+	var q := Vector3(p.x, 0, p.z)
+	for i in line.size() - 1:
+		var a := Vector3(line[i].x, 0, line[i].z)
+		var b := Vector3(line[i + 1].x, 0, line[i + 1].z)
+		best = minf(best, Geometry3D.get_closest_point_to_segment(q, a, b).distance_to(q))
+	return best
+
+
+## A new road this near an old one, running parallel to it, runs along it
+## rather than beside it (metres; the cosine of the angle between them).
+const OVERLAY_NEAR := 2.5
+const OVERLAY_PARALLEL := 0.97
+const OVERLAY_STEP := 4.0
+
+
 func upgrade_cost(seg: int, type: int) -> int:
 	if not network.segments.has(seg):
 		return -1

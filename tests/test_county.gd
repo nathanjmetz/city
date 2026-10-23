@@ -46,6 +46,7 @@ func _init() -> void:
 	_test_remove()
 	_test_adopt()
 	_test_meet()
+	_test_overlay()
 	print("ALL TESTS PASSED" if _failed == 0 else "SOME TESTS FAILED")
 	quit(1 if _failed > 0 else 0)
 
@@ -275,6 +276,60 @@ func _test_meet() -> void:
 	for c in _gravel(sim):
 		reach = maxf(reach, maxf(c[0].z, c[2].z))
 	_check(reach > z + 680.0 and reach <= z + 700.0, "the county road is taken up to the edge of the town's land (%d m)" % (reach - z - 500))
+
+
+## A road drawn along a road already there takes its place instead of
+## being laid on top of it.
+func _test_overlay() -> void:
+	var x := 0.0
+	var z := 0.0
+	var found := false
+	for line in range(-6, 6):
+		for seg in range(-6, 6):
+			if found or not CountyGrid.has_mile(line, seg):
+				continue
+			var cx := line * CountyGrid.SECTION
+			var cz := (seg + 0.3) * CountyGrid.SECTION
+			var dry := true
+			for k in range(-4, 16):
+				dry = dry and CountyGrid.clears(cx, cz + k * 50.0) and Terrain.water(cx - 150, cz) < 0.05
+			if dry:
+				x = cx
+				z = cz
+				found = true
+	_check(found, "found a dry county road to draw along")
+	if not found:
+		return
+	var sim := CitySim.new()
+	sim.apply({"type": "build_road", "start": [x - 150, z], "ctrl": [x - 75, z], "end": [x, z],
+		"road": RoadStyle.Type.STREET, "join": true})
+	_check(not _gravel(sim).is_empty(), "the county road is joined first")
+	var money := sim.economy.money
+	var ok := sim.apply({"type": "build_road", "start": [x, z + 50], "ctrl": [x, z + 300], "end": [x, z + 550],
+		"road": RoadStyle.Type.STREET, "join": true})
+	_check(ok, "a street drawn along the county road is accepted")
+	var length := 0.0
+	var gravel_left := false
+	for id in sim.network.segments:
+		var c := sim.network.curve_of(id)
+		var mid: Vector3 = (c[0] + c[2]) * 0.5
+		if absf(mid.x - x) < 2.0 and mid.z > z + 50 and mid.z < z + 550:
+			length += c[0].distance_to(c[2])
+			gravel_left = gravel_left or int(sim.network.segments[id].type) == RoadStyle.Type.GRAVEL
+	_check(absf(length - 500.0) < 10.0, "it isn't laid on top of the county road (%d m of road along 500 m)" % length)
+	_check(not gravel_left, "that stretch becomes the street")
+	_check(money - sim.economy.money <= Economy.road_cost([Vector3(x, 0, z + 50), Vector3(x, 0, z + 300),
+		Vector3(x, 0, z + 550)], RoadStyle.Type.STREET), "and costs no more than a new street")
+	# A street drawn over a street and on past its end just carries on.
+	sim = CitySim.new()
+	sim.apply({"type": "build_road", "start": [0, 0], "ctrl": [100, 0], "end": [200, 0], "road": RoadStyle.Type.STREET})
+	sim.apply({"type": "build_road", "start": [100, 0], "ctrl": [200, 0], "end": [300, 0], "road": RoadStyle.Type.STREET})
+	length = 0.0
+	for id in sim.network.segments:
+		var c := sim.network.curve_of(id)
+		length += c[0].distance_to(c[2])
+	_check(absf(length - 300.0) < 5.0, "a street drawn over a street and on past it isn't doubled (%d m)" % length)
+	_check(sim.network.segments.size() <= 3, "and is one run of road (%d pieces)" % sim.network.segments.size())
 
 
 func _gravel(sim: CitySim) -> Array:
