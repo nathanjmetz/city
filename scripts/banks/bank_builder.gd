@@ -253,4 +253,4 @@ func _leasing_yard() -> void:
 		for s in [-1.0, 1.0]:
 			_cyl_y(Vector3(x + s * 1.5, 0.9, -4.6), 0.9, 0.6, Color("#1e1f20"))
 	_box("metal", Vector3(12.0, 1.0, 2.0), Vector3(0, 0.9, 8.0), Color("#c9a227"))  # a planter bar
-	_fence(Vector2(-S + 1.0, -S + 1.0), Vector2(S - 1.0, -S + 1.0), 1.8)
+	_fence(Vector2(-S + 1.0, -S + 1.0), Vector2(S - 1.0, S - 1.0), 1.8)

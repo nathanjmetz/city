@@ -160,8 +160,16 @@ void fragment() {
 	col = mix(col, lot, step(0.2, COLOR.a));
 	col = mix(col, line, step(0.6, COLOR.a));
 	col = mix(col, loose, step(0.86, COLOR.a));
-	ALBEDO = col;
-	ROUGHNESS = 0.9;
+	// Winter: gravel, mulch and the woods floor keep their snow like the
+	// lawn does; paved drives and lots are plowed, leaving packed snow in
+	// the low patches and wheel-polished bare ground between.
+	float is_loose = step(0.86, COLOR.a);
+	float cover = snow_cover(0.8, 0.95);
+	float packed = smoothstep(0.55, 0.75, texture(noise_soft, p / 3.0).r) * 0.6;
+	cover *= mix(packed, 0.85 + chips * 0.15, is_loose);
+	vec3 snowy = vec3(0.80, 0.83, 0.88) * mix(0.82, 0.97, is_loose) * (0.95 + grain * 0.07);
+	ALBEDO = mix(col, snowy, cover);
+	ROUGHNESS = mix(0.9, 0.75, cover);
 	SPECULAR = 0.25;
 }
 """

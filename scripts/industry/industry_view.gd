@@ -81,11 +81,10 @@ func _site(id: int, s: Dictionary) -> Node3D:
 	for c in s.pads:
 		if s.kind == "ore":
 			break  # the strip mine's haul road is its track
-		RoadMesh.add_strip(st, PackedVector3Array([Industry.pad_center(s, c), Industry.pad_center(s, _track_to(s, c))]),
-			-2.0, 2.0, 0.1)
+		RoadMesh.add_strip(st, _track(s, c), -2.0, 2.0, 0.1)
 	var flat := MeshInstance3D.new()
 	flat.mesh = Terrain.drape(st.commit(), true, 8.0)
-	flat.material_override = _mat(LANE)
+	flat.material_override = Surfaces.lane(LANE)
 	flat.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(flat)
 	if s.kind == "forest":
@@ -163,6 +162,9 @@ func _forest(s: Dictionary, root: Node3D, trees: Array) -> void:
 					and sim.field_usable(mid, Industry.pad_corners(s, n)) and not _near_road(mid):
 				wooded[n] = true
 				woods.append(n)
+	var tracks := []
+	for c in s.pads:
+		tracks.append(_track(s, c))
 	for c in wooded:
 		if not wooded[c]:
 			continue
@@ -170,13 +172,20 @@ func _forest(s: Dictionary, root: Node3D, trees: Array) -> void:
 		var open := []
 		for d in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]:
 			open.append(not wooded.get(c + d, false))
-		# Keep trees off the company's drive.
+		# Keep trees off the company's drive and its logging roads.
 		var clear := []
 		var inv := frame.affine_inverse()
 		for i in s.drive.size() - 1:
 			var a: Vector3 = inv * s.drive[i]
 			var b: Vector3 = inv * s.drive[i + 1]
 			clear.append([Vector2(a.x, a.z), Vector2(b.x, b.z), 6.0])
+		for road in tracks:
+			for i in road.size() - 1:
+				var a: Vector3 = inv * road[i]
+				var b: Vector3 = inv * road[i + 1]
+				var reach := Industry.PAD * 0.5 + 8.0
+				if minf(absf(a.x), absf(b.x)) < reach and minf(absf(a.z), absf(b.z)) < reach:
+					clear.append([Vector2(a.x, a.z), Vector2(b.x, b.z), 5.0])
 		var cseed := hash([seed0, c])
 		if c == Vector2i.ZERO:
 			# The mill's clearing.
@@ -309,7 +318,7 @@ func _near_road(mid: Vector3) -> bool:
 	return not sim.network.find_segment_near(mid, Industry.PAD * 0.75, 1.0).is_empty()
 
 
-## The pad a stand's haul track runs to (as drawn in _site).
+## The pad a pad's track runs to: the neighbour nearer the main building.
 func _track_to(s: Dictionary, c: Vector2i) -> Vector2i:
 	var home := Industry.pad_center(s, Vector2i.ZERO)
 	var mine := Industry.pad_center(s, c)
@@ -322,6 +331,33 @@ func _track_to(s: Dictionary, c: Vector2i) -> Vector2i:
 			best_d = d
 			best = o
 	return best
+
+
+## A pad's track in world space. Well pads and pits get a straight lease
+## road. Logging roads bend: real ones (US Forest Service and Indiana DNR
+## forestry road guides) follow the contour and swing around wet ground
+## and big trees, so each one leaves its stand straight past the landing
+## and bows to one side on its way to the next.
+func _track(s: Dictionary, c: Vector2i) -> PackedVector3Array:
+	var a := Industry.pad_center(s, c)
+	var b := Industry.pad_center(s, _track_to(s, c))
+	if s.kind != "forest":
+		return PackedVector3Array([a, b])
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([roundi(s.pos.x), roundi(s.pos.z), c])
+	var dir := (b - a).normalized()
+	var side := Vector3(-dir.z, 0.0, dir.x) * rng.randf_range(10.0, 20.0) * (1.0 if rng.randf() < 0.5 else -1.0)
+	var length := a.distance_to(b)
+	var p1 := a + dir * length * 0.3
+	var p2 := b - dir * length * 0.3 + side
+	var wiggle := rng.randf_range(1.0, 2.5)
+	var pts := PackedVector3Array()
+	for i in 17:
+		var t := i / 16.0
+		var u := 1.0 - t
+		var p := a * u * u * u + p1 * 3.0 * u * u * t + p2 * 3.0 * u * t * t + b * t * t * t
+		pts.append(p + side.normalized() * sin(t * TAU) * wiggle * sin(t * PI))
+	return pts
 
 
 ## Adds a builder's meshes at `frame` into `merged` (one surface per
