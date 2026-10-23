@@ -51,7 +51,7 @@ func _init() -> void:
 		var k := kind
 		if kind == "types":
 			k = ["house", "row", "apartments", "mixed", "office"][i]
-		var w: float = {"row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "office": 40.0, "towers": 44.0, "towerfar": 44.0}.get(k, 20.0)
+		var w: float = {"row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "office": 40.0, "towers": 44.0, "towerfar": 44.0, "flats": 24.0, "courtyard": 48.0, "walkup": 26.0, "garage": 44.0}.get(k, 20.0)
 		var sd := seed * 100 + i
 		match k:
 			"shop": meshes = CommercialBuilder.build_shop(sd, 3.9)
@@ -64,6 +64,10 @@ func _init() -> void:
 				{}, ["chicago", "deco", "glass", "chicago", "glass"][i])
 			"towerfar": meshes = [TowerBuilder.build_far(sd, 3.9, {"width": w, "depth": 55.0}, [12, 22, 24, 10, 16][i],
 				["chicago", "deco", "glass", "chicago", "glass"][i]), ArrayMesh.new(), []]
+			"flats": meshes = MetroBuilder.build_row(sd * 7 + 1, 3.9, {"width": w, "depth": 45.0, "era": "prewar"}, 3, 2 + i % 2)
+			"courtyard": meshes = MetroBuilder.build_apartments(sd, 3.9, {"width": w, "depth": 55.0, "era": "prewar"}, 3)
+			"walkup": meshes = MetroBuilder.build_apartments(sd, 3.9, {"width": w, "depth": 40.0, "era": "prewar"}, 5)
+			"garage": meshes = MetroBuilder.build_garage(sd, 3.9, {"width": w, "depth": 60.0}, 4 + i % 3)
 			_: meshes = HouseBuilder.build(sd, 3.9)
 		var at := Vector3(x + w * 0.5, 0, 0)
 		x += w

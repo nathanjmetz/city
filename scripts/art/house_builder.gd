@@ -81,7 +81,9 @@ func _fit(lot: Dictionary) -> void:
 	outline = lot.get("outline", PackedVector2Array())
 	depth = float(lot.get("depth", 32.0)) - pad
 	# The era comes from where the lot is, in blocks of about a quarter mile.
-	if lot.has("at"):
+	if lot.has("era"):
+		era = lot.era
+	elif lot.has("at"):
 		var at: Vector2 = lot.at
 		var cell := Vector2i(floori(at.x / 400.0), floori(at.y / 400.0))
 		era = ["prewar", "postwar", "postwar", "recent", "recent"][posmod(hash(cell), 5)]
