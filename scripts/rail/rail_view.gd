@@ -519,13 +519,16 @@ func _draw_yards() -> void:
 			var cs := _frame(d, half - 85.0, float(Rail.TRACK_V[2]) + 4.0, y)
 			_building(st, cs, Vector3(50.0, 10.0, 16.0), Color("#8d9290"), Color("#5c6265"), true)
 		if "intermodal" in built:
-			# Stacks of containers on a paved pad.
-			var ix := _frame(d, -half + 110.0, 6.0, y)
-			_box(st, ix, Vector3(0, 0.05, 0), Vector3(60.0, 0.1, 10.0), Color("#5d5e5c"))
+			# Stacks of containers on a paved pad, between the crews' lot
+			# and the station.
+			var ix := _frame(d, -29.0, 6.0, y)
+			_box(st, ix, Vector3(0, 0.05, 0), Vector3(38.0, 0.1, 10.0), Color("#5d5e5c"))
+			# 40 ft boxes in two rows of three, stacked one or two high.
 			for k in 6:
 				for lvl in (k % 2) + 1:
 					var col: Color = [Color("#a33a2c"), Color("#2c5d8a"), Color("#c9a13a"), Color("#4f7a47")][(k + lvl) % 4]
-					_box(st, ix, Vector3(-25.0 + k * 10.0, 1.3 + lvl * 2.6, 0), Vector3(12.2, 2.6, 2.44), col)
+					_box(st, ix, Vector3(-11.5 + (k % 2) * 23.0, 1.3 + lvl * 2.6 - 2.6, -3.0 + (k / 2) * 3.0), Vector3(12.2, 2.6, 2.44), col)
+		_depot_upgrades(st, d, y, built)
 	_yard.visible = any
 	if any:
 		st.generate_normals()
@@ -565,6 +568,84 @@ func _station(st: SurfaceTool, d: Dictionary, y: float) -> void:
 	# A walk from the lot to the platform.
 	_box(st, _frame(d, 16.0, (9.5 + edge - 4.0) * 0.5, y), Vector3(0, -0.6, 0),
 		Vector3(2.0, 1.4, edge - 4.0 - 9.5), CONCRETE)
+
+
+## The rest of the railroad's development tree (Rail.TREE), each where a
+## real short line puts it (Brawn 2026-10-23: every upgrade shows). The
+## strip behind the far track (v 30-40) holds the freight side; the station
+## side gets the passenger steps.
+func _depot_upgrades(st: SurfaceTool, d: Dictionary, y: float, built: Array) -> void:
+	var steel := Color("#6b6f73")
+	if "team_track" in built:
+		# Team track: a gravel pad and a concrete end-loading ramp where
+		# local businesses back trucks up to load their own cars.
+		var t := _frame(d, -105.0, 35.0, y)
+		_box(st, t, Vector3(0, 0.05, 0), Vector3(36.0, 0.1, 8.0), Color("#8d877c"))
+		_box(st, t, Vector3(-14.0, 0.6, -2.0), Vector3(6.0, 1.2, 4.0), CONCRETE)
+	if "grain_spur" in built:
+		# The co-op elevator on its spur: three concrete silos, a headhouse
+		# and a loading spout out over the track.
+		for k in 3:
+			var c := _frame(d, -76.0 + k * 7.4, 35.5, y)
+			_cyl(st, c, 3.5, 26.0, Color("#c9c3b4"))
+		_box(st, _frame(d, -68.6, 35.5, y), Vector3(0, 30.0, 0), Vector3(6.0, 8.0, 5.0), Color("#b9b3a4"))
+		_box(st, _frame(d, -68.6, 30.0, y), Vector3(0, 10.0, 0), Vector3(0.6, 0.6, 7.0), steel)
+	if "unit_loop" in built:
+		# Shuttle loader for 100-car trains: two big steel bins and a tall
+		# loading tower whose spout fills each hopper as it creeps under.
+		for k in 2:
+			_cyl(st, _frame(d, -42.0 + k * 10.0, 35.5, y), 4.4, 20.0, Color("#bfc3c4"))
+		_box(st, _frame(d, -22.0, 34.0, y), Vector3(0, 16.0, 0), Vector3(4.0, 32.0, 4.0), Color("#a7aba9"))
+		_box(st, _frame(d, -22.0, 29.0, y), Vector3(0, 8.0, 0), Vector3(1.2, 4.0, 1.2), steel)
+	if "interchange" in built:
+		# Interchange: a yardmaster's tower watching the swap tracks.
+		var t := _frame(d, 5.0, 35.0, y)
+		_box(st, t, Vector3(0, 3.0, 0), Vector3(5.0, 6.0, 5.0), Color("#6e3428"))
+		_box(st, t, Vector3(0, 7.2, 0), Vector3(5.6, 2.4, 5.6), Color("#2a3438"))
+		_box(st, t, Vector3(0, 8.6, 0), Vector3(6.4, 0.4, 6.4), Color("#3a3734"))
+	if "classification" in built:
+		# A busy classification yard works all night under high-mast lights.
+		for k in 5:
+			var t := _frame(d, -120.0 + k * 60.0, 39.0, y)
+			_box(st, t, Vector3(0, 13.0, 0), Vector3(0.6, 26.0, 0.6), steel)
+			_box(st, t, Vector3(0, 26.2, 0), Vector3(3.0, 0.8, 1.0), Color("#d8d6cf"))
+	var edge := float(Rail.TRACK_V[0]) - 1.6
+	if "intercity" in built and "station" in built:
+		# Intercity trains are long: the platform runs on to 240 m.
+		for s: float in [-1.0, 1.0]:
+			var pl := _frame(d, s * 91.0, edge - 2.0, y)
+			_box(st, pl, Vector3(0, 0.1, 0), Vector3(60.0, 0.2, 4.0), CONCRETE)
+			_box(st, pl, Vector3(0, 0.205, 1.7), Vector3(60.0, 0.01, 0.6), Color("#e3b51e"))
+	if "commuter" in built and "station" in built:
+		# Commuter service: glass shelters down the platform with ticket
+		# machines, and a park-and-ride lot beside the station lot.
+		for u: float in [-40.0, 40.0, 75.0]:
+			var sh := _frame(d, u, edge - 3.0, y)
+			_box(st, sh, Vector3(0, 1.3, 0.9), Vector3(4.0, 2.4, 0.1), Color("#9fb4bd"))
+			_box(st, sh, Vector3(0, 2.6, 0), Vector3(4.4, 0.15, 2.0), Color("#2f4a3a"))
+			_box(st, sh, Vector3(2.6, 0.8, 0), Vector3(0.6, 1.6, 0.5), Color("#c43a2c"))
+		var lot := _frame(d, 76.0, 5.0, y)
+		_box(st, lot, Vector3(0, -0.7, 0), Vector3(36.0, 1.5, 9.0), Color("#4e4f4e"))
+		for k in 13:
+			_box(st, lot, Vector3(-16.2 + k * 2.7, 0.055, 1.5), Vector3(0.1, 0.01, 5.4), Color("#e8e8e2"))
+
+
+## An upright cylinder (silos, bins) on the yard.
+func _cyl(st: SurfaceTool, f: Transform3D, r: float, h: float, col: Color) -> void:
+	var segs := 14
+	for i in segs:
+		var a0 := TAU * i / segs
+		var a1 := TAU * (i + 1) / segs
+		var p0 := Vector3(cos(a0) * r, 0, sin(a0) * r)
+		var p1 := Vector3(cos(a1) * r, 0, sin(a1) * r)
+		var up := Vector3(0, h, 0)
+		# Same winding as _box: outward faces front.
+		for q in [p0, p1 + up, p1, p0, p0 + up, p1 + up]:
+			st.set_color(col)
+			st.add_vertex(f * (q as Vector3))
+		for q in [p0 + up, Vector3(0, h + r * 0.4, 0), p1 + up]:
+			st.set_color(col.darkened(0.1))
+			st.add_vertex(f * (q as Vector3))
 
 
 ## A frame on the yard: x along the tracks, z away from the road (+z back).

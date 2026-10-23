@@ -37,6 +37,7 @@ func _init() -> void:
 				if not Rect2(-40.5, -40.5, 81, 81).encloses(r):
 					bad.append(node)
 		_check(bad.is_empty(), "%s add-ons stay inside the main building's own 80 m cell %s" % [kind, bad])
+	_railroad()
 	_oil_company()
 	_done()
 
@@ -93,6 +94,31 @@ func _plant_verts(kind: String, built: Array) -> int:
 		for i in mesh.get_surface_count():
 			n += mesh.surface_get_array_len(i)
 	return n
+
+
+## A railroad depot draws each step of its tree (Rail.TREE) in its yard.
+func _railroad() -> void:
+	var sim := CitySim.new()
+	sim.simulate_traffic = false
+	sim.apply({"type": "build_county_road", "a": [-2000, 0], "b": [2000, 0], "links": [0, 1]})
+	var site := Rail.site_near(sim.network, Vector3(0, 0, 60))
+	sim.apply({"type": "place_rail_depot", "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z],
+		"axis": [site[2].x, site[2].z]})
+	var d: Dictionary = sim.rail.depots.values()[0]
+	var view := RailView.new()
+	view.sim = sim
+	var missing := []
+	for node in Rail.TREE:
+		var built := _with_requires(Rail.TREE, node.id)
+		d.built = built.filter(func(n): return n != node.id)
+		view._draw_yards()
+		var before: int = view._yard.mesh.surface_get_array_len(0)
+		d.built = built
+		view._draw_yards()
+		if view._yard.mesh.surface_get_array_len(0) == before:
+			missing.append(node.id)
+	view.free()
+	_check(missing.is_empty(), "every railroad upgrade draws something%s" % ["" if missing.is_empty() else ": missing " + str(missing)])
 
 
 func _oil_company() -> void:
