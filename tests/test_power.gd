@@ -153,6 +153,36 @@ func _init() -> void:
 		"the farm earns the lease on top of its crop")
 	_check(farm.cells.size() == 1, "and keeps farming the field")
 
+	# Solar boxed in by cornfields asks the player (a land-use permit) to
+	# lease farmland; once approved, the fields become panel rows and the
+	# farm earns rent instead of a crop.
+	var sol := CitySim.new()
+	var sfid := sol.farms.add_farm(calm + Vector3(-1000, 0, 0), Vector3(0, 0, -1), "corn", [])
+	var sf: Dictionary = sol.farms.farms[sfid]
+	for fx in range(14, 37):
+		for fy in range(-11, 12):
+			sf.cells.append(Vector2i(fx, fy))
+	var fields_before: int = sf.cells.size()
+	var sid := sol.power.add_site(calm, Vector3(0, 0, -1), [], 0.8, 5)
+	var ss: Dictionary = sol.power.sites[sid]
+	ss.plant = "solar"
+	ss.cells = [Vector2i(0, 1)]
+	sol.power.decide(sol.field_usable, 1_000_000.0, false, {})
+	_check(not ss.get("farm_want", []).is_empty(), "boxed in by fields, the solar company eyes the farmland (%d)" % ss.get("farm_want", []).size())
+	_check(ss.cells.size() == 1, "but doesn't take it on its own")
+	sol.power.farmland(sol, sid)
+	var asked: Array = sol.permits.requests.values().filter(func(r): return r.hub == "power")
+	_check(asked.size() == 1 and asked[0].change == "Farmland to solar panels", "it asks you first: %s" % (asked[0].title if asked.size() else "nothing"))
+	if asked.size() == 1:
+		sol.apply({"type": "permit", "id": asked[0].id, "answer": "approve"})
+		sol.power.farmland(sol, sid)
+		_check(ss.cells.size() > 1, "approved, panels go up on the leased fields (%d units)" % ss.cells.size())
+		_check(sf.cells.size() < fields_before, "the farm gives those fields up (%d of %d left)" % [sf.cells.size(), fields_before])
+		_check(sol.power.farm_rent(sfid) > 0.0, "and earns rent for them ($%d a year)" % roundi(sol.power.farm_rent(sfid)))
+		var sol2 := CitySim.new()
+		sol2.from_dict(JSON.parse_string(JSON.stringify(sol.to_dict())))
+		_check(is_equal_approx(sol2.power.farm_rent(sfid), sol.power.farm_rent(sfid)), "a save keeps the leases")
+
 	# Saves and copies stay in step.
 	var copy := CitySim.new()
 	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))

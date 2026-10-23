@@ -345,6 +345,9 @@ static func _farm(sim: CitySim, id: int) -> Dictionary:
 	var lease := 0.0
 	for c in f.cells:
 		lease += sim.power.lease_in(Farms.cell_corners(f, c))
+	var rent := sim.power.farm_rent(id)
+	if rent > 0.0:
+		rows.insert(4, ["Solar rent", "$%s / year for fields leased to panels" % CitySim.money_text(roundi(rent))])
 	if lease > 0.0:
 		rows.insert(4, ["Wind leases", "$%s / year (%d turbines in its fields)" % [CitySim.money_text(roundi(lease)),
 			roundi(lease / Balance.POWER_WIND_LEASE)]])
@@ -562,6 +565,10 @@ static func _power(sim: CitySim, id: int) -> Dictionary:
 		["Jobs", str(roundi(Balance.POWER_YARD_JOBS + float(k.jobs) * s.cells.size()))],
 		["Profit", "%s$%s / year" % ["" if profit >= 0.0 else "-", CitySim.money_text(absi(roundi(profit)))]],
 	]
+	var acres := Power._acres_leased(s)
+	if acres > 0.0:
+		rows.append(["Farmland leased", "%.0f acres ($%s / year)" % [acres,
+			CitySim.money_text(roundi(acres * Balance.POWER_SOLAR_LEASE_PER_ACRE))]])
 	var leased := sim.power.leased(s)
 	if leased > 0:
 		rows.append(["Farm leases", "%d turbines in farmers' fields ($%s / year)" % [leased,

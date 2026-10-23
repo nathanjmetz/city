@@ -54,6 +54,9 @@ var policies: Policies
 ## Set by the city: what power companies pay a year to lease ground in a
 ## field outline (wind turbines in the corn). Callable(poly) -> float.
 var lease_of := Callable()
+## And what they pay farm `id` a year for whole fields it leased out for
+## solar panels. Callable(id) -> float.
+var rent_of := Callable()
 ## The town's character: a farm town's farmers buy land more readily.
 var culture: TownCulture
 ## Farmland outlines from older saves, for the city to turn into reserves.
@@ -195,6 +198,8 @@ func yearly_profit(id: int) -> float:
 	var total := 0.0
 	for c in f.cells:
 		total += field_profit(f, c)
+	if rent_of.is_valid():
+		total += rent_of.call(id)
 	return total + f.cells.size() * support(id)
 
 
