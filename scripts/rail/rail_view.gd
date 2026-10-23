@@ -17,6 +17,12 @@ const RAIL := Color("#5a4d44")
 const RAIL_TOP := Color("#b8b6b2")
 const TIE := Color("#4a3f35")
 const EARTH := Color("#6f6a4c")
+const WEEDS := Color("#5f6e3c")
+## Highest embankment drawn (m); anything taller is a bridge.
+const MAX_FILL := 4.0
+## The right of way graded level each side of the centreline (m): wider than
+## the terrain's 8 m grid, so the drawn ground meets the ballast's toe.
+const ROW_GRADE := 9.0
 const GIRDER := Color("#3d4347")
 const CONCRETE := Color("#a9a69d")
 ## Heights above the track's base level (m): ballast top, tie top, rail top.
@@ -24,6 +30,10 @@ const BALLAST_Y := 0.3
 const TIE_Y := 0.48
 const RAIL_Y := 0.65
 const TIE_EVERY := 0.6
+## Rail top above the road at a crossing panel (m), and the approach over
+## which the bed eases down to it each side.
+const CROSSING_RAIL := 0.09
+const CROSSING_RAMP := 30.0
 ## Above the water at a bridge (m).
 const BRIDGE_CLEAR := 5.5
 const FAR := 3200.0
@@ -187,6 +197,57 @@ func _profile(pts: Array, grade: float) -> PackedFloat32Array:
 	return h
 
 
+## Where the track crosses a road the rails sit flush with the pavement in
+## a crossing panel, the bed easing down over the approach (a vertical
+## curve, AREMA ch. 5 / FHWA crossing handbook). Returns the points with a
+## few added at each crossing's edges, and how far each is lowered.
+func _crossing_sink(pid: int, pts: Array) -> Array:
+	var marks := []  # [s, half width] for this piece's crossings
+	for c in sim.rail.crossings:
+		if int(c.piece) == pid and sim.network.segments.has(c.seg):
+			marks.append([float(c.s), RoadStyle.half_width(sim.network.segments[c.seg].type) + 2.0])
+	var drop := PackedFloat32Array()
+	if marks.is_empty():
+		drop.resize(pts.size())
+		return [pts, drop]
+	# Distance along the line of each point, and extra points where the
+	# panel ends and the ramp starts so the mesh bends there.
+	var along := [0.0]
+	for i in range(1, pts.size()):
+		along.append(float(along[i - 1]) + (pts[i] as Vector3).distance_to(pts[i - 1]))
+	var want := []
+	for m in marks:
+		for o: float in [-m[1] - CROSSING_RAMP, -m[1], 0.0, m[1], m[1] + CROSSING_RAMP]:
+			var at: float = m[0] + o
+			if at > 0.0 and at < float(along[-1]):
+				want.append(at)
+	var out := []
+	var out_s := []
+	for i in pts.size():
+		if i > 0:
+			for at: float in want:
+				if at > float(along[i - 1]) + 0.5 and at < float(along[i]) - 0.5:
+					var f := (at - float(along[i - 1])) / (float(along[i]) - float(along[i - 1]))
+					out.append((pts[i - 1] as Vector3).lerp(pts[i], f))
+					out_s.append(at)
+		out.append(pts[i])
+		out_s.append(along[i])
+	# Keep them in order along the line (two crossings' marks may interleave).
+	var order := range(out.size())
+	order.sort_custom(func(a, b): return out_s[a] < out_s[b])
+	var sorted := []
+	drop.resize(out.size())
+	for k in order.size():
+		var i: int = order[k]
+		sorted.append(out[i])
+		var most := 0.0
+		for m in marks:
+			var d := absf(float(out_s[i]) - float(m[0])) - float(m[1])
+			most = maxf(most, 1.0 - clampf(d / CROSSING_RAMP, 0.0, 1.0))
+		drop[k] = most * (RAIL_Y - CROSSING_RAIL)
+	return [sorted, drop]
+
+
 func _draw_track() -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -203,7 +264,11 @@ func _draw_track() -> void:
 			continue
 		any = true
 		var grade: float = RailPlanner.LIMITS.spur.grade if pc.kind == "spur" else RailPlanner.LIMITS.main.grade
+		var sink := _crossing_sink(pid, pts)
+		pts = sink[0]
 		var h := _profile(pts, grade)
+		for i in pts.size():
+			h[i] -= sink[1][i]
 		for i in pts.size():
 			var p: Vector3 = pts[i]
 			_h[Vector2i(floori(p.x / 4.0), floori(p.z / 4.0))] = h[i]
@@ -242,6 +307,9 @@ func _draw_track() -> void:
 		_whistle_posts(st, c)
 	_track.visible = any
 	if any:
+		# Shared corners get one smooth normal, so the ballast doesn't shade
+		# in stripes from quad to quad.
+		st.index()
 		st.generate_normals()
 		_track.mesh = st.commit()
 	var mm := _ties.multimesh
@@ -283,7 +351,7 @@ func _grade_chunks(pid: int, pts: Array) -> void:
 			line.append(pts[j])
 			dry = dry and not _wet(pts[j])
 		if dry and line.size() >= 2:
-			_grades["rail:%d:%d" % [pid, chunk]] = [line, 4.0, 10.0]
+			_grades["rail:%d:%d" % [pid, chunk]] = [line, ROW_GRADE, ROW_GRADE + 6.0]
 		k += 10
 		chunk += 1
 
@@ -291,26 +359,32 @@ func _grade_chunks(pid: int, pts: Array) -> void:
 ## Crushed rock in a trapezoid, and an earth embankment down to the ground
 ## where the track runs above it.
 func _ballast(st: SurfaceTool, c0: Vector3, c1: Vector3, n0: Vector3, n1: Vector3) -> void:
+	# A low prism like real in-town track: a 3.2 m crown just wider than the
+	# 2.6 m ties, shoulders falling about 2:1 to a weedy toe at ground level.
 	var y := Vector3(0, BALLAST_Y, 0)
-	var down := Vector3(0, -0.05, 0)
-	_quad(st, c0 - n0 * 1.9 + y, c0 + n0 * 1.9 + y, c1 + n1 * 1.9 + y, c1 - n1 * 1.9 + y, BALLAST)
+	var down := Vector3(0, -0.04, 0)
+	_quad(st, c0 - n0 * 1.6 + y, c0 + n0 * 1.6 + y, c1 + n1 * 1.6 + y, c1 - n1 * 1.6 + y, BALLAST)
 	for side: float in [-1.0, 1.0]:
-		var a0 := c0 + n0 * side * 1.9 + y
-		var a1 := c1 + n1 * side * 1.9 + y
-		var b0 := c0 + n0 * side * 3.0 + down
-		var b1 := c1 + n1 * side * 3.0 + down
+		var a0 := c0 + n0 * side * 1.6 + y
+		var a1 := c1 + n1 * side * 1.6 + y
+		var b0 := c0 + n0 * side * 2.3 + down
+		var b1 := c1 + n1 * side * 2.3 + down
 		_quad(st, a0, b0, b1, a1, BALLAST_DARK)
-		# Fill slopes at 2:1 to meet the ground.
-		var g0 := Terrain.ground_y(b0.x, b0.z)
-		var g1 := Terrain.ground_y(b1.x, b1.z)
-		var drop0 := b0.y - g0
-		var drop1 := b1.y - g1
+		# Weeds and spilled rock fading into the grass.
+		var f0 := c0 + n0 * side * 3.1 + down * 2.0
+		var f1 := c1 + n1 * side * 3.1 + down * 2.0
+		_quad(st, b0, f0, f1, b1, WEEDS)
+		# Fill slopes at 2:1 where the track's profile rides above the graded
+		# ground. Measured against the grade (base), which the terrain under
+		# the track is levelled to; the drawn ground may not be regraded yet.
+		var drop0 := minf(f0.y - Terrain.base_y(f0.x, f0.z), MAX_FILL)
+		var drop1 := minf(f1.y - Terrain.base_y(f1.x, f1.z), MAX_FILL)
 		if drop0 > 0.15 or drop1 > 0.15:
-			var e0 := b0 + n0 * side * maxf(drop0, 0.0) * 2.0
-			var e1 := b1 + n1 * side * maxf(drop1, 0.0) * 2.0
-			e0.y = Terrain.ground_y(e0.x, e0.z) - 0.2
-			e1.y = Terrain.ground_y(e1.x, e1.z) - 0.2
-			_quad(st, b0, e0, e1, b1, EARTH)
+			var e0 := f0 + n0 * side * maxf(drop0, 0.0) * 2.0
+			var e1 := f1 + n1 * side * maxf(drop1, 0.0) * 2.0
+			e0.y = minf(f0.y, Terrain.base_y(e0.x, e0.z)) - 0.2
+			e1.y = minf(f1.y, Terrain.base_y(e1.x, e1.z)) - 0.2
+			_quad(st, f0, e0, e1, f1, EARTH)
 
 
 ## A deck girder span, with a concrete pier every third point (~30 m).
@@ -355,7 +429,7 @@ func _crossing_pad(st: SurfaceTool, c: Dictionary) -> void:
 	var n := Vector3(-fwd.z, 0.0, fwd.x)
 	var hw := RoadStyle.half_width(sim.network.segments[c.seg].type)
 	var p: Vector3 = c.pos
-	var y := Terrain.base_y(p.x, p.z) + 0.07
+	var y := Terrain.base_y(p.x, p.z) + CROSSING_RAIL - 0.02
 	# Along the road the pad is the track's width; across, the road's.
 	var road := _road_dir(c)
 	var q := [p - road * hw - fwd * 0.0, p + road * hw]

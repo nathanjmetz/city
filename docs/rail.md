@@ -44,6 +44,11 @@ CS2 trains, with track drawing replaced by the leader's own planning.
     minute). The horn carries about 2.4 km, the bell about 350 m.
   - Whistle posts (a white sign with a black W) stand on the engineer's right
     a quarter mile before each crossing, in both directions.
+- **Track bed**: a low ballast prism like real in-town branch line, crown
+  0.3 m above the graded right of way (±9 m levelled), shoulders about 2:1 to a
+  weedy toe, earth fill slopes only where the profile rides above the grade.
+  At a road crossing the rails sit flush in a crossing panel and the bed eases
+  down over a 30 m approach each side.
 - **Development tree** (`Rail.TREE`, on `Agency`): team track, then engine
   house, grain elevator spur, station, car shop, intercity stop, commuter
   trains, unit-train loop, intermodal yard, interchange and classification yard.
