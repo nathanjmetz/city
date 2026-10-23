@@ -90,6 +90,30 @@ func _init() -> void:
 		if JSON.stringify(da[k]) != JSON.stringify(db.get(k)):
 			diff.append(k)
 	_check(diff.is_empty(), "a copy saved while catching up stays in sync %s" % str(diff))
+	# Rounded block corners and curving streets: the lots fan radially round
+	# each bend (none lost to it, none cut on a diagonal), and none overlap.
+	for scene in ["rounded", "curves"]:
+		var bend := CitySim.new()
+		bend.simulate_traffic = false
+		load("res://tools/lot_map.gd").build(bend, scene)
+		bend.tick()
+		var bad := 0
+		var ks := bend.lots.keys()
+		ks.sort()
+		for i in ks.size():
+			for j in range(i + 1, ks.size()):
+				for q in Geometry2D.intersect_polygons(bend.lots[ks[i]].corners, bend.lots[ks[j]].corners):
+					if absf(LotPlanner._area(q)) > 4.0:
+						bad += 1
+		_check(bad == 0, "%s: no lots overlap (%d)" % [scene, bad])
+		if scene == "rounded":
+			var on_bends := {}
+			for key in bend.lots:
+				var c := bend.network.curve_of(bend.lots[key].seg)
+				# Inside the block (side 1 here), where the corner used to be lost.
+				if bend.lots[key].side == 1 and Vector2(c[1].x - c[0].x, c[1].z - c[0].z).normalized().dot(Vector2(c[2].x - c[1].x, c[2].z - c[1].z).normalized()) < 0.5:
+					on_bends[bend.lots[key].seg] = true
+			_check(on_bends.size() == 4, "every rounded corner has lots fanning round it (%d of 4)" % on_bends.size())
 	# A zoning drag: the zones go in at once, the lots once, when it ends.
 	var drag := CitySim.new()
 	drag.apply({"type": "build_road", "start": [0, 0], "ctrl": [100, 0], "end": [200, 0]})
