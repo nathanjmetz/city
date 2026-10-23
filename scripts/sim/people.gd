@@ -30,6 +30,7 @@ var _homes := {}   # lot key -> [person ids], oldest first
 var _staff := {}   # job ref -> number of people working there
 var _next := 1
 var _families: Families  # names on the signs, set each sync
+var _due := {}   # tick -> ids of people who may head off then (set_until)
 var _ids := []  # people.keys(), kept until someone moves in or out
 var _ids_sig := []
 
@@ -84,11 +85,20 @@ func sync(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void
 	for ref in names.keys():
 		if ref.begins_with("lot:") and not sim.buildings.has(ref.substr(4)):
 			_forget(0, ref)
-	for id in people:
-		var p: Dictionary = people[id]
-		if p.job != "" and not _job_open(sim, p.job):
-			_staff[p.job] = _staff.get(p.job, 1) - 1
-			p.job = ""
+	# Only when a workplace has closed are the people looked through.
+	var shut := []
+	for ref in _staff:
+		if not _job_open(sim, ref):
+			shut.append(ref)
+	if not shut.is_empty():
+		for id in people:
+			var p: Dictionary = people[id]
+			if p.job != "" and not _job_open(sim, p.job):
+				_staff[p.job] = _staff.get(p.job, 1) - 1
+				p.job = ""
+		for ref in shut:
+			if _staff.get(ref, 0) <= 0:
+				_staff.erase(ref)
 	if sim.tick_count % (SYNC_EVERY * 3) == SYNC_AT:
 		_hire(sim, keys, rng)
 
@@ -101,12 +111,26 @@ func plan(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void
 		return
 	var now := sim.tick_count
 	# Time to head home (or back to work after an errand).
-	if now % 5 == 0:
-		for id in people:
+	# Each is filed under the tick they're due (set_until), so only those
+	# are looked at; taken in id order, as a loaded town would.
+	if now % 5 == 0 and not _due.is_empty():
+		var ids := []
+		for t in _due.keys():
+			if t <= now:
+				for id in _due[t]:
+					if people.has(id) and people[id].until == t:
+						ids.append(id)
+				_due.erase(t)
+		ids.sort()
+		var last := -1
+		for id in ids:
+			if id == last:
+				continue
+			last = id
 			var p: Dictionary = people[id]
 			if p.at != "" and p.at != "travel" and p.until >= 0 and p.until <= now:
 				if not traffic.go(id, "lot:" + p.home, "home", -1):
-					p.until = now + 30  # try again in a while
+					set_until(p, now + 30)  # try again in a while
 	var hour: int = sim.clock().hour
 	var rate := 0.15
 	if hour >= 6 and hour < 9 or hour >= 16 and hour < 19:
@@ -170,6 +194,15 @@ func place_name(ref: String) -> String:
 
 func residents(key: String) -> Array:
 	return _homes.get(key, [])
+
+
+## When a person who is out heads off again (-1: not until sent).
+func set_until(p: Dictionary, tick: int) -> void:
+	p.until = tick
+	if tick >= 0:
+		if not _due.has(tick):
+			_due[tick] = []
+		_due[tick].append(p.id)
 
 
 func staff(ref: String) -> int:
@@ -270,6 +303,7 @@ func from_dict(d: Dictionary) -> void:
 	_taken.clear()
 	_homes.clear()
 	_staff.clear()
+	_due.clear()
 	_next = 1
 	if not d.has("state") and not d.has("bin"):
 		return
@@ -281,5 +315,8 @@ func from_dict(d: Dictionary) -> void:
 	_homes = s.homes
 	_staff = s.staff
 	_next = s.next
+	for id in people:
+		if people[id].until >= 0:
+			set_until(people[id], people[id].until)
 	for ref in names:
 		_taken[names[ref]] = true

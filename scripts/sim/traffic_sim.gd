@@ -117,7 +117,10 @@ var _turns := {}  # way -> [ways it may turn into]
 var _arrows := {} # way -> {next way: [lanes that may take it]}
 var _kind := {}   # Vector2i(way, next) -> Turn
 var _tcost := {}  # way -> PackedFloat64Array, _turn_cost for each of _turns[way]
+var _wend := {}   # way -> where it ends (x, z), for the route planner's estimate
+var _vtop := 1.0  # the fastest limit on any way, m/s
 var _wcost := {}  # way -> _way_cost now (_refresh_wcost)
+var _cfor := {}   # Vector3i(way, lane, next) -> _conn_for's answer
 var _conns := {}  # Vector4i(way, lane, next, lane) -> junction path
 var _conflict := {}
 var _next_conn := 1
@@ -137,6 +140,8 @@ var _due := {}       # tick -> parked vehicles due to head off then (_due_at)
 var _pend := {}      # vehicle id -> parked vehicle waiting for a gap to pull out
 var _slow := {}      # ways whose _speed is below 1 (or has cars), kept up to date each tick
 var _slow_ok := -1   # the lane version _slow was gathered on
+var _wstep := 0      # walker steps taken since load: a walker is _wstep - w.t0 steps along
+var _wdone := {}     # walker step -> walkers who get where they're going then
 var _pseq := {}      # vehicle id -> its place in `parked` order (for _rest)
 var _next_pseq := 0
 var _xing_key := []
@@ -406,7 +411,7 @@ func to_dict() -> Dictionary:
 		list.append(e)
 	var state := {"cars": list, "waiting": _waiting.size(), "next_id": _next_id, "time": time,
 		"gave_up": gave_up, "speed": _speed, "dirty": _dirty, "arrivals": arrivals, "failed": failed,
-		"parked": parked, "walkers": walkers, "next_trip": _next_trip, "next_walker": _next_walker,
+		"parked": parked, "walkers": _walkers_saved(), "next_trip": _next_trip, "next_walker": _next_walker,
 		"sites": _sites, "extra": _extra, "closed": closed}
 	# Binary, so every float comes back exactly and copies stay in step
 	# (var_to_str rounds to 15 digits).
@@ -422,6 +427,7 @@ func from_dict(d: Dictionary) -> void:
 	_pend.clear()
 	_pseq.clear()
 	walkers.clear()
+	_wdone.clear()
 	_sites.clear()
 	_extra.clear()
 	closed.clear()
@@ -450,6 +456,11 @@ func from_dict(d: Dictionary) -> void:
 	parked = state.get("parked", [])
 	_index_parked()
 	walkers = state.get("walkers", [])
+	_wstep = 0
+	_wdone.clear()
+	for w in walkers:
+		w.t0 = -int(w.get("t", 0))
+		_file_walker(w)
 	_next_trip = state.get("next_trip", _next_id)
 	_next_walker = state.get("next_walker", 1)
 	_sites = state.get("sites", {})
@@ -519,6 +530,7 @@ func _rebuild() -> void:
 	_arrows.clear()
 	_kind.clear()
 	_conns.clear()
+	_cfor.clear()
 	_conflict.clear()
 	var seg_ids := network.segments.keys()
 	seg_ids.sort()
@@ -861,9 +873,14 @@ func _turn_cost(wi: int, wo: int) -> float:
 ## every way so route planning doesn't call a function per road).
 func _refresh_wcost() -> void:
 	_wcost.clear()
+	_wend.clear()
+	_vtop = 1.0
 	for wid in ways:
 		var w: Dictionary = ways[wid]
 		_wcost[wid] = w.len / (w.vmax * maxf(_speed.get(wid, 1.0), 0.15))
+		var e: Vector3 = w.pts[w.pts.size() - 1]
+		_wend[wid] = Vector2(e.x, e.z)
+		_vtop = maxf(_vtop, w.vmax)
 
 
 func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
@@ -880,8 +897,18 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 				best_route = [s[0]]
 	var dist := {}
 	var prev := {}
-	# A binary heap of (cost, way) in two packed arrays, kept inline: ties
-	# go to the lower way id, so every copy picks the same route.
+	# A*: the estimate is the straight line from the end of a way to the
+	# nearest target at the fastest limit in town, which no real route
+	# beats, so the route found is still the fastest.
+	var goals := PackedVector2Array()
+	for t in targets:
+		if ways.has(t):
+			var p0: Vector3 = ways[t].pts[0]
+			goals.append(Vector2(p0.x, p0.z))
+	var inv_v := 1.0 / _vtop
+	var hcache := {}
+	# A binary heap of (cost + estimate, way) in two packed arrays, kept
+	# inline: ties go to the lower way id, so every copy picks the same route.
 	var hg := PackedFloat64Array()
 	var hu := PackedInt32Array()
 	for s in starts:
@@ -889,18 +916,19 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 		var g: float = maxf(w.len - s[1], 0.0) / w.vmax + (s[2] if s.size() > 2 else 0.0)
 		if g < dist.get(s[0], INF):
 			dist[s[0]] = g
-			_hpush(hg, hu, g, s[0])
+			_hpush(hg, hu, g + _h_est(s[0], goals, inv_v, hcache), s[0])
 	var end := -1
 	var end_prev := -1
 	var first := lane >= 0
 	var none := PackedFloat64Array()
 	while not hg.is_empty():
-		var g: float = hg[0]
+		var f: float = hg[0]
 		var u: int = hu[0]
 		_hpop(hg, hu)
-		if g > dist[u] + 0.0001:
+		var g: float = dist[u]
+		if f > g + hcache[u] + 0.0001:
 			continue
-		if g >= best:
+		if f >= best:
 			break
 		var outs: Array = _turns.get(u, [])
 		var tc: PackedFloat64Array = _tcost.get(u, none)
@@ -922,7 +950,7 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 			if ng < dist.get(nx, INF):
 				dist[nx] = ng
 				prev[nx] = u
-				_hpush(hg, hu, ng, nx)
+				_hpush(hg, hu, ng + _h_est(nx, goals, inv_v, hcache), nx)
 		first = false
 	if best_route.is_empty() and end != -1:
 		var route := [end]
@@ -936,6 +964,19 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 			guard += 1
 		return route
 	return best_route
+
+
+## The planner's estimate of seconds left from the end of way `u`.
+func _h_est(u: int, goals: PackedVector2Array, inv_v: float, hcache: Dictionary) -> float:
+	if hcache.has(u):
+		return hcache[u]
+	var e: Vector2 = _wend.get(u, Vector2.ZERO)
+	var best := INF
+	for q in goals:
+		best = minf(best, e.distance_to(q))
+	var h := 0.0 if best == INF else best * inv_v
+	hcache[u] = h
+	return h
 
 
 static func _hpush(hg: PackedFloat64Array, hu: PackedInt32Array, g: float, u: int) -> void:
@@ -1232,7 +1273,7 @@ func _cancel(car: Dictionary) -> void:
 	if pid != -1 and _sim != null and _sim.people.people.has(pid):
 		var p: Dictionary = _sim.people.people[pid]
 		p.at = "" if car.at_place == "lot:" + p.home else car.at_place
-		p.until = -1 if p.at == "" else _tick + 30
+		_sim.people.set_until(p, -1 if p.at == "" else _tick + 30)
 
 
 # --- Trips ------------------------------------------------------------------
@@ -1852,6 +1893,7 @@ func retire_vehicle(vid: int) -> void:
 func forget_person(pid: int) -> void:
 	for w in walkers.duplicate():
 		if w.person == pid:
+			w.gone = true
 			walkers.erase(w)
 	for car in parked:
 		if car.get("driver", -1) == pid:
@@ -2394,7 +2436,7 @@ func go(pid: int, to_ref: String, purpose: String, stay: int) -> bool:
 			return false
 		_walk(pid, path, {"enter": to_ref, "stay": stay})
 	p.at = "travel"
-	p.until = -1
+	_sim.people.set_until(p, -1)
 	return true
 
 
@@ -2403,23 +2445,62 @@ func _walk(pid: int, pts: PackedVector3Array, then: Dictionary) -> void:
 	for i in range(1, pts.size()):
 		cum.append(cum[i - 1] + pts[i].distance_to(pts[i - 1]))
 	walkers.append({"id": _next_walker, "person": pid, "pts": pts, "cum": cum, "len": cum[cum.size() - 1],
-		"d": 0.0, "t": 0, "then": then,
+		"d": 0.0, "t": 0, "then": then, "t0": _wstep,
 		# Walking pace in whole cm/s, and distance worked out from the ticks
 		# walked, so a saved and loaded walker is exactly where it was.
 		"v": float(roundi(WALK_V * (85 + hash([pid, _next_walker]) % 31))) / 100.0})
+	_file_walker(walkers[walkers.size() - 1])
 	_next_walker += 1
+
+
+## Files a walker under the step they arrive: the first whole step count t
+## with t * v * DT >= len.
+func _file_walker(w: Dictionary) -> void:
+	var t := maxi(ceili(w.len / (w.v * DT)), 1)
+	while t > 1 and (t - 1) * w.v * DT >= w.len:
+		t -= 1
+	while t * w.v * DT < w.len:
+		t += 1
+	var at: int = int(w.t0) + t
+	if not _wdone.has(at):
+		_wdone[at] = []
+	_wdone[at].append(w)
+
+
+## Metres a walker has gone (worked out from the steps, not stored).
+func _walker_d(w: Dictionary) -> float:
+	return (_wstep - int(w.t0)) * w.v * DT
+
+
+## Walkers as saved: with how far they've got, and without the step they
+## set off on (that counts from the load).
+func _walkers_saved() -> Array:
+	var out := []
+	for w in walkers:
+		var e: Dictionary = w.duplicate()
+		e.t = _wstep - int(w.t0)
+		e.d = e.t * w.v * DT
+		e.erase("t0")
+		out.append(e)
+	return out
 
 
 ## Moves everyone on foot along, and lets them do what they set out to.
 func _step_walkers() -> void:
-	var done := []
-	for w in walkers:
-		w.t = int(w.get("t", 0)) + 1
-		w.d = w.t * w.v * DT
-		if w.d >= w.len:
-			done.append(w)
+	# Only the ones arriving this step are touched; where the rest are is
+	# worked out from the step count when it's wanted.
+	_wstep += 1
+	var done: Array = _wdone.get(_wstep, [])
+	_wdone.erase(_wstep)
+	if done.is_empty():
+		return
+	done.sort_custom(func(a, b): return a.id < b.id)
 	for w in done:
+		if w.has("gone"):
+			continue  # stopped walking (left town)
 		walkers.erase(w)
+		w.t = _wstep - int(w.t0)
+		w.d = w.t * w.v * DT
 		_walked(w)
 
 
@@ -2431,7 +2512,7 @@ func _walked(w: Dictionary) -> void:
 	if then.has("enter"):
 		var home_ref: String = "lot:" + p.home
 		p.at = "" if then.enter == home_ref else then.enter
-		p.until = -1 if then.enter == home_ref else _tick + maxi(int(then.get("stay", 30)), 1)
+		_sim.people.set_until(p, -1 if then.enter == home_ref else _tick + maxi(int(then.get("stay", 30)), 1))
 	elif then.has("drive"):
 		var car := _vehicle_parked(int(then.drive))
 		if car.is_empty() or not _send(car, then.to, then.purpose, {}, {"driver": w.person, "stay": then.stay}):
@@ -2439,7 +2520,7 @@ func _walked(w: Dictionary) -> void:
 			if not car.is_empty():
 				car.driver = -1
 			p.at = "" if car.is_empty() or car.at_place == "lot:" + p.home else car.at_place
-			p.until = _tick + 30 if p.at != "" else -1
+			_sim.people.set_until(p, _tick + 30 if p.at != "" else -1)
 			return
 
 
@@ -2624,7 +2705,7 @@ static func _line_at(line: PackedVector3Array, f: float) -> Vector3:
 
 ## Where a person on foot is and which way they face.
 func walker_pose(w: Dictionary, ahead := 0.0) -> Array:
-	var d := minf(w.d + ahead, w.len)
+	var d := minf(_walker_d(w) + ahead, w.len)
 	var p := _poly_point(w.pts, w.cum, d)
 	var q := _poly_point(w.pts, w.cum, minf(d + 0.5, w.len))
 	if q.distance_to(p) < 0.01:
@@ -2917,9 +2998,12 @@ func _snapshot() -> void:
 func _conn_for(car: Dictionary) -> Dictionary:
 	var wi: int = car.route[car.leg]
 	var wo: int = car.route[car.leg + 1]
-	if not lanes_for(wi, wo).has(car.lane):
-		return {}
-	return _connector(wi, car.lane, wo, _out_lane(wi, car.lane, wo))
+	var key := Vector3i(wi, car.lane, wo)
+	var c = _cfor.get(key)
+	if c == null:
+		c = {} if not lanes_for(wi, wo).has(car.lane) else _connector(wi, car.lane, wo, _out_lane(wi, car.lane, wo))
+		_cfor[key] = c
+	return c
 
 
 ## Intelligent Driver Model: acceleration for speed v wanting v0, with a gap
@@ -3048,13 +3132,13 @@ func _through_leader(c: Dictionary, ds: float, me: Dictionary) -> Array:
 	var blen := CAR_LEN
 	var list: Array = _lanes.get(c.wo * 8 + c.lo, [])
 	for k in range(list.size() - 1, -1, -1):
-		if list[k] != me and list[k].d > mine:
+		if list[k].id != me.id and list[k].d > mine:
 			best = list[k].d
 			bv = list[k].v
 			blen = list[k].len
 			break
 	for b in _box.get(c.node, []):
-		if b == me or b.j.wo != c.wo or b.j.lo != c.lo:
+		if b.id == me.id or b.j.wo != c.wo or b.j.lo != c.lo:
 			continue
 		var pos: float = b.j.exit_d - (b.j.len - b.jd)
 		if pos > mine and pos < best:
@@ -3075,7 +3159,7 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 	var queued := 0
 	for b in occupants:
 		var bc: Dictionary = b.j if b.j != null else b.conn
-		if b != car and bc.wo == c.wo and bc.lo == c.lo:
+		if b.id != car.id and bc.wo == c.wo and bc.lo == c.lo:
 			queued += 1
 	var list: Array = _lanes.get(c.wo * 8 + c.lo, [])
 	if not list.is_empty():
@@ -3084,7 +3168,7 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 			return false
 	# Nothing crossing our path in the junction.
 	for b in occupants:
-		if b == car:
+		if b.id == car.id:
 			continue
 		var bc: Dictionary = b.j if b.j != null else b.conn
 		if _conflicts(c, bc):
@@ -3104,7 +3188,7 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 			elif st == Light.YELLOW and car.v * car.v / (2.0 * BRAKE) < ds - 1.0:
 				return false
 			for ap in _approach.get(n, []):
-				if ap.car == car or ap.conn.wi == c.wi or light(n, ap.conn.wi) != Light.GREEN:
+				if ap.car.id == car.id or ap.conn.wi == c.wi or light(n, ap.conn.wi) != Light.GREEN:
 					continue
 				var theirs_minor: bool = ap.conn.turn == Turn.LEFT or ap.conn.turn == Turn.UTURN
 				if (on_red or (mine_minor_turn and not theirs_minor)) and _soon(ap) and _conflicts(c, ap.conn):
@@ -3113,14 +3197,14 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 			if not stopped:
 				return false
 			for ap in _approach.get(n, []):
-				if ap.car != car and ap.conn.wi != c.wi and _first(ap.car, car) and _conflicts(c, ap.conn):
+				if ap.car.id != car.id and ap.conn.wi != c.wi and _first(ap.car, car) and _conflicts(c, ap.conn):
 					return false
 		Rule.PRIORITY:
 			if not j.major.has(c.wi):
 				if j.sign == "stop" and not stopped:
 					return false
 				for ap in _approach.get(n, []):
-					if ap.car == car or ap.conn.wi == c.wi:
+					if ap.car.id == car.id or ap.conn.wi == c.wi:
 						continue
 					if j.major.has(ap.conn.wi):
 						if _soon(ap) and _conflicts(c, ap.conn):
@@ -3129,7 +3213,7 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 						return false
 			elif mine_minor_turn:
 				for ap in _approach.get(n, []):
-					if ap.car == car or ap.conn.wi == c.wi or not j.major.has(ap.conn.wi):
+					if ap.car.id == car.id or ap.conn.wi == c.wi or not j.major.has(ap.conn.wi):
 						continue
 					var theirs_minor: bool = ap.conn.turn == Turn.LEFT or ap.conn.turn == Turn.UTURN
 					if not theirs_minor and _soon(ap) and _conflicts(c, ap.conn):
