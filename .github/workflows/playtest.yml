@@ -57,7 +57,7 @@ jobs:
           tools/playtest/run_desktop.sh ~/godot-perf/godot out "$SECONDS_RUN"
 
       - name: Check the budgets
-        run: python3 tools/playtest/check.py tools/playtest/budgets.json out/alone.json out/region.json | tee -a "$GITHUB_STEP_SUMMARY"
+        run: set -o pipefail && python3 tools/playtest/check.py tools/playtest/budgets.json out/alone.json out/region.json | tee -a "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -123,7 +123,7 @@ jobs:
           node tools/playtest/web_playtest.mjs build/web 120 out/web.json || true
 
       - name: Check the budgets
-        run: python3 tools/playtest/check.py tools/playtest/budgets.json out/web.json | tee -a "$GITHUB_STEP_SUMMARY"
+        run: set -o pipefail && python3 tools/playtest/check.py tools/playtest/budgets.json out/web.json | tee -a "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         if: always()
