@@ -76,7 +76,7 @@ const VARIANTS := {
 const AXLE := {
 	"sedan": 3.9, "hatchback": 3.4, "crossover": 3.6, "suv": 4.2, "pickup": 4.7, "work_pickup": 4.8,
 	"minivan": 4.0, "sports": 3.8, "motorcycle": 1.8, "van": 4.4, "delivery_van": 5.3,
-	"box_truck": 7.9, "dump_truck": 6.7, "tow_truck": 5.2, "police_charger": 3.95, "police_tahoe": 4.15, "fire_tender": 7.2, "garbage_side": 7.3, "pickup_old": 4.4, "suv_jeep": 3.9, "minivan_pacifica": 4.0, "crossover_compact": 3.5, "work_pickup_plow": 4.8, "dump_truck_plow": 6.7, "buggy": 4.9, "rv": 5.9, "motorhome": 7.1, "pickup_camper": 4.8, "bucket_truck": 5.6, "school_bus": 8.9, "city_bus": 9.2,
+	"box_truck": 7.9, "dump_truck": 6.7, "tow_truck": 5.2, "police_charger": 3.95, "police_tahoe": 4.15, "fire_tender": 7.2, "garbage_side": 7.3, "pickup_old": 4.4, "suv_jeep": 3.9, "minivan_pacifica": 4.0, "crossover_compact": 3.5, "work_pickup_plow": 4.8, "dump_truck_plow": 6.7, "buggy": 4.9, "rv": 5.9, "motorhome": 7.1, "pickup_camper": 4.8, "bucket_truck": 5.6, "school_bus": 8.9, "city_bus": 9.2, "coach": 10.9,
 	"garbage_truck": 7.3, "fire_engine": 7.4, "police": 3.9, "taxi": 3.9, "ambulance": 5.1, "tractor": 4.2,
 	"combine": 7.0, "tractor_sleeper": 6.4, "mail_truck": 4.3, "concrete_mixer": 7.0, "sedan_compact": 3.6, "sedan_fullsize": 4.0,
 	"pickup_ext": 4.6, "pickup_mid": 4.4, "suv_mid": 3.9, "wagon": 3.7, "ev_crossover": 3.8, "hatch_box": 3.4, "van_low": 4.4,
@@ -891,6 +891,38 @@ func _city_bus() -> void:  # 40 ft low-floor transit bus (Gillig, New Flyer)
 	_box(Vector3(hw - 0.25, 0.75, -0.02), Vector3(0.3, 0.16, 0.06), HEAD, true)
 	_box(Vector3(hw - 0.15, 1.1, L + 0.01), Vector3(0.14, 0.3, 0.04), TAIL, true)
 	_box(Vector3(0, 2.85, -0.03), Vector3(1.8, 0.22, 0.03), Color(1.0, 0.6, 0.1, 0.5))
+
+
+## A 45 ft intercity motorcoach (MCI J4500, Prevost H3-45): high deck over
+## luggage bays, a tag axle behind the drive axle, and the door up front on
+## the curb side.
+func _coach() -> void:
+	var L := 13.8
+	var hw := 1.29
+	_loft([
+		[0.0, 0.45, 3.0, 3.3, hw - 0.12, hw - 0.1, hw - 0.3],
+		[0.5, 0.4, 3.25, 3.45, hw - 0.02, hw, hw - 0.12],
+		[L - 0.3, 0.4, 3.25, 3.45, hw - 0.02, hw, hw - 0.12],
+		[L, 0.45, 3.15, 3.35, hw - 0.1, hw - 0.08, hw - 0.22],
+	], [_edges(PAINT, TRIM)], PAINT, PAINT)
+	# A tall two-piece windshield raked back over the driver.
+	_box(Vector3(0, 2.15, 0.02), Vector3(2.3, 1.75, 0.02), GLASS)
+	for s in [-1.0, 1.0]:
+		# Passenger windows sit high, above the luggage bays.
+		_box(Vector3(s * (hw + 0.004), 2.45, 7.6), Vector3(0.006, 1.05, 10.6), GLASS)
+		_box(Vector3(s * (hw + 0.006), 1.55, 7.0), Vector3(0.006, 0.12, 12.4), Color(0.1, 0.25, 0.5, 0.4))
+		if not _lo:
+			for i in 5:  # luggage bay doors between the axles
+				_box(Vector3(s * (hw + 0.006), 0.95, 3.6 + i * 1.25), Vector3(0.006, 0.8, 0.03), TRIM)
+	_box(Vector3(hw + 0.006, 1.75, 1.3), Vector3(0.006, 2.4, 0.9), GLASS)  # curb-side door
+	_wheels([2.2, 10.2, 11.6], 0.52, hw, 0.3)
+	for x in [-1.0, 1.0]:
+		_box(Vector3(x * (hw - 0.3), 0.85, -0.02), Vector3(0.36, 0.16, 0.06), HEAD, true)
+		_box(Vector3(x * (hw - 0.15), 1.3, L + 0.01), Vector3(0.14, 0.4, 0.04), TAIL, true)
+	_box(Vector3(0, 3.1, -0.03), Vector3(1.8, 0.2, 0.03), Color(1.0, 0.6, 0.1, 0.5))  # destination sign
+	if not _lo:
+		for x in [-1.0, 1.0]:
+			_box(Vector3(x * (hw + 0.25), 2.3, 0.4), Vector3(0.08, 0.45, 0.2), TRIM)  # mirrors on long arms
 
 
 # --- Semis ------------------------------------------------------------------
