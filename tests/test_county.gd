@@ -45,6 +45,7 @@ func _init() -> void:
 	_test_join()
 	_test_remove()
 	_test_adopt()
+	_test_meet()
 	print("ALL TESTS PASSED" if _failed == 0 else "SOME TESTS FAILED")
 	quit(1 if _failed > 0 else 0)
 
@@ -221,6 +222,59 @@ func _test_adopt() -> void:
 	for c in _gravel(sim):
 		past = past or c[0].z > z + 265.0 or c[2].z > z + 265.0
 	_check(not past, "and stops short of zoned lots")
+
+
+## Roads drawn to a county road always meet it: at a crossing of two, just
+## short of one, or at the edge of the town's land.
+func _test_meet() -> void:
+	var S := CountyGrid.SECTION
+	var x := 0.0
+	var z := 0.0
+	var found := false
+	for lx in range(-6, 6):
+		for lz in range(-6, 6):
+			if found or not (CountyGrid.has_mile(lx, lz) and CountyGrid.has_mile(lx, lz - 1)
+					and CountyGrid.has_mile(lz + (1 << 20), lx) and CountyGrid.has_mile(lz + (1 << 20), lx - 1)):
+				continue
+			var dry := true
+			for k in range(-10, 11):
+				dry = dry and CountyGrid.clears(lx * S + k * 30, lz * S) and CountyGrid.clears(lx * S, lz * S + k * 30) \
+					and CountyGrid.clears(lx * S, lz * S + 500 + k * 10)
+			if dry:
+				x = lx * S
+				z = lz * S
+				found = true
+	_check(found, "found a dry crossing of two county roads")
+	if not found:
+		return
+	# A road ending right at the crossing takes on all four roads out of it.
+	var sim := CitySim.new()
+	sim.apply({"type": "build_road", "start": [x - 200, z - 200], "ctrl": [x - 100, z - 100], "end": [x, z],
+		"road": RoadStyle.Type.STREET, "join": true})
+	_check(sim.county_joined.size() == 4, "a road to a crossing of county roads takes on all four (%d)" % sim.county_joined.size())
+	var corner := sim.network.find_node_near(Vector3(x, 0, z), 0.5)
+	_check(corner != -1 and sim.network.segments_at(corner).size() == 5, "and they all meet there")
+	# A road ending a few metres short is taken on to it.
+	sim = CitySim.new()
+	sim.apply({"type": "build_road", "start": [x - 200, z + 500], "ctrl": [x - 100, z + 500], "end": [x - 6, z + 500],
+		"road": RoadStyle.Type.STREET, "join": true})
+	var end := sim.network.find_node_near(Vector3(x - 6, 0, z + 500), 0.5)
+	_check(end != -1 and sim.network.segments_at(end).size() == 2, "a road ending just short of a county road meets it")
+	var on := sim.network.find_node_near(Vector3(x, 0, z + 500), 0.5)
+	_check(on != -1 and sim.network.segments_at(on).size() == 3, "joining it on the line")
+	# Only as far as the town's land, but right up to its edge.
+	sim = CitySim.new()
+	sim.land_check = func(pts: Array) -> String:
+		for q in pts:
+			if q.y > z + 700.0:
+				return "Not your land."
+		return ""
+	sim.apply({"type": "build_road", "start": [x - 200, z + 500], "ctrl": [x - 100, z + 500], "end": [x, z + 500],
+		"road": RoadStyle.Type.STREET, "join": true})
+	var reach := -INF
+	for c in _gravel(sim):
+		reach = maxf(reach, maxf(c[0].z, c[2].z))
+	_check(reach > z + 680.0 and reach <= z + 700.0, "the county road is taken up to the edge of the town's land (%d m)" % (reach - z - 500))
 
 
 func _gravel(sim: CitySim) -> Array:
