@@ -111,6 +111,15 @@ const SERVICES := {
 	# A licensed daycare center for about 60 children; parents drive up to a
 	# mile or so out of their way.
 	"daycare": {"cost": 450_000, "upkeep": 4_000, "reach": 1600.0},
+	# Public parking (ParkingLots). A paved, lit and striped surface lot runs
+	# about $5,000 a stall to build and $300-500 a stall a year to sweep,
+	# plow, light and restripe; a precast parking garage about $25,000 a
+	# stall and $700-900 a stall a year (Walker Consultants cost surveys).
+	"parking_small": {"cost": 110_000, "upkeep": 600},
+	"parking_downtown": {"cost": 260_000, "upkeep": 1_600},
+	"parking_large": {"cost": 650_000, "upkeep": 4_000},
+	"park_and_ride": {"cost": 1_100_000, "upkeep": 6_500},
+	"parking_garage": {"cost": 6_500_000, "upkeep": 17_000},
 }
 ## Water and sewer bills the city collects, per building per month. The
 ## average US household pays about $100 a month for water and sewer

@@ -451,7 +451,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 					or parks.overlaps(Services.corners(kind, pos, dir).map(func(q): return Vector2(q.x, q.z))) \
 					or education.covers(pos) or banks.covers(pos) or telecom.covers(pos):
 				return false
-			var sid := services.add(kind, pos, dir)
+			var sid := services.add(kind, pos, dir, bool(cmd.get("angled", false)) and kind in Services.PARKING)
 			construction.start("svc:%d" % sid, Services.profile_of(kind), tick_count, pos, dir, Services.SETBACK
 				+ RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH)
 			economy.money -= cost
