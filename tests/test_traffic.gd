@@ -33,6 +33,29 @@ func _init() -> void:
 	_check(finished > 3, "cars finish their trips (%d)" % finished)
 	_check(parked_posed > 0, "a car held after it parks still has a pose (%d)" % parked_posed)
 
+	# Two streets crossing: cars stop at the bar behind the crosswalk, so a
+	# right turn sweeps a real curve (AASHTO's passenger car: 6.4 m at least).
+	var xs := CitySim.new()
+	xs.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
+	xs.apply({"type": "build_road", "start": [0, -200], "ctrl": [0, 0], "end": [0, 200]})
+	xs.tick()
+	var tightest := INF
+	for n in xs.traffic.junctions:
+		for wi in xs.traffic.ways_into(n):
+			for wo in xs.traffic._turns.get(wi, []):
+				var con: Dictionary = xs.traffic._connector(wi, xs.traffic.ways[wi].lanes - 1, wo, xs.traffic.ways[wo].lanes - 1)
+				if con.turn != TrafficSim.Turn.RIGHT:
+					continue
+				var cp: PackedVector3Array = RoadNetwork.sample_curve(con.pts[0], con.ctrl, con.pts[con.pts.size() - 1], 40)
+				for k in range(1, cp.size() - 1):
+					var u := Vector2(cp[k - 1].x, cp[k - 1].z)
+					var v := Vector2(cp[k].x, cp[k].z)
+					var w3 := Vector2(cp[k + 1].x, cp[k + 1].z)
+					var cr := absf((v - u).cross(w3 - u))
+					if cr > 1e-6:
+						tightest = minf(tightest, u.distance_to(v) * v.distance_to(w3) * w3.distance_to(u) / (2.0 * cr))
+	_check(tightest > 6.4 and tightest < INF, "a right turn at a street corner is a real curve (%.1f m radius)" % tightest)
+
 	# A full place's overflow cars park one after another along the kerb,
 	# not on top of each other, and never across a driveway.
 	var cpl := {}
@@ -404,7 +427,7 @@ func _init() -> void:
 	var crossed := 0
 	var waiting := 0
 	var last_d := {}
-	for i in 400:
+	for i in 600:  # long enough for the first car to reach the gates and stop
 		rx.tick()
 		for car in rx.traffic.cars:
 			if car.j != null or not rx.traffic._xings.has(car.route[car.leg]):
@@ -498,7 +521,12 @@ func _init() -> void:
 			yielded = wk.traffic.crosswalk_busy(n, seg) and not wk.traffic._may_enter(turning, onto, 20.0)
 			while wk.traffic._wstep <= to_step:
 				wk.tick()
-			cleared = not wk.traffic.crosswalk_busy(n, seg)
+			# Once off it (and anyone else who stepped on meanwhile), cars go.
+			for k in 60:
+				cleared = not wk.traffic.crosswalk_busy(n, seg)
+				if cleared:
+					break
+				wk.tick()
 	_check(yielded, "a car turning onto the road waits while someone is on its crosswalk")
 	_check(cleared, "and may go once they've crossed")
 
@@ -520,7 +548,7 @@ func _init() -> void:
 			for k in pn:
 				var q := pa.lerp(pb, float(k) / pn)
 				along += pa.distance_to(pb) / pn
-				if along > 3.0 and absf(q.z) < hw - 0.3 and absf(q.x) > 16.0:
+				if along > 3.0 and absf(q.z) < hw - 0.3 and absf(q.x) > 22.0:
 					on_road += 1
 		reached = wpath.size() > 2 and wpath[wpath.size() - 1].distance_to(wk.traffic.place("lot:" + west_home).door) < 0.5
 	_check(west_home != "" and on_road == 0 and reached,
