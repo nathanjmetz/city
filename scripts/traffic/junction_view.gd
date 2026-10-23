@@ -13,6 +13,8 @@ const YELLOW := Color(1.0, 0.72, 0.05)
 const GREEN := Color(0.15, 1.0, 0.45)
 
 var traffic: TrafficSim
+## The road view, for where shaped town junctions make each road stop short.
+var roads: RoadView
 var _version := -1
 var _poles: MultiMeshInstance3D
 var _arms: MultiMeshInstance3D
@@ -92,6 +94,9 @@ func _rebuild_all() -> void:
 	_head_ways.clear()
 	var nodes := traffic.junctions.keys()
 	nodes.sort()
+	var plans := {}
+	if roads != null:
+		plans = Junction.plan(roads.network, roads._rural)
 	for n in nodes:
 		var j: Dictionary = traffic.junctions[n]
 		if j.control == TrafficSim.Rule.NONE:
@@ -102,13 +107,19 @@ func _rebuild_all() -> void:
 		var cross := 0.0
 		for w2 in traffic.ways_into(n):
 			cross = maxf(cross, RoadStyle.TYPES[traffic.ways[w2].type].width * 0.5)
-		var walk := cross + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH * 0.5
+		var plain := cross + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH * 0.5
 		for wid in traffic.ways_into(n):
+			var walk := plain
+			# A shaped corner: the crosswalk runs from 0.3 to 2.7 m past where
+			# the road stops, in line with the curb ramps.
+			var trim := Junction.trim(plans, n, traffic.ways[wid].seg)
+			if trim > 0.0:
+				walk = trim + 1.5
 			var sl := traffic.stop_line(wid)
 			var dir: Vector3 = sl.dir
 			var right: Vector3 = sl.right
 			var half: float = RoadStyle.TYPES[traffic.ways[wid].type].width * 0.5
-			var back := walk + 1.8 + 1.2  # behind the crosswalk and the stop bar
+			var back := walk + 3.3  # behind the crosswalk and the stop bar
 			var base: Vector3 = sl.pos + right * sl.curb - dir * 1.0
 			if not RoadStyle.TYPES[traffic.ways[wid].type].oneway:
 				# On the near-side corner, in the grass strip beside the curb.
@@ -161,11 +172,12 @@ func _markings(st: SurfaceTool, sl: Dictionary, half: float, walk: float) -> voi
 	var y := RoadStyle.Y_JUNCTION + 0.02
 	var p: Vector3 = sl.pos
 	var dir: Vector3 = sl.dir
-	# Two 12 in lines, 6 ft apart (MUTCD 3B.18), then a 24 in stop bar 4 ft back.
-	for k in [-0.9, 0.9]:
+	# Two 12 in lines about 7 ft apart (MUTCD 3B.18: at least 6 ft), then a
+	# 24 in stop bar 4 ft back.
+	for k in [-1.05, 1.05]:
 		var c: float = walk + k
 		RoadMesh.add_strip(st, PackedVector3Array([p - dir * (c + 0.15), p - dir * (c - 0.15)]), -half, half, y)
-	var bar := walk + 0.9 + 1.2
+	var bar := walk + 1.2 + 1.2
 	RoadMesh.add_strip(st, PackedVector3Array([p - dir * (bar + 0.6), p - dir * bar]), 0.15, half - 0.2, y)
 
 
