@@ -1359,6 +1359,15 @@ func move(vid: int, to: Dictionary, purpose: String, cargo := {}) -> int:
 
 
 ## Remembers a dispatch endpoint as a place; returns its ref ("" if no road).
+## Makes a dispatch endpoint {"ref", "pos"} a place vehicles can be based
+## at and driven to (a bus stop, a yard). Returns its place ref, or "" if
+## no road is near.
+func register(e: Dictionary) -> String:
+	if _dirty:
+		_rebuild()
+	return _register(e)
+
+
 func _register(e: Dictionary) -> String:
 	var ref := str(e.get("ref", ""))
 	if ref == "edge":
