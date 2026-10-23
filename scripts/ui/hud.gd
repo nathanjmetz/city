@@ -121,6 +121,9 @@ var _views_button: Button
 var _view_cards := {}  # view key -> Button
 var _view := ""
 var _help_button: Button
+const CLEAR_TEXT := "Start over (clear the map)"
+var _clear_button := Button.new()
+var _clear_armed := false
 var advisor := AdvisorPanel.new()
 var permits := PermitPanel.new()
 ## The region's shared projects and services (only in a region).
@@ -290,6 +293,9 @@ func _build_quick() -> void:
 		for b in found:
 			_all_cards.append([b, cat])
 			b.pressed.connect(_remember.bind(b))
+	# The Views come up in search too ("smoke", "noise", "traffic").
+	for k in _view_cards:
+		_all_cards.append([_view_cards[k], "views"])
 	_quick.add_theme_constant_override("separation", 2)
 	_quick.alignment = BoxContainer.ALIGNMENT_END
 	_root.add_child(_quick)
@@ -332,20 +338,55 @@ func _open_search(on: bool) -> void:
 ## The cards whose name or tooltip has every word typed, best first.
 func search_cards(text: String) -> Array[Button]:
 	var out: Array[Button] = []
-	var words := text.to_lower().split(" ", false)
+	var phrase := text.to_lower().strip_edges()
+	var words := phrase.split(" ", false)
 	if words.is_empty():
 		return out
-	var starts: Array[Button] = []
+	# Best first: the name itself, a name that starts with it, the whole
+	# phrase in the name or tip ("traffic light" finds Lights), every word.
+	var ranks: Array = [[], [], [], []]
 	for entry in _all_cards:
 		var b: Button = entry[0]
-		var title := (b.get_meta("title") as Label).text.to_lower()
-		var hay := title + " " + b.tooltip_text.to_lower()
-		if Array(words).all(func(w): return w in hay):
-			if title.begins_with(words[0]):
-				starts.append(b)
-			elif not b in out:
-				out.append(b)
-	return starts + out
+		var title := card_title(b).to_lower()
+		var hay := title + " " + b.tooltip_text.to_lower() + " " + menu_title(entry[1]).to_lower()
+		if not Array(words).all(func(w): return w in hay):
+			continue
+		var r := 3
+		if title == phrase:
+			r = 0
+		elif title.begins_with(phrase):
+			r = 1
+		elif phrase in title + " " + b.tooltip_text.to_lower():
+			r = 2
+		if not b in ranks[r]:
+			ranks[r].append(b)
+	for r in ranks:
+		out.append_array(r)
+	return out
+
+
+## A card's name (drawer cards and View buttons alike).
+static func card_title(b: Button) -> String:
+	if b.has_meta("title"):
+		return (b.get_meta("title") as Label).text
+	return b.text.strip_edges()
+
+
+## The menu a card sits in, as the bottom bar names it.
+static func menu_title(cat: String) -> String:
+	if cat == "views":
+		return "Views"
+	for c in CATEGORIES:
+		if c[0] == cat:
+			return c[1]
+	return ""
+
+
+func _menu_of(b: Button) -> String:
+	for entry in _all_cards:
+		if entry[0] == b:
+			return entry[1]
+	return ""
 
 
 func _find(text: String) -> void:
@@ -355,7 +396,8 @@ func _find(text: String) -> void:
 	for i in mini(hits.size(), 8):
 		var b := hits[i]
 		var r := Button.new()
-		r.text = (b.get_meta("title") as Label).text
+		# The menu it's in, so two cards with one name can be told apart.
+		r.text = "%s   ·  %s" % [card_title(b), menu_title(_menu_of(b))]
 		r.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		r.focus_mode = Control.FOCUS_NONE
 		r.pressed.connect(_pick_result.bind(i))
@@ -372,9 +414,14 @@ func _pick_result(i: int) -> void:
 
 ## Picks a card from anywhere (search, recents): opens its menu, then the tool.
 func press_card(b: Button) -> void:
-	for entry in _all_cards:
-		if entry[0] == b and entry[1] != _category:
-			_open(entry[1])
+	var cat := _menu_of(b)
+	if cat == "views":
+		_views_button.button_pressed = true
+		if not b.button_pressed:
+			b.pressed.emit()
+		return
+	if cat != "" and cat != _category:
+		_open(cat)
 	b.pressed.emit()
 	_sync()
 
@@ -794,6 +841,7 @@ func _build_top_bar() -> void:
 	_help_button.toggled.connect(func(on):
 		_help.visible = on
 		if on:
+			_disarm_clear()
 			_fill_help()
 			advisor.close_panel()
 			permits.close_panel()
@@ -1539,7 +1587,7 @@ func _fill_traffic_row(row: HBoxContainer) -> void:
 	var junctions := _section(row, "Junctions  ·  click one to set it")
 	for entry in [[TrafficTool.Mode.VIEW, "flow", "Flow", "Roads coloured by traffic flow  (J)", view],
 			[TrafficTool.Mode.AUTO, "auto", "Auto", "Let the game choose, by US rules", junctions],
-			[TrafficTool.Mode.SIGNAL, "signal", "Lights", "Traffic lights", junctions],
+			[TrafficTool.Mode.SIGNAL, "signal", "Lights", "Traffic lights (signals)", junctions],
 			[TrafficTool.Mode.ALL_STOP, "allstop", "All-way", "All-way stop: first to stop goes first", junctions],
 			[TrafficTool.Mode.STOP, "stop", "Stop signs", "Stop signs on the smaller road only", junctions],
 			[TrafficTool.Mode.NO_CONTROL, "nocontrol", "None", "No signs or lights", junctions]]:
@@ -1983,15 +2031,41 @@ func _build_help() -> void:
 	guide.focus_mode = Control.FOCUS_NONE
 	guide.pressed.connect(func(): tour.start())
 	col.add_child(guide)
-	var clear := Button.new()
-	clear.text = "Start over (clear the map)"
-	clear.focus_mode = Control.FOCUS_NONE
-	clear.pressed.connect(func(): sim.apply({"type": "clear"}))
-	col.add_child(clear)
+	_clear_button.text = CLEAR_TEXT
+	_clear_button.focus_mode = Control.FOCUS_NONE
+	_clear_button.pressed.connect(_press_clear)
+	col.add_child(_clear_button)
 	col.add_child(UiStyle.label("Build " + _build_name(), 10, UiStyle.MUTED))
 	_help.visible = false
 	_root.add_child(_help)
 	_pin(_help, Control.PRESET_TOP_RIGHT, Vector2(-6, 42))
+
+
+## Start over takes a second click: one stray click (or clicks queued
+## behind a freeze) used to wipe a whole town with no way back.
+func _press_clear() -> void:
+	if not _clear_armed:
+		_clear_armed = true
+		var pop := int(sim.stats.get("population", 0))
+		_clear_button.text = "Click again to clear it all" + (" (%s people)" % _thousands(pop) if pop > 0 else "")
+		_clear_button.add_theme_color_override("font_color", BAD)
+		get_tree().create_timer(4.0).timeout.connect(_disarm_clear)
+		return
+	_disarm_clear()
+	sim.apply({"type": "clear"})
+	# Say it happened, and rest the button a moment so repeat clicks don't pile up.
+	_clear_button.text = "Map cleared"
+	_clear_button.disabled = true
+	get_tree().create_timer(3.0).timeout.connect(func():
+		_clear_button.disabled = false
+		_clear_button.text = CLEAR_TEXT)
+
+
+func _disarm_clear() -> void:
+	if _clear_armed:
+		_clear_armed = false
+		_clear_button.text = CLEAR_TEXT
+		_clear_button.remove_theme_color_override("font_color")
 
 
 ## The key list follows the Controls page, so it's refilled each time it opens.
