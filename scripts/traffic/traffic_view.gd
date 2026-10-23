@@ -75,6 +75,7 @@ var _rt := 0.0
 var _rate := 1.0
 var _win_real := 0.0
 var _win_t := 0.0
+var _own_clock := false  # driven by the game's own tick clock (your town)
 
 
 ## How one vehicle is moving, for drawing: two samples of its front axle
@@ -372,9 +373,11 @@ func _add_parked(kind: String, xf: Transform3D, id: int, eye: Vector3, ultra2: f
 		_add(kind, lod, xf, Color(paint.r, paint.g, paint.b, 0.0))
 
 
-## Keeps the drawing clock a step behind the simulation's, running at the
-## simulation's own pace (worked out from how fast its clock moves), so it
-## can glide between the last two samples whatever the step size.
+## Keeps the drawing clock a step behind the simulation's, so it can glide
+## between the last two samples. For your own town it is the game's own
+## clock (how far through the tick it is), so every frame moves each car
+## exactly as far as the time that passed; a neighbor's town, which only
+## arrives now and then, runs on a clock matched to how fast it comes.
 func _clock(delta: float) -> void:
 	var now: float = traffic.time
 	if now < _t1 or _t1 < 0.0 or now - _t1 > 30.0:
@@ -386,9 +389,19 @@ func _clock(delta: float) -> void:
 		_win_real = 0.0
 		_info.clear()
 	elif now > _t1:
-		_step = now - _t1
 		_t0 = _t1
 		_t1 = now
+	var frac: float = tick_fraction.call() if tick_fraction.is_valid() else 0.0
+	if frac > 0.0:
+		_own_clock = true
+	if _own_clock:
+		# One tick behind the game clock, which runs smoothly whatever the
+		# frame rate (a tick is TrafficSim.DT of driving).
+		_step = TrafficSim.DT
+		_rt = now - TrafficSim.DT + clampf(frac, 0.0, 1.0) * TrafficSim.DT
+		return
+	if now > _t0 and _t1 == now:
+		_step = maxf(now - _t0, 0.001)
 	_win_real += delta
 	if _win_real >= 0.5:
 		_rate = lerpf(_rate, (now - _win_t) / _win_real, 0.5)
