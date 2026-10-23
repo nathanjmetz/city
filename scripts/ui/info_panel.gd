@@ -33,7 +33,10 @@ var _lever_label := UiStyle.label("", 12, UiStyle.MUTED)
 var _lever_value := UiStyle.label("", 12)
 var _lever_cmds := [{}, {}]
 var _icon_name := ""
-var _guide: LeaderGuide
+## Asks the HUD to open the Economy page (from a hub's sliders).
+signal open_economy
+
+var _guide: HubSliders
 var _guide_for := {}
 var _wait := 0.0
 
@@ -243,7 +246,7 @@ func _show_actions(actions: Array) -> void:
 		_actions.add_child(b)
 
 
-## Hubs with a leader get your word to them at the bottom (see LeaderGuide).
+## Hubs get their Funding and Growth sliders at the bottom (see HubSliders).
 func _sync_guide() -> void:
 	if tool.selection == _guide_for:
 		return
@@ -251,7 +254,8 @@ func _sync_guide() -> void:
 	if _guide:
 		_guide.queue_free()
 		_guide = null
-	if LeaderGuide.takes(sim, tool.selection):
-		_guide = LeaderGuide.new()
-		_guide.setup(sim, LeaderGuide.hub_of(sim, tool.selection), int(tool.selection.id))
+	if HubSliders.takes(sim, tool.selection):
+		_guide = HubSliders.new()
+		_guide.open_economy.connect(func(): open_economy.emit())
+		_guide.setup(sim, str(tool.selection.type), int(tool.selection.id))
 		get_child(0).add_child(_guide)

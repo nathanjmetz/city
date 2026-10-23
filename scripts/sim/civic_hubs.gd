@@ -52,6 +52,9 @@ var parked := []
 var claimed := {}
 ## Bumped whenever any hub's land or kind changes (the view redraws).
 var version := 0
+## The town's sliders: Funding sets upkeep and trucks, Growth how soon it
+## takes more land (see Policies).
+var policies: Policies
 var _next_id := 1
 var _net_dirty := true
 var _hooked: RoadNetwork
@@ -237,7 +240,39 @@ func trucks(id: int) -> int:
 	var h: Dictionary = hubs[id]
 	if not is_waste(h.kind):
 		return 0
-	return int(Balance.HUB_TRUCKS[h.kind]) + extra_pieces(h) / 2
+	var n := int(Balance.HUB_TRUCKS[h.kind]) + extra_pieces(h) / 2
+	return maxi(1, roundi(n * policy_funding(id, Balance.POLICY_EFFECT)))
+
+
+## The Economy page area a hub belongs to.
+static func area_of(kind: String) -> String:
+	return "waste" if is_waste(kind) else "cemetery"
+
+
+## A Balance list's value for hub `id`'s Funding step.
+func policy_funding(id: int, list: Array) -> float:
+	if policies == null or not hubs.has(id):
+		return float(list[Policies.STANDARD])
+	return policies.pick(list, "funding", area_of(hubs[id].kind), "hub:%d" % id)
+
+
+## A Balance list's value for hub `id`'s Growth step.
+func policy_growth(id: int, list: Array) -> float:
+	if policies == null or not hubs.has(id):
+		return float(list[Policies.STANDARD])
+	return policies.pick(list, "growth", area_of(hubs[id].kind), "hub:%d" % id)
+
+
+## Hub `id`'s monthly upkeep at its size and Funding, less what it sells.
+func cost_of(id: int) -> int:
+	var h: Dictionary = hubs[id]
+	var s: Dictionary = Balance.WASTE_SITES[h.kind]
+	var size := 1.0 + Balance.HUB_PIECE_UPKEEP * extra_pieces(h)
+	var total := (float(s.upkeep) * policy_funding(id, Balance.POLICY_UPKEEP) - sales(h)) * size
+	for node in tree(h):
+		if node.id in h.built:
+			total += float(node.get("upkeep", 0))
+	return roundi(total)
 
 
 func trucks_out(id: int) -> int:
@@ -262,13 +297,7 @@ func monthly_cost() -> int:
 	var ids := hubs.keys()
 	ids.sort()
 	for id in ids:
-		var h: Dictionary = hubs[id]
-		var s: Dictionary = Balance.WASTE_SITES[h.kind]
-		var size := 1.0 + Balance.HUB_PIECE_UPKEEP * extra_pieces(h)
-		total += (float(s.upkeep) - sales(h)) * size
-		for node in tree(h):
-			if node.id in h.built:
-				total += float(node.get("upkeep", 0))
+		total += cost_of(id)
 	return roundi(total)
 
 
@@ -398,7 +427,7 @@ func _pile_up(sim: CitySim) -> void:
 		if lb <= 0.0:
 			continue
 		var seg: int = sim.lots[key].seg
-		trash[seg] = minf(trash.get(seg, 0.0) + lb * share, Balance.GARBAGE_PILE_LB * 4.0)
+		trash[seg] = _snap(minf(trash.get(seg, 0.0) + lb * share, Balance.GARBAGE_PILE_LB * 4.0))
 	for seg in trash.keys():
 		if not sim.network.segments.has(seg):
 			trash.erase(seg)
@@ -689,7 +718,7 @@ func _trade(sim: CitySim) -> void:
 	if taken > 0.0 and wanted > 0.0:
 		var keep := 1.0 - clampf(taken / wanted, 0.0, 1.0)
 		for seg in trash:
-			trash[seg] *= keep
+			trash[seg] = _snap(trash[seg] * keep)
 	# What neighbors' trash came in raises the mound.
 	var brought := sim.trade.sold("garbage")
 	var totals := {"power": 0.0, "compost": 0.0, "scrap": 0.0, "garbage": 0.0}
@@ -731,11 +760,12 @@ func _decide(sim: CitySim) -> void:
 	for id in ids:
 		var h: Dictionary = hubs[id]
 		var grow := false
-		var stance: String = sim.permits.guidance("hub", id).stance
+		# Growth on the Economy page; its leader hears it as this stance.
+		var stance := Policies.stance(roundi(policy_growth(id, [0, 1, 2, 3, 4])))
 		if is_waste(h.kind):
-			# The player's word to its leader: grow sooner, or hold off.
-			var share := Balance.HUB_GROW_BUSY_SHARE * (0.5 if stance == "grow" else 1.0)
-			grow = h.want > 0 and float(h.short) / h.want >= share
+			# Growth (also your word to its leader): Hold never takes land,
+			# Expand at the first sign of being busy.
+			grow = h.want > 0 and float(h.short) / h.want >= policy_growth(id, Balance.POLICY_HUB_BUSY)
 			h.quiet = h.quiet + 1 if h.want == 0 else 0
 			if h.quiet >= Balance.HUB_SHRINK_QUIET and h.cells.size() > BASE.size():
 				_shrink(h)
@@ -743,11 +773,13 @@ func _decide(sim: CitySim) -> void:
 			h.want = 0
 			h.short = 0
 		else:
-			var target := BASE.size() + int(sim.stats.population / Balance.CEMETERY_PEOPLE_PER_PIECE)
+			var target := BASE.size() + int(sim.stats.population / Balance.CEMETERY_PEOPLE_PER_PIECE
+				* policy_growth(id, Balance.POLICY_CEMETERY_PACE))
 			grow = h.cells.size() < target
-		if stance == "hold":
+		# The town pays for the land, so a town in the red can't grow its hubs.
+		if sim.economy.money < 0 or stance == "hold":
 			grow = false
-		else:
+		if stance != "hold":
 			_develop(sim, id, stance)
 		if grow and h.cells.size() < max_pieces(h):
 			var c := _best_piece(sim, id)
@@ -950,3 +982,9 @@ func from_dict(d: Dictionary) -> void:
 static func _truck(t: Dictionary) -> Dictionary:
 	return {"hub": int(t.hub), "load": float(t.load), "stops": int(t.stops), "seg": int(t.seg),
 		"prev": int(t.get("prev", -1)), "at": [float(t.at[0]), float(t.at[1])]}
+
+
+## Pounds of trash in 1/1024 lb steps: exact in a JSON save, so a loaded copy
+## of the city carries on exactly the same.
+static func _snap(lb: float) -> float:
+	return snappedf(lb, 1.0 / 1024.0)

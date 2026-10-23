@@ -42,6 +42,20 @@ static func theme() -> Theme:
 	t.set_color("font_placeholder_color", "LineEdit", Brand.INK_FAINT)
 	t.set_color("caret_color", "LineEdit", ACCENT)
 	t.set_color("selection_color", "LineEdit", Color(ACCENT, 0.35))
+	# The broad Funding and Growth sliders: a thin sunken track filled teal
+	# up to a round grabber.
+	var track := _box(Brand.SURFACE_SUNKEN, 3)
+	track.content_margin_top = 2
+	track.content_margin_bottom = 2
+	t.set_stylebox("slider", "HSlider", track)
+	var fill := _box(Brand.BRAND_TEAL, 3)
+	fill.content_margin_top = 2
+	fill.content_margin_bottom = 2
+	t.set_stylebox("grabber_area", "HSlider", fill)
+	t.set_stylebox("grabber_area_highlight", "HSlider", fill)
+	t.set_icon("grabber", "HSlider", _dot(12, Brand.INK))
+	t.set_icon("grabber_highlight", "HSlider", _dot(12, Brand.BRAND_MINT))
+	t.set_icon("tick", "HSlider", _dot(4, Brand.INK_FAINT))
 	t.set_stylebox("panel", "TooltipPanel", _box(Brand.SURFACE_RAISED, RADIUS_SM, LINE, 1))
 	t.set_color("font_color", "TooltipLabel", TEXT)
 	return t
@@ -95,6 +109,17 @@ static func title(text: String, size := 16, color := TEXT) -> Label:
 	var l := label(text, size, color, 600)
 	l.add_theme_font_override("font", Brand.display(600))
 	return l
+
+
+## A small filled circle, for slider grabbers and ticks.
+static func _dot(px: int, color: Color) -> ImageTexture:
+	var img := Image.create(px, px, false, Image.FORMAT_RGBA8)
+	var r := px / 2.0
+	for y in px:
+		for x in px:
+			var d := Vector2(x + 0.5 - r, y + 0.5 - r).length()
+			img.set_pixel(x, y, Color(color, clampf(r - d, 0.0, 1.0)))
+	return ImageTexture.create_from_image(img)
 
 
 static func _box(bg: Color, radius: int, border := Color.TRANSPARENT, border_px := 2) -> StyleBoxFlat:

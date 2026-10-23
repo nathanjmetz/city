@@ -81,7 +81,26 @@ var plants := []
 ## [{"node": county road end, "offset": road metres from their station to
 ## it, "reach": metres}]. Set by Interlocal, never saved.
 var contracts := {}
+## The town's Funding slider: a lean department costs less and covers less.
+var policies: Policies
 var _next_id := 1
+
+
+## The Economy page area a service kind belongs to.
+static func area_of(kind: int) -> String:
+	return "utilities" if KINDS[kind].has("utility") else "public"
+
+
+## Upkeep and reach (or capacity) multipliers for service `id` from Funding.
+func funding(id: int, list: Array) -> float:
+	if policies == null or not buildings.has(id):
+		return 1.0
+	return policies.pick(list, "funding", area_of(buildings[id].kind), "service:%d" % id)
+
+
+## This service's monthly upkeep at its Funding.
+func upkeep_of(id: int) -> int:
+	return roundi(int(KINDS[buildings[id].kind].upkeep) * funding(id, Balance.POLICY_UPKEEP))
 
 
 static func spec(kind: int) -> Dictionary:
@@ -199,7 +218,7 @@ func covers(p: Vector3) -> bool:
 func monthly_upkeep() -> int:
 	var total := 0
 	for id in buildings:
-		total += int(KINDS[buildings[id].kind].upkeep) + int(buildings[id].get("subsidy", 0))
+		total += upkeep_of(id) + int(buildings[id].get("subsidy", 0))
 	return total + water.monthly_subsidy()
 
 
@@ -216,7 +235,7 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 		var dist := {}
 		for id in buildings:
 			if buildings[id].kind == kind:
-				_spread(network, lengths, buildings[id], dist)
+				_spread(network, lengths, buildings[id], dist, funding(id, Balance.POLICY_EFFECT))
 		reach_by_kind[kind] = dist
 	# A neighbor's station under contract reaches in over the county road.
 	var by_contract := {}
@@ -267,7 +286,7 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 		var cap := 0
 		for id in buildings:
 			if buildings[id].kind in UTILITIES[u]:
-				cap += int(KINDS[buildings[id].kind].capacity)
+				cap += roundi(int(KINDS[buildings[id].kind].capacity) * funding(id, Balance.POLICY_EFFECT))
 		if u == "power":
 			for pl in plants:
 				cap += int(pl.capacity)
@@ -277,7 +296,7 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 			var key: String = entry[1]
 			var load := 1
 			if city_buildings.has(key):
-				load = LOAD[int(city_buildings[key].zone)]
+				load = LOAD[int(city_buildings[key].zone)] * BuildingTypes.load_of(city_buildings[key])
 				if used + load > cap:
 					continue
 				used += load
@@ -353,25 +372,28 @@ func coverage(key: String) -> float:
 
 
 ## Road distance from each service's front door to every node (Dijkstra).
-func _spread(network: RoadNetwork, lengths: Dictionary, b: Dictionary, dist: Dictionary) -> void:
-	_spread_from(network, lengths, b.pos + b.dir * size_of(b).y * 0.5, dist)
+## `effect` stretches its reach: distances are counted as d / effect, so a
+## well-funded station covers farther than a lean one of the same kind.
+func _spread(network: RoadNetwork, lengths: Dictionary, b: Dictionary, dist: Dictionary, effect := 1.0) -> void:
+	_spread_from(network, lengths, b.pos + b.dir * size_of(b).y * 0.5, dist, effect)
 
 
-func _spread_from(network: RoadNetwork, lengths: Dictionary, front: Vector3, dist: Dictionary) -> void:
+func _spread_from(network: RoadNetwork, lengths: Dictionary, front: Vector3, dist: Dictionary, effect := 1.0) -> void:
 	var near := network.find_segment_near(front, 80.0, 1.0)
 	if near.is_empty():
 		return
 	var s: Dictionary = network.segments[near.seg]
 	var l: float = lengths[near.seg]
 	var frontier := {}
-	frontier[s.a] = near.t * l
-	frontier[s.b] = (1.0 - near.t) * l
-	_spread_nodes(network, lengths, frontier, dist)
+	var k := 1.0 / maxf(effect, 0.01)
+	frontier[s.a] = near.t * l * k
+	frontier[s.b] = (1.0 - near.t) * l * k
+	_spread_nodes(network, lengths, frontier, dist, k)
 
 
 ## Road distance out from the starting nodes (node -> metres already
-## travelled), keeping the shortest in `dist`.
-func _spread_nodes(network: RoadNetwork, lengths: Dictionary, frontier: Dictionary, dist: Dictionary) -> void:
+## travelled), keeping the shortest in `dist`. Each road metre counts `k`.
+func _spread_nodes(network: RoadNetwork, lengths: Dictionary, frontier: Dictionary, dist: Dictionary, k := 1.0) -> void:
 	var done := {}
 	while not frontier.is_empty():
 		var best := -1
@@ -388,7 +410,7 @@ func _spread_nodes(network: RoadNetwork, lengths: Dictionary, frontier: Dictiona
 		for seg in network.segments_at(best):
 			var sg: Dictionary = network.segments[seg]
 			var other: int = sg.b if sg.a == best else sg.a
-			var nd: float = d + lengths[seg]
+			var nd: float = d + lengths[seg] * k
 			if done.has(other) or (dist.has(other) and dist[other] <= nd):
 				continue
 			if not frontier.has(other) or nd < frontier[other]:

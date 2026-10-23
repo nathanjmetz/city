@@ -163,9 +163,6 @@ func _farmstead(id: Variant, f: Dictionary) -> Node3D:
 	root.position = Vector3(f.pos.x, Terrain.ground_y(f.pos.x, f.pos.z), f.pos.z)
 	root.basis = Basis.looking_at(f.dir, Vector3.UP)
 	var built := FarmBuilder.build_farmstead(hash(str(id)), look)
-	var house := MeshInstance3D.new()
-	house.mesh = built[0]
-	root.add_child(house)
 	# A footing under the yard, for farmsteads on a slope.
 	var footing := MeshInstance3D.new()
 	var cube := BoxMesh.new()
@@ -175,11 +172,12 @@ func _farmstead(id: Variant, f: Dictionary) -> Node3D:
 	footing.material_override = _footing_mat()
 	footing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(footing)
-	var ground := MeshInstance3D.new()
 	# The yard's gravel and grass lie on the ground, following it.
-	ground.mesh = Terrain.drape_local(built[1], root.transform)
-	ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(ground)
+	built[1] = Terrain.drape_local(built[1], root.transform)
+	# The farmhouse goes up stage by stage (ConstructionSite).
+	var ref := "farm:%s" % str(id)
+	ConstructionSite.add_to(root, built, "house", func(): return sim.construction.state(ref, sim.tick_count),
+		func(): pass)
 	var xf := Transform3D(root.basis, root.position)
 	var planted := []
 	for t in built[2]:
@@ -201,9 +199,6 @@ func _farmstead(id: Variant, f: Dictionary) -> Node3D:
 		planted.append([Transform3D(Basis(Vector3.UP, h * TAU).scaled(Vector3.ONE * size), spot), sp, TreeField.LEAF[sp]])
 		k += 1
 	_trees.set_trees(str(id), planted)
-	root.scale = Vector3(1.0, 0.01, 1.0)
-	create_tween().tween_property(root, "scale", Vector3.ONE, 0.45) \
-		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	return root
 
 

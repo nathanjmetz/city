@@ -2,7 +2,8 @@ extends SceneTree
 ## Renders parks and landmarks for the art loop and saves a picture.
 ## Run: godot -s tools/park_shot.gd -- out.png scene yaw_deg pitch_deg dist
 ## scene: parks (a struggling and a thriving park side by side), courthouse,
-## water_tower, grain_elevator, football or all.
+## water_tower, grain_elevator, football, tree (a park with its whole
+## development tree) or all.
 
 var _main: Node
 var _frames := 0
@@ -15,11 +16,13 @@ func _initialize() -> void:
 
 func _process(_delta: float) -> bool:
 	_frames += 1
-	if _frames == 2:
+	# After the game shell has set up its own town.
+	if _frames == 30:
 		_build()
-	if _frames == 50:
+	if _frames == 150:
 		var args := OS.get_cmdline_user_args()
 		root.get_viewport().get_texture().get_image().save_png(args[0] if args.size() > 0 else "parks.png")
+		_count_trees(_main)
 		print("draw calls: ", Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
 		quit()
 	return false
@@ -41,6 +44,17 @@ func _build() -> void:
 				var id := _place(sim, "park", Vector3(entry[0], 0, 60))
 				_fill(sim, id, entry[1])
 			look = Vector3(0, 0, 90)
+		"tree":
+			# A thriving park with its whole development tree built out.
+			var id := _place(sim, "park", Vector3(0, 0, 60))
+			_fill(sim, id, 3)
+			_fill_tree(sim, id)
+			look = sim.parks.sites[id].pos
+		"sports":
+			# The big items: a youth complex with lights and an aquatic center.
+			var id := _place(sim, "park", Vector3(0, 0, 60))
+			_fill_tree(sim, id, ["field_lights", "youth_complex", "tournament", "aquatic_center"])
+			look = sim.parks.sites[id].pos
 		"all":
 			_place(sim, "courthouse", Vector3(-320, 0, 60))
 			_place(sim, "water_tower", Vector3(-200, 0, 60))
@@ -52,6 +66,12 @@ func _build() -> void:
 			_place(sim, scene, Vector3(0, 0, 60))
 			look = Vector3(0, 0, 50)
 	sim.parks_changed.emit()
+	for i in 3:
+		sim.tick()
+	for id in sim.parks.sites:
+		var pp: Vector3 = sim.parks.sites[id].pos
+		print("wild plants in the middle of %s: %d" % [sim.parks.sites[id].name,
+			sim.vegetation.plants_in(Rect2(Vector2(pp.x - 20, pp.z - 20), Vector2(40, 40)), sim.tick_count).size()])
 	for c in _main.get_children():
 		if c is Hud:
 			c.close_all()
@@ -76,3 +96,35 @@ func _fill(sim: CitySim, id: int, tier: int) -> void:
 	s.score = Neighborhood.TIERS[tier].min + 0.06
 	for i in 20:
 		sim.parks._fill_in(sim, id, 100 if tier > 0 else 0)
+
+
+## Builds every item of the park tree, buying land as needed (skipping what
+## the town would have to support, for the picture).
+func _fill_tree(sim: CitySim, id: int, only := []) -> void:
+	var s: Dictionary = sim.parks.sites[id]
+	for t in Balance.PARK_TREE:
+		var key: String = t.id
+		if not only.is_empty() and not key in only:
+			continue
+		for i in 40:
+			var spot = sim.parks._find_spot(id, key, t.size)
+			if spot != null:
+				s.features.append({"type": key, "pos": spot, "size": t.size})
+				break
+			if not sim.parks._grow(sim, id, t.size, t.size.x * t.size.y):
+				print("no room for ", key)
+				break
+
+
+func _count_trees(n: Node) -> void:
+	if n is TreeField:
+		for key in n._trees:
+			var inside := 0
+			for t in n._trees[key]:
+				var o: Vector3 = t[0].origin
+				if _main.sim.parks.covers(o):
+					inside += 1
+			if key.begins_with("park"):
+				print("park sites %s, first tree %s, field at %s" % [_main.sim.parks.sites.values().map(func(x): return [x.pos, x.size]), n._trees[key][0][0].origin, n.global_position])
+	for c in n.get_children():
+		_count_trees(c)

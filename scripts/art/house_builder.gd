@@ -48,12 +48,14 @@ var rng: RandomNumberGenerator
 
 
 ## `lot` (optional): width, depth, outline (local x/z points) and pad.
-static func build(seed: int, to_curb: float, lot := {}) -> Array:
+## `storeys` 1 gives a ranch, 2 a colonial or split-level, 0 any of them
+## (the building type's stage decides).
+static func build(seed: int, to_curb: float, lot := {}, storeys := 0) -> Array:
 	var b := HouseBuilder.new()
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
 	b._fit(lot)
-	return b._house(to_curb)
+	return b._house(to_curb, storeys)
 
 
 func _fit(lot: Dictionary) -> void:
@@ -82,7 +84,7 @@ func _in_lot(p: Vector3, margin := 1.5) -> bool:
 	return true
 
 
-func _house(to_curb: float) -> Array:
+func _house(to_curb: float, storeys := 0) -> Array:
 	_flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var siding := Color(_pick(SIDING))
 	var roof := Color(_pick(ROOF))
@@ -104,6 +106,10 @@ func _house(to_curb: float) -> Array:
 	var shutter := Color(shutter_hex) if shutters else TRIM
 	var info: Dictionary
 	var kind := rng.randf()
+	if storeys == 1:
+		kind = 0.99
+	elif storeys >= 2:
+		kind *= 0.58
 	if kind < 0.38:
 		info = _colonial(zf, gs, gw, siding, roof, shutters, shutter, door, brick_style, brick)
 	elif kind < 0.58 and _avail() >= 15.0:

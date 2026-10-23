@@ -38,6 +38,9 @@ const TICKS_PER_SECOND := 10
 const GROW_EVERY := Balance.GROW_EVERY
 ## People move in and stats update every this many ticks.
 const MOVE_EVERY := Balance.MOVE_EVERY
+## How each zone's buildings go up (see Construction).
+const PROFILE_OF_ZONE := {ZoneMap.Zone.RESIDENTIAL: "house", ZoneMap.Zone.COMMERCIAL: "shop",
+	ZoneMap.Zone.INDUSTRIAL: "factory"}
 ## Game minutes per tick: at normal speed a day takes 2.4 real minutes.
 const MINUTES_PER_TICK := 1
 ## Tick 0 is 6:00 AM on Monday, January 4, 2027.
@@ -91,6 +94,11 @@ var parks := Parks.new()
 var mail := Mail.new()
 ## Services shared with neighbor towns under signed deals (Interlocal).
 var interlocal := Interlocal.new()
+## The town's broad Funding and Growth sliders for every area and hub (no
+## tax fiddling: Brawn). Set on the Economy page or a hub's panel.
+var policies := Policies.new()
+## Buildings going up, stage by stage, with their crews and deliveries.
+var construction := Construction.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -101,7 +109,7 @@ var lots := {}       # lot key -> lot Dictionary (from LotPlanner)
 ## Surveys lots from the roads and zones; lots with buildings are saved
 ## parcels that stay put.
 var planner := LotPlanner.new()
-var buildings := {}  # lot key -> {"zone", "seed", "built", "cap", "occ"}
+var buildings := {}  # lot key -> building Dictionary (see BuildingTypes)
 var tick_count := 0
 var city_seed := 1
 
@@ -156,6 +164,7 @@ func _init() -> void:
 		return Vector2(b.pos.x, b.pos.z)
 	farms.reserves = reserves
 	industry.reserves = reserves
+	_wire_policies()
 	network.changed.connect(func():
 		_lots_dirty = true
 		_roads_moved = true)
@@ -230,6 +239,8 @@ func apply_now(cmd: Dictionary) -> bool:
 					or education.covers(pos) or banks.covers(pos):
 				return false
 			var sid := services.add(kind, pos, dir)
+			construction.start("svc:%d" % sid, "civic", tick_count, pos, dir, Services.SETBACK
+				+ RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH)
 			economy.money -= cost
 			if kind == Services.Kind.BUS_DEPOT:
 				buses.on_placed(self, sid)
@@ -258,7 +269,13 @@ func apply_now(cmd: Dictionary) -> bool:
 			var dir := _v(cmd.dir).normalized()
 			if dir.length() < 0.5 or farmhouse_problem(pos, dir) != "" or Farms.FARMHOUSE_COST > economy.money:
 				return false
-			farms.add_farm(pos, dir, str(cmd.get("crop", "corn")), farm_drive(pos, dir))
+			var fid := farms.add_farm(pos, dir, str(cmd.get("crop", "corn")), farm_drive(pos, dir))
+			var lane: Array = farms.farms[fid].drive
+			if lane.size() >= 2:
+				# The farmhouse goes up first (FarmBuilder adds the barn as the
+				# farm grows). Trucks pull over where the lane meets the road.
+				construction.start("farm:%d" % fid, "house", tick_count, lane[-1],
+					(lane[-1] - lane[-2]).normalized(), 0.0)
 			economy.money -= Farms.FARMHOUSE_COST
 			_lots_dirty = true
 			farms_changed.emit()
@@ -283,6 +300,8 @@ func apply_now(cmd: Dictionary) -> bool:
 					or int(Balance.WAREHOUSE[kind].cost) > economy.money:
 				return false
 			var wid := warehouses.add(kind, pos, dir)
+			construction.start("wh:%d" % wid, "warehouse", tick_count, pos, dir, Warehouses.SETBACK
+				+ RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH)
 			economy.money -= int(Balance.WAREHOUSE[kind].cost)
 			_clear_zones_under(warehouses.footprint(wid))
 			_lots_dirty = true
@@ -356,7 +375,10 @@ func apply_now(cmd: Dictionary) -> bool:
 		"set_campus_funding":
 			ok = education.campuses.has(int(cmd.id))
 			if ok:
-				education.campuses[int(cmd.id)].funding = clampi(int(cmd.level), 0, Balance.EDUCATION_FUNDING_LEVELS.size() - 1)
+				# A campus's funding is its Funding slider on the Economy page.
+				policies.set_step("campus:%d" % int(cmd.id), "funding",
+					clampi(int(cmd.level), 0, Balance.EDUCATION_FUNDING_LEVELS.size() - 1))
+				_sync_campus_funding()
 				update_stats()
 		"remove_industry":
 			ok = industry.sites.has(int(cmd.id))
@@ -427,7 +449,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			ok = buses.apply(self, cmd)
 		"zone_frontage":
 			# Zones a whole block face: one side of a street from junction to
-			# junction ("both" does the other side too).
+			# junction ("both" does the other side too, "single" only this
+			# piece of street, not on round bends).
 			if not network.segments.has(int(cmd.seg)):
 				return false
 			planner.update(network)
@@ -435,7 +458,9 @@ func apply_now(cmd: Dictionary) -> bool:
 			if bool(cmd.get("both", false)):
 				sides.append(-int(cmd.side))
 			for side in sides:
-				for part in frontage_chain(int(cmd.seg), side):
+				var parts := [[int(cmd.seg), side]] if bool(cmd.get("single", false)) \
+					else frontage_chain(int(cmd.seg), side)
+				for part in parts:
 					_paint_frontage(part[0], part[1], int(cmd.zone))
 			_clear_reserved_zones()
 			_usable_cache.clear()
@@ -446,9 +471,25 @@ func apply_now(cmd: Dictionary) -> bool:
 		"guide":
 			# The player's word to a hub's leader (grow, hold off, pre-approve).
 			ok = permits.guide(self, cmd)
+			var key := "%s:%d" % [str(cmd.get("hub", "")), int(cmd.get("hub_id", 0))]
+			if ok and hub_area(key) != "":
+				# Growth is the same word: keep the hub's slider in step.
+				var now := policies.step("growth", hub_area(key), key)
+				var want := Policies.growth_for(str(cmd.get("stance", "steady")), now)
+				if want != now:
+					policies.set_step(key, "growth", want)
 		"end_deal":
 			# Notice to end a service deal with a neighbor town.
 			ok = interlocal.end(self, int(cmd.get("id", -1)))
+		"policy":
+			# A Funding or Growth slider for the town, an area or one hub.
+			ok = _set_policy(str(cmd.get("scope", "")), str(cmd.get("slider", "")), int(cmd.get("step", -1)))
+		"policy_reset":
+			# Everything under the town or an area follows it again.
+			ok = policies.reset_below(str(cmd.get("scope", "")), hub_area)
+			if ok:
+				_sync_stances()
+				_sync_campus_funding()
 		"set_junction":
 			# Traffic lights, stop signs or none at a junction (-1 = automatic).
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
@@ -460,6 +501,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			region_links.clear()
 			trade = Trade.new()
 			traffic.overrides.clear()
+			traffic.from_dict({})
 			network.clear()
 			zones.cells.clear()
 			planner = LotPlanner.new()
@@ -473,6 +515,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			power = Power.new()
 			power.offset = terrain_offset
 			logistics = Logistics.new()
+			construction = Construction.new()
 			warehouses = Warehouses.new()
 			reserves = Reserves.new()
 			buses = BusNet.new()
@@ -484,9 +527,11 @@ func apply_now(cmd: Dictionary) -> bool:
 			parks = Parks.new()
 			parks_changed.emit()
 			mail = Mail.new()
+			policies.from_dict({})
 			farms.reserves = reserves
 			industry.reserves = reserves
 			vegetation.reset()
+			_wire_policies()
 			farms_changed.emit()
 			industry_changed.emit()
 			warehouses_changed.emit()
@@ -494,6 +539,11 @@ func apply_now(cmd: Dictionary) -> bool:
 			education_changed.emit()
 			ok = true
 	if ok:
+		if cmd.type in ["place_campus", "place_park", "place_bank", "place_hub", "place_service", "place_farmhouse",
+				"place_industry", "clear"]:
+			# A new hub takes its area's sliders (and its leader the stance).
+			_sync_campus_funding()
+			_sync_stances()
 		if _roads_moved:
 			_road_wins()
 		_refresh()
@@ -644,6 +694,8 @@ func tick() -> void:
 			var key := _grow_one(1)
 			if key != "":
 				banks.financed(self, key)
+	if tick_count % Balance.DEVELOP_EVERY == 0:
+		_develop_one()
 	if tick_count % Farms.DECIDE_EVERY == 0 and not farms.farms.is_empty():
 		farms.tax_rate = economy.tax[ZoneMap.Zone.INDUSTRIAL]
 		farms.price = Farms.price_on(tick_count / (24.0 * TICKS_PER_HOUR))
@@ -696,6 +748,7 @@ func tick() -> void:
 		economy.money += roundi(economy.monthly_net() / 24.0)
 	# Before logistics, which clears Traffic's arrivals.
 	hubs.tick(self)
+	construction.tick(self)
 	if not in_region and tick_count % (24 * TICKS_PER_HOUR) == 0:
 		Trade.settle({"me": self}, {})
 	mail.tick(self)
@@ -730,13 +783,25 @@ func update_stats() -> void:
 	var home_cap := 0
 	var shop_jobs := 0
 	var factory_jobs := 0
+	# Shops and factories still going up count toward demand (they're
+	# coming) but nobody works there yet.
+	var unfinished_jobs := 0
+	var unfinished_homes := 0
 	for key in buildings:
 		var b: Dictionary = buildings[key]
+		if int(b.zone) != ZoneMap.Zone.RESIDENTIAL and _utilities_ok(key) \
+				and not construction.is_done("lot:" + key, tick_count):
+			unfinished_jobs += b.cap
 		match int(b.zone):
 			ZoneMap.Zone.RESIDENTIAL:
 				pop += b.occ
 				home_cap += b.cap
+				if not construction.is_done("lot:" + key, tick_count):
+					unfinished_homes += b.cap
 			ZoneMap.Zone.COMMERCIAL:
+				# Flats above a shop count as homes.
+				pop += int(b.get("focc", 0))
+				home_cap += int(b.get("flats", 0))
 				if _utilities_ok(key):  # closed without power or water
 					shop_jobs += b.cap
 			ZoneMap.Zone.INDUSTRIAL:
@@ -746,22 +811,29 @@ func update_stats() -> void:
 	services.update(network, lots, buildings)
 	parks.update_effects(self)
 	factory_jobs += farms.jobs() + industry.jobs() + warehouses.jobs() + power.jobs()
-	# Teachers, and office and tech jobs for the town's graduates.
-	shop_jobs += education.jobs()
+	# Teachers, and office and tech jobs for the town's graduates (less the
+	# ones already counted in office buildings, which house those jobs).
+	shop_jobs += education.jobs() - mini(BuildingTypes.office_jobs(self), education.office_jobs())
 	# Tellers and loan officers.
 	shop_jobs += banks.jobs()
 	economy.reach_milestones(pop)
 	var workers := int(pop * WORKER_SHARE)
 	var jobs := shop_jobs + factory_jobs
-	var free := home_cap - pop
-	stats = {"population": pop, "workers": workers, "jobs": jobs,
-		"employed": mini(workers, jobs), "homes_free": free}
+	# Demand plans ahead, as builders do: homes going up are people on the
+	# way, and jobs at shops and factories going up are jobs on the way.
+	var coming := pop + unfinished_homes
+	var coming_workers := int(coming * WORKER_SHARE)
+	var free := home_cap - unfinished_homes - pop
+	var open_jobs := maxi(jobs - unfinished_jobs, 0)
+	stats = {"population": pop, "workers": workers, "jobs": open_jobs,
+		"employed": mini(workers, open_jobs), "homes_free": free}
 	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(
-		0.6 + 0.6 * float(jobs - workers) / maxf(workers, 40.0) - float(free) / maxf(home_cap, 30.0), 0.0, 1.0)
+		0.6 + 0.6 * float(jobs - coming_workers) / maxf(coming_workers, 40.0)
+		- float(free) / maxf(home_cap - unfinished_homes, 30.0), 0.0, 1.0)
 	demand[ZoneMap.Zone.COMMERCIAL] = clampf(
-		0.05 + (pop * 0.12 - shop_jobs) / maxf(shop_jobs, 12.0), 0.0, 1.0)
+		0.05 + (coming * 0.12 - shop_jobs) / maxf(shop_jobs, 12.0), 0.0, 1.0)
 	demand[ZoneMap.Zone.INDUSTRIAL] = clampf(
-		0.1 + float(workers - jobs) / maxf(workers, 40.0)
+		0.1 + float(coming_workers - jobs) / maxf(coming_workers, 40.0)
 		+ 0.4 * (shop_jobs * 0.8 - factory_jobs) / maxf(factory_jobs, 20.0), 0.0, 1.0)
 	for z in demand:
 		demand[z] = clampf(demand[z] + economy.demand_shift(z) + mail.demand_shift(z), 0.0, 1.0)
@@ -787,6 +859,17 @@ func _move_in() -> void:
 			var home: Dictionary = buildings[key]
 			if home.zone == ZoneMap.Zone.RESIDENTIAL and home.occ > 0 and not _utilities_ok(key):
 				home.occ -= 1
+			elif int(home.get("focc", 0)) > 0 and not _utilities_ok(key):
+				home.focc -= 1
+	# A new home is built for a buyer: they move in when it's finished.
+	var keys0 := buildings.keys()
+	keys0.sort()
+	for key in keys0:
+		var nb: Dictionary = buildings[key]
+		if nb.zone == ZoneMap.Zone.RESIDENTIAL and nb.occ == 0 and _utilities_ok(key):
+			var since: int = tick_count - int(nb.built) - Construction.duration("house")
+			if since >= 0 and since < MOVE_EVERY * 6:
+				nb.occ = mini(nb.cap, 2)
 	var arrivals := 1 + int(demand[ZoneMap.Zone.RESIDENTIAL] * 4.0)
 	if demand[ZoneMap.Zone.RESIDENTIAL] <= 0.05:
 		return
@@ -794,11 +877,16 @@ func _move_in() -> void:
 	keys.sort()
 	for key in keys:
 		var b: Dictionary = buildings[key]
-		if b.zone == ZoneMap.Zone.RESIDENTIAL and b.occ < b.cap and _utilities_ok(key):
+		if b.zone == ZoneMap.Zone.RESIDENTIAL and b.occ < b.cap and _utilities_ok(key) \
+				and construction.is_done("lot:" + key, tick_count):
 			b.occ += 1
 			arrivals -= 1
-			if arrivals == 0:
-				return
+		elif int(b.get("focc", 0)) < int(b.get("flats", 0)) and _utilities_ok(key) \
+				and construction.is_done("lot:" + key, tick_count):
+			b.focc += 1
+			arrivals -= 1
+		if arrivals == 0:
+			return
 
 
 ## Lots that are zoned but have nothing on them yet.
@@ -1126,6 +1214,92 @@ func _hub_command(cmd: Dictionary) -> bool:
 			return false
 	_lots_dirty = true
 	return true
+
+
+## Hands the sliders to everything that reads them.
+func _wire_policies() -> void:
+	farms.policies = policies
+	industry.policies = policies
+	services.policies = policies
+	hubs.policies = policies
+	parks.policies = policies
+
+
+## A campus keeps its funding level as its Funding slider's step.
+func _sync_campus_funding() -> void:
+	for id in education.campuses:
+		education.campuses[id].funding = policies.step("funding", "schools", "campus:%d" % id)
+
+
+## The Economy page area of a hub key ("farm:3", "service:5", "hub:1"...),
+## or "" if there's no such hub.
+func hub_area(key: String) -> String:
+	var parts := key.split(":")
+	if parts.size() != 2 or not parts[1].is_valid_int():
+		return ""
+	var id := int(parts[1])
+	match parts[0]:
+		"farm":
+			return "farms" if farms.farms.has(id) else ""
+		"industry":
+			return "resources" if industry.sites.has(id) else ""
+		"service":
+			return Services.area_of(services.buildings[id].kind) if services.buildings.has(id) else ""
+		"hub":
+			return CivicHubs.area_of(hubs.hubs[id].kind) if hubs.hubs.has(id) else ""
+		"park":
+			return "parks" if parks.sites.has(id) else ""
+		"campus":
+			return "schools" if education.campuses.has(id) else ""
+		"bank":
+			return "banks" if banks.banks.has(id) else ""
+	return ""
+
+
+func _set_policy(scope: String, slider: String, s: int) -> bool:
+	if scope.begins_with("area:"):
+		var area := scope.trim_prefix("area:")
+		if Policies.AREAS.has(area) and not slider in Policies.AREAS[area].sliders:
+			return false
+	elif scope != "city":
+		# A hub with a leader always takes Growth: it's your word to them.
+		var area := hub_area(scope)
+		if area == "" or not (slider in Policies.AREAS[area].sliders
+				or slider == "growth" and permits.locators.has(scope.get_slice(":", 0))):
+			return false
+	if not policies.set_step(scope, slider, s):
+		return false
+	if slider == "growth":
+		_sync_stances()
+	_sync_campus_funding()
+	economy.update_budget(self)
+	return true
+
+
+## Leaders who signed up with Permits hear their hub's Growth as a stance.
+func _sync_stances() -> void:
+	for key in permits.guided.keys() + _leader_keys():
+		var parts: PackedStringArray = str(key).split(":")
+		# Hubs the Economy page doesn't list (rail...) keep their own stance.
+		if parts.size() != 2 or hub_area(key) == "":
+			continue
+		var want := Policies.stance(policies.step("growth", hub_area(key), key))
+		var g := permits.guidance(parts[0], int(parts[1]))
+		if g.stance != want:
+			permits.guide(self, {"hub": parts[0], "hub_id": int(parts[1]), "stance": want, "grant": int(g.grant)})
+
+
+## Hub keys of every hub whose kind has a leader (signed up with Permits).
+func _leader_keys() -> Array:
+	var out := []
+	for kind in ["farm", "industry", "service", "hub", "park", "campus", "bank"]:
+		if not permits.locators.has(kind):
+			continue
+		var ids: Array = {"farm": farms.farms, "industry": industry.sites, "service": services.buildings,
+			"hub": hubs.hubs, "park": parks.sites, "campus": education.campuses, "bank": banks.banks}[kind].keys()
+		for id in ids:
+			out.append("%s:%d" % [kind, id])
+	return out
 
 
 ## Zoning under a new building goes away, as in Cities: Skylines 2.
@@ -1499,7 +1673,9 @@ func _grow_one(salt := 0) -> String:
 	var zone_order := by_zone.keys()
 	zone_order.sort()
 	for z in zone_order:
-		if rng.randf() >= demand[z]:
+		# Growth on the Economy page: Hold builds nothing new, Expand more.
+		var pace := policies.pick(Balance.POLICY_BUILD_PACE, "growth", Economy.ZONE_AREA.get(z, "homes"))
+		if rng.randf() >= demand[z] * pace:
 			continue
 		var list: Array = by_zone[z]
 		var key: String = list[rng.randi() % list.size()]
@@ -1508,10 +1684,16 @@ func _grow_one(salt := 0) -> String:
 				and rng.randf() < -power.land_value_effect(lots[key].pos) * Balance.POWER_SMOKE_GROWTH:
 			continue
 		var bseed := rng.randi()
-		buildings[key] = {"zone": z, "seed": bseed, "built": tick_count,
-			"cap": capacity(z, bseed), "occ": 0}
+		# The lot's owner picks what to build from what is around it.
+		var choice := BuildingTypes.pick(self, key, z, rng)
+		var b := {"zone": z, "seed": bseed, "built": tick_count, "changed": tick_count, "occ": 0}
+		b = BuildingTypes.make(self, key, b, choice[0], 0)
+		b.why = choice[1]
+		buildings[key] = b
 		if z == ZoneMap.Zone.INDUSTRIAL:
 			buildings[key].chain = factory_chain(lots[key].pos)
+		var lot: Dictionary = lots[key]
+		construction.start("lot:" + key, PROFILE_OF_ZONE[z], tick_count, lot.front, -lot.normal, lot.to_curb)
 		buildings_changed.emit()
 		return key
 	return ""
@@ -1594,6 +1776,44 @@ func factory_chain(at: Vector3) -> String:
 	return best
 
 
+## Now and then a grown building moves up its growth path (a starter home
+## adds a storey, a Main Street block goes up a floor), or turns into another
+## type when the area calls for it. One building per check, chosen the same
+## way on every copy of the city.
+func _develop_one() -> void:
+	var keys := []
+	for key in buildings:
+		if lots.has(key) and BuildingTypes.ready(self, key):
+			keys.append(key)
+	if keys.is_empty():
+		return
+	keys.sort()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([city_seed, tick_count, "develop"])
+	if rng.randf() >= Balance.DEVELOP_CHANCE:
+		return
+	# Try a few owners: not every one has somewhere to go.
+	for i in mini(keys.size(), 6):
+		var key: String = keys[rng.randi() % keys.size()]
+		var opts := BuildingTypes.options(self, key)
+		if opts.is_empty():
+			continue
+		var o: Array = opts[rng.randi() % opts.size()]
+		redevelop(key, o[0], o[1])
+		return
+
+
+## Rebuilds a building as another type or stage (the owner's call). Residents
+## stay up to the new size. Build's agency can call this too.
+func redevelop(key: String, type: String, level: int) -> void:
+	if not buildings.has(key):
+		return
+	var b := BuildingTypes.make(self, key, buildings[key], type, level)
+	b.changed = tick_count
+	buildings[key] = b
+	buildings_changed.emit()
+
+
 ## People a home holds, or jobs a shop or factory offers.
 static func capacity(zone: int, bseed: int) -> int:
 	var r := absi(bseed)
@@ -1670,6 +1890,7 @@ func to_dict() -> Dictionary:
 		"education": education.to_dict(),
 		"banks": banks.to_dict(),
 		"logistics": logistics.to_dict(),
+		"construction": construction.to_dict(),
 		"warehouses": warehouses.to_dict(),
 		"reserves": reserves.to_dict(),
 		"permits": permits.to_dict(),
@@ -1677,6 +1898,7 @@ func to_dict() -> Dictionary:
 		"parks": parks.to_dict(),
 		"mail": mail.to_dict(),
 		"interlocal": interlocal.to_dict(),
+		"policies": policies.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
 		"buses": buses.to_dict(),
@@ -1714,6 +1936,7 @@ func from_dict(d: Dictionary) -> void:
 	education.from_dict(d.get("education", {}))
 	banks.from_dict(d.get("banks", {}))
 	logistics.from_dict(d.get("logistics", {}))
+	construction.from_dict(d.get("construction", {}))
 	warehouses.from_dict(d.get("warehouses", {}))
 	reserves.from_list(d.get("reserves", []))
 	permits.from_dict(d.get("permits", {}))
@@ -1722,6 +1945,12 @@ func from_dict(d: Dictionary) -> void:
 	mail.from_dict(d.get("mail", {}))
 	interlocal.from_dict(d.get("interlocal", {}))
 	services.contracts = interlocal.coverage()
+	policies.from_dict(d.get("policies", {}))
+	# Campuses saved before the Economy page kept their own funding level.
+	for id in education.campuses:
+		var level := int(education.campuses[id].funding)
+		if level != policies.step("funding", "schools", "campus:%d" % id):
+			policies.set_step("campus:%d" % id, "funding", level)
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:
@@ -1748,9 +1977,13 @@ func from_dict(d: Dictionary) -> void:
 		var b: Dictionary = d.buildings[key]
 		var z := int(b.zone)
 		var cap := int(b.get("cap", capacity(z, int(b.seed))))
-		# Older saves had no residents yet: assume the homes were full.
+		# Older saves had no residents yet: assume the homes were full. Their
+		# buildings are the plain type for the zone, first stage.
 		buildings[key] = {"zone": z, "seed": int(b.seed), "built": int(b.built), "cap": cap,
-			"occ": int(b.get("occ", cap if z == ZoneMap.Zone.RESIDENTIAL else 0))}
+			"occ": int(b.get("occ", cap if z == ZoneMap.Zone.RESIDENTIAL else 0)),
+			"type": BuildingTypes.type_of(b), "level": int(b.get("level", 0)),
+			"units": int(b.get("units", 1)), "flats": int(b.get("flats", 0)), "focc": int(b.get("focc", 0)),
+			"changed": int(b.get("changed", b.built)), "why": str(b.get("why", ""))}
 		if z == ZoneMap.Zone.INDUSTRIAL and b.has("chain"):
 			buildings[key].chain = str(b.chain)
 	_road_wins()

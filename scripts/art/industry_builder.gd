@@ -6,8 +6,10 @@ extends FarmBuilder
 ##   - every company has a low metal-sided office with a gravel lot
 ##   - oil: beam pumpjacks on steel skids with a wellhead, and a tank battery
 ##     (welded tanks, catwalk, stairs) at the main yard
-##   - ore: a stepped quarry pit with pale benches and a haul ramp, a crusher
-##     house with an inclined conveyor feeding a stockpile
+##   - ore: one crushed-limestone quarry for the whole company, however many
+##     pads it has opened: rounded benches stepping down to a wet floor, a
+##     haul ramp cut across them, an overburden berm round the rim, haul
+##     trucks, and a crusher house feeding a row of graded stone stockpiles
 ## Local space: the company faces -z, like FarmView's farmsteads.
 
 const OFFICE_WALL := ["#d8d6cf", "#c9cbc8", "#b9b4a6", "#c2b59b"]
@@ -24,7 +26,13 @@ static func build_hq(kind: String, seed: int) -> Array:
 	b._office(-8.0, -10.0)
 	match kind:
 		"oil": b._tank_battery(Vector3(10, 0, 6))
-		"ore": b._crusher(Vector3(8, 0, 4))
+		"ore":
+			b._crusher(Vector3(8, 0, 4))
+			# Graded stone: #57s, #8s, #53 base and screenings, each its own pile.
+			b._flat_rect("gravel", -28, 34, 20, 36, 0.09, YARD_GRAVEL)
+			for i in 4:
+				var shade := Color("#bdb6a5").darkened(i * 0.05)
+				b._cone(Vector3(-20.0 + i * 15.0, 0, 28.0), 6.5, 5.0, shade, 16, "paint")
 	return [b._commit_house(), b._commit_flat()]
 
 
@@ -199,3 +207,152 @@ func _crusher(at: Vector3) -> void:
 		var p: Vector3 = top.lerp(foot, t)
 		_box("paint", Vector3(0.25, p.y, 0.25), Vector3(p.x, p.y * 0.5, p.z), Color("#6b6f73"))
 	_cone(pile, 9.0, 7.0, Color("#bdb6a5"), 18, "paint")
+
+
+## The company's quarry as one pit over every pad it has opened, in the
+## company's local frame. `cells` are the pads' centres; `toward` is the
+## main yard, where the haul ramp climbs out.
+## Real limestone quarries are one hole that grows outward bench by bench:
+## near-vertical faces about 12 m high, 10 m benches, rounded corners, a
+## ramp cut down across the benches, rain water on the floor and a berm of
+## stripped overburden round the rim. Faces are shaded by the way they
+## face, so the steps read as depth from above.
+static func build_quarry(seed: int, cells: Array, pad: float, toward: Vector2) -> Array:
+	var b := IndustryBuilder.new()
+	b._begin(seed)
+	b._quarry(cells, pad, toward)
+	var ground := b._commit_flat()
+	b._pit_st.commit(ground)
+	ground.surface_set_material(ground.get_surface_count() - 1, Surfaces.quarry())
+	return [b._commit_house(), ground]
+
+
+var _pit_st: SurfaceTool
+
+
+const BENCH := 10.0   # bench width in plan
+const FACE := 5.0     # a 12 m face at about 70 degrees, seen from above
+const RIM := 6.0      # the pit edge stands this far inside the pads
+const LEVELS := 5
+const ROUND := 10.0   # corner rounding
+
+
+func _quarry(cells: Array, pad: float, toward: Vector2) -> void:
+	var occupied := {}
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	for c in cells:
+		var v: Vector2 = c
+		occupied[Vector2i(roundi(v.x / pad), roundi(v.y / pad))] = true
+		lo = lo.min(v)
+		hi = hi.max(v)
+	var noise := FastNoiseLite.new()
+	noise.seed = rng.randi()
+	noise.frequency = 1.0 / 110.0
+	var half := pad * 0.5
+	# Signed distance to the edge of the pads (negative inside), with rounded
+	# corners: a soft minimum over the nearest pads or open cells.
+	var dist := func(p: Vector2) -> float:
+		var ci := Vector2i(roundi(p.x / pad), roundi(p.y / pad))
+		var inside: bool = occupied.has(ci)
+		var acc := 0.0
+		for dj in range(-2, 3):
+			for di in range(-2, 3):
+				var n := ci + Vector2i(di, dj)
+				if occupied.has(n) == inside:
+					continue
+				var q := (p - Vector2(n) * pad).abs() - Vector2(half, half)
+				acc += exp(-Vector2(maxf(q.x, 0.0), maxf(q.y, 0.0)).length() / ROUND)
+		var d := -ROUND * log(acc) if acc > 0.0 else 3.0 * pad
+		return -d if inside else d
+	var step := 2.5
+	var x0 := lo.x - half - 24.0
+	var z0 := lo.y - half - 24.0
+	var nx := ceili((hi.x - lo.x + pad + 48.0) / step)
+	var nz := ceili((hi.y - lo.y + pad + 48.0) / step)
+	var s_at := PackedFloat32Array()
+	s_at.resize((nx + 1) * (nz + 1))
+	var deepest := 0.0
+	for j in nz + 1:
+		for i in nx + 1:
+			var p := Vector2(x0 + i * step, z0 + j * step)
+			# How far into the pit from its rim, with a wandering edge.
+			var sv: float = -dist.call(p) - RIM + noise.get_noise_2dv(p) * 4.0
+			s_at[j * (nx + 1) + i] = sv
+			deepest = maxf(deepest, sv)
+	var floor_at := minf(LEVELS * (BENCH + FACE), deepest - 12.0)
+	# The ramp: from the main yard straight in across the benches.
+	var mid := (lo + hi) * 0.5
+	var ramp_dir := (mid - toward).normalized() if mid.distance_to(toward) > 1.0 else Vector2(0, 1)
+	var across := Vector2(-ramp_dir.y, ramp_dir.x)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var vert := func(x: float, z: float, sv: float) -> void:
+		var p := Vector2(x, z)
+		var along := (p - toward).dot(ramp_dir)
+		var off := absf((p - toward).dot(across)) / 14.0 if along > 0.0 else 1.0
+		var y := 0.1
+		if sv > -9.0 and sv < 0.0 and off >= 0.5:
+			y += sin((sv + 9.0) / 9.0 * PI) * 2.0  # the berm, about 2 m high
+		st.set_normal(Vector3.UP)
+		st.set_color(Color(clampf(floor_at / 100.0, 0.0, 1.0), clampf(off, 0.0, 1.0), 0.0, 1.0))
+		st.set_uv(Vector2(sv, 0.0))
+		st.add_vertex(Vector3(x, y, z))
+	for j in nz:
+		for i in nx:
+			var k := j * (nx + 1) + i
+			var quad := [k, k + 1, k + nx + 2, k + nx + 1]
+			var any := false
+			for q in quad:
+				any = any or s_at[q] >= -9.0
+			if not any:
+				continue
+			for t in [0, 1, 2, 0, 2, 3]:
+				var q: int = quad[t]
+				vert.call(x0 + (q % (nx + 1)) * step, z0 + (q / (nx + 1)) * step, s_at[q])
+	# The haul road from the yard out to the rim.
+	var reach := 0.0
+	while reach < 400.0:
+		var q := toward + ramp_dir * reach
+		var qi := clampi(roundi((q.x - x0) / step), 0, nx)
+		var qj := clampi(roundi((q.y - z0) / step), 0, nz)
+		if s_at[qj * (nx + 1) + qi] >= -9.0:
+			break
+		reach += step
+	if reach > 0.0:
+		var e := toward + ramp_dir * (reach + step)
+		var side := across * 6.0
+		var quad := [toward - side, toward + side, e + side, e - side]
+		if (quad[1] - quad[0]).cross(quad[2] - quad[0]) < 0.0:
+			quad.reverse()
+		for t in [0, 1, 2, 0, 2, 3]:
+			var v: Vector2 = quad[t]
+			st.set_normal(Vector3.UP)
+			st.set_color(Color(clampf(floor_at / 100.0, 0.0, 1.0), 0.0, 0.0, 1.0))
+			st.set_uv(Vector2(-5.0, 0.0))
+			st.add_vertex(Vector3(v.x, 0.11, v.y))
+	_pit_st = st
+	# Two haul trucks and a front loader working the floor.
+	var floor_pts := []
+	for j in range(0, nz + 1, 4):
+		for i in range(0, nx + 1, 4):
+			if s_at[j * (nx + 1) + i] > deepest - 10.0:
+				floor_pts.append(Vector3(x0 + i * step, 0, z0 + j * step))
+	if not floor_pts.is_empty():
+		var at: Vector3 = floor_pts[rng.randi() % floor_pts.size()]
+		_haul_truck(at, rng.randf() * TAU)
+		_haul_truck(at + Vector3(14, 0, 6), rng.randf() * TAU)
+		_box("paint", Vector3(3.2, 3.2, 7.5), at + Vector3(4, 1.8, -10), Color("#d9a521"))
+		_box("paint", Vector3(4.2, 1.6, 2.2), at + Vector3(4, 1.4, -14.6), Color("#5b5b55"))
+
+
+## A rigid-frame haul truck (a Cat 777 is about 10 x 6 m, 4.5 m tall).
+func _haul_truck(at: Vector3, yaw: float) -> void:
+	var b := Basis(Vector3.UP, yaw)
+	var yellow := Color("#d9a521")
+	_box("paint", Vector3(6.0, 2.2, 6.4), at + b * Vector3(0, 3.0, 1.2), yellow, b)  # dump body
+	_box("paint", Vector3(5.0, 2.4, 3.0), at + b * Vector3(0, 2.6, -3.6), yellow, b)  # cab deck
+	_box("paint", Vector3(1.6, 1.4, 1.6), at + b * Vector3(-1.4, 4.4, -3.8), Color("#2b2f33"), b)  # cab
+	for wz in [-3.6, 2.6]:
+		for wx in [-2.6, 2.6]:
+			_box("paint", Vector3(0.9, 2.6, 2.6), at + b * Vector3(wx, 1.3, wz), Color("#1e1e1e"), b)
