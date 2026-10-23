@@ -70,8 +70,12 @@ static func _look(f: Dictionary) -> int:
 ## brighter yellow-green; winter wheat greens up in March, turns gold and
 ## is cut in June, then double-crop soybeans follow; hay stays green all
 ## season. A rye cover crop greens the stubble in November (`cover`) and
-## again in March and April before planting (`cover_prev`).
-func _season_color(crop: String, cover_prev := false, cover := false) -> Color:
+## again in March and April before planting (`cover_prev`). `when` (0 to 1)
+## is how early this field's planting and harvest run: farmers work one
+## field at a time, so in spring and fall neighbouring forties differ
+## (Purdue crop progress reports: planting runs late April to early June,
+## harvest mid-September to early November).
+func _season_color(crop: String, cover_prev := false, cover := false, when := 0.5) -> Color:
 	var m := maxi(_month, 1)
 	if m <= 2 or m == 12:
 		return Color(0.84, 0.85, 0.88)  # snow over the stubble
@@ -87,20 +91,30 @@ func _season_color(crop: String, cover_prev := false, cover := false) -> Color:
 	if m == 3:
 		return Color(0.4, 0.48, 0.24) if cover_prev else Color(0.6, 0.52, 0.38)  # rye, or winter stubble
 	if m == 4:
-		return Color(0.38, 0.47, 0.24) if cover_prev else Color(0.36, 0.27, 0.19)  # rye, or tilled black soil
+		if cover_prev:
+			return Color(0.38, 0.47, 0.24)  # rye
+		# Tilled black soil, or last fall's stubble not yet worked.
+		return Color(0.36, 0.27, 0.19) if when < 0.6 else Color(0.55, 0.48, 0.34)
 	if m == 5:
-		return Color(0.42, 0.42, 0.24)  # rows just up
+		return Color(0.42, 0.42, 0.24) if when < 0.55 else Color(0.38, 0.29, 0.2)  # rows just up, or just planted
 	if m <= 8:
-		return Color(0.18, 0.34, 0.12) if crop == "corn" else Color(0.32, 0.46, 0.16)
+		var green := Color(0.18, 0.34, 0.12) if crop == "corn" else Color(0.32, 0.46, 0.16)
+		return green.lerp(Color(0.24, 0.36, 0.14), (when - 0.5) * 0.4)  # varieties, planting dates
+	var ripe := Color(0.62, 0.58, 0.3) if crop == "corn" else Color(0.7, 0.62, 0.22)
+	var cut := Color(0.66, 0.56, 0.36)  # harvested stubble
 	if m == 9:
-		return Color(0.62, 0.58, 0.3) if crop == "corn" else Color(0.7, 0.62, 0.22)
+		return cut if when < 0.15 else ripe
+	if m == 10:
+		return cut if when < 0.75 else ripe
 	if m == 11 and cover:
 		return Color(0.42, 0.48, 0.26)  # rye coming up in the stubble
-	return Color(0.66, 0.56, 0.36)  # harvested
+	return cut
 
 
-## Each farm's fields as one patch, square to its farmhouse, with crop rows
-## running back from the road.
+## Each farm's fields: 40-acre forties square to its farmhouse, crop rows
+## running back from the road, turn rows across the ends of each field and
+## a grass border between fields, the way they look from the air in Pike
+## County.
 func _draw_fields() -> void:
 	if sim == null:
 		return
@@ -113,12 +127,19 @@ func _draw_fields() -> void:
 	for id in sim.farms.farms:
 		var f: Dictionary = sim.farms.farms[id]
 		var trimmed: Dictionary = sim.farms.trim.get(id, {})
+		var owned := {}
+		for c in f.cells:
+			owned[c] = true
 		for c in f.cells:
 			var fl := CropPlan.field(f, c)
-			var col := _season_color(fl.crop, fl.cover_prev, fl.cover)
-			# A field a road ran through stops at the road's edge.
-			for poly in trimmed.get(c, [Farms.cell_corners(f, c)]):
-				_add_poly(st, f, poly, 0.06, col)
+			var col := _season_color(fl.crop, fl.cover_prev, fl.cover,
+				Farms._hash01(Farms.forty_of(c) + Vector2i(int(id) * 7, 3), 23))
+			if trimmed.has(c):
+				# A field a road ran through stops at the road's edge.
+				for poly in trimmed[c]:
+					_add_poly(st, f, poly, 0.06, col)
+			else:
+				_add_cell(st, f, c, owned, col)
 			any = true
 		_fencerows(st, id, f)
 		if f.drive.size() >= 2:
@@ -135,7 +156,33 @@ func _draw_fields() -> void:
 		_lanes.mesh = Terrain.drape(lanes.commit(), true, 8.0)
 
 
-func _add_poly(st: SurfaceTool, f: Dictionary, poly: PackedVector2Array, y: float, col: Color) -> void:
+## How wide the turn rows (headlands) are at each end of a field: two passes
+## of a 12-row, 30-inch planter, about 18 m.
+const HEADLAND := 18.0
+
+
+## One field cell. At the front or back end of its forty the planter turned
+## round, so a band of rows there runs across the field.
+func _add_cell(st: SurfaceTool, f: Dictionary, c: Vector2i, owned: Dictionary, col: Color) -> void:
+	var corners := Farms.cell_corners(f, c)
+	var forty := Farms.forty_of(c)
+	# corners: 0 front-left, 1 front-right, 2 back-right, 3 back-left
+	# (front is toward the road, -y in the farm's frame).
+	var front := not owned.has(c - Vector2i(0, 1)) or Farms.forty_of(c - Vector2i(0, 1)) != forty
+	var back := not owned.has(c + Vector2i(0, 1)) or Farms.forty_of(c + Vector2i(0, 1)) != forty
+	var h := HEADLAND / Farms.CELL
+	var t0 := h if front else 0.0
+	var t1 := 1.0 - h if back else 1.0
+	var mid := PackedVector2Array([corners[0].lerp(corners[3], t0), corners[1].lerp(corners[2], t0),
+		corners[1].lerp(corners[2], t1), corners[0].lerp(corners[3], t1)])
+	_add_poly(st, f, mid, 0.06, col)
+	if front:
+		_add_poly(st, f, PackedVector2Array([corners[0], corners[1], mid[1], mid[0]]), 0.06, col.darkened(0.04), true)
+	if back:
+		_add_poly(st, f, PackedVector2Array([mid[3], mid[2], corners[2], corners[3]]), 0.06, col.darkened(0.04), true)
+
+
+func _add_poly(st: SurfaceTool, f: Dictionary, poly: PackedVector2Array, y: float, col: Color, across := false) -> void:
 	var tris := Geometry2D.triangulate_polygon(poly)
 	var right := Vector2(-f.dir.z, f.dir.x)
 	var back := Vector2(-f.dir.x, -f.dir.z)
@@ -148,32 +195,42 @@ func _add_poly(st: SurfaceTool, f: Dictionary, poly: PackedVector2Array, y: floa
 		for p in order:
 			st.set_color(col)
 			st.set_normal(Vector3.UP)
-			# Rows run back from the road: about one stripe per 2 m.
+			# Rows run back from the road: about one stripe per 2 m. Turn rows
+			# at a field's ends run across it.
 			var d: Vector2 = p - origin
-			st.set_uv(Vector2(d.dot(right), d.dot(back)) / 16.0)
+			st.set_uv((Vector2(d.dot(back), d.dot(right)) if across else Vector2(d.dot(right), d.dot(back))) / 16.0)
 			st.add_vertex(Vector3(p.x, y, p.y))
 
 
 ## A grassy, brushy fencerow along each outside edge of a farm's land, with
-## the odd volunteer tree in it, as on real section-line field edges.
+## the odd volunteer tree in it, as on real section-line field edges, and a
+## narrower grass border (a field edge or grassed waterway, NRCS practice
+## 386 and 412) between the farm's own forties.
 func _fencerows(st: SurfaceTool, id: Variant, f: Dictionary) -> void:
 	var verge := Color(0.5, 0.5, 0.3, 0.0)
 	var planted := []
 	# Neighbour offsets and the cell_corners() edge each one shares.
 	var sides := [[Vector2i(-1, 0), 0, 3], [Vector2i(1, 0), 1, 2], [Vector2i(0, -1), 0, 1], [Vector2i(0, 1), 3, 2]]
+	var owned := {}
+	for c in f.cells:
+		owned[c] = true
 	for c in f.cells:
 		var corners := Farms.cell_corners(f, c)
 		var mid := Farms.cell_center(f, c)
 		for s in sides:
-			if f.cells.has(c + s[0]):
+			var n: Vector2i = c + s[0]
+			var inner := owned.has(n)
+			if inner and Farms.forty_of(n) == Farms.forty_of(c):
 				continue
 			var a: Vector2 = corners[s[1]]
 			var b: Vector2 = corners[s[2]]
 			var out := ((a + b) * 0.5 - Vector2(mid.x, mid.z)).normalized()
-			var strip := PackedVector2Array([a - out * 2.5, b - out * 2.5, b + out * 1.0, a + out * 1.0])
+			# Between two of its own fields each side gives up 3 m of grass.
+			var strip := PackedVector2Array([a - out * 3.0, b - out * 3.0, b, a]) if inner \
+				else PackedVector2Array([a - out * 2.5, b - out * 2.5, b + out * 1.0, a + out * 1.0])
 			_add_poly(st, f, strip, 0.07, verge)
 			var h := Farms._hash01(c * 4 + s[0], 7)
-			if h < 0.45:
+			if h < (0.06 if inner else 0.45):
 				var at := a.lerp(b, 0.15 + 0.7 * Farms._hash01(c * 4 + s[0], 11)) - out * 1.2
 				var sp: int = [TreeField.Species.OAK, TreeField.Species.MAPLE, TreeField.Species.LOCUST, TreeField.Species.CRABAPPLE][int(h * 8.9) % 4]
 				planted.append([Transform3D(Basis(Vector3.UP, h * 40.0).scaled(Vector3.ONE * (0.7 + h)), Vector3(at.x, Terrain.ground_y(at.x, at.y), at.y)),

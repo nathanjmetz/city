@@ -39,6 +39,32 @@ void vertex() {
 }
 """
 
+## Fields lie on the land like a sheet of paint, hundreds of metres across.
+## The land under them is drawn from a grid (8 m near, coarser and morphing
+## farther off, see TerrainView) while the field follows the true ground, so
+## on a rolling field the land bulged through it in pale blotches. Every
+## field vertex is drawn a little nearer the camera along its own line of
+## sight (it stays exactly where it is on screen), more the farther off it
+## is, so the field always wins against the land it lies on.
+const FIELD_COMMON := """
+shader_type spatial;
+render_mode cull_disabled;
+uniform sampler2D noise_soft : filter_linear_mipmap, repeat_enable;
+uniform sampler2D noise_grain : filter_linear_mipmap, repeat_enable;
+varying vec3 world_pos;
+vec2 turn(vec2 p, float a) {
+	return vec2(p.x * cos(a) - p.y * sin(a), p.x * sin(a) + p.y * cos(a));
+}
+void vertex() {
+	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	vec4 eye = MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
+	float dist = length(eye.xyz);
+	float pull = 0.35 + dist * 0.004 + max(dist - 350.0, 0.0) * 0.006;
+	eye.xyz *= 1.0 - min(pull, dist * 0.5) / max(dist, 1.0);
+	POSITION = PROJECTION_MATRIX * eye;
+}
+"""
+
 const ASPHALT := """
 uniform vec4 fresh : source_color = vec4(0.28, 0.27, 0.27, 1.0);
 uniform vec4 faded : source_color = vec4(0.42, 0.41, 0.39, 1.0);
@@ -238,6 +264,13 @@ void fragment() {
 	float t = abs(mod(m.x, 36.0) - 18.0);
 	float tram = (1.0 - smoothstep(0.25, 0.45, t)) * clamp(0.5 / max(fwidth(m.x), 0.001), 0.0, 1.0);
 	vec3 crop = lin(COLOR.rgb) * 1.45 * (0.8 + patch * 0.34 + (mid - 0.5) * 0.14);
+	// Soil shows through the crop the way it does from the air over Pike
+	// County: thinner, yellower growth on eroded knobs (light Alford and
+	// Wellston silt loams) and darker, lusher crop down the wet swales.
+	float knob = smoothstep(0.55, 0.85, texture(noise_soft, turn(p, 0.4) / 95.0 + 0.17).r);
+	float swale = smoothstep(0.6, 0.9, texture(noise_soft, turn(p, 2.0) / 140.0 + 0.71).r);
+	crop = mix(crop, crop * vec3(1.25, 1.12, 0.8), knob * 0.55);
+	crop *= 1.0 - swale * 0.18;
 	crop *= 1.0 - gap * 0.22 - tram * 0.12;
 	crop *= 0.96 + grain * 0.08;
 	// Fencerow verge: rough grass with brushy darker clumps.
@@ -345,18 +378,18 @@ static func lane(color: Color) -> ShaderMaterial:
 
 
 static func field() -> ShaderMaterial:
-	return _make("field", FIELD, {})
+	return _make("field", FIELD, {}, FIELD_COMMON)
 
 
 static func paint(color: Color) -> ShaderMaterial:
 	return _make("paint %s" % color, PAINT, {"paint": color})
 
 
-static func _make(key: String, body: String, params: Dictionary) -> ShaderMaterial:
+static func _make(key: String, body: String, params: Dictionary, common := COMMON) -> ShaderMaterial:
 	if _cache.has(key):
 		return _cache[key]
 	var shader := Shader.new()
-	shader.code = COMMON + body
+	shader.code = common + body
 	var mat := ShaderMaterial.new()
 	mat.shader = shader
 	if _soft == null:

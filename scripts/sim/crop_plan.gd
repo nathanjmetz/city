@@ -28,7 +28,7 @@ const GRAIN := ["corn", "soybeans", "wheat"]
 
 ## The field (a 40-acre "forty") a cell belongs to, in the farm's own frame.
 static func field_of(c: Vector2i) -> Vector2i:
-	return Vector2i(floori(c.x / 10.0), floori(c.y / 10.0))
+	return Farms.forty_of(c)
 
 
 ## A field's record: {crop, prev, years, health, cover, cover_prev, why}.

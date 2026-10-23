@@ -208,7 +208,25 @@ const FARM_COST_PER_ACRE := {"corn": 420.0, "soybeans": 280.0, "wheat": 240.0, "
 const FARM_COST_PER_ACRE_PER_KM := 260.0
 ## Jobs: the farm family (2) plus a hired hand per this many cells (~40 acres).
 const FARM_CELLS_PER_WORKER := 100
-const FARM_MAX_CELLS := 400
+## The most land one farm works: about 320 acres, four 80s, a mid-size
+## family grain farm in southern Indiana (the state's average farm is about
+## 260 acres, USDA Census of Agriculture; grain farms run bigger).
+const FARM_MAX_CELLS := 800
+## A farm works one block of land between roads at a time (Brawn: farms stop
+## at a set size and build a road). A block is an "80", the half-quarter
+## section of the US land survey: half a mile along its road (20 cells) by a
+## quarter mile back (10 cells), worked as two 40-acre fields (forties). The
+## lines between blocks are where the next road goes, the way Indiana's
+## county roads run on the survey lines.
+const FARM_BLOCK_CELLS := Vector2i(20, 10)
+## A full block's farmer builds a road to the next one only when it has made
+## this much a year (the road is the farm's own cost, paid off over time).
+const FARM_ROAD_MIN_PROFIT := 20_000.0
+## Longest road a farm will build to reach its next block (m).
+const FARM_ROAD_MAX := 1_300.0
+## After a road it couldn't build (or the player said no), a farmer waits
+## this many game days before looking again.
+const FARM_ROAD_WAIT_DAYS := 6.0
 ## Dollars a year a field is preferred per neighbouring field of the same farm.
 const FARM_COMPACT_BONUS := 25.0
 ## Dollars a year a field is preferred on land reserved for farming.
