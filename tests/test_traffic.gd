@@ -33,6 +33,28 @@ func _init() -> void:
 	_check(finished > 3, "cars finish their trips (%d)" % finished)
 	_check(parked_posed > 0, "a car held after it parks still has a pose (%d)" % parked_posed)
 
+	# A flatbed bound for the far side of a two-lane road stops at the curb on
+	# its own side: a 70 ft rig can't loop round to face the other way (Brawn
+	# saw one bounce about on the shoulder).
+	var tr := CitySim.new()
+	tr.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0]})
+	for side in [-12.0, 12.0]:
+		tr.traffic.dispatch({"ref": "yard", "pos": [-250, side]}, {"ref": "site", "pos": [150, -side]}, "construction",
+			{}, "flatbed")
+		tr.traffic.dispatch({"ref": "yard2", "pos": [250, side]}, {"ref": "site2", "pos": [-150, -side]}, "construction",
+			{}, "flatbed")
+	var loops := 0
+	var pulled_in := 0
+	for i in 900:
+		tr.tick()
+		for car in tr.traffic.cars:
+			var j = car.get("j")
+			if j != null and int(j.get("node", 0)) == -1 and int(j.get("wi", -1)) >= 0 and float(car.jd) < 0.5:
+				pulled_in += 1
+				if (j.d0 as Vector3).dot(j.d1) < -0.3:
+					loops += 1
+	_check(pulled_in > 0 and loops == 0, "trucks pull straight in to the curb, never loop round (%d of %d)" % [loops, pulled_in])
+
 	# Two streets crossing: cars stop at the bar behind the crosswalk, so a
 	# right turn sweeps a real curve (AASHTO's passenger car: 6.4 m at least).
 	var xs := CitySim.new()
