@@ -12,8 +12,14 @@ signal nothing_to_close
 
 const GOOD := Color(0.5, 0.85, 0.5)
 ## The bottom bar's tool categories: [key, title].
-const CATEGORIES := [["roads", "Roads"], ["zones", "Zoning"], ["industry", "Industry"], ["services", "Services"],
+## The town's services are split up like CS2's toolbar groups, so no
+## menu spreads across the screen.
+const CATEGORIES := [["roads", "Roads"], ["zones", "Zoning"], ["industry", "Industry"],
+	["utilities", "Utilities", "power"], ["civic", "Civic", "police"], ["education", "Education", "school"],
+	["health", "Health", "health"], ["transport", "Transport", "bus"],
 	["parks", "Parks"], ["bulldoze", "Bulldoze"], ["move", "Move It"], ["budget", "Economy"]]
+## The bottom bar categories that hold the town's services.
+const SERVICE_CATEGORIES := ["utilities", "civic", "education", "health", "transport"]
 const BAD := Color(0.95, 0.45, 0.4)
 
 var road_tool: RoadTool
@@ -35,7 +41,10 @@ var _bank_cards := {}  # "community"/"farm_credit" -> Button
 var _campus_cards := {}  # "high_school"/"college"/"university" -> Button
 var telecom_tool: TelecomTool
 var _telecom_card: Button
-var _warehouse_cards := {}  # Warehouses size -> Button
+var _warehouse_cards := {}  # Warehouses size -> Button, in the size row
+var _warehouse_card: Button
+var _warehouse_sizes: Control
+var _warehouse_last: String = Warehouses.ORDER[0]  # the size the Warehouse card picks
 var big_tool: BigFactoryTool
 var _big_cards := {}  # BigFactories kind -> Button
 var traffic_tool: TrafficTool
@@ -71,6 +80,8 @@ var _neighborhood_card: Button
 var _zone_cards := {}    # ZoneMap.Zone -> Button
 var _power_card: Button
 var _service_cards := {} # Services.Kind -> Button
+var _service_cat := {}   # Services.Kind -> its bottom bar category
+var _first_card := {}    # service category -> the card it opens on
 var _farm_cards := {}    # FarmTool.Mode -> Button
 var _warning := UiStyle.label("", 13, Color(1.0, 0.75, 0.3))
 var _parallel_card: Button
@@ -656,7 +667,11 @@ func _build_bottom_bar() -> void:
 	_drawer_dock.add_child(holder)
 	_drawers["roads"] = _roads_drawer()
 	_drawers["zones"] = _zones_drawer()
-	_drawers["services"] = _services_drawer()
+	_drawers["utilities"] = _utilities_drawer()
+	_drawers["civic"] = _civic_drawer()
+	_drawers["education"] = _education_drawer()
+	_drawers["health"] = _health_drawer()
+	_drawers["transport"] = _transport_drawer()
 	_drawers["parks"] = _parks_drawer()
 	_drawers["industry"] = _industry_drawer()
 	for key in _drawers:
@@ -672,7 +687,7 @@ func _build_bottom_bar() -> void:
 	bar.add_child(row)
 	# Traffic lives under Roads and Farming under Industry, as in CS2.
 	for entry in CATEGORIES:
-		var b := _category_button(entry[0], entry[1])
+		var b := _category_button(entry[2] if entry.size() > 2 else entry[0], entry[1])
 		b.pressed.connect(func(): _open(entry[0]))
 		row.add_child(b)
 		_category_buttons[entry[0]] = b
@@ -702,16 +717,18 @@ func _category_button(icon: String, title: String) -> Button:
 	b.custom_minimum_size = Vector2(104, 36)
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 6)
+	row.add_theme_constant_override("separation", 5)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.set_anchors_preset(Control.PRESET_FULL_RECT)
 	b.add_child(row)
-	var ic := Icon.new(icon, 22)
+	var ic := Icon.new(icon, 20)
 	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(ic)
-	var t := UiStyle.label(title, 14)
+	var t := UiStyle.label(title, 13)
 	t.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(t)
+	# Snug to its title, so twelve categories still sit in a compact row.
+	b.custom_minimum_size.x = maxf(64.0, ceilf(t.get_minimum_size().x) + 20 + 5 + 16)
 	return b
 
 
@@ -805,19 +822,25 @@ func _roads_drawer() -> PanelContainer:
 	_parallel_card = _card("parallel", "Parallel", "P")
 	_parallel_card.pressed.connect(func(): road_tool.set_parallel(not road_tool.parallel))
 	opts.add_child(_parallel_card)
-	var lower := _card("lower", "Lower", "Page Down", false)
-	lower.pressed.connect(func(): road_tool.change_elevation(-1))
-	opts.add_child(lower)
-	_elevation.custom_minimum_size = Vector2(48, 0)
-	_elevation.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_elevation.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	opts.add_child(_elevation)
-	var raise := _card("raise", "Raise", "Page Up", false)
+	# Raise over the height over Lower, in one card's space.
+	var elev := VBoxContainer.new()
+	elev.add_theme_constant_override("separation", 0)
+	elev.custom_minimum_size = Vector2(56, 50)
+	opts.add_child(elev)
+	var raise := _step_button("raise", "Raise: bridge  (Page Up)")
 	raise.pressed.connect(func(): road_tool.change_elevation(1))
-	opts.add_child(raise)
+	elev.add_child(raise)
+	_elevation.add_theme_font_size_override("font_size", 11)
+	_elevation.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_elevation.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_elevation.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	elev.add_child(_elevation)
+	var lower := _step_button("lower", "Lower: tunnel  (Page Down)")
+	lower.pressed.connect(func(): road_tool.change_elevation(-1))
+	elev.add_child(lower)
 
 	row.add_child(VSeparator.new())
-	var traffic := _section(row, "Traffic")
+	var traffic := _section(row, "Traffic and town")
 	_traffic_card = _card("traffic", "Traffic", "J")
 	_traffic_card.tooltip_text = "Traffic flow, lights and stop signs  (J)"
 	_traffic_card.pressed.connect(func():
@@ -828,8 +851,7 @@ func _roads_drawer() -> PanelContainer:
 	traffic.add_child(_traffic_card)
 
 	# A town hemmed in by its neighbors starts a new neighborhood on open land.
-	row.add_child(VSeparator.new())
-	var town := _section(row, "Town")
+	var town := traffic
 	_neighborhood_card = _card("homes", "Neighborhood", "")
 	_neighborhood_card.tooltip_text = "New neighborhood: start part of your town out on open land, linked by a free county road. You earn one per town stage."
 	_neighborhood_card.pressed.connect(func():
@@ -912,107 +934,144 @@ func _zones_drawer() -> PanelContainer:
 	return drawer
 
 
-func _services_drawer() -> PanelContainer:
+## A card for a Services kind, filed under its bottom bar category.
+func _service_card(k: int, cat: String) -> Button:
+	var s: Dictionary = Services.KINDS[k]
+	var short := {Services.Kind.WATER_TOWER: "Water tower", Services.Kind.POWER_FEED: "Power line",
+		Services.Kind.WELL: "Well", Services.Kind.SCHOOL: "Elementary", Services.Kind.WATER_UTILITY: "Water utility",
+		Services.Kind.TAXI_COMPANY: "Taxis", Services.Kind.NURSING_HOME: "Nursing home", Services.Kind.BUS_DEPOT: "Bus depot"}
+	var b := _card(s.icon, short.get(k, s.name.split(" ")[0]), "")
+	b.tooltip_text = "%s: $%s to build, $%s a month" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
+	if k == Services.Kind.BUS_DEPOT:
+		b.tooltip_text = "%s: $%s to build, with two buses. It plans its own stops, routes and fare; you set its funding." % [s.name, CitySim.money_text(s.cost)]
+	elif k == Services.Kind.TAXI_COMPANY:
+		b.tooltip_text = "%s: $%s to bring one to town, with two cabs. Its owner runs it on fares: the fleet, the meter and the lot." % [s.name, CitySim.money_text(s.cost)]
+	b.pressed.connect(func(): service_tool.set_kind(k))
+	_service_cards[k] = b
+	_service_cat[k] = cat
+	return b
+
+
+## A card for a landfill, recycling center or cemetery: hubs that grow on their own.
+func _hub_card(k: int, cat: String) -> Button:
+	var hk: String = CivicHubs.TOOL_KINDS[k]
+	var w: Dictionary = Balance.WASTE_SITES[hk]
+	var title: String = CivicHubs.KINDS[hk].name
+	var b := _card(CivicHubs.KINDS[hk].icon, {"recycling_1": "Recycling"}.get(hk, title), "")
+	b.tooltip_text = "%s: $%s to build, $%s a month. Never fills up." % [title, CitySim.money_text(int(w.cost)),
+		CitySim.money_text(int(w.upkeep))]
+	b.pressed.connect(func(): service_tool.set_kind(k))
+	_service_cards[k] = b
+	_service_cat[k] = cat
+	return b
+
+
+## A drawer with one row of titled sections, as the service menus use.
+func _service_drawer(cat: String, sections: Array) -> PanelContainer:
 	var drawer := PanelContainer.new()
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	drawer.add_child(row)
-	for group in [["Utilities", [Services.Kind.POWER_FEED, Services.Kind.WELL, Services.Kind.SUBSTATION,
-				Services.Kind.WATER_TOWER, Services.Kind.WATER_UTILITY]],
-			["Safety and schools", [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.SCHOOL]],
-			["Health and care", [Services.Kind.CLINIC, Services.Kind.HOSPITAL, Services.Kind.NURSING_HOME,
-				Services.Kind.DAYCARE]],
-			["Transit", [Services.Kind.BUS_DEPOT, Services.Kind.TAXI_COMPANY]]]:
+	for sec in sections:
 		if row.get_child_count() > 0:
 			row.add_child(VSeparator.new())
-		var cards := _section(row, group[0])
-		for k in group[1]:
-			var s: Dictionary = Services.KINDS[k]
-			var short := {Services.Kind.WATER_TOWER: "Water tower", Services.Kind.POWER_FEED: "Power line",
-				Services.Kind.WELL: "Well", Services.Kind.SCHOOL: "School", Services.Kind.WATER_UTILITY: "Water utility",
-				Services.Kind.TAXI_COMPANY: "Taxis"}
-			var b := _card(s.icon, short.get(k, s.name.split(" ")[0]),
-				"%s: $%s, $%s a month" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)])
-			b.tooltip_text = "%s: $%s to build, $%s a month" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
-			if k == Services.Kind.BUS_DEPOT:
-				b.tooltip_text = "%s: $%s to build, with two buses. It plans its own stops, routes and fare; you set its funding." % [s.name, CitySim.money_text(s.cost)]
-			elif k == Services.Kind.TAXI_COMPANY:
-				b.tooltip_text = "%s: $%s to bring one to town, with two cabs. Its owner runs it on fares: the fleet, the meter and the lot." % [s.name, CitySim.money_text(s.cost)]
-			b.pressed.connect(func(): service_tool.set_kind(k))
+		var cards := _section(row, sec[0])
+		for b in sec[1]:
 			cards.add_child(b)
-			_service_cards[k] = b
-		if group[0] == "Utilities":
-			# Brawn's hub model: a company whose leader picks and grows the plant.
-			var pc := _card("power", "Power co.", "")
-			pc.tooltip_text = "Power company: $%s. Its leader picks solar, wind, gas, a dam or an old coal plant, and grows it" \
-				% CitySim.money_text(Balance.POWER_YARD_COST)
-			pc.pressed.connect(func(): industry_tool.set_kind("power"))
-			cards.add_child(pc)
-			_power_card = pc
-	# Landfill, recycling and cemetery: hubs that grow on their own.
-	row.add_child(VSeparator.new())
-	var hubs := _section(row, "Trash and cemeteries")
-	for k in CivicHubs.TOOL_KINDS:
-		var hk: String = CivicHubs.TOOL_KINDS[k]
-		var w: Dictionary = Balance.WASTE_SITES[hk]
-		var title: String = CivicHubs.KINDS[hk].name
-		var b := _card(CivicHubs.KINDS[hk].icon, {"recycling_1": "Recycling"}.get(hk, title),
-			"%s: $%s, $%s a month" % [title, CitySim.money_text(int(w.cost)), CitySim.money_text(int(w.upkeep))])
-		b.tooltip_text = "%s: $%s to build, $%s a month. Never fills up." % [title, CitySim.money_text(int(w.cost)),
-			CitySim.money_text(int(w.upkeep))]
-		b.pressed.connect(func(): service_tool.set_kind(k))
-		hubs.add_child(b)
-		_service_cards[k] = b
-	# Campuses grow on their own once placed (Brawn's hub model).
-	row.add_child(VSeparator.new())
-	var campus := _section(row, "High school and college")
-	for k in ["high_school", "college", "university"]:
-		var e: Dictionary = Education.spec(k)
-		var b := _card("school", {"high_school": "High school", "college": "College", "university": "University"}[k], "")
-		b.tooltip_text = "%s: $%s to build, $%s a month. Its %s buys the free land next to it as it fills." % [
-			Education.KINDS[k].name, CitySim.money_text(e.cost), CitySim.money_text(e.funding), Education.KINDS[k].head.to_lower()]
-		b.pressed.connect(func(): campus_tool.set_kind(k))
-		campus.add_child(b)
-		_campus_cards[k] = b
-	# The post office: its postmaster plans the routes.
-	row.add_child(VSeparator.new())
-	var mail := _section(row, "Mail")
-	var pb := _card("mail", "Post office", "Post office: $%s, $%s a month" % [CitySim.money_text(Balance.MAIL_COST),
-		CitySim.money_text(Balance.MAIL_UPKEEP)])
-	pb.tooltip_text = "Post office: $%s to build, $%s a month. Its postmaster plans the routes." % [
-		CitySim.money_text(Balance.MAIL_COST), CitySim.money_text(Balance.MAIL_UPKEEP)]
-	pb.pressed.connect(func(): service_tool.set_kind(Mail.TOOL_KIND))
-	mail.add_child(pb)
-	_service_cards[Mail.TOOL_KIND] = pb
+			if not _first_card.has(cat):
+				_first_card[cat] = b
+	return drawer
+
+
+## Utilities, like CS2's Electricity, Water & Sewage, Garbage and
+## Communications menus: what every home and shop is hooked up to.
+func _utilities_drawer() -> PanelContainer:
+	var cat := "utilities"
+	# Brawn's hub model: a company whose leader picks and grows the plant.
+	_power_card = _card("power", "Power co.", "")
+	_power_card.tooltip_text = "Power company: $%s. Its leader picks solar, wind, gas, a dam or an old coal plant, and grows it" \
+		% CitySim.money_text(Balance.POWER_YARD_COST)
+	_power_card.pressed.connect(func(): industry_tool.set_kind("power"))
 	# The phone company: placed once, then it builds its own network.
-	row.add_child(VSeparator.new())
-	var phone := _section(row, "Phone and internet")
 	_telecom_card = _card("tower", "Phone co.", "")
 	_telecom_card.tooltip_text = "Phone company: $%s to build, $%s a month grant. Its manager strings fiber and puts up cell towers where they pay off. One per town." % [
 		CitySim.money_text(Balance.TELECOM_COST), CitySim.money_text(Balance.TELECOM_GRANT)]
 	_telecom_card.pressed.connect(func(): telecom_tool.set_kind("telecom"))
-	phone.add_child(_telecom_card)
-	# The railroad: its leader plans the track and asks before building.
-	row.add_child(VSeparator.new())
-	var rail := _section(row, "Rail")
-	var rb := _card("train", "Rail depot", "")
-	rb.tooltip_text = "Rail depot: $%s. Its leader lays track to the region and to industry, by your permit." % \
-		CitySim.money_text(Balance.RAIL_DEPOT_COST)
-	rb.pressed.connect(func(): service_tool.set_kind(Rail.TOOL_KIND))
-	rail.add_child(rb)
-	_service_cards[Rail.TOOL_KIND] = rb
+	return _service_drawer(cat, [
+		["Power", [_service_card(Services.Kind.POWER_FEED, cat), _service_card(Services.Kind.SUBSTATION, cat), _power_card]],
+		["Water and sewer", [_service_card(Services.Kind.WELL, cat), _service_card(Services.Kind.WATER_TOWER, cat),
+			_service_card(Services.Kind.WATER_UTILITY, cat)]],
+		["Trash", [_hub_card(100, cat), _hub_card(101, cat)]],
+		["Phone and internet", [_telecom_card]]])
+
+
+## Civic: fire and police (CS2's Fire & Rescue, Police & Administration),
+## the post office and the banks.
+func _civic_drawer() -> PanelContainer:
+	var cat := "civic"
+	# The post office: its postmaster plans the routes.
+	var pb := _card("mail", "Post office", "")
+	pb.tooltip_text = "Post office: $%s to build, $%s a month. Its postmaster plans the routes." % [
+		CitySim.money_text(Balance.MAIL_COST), CitySim.money_text(Balance.MAIL_UPKEEP)]
+	pb.pressed.connect(func(): service_tool.set_kind(Mail.TOOL_KIND))
+	_service_cards[Mail.TOOL_KIND] = pb
+	_service_cat[Mail.TOOL_KIND] = cat
 	# Banks lend to the farms, companies and builders (Brawn's hub model).
-	row.add_child(VSeparator.new())
-	var bank := _section(row, "Banks")
+	var banks := []
 	for k in ["community", "farm_credit"]:
 		var b := _card("bank", {"community": "Bank", "farm_credit": "Farm Credit"}[k], "")
 		b.tooltip_text = "%s: $%s for the lot. Its %s lends to %s, and buys the land next door as it grows." % [
 			Banks.KINDS[k].name, CitySim.money_text(int(Banks.spec(k).cost)), Banks.KINDS[k].head.to_lower(),
 			{"community": "farms, companies and builders", "farm_credit": "farms and timber"}[k]]
 		b.pressed.connect(func(): bank_tool.set_kind(k))
-		bank.add_child(b)
 		_bank_cards[k] = b
-	return drawer
+		banks.append(b)
+	return _service_drawer(cat, [
+		["Safety", [_service_card(Services.Kind.FIRE, cat), _service_card(Services.Kind.POLICE, cat)]],
+		["Mail", [pb]],
+		["Banks", banks]])
+
+
+## Education, from daycare to the university (CS2's Education & Research).
+## Campuses grow on their own once placed (Brawn's hub model).
+func _education_drawer() -> PanelContainer:
+	var cat := "education"
+	var campus := []
+	for k in ["high_school", "college", "university"]:
+		var e: Dictionary = Education.spec(k)
+		var b := _card("school", {"high_school": "High school", "college": "College", "university": "University"}[k], "")
+		b.tooltip_text = "%s: $%s to build, $%s a month. Its %s buys the free land next to it as it fills." % [
+			Education.KINDS[k].name, CitySim.money_text(e.cost), CitySim.money_text(e.funding), Education.KINDS[k].head.to_lower()]
+		b.pressed.connect(func(): campus_tool.set_kind(k))
+		_campus_cards[k] = b
+		campus.append(b)
+	return _service_drawer(cat, [
+		["Schools", [_service_card(Services.Kind.SCHOOL, cat), _service_card(Services.Kind.DAYCARE, cat)]],
+		["High school and college", campus]])
+
+
+## Health and care, with the cemetery (CS2's Healthcare & Deathcare).
+func _health_drawer() -> PanelContainer:
+	var cat := "health"
+	return _service_drawer(cat, [
+		["Health and care", [_service_card(Services.Kind.CLINIC, cat), _service_card(Services.Kind.HOSPITAL, cat),
+			_service_card(Services.Kind.NURSING_HOME, cat)]],
+		["Cemetery", [_hub_card(102, cat)]]])
+
+
+## Transport: buses, cabs and the railroad (CS2's Transportation).
+func _transport_drawer() -> PanelContainer:
+	var cat := "transport"
+	# The railroad: its leader plans the track and asks before building.
+	var rb := _card("train", "Rail depot", "")
+	rb.tooltip_text = "Rail depot: $%s. Its leader lays track to the region and to industry, by your permit." % \
+		CitySim.money_text(Balance.RAIL_DEPOT_COST)
+	rb.pressed.connect(func(): service_tool.set_kind(Rail.TOOL_KIND))
+	_service_cards[Rail.TOOL_KIND] = rb
+	_service_cat[Rail.TOOL_KIND] = cat
+	return _service_drawer(cat, [
+		["Transit", [_service_card(Services.Kind.BUS_DEPOT, cat), _service_card(Services.Kind.TAXI_COMPANY, cat)]],
+		["Rail", [rb]]])
 
 
 func _parks_drawer() -> PanelContainer:
@@ -1060,9 +1119,18 @@ func _parks_drawer() -> PanelContainer:
 ## the resource; its pads spread on their own. Reserve saves land for it.
 func _industry_drawer() -> PanelContainer:
 	var drawer := PanelContainer.new()
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 6)
+	drawer.add_child(stack)
+	# Warehouse sizes, in the one row above the tools while a warehouse is in
+	# hand (like the park sizes), so the menu stays one compact row.
+	_warehouse_sizes = HBoxContainer.new()
+	_warehouse_sizes.alignment = BoxContainer.ALIGNMENT_CENTER
+	stack.add_child(_warehouse_sizes)
+	var sizes := _section(_warehouse_sizes, "Warehouse size  ·  beside a street")
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
-	drawer.add_child(row)
+	stack.add_child(row)
 	var farms := _section(row, "Farmhouse  ·  near green soil")
 	for entry in [[FarmTool.Mode.CORN, "corn", "Corn", "Corn farm: more income on rich soil"],
 			[FarmTool.Mode.SOYBEANS, "soybeans", "Soybeans", "Soybean farm: steadier on poorer soil"]]:
@@ -1078,7 +1146,11 @@ func _industry_drawer() -> PanelContainer:
 		_farm_cards[m] = b
 	var hq := _section(row, "Main building  ·  near the resource")
 	var area := _section(row, "Save land")
-	var stores := _section(row, "Warehouses  ·  beside a street")
+	var stores := _section(row, "Storage")
+	_warehouse_card = _card("warehouse", "Warehouse", "")
+	_warehouse_card.tooltip_text = "Warehouses store raw loads and goods until a factory or shop needs them. Pick a size above."
+	_warehouse_card.pressed.connect(func(): warehouse_tool.set_kind(_warehouse_last))
+	stores.add_child(_warehouse_card)
 	var plants := _section(row, "Big factories  ·  one per town")
 	for k in BigFactories.ORDER:
 		var kk: Dictionary = BigFactories.KINDS[k]
@@ -1094,7 +1166,7 @@ func _industry_drawer() -> PanelContainer:
 		b.tooltip_text = "%s, %s ($%s): stores raw loads and goods until a factory or shop needs them" \
 			% [Warehouses.KINDS[k].name, Warehouses.KINDS[k].area, CitySim.money_text(int(spec.cost))]
 		b.pressed.connect(func(): warehouse_tool.set_kind(k))
-		stores.add_child(b)
+		sizes.add_child(b)
 		_warehouse_cards[k] = b
 	for entry in [["oil", "oil", "Oil", "Oil company: pumpjacks spread over the oil field"],
 			["ore", "ore", "Mining", "Mining company: pits open where the ore is"],
@@ -1176,6 +1248,19 @@ func _card(icon: String, title: String, detail: String, toggle := true) -> Butto
 	return b
 
 
+## A slim arrow button, a third of a card tall (road height up and down).
+func _step_button(icon: String, tip: String) -> Button:
+	var b := Button.new()
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(56, 16)
+	b.tooltip_text = tip
+	var ic := Icon.new(icon, 14)
+	ic.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	ic.position -= Vector2(7, 7)
+	b.add_child(ic)
+	return b
+
+
 func _icon_button(icon: String, px: int, tip: String) -> Button:
 	var b := Button.new()
 	b.toggle_mode = true
@@ -1237,9 +1322,8 @@ func _open(cat: String) -> void:
 					farm_tool.set_mode(FarmTool.Mode.CORN)
 				else:
 					industry_tool.set_kind(_industry_kind)
-		"services":
-			if service_tool.kind == ServiceTool.OFF:
-				service_tool.set_kind(Services.Kind.POWER_FEED)
+		"utilities", "civic", "education", "health", "transport":
+			_first_card[cat].pressed.emit()
 		"parks":
 			if park_tool.kind == "":
 				park_tool.set_kind("park")
@@ -1276,16 +1360,21 @@ func _advisor_key() -> String:
 	if farm_tool.mode in [FarmTool.Mode.CORN, FarmTool.Mode.SOYBEANS] or (farm_tool.mode != FarmTool.Mode.NONE
 			and farm_tool.reserve_kind == "farm"):
 		return "farms"
-	return _category
+	return "services" if _category in SERVICE_CATEGORIES else _category
 
 
 ## Brings every button in line with the tools (keys change them too).
 func _sync() -> void:
 	if zone_tool.zone != ZoneTool.OFF:
 		_category = "zones"
-	elif service_tool.kind != ServiceTool.OFF or campus_tool.kind != "" or industry_tool.kind == "power" \
-			or bank_tool.kind != "" or telecom_tool.kind != "":
-		_category = "services"
+	elif service_tool.kind != ServiceTool.OFF:
+		_category = _service_cat.get(service_tool.kind, "utilities")
+	elif industry_tool.kind == "power" or telecom_tool.kind != "":
+		_category = "utilities"
+	elif campus_tool.kind != "":
+		_category = "education"
+	elif bank_tool.kind != "":
+		_category = "civic"
 	elif park_tool.kind != "":
 		_category = "parks"
 	elif industry_tool.kind != "" or warehouse_tool.kind != "" or big_tool.kind != "" or farm_tool.mode != FarmTool.Mode.NONE:
@@ -1307,7 +1396,7 @@ func _sync() -> void:
 	for key in _drawers:
 		_drawers[key].visible = key == _category
 	_drawer_dock.visible = _drawers.has(_category)
-	lot_alerts.show_empty = _category in ["zones", "services"]
+	lot_alerts.show_empty = _category == "zones" or _category in SERVICE_CATEGORIES
 	_fit_bottom.call_deferred()
 	for m in _tool_cards:
 		_tool_cards[m].set_pressed_no_signal(m == road_tool.mode)
@@ -1354,6 +1443,10 @@ func _sync() -> void:
 		elif k == "release":
 			on = _category == "industry" and farm_tool.mode == FarmTool.Mode.CLEAR
 		_industry_cards[k].set_pressed_no_signal(on)
+	if warehouse_tool.kind != "":
+		_warehouse_last = warehouse_tool.kind
+	_warehouse_card.set_pressed_no_signal(warehouse_tool.kind != "")
+	_warehouse_sizes.visible = warehouse_tool.kind != ""
 	for k in _warehouse_cards:
 		_warehouse_cards[k].set_pressed_no_signal(k == warehouse_tool.kind)
 	for k in _big_cards:
@@ -1513,7 +1606,7 @@ func _build_help() -> void:
 	col.add_child(UiStyle.label("TOOLS", 10, UiStyle.MUTED))
 	for line in ["1 2 3 4  road, curve, grid, roundabout", "U upgrade   P parallel   B bulldoze",
 			"Page Up / Down  bridge or tunnel", "5 6 7 8  homes, shops, industry, dezone",
-			"Services: place beside a road; green roads show coverage",
+			"Utilities to Transport: place beside a road; green roads show coverage",
 			"J  traffic view; Traffic: set lights or stop signs",
 			"Right click  stop drawing", "Esc  stop drawing, then close everything"]:
 		col.add_child(UiStyle.label(line, 12))

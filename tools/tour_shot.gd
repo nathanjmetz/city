@@ -22,7 +22,7 @@ var _plan := [
 	[185, "town", ""],
 	[230, "", "5-draw-grid"],
 	[235, "build_grid", ""],
-	[280, "", "6-open-services"],
+	[280, "", "6-open-utilities"],
 	[285, "power_tool", ""],
 	[330, "", "7-place-power"],
 	[335, "place_power", ""],
@@ -90,7 +90,7 @@ func _do(what: String) -> void:
 				"road": RoadStyle.Type.STREET})
 			_hud.close_all()
 		"power_tool":
-			_hud._open("services")
+			_hud._open("utilities")
 			_hud.service_tool.set_kind(Services.Kind.POWER_FEED)
 		"place_power", "place_water":
 			var u := "power" if what == "place_power" else "water"
