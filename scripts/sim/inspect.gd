@@ -847,6 +847,8 @@ static func _vehicle(sim: CitySim, vid: int) -> Dictionary:
 		rows.append(["Based at", place_name(sim, car.base)])
 	if f.state == "driving":
 		rows.append(["Speed", "%d mph" % roundi(car.v * 2.237)])
+	elif f.state == "flowing":
+		rows.append(["Traffic", "In the flow of town traffic"])
 	return {"title": title, "kind": "Vehicle", "icon": "traffic", "ok": true, "status": status,
 		"rows": rows, "problems": [], "follow": true}
 

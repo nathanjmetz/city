@@ -17,6 +17,10 @@ const NEAR := 240.0
 const FAR := 2600.0
 ## Cars and pickups shrink to a few pixels sooner than trucks do.
 const FAR_SMALL := 1800.0
+## How far out a big town's flowing traffic is drawn as cars.
+const FLOW_NEAR := 900.0
+var _flow_list := []
+var _flow_frames := 0
 ## On the desktop Ultra tier, vehicles this close (metres) get the close-up
 ## model: rounded body, alloy wheels, seams and clear-coat paint.
 const ULTRA_NEAR := 75.0
@@ -107,6 +111,25 @@ func _process(_delta: float) -> void:
 	Terrain.shift = Vector2.ZERO
 
 
+## Cars driving as part of a big town's traffic flow, near enough to draw:
+## found again a few times a second, since there can be thousands.
+func _flow_near(eye: Vector3) -> Array:
+	if traffic.flowing.is_empty():
+		_flow_list = []
+		return _flow_list
+	_flow_frames -= 1
+	if _flow_frames > 0:
+		return _flow_list
+	_flow_frames = 6
+	_flow_list = []
+	var r2 := FLOW_NEAR * FLOW_NEAR
+	for car in traffic.flowing:
+		var p: Vector3 = traffic.flow_pose(car)[0]
+		if (p.x - eye.x) * (p.x - eye.x) + (p.z - eye.z) * (p.z - eye.z) < r2:
+			_flow_list.append(car)
+	return _flow_list
+
+
 func _draw_cars(_delta: float) -> void:
 	for k in _xf:
 		_xf[k].clear()
@@ -137,8 +160,8 @@ func _draw_cars(_delta: float) -> void:
 	var small2 := FAR_SMALL * FAR_SMALL
 	if _info.size() > traffic.cars.size() * 2 + 256:
 		_info.clear()  # vehicles long gone
-	for car in traffic.cars:
-		var ahead: float = car.v * TrafficSim.DT * frac
+	for car in traffic.cars + _flow_near(eye):
+		var ahead: float = car.get("flow_v", car.v) * TrafficSim.DT * frac
 		var pose: Array = traffic.car_pose(car, ahead)
 		var p0: Vector3 = pose[0]
 		# Ground height can't bring a car back inside the range, so test the

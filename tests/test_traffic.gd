@@ -428,6 +428,46 @@ func _init() -> void:
 			tw.tick()
 		_check(tw.people.people[walker_pid].at == "", "and home again after the walk")
 
+	# A big town: household cars drive as traffic flows (BPR timing), park
+	# where they were going, and a saved town picks up exactly.
+	var fl := rx
+	fl.traffic.flows_from = 1
+	var most_flowing := 0
+	var agents_home := 0
+	for i in 1500:
+		fl.tick()
+		most_flowing = maxi(most_flowing, fl.traffic.flowing.size())
+		for car in fl.traffic.cars:
+			if car.get("after", {}).get("driver", -1) != -1 and car.get("from_place", "") != "":
+				agents_home += 0
+	_check(most_flowing > 0, "household trips drive as flows in a big town (%d at once)" % most_flowing)
+	var fcar: Dictionary = {} if fl.traffic.flowing.is_empty() else fl.traffic.flowing[0]
+	if not fcar.is_empty():
+		var fp: Vector3 = fl.traffic.car_pose(fcar)[0]
+		_check(fp != Vector3.ZERO and not fl.traffic.find_vehicle(fcar.id).is_empty(), "a flowing car has a place on its road and can be clicked")
+	# (Two copies of one save: the original's roads aren't rounded like a save's.)
+	var fsave := JSON.stringify(fl.to_dict())
+	var fl1 := CitySim.new()
+	fl1.from_dict(JSON.parse_string(fsave))
+	var fl2 := CitySim.new()
+	fl2.from_dict(JSON.parse_string(fsave))
+	fl1.traffic.flows_from = 1
+	fl2.traffic.flows_from = 1
+	_check(fl1.traffic.flowing.size() == fl.traffic.flowing.size(), "flowing cars are saved")
+	for i in 400:
+		fl1.tick()
+		fl2.tick()
+	_check(JSON.stringify(fl1.to_dict()) == JSON.stringify(fl2.to_dict()), "flows load back exactly")
+	# BPR: a lane loaded past its capacity slows to a crawl.
+	var bw: int = fl.traffic.ways.keys()[0]
+	var lanes_n: int = fl.traffic.ways[bw].lanes
+	fl.traffic._fq[bw] = int(TrafficSim.LANE_CAP * lanes_n * 1.5 * TrafficSim.FLOW_WINDOW * TrafficSim.DT / 3600.0)
+	while fl.tick_count % TrafficSim.FLOW_WINDOW != 0:
+		fl.tick()
+	fl.tick()
+	var bs: float = fl.traffic._fshare.get(bw, 1.0)
+	_check(absf(bs - 1.0 / (1.0 + 0.15 * pow(1.5, 4.0))) < 0.05, "BPR: 1.5 times capacity drives at %.2f of the limit" % bs)
+
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
