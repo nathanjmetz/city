@@ -117,7 +117,7 @@ func rebuild(sim: CitySim) -> void:
 		if int(b.zone) != ZoneMap.Zone.INDUSTRIAL or not sim.lots.has(key):
 			continue
 		var chain := str(b.get("chain", "general"))
-		_add(sim, "lot:" + key, _unique(used_names, factory_name(key, int(b.seed), chain)), "factory", "factory",
+		_add(sim, "lot:" + key, _unique(used_names, _named(sim, "lot:" + key, factory_name(key, int(b.seed), chain))), "factory", "factory",
 			{"type": "lot", "id": key}, [[sim.lots[key].pos, 1.0]],
 			Balance.POLLUTION_SOURCES.factory_chains.get(chain, {}))
 	var ids := sim.industry.sites.keys()
@@ -128,7 +128,7 @@ func rebuild(sim: CitySim) -> void:
 		var pts := [[s.pos, 1.0]]
 		for c in s.pads:
 			pts.append([Industry.pad_center(s, c), share])
-		_add(sim, "site:%d" % id, _unique(used_names, company_name(s.kind, id)), s.kind, s.kind,
+		_add(sim, "site:%d" % id, _unique(used_names, _named(sim, "site:%d" % id, company_name(s.kind, id))), s.kind, s.kind,
 			{"type": "industry", "id": id}, pts)
 	ids = sim.hubs.hubs.keys()
 	ids.sort()
@@ -151,7 +151,7 @@ func rebuild(sim: CitySim) -> void:
 		var pts := []
 		for c in f.cells:
 			pts.append([Farms.cell_center(f, c), 1.0])
-		_add(sim, "farm:%d" % id, _unique(used_names, farm_name(id)), "farm", "farm",
+		_add(sim, "farm:%d" % id, _unique(used_names, _named(sim, "farm:%d" % id, farm_name(id))), "farm", "farm",
 			{"type": "farm", "id": id}, pts)
 	var refs := emitters.keys()
 	refs.sort()
@@ -754,6 +754,12 @@ static func company_name(kind: String, id: int) -> String:
 static func farm_name(id: int) -> String:
 	var h := absi(hash(["farm", id]))
 	return "%s farm" % _SURNAMES[h % _SURNAMES.size()]
+
+
+## The family business's own name (Families), or ours until it has one.
+static func _named(sim: CitySim, ref: String, plain: String) -> String:
+	var n := sim.families.name_of(ref)
+	return n if n != "" else plain
 
 
 static func _unique(used: Dictionary, name: String) -> String:
