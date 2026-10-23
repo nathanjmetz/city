@@ -143,8 +143,10 @@ func _demo_town() -> void:
 				if v > best_v:
 					best_v = v
 					best = Vector3(x, 0, z)
-		sim.apply({"type": "build_road", "start": [best.x - 600, best.z - 60], "ctrl": [best.x, best.z - 60], "end": [best.x + 600, best.z - 60]})
-		sim.apply({"type": "place_industry", "kind": kind, "pos": [best.x, best.z + 20], "dir": [0, -1]})
+		# The road and plant sit just off the richest ground, so the company
+		# works it from its own side of the road.
+		sim.apply({"type": "build_road", "start": [best.x - 600, best.z - 260], "ctrl": [best.x, best.z - 260], "end": [best.x + 600, best.z - 260]})
+		sim.apply({"type": "place_industry", "kind": kind, "pos": [best.x, best.z - 180], "dir": [0, -1]})
 		for i in 1440 * 4:
 			sim.tick()
 		for c in _main.get_children():

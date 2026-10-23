@@ -106,7 +106,7 @@ func _process(delta: float) -> void:
 func _rebuild() -> void:
 	if sim == null:
 		return
-	var key := "%s|%s|%d|%s|%d|%d" % [sim.culture.nickname, sim.culture.past.size(), sim.markers.version,
+	var key := "%s|%s|%d|%s|%d|%d" % [sim.nicknames.current, sim.nicknames.past.size(), sim.markers.version,
 		sim.heritage.listed(), Seasons.month(sim.tick_count), sim.timelapse.months]
 	if key == _shown_key:
 		return
@@ -115,26 +115,25 @@ func _rebuild() -> void:
 		c.queue_free()
 	var town := _town_name("Your town")
 	_body.add_child(UiStyle.label(town, 18, UiStyle.TEXT, 700))
-	var nick: Dictionary = sim.culture.nickname
+	var nick: Dictionary = sim.nicknames.current
 	if nick.is_empty():
 		_body.add_child(_text("No nickname yet. A town earns one from what it becomes: its farms, its mills, its Main Street.",
 			UiStyle.MUTED))
 	else:
 		_body.add_child(_text("“%s”" % nick.text, Brand.BRAND_MINT, 600, 14))
 		_body.add_child(_text("Since %d" % int(nick.since), UiStyle.MUTED, 500, 11))
-	for p in sim.culture.past:
+	for p in sim.nicknames.past:
 		_body.add_child(_text("Once the %s (%d to %d)" % [p.text, int(p.from), int(p.to)], UiStyle.MUTED, 500, 12))
 
 	_section("KNOWN FOR")
-	var axes: Array = TownCulture.AXES.duplicate()
-	axes.sort_custom(func(a, b): return float(sim.culture.mix[a]) > float(sim.culture.mix[b]))
-	for a in axes:
-		var share := float(sim.culture.mix[a])
-		if share < 0.01:
-			continue
-		_body.add_child(_bar(TownCulture.AXIS_NAMES[a], share))
-	if float(sim.culture.leading()[1]) <= 0.0:
-		_body.add_child(_text("Nothing yet: nobody works in town.", UiStyle.MUTED, 500, 12))
+	var shares: Dictionary = sim.culture.shares
+	var sectors: Array = shares.keys()
+	sectors.sort_custom(func(a, b): return float(shares[a]) > float(shares[b]) or (shares[a] == shares[b] and a < b))
+	for k in sectors:
+		if float(shares[k]) >= 0.01:
+			_body.add_child(_bar(TownNickname.SECTOR_NAMES.get(k, k), float(shares[k])))
+	if shares.is_empty():
+		_body.add_child(_text("Nothing yet: too few people work in town.", UiStyle.MUTED, 500, 12))
 	_body.add_child(_text("It follows where people work, slowly. Your answers to leaders on the bell lean it too.",
 		Brand.INK_FAINT, 500, 11))
 

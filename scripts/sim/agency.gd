@@ -163,12 +163,10 @@ static func open(sim: CitySim, hub: Dictionary, tree: Array, at: Vector3, profit
 ## The leader's next move: of what's open and affordable from the hub's
 ## own money, the node it values most. Ambitious leaders reach for bigger
 ## projects; cautious ones keep a cushion. Records "built" and "why".
-## `boost` is the town's culture behind this kind of hub (TownCulture.boost):
-## a leader of the town's own kind is keener to build.
-static func develop(sim: CitySim, hub: Dictionary, tree: Array, at: Vector3, profit: float, boost := 1.0) -> Dictionary:
+static func develop(sim: CitySim, hub: Dictionary, tree: Array, at: Vector3, profit: float) -> Dictionary:
 	var lead: Dictionary = hub.get("leader", {"edu": 0.5, "caution": 0.5, "ambition": 0.5})
 	# A cautious leader keeps up to a year's profit in hand before spending.
-	var budget := (profit * (2.0 + 3.0 * float(lead.ambition)) - profit * float(lead.caution)) * boost
+	var budget := profit * (2.0 + 3.0 * float(lead.ambition)) - profit * float(lead.caution)
 	var best := {}
 	var best_v := -INF
 	for node in open(sim, hub, tree, at, profit):

@@ -51,6 +51,14 @@ var reserves: Reserves
 ## The town's sliders: Funding is support per acre, Growth how eagerly a
 ## farm buys more fields (see Policies).
 var policies: Policies
+## Set by the city: what power companies pay a year to lease ground in a
+## field outline (wind turbines in the corn). Callable(poly) -> float.
+var lease_of := Callable()
+## And what they pay farm `id` a year for whole fields it leased out for
+## solar panels. Callable(id) -> float.
+var rent_of := Callable()
+## The town's character: a farm town's farmers buy land more readily.
+var culture: TownCulture
 ## Farmland outlines from older saves, for the city to turn into reserves.
 var legacy_outlines: Array = []
 ## Farms: id -> {pos, dir, crop, cells: Array of Vector2i in the farm's own
@@ -190,6 +198,8 @@ func yearly_profit(id: int) -> float:
 	var total := 0.0
 	for c in f.cells:
 		total += field_profit(f, c)
+	if rent_of.is_valid():
+		total += rent_of.call(id)
 	return total + f.cells.size() * support(id)
 
 
@@ -204,7 +214,10 @@ func support(id: int) -> float:
 func buy_margin(id: int) -> float:
 	if policies == null:
 		return 0.0
-	return policies.pick(Balance.POLICY_BUY_MARGIN_PER_ACRE, "growth", "farms", "farm:%d" % id) * ACRES_PER_CELL
+	var m: float = policies.pick(Balance.POLICY_BUY_MARGIN_PER_ACRE, "growth", "farms", "farm:%d" % id)
+	if culture != null and m < INF:
+		m -= culture.pull("farm") * Balance.CULTURE_MARGIN_PER_ACRE
+	return m * ACRES_PER_CELL
 
 
 ## What the town pays all its farms a year (negative: what it collects).
@@ -224,7 +237,10 @@ func field_profit(f: Dictionary, c: Vector2i) -> float:
 	var gross: float = GROSS_PER_ACRE[f.crop] * fertility_at(mid) * price \
 		* Agency.effect(f, Agency.TREES.farm, "output*") * Agency.effect(f, Agency.TREES.farm, "price*")
 	var tax := LAND_PER_ACRE * AG_ASSESSMENT * tax_rate / 100.0
-	return (gross - COST_PER_ACRE[f.crop] - COST_PER_ACRE_PER_KM * km - tax) * ACRES_PER_CELL
+	var lease := 0.0
+	if lease_of.is_valid():
+		lease = lease_of.call(cell_corners(f, c))
+	return (gross - COST_PER_ACRE[f.crop] - COST_PER_ACRE_PER_KM * km - tax) * ACRES_PER_CELL + lease
 
 
 ## Every farm takes its next step. A new farm puts up its barn first. Then

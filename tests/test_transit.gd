@@ -51,7 +51,8 @@ func _init() -> void:
 	_check(dwelt, "buses stopped at stops to let people on and off")
 	var in_traffic := 0
 	for car in sim.traffic.cars:
-		if sim.buses.trips.has(car.id):
+		# Trip ids and vehicle ids are separate counters since cars park.
+		if sim.buses.trips.has(car.get("trip", car.id)):
 			in_traffic += 1
 			_check(car.kind == "city_bus", "a depot bus is a transit bus")
 	for bid in sim.buses.buses:
@@ -148,14 +149,15 @@ func _init() -> void:
 		copy.tick()
 		copy2.tick()
 	_check(JSON.stringify(copy.buses.to_dict()) == JSON.stringify(copy2.buses.to_dict()), "two copies run the buses the same")
-	_coach(sim, id)
 	# Bulldozing the depot sells its parked buses.
 	sim.apply({"type": "remove_service", "id": id})
 	sim.tick()
 	for bid in sim.buses.buses:
 		_check(sim.buses.buses[bid].state == "driving", "only buses still on a trip remain after the depot goes")
+	_coach()
 	_schools()
 	_taxis()
+	_bus_lanes()
 	print("TESTS FAILED" if _fails > 0 else "ALL TESTS PASSED")
 	quit(1 if _fails > 0 else 0)
 
@@ -163,7 +165,7 @@ func _init() -> void:
 ## Taxis: the owner sizes the fleet to the rides people call for, sets the
 ## meter, and each cab drives real fares and comes back to its stall.
 func _taxis() -> void:
-	var sim := _town()
+	var sim := _town(500)
 	var placed := false
 	for spot in [Vector3(260, 0, 420), Vector3(-260, 0, 380), Vector3(500, 0, 220), Vector3(-600, 0, 620)]:
 		var site := Services.site_near(sim.network, Services.Kind.TAXI_COMPANY, spot)
@@ -218,13 +220,43 @@ func _taxis() -> void:
 		_check(sim.taxis.cabs[cid].state == "driving", "only cabs still on a trip remain after the company goes")
 
 
+## Two equal ways round a block, one along an avenue with bus lanes: the
+## depot routes its buses that way, and still measures the real distance.
+func _bus_lanes() -> void:
+	var sim := CitySim.new()
+	sim.economy.money = 50_000_000
+	sim.apply({"type": "build_road", "start": [0, 0], "ctrl": [200, 0], "end": [400, 0]})
+	sim.apply({"type": "build_road", "start": [400, 0], "ctrl": [400, 100], "end": [400, 200]})
+	sim.apply({"type": "build_road", "start": [0, 0], "ctrl": [0, 100], "end": [0, 200]})
+	sim.apply({"type": "build_road", "start": [0, 200], "ctrl": [200, 200], "end": [400, 200], "road": RoadStyle.Type.AVENUE_BUS})
+	var g := sim.buses._graph(sim.network)
+	var p := sim.buses._path(sim.network, g, BusNet._spot(sim.network, Vector3(0, 0, 100)),
+		BusNet._spot(sim.network, Vector3(400, 0, 100)))
+	var top := 0.0
+	for q in p.get("pts", []):
+		top = maxf(top, q.z)
+	_check(top > 190.0, "a route takes the avenue with bus lanes over an equal plain street")
+	_check(absf(float(p.get("len", 0.0)) - 600.0) < 30.0, "and measures the real distance (%.0f m)" % float(p.get("len", 0.0)))
+
+
 ## The intercity coach: with a neighbor and a road out of the region, it
 ## drives to the county highway's link, spends a while away, and comes home.
-func _coach(sim: CitySim, id: int) -> void:
+func _coach() -> void:
+	var sim := _town(500)
+	var site := Services.site_near(sim.network, Services.Kind.BUS_DEPOT, Vector3(-40, 0, 220))
+	sim.apply({"type": "place_service", "kind": Services.Kind.BUS_DEPOT, "pos": [site[0].x, site[0].z],
+		"dir": [site[1].x, site[1].z]})
+	var id: int = sim.services.buildings.keys().filter(func(k): return sim.services.buildings[k].kind == Services.Kind.BUS_DEPOT)[0]
 	sim.region = {"neighbors": [{"name": "Oakland City"}]}
+	# The link is the nearest corner 400 m or more from the depot, so the run
+	# is a real drive without taking the test all night.
+	var depot: Vector3 = sim.services.buildings[id].pos
 	var edge := -1
+	var best := INF
 	for n in sim.network.nodes:
-		if edge == -1 or sim.network.nodes[n].x > sim.network.nodes[edge].x:
+		var d: float = sim.network.nodes[n].distance_to(depot)
+		if d >= 400.0 and d < best:
+			best = d
 			edge = n
 	sim.region_links = [edge]
 	_check(not sim.buses._open_tree(sim, id).filter(func(n): return n.id == "intercity").is_empty(),
@@ -235,8 +267,11 @@ func _coach(sim: CitySim, id: int) -> void:
 	_check(sim.buses._has_coach(id), "it buys a coach")
 	var seen := {}
 	var loaded := 0
-	for i in 9000:
+	var as_coach := false
+	for i in 15000:
 		sim.tick()
+		for car in sim.traffic.cars:
+			as_coach = as_coach or car.kind == "coach"
 		for bid in sim.buses.buses:
 			var bus: Dictionary = sim.buses.buses[bid]
 			if bus.kind == "coach":
@@ -249,6 +284,7 @@ func _coach(sim: CitySim, id: int) -> void:
 			break
 	_check(seen.has("away"), "the coach reaches the region link (%s)" % str(seen.keys()))
 	_check(loaded > 0, "with riders aboard (%d)" % loaded)
+	_check(as_coach, "it drives as a motorcoach, not a city bus")
 	_check(seen.has("home"), "and comes back to its bay")
 	_check(sim.buses.describe(sim, id).rows.any(func(r): return r[0] == "Coach riders"), "the panel shows coach riders")
 
@@ -281,12 +317,12 @@ func _schools() -> void:
 
 
 ## A grid town with homes, shops and jobs already built (as if grown).
-func _town() -> CitySim:
+func _town(half := 1000) -> CitySim:
 	var sim := CitySim.new()
 	sim.simulate_traffic = true
 	for z in range(0, 801, 200):
-		sim.apply({"type": "build_road", "start": [-1000, z], "ctrl": [0, z], "end": [1000, z]})
-	for x in range(-1000, 1001, 250):
+		sim.apply({"type": "build_road", "start": [-half, z], "ctrl": [0, z], "end": [half, z]})
+	for x in range(-half, half + 1, 250):
 		sim.apply({"type": "build_road", "start": [x, 0], "ctrl": [x, 400], "end": [x, 800]})
 	sim.economy.money = 50_000_000
 	# Zone every block face: shops downtown, homes around.

@@ -269,14 +269,21 @@ const engine = new Engine(GODOT_CONFIG);
 		}
 	} else {
 		label = 'Downloading the town';
+		// Load timings for the game's telemetry: a slow line vs. a slow start.
+		window.nbLoad = { start: performance.now(), downloaded: 0, started: 0, bytes: 0 };
 		engine.startGame({
 			'onProgress': function (current, total) {
+				if (total > 0 && current >= total && !window.nbLoad.downloaded) {
+					window.nbLoad.downloaded = performance.now();
+					window.nbLoad.bytes = total;
+				}
 				if (current > 0 && total > 0) {
 					// The download is most of the wait; starting up takes the last bit.
 					target = Math.max(target, Math.min(0.9, 0.9 * current / total));
 				}
 			},
 		}).then(() => {
+			window.nbLoad.started = performance.now();
 			label = 'Opening the front door';
 			target = 1;
 			finishing = true;

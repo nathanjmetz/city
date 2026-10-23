@@ -83,10 +83,16 @@ func update_budget(sim: CitySim) -> void:
 		income[z] = 0.0
 	var staffed := float(sim.stats.employed) / maxf(sim.stats.jobs, 1.0)
 	var care := 0.0
+	# The sliders are per area, so each is read once rather than per building.
+	var care_of := {}
+	var land_of := {}
 	for key in sim.buildings:
 		var b: Dictionary = sim.buildings[key]
 		var area: String = ZONE_AREA.get(int(b.zone), "homes")
-		care += sim.policies.pick(Balance.POLICY_CARE_PER_BUILDING, "funding", area)
+		if not care_of.has(area):
+			care_of[area] = sim.policies.pick(Balance.POLICY_CARE_PER_BUILDING, "funding", area)
+			land_of[area] = sim.policies.pick(Balance.POLICY_LAND_VALUE, "funding", area)
+		care += float(care_of[area])
 		if int(b.zone) != ZoneMap.Zone.RESIDENTIAL and not sim.utilities_ok(key):
 			continue  # a business with no power or water is closed
 		# Land near a landfill is worth less, near a cemetery a little more,
@@ -94,7 +100,7 @@ func update_budget(sim: CitySim) -> void:
 		# too, and so do well-kept streets (Funding) and fiber and cell service;
 		# a smelly sewer plant and pollution lower it.
 		var tax_due := building_tax(b, staffed, sim.parks.lot_value.get(key, 0.0) + sim.telecom.lot_lift(key)) * sim.land_factor(key) \
-			* sim.mail.lot_factor(sim, key) * sim.policies.pick(Balance.POLICY_LAND_VALUE, "funding", area) / 12.0
+			* sim.mail.lot_factor(sim, key) * float(land_of[area]) / 12.0
 		if sim.lots.has(key):
 			tax_due *= sim.services.water.land_value_factor(sim.services.buildings, sim.lots[key].pos)
 		income[int(b.zone)] += tax_due
@@ -145,12 +151,16 @@ func update_budget(sim: CitySim) -> void:
 			+ sim.mail.monthly_cost() + sim.heritage.monthly_cost()) * d.upkeep + sim.leaders.monthly_cost()),
 		"education": roundi(sim.education.monthly_upkeep() * d.upkeep),
 		"care": roundi(care * d.upkeep), "support": roundi(support),
-		"telecom": roundi(sim.telecom.monthly_upkeep() * d.upkeep)}
+		"telecom": roundi(sim.telecom.monthly_upkeep() * d.upkeep),
+		# Service deals with neighbor towns: fees in as host, out as served.
+		"deals": sim.interlocal.monthly_net(),
+		# The region's projects: air visitors' spending and co-op capital credits.
+		"region": sim.regional.monthly_income(sim)}
 
 
 func monthly_net() -> int:
 	var total := -int(budget.upkeep) - int(budget.services) - int(budget.get("education", 0)) + int(budget.fees) \
-		- int(budget.get("care", 0)) - int(budget.get("support", 0)) - int(budget.get("telecom", 0))
+		- int(budget.get("care", 0)) - int(budget.get("support", 0)) - int(budget.get("telecom", 0)) + int(budget.get("deals", 0)) + int(budget.get("region", 0))
 	for z in budget.income:
 		total += int(budget.income[z])
 	return total

@@ -29,8 +29,9 @@ extends RefCounted
 ##   - An owner who wants to tear down a charming building outside a
 ##     district asks first (demolition delay). Yes: it comes down for the
 ##     bigger building. No: the town buys an easement and it stays for good.
-## Answers lean the town's culture (TownCulture): protecting leans it toward
-## heritage, which can earn a "Historic" nickname.
+## Answers lean the town: protecting leans it toward its history, which can
+## earn a "Historic" nickname (TownNickname); letting a block go leans its
+## reputation (TownCulture) toward the trade that replaces it.
 ##
 ## Monthly and O(buildings). Charm, lift and district membership are worked
 ## out again after a load, so only districts, easements and asks are saved.
@@ -398,7 +399,7 @@ func _ask_districts(sim) -> void:
 			president = "%s %s" % [Names.FIRST_NEW[absi(hash([sim.city_seed, "society"])) % Names.FIRST_NEW.size()],
 				Names.surname(hash([sim.city_seed, "society"]))]
 		var req: int = sim.permits.file(sim, {"hub": HUB, "hub_id": id,
-			"leader": "%s, %s Historical Society" % [president, TownCulture.COUNTY],
+			"leader": "%s, %s Historical Society" % [president, TownNickname.COUNTY],
 			"title": "Protect the %s" % d.name,
 			"why": "%d of its buildings date from the town's early years and still stand together." % old,
 			"area": hull, "change": "Local historic district", "ask": "district",
@@ -462,7 +463,7 @@ func carry_out(sim) -> void:
 				elif st == Permits.State.DENIED and sim.buildings.has(key):
 					sim.economy.money -= int(a.cost)
 					easements[key] = Families.calendar(Seasons.year(sim.tick_count))
-					sim.culture.nudge("heritage", Balance.CULTURE_YES_LEAN)
+					sim.nicknames.lean_historic(Balance.NICKNAME_HISTORIC_LEAN)
 		changed.emit()
 
 
@@ -470,7 +471,7 @@ static func _axis_of(type: String) -> String:
 	match type:
 		"office": return "office"
 		"shop", "mixed_use": return "trade"
-		"factory": return "industry"
+		"factory": return "manufacturing"
 	return "trade"
 
 
@@ -490,7 +491,7 @@ func set_protected(sim, id: int, on: bool) -> bool:
 			sim.permits.withdraw(int(d.req))
 			asks.erase(int(d.req))
 			d.req = -1
-		sim.culture.nudge("heritage", Balance.CULTURE_YES_LEAN)
+		sim.nicknames.lean_historic(Balance.NICKNAME_HISTORIC_LEAN)
 		sim.markers.district(sim, d, _outline(sim, _members(id)))
 	else:
 		# Lifting it is a no to the society, for now.

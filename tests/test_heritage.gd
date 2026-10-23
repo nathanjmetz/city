@@ -1,6 +1,6 @@
 extends SceneTree
 ## Run: godot --headless -s tests/test_heritage.gd
-## Town culture and nicknames, old buildings and historic districts,
+## Earned nicknames, old buildings and historic districts,
 ## historic markers, leaders' asks on the bell, and the growth timelapse.
 
 var _failed := false
@@ -31,25 +31,25 @@ func _init() -> void:
 	sim.stats.population = 600
 	for i in 3:
 		_month(sim)
-	var lead := sim.culture.leading()
-	_check(lead[0] != "", "the town leads in something (%s %.2f)" % lead)
-	_check(not sim.culture.nickname.is_empty(), "the town earned a nickname: %s" % sim.culture.nickname.get("text", "none"))
-	var first_nick := str(sim.culture.nickname.get("text", ""))
+	_check(sim.culture.identity != "", "the town is known for something (%s)" % sim.culture.identity)
+	_check(not sim.nicknames.current.is_empty(), "the town earned a nickname: %s" % sim.nicknames.current.get("text", "none"))
+	var first_nick := str(sim.nicknames.current.get("text", ""))
 	# The town changes under it (shops become offices, and the player keeps
 	# saying yes to the bank): the nickname changes, and the old one is
 	# remembered.
 	var n := 0
 	for k in sim.buildings.keys():
-		if BuildingTypes.type_of(sim.buildings[k]) in ["shop", "mixed_use", "factory"] and n % 3 != 2:
+		var t := BuildingTypes.type_of(sim.buildings[k])
+		if t == "factory" or (t in ["shop", "mixed_use"] and n % 4 != 3):
 			sim.redevelop(k, "office", 0)
 		n += 1
 	for i in 40:
 		sim.culture.nudge("office", Balance.CULTURE_YES_LEAN)
 		_month(sim)
-	_check(str(sim.culture.nickname.get("text", "")) != first_nick, "identity shifted: now %s" % sim.culture.nickname.get("text", ""))
-	_check(not sim.culture.past.is_empty() and str(sim.culture.past[0].text) == first_nick, "and it remembers it was the %s" % first_nick)
-	print("  nicknames: ", sim.culture.past.map(func(p): return p.text), " then ", sim.culture.nickname.get("text", ""))
-	_check(sim.culture.tilt("office") > 1.0, "an office culture makes owners lean to offices (%.2f)" % sim.culture.tilt("office"))
+	_check(str(sim.nicknames.current.get("text", "")) != first_nick, "identity shifted: now %s" % sim.nicknames.current.get("text", ""))
+	_check(not sim.nicknames.past.is_empty() and str(sim.nicknames.past[0].text) == first_nick, "and it remembers it was the %s" % first_nick)
+	print("  nicknames: ", sim.nicknames.past.map(func(p): return p.text), " then ", sim.nicknames.current.get("text", ""))
+	_check(sim.culture.pull("office") > 0.0, "an office town pulls offices forward (%.2f)" % sim.culture.pull("office"))
 
 	# --- Old buildings: charm grows with age and a district becomes eligible.
 	var key0: String = _any_shop(sim)
@@ -148,12 +148,12 @@ func _init() -> void:
 		var ask := _ask_for(sim, "festival")
 		_check(ask > 0, "the festival ask is on the bell")
 		var money: int = sim.economy.money
-		var trade: float = sim.culture.lean.trade
+		var trade := float(sim.culture.shares.get("trade", 0.0))
 		sim.apply({"type": "permit", "id": ask, "answer": "approve"})
 		_hour(sim)
 		_check(sim.economy.money == money - Balance.ASK_FESTIVAL_COST, "the town pays for it")
 		_check(LeaderAsks.festival_demand(sim) > 0.0, "shops get a month's extra business")
-		_check(sim.culture.lean.trade > trade, "and the town leans toward its Main Street")
+		_check(float(sim.culture.shares.get("trade", 0.0)) > trade, "and the town leans toward its Main Street")
 
 	# --- A farm asks to pave its gravel road.
 	_clear_bell(sim)
@@ -177,8 +177,8 @@ func _init() -> void:
 	_month(sim)
 	var copy := CitySim.new()
 	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
-	_check(copy.culture.nickname == sim.culture.nickname, "the nickname is saved")
-	_check(copy.culture.past.size() == sim.culture.past.size(), "and the old ones")
+	_check(copy.nicknames.current == sim.nicknames.current, "the nickname is saved")
+	_check(copy.nicknames.past.size() == sim.nicknames.past.size(), "and the old ones")
 	_check(copy.markers.markers.size() == sim.markers.markers.size(), "markers are saved")
 	_check(copy.heritage.districts.size() == sim.heritage.districts.size(), "districts are saved")
 	_check(copy.heritage.easements == sim.heritage.easements, "easements are saved")
@@ -201,7 +201,7 @@ func _init() -> void:
 		b.stats.population = 600
 		_month(a)
 		_month(b)
-	_check(JSON.stringify(a.culture.to_dict()) == JSON.stringify(b.culture.to_dict()), "two copies share a culture")
+	_check(JSON.stringify(a.nicknames.to_dict()) == JSON.stringify(b.nicknames.to_dict()), "two copies share a nickname")
 	_check(JSON.stringify(a.markers.to_dict()) == JSON.stringify(b.markers.to_dict()), "and markers")
 
 	# --- It costs next to nothing: a town month in the test town.
@@ -240,6 +240,7 @@ func _town(seed: int) -> CitySim:
 func _month(sim: CitySim) -> void:
 	sim.tick_count += MONTH
 	sim.permits.tick(sim)
+	sim.culture.update(sim, sim.tick_count / MONTH)
 	sim.town_month()
 
 

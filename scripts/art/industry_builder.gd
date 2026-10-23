@@ -246,11 +246,13 @@ var _plant_yard := Rect2()
 var _grass: SurfaceTool
 var _water_n := 0
 var _grass_n := 0
-static var _reclaimed: StandardMaterial3D
 
 const SPOIL := Color("#8b8170")      # fresh cast overburden: grey-brown shale and till
 const SPOIL_OLD := Color("#7d8459")  # a few years on: weeds coming in
+const SPOIL_GREEN := Color("#667f45") # fescue, broomsedge and autumn olive over the ridge
 const COAL := Color("#24221f")
+const BENCH := Color("#857358")      # subsoil left after the topsoil is scraped off
+const TOPSOIL := Color("#5a4a37")
 const UNDERCLAY := Color("#6f6b62")  # the grey fireclay under the seam
 const RAMP := Color("#93897a")
 # The highwall from the crest down: soil and till, grey shale, sandstone,
@@ -261,14 +263,8 @@ const RIDGE_H := 12.0
 const YARD := Vector2(50.0, 40.0)  # half-size of the plant yard kept clear  # cast spoil stands 10-15 m above the old ground
 
 
-static func _reclaimed_mat() -> StandardMaterial3D:
-	if _reclaimed == null:
-		_reclaimed = StandardMaterial3D.new()
-		_reclaimed.vertex_color_use_as_albedo = true
-		_reclaimed.vertex_color_is_srgb = true
-		_reclaimed.roughness = 0.95
-		_reclaimed.cull_mode = BaseMaterial3D.CULL_DISABLED
-	return _reclaimed
+static func _reclaimed_mat() -> Material:
+	return HouseMaterials.get_mat("pasture")
 
 
 func _strip_mine(outlines: Array, rows: Array, pitch: float, toward: Vector2) -> void:
@@ -307,10 +303,13 @@ func _strip_mine(outlines: Array, rows: Array, pitch: float, toward: Vector2) ->
 		var rect := PackedVector2Array([Vector2(-1e4, z0), Vector2(1e4, z0), Vector2(1e4, z0 + pitch), Vector2(-1e4, z0 + pitch)])
 		if i == pit:
 			_pit_row(outlines, z0, pitch, hs, toward)
-		elif age - youngest < 8.0 or absf(i - pit) <= 2:
-			# Spoil: the fresher, the barer and taller.
-			var fresh := clampf((age - youngest) / 7.0, 0.0, 1.0)
-			var col := SPOIL.lerp(SPOIL_OLD, fresh)
+		elif absi(i - pit) <= 5:
+			# Spoil: each cut back from the pit is a season or two older
+			# (a dragline casts a cut every few months), so the ridges go
+			# from bare shale beside the pit to weedy, then grassed over,
+			# before they are graded back to pasture.
+			var fresh := clampf((absi(i - pit) - 1 + (age - youngest) * 0.5) / 4.0, 0.0, 1.0)
+			var col := SPOIL.lerp(SPOIL_OLD, fresh * 2.0) if fresh < 0.5 else SPOIL_OLD.lerp(SPOIL_GREEN, fresh * 2.0 - 1.0)
 			_flat_clip(outlines, rect, 0.13, col)
 			_ridge(outlines, z0 + pitch * 0.5, pitch, RIDGE_H * (1.0 - fresh * 0.2), col)
 			# Rain water stands in some troughs between older ridges.
@@ -322,7 +321,7 @@ func _strip_mine(outlines: Array, rows: Array, pitch: float, toward: Vector2) ->
 						Vector2(a + rng.randf_range(30.0, 60.0), z0 + 3.0), Vector2(a, z0 + 3.0)]), 0.6)
 		else:
 			# Graded back to hay and pasture, a shade per cut.
-			var g := Color("#87a05a").lerp(Color("#9aa865"), rng.randf())
+			var g := Color("#6c8746").lerp(Color("#7a8f4e"), rng.randf())
 			for poly in _clip(outlines, rect):
 				_poly_into(_grass, poly, 0.13, g)
 				_grass_n += 1
@@ -347,6 +346,33 @@ func _pit_row(outlines: Array, z0: float, pitch: float, hs: float, toward: Vecto
 		var c: float = zu.call(u1)
 		_poly_into(_flat, PackedVector2Array([Vector2(span.x, minf(a, c)), Vector2(span.y, minf(a, c)),
 			Vector2(span.y, maxf(a, c)), Vector2(span.x, maxf(a, c))]), y, col)
+	# Ahead of the face scrapers have stripped the topsoil for the next cut
+	# and the dragline walks on the bare bench; the topsoil waits in a long
+	# windrow to go back on the graded spoil.
+	var yard := PackedVector2Array([_plant_yard.position, Vector2(_plant_yard.end.x, _plant_yard.position.y), _plant_yard.end, Vector2(_plant_yard.position.x, _plant_yard.end.y)])
+	var a0: float = zu.call(-32.0)
+	var a1: float = zu.call(0.0)
+	# Dozed ground has no square corners: its outer edge wanders and its
+	# ends round off.
+	var bench := PackedVector2Array()
+	var lo_z := minf(a0, a1)
+	var hi_z := maxf(a0, a1)
+	var outer_lo := a0 < a1  # the outer edge is the one away from the cut
+	var steps := maxi(ceili((span.y - span.x) / 10.0), 2)
+	for k in steps + 1:
+		var x := lerpf(span.x, span.y, float(k) / steps)
+		var end := 1.0 - minf(minf(k, steps - k) / 2.0, 1.0)
+		var jig := rng.randf_range(-3.0, 3.0) + end * 9.0
+		bench.append(Vector2(x, lo_z + (jig if outer_lo else end * 4.0)))
+	for k in steps + 1:
+		var x := lerpf(span.y, span.x, float(k) / steps)
+		var end := 1.0 - minf(minf(k, steps - k) / 2.0, 1.0)
+		var jig := rng.randf_range(-3.0, 3.0) + end * 9.0
+		bench.append(Vector2(x, hi_z - (end * 4.0 if outer_lo else jig)))
+	for piece in (Geometry2D.clip_polygons(bench, yard) if _plant_yard.has_area() else [bench]):
+		if not Geometry2D.is_polygon_clockwise(piece):
+			_poly_into(_flat, piece, 0.12, BENCH)
+	_ridge_on(Vector2(span.x + (span.y - span.x) * 0.15, span.y - (span.y - span.x) * 0.15), zu.call(-29.0), 7.0, 3.5, TOPSOIL)
 	for s in STRATA:
 		band.call(s[0], s[1], 0.13, Color(s[2]).darkened(0.12))  # the face is steep and half in shade
 	band.call(7.4, 16.0, 0.13, COAL)
@@ -357,10 +383,18 @@ func _pit_row(outlines: Array, z0: float, pitch: float, hs: float, toward: Vecto
 	var r0: float = zu.call(8.0)
 	var r1: float = zu.call(20.0)
 	_flat_rect("gravel", minf(near_end, near_end + dirx * 45.0), maxf(near_end, near_end + dirx * 45.0), minf(r0, r1), maxf(r0, r1), 0.15, RAMP)
-	# The haul road from the top of the ramp to the plant.
+	# The haul road from the top of the ramp to the plant, around the end
+	# of the spoil rather than over it: graded, about 15 m wide for two
+	# 100-ton trucks to pass, the mine's palest and straightest line.
 	var top := Vector2(near_end - dirx * 6.0, (r0 + r1) * 0.5)
-	_road(top, Vector2(top.x, toward.y if absf(toward.y - top.y) > 1.0 else top.y), 10.0)
-	_road(Vector2(top.x, toward.y), toward, 10.0)
+	var edge := INF if dirx > 0.0 else -INF
+	for o in outlines:
+		for q in o:
+			edge = minf(edge, q.x) if dirx > 0.0 else maxf(edge, q.x)
+	edge -= dirx * 16.0
+	var route := [top, Vector2(edge, top.y), Vector2(edge, toward.y), toward]
+	for i in route.size() - 1:
+		_road(route[i], route[i + 1], 15.0)
 	# The sump at the far end, in the lowest corner of the floor.
 	var far_end := span.y if dirx > 0.0 else span.x
 	var s0: float = zu.call(17.0)
@@ -396,8 +430,9 @@ func _ridge_on(span: Vector2, zc: float, pitch: float, h: float, col: Color) -> 
 	noise.seed = rng.randi()
 	noise.frequency = 1.0 / 35.0
 	var prof := func(x: float) -> Array:
-		var taper := clampf(minf(x - x0, x1 - x) / 25.0, 0.0, 1.0)
-		var hh := maxf(h * (0.85 + noise.get_noise_1d(x) * 0.35) * sqrt(taper), 0.2)
+		# The ends run out at the angle of repose, about 35 degrees.
+		var taper := smoothstep(0.0, 1.0, minf(x - x0, x1 - x) / (h * 1.6 + 4.0))
+		var hh := maxf(h * (0.85 + noise.get_noise_1d(x) * 0.35) * taper, 0.2)
 		var shift := noise.get_noise_1d(x + 500.0) * 3.0
 		# Base, shoulder, crest, shoulder, base: steep angle-of-repose sides.
 		return [Vector3(x, 0.1, zc - hw), Vector3(x, hh * 0.7, zc - hw * 0.4 + shift), Vector3(x, hh, zc + shift),
@@ -506,9 +541,16 @@ func _loader(at: Vector3, yaw_a: float) -> void:
 func _road(a: Vector2, b: Vector2, w: float) -> void:
 	if a.distance_to(b) < 1.0:
 		return
-	var side := (b - a).normalized().orthogonal() * w * 0.5
-	var poly := PackedVector2Array([a - side, b - side, b + side, a + side])
-	_poly_into(_flat, poly, 0.14, Color("#a39a88"), 1.0)
+	var along := (b - a).normalized()
+	a -= along * w * 0.5  # run on through the corners
+	b += along * w * 0.5
+	var side := along.orthogonal() * w * 0.5
+	_poly_into(_flat, PackedVector2Array([a - side, b - side, b + side, a + side]), 0.14, Color("#b3aa97"), 1.0)
+	# Safety berms of pushed spoil along both edges (MSHA 77.1605: axle high).
+	for sd in [-1.0, 1.0]:
+		var o: Vector2 = side * sd
+		var e: Vector2 = o + along.orthogonal() * sd * 1.6
+		_poly_into(_flat, PackedVector2Array([a + o, b + o, b + e, a + e]) if sd < 0.0 else PackedVector2Array([a + e, b + e, b + o, a + o]), 0.15, Color("#7f7563"), 1.0)
 
 
 ## Where a line along x at `z` crosses the mined ground, the plant yard

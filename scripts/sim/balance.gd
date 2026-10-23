@@ -146,6 +146,16 @@ const CORE_RADIUS := 200.0
 ## too dear for a detached house on every lot), apartments from DENSE_CORE.
 const ROW_HOME_DENSITY := 30
 const DENSE_CORE := 20
+## Town size matters as much as the block (Census ACS: Petersburg, IN,
+## about 2,300 people, is ~85% detached houses, ~6% small walk-ups and
+## almost no row houses; townhouse rows are a metro type). Row homes start
+## once the town has ROW_HOME_TOWN people and are fully in favour by
+## ROW_HOME_CITY; apartments in a small town are rarer by SMALL_TOWN_FLATS,
+## reaching their full share by FLATS_TOWN people.
+const ROW_HOME_TOWN := 25_000
+const ROW_HOME_CITY := 100_000
+const SMALL_TOWN_FLATS := 0.15
+const FLATS_TOWN := 25_000
 ## A street side becomes a Main Street once this many shops line it, and
 ## new shops there get flats upstairs (the classic Midwestern main street).
 const MAIN_STREET_SHOPS := 2
@@ -313,6 +323,19 @@ const POWER_BLADE_YARD_SALES := 200_000.0
 const POWER_LEADER_TERM_DAYS := 120.0
 ## A training center lifts a successor's education by this much.
 const POWER_TRAINING_LIFT := 0.15
+## A 69 kV line to the neighbors: wood poles about 300 ft apart (typical
+## rural subtransmission spans), set back from the road right of way, with
+## a cleared corridor about 50 ft wide (25 ft either side).
+const POWER_TIE_SPAN := 90.0
+const POWER_TIE_SETBACK := 3.0
+const POWER_TIE_CLEAR := 7.5
+const POWER_TIE_SAG := 1.5
+## A wind company pays the farmer a lease for each turbine in a field, about
+## $8,000 a year (Benton County, Indiana leases run $7,000 to $10,000).
+const POWER_WIND_LEASE := 8000.0
+## Solar developers lease whole fields, about $1,000 an acre a year in
+## Indiana (well above what corn or beans net).
+const POWER_SOLAR_LEASE_PER_ACRE := 1000.0
 
 # --- Freight -----------------------------------------------------------------
 
@@ -524,6 +547,10 @@ const BUS_COACH_SEATS := 56
 ## The depot buys land next door at about $50,000 an acre (Midwest town
 ## edge), dollars per square metre.
 const BUS_LAND_PER_M2 := 12.0
+## How a depot weighs a road with a bus lane when it plans routes: buses in
+## their own lane run about 20% faster (NACTO Transit Street Design Guide),
+## so it routes along those avenues when the detour is small.
+const BUS_LANE_ROUTE_COST := 0.8
 
 # --- Taxis --------------------------------------------------------------------
 # A small-town cab company (Brawn, 2026-10-22): its owner sizes the fleet to
@@ -685,6 +712,12 @@ const POLLUTION_SOURCES := {
 	"power_coal": {"smoke": 14.0, "noise": 70.0, "ground": 0.4, "reach": 250.0},
 	"power_gas": {"smoke": 1.5, "noise": 72.0, "ground": 0.0, "reach": 0.0},
 	"power_wind": {"smoke": 0.0, "noise": 70.0, "ground": 0.0, "reach": 0.0},
+	# A freight railroad: a few trains a day average about 65 dBA at 50 ft
+	# (FTA noise manual; a line source like a road), plus diesel exhaust.
+	"rail": {"smoke": 0.4, "noise": 64.0, "ground": 0.0, "reach": 0.0},
+	# The horn at each grade crossing: 96-110 dBA for the long-long-short-long
+	# (49 CFR 222.21), averaged over the day it adds about 75 dBA at 50 ft.
+	"rail_horn": {"smoke": 0.0, "noise": 76.0, "ground": 0.0, "reach": 0.0},
 	# Fertilizer washing off fields: nitrate in wells is a real Indiana issue.
 	# Per field cell, so a big farm adds up.
 	"farm": {"smoke": 0.0, "noise": 0.0, "ground": 0.03, "reach": 70.0},
@@ -765,6 +798,17 @@ const CLEAN_COMPLAINT_MAX := 2.0
 ## road (a wall costs about $2,500 a metre; federal aid pays 80% of one
 ## on a federal-aid highway), and how many decibels it takes off (FHWA: a
 ## wall that breaks the line of sight cuts 5 to 10 dBA).
+## Smoke and breathing (EPA: each 10 ug/m3 more fine particles means a few
+## percent more respiratory hospital visits; asthma ER visits rise most). As
+## gameplay: a home over the smoke line is this much more likely to call an
+## ambulance per HURT_SMOKE of smoke, and that share of its calls are
+## breathing trouble, counted against the source.
+const SMOKE_CALL_WEIGHT := 0.5
+const SMOKE_BREATHING_SHARE := 0.5
+## A quiet zone (49 CFR 222): the town adds supplementary safety measures
+## (four-quadrant gates or raised medians) at every crossing so engineers
+## stop sounding the horn. Real cost runs about $30k to $500k a crossing.
+const QUIET_ZONE_PER_CROSSING := 250_000
 const NOISE_WALL_PER_M := 500
 const NOISE_WALL_DB := 8.0
 
@@ -807,24 +851,123 @@ const REGION_PROJECTS := [
 	{"id": "i69", "name": "I-69 extension", "kind": "interstate",
 		"board": "I-69 Corridor Authority", "site": [3200.0, 0.0],
 		"stages": [
-			{"name": "Right of way and grading", "goal": {"money": 4_000_000.0}},
-			{"name": "Interchange at the county highway", "goal": {"money": 6_000_000.0}},
-			{"name": "Four lanes to the next county", "goal": {"money": 12_000_000.0}},
+			{"name": "Right of way and grading", "goal": {"money": 4_000_000.0},
+				"does": "Land near the new road starts to gain value."},
+			{"name": "Interchange at the county highway", "goal": {"money": 6_000_000.0},
+				"does": "Goods from outside the region cost less to bring in."},
+			{"name": "Four lanes to the next county", "goal": {"money": 12_000_000.0},
+				"does": "More demand for shops and industry: truck stops and warehouses."},
 		]},
 	{"id": "power", "name": "Regional generating station", "kind": "power",
 		"board": "Pike County Power Cooperative", "site": [-2600.0, 600.0],
 		"stages": [
-			{"name": "Transmission tie to every town", "goal": {"money": 3_000_000.0}},
-			{"name": "Gas turbine unit", "goal": {"money": 9_000_000.0}},
+			{"name": "Transmission tie to every town", "goal": {"money": 3_000_000.0},
+				"does": "Member towns buy power from the co-op at wholesale cost."},
+			{"name": "Gas turbine unit", "goal": {"money": 9_000_000.0},
+				"does": "Cheaper power, and yearly capital credits paid to members by share."},
 		]},
 	{"id": "airport", "name": "International airport", "kind": "airport",
 		"board": "Southwest Indiana Airport Authority", "site": [0.0, -9000.0],
 		"stages": [
-			{"name": "Land and a 7,000 ft runway", "goal": {"money": 8_000_000.0}},
-			{"name": "Terminal and air cargo", "goal": {"money": 15_000_000.0}},
-			{"name": "International service", "goal": {"money": 25_000_000.0}},
+			{"name": "Land and a 7,000 ft runway", "goal": {"money": 8_000_000.0},
+				"does": "More demand for offices and shops in towns within reach."},
+			{"name": "Terminal and air cargo", "goal": {"money": 15_000_000.0},
+				"does": "Visitors fly in and spend money in town."},
+			{"name": "International service", "goal": {"money": 25_000_000.0},
+				"does": "Office and headquarters demand jumps, and land gains value."},
 		]},
 ]
+
+## What a funded stage does in each town (design 2026-10-23, regional-
+## projects.md). A town's benefit is reach x (BASE + (1 - BASE) x its share
+## next to the top pledger's): reach is 1 at the site and fades to 0 at about
+## an hour's drive, so a near town that paid nothing still gets a little, as
+## from a real public road, and the towns that paid get most of it.
+const REGION_REACH := 80_000.0
+const REGION_BASE_SHARE := 0.4
+## I-69 interchange: the outside world's import markup falls from
+## TRADE_IMPORT_MARKUP toward this (a real interstate cuts freight costs).
+const REGION_I69_MARKUP := 1.3
+## Demand added at full benefit (0 to 1 scale, like the zone demand bars):
+## I-69 four lanes (interchange growth: truck stops, warehouses), the
+## runway (offices), international service (headquarters).
+const REGION_I69_DEMAND := {ZoneMap.Zone.COMMERCIAL: 0.08, ZoneMap.Zone.INDUSTRIAL: 0.12}
+const REGION_RUNWAY_DEMAND := {ZoneMap.Zone.COMMERCIAL: 0.06}
+const REGION_INTL_DEMAND := {ZoneMap.Zone.COMMERCIAL: 0.1, ZoneMap.Zone.INDUSTRIAL: 0.04}
+## Land value lift at full benefit, in amenity units (x AMENITY_LAND_SCALE):
+## along the interstate's right of way, and near an international airport.
+const REGION_I69_LAND := 0.02
+const REGION_INTL_LAND := 0.03
+## The power co-op (Hoosier Energy style): members (any pledge) buy the
+## power their line feeds bring in at wholesale, about a fifth under retail;
+## the gas unit makes it cheaper still. Share of the feeds' upkeep paid.
+const REGION_COOP_FEED := 0.8
+const REGION_COOP_GAS_FEED := 0.65
+## Capital credits: the co-op's yearly margin returned to members by share
+## (real rural electric co-ops retire a few % of revenue a year).
+const REGION_COOP_CREDITS_YEAR := 600_000.0
+## Air visitors a year to a town at full benefit once the terminal opens
+## (Evansville Regional sees ~200k boardings a year; a share comes to town).
+const REGION_AIR_VISITORS_YEAR := 20_000.0
+
+# --- Grow the metro (the long game) ------------------------------------------
+# Agreed with Brawn 2026-10-23: the road-linked towns of a region count as
+# one metro, ranked against real US metros. Ranks gate regional projects.
+
+## Census (OMB) area types: a micropolitan area has an urban core of 10k to
+## 50k people, a metropolitan area 50k or more.
+const METRO_MICRO_MIN := 10_000
+const METRO_METRO_MIN := 50_000
+## Real US areas to pass, smallest first: [name, population]. These are 2020
+## Census CBSA totals rounded to the thousand, from memory, so verify them
+## before showing them as exact. Southern Indiana and nearby first, since
+## the region sits near Petersburg, IN.
+const METRO_LADDER := [
+	["Connersville, IN", 23_000], ["Greensburg, IN", 26_000], ["North Vernon, IN", 28_000],
+	["Wabash, IN", 31_000], ["Madison, IN", 33_000], ["Washington, IN", 33_000],
+	["Vincennes, IN", 37_000], ["Logansport, IN", 38_000], ["Crawfordsville, IN", 38_000],
+	["Seymour, IN", 45_000], ["Bedford, IN", 45_000], ["Jasper, IN", 56_000],
+	["Richmond, IN", 66_000], ["Marion, IN", 66_000], ["Warsaw, IN", 80_000],
+	["Columbus, IN", 82_000], ["Kokomo, IN", 84_000], ["Michigan City-La Porte, IN", 112_000],
+	["Muncie, IN", 112_000], ["Owensboro, KY", 121_000], ["Bloomington, IN", 161_000],
+	["Terre Haute, IN", 185_000], ["Elkhart-Goshen, IN", 207_000],
+	["Lafayette-West Lafayette, IN", 223_000], ["Evansville, IN-KY", 315_000],
+	["South Bend-Mishawaka, IN-MI", 324_000], ["Fort Wayne, IN", 420_000],
+	["Lexington-Fayette, KY", 517_000], ["Louisville/Jefferson County, KY-IN", 1_285_000],
+	["Indianapolis-Carmel-Anderson, IN", 2_111_000],
+]
+## Metro population each regional project needs before its first stage
+## opens (later stages still open by funding). Real references: rural
+## power co-ops serve micropolitan areas; an interstate link follows a
+## metropolitan area; scheduled airline service in the Midwest starts
+## around Evansville's size (Bloomington at 161k and Terre Haute at 185k
+## have none today).
+const REGION_PROJECT_GATES := {"power": METRO_MICRO_MIN, "i69": METRO_METRO_MIN, "airport": 300_000}
+## Pacing check: a family region of this many active towns should become
+## metropolitan in about a third of the solo hamlet-to-metropolis time
+## (STAGE_TARGET_DAYS), and reach the airport gate in about that full time.
+const METRO_PACING_TOWNS := 4
+
+## A town's other neighborhoods (Brawn 2026-10-23; see Neighborhoods and
+## neighborhoods-risks.md). The first costs this (land and a start on
+## streets; Midwestern farmland runs about $10,000 an acre, and a new
+## subdivision buys a quarter section or so), and each one after costs
+## double the one before. A town may have up to NEIGHBORHOOD_MAX.
+const NEIGHBORHOOD_FEE := 1_000_000
+const NEIGHBORHOOD_MAX := 6
+## A neighborhood starts at least this far from any other town's buildings
+## (a mile), on open land.
+const NEIGHBORHOOD_SPACING := 1609.0
+## A site with no building within NEIGHBORHOOD_USE_RADIUS metres after this
+## many game days is let go.
+const NEIGHBORHOOD_USE_DAYS := 30
+const NEIGHBORHOOD_USE_RADIUS := 400.0
+## Land: a town's buildings claim the land nearer to them than to any other
+## town's, out to this far (half a mile); past that it is open land anyone
+## may build on. Roads and zoning claim nothing. Footprints are sent as
+## cells this size, metres.
+const LAND_CLAIM := 800.0
+const LAND_CELL := 100.0
 
 # --- Parks and landmarks -------------------------------------------------------
 # Brawn's rules (2026-10-22): a park is a hub. You place it and it fills in by
@@ -1832,6 +1975,48 @@ const BANK_DECIDE_EVERY := 1440
 ## Assessed value of a block of bank premises, for commercial property tax.
 const BANK_PREMISES_VALUE := 900_000
 
+# --- Shared services between towns -----------------------------------------------
+# Brawn (2026-10-22): a hub leader can offer a neighbor town a service deal
+# through the permit bell on both sides. Modelled on Indiana interlocal
+# agreements (Interlocal Cooperation Act, IC 36-1-7): a written agreement
+# between two units that says what is served, how the cost is shared and
+# how either side ends it. Real cases: a town contracting a neighbor's fire
+# department (IC 36-8-13 township fire contracts), a sheriff or town marshal
+# patrolling a smaller town, transfer students taught by the next school
+# corporation (IC 20-26-11), and trash hauled under a solid waste contract
+# (IC 36-9-30).
+
+## The services a town can share. `upkeep` is the host's cost the served
+## town shares in (one station or site); `reach` is how far by road, from the
+## host's building through the county road, a home can be and still be
+## served (metres). ISO counts a home as protected within 5 road miles of a
+## fire station; a sheriff's deputy or a rural school bus covers more.
+const INTERLOCAL := {
+	"trash": {"upkeep": 20_000, "reach": INF},
+	"fire": {"upkeep": 45_000, "reach": 8047.0},
+	"police": {"upkeep": 50_000, "reach": 12875.0},
+	"school": {"upkeep": 95_000, "reach": 16093.0},
+}
+## The fee: the host's cost shared by households (each town's homes), plus
+## an administrative share, as most Indiana interlocals split costs. It
+## never drops below the minimum.
+const INTERLOCAL_ADMIN := 0.1
+const INTERLOCAL_MIN_FEE := 1_500
+## A leader offers a service only to a town with at least this many homes.
+const INTERLOCAL_MIN_HOMES := 25
+## Either town ends a deal with this much notice (game months; 90 days, the
+## usual termination clause).
+const INTERLOCAL_NOTICE := 3
+## After a "no", the same offer waits this long before it comes again
+## (game months).
+const INTERLOCAL_RETRY := 6
+## Garbage trucks a hauling contract runs in the served town at once, and
+## school buses: one 72-seat bus for about this many homes, up to the cap.
+const INTERLOCAL_TRASH_TRUCKS := 2
+const INTERLOCAL_HOMES_PER_BUS := 60
+const INTERLOCAL_MAX_BUSES := 4
+## Stops a contract school bus makes on its morning and afternoon run.
+const INTERLOCAL_BUS_STOPS := 5
 # --- Town policy sliders --------------------------------------------------------
 # Brawn's rule (2026-10-22): money is a limiter, not the game. No tax sliders:
 # taxes run at the normal rates above on their own. Instead every area and hub
@@ -1879,6 +2064,64 @@ const POLICY_PARK_RESIDENTS := [INF, 2.0, 1.0, 0.7, 0.5]
 ## Basic). A bus depot's subsidy is BUS_FUNDING_LEVELS at the same step.
 const POLICY_WATER_SUBSIDY := [0, 2_500, 5_000, 12_000, 25_000]
 const POLICY_MAIL_FUNDING := [0, 0, 1, 2, 3]
+
+# --- Growth pacing targets ---------------------------------------------------
+# Metro scale plan (2026-10-23, approved direction): how long a steady player
+# should take to reach each size, in game days at 1x (a day is about 2.5
+# real minutes; fast-forward compresses these). Benchmarked on CS1/CS2
+# player hours. The balance harness checks pacing against these; the early
+# curve runs faster today and gets slowed once stage gates land.
+const STAGE_TARGET_DAYS := {
+	100: 8,       # Village, ~20 min
+	500: 24,      # Town, ~1 h
+	2000: 72,     # Large town, ~3 h
+	8000: 144,    # Small city, ~6 h
+	25000: 288,   # City, ~12 h
+	80000: 660,   # Metropolis, ~25-30 h
+	150000: 960,  # Manhattan-style core, 40 h and up
+}
+## How far from a target the harness tolerates before flagging it (0.5 =
+## anywhere from half to one and a half times the target).
+const STAGE_TARGET_SLACK := 0.5
+
+
+# --- Town culture ------------------------------------------------------------
+# Brawn's core idea (2026-10-22): a town's character drifts with its work and
+# tilts which hubs thrive. Measured as location quotients (TownCulture).
+
+## A town needs this many jobs before it has a character of its own.
+const CULTURE_MIN_JOBS := 40
+## How slowly culture follows the jobs: half the gap closes in this many game
+## days (a game day is a month, so three years; a town's reputation for a
+## trade outlasts the trade by years).
+const CULTURE_HALF_LIFE_DAYS := 36.0
+## The location quotient economic developers count as a specialisation.
+const CULTURE_SPECIALISED_LQ := 1.25
+## A known identity holds until another sector beats it by this much LQ.
+const CULTURE_HOLD_LQ := 0.5
+## The LQ where a sector's pull (or, at its inverse, its drag) is full.
+const CULTURE_FULL_PULL_LQ := 4.0
+## How much thinner a margin a town's own trade will buy land on, at full
+## pull, a year: about a quarter of a growth-slider step (Balance POLICY_*).
+const CULTURE_MARGIN_PER_ACRE := 5.0
+const CULTURE_MARGIN_PER_PAD := 1_000.0
+## A developer asks to rezone farm ground for a trade when its pull plus
+## how fast it is rising passes this...
+const CULTURE_DEVELOP_SCORE := 0.25
+## ...and builders want that zone (its demand, 0 to 1)...
+const CULTURE_DEVELOP_DEMAND := 0.6
+## ...and fewer than this many zoned lots for it stand empty.
+const CULTURE_DEVELOP_FREE_LOTS := 3
+## What a developer pays for Indiana farm ground, $ per square metre (about
+## $11,000 an acre, Purdue Farmland Value Survey 2023, before rezoning).
+const CULTURE_FARMLAND_PER_M2 := 3
+## How far back from the road a rezoning reaches (one deep commercial or
+## industrial lot, metres) and the least road frontage worth asking for.
+const CULTURE_FRONTAGE_DEPTH := 60.0
+const CULTURE_FRONTAGE_MIN := 80.0
+## How long (game days; a day is a month) the advisor mentions that the town
+## has a new reputation (TownCulture identity).
+const CULTURE_NEWS_DAYS := 12
 
 # --- Town heritage, culture and leader requests -------------------------------
 # Brawn (2026-10-23): a town earns nicknames from what it really is, puts up
@@ -1940,37 +2183,27 @@ const HERITAGE_EASEMENT_PER_STOREY := 25_000
 ## about the same district again.
 const HERITAGE_REASK_YEARS := 5
 
-## What a town can be known for. Culture follows where its people work.
-const CULTURE_AXES := ["farm", "industry", "trade", "office", "college", "heritage"]
-## Culture follows the jobs slowly: half the gap closes in this many game
-## days (two years). Reputations lag what a town has become.
-const CULTURE_HALF_LIFE_DAYS := 24.0
-## A yes to a leader leans the town toward their kind of place (in share
-## points); a no leans it a little toward what the leader would have
-## replaced. The lean fades with the same half-life.
-const CULTURE_YES_LEAN := 0.05
-const CULTURE_NO_LEAN := 0.02
-## Each building in a protected historic district counts as this many jobs'
-## worth of what the town is known for.
-const CULTURE_HERITAGE_PER_BUILDING := 6.0
-## How much the culture tilts what owners build on a new lot: a town known
-## for offices sees more office buildings, a market town more shops.
-const CULTURE_TILT := 1.5
-## How much keener a leader of the town's own kind is to build (their
-## development budget, Agency.develop): bankers thrive in a banking town.
-const CULTURE_LEADER_BOOST := 0.5
-## Earned nicknames: the town needs this many people, and its leading
-## culture this big a share...
+## A yes to a leader leans the town's reputation (TownCulture shares) toward
+## their trade by this much; a no leans it a little toward what the leader
+## would have replaced. It fades as the reputation follows the jobs.
+const CULTURE_YES_LEAN := 0.02
+const CULTURE_NO_LEAN := 0.01
+## Earned nicknames (TownNickname): the town needs this many people and an
+## identity (TownCulture)...
 const NICKNAME_MIN_POP := 150
-const NICKNAME_MIN_SHARE := 0.28
-## ...and a new identity must lead the current one by this much to replace
-## it, so a nickname doesn't flicker.
-const NICKNAME_SWITCH := 0.06
+## ...or, for a "Historic" nickname, this share of its buildings in protected
+## districts (counting the lean from preservation answers), like Madison,
+## Indiana, known first for its 133-block historic district.
+const NICKNAME_HISTORIC_SHARE := 0.2
+## How much a preservation answer adds to that share; it fades by half in
+## this many game days (two years).
+const NICKNAME_HISTORIC_LEAN := 0.03
+const NICKNAME_LEAN_HALF_LIFE_DAYS := 24.0
 
 ## Leader requests: at most one new one a month, with this chance, and each
 ## kind waits this many game months after it was last asked.
 const ASK_CHANCE := 0.5
-const ASK_COOLDOWN := {"abatement": 18, "pave": 12, "signal": 12, "festival": 11, "offices": 24}
+const ASK_COOLDOWN := {"abatement": 18, "pave": 12, "signal": 12, "festival": 11}
 ## Indiana tax abatement (IC 6-1.1-12.1): the town council declares an
 ## Economic Revitalization Area and the new investment's property tax phases
 ## in over up to 10 years. The town forgoes about this share of the
@@ -1994,6 +2227,3 @@ const ASK_FESTIVAL_COST := 15_000
 const ASK_FESTIVAL_DEMAND := 0.15
 ## Fall festival season (Indiana's harvest and heritage festivals).
 const ASK_FESTIVAL_MONTHS := [9, 10]
-## Farmland to offices: the bank wants this much road frontage (metres) of
-## farm country near town turned into an office park.
-const ASK_OFFICE_FRONTAGE := 240.0

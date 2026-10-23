@@ -57,22 +57,31 @@ func _row(to_curb: float, width: float, units: int, storeys: int) -> void:
 	var zf := rng.randf_range(4.0, 5.5)  # a small front yard
 	var d := rng.randf_range(11.0, 13.5)
 	var floor_h := 3.1
-	var base := 0.7  # raised first floor behind a stoop
-	var deck := base + floor_h * storeys
+	# Sided rows are side-by-side duplexes and townhouses under one gable
+	# roof with eaves and gutters; flat roofs belong to the brick rows,
+	# behind a parapet and cornice (St. Louis, Cincinnati, Chicago).
 	var painted := rng.randf() < 0.25
+	var base := 0.45 if painted else 0.7  # raised first floor behind a stoop
+	var deck := base + floor_h * storeys
 	var trim := Color(_pick(["#d9d3c3", "#efede6", "#3a3530", "#cfc8b6"]))
+	var siding := Color(_pick(SIDING))
 	var door_side := -1.0 if rng.randf() < 0.5 else 1.0
 	for i in units:
 		var cx := -width * 0.5 + 0.5 + (i + 0.5) * uw
-		# Neighbours differ a little, as rows built one by one do.
-		var wall := Color(_pick(FACADE_BRICK)) if not painted else Color(_pick(SIDING))
-		var top := deck + rng.randf_range(0.5, 0.9)
-		_block("brick" if not painted else "siding", cx, uw, d, zf + d * 0.5, deck, top, wall)
-		_box("paint", Vector3(uw, 0.35, 0.4), Vector3(cx, top - 0.1, zf - 0.15), trim)
-		_box("brick", Vector3(uw, 0.25, 0.25), Vector3(cx, top - 0.45, zf - 0.1), wall.darkened(0.12))
+		if painted:
+			_box("siding", Vector3(uw, deck, d), Vector3(cx, deck * 0.5, zf + d * 0.5), siding)
+		else:
+			# Neighbours differ a little, as rows built one by one do.
+			var wall := Color(_pick(FACADE_BRICK))
+			var top := deck + rng.randf_range(0.5, 0.9)
+			_block("brick", cx, uw, d, zf + d * 0.5, deck, top, wall)
+			_box("paint", Vector3(uw, 0.35, 0.4), Vector3(cx, top - 0.1, zf - 0.15), trim)
+			_box("brick", Vector3(uw, 0.25, 0.25), Vector3(cx, top - 0.45, zf - 0.1), wall.darkened(0.12))
+		# The foundation shows below the siding or brick.
+		_box("concrete", Vector3(uw, base, 0.08), Vector3(cx, base * 0.5, zf - 0.02), FOUNDATION)
 		var side := door_side if i % 2 == 0 else -door_side
 		var door_x := cx + side * (uw * 0.5 - 1.1)
-		_stoop(door_x, zf, 1.6, 1.8, base)
+		_stoop(door_x, zf - 0.05, 1.5, 1.4, base)
 		_front_door(door_x, zf, base, Color(_pick(DOOR)))
 		# Windows: one beside the door below, two on each floor above.
 		_window(Vector3(cx - side * uw * 0.18, base + 1.45, zf), Vector3(-1, 0, 0), 1.0, 1.7, false, false, trim)
@@ -85,6 +94,13 @@ func _row(to_curb: float, width: float, units: int, storeys: int) -> void:
 		_flat_rect("drive", door_x - 0.6, door_x + 0.6, -0.3, zf - 1.8, 0.06)
 		if rng.randf() < 0.6:
 			_shrub(Vector3(cx - side * uw * 0.25, 0.0, zf - 0.7), rng.randf_range(0.4, 0.6))
+	var x0 := -width * 0.5 + 0.5
+	var x1 := width * 0.5 - 0.5
+	for e in [x0, x1]:
+		_box("concrete", Vector3(0.08, base, d), Vector3(e + signf(e) * 0.02, base * 0.5, zf + d * 0.5), FOUNDATION)
+	if painted:
+		_gable_roof(0.0, zf + d * 0.5, deck, d, d * 0.5 * rng.randf_range(0.33, 0.5), x1 - x0, true,
+			Color(_pick(ROOF)), siding)
 	# The alley garage pad at the back.
 	if depth - 1.0 > zf + d + 8.0:
 		_flat_rect("drive", -width * 0.5 + 0.5, width * 0.5 - 0.5, depth - 7.0, depth - 1.0, 0.06)
@@ -129,6 +145,12 @@ func _apartments(to_curb: float, width: float, storeys: int) -> void:
 			for i in bays:
 				var x: float = s * (2.4 + (i + 0.5) * (w * 0.5 - 2.6) / bays)
 				_window(Vector3(x, y, zf), Vector3(-1, 0, 0), 1.2, 1.5, false, false, trim)
+		# Side walls have windows too: the end flats are corner flats.
+		var nside := maxi(2, int((d - 3.0) / 3.6))
+		for s in [-1.0, 1.0]:
+			for i in nside:
+				var z := zf + 1.8 + (i + 0.5) * (d - 3.6) / nside
+				_window(Vector3(s * w * 0.5, y, z), Vector3(0, 0, -s), 1.1, 1.5, false, false, trim)
 		if f > 0:
 			# Stair-hall window over the door.
 			_glass(Vector3(0, y, zf - 0.02), Vector3(-1, 0, 0), 1.0, 1.6, 0.0)

@@ -346,9 +346,16 @@ func lift_at(p: Vector3, effect: String, skip := -1) -> float:
 
 ## Works out the lift each building's lot gets (after stats update).
 func update_effects(sim: CitySim) -> void:
-	# The lifts only change when parks, lots or buildings do (and are
-	# refreshed every game hour regardless).
-	var sig := [sites.hash(), sim.buildings.size(), sim.lots.size(), sim.tick_count / CitySim.TICKS_PER_HOUR]
+	# Each site's full-strength lift, worked out once (quality and its tree
+	# are the same for every lot). The lots' lifts only change when these,
+	# the parks, the trails, the lots or the buildings do.
+	var coefs := {}
+	for id in sites:
+		var a: Dictionary = Balance.AMENITIES[sites[id].kind]
+		var q := quality(id)
+		coefs[id] = [float(a.value) * q + tree_lift(id, "value"), float(a.value_reach),
+			float(a.happy) * q + tree_lift(id, "happy"), float(a.happy_reach)]
+	var sig := [sites.hash(), coefs, sim.buildings.size(), sim.lots.size(), trails.paths.size(), trails.lanes.size()]
 	if sig == _effects_key and is_same(sim.lots, _effects_lots):
 		return
 	_effects_key = sig
@@ -361,9 +368,18 @@ func update_effects(sim: CitySim) -> void:
 		if not sim.lots.has(key):
 			continue
 		var p: Vector3 = sim.lots[key].pos
-		# Homes along a trail are worth a little more, too.
-		lot_value[key] = minf(lift_at(p, "value") + trails.lift(sim, key, "value"), Balance.AMENITY_VALUE_CAP)
-		lot_happy[key] = minf(lift_at(p, "happy") + trails.lift(sim, key, "happy"), Balance.AMENITY_HAPPY_CAP)
+		var value := 0.0
+		var happy := 0.0
+		for id in coefs:
+			var c: Array = coefs[id]
+			var d := distance_to(id, p)
+			if d < c[1]:
+				value += c[0] * (1.0 - d / c[1])
+			if d < c[3]:
+				happy += c[2] * (1.0 - d / c[3])
+		# As lift_at, plus homes along a trail are worth a little more, too.
+		lot_value[key] = minf(minf(value, Balance.AMENITY_VALUE_CAP) + trails.lift(sim, key, "value"), Balance.AMENITY_VALUE_CAP)
+		lot_happy[key] = minf(minf(happy, Balance.AMENITY_HAPPY_CAP) + trails.lift(sim, key, "happy"), Balance.AMENITY_HAPPY_CAP)
 
 
 ## Average happiness lift across the town's homes, 0 to AMENITY_HAPPY_CAP.

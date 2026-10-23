@@ -57,6 +57,16 @@ func _draw() -> void:
 		draw_texture_rect(_texture(_FILES[kind]), rect, false, color)
 		return
 	match kind:
+		"region":
+			# A globe: the region's shared projects and neighbors.
+			var c: Vector2 = P.call(0.5, 0.5)
+			draw_arc(c, s * 0.38, 0.0, TAU, 32, color, w, true)
+			line.call(P.call(0.12, 0.5), P.call(0.88, 0.5))
+			var pts := PackedVector2Array()
+			for i in 33:
+				var a := TAU * i / 32.0
+				pts.append(c + Vector2(cos(a) * s * 0.16, sin(a) * s * 0.38))
+			draw_polyline(pts, color, w, true)
 		"road", "roads":
 			_poly([P.call(0.3, 0.92), P.call(0.42, 0.08), P.call(0.58, 0.08), P.call(0.7, 0.92)], Color(color, 0.25))
 			line.call(P.call(0.3, 0.92), P.call(0.42, 0.08))

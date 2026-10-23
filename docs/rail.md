@@ -33,6 +33,17 @@ CS2 trains, with track drawing replaced by the leader's own planning.
   - Freight trips: the yard, then the siding, then the yard, then the region,
     and back. Passenger trains run from the platform to the region and back.
     Nothing vanishes.
+- **Sounds** (`RailSounds`, each placed on the thing that makes it):
+  - The diesel rumbles on the lead engine and rises with the throttle (an
+    EMD 645, the GP38's engine).
+  - The engineer blows the horn for every grade crossing: long, long, short,
+    long, starting 18 s out and holding the last long until the engine is on
+    the crossing (FRA 49 CFR 222.21; Nathan P5 chord). Two long blasts mean
+    "proceed" when a train leaves after standing (GCOR 5.8.2).
+  - The crossing bell rings while the gates are down (MUTCD 8C; 150 strokes a
+    minute). The horn carries about 2.4 km, the bell about 350 m.
+  - Whistle posts (a white sign with a black W) stand on the engineer's right
+    a quarter mile before each crossing, in both directions.
 - **Development tree** (`Rail.TREE`, on `Agency`): team track, then engine
   house, grain elevator spur, station, car shop, intercity stop, commuter
   trains, unit-train loop, intermodal yard, interchange and classification yard.
@@ -56,5 +67,5 @@ CS2 trains, with track drawing replaced by the leader's own planning.
 - Sim: `scripts/sim/rail.gd`, `scripts/sim/rail_planner.gd`, plus the Rail
   section of `balance.gd`.
 - Views and panels: `scripts/rail/rail_view.gd`, `rail_models.gd` and
-  `rail_info.gd`.
+  `rail_info.gd`; sounds in `rail_sounds.gd`, made by `tools/rail/rail_sounds.py`.
 - Tests and screenshots: `tests/test_rail.gd` and `tools/rail_shot.gd`.

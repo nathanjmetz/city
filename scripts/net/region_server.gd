@@ -13,6 +13,12 @@ extends Node
 signal log_line(text: String)
 
 const PROTOCOL := 3
+## The oldest version this server still lets in, and (sent in the hello)
+## the oldest server a client can talk to. Desktop apps can trail the live
+## build by one launch, so small gaps still play together: raise this only
+## when an older game would really break. Unknown message types are ignored
+## on both sides.
+const MIN_PROTOCOL := 3
 ## How often the region is written to disk, in seconds (a server that's
 ## switched off loses at most this much).
 const SAVE_EVERY := 10.0
@@ -167,7 +173,15 @@ func _handle(from: int, msg: Dictionary) -> void:
 			if p.city != "" and typeof(d) == TYPE_DICTIONARY:
 				region.update_city(p.city, d)
 				_dirty = true
-				_broadcast({"t": "city", "id": p.city, "z": msg.z}, from)
+				var relay := {"t": "city", "id": p.city, "z": msg.z}
+				# Its land, when it changed (see Region.land).
+				if msg.get("land") is Array:
+					region.take_land(p.city, msg.land)
+					relay.land = msg.land
+				_broadcast(relay, from)
+				# Its population, for the metro (older games don't send it).
+				if msg.has("pop") and region.ledger.set_population(p.city, int(msg.pop)) and region.update_metro():
+					_ledger_changed()
 		"chat":
 			var text := str(msg.get("text", "")).strip_edges()
 			if text != "":
@@ -189,6 +203,7 @@ func _handle(from: int, msg: Dictionary) -> void:
 			var amount := float(msg.get("amount", 0.0))
 			if p.city == "" or good != "money" or not is_finite(amount) or amount <= 0.0:
 				return
+			region.load_stale(p.city)
 			amount = minf(amount, maxf(0.0, region.cities[p.city].sim.economy.money))
 			var took := region.ledger.pledge(p.city, str(msg.get("project", "")), good, amount)
 			if took > 0.0:
@@ -209,7 +224,8 @@ func _handle(from: int, msg: Dictionary) -> void:
 
 
 func _hello(from: int, msg: Dictionary) -> void:
-	if int(msg.get("v", 0)) != PROTOCOL:
+	var v := int(msg.get("v", 0))
+	if v < MIN_PROTOCOL or PROTOCOL < int(msg.get("min", v)):
 		_reject(from, "This region runs a different version of the game. Refresh to update.")
 		return
 	if str(msg.get("code", "")).to_upper().replace("-", "").strip_edges() != invite_code:
@@ -364,13 +380,18 @@ func _admit(from: int, account: Dictionary, token: String) -> void:
 		# A new town, on its county roads; the neighbors' halves of those
 		# roads go to their computers too, if they're running.
 		city = region.add_city(pid, name)
+		region.update_metro()
 		_dirty = true
 		for other in region.handed:
 			for peer in _players:
 				if _players[peer].city == other:
 					_send(peer, {"t": "apply", "cmds": region.handed[other]})
+		# Everyone else gets the new town and the neighbors it joined; the
+		# rest they already have.
+		var fresh: Array = [city] + region.handed.keys()
 		for peer in _players:
-			_send(peer, {"t": "region", "z": pack(region.to_dict_without(_players[peer].city))})
+			var d := region.to_dict_with(fresh.filter(func(id): return id != _players[peer].city))
+			_send(peer, {"t": "region", "z": pack(d)})
 	elif region.cities[city].player != name:
 		region.cities[city].player = name
 	_players[from] = {"id": pid, "name": name, "city": city, "host": account.host}

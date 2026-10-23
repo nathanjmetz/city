@@ -109,12 +109,15 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_telemetry.gd
           ~/godot-cache/godot --headless -s tests/test_pollution.gd
           ~/godot-cache/godot --headless -s tests/test_health.gd
+          ~/godot-cache/godot --headless -s tests/test_interlocal.gd
+          ~/godot-cache/godot --headless -s tests/test_regional.gd
+          ~/godot-cache/godot --headless -s tests/test_desktop.gd
           ~/godot-cache/godot --headless -s tests/test_heritage.gd
 
       - name: Stamp the build
         run: |
           # Shown in the game's corner so you can tell which version you're playing.
-          printf 'const BUILD := "%s"\nconst BUILT_AT := %s\n' "${GITHUB_SHA::7}" "$(date -u +%s)" > scripts/build_info.gd
+          python3 tools/stamp_build.py
 
       - name: Export for the web
         run: |
@@ -145,6 +148,12 @@ jobs:
           grep -q "\"mainPack\":\"$g.pck\"" index.html
           grep -q "\"$e.wasm\":" index.html
           ls
+
+      - name: Add the desktop download page
+        run: |
+          mkdir -p build/web/download
+          cp web/download.html build/web/download/index.html
+          cp assets/brand/logos/neighbors-horizontal-on-dark.png build/web/download/logo.png
 
       - uses: actions/upload-pages-artifact@v3
         with:

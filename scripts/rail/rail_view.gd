@@ -27,6 +27,8 @@ const TIE_EVERY := 0.6
 ## Above the water at a bridge (m).
 const BRIDGE_CLEAR := 5.5
 const FAR := 3200.0
+## Whistle posts stand a quarter mile before each crossing (m).
+const WHISTLE_POST := 402.0
 
 var sim: CitySim
 var terrain: TerrainView
@@ -57,6 +59,9 @@ var _grades := {}   # chunk key -> [pts, inner, outer] for the terrain
 func setup(s: CitySim, t: TerrainView = null) -> void:
 	sim = s
 	terrain = t
+	var sounds := RailSounds.new()
+	sounds.setup(s, height_at)
+	add_child(sounds)
 	if terrain != null:
 		terrain.extra_grades = func() -> Dictionary: return _grades
 
@@ -148,6 +153,7 @@ func _signature() -> String:
 		parts.append(sim.rail.lines[lid].state)
 	for id in sim.rail.depots:
 		parts.append(sim.rail.depots[id].get("built", []).size())
+	parts.append(sim.pollution.quiet.size())
 	return str(parts)
 
 
@@ -230,6 +236,7 @@ func _draw_track() -> void:
 				k += TIE_EVERY
 	for c in sim.rail.crossings:
 		_crossing_pad(st, c)
+		_whistle_posts(st, c)
 	_track.visible = any
 	if any:
 		st.generate_normals()
@@ -361,6 +368,57 @@ func _crossing_pad(st: SurfaceTool, c: Dictionary) -> void:
 			c1 + o + side * 0.04 + Vector3(0, 0.02, 0), c1 + o - side * 0.04 + Vector3(0, 0.02, 0), RAIL_TOP)
 
 
+## Whistle posts: a white sign with a black W on the engineer's right, a
+## quarter mile before each crossing in both directions, where the horn
+## pattern starts (FRA 49 CFR 222.21; railroads' timetable instructions).
+func _whistle_posts(st: SurfaceTool, c: Dictionary) -> void:
+	if not sim.rail.pieces.has(int(c.piece)):
+		return
+	# A quiet zone takes its whistle posts down.
+	if sim.pollution.quiet.has(int(sim.rail.pieces[int(c.piece)].depot)):
+		return
+	for dir: int in [-1, 1]:
+		var at := _walk(int(c.piece), float(c.s), dir, WHISTLE_POST)
+		if at.is_empty():
+			continue
+		var heading: Vector3 = -at[1]   # a train coming toward the crossing
+		var right := Vector3(-heading.z, 0.0, heading.x)
+		var p: Vector3 = at[0] + right * 3.4
+		var f := Transform3D(Basis(right, Vector3.UP, -heading), Vector3(p.x, Terrain.ground_y(p.x, p.z), p.z))
+		_box(st, f, Vector3(0, 1.3, 0), Vector3(0.1, 2.6, 0.1), Color("#8a8a86"))
+		_box(st, f, Vector3(0, 2.25, 0.07), Vector3(0.7, 0.85, 0.04), Color("#f2f2ee"))
+		for k in 4:
+			var x := -0.18 + k * 0.12
+			var lean := 0.32 if k % 2 == 0 else -0.32
+			var stroke := f * Transform3D(Basis(Vector3.BACK, lean), Vector3(x, 2.25, 0.1))
+			_box(st, stroke, Vector3.ZERO, Vector3(0.05, 0.5, 0.01), Color("#1e1e1e"))
+
+
+## A point `dist` metres along the track from (piece, s), going `dir`,
+## carrying on through joints: [pos, direction of travel], or [] at a dead end.
+func _walk(pid: int, s: float, dir: int, dist: float) -> Array:
+	var rail := sim.rail
+	for guard in 12:
+		var L := rail._length(pid)
+		var room: float = (L - s) if dir > 0 else s
+		if dist <= room:
+			var pose := rail.pose_at(pid, s + dir * dist)
+			return [pose[0], (pose[1] as Vector3) * dir]
+		dist -= room
+		var node: int = rail.pieces[pid].b if dir > 0 else rail.pieces[pid].a
+		var next := -1
+		for q in rail._pieces_at(node):
+			if q != pid and rail._complete(q):
+				next = q
+				break
+		if next == -1:
+			return []
+		pid = next
+		dir = 1 if rail.pieces[pid].a == node else -1
+		s = 0.0 if dir > 0 else rail._length(pid)
+	return []
+
+
 func _road_dir(c: Dictionary) -> Vector3:
 	var near := sim.network.find_segment_near(c.pos, 20.0, 1.0)
 	if near.is_empty():
@@ -443,12 +501,7 @@ func _draw_yards() -> void:
 		# Gravel lot for the crews' trucks beside it.
 		_box(st, _frame(d, -half + 66.0, 7.0, y), Vector3(0, 0.05, 0), Vector3(24.0, 0.1, 10.0), Color("#77736a"))
 		if "station" in built:
-			# Platform and canopy beside the passenger track.
-			var plat := _frame(d, 0.0, float(Rail.TRACK_V[0]) - 3.4, y)
-			_box(st, plat, Vector3(0, 0.45, 0), Vector3(120.0, 0.9, 3.6), CONCRETE)
-			for k in 7:
-				_box(st, plat, Vector3(-48.0 + k * 16.0, 2.4, -0.8), Vector3(0.25, 3.2, 0.25), Color("#2f4a3a"))
-			_box(st, plat, Vector3(0, 4.05, -0.3), Vector3(100.0, 0.18, 4.4), Color("#2f4a3a"))
+			_station(st, d, y)
 		if "engine_house" in built:
 			# A two-stall engine house straddling the far yard track.
 			var eh := _frame(d, half - 30.0, float(Rail.TRACK_V[2]) + 2.3, y)
@@ -468,6 +521,41 @@ func _draw_yards() -> void:
 	if any:
 		st.generate_normals()
 		_yard.mesh = st.commit()
+
+
+## A small-town Amtrak stop, like the Midwest's restored depots: a brick
+## waiting room with wide bracketed eaves, a concrete platform long enough
+## for the train (an 8 in. high platform with the ADA's 24 in. yellow
+## tactile strip along the edge), a short canopy by the door, lamp posts,
+## and a small paved lot with a drive in from the road.
+func _station(st: SurfaceTool, d: Dictionary, y: float) -> void:
+	var edge := float(Rail.TRACK_V[0]) - 1.6   # platform edge, clear of the train
+	var plat := _frame(d, 0.0, edge - 2.0, y)
+	_box(st, plat, Vector3(0, 0.1, 0), Vector3(122.0, 0.2, 4.0), CONCRETE)
+	_box(st, plat, Vector3(0, 0.205, 1.7), Vector3(122.0, 0.01, 0.6), Color("#e3b51e"))
+	for k in 9:
+		var lamp := Vector3(-56.0 + k * 14.0, 0, -1.4)
+		_box(st, plat, lamp + Vector3(0, 2.2, 0), Vector3(0.14, 4.4, 0.14), Color("#22262a"))
+		_box(st, plat, lamp + Vector3(0, 4.35, 0.25), Vector3(0.3, 0.2, 0.6), Color("#22262a"))
+	# The canopy: a short one over the door, not the whole platform.
+	for x: float in [-10.0, 0.0, 10.0]:
+		_box(st, plat, Vector3(x, 1.7, -0.6), Vector3(0.22, 3.4, 0.22), Color("#2f4a3a"))
+	_box(st, plat, Vector3(0, 3.5, 0), Vector3(24.0, 0.16, 3.6), Color("#2f4a3a"))
+	# The depot: waiting room and ticket office, door to the platform.
+	var depot := _frame(d, 0.0, edge - 8.5, y)
+	_building(st, depot, Vector3(16.0, 4.4, 7.0), Color("#7a3b2c"), Color("#3c3a37"))
+	# A white station-name board on the platform side, like the old depots'.
+	_box(st, depot, Vector3(0, 3.6, 3.56), Vector3(5.0, 0.6, 0.06), Color("#f2f2ee"))
+	_box(st, depot, Vector3(0, 3.6, 3.6), Vector3(4.0, 0.22, 0.02), Color("#1e1e1e"))
+	# Parking: a paved lot with 2.7 m stalls, opening straight off the road,
+	# built up on fill where the ground falls away.
+	var lot := _frame(d, 36.0, 5.0, y)
+	_box(st, lot, Vector3(0, -0.7, 0), Vector3(36.0, 1.5, 9.0), Color("#4e4f4e"))
+	for k in 13:
+		_box(st, lot, Vector3(-16.2 + k * 2.7, 0.055, 1.5), Vector3(0.1, 0.01, 5.4), Color("#e8e8e2"))
+	# A walk from the lot to the platform.
+	_box(st, _frame(d, 16.0, (9.5 + edge - 4.0) * 0.5, y), Vector3(0, -0.6, 0),
+		Vector3(2.0, 1.4, edge - 4.0 - 9.5), CONCRETE)
 
 
 ## A frame on the yard: x along the tracks, z away from the road (+z back).

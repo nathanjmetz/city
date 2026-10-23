@@ -28,6 +28,7 @@ var _industry_kind := "oil"  # what the industry Reserve tool saves land for
 var warehouse_tool: WarehouseTool
 var campus_tool: CampusTool
 var bank_tool: BankTool
+var neighborhood_tool: NeighborhoodTool
 var _bank_cards := {}  # "community"/"farm_credit" -> Button
 var _campus_cards := {}  # "high_school"/"college"/"university" -> Button
 var telecom_tool: TelecomTool
@@ -62,6 +63,7 @@ var _variant_of := {}     # road menu -> the variant last picked in it
 var _kinds_open := false  # the road kinds row is up instead of grid sizes
 var _traffic_row := HBoxContainer.new()
 var _traffic_card: Button
+var _neighborhood_card: Button
 var _zone_cards := {}    # ZoneMap.Zone -> Button
 var _power_card: Button
 var _service_cards := {} # Services.Kind -> Button
@@ -96,6 +98,8 @@ var _view := ""
 var _help_button: Button
 var advisor := AdvisorPanel.new()
 var permits := PermitPanel.new()
+## The region's shared projects and services (only in a region).
+var region_panel := RegionPanel.new()
 ## The town's nickname, history, districts and markers, and its timelapse.
 var town := TownPanel.new()
 var timelapse := TimelapseView.new()
@@ -122,6 +126,7 @@ func _ready() -> void:
 	_build_views()
 	_build_advisor()
 	_build_permits()
+	_build_region_panel()
 	_build_town()
 	_info_panel.setup(sim, select_tool)
 	_root.add_child(_info_panel)
@@ -147,6 +152,8 @@ func _ready() -> void:
 	sim.telecom_changed.connect(_sync)
 	bank_tool.kind_changed.connect(func(_k): _sync())
 	bank_tool.hint_changed.connect(_show_hint)
+	neighborhood_tool.kind_changed.connect(func(_k): _sync())
+	neighborhood_tool.hint_changed.connect(_show_hint)
 	traffic_tool.mode_changed.connect(func(_m): _sync())
 	traffic_tool.hint_changed.connect(_show_hint)
 	park_tool.kind_changed.connect(func(_k): _sync())
@@ -200,12 +207,13 @@ func pad_bottom_height() -> float:
 
 ## True while a tool is in hand, a panel or view is open, or something is selected.
 func anything_open() -> bool:
-	return _budget_open or _view != "" or _views_panel.visible or _help.visible or advisor.visible or permits.visible \
+	return _budget_open or _view != "" or _views_panel.visible or _help.visible or advisor.visible or permits.visible or region_panel.visible \
 		or town.visible or timelapse.visible \
 		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
-		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or bank_tool.kind != "" or telecom_tool.kind != "" or move_tool.active
+		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or bank_tool.kind != "" or telecom_tool.kind != "" or move_tool.active \
+		or neighborhood_tool.kind != ""
 
 
 ## Puts every tool away and closes every panel.
@@ -219,6 +227,7 @@ func close_all() -> void:
 	_help_button.set_pressed_no_signal(false)
 	advisor.close_panel()
 	permits.close_panel()
+	region_panel.close_panel()
 	town.close_panel()
 	timelapse.close_view()
 	road_tool.set_mode(RoadTool.Mode.NONE)
@@ -233,6 +242,7 @@ func close_all() -> void:
 	traffic_tool.set_mode(TrafficTool.Mode.NONE)
 	park_tool.set_kind("")
 	move_tool.set_active(false)
+	neighborhood_tool.set_kind("")
 	_sync()
 
 
@@ -320,7 +330,11 @@ func _show_view(key: String) -> void:
 	info_view.set_mode(resource.get(key, InfoView.Mode.NONE))
 	# In a pollution view any click on the map says who pollutes that spot.
 	select_tool.spot_clicks = key in ["smoke", "noise", "ground"]
-	if not select_tool.spot_clicks and select_tool.selection.get("type", "") == "spot":
+	var sel_type: String = select_tool.selection.get("type", "")
+	if select_tool.spot_clicks and sel_type in ["", "spot", "pollution"]:
+		# The town's worst sources for this view, until a click picks a spot.
+		select_tool.select({"type": "pollution", "id": key})
+	elif not select_tool.spot_clicks and sel_type in ["spot", "pollution"]:
 		select_tool.select({})
 	var cover := {"fire": Services.Kind.FIRE, "police": Services.Kind.POLICE,
 		"health": Services.Kind.CLINIC, "school": Services.Kind.SCHOOL}
@@ -416,6 +430,12 @@ func _build_top_bar() -> void:
 	seasons.toggled.connect(DayNight.set_seasons)
 	row.add_child(seasons)
 	row.add_child(VSeparator.new())
+	# (The Session autoload by path: tools and tests load the HUD before it exists.)
+	var session := get_node_or_null("/root/Session")
+	if session and session.online():
+		var c: RegionClient = session.client
+		region_panel.setup(sim, c.region, c.my_city, c.pledge)
+		row.add_child(region_panel.make_button())
 	town.setup(sim, info_view.cam)
 	row.add_child(town.make_button())
 	permits.setup(sim, game, info_view.cam)
@@ -428,7 +448,8 @@ func _build_top_bar() -> void:
 		if on:
 			advisor.close_panel()
 			permits.close_panel()
-			town.close_panel())
+			town.close_panel()
+			region_panel.close_panel())
 	row.add_child(_help_button)
 
 
@@ -630,6 +651,15 @@ func _roads_drawer() -> PanelContainer:
 		else:
 			road_tool.set_mode(road_tool.last_draw))
 	traffic.add_child(_traffic_card)
+
+	# A town hemmed in by its neighbors starts a new neighborhood on open land.
+	row.add_child(VSeparator.new())
+	var town := _section(row, "Town")
+	_neighborhood_card = _card("homes", "Neighborhood", "")
+	_neighborhood_card.tooltip_text = "New neighborhood: start part of your town out on open land, linked by a free county road. You earn one per town stage."
+	_neighborhood_card.pressed.connect(func():
+		neighborhood_tool.set_kind("" if neighborhood_tool.kind != "" else "found"))
+	town.add_child(_neighborhood_card)
 	return drawer
 
 
@@ -1033,7 +1063,7 @@ func _sync() -> void:
 		_category = "parks"
 	elif industry_tool.kind != "" or warehouse_tool.kind != "" or farm_tool.mode != FarmTool.Mode.NONE:
 		_category = "industry"
-	elif traffic_tool.mode != TrafficTool.Mode.NONE:
+	elif traffic_tool.mode != TrafficTool.Mode.NONE or neighborhood_tool.kind != "":
 		_category = "roads"
 	elif move_tool.active:
 		_category = "move"
@@ -1068,6 +1098,7 @@ func _sync() -> void:
 	_variant_row.get_parent().visible = not in_traffic and _kinds_open
 	_traffic_row.visible = in_traffic
 	_traffic_card.set_pressed_no_signal(in_traffic)
+	_neighborhood_card.set_pressed_no_signal(neighborhood_tool.kind != "")
 	for z in _zone_cards:
 		_zone_cards[z].set_pressed_no_signal(z == zone_tool.zone)
 	for k in _service_cards:
@@ -1161,6 +1192,7 @@ func _build_advisor() -> void:
 	place.call_deferred()
 	advisor.opened.connect(func():
 		permits.close_panel()
+		region_panel.close_panel()
 		town.close_panel()
 		_help.visible = false
 		_help_button.set_pressed_no_signal(false))
@@ -1180,6 +1212,27 @@ func _build_permits() -> void:
 	permits.opened.connect(func():
 		advisor.close_panel()
 		town.close_panel()
+		region_panel.close_panel()
+		_help.visible = false
+		_help_button.set_pressed_no_signal(false))
+
+
+
+## The region panel: docked where the bell's is.
+func _build_region_panel() -> void:
+	_root.add_child(region_panel)
+	region_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	region_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	var place := func():
+		region_panel.offset_right = 0
+		region_panel.offset_left = 0
+		region_panel.offset_top = _top_bar.size.y
+	_top_bar.resized.connect(place)
+	place.call_deferred()
+	region_panel.opened.connect(func():
+		advisor.close_panel()
+		permits.close_panel()
+		town.close_panel()
 		_help.visible = false
 		_help_button.set_pressed_no_signal(false))
 
@@ -1198,6 +1251,7 @@ func _build_town() -> void:
 	town.opened.connect(func():
 		advisor.close_panel()
 		permits.close_panel()
+		region_panel.close_panel()
 		_help.visible = false
 		_help_button.set_pressed_no_signal(false))
 	_root.add_child(timelapse)

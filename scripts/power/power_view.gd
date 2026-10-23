@@ -16,6 +16,9 @@ const WHITE := Color(0.93, 0.94, 0.94)
 const PANEL := Color(0.12, 0.17, 0.3)
 const BRICK := Color(0.52, 0.3, 0.24)
 const COAL := Color(0.12, 0.12, 0.13)
+const POLE := Color(0.36, 0.29, 0.22)  # weathered treated pine
+const INSULATOR := Color(0.62, 0.64, 0.6)
+const WIRE := Color(0.32, 0.33, 0.34)
 
 var sim: CitySim
 var _sites := {}  # site id -> Node3D
@@ -29,6 +32,7 @@ var _time := 0.0
 func setup(s: CitySim) -> void:
 	sim = s
 	sim.power_changed.connect(_rebuild)
+	sim.network.changed.connect(_rebuild)
 	_rebuild()
 	_loaded = true
 
@@ -42,8 +46,14 @@ func _process(delta: float) -> void:
 
 
 ## A company is redrawn when its plant, units or add-ons change.
-static func _stamp(s: Dictionary) -> String:
-	return "%s|%s|%s" % [s.plant, str(s.cells), str(s.built)]
+## So is its line to the neighbors when the roads it follows change.
+func _stamp(s: Dictionary) -> String:
+	var tie := _tie(s)
+	return "%s|%s|%s|%d|%s" % [s.plant, str(s.cells), str(s.built), tie.size(), tie[-1] if tie.size() > 0 else ""]
+
+
+func _tie(s: Dictionary) -> PackedVector3Array:
+	return sim.power.tie_route(sim.network, sim.region_links, s)
 
 
 func _rebuild() -> void:
@@ -67,13 +77,8 @@ func _site(s: Dictionary) -> Node3D:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	if s.drive.size() >= 2:
 		RoadMesh.add_strip(st, Terrain.densify(PackedVector3Array(s.drive), 6.0), -Farms.DRIVE_WIDTH * 0.5, Farms.DRIVE_WIDTH * 0.5, 0.12)
-	for c in s.cells:
-		var to := Vector2i.ZERO
-		for d in [Vector2i(-signi(c.x), 0), Vector2i(0, -signi(c.y))]:
-			if d != Vector2i.ZERO and (c + d == Vector2i.ZERO or (c + d) in s.cells):
-				to = c + d
-				break
-		RoadMesh.add_strip(st, PackedVector3Array([Power.cell_center(s, c), Power.cell_center(s, to)]), -2.0, 2.0, 0.1)
+	for lane in Power.lanes(s):
+		RoadMesh.add_strip(st, PackedVector3Array(lane), -2.0, 2.0, 0.1)
 	var flat := MeshInstance3D.new()
 	flat.mesh = Terrain.drape(st.commit(), true, 8.0)
 	flat.material_override = _mat(LANE)
@@ -90,6 +95,7 @@ func _site(s: Dictionary) -> Node3D:
 			"gas": _gas(unit)
 			"coal": _coal(unit, "scrubbers" in s.built)
 			"hydro": _dam(unit)
+	_line(root, _tie(s))
 	for color in _batch:
 		var mi := MeshInstance3D.new()
 		mi.mesh = (_batch[color] as SurfaceTool).commit()
@@ -145,6 +151,53 @@ func _yard(n: Node3D, s: Dictionary) -> void:
 			_:
 				continue
 		k += 1
+
+
+## A 69 kV line on single wood poles: an 18 m pole with a crossarm and
+## three conductors, sagging about 1.5 m mid-span (real rural co-op
+## subtransmission). The wires are merged into the batch like the rest.
+func _line(root: Node3D, route: PackedVector3Array) -> void:
+	var spots := Power.poles(route)
+	if spots.size() < 2:
+		return
+	var tops := []
+	for i in spots.size():
+		var p := spots[i]
+		var ahead := spots[mini(i + 1, spots.size() - 1)] - spots[maxi(i - 1, 0)]
+		ahead.y = 0.0
+		var basis := Basis.looking_at(ahead.normalized() if ahead.length() > 0.1 else Vector3.FORWARD, Vector3.UP)
+		var n := _node(root, p, basis)
+		_cyl(n, 0.16, 18.0, Vector3(0, 9.0, 0), POLE)
+		_box(n, Vector3(3.6, 0.15, 0.15), Vector3(0, 17.2, 0), POLE)
+		var arms := []
+		for x in [-1.6, 0.0, 1.6]:
+			_box(n, Vector3(0.12, 0.5, 0.12), Vector3(x, 17.55 + (0.6 if x == 0.0 else 0.0), 0), INSULATOR)
+			arms.append(n.transform * Vector3(x, 17.8 + (0.6 if x == 0.0 else 0.0), 0))
+		tops.append(arms)
+	for i in range(1, tops.size()):
+		for k in 3:
+			var a: Vector3 = tops[i - 1][k]
+			var b: Vector3 = tops[i][k]
+			var prev := a
+			for j in range(1, 5):
+				var t := j / 4.0
+				var q := a.lerp(b, t) - Vector3(0, 4.0 * Balance.POWER_TIE_SAG * t * (1.0 - t), 0)
+				_wire(prev, q)
+				prev = q
+
+
+func _wire(a: Vector3, b: Vector3) -> void:
+	var len := a.distance_to(b)
+	if len < 0.01:
+		return
+	var m := BoxMesh.new()
+	m.size = Vector3(0.05, 0.05, len)
+	if not _batch.has(WIRE):
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		_batch[WIRE] = st
+	var basis := Basis.looking_at((b - a).normalized(), Vector3.UP if absf((b - a).normalized().y) < 0.99 else Vector3.RIGHT)
+	(_batch[WIRE] as SurfaceTool).append_from(m, 0, Transform3D(basis, (a + b) * 0.5))
 
 
 ## Fixed-tilt rows facing south-ish: eight rows of panels on an 80 m cell.

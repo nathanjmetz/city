@@ -36,6 +36,9 @@ const SIM := {
 	"sim.heritage":     {"per_tick": 0.05, "max": 6.0, "what": "Monthly heritage, markers, culture, leader asks, timelapse"},
 	"sim.civic_hubs":   {"per_tick": 0.2, "max": 6.0, "what": "Landfill, recycling, cemetery, garbage trucks"},
 	"sim.mail":         {"per_tick": 0.1, "max": 4.0, "what": "Mail carriers and routes"},
+	"sim.pollution":    {"per_tick": 0.2, "max": 6.0, "what": "Smoke, noise and dirty ground"},
+	"sim.healthcare":   {"per_tick": 0.1, "max": 6.0, "what": "Hospital, ambulances and care"},
+	"sim.telecom":      {"per_tick": 0.05, "max": 6.0, "what": "Phone company decisions"},
 	"sim.rail":         {"per_tick": 0.1, "max": 4.0, "what": "Rail depots, trains and crossings"},
 	"sim.buses":        {"per_tick": 0.1, "max": 4.0, "what": "Bus depots and routes"},
 	"sim.permits":      {"per_tick": 0.05, "max": 3.0, "what": "Hub leaders' permit requests"},
@@ -52,6 +55,7 @@ const FRAME := {
 	"frame.roads":     {"avg": 0.3, "max": 30.0, "what": "Road meshes (rebuilt after an edit)"},
 	"frame.audio":     {"avg": 0.5, "max": 2.0, "what": "Placing sounds on real objects"},
 	"frame.ui":        {"avg": 0.5, "max": 3.0, "what": "HUD and panels"},
+	"frame.quality":   {"avg": 0.05, "max": 0.5, "what": "Desktop quality governor"},
 }
 
 ## Whole-frame limits for the drawing side.

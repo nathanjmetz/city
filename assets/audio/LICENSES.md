@@ -4,6 +4,7 @@
 | --- | --- | --- |
 | `ui/*.ogg` | Made in code by `tools/audio/make_assets.py` ("Front Porch" style: wooden mallets and plucked guitar) | Our own work |
 | `world/car_engine.ogg`, `world/transformer.ogg` | Made in code by `tools/audio/make_assets.py` | Our own work |
+| `world/rail/*.ogg` (Nathan P5 horn, EMD 645 diesel, crossing bell) | Made in code by `tools/rail/rail_sounds.py` | Our own work |
 | `world/birds_day.ogg` | [Birds singing in garden.ogg](https://commons.wikimedia.org/wiki/File:Birds_singing_in_garden.ogg) by ezwa | Public domain |
 | `world/crickets_night.ogg` | [Pterophylla camellifolia singing.wav](https://commons.wikimedia.org/wiki/File:Pterophylla_camellifolia_singing.wav) by peterwchen (common true katydid, Naperville, Illinois) | CC BY 4.0 |
 | `world/leaves.ogg` | [Rustling leaves (Gravity Sound).wav](https://commons.wikimedia.org/wiki/File:Rustling_leaves_(Gravity_Sound).wav) by Gravity Sound | CC BY 4.0 |

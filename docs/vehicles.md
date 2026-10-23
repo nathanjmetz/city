@@ -13,10 +13,18 @@ sedans, crew and mid-size pickups, wagon, EV crossover and more); a car's id
 picks its style (`VehicleModels.variant()`), so it never changes.
 Freight: delivery (step) van, 26 ft box truck, dump truck, concrete mixer,
 tow truck, and semis with a 53 ft dry van, flatbed, grain hopper, tanker,
-log trailer, end dump, USPS trailer or pot-belly livestock trailer.
+log trailer, end dump, USPS trailer, pot-belly livestock trailer or a
+flatbed of sawmill lumber.
 Utility: bucket truck (Altec AT40G) for phone and power line crews.
 Camping: Class C RV, Class A motorhome and a pickup with a slide-in camper,
 used by out-of-town visitors (purpose "visitor").
+Farm: tractor, combine, and a tractor towing a gravity wagon of grain to the
+elevator (some grain hauls).
+Farm country: Amish black top buggy at a trot (about 10 mph); Daviess County,
+next to Petersburg, has one of Indiana's largest Amish settlements. Buggies
+turn up now and then on shopping trips.
+Winter: while snow is on the ground, dump trucks and one contractor pickup in
+three wear a plow blade (`VehicleModels.WINTER`).
 Services: school bus, city bus, garbage truck, fire engine, police
 interceptor, ambulance. Farm: row-crop tractor, combine.
 

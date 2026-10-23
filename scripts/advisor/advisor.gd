@@ -147,7 +147,8 @@ static func _problems(sim: CitySim, out: Array) -> void:
 		var what := _pollution_kind(sim, worst_ref)
 		_add(out, "pollution", Kind.PROBLEM if worst_homes >= 25 else Kind.HEADS_UP,
 			"%s %s is botherin' %d homes. Open the %s view and click it to see how it could clean up." % [
-			src.name + ("'" if str(src.name).ends_with("s") else "'s"), {"noise": "noise", "smoke": "smoke", "ground": "runoff"}[what], worst_homes,
+			src.name + ("'" if str(src.name).ends_with("s") else "'s"), {"noise": "noise", "smoke": "smoke", "ground": "runoff"}[what],
+			maxi(1, int(sim.pollution.hurts[worst_ref].kinds.get(what, 0))),
 			{"noise": "Noise", "smoke": "Smoke", "ground": "Dirty ground"}[what]])
 
 	# Resource industry: trucks that can't get out, and yards filled up.
@@ -173,6 +174,11 @@ static func _problems(sim: CitySim, out: Array) -> void:
 static func _ideas(sim: CitySim, out: Array) -> void:
 	var s := sim.stats
 	var e := sim.economy
+	# The town has taken on a new reputation (TownCulture): say so for a year.
+	var c := sim.culture
+	var day := sim.tick_count / (24 * CitySim.TICKS_PER_HOUR)
+	if c.identity != "" and day - c.since < Balance.CULTURE_NEWS_DAYS:
+		_add(out, "identity_" + c.identity, Kind.HEADS_UP, "Folks around the county have started calling us a %s. Leaders in that line of work find it a little easier to grow here now. The Economy page shows what's rising." % c.title().to_lower())
 	if sim.network.segments.size() <= 2:
 		_add(out, "first_streets", Kind.IDEA, "That road in from the highway is all yours. Towns tend to start with a few streets off it.")
 	elif sim.zones.cells.is_empty():
@@ -277,19 +283,14 @@ static func _tool_tips(sim: CitySim, category: String) -> Array:
 
 # --- Helpers --------------------------------------------------------------------
 
-## What a source mostly bothers homes with: "noise", "smoke" or "ground",
-## read at the first home it hurts.
+## What a source mostly bothers homes with: "noise", "smoke" or "ground".
 static func _pollution_kind(sim: CitySim, ref: String) -> String:
-	var keys: Array = sim.pollution.lots.keys()
-	keys.sort()
-	for key in keys:
-		if ref in sim.pollution.lots[key].hurt and sim.lots.has(key):
-			var at := sim.pollution.sample(sim.lots[key].pos)
-			for kind in ["smoke", "noise", "ground"]:
-				var by: Array = at.by[kind]
-				if not by.is_empty() and by[0][0] == ref and PollutionInfo.hurts(kind, at[kind]):
-					return kind
-	return "smoke"
+	var kinds: Dictionary = sim.pollution.hurts.get(ref, {}).get("kinds", {})
+	var best := "smoke"
+	for kind in ["smoke", "noise", "ground"]:
+		if int(kinds.get(kind, 0)) > int(kinds.get(best, 0)):
+			best = kind
+	return best
 
 
 static func _add(out: Array, id: String, kind: int, text: String) -> void:

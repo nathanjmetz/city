@@ -65,6 +65,13 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary) -> Array
 		["asphalt", [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
 		["curb", [[-hw - cw, -hw], [hw, hw + cw]], RoadStyle.Y_CURB, ""],
 	]
+	# Combined concrete curb and gutter (INDOT standard E 605-CCCG): a 2 ft
+	# concrete gutter pan along each edge of the pavement, and the curb's
+	# face reading as a thin shaded line.
+	if mats.has("curb_face"):
+		var g := RoadStyle.GUTTER_WIDTH
+		layers.append(["curb", [[-hw, -hw + g], [hw - g, hw]], RoadStyle.Y_ASPHALT + 0.004, ""])
+		layers.append(["curb_face", [[-hw - 0.07, -hw], [hw, hw + 0.07]], RoadStyle.Y_CURB + 0.003, ""])
 	if spec.get("walk", true):
 		layers.append(["walk", [[-w1, -w0], [w0, w1]], RoadStyle.Y_SIDEWALK, ""])
 	var dashes := []

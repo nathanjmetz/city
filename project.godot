@@ -6,12 +6,14 @@ config_version=5
 config/name="Neighbors"
 config/description="A cozy 3D city builder."
 run/main_scene="res://scenes/menu.tscn"
-config/features=PackedStringArray("4.7", "GL Compatibility")
+config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://assets/brand/app-icons/icon-256.png"
 config/windows_native_icon="res://assets/brand/app-icons/neighbors.ico"
 
 [autoload]
 
+Updater="*res://scripts/shell/updater.gd"
+Quality="*res://scripts/shell/quality.gd"
 Session="*res://scripts/shell/session.gd"
 Telemetry="*res://scripts/telemetry/telemetry.gd"
 Pad="*res://scripts/shell/pad.gd"
@@ -23,9 +25,11 @@ window/size/viewport_height=900
 
 [rendering]
 
-renderer/rendering_method="gl_compatibility"
+renderer/rendering_method="forward_plus"
 renderer/rendering_method.mobile="gl_compatibility"
+renderer/rendering_method.web="gl_compatibility"
 anti_aliasing/quality/msaa_3d=2
+textures/vram_compression/import_etc2_astc=true
 
 [shader_globals]
 

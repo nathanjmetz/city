@@ -1,4 +1,4 @@
-# The town's story: culture, heritage, markers, leaders' asks, timelapse
+# The town's story: nicknames, heritage, markers, leaders' asks, timelapse
 
 A town in Neighbors has a culture that drifts, leaders who ask it for
 things, old buildings that gain charm, roadside markers for its firsts, and
@@ -6,26 +6,28 @@ a record of how it grew. Together they let a town change identity on its
 own while the player stays in control: every big change is a yes or a no.
 
 All of it runs once a game month, one part an hour from 14:00 to 18:00
-(districts, then charm, markers, culture and asks, then the timelapse), plus
+(districts, then charm, markers, the nickname and asks, then the timelapse), plus
 a quick check of answered asks every game hour. Each part is one pass over
 the buildings or less: a few ms in the big test town (3,150 buildings). Numbers live in `Balance` under "Town heritage, culture and leader
 requests".
 
-## Culture and nicknames (`scripts/sim/culture.gd`)
+## Nicknames (`scripts/sim/nickname.gd`)
 
-- Six things a town can be known for: farming, industry, shops and Main
-  Street, offices and banking, college, and history.
-- The mix follows where people work, slowly (half the gap closes in two
-  game years), plus a lean from the player's answers on the bell.
-- It feeds back: owners on new lots lean toward the town's kind of
-  building, and leaders of the town's kind are keener to build.
-- A nickname is earned once the town has 150 people and one culture leads.
-  A new one must lead the old one clearly before it takes over, and old
-  nicknames are remembered ("Once the Corn Capital of Pike County, 2027 to
-  2041").
+- What the town is known for comes from its culture (`TownCulture`,
+  `scripts/sim/town_culture.gd`): where its people work, measured as
+  location quotients, drifting slowly. Answers on the bell lean it a little
+  (`TownCulture.nudge`).
+- A nickname is earned once the town has 150 people and an identity, in
+  the words of what it actually has: "Corn Capital of Pike County", "Mill
+  Town of Pike County", "Steel Town of Southern Indiana", "Coal Town of Pike
+  County", "Athens of the White River Valley", "Railroad Town of Pike
+  County". A town with a fifth of its buildings protected (counting a lean
+  from preservation answers) is the "Historic River Town of Pike County".
+- Old nicknames are remembered ("Once the Corn Capital of Pike County, 2027
+  to 2041").
 - Real references: Elkhart, "RV Capital of the World"; Bedford, "Limestone
-  Capital of the World"; Crawfordsville, "Athens of Indiana"; the state
-  motto, "The Crossroads of America".
+  Capital of the World"; Crawfordsville, "Athens of Indiana"; Madison and
+  its historic district; the state motto, "The Crossroads of America".
 
 ## Old buildings and historic districts (`scripts/sim/heritage.gd`)
 
@@ -63,8 +65,10 @@ requests".
 ## Leaders' asks (`scripts/sim/leader_asks.gd`)
 
 At most one new ask a month, on the bell, never a pop-up. Each card says
-what a yes and a no bring. Which leaders ask follows the culture, and each
-answer leans it.
+what a yes and a no bring. Which leaders ask follows the culture (a trade
+the town is known for speaks up more), and each yes leans it. Farmland
+turned into an office park or a shopping strip is asked by a land developer
+(`TownCulture.develop`).
 
 | Ask | Who | Real reference | Yes | No |
 | --- | --- | --- | --- | --- |
@@ -72,7 +76,6 @@ answer leans it.
 | Pave a gravel road | A farm family | Community Crossings grants; spring weight limits | The town pays its 25% share | It stays gravel |
 | Stoplight | The bank president or a Main Street owner | MUTCD chapter 4C signal warrants | The town pays $250,000; the main road flows | It stays a four-way stop |
 | Fall festival | Main Street merchants | Special event permits | The town pays $15,000; shops do a month's extra business | No festival |
-| Office park on farmland | A bank president | Brawn's identity-shift example | Frontage zoned for shops and offices; fields in the way go | It stays farm country; the town leans toward farming |
 
 ## Timelapse (`scripts/sim/timelapse.gd`, `scripts/ui/timelapse_view.gd`)
 

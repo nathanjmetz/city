@@ -122,7 +122,7 @@ func _sync(sim: CitySim) -> void:
 			companies.erase(id)
 	for cid in cabs.keys():
 		if not sim.services.buildings.has(cabs[cid].co) and cabs[cid].state != "driving":
-			cabs.erase(cid)
+			_drop(sim, cid)
 
 
 func _new_company(sim: CitySim, id: int) -> Dictionary:
@@ -464,6 +464,14 @@ func _add_cab(sim: CitySim, co: int) -> int:
 	return id
 
 
+## A cab leaves the books, and its car leaves the road if it's parked.
+func _drop(sim: CitySim, cid: int) -> void:
+	var cab: Dictionary = cabs.get(cid, {})
+	if int(cab.get("vid", -1)) != -1 and cab.get("state", "") != "driving":
+		sim.traffic.retire_vehicle(int(cab.vid))
+	cabs.erase(cid)
+
+
 func _retire_one(co: int) -> bool:
 	var ids := cabs.keys()
 	ids.sort()
@@ -496,9 +504,12 @@ func _arrivals(sim: CitySim) -> void:
 				i += 1
 				continue
 			var cid: int = trips[tid]
+			var a: Dictionary = list[i]
 			trips.erase(tid)
 			list.remove_at(i)
 			if cabs.has(cid):
+				if a.has("vid"):
+					cabs[cid].vid = int(a.vid)
 				_arrived(sim, cabs[cid], ok)
 
 
@@ -521,8 +532,12 @@ func _arrived(sim: CitySim, cab: Dictionary, ok: bool) -> void:
 			cab.load = 0
 			cab.until = sim.tick_count + DROPOFF_TICKS
 		_:
+			# Back in the lot: its car leaves the road for its stall.
+			if int(cab.get("vid", -1)) != -1:
+				sim.traffic.retire_vehicle(int(cab.vid))
+				cab.vid = -1
 			if cab.get("retire", false) or not sim.services.buildings.has(cab.co):
-				cabs.erase(cab.id)
+				_drop(sim, cab.id)
 				return
 			var pose := stall_pose(sim, cab)
 			cab.at = pose[0]
@@ -551,7 +566,7 @@ func _drive(sim: CitySim) -> void:
 			"parked":
 				cab.until = sim.tick_count + LOOK_EVERY
 				if cab.get("retire", false) or not companies.has(cab.co):
-					cabs.erase(cid)
+					_drop(sim, cid)
 					continue
 				if rank >= on_shift(cab.co, hour) or _roll(cab, sim.tick_count, 1) > _busy(cab.co):
 					continue
@@ -573,7 +588,7 @@ func _drive(sim: CitySim) -> void:
 func _home(sim: CitySim, cab: Dictionary) -> void:
 	var b: Dictionary = sim.services.buildings.get(cab.co, {})
 	if b.is_empty():
-		cabs.erase(cab.id)
+		_drop(sim, cab.id)
 		return
 	_send(sim, cab, "home", _gate(b))
 
@@ -617,8 +632,8 @@ func _send(sim: CitySim, cab: Dictionary, leg: String, to: Vector3) -> bool:
 	var from: Vector3 = cab.at
 	if cab.state == "parked":
 		from = _gate(sim.services.buildings[cab.co])
-	var tid := sim.traffic.dispatch({"ref": "taxi:%d" % cab.id, "pos": [from.x, from.z]},
-		{"ref": "taxi:%d" % cab.id, "pos": [to.x, to.z]}, "taxi", {"riders": cab.load, "cab": cab.id})
+	var tid := BusNet.leg(sim.traffic, cab, "taxi:%d" % cab.id, from, {"ref": "taxi:%d" % cab.id, "pos": [to.x, to.z]},
+		"taxi", {"riders": cab.load, "cab": cab.id}, "taxi")
 	if tid == -1:
 		cab.until = sim.tick_count + RETRY_TICKS
 		if cab.state != "parked":
@@ -642,9 +657,10 @@ func standing(sim: CitySim) -> Array:
 			continue
 		if cab.state == "parked":
 			var pose := stall_pose(sim, cab)
-			out.append(["taxi", pose[0], pose[1], 0])
+			out.append(["taxi", pose[0], pose[1], 0, int(cab.get("vid", -1)) != -1])
 		else:
-			out.append(["taxi", cab.at, cab.dir if cab.dir.length() > 0.5 else Vector3.FORWARD, cab.load])
+			out.append(["taxi", cab.at, cab.dir if cab.dir.length() > 0.5 else Vector3.FORWARD, cab.load,
+				int(cab.get("vid", -1)) != -1])
 	return out
 
 
@@ -696,7 +712,7 @@ func to_dict() -> Dictionary:
 		var p: Vector3 = c.get("pickup", Vector3.ZERO)
 		d.cabs.append({"id": cid, "co": c.co, "state": c.state, "leg": c.leg, "at": [c.at.x, c.at.z],
 			"dir": [c.dir.x, c.dir.z], "stall": c.stall, "to": [c.to.x, c.to.z], "pickup": [p.x, p.z],
-			"load": c.load, "until": c.until, "retire": c.get("retire", false)})
+			"load": c.load, "until": c.until, "retire": c.get("retire", false), "vid": c.get("vid", -1)})
 	for tid in trips:
 		d.trips[str(tid)] = trips[tid]
 	return d
@@ -724,7 +740,8 @@ func from_dict(sim: CitySim, d: Dictionary) -> void:
 		cabs[int(a.id)] = {"id": int(a.id), "co": int(a.co), "state": str(a.state), "leg": str(a.leg),
 			"at": Vector3(a.at[0], 0.0, a.at[1]), "dir": Vector3(a.dir[0], 0.0, a.dir[1]), "stall": int(a.stall),
 			"to": Vector3(a.to[0], 0.0, a.to[1]), "pickup": Vector3(a.pickup[0], 0.0, a.pickup[1]),
-			"load": int(a.load), "until": int(a.until), "retire": bool(a.get("retire", false))}
+			"load": int(a.load), "until": int(a.until), "retire": bool(a.get("retire", false)),
+			"vid": int(a.get("vid", -1))}
 	trips.clear()
 	for k in d.get("trips", {}):
 		trips[int(k)] = int(d.trips[k])

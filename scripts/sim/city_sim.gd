@@ -37,6 +37,7 @@ signal command_applied(cmd: Dictionary)
 ## A player command was turned down (Telemetry counts these to find where
 ## players get stuck).
 signal command_refused(cmd: Dictionary)
+signal neighborhoods_changed
 
 const TICKS_PER_SECOND := 10
 ## A new building can start every this many ticks.
@@ -57,6 +58,8 @@ const TICKS_PER_HOUR := 60 / MINUTES_PER_TICK
 var network := RoadNetwork.new()
 var zones := ZoneMap.new()
 var traffic := TrafficSim.new(network)
+## Everyone in town by name, and the names of places (owned by Traffic work).
+var people := People.new()
 var economy := Economy.new()
 var services := Services.new()
 var farms := Farms.new()
@@ -103,23 +106,39 @@ var hubs := CivicHubs.new()
 var parks := Parks.new()
 ## The post office, its postmaster, and the carriers on their routes.
 var mail := Mail.new()
+## Services shared with neighbor towns under signed deals (Interlocal).
+var interlocal := Interlocal.new()
+## What the region's shared projects do in this town (Regional).
+var regional := Regional.new()
+## The town's other neighborhoods, out on open land (Neighborhoods).
+var neighborhoods := Neighborhoods.new()
+## In a region, set by RegionClient: whose land these points (town
+## coordinates) are on. Returns "" when this town may build there, or why
+## not. Unset in a lone town.
+var land_check: Callable
+## In a region: why a new neighborhood can't start at a spot ("" if it can).
+var site_check: Callable
 ## Who owns each business, its name and its family's brand (Families).
 var families := Families.new()
+var _zone_keys := {}  # zone_keys() cache
+var _zone_sig := []
 var streets := Streets.new()
 ## The town's broad Funding and Growth sliders for every area and hub (no
 ## tax fiddling: Brawn). Set on the Economy page or a hub's panel.
 var policies := Policies.new()
+## What kind of town this is, from where its jobs are (TownCulture).
+var culture := TownCulture.new()
 ## Buildings going up, stage by stage, with their crews and deliveries.
 var construction := Construction.new()
 ## Smoke, noise and dirty ground, each traced to the source that makes it.
 var pollution := Pollution.new()
 ## Hospitals run by their administrators, ambulances, nursing homes, daycare.
 var healthcare := Healthcare.new()
-## What the town is known for and the nickname it earns (TownCulture), its
-## old buildings and historic districts (Heritage), the roadside markers for
-## its firsts (HistoricMarkers), what its leaders ask of the town
-## (LeaderAsks), and the record its timelapse plays back (Timelapse).
-var culture := TownCulture.new()
+## The nickname the town earns (TownNickname), its old buildings and
+## historic districts (Heritage), the roadside markers for its firsts
+## (HistoricMarkers), what its leaders ask of the town (LeaderAsks), and the
+## record its timelapse plays back (Timelapse).
+var nicknames := TownNickname.new()
 var heritage := Heritage.new()
 var markers := HistoricMarkers.new()
 var leaders := LeaderAsks.new()
@@ -198,6 +217,9 @@ func _init() -> void:
 		return int(req.base)
 	rail.attach(self)
 	# Bank presidents take the player's word too.
+	permits.locators["power"] = func(_sim, id: int) -> Vector2:
+		var s: Dictionary = power.sites.get(id, {"pos": Vector3.ZERO})
+		return Vector2(s.pos.x, s.pos.z)
 	permits.locators["bank"] = func(_sim, id: int) -> Vector2:
 		var b: Dictionary = banks.banks.get(id, {"pos": Vector3.ZERO})
 		return Vector2(b.pos.x, b.pos.z)
@@ -207,6 +229,7 @@ func _init() -> void:
 	# up with the building (connected ahead of the views).
 	for sig in [buildings_changed, farms_changed, industry_changed]:
 		sig.connect(func(): families.sync(self))
+	buildings_changed.connect(func(): _zone_keys = {})
 	permits.costers[Families.HUB] = func(_sim, req: Dictionary, _route, _hits) -> int:
 		return int(req.base)
 	permits.locators[Families.HUB] = func(_sim, id: int) -> Vector2:
@@ -235,6 +258,21 @@ func apply(cmd: Dictionary) -> bool:
 
 
 ## Applies a command right away, even online (the region does this).
+## The lot keys of every building in a zone, sorted (where people shop and
+## work, where freight goes). Cached until the buildings change.
+func zone_keys(zone: int) -> Array:
+	var sig := [buildings.size(), lots.size()]
+	if _zone_keys.is_empty() or _zone_sig != sig:
+		_zone_sig = sig
+		_zone_keys = {ZoneMap.Zone.RESIDENTIAL: [], ZoneMap.Zone.COMMERCIAL: [], ZoneMap.Zone.INDUSTRIAL: []}
+		for key in buildings:
+			if lots.has(key) and _zone_keys.has(buildings[key].zone):
+				_zone_keys[buildings[key].zone].append(key)
+		for z in _zone_keys:
+			_zone_keys[z].sort()
+	return _zone_keys.get(zone, [])
+
+
 func apply_now(cmd: Dictionary) -> bool:
 	var ok := false
 	match cmd.get("type", ""):
@@ -253,7 +291,7 @@ func apply_now(cmd: Dictionary) -> bool:
 				clampf(float(cmd.get("across", RoadShapes.GRID_ACROSS)), GridFill.ACROSS_MIN, GridFill.BLOCK_MAX))
 			if shape.size() == 2:
 				lines = [[shape[0], shape[0].lerp(shape[1], 0.5), shape[1]]]
-			if lines.is_empty() or not _can_afford(lines, _road(cmd)):
+			if lines.is_empty() or not _can_afford(lines, _road(cmd)) or land_problem(lines) != "":
 				return false
 			network.begin_batch()
 			for l in lines:
@@ -265,7 +303,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			var ring := RoadStyle.ring_type(_road(cmd))
 			var radius := RoadShapes.roundabout_radius(float(cmd.radius), _road(cmd))
 			var arcs := RoadShapes.roundabout(_v(cmd.center), radius)
-			if not _can_afford(arcs, ring):
+			if not _can_afford(arcs, ring) or land_problem(arcs) != "":
 				return false
 			ok = _build_roundabout(_v(cmd.center), radius, ring)
 			if ok:
@@ -280,6 +318,21 @@ func apply_now(cmd: Dictionary) -> bool:
 			ok = network.set_type(int(cmd.seg), _road(cmd))
 			if ok:
 				economy.money -= cost
+		"found_neighborhood":
+			var at := _v(cmd.pos)
+			var spot := Vector2(at.x, at.z)
+			if neighborhood_problem(spot) != "":
+				return false
+			var from := _nearest_road_xz(spot)
+			economy.money -= neighborhoods.fee()
+			var name := str(cmd.get("name", "")).strip_edges().left(40)
+			if name == "":
+				name = Neighborhoods.side_name(spot)
+			neighborhoods.add(spot, name, tick_count)
+			if from.distance_to(spot) >= RoadNetwork.MIN_LENGTH:
+				_county_road(from, spot, [])
+			neighborhoods_changed.emit()
+			ok = true
 		"place_service":
 			var kind := int(cmd.kind)
 			if not Services.KINDS.has(kind):
@@ -343,7 +396,13 @@ func apply_now(cmd: Dictionary) -> bool:
 			if not Industry.KINDS.has(kind) or dir.length() < 0.5 or industry_problem(kind, pos, dir) != "" \
 					or int(Industry.KINDS[kind].cost) > economy.money:
 				return false
-			industry.add_site(kind, pos, dir, industry_drive(pos, dir))
+			var drive := industry_drive(pos, dir)
+			var iid := industry.add_site(kind, pos, dir, drive)
+			# The main building goes up like any steel-frame plant; the crews
+			# park where its road meets the street.
+			var gate: Vector3 = drive[-1] if drive.size() >= 2 else pos
+			var out: Vector3 = (drive[-1] - drive[-2]).normalized() if drive.size() >= 2 else dir
+			construction.start("ind:%d" % iid, "factory", tick_count, gate - out * 2.0, out, 0.5)
 			economy.money -= int(Industry.KINDS[kind].cost)
 			_lots_dirty = true
 			industry_changed.emit()
@@ -508,7 +567,7 @@ func apply_now(cmd: Dictionary) -> bool:
 		"move":
 			# Move It: slide, turn or raise what the player placed (MoveIt).
 			ok = MoveIt.apply(self, cmd)
-		"fund_cleanup", "noise_wall":
+		"fund_cleanup", "noise_wall", "quiet_zone":
 			ok = pollution.command(self, cmd)
 		"set_difficulty":
 			# A city that hasn't started yet also gets that difficulty's start money.
@@ -586,6 +645,9 @@ func apply_now(cmd: Dictionary) -> bool:
 				var want := Policies.growth_for(str(cmd.get("stance", "steady")), now)
 				if want != now:
 					policies.set_step(key, "growth", want)
+		"end_deal":
+			# Notice to end a service deal with a neighbor town.
+			ok = interlocal.end(self, str(cmd.get("id", "")))
 		"policy":
 			# A Funding or Growth slider for the town, an area or one hub.
 			ok = _set_policy(str(cmd.get("scope", "")), str(cmd.get("slider", "")), int(cmd.get("step", -1)))
@@ -612,6 +674,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			trade = Trade.new()
 			traffic.overrides.clear()
 			traffic.from_dict({})
+			people = People.new()
 			network.clear()
 			zones.cells.clear()
 			planner = LotPlanner.new()
@@ -644,7 +707,15 @@ func apply_now(cmd: Dictionary) -> bool:
 			parks = Parks.new()
 			parks_changed.emit()
 			mail = Mail.new()
+			neighborhoods = Neighborhoods.new()
+			neighborhoods_changed.emit()
 			policies.from_dict({})
+			culture.from_dict({})
+			nicknames.from_dict({})
+			heritage.from_dict({})
+			markers.from_dict({})
+			leaders.from_dict({})
+			timelapse.from_dict(self, {})
 			_lever_steps.clear()
 			pollution = Pollution.new()
 			_hook_pollution()
@@ -903,15 +974,28 @@ func tick() -> void:
 	# Once a month every hub's leader looks at its development tree (Agency).
 	if tick_count % (24 * TICKS_PER_HOUR) == 12 * TICKS_PER_HOUR:
 		_develop_hubs()
+		if not neighborhoods.sites.is_empty():
+			var before := neighborhoods.sites.size()
+			neighborhoods.check(self)
+			if neighborhoods.sites.size() != before:
+				neighborhoods_changed.emit()
 	Perf.add("sim.hub_leaders", t)
 	t = Perf.now()
+	# The town's character drifts toward where its jobs are.
+	if tick_count % (24 * TICKS_PER_HOUR) == 11 * TICKS_PER_HOUR:
+		culture.update(self, tick_count / (24 * TICKS_PER_HOUR))
+		if culture.develop(self):
+			_usable_cache.clear()
+			_lots_dirty = true
+			farms_changed.emit()
+			zones_changed.emit()
 	# ...and every family looks at what it owns, and whether to branch out.
 	if tick_count % (24 * TICKS_PER_HOUR) == 13 * TICKS_PER_HOUR:
 		families.month(self)
 	Perf.add("sim.families", t)
 	t = Perf.now()
-	# The town's story, one part an hour so no tick carries it all: charm
-	# and districts, its firsts and culture, its leaders' asks, and the
+	# The town's story, one part an hour so no tick carries it all: its
+	# districts, charm, firsts, nickname and leaders' asks, and the
 	# timelapse's record.
 	var hour := tick_count % (24 * TICKS_PER_HOUR)
 	if hour == 14 * TICKS_PER_HOUR:
@@ -921,7 +1005,7 @@ func tick() -> void:
 	elif hour == 16 * TICKS_PER_HOUR:
 		markers.month(self)
 	elif hour == 17 * TICKS_PER_HOUR:
-		culture.month(self)
+		nicknames.month(self)
 		leaders.month(self)
 	elif hour == 18 * TICKS_PER_HOUR:
 		timelapse.month(self)
@@ -944,8 +1028,9 @@ func tick() -> void:
 	t = Perf.now()
 	hubs.tick(self)
 	construction.tick(self)
+	if simulate_traffic:
+		power.crew_tick(self)
 	Perf.add("sim.civic_hubs", t)
-	pollution.tick(self)
 	if not in_region and tick_count % (24 * TICKS_PER_HOUR) == 0:
 		t = Perf.now()
 		Trade.settle({"me": self}, {})
@@ -954,8 +1039,15 @@ func tick() -> void:
 	mail.tick(self)
 	Perf.add("sim.mail", t)
 	t = Perf.now()
+	interlocal.tick(self)
+	Perf.add("sim.interlocal", t)
+	t = Perf.now()
 	rail.tick(self)
 	Perf.add("sim.rail", t)
+	# After rail, so a loaded copy has its grade crossings back first.
+	t = Perf.now()
+	pollution.tick(self)
+	Perf.add("sim.pollution", t)
 	t = Perf.now()
 	healthcare.tick(self)
 	Perf.add("sim.healthcare", t)
@@ -972,6 +1064,12 @@ func tick() -> void:
 	logistics.tick(self)
 	Perf.add("sim.logistics", t)
 	t = Perf.now()
+	var prng := RandomNumberGenerator.new()
+	prng.seed = hash([city_seed, tick_count, "people"])
+	people.sync(self, traffic, prng)
+	people.plan(self, traffic, prng)
+	Perf.add("sim.people", t)
+	t = Perf.now()
 	education.trips(self)
 	telecom.trips(self)
 	Perf.add("sim.school_trips", t)
@@ -984,13 +1082,13 @@ func tick() -> void:
 	Perf.add("sim.tick", t0)
 
 
-## The town's heritage, firsts, culture, leaders' asks and timelapse record
+## The town's heritage, firsts, nickname, leaders' asks and timelapse record
 ## all at once (tests and tools; the tick spreads them over the afternoon).
 func town_month() -> void:
 	heritage.month(self)
 	heritage.month_charm(self)
 	markers.month(self)
-	culture.month(self)
+	nicknames.month(self)
 	leaders.month(self)
 	timelapse.month(self)
 
@@ -1072,7 +1170,7 @@ func update_stats(budget := true) -> void:
 		0.1 + float(coming_workers - jobs) / maxf(coming_workers, 40.0)
 		+ 0.4 * (shop_jobs * 0.8 - factory_jobs) / maxf(factory_jobs, 20.0), 0.0, 1.0)
 	for z in demand:
-		demand[z] = clampf(demand[z] + economy.demand_shift(z) + mail.demand_shift(z), 0.0, 1.0)
+		demand[z] = clampf(demand[z] + economy.demand_shift(z) + mail.demand_shift(z) + regional.demand_shift(z), 0.0, 1.0)
 	# Visitors who come to walk the old districts, and the fall festival.
 	demand[ZoneMap.Zone.COMMERCIAL] = clampf(demand[ZoneMap.Zone.COMMERCIAL] + heritage.tourism_demand()
 		+ LeaderAsks.festival_demand(self), 0.0, 1.0)
@@ -1410,6 +1508,25 @@ func _decide_power() -> bool:
 
 
 ## What a power company's leader can see around it (see Power.decide).
+## How much the power plants' smoke, noise and ash lower land value at a
+## point (0 to about -0.3), as Pollution measures them.
+func power_nuisance(p: Vector3) -> float:
+	var smoke := 0.0
+	var energy := 0.0
+	var clean := 1.0
+	for id in power.sites:
+		var src: Dictionary = pollution.sources.get("power:%d" % id, {})
+		if src.is_empty():
+			continue
+		var v := pollution.source_at(src, p)
+		smoke += v.x
+		energy += v.y
+		clean *= 1.0 - v.z
+	if smoke == 0.0 and energy == 0.0 and clean == 1.0:
+		return 0.0
+	return Pollution.penalty({"smoke": smoke, "noise": Pollution.db(energy), "ground": 1.0 - clean})
+
+
 func power_context() -> Dictionary:
 	var has_school := false
 	for id in services.buildings:
@@ -1492,10 +1609,17 @@ func mark_lots_dirty() -> void:
 func _wire_policies() -> void:
 	farms.policies = policies
 	industry.policies = policies
+	farms.culture = culture
+	industry.culture = culture
 	services.policies = policies
 	hubs.policies = policies
 	parks.policies = policies
 	power.policies = policies
+	# Wind leases: turbines stand in farmers' fields, which pay the farm.
+	power.on_farm = func(p: Vector3) -> bool: return farms.field_at(p) != -1
+	power.pad_usable = pad_usable
+	farms.lease_of = power.lease_in
+	farms.rent_of = power.farm_rent
 
 
 ## Hubs with their own money lever (a campus's funding level, a post
@@ -1679,7 +1803,6 @@ func farm_drive(pos: Vector3, dir: Vector3) -> Array:
 	return Farms.make_drive(pos, dir, near.point)
 
 
-## True when ground for a field is clear: no road, lot, service or farmyard.
 ## True when a public road runs between a and b on the ground.
 func road_between(a: Vector3, b: Vector3) -> bool:
 	var a2 := Vector3(a.x, 0.0, a.z)
@@ -1687,13 +1810,29 @@ func road_between(a: Vector3, b: Vector3) -> bool:
 	var n := maxi(2, ceili(a2.distance_to(b2) / 6.0))
 	for i in range(1, n):
 		var p := a2.lerp(b2, float(i) / n)
-		if not network.find_segment_near(Vector3(p.x, Terrain.ground_y(p.x, p.z), p.z), 4.0, 3.0).is_empty():
+		if not network.find_segment_near(p, 4.0).is_empty():
 			return true
 	return false
 
 
+## Fields and lots changed outside a command (a farm leased fields away).
+func clear_usable_cache() -> void:
+	_usable_cache.clear()
+
+
+## True when ground for a field is clear: no road, lot, service or farmyard.
 func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
-	var key := Vector2i(roundi(mid.x), roundi(mid.z))
+	return _ground_free(mid, corners, false)
+
+
+## Where a wind turbine's pad may go: the same free ground, or inside a
+## farm's field, which the farmer leases out and keeps farming around.
+func pad_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
+	return _ground_free(mid, corners, true)
+
+
+func _ground_free(mid: Vector3, corners: PackedVector2Array, in_fields: bool) -> bool:
+	var key := Vector3i(roundi(mid.x), roundi(mid.z), int(in_fields))
 	if _usable_cache.has(key):
 		return _usable_cache[key]
 	var ok := network.find_segment_near(mid, Farms.CELL * 0.6 + RoadStyle.right_of_way_half(RoadStyle.Type.AVENUE), 2.0).is_empty()
@@ -1702,7 +1841,7 @@ func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
 		pts.append(mid.lerp(Vector3(c.x, 0.0, c.y), 0.8))
 	if ok:
 		for p in pts:
-			if services.covers(p) or farms.covers(p) or industry.covers(p) or farms.field_at(p) != -1 \
+			if services.covers(p) or farms.covers(p) or industry.covers(p) or (not in_fields and farms.field_at(p) != -1) \
 					or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
 					or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p) \
 					or not land_ok(p):
@@ -1985,12 +2124,75 @@ func road_problem(c: Array, type: int) -> String:
 		return "Too steep: %d%% grade. A %s can climb at most %d%% (AASHTO)." \
 			% [roundi(grade * 100.0), spec.name, roundi(spec.grade * 100.0)]
 	var problem := network.crossing_problem(c[0], c[1], c[2])
+	if problem == "":
+		problem = land_problem([c])
 	var saved := reserves.crosses(RoadNetwork.sample_curve(c[0], c[1], c[2], 24))
 	if problem == "" and saved != "":
 		problem = "That land is reserved for %s. Clear the reserve first." % Reserves.KINDS[saved]
 	if problem == "" and Economy.road_cost(c, type) > economy.money:
 		return "Not enough money: this road costs $%s." % money_text(Economy.road_cost(c, type))
 	return problem
+
+
+## Whose land these road pieces cross ("" when it's this town's or open
+## land). Only in a region (land_check).
+func land_problem(curves: Array) -> String:
+	if not land_check.is_valid():
+		return ""
+	var pts := []
+	for c in curves:
+		for q in RoadNetwork.sample_curve(c[0], c[1], c[2], 8):
+			pts.append(Vector2(q.x, q.z))
+	return land_check.call(pts)
+
+
+## Why a new neighborhood can't start here ("" if it can).
+func neighborhood_problem(spot: Vector2) -> String:
+	if neighborhoods.slots_free(int(stats.population)) <= 0:
+		if neighborhoods.sites.size() >= Balance.NEIGHBORHOOD_MAX:
+			return "A town can have %d neighborhoods." % Balance.NEIGHBORHOOD_MAX
+		return "Grow to the next town stage to earn another neighborhood."
+	if neighborhoods.fee() > economy.money:
+		return "Not enough money: a new neighborhood costs $%s." % money_text(neighborhoods.fee())
+	if network.nodes.is_empty():
+		return "Build your first roads at home first."
+	if site_check.is_valid():
+		return site_check.call(spot)
+	return ""
+
+
+## The nearest road node to a spot, on the ground plane.
+func _nearest_road_xz(to: Vector2) -> Vector2:
+	var best := Vector2.ZERO
+	var best_d := INF
+	for n in network.nodes:
+		var q: Vector3 = network.nodes[n]
+		var d := Vector2(q.x, q.z).distance_squared_to(to)
+		if d < best_d:
+			best_d = d
+			best = Vector2(q.x, q.z)
+	return best
+
+
+## The land this town has built on, as LAND_CELL squares (centres, town
+## coordinates): its buildings, its town centre and its neighborhood sites.
+## Neighbors use it to tell whose land is whose without the whole town.
+func land_cells() -> PackedVector2Array:
+	var cell := Balance.LAND_CELL
+	var seen := {}
+	var add := func(p: Vector2):
+		seen[Vector2i(floori(p.x / cell), floori(p.y / cell))] = true
+	add.call(Vector2.ZERO)
+	for s in neighborhoods.sites:
+		add.call(s.at)
+	for key in buildings:
+		if lots.has(key):
+			var p: Vector3 = lots[key].pos
+			add.call(Vector2(p.x, p.z))
+	var out := PackedVector2Array()
+	for k in seen:
+		out.append((Vector2(k) + Vector2(0.5, 0.5)) * cell)
+	return out
 
 
 ## What it costs to build these road pieces.
@@ -2066,7 +2268,7 @@ func _grow_one(salt := 0) -> String:
 		var key: String = list[rng.randi() % list.size()]
 		# Nobody wants to build next to a smoky old power plant.
 		if z != ZoneMap.Zone.INDUSTRIAL and not power.sites.is_empty() \
-				and rng.randf() < -power.land_value_effect(lots[key].pos) * Balance.POWER_SMOKE_GROWTH:
+				and rng.randf() < -power_nuisance(lots[key].pos) * Balance.POWER_SMOKE_GROWTH:
 			continue
 		var bseed := rng.randi()
 		# The lot's owner picks what to build from what is around it.
@@ -2122,7 +2324,7 @@ func _develop_hubs() -> void:
 		var f: Dictionary = farms.farms[id]
 		if not f.has("leader"):
 			f.leader = Agency.leader(self, hash([city_seed, "farm", id]))
-		if not Agency.develop(self, f, Agency.TREES.farm, f.pos, farms.yearly_profit(id), culture.boost("farm")).is_empty():
+		if not Agency.develop(self, f, Agency.TREES.farm, f.pos, farms.yearly_profit(id)).is_empty():
 			farm_built = true
 	ids = industry.sites.keys()
 	ids.sort()
@@ -2131,8 +2333,7 @@ func _develop_hubs() -> void:
 		var s: Dictionary = industry.sites[id]
 		if not s.has("leader"):
 			s.leader = Agency.leader(self, hash([city_seed, "site", id]))
-		if not Agency.develop(self, s, Agency.TREES[s.kind], s.pos, industry.yearly_profit(id),
-				culture.boost("industry")).is_empty():
+		if not Agency.develop(self, s, Agency.TREES[s.kind], s.pos, industry.yearly_profit(id)).is_empty():
 			site_built = true
 	if farm_built:
 		farms_changed.emit()
@@ -2144,6 +2345,8 @@ func _develop_hubs() -> void:
 	var ctx := power_context()
 	for id in ids:
 		if power.develop(self, id, ctx):
+			power_built = true
+		if power.farmland(self, id):
 			power_built = true
 	if power_built:
 		_lots_dirty = true
@@ -2314,13 +2517,17 @@ func to_dict() -> Dictionary:
 		"permits": permits.to_dict(),
 		"hubs": hubs.to_dict(),
 		"parks": parks.to_dict(),
+		"neighborhoods": neighborhoods.to_dict(),
 		"mail": mail.to_dict(),
+		"interlocal": interlocal.to_dict(),
+		"regional": regional.to_dict(),
 		"families": families.to_dict(),
 		"streets": streets.to_dict(),
 		"policies": policies.to_dict(),
+		"culture": culture.to_dict(),
 		"pollution": pollution.to_dict(),
 		"healthcare": healthcare.to_dict(),
-		"culture": culture.to_dict(),
+		"nicknames": nicknames.to_dict(),
 		"heritage": heritage.to_dict(),
 		"markers": markers.to_dict(),
 		"leaders": leaders.to_dict(),
@@ -2329,6 +2536,7 @@ func to_dict() -> Dictionary:
 		"traffic": traffic.to_dict(),
 		"buses": buses.to_dict(),
 		"taxis": taxis.to_dict(),
+		"people": people.to_dict(),
 		"vegetation": vegetation.to_dict(),
 	}
 
@@ -2373,11 +2581,16 @@ func from_dict(d: Dictionary) -> void:
 	permits.from_dict(d.get("permits", {}))
 	hubs.from_dict(d.get("hubs", {}))
 	parks.from_dict(d.get("parks", {}))
+	neighborhoods.from_dict(d.get("neighborhoods", {}))
 	mail.from_dict(d.get("mail", {}))
+	interlocal.from_dict(d.get("interlocal", {}))
+	regional.from_dict(d.get("regional", {}))
+	services.contracts = interlocal.coverage()
 	policies.from_dict(d.get("policies", {}))
+	culture.from_dict(d.get("culture", {}))
 	pollution.from_dict(d.get("pollution", {}))
 	healthcare.from_dict(d.get("healthcare", {}))
-	culture.from_dict(d.get("culture", {}))
+	nicknames.from_dict(d.get("nicknames", {}))
 	heritage.from_dict(d.get("heritage", {}))
 	markers.from_dict(d.get("markers", {}))
 	leaders.from_dict(d.get("leaders", {}))
@@ -2389,6 +2602,7 @@ func from_dict(d: Dictionary) -> void:
 			f.drive = farm_drive(f.pos, f.dir)
 	traffic.rules_from_dict(d.get("junctions", {}))
 	traffic.from_dict(d.get("traffic", {}))
+	people.from_dict(d.get("people", {}))
 	tick_count = int(d.get("tick", 0))
 	city_seed = int(d.get("seed", 1))
 	# Parcels: the lots buildings stand on.

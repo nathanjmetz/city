@@ -4,8 +4,11 @@ extends Node3D
 ## deep-ink fade into a slowly turning view of your latest city.
 ##
 ## There is one shared map and one way to play: Play · Profile · Quit.
-## Play drops you into your town; the first time, it asks for the invite
-## code the host sent you, and that code is the only key.
+## Play drops you into your town in the family region; the first time, it
+## asks only your name. The region's invite code comes with the game (or
+## from the region itself), so nobody types one; "Join with a code" is for
+## a different region. If the region's computer is off, you can play
+## offline instead.
 
 var _panel := PanelContainer.new()
 var _pages := {}       # name -> Control
@@ -21,6 +24,9 @@ var _published_server := ""  # from Session.REGION_CONFIG
 var _fetching := false
 var _join_after_fetch := false
 var _who := LineEdit.new()  # your name, on the invite code page
+var _first := LineEdit.new()  # your name, the first time you press Play
+var _published_code := ""  # the family region's invite code, from REGION_CONFIG
+var _offline: Button  # shown when the region can't be reached
 
 
 func _ready() -> void:
@@ -58,13 +64,17 @@ func _ready() -> void:
 	tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(tag)
 	col.add_child(_gap(24))
-	for page in [_home_page(), _code_page(), _profile_page()]:
+	for page in [_home_page(), _name_page(), _code_page(), _profile_page()]:
 		col.add_child(page)
+	_offline = _big_button("Play offline instead", "Your town on this computer, until the region is back", _play_offline)
+	_offline.visible = false
+	col.add_child(_offline)
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	col.add_child(spacer)
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(_status)
+	col.add_child(_app_line())
 	col.add_child(ShellStyle.text("Build " + Hud._build_name(), 11, 500, Brand.INK_FAINT))
 
 	if not Session.pending_invite.is_empty():
@@ -103,6 +113,10 @@ func _home_page() -> Control:
 	ShellStyle.primary(play)
 	col.add_child(play)
 	col.add_child(_big_button("Profile", "How neighbors see you", func(): _show("profile")))
+	var other := _back()
+	other.text = "Join with a code"
+	other.pressed.connect(func(): _show("code"))
+	col.add_child(other)
 	if not OS.has_feature("web"):
 		col.add_child(_big_button("Quit", "", func(): get_tree().quit()))
 	return col
@@ -150,6 +164,36 @@ func _code_page() -> Control:
 	return col
 
 
+## The first Play: just your name, then straight in.
+func _name_page() -> Control:
+	var col := _page("name")
+	col.add_child(ShellStyle.title("Welcome"))
+	col.add_child(_label("YOUR NAME"))
+	_first.placeholder_text = "Who you are, over your town"
+	_first.max_length = 24
+	_first.custom_minimum_size = Vector2(0, 38)
+	_first.text_submitted.connect(func(_t): _name_and_play())
+	col.add_child(_first)
+	var play := _big_button("Play", "", _name_and_play)
+	ShellStyle.primary(play)
+	col.add_child(play)
+	col.add_child(_back())
+	return col
+
+
+func _name_and_play() -> void:
+	var n := _first.text.strip_edges()
+	if n == "":
+		_status.text = "Type your name: it goes over your town."
+		_first.grab_focus()
+		return
+	Session.profile.name = n
+	_name.text = n
+	_who.text = n
+	Session.save_profile()
+	_play()
+
+
 func _profile_page() -> Control:
 	var col := _page("profile")
 	col.add_child(ShellStyle.title("Profile"))
@@ -170,20 +214,44 @@ func _show(page: String) -> void:
 	for p in _pages:
 		_pages[p].visible = p == page
 	_status.text = ""
+	_offline.visible = false
 	if page == "code":
 		_code.grab_focus.call_deferred()
+	elif page == "name":
+		_first.grab_focus.call_deferred()
 
 
 # --- Actions -----------------------------------------------------------------
 
-## Play: straight into your town if this device has been in before,
-## otherwise ask for the invite code first.
+## Play: straight into your town in the family region. The first time,
+## it asks your name; there is no code to type.
 func _play() -> void:
-	if Session.profile.code != "" and Session.has_login(_server_address(), Session.profile.code):
-		_code.text = Session.profile.code
-		_join()
+	if str(Session.profile.get("name", "")).strip_edges() == "":
+		_show("name")
+		return
+	_code.text = _family_code()
+	_join()
+
+
+## The family region's invite code: the one the region publishes, else the
+## one this device last played with, else the one the game ships with.
+func _family_code() -> String:
+	if _published_code != "":
+		return _published_code
+	if str(Session.profile.get("code", "")) != "":
+		return str(Session.profile.code)
+	return Session.FAMILY_CODE
+
+
+## The region can't be reached: your own town on this computer instead
+## (the newest one saved here, or a new one).
+func _play_offline() -> void:
+	var saves := Session.list_saves()
+	if saves.is_empty():
+		var n := str(Session.profile.get("name", "")).strip_edges()
+		Session.new_city((n if n != "" else "My") + "ville")
 	else:
-		_show("code")
+		Session.play_solo(saves[0].path)
 
 
 func _join() -> void:
@@ -204,7 +272,10 @@ func _join() -> void:
 	c.waiting.connect(func(message): _status.text = message)
 	c.failed.connect(func(reason):
 		_joining = false
-		_status.text = reason)
+		_status.text = reason
+		# The region's computer is off, asleep or out of date: don't leave
+		# anyone stuck on the title screen.
+		_offline.visible = "answering" in reason or "version" in reason or "reach" in reason)
 
 
 ## Where the region is: the invite link's address, else the one the region
@@ -227,6 +298,8 @@ func _fetch_server() -> void:
 			var d = JSON.parse_string(body.get_string_from_utf8())
 			if d is Dictionary and str(d.get("server", "")).begins_with("ws"):
 				_published_server = str(d.server)
+			if d is Dictionary and str(d.get("code", "")) != "":
+				_published_code = str(d.code).strip_edges().to_upper()
 		http.queue_free()
 		_fetched())
 	if http.request(Session.REGION_CONFIG, ["Accept: application/vnd.github.raw+json"]) != OK:
@@ -303,6 +376,36 @@ func _back() -> Button:
 
 
 ## An uppercase label above a field, like the kit's "label" style.
+## The desktop app: a link to it from the browser, and in the app what the
+## updater is doing (or a link to a new app when the engine changed).
+func _app_line() -> Control:
+	var row := VBoxContainer.new()
+	row.add_theme_constant_override("separation", 2)
+	var link := LinkButton.new()
+	link.text = "Get the free Mac and Windows app"
+	link.add_theme_font_override("font", Brand.ui(600))
+	link.add_theme_font_size_override("font_size", 13)
+	link.add_theme_color_override("font_color", Brand.INK_MUTED)
+	link.focus_mode = Control.FOCUS_NONE
+	link.pressed.connect(func(): OS.shell_open(Updater.DOWNLOAD_PAGE))
+	link.visible = OS.has_feature("web")
+	row.add_child(link)
+	var note := ShellStyle.text(Updater.last_status, 12, 500, Brand.INK_MUTED)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.visible = note.text != ""
+	row.add_child(note)
+	var show := func(text: String):
+		note.text = text
+		note.visible = text != ""
+		if Updater.new_app:
+			link.text = "Download the new version"
+			link.visible = true
+	Updater.status.connect(show)
+	if Updater.new_app:
+		show.call(Updater.last_status)
+	return row
+
+
 func _label(s: String) -> Label:
 	var l := ShellStyle.text(s, 11, 600, Brand.INK_MUTED)
 	return l

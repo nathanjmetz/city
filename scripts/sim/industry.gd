@@ -45,6 +45,8 @@ var reserves: Reserves
 ## The town's sliders: Funding is support per pad, Growth how eagerly a
 ## company opens more pads (see Policies).
 var policies: Policies
+## The town's character: a coal town's mines open new cuts more readily.
+var culture: TownCulture
 ## Set by the city: the industrial tax rate (percent) and a price factor.
 var tax_rate := 1.5
 var price := 1.0
@@ -123,7 +125,10 @@ func support(id: int) -> float:
 func buy_margin(id: int) -> float:
 	if policies == null:
 		return 0.0
-	return policies.pick(Balance.POLICY_BUY_MARGIN_PER_PAD, "growth", "resources", "industry:%d" % id)
+	var m: float = policies.pick(Balance.POLICY_BUY_MARGIN_PER_PAD, "growth", "resources", "industry:%d" % id)
+	if culture != null and m < INF and sites.has(id):
+		m -= culture.pull(TownCulture.sector_of_kind(sites[id].kind)) * Balance.CULTURE_MARGIN_PER_PAD
+	return m
 
 
 ## What the town pays all its companies a year (negative: what it collects).
@@ -231,7 +236,14 @@ func best_pad(id: int, usable: Callable) -> Vector2i:
 ## Forest: any timber on its land that isn't being cut or regrowing.
 func _candidates(s: Dictionary) -> Array:
 	if s.kind == "ore":
-		return _frontier(s) if not s.pads.is_empty() else _seeds()
+		# An area strip mine opens beside its plant, on its own side of any
+		# road, and advances one way, cut after cut, never back past the plant.
+		if s.pads.is_empty():
+			return _seeds().filter(func(c): return c.y != 0 and not (road_between.is_valid()
+				and road_between.call(s.pos, pad_center(s, c))))
+		var first: Vector2i = s.pads[0]
+		var way := signi(first.y) if first.y != 0 else 1
+		return _frontier(s).filter(func(c): return c.y * way >= first.y * way)
 	var out := []
 	var r := Balance.LEASE_REACH_CELLS if not s.pads.is_empty() else SEED_REACH
 	var resting: Dictionary = s.get("regrow", {})
@@ -394,9 +406,7 @@ func _frontier(s: Dictionary) -> Array:
 	var seen := {Vector2i.ZERO: true}
 	for c in s.pads:
 		seen[c] = true
-	var from: Array = s.pads.duplicate()
-	from.append(Vector2i.ZERO)
-	for c in from:
+	for c in s.pads:
 		# Edge neighbours only: the quarry widens, it doesn't skip across.
 		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 			var n: Vector2i = c + d

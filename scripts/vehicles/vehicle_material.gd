@@ -3,19 +3,25 @@ extends RefCounted
 ## One shader for every vehicle. Vertex alpha picks the surface (see
 ## VehicleModels); per-instance custom data carries the body colour (sRGB) in
 ## rgb and, in alpha, 1 while braking plus 2 while running emergency lights.
-## Cheap enough for the Compatibility renderer.
+## Cheap enough for the Compatibility renderer. The Ultra version (desktop,
+## Forward+) adds a clear coat over metallic flake paint, road grime that
+## builds toward the sills and wheels, and tinted, sharper glass.
 
 const SHADER := """
 shader_type spatial;
 render_mode cull_back;
 global uniform float night;
+uniform bool ultra = false;
 varying vec4 v_custom;
 varying float v_side;
+varying float v_y;
 vec3 lin(vec3 c) { return pow(c, vec3(2.2)); }
 void vertex() {
 	v_custom = INSTANCE_CUSTOM;
 	v_side = VERTEX.x;
+	v_y = VERTEX.y;
 }
+float hash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
 void fragment() {
 	float code = COLOR.a;
 	vec3 col = lin(COLOR.rgb);
@@ -56,6 +62,32 @@ void fragment() {
 		col *= 0.6;
 		emit = lin(COLOR.rgb) * flash * 3.0;
 	}
+	if (ultra) {
+		if (code < 0.05) {
+			// Metallic paint on most colours, solid on whites and blacks;
+			// a glossy clear coat over both.
+			float sat = max(max(v_custom.r, v_custom.g), v_custom.b) - min(min(v_custom.r, v_custom.g), v_custom.b);
+			float lum = dot(v_custom.rgb, vec3(0.3, 0.59, 0.11));
+			float flake = step(0.12, sat) + step(0.25, lum) * step(lum, 0.8);
+			metal = mix(0.1, 0.55, clamp(flake, 0.0, 1.0));
+			rough = 0.32;
+			CLEARCOAT = 1.0;
+			CLEARCOAT_ROUGHNESS = 0.06;
+		} else if (code < 0.15) {
+			col = vec3(0.012, 0.016, 0.02);
+			rough = 0.02;
+			spec = 1.0;
+		} else if (code < 0.35 && code > 0.25) {
+			// Rubber and plastic aren't one flat black.
+			col *= 0.9 + 0.2 * hash(floor(VERTEX * 40.0));
+		}
+		// Road grime: dust and spray, heaviest on the sills and wheels.
+		float grime = (1.0 - smoothstep(0.2, 0.9, v_y)) * (0.6 + 0.4 * hash(floor(VERTEX * 6.0)));
+		if (code < 0.45 && code > 0.15 || code < 0.05) {
+			col = mix(col, vec3(0.16, 0.13, 0.10), grime * 0.35);
+			rough = mix(rough, 0.85, grime * 0.6);
+		}
+	}
 	ALBEDO = col;
 	ROUGHNESS = rough;
 	METALLIC = metal;
@@ -65,12 +97,17 @@ void fragment() {
 """
 
 static var _mat: ShaderMaterial
+static var _ultra: ShaderMaterial
 
 
-static func get_material() -> ShaderMaterial:
+## The shared material; `ultra` gives the desktop Ultra tier's version.
+static func get_material(ultra := false) -> ShaderMaterial:
 	if _mat == null:
 		var sh := Shader.new()
 		sh.code = SHADER
 		_mat = ShaderMaterial.new()
 		_mat.shader = sh
-	return _mat
+		_ultra = ShaderMaterial.new()
+		_ultra.shader = sh
+		_ultra.set_shader_parameter("ultra", true)
+	return _ultra if ultra else _mat

@@ -142,7 +142,7 @@ func month(sim) -> void:
 			fields.append({"c": [snappedf(mid.x, 0.1), snappedf(mid.z, 0.1)],
 				"a": snappedf(atan2(f.dir.z, f.dir.x), 0.001), "from": m, "to": -1, "k": "%d:%d,%d" % [id, c.x, c.y]})
 			live[c] = fields.size() - 1
-	var nick := str(sim.culture.nickname.get("text", ""))
+	var nick := str(sim.nicknames.current.get("text", ""))
 	if story.is_empty() or int(story[-1].pop) != int(sim.stats.population) or str(story[-1].nick) != nick:
 		story.append({"m": m, "pop": int(sim.stats.population), "nick": nick})
 

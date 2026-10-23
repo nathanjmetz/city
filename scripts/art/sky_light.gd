@@ -35,6 +35,8 @@ var sky_mat := ProceduralSkyMaterial.new()
 ## 0 in full daylight, 1 at full night. DayNight reads it.
 var darkness := 0.0
 var _day := {}  # the fixed late-morning look, to go back to
+## How far from the camera shadows reach at most, in metres (Quality sets it).
+var shadow_reach := 2000.0
 
 
 func _ready() -> void:
@@ -103,6 +105,51 @@ func _ready() -> void:
 	_day = {"top": sky_mat.sky_top_color, "horizon": sky_mat.sky_horizon_color,
 		"ambient": env.ambient_light_energy, "ambient_color": env.ambient_light_color,
 		"sun_color": sun.light_color, "sun_energy": sun.light_energy, "rot": sun.rotation_degrees}
+	if GraphicsQuality.current:
+		GraphicsQuality.current.changed.connect(_apply_quality)
+		_apply_quality()
+
+
+## The desktop app's quality tier (see Quality). Ambient occlusion darkens
+## the creases real photos show: under eaves, where walls meet the ground,
+## between houses close together. The browser build keeps the look above.
+func _apply_quality() -> void:
+	var q := GraphicsQuality.current
+	if q == null or not q.active:
+		return
+	var t := q.settings()
+	env.ssao_enabled = t.ssao
+	env.ssao_radius = 1.5
+	env.ssao_intensity = 1.6
+	env.ssao_power = 1.5
+	env.ssao_light_affect = 0.1
+	env.ssil_enabled = t.ssil
+	env.ssil_radius = 6.0
+	env.ssil_intensity = 0.6
+	# Sky and clouds mirrored in ponds, the river and wet pavement.
+	env.ssr_enabled = t.ssr
+	env.ssr_max_steps = 48
+	env.ssr_fade_out = 2.0
+	# Sunlight bouncing off lawns, walls and streets into the shade, the
+	# way a real street's shadows are never black (Cinematic only).
+	env.sdfgi_enabled = t.sdfgi
+	env.sdfgi_use_occlusion = true
+	env.sdfgi_cascades = 6
+	env.sdfgi_min_cell_size = 0.4
+	env.sdfgi_energy = 0.8
+	# Light you can see in the air: low sun through haze, shafts between
+	# buildings. Thin, so the aerial perspective above still does the
+	# distance (Cinematic only).
+	env.volumetric_fog_enabled = t.fog
+	env.volumetric_fog_density = 0.0012
+	env.volumetric_fog_albedo = HAZE
+	env.volumetric_fog_anisotropy = 0.6
+	env.volumetric_fog_length = 600.0
+	env.volumetric_fog_sky_affect = 0.0
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS if t.splits == 4 \
+		else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	shadow_reach = t.shadow_reach
+	sun.directional_shadow_max_distance = minf(sun.directional_shadow_max_distance, shadow_reach)
 
 
 ## Back to the fixed late-morning look (day/night cycle off).
@@ -212,7 +259,7 @@ func _process(_delta: float) -> void:
 		reach = cam.global_position.y / -dir.y
 	# Change the range only in big steps: a shadow map that resizes every
 	# frame makes every shadow edge crawl while the camera moves.
-	var want := clampf(reach * 2.0, 120.0, 2000.0)
+	var want := clampf(reach * 2.0, 120.0, shadow_reach)
 	var cur := sun.directional_shadow_max_distance
 	if want > cur or want < cur * 0.55:
-		sun.directional_shadow_max_distance = minf(120.0 * pow(1.5, ceilf(log(want / 120.0) / log(1.5))), 2000.0)
+		sun.directional_shadow_max_distance = minf(120.0 * pow(1.5, ceilf(log(want / 120.0) / log(1.5))), shadow_reach)

@@ -142,7 +142,9 @@ func _process(delta: float) -> void:
 	var now := _now()
 	if not _booted:
 		_booted = true
-		event("boot", {"engine_ms": Time.get_ticks_msec(), "page_ms": _page_ms()})
+		var boot := {"engine_ms": Time.get_ticks_msec(), "page_ms": _page_ms()}
+		boot.merge(_web_load())
+		event("boot", boot)
 	_watch_scene()
 	_watch_loading(now)
 	_watch_client()
@@ -167,6 +169,7 @@ func _perf_sample() -> void:
 		"mem_mb": int(OS.get_static_memory_usage() / 1048576.0),
 		"draw": int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
 		"nodes": int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)), "scene": _scene}
+	_perf_systems(e)
 	if _sim and is_instance_valid(_sim) and "stats" in _sim:
 		e["pop"] = int(_sim.stats.population)
 		e["money"] = int(_sim.economy.money)
@@ -175,6 +178,29 @@ func _perf_sample() -> void:
 	_frames = 0
 	_worst = 0.0
 	_hitches = 0
+
+
+## Per-system timings from Perf for this window: the sim tick (mean and
+## worst), the worst frame.sim, and the three costliest sim.* systems.
+func _perf_systems(e: Dictionary) -> void:
+	var tick: Dictionary = Perf.stats.get("sim.tick", {})
+	if not tick.is_empty() and tick.n > 0:
+		e["tick_ms"] = snappedf(tick.sum / tick.n, 0.01)
+		e["tick_max_ms"] = snappedf(tick.max, 0.01)
+	var frame_sim: Dictionary = Perf.stats.get("frame.sim", {})
+	if not frame_sim.is_empty() and frame_sim.n > 0:
+		e["frame_sim_max_ms"] = snappedf(frame_sim.max, 0.01)
+	var systems := []
+	for key in Perf.stats:
+		if key.begins_with("sim.") and key != "sim.tick" and Perf.stats[key].n > 0:
+			systems.append([key, Perf.stats[key].sum / Perf.stats[key].n])
+	systems.sort_custom(func(a, b): return a[1] > b[1])
+	var top := {}
+	for s in systems.slice(0, 3):
+		top[s[0]] = snappedf(s[1], 0.01)
+	if not top.is_empty():
+		e["top_sim"] = top
+	Perf.reset_window()
 
 
 func _error(err: Dictionary) -> void:
@@ -314,6 +340,22 @@ func _browser() -> String:
 	if OS.has_feature("web"):
 		return str(JavaScriptBridge.eval("navigator.userAgent", true)).left(200)
 	return ""
+
+
+## Web only: download time (until the last byte), start time (from then
+## until the engine was up) and the download size, from web/shell.html.
+func _web_load() -> Dictionary:
+	if not OS.has_feature("web"):
+		return {}
+	var d = JSON.parse_string(str(JavaScriptBridge.eval("JSON.stringify(window.nbLoad || {})", true)))
+	if typeof(d) != TYPE_DICTIONARY or float(d.get("start", 0)) <= 0.0:
+		return {}
+	var out := {"bytes": int(d.get("bytes", 0))}
+	if float(d.downloaded) > 0.0:
+		out["download_ms"] = int(float(d.downloaded) - float(d.start))
+		if float(d.started) > 0.0:
+			out["start_ms"] = int(float(d.started) - float(d.downloaded))
+	return out
 
 
 func _page_ms() -> int:

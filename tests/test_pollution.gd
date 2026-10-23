@@ -113,6 +113,34 @@ func _init() -> void:
 	_check(pol.hurts[most].homes < 3 or (not tip.is_empty() and tip[0].text.contains(pol.sources[most].name)
 		and tip[0].text.length() <= 170), "the advisor names the worst polluter (%s)" % (tip[0].text if not tip.is_empty() else "none"))
 
+	# Smoky homes call ambulances more, for breathing trouble, blamed on the source.
+	var smoky := ""
+	for key in pol.lots:
+		if sim.buildings.has(key) and float(pol.lots[key].smoke) >= Balance.HURT_SMOKE:
+			smoky = key
+			break
+	if smoky != "":
+		_check(pol.call_weight(smoky) >= 1.0 + Balance.SMOKE_CALL_WEIGHT, "a home in heavy smoke calls more (%.2fx)" % pol.call_weight(smoky))
+		_check(pol.breathing_call(sim, smoky, 0.0), "its calls are often breathing trouble")
+		_check(not pol.breathing_call(sim, smoky, 0.99), "but not always")
+		var blamed: String = pol.calls.keys()[0]
+		var bd := Inspect.describe(sim, pol.sources[blamed].select)
+		_check(bd.rows.any(func(r): return r[0] == "Breathing calls"), "the source panel counts its breathing calls")
+	else:
+		print("  (no home over the smoke line in this town)")
+
+	# Each pollution view opens on the town's worst sources, worst first, with Go to.
+	for kind in Pollution.KINDS:
+		var td := Inspect.describe(sim, {"type": "pollution", "id": kind})
+		_check(not td.is_empty() and td.rows.size() >= 1 and td.notes.size() >= 1, "the %s view lists the town's sources" % kind)
+	var gd := Inspect.describe(sim, {"type": "pollution", "id": "ground"})
+	var top_ground := 0
+	for ref in pol.hurts:
+		top_ground = maxi(top_ground, int(pol.hurts[ref].kinds.get("ground", 0)))
+	_check(gd.rows[0][1] == "bothers %d home%s" % [top_ground, "" if top_ground == 1 else "s"] or top_ground == 0,
+		"the worst for dirty ground is listed first (%s: %s)" % [gd.rows[0][0], gd.rows[0][1]])
+	_check(gd.actions.any(func(a): return a.has("go")), "with a Go to button")
+
 	# A source panel says who it hurts and how to fix it.
 	var fd := Inspect.describe(sim, f.select)
 	_check(fd.title == f.name, "the factory panel uses its name")
@@ -190,6 +218,35 @@ func _init() -> void:
 	sim.power.sites.erase(pid)
 	pol.rebuild(sim)
 
+	# A railroad: its track hums, its crossing horns blare, and a quiet zone stops the horns.
+	var did := sim.rail.add_depot(sim, Vector3(6000, 0, -6000), Vector3(0, 0, 1), Vector3(1, 0, 0))
+	var track := []
+	for i in 101:
+		track.append(Vector3(5000 + i * 10.0, 0, -5000))
+	var a := sim.rail._add_node(track[0])
+	var b := sim.rail._add_node(track[-1])
+	var tp := sim.rail._add_piece(a, b, track, "main", did, -1, -1.0)
+	sim.rail.pieces[tp].built = -1.0
+	sim.rail.crossings.append({"seg": -1, "pos": Vector3(5500, 0, -5000), "piece": tp, "s": 500.0, "closed": false})
+	pol.rebuild(sim)
+	var rref := "rail:%d" % did
+	_check(pol.sources.has(rref) and pol.sources[rref].points.size() == 1, "a railroad is a source, with a horn at its crossing")
+	var by_track: float = pol.sample(Vector3(5200, 0, -4985)).noise
+	var by_horn: float = pol.sample(Vector3(5500, 0, -4985)).noise
+	_check(by_horn > by_track + 5.0, "the crossing is louder than open track (%.1f vs %.1f dB)" % [by_horn, by_track])
+	var rd := Inspect.describe(sim, {"type": "spot", "id": [5500.0, -4985.0]})
+	_check(rd.rows.any(func(r): return r[1] == str(sim.rail.depots[did].name)), "a spot by the crossing names the railroad")
+	var qcost := pol.quiet_cost(sim, rref)
+	money = sim.economy.money
+	_check(qcost == Balance.QUIET_ZONE_PER_CROSSING and sim.apply({"type": "quiet_zone", "ref": rref}), "the town can make a quiet zone")
+	_check(sim.economy.money == money - qcost, "a quiet zone costs what it said ($%d)" % qcost)
+	var hushed: float = pol.sample(Vector3(5500, 0, -4985)).noise
+	_check(hushed < by_horn - 5.0 and pol.quiet_cost(sim, rref) < 0, "no more horns (%.1f -> %.1f dB)" % [by_horn, hushed])
+	sim.rail.remove_depot(sim, did)
+	pol._prune(sim)
+	pol.rebuild(sim)
+	_check(not pol.sources.has(rref) and pol.quiet.is_empty(), "a closed railroad stops and forgets its quiet zone")
+
 	# Dirty ground seeps downhill.
 	pol.height = func(p: Vector3) -> float: return -p.x * 0.05
 	pol.rebuild(sim)
@@ -199,6 +256,35 @@ func _init() -> void:
 	_check(downhill > uphill * 2.0, "dirty ground seeps downhill (%.3f vs %.3f)" % [downhill, uphill])
 	pol.height = Callable()
 
+	# Measuring keeps up a little at a time: a quiet hour re-measures nothing,
+	# a change re-measures only the lots it can reach, and the result matches
+	# measuring everything at once.
+	pol.rebuild(sim)
+	pol.measure_lots(sim)
+	pol._refresh(sim)
+	_check(pol._queue.is_empty(), "a quiet hour re-measures nothing")
+	var gone := ""
+	for key in sim.buildings:
+		if int(sim.buildings[key].zone) == ZoneMap.Zone.INDUSTRIAL:
+			gone = key
+	var gone_b: Dictionary = sim.buildings[gone]
+	sim.buildings.erase(gone)
+	pol._refresh(sim)
+	var built := 0
+	for key in sim.buildings:
+		built += 1 if sim.lots.has(key) else 0
+	_check(not pol._queue.is_empty() and pol._queue.size() < built, "a factory closing re-measures only the lots near it (%d of %d)" % [pol._queue.size(), built])
+	var ticks := 0
+	while not pol._queue.is_empty() and ticks < 10000:
+		pol._work(sim, Pollution.CHECKS_PER_TICK)
+		ticks += 1
+	var bit := JSON.stringify(pol.lots)
+	pol.measure_lots(sim)
+	_check(bit == JSON.stringify(pol.lots), "a little at a time ends the same as all at once (%d ticks)" % ticks)
+	sim.buildings[gone] = gone_b
+	pol.rebuild(sim)
+	pol.measure_lots(sim)
+
 	# Saves keep walls, owners, readings and wear.
 	pol.rebuild(sim)
 	pol.measure_lots(sim)
@@ -206,6 +292,7 @@ func _init() -> void:
 	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
 	_check(copy.pollution.walls.size() == pol.walls.size(), "noise walls are saved")
 	_check(copy.pollution.owners.size() == pol.owners.size(), "owners' plans are saved")
+	_check(copy.pollution.calls == pol.calls, "breathing calls are saved")
 	_check(is_equal_approx(snappedf(copy.pollution.lot_factor(copy, worst_key), 0.001),
 		snappedf(pol.lot_factor(sim, worst_key), 0.001)), "land value is the same after loading")
 	_check(copy.pollution.sources.size() == pol.sources.size(), "sources are back right after loading")

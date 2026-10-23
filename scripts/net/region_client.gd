@@ -51,9 +51,22 @@ const RECONNECT_EVERY := 5.0
 ## Gives up (and says so) after this long without the region.
 const RECONNECT_FOR := 300.0
 var reconnecting := false
+const TOWN_GAP := 20.0
+const TOWN_MAX_GAP := 120.0
+var _sent_at := -1000.0
+var _sent_sig := []
+var _land_sent := 0  # hash of the land last sent
+## A neighbor's newest copy is unpacked into its simulation (a second or so
+## for a grown town) one town at a time, this many seconds apart.
+const NEIGHBOR_EVERY := 15.0
+const NEIGHBOR_FIRST := 2.0
+var _neighbor_wait := NEIGHBOR_FIRST
+var _unseen := []  # neighbors not unpacked since joining
 ## A game month (a game day) in ticks: agreements are paid once a month.
 const MONTH_TICKS := 24 * CitySim.TICKS_PER_HOUR
 var _booked_month := -1
+## The game hour this town last went over its shared-service deals.
+var _deals_hour := -1
 var _retry_in := 0.0
 var _lost_for := 0.0
 
@@ -84,7 +97,7 @@ func _connect() -> int:
 
 func leave() -> void:
 	if _peer:
-		send_town()
+		send_town(true)
 		_peer.poll()
 		_peer.close()
 	_peer = null
@@ -93,10 +106,28 @@ func leave() -> void:
 
 
 ## Sends the server a copy of your town, for the neighbors and to keep.
-func send_town() -> void:
+## Copying a town takes a moment (a tenth of a second or more for a grown
+## one), so it goes out only when something visible changed, and at least
+## this often (seconds) for the money and the people; `now` sends anyway.
+func send_town(now := false) -> void:
 	var sim := my_sim()
-	if sim and is_joined:
-		_send({"t": "city", "z": RegionServer.pack(sim.to_dict())})
+	if sim == null or not is_joined:
+		return
+	var t := Time.get_ticks_msec() / 1000.0
+	var sig := [sim.network.segments.size(), sim.buildings.size(), sim.zones.cells.size(),
+		sim.stats.population / 25]
+	if not now and (t - _sent_at < TOWN_GAP or (sig == _sent_sig and t - _sent_at < TOWN_MAX_GAP)):
+		return
+	_sent_at = t
+	_sent_sig = sig
+	var msg := {"t": "city", "z": RegionServer.pack(sim.to_dict()), "pop": int(sim.stats.population)}
+	# Where the town has built, only when that changed (it can be long).
+	var land := region.land_of_sim(my_city)
+	if land.hash() != _land_sent:
+		_land_sent = land.hash()
+		region.take_land(my_city, land)
+		msg.land = land
+	_send(msg)
 
 
 ## Sends a batch of play telemetry (see Telemetry); telemetry_acked says when it's kept.
@@ -140,7 +171,28 @@ func _book_agreements() -> void:
 		_booked_month = month
 	while _booked_month < month:
 		_booked_month += 1
-		sim.economy.money += region.ledger.book_month(my_city)
+		sim.economy.money += region.ledger.book_month(my_city, Interlocal.KINDS.keys())
+
+
+## Shared services with neighbors (Interlocal): this town's half of each
+## agreement in the ledger, and the offers and answers its bell sends out.
+func _sync_deals() -> void:
+	var sim := my_sim()
+	if sim == null:
+		return
+	var hour := int(sim.tick_count / CitySim.TICKS_PER_HOUR)
+	if hour == _deals_hour:
+		return
+	_deals_hour = hour
+	sim.regional.sync(region, my_city)
+	for act in sim.interlocal.sync(region, my_city, sim):
+		match act.op:
+			"offer":
+				offer_service(act.to, act.service, act.price, act.capacity)
+			"answer":
+				answer_offer(act.id, act.yes)
+			"end":
+				end_agreement(act.id)
 
 
 ## (Host only) lets a waiting player in, or turns them away.
@@ -184,13 +236,20 @@ func _process(delta: float) -> void:
 			_connect()
 	if is_joined:
 		_book_agreements()
+		_neighbor_wait -= delta
+		if _neighbor_wait <= 0.0 and not region.stale_ids().is_empty():
+			# Towns never drawn yet come first, and quicker.
+			var next: String = _unseen.pop_front() if not _unseen.is_empty() else region.stale_ids()[0]
+			_neighbor_wait = NEIGHBOR_FIRST if not _unseen.is_empty() else NEIGHBOR_EVERY
+			region.load_stale(next)
+		_sync_deals()
 	if _peer == null:
 		return
 	_peer.poll()
 	var state := _peer.get_connection_status()
 	if state == MultiplayerPeer.CONNECTION_CONNECTED and not _connected:
 		_connected = true
-		_send({"t": "hello", "v": RegionServer.PROTOCOL, "code": invite_code,
+		_send({"t": "hello", "v": RegionServer.PROTOCOL, "min": RegionServer.MIN_PROTOCOL, "code": invite_code,
 			"id": player_id, "name": player_name, "password": _password, "new": _new_account, "token": token})
 		_password = ""
 	elif state == MultiplayerPeer.CONNECTION_DISCONNECTED:
@@ -204,7 +263,7 @@ func _process(delta: float) -> void:
 				_lost_for = 0.0
 				_retry_in = RECONNECT_EVERY
 		else:
-			failed.emit("Couldn't connect to the region. Check the address, and that the server is running.")
+			failed.emit("The region isn't answering. The host's computer may be off, asleep or restarting: try again in a minute.")
 		return
 	while _peer and _peer.get_available_packet_count() > 0:
 		var msg = JSON.parse_string(_peer.get_packet().get_string_from_utf8())
@@ -235,11 +294,20 @@ func _handle(msg: Dictionary) -> void:
 				for id in region.cities:
 					if not id in old_ids:
 						city_added.emit(id)
-				send_town()
+				send_town(true)
 				reconnected.emit()
 				return
-			region.from_dict(d)
+			# Your own town first, so you can play at once; the neighbors are
+			# unpacked one by one right after.
+			var mine := ""
+			for id in d.get("cities", {}):
+				if str(d.cities[id].owner) == player_id:
+					mine = id
+			region.from_dict(d, mine)
 			my_city = region.city_of(player_id)
+			_land_sent = 0
+			_hook_land()
+			_unseen = region.stale_ids()
 			is_joined = true
 			joined.emit()
 		"waiting":
@@ -253,13 +321,14 @@ func _handle(msg: Dictionary) -> void:
 		"ledger":
 			if msg.get("d") is Dictionary:
 				region.ledger.from_dict(msg.d)
+				_deals_hour = -1
 				ledger_changed.emit()
 		"pledged":
 			# The server booked our pledge: pay it from the town.
 			var sim := my_sim()
 			if sim and str(msg.get("good", "")) == "money":
 				sim.economy.money -= float(msg.get("amount", 0.0))
-				send_town()
+				send_town(true)
 		"reject":
 			var reason := str(msg.get("reason", "The region turned you away."))
 			if reconnecting and "version" in reason and OS.has_feature("web"):
@@ -267,6 +336,13 @@ func _handle(msg: Dictionary) -> void:
 				# load it (the invite link in the address bar brings you back).
 				JavaScriptBridge.eval("location.reload()")
 				return
+			var updater := GameUpdater.current
+			if "version" in reason and updater and updater.active:
+				# The desktop app fetches the newest game data and restarts.
+				updater.on_version_mismatch()
+				if reconnecting:
+					return
+				reason = "This region runs a newer version. Updating..."
 			if reconnecting:
 				# Say the server still holds the old connection: try again soon.
 				_peer.close()
@@ -274,6 +350,10 @@ func _handle(msg: Dictionary) -> void:
 				_connected = false
 				return
 			leave()
+			if "version" in reason:
+				# Old servers say "Refresh to update", which can't help when
+				# the page is the newer one.
+				reason = "This page and the region's computer are on different versions of the game. Refresh once; if this keeps showing, the host's computer needs updating."
 			failed.emit(reason)
 		"region":
 			var d = RegionServer.unpack(str(msg.get("z", "")))
@@ -289,6 +369,8 @@ func _handle(msg: Dictionary) -> void:
 			var d = RegionServer.unpack(str(msg.get("z", "")))
 			if id != my_city and region.cities.has(id) and typeof(d) == TYPE_DICTIONARY:
 				region.update_city(id, d)
+				if msg.get("land") is Array:
+					region.take_land(id, msg.land)
 		"apply":
 			# Roads the region built in your town (a new neighbor's county road).
 			for cmd in msg.get("cmds", []):
@@ -316,6 +398,8 @@ func _replace_region(d: Dictionary) -> void:
 	region.ledger.from_dict(d.get("ledger", {}))
 	for id in d.cities:
 		var c: Dictionary = d.cities[id]
+		if id != my_city and c.get("land") is Array and not c.land.is_empty():
+			region.take_land(id, c.land)
 		if id == my_city or not c.has("city"):
 			continue
 		if region.cities.has(id):
@@ -327,6 +411,17 @@ func _replace_region(d: Dictionary) -> void:
 			region.cities[id] = {"owner": str(c.owner), "player": str(c.get("player", "")),
 				"name": str(c.name), "origin": Vector2(float(c.origin[0]), float(c.origin[1])),
 				"color": int(c.color), "sim": sim}
+
+
+## Your town keeps to its own land and open land, and starts neighborhoods
+## only where there's room (see Region.land_problem, site_problem).
+func _hook_land() -> void:
+	var sim := my_sim()
+	if sim == null:
+		return
+	var me := my_city
+	sim.land_check = func(pts: Array) -> String: return region.land_problem(me, pts)
+	sim.site_check = func(spot: Vector2) -> String: return region.site_problem(me, spot)
 
 
 func _send(msg: Dictionary) -> void:

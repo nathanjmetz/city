@@ -3,6 +3,7 @@
 # 2 MB less to download (7.9 instead of 10.1 MB compressed).
 # Built by .github/workflows/engine.yml. Before using a physics, navigation,
 # XR, glTF, CSG, GridMap or WebRTC class in a script, take it out of here.
+threads = "no"  # the web export uses the no-threads template
 optimize = "size"
 lto = "full"
 production = "yes"

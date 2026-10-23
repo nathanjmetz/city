@@ -29,7 +29,7 @@ const BRICK := ["#8a4a38", "#9b5a42", "#7a4234", "#a8775c", "#b59a7c"]
 const TRIM := Color("#efede6")
 const SOFFIT := Color("#b9b6ad")
 const FOUNDATION := Color("#9d9a92")
-const SHRUB := [Color("#2f4a24"), Color("#3a5a2a"), Color("#29401f"), Color("#4a5e2c")]
+const SHRUB := [Color("#41633a"), Color("#4c6f35"), Color("#3a5a32"), Color("#5c7238")]  # yew, boxwood, arborvitae, spirea
 const MULCH := Color("#4a3426")
 const LOT_HALF := 10.0  # half a lot's width when no lot is given
 ## House types by the era a street was built in. Before the war: American
@@ -81,7 +81,9 @@ func _fit(lot: Dictionary) -> void:
 	outline = lot.get("outline", PackedVector2Array())
 	depth = float(lot.get("depth", 32.0)) - pad
 	# The era comes from where the lot is, in blocks of about a quarter mile.
-	if lot.has("at"):
+	if lot.has("era"):
+		era = lot.era
+	elif lot.has("at"):
 		var at: Vector2 = lot.at
 		var cell := Vector2i(floori(at.x / 400.0), floori(at.y / 400.0))
 		era = ["prewar", "postwar", "postwar", "recent", "recent"][posmod(hash(cell), 5)]
@@ -449,7 +451,7 @@ func _foursquare(zf: float, gs: float, siding: Color, roof: Color, shutter: Colo
 		_window(Vector3(x - 0.5, 4.9, zf), Vector3(-1, 0, 0), 0.8, 1.45, false, false, shutter)
 		_window(Vector3(x + 0.5, 4.9, zf), Vector3(-1, 0, 0), 0.8, 1.45, false, false, shutter)
 		for f in [2.3, 4.9]:
-			_window(Vector3(cx + s * w * 0.5, f, cz + d * 0.2 * s), Vector3(0, 0, s), 0.85, 1.5, false, false, shutter)
+			_window(Vector3(cx + s * w * 0.5, f, cz + d * 0.2 * s), Vector3(0, 0, -s), 0.85, 1.5, false, false, shutter)
 	_back(x0, x1, zf + d, [2.3, 4.9], 0.7)
 	var g := _back_garage(at[1], zf + d, siding, roof)
 	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": door_x,
@@ -500,7 +502,7 @@ func _bungalow(zf: float, gs: float, siding: Color, roof: Color, door: Color, br
 		_window(Vector3(wx + k, 2.25, zf), Vector3(-1, 0, 0), 0.95, 1.5, false, false, trim)
 	for s in [-1.0, 1.0]:
 		for z in [cz - d * 0.28, cz, cz + d * 0.28]:
-			_window(Vector3(cx + s * w * 0.5, 2.25, z), Vector3(0, 0, s), 0.9, 1.4, false, false, trim)
+			_window(Vector3(cx + s * w * 0.5, 2.25, z), Vector3(0, 0, -s), 0.9, 1.4, false, false, trim)
 	_back(x0, x1, zf + d, [2.25], 0.75)
 	var g := _back_garage(at[1], zf + d, siding, roof)
 	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": door_x,
@@ -594,7 +596,7 @@ func _ell_farmhouse(zf: float, gs: float, roof: Color, door: Color) -> Dictionar
 		_window(Vector3(ux + s * uw * 0.22, 4.8, zf), Vector3(-1, 0, 0), 0.8, 1.6, false, false, trim)
 	_window(Vector3(ux, 7.0, zf), Vector3(-1, 0, 0), 0.6, 0.9, false, false, trim)
 	for f in [2.2, 4.8]:
-		_window(Vector3(ux + gs * uw * 0.5, f, zf + ud * 0.5), Vector3(0, 0, gs), 0.8, 1.6, false, false, trim)
+		_window(Vector3(ux + gs * uw * 0.5, f, zf + ud * 0.5), Vector3(0, 0, -gs), 0.8, 1.6, false, false, trim)
 	_back(minf(ux, wx) - (uw if gs < 0 else ww) * 0.5, maxf(ux, wx) + (uw if gs > 0 else ww) * 0.5, zf + ud, [2.2], 0.6)
 	var g := _back_garage(at[1], zf + ud, wall, roof)
 	var x0 := cx - total * 0.5
@@ -629,7 +631,7 @@ func _cape(zf: float, gs: float, siding: Color, roof: Color, shutters: bool, shu
 	for s in [-1.0, 1.0]:
 		for k in [0.2, 0.36]:
 			_window(Vector3(cx + s * w * k, 1.95, zf), Vector3(-1, 0, 0), 0.85, 1.35, true, shutters, shutter)
-		_window(Vector3(cx + s * w * 0.5, 4.2, cz), Vector3(0, 0, s), 0.7, 0.9, true, false, shutter)
+		_window(Vector3(cx + s * w * 0.5, 4.2, cz), Vector3(0, 0, -s), 0.7, 0.9, true, false, shutter)
 	_back(x0, x1, zf + d, [1.95], 0.5)
 	var g := _back_garage(at[1], zf + d, siding, roof)
 	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": cx,
@@ -779,8 +781,35 @@ func _corners(x0: float, x1: float, z0: float, z1: float, y0: float, y1: float) 
 			_box("paint", Vector3(0.14, y1 - y0, 0.14), Vector3(x, (y0 + y1) * 0.5, z), TRIM)
 
 
+## A concrete landing at the door, with steps down to the walk: risers of
+## at most 7 3/4 in and 11 in treads (IRC R311.7), and a pipe handrail on
+## each side once there are four or more risers.
 func _stoop(x: float, zf: float, w: float, d: float, h: float) -> void:
 	_box("concrete", Vector3(w, h, d), Vector3(x, h * 0.5, zf - d * 0.5), FOUNDATION)
+	if h < 0.25:
+		return
+	var n := ceili(h / 0.195)
+	var rise := h / n
+	var run := 0.28
+	var sw := minf(w, 1.3)
+	var z0 := zf - d
+	for k in range(1, n):
+		var sh := h - k * rise
+		_box("concrete", Vector3(sw, sh, run + 0.02), Vector3(x, sh * 0.5, z0 - (k - 0.5) * run), FOUNDATION.lightened(0.04))
+	if n < 4:
+		return
+	var rail := Color("#222222")
+	var zb := z0 - (n - 1) * run + 0.12
+	var zt := z0 + 0.15
+	var yb := rise + 0.86
+	var yt := h + 0.86
+	var tilt := Basis(Vector3.RIGHT, -atan2(yt - yb, zt - zb))
+	for side in [-1.0, 1.0]:
+		var rx: float = x + side * (sw * 0.5 - 0.06)
+		_box("metal", Vector3(0.045, 0.86, 0.045), Vector3(rx, rise + 0.43, zb), rail)
+		_box("metal", Vector3(0.045, 0.86, 0.045), Vector3(rx, h + 0.43, zt), rail)
+		_box("metal", Vector3(0.045, 0.045, Vector2(zt - zb, yt - yb).length() + 0.05),
+			Vector3(rx, (yb + yt) * 0.5, (zb + zt) * 0.5), rail, tilt)
 
 
 func _front_door(x: float, zf: float, sill: float, c: Color) -> void:
@@ -788,7 +817,13 @@ func _front_door(x: float, zf: float, sill: float, c: Color) -> void:
 	_box("paint", Vector3(1.25, 0.14, 0.1), Vector3(x, sill + 2.17, zf - 0.05), TRIM)
 	for s in [-1.0, 1.0]:
 		_box("paint", Vector3(0.12, 2.2, 0.1), Vector3(x + s * 0.55, sill + 1.1, zf - 0.05), TRIM)
-	# Storm door glass and a porch light.
+	# Raised panels below the lite, a brass knob at 36 in, the aluminium
+	# sill; storm door glass and a porch light.
+	var panel := c.lightened(0.14) if c.get_luminance() < 0.3 else c.darkened(0.1)
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(0.3, 0.62, 0.02), Vector3(x + s * 0.2, sill + 0.5, zf - 0.055), panel)
+	_box("metal", Vector3(0.07, 0.07, 0.07), Vector3(x + 0.36, sill + 0.92, zf - 0.09), Color("#b08d48"))
+	_box("metal", Vector3(1.1, 0.04, 0.16), Vector3(x, sill + 0.02, zf - 0.08), Color("#a9acae"))
 	_glass(Vector3(x, sill + 1.45, zf - 0.06), Vector3(-1, 0, 0), 0.6, 0.8, 0.0)
 	_box("paint", Vector3(0.14, 0.26, 0.1), Vector3(x + 0.85, sill + 1.75, zf - 0.06), Color("#1c1c1c"))
 
@@ -945,16 +980,23 @@ func _shrub(p: Vector3, r: float) -> void:
 			var k := r * rng.randf_range(0.82, 1.12)
 			row.append(p + Vector3(sin(t) * cos(a) * k, (1.0 - cos(t)) * k * 0.8, sin(t) * sin(a) * k))
 		pts.append(row)
+	# Smooth normals from the middle, so it shades as a rounded clipped
+	# yew or boxwood rather than a cut stone; alpha marks it as foliage.
+	var mid := p + Vector3(0, r * 0.8, 0)
+	var st := _tool("foliage")
 	for i in rings:
 		for j in segs:
-			var a: Vector3 = pts[i][j]
-			var b: Vector3 = pts[i][(j + 1) % segs]
-			var c: Vector3 = pts[i + 1][(j + 1) % segs]
-			var d: Vector3 = pts[i + 1][j]
-			var shade := col.darkened(0.25 * (1.0 - float(i) / rings))
-			var outward := (a + c) * 0.5 - (p + Vector3(0, r * 0.8, 0))
-			_tri("foliage", a, b, c, shade, [], outward)
-			_tri("foliage", a, c, d, shade, [], outward)
+			var quad: Array = [pts[i][j], pts[i][(j + 1) % segs], pts[i + 1][(j + 1) % segs], pts[i + 1][j]]
+			var face_n: Vector3 = (quad[1] - quad[0]).cross(quad[3] - quad[0])
+			var order := [0, 2, 1, 0, 3, 2] if face_n.dot((quad[0] + quad[2]) * 0.5 - mid) >= 0.0 else [0, 1, 2, 0, 2, 3]
+			for k in order:
+				var v: Vector3 = quad[k]
+				var shade := col.darkened(0.25 * (1.0 - (v.y - p.y) / (r * 1.6)))
+				shade.a = 0.3
+				st.set_normal(((v - mid).normalized() + Vector3(0, 0.4, 0)).normalized())
+				st.set_color(shade)
+				st.set_uv(Vector2(v.x, v.z))
+				st.add_vertex(v)
 
 
 # ---------------------------------------------------------------- geometry

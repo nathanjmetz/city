@@ -6,8 +6,8 @@ extends RefCounted
 ## Each card says what happens on a yes and on a no.
 ##
 ## This is how culture and community show up in play. Which leaders ask
-## follows the town's culture (TownCulture): a farm town hears from farmers,
-## a banking town from bankers. Each answer leans the culture in turn, so the
+## follows the town's culture (TownCulture.pull): a farm town hears from
+## farmers, a market town from merchants. Each answer leans it in turn, so the
 ## player steers what the town becomes one answer at a time; that is the
 ## CORE PILLAR, a town that can change identity, with the player in control.
 ##
@@ -26,11 +26,8 @@ extends RefCounted
 ##   festival   Main Street merchants ask to close the street for the fall
 ##              festival (a special event permit). Yes: the town pays police
 ##              and cleanup; shops do a month's extra business.
-##   offices    A bank president asks to turn farmland along a county road
-##              into an office park, when graduates need office jobs and no
-##              shop land is left: Brawn's example of a town's identity
-##              shifting. Yes: the frontage is zoned for shops and offices and
-##              fields in the way go. No: it stays farm country.
+## Farmland turned into an office park or a shopping strip, Brawn's example
+## of a town changing identity, is asked by a land developer (TownCulture).
 ## Heritage asks (protect a district, tear down an old building) live in
 ## Heritage and work the same way.
 ##
@@ -40,10 +37,9 @@ extends RefCounted
 signal changed
 
 const HUB := "town"
-## The culture each ask speaks for.
-const AXIS := {"abatement": "industry", "pave": "farm", "signal": "trade", "festival": "trade", "offices": "office"}
-## What a no leans toward (the other side of the tradeoff), if anything.
-const NO_AXIS := {"offices": "farm"}
+## The trade (TownCulture sector) each ask speaks for; an abatement speaks
+## for the company's own trade.
+const AXIS := {"abatement": "mining", "pave": "farm", "signal": "trade", "festival": "trade"}
 const TICKS_PER_MONTH := 24 * CitySim.TICKS_PER_HOUR
 
 ## permit id -> {"kind", ...what to do on a yes}
@@ -52,6 +48,8 @@ var asks := {}
 var last := {}
 ## Tax abatements in force: [{"who", "monthly", "until"}]
 var abatements := []
+## The tick a festival lifts shop demand until.
+var festival_until := -1
 
 
 ## Once a game month: maybe one leader asks for something.
@@ -62,14 +60,14 @@ func month(sim) -> void:
 	if rng.randf() >= Balance.ASK_CHANCE:
 		return
 	var options := []
-	for kind in ["abatement", "pave", "signal", "festival", "offices"]:
+	for kind in ["abatement", "pave", "signal", "festival"]:
 		if sim.tick_count - int(last.get(kind, -1_000_000_000)) < int(Balance.ASK_COOLDOWN[kind]) * TICKS_PER_MONTH:
 			continue
 		var plan: Dictionary = call("_plan_" + kind, sim)
 		if plan.is_empty():
 			continue
 		# The town's own kind of leaders speak up more.
-		plan.weight = 0.2 + 2.0 * float(sim.culture.mix.get(AXIS[kind], 0.0))
+		plan.weight = 1.2 + sim.culture.pull(_sector(sim, kind, plan.get("do", {})))
 		options.append(plan)
 	if options.is_empty():
 		return
@@ -284,68 +282,6 @@ func _plan_festival(sim) -> Dictionary:
 		"do": {"cost": Balance.ASK_FESTIVAL_COST}}
 
 
-## A bank wants farm country near town turned into an office park.
-func _plan_offices(sim) -> Dictionary:
-	if sim.banks.banks.is_empty() or BuildingTypes.graduates_free(sim) < int(BuildingTypes.TYPES.office.stages[0].cap[1]):
-		return {}
-	for key in sim.empty_zoned_lots():
-		if sim.zones.zone_at(sim.lots[key].zone_pt) == ZoneMap.Zone.COMMERCIAL:
-			return {}  # there's still shop land in town
-	var ids: Array = sim.banks.banks.keys()
-	ids.sort()
-	var bank: Dictionary = sim.banks.banks[ids[0]]
-	# The rural road nearest the bank with farm fields beside it and no
-	# zoning yet.
-	var best := -1
-	var best_d := INF
-	var segs: Array = sim.network.segments.keys()
-	segs.sort()
-	for seg in segs:
-		var t: int = sim.network.segments[seg].type
-		if not RoadStyle.TYPES[t].get("rural", false) or sim.is_link_segment(seg):
-			continue
-		var pts: PackedVector3Array = sim.network.sample_segment(seg)
-		var mid: Vector3 = pts[pts.size() / 2]
-		var d: float = mid.distance_to(bank.pos)
-		if d >= best_d or d > 2500.0:
-			continue
-		var zoned := false
-		for i in pts.size():
-			var tan := (pts[mini(i + 1, pts.size() - 1)] - pts[maxi(i - 1, 0)]).normalized()
-			for side in [-1.0, 1.0]:
-				if sim.zones.zone_at(pts[i] + Vector3(-tan.z, 0.0, tan.x) * side * 20.0) != ZoneMap.Zone.NONE:
-					zoned = true
-		if zoned or not _fields_near(sim, pts):
-			continue
-		best = seg
-		best_d = d
-	if best == -1:
-		return {}
-	var street: String = sim.streets.name_of(best)
-	if street == "":
-		street = "the county road"
-	var pts: PackedVector3Array = sim.network.sample_segment(best)
-	return {"kind": "offices", "hub_id": 400000 + best,
-		"leader": "%s, %s" % [bank.leader.get("name", "The president"), bank.name],
-		"title": "Turn the farmland along %s into an office park" % street,
-		"why": "The town's college graduates need office jobs, and there's no shop land left in town.",
-		"area": _corridor(pts, 45.0), "change": "Farmland to offices",
-		"yes": "Its frontage is zoned for shops and offices, and fields in the way go. The town leans toward banking.",
-		"no": "It stays farm country, and the town leans toward farming.",
-		"do": {"seg": best}}
-
-
-static func _fields_near(sim, pts: PackedVector3Array) -> bool:
-	for id in sim.farms.farms:
-		var f: Dictionary = sim.farms.farms[id]
-		for c in f.cells:
-			var mid := Farms.cell_center(f, c)
-			for p in pts:
-				if p.distance_to(mid) < Farms.CELL * 2.0:
-					return true
-	return false
-
-
 # ------------------------------------------------------------ the answers
 
 ## Carries out the player's answers (CitySim, every game hour).
@@ -364,10 +300,15 @@ func carry_out(sim) -> void:
 		if st == Permits.State.APPROVED:
 			sim.permits.done(id)
 			if _yes(sim, a):
-				sim.culture.nudge(AXIS[kind], Balance.CULTURE_YES_LEAN)
-		elif st == Permits.State.DENIED and NO_AXIS.has(kind):
-			sim.culture.nudge(NO_AXIS[kind], Balance.CULTURE_NO_LEAN)
+				sim.culture.nudge(_sector(sim, kind, a), Balance.CULTURE_YES_LEAN)
 		changed.emit()
+
+
+## The trade an ask speaks for: an abatement's is its company's.
+static func _sector(sim, kind: String, a: Dictionary) -> String:
+	if kind == "abatement" and sim.industry.sites.has(int(a.get("site", -1))):
+		return TownCulture.sector_of_kind(str(sim.industry.sites[int(a.site)].kind))
+	return AXIS[kind]
 
 
 func _yes(sim, a: Dictionary) -> bool:
@@ -398,27 +339,7 @@ func _yes(sim, a: Dictionary) -> bool:
 			sim.economy.money -= int(a.cost)
 		"festival":
 			sim.economy.money -= int(a.cost)
-			sim.culture.festival_until = sim.tick_count + TICKS_PER_MONTH
-		"offices":
-			var seg := int(a.seg)
-			if not sim.network.segments.has(seg):
-				return false
-			var outline := PackedVector2Array()
-			for p in _corridor(sim.network.sample_segment(seg), 45.0):
-				outline.append(Vector2(p[0], p[1]))
-			var cut := false
-			for id in sim.farms.farms:
-				var f: Dictionary = sim.farms.farms[id]
-				for c in f.cells.duplicate():
-					var m := Farms.cell_center(f, c)
-					if Geometry2D.is_point_in_polygon(Vector2(m.x, m.z), outline):
-						f.cells.erase(c)
-						cut = true
-			sim.apply_now({"type": "zone_frontage", "seg": seg, "side": 1, "both": true, "single": true,
-				"zone": ZoneMap.Zone.COMMERCIAL})
-			if cut:
-				sim.mark_lots_dirty()
-				sim.farms_changed.emit()
+			festival_until = sim.tick_count + TICKS_PER_MONTH
 	return true
 
 
@@ -437,7 +358,7 @@ func monthly_cost() -> int:
 
 ## Shop demand from a festival this month.
 static func festival_demand(sim) -> float:
-	return Balance.ASK_FESTIVAL_DEMAND if sim.tick_count < int(sim.culture.festival_until) else 0.0
+	return Balance.ASK_FESTIVAL_DEMAND if sim.tick_count < int(sim.leaders.festival_until) else 0.0
 
 
 # --------------------------------------------------------------- outlines
@@ -467,13 +388,14 @@ func to_dict() -> Dictionary:
 	var as_ := {}
 	for id in asks:
 		as_[str(id)] = asks[id]
-	return {"asks": as_, "last": last, "abatements": abatements}
+	return {"asks": as_, "last": last, "abatements": abatements, "festival": festival_until}
 
 
 func from_dict(d: Dictionary) -> void:
 	asks.clear()
 	last.clear()
 	abatements.clear()
+	festival_until = int(d.get("festival", -1))
 	for k in d.get("asks", {}):
 		var a: Dictionary = d.asks[k]
 		var out := {}

@@ -176,11 +176,15 @@ func _init() -> void:
 		if i % 6 == 0:
 			e.traffic.add_trip(e.lots[elots[erng.randi() % elots.size()]], e.lots[elots[erng.randi() % elots.size()]], erng)
 		e.tick()
+		# A vehicle keeps its id for life, so only compare it with the tick
+		# before if it was driving then too (not parked between trips).
+		var now := {}
 		for car in e.traffic.cars:
 			var pose := e.traffic.car_pose(car)
 			if last.has(car.id) and absf(last[car.id].signed_angle_to(pose[1], Vector3.UP)) > deg_to_rad(25.0):
 				jumps += 1
-			last[car.id] = pose[1]
+			now[car.id] = pose[1]
+		last = now
 	_check(jumps == 0, "no car turns more than 25 degrees in a tenth of a second (%d)" % jumps)
 
 	# A truck with a job: grain from a farm gate to a mill, reported on arrival,
@@ -230,6 +234,128 @@ func _init() -> void:
 	_check(copy.traffic.cars.size() > 10 and JSON.stringify(copy.traffic.to_dict()) == JSON.stringify(copy2.traffic.to_dict()),
 		"loaded copies drive every car exactly the same (%d cars)" % copy.traffic.cars.size())
 
+	# Loop 4: everyone is a named person; cars park in real spots, drivers walk
+	# in, and no vehicle ever just disappears (CS2's parking and citizens).
+	var people: Dictionary = sim.people.people
+	_check(people.size() > 20, "every resident is a person (%d people)" % people.size())
+	var place_names := {}
+	for ref in sim.people.names:
+		place_names[sim.people.names[ref]] = true
+	_check(place_names.size() == sim.people.names.size() and place_names.size() > 10,
+		"every place has its own name (%d)" % place_names.size())
+	var vanished := 0
+	var walked := 0
+	var spot_kinds := {}
+	var known := _vehicle_ids(t)
+	for i in 3000:
+		sim.tick()
+		var now := _vehicle_ids(t)
+		for vid in known:
+			var was: Array = known[vid]
+			if not now.has(vid) and was[0] != "edge" and not was[2] and (was[1] < 0 or people.has(was[1])):
+				vanished += 1
+		known = now
+		walked = maxi(walked, t.walkers.size())
+		if i % 100 == 0:
+			for car in t.parked:
+				var pl := t.place(car.at_place)
+				if not pl.is_empty() and car.spot < pl.spots.size():
+					spot_kinds[pl.spots[car.spot].kind] = true
+	_check(vanished == 0, "no vehicle ever just disappears (%d did)" % vanished)
+	_check(walked > 0, "people walk the sidewalks (up to %d at once)" % walked)
+	_check(spot_kinds.has("drive") or spot_kinds.has("garage"), "cars park in driveways and garages (%s)" % [spot_kinds.keys()])
+
+	# A truck from a factory unloads at a shop's lot, then drives home and parks.
+	var shop := ""
+	var works := ""
+	for key in sim.buildings:
+		if sim.buildings[key].zone == ZoneMap.Zone.COMMERCIAL and shop == "":
+			shop = key
+		if sim.buildings[key].zone == ZoneMap.Zone.INDUSTRIAL and works == "":
+			works = key
+	var trip := -1
+	var truck := -1
+	if shop != "" and works != "":
+		var wl: Dictionary = sim.lots[works]
+		var sl: Dictionary = sim.lots[shop]
+		trip = t.dispatch({"ref": "lot:" + works, "pos": [wl.front.x, wl.front.z]},
+			{"ref": "lot:" + shop, "pos": [sl.front.x, sl.front.z]}, "goods", {"good": "goods", "amount": 4})
+	var arrived := false
+	var home_again := false
+	for i in 4000:
+		sim.tick()
+		for got_one in t.arrivals:
+			if got_one.id == trip:
+				arrived = true
+				truck = got_one.get("vid", truck)
+		if arrived:
+			for car in t.parked:
+				if car.id == truck and car.at_place == "lot:" + works and not car.get("pending", false) \
+						and car.until < 0:
+					home_again = true
+		if home_again:
+			break
+	_check(trip >= 0 and arrived, "a delivery truck reaches the shop (trip %d)" % trip)
+	_check(home_again, "and then drives back and parks at its own yard")
+
+	# Click a vehicle: the panel says what it is, where from and to, and why.
+	var info := {}
+	for car in t.cars:
+		var at: Vector3 = t.vehicle_centre(car, false)
+		var sel := Inspect.pick(sim, at)
+		if sel.get("type", "") == "vehicle":
+			info = Inspect.describe(sim, sel)
+			break
+	var labels := []
+	for row in info.get("rows", []):
+		labels.append(row[0])
+	_check(info.get("follow", false) and labels.has("From") and labels.has("To"),
+		"clicking a vehicle shows where it's going (%s: %s)" % [info.get("title", "none"), info.get("status", "")])
+
+	# Parked cars and people on foot load back exactly where they were.
+	var save2 := JSON.stringify(sim.to_dict())
+	var p1 := CitySim.new()
+	p1.from_dict(JSON.parse_string(save2))
+	var p2 := CitySim.new()
+	p2.from_dict(JSON.parse_string(save2))
+	for i in 300:
+		p1.tick()
+		p2.tick()
+	_check(p1.traffic.parked.size() > 0 and JSON.stringify(p1.to_dict()) == JSON.stringify(p2.to_dict()),
+		"parked cars, walkers and people load back exactly (%d parked)" % p1.traffic.parked.size())
+
+	# A street closed to cars for a plaza: nobody drives in, people park
+	# nearby, trucks deliver only when allowed, and it's saved.
+	var pz := _crossroads()
+	pz.economy.money = 1.0e9
+	pz.tick()
+	var west := -1
+	var west_lot := ""
+	var east_lot := ""
+	var plots: Array = pz.lots.keys()
+	plots.sort()
+	for k in plots:
+		var l: Dictionary = pz.lots[k]
+		if l.pos.z > 5.0 and absf(l.pos.z) < 40.0 and l.pos.x < -60.0 and west_lot == "":
+			west_lot = k
+			west = int(l.seg)
+		elif l.pos.z > 5.0 and absf(l.pos.z) < 40.0 and l.pos.x > 60.0 and east_lot == "":
+			east_lot = k
+	var prng := RandomNumberGenerator.new()
+	prng.seed = 5
+	pz.traffic.close_segment(west, true, "never")
+	_check(west >= 0 and not pz.traffic.add_trip(pz.lots[east_lot], pz.lots[west_lot], prng),
+		"no car drives onto a street closed to cars")
+	_check(not pz.traffic.may_enter(west, true), "and no truck when deliveries are never allowed")
+	pz.traffic.close_segment(west, true, "always")
+	_check(pz.traffic.may_enter(west, true) and not pz.traffic.may_enter(west, false),
+		"trucks may deliver when allowed, cars still may not")
+	var pz2 := CitySim.new()
+	pz2.from_dict(JSON.parse_string(JSON.stringify(pz.to_dict())))
+	_check(pz2.traffic.closed.get(west, pz2.traffic.closed.get(str(west), "")) == "always", "a closed street stays closed after a load")
+	pz.traffic.close_segment(west, false)
+	_check(pz.traffic.add_trip(pz.lots[east_lot], pz.lots[west_lot], prng), "reopened, cars drive there again")
+
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
@@ -245,6 +371,16 @@ func _l_town() -> CitySim:
 		sim.apply({"type": "paint_zone", "center": [315, z], "radius": 10, "zone": ZoneMap.Zone.INDUSTRIAL})
 		sim.apply({"type": "paint_zone", "center": [285, z], "radius": 10, "zone": ZoneMap.Zone.COMMERCIAL})
 	return sim
+
+
+## Every vehicle in town, by id: [where it's based ("edge" for ones passing
+## through from out of town), its owner, whether it's being retired].
+func _vehicle_ids(t: TrafficSim) -> Dictionary:
+	var out := {}
+	for list in [t.cars, t.parked, t._waiting]:
+		for car in list:
+			out[car.id] = [str(car.get("base", "")), int(car.get("owner", -1)), car.get("retire", false)]
+	return out
 
 
 ## Two avenues crossing, homes on one, shops and factories on the other.

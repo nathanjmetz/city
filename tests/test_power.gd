@@ -61,18 +61,45 @@ func _init() -> void:
 	_check(wells == 0, "no substation or feed")
 	var site := Services.site_near(sim.network, Services.Kind.WELL, o + Vector3(-300, 0, 30))
 	sim.apply({"type": "place_service", "kind": Services.Kind.WELL, "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})
+	var crewed := 0
 	for i in 3000:
 		sim.tick()
+		crewed = maxi(crewed, sim.power.crews.size())
 	var powered := 0
 	for key in sim.buildings:
 		if sim.services.served[key].power:
 			powered += 1
+	_check(crewed > 0, "a line crew drives out from the yard")
 	_check(powered > 0, "homes grow on the company's power alone (%d)" % powered)
 	print("  cells %d, capacity %d, sales %s, built %s" % [s.cells.size(), sim.power.capacity(id),
 		str(sim.power.sales.get(id)), str(s.built)])
 	if s.plant == "coal":
-		_check(sim.power.land_value_effect(Power.cell_center(s, s.cells[0])) < -0.1, "coal smoke lowers land value next door")
-		_check(sim.power.land_value_effect(Power.cell_center(s, s.cells[0]) + Vector3(3000, 0, 0)) == 0.0, "but not far away")
+		var next_door: Vector3 = Power.cell_center(s, s.cells[0]) + s.dir * 150.0
+		_check(sim.power_nuisance(next_door) < -0.05, "coal smoke lowers land value next door (%.2f)" % sim.power_nuisance(next_door))
+		_check(sim.power_nuisance(next_door + Vector3(5000, 0, 0)) == 0.0, "but not far away")
+
+	# Wild trees clear off the yard and every unit.
+	sim.vegetation.update(sim)
+	_check(sim.vegetation.is_occupied(Vegetation.cell_of(s.pos)), "trees don't grow in the yard")
+	_check(sim.vegetation.is_occupied(Vegetation.cell_of(Power.cell_center(s, s.cells[-1]))), "or on its units")
+	# A line to the neighbors follows the road out of town on wood poles.
+	_check(sim.power.tie_route(sim.network, sim.region_links, s).is_empty(), "no line until the leader builds one")
+	s.built.append("tie_line")
+	var line: PackedVector3Array = sim.power.tie_route(sim.network, sim.region_links, s)
+	var out_at: Vector3 = sim.network.nodes[sim.region_links[0]]
+	_check(line.size() > 2 and line[0] == s.pos and Vector2(line[-1].x - out_at.x, line[-1].z - out_at.z).length() < 30.0,
+		"the line runs from the yard to the road out of town (%d points)" % line.size())
+	var spans := Power.poles(line)
+	var longest := 0.0
+	for i in range(1, spans.size()):
+		longest = maxf(longest, spans[i].distance_to(spans[i - 1]))
+	_check(spans.size() >= 4 and longest <= Balance.POWER_TIE_SPAN + 0.5, "poles about a span apart (%d, longest %.0f m)" % [spans.size(), longest])
+	sim.power_changed.emit()
+	sim.vegetation.update(sim)
+	var under := line[line.size() / 2]
+	_check(sim.vegetation.is_occupied(Vegetation.cell_of(under)), "the corridor under the line is kept clear")
+	s.built.erase("tie_line")
+	sim.power_changed.emit()
 
 	# A coal company's tree (Agency): nothing while it loses money;
 	# scrubbers once it profits; a schooled leader near oil switches to gas.
@@ -104,6 +131,57 @@ func _init() -> void:
 	var before: String = ts.leader.name
 	t.power.develop(t, tid, {"day": 10.0 + Balance.POWER_LEADER_TERM_DAYS, "education": 0.5})
 	_check(ts.hired > 10.0 and ts.leader.edu >= 0.5, "a better-schooled successor takes over (%s -> %s)" % [before, ts.leader.name])
+
+	# Wind on farmland: a turbine may stand in a farmer's field, which stays
+	# farmed; the wind company pays the farm a lease.
+	var w := CitySim.new()
+	var fid := w.farms.add_farm(windy, Vector3(0, 0, -1), "corn", [])
+	var farm: Dictionary = w.farms.farms[fid]
+	farm.cells = [Vector2i(0, 1)]
+	var field_mid: Vector3 = Farms.cell_center(farm, Vector2i(0, 1))
+	var before_lease := w.farms.field_profit(farm, Vector2i(0, 1))
+	var wid := w.power.add_site(field_mid + Vector3(0, 0, -300), Vector3(0, 0, -1), [], 0.8, 3)
+	var ws: Dictionary = w.power.sites[wid]
+	ws.plant = "wind"
+	_check(not w.field_usable(field_mid, Farms.cell_corners(farm, Vector2i(0, 1))) and w.pad_usable(field_mid, Farms.cell_corners(farm, Vector2i(0, 1))),
+		"a turbine pad may go in a field where nothing else can")
+	ws.pos = field_mid - ws.dir * -Power.spacing(ws)  # cell (0, 1) lands on the field
+	ws.cells = [Vector2i(0, 1)]
+	_check(Power.cell_center(ws, Vector2i(0, 1)).distance_to(field_mid) < 1.0, "the test turbine stands in the field")
+	_check(w.power.leased(ws) == 1, "the company leases that ground")
+	_check(is_equal_approx(w.farms.field_profit(farm, Vector2i(0, 1)) - before_lease, Balance.POWER_WIND_LEASE),
+		"the farm earns the lease on top of its crop")
+	_check(farm.cells.size() == 1, "and keeps farming the field")
+
+	# Solar boxed in by cornfields asks the player (a land-use permit) to
+	# lease farmland; once approved, the fields become panel rows and the
+	# farm earns rent instead of a crop.
+	var sol := CitySim.new()
+	var sfid := sol.farms.add_farm(calm + Vector3(-1000, 0, 0), Vector3(0, 0, -1), "corn", [])
+	var sf: Dictionary = sol.farms.farms[sfid]
+	for fx in range(14, 37):
+		for fy in range(-11, 12):
+			sf.cells.append(Vector2i(fx, fy))
+	var fields_before: int = sf.cells.size()
+	var sid := sol.power.add_site(calm, Vector3(0, 0, -1), [], 0.8, 5)
+	var ss: Dictionary = sol.power.sites[sid]
+	ss.plant = "solar"
+	ss.cells = [Vector2i(0, 1)]
+	sol.power.decide(sol.field_usable, 1_000_000.0, false, {})
+	_check(not ss.get("farm_want", []).is_empty(), "boxed in by fields, the solar company eyes the farmland (%d)" % ss.get("farm_want", []).size())
+	_check(ss.cells.size() == 1, "but doesn't take it on its own")
+	sol.power.farmland(sol, sid)
+	var asked: Array = sol.permits.requests.values().filter(func(r): return r.hub == "power")
+	_check(asked.size() == 1 and asked[0].change == "Farmland to solar panels", "it asks you first: %s" % (asked[0].title if asked.size() else "nothing"))
+	if asked.size() == 1:
+		sol.apply({"type": "permit", "id": asked[0].id, "answer": "approve"})
+		sol.power.farmland(sol, sid)
+		_check(ss.cells.size() > 1, "approved, panels go up on the leased fields (%d units)" % ss.cells.size())
+		_check(sf.cells.size() < fields_before, "the farm gives those fields up (%d of %d left)" % [sf.cells.size(), fields_before])
+		_check(sol.power.farm_rent(sfid) > 0.0, "and earns rent for them ($%d a year)" % roundi(sol.power.farm_rent(sfid)))
+		var sol2 := CitySim.new()
+		sol2.from_dict(JSON.parse_string(JSON.stringify(sol.to_dict())))
+		_check(is_equal_approx(sol2.power.farm_rent(sfid), sol.power.farm_rent(sfid)), "a save keeps the leases")
 
 	# Saves and copies stay in step.
 	var copy := CitySim.new()
