@@ -68,15 +68,18 @@ func _init() -> void:
 		var ci: int = t._new_curb(cpl, cpl.stop, 90000 + k)
 		if ci >= 0:
 			cps.append(cpl.spots[ci].pos)
+	# The first few find room along the block; past that they double-park
+	# out front rather than give up the trip.
+	var spaced := cps.slice(0, 3)
 	var cgap := INF
-	for i in cps.size():
-		for j in range(i + 1, cps.size()):
-			cgap = minf(cgap, cps[i].distance_to(cps[j]))
+	for i in spaced.size():
+		for j in range(i + 1, spaced.size()):
+			cgap = minf(cgap, spaced[i].distance_to(spaced[j]))
 	var capron := INF
 	for q in t._aprons(cpl.stop):
-		for p in cps:
+		for p in spaced:
 			capron = minf(capron, p.distance_to(q))
-	_check(cps.size() >= 3 and cgap > 6.0 and capron > 5.0,
+	_check(cps.size() == 5 and cgap > 6.0 and capron > 5.0,
 		"overflow cars park a stall apart along the kerb (%d spaces, %.1f m apart, %.1f m from a drive)" % [cps.size(), cgap, capron])
 	_check(too_close == 0, "cars keep their distance (%d too close)" % too_close)
 
