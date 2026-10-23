@@ -117,7 +117,16 @@ static func edge_color(d: float, reach: float) -> Color:
 func _look(id: int) -> String:
 	var b: Dictionary = sim.services.buildings[id]
 	var hub: Dictionary = sim.healthcare.hubs.get(id, {})
-	return str([Services.size_of(b), hub.get("pieces", []), hub.get("level", 0), b.get("angled", false)])
+	return str([Services.size_of(b), hub.get("pieces", []), hub.get("level", 0), b.get("angled", false), _dev(id).size()])
+
+
+## The steps of its owner's development tree a depot or cab company has built.
+func _dev(id: int) -> Array:
+	if sim.buses.depots.has(id):
+		return sim.buses.depots[id].get("built", [])
+	if sim.taxis.companies.has(id):
+		return sim.taxis.companies[id].get("built", [])
+	return []
 
 
 func _spawn(id: int, b: Dictionary) -> Node3D:
@@ -139,7 +148,7 @@ func _spawn(id: int, b: Dictionary) -> Node3D:
 	elif int(b.kind) in Services.CARE:
 		built = HealthBuilder.build_care(int(b.kind), seed, size, to_curb, sim.healthcare.hubs.get(id, {}))
 	else:
-		built = CivicBuilder.build_service(int(b.kind), seed, size, to_curb)
+		built = CivicBuilder.build_service(int(b.kind), seed, size, to_curb, _dev(id))
 	built[1] = Terrain.drape_local(built[1], Transform3D(root.basis, root.position))
 	var footing := _footing(built[0])
 	if footing != null:

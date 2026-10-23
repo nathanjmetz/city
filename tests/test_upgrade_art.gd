@@ -38,6 +38,7 @@ func _init() -> void:
 					bad.append(node)
 		_check(bad.is_empty(), "%s add-ons stay inside the main building's own 80 m cell %s" % [kind, bad])
 	_railroad()
+	_services()
 	_oil_company()
 	_done()
 
@@ -119,6 +120,56 @@ func _railroad() -> void:
 			missing.append(node.id)
 	view.free()
 	_check(missing.is_empty(), "every railroad upgrade draws something%s" % ["" if missing.is_empty() else ": missing " + str(missing)])
+
+
+## Bus depots and cab companies draw their trees at their own sites; the few
+## steps that show elsewhere are checked where they show.
+func _services() -> void:
+	var elsewhere := ["shelters", "transfer_center", "park_ride", "hybrids"]
+	for pair in [[Services.Kind.BUS_DEPOT, BusNet.TREE], [Services.Kind.TAXI_COMPANY, TaxiCo.TREE]]:
+		var size: Vector2 = Services.KINDS[pair[0]].size
+		var missing := []
+		for node in pair[1]:
+			if node.id in elsewhere:
+				continue
+			var built := _with_requires(pair[1], node.id)
+			if _svc_verts(pair[0], size, built) == _svc_verts(pair[0], size, built.filter(func(n): return n != node.id)):
+				missing.append(node.id)
+		_check(missing.is_empty(), "every %s upgrade draws something%s" % [Services.KINDS[pair[0]].name,
+			"" if missing.is_empty() else ": missing " + str(missing)])
+	# Hybrids: the company's cabs change from old Crown Victorias.
+	var taxis := TaxiCo.new()
+	taxis.companies[5] = {"built": ["radio"]}
+	var old := taxis.cab_kind(5)
+	taxis.companies[5].built.append("hybrids")
+	_check(old == "taxi_old" and taxis.cab_kind(5) == "taxi" and VehicleTypes.SPECS.has("taxi_old")
+		and VehicleModels.build("taxi_old").get_surface_count() > 0, "hybrid cabs replace the old sedans")
+	# At the stops: the transfer center downtown, park-and-ride out of town.
+	var sim := CitySim.new()
+	sim.services.buildings[9] = {"kind": Services.Kind.BUS_DEPOT, "pos": Vector3.ZERO, "dir": Vector3(0, 0, -1)}
+	sim.buses.depots[9] = {"built": []}
+	for k in 3:
+		sim.buses.stops[k + 1] = {"id": k + 1, "pos": Vector3(100.0 + k * 300.0, 0, 0), "dir": Vector3(1, 0, 0),
+			"side": 1.0, "depot": 9, "riders": 0.0, "res": 300.0 - k * 100.0, "jobs": 0.0}
+	var view := BusView.new()
+	view.sim = sim
+	var counts := []
+	for built in [["shelters"], ["shelters", "transfer_center"], ["shelters", "transfer_center", "park_ride"]]:
+		sim.buses.depots[9].built = built
+		view._draw_stops()
+		counts.append(view._stops.mesh.surface_get_array_len(0))
+	view.free()
+	_check(counts[1] > counts[0] and counts[2] > counts[1], "the transfer center and park-and-ride show at the stops %s" % [counts])
+
+
+func _svc_verts(kind: int, size: Vector2, built: Array) -> int:
+	var parts := CivicBuilder.build_service(kind, 7, size, 3.9, built)
+	var n := 0
+	for k in 2:
+		var mesh: ArrayMesh = parts[k]
+		for i in mesh.get_surface_count():
+			n += mesh.surface_get_array_len(i)
+	return n
 
 
 func _oil_company() -> void:

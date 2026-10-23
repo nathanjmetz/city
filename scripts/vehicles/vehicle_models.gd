@@ -79,7 +79,7 @@ const AXLE := {
 	"sedan": 3.9, "hatchback": 3.4, "crossover": 3.6, "suv": 4.2, "pickup": 4.7, "work_pickup": 4.8,
 	"minivan": 4.0, "sports": 3.8, "motorcycle": 1.8, "van": 4.4, "delivery_van": 5.3,
 	"box_truck": 7.9, "dump_truck": 6.7, "tow_truck": 5.2, "police_charger": 3.95, "police_tahoe": 4.15, "fire_tender": 7.2, "garbage_side": 7.3, "pickup_old": 4.4, "suv_jeep": 3.9, "minivan_pacifica": 4.0, "crossover_compact": 3.5, "work_pickup_plow": 4.8, "dump_truck_plow": 6.7, "buggy": 4.9, "rv": 5.9, "motorhome": 7.1, "pickup_camper": 4.8, "bucket_truck": 5.6, "school_bus": 8.9, "city_bus": 9.2, "coach": 10.9,
-	"garbage_truck": 7.3, "fire_engine": 7.4, "police": 3.9, "taxi": 3.9, "ambulance": 5.1, "tractor": 4.2,
+	"garbage_truck": 7.3, "fire_engine": 7.4, "police": 3.9, "taxi": 3.9, "taxi_old": 4.0, "ambulance": 5.1, "tractor": 4.2,
 	"combine": 7.0, "tractor_sleeper": 6.4, "mail_truck": 4.3, "concrete_mixer": 7.0, "sedan_compact": 3.6, "sedan_fullsize": 4.0,
 	"pickup_ext": 4.6, "pickup_mid": 4.4, "suv_mid": 3.9, "wagon": 3.7, "ev_crossover": 3.8, "hatch_box": 3.4, "van_low": 4.4,
 	"rural_mail": 3.9, "tractor_day": 4.8,
@@ -280,6 +280,17 @@ func _taxi() -> void:  # Toyota Camry Hybrid, the usual small-town cab now
 	if not _lo:
 		for s in [-1.0, 1.0]:
 			_box(Vector3(s * 0.925, 0.78, 2.4), Vector3(0.004, 0.1, 1.9), TRIM)
+
+
+## Ford Crown Victoria, the long body-on-frame sedan most US cab fleets ran
+## until hybrids replaced them (a cab company's "hybrids" upgrade).
+func _taxi_old() -> void:
+	_car({"L": 5.39, "W": 1.99, "H": 1.47, "clear": 0.15, "hood": 0.86, "belt": 1.0, "a": 1.55,
+		"b": 2.3, "c": 3.6, "e": 4.3, "tail": 1.02, "wr": 0.34, "axles": [1.15, 4.0], "grille": CHROME})
+	_box(Vector3(0, 1.56, 2.9), Vector3(0.75, 0.2, 0.28), WHITE)
+	if not _lo:
+		for s in [-1.0, 1.0]:
+			_box(Vector3(s * 1.0, 0.72, 2.6), Vector3(0.004, 0.1, 2.1), TRIM)
 
 
 func _sedan_compact() -> void:  # Toyota Corolla

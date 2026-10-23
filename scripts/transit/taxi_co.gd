@@ -633,7 +633,7 @@ func _send(sim: CitySim, cab: Dictionary, leg: String, to: Vector3) -> bool:
 	if cab.state == "parked":
 		from = _gate(sim.services.buildings[cab.co])
 	var tid := BusNet.leg(sim.traffic, cab, "taxi:%d" % cab.id, from, {"ref": "taxi:%d" % cab.id, "pos": [to.x, to.z]},
-		"taxi", {"riders": cab.load, "cab": cab.id}, "taxi")
+		"taxi", {"riders": cab.load, "cab": cab.id}, cab_kind(cab.co))
 	if tid == -1:
 		cab.until = sim.tick_count + RETRY_TICKS
 		if cab.state != "parked":
@@ -644,6 +644,11 @@ func _send(sim: CitySim, cab: Dictionary, leg: String, to: Vector3) -> bool:
 	cab.leg = leg
 	cab.state = "driving"
 	return true
+
+
+## The car a company's cabs are: old Crown Victorias until it buys hybrids.
+func cab_kind(co: int) -> String:
+	return "taxi" if "hybrids" in companies.get(co, {}).get("built", []) else "taxi_old"
 
 
 ## Cabs standing still, for the view: [kind, front of the cab, facing, riders].
@@ -657,9 +662,9 @@ func standing(sim: CitySim) -> Array:
 			continue
 		if cab.state == "parked":
 			var pose := stall_pose(sim, cab)
-			out.append(["taxi", pose[0], pose[1], 0, int(cab.get("vid", -1)) != -1])
+			out.append([cab_kind(cab.co), pose[0], pose[1], 0, int(cab.get("vid", -1)) != -1])
 		else:
-			out.append(["taxi", cab.at, cab.dir if cab.dir.length() > 0.5 else Vector3.FORWARD, cab.load,
+			out.append([cab_kind(cab.co), cab.at, cab.dir if cab.dir.length() > 0.5 else Vector3.FORWARD, cab.load,
 				int(cab.get("vid", -1)) != -1])
 	return out
 

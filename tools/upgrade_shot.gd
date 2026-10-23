@@ -1,7 +1,7 @@
 extends SceneTree
 ## Renders a company yard or a farmstead with every step of its development
 ## tree built, for the art realism loop (compare each add-on with its real
-## example in UpgradeKits). Kinds: oil, ore, forest, farm, rail.
+## example in UpgradeKits). Kinds: oil, ore, forest, farm, rail, bus, taxi.
 ## Run: godot -s tools/upgrade_shot.gd -- out.png kind [yaw pitch dist]
 
 var _frames := 0
@@ -17,14 +17,20 @@ func _init() -> void:
 	if kind == "rail":
 		_rail(world, args)
 		return
-	var built: Array = Agency.TREES[kind].map(func(n): return n.id)
+	var parts: Array = []
+	if kind in ["bus", "taxi"]:
+		var svc: int = Services.Kind.BUS_DEPOT if kind == "bus" else Services.Kind.TAXI_COMPANY
+		var tree: Array = BusNet.TREE if kind == "bus" else TaxiCo.TREE
+		var size: Vector2 = Services.KINDS[svc].size
+		parts = CivicBuilder.build_service(svc, 7, size, 3.9, tree.map(func(n): return n.id))
+	var built: Array = Agency.TREES.get(kind, []).map(func(n): return n.id)
 	var s := {"kind": kind, "pos": Vector3.ZERO, "dir": Vector3(0, 0, -1), "addons": {}}
 	var ind := Industry.new()
 	ind.sites[1] = s
 	for n in built:
 		ind.place_addon(1, n, func(_p): return true)
-	var parts: Array
 	match kind:
+		"bus", "taxi": pass
 		"farm": parts = FarmBuilder.build_farmstead(7, 3, built)
 		"forest": parts = ForestryBuilder.mill(7, Industry.HQ_SIZE, built, s.addons)
 		_: parts = IndustryBuilder.build_hq(kind, 7, built, s.addons)
@@ -39,7 +45,7 @@ func _init() -> void:
 	world.add_child(cam)
 	var yaw := deg_to_rad(float(args[2])) if args.size() > 4 else deg_to_rad(-30.0)
 	var pitch := deg_to_rad(float(args[3])) if args.size() > 4 else deg_to_rad(35.0)
-	var dist := float(args[4]) if args.size() > 4 else (70.0 if kind == "farm" else 150.0)
+	var dist := float(args[4]) if args.size() > 4 else (70.0 if kind in ["farm", "bus", "taxi"] else 150.0)
 	var target := Vector3(0, 3, 0)
 	cam.position = target + Vector3(sin(yaw) * cos(pitch), sin(pitch), -cos(yaw) * cos(pitch)) * dist
 	cam.basis = Basis.looking_at(target - cam.position)
