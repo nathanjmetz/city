@@ -26,6 +26,12 @@ const SAVE_EVERY := 30.0
 var loading := true
 
 
+# A static Callable that outlives this script crashes the engine at quit
+# (seen in -s tests): let go of the cover lambda when the town closes.
+func _exit_tree() -> void:
+	Vegetation.cover_source = Callable()
+
+
 func _ready() -> void:
 	if Session.online():
 		sim = Session.client.my_sim()
