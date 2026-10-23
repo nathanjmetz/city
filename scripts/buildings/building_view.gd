@@ -115,7 +115,8 @@ func _plant(key: String, root: Node3D, planted: Array, labels := []) -> void:
 ## The lot as the art builders want it: width, depth, flag pad, and the
 ## outline in the building's own frame (x across, z back from the street).
 static func _local_lot(lot: Dictionary, frame: Transform3D) -> Dictionary:
-	var fit := {"width": lot.get("width", 20.0), "depth": lot.get("depth", 32.0), "pad": lot.get("pad", 0.0)}
+	var fit := {"width": lot.get("width", 20.0), "depth": lot.get("depth", 32.0), "pad": lot.get("pad", 0.0),
+		"at": Vector2(frame.origin.x, frame.origin.z), "corner": lot.get("corner", false)}
 	var corners: PackedVector2Array = lot.get("corners", PackedVector2Array())
 	if corners.size() >= 3:
 		var inv := frame.affine_inverse()
