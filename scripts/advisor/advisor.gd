@@ -39,10 +39,12 @@ static func tips(sim: CitySim, category := "") -> Array:
 	return out
 
 
-## A couple of ideas for a brand-new town, for the welcome.
+## The first steps for a brand-new town, for the welcome.
 static func first_ideas(sim: CitySim) -> Array:
 	var ideas := []
-	if sim.network.segments.size() <= 2:
+	# A region town starts with its county roads already in, so count only
+	# what the player has done: no homes yet means streets come first.
+	if sim.zones.cells.is_empty():
 		ideas.append("Run a few streets off that road in from the highway. Roads is down at the bottom.")
 	if sim.zones.cells.is_empty():
 		ideas.append("Paint some homes along your streets, and folks will start showing up.")
@@ -50,13 +52,13 @@ static func first_ideas(sim: CitySim) -> Array:
 		ideas.append("Nobody builds without power and water, so a power line and a well (Services) go a long way.")
 	if ideas.size() < 2:
 		ideas.append("Out past town, good dirt grows the best corn. The Fertility view shows where.")
-	return ideas.slice(0, 2)
+	return ideas
 
 
 ## A city is new until someone has done something with it.
 static func is_new_city(sim: CitySim) -> bool:
-	return sim.network.segments.size() <= 2 and sim.zones.cells.is_empty() \
-		and sim.services.buildings.is_empty() and sim.farms.farms.is_empty()
+	return sim.zones.cells.is_empty() and sim.services.buildings.is_empty() \
+		and sim.farms.farms.is_empty()
 
 
 # --- Problems and heads-ups --------------------------------------------------

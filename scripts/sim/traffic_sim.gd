@@ -25,6 +25,10 @@ const MAX_CARS := 400
 const DT := 0.1
 const CAR_LEN := 4.6
 const LANE_W := 3.6
+## Trips that may drive in bus lanes, and how far before a corner or
+## driveway other traffic may cross into one (about a block's last third).
+const BUS_PURPOSES := ["transit", "school"]
+const BUS_LANE_ENTRY := 60.0
 ## Intelligent Driver Model: bumper gap when stopped, time gap at speed,
 ## gentle acceleration and comfortable braking (AASHTO uses 3.4 m/s^2).
 const JAM_GAP := 2.0
@@ -280,18 +284,21 @@ static func limit(type: int) -> float:
 static func lane_offsets(type: int, oneway_flag: bool) -> PackedFloat32Array:
 	var spec: Dictionary = RoadStyle.TYPES[type]
 	var offs := PackedFloat32Array()
-	if spec.oneway:
+	if RoadStyle.is_freeway(type):
 		# Highways and ramps: 4 ft shoulder on the left.
 		for k in spec.lanes:
 			offs.append(-spec.width * 0.5 + 1.2 + LANE_W * (k + 0.5))
-	elif oneway_flag:
+	elif oneway_flag or spec.oneway:
 		# A one-way street (a roundabout ring): every lane goes one way.
 		for k in spec.lanes:
 			offs.append(-LANE_W * spec.lanes * 0.5 + LANE_W * (k + 0.5))
 	else:
-		var inner: float = spec.median * 0.5 + (RoadStyle.CURB_WIDTH if spec.median > 0.0 else 0.0)
+		var inner: float = spec.median * 0.5 + (RoadStyle.CURB_WIDTH if RoadStyle.raised_median(type) else 0.0)
+		# Gravel roads and alleys have no lane lines: cars share what width
+		# there is and squeeze by each other.
+		var lane: float = LANE_W if spec.get("surface", "asphalt") == "asphalt" else minf(LANE_W, spec.width * 0.5 - inner)
 		for k in spec.lanes / 2:
-			offs.append(inner + LANE_W * (k + 0.5))
+			offs.append(inner + lane * (k + 0.5))
 	return offs
 
 
@@ -601,7 +608,8 @@ func _build_control(n: int, segs: Array) -> void:
 
 
 func _rank(seg: int) -> int:
-	return [0, 1, 2, 3, 1, 1, 1][mini(network.segments[seg].type, 6)]
+	var type: int = network.segments[seg].type
+	return [0, 1, 2, 3, 1, 1, 1][mini(type if RoadStyle.is_ring(type) else RoadStyle.group(type), 6)]
 
 
 ## Roundabout ring pieces: one-way roads that aren't highways or ramps.
@@ -1527,6 +1535,17 @@ func _lane_changes() -> void:
 				desired = [w.lanes - 1] if ds < 80.0 else range(w.lanes)
 			else:
 				desired = lanes_for(w.id, car.route[car.leg + 1])
+			# Bus lanes: other traffic keeps out of them, except to turn
+			# right at the next corner or reach a driveway close ahead.
+			var bus := RoadStyle.bus_lane(w.type)
+			if bus != -1 and not car.purpose in BUS_PURPOSES:
+				var others: Array = desired.filter(func(l): return l != bus)
+				if not others.is_empty():
+					desired = others
+				elif ds > BUS_LANE_ENTRY:
+					desired = [bus - 1]
+				if t == bus and not desired.has(bus):
+					continue
 			var must := false
 			if not desired.has(car.lane):
 				if _lane_dist(t, desired) >= _lane_dist(car.lane, desired):
