@@ -150,6 +150,10 @@ var neighbor_power_short := 0.0
 var region := {}
 
 var _lots_dirty := true
+## Only zoning or roads changed: built parcels need checking only where a
+## road moved (the rest can't have changed), which keeps edits in a big
+## town quick.
+var _lots_light := false
 ## Roads changed since the world last made way for them (see RoadWins).
 var _roads_moved := false
 var _usable_cache := {}  # field cell -> bool, cleared when roads or lots change
@@ -198,7 +202,7 @@ func _init() -> void:
 	network.changed.connect(func(): streets.sync(self))
 	_hook_pollution()
 	network.changed.connect(func():
-		_lots_dirty = true
+		_lots_light = true
 		_roads_moved = true
 		rail.roads_changed())
 	vegetation.watch(self)
@@ -509,7 +513,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			zones.paint(_v(cmd.center), float(cmd.radius), int(cmd.zone))
 			_clear_reserved_zones(_v(cmd.center), float(cmd.radius) + ZoneMap.CELL)
 			_usable_cache.clear()
-			_lots_dirty = true
+			_lots_light = true
 			ok = true
 		"set_bus_subsidy":
 			ok = buses.apply(self, cmd)
@@ -532,7 +536,7 @@ func apply_now(cmd: Dictionary) -> bool:
 					_paint_frontage(part[0], part[1], int(cmd.zone))
 			_clear_reserved_zones()
 			_usable_cache.clear()
-			_lots_dirty = true
+			_lots_light = true
 			ok = true
 		"permit":
 			ok = permits.answer(self, cmd)
@@ -1843,8 +1847,10 @@ func _lot_blocked(lot: Dictionary) -> bool:
 
 
 func _refresh() -> void:
-	if _lots_dirty:
+	if _lots_dirty or _lots_light:
+		var full := _lots_dirty
 		_lots_dirty = false
+		_lots_light = false
 		planner.update(network)
 		# Lots with buildings are parcels: they stay as they are unless a road
 		# now runs through them.
@@ -1855,7 +1861,9 @@ func _refresh() -> void:
 		for key in keys:
 			if lots.has(key):
 				var lot := planner.revalidate(network, lots[key])
-				if not lot.is_empty() and not _lot_blocked(lot):
+				if not full and is_same(lot, lots[key]):
+					frozen[key] = lot  # no road came near it
+				elif not lot.is_empty() and not _lot_blocked(lot):
 					frozen[key] = lot
 				else:
 					lost.append(key)
