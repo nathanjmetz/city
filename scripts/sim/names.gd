@@ -71,7 +71,7 @@ const TRADES := [
 	{"trade": "pizza", "w": 5, "style": "condensed", "names": ["{S's} Pizza", "{S} Pizza"]},
 	{"trade": "hair", "w": 6, "style": "script", "names": ["{F's} Hair Studio", "{S's} Salon", "{F's} Beauty Shop"]},
 	{"trade": "barber", "w": 3, "style": "serif", "names": ["{F's} Barber Shop", "{S's} Barber Shop"]},
-	{"trade": "insurance", "w": 5, "style": "serif", "names": ["{S} Insurance", "{S} Insurance Agency"]},
+	{"trade": "insurance", "office": true, "w": 5, "style": "serif", "names": ["{S} Insurance", "{S} Insurance Agency"]},
 	{"trade": "hardware", "w": 3, "style": "slab", "names": ["{S} Hardware", "{S's} Hardware", "{S} Hardware & Supply"]},
 	{"trade": "feed", "w": 2, "style": "slab", "names": ["{S} Feed & Seed", "{S} Farm Supply"]},
 	{"trade": "pharmacy", "w": 2, "style": "franklin", "names": ["{S} Drugs", "{S} Pharmacy"]},
@@ -81,13 +81,13 @@ const TRADES := [
 	{"trade": "bakery", "w": 2, "style": "script", "names": ["{S's} Bakery", "{S} Bakery & Donuts"]},
 	{"trade": "furniture", "w": 2, "style": "serif", "names": ["{S} Furniture", "{S} Furniture & Appliance"]},
 	{"trade": "funeral", "w": 2, "style": "serif", "names": ["{S} Funeral Home", "{S} & Sons Funeral Home"]},
-	{"trade": "law", "w": 2, "style": "serif", "names": ["{S} Law Office", "{S} & Associates"]},
-	{"trade": "realty", "w": 2, "style": "franklin", "names": ["{S} Realty", "{S} Real Estate"]},
+	{"trade": "law", "office": true, "w": 2, "style": "serif", "names": ["{S} Law Office", "{S} & Associates"]},
+	{"trade": "realty", "office": true, "w": 2, "style": "franklin", "names": ["{S} Realty", "{S} Real Estate"]},
 	{"trade": "antiques", "w": 2, "style": "serif", "names": ["{S} Antiques", "{S} Antique Mall"]},
 	{"trade": "clothing", "w": 2, "style": "serif", "names": ["{S's} Clothing", "{S} Western Wear"]},
 	{"trade": "gifts", "w": 2, "style": "script", "names": ["{F's} Gifts", "{S} Gift Shop"]},
 	{"trade": "appliance", "w": 1, "style": "franklin", "names": ["{S} Appliance & TV"]},
-	{"trade": "accounting", "w": 2, "style": "serif", "names": ["{S} Tax & Accounting"]},
+	{"trade": "accounting", "office": true, "w": 2, "style": "serif", "names": ["{S} Tax & Accounting"]},
 ]
 ## What each kind of trade is called in a sentence ("a diner").
 const TRADE_WORD := {
@@ -131,16 +131,19 @@ static func place(seed: int) -> String:
 	return PLACES[absi(seed) % PLACES.size()]
 
 
-## A shop's trade, weighted like a real main street.
-static func trade(seed: int) -> Dictionary:
+## A shop's trade, weighted like a real main street; `office` keeps to the
+## trades that rent office space.
+static func trade(seed: int, office := false) -> Dictionary:
 	var total := 0
 	for t in TRADES:
-		total += int(t.w)
+		if not office or t.get("office", false):
+			total += int(t.w)
 	var r := absi(seed) % total
 	for t in TRADES:
-		r -= int(t.w)
-		if r < 0:
-			return t
+		if not office or t.get("office", false):
+			r -= int(t.w)
+			if r < 0:
+				return t
 	return TRADES[0]
 
 

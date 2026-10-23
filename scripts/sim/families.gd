@@ -99,8 +99,11 @@ func _found(sim, ref: String, trades: Dictionary) -> void:
 	for attempt in 12:
 		var seed := hash([sim.city_seed, ref, attempt])
 		if what == "shop":
+			# An office building's tenant is an office: an agent, a lawyer,
+			# an accountant, a realtor.
+			var office := ref.begins_with("lot:") and BuildingTypes.type_of(sim.buildings[ref.substr(4)]) == "office"
 			for pick in 8:
-				var t: Dictionary = Names.trade(hash([seed, pick]))
+				var t: Dictionary = Names.trade(hash([seed, pick]), office)
 				what = t.trade
 				if int(trades.get(what, 0)) < 1 + shops * int(t.w) / 60:
 					break

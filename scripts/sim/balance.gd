@@ -121,6 +121,32 @@ const BUILD_TICKS_PER_WEEK := 30
 ## Share of residents who work (US labour force is about half of everyone).
 const WORKER_SHARE := 0.5
 
+# --- Building types ----------------------------------------------------------
+# Brawn's "bright green" (2026-10-22): each lot's owner picks what to build
+# from its surroundings, and each type has its own growth path (see
+# scripts/sim/building_types.gd for the types themselves).
+
+## Buildings counted within this many metres tell an owner how built-up and
+## pricey the land is (about a two-minute walk).
+const CORE_RADIUS := 200.0
+## Row homes appear once this many buildings stand within CORE_RADIUS (land
+## too dear for a detached house on every lot), apartments from DENSE_CORE.
+const ROW_HOME_DENSITY := 30
+const DENSE_CORE := 20
+## A street side becomes a Main Street once this many shops line it, and
+## new shops there get flats upstairs (the classic Midwestern main street).
+const MAIN_STREET_SHOPS := 2
+## How often a grown building may move up its growth path (ticks), how long
+## it must stand first (ticks; 4320 = three game days, a season), and the chance
+## per check that the owner goes ahead.
+const DEVELOP_EVERY := 40
+const DEVELOP_AGE := 4320
+const DEVELOP_CHANCE := 0.35
+## Share of owners keen to build on: DEVELOP_KEEN plus DEVELOP_KEEN_WEALTH
+## times the neighborhood's wealth (0 to 1), so about half at 0.5.
+const DEVELOP_KEEN := 0.25
+const DEVELOP_KEEN_WEALTH := 0.6
+
 # --- Farms -------------------------------------------------------------------
 
 const FARMHOUSE_COST := 350_000

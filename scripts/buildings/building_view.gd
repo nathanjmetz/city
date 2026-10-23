@@ -1,8 +1,10 @@
 class_name BuildingView
 extends Node3D
 ## Draws the buildings the simulation has grown, using the art library's
-## HouseBuilder (homes) and CommercialBuilder (shops and factories). New ones
-## go up stage by stage (ConstructionSite).
+## HouseBuilder (homes), CommercialBuilder (shops and factories) and
+## DenseBuilder (row homes, apartments, Main Street blocks, offices). Each
+## building is drawn for its type and stage, and redrawn when it grows. New
+## ones go up stage by stage (ConstructionSite).
 
 var sim: CitySim
 var _nodes := {}  # lot key -> Node3D
@@ -32,6 +34,7 @@ func _sync_all() -> void:
 		# Gone, or its lot moved (the road was widened), or its sign changed.
 		if not sim.buildings.has(key) or not sim.lots.has(key) \
 				or not _nodes[key].get_meta("front").is_equal_approx(sim.lots[key].front) \
+				or _nodes[key].get_meta("look") != _look(sim.buildings[key]) \
 				or _nodes[key].get_meta("sign") != sim.families.sign_key(sim, "lot:" + key):
 			_nodes[key].queue_free()
 			_nodes.erase(key)
@@ -41,8 +44,14 @@ func _sync_all() -> void:
 			_nodes[key] = _spawn(key, sim.lots[key], sim.buildings[key])
 
 
+## What the drawing depends on: type, stage and size.
+static func _look(b: Dictionary) -> Array:
+	return [BuildingTypes.type_of(b), int(b.get("level", 0)), int(b.get("units", 1))]
+
+
 func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 	var root := Node3D.new()
+	root.set_meta("look", _look(b))
 	add_child(root)
 	root.set_meta("front", lot.front)
 	root.set_meta("sign", sim.families.sign_key(sim, "lot:" + key))
@@ -55,10 +64,16 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 	rng.seed = b.seed
 	var built := []
 	var fit := _local_lot(lot, Transform3D(root.basis, root.position))
-	match int(b.zone):
-		ZoneMap.Zone.RESIDENTIAL: built = HouseBuilder.build(rng.randi(), lot.to_curb, fit)
-		ZoneMap.Zone.COMMERCIAL: built = CommercialBuilder.build_shop(rng.randi(), lot.to_curb, fit, spec)
-		ZoneMap.Zone.INDUSTRIAL: built = CommercialBuilder.build_factory(rng.randi(), lot.to_curb, fit, spec)
+	var s := rng.randi()
+	var storeys := BuildingTypes.storeys(b)
+	match BuildingTypes.type_of(b):
+		"house": built = HouseBuilder.build(s, lot.to_curb, fit, storeys)
+		"row_home": built = DenseBuilder.build_row(s, lot.to_curb, fit, int(b.get("units", 2)), storeys)
+		"apartments": built = DenseBuilder.build_apartments(s, lot.to_curb, fit, storeys)
+		"shop": built = DenseBuilder.build_retail(s, lot.to_curb, fit, spec)
+		"mixed_use": built = DenseBuilder.build_mixed(s, lot.to_curb, fit, storeys, spec)
+		"office": built = DenseBuilder.build_office(s, lot.to_curb, fit, storeys, spec)
+		_: built = CommercialBuilder.build_factory(s, lot.to_curb, fit, spec)
 	if built.is_empty():
 		return root
 	# Drives, walks and beds lie on the ground, following it.

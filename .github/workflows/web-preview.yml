@@ -74,6 +74,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_permits.gd
           ~/godot-cache/godot --headless -s tests/test_families.gd
           ~/godot-cache/godot --headless -s tests/test_lots.gd
+          ~/godot-cache/godot --headless -s tests/test_building_types.gd
           ~/godot-cache/godot --headless -s tests/test_hubs.gd
           ~/godot-cache/godot --headless -s tests/test_warehouses.gd
           ~/godot-cache/godot --headless -s tests/test_parks.gd

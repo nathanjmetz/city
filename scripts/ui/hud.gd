@@ -212,9 +212,10 @@ func _process(_delta: float) -> void:
 	var t := sim.clock()
 	var hour: int = t.hour % 12
 	# A game day is a month (see Seasons), so the date is month and year.
-	_clock.text = "%s, Year %d  %d:%02d %s" % [
+	# Calendar years, matching the "since" on business signs.
+	_clock.text = "%s %d  %d:%02d %s" % [
 		["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][t.month - 1],
-		t.year, 12 if hour == 0 else hour, t.minute, "AM" if t.hour < 12 else "PM"]
+		Families.calendar(t.year), 12 if hour == 0 else hour, t.minute, "AM" if t.hour < 12 else "PM"]
 	_money.text = "$" + _thousands(sim.economy.money)
 	_money.add_theme_color_override("font_color", UiStyle.TEXT if sim.economy.money >= 0 else BAD)
 	_cars.text = "%d  ·  %d%% flow" % [sim.traffic.cars.size(), roundi(sim.traffic.flow * 100.0)]

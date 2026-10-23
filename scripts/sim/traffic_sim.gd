@@ -116,7 +116,10 @@ var _keep_routes := false
 
 func _init(net: RoadNetwork) -> void:
 	network = net
-	network.changed.connect(func(): _dirty = true)
+	# A road change before a loaded city has run a tick drops the saved plans.
+	network.changed.connect(func():
+		_dirty = true
+		_keep_routes = false)
 
 
 func step(sim: CitySim, rng: RandomNumberGenerator) -> void:
@@ -134,6 +137,8 @@ func step(sim: CitySim, rng: RandomNumberGenerator) -> void:
 ## direction]. `ahead` moves it on by that many metres, for smooth drawing
 ## between ticks.
 func car_pose(car: Dictionary, ahead := 0.0) -> Array:
+	if _dirty:
+		_rebuild()  # a loaded city that hasn't run yet (a neighbor's, say)
 	if car.j != null:
 		return _conn_pose(car.j, minf(car.jd + ahead, car.j.len))
 	var w: Dictionary = ways[car.route[car.leg]]
@@ -1137,7 +1142,10 @@ func _launch(car: Dictionary) -> bool:
 ## The path out of a driveway into the nearest lane.
 func _driveway_out(car: Dictionary, exit_d: float) -> Dictionary:
 	var w: Dictionary = ways[car.route[0]]
-	var corner := _lane_point(w, car.lane, car.d)
+	# A drive right by the end of the street can't swing forward its usual
+	# distance: it swings back a little, so the car still meets the lane
+	# heading the lane's way.
+	var corner := _lane_point(w, car.lane, maxf(minf(car.d, exit_d - 3.0), 0.0))
 	var p2 := _lane_point(w, car.lane, exit_d)
 	return _path({"node": -1, "wi": -1, "li": -1, "wo": w.id, "lo": car.lane, "turn": Turn.RIGHT,
 		"vt": 5.0, "exit_d": exit_d}, car.home, corner, p2)

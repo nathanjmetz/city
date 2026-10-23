@@ -429,7 +429,6 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 	if smell > 0.1:
 		problems.append("The sewer plant smells here, so the land is worth %d%% less." % roundi(
 			100.0 * (1.0 - sim.services.water.land_value_factor(sim.services.buildings, lot.pos))))
-	var names := {ZoneMap.Zone.RESIDENTIAL: "Home", ZoneMap.Zone.COMMERCIAL: "Shop", ZoneMap.Zone.INDUSTRIAL: "Factory"}
 	if not sim.buildings.has(key):
 		var status := "Empty lot, waiting to be built"
 		if not problems.is_empty():
@@ -464,6 +463,16 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 			rows.append(["%s in the yard" % chain.input.capitalize(), "%d loads" % floori(sim.logistics.stock.get(key, 0.0))])
 		rows.append(["Trucks on the road", str(sim.logistics.trucks_for("lot:" + key))])
 		status = "Open for business" if problems.is_empty() else "Closed: no power or water"
+	if int(b.get("flats", 0)) > 0:
+		rows.insert(1, ["Flats upstairs", "%d of %d residents" % [int(b.focc), int(b.flats)]])
+	if BuildingTypes.storeys(b) > 0:
+		rows.insert(0, ["Storeys", str(BuildingTypes.storeys(b))])
+	if str(b.get("why", "")) != "":
+		rows.append(["Why this", b.why])
+	var next := []
+	for o in BuildingTypes.options(sim, key):
+		next.append(BuildingTypes.TYPES[o[0]].stages[o[1]].name)
+	rows.append(["Can grow into", ", ".join(next) if not next.is_empty() else "Nothing yet"])
 	var going_up := sim.construction.describe("lot:" + key, sim.tick_count)
 	if going_up != "":
 		status = going_up
@@ -485,16 +494,18 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 	if trash != "":
 		problems.append(trash)
 	var icons := {ZoneMap.Zone.RESIDENTIAL: "homes", ZoneMap.Zone.COMMERCIAL: "shops", ZoneMap.Zone.INDUSTRIAL: "industry"}
-	var title: String = names[z]
-	var kind: String = ZoneMap.NAMES[z]
+	var title: String = BuildingTypes.name_of(b)
+	var kind: String = BuildingTypes.TYPES[BuildingTypes.type_of(b)].name
 	if z == ZoneMap.Zone.INDUSTRIAL:
 		title = Balance.FACTORY_CHAINS[b.get("chain", "general")].name
 	var ref := "lot:" + key
 	if sim.families.owned.has(ref):
+		rows.insert(0, ["Building", title])
 		kind = Names.trade_word(sim.families.owned[ref].what).capitalize() if z == ZoneMap.Zone.COMMERCIAL else title
 		title = sim.families.name_of(ref)
 		rows.append_array(sim.families.rows(sim, ref))
 	elif z == ZoneMap.Zone.RESIDENTIAL:
+		rows.insert(0, ["Building", title])
 		title = Families.home_name(b)
 	return {"title": title, "kind": kind, "icon": icons[z], "ok": problems.is_empty(),
 		"status": status, "rows": rows, "problems": problems}

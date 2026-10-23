@@ -150,7 +150,11 @@ func _init() -> void:
 		ng.tick()
 	_check(ng.stats.population >= 50, "the village grows (%d people)" % ng.stats.population)
 	var before_grant: int = ng.economy.money
-	_check(ng.economy.reach_milestones(260) == 650_000 and ng.economy.money == before_grant + 650_000
+	var owed := 0
+	for i in range(ng.economy.milestone, Economy.MILESTONES.size()):
+		if Economy.MILESTONES[i][0] <= 260:
+			owed += Economy.MILESTONES[i][1]
+	_check(owed > 0 and ng.economy.reach_milestones(260) == owed and ng.economy.money == before_grant + owed
 		and ng.economy.reach_milestones(260) == 0, "milestone grants paid once each")
 	# Farms: outline farmland, place a farmhouse, watch it buy fields.
 	var fm := CitySim.new()
