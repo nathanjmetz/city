@@ -302,6 +302,12 @@ func _scout_road(sim, seg: int, depth: float, roads: Dictionary) -> void:
 			var mid := local(site, 0.0, depth * 0.5)
 			if _near(_built, mid, 0) or sim.zones.zone_at(mid) != ZoneMap.Zone.NONE:
 				continue
+			# The town's land use plan: never homes on land it plans for
+			# something else; land it plans for homes is looked at first.
+			var plan: String = sim.land_plan.kind_at(mid)
+			if plan != "" and plan != "homes":
+				last_search["planned for " + plan] = int(last_search.get("planned for " + plan, 0)) + 1
+				continue
 			scout.tries = int(scout.tries) + 1
 			if int(scout.tries) > Balance.SUBDIV_MAX_TRIES:
 				return
@@ -310,6 +316,9 @@ func _scout_road(sim, seg: int, depth: float, roads: Dictionary) -> void:
 				last_search[why] = int(last_search.get(why, 0)) + 1
 				continue
 			site.score = snappedf(-Vector2(p.x, p.z).distance_to(centre), 0.01)
+			if plan == "homes":
+				site.planned = true
+				site.score = float(site.score) + Balance.PLAN_FIRST_M
 			found.append(site)
 
 
@@ -515,7 +524,7 @@ func _lay_out(sim, site: Dictionary) -> void:
 	site.cost = cost + roundi(Balance.SUBDIV_WIDTH * depth * Balance.CULTURE_FARMLAND_PER_M2)
 	site.effects = effects_of(sim, homes, street_m)
 	site.effects.acres = snappedf(acres, 0.1)
-	site.effects.years = snappedf(float(phases) * Balance.SUBDIV_PHASE_MIN_MONTHS / 12.0, 0.5)
+	site.effects.years = snappedf(float(phases) * _phase_months(site) / 12.0, 0.5)
 
 
 ## What adding `homes` homes and `street_m` metres of street means for the
@@ -538,6 +547,8 @@ static func effects_of(sim, homes: int, street_m: float) -> Dictionary:
 		"water": _pct(int(water[0]) + load, int(water[1])),
 		"power": _pct(int(power[0]) + load, int(power[1])),
 		"upkeep": roundi(street_m * RoadStyle.TYPES[TYPE].lanes * Balance.ROAD_UPKEEP_PER_LANE_M * 12.0),
+		# ...and resurfacing them when they wear out (StreetAge).
+		"repave": StreetAge.repave_cost(street_m * RoadStyle.TYPES[TYPE].lanes, TYPE),
 		"taxes": roundi(people * Balance.VALUE_PER_PLACE[ZoneMap.Zone.RESIDENTIAL] * tax / 100.0),
 	}
 
@@ -631,7 +642,7 @@ func _phases(sim) -> bool:
 			continue
 		if int(a.phase) > 0:
 			# Shortages on the last phase make it take longer.
-			var wait := roundi(Balance.SUBDIV_PHASE_MIN_MONTHS * (1.0 + float(a.get("slow", 0.0))) * _month_ticks())
+			var wait := roundi(_phase_months(a.site) * (1.0 + float(a.get("slow", 0.0))) * _month_ticks())
 			if int(sim.tick_count) - int(a.opened) < wait:
 				continue
 			var fill := sold(sim, sid)
@@ -661,6 +672,12 @@ func _ready(sim, sid: int) -> bool:
 	a.extra = int(a.get("extra", 0)) + int(needs.extra)
 	a.slow = float(needs.slow)
 	return true
+
+
+## Months a phase takes at least: less inside the town's land use plan,
+## where the plan commission approves each section plat as routine.
+static func _phase_months(site: Dictionary) -> float:
+	return Balance.SUBDIV_PHASE_MIN_MONTHS * (Balance.PLAN_FASTER if bool(site.get("planned", false)) else 1.0)
 
 
 ## Homes in one phase of a site.

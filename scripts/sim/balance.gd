@@ -276,6 +276,24 @@ const SUBDIV_KIDS_PER_HOME := 0.6
 const SUBDIV_TRIPS_PER_HOME := 9.4
 const SUBDIV_PEAK_PER_HOME := 1.0
 
+## Streets wear out (StreetAge): resurfaced about this many years after
+## they're built (asphalt lasts about 20 to 30 years, FHWA), at about $130 a
+## lane-metre (INDOT mill and overlay, about $30 a square yard). Ages are
+## kept on squares this many metres across; the Economy page looks this
+## many years ahead.
+const STREET_LIFE_YEARS := 25
+const STREET_REPAVE_PER_LANE_M := 130.0
+const STREET_AGE_CELL := 40.0
+const STREET_FORECAST_YEARS := 30
+
+## The future land use map (LandPlan). Land planned for homes is looked at
+## before any other (as if this many metres nearer the middle of town), and
+## a subdivision inside the plan opens each phase in this share of the time:
+## a plat that matches the comprehensive plan is routine for the plan
+## commission, one that doesn't means hearings and objections.
+const PLAN_FIRST_M := 100_000.0
+const PLAN_FASTER := 0.75
+
 ## What a building project needs from the other leaders (ProjectNeeds).
 ## About 400 tons of aggregate a home with its share of the street (NSSGA),
 ## about $16 a ton at the quarry (USGS 2023), its delivered price doubling
@@ -396,15 +414,18 @@ const CAPITAL_TERM_YEARS := 25
 const CAPITAL_AVG_YEARS := 3.0
 ## What a lender wants kept profit to cover: payments times this.
 const CAPITAL_COVERAGE := 1.25
-## Development within this far raises land prices (m; about a mile).
-const CAPITAL_URBAN_REACH := 1_600.0
+## Developers pay over farm value only within this far of the town's built
+## edge (m; about half a mile).
+const CAPITAL_FRINGE := 800.0
 ## The most development adds, as a multiple of farm value: ground at the
-## edge of a growing town sells for up to 3x farm value (transition land).
+## edge of a growing city sells for up to 3x farm value (transition land).
 const CAPITAL_URBAN_MAX := 2.0
-## Built lots (weighted by nearness) that bring about 63% of that premium.
-const CAPITAL_URBAN_SCALE := 150.0
-## Grid the built lots are counted on (m).
-const CAPITAL_GRID := 400.0
+## A town of about this many people carries about 63% of that premium; a
+## town of 1,500 carries under a tenth of it (rural Indiana: ground by a
+## small town sells near farm value).
+const CAPITAL_URBAN_POP := 20_000.0
+## Grid the town's built ground is mapped on (m).
+const CAPITAL_GRID := 200.0
 ## Land worth this many times farm value tempts an owner to sell out.
 const CAPITAL_SELL_RATIO := 2.0
 ## Rented ground: the landowner's share of what a field makes (Midwest
@@ -587,6 +608,10 @@ const INDUSTRY_MAX_LEASES := 3
 const INDUSTRY_ROAD_MAX := 1_600.0
 const INDUSTRY_ROAD_WAIT_DAYS := 12.0
 ## Longest lease road a company lays out to one new pad (m).
+## Working ground a company keeps around each pad, its tank battery and
+## turnaround (m): no one else plants or builds there. About 80 ft, the
+## fenced work area around an Indiana well pad.
+const INDUSTRY_CLAIM_BUFFER := 25.0
 const INDUSTRY_PAD_ROAD_MAX := 600.0
 ## Ore: one quarry that widens bench by bench beside its plant, never
 ## separate holes (Indiana limestone quarries, Iron Range pits).

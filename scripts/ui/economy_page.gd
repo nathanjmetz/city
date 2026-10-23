@@ -24,6 +24,8 @@ var _lines := {}        # budget key -> value Label
 var _grant := UiStyle.label("", 11, UiStyle.MUTED)
 var _identity := UiStyle.label("", 15, UiStyle.TEXT, 600)
 var _sectors := UiStyle.label("", 11, UiStyle.MUTED)
+var _repaved := UiStyle.label("", 11, UiStyle.MUTED)
+var _due := DueBars.new()
 var _town := {}         # slider -> StepSlider
 var _areas := VBoxContainer.new()
 var _open_areas := {}   # area -> true while expanded
@@ -102,6 +104,16 @@ func _ready() -> void:
 	body.add_child(note)
 	body.add_child(_grant)
 
+	# Streets coming due for resurfacing (StreetAge): the long-term bill.
+	body.add_child(HSeparator.new())
+	body.add_child(UiStyle.label("STREETS COMING DUE", 10, UiStyle.MUTED))
+	_repaved.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.add_child(_repaved)
+	_due.custom_minimum_size = Vector2(0, 76)
+	_due.tooltip_text = "What resurfacing worn-out streets will cost, five years at a time. Every street is resurfaced about %d years after it's built." \
+		% Balance.STREET_LIFE_YEARS
+	body.add_child(_due)
+
 	# What kind of town this is, and what's rising (TownCulture).
 	body.add_child(HSeparator.new())
 	body.add_child(UiStyle.label("TOWN CHARACTER", 10, UiStyle.MUTED))
@@ -178,6 +190,10 @@ func refresh() -> void:
 	_grant.text = "" if e.milestone >= Economy.MILESTONES.size() else \
 		"Next grant: $%s at %s people" % [CitySim.money_text(Economy.MILESTONES[e.milestone][1]),
 		CitySim.money_text(Economy.MILESTONES[e.milestone][0])]
+	var sa := sim.street_age
+	_repaved.text = "Resurfacing worn-out streets: $%s this past year. Streets last about %d years, so a fast-growing town meets them all at once." % [
+		CitySim.money_text(sa.paid_this_year()), Balance.STREET_LIFE_YEARS]
+	_due.set_years(sa.forecast)
 	var who := character(sim.culture)
 	_identity.text = who[0]
 	_sectors.text = who[1]
@@ -510,3 +526,35 @@ func _sync_sliders() -> void:
 			continue
 		for sl in _hub_rows[key]:
 			_hub_rows[key][sl].show_step(p.step(sl, area, key), p.own(key, sl) >= 0, Policies.AREAS[area].name)
+
+
+## Five-year bars of what worn-out streets will cost to resurface.
+class DueBars extends Control:
+	var _buckets: Array = []
+
+	func set_years(years: Array) -> void:
+		var b := []
+		for i in range(0, years.size(), 5):
+			var sum := 0
+			for v in years.slice(i, i + 5):
+				sum += int(v)
+			b.append(sum)
+		if b != _buckets:
+			_buckets = b
+			queue_redraw()
+
+	func _draw() -> void:
+		if _buckets.is_empty():
+			return
+		var top := 1
+		for v in _buckets:
+			top = maxi(top, int(v))
+		var font := get_theme_default_font()
+		var w := size.x / _buckets.size()
+		for i in _buckets.size():
+			var h := (size.y - 30.0) * float(_buckets[i]) / top
+			draw_rect(Rect2(i * w + 3.0, size.y - 16.0 - h, w - 6.0, h), Brand.WARNING if i == 0 and _buckets[i] > 0 else Brand.BRAND_TEAL)
+			var amount := "$" + CitySim.money_text(int(_buckets[i])) if int(_buckets[i]) > 0 else "–"
+			draw_string(font, Vector2(i * w, size.y - 20.0 - h), amount, HORIZONTAL_ALIGNMENT_CENTER, w, 10, UiStyle.TEXT)
+			draw_string(font, Vector2(i * w, size.y - 2.0), "%d-%d yr" % [i * 5, i * 5 + 5], HORIZONTAL_ALIGNMENT_CENTER, w, 10,
+				UiStyle.MUTED)

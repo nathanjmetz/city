@@ -97,13 +97,16 @@ func new_save_path(city_name: String) -> String:
 	return path
 
 
-func save_city(sim: CitySim, path := save_path) -> void:
+## Saves a town alone; `raw` is the town already taken (TownSnapshot.bytes),
+## else it is taken now.
+func save_city(sim: CitySim, path := save_path, raw := PackedByteArray()) -> void:
 	if path == "":
 		return
 	var meta := {"name": current_name if path == save_path else city_name(path),
 		"population": sim.stats.population, "money": int(sim.economy.money),
 		"saved": int(Time.get_unix_time_from_system())}
-	var raw := var_to_bytes(sim.to_dict())
+	if raw.is_empty():
+		raw = var_to_bytes(sim.to_dict())
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f:
 		# Godot's binary form, compressed: several times faster than JSON
@@ -322,6 +325,7 @@ static func _read(path: String) -> Dictionary:
 		var town = bytes_to_var(raw) if raw.size() == size else null
 		if typeof(town) != TYPE_DICTIONARY:
 			return {}
+		town = TownSnapshot.join(town)
 		town["meta"] = meta if meta is Dictionary else {}
 		return town
 	var d = JSON.parse_string(FileAccess.get_file_as_string(path))

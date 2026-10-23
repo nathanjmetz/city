@@ -37,6 +37,7 @@ func _process(_delta: float) -> bool:
 			sim.apply({"type": "place_hub", "kind": "landfill", "pos": [hs[0].x, hs[0].z], "dir": [hs[1].x, hs[1].z]})
 		for i in 600:
 			sim.tick()
+		sim.street_age.month(sim)  # the streets-coming-due forecast
 		sim.apply({"type": "policy", "scope": "area:farms", "slider": "growth", "step": 3})
 		sim.apply({"type": "policy", "scope": "farm:%d" % f1, "slider": "funding", "step": 4})
 		sim.apply({"type": "policy", "scope": "area:homes", "slider": "funding", "step": 3})

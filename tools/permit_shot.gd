@@ -1,9 +1,9 @@
 extends SceneTree
 ## Pictures of the permit bell for checking the look, with a made-up railroad
 ## request across the starter road (no real hub files one yet).
-## Run: godot -s tools/permit_shot.gd -- list|edit|land|guide|deal|homes|projects out.png
+## Run: godot -s tools/permit_shot.gd -- list|edit|land|guide|deal|homes|projects|plan out.png
 ## ("homes" is a real home builder's subdivision, with its choice of sites;
-## "projects" is one under way.)
+## "projects" is one under way; "plan" is the land use plan tool.)
 
 var _frames := 0
 var _mode := "list"
@@ -29,6 +29,23 @@ func _process(_delta: float) -> bool:
 			sim.apply({"type": "paint_zone", "center": [x, 35], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
 		for i in 600:
 			sim.tick()
+		if _mode == "plan":
+			# A land use plan: homes north of the road, shops along it, jobs
+			# and farms beyond, and the Plan tool out.
+			sim.apply({"type": "paint_plan", "points": [[-200, 80], [500, 80], [500, 500], [-200, 500]], "kind": "homes"})
+			sim.apply({"type": "paint_plan", "points": [[-200, 30], [500, 30], [500, 95], [-200, 95]], "kind": "shops"})
+			sim.apply({"type": "paint_plan", "points": [[300, -400], [700, -400], [700, -60], [300, -60]], "kind": "jobs"})
+			sim.apply({"type": "paint_plan", "points": [[-500, -500], [250, -500], [250, -120], [-500, -120]], "kind": "farms"})
+			var hp: Hud = main.get_children().filter(func(n): return n is Hud)[0]
+			hp.advisor.settings.welcomed = true
+			hp.advisor.close_panel()
+			hp.tour.stop()
+			hp.farm_tool.plan_kind = "homes"
+			hp.farm_tool.set_mode(FarmTool.Mode.PLAN)
+			var cp: CityCamera = hp.info_view.cam
+			cp.set_view(0.6, 0.8, 1100.0)
+			cp.look_at_point(Vector3(100, 0, 0))
+			return false
 		if _mode == "homes" or _mode == "projects":
 			for key in sim.lots:
 				if sim.buildings.has(key) or sim.zones.zone_at(sim.lots[key].zone_pt) != ZoneMap.Zone.RESIDENTIAL:

@@ -76,6 +76,29 @@ func _init() -> void:
 	var twin_req: Dictionary = twin.permits.requests.get(twin.subdivisions.pending.keys()[0] if not twin.subdivisions.pending.is_empty() else -1, {})
 	_check(JSON.stringify(twin_req.get("options", [])) == JSON.stringify(opts), "every copy of the town gets the same sites")
 
+	# --- The land use plan: never homes where it plans something else;
+	# land planned for homes first, and faster.
+	var jobs := _town(7)
+	jobs.stats.population = 2500
+	jobs.demand[ZoneMap.Zone.RESIDENTIAL] = 1.0
+	_check(jobs.apply({"type": "paint_plan", "points": [[-3000, -3000], [3000, -3000], [3000, 3000], [-3000, 3000]], "kind": "jobs"}),
+		"the plan can be painted")
+	_ask(jobs)
+	_check(jobs.subdivisions.pending.is_empty(), "no homes proposed on land planned for jobs")
+	var planned := _town(7)
+	planned.stats.population = 2500
+	planned.demand[ZoneMap.Zone.RESIDENTIAL] = 1.0
+	var far := Vector2(opts[-1].o[0], opts[-1].o[1])
+	planned.apply({"type": "paint_plan", "points": [[far.x - 600, far.y - 600], [far.x + 600, far.y - 600], [far.x + 600, far.y + 600],
+		[far.x - 600, far.y + 600]], "kind": "homes"})
+	_ask(planned)
+	var preq: Dictionary = planned.permits.requests.get(planned.subdivisions.pending.keys()[0] if not planned.subdivisions.pending.is_empty() else -1, {})
+	var popts: Array = preq.get("options", [])
+	_check(not popts.is_empty() and bool(popts[0].get("planned", false)), "land planned for homes is offered first")
+	if not popts.is_empty():
+		print("  planned site: ", popts[0].effects.years, " years vs ", opts[0].effects.years)
+		_check(float(popts[0].effects.years) < float(opts[0].effects.years), "a site inside the plan builds out faster")
+
 	# --- The player picks the last site.
 	var pick := opts.size() - 1
 	var money: int = sim.economy.money

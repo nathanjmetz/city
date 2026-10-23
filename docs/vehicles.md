@@ -51,11 +51,16 @@ engine). `pick()` is the fallback for background trips.
   through lane changes; buses swing their fronts wide; semi trailers hinge
   at the fifth wheel with their axles in the same tracks. Backing out of a drive, the rear leads along the
   path. The view samples each vehicle once a simulation step and glides
-  between samples one step behind, so it stays smooth at any step rate.
+  between samples one step behind. In your own town that clock is the game's
+  tick clock (main's `_tick_fraction`), so each frame moves a car exactly as
+  far as the time that passed; only neighbors' towns, which arrive now and
+  then, use the view's own catch-up clock.
   Up close, bodies dip a little under braking and lean out in turns.
 - `tools/vehicle_shot.gd`: lines up every model for photo checks.
 - `tools/motion_clip.gd`: films one car backing out or turning in the real
-  game; `tools/motion_check.gd` counts bodies that overlap.
+  game; `tools/motion_check.gd` counts bodies that overlap;
+  `tools/smooth_check.gd` counts frames where a moving car stalls or jumps
+  under uneven frame times (`old` for the catch-up clock, `fast` for 4x).
 
 ## Ultra close-ups
 
