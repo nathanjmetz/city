@@ -48,6 +48,8 @@ const BUDGET_MS := 6
 ## How far the camera moves (metres, height counted) before the chunks'
 ## detail levels are worked out again; far smaller than any level's reach.
 const SETTLE_MOVE := 8.0
+## Rows of a chunk built between checks of the frame's budget.
+const JOB_ROWS := 4
 
 const SHADER := """
 shader_type spatial;
@@ -347,6 +349,9 @@ var _far_centre := Vector2(INF, INF)
 ## Where the camera was when every chunk last reached its wanted detail:
 ## until it moves SETTLE_MOVE or ground is graded, nothing needs redoing.
 var _settled_eye := Vector3(INF, INF, INF)
+## A chunk being built a few rows a frame (see chunk_job), or empty: the
+## finest chunks take longer than a frame's share to build in one go.
+var _job := {}
 ## The far land being built (see far_job), or empty.
 var _far_job := {}
 
@@ -439,6 +444,11 @@ func _process(_delta: float) -> void:
 		if have == null or have.lod != want[key] or _dirty.has(key):
 			todo.append([_chunk_distance(key, flat_eye, eye.z), key])
 	todo.sort_custom(func(a, b): return a[0] < b[0])
+	# A chunk already part built is finished first.
+	if not _job.is_empty():
+		var at := todo.find_custom(func(e): return e[1] == _job.key)
+		if at > 0 and want.get(_job.key) == _job.lod:
+			todo.push_front(todo.pop_at(at))
 	for item in todo:
 		var key: Vector2i = item[1]
 		var have = _chunks.get(key)
@@ -446,8 +456,22 @@ func _process(_delta: float) -> void:
 			# Graded under a new road: redo just that strip of the chunk.
 			patch_chunk(have.data, _dirty[key])
 			have.ground.mesh = have.data.ground
-		else:
+		elif _first:
 			_build(key, want[key])
+		else:
+			# A few rows at a time; the old chunk shows until it's done.
+			var lod: int = want[key]
+			if _job.get("key") != key or _job.lod != lod:
+				_job = {"key": key, "lod": lod, "data": chunk_job(Vector2(key) * CHUNK, CHUNK, STEPS[lod],
+					REACH[lod] if lod < STEPS.size() - 1 else 0.0)}
+			var finished := false
+			while not finished and Time.get_ticks_usec() - start * 1000 < BUDGET_MS * 1000:
+				finished = chunk_step(_job.data, JOB_ROWS)
+			if not finished:
+				done = false
+				break
+			_build(key, lod, _job.data)
+			_job = {}
 		_dirty.erase(key)
 		# Build everything at once the first time, so the land is there
 		# when the game opens; then a little each frame.
@@ -582,10 +606,11 @@ func _drop(key: Vector2i) -> void:
 	_dirty.erase(key)
 
 
-func _build(key: Vector2i, lod: int) -> void:
+func _build(key: Vector2i, lod: int, data := {}) -> void:
 	if _chunks.has(key):
 		_drop(key)
-	var data := chunk_data(Vector2(key) * CHUNK, CHUNK, STEPS[lod], REACH[lod] if lod < STEPS.size() - 1 else 0.0)
+	if data.is_empty():
+		data = chunk_data(Vector2(key) * CHUNK, CHUNK, STEPS[lod], REACH[lod] if lod < STEPS.size() - 1 else 0.0)
 	var meshes := [data.ground, data.water]
 	var entry := {"lod": lod, "ground": null, "water": null, "data": data}
 	var g := MeshInstance3D.new()
@@ -657,7 +682,7 @@ static func build_chunk(origin: Vector2, size: float, step: float, reach := 0.0)
 
 ## A chunk's samples, vertices and meshes, kept so patch_chunk can redo only
 ## the part a new road grades.
-static func chunk_data(origin: Vector2, size: float, step: float, reach := 0.0) -> Dictionary:
+static func chunk_job(origin: Vector2, size: float, step: float, reach := 0.0) -> Dictionary:
 	var n := int(size / step)
 	var m := n + 5  # two extra samples all round, for normals at both levels
 	var count := (n + 1) * (n + 1)
@@ -675,13 +700,54 @@ static func chunk_data(origin: Vector2, size: float, step: float, reach := 0.0) 
 	d.coarse.resize(count * 4)
 	d.wet.resize(count)
 	d.idx.resize(n * n * 6)
-	_sample_heights(d, 0, m - 1, 0, m - 1)
-	var any_water := _fill_vertices(d, 0, n, 0, n)
-	_fill_squares(d, 0, n - 1, 0, n - 1)
-	d.ground = _ground_mesh(d)
-	if any_water:
-		d.water = _water_mesh(d)
+	d.phase = 0
+	d.row = 0
+	d.any_water = false
 	return d
+
+
+## Does up to `rows` rows of a chunk_job (heights, then vertices, then
+## squares, then the meshes); true once it is finished.
+static func chunk_step(d: Dictionary, rows: int) -> bool:
+	var n: int = d.n
+	var m: int = d.m
+	match int(d.phase):
+		0:
+			var r1 := mini(int(d.row) + rows, m)
+			_sample_heights(d, 0, m - 1, d.row, r1 - 1)
+			d.row = r1
+			if r1 >= m:
+				d.phase = 1
+				d.row = 0
+		1:
+			var r1 := mini(int(d.row) + rows, n + 1)
+			if _fill_vertices(d, 0, n, d.row, r1 - 1):
+				d.any_water = true
+			d.row = r1
+			if r1 >= n + 1:
+				d.phase = 2
+				d.row = 0
+		2:
+			var r1 := mini(int(d.row) + rows, n)
+			_fill_squares(d, 0, n - 1, d.row, r1 - 1)
+			d.row = r1
+			if r1 >= n:
+				d.phase = 3
+		3:
+			d.ground = _ground_mesh(d)
+			if d.any_water:
+				d.water = _water_mesh(d)
+			d.phase = 4
+	return int(d.phase) >= 4
+
+
+static func chunk_data(origin: Vector2, size: float, step: float, reach := 0.0) -> Dictionary:
+	var d := chunk_job(origin, size, step, reach)
+	while not chunk_step(d, 1 << 20):
+		pass
+	return d
+
+
 
 
 ## Redoes a chunk's ground under `boxes` (view coordinates) after grading:
@@ -978,6 +1044,9 @@ func _regrade() -> void:
 				now[name + ":" + str(key)] = o[0][key]
 	if extra_grades.is_valid():
 		now.merge(extra_grades.call())
+	# Roads removed long ago needn't be remembered.
+	if _strips.size() > 2 * now.size() + 2000:
+		_strips.clear()
 	var changed := []
 	var changed_strips := []
 	for id in _graded:
@@ -1028,7 +1097,10 @@ func _mark_dirty(g: Array) -> void:
 		for cz in range(c0.y, c1.y + 1):
 			for cx in range(c0.x, c1.x + 1):
 				var key := Vector2i(cx, cz)
-				# A chunk not built yet gets the grading when it is built.
+				# A chunk not built yet gets the grading when it is built
+				# (one half built starts over).
+				if _job.get("key") == key:
+					_job = {}
 				if not _chunks.has(key):
 					continue
 				if not _dirty.has(key):
@@ -1041,8 +1113,19 @@ func _mark_dirty(g: Array) -> void:
 static func _grade_network(now: Dictionary, net: RoadNetwork, offset: Vector2, lots: bool, prefix: String) -> void:
 	var shift := Vector3(offset.x, 0.0, offset.y)
 	for id in net.segments:
+		var key = id if prefix == "" else prefix + str(id)
+		# A road's strip follows only from its curve and type: when a
+		# neighbor's town is reloaded, unchanged roads keep theirs.
+		var c := net.curve_of(id)
+		var sig := [c[0], c[1], c[2], net.segments[id].type, offset, lots]
+		var hit = _strips.get(key)
+		if hit != null and hit[0] == sig:
+			if not hit[1].is_empty():
+				now[key] = hit[1]
+			continue
 		var pts := _straightened(net.sample_segment(id, 24))
 		var type: int = net.segments[id].type
+		_strips[key] = [sig, []]
 		if absf(pts[0].y) > 3.0 and absf(pts[pts.size() - 1].y) > 3.0 and absf(pts[pts.size() / 2].y) > 3.0:
 			continue  # bridges and tunnels leave the ground alone
 		if offset != Vector2.ZERO:
@@ -1050,8 +1133,13 @@ static func _grade_network(now: Dictionary, net: RoadNetwork, offset: Vector2, l
 				pts[i] += shift
 		var inner := RoadStyle.right_of_way_half(type) + (LOT_GRADE if lots and RoadStyle.TYPES[type].lots else 2.0)
 		# The verge is mowed a few metres past the shoulder; woods start there.
-		now[id if prefix == "" else prefix + str(id)] = [pts, inner, inner + GRADE_FADE,
-			RoadStyle.right_of_way_half(type) + MOW_VERGE]
+		now[key] = [pts, inner, inner + GRADE_FADE, RoadStyle.right_of_way_half(type) + MOW_VERGE]
+		_strips[key][1] = now[key]
+
+
+## Each road's last graded strip, by its key in _graded: [what it was made
+## from, the strip] (an empty strip for a bridge or tunnel).
+static var _strips := {}
 
 
 ## A straight road's samples cut down to its two ends (grading costs one

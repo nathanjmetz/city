@@ -286,8 +286,61 @@ const FARM_COMPACT_BONUS := 25.0
 const FARM_RESERVE_BONUS := 40.0
 ## One crop price cycle, in game days (a game day settles a month: 4 years).
 const FARM_PRICE_CYCLE_DAYS := 48.0
+## A field that loses money this many looks running (a game day settles a
+## month, four looks a day: about half a year) is cut back.
+const FARM_SELL_LOOKS := 24
 ## Farms decide to buy or sell land this often, in ticks (6 game hours).
 const FARM_DECIDE_EVERY := 360
+
+# --- Capital: a hub's own money (Capital) ---------------------------------------
+
+## Startup cash a new hub brings (its owners' savings and a start-up loan),
+## by kind. A farm family starts with its first 80 acres paid for, and
+## this much more to buy into the next.
+const CAPITAL_START := {"farm": 40_000.0, "company": 250_000.0}
+## Share of a year's profit a hub keeps to grow on, by kind, for a leader of
+## middling ambition (0.75x to 1.25x from cautious to bold). A farm family
+## lives off the farm first (USDA: family living about $70,000 a year); a
+## company pays out dividends.
+const CAPITAL_RETAIN := {"farm": 0.5, "company": 0.6}
+## Farm value of an acre with no town nearby (Purdue 2025: average Indiana
+## ground about $12,000; southwest Indiana a little less).
+const CAPITAL_LAND_PER_ACRE := 10_000.0
+## Down payment on land (Farm Credit: 20 to 35%).
+const CAPITAL_DOWN := 0.25
+## Land loan rate and term (Farm Credit real estate loans).
+const CAPITAL_RATE := 0.0675
+const CAPITAL_TERM_YEARS := 25
+## Years of profit a lender averages over.
+const CAPITAL_AVG_YEARS := 3.0
+## What a lender wants kept profit to cover: payments times this.
+const CAPITAL_COVERAGE := 1.25
+## Development within this far raises land prices (m; about a mile).
+const CAPITAL_URBAN_REACH := 1_600.0
+## The most development adds, as a multiple of farm value: ground at the
+## edge of a growing town sells for up to 3x farm value (transition land).
+const CAPITAL_URBAN_MAX := 2.0
+## Built lots (weighted by nearness) that bring about 63% of that premium.
+const CAPITAL_URBAN_SCALE := 150.0
+## Grid the built lots are counted on (m).
+const CAPITAL_GRID := 400.0
+## Land worth this many times farm value tempts an owner to sell out.
+const CAPITAL_SELL_RATIO := 2.0
+## Rented ground: the landowner's share of what a field makes (Midwest
+## crop-share leases run a third to a half; cash rents come to about the
+## same).
+const CAPITAL_RENT_SHARE := 0.4
+## Taking on a field costs this much an acre up front: the equipment to
+## work it and a season's seed, fertiliser and fuel (Purdue Crop Cost and
+## Return Guide: corn's variable costs run about $450 an acre).
+const CAPITAL_OPEN_PER_ACRE := 450.0
+## Ground selling for more than this much over farm value is held for
+## developers, not rented out.
+const CAPITAL_RENT_MAX_PREMIUM := 0.5
+## A farm keeps this much cash in hand after buying land.
+const CAPITAL_RESERVE := 20_000.0
+## After the town says no, an owner waits this many years to ask again.
+const CAPITAL_SELL_WAIT_YEARS := 5
 
 # --- Crop rotation (CropPlan) ----------------------------------------------------
 

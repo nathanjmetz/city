@@ -164,6 +164,7 @@ func _test_insights() -> void:
 		if who == "Ann":
 			events.append({"k": "perf", "fps": 50.0, "worst_ms": 40, "hitches": 0, "scene": "main",
 				"free_mb": 180, "vram_mb": 2900})
+			events.append({"k": "crashed", "t": 80.0, "replay": [[62.4, "x", "build_road", true, "road=0"]]})
 			events.append({"k": "stall", "ms": 4350, "scene": "main", "ctx": "Grid", "stages": {"frame.roads": 4200.0}})
 		if who != "Cy":
 			events.append({"k": "error", "sig": "x:1 boom", "file": "res://scripts/traffic/traffic_sim.gd", "line": 1,
@@ -173,7 +174,8 @@ func _test_insights() -> void:
 		"events": [{"k": "join_fail", "reason": "That invite code doesn't match this region.", "s": 1.0}]})
 	var r := Insights.analyze(batches)
 	var titles: Array = r.fixes.map(func(f): return f.title)
-	_check(r.fixes[0].kind == "multiplayer", "a failed join ranks first (%s)" % titles[0])
+	_check(titles[0].begins_with("Crashes"), "a crash ranks first (%s)" % titles[0])
+	_check(r.fixes[1].kind == "multiplayer", "a failed join ranks next (%s)" % titles[1])
 	_check(titles.any(func(x): return "Invalid access" in x), "script errors become fixes")
 	var err: Dictionary = r.fixes.filter(func(f): return "Invalid access" in f.title)[0]
 	_check(err.owner == "Traffic simulation" and err.players == 2, "errors go to the thread that owns the file")
@@ -182,6 +184,8 @@ func _test_insights() -> void:
 	_check(titles.any(func(x): return x.begins_with("Slow loading screen")), "slow loads become fixes")
 	_check(titles.any(func(x): return x.begins_with("Low frame rate")), "low frame rate becomes a fix")
 	_check(titles.has("Machine nearly out of memory: 180 MB free"), "low free memory becomes a fix")
+	var crash: Array = r.fixes.filter(func(f): return f.title.begins_with("Crashes: 1"))
+	_check(not crash.is_empty() and crash[0].has("replay"), "a session that never closed is a fix with its last actions")
 	var stall: Array = r.fixes.filter(func(f): return f.title.begins_with("Freezes: 1 frames"))
 	_check(not stall.is_empty() and "frame.roads" in stall[0].detail, "freezes become a fix naming the stage")
 	_check(titles.any(func(x): return x.begins_with("The download takes")) \

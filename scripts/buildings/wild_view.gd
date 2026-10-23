@@ -63,13 +63,13 @@ func _process(_delta: float) -> void:
 	# w is the camera's height: from high up the trees fade out and the
 	# ground's painted canopy covers the woods (TreeField and TerrainView).
 	RenderingServer.global_shader_parameter_set("tree_fade", Vector4(focus.x, focus.y, radius, height))
-	if height > TREES_OFF:
-		for c in _chunks:
-			_chunks[c].queue_free()
-		_chunks.clear()
-		_detail.clear()
-		_stale.clear()
-		return
+	# From high up the trees are faded out, but their chunks stay built
+	# (hidden) around the spot the camera looks at, which is where a zoom
+	# lands, so zooming back in fast finds them ready instead of popping in.
+	visible = height <= TREES_OFF
+	if not visible:
+		radius = reach(TREES_OFF) * clampf(GraphicsQuality.detail, 0.6, 1.0)
+		focus = _look_spot(cam, height)
 	var size := Vegetation.CHUNK
 	var day := sim.tick_count / REGROW_REDRAW
 	if day != _last_regrow:
@@ -135,7 +135,7 @@ func _draw_chunk(c: Vector2i, detail: bool) -> void:
 		if mowed and Terrain.mow_weight(p.pos.x, p.pos.z) > 0.5:
 			continue
 		# Nor on the county roads out in the country (in town, lots win).
-		if CountyGrid.clears(p.pos.x + o.x, p.pos.z + o.y) and Terrain.flat_weight(p.pos.x, p.pos.z) < 0.5:
+		if CountyGrid.clears(p.pos.x + o.x, p.pos.z + o.y, CountyGrid.TREE_CLEAR) and Terrain.flat_weight(p.pos.x, p.pos.z) < 0.5:
 			continue
 		trees.append([placement(p), p.species, p.tint])
 	_chunks[c].set_trees("wild", trees)
@@ -163,6 +163,15 @@ static func placement(p: Dictionary) -> Transform3D:
 
 func _centre(c: Vector2i) -> Vector2:
 	return (Vector2(c) + Vector2(0.5, 0.5)) * Vegetation.CHUNK
+
+
+## Where the camera's line of sight meets the ground (roughly).
+func _look_spot(cam: Camera3D, height: float) -> Vector2:
+	var from := cam.global_position
+	var dir := -cam.global_basis.z
+	if dir.y > -0.05:
+		return _ground_focus(cam, reach(TREES_OFF))
+	return Vector2(from.x, from.z) + Vector2(dir.x, dir.z) * (height / -dir.y)
 
 
 ## The centre of the trees drawn: from the camera toward where it looks, but

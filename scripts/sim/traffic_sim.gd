@@ -23,6 +23,17 @@ extends RefCounted
 const MAX_CARS := 400
 ## Real seconds of driving per tick, so cars move at true speeds on screen.
 const DT := 0.1
+## Ticks between drivers' decisions (see _drive).
+const THINK_EVERY := 3
+## Curb spaces: a 23 ft parallel stall; kept this far from a driveway's
+## centre; how many places along the kerb to try.
+const CURB_STALL := 7.0
+const CURB_APRON := 5.0
+const CURB_TRIES := 25
+## How far a road's running speed eases each decision: 5% (with cars on it)
+## and 2% (empty) a tenth of a second.
+const EASE_BUSY := 1.0 - 0.95 * 0.95 * 0.95
+const EASE_QUIET := 1.0 - 0.98 * 0.98 * 0.98
 const CAR_LEN := 4.6
 const LANE_W := 3.6
 ## Trips that may drive in bus lanes, and how far before a corner or
@@ -150,6 +161,8 @@ var _approach := {}  # node -> [{car, conn, ds}] for the first car in each lane
 var _xings := {}     # way -> [[s along the way, rail crossing]] (_find_xings)
 var _by_vid := {}    # vehicle id -> its record in `parked`
 var _due := {}       # tick -> parked vehicles due to head off then (_due_at)
+var _outs := {}      # vehicle id -> [key, path out of its spot] while it waits to pull out
+var _due_done := -1  # the last tick _rest took its due vehicles for (-1: look through all)
 var _pend := {}      # vehicle id -> parked vehicle waiting for a gap to pull out
 var _slow := {}      # ways whose _speed is below 1 (or has cars), kept up to date each tick
 var _slow_ok := -1   # the lane version _slow was gathered on
@@ -179,9 +192,10 @@ var closed := {}
 var _truck_plan := false  # the route being planned is for a truck (close_segment)
 var _walk_lines := {} # segment * 2 + side -> sidewalk line
 var _rings := {}      # node -> sidewalk ends around it (_corner_ring)
-var _marks := []
+var _marks := []      # crosswalks on the walk just planned: [point, node, way in]
 var _xbusy := {}      # node -> [[from step, to step, segment, walker]] on its crosswalks
-const _NO_XINGS := []      # crosswalks on the walk just planned: [point, node, way in]
+const _NO_XINGS := []
+const _NO_PEND := {}
 var _next_trip := 1
 var _next_walker := 1
 var _restoring := false   # just loaded: junction paths still saved as keys
@@ -371,8 +385,12 @@ func car_pose(car: Dictionary, ahead := 0.0) -> Array:
 		_rebuild()  # a loaded city that hasn't run yet (a neighbor's, say)
 	if car.has("flow_end"):
 		return flow_pose(car, ahead)
-	if car.j != null:
+	if car.get("j") != null:
 		return _conn_pose(car.j, minf(car.jd + ahead, car.j.len))
+	if not car.has("route"):
+		# Parked since the caller last looked (a view holding on to it
+		# between frames): it stands where it stopped.
+		return parked_pose(car) if car.has("pos") else [Vector3.ZERO, Vector3.FORWARD]
 	var w: Dictionary = ways[car.route[car.leg]]
 	var d := minf(car.d + ahead, w.len)
 	var pose := _way_pose(w, car.lane, d)
@@ -568,10 +586,12 @@ func to_dict() -> Dictionary:
 
 func from_dict(d: Dictionary) -> void:
 	cars.clear()
+	_outs.clear()
 	_waiting.clear()
 	parked.clear()
 	_by_vid.clear()
 	_due.clear()
+	_due_done = -1
 	_pend.clear()
 	_pseq.clear()
 	walkers.clear()
@@ -1381,10 +1401,9 @@ func _reroute_all() -> void:
 			ok = (s.pos + s.face * car.len * 0.5).distance_to(car.pos) < 0.5
 		if ok:
 			continue
-		var curb := _curb_spots(pl.stop, 3)
-		for c in curb:
-			_add_spot(pl, c)
 		var at := _reserve(pl, car.id, car.len > 6.5)
+		if at < 0:
+			at = _new_curb(pl, pl.stop, car.id)
 		if at >= 0:
 			var s: Dictionary = pl.spots[at]
 			car.spot = at
@@ -1720,7 +1739,17 @@ func _launch(car: Dictionary, lanes := {}) -> bool:
 	var from_ref: String = car.get("from_place", "")
 	var from_pl: Dictionary = place(from_ref) if from_ref != "" else {}
 	if not from_pl.is_empty() and car.get("from_spot", -1) >= 0 and car.from_spot < from_pl.spots.size():
-		out = _out_path(car, from_pl, car.from_spot, w, car.lane, car.d)
+		# The way out only changes with the roads or the place, so a car
+		# waiting for a gap works it out once (not saved: it's rebuilt the same).
+		var key := [version, from_pl.get("seed", 0), from_ref, car.from_spot, w.id, car.lane, car.d]
+		var kept: Array = _outs.get(car.id, [])
+		if not kept.is_empty() and kept[0] == key:
+			out = kept[1]
+		else:
+			out = _out_path(car, from_pl, car.from_spot, w, car.lane, car.d)
+			if _outs.size() > 4000:
+				_outs.clear()  # (cars that left town while waiting)
+			_outs[car.id] = [key, out]
 		exit_d = out.exit_d
 	elif exit_d <= car.d + 1.0 and last:
 		return false  # next door: walk
@@ -1741,6 +1770,7 @@ func _launch(car: Dictionary, lanes := {}) -> bool:
 		for od in lanes.get(Vector2i(car.route[0], car.lane), []):
 			if od > car.d - 30.0 and od < exit_d + 12.0:
 				return false
+	_outs.erase(car.id)
 	if not out.is_empty():
 		car.j = out
 		car.jd = 0.0
@@ -1845,7 +1875,8 @@ func _lot_place(ref: String) -> Dictionary:
 		return {}
 	var lot: Dictionary = _sim.lots[ref.substr(4)]
 	var b = _sim.buildings.get(ref.substr(4))
-	var lay := SiteLayout.empty_lot() if b == null else SiteLayout.for_building(int(b.zone), int(b.seed), lot)
+	var lay := SiteLayout.empty_lot() if b == null else SiteLayout.for_building(int(b.zone), int(b.seed), lot,
+		BuildingTypes.storeys(b))
 	var spots := []
 	for s in lay.spots:
 		spots.append({"pos": SiteLayout.world(lot, s.pos), "face": SiteLayout.world_dir(lot, s.face),
@@ -1928,24 +1959,84 @@ func _out_way(pl: Dictionary, spot: int, stop: Dictionary) -> Dictionary:
 ## Places at the side of the road in front of a stop, as on a main street.
 func _curb_spots(stop: Dictionary, n: int) -> Array:
 	var out := []
+	var line := _curb_line(stop)
+	for k in (n if not line.is_empty() else 0):
+		out.append(_curb_at(line, line[1] + (k - (n - 1) * 0.5) * CURB_STALL))
+	return out
+
+
+## The kerb a stop's curb spaces line: [way, where the stop is along it,
+## facing, offset from the centre line]. [] if there's no room to park.
+func _curb_line(stop: Dictionary) -> Array:
 	var wid: int = stop.seg * 2 + 1
 	if not ways.has(wid):
 		wid = stop.seg * 2
 	if not ways.has(wid):
-		return out
+		return []
 	var w: Dictionary = ways[wid]
 	if w.s1 - w.s0 < 24.0:
-		return out  # too short a piece of road to park along
+		return []  # too short a piece of road to park along
 	var mid: float = _frac(stop) * w.len if w.fwd else w.len - _frac(stop) * w.len
 	var face := 1.0 if (stop.side > 0) == w.fwd else -1.0
-	var edge := RoadStyle.half_width(w.type) - 1.1
-	for k in n:
-		# Clear of the junctions at both ends, with room to pull away.
-		var d := clampf(mid + (k - (n - 1) * 0.5) * 7.0, w.s0 + 12.0, w.s1 - 12.0)
-		var dir := _way_dir(w, d) * face
-		var right := Vector3(-dir.z, 0.0, dir.x)
-		var p := _poly_point(w.pts, w.cum, d) + right * edge
-		out.append({"pos": p, "face": dir, "kind": "curb", "hidden": false, "local": Vector2.ZERO})
+	return [w, mid, face, RoadStyle.half_width(w.type) - 1.1]
+
+
+func _curb_at(line: Array, d: float) -> Dictionary:
+	var w: Dictionary = line[0]
+	# Clear of the junctions at both ends, with room to pull away.
+	d = clampf(d, w.s0 + 12.0, w.s1 - 12.0)
+	var dir := _way_dir(w, d) * float(line[2])
+	var right := Vector3(-dir.z, 0.0, dir.x)
+	var p := _poly_point(w.pts, w.cum, d) + right * float(line[3])
+	return {"pos": p, "face": dir, "kind": "curb", "hidden": false, "local": Vector2.ZERO}
+
+
+## A new curb space for a full place, saved with it: the nearest one to the
+## stop along the kerb that's clear of the curb spaces already marked there
+## (a 23 ft parallel stall, as painted downtown) and of driveway aprons
+## (no parking across a driveway: UVC 11-1003). Tried every half stall out
+## to about 40 m each way. If the kerb is full a truck double-parks out front
+## to unload, as delivery trucks do; otherwise -1.
+func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1, double_park := false) -> int:
+	var line := _curb_line(stop)
+	if line.is_empty():
+		return -1
+	var taken := []
+	for ref in _extra:
+		for e in _extra[ref]:
+			if e.get("kind", "") == "curb":
+				taken.append(e.pos)
+	var aprons := _aprons(stop)
+	for k in CURB_TRIES:
+		var off := ceilf(k * 0.5) * (1.0 if k % 2 == 1 else -1.0) * CURB_STALL * 0.5
+		var c := _curb_at(line, float(line[1]) + off)
+		var ok := true
+		for q in taken:
+			if c.pos.distance_squared_to(q) < (CURB_STALL - 0.5) * (CURB_STALL - 0.5):
+				ok = false
+				break
+		for q in aprons if ok else []:
+			if c.pos.distance_squared_to(q) < CURB_APRON * CURB_APRON:
+				ok = false
+				break
+		if ok:
+			return _add_spot(pl, c, vid)
+	return _add_spot(pl, _curb_at(line, float(line[1])), vid) if double_park else -1
+
+
+## Where the driveways of the built lots on a stop's side of its street meet
+## the road.
+func _aprons(stop: Dictionary) -> Array:
+	var out := []
+	if _sim == null:
+		return out
+	for id in _sim.lots:
+		var lot: Dictionary = _sim.lots[id]
+		if lot.get("seg", -1) != stop.seg or lot.get("side", 0) != stop.side or not _sim.buildings.has(id):
+			continue
+		var lp := place("lot:" + id)
+		if not lp.is_empty() and lp.lay.has("cut_x"):
+			out.append(SiteLayout.world(lot, Vector2(lp.lay.cut_x, -float(lot.get("to_curb", 0.0)))))
 	return out
 
 
@@ -2072,6 +2163,8 @@ func _vehicle_parked(vid: int) -> Dictionary:
 ## A parked vehicle is due to head off at `tick`.
 func _due_at(car: Dictionary, tick: int) -> void:
 	car.until = tick
+	if tick <= _due_done:
+		_due_done = -1  # filed in the past: the next tick looks through every bucket
 	if not _due.has(tick):
 		_due[tick] = []
 	_due[tick].append(car)
@@ -2081,6 +2174,7 @@ func _due_at(car: Dictionary, tick: int) -> void:
 func _index_parked() -> void:
 	_by_vid.clear()
 	_due.clear()
+	_due_done = -1
 	_pend.clear()
 	_pseq.clear()
 	_next_pseq = 0
@@ -2179,10 +2273,9 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 		if spot < 0:
 			# Nowhere to park: double-park at the curb out front, as delivery
 			# trucks do, or (for a car) take a curb space anyway.
-			var curb := _curb_spots(to_pl.stop, 1)
-			if curb.is_empty():
+			spot = _new_curb(to_pl, to_pl.stop, car.id, truck)
+			if spot < 0:
 				return false
-			spot = _add_spot(to_pl, curb[0], car.id)
 	car.merge(trip, true)
 	car.to_stop = to_pl.stop
 	if not car.has("at_place"):
@@ -2207,9 +2300,11 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 
 
 ## A parked vehicle with a trip pulls out if there's a gap in traffic.
-func _try_launch(car: Dictionary) -> bool:
-	if cars.size() >= MAX_CARS or not _launch(car):
+func _try_launch(car: Dictionary, lanes := {}) -> bool:
+	if cars.size() >= MAX_CARS or not _launch(car, lanes):
 		return false
+	if not lanes.is_empty():
+		_lane_add(lanes, car)
 	_release(car.at_place, car.spot, car.id)
 	_unpark(car)
 	for k in ["at_place", "spot", "pos", "face", "hidden", "pending"]:
@@ -2229,10 +2324,9 @@ func _dest(car: Dictionary) -> Dictionary:
 	if i < 0 or i >= pl.spots.size() or (pl.taken[i] != car.id and pl.taken[i] != -1):
 		i = _reserve(pl, car.id, car.len > 6.5)
 		if i < 0:
-			var curb := _curb_spots(pl.stop, 1)
-			if curb.is_empty():
+			i = _new_curb(pl, pl.stop, car.id)
+			if i < 0:
 				return {}
-			i = _add_spot(pl, curb[0], car.id)
 		car.to_spot = i
 	pl.taken[i] = car.id
 	return pl
@@ -2277,11 +2371,12 @@ func _pull_over(car: Dictionary, w: Dictionary) -> void:
 		return
 	var at := clampf(car.d + 14.0, 0.0, w.len)
 	var frac: float = at / w.len if w.fwd else 1.0 - at / w.len
-	var curb := _curb_spots({"seg": w.seg, "at_frac": frac, "side": 1 if w.fwd else -1}, 1)
-	if curb.is_empty():
+	var stop := {"seg": w.seg, "at_frac": frac, "side": 1 if w.fwd else -1}
+	var ci := _new_curb(pl, stop, car.id)
+	if ci < 0:
 		return
 	_release(pl.ref, car.get("to_spot", -1), car.id)
-	car.to_spot = _add_spot(pl, curb[0], car.id)
+	car.to_spot = ci
 	car.pulled_over = true
 	car.end_d = clampf(_nearest_d(w, _entrance(pl, car.to_spot)), car.d + PARK_LEAD, w.len - 0.5)
 
@@ -2358,6 +2453,34 @@ func _out_path(car: Dictionary, pl: Dictionary, spot: int, w: Dictionary, lane: 
 	if s.kind == "curb":
 		# Pull away from the curb into the lane.
 		var df := _nearest_d(w, front)
+		if s.face.dot(_way_dir(w, df)) < 0.0:
+			# Parked facing the other way (double-parked across the street):
+			# a U-turn out into the lane, as drivers do on a quiet street.
+			var lat := _lane_point(w, lane, df) - front
+			lat -= s.face * lat.dot(s.face)
+			lat.y = 0.0
+			var ld := lat.normalized() if lat.length() > 0.1 else Vector3(-s.face.z, 0.0, s.face.x)
+			var r := maxf(lat.length(), 3.0) * 0.5
+			var u := PackedVector3Array()
+			for k in 13:
+				var ang := PI * k / 12.0
+				u.append(front + ld * (r - r * cos(ang)) + s.face * (r * sin(ang)))
+			var du := _nearest_d(w, u[u.size() - 1])
+			var go_u := clampf(du + 6.0, bot, top)
+			for q in _lane_run(w, lane, minf(du + 1.5, go_u - 0.5), go_u):
+				u.append(Vector3(q.x, 0.0, q.z))
+			return _poly_path({"node": -1, "wi": -1, "li": -1, "wo": w.id, "lo": lane, "turn": Turn.RIGHT,
+				"vt": 4.0, "exit_d": go_u}, u, 0.0)
+		if df > top - 3.0:
+			# No room ahead (the road was rebuilt short of the spot): back out
+			# into the lane, then pull forward to where it joins traffic.
+			var back_to := clampf(minf(df, top) - 9.0, bot, top)
+			var rp := _smooth([front, _lane_point(w, lane, back_to)])
+			var rev := _polylen(rp)
+			for q in _lane_run(w, lane, back_to, top).slice(1):
+				rp.append(Vector3(q.x, 0.0, q.z))
+			return _poly_path({"node": -1, "wi": -1, "li": -1, "wo": w.id, "lo": lane, "turn": Turn.RIGHT,
+				"vt": 4.0, "exit_d": top}, rp, rev)
 		var go := clampf(df + 7.0, bot, top)
 		var pts := _smooth([front, front + s.face * 2.0] + _lane_run(w, lane, minf(clampf(df + 4.0, bot, top), go - 3.0), go))
 		return _poly_path({"node": -1, "wi": -1, "li": -1, "wo": w.id, "lo": lane, "turn": Turn.RIGHT,
@@ -2468,8 +2591,8 @@ func _poly_pose(c: Dictionary, jd: float) -> Array:
 			hi = c.rev
 		else:
 			lo = c.rev
-	var a := _poly_point(c.pts, c.cum, maxf(jd - 0.5, lo))
-	var b := _poly_point(c.pts, c.cum, minf(jd + 0.5, hi))
+	var a := _poly_point(c.pts, c.cum, maxf(jd - 1.5, lo))
+	var b := _poly_point(c.pts, c.cum, minf(jd + 1.5, hi))
 	var dir := _flat_dir(b - a)
 	if b.distance_to(a) < 0.05:
 		dir = c.d1 if jd >= c.rev else -c.d0
@@ -2535,15 +2658,21 @@ func _rest() -> void:
 	# order they parked, as a loaded town would.
 	var due := []
 	var ticks := []
-	for t in _due:
-		if t <= _tick:
-			ticks.append(t)
+	if _due_done >= 0 and _due_done == _tick - 1:
+		if _due.has(_tick):
+			ticks.append(_tick)  # the usual case: only this tick's bucket is new
+	else:
+		for t in _due:
+			if t <= _tick:
+				ticks.append(t)
+	_due_done = _tick
 	for t in ticks:
 		for car in _due[t]:
 			if car.until == t and is_same(_by_vid.get(car.id), car):
 				due.append(car)
 		_due.erase(t)
-	for vid in _pend:
+	# Cars waiting for a gap to pull out look when drivers decide (_drive).
+	for vid in (_pend if _tick % THINK_EVERY == 0 else _NO_PEND):
 		var car: Dictionary = _pend[vid]
 		if car.has("pending") and is_same(_by_vid.get(vid), car):
 			due.append(car)
@@ -2551,12 +2680,17 @@ func _rest() -> void:
 		return
 	due.sort_custom(func(a, b): return _pseq[a.id] < _pseq[b.id])
 	var last := -1
+	var lanes := {}  # where the moving cars are, filed once for every pull-out
 	for car in due:
 		if car.id == last:
 			continue
 		last = car.id
 		if car.get("pending", false):
-			if _try_launch(car):
+			if lanes.is_empty():
+				lanes[Vector2i(-1, -1)] = []  # (so it isn't filed again when empty)
+				for other in cars:
+					_lane_add(lanes, other)
+			if _try_launch(car, lanes):
 				_pend.erase(car.id)
 			continue
 		var back: String = car.get("next", "")
@@ -2791,6 +2925,18 @@ func _walk_to_car(from_pl: Dictionary, car: Dictionary) -> PackedVector3Array:
 	var car_pl := place(car.at_place)
 	if car_pl.is_empty():
 		return PackedVector3Array()
+	var kerb := _kerb_stop(car.pos)
+	if not kerb.is_empty() and not from_pl.lot.is_empty() and not from_pl.lay.is_empty():
+		# Parked on the street: along the sidewalks (over at the crosswalks)
+		# to the car, then off the kerb beside it.
+		var walk := _door_out(from_pl)
+		walk.append(SiteLayout.world(from_pl.lot, Vector2(from_pl.lay.door.x, SiteLayout.WALK_Z)))
+		var mid := _sidewalks(from_pl.lot, kerb)
+		if not mid.is_empty() or (from_pl.lot.seg == kerb.seg and from_pl.lot.side == kerb.side):
+			walk.append_array(mid)
+			walk.append(kerb.walk_pt)
+			walk.append(_car_side(car))
+			return walk
 	var out := PackedVector3Array()
 	if car_pl.ref != from_pl.ref:
 		out = _walk_between(from_pl, car_pl)
@@ -2811,6 +2957,19 @@ func _walk_from_car(car: Dictionary, dest: String) -> PackedVector3Array:
 	var out := PackedVector3Array([_car_side(car)])
 	if dest_pl.is_empty() or car_pl.is_empty():
 		return out
+	var kerb := _kerb_stop(car.pos)
+	if not kerb.is_empty() and not dest_pl.lot.is_empty() and not dest_pl.lay.is_empty():
+		# Parked on the street: up onto the sidewalk beside the car, along it
+		# (over at the crosswalks, never mid-block) and up the front walk.
+		var mid := _sidewalks(kerb, dest_pl.lot)
+		if not mid.is_empty() or (dest_pl.lot.seg == kerb.seg and dest_pl.lot.side == kerb.side):
+			out.append(kerb.walk_pt)
+			out.append_array(mid)
+			out.append(SiteLayout.world(dest_pl.lot, Vector2(dest_pl.lay.door.x, SiteLayout.WALK_Z)))
+			var inward_k := _door_out(dest_pl)
+			inward_k.reverse()
+			out.append_array(inward_k)
+			return out
 	if dest_pl.ref == car_pl.ref:
 		var inward := _door_out(car_pl)
 		inward.reverse()
@@ -2821,6 +2980,28 @@ func _walk_from_car(car: Dictionary, dest: String) -> PackedVector3Array:
 		path.remove_at(0)
 	out.append_array(path)
 	return out
+
+
+## Where a car parked on the street meets the sidewalk: {seg, side, at_frac,
+## walk_pt}, lot-like for _sidewalks, or {} if it isn't on a street.
+func _kerb_stop(pos: Vector3) -> Dictionary:
+	var near := network.find_segment_near(pos, 20.0)
+	if near.is_empty():
+		return {}
+	var seg: int = near.seg
+	var type: int = network.segments[seg].type
+	if RoadStyle.is_freeway(type) or not RoadStyle.TYPES[type].get("walk", true) \
+			or float(near.dist) > RoadStyle.half_width(type) + RoadStyle.CURB_WIDTH:
+		return {}  # in a lot or driveway, or a road with no sidewalks
+	var c := network.curve_of(seg)
+	var t: float = near.t
+	var dir := _flat_dir(RoadNetwork.bezier(c[0], c[1], c[2], minf(t + 0.01, 1.0))
+		- RoadNetwork.bezier(c[0], c[1], c[2], maxf(t - 0.01, 0.0)))
+	var side := 1 if (pos - near.point).dot(Vector3(-dir.z, 0.0, dir.x)) >= 0.0 else -1
+	var stop := {"seg": seg, "side": side, "at_frac": t}
+	var line := _walk_line(seg, side)
+	stop.walk_pt = _line_at(line, _frac(stop) * (line.size() - 1))
+	return stop
 
 
 ## Beside the driver's door of a parked car.
@@ -3241,6 +3422,14 @@ static func parked_pose(car: Dictionary) -> Array:
 # --- Driving ----------------------------------------------------------------
 
 func _drive(_rng: RandomNumberGenerator) -> void:
+	# Drivers look and decide every THINK_EVERY ticks (a 0.2 s reaction, well
+	# under a real driver's ~1 s, AASHTO); cars move every tick on what they
+	# decided, so stop lines and parking stay exact.
+	var think := _tick % THINK_EVERY == 0
+	if not think:
+		_drive_move(false)
+		_keep_gaps()
+		return
 	# Vehicles with a job that were waiting for a gap to pull out. Routes
 	# only break when the roads are rebuilt, so they're checked once a version.
 	var lanes := {}
@@ -3267,7 +3456,33 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 		for car in _box[n]:
 			car.a = _accel_in_box(car)
 	_lane_changes()
-	_replan_some()
+	_replan_some(THINK_EVERY)
+	_drive_move(true)
+
+
+## Between decisions nobody runs into the car ahead: a follower closing in
+## on a braking leader stops short at the jam gap, as it would have braked.
+func _keep_gaps() -> void:
+	for key in _lanes:
+		var list: Array = _lanes[key]
+		for i in range(1, list.size()):
+			var car: Dictionary = list[i]
+			var lead: Dictionary = list[i - 1]
+			# (Either may have parked since the lanes were filed.)
+			if not car.has("route") or not lead.has("route") or lead.has("at_place") or car.get("j") != null or lead.get("j") != null \
+					or car.route[car.leg] != lead.route[lead.leg] \
+					or car.lane != lead.lane:
+				continue
+			var room: float = lead.d - lead.len - 1.0
+			if car.d > room:
+				car.d = maxf(room, car.d - car.v * DT)
+				car.v = minf(car.v, lead.v)
+
+
+## Moves every car on by its speed and does what it reached: a junction,
+## its spot, the end of its road.
+## `tally`: also measure how fast each road is going (on decision ticks).
+func _drive_move(tally: bool) -> void:
 	var done := []
 	var speed_sum := 0.0
 	var limit_sum := 0.0
@@ -3301,13 +3516,14 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 			continue
 		var w: Dictionary = ways[car.route[car.leg]]
 		car.d += car.v * DT
-		var share: float = minf(car.v / w.vmax, 1.0) if car.get("held", false) else 1.0
-		speed_sum += share
-		limit_sum += 1.0
-		if not way_sum.has(w.id):
-			way_sum[w.id] = [0.0, 0]
-		way_sum[w.id][0] += share
-		way_sum[w.id][1] += 1
+		if tally:
+			var share: float = minf(car.v / w.vmax, 1.0) if car.get("held", false) else 1.0
+			speed_sum += share
+			limit_sum += 1.0
+			if not way_sum.has(w.id):
+				way_sum[w.id] = [0.0, 0]
+			way_sum[w.id][0] += share
+			way_sum[w.id][1] += 1
 		if car.leg == car.route.size() - 1:
 			# Start turning in a few metres early, so the driveway is a smooth arc.
 			if car.has("to_place") and car.d >= car.end_d - 40.0 and car.to_place != "edge" \
@@ -3350,6 +3566,13 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 				car.v = 0.0
 	for car in done:
 		cars.erase(car)
+	if tally:
+		_tally_speeds(way_sum, speed_sum, limit_sum)
+
+
+## Each road's running speed (a share of its limit), eased toward what the
+## cars on it are doing; it feeds route costs and the flow figure.
+func _tally_speeds(way_sum: Dictionary, speed_sum: float, limit_sum: float) -> void:
 	# Snapped so the value survives a save and load exactly (saves and region
 	# snapshots must give the same city).
 	# Only roads with cars on them or still recovering from a jam change;
@@ -3370,9 +3593,9 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 		var sp: float
 		var fs: float = _fshare.get(wid, 1.0)
 		if way_sum.has(wid):
-			sp = snappedf(lerpf(_speed[wid], minf(way_sum[wid][0] / way_sum[wid][1], fs), 0.05), 0.000001)
+			sp = snappedf(lerpf(_speed[wid], minf(way_sum[wid][0] / way_sum[wid][1], fs), EASE_BUSY), 0.000001)
 		else:
-			sp = snappedf(lerpf(_speed[wid], fs, 0.02), 0.000001)
+			sp = snappedf(lerpf(_speed[wid], fs, EASE_QUIET), 0.000001)
 		if sp > 0.9999 and fs >= 1.0:
 			sp = 1.0  # all but recovered (snapping would leave it just short)
 			_slow.erase(wid)
@@ -3783,12 +4006,13 @@ static func _lane_dist(lane: int, desired: Array) -> int:
 
 ## A few cars each tick look again at the rest of their trip with live
 ## travel times, and switch if another way is clearly faster.
-func _replan_some() -> void:
-	var budget := REPLANS_PER_TICK  # route plans are the costly part of a tick
+func _replan_some(every := 1) -> void:
+	var budget := REPLANS_PER_TICK * every  # route plans are the costly part of a tick
+	var round := _tick / every
 	for car in cars:
 		if budget == 0:
 			return
-		if (car.id * 7 + _tick) % 300 != 0 or car.j != null or car.commit:
+		if (car.id * 7 + round) % (300 / every) != 0 or car.j != null or car.commit:
 			continue
 		if car.leg >= car.route.size() - 1:
 			continue

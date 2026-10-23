@@ -9,6 +9,8 @@ func _init() -> void:
 	var finished := 0
 	var seen := {}
 	var too_close := 0
+	var held := []
+	var parked_posed := 0
 	for i in 12000:
 		sim.tick()
 		most = maxi(most, t.cars.size())
@@ -19,10 +21,40 @@ func _init() -> void:
 			if not now.has(id):
 				finished += 1
 		seen = now
+		# A view (the engine sounds) can hold a car between frames after it
+		# parks: asking where it is must still work.
+		for car in held:
+			if not now.has(car.id) and t.car_pose(car).size() == 2:
+				parked_posed += 1
+		held = t.cars.duplicate()
 		if i % 50 == 0:
 			too_close += _crowding(t)
 	_check(most > 3, "cars on the road (most at once %d, pop %d)" % [most, sim.stats.population])
 	_check(finished > 3, "cars finish their trips (%d)" % finished)
+	_check(parked_posed > 0, "a car held after it parks still has a pose (%d)" % parked_posed)
+
+	# A full place's overflow cars park one after another along the kerb,
+	# not on top of each other, and never across a driveway.
+	var cpl := {}
+	for id in sim.lots:
+		if sim.buildings.has(id) and not t.place("lot:" + id).is_empty():
+			cpl = t.place("lot:" + id)
+			break
+	var cps := []
+	for k in 5:
+		var ci: int = t._new_curb(cpl, cpl.stop, 90000 + k)
+		if ci >= 0:
+			cps.append(cpl.spots[ci].pos)
+	var cgap := INF
+	for i in cps.size():
+		for j in range(i + 1, cps.size()):
+			cgap = minf(cgap, cps[i].distance_to(cps[j]))
+	var capron := INF
+	for q in t._aprons(cpl.stop):
+		for p in cps:
+			capron = minf(capron, p.distance_to(q))
+	_check(cps.size() >= 3 and cgap > 6.0 and capron > 5.0,
+		"overflow cars park a stall apart along the kerb (%d spaces, %.1f m apart, %.1f m from a drive)" % [cps.size(), cgap, capron])
 	_check(too_close == 0, "cars keep their distance (%d too close)" % too_close)
 
 	# The same commands give the same cars (needed for multiplayer).
@@ -469,6 +501,30 @@ func _init() -> void:
 			cleared = not wk.traffic.crosswalk_busy(n, seg)
 	_check(yielded, "a car turning onto the road waits while someone is on its crosswalk")
 	_check(cleared, "and may go once they've crossed")
+
+	# Parked across the street: up onto that sidewalk, over at the corner's
+	# crosswalk and back along to the door, never straight across mid-block.
+	var on_road := 0
+	var reached := false
+	if west_home != "":
+		var hl: Dictionary = wk.lots[west_home]
+		var hw := RoadStyle.half_width(RoadStyle.Type.AVENUE)
+		var parked_car := {"pos": Vector3(hl.front.x, 0.0, -(hw - 1.1)), "face": Vector3(-1, 0, 0), "len": 4.8,
+			"at_place": "lot:" + west_home}
+		var wpath := wk.traffic._walk_from_car(parked_car, "lot:" + west_home)
+		var along := 0.0
+		for i in range(1, wpath.size()):
+			var pa: Vector3 = wpath[i - 1]
+			var pb: Vector3 = wpath[i]
+			var pn := maxi(1, ceili(pa.distance_to(pb)))
+			for k in pn:
+				var q := pa.lerp(pb, float(k) / pn)
+				along += pa.distance_to(pb) / pn
+				if along > 3.0 and absf(q.z) < hw - 0.3 and absf(q.x) > 16.0:
+					on_road += 1
+		reached = wpath.size() > 2 and wpath[wpath.size() - 1].distance_to(wk.traffic.place("lot:" + west_home).door) < 0.5
+	_check(west_home != "" and on_road == 0 and reached,
+		"from a car parked across the street people walk round by the crosswalk, not across the road (%d m on it)" % on_road)
 
 	# A walk on the trail: out along the sidewalk to where the trail crosses
 	# the street, along it and back home.

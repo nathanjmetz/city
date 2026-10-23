@@ -43,6 +43,20 @@ var _pending: Array = []  # lot keys waiting to be built, nearest last
 var _recheck: Array = []  # lot keys still to look over since the last change
 var _recheck_again := false  # changed again while a look-over was under way
 var _first := true  # the town as it loads goes in at once
+## A neighbor's whole town lands at once, while you play: drawn a few
+## buildings a frame even then, its far boxes once it's all in (RegionView).
+var sliced := false
+## Finished buildings are drawn merged, one mesh per material for each
+## 128 m square, instead of a dozen draw calls each: a town of a few
+## hundred homes was thousands of draw calls, most of the frame on a Mac.
+## Buildings still going up draw on their own until they're done.
+var _baked := {}  # Vector2i -> [MeshInstance3D casting shadows, one not]
+var _bake_due := {}  # Vector2i -> msec when its square is merged again
+var _unbaked := {}  # Vector2i -> true: lost a merged building this frame
+## A square that gains a building waits this long, so a block filling in
+## is merged once, not once a house.
+const BAKE_WAIT_MS := 3000
+const BAKE_BUDGET_MS := 6.0
 
 
 func setup(s: CitySim) -> void:
@@ -67,6 +81,8 @@ func _mark() -> void:
 func _process(_delta: float) -> void:
 	if _dirty or not _pending.is_empty() or not _recheck.is_empty():
 		_sync()
+	if not _bake_due.is_empty():
+		_bake_some()
 
 
 func _sync() -> void:
@@ -112,7 +128,7 @@ func _sync_all() -> void:
 		_recheck = _nodes.keys()
 	# Build: everything at once for a big batch (loading a town), otherwise
 	# nearest first until the frame's share is used.
-	var all_now := _first or _pending.size() > SPAWN_ALL
+	var all_now := not sliced and (_first or _pending.size() > SPAWN_ALL)
 	_first = false
 	while not _pending.is_empty():
 		var key: String = _pending.pop_back()
@@ -127,6 +143,8 @@ func _sync_all() -> void:
 		_far_dirty[c] = true
 		if not all_now and Time.get_ticks_usec() - start > SPAWN_MS * 1000:
 			break
+	if sliced and not _pending.is_empty():
+		return
 	for c in _far_dirty:
 		var had := _far.has(c)
 		_build_far(c)
@@ -135,6 +153,12 @@ func _sync_all() -> void:
 			for key in _by_chunk.get(c, {}):
 				_link_far(_nodes[key])
 	_far_dirty.clear()
+	# A building torn down or replaced leaves its square's merged mesh at
+	# once, so it doesn't linger.
+	for c in _unbaked:
+		_bake(c)
+		_bake_due.erase(c)
+	_unbaked.clear()
 
 
 ## Whether a building's drawing is out of date.
@@ -150,6 +174,8 @@ func _stale(key: String) -> bool:
 func _unspawn(key: String) -> void:
 	var c := _far_chunk(_nodes[key])
 	_far_dirty[c] = true
+	if _nodes[key].get_meta("bake", false):
+		_unbaked[c] = true
 	if _by_chunk.has(c):
 		_by_chunk[c].erase(key)
 		if _by_chunk[c].is_empty():
@@ -250,6 +276,10 @@ func _plant(key: String, root: Node3D, planted: Array, labels := []) -> void:
 		return
 	SignText.add(root, labels)
 	_link_far(root)
+	root.set_meta("bake", true)
+	var c := _far_chunk(root)
+	if not _bake_due.has(c):
+		_bake_due[c] = Time.get_ticks_msec() + (BAKE_WAIT_MS if _baked.has(c) else 0)
 	var was := Terrain.shift
 	Terrain.shift = Terrain.shift_for(self)
 	var frame := Transform3D(root.basis, root.position)
@@ -261,6 +291,75 @@ func _plant(key: String, root: Node3D, planted: Array, labels := []) -> void:
 		trees.append([at, t[1], t[2]])
 	Terrain.shift = was
 	_trees.set_trees(key, trees)
+
+
+func _bake_some() -> void:
+	var t := Perf.now()
+	var now := Time.get_ticks_msec()
+	for c in _bake_due.keys():
+		if _bake_due[c] > now:
+			continue
+		_bake_due.erase(c)
+		_bake(c)
+		if (Perf.now() - t) / 1000.0 > BAKE_BUDGET_MS:
+			break
+	Perf.add("frame.buildings", t)
+
+
+## Merges a square's finished buildings (walls and roofs, and their drives
+## and walks) into one mesh per material, and hides their own meshes.
+func _bake(c: Vector2i) -> void:
+	var centre := Vector3((c.x + 0.5) * FAR_CHUNK, 0.0, (c.y + 0.5) * FAR_CHUNK)
+	var to_square := Transform3D(Basis.IDENTITY, -centre) * global_transform.affine_inverse()
+	var parts := {}  # [material, format, casts shadow] -> SurfaceTool
+	var members := []
+	for key in _by_chunk.get(c, {}):
+		var root: Node3D = _nodes[key]
+		if not root.get_meta("bake", false) or not root.is_inside_tree():
+			continue
+		for site in root.get_children():
+			if not site is ConstructionSite or site.building():
+				continue
+			for mi: MeshInstance3D in [site._final, site._ground]:
+				if mi.mesh == null:
+					continue
+				var xf := to_square * mi.global_transform
+				for i in mi.mesh.get_surface_count():
+					var k := [mi.get_active_material(i), mi.mesh.surface_get_format(i), mi == site._final]
+					if not parts.has(k):
+						parts[k] = SurfaceTool.new()
+						parts[k].begin(Mesh.PRIMITIVE_TRIANGLES)
+					parts[k].append_from(mi.mesh, i, xf)
+				members.append(mi)
+	if not _baked.has(c):
+		var pair := []
+		for shadow in [true, false]:
+			var mi := MeshInstance3D.new()
+			mi.position = centre
+			mi.mesh = ArrayMesh.new()
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadow \
+				else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(mi)
+			pair.append(mi)
+		_baked[c] = pair
+	var meshes: Array = [_baked[c][0].mesh, _baked[c][1].mesh]
+	for m: ArrayMesh in meshes:
+		m.clear_surfaces()
+	for k in parts:
+		var m: ArrayMesh = meshes[0] if k[2] else meshes[1]
+		parts[k].commit(m)
+		m.surface_set_material(m.get_surface_count() - 1, k[0])
+	for mi in members:
+		mi.visible = false
+	_link_baked(c)
+
+
+## The merged square shows only while its far boxes don't.
+func _link_baked(c: Vector2i) -> void:
+	if not _baked.has(c) or not _far.has(c):
+		return
+	for mi: MeshInstance3D in _baked[c]:
+		mi.visibility_parent = _far[c].get_path()
 
 
 static func _far_from() -> float:
@@ -324,6 +423,7 @@ func _build_far(c: Vector2i) -> void:
 	var mesh: ArrayMesh = _far[c].mesh
 	mesh.clear_surfaces()
 	st.commit(mesh)
+	_link_baked(c)
 
 
 ## One building as its block: walls in its colour; a houses' pitched

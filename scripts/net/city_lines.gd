@@ -130,7 +130,7 @@ static func city_points(city: Dictionary) -> PackedVector2Array:
 
 ## The city lines between two cities, as lists of points (region coordinates).
 static func trace(a: PointSet, b: PointSet, others: Array) -> Array:
-	var pair := _closest_pair(a, b)
+	var pair := _closest_pair(a, b, others)
 	var gap: float = pair[0].distance_to(pair[1])
 	if gap > MAX_GAP or gap < 0.01:
 		return []
@@ -188,7 +188,9 @@ static func _is_ours(p: Vector2, d: float, others: Array) -> bool:
 	return true
 
 
-static func _closest_pair(a: PointSet, b: PointSet) -> Array:
+## The closest two buildings whose halfway point no third town is nearer to
+## (where the line starts).
+static func _closest_pair(a: PointSet, b: PointSet, others := []) -> Array:
 	# Each of a's cells first, by how near b comes to its centre; then the
 	# points of only the cells that could still hold the closest pair.
 	var half_diag := BUCKET * 0.7072
@@ -207,7 +209,7 @@ static func _closest_pair(a: PointSet, b: PointSet) -> Array:
 		for p in pts:
 			var q := b.nearest(p)
 			var d := p.distance_to(q)
-			if d < best:
+			if d < best and _is_ours((p + q) * 0.5, d * 0.5, others):
 				best = d
 				pa = p
 				pb = q

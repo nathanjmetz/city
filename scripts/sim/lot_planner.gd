@@ -425,7 +425,8 @@ func update(network: RoadNetwork) -> void:
 		for i in range(pts.size() - 1):
 			var a := Vector2(pts[i].x, pts[i].z)
 			var b := Vector2(pts[i + 1].x, pts[i + 1].z)
-			pieces.append([a, b, half, Rect2(a, Vector2.ZERO).expand(b), id, rank])
+			# The last two: whether a, b are the street's own ends.
+			pieces.append([a, b, half, Rect2(a, Vector2.ZERO).expand(b), id, rank, i == 0, i == pts.size() - 2])
 			box = box.expand(b)
 		_pieces[id] = pieces
 		_seg_box[id] = box
@@ -713,19 +714,26 @@ static func _ray(s: Dictionary, a: float) -> Array:
 	if r[3] < 0.0:
 		return r
 	var lanes := {}
+	var stop := INF
 	for ru in rules:
 		var d := _dist_to(r[1], ru.pieces)
-		if not ru.win and d < ru.k + 0.3 + ru.depth + 0.5:
-			# The corner lot of the cross street that holds the corner.
-			return [a, r[1], r[2], -1.0, ru.k, ru.seg]
+		if not ru.win:
+			var band: float = ru.k + 0.3 + ru.depth + 0.5
+			if _dist_square(r[1], ru.pieces) < band:
+				# The corner lot of the cross street that holds the corner.
+				return [a, r[1], r[2], -1.0, ru.k, ru.seg]
+			# Past the end of a cross street that bends away (a rounded
+			# corner): the lots stop at the back of its corner lots.
+			stop = minf(stop, _enter_band(r[1], r[2], ru.pieces, band))
 		if d < ru.k + REACH:
 			lanes[ru.seg] = ru
-	if lanes.is_empty():
-		return r
-	r = _ray_raw(s, a, lanes)
-	for o in lanes:
-		if lanes[o].win and r[3] >= 0.0:
-			r[3] = minf(r[3], lanes[o].depth)
+	if not lanes.is_empty():
+		r = _ray_raw(s, a, lanes)
+		for o in lanes:
+			if lanes[o].win and r[3] >= 0.0:
+				r[3] = minf(r[3], lanes[o].depth)
+	if r[3] > stop:
+		r[3] = stop
 	return r
 
 
@@ -761,7 +769,7 @@ static func _ray_raw(s: Dictionary, a: float, lanes := {}) -> Array:
 		# A back lane (an alley, or a gravel lane behind a paved street's
 		# lots) stops the lots only at its edge.
 		var t := _first_touch(f, n, p[0], p[1], k) if p[5] < rank or lanes.has(p[4]) \
-			else _first_claim(f, n, p[0], p[1], k)
+			else _first_claim(f, n, p[0], p[1], k, not p[6], not p[7])
 		if t < 0.0:
 			return [a, f, n, -1.0, p[2], p[4]]
 		if t < best:
@@ -790,20 +798,50 @@ static func _on_curve(s: Dictionary, a: float) -> Array:
 
 
 ## Inside a curve the survey lines cross: stop each where it meets the next.
+## Round a bend that isn't a true arc they cross farther along too, so each
+## is stopped where it first meets any nearby line, until none cross: the
+## lots round the bend then fan to a clean rear line, none overlapping.
 static func _converge(rays: Array) -> void:
+	var bent := false
 	for i in range(rays.size() - 1):
-		var r: Array = rays[i]
-		var q: Array = rays[i + 1]
-		if r[3] <= 0.0 or q[3] <= 0.0 or (r[2] as Vector2).dot(q[2]) > 0.9998:
-			continue
-		var hit = Geometry2D.line_intersects_line(r[1], r[2], q[1], q[2])
-		if hit == null:
-			continue
-		var tr: float = ((hit as Vector2) - r[1]).dot(r[2])
-		var tq: float = ((hit as Vector2) - q[1]).dot(q[2])
-		if tr > 0.0 and tq > 0.0:
-			r[3] = minf(r[3], tr)
-			q[3] = minf(q[3], tq)
+		_cross(rays[i], rays[i + 1], false)
+		bent = bent or (rays[i][2] as Vector2).dot(rays[i + 1][2]) <= 0.9998
+	if not bent:
+		return  # a straight street: its lines never cross
+	for _round in CONVERGE_PASSES:
+		var changed := false
+		for i in rays.size():
+			var r: Array = rays[i]
+			for j in range(i + 2, rays.size()):
+				# Lines whose fronts are farther apart than both can run never meet.
+				if rays[j][0] - r[0] > r[3] + REACH:
+					break
+				changed = _cross(r, rays[j], true) or changed
+		if not changed:
+			break
+
+
+const CONVERGE_PASSES := 4
+
+
+## Stops two survey lines where they cross (`within`: only if they cross
+## within both as they now run). Returns true if either got shorter.
+static func _cross(r: Array, q: Array, within: bool) -> bool:
+	if r[3] <= 0.0 or q[3] <= 0.0 or (r[2] as Vector2).dot(q[2]) > 0.9998:
+		return false
+	var hit = Geometry2D.line_intersects_line(r[1], r[2], q[1], q[2])
+	if hit == null:
+		return false
+	var tr: float = ((hit as Vector2) - r[1]).dot(r[2])
+	var tq: float = ((hit as Vector2) - q[1]).dot(q[2])
+	if tr <= 0.0 or tq <= 0.0:
+		return false
+	if within and (tr >= r[3] - 0.01 or tq >= q[3] - 0.01):
+		return false
+	var was: float = r[3] + q[3]
+	r[3] = minf(r[3], tr)
+	q[3] = minf(q[3], tq)
+	return r[3] + q[3] < was
 
 
 ## First distance t along the line f + n·t where a road piece a-b (with
@@ -811,8 +849,13 @@ static func _converge(rays: Array) -> void:
 ## i.e. dist(p, ab) <= t + k. -1 if f itself is inside that road; INF if never.
 ## Exact: the distance is linear along the line (sides) or a square root that
 ## cancels (ends), so every case is a linear equation.
-static func _first_claim(f: Vector2, n: Vector2, a: Vector2, b: Vector2, k: float) -> float:
-	var d0 := Geometry2D.get_closest_point_to_segment(f, a, b).distance_to(f)
+## A street claims no land past its own ends (cap_a / cap_b false there):
+## its lots run square or radial to it, so the land beyond where it ends or
+## bends away is the next street's (round a bend, a plat's lots fan to the
+## curve's centre and the straight lots run on behind them).
+static func _first_claim(f: Vector2, n: Vector2, a: Vector2, b: Vector2, k: float,
+		cap_a := true, cap_b := true) -> float:
+	var d0 := _piece_dist(f, a, b, cap_a, cap_b)
 	if d0 <= k - 0.3:
 		return -1.0
 	if d0 <= k:
@@ -830,18 +873,40 @@ static func _first_claim(f: Vector2, n: Vector2, a: Vector2, b: Vector2, k: floa
 			if absf(den) > 0.000001:
 				cands.append((k - sg * s0) / den)
 	for e in [a, b]:
+		if not (cap_a if e == a else cap_b):
+			continue
 		var w: Vector2 = f - e
 		var den := 2.0 * (n.dot(w) - k)
 		if absf(den) > 0.000001:
 			cands.append((k * k - w.length_squared()) / den)
+	if not (cap_a and cap_b) and l > 0.0001:
+		# Where the line crosses the square end, a claim can start too.
+		var u := d / l
+		for e in [a, b]:
+			var den2 := n.dot(u)
+			if absf(den2) > 0.000001:
+				cands.append(u.dot(e - f) / den2)
 	cands.sort()
 	for t in cands:
 		if t < 0.0 or t > REACH:
 			continue
 		var p: Vector2 = f + n * t
-		if Geometry2D.get_closest_point_to_segment(p, a, b).distance_to(p) <= t + k + 0.01:
+		if _piece_dist(p, a, b, cap_a, cap_b) <= t + k + 0.01:
 			return t
 	return INF
+
+
+## Distance from p to the piece a-b, or INF where p lies past an end that
+## doesn't count (see _first_claim).
+static func _piece_dist(p: Vector2, a: Vector2, b: Vector2, cap_a: bool, cap_b: bool) -> float:
+	if not (cap_a and cap_b):
+		var d := b - a
+		var l2 := d.length_squared()
+		if l2 > 0.00000001:
+			var u := (p - a).dot(d) / l2
+			if u < -0.0001 and not cap_a or u > 1.0001 and not cap_b:
+				return INF
+	return Geometry2D.get_closest_point_to_segment(p, a, b).distance_to(p)
 
 
 ## First distance t along the line f + n·t that comes within k of the road
@@ -895,6 +960,10 @@ func _corner_rules(s: Dictionary, rays: Array, zones: ZoneMap) -> Array:
 		if o < 0 or r[3] < 0.0 or seen.has(o) or not _pieces.has(o):
 			continue
 		seen[o] = true
+		# A bend that carries this street on isn't a cross street: the lots
+		# just fan round it (the streets either side of it still square up).
+		if _carries_on(s, _pieces[o]):
+			continue
 		var piece: Array = _nearest_piece(r[1], _pieces[o])
 		var d: Vector2 = (piece[1] - piece[0]).normalized()
 		# Only a street running along the survey lines is a cross street.
@@ -934,6 +1003,68 @@ static func _behind_corner(s: Dictionary, seg: int) -> bool:
 		if ru.seg == seg:
 			return not ru.win
 	return false
+
+
+## Whether the road (its pieces) runs on from one of this side's street's
+## ends in nearly the same direction (within 30°).
+static func _carries_on(s: Dictionary, pieces: Array) -> bool:
+	var c: Array = s.curve
+	var ends := [[Vector2(c[0].x, c[0].z), Vector2(c[1].x - c[0].x, c[1].z - c[0].z)],
+		[Vector2(c[2].x, c[2].z), Vector2(c[1].x - c[2].x, c[1].z - c[2].z)]]
+	var first: Array = pieces[0]
+	var last: Array = pieces[pieces.size() - 1]
+	for e in ends:
+		# Out of this street at its end, and into the other road there.
+		var out: Vector2 = -(e[1] as Vector2).normalized()
+		if (first[0] as Vector2).distance_to(e[0]) < 1.0 \
+				and out.dot(((first[1] as Vector2) - first[0]).normalized()) > 0.866:
+			return true
+		if (last[1] as Vector2).distance_to(e[0]) < 1.0 \
+				and out.dot(((last[0] as Vector2) - last[1]).normalized()) > 0.866:
+			return true
+	return false
+
+
+## Distance from p to a road (its pieces), not counting past its two ends
+## (see _first_claim).
+static func _dist_square(p: Vector2, pieces: Array) -> float:
+	var best := INF
+	var last := pieces.size() - 1
+	for i in pieces.size():
+		var q: Array = pieces[i]
+		best = minf(best, _piece_dist(p, q[0], q[1], i != 0, i != last))
+	return best
+
+
+## First t along f + n·t within `k` of a road (its pieces, each taken as the
+## band square to it), or INF.
+static func _enter_band(f: Vector2, n: Vector2, pieces: Array, k: float) -> float:
+	var best := INF
+	for q in pieces:
+		var d: Vector2 = q[1] - q[0]
+		var l := d.length()
+		if l < 0.0001:
+			continue
+		var u := d / l
+		var m := Vector2(-u.y, u.x)
+		var lo := 0.0
+		var hi := INF
+		# Inside the band: 0 <= u·(p - a) <= l and |m·(p - a)| <= k.
+		for c in [[u, 0.0, l], [m, -k, k]]:
+			var axis: Vector2 = c[0]
+			var p0: float = axis.dot(f - (q[0] as Vector2))
+			var v: float = axis.dot(n)
+			if absf(v) < 0.000001:
+				if p0 < c[1] or p0 > c[2]:
+					lo = INF
+				continue
+			var t1: float = (c[1] - p0) / v
+			var t2: float = (c[2] - p0) / v
+			lo = maxf(lo, minf(t1, t2))
+			hi = minf(hi, maxf(t1, t2))
+		if lo <= hi:
+			best = minf(best, lo)
+	return best
 
 
 static func _near_rule(p: Vector2, rules: Array) -> bool:
@@ -1255,13 +1386,33 @@ func _median_depth(s: Dictionary, a0: float, a1: float) -> float:
 
 ## Survey lines from a0 to a1: exact ones at both ends, cached ones between.
 func _rays_between(s: Dictionary, a0: float, a1: float) -> Array:
-	var out := [_ray(s, a0)]
-	for r in (s.sq_rays if not s.get("sq", []).is_empty() else _survey(s)):
+	var all: Array = s.sq_rays if not s.get("sq", []).is_empty() else _survey(s)
+	var out := [_edge_ray(s, a0, all)]
+	for r in all:
 		if r[0] > a0 + 0.5 and r[0] < a1 - 0.5:
 			out.append(r.duplicate())
-	out.append(_ray(s, a1))
+	out.append(_edge_ray(s, a1, all))
 	_converge(out)
 	return out
+
+
+## A lot's side line at `a`, stopped where it meets the side's survey lines
+## (round a bend they fan in and would otherwise be crossed).
+static func _edge_ray(s: Dictionary, a: float, all: Array) -> Array:
+	var r := _ray(s, a)
+	for q in all:
+		if absf(q[0] - a) < 0.5 or absf(q[0] - a) > r[3] + REACH:
+			continue
+		if r[3] <= 0.0 or q[3] <= 0.0 or (r[2] as Vector2).dot(q[2]) > 0.9998:
+			continue
+		var hit = Geometry2D.line_intersects_line(r[1], r[2], q[1], q[2])
+		if hit == null:
+			continue
+		var tr: float = ((hit as Vector2) - r[1]).dot(r[2])
+		var tq: float = ((hit as Vector2) - q[1]).dot(q[2])
+		if tr > 0.0 and tq > 0.0 and tq < q[3] + 0.01:
+			r[3] = minf(r[3], tr)
+	return r
 
 
 ## A lot from the street back to the middle of the block (at most `cap`).

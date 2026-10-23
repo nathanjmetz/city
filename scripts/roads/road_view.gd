@@ -15,6 +15,9 @@ var sim: CitySim
 ## running on past the town to the horizon).
 var all_rural := false
 var _rural := {}  # segment id -> true
+## Streets that have been town streets, so they keep their curbs while lots
+## are replanned around them (segment id -> true).
+var _town_ever := {}
 var _recheck := -1.0  # seconds until the town edge is checked again, or -1
 var _redraw := false  # a new drive needs the poles moved
 var _drawn_drives := []
@@ -25,8 +28,8 @@ var _bridge_cache := {}  # segment id -> [what it was drawn from, piers or null]
 var _junction_cache := {}  # node -> [its plan, {part: mesh}]
 var _later := {}  # segment id -> what to redraw it from, a few each frame
 var _seg_mi := {}  # segment id -> its street
-var _poles_later := {}  # segment id -> [key, pts, offset, drives near], drawn later (sliced)
-var _corners_later := {}  # node -> [key, its plan], drawn later (sliced)
+var _poles_later := {}  # segment id -> [key, pts, offset, drives near], drawn when a rebuild runs out of time
+var _corners_later := {}  # node -> [key, its plan], drawn when a rebuild runs out of time
 var _merged := []  # the merged pole and corner meshes, redone once the later ones are drawn
 var _gen := 0  # which rebuild is current; a sliced one left behind stops
 var _building := false  # a sliced rebuild is part way through
@@ -104,6 +107,8 @@ func _rural_segments() -> Dictionary:
 			mark.call(lot.front)
 	for id in sim.services.buildings:
 		mark.call(sim.services.buildings[id].pos)
+	var in_town := {}
+	var eligible := []
 	for id in network.segments:
 		var type: int = network.segments[id].type
 		if type != RoadStyle.Type.STREET and type != RoadStyle.Type.AVENUE:
@@ -117,9 +122,87 @@ func _rural_segments() -> Dictionary:
 						near = true
 			if near:
 				break
-		if not near:
+		if near:
+			in_town[id] = true
+		else:
+			eligible.append(id)
+	# A street keeps its curbs once it has them (as real curbs stay while a
+	# block is replatted), and a run of street that's town at both ends is
+	# town all along: one style per street, no country stretch mid-block.
+	for id in _town_ever:
+		if network.segments.has(id):
+			in_town[id] = true
+	for run in _runs():
+		var first := -1
+		var last := -1
+		for i in run.size():
+			if in_town.has(run[i]):
+				if first == -1:
+					first = i
+				last = i
+		for i in range(first + 1, last):
+			in_town[run[i]] = true
+	_town_ever = in_town
+	for id in eligible:
+		if not in_town.has(id):
 			out[id] = true
 	return out
+
+
+## Streets and avenues as runs of segments that carry straight on through
+## their nodes (a side street meeting a road doesn't break it), each in
+## order along the road.
+func _runs() -> Array:
+	var next := {}  # segment id -> segments it carries straight on into
+	for n in network.nodes:
+		var here := []
+		for id in network.segments_at(n):
+			var s: Dictionary = network.segments[id]
+			if int(s.type) != RoadStyle.Type.STREET and int(s.type) != RoadStyle.Type.AVENUE:
+				continue
+			var at: Vector3 = network.nodes[n]
+			var t: Vector3 = s.ctrl - at
+			t.y = 0.0
+			if t.length() > 0.01:
+				here.append([id, t.normalized(), int(s.type)])
+		# Pair the straightest continuations first.
+		var pairs := []
+		for i in here.size():
+			for j in range(i + 1, here.size()):
+				var d: float = here[i][1].dot(here[j][1])
+				if d < -0.8 and here[i][2] == here[j][2]:
+					pairs.append([d, here[i][0], here[j][0]])
+		pairs.sort()
+		var used := {}
+		for p in pairs:
+			if used.has(p[1]) or used.has(p[2]):
+				continue
+			used[p[1]] = true
+			used[p[2]] = true
+			next[p[1]] = next.get(p[1], []) + [p[2]]
+			next[p[2]] = next.get(p[2], []) + [p[1]]
+	var runs := []
+	var seen := {}
+	var ids := network.segments.keys()
+	ids.sort()
+	for id in ids:
+		if seen.has(id) or not next.has(id) or next[id].size() > 1:
+			continue
+		# Walk from one end of the run to the other.
+		var run := []
+		var cur: int = id
+		var prev := -1
+		while cur != -1 and not seen.has(cur):
+			seen[cur] = true
+			run.append(cur)
+			var go := -1
+			for o in next.get(cur, []):
+				if o != prev:
+					go = o
+			prev = cur
+			cur = go
+		runs.append(run)
+	return runs
 
 
 ## Farm lanes and company drives, kept clear of poles.
@@ -234,11 +317,12 @@ func _rebuild_all(gen: int) -> void:
 			var key := [pts, type, rural, seg_gaps, Terrain.shift]
 			var cached: Array = _street_cache.get(id, [])
 			if cached.is_empty() or cached[0] != key:
-				if (sliced or not cached.is_empty() and cached[0][0] == pts) and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+				if (sliced or not cached.is_empty()) and (Perf.now() - t0) / 1000.0 > REMESH_MS:
 					# When the town edge moves, many streets turn from country
-					# road to town street at once; a street that didn't move
-					# keeps its old look a few frames while they're redrawn.
-					# A neighbor's new streets just appear a few frames late.
+					# road to town street at once (and their corners trim
+					# them); a street keeps its old look a few frames while
+					# they're redrawn. A new street is drawn at once, except a
+					# neighbor's, which just appears a few frames late.
 					_later[id] = [key, pts, type, seg_gaps, rural]
 				else:
 					cached = [key, Terrain.drape(RoadMesh.street(pts, type, _mats, seg_gaps, rural))]
@@ -254,9 +338,9 @@ func _rebuild_all(gen: int) -> void:
 				var near := _drives_near(drives, pts)
 				var pkey := [pts, off, near, Terrain.shift]
 				var poles: Array = _pole_cache.get(id, [])
-				if (poles.is_empty() or poles[0] != pkey) and sliced and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+				if (poles.is_empty() or poles[0] != pkey) and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+					# Out of time: drawn a few frames later, the old ones up meanwhile.
 					_poles_later[id] = [pkey, pts, off, near]
-					poles = []
 				elif poles.is_empty() or poles[0] != pkey:
 					var w := SurfaceTool.new()
 					var r := SurfaceTool.new()
@@ -347,10 +431,12 @@ func _rebuild_all(gen: int) -> void:
 	for node in junctions:
 		var jkey := [junctions[node], Terrain.shift]
 		var drawn: Array = _junction_cache.get(node, [])
-		if (drawn.is_empty() or drawn[0] != jkey) and sliced and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+		if (drawn.is_empty() or drawn[0] != jkey) and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+			# Out of time: drawn a few frames later, the old corner up meanwhile.
 			_corners_later[node] = [jkey, junctions[node]]
-			continue
-		if drawn.is_empty() or drawn[0] != jkey:
+			if drawn.is_empty():
+				continue
+		elif drawn.is_empty() or drawn[0] != jkey:
 			drawn = [jkey, _corner_meshes(node, junctions[node])]
 		junction_cache[node] = drawn
 		for key in corners:

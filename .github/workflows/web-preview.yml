@@ -71,58 +71,68 @@ jobs:
       - name: Run tests
         timeout-minutes: 30
         run: |
+          set -o pipefail
+          # A test fails on a script error too, even if its checks all passed.
+          run_test() {
+            ~/godot-cache/godot --headless -s "$1" 2>&1 | tee /tmp/test.log
+            if grep -q "SCRIPT ERROR" /tmp/test.log; then
+              echo "::error::$1 hit a script error"
+              return 1
+            fi
+          }
           ~/godot-cache/godot --headless --import
-          ~/godot-cache/godot --headless -s tests/test_roads.gd
-          ~/godot-cache/godot --headless -s tests/test_sim.gd
-          ~/godot-cache/godot --headless -s tests/test_water.gd
-          ~/godot-cache/godot --headless -s tests/test_advisor.gd
-          ~/godot-cache/godot --headless -s tests/test_first_town.gd
-          ~/godot-cache/godot --headless -s tests/test_pad.gd
-          ~/godot-cache/godot --headless -s tests/test_road_tools.gd
-          ~/godot-cache/godot --headless -s tests/test_grid_fill.gd
-          ~/godot-cache/godot --headless -s tests/test_move_it.gd
-          ~/godot-cache/godot --headless -s tests/test_road_variants.gd
-          ~/godot-cache/godot --headless -s tests/test_traffic.gd
-          ~/godot-cache/godot --headless -s tests/test_net.gd
-          ~/godot-cache/godot --headless -s tests/test_vehicles.gd
-          ~/godot-cache/godot --headless -s tests/test_seasons.gd
-          ~/godot-cache/godot --headless -s tests/test_balance.gd
-          ~/godot-cache/godot --headless -s tests/test_audio.gd
-          ~/godot-cache/godot --headless -s tests/test_transit.gd
-          ~/godot-cache/godot --headless -s tests/test_loading.gd
-          ~/godot-cache/godot --headless -s tests/test_terrain.gd
-          ~/godot-cache/godot --headless -s tests/test_permits.gd
-          ~/godot-cache/godot --headless -s tests/test_rail.gd
-          ~/godot-cache/godot --headless -s tests/test_rail_grain.gd
-          ~/godot-cache/godot --headless -s tests/test_farm_roads.gd
-          ~/godot-cache/godot --headless -s tests/test_livestock.gd
-          ~/godot-cache/godot --headless -s tests/test_families.gd
-          ~/godot-cache/godot --headless -s tests/test_streets.gd
-          ~/godot-cache/godot --headless -s tests/test_lots.gd
-          ~/godot-cache/godot --headless -s tests/test_building_types.gd
-          ~/godot-cache/godot --headless -s tests/test_hubs.gd
-          ~/godot-cache/godot --headless -s tests/test_warehouses.gd
-          ~/godot-cache/godot --headless -s tests/test_big_factories.gd
-          ~/godot-cache/godot --headless -s tests/test_parks.gd
-          ~/godot-cache/godot --headless -s tests/test_tourism.gd
-          ~/godot-cache/godot --headless -s tests/test_trails.gd
-          ~/godot-cache/godot --headless -s tests/test_power.gd
-          ~/godot-cache/godot --headless -s tests/test_vegetation.gd
-          ~/godot-cache/godot --headless -s tests/test_education.gd
-          ~/godot-cache/godot --headless -s tests/test_telecom.gd
-          ~/godot-cache/godot --headless -s tests/test_banks.gd
-          ~/godot-cache/godot --headless -s tests/test_mail.gd
-          ~/godot-cache/godot --headless -s tests/test_economy.gd
-          ~/godot-cache/godot --headless -s tests/test_construction.gd
-          ~/godot-cache/godot --headless -s tests/test_telemetry.gd
-          ~/godot-cache/godot --headless -s tests/test_pollution.gd
-          ~/godot-cache/godot --headless -s tests/test_health.gd
-          ~/godot-cache/godot --headless -s tests/test_interlocal.gd
-          ~/godot-cache/godot --headless -s tests/test_regional.gd
-          ~/godot-cache/godot --headless -s tests/test_desktop.gd
-          ~/godot-cache/godot --headless -s tests/test_heritage.gd
-          ~/godot-cache/godot --headless -s tests/test_crops.gd
-          ~/godot-cache/godot --headless -s tests/test_stats.gd
+          run_test tests/test_roads.gd
+          run_test tests/test_sim.gd
+          run_test tests/test_water.gd
+          run_test tests/test_advisor.gd
+          run_test tests/test_first_town.gd
+          run_test tests/test_pad.gd
+          run_test tests/test_road_tools.gd
+          run_test tests/test_grid_fill.gd
+          run_test tests/test_move_it.gd
+          run_test tests/test_road_variants.gd
+          run_test tests/test_traffic.gd
+          run_test tests/test_net.gd
+          run_test tests/test_vehicles.gd
+          run_test tests/test_seasons.gd
+          run_test tests/test_balance.gd
+          run_test tests/test_audio.gd
+          run_test tests/test_transit.gd
+          run_test tests/test_loading.gd
+          run_test tests/test_terrain.gd
+          run_test tests/test_permits.gd
+          run_test tests/test_rail.gd
+          run_test tests/test_rail_grain.gd
+          run_test tests/test_farm_roads.gd
+          run_test tests/test_capital.gd
+          run_test tests/test_livestock.gd
+          run_test tests/test_families.gd
+          run_test tests/test_streets.gd
+          run_test tests/test_lots.gd
+          run_test tests/test_building_types.gd
+          run_test tests/test_hubs.gd
+          run_test tests/test_warehouses.gd
+          run_test tests/test_big_factories.gd
+          run_test tests/test_parks.gd
+          run_test tests/test_tourism.gd
+          run_test tests/test_trails.gd
+          run_test tests/test_power.gd
+          run_test tests/test_vegetation.gd
+          run_test tests/test_education.gd
+          run_test tests/test_telecom.gd
+          run_test tests/test_banks.gd
+          run_test tests/test_mail.gd
+          run_test tests/test_economy.gd
+          run_test tests/test_construction.gd
+          run_test tests/test_telemetry.gd
+          run_test tests/test_pollution.gd
+          run_test tests/test_health.gd
+          run_test tests/test_interlocal.gd
+          run_test tests/test_regional.gd
+          run_test tests/test_desktop.gd
+          run_test tests/test_heritage.gd
+          run_test tests/test_crops.gd
+          run_test tests/test_stats.gd
 
       - name: Stamp the build
         run: |

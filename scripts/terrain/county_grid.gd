@@ -15,6 +15,9 @@ const SECTION := 1608.0
 const HALF_WIDTH := 3.5
 ## Half the cleared strip: the roadway, ditches and mowed verge.
 const HALF_CLEAR := 8.0
+## Trees stand back this far from the middle of the road, so their crowns
+## don't close over it (the right of way is mowed, 33 ft each side).
+const TREE_CLEAR := 12.0
 ## Share of the miles of section line that have a road.
 const SHARE := 0.95
 ## No road where the land is steeper than this (bluffs above the river).
@@ -61,8 +64,8 @@ static func distance(x: float, z: float) -> float:
 
 ## True where the cleared strip of a county road runs: the road itself, its
 ## ditches and verge, on dry land that isn't too steep. Region coordinates.
-static func clears(x: float, z: float) -> bool:
-	if distance(x, z) > HALF_CLEAR:
+static func clears(x: float, z: float, half := HALF_CLEAR) -> bool:
+	if distance(x, z) > half:
 		return false
 	return Terrain.water(x, z) < 0.1 and Terrain.slope(x, z) < MAX_SLOPE
 
@@ -85,6 +88,36 @@ static func mile_at(x: float, z: float, reach: float) -> Dictionary:
 		best = {"key": "ew:%d:%d" % [ew, seg], "a": Vector2(seg * SECTION, ew * SECTION),
 			"b": Vector2((seg + 1) * SECTION, ew * SECTION), "on": Vector2(x, ew * SECTION)}
 	return best
+
+
+## Every mile of county road within `reach` metres of a point (region
+## coordinates), as mile_at gives them: at a crossing, all four.
+static func miles_at(x: float, z: float, reach: float) -> Array:
+	var out := []
+	var ns := _line(x)
+	if absf(x - ns * SECTION) <= reach:
+		for seg in range(floori((z - reach) / SECTION), floori((z + reach) / SECTION) + 1):
+			if has_mile(ns, seg):
+				out.append(mile_of("ns:%d:%d" % [ns, seg], x, z))
+	var ew := _line(z)
+	if absf(z - ew * SECTION) <= reach:
+		for seg in range(floori((x - reach) / SECTION), floori((x + reach) / SECTION) + 1):
+			if has_mile(ew + (1 << 20), seg):
+				out.append(mile_of("ew:%d:%d" % [ew, seg], x, z))
+	return out
+
+
+## The mile with this key, as mile_at gives it, `on` its nearest point to
+## (x, z) (region coordinates).
+static func mile_of(key: String, x: float, z: float) -> Dictionary:
+	var parts := key.split(":")
+	var line := int(parts[1])
+	var seg := int(parts[2])
+	if parts[0] == "ns":
+		return {"key": key, "a": Vector2(line * SECTION, seg * SECTION), "b": Vector2(line * SECTION, (seg + 1) * SECTION),
+			"on": Vector2(line * SECTION, clampf(z, seg * SECTION, (seg + 1) * SECTION))}
+	return {"key": key, "a": Vector2(seg * SECTION, line * SECTION), "b": Vector2((seg + 1) * SECTION, line * SECTION),
+		"on": Vector2(clampf(x, seg * SECTION, (seg + 1) * SECTION), line * SECTION)}
 
 
 ## How far the road runs from `on` toward `to` (both on one mile) before

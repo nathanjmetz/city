@@ -104,6 +104,8 @@ func _add_city(id: String) -> void:
 		root.add_child(roads)
 		roads.setup(c.sim.network, c.sim)
 		var buildings := BuildingView.new()
+		# Their whole town lands at once: drawn a few buildings a frame.
+		buildings.sliced = true
 		root.add_child(buildings)
 		buildings.setup(c.sim)
 		var cars := TrafficView.new()

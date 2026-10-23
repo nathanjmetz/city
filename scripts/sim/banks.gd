@@ -317,7 +317,7 @@ func room(sim: CitySim, id: int) -> float:
 
 
 static func farmland_value(sim: CitySim) -> float:
-	return sim.farms.total_acres() * Farms.LAND_PER_ACRE
+	return maxf(sim.farms.total_acres(), sim.farms.held_acres()) * Farms.LAND_PER_ACRE
 
 
 static func _years(what: String) -> float:
@@ -407,10 +407,43 @@ func lend(sim: CitySim) -> Dictionary:
 		var c := sim.farms.best_field(fid, sim.field_usable)
 		if c == Vector2i.MAX:
 			continue
-		var value := Farms.LAND_PER_ACRE * Farms.ACRES_PER_CELL
+		# A farm borrows for ground it wants but can't take on out of its
+		# own savings (Capital): an operating loan for the equipment and
+		# inputs to rent it, or, where land near town isn't rented out, a
+		# land loan for the bank's share of the price.
+		var k := Farms.field_of(c)
+		if not f.has("own"):
+			f.own = Farms.start_fields()
+		if not f.has("rent"):
+			f.rent = []
+		if k in f.own or k in f.rent:
+			continue
+		var price := sim.farms.field_price(f, k)
+		var acres := Farms.field_cells(f, k).size() * Farms.ACRES_PER_CELL
+		var rentable := price / acres <= Balance.CAPITAL_LAND_PER_ACRE * (1.0 + Balance.CAPITAL_RENT_MAX_PREMIUM)
+		var start := acres * Balance.CAPITAL_OPEN_PER_ACRE
+		var cash := float(f.get("cash", 0.0))
 		var who := "farm:%d" % fid
-		if _approve(sim, who, "farm", value, sim.farms.field_profit(f, c), c):
-			sim.farms.farms[fid].cells.append(c)
+		var gain := sim.farms.field_gain(f, k)
+		if rentable:
+			if cash >= start:
+				continue
+			if _approve(sim, who, "farm", start, gain, c):
+				f.cash = cash + _last_amount - start
+				f.rent.append(k)
+				f.cells.append(c)
+				f.why = "It rented %d more acres from a neighbour, with an operating loan from the bank for the equipment and inputs." % roundi(acres)
+				out.farms = true
+			continue
+		var profit := sim.farms.yearly_profit(fid)
+		if Capital.can_buy(f, price, Capital.kept(f, "farm", Capital.steady(f, profit) + gain)) \
+				or cash < price * (1.0 - Balance.BANK_LTV[1]):
+			continue
+		if _approve(sim, who, "farm", price, gain, c):
+			f.cash = cash - (price - _last_amount)
+			f.own.append(k)
+			f.cells.append(c)
+			f.why = "It bought %d more acres with a loan from the bank." % roundi(acres)
 			out.farms = true
 	ids = sim.industry.sites.keys()
 	ids.sort()
@@ -458,6 +491,10 @@ func financed(sim: CitySim, key: String) -> void:
 
 ## The loan decision for buying one field or pad: the cheapest bank with
 ## room, its LTV, the coverage its president wants, and its appetite.
+## What the last approved loan lent.
+var _last_amount := 0.0
+
+
 func _approve(sim: CitySim, who: String, what: String, value: float, new_profit: float, cell: Vector2i) -> bool:
 	var id := lender_for(sim, what, value * Balance.BANK_LTV[0])
 	if id == -1:
@@ -473,6 +510,7 @@ func _approve(sim: CitySim, who: String, what: String, value: float, new_profit:
 	if _roll(sim, [id, who]) >= appetite(sim, id, what):
 		return false
 	_book(id, who, what, amount, cell)
+	_last_amount = amount
 	return true
 
 

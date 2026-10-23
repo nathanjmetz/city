@@ -23,9 +23,10 @@ extends Node
 ## app goes as high as the machine allows, up to Cinematic, and is never
 ## held back for the browser. The browser (and a desktop whose graphics
 ## chip only runs the Compatibility renderer) gets the same governor over
-## the tiers that renderer can draw, Low and Medium, starting at Low with
-## fewer pixels on a phone or tablet. This only touches drawing, never the
-## simulation, so every computer in a region still steps towns the same way.
+## the tiers that renderer can draw, Low to High, starting at Low with
+## fewer pixels on a phone or tablet and climbing while frames have room.
+## This only touches drawing, never the simulation, so every computer in a
+## region still steps towns the same way.
 ## `--quality low|medium|high|ultra|cinematic` on the command line pins a
 ## tier (for screenshots).
 
@@ -35,6 +36,9 @@ enum { LOW, MEDIUM, HIGH, ULTRA, CINEMATIC }
 const NAMES := ["Low", "Medium", "High", "Ultra", "Cinematic"]
 const AUTO := -1
 const SAVE_PATH := "user://quality.json"
+## There while the game runs, removed on a clean exit: found at launch, the
+## last run crashed (or was force quit), and the look steps back to safety.
+const RUNNING_PATH := "user://quality_running"
 ## Bumped when guess_tier changes, so Auto guesses again on machines that
 ## were first guessed by an older version.
 const GUESS_VERSION := 2
@@ -76,6 +80,11 @@ const SLOW_MS := 22.0
 const ROOM_FRAME_MS := 18.0
 const ROOM_PART_MS := 8.0
 const MIN_SCALE := 0.7
+## The browser (Compatibility renderer) climbs as far as High: its longer
+## detail, trees and shadows draw there; SSAO and the rest are desktop only.
+## Browser frames have room under this many ms (it can't time the parts).
+const BROWSER_TOP := HIGH
+const ROOM_BROWSER_MS := 20.0
 ## A single frame longer than this is a stall (a town loading, a shader
 ## compiling), not drawing load: it's left out rather than lowering the look.
 const STALL_MS := 250.0
@@ -123,7 +132,7 @@ func _ready() -> void:
 		return
 	browser = RenderingServer.get_current_rendering_method() == "gl_compatibility"
 	if browser:
-		_ceiling = MEDIUM
+		_ceiling = BROWSER_TOP
 	process_priority = 1000  # after the frame's own work
 	_guess = MEDIUM if browser else guess_tier(adapter, RenderingServer.get_video_adapter_type(),
 		OS.get_processor_count(), float(OS.get_memory_info().get("physical", 0)) / 1e9)
@@ -143,6 +152,12 @@ func _ready() -> void:
 	else:
 		_first_guess()
 		_save()
+	if FileAccess.file_exists(RUNNING_PATH):
+		_after_crash(int(saved.get("tier", tier)))
+	var f := FileAccess.open(RUNNING_PATH, FileAccess.WRITE)
+	if f:
+		f.store_string(str(Time.get_unix_time_from_system()))
+		f.close()
 	var args := OS.get_cmdline_user_args() + OS.get_cmdline_args()
 	for i in args.size():
 		var a: String = args[i]
@@ -229,16 +244,16 @@ func label() -> String:
 ## The highest tier the Graphics menu offers here: one above the hardware
 ## guess, so a small computer can try a step up but is never handed a tier
 ## that's far beyond it (Cinematic on an 8 GB Mac mini runs it out of
-## memory). The browser draws Low and Medium only.
+## memory). The browser climbs as far as High (see BROWSER_TOP).
 func top() -> int:
-	return MEDIUM if browser else mini(_guess + 1, CINEMATIC)
+	return BROWSER_TOP if browser else mini(_guess + 1, CINEMATIC)
 
 
 ## What the Graphics menu picked: AUTO, or a fixed tier up to top().
 func choose(m: int) -> void:
 	m = clampi(m, AUTO, top())
 	mode = m
-	_ceiling = MEDIUM if browser else CINEMATIC
+	_ceiling = BROWSER_TOP if browser else CINEMATIC
 	if mode == AUTO:
 		_first_guess()
 	else:
@@ -265,7 +280,7 @@ func apply() -> void:
 	vp.msaa_3d = 2 if browser and tier == MEDIUM else t.msaa
 	vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if t.fxaa else Viewport.SCREEN_SPACE_AA_DISABLED
 	vp.mesh_lod_threshold = t.lod
-	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if scale < 0.99 and not browser else Viewport.SCALING_3D_MODE_BILINEAR
+	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if scale < 0.99 and _fsr_ok() else Viewport.SCALING_3D_MODE_BILINEAR
 	vp.scaling_3d_scale = scale
 	RenderingServer.directional_shadow_atlas_set_size(t.shadow_size, true)
 	RenderingServer.directional_soft_shadow_filter_set_quality(t.soft)
@@ -311,7 +326,8 @@ func _process(_delta: float) -> void:
 		if _slow >= 2 or frame_ms > slow_ms * 2.0:
 			_slow = 0
 			_step_down(gpu_ms > cpu_ms)
-	elif frame_ms < ROOM_FRAME_MS and gpu_ms < ROOM_PART_MS and cpu_ms < ROOM_PART_MS:
+	elif (frame_ms < ROOM_BROWSER_MS) if browser \
+			else (frame_ms < ROOM_FRAME_MS and gpu_ms < ROOM_PART_MS and cpu_ms < ROOM_PART_MS):
 		_slow = 0
 		_room += 1
 		if _room >= 4:
@@ -362,6 +378,37 @@ func _step_up() -> void:
 		return
 	apply()
 	_save()
+
+
+## FSR upscaling, for fewer pixels than the screen. Not in the browser, and
+## not on the Mac's Metal driver: Brawn's Mac Studio crashed within seconds
+## each time it drew below 100% there (2026-10-23), so a Mac upscales
+## plainly instead.
+func _fsr_ok() -> bool:
+	return not browser and RenderingServer.get_current_rendering_driver_name() != "metal"
+
+
+## The last run ended without a clean exit. Whatever the cause, start this
+## one safe: Auto, full pixels, one tier below where it died, and no higher
+## for this session (the governor climbs back next time if there's room).
+func _after_crash(died_on: int) -> void:
+	mode = AUTO
+	scale = 1.0
+	tier = clampi(mini(died_on - 1, _guess), LOW, _ceiling)
+	_ceiling = maxi(tier, LOW)
+	_save()
+	print("Graphics: the last run didn't close cleanly; starting safe at ", NAMES[tier])
+	# Telemetry comes up after this autoload.
+	(func():
+		var t := get_node_or_null("/root/Telemetry")
+		if t:
+			t.event("gfx_after_crash", {"died_on": NAMES[clampi(died_on, LOW, CINEMATIC)], "now": NAMES[tier]})
+	).call_deferred()
+
+
+func _exit_tree() -> void:
+	if active:
+		DirAccess.remove_absolute(RUNNING_PATH)
 
 
 func _save() -> void:
