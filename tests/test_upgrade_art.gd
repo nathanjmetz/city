@@ -40,6 +40,7 @@ func _init() -> void:
 	_railroad()
 	_services()
 	_telecom()
+	_warehouse()
 	_oil_company()
 	_done()
 
@@ -176,6 +177,20 @@ func _telecom() -> void:
 	_check(on > off and fw > bare and cells.size() >= 2 and cells.size() <= 8
 		and _mesh_verts(TelecomBuilder.build_small_cell(7)) > 0,
 		"the phone company's middle mile, fixed wireless and small cells show (%d cells)" % cells.size())
+
+
+## A warehouse's inside-the-walls steps show from outside.
+func _warehouse() -> void:
+	var missing := []
+	for id in ["sortation", "robotics", "fulfillment"]:
+		var built := _with_requires(Warehouses.TREE, id)
+		var w := {"kind": Warehouses.KINDS.keys()[0], "level": 1, "bays": 1, "pos": Vector3.ZERO, "dir": Vector3.FORWARD}
+		w.built = built.filter(func(n): return n != id)
+		var before := _mesh_verts(WarehouseBuilder.build_warehouse(w, 7, 3.9))
+		w.built = built
+		if _mesh_verts(WarehouseBuilder.build_warehouse(w, 7, 3.9)) == before:
+			missing.append(id)
+	_check(missing.is_empty(), "a warehouse's automation shows%s" % ["" if missing.is_empty() else ": missing " + str(missing)])
 
 
 func _mesh_verts(parts: Array) -> int:

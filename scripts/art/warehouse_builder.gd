@@ -114,11 +114,48 @@ func _warehouse(w: Dictionary, to_curb: float) -> void:
 		var z := pz + i * 2.75
 		_flat_rect("line", lane_x + 0.4, lane_x + 5.6, z - 0.06, z + 0.06, 0.07, LINE)
 	_annexes(w, cx, bw, lane_x - 5.6, zf + bd, h)
+	_automation(w.get("built", []), cx, bw, zf, bd, h, wall, ox, ow, truck_x, front)
 	# A few street trees and a strip of shrubs by the office.
 	_bed(ox, zf - 1.6, ow * 0.6)
 	for i in rng.randi_range(1, 3):
 		var pick := TreeField.pick(rng, true)
 		trees.append([Vector3(cx - bw * 0.5 + 3.0 + i * 9.0, 0, front + 1.5), pick[0], pick[1], rng.randf_range(0.8, 1.05)])
+
+
+## The steps of its owner's tree that happen inside the walls (Warehouses
+## TREE nodes with no land), as they show from outside on real buildings.
+func _automation(built: Array, cx: float, bw: float, zf: float, bd: float, h: float, wall: Color,
+		ox: float, ow: float, truck_x: float, front: float) -> void:
+	if "sortation" in built:
+		# A sorter's motors and the people working it need far more power
+		# and air: a row of big rooftop units and exhaust fans down the roof.
+		var n := maxi(3, int(bw / 18.0))
+		for i in n:
+			var x := cx - bw * 0.5 + (i + 0.5) * bw / n
+			_box("metal", Vector3(3.2, 1.6, 2.0), Vector3(x, h + 0.8, zf + bd * 0.3), Color("#b9bcbc"))
+			_cylinder("paint", Vector3(x + 2.6, h, zf + bd * 0.3), 0.55, 1.0, Color("#9ea3a6"), 10)
+	if "robotics" in built:
+		# Robotic storage (an AS/RS) needs racks far taller than the old
+		# clear height: a high-bay roof raised over the back of the box.
+		var hz0 := zf + bd * 0.55
+		var hz1 := zf + bd - 1.0
+		var hw := bw - 6.0
+		var top := h + 9.0
+		_box("paint", Vector3(hw, top - h, hz1 - hz0), Vector3(cx, h + (top - h) * 0.5, (hz0 + hz1) * 0.5), wall)
+		_quad("paint", Vector3(cx - hw * 0.5, top + 0.02, hz0), Vector3(cx + hw * 0.5, top + 0.02, hz0),
+			Vector3(cx + hw * 0.5, top + 0.02, hz1), Vector3(cx - hw * 0.5, top + 0.02, hz1), MEMBRANE, [], Vector3.UP)
+		_box("paint", Vector3(hw + 0.1, 0.4, 0.3), Vector3(cx, top + 0.2, hz0), Color("#cfcbc2"))
+	if "fulfillment" in built:
+		# Order fulfillment runs shifts of pickers: a big covered staff
+		# entrance at the office and a guard booth at the truck gate.
+		_box("paint", Vector3(ow * 0.8, 0.3, 3.4), Vector3(ox, 4.3, zf - 1.7), Color("#2f3a44"))
+		for e in [-1.0, 1.0]:
+			_box("paint", Vector3(0.3, 4.2, 0.3), Vector3(ox + e * ow * 0.36, 2.1, zf - 3.2), Color("#2f3a44"))
+		var g := Vector3(truck_x + 7.6, 0, front + 3.0)
+		_box("paint", Vector3(2.6, 0.2, 2.6), g + Vector3(0, 0.1, 0), Color("#b9b5ab"))
+		_box("paint", Vector3(2.2, 2.6, 2.2), g + Vector3(0, 1.5, 0), Color("#d8d6cf"))
+		_box("paint", Vector3(2.3, 0.9, 2.3), g + Vector3(0, 2.0, 0), Color(0.55, 0.65, 0.7))
+		_box("paint", Vector3(2.6, 0.2, 2.6), g + Vector3(0, 2.9, 0), Color("#3a3734"))
 
 
 ## Reveal joints between tilt-up panels, front and sides.
