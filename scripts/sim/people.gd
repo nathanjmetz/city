@@ -13,6 +13,11 @@ const MAX_CARS := 2
 ## Furthest anyone walks instead of driving, in metres.
 const WALK_MAX := 260.0
 const WORK_AGE := [18, 66]
+## sync() goes over every building and resident (16 ms in a 3,000-building
+## town), so it runs once every SYNC_EVERY ticks, off the move-in tick:
+## people move in, out and lose closed jobs within a few game minutes.
+const SYNC_EVERY := 10
+const SYNC_AT := 5
 
 ## id -> {id, first, last, age, home (lot key), job ("lot:key" or ""),
 ## car (vehicle id or -1), at ("" at home, a place ref while out, "travel"),
@@ -28,9 +33,10 @@ var _families: Families  # names on the signs, set each sync
 
 
 ## Keeps a person for every resident, fills open jobs, names new places.
-## Cheap enough to run every tick: it only acts on what changed.
 func sync(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void:
 	_families = sim.families
+	if sim.tick_count % SYNC_EVERY != SYNC_AT:
+		return
 	var keys := sim.buildings.keys()
 	keys.sort()
 	for key in keys:
@@ -81,7 +87,7 @@ func sync(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void
 		if p.job != "" and not _job_open(sim, p.job):
 			_staff[p.job] = _staff.get(p.job, 1) - 1
 			p.job = ""
-	if sim.tick_count % 30 == 0:
+	if sim.tick_count % (SYNC_EVERY * 3) == SYNC_AT:
 		_hire(sim, keys, rng)
 
 

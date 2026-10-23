@@ -79,6 +79,7 @@ var gave_up := 0
 var arrivals := []
 var failed := []
 var _waiting := []  # vehicles with a job waiting to pull out
+var _waiting_ok := -1  # the road version every waiting route was checked on
 ## Vehicles at rest: parked in a stall, driveway or at the curb, at a dock, or
 ## out of sight inside a garage or factory bay. Each is a car with at_place,
 ## spot, pos, face, hidden, until (tick it heads off, or -1), owner, base.
@@ -1382,7 +1383,9 @@ func _endpoint(e: Dictionary) -> Dictionary:
 
 
 ## Puts a new vehicle on the road if there's a gap. Returns false if not.
-func _launch(car: Dictionary) -> bool:
+## `lanes` (from _lane_add) lists where the moving cars are by lane, so a
+## tick with many vehicles waiting doesn't look through every car for each.
+func _launch(car: Dictionary, lanes := {}) -> bool:
 	var w: Dictionary = ways[car.route[0]]
 	var last: bool = car.route.size() == 1
 	var limit: float = car.end_d - 4.0 if last else w.s1 - 0.5
@@ -1395,17 +1398,22 @@ func _launch(car: Dictionary) -> bool:
 	elif exit_d <= car.d + 1.0 and last:
 		return false  # next door: walk
 	# Pull out only when there's a gap in the traffic.
-	for other in cars:
-		var lane_way: int = other.route[other.leg]
-		if other.j != null:
-			if other.j.wo != car.route[0] or other.j.lo != car.lane:
+	if lanes.is_empty():
+		for other in cars:
+			var lane_way: int = other.route[other.leg]
+			if other.j != null:
+				if other.j.wo != car.route[0] or other.j.lo != car.lane:
+					continue
+				lane_way = car.route[0]
+			elif lane_way != car.route[0] or other.lane != car.lane:
 				continue
-			lane_way = car.route[0]
-		elif lane_way != car.route[0] or other.lane != car.lane:
-			continue
-		var od: float = other.d if other.j == null else other.j.exit_d
-		if od > car.d - 30.0 and od < exit_d + 12.0:
-			return false
+			var od: float = other.d if other.j == null else other.j.exit_d
+			if od > car.d - 30.0 and od < exit_d + 12.0:
+				return false
+	else:
+		for od in lanes.get(Vector2i(car.route[0], car.lane), []):
+			if od > car.d - 30.0 and od < exit_d + 12.0:
+				return false
 	if not out.is_empty():
 		car.j = out
 		car.jd = 0.0
@@ -1417,6 +1425,16 @@ func _launch(car: Dictionary) -> bool:
 		car.d = exit_d
 	cars.append(car)
 	return true
+
+
+## Files a moving car under the lane it's in (or turning into), at the
+## distance along it _launch compares.
+func _lane_add(lanes: Dictionary, other: Dictionary) -> void:
+	var at := Vector2i(other.route[other.leg], other.lane) if other.j == null else Vector2i(other.j.wo, other.j.lo)
+	var od: float = other.d if other.j == null else other.j.exit_d
+	if not lanes.has(at):
+		lanes[at] = []
+	lanes[at].append(od)
 
 
 ## The path out of a driveway into the nearest lane.
@@ -2506,14 +2524,23 @@ static func parked_pose(car: Dictionary) -> Array:
 # --- Driving ----------------------------------------------------------------
 
 func _drive(_rng: RandomNumberGenerator) -> void:
-	# Vehicles with a job that were waiting for a gap to pull out.
+	# Vehicles with a job that were waiting for a gap to pull out. Routes
+	# only break when the roads are rebuilt, so they're checked once a version.
+	var lanes := {}
 	for car in _waiting.duplicate():
-		if not ways.has(car.route[0]) or car.route.any(func(w): return not ways.has(w)) and not _replan(car):
+		if _waiting_ok != version and (not ways.has(car.route[0])
+				or car.route.any(func(w): return not ways.has(w)) and not _replan(car)):
 			# Its road went, or was rebuilt and there's no way through now.
 			_waiting.erase(car)
 			_report(car, failed)
-		elif cars.size() < MAX_CARS and _launch(car):
-			_waiting.erase(car)
+		elif cars.size() < MAX_CARS:
+			if lanes.is_empty():
+				for other in cars:
+					_lane_add(lanes, other)
+			if _launch(car, lanes):
+				_waiting.erase(car)
+				_lane_add(lanes, car)
+	_waiting_ok = version
 	_snapshot()
 	for key in _lanes:
 		var list: Array = _lanes[key]

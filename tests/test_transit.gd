@@ -51,7 +51,8 @@ func _init() -> void:
 	_check(dwelt, "buses stopped at stops to let people on and off")
 	var in_traffic := 0
 	for car in sim.traffic.cars:
-		if sim.buses.trips.has(car.id):
+		# Trip ids and vehicle ids are separate counters since cars park.
+		if sim.buses.trips.has(car.get("trip", car.id)):
 			in_traffic += 1
 			_check(car.kind == "city_bus", "a depot bus is a transit bus")
 	for bid in sim.buses.buses:
