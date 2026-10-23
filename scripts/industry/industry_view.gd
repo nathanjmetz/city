@@ -130,7 +130,7 @@ func _mine(id: int, s: Dictionary, root: Node3D) -> void:
 		var mi := MeshInstance3D.new()
 		# On the land: ground work drapes over it, the rest stands on it.
 		mi.mesh = Terrain.drape((merged[mat][0] as SurfaceTool).commit(), true, 8.0 if merged[mat][1] else 0.0)
-		mi.material_override = mat
+		mi.material_override = merged[mat][2]
 		if merged[mat][1]:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(mi)
@@ -200,7 +200,7 @@ func _forest(id: int, s: Dictionary, root: Node3D, trees: Array) -> void:
 		var mi := MeshInstance3D.new()
 		# On the land: ground work drapes over it, the rest stands on it.
 		mi.mesh = Terrain.drape((merged[mat][0] as SurfaceTool).commit(), true, 8.0 if merged[mat][1] else 0.0)
-		mi.material_override = mat
+		mi.material_override = merged[mat][2]
 		if merged[mat][1]:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(mi)
@@ -261,7 +261,7 @@ func _strip_mine(s: Dictionary, hq: Transform3D, root: Node3D) -> void:
 	for mat in merged:
 		var mi := MeshInstance3D.new()
 		mi.mesh = Terrain.drape((merged[mat][0] as SurfaceTool).commit(), true, 8.0 if merged[mat][1] else 0.0)
-		mi.material_override = mat
+		mi.material_override = merged[mat][2]
 		if merged[mat][1]:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(mi)
@@ -351,11 +351,14 @@ func _put(merged: Dictionary, built: Array, frame: Transform3D, trees: Array) ->
 		var mesh: ArrayMesh = built[k]
 		for i in mesh.get_surface_count():
 			var mat := mesh.surface_get_material(i)
-			if not merged.has(mat):
+			# Ground work and buildings stay apart even with one material:
+			# only ground work is cut finer to follow the land.
+			var key := [mat, k == 1]
+			if not merged.has(key):
 				var st := SurfaceTool.new()
 				st.begin(Mesh.PRIMITIVE_TRIANGLES)
-				merged[mat] = [st, k == 1]
-			(merged[mat][0] as SurfaceTool).append_from(mesh, i, frame)
+				merged[key] = [st, k == 1, mat]
+			(merged[key][0] as SurfaceTool).append_from(mesh, i, frame)
 	for t in built[2]:
 		var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
 		var at := frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])
