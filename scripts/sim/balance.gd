@@ -778,6 +778,36 @@ const TRADE_IMPORT_MARKUP := 1.5
 ## Trading with a neighbor is the better deal for both towns.
 const TRADE_EXPORT_SHARE := 0.6
 
+## Regional projects: big shared assets no one town owns, each run by its
+## board and built in stages that open when the one before is funded (no
+## clock). Seeded at real sites near Petersburg, in region metres from the
+## map's centre. Goals are in Trade goods ("money" in dollars). Shares
+## count every pledge at TRADE_PRICE. Player interaction design owns what a
+## finished stage does in each town; these goals are starting numbers for
+## the balance thread (a game town starts with START_MONEY).
+const REGION_PROJECTS := [
+	{"id": "i69", "name": "I-69 extension", "kind": "interstate",
+		"board": "I-69 Corridor Authority", "site": [3200.0, 0.0],
+		"stages": [
+			{"name": "Right of way and grading", "goal": {"money": 4_000_000.0}},
+			{"name": "Interchange at the county highway", "goal": {"money": 6_000_000.0}},
+			{"name": "Four lanes to the next county", "goal": {"money": 12_000_000.0}},
+		]},
+	{"id": "power", "name": "Regional generating station", "kind": "power",
+		"board": "Pike County Power Cooperative", "site": [-2600.0, 600.0],
+		"stages": [
+			{"name": "Transmission tie to every town", "goal": {"money": 3_000_000.0}},
+			{"name": "Gas turbine unit", "goal": {"money": 9_000_000.0}},
+		]},
+	{"id": "airport", "name": "International airport", "kind": "airport",
+		"board": "Southwest Indiana Airport Authority", "site": [0.0, -9000.0],
+		"stages": [
+			{"name": "Land and a 7,000 ft runway", "goal": {"money": 8_000_000.0}},
+			{"name": "Terminal and air cargo", "goal": {"money": 15_000_000.0}},
+			{"name": "International service", "goal": {"money": 25_000_000.0}},
+		]},
+]
+
 # --- Parks and landmarks -------------------------------------------------------
 # Brawn's rules (2026-10-22): a park is a hub. You place it and it fills in by
 # itself over time (paths, a playground, a pavilion, a ball diamond), growing
