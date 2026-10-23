@@ -25,6 +25,12 @@ const MAX_CARS := 400
 const DT := 0.1
 ## Ticks between drivers' decisions (see _drive).
 const THINK_EVERY := 3
+## From the end of a curb return to where cars stop: the crosswalk (0.3 to
+## 2.7 m past the return, in line with the curb ramps), then 4 ft and the
+## 2 ft stop bar (MUTCD 3B.16).
+const STOP_PAST_RETURN := 4.5
+## The crosswalk's middle, ahead of the stop line (junction_view paints it there).
+const CROSSWALK_AHEAD := 3.0
 ## Curb spaces: a 23 ft parallel stall; kept this far from a driveway's
 ## centre; how many places along the kerb to try.
 const CURB_STALL := 7.0
@@ -189,6 +195,7 @@ var _ep_cache := {}   # Vector2 position -> its road stop (_endpoint), until the
 var _ep_rev := -1
 var _ep_ver := -1
 var _seg_lots := {}   # road piece -> lot ids along it (_aprons)
+var _walk_back := {}  # node -> metres from its centre to the middle of its crosswalks
 var _seg_lots_key := []
 var _extra := {}      # place ref -> spots added beyond its layout, in order (_add_spot)
 ## Streets closed to cars (a pedestrian plaza): segment -> who may still
@@ -757,18 +764,21 @@ func _rebuild() -> void:
 	var node_ids := at_node.keys()
 	node_ids.sort()
 	var setback := {}
+	_walk_back.clear()
 	for n in node_ids:
 		var segs: Array = at_node[n]
 		var sb := 0.0
 		if segs.size() >= 3:
-			for id in segs:
-				sb = maxf(sb, RoadStyle.half_width(network.segments[id].type) + 1.5)
+			sb = _stop_back(segs)
 		elif segs.size() == 2:
 			var s1: Dictionary = network.segments[segs[0]]
 			var s2: Dictionary = network.segments[segs[1]]
 			if s1.type != s2.type or network.is_oneway(segs[0]) != network.is_oneway(segs[1]):
 				sb = 5.0
 		setback[n] = sb
+		# People cross at the crosswalk, just ahead of the stop bar.
+		_walk_back[n] = sb - CROSSWALK_AHEAD if sb > CROSSWALK_AHEAD + 1.0 and segs.size() >= 3 \
+			and sb > _stop_back_plain(segs) else sb
 	for wid in ways:
 		var w: Dictionary = ways[wid]
 		w.s0 = minf(setback[w.from], w.len * 0.4)
@@ -939,6 +949,36 @@ func _build_control(n: int, segs: Array) -> void:
 			t += green + yellow + 1.5
 		j.cycle = maxf(t, 1.0)
 		j.offset = fposmod(n * 37.0, j.cycle)
+
+
+## How far before a junction's centre traffic stops, at the stop bar. Town
+## streets meet in rounded curb returns (Junction.RETURN_RADIUS); the
+## crosswalk runs just past the end of the return, and the stop bar is 4 ft
+## behind it, so turning cars sweep a real curve: about 9 m at the centre
+## line turning right on a local street corner and 11 m turning left, more
+## on avenues, against AASHTO's 6.4 m for a passenger car. Country roads, highways and
+## roundabouts have no returns: traffic stops at the edge of the cross road.
+func _stop_back(segs: Array) -> float:
+	var hw := 0.0
+	var curbed := true
+	var r := 0.0
+	for id in segs:
+		var type: int = network.segments[id].type
+		var spec: Dictionary = RoadStyle.TYPES[type]
+		hw = maxf(hw, RoadStyle.half_width(type))
+		if spec.oneway or spec.get("rural", false) or RoadStyle.is_ring(type) or network.is_oneway(id):
+			curbed = false
+		r = maxf(r, Junction.RETURN_RADIUS.get(RoadStyle.group(type), 6.0))
+	if not curbed:
+		return _stop_back_plain(segs)
+	return hw + r + STOP_PAST_RETURN
+
+
+func _stop_back_plain(segs: Array) -> float:
+	var hw := 0.0
+	for id in segs:
+		hw = maxf(hw, RoadStyle.half_width(network.segments[id].type))
+	return hw + 1.5
 
 
 func _rank(seg: int) -> int:
@@ -3250,6 +3290,13 @@ func _walk_end(sid: int, end: int) -> float:
 	var fwd: bool = w.fwd
 	var s0: float = w.s0 if fwd else w.len - w.s1
 	var s1: float = w.s1 if fwd else w.len - w.s0
+	# The crosswalk is a little ahead of where the cars stop.
+	var n0: int = w.from if fwd else w.to
+	var n1: int = w.to if fwd else w.from
+	if _walk_back.has(n0):
+		s0 = minf(s0, minf(_walk_back[n0], w.len * 0.4))
+	if _walk_back.has(n1):
+		s1 = maxf(s1, maxf(w.len - _walk_back[n1], w.len * 0.6))
 	return clampf((s0 if end == 0 else s1) / maxf(w.len, 0.1), 0.0, 1.0)
 
 

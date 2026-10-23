@@ -102,8 +102,9 @@ func _rebuild_all() -> void:
 		if j.control == TrafficSim.Rule.NONE:
 			continue
 		var named := false
-		# How far back from the junction centre the cross street's sidewalk
-		# runs: crosswalks line up with it, stop bars and signs sit behind it.
+		# How far back from the stop line the crosswalk is (behind it where
+		# the corner isn't shaped: in line with the cross street's
+		# sidewalk); stop bars and signs sit behind the crosswalk.
 		var cross := 0.0
 		for w2 in traffic.ways_into(n):
 			cross = maxf(cross, RoadStyle.TYPES[traffic.ways[w2].type].width * 0.5)
@@ -114,7 +115,9 @@ func _rebuild_all() -> void:
 			# the road stops, in line with the curb ramps.
 			var trim := Junction.trim(plans, n, traffic.ways[wid].seg)
 			if trim > 0.0:
-				walk = trim + 1.5
+				# Traffic stops behind the bar (TrafficSim.STOP_PAST_RETURN):
+				# the crosswalk is 3 m on, at the curb ramps.
+				walk = -TrafficSim.CROSSWALK_AHEAD
 			var sl := traffic.stop_line(wid)
 			var dir: Vector3 = sl.dir
 			var right: Vector3 = sl.right
@@ -167,7 +170,8 @@ func _rebuild_all() -> void:
 
 ## A stop bar across the approach lanes and a pair of crosswalk lines across
 ## the whole street, just short of the junction.
-## `walk` is the crosswalk's centre, metres back from the junction centre.
+## `walk` is the crosswalk's centre, metres back from the stop line (less
+## than 0 for one ahead of it).
 func _markings(st: SurfaceTool, sl: Dictionary, half: float, walk: float) -> void:
 	var y := RoadStyle.Y_JUNCTION + 0.02
 	var p: Vector3 = sl.pos
