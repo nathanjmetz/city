@@ -12,6 +12,8 @@ const SETTINGS_PATH := "user://first_town.json"
 const WIDTH := 300
 ## Guidance is mint (a hint, never coral: coral means "you").
 const GLOW := Brand.BRAND_MINT
+## Seconds the "Welcome to town!" card stays before closing itself.
+const DONE_FOR := 10.0
 ## Seconds a "Power's on!" line stays up after a wait.
 const CHEER_FOR := 5.0
 const CHEERS := {"power_wait": "Power's on!", "water_wait": "Water's on!", "builders": "Your first family moved in!"}
@@ -43,6 +45,7 @@ var _ground := []          # world marks: [["grid", a, b] or ["ring", pos]]
 var _glided := {}          # step -> true once the camera went there
 var _spot := []            # the suggested grid, kept once the streets go in
 var _cheer_left := 0.0
+var _done_left := 0.0
 var _poll := 0.0
 var _t := 0.0
 
@@ -179,6 +182,11 @@ func _process(delta: float) -> void:
 		return
 	_t += delta
 	_cheer_left -= delta
+	if _step == "done":
+		_done_left -= delta
+		if _done_left <= 0.0:
+			stop()
+			return
 	_poll -= delta
 	if _poll <= 0.0:
 		_poll = 0.2
@@ -190,8 +198,17 @@ func _process(delta: float) -> void:
 
 
 func _refresh() -> void:
+	# Steps check themselves off: a player who builds without pressing
+	# "Let's go" skips the plan, as CS2's tutorial cards do.
+	if _intro and FirstTown.current(sim) != "streets":
+		_intro = false
 	var now := "plan" if _intro else FirstTown.current(sim)
+	if now == "done" and _step in ["", "plan"]:
+		stop()  # the town got there on its own: nothing left to show
+		return
 	if now != _step:
+		if now == "done":
+			_done_left = DONE_FOR
 		if CHEERS.has(_step) and FirstTown.index_of(now) > FirstTown.index_of(_step):
 			_cheer.text = CHEERS[_step]
 			_cheer_left = CHEER_FOR
