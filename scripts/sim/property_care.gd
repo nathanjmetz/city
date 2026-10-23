@@ -245,21 +245,15 @@ func start_month(sim) -> void:
 
 func _build_grid(sim) -> void:
 	_grid = {}
+	var sums := {}
 	for key in sim.buildings:
 		if not sim.lots.has(key):
 			continue
 		var p: Vector3 = sim.lots[key].pos
 		var c := Vector2i(floori(p.x / NEAR_CELL), floori(p.z / NEAR_CELL))
-		if not _grid.has(c):
-			_grid[c] = []
-		_grid[c].append([p, key])
+		_grid[c] = int(_grid.get(c, 0)) + 1
+		sums[c] = [float(sums.get(c, [0.0, 0])[0]) + cond_of(key), _grid[c]]
 	_cell_avg = {}
-	var sums := {}
-	for c in _grid:
-		var t := 0.0
-		for e in _grid[c]:
-			t += cond_of(e[1])
-		sums[c] = [t, _grid[c].size()]
 	for c in _grid:
 		var t := 0.0
 		var n := 0
@@ -268,7 +262,8 @@ func _build_grid(sim) -> void:
 				var s: Array = sums.get(c + Vector2i(dx, dz), [0.0, 0])
 				t += float(s[0])
 				n += int(s[1])
-		_cell_avg[c] = [t, n]
+		# Snapped so it survives a save (copies must stay in sync).
+		_cell_avg[c] = [snappedf(t, 0.0001), n]
 
 
 ## Average condition of the buildings around a point (its 80 m cell and
@@ -307,7 +302,13 @@ func rows(sim, key: String) -> Array:
 
 
 func to_dict() -> Dictionary:
-	return {"cond": cond, "tier": tier, "derelict": derelict_since, "lacking": lacking}
+	# The month's neighbour grid is saved too: rebuilding it on load would
+	# see this month's changes early and drift from the other copies.
+	var cells := []
+	for c in _cell_avg:
+		cells.append([c.x, c.y, int(_grid.get(c, 0)), _cell_avg[c][0], _cell_avg[c][1]])
+	cells.sort()
+	return {"cond": cond, "tier": tier, "derelict": derelict_since, "lacking": lacking, "cells": cells}
 
 
 func from_dict(d: Dictionary) -> void:
@@ -316,6 +317,11 @@ func from_dict(d: Dictionary) -> void:
 	derelict_since = {}
 	lacking = {}
 	_grid = {}
+	_cell_avg = {}
+	for e in d.get("cells", []):
+		var c := Vector2i(int(e[0]), int(e[1]))
+		_grid[c] = int(e[2])
+		_cell_avg[c] = [snappedf(float(e[3]), 0.0001), int(e[4])]
 	for k in d.get("cond", {}):
 		cond[str(k)] = float(d.cond[k])
 	for k in d.get("tier", {}):

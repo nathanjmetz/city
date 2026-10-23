@@ -411,7 +411,7 @@ static func _density(sim, p: Vector3) -> int:
 			var cell := c + Vector2i(dx, dz)
 			var mid := Vector2((cell.x + 0.5) * size, (cell.y + 0.5) * size)
 			if mid.distance_to(Vector2(p.x, p.z)) <= Balance.CORE_RADIUS:
-				n += sim.care._grid.get(cell, []).size()
+				n += int(sim.care._grid.get(cell, 0))
 	return n
 
 
@@ -426,7 +426,7 @@ func to_dict() -> Dictionary:
 	var as_ := {}
 	for id in asks:
 		as_[str(id)] = asks[id]
-	return {"asks": as_, "last": last}
+	return {"asks": as_, "last": last, "month_no": _month_no}
 
 
 func from_dict(d: Dictionary) -> void:
@@ -441,4 +441,5 @@ func from_dict(d: Dictionary) -> void:
 			"type": str(a.type), "level": int(a.level), "was": was}
 	for k in d.get("last", {}):
 		last[str(k)] = int(d.last[k])
+	_month_no = int(d.get("month_no", 0))
 	changed.emit()
