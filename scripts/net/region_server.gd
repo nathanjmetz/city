@@ -4,21 +4,21 @@ extends Node
 ## Windows can all join. It runs headless (no window) for a home computer or
 ## a cheap cloud server: see scripts/net/server_main.gd.
 ##
-## The server owns the real Region. Players send commands for their own
-## city; every tick the server applies what arrived, steps every city and
-## sends the tick out, so every player's copy runs the same way.
+## Each player's own computer runs their own town and sends the server a
+## copy every few seconds; the server keeps the latest copy of every town,
+## passes copies on so neighbors see each other, places new towns, settles
+## trade between towns that are online, and keeps accounts and the chat.
+## The server simulates nothing, so a small computer can host many players.
 
 signal log_line(text: String)
 
-const PROTOCOL := 2
+const PROTOCOL := 3
 ## How often the region is written to disk, in seconds (a server that's
 ## switched off loses at most this much).
 const SAVE_EVERY := 10.0
 ## WebSocket buffer size: a whole region goes out in one message when a
 ## player joins or resyncs (Godot's 64 KB default is far too small).
 const BUFFER_BYTES := 16 * 1024 * 1024
-## How often players get checksums to compare against, in ticks.
-const CHECK_EVERY := 50
 
 var region := Region.new()
 var invite_code := ""
@@ -38,8 +38,7 @@ var require_approval := false
 var _peer := WebSocketMultiplayerPeer.new()
 var _players := {}   # peer id -> {"id": player id, "name", "city", "host"}
 var _waiting := {}   # peer id -> account key, signed up but not approved yet
-var _events := []    # waiting for the next tick: ["city", id, name] or ["cmd", city, cmd]
-var _tick_time := 0.0
+var _trade_time := 0.0
 var _save_time := 0.0
 var _dirty := false
 
@@ -91,14 +90,10 @@ func _process(delta: float) -> void:
 		var msg = JSON.parse_string(_peer.get_packet().get_string_from_utf8())
 		if typeof(msg) == TYPE_DICTIONARY:
 			_handle(from, msg)
-	_tick_time += delta
-	var step := 1.0 / CitySim.TICKS_PER_SECOND
-	var guard := 0
-	while _tick_time >= step and guard < 20:
-		_tick_time -= step
-		guard += 1
-		_step()
-	_tick_time = minf(_tick_time, step)
+	_trade_time += delta
+	if _trade_time >= Region.TRADE_SECONDS:
+		_trade_time = 0.0
+		settle_trade()
 	_save_time += delta
 	if _save_time >= SAVE_EVERY:
 		_save_time = 0.0
@@ -106,26 +101,33 @@ func _process(delta: float) -> void:
 			save()
 
 
-func _step() -> void:
-	var events := _events
-	_events = []
-	for e in events:
-		match e[0]:
-			"city":
-				if region.city_of(e[1]) != "":
-					continue
-				var id := region.add_city(e[1], e[2])
-				for peer in _players:
-					if _players[peer].id == e[1]:
-						_players[peer].city = id
-			"cmd":
-				region.apply(e[1], e[2])
-	region.tick()
-	if not events.is_empty():
-		_dirty = true
-	_broadcast({"t": "tick", "n": region.tick_count, "ev": events})
-	if region.tick_count % CHECK_EVERY == 0:
-		_broadcast({"t": "sums", "n": region.tick_count, "sums": region.checksums()})
+## A month of trade between the towns that are running now; each player's
+## computer gets its own deals and moves the money.
+func settle_trade() -> void:
+	var online := []
+	for peer in _players:
+		if _players[peer].city != "":
+			online.append(_players[peer].city)
+	if online.is_empty():
+		return
+	region.settle_trade(online)
+	for peer in _players:
+		var id: String = _players[peer].city
+		if id != "":
+			_send(peer, {"t": "trade", "deals": region.cities[id].sim.trade.last_deals})
+
+
+## A region or a town packed small for the wire: JSON, gzipped, in base64.
+static func pack(d: Dictionary) -> String:
+	return Marshalls.raw_to_base64(JSON.stringify(d, "", false, true).to_utf8_buffer().compress(FileAccess.COMPRESSION_GZIP))
+
+
+static func unpack(z: String) -> Variant:
+	var raw := Marshalls.base64_to_raw(z)
+	if raw.is_empty():
+		return null
+	var bytes := raw.decompress_dynamic(64 * 1024 * 1024, FileAccess.COMPRESSION_GZIP)
+	return JSON.parse_string(bytes.get_string_from_utf8())
 
 
 func _handle(from: int, msg: Dictionary) -> void:
@@ -135,10 +137,13 @@ func _handle(from: int, msg: Dictionary) -> void:
 		return
 	var p: Dictionary = _players[from]
 	match msg.get("t", ""):
-		"cmd":
-			# A player can only change their own city.
-			if p.city != "" and typeof(msg.get("cmd")) == TYPE_DICTIONARY:
-				_events.append(["cmd", p.city, msg.cmd])
+		"city":
+			# A copy of the player's own town (never anyone else's).
+			var d = unpack(str(msg.get("z", "")))
+			if p.city != "" and typeof(d) == TYPE_DICTIONARY:
+				region.update_city(p.city, d)
+				_dirty = true
+				_broadcast({"t": "city", "id": p.city, "z": msg.z}, from)
 		"chat":
 			var text := str(msg.get("text", "")).strip_edges()
 			if text != "":
@@ -147,9 +152,6 @@ func _handle(from: int, msg: Dictionary) -> void:
 				_broadcast({"t": "chat", "line": line})
 		"cursor":
 			_broadcast({"t": "cursor", "id": p.id, "p": msg.get("p")}, from)
-		"resync":
-			_log("%s's copy drifted; sending a fresh one" % p.name)
-			_send(from, {"t": "region", "region": region.to_dict()})
 		"approve":
 			if p.host:
 				approve(str(msg.get("name", "")), bool(msg.get("ok", false)))
@@ -306,19 +308,24 @@ func _admit(from: int, account: Dictionary, token: String) -> void:
 			_reject(from, "You're already playing in this region in another window.")
 			return
 	var city := region.city_of(pid)
-	_players[from] = {"id": pid, "name": name, "city": city, "host": account.host}
 	if city == "":
-		_events.append(["city", pid, name])
+		# A new town, on its county roads; the neighbors' halves of those
+		# roads go to their computers too, if they're running.
+		city = region.add_city(pid, name)
+		_dirty = true
+		for other in region.handed:
+			for peer in _players:
+				if _players[peer].city == other:
+					_send(peer, {"t": "apply", "cmds": region.handed[other]})
+		for peer in _players:
+			_send(peer, {"t": "region", "z": pack(region.to_dict_without(_players[peer].city))})
 	elif region.cities[city].player != name:
 		region.cities[city].player = name
+	_players[from] = {"id": pid, "name": name, "city": city, "host": account.host}
 	_log("%s joined" % name)
-	# The full region as it is now; ticks from here on keep it in step. The
-	# server and everyone already here reload the same copy too, so nothing a
-	# save rounds off (road coordinates, say) can make one copy drift.
-	var snapshot = JSON.parse_string(JSON.stringify(region.to_dict(), "", false, true))
-	region.from_dict(snapshot)
-	_broadcast({"t": "region", "region": snapshot}, from)
-	_send(from, {"t": "welcome", "you": pid, "name": name, "code": invite_code, "region": snapshot,
+	# Everything as it is now, their own town included: the server's copy is
+	# what they play from.
+	_send(from, {"t": "welcome", "you": pid, "name": name, "code": invite_code, "z": pack(region.to_dict()),
 		"token": token, "host": account.host})
 	_send_players()
 	_send_requests()

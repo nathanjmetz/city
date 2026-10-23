@@ -28,6 +28,9 @@ func _init() -> void:
 		total += _scan("house %d" % s, HouseBuilder.build(s, 3.9))
 		total += _scan("shop %d" % s, CommercialBuilder.build_shop(s, 3.9))
 		total += _scan("factory %d" % s, CommercialBuilder.build_factory(s, 3.9))
+		for chain in Balance.FACTORY_CHAINS:
+			total += _scan("%s %d" % [chain, s], FactoryBuilder.build_chain(chain, s, 3.9,
+				{"width": 80.0, "depth": 90.0}))
 		total += _scan("farm %d" % s, FarmBuilder.build_farmstead(s, s % 3))
 		for kind in ["oil", "ore"]:
 			total += _scan("%s hq %d" % [kind, s], IndustryBuilder.build_hq(kind, s))

@@ -73,6 +73,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_terrain.gd
           ~/godot-cache/godot --headless -s tests/test_permits.gd
           ~/godot-cache/godot --headless -s tests/test_rail.gd
+          ~/godot-cache/godot --headless -s tests/test_rail_grain.gd
           ~/godot-cache/godot --headless -s tests/test_families.gd
           ~/godot-cache/godot --headless -s tests/test_lots.gd
           ~/godot-cache/godot --headless -s tests/test_building_types.gd
@@ -99,19 +100,28 @@ jobs:
           ~/godot-cache/godot --headless --export-release "Web" build/web/index.html
           test -f build/web/index.wasm
 
-      - name: Give files versioned names
+      - name: Name files by what's inside them
         run: |
-          # Browsers cache the game files, so each build gets new file names
-          # and a refresh always loads the latest version.
-          v=${GITHUB_SHA::8}
+          # File names come from what's inside each file. The engine (js, wasm
+          # and audio worklets) only changes with the Godot version, so the
+          # browser keeps it between builds and only the game data (pck)
+          # downloads again after a merge.
           cd build/web
+          e=engine-$(cat index.js index.wasm | sha256sum | cut -c1-10)
+          g=game-$(sha256sum index.pck | cut -c1-10)
+          v=${GITHUB_SHA::8}
           for f in index.*; do
-            [ "$f" = index.html ] && continue
-            mv "$f" "index-$v.${f#index.}"
+            case "$f" in
+              index.html) ;;
+              index.pck) mv "$f" "$g.pck" ;;
+              index.js|index.wasm|index.audio.*) mv "$f" "$e.${f#index.}" ;;
+              *) mv "$f" "index-$v.${f#index.}" ;;
+            esac
           done
-          sed -i -E "s/index\.(js|pck|wasm|audio|icon|apple-touch-icon|png)/index-$v.\1/g; s/\"executable\":\"index\"/\"executable\":\"index-$v\"/" index.html
-          grep -q "index-$v.js" index.html
-          grep -q "\"executable\":\"index-$v\"" index.html
+          sed -i -E "s/index\.(icon|apple-touch-icon|png)/index-$v.\1/g; s/\"index\.js\"/\"$e.js\"/g; s/\"index\.pck\"/\"$g.pck\"/; s/\"index\.wasm\"/\"$e.wasm\"/; s/\"executable\":\"index\"/\"executable\":\"$e\",\"mainPack\":\"$g.pck\"/" index.html
+          grep -q "src=\"$e.js\"" index.html
+          grep -q "\"mainPack\":\"$g.pck\"" index.html
+          grep -q "\"$e.wasm\":" index.html
           ls
 
       - uses: actions/upload-pages-artifact@v3

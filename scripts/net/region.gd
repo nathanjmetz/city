@@ -3,9 +3,11 @@ extends RefCounted
 ## A shared region: every player's city on one open map, plus the chat.
 ##
 ## Each city is its own CitySim with its own budget, placed at an origin on
-## the shared map. The server owns the real copy. Every tick it applies the
-## commands players sent, then steps every city, and sends players exactly
-## that ("tick n, these commands") so their copies stay identical.
+## the shared map. Each player's own computer runs their own town and sends
+## the server a copy every few seconds; the server keeps the latest copy of
+## every town (a town whose player is away simply waits) and passes copies
+## on, so everyone sees their neighbors. The server also places new towns,
+## settles trade between towns that are online, and keeps the chat.
 
 ## "Elbow room": a new town starts at least this far from the edge of
 ## every other town, in metres (3 miles), so nobody is boxed in early.
@@ -21,18 +23,23 @@ const CHAT_KEEP := 100
 const COUNTY_REACH := 2000.0
 ## A new town is linked by county road to this many of its nearest towns.
 const LINK_TOWNS := 2
-## Trade settles once a game month (a game day).
-const TRADE_EVERY := 24 * CitySim.TICKS_PER_HOUR
+## Trade between online towns settles this often, in real seconds (a game
+## month, which is a game day, at normal speed).
+const TRADE_SECONDS := 24.0 * 60.0 / CitySim.TICKS_PER_SECOND
 
 ## city id -> {"owner": player id, "player": player name, "name": city name,
 ## "origin": Vector2, "color": int, "sim": CitySim}
 var cities := {}
-var chat := []  # [{"from", "text", "tick"}]
+var chat := []  # [{"from", "text", "at"}]
 ## Where two towns' county roads meet on the city line, so traffic can pass
-## from one to the other: [{"a": city id, "a_node": node, "b": city id, "b_node": node}]
+## from one to the other: [{"a": city id, "a_at": [x, z], "b": city id,
+## "b_at": [x, z]}], each end in its own town's coordinates.
 var joins := []
-var tick_count := 0
 var region_seed := 1
+## Roads the last add_city built in existing towns (their halves of the new
+## county roads): city id -> [commands]. Their owners, if online, run them
+## on their own computers too.
+var handed := {}
 
 
 ## The city a player owns, or "" if they have none yet.
@@ -49,6 +56,7 @@ func city_of(player_id: String) -> String:
 ## its nearest towns (meeting theirs halfway, on the city line) and one on
 ## out to open country. The roads are free and can't be bulldozed.
 func add_city(player_id: String, player: String) -> String:
+	handed = {}
 	var id := "c%d" % (cities.size() + 1)
 	while cities.has(id):
 		id += "x"
@@ -67,13 +75,18 @@ func add_city(player_id: String, player: String) -> String:
 			var o: Dictionary = cities[other]
 			var meet: Vector2 = ((origin + o.origin) * 0.5).snapped(Vector2(1, 1))
 			away -= (meet - origin).normalized()
-			var mine: Array = sim.build_county_road(Vector2.ZERO, meet - origin, [1])
+			sim.build_county_road(Vector2.ZERO, meet - origin, [1])
 			# Their half starts from their nearest road, so it joins their town.
 			var their: CitySim = o.sim
 			var to: Vector2 = meet - o.origin
 			var from := _nearest_road_point(their, to)
-			var theirs: Array = their.build_county_road(from, to, [1])
-			joins.append({"a": id, "a_node": mine[1], "b": other, "b_node": theirs[1]})
+			var cmd := {"type": "build_county_road", "a": [from.x, from.y], "b": [to.x, to.y], "links": [1]}
+			their.apply_now(cmd)
+			if not handed.has(other):
+				handed[other] = []
+			handed[other].append(cmd)
+			var here: Vector2 = meet - origin
+			joins.append({"a": id, "a_at": [here.x, here.y], "b": other, "b_at": [to.x, to.y]})
 		if away.length() < 0.1:
 			away = (origin - cities[near[0]].origin).orthogonal()
 		sim.build_county_road(Vector2.ZERO, away.normalized() * COUNTY_REACH, [1])
@@ -89,30 +102,22 @@ static func new_sim() -> CitySim:
 	return sim
 
 
-## Applies one player's command to their own city. Players can only change
-## the city they own.
-func apply(city_id: String, cmd: Dictionary) -> bool:
-	if not cities.has(city_id):
-		return false
-	return cities[city_id].sim.apply_now(cmd)
+## Takes the latest copy of a town from its player's computer.
+func update_city(id: String, d: Dictionary) -> void:
+	if cities.has(id):
+		var sim: CitySim = cities[id].sim
+		sim.terrain_offset = cities[id].origin
+		sim.from_dict(d)
 
 
-func tick() -> void:
-	tick_count += 1
-	var ids := cities.keys()
-	ids.sort()
-	for id in ids:
-		cities[id].sim.tick()
-	if tick_count % TRADE_EVERY == 0:
-		settle_trade()
-
-
-## A month of trade between every city: neighbors joined by county road
-## first, then the outside world (see Trade).
-func settle_trade() -> void:
+## A month of trade between towns: neighbors joined by county road first,
+## then the outside world (see Trade). Only the listed towns take part
+## (the ones whose players are online; the others are waiting).
+func settle_trade(ids: Array) -> void:
 	var sims := {}
-	for id in cities:
-		sims[id] = cities[id].sim
+	for id in ids:
+		if cities.has(id):
+			sims[id] = cities[id].sim
 	Trade.settle(sims, trade_links())
 
 
@@ -124,9 +129,15 @@ func trade_links() -> Dictionary:
 			out[j.a] = {}
 		if not out.has(j.b):
 			out[j.b] = {}
-		out[j.a][j.b] = j.a_node
-		out[j.b][j.a] = j.b_node
+		out[j.a][j.b] = _node_at(j.a, j.a_at)
+		out[j.b][j.a] = _node_at(j.b, j.b_at)
 	return out
+
+
+func _node_at(id: String, at: Array) -> int:
+	if not cities.has(id):
+		return -1
+	return cities[id].sim.network.find_node_near(Vector3(float(at[0]), 0, float(at[1])), 3.0)
 
 
 ## A city's player color as one viewer sees it: coral for their own city,
@@ -138,22 +149,11 @@ func color_of(city_id: String, viewer_city: String) -> Color:
 
 
 func add_chat(from: String, text: String) -> Dictionary:
-	var line := {"from": from, "text": text.strip_edges().left(300), "tick": tick_count}
+	var line := {"from": from, "text": text.strip_edges().left(300), "at": int(Time.get_unix_time_from_system())}
 	chat.append(line)
 	while chat.size() > CHAT_KEEP:
 		chat.pop_front()
 	return line
-
-
-## A short fingerprint of each city, so players can check their copy still
-## matches the server's.
-func checksums() -> Dictionary:
-	var out := {}
-	for id in cities:
-		var s: CitySim = cities[id].sim
-		out[id] = hash([s.tick_count, s.economy.money, s.trade.net, s.buildings.size(),
-			s.network.segments.size(), s.stats.population, s.traffic.cars.size()])
-	return out
 
 
 ## The open spot nearest the middle of the region that keeps elbow room
@@ -239,16 +239,17 @@ func to_dict() -> Dictionary:
 		var c: Dictionary = cities[id]
 		cs[id] = {"owner": c.owner, "player": c.player, "name": c.name, "origin": [c.origin.x, c.origin.y],
 			"color": c.color, "city": c.sim.to_dict()}
-	return {"version": 1, "tick": tick_count, "seed": region_seed, "cities": cs, "chat": chat, "joins": joins}
+	return {"version": 2, "seed": region_seed, "cities": cs, "chat": chat, "joins": joins}
 
 
 func from_dict(d: Dictionary) -> void:
-	tick_count = int(d.get("tick", 0))
 	region_seed = int(d.get("seed", 1))
 	chat = d.get("chat", [])
 	joins = []
 	for j in d.get("joins", []):
-		joins.append({"a": str(j.a), "a_node": int(j.a_node), "b": str(j.b), "b_node": int(j.b_node)})
+		if j.has("a_at"):
+			joins.append({"a": str(j.a), "a_at": [float(j.a_at[0]), float(j.a_at[1])],
+				"b": str(j.b), "b_at": [float(j.b_at[0]), float(j.b_at[1])]})
 	cities.clear()
 	var cs: Dictionary = d.get("cities", {})
 	for id in cs:
@@ -258,3 +259,12 @@ func from_dict(d: Dictionary) -> void:
 		sim.from_dict(c.city)
 		cities[id] = {"owner": str(c.owner), "player": str(c.get("player", "")), "name": str(c.name),
 			"origin": Vector2(float(c.origin[0]), float(c.origin[1])), "color": int(c.color), "sim": sim}
+
+
+## The region with every town in it but the one listed, whose own computer
+## has the newer copy (sent to a player whose town is running).
+func to_dict_without(skip: String) -> Dictionary:
+	var d := to_dict()
+	if d.cities.has(skip):
+		d.cities[skip].erase("city")
+	return d
