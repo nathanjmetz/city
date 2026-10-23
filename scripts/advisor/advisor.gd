@@ -68,13 +68,13 @@ static func _problems(sim: CitySim, out: Array) -> void:
 	var s := sim.stats
 	var net := e.monthly_net()
 	if e.money < 0:
-		_add(out, "broke", Kind.PROBLEM, "Ope, the town's in the red. Nothing new gets built till that's sorted out. The Budget shows where it's all going.")
+		_add(out, "broke", Kind.PROBLEM, "Ope, the town's in the red. Nothing new gets built till that's sorted out. The Economy page shows where it's all going.")
 	elif net < 0:
 		var months := e.money / float(-net)
 		if months < 6.0:
-			_add(out, "running_low", Kind.PROBLEM, "Money's going out faster than it comes in. At this rate it's gone in about %d months (a day is a month). Budget's the place to peek." % maxi(1, int(months)))
+			_add(out, "running_low", Kind.PROBLEM, "Money's going out faster than it comes in. At this rate it's gone in about %d months (a day is a month). The Economy page is the place to peek." % maxi(1, int(months)))
 		elif months < 24.0 and s.population > 0:
-			_add(out, "spending", Kind.HEADS_UP, "We're spending a bit more than we take in, about $%s a month. Nothing to fret over yet, but worth a look at the Budget sometime." % CitySim.money_text(-net))
+			_add(out, "spending", Kind.HEADS_UP, "We're spending a bit more than we take in, about $%s a month. Nothing to fret over yet, but worth a look at the Economy page sometime." % CitySim.money_text(-net))
 
 	var zoned := not sim.zones.cells.is_empty()
 	var use: Dictionary = sim.services.utility_use
@@ -93,7 +93,7 @@ static func _problems(sim: CitySim, out: Array) -> void:
 		short -= e.money
 		var text := "Folks won't build where there's no %s. You'll find that under Services." % " or ".join(missing)
 		if short > 0:
-			text = "Folks won't build where there's no %s, and we're about $%s short for it. Budget's worth a look." % [" or ".join(missing), CitySim.money_text(short)]
+			text = "Folks won't build where there's no %s, and we're about $%s short for it. The Economy page is worth a look." % [" or ".join(missing), CitySim.money_text(short)]
 		_add(out, "no_utilities", Kind.PROBLEM, text)
 	elif missing.is_empty():
 		var unserved := sim.unserved_count()
@@ -213,7 +213,8 @@ const TOOL_NOTES := {
 		"All-way stops are fine on quiet corners; lights earn their keep on busy ones.",
 	],
 	"budget": [
-		"Lower taxes bring more demand, higher ones bring more money. A day settles a month.",
+		"Taxes look after themselves. Lean saves a little but things run thinner; Generous costs more and they run better.",
+		"Set the whole town once, then just nudge the odd area or hub that needs it.",
 	],
 	"view_fertility": [
 		"Corn likes the greenest dirt; soybeans hold up better on poorer ground.",
