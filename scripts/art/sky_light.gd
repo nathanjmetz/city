@@ -93,7 +93,11 @@ func _ready() -> void:
 	sun.shadow_enabled = true
 	sun.shadow_blur = 1.2
 	sun.shadow_bias = 0.04
-	sun.shadow_normal_bias = 1.2
+	# The browser's renderer (Compatibility) self-shadows flat ground at a
+	# low sun: fine diagonal stripes over every lawn, roof and road ("shadow
+	# acne"), which read as a grid of lines. A bigger normal offset clears
+	# them; Forward+ doesn't need it.
+	sun.shadow_normal_bias = 2.5 if RenderingServer.get_current_rendering_method() == "gl_compatibility" else 1.2
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 	sun.directional_shadow_blend_splits = true
 	sun.directional_shadow_max_distance = 600.0

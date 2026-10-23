@@ -28,7 +28,8 @@ Brawn (2026-10-23): the game starts as a classic city builder, and as the town g
 
 Every phase checks with the town's other leaders before it starts. Shortages cost the builder and slow the job, never the town's money.
 
-- **Gravel:** about 400 tons a home (NSSGA) at about $16 a ton (USGS), with the price doubling every 30 miles. With a quarry (an ore company) in town it's local. Without one it's trucked about 40 miles: the builder pays more and the job takes 25% longer.
+- **Gravel:** about 400 tons a home (NSSGA) at about $16 a ton (USGS), with the price doubling every 30 miles. With a quarry (an ore company) in town it's local. Without one it's trucked about 40 miles: the builder pays more and the job takes 25% longer. Concrete rides the same line: about 45 cubic yards a home, poured within 90 minutes of batching (ASTM C94), so ready-mix plants sit by quarries; without one the builder pays a haul charge of about $1 a yard a mile.
+- **Water ahead of time:** once the water system is three quarters full and the utility can't pay for its next well, intake or tower, the superintendent asks the town to pay for it on the bell (plan at 75%, build by 90%: Texas's 75/90 rule; big utility projects go to the council). A yes builds it now; a no lets it save up, and a full system stops new hookups.
 - **Builders:** about one crew per 1,500 people (at least 2), each with about 6 houses going up. Past that, labor costs climb and the phase takes longer.
 - **Water and power:** a warning past 90% of capacity (the Texas 75/90 rule). At 100% there are no new hookups, a moratorium, and the next phase waits.
 - **Winter:** paving season closes December through February, so new phases wait for spring.
@@ -48,6 +49,10 @@ Every paved street is resurfaced about 25 game years (`STREET_LIFE_YEARS`) after
 - The Economy page shows STREETS COMING DUE: what was paid this past year, and a forecast in five-year bars.
 - It runs once a month: about 3 ms on a huge town, and about 22 ms the first month after loading, when every street is measured.
 
+## The builder's park
+
+A subdivision of 60 homes or more sets aside a pocket park halfway through, on the middle of that phase's cross street, at the builder's cost (Indiana subdivision rules ask for park land dedication or a fee in lieu). The town keeps it up after, and the park board grows it like any other park. Nothing new on the card.
+
 ## The city engineer (CityEngineer)
 
 The engineer takes a traffic count at four rush hours each game month (`ENGINEER_COUNT_HOURS`): every car on the roads, whether that road is moving under 40% of its speed limit (Highway Capacity Manual level of service E or F), and whether a car on a hub's own road has any business with that hub. Once a month the worst problem goes to the bell, one at a time, each with a ghost, an argument for why, and what the town pays:
@@ -57,6 +62,8 @@ The engineer takes a traffic count at four rush hours each game month (`ENGINEER
 - **A busy alley**: pave it into a narrow street.
 
 The town pays on approval. When the money isn't there, the job waits. Counts are saved. The cost is four counts and one look a month. `tools/permit_shot.gd -- engineer` shows the card.
+
+A neighborhood with more than 30 homes and only one road in (a road whose removal cuts it off) comes first: the engineer proposes a new street from it to a public road at least 150 m from the first way in, through open ground only. The fire code asks for two separate ways in past 30 homes (International Fire Code D107), and subdivision rules make builders stub streets to the next parcel for the same reason. A neighborhood the town turned down, or that has no room for one, comes up again after three years. The network walk (Tarjan's bridges) runs only in a month after the roads change.
 
 ## Code
 

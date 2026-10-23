@@ -1,6 +1,7 @@
 extends SceneTree
-## House lots: yard trees stand clear of the house, and the traffic sim
-## parks cars on the drive the art paints.
+## House lots: yard trees stand clear of the house, the traffic sim parks
+## cars on the drive the art paints, and homes built on a wooded hillside
+## clear their lots and meet the ground.
 ## Run: godot --headless -s tests/test_house_lots.gd
 
 
@@ -70,8 +71,75 @@ func _init() -> void:
 			off.append("lot %d curb cut at %.1f" % [i, lay.cut_x])
 	_check(off.is_empty(), "cars use the drive the art paints %s" % [off.slice(0, 3)])
 
+	# A house on a wooded hillside (Brawn built a street through a forest:
+	# the hill came up through the homes and the woods stayed). The house
+	# stands on the high side of its pad and its foundation reaches the low
+	# side, at any slope a lot may have and any way the lot faces.
+	var buried := []
+	for i in 40:
+		var built: Array = HouseBuilder.build(i * 31 + 7, 6.0, lots[i], 0)
+		var masses: Array = HouseBuilder.last_masses
+		var grade := 0.04 + 0.21 * (i % 8) / 7.0  # up to Terrain.MAX_BUILD_SLOPE
+		var fall := Vector2.from_angle(i * 0.9) * grade
+		var hill := func(x: float, z: float) -> float: return 30.0 + fall.x * x + fall.y * z
+		var xform := Transform3D(Basis(Vector3.UP, i * 0.37), Vector3(i * 5.0, 30.0, -i * 3.0))
+		var seat := BuildingView.seat_on(masses, xform, hill)
+		var floor_y := xform.origin.y + seat.x
+		for m: Rect2 in masses:
+			for fx in 6:
+				for fz in 6:
+					var w := xform * Vector3(m.position.x + m.size.x * (0.05 + 0.18 * fx), 0.0, m.position.y + m.size.y * (0.05 + 0.18 * fz))
+					var g: float = hill.call(w.x, w.z)
+					if g > floor_y + 0.02:
+						buried.append("lot %d: ground %.2f m into the floor" % [i, g - floor_y])
+					elif g < floor_y - seat.y:
+						buried.append("lot %d: foundation %.2f m short of the ground" % [i, floor_y - seat.y - g])
+	_check(buried.is_empty(), "on a hillside the ground meets the foundation, never the walls %s" % [buried.slice(0, 3)])
+	var level := BuildingView.seat_on(HouseBuilder.last_masses, Transform3D(Basis.IDENTITY, Vector3(0, 12, 0)), func(_x, _z): return 12.0)
+	_check(level == Vector2(0.0, BuildingView.FOOTING_DEPTH), "on level ground a house sits where it was put %s" % level)
+
+	# The woods are cleared off every built lot, and stay beside them.
+	var sim := CitySim.new()
+	var wood := _woodlot()
+	sim.apply({"type": "build_road", "start": [wood.x - 150, wood.z], "ctrl": [wood.x, wood.z], "end": [wood.x + 150, wood.z]})
+	for x in range(-140, 141, 10):
+		for side in [-30.0, 30.0]:
+			sim.apply({"type": "paint_zone", "center": [wood.x + x, wood.z + side], "radius": 18, "zone": ZoneMap.Zone.RESIDENTIAL})
+	for i in 3000:
+		sim.tick()
+	var treed := []
+	var homes := 0
+	for key in sim.buildings:
+		if not sim.lots.has(key):
+			continue
+		homes += 1
+		var poly: PackedVector2Array = sim.lots[key].corners
+		var box := Rect2(poly[0], Vector2.ZERO)
+		for q in poly:
+			box = box.expand(q)
+		for pl in sim.vegetation.plants_in(box, sim.tick_count):
+			if Geometry2D.is_point_in_polygon(Vector2(pl.pos.x, pl.pos.z), poly):
+				treed.append(key)
+				break
+	var behind := sim.vegetation.plants_in(Rect2(wood.x - 100, wood.z + 90, 200, 80), sim.tick_count).size()
+	_check(homes >= 10 and treed.is_empty() and behind > 20,
+		"homes built in the woods stand on cleared lots (%d homes, %d trees and shrubs in the woods behind) %s" % [homes, behind, treed.slice(0, 3)])
+
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
+
+
+## The most wooded spot near the start (as test_vegetation finds it).
+func _woodlot() -> Vector3:
+	var best := Vector3.ZERO
+	var best_v := -1.0
+	for x in range(-2000, 2001, 100):
+		for z in range(-2000, 2001, 100):
+			var v := Resources.at(Resources.Kind.FOREST, Vector3(x, 0, z))
+			if v > best_v:
+				best_v = v
+				best = Vector3(x, 0, z)
+	return best
 
 
 ## True when a spot lies on a concrete drive (yard alpha 0) in the flat mesh.

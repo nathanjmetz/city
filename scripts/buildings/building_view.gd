@@ -255,6 +255,11 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 	var masses: Array = HouseBuilder.last_masses
 	root.set_meta("box", _mass_box(built[0].get_aabb(), masses))
 	root.set_meta("wall", _wall_colour(int(b.zone), rng))
+	# On a hillside the house stands on the highest ground under its walls,
+	# with a walkout foundation down to the low side: never with the hill
+	# coming up through the floor (Brawn's homes built through a forest).
+	var seat := seat_on(masses, root.transform, Terrain.ground_y)
+	root.position.y += seat.x
 	var pitched: bool = BuildingTypes.type_of(b) in ["house", "row_home"]
 	root.set_meta("pitched", pitched)
 	root.set_meta("roof", _roof_colour(pitched, rng))
@@ -266,7 +271,7 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 	var labels: Array = built[3] if built.size() > 3 else []
 	ConstructionSite.add_to(root, built, CitySim.PROFILE_OF_ZONE.get(int(b.zone), "house"),
 		func(): return sim.construction.state(ref, sim.tick_count), _plant.bind(key, root, built[2], labels),
-		_footing(masses))
+		_footing(masses, seat.y))
 	return root
 
 
@@ -519,10 +524,38 @@ static func _mass_box(mesh_box: AABB, masses: Array) -> AABB:
 	return AABB(Vector3(r.position.x, mesh_box.position.y, r.position.y), Vector3(r.size.x, mesh_box.size.y, r.size.y))
 
 
+## How a building meets sloping ground: [how far to raise it so no ground
+## stands above its floor anywhere under its walls, how deep its foundation
+## must reach to meet the lowest ground there]. `xform` places the building's
+## local frame; `ground` is Callable(x, z) -> height in that frame's parent.
+## A hillside home is built this way: the uphill wall at grade and a walkout
+## basement (or a taller foundation) exposed on the downhill side.
+static func seat_on(masses: Array, xform: Transform3D, ground: Callable) -> Vector2:
+	var floor_y := xform.origin.y
+	var hi := -INF
+	var lo := INF
+	for m: Rect2 in masses:
+		var r := m.grow(-0.15)
+		for fx in [0.0, 0.5, 1.0]:
+			for fz in [0.0, 0.5, 1.0]:
+				var w := xform * Vector3(r.position.x + r.size.x * fx, 0.0, r.position.y + r.size.y * fz)
+				var g: float = ground.call(w.x, w.z)
+				hi = maxf(hi, g)
+				lo = minf(lo, g)
+	if hi == -INF:
+		return Vector2(0.0, FOOTING_DEPTH)
+	var lift := maxf(hi - floor_y, 0.0)
+	return Vector2(lift, maxf(FOOTING_DEPTH, floor_y + lift - lo + 0.3))
+
+
+## How deep a foundation shows below the floor on level ground.
+const FOOTING_DEPTH := 2.95
+
+
 ## A foundation down into the ground under each building mass, for lots on
 ## a slope (or null): just under the walls, as a real one is, never a slab
-## across the yard.
-func _footing(masses: Array) -> MeshInstance3D:
+## across the yard; `depth` reaches the lowest ground under them.
+func _footing(masses: Array, depth := FOOTING_DEPTH) -> MeshInstance3D:
 	if masses.is_empty():
 		return null
 	var st := SurfaceTool.new()
@@ -531,7 +564,7 @@ func _footing(masses: Array) -> MeshInstance3D:
 		var r := m.grow(-0.15)
 		if r.size.x <= 0.3 or r.size.y <= 0.3:
 			continue
-		var lo := Vector3(r.position.x, -2.95, r.position.y)
+		var lo := Vector3(r.position.x, -depth, r.position.y)
 		var hi := Vector3(r.end.x, 0.05, r.end.y)
 		var c := [Vector3(lo.x, lo.y, lo.z), Vector3(hi.x, lo.y, lo.z), Vector3(hi.x, lo.y, hi.z), Vector3(lo.x, lo.y, hi.z),
 			Vector3(lo.x, hi.y, lo.z), Vector3(hi.x, hi.y, lo.z), Vector3(hi.x, hi.y, hi.z), Vector3(lo.x, hi.y, hi.z)]

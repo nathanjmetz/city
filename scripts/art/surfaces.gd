@@ -351,8 +351,8 @@ void fragment() {
 """
 
 static var _cache := {}
-static var _soft: NoiseTexture2D
-static var _grain: NoiseTexture2D
+static var _soft: Texture2D
+static var _grain: Texture2D
 
 
 static func asphalt() -> ShaderMaterial:

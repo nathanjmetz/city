@@ -267,6 +267,8 @@ const SUBDIV_TRIES_PER_HOUR := 2
 ## in a market that absorbs a few sales a month: about a year a phase).
 const SUBDIV_NEXT_PHASE_FILL := 0.7
 const SUBDIV_PHASE_MIN_MONTHS := 9
+## Subdivisions this big set aside a pocket park (park land dedication).
+const SUBDIV_PARK_HOMES := 60
 ## What a yes means: about 2.5 people a household (US Census), about 0.6
 ## school-age children per new single-family home (pupil yield studies),
 ## about 9.4 car trips a day per house and about 1 at rush hour (ITE Trip
@@ -303,6 +305,16 @@ const ENGINEER_ALLEY_BUSY := 0.75
 const ENGINEER_CUT_CARS := 4
 const ENGINEER_RUN := 12
 const ENGINEER_SIGN_COST := 6_000
+## A neighborhood with one road in gets a second past this many homes, a
+## street ENGINEER_LINK_MIN..MAX metres long, its far end at least
+## ENGINEER_LINK_APART from the first road in. The engineer looks again at
+## one it couldn't fix (or the town turned down) after ENGINEER_REASK_YEARS.
+const ENGINEER_ONE_WAY_HOMES := 30
+const ENGINEER_LINK_MIN := 30.0
+const ENGINEER_LINK_MAX := 450.0
+const ENGINEER_LINK_APART := 150.0
+const ENGINEER_LINK_TRIES := 40
+const ENGINEER_REASK_YEARS := 3
 
 ## The future land use map (LandPlan). Land planned for homes is looked at
 ## before any other (as if this many metres nearer the middle of town), and
@@ -323,6 +335,10 @@ const NEEDS_DOUBLE_MILES := 30.0
 const NEEDS_LOCAL_MILES := 5.0
 const NEEDS_IMPORT_MILES := 40.0
 const NEEDS_IMPORT_SLOW := 0.25
+## Ready-mix concrete a home takes (cubic yards) and the haul charge a
+## yard a mile past a nearby plant.
+const NEEDS_CONCRETE_YD_PER_HOME := 45
+const NEEDS_CONCRETE_HAUL := 1.0
 ## Builders: about one crew per 1,500 people (at least 2), each with about
 ## 6 houses going up at once; past that, labor costs climb about $15,000 a
 ## home at double the load.
@@ -2768,7 +2784,9 @@ const TIMELAPSE_RECORDS_PER_MONTH := 120
 ## Leader requests: at most one new one a month, with this chance, and each
 ## kind waits this many game months after it was last asked.
 const ASK_CHANCE := 0.5
-const ASK_COOLDOWN := {"abatement": 18, "pave": 12, "signal": 12, "festival": 11}
+const ASK_COOLDOWN := {"abatement": 18, "pave": 12, "signal": 12, "festival": 11, "water": 6}
+## The water superintendent asks once the system is this full (percent).
+const ASK_WATER_PCT := 75
 ## Indiana tax abatement (IC 6-1.1-12.1): the town council declares an
 ## Economic Revitalization Area and the new investment's property tax phases
 ## in over up to 10 years. The town forgoes about this share of the
