@@ -327,6 +327,35 @@ func restore(network: RoadNetwork, zones: ZoneMap, saved: Dictionary) -> void:
 	_fresh = false
 
 
+## The lots plan() would hand back from the street sides as they're cut
+## now, without cutting any again: what a save's cuts give on load, so the
+## empty lots needn't be saved twice. `frozen`: keys of lots built on.
+func cut_lots(network: RoadNetwork, frozen: Dictionary) -> Array:
+	var all := []
+	var corners := []
+	var ids := network.segments.keys()
+	ids.sort()
+	for id in ids:
+		for side in [-1, 1]:
+			var s: Dictionary = _sides.get("%d:%d" % [id, side], {})
+			if s.is_empty() or s.cut_sig == 0 or not _lot_road(network, id):
+				continue
+			for cached in s.cut:
+				if frozen.has(cached.key) and not cached.has("corner_by"):
+					continue
+				var lot: Dictionary = cached.duplicate()
+				all.append(lot)
+				if lot.has("corner_by"):
+					corners.append(lot)
+	_join_corners(all, corners)
+	var out := []
+	for lot in all:
+		if not frozen.has(lot.key):
+			lot.erase("corner_by")
+			out.append(lot)
+	return out
+
+
 ## Lots never cross a saved parcel: trims them, or drops them if little is
 ## left.
 static func _clear_of_parcels(lots: Array, parcels: Array) -> Array:
@@ -489,16 +518,19 @@ func warm(network: RoadNetwork, zones: ZoneMap, built: Callable, blocked: Callab
 	# Then the street sides plan() will cut again, in order, with the
 	# parcels as they will stand (the town doesn't grow while it catches up).
 	# Worked out over two ticks: the parcels, then the sides near changes.
-	var rev := zones.revision + network.segments.size() * 7919 + _net_rev * 104729
+	var roads := network.segments.size() * 7919 + _net_rev * 104729
+	var rev := zones.revision + roads
 	if _warm_list.is_empty() and _warm_rev != rev:
-		if _warm_next.is_empty() or _warm_next[0] != rev:
+		# The parcels don't hang on zoning, so a drag zoning a street every
+		# tick doesn't start them over.
+		if _warm_next.is_empty() or _warm_next[0] != roads:
 			var frozen := {}
 			var lots: Dictionary = built.call()
 			for key in lots:
 				var lot := revalidate(network, lots[key])
 				if is_same(lot, lots[key]) or not lot.is_empty() and not blocked.call(lot):
 					frozen[key] = lot
-			_warm_next = [rev, _parcels(frozen)]
+			_warm_next = [roads, _parcels(frozen)]
 			return
 		var parcels: Array = _warm_next[1]
 		_warm_next = []
@@ -979,12 +1011,19 @@ func _plan_side(s: Dictionary, zones: ZoneMap, index: Dictionary) -> Array:
 		_work += s.fronts.size()
 	var rays := _survey(s)
 	var rules := _corner_rules(s, rays, zones)
+	var corners := rules.map(func(ru): return [ru.seg, ru.win, ru.depth])
 	s.sq = rules
 	if not rules.is_empty():
-		var raw := []
-		for r in s.raw:
-			raw.append(_ray(s, r[0]) if _near_rule(r[1], rules) else r)
-		rays = _converged(raw)
+		# The squared survey only changes with the survey or the corners.
+		if is_same(s.get("sq_of"), s.rays) and s.get("sq_corners") == corners:
+			rays = s.sq_rays
+		else:
+			var raw := []
+			for r in s.raw:
+				raw.append(_ray(s, r[0]) if _near_rule(r[1], rules) else r)
+			rays = _converged(raw)
+			s.sq_of = s.rays
+			s.sq_corners = corners
 	s.sq_rays = rays
 	# What each survey line is: its zone, or 0 when it can't hold a lot.
 	var kinds := []
@@ -995,7 +1034,6 @@ func _plan_side(s: Dictionary, zones: ZoneMap, index: Dictionary) -> Array:
 			k = zones.zone_at(_v3((r[1] as Vector2) + (r[2] as Vector2) * ZONE_PROBE))
 		free_kinds.append(k)
 		kinds.append(0 if k != 0 and _in_parcel(r[1], parcels) else k)
-	var corners := rules.map(func(ru): return [ru.seg, ru.win, ru.depth])
 	var sig := hash([kinds, near_keys, rich, corners])
 	if sig == s.cut_sig:
 		_inputs(s, zones, index, rich)
