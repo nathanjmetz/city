@@ -41,6 +41,10 @@ var _ids_sig := []
 ## `people` after a load (not saved).
 var _seekers := {}  # id -> true
 var _seekers_ok := false
+## The town's building set (CitySim.ledger().sig) when homes, names and
+## jobs were last checked for buildings that are gone: until a building is
+## added or removed, none can be.
+var _gone_sig := 0
 
 
 ## Keeps a person for every resident, fills open jobs, names new places.
@@ -48,7 +52,8 @@ func sync(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void
 	_families = sim.families
 	if sim.tick_count % SYNC_EVERY != SYNC_AT:
 		return
-	var keys: Array = sim.ledger().sorted
+	var ledger := sim.ledger()
+	var keys: Array = ledger.sorted
 	for key in keys:
 		var b: Dictionary = sim.buildings[key]
 		var ref: String = "lot:" + key
@@ -81,6 +86,15 @@ func sync(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void
 	for ref in names.keys():
 		if not ref.begins_with("lot:") and not others.has(ref):
 			_forget(0, ref)
+	if ledger.sig != _gone_sig:
+		_gone_sig = ledger.sig
+		_gone(sim, traffic)
+	if sim.tick_count % (SYNC_EVERY * 3) == SYNC_AT:
+		_hire(sim, keys, rng)
+
+
+## Homes, names and jobs at buildings that are gone.
+func _gone(sim: CitySim, traffic: TrafficSim) -> void:
 	# People whose home is gone have moved away.
 	for key in _homes.keys():
 		if not sim.buildings.has(key):
@@ -107,8 +121,6 @@ func sync(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void
 		for ref in shut:
 			if _staff.get(ref, 0) <= 0:
 				_staff.erase(ref)
-	if sim.tick_count % (SYNC_EVERY * 3) == SYNC_AT:
-		_hire(sim, keys, rng)
 
 
 ## Sends people out and brings them home, by the time of day: to work in
@@ -332,6 +344,7 @@ func from_dict(d: Dictionary) -> void:
 	_due.clear()
 	_seekers.clear()
 	_seekers_ok = false
+	_gone_sig = 0
 	_next = 1
 	if not d.has("state") and not d.has("bin"):
 		return

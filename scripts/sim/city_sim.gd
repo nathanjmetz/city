@@ -1434,6 +1434,8 @@ func _home_part(slice: int) -> Dictionary:
 ##   sorted: every building's key, sorted
 ##   slices: every building's key in each Economy slice, in building order
 ##   home_slices: the homes' keys in each Economy slice, in building order
+##   by_zone: zone -> its buildings' keys, sorted
+##   sig: a hash of the building keys, which changes when one comes or goes
 var _ledger := {}
 var _ledger_sig := 0
 
@@ -1456,7 +1458,13 @@ func ledger() -> Dictionary:
 			homes[i].append(key)
 	var sorted := keys.duplicate()
 	sorted.sort()
-	_ledger = {"sorted": sorted, "slices": slices, "home_slices": homes}
+	var by_zone := {}
+	for key in sorted:
+		var z := int(buildings[key].zone)
+		if not by_zone.has(z):
+			by_zone[z] = []
+		by_zone[z].append(key)
+	_ledger = {"sorted": sorted, "slices": slices, "home_slices": homes, "by_zone": by_zone, "sig": sig}
 	return _ledger
 
 

@@ -186,10 +186,10 @@ func _buyer(sim: CitySim, from: Vector3, what: String, good := "") -> Dictionary
 	var zone := ZoneMap.Zone.INDUSTRIAL if what == "raw" else ZoneMap.Zone.COMMERCIAL
 	var best := ""
 	var best_d := INF
-	var keys := sim.buildings.keys()
-	keys.sort()
-	for key in keys:
-		if sim.buildings[key].zone != zone or not sim.lots.has(key) or not sim.utilities_ok(key):
+	# The zone's buildings, sorted, from the town's ledger: a round of trucks
+	# asks this many times, and the whole town needn't be sorted each time.
+	for key in sim.ledger().by_zone.get(zone, []):
+		if not sim.lots.has(key) or not sim.utilities_ok(key):
 			continue
 		if zone == ZoneMap.Zone.INDUSTRIAL and (need.get(key, 0.0) < 0.5 or input_of(sim, key) != cargo_class(good)):
 			continue

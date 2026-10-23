@@ -1044,6 +1044,9 @@ func _regrade() -> void:
 				now[name + ":" + str(key)] = o[0][key]
 	if extra_grades.is_valid():
 		now.merge(extra_grades.call())
+	# Roads removed long ago needn't be remembered.
+	if _strips.size() > 2 * now.size() + 2000:
+		_strips.clear()
 	var changed := []
 	var changed_strips := []
 	for id in _graded:
@@ -1110,8 +1113,19 @@ func _mark_dirty(g: Array) -> void:
 static func _grade_network(now: Dictionary, net: RoadNetwork, offset: Vector2, lots: bool, prefix: String) -> void:
 	var shift := Vector3(offset.x, 0.0, offset.y)
 	for id in net.segments:
+		var key = id if prefix == "" else prefix + str(id)
+		# A road's strip follows only from its curve and type: when a
+		# neighbor's town is reloaded, unchanged roads keep theirs.
+		var c := net.curve_of(id)
+		var sig := [c[0], c[1], c[2], net.segments[id].type, offset, lots]
+		var hit = _strips.get(key)
+		if hit != null and hit[0] == sig:
+			if not hit[1].is_empty():
+				now[key] = hit[1]
+			continue
 		var pts := _straightened(net.sample_segment(id, 24))
 		var type: int = net.segments[id].type
+		_strips[key] = [sig, []]
 		if absf(pts[0].y) > 3.0 and absf(pts[pts.size() - 1].y) > 3.0 and absf(pts[pts.size() / 2].y) > 3.0:
 			continue  # bridges and tunnels leave the ground alone
 		if offset != Vector2.ZERO:
@@ -1119,8 +1133,13 @@ static func _grade_network(now: Dictionary, net: RoadNetwork, offset: Vector2, l
 				pts[i] += shift
 		var inner := RoadStyle.right_of_way_half(type) + (LOT_GRADE if lots and RoadStyle.TYPES[type].lots else 2.0)
 		# The verge is mowed a few metres past the shoulder; woods start there.
-		now[id if prefix == "" else prefix + str(id)] = [pts, inner, inner + GRADE_FADE,
-			RoadStyle.right_of_way_half(type) + MOW_VERGE]
+		now[key] = [pts, inner, inner + GRADE_FADE, RoadStyle.right_of_way_half(type) + MOW_VERGE]
+		_strips[key][1] = now[key]
+
+
+## Each road's last graded strip, by its key in _graded: [what it was made
+## from, the strip] (an empty strip for a bridge or tunnel).
+static var _strips := {}
 
 
 ## A straight road's samples cut down to its two ends (grading costs one

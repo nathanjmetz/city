@@ -734,10 +734,9 @@ func _roll_call(sim: CitySim) -> void:
 ## Where the call comes from: a home, or now and then the nursing home.
 func _scene(sim: CitySim, rng: RandomNumberGenerator) -> Dictionary:
 	var homes := []
-	for key in sim.buildings:
-		if sim.buildings[key].zone == ZoneMap.Zone.RESIDENTIAL and int(sim.buildings[key].occ) > 0 and sim.lots.has(key):
+	for key in sim.ledger().by_zone.get(ZoneMap.Zone.RESIDENTIAL, []):  # sorted
+		if int(sim.buildings[key].occ) > 0 and sim.lots.has(key):
 			homes.append(key)
-	homes.sort()
 	var care_homes := []
 	for id in sim.services.buildings:
 		if sim.services.buildings[id].kind == Services.Kind.NURSING_HOME:
