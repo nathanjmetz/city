@@ -3,7 +3,7 @@ extends SceneTree
 ## (permits approved, a bold leader), to check how the railroad looks.
 ## Run: xvfb-run godot -s tools/rail_shot.gd -- out.png yaw pitch dist [focus] [days]
 ## focus: yard (default), crossing, train, pax, or x,z. Add "pax" after days
-## for passenger service and a station.
+## for passenger service and a station ("-" for none), then "view" for the Rail view.
 
 var _main: Node
 var _frames := 0
@@ -102,6 +102,8 @@ func _town() -> void:
 func _aim() -> void:
 	var args := OS.get_cmdline_user_args()
 	for c in _main.get_children():
+		if c is RailView and args.size() > 7 and args[7] == "view":
+			c.show_lines = true
 		if c is CityCamera:
 			c.look_at_point(_focus)
 			c.set_view(deg_to_rad(float(args[1]) if args.size() > 1 else 30.0),
