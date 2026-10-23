@@ -115,6 +115,10 @@ var _by_dist := {"power": [], "water": []}  # lots with a road to each utility, 
 var _on_mains := {}
 var _lot_rows := {}  # lot key -> [where it is, _lot_reach]
 var _rows_key := []
+## Each lot's Dictionary as `served` last saw it (LotPlanner hands back the
+## same one for a lot it cut the same), for redoing only what changed.
+var _served_lot := {}
+var _inc := false  # served, _by_dist and _on_mains match _rows_key
 var _loads := {}  # building key -> [its dictionary, power and water draw]
 var _alloc_dirty := true
 var _alloc_caps := {}
@@ -397,11 +401,17 @@ func _update_reach(network: RoadNetwork, lots: Dictionary, owners: Dictionary) -
 	if rows_key != _rows_key:
 		_rows_key = rows_key
 		_lot_rows.clear()
+		_inc = false
 	elif _lot_rows.size() > lots.size():
 		for key in _lot_rows.keys():
 			if not lots.has(key):
 				_lot_rows.erase(key)
+	if _inc:
+		_update_changed(network, lots, owners)
+		return
+	_inc = true
 	served.clear()
+	_served_lot.clear()
 	var keys := lots.keys()
 	keys.sort()
 	# Utilities serve the nearest buildings first, up to their capacity.
@@ -415,21 +425,64 @@ func _update_reach(network: RoadNetwork, lots: Dictionary, owners: Dictionary) -
 		if row.is_empty() or row[0] != sig:
 			row = [sig, _lot_reach(network, lot, owners)]
 			_lot_rows[key] = row
-		var base: Dictionary = row[1]
-		var s: Dictionary = base.s.duplicate()
-		# Coverage a neighbor gives this town under a service deal (Interlocal).
-		for kind in _by_contract:
-			for c in _by_contract[kind]:
-				s[kind] = s[kind] or _lot_distance(network, _lengths, c[0], lot) <= c[1]
-		served[key] = s
-		var owner: int = base.owner
-		if owner != -1:
-			if not _on_mains.has(owner):
-				_on_mains[owner] = []
-			_on_mains[owner].append([base.mains_d, key, lot.seg])
-		for u in ["power", "water"]:
-			if base.has(u):
-				_by_dist[u].append([base[u], key])
+		_serve_lot(network, key, lot, row[1])
+	for u in _by_dist:
+		_by_dist[u].sort()
+
+
+## A lot's fresh row in `served`, and its place in the utilities' lists.
+func _serve_lot(network: RoadNetwork, key: String, lot: Dictionary, base: Dictionary) -> void:
+	var s: Dictionary = base.s.duplicate()
+	# Coverage a neighbor gives this town under a service deal (Interlocal).
+	for kind in _by_contract:
+		for c in _by_contract[kind]:
+			s[kind] = s[kind] or _lot_distance(network, _lengths, c[0], lot) <= c[1]
+	served[key] = s
+	_served_lot[key] = lot
+	var owner: int = base.owner
+	if owner != -1:
+		if not _on_mains.has(owner):
+			_on_mains[owner] = []
+		_on_mains[owner].append([base.mains_d, key, lot.seg])
+	for u in ["power", "water"]:
+		if base.has(u):
+			_by_dist[u].append([base[u], key])
+
+
+## The roads, services and mains are as before: only lots that are new,
+## gone or cut again (a different Dictionary) are redone. The shares are
+## worked out again for everyone after (_alloc_dirty).
+func _update_changed(network: RoadNetwork, lots: Dictionary, owners: Dictionary) -> void:
+	var redo := {}
+	for key in lots:
+		if not is_same(_served_lot.get(key), lots[key]):
+			redo[key] = true
+	for key in _served_lot:
+		if not lots.has(key):
+			redo[key] = true
+	if redo.is_empty():
+		return
+	for key in redo:
+		served.erase(key)
+		_served_lot.erase(key)
+	for u in _by_dist:
+		_by_dist[u] = _by_dist[u].filter(func(e): return not redo.has(e[1]))
+	for id in _on_mains.keys():
+		_on_mains[id] = _on_mains[id].filter(func(e): return not redo.has(e[1]))
+		if _on_mains[id].is_empty():
+			_on_mains.erase(id)
+	var keys := redo.keys()
+	keys.sort()
+	for key in keys:
+		if not lots.has(key):
+			continue
+		var lot: Dictionary = lots[key]
+		var sig := [lot.seg, lot.at_frac, lot.pos]
+		var row: Array = _lot_rows.get(key, [])
+		if row.is_empty() or row[0] != sig:
+			row = [sig, _lot_reach(network, lot, owners)]
+			_lot_rows[key] = row
+		_serve_lot(network, key, lot, row[1])
 	for u in _by_dist:
 		_by_dist[u].sort()
 
@@ -486,6 +539,9 @@ func _serve_from_utilities(on_mains: Dictionary, city_buildings: Dictionary) -> 
 			if city_buildings.has(key):
 				load = LOAD[int(city_buildings[key].zone)]
 				if used + load > cap:
+					# Out of water: none, and no sewer (not last time's).
+					s["water"] = false
+					s["sewer"] = false
 					continue
 				used += load
 			s["water"] = used <= cap
@@ -612,4 +668,5 @@ func from_dict(d: Dictionary) -> void:
 			buildings[int(k)].size = Vector2(a[5], a[6])
 			buildings[int(k)].subsidy = int(a[7])
 	_next_id = int(d.get("next_id", 1))
+	_inc = false
 	water.from_dict(d.get("water", {}))
