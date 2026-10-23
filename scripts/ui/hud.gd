@@ -93,6 +93,10 @@ var _grid_sizes: Control
 var _grid_size_cards := []
 var _ring_sizes: Control
 var _ring_size_cards := []
+var _parking_row: Control  # the lot kinds, over the tools while placing one
+var _parking_card: Button
+var _angled_card: Button
+var _parking_last: int = Services.Kind.PARKING_SMALL
 var _elevation := UiStyle.label("Ground", 12)
 var _speed_buttons := []
 var _clock := UiStyle.label("", 14)
@@ -1049,6 +1053,33 @@ func _roads_drawer() -> PanelContainer:
 		rings.add_child(b)
 		_ring_size_cards.append(b)
 	_ring_sizes = rings_row
+	# Parking: the lots and the garage, in the same one row of options.
+	var park_row := HBoxContainer.new()
+	park_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	stack.add_child(park_row)
+	var lots := _section(park_row, "Parking  ·  9 × 18 ft stalls, accessible stalls by the street")
+	for k in Services.PARKING:
+		var ks: Dictionary = Services.KINDS[k]
+		var n: int = ParkingLots.layout(ks.size, false, k == Services.Kind.PARKING_GARAGE).spots.size()
+		var short := {Services.Kind.PARKING_SMALL: "Small lot", Services.Kind.PARKING_DOWNTOWN: "Downtown",
+			Services.Kind.PARKING_LARGE: "Large lot", Services.Kind.PARK_AND_RIDE: "Park & ride",
+			Services.Kind.PARKING_GARAGE: "Garage"}
+		var b := _card("parking", short[k], "%d stalls" % n)
+		b.tooltip_text = "%s: %d stalls, $%s to build, $%s a month" % [ks.name, n, CitySim.money_text(ks.cost),
+			CitySim.money_text(ks.upkeep)]
+		b.pressed.connect(func():
+			_parking_last = k
+			service_tool.set_kind(k))
+		lots.add_child(b)
+		_service_cards[k] = b
+		_service_cat[k] = "roads"
+	park_row.add_child(VSeparator.new())
+	var stalls := _section(park_row, "Stalls")
+	_angled_card = _card("parking", "60° angled", "")
+	_angled_card.tooltip_text = "60° angled stalls on one-way aisles: easier to pull into, about a quarter fewer stalls. 90° stalls on two-way aisles hold the most. Lots too narrow for a pair of one-way aisles stay at 90°."
+	_angled_card.pressed.connect(func(): service_tool.set_angled(not service_tool.angled))
+	stalls.add_child(_angled_card)
+	_parking_row = park_row
 
 	var upper := VBoxContainer.new()
 	upper.add_theme_constant_override("separation", 2)
@@ -1120,14 +1151,26 @@ func _roads_drawer() -> PanelContainer:
 
 	row.add_child(VSeparator.new())
 	var traffic := _section(row, "Traffic and town")
-	_traffic_card = _card("traffic", "Traffic", "J")
+	# Traffic over Parking, in one card's space (the menu stays under 1000 px).
+	var pair := VBoxContainer.new()
+	pair.add_theme_constant_override("separation", 2)
+	traffic.add_child(pair)
+	_traffic_card = _half_card("traffic", "Traffic")
 	_traffic_card.tooltip_text = "Traffic flow, lights and stop signs  (J)"
 	_traffic_card.pressed.connect(func():
 		if traffic_tool.mode == TrafficTool.Mode.NONE:
 			traffic_tool.set_mode(TrafficTool.Mode.VIEW)
 		else:
 			road_tool.set_mode(road_tool.last_draw))
-	traffic.add_child(_traffic_card)
+	pair.add_child(_traffic_card)
+	_parking_card = _half_card("parking", "Parking")
+	_parking_card.tooltip_text = "Parking lots and a garage for the town: drivers who can't park at their own stop walk from the nearest one"
+	_parking_card.pressed.connect(func():
+		if service_tool.kind in Services.PARKING:
+			road_tool.set_mode(road_tool.last_draw)
+		else:
+			service_tool.set_kind(_parking_last))
+	pair.add_child(_parking_card)
 
 	# A town hemmed in by its neighbors starts a new neighborhood on open land.
 	var town := traffic
@@ -1545,6 +1588,30 @@ func _card(icon: String, title: String, detail: String, toggle := true) -> Butto
 
 
 ## A slim arrow button, a third of a card tall (road height up and down).
+## A half-height card, icon beside its name, for two to share one card's space.
+func _half_card(icon: String, title: String) -> Button:
+	var b := Button.new()
+	b.toggle_mode = true
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(64, 24)
+	b.tooltip_text = title
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 4)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.set_anchors_preset(Control.PRESET_FULL_RECT)
+	b.add_child(row)
+	var ic := Icon.new(icon, 16)
+	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(ic)
+	var t := UiStyle.label(title, 11)
+	t.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(t)
+	b.set_meta("icon", ic)
+	b.set_meta("title", t)
+	return b
+
+
 func _step_button(icon: String, tip: String) -> Button:
 	var b := Button.new()
 	b.focus_mode = Control.FOCUS_NONE
@@ -1699,8 +1766,9 @@ func _sync() -> void:
 	var menu := RoadStyle.group(road_tool.road_type)
 	_variant_of[menu] = road_tool.road_type
 	var in_traffic := traffic_tool.mode != TrafficTool.Mode.NONE
+	var placing_lot: bool = service_tool.kind in Services.PARKING
 	for g in _type_cards:
-		_type_cards[g].set_pressed_no_signal(g == menu and not in_traffic)
+		_type_cards[g].set_pressed_no_signal(g == menu and not in_traffic and not placing_lot)
 		# The menu card shows the kind picked in it.
 		(_type_cards[g].get_meta("icon") as Icon).kind = \
 			RoadStyle.TYPES[g].name.to_lower() if _variant_of.get(g, g) == g else "road:%d" % _variant_of[g]
@@ -1759,6 +1827,15 @@ func _sync() -> void:
 	for i in _grid_size_cards.size():
 		_grid_size_cards[i].set_pressed_no_signal(i == road_tool.grid_preset)
 	_ring_sizes.visible = road_tool.mode == RoadTool.Mode.ROUNDABOUT and not _kinds_open and not in_traffic
+	var parking: bool = service_tool.kind in Services.PARKING
+	_parking_row.visible = parking
+	_parking_card.set_pressed_no_signal(parking)
+	_angled_card.set_pressed_no_signal(service_tool.angled)
+	(_angled_card.get_meta("title") as Label).text = "60° angled" if service_tool.angled else "90° stalls"
+	if parking:
+		_grid_sizes.visible = false
+		_ring_sizes.visible = false
+		_variant_row.get_parent().visible = false
 	for i in _ring_size_cards.size():
 		_ring_size_cards[i].set_pressed_no_signal(i == road_tool.roundabout_preset)
 	_elevation.text = "Ground" if road_tool.elevation == 0.0 else "%+d ft" % roundi(road_tool.elevation * RoadTool.FT)

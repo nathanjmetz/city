@@ -117,7 +117,7 @@ static func edge_color(d: float, reach: float) -> Color:
 func _look(id: int) -> String:
 	var b: Dictionary = sim.services.buildings[id]
 	var hub: Dictionary = sim.healthcare.hubs.get(id, {})
-	return str([Services.size_of(b), hub.get("pieces", []), hub.get("level", 0)])
+	return str([Services.size_of(b), hub.get("pieces", []), hub.get("level", 0), b.get("angled", false)])
 
 
 func _spawn(id: int, b: Dictionary) -> Node3D:
@@ -134,7 +134,9 @@ func _spawn(id: int, b: Dictionary) -> Node3D:
 	var door: Vector3 = sim.healthcare.hubs[id].front if sim.healthcare.hubs.has(id) else b.pos + b.dir * size.y * 0.5
 	var seed := int(door.x * 73.0) ^ int(door.z * 151.0) ^ (int(b.kind) << 20)
 	var built: Array
-	if int(b.kind) in Services.CARE:
+	if int(b.kind) in Services.PARKING:
+		built = ParkingBuilder.build_lot(b, seed, to_curb)
+	elif int(b.kind) in Services.CARE:
 		built = HealthBuilder.build_care(int(b.kind), seed, size, to_curb, sim.healthcare.hubs.get(id, {}))
 	else:
 		built = CivicBuilder.build_service(int(b.kind), seed, size, to_curb)

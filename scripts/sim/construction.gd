@@ -73,6 +73,19 @@ const PROFILES := {
 		"words": ["Clearing the site", "Drilling the well", "Framing the pump house", "Roofing",
 			"Block and doors", "Setting the pump and tank", "Disinfecting and testing"],
 		"deliveries": {"foundation": [["flatbed", "well casing"]], "interior": [["box_truck", "pump and pressure tank"]]}},
+	# A surface parking lot: graded, a crushed-stone base rolled in, curbs
+	# and light pole bases set, two lifts of asphalt, then striped and
+	# planted. Three to six weeks for a small-town lot.
+	"paving": {"frame": "pole", "weeks": [1, 1, 1, 1, 1, 1, 1], "found": 0.0,
+		"words": ["Clearing and grading", "Rolling in the stone base", "Setting curbs and light poles",
+			"Paving the asphalt", "Striping the stalls", "Signs and the pay station", "Planting the islands"],
+		"deliveries": {"foundation": [["dump_truck", "crushed stone"]], "dry_in": [["dump_truck", "hot-mix asphalt"]]}},
+	# A precast concrete garage: footings, then double tees and spandrels
+	# set by crane deck by deck, a topping and the ramps, stairs and lights.
+	"garage": {"frame": "tilt_up", "weeks": [2, 4, 10, 6, 4, 4, 2], "found": 0.3,
+		"words": ["Clearing the site", "Footings and the ground slab", "Setting the precast tees",
+			"Topping the decks and ramps", "Spandrels, stairs and the elevator", "Lighting and striping", "Planting"],
+		"deliveries": {"frame": [["flatbed", "precast double tees"]]}},
 }
 ## What each stage sends: [vehicle kind, cargo] (the crew's pickup comes for
 ## the whole job). A kind the fleet doesn't have yet falls back to the next.
