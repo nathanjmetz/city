@@ -32,6 +32,9 @@ func _ready() -> void:
 	var roads := RoadView.new()
 	add_child(roads)
 	roads.setup(sim.network, sim)
+	var street_signs := StreetSignView.new()
+	add_child(street_signs)
+	street_signs.setup(sim)
 
 	var zone_view := ZoneView.new()
 	zone_view.setup(sim)

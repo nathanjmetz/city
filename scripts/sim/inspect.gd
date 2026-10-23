@@ -582,6 +582,7 @@ static func _road(sim: CitySim, seg: int) -> Dictionary:
 	var problems := []
 	if flow < 0.5:
 		problems.append("Congested: cars manage under half the speed limit.")
-	return {"title": spec.name, "kind": "Road", "icon": "road", "ok": problems.is_empty(),
+	var street := sim.streets.name_of(seg)
+	return {"title": street if street != "" else spec.name, "kind": spec.name if street != "" else "Road", "icon": "road", "ok": problems.is_empty(),
 		"status": "Flowing freely" if flow >= 0.8 else ("Busy" if flow >= 0.5 else "Jammed"),
 		"rows": rows, "problems": problems}

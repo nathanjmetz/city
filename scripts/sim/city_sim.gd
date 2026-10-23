@@ -94,6 +94,7 @@ var parks := Parks.new()
 var mail := Mail.new()
 ## Who owns each business, its name and its family's brand (Families).
 var families := Families.new()
+var streets := Streets.new()
 ## The town's broad Funding and Growth sliders for every area and hub (no
 ## tax fiddling: Brawn). Set on the Economy page or a hub's panel.
 var policies := Policies.new()
@@ -173,6 +174,8 @@ func _init() -> void:
 	permits.locators[Families.HUB] = func(_sim, id: int) -> Vector2:
 		return families.locate(self, id)
 	_wire_policies()
+	# Streets are named before any view draws their signs.
+	network.changed.connect(func(): streets.sync(self))
 	network.changed.connect(func():
 		_lots_dirty = true
 		_roads_moved = true)
@@ -530,6 +533,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			permits.from_dict({})
 			families.from_dict({})
 			families.changed.emit()
+			streets.from_dict(self, {})
 			hubs = CivicHubs.new()
 			parks = Parks.new()
 			parks_changed.emit()
@@ -1878,10 +1882,17 @@ func _county_road(a: Vector2, b: Vector2, link_ends: Array) -> Array:
 	for i in n + 1:
 		var p := a.lerp(b, float(i) / n)
 		pts.append(Vector3(p.x, 0.0, p.y))
+	var before := network.segments.keys()
+	streets.hold = true
 	network.begin_batch()
 	for i in n:
 		network.build_road(pts[i], (pts[i] + pts[i + 1]) * 0.5, pts[i + 1], RoadStyle.Type.STREET)
 	network.end_batch()
+	streets.hold = false
+	# A road out of town is named for the town it leads to.
+	streets.name_road(self, network.segments.keys().filter(func(id): return not id in before),
+		streets.town_road(hash([city_seed, a, b])))
+	streets.sync(self)
 	economy.money = money
 	var ends := [network.find_node_near(pts[0], 1.0), network.find_node_near(pts[-1], 1.0)]
 	for i in link_ends:
@@ -1928,6 +1939,7 @@ func to_dict() -> Dictionary:
 		"parks": parks.to_dict(),
 		"mail": mail.to_dict(),
 		"families": families.to_dict(),
+		"streets": streets.to_dict(),
 		"policies": policies.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
@@ -1960,6 +1972,7 @@ func from_dict(d: Dictionary) -> void:
 	_upgrade_old_rings()
 	economy.from_dict(d.get("economy", {}))
 	families.from_dict(d.get("families", {}))
+	streets.from_dict(self, d.get("streets", {}))
 	services.from_dict(d.get("services", {}))
 	farms.from_dict(d.get("farms", {}))
 	industry.from_dict(d.get("industry", {}))
