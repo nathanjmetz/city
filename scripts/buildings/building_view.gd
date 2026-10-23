@@ -100,7 +100,7 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 	var fit := _local_lot(lot, Transform3D(root.basis, root.position))
 	var s := rng.randi()
 	var storeys := BuildingTypes.storeys(b)
-	HouseBuilder.care = sim.care.tier_of(key)
+	HouseBuilder.owner_care = sim.care.tier_of(key)
 	match BuildingTypes.type_of(b):
 		"house": built = HouseBuilder.build(s, lot.to_curb, fit, storeys)
 		"row_home": built = MetroBuilder.build_row(s, lot.to_curb, fit, int(b.get("units", 2)), storeys)
@@ -124,7 +124,7 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 			else:
 				built = DenseBuilder.build_office(s, lot.to_curb, fit, storeys, spec)
 		_: built = FactoryBuilder.build_chain(b.get("chain", "general"), s, lot.to_curb, fit, spec)
-	HouseBuilder.care = 0
+	HouseBuilder.owner_care = 0
 	if built.is_empty():
 		return root
 	root.set_meta("box", built[0].get_aabb())

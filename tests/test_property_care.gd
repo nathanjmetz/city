@@ -118,10 +118,10 @@ func _art() -> void:
 	var tris := {}
 	var t0 := Time.get_ticks_usec()
 	for c in [-2, -1, 0, 1, 2]:
-		HouseBuilder.care = c
+		HouseBuilder.owner_care = c
 		var built := HouseBuilder.build(4242, 6.0, lot, 1)
 		tris[c] = [_tris(built[0]), built[0].get_surface_count(), _tris(built[1]), _pool(built[0])]
-	HouseBuilder.care = 0
+	HouseBuilder.owner_care = 0
 	print("  house by care (tris, surfaces, ground tris): ", tris, "  %.1f ms each" % ((Time.get_ticks_usec() - t0) / 5000.0))
 	# Trees give way to the pool and shed, so count the pool water itself.
 	_check(tris[2][3] > 0 and tris[0][3] == 0 and tris[1][3] == 0, "a showpiece has a pool out back (%d pool vertices)" % tris[2][3])
@@ -129,9 +129,9 @@ func _art() -> void:
 	_check(tris[-2][2] > tris[0][2], "and weeds in the yard")
 	_check(tris[2][1] == tris[0][1] and tris[-2][1] == tris[0][1], "no extra draw calls either way")
 	_check(tris[2][0] - tris[0][0] < 400, "add-ons stay low-poly (+%d triangles)" % (tris[2][0] - tris[0][0]))
-	HouseBuilder.care = -2
+	HouseBuilder.owner_care = -2
 	var shop := DenseBuilder.build_retail(77, 6.0, {"width": 24.0, "depth": 40.0})
-	HouseBuilder.care = 0
+	HouseBuilder.owner_care = 0
 	var shop0 := DenseBuilder.build_retail(77, 6.0, {"width": 24.0, "depth": 40.0})
 	_check(_tris(shop[0]) > _tris(shop0[0]), "a derelict shop is boarded up too")
 
