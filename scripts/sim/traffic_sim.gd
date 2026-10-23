@@ -36,6 +36,7 @@ const CROSSWALK_AHEAD := 3.0
 const CURB_STALL := 7.0
 const CURB_APRON := 5.0
 const CURB_TRIES := 25
+const PARK_WALK := 250.0  # how far a driver walks from a stall to a full destination
 ## How far a road's running speed eases each decision: 5% (with cars on it)
 ## and 2% (empty) a tenth of a second.
 const EASE_BUSY := 1.0 - 0.95 * 0.95 * 0.95
@@ -197,6 +198,8 @@ var _ep_ver := -1
 var _seg_lots := {}   # road piece -> lot ids along it (_aprons)
 var _walk_back := {}  # node -> metres from its centre to the middle of its crosswalks
 var _seg_lots_key := []
+var _lot_cells := {}  # 250 m cell -> lot ids whose fronts lie in it (_parking_near)
+var _lot_cells_key := []
 var _extra := {}      # place ref -> spots added beyond its layout, in order (_add_spot)
 ## Streets closed to cars (a pedestrian plaza): segment -> who may still
 ## drive in to deliver: "never", "night" (10 pm to 6 am) or "always".
@@ -2179,27 +2182,42 @@ func _release(ref: String, i: int, vid: int) -> void:
 func _parking_near(pl: Dictionary, vid: int) -> Array:
 	if _sim == null:
 		return []
-	var best := []
-	var best_d := 250.0
-	var keys := _sim.buildings.keys()
-	keys.sort()
-	for key in keys:
-		if _sim.buildings[key].zone == ZoneMap.Zone.RESIDENTIAL or not _sim.lots.has(key):
-			continue
-		var d: float = _sim.lots[key].front.distance_to(pl.door)
-		if d >= best_d:
-			continue
-		var other := place("lot:" + key)
+	# Lots by the 250 m cell their front lies in, kept until lots are planned
+	# again, so a search reads the nine cells round the door, not every lot.
+	var key := [_sim.zones.revision, network.revision, _sim.lots.size()]
+	if key != _lot_cells_key:
+		_lot_cells_key = key
+		_lot_cells.clear()
+		for id in _sim.lots:
+			var c := _cell(_sim.lots[id].front)
+			if not _lot_cells.has(c):
+				_lot_cells[c] = []
+			_lot_cells[c].append(id)
+	# Nearest first, ties by name, as a sorted walk over every lot would.
+	var near := []
+	var at := _cell(pl.door)
+	for dx in range(-1, 2):
+		for dz in range(-1, 2):
+			for id in _lot_cells.get(at + Vector2i(dx, dz), []):
+				if not _sim.buildings.has(id) or _sim.buildings[id].zone == ZoneMap.Zone.RESIDENTIAL:
+					continue
+				var d: float = _sim.lots[id].front.distance_to(pl.door)
+				if d < PARK_WALK:
+					near.append([d, id])
+	near.sort_custom(func(a, b): return a[0] < b[0] or (a[0] == b[0] and a[1] < b[1]))
+	for n in near:
+		var other := place("lot:" + n[1])
 		if other.is_empty() or other.ref == pl.ref or closed.has(int(other.stop.get("seg", -1))):
 			continue
 		for i in other.spots.size():
 			if other.taken[i] == -1 and other.spots[i].kind == "stall":
-				best = [other.ref, i]
-				best_d = d
-				break
-	if not best.is_empty():
-		_places[best[0]].taken[best[1]] = vid
-	return best
+				other.taken[i] = vid
+				return [other.ref, i]
+	return []
+
+
+static func _cell(p) -> Vector2i:
+	return Vector2i(floori(p.x / PARK_WALK), floori((p.z if p is Vector3 else p.y) / PARK_WALK))
 
 
 ## A new vehicle at rest in a place (a household car in its driveway, a
