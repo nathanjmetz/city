@@ -53,6 +53,7 @@ var _variant_row := HBoxContainer.new()
 var _variant_title := UiStyle.label("", 10, UiStyle.MUTED)
 var _variant_group := -1  # the menu whose variants the row shows
 var _variant_of := {}     # road menu -> the variant last picked in it
+var _kinds_open := false  # the road kinds row is up instead of grid sizes
 var _traffic_row := HBoxContainer.new()
 var _traffic_card: Button
 var _zone_cards := {}    # ZoneMap.Zone -> Button
@@ -532,16 +533,21 @@ func _roads_drawer() -> PanelContainer:
 	]:
 		var m: int = entry[0]
 		var b := _card(entry[1], entry[2], entry[3])
-		b.pressed.connect(func(): road_tool.set_mode(m))
+		b.pressed.connect(func():
+			_kinds_open = false
+			road_tool.set_mode(m))
 		tools.add_child(b)
 		_tool_cards[m] = b
 
 	row.add_child(VSeparator.new())
-	var types := _section(row, "Road type  ·  pick a kind above")
+	var types := _section(row, "Road type  ·  click for its kinds")
 	for g in RoadStyle.GROUPS:
 		var spec: Dictionary = RoadStyle.TYPES[g]
 		var b := _card(spec.name.to_lower(), spec.name, "%d kinds" % RoadStyle.variants(g).size())
-		b.pressed.connect(func(): _pick_road(_variant_of.get(g, g)))
+		b.pressed.connect(func():
+			# One row above the tools at a time: the kinds open over the grid sizes.
+			_kinds_open = not (_kinds_open and RoadStyle.group(road_tool.road_type) == g)
+			_pick_road(_variant_of.get(g, g)))
 		types.add_child(b)
 		_type_cards[g] = b
 
@@ -597,7 +603,9 @@ func _show_variants(menu: int) -> void:
 		var b := _card("road:%d" % t, spec.get("short", "Standard" if t == menu else spec.name), "")
 		b.custom_minimum_size = Vector2(72, 50)
 		b.tooltip_text = _road_tip(t)
-		b.pressed.connect(func(): _pick_road(t))
+		b.pressed.connect(func():
+			_kinds_open = false
+			_pick_road(t))
 		_variant_row.add_child(b)
 		_variant_cards[t] = b
 
@@ -982,7 +990,7 @@ func _sync() -> void:
 	_show_variants(menu)
 	for t in _variant_cards:
 		_variant_cards[t].set_pressed_no_signal(t == road_tool.road_type and not in_traffic)
-	_variant_row.get_parent().visible = not in_traffic
+	_variant_row.get_parent().visible = not in_traffic and _kinds_open
 	_traffic_row.visible = in_traffic
 	_traffic_card.set_pressed_no_signal(in_traffic)
 	for z in _zone_cards:
@@ -1014,7 +1022,7 @@ func _sync() -> void:
 	_parallel_card.set_pressed_no_signal(road_tool.parallel)
 	_shape_card.set_pressed_no_signal(road_tool.grid_free)
 	_shape_card.visible = road_tool.mode == RoadTool.Mode.GRID
-	_grid_sizes.visible = road_tool.mode == RoadTool.Mode.GRID
+	_grid_sizes.visible = road_tool.mode == RoadTool.Mode.GRID and not _kinds_open and not in_traffic
 	for i in _grid_size_cards.size():
 		_grid_size_cards[i].set_pressed_no_signal(i == road_tool.grid_preset)
 	_elevation.text = "Ground" if road_tool.elevation == 0.0 else "%+d ft" % roundi(road_tool.elevation * RoadTool.FT)
