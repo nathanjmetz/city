@@ -56,6 +56,9 @@ func _ready() -> void:
 		sig.connect(func(): _sources_dirty = true)
 	sim.buildings_changed.connect(_on_buildings)
 	_known_buildings = sim.buildings.duplicate()
+	var tel = SoundSettings._telemetry()
+	if tel:
+		tel.event("audio", SoundSettings.state())
 
 
 ## UI, World (effects), Ambience and Music buses under Master, plus a

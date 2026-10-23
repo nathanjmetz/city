@@ -185,6 +185,9 @@ func _audio() -> void:
 		if c != _title and c != _note:
 			c.queue_free()
 	_title.text = "Audio"
+	var tel := get_node_or_null("/root/Telemetry")
+	if tel:
+		tel.event("audio", SoundSettings.state())
 	_note.text = "Hear a bad sound? Flag it. It goes quiet right away, and we replace it."
 	for ch in SoundSettings.CHANNELS:
 		var row := HBoxContainer.new()
@@ -200,6 +203,8 @@ func _audio() -> void:
 		slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		slider.focus_mode = Control.FOCUS_NONE
+		# Scrolling the page must never turn a volume down by itself.
+		slider.scrollable = false
 		var pct := ShellStyle.text("%d%%" % slider.value, 14, 500, Brand.INK_MUTED)
 		pct.custom_minimum_size = Vector2(44, 0)
 		pct.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -210,10 +215,22 @@ func _audio() -> void:
 		row.add_child(pct)
 		_col.add_child(row)
 	_col.add_child(ShellStyle.text("Music is for your own songs; none are in the game yet.", 13, 500, Brand.INK_MUTED))
+	var silent := SoundSettings.why_silent()
+	if silent != "":
+		_col.add_child(ShellStyle.text(silent, 14, 600, Brand.BRAND_CORAL))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
 	var mute := _button("Unmute all sounds" if SoundSettings.muted else "Mute all sounds", func():
 		SoundSettings.set_muted(not SoundSettings.muted)
 		_audio())
-	_col.add_child(mute)
+	mute.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(mute)
+	var reset := _button("Reset to normal", func():
+		SoundSettings.reset()
+		_audio())
+	reset.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(reset)
+	_col.add_child(row)
 
 	var list := VBoxContainer.new()
 	list.add_theme_constant_override("separation", 4)
@@ -286,6 +303,8 @@ func _play(id: String) -> void:
 	_preview.stream = stream
 	_preview.bus = "Master"
 	_preview.play()
+	var silent := SoundSettings.why_silent()
+	_note.text = silent if silent != "" else "Playing \"%s\"." % SoundSettings.info(id)[1]
 	var t := get_tree().create_timer(4.0)
 	_preview_stop = t
 	t.timeout.connect(func():
