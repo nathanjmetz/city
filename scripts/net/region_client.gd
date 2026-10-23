@@ -58,7 +58,9 @@ var _sent_sig := []
 ## A neighbor's newest copy is unpacked into its simulation (a second or so
 ## for a grown town) one town at a time, this many seconds apart.
 const NEIGHBOR_EVERY := 15.0
-var _neighbor_wait := NEIGHBOR_EVERY
+const NEIGHBOR_FIRST := 2.0
+var _neighbor_wait := NEIGHBOR_FIRST
+var _unseen := []  # neighbors not unpacked since joining
 ## A game month (a game day) in ticks: agreements are paid once a month.
 const MONTH_TICKS := 24 * CitySim.TICKS_PER_HOUR
 var _booked_month := -1
@@ -205,8 +207,10 @@ func _process(delta: float) -> void:
 		_book_agreements()
 		_neighbor_wait -= delta
 		if _neighbor_wait <= 0.0 and not region.stale_ids().is_empty():
-			_neighbor_wait = NEIGHBOR_EVERY
-			region.load_stale(region.stale_ids()[0])
+			# Towns never drawn yet come first, and quicker.
+			var next: String = _unseen.pop_front() if not _unseen.is_empty() else region.stale_ids()[0]
+			_neighbor_wait = NEIGHBOR_FIRST if not _unseen.is_empty() else NEIGHBOR_EVERY
+			region.load_stale(next)
 	if _peer == null:
 		return
 	_peer.poll()
@@ -261,8 +265,15 @@ func _handle(msg: Dictionary) -> void:
 				send_town(true)
 				reconnected.emit()
 				return
-			region.from_dict(d)
+			# Your own town first, so you can play at once; the neighbors are
+			# unpacked one by one right after.
+			var mine := ""
+			for id in d.get("cities", {}):
+				if str(d.cities[id].owner) == player_id:
+					mine = id
+			region.from_dict(d, mine)
 			my_city = region.city_of(player_id)
+			_unseen = region.stale_ids()
 			is_joined = true
 			joined.emit()
 		"waiting":
