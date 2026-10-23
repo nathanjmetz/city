@@ -1,7 +1,7 @@
 class_name RoadView
 extends Node3D
-## Draws the road network. Rebuilds every mesh whenever the network changes,
-## which is plenty fast for a small town.
+## Draws the road network. Redraws whenever the network changes, reusing
+## the mesh of every road that didn't.
 ## Streets and avenues out in the country, with nothing built or zoned along
 ## them, are drawn as rural roads: gravel shoulders and utility poles instead
 ## of curbs and sidewalks. They get their curbs once the town reaches them.
@@ -17,7 +17,9 @@ var all_rural := false
 var _rural := {}  # segment id -> true
 var _recheck := -1.0  # seconds until the town edge is checked again, or -1
 var _redraw := false  # a new drive needs the poles moved
+var _drawn_drives := []
 var _trees := TreeField.new()  # street trees down planted medians
+var _street_cache := {}  # segment id -> [what it was drawn from, its mesh]
 
 var _mats := {
 	"asphalt": Surfaces.asphalt(),
@@ -58,8 +60,13 @@ func _process(delta: float) -> void:
 	if _recheck < 0.0:
 		return
 	_recheck -= delta
-	if _recheck < 0.0 and (_redraw or _rural_segments() != _rural):
+	if _recheck >= 0.0:
+		return
+	_recheck = -1.0
+	# A farm or company that changed only matters if its drive moved.
+	if (_redraw and _drives() != _drawn_drives) or _rural_segments() != _rural:
 		rebuild()
+	_redraw = false
 
 
 ## Streets and avenues with no zoned lot, building or service near them.
@@ -99,6 +106,17 @@ func _rural_segments() -> Dictionary:
 	return out
 
 
+## Farm lanes and company drives, kept clear of poles.
+func _drives() -> Array:
+	var drives := []
+	if sim != null:
+		for f in sim.farms.farms.values():
+			drives.append_array(f.get("drive", []))
+		for c in sim.industry.sites.values():
+			drives.append_array(c.get("drive", []))
+	return drives
+
+
 func rebuild() -> void:
 	# Neighbors' cities are drawn moved over to their place on the land.
 	Terrain.shift = Terrain.shift_for(self)
@@ -125,12 +143,8 @@ func _rebuild_all() -> void:
 	wood.begin(Mesh.PRIMITIVE_TRIANGLES)
 	wire.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var any_pole := false
-	var drives := []  # farm lanes and company drives, kept clear of poles
-	if sim != null:
-		for f in sim.farms.farms.values():
-			drives.append_array(f.get("drive", []))
-		for c in sim.industry.sites.values():
-			drives.append_array(c.get("drive", []))
+	var drives := _drives()
+	_drawn_drives = drives
 	# Ramps joining highways start where they clear the through lanes.
 	var merges := RampMerge.merges(network)
 	var cuts := {}  # [seg, node] -> metres
@@ -145,6 +159,7 @@ func _rebuild_all() -> void:
 				gaps[seg][side] = g[seg][side]
 	# Town street junctions get real corners; their roads stop short of them.
 	var junctions := Junction.plan(network, _rural)
+	var street_cache := {}
 	for id in network.segments:
 		var pts := network.sample_segment(id)
 		var type: int = network.segments[id].type
@@ -181,7 +196,14 @@ func _rebuild_all() -> void:
 		else:
 			var spec: Dictionary = RoadStyle.TYPES[type]
 			var rural: bool = (_rural.has(id) or spec.get("rural", false)) and pts[pts.size() / 2].y < 1.0
-			mi.mesh = Terrain.drape(RoadMesh.street(pts, type, _mats, seg_gaps, rural))
+			# A road that hasn't changed keeps its mesh (one edit doesn't redo
+			# the whole town's streets).
+			var key := [pts, type, rural, seg_gaps, Terrain.shift]
+			var cached: Array = _street_cache.get(id, [])
+			if cached.is_empty() or cached[0] != key:
+				cached = [key, Terrain.drape(RoadMesh.street(pts, type, _mats, seg_gaps, rural))]
+			street_cache[id] = cached
+			mi.mesh = cached[1]
 			if rural:
 				# Poles run down one side of a country road, and down the
 				# alley behind the homes in town.
@@ -219,6 +241,7 @@ func _rebuild_all() -> void:
 		mi.mesh = piers.commit()
 		mi.material_override = _mats.concrete
 		add_child(mi)
+	_street_cache = street_cache
 	_trees.set_trees("medians", median_trees)
 	# Fill each junction and road end so curves meet cleanly; where only
 	# gravel roads or alleys meet, the junction is gravel or concrete too.
