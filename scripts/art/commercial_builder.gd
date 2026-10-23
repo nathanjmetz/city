@@ -268,7 +268,13 @@ func _strip_center(to_curb: float) -> void:
 		_box("paint", Vector3(sw, 0.1, 0.12), Vector3(x, 2.9, zf - 0.06), mull)
 		_box("paint", Vector3(sw, 0.35, 0.12), Vector3(x, 0.47, zf - 0.06), mull)
 		_box("paint", Vector3(0.5, 3.0, 0.2), Vector3(x - bay * 0.5, 1.8, zf - 0.1), wall.darkened(0.1))
+		# The owner's own store takes the first bay; the other tenants' signs
+		# are their own businesses, drawn as stand-in lettering.
+		var spec := sign_spec
+		if i > 0:
+			sign_spec = {}
 		_sign(Vector3(x, 3.9, zf - 2.55), sw * rng.randf_range(0.5, 0.8), 0.7)
+		sign_spec = spec
 	# Canopy over the walk on square columns.
 	_box("paint", Vector3(w + 0.4, 0.5, 2.6), Vector3(0, 3.65, zf - 1.3), wall.lightened(0.1))
 	_quad("paint", Vector3(-w * 0.5 - 0.2, 3.39, zf - 2.6), Vector3(w * 0.5 + 0.2, 3.39, zf - 2.6),
