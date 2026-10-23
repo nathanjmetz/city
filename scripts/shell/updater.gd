@@ -215,10 +215,22 @@ func _on_pack(result: int, code: int, _headers: PackedStringArray, _body: Packed
 	ready_pack = path
 	_tell("update_ready", {"commit": str(_manifest.get("commit", "")).left(7)})
 	_say("Updated. It'll be ready next time you open Neighbors.")
-	# On the title screen nothing is lost by restarting now.
+	# On the title screen nothing is lost by restarting now; in a town, it
+	# restarts when you're back on the title screen, so the update never
+	# waits for a launch that might not come.
 	if _restart_when_ready or _on_title_screen():
 		_say("Updating...")
 		restart.call_deferred()
+	else:
+		var t := Timer.new()
+		t.wait_time = 2.0
+		add_child(t)
+		t.timeout.connect(func():
+			if _on_title_screen():
+				t.stop()
+				_say("Updating...")
+				restart())
+		t.start()
 
 
 ## Whether a build (a manifest or a downloaded pack's state) can run inside
