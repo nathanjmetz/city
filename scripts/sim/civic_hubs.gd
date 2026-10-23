@@ -432,9 +432,9 @@ func tick(sim: CitySim) -> void:
 ## Every home and business puts trash out at the curb of its street.
 func _pile_up(sim: CitySim) -> void:
 	var share := float(EVERY) / TICKS_PER_DAY
-	var keys := sim.buildings.keys()
-	keys.sort()
-	for key in keys:
+	# Each street's day of trash is added up first, then put out at once.
+	var put := {}
+	for key in sim.ledger().sorted:
 		if not sim.lots.has(key):
 			continue
 		var b: Dictionary = sim.buildings[key]
@@ -446,7 +446,9 @@ func _pile_up(sim: CitySim) -> void:
 		if lb <= 0.0:
 			continue
 		var seg: int = sim.lots[key].seg
-		trash[seg] = _snap(minf(trash.get(seg, 0.0) + lb * share, Balance.GARBAGE_PILE_LB * 4.0))
+		put[seg] = put.get(seg, 0.0) + lb
+	for seg in put:
+		trash[seg] = _snap(minf(trash.get(seg, 0.0) + put[seg] * share, Balance.GARBAGE_PILE_LB * 4.0))
 	for seg in trash.keys():
 		if not sim.network.segments.has(seg):
 			trash.erase(seg)
