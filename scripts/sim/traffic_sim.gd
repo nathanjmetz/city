@@ -185,6 +185,11 @@ var _acc := ACCEL    # acceleration of the vehicle being worked out
 var _sim: CitySim
 var _places := {}     # place ref -> place (see place())
 var _sites := {}      # place ref -> dispatch endpoint, for places off the lots
+var _ep_cache := {}   # Vector2 position -> its road stop (_endpoint), until the roads change
+var _ep_rev := -1
+var _ep_ver := -1
+var _seg_lots := {}   # road piece -> lot ids along it (_aprons)
+var _seg_lots_key := []
 var _extra := {}      # place ref -> spots added beyond its layout, in order (_add_spot)
 ## Streets closed to cars (a pedestrian plaza): segment -> who may still
 ## drive in to deliver: "never", "night" (10 pm to 6 am) or "always".
@@ -1702,7 +1707,25 @@ func _register(e: Dictionary) -> String:
 
 ## A place given as {"ref", "pos": [x, z]}, as a lot-like stop on the nearest road.
 func _endpoint(e: Dictionary) -> Dictionary:
-	var pos := Vector3(float(e.pos[0]), 0.0, float(e.pos[1]))
+	# The same few places (region links, depots) are asked for again and
+	# again: the answer depends only on the roads, so it's kept until they
+	# change.
+	if _ep_rev != network.revision or _ep_ver != version:
+		_ep_cache.clear()
+		_ep_rev = network.revision
+		_ep_ver = version
+	var at := Vector2(float(e.pos[0]), float(e.pos[1]))
+	if not _ep_cache.has(at):
+		_ep_cache[at] = _endpoint_x(at)
+	var out: Dictionary = _ep_cache[at].duplicate()
+	if not out.is_empty():
+		out.ref = e.get("ref", "")
+	return out
+
+
+func _endpoint_x(at: Vector2) -> Dictionary:
+	var e := {"ref": ""}
+	var pos := Vector3(at.x, 0.0, at.y)
 	var near := network.find_segment_near(pos, 80.0)
 	if near.is_empty():
 		return {}
@@ -2030,8 +2053,18 @@ func _aprons(stop: Dictionary) -> Array:
 	var out := []
 	if _sim == null:
 		return out
-	for id in _sim.lots:
-		var lot: Dictionary = _sim.lots[id]
+	# Lots by the road piece they front, kept until lots are planned again.
+	var key := [_sim.zones.revision, network.revision, _sim.lots.size()]
+	if key != _seg_lots_key:
+		_seg_lots_key = key
+		_seg_lots.clear()
+		for id in _sim.lots:
+			var sg: int = _sim.lots[id].get("seg", -1)
+			if not _seg_lots.has(sg):
+				_seg_lots[sg] = []
+			_seg_lots[sg].append(id)
+	for id in _seg_lots.get(stop.seg, []):
+		var lot: Dictionary = _sim.lots.get(id, {})
 		if lot.get("seg", -1) != stop.seg or lot.get("side", 0) != stop.side or not _sim.buildings.has(id):
 			continue
 		var lp := place("lot:" + id)
@@ -2064,9 +2097,10 @@ func _claim_spots(pl: Dictionary) -> void:
 	for car in parked:
 		if car.at_place == pl.ref and car.spot >= 0 and car.spot < pl.taken.size():
 			pl.taken[car.spot] = car.id
-	for car in cars + _waiting + flowing:
-		if car.get("to_place", "") == pl.ref and car.get("to_spot", -1) >= 0 and car.to_spot < pl.taken.size():
-			pl.taken[car.to_spot] = car.id
+	for list in [cars, _waiting, flowing]:
+		for car in list:
+			if car.get("to_place", "") == pl.ref and car.get("to_spot", -1) >= 0 and car.to_spot < pl.taken.size():
+				pl.taken[car.to_spot] = car.id
 
 
 ## A free spot for a vehicle: trucks take docks and bays first, cars their

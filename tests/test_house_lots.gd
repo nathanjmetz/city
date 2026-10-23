@@ -30,6 +30,21 @@ func _init() -> void:
 				bad.append("lot %d: %s %.1f m from the house, crown %.1f m" % [i, TreeField.Species.keys()[t[1]], b._wall_gap(p), need])
 	_check(trees > 100 and bad.is_empty(), "yard trees keep their crowns off the walls (%d trees) %s" % [trees, bad.slice(0, 3)])
 
+	# The traffic sim lays a plan out without drawing it: the drive, garage
+	# and door come out exactly as when the plan is drawn.
+	var differ := []
+	for i in lots.size():
+		var seed := i * 104729 + 5
+		HouseBuilder._plans.clear()
+		HouseBuilder._infos.clear()
+		var dry: Dictionary = HouseBuilder.plan_info(seed, lots[i], 0)
+		HouseBuilder.build(seed, 6.0, lots[i], 0)
+		HouseBuilder._infos.clear()
+		var drawn: Dictionary = HouseBuilder.plan_info(seed, lots[i], 0)
+		if str(dry) != str(drawn):
+			differ.append("lot %d" % i)
+	_check(differ.is_empty(), "a plan laid out without drawing matches the drawn one %s" % [differ.slice(0, 3)])
+
 	# The car's garage and drive spots lie on the painted drive.
 	var off := []
 	for i in lots.size():
