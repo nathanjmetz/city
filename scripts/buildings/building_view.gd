@@ -21,7 +21,9 @@ static var _far_mat: Material
 
 const FAR_CHUNK := 128.0
 ## Full buildings out to this far from a square's centre (times the tier's
-## detail, never under 0.6 so nearby streets stay real); past it, the
+## detail, never under 0.6 so nearby streets stay real, and never over 1.2:
+## past about 700 m a house is a few pixels tall even on a 5K screen, and
+## drawing every one in full there swamped a Mac Studio); past it, the
 ## square's blocks.
 const FAR_FROM := 600.0
 var _far := {}  # Vector2i -> MeshInstance3D
@@ -163,7 +165,7 @@ func _plant(key: String, root: Node3D, planted: Array, labels := []) -> void:
 
 
 static func _far_from() -> float:
-	return FAR_FROM * maxf(GraphicsQuality.detail, 0.6)
+	return FAR_FROM * clampf(GraphicsQuality.detail, 0.6, 1.2)
 
 
 func _far_chunk(root: Node3D) -> Vector2i:
