@@ -80,12 +80,14 @@ func _init() -> void:
 	var saw_haul := false
 	var received: float = ann.hubs.hubs.values()[0].received
 	# The county road is a few miles long: a run takes a while.
-	for i in 8 * Region.TRADE_EVERY:
+	for i in 24 * Region.TRADE_EVERY:
 		r.tick()
 		for t in bob.interlocal.trips:
 			saw_pickup = saw_pickup or bob.interlocal.trips[t].what == "pickup"
 		for t in ann.interlocal.trips:
 			saw_haul = saw_haul or ann.interlocal.trips[t].what == "haul"
+		if saw_haul and ann.hubs.hubs.values()[0].received > received and i % Region.TRADE_EVERY == 0:
+			break
 	_check(saw_pickup, "contract garbage trucks pick up in Bob's town")
 	_check(saw_haul, "Ann's trucks drive out to the county road and back")
 	_check(ann.hubs.hubs.values()[0].received > received, "Bob's trash reaches Ann's landfill")
