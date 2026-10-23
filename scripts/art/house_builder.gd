@@ -817,7 +817,13 @@ func _front_door(x: float, zf: float, sill: float, c: Color) -> void:
 	_box("paint", Vector3(1.25, 0.14, 0.1), Vector3(x, sill + 2.17, zf - 0.05), TRIM)
 	for s in [-1.0, 1.0]:
 		_box("paint", Vector3(0.12, 2.2, 0.1), Vector3(x + s * 0.55, sill + 1.1, zf - 0.05), TRIM)
-	# Storm door glass and a porch light.
+	# Raised panels below the lite, a brass knob at 36 in, the aluminium
+	# sill; storm door glass and a porch light.
+	var panel := c.lightened(0.14) if c.get_luminance() < 0.3 else c.darkened(0.1)
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(0.3, 0.62, 0.02), Vector3(x + s * 0.2, sill + 0.5, zf - 0.055), panel)
+	_box("metal", Vector3(0.07, 0.07, 0.07), Vector3(x + 0.36, sill + 0.92, zf - 0.09), Color("#b08d48"))
+	_box("metal", Vector3(1.1, 0.04, 0.16), Vector3(x, sill + 0.02, zf - 0.08), Color("#a9acae"))
 	_glass(Vector3(x, sill + 1.45, zf - 0.06), Vector3(-1, 0, 0), 0.6, 0.8, 0.0)
 	_box("paint", Vector3(0.14, 0.26, 0.1), Vector3(x + 0.85, sill + 1.75, zf - 0.06), Color("#1c1c1c"))
 
