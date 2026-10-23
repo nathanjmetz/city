@@ -1159,8 +1159,6 @@ func to_dict() -> Dictionary:
 	var known := _known.keys()
 	known.sort()
 	out.known = known
-	if _facs_ready:
-		out.facs = _facs
 	out.pending = _pending.map(func(r: Rect2): return [r.position.x, r.position.y, r.size.x, r.size.y])
 	return out
 
@@ -1236,8 +1234,10 @@ func from_dict(d: Dictionary) -> void:
 	_queue = Array(d.get("queue", []))
 	_pending = Array(d.get("pending", [])).map(func(r): return Rect2(r[0], r[1], r[2], r[3]))
 	_changed = true
-	_facs_ready = d.has("facs")
-	_facs = Array(d.get("facs", []))
+	# The factory list is a cache for the hour's re-read, never saved: a
+	# copy finds it again, so saves match whichever tick they're taken on.
+	_facs_ready = false
+	_facs = []
 	_lot_buckets.clear()
 	_lot_pos.clear()
 	_keys_hash = 0
