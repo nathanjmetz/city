@@ -20,9 +20,12 @@ func _demo_town() -> void:
 		if soil > rich:
 			rich = soil
 			at.x = x
+	# FARM_X picks a spot instead (patchier soil shows how fields stay square).
+	if OS.get_environment("FARM_X") != "":
+		at.x = float(OS.get_environment("FARM_X"))
 	sim.apply({"type": "build_road", "start": [at.x - 1500, at.z - 180], "ctrl": [at.x, at.z - 180], "end": [at.x + 1500, at.z - 180]})
 	print("farmhouse: ", sim.apply({"type": "place_farmhouse", "pos": [at.x, at.z], "dir": [0, -1], "crop": "corn"}))
-	sim.farms.price = 1.1
+	sim.farms.price = float(OS.get_environment("FARM_PRICE")) if OS.get_environment("FARM_PRICE") != "" else 1.1
 	for i in 900:
 		sim.farms.day = i * 0.25
 		if sim.farms.decide(sim.field_usable):
