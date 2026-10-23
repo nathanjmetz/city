@@ -113,6 +113,22 @@ func _init() -> void:
 	_check(pol.hurts[most].homes < 3 or (not tip.is_empty() and tip[0].text.contains(pol.sources[most].name)
 		and tip[0].text.length() <= 170), "the advisor names the worst polluter (%s)" % (tip[0].text if not tip.is_empty() else "none"))
 
+	# Smoky homes call ambulances more, for breathing trouble, blamed on the source.
+	var smoky := ""
+	for key in pol.lots:
+		if sim.buildings.has(key) and float(pol.lots[key].smoke) >= Balance.HURT_SMOKE:
+			smoky = key
+			break
+	if smoky != "":
+		_check(pol.call_weight(smoky) >= 1.0 + Balance.SMOKE_CALL_WEIGHT, "a home in heavy smoke calls more (%.2fx)" % pol.call_weight(smoky))
+		_check(pol.breathing_call(sim, smoky, 0.0), "its calls are often breathing trouble")
+		_check(not pol.breathing_call(sim, smoky, 0.99), "but not always")
+		var blamed: String = pol.calls.keys()[0]
+		var bd := Inspect.describe(sim, pol.sources[blamed].select)
+		_check(bd.rows.any(func(r): return r[0] == "Breathing calls"), "the source panel counts its breathing calls")
+	else:
+		print("  (no home over the smoke line in this town)")
+
 	# A source panel says who it hurts and how to fix it.
 	var fd := Inspect.describe(sim, f.select)
 	_check(fd.title == f.name, "the factory panel uses its name")
@@ -206,6 +222,7 @@ func _init() -> void:
 	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
 	_check(copy.pollution.walls.size() == pol.walls.size(), "noise walls are saved")
 	_check(copy.pollution.owners.size() == pol.owners.size(), "owners' plans are saved")
+	_check(copy.pollution.calls == pol.calls, "breathing calls are saved")
 	_check(is_equal_approx(snappedf(copy.pollution.lot_factor(copy, worst_key), 0.001),
 		snappedf(pol.lot_factor(sim, worst_key), 0.001)), "land value is the same after loading")
 	_check(copy.pollution.sources.size() == pol.sources.size(), "sources are back right after loading")

@@ -58,6 +58,8 @@ var lots := {}
 var wear := {}
 ## How many homes and people each source hurts: ref -> {homes, people}.
 var hurts := {}
+## Ambulance calls for breathing trouble blamed on each source's smoke.
+var calls := {}
 ## Ground height at a point, metres (Callable(Vector3) -> float). The terrain
 ## sets this so dirty ground seeps downhill; flat ground when unset.
 var height := Callable()
@@ -183,6 +185,9 @@ func _prune(sim: CitySim) -> void:
 	for ref in owners.keys():
 		if not sources.has(ref):
 			owners.erase(ref)
+	for ref in calls.keys():
+		if not sources.has(ref):
+			calls.erase(ref)
 
 
 ## Highways and ramps, then boulevards, each joined into one source per
@@ -604,6 +609,31 @@ func count_hurts(sim: CitySim) -> void:
 
 # --- Effects ---------------------------------------------------------------------
 
+## How much more likely a home is to call an ambulance, from its smoke (1.0
+## is no change), for Healthcare.
+func call_weight(key: String) -> float:
+	var e: Dictionary = lots.get(key, {})
+	if e.is_empty():
+		return 1.0
+	return 1.0 + Balance.SMOKE_CALL_WEIGHT * maxf(float(e.smoke) - Balance.HURT_SMOKE, 0.0) / Balance.HURT_SMOKE \
+		+ (Balance.SMOKE_CALL_WEIGHT if float(e.smoke) >= Balance.HURT_SMOKE else 0.0)
+
+
+## A call from a home over the smoke line: true (and blamed on the source
+## with the biggest share of its smoke) when it is breathing trouble.
+## `roll` is a 0-1 draw from the caller's own random numbers.
+func breathing_call(sim: CitySim, key: String, roll: float) -> bool:
+	var e: Dictionary = lots.get(key, {})
+	if e.is_empty() or float(e.smoke) < Balance.HURT_SMOKE or roll >= Balance.SMOKE_BREATHING_SHARE \
+			or not sim.lots.has(key):
+		return false
+	var by: Array = sample(sim.lots[key].pos).by.smoke
+	if by.is_empty():
+		return false
+	calls[by[0][0]] = int(calls.get(by[0][0], 0)) + 1
+	return true
+
+
 ## A lot's land value factor from pollution and wear: 1.0 is no change.
 func lot_factor(sim: CitySim, key: String) -> float:
 	var e: Dictionary = lots.get(key, {})
@@ -807,7 +837,8 @@ func to_dict() -> Dictionary:
 	var wear_out := {}
 	for key in wear:
 		wear_out[key] = snappedf(wear[key], 0.0001)
-	var out := {"walls": walls.keys(), "owners": owners.duplicate(true), "lots": lot_out, "wear": wear_out}
+	var out := {"walls": walls.keys(), "owners": owners.duplicate(true), "lots": lot_out, "wear": wear_out,
+		"calls": calls.duplicate()}
 	if _mid_pass:
 		var srcs := []
 		var refs := sources.keys()
@@ -873,6 +904,10 @@ func from_dict(d: Dictionary) -> void:
 	var w: Dictionary = d.get("wear", {})
 	for key in w:
 		wear[key] = float(w[key])
+	calls.clear()
+	var c: Dictionary = d.get("calls", {})
+	for ref in c:
+		calls[ref] = int(c[ref])
 	sources.clear()
 	hurts.clear()
 	_source_sig = 0

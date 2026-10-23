@@ -161,6 +161,8 @@ static func _source_part(sim: CitySim, ref: String, d: Dictionary) -> void:
 		d.rows.append(["Homes it hurts", "None"])
 	else:
 		d.rows.append(["Homes it hurts", "%d (%s people)" % [h.homes, CitySim.money_text(int(h.people))]])
+	if int(p.calls.get(ref, 0)) > 0:
+		d.rows.append(["Breathing calls", "%d ambulance runs so far" % int(p.calls[ref])])
 	if s.owner != "":
 		var now := p.equipment(ref, s.owner)
 		d.rows.append(["Cleaner equipment", "None yet" if now.is_empty() else str(now.name).capitalize()])
