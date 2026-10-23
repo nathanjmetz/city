@@ -95,6 +95,22 @@ func _test_join() -> void:
 	var copy := CitySim.new()
 	copy.from_dict(sim.to_dict())
 	_check(copy.county_joined.size() == 1, "joined county roads are saved")
+	# A farm or company road heading for the county road comes out on it,
+	# and the town takes over that mile, instead of a road of its own.
+	var hub := CitySim.new()
+	hub.apply({"type": "build_road", "start": [x + 120, z], "ctrl": [x + 60, z], "end": [x, z],
+		"road": RoadStyle.Type.STREET})
+	var far := Vector3(x + 200.0, 0.0, z + 300.0)
+	var start := HubRoads.reach(hub, far, Vector3(-1, 0, 0), 400.0)
+	_check(start != Vector3.INF and absf(start.x - x) < 0.5, "a hub's road reaches the county road (%s)" % str(start))
+	if start != Vector3.INF:
+		var plan := HubRoads.check(hub, [start, far], "farm:1")
+		_check(plan.ok and not plan.permit, "it may build out to it (%s)" % plan.why)
+		_check(not HubRoads.build(hub, plan.route).is_empty() and hub.county_joined.size() == 1,
+			"building it joins the county mile to town")
+	var lone := CitySim.new()
+	_check(HubRoads.reach(lone, far, Vector3(-1, 0, 0), 400.0) == Vector3.INF,
+		"a county road that meets no town road isn't a way into town")
 
 	# Founding the county seat: county roads are renamed from its courthouse.
 	var key: String = sim.county_joined.keys()[0]

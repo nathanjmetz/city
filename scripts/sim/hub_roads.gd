@@ -37,15 +37,49 @@ const SNAP := 14.0
 ## Walks from `far_end` along `toward` (a flat unit vector) until it meets a
 ## public road, at most `max_len` metres. Returns the point on that road,
 ## or Vector3.INF if there's none.
+##
+## A county road on the section line (CountyGrid) that already meets the
+## town's roads counts too: the hub joins that mile, the way a farm lane
+## comes out on the county road, instead of laying its own beside it.
 static func reach(sim, far_end: Vector3, toward: Vector3, max_len: float) -> Vector3:
 	var d := Vector3(toward.x, 0.0, toward.z).normalized()
 	var t := 0.0
+	var tried := {}
 	while t <= max_len:
-		var hit: Dictionary = sim.network.find_segment_near(far_end + d * t, 5.0, 2.0)
+		var p := far_end + d * t
+		var hit: Dictionary = sim.network.find_segment_near(p, 5.0, 2.0)
 		if not hit.is_empty():
 			return hit.point
+		var mile := _county(sim, p, tried)
+		if not mile.is_empty():
+			return Vector3(mile.on.x - sim.terrain_offset.x, 0.0, mile.on.y - sim.terrain_offset.y)
 		t += 4.0
 	return Vector3.INF
+
+
+## The unjoined county mile under p (within 5 m) that touches the town's
+## roads, or {}. `tried` remembers miles already looked at.
+static func _county(sim, p: Vector3, tried: Dictionary) -> Dictionary:
+	var o: Vector2 = sim.terrain_offset
+	var mile := CountyGrid.mile_at(p.x + o.x, p.z + o.y, 5.0)
+	if mile.is_empty() or sim.county_joined.has(mile.key):
+		return {}
+	if not tried.has(mile.key):
+		tried[mile.key] = _county_meets_town(sim, mile)
+	return mile if tried[mile.key] else {}
+
+
+## True when the open stretch of a county mile meets a town road.
+static func _county_meets_town(sim, mile: Dictionary) -> bool:
+	var o: Vector2 = sim.terrain_offset
+	var a: Vector2 = CountyGrid.run(mile.on, mile.a) - o
+	var b: Vector2 = CountyGrid.run(mile.on, mile.b) - o
+	var n := maxi(1, ceili(a.distance_to(b) / 16.0))
+	for i in n + 1:
+		var q := a.lerp(b, float(i) / n)
+		if not sim.network.find_segment_near(Vector3(q.x, 0.0, q.y), 10.0, 2.0).is_empty():
+			return true
+	return false
 
 
 ## The point on a public road within SNAP of p, or Vector3.INF.
@@ -119,6 +153,10 @@ static func check(sim, route: Array, self_ref: String) -> Dictionary:
 static func build(sim, route: Array) -> Array:
 	var money: int = sim.economy.money
 	var before: Array = sim.network.segments.keys()
+	# Starting on a county road: the town takes over that mile first (free,
+	# the county hands it over), and the hub's road joins it.
+	if not route.is_empty() and on_road(sim, route[0]) == Vector3.INF:
+		sim._join_county(route[0])
 	sim.network.begin_batch()
 	for i in range(1, route.size()):
 		var a: Vector3 = route[i - 1]
