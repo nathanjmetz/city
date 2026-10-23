@@ -250,7 +250,10 @@ static var _reclaimed: StandardMaterial3D
 
 const SPOIL := Color("#8b8170")      # fresh cast overburden: grey-brown shale and till
 const SPOIL_OLD := Color("#7d8459")  # a few years on: weeds coming in
+const SPOIL_GREEN := Color("#667f45") # fescue, broomsedge and autumn olive over the ridge
 const COAL := Color("#24221f")
+const BENCH := Color("#857358")      # subsoil left after the topsoil is scraped off
+const TOPSOIL := Color("#5a4a37")
 const UNDERCLAY := Color("#6f6b62")  # the grey fireclay under the seam
 const RAMP := Color("#93897a")
 # The highwall from the crest down: soil and till, grey shale, sandstone,
@@ -267,6 +270,7 @@ static func _reclaimed_mat() -> StandardMaterial3D:
 		_reclaimed.vertex_color_use_as_albedo = true
 		_reclaimed.vertex_color_is_srgb = true
 		_reclaimed.roughness = 0.95
+		_reclaimed.metallic_specular = 0.0  # pasture has no sheen; with it the strip read pale mint at a low sun
 		_reclaimed.cull_mode = BaseMaterial3D.CULL_DISABLED
 	return _reclaimed
 
@@ -307,10 +311,13 @@ func _strip_mine(outlines: Array, rows: Array, pitch: float, toward: Vector2) ->
 		var rect := PackedVector2Array([Vector2(-1e4, z0), Vector2(1e4, z0), Vector2(1e4, z0 + pitch), Vector2(-1e4, z0 + pitch)])
 		if i == pit:
 			_pit_row(outlines, z0, pitch, hs, toward)
-		elif age - youngest < 8.0 or absf(i - pit) <= 2:
-			# Spoil: the fresher, the barer and taller.
-			var fresh := clampf((age - youngest) / 7.0, 0.0, 1.0)
-			var col := SPOIL.lerp(SPOIL_OLD, fresh)
+		elif absi(i - pit) <= 5:
+			# Spoil: each cut back from the pit is a season or two older
+			# (a dragline casts a cut every few months), so the ridges go
+			# from bare shale beside the pit to weedy, then grassed over,
+			# before they are graded back to pasture.
+			var fresh := clampf((absi(i - pit) - 1 + (age - youngest) * 0.5) / 4.0, 0.0, 1.0)
+			var col := SPOIL.lerp(SPOIL_OLD, fresh * 2.0) if fresh < 0.5 else SPOIL_OLD.lerp(SPOIL_GREEN, fresh * 2.0 - 1.0)
 			_flat_clip(outlines, rect, 0.13, col)
 			_ridge(outlines, z0 + pitch * 0.5, pitch, RIDGE_H * (1.0 - fresh * 0.2), col)
 			# Rain water stands in some troughs between older ridges.
@@ -322,7 +329,7 @@ func _strip_mine(outlines: Array, rows: Array, pitch: float, toward: Vector2) ->
 						Vector2(a + rng.randf_range(30.0, 60.0), z0 + 3.0), Vector2(a, z0 + 3.0)]), 0.6)
 		else:
 			# Graded back to hay and pasture, a shade per cut.
-			var g := Color("#87a05a").lerp(Color("#9aa865"), rng.randf())
+			var g := Color("#6c8746").lerp(Color("#7a8f4e"), rng.randf())
 			for poly in _clip(outlines, rect):
 				_poly_into(_grass, poly, 0.13, g)
 				_grass_n += 1
@@ -347,6 +354,17 @@ func _pit_row(outlines: Array, z0: float, pitch: float, hs: float, toward: Vecto
 		var c: float = zu.call(u1)
 		_poly_into(_flat, PackedVector2Array([Vector2(span.x, minf(a, c)), Vector2(span.y, minf(a, c)),
 			Vector2(span.y, maxf(a, c)), Vector2(span.x, maxf(a, c))]), y, col)
+	# Ahead of the face scrapers have stripped the topsoil for the next cut
+	# and the dragline walks on the bare bench; the topsoil waits in a long
+	# windrow to go back on the graded spoil.
+	var yard := PackedVector2Array([_plant_yard.position, Vector2(_plant_yard.end.x, _plant_yard.position.y), _plant_yard.end, Vector2(_plant_yard.position.x, _plant_yard.end.y)])
+	var a0: float = zu.call(-32.0)
+	var a1: float = zu.call(0.0)
+	var bench := PackedVector2Array([Vector2(span.x, minf(a0, a1)), Vector2(span.y, minf(a0, a1)), Vector2(span.y, maxf(a0, a1)), Vector2(span.x, maxf(a0, a1))])
+	for piece in (Geometry2D.clip_polygons(bench, yard) if _plant_yard.has_area() else [bench]):
+		if not Geometry2D.is_polygon_clockwise(piece):
+			_poly_into(_flat, piece, 0.12, BENCH)
+	_ridge_on(Vector2(span.x + (span.y - span.x) * 0.15, span.y - (span.y - span.x) * 0.15), zu.call(-29.0), 7.0, 3.5, TOPSOIL)
 	for s in STRATA:
 		band.call(s[0], s[1], 0.13, Color(s[2]).darkened(0.12))  # the face is steep and half in shade
 	band.call(7.4, 16.0, 0.13, COAL)
@@ -396,8 +414,9 @@ func _ridge_on(span: Vector2, zc: float, pitch: float, h: float, col: Color) -> 
 	noise.seed = rng.randi()
 	noise.frequency = 1.0 / 35.0
 	var prof := func(x: float) -> Array:
-		var taper := clampf(minf(x - x0, x1 - x) / 25.0, 0.0, 1.0)
-		var hh := maxf(h * (0.85 + noise.get_noise_1d(x) * 0.35) * sqrt(taper), 0.2)
+		# The ends run out at the angle of repose, about 35 degrees.
+		var taper := smoothstep(0.0, 1.0, minf(x - x0, x1 - x) / (h * 1.6 + 4.0))
+		var hh := maxf(h * (0.85 + noise.get_noise_1d(x) * 0.35) * taper, 0.2)
 		var shift := noise.get_noise_1d(x + 500.0) * 3.0
 		# Base, shoulder, crest, shoulder, base: steep angle-of-repose sides.
 		return [Vector3(x, 0.1, zc - hw), Vector3(x, hh * 0.7, zc - hw * 0.4 + shift), Vector3(x, hh, zc + shift),
