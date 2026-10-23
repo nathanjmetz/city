@@ -123,8 +123,9 @@ static func area_of(kind: int) -> String:
 	return "utilities" if KINDS[kind].has("utility") else "public"
 
 
-## The sliders' key for service `id`: a bus depot, the water utility and a
-## taxi company and a hospital run themselves as hubs, so they go by their leader's kind.
+## The sliders' key for service `id`: a bus depot, the water utility, a taxi
+## company and a hospital run themselves as hubs, so they go by their
+## leader's kind.
 func key_of(id: int) -> String:
 	match int(buildings[id].kind) if buildings.has(id) else -1:
 		Kind.BUS_DEPOT:
