@@ -541,6 +541,10 @@ const BUS_COACH_SEATS := 56
 ## The depot buys land next door at about $50,000 an acre (Midwest town
 ## edge), dollars per square metre.
 const BUS_LAND_PER_M2 := 12.0
+## How a depot weighs a road with a bus lane when it plans routes: buses in
+## their own lane run about 20% faster (NACTO Transit Street Design Guide),
+## so it routes along those avenues when the detour is small.
+const BUS_LANE_ROUTE_COST := 0.8
 
 # --- Taxis --------------------------------------------------------------------
 # A small-town cab company (Brawn, 2026-10-22): its owner sizes the fleet to

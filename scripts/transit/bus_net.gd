@@ -538,13 +538,15 @@ func _graph(net: RoadNetwork) -> Dictionary:
 		var s: Dictionary = net.segments[seg]
 		var length := RoadNetwork.polyline_length(net.sample_segment(seg, 16))
 		lens[seg] = length
+		# Routes lean onto avenues with bus lanes, where buses run faster.
+		var cost := length * (Balance.BUS_LANE_ROUTE_COST if RoadStyle.bus_lane(int(s.type)) >= 0 else 1.0)
 		if not adj.has(s.a):
 			adj[s.a] = []
 		if not adj.has(s.b):
 			adj[s.b] = []
-		adj[s.a].append([s.b, seg, length, true])
+		adj[s.a].append([s.b, seg, cost, true])
 		if not net.is_oneway(seg):
-			adj[s.b].append([s.a, seg, length, false])
+			adj[s.b].append([s.a, seg, cost, false])
 	return {"adj": adj, "len": lens}
 
 
@@ -614,11 +616,15 @@ func _path(net: RoadNetwork, g: Dictionary, from: Dictionary, to: Dictionary) ->
 	var pts := PackedVector3Array()
 	var first: Array = legs[0]
 	pts.append_array(_part(net, from.seg, from.t, 1.0 if first[2] else 0.0))
+	# The real distance driven (the search weighs bus-lane roads lighter).
+	var length: float = ((1.0 - from.t) if first[2] else from.t) * fl
 	for i in range(1, legs.size()):
 		var l: Array = legs[i]
 		pts.append_array(_part(net, l[1], 0.0 if l[2] else 1.0, 1.0 if l[2] else 0.0))
+		length += float(lens[l[1]])
 	pts.append_array(_part(net, to.seg, 0.0 if end == ts.a else 1.0, to.t))
-	return {"len": best, "pts": pts}
+	length += (to.t if end == ts.a else 1.0 - to.t) * tl
+	return {"len": length, "pts": pts}
 
 
 ## Points along a road from t0 to t1 (either way).
