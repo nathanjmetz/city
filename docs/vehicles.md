@@ -18,6 +18,8 @@ flatbed of sawmill lumber.
 Utility: bucket truck (Altec AT40G) for phone and power line crews.
 Camping: Class C RV, Class A motorhome and a pickup with a slide-in camper,
 used by out-of-town visitors (purpose "visitor").
+Farm: tractor, combine, and a tractor towing a gravity wagon of grain to the
+elevator (some grain hauls).
 Farm country: Amish black top buggy at a trot (about 10 mph); Daviess County,
 next to Petersburg, has one of Indiana's largest Amish settlements. Buggies
 turn up now and then on shopping trips.
