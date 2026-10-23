@@ -85,13 +85,18 @@ jobs:
           run_test tests/test_sim.gd
           run_test tests/test_water.gd
           run_test tests/test_advisor.gd
+          run_test tests/test_build_menus.gd
           run_test tests/test_first_town.gd
           run_test tests/test_pad.gd
+          run_test tests/test_undo.gd
+          run_test tests/test_hud_quick.gd
+          run_test tests/test_connections.gd
           run_test tests/test_road_tools.gd
           run_test tests/test_grid_fill.gd
           run_test tests/test_move_it.gd
           run_test tests/test_road_variants.gd
           run_test tests/test_traffic.gd
+          run_test tests/test_parking.gd
           run_test tests/test_net.gd
           run_test tests/test_postcard.gd
           run_test tests/test_vehicles.gd
@@ -139,6 +144,7 @@ jobs:
           run_test tests/test_heritage.gd
           run_test tests/test_crops.gd
           run_test tests/test_stats.gd
+          run_test tests/test_upgrade_art.gd
 
       - name: Stamp the build
         run: |

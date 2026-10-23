@@ -95,6 +95,25 @@ func _init() -> void:
 		var f := FrameBuilder.build(CommercialBuilder.build_factory(3, 3.9)[0], kind)
 		_check(not f.is_empty(), "a %s frame builds" % kind)
 
+	# Dried in, the windows are set in the wrap: the glass is drawn dark,
+	# never wrapped over (critic round: blocks of blank white boxes).
+	var built := HouseBuilder.build(5, 6.0, {"width": 18.0, "depth": 36.0}, 0)
+	var holder := Node3D.new()
+	root.add_child(holder)
+	var dry := {"name": "dry_in", "t": 0.9, "frame": "wood", "found": 0.3}
+	var site := ConstructionSite.add_to(holder, built, "house", func(): return dry, func(): pass)
+	var glass := HouseMaterials.get_mat("glass")
+	var dark := 0
+	var wrapped := 0
+	for i in site._shell.mesh.get_surface_count():
+		var m: ShaderMaterial = site._shell.get_surface_override_material(i)
+		if site._shell.mesh.surface_get_material(i) == glass:
+			dark += 1 if m.get_shader_parameter("glazing") else 0
+		else:
+			wrapped += 1 if m.get_shader_parameter("wall_color") == ConstructionSite.SHELL.house[0] else 0
+	_check(dark == 1 and wrapped > 0, "a dried-in house shows its windows in the wrap (%d glass, %d wrapped)" % [dark, wrapped])
+	holder.free()
+
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 

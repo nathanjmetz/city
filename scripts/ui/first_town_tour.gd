@@ -264,8 +264,8 @@ func _fill() -> void:
 		"power", "water":
 			var kind: int = Services.Kind.POWER_FEED if _step == "power" else Services.Kind.WELL
 			if st.kind == ServiceTool.OFF:
-				_say("Homes need power and water before anyone moves in. Open Services." if _step == "power"
-					else "Now water. Open Services.", "cat:services")
+				_say("Homes need power and water before anyone moves in. Open Utilities." if _step == "power"
+					else "Now water. Open Utilities.", "cat:utilities")
 			elif st.kind != kind:
 				_say("Pick Power line." if _step == "power" else "Pick Well.", "svc:%d" % kind)
 			elif _step == "power":

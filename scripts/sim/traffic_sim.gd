@@ -1919,6 +1919,8 @@ func place(ref: String) -> Dictionary:
 	var pl := {}
 	if ref.begins_with("lot:"):
 		pl = _lot_place(ref)
+	elif ref.begins_with("svc:"):
+		pl = _park_place(ref)
 	elif _sites.has(ref):
 		pl = _site_place(_sites[ref])
 	if pl.is_empty():
@@ -1932,6 +1934,10 @@ func place(ref: String) -> Dictionary:
 
 
 func _place_seed(ref: String) -> int:
+	if _sim != null and ref.begins_with("svc:"):
+		# A parking lot moved, re-striped or gone is laid out afresh.
+		var s = _sim.services.buildings.get(int(ref.substr(4)))
+		return 0 if s == null else hash([s.kind, s.pos, s.dir, Services.size_of(s), s.get("angled", false)])
 	if _sim == null or not ref.begins_with("lot:"):
 		return 0
 	var b = _sim.buildings.get(ref.substr(4))
@@ -1958,6 +1964,37 @@ func _lot_place(ref: String) -> Dictionary:
 
 ## A place reached from the road by its own lane, like a farmyard or a mine:
 ## trucks drive up the lane to the dock at its end.
+## A parking lot or garage the player built (Services.PARKING): every
+## stall of its ParkingLots layout, reached by its one driveway.
+func _park_place(ref: String) -> Dictionary:
+	var b = _sim.services.buildings.get(int(ref.substr(4))) if _sim != null else null
+	if b == null or not int(b.kind) in Services.PARKING:
+		return {}
+	var lay := Services.parking_layout(b)
+	var xf := Transform3D(Basis.looking_at(b.dir, Vector3.UP), b.pos)
+	var to_curb := Services.SETBACK + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
+	var gate: Vector2 = lay.gate
+	var road_end := xf * Vector3(gate.x, 0.0, gate.y - to_curb)
+	var stop := _endpoint({"ref": ref, "pos": [road_end.x, road_end.z]})
+	if stop.is_empty():
+		return {}
+	var hidden: bool = int(lay.levels) > 1
+	var spots := []
+	for s in lay.spots:
+		var via := []
+		for q in s.via:
+			via.append(xf * Vector3(q.x, 0.0, q.y))
+		var out := []
+		for q in s.out:
+			out.append(xf * Vector3(q.x, 0.0, q.y))
+		spots.append({"pos": xf * Vector3(s.pos.x, 0.0, s.pos.y), "face": (xf.basis * Vector3(s.face.x, 0.0,
+			s.face.y)).normalized(), "kind": "stall", "hidden": hidden, "local": s.pos, "ada": s.ada,
+			"via": via, "out": out, "back_pad": s.back_pad})
+	return {"ref": ref, "stop": stop, "lot": {}, "lay": {}, "spots": spots, "taken": _fill(spots.size()),
+		"door": xf * Vector3(gate.x, 0.0, gate.y), "drive": PackedVector3Array([xf * Vector3(gate.x, 0.0,
+		gate.y + 1.0), road_end]), "zone": -1, "seed": _place_seed(ref), "parking": true}
+
+
 func _site_place(e: Dictionary) -> Dictionary:
 	var ref: String = str(e.get("ref", ""))
 	var drive := PackedVector3Array()
@@ -2203,17 +2240,44 @@ func _parking_near(pl: Dictionary, vid: int) -> Array:
 					continue
 				var d: float = _sim.lots[id].front.distance_to(pl.door)
 				if d < PARK_WALK:
-					near.append([d, id])
-	near.sort_custom(func(a, b): return a[0] < b[0] or (a[0] == b[0] and a[1] < b[1]))
+					near.append([d, "lot:" + id])
+	# The town's own lots and garages, once they're built.
+	for sid in _sim.services.buildings:
+		var b: Dictionary = _sim.services.buildings[sid]
+		if not int(b.kind) in Services.PARKING or not _sim.construction.is_done("svc:%d" % sid, _sim.tick_count):
+			continue
+		var d: float = (b.pos + b.dir * Services.size_of(b).y * 0.5).distance_to(pl.door)
+		if d < PARK_WALK:
+			near.append([d, "svc:%d" % sid])
+	# The town's public lots first: a shop's own lot is for its customers
+	# ("customer parking only"), so drivers try those only when there's no
+	# public stall within the walk. Then nearest first, ties by name.
+	near.sort_custom(func(a, b): return _park_before(a, b))
+	var placard := has_placard(vid)
 	for n in near:
-		var other := place("lot:" + n[1])
+		var other := place(n[1])
 		if other.is_empty() or other.ref == pl.ref or closed.has(int(other.stop.get("seg", -1))):
 			continue
 		for i in other.spots.size():
-			if other.taken[i] == -1 and other.spots[i].kind == "stall":
+			if other.taken[i] == -1 and other.spots[i].kind == "stall" \
+					and (placard or not other.spots[i].get("ada", false)):
 				other.taken[i] = vid
 				return [other.ref, i]
 	return []
+
+
+static func _park_before(a: Array, b: Array) -> bool:
+	var pa: bool = str(a[1]).begins_with("svc:")
+	var pb: bool = str(b[1]).begins_with("svc:")
+	if pa != pb:
+		return pa
+	return a[0] < b[0] or (a[0] == b[0] and a[1] < b[1])
+
+
+## True for the drivers with a disability placard, who may use accessible
+## stalls: about one in sixteen (state DMV counts run 5 to 8% of drivers).
+static func has_placard(vid: int) -> bool:
+	return vid % 16 == 0
 
 
 static func _cell(p) -> Vector2i:
@@ -2501,6 +2565,9 @@ func _approach_pts(pl: Dictionary, spot: int, car_len: float) -> Array:
 	var front: Vector3 = s.pos + s.face * car_len * 0.5
 	if s.kind == "curb":
 		return [s.pos - s.face * (car_len * 0.5 + 1.0), front]
+	if s.has("via"):
+		# A parking lot: in at the driveway, along its aisles to the stall.
+		return [pl.drive[pl.drive.size() - 1]] + s.via + [front]
 	if not pl.drive.is_empty():
 		var out := []
 		for i in range(pl.drive.size() - 1, 0, -1):
@@ -2608,14 +2675,19 @@ func _out_path(car: Dictionary, pl: Dictionary, spot: int, w: Dictionary, lane: 
 	# Back out of the stall or dock, turning to face the way out, then drive
 	# forward to the street.
 	var side := Vector3(-s.face.z, 0.0, s.face.x)
-	var swing := side if side.dot(entry - s.pos) < 0.0 else -side
-	var back: float = car.len + (7.0 if s.kind == "bay" else 1.5)
+	# Backing round to face the way out: the driveway, or (in a parking lot)
+	# on along its aisle.
+	var toward: Vector3 = s.out[0] if s.has("out") else entry
+	var swing := side if side.dot(toward - s.pos) < 0.0 else -side
+	var back: float = car.len + (7.0 if s.kind == "bay" else float(s.get("back_pad", 1.5)))
 	var mid: Vector3 = front - s.face * back
 	# Straight back until the nose is out of the row, then turn: turning any
 	# sooner swings the front into the car parked alongside.
 	var clear: Vector3 = front - s.face * minf(SiteLayout.STALL_DEPTH, back - 1.0)
 	var rev_pts := _smooth([front, clear, mid, mid + swing * 4.5])
 	var fwd := [rev_pts[rev_pts.size() - 1], mid]
+	if s.has("out"):
+		fwd.append_array(s.out)
 	if not pl.drive.is_empty():
 		for i in range(1, pl.drive.size()):
 			fwd.append(pl.drive[i])

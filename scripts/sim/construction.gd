@@ -73,6 +73,19 @@ const PROFILES := {
 		"words": ["Clearing the site", "Drilling the well", "Framing the pump house", "Roofing",
 			"Block and doors", "Setting the pump and tank", "Disinfecting and testing"],
 		"deliveries": {"foundation": [["flatbed", "well casing"]], "interior": [["box_truck", "pump and pressure tank"]]}},
+	# A surface parking lot: graded, a crushed-stone base rolled in, curbs
+	# and light pole bases set, two lifts of asphalt, then striped and
+	# planted. Three to six weeks for a small-town lot.
+	"paving": {"frame": "pole", "weeks": [1, 1, 1, 1, 1, 1, 1], "found": 0.0,
+		"words": ["Clearing and grading", "Rolling in the stone base", "Setting curbs and light poles",
+			"Paving the asphalt", "Striping the stalls", "Signs and the pay station", "Planting the islands"],
+		"deliveries": {"foundation": [["dump_truck", "crushed stone"]], "dry_in": [["dump_truck", "hot-mix asphalt"]]}},
+	# A precast concrete garage: footings, then double tees and spandrels
+	# set by crane deck by deck, a topping and the ramps, stairs and lights.
+	"garage": {"frame": "tilt_up", "weeks": [2, 4, 10, 6, 4, 4, 2], "found": 0.3,
+		"words": ["Clearing the site", "Footings and the ground slab", "Setting the precast tees",
+			"Topping the decks and ramps", "Spandrels, stairs and the elevator", "Lighting and striping", "Planting"],
+		"deliveries": {"frame": [["flatbed", "precast double tees"]]}},
 }
 ## What each stage sends: [vehicle kind, cargo] (the crew's pickup comes for
 ## the whole job). A kind the fleet doesn't have yet falls back to the next.
@@ -312,7 +325,7 @@ func _leave(sim: CitySim, ref: String, job: String) -> void:
 		if _budget <= 0 and sim.simulate_traffic:
 			keep.append(p)  # it pulls out next round
 			continue
-		var dest := _crew_base(sim, s) if job == "crew" else sim.logistics._edge(sim, _pos(s))
+		var dest := _crew_base(sim, s) if job == "crew" else _edge_ahead(sim, s)
 		var id := -1
 		if not dest.is_empty() and sim.simulate_traffic:
 			_budget -= 1
@@ -323,6 +336,28 @@ func _leave(sim: CitySim, ref: String, job: String) -> void:
 		else:
 			trips[id] = {"ref": ref, "kind": p.kind, "job": job, "cargo": "", "inbound": false}
 	s.parked = keep
+
+
+## Where an emptied truck leaves town: the nearest way off the map ahead of
+## it at the curb, so a 70 ft rig drives on (through town if need be)
+## rather than hunting for room to turn around on a two-lane highway.
+static func _edge_ahead(sim: CitySim, s: Dictionary) -> Dictionary:
+	var pos := _pos(s)
+	var o := Vector3(float(s.out[0]), 0.0, float(s.out[1]))
+	var fwd := Vector3.UP.cross(-o).normalized()  # lot on the driver's right
+	var best := -1
+	var best_d := INF
+	for n in sim.region_links:
+		if not sim.network.nodes.has(n):
+			continue
+		var to: Vector3 = sim.network.nodes[n] - pos
+		to.y = 0.0
+		if to.normalized().dot(fwd) > 0.2 and to.length() < best_d:
+			best_d = to.length()
+			best = n
+	if best == -1:
+		return sim.logistics._edge(sim, pos)
+	return {"ref": "edge", "pos": Logistics._xz(sim.network.nodes[best])}
 
 
 func _leave_all(sim: CitySim, ref: String) -> void:

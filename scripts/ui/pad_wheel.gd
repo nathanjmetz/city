@@ -2,14 +2,17 @@ class_name PadWheel
 extends Control
 ## The controller's tool wheel (Y), like the radial menus in the console
 ## editions of Cities: Skylines: the tool bar's categories in a ring. Point
-## the left stick at one and press A (or Y again) to open it; B closes.
+## the left stick at one and press A (or Y again) to open it; a menu with
+## tools then opens a second ring of its tools. B closes.
 
 signal picked(key: String)
 
 const RADIUS := 150.0
 const SLOT := 64.0
 
-var _items: Array = []  # [key, title]
+var _items: Array = []  # [icon, title, key]; the key defaults to the icon
+var _radius := RADIUS
+var _hint := "Open"
 var _icons: Array[Icon] = []
 var _sel := 0
 var _style := 0
@@ -28,9 +31,13 @@ static func slot_for(dir: Vector2, count: int) -> int:
 	return posmod(roundi(a / (TAU / count)), count)
 
 
-func open(items: Array, style: int) -> void:
+func open(items: Array, style: int, hint := "Open", sel := 0) -> void:
 	_items = items
 	_style = style
+	_hint = hint
+	_sel = clampi(sel, 0, maxi(items.size() - 1, 0))
+	# More slots need a bigger ring, so the titles don't touch.
+	_radius = maxf(RADIUS, items.size() * SLOT * 1.15 / TAU)
 	for ic in _icons:
 		ic.queue_free()
 	_icons.clear()
@@ -60,7 +67,8 @@ func aim(stick: Vector2) -> void:
 func pick() -> void:
 	close()
 	if _sel < _items.size():
-		picked.emit(_items[_sel][0])
+		var it: Array = _items[_sel]
+		picked.emit(it[2] if it.size() > 2 else it[0])
 
 
 func _notification(what: int) -> void:
@@ -70,7 +78,7 @@ func _notification(what: int) -> void:
 
 func _slot_pos(i: int) -> Vector2:
 	var a := TAU * i / _items.size()
-	return size * 0.5 + Vector2(sin(a), -cos(a)) * RADIUS
+	return size * 0.5 + Vector2(sin(a), -cos(a)) * _radius
 
 
 func _layout() -> void:
@@ -82,8 +90,8 @@ func _layout() -> void:
 func _draw() -> void:
 	var c := size * 0.5
 	draw_rect(Rect2(Vector2.ZERO, size), Color(Brand.SURFACE, 0.35))
-	draw_circle(c, RADIUS + SLOT * 0.75, Color(Brand.SURFACE_PANEL, 0.92))
-	draw_circle(c, RADIUS + SLOT * 0.75, Brand.LINE, false, 1.5, true)
+	draw_circle(c, _radius + SLOT * 0.75, Color(Brand.SURFACE_PANEL, 0.92))
+	draw_circle(c, _radius + SLOT * 0.75, Brand.LINE, false, 1.5, true)
 	var font := get_theme_default_font()
 	for i in _items.size():
 		var p := _slot_pos(i)
@@ -101,6 +109,6 @@ func _draw() -> void:
 	# What to press, in the pad's own buttons.
 	var y := c.y + 14.0
 	PadPrompts.glyph(self, Rect2(c.x - 52, y, 20, 20), "a", _style)
-	draw_string(font, Vector2(c.x - 28, y + 15), "Open", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Brand.INK_MUTED)
+	draw_string(font, Vector2(c.x - 28, y + 15), _hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Brand.INK_MUTED)
 	PadPrompts.glyph(self, Rect2(c.x + 6, y, 20, 20), "b", _style)
 	draw_string(font, Vector2(c.x + 30, y + 15), "Close", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Brand.INK_MUTED)

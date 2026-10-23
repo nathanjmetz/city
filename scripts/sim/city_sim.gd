@@ -62,6 +62,8 @@ const WORKER_SHARE := Balance.WORKER_SHARE
 const TICKS_PER_HOUR := 60 / MINUTES_PER_TICK
 
 var network := RoadNetwork.new()
+## The last builds, for Ctrl+Z (not saved).
+var undo := UndoLog.new()
 var zones := ZoneMap.new()
 var traffic := TrafficSim.new(network)
 ## Everyone in town by name, and the names of places (owned by Traffic work).
@@ -340,6 +342,16 @@ func zone_keys(zone: int) -> Array:
 
 
 func apply_now(cmd: Dictionary) -> bool:
+	if cmd.get("type", "") == "undo":
+		return undo.undo(self)
+	var snap: Variant = undo.before(self, cmd)
+	var ok := _apply_cmd(cmd)
+	if ok and snap != null:
+		undo.after(self, snap)
+	return ok
+
+
+func _apply_cmd(cmd: Dictionary) -> bool:
 	var ok := false
 	match cmd.get("type", ""):
 		"build_road":
@@ -439,7 +451,7 @@ func apply_now(cmd: Dictionary) -> bool:
 					or parks.overlaps(Services.corners(kind, pos, dir).map(func(q): return Vector2(q.x, q.z))) \
 					or education.covers(pos) or banks.covers(pos) or telecom.covers(pos):
 				return false
-			var sid := services.add(kind, pos, dir)
+			var sid := services.add(kind, pos, dir, bool(cmd.get("angled", false)) and kind in Services.PARKING)
 			construction.start("svc:%d" % sid, Services.profile_of(kind), tick_count, pos, dir, Services.SETBACK
 				+ RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH)
 			economy.money -= cost
@@ -798,6 +810,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			# neighbouring towns (trade comes and goes on them), rebuilt
 			# after the wipe, with a crossroads to start the town from.
 			var links_kept := _link_roads()
+			undo = UndoLog.new()
 			region_links.clear()
 			trade = Trade.new()
 			traffic.overrides.clear()
@@ -3237,6 +3250,14 @@ func found_business(key: String, zone: int, chain := "") -> bool:
 	return true
 
 
+## Ground beside a company's yard it may build an add-on on: buildable,
+## unzoned, clear of roads, and nobody else's (Capital.land_free).
+func _addon_free(p: Vector3, who: String) -> bool:
+	return land_ok(p) and zones.zone_at(p) == ZoneMap.Zone.NONE \
+		and network.find_segment_near(p, 12.0).is_empty() and not big.covers(p) \
+		and Capital.land_free(self, [p], who)
+
+
 ## Each farm and company leader takes their next step up their tree.
 func _develop_hubs() -> void:
 	var ids := farms.farms.keys()
@@ -3255,8 +3276,24 @@ func _develop_hubs() -> void:
 		var s: Dictionary = industry.sites[id]
 		if not s.has("leader"):
 			s.leader = Agency.leader(self, hash([city_seed, "site", id]))
-		if not Agency.develop(self, s, Agency.TREES[s.kind], s.pos, industry.yearly_profit(id)).is_empty():
+		var who := "site:%d" % id
+		var free := func(p: Vector3) -> bool: return _addon_free(p, who)
+		# Upgrades from before they took ground find theirs now.
+		for had in s.get("built", []):
+			if Industry.ADDONS.get(s.kind, {}).has(had) and not s.get("addons", {}).has(had):
+				site_built = industry.place_addon(id, had, free) or site_built
+		var node := Agency.develop(self, s, Agency.TREES[s.kind], s.pos, industry.yearly_profit(id))
+		if node.is_empty():
+			continue
+		if industry.place_addon(id, node.id, free):
 			site_built = true
+			continue
+		# No ground for it beside the yard: it isn't built after all.
+		s.built.erase(node.id)
+		if s.has("cap_day"):
+			s.cash = float(s.cash) + float(node.cost)
+		s.why = "%s wanted to build %s, but there's no free ground beside the yard." % [
+			"Its owner", str(node.name).to_lower()]
 	if farm_built:
 		farms_changed.emit()
 	if site_built:

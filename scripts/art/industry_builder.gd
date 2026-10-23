@@ -17,20 +17,42 @@ const JACK := ["#3d4a3f", "#5b6066", "#2f3a46", "#6b5a2a"]
 const QUARRY := Color("#c8c1b0")  # limestone
 
 
-## [mesh, ground mesh] for a company's main yard.
-static func build_hq(kind: String, seed: int) -> Array:
+## [mesh, ground mesh] for a company's main yard. `built` is what its
+## leader has built (Agency.TREES) and `addons` where each add-on stands
+## (Industry.ADDONS), so every upgrade shows (UpgradeKits).
+static func build_hq(kind: String, seed: int, built := [], addons := {}) -> Array:
 	var b := IndustryBuilder.new()
 	b._begin(seed)
 	b._flat_rect("gravel", -20, 20, -20, 20, 0.09, YARD_GRAVEL)
 	b._office(-8.0, -10.0)
 	match kind:
-		"oil": b._tank_battery(Vector3(10, 0, 6))
+		"oil":
+			if "tank_battery" in built:
+				b._tank_battery(Vector3(10, 0, 6))
+			else:
+				UpgradeKits.lease_tanks(b, Vector3(10, 0, 6))
 		"ore":
-			b._crusher(Vector3(8, 0, 4))
+			if "crusher" in built:
+				b._crusher(Vector3(8, 0, 4))
+			else:
+				# Trucks tip run-of-mine coal straight onto the pile.
+				b._cone(Vector3(8.0, 0, 6.0), 6.0, 4.0, COAL.lightened(0.05), 16, "paint")
 			# Raw coal waiting for the plant and washed coal waiting for trucks.
 			b._flat_rect("gravel", -28, 34, 20, 36, 0.09, COAL.lightened(0.15))
 			b._cone(Vector3(-14.0, 0, 28.0), 9.0, 6.0, COAL.lightened(0.05), 18, "paint")
 			b._cone(Vector3(16.0, 0, 28.0), 8.0, 5.5, COAL, 18, "paint")
+	for node in addons:
+		var at := Vector3(float(addons[node][0]), 0, float(addons[node][1]))
+		match str(node):
+			"gas_plant": UpgradeKits.gas_plant(b, at)
+			"pipeline": UpgradeKits.pipeline(b, at - Vector3(1.5, 0, 1.5), 40.0 if at.x > 0.0 else -40.0)
+			"frac_crew": UpgradeKits.completion_yard(b, at)
+			"terminal": UpgradeKits.crude_terminal(b, at)
+			"wash_plant": UpgradeKits.prep_plant(b, at)
+			"conveyor":
+				# Out of the crusher's side, to a transfer house at the yard's edge.
+				UpgradeKits.overland_conveyor(b, Vector3(14.0, 9.0, at.z), Vector3(at.x + 11.0, 0, at.z))
+			"rail_loadout": UpgradeKits.rail_loadout(b, at)
 	return [b._commit_house(), b._commit_flat()]
 
 

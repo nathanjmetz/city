@@ -11,9 +11,12 @@ extends Node
 ##   Y: tool wheel                 LB / RB: smaller / bigger (like [ and ])
 ##   D-pad up / down: raise / lower new roads
 ##   D-pad left / right: slower / faster
+##   D-pad over a menu: step the cursor to the next button that way
+##   The cursor slows down over buttons, so it's easy to land on one
 ##   Click the left stick: hold for Shift (snap angles)
 ##   Click the right stick: finish a shape (like Enter), else fly home
 ##   Menu (Start): pause menu      View (Back): pause the clock
+##   Hold View and press X: undo (like Ctrl+Z)
 ## Mouse and keyboard keep working: moving the mouse puts the pad cursor away.
 ## An autoload (Pad); other scripts reach it with Gamepad.find().
 
@@ -27,6 +30,8 @@ const CURSOR_SPEED := 0.9
 const EDGE := 3.0
 ## The right stick scrolls a list this often, in seconds.
 const SCROLL_EVERY := 0.06
+## How much the cursor slows over a button (console-style "sticky" aim).
+const STICKY := 0.45
 
 ## True while the controller is in use (the pad cursor is up).
 var active := false
@@ -43,6 +48,9 @@ var zoom := 0.0
 
 var _device := -1
 var _a_down := false
+## View is held; a View press that undoes something doesn't also pause.
+var _view_down := false
+var _view_used := false
 var _scroll_wait := 0.0
 var _layer := CanvasLayer.new()
 var _pointer := _Pointer.new()
@@ -150,7 +158,10 @@ func _on_button(b: int, pressed: bool) -> void:
 				_a_down = pressed
 				_click(MOUSE_BUTTON_LEFT, pressed)
 		JOY_BUTTON_X:
-			if pressed:
+			if pressed and _view_down:
+				_view_used = true
+				_undo()
+			elif pressed:
 				_set_active(true)
 				_click(MOUSE_BUTTON_RIGHT, true)
 				_click(MOUSE_BUTTON_RIGHT, false)
@@ -162,32 +173,44 @@ func _on_button(b: int, pressed: bool) -> void:
 				_open_wheel()
 		JOY_BUTTON_LEFT_SHOULDER:
 			if pressed:
-				_tap(KEY_BRACKETLEFT)
+				_tap(KeyBinds.key("smaller"))
 		JOY_BUTTON_RIGHT_SHOULDER:
 			if pressed:
-				_tap(KEY_BRACKETRIGHT)
-		JOY_BUTTON_DPAD_UP:
-			if pressed:
-				_tap(KEY_PAGEUP)
-		JOY_BUTTON_DPAD_DOWN:
-			if pressed:
-				_tap(KEY_PAGEDOWN)
-		JOY_BUTTON_DPAD_LEFT, JOY_BUTTON_DPAD_RIGHT:
-			var game := get_tree().current_scene
-			if pressed and game != null and game.has_method("set_speed") and not MenuState.showing:
-				game.set_speed(game.speed + (1 if b == JOY_BUTTON_DPAD_RIGHT else -1))
+				_tap(KeyBinds.key("bigger"))
+		JOY_BUTTON_DPAD_UP, JOY_BUTTON_DPAD_DOWN, JOY_BUTTON_DPAD_LEFT, JOY_BUTTON_DPAD_RIGHT:
+			if not pressed:
+				return
+			var dir: Vector2 = {JOY_BUTTON_DPAD_UP: Vector2.UP, JOY_BUTTON_DPAD_DOWN: Vector2.DOWN,
+				JOY_BUTTON_DPAD_LEFT: Vector2.LEFT, JOY_BUTTON_DPAD_RIGHT: Vector2.RIGHT}[b]
+			# Over a menu (or with the pause menu up) the d-pad walks its buttons.
+			if active and (MenuState.showing or _over_ui()) and _step(dir):
+				return
+			if b == JOY_BUTTON_DPAD_UP:
+				_tap(KeyBinds.key("raise"))
+			elif b == JOY_BUTTON_DPAD_DOWN:
+				_tap(KeyBinds.key("lower"))
+			else:
+				var game := get_tree().current_scene
+				if game != null and game.has_method("set_speed") and not MenuState.showing:
+					game.set_speed(game.speed + (1 if b == JOY_BUTTON_DPAD_RIGHT else -1))
 		JOY_BUTTON_LEFT_STICK:
 			_key(KEY_SHIFT, pressed)
 		JOY_BUTTON_RIGHT_STICK:
 			if pressed and not MenuState.showing:
 				var hud := _hud()
-				_tap(KEY_ENTER if hud != null and hud.shape_open() else KEY_HOME)
+				_tap(KEY_ENTER if hud != null and hud.shape_open() else KeyBinds.key("home"))
 		JOY_BUTTON_START:
 			if pressed:
 				_toggle_menu()
 		JOY_BUTTON_BACK:
+			# Pauses on release, unless View was held to undo.
+			if pressed:
+				_view_down = true
+				_view_used = false
+				return
+			_view_down = false
 			var game := get_tree().current_scene
-			if pressed and game != null and game.has_method("toggle_pause") and not MenuState.showing:
+			if not _view_used and game != null and game.has_method("toggle_pause") and not MenuState.showing:
 				game.toggle_pause()
 
 
@@ -209,7 +232,8 @@ func _process(delta: float) -> void:
 		_set_active(true)
 		var size := get_viewport().get_visible_rect().size
 		var was := cursor
-		cursor = (cursor + ls * size.y * CURSOR_SPEED * delta).clamp(Vector2.ZERO, size - Vector2.ONE)
+		var speed := CURSOR_SPEED * (STICKY if _over_button() else 1.0)
+		cursor = (cursor + ls * size.y * speed * delta).clamp(Vector2.ZERO, size - Vector2.ONE)
 		# Pushing against an edge moves the map, like edge scrolling.
 		if cursor.x <= EDGE and ls.x < 0.0 or cursor.x >= size.x - 1.0 - EDGE and ls.x > 0.0:
 			pan.x = ls.x
@@ -267,6 +291,92 @@ func _over_scroll_list() -> bool:
 	return false
 
 
+func _over_button() -> bool:
+	return get_viewport().gui_get_hovered_control() is BaseButton
+
+
+## The cursor is over a panel or menu rather than the map.
+func _over_ui() -> bool:
+	return get_viewport().gui_get_hovered_control() != null
+
+
+## Moves the cursor to the nearest button that way, like stepping through a
+## console menu. False when there is none.
+func _step(dir: Vector2) -> bool:
+	var best := Vector2.INF
+	var best_score := INF
+	var screen := get_viewport().get_visible_rect()
+	var buttons := buttons_on_screen(get_tree().root)
+	# Over the pause menu, only its own buttons (the top layer) count.
+	var top := -1000
+	if MenuState.showing:
+		for b in buttons:
+			top = maxi(top, _layer_of(b))
+	for b in buttons:
+		if MenuState.showing and _layer_of(b) < top:
+			continue
+		var c := b.get_global_rect().get_center()
+		if not screen.has_point(c):
+			continue
+		var d := c - cursor
+		var along := d.dot(dir)
+		if along < 8.0:
+			continue
+		var across := absf(d.dot(Vector2(-dir.y, dir.x)))
+		if across > along * 2.0:
+			continue
+		var score := along + across * 2.5
+		if score < best_score:
+			best_score = score
+			best = c
+	if best == Vector2.INF:
+		return false
+	var was := cursor
+	cursor = best
+	_move(cursor - was)
+	return true
+
+
+## Every button that can be clicked right now: visible, enabled, and on a
+## 2D layer (3D nodes are skipped, so this stays cheap).
+static func buttons_on_screen(root: Node) -> Array[BaseButton]:
+	var out: Array[BaseButton] = []
+	_gather(root, out)
+	return out
+
+
+static func _gather(n: Node, out: Array[BaseButton]) -> void:
+	for c in n.get_children():
+		if c is Node3D:
+			continue
+		if c is CanvasItem and not (c as CanvasItem).visible:
+			continue
+		if c is CanvasLayer and not (c as CanvasLayer).visible:
+			continue
+		if c is BaseButton and not (c as BaseButton).disabled and (c as Control).mouse_filter != Control.MOUSE_FILTER_IGNORE:
+			out.append(c)
+			continue
+		_gather(c, out)
+
+
+static func _layer_of(c: Control) -> int:
+	var l := c.get_canvas_layer_node()
+	return l.layer if l != null else 0
+
+
+func _undo() -> void:
+	var e := InputEventKey.new()
+	e.device = DEVICE
+	e.keycode = KEY_Z
+	e.physical_keycode = KEY_Z
+	e.ctrl_pressed = true
+	e.pressed = true
+	Input.parse_input_event(e)
+	e = e.duplicate()
+	e.pressed = false
+	Input.parse_input_event(e)
+
+
 func _toggle_menu() -> void:
 	var game := get_tree().current_scene
 	if game != null:
@@ -284,15 +394,20 @@ func _open_wheel() -> void:
 	if _a_down:
 		_a_down = false
 		_click(MOUSE_BUTTON_LEFT, false)
-	_wheel.open(hud.pad_wheel_items(), style)
+	_wheel.open(hud.pad_wheel_items(), style, "Open", hud.pad_category_index())
 	_pointer.visible = false
 
 
 func _wheel_picked(key: String) -> void:
 	_pointer.visible = active
 	var hud := _hud()
-	if hud != null:
-		hud.pad_wheel_pick(key)
+	if hud == null:
+		return
+	# A menu with tools opens a second ring with them.
+	var tools: Array = hud.pad_wheel_pick(key)
+	if not tools.is_empty():
+		_wheel.open(tools, style, "Use", hud.pad_tool_selected())
+		_pointer.visible = false
 
 
 # --- Mouse and keys made from the pad --------------------------------------

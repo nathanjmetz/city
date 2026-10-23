@@ -14,6 +14,8 @@ var sim: CitySim
 var cam: CityCamera
 var view: ServiceView
 var kind := OFF
+## Parking lots: 60 degree stalls on one-way aisles instead of 90 degree.
+var angled := false
 
 var _ghost := MeshInstance3D.new()
 var _ok_mat := StandardMaterial3D.new()
@@ -37,6 +39,12 @@ func _ready() -> void:
 	_ghost.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_ghost.visible = false
 	add_child(_ghost)
+
+
+func set_angled(on: bool) -> void:
+	angled = on
+	kind_changed.emit(kind)
+	_update_hint()
 
 
 func set_kind(k: int) -> void:
@@ -63,7 +71,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			sim.apply({"type": "place_hub", "kind": CivicHubs.TOOL_KINDS[kind], "pos": [_site[0].x, _site[0].z],
 				"dir": [_site[1].x, _site[1].z]})
 		elif sim.apply({"type": "place_service", "kind": kind, "pos": [_site[0].x, _site[0].z],
-				"dir": [_site[1].x, _site[1].z]}):
+				"dir": [_site[1].x, _site[1].z], "angled": angled and kind in Services.PARKING}):
 			view.show_kind = kind  # refresh the coverage shown
 		_update_hint()
 
@@ -181,7 +189,14 @@ func _update_hint() -> void:
 		return
 	var s: Dictionary = Services.KINDS[kind]
 	var text := "%s: $%s to build, $%s a month." % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
-	if s.has("transit"):
+	if s.get("parking", false):
+		var lay: Dictionary = ParkingLots.layout(s.size, angled, kind == Services.Kind.PARKING_GARAGE)
+		text = "%s: %d stalls%s, $%s to build, $%s a month. Drivers who can't park at their own stop walk up to 800 ft from the nearest public stall." % [
+			s.name, lay.spots.size(), ", 60° angled" if lay.angled else "", CitySim.money_text(s.cost),
+			CitySim.money_text(s.upkeep)]
+		if angled and not lay.angled:
+			text += " Too narrow for one-way angled aisles, so its stalls are at 90°."
+	elif s.has("transit"):
 		text = "%s: $%s to build, with two buses. You set how much the city funds it (click it); it plans its own stops, routes, fleet and fare, and buys the land next door as it grows." % [s.name, CitySim.money_text(s.cost)]
 	elif s.get("hub", false):
 		text += " Its superintendent lays mains and sewers, drills wells and builds plants on their own. You set its subsidy."

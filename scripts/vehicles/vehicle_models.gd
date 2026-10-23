@@ -59,6 +59,8 @@ const ARTIC := {
 ## What some kinds wear while snow is on the ground: plows go on contractors'
 ## pickups and on dump trucks (most Midwest towns hire them for plowing).
 const WINTER := {"work_pickup": "work_pickup_plow", "dump_truck": "dump_truck_plow"}
+## Open trailers whose load shows: the bare one they pull when empty.
+const EMPTY := {"trailer_flat": "trailer_flat_empty", "trailer_lumber": "trailer_flat_empty"}
 ## Body styles within one kind, all close to its length (see VehicleTypes).
 const VARIANTS := {
 	"sedan": ["sedan", "sedan_compact", "sedan_fullsize"],
@@ -121,7 +123,16 @@ static func mesh_keys() -> Array:
 			out.append_array(VARIANTS.get(k, [k]))
 		if WINTER.has(k):
 			out.append(WINTER[k])
+	for e in EMPTY.values():
+		if not out.has(e):
+			out.append(e)
 	return out
+
+
+## The trailer as it looks with this trip's cargo: open ones run bare when
+## nothing is aboard (heading back after a drop-off).
+static func trailer_for(trailer: String, cargo) -> String:
+	return EMPTY[trailer] if EMPTY.has(trailer) and not VehicleTypes.is_loaded(cargo) else trailer
 
 
 ## The model one vehicle of a kind uses, fixed by its id, so a street of
@@ -1100,6 +1111,20 @@ func _trailer_flat() -> void:  # 48 ft flatbed with steel coils on cradles
 		if not _lo:
 			_box(Vector3(0, 1.55, z), Vector3(1.6, 0.2, 1.3), WOOD_DARK)
 			_box(Vector3(0, 2.15, z), Vector3(1.84, 1.44, 0.04), STRAP)
+	_trailer_base(L, [12.4, 13.65])
+
+
+## A 48 ft flatbed running empty: bare deck, the load's dunnage stacked
+## up front and the straps rolled at the headboard, as drivers carry them.
+func _trailer_flat_empty() -> void:
+	var L := 14.6
+	_box(Vector3(0, 1.35, L * 0.5), Vector3(2.6, 0.2, L), STEEL)
+	_box(Vector3(0, 1.5, 0.15), Vector3(2.5, 0.12, 0.3), TRIM)
+	if not _lo:
+		for i in 3:
+			_box(Vector3(0, 1.5 + i * 0.1, 0.9), Vector3(2.3, 0.09, 0.12), WOOD_DARK)
+		for x in [-0.8, -0.4, 0.4, 0.8]:
+			_cyl(Vector3(x - 0.1, 1.58, 0.45), Vector3(x + 0.1, 1.58, 0.45), 0.13, STRAP, 8)
 	_trailer_base(L, [12.4, 13.65])
 
 

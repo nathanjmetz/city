@@ -12,8 +12,14 @@ signal nothing_to_close
 
 const GOOD := Color(0.5, 0.85, 0.5)
 ## The bottom bar's tool categories: [key, title].
-const CATEGORIES := [["roads", "Roads"], ["zones", "Zoning"], ["industry", "Industry"], ["services", "Services"],
+## The town's services are split up like CS2's toolbar groups, so no
+## menu spreads across the screen.
+const CATEGORIES := [["roads", "Roads"], ["zones", "Zoning"], ["industry", "Industry"],
+	["utilities", "Utilities", "power"], ["civic", "Civic", "police"], ["education", "Education", "school"],
+	["health", "Health", "health"], ["transport", "Transport", "bus"],
 	["parks", "Parks"], ["bulldoze", "Bulldoze"], ["move", "Move It"], ["budget", "Economy"]]
+## The bottom bar categories that hold the town's services.
+const SERVICE_CATEGORIES := ["utilities", "civic", "education", "health", "transport"]
 const BAD := Color(0.95, 0.45, 0.4)
 
 var road_tool: RoadTool
@@ -35,7 +41,10 @@ var _bank_cards := {}  # "community"/"farm_credit" -> Button
 var _campus_cards := {}  # "high_school"/"college"/"university" -> Button
 var telecom_tool: TelecomTool
 var _telecom_card: Button
-var _warehouse_cards := {}  # Warehouses size -> Button
+var _warehouse_cards := {}  # Warehouses size -> Button, in the size row
+var _warehouse_card: Button
+var _warehouse_sizes: Control
+var _warehouse_last: String = Warehouses.ORDER[0]  # the size the Warehouse card picks
 var big_tool: BigFactoryTool
 var _big_cards := {}  # BigFactories kind -> Button
 var traffic_tool: TrafficTool
@@ -72,6 +81,8 @@ var _zone_cards := {}    # ZoneMap.Zone -> Button
 var _plan_cards := {}    # LandPlan kind ("" erases) -> Button
 var _power_card: Button
 var _service_cards := {} # Services.Kind -> Button
+var _service_cat := {}   # Services.Kind -> its bottom bar category
+var _first_card := {}    # service category -> the card it opens on
 var _farm_cards := {}    # FarmTool.Mode -> Button
 var _warning := UiStyle.label("", 13, Color(1.0, 0.75, 0.3))
 var _parallel_card: Button
@@ -82,6 +93,10 @@ var _grid_sizes: Control
 var _grid_size_cards := []
 var _ring_sizes: Control
 var _ring_size_cards := []
+var _parking_row: Control  # the lot kinds, over the tools while placing one
+var _parking_card: Button
+var _angled_card: Button
+var _parking_last: int = Services.Kind.PARKING_SMALL
 var _elevation := UiStyle.label("Ground", 12)
 var _speed_buttons := []
 var _clock := UiStyle.label("", 14)
@@ -98,6 +113,7 @@ var _warning_box: PanelContainer
 var _budget_open := false
 var economy_page := EconomyPage.new()
 var _help := PanelContainer.new()
+var _help_keys := VBoxContainer.new()
 var _top_bar: PanelContainer
 var _town_button: Button  # top bar buttons from elsewhere go just before it
 var _views_panel := PanelContainer.new()
@@ -121,6 +137,19 @@ var jump: TownJump
 var _towns_panel := PanelContainer.new()
 var _towns_list := VBoxContainer.new()
 var _towns_button: Button
+## The cards the pad wheel's second ring offers ("tool:<n>" picks one).
+var _wheel_tools: Array[Button] = []
+## Every card in every drawer: [Button, category], for search and recents.
+var _all_cards: Array = []
+## The last tools picked, newest first (Anno's and Frostpunk's quick row).
+var _recent: Array[Button] = []
+const RECENT_MAX := 5
+var _quick := VBoxContainer.new()  # search, then the recent tools, bottom left
+var _search_panel := PanelContainer.new()
+var _search := LineEdit.new()
+var _results := VBoxContainer.new()
+## A building's name (and problem) when the cursor rests on it.
+var hover := HoverCard.new()
 
 
 func setup(rt: RoadTool, zt: ZoneTool, s: CitySim, g: Node) -> void:
@@ -150,6 +179,9 @@ func _ready() -> void:
 	_root.add_child(_info_panel)
 	_build_economy()
 	_build_stats()
+	_build_quick()
+	hover.setup(sim, info_view.cam, select_tool, anything_open)
+	_root.add_child(hover)
 	tour.setup(sim, self, info_view.cam, game)
 	_root.add_child(tour)
 
@@ -193,12 +225,47 @@ func _ready() -> void:
 	road_tool.set_mode(road_tool.mode)  # shows the first hint
 
 
+func _input(event: InputEvent) -> void:
+	# Escape while typing in the search box closes it.
+	if _search.has_focus() and event is InputEventKey and event.pressed \
+			and (event as InputEventKey).keycode == KEY_ESCAPE:
+		_open_search(false)
+		(_quick.get_child(0) as Button).set_pressed_no_signal(false)
+		get_viewport().set_input_as_handled()
+
+
 func _unhandled_key_input(event: InputEvent) -> void:
 	var k := event as InputEventKey
-	if k != null and k.pressed and not k.echo and k.keycode == KEY_HOME:
+	if k != null and k.pressed and not k.echo and KeyBinds.matches(k, "home"):
 		jump.go_home()
 		get_viewport().set_input_as_handled()
 		return
+	# Ctrl+Z (Cmd+Z on a Mac; View + X on a controller): undo the last build.
+	# Move It keeps its own undo while it's in hand.
+	if k != null and k.pressed and not k.echo and k.keycode == KEY_Z and (k.ctrl_pressed or k.meta_pressed) \
+			and not move_tool.active:
+		undo_last()
+		get_viewport().set_input_as_handled()
+		return
+	if k != null and k.pressed and not k.echo and not (k.ctrl_pressed or k.meta_pressed or k.alt_pressed):
+		var cat := hotkey_category(k)
+		if cat != "":
+			_open(cat)
+			get_viewport().set_input_as_handled()
+			return
+		if KeyBinds.matches(k, "search") and not k.shift_pressed:
+			var find := _quick.get_child(0) as Button
+			find.button_pressed = not find.button_pressed
+			get_viewport().set_input_as_handled()
+			return
+		if KeyBinds.matches(k, "views") and not k.shift_pressed:
+			_views_button.button_pressed = not _views_button.button_pressed
+			get_viewport().set_input_as_handled()
+			return
+		if KeyBinds.matches(k, "help") or k.keycode == KEY_SLASH and k.shift_pressed:
+			_help_button.button_pressed = not _help_button.button_pressed
+			get_viewport().set_input_as_handled()
+			return
 	if k == null or not k.pressed or k.echo or k.keycode != KEY_ESCAPE:
 		return
 	if road_tool.is_drawing():
@@ -214,17 +281,227 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	get_viewport().set_input_as_handled()
 
 
+# --- Search and recent tools (bottom left, above the bar) --------------------
+
+func _build_quick() -> void:
+	for cat in _drawers:
+		var found := []
+		_cards_in(_drawers[cat], found)
+		for b in found:
+			_all_cards.append([b, cat])
+			b.pressed.connect(_remember.bind(b))
+	_quick.add_theme_constant_override("separation", 2)
+	_quick.alignment = BoxContainer.ALIGNMENT_END
+	_root.add_child(_quick)
+	var find := _icon_button("search", 22, "Find a building or tool  (/)")
+	find.toggle_mode = true
+	find.toggled.connect(_open_search)
+	_quick.add_child(find)
+	_search_panel.add_theme_stylebox_override("panel", UiStyle.panel())
+	_search_panel.visible = false
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 2)
+	_search_panel.add_child(col)
+	_search.placeholder_text = "Find: school, park, well..."
+	_search.custom_minimum_size = Vector2(220, 0)
+	_search.text_changed.connect(_find)
+	_search.text_submitted.connect(func(_t): _pick_result(0))
+	col.add_child(_search)
+	col.add_child(_results)
+	_root.add_child(_search_panel)
+
+
+func _cards_in(n: Node, out: Array) -> void:
+	for c in n.get_children():
+		if c is Button and c.has_meta("title"):
+			out.append(c)
+		elif c is Control:
+			_cards_in(c, out)
+
+
+func _open_search(on: bool) -> void:
+	_search_panel.visible = on
+	if on:
+		_search.clear()
+		_find("")
+		_search.grab_focus()
+	else:
+		_search.release_focus()
+
+
+## The cards whose name or tooltip has every word typed, best first.
+func search_cards(text: String) -> Array[Button]:
+	var out: Array[Button] = []
+	var words := text.to_lower().split(" ", false)
+	if words.is_empty():
+		return out
+	var starts: Array[Button] = []
+	for entry in _all_cards:
+		var b: Button = entry[0]
+		var title := (b.get_meta("title") as Label).text.to_lower()
+		var hay := title + " " + b.tooltip_text.to_lower()
+		if Array(words).all(func(w): return w in hay):
+			if title.begins_with(words[0]):
+				starts.append(b)
+			elif not b in out:
+				out.append(b)
+	return starts + out
+
+
+func _find(text: String) -> void:
+	for c in _results.get_children():
+		c.queue_free()
+	var hits := search_cards(text)
+	for i in mini(hits.size(), 8):
+		var b := hits[i]
+		var r := Button.new()
+		r.text = (b.get_meta("title") as Label).text
+		r.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		r.focus_mode = Control.FOCUS_NONE
+		r.pressed.connect(_pick_result.bind(i))
+		_results.add_child(r)
+
+
+func _pick_result(i: int) -> void:
+	var hits := search_cards(_search.text)
+	if i < hits.size():
+		press_card(hits[i])
+	_open_search(false)
+	(_quick.get_child(0) as Button).set_pressed_no_signal(false)
+
+
+## Picks a card from anywhere (search, recents): opens its menu, then the tool.
+func press_card(b: Button) -> void:
+	for entry in _all_cards:
+		if entry[0] == b and entry[1] != _category:
+			_open(entry[1])
+	b.pressed.emit()
+	_sync()
+
+
+func _remember(b: Button) -> void:
+	_recent.erase(b)
+	_recent.push_front(b)
+	if _recent.size() > RECENT_MAX:
+		_recent.pop_back()
+	# Newest at the bottom, nearest the bar; the search button stays on top.
+	for i in range(_quick.get_child_count() - 1, 0, -1):
+		_quick.get_child(i).queue_free()
+	for r in _recent:
+		var q := _icon_button((r.get_meta("icon") as Icon).kind, 22, (r.get_meta("title") as Label).text)
+		q.pressed.connect(press_card.bind(r))
+		_quick.add_child(q)
+		_quick.move_child(q, 1)
+
+
+## Takes back the last road or building placed in the last 30 seconds, with
+## a full refund.
+func undo_last() -> void:
+	var e := sim.undo.last(sim)
+	if e.is_empty() or Time.get_ticks_msec() - int(e.at_ms) > UndoLog.WINDOW_MS:
+		_show_hint("Nothing to undo.")
+		return
+	sim.apply({"type": "undo"})
+	var was := _hint.text
+	var note := "Undone. $%s back." % _thousands(int(e.refund))
+	_show_hint(note)
+	get_tree().create_timer(3.0).timeout.connect(func(): if _hint.text == note: _show_hint(was))
+
+
+## The bottom bar menus Shift + 1 to 0 open, in bar order (Bulldoze and
+## Move It keep their own B and M).
+static func hotkey_categories() -> Array:
+	var keys := []
+	for entry in CATEGORIES:
+		if not entry[0] in ["bulldoze", "move"]:
+			keys.append(entry[0])
+	return keys.slice(0, 10)
+
+
+## The menu a key opens: Shift + a number key, or "".
+static func hotkey_category(k: InputEventKey) -> String:
+	if not k.shift_pressed:
+		return ""
+	var code := k.physical_keycode if k.physical_keycode != KEY_NONE else k.keycode
+	if code < KEY_0 or code > KEY_9:
+		return ""
+	var i := 9 if code == KEY_0 else code - KEY_1
+	var cats := hotkey_categories()
+	return cats[i] if i < cats.size() else ""
+
+
+## The key that opens a menu, for its tooltip.
+static func hotkey_text(cat: String) -> String:
+	if cat == "bulldoze":
+		return "B"
+	if cat == "move":
+		return "M"
+	var i := hotkey_categories().find(cat)
+	return "" if i < 0 else "Shift+%d" % ((i + 1) % 10)
+
+
 ## Game controllers (Pad): the tool wheel holds the bottom bar's categories
 ## and the Views.
 func pad_wheel_items() -> Array:
-	return CATEGORIES + [["views", "Views"]]
+	var items := []
+	for entry in CATEGORIES:
+		items.append([entry[2] if entry.size() > 2 else entry[0], entry[1], entry[0]])
+	return items + [["views", "Views", "views"]]
 
 
-func pad_wheel_pick(key: String) -> void:
+## Which first-ring slot starts lit: the open menu.
+func pad_category_index() -> int:
+	for i in CATEGORIES.size():
+		if CATEGORIES[i][0] == _category:
+			return i
+	return 0
+
+
+## Opens what the wheel picked. A menu with tools answers with its tools for
+## the second ring (like the console editions' radial sub-menus); picking
+## one of those presses its card. Empty means the wheel stays closed.
+func pad_wheel_pick(key: String) -> Array:
+	if key.begins_with("tool:"):
+		var i := int(key.substr(5))
+		if i < _wheel_tools.size() and is_instance_valid(_wheel_tools[i]) and not _wheel_tools[i].disabled:
+			_wheel_tools[i].pressed.emit()
+			if _wheel_tools[i].toggle_mode:
+				_sync()
+		return []
 	if key == "views":
 		_views_button.button_pressed = not _views_button.button_pressed
-	elif key != _category or key == "bulldoze":
+		return []
+	if key != _category or key == "bulldoze":
 		_open(key)
+	return pad_tool_items(key)
+
+
+## The cards in a menu's drawer, for the wheel's second ring.
+func pad_tool_items(cat: String) -> Array:
+	_wheel_tools.clear()
+	var items := []
+	if not _drawers.has(cat) or _category != cat:
+		return items
+	_collect_cards(_drawers[cat], items)
+	return items
+
+
+## Which second-ring slot starts lit: the tool already in hand.
+func pad_tool_selected() -> int:
+	for i in _wheel_tools.size():
+		if is_instance_valid(_wheel_tools[i]) and _wheel_tools[i].button_pressed:
+			return i
+	return 0
+
+
+func _collect_cards(n: Node, items: Array) -> void:
+	for c in n.get_children():
+		if c is Button and c.has_meta("title") and (c as Button).is_visible_in_tree():
+			var b := c as Button
+			_wheel_tools.append(b)
+			items.append([(b.get_meta("icon") as Icon).kind, (b.get_meta("title") as Label).text, "tool:%d" % (_wheel_tools.size() - 1)])
+		elif c is Control:
+			_collect_cards(c, items)
 
 
 ## A grid shape or an outline is being drawn, so Enter finishes it (the
@@ -240,7 +517,7 @@ func pad_bottom_height() -> float:
 
 ## True while a tool is in hand, a panel or view is open, or something is selected.
 func anything_open() -> bool:
-	return _budget_open or _view != "" or _views_panel.visible or _help.visible or advisor.visible or permits.visible or region_panel.visible \
+	return _budget_open or _view != "" or _views_panel.visible or _help.visible or _search_panel.visible or advisor.visible or permits.visible or region_panel.visible \
 		or town.visible or timelapse.visible or stats_panel.visible or _towns_panel.visible \
 		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
@@ -252,6 +529,8 @@ func anything_open() -> bool:
 ## Puts every tool away and closes every panel.
 func close_all() -> void:
 	_budget_open = false
+	_open_search(false)
+	(_quick.get_child(0) as Button).set_pressed_no_signal(false)
 	_show_view("")
 	_views_panel.visible = false
 	_views_button.set_pressed_no_signal(false)
@@ -296,6 +575,12 @@ func _process(_delta: float) -> void:
 	if economy_page.visible:
 		left = economy_page.size.x
 	_info_panel.position = Vector2(left, _top_bar.size.y)
+	# Search and recent tools sit on the left edge just above the bottom dock.
+	_quick.reset_size()
+	_quick.position = Vector2(6, _root.size.y - _bottom.size.y - _quick.size.y - 6)
+	if _search_panel.visible:
+		_search_panel.reset_size()
+		_search_panel.position = Vector2(_quick.size.x + 12, _root.size.y - _bottom.size.y - _search_panel.size.y - 6)
 	var t := sim.clock()
 	var hour: int = t.hour % 12
 	# A game day is a month (see Seasons), so the date is month and year.
@@ -406,7 +691,7 @@ func _build_top_bar() -> void:
 	row.add_theme_constant_override("separation", 8)
 	bar.add_child(row)
 
-	_views_button = _icon_button("views", 24, "Views: see the map by fertility, oil, ore, forest, services, traffic and pollution")
+	_views_button = _icon_button("views", 24, "Views: see the map by fertility, oil, ore, forest, services, traffic and pollution  (V)")
 	_views_button.toggled.connect(func(on): _views_panel.visible = on)
 	row.add_child(_views_button)
 	# Home: back to your town centre (Home key); the arrow lists every town.
@@ -505,10 +790,11 @@ func _build_top_bar() -> void:
 	row.add_child(permits.make_button())
 	advisor.setup(sim, func(): return _advisor_key() if _category != "" or _view == "" else "view_" + _view)
 	row.add_child(advisor.make_button())
-	_help_button = _icon_button("help", 24, "Controls")
+	_help_button = _icon_button("help", 24, "Controls  (F1)")
 	_help_button.toggled.connect(func(on):
 		_help.visible = on
 		if on:
+			_fill_help()
 			advisor.close_panel()
 			permits.close_panel()
 			town.close_panel()
@@ -663,7 +949,11 @@ func _build_bottom_bar() -> void:
 	_drawer_dock.add_child(holder)
 	_drawers["roads"] = _roads_drawer()
 	_drawers["zones"] = _zones_drawer()
-	_drawers["services"] = _services_drawer()
+	_drawers["utilities"] = _utilities_drawer()
+	_drawers["civic"] = _civic_drawer()
+	_drawers["education"] = _education_drawer()
+	_drawers["health"] = _health_drawer()
+	_drawers["transport"] = _transport_drawer()
 	_drawers["parks"] = _parks_drawer()
 	_drawers["industry"] = _industry_drawer()
 	for key in _drawers:
@@ -679,7 +969,8 @@ func _build_bottom_bar() -> void:
 	bar.add_child(row)
 	# Traffic lives under Roads and Farming under Industry, as in CS2.
 	for entry in CATEGORIES:
-		var b := _category_button(entry[0], entry[1])
+		var b := _category_button(entry[2] if entry.size() > 2 else entry[0], entry[1])
+		b.tooltip_text = "%s  (%s)" % [entry[1], hotkey_text(entry[0])]
 		b.pressed.connect(func(): _open(entry[0]))
 		row.add_child(b)
 		_category_buttons[entry[0]] = b
@@ -709,16 +1000,18 @@ func _category_button(icon: String, title: String) -> Button:
 	b.custom_minimum_size = Vector2(104, 36)
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 6)
+	row.add_theme_constant_override("separation", 5)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.set_anchors_preset(Control.PRESET_FULL_RECT)
 	b.add_child(row)
-	var ic := Icon.new(icon, 22)
+	var ic := Icon.new(icon, 20)
 	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(ic)
-	var t := UiStyle.label(title, 14)
+	var t := UiStyle.label(title, 13)
 	t.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(t)
+	# Snug to its title, so twelve categories still sit in a compact row.
+	b.custom_minimum_size.x = maxf(64.0, ceilf(t.get_minimum_size().x) + 20 + 5 + 16)
 	return b
 
 
@@ -760,6 +1053,33 @@ func _roads_drawer() -> PanelContainer:
 		rings.add_child(b)
 		_ring_size_cards.append(b)
 	_ring_sizes = rings_row
+	# Parking: the lots and the garage, in the same one row of options.
+	var park_row := HBoxContainer.new()
+	park_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	stack.add_child(park_row)
+	var lots := _section(park_row, "Parking  ·  9 × 18 ft stalls, accessible stalls by the street")
+	for k in Services.PARKING:
+		var ks: Dictionary = Services.KINDS[k]
+		var n: int = ParkingLots.layout(ks.size, false, k == Services.Kind.PARKING_GARAGE).spots.size()
+		var short := {Services.Kind.PARKING_SMALL: "Small lot", Services.Kind.PARKING_DOWNTOWN: "Downtown",
+			Services.Kind.PARKING_LARGE: "Large lot", Services.Kind.PARK_AND_RIDE: "Park & ride",
+			Services.Kind.PARKING_GARAGE: "Garage"}
+		var b := _card("parking", short[k], "%d stalls" % n)
+		b.tooltip_text = "%s: %d stalls, $%s to build, $%s a month" % [ks.name, n, CitySim.money_text(ks.cost),
+			CitySim.money_text(ks.upkeep)]
+		b.pressed.connect(func():
+			_parking_last = k
+			service_tool.set_kind(k))
+		lots.add_child(b)
+		_service_cards[k] = b
+		_service_cat[k] = "roads"
+	park_row.add_child(VSeparator.new())
+	var stalls := _section(park_row, "Stalls")
+	_angled_card = _card("parking", "60° angled", "")
+	_angled_card.tooltip_text = "60° angled stalls on one-way aisles: easier to pull into, about a quarter fewer stalls. 90° stalls on two-way aisles hold the most. Lots too narrow for a pair of one-way aisles stay at 90°."
+	_angled_card.pressed.connect(func(): service_tool.set_angled(not service_tool.angled))
+	stalls.add_child(_angled_card)
+	_parking_row = park_row
 
 	var upper := VBoxContainer.new()
 	upper.add_theme_constant_override("separation", 2)
@@ -812,31 +1132,48 @@ func _roads_drawer() -> PanelContainer:
 	_parallel_card = _card("parallel", "Parallel", "P")
 	_parallel_card.pressed.connect(func(): road_tool.set_parallel(not road_tool.parallel))
 	opts.add_child(_parallel_card)
-	var lower := _card("lower", "Lower", "Page Down", false)
-	lower.pressed.connect(func(): road_tool.change_elevation(-1))
-	opts.add_child(lower)
-	_elevation.custom_minimum_size = Vector2(48, 0)
-	_elevation.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_elevation.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	opts.add_child(_elevation)
-	var raise := _card("raise", "Raise", "Page Up", false)
+	# Raise over the height over Lower, in one card's space.
+	var elev := VBoxContainer.new()
+	elev.add_theme_constant_override("separation", 0)
+	elev.custom_minimum_size = Vector2(56, 50)
+	opts.add_child(elev)
+	var raise := _step_button("raise", "Raise: bridge  (Page Up)")
 	raise.pressed.connect(func(): road_tool.change_elevation(1))
-	opts.add_child(raise)
+	elev.add_child(raise)
+	_elevation.add_theme_font_size_override("font_size", 11)
+	_elevation.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_elevation.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_elevation.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	elev.add_child(_elevation)
+	var lower := _step_button("lower", "Lower: tunnel  (Page Down)")
+	lower.pressed.connect(func(): road_tool.change_elevation(-1))
+	elev.add_child(lower)
 
 	row.add_child(VSeparator.new())
-	var traffic := _section(row, "Traffic")
-	_traffic_card = _card("traffic", "Traffic", "J")
+	var traffic := _section(row, "Traffic and town")
+	# Traffic over Parking, in one card's space (the menu stays under 1000 px).
+	var pair := VBoxContainer.new()
+	pair.add_theme_constant_override("separation", 2)
+	traffic.add_child(pair)
+	_traffic_card = _half_card("traffic", "Traffic")
 	_traffic_card.tooltip_text = "Traffic flow, lights and stop signs  (J)"
 	_traffic_card.pressed.connect(func():
 		if traffic_tool.mode == TrafficTool.Mode.NONE:
 			traffic_tool.set_mode(TrafficTool.Mode.VIEW)
 		else:
 			road_tool.set_mode(road_tool.last_draw))
-	traffic.add_child(_traffic_card)
+	pair.add_child(_traffic_card)
+	_parking_card = _half_card("parking", "Parking")
+	_parking_card.tooltip_text = "Parking lots and a garage for the town: drivers who can't park at their own stop walk from the nearest one"
+	_parking_card.pressed.connect(func():
+		if service_tool.kind in Services.PARKING:
+			road_tool.set_mode(road_tool.last_draw)
+		else:
+			service_tool.set_kind(_parking_last))
+	pair.add_child(_parking_card)
 
 	# A town hemmed in by its neighbors starts a new neighborhood on open land.
-	row.add_child(VSeparator.new())
-	var town := _section(row, "Town")
+	var town := traffic
 	_neighborhood_card = _card("homes", "Neighborhood", "")
 	_neighborhood_card.tooltip_text = "New neighborhood: start part of your town out on open land, linked by a free county road. You earn one per town stage."
 	_neighborhood_card.pressed.connect(func():
@@ -936,107 +1273,144 @@ func _zones_drawer() -> PanelContainer:
 	return drawer
 
 
-func _services_drawer() -> PanelContainer:
+## A card for a Services kind, filed under its bottom bar category.
+func _service_card(k: int, cat: String) -> Button:
+	var s: Dictionary = Services.KINDS[k]
+	var short := {Services.Kind.WATER_TOWER: "Water tower", Services.Kind.POWER_FEED: "Power line",
+		Services.Kind.WELL: "Well", Services.Kind.SCHOOL: "Elementary", Services.Kind.WATER_UTILITY: "Water utility",
+		Services.Kind.TAXI_COMPANY: "Taxis", Services.Kind.NURSING_HOME: "Nursing home", Services.Kind.BUS_DEPOT: "Bus depot"}
+	var b := _card(s.icon, short.get(k, s.name.split(" ")[0]), "")
+	b.tooltip_text = "%s: $%s to build, $%s a month" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
+	if k == Services.Kind.BUS_DEPOT:
+		b.tooltip_text = "%s: $%s to build, with two buses. It plans its own stops, routes and fare; you set its funding." % [s.name, CitySim.money_text(s.cost)]
+	elif k == Services.Kind.TAXI_COMPANY:
+		b.tooltip_text = "%s: $%s to bring one to town, with two cabs. Its owner runs it on fares: the fleet, the meter and the lot." % [s.name, CitySim.money_text(s.cost)]
+	b.pressed.connect(func(): service_tool.set_kind(k))
+	_service_cards[k] = b
+	_service_cat[k] = cat
+	return b
+
+
+## A card for a landfill, recycling center or cemetery: hubs that grow on their own.
+func _hub_card(k: int, cat: String) -> Button:
+	var hk: String = CivicHubs.TOOL_KINDS[k]
+	var w: Dictionary = Balance.WASTE_SITES[hk]
+	var title: String = CivicHubs.KINDS[hk].name
+	var b := _card(CivicHubs.KINDS[hk].icon, {"recycling_1": "Recycling"}.get(hk, title), "")
+	b.tooltip_text = "%s: $%s to build, $%s a month. Never fills up." % [title, CitySim.money_text(int(w.cost)),
+		CitySim.money_text(int(w.upkeep))]
+	b.pressed.connect(func(): service_tool.set_kind(k))
+	_service_cards[k] = b
+	_service_cat[k] = cat
+	return b
+
+
+## A drawer with one row of titled sections, as the service menus use.
+func _service_drawer(cat: String, sections: Array) -> PanelContainer:
 	var drawer := PanelContainer.new()
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	drawer.add_child(row)
-	for group in [["Utilities", [Services.Kind.POWER_FEED, Services.Kind.WELL, Services.Kind.SUBSTATION,
-				Services.Kind.WATER_TOWER, Services.Kind.WATER_UTILITY]],
-			["Safety and schools", [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.SCHOOL]],
-			["Health and care", [Services.Kind.CLINIC, Services.Kind.HOSPITAL, Services.Kind.NURSING_HOME,
-				Services.Kind.DAYCARE]],
-			["Transit", [Services.Kind.BUS_DEPOT, Services.Kind.TAXI_COMPANY]]]:
+	for sec in sections:
 		if row.get_child_count() > 0:
 			row.add_child(VSeparator.new())
-		var cards := _section(row, group[0])
-		for k in group[1]:
-			var s: Dictionary = Services.KINDS[k]
-			var short := {Services.Kind.WATER_TOWER: "Water tower", Services.Kind.POWER_FEED: "Power line",
-				Services.Kind.WELL: "Well", Services.Kind.SCHOOL: "School", Services.Kind.WATER_UTILITY: "Water utility",
-				Services.Kind.TAXI_COMPANY: "Taxis"}
-			var b := _card(s.icon, short.get(k, s.name.split(" ")[0]),
-				"%s: $%s, $%s a month" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)])
-			b.tooltip_text = "%s: $%s to build, $%s a month" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
-			if k == Services.Kind.BUS_DEPOT:
-				b.tooltip_text = "%s: $%s to build, with two buses. It plans its own stops, routes and fare; you set its funding." % [s.name, CitySim.money_text(s.cost)]
-			elif k == Services.Kind.TAXI_COMPANY:
-				b.tooltip_text = "%s: $%s to bring one to town, with two cabs. Its owner runs it on fares: the fleet, the meter and the lot." % [s.name, CitySim.money_text(s.cost)]
-			b.pressed.connect(func(): service_tool.set_kind(k))
+		var cards := _section(row, sec[0])
+		for b in sec[1]:
 			cards.add_child(b)
-			_service_cards[k] = b
-		if group[0] == "Utilities":
-			# Brawn's hub model: a company whose leader picks and grows the plant.
-			var pc := _card("power", "Power co.", "")
-			pc.tooltip_text = "Power company: $%s. Its leader picks solar, wind, gas, a dam or an old coal plant, and grows it" \
-				% CitySim.money_text(Balance.POWER_YARD_COST)
-			pc.pressed.connect(func(): industry_tool.set_kind("power"))
-			cards.add_child(pc)
-			_power_card = pc
-	# Landfill, recycling and cemetery: hubs that grow on their own.
-	row.add_child(VSeparator.new())
-	var hubs := _section(row, "Trash and cemeteries")
-	for k in CivicHubs.TOOL_KINDS:
-		var hk: String = CivicHubs.TOOL_KINDS[k]
-		var w: Dictionary = Balance.WASTE_SITES[hk]
-		var title: String = CivicHubs.KINDS[hk].name
-		var b := _card(CivicHubs.KINDS[hk].icon, {"recycling_1": "Recycling"}.get(hk, title),
-			"%s: $%s, $%s a month" % [title, CitySim.money_text(int(w.cost)), CitySim.money_text(int(w.upkeep))])
-		b.tooltip_text = "%s: $%s to build, $%s a month. Never fills up." % [title, CitySim.money_text(int(w.cost)),
-			CitySim.money_text(int(w.upkeep))]
-		b.pressed.connect(func(): service_tool.set_kind(k))
-		hubs.add_child(b)
-		_service_cards[k] = b
-	# Campuses grow on their own once placed (Brawn's hub model).
-	row.add_child(VSeparator.new())
-	var campus := _section(row, "High school and college")
-	for k in ["high_school", "college", "university"]:
-		var e: Dictionary = Education.spec(k)
-		var b := _card("school", {"high_school": "High school", "college": "College", "university": "University"}[k], "")
-		b.tooltip_text = "%s: $%s to build, $%s a month. Its %s buys the free land next to it as it fills." % [
-			Education.KINDS[k].name, CitySim.money_text(e.cost), CitySim.money_text(e.funding), Education.KINDS[k].head.to_lower()]
-		b.pressed.connect(func(): campus_tool.set_kind(k))
-		campus.add_child(b)
-		_campus_cards[k] = b
-	# The post office: its postmaster plans the routes.
-	row.add_child(VSeparator.new())
-	var mail := _section(row, "Mail")
-	var pb := _card("mail", "Post office", "Post office: $%s, $%s a month" % [CitySim.money_text(Balance.MAIL_COST),
-		CitySim.money_text(Balance.MAIL_UPKEEP)])
-	pb.tooltip_text = "Post office: $%s to build, $%s a month. Its postmaster plans the routes." % [
-		CitySim.money_text(Balance.MAIL_COST), CitySim.money_text(Balance.MAIL_UPKEEP)]
-	pb.pressed.connect(func(): service_tool.set_kind(Mail.TOOL_KIND))
-	mail.add_child(pb)
-	_service_cards[Mail.TOOL_KIND] = pb
+			if not _first_card.has(cat):
+				_first_card[cat] = b
+	return drawer
+
+
+## Utilities, like CS2's Electricity, Water & Sewage, Garbage and
+## Communications menus: what every home and shop is hooked up to.
+func _utilities_drawer() -> PanelContainer:
+	var cat := "utilities"
+	# Brawn's hub model: a company whose leader picks and grows the plant.
+	_power_card = _card("power", "Power co.", "")
+	_power_card.tooltip_text = "Power company: $%s. Its leader picks solar, wind, gas, a dam or an old coal plant, and grows it" \
+		% CitySim.money_text(Balance.POWER_YARD_COST)
+	_power_card.pressed.connect(func(): industry_tool.set_kind("power"))
 	# The phone company: placed once, then it builds its own network.
-	row.add_child(VSeparator.new())
-	var phone := _section(row, "Phone and internet")
 	_telecom_card = _card("tower", "Phone co.", "")
 	_telecom_card.tooltip_text = "Phone company: $%s to build, $%s a month grant. Its manager strings fiber and puts up cell towers where they pay off. One per town." % [
 		CitySim.money_text(Balance.TELECOM_COST), CitySim.money_text(Balance.TELECOM_GRANT)]
 	_telecom_card.pressed.connect(func(): telecom_tool.set_kind("telecom"))
-	phone.add_child(_telecom_card)
-	# The railroad: its leader plans the track and asks before building.
-	row.add_child(VSeparator.new())
-	var rail := _section(row, "Rail")
-	var rb := _card("train", "Rail depot", "")
-	rb.tooltip_text = "Rail depot: $%s. Its leader lays track to the region and to industry, by your permit." % \
-		CitySim.money_text(Balance.RAIL_DEPOT_COST)
-	rb.pressed.connect(func(): service_tool.set_kind(Rail.TOOL_KIND))
-	rail.add_child(rb)
-	_service_cards[Rail.TOOL_KIND] = rb
+	return _service_drawer(cat, [
+		["Power", [_service_card(Services.Kind.POWER_FEED, cat), _service_card(Services.Kind.SUBSTATION, cat), _power_card]],
+		["Water and sewer", [_service_card(Services.Kind.WELL, cat), _service_card(Services.Kind.WATER_TOWER, cat),
+			_service_card(Services.Kind.WATER_UTILITY, cat)]],
+		["Trash", [_hub_card(100, cat), _hub_card(101, cat)]],
+		["Phone and internet", [_telecom_card]]])
+
+
+## Civic: fire and police (CS2's Fire & Rescue, Police & Administration),
+## the post office and the banks.
+func _civic_drawer() -> PanelContainer:
+	var cat := "civic"
+	# The post office: its postmaster plans the routes.
+	var pb := _card("mail", "Post office", "")
+	pb.tooltip_text = "Post office: $%s to build, $%s a month. Its postmaster plans the routes." % [
+		CitySim.money_text(Balance.MAIL_COST), CitySim.money_text(Balance.MAIL_UPKEEP)]
+	pb.pressed.connect(func(): service_tool.set_kind(Mail.TOOL_KIND))
+	_service_cards[Mail.TOOL_KIND] = pb
+	_service_cat[Mail.TOOL_KIND] = cat
 	# Banks lend to the farms, companies and builders (Brawn's hub model).
-	row.add_child(VSeparator.new())
-	var bank := _section(row, "Banks")
+	var banks := []
 	for k in ["community", "farm_credit"]:
 		var b := _card("bank", {"community": "Bank", "farm_credit": "Farm Credit"}[k], "")
 		b.tooltip_text = "%s: $%s for the lot. Its %s lends to %s, and buys the land next door as it grows." % [
 			Banks.KINDS[k].name, CitySim.money_text(int(Banks.spec(k).cost)), Banks.KINDS[k].head.to_lower(),
 			{"community": "farms, companies and builders", "farm_credit": "farms and timber"}[k]]
 		b.pressed.connect(func(): bank_tool.set_kind(k))
-		bank.add_child(b)
 		_bank_cards[k] = b
-	return drawer
+		banks.append(b)
+	return _service_drawer(cat, [
+		["Safety", [_service_card(Services.Kind.FIRE, cat), _service_card(Services.Kind.POLICE, cat)]],
+		["Mail", [pb]],
+		["Banks", banks]])
+
+
+## Education, from daycare to the university (CS2's Education & Research).
+## Campuses grow on their own once placed (Brawn's hub model).
+func _education_drawer() -> PanelContainer:
+	var cat := "education"
+	var campus := []
+	for k in ["high_school", "college", "university"]:
+		var e: Dictionary = Education.spec(k)
+		var b := _card("school", {"high_school": "High school", "college": "College", "university": "University"}[k], "")
+		b.tooltip_text = "%s: $%s to build, $%s a month. Its %s buys the free land next to it as it fills." % [
+			Education.KINDS[k].name, CitySim.money_text(e.cost), CitySim.money_text(e.funding), Education.KINDS[k].head.to_lower()]
+		b.pressed.connect(func(): campus_tool.set_kind(k))
+		_campus_cards[k] = b
+		campus.append(b)
+	return _service_drawer(cat, [
+		["Schools", [_service_card(Services.Kind.SCHOOL, cat), _service_card(Services.Kind.DAYCARE, cat)]],
+		["High school and college", campus]])
+
+
+## Health and care, with the cemetery (CS2's Healthcare & Deathcare).
+func _health_drawer() -> PanelContainer:
+	var cat := "health"
+	return _service_drawer(cat, [
+		["Health and care", [_service_card(Services.Kind.CLINIC, cat), _service_card(Services.Kind.HOSPITAL, cat),
+			_service_card(Services.Kind.NURSING_HOME, cat)]],
+		["Cemetery", [_hub_card(102, cat)]]])
+
+
+## Transport: buses, cabs and the railroad (CS2's Transportation).
+func _transport_drawer() -> PanelContainer:
+	var cat := "transport"
+	# The railroad: its leader plans the track and asks before building.
+	var rb := _card("train", "Rail depot", "")
+	rb.tooltip_text = "Rail depot: $%s. Its leader lays track to the region and to industry, by your permit." % \
+		CitySim.money_text(Balance.RAIL_DEPOT_COST)
+	rb.pressed.connect(func(): service_tool.set_kind(Rail.TOOL_KIND))
+	_service_cards[Rail.TOOL_KIND] = rb
+	_service_cat[Rail.TOOL_KIND] = cat
+	return _service_drawer(cat, [
+		["Transit", [_service_card(Services.Kind.BUS_DEPOT, cat), _service_card(Services.Kind.TAXI_COMPANY, cat)]],
+		["Rail", [rb]]])
 
 
 func _parks_drawer() -> PanelContainer:
@@ -1084,9 +1458,18 @@ func _parks_drawer() -> PanelContainer:
 ## the resource; its pads spread on their own. Reserve saves land for it.
 func _industry_drawer() -> PanelContainer:
 	var drawer := PanelContainer.new()
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 6)
+	drawer.add_child(stack)
+	# Warehouse sizes, in the one row above the tools while a warehouse is in
+	# hand (like the park sizes), so the menu stays one compact row.
+	_warehouse_sizes = HBoxContainer.new()
+	_warehouse_sizes.alignment = BoxContainer.ALIGNMENT_CENTER
+	stack.add_child(_warehouse_sizes)
+	var sizes := _section(_warehouse_sizes, "Warehouse size  ·  beside a street")
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
-	drawer.add_child(row)
+	stack.add_child(row)
 	var farms := _section(row, "Farmhouse  ·  near green soil")
 	for entry in [[FarmTool.Mode.CORN, "corn", "Corn", "Corn farm: more income on rich soil"],
 			[FarmTool.Mode.SOYBEANS, "soybeans", "Soybeans", "Soybean farm: steadier on poorer soil"]]:
@@ -1102,7 +1485,11 @@ func _industry_drawer() -> PanelContainer:
 		_farm_cards[m] = b
 	var hq := _section(row, "Main building  ·  near the resource")
 	var area := _section(row, "Save land")
-	var stores := _section(row, "Warehouses  ·  beside a street")
+	var stores := _section(row, "Storage")
+	_warehouse_card = _card("warehouse", "Warehouse", "")
+	_warehouse_card.tooltip_text = "Warehouses store raw loads and goods until a factory or shop needs them. Pick a size above."
+	_warehouse_card.pressed.connect(func(): warehouse_tool.set_kind(_warehouse_last))
+	stores.add_child(_warehouse_card)
 	var plants := _section(row, "Big factories  ·  one per town")
 	for k in BigFactories.ORDER:
 		var kk: Dictionary = BigFactories.KINDS[k]
@@ -1118,7 +1505,7 @@ func _industry_drawer() -> PanelContainer:
 		b.tooltip_text = "%s, %s ($%s): stores raw loads and goods until a factory or shop needs them" \
 			% [Warehouses.KINDS[k].name, Warehouses.KINDS[k].area, CitySim.money_text(int(spec.cost))]
 		b.pressed.connect(func(): warehouse_tool.set_kind(k))
-		stores.add_child(b)
+		sizes.add_child(b)
 		_warehouse_cards[k] = b
 	for entry in [["oil", "oil", "Oil", "Oil company: pumpjacks spread over the oil field"],
 			["ore", "ore", "Mining", "Mining company: pits open where the ore is"],
@@ -1200,6 +1587,43 @@ func _card(icon: String, title: String, detail: String, toggle := true) -> Butto
 	return b
 
 
+## A slim arrow button, a third of a card tall (road height up and down).
+## A half-height card, icon beside its name, for two to share one card's space.
+func _half_card(icon: String, title: String) -> Button:
+	var b := Button.new()
+	b.toggle_mode = true
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(64, 24)
+	b.tooltip_text = title
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 4)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.set_anchors_preset(Control.PRESET_FULL_RECT)
+	b.add_child(row)
+	var ic := Icon.new(icon, 16)
+	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(ic)
+	var t := UiStyle.label(title, 11)
+	t.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(t)
+	b.set_meta("icon", ic)
+	b.set_meta("title", t)
+	return b
+
+
+func _step_button(icon: String, tip: String) -> Button:
+	var b := Button.new()
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(56, 16)
+	b.tooltip_text = tip
+	var ic := Icon.new(icon, 14)
+	ic.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	ic.position -= Vector2(7, 7)
+	b.add_child(ic)
+	return b
+
+
 func _icon_button(icon: String, px: int, tip: String) -> Button:
 	var b := Button.new()
 	b.toggle_mode = true
@@ -1261,9 +1685,8 @@ func _open(cat: String) -> void:
 					farm_tool.set_mode(FarmTool.Mode.CORN)
 				else:
 					industry_tool.set_kind(_industry_kind)
-		"services":
-			if service_tool.kind == ServiceTool.OFF:
-				service_tool.set_kind(Services.Kind.POWER_FEED)
+		"utilities", "civic", "education", "health", "transport":
+			_first_card[cat].pressed.emit()
 		"parks":
 			if park_tool.kind == "":
 				park_tool.set_kind("park")
@@ -1300,16 +1723,21 @@ func _advisor_key() -> String:
 	if farm_tool.mode in [FarmTool.Mode.CORN, FarmTool.Mode.SOYBEANS] or (farm_tool.mode != FarmTool.Mode.NONE
 			and farm_tool.reserve_kind == "farm"):
 		return "farms"
-	return _category
+	return "services" if _category in SERVICE_CATEGORIES else _category
 
 
 ## Brings every button in line with the tools (keys change them too).
 func _sync() -> void:
 	if zone_tool.zone != ZoneTool.OFF or farm_tool.mode in [FarmTool.Mode.PLAN, FarmTool.Mode.UNPLAN]:
 		_category = "zones"
-	elif service_tool.kind != ServiceTool.OFF or campus_tool.kind != "" or industry_tool.kind == "power" \
-			or bank_tool.kind != "" or telecom_tool.kind != "":
-		_category = "services"
+	elif service_tool.kind != ServiceTool.OFF:
+		_category = _service_cat.get(service_tool.kind, "utilities")
+	elif industry_tool.kind == "power" or telecom_tool.kind != "":
+		_category = "utilities"
+	elif campus_tool.kind != "":
+		_category = "education"
+	elif bank_tool.kind != "":
+		_category = "civic"
 	elif park_tool.kind != "":
 		_category = "parks"
 	elif industry_tool.kind != "" or warehouse_tool.kind != "" or big_tool.kind != "" or farm_tool.mode != FarmTool.Mode.NONE:
@@ -1331,15 +1759,16 @@ func _sync() -> void:
 	for key in _drawers:
 		_drawers[key].visible = key == _category
 	_drawer_dock.visible = _drawers.has(_category)
-	lot_alerts.show_empty = _category in ["zones", "services"]
+	lot_alerts.show_empty = _category == "zones" or _category in SERVICE_CATEGORIES
 	_fit_bottom.call_deferred()
 	for m in _tool_cards:
 		_tool_cards[m].set_pressed_no_signal(m == road_tool.mode)
 	var menu := RoadStyle.group(road_tool.road_type)
 	_variant_of[menu] = road_tool.road_type
 	var in_traffic := traffic_tool.mode != TrafficTool.Mode.NONE
+	var placing_lot: bool = service_tool.kind in Services.PARKING
 	for g in _type_cards:
-		_type_cards[g].set_pressed_no_signal(g == menu and not in_traffic)
+		_type_cards[g].set_pressed_no_signal(g == menu and not in_traffic and not placing_lot)
 		# The menu card shows the kind picked in it.
 		(_type_cards[g].get_meta("icon") as Icon).kind = \
 			RoadStyle.TYPES[g].name.to_lower() if _variant_of.get(g, g) == g else "road:%d" % _variant_of[g]
@@ -1381,6 +1810,10 @@ func _sync() -> void:
 		elif k == "release":
 			on = _category == "industry" and farm_tool.mode == FarmTool.Mode.CLEAR
 		_industry_cards[k].set_pressed_no_signal(on)
+	if warehouse_tool.kind != "":
+		_warehouse_last = warehouse_tool.kind
+	_warehouse_card.set_pressed_no_signal(warehouse_tool.kind != "")
+	_warehouse_sizes.visible = warehouse_tool.kind != ""
 	for k in _warehouse_cards:
 		_warehouse_cards[k].set_pressed_no_signal(k == warehouse_tool.kind)
 	for k in _big_cards:
@@ -1394,6 +1827,15 @@ func _sync() -> void:
 	for i in _grid_size_cards.size():
 		_grid_size_cards[i].set_pressed_no_signal(i == road_tool.grid_preset)
 	_ring_sizes.visible = road_tool.mode == RoadTool.Mode.ROUNDABOUT and not _kinds_open and not in_traffic
+	var parking: bool = service_tool.kind in Services.PARKING
+	_parking_row.visible = parking
+	_parking_card.set_pressed_no_signal(parking)
+	_angled_card.set_pressed_no_signal(service_tool.angled)
+	(_angled_card.get_meta("title") as Label).text = "60° angled" if service_tool.angled else "90° stalls"
+	if parking:
+		_grid_sizes.visible = false
+		_ring_sizes.visible = false
+		_variant_row.get_parent().visible = false
 	for i in _ring_size_cards.size():
 		_ring_size_cards[i].set_pressed_no_signal(i == road_tool.roundabout_preset)
 	_elevation.text = "Ground" if road_tool.elevation == 0.0 else "%+d ft" % roundi(road_tool.elevation * RoadTool.FT)
@@ -1533,25 +1975,9 @@ func _build_help() -> void:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 2)
 	_help.add_child(col)
-	col.add_child(UiStyle.label("CAMERA", 10, UiStyle.MUTED))
-	for line in ["W A S D  move  (Shift: faster)", "Q / E  rotate", "T / G  tilt", "R / F or scroll  zoom",
-			"Right drag  move the map", "Middle drag or Option + drag  rotate", "Home  back to your town"]:
-		col.add_child(UiStyle.label(line, 12))
-	col.add_child(UiStyle.label("TOOLS", 10, UiStyle.MUTED))
-	for line in ["1 2 3 4  road, curve, grid, roundabout", "U upgrade   P parallel   B bulldoze   M move it",
-			"[ ]  size   Page Up / Down  bridge or tunnel", "Grid: Enter builds the shape, Tab turns it",
-			"5 6 7 8  homes, shops, industry, dezone   Tab  brush",
-			"J  traffic view   Ctrl+Z  undo a move",
-			"Right click  stop drawing", "Esc  stop drawing, then close everything"]:
-		col.add_child(UiStyle.label(line, 12))
-	col.add_child(UiStyle.label("GAME", 10, UiStyle.MUTED))
-	for line in ["Space  pause", "Enter  chat (in a region)", "N  flag the sound you just heard"]:
-		col.add_child(UiStyle.label(line, 12))
-	col.add_child(UiStyle.label("CONTROLLER", 10, UiStyle.MUTED))
-	for line in ["Left stick  cursor (push the edge to move)", "Right stick  turn and tilt   LT / RT  zoom",
-			"A  use   X  cancel   B  back   Y  tool wheel", "LB / RB  size or turn   D-pad  height, speed",
-			"Click right stick  finish a shape, or go home", "Menu  pause menu   View  pause"]:
-		col.add_child(UiStyle.label(line, 12))
+	_help_keys.add_theme_constant_override("separation", 2)
+	col.add_child(_help_keys)
+	_fill_help()
 	var guide := Button.new()
 	guide.text = "Guided tour (first town)"
 	guide.focus_mode = Control.FOCUS_NONE
@@ -1566,6 +1992,42 @@ func _build_help() -> void:
 	_help.visible = false
 	_root.add_child(_help)
 	_pin(_help, Control.PRESET_TOP_RIGHT, Vector2(-6, 42))
+
+
+## The key list follows the Controls page, so it's refilled each time it opens.
+func _fill_help() -> void:
+	for c in _help_keys.get_children():
+		c.queue_free()
+	var k := func(a: String) -> String: return KeyBinds.text(a)
+	var lines := [
+		"CAMERA",
+		"%s %s %s %s  move  (Shift: faster)" % [k.call("move_forward"), k.call("move_left"), k.call("move_back"), k.call("move_right")],
+		"%s / %s  rotate   %s / %s  tilt" % [k.call("rotate_left"), k.call("rotate_right"), k.call("tilt_up"), k.call("tilt_down")],
+		"%s / %s or scroll  zoom" % [k.call("zoom_in"), k.call("zoom_out")],
+		"Right drag  move the map", "Middle drag or Option + drag  rotate", "%s  back to your town" % k.call("home"),
+		"TOOLS",
+		"Shift + 1 to 0  open a menu (shown on each button)   %s  views   %s  find" % [k.call("views"), k.call("search")],
+		"%s %s %s %s  road, curve, grid, roundabout" % [k.call("road"), k.call("curve"), k.call("grid"), k.call("roundabout")],
+		"%s upgrade   %s parallel   %s bulldoze   %s move it" % [k.call("upgrade"), k.call("parallel"), k.call("bulldoze"), k.call("move_it")],
+		"%s %s  size   %s / %s  bridge or tunnel" % [k.call("smaller"), k.call("bigger"), k.call("raise"), k.call("lower")],
+		"Grid: Enter builds the shape, Tab turns it",
+		"%s %s %s %s  homes, shops, industry, dezone   %s  brush" % [k.call("homes"), k.call("shops"), k.call("industry"),
+			k.call("dezone"), k.call("brush")],
+		"%s  traffic view   Ctrl+Z  undo the last build" % k.call("traffic"),
+		"Right click  stop drawing", "Esc  stop drawing, then close everything",
+		"GAME",
+		"%s  pause   Enter  chat (in a region)   %s  flag a bad sound" % [k.call("pause"), k.call("flag_sound")],
+		"Change keys: pause menu, Controls",
+		"CONTROLLER",
+		"Left stick  cursor (push the edge to move)", "Right stick  turn and tilt   LT / RT  zoom",
+		"A  use   X  cancel   B  back   Y  tool wheel, then its tools",
+		"LB / RB  size or turn   D-pad  height, speed; steps between buttons over a menu",
+		"Click right stick  finish a shape, or go home", "Menu  pause menu   View  pause   View + X  undo"]
+	for line in lines:
+		if line == line.to_upper():
+			_help_keys.add_child(UiStyle.label(line, 10, UiStyle.MUTED))
+		else:
+			_help_keys.add_child(UiStyle.label(line, 12))
 
 
 ## The build stamp written by the web preview workflow, or "dev" locally:

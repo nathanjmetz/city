@@ -263,6 +263,7 @@ func _rebuild_now() -> void:
 				for i in list.size():
 					var xf: Transform3D = list[i][0]
 					multi.set_instance_transform(i, Transform3D(xf.basis, xf.origin - centre))
+					multi.set_instance_color(i, Color.WHITE)
 					# Alpha carries the species, for the season colours.
 					var custom: Color = list[i][2]
 					custom.a = (float(sp) + 0.5) / 8.0
@@ -279,6 +280,9 @@ func _chunk(g: String, sp: int, far: bool, centre: Vector3) -> MultiMeshInstance
 	var mmi := MultiMeshInstance3D.new()
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
+	# White instance colours: the browser's renderer multiplies vertex COLOR
+	# by the instance colour even without use_colors, and that is black.
+	mm.use_colors = true
 	mm.use_custom_data = true
 	mm.mesh = tree_mesh(sp, far, fades)
 	mmi.multimesh = mm

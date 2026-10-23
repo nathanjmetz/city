@@ -21,7 +21,7 @@ func setup(s: CitySim) -> void:
 func _sync() -> void:
 	for id in _nodes.keys():
 		var f = sim.big.sites.get(id)
-		if f == null or _shapes[id] != [f.kind, f.level, f.bays]:
+		if f == null or _shapes[id] != [f.kind, f.level, f.bays, f.get("built", []).size()]:
 			_trees.remove(_nodes[id].get_meta("tree_key"))
 			_nodes[id].queue_free()
 			_nodes.erase(id)
@@ -30,7 +30,7 @@ func _sync() -> void:
 		if not _nodes.has(id):
 			var f: Dictionary = sim.big.sites[id]
 			_nodes[id] = _spawn(id, f)
-			_shapes[id] = [f.kind, f.level, f.bays]
+			_shapes[id] = [f.kind, f.level, f.bays, f.get("built", []).size()]
 
 
 func _spawn(id: int, f: Dictionary) -> Node3D:

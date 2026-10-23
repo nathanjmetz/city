@@ -66,6 +66,54 @@ func _initialize() -> void:
 	await process_frame
 	_check(_keys.has(KEY_HOME), "clicking the right stick flies home")
 
+	# Hold View and press X: undo (Ctrl+Z), and no pause on the release.
+	_keys.clear()
+	_press(JOY_BUTTON_BACK, true)
+	_press(JOY_BUTTON_X, true)
+	_press(JOY_BUTTON_X, false)
+	_press(JOY_BUTTON_BACK, false)
+	await process_frame
+	await process_frame
+	_check(_keys.has(KEY_Z), "View + X undoes like Ctrl+Z")
+
+	# Over a menu the d-pad steps to the next button that way.
+	var other := Button.new()
+	other.position = Vector2(48, 4)
+	other.size = Vector2(12, 30)
+	root.add_child(other)
+	Pad.cursor = Vector2(20, 15)
+	Pad._move(Vector2.ZERO)
+	await process_frame
+	await process_frame
+	_press(JOY_BUTTON_DPAD_RIGHT, true)
+	await process_frame
+	_check(Pad.cursor.distance_to(other.get_global_rect().get_center()) < 1.0,
+		"the d-pad steps the cursor to the button on the right (%s)" % Pad.cursor)
+	_press(JOY_BUTTON_DPAD_LEFT, true)
+	await process_frame
+	_check(Pad.cursor.distance_to(button.get_global_rect().get_center()) < 1.0, "and back to the left")
+	other.queue_free()
+
+	# The wheel's second ring: more tools make a bigger ring.
+	var w := PadWheel.new()
+	w.open([["road", "A", "tool:0"], ["road", "B", "tool:1"]], 0, "Use")
+	var picked_key := [""]
+	w.picked.connect(func(k): picked_key[0] = k)
+	w.pick()
+	_check(picked_key[0] == "tool:0", "the wheel hands back an item's own key (%s)" % picked_key[0])
+	w.free()
+
+	# Keyboard: Shift + a number opens a bottom bar menu, in bar order.
+	var e := InputEventKey.new()
+	e.shift_pressed = true
+	e.keycode = KEY_2
+	_check(Hud.hotkey_category(e) == "zones", "Shift+2 opens Zoning (%s)" % Hud.hotkey_category(e))
+	e.keycode = KEY_0
+	_check(Hud.hotkey_category(e) == Hud.hotkey_categories().back(), "Shift+0 opens the last menu")
+	e.shift_pressed = false
+	_check(Hud.hotkey_category(e) == "", "a plain number key still picks a tool")
+	_check(Hud.hotkey_text("bulldoze") == "B" and Hud.hotkey_text("roads") == "Shift+1", "tooltips name the keys")
+
 	# With the pause menu up, the pad leaves the town alone.
 	MenuState.showing = true
 	_press(JOY_BUTTON_Y, true)

@@ -117,6 +117,9 @@ func _ready() -> void:
 	for kind in Rail.STOCK:
 		var m := MultiMesh.new()
 		m.transform_format = MultiMesh.TRANSFORM_3D
+		# White instance colours: the browser's renderer multiplies vertex
+		# COLOR by the instance colour even without use_colors (black).
+		m.use_colors = true
 		m.mesh = RailModels.build(kind)
 		var inst := MultiMeshInstance3D.new()
 		inst.multimesh = m
@@ -703,6 +706,7 @@ func _draw_trains() -> void:
 			mm.instance_count = maxi(list.size() * 2, 8)
 		for i in list.size():
 			mm.set_instance_transform(i, list[i])
+			mm.set_instance_color(i, Color.WHITE)
 		mm.visible_instance_count = list.size()
 
 

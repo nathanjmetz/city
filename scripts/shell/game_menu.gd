@@ -19,6 +19,8 @@ var _was_speed := 1
 var _just_heard := []
 var _preview := AudioStreamPlayer.new()
 var _preview_stop: SceneTreeTimer
+## The action the Controls page is waiting to hear a key for, or "".
+var _capture := ""
 
 
 func _ready() -> void:
@@ -65,7 +67,7 @@ func _exit_tree() -> void:
 ## N: "that sound was bad". Opens the Audio page with what just played.
 func _unhandled_key_input(event: InputEvent) -> void:
 	var k := event as InputEventKey
-	if k == null or not k.pressed or k.echo or k.keycode != KEY_N or k.ctrl_pressed or k.meta_pressed:
+	if k == null or not k.pressed or k.echo or not KeyBinds.matches(k, "flag_sound") or k.ctrl_pressed or k.meta_pressed:
 		return
 	if not _shade.visible:
 		open()
@@ -81,7 +83,19 @@ func _input(event: InputEvent) -> void:
 	if not _shade.visible or not event is InputEventKey:
 		return
 	var k := event as InputEventKey
-	if k.keycode == KEY_N:
+	# The Controls page is waiting for a key: this one is it (Esc cancels).
+	if _capture != "":
+		get_viewport().set_input_as_handled()
+		if k.pressed and not k.echo:
+			var a := _capture
+			_capture = ""
+			if k.keycode != KEY_ESCAPE:
+				var bumped := KeyBinds.bind(a, k.keycode)
+				_note.text = "%s is on %s now." % [KeyBinds.label(a), KeyBinds.text(a)] \
+					+ ("" if bumped == "" else " %s has no key; give it one below." % KeyBinds.label(bumped))
+			_controls()
+		return
+	if KeyBinds.matches(k, "flag_sound"):
 		return
 	get_viewport().set_input_as_handled()
 	if k.pressed and not k.echo and k.keycode == KEY_ESCAPE:
@@ -159,6 +173,9 @@ func _fill() -> void:
 	if q and q.active:
 		_col.add_child(_button("Graphics: " + q.label(), _graphics))
 	_col.add_child(_button("Audio" + ("  ·  muted" if SoundSettings.muted else ""), _audio))
+	_col.add_child(_button("Controls", func():
+		_note.text = ""
+		_controls()))
 	_col.add_child(_button("Credits", func(): _note.text = SoundCredits.text()))
 	if not OS.has_feature("web"):
 		_col.add_child(_button("Quit to desktop", func():
@@ -345,6 +362,62 @@ func _play(id: String) -> void:
 	t.timeout.connect(func():
 		if _preview_stop == t:
 			_preview.stop())
+
+
+## The Controls page, like CS2's key bindings: every action and its key.
+## Click a key, then press the new one. The controller's buttons are listed
+## too; LB / RB, the d-pad and the right stick click follow the keys here.
+func _controls() -> void:
+	var scroll_at := 0
+	for c in _col.get_children():
+		if c is ScrollContainer:
+			scroll_at = (c as ScrollContainer).scroll_vertical
+		if c != _title and c != _note:
+			c.queue_free()
+	_title.text = "Controls"
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(480, 360)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list.add_theme_constant_override("separation", 2)
+	scroll.add_child(list)
+	for row in KeyBinds.ACTIONS:
+		var a: String = row[0]
+		var line := HBoxContainer.new()
+		var name := ShellStyle.text(row[1], 14, 500, Brand.INK)
+		name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		line.add_child(name)
+		var key := Button.new()
+		key.text = "Press a key..." if _capture == a else KeyBinds.text(a)
+		key.focus_mode = Control.FOCUS_NONE
+		key.custom_minimum_size = Vector2(140, 30)
+		key.pressed.connect(func():
+			_capture = a
+			_note.text = "Press the new key for %s. Esc keeps the old one." % row[1]
+			_controls())
+		line.add_child(key)
+		list.add_child(line)
+	list.add_child(ShellStyle.text("CONTROLLER", 12, 600, Brand.INK_MUTED))
+	for pair in [["Left stick", "Cursor"], ["Right stick", "Turn and tilt"], ["LT / RT", "Zoom"], ["A", "Use"],
+			["B", "Back"], ["X", "Cancel"], ["Y", "Tool wheel"], ["LB / RB", "Smaller / bigger"],
+			["D-pad", "Raise, lower, slower, faster"], ["Click right stick", "Finish a shape, or go home"],
+			["Menu", "This menu"], ["View", "Pause; hold it and press X to undo"]]:
+		var line := HBoxContainer.new()
+		var name := ShellStyle.text(pair[1], 14, 500, Brand.INK)
+		name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		line.add_child(name)
+		line.add_child(ShellStyle.text(pair[0], 14, 600, Brand.INK_MUTED))
+		list.add_child(line)
+	_col.add_child(scroll)
+	scroll.set_deferred("scroll_vertical", scroll_at)
+	_col.add_child(_button("Reset to defaults", func():
+		KeyBinds.reset()
+		_note.text = "Every key is back to its default."
+		_controls()))
+	_col.add_child(_button("Back", func():
+		_capture = ""
+		_fill()))
 
 
 func _lost_connection() -> void:

@@ -57,6 +57,17 @@ func _draw() -> void:
 		draw_texture_rect(_texture(_FILES[kind]), rect, false, color)
 		return
 	match kind:
+		"parking":
+			# The MUTCD parking sign: a P in a rounded square.
+			var r := Rect2(P.call(0.18, 0.14), Vector2(s * 0.64, s * 0.72))
+			draw_rect(r, color, false, w)
+			line.call(P.call(0.4, 0.3), P.call(0.4, 0.74))
+			var bowl := PackedVector2Array()
+			for i in 17:
+				var a := -PI * 0.5 + PI * i / 16.0
+				bowl.append(P.call(0.47, 0.42) + Vector2(cos(a), sin(a)) * s * 0.12)
+			draw_polyline(PackedVector2Array([P.call(0.4, 0.3), P.call(0.47, 0.3)]) + bowl
+				+ PackedVector2Array([P.call(0.4, 0.54)]), color, w, true)
 		"region":
 			# A globe: the region's shared projects and neighbors.
 			var c: Vector2 = P.call(0.5, 0.5)
@@ -67,6 +78,10 @@ func _draw() -> void:
 				var a := TAU * i / 32.0
 				pts.append(c + Vector2(cos(a) * s * 0.16, sin(a) * s * 0.38))
 			draw_polyline(pts, color, w, true)
+		"search":
+			# A magnifying glass: find a building or tool.
+			draw_arc(P.call(0.42, 0.42), s * 0.26, 0.0, TAU, 28, color, w, true)
+			line.call(P.call(0.61, 0.61), P.call(0.86, 0.86), w * 1.4)
 		"chat":
 			# A speech bubble: the region chat.
 			var box := PackedVector2Array([P.call(0.12, 0.16), P.call(0.88, 0.16), P.call(0.88, 0.66),

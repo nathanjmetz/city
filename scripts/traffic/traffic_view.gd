@@ -276,7 +276,8 @@ func _draw_cars(_delta: float) -> void:
 				dir = -xf.basis.z
 			dir = dir.normalized()
 			var origin: Vector3 = hitch + dir * float(art.pin)
-			_add(art.trailer, lod, Transform3D(Basis.looking_at(dir, Vector3.UP), origin), Color(1, 1, 1, flags))
+			_add(VehicleModels.trailer_for(art.trailer, car.get("cargo", {})), lod,
+				Transform3D(Basis.looking_at(dir, Vector3.UP), origin), Color(1, 1, 1, flags))
 		else:
 			_add(info[8] if lod == 1 else info[2], lod, xf, custom)
 	if parked.is_valid():
@@ -620,8 +621,9 @@ func _rebuild_parked() -> void:
 			var xf := Transform3D(Basis.looking_at(dir, Vector3.UP), front)
 			_parked.append([front, art.cab, xf, custom, art.cab])
 			var hitch: Vector3 = xf * Vector3(0, 0, art.hitch)
-			_parked.append([front, art.trailer, Transform3D(xf.basis, hitch + dir * float(art.pin)),
-				Color(1, 1, 1, 0.0), art.trailer])
+			var trailer := VehicleModels.trailer_for(art.trailer, car.get("cargo", {}))
+			_parked.append([front, trailer, Transform3D(xf.basis, hitch + dir * float(art.pin)),
+				Color(1, 1, 1, 0.0), trailer])
 		else:
 			# Parked in the same body it drove in.
 			var model := _model(kind, car.id)

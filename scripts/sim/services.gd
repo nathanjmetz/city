@@ -7,7 +7,7 @@ extends RefCounted
 ## Sizes, prices and reach follow real US practice for a small town.
 
 enum Kind { SUBSTATION, WATER_TOWER, FIRE, POLICE, CLINIC, SCHOOL, POWER_FEED, WELL, BUS_DEPOT, WATER_UTILITY, TAXI_COMPANY,
-	HOSPITAL, NURSING_HOME, DAYCARE }
+	HOSPITAL, NURSING_HOME, DAYCARE, PARKING_SMALL, PARKING_DOWNTOWN, PARKING_LARGE, PARK_AND_RIDE, PARKING_GARAGE }
 
 ## Each kind: name, icon, footprint (width along the road x depth, metres),
 ## and its build cost, monthly upkeep and `reach` or `capacity` from Balance.
@@ -63,7 +63,32 @@ const KINDS := {
 	# A daycare center with a fenced play yard.
 	Kind.DAYCARE: {"name": "Daycare", "icon": "homes", "size": Vector2(30, 32),
 		"cost": Balance.SERVICES["daycare"]["cost"], "upkeep": Balance.SERVICES["daycare"]["upkeep"], "reach": Balance.SERVICES["daycare"]["reach"]},
+	# Public parking from the Roads menu (ParkingLots lays out the stalls;
+	# 90 degree stall counts here). A small lot of 20 stalls beside a shop
+	# row, about 72 x 131 ft.
+	Kind.PARKING_SMALL: {"name": "Small parking lot", "icon": "parking", "size": Vector2(22, 40), "parking": true,
+		"cost": Balance.SERVICES["parking_small"]["cost"], "upkeep": Balance.SERVICES["parking_small"]["upkeep"]},
+	# The city's downtown lot behind Main Street: about 48 metered stalls on
+	# half an acre, with a pay station and shade trees.
+	Kind.PARKING_DOWNTOWN: {"name": "Downtown parking lot", "icon": "parking", "size": Vector2(40, 46),
+		"parking": true, "cost": Balance.SERVICES["parking_downtown"]["cost"],
+		"upkeep": Balance.SERVICES["parking_downtown"]["upkeep"]},
+	# A big surface lot of about 150 stalls (a ballpark, a fairground, a
+	# store's overflow), an acre and a quarter.
+	Kind.PARKING_LARGE: {"name": "Large parking lot", "icon": "parking", "size": Vector2(77, 64), "parking": true,
+		"cost": Balance.SERVICES["parking_large"]["cost"], "upkeep": Balance.SERVICES["parking_large"]["upkeep"]},
+	# A state park-and-ride by the highway for commuters who carpool or ride
+	# the bus on (INDOT's run 50 to 300 stalls), with a bus shelter.
+	Kind.PARK_AND_RIDE: {"name": "Park and ride", "icon": "parking", "size": Vector2(80, 80), "parking": true,
+		"cost": Balance.SERVICES["park_and_ride"]["cost"], "upkeep": Balance.SERVICES["park_and_ride"]["upkeep"]},
+	# A precast concrete garage, two bays wide (about 130 x 180 ft), the
+	# ground floor and three decks: about 230 stalls.
+	Kind.PARKING_GARAGE: {"name": "Parking garage", "icon": "parking", "size": Vector2(40, 55), "parking": true,
+		"cost": Balance.SERVICES["parking_garage"]["cost"], "upkeep": Balance.SERVICES["parking_garage"]["upkeep"]},
 }
+## The parking kinds, smallest first (the Roads menu's Parking row).
+const PARKING := [Kind.PARKING_SMALL, Kind.PARKING_DOWNTOWN, Kind.PARKING_LARGE, Kind.PARK_AND_RIDE,
+	Kind.PARKING_GARAGE]
 ## Which kinds supply each utility.
 const UTILITIES := {"power": [Kind.SUBSTATION, Kind.POWER_FEED], "water": [Kind.WATER_TOWER, Kind.WELL]}
 ## Kinds that cover homes by distance (the rest are utilities).
@@ -77,7 +102,9 @@ const LOAD := Balance.UTILITY_LOAD
 ## Gap kept between a service's front and the road's edge.
 const SETBACK := 2.0
 ## How each kind goes up (Construction.PROFILES); the rest are "civic".
-const PROFILE := {Kind.POWER_FEED: "power_feed", Kind.WELL: "well"}
+const PROFILE := {Kind.POWER_FEED: "power_feed", Kind.WELL: "well", Kind.PARKING_SMALL: "paving",
+	Kind.PARKING_DOWNTOWN: "paving", Kind.PARKING_LARGE: "paving", Kind.PARK_AND_RIDE: "paving",
+	Kind.PARKING_GARAGE: "garage"}
 
 
 ## Where the city sits in the shared region (set by CitySim).
@@ -146,6 +173,8 @@ static func area_of(kind: int) -> String:
 			return "water"
 		Kind.TAXI_COMPANY:
 			return "taxis"
+	if kind in PARKING:
+		return "transit"
 	return "utilities" if KINDS[kind].has("utility") else "public"
 
 
@@ -264,11 +293,21 @@ func footprint(id: int) -> PackedVector2Array:
 	return out
 
 
-func add(kind: int, pos: Vector3, dir: Vector3) -> int:
+func add(kind: int, pos: Vector3, dir: Vector3, angled := false) -> int:
 	var id := _next_id
 	_next_id += 1
 	buildings[id] = {"kind": kind, "pos": pos, "dir": dir}
+	if angled:
+		buildings[id].angled = true
 	return id
+
+
+## The stalls of a parking lot or garage (ParkingLots.layout), {} for any
+## other service.
+static func parking_layout(b: Dictionary) -> Dictionary:
+	if not int(b.kind) in PARKING:
+		return {}
+	return ParkingLots.layout(size_of(b), bool(b.get("angled", false)), int(b.kind) == Kind.PARKING_GARAGE)
 
 
 ## The service whose footprint holds this point, or -1.
@@ -315,6 +354,8 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 			_lengths[id] = RoadNetwork.polyline_length(network.sample_segment(id, 16))
 		_reach = {}
 		for kind in KINDS:
+			if kind in PARKING:
+				continue  # a lot covers nothing
 			var dist := {}
 			for id in buildings:
 				if buildings[id].kind == kind:
@@ -663,8 +704,10 @@ func to_dict() -> Dictionary:
 	for id in buildings:
 		var b: Dictionary = buildings[id]
 		out[str(id)] = [b.kind, b.pos.x, b.pos.z, b.dir.x, b.dir.z]
-		if b.has("size") or b.has("subsidy"):
+		if b.has("size") or b.has("subsidy") or b.get("angled", false):
 			out[str(id)].append_array([size_of(b).x, size_of(b).y, int(b.get("subsidy", 0))])
+		if b.get("angled", false):
+			out[str(id)].append(1)
 	return {"next_id": _next_id, "buildings": out, "water": water.to_dict()}
 
 
@@ -677,6 +720,8 @@ func from_dict(d: Dictionary) -> void:
 		if a.size() >= 8:
 			buildings[int(k)].size = Vector2(a[5], a[6])
 			buildings[int(k)].subsidy = int(a[7])
+		if a.size() >= 9 and int(a[8]) == 1:
+			buildings[int(k)].angled = true
 	_next_id = int(d.get("next_id", 1))
 	_inc = false
 	water.from_dict(d.get("water", {}))

@@ -39,6 +39,10 @@ const BERM := Color("#8a8f6a")
 const YARD_GRAVEL := Color("#b5ad9c")  # crushed limestone, as FarmBuilder
 const STAVE := Color("#bdb7aa")
 
+## What the plant's leader has built (BigFactories.TREES): each step is
+## drawn where a real plant puts it (Brawn 2026-10-23: every upgrade shows).
+var _dev: Array = []
+
 
 ## [buildings mesh, ground mesh, trees] for plant `f` (see BigFactories).
 static func build_plant(f: Dictionary, seed: int, to_curb: float) -> Array:
@@ -48,6 +52,7 @@ static func build_plant(f: Dictionary, seed: int, to_curb: float) -> Array:
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var w := BigFactories.site_width(f)
 	var d := BigFactories.site_depth(f)
+	b._dev = f.get("built", [])
 	match f.kind:
 		"ethanol": b._ethanol(w, d, int(f.level), to_curb)
 		"meatpacker": b._meatpacker(w, d, int(f.level), to_curb)
@@ -209,19 +214,24 @@ func _ethanol(w: float, d: float, level: int, to_curb: float) -> void:
 	_shed(drive_x, rz + 22.0, 16.0, 20.0, 9.0, BIN_STEEL, Color("#9aa2a5"))
 	var leg := Vector3(drive_x + 14.0, 0, rz + 22.0)
 	var bins := []
-	for i in 2 + mini(level, 1):
-		var bc := Vector3(drive_x + 30.0 + i * 22.0, 0, rz + 30.0)
-		if bc.x + 10.0 > w * 0.5 - 4.0:
-			bc = Vector3(drive_x + 30.0 + (i - 1) * 22.0, 0, rz + 54.0)
+	# Bins in a row down the side of the yard, one more with a second line
+	# and one more again when it builds storage to buy at harvest.
+	var bx := w * 0.5 - 13.0
+	for i in 2 + mini(level, 1) + (1 if "grain_bins" in _dev else 0):
+		var bc := Vector3(bx, 0, rz + 34.0 + i * 21.0)
 		_grain_bin(bc, 9.0, 20.0)
 		bins.append(bc + Vector3(0, 27.0, 0))
 	_leg(leg, 46.0, bins)
+	if "grain_bins" in _dev:
+		# A second dump pit and truck scale beside the first.
+		_box("paint", Vector3(3.6, 0.25, 22.0), Vector3(drive_x + 4.0, 0.12, rz), CONCRETE)
+		_shed(drive_x + 2.0, rz + 22.0, 20.0, 20.0, 9.0, BIN_STEEL, Color("#9aa2a5"))
 	# Hammer mill and the slurry building.
 	_panel_building(drive_x - 14.0, rz + 36.0, 14.0, 12.0, 11.0, PANEL_WHITE)
 	# Fermenters: stainless tanks in a row, joined at the top. Real plants
 	# run three or four 750,000-gallon fermenters (about 16 m across).
 	var fz := front + 92.0
-	var count := 3 + level
+	var count := 3 + level + (1 if "fermenter" in _dev else 0)
 	var r := 7.5
 	var x0 := -w * 0.5 + 14.0
 	var tops := []
@@ -244,6 +254,7 @@ func _ethanol(w: float, d: float, level: int, to_curb: float) -> void:
 	_stack(Vector3(-w * 0.5 + 52.0, 0, bz + 10.0), 1.6, 42.0)
 	_ddgs_shed(Vector3(-w * 0.5 + 40.0, 0, bz + 44.0), 50.0, 26.0)
 	_cooling_tower(Vector3(dx + 4.0, 0, bz + 12.0), 3 + level)
+	_ethanol_upgrades(w, d, front, drive_x, dx, bz)
 	# Ethanol and denaturant tanks in a containment berm, and the tanker loadout.
 	var tz := minf(d * 0.5 - 30.0, front + 175.0)
 	var tx := w * 0.5 - 40.0
@@ -254,6 +265,42 @@ func _ethanol(w: float, d: float, level: int, to_curb: float) -> void:
 	_loadout(Vector3(drive_x, 0, tz - 22.0))
 	for i in 4:
 		trees.append([Vector3(-w * 0.5 + 6.0 + i * 12.0, 0, front + 3.0), TreeField.pick(rng, true)[0], TreeField.pick(rng, true)[1], rng.randf_range(0.8, 1.0)])
+
+
+## The ethanol plant's development steps, after Indiana dry mills.
+func _ethanol_upgrades(w: float, d: float, front: float, drive_x: float, dx: float, bz: float) -> void:
+	if "corn_oil" in _dev:
+		# Corn oil: a small process building with decanter centrifuges off the
+		# evaporators, and an amber-stained corn oil tank (as at POET plants).
+		var c := Vector3(dx + 18.0, 0, front + 112.0)
+		_panel_building(c.x, c.z - 4.0, 10.0, 8.0, 7.0, PANEL_WHITE)
+		_tank(c + Vector3(9.0, 0, 0), 2.6, 8.0, Color("#d9cfa8"))
+	if "co2" in _dev:
+		# CO2 recovery: a scrubber column off the fermenters, a compressor
+		# building and white liquid CO2 tanks on saddles, run by a gas company.
+		var c := Vector3(-w * 0.5 + 40.0, 0, front + 108.0)
+		_panel_building(c.x - 8.0, c.z - 4.0, 12.0, 8.0, 6.0, Color("#d9d6cc"))
+		_cylinder("metal", c + Vector3(4.0, 0, 0), 1.0, 16.0, STAINLESS, 14)
+		for i in 2:
+			_tank_on_saddles(c + Vector3(12.0 + i * 5.0, 0, 0), 1.6, 14.0, TANK_WHITE)
+	if "wet_cake" in _dev:
+		# Wet distillers grains: a three-sided concrete bunker with a steaming
+		# brown pile that farm trucks load from with a loader.
+		var c := Vector3(-w * 0.5 + 40.0, 0, minf(d * 0.5 - 14.0, bz + 72.0))
+		_box("concrete", Vector3(36.0, 0.3, 16.0), c + Vector3(0, 0.15, 0), CONCRETE)
+		_box("concrete", Vector3(36.0, 3.2, 0.8), c + Vector3(0, 1.9, 7.6), CONCRETE)
+		for x in [-17.6, 17.6]:
+			_box("concrete", Vector3(0.8, 3.2, 16.0), c + Vector3(x, 1.9, 0), CONCRETE)
+		_cone(c + Vector3(-6.0, 0.3, 2.0), 7.0, 3.6, Color("#7a5a32"), 16, "paint")
+		_cone(c + Vector3(7.0, 0.3, 2.5), 5.5, 2.8, Color("#80603a"), 16, "paint")
+	if "unit_loadout" in _dev:
+		# A regional terminal: two more product tanks in their own berm and
+		# a second tanker loading canopy.
+		var tz := minf(d * 0.5 - 22.0, front + 190.0)
+		_berm(0.0, tz, 40.0, 24.0)
+		for x in [-10.0, 10.0]:
+			_tank(Vector3(x, 0, tz), 8.0, 11.0, TANK_WHITE)
+		_loadout(Vector3(0.0, 0, tz - 28.0))
 
 
 ## A steel structure frame of columns and floors, for a process tower.
@@ -361,6 +408,7 @@ func _meatpacker(w: float, d: float, level: int, to_curb: float) -> void:
 	if d * 0.5 - lz > 16.0:
 		_flat_rect("gravel", -w * 0.5 + 8.0, w * 0.5 - 30.0, lz, d * 0.5 - 6.0, 0.05, BERM)
 		_flat_rect("line", -w * 0.5 + 12.0, w * 0.5 - 34.0, lz + 4.0, d * 0.5 - 10.0, 0.08, LAGOON)
+	_packer_upgrades(w, d, front, sx, px, pz, pw)
 	for i in 5:
 		trees.append([Vector3(-w * 0.5 + 6.0 + i * 11.0, 0, front + 2.0), TreeField.pick(rng, true)[0], TreeField.pick(rng, true)[1], rng.randf_range(0.8, 1.05)])
 
@@ -399,7 +447,8 @@ func _furniture(w: float, d: float, level: int, to_curb: float) -> void:
 	_stack(Vector3(dx + 10.0, 0, dz - 4.0), 0.9, 20.0)
 	# Dry kilns: a row of insulated metal chambers with big doors.
 	var kz := zf + 50.0
-	for i in 3 + level:
+	# Until it builds its own kilns it buys kiln-dried lumber.
+	for i in (3 + level) if "dry_kiln" in _dev else 0:
 		var kx := dx - 2.0 + i * 9.0
 		if kx + 4.0 > w * 0.5 - 4.0:
 			break
@@ -421,6 +470,7 @@ func _furniture(w: float, d: float, level: int, to_curb: float) -> void:
 		_box("wood", Vector3(2.4, h, 5.0), p + Vector3(0, h * 0.5, 0), LUMBER.darkened(rng.randf_range(0.0, 0.15)))
 		for k in int(h / 0.35):
 			_box("paint", Vector3(2.5, 0.04, 5.05), p + Vector3(0, 0.35 * (k + 1), 0), LUMBER.darkened(0.45))
+	_furniture_upgrades(w, d, front, zf, cx, pw)
 	for i in 4:
 		trees.append([Vector3(-w * 0.5 + 6.0 + i * 13.0, 0, front + 2.0), TreeField.pick(rng, true)[0], TreeField.pick(rng, true)[1], rng.randf_range(0.8, 1.05)])
 
@@ -434,7 +484,7 @@ func _rv(w: float, d: float, level: int, to_curb: float) -> void:
 	_office(-w * 0.34, front, 20.0, 10.0, 30.0, to_curb)
 	# Long, narrow production buildings with doors down the long side: units
 	# roll in one end on their frames and out the other finished.
-	var lines := 1 + mini(level, 2)
+	var lines := 1 + mini(level + (1 if "second_line" in _dev else 0), 2)
 	var bw := 30.0
 	var zf := front + 30.0
 	var bd := minf(d - 70.0, 130.0)
@@ -455,13 +505,14 @@ func _rv(w: float, d: float, level: int, to_curb: float) -> void:
 	var yx0 := fx - 4.0
 	var yx1 := w * 0.5 - 8.0
 	var rz := zf + 28.0
-	while rz < d * 0.5 - 10.0 and yx1 - yx0 > 6.0:
+	while rz < minf(d * 0.5 - 10.0, zf + bd + 4.0) and yx1 - yx0 > 6.0:
 		var x := yx0
 		while x < yx1 - 3.0:
 			if rng.randf() < 0.85:
 				_camper(Vector3(x + 1.3, 0, rz), rng.randf_range(8.0, 10.5))
 			x += 3.6
 		rz += 14.0
+	_rv_upgrades(w, d, front, zf + bd, level)
 	for i in 3:
 		trees.append([Vector3(-w * 0.5 + 6.0 + i * 12.0, 0, front + 2.0), TreeField.pick(rng, true)[0], TreeField.pick(rng, true)[1], rng.randf_range(0.8, 1.05)])
 
@@ -478,3 +529,113 @@ func _camper(c: Vector3, len: float) -> void:
 	_box("paint", Vector3(0.3, 0.6, 1.4), c + Vector3(0, 0.55, -len * 0.5 - 0.7), DARK)
 	for s in [-1.0, 1.0]:
 		_box("paint", Vector3(0.25, 0.75, 0.75), c + Vector3(s * 1.15, 0.38, 0.0), Color("#1b1c1e"))
+
+
+# ---------------------------------------------------------------- upgrades
+
+## The packing plant's steps, after Indiana Packers (Delphi) and other
+## Midwest hog plants.
+func _packer_upgrades(w: float, d: float, front: float, _sx: float, px: float, pz: float, pw: float) -> void:
+	var ex := w * 0.5 - 8.0  # the strip along the plant's far side
+	if "cold_store" in _dev:
+		# A tall freezer warehouse of insulated panel with its own docks.
+		_panel_building(ex - 2.0, front + 38.0, 12.0, 30.0, 14.0, PANEL_WHITE)
+		_box("metal", Vector3(6.0, 2.0, 4.0), Vector3(ex - 2.0, 15.4, front + 50.0), Color("#b9bcbc"))
+	if "smokehouse" in _dev:
+		# Bacon and ham smokehouse: a lower brick-and-panel building with a
+		# row of short smoke stacks on the roof.
+		var z := front + 74.0
+		_panel_building(ex - 2.0, z, 12.0, 22.0, 8.0, Color("#d9d6cc"))
+		for i in 4:
+			_cylinder("metal", Vector3(ex - 2.0, 8.9, z + 3.0 + i * 5.0), 0.45, 4.0, Color("#5c5c5e"), 10)
+	# Hog trailers waiting at the receiving pens: more growers, more loads.
+	var pots := (2 if "contract" in _dev else 0) + (2 if "more_growers" in _dev else 0)
+	for i in pots:
+		_trailer(Vector3(px - pw * 0.5 + 2.0 + i * 3.4, 0, pz + 34.0), Vector3(0, 0, 1), Color("#b7bcbe"))
+	if "more_growers" in _dev:
+		# A truck wash for biosecurity: every livestock trailer is washed out.
+		var c := Vector3(ex, 0, pz + 26.0)
+		_box("concrete", Vector3(8.0, 0.3, 24.0), c + Vector3(0, 0.15, 0), CONCRETE)
+		_shed(c.x, c.z, 7.0, 22.0, 6.0, Color("#d8d6cf"), Color("#8f979b"))
+	if "second_shift" in _dev:
+		# A second staff lot for the night shift.
+		_parking(w * 0.15 + 4.0, w * 0.38 - 8.0, front + 1.0, front + 30.0, 0.0, w * 0.25)
+	if "rendering" in _dev:
+		# Rendering: a cooker building with its stack and tallow tanks, at the
+		# back corner downwind, as every packer keeps it.
+		var c := Vector3(w * 0.5 - 18.0, 0, d * 0.5 - 16.0)
+		_panel_building(c.x - 4.0, c.z - 8.0, 14.0, 14.0, 10.0, Color("#c9c5b8"))
+		_stack(c + Vector3(-9.0, 0, 6.0), 0.7, 18.0)
+		for i in 2:
+			_tank(c + Vector3(7.0, 0, -4.0 + i * 7.0), 2.6, 9.0, Color("#d7d2bf"))
+
+
+## The furniture plant's steps, after Jasper, Indiana plants.
+func _furniture_upgrades(w: float, d: float, front: float, zf: float, cx: float, pw: float) -> void:
+	var bz := d * 0.5 - 15.0  # the strip at the back of the site
+	if "log_yard" in _dev:
+		# Log decks and a small band sawmill, logs straight from the woods.
+		for i in 3:
+			_log_row(Vector3(-w * 0.5 + 12.0, 0, bz - 4.0 + i * 4.5), 34.0)
+		_shed(-w * 0.5 + 62.0, bz, 22.0, 12.0, 6.5, Color("#a39a86"), Color("#7f8486"))
+		_cone(Vector3(-w * 0.5 + 78.0, 0.3, bz + 2.0), 4.0, 3.4, Color("#b08a5c"), 12, "paint")
+	if "finishing" in _dev:
+		# Finishing line: a building with paint booth exhaust stacks above the roof.
+		var x := w * 0.5 - 26.0
+		_shed(x, bz, 34.0, 18.0, 7.5, Color(_pick(METAL_WALL)), Color("#8f979b"))
+		for i in 4:
+			_cylinder("metal", Vector3(x - 12.0 + i * 8.0, 8.4, bz + 4.0), 0.5, 3.6, GALV, 10)
+	if "cnc" in _dev:
+		# CNC router cell: a new high-bay wing on the plant's side.
+		_shed(cx + pw * 0.5 + 18.0, zf + 10.0, 30.0, 18.0, 9.0, Color("#d8d6cf"), Color("#8e9aa3"))
+	if "office_line" in _dev:
+		# Office furniture: a big new plant building with its own shipping docks.
+		var x := 13.0
+		_shed(x, front + 20.0, 44.0, 18.0, 9.0, Color("#e4dfcf"), Color("#9aa3a6"))
+		for i in 5:
+			_box("paint", Vector3(3.2, 3.4, 0.35), Vector3(x - 16.0 + i * 8.0, 2.0, front + 29.1), DARK)
+
+
+## A row of sawlogs on the ground, cut ends showing.
+func _log_row(c: Vector3, len: float) -> void:
+	for i in int(len / 0.8):
+		var p := c + Vector3(i * 0.8, 0.4, 0)
+		_cylinder("paint", p - Vector3(0, 0.4, 2.5), 0.38, 0.8, Color("#5a4636"), 8)
+	_box("paint", Vector3(len, 0.8, 5.0), c + Vector3(len * 0.5, 0.4, 0), Color("#5a4636"))
+
+
+## The RV plant's steps, after Elkhart County plants.
+func _rv_upgrades(w: float, d: float, front: float, back: float, _level: int) -> void:
+	var bz := (back + d * 0.5) * 0.5  # the strip behind the lines
+	var slots := [-w * 0.5 + 25.0, -w * 0.5 + 65.0, -w * 0.5 + 105.0]
+	if "chassis" in _dev:
+		# Frame and chassis shop: welding bays with roof fume fans.
+		_shed(slots[0], bz, 32.0, 20.0, 8.0, Color("#b9b4a6"), Color("#8f979b"))
+		for i in 3:
+			_box("metal", Vector3(1.6, 1.0, 1.6), Vector3(slots[0] - 10.0 + i * 10.0, 9.4, bz), GALV)
+	if "fiberglass" in _dev:
+		# Fiberglass cap shop: a closed building with tall exhaust stacks.
+		_shed(slots[1], bz, 32.0, 20.0, 8.0, Color("#eeede6"), Color("#9aa3a6"))
+		for i in 3:
+			_cylinder("metal", Vector3(slots[1] - 10.0 + i * 10.0, 9.0, bz + 5.0), 0.6, 6.0, GALV, 10)
+	if "suppliers" in _dev:
+		# Supplier park: a supplier's own smaller building with a coloured band.
+		_shed(slots[2], bz, 28.0, 18.0, 7.0, Color("#c2b59b"), Color("#7f8486"))
+		_box("paint", Vector3(28.1, 1.0, 18.1), Vector3(slots[2], 6.0, bz), Color("#2f3b4a"))
+	if "second_line" in _dev:
+		# Final finish and water-test bays for the busier lines.
+		_shed(w * 0.5 - 22.0, bz, 30.0, 18.0, 7.5, Color("#e4dfcf"), Color("#9aa3a6"))
+	if "motorhome" in _dev:
+		# Motorhomes: finished Class A coaches lined up by the street.
+		for i in 6:
+			_motorhome(Vector3(-w * 0.5 + 60.0 + i * 5.0, 0, front + 14.0))
+
+
+## A Class A motorhome: a 12 m bus-shaped coach, nose to the street.
+func _motorhome(c: Vector3) -> void:
+	_box("paint", Vector3(2.55, 3.4, 12.0), c + Vector3(0, 2.1, 0), Color("#ece9e2"))
+	_box("paint", Vector3(2.6, 0.5, 11.0), c + Vector3(0, 1.5, 0.3), Color(_pick(["#4a3f35", "#2f4a6e", "#6e2f2f"])))
+	_box("paint", Vector3(2.5, 1.2, 0.2), c + Vector3(0, 2.6, -6.05), Color("#26292c"))  # windshield
+	for z in [-4.0, 3.0, 4.4]:
+		for x in [-1.1, 1.1]:
+			_box("paint", Vector3(0.3, 1.0, 1.0), c + Vector3(x, 0.5, z), Color("#1b1c1e"))
