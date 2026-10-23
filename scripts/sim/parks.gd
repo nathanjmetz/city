@@ -156,9 +156,10 @@ func ground_problem(sim: CitySim, poly: PackedVector2Array, skip := -1) -> Strin
 			return "Buildings stand there."
 	for p in _samples(poly):
 		var q := Vector3(p.x, 0.0, p.y)
-		if sim.farms.covers(q) or sim.farms.field_at(q) != -1:
+		var owner := Capital.owner_of(sim, q)
+		if owner.begins_with("farm:"):
 			return "That ground is farmland."
-		if sim.industry.covers(q):
+		if owner.begins_with("site:"):
 			return "That ground belongs to a company."
 		if sim.warehouses.covers(q):
 			return "A warehouse stands there."

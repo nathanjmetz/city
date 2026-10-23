@@ -204,6 +204,22 @@ static func kept(hub: Dictionary, kind: String, profit: float) -> float:
 ## "site:5"): the one gate a hub passes before it builds on or plants
 ## ground (Brawn, 2026-10-23: land has one owner, and a hub buys a parcel
 ## before it builds there). Owners come from CitySim.land_owner.
+## Who holds private land at p: "farm:<id>" (a farmyard, lane or field),
+## "site:<id>" (a company's yard, pads with their working ground, leases:
+## Industry.claim_at) or "" (open, or a public hub's). Every hub that builds
+## checks this before it takes ground.
+static func owner_of(sim, p: Vector3) -> String:
+	var id: int = sim.farms.farm_at(p)
+	if id == -1:
+		id = sim.farms.field_at(p)
+	if id != -1:
+		return "farm:%d" % id
+	id = sim.industry.claim_at(p)
+	if id != -1:
+		return "site:%d" % id
+	return ""
+
+
 static func land_free(sim, pts: Array, who: String) -> bool:
 	for p in pts:
 		var owner: String = sim.land_owner(p)

@@ -1610,7 +1610,7 @@ func farmhouse_problem(pos: Vector3, dir: Vector3) -> String:
 		if farms.farms[id].pos.distance_to(pos) < Farms.FARMHOUSE_SIZE.length():
 			return "Too close to another farm."
 	for p in [pos] + Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y)):
-		if industry.covers(p) or power.covers(p):
+		if Capital.owner_of(self, p).begins_with("site:") or power.covers(p):
 			return "That ground belongs to a company."
 		if rail.covers(p):
 			return "That ground belongs to the railroad."
@@ -1654,9 +1654,10 @@ func industry_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 		if not Geometry2D.intersect_polygons(poly, services.footprint(id)).is_empty():
 			return "Overlaps a service building."
 	for p in [pos] + Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y)):
-		if farms.covers(p) or farms.field_at(p) != -1:
+		var owner := Capital.owner_of(self, p)
+		if owner.begins_with("farm:"):
 			return "That ground is farmland."
-		if industry.covers(p) or power.covers(p):
+		if owner.begins_with("site:") or power.covers(p):
 			return "Too close to another company."
 		if rail.covers(p):
 			return "That ground belongs to the railroad."
@@ -1693,9 +1694,10 @@ func warehouse_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 		if not Geometry2D.intersect_polygons(poly, warehouses.footprint(id)).is_empty():
 			return "Overlaps another warehouse."
 	for p in _grid_in(poly):
-		if farms.covers(p) or farms.field_at(p) != -1:
+		var owner := Capital.owner_of(self, p)
+		if owner.begins_with("farm:"):
 			return "That ground is farmland."
-		if industry.covers(p):
+		if owner.begins_with("site:"):
 			return "That ground belongs to a company."
 		if rail.covers(p):
 			return "That ground belongs to the railroad."
@@ -1733,7 +1735,7 @@ func warehouse_ground_ok(poly: PackedVector2Array, id: int) -> bool:
 		if wid != id and not Geometry2D.intersect_polygons(poly, warehouses.footprint(wid)).is_empty():
 			return false
 	for p in _grid_in(poly):
-		if farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) or reserves.kind_at(p) != "" \
+		if Capital.owner_of(self, p) != "" or reserves.kind_at(p) != "" \
 				or hubs.covers(p) or education.covers(p) or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p) or big.covers(p):
 			return false
 	for key in lots:
@@ -1797,9 +1799,10 @@ func power_problem(pos: Vector3, dir: Vector3) -> String:
 		if not Geometry2D.intersect_polygons(poly, services.footprint(id)).is_empty():
 			return "Overlaps a service building."
 	for p in pts:
-		if farms.covers(p) or farms.field_at(p) != -1:
+		var owner := Capital.owner_of(self, p)
+		if owner.begins_with("farm:"):
 			return "That ground is farmland."
-		if industry.covers(p) or power.covers(p):
+		if owner.begins_with("site:") or power.covers(p):
 			return "Too close to another company."
 		if hubs.covers(p):
 			return "Overlaps a landfill, recycling center or cemetery."
@@ -2223,14 +2226,9 @@ func _ground_free(mid: Vector3, corners: PackedVector2Array, in_fields: bool) ->
 ## its leases: Industry.claim_at), "hub" for any other hub or
 ## service, or "" for open land.
 func land_owner(p: Vector3) -> String:
-	var id := farms.farm_at(p)
-	if id == -1:
-		id = farms.field_at(p)
-	if id != -1:
-		return "farm:%d" % id
-	id = industry.claim_at(p)
-	if id != -1:
-		return "site:%d" % id
+	var owner := Capital.owner_of(self, p)
+	if owner != "":
+		return owner
 	if services.covers(p) or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
 			or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p):
 		return "hub"
@@ -2545,7 +2543,7 @@ func yard_usable(corners: PackedVector2Array) -> bool:
 	for c in corners:
 		pts.append(mid.lerp(Vector3(c.x, 0.0, c.y), 0.9))
 	for p in pts:
-		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) or reserves.kind_at(p) != "":
+		if services.covers(p) or Capital.owner_of(self, p) != "" or reserves.kind_at(p) != "":
 			return false
 	for id in services.buildings:
 		if not Geometry2D.intersect_polygons(corners, services.footprint(id)).is_empty():
@@ -2768,7 +2766,7 @@ func land_factor(key: String) -> float:
 
 func _lot_blocked(lot: Dictionary) -> bool:
 	for p in [lot.pos, lot.front, lot.zone_pt]:
-		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) \
+		if services.covers(p) or Capital.owner_of(self, p) != "" \
 				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
 				or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p) or big.covers(p):
 			return true

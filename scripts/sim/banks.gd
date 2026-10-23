@@ -173,9 +173,10 @@ static func ground_problem(sim: CitySim, p: Vector3) -> String:
 		return "Can't build in the water or on a slope that steep."
 	if sim.services.covers(p):
 		return "Overlaps a service building."
-	if sim.farms.covers(p) or sim.farms.field_at(p) != -1:
+	var owner := Capital.owner_of(sim, p)
+	if owner.begins_with("farm:"):
 		return "That ground is farmland."
-	if sim.industry.covers(p) or sim.power.covers(p):
+	if owner.begins_with("site:") or sim.power.covers(p):
 		return "That ground belongs to a company."
 	if sim.reserves.kind_at(p) != "":
 		return "That land is reserved for %s." % Reserves.KINDS[sim.reserves.kind_at(p)]

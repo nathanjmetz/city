@@ -453,7 +453,7 @@ func _blocked(sim: CitySim, id: int, poly: PackedVector2Array) -> bool:
 		pts.append((poly[i] + poly[(i + 1) % poly.size()]) * 0.5)
 	for q in pts:
 		var p := Vector3(q.x, 0.0, q.y)
-		if sim.farms.covers(p) or sim.farms.field_at(p) != -1 or sim.industry.covers(p) or sim.reserves.kind_at(p) != "" \
+		if Capital.owner_of(sim, p) != "" or sim.reserves.kind_at(p) != "" \
 				or sim.hubs.covers(p) or sim.warehouses.covers(p) or sim.parks.covers(p) or sim.education.covers(p) \
 				or not sim.land_ok(p):
 			return true
