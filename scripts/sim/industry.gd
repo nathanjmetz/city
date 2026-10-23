@@ -49,6 +49,8 @@ var policies: Policies
 var tax_rate := 1.5
 var price := 1.0
 ## Game days since the start, set by the city (harvest units regrow).
+## True when a public road runs between two points (set by CitySim).
+var road_between: Callable
 var day := 0.0
 var _next_id := 1
 
@@ -398,9 +400,13 @@ func _frontier(s: Dictionary) -> Array:
 		# Edge neighbours only: the quarry widens, it doesn't skip across.
 		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 			var n: Vector2i = c + d
-			if not seen.has(n):
-				seen[n] = true
-				out.append(n)
+			if seen.has(n):
+				continue
+			# A mine stays on its own side of a public road; it never jumps it.
+			if road_between.is_valid() and road_between.call(pad_center(s, c), pad_center(s, n)):
+				continue
+			seen[n] = true
+			out.append(n)
 	return out
 
 

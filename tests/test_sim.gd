@@ -463,6 +463,18 @@ func _real_layouts() -> void:
 					touches = touches or (c + d) in pads
 				joined = joined and touches
 			_check(joined, "the quarry grows as one pit (%d benches)" % pads.size())
+			# A county road one cell east of the yard: the pit never jumps it.
+			var walled := Industry.new()
+			walled.price = 3.0
+			var rx := best.x + 1.5 * Industry.PAD
+			walled.road_between = func(a: Vector3, b: Vector3): return (a.x - rx) * (b.x - rx) < 0.0
+			var wid := walled.add_site(kind, best, Vector3(0, 0, -1), [])
+			for i in 40:
+				walled.decide(any)
+			var stays: bool = walled.sites[wid].pads.size() >= 3
+			for c in walled.sites[wid].pads:
+				stays = stays and c.x <= 1
+			_check(stays, "the strip mine stays on its own side of the road")
 		else:
 			_check(pads.size() <= Balance.FOREST_ACTIVE_UNITS and not ind.sites[id].get("regrow", {}).is_empty(),
 				"timber is cut a few units at a time and left to regrow (%d cutting, %d resting)"

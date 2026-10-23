@@ -712,6 +712,7 @@ func tick() -> void:
 	if tick_count % Industry.DECIDE_EVERY == 0 and not industry.sites.is_empty():
 		industry.tax_rate = economy.tax[ZoneMap.Zone.INDUSTRIAL]
 		industry.day = tick_count / (24.0 * TICKS_PER_HOUR)
+		industry.road_between = road_between
 		if industry.decide(field_usable):
 			_lots_dirty = true
 			industry_changed.emit()
@@ -1346,6 +1347,18 @@ func farm_drive(pos: Vector3, dir: Vector3) -> Array:
 
 
 ## True when ground for a field is clear: no road, lot, service or farmyard.
+## True when a public road runs between a and b on the ground.
+func road_between(a: Vector3, b: Vector3) -> bool:
+	var a2 := Vector3(a.x, 0.0, a.z)
+	var b2 := Vector3(b.x, 0.0, b.z)
+	var n := maxi(2, ceili(a2.distance_to(b2) / 6.0))
+	for i in range(1, n):
+		var p := a2.lerp(b2, float(i) / n)
+		if not network.find_segment_near(Vector3(p.x, Terrain.ground_y(p.x, p.z), p.z), 4.0, 3.0).is_empty():
+			return true
+	return false
+
+
 func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
 	var key := Vector2i(roundi(mid.x), roundi(mid.z))
 	if _usable_cache.has(key):
