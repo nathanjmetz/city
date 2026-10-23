@@ -425,6 +425,8 @@ func _init() -> void:
 		"segments": {"3": [1, 2, 0, 0]}})
 	_check(old.empty_zoned_lots().size() == old.lots.size() and old.lots.size() > 0, "old saves get zoned")
 	_real_layouts()
+	_town_culture()
+	_identity_shift()
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
@@ -432,6 +434,66 @@ var _failed := false
 
 ## Industry spreads like the real thing: spaced oil pads, one quarry,
 ## timber cut in rotation.
+## A town's character follows its jobs (location quotients) and pulls its
+## own trade forward.
+func _town_culture() -> void:
+	var sim := CitySim.new()
+	var res: int = Industry.KINDS["ore"].resource
+	var best := Vector3.ZERO
+	var best_v := 0.0
+	for x in range(-1500, 1501, 100):
+		for z in range(-1500, 1501, 100):
+			var v := Resources.at(res, Vector3(x, 0, z))
+			if v > best_v:
+				best_v = v
+				best = Vector3(x, 0, z)
+	sim.apply({"type": "build_road", "start": [best.x - 600, best.z - 260], "ctrl": [best.x, best.z - 260], "end": [best.x + 600, best.z - 260]})
+	sim.apply({"type": "place_industry", "kind": "ore", "pos": [best.x, best.z - 180], "dir": [0, -1]})
+	var id: int = sim.industry.sites.keys()[0]
+	var plain := sim.industry.buy_margin(id)
+	for i in 1440 * 4:
+		sim.tick()
+	_check(sim.culture.identity == "mining" and sim.culture.title() == "Coal and oil town",
+		"a town of coal miners is a coal town (%s, LQ %.0f)" % [sim.culture.identity, sim.culture.lq("mining")])
+	_check(sim.culture.pull("mining") > 0.5 and sim.culture.pull("office") < 0.0, "its own trade pulls, others drag")
+	_check(sim.industry.buy_margin(id) < plain, "a coal town's mine opens new cuts on thinner margins")
+	var back := CitySim.new()
+	back.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
+	_check(back.culture.identity == "mining" and is_equal_approx(back.culture.lq("mining"), sim.culture.lq("mining")),
+		"the town's character is saved")
+
+
+## A rising trade with no land left asks to rezone farm ground along a
+## road, and only does it once the player approves.
+func _identity_shift() -> void:
+	var sim := CitySim.new()
+	sim.economy.money = 10_000_000
+	sim.apply({"type": "build_road", "start": [-600, 0], "ctrl": [0, 0], "end": [600, 0]})
+	sim.apply({"type": "place_farmhouse", "pos": [0, 60], "dir": [0, -1], "crop": "corn"})
+	for i in Farms.DECIDE_EVERY * 40:
+		sim.tick()
+	var farm: Dictionary = sim.farms.farms.values()[0]
+	var fields: int = farm.cells.size()
+	# Offices are rising fast and every commercial lot is taken.
+	for k in TownCulture.SECTORS:
+		sim.culture.shares[k] = 0.1
+		sim.culture.now[k] = 0.1
+	sim.culture.now["office"] = 0.3
+	sim.demand[ZoneMap.Zone.COMMERCIAL] = 0.9
+	sim.culture.develop(sim)
+	var asked: Array = sim.permits.listed(Permits.State.OPEN).filter(func(r): return r.hub == TownCulture.HUB)
+	_check(asked.size() == 1 and asked[0].change == "Farmland to offices" and asked[0].shape == "area",
+		"a rising office trade asks to rezone farm ground (%s)" % [asked.map(func(r): return r.change)])
+	_check(farm.cells.size() == fields and sim.zones.cells.is_empty(), "nothing changes before the player says yes")
+	if asked.is_empty():
+		return
+	sim.apply({"type": "permit", "id": asked[0].id, "answer": "approve"})
+	sim.culture.develop(sim)
+	_check(farm.cells.size() < fields and not sim.zones.cells.is_empty(),
+		"approved: the fields along the road are sold and zoned (%d of %d fields left)" % [farm.cells.size(), fields])
+	_check(sim.zones.cells.values().all(func(z): return z == ZoneMap.Zone.COMMERCIAL), "zoned for offices")
+
+
 func _real_layouts() -> void:
 	var any := func(_mid, _corners): return true
 	for kind in ["oil", "ore", "forest"]:

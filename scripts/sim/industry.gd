@@ -45,6 +45,8 @@ var reserves: Reserves
 ## The town's sliders: Funding is support per pad, Growth how eagerly a
 ## company opens more pads (see Policies).
 var policies: Policies
+## The town's character: a coal town's mines open new cuts more readily.
+var culture: TownCulture
 ## Set by the city: the industrial tax rate (percent) and a price factor.
 var tax_rate := 1.5
 var price := 1.0
@@ -123,7 +125,10 @@ func support(id: int) -> float:
 func buy_margin(id: int) -> float:
 	if policies == null:
 		return 0.0
-	return policies.pick(Balance.POLICY_BUY_MARGIN_PER_PAD, "growth", "resources", "industry:%d" % id)
+	var m: float = policies.pick(Balance.POLICY_BUY_MARGIN_PER_PAD, "growth", "resources", "industry:%d" % id)
+	if culture != null and m < INF and sites.has(id):
+		m -= culture.pull(TownCulture.sector_of_kind(sites[id].kind)) * Balance.CULTURE_MARGIN_PER_PAD
+	return m
 
 
 ## What the town pays all its companies a year (negative: what it collects).
