@@ -338,6 +338,12 @@ func blockers(sim: CitySim, a: Dictionary, t: int, corr: Array, skip := -1) -> D
 					and _hits_any(clear, WaterUtility.cell_corners(sim.services.buildings[id], c)):
 				add.call("water works")
 				break
+	for id in sim.banks.banks:
+		var bk: Dictionary = sim.banks.banks[id]
+		for blk in bk.blocks:
+			if _hits_any(clear, Banks.block_corners(bk, blk.c)):
+				add.call("banks")
+				break
 	for id in sim.parks.sites:
 		if _hits_any(clear, sim.parks.footprint(id)):
 			add.call("parks")
@@ -416,7 +422,7 @@ static func describe_blockers(b: Dictionary) -> String:
 		"airports": "another airport", "water": "a river or lake", "steep ground": "ground too steep to grade",
 		"warehouses": "a warehouse", "landfills": "a landfill", "recycling centers": "a recycling center",
 		"cemeteries": "a cemetery", "post offices": "the post office",
-		"power plants": "a power plant", "water works": "the water works", "parks": "a park", "campuses": "a campus",
+		"power plants": "a power plant", "banks": "a bank", "water works": "the water works", "parks": "a park", "campuses": "a campus",
 		"reserved land": "land reserved for something else"}
 	var parts := []
 	var keys := b.keys()

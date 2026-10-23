@@ -183,6 +183,8 @@ static func ground_problem(sim: CitySim, p: Vector3) -> String:
 		return "That ground is a campus."
 	if sim.hubs.covers(p) or sim.warehouses.covers(p) or sim.parks.covers(p) or sim.mail.covers(p):
 		return "Overlaps a landfill, cemetery, warehouse, park or post office."
+	if sim.airports.covers(p):
+		return "That's airport land."
 	return ""
 
 
