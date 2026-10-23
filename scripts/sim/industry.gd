@@ -62,6 +62,9 @@ var land_price_of := Callable()
 ## Set by the city: lays the lease or logging road out to a new pad, paid
 ## from the company's cash; false when no road can reach it (CitySim._pad_road).
 var pad_road := Callable()
+## Set by the city: is all this ground open or already the company's own?
+## Callable(points, "site:<id>") -> bool (Capital.land_free).
+var land_free := Callable()
 var _next_id := 1
 
 
@@ -537,6 +540,38 @@ func covers(p: Vector3) -> bool:
 	return site_at(p) != -1 or pad_at(p) != -1
 
 
+## The company that owns the land at p (Brawn, 2026-10-23: land has one
+## owner): its yard and road in, each pad with the working ground around it
+## (Balance.INDUSTRY_CLAIM_BUFFER), and the tracts it has leased. -1 if none.
+func claim_at(p: Vector3) -> int:
+	var id := site_at(p)
+	if id != -1:
+		return id
+	var q := Vector2(p.x, p.z)
+	var buffer := float(Balance.INDUSTRY_CLAIM_BUFFER)
+	for sid in sites:
+		var s: Dictionary = sites[sid]
+		var d: Vector3 = p - s.pos
+		var near := Vector2i(roundi(d.dot(_right(s)) / PAD), roundi(-d.dot(s.dir) / PAD))
+		for dx in [0, -1, 1]:
+			for dy in [0, -1, 1]:
+				var c: Vector2i = near + Vector2i(dx, dy)
+				# Its pads, leases and land bought, and woods cut and growing back.
+				if not (c in s.pads or c in s.get("leases", []) or s.get("owned", {}).has(c)
+						or s.get("cut", {}).has(c) or s.get("regrow", {}).has(c)):
+					continue
+				var poly := pad_corners(s, c)
+				if Geometry2D.is_point_in_polygon(q, poly):
+					return sid
+				# The working ground around the pad.
+				for i in poly.size():
+					var a: Vector2 = poly[i]
+					var b: Vector2 = poly[(i + 1) % poly.size()]
+					if q.distance_to(Geometry2D.get_closest_point_to_segment(q, a, b)) < buffer:
+						return sid
+	return -1
+
+
 func jobs() -> int:
 	var total := 0
 	for id in sites:
@@ -572,6 +607,9 @@ func _free(id: int, s: Dictionary, c: Vector2i, usable: Callable) -> bool:
 		var other := pad_at(p)
 		if (other != -1 and other != id) or (site_at(p) != -1 and site_at(p) != id):
 			return false
+	# Nobody else's land: a farm's fields, another company's ground.
+	if land_free.is_valid() and not land_free.call(pts, "site:%d" % id):
+		return false
 	return usable.call(mid, corners)
 
 

@@ -169,6 +169,18 @@ static func kept(hub: Dictionary, kind: String, profit: float) -> float:
 		* (0.75 + 0.5 * float(lead.get("ambition", 0.5))), 0.0, 1.0)
 
 
+## True when every point is open land or already `who`'s own ("farm:3",
+## "site:5"): the one gate a hub passes before it builds on or plants
+## ground (Brawn, 2026-10-23: land has one owner, and a hub buys a parcel
+## before it builds there). Owners come from CitySim.land_owner.
+static func land_free(sim, pts: Array, who: String) -> bool:
+	for p in pts:
+		var owner: String = sim.land_owner(p)
+		if owner != "" and owner != who:
+			return false
+	return true
+
+
 ## True when land at pos is worth so much more developed that an owner
 ## would think of selling out (land price at least CAPITAL_SELL_RATIO times
 ## farm value: Purdue's "transition land").

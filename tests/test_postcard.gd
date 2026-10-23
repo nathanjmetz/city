@@ -44,6 +44,27 @@ func _init() -> void:
 		"a player gets their own town whole, neighbors get postcards")
 	_check(not Region.postcard_of(full).has("people") and full.has("people"), "cutting a postcard leaves the full copy alone")
 
+	# The whole town a few parts at a time: it holds still meanwhile, and
+	# comes out the same as all at once.
+	var snap := TownSnapshot.new(sim)
+	var ticks_before := sim.tick_count
+	var road := {"type": "build_road", "start": [400, 400], "ctrl": [450, 400], "end": [500, 400]}
+	var roads_before := sim.network.segments.size()
+	_check(sim.held and sim.apply(road) and sim.network.segments.size() == roads_before,
+		"while it's being saved, the town holds still and a new road waits")
+	var frames := 1
+	while not snap.step(0.001):
+		frames += 1
+	_check(frames > 3 and not sim.held, "it's saved over several steps (%d) and then lets go" % frames)
+	_check(sim.network.segments.size() > roads_before, "and the road that waited is built")
+	var whole = RegionServer.unpack(RegionServer.pack_bytes(snap.bytes()))
+	_check(whole is Dictionary and whole.has("people") and int(whole.tick) == ticks_before,
+		"the sliced copy unpacks as a whole town")
+	var again := CitySim.new()
+	again.from_dict(whole)
+	_check(again.buildings.size() == sim.buildings.size() and again.people.people.size() == sim.people.people.size(),
+		"and loads back whole")
+
 	_saves.call_deferred(sim)
 
 

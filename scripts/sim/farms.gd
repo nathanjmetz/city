@@ -104,6 +104,9 @@ var expand := Callable()
 ## What an acre sells for at a point, nearby development included
 ## (Capital.land_price). Callable(pos) -> float; unset, farm value.
 var land_price_of := Callable()
+## Set by the city: is all this ground open or already the farm's own?
+## Callable(points, "farm:<id>") -> bool (Capital.land_free).
+var land_free := Callable()
 
 
 ## How good the soil is at a point (see Resources). Fixed forever.
@@ -833,6 +836,14 @@ func _free(id: int, f: Dictionary, c: Vector2i, usable: Callable) -> bool:
 	if f.has("stock") and c in Livestock.site_cells(f):
 		return false
 	var mid := cell_center(f, c)
+	# Land has one owner (Brawn): not on a company's pads, the ground around
+	# them or its leases.
+	if land_free.is_valid():
+		var probe := [mid]
+		for q in cell_corners(f, c):
+			probe.append(mid.lerp(Vector3(q.x, 0.0, q.y), 0.9))
+		if not land_free.call(probe, "farm:%d" % id):
+			return false
 	if not reserved_ok(mid):
 		return false
 	var corners := cell_corners(f, c)

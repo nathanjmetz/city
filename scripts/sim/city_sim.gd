@@ -18,6 +18,8 @@ signal zones_changed
 signal stats_changed
 ## Farmland or a farm's fields changed.
 signal farms_changed
+## The future land use map changed (LandPlan).
+signal plan_changed
 ## A resource company opened, closed, or added or dropped a pad.
 signal industry_changed
 ## A campus opened, closed, or bought, built up or sold a block.
@@ -82,6 +84,9 @@ var power := Power.new()
 var logistics := Logistics.new()
 ## Land saved for farming or an industry: no roads or zoning on it.
 var reserves := Reserves.new()
+## The town's future land use map: big soft areas the player outlines for
+## homes, shops, jobs or farming. Builders look inside it first (LandPlan).
+var land_plan := LandPlan.new()
 ## Bus depots and school buses, which run themselves (scripts/transit/).
 var buses := BusNet.new()
 ## Cab companies, which run themselves too.
@@ -302,6 +307,9 @@ func _init() -> void:
 ## Applies one player command. Returns true if anything changed (online:
 ## true once it's sent).
 func apply(cmd: Dictionary) -> bool:
+	if held:
+		_held_cmds.append(cmd)
+		return true
 	if send_command.is_valid():
 		send_command.call(cmd)
 		return true
@@ -455,6 +463,13 @@ func apply_now(cmd: Dictionary) -> bool:
 				zones_changed.emit()
 				farms_changed.emit()
 				farms_changed.emit()
+		"paint_plan":
+			var pts := []
+			for p in cmd.points:
+				pts.append(_v(p))
+			ok = land_plan.paint(pts, str(cmd.get("kind", "")))
+			if ok:
+				plan_changed.emit()
 		"place_farmhouse":
 			var pos := _v(cmd.pos)
 			var dir := _v(cmd.dir).normalized()
@@ -806,6 +821,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			big = BigFactories.new()
 			big_factories_changed.emit()
 			reserves = Reserves.new()
+			land_plan = LandPlan.new()
 			buses = BusNet.new()
 			taxis = TaxiCo.new()
 			education = Education.new()
@@ -1949,6 +1965,9 @@ func _wire_policies() -> void:
 	industry.expand = _industry_road
 	industry.land_price_of = func(p: Vector3) -> float: return Capital.land_price(self, p)
 	industry.pad_road = _pad_road
+	# Land has one owner: hubs plant and build only on open land or their own.
+	industry.land_free = func(pts: Array, who: String) -> bool: return Capital.land_free(self, pts, who)
+	farms.land_free = industry.land_free
 	# What farmland sells for, nearby development included (Capital).
 	farms.land_price_of = func(p: Vector3) -> float: return Capital.land_price(self, p)
 
@@ -2192,7 +2211,8 @@ func _ground_free(mid: Vector3, corners: PackedVector2Array, in_fields: bool) ->
 
 
 ## Whose land a point is: "farm:<id>" for a farm's yard, lane or fields,
-## "site:<id>" for an industry company's, "hub" for any other hub or
+## "site:<id>" for an industry company's (pads, the ground around them and
+## its leases: Industry.claim_at), "hub" for any other hub or
 ## service, or "" for open land.
 func land_owner(p: Vector3) -> String:
 	var id := farms.farm_at(p)
@@ -2200,9 +2220,7 @@ func land_owner(p: Vector3) -> String:
 		id = farms.field_at(p)
 	if id != -1:
 		return "farm:%d" % id
-	id = industry.site_at(p)
-	if id == -1:
-		id = industry.pad_at(p)
+	id = industry.claim_at(p)
 	if id != -1:
 		return "site:%d" % id
 	if services.covers(p) or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
@@ -3658,6 +3676,15 @@ func _plan_to_save() -> Dictionary:
 
 
 var _parcel_cache := {}  # lot key -> [hash of the lot, its saved form] (see _parcels_to_save)
+var _zones_saved := [-1, {}]  # [ZoneMap.revision, its saved form]
+
+
+## The zoning as saved, made again only when it changed (a big town's
+## zoning takes a fifth of a second to write out).
+func _zones_to_save() -> Dictionary:
+	if int(_zones_saved[0]) != zones.revision:
+		_zones_saved = [zones.revision, zones.to_dict()]
+	return _zones_saved[1]
 
 
 ## What a postcard leaves out (see to_dict).
@@ -3670,67 +3697,99 @@ const POSTCARD_SKIP := ["plan", "zones", "families", "timelapse", "history", "tr
 ## town's size and saving time (see from_dict).
 func to_dict(postcard := false) -> Dictionary:
 	vegetation.update(self)  # land cleared since the last tick counts
-	var d := {
-		"version": 2,
-		"links": region_links,
-		"county": county_joined.keys(),
-		"county_removed": county_removed.keys(),
-		"trade": trade.to_dict(),
-		"tick": tick_count,
-		"seed": city_seed,
-		"roads": network.to_dict(),
-		"buildings": buildings,
-		"parcels": _parcels_to_save(),
-		"economy": economy.to_dict(),
-		"home_parts": _home_parts,
-		"services": services.to_dict(),
-		"farms": farms.to_dict(),
-		"industry": industry.to_dict(),
-		"power": power.to_dict(),
-		"education": education.to_dict(),
-		"telecom": telecom.to_dict(),
-		"banks": banks.to_dict(),
-		"logistics": logistics.to_dict(),
-		"construction": construction.to_dict(),
-		"warehouses": warehouses.to_dict(),
-		"big_factories": big.to_dict(),
-		"reserves": reserves.to_dict(),
-		"rail": rail.to_dict(),
-		"permits": permits.to_dict(),
-		"hubs": hubs.to_dict(),
-		"parks": parks.to_dict(),
-		"neighborhoods": neighborhoods.to_dict(),
-		"mail": mail.to_dict(),
-		"interlocal": interlocal.to_dict(),
-		"regional": regional.to_dict(),
-		"streets": streets.to_dict(),
-		"policies": policies.to_dict(),
-		"culture": culture.to_dict(),
-		"pollution": pollution.to_dict(),
-		"healthcare": healthcare.to_dict(),
-		"nicknames": nicknames.to_dict(),
-		"heritage": heritage.to_dict(),
-		"markers": markers.to_dict(),
-		"leaders": leaders.to_dict(),
-		"care": care.to_dict(),
-		"redevelopment": redevelopment.to_dict(),
-		"subdivisions": subdivisions.to_dict(),
-		"junctions": traffic.rules_to_dict(),
-		"vegetation": vegetation.to_dict(),
-	}
+	var d := {}
+	for step in save_steps(postcard):
+		d[step[0]] = step[1].call()
 	if postcard:
 		d.postcard = true
-		return d
-	d.zones = zones.to_dict()
-	d.plan = _plan_to_save()
-	d.families = families.to_dict()
-	d.timelapse = timelapse.to_dict()
-	d.history = history.to_dict()
-	d.traffic = traffic.to_dict()
-	d.buses = buses.to_dict()
-	d.taxis = taxis.to_dict()
-	d.people = people.to_dict()
 	return d
+
+
+## Holds the town still while a TownSnapshot saves it: no ticks (the game
+## checks `held`), and player commands wait their turn.
+var held := false
+var _held_cmds := []
+
+
+func hold() -> void:
+	held = true
+
+
+func release() -> void:
+	held = false
+	var cmds := _held_cmds
+	_held_cmds = []
+	for cmd in cmds:
+		apply(cmd)
+
+
+## to_dict as steps, [key, Callable], so a big town can be saved a few at
+## a time over several frames while it holds still (see hold and
+## TownSnapshot). The heavy ones (people, plans, cars) come last and only
+## in a full copy.
+func save_steps(postcard := false) -> Array:
+	var steps := [
+		["version", func(): return 2],
+		["links", func(): return region_links],
+		["county", func(): return county_joined.keys()],
+		["county_removed", func(): return county_removed.keys()],
+		["trade", func(): return trade.to_dict()],
+		["tick", func(): return tick_count],
+		["seed", func(): return city_seed],
+		["roads", func(): return network.to_dict()],
+		["buildings", func(): return buildings],
+		["parcels", func(): return _parcels_to_save()],
+		["economy", func(): return economy.to_dict()],
+		["home_parts", func(): return _home_parts],
+		["services", func(): return services.to_dict()],
+		["farms", func(): return farms.to_dict()],
+		["industry", func(): return industry.to_dict()],
+		["power", func(): return power.to_dict()],
+		["education", func(): return education.to_dict()],
+		["telecom", func(): return telecom.to_dict()],
+		["banks", func(): return banks.to_dict()],
+		["logistics", func(): return logistics.to_dict()],
+		["construction", func(): return construction.to_dict()],
+		["warehouses", func(): return warehouses.to_dict()],
+		["big_factories", func(): return big.to_dict()],
+		["reserves", func(): return reserves.to_dict()],
+		["land_plan", func(): return land_plan.to_dict()],
+		["rail", func(): return rail.to_dict()],
+		["permits", func(): return permits.to_dict()],
+		["hubs", func(): return hubs.to_dict()],
+		["parks", func(): return parks.to_dict()],
+		["neighborhoods", func(): return neighborhoods.to_dict()],
+		["mail", func(): return mail.to_dict()],
+		["interlocal", func(): return interlocal.to_dict()],
+		["regional", func(): return regional.to_dict()],
+		["streets", func(): return streets.to_dict()],
+		["policies", func(): return policies.to_dict()],
+		["culture", func(): return culture.to_dict()],
+		["pollution", func(): return pollution.to_dict()],
+		["healthcare", func(): return healthcare.to_dict()],
+		["nicknames", func(): return nicknames.to_dict()],
+		["heritage", func(): return heritage.to_dict()],
+		["markers", func(): return markers.to_dict()],
+		["leaders", func(): return leaders.to_dict()],
+		["care", func(): return care.to_dict()],
+		["redevelopment", func(): return redevelopment.to_dict()],
+		["subdivisions", func(): return subdivisions.to_dict()],
+		["junctions", func(): return traffic.rules_to_dict()],
+		["vegetation", func(): return vegetation.to_dict()],
+	]
+	if not postcard:
+		steps.append_array([
+			["zones", func(): return _zones_to_save()],
+			["plan", func(): return _plan_to_save()],
+			["families", func(): return families.to_dict()],
+			["timelapse", func(): return timelapse.to_dict()],
+			["history", func(): return history.to_dict()],
+			["traffic", func(): return traffic.to_dict()],
+			["buses", func(): return buses.to_dict()],
+			["taxis", func(): return taxis.to_dict()],
+			["people", func(): return people.to_dict()],
+		])
+	return steps
 
 
 func from_dict(d: Dictionary) -> void:
@@ -3786,6 +3845,8 @@ func from_dict(d: Dictionary) -> void:
 	warehouses.from_dict(d.get("warehouses", {}))
 	big.from_dict(d.get("big_factories", {}))
 	reserves.from_list(d.get("reserves", []))
+	land_plan.from_list(d.get("land_plan", []))
+	plan_changed.emit()
 	rail.from_dict(d.get("rail", {}))
 	permits.from_dict(d.get("permits", {}))
 	hubs.from_dict(d.get("hubs", {}))

@@ -178,7 +178,8 @@ static func unpack(z: String) -> Variant:
 		if size > MAX_UNPACKED:
 			return null
 		var bytes := all.slice(4).decompress(size, FileAccess.COMPRESSION_ZSTD)
-		return bytes_to_var(bytes) if bytes.size() == size else null
+		var d = bytes_to_var(bytes) if bytes.size() == size else null
+		return TownSnapshot.join(d) if d is Dictionary else d
 	var raw := Marshalls.base64_to_raw(z)
 	if raw.is_empty():
 		return null

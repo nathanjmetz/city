@@ -396,6 +396,10 @@ func _sites(col: VBoxContainer, req: Dictionary, picked: bool) -> void:
 		_num(float(e.get("years", 0)))], UiStyle.TEXT, 600, 12))
 	col.add_child(_fact("money", "The builder pays $%s for %s acres and the streets" % [CitySim.money_text(int(o.cost)),
 		_acres(float(e.get("acres", 0)))], UiStyle.MUTED, false))
+	if bool(o.get("planned", false)):
+		col.add_child(_fact("homes", "Inside your land use plan for homes: each phase is approved faster", Brand.POSITIVE, false))
+	elif not sim.land_plan.outlines.is_empty():
+		col.add_child(_fact("views", "Not in your land use plan", UiStyle.MUTED, false))
 	effects(col, e)
 	# (Water and power are in the lines above.)
 	needs(col, o.get("needs", {}), "EACH PHASE NEEDS", ["water", "power"])
