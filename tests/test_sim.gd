@@ -273,7 +273,7 @@ func _init() -> void:
 		"split networks: each utility's cause is named: " + split.utility_problem())
 	_check(split.utility_summary().length() < 40, "the top-bar chip stays short: " + split.utility_summary())
 	var rd := Inspect.describe(ws, Inspect.pick(ws, Vector3(60, 0, 0)))
-	_check(rd.get("title") == "Street" and rd.ok, "clicking a road shows the street")
+	_check(rd.get("kind") == "Street" and str(rd.get("title")).ends_with("Street") and rd.ok, "clicking a road shows the street and its name: %s" % rd.get("title"))
 	_check(Inspect.pick(ws, Vector3(0, 0, -900)).is_empty(), "clicking open ground selects nothing")
 	# Resource industry (Brawn's model): a company's pads spread where the
 	# resource is, and every load leaves on a real truck.

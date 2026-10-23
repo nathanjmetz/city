@@ -75,6 +75,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_rail.gd
           ~/godot-cache/godot --headless -s tests/test_rail_grain.gd
           ~/godot-cache/godot --headless -s tests/test_families.gd
+          ~/godot-cache/godot --headless -s tests/test_streets.gd
           ~/godot-cache/godot --headless -s tests/test_lots.gd
           ~/godot-cache/godot --headless -s tests/test_building_types.gd
           ~/godot-cache/godot --headless -s tests/test_hubs.gd
