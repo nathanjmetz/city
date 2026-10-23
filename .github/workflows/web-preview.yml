@@ -24,6 +24,9 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # A hung test once held the queue for over an hour and no merge could
+    # deploy behind it: stop a stuck build so the next one runs.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -66,6 +69,7 @@ jobs:
           grep -n custom_template/release export_presets.cfg
 
       - name: Run tests
+        timeout-minutes: 30
         run: |
           ~/godot-cache/godot --headless --import
           ~/godot-cache/godot --headless -s tests/test_roads.gd
