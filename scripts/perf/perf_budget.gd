@@ -38,6 +38,7 @@ const SIM := {
 	"sim.care":         {"per_tick": 0.05, "max": 8.0, "what": "Monthly property upkeep, a slice of town an hour"},
 	"sim.redevelop":    {"per_tick": 0.05, "max": 8.0, "what": "Monthly developers' asks to build denser"},
 	"sim.civic_hubs":   {"per_tick": 0.2, "max": 6.0, "what": "Landfill, recycling, cemetery, garbage trucks"},
+	"sim.construction": {"per_tick": 0.2, "max": 6.0, "what": "Building sites: stages, crews and deliveries (inside sim.civic_hubs)"},
 	"sim.mail":         {"per_tick": 0.1, "max": 4.0, "what": "Mail carriers and routes"},
 	"sim.pollution":    {"per_tick": 0.2, "max": 6.0, "what": "Smoke, noise and dirty ground"},
 	"sim.healthcare":   {"per_tick": 0.1, "max": 6.0, "what": "Hospital, ambulances and care"},
