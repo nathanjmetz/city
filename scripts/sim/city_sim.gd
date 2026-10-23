@@ -1252,6 +1252,9 @@ func _hub_command(cmd: Dictionary) -> bool:
 		if cost > economy.money or hubs.site_problem(self, kind, pos, dir) != "":
 			return false
 		var id := hubs.add(kind, pos, dir, tick_count)
+		# Its scale house, booth or chapel goes up like any other building.
+		construction.start("hub:%d" % id, "shop", tick_count, pos, dir, CivicHubs.SETBACK
+			+ RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH)
 		economy.money -= cost
 		for c in hubs.hubs[id].cells:
 			_clear_zones_under(CivicHubs.cell_poly(hubs.hubs[id], c))
