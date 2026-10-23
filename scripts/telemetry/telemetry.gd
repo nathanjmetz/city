@@ -42,6 +42,9 @@ var _perf_time := 0.0
 var _frames := 0
 var _worst := 0.0
 var _last_us := 0
+## Neighbor towns loaded this perf window (see RegionClient.town_loaded).
+var _towns := {}
+var _town_at := -1.0
 var _frame_ms := PackedFloat32Array()   # this window's frame times
 var _quality_hooked := false
 var _hitches := 0
@@ -259,6 +262,9 @@ func _perf_sample() -> void:
 	_frame_ms.clear()
 	e.merge(_quality_now())
 	_perf_systems(e)
+	if not _towns.is_empty():
+		e["towns"] = _towns
+		_towns = {}
 	if _sim and is_instance_valid(_sim) and "stats" in _sim:
 		e["pop"] = int(_sim.stats.population)
 		e["money"] = int(_sim.economy.money)
@@ -281,7 +287,11 @@ func _stall(dt: float) -> void:
 	var top := {}
 	for st in stages.slice(0, 5):
 		top[st[0]] = snappedf(st[1], 0.1)
-	event("stall", {"ms": int(dt * 1000.0), "scene": _scene, "ctx": tracker.context, "stages": top})
+	var e := {"ms": int(dt * 1000.0), "scene": _scene, "ctx": tracker.context, "stages": top}
+	# Whether a neighbor's town had just been loaded (seconds before the freeze ended).
+	if _town_at >= 0.0:
+		e["since_town_s"] = snappedf(_now() - _town_at, 0.1)
+	event("stall", e)
 	flush()
 
 
@@ -405,6 +415,20 @@ func _watch_client() -> void:
 		_send())
 	c.disconnected.connect(func(): event("dropped"))
 	c.telemetry_acked.connect(_acked)
+	c.town_loaded.connect(_town_loaded)
+
+
+func _town_loaded(id: String, bytes: int, unpack_ms: float, load_ms: float) -> void:
+	_town_at = _now()
+	var key := id if id != "" else "region"
+	_towns["n"] = int(_towns.get("n", 0)) + 1
+	_towns["kb"] = int(_towns.get("kb", 0)) + bytes / 1024
+	_towns["unpack_max_ms"] = snappedf(maxf(float(_towns.get("unpack_max_ms", 0.0)), unpack_ms), 0.1)
+	_towns["load_max_ms"] = snappedf(maxf(float(_towns.get("load_max_ms", 0.0)), load_ms), 0.1)
+	_towns["load_ms"] = snappedf(float(_towns.get("load_ms", 0.0)) + unpack_ms + load_ms, 0.1)
+	var from: Dictionary = _towns.get("from", {})
+	from[key] = int(from.get(key, 0)) + 1
+	_towns["from"] = from
 
 
 ## Moves what's gathered into the outbox, saves it, and sends what it can.
