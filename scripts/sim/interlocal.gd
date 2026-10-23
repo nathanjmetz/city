@@ -22,12 +22,10 @@ extends RefCounted
 ## Each computer runs only its own town, and each town only ever simulates
 ## its own half from the deal's terms (the fee, the county road, how far the
 ## host's station is from it), so a deal keeps running on its last terms
-## while either player is away. The region server keeps the ledger: once a
-## game month (Interlocal.region_step, with its latest copy of every town)
-## it files new offers, signs deals both towns approved, and passes on each
-## month's numbers (trash picked up, the station's distance, notice to
-## end). What changes for a town goes to it as a short list of steps
-## (receive), held for a player who is away until they're back.
+## while either player is away. The agreement itself lives in the region's
+## ledger (Ledger): a leader's offer goes on the host's bell first, out to
+## the neighbor once approved, onto the neighbor's bell, and is signed when
+## that player approves too (sync).
 
 ## The services, how the card names them and who offers them.
 const KINDS := {
@@ -83,8 +81,9 @@ func monthly_net() -> int:
 
 
 ## The player gives notice to end a deal (CitySim command "end_deal" {id}).
-## The region sees it and ends the deal on both sides after the notice.
-func end(sim, id: int) -> bool:
+## The neighbor hears it from this town's copy, and the deal ends in the
+## region's ledger once the notice runs out (sync).
+func end(sim, id: String) -> bool:
 	if not deals.has(id) or int(deals[id].left) >= 0:
 		return false
 	deals[id].left = Balance.INTERLOCAL_NOTICE
@@ -221,7 +220,7 @@ func tick(sim) -> void:
 					_send_host_buses(sim, d)
 
 
-func _out(deal_id: int, what: String) -> int:
+func _out(deal_id: String, what: String) -> int:
 	return trips.values().filter(func(r): return r.deal == deal_id and r.what == what).size()
 
 
@@ -309,8 +308,8 @@ static func _bus_stops(sim) -> Array:
 
 
 func _go(sim, run: Dictionary, to: Array, purpose: String, cargo: Dictionary) -> bool:
-	var trip: int = sim.traffic.dispatch({"ref": "deal:%d" % run.deal, "pos": run.at},
-		{"ref": "deal:%d" % run.deal, "pos": to}, purpose, cargo)
+	var trip: int = sim.traffic.dispatch({"ref": "deal:%s" % run.deal, "pos": run.at},
+		{"ref": "deal:%s" % run.deal, "pos": to}, purpose, cargo)
 	if trip == -1:
 		return false
 	trips[trip] = run
@@ -414,253 +413,205 @@ func _ids() -> Array:
 	return ids
 
 
-# --- What the region sends this town ----------------------------------------------
+# --- The region's ledger: offers on both bells -----------------------------------
+# Agreements live in the region's ledger (Ledger, kept by the region server
+# and sent to every player). This computer runs only its own town's half:
+# sync reads the ledger and the neighbors' latest copies, files offers on
+# this town's bell, and hands back what to tell the server.
 
-## Takes the region's steps for this town, in order (see region_step):
-##   {"op": "offer", "id", "kind", "fee", "other", "pays", "leader", "title", "why", "link"}
-##   {"op": "withdraw", "id"}
-##   {"op": "sign", "deal": {...}}
-##   {"op": "update", "id", "fee", "offset", "homes", "left", "haul_add"}
+## Host side: agreement id -> the neighbor's trash (tons) already brought home.
+var seen := {}
+## Agreement id -> the tick this town first saw the neighbor turn it down.
+var told_no := {}
+## The last game month notice was counted down.
+var month := -1
+## Offers sent that the ledger doesn't show yet: "kind:other" -> tick sent.
+var _pending := {}
+
+
+## Brings this town's deals in line with the region's ledger. Called when the
+## ledger changes and every game hour. Returns the actions for the server:
+##   {"op": "offer", "to", "service", "price", "capacity"}
+##   {"op": "answer", "id", "yes"}
 ##   {"op": "end", "id"}
-## Every step is safe to take twice except "haul_add", which the region
-## sends only once: to the town's computer if it's running, otherwise into
-## the region's copy of the town, which is what its player starts from.
-func receive(sim, ops: Array) -> void:
-	for op in ops:
-		var id := int(op.get("id", op.get("deal", {}).get("id", -1)))
-		match str(op.get("op", "")):
-			"offer":
-				if _request(sim, id).is_empty():
-					var deal := {"kind": str(op.kind), "fee": int(op.fee), "other": str(op.other)}
-					if bool(op.get("pays", false)):
-						deal.pays = true
-					sim.permits.file(sim, {"hub": "interlocal", "hub_id": id, "leader": str(op.leader),
-						"title": str(op.title), "why": str(op.why), "route": op.get("at", []), "deal": deal})
-			"withdraw":
-				var req := _request(sim, id)
-				if not req.is_empty():
+func sync(region, me: String, sim) -> Array:
+	var acts := []
+	var links: Dictionary = region.trade_links()
+	var mine: Dictionary = links.get(me, {})
+	var live := {}
+	var ids: Array = region.ledger.agreements.keys()
+	ids.sort()
+	for aid in ids:
+		var a: Dictionary = region.ledger.agreements[aid]
+		if not KINDS.has(a.service) or not me in [a.host, a.client]:
+			continue
+		var other: String = a.client if a.host == me else a.host
+		match str(a.status):
+			"active":
+				live[a.id] = true
+				_keep(region, me, sim, a, other, links)
+			"offered":
+				if a.client == me:
+					_ask(region, sim, a, other, mine, acts)
+			_:
+				var req := _request(sim, "agreement", a.id)
+				if not req.is_empty() and int(req.state) in [Permits.State.OPEN, Permits.State.SHELVED]:
 					sim.permits.withdraw(int(req.id))
-			"sign":
-				var d: Dictionary = op.deal
-				deals[id] = {"id": id, "kind": str(d.kind), "role": str(d.role), "other": str(d.other),
-					"other_name": str(d.other_name), "fee": int(d.fee), "link": int(d.link),
-					"offset": int(d.offset), "left": -1, "picked": 0.0, "haul": 0.0, "homes": int(d.homes)}
-				var req := _request(sim, id)
-				if not req.is_empty():
-					sim.permits.done(int(req.id))
-			"update":
-				if deals.has(id):
-					var d: Dictionary = deals[id]
-					for k in ["fee", "offset", "homes", "left"]:
-						if op.has(k):
-							d[k] = int(op[k])
-					d.haul = float(d.haul) + float(op.get("haul_add", 0.0))
-			"end":
-				deals.erase(id)
-	refresh(sim)
-
-
-## This town's bell request for a deal offer, or {}.
-static func _request(sim, id: int) -> Dictionary:
+				if a.status == "denied" and a.host == me and not told_no.has(a.id):
+					told_no[a.id] = int(sim.tick_count)
+	for id in deals.keys():
+		if not live.has(id):
+			deals.erase(id)
+			seen.erase(id)
+	# Notice runs out a month at a time; at the end, the deal ends.
+	var m := int(sim.tick_count / (24 * CitySim.TICKS_PER_HOUR))
+	if month < 0 or m < month:
+		month = m
+	while month < m:
+		month += 1
+		for id in deals:
+			if int(deals[id].left) > 0:
+				deals[id].left = int(deals[id].left) - 1
+	for id in _ids():
+		if int(deals[id].left) == 0:
+			acts.append({"op": "end", "id": id})
+	# Offers this town's leaders made that the player approved go out.
 	for rid in sim.permits.requests:
 		var q: Dictionary = sim.permits.requests[rid]
-		if q.hub == "interlocal" and int(q.hub_id) == id:
-			return q
-	return {}
+		if q.hub == "interlocal" and q.get("deal", {}).has("key") and int(q.state) == Permits.State.APPROVED:
+			acts.append({"op": "offer", "to": str(q.deal.other), "service": str(q.deal.kind),
+				"price": float(q.deal.fee), "capacity": float(maxi(int(q.deal.get("homes", 1)), 1))})
+			sim.permits.done(int(rid))
+			_pending[str(q.deal.key)] = int(sim.tick_count)
+	_new_offers(region, me, sim, links, acts)
+	refresh(sim)
+	return acts
 
 
-static func _state(sim, id: int) -> int:
-	var q := _request(sim, id)
-	return -1 if q.is_empty() else int(q.state)
+## An active agreement: this town's half of it, on the ledger's terms, with
+## what changed over there (the host's station, the town's homes, trash
+## picked up, notice given) from the neighbor's latest copy.
+func _keep(region, me: String, sim, a: Dictionary, other: String, links: Dictionary) -> void:
+	var host: bool = a.host == me
+	var them = region.cities[other].sim if region.cities.has(other) else null
+	var d: Dictionary = deals.get(a.id, {})
+	if d.is_empty():
+		d = {"id": a.id, "kind": a.service, "role": "host" if host else "served", "other": other,
+			"other_name": "", "fee": 0, "link": -1, "offset": -1, "left": -1, "picked": 0.0, "haul": 0.0, "homes": 0}
+		deals[a.id] = d
+		var req := _request(sim, "agreement", a.id)
+		if not req.is_empty():
+			sim.permits.done(int(req.id))
+	d.fee = roundi(float(a.price_per_month))
+	d.link = int(links.get(me, {}).get(other, d.link))
+	if region.cities.has(other):
+		d.other_name = str(region.cities[other].name)
+	var their_deal: Dictionary = them.interlocal.deals.get(a.id, {}) if them else {}
+	if host:
+		d.offset = offset(sim, d.kind, int(d.link))
+		if them:
+			d.homes = homes(them)
+		# The neighbor's trash picked up since last time comes home with our trucks.
+		var picked := float(their_deal.get("picked", 0.0))
+		d.haul = float(d.haul) + maxf(picked - float(seen.get(a.id, 0.0)), 0.0)
+		seen[a.id] = maxf(picked, float(seen.get(a.id, 0.0)))
+	else:
+		d.homes = homes(sim)
+		if them:
+			d.offset = offset(them, d.kind, int(links.get(other, {}).get(me, -1)))
+	if int(d.left) < 0 and int(their_deal.get("left", -1)) >= 0:
+		d.left = int(their_deal.left)
 
 
-# --- The region: offers, signing and each month's numbers --------------------------
-# Runs on the region server, with its latest copy of every town (a town
-# whose player is away keeps its last copy). The ledger lives in the Region:
-#   r.pacts     offers waiting on both bells: id -> {kind, host, served, fee,
-#               host_link, served_link, offset, homes, made}
-#   r.deals     signed deals: id -> {kind, host, served, fee, host_link,
-#               served_link, offset, homes, priced, left, seen}
-#   r.month, r.next_pact, r.pact_wait ("kind:host:served" -> month)
-
-## One game month of deals. Returns each town's steps (city id -> [steps])
-## for the server to send to the towns that are running, and takes them on
-## the region's own copies too: a town whose player is away starts from
-## that copy when they're back.
-static func region_step(r) -> Dictionary:
-	r.month += 1
-	var links: Dictionary = r.trade_links()
-	var ops := {}
-	_settle_offers(r, ops)
-	_carry_over(r, ops)
-	_new_offers(r, links, ops)
-	for id in ops:
-		if r.cities.has(id):
-			r.cities[id].sim.interlocal.receive(r.cities[id].sim, ops[id])
-	return ops
-
-
-static func _send(ops: Dictionary, city: String, op: Dictionary) -> void:
-	if not ops.has(city):
-		ops[city] = []
-	ops[city].append(op)
+## A neighbor's offer to this town: on the bell until the player answers.
+func _ask(region, sim, a: Dictionary, other: String, mine: Dictionary, acts: Array) -> void:
+	var req := _request(sim, "agreement", a.id)
+	if req.is_empty():
+		var info: Dictionary = KINDS[a.service]
+		var host_name: String = region.cities[other].name if region.cities.has(other) else "A neighbor"
+		var money := CitySim.money_text(roundi(float(a.price_per_month)))
+		var at := []
+		if sim.network.nodes.has(int(mine.get(other, -1))):
+			at = [_xz(sim.network.nodes[int(mine[other])])]
+		sim.permits.file(sim, {"hub": "interlocal", "hub_id": _hub_id("agreement:" + a.id),
+			"leader": "%s %s (%s)" % [info.title, _name(hash([other, a.service])), host_name],
+			"title": "%s offers us %s" % [host_name, info.name],
+			"why": "We'd serve your town from %s over the county road, for $%s a month: your share of our cost, by homes." % [
+				host_name, money],
+			"route": at, "deal": {"kind": a.service, "fee": roundi(float(a.price_per_month)), "other": other,
+				"pays": true, "agreement": a.id}})
+		return
+	match int(req.state):
+		Permits.State.APPROVED:
+			acts.append({"op": "answer", "id": a.id, "yes": true})
+		Permits.State.DENIED, Permits.State.WITHDRAWN:
+			acts.append({"op": "answer", "id": a.id, "yes": false})
 
 
-static func _sim(r, id: String):
-	return r.cities[id].sim if r.cities.has(id) else null
-
-
-## Offers both towns approved become deals; one either town turned down (or
-## let sit until shelved) is dropped, and not offered again for a while.
-## An offer a town hasn't filed yet (away, or its bell was full) is sent again.
-static func _settle_offers(r, ops: Dictionary) -> void:
-	var ids: Array = r.pacts.keys()
-	ids.sort()
-	for pid in ids:
-		var p: Dictionary = r.pacts[pid]
-		var hs = _sim(r, p.host)
-		var ss = _sim(r, p.served)
-		if hs == null or ss == null:
-			r.pacts.erase(pid)
+## Each of this town's leaders looks at the towns joined to it by county road
+## and offers what one of them lacks: on this town's bell first, and to the
+## neighbor once the player approves. One offer per service per town at a time.
+func _new_offers(region, me: String, sim, links: Dictionary, acts: Array) -> void:
+	var near: Array = links.get(me, {}).keys()
+	near.sort()
+	for other in near:
+		if not region.cities.has(other):
 			continue
-		var a: int = _state(hs, pid)
-		var b: int = _state(ss, pid)
-		var ok := [Permits.State.APPROVED, Permits.State.DONE]
-		if a in ok and b in ok:
-			r.deals[pid] = {"kind": p.kind, "host": p.host, "served": p.served, "fee": int(p.fee),
-				"host_link": int(p.host_link), "served_link": int(p.served_link), "offset": int(p.offset),
-				"homes": int(p.homes), "priced": int(r.month), "left": -1, "seen": 0.0}
-			for side in [["host", p.host, p.served, int(p.host_link)], ["served", p.served, p.host, int(p.served_link)]]:
-				_send(ops, side[1], {"op": "sign", "deal": {"id": int(pid), "kind": p.kind, "role": side[0],
-					"other": side[2], "other_name": r.cities[side[2]].name, "fee": int(p.fee), "link": side[3],
-					"offset": int(p.offset), "homes": int(p.homes)}})
-			r.pacts.erase(pid)
-		elif a in [Permits.State.DENIED, Permits.State.SHELVED, Permits.State.WITHDRAWN] \
-				or b in [Permits.State.DENIED, Permits.State.SHELVED, Permits.State.WITHDRAWN]:
-			_send(ops, p.host, {"op": "withdraw", "id": int(pid)})
-			_send(ops, p.served, {"op": "withdraw", "id": int(pid)})
-			r.pact_wait[_pair(p.kind, p.host, p.served)] = int(r.month) + Balance.INTERLOCAL_RETRY
-			r.pacts.erase(pid)
-		else:
-			# Not on a bell yet: send it again.
-			if a == -1:
-				_send(ops, p.host, p.host_offer)
-			if b == -1:
-				_send(ops, p.served, p.served_offer)
-
-
-## Each signed deal's month: trash picked up goes to the host to haul home,
-## the host's station distance comes over, notice to end counts down, and
-## once a year the fee is re-figured.
-static func _carry_over(r, ops: Dictionary) -> void:
-	var ids: Array = r.deals.keys()
-	ids.sort()
-	for did in ids:
-		var d: Dictionary = r.deals[did]
-		var hs = _sim(r, d.host)
-		var ss = _sim(r, d.served)
-		if hs == null or ss == null:
-			r.deals.erase(did)
-			for c in [d.host, d.served]:
-				_send(ops, c, {"op": "end", "id": int(did)})
+		var them = region.cities[other].sim
+		var link: int = links[me][other]
+		if not them.network.nodes.has(int(links.get(other, {}).get(me, -1))):
 			continue
-		var mine_h: Dictionary = hs.interlocal.deals.get(did, {})
-		var mine_s: Dictionary = ss.interlocal.deals.get(did, {})
-		# Notice from either town starts the count; it ends when it runs out.
-		if int(d.left) < 0 and (int(mine_h.get("left", -1)) >= 0 or int(mine_s.get("left", -1)) >= 0):
-			d.left = Balance.INTERLOCAL_NOTICE
-		elif int(d.left) >= 0:
-			d.left = int(d.left) - 1
-		if int(d.left) == 0:
-			r.deals.erase(did)
-			for c in [d.host, d.served]:
-				_send(ops, c, {"op": "end", "id": int(did)})
-			continue
-		var picked := float(mine_s.get("picked", d.seen))
-		var haul := maxf(picked - float(d.seen), 0.0)
-		d.seen = maxf(picked, float(d.seen))
-		d.offset = offset(hs, d.kind, int(d.host_link))
-		d.homes = homes(ss)
-		if int(r.month) - int(d.priced) >= Balance.INTERLOCAL_REPRICE:
-			d.fee = fee(d.kind, homes(hs), homes(ss))
-			d.priced = r.month
-		var up := {"op": "update", "id": int(did), "fee": int(d.fee), "offset": int(d.offset), "homes": int(d.homes),
-			"left": int(d.left)}
-		_send(ops, d.served, up)
-		var host_up: Dictionary = up.duplicate()
-		host_up.haul_add = haul
-		_send(ops, d.host, host_up)
-
-
-## Each host leader looks at the towns joined to it by county road and
-## offers what one of them lacks. One offer per service per town at a time.
-static func _new_offers(r, links: Dictionary, ops: Dictionary) -> void:
-	var hosts: Array = links.keys()
-	hosts.sort()
-	for host in hosts:
-		var hs = _sim(r, host)
-		if hs == null:
-			continue
-		var near: Array = links[host].keys()
-		near.sort()
-		for served in near:
-			var ss = _sim(r, served)
-			if ss == null:
+		for kind in KINDS:
+			if _taken(region, me, kind, other, sim) or not needs(them, kind):
 				continue
-			for kind in KINDS:
-				if _taken(r, kind, served) or int(r.month) < int(r.pact_wait.get(_pair(kind, host, served), -1)):
-					continue
-				if not needs(ss, kind):
-					continue
-				var host_link: int = links[host][served]
-				var served_link: int = links[served].get(host, -1)
-				var off := offset(hs, kind, host_link)
-				if off < 0 or not ss.network.nodes.has(served_link):
-					continue
-				if kind == "trash":
-					var site := _site(hs, kind, host_link)
-					if hs.permits.guidance("hub", int(site[2])).stance == "hold":
-						continue
-				_offer(r, ops, kind, host, served, host_link, served_link, off)
+			if offset(sim, kind, link) < 0:
+				continue
+			if kind == "trash" and sim.permits.guidance("hub", int(_site(sim, kind, link)[2])).stance == "hold":
+				continue
+			var info: Dictionary = KINDS[kind]
+			var f := fee(kind, homes(sim), homes(them))
+			sim.permits.file(sim, {"hub": "interlocal", "hub_id": _hub_id("offer:%s:%s" % [kind, other]),
+				"leader": "%s %s" % [info.title, _name(hash([me, kind]))],
+				"title": "Offer %s to %s" % [info.name, region.cities[other].name],
+				"why": "%s has no %s of its own. We can cover it over the county road for $%s a month, our cost shared by homes." % [
+					region.cities[other].name, _lacks(kind), CitySim.money_text(f)],
+				"route": [_xz(sim.network.nodes[link])],
+				"deal": {"kind": kind, "fee": f, "other": other, "key": "%s:%s" % [kind, other], "homes": homes(them)}})
 
 
-## True when a town already has, or is being offered, this service.
-static func _taken(r, kind: String, served: String) -> bool:
-	for book in [r.pacts, r.deals]:
-		for id in book:
-			if book[id].kind == kind and book[id].served == served:
-				return true
-	return false
+## True when the town is already served, offered or being asked about this
+## service, or turned this town down for it lately.
+func _taken(region, me: String, kind: String, other: String, sim) -> bool:
+	for a in region.ledger.agreements.values():
+		if a.service != kind or a.client != other:
+			continue
+		if a.status in ["offered", "active"]:
+			_pending.erase("%s:%s" % [kind, other])
+			return true
+		if a.host == me and int(sim.tick_count) - int(told_no.get(a.id, -(1 << 40))) \
+				< Balance.INTERLOCAL_RETRY * 24 * CitySim.TICKS_PER_HOUR:
+			return true
+	var key := "%s:%s" % [kind, other]
+	if int(sim.tick_count) - int(_pending.get(key, -(1 << 40))) < 24 * CitySim.TICKS_PER_HOUR:
+		return true
+	var req := _request(sim, "key", key)
+	return not req.is_empty() and int(req.state) in [Permits.State.OPEN, Permits.State.SHELVED, Permits.State.APPROVED]
 
 
-## Sends the offer to both bells.
-static func _offer(r, ops: Dictionary, kind: String, host: String, served: String, host_link: int,
-		served_link: int, off: int) -> void:
-	var hs = _sim(r, host)
-	var ss = _sim(r, served)
-	var pid: int = r.next_pact
-	r.next_pact = pid + 1
-	var f := fee(kind, homes(hs), homes(ss))
-	var info: Dictionary = KINDS[kind]
-	var host_name: String = r.cities[host].name
-	var served_name: String = r.cities[served].name
-	var who := "%s %s (%s)" % [info.title, _name(hash([r.region_seed, host, kind])), host_name]
-	var money := CitySim.money_text(f)
-	var host_offer := {"op": "offer", "id": pid, "kind": kind, "fee": f, "other": served, "leader": who,
-		"title": "Offer %s to %s" % [info.name, served_name],
-		"why": "%s has no %s of its own. We can cover it over the county road for $%s a month, our cost shared by homes." % [
-			served_name, _lacks(kind), money],
-		"at": [_xz(hs.network.nodes[host_link])]}
-	var served_offer := {"op": "offer", "id": pid, "kind": kind, "fee": f, "other": host, "pays": true, "leader": who,
-		"title": "%s offers us %s" % [host_name, info.name],
-		"why": "We'd serve your town from %s over the county road, for $%s a month: your share of our cost, by homes." % [
-			host_name, money],
-		"at": [_xz(ss.network.nodes[served_link])]}
-	r.pacts[pid] = {"kind": kind, "host": host, "served": served, "fee": f, "host_link": host_link,
-		"served_link": served_link, "offset": off, "homes": homes(ss), "made": int(r.month),
-		"host_offer": host_offer, "served_offer": served_offer}
-	_send(ops, host, host_offer)
-	_send(ops, served, served_offer)
+## This town's latest bell request whose deal has this field, or {}.
+static func _request(sim, field: String, value: String) -> Dictionary:
+	var best := {}
+	for rid in sim.permits.requests:
+		var q: Dictionary = sim.permits.requests[rid]
+		if q.hub == "interlocal" and str(q.get("deal", {}).get(field, "")) == value:
+			if best.is_empty() or int(q.id) > int(best.id):
+				best = q
+	return best
+
+
+## A steady bell id for an offer, so the bell keeps one per offer.
+static func _hub_id(key: String) -> int:
+	return absi(hash(key)) % 1_000_000_000
 
 
 static func _lacks(kind: String) -> String:
@@ -674,37 +625,6 @@ static func _name(seed: int) -> String:
 		Power.LAST_NAMES[rng.randi() % Power.LAST_NAMES.size()]]
 
 
-static func _pair(kind: String, host: String, served: String) -> String:
-	return "%s:%s:%s" % [kind, host, served]
-
-
-## The region's ledger for saving: plain JSON, so int keys come back as
-## strings and load_ledger turns them back.
-static func ledger_to_dict(r) -> Dictionary:
-	return {"pacts": r.pacts, "deals": r.deals, "month": r.month, "next": r.next_pact, "wait": r.pact_wait}
-
-
-static func load_ledger(r, d: Dictionary) -> void:
-	r.pacts = {}
-	r.deals = {}
-	for pair in [[r.pacts, d.get("pacts", {})], [r.deals, d.get("deals", {})]]:
-		for k in pair[1]:
-			var e: Dictionary = pair[1][k].duplicate(true)
-			for f in ["fee", "host_link", "served_link", "offset", "homes", "made", "priced", "left"]:
-				if e.has(f):
-					e[f] = int(e[f])
-			for o in ["host_offer", "served_offer"]:
-				if e.has(o):
-					e[o].id = int(e[o].id)
-					e[o].fee = int(e[o].fee)
-			pair[0][int(k)] = e
-	r.month = int(d.get("month", 0))
-	r.next_pact = int(d.get("next", 1))
-	r.pact_wait = {}
-	for k in d.get("wait", {}):
-		r.pact_wait[str(k)] = int(d.wait[k])
-
-
 # --- Saving -------------------------------------------------------------------------
 
 func to_dict() -> Dictionary:
@@ -712,14 +632,14 @@ func to_dict() -> Dictionary:
 	for id in _ids():
 		list.append(deals[id])
 	# Vehicles out on runs come back with the save (exact types).
-	return {"deals": list, "trips": var_to_str(trips)}
+	return {"deals": list, "trips": var_to_str(trips), "seen": seen, "told_no": told_no, "month": month}
 
 
 func from_dict(d: Dictionary) -> void:
 	deals.clear()
 	trips.clear()
 	for x in d.get("deals", []):
-		deals[int(x.id)] = {"id": int(x.id), "kind": str(x.kind), "role": str(x.role), "other": str(x.other),
+		deals[str(x.id)] = {"id": str(x.id), "kind": str(x.kind), "role": str(x.role), "other": str(x.other),
 			"other_name": str(x.get("other_name", "")), "fee": int(x.fee), "link": int(x.link),
 			"offset": int(x.get("offset", -1)), "left": int(x.get("left", -1)), "picked": float(x.get("picked", 0.0)),
 			"haul": float(x.get("haul", 0.0)), "homes": int(x.get("homes", 0))}
@@ -727,3 +647,10 @@ func from_dict(d: Dictionary) -> void:
 		var t = str_to_var(str(d.trips))
 		if t is Dictionary:
 			trips = t
+	seen = {}
+	for k in d.get("seen", {}):
+		seen[str(k)] = float(d.seen[k])
+	told_no = {}
+	for k in d.get("told_no", {}):
+		told_no[str(k)] = int(d.told_no[k])
+	month = int(d.get("month", -1))

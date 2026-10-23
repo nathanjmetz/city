@@ -105,11 +105,14 @@ void fragment() {
 		// November to March.
 		float b = smoothstep(0.3, 0.9, bare);
 		vec4 tw = texture(twig_tex, UV);
-		tw.a *= 1.0 + lod * 0.35;
+		// Bare crowns from above are a see-through haze (aerial photos show
+		// the snow or leaf litter through them), so the twigs get much less
+		// of the far-off alpha boost than leaves do.
+		tw.a *= 1.0 + lod * 0.12;
 		float h = fract(sin(dot(floor(leaf_pos * 0.55), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
 		alpha = mix(alpha, tw.a * step(bare * 0.3, h), b);
 		t.rgb = mix(t.rgb, tw.rgb, b);
-		vec3 twig = vec3(0.15, 0.13, 0.11) * (0.85 + tree_rand * 0.3);
+		vec3 twig = vec3(0.2, 0.17, 0.15) * (0.85 + tree_rand * 0.3);
 		leaf = mix(leaf, twig, b);
 	}
 	// Snow resting on the tops of the crowns.

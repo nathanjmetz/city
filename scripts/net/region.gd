@@ -36,18 +36,12 @@ var chat := []  # [{"from", "text", "at"}]
 ## "b_at": [x, z]}], each end in its own town's coordinates.
 var joins := []
 var region_seed := 1
+## Regional projects and service agreements between towns (see Ledger).
+var ledger := Ledger.new()
 ## Roads the last add_city built in existing towns (their halves of the new
 ## county roads): city id -> [commands]. Their owners, if online, run them
 ## on their own computers too.
 var handed := {}
-## Service deals between towns (Interlocal keeps them): offers waiting on
-## both bells, signed deals, the game month they're counted in, the next
-## id, and when an offer turned down may come again.
-var pacts := {}
-var deals := {}
-var month := 0
-var next_pact := 1
-var pact_wait := {}
 
 
 ## The city a player owns, or "" if they have none yet.
@@ -248,18 +242,19 @@ func to_dict() -> Dictionary:
 		cs[id] = {"owner": c.owner, "player": c.player, "name": c.name, "origin": [c.origin.x, c.origin.y],
 			"color": c.color, "city": c.sim.to_dict()}
 	return {"version": 2, "seed": region_seed, "cities": cs, "chat": chat, "joins": joins,
-		"interlocal": Interlocal.ledger_to_dict(self)}
+		"ledger": ledger.to_dict()}
 
 
 func from_dict(d: Dictionary) -> void:
 	region_seed = int(d.get("seed", 1))
 	chat = d.get("chat", [])
+	ledger = Ledger.new()
+	ledger.from_dict(d.get("ledger", {}))
 	joins = []
 	for j in d.get("joins", []):
 		if j.has("a_at"):
 			joins.append({"a": str(j.a), "a_at": [float(j.a_at[0]), float(j.a_at[1])],
 				"b": str(j.b), "b_at": [float(j.b_at[0]), float(j.b_at[1])]})
-	Interlocal.load_ledger(self, d.get("interlocal", {}))
 	cities.clear()
 	var cs: Dictionary = d.get("cities", {})
 	for id in cs:

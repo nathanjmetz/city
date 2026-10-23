@@ -87,7 +87,7 @@ func _ready() -> void:
 	for entry in [["taxes", "Property taxes"], ["fees", "Water and sewer bills"], ["upkeep", "Road upkeep"],
 			["services", "Services, parks, garbage, cemeteries"], ["education", "Schools and colleges"],
 			["care", "Street care"],
-			["support", "Farm and business aid"], ["deals", "Services shared with neighbors"]]:
+			["support", "Farm and business aid"], ["deals", "Services shared with neighbors"], ["region", "Regional projects"]]:
 		var l := UiStyle.label(entry[1], 12, UiStyle.MUTED)
 		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		grid.add_child(l)
@@ -165,6 +165,7 @@ func refresh() -> void:
 	_money_line("care", -int(e.budget.get("care", 0)))
 	_money_line("support", -int(e.budget.get("support", 0)))
 	_money_line("deals", int(e.budget.get("deals", 0)))
+	_money_line("region", int(e.budget.get("region", 0)))
 	_grant.text = "" if e.milestone >= Economy.MILESTONES.size() else \
 		"Next grant: $%s at %s people" % [CitySim.money_text(Economy.MILESTONES[e.milestone][1]),
 		CitySim.money_text(Economy.MILESTONES[e.milestone][0])]
@@ -267,6 +268,13 @@ func hubs_in(area: String) -> Array:
 		"warehouses":
 			for id in sim.warehouses.buildings:
 				out.append("warehouse:%d" % id)
+		"taxis":
+			for id in sim.taxis.companies:
+				if sim.services.buildings.has(id):
+					out.append("taxi:%d" % id)
+		"telecom":
+			for id in sim.telecom.companies:
+				out.append("telecom:%d" % id)
 		"waste", "cemetery":
 			for id in sim.hubs.hubs:
 				if CivicHubs.area_of(sim.hubs.hubs[id].kind) == area:
@@ -348,6 +356,10 @@ func hub_name(key: String) -> String:
 			return "%s %d  ·  %d %s%s" % [k.name, id, p.cells.size(), k.unit, "" if p.cells.size() == 1 else "s"]
 		"warehouse":
 			return "%s %d" % [Warehouses.KINDS[sim.warehouses.buildings[id].kind].name, id]
+		"taxi":
+			return "Taxi company %d" % id
+		"telecom":
+			return "Phone company %d  ·  $%s a month" % [id, CitySim.money_text(Telecom.monthly_grant(sim.telecom.companies[id]))]
 		"hub":
 			return "%s %d  ·  $%s a month" % [CivicHubs.KINDS[sim.hubs.hubs[id].kind].name, id,
 				CitySim.money_text(sim.hubs.cost_of(id))]
@@ -399,6 +411,13 @@ func _summary(area: String) -> String:
 			return "%d companies" % sim.power.sites.size() if sim.power.sites.size() != 1 else "1 company"
 		"warehouses":
 			return "%d" % sim.warehouses.buildings.size()
+		"taxis":
+			return "%d" % hubs_in(area).size()
+		"telecom":
+			var grant := 0
+			for id in sim.telecom.companies:
+				grant += Telecom.monthly_grant(sim.telecom.companies[id])
+			return "%d  ·  $%s grant" % [sim.telecom.companies.size(), CitySim.money_text(grant)]
 		"waste", "cemetery":
 			var n := 0
 			var cost := 0

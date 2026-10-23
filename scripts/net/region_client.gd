@@ -19,6 +19,8 @@ signal city_added(city_id: String)
 signal waiting(message: String)
 ## (Host only) the list of players waiting to be let in changed.
 signal requests_changed
+## Regional projects or service agreements changed (region.ledger).
+signal ledger_changed
 
 var region := Region.new()
 var player_id := ""
@@ -47,6 +49,11 @@ const RECONNECT_EVERY := 5.0
 ## Gives up (and says so) after this long without the region.
 const RECONNECT_FOR := 300.0
 var reconnecting := false
+## A game month (a game day) in ticks: agreements are paid once a month.
+const MONTH_TICKS := 24 * CitySim.TICKS_PER_HOUR
+var _booked_month := -1
+## The game hour this town last went over its shared-service deals.
+var _deals_hour := -1
 var _retry_in := 0.0
 var _lost_for := 0.0
 
@@ -92,6 +99,66 @@ func send_town() -> void:
 		_send({"t": "city", "z": RegionServer.pack(sim.to_dict())})
 
 
+## Chips in to a regional project's open stage. The server books what the
+## stage still needs, and this computer pays exactly that ("pledged").
+func pledge(project_id: String, amount: float, good := "money") -> void:
+	var sim := my_sim()
+	if sim == null or amount <= 0.0:
+		return
+	if good == "money":
+		amount = minf(amount, maxf(0.0, sim.economy.money))
+	_send({"t": "pledge", "project": project_id, "good": good, "amount": amount})
+
+
+## Offers a neighbor a service from your town for a monthly price.
+func offer_service(to_city: String, service: String, price_per_month: float, capacity: float) -> void:
+	_send({"t": "offer", "to": to_city, "service": service, "price": price_per_month, "capacity": capacity})
+
+
+## Says yes or no to a neighbor's offer.
+func answer_offer(agreement_id: String, yes: bool) -> void:
+	_send({"t": "answer", "id": agreement_id, "yes": yes})
+
+
+func end_agreement(agreement_id: String) -> void:
+	_send({"t": "end", "id": agreement_id})
+
+
+## Each game month of your own town, your side of every active agreement:
+## booked here, so it keeps going whoever is online.
+func _book_agreements() -> void:
+	var sim := my_sim()
+	if sim == null:
+		return
+	var month := int(sim.tick_count / MONTH_TICKS)
+	if _booked_month < 0 or month < _booked_month:
+		_booked_month = month
+	while _booked_month < month:
+		_booked_month += 1
+		sim.economy.money += region.ledger.book_month(my_city, Interlocal.KINDS.keys())
+
+
+## Shared services with neighbors (Interlocal): this town's half of each
+## agreement in the ledger, and the offers and answers its bell sends out.
+func _sync_deals() -> void:
+	var sim := my_sim()
+	if sim == null:
+		return
+	var hour := int(sim.tick_count / CitySim.TICKS_PER_HOUR)
+	if hour == _deals_hour:
+		return
+	_deals_hour = hour
+	sim.regional.sync(region, my_city)
+	for act in sim.interlocal.sync(region, my_city, sim):
+		match act.op:
+			"offer":
+				offer_service(act.to, act.service, act.price, act.capacity)
+			"answer":
+				answer_offer(act.id, act.yes)
+			"end":
+				end_agreement(act.id)
+
+
 ## (Host only) lets a waiting player in, or turns them away.
 func approve(name: String, ok: bool) -> void:
 	_send({"t": "approve", "name": name, "ok": ok})
@@ -131,6 +198,9 @@ func _process(delta: float) -> void:
 				return
 			_retry_in = RECONNECT_EVERY
 			_connect()
+	if is_joined:
+		_book_agreements()
+		_sync_deals()
 	if _peer == null:
 		return
 	_peer.poll()
@@ -195,6 +265,17 @@ func _handle(msg: Dictionary) -> void:
 		"requests":
 			requests = msg.list
 			requests_changed.emit()
+		"ledger":
+			if msg.get("d") is Dictionary:
+				region.ledger.from_dict(msg.d)
+				_deals_hour = -1
+				ledger_changed.emit()
+		"pledged":
+			# The server booked our pledge: pay it from the town.
+			var sim := my_sim()
+			if sim and str(msg.get("good", "")) == "money":
+				sim.economy.money -= float(msg.get("amount", 0.0))
+				send_town()
 		"reject":
 			var reason := str(msg.get("reason", "The region turned you away."))
 			if reconnecting and "version" in reason and OS.has_feature("web"):
@@ -230,9 +311,6 @@ func _handle(msg: Dictionary) -> void:
 				my_sim().apply_now(cmd)
 		"trade":
 			my_sim().trade.receive(my_sim(), msg.get("deals", []))
-		"interlocal":
-			# Service deals with neighbor towns: offers, signings, the month's numbers.
-			my_sim().interlocal.receive(my_sim(), msg.get("ops", []))
 		"chat":
 			region.chat.append(msg.line)
 			chat_received.emit(msg.line)
@@ -251,6 +329,7 @@ func _replace_region(d: Dictionary) -> void:
 	var r := Region.new()
 	r.from_dict({"joins": d.get("joins", [])})
 	region.joins = r.joins
+	region.ledger.from_dict(d.get("ledger", {}))
 	for id in d.cities:
 		var c: Dictionary = d.cities[id]
 		if id == my_city or not c.has("city"):

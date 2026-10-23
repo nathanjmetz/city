@@ -381,6 +381,8 @@ static func _park(sim: CitySim, id: int) -> Dictionary:
 			"problems": []}
 	if sim.parks.tourism.venues.has(id):
 		status = _venue(sim, id, rows)
+	if s.kind == "trailhead":
+		status = _trails(sim, id, rows)
 	rows.append(["Land value nearby", "up to +%d%%" % roundi((float(a.value) * q + sim.parks.tree_lift(id, "value")) * 100.0)])
 	rows.append(["Happiness nearby", "up to +%d%%" % roundi((float(a.happy) * q + sim.parks.tree_lift(id, "happy")) * 100.0)])
 	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(roundi(sim.parks.site_upkeep(id)))])
@@ -415,6 +417,28 @@ static func _venue(sim: CitySim, id: int, rows: Array) -> String:
 	if not v.crowd.is_empty():
 		return "%s on now: %s people" % [v.crowd.name, CitySim.money_text(int(v.crowd.visitors))]
 	return "Between events"
+
+
+## The trailhead's rows: its director, the trails and bike lanes so far,
+## the trips they take off the road, and the tree. Returns its status line.
+static func _trails(sim: CitySim, id: int, rows: Array) -> String:
+	var t := sim.parks.trails
+	if t.hub.is_empty() or int(t.hub.id) != id:
+		return "Where the town's trails start"
+	rows.append(["Parks and trails", "director %s, %s" % [t.hub.leader.name, Education.leader_style(t.hub.leader)]])
+	var connectors := t.paths.filter(func(p): return p.kind == "connector").size()
+	var miles := t.length() / 1609.34
+	rows.append(["Trails", "%.1f mi%s" % [miles, (", %d to parks" % connectors) if connectors > 0 else ""]])
+	if not t.lanes.is_empty() or "bike_lanes" in t.hub.built:
+		rows.append(["Bike lanes", "%d streets%s" % [t.lanes.size(), ", one waiting on you" if not t.asked.is_empty() else ""]])
+	if t.walked_last > 0 or t.walked > 0:
+		rows.append(["Trips on foot or by bike", "%s last month" % CitySim.money_text(maxi(t.walked_last, t.walked))])
+	if str(t.hub.why) != "":
+		rows.append(["Last move", t.hub.why])
+	rows.append_array(t.status(sim))
+	if miles < 0.05:
+		return "Planning the first trail"
+	return "%.1f miles of trail" % miles
 
 
 ## A power company: its leader and why they built what they did, what it

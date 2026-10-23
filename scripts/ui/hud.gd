@@ -11,6 +11,9 @@ extends CanvasLayer
 signal nothing_to_close
 
 const GOOD := Color(0.5, 0.85, 0.5)
+## The bottom bar's tool categories: [key, title].
+const CATEGORIES := [["roads", "Roads"], ["zones", "Zoning"], ["industry", "Industry"], ["services", "Services"],
+	["parks", "Parks"], ["bulldoze", "Bulldoze"], ["move", "Move It"], ["budget", "Economy"]]
 const BAD := Color(0.95, 0.45, 0.4)
 
 var road_tool: RoadTool
@@ -93,6 +96,8 @@ var _view := ""
 var _help_button: Button
 var advisor := AdvisorPanel.new()
 var permits := PermitPanel.new()
+## The region's shared projects and services (only in a region).
+var region_panel := RegionPanel.new()
 
 
 func setup(rt: RoadTool, zt: ZoneTool, s: CitySim, g: Node) -> void:
@@ -103,6 +108,7 @@ func setup(rt: RoadTool, zt: ZoneTool, s: CitySim, g: Node) -> void:
 
 
 func _ready() -> void:
+	add_to_group("pad_hud")
 	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.theme = UiStyle.theme()
@@ -115,6 +121,7 @@ func _ready() -> void:
 	_build_views()
 	_build_advisor()
 	_build_permits()
+	_build_region_panel()
 	_info_panel.setup(sim, select_tool)
 	_root.add_child(_info_panel)
 	_build_economy()
@@ -172,9 +179,27 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	get_viewport().set_input_as_handled()
 
 
+## Game controllers (Pad): the tool wheel holds the bottom bar's categories
+## and the Views.
+func pad_wheel_items() -> Array:
+	return CATEGORIES + [["views", "Views"]]
+
+
+func pad_wheel_pick(key: String) -> void:
+	if key == "views":
+		_views_button.button_pressed = not _views_button.button_pressed
+	elif key != _category or key == "bulldoze":
+		_open(key)
+
+
+## How tall the bottom dock is, so the pad's prompts sit just above it.
+func pad_bottom_height() -> float:
+	return _bottom.size.y
+
+
 ## True while a tool is in hand, a panel or view is open, or something is selected.
 func anything_open() -> bool:
-	return _budget_open or _view != "" or _views_panel.visible or _help.visible or advisor.visible or permits.visible \
+	return _budget_open or _view != "" or _views_panel.visible or _help.visible or advisor.visible or permits.visible or region_panel.visible \
 		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
@@ -192,6 +217,7 @@ func close_all() -> void:
 	_help_button.set_pressed_no_signal(false)
 	advisor.close_panel()
 	permits.close_panel()
+	region_panel.close_panel()
 	road_tool.set_mode(RoadTool.Mode.NONE)
 	zone_tool.set_zone(ZoneTool.OFF)
 	service_tool.set_kind(ServiceTool.OFF)
@@ -387,6 +413,10 @@ func _build_top_bar() -> void:
 	seasons.toggled.connect(DayNight.set_seasons)
 	row.add_child(seasons)
 	row.add_child(VSeparator.new())
+	if Session.online():
+		var c := Session.client
+		region_panel.setup(sim, c.region, c.my_city, c.pledge)
+		row.add_child(region_panel.make_button())
 	permits.setup(sim, game, info_view.cam)
 	row.add_child(permits.make_button())
 	advisor.setup(sim, func(): return _advisor_key() if _category != "" or _view == "" else "view_" + _view)
@@ -396,7 +426,8 @@ func _build_top_bar() -> void:
 		_help.visible = on
 		if on:
 			advisor.close_panel()
-			permits.close_panel())
+			permits.close_panel()
+			region_panel.close_panel())
 	row.add_child(_help_button)
 
 
@@ -464,9 +495,7 @@ func _build_bottom_bar() -> void:
 	row.add_theme_constant_override("separation", 4)
 	bar.add_child(row)
 	# Traffic lives under Roads and Farming under Industry, as in CS2.
-	for entry in [["roads", "Roads"], ["zones", "Zoning"], ["industry", "Industry"], ["services", "Services"], ["parks", "Parks"],
-			["bulldoze", "Bulldoze"], ["move", "Move It"],
-			["budget", "Economy"]]:
+	for entry in CATEGORIES:
 		var b := _category_button(entry[0], entry[1])
 		b.pressed.connect(func(): _open(entry[0]))
 		row.add_child(b)
@@ -791,7 +820,7 @@ func _parks_drawer() -> PanelContainer:
 			continue
 		var a: Dictionary = Balance.AMENITIES[k]
 		var short := {"park": "Park", "courthouse": "Courthouse", "water_tower": "Water tower",
-			"grain_elevator": "Elevator", "football": "Football", "fairgrounds": "Fairgrounds"}
+			"grain_elevator": "Elevator", "football": "Football", "fairgrounds": "Fairgrounds", "trailhead": "Trails"}
 		var tip := "%s: $%s" % [spec.name, CitySim.money_text(int(a.cost))]
 		if spec.landmark:
 			tip += ", $%s a month" % CitySim.money_text(int(a.upkeep))
@@ -1129,6 +1158,7 @@ func _build_advisor() -> void:
 	place.call_deferred()
 	advisor.opened.connect(func():
 		permits.close_panel()
+		region_panel.close_panel()
 		_help.visible = false
 		_help_button.set_pressed_no_signal(false))
 
@@ -1146,6 +1176,26 @@ func _build_permits() -> void:
 	place.call_deferred()
 	permits.opened.connect(func():
 		advisor.close_panel()
+		region_panel.close_panel()
+		_help.visible = false
+		_help_button.set_pressed_no_signal(false))
+
+
+
+## The region panel: docked where the bell's is.
+func _build_region_panel() -> void:
+	_root.add_child(region_panel)
+	region_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	region_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	var place := func():
+		region_panel.offset_right = 0
+		region_panel.offset_left = 0
+		region_panel.offset_top = _top_bar.size.y
+	_top_bar.resized.connect(place)
+	place.call_deferred()
+	region_panel.opened.connect(func():
+		advisor.close_panel()
+		permits.close_panel()
 		_help.visible = false
 		_help_button.set_pressed_no_signal(false))
 

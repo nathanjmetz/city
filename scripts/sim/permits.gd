@@ -432,6 +432,11 @@ func from_dict(d: Dictionary) -> void:
 			req.deal = {"kind": str(dl.get("kind", "")), "fee": int(dl.get("fee", 0)), "other": str(dl.get("other", ""))}
 			if dl.get("pays", false):
 				req.deal.pays = true
+			for k in ["key", "agreement"]:
+				if dl.has(k):
+					req.deal[k] = str(dl[k])
+			if dl.has("homes"):
+				req.deal.homes = int(dl.homes)
 		requests[req.id] = req
 	for k in d.get("wait", {}):
 		wait_until[str(k)] = int(d.wait[k])

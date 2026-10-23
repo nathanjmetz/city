@@ -31,7 +31,7 @@ static func target(sim: CitySim, pos: Vector3, amenity: float) -> Dictionary:
 		cover += sim.services.coverage(key)
 	var workers: int = sim.stats.get("workers", 0)
 	var parts := {
-		"land_value": clampf(Balance.HOOD_LAND_BASE + (amenity + sim.telecom.lift_at(sim, pos)) * Balance.AMENITY_LAND_SCALE,
+		"land_value": clampf(Balance.HOOD_LAND_BASE + (amenity + sim.telecom.lift_at(sim, pos) + sim.regional.land_lift()) * Balance.AMENITY_LAND_SCALE,
 			0.0, 1.0),
 		"services": cover / homes if homes > 0 else 0.0,
 		"employment": float(sim.stats.get("employed", 0)) / workers if workers > 0 else 0.5,

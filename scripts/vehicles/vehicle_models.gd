@@ -51,6 +51,7 @@ const ARTIC := {
 	"log_truck": {"cab": "tractor_day", "trailer": "trailer_logs", "hitch": 5.0, "pin": 0.9, "axle": 13.4},
 	"ore_truck": {"cab": "tractor_day", "trailer": "trailer_end_dump", "hitch": 5.0, "pin": 0.9, "axle": 12.6},
 	"mail_semi": {"cab": "tractor_day", "trailer": "trailer_usps", "hitch": 5.0, "pin": 0.9, "axle": 14.4},
+	"livestock_truck": {"cab": "tractor_sleeper", "trailer": "trailer_livestock", "hitch": 6.6, "pin": 0.9, "axle": 14.4},
 	"tanker": {"cab": "tractor_day", "trailer": "trailer_tank", "hitch": 5.0, "pin": 0.9, "axle": 13.4},
 }
 ## Body styles within one kind, all close to its length (see VehicleTypes).
@@ -66,7 +67,7 @@ const VARIANTS := {
 const AXLE := {
 	"sedan": 3.9, "hatchback": 3.4, "crossover": 3.6, "suv": 4.2, "pickup": 4.7, "work_pickup": 4.8,
 	"minivan": 4.0, "sports": 3.8, "motorcycle": 1.8, "van": 4.4, "delivery_van": 5.3,
-	"box_truck": 7.9, "dump_truck": 6.7, "tow_truck": 5.2, "school_bus": 8.9, "city_bus": 9.2,
+	"box_truck": 7.9, "dump_truck": 6.7, "tow_truck": 5.2, "bucket_truck": 5.6, "school_bus": 8.9, "city_bus": 9.2,
 	"garbage_truck": 7.3, "fire_engine": 7.4, "police": 3.9, "taxi": 3.9, "ambulance": 5.1, "tractor": 4.2,
 	"combine": 7.0, "tractor_sleeper": 6.4, "mail_truck": 4.3, "concrete_mixer": 7.0, "sedan_compact": 3.6, "sedan_fullsize": 4.0,
 	"pickup_ext": 4.6, "pickup_mid": 4.4, "suv_mid": 3.9, "wagon": 3.7, "ev_crossover": 3.8, "hatch_box": 3.4, "van_low": 4.4,
@@ -348,6 +349,34 @@ func _tow_truck() -> void:  # wrecker on a Ford F-550
 	if not _lo:
 		_beam(Vector3(0, 1.6, 4.0), Vector3(0, 2.3, 6.4), 0.18, PAINT)
 		_box(Vector3(0, 0.75, 6.9), Vector3(1.6, 0.12, 0.3), TRIM)
+
+
+## An insulated aerial lift (Altec AT40G) on a Ford F-550 with a utility
+## service body: side compartments, turntable behind the cab, the boom
+## stowed toward the back and the fiberglass bucket at the tail.
+func _bucket_truck() -> void:
+	var L := 8.2
+	_truck(L, 3.3, [1.2, 5.6], false, 2.2, 2.05)
+	# Service body: compartments down each side, open well in the middle.
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * 0.95, 1.45, 5.75), Vector3(0.5, 1.1, 4.7), WHITE)
+		if not _lo:
+			for z in [4.2, 5.4, 6.6, 7.6]:
+				_box(Vector3(s * 1.202, 1.45, z), Vector3(0.006, 0.9, 0.04), STEEL)
+				_box(Vector3(s * 1.203, 1.55, z + 0.4), Vector3(0.006, 0.05, 0.14), CHROME)
+	_box(Vector3(0, 1.0, 5.75), Vector3(1.4, 0.06, 4.7), DARK)
+	# Turntable and pedestal, the boom lying back on its rest.
+	var pivot := Vector3(0, 2.25, 3.95)
+	_cyl(Vector3(0, 1.0, 3.95), pivot, 0.32, WHITE, 10)
+	_box(Vector3(0, 2.15, 7.0), Vector3(0.2, 0.3, 0.2), TRIM)
+	_beam(pivot, Vector3(0, 2.4, 7.4), 0.32, WHITE)
+	_beam(Vector3(0, 2.4, 6.2), Vector3(0, 2.45, 7.9), 0.24, Color(0.85, 0.85, 0.82, 0.4))
+	# Yellow fiberglass bucket hanging off the tail.
+	_box(Vector3(0, 2.25, 8.3), Vector3(0.75, 1.05, 0.75), Color(0.90, 0.72, 0.08, 0.4))
+	_box(Vector3(0, 2.0, 2.98), Vector3(1.2, 0.1, 0.2), BEACON_AMBER)
+	if not _lo:
+		_box(Vector3(0, 2.78, 8.3), Vector3(0.7, 0.02, 0.7), DARK)
+		_cyl(Vector3(0, 1.6, 3.95), Vector3(0, 2.5, 6.9), 0.07, CHROME, 6)
 
 
 # --- Vans and trucks --------------------------------------------------------
@@ -822,6 +851,38 @@ func _trailer_end_dump() -> void:
 	], [_edges(ORE, ORE)], ORE, ORE)
 	_box(Vector3(0, 1.2, L * 0.5), Vector3(1.0, 0.25, L), TRIM)
 	_trailer_base(L, [10.6, 11.85])
+
+
+## A 53 ft aluminium "pot belly" livestock trailer (Wilson Silverstar):
+## raised decks over the kingpin and the axles, a deep drop belly between,
+## and rows of air slots down the sides where the cattle look out.
+func _trailer_livestock() -> void:
+	var L := 16.15
+	_loft([
+		[0.0, 1.35, 4.0, 4.1, 1.3, 1.3, 1.28],
+		[3.4, 1.35, 4.0, 4.1, 1.3, 1.3, 1.28],
+		[3.9, 0.55, 4.0, 4.1, 1.3, 1.3, 1.28],
+		[11.3, 0.55, 4.0, 4.1, 1.3, 1.3, 1.28],
+		[11.8, 1.35, 4.0, 4.1, 1.3, 1.3, 1.28],
+		[L, 1.35, 4.0, 4.1, 1.3, 1.3, 1.28],
+	], [_edges(ALUM, ALUM)], ALUM, ALUM)
+	var slot := Color(0.07, 0.07, 0.07, 0.4)
+	for s in [-1.0, 1.0]:
+		if _lo:
+			_box(Vector3(s * 1.302, 2.9, L * 0.5), Vector3(0.006, 1.0, L - 1.0), Color(0.3, 0.3, 0.3, 0.4))
+			continue
+		# Upper deck slots run the full length; the belly gets lower rows too.
+		for y in [3.6, 3.3, 3.0, 2.7, 2.4]:
+			for i in 12:
+				_box(Vector3(s * 1.302, y, 0.9 + i * 1.22), Vector3(0.006, 0.09, 0.95), slot)
+		for y in [1.8, 1.5, 1.2]:
+			for i in 6:
+				_box(Vector3(s * 1.302, y, 4.6 + i * 1.12), Vector3(0.006, 0.09, 0.85), slot)
+	if not _lo:
+		# Rear swing gates and a nose vent.
+		_box(Vector3(0, 2.75, L + 0.01), Vector3(0.04, 2.7, 0.01), STEEL)
+		_box(Vector3(0, 3.6, -0.01), Vector3(1.6, 0.4, 0.01), slot)
+	_trailer_base(L, [13.9, 15.15])
 
 
 # --- Farm -------------------------------------------------------------------

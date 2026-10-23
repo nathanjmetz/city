@@ -111,16 +111,15 @@ func settle_trade() -> void:
 	if online.is_empty():
 		return
 	region.settle_trade(online)
-	# Service deals between towns: the region keeps the ledger; each running
-	# town gets its own steps (the others' are in the region's copies).
-	var steps := Interlocal.region_step(region)
-	_dirty = true
 	for peer in _players:
 		var id: String = _players[peer].city
 		if id != "":
 			_send(peer, {"t": "trade", "deals": region.cities[id].sim.trade.last_deals})
-			if steps.has(id):
-				_send(peer, {"t": "interlocal", "ops": steps[id]})
+
+
+func _ledger_changed() -> void:
+	_dirty = true
+	_broadcast({"t": "ledger", "d": region.ledger.to_dict()})
 
 
 ## A region or a town packed small for the wire: JSON, gzipped, in base64.
@@ -161,6 +160,29 @@ func _handle(from: int, msg: Dictionary) -> void:
 		"approve":
 			if p.host:
 				approve(str(msg.get("name", "")), bool(msg.get("ok", false)))
+		"pledge":
+			# Money only for now; goods need each town to set them aside.
+			var good := str(msg.get("good", "money"))
+			var amount := float(msg.get("amount", 0.0))
+			if p.city == "" or good != "money" or not is_finite(amount) or amount <= 0.0:
+				return
+			amount = minf(amount, maxf(0.0, region.cities[p.city].sim.economy.money))
+			var took := region.ledger.pledge(p.city, str(msg.get("project", "")), good, amount)
+			if took > 0.0:
+				_log("%s pledged $%d to %s" % [p.name, roundi(took), str(msg.project)])
+				_send(from, {"t": "pledged", "project": str(msg.project), "good": good, "amount": took})
+				_ledger_changed()
+		"offer":
+			var to := str(msg.get("to", ""))
+			if p.city != "" and region.cities.has(to) and region.ledger.offer(p.city, to,
+					str(msg.get("service", "")).left(40), float(msg.get("price", -1.0)), float(msg.get("capacity", 0.0))) != "":
+				_ledger_changed()
+		"answer":
+			if region.ledger.answer(str(msg.get("id", "")), p.city, bool(msg.get("yes", false))):
+				_ledger_changed()
+		"end":
+			if region.ledger.end(str(msg.get("id", "")), p.city):
+				_ledger_changed()
 
 
 func _hello(from: int, msg: Dictionary) -> void:

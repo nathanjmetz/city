@@ -349,11 +349,16 @@ func set_speed(s: int) -> void:
 	speed_changed.emit(speed)
 
 
+## Pauses, or resumes at the last speed.
+func toggle_pause() -> void:
+	set_speed(0 if speed != 0 else _resume_speed)
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	# Space pauses and resumes, like Cities: Skylines.
 	if event is InputEventKey and event.pressed and not event.echo \
 			and (event as InputEventKey).keycode == KEY_SPACE:
-		set_speed(0 if speed != 0 else _resume_speed)
+		toggle_pause()
 
 
 func _load() -> bool:

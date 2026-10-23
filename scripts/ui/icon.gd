@@ -57,6 +57,16 @@ func _draw() -> void:
 		draw_texture_rect(_texture(_FILES[kind]), rect, false, color)
 		return
 	match kind:
+		"region":
+			# A globe: the region's shared projects and neighbors.
+			var c: Vector2 = P.call(0.5, 0.5)
+			draw_arc(c, s * 0.38, 0.0, TAU, 32, color, w, true)
+			line.call(P.call(0.12, 0.5), P.call(0.88, 0.5))
+			var pts := PackedVector2Array()
+			for i in 33:
+				var a := TAU * i / 32.0
+				pts.append(c + Vector2(cos(a) * s * 0.16, sin(a) * s * 0.38))
+			draw_polyline(pts, color, w, true)
 		"road", "roads":
 			_poly([P.call(0.3, 0.92), P.call(0.42, 0.08), P.call(0.58, 0.08), P.call(0.7, 0.92)], Color(color, 0.25))
 			line.call(P.call(0.3, 0.92), P.call(0.42, 0.08))
@@ -425,6 +435,15 @@ func _draw() -> void:
 			draw_circle(P.call(0.5, 0.42), s * 0.12, color)
 			for x in [0.3, 0.55, 0.75]:
 				draw_circle(P.call(x, 0.8), s * 0.04, Color(0.25, 0.2, 0.1))
+		"trailhead":
+			# A bicycle: two wheels, a frame and handlebars.
+			draw_arc(P.call(0.26, 0.66), s * 0.17, 0, TAU, 18, color, w, true)
+			draw_arc(P.call(0.74, 0.66), s * 0.17, 0, TAU, 18, color, w, true)
+			draw_polyline(PackedVector2Array([P.call(0.26, 0.66), P.call(0.46, 0.66), P.call(0.66, 0.4),
+				P.call(0.38, 0.4), P.call(0.26, 0.66)]), color, w * 0.8, true)
+			line.call(P.call(0.66, 0.4), P.call(0.74, 0.66), w * 0.8)
+			line.call(P.call(0.62, 0.3), P.call(0.72, 0.3), w * 0.8)
+			line.call(P.call(0.38, 0.4), P.call(0.35, 0.32), w * 0.8)
 		"advice":
 			# A speech bubble with three dots.
 			var bubble := PackedVector2Array([P.call(0.12, 0.18), P.call(0.88, 0.18), P.call(0.88, 0.68),

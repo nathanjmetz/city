@@ -778,6 +778,76 @@ const TRADE_IMPORT_MARKUP := 1.5
 ## Trading with a neighbor is the better deal for both towns.
 const TRADE_EXPORT_SHARE := 0.6
 
+## Regional projects: big shared assets no one town owns, each run by its
+## board and built in stages that open when the one before is funded (no
+## clock). Seeded at real sites near Petersburg, in region metres from the
+## map's centre. Goals are in Trade goods ("money" in dollars). Shares
+## count every pledge at TRADE_PRICE. Player interaction design owns what a
+## finished stage does in each town; these goals are starting numbers for
+## the balance thread (a game town starts with START_MONEY).
+const REGION_PROJECTS := [
+	{"id": "i69", "name": "I-69 extension", "kind": "interstate",
+		"board": "I-69 Corridor Authority", "site": [3200.0, 0.0],
+		"stages": [
+			{"name": "Right of way and grading", "goal": {"money": 4_000_000.0},
+				"does": "Land near the new road starts to gain value."},
+			{"name": "Interchange at the county highway", "goal": {"money": 6_000_000.0},
+				"does": "Goods from outside the region cost less to bring in."},
+			{"name": "Four lanes to the next county", "goal": {"money": 12_000_000.0},
+				"does": "More demand for shops and industry: truck stops and warehouses."},
+		]},
+	{"id": "power", "name": "Regional generating station", "kind": "power",
+		"board": "Pike County Power Cooperative", "site": [-2600.0, 600.0],
+		"stages": [
+			{"name": "Transmission tie to every town", "goal": {"money": 3_000_000.0},
+				"does": "Member towns buy power from the co-op at wholesale cost."},
+			{"name": "Gas turbine unit", "goal": {"money": 9_000_000.0},
+				"does": "Cheaper power, and yearly capital credits paid to members by share."},
+		]},
+	{"id": "airport", "name": "International airport", "kind": "airport",
+		"board": "Southwest Indiana Airport Authority", "site": [0.0, -9000.0],
+		"stages": [
+			{"name": "Land and a 7,000 ft runway", "goal": {"money": 8_000_000.0},
+				"does": "More demand for offices and shops in towns within reach."},
+			{"name": "Terminal and air cargo", "goal": {"money": 15_000_000.0},
+				"does": "Visitors fly in and spend money in town."},
+			{"name": "International service", "goal": {"money": 25_000_000.0},
+				"does": "Office and headquarters demand jumps, and land gains value."},
+		]},
+]
+
+## What a funded stage does in each town (design 2026-10-23, regional-
+## projects.md). A town's benefit is reach x (BASE + (1 - BASE) x its share
+## next to the top pledger's): reach is 1 at the site and fades to 0 at about
+## an hour's drive, so a near town that paid nothing still gets a little, as
+## from a real public road, and the towns that paid get most of it.
+const REGION_REACH := 80_000.0
+const REGION_BASE_SHARE := 0.4
+## I-69 interchange: the outside world's import markup falls from
+## TRADE_IMPORT_MARKUP toward this (a real interstate cuts freight costs).
+const REGION_I69_MARKUP := 1.3
+## Demand added at full benefit (0 to 1 scale, like the zone demand bars):
+## I-69 four lanes (interchange growth: truck stops, warehouses), the
+## runway (offices), international service (headquarters).
+const REGION_I69_DEMAND := {ZoneMap.Zone.COMMERCIAL: 0.08, ZoneMap.Zone.INDUSTRIAL: 0.12}
+const REGION_RUNWAY_DEMAND := {ZoneMap.Zone.COMMERCIAL: 0.06}
+const REGION_INTL_DEMAND := {ZoneMap.Zone.COMMERCIAL: 0.1, ZoneMap.Zone.INDUSTRIAL: 0.04}
+## Land value lift at full benefit, in amenity units (x AMENITY_LAND_SCALE):
+## along the interstate's right of way, and near an international airport.
+const REGION_I69_LAND := 0.02
+const REGION_INTL_LAND := 0.03
+## The power co-op (Hoosier Energy style): members (any pledge) buy the
+## power their line feeds bring in at wholesale, about a fifth under retail;
+## the gas unit makes it cheaper still. Share of the feeds' upkeep paid.
+const REGION_COOP_FEED := 0.8
+const REGION_COOP_GAS_FEED := 0.65
+## Capital credits: the co-op's yearly margin returned to members by share
+## (real rural electric co-ops retire a few % of revenue a year).
+const REGION_COOP_CREDITS_YEAR := 600_000.0
+## Air visitors a year to a town at full benefit once the terminal opens
+## (Evansville Regional sees ~200k boardings a year; a share comes to town).
+const REGION_AIR_VISITORS_YEAR := 20_000.0
+
 # --- Parks and landmarks -------------------------------------------------------
 # Brawn's rules (2026-10-22): a park is a hub. You place it and it fills in by
 # itself over time (paths, a playground, a pavilion, a ball diamond), growing
@@ -907,6 +977,11 @@ const AMENITIES := {
 	"motel": {"cost": 0, "upkeep": 0, "size": Vector2(46, 30), "value": 0.0, "value_reach": 1.0, "happy": 0.0, "happy_reach": 1.0},
 	"diner": {"cost": 0, "upkeep": 0, "size": Vector2(26, 30), "value": 0.0, "value_reach": 1.0, "happy": 0.0, "happy_reach": 1.0},
 	"gas_station": {"cost": 0, "upkeep": 0, "size": Vector2(40, 36), "value": 0.0, "value_reach": 1.0, "happy": 0.0, "happy_reach": 1.0},
+	# A trailhead: a gravel lot for about 20 cars, a map kiosk, a bike rack
+	# and a vault toilet, where the town's trails start (typical Indiana
+	# rail-trail and greenway trailheads; about $300k to $500k built).
+	"trailhead": {"cost": 350_000, "upkeep": 2_500, "size": Vector2(50, 36),
+		"value": 0.01, "value_reach": 300.0, "happy": 0.03, "happy_reach": 1500.0},
 }
 # --- Tourism and events --------------------------------------------------------
 # Brawn green-lit (2026-10-22): a fairgrounds hub whose fair board grows it
@@ -986,6 +1061,48 @@ const VENUE_TREES := {
 }
 ## Months the tree's extra events fall in, in order: spring then summer.
 const VENUE_EXTRA_MONTHS := [5, 6, 8, 4, 10]
+
+# --- Walking and biking ----------------------------------------------------------
+# A trailhead hub run by a parks-and-trails director grows the town's trails
+# a month at a time: a greenway along the creek, connector trails out to the
+# parks, bike lanes on nearby streets (through the permit bell, since they
+# restripe the player's streets), and a longer county greenway once there
+# is a road out to the region. Built like a 10 ft (3 m) shared-use path
+# (AASHTO bike guide), about $1M a mile paved.
+const TRAIL_TREE := [
+	{"id": "greenway", "name": "Creek greenway", "cost": 600_000, "needs": {},
+		"effects": {"length+": 1_600.0}, "note": "a paved path along the creek, about a mile"},
+	{"id": "connectors", "name": "Park connector trails", "cost": 400_000, "needs": {"population": 1_000},
+		"effects": {}, "note": "paths out to the town's parks"},
+	{"id": "bike_lanes", "name": "Bike lanes", "cost": 150_000, "requires": ["greenway"],
+		"needs": {"population": 1_500}, "effects": {"lanes+": 8.0}, "note": "restriped streets from the trail into town"},
+	{"id": "county_greenway", "name": "County greenway extension", "cost": 1_500_000, "requires": ["greenway"],
+		"needs": {"population": 3_000, "link": 1}, "effects": {"length+": 3_400.0},
+		"note": "the creek path runs on toward the towns around"},
+]
+## Width of a trail (10 ft shared-use path) and the strip kept clear for it.
+const TRAIL_WIDTH := 3.0
+const TRAIL_CLEAR := 6.0
+## How far a greenway grows each month, and its step along the bank.
+const TRAIL_GROW_MONTH := 400.0
+const TRAIL_STEP := 30.0
+## How far from the trailhead a creek can be for a greenway.
+const TRAIL_CREEK_REACH := 800.0
+## Homes near a trail are worth more: about 3 to 5% within a few hundred feet
+## in hedonic price studies of US trails. Value and happiness at the path,
+## fading to nothing at the reach.
+const TRAIL_VALUE := 0.03
+const TRAIL_HAPPY := 0.04
+const TRAIL_REACH := 200.0
+## A trip between two places near the trails or bike lanes, shorter than
+## WALK_MAX, goes on foot or by bike this often instead of by car (small
+## towns with good trails see 10 to 20% of short trips walked or biked).
+const WALK_NEAR := 400.0
+const WALK_MAX := 3_000.0
+const WALK_SHARE := 0.12
+const WALK_SHARE_BIKE := 0.08
+## Trail upkeep: about $3k to $5k a mile a year (sweeping, patching, mowing).
+const TRAIL_UPKEEP_KM := 250.0
 
 ## Most land value and happiness a home can get from parks and landmarks
 ## together.
@@ -1666,9 +1783,8 @@ const INTERLOCAL_MIN_FEE := 1_500
 ## A leader offers a service only to a town with at least this many homes.
 const INTERLOCAL_MIN_HOMES := 25
 ## Either town ends a deal with this much notice (game months; 90 days, the
-## usual termination clause), and the fee is re-figured once a year.
+## usual termination clause).
 const INTERLOCAL_NOTICE := 3
-const INTERLOCAL_REPRICE := 12
 ## After a "no", the same offer waits this long before it comes again
 ## (game months).
 const INTERLOCAL_RETRY := 6

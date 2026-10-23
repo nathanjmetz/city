@@ -58,6 +58,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_sim.gd
           ~/godot-cache/godot --headless -s tests/test_water.gd
           ~/godot-cache/godot --headless -s tests/test_advisor.gd
+          ~/godot-cache/godot --headless -s tests/test_pad.gd
           ~/godot-cache/godot --headless -s tests/test_road_tools.gd
           ~/godot-cache/godot --headless -s tests/test_grid_fill.gd
           ~/godot-cache/godot --headless -s tests/test_move_it.gd
@@ -82,6 +83,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_warehouses.gd
           ~/godot-cache/godot --headless -s tests/test_parks.gd
           ~/godot-cache/godot --headless -s tests/test_tourism.gd
+          ~/godot-cache/godot --headless -s tests/test_trails.gd
           ~/godot-cache/godot --headless -s tests/test_power.gd
           ~/godot-cache/godot --headless -s tests/test_vegetation.gd
           ~/godot-cache/godot --headless -s tests/test_education.gd
@@ -92,6 +94,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_construction.gd
           ~/godot-cache/godot --headless -s tests/test_pollution.gd
           ~/godot-cache/godot --headless -s tests/test_interlocal.gd
+          ~/godot-cache/godot --headless -s tests/test_regional.gd
 
       - name: Stamp the build
         run: |

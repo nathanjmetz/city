@@ -102,6 +102,8 @@ var parks := Parks.new()
 var mail := Mail.new()
 ## Services shared with neighbor towns under signed deals (Interlocal).
 var interlocal := Interlocal.new()
+## What the region's shared projects do in this town (Regional).
+var regional := Regional.new()
 ## Who owns each business, its name and its family's brand (Families).
 var families := Families.new()
 var streets := Streets.new()
@@ -441,6 +443,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			ok = telecom.companies.has(int(cmd.id))
 			if ok:
 				telecom.companies[int(cmd.id)].funding = clampi(int(cmd.level), 0, Balance.TELECOM_FUNDING_LEVELS.size() - 1)
+				# The grant is the company's Funding slider on the Economy page.
+				_adopt_levers("telecom:%d" % int(cmd.id))
 				update_stats()
 		"remove_industry":
 			ok = industry.sites.has(int(cmd.id))
@@ -567,7 +571,7 @@ func apply_now(cmd: Dictionary) -> bool:
 					policies.set_step(key, "growth", want)
 		"end_deal":
 			# Notice to end a service deal with a neighbor town.
-			ok = interlocal.end(self, int(cmd.get("id", -1)))
+			ok = interlocal.end(self, str(cmd.get("id", "")))
 		"policy":
 			# A Funding or Growth slider for the town, an area or one hub.
 			ok = _set_policy(str(cmd.get("scope", "")), str(cmd.get("slider", "")), int(cmd.get("step", -1)))
@@ -640,7 +644,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			ok = true
 	if ok:
 		if cmd.type in ["place_campus", "place_park", "place_bank", "place_hub", "place_service", "place_farmhouse",
-				"place_industry", "place_post_office", "place_warehouse", "place_power", "clear"]:
+				"place_industry", "place_post_office", "place_warehouse", "place_power", "place_telecom", "clear"]:
 			# A new hub takes its area's sliders (and its leader the stance).
 			_sync_levers()
 			_sync_stances()
@@ -1019,7 +1023,7 @@ func update_stats(budget := true) -> void:
 		0.1 + float(coming_workers - jobs) / maxf(coming_workers, 40.0)
 		+ 0.4 * (shop_jobs * 0.8 - factory_jobs) / maxf(factory_jobs, 20.0), 0.0, 1.0)
 	for z in demand:
-		demand[z] = clampf(demand[z] + economy.demand_shift(z) + mail.demand_shift(z), 0.0, 1.0)
+		demand[z] = clampf(demand[z] + economy.demand_shift(z) + mail.demand_shift(z) + regional.demand_shift(z), 0.0, 1.0)
 	# A boil-water notice, or a steep water bill, puts people off moving in.
 	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL]
 		- Balance.WATER_BOIL_DEMAND * services.water.boil_share(self) - services.water.rate_penalty(self), 0.0, 1.0)
@@ -1449,6 +1453,7 @@ func _levers() -> Array:
 		{"kind": "campus", "area": "schools", "hubs": education.campuses, "field": "funding", "values": [0, 1, 2, 3, 4]},
 		{"kind": "post_office", "area": "mail", "hubs": mail.offices, "field": "funding", "values": Balance.POLICY_MAIL_FUNDING},
 		{"kind": "water", "area": "water", "hubs": services.water.utilities, "field": "subsidy", "values": Balance.POLICY_WATER_SUBSIDY},
+		{"kind": "telecom", "area": "telecom", "hubs": telecom.companies, "field": "funding", "values": [0, 1, 2, 3, 4]},
 		{"kind": "bus_depot", "area": "transit", "hubs": services.buildings, "ids": depots, "field": "subsidy", "values": bus},
 	]
 
@@ -1519,6 +1524,10 @@ func hub_area(key: String) -> String:
 			return "power" if power.sites.has(id) else ""
 		"warehouse":
 			return "warehouses" if warehouses.buildings.has(id) else ""
+		"taxi":
+			return "taxis" if taxis.companies.has(id) and services.buildings.has(id) else ""
+		"telecom":
+			return "telecom" if telecom.companies.has(id) else ""
 		"hub":
 			return CivicHubs.area_of(hubs.hubs[id].kind) if hubs.hubs.has(id) else ""
 		"park":
@@ -1567,13 +1576,13 @@ func _sync_stances() -> void:
 func _leader_keys() -> Array:
 	var out := []
 	for kind in ["farm", "industry", "service", "hub", "park", "campus", "bank", "bus_depot", "water",
-			"post_office", "warehouse"]:
+			"post_office", "warehouse", "taxi", "telecom"]:
 		if not permits.locators.has(kind):
 			continue
 		var ids: Array = {"farm": farms.farms, "industry": industry.sites, "service": services.buildings,
 			"hub": hubs.hubs, "park": parks.sites, "campus": education.campuses, "bank": banks.banks,
 			"bus_depot": buses.depots, "water": services.water.utilities, "post_office": mail.offices,
-			"warehouse": warehouses.buildings}[kind].keys()
+			"warehouse": warehouses.buildings, "taxi": taxis.companies, "telecom": telecom.companies}[kind].keys()
 		for id in ids:
 			out.append("%s:%d" % [kind, id])
 	return out
@@ -2231,6 +2240,7 @@ func to_dict() -> Dictionary:
 		"parks": parks.to_dict(),
 		"mail": mail.to_dict(),
 		"interlocal": interlocal.to_dict(),
+		"regional": regional.to_dict(),
 		"families": families.to_dict(),
 		"streets": streets.to_dict(),
 		"policies": policies.to_dict(),
@@ -2285,6 +2295,7 @@ func from_dict(d: Dictionary) -> void:
 	parks.from_dict(d.get("parks", {}))
 	mail.from_dict(d.get("mail", {}))
 	interlocal.from_dict(d.get("interlocal", {}))
+	regional.from_dict(d.get("regional", {}))
 	services.contracts = interlocal.coverage()
 	policies.from_dict(d.get("policies", {}))
 	pollution.from_dict(d.get("pollution", {}))

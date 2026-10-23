@@ -52,10 +52,6 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 		status = "Town well covered"
 	if c.idle != "":
 		problems.append(c.idle)
-	var actions := []
-	actions.append({"label": "Smaller grant", "cmd": {"type": "set_telecom_funding", "id": id, "level": level - 1},
-		"enabled": level > 0})
-	actions.append({"label": "Bigger grant", "cmd": {"type": "set_telecom_funding", "id": id, "level": level + 1},
-		"enabled": level < levels.size() - 1})
+	# The grant is set by its Funding slider (Economy page).
 	return {"title": "Phone company", "kind": "Phone and internet", "icon": "tower", "ok": problems.is_empty(),
-		"status": status, "rows": rows, "problems": problems, "actions": actions}
+		"status": status, "rows": rows, "problems": problems}

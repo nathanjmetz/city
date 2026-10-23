@@ -1029,9 +1029,13 @@ func _spawn(sim: CitySim, rng: RandomNumberGenerator) -> void:
 	var dests := shops + plants
 	if homes.is_empty() or dests.is_empty():
 		return
-	var a: Dictionary = sim.lots[homes[rng.randi() % homes.size()]]
+	var home_key: String = homes[rng.randi() % homes.size()]
+	var a: Dictionary = sim.lots[home_key]
 	var dest_key: String = dests[rng.randi() % dests.size()]
 	var b: Dictionary = sim.lots[dest_key]
+	# Short trips near the trails and bike lanes often go on foot instead.
+	if sim.parks.trails.on_foot(sim, home_key, dest_key, rng):
+		return
 	var purpose := "shopping" if sim.buildings[dest_key].zone == ZoneMap.Zone.COMMERCIAL else "commute"
 	if hour >= 15:
 		var t := a

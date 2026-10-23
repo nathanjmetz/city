@@ -7,6 +7,8 @@ extends Node3D
 ##   Middle mouse drag: rotate and tilt     Right mouse drag: move
 ##   Scroll / pinch: zoom
 ## Mac trackpads have no middle button, so Option + drag also rotates and tilts.
+## Game controllers (Pad): right stick rotates and tilts, LT / RT zoom, and
+## the pad cursor moves the map at the screen edge.
 
 const MIN_DIST := 25.0
 const MAX_DIST := 1200.0
@@ -33,9 +35,11 @@ var _panning := false
 var _pan_moved := 0.0
 ## Height of the land under the orbit point, eased.
 var _ground := NAN
+var _pad: Gamepad
 
 
 func _ready() -> void:
+	_pad = Gamepad.find()
 	camera.near = 1.0
 	camera.far = 8000.0
 	camera.fov = 50.0
@@ -47,6 +51,9 @@ func _ready() -> void:
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
+		# The right stick scrolls lists with wheel clicks; those never zoom.
+		if mb.device == Gamepad.DEVICE and mb.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+			return
 		match mb.button_index:
 			MOUSE_BUTTON_WHEEL_UP:
 				if mb.pressed:
@@ -109,6 +116,8 @@ func _process(delta: float) -> void:
 			_zoom(1.0 - 1.5 * delta * boost)
 		if Input.is_key_pressed(KEY_F):
 			_zoom(1.0 + 1.5 * delta * boost)
+	if _pad != null:
+		_pad_input(delta)
 	# Ease toward the goal, like CS2's smoothed camera.
 	var k := 1.0 - exp(-12.0 * delta)
 	_target = _target.lerp(_goal_target, k)
@@ -124,11 +133,12 @@ func fly_to(p: Vector3) -> void:
 	_goal_dist = maxf(_goal_dist, 420.0)
 
 
-## Where the mouse ray meets the ground, or null if it points at the sky.
+## Where the mouse (or the pad cursor) ray meets the ground, or null if it
+## points at the sky.
 ## The point comes back on the map (y = 0, the sim's ground level), wherever
 ## the hills put it on screen.
 func mouse_ground_point():
-	var mouse := get_viewport().get_mouse_position()
+	var mouse := _pad.pointer(get_viewport()) if _pad != null else get_viewport().get_mouse_position()
 	var hit = Terrain.ray_hit(camera.project_ray_origin(mouse), camera.project_ray_normal(mouse))
 	if hit == null:
 		return null
@@ -158,6 +168,19 @@ func set_view(yaw: float, pitch: float, dist: float) -> void:
 ## leave that click alone.
 func is_dragging() -> bool:
 	return _rotating or right_dragged
+
+
+## Game controller: the cursor pushing on a screen edge moves the map, the
+## right stick rotates and tilts, the triggers zoom.
+func _pad_input(delta: float) -> void:
+	if _pad.pan != Vector2.ZERO:
+		var speed := _dist * 1.1 * delta
+		_goal_target += (_right() * _pad.pan.x - _forward() * _pad.pan.y) * speed
+	if _pad.turn != Vector2.ZERO:
+		_goal_yaw -= _pad.turn.x * 1.8 * delta
+		_goal_pitch = clampf(_goal_pitch + _pad.turn.y * 1.1 * delta, MIN_PITCH, MAX_PITCH)
+	if _pad.zoom != 0.0:
+		_zoom(1.0 - _pad.zoom * 1.6 * delta)
 
 
 func _zoom(f: float) -> void:
