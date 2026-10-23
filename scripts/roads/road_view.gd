@@ -25,7 +25,15 @@ var _bridge_cache := {}  # segment id -> [what it was drawn from, piers or null]
 var _junction_cache := {}  # node -> [its plan, {part: mesh}]
 var _later := {}  # segment id -> what to redraw it from, a few each frame
 var _seg_mi := {}  # segment id -> its street
+var _poles_later := {}  # segment id -> [key, pts, offset, drives near], drawn later (sliced)
+var _corners_later := {}  # node -> [key, its plan], drawn later (sliced)
+var _merged := []  # the merged pole and corner meshes, redone once the later ones are drawn
+var _gen := 0  # which rebuild is current; a sliced one left behind stops
+var _building := false  # a sliced rebuild is part way through
 const REMESH_MS := 8.0  # redraw changed streets for this long, then finish them later
+## A neighbor's whole town lands at once: its streets are drawn a few each
+## frame instead of in one long freeze (RegionView).
+var sliced := false
 
 var _mats := {
 	"asphalt": Surfaces.asphalt(),
@@ -63,7 +71,7 @@ func setup(net: RoadNetwork, s: CitySim = null) -> void:
 ## Rebuilds when a road has turned from country road to town street or back
 ## (checked at most once a second while the town grows).
 func _process(delta: float) -> void:
-	if not _later.is_empty():
+	if not _building and not (_later.is_empty() and _poles_later.is_empty() and _corners_later.is_empty()):
 		_remesh_later()
 	if _recheck < 0.0:
 		return
@@ -126,18 +134,21 @@ func _drives() -> Array:
 
 
 func rebuild() -> void:
+	_gen += 1
+	_rebuild_all(_gen)
+
+
+## Draws every road. A sliced view spreads it over frames, its old drawing
+## staying up until the new one is done.
+func _rebuild_all(gen: int) -> void:
 	# Neighbors' cities are drawn moved over to their place on the land.
 	Terrain.shift = Terrain.shift_for(self)
-	var t := Perf.now()
-	_rebuild_all()
-	Perf.add("frame.roads", t)
-	Terrain.shift = Vector2.ZERO
-
-
-func _rebuild_all() -> void:
+	var slice := Perf.now()
+	_building = true
+	var old := []
 	for child in get_children():
 		if child != _trees:
-			child.queue_free()
+			old.append(child)
 	if _trees.get_parent() == null:
 		add_child(_trees)
 	var median_trees := []
@@ -166,9 +177,23 @@ func _rebuild_all() -> void:
 	var t0 := Perf.now()
 	_later.clear()
 	_seg_mi.clear()
+	_poles_later.clear()
+	_corners_later.clear()
+	_merged.clear()
 	var pole_cache := {}
 	var bridge_cache := {}
-	for id in network.segments:
+	for id in network.segments.keys():
+		if sliced and (Perf.now() - t0) / 1000.0 > REMESH_MS and is_inside_tree():
+			Perf.add(_perf_key(), slice)
+			Terrain.shift = Vector2.ZERO
+			await get_tree().process_frame
+			if gen != _gen or not is_inside_tree():
+				return
+			Terrain.shift = Terrain.shift_for(self)
+			slice = Perf.now()
+			t0 = slice
+		if not network.segments.has(id):
+			continue
 		var pts := network.sample_segment(id)
 		var type: int = network.segments[id].type
 		var sg: Dictionary = network.segments[id]
@@ -209,15 +234,17 @@ func _rebuild_all() -> void:
 			var key := [pts, type, rural, seg_gaps, Terrain.shift]
 			var cached: Array = _street_cache.get(id, [])
 			if cached.is_empty() or cached[0] != key:
-				if not cached.is_empty() and cached[0][0] == pts and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+				if (sliced or not cached.is_empty() and cached[0][0] == pts) and (Perf.now() - t0) / 1000.0 > REMESH_MS:
 					# When the town edge moves, many streets turn from country
 					# road to town street at once; a street that didn't move
 					# keeps its old look a few frames while they're redrawn.
+					# A neighbor's new streets just appear a few frames late.
 					_later[id] = [key, pts, type, seg_gaps, rural]
 				else:
 					cached = [key, Terrain.drape(RoadMesh.street(pts, type, _mats, seg_gaps, rural))]
-			street_cache[id] = cached
-			mi.mesh = cached[1]
+			if not cached.is_empty():
+				street_cache[id] = cached
+				mi.mesh = cached[1]
 			_seg_mi[id] = mi
 			if rural:
 				# Poles run down one side of a country road, and down the
@@ -227,16 +254,20 @@ func _rebuild_all() -> void:
 				var near := _drives_near(drives, pts)
 				var pkey := [pts, off, near, Terrain.shift]
 				var poles: Array = _pole_cache.get(id, [])
-				if poles.is_empty() or poles[0] != pkey:
+				if (poles.is_empty() or poles[0] != pkey) and sliced and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+					_poles_later[id] = [pkey, pts, off, near]
+					poles = []
+				elif poles.is_empty() or poles[0] != pkey:
 					var w := SurfaceTool.new()
 					var r := SurfaceTool.new()
 					w.begin(Mesh.PRIMITIVE_TRIANGLES)
 					r.begin(Mesh.PRIMITIVE_TRIANGLES)
 					RoadMesh.add_poles(w, r, pts, off, near)
 					poles = [pkey, Terrain.drape(w.commit(), true), Terrain.drape(r.commit(), true)]
-				pole_cache[id] = poles
-				wood.append(poles[1])
-				wire.append(poles[2])
+				if not poles.is_empty():
+					pole_cache[id] = poles
+					wood.append(poles[1])
+					wire.append(poles[2])
 			if spec.get("trees", false):
 				median_trees.append_array(_median_trees(id, pts, type))
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -265,12 +296,7 @@ func _rebuild_all() -> void:
 			mi.material_override = {"white": _mats.white, "barrier": _mats.curb}.get(key, _mats.asphalt)
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(mi)
-	if not wood.is_empty():
-		for entry in [[wood, _mats.pole], [wire, _mats.wire]]:
-			var pm := MeshInstance3D.new()
-			pm.mesh = _merge(entry[0])
-			pm.material_override = entry[1]
-			add_child(pm)
+	_add_poles(wood, wire)
 	if not piers.is_empty():
 		var mi := MeshInstance3D.new()
 		mi.mesh = _merge(piers, true)
@@ -321,32 +347,62 @@ func _rebuild_all() -> void:
 	for node in junctions:
 		var jkey := [junctions[node], Terrain.shift]
 		var drawn: Array = _junction_cache.get(node, [])
+		if (drawn.is_empty() or drawn[0] != jkey) and sliced and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+			_corners_later[node] = [jkey, junctions[node]]
+			continue
 		if drawn.is_empty() or drawn[0] != jkey:
-			var parts := {"asphalt": SurfaceTool.new(), "curb": SurfaceTool.new(), "walk": SurfaceTool.new(),
-				"domes": SurfaceTool.new()}
-			for p in parts.values():
-				p.begin(Mesh.PRIMITIVE_TRIANGLES)
-			Junction.draw({node: junctions[node]}, parts.asphalt, parts.curb, parts.walk, parts.domes)
-			var meshes := {}
-			for key in parts:
-				meshes[key] = Terrain.drape(parts[key].commit(), false, 6.0)
-			drawn = [jkey, meshes]
+			drawn = [jkey, _corner_meshes(node, junctions[node])]
 		junction_cache[node] = drawn
 		for key in corners:
 			corners[key].append(drawn[1][key])
 	_junction_cache = junction_cache
-	if not junctions.is_empty():
-		for key in corners:
-			var mi := MeshInstance3D.new()
-			mi.mesh = _merge(corners[key])
-			mi.material_override = _mats[key]
-			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			add_child(mi)
+	if not junction_cache.is_empty():
+		_add_corners(corners)
 
 	_build_roundabouts(ring_nodes)
+	for child in old:
+		child.queue_free()
+	_building = false
+	Perf.add(_perf_key(), slice)
+	Terrain.shift = Vector2.ZERO
 
 
-## Redraws streets left over from the last rebuild, for a few ms a frame.
+## One junction's corner pieces: {part: mesh}.
+func _corner_meshes(node: int, plan) -> Dictionary:
+	var parts := {"asphalt": SurfaceTool.new(), "curb": SurfaceTool.new(), "walk": SurfaceTool.new(),
+		"domes": SurfaceTool.new()}
+	for p in parts.values():
+		p.begin(Mesh.PRIMITIVE_TRIANGLES)
+	Junction.draw({node: plan}, parts.asphalt, parts.curb, parts.walk, parts.domes)
+	var meshes := {}
+	for key in parts:
+		meshes[key] = Terrain.drape(parts[key].commit(), false, 6.0)
+	return meshes
+
+
+func _add_poles(wood: Array, wire: Array) -> void:
+	if wood.is_empty():
+		return
+	for entry in [[wood, _mats.pole], [wire, _mats.wire]]:
+		var pm := MeshInstance3D.new()
+		pm.mesh = _merge(entry[0])
+		pm.material_override = entry[1]
+		add_child(pm)
+		_merged.append(pm)
+
+
+func _add_corners(corners: Dictionary) -> void:
+	for key in corners:
+		var mi := MeshInstance3D.new()
+		mi.mesh = _merge(corners[key])
+		mi.material_override = _mats[key]
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mi)
+		_merged.append(mi)
+
+
+## Redraws streets left over from the last rebuild, for a few ms a frame;
+## then a sliced view's poles and corners, merged again once all are drawn.
 func _remesh_later() -> void:
 	var t := Perf.now()
 	Terrain.shift = Terrain.shift_for(self)
@@ -361,8 +417,54 @@ func _remesh_later() -> void:
 		mi.mesh = mesh
 		if (Perf.now() - t) / 1000.0 > REMESH_MS:
 			break
+	for id in _poles_later.keys():
+		if (Perf.now() - t) / 1000.0 > REMESH_MS:
+			break
+		var job: Array = _poles_later[id]
+		_poles_later.erase(id)
+		var w := SurfaceTool.new()
+		var r := SurfaceTool.new()
+		w.begin(Mesh.PRIMITIVE_TRIANGLES)
+		r.begin(Mesh.PRIMITIVE_TRIANGLES)
+		RoadMesh.add_poles(w, r, job[1], job[2], job[3])
+		_pole_cache[id] = [job[0], Terrain.drape(w.commit(), true), Terrain.drape(r.commit(), true)]
+		if _poles_later.is_empty() and _corners_later.is_empty():
+			_remerge()
+	for node in _corners_later.keys():
+		if (Perf.now() - t) / 1000.0 > REMESH_MS:
+			break
+		var job: Array = _corners_later[node]
+		_corners_later.erase(node)
+		_junction_cache[node] = [job[0], _corner_meshes(node, job[1])]
+		if _poles_later.is_empty() and _corners_later.is_empty():
+			_remerge()
 	Terrain.shift = Vector2.ZERO
-	Perf.add("frame.roads", t)
+	Perf.add(_perf_key(), t)
+
+
+## Neighbors' roads are timed apart from your own.
+func _perf_key() -> String:
+	return "frame.roads_theirs" if sliced else "frame.roads"
+
+
+## Poles and corners all drawn: merge them again with the late ones in.
+func _remerge() -> void:
+	for mi in _merged:
+		if is_instance_valid(mi):
+			mi.queue_free()
+	_merged.clear()
+	var wood := []
+	var wire := []
+	for id in _pole_cache:
+		wood.append(_pole_cache[id][1])
+		wire.append(_pole_cache[id][2])
+	_add_poles(wood, wire)
+	if not _junction_cache.is_empty():
+		var corners := {"asphalt": [], "curb": [], "walk": [], "domes": []}
+		for node in _junction_cache:
+			for key in corners:
+				corners[key].append(_junction_cache[node][1][key])
+		_add_corners(corners)
 
 
 ## Drives close enough to a road to move one of its poles.

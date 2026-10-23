@@ -17,6 +17,10 @@ var _resume_speed := 1
 var _save_wait := 0.0
 ## Online, a copy of your town goes to the region this often, in seconds.
 const TOWN_SEND_EVERY := 10.0
+## Played offline, the town saves itself this often, in seconds, when it
+## changed (a save stops play for about 0.1 s in a small town, 0.4 s in a
+## big one). The pause menu's Save, Main menu and Quit save at once.
+const SAVE_EVERY := 30.0
 ## True until the whole town is built and drawn; the clock waits for it.
 var loading := true
 
@@ -377,7 +381,7 @@ func _process(delta: float) -> void:
 			Session.client.send_town()
 	elif _save_pending and _save_wait <= 0.0:
 		_save_pending = false
-		_save_wait = 2.0
+		_save_wait = SAVE_EVERY
 		Session.save_city(sim)
 
 

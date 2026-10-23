@@ -99,6 +99,8 @@ func _add_city(id: String) -> void:
 	var their_exits: ExitRoads = null
 	if id != client.my_city:
 		var roads := RoadView.new()
+		# Their whole town lands at once: its streets drawn a few a frame.
+		roads.sliced = true
 		root.add_child(roads)
 		roads.setup(c.sim.network, c.sim)
 		var buildings := BuildingView.new()
