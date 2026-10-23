@@ -84,8 +84,16 @@ func _run() -> void:
 	for i in 3000:
 		sim.tick()
 	_check(sim.buildings.size() > 0, "homes grow in Ann's town on her own computer")
-	ann.send_town()
-	await _until(func(): return bob.region.cities[ann.my_city].sim.network.segments.size() > roads_before)
+	ann.send_town(true)
+	await _until(func(): return bob.region.stale_ids().has(ann.my_city) \
+		and bob.region.city_data(ann.my_city).get("buildings", {}).size() == sim.buildings.size())
+	_check(server.region.stale_ids().has(ann.my_city), "the server keeps Ann's copy as data until it needs it")
+	await _until(func(): return int(bob.region.ledger.metro.get("population", 0)) == sim.stats.population)
+	_check(sim.stats.population > 0 and server.region.ledger.metro.population == sim.stats.population \
+		and server.region.ledger.metro.towns.size() == 2, "her people count toward the metro, on everyone's ledger")
+	# Copies are unpacked one town at a time, a few seconds apart; now, here.
+	bob.region.load_stale()
+	server.region.load_stale()
 	_check(bob.region.cities[ann.my_city].sim.network.segments.size() > roads_before, "Bob sees Ann's new road")
 	_check(bob.region.cities[ann.my_city].sim.buildings.size() == sim.buildings.size(), "and her homes")
 	_check(server.region.cities[ann.my_city].sim.buildings.size() == sim.buildings.size(), "the server keeps a copy")
@@ -93,15 +101,15 @@ func _run() -> void:
 	# Bob's copy only ever updates Bob's own town.
 	var ann_roads: int = server.region.cities[ann.my_city].sim.network.segments.size()
 	bob.my_sim().apply({"type": "clear"})
-	bob.send_town()
+	bob.send_town(true)
 	await _frames(20)
 	_check(server.region.cities[ann.my_city].sim.network.segments.size() == ann_roads, "Bob can't change Ann's town")
 
 	# Trade between the two computers, settled by the server.
 	sim.trade.offer("power", 50.0)
 	bob.my_sim().trade.want("power", 30.0)
-	ann.send_town()
-	bob.send_town()
+	ann.send_town(true)
+	bob.send_town(true)
 	await _frames(20)
 	var bob_money := bob.my_sim().economy.money
 	server.settle_trade()
@@ -119,6 +127,7 @@ func _run() -> void:
 	_check(not line.is_empty() and line[0].from == "Ann", "Bob gets Ann's chat message")
 	_check(bob.players.size() == 2, "both players listed online")
 	var bob_cash := bob.my_sim().economy.money
+	server.region.ledger.projects.airport.unlocked = true
 	bob.pledge("airport", 250_000.0)
 	await _until(func(): return ann.region.ledger.projects.airport.stages[0].pledged.get("money", 0.0) > 0.0)
 	_check(is_equal_approx(server.region.ledger.projects.airport.stages[0].pledged.money, 250_000.0), "Bob pledges to the airport; the server books it")
@@ -181,6 +190,7 @@ func _run() -> void:
 	await _until(func(): return not back.is_empty(), 20.0)
 	await _frames(20)
 	_check(not back.is_empty() and kid2.is_joined, "the game reconnects by itself")
+	third.region.load_stale()
 	_check(third.region.cities[kid_city].sim.network.segments.size() > segs, "and the road built while away reaches the server")
 	third.stop()
 	DirAccess.remove_absolute(data)
@@ -204,6 +214,9 @@ func _test_region_copies() -> void:
 	for i in 2000:
 		ann.tick()
 	c.update_city("c1", JSON.parse_string(JSON.stringify(ann.to_dict(), "", false, true)))
+	_check(c.cities.c1.sim.buildings.is_empty() and c.city_data("c1").buildings.size() == ann.buildings.size(),
+		"a new copy waits as data, unpacked only when needed")
+	c.load_stale()
 	_check(c.cities.c1.sim.buildings.size() == ann.buildings.size() and ann.buildings.size() > 0, "a town's new copy replaces the old")
 	_check(not r.to_dict_without("c1").cities.c1.has("city"), "a player isn't sent their own town while it runs")
 
@@ -365,6 +378,8 @@ func _test_ledger() -> void:
 	var l := Ledger.new()
 	_check(l.projects.has("i69") and l.projects.has("airport"), "regional projects are seeded at real sites")
 	var p: Dictionary = l.projects.i69
+	_check(l.pledge("c1", "i69", "money", 1000.0) == 0.0, "a project waits until the metro is big enough")
+	_test_metro(l)
 	var goal: float = p.stages[0].goal.money
 	_check(l.pledge("c1", "i69", "money", goal * 0.25) == goal * 0.25, "a town chips in")
 	_check(l.pledge("c2", "i69", "money", goal * 10.0) == goal * 0.75, "nobody pays more than the stage still needs")
@@ -380,6 +395,41 @@ func _test_ledger() -> void:
 	_check(copy.projects.i69.stages[1].status == "open" and is_equal_approx(copy.share("i69", "c2"), 0.75) \
 		and copy.agreements[id].status == "active", "the ledger saves and loads")
 	_check(l.end(id, "c2") and l.book_month("c1") == 0.0, "either side can end it")
+
+
+## Grow the metro: towns joined by road count together, ranked on the real
+## ladder, and the metro opens the regional projects as it grows.
+func _test_metro(l: Ledger) -> void:
+	var towns := {"c1": "Petersburg", "c2": "Oakland City", "c3": "Winslow", "c4": "Faraway"}
+	var joins := [{"a": "c2", "b": "c1"}, {"a": "c3", "b": "c1"}]
+	l.set_population("c1", 30_000)
+	l.set_population("c2", 12_000)
+	l.set_population("c3", 3_000)
+	l.set_population("c4", 40_000)
+	_check(l.update_metro(towns, joins), "the metro is worked out")
+	_check(l.metro.population == 45_000 and l.metro.towns.size() == 3,
+		"only towns joined by road count (%s)" % str(l.metro))
+	_check(l.metro.name == "Petersburg-Oakland City", "named for the largest town and its principal towns (%s)" % l.metro.name)
+	_check(l.metro.kind == "micropolitan", "a micropolitan area")
+	var next: Array = l.metro.next
+	_check(not next.is_empty() and int(next[1]) > 45_000 and Balance.METRO_LADDER.all(
+		func(a): return int(a[1]) <= 45_000 or int(a[1]) >= int(next[1])), "the next real metro to pass is the nearest bigger one")
+	_check(l.is_unlocked("power") and not l.is_unlocked("i69"), "micropolitan opens the power co-op, not I-69 yet")
+	_check(not l.update_metro(towns, joins), "nothing new, nothing to send")
+	l.set_population("c3", 31_000)
+	l.update_metro(towns, joins)
+	_check(l.metro.name == "Winslow-Petersburg-Oakland City" and l.metro.kind == "metropolitan",
+		"towns overtaking each other rename the metro (%s)" % l.metro.name)
+	_check(l.is_unlocked("i69"), "metropolitan opens I-69")
+	l.set_population("c3", 0)
+	l.update_metro(towns, joins)
+	_check(l.is_unlocked("i69"), "an opened project stays open")
+	_check(l.metro_line().begins_with("Petersburg-Oakland City micropolitan area, 42,000 people. Next: "),
+		"one line for the regional panel (%s)" % l.metro_line())
+	var copy := Ledger.new()
+	copy.from_dict(JSON.parse_string(JSON.stringify(l.to_dict())))
+	_check(copy.metro_line() == l.metro_line() and copy.is_unlocked("i69") and not copy.is_unlocked("airport"),
+		"the metro saves and loads")
 
 
 func _client() -> RegionClient:

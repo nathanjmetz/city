@@ -165,7 +165,7 @@ void fragment() {
 	// the low patches and wheel-polished bare ground between.
 	float is_loose = step(0.86, COLOR.a);
 	float cover = snow_cover(0.8, 0.95);
-	float packed = smoothstep(0.55, 0.75, texture(noise_soft, p / 3.0).r) * 0.6;
+	float packed = smoothstep(0.68, 0.88, texture(noise_soft, p / 9.0).r) * 0.45;
 	cover *= mix(packed, 0.85 + chips * 0.15, is_loose);
 	vec3 snowy = vec3(0.80, 0.83, 0.88) * mix(0.82, 0.97, is_loose) * (0.95 + grain * 0.07);
 	ALBEDO = mix(col, snowy, cover);
@@ -230,6 +230,26 @@ void fragment() {
 }
 """
 
+## Reclaimed pasture and hay ground laid as a flat (strip mine grading):
+## vertex colour as the grass, with the lawn's seasons and snow, no sheen.
+const PASTURE := """
+global uniform vec4 season_look;
+void fragment() {
+	vec2 p = world_pos.xz;
+	float big = texture(noise_soft, p / 40.0).r;
+	float clump = texture(noise_soft, p / 5.0).r;
+	float fade = clamp(1.0 - length(VERTEX) / 180.0, 0.0, 1.0);
+	vec3 col = lin(COLOR.rgb) * (0.85 + big * 0.3) * (1.0 + (texture(noise_grain, p / 0.8).r - 0.5) * 0.3 * fade);
+	col = mix(col, col * vec3(0.92, 1.12, 0.78), season_look.z);
+	vec3 dormant = lin(vec3(0.55, 0.48, 0.33)) * (0.85 + big * 0.3);
+	col = mix(col, dormant, clamp(season_look.w * 1.1 - clump * 0.2, 0.0, 0.85));
+	float cover = smoothstep(0.05, 0.45, snow * 1.15 - clump * 0.35 + 0.1) * smoothstep(0.6, 0.9, world_normal.y);
+	ALBEDO = mix(col, vec3(0.80, 0.83, 0.88), cover);
+	ROUGHNESS = 0.95;
+	SPECULAR = 0.0;
+}
+"""
+
 static var _cache := {}
 static var _soft: NoiseTexture2D
 static var _grain: NoiseTexture2D
@@ -247,6 +267,7 @@ static func get_mat(key: String) -> Material:
 		"yard": mat = _shader(YARD)
 		"metal": mat = _shader(METAL)
 		"sign": mat = _shader(SIGN)
+		"pasture": mat = _shader(PASTURE)
 		"foliage": mat = _plain(1.0)
 		_: mat = _plain(0.55)  # paint, shutters, trim
 	_cache[key] = mat

@@ -313,6 +313,9 @@ func _init() -> void:
 		oil.apply({"type": "build_road", "start": [dry.x - 100, dry.z - 80], "ctrl": [dry.x, dry.z - 80], "end": [dry.x + 100, dry.z - 80]})
 		_check(oil.industry_problem("oil", dry, Vector3(0, 0, -1)).begins_with("No crude oil"), "no oil company where there's no oil")
 	_check(oil.apply({"type": "place_industry", "kind": "oil", "pos": [best.x, best.z + 20], "dir": [0, -1]}), "an oil company opens on the oil field")
+	var ind_id: int = oil.industry.sites.keys()[0]
+	_check(not oil.construction.state("ind:%d" % ind_id, oil.tick_count).is_empty(),
+		"the company's main building goes up in stages")
 	var twin := CitySim.new()
 	twin.from_dict(JSON.parse_string(JSON.stringify(oil.to_dict())))
 	for i in 1440 * 3:
@@ -463,6 +466,11 @@ func _real_layouts() -> void:
 					touches = touches or (c + d) in pads
 				joined = joined and touches
 			_check(joined, "the quarry grows as one pit (%d benches)" % pads.size())
+			var way := signi(pads[0].y)
+			var one_way: bool = way != 0
+			for c in pads:
+				one_way = one_way and c.y * way >= pads[0].y * way
+			_check(one_way, "the strip mine advances one way, away from its plant")
 			# A county road one cell east of the yard: the pit never jumps it.
 			var walled := Industry.new()
 			walled.price = 3.0

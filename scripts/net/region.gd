@@ -42,6 +42,12 @@ var ledger := Ledger.new()
 ## county roads): city id -> [commands]. Their owners, if online, run them
 ## on their own computers too.
 var handed := {}
+## The latest copy of each town as saved data. Unpacking a copy into a full
+## simulation is slow (about a second for a grown town), so a copy that
+## arrives is only kept here until something needs the simulation itself
+## (placing a town, trade, drawing a neighbor): see load_stale().
+var _data := {}   # city id -> saved data, the same as sim.to_dict()
+var _stale := {}  # city ids whose simulation is older than _data
 
 
 ## The city a player owns, or "" if they have none yet.
@@ -58,6 +64,7 @@ func city_of(player_id: String) -> String:
 ## its nearest towns (meeting theirs halfway, on the city line) and one on
 ## out to open country. The roads are free and can't be bulldozed.
 func add_city(player_id: String, player: String) -> String:
+	load_stale()
 	handed = {}
 	var id := "c%d" % (cities.size() + 1)
 	while cities.has(id):
@@ -93,6 +100,9 @@ func add_city(player_id: String, player: String) -> String:
 			away = (origin - cities[near[0]].origin).orthogonal()
 		sim.build_county_road(Vector2.ZERO, away.normalized() * COUNTY_REACH, [1])
 	sim.economy.money = Economy.START_MONEY
+	_data.erase(id)
+	for other in handed:
+		_data.erase(other)
 	return id
 
 
@@ -107,9 +117,67 @@ static func new_sim() -> CitySim:
 ## Takes the latest copy of a town from its player's computer.
 func update_city(id: String, d: Dictionary) -> void:
 	if cities.has(id):
-		var sim: CitySim = cities[id].sim
-		sim.terrain_offset = cities[id].origin
-		sim.from_dict(d)
+		_data[id] = d
+		_stale[id] = true
+
+
+## Unpacks the waiting copies into their simulations: all of them, or just
+## the one given. Returns the ids loaded.
+func load_stale(only := "") -> Array:
+	var ids: Array = [only] if only != "" else _stale.keys()
+	var done := []
+	for id in ids:
+		if _stale.has(id) and cities.has(id):
+			var sim: CitySim = cities[id].sim
+			sim.terrain_offset = cities[id].origin
+			sim.from_dict(_data[id])
+			done.append(id)
+		_stale.erase(id)
+	if not done.is_empty():
+		share_care()
+	return done
+
+
+## The towns whose newest copy hasn't been unpacked yet.
+func stale_ids() -> Array:
+	return _stale.keys()
+
+
+## A town's saved data, made from its simulation only when there's no copy.
+func city_data(id: String) -> Dictionary:
+	if not _data.has(id):
+		_data[id] = cities[id].sim.to_dict()
+	return _data[id]
+
+
+## Call after changing a town's simulation directly, so its saved data is
+## made afresh.
+func touched(id: String) -> void:
+	_data.erase(id)
+	_stale.erase(id)
+
+
+## Neighbors' hospitals draw patients from every town in the region, and
+## their helipads and specialty centers lift care in the others.
+func share_care() -> void:
+	for id in cities:
+		var others := 0
+		var offered := 0.0
+		for other in cities:
+			if other != id:
+				others += int(cities[other].sim.stats.get("population", 0))
+				offered = maxf(offered, cities[other].sim.healthcare.care_offered())
+		cities[id].sim.healthcare.region_pop = others
+		cities[id].sim.healthcare.region_care = offered
+
+
+## Works out the metro again (see Ledger.update_metro). Returns whether it
+## changed.
+func update_metro() -> bool:
+	var towns := {}
+	for id in cities:
+		towns[id] = cities[id].name
+	return ledger.update_metro(towns, joins)
 
 
 ## A month of trade between towns: neighbors joined by county road first,
@@ -119,6 +187,7 @@ func settle_trade(ids: Array) -> void:
 	var sims := {}
 	for id in ids:
 		if cities.has(id):
+			load_stale(id)
 			sims[id] = cities[id].sim
 	Trade.settle(sims, trade_links())
 
@@ -240,12 +309,14 @@ func to_dict() -> Dictionary:
 	for id in cities:
 		var c: Dictionary = cities[id]
 		cs[id] = {"owner": c.owner, "player": c.player, "name": c.name, "origin": [c.origin.x, c.origin.y],
-			"color": c.color, "city": c.sim.to_dict()}
+			"color": c.color, "city": city_data(id)}
 	return {"version": 2, "seed": region_seed, "cities": cs, "chat": chat, "joins": joins,
 		"ledger": ledger.to_dict()}
 
 
-func from_dict(d: Dictionary) -> void:
+## With `first` set, only that town is unpacked now (a player's own, so
+## they can start playing at once); the others wait as data (load_stale).
+func from_dict(d: Dictionary, first := "") -> void:
 	region_seed = int(d.get("seed", 1))
 	chat = d.get("chat", [])
 	ledger = Ledger.new()
@@ -256,12 +327,18 @@ func from_dict(d: Dictionary) -> void:
 			joins.append({"a": str(j.a), "a_at": [float(j.a_at[0]), float(j.a_at[1])],
 				"b": str(j.b), "b_at": [float(j.b_at[0]), float(j.b_at[1])]})
 	cities.clear()
+	_data = {}
+	_stale = {}
 	var cs: Dictionary = d.get("cities", {})
 	for id in cs:
 		var c: Dictionary = cs[id]
 		var sim := new_sim()
 		sim.terrain_offset = Vector2(float(c.origin[0]), float(c.origin[1]))
-		sim.from_dict(c.city)
+		if first == "" or id == first:
+			sim.from_dict(c.city)
+		else:
+			_data[id] = c.city
+			_stale[id] = true
 		cities[id] = {"owner": str(c.owner), "player": str(c.get("player", "")), "name": str(c.name),
 			"origin": Vector2(float(c.origin[0]), float(c.origin[1])), "color": int(c.color), "sim": sim}
 
@@ -272,4 +349,14 @@ func to_dict_without(skip: String) -> Dictionary:
 	var d := to_dict()
 	if d.cities.has(skip):
 		d.cities[skip].erase("city")
+	return d
+
+
+## The region with only the listed towns' data (the others just named and
+## placed), for players who already have the rest.
+func to_dict_with(ids: Array) -> Dictionary:
+	var d := to_dict()
+	for id in d.cities:
+		if not id in ids:
+			d.cities[id].erase("city")
 	return d

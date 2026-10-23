@@ -51,6 +51,20 @@ jobs:
           dest=~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
           mkdir -p "$dest" && cp ~/godot-cache/templates/* "$dest/"
 
+      # The slim web engine from the Web engine workflow, when it's built.
+      - name: Slim engine
+        id: slim
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/slim-engine
+          key: slim-web-${{ env.GODOT_VERSION }}-${{ hashFiles('web/engine/custom.py') }}
+
+      - name: Use the slim engine
+        if: steps.slim.outputs.cache-hit == 'true'
+        run: |
+          sed -i "s|^custom_template/release=.*|custom_template/release=\"$HOME/slim-engine/web_nothreads_release.zip\"|" export_presets.cfg
+          grep -n custom_template/release export_presets.cfg
+
       - name: Run tests
         run: |
           ~/godot-cache/godot --headless --import
@@ -92,14 +106,16 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_mail.gd
           ~/godot-cache/godot --headless -s tests/test_economy.gd
           ~/godot-cache/godot --headless -s tests/test_construction.gd
+          ~/godot-cache/godot --headless -s tests/test_telemetry.gd
           ~/godot-cache/godot --headless -s tests/test_pollution.gd
+          ~/godot-cache/godot --headless -s tests/test_health.gd
           ~/godot-cache/godot --headless -s tests/test_interlocal.gd
           ~/godot-cache/godot --headless -s tests/test_regional.gd
 
       - name: Stamp the build
         run: |
           # Shown in the game's corner so you can tell which version you're playing.
-          printf 'const BUILD := "%s  %s"\n' "${GITHUB_SHA::7}" "$(date -u '+%b %d %H:%M UTC')" > scripts/build_info.gd
+          printf 'const BUILD := "%s"\nconst BUILT_AT := %s\n' "${GITHUB_SHA::7}" "$(date -u +%s)" > scripts/build_info.gd
 
       - name: Export for the web
         run: |

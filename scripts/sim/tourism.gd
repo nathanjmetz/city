@@ -132,7 +132,8 @@ func attendance(sim: CitySim, id: int, ev: Dictionary) -> Dictionary:
 ## On the hour: an event opens (its crowd and gate are counted) or closes.
 func _crowd(sim: CitySim, id: int, month: int, hour: int) -> void:
 	var v: Dictionary = venues[id]
-	var ev := event_in(id, month)
+	# No events until the grandstand is built.
+	var ev := event_in(id, month) if sim.construction.state("park:%d" % id, sim.tick_count).is_empty() else {}
 	if ev.is_empty():
 		if not v.crowd.is_empty():
 			v.crowd = {}
@@ -179,10 +180,12 @@ func _cars(sim: CitySim, id: int, c: Dictionary, minute: int) -> void:
 	if there.is_empty():
 		return
 	var cargo := {"event": c.name, "from": there.get("town", "town")}
+	# Out-of-town visitors come as visitors (campers and RVs among them).
+	var purpose := "visitor" if there.get("town", "") == "out of town" else "shopping"
 	if leaving:
-		sim.traffic.dispatch(gate, there, "shopping", cargo)
+		sim.traffic.dispatch(gate, there, purpose, cargo)
 	else:
-		sim.traffic.dispatch(there, gate, "shopping", cargo)
+		sim.traffic.dispatch(there, gate, purpose, cargo)
 
 
 ## Where car `i` comes from: the county highway (out of town) or a home.

@@ -145,6 +145,7 @@ func _rebuild(force := false) -> void:
 		return
 	_shown_key = key
 	for c in _list.get_children():
+		_list.remove_child(c)
 		c.queue_free()
 	if _tab == "projects":
 		_projects()

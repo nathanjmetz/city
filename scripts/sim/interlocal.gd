@@ -507,9 +507,12 @@ func _keep(region, me: String, sim, a: Dictionary, other: String, links: Diction
 	if region.cities.has(other):
 		d.other_name = str(region.cities[other].name)
 	var their_deal: Dictionary = them.interlocal.deals.get(a.id, {}) if them else {}
+	# A neighbor's copy not unpacked yet (RegionClient loads them one at a
+	# time) has nothing in it: keep the last numbers until it is.
+	var host_link := int(links.get(other, {}).get(me, -1))
 	if host:
 		d.offset = offset(sim, d.kind, int(d.link))
-		if them:
+		if them and homes(them) > 0:
 			d.homes = homes(them)
 		# The neighbor's trash picked up since last time comes home with our trucks.
 		var picked := float(their_deal.get("picked", 0.0))
@@ -517,8 +520,8 @@ func _keep(region, me: String, sim, a: Dictionary, other: String, links: Diction
 		seen[a.id] = maxf(picked, float(seen.get(a.id, 0.0)))
 	else:
 		d.homes = homes(sim)
-		if them:
-			d.offset = offset(them, d.kind, int(links.get(other, {}).get(me, -1)))
+		if them and them.network.nodes.has(host_link):
+			d.offset = offset(them, d.kind, host_link)
 	if int(d.left) < 0 and int(their_deal.get("left", -1)) >= 0:
 		d.left = int(their_deal.left)
 

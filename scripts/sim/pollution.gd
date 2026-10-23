@@ -56,8 +56,13 @@ var owners := {}
 var lots := {}
 ## How worn each home has become from living with pollution, 0 to 1.
 var wear := {}
-## How many homes and people each source hurts: ref -> {homes, people}.
+## How many homes and people each source hurts: ref -> {homes, people,
+## kinds: {kind: homes where it is the worst of that kind}}.
 var hurts := {}
+## Ambulance calls for breathing trouble blamed on each source's smoke.
+var calls := {}
+## Railroads whose crossings are a quiet zone (no horns): depot id -> true.
+var quiet := {}
 ## Ground height at a point, metres (Callable(Vector3) -> float). The terrain
 ## sets this so dirty ground seeps downhill; flat ground when unset.
 var height := Callable()
@@ -142,6 +147,8 @@ func rebuild(sim: CitySim) -> void:
 			pts.append([CivicHubs.cell_center(h, c), w])
 		var name: String = "Town " + CivicHubs.KINDS[h.kind].name.to_lower()
 		_add(sim, "hub:%d" % id, _unique(used_names, name), h.kind, "", {"type": "hub", "id": id}, pts)
+	_add_power(sim, used_names)
+	_add_rail(sim, used_names)
 	ids = sim.farms.farms.keys()
 	ids.sort()
 	for id in ids:
@@ -182,6 +189,12 @@ func _prune(sim: CitySim) -> void:
 	for ref in owners.keys():
 		if not sources.has(ref):
 			owners.erase(ref)
+	for ref in calls.keys():
+		if not sources.has(ref):
+			calls.erase(ref)
+	for id in quiet.keys():
+		if not sim.rail.depots.has(id):
+			quiet.erase(id)
 
 
 ## Highways and ramps, then boulevards, each joined into one source per
@@ -230,6 +243,81 @@ func _add_roads(sim: CitySim, used_names: Dictionary) -> void:
 				{"type": "road", "id": group[0]}, [], lines, 0.0, 0.0, 0.0, 0.0)
 			s.segs = group
 			_finish(s)
+
+
+## Power companies that burn fuel or spin turbines: one point per unit, with
+## the fixes the company's own development tree offers.
+func _add_power(sim: CitySim, used_names: Dictionary) -> void:
+	var ids := sim.power.sites.keys()
+	ids.sort()
+	for id in ids:
+		var site: Dictionary = sim.power.sites[id]
+		var kind := "power_" + str(site.plant)
+		if site.cells.is_empty() or not Balance.POLLUTION_SOURCES.has(kind):
+			continue
+		var spec: Dictionary = Balance.POLLUTION_SOURCES[kind]
+		var pts := []
+		for c in site.cells:
+			pts.append([Power.cell_center(site, c), 1.0])
+		var ref := "power:%d" % id
+		var plain: String = Power.PLANTS[site.plant].name
+		var s := _make(ref, _unique(used_names, _named(sim, ref, plain)), kind, "", {"type": "power", "id": id}, pts, [],
+			float(spec.smoke) * Agency.effect(site, Power.TREE, "smoke*"), float(spec.noise), float(spec.ground),
+			float(spec.reach))
+		for node in Power.TREE:
+			if node.id in ["scrubbers", "repower"] and site.plant in node.get("plants", []) and not node.id in site.built:
+				s.fixes.append("%s (%s): %s. Its leader picks it up once the company can afford it." % [
+					node.name, "$" + CitySim.money_text(int(node.cost)), node.note])
+		if site.plant == "coal":
+			s.fixes.append("Power companies run by better-schooled leaders build clean plants: schools in town help the next one.")
+		_finish(s)
+
+
+## Railroads: every finished piece of track is a line source, and each grade
+## crossing a horn (unless the town made its crossings a quiet zone).
+func _add_rail(sim: CitySim, used_names: Dictionary) -> void:
+	var rail := sim.rail
+	var ids := rail.depots.keys()
+	ids.sort()
+	var pids := rail.pieces.keys()
+	pids.sort()
+	var spec: Dictionary = Balance.POLLUTION_SOURCES.rail
+	for id in ids:
+		var lines := []
+		var mine := {}
+		for pid in pids:
+			var pc: Dictionary = rail.pieces[pid]
+			if int(pc.depot) != id or float(pc.built) >= 0.0:
+				continue
+			mine[pid] = true
+			# Every ~60 m of the track's points (they come every ~10 m).
+			var pts: Array = pc.pts
+			var step := maxi(1, roundi(ROAD_PIECE_M / 10.0))
+			var i := 0
+			while i < pts.size() - 1:
+				var j := mini(i + step, pts.size() - 1)
+				lines.append([pts[i], pts[j], float(spec.noise), float(spec.smoke)])
+				i = j
+		if lines.is_empty():
+			continue
+		var horns := []
+		if not quiet.has(id):
+			for c in rail.crossings:
+				if mine.has(c.piece):
+					horns.append([c.pos, 1.0])
+		var ref := "rail:%d" % id
+		var s := _make(ref, _unique(used_names, str(rail.depots[id].name)), "railroad", "", {"type": "rail", "id": id},
+			horns, lines, 0.0, float(Balance.POLLUTION_SOURCES.rail_horn.noise) if not horns.is_empty() else 0.0, 0.0, 0.0)
+		_finish(s)
+
+
+## What a quiet zone costs on a railroad's crossings, or -1 when it has none
+## to quiet (or already is one).
+func quiet_cost(sim: CitySim, ref: String) -> int:
+	if not ref.begins_with("rail:") or quiet.has(int(ref.substr(5))) or not sources.has(ref):
+		return -1
+	var n: int = sources[ref].points.size()
+	return n * Balance.QUIET_ZONE_PER_CROSSING if n > 0 else -1
 
 
 static func road_pieces(net: RoadNetwork, id: int) -> int:
@@ -540,6 +628,7 @@ func measure_lots(sim: CitySim, slice := -1) -> void:
 			continue
 		# Who hurts it: the biggest share of each kind that is over the line.
 		var hurt := {}
+		var worst := {}
 		for k in [["smoke", 0, Balance.HURT_SMOKE], ["noise", 1, Balance.HURT_NOISE_DB], ["ground", 2, Balance.HURT_GROUND]]:
 			if e[k[0]] < k[2]:
 				continue
@@ -552,9 +641,11 @@ func measure_lots(sim: CitySim, slice := -1) -> void:
 					best = ref
 			if best != "":
 				hurt[best] = true
+				worst[k[0]] = best
 		var h := hurt.keys()
 		h.sort()
 		e.hurt = h
+		e.by = worst
 		lots[key] = e
 	if slice < 0 or slice == SLICES - 1:
 		count_hurts(sim)
@@ -568,12 +659,41 @@ func count_hurts(sim: CitySim) -> void:
 			continue
 		for ref in lots[key].hurt:
 			if not hurts.has(ref):
-				hurts[ref] = {"homes": 0, "people": 0}
+				hurts[ref] = {"homes": 0, "people": 0, "kinds": {}}
 			hurts[ref].homes += 1
 			hurts[ref].people += int(b.occ)
+		for kind in lots[key].get("by", {}):
+			var ref: String = lots[key].by[kind]
+			if hurts.has(ref):
+				hurts[ref].kinds[kind] = int(hurts[ref].kinds.get(kind, 0)) + 1
 
 
 # --- Effects ---------------------------------------------------------------------
+
+## How much more likely a home is to call an ambulance, from its smoke (1.0
+## is no change), for Healthcare.
+func call_weight(key: String) -> float:
+	var e: Dictionary = lots.get(key, {})
+	if e.is_empty():
+		return 1.0
+	return 1.0 + Balance.SMOKE_CALL_WEIGHT * maxf(float(e.smoke) - Balance.HURT_SMOKE, 0.0) / Balance.HURT_SMOKE \
+		+ (Balance.SMOKE_CALL_WEIGHT if float(e.smoke) >= Balance.HURT_SMOKE else 0.0)
+
+
+## A call from a home over the smoke line: true (and blamed on the source
+## with the biggest share of its smoke) when it is breathing trouble.
+## `roll` is a 0-1 draw from the caller's own random numbers.
+func breathing_call(sim: CitySim, key: String, roll: float) -> bool:
+	var e: Dictionary = lots.get(key, {})
+	if e.is_empty() or float(e.smoke) < Balance.HURT_SMOKE or roll >= Balance.SMOKE_BREATHING_SHARE \
+			or not sim.lots.has(key):
+		return false
+	var by: Array = sample(sim.lots[key].pos).by.smoke
+	if by.is_empty():
+		return false
+	calls[by[0][0]] = int(calls.get(by[0][0], 0)) + 1
+	return true
+
 
 ## A lot's land value factor from pollution and wear: 1.0 is no change.
 func lot_factor(sim: CitySim, key: String) -> float:
@@ -697,7 +817,8 @@ func wall_cost(sim: CitySim, ref: String) -> int:
 
 
 ## Player commands: {type: "fund_cleanup", ref} pays the rest of an owner's
-## next upgrade; {type: "noise_wall", ref} walls a road source.
+## next upgrade; {type: "noise_wall", ref} walls a road source;
+## {type: "quiet_zone", ref} quiets a railroad's crossings.
 func command(sim: CitySim, cmd: Dictionary) -> bool:
 	var ref := str(cmd.get("ref", ""))
 	match cmd.type:
@@ -717,6 +838,12 @@ func command(sim: CitySim, cmd: Dictionary) -> bool:
 			sim.economy.money -= cost
 			for seg in sources[ref].segs:
 				walls[seg] = true
+		"quiet_zone":
+			var cost := quiet_cost(sim, ref)
+			if cost < 0 or cost > sim.economy.money:
+				return false
+			sim.economy.money -= cost
+			quiet[int(ref.substr(5))] = true
 		_:
 			return false
 	rebuild(sim)
@@ -774,11 +901,13 @@ func to_dict() -> Dictionary:
 	var lot_out := {}
 	for key in lots:
 		var e: Dictionary = lots[key]
-		lot_out[key] = [snappedf(e.smoke, 0.001), snappedf(e.noise, 0.001), snappedf(e.ground, 0.0001), e.hurt]
+		lot_out[key] = [snappedf(e.smoke, 0.001), snappedf(e.noise, 0.001), snappedf(e.ground, 0.0001), e.hurt,
+			e.get("by", {})]
 	var wear_out := {}
 	for key in wear:
 		wear_out[key] = snappedf(wear[key], 0.0001)
-	var out := {"walls": walls.keys(), "owners": owners.duplicate(true), "lots": lot_out, "wear": wear_out}
+	var out := {"walls": walls.keys(), "owners": owners.duplicate(true), "lots": lot_out, "wear": wear_out,
+		"calls": calls.duplicate(), "quiet": quiet.keys()}
 	if _mid_pass:
 		var srcs := []
 		var refs := sources.keys()
@@ -839,11 +968,19 @@ func from_dict(d: Dictionary) -> void:
 	var l: Dictionary = d.get("lots", {})
 	for key in l:
 		var e: Array = l[key]
-		lots[key] = {"smoke": float(e[0]), "noise": float(e[1]), "ground": float(e[2]), "hurt": Array(e[3])}
+		lots[key] = {"smoke": float(e[0]), "noise": float(e[1]), "ground": float(e[2]), "hurt": Array(e[3]),
+			"by": Dictionary(e[4]) if e.size() > 4 else {}}
 	wear.clear()
 	var w: Dictionary = d.get("wear", {})
 	for key in w:
 		wear[key] = float(w[key])
+	quiet.clear()
+	for id in d.get("quiet", []):
+		quiet[int(id)] = true
+	calls.clear()
+	var c: Dictionary = d.get("calls", {})
+	for ref in c:
+		calls[ref] = int(c[ref])
 	sources.clear()
 	hurts.clear()
 	_source_sig = 0

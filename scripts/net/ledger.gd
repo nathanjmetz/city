@@ -19,10 +19,30 @@ extends RefCounted
 ## "price_per_month", "capacity", "status": "offered" | "active" | "ended" |
 ## "denied"}. Each side runs its own half from the last terms, so an
 ## agreement keeps going while either player is away.
+##
+## The metro (Brawn's long game, 2026-10-23): the towns joined to each other
+## by road count as one metro, ranked against real US metros
+## (Balance.METRO_LADDER). Each town's population comes in with its copy;
+## update_metro() works out the biggest road-linked group, its OMB-style
+## name and its place on the ladder, and opens any project whose
+## Balance.REGION_PROJECT_GATES size it has reached. An opened project stays
+## open if the metro shrinks again.
+
+## OMB's rule for smaller principal cities, simplified: a town is named in
+## the metro's title when it has at least a third of the largest town's
+## people. The title names at most three.
+const PRINCIPAL_SHARE := 1.0 / 3.0
+const PRINCIPAL_MAX := 3
 
 var projects := {}
 var agreements := {}
 var _next_agreement := 1
+## city id -> its latest population.
+var populations := {}
+## {"population", "name", "kind": "town" | "micropolitan" | "metropolitan",
+## "towns": [city ids], "rank": place among the ladder plus us (1 = biggest),
+## "of": how many that is, "next": [real area, population] or []}.
+var metro := {}
 
 
 func _init() -> void:
@@ -40,7 +60,17 @@ func seed_projects() -> void:
 			stages.append({"name": st.name, "goal": st.goal.duplicate(), "pledged": {},
 				"status": "open" if i == 0 else "waiting"})
 		projects[p.id] = {"name": p.name, "kind": p.kind, "board": p.board, "site": p.site.duplicate(),
-			"stages": stages, "pledges": [], "shares": {}}
+			"stages": stages, "pledges": [], "shares": {}, "unlocked": gate(p.id) <= 0}
+
+
+## The metro population a project needs before it takes pledges.
+static func gate(project_id: String) -> int:
+	return int(Balance.REGION_PROJECT_GATES.get(project_id, 0))
+
+
+## Whether the metro has grown big enough for a project.
+func is_unlocked(project_id: String) -> bool:
+	return projects.has(project_id) and bool(projects[project_id].get("unlocked", false))
 
 
 ## The stage taking pledges now, or {} when every stage is funded.
@@ -64,6 +94,8 @@ func still_needed(project_id: String, good: String) -> float:
 ## Books a pledge to a project's open stage. Returns the amount taken (never
 ## more than the stage still needs); the pledger's computer pays exactly that.
 func pledge(player: String, project_id: String, good: String, amount: float) -> float:
+	if not is_unlocked(project_id):
+		return 0.0
 	var take := minf(amount, still_needed(project_id, good))
 	if take <= 0.0:
 		return 0.0
@@ -158,10 +190,101 @@ func book_month(city: String, skip := []) -> float:
 	return net
 
 
+# --- The metro -----------------------------------------------------------------
+
+## Notes a town's population. Returns whether it changed.
+func set_population(city: String, population: int) -> bool:
+	population = maxi(0, population)
+	if int(populations.get(city, -1)) == population:
+		return false
+	populations[city] = population
+	return true
+
+
+## Works the metro out again from the towns (city id -> town name) and the
+## road joins between them ([{"a", "b"}...]). Returns whether anything
+## players would see changed.
+func update_metro(towns: Dictionary, joins: Array) -> bool:
+	# Group the towns by road: each group is a would-be metro.
+	var group := {}
+	for id in towns:
+		group[id] = id
+	var find := func(id: String) -> String:
+		while group[id] != id:
+			id = group[id]
+		return id
+	for j in joins:
+		if group.has(j.a) and group.has(j.b):
+			group[find.call(j.a)] = find.call(j.b)
+	var members := {}
+	for id in towns:
+		var root: String = find.call(id)
+		if not members.has(root):
+			members[root] = []
+		members[root].append(id)
+	var best := []
+	var best_pop := -1
+	for root in members:
+		var pop := 0
+		for id in members[root]:
+			pop += int(populations.get(id, 0))
+		if pop > best_pop or (pop == best_pop and str(members[root]) < str(best)):
+			best = members[root]
+			best_pop = pop
+	best.sort_custom(func(a, b): return int(populations.get(a, 0)) > int(populations.get(b, 0)) \
+		or (int(populations.get(a, 0)) == int(populations.get(b, 0)) and a < b))
+	var named := []
+	for id in best:
+		if named.is_empty() or (named.size() < PRINCIPAL_MAX and int(populations.get(id, 0)) > 0 \
+				and populations.get(id, 0) >= PRINCIPAL_SHARE * int(populations.get(best[0], 0))):
+			named.append(str(towns[id]))
+	var pop := maxi(best_pop, 0)
+	var rank := 1
+	var next := []
+	for area in Balance.METRO_LADDER:
+		if int(area[1]) > pop:
+			rank += 1
+			if next.is_empty():
+				next = [str(area[0]), int(area[1])]
+	var kind := "metropolitan" if pop >= Balance.METRO_METRO_MIN \
+		else "micropolitan" if pop >= Balance.METRO_MICRO_MIN else "town"
+	var was := metro.duplicate()
+	metro = {"population": pop, "name": "-".join(named), "kind": kind, "towns": best,
+		"rank": rank, "of": Balance.METRO_LADDER.size() + 1, "next": next}
+	var opened := false
+	for id in projects:
+		if not projects[id].get("unlocked", false) and pop >= gate(id):
+			projects[id].unlocked = true
+			opened = true
+	return opened or JSON.stringify(was) != JSON.stringify(metro)
+
+
+## The metro in one line, for the regional panel: "Petersburg-Oakland City
+## micropolitan area, 12,400 people. Next: Connersville, IN, 10,600 to go."
+func metro_line() -> String:
+	if metro.is_empty():
+		return ""
+	var line := "%s, %s people." % [metro.name if metro.kind == "town" else "%s %s area" % [metro.name, metro.kind],
+		_thousands(int(metro.population))]
+	if not metro.next.is_empty():
+		line += " Next: %s, %s to go." % [metro.next[0], _thousands(int(metro.next[1]) - int(metro.population))]
+	return line
+
+
+static func _thousands(n: int) -> String:
+	var s := str(absi(n))
+	var out := ""
+	while s.length() > 3:
+		out = "," + s.right(3) + out
+		s = s.left(s.length() - 3)
+	return ("-" if n < 0 else "") + s + out
+
+
 # --- Saving --------------------------------------------------------------------
 
 func to_dict() -> Dictionary:
-	return {"projects": projects, "agreements": agreements, "next": _next_agreement}
+	return {"projects": projects, "agreements": agreements, "next": _next_agreement,
+		"populations": populations, "metro": metro}
 
 
 func from_dict(d: Dictionary) -> void:
@@ -177,15 +300,33 @@ func from_dict(d: Dictionary) -> void:
 		var pledges := []
 		for pl in p.get("pledges", []):
 			pledges.append({"player": str(pl.player), "good": str(pl.good), "amount": float(pl.amount), "at": int(pl.get("at", 0))})
+		# A project already taking pledges before gates existed stays open.
+		var unlocked := bool(p.get("unlocked", gate(str(id)) <= 0 or not pledges.is_empty()))
 		projects[id] = {"name": str(p.name), "kind": str(p.get("kind", "")), "board": str(p.get("board", "")),
 			"site": [float(p.site[0]), float(p.site[1])], "stages": stages, "pledges": pledges,
-			"shares": _amounts(p.get("shares", {}))}
+			"shares": _amounts(p.get("shares", {})), "unlocked": unlocked}
 	var as_: Dictionary = d.get("agreements", {})
 	for id in as_:
 		var a: Dictionary = as_[id]
 		agreements[id] = {"id": str(id), "host": str(a.host), "client": str(a.client), "service": str(a.service),
 			"price_per_month": float(a.price_per_month), "capacity": float(a.capacity), "status": str(a.status)}
 	_next_agreement = int(d.get("next", agreements.size() + 1))
+	populations = {}
+	var pops: Dictionary = d.get("populations", {})
+	for id in pops:
+		populations[str(id)] = int(pops[id])
+	metro = {}
+	var m: Dictionary = d.get("metro", {})
+	if not m.is_empty():
+		var towns := []
+		for t in m.get("towns", []):
+			towns.append(str(t))
+		var next := []
+		if m.get("next", []).size() == 2:
+			next = [str(m.next[0]), int(m.next[1])]
+		metro = {"population": int(m.get("population", 0)), "name": str(m.get("name", "")),
+			"kind": str(m.get("kind", "town")), "towns": towns, "rank": int(m.get("rank", 0)),
+			"of": int(m.get("of", 0)), "next": next}
 	seed_projects()
 
 

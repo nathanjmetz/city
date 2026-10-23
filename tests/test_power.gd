@@ -61,18 +61,45 @@ func _init() -> void:
 	_check(wells == 0, "no substation or feed")
 	var site := Services.site_near(sim.network, Services.Kind.WELL, o + Vector3(-300, 0, 30))
 	sim.apply({"type": "place_service", "kind": Services.Kind.WELL, "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})
+	var crewed := 0
 	for i in 3000:
 		sim.tick()
+		crewed = maxi(crewed, sim.power.crews.size())
 	var powered := 0
 	for key in sim.buildings:
 		if sim.services.served[key].power:
 			powered += 1
+	_check(crewed > 0, "a line crew drives out from the yard")
 	_check(powered > 0, "homes grow on the company's power alone (%d)" % powered)
 	print("  cells %d, capacity %d, sales %s, built %s" % [s.cells.size(), sim.power.capacity(id),
 		str(sim.power.sales.get(id)), str(s.built)])
 	if s.plant == "coal":
-		_check(sim.power.land_value_effect(Power.cell_center(s, s.cells[0])) < -0.1, "coal smoke lowers land value next door")
-		_check(sim.power.land_value_effect(Power.cell_center(s, s.cells[0]) + Vector3(3000, 0, 0)) == 0.0, "but not far away")
+		var next_door: Vector3 = Power.cell_center(s, s.cells[0]) + s.dir * 150.0
+		_check(sim.power_nuisance(next_door) < -0.05, "coal smoke lowers land value next door (%.2f)" % sim.power_nuisance(next_door))
+		_check(sim.power_nuisance(next_door + Vector3(5000, 0, 0)) == 0.0, "but not far away")
+
+	# Wild trees clear off the yard and every unit.
+	sim.vegetation.update(sim)
+	_check(sim.vegetation.is_occupied(Vegetation.cell_of(s.pos)), "trees don't grow in the yard")
+	_check(sim.vegetation.is_occupied(Vegetation.cell_of(Power.cell_center(s, s.cells[-1]))), "or on its units")
+	# A line to the neighbors follows the road out of town on wood poles.
+	_check(sim.power.tie_route(sim.network, sim.region_links, s).is_empty(), "no line until the leader builds one")
+	s.built.append("tie_line")
+	var line: PackedVector3Array = sim.power.tie_route(sim.network, sim.region_links, s)
+	var out_at: Vector3 = sim.network.nodes[sim.region_links[0]]
+	_check(line.size() > 2 and line[0] == s.pos and Vector2(line[-1].x - out_at.x, line[-1].z - out_at.z).length() < 30.0,
+		"the line runs from the yard to the road out of town (%d points)" % line.size())
+	var spans := Power.poles(line)
+	var longest := 0.0
+	for i in range(1, spans.size()):
+		longest = maxf(longest, spans[i].distance_to(spans[i - 1]))
+	_check(spans.size() >= 4 and longest <= Balance.POWER_TIE_SPAN + 0.5, "poles about a span apart (%d, longest %.0f m)" % [spans.size(), longest])
+	sim.power_changed.emit()
+	sim.vegetation.update(sim)
+	var under := line[line.size() / 2]
+	_check(sim.vegetation.is_occupied(Vegetation.cell_of(under)), "the corridor under the line is kept clear")
+	s.built.erase("tie_line")
+	sim.power_changed.emit()
 
 	# A coal company's tree (Agency): nothing while it loses money;
 	# scrubbers once it profits; a schooled leader near oil switches to gas.

@@ -77,7 +77,7 @@ func _process(_delta: float) -> void:
 	if at.is_empty():
 		select({})
 		return
-	_ring.visible = true
 	var r: float = at[1]
+	_ring.visible = r > 0.0
 	_ring.position = Vector3(at[0].x, Terrain.ground_y(at[0].x, at[0].z) + 0.4, at[0].z)
 	_ring.scale = Vector3(r, 0.6, r)

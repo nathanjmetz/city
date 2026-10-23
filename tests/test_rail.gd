@@ -103,6 +103,8 @@ func _init() -> void:
 	var gates_down := false
 	var moved := false
 	var start_pos = null
+	var horn := false
+	var horn_gates := true
 	for i in 24 * 60 * 9:
 		sim.tick()
 		if sim.industry.sites[sid].stock < 6.0:
@@ -110,6 +112,11 @@ func _init() -> void:
 		for c in sim.rail.crossings:
 			gates_down = gates_down or c.closed
 		var t: Dictionary = sim.rail.trains[d.freight_train]
+		var nc := sim.rail.next_crossing(d.freight_train)
+		if not nc.is_empty() and RailSounds.horn_due(nc.dist, t.v):
+			horn = true
+			# The gates are down before the engineer starts blowing.
+			horn_gates = horn_gates and sim.rail.crossings[nc.index].closed
 		var poses := sim.rail.car_poses(d.freight_train)
 		if not poses.is_empty():
 			if start_pos == null:
@@ -121,6 +128,13 @@ func _init() -> void:
 
 	_check(moved, "the local freight drives")
 	_check(gates_down, "crossing gates come down for the train")
+	_check(horn, "the engineer blows the horn for the crossing")
+	_check(horn_gates, "the gates are down before the horn starts")
+	var p := RailSounds.CROSSING_HORN
+	_check(RailSounds.horn_on(p, 1.0, INF) and not RailSounds.horn_on(p, 3.2, INF) and RailSounds.horn_on(p, 7.5, INF)
+		and not RailSounds.horn_on(p, 8.2, INF), "the horn goes long, long, short, long")
+	_check(RailSounds.horn_on(p, 14.0, INF) and not RailSounds.horn_on(p, 14.0, 12.0),
+		"the last long is held until the engine is on the crossing")
 	_check(int(d.get("delivered", 0)) > 0, "loaded cars reach the region (%s)" % sim.rail.trains[d.freight_train].purpose)
 	_check(d.ledger.income + d.last.income > 0.0 or d.money > income - 1e6, "freight pays the railroad")
 	# A train in the region comes back to the yard.

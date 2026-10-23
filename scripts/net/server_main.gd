@@ -9,6 +9,9 @@ extends SceneTree
 ##   --data FILE   CITY_DATA    where the region is saved (default user://region.json)
 ##   --host NAME   CITY_HOST    the host's player name
 ##                              (default: whoever comes in first)
+##   --telemetry DIR CITY_TELEMETRY_DIR  where play telemetry and its fix
+##                              list (report.md) go (default: next to the
+##                              data file, as <name>-telemetry/)
 ##   --approve yes CITY_APPROVE the host lets each new player in (default: the
 ##                              invite code is the only key)
 
@@ -22,6 +25,7 @@ func _init() -> void:
 		"data": OS.get_environment("CITY_DATA"),
 		"host": OS.get_environment("CITY_HOST"),
 		"approve": OS.get_environment("CITY_APPROVE"),
+		"telemetry": OS.get_environment("CITY_TELEMETRY_DIR"),
 	}
 	var args := OS.get_cmdline_user_args()
 	for i in args.size() - 1:
@@ -33,6 +37,9 @@ func _init() -> void:
 		data = OS.get_environment("PWD").path_join(data)
 	server = RegionServer.new()
 	server.require_approval = opts.approve in ["yes", "true", "1"]
+	if opts.telemetry != "":
+		server.telemetry_dir = opts.telemetry if opts.telemetry.begins_with("/") or opts.telemetry.begins_with("user://") \
+			else OS.get_environment("PWD").path_join(opts.telemetry)
 	root.add_child.call_deferred(server)
 	var err := server.start(port, opts.code, data, opts.host)
 	if err != OK:

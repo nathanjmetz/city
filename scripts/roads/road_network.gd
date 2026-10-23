@@ -133,6 +133,11 @@ func find_segment_near(pos: Vector3, max_dist: float, max_dy := INF) -> Dictiona
 	var p := _flat(pos)
 	for id in segments:
 		var c := curve_of(id)
+		# A curve stays inside its control points: skip the far ones.
+		var hull := Rect2(Vector2(c[0].x, c[0].z), Vector2.ZERO).expand(Vector2(c[1].x, c[1].z)) \
+			.expand(Vector2(c[2].x, c[2].z)).grow(best_d + 0.01)
+		if not hull.has_point(Vector2(p.x, p.z)):
+			continue
 		var n := 48
 		var prev := bezier(c[0], c[1], c[2], 0.0)
 		for i in range(1, n + 1):

@@ -317,7 +317,11 @@ func _show_view(key: String) -> void:
 	info_view.set_mode(resource.get(key, InfoView.Mode.NONE))
 	# In a pollution view any click on the map says who pollutes that spot.
 	select_tool.spot_clicks = key in ["smoke", "noise", "ground"]
-	if not select_tool.spot_clicks and select_tool.selection.get("type", "") == "spot":
+	var sel_type: String = select_tool.selection.get("type", "")
+	if select_tool.spot_clicks and sel_type in ["", "spot", "pollution"]:
+		# The town's worst sources for this view, until a click picks a spot.
+		select_tool.select({"type": "pollution", "id": key})
+	elif not select_tool.spot_clicks and sel_type in ["spot", "pollution"]:
 		select_tool.select({})
 	var cover := {"fire": Services.Kind.FIRE, "police": Services.Kind.POLICE,
 		"health": Services.Kind.CLINIC, "school": Services.Kind.SCHOOL}
@@ -713,7 +717,9 @@ func _services_drawer() -> PanelContainer:
 	drawer.add_child(row)
 	for group in [["Utilities", [Services.Kind.POWER_FEED, Services.Kind.WELL, Services.Kind.SUBSTATION,
 				Services.Kind.WATER_TOWER, Services.Kind.WATER_UTILITY]],
-			["Safety, health and schools", [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.CLINIC, Services.Kind.SCHOOL]],
+			["Safety and schools", [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.SCHOOL]],
+			["Health and care", [Services.Kind.CLINIC, Services.Kind.HOSPITAL, Services.Kind.NURSING_HOME,
+				Services.Kind.DAYCARE]],
 			["Transit", [Services.Kind.BUS_DEPOT, Services.Kind.TAXI_COMPANY]]]:
 		if row.get_child_count() > 0:
 			row.add_child(VSeparator.new())
@@ -1228,11 +1234,26 @@ func _build_help() -> void:
 	_pin(_help, Control.PRESET_TOP_RIGHT, Vector2(-6, 42))
 
 
-## The build stamp written by the web preview workflow, or "dev" locally.
+## The build stamp written by the web preview workflow, or "dev" locally:
+## the commit and when it was built, in the player's own time zone.
 static func _build_name() -> String:
-	if ResourceLoader.exists("res://scripts/build_info.gd"):
-		return load("res://scripts/build_info.gd").BUILD
-	return "dev"
+	if not ResourceLoader.exists("res://scripts/build_info.gd"):
+		return "dev"
+	var info: Script = load("res://scripts/build_info.gd")
+	var consts := info.get_script_constant_map()
+	if not consts.has("BUILT_AT"):
+		return str(consts.get("BUILD", "dev"))
+	return "%s  %s" % [consts.BUILD, local_time_text(int(consts.BUILT_AT))]
+
+
+## A moment as the player's clock shows it, e.g. "Oct 22, 9:06 PM".
+static func local_time_text(unix: int) -> String:
+	var bias: int = int(Time.get_time_zone_from_system().get("bias", 0))
+	var t := Time.get_datetime_dict_from_unix_time(unix + bias * 60)
+	var months := ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+	var h: int = int(t.hour) % 12
+	return "%s %d, %d:%02d %s" % [months[int(t.month) - 1], int(t.day), 12 if h == 0 else h, int(t.minute),
+		"PM" if int(t.hour) >= 12 else "AM"]
 
 
 static func _thousands(n: int) -> String:

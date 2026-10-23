@@ -15,6 +15,27 @@ func _init() -> void:
 	var ann: CitySim = r.cities.c1.sim
 	var bob: CitySim = r.cities.c2.sim
 
+	# Grow the metro: the two road-linked towns are one micropolitan area, so
+	# the power co-op and the interstate take pledges and the airport waits.
+	r.ledger.set_population("c1", 40_000)
+	r.ledger.set_population("c2", 20_000)
+	r.update_metro()
+	_check(r.ledger.is_unlocked("power") and r.ledger.is_unlocked("i69") and not r.ledger.is_unlocked("airport"),
+		"the metro's size opens the projects")
+	var pledged := []
+	var panel := RegionPanel.new()
+	root.add_child(panel)
+	panel.setup(ann, r, "c1", func(id, amount): pledged.append([id, amount]))
+	ann.economy.money = 50_000_000
+	panel.open_panel()
+	_check(panel._list.get_child_count() == 2 + Balance.REGION_PROJECTS.size(), "the metro, then one card per project")
+	_check(_labels(panel._list).any(func(t): return "Next:" in t and "Annville" in t), "the panel shows the metro and the next to pass")
+	_check(_labels(panel._list).any(func(t): return "Opens when the metro reaches" in t), "the airport waits for a bigger metro")
+	_check(_buttons(panel._list).filter(func(b): return b.text.begins_with("Pledge")).size() == 4,
+		"Pledge buttons on the two open projects")
+	r.ledger.set_population("c1", 300_000)
+	r.update_metro()
+
 	# Nothing funded: nothing changes.
 	ann.regional.sync(r, "c1")
 	_check(ann.regional.import_markup("steel") == Balance.TRADE_IMPORT_MARKUP and ann.regional.land_lift() == 0.0
@@ -73,17 +94,10 @@ func _init() -> void:
 	copy.from_dict(JSON.parse_string(JSON.stringify(ann.to_dict(), "", false, true)))
 	_check(var_to_str(copy.regional.projects) == var_to_str(ann.regional.projects), "a save keeps what the projects do")
 
-	# The panel.
-	var pledged := []
-	var panel := RegionPanel.new()
-	root.add_child(panel)
-	panel.setup(ann, r, "c1", func(id, amount): pledged.append([id, amount]))
-	panel.open_panel()
-	_check(panel._list.get_child_count() == 2 + Balance.REGION_PROJECTS.size(), "the metro, then one card per project")
-	_check(_labels(panel._list).any(func(t): return "Next: Jasper, IN" in t), "the panel shows the next metro")
+	# The panel, with stages funded.
+	panel.show_tab("projects")
 	var buttons := _buttons(panel._list).filter(func(b): return b.text.begins_with("Pledge"))
-	_check(buttons.size() == 2, "Pledge buttons only where the metro is big enough and a stage is open (%d)" % buttons.size())
-	_check(_labels(panel._list).any(func(t): return "Opens when the metro reaches 250,000" in t), "the airport waits for a bigger metro")
+	_check(buttons.size() == 4, "Pledge buttons where a stage is still open (%d)" % buttons.size())
 	buttons[0].pressed.emit()
 	_check(pledged.size() == 1 and pledged[0][1] == 100_000.0, "a pledge goes to the region")
 	_check(_labels(panel._list).any(func(t): return "Your share 100%" in t), "the panel shows your share")

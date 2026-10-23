@@ -189,6 +189,7 @@ func _month_end(online: Array) -> void:
 	for id in online:
 		r.update_city(id, JSON.parse_string(JSON.stringify(homes[id].to_dict(), "", false, true)))
 	r.settle_trade(online)
+	r.load_stale()
 	_sync(online)
 	_sync(online)
 

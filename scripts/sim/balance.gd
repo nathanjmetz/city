@@ -101,6 +101,16 @@ const SERVICES := {
 	# The town's share of bringing a cab company in (office, lot and its
 	# first two cabs); after that it runs on its own fares.
 	"taxi_company": {"cost": 150_000, "upkeep": 0},
+	# A 25-bed critical access hospital with an ER, the kind most rural US
+	# counties have. Its ambulances answer calls within about 6 road miles.
+	# The city's upkeep is its county hospital levy; the hospital earns the
+	# rest itself (see HOSPITAL_*).
+	"hospital": {"cost": 8_000_000, "upkeep": 70_000, "reach": 9600.0},
+	# A 60-bed skilled nursing home, the usual size in small Midwest towns.
+	"nursing_home": {"cost": 3_500_000, "upkeep": 15_000, "reach": 4800.0},
+	# A licensed daycare center for about 60 children; parents drive up to a
+	# mile or so out of their way.
+	"daycare": {"cost": 450_000, "upkeep": 4_000, "reach": 1600.0},
 }
 ## Water and sewer bills the city collects, per building per month. The
 ## average US household pays about $100 a month for water and sewer
@@ -136,6 +146,16 @@ const CORE_RADIUS := 200.0
 ## too dear for a detached house on every lot), apartments from DENSE_CORE.
 const ROW_HOME_DENSITY := 30
 const DENSE_CORE := 20
+## Town size matters as much as the block (Census ACS: Petersburg, IN,
+## about 2,300 people, is ~85% detached houses, ~6% small walk-ups and
+## almost no row houses; townhouse rows are a metro type). Row homes start
+## once the town has ROW_HOME_TOWN people and are fully in favour by
+## ROW_HOME_CITY; apartments in a small town are rarer by SMALL_TOWN_FLATS,
+## reaching their full share by FLATS_TOWN people.
+const ROW_HOME_TOWN := 25_000
+const ROW_HOME_CITY := 100_000
+const SMALL_TOWN_FLATS := 0.15
+const FLATS_TOWN := 25_000
 ## A street side becomes a Main Street once this many shops line it, and
 ## new shops there get flats upstairs (the classic Midwestern main street).
 const MAIN_STREET_SHOPS := 2
@@ -303,6 +323,13 @@ const POWER_BLADE_YARD_SALES := 200_000.0
 const POWER_LEADER_TERM_DAYS := 120.0
 ## A training center lifts a successor's education by this much.
 const POWER_TRAINING_LIFT := 0.15
+## A 69 kV line to the neighbors: wood poles about 300 ft apart (typical
+## rural subtransmission spans), set back from the road right of way, with
+## a cleared corridor about 50 ft wide (25 ft either side).
+const POWER_TIE_SPAN := 90.0
+const POWER_TIE_SETBACK := 3.0
+const POWER_TIE_CLEAR := 7.5
+const POWER_TIE_SAG := 1.5
 
 # --- Freight -----------------------------------------------------------------
 
@@ -667,6 +694,20 @@ const POLLUTION_SOURCES := {
 	"recycling_1": {"smoke": 1.0, "noise": 64.0, "ground": 0.1, "reach": 80.0},
 	"recycling_2": {"smoke": 0.6, "noise": 62.0, "ground": 0.05, "reach": 60.0},
 	"recycling_3": {"smoke": 0.3, "noise": 58.0, "ground": 0.0, "reach": 0.0},
+	# Power companies (see Power), per unit. An old coal boiler: stack soot
+	# and the ash pond leaching into groundwater (Petersburg Generating
+	# Station's real coal-ash problem), belts and fans about 70 dBA. A gas
+	# engine hall is loud but burns clean. A wind turbine is about 45 dBA at
+	# 300 m (the usual US siting limit); panels and dams are quiet.
+	"power_coal": {"smoke": 14.0, "noise": 70.0, "ground": 0.4, "reach": 250.0},
+	"power_gas": {"smoke": 1.5, "noise": 72.0, "ground": 0.0, "reach": 0.0},
+	"power_wind": {"smoke": 0.0, "noise": 70.0, "ground": 0.0, "reach": 0.0},
+	# A freight railroad: a few trains a day average about 65 dBA at 50 ft
+	# (FTA noise manual; a line source like a road), plus diesel exhaust.
+	"rail": {"smoke": 0.4, "noise": 64.0, "ground": 0.0, "reach": 0.0},
+	# The horn at each grade crossing: 96-110 dBA for the long-long-short-long
+	# (49 CFR 222.21), averaged over the day it adds about 75 dBA at 50 ft.
+	"rail_horn": {"smoke": 0.0, "noise": 76.0, "ground": 0.0, "reach": 0.0},
 	# Fertilizer washing off fields: nitrate in wells is a real Indiana issue.
 	# Per field cell, so a big farm adds up.
 	"farm": {"smoke": 0.0, "noise": 0.0, "ground": 0.03, "reach": 70.0},
@@ -747,6 +788,17 @@ const CLEAN_COMPLAINT_MAX := 2.0
 ## road (a wall costs about $2,500 a metre; federal aid pays 80% of one
 ## on a federal-aid highway), and how many decibels it takes off (FHWA: a
 ## wall that breaks the line of sight cuts 5 to 10 dBA).
+## Smoke and breathing (EPA: each 10 ug/m3 more fine particles means a few
+## percent more respiratory hospital visits; asthma ER visits rise most). As
+## gameplay: a home over the smoke line is this much more likely to call an
+## ambulance per HURT_SMOKE of smoke, and that share of its calls are
+## breathing trouble, counted against the source.
+const SMOKE_CALL_WEIGHT := 0.5
+const SMOKE_BREATHING_SHARE := 0.5
+## A quiet zone (49 CFR 222): the town adds supplementary safety measures
+## (four-quadrant gates or raised medians) at every crossing so engineers
+## stop sounding the horn. Real cost runs about $30k to $500k a crossing.
+const QUIET_ZONE_PER_CROSSING := 250_000
 const NOISE_WALL_PER_M := 500
 const NOISE_WALL_DB := 8.0
 
@@ -847,6 +899,44 @@ const REGION_COOP_CREDITS_YEAR := 600_000.0
 ## Air visitors a year to a town at full benefit once the terminal opens
 ## (Evansville Regional sees ~200k boardings a year; a share comes to town).
 const REGION_AIR_VISITORS_YEAR := 20_000.0
+
+# --- Grow the metro (the long game) ------------------------------------------
+# Agreed with Brawn 2026-10-23: the road-linked towns of a region count as
+# one metro, ranked against real US metros. Ranks gate regional projects.
+
+## Census (OMB) area types: a micropolitan area has an urban core of 10k to
+## 50k people, a metropolitan area 50k or more.
+const METRO_MICRO_MIN := 10_000
+const METRO_METRO_MIN := 50_000
+## Real US areas to pass, smallest first: [name, population]. These are 2020
+## Census CBSA totals rounded to the thousand, from memory, so verify them
+## before showing them as exact. Southern Indiana and nearby first, since
+## the region sits near Petersburg, IN.
+const METRO_LADDER := [
+	["Connersville, IN", 23_000], ["Greensburg, IN", 26_000], ["North Vernon, IN", 28_000],
+	["Wabash, IN", 31_000], ["Madison, IN", 33_000], ["Washington, IN", 33_000],
+	["Vincennes, IN", 37_000], ["Logansport, IN", 38_000], ["Crawfordsville, IN", 38_000],
+	["Seymour, IN", 45_000], ["Bedford, IN", 45_000], ["Jasper, IN", 56_000],
+	["Richmond, IN", 66_000], ["Marion, IN", 66_000], ["Warsaw, IN", 80_000],
+	["Columbus, IN", 82_000], ["Kokomo, IN", 84_000], ["Michigan City-La Porte, IN", 112_000],
+	["Muncie, IN", 112_000], ["Owensboro, KY", 121_000], ["Bloomington, IN", 161_000],
+	["Terre Haute, IN", 185_000], ["Elkhart-Goshen, IN", 207_000],
+	["Lafayette-West Lafayette, IN", 223_000], ["Evansville, IN-KY", 315_000],
+	["South Bend-Mishawaka, IN-MI", 324_000], ["Fort Wayne, IN", 420_000],
+	["Lexington-Fayette, KY", 517_000], ["Louisville/Jefferson County, KY-IN", 1_285_000],
+	["Indianapolis-Carmel-Anderson, IN", 2_111_000],
+]
+## Metro population each regional project needs before its first stage
+## opens (later stages still open by funding). Real references: rural
+## power co-ops serve micropolitan areas; an interstate link follows a
+## metropolitan area; scheduled airline service in the Midwest starts
+## around Evansville's size (Bloomington at 161k and Terre Haute at 185k
+## have none today).
+const REGION_PROJECT_GATES := {"power": METRO_MICRO_MIN, "i69": METRO_METRO_MIN, "airport": 300_000}
+## Pacing check: a family region of this many active towns should become
+## metropolitan in about a third of the solo hamlet-to-metropolis time
+## (STAGE_TARGET_DAYS), and reach the airport gate in about that full time.
+const METRO_PACING_TOWNS := 4
 
 # --- Parks and landmarks -------------------------------------------------------
 # Brawn's rules (2026-10-22): a park is a hub. You place it and it fills in by
@@ -1392,6 +1482,107 @@ const FAMILY_REBRAND_YEARS := 20
 const FAMILY_REBRAND_COST := 40_000
 ## Signs read "SINCE 2031" once a business is this many years old.
 const FAMILY_SINCE_SHOWN := 10
+
+# --- Healthcare --------------------------------------------------------------
+# Brawn's hub-with-a-leader model (2026-10-22): the hospital is run by its
+# own administrator, whose schooling follows the town's schools. They grow
+# it from a county hospital into a regional medical center through a tree of
+# new buildings, each on land right next to what it has.
+
+## Jobs the nursing home and the daycare offer (staff for 60 residents, and
+## for 60 children at state ratios).
+const NURSING_HOME_JOBS := 60
+const DAYCARE_JOBS := 12
+## What the hospital keeps each month for every person it serves, after
+## paying its staff and supplies: its savings for new buildings. (About 7%
+## of the ~$350 a month Americans spend per person on hospital care.)
+const HOSPITAL_NET_PER_PERSON := 25.0
+## Share of the neighboring towns' people who come here for care, plus this
+## much more for each specialty center the hospital has built.
+const HOSPITAL_REGION_SHARE := 0.2
+const HOSPITAL_REGION_SHARE_PER_CENTER := 0.15
+## Without neighbors, the countryside around town: people per region link
+## (the county highway's ends) who come in for care.
+const HOSPITAL_COUNTY_POP := 1500
+## Fixed monthly running costs at each level, which a hospital too big for
+## its town can't cover (it then closes its newest building).
+const HOSPITAL_OVERHEAD := [0, 40_000, 140_000]
+## Names, beds and staff at each level.
+const HOSPITAL_LEVELS := [
+	{"name": "County Hospital", "beds": 25, "jobs": 150, "floors": 2, "ambulances": 2},
+	{"name": "Community Hospital", "beds": 100, "jobs": 450, "floors": 4, "ambulances": 3},
+	{"name": "Regional Medical Center", "beds": 300, "jobs": 1200, "floors": 7, "ambulances": 4},
+]
+## The administrator's down payment before a project: this share of its
+## cost, plus up to `CAUTION` more for a careful one (the rest is bonds and
+## donors). A well educated one plans for up to `EDU_SAVING` less.
+const HOSPITAL_DOWN_PAYMENT := 0.15
+const HOSPITAL_DOWN_PAYMENT_CAUTION := 0.35
+const HOSPITAL_EDU_SAVING := 0.15
+## Buying out the homes or shops in the way costs their assessed value times this.
+const HOSPITAL_BUYOUT_PREMIUM := 1.3
+## Building up instead of out (when boxed in) costs this much more.
+const HOSPITAL_BUILD_UP_COST := 1.25
+## Ground a parking garage frees for later buildings, square metres.
+const HOSPITAL_GARAGE_FREES := 3000.0
+## The administrator weighs a project this often, in ticks (6 game hours).
+const HOSPITAL_DECIDE_EVERY := 360
+## Game days an administrator serves before retiring (a game day is a
+## month: about 10 years).
+const HOSPITAL_TENURE_DAYS := 120
+## Ambulance calls a year per resident (US EMS: about 0.12), and minutes an
+## ambulance crew spends with the patient before heading back.
+const EMS_CALLS_PER_PERSON_YEAR := 0.12
+const EMS_ON_SCENE_MINUTES := 15
+## How much better care lifts the want to live here, at most (people stay,
+## and families move in), and what the maternity ward adds to that.
+const CARE_DEMAND := 0.15
+const CARE_MATERNITY := 0.04
+## The development tree, in the shared Agency format (scripts/sim/agency.gd).
+## Hospital extras: `tier` is the hospital level it needs; `area` the new
+## land it takes in square metres (0 builds on what it has); `height` in
+## metres; `level` raises the hospital. Needs beyond Agency's own
+## (education = homes near a school, leader_edu = the administrator's):
+## pop (people its ambulances reach), catchment (those plus the region's),
+## region_pop (people in neighboring towns), daycare / nursing_home (one in
+## town), boxed (out of land). Effects: jobs+, ambulances+, staffing+
+## (share of jobs locals fill), education+ (town education), region_care+
+## (care it adds in neighboring towns), center+ (a specialty center that
+## draws patients from the region).
+const HOSPITAL_TREE := [
+	{"id": "er", "name": "ER and ambulance bay", "tier": 0, "cost": 2_000_000, "area": 1200.0, "height": 5.0,
+		"needs": {"pop": 800}, "effects": {"jobs+": 30, "ambulances+": 2}, "note": "more ambulances, faster"},
+	{"id": "offices", "name": "Medical office building", "tier": 0, "cost": 3_000_000, "area": 1500.0, "height": 10.0,
+		"needs": {"pop": 1500, "leader_edu": 0.3}, "effects": {"jobs+": 60}, "note": "doctors' offices next door"},
+	{"id": "maternity", "name": "Maternity ward", "tier": 0, "cost": 2_500_000, "area": 1000.0, "height": 5.0,
+		"needs": {"pop": 1200, "daycare": 1}, "effects": {"jobs+": 40}, "note": "young families move in"},
+	{"id": "community", "name": "Community hospital tower", "tier": 0, "level": 1, "cost": 15_000_000, "area": 2500.0,
+		"height": 16.0, "requires": ["er"], "needs": {"pop": 3000}, "effects": {}, "note": "100 beds"},
+	{"id": "surgery", "name": "Outpatient surgery center", "tier": 1, "cost": 6_000_000, "area": 1800.0, "height": 6.0,
+		"needs": {"pop": 3500}, "effects": {"jobs+": 80, "center+": 1}},
+	{"id": "rehab", "name": "Rehab and therapy center", "tier": 1, "cost": 4_000_000, "area": 1500.0, "height": 5.0,
+		"needs": {"nursing_home": 1}, "effects": {"jobs+": 50}, "note": "with the nursing home"},
+	{"id": "nursing_school", "name": "Nursing school", "tier": 1, "cost": 7_000_000, "area": 2000.0, "height": 10.0,
+		"needs": {"education": 0.5}, "effects": {"jobs+": 40, "staffing+": 0.15, "education+": 0.1},
+		"note": "trains the town's own nurses"},
+	{"id": "helipad", "name": "Helipad", "tier": 1, "cost": 2_000_000, "area": 900.0, "height": 0.0,
+		"needs": {"region_pop": 3000}, "effects": {"jobs+": 12, "region_care+": 0.1},
+		"note": "flies in patients from neighboring towns"},
+	{"id": "garage", "name": "Parking garage", "tier": 1, "cost": 5_000_000, "area": 0.0, "height": 12.0,
+		"needs": {"boxed": 1}, "effects": {"jobs+": 4}, "note": "frees the front lot for building"},
+	{"id": "regional", "name": "Regional medical center tower", "tier": 1, "level": 2, "cost": 45_000_000, "area": 4000.0,
+		"height": 30.0, "requires": ["surgery"], "needs": {"pop": 8000, "catchment": 15000}, "effects": {},
+		"note": "300 beds"},
+	{"id": "heart", "name": "Heart center", "tier": 2, "cost": 18_000_000, "area": 2500.0, "height": 12.0,
+		"needs": {"pop": 8000}, "effects": {"jobs+": 150, "center+": 1, "region_care+": 0.05}},
+	{"id": "cancer", "name": "Cancer center", "tier": 2, "cost": 25_000_000, "area": 3000.0, "height": 12.0,
+		"needs": {"leader_edu": 0.6, "catchment": 20000}, "effects": {"jobs+": 200, "center+": 1, "region_care+": 0.1}},
+	{"id": "teaching", "name": "Teaching hospital", "tier": 2, "cost": 40_000_000, "area": 4000.0, "height": 18.0,
+		"requires": ["nursing_school"], "needs": {"leader_edu": 0.75, "catchment": 30000},
+		"effects": {"jobs+": 400, "center+": 1, "staffing+": 0.1, "education+": 0.15, "region_care+": 0.05},
+		"note": "trains doctors"},
+]
+
 # --- Water and sewer utility ---------------------------------------------------
 # Brawn's green (2026-10-22): the player places a water utility and sets its
 # subsidy; its superintendent runs it like a small business and climbs a
@@ -1842,3 +2033,22 @@ const POLICY_PARK_RESIDENTS := [INF, 2.0, 1.0, 0.7, 0.5]
 ## Basic). A bus depot's subsidy is BUS_FUNDING_LEVELS at the same step.
 const POLICY_WATER_SUBSIDY := [0, 2_500, 5_000, 12_000, 25_000]
 const POLICY_MAIL_FUNDING := [0, 0, 1, 2, 3]
+
+# --- Growth pacing targets ---------------------------------------------------
+# Metro scale plan (2026-10-23, approved direction): how long a steady player
+# should take to reach each size, in game days at 1x (a day is about 2.5
+# real minutes; fast-forward compresses these). Benchmarked on CS1/CS2
+# player hours. The balance harness checks pacing against these; the early
+# curve runs faster today and gets slowed once stage gates land.
+const STAGE_TARGET_DAYS := {
+	100: 8,       # Village, ~20 min
+	500: 24,      # Town, ~1 h
+	2000: 72,     # Large town, ~3 h
+	8000: 144,    # Small city, ~6 h
+	25000: 288,   # City, ~12 h
+	80000: 660,   # Metropolis, ~25-30 h
+	150000: 960,  # Manhattan-style core, 40 h and up
+}
+## How far from a target the harness tolerates before flagging it (0.5 =
+## anywhere from half to one and a half times the target).
+const STAGE_TARGET_SLACK := 0.5

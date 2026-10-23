@@ -39,10 +39,16 @@ const SPECS := {
 	"mail_semi":     {"len": 21.00, "width": 2.60, "height": 4.10, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"livestock_truck": {"len": 21.90, "width": 2.60, "height": 4.10, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"tanker":        {"len": 20.50, "width": 2.60, "height": 3.60, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
+	"lumber_truck":  {"len": 20.30, "width": 2.60, "height": 3.90, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"flatbed":       {"len": 20.30, "width": 2.60, "height": 3.30, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"dump_truck":    {"len": 9.00, "width": 2.60, "height": 3.40, "acc": 0.9, "brake": 2.3, "top_speed": 29.0, "pref": 0.93},
 	"concrete_mixer": {"len": 10.40, "width": 2.60, "height": 3.95, "acc": 0.8, "brake": 2.2, "top_speed": 29.0, "pref": 0.92},
 	"bucket_truck":  {"len": 8.70, "width": 2.40, "height": 3.30, "acc": 1.2, "brake": 2.6, "top_speed": 33.0, "pref": 0.96},
+	"rv":            {"len": 9.40, "width": 2.45, "height": 3.45, "acc": 1.0, "brake": 2.4, "top_speed": 31.0, "pref": 0.93},
+	"motorhome":     {"len": 11.30, "width": 2.55, "height": 3.80, "acc": 0.9, "brake": 2.3, "top_speed": 31.0, "pref": 0.92},
+	"pickup_camper": {"len": 6.70, "width": 2.40, "height": 3.30, "acc": 1.3, "brake": 2.6, "top_speed": 36.0, "pref": 0.95},
+	# A horse at a trot: about 10 mph, slowest thing on the road.
+	"buggy":         {"len": 5.60, "width": 1.70, "height": 2.40, "acc": 0.8, "brake": 2.0, "top_speed": 4.5, "pref": 0.80},
 	"tow_truck":     {"len": 7.00, "width": 2.40, "height": 2.80, "acc": 1.3, "brake": 2.6, "top_speed": 36.0, "pref": 0.97},
 	"school_bus":    {"len": 12.20, "width": 2.44, "height": 3.20, "acc": 1.0, "brake": 2.3, "top_speed": 27.0, "pref": 0.92},
 	"city_bus":      {"len": 12.20, "width": 2.60, "height": 3.30, "acc": 1.0, "brake": 2.0, "top_speed": 27.0, "pref": 0.92},
@@ -52,6 +58,8 @@ const SPECS := {
 	"police":        {"len": 5.05, "width": 2.00, "height": 1.78, "acc": 2.4, "brake": 3.5, "top_speed": 66.0, "pref": 1.0},
 	"ambulance":     {"len": 7.00, "width": 2.40, "height": 3.00, "acc": 1.4, "brake": 2.8, "top_speed": 40.0, "pref": 1.0},
 	"tractor":       {"len": 5.60, "width": 2.60, "height": 3.30, "acc": 0.8, "brake": 2.0, "top_speed": 11.2, "pref": 1.0},
+	# A tractor towing a 500 bu gravity wagon to the elevator.
+	"tractor_wagon": {"len": 11.80, "width": 2.60, "height": 3.30, "acc": 0.6, "brake": 1.8, "top_speed": 11.2, "pref": 1.0},
 	"combine":       {"len": 9.00, "width": 3.60, "height": 4.00, "acc": 0.6, "brake": 1.8, "top_speed": 8.9, "pref": 1.0},
 }
 
@@ -109,10 +117,15 @@ const LIVERY := {
 	"dump_truck": [[Color(0.92, 0.92, 0.91), 2.0], [Color(0.92, 0.52, 0.05), 1.0], [Color(0.90, 0.72, 0.05), 1.0]],
 	# Utility fleets are nearly all white; some co-ops run yellow.
 	"bucket_truck": [[Color(0.92, 0.92, 0.91), 6.0], [Color(0.90, 0.72, 0.05), 1.0]],
+	# RVs are white or tan; the paint is the swoosh graphic down the side.
+	"rv": [[Color(0.38, 0.27, 0.18), 3.0], [Color(0.25, 0.27, 0.30), 3.0], [Color(0.12, 0.22, 0.40), 1.0], [Color(0.50, 0.10, 0.08), 1.0]],
+	"motorhome": [[Color(0.38, 0.27, 0.18), 3.0], [Color(0.25, 0.27, 0.30), 3.0], [Color(0.12, 0.22, 0.40), 1.0]],
+	"buggy": [[Color(0.04, 0.04, 0.05), 1.0]],
 	"tow_truck": [[Color(0.92, 0.92, 0.91), 1.0], [Color(0.70, 0.07, 0.07), 1.0], [Color(0.05, 0.05, 0.06), 1.0]],
 	# John Deere green, Case IH red, New Holland blue.
 	"tractor": [[Color(0.21, 0.49, 0.17), 5.0], [Color(0.70, 0.08, 0.07), 3.0], [Color(0.10, 0.28, 0.58), 1.0]],
 	"grain_truck": [[Color(0.65, 0.07, 0.07), 3.0], [Color(0.92, 0.92, 0.91), 3.0], [Color(0.10, 0.22, 0.50), 2.0], [Color(0.05, 0.05, 0.06), 2.0]],
+	"tractor_wagon": [[Color(0.21, 0.49, 0.17), 5.0], [Color(0.70, 0.08, 0.07), 3.0], [Color(0.10, 0.28, 0.58), 1.0]],
 	"combine": [[Color(0.21, 0.49, 0.17), 3.0], [Color(0.70, 0.08, 0.07), 2.0]],
 }
 ## Every vehicle has a purpose. The simulation names the job (what the trip
@@ -121,9 +134,20 @@ const LIVERY := {
 ## that can do it, with weights.
 const PURPOSE := {
 	"commute": PERSONAL,
-	"shopping": PERSONAL,
+	# Out-of-town visitors: mostly ordinary cars, some on a camping trip.
+	"visitor": {
+		"pickup": 20.0, "work_pickup": 2.0, "crossover": 20.0, "suv": 12.0, "sedan": 15.0,
+		"hatchback": 4.0, "minivan": 7.0, "sports": 1.5, "motorcycle": 1.5, "van": 1.0,
+		"rv": 3.0, "motorhome": 1.5, "pickup_camper": 2.0,
+	},
+	# Amish families drive their buggies to town to shop (Washington and Odon
+	# stores keep hitching rails), so now and then one turns up.
+	"shopping": {
+		"pickup": 20.0, "work_pickup": 4.0, "crossover": 20.0, "suv": 12.0, "sedan": 15.0,
+		"hatchback": 4.0, "minivan": 5.0, "sports": 1.5, "motorcycle": 1.0, "van": 2.0, "buggy": 0.4,
+	},
 	# Freight.
-	"grain": {"grain_truck": 8.0, "tractor": 2.0},       # hopper semis, tractors with wagons
+	"grain": {"grain_truck": 8.0, "tractor_wagon": 2.0},  # hopper semis, tractors with wagons
 	"livestock": {"livestock_truck": 1.0},  # pot-belly cattle and hog trailers
 	"milk": {"tanker": 1.0},
 	"fuel": {"tanker": 1.0},
@@ -156,7 +180,8 @@ const PURPOSE := {
 ## log trailer between stakes, ore an end-dump, crude oil a tanker.
 const CARGO_KIND := {
 	"logs": "log_truck", "ore": "ore_truck", "crude oil": "tanker", "fuel": "tanker",
-	"milk": "tanker", "grain": "grain_truck", "cattle": "livestock_truck", "hogs": "livestock_truck",
+	"milk": "tanker", "grain": "grain_truck", "corn": "grain_truck", "soybeans": "grain_truck",
+	"lumber": "lumber_truck", "cattle": "livestock_truck", "hogs": "livestock_truck",
 	"livestock": "livestock_truck", "gravel": "dump_truck", "steel": "flatbed",
 }
 
@@ -200,7 +225,9 @@ static func pick(dest_zone: int, hour: int, rng: RandomNumberGenerator, ctx := {
 	if int(ctx.get("population", 0)) >= 1500 and hour >= 5 and hour < 23:
 		_add(w, {"city_bus": 0.8})
 	if ctx.get("farms", false) and day:
-		_add(w, {"tractor": 2.0, "combine": 0.6})
+		# Daviess County, next to Petersburg, has one of Indiana's largest
+		# Amish settlements: black top buggies share the county roads.
+		_add(w, {"tractor": 2.0, "combine": 0.6, "buggy": 0.4})
 	return _weighted(w, rng.randf())
 
 
@@ -210,7 +237,13 @@ static func pick(dest_zone: int, hour: int, rng: RandomNumberGenerator, ctx := {
 static func for_purpose(purpose: String, rng: RandomNumberGenerator, cargo := {}) -> String:
 	var r := rng.randf()
 	var rig := for_cargo(cargo)
-	return rig if rig != "" else _weighted(PURPOSE.get(purpose, PERSONAL), r)
+	var kind := _weighted(PURPOSE.get(purpose, PERSONAL), r)
+	return rig if rig != "" and not kind in CARGO_ALT.get(rig, []) else kind
+
+
+## Other rigs that can carry what a rig carries, so the cargo doesn't
+## override them: a farmer hauls his own corn to the elevator by wagon.
+const CARGO_ALT := {"grain_truck": ["tractor_wagon"]}
 
 
 ## The rig a load needs ({"good": "logs", ...}), or "" if any truck will do.
@@ -238,7 +271,7 @@ static func household(id: int) -> String:
 ## The sRGB body colour of one vehicle, fixed by its id so it never changes.
 static func paint(kind: String, id: int) -> Color:
 	var table: Array = LIVERY.get(kind, FLEET_COLORS if kind in FLEET else
-		SEMI_COLORS if kind in ["semi", "tanker", "flatbed", "log_truck", "ore_truck", "livestock_truck"] else CAR_COLORS)
+		SEMI_COLORS if kind in ["semi", "tanker", "flatbed", "lumber_truck", "log_truck", "ore_truck", "livestock_truck"] else CAR_COLORS)
 	var total := 0.0
 	for e in table:
 		total += e[1]
