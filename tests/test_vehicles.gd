@@ -24,6 +24,10 @@ func _init() -> void:
 		if VehicleTypes.for_purpose("grain", rng, {"good": "corn"}) == "tractor_wagon":
 			wagons += 1
 	_check(wagons > 10 and wagons < 100, "some farmers haul corn by wagon (%d of 200)" % wagons)
+	for key in ["sedan", "pickup", "school_bus"]:
+		var near := VehicleModels.build(key, VehicleModels.LOD_NEAR).get_faces().size()
+		var ultra := VehicleModels.build(key, VehicleModels.LOD_ULTRA).get_faces().size()
+		_check(ultra > near, "%s has more detail for Ultra close-ups (%d > %d)" % [key, ultra / 3, near / 3])
 	var campers := 0
 	for i in 400:
 		if VehicleTypes.for_purpose("visitor", rng) in ["rv", "motorhome", "pickup_camper"]:
