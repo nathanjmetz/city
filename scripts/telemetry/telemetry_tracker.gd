@@ -62,7 +62,8 @@ var context := ""
 ## Everything the player did, in order, for replays: [time, kind, ...].
 ## kinds: "b" button (label), "c" map click (screen x, y, world x, z),
 ## "d" map drag (from x, z, to x, z), "k" key, "x" command (type, ok, brief),
-## "h" what the tool's hint said.
+## "h" what the tool's hint said, "s" a burst of scrolling or a gesture
+## (kind, events, total amount, camera height before, after).
 var actions: Array = []
 
 var _hunt := {}
@@ -85,6 +86,13 @@ var _tool_done := true       # the tool in hand has done something
 var _idle_clicks := 0        # map clicks since the last command that went through
 var _press := {}             # where the last map press was
 var _last_hint := ""
+var _scroll := {}            # the scroll burst going on
+## Scroll events this close together are one burst.
+const SCROLL_GAP := 0.4
+## This many scroll bursts that didn't move the camera, this fast.
+const DEAD_SCROLLS := 3
+const DEAD_SCROLL_SECONDS := 30.0
+var _dead_scrolls: Array = []
 ## A tool is in hand (its hint line is showing). Before any hint arrives
 ## (tests, scenes without tools) a picked button counts as a tool.
 var _tool_on := true
@@ -164,6 +172,35 @@ func command(type: String, ok: bool, now: float, brief := "") -> void:
 		_flag({"k": "refused_streak", "n": REFUSED_STREAK, "cmd": type, "ctx": context}, now)
 
 
+## A wheel notch, a trackpad or Magic Mouse pan, or a pinch. Bursts become
+## one action with the camera height before and after, so a scroll that
+## didn't zoom shows up.
+func scroll(kind: String, amount: float, height: float, now: float) -> void:
+	if not _scroll.is_empty() and (_scroll.kind != kind or now - float(_scroll.last) > SCROLL_GAP):
+		_end_scroll(now)
+	if _scroll.is_empty():
+		_scroll = {"start": now, "kind": kind, "n": 0, "sum": 0.0, "from": height}
+		_bump(keys, kind)
+	_scroll.n += 1
+	_scroll.sum += amount
+	_scroll.last = now
+	_scroll.to = height
+
+
+func _end_scroll(now: float) -> void:
+	var b := _scroll
+	_scroll = {}
+	_act(float(b.start), ["s", b.kind, b.n, _r(b.sum), snappedf(b.from, 0.1), snappedf(b.to, 0.1)])
+	# Scrolling again and again with the camera staying put: zoom isn't
+	# answering this mouse.
+	if b.n >= 2 and absf(float(b.from) - float(b.to)) < 0.5 and float(b.from) > 0.0:
+		_dead_scrolls = _streak(_dead_scrolls, now, DEAD_SCROLL_SECONDS)
+		if _dead_scrolls.size() == DEAD_SCROLLS:
+			_flag({"k": "scroll_dead", "n": DEAD_SCROLLS, "kind": b.kind, "ctx": context}, now)
+	else:
+		_dead_scrolls.clear()
+
+
 ## The left button came up. A press that moved on the map was a drag.
 func release(pos: Vector2, now: float, world := Vector2.INF) -> void:
 	if _press.is_empty():
@@ -208,8 +245,13 @@ func _redo_check(type: String, now: float) -> void:
 
 
 ## Called now and then so a hunt left hanging gets closed.
-func tick(now: float) -> void:
+## height: the camera's height now, so a scroll burst ends with where the
+## camera settled (it glides to its zoom).
+func tick(now: float, height := 0.0) -> void:
 	_check_idle(now)
+	if not _scroll.is_empty() and now - float(_scroll.last) > SCROLL_GAP:
+		_scroll.to = height
+		_end_scroll(now)
 
 
 ## Hands over everything gathered so far, with a feature-use summary.

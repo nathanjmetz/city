@@ -135,7 +135,10 @@ static func _error_fixes(ev: Dictionary, fixes: Array) -> void:
 		var who := _who(g)
 		var base := 70.0 if first.type == "script" else (50.0 if first.type == "error" else 15.0)
 		var where := "%s:%s" % [str(first.file).trim_prefix("res://"), int(first.line)]
-		var detail := "%d times for %d players. In %s." % [n, who, where]
+		var seen := {}
+		for e in g:
+			seen[e._build] = true
+		var detail := "%d times for %d players. In %s. Seen in builds %s." % [n, who, where, ", ".join(PackedStringArray(seen.keys()))]
 		if str(first.get("ctx", "")) != "":
 			detail += " Last thing pressed: %s." % first.ctx
 		if str(first.get("trace", "")) != "":
@@ -256,6 +259,10 @@ static func _stuck_fixes(ev: Dictionary, fixes: Array) -> void:
 		_fix(fixes, 45 + 6 * _who(e) + 2 * e.size(), "Lots of clicking with %s and nothing gets built" % _or_game(e[0].ctx),
 			"%d times: %d+ clicks on the map with the tool in hand and no result." % [e.size(), TelemetryTracker.NO_PROGRESS_CLICKS],
 			UI_OWNER, "stuck", _who(e), e)
+	for e in _group(ev.get("scroll_dead", []), "kind").values():
+		_fix(fixes, 70 + 8 * _who(e) + e.size(), "Scrolling (%s) doesn't zoom" % e[0].kind,
+			"%d times players scrolled again and again and the camera stayed put. Their mouse or trackpad sends %s events." \
+			% [e.size(), e[0].kind], UI_OWNER, "stuck", _who(e), e)
 	# From the feature-use summaries.
 	var disabled := {}
 	var dead := {}
@@ -371,6 +378,7 @@ static func action_text(a: Array) -> String:
 		"k": return "key %s" % a[2]
 		"x": return "%s %s%s" % [a[2], "done" if a[3] else "TURNED DOWN", (" (%s)" % a[4]) if a.size() > 4 and str(a[4]) != "" else ""]
 		"h": return "hint: \"%s\"" % a[2]
+		"s": return "%s x%d (camera %s m to %s m%s)" % [a[2], a[3], a[5], a[6], ", didn't move" if is_equal_approx(float(a[5]), float(a[6])) else ""]
 	return str(a)
 
 
