@@ -1067,33 +1067,40 @@ func update_stats(budget := true) -> void:
 	# coming) but nobody works there yet.
 	var unfinished_jobs := 0
 	var presold := 0  # buyers waiting on homes going up (see _move_in)
+	var office_cap := 0  # BuildingTypes.office_jobs, in the same pass
 	for key in buildings:
 		var b: Dictionary = buildings[key]
-		if int(b.zone) != ZoneMap.Zone.RESIDENTIAL and _utilities_ok(key) \
-				and not construction.is_done("lot:" + key, tick_count):
+		var zone := int(b.zone)
+		if zone == ZoneMap.Zone.RESIDENTIAL:
+			pop += b.occ
+			home_cap += b.cap
+			if not construction.is_done("lot:" + key, tick_count):
+				presold += mini(b.cap, 2)
+			continue
+		if BuildingTypes.type_of(b) == "office":
+			office_cap += int(b.cap)
+		# Closed without power or water.
+		var ok := _utilities_ok(key)
+		if ok and not construction.is_done("lot:" + key, tick_count):
 			unfinished_jobs += b.cap
-		match int(b.zone):
-			ZoneMap.Zone.RESIDENTIAL:
-				pop += b.occ
-				home_cap += b.cap
-				if not construction.is_done("lot:" + key, tick_count):
-					presold += mini(b.cap, 2)
+		match zone:
 			ZoneMap.Zone.COMMERCIAL:
 				# Flats above a shop count as homes.
 				pop += int(b.get("focc", 0))
 				home_cap += int(b.get("flats", 0))
-				if _utilities_ok(key):  # closed without power or water
+				if ok:
 					shop_jobs += b.cap
 			ZoneMap.Zone.INDUSTRIAL:
-				if _utilities_ok(key):
+				if ok:
 					factory_jobs += b.cap
 	services.plants = power.sources()
 	services.update(network, lots, buildings)
 	parks.update_effects(self)
+	var homes := _home_scan()
 	factory_jobs += farms.jobs() + industry.jobs() + warehouses.jobs() + power.jobs() + rail.jobs()
 	# Teachers, and office and tech jobs for the town's graduates (less the
 	# ones already counted in office buildings, which house those jobs).
-	shop_jobs += education.jobs() - mini(BuildingTypes.office_jobs(self), education.office_jobs())
+	shop_jobs += education.jobs() - mini(office_cap, education.office_jobs())
 	# The gas station, diner and motel that opened for visitors.
 	shop_jobs += Tourism.jobs(self)
 	# The phone company's staff, and remote workers who bring their jobs.
@@ -1125,16 +1132,16 @@ func update_stats(budget := true) -> void:
 		demand[z] = clampf(demand[z] + economy.demand_shift(z) + mail.demand_shift(z) + regional.demand_shift(z), 0.0, 1.0)
 	# A boil-water notice, or a steep water bill, puts people off moving in.
 	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL]
-		- Balance.WATER_BOIL_DEMAND * services.water.boil_share(self) - services.water.rate_penalty(self), 0.0, 1.0)
+		- Balance.WATER_BOIL_DEMAND * homes.boil - services.water.rate_penalty(self), 0.0, 1.0)
 	# Good care keeps people in town and draws families.
-	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL] + healthcare.demand_shift(self), 0.0, 1.0)
+	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL] + healthcare.demand_shift(self, homes.care), 0.0, 1.0)
 	# Past village size, people want fire, police, a clinic and a school nearby.
 	if pop > 300:
 		demand[ZoneMap.Zone.RESIDENTIAL] = clampf(
-			demand[ZoneMap.Zone.RESIDENTIAL] + 0.3 * (service_coverage() - 0.5), 0.0, 1.0)
+			demand[ZoneMap.Zone.RESIDENTIAL] + 0.3 * (homes.cover - 0.5), 0.0, 1.0)
 	# Parks and landmarks make a town nicer to live in.
 	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL]
-		+ Balance.AMENITY_DEMAND * parks.average_happiness(self), 0.0, 1.0)
+		+ Balance.AMENITY_DEMAND * homes.happy, 0.0, 1.0)
 	# Good cell service and internet draw people, and fiber draws offices.
 	if not telecom.companies.is_empty():
 		demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL]
@@ -1143,6 +1150,33 @@ func update_stats(budget := true) -> void:
 	if budget:
 		economy.update_budget(self)
 	stats_changed.emit()
+
+
+## The town's homes in one pass, as their own functions would each work
+## them out: share under a boil notice (water.boil_share), care
+## (healthcare.care), service coverage (service_coverage) and park
+## happiness (parks.average_happiness).
+func _home_scan() -> Dictionary:
+	var n := 0
+	var boil := 0
+	var care := 0.0
+	var cover := 0.0
+	var happy := 0.0
+	for key in buildings:
+		if int(buildings[key].zone) != ZoneMap.Zone.RESIDENTIAL:
+			continue
+		n += 1
+		var s: Dictionary = services.served.get(key, {})
+		if services.water.boils(s):
+			boil += 1
+		care += Healthcare.care_of(s)
+		if not s.is_empty():
+			cover += Services.coverage_of(s)
+		happy += float(parks.lot_happy.get(key, 0.0))
+	if n == 0:
+		return {"boil": 0.0, "care": 0.0, "cover": 0.0, "happy": 0.0}
+	return {"boil": float(boil) / n, "care": clampf(care / n + healthcare.region_care, 0.0, 1.0),
+		"cover": cover / n, "happy": happy / n}
 
 
 ## New residents move into homes with room, faster when homes are in demand.
