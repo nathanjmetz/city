@@ -116,7 +116,10 @@ var _keep_routes := false
 
 func _init(net: RoadNetwork) -> void:
 	network = net
-	network.changed.connect(func(): _dirty = true)
+	# A road change before a loaded city has run a tick drops the saved plans.
+	network.changed.connect(func():
+		_dirty = true
+		_keep_routes = false)
 
 
 func step(sim: CitySim, rng: RandomNumberGenerator) -> void:
@@ -134,6 +137,8 @@ func step(sim: CitySim, rng: RandomNumberGenerator) -> void:
 ## direction]. `ahead` moves it on by that many metres, for smooth drawing
 ## between ticks.
 func car_pose(car: Dictionary, ahead := 0.0) -> Array:
+	if _dirty:
+		_rebuild()  # a loaded city that hasn't run yet (a neighbor's, say)
 	if car.j != null:
 		return _conn_pose(car.j, minf(car.jd + ahead, car.j.len))
 	var w: Dictionary = ways[car.route[car.leg]]

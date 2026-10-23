@@ -496,6 +496,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			region_links.clear()
 			trade = Trade.new()
 			traffic.overrides.clear()
+			traffic.from_dict({})
 			network.clear()
 			zones.cells.clear()
 			planner = LotPlanner.new()
