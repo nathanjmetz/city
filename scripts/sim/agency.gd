@@ -19,6 +19,8 @@ extends RefCounted
 ##      money) returns the node it builds ({} for none) and records why.
 ##   4. Agency.effect(hub, tree, key) sums an effect (1.0-based for "*"
 ##      keys like "output*", 0-based otherwise) for its own numbers.
+##   5. For choices between ways to run (not things to buy), Agency.choose
+##      (lead, options) picks one and says why (crop rotation: CropPlan).
 ## Deterministic: no clocks or global random, only seeds and city state.
 ## No player nudges: the player only sets money and can remove buildings.
 ##
@@ -188,6 +190,55 @@ static func develop(sim: CitySim, hub: Dictionary, tree: Array, at: Vector3, pro
 	hub.why = "%s built %s%s." % ["Its owner" if float(lead.edu) < 0.5 else "Its college-educated owner",
 		str(best.name).to_lower(), (": " + str(best.note)) if best.has("note") else ""]
 	return best
+
+
+## A leader's choice between options (Brawn 2026-10-23: "a leader of a
+## hub decision"): a farmer picking next year's crop, a factory what to
+## make, a school what to teach. Unlike develop() nothing is bought; the
+## hub picks one of several ways to run. Each option is
+## {id, name, factors: {kind: [value, reason]}}, values in dollars (or a
+## like score) a unit a year. The leader weighs each kind by temperament
+## (see weight()) and the best total wins, ties to the lower id. Returns
+## {id, name, score, why}: why names the reasons that beat the runner-up,
+## for Inspect. Deterministic.
+static func choose(lead: Dictionary, options: Array) -> Dictionary:
+	var scored := []
+	for o in options:
+		var total := 0.0
+		for k in o.factors:
+			total += weight(lead, k) * float(o.factors[k][0])
+		scored.append([total, str(o.id), o])
+	scored.sort_custom(func(a, b): return a[0] > b[0] or (a[0] == b[0] and a[1] < b[1]))
+	var best: Dictionary = scored[0][2]
+	var reasons := []
+	if scored.size() > 1:
+		var other: Dictionary = scored[1][2]
+		var edges := []
+		for k in best.factors:
+			var d := weight(lead, k) * (float(best.factors[k][0]) - float(other.factors.get(k, [0.0])[0]))
+			if d > 1.0:
+				edges.append([d, str(best.factors[k][1])])
+		edges.sort_custom(func(a, b): return a[0] > b[0])
+		for e in edges.slice(0, 2):
+			reasons.append(e[1])
+		if reasons.is_empty():
+			reasons.append("it edges out %s" % str(other.name).to_lower())
+		return {"id": best.id, "name": best.name, "score": scored[0][0], "runner_up": other.id,
+			"why": "%s over %s: it %s." % [best.name, str(other.name).to_lower(), ", and it ".join(reasons)]}
+	return {"id": best.id, "name": best.name, "score": scored[0][0], "runner_up": "", "why": "%s." % best.name}
+
+
+## How much a leader counts one kind of reason. Money and buyers count in
+## full; schooling makes a leader look further ahead (future); caution
+## weighs money at stake and spreading risk; ambition weighs growth.
+static func weight(lead: Dictionary, kind: String) -> float:
+	var edu := float(lead.get("edu", 0.5))
+	var caution := float(lead.get("caution", 0.5))
+	match kind:
+		"future": return 0.3 + 0.7 * edu
+		"risk", "spread": return 0.5 + caution
+		"growth": return 0.5 + float(lead.get("ambition", 0.5))
+	return 1.0
 
 
 ## The sum of one effect over what a hub has built: "output*" style keys
