@@ -91,6 +91,49 @@ func _init() -> void:
 			alleys += 1
 	_check(alleys == 0, "the alley is paved into a street")
 
+	# --- A neighborhood with one road in.
+	sim = _town()
+	sim.stats.population = 2500
+	sim.apply({"type": "build_road", "start": [0, 0], "ctrl": [0, -100], "end": [0, -200]})
+	sim.apply({"type": "build_road", "start": [-150, -200], "ctrl": [0, -200], "end": [150, -200]})
+	var cross := -1
+	for seg in sim.network.segments:
+		var sg: Dictionary = sim.network.segments[seg]
+		if absf(sim.network.nodes[sg.a].z + 200.0) < 1.0 and absf(sim.network.nodes[sg.b].z + 200.0) < 1.0:
+			cross = seg
+	for i in 20:
+		sim.lots["t%d" % i] = {"seg": cross}
+		sim.buildings["t%d" % i] = {"zone": ZoneMap.Zone.RESIDENTIAL, "type": "row_home", "units": 1}
+	sim.engineer.samples = 4
+	sim.engineer.month(sim)
+	_check(sim.engineer.pending.is_empty(), "20 homes on one road in is fine")
+	for i in range(20, 31):
+		sim.lots["t%d" % i] = {"seg": cross}
+		sim.buildings["t%d" % i] = {"zone": ZoneMap.Zone.RESIDENTIAL, "type": "row_home", "units": 1}
+	sim.engineer.samples = 4
+	sim.engineer.month(sim)
+	id = sim.engineer.pending.keys()[0] if not sim.engineer.pending.is_empty() else -1
+	req = sim.permits.requests.get(id, {})
+	_check(str(req.get("change", "")) == "Second way in" and str(req.why).begins_with("31 homes"), "31 homes with one road in: a second way in (%s)" % req.get("title", ""))
+	for i in 31:
+		sim.lots.erase("t%d" % i)
+		sim.buildings.erase("t%d" % i)
+	var segs_before := sim.network.segments.size()
+	money = sim.economy.money
+	sim.apply({"type": "permit", "id": id, "answer": "approve", "pick": 0})
+	sim.engineer.carry_out(sim)
+	_check(sim.network.segments.size() > segs_before and money - sim.economy.money == int(req.options[0].cost), "the new street is built and paid for ($%s)" % CitySim.money_text(int(req.options[0].cost)))
+	var saved := CitySim.new()
+	saved.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
+	_check(saved.engineer.asked.size() == sim.engineer.asked.size() and not saved.engineer.asked.is_empty(), "a save remembers what it brought up")
+	sim.engineer.asked.clear()
+	for i in 31:
+		sim.lots["t%d" % i] = {"seg": cross}
+		sim.buildings["t%d" % i] = {"zone": ZoneMap.Zone.RESIDENTIAL, "type": "row_home", "units": 1}
+	sim.engineer.samples = 4
+	sim.engineer.month(sim)
+	_check(sim.engineer.pending.is_empty(), "with two ways in, nothing more to ask")
+
 	print("SOME TESTS FAILED" if _failed else "ALL TESTS PASSED")
 	quit(1 if _failed else 0)
 
