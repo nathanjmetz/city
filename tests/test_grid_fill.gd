@@ -212,10 +212,13 @@ func _init() -> void:
 	te.mode = RoadTool.Mode.GRID
 	te.set_grid_preset(0)
 	te._points.append(Vector3.ZERO)
+	# Brawn: right after the first click nothing jumps a block away.
+	_check(te._side_end(Vector3(3, 0, 2)).distance_to(Vector3.ZERO) < 0.01, "exact: no side until a whole block is dragged")
+	_check(te._exact_next.contains("first block"), "exact: says how far to the first block (got %s)" % te._exact_next)
 	var be := te._side_end(Vector3(2575, 0, 4))
 	_check(be.distance_to(Vector3(1608, 0, 0)) < 0.01, "exact: a 1.6 mi side stops at one whole section (got %s)" % str(be))
 	_check(te._exact_next.contains("0.4 mi more"), "exact: says 0.4 mi to the next section (got %s)" % te._exact_next)
-	var re := _three_clicks(te, Vector3.ZERO, Vector3(2575, 0, 4), Vector3(1700, 0, 1300), true)
+	var re := _three_clicks(te, Vector3.ZERO, Vector3(2575, 0, 4), Vector3(1700, 0, 1700), true)
 	_check(re[2].distance_to(Vector3(1608, 0, 1608)) < 0.01, "exact: the rectangle is one whole section (got %s)" % str(re))
 	re = _three_clicks(te, Vector3.ZERO, Vector3(-3300, 0, 0), Vector3(-3216, 0, 3250), true)
 	_check(re[2].distance_to(Vector3(-3216, 0, 3216)) < 0.01, "exact: 2 x 2 sections laid up and left (got %s)" % str(re))

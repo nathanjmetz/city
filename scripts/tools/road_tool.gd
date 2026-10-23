@@ -546,14 +546,16 @@ func _pending_shape(p: Vector3) -> Array:
 	return shape
 
 
-## Exact mode: `d` cut back to whole blocks of `size` (one at least),
+## Exact mode: `d` cut back to whole blocks of `size` (none until the
+## cursor has gone a whole block, so a click never jumps a block away),
 ## noting how much further the cursor must go for the next block.
 func _whole(d: float, size: float, axis: int) -> float:
-	var n := maxi(1, floori(absf(d) / size + 0.001))
+	var n := floori(absf(d) / size + 0.001)
 	var more := (n + 1) * size - absf(d)
-	_exact_past[axis] = more < size * 0.999
-	if _exact_past[axis]:
-		var txt := "%s more for the next block %s" % [_distance_text(more), "along" if axis == 0 else "across"]
+	_exact_past[axis] = n > 0 and more < size * 0.999
+	if more < size * 0.999:
+		var txt := "%s more for the %s block %s" % [_distance_text(more), "next" if n > 0 else "first",
+			"along" if axis == 0 else "across"]
 		_exact_next = txt if _exact_next == "" else _exact_next + "\n" + txt
 	return (1.0 if d >= 0.0 else -1.0) * n * size
 
