@@ -62,6 +62,7 @@ uniform vec4 crop_tan : source_color = vec4(0.55, 0.47, 0.30, 1.0);
 uniform vec4 tilled : source_color = vec4(0.40, 0.33, 0.24, 1.0);
 uniform vec4 litter : source_color = vec4(0.22, 0.20, 0.12, 1.0);
 uniform vec4 canopy : source_color = vec4(0.13, 0.22, 0.09, 1.0);
+uniform vec4 gravel : source_color = vec4(0.58, 0.55, 0.49, 1.0);
 uniform vec4 spoil : source_color = vec4(0.52, 0.49, 0.43, 1.0);
 uniform vec4 mud : source_color = vec4(0.42, 0.37, 0.27, 1.0);
 // Where wild trees are drawn (WildView): centre x, z and reach. Past them
@@ -78,6 +79,9 @@ uniform vec4 fall_leaves : source_color = vec4(0.42, 0.27, 0.11, 1.0);
 // The camera's x, height above the ground, z: level of detail is measured
 // from it the way TerrainView picks chunk detail.
 uniform vec3 lod_eye;
+// Where this town sits in the region (Terrain.view_origin): the field and
+// county road grid is the region's.
+uniform vec2 region_origin;
 // The far land (TerrainView's far sheet) is cut away nearer than this, where
 // the chunks draw the ground; 0 for the chunks themselves.
 uniform float far_cut = 0.0;
@@ -88,6 +92,7 @@ uniform float far_cut = 0.0;
 varying vec3 world_pos;
 varying vec4 cover;
 varying float steep;
+varying vec2 town;
 
 vec2 turn(vec2 p, float a) {
 	return vec2(p.x * cos(a) - p.y * sin(a), p.x * sin(a) + p.y * cos(a));
@@ -102,6 +107,38 @@ void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	cover = COLOR;
 	steep = 1.0 - NORMAL.y;
+	town = UV;
+}
+
+// County roads (CountyGrid; keep the two the same): a gravel road on a
+// mile of section line where the hash of its line and mile says so.
+uint county_mix(int a, int b) {
+	uint h = (uint(a) * 73856093u) ^ (uint(b) * 19349663u);
+	h ^= h >> 15u;
+	h *= 0x2c1b3c6du;
+	h ^= h >> 12u;
+	h *= 0x297a2d39u;
+	h ^= h >> 15u;
+	return h;
+}
+
+float county_has(int line, int seg) {
+	return float(county_mix(line, seg) & 0xffffu) / 65536.0 < 0.73 ? 1.0 : 0.0;
+}
+
+// Coverage, 0 to 1, of a strip `half_w` metres each side of the county
+// roads near region point r, spread over `px` metres (its pixel footprint),
+// so far off it thins out instead of crawling.
+float county_road(vec2 r, float half_w, float px) {
+	float w = max(half_w, px * 0.5);
+	float soft = max(0.5, px * 0.5);
+	float ns_line = floor(r.x / 1608.0 + 0.5);
+	float ew_line = floor(r.y / 1608.0 + 0.5);
+	float ns = county_has(int(ns_line), int(floor(r.y / 1608.0)))
+		* (1.0 - smoothstep(w - soft, w + soft, abs(r.x - ns_line * 1608.0)));
+	float ew = county_has(int(ew_line) + 1048576, int(floor(r.x / 1608.0)))
+		* (1.0 - smoothstep(w - soft, w + soft, abs(r.y - ew_line * 1608.0)));
+	return max(ns, ew) * clamp(half_w / w, 0.0, 1.0);
 }
 
 void fragment() {
@@ -133,7 +170,8 @@ void fragment() {
 	// Crop fields: whole fields of one crop, a quarter mile across, in green
 	// beans, tan corn stubble or tilled soil, with rows running north-south
 	// (the township grid) that fade with distance.
-	vec2 field = floor(p / 402.0);
+	vec2 r = p + region_origin;
+	vec2 field = floor(r / 402.0);
 	float pick = fract(sin(dot(field, vec2(12.9898, 78.233))) * 43758.5453);
 	vec3 crop = pick < 0.45 ? crop_green.rgb : (pick < 0.8 ? crop_corn.rgb : (pick < 0.92 ? crop_tan.rgb : tilled.rgb));
 	// The crop year: corn and beans ripen gold in the fall; after harvest
@@ -166,6 +204,19 @@ void fragment() {
 	// A ragged edge, as real woods have, not the straight line between samples.
 	col = mix(col, woods, smoothstep(0.3, 0.65, cover.r + (clump - 0.5) * 0.45 + (mid - 0.5) * 0.25));
 
+	// County roads on the section lines of the PLSS mile grid (CR 100 N,
+	// 200 E...): gravel with mowed ditches. They stop at the water and on
+	// steep bluffs (CountyGrid.clears), and give way to the town's own roads
+	// and lots (UV: mowed, graded), which take them over when joined.
+	float px = fwidth(r.x) + fwidth(r.y);
+	float open_land = (1.0 - smoothstep(0.06, 0.12, cover.g)) * (1.0 - smoothstep(0.012, 0.02, steep))
+		* (1.0 - smoothstep(0.2, 0.6, max(town.x, town.y)));
+	float verge = county_road(r, 8.0, px) * open_land;
+	float county = county_road(r, 3.5, px) * open_land;
+	vec3 ditch = mix(lush.rgb, dry.rgb, 0.3);
+	ditch = mix(ditch, dormant.rgb, brown);
+	col = mix(col, ditch * (0.92 + 0.16 * clump), verge * 0.65);
+	col = mix(col, gravel.rgb * (0.88 + 0.24 * grain) * (0.95 + 0.1 * clump), county);
 	// Strip mine spoil and gravel.
 	col = mix(col, spoil.rgb * (0.85 + 0.3 * clump), smoothstep(0.3, 0.7, cover.a));
 	// Muddy, sandy banks by the water.
@@ -302,8 +353,10 @@ func _process(_delta: float) -> void:
 	var eye := _eye()
 	if _ground_mat != null:
 		_ground_mat.set_shader_parameter("lod_eye", Vector3(eye.x, eye.z, eye.y))
+		_ground_mat.set_shader_parameter("region_origin", Terrain.view_origin)
 	if _far_mat != null:
 		_far_mat.set_shader_parameter("lod_eye", Vector3(eye.x, eye.z, eye.y))
+		_far_mat.set_shader_parameter("region_origin", Terrain.view_origin)
 	var flat_eye := Vector2(eye.x, eye.y)
 	var start := Time.get_ticks_msec()
 	# Wanted level of detail for every chunk in reach: finer once well
@@ -547,12 +600,13 @@ static func chunk_data(origin: Vector2, size: float, step: float, reach := 0.0) 
 	var count := (n + 1) * (n + 1)
 	var d := {"origin": origin, "step": step, "reach": reach, "n": n, "m": m,
 		"hs": PackedFloat32Array(), "verts": PackedVector3Array(), "normals": PackedVector3Array(),
-		"colors": PackedColorArray(), "coarse": PackedFloat32Array(), "wet": PackedFloat32Array(),
-		"idx": PackedInt32Array(), "water": null}
+		"colors": PackedColorArray(), "town": PackedVector2Array(), "coarse": PackedFloat32Array(),
+		"wet": PackedFloat32Array(), "idx": PackedInt32Array(), "water": null}
 	d.hs.resize(m * m)
 	d.verts.resize(count)
 	d.normals.resize(count)
 	d.colors.resize(count)
+	d.town.resize(count)
 	# Each vertex also carries where it sits on the next coarser level (its
 	# height and normal there), for the shader to slide toward with distance.
 	d.coarse.resize(count * 4)
@@ -651,6 +705,7 @@ static func _fill_vertices(d: Dictionary, i0: int, i1: int, j0: int, j1: int) ->
 	var verts: PackedVector3Array = d.verts
 	var normals: PackedVector3Array = d.normals
 	var colors: PackedColorArray = d.colors
+	var town: PackedVector2Array = d.town
 	var coarse: PackedFloat32Array = d.coarse
 	var wet: PackedFloat32Array = d.wet
 	var any_water := false
@@ -675,13 +730,17 @@ static func _fill_vertices(d: Dictionary, i0: int, i1: int, j0: int, j1: int) ->
 			# Yards (graded for lots but past the mowed verge) keep their trees,
 			# but the ground under them is thin, patchy lawn with some leaves,
 			# not the bare leaf litter of the woods.
-			var yard := clampf(Terrain.flat_weight(x, z) - mowed, 0.0, 1.0)
+			var graded := Terrain.flat_weight(x, z)
+			var yard := clampf(graded - mowed, 0.0, 1.0)
 			colors[k] = Color(cov.r * keep * (1.0 - YARD_THIN * yard), cov.g, cov.b * keep, cov.a * keep)
+			# Towns' roads and lots, where the county roads give way.
+			town[k] = Vector2(mowed, graded)
 			wet[k] = cov.g
 			any_water = any_water or cov.g > 0.02
 	d.verts = verts
 	d.normals = normals
 	d.colors = colors
+	d.town = town
 	d.coarse = coarse
 	d.wet = wet
 	return any_water
@@ -721,6 +780,7 @@ static func _ground_mesh(d: Dictionary) -> ArrayMesh:
 	var verts: PackedVector3Array = d.verts.duplicate()
 	var normals: PackedVector3Array = d.normals.duplicate()
 	var colors: PackedColorArray = d.colors.duplicate()
+	var town: PackedVector2Array = d.town.duplicate()
 	var coarse: PackedFloat32Array = d.coarse.duplicate()
 	var idx: PackedInt32Array = d.idx.duplicate()
 	# A skirt hangs from each edge to hide cracks against coarser neighbours.
@@ -733,6 +793,7 @@ static func _ground_mesh(d: Dictionary) -> ArrayMesh:
 			verts.append(verts[k] - Vector3(0, drop, 0))
 			normals.append(normals[k])
 			colors.append(colors[k])
+			town.append(town[k])
 			coarse.append_array([coarse[k * 4] - drop, coarse[k * 4 + 1], coarse[k * 4 + 2], reach])
 		for s in line.size() - 1:
 			var a: int = line[s]
@@ -744,6 +805,7 @@ static func _ground_mesh(d: Dictionary) -> ArrayMesh:
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_TEX_UV] = town
 	arrays[Mesh.ARRAY_CUSTOM0] = coarse
 	arrays[Mesh.ARRAY_INDEX] = idx
 	var ground := ArrayMesh.new()

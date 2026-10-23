@@ -347,7 +347,10 @@ func _free_spot() -> Vector2:
 		var steps := 12 * ring
 		for i in steps:
 			var a := TAU * i / steps + ring * 0.5
-			var p := (centre + Vector2(cos(a), sin(a)) * ELBOW_ROOM * 0.5 * ring).snapped(Vector2(10, 10))
+			# On a section corner, so the town's county highway runs along a
+			# section line like the county roads around it (CountyGrid).
+			var p := (centre + Vector2(cos(a), sin(a)) * ELBOW_ROOM * 0.5 * ring).snapped(
+				Vector2(CountyGrid.SECTION, CountyGrid.SECTION))
 			if _clear_of(p, pts) and not _in_growth_way(p, wedges) and Terrain.buildable(p.x, p.y, SITE_RADIUS):
 				return p
 		ring += 1

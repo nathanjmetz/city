@@ -130,8 +130,12 @@ func _draw_chunk(c: Vector2i, detail: bool) -> void:
 	# the horizon) keep their mowed verges clear too.
 	var mowed := Terrain.any_mowed(Rect2(Vector2(c) * size, Vector2(size, size)))
 	var trees := []
+	var o := Terrain.view_origin
 	for p in plants:
 		if mowed and Terrain.mow_weight(p.pos.x, p.pos.z) > 0.5:
+			continue
+		# Nor on the county roads out in the country (in town, lots win).
+		if CountyGrid.clears(p.pos.x + o.x, p.pos.z + o.y) and Terrain.flat_weight(p.pos.x, p.pos.z) < 0.5:
 			continue
 		trees.append([placement(p), p.species, p.tint])
 	_chunks[c].set_trees("wild", trees)
