@@ -436,7 +436,8 @@ static func _park(sim: CitySim, id: int) -> Dictionary:
 	var biz := Tourism.business(s.kind)
 	if not biz.is_empty():
 		return {"title": s.name, "kind": k.name, "icon": k.icon, "ok": true,
-			"status": "Opened for the visitors to town's events", "rows": [["Jobs", str(biz.jobs)],
+			"status": sim.construction.describe("park:%d" % id, sim.tick_count) if sim.construction.sites.has("park:%d" % id)
+				else "Opened for the visitors to town's events", "rows": [["Jobs", str(biz.jobs)],
 				["Assessed value", "$%s" % CitySim.money_text(int(biz.value))],
 				["Visitors from out of town", "%s a year" % CitySim.money_text(roundi(sim.parks.tourism.outside_year()))]],
 			"problems": []}
@@ -444,6 +445,9 @@ static func _park(sim: CitySim, id: int) -> Dictionary:
 		status = _venue(sim, id, rows)
 	if s.kind == "trailhead":
 		status = _trails(sim, id, rows)
+	var going_up := sim.construction.describe("park:%d" % id, sim.tick_count)
+	if going_up != "":
+		status = going_up
 	rows.append(["Land value nearby", "up to +%d%%" % roundi((float(a.value) * q + sim.parks.tree_lift(id, "value")) * 100.0)])
 	rows.append(["Happiness nearby", "up to +%d%%" % roundi((float(a.happy) * q + sim.parks.tree_lift(id, "happy")) * 100.0)])
 	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(roundi(sim.parks.site_upkeep(id)))])
