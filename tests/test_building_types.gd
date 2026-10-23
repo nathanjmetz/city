@@ -45,8 +45,16 @@ func _init() -> void:
 	var sparse := _picks(sim, key, ZoneMap.Zone.RESIDENTIAL, rng)
 	_check(sparse.keys() == ["house"], "a quiet street gets houses (%s)" % str(sparse))
 	var crowd := _crowd(sim, key, 70)
+	# A small town's crowded core: mostly houses, a few walk-ups, no rows
+	# (real small Midwestern towns).
+	var small := _picks(sim, key, ZoneMap.Zone.RESIDENTIAL, rng)
+	_check(not small.has("row_home") and small.get("house", 0) > small.get("apartments", 0),
+		"a small town's core stays mostly houses, no row homes (%s)" % str(small))
+	var people: int = sim.stats.population
+	sim.stats.population = 150_000
 	var dense := _picks(sim, key, ZoneMap.Zone.RESIDENTIAL, rng)
-	_check(dense.has("row_home") and dense.has("apartments"), "a dense core gets row homes and apartments (%s)" % str(dense))
+	_check(dense.has("row_home") and dense.has("apartments"), "a big city's dense core gets row homes and apartments (%s)" % str(dense))
+	sim.stats.population = people
 	var row := BuildingTypes.make(sim, key, sim.buildings[key], "row_home", 0)
 	var units: int = row.units
 	_check(units == maxi(2, floori(sim.lots[key].width / 7.5)) and row.cap == units * 3,
@@ -157,8 +165,83 @@ func _init() -> void:
 	for k in grow.buildings:
 		grown += int(grow.buildings[k].level)
 	_check(grown > 0, "buildings grow along their paths over time (%d stages up)" % grown)
+	_test_far()
 	print("ALL TESTS PASSED" if not failed else "TESTS FAILED")
 	quit(1 if failed else 0)
+
+
+## Zoning's floor-area ratio caps how big a building gets; a tower needs
+## a bigger lot than a storefront, so its owner buys the lot next door.
+func _test_far() -> void:
+	var sim := CitySim.new()
+	sim.simulate_traffic = false
+	sim.apply({"type": "build_grid", "a": [0, 0], "b": [360, 0], "c": [360, 240], "block": 120.0})
+	# The middle street of the grid is the shopping street.
+	var main := -1
+	var best := INF
+	for id in sim.network.segments:
+		var pts: PackedVector3Array = sim.network.sample_segment(id, 2)
+		var d: float = pts[1].distance_to(Vector3(180, 0, 120))
+		if d < best:
+			best = d
+			main = id
+	sim.apply({"type": "zone_frontage", "seg": main, "side": 1, "zone": ZoneMap.Zone.COMMERCIAL})
+	var segs := sim.network.segments.keys()
+	segs.sort()
+	for id in segs:
+		if id != main:
+			for side in [-1, 1]:
+				sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": ZoneMap.Zone.RESIDENTIAL})
+	sim.tick()
+	var shop_lot := ""
+	for k in sim.lots:
+		if sim.zones.zone_at(sim.lots[k].zone_pt) == ZoneMap.Zone.COMMERCIAL:
+			shop_lot = k
+	var face := LotPlanner.block_face(sim, shop_lot)
+	var home := ""
+	for k in sim.lots:
+		if sim.zones.zone_at(sim.lots[k].zone_pt) == ZoneMap.Zone.RESIDENTIAL:
+			home = k
+			break
+	_check(is_equal_approx(BuildingTypes.context(sim, home).far, Balance.FAR_HOMES[0]),
+		"a quiet street of homes is zoned for houses (FAR %.1f)" % BuildingTypes.context(sim, home).far)
+	var key: String = face[1]
+	var crowd := _crowd(sim, key, 80)
+	for k in face:
+		sim.buildings.erase(k)
+	sim.stats.population = 3_000
+	var c := BuildingTypes.context(sim, key)
+	_check(c.far <= Balance.FAR_SHOPS[2], "a small town's busy blocks stay low (FAR %.1f)" % c.far)
+	sim.stats.population = 60_000
+	sim.education.locals.degree = 20_000.0
+	c = BuildingTypes.context(sim, key)
+	_check(c.downtown and is_equal_approx(c.far, Balance.FAR_DOWNTOWN[1]), "a city's core is zoned for towers (FAR %.1f, %d nearby, %d lots)" % [c.far, c.density, sim.lots.size()])
+	sim.buildings[key] = BuildingTypes.make(sim, key,
+		{"zone": ZoneMap.Zone.COMMERCIAL, "seed": 5, "built": 0, "occ": 0}, "office", 2)
+	var area: float = sim.lots[key].area
+	_check(BuildingTypes.far_of("office", 3, area) > c.far and not BuildingTypes.options(sim, key).has(["office", 3]),
+		"a high-rise doesn't fit one storefront lot (%.0f m², FAR %.1f)" % [area, BuildingTypes.far_of("office", 3, area)])
+	# Next door: a charming old shop, which isn't for sale, and a vacant one.
+	var at := face.find(key)
+	sim.buildings[face[at - 1]] = BuildingTypes.make(sim, face[at - 1],
+		{"zone": ZoneMap.Zone.COMMERCIAL, "seed": 6, "built": 0, "occ": 4}, "shop", 0)
+	sim.heritage.charm[face[at - 1]] = 1.0
+	var bought := BuildingTypes.assemble(sim, key)
+	_check(bought == face[at + 1] and not sim.lots.has(bought) and sim.lots[key].area > area + 200.0,
+		"the owner buys the empty lot next door, not the charming old shop (%s, %.0f m²)" % [bought, sim.lots[key].area])
+	for i in 4:
+		if BuildingTypes.options(sim, key).has(["office", 3]):
+			break
+		BuildingTypes.assemble(sim, key)
+	_check(BuildingTypes.options(sim, key).has(["office", 3]) and sim.lots.has(face[at - 1]),
+		"on the assembled site the high-rise fits (%.0f m²)" % sim.lots[key].area)
+	sim.redevelop(key, "office", 3)
+	_check(BuildingTypes.storeys(sim.buildings[key]) == 16, "and it goes up 16 storeys")
+	# A small town has no tower core: nobody assembles a site there.
+	sim.stats.population = 3_000
+	_check(BuildingTypes.assemble(sim, key) == "", "no tower sites outside a city's core")
+	for k in crowd:
+		sim.buildings.erase(k)
 
 
 ## How often each type comes up for a lot, over many owners.

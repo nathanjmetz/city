@@ -57,7 +57,7 @@ func _lineup() -> void:
 		mm.set_instance_transform(0, Transform3D(Basis.IDENTITY, Vector3(x, Terrain.ground_y(x, row * 26.0), row * 26.0)))
 		var mi := MultiMeshInstance3D.new()
 		mi.multimesh = mm
-		mi.material_override = VehicleMaterial.get_material()
+		mi.material_override = VehicleMaterial.get_material(lod == VehicleModels.LOD_ULTRA)
 		_main.add_child(mi)
 		x += maxf(w, 2.0) + 2.5
 		i += 1

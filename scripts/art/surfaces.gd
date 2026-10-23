@@ -26,6 +26,16 @@ vec2 turn(vec2 p, float a) {
 }
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	// Far off, the land is drawn coarser (TerrainView) and the depth buffer
+	// gets coarse too, so a road lying on the land could sink into it. Past
+	// 400 m each vertex is drawn a little nearer the camera (0.4% of the way)
+	// along its own line of sight: it stays exactly where it was on screen,
+	// but always wins against the land under it.
+	vec4 eye = MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
+	float dist = length(eye.xyz);
+	float pull = max(dist - 400.0, 0.0) * 0.004;
+	eye.xyz *= 1.0 - pull / max(dist, 1.0);
+	POSITION = PROJECTION_MATRIX * eye;
 }
 """
 
@@ -33,6 +43,7 @@ const ASPHALT := """
 uniform vec4 fresh : source_color = vec4(0.28, 0.27, 0.27, 1.0);
 uniform vec4 faded : source_color = vec4(0.42, 0.41, 0.39, 1.0);
 uniform vec4 tar : source_color = vec4(0.13, 0.13, 0.13, 1.0);
+global uniform float snow;
 void fragment() {
 	vec2 p = world_pos.xz;
 	float close = clamp(1.0 - length(VERTEX) / 220.0, 0.0, 1.0);
@@ -88,8 +99,15 @@ void fragment() {
 	// Aggregate speckle up close.
 	float g = texture(noise_grain, p / 0.31).r;
 	col *= 1.0 + (g - 0.5) * 0.28 * close;
+	// Winter: plowed and salted. Indiana streets go a chalky pale grey
+	// with white road-salt residue drying in streaks, and a skim of packed
+	// snow survives in patches between the wheel paths.
+	float salt = snow * (0.55 + 0.45 * texture(noise_soft, turn(p, 0.3) / 18.0).r);
+	col = mix(col, vec3(0.50, 0.50, 0.49) * (0.95 + g * 0.1), salt * 0.55);
+	float packed = smoothstep(0.72, 0.9, texture(noise_soft, turn(p, 1.2) / 11.0 + 0.7).r) * snow;
+	col = mix(col, vec3(0.72, 0.74, 0.77) * (0.92 + g * 0.1), packed * 0.45);
 	ALBEDO = col;
-	ROUGHNESS = 0.9 - crack * 0.4;
+	ROUGHNESS = 0.9 - crack * 0.4 - packed * 0.15;
 	SPECULAR = 0.3;
 }
 """
@@ -97,6 +115,7 @@ void fragment() {
 const CONCRETE := """
 uniform vec4 base : source_color = vec4(0.70, 0.69, 0.65, 1.0);
 uniform float joints = 1.0;
+global uniform float snow;
 void fragment() {
 	vec2 p = world_pos.xz;
 	float close = clamp(1.0 - length(VERTEX) / 200.0, 0.0, 1.0);
@@ -116,6 +135,11 @@ void fragment() {
 	float joint = 1.0 - smoothstep(0.012, 0.012 + fwidth(along) * 1.5, d);
 	joint *= clamp(0.024 / max(fwidth(along), 0.0001), 0.0, 1.0);  // thinner than a pixel: fade
 	col *= 1.0 - joint * joints * 0.45 * close;
+	// Winter: some owners shovel their stretch of walk and some don't, so
+	// snow lies in runs of whole slabs with thin trodden traces between.
+	float unshoveled = step(0.5, texture(noise_soft, p / 30.0 + 0.4).r);
+	float cover = snow * mix(0.25 * smoothstep(0.5, 0.8, texture(noise_soft, p / 2.0).r), 0.95, unshoveled);
+	col = mix(col, vec3(0.80, 0.83, 0.88) * (0.95 + tint * 0.05), cover);
 	ALBEDO = col;
 	ROUGHNESS = 0.88;
 	SPECULAR = 0.3;
@@ -149,6 +173,40 @@ void fragment() {
 	col *= 1.0 + (grain - 0.5) * 0.35 * close;
 	float weeds = smoothstep(0.62, 0.78, texture(noise_soft, turn(p, 1.7) / 4.0).r);
 	col = mix(col, vec3(0.16, 0.22, 0.08) * (0.8 + grain * 0.4), weeds * 0.85);
+	ALBEDO = col;
+	ROUGHNESS = 0.95;
+	SPECULAR = 0.2;
+}
+"""
+
+## Dirt and crushed-limestone lanes (logging roads, lease roads), benchmarked
+## against photos of Indiana farm lanes and skid roads: two darker packed
+## wheel paths 1.8 m apart, a looser crown between them with weeds coming
+## through, and ragged grassy edges. Snow lies on them in winter, packed
+## thin in the wheel paths. UV.x runs 0..0.25 across (RoadMesh ribbons).
+const LANE := """
+uniform vec4 base : source_color = vec4(0.58, 0.47, 0.33, 1.0);
+global uniform float snow;
+global uniform vec4 season_look;
+void fragment() {
+	vec2 p = world_pos.xz;
+	float close = clamp(1.0 - length(VERTEX) / 160.0, 0.0, 1.0);
+	float x = UV.x * 4.0 - 0.5;
+	float grain = texture(noise_grain, p / 0.4).r;
+	float patch = texture(noise_soft, p / 9.0).r;
+	float drift = (texture(noise_soft, p / 23.0).r - 0.5) * 0.08;
+	float rut = 1.0 - smoothstep(0.05, 0.12, abs(abs(x + drift) - 0.22));
+	float crown = 1.0 - smoothstep(0.05, 0.13, abs(x + drift));
+	float edge = smoothstep(0.34, 0.5, abs(x) + (patch - 0.5) * 0.14);
+	vec3 col = base.rgb * (0.85 + patch * 0.3) * (1.0 + (grain - 0.5) * 0.3 * close);
+	col = mix(col, base.rgb * 0.66, rut * 0.7);
+	// Weeds: green in summer, dead tan after frost.
+	vec3 weed = mix(vec3(0.20, 0.25, 0.11), vec3(0.42, 0.37, 0.25), max(season_look.w, season_look.y));
+	weed *= 0.8 + grain * 0.4;
+	float weeds = smoothstep(0.45, 0.7, texture(noise_soft, turn(p, 1.3) / 3.0).r);
+	col = mix(col, weed, max(edge, crown * weeds * 0.8) * 0.85);
+	float cover = smoothstep(0.15, 0.55, snow * 0.9 + patch * 0.35 - 0.1) * mix(1.0, 0.45, rut);
+	col = mix(col, vec3(0.80, 0.83, 0.88) * (0.93 + grain * 0.07), cover);
 	ALBEDO = col;
 	ROUGHNESS = 0.95;
 	SPECULAR = 0.2;
@@ -280,6 +338,10 @@ static func gravel() -> ShaderMaterial:
 
 static func quarry() -> ShaderMaterial:
 	return _make("quarry", QUARRY, {})
+
+
+static func lane(color: Color) -> ShaderMaterial:
+	return _make("lane %s" % color, LANE, {"base": color})
 
 
 static func field() -> ShaderMaterial:

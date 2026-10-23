@@ -6,9 +6,16 @@ extends RefCounted
 ## Plain data, so tests can read it and any interface can show it.
 
 
-## The thing under a ground point: {type: "service"|"farm"|"lot"|"road", id},
-## or {} for open ground. Buildings win over the road they stand on.
+## The thing under a ground point: {type: "vehicle"|"person"|"service"|
+## "farm"|"lot"|"road", id}, or {} for open ground. People and vehicles win
+## over what they're on; buildings win over the road they stand on.
 static func pick(sim: CitySim, p: Vector3) -> Dictionary:
+	var who := sim.traffic.walker_at(p)
+	if who != -1:
+		return {"type": "person", "id": who}
+	var vid := sim.traffic.vehicle_at(p)
+	if vid != -1:
+		return {"type": "vehicle", "id": vid}
 	if not sim.rail.trains.is_empty():
 		var tid := sim.rail.train_at(p)
 		if tid != -1:
@@ -54,6 +61,9 @@ static func pick(sim: CitySim, p: Vector3) -> Dictionary:
 	var cid := sim.education.at(p) if not sim.education.campuses.is_empty() else -1
 	if cid != -1:
 		return {"type": "campus", "id": cid}
+	var tid := sim.telecom.at(p) if not sim.telecom.companies.is_empty() else -1
+	if tid != -1:
+		return {"type": "telecom", "id": tid}
 	var fid := sim.farms.farm_at(p)
 	if fid == -1:
 		fid = sim.farms.field_at(p)
@@ -81,6 +91,22 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 	if not exists(sim, sel):
 		return []
 	match sel.type:
+		"vehicle":
+			var f := sim.traffic.find_vehicle(sel.id)
+			return [sim.traffic.vehicle_centre(f.car, f.state == "parked"), f.car.len * 0.5 + 2.0]
+		"person":
+			var w := sim.traffic.walker_of(sel.id)
+			if not w.is_empty():
+				return [sim.traffic.walker_pose(w)[0], 1.5]
+			# In a car, or indoors.
+			var p: Dictionary = sim.people.people[sel.id]
+			for car in sim.traffic.cars:
+				if car.get("after", {}).get("driver", -1) == sel.id:
+					return [sim.traffic.vehicle_centre(car, false), car.len * 0.5 + 2.0]
+			var at: String = p.at if p.at != "" and p.at != "travel" else "lot:" + p.home
+			if at.begins_with("lot:") and sim.lots.has(at.substr(4)):
+				return [sim.lots[at.substr(4)].pos, LotPlanner.DEPTH * 0.5 + 2.0]
+			return []
 		"service", "water":
 			var b: Dictionary = sim.services.buildings[sel.id]
 			return [b.pos, Services.size_of(b).length() * 0.5 + 3.0]
@@ -103,6 +129,8 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 			return [sim.education.campuses[sel.id].pos, Education.CELL * 0.75]
 		"post_office":
 			return sim.mail.extent(sel.id)
+		"telecom":
+			return [sim.telecom.companies[sel.id].pos, Telecom.CELL * 0.75]
 		"rail":
 			return [sim.rail.depots[sel.id].pos, Rail.YARD_LEN * 0.5 + Rail.LADDER]
 		"train":
@@ -119,11 +147,17 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 		"road":
 			var c := sim.network.curve_of(sel.id)
 			return [RoadNetwork.bezier(c[0], c[1], c[2], 0.5), RoadStyle.half_width(sim.network.segments[sel.id].type) + 4.0]
+		"spot":
+			return [Vector3(sel.id[0], 0.0, sel.id[1]), 8.0]
+		"pollution":
+			return [Vector3.ZERO, 0.0]  # the whole town: no ring
 	return []
 
 
 static func exists(sim: CitySim, sel: Dictionary) -> bool:
 	match sel.get("type", ""):
+		"vehicle": return not sim.traffic.find_vehicle(sel.id).is_empty()
+		"person": return sim.people.people.has(sel.id)
 		"service": return sim.services.buildings.has(sel.id)
 		"water": return sim.services.water.utilities.has(sel.id) and sim.services.buildings.has(sel.id)
 		"hub": return sim.hubs.hubs.has(sel.id)
@@ -133,6 +167,7 @@ static func exists(sim: CitySim, sel: Dictionary) -> bool:
 		"farm": return sim.farms.farms.has(sel.id)
 		"industry": return sim.industry.sites.has(sel.id)
 		"campus": return sim.education.campuses.has(sel.id)
+		"telecom": return sim.telecom.companies.has(sel.id)
 		"bank": return sim.banks.banks.has(sel.id)
 		"warehouse": return sim.warehouses.buildings.has(sel.id)
 		"big": return sim.big.sites.has(sel.id)
@@ -140,15 +175,29 @@ static func exists(sim: CitySim, sel: Dictionary) -> bool:
 		"power": return sim.power.sites.has(sel.id)
 		"lot": return sim.lots.has(sel.id)
 		"road": return sim.network.segments.has(sel.id)
+		"spot": return true
+		"pollution": return sel.id in Pollution.KINDS
 	return false
 
 
 ## {title, kind (a line under the title), icon, ok: bool, status, rows:
-## [[label, value]], problems: [text]}.
+## [[label, value]], problems: [text]}, and optionally notes: [text] and
+## actions (see HubInfo), and "follow": true for something the camera can
+## follow. Pollution is added to everything (PollutionInfo).
 static func describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 	if not exists(sim, sel):
 		return {}
+	if sel.type == "spot":
+		return PollutionInfo.spot(sim, Vector3(sel.id[0], 0.0, sel.id[1]))
+	if sel.type == "pollution":
+		return PollutionInfo.town(sim, sel.id)
+	return PollutionInfo.add(sim, sel, _describe(sim, sel))
+
+
+static func _describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 	match sel.type:
+		"vehicle": return _vehicle(sim, sel.id)
+		"person": return _person(sim, sel.id)
 		"service": return _service(sim, sel.id)
 		"water": return WaterUtility.describe(sim, sel.id)
 		"hub": return HubInfo.describe(sim, sel.id)
@@ -158,6 +207,7 @@ static func describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 		"farm": return _farm(sim, sel.id)
 		"industry": return _industry(sim, sel.id)
 		"campus": return CampusInfo.describe(sim, sel.id)
+		"telecom": return TelecomInfo.describe(sim, sel.id)
 		"bank": return BankInfo.describe(sim, sel.id)
 		"warehouse": return _warehouse(sim, sel.id)
 		"big": return BigFactoryInfo.describe(sim, sel.id)
@@ -172,6 +222,10 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 	var b: Dictionary = sim.services.buildings[id]
 	if b.kind == Services.Kind.BUS_DEPOT:
 		return sim.buses.describe(sim, id)
+	if b.kind == Services.Kind.TAXI_COMPANY:
+		return sim.taxis.describe(sim, id)
+	if b.kind == Services.Kind.HOSPITAL and sim.healthcare.hubs.has(id):
+		return _hospital(sim, id)
 	var k: Dictionary = Services.KINDS[b.kind]
 	var rows := []
 	var problems := []
@@ -225,6 +279,65 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 		"ok": ok and problems.is_empty(), "status": status, "rows": rows, "problems": problems}
 
 
+## The hospital and the administrator who runs it: who they are, what
+## they've built, what they're working toward and what holds them back.
+static func _hospital(sim: CitySim, id: int) -> Dictionary:
+	var hc := sim.healthcare
+	var h: Dictionary = hc.hubs[id]
+	var k: Dictionary = Services.KINDS[Services.Kind.HOSPITAL]
+	var a: Dictionary = h.leader
+	var lvl: Dictionary = Healthcare.LEVELS[int(h.level)]
+	var traits := []
+	traits.append("ambitious" if a.ambition > 0.65 else ("steady" if a.ambition > 0.4 else "modest"))
+	traits.append("careful" if a.caution > 0.35 else "bold")
+	traits.append("well educated" if a.edu >= 0.6 else ("educated" if a.edu >= 0.3 else "learned on the job"))
+	var net := hc.monthly_net(sim, id)
+	var built := []
+	for p in h.pieces:
+		built.append(Healthcare.TREE[p.key].name + ("" if not p.rect.is_empty() or float(Healthcare.TREE[p.key].area) == 0.0 else " (built up)"))
+	var rows := [
+		["Administrator", "%s, %s" % [a.name, a.title]],
+		["Character", ", ".join(traits).capitalize()],
+		["Beds", str(lvl.beds)],
+		["Jobs", "%d (%d%% filled by locals)" % [hc.hospital_jobs(id), roundi(hc.staffing(sim, id) * 100.0)]],
+		["People it serves", "%s in town, %s from the region" % [CitySim.money_text(hc.covered_pop(sim, id)),
+			CitySim.money_text(hc.regional_pop(sim))]],
+		["Ambulances", "%d (%d out on calls)" % [hc.ambulances(id), hc.busy(id)]],
+		["Calls answered", "%d, %d patients brought in" % [h.calls, h.treated]],
+		["Savings", "%s$%s (%s$%s / month)" % ["" if h.savings >= 0.0 else "-", CitySim.money_text(absi(roundi(h.savings))),
+			"+" if net >= 0.0 else "-", CitySim.money_text(absi(roundi(net)))]],
+		["Built", ", ".join(built) if not built.is_empty() else "Just the county hospital"],
+		["City's hospital levy", "$%s / month" % CitySim.money_text(int(k.upkeep))],
+	]
+	var status := "%s is looking for the next project" % a.name
+	var plan: String = h.plan
+	if plan != "":
+		var cost := hc.project_cost(sim, id, plan)
+		status = "Saving for the %s: $%s of $%s down" % [Healthcare.TREE[plan].name.to_lower(),
+			CitySim.money_text(maxi(0, roundi(h.savings))), CitySim.money_text(roundi(cost.get("down", 0.0)))]
+		if a.ambition > 0.65:
+			status += " (aiming high)"
+	# The next few branches and what each still needs.
+	var next := []
+	for key in Healthcare.ORDER:
+		var why := hc.unmet(sim, id, key)
+		if why != "" and why != "built" and not why.begins_with("needs the") and next.size() < 3:
+			next.append("%s: %s" % [Healthcare.TREE[key].name, why])
+	if not next.is_empty():
+		rows.append(["Waiting on", "; ".join(next)])
+	if h.why != "":
+		rows.append(["Latest", h.why])
+	var problems := []
+	if not h.permit.is_empty():
+		problems.append("%s is waiting on your answer in the permits bell." % a.name)
+	elif h.note != "":
+		problems.append(h.note)
+	if h.boxed:
+		problems.append("Boxed in by roads or neighbors: new buildings go up instead of out.")
+	return {"title": "%s %s" % [h.name, lvl.name], "kind": "Hospital", "icon": "health",
+		"ok": net >= 0.0, "status": status, "rows": rows, "problems": problems}
+
+
 static func _farm(sim: CitySim, id: int) -> Dictionary:
 	var f: Dictionary = sim.farms.farms[id]
 	var acres: float = f.cells.size() * Farms.ACRES_PER_CELL
@@ -237,6 +350,15 @@ static func _farm(sim: CitySim, id: int) -> Dictionary:
 		["Property tax to town", "$%s / month" % CitySim.money_text(roundi(acres * Farms.LAND_PER_ACRE
 			* Farms.AG_ASSESSMENT * sim.economy.tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0))],
 	]
+	var lease := 0.0
+	for c in f.cells:
+		lease += sim.power.lease_in(Farms.cell_corners(f, c))
+	var rent := sim.power.farm_rent(id)
+	if rent > 0.0:
+		rows.insert(4, ["Solar rent", "$%s / year for fields leased to panels" % CitySim.money_text(roundi(rent))])
+	if lease > 0.0:
+		rows.insert(4, ["Wind leases", "$%s / year (%d turbines in its fields)" % [CitySim.money_text(roundi(lease)),
+			roundi(lease / Balance.POWER_WIND_LEASE)]])
 	var problems := []
 	var status := "Growing: buying land where the soil pays"
 	if not f.barn:
@@ -364,12 +486,18 @@ static func _park(sim: CitySim, id: int) -> Dictionary:
 	var biz := Tourism.business(s.kind)
 	if not biz.is_empty():
 		return {"title": s.name, "kind": k.name, "icon": k.icon, "ok": true,
-			"status": "Opened for the visitors to town's events", "rows": [["Jobs", str(biz.jobs)],
+			"status": sim.construction.describe("park:%d" % id, sim.tick_count) if sim.construction.sites.has("park:%d" % id)
+				else "Opened for the visitors to town's events", "rows": [["Jobs", str(biz.jobs)],
 				["Assessed value", "$%s" % CitySim.money_text(int(biz.value))],
 				["Visitors from out of town", "%s a year" % CitySim.money_text(roundi(sim.parks.tourism.outside_year()))]],
 			"problems": []}
 	if sim.parks.tourism.venues.has(id):
 		status = _venue(sim, id, rows)
+	if s.kind == "trailhead":
+		status = _trails(sim, id, rows)
+	var going_up := sim.construction.describe("park:%d" % id, sim.tick_count)
+	if going_up != "":
+		status = going_up
 	rows.append(["Land value nearby", "up to +%d%%" % roundi((float(a.value) * q + sim.parks.tree_lift(id, "value")) * 100.0)])
 	rows.append(["Happiness nearby", "up to +%d%%" % roundi((float(a.happy) * q + sim.parks.tree_lift(id, "happy")) * 100.0)])
 	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(roundi(sim.parks.site_upkeep(id)))])
@@ -406,6 +534,30 @@ static func _venue(sim: CitySim, id: int, rows: Array) -> String:
 	return "Between events"
 
 
+## The trailhead's rows: its director, the trails and bike lanes so far,
+## the trips they take off the road, and the tree. Returns its status line.
+static func _trails(sim: CitySim, id: int, rows: Array) -> String:
+	var t := sim.parks.trails
+	if t.hub.is_empty() or int(t.hub.id) != id:
+		return "Where the town's trails start"
+	rows.append(["Parks and trails", "director %s, %s" % [t.hub.leader.name, Education.leader_style(t.hub.leader)]])
+	var connectors := t.paths.filter(func(p): return p.kind == "connector").size()
+	var miles := t.length() / 1609.34
+	rows.append(["Trails", "%.1f mi%s" % [miles, (", %d to parks" % connectors) if connectors > 0 else ""]])
+	if not t.lanes.is_empty() or "bike_lanes" in t.hub.built:
+		rows.append(["Bike lanes", "%d streets%s" % [t.lanes.size(), ", one waiting on you" if not t.asked.is_empty() else ""]])
+	if not t.plazas.is_empty() or "plaza" in t.hub.built:
+		rows.append(["Plazas", "%d downtown blocks%s" % [t.plazas.size(), ", one waiting on you" if not t.asked_plaza.is_empty() else ""]])
+	if t.walked_last > 0 or t.walked > 0:
+		rows.append(["Trips on foot or by bike", "%s last month" % CitySim.money_text(maxi(t.walked_last, t.walked))])
+	if str(t.hub.why) != "":
+		rows.append(["Last move", t.hub.why])
+	rows.append_array(t.status(sim))
+	if miles < 0.05:
+		return "Planning the first trail"
+	return "%.1f miles of trail" % miles
+
+
 ## A power company: its leader and why they built what they did, what it
 ## makes and sells, and its development tree (built, saving up, or what it
 ## still needs).
@@ -423,6 +575,14 @@ static func _power(sim: CitySim, id: int) -> Dictionary:
 		["Jobs", str(roundi(Balance.POWER_YARD_JOBS + float(k.jobs) * s.cells.size()))],
 		["Profit", "%s$%s / year" % ["" if profit >= 0.0 else "-", CitySim.money_text(absi(roundi(profit)))]],
 	]
+	var acres := Power._acres_leased(s)
+	if acres > 0.0:
+		rows.append(["Farmland leased", "%.0f acres ($%s / year)" % [acres,
+			CitySim.money_text(roundi(acres * Balance.POWER_SOLAR_LEASE_PER_ACRE))]])
+	var leased := sim.power.leased(s)
+	if leased > 0:
+		rows.append(["Farm leases", "%d turbines in farmers' fields ($%s / year)" % [leased,
+			CitySim.money_text(roundi(leased * Balance.POWER_WIND_LEASE))]])
 	var ctx := sim.power_context()
 	rows += _development(sim, s, sim.power.tree_for(id, ctx), s.pos, profit)
 	# What the tree still needs that the town or land can't give yet.
@@ -434,7 +594,7 @@ static func _power(sim: CitySim, id: int) -> Dictionary:
 	if s.get("idle", "") != "":
 		problems.append(s.idle)
 	if float(k.value) < 0.0:
-		problems.append("Its smoke lowers land value up to %d m away." % int(k.reach))
+		problems.append("Its smoke and ash lower land value nearby (see the Pollution view).")
 	var title: String = "%s %s" % [s.leader.name.split(" ")[-1], k.name.to_lower()]
 	return {"title": title, "kind": "Power company: " + sim.power.status(id), "icon": "power",
 		"ok": s.get("idle", "") == "", "status": s.reason, "rows": rows, "problems": problems}
@@ -480,10 +640,6 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 			else "The water utility hasn't laid a main under this street yet." if not sim.services.water.utilities.is_empty()
 			else "Build a Well on a connected street."))
 	rows.append(["Power", "Yes" if power else "No"])
-	var smoke := sim.power.smoke_from(lot.pos)
-	if smoke != -1:
-		rows.append(["Land value", "%d%% (smoke from the %s)" % [roundi(sim.power.land_value_effect(lot.pos) * 100.0),
-			Power.PLANTS[sim.power.sites[smoke].plant].name.to_lower()]])
 	rows.append(["Water", "Yes" if water else "No"])
 	if by != -1 and sim.services.water.utilities.has(by):
 		rows.append(["Sewer", "Yes" if s.get("sewer", false) else "Septic tank"])
@@ -531,18 +687,25 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 		rows.insert(1, ["Flats upstairs", "%d of %d residents" % [int(b.focc), int(b.flats)]])
 	if BuildingTypes.storeys(b) > 0:
 		rows.insert(0, ["Storeys", str(BuildingTypes.storeys(b))])
+	var address := sim.streets.address(sim, key)
+	if address != "":
+		rows.insert(0, ["Address", address])
 	if str(b.get("why", "")) != "":
 		rows.append(["Why this", b.why])
 	var next := []
 	for o in BuildingTypes.options(sim, key):
 		next.append(BuildingTypes.TYPES[o[0]].stages[o[1]].name)
-	rows.append(["Can grow into", ", ".join(next) if not next.is_empty() else "Nothing yet"])
+	if sim.heritage.protected(key):
+		rows.append(["Can grow into", "Nothing: it's kept as it is"])
+	else:
+		rows.append(["Can grow into", ", ".join(next) if not next.is_empty() else "Nothing yet"])
+	rows.append_array(sim.heritage.rows(sim, key))
 	var going_up := sim.construction.describe("lot:" + key, sim.tick_count)
 	if going_up != "":
 		status = going_up
 	var staffed := float(sim.stats.employed) / maxf(sim.stats.jobs, 1.0)
 	var lift: float = sim.parks.lot_value.get(key, 0.0)
-	var land := sim.hubs.lot_factor(sim, key) * sim.mail.lot_factor(sim, key) * (1.0 + lift)
+	var land := sim.land_factor(key) * sim.mail.lot_factor(sim, key) * (1.0 + lift)
 	if absf(land - 1.0) >= 0.005:
 		rows.append(["Land value nearby", "%+d%%" % roundi((land - 1.0) * 100.0)])
 	if lift > 0.005:
@@ -550,7 +713,7 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 	if not sim.mail.offices.is_empty():
 		rows.append(["Mail", "Delivered" if sim.mail.served(sim, sim.lots[key].seg) else "Not lately"])
 	rows.append(["Property tax", "$%s / month" % CitySim.money_text(roundi(sim.economy.building_tax(b, staffed, lift)
-		* sim.hubs.lot_factor(sim, key) * sim.mail.lot_factor(sim, key) / 12.0))])
+		* sim.land_factor(key) * sim.mail.lot_factor(sim, key) / 12.0))])
 	var mail := sim.mail.lot_problem(sim, key)
 	if mail != "":
 		problems.append(mail)
@@ -571,8 +734,15 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 	elif z == ZoneMap.Zone.RESIDENTIAL:
 		rows.insert(0, ["Building", title])
 		title = Families.home_name(b)
+	elif sim.people.place_name(ref) != "":
+		title = sim.people.place_name(ref)
+	if z == ZoneMap.Zone.RESIDENTIAL and not sim.people.residents(key).is_empty():
+		var who := []
+		for id in sim.people.residents(key).slice(0, 4):
+			who.append(sim.people.person_name(id))
+		rows.insert(1, ["Who lives here", ", ".join(who) + ("…" if sim.people.residents(key).size() > 4 else "")])
 	return {"title": title, "kind": kind, "icon": icons[z], "ok": problems.is_empty(),
-		"status": status, "rows": rows, "problems": problems}
+		"status": status, "rows": rows, "problems": problems, "actions": sim.heritage.actions(sim, key)}
 
 
 ## A business's own name if it has one ("Miller Farms"), else `plain`.
@@ -608,6 +778,124 @@ static func _road(sim: CitySim, seg: int) -> Dictionary:
 	var problems := []
 	if flow < 0.5:
 		problems.append("Congested: cars manage under half the speed limit.")
-	return {"title": spec.name, "kind": "Road", "icon": "road", "ok": problems.is_empty(),
+	var street := sim.streets.name_of(seg)
+	return {"title": street if street != "" else spec.name, "kind": spec.name if street != "" else "Road", "icon": "road", "ok": problems.is_empty(),
 		"status": "Flowing freely" if flow >= 0.8 else ("Busy" if flow >= 0.5 else "Jammed"),
 		"rows": rows, "problems": problems}
+
+
+## Plain words for where a place ref is: its name, or what it is.
+static func place_name(sim: CitySim, ref: String) -> String:
+	if ref == "" :
+		return "—"
+	if ref == "edge":
+		return "Out of town, by the county highway"
+	var n := sim.people.place_name(ref)
+	if n != "":
+		return n
+	if ref.begins_with("lot:"):
+		var key := ref.substr(4)
+		if sim.buildings.has(key):
+			return {ZoneMap.Zone.RESIDENTIAL: "A home", ZoneMap.Zone.COMMERCIAL: "A shop",
+				ZoneMap.Zone.INDUSTRIAL: "A factory"}.get(int(sim.buildings[key].zone), "A lot")
+		return "An empty lot"
+	if ref.begins_with("farm:"):
+		return "A farm"
+	if ref.begins_with("site:"):
+		return "A company yard"
+	return ref.get_slice("@", 0).replace(":", " ").capitalize()
+
+
+## What a vehicle is, like the vehicle panel in Cities: Skylines 2: the
+## kind, who drives it, where it's coming from and going, why, and its load.
+static func _vehicle(sim: CitySim, vid: int) -> Dictionary:
+	var f := sim.traffic.find_vehicle(vid)
+	var car: Dictionary = f.car
+	var kind: String = TrafficSim.vehicle_kind(car)
+	var title := kind.replace("_", " ").capitalize()
+	var rows := []
+	var status := ""
+	var after: Dictionary = car.get("after", {})
+	var driver: int = after.get("driver", -1) if f.state != "parked" else -1
+	var purpose: String = car.get("purpose", "")
+	var why := _purpose_words(purpose)
+	match f.state:
+		"parked":
+			var at := place_name(sim, car.get("at_place", ""))
+			if car.get("pending", false):
+				status = "Pulling out of %s" % at
+			elif car.get("hidden", false):
+				status = "Inside %s" % at
+			elif car.get("driver", -1) != -1:
+				status = "Parked at %s while %s is inside" % [at, sim.people.person_name(car.driver)]
+			else:
+				status = "Parked at %s" % at
+		"waiting":
+			status = "Waiting for a gap to pull out"
+		_:
+			var to := place_name(sim, car.get("to_ref", ""))
+			status = ("Heading home to %s" % to) if purpose == "return" or purpose == "home" else "Driving to %s" % to
+	if f.state != "parked" or car.get("pending", false):
+		rows.append(["From", place_name(sim, car.get("from_ref", ""))])
+		rows.append(["To", place_name(sim, car.get("to_ref", ""))])
+		if why != "":
+			rows.append(["Why", why])
+	var cargo: Dictionary = car.get("cargo", {})
+	if not cargo.is_empty():
+		rows.append(["Carrying", "%s %s" % [str(cargo.get("amount", "")), str(cargo.get("good", ""))]
+			if cargo.has("good") else str(cargo)])
+	elif VehicleTypes.spec(kind).len > 6.5:
+		rows.append(["Carrying", "Empty"])
+	if driver != -1:
+		rows.append(["Driver", sim.people.person_name(driver)])
+	var owner: int = car.get("owner", -1)
+	if owner != -1 and sim.people.people.has(owner):
+		rows.append(["Owner", sim.people.person_name(owner)])
+	elif car.get("base", "") != "":
+		rows.append(["Based at", place_name(sim, car.base)])
+	if f.state == "driving":
+		rows.append(["Speed", "%d mph" % roundi(car.v * 2.237)])
+	elif f.state == "flowing":
+		rows.append(["Traffic", "In the flow of town traffic"])
+	return {"title": title, "kind": "Vehicle", "icon": "traffic", "ok": true, "status": status,
+		"rows": rows, "problems": [], "follow": true}
+
+
+## A person: name, age, home, work, and what they're doing now.
+static func _person(sim: CitySim, pid: int) -> Dictionary:
+	var p: Dictionary = sim.people.people[pid]
+	var rows := [["Age", str(p.age)], ["Lives at", place_name(sim, "lot:" + p.home)]]
+	rows.append(["Works at", place_name(sim, p.job) if p.job != "" else ("School" if p.age < 18 else
+		("Retired" if p.age > 66 else "Looking for work"))])
+	var status := "At home"
+	var w := sim.traffic.walker_of(pid)
+	if not w.is_empty():
+		var then: Dictionary = w.then
+		if then.has("stroll"):
+			status = "Out for a walk on the trail"
+		elif then.has("enter"):
+			status = "Walking to %s" % place_name(sim, then.enter)
+		elif then.has("drive"):
+			status = "Walking to the car, off to %s" % place_name(sim, then.get("to", ""))
+		else:
+			status = "Out walking"
+	elif p.at == "travel":
+		status = "Driving"
+		for car in sim.traffic.cars:
+			if car.get("after", {}).get("driver", -1) == pid:
+				status = "Driving to %s" % place_name(sim, car.get("to_ref", ""))
+	elif p.at != "":
+		status = "At %s" % place_name(sim, p.at)
+	if p.car != -1:
+		var f := sim.traffic.find_vehicle(p.car)
+		if not f.is_empty():
+			rows.append(["Car", TrafficSim.vehicle_kind(f.car).replace("_", " ").capitalize()])
+	return {"title": sim.people.person_name(pid), "kind": "Resident", "icon": "homes", "ok": true,
+		"status": status, "rows": rows, "problems": [], "follow": true}
+
+
+static func _purpose_words(purpose: String) -> String:
+	return {"commute": "Going to work", "shopping": "Shopping", "home": "Going home", "return": "Heading back",
+		"grain": "Hauling grain", "raw": "Hauling raw goods", "fuel": "Hauling fuel", "goods": "Delivering goods",
+		"delivery": "Making a delivery", "export": "Shipping out of town", "import": "Bringing goods in",
+		"visit": "Visiting", "bus": "Bus route"}.get(purpose, purpose.capitalize())

@@ -177,6 +177,11 @@ func _init() -> void:
 	_check(oil_seen > 0.5, "oil turns up somewhere on the map")
 	_check(fm.apply({"type": "place_farmhouse", "pos": [0, 60], "dir": [0, -1], "crop": "corn"}), "farmhouse placed")
 	_check(not fm.apply({"type": "place_farmhouse", "pos": [0, 560], "dir": [0, -1]}), "farmhouse needs a road near")
+	# The critic's woods (round 19): 35% fertile, no field would ever pay.
+	var woods := CitySim.new()
+	_check(woods.farms.start_profit(Vector3(300, 0, -120), Vector3(0, 0, 1)) <= 0.0
+		and fm.farms.start_profit(Vector3(0, 0, 60), Vector3(0, 0, -1)) > 0.0,
+		"a farmstead only goes where a field would pay")
 	var farm: Dictionary = fm.farms.farms.values()[0]
 	_check(farm.drive.size() >= 2 and absf(farm.drive[-1].z) < 1.0, "a farm lane runs out to the road")
 	fm.farms.decide(fm.field_usable)
@@ -273,7 +278,7 @@ func _init() -> void:
 		"split networks: each utility's cause is named: " + split.utility_problem())
 	_check(split.utility_summary().length() < 40, "the top-bar chip stays short: " + split.utility_summary())
 	var rd := Inspect.describe(ws, Inspect.pick(ws, Vector3(60, 0, 0)))
-	_check(rd.get("title") == "Street" and rd.ok, "clicking a road shows the street")
+	_check(rd.get("kind") == "Street" and str(rd.get("title")).ends_with("Street") and rd.ok, "clicking a road shows the street and its name: %s" % rd.get("title"))
 	_check(Inspect.pick(ws, Vector3(0, 0, -900)).is_empty(), "clicking open ground selects nothing")
 	# Resource industry (Brawn's model): a company's pads spread where the
 	# resource is, and every load leaves on a real truck.
@@ -313,6 +318,9 @@ func _init() -> void:
 		oil.apply({"type": "build_road", "start": [dry.x - 100, dry.z - 80], "ctrl": [dry.x, dry.z - 80], "end": [dry.x + 100, dry.z - 80]})
 		_check(oil.industry_problem("oil", dry, Vector3(0, 0, -1)).begins_with("No crude oil"), "no oil company where there's no oil")
 	_check(oil.apply({"type": "place_industry", "kind": "oil", "pos": [best.x, best.z + 20], "dir": [0, -1]}), "an oil company opens on the oil field")
+	var ind_id: int = oil.industry.sites.keys()[0]
+	_check(not oil.construction.state("ind:%d" % ind_id, oil.tick_count).is_empty(),
+		"the company's main building goes up in stages")
 	var twin := CitySim.new()
 	twin.from_dict(JSON.parse_string(JSON.stringify(oil.to_dict())))
 	for i in 1440 * 3:
@@ -421,10 +429,135 @@ func _init() -> void:
 	old.from_dict({"version": 1, "next_id": 4, "nodes": {"1": [-100, 0], "2": [100, 0]},
 		"segments": {"3": [1, 2, 0, 0]}})
 	_check(old.empty_zoned_lots().size() == old.lots.size() and old.lots.size() > 0, "old saves get zoned")
+	_real_layouts()
+	_town_culture()
+	_identity_shift()
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
 var _failed := false
+
+## Industry spreads like the real thing: spaced oil pads, one quarry,
+## timber cut in rotation.
+## A town's character follows its jobs (location quotients) and pulls its
+## own trade forward.
+func _town_culture() -> void:
+	var sim := CitySim.new()
+	var res: int = Industry.KINDS["ore"].resource
+	var best := Vector3.ZERO
+	var best_v := 0.0
+	for x in range(-1500, 1501, 100):
+		for z in range(-1500, 1501, 100):
+			var v := Resources.at(res, Vector3(x, 0, z))
+			if v > best_v:
+				best_v = v
+				best = Vector3(x, 0, z)
+	sim.apply({"type": "build_road", "start": [best.x - 600, best.z - 260], "ctrl": [best.x, best.z - 260], "end": [best.x + 600, best.z - 260]})
+	sim.apply({"type": "place_industry", "kind": "ore", "pos": [best.x, best.z - 180], "dir": [0, -1]})
+	var id: int = sim.industry.sites.keys()[0]
+	var plain := sim.industry.buy_margin(id)
+	for i in 1440 * 4:
+		sim.tick()
+	_check(sim.culture.identity == "mining" and sim.culture.title() == "Coal and oil town",
+		"a town of coal miners is a coal town (%s, LQ %.0f)" % [sim.culture.identity, sim.culture.lq("mining")])
+	_check(sim.culture.pull("mining") > 0.5 and sim.culture.pull("office") < 0.0, "its own trade pulls, others drag")
+	_check(sim.industry.buy_margin(id) < plain, "a coal town's mine opens new cuts on thinner margins")
+	var back := CitySim.new()
+	back.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
+	_check(back.culture.identity == "mining" and is_equal_approx(back.culture.lq("mining"), sim.culture.lq("mining")),
+		"the town's character is saved")
+
+
+## A rising trade with no land left asks to rezone farm ground along a
+## road, and only does it once the player approves.
+func _identity_shift() -> void:
+	var sim := CitySim.new()
+	sim.economy.money = 10_000_000
+	sim.apply({"type": "build_road", "start": [-600, 0], "ctrl": [0, 0], "end": [600, 0]})
+	sim.apply({"type": "place_farmhouse", "pos": [0, 60], "dir": [0, -1], "crop": "corn"})
+	for i in Farms.DECIDE_EVERY * 40:
+		sim.tick()
+	var farm: Dictionary = sim.farms.farms.values()[0]
+	var fields: int = farm.cells.size()
+	# Offices are rising fast and every commercial lot is taken.
+	for k in TownCulture.SECTORS:
+		sim.culture.shares[k] = 0.1
+		sim.culture.now[k] = 0.1
+	sim.culture.now["office"] = 0.3
+	sim.demand[ZoneMap.Zone.COMMERCIAL] = 0.9
+	sim.culture.develop(sim)
+	var asked: Array = sim.permits.listed(Permits.State.OPEN).filter(func(r): return r.hub == TownCulture.HUB)
+	_check(asked.size() == 1 and asked[0].change == "Farmland to offices" and asked[0].shape == "area",
+		"a rising office trade asks to rezone farm ground (%s)" % [asked.map(func(r): return r.change)])
+	_check(farm.cells.size() == fields and sim.zones.cells.is_empty(), "nothing changes before the player says yes")
+	if asked.is_empty():
+		return
+	sim.apply({"type": "permit", "id": asked[0].id, "answer": "approve"})
+	sim.culture.develop(sim)
+	_check(farm.cells.size() < fields and not sim.zones.cells.is_empty(),
+		"approved: the fields along the road are sold and zoned (%d of %d fields left)" % [farm.cells.size(), fields])
+	_check(sim.zones.cells.values().all(func(z): return z == ZoneMap.Zone.COMMERCIAL), "zoned for offices")
+
+
+func _real_layouts() -> void:
+	var any := func(_mid, _corners): return true
+	for kind in ["oil", "ore", "forest"]:
+		var res: int = Industry.KINDS[kind].resource
+		var best := Vector3.ZERO
+		var best_v := 0.0
+		for x in range(-3000, 3001, 150):
+			for z in range(-3000, 3001, 150):
+				var v := Resources.at(res, Vector3(x, 0, z))
+				if v > best_v:
+					best_v = v
+					best = Vector3(x, 0, z)
+		var ind := Industry.new()
+		ind.price = 3.0  # rich enough that every good cell pays
+		var id := ind.add_site(kind, best, Vector3(0, 0, -1), [])
+		for i in 40:
+			ind.day = i * 1.5
+			ind.decide(any)
+		var pads: Array = ind.sites[id].pads
+		if kind == "oil":
+			var spaced := pads.size() >= 2
+			for a in pads:
+				for b in pads:
+					if a != b and maxi(absi(a.x - b.x), absi(a.y - b.y)) < Balance.OIL_SPACING_CELLS:
+						spaced = false
+			_check(spaced, "oil pads keep their well spacing (%d pads)" % pads.size())
+		elif kind == "ore":
+			var joined := pads.size() >= 3
+			for c in pads:
+				var touches: bool = c.length_squared() == 1
+				for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+					touches = touches or (c + d) in pads
+				joined = joined and touches
+			_check(joined, "the quarry grows as one pit (%d benches)" % pads.size())
+			var way := signi(pads[0].y)
+			var one_way: bool = way != 0
+			for c in pads:
+				one_way = one_way and c.y * way >= pads[0].y * way
+			_check(one_way, "the strip mine advances one way, away from its plant")
+			# A county road one cell east of the yard: the pit never jumps it.
+			var walled := Industry.new()
+			walled.price = 3.0
+			var rx := best.x + 1.5 * Industry.PAD
+			walled.road_between = func(a: Vector3, b: Vector3): return (a.x - rx) * (b.x - rx) < 0.0
+			var wid := walled.add_site(kind, best, Vector3(0, 0, -1), [])
+			for i in 40:
+				walled.decide(any)
+			var stays: bool = walled.sites[wid].pads.size() >= 3
+			for c in walled.sites[wid].pads:
+				stays = stays and c.x <= 1
+			_check(stays, "the strip mine stays on its own side of the road")
+		else:
+			_check(pads.size() <= Balance.FOREST_ACTIVE_UNITS and not ind.sites[id].get("regrow", {}).is_empty(),
+				"timber is cut a few units at a time and left to regrow (%d cutting, %d resting)"
+				% [pads.size(), ind.sites[id].get("regrow", {}).size()])
+			var back := Industry.new()
+			back.from_dict(JSON.parse_string(JSON.stringify(ind.to_dict())))
+			_check(back.sites[id].regrow.size() == ind.sites[id].regrow.size(), "resting units are saved")
+
 
 func _check(ok: bool, what: String) -> void:
 	if not ok:

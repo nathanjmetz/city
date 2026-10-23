@@ -75,6 +75,13 @@ var river := Callable()
 ## Last decide step's sales, per company id: {"town": homes, "export": homes,
 ## "profit": $ a year}. Shown in the panel; worked out again each step.
 var sales := {}
+## Set by the city: true when a point is in a farmer's field. Wind pads
+## may stand there on a lease (pad_usable), paying POWER_WIND_LEASE a year.
+var on_farm := Callable()
+var pad_usable := Callable()
+## Line crews out on the road: trip id -> {"site", "home"} (home: on the
+## way back to the yard).
+var crews := {}
 var _next_id := 1
 ## The Economy page's sliders: a company on Growth Hold adds no units or
 ## buildings beyond its first unit (set by CitySim).
@@ -109,6 +116,33 @@ func river_at(p: Vector3) -> float:
 	if river.is_valid():
 		return clampf(float(river.call(p)), 0.0, 1.0)
 	return clampf(Terrain.water(p.x + offset.x, p.z + offset.y), 0.0, 1.0)
+
+
+## Where a dam at `p` spans the river: [one bank, the other bank], across
+## the flow (the flow runs along the longest stretch of water through p).
+## Empty when p isn't on the water.
+func dam_span(p: Vector3) -> Array:
+	if river_at(p) < 0.5:
+		return []
+	var best := Vector3.RIGHT
+	var best_run := -1.0
+	for k in 12:
+		var a := PI * k / 12.0
+		var d := Vector3(cos(a), 0.0, sin(a))
+		var run := _wet_run(p, d, 400.0) + _wet_run(p, -d, 400.0)
+		if run > best_run:
+			best_run = run
+			best = d
+	var across := Vector3(-best.z, 0.0, best.x)
+	return [p - across * _wet_run(p, -across, 300.0), p + across * _wet_run(p, across, 300.0)]
+
+
+## How far the water reaches from p along d, up to `most` metres.
+func _wet_run(p: Vector3, d: Vector3, most: float) -> float:
+	var t := 0.0
+	while t < most and river_at(p + d * (t + 6.0)) >= 0.5:
+		t += 6.0
+	return t
 
 
 ## How well a plant of this kind works at a point, 0 to 1 (0 = can't).
@@ -328,7 +362,8 @@ func _profit(s: Dictionary, town: float, export: float, neighbor := 0.0) -> floa
 	var mwh_t := (town + neighbor) * Balance.POWER_MWH_PER_HOME
 	var mwh_x := export * Balance.POWER_MWH_PER_HOME
 	var built: float = float(k.capex) * s.cells.size()
-	var extra := Agency.effect(s, TREE, "sales+")
+	var extra := Agency.effect(s, TREE, "sales+") - leased(s) * Balance.POWER_WIND_LEASE \
+		- _acres_leased(s) * Balance.POWER_SOLAR_LEASE_PER_ACRE
 	return mwh_t * (Balance.POWER_TOWN_PRICE - op) + mwh_x * (Balance.POWER_EXPORT_PRICE - op) + extra \
 		- built / Balance.POWER_LOAN_YEARS - (built + Balance.POWER_YARD_VALUE) * tax_rate / 100.0
 
@@ -379,6 +414,17 @@ func decide(usable: Callable, load: float, can_export: bool, ctx := {}) -> bool:
 					continue
 				best = c
 				best_q = q
+		# A solar company boxed in by cornfields remembers which ones it
+		# could lease; it asks the player before turning farmland to panels.
+		var want := []
+		if best == Vector2i.MAX and s.plant == "solar" and not s.cells.is_empty() \
+				and s.cells.size() < int(k.max_cells) and pad_usable.is_valid() and on_farm.is_valid():
+			for c in _frontier(s):
+				var mid := cell_center(s, c)
+				if quality(s.plant, mid) >= Balance.POWER_MIN_QUALITY and on_farm.call(mid) \
+						and _free(id, s, c, pad_usable):
+					want.append(c)
+		s.farm_want = want
 		if best != Vector2i.MAX:
 			var add := unit_homes(s.plant, best_q) * _boost(s)
 			var to_town := clampf(left - cap, 0.0, add)
@@ -483,43 +529,6 @@ func status(id: int) -> String:
 	return "Doing well" if p > Balance.POWER_THRIVING_PROFIT else "Getting by"
 
 
-## How much a point's land value drops from smoke and noise, 0 to about
-## -0.3 (-0.2 = 20% lower). An old coal plant smokes up the land around it,
-## a gas plant a little; solar, wind and hydro leave it be.
-func land_value_effect(p: Vector3) -> float:
-	var total := 0.0
-	for id in sites:
-		var s: Dictionary = sites[id]
-		var k: Dictionary = PLANTS[s.plant]
-		if float(k.value) >= 0.0 or s.cells.is_empty():
-			continue
-		var d := INF
-		for c in s.cells:
-			d = minf(d, cell_center(s, c).distance_to(Vector3(p.x, 0.0, p.z)))
-		if d < float(k.reach):
-			total += float(k.value) * (1.0 - d / float(k.reach)) * minf(1.0, s.cells.size() / 2.0 + 0.5) \
-				* Agency.effect(s, TREE, "smoke*")
-	return maxf(total, Balance.POWER_SMOKE_FLOOR)
-
-
-## The smokiest plant near a point, for the lot panel: id or -1.
-func smoke_from(p: Vector3) -> int:
-	var worst := -1
-	var worst_v := 0.0
-	for id in sites:
-		var s: Dictionary = sites[id]
-		var k: Dictionary = PLANTS[s.plant]
-		if float(k.value) >= 0.0:
-			continue
-		for c in s.cells:
-			var d := cell_center(s, c).distance_to(Vector3(p.x, 0.0, p.z))
-			var v := float(k.value) * (1.0 - d / float(k.reach))
-			if d < float(k.reach) and v < worst_v:
-				worst = id
-				worst_v = v
-	return worst
-
-
 ## Cells a new company may open its first unit on.
 static func _seeds() -> Array:
 	var out := []
@@ -568,6 +577,8 @@ func _free(id: int, s: Dictionary, c: Vector2i, usable: Callable) -> bool:
 		if site_at(p) == id:
 			return false
 	# A dam bay stands in the river itself, where nothing else can go.
+	if s.plant == "wind" and pad_usable.is_valid():
+		return pad_usable.call(mid, corners)
 	return s.plant == "hydro" or usable.call(mid, corners)
 
 
@@ -621,6 +632,326 @@ func taxable_value() -> float:
 	return total
 
 
+## The service lanes between units: each unit hooks to the one next to it
+## on the way back to the yard (cell 0,0 is the yard itself).
+static func lanes(s: Dictionary) -> Array:
+	var out := []
+	for c in s.cells:
+		var to := Vector2i.ZERO
+		for d in [Vector2i(-signi(c.x), 0), Vector2i(0, -signi(c.y))]:
+			if d != Vector2i.ZERO and (c + d == Vector2i.ZERO or (c + d) in s.cells):
+				to = c + d
+				break
+		out.append([cell_center(s, c), cell_center(s, to)])
+	return out
+
+
+## The line to the neighbors, once its leader has built one: a 69 kV
+## wood-pole line from the yard that follows the county roads (as rural
+## co-op lines do, in the road right of way) to the nearest road out of
+## town. Empty when there's no line or no road out.
+func tie_route(net: RoadNetwork, links: Array, s: Dictionary) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	if Agency.effect(s, TREE, "tie+") <= 0.0 or links.is_empty() or s.drive.is_empty() or net.segments.is_empty():
+		return out
+	var gate: Vector3 = s.drive[-1]
+	var hit := net.find_segment_near(gate, 60.0)
+	if hit.is_empty():
+		return out
+	# Shortest way along the roads to any road out of town, starting both
+	# ways from the yard's gate.
+	var first: Dictionary = net.segments[hit.seg]
+	var c0 := net.curve_of(hit.seg)
+	var whole: float = c0[0].distance_to(c0[1]) + c0[1].distance_to(c0[2])
+	var dist := {first.a: whole * hit.t, first.b: whole * (1.0 - hit.t)}
+	var came := {first.a: [-1, hit.seg], first.b: [-1, hit.seg]}
+	var open := [first.a, first.b]
+	var goal := -1
+	while not open.is_empty():
+		var bi := 0
+		for i in open.size():
+			if dist[open[i]] < dist[open[bi]]:
+				bi = i
+		var n: int = open[bi]
+		open.remove_at(bi)
+		if n in links:
+			goal = n
+			break
+		for sid in net.segments_at(n):
+			var seg: Dictionary = net.segments[sid]
+			var m: int = seg.b if seg.a == n else seg.a
+			var c := net.curve_of(sid)
+			var d: float = dist[n] + c[0].distance_to(c[1]) + c[1].distance_to(c[2])
+			if d < dist.get(m, INF):
+				dist[m] = d
+				came[m] = [n, sid]
+				if not m in open:
+					open.append(m)
+	if goal == -1:
+		return out
+	# Each leg: [segment, node it starts from (-1: the gate), node it ends at].
+	var legs := []
+	var n := goal
+	while true:
+		legs.push_front([came[n][1], came[n][0], n])
+		if came[n][0] == -1:
+			break
+		n = came[n][0]
+	out.append(s.pos)
+	out.append(gate)
+	for leg in legs:
+		var sid: int = leg[0]
+		var seg: Dictionary = net.segments[sid]
+		var pts := net.sample_segment(sid, 16)
+		if leg[1] == -1:
+			# Only the part of the gate's road from the gate onward.
+			var k := clampi(roundi(hit.t * 16.0), 0, 16)
+			pts = pts.slice(k) if leg[2] == seg.b else pts.slice(0, k + 1)
+		if seg.b != leg[2]:
+			pts.reverse()
+		# Poles stand just outside the right of way, on the right-hand side.
+		var off := RoadStyle.right_of_way_half(seg.type) + Balance.POWER_TIE_SETBACK
+		for i in pts.size():
+			var t := (pts[mini(i + 1, pts.size() - 1)] - pts[maxi(i - 1, 0)])
+			t.y = 0.0
+			if t.length() < 0.01:
+				continue
+			t = t.normalized()
+			var q := pts[i] + Vector3(-t.z, 0.0, t.x) * off
+			out.append(Vector3(q.x, 0.0, q.z))
+	return out
+
+
+## Where a line to the neighbors ends: a small fenced metering substation
+## beside the road out, on the line's side. [centre, facing] or [] (no line).
+static func substation(route: PackedVector3Array) -> Array:
+	if route.size() < 3:
+		return []
+	var t := route[-1] - route[-2]
+	t.y = 0.0
+	if t.length() < 0.01:
+		return []
+	t = t.normalized()
+	var side := Vector3(-t.z, 0.0, t.x)
+	return [route[-1] + side * (Balance.POWER_SUBSTATION_SIZE.y * 0.5 + 2.0), t]
+
+
+## The substation's ground, as an outline.
+static func substation_corners(route: PackedVector3Array) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var sub := substation(route)
+	if sub.is_empty():
+		return out
+	var c: Vector3 = sub[0]
+	var t: Vector3 = sub[1]
+	var side := Vector3(-t.z, 0.0, t.x)
+	var h: Vector2 = Balance.POWER_SUBSTATION_SIZE * 0.5
+	for k in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+		var p: Vector3 = c + t * h.x * k.x + side * h.y * k.y
+		out.append(Vector2(p.x, p.z))
+	return out
+
+
+## Pole spots along a line, about one span apart, ends included.
+static func poles(route: PackedVector3Array) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	if route.size() < 2:
+		return out
+	out.append(route[0])
+	var since := 0.0
+	for i in range(1, route.size()):
+		var a := route[i - 1]
+		var b := route[i]
+		var len := a.distance_to(b)
+		var at := 0.0
+		while since + (len - at) >= Balance.POWER_TIE_SPAN:
+			at += Balance.POWER_TIE_SPAN - since
+			since = 0.0
+			out.append(a.lerp(b, at / len))
+		since += len - at
+	if out[-1].distance_to(route[-1]) > 5.0:
+		out.append(route[-1])
+	return out
+
+
+## Line crews: every morning each company sends a bucket truck out to
+## check its units, and one along its line to the neighbors, trimming trees
+## and fixing what the weather broke (as co-op line crews do). A crew parks
+## at the job, then drives back to the yard.
+func crew_tick(sim: Object) -> void:
+	for a in sim.traffic.arrivals:
+		if crews.has(a.id):
+			var c: Dictionary = crews[a.id]
+			crews.erase(a.id)
+			if not c.home and sites.has(c.site):
+				var s: Dictionary = sites[c.site]
+				_send(sim, c.site, c.at, s.drive[-1], true)
+	for f in sim.traffic.failed:
+		crews.erase(f.id)
+	if sim.tick_count % (CitySim.TICKS_PER_HOUR * 24) != CitySim.TICKS_PER_HOUR * 7:
+		return
+	var ids := sites.keys()
+	ids.sort()
+	var day := int(sim.tick_count / (CitySim.TICKS_PER_HOUR * 24))
+	for id in ids:
+		var s: Dictionary = sites[id]
+		if s.drive.is_empty() or s.cells.is_empty():
+			continue
+		var jobs := []
+		var c: Vector2i = s.cells[absi(hash([id, day])) % s.cells.size()]
+		jobs.append(cell_center(s, c))
+		var line := tie_route(sim.network, sim.region_links, s)
+		if line.size() > 2:
+			jobs.append(line[2 + absi(hash([id, day, "line"])) % (line.size() - 2)])
+		for at in jobs:
+			_send(sim, id, s.drive[-1], at, false)
+
+
+func _send(sim: Object, id: int, from: Vector3, to: Vector3, home: bool) -> void:
+	var trip: int = sim.traffic.dispatch({"ref": "power:%d" % id, "pos": [from.x, from.z]},
+		{"ref": "power:%d" % id if home else "line:%d" % id, "pos": [to.x, to.z]}, "power_line")
+	if trip != -1:
+		crews[trip] = {"site": id, "home": home, "at": to}
+
+
+## Acres of former cropland a solar company rents from farmers.
+static func _acres_leased(s: Dictionary) -> float:
+	var total := 0.0
+	for fid in s.get("leases", {}):
+		total += float(s.leases[fid])
+	return total
+
+
+## What the solar companies pay farm `fid` a year for land it leased them.
+func farm_rent(fid: int) -> float:
+	var total := 0.0
+	for id in sites:
+		total += float(sites[id].get("leases", {}).get(str(fid), 0.0)) * Balance.POWER_SOLAR_LEASE_PER_ACRE
+	return total
+
+
+## Solar on farmland, through a land-use permit (it changes what the town
+## is: cropland to panels). Once a month: carry out what the player
+## approved (the outline may have been redrawn), or, when the company is
+## boxed in by fields it would pay to lease, ask. True if anything changed.
+func farmland(sim: CitySim, id: int) -> bool:
+	var s: Dictionary = sites[id]
+	var did := false
+	for req in sim.permits.approved("power", id):
+		did = _lease_fields(sim, id, req.route) or did
+		sim.permits.done(int(req.id))
+	var want: Array = s.get("farm_want", [])
+	if want.is_empty() or on_hold(id) or not sim.permits.can_file(sim, "power", id):
+		return did
+	# Ask for a block of up to 2 x 2 cells around the best one, all fields.
+	want.sort_custom(func(a, b): return quality(s.plant, cell_center(s, a)) > quality(s.plant, cell_center(s, b)))
+	var c0: Vector2i = want[0]
+	var block := [c0]
+	for d in [Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(-1, 0), Vector2i(0, -1), Vector2i(-1, -1)]:
+		if block.size() >= 4:
+			break
+		if (c0 + d) in want:
+			block.append(c0 + d)
+	var lo := c0
+	var hi := c0
+	for c in block:
+		lo = Vector2i(mini(lo.x, c.x), mini(lo.y, c.y))
+		hi = Vector2i(maxi(hi.x, c.x), maxi(hi.y, c.y))
+	var sp := spacing(s)
+	var half := float(PLANTS[s.plant].footprint) * 0.5
+	var outline := []
+	for corner in [Vector2(lo.x, lo.y), Vector2(hi.x, lo.y), Vector2(hi.x, hi.y), Vector2(lo.x, hi.y)]:
+		var sx := -1.0 if corner.x == lo.x else 1.0
+		var sy := -1.0 if corner.y == lo.y else 1.0
+		var p: Vector3 = s.pos + _right(s) * (corner.x * sp + sx * half) - s.dir * (corner.y * sp + sy * half)
+		outline.append([p.x, p.z])
+	var acres := float((hi.x - lo.x + 1) * (hi.y - lo.y + 1)) * sp * sp / 4046.86
+	var farm_id: int = sim.farms.field_at(cell_center(s, c0))
+	var owner: String = sim.families.name_of("farm:%d" % farm_id) if farm_id != -1 else ""
+	sim.permits.file(sim, {"hub": "power", "hub_id": id, "leader": s.leader.name,
+		"title": "Solar panels on %d acres of farmland" % roundi(acres),
+		"why": "%s has run out of open ground next to the panels. %s would lease the field for $%s an acre a year instead of growing %s." % [
+			s.leader.name, owner if owner != "" else "The farmer", CitySim.money_text(roundi(Balance.POWER_SOLAR_LEASE_PER_ACRE)),
+			str(sim.farms.farms[farm_id].crop) if farm_id != -1 else "crops"],
+		"change": "Farmland to solar panels", "area": outline, "per_m2": 0,
+		"base": int(PLANTS[s.plant].capex) * block.size()})
+	return true
+
+
+## The farmers hand over their fields inside `route` (an outline) and the
+## company fills the ground with panel rows.
+func _lease_fields(sim: CitySim, id: int, route: Array) -> bool:
+	var s: Dictionary = sites[id]
+	var poly := PackedVector2Array()
+	for p in route:
+		poly.append(Vector2(float(p[0]), float(p[1])))
+	if poly.size() < 3:
+		return false
+	if not s.has("leases"):
+		s.leases = {}
+	var took := false
+	var fids: Array = sim.farms.farms.keys()
+	fids.sort()
+	for fid in fids:
+		var f: Dictionary = sim.farms.farms[fid]
+		for c in f.cells.duplicate():
+			var m: Vector3 = Farms.cell_center(f, c)
+			if Geometry2D.is_point_in_polygon(Vector2(m.x, m.z), poly):
+				f.cells.erase(c)
+				s.leases[str(fid)] = float(s.leases.get(str(fid), 0.0)) + Farms.ACRES_PER_CELL
+				took = true
+	if took:
+		sim.farms_changed.emit()
+		sim.clear_usable_cache()
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	for q in poly:
+		var d: Vector3 = Vector3(q.x, 0.0, q.y) - s.pos
+		var g := Vector2(d.dot(_right(s)), -d.dot(s.dir)) / spacing(s)
+		lo = lo.min(g)
+		hi = hi.max(g)
+	var added := false
+	for y in range(floori(lo.y), ceili(hi.y) + 1):
+		for x in range(floori(lo.x), ceili(hi.x) + 1):
+			var c := Vector2i(x, y)
+			var m := cell_center(s, c)
+			if c in s.cells or c == Vector2i.ZERO or s.cells.size() >= int(PLANTS[s.plant].max_cells):
+				continue
+			if not Geometry2D.is_point_in_polygon(Vector2(m.x, m.z), poly) or not _free(id, s, c, pad_usable):
+				continue
+			s.cells.append(c)
+			added = true
+	if added:
+		s.reason = "%s leased farmland for more panels, with your permit." % s.leader.name
+	return took or added
+
+
+## How many of a company's turbines stand on leased farmland.
+func leased(s: Dictionary) -> int:
+	if s.plant != "wind" or not on_farm.is_valid():
+		return 0
+	var n := 0
+	for c in s.cells:
+		if on_farm.call(cell_center(s, c)):
+			n += 1
+	return n
+
+
+## What the power companies pay a year in leases for turbines inside this
+## field outline (for the farm that owns it).
+func lease_in(poly: PackedVector2Array) -> float:
+	var total := 0.0
+	for id in sites:
+		var s: Dictionary = sites[id]
+		if s.plant != "wind":
+			continue
+		for c in s.cells:
+			var p := cell_center(s, c)
+			if Geometry2D.is_point_in_polygon(Vector2(p.x, p.z), poly):
+				total += Balance.POWER_WIND_LEASE
+	return total
+
+
 func yard(s: Dictionary) -> PackedVector2Array:
 	var side := _right(s)
 	var out := PackedVector2Array()
@@ -642,12 +973,13 @@ func to_dict() -> Dictionary:
 			lane.append([p.x, p.z])
 		out[str(id)] = {"plant": s.plant, "pos": [s.pos.x, s.pos.z], "dir": [s.dir.x, s.dir.z],
 			"drive": lane, "cells": cells, "leader": s.leader, "reason": s.reason, "why": s.get("why", ""), "loss": s.loss_streak,
-			"built": s.built, "hired": s.hired}
+			"built": s.built, "hired": s.hired, "leases": s.get("leases", {})}
 	return {"sites": out, "next_id": _next_id}
 
 
 func from_dict(d: Dictionary) -> void:
 	sites.clear()
+	crews.clear()
 	sales.clear()
 	for k in d.get("sites", {}):
 		var s: Dictionary = d.sites[k]
@@ -666,4 +998,8 @@ func from_dict(d: Dictionary) -> void:
 			"reason": str(s.get("reason", "")), "why": str(s.get("why", "")), "loss_streak": int(s.get("loss", 0)),
 			"built": Array(s.get("built", [])).map(func(u): return str(u)),
 			"hired": float(s.get("hired", 0.0))}
+		var leases := {}
+		for fid in s.get("leases", {}):
+			leases[str(fid)] = float(s.leases[fid])
+		sites[int(k)].leases = leases
 	_next_id = int(d.get("next_id", 1))

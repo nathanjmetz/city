@@ -20,13 +20,14 @@ func _process(_delta: float) -> bool:
 		sim.apply({"type": "clear"})
 		sim.economy.money = 50_000_000
 		sim.apply({"type": "build_road", "start": [-600, 0], "ctrl": [0, 0], "end": [600, 0]})
+		sim.region_links.append(sim.network.find_node_near(Vector3(600, 0, 0), 1.0))
 		sim.apply({"type": "place_power", "pos": [-250, 60], "dir": [0, -1]})
 		sim.apply({"type": "place_power", "pos": [250, 60], "dir": [0, -1]})
 		var ids := sim.power.sites.keys()
 		var a: Dictionary = sim.power.sites[ids[0]]
 		a.plant = "coal"
 		a.cells = [Vector2i(0, 1), Vector2i(1, 1)]
-		a.built = ["scrubbers", "training"]
+		a.built = ["scrubbers", "training", "tie_line"]
 		var b: Dictionary = sim.power.sites[ids[1]]
 		b.plant = "wind"
 		b.cells = [Vector2i(0, 1), Vector2i(1, 1), Vector2i(-1, 1), Vector2i(0, 2)]

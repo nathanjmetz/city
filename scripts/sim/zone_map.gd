@@ -17,6 +17,8 @@ const COLORS := [
 var cells := {}  # Vector2i -> Zone
 ## Areas whose zoning changed since lots were last planned (Rect2 in x/z).
 var dirty: Array = []
+## Goes up whenever any zoning changes, so callers can skip rechecking.
+var revision := 0
 
 
 func zone_at(pos: Vector3) -> int:
@@ -25,6 +27,7 @@ func zone_at(pos: Vector3) -> int:
 
 ## Paints every cell whose middle is inside the circle. Zone.NONE erases.
 func paint(center: Vector3, radius: float, zone: int) -> void:
+	revision += 1
 	dirty.append(Rect2(center.x - radius - CELL, center.z - radius - CELL, radius * 2 + CELL * 2, radius * 2 + CELL * 2))
 	var lo := _cell(center - Vector3(radius, 0, radius))
 	var hi := _cell(center + Vector3(radius, 0, radius))
@@ -42,19 +45,27 @@ func paint(center: Vector3, radius: float, zone: int) -> void:
 ## Clears one cell's zone, noting the change for lot planning.
 func erase_cell(c: Vector2i) -> void:
 	if cells.erase(c):
+		revision += 1
 		dirty.append(Rect2(c.x * CELL - CELL, c.y * CELL - CELL, CELL * 3, CELL * 3))
 
 
 func to_dict() -> Dictionary:
 	# One string per zone type: "x,y;x,y;..." keeps saves small.
-	var out := {}
+	# Joined once at the end: adding to one long string each cell was slow.
+	var parts := {}
 	for c in cells:
 		var key := str(cells[c])
-		out[key] = out.get(key, "") + "%d,%d;" % [c.x, c.y]
+		if not parts.has(key):
+			parts[key] = PackedStringArray()
+		parts[key].append("%d,%d;" % [c.x, c.y])
+	var out := {}
+	for key in parts:
+		out[key] = "".join(parts[key])
 	return out
 
 
 func from_dict(d: Dictionary) -> void:
+	revision += 1
 	cells.clear()
 	dirty.clear()
 	for key in d:

@@ -22,6 +22,8 @@ var _net := UiStyle.label("", 14, UiStyle.TEXT, 600)
 var _short := UiStyle.label("", 12, Brand.WARNING)
 var _lines := {}        # budget key -> value Label
 var _grant := UiStyle.label("", 11, UiStyle.MUTED)
+var _identity := UiStyle.label("", 15, UiStyle.TEXT, 600)
+var _sectors := UiStyle.label("", 11, UiStyle.MUTED)
 var _town := {}         # slider -> StepSlider
 var _areas := VBoxContainer.new()
 var _open_areas := {}   # area -> true while expanded
@@ -87,7 +89,7 @@ func _ready() -> void:
 	for entry in [["taxes", "Property taxes"], ["fees", "Water and sewer bills"], ["upkeep", "Road upkeep"],
 			["services", "Services, parks, garbage, cemeteries"], ["education", "Schools and colleges"],
 			["care", "Street care"],
-			["support", "Farm and business aid"]]:
+			["support", "Farm and business aid"], ["deals", "Services shared with neighbors"], ["region", "Regional projects"]]:
 		var l := UiStyle.label(entry[1], 12, UiStyle.MUTED)
 		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		grid.add_child(l)
@@ -99,6 +101,13 @@ func _ready() -> void:
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.add_child(note)
 	body.add_child(_grant)
+
+	# What kind of town this is, and what's rising (TownCulture).
+	body.add_child(HSeparator.new())
+	body.add_child(UiStyle.label("TOWN CHARACTER", 10, UiStyle.MUTED))
+	body.add_child(_identity)
+	_sectors.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.add_child(_sectors)
 
 	# The whole town: the default every area follows.
 	body.add_child(HSeparator.new())
@@ -164,14 +173,44 @@ func refresh() -> void:
 	_money_line("education", -int(e.budget.get("education", 0)))
 	_money_line("care", -int(e.budget.get("care", 0)))
 	_money_line("support", -int(e.budget.get("support", 0)))
+	_money_line("deals", int(e.budget.get("deals", 0)))
+	_money_line("region", int(e.budget.get("region", 0)))
 	_grant.text = "" if e.milestone >= Economy.MILESTONES.size() else \
 		"Next grant: $%s at %s people" % [CitySim.money_text(Economy.MILESTONES[e.milestone][1]),
 		CitySim.money_text(Economy.MILESTONES[e.milestone][0])]
+	var who := character(sim.culture)
+	_identity.text = who[0]
+	_sectors.text = who[1]
 	for area in _area_rows:
 		_area_rows[area].sum.text = _summary(area)
 		if _open_areas.has(area) and _hub_sig.get(area, []) != hubs_in(area):
 			_fill_hubs(area)
 	_sync_sliders()
+
+
+## Sector names for the town character breakdown.
+const SECTOR_NAMES := {"farm": "Farming", "mining": "Coal and oil", "timber": "Timber",
+	"manufacturing": "Manufacturing", "trade": "Shops and trade", "office": "Banks and offices",
+	"campus": "Colleges and hospitals", "transport": "Rail and power"}
+
+
+## [the town's title, a few lines on its strongest trades]: how many times
+## the US share of jobs each one has (its location quotient) and whether
+## it's rising or fading against what the town is known for.
+static func character(c: TownCulture) -> Array:
+	if c.shares.is_empty():
+		return ["Too small for a reputation yet", "Once a few hundred people work here, the county will know what kind of town this is."]
+	var title := c.title() if c.title() != "" else "A town of all trades"
+	var ranked: Array = TownCulture.SECTORS.keys()
+	ranked.sort_custom(func(a, b): return c.lq(a) > c.lq(b))
+	var lines := []
+	for k in ranked.slice(0, 3):
+		var m := c.momentum(k)
+		var trend := "▲ rising" if m > 0.1 else ("▼ fading" if m < -0.1 else "steady")
+		lines.append("%s: %.1f× the US share of jobs, %s" % [SECTOR_NAMES.get(k, k), c.lq(k), trend])
+	if c.identity != "":
+		lines.append("Known for it since year %d." % (c.since / 12 + 1))
+	return [title, "\n".join(lines)]
 
 
 func _money_line(key: String, v: int) -> void:
@@ -246,10 +285,10 @@ func hubs_in(area: String) -> Array:
 		"resources":
 			for id in sim.industry.sites:
 				out.append("industry:%d" % id)
-		"utilities", "public":
+		"utilities", "public", "health":
 			for id in sim.services.buildings:
 				if Services.area_of(sim.services.buildings[id].kind) == area:
-					out.append("service:%d" % id)
+					out.append(sim.services.key_of(id))
 		"transit":
 			for id in sim.buses.depots:
 				if sim.services.buildings.has(id):
@@ -269,6 +308,13 @@ func hubs_in(area: String) -> Array:
 		"big":
 			for id in sim.big.sites:
 				out.append("big:%d" % id)
+		"taxis":
+			for id in sim.taxis.companies:
+				if sim.services.buildings.has(id):
+					out.append("taxi:%d" % id)
+		"telecom":
+			for id in sim.telecom.companies:
+				out.append("telecom:%d" % id)
 		"waste", "cemetery":
 			for id in sim.hubs.hubs:
 				if CivicHubs.area_of(sim.hubs.hubs[id].kind) == area:
@@ -315,6 +361,9 @@ func _fill_hubs(area: String) -> void:
 		card.add_child(title)
 		var rows := {}
 		for sl in Policies.AREAS[area].sliders:
+			# Growth is a word to a leader: a nursing home or daycare has none.
+			if sl == "growth" and key.begins_with("service:"):
+				continue
 			var row := StepSlider.new(sl, sl.capitalize(), Policies.AREAS[area][sl], 56.0)
 			row.picked.connect(func(step): sim.apply({"type": "policy", "scope": key, "slider": sl, "step": step}))
 			card.add_child(row)
@@ -353,6 +402,10 @@ func hub_name(key: String) -> String:
 		"big":
 			var f: Dictionary = sim.big.sites[id]
 			return "%s  ·  %s" % [f.name, BigFactories.KINDS[f.kind].name]
+		"taxi":
+			return "Taxi company %d" % id
+		"telecom":
+			return "Phone company %d  ·  $%s a month" % [id, CitySim.money_text(Telecom.monthly_grant(sim.telecom.companies[id]))]
 		"hub":
 			return "%s %d  ·  $%s a month" % [CivicHubs.KINDS[sim.hubs.hubs[id].kind].name, id,
 				CitySim.money_text(sim.hubs.cost_of(id))]
@@ -362,6 +415,9 @@ func hub_name(key: String) -> String:
 			var c: Dictionary = sim.education.campuses[id]
 			return "%s %d  ·  $%s a month" % [Education.KINDS[c.kind].name, id,
 				CitySim.money_text(Education.monthly_funding(c))]
+		"hospital":
+			var h: Dictionary = sim.healthcare.hubs.get(id, {})
+			return "%s  ·  $%s a month" % [h.get("name", "Hospital %d" % id), CitySim.money_text(sim.services.upkeep_of(id))]
 		"bank":
 			var b: Dictionary = sim.banks.banks[id]
 			return "%s %d  ·  %s" % [Banks.KINDS[b.kind].name, id, {"well": "well run", "adequate": "doing all right",
@@ -406,6 +462,13 @@ func _summary(area: String) -> String:
 			return "%d" % sim.warehouses.buildings.size()
 		"big":
 			return "%d" % sim.big.sites.size()
+		"taxis":
+			return "%d" % hubs_in(area).size()
+		"telecom":
+			var grant := 0
+			for id in sim.telecom.companies:
+				grant += Telecom.monthly_grant(sim.telecom.companies[id])
+			return "%d  ·  $%s grant" % [sim.telecom.companies.size(), CitySim.money_text(grant)]
 		"waste", "cemetery":
 			var n := 0
 			var cost := 0

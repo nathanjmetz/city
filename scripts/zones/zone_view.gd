@@ -1,9 +1,11 @@
 class_name ZoneView
 extends Node3D
-## Shows lots on the ground. Empty zoned lots are always tinted; while a zone
-## tool is open every lot shows its outline. Unzoned land shows no lot lines
-## at all: lots are surveyed only where streets are zoned. The street side
-## under the zone tool shows as a band.
+## Shows lots on the ground while a zone tool is open: every lot's outline,
+## empty zoned lots tinted. Otherwise the ground stays plain, as a platted
+## but unbuilt lot is in real life (and CS2 shows zone colour only in the
+## zoning tool). Unzoned land shows no lot lines at all: lots are surveyed
+## only where streets are zoned. The street side under the zone tool shows
+## as a band.
 
 var sim: CitySim
 var show_all := false:
@@ -49,15 +51,13 @@ func _rebuild() -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var any := false
-	for key in sim.lots:
+	for key in (sim.lots if show_all else {}):
 		var lot: Dictionary = sim.lots[key]
 		var zone := sim.zones.zone_at(lot.zone_pt)
 		var built := sim.buildings.has(key)
-		if not show_all and (zone == ZoneMap.Zone.NONE or built):
-			continue
 		var c: Color = ZoneMap.COLORS[zone]
 		var fill := 0.0 if zone == ZoneMap.Zone.NONE else (0.18 if built else 0.42)
-		var edge := 0.75 if show_all else 0.0
+		var edge := 0.75
 		_lot(st, lot.corners, Color(c, fill), Color(c, maxf(edge, fill + 0.2)))
 		any = true
 	var band: Color = ZoneMap.COLORS[preview_zone] if preview_zone != ZoneMap.Zone.NONE else Color(1, 0.35, 0.3)

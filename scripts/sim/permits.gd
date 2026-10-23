@@ -38,6 +38,11 @@ extends RefCounted
 ## "change": "Farmland to offices" and "per_m2". The player can drag every
 ## corner of the boundary; the leader re-prices the land it now covers.
 ## Check land with check(sim, outline, 0.0, true).
+## Leader requests (Brawn, 2026-10-23: LeaderAsks and Heritage) are asks of
+## the town rather than plans to build through it: file with "ask": a kind,
+## "yes" and "no" (what happens either way, in plain words) and an "area" to
+## show on the map. They aren't priced, can't be redrawn, and a town-wide
+## Growth Hold doesn't stop them (a leader can still ask).
 ## A hub can price routes its own way: sim.permits.costers["rail"] =
 ## func(sim, req, route, hits) -> int. Filing and carrying out happen inside
 ## tick(), and the player's answers come through CitySim.apply, so every
@@ -85,11 +90,12 @@ var locators := {}
 func file(sim, plan: Dictionary) -> int:
 	var hub := str(plan.get("hub", ""))
 	var hub_id := int(plan.get("hub_id", 0))
-	if not can_file(sim, hub, hub_id):
+	var ask := str(plan.get("ask", ""))
+	if not can_file(sim, hub, hub_id, ask != ""):
 		return -1
-	var shape := "area" if plan.has("area") else "route"
+	var shape := "area" if plan.has("area") else ("deal" if plan.has("deal") else "route")
 	var route := _route(plan.get("area", plan.get("route", [])))
-	if route.size() < (3 if shape == "area" else 2):
+	if route.size() < {"area": 3, "route": 2, "deal": 0}[shape]:
 		return -1
 	var req := {
 		"id": next_id,
@@ -114,7 +120,18 @@ func file(sim, plan: Dictionary) -> int:
 		"decided": -1,
 		"edits": 0,
 		"note": "",
+		"ask": ask,
+		"yes": str(plan.get("yes", "")),
+		"no": str(plan.get("no", "")),
 	}
+	if shape == "deal":
+		# A service deal with a neighbor town (Interlocal): {kind, fee, other}.
+		req.deal = plan.deal
+	if ask != "":
+		next_id += 1
+		requests[req.id] = req
+		changed.emit()
+		return req.id
 	_price(sim, req, route)
 	next_id += 1
 	requests[req.id] = req
@@ -168,12 +185,12 @@ func _granted(sim, req: Dictionary) -> bool:
 
 
 ## True if this hub may file a request now.
-func can_file(sim, hub: String, hub_id: int) -> bool:
+func can_file(sim, hub: String, hub_id: int, ask := false) -> bool:
 	if guidance(hub, hub_id).stance == "hold":
 		return false
 	# Growth on Hold (for this hub, its area or the whole town) is the same word.
 	var key := _key(hub, hub_id)
-	if "policies" in sim and sim.policies.step("growth", sim.hub_area(key), key) == 0:
+	if not ask and "policies" in sim and sim.policies.step("growth", sim.hub_area(key), key) == 0:
 		return false
 	if int(sim.tick_count) < int(wait_until.get(_key(hub, hub_id), -1)):
 		return false
@@ -243,6 +260,8 @@ static func needs(hits: Dictionary) -> bool:
 ## otherwise base + per_m for every metre + PER_CROSSING per road crossed,
 ## or for land, base + per_m2 for every square metre.
 func cost_of(sim, req: Dictionary, route: Array, hits: Dictionary) -> int:
+	if req.shape == "deal":
+		return 0  # a service deal builds nothing; its monthly fee is on the card
 	if costers.has(req.hub) and (costers[req.hub] as Callable).is_valid():
 		return int(costers[req.hub].call(sim, req, route, hits))
 	if req.shape == "area":
@@ -280,6 +299,8 @@ func answer(sim, cmd: Dictionary) -> bool:
 			req.state = State.DENIED
 			wait_until[_key(req.hub, req.hub_id)] = int(sim.tick_count) + DENY_WAIT
 		"edit":
+			if req.shape == "deal" or str(req.get("ask", "")) != "":
+				return false
 			var route := _route(cmd.get("route", []))
 			if route.size() < (3 if req.shape == "area" else 2):
 				return false
@@ -419,7 +440,18 @@ func from_dict(d: Dictionary) -> void:
 					"id": str(b.id) if str(b.what) == "lot" else int(b.id), "name": str(b.name)})},
 			"state": int(r.state), "filed": int(r.filed), "decided": int(r.decided),
 			"edits": int(r.edits), "note": str(r.get("note", "")),
+			"ask": str(r.get("ask", "")), "yes": str(r.get("yes", "")), "no": str(r.get("no", "")),
 		}
+		if not r.get("deal", {}).is_empty():
+			var dl: Dictionary = r.deal
+			req.deal = {"kind": str(dl.get("kind", "")), "fee": int(dl.get("fee", 0)), "other": str(dl.get("other", ""))}
+			if dl.get("pays", false):
+				req.deal.pays = true
+			for k in ["key", "agreement"]:
+				if dl.has(k):
+					req.deal[k] = str(dl[k])
+			if dl.has("homes"):
+				req.deal.homes = int(dl.homes)
 		requests[req.id] = req
 	for k in d.get("wait", {}):
 		wait_until[str(k)] = int(d.wait[k])

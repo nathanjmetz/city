@@ -36,10 +36,23 @@ var chat := []  # [{"from", "text", "at"}]
 ## "b_at": [x, z]}], each end in its own town's coordinates.
 var joins := []
 var region_seed := 1
+## Regional projects and service agreements between towns (see Ledger).
+var ledger := Ledger.new()
 ## Roads the last add_city built in existing towns (their halves of the new
 ## county roads): city id -> [commands]. Their owners, if online, run them
 ## on their own computers too.
 var handed := {}
+## The latest copy of each town as saved data. Unpacking a copy into a full
+## simulation is slow (about a second for a grown town), so a copy that
+## arrives is only kept here until something needs the simulation itself
+## (placing a town, trade, drawing a neighbor): see load_stale().
+## Whose land is whose: city id -> {Vector2i: true}, the LAND_CELL squares
+## (region coordinates) each town has built on (see CitySim.land_cells).
+## Sent with each town's copy, so nobody needs a neighbor's whole town to
+## know where its land is.
+var land := {}
+var _data := {}   # city id -> saved data, the same as sim.to_dict()
+var _stale := {}  # city ids whose simulation is older than _data
 
 
 ## The city a player owns, or "" if they have none yet.
@@ -56,6 +69,7 @@ func city_of(player_id: String) -> String:
 ## its nearest towns (meeting theirs halfway, on the city line) and one on
 ## out to open country. The roads are free and can't be bulldozed.
 func add_city(player_id: String, player: String) -> String:
+	load_stale()
 	handed = {}
 	var id := "c%d" % (cities.size() + 1)
 	while cities.has(id):
@@ -91,6 +105,10 @@ func add_city(player_id: String, player: String) -> String:
 			away = (origin - cities[near[0]].origin).orthogonal()
 		sim.build_county_road(Vector2.ZERO, away.normalized() * COUNTY_REACH, [1])
 	sim.economy.money = Economy.START_MONEY
+	take_land(id, land_of_sim(id))
+	_data.erase(id)
+	for other in handed:
+		_data.erase(other)
 	return id
 
 
@@ -105,9 +123,148 @@ static func new_sim() -> CitySim:
 ## Takes the latest copy of a town from its player's computer.
 func update_city(id: String, d: Dictionary) -> void:
 	if cities.has(id):
-		var sim: CitySim = cities[id].sim
-		sim.terrain_offset = cities[id].origin
-		sim.from_dict(d)
+		_data[id] = d
+		_stale[id] = true
+
+
+## Unpacks the waiting copies into their simulations: all of them, or just
+## the one given. Returns the ids loaded.
+func load_stale(only := "") -> Array:
+	var ids: Array = [only] if only != "" else _stale.keys()
+	var done := []
+	for id in ids:
+		if _stale.has(id) and cities.has(id):
+			var sim: CitySim = cities[id].sim
+			sim.terrain_offset = cities[id].origin
+			sim.from_dict(_data[id])
+			done.append(id)
+		_stale.erase(id)
+	if not done.is_empty():
+		share_care()
+	return done
+
+
+## The towns whose newest copy hasn't been unpacked yet.
+func stale_ids() -> Array:
+	return _stale.keys()
+
+
+## A town's saved data, made from its simulation only when there's no copy.
+func city_data(id: String) -> Dictionary:
+	if not _data.has(id):
+		_data[id] = cities[id].sim.to_dict()
+	return _data[id]
+
+
+## Call after changing a town's simulation directly, so its saved data is
+## made afresh.
+func touched(id: String) -> void:
+	_data.erase(id)
+	_stale.erase(id)
+
+
+## Neighbors' hospitals draw patients from every town in the region, and
+## their helipads and specialty centers lift care in the others.
+func share_care() -> void:
+	for id in cities:
+		var others := 0
+		var offered := 0.0
+		for other in cities:
+			if other != id:
+				others += int(cities[other].sim.stats.get("population", 0))
+				offered = maxf(offered, cities[other].sim.healthcare.care_offered())
+		cities[id].sim.healthcare.region_pop = others
+		cities[id].sim.healthcare.region_care = offered
+
+
+## Works out the metro again (see Ledger.update_metro). Returns whether it
+## changed.
+func update_metro() -> bool:
+	var towns := {}
+	for id in cities:
+		towns[id] = cities[id].name
+	return ledger.update_metro(towns, joins)
+
+
+## Takes a town's land as sent: a flat list of cells [x0, z0, x1, z1...].
+func take_land(id: String, flat: Array) -> void:
+	var cells := {}
+	for i in range(0, flat.size() - 1, 2):
+		cells[Vector2i(int(flat[i]), int(flat[i + 1]))] = true
+	land[id] = cells
+
+
+## A town's land, worked out from its simulation, as a flat list to send.
+func land_of_sim(id: String) -> Array:
+	var origin: Vector2 = cities[id].origin
+	var flat := []
+	for p in cities[id].sim.land_cells():
+		var c := Vector2i(((p + origin) / Balance.LAND_CELL).floor())
+		flat.append(c.x)
+		flat.append(c.y)
+	return flat
+
+
+func land_flat(id: String) -> Array:
+	var flat := []
+	for c in land.get(id, {}):
+		flat.append(c.x)
+		flat.append(c.y)
+	return flat
+
+
+## Whether a town may build at these points (its own coordinates): "" if
+## they are its land or open land, else whose land they are. A point is
+## another town's when that town has built within LAND_CLAIM of it and
+## nearer than this town has: the city line, as a rule.
+func land_problem(me: String, pts: Array) -> String:
+	if not cities.has(me):
+		return ""
+	var origin: Vector2 = cities[me].origin
+	for p in pts:
+		var q: Vector2 = p + origin
+		var nearest := Balance.LAND_CLAIM
+		var who := ""
+		for id in land:
+			if id != me and cities.has(id):
+				var d := _land_distance(land[id], q, nearest)
+				if d < nearest:
+					nearest = d
+					who = id
+		if who != "" and _land_distance(land.get(me, {}), q, nearest) > nearest:
+			return "That's %s's land." % cities[who].name
+	return ""
+
+
+## Why a town can't start a neighborhood at this spot (its coordinates):
+## too near another town's buildings, or not dry, level ground.
+func site_problem(me: String, spot: Vector2) -> String:
+	if not cities.has(me):
+		return ""
+	var q: Vector2 = spot + cities[me].origin
+	for id in land:
+		if id != me and cities.has(id) and _land_distance(land[id], q, Balance.NEIGHBORHOOD_SPACING) < Balance.NEIGHBORHOOD_SPACING:
+			return "Too close to %s: a new neighborhood starts at least a mile from other towns." % cities[id].name
+	if not Terrain.buildable(q.x, q.y, SITE_RADIUS):
+		return "A neighborhood needs dry, level ground."
+	return ""
+
+
+## Distance from a spot to the nearest of these land cells, looking no
+## further than `within` (INF past it).
+static func _land_distance(cells: Dictionary, q: Vector2, within: float) -> float:
+	if cells.is_empty():
+		return INF
+	var size := Balance.LAND_CELL
+	var r := ceili(within / size) + 1
+	var at := Vector2i((q / size).floor())
+	var best := INF
+	for dx in range(-r, r + 1):
+		for dz in range(-r, r + 1):
+			var c := at + Vector2i(dx, dz)
+			if cells.has(c):
+				best = minf(best, q.distance_to((Vector2(c) + Vector2(0.5, 0.5)) * size))
+	return best if best <= within + size else INF
 
 
 ## A month of trade between towns: neighbors joined by county road first,
@@ -117,6 +274,7 @@ func settle_trade(ids: Array) -> void:
 	var sims := {}
 	for id in ids:
 		if cities.has(id):
+			load_stale(id)
 			sims[id] = cities[id].sim
 	Trade.settle(sims, trade_links())
 
@@ -180,6 +338,9 @@ func _free_spot() -> Vector2:
 				n += 1
 		if n > 0 and (built / n).length() > 150.0:
 			wedges.append([c.origin, (built / n).normalized()])
+		# Its land too: neighborhood sites, and towns not unpacked here.
+		for cell in land.get(id, {}):
+			pts.append((Vector2(cell) + Vector2(0.5, 0.5)) * Balance.LAND_CELL)
 	centre /= ids.size()
 	var ring := 1
 	while ring < 200:
@@ -238,27 +399,43 @@ func to_dict() -> Dictionary:
 	for id in cities:
 		var c: Dictionary = cities[id]
 		cs[id] = {"owner": c.owner, "player": c.player, "name": c.name, "origin": [c.origin.x, c.origin.y],
-			"color": c.color, "city": c.sim.to_dict()}
-	return {"version": 2, "seed": region_seed, "cities": cs, "chat": chat, "joins": joins}
+			"color": c.color, "city": city_data(id), "land": land_flat(id)}
+	return {"version": 2, "seed": region_seed, "cities": cs, "chat": chat, "joins": joins,
+		"ledger": ledger.to_dict()}
 
 
-func from_dict(d: Dictionary) -> void:
+## With `first` set, only that town is unpacked now (a player's own, so
+## they can start playing at once); the others wait as data (load_stale).
+func from_dict(d: Dictionary, first := "") -> void:
 	region_seed = int(d.get("seed", 1))
 	chat = d.get("chat", [])
+	ledger = Ledger.new()
+	ledger.from_dict(d.get("ledger", {}))
 	joins = []
 	for j in d.get("joins", []):
 		if j.has("a_at"):
 			joins.append({"a": str(j.a), "a_at": [float(j.a_at[0]), float(j.a_at[1])],
 				"b": str(j.b), "b_at": [float(j.b_at[0]), float(j.b_at[1])]})
 	cities.clear()
+	land = {}
+	_data = {}
+	_stale = {}
 	var cs: Dictionary = d.get("cities", {})
 	for id in cs:
 		var c: Dictionary = cs[id]
 		var sim := new_sim()
 		sim.terrain_offset = Vector2(float(c.origin[0]), float(c.origin[1]))
-		sim.from_dict(c.city)
+		if first == "" or id == first:
+			sim.from_dict(c.city)
+		else:
+			_data[id] = c.city
+			_stale[id] = true
 		cities[id] = {"owner": str(c.owner), "player": str(c.get("player", "")), "name": str(c.name),
 			"origin": Vector2(float(c.origin[0]), float(c.origin[1])), "color": int(c.color), "sim": sim}
+		if c.get("land") is Array and not c.land.is_empty():
+			take_land(id, c.land)
+		elif not _stale.has(id):
+			take_land(id, land_of_sim(id))
 
 
 ## The region with every town in it but the one listed, whose own computer
@@ -267,4 +444,14 @@ func to_dict_without(skip: String) -> Dictionary:
 	var d := to_dict()
 	if d.cities.has(skip):
 		d.cities[skip].erase("city")
+	return d
+
+
+## The region with only the listed towns' data (the others just named and
+## placed), for players who already have the rest.
+func to_dict_with(ids: Array) -> Dictionary:
+	var d := to_dict()
+	for id in d.cities:
+		if not id in ids:
+			d.cities[id].erase("city")
 	return d

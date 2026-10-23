@@ -504,8 +504,8 @@ func _next_project(sim: CitySim, id: int) -> bool:
 		d.why = "Saving up for a spur to the %s ($%s)." % [best.target.name.to_lower(), CitySim.money_text(cost)]
 		return false
 	_propose(sim, id, "spur", best.target, best.plan,
-		"A spur to the %s: about %d carloads a year, paying for itself in %.0f years" % [
-			best.target.name.to_lower(), roundi(best.cars), best.years])
+		"A spur to the %s: about %d carloads a year, paying for itself in %s" % [
+			best.target.name.to_lower(), roundi(best.cars), "about a year" if best.years < 1.5 else "%d years" % roundi(best.years)])
 	return true
 
 
@@ -868,9 +868,11 @@ func _construct(sim: CitySim) -> void:
 		d.money -= m * rate
 		d.ledger.costs += m * rate
 		pc.built += m
+		l.built = pc.built
 		_dirty = true
 		if pc.built >= total - 0.01:
 			pc.built = -1.0  # complete
+			l.built = total
 			l.state = "open"
 			if l.kind == "main":
 				_region_run(l)
@@ -1588,6 +1590,35 @@ func _spans(t: Dictionary, length: float, reach: float) -> Array:
 			if reach <= 0.0:
 				break
 	return out
+
+
+## The next grade crossing ahead of a train's head on its route, within
+## `look` metres: {index (into crossings), dist (m)}, or {}. The engineer
+## blows for it 15 to 20 seconds out (FRA, 49 CFR 222.21).
+func next_crossing(tid: int, look := 800.0) -> Dictionary:
+	var t: Dictionary = trains[tid]
+	if crossings.is_empty() or t.route.is_empty() or t.state != "run":
+		return {}
+	var ahead := 0.0
+	for i in t.route.size():
+		var pid: int = t.route[i][0]
+		var dir: int = t.route[i][1]
+		var from_s: float = t.s if i == 0 else (0.0 if dir > 0 else _length(pid))
+		var best := INF
+		var found := -1
+		for k in crossings.size():
+			if crossings[k].piece != pid:
+				continue
+			var d: float = (float(crossings[k].s) - from_s) * dir
+			if d >= 0.0 and d < best:
+				best = d
+				found = k
+		if found != -1:
+			return {"index": found, "dist": ahead + best} if ahead + best <= look else {}
+		ahead += (_length(pid) - from_s) if dir > 0 else from_s
+		if ahead > look:
+			break
+	return {}
 
 
 ## True if a car must stop for a crossing at this point (gates down).

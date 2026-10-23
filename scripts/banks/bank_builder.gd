@@ -10,7 +10,8 @@ extends CivicBuilder
 ##   - later blocks: drive-up teller lanes under a canopy with a pneumatic
 ##     tube island per lane, an ATM kiosk, a parking lot, brick office
 ##     wings, a community room, a flat-roofed operations center, a four-storey
-##     holding company headquarters, and an equipment leasing yard
+##     holding company headquarters (Farm Credit Leasing works from an office
+##     wing: leased machines go straight from the dealer to the farm)
 ## Local space: one Banks.CELL block centred on 0, -z toward the street.
 ## `to_curb` is how far the curb lies in front of the first building.
 
@@ -38,7 +39,6 @@ static func build_block(art: String, seed: int) -> Array:
 		"hall": b._community_room()
 		"operations": b._operations()
 		"headquarters": b._headquarters()
-		"yard": b._leasing_yard()
 		_: b._office_wing()
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
@@ -238,19 +238,3 @@ func _headquarters() -> void:
 	_sign(Vector3(0.0, floors * 4.0 - 0.6, zf - 0.08), 12.0, 0.9)
 	_rooftop_units(0.0, w * 0.7, zf, d, floors * 4.0 + 0.4, 2)
 	_flagpole(Vector3(-w * 0.5 + 1.0, 0, zf - 4.0))
-
-
-## Farm Credit's equipment leasing yard: gravel with tractors and a planter.
-func _leasing_yard() -> void:
-	_flat_rect("gravel", -S + 1.0, S - 1.0, -S + 1.0, S - 1.0, 0.06, DIRT)
-	var green := Color("#2f6b34")
-	var red := Color("#a3352b")
-	for i in 3:
-		var col: Color = green if rng.randf() < 0.6 else red
-		var x := -10.0 + i * 10.0
-		_box("metal", Vector3(2.6, 1.6, 4.2), Vector3(x, 1.5, -6.0), col)
-		_box("metal", Vector3(1.6, 1.4, 1.6), Vector3(x, 3.0, -5.0), Color("#2a2c2e"))
-		for s in [-1.0, 1.0]:
-			_cyl_y(Vector3(x + s * 1.5, 0.9, -4.6), 0.9, 0.6, Color("#1e1f20"))
-	_box("metal", Vector3(12.0, 1.0, 2.0), Vector3(0, 0.9, 8.0), Color("#c9a227"))  # a planter bar
-	_fence(Vector2(-S + 1.0, -S + 1.0), Vector2(S - 1.0, -S + 1.0), 1.8)

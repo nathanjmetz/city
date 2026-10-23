@@ -16,6 +16,10 @@ const WHITE := Color(0.93, 0.94, 0.94)
 const PANEL := Color(0.12, 0.17, 0.3)
 const BRICK := Color(0.52, 0.3, 0.24)
 const COAL := Color(0.12, 0.12, 0.13)
+const POLE := Color(0.36, 0.29, 0.22)  # weathered treated pine
+const INSULATOR := Color(0.62, 0.64, 0.6)
+const WIRE := Color(0.32, 0.33, 0.34)
+const FENCE := Color(0.6, 0.62, 0.62)
 
 var sim: CitySim
 var _sites := {}  # site id -> Node3D
@@ -29,6 +33,7 @@ var _time := 0.0
 func setup(s: CitySim) -> void:
 	sim = s
 	sim.power_changed.connect(_rebuild)
+	sim.network.changed.connect(_rebuild)
 	_rebuild()
 	_loaded = true
 
@@ -42,8 +47,14 @@ func _process(delta: float) -> void:
 
 
 ## A company is redrawn when its plant, units or add-ons change.
-static func _stamp(s: Dictionary) -> String:
-	return "%s|%s|%s" % [s.plant, str(s.cells), str(s.built)]
+## So is its line to the neighbors when the roads it follows change.
+func _stamp(s: Dictionary) -> String:
+	var tie := _tie(s)
+	return "%s|%s|%s|%d|%s" % [s.plant, str(s.cells), str(s.built), tie.size(), tie[-1] if tie.size() > 0 else ""]
+
+
+func _tie(s: Dictionary) -> PackedVector3Array:
+	return sim.power.tie_route(sim.network, sim.region_links, s)
 
 
 func _rebuild() -> void:
@@ -67,13 +78,8 @@ func _site(s: Dictionary) -> Node3D:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	if s.drive.size() >= 2:
 		RoadMesh.add_strip(st, Terrain.densify(PackedVector3Array(s.drive), 6.0), -Farms.DRIVE_WIDTH * 0.5, Farms.DRIVE_WIDTH * 0.5, 0.12)
-	for c in s.cells:
-		var to := Vector2i.ZERO
-		for d in [Vector2i(-signi(c.x), 0), Vector2i(0, -signi(c.y))]:
-			if d != Vector2i.ZERO and (c + d == Vector2i.ZERO or (c + d) in s.cells):
-				to = c + d
-				break
-		RoadMesh.add_strip(st, PackedVector3Array([Power.cell_center(s, c), Power.cell_center(s, to)]), -2.0, 2.0, 0.1)
+	for lane in Power.lanes(s):
+		RoadMesh.add_strip(st, PackedVector3Array(lane), -2.0, 2.0, 0.1)
 	var flat := MeshInstance3D.new()
 	flat.mesh = Terrain.drape(st.commit(), true, 8.0)
 	flat.material_override = _mat(LANE)
@@ -89,7 +95,12 @@ func _site(s: Dictionary) -> Node3D:
 			"wind": _turbine(root, unit)
 			"gas": _gas(unit)
 			"coal": _coal(unit, "scrubbers" in s.built)
-			"hydro": _dam(unit)
+			"hydro": pass
+	if s.plant == "hydro" and not s.cells.is_empty():
+		_dam(root, s)
+	var tie := _tie(s)
+	_line(root, tie)
+	_substation(root, tie)
 	for color in _batch:
 		var mi := MeshInstance3D.new()
 		mi.mesh = (_batch[color] as SurfaceTool).commit()
@@ -145,6 +156,85 @@ func _yard(n: Node3D, s: Dictionary) -> void:
 			_:
 				continue
 		k += 1
+
+
+## A 69 kV line on single wood poles: an 18 m pole with a crossarm and
+## three conductors, sagging about 1.5 m mid-span (real rural co-op
+## subtransmission). The wires are merged into the batch like the rest.
+func _line(root: Node3D, route: PackedVector3Array) -> void:
+	var spots := Power.poles(route)
+	if spots.size() < 2:
+		return
+	var tops := []
+	for i in spots.size():
+		var p := spots[i]
+		var ahead := spots[mini(i + 1, spots.size() - 1)] - spots[maxi(i - 1, 0)]
+		ahead.y = 0.0
+		var basis := Basis.looking_at(ahead.normalized() if ahead.length() > 0.1 else Vector3.FORWARD, Vector3.UP)
+		var n := _node(root, p, basis)
+		_cyl(n, 0.16, 18.0, Vector3(0, 9.0, 0), POLE)
+		_box(n, Vector3(3.6, 0.15, 0.15), Vector3(0, 17.2, 0), POLE)
+		var arms := []
+		for x in [-1.6, 0.0, 1.6]:
+			_box(n, Vector3(0.12, 0.5, 0.12), Vector3(x, 17.55 + (0.6 if x == 0.0 else 0.0), 0), INSULATOR)
+			arms.append(n.transform * Vector3(x, 17.8 + (0.6 if x == 0.0 else 0.0), 0))
+		tops.append(arms)
+	for i in range(1, tops.size()):
+		for k in 3:
+			var a: Vector3 = tops[i - 1][k]
+			var b: Vector3 = tops[i][k]
+			var prev := a
+			for j in range(1, 5):
+				var t := j / 4.0
+				var q := a.lerp(b, t) - Vector3(0, 4.0 * Balance.POWER_TIE_SAG * t * (1.0 - t), 0)
+				_wire(prev, q)
+				prev = q
+
+
+func _wire(a: Vector3, b: Vector3) -> void:
+	var len := a.distance_to(b)
+	if len < 0.01:
+		return
+	var m := BoxMesh.new()
+	m.size = Vector3(0.05, 0.05, len)
+	if not _batch.has(WIRE):
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		_batch[WIRE] = st
+	var basis := Basis.looking_at((b - a).normalized(), Vector3.UP if absf((b - a).normalized().y) < 0.99 else Vector3.RIGHT)
+	(_batch[WIRE] as SurfaceTool).append_from(m, 0, Transform3D(basis, (a + b) * 0.5))
+
+
+## The metering substation at the end of the line: a gravel yard inside
+## a chain-link fence, a wood H-frame dead-end where the line lands, a bank
+## of three regulators, the meter cabinet and a small control house.
+func _substation(root: Node3D, route: PackedVector3Array) -> void:
+	var sub := Power.substation(route)
+	if sub.is_empty():
+		return
+	var t: Vector3 = sub[1]
+	var n := _node(root, sub[0], Basis.looking_at(Vector3(-t.z, 0.0, t.x), Vector3.UP))
+	var w: float = Balance.POWER_SUBSTATION_SIZE.x
+	var d: float = Balance.POWER_SUBSTATION_SIZE.y
+	# Graded flat: the pad is cut into the slope, its top just above grade.
+	_box(n, Vector3(w, 1.6, d), Vector3(0, -0.5, 0), GRAVEL)
+	# Chain-link: posts every 3 m with a top rail and line wires.
+	for side in [-1.0, 1.0]:
+		for i in int(w / 3.0) + 1:
+			_box(n, Vector3(0.08, 2.4, 0.08), Vector3(-w * 0.5 + i * w / int(w / 3.0), 1.5, side * d * 0.5), FENCE)
+		for i in int(d / 3.0) + 1:
+			_box(n, Vector3(0.08, 2.4, 0.08), Vector3(side * w * 0.5, 1.5, -d * 0.5 + i * d / int(d / 3.0)), FENCE)
+		for y in [0.9, 1.8, 2.6]:
+			_box(n, Vector3(w, 0.04, 0.04), Vector3(0, y, side * d * 0.5), FENCE)
+			_box(n, Vector3(0.04, 0.04, d), Vector3(side * w * 0.5, y, 0), FENCE)
+	# The line comes in from the road side (-z) onto the H-frame.
+	for x in [-3.0, 3.0]:
+		_cyl(n, 0.2, 14.0, Vector3(x, 7.0, d * 0.5 - 5.0), POLE)
+	_box(n, Vector3(7.6, 0.3, 0.3), Vector3(0, 12.8, d * 0.5 - 5.0), POLE)
+	for i in 3:
+		_box(n, Vector3(1.6, 3.0, 1.6), Vector3(-4.0 + i * 4.0, 1.5, 0.0), Color(0.5, 0.53, 0.5))  # regulators
+	_box(n, Vector3(1.2, 2.0, 0.8), Vector3(8.0, 1.0, -2.0), STEEL)  # meter cabinet
+	_box(n, Vector3(6.0, 3.2, 4.0), Vector3(-w * 0.5 + 5.0, 1.6, -d * 0.5 + 4.0), Color(0.78, 0.76, 0.7))  # control house
 
 
 ## Fixed-tilt rows facing south-ish: eight rows of panels on an 80 m cell.
@@ -214,10 +304,46 @@ func _coal(n: Node3D, scrubbed: bool) -> void:
 	_add(n, pile, Vector3(20, 4.5, -26), COAL)
 
 
-## A low run-of-river dam bay with its powerhouse.
-func _dam(n: Node3D) -> void:
-	_box(n, Vector3(80, 8, 10), Vector3(0, 2, 0), CONCRETE)
-	_box(n, Vector3(22, 10, 14), Vector3(-24, 5, 12), Color(0.66, 0.64, 0.6))
+## A low-head run-of-river dam, like Norway Dam on the Tippecanoe: a
+## concrete weir bank to bank across the flow with piers every 12 m, and
+## the powerhouse on the bank nearer the yard, one turbine bay per unit.
+func _dam(root: Node3D, s: Dictionary) -> void:
+	var span: Array = sim.power.dam_span(Power.cell_center(s, s.cells[0]))
+	if span.size() < 2:
+		return
+	var a: Vector3 = span[0]
+	var b: Vector3 = span[1]
+	if b.distance_to(s.pos) < a.distance_to(s.pos):
+		var t := a
+		a = b
+		b = t
+	var length := maxf(a.distance_to(b), 20.0)
+	var along := (b - a).normalized() if a.distance_to(b) > 1.0 else Vector3.RIGHT
+	var n := _node(root, (a + b) * 0.5, Basis.looking_at(Vector3(-along.z, 0.0, along.x), Vector3.UP))
+	# The weir sits on the river's surface, not its bed (as rail bridges do).
+	var m := (a + b) * 0.5
+	n.position.y = maxf(n.position.y, Terrain.water_level(m.x + Terrain.shift.x + Terrain.view_origin.x,
+		m.z + Terrain.shift.y + Terrain.view_origin.y))
+	# An overflow weir from bank to bank, its crest a little over the pool,
+	# with white water spilling down its face; a gated section with piers
+	# beside the powerhouse.
+	_box(n, Vector3(length + 8.0, 3.2, 7.0), Vector3(0, 0.4, 0), CONCRETE)
+	_box(n, Vector3(length, 0.3, 5.0), Vector3(0, 0.15, 5.5), WHITE)
+	var gates := mini(4, maxi(1, int(length / 30.0)))
+	for i in gates + 1:
+		var px := length * 0.5 - i * 10.0
+		_box(n, Vector3(1.8, 7.0, 10.0), Vector3(px, 2.5, 0), CONCRETE)
+		if i < gates:
+			_box(n, Vector3(8.2, 1.0, 1.2), Vector3(px - 5.0, 5.4, -1.0), STEEL)  # gate leaf, raised
+	_box(n, Vector3(gates * 10.0 + 1.8, 0.8, 4.0), Vector3(length * 0.5 - gates * 5.0, 6.4, 0), CONCRETE)  # hoist deck
+	# Powerhouse on the yard's bank: one bay per unit.
+	var bays: int = s.cells.size()
+	var house := 10.0 + 9.0 * bays
+	var hx := length * 0.5 + house * 0.5 - 4.0  # +x runs toward the yard bank
+	_box(n, Vector3(house, 11.0, 18.0), Vector3(hx, 4.5, 3.0), Color(0.66, 0.64, 0.6))
+	_box(n, Vector3(house + 0.6, 0.6, 18.6), Vector3(hx, 10.3, 3.0), Color(0.3, 0.3, 0.32))
+	for i in bays:
+		_box(n, Vector3(6.0, 2.0, 2.0), Vector3(hx - house * 0.5 + 9.0 * i + 9.5, 9.0, -6.5), STEEL)  # gate hoists
 
 
 func _box(root: Node3D, size: Vector3, pos: Vector3, color: Color) -> void:

@@ -13,7 +13,11 @@ signal opened
 
 const WIDTH := 340
 ## What each kind of hub is called on its card.
-const HUB_NAMES := {"rail": "Railroad", "bus": "Bus company", "family": "Family business"}
+const HUB_NAMES := {"rail": "Railroad", "bus": "Bus company", "family": "Family business", "developer": "Land developer",
+	"interlocal": "Shared service", "heritage": "Historical society", "owner": "Building owner"}
+## Leader requests (asks of the town) by kind (LeaderAsks, Heritage).
+const ASK_NAMES := {"abatement": "Company", "pave": "Farm", "signal": "Business", "festival": "Main Street",
+	"district": "Historical society", "demolish": "Building owner"}
 
 var sim: CitySim
 var view := PermitView.new()
@@ -125,6 +129,11 @@ func _select(id: int) -> void:
 	if req.is_empty():
 		_selected = -1
 		view.hide_plan()
+	elif req.get("shape", "route") == "deal":
+		# A service deal has no plan to draw: look at the county road it uses.
+		view.hide_plan()
+		if view.cam and not req.route.is_empty():
+			view.cam.fly_to(Vector3(req.route[0][0], 0.0, req.route[0][1]))
 	else:
 		view.show_plan(req)
 		if view.cam:
@@ -158,8 +167,8 @@ func _rebuild(force := false) -> void:
 		view.hide_plan()
 	var open := sim.permits.listed(Permits.State.OPEN)
 	var shelved := sim.permits.listed(Permits.State.SHELVED)
-	var key := "%s|%s|%d|%s|%s|%d" % [open.map(_card_key), shelved.map(_card_key), _selected, _editing,
-		_show_shelved, int(sim.tick_count / (CitySim.TICKS_PER_HOUR * 6))]
+	var key := "%s|%s|%d|%s|%s|%d|%s" % [open.map(_card_key), shelved.map(_card_key), _selected, _editing,
+		_show_shelved, int(sim.tick_count / (CitySim.TICKS_PER_HOUR * 6)), str(sim.interlocal.deals)]
 	if key == _shown_key and not force:
 		return
 	_shown_key = key
@@ -186,7 +195,40 @@ func _rebuild(force := false) -> void:
 		if _show_shelved:
 			for req in shelved:
 				_list.add_child(_card(req))
+	_agreements()
 	_update_badge()
+
+
+## Signed service deals with neighbor towns, each with a way to end it.
+func _agreements() -> void:
+	var ids := sim.interlocal.deals.keys()
+	if ids.is_empty():
+		return
+	ids.sort()
+	_list.add_child(UiStyle.label("SHARED SERVICES", 11, UiStyle.MUTED))
+	for id in ids:
+		var d: Dictionary = sim.interlocal.deals[id]
+		var card := PanelContainer.new()
+		card.add_theme_stylebox_override("panel", _card_style(false))
+		var col := VBoxContainer.new()
+		col.add_theme_constant_override("separation", 4)
+		card.add_child(col)
+		var what: String = Interlocal.KINDS[d.kind].name
+		var host: bool = d.role == "host"
+		var title := ("We give %s %s" % [d.other_name, what]) if host else ("%s gives us %s" % [d.other_name, what])
+		col.add_child(_text(title, UiStyle.TEXT, 600))
+		var serving := int(d.offset) >= 0
+		col.add_child(_fact("money", "%s$%s a month%s" % ["+" if host else "–", CitySim.money_text(int(d.fee)),
+			"" if serving else " (on hold: nothing to serve from)"], UiStyle.MUTED, not serving))
+		if int(d.left) >= 0:
+			col.add_child(_text("Notice given: ends in about %s" % _months(maxi(int(d.left), 1) * 24 * CitySim.TICKS_PER_HOUR),
+				Brand.INK_FAINT, 500, 11))
+		else:
+			var row := HBoxContainer.new()
+			col.add_child(row)
+			row.add_child(_action("Give notice", false, func(): sim.apply({"type": "end_deal", "id": id})))
+			row.tooltip_text = "Ends the deal after %s' notice, as the agreement says." % _months(Balance.INTERLOCAL_NOTICE * 24 * CitySim.TICKS_PER_HOUR)
+		_list.add_child(card)
 
 
 func _card_key(r: Dictionary) -> String:
@@ -213,13 +255,47 @@ func _card(req: Dictionary) -> Control:
 	var name := UiStyle.label(req.leader if req.leader != "" else "A leader in town", 13, UiStyle.TEXT, 600)
 	name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	who.add_child(name)
-	who.add_child(UiStyle.label(HUB_NAMES.get(req.hub, str(req.hub).capitalize()), 11, UiStyle.MUTED))
+	var ask := str(req.get("ask", ""))
+	who.add_child(UiStyle.label(ASK_NAMES.get(ask, "Leader") if ask != "" else HUB_NAMES.get(req.hub, str(req.hub).capitalize()),
+		11, UiStyle.MUTED))
 	col.add_child(_text(req.title, UiStyle.TEXT, 600))
 	if req.why != "" and (picked or req.state == Permits.State.OPEN):
 		col.add_child(_text(req.why, UiStyle.MUTED, 500, 12))
+	if ask != "":
+		# An ask of the town: what a yes and a no each bring.
+		col.add_child(_fact("check", "If yes: " + str(req.yes), UiStyle.TEXT, false))
+		col.add_child(_fact("close", "If no: " + str(req.no), UiStyle.MUTED, false))
+		if req.state == Permits.State.OPEN:
+			var wait := Permits.SHELVE_AFTER - (sim.tick_count - int(req.filed))
+			col.add_child(_text("Shelved in " + _days(wait) + " if you don't answer", Brand.INK_FAINT, 500, 11))
+		if picked:
+			var yes_no := HBoxContainer.new()
+			yes_no.add_theme_constant_override("separation", 6)
+			col.add_child(yes_no)
+			yes_no.add_child(_action("Yes", true, func(): _answer("approve")))
+			yes_no.add_child(_action("No", false, func(): _answer("deny")))
+		return card
 
 	var hits: Dictionary = view.hits if picked and _editing else req.hits
 	var cost: int = sim.permits.cost_of(sim, req, view.route, hits) if picked and _editing else req.cost
+	var deal: Dictionary = req.get("deal", {})
+	if not deal.is_empty():
+		# A service deal: what it costs or brings in each month, and nothing built.
+		col.add_child(_fact("money", ("Costs us $%s a month" if deal.get("pays", false) else "Brings in $%s a month")
+			% CitySim.money_text(int(deal.fee)), UiStyle.MUTED, false))
+		col.add_child(_fact("check", "Builds nothing. Either town can end it with %s' notice" % _months(Balance.INTERLOCAL_NOTICE * 24 * CitySim.TICKS_PER_HOUR),
+			Brand.POSITIVE, false))
+		if req.state == Permits.State.OPEN:
+			var left := Permits.SHELVE_AFTER - (sim.tick_count - int(req.filed))
+			col.add_child(_text("Both towns must approve. Shelved in " + _days(left) + " if you don't answer",
+				Brand.INK_FAINT, 500, 11))
+		if picked:
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 6)
+			col.add_child(row)
+			row.add_child(_action("Approve", true, func(): _answer("approve")))
+			row.add_child(_action("Deny", false, func(): _answer("deny")))
+		return card
 	var money := "%s$%s" % ["New cost " if picked and _editing else "Cost ", CitySim.money_text(cost)]
 	if req.budget > 0:
 		money += "  ·  they can spend $" + CitySim.money_text(req.budget)
@@ -292,10 +368,16 @@ static func _acres(a: float) -> String:
 	return "%.1f" % a if a < 10.0 else str(roundi(a))
 
 
+## Game months (a game day settles a month), for terms like notice.
+static func _months(ticks: int) -> String:
+	var m := roundi(float(ticks) / (24 * CitySim.TICKS_PER_HOUR))
+	return "%d month%s" % [m, "" if m == 1 else "s"]
+
+
 static func _days(ticks: int) -> String:
 	var hours := maxi(ticks, 0) / CitySim.TICKS_PER_HOUR
 	if hours < 24:
-		return "%d hour%s" % [maxi(hours, 1), "" if hours == 1 else "s"]
+		return "%d hour%s" % [maxi(hours, 1), "" if hours <= 1 else "s"]
 	var days := roundi(hours / 24.0)
 	return "%d day%s" % [days, "" if days == 1 else "s"]
 

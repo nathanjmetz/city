@@ -52,8 +52,10 @@ var _rail_version := -1
 func watch(sim: Object) -> void:
 	_sim = sim
 	for sig in [sim.buildings_changed, sim.lots_changed, sim.farms_changed, sim.industry_changed, sim.warehouses_changed,
-			sim.parks_changed, sim.water_changed, sim.banks_changed, sim.network.changed]:
+			sim.parks_changed, sim.water_changed, sim.banks_changed, sim.power_changed, sim.network.changed]:
 		sig.connect(_mark)
+	if sim.has_signal("telecom_changed"):
+		sim.telecom_changed.connect(_mark)
 
 
 func _mark() -> void:
@@ -178,6 +180,14 @@ static func sources(sim: Object) -> Dictionary:
 	for id in sim.parks.sites:
 		var poly: PackedVector2Array = sim.parks.footprint(id)
 		out["p%d %s" % [id, poly]] = _poly_cells.bind(poly)
+	# A trail's cleared strip through the woods.
+	for i in sim.parks.trails.paths.size():
+		var pts: Array = sim.parks.trails.paths[i].pts
+		var line := PackedVector3Array()
+		for q in pts:
+			line.append(Vector3(float(q[0]), 0.0, float(q[1])))
+		out["t%d %d %s" % [i, pts.size(), line[0] if not line.is_empty() else Vector3.ZERO]] = \
+			_line_cells.bind(line, Balance.TRAIL_CLEAR * 0.5 + 1.0)
 	for id in sim.hubs.hubs:
 		var h: Dictionary = sim.hubs.hubs[id]
 		for cell in h.cells:
@@ -186,11 +196,31 @@ static func sources(sim: Object) -> Dictionary:
 		var o: Dictionary = sim.mail.offices[id]
 		for cell in o.cells:
 			out["m%d %s %s" % [id, cell, o.pos]] = _poly_cells.bind(CivicHubs.cell_poly(o, cell))
+	for id in sim.telecom.companies:
+		var tc: Dictionary = sim.telecom.companies[id]
+		for cell in [Vector2i.ZERO] + tc.blocks.map(func(b): return b.c):
+			out["t%d %s %s" % [id, cell, tc.pos]] = _poly_cells.bind(Telecom.block_corners(tc, cell))
+		for t in tc.towers:
+			out["tt%d %s" % [id, t.pos]] = _poly_cells.bind(Telecom.compound(Vector2(t.pos[0], t.pos[1])))
 	for id in sim.banks.banks:
 		var b: Dictionary = sim.banks.banks[id]
 		out["k%d %s" % [id, b.pos]] = _poly_cells.bind(Banks.block_corners(b, Vector2i.ZERO))
 		for blk in b.blocks:
 			out["k%d %s %s" % [id, blk.c, b.pos]] = _poly_cells.bind(Banks.block_corners(b, blk.c))
+	# Power companies: the yard, its lane, every unit and the lanes between
+	# them, and the cleared corridor under a line to the neighbors.
+	for id in sim.power.sites:
+		var s: Dictionary = sim.power.sites[id]
+		out["ey%d %s" % [id, s.pos]] = _poly_cells.bind(sim.power.yard(s))
+		out["ed%d %d" % [id, s.drive.size()]] = _line_cells.bind(PackedVector3Array(s.drive), Farms.DRIVE_WIDTH * 0.5 + 1.5)
+		for c in s.cells:
+			out["ec%d %s %s %s" % [id, s.plant, c, s.pos]] = _poly_cells.bind(Power.cell_corners(s, c))
+		for lane in Power.lanes(s):
+			out["el%d %s %s" % [id, lane[0], lane[1]]] = _line_cells.bind(PackedVector3Array(lane), 3.5)
+		var tie: PackedVector3Array = sim.power.tie_route(sim.network, sim.region_links, s)
+		if tie.size() >= 2:
+			out["et%d %d %s" % [id, tie.size(), tie[-1]]] = _line_cells.bind(tie, Balance.POWER_TIE_CLEAR)
+			out["es%d %s" % [id, tie[-1]]] = _poly_cells.bind(Power.substation_corners(tie))
 	for id in sim.industry.sites:
 		var s: Dictionary = sim.industry.sites[id]
 		out["iy%d" % id] = _poly_cells.bind(sim.industry._yard(s))

@@ -34,10 +34,55 @@ func _build() -> void:
 	var sim: CitySim = _main.sim
 	sim.apply({"type": "clear"})
 	sim.economy.money = 50_000_000
+	if OS.get_environment("SHOT_MONTH") != "":
+		# Months from January, as in screenshot.gd (0.5 is mid-January snow).
+		var m := float(OS.get_environment("SHOT_MONTH")) - Seasons.START_MONTH
+		sim.tick_count = int(fposmod(m, 12.0) * Seasons.TICKS_PER_DAY)
 	root.get_node("Session").set("current_name", "Petersburg")
-	sim.apply({"type": "build_road", "start": [-500, 0], "ctrl": [0, 0], "end": [500, 0], "road": 1})
 	var look := Vector3.ZERO
+	if scene == "trails":
+		# A trailhead up from the creek south of town, with its greenway, a
+		# connector to a park, and bike lanes on the street.
+		sim.apply({"type": "build_road", "start": [-900, -300], "ctrl": [-300, -300], "end": [300, -300]})
+		var th := _place(sim, "trailhead", Vector3(-300, 0, -340))
+		_fill(sim, _place(sim, "park", Vector3(100, 0, -340)), 2)
+		var t := sim.parks.trails
+		for k in 8:
+			sim.stats.population = 2_000
+			t._month = -1
+			t.decide(sim)
+		for rid in t.asked.keys():
+			sim.apply({"type": "permit", "id": rid, "answer": "approve"})
+		t.decide(sim)
+		look = sim.parks.sites[th].pos + Vector3(0, 0, -150)
+		scene = "done"
+	elif scene == "plaza":
+		# A downtown block of shops closed to cars, between two cross streets.
+		sim.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0], "road": RoadStyle.Type.MAIN_STREET})
+		for x in [-90, 90]:
+			sim.apply({"type": "build_road", "start": [x, -120], "ctrl": [x, 0], "end": [x, 120]})
+		for x in range(-280, 281, 10):
+			for z in [-22, 22]:
+				sim.apply({"type": "paint_zone", "center": [x, z], "radius": 12, "zone": ZoneMap.Zone.COMMERCIAL})
+		for i in 2500:
+			sim.tick()
+		if OS.get_environment("SHOT_MONTH") != "":
+			sim.tick_count = int(fposmod(float(OS.get_environment("SHOT_MONTH")) - Seasons.START_MONTH, 12.0) * Seasons.TICKS_PER_DAY)
+		var best := -1
+		for seg in sim.network.segments:
+			var mid: Vector3 = sim.network.sample_segment(seg, 3)[1]
+			if best == -1 or mid.length() < sim.network.sample_segment(best, 3)[1].length():
+				best = seg
+		sim.parks.trails.plazas.append(best)
+		sim.traffic.close_segment(best, true, "night")
+		print("plaza on ", best, " ", sim.network.segments[best].type, "; buildings: ", sim.buildings.size())
+		look = Vector3.ZERO
+		scene = "done"
+	else:
+		sim.apply({"type": "build_road", "start": [-500, 0], "ctrl": [0, 0], "end": [500, 0], "road": 1})
 	match scene:
+		"done":
+			pass
 		"parks":
 			# The same park in a struggling and a thriving neighborhood.
 			for entry in [[-110.0, 0], [110.0, 3]]:

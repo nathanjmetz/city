@@ -16,6 +16,25 @@ func _init() -> void:
 	rng.seed = 1
 	_check(VehicleTypes.for_purpose("fire", rng) == "fire_engine", "fire call sends a fire engine")
 	_check(VehicleTypes.for_purpose("milk", rng) == "tanker", "milk goes by tanker")
+	_check(VehicleTypes.for_purpose("livestock", rng) == "livestock_truck", "cattle go by livestock trailer")
+	_check(VehicleTypes.spec("buggy").top_speed < 6.0, "a buggy goes at a horse's trot")
+	_check(VehicleTypes.for_cargo({"good": "lumber"}) == "lumber_truck", "lumber leaves the mill on a flatbed")
+	var wagons := 0
+	for i in 200:
+		if VehicleTypes.for_purpose("grain", rng, {"good": "corn"}) == "tractor_wagon":
+			wagons += 1
+	_check(wagons > 10 and wagons < 100, "some farmers haul corn by wagon (%d of 200)" % wagons)
+	for key in ["sedan", "pickup", "school_bus"]:
+		var near := VehicleModels.build(key, VehicleModels.LOD_NEAR).get_faces().size()
+		var ultra := VehicleModels.build(key, VehicleModels.LOD_ULTRA).get_faces().size()
+		_check(ultra > near, "%s has more detail for Ultra close-ups (%d > %d)" % [key, ultra / 3, near / 3])
+	var campers := 0
+	for i in 400:
+		if VehicleTypes.for_purpose("visitor", rng) in ["rv", "motorhome", "pickup_camper"]:
+			campers += 1
+	_check(campers > 4 and campers < 60, "some visitors come camping (%d of 400)" % campers)
+	_check(VehicleTypes.for_purpose("power_line", rng) in ["bucket_truck", "work_pickup"], "line crews take bucket trucks")
+	_check(VehicleTypes.for_cargo({"good": "hogs"}) == "livestock_truck", "hogs ride a livestock trailer")
 	_check(VehicleTypes.for_purpose("raw", rng, {"good": "logs"}) == "log_truck", "logs go on a log truck")
 	_check(VehicleTypes.for_purpose("raw", rng, {"good": "ore"}) == "ore_truck", "ore goes in an end-dump")
 	_check(VehicleTypes.for_purpose("fuel", rng, {"good": "crude oil"}) == "tanker", "crude oil goes by tanker")

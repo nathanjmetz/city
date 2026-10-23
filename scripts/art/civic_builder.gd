@@ -47,6 +47,7 @@ static func build_service(kind: int, seed: int, size: Vector2, to_curb: float) -
 		Services.Kind.WELL, Services.Kind.WATER_UTILITY: b._well(front, to_curb)
 		Services.Kind.POWER_FEED: b._power_feed()
 		Services.Kind.BUS_DEPOT: b._bus_depot(size, front, to_curb)
+		Services.Kind.TAXI_COMPANY: b._taxi_company(size, front, to_curb)
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 
@@ -360,7 +361,7 @@ func _substation(front: float, to_curb: float) -> void:
 	_box("paint", Vector3(5.0, 0.3, 3.6), Vector3(9.5, 0.15, front + 4.5), CONCRETE)
 	_box("brick", Vector3(4.6, 3.0, 3.2), Vector3(9.5, 1.8, front + 4.5), Color(_pick(["#b8b2a4", "#a49d8f", "#8a4a38"])))
 	_box("paint", Vector3(4.9, 0.15, 3.5), Vector3(9.5, 3.35, front + 4.5), Color("#cfcbc2"))
-	_box("paint", Vector3(0.95, 2.1, 0.06), Vector3(8.6, 1.35, front + 2.88), Color("#5a5e60"))
+	_steel_door(Vector3(8.6, 1.35, front + 2.88), -1.0)
 	_sign(Vector3(-1.6, 1.2, front + 1.9), 1.2, 0.4)
 
 
@@ -441,7 +442,7 @@ func _water_tower(front: float, to_curb: float) -> void:
 	_box("paint", Vector3(7.4, 0.3, 5.4), Vector3(px, 0.15, pz), CONCRETE)
 	_box("brick", Vector3(7.0, 3.2, 5.0), Vector3(px, 1.9, pz), Color(_pick(["#8a4a38", "#a8775c", "#b8b2a4"])))
 	_metal_roof(px, pz, 3.5, 7.0, 5.0, Color(_pick(["#7a7874", "#3e5a48", "#5a2a26"])))
-	_box("paint", Vector3(0.95, 2.1, 0.06), Vector3(px - 1.8, 1.35, pz - 2.53), Color("#5a5e60"))
+	_steel_door(Vector3(px - 1.8, 1.35, pz - 2.53), -1.0)
 	_flat_rect("gravel", px - 3.0, px + 3.0, front - to_curb, pz - 2.7, 0.08, Color("#8d877c"))
 	_fence(Vector2(-13.5, front + 1.5), Vector2(13.5, front + 28.0), 2.0)
 
@@ -508,12 +509,12 @@ func _well(front: float, to_curb: float) -> void:
 	_box("paint", Vector3(6.4, 0.3, 5.4), c + Vector3(0, 0.15, 0), CONCRETE)
 	_box("brick", Vector3(6.0, 3.0, 5.0), c + Vector3(0, 1.8, 0), Color(_pick(["#8a4a38", "#a8775c", "#b8b2a4"])))
 	_metal_roof(c.x, c.z, 3.3, 6.0, 5.0, Color(_pick(["#7a7874", "#3e5a48", "#5a2a26"])))
-	_box("paint", Vector3(0.95, 2.1, 0.06), c + Vector3(-1.4, 1.35, -2.53), Color("#5a5e60"))
+	_steel_door(c + Vector3(-1.4, 1.35, -2.53), -1.0)
 	_box("metal", Vector3(1.0, 0.6, 0.6), c + Vector3(2.2, 2.4, -2.8), Color("#b9bcbc"))  # louvre vent
 	# Hydropneumatic tank on saddles, and the capped well head.
 	var t := Vector3(5.5, 0, front + 9.0)
 	_box("paint", Vector3(2.4, 0.3, 5.0), t + Vector3(0, 0.15, 0), CONCRETE)
-	_cylinder("paint", t + Vector3(0, 0.3, 0), 1.1, 3.8, Color("#d8dadb"), 14)
+	_tank_on_saddles(t + Vector3(0, 0.3, 0), 0.9, 4.2, Color("#d8dadb"))
 	_cyl_y(Vector3(-2.0, 0.5, front + 14.5), 0.3, 1.0, Color("#3a5a8a"))
 	_flat_rect("gravel", -5.0, 7.0, front - to_curb, front + 6.0, 0.06, Color("#8d877c"))
 	_fence(Vector2(-7.0, front + 2.0), Vector2(8.5, front + 17.0), 1.8)
@@ -580,6 +581,37 @@ func _bus_depot(size: Vector2, front: float, to_curb: float) -> void:
 	_fence(Vector2(-w * 0.5 + 0.2, back - 0.5), Vector2(w * 0.5 - 0.2, back - 0.3), 2.1)
 
 
+## A small-town cab company: a one-story brick storefront for the dispatch
+## office and drivers' room at the street, with a TAXI sign, and an asphalt
+## lot of striped stalls behind it reached by a side driveway.
+func _taxi_company(size: Vector2, front: float, to_curb: float) -> void:
+	var w := size.x
+	var back := size.y * 0.5
+	var trim := Color(_pick(["#d9d3c3", "#cfc8b6", "#efede6"]))
+	var brick := Color(_pick(["#8a4a38", "#9b5a42", "#a8775c", "#b59a7c"]))
+	var drive_x := w * 0.5 - 4.0
+	var lot_z := front + TaxiCo.OFFICE_D
+	_flat_rect("asphalt", drive_x - 3.2, drive_x + 3.2, front - to_curb, lot_z, 0.1)
+	_flat_rect("asphalt", -w * 0.5 + 0.5, w * 0.5 - 0.5, lot_z, back - 0.5, 0.07)
+	for slot in TaxiCo.stall_slots(size):
+		var p: Vector3 = slot[0]
+		for e in [-1.0, 1.0]:
+			var x: float = p.x + e * TaxiCo.STALL_W * 0.5
+			_flat_rect("line", x - 0.05, x + 0.05, p.z - 0.3, p.z - 0.3 + TaxiCo.STALL_D, 0.08, LINE)
+	# The storefront: brick, a glass front with the door, a parapet sign.
+	var ow := minf(w - 9.0, 16.0)
+	var ox := drive_x - 3.8 - ow * 0.5
+	var od := TaxiCo.OFFICE_D - 3.0
+	var oz := front + 1.0
+	_slab(ox, ow, oz, od)
+	_flat_roofed_at("brick", ox, ow, od, oz + od * 0.5, 4.0, 4.8, brick)
+	_glass(Vector3(ox - ow * 0.2, 1.6, oz - 0.03), Vector3(-1, 0, 0), ow * 0.45, 2.0, 0.0)
+	_entry(ox + ow * 0.25, oz, trim)
+	_sign(Vector3(ox, 4.3, oz - 0.04), ow * 0.5, 0.7)
+	_fence(Vector2(-w * 0.5 + 0.2, lot_z), Vector2(-w * 0.5 + 0.4, back - 0.3), 1.2)
+	_fence(Vector2(-w * 0.5 + 0.2, back - 0.5), Vector2(w * 0.5 - 0.2, back - 0.3), 1.2)
+
+
 # ---------------------------------------------------------------- shared parts
 
 func _slab(cx: float, w: float, zf: float, d: float) -> void:
@@ -592,8 +624,8 @@ func _flat_roofed_at(mat: String, cx: float, w: float, d: float, cz: float, deck
 	var ph := top - deck
 	_box(mat, Vector3(w, deck, d), Vector3(cx, deck * 0.5, cz), wall)
 	var y := deck + 0.02
-	_quad("paint", Vector3(cx - w * 0.5, y, cz - d * 0.5), Vector3(cx + w * 0.5, y, cz - d * 0.5),
-		Vector3(cx + w * 0.5, y, cz + d * 0.5), Vector3(cx - w * 0.5, y, cz + d * 0.5), Color("#bdbbb4"), [], Vector3.UP)
+	_quad("membrane", Vector3(cx - w * 0.5, y, cz - d * 0.5), Vector3(cx + w * 0.5, y, cz - d * 0.5),
+		Vector3(cx + w * 0.5, y, cz + d * 0.5), Vector3(cx - w * 0.5, y, cz + d * 0.5), _low_slope(w, d, cx + cz), [], Vector3.UP)
 	_box(mat, Vector3(w, ph, t), Vector3(cx, deck + ph * 0.5, cz - d * 0.5 + t * 0.5), wall)
 	_box(mat, Vector3(w, ph, t), Vector3(cx, deck + ph * 0.5, cz + d * 0.5 - t * 0.5), wall)
 	_box(mat, Vector3(t, ph, d), Vector3(cx - w * 0.5 + t * 0.5, deck + ph * 0.5, cz), wall)
@@ -702,6 +734,8 @@ func _fence(a: Vector2, b: Vector2, h: float, barbed := false) -> void:
 		var p: Vector3 = corners[i]
 		var q: Vector3 = corners[(i + 1) % 4]
 		var len := p.distance_to(q)
+		if len < 0.01:
+			continue  # a zero-length side would put NaNs in the mesh and hide all of it
 		var dir := (q - p) / len
 		var yaw := Basis(Vector3.UP, atan2(dir.x, dir.z))
 		var n := maxi(1, int(len / 3.0))
@@ -712,6 +746,35 @@ func _fence(a: Vector2, b: Vector2, h: float, barbed := false) -> void:
 		if barbed:
 			for k in 3:
 				_box("paint", Vector3(0.02, 0.02, len), (p + q) * 0.5 + Vector3(0, h + 0.15 + k * 0.15, 0), DARK, yaw)
+
+
+## A horizontal pressure tank lying along z on two concrete saddles, with
+## shallow dished heads (an ASME hydropneumatic tank, 6 ft by 14 ft for a
+## small town well). `base` is the middle of the slab top it stands on.
+func _tank_on_saddles(base: Vector3, r: float, length: float, col: Color) -> void:
+	var c := base + Vector3(0, 0.45 + r, 0)
+	var h := length * 0.5
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(r * 1.6, 0.45 + r * 0.4, 0.35), base + Vector3(0, (0.45 + r * 0.4) * 0.5, s * h * 0.6), CONCRETE)
+	var segs := 16
+	var dish := r * 0.3
+	for i in segs:
+		var a0 := TAU * i / segs
+		var a1 := TAU * (i + 1) / segs
+		var d0 := Vector3(cos(a0), sin(a0), 0)
+		var d1 := Vector3(cos(a1), sin(a1), 0)
+		var p0 := c + d0 * r
+		var p1 := c + d1 * r
+		var out := (d0 + d1) * 0.5
+		_quad("paint", p0 + Vector3(0, 0, -h), p1 + Vector3(0, 0, -h), p1 + Vector3(0, 0, h), p0 + Vector3(0, 0, h), col, [], out)
+		for s in [-1.0, 1.0]:
+			# Dished head: a ring in to 60 % of the radius, then a flat cap.
+			var q0 := c + d0 * r * 0.6 + Vector3(0, 0, s * (h + dish))
+			var q1 := c + d1 * r * 0.6 + Vector3(0, 0, s * (h + dish))
+			var e0 := p0 + Vector3(0, 0, s * h)
+			var e1 := p1 + Vector3(0, 0, s * h)
+			_quad("paint", e0, e1, q1, q0, col.darkened(0.05), [], out + Vector3(0, 0, s))
+			_tri("paint", c + Vector3(0, 0, s * (h + dish)), q0, q1, col.darkened(0.08), [], Vector3(0, 0, s))
 
 
 func _cyl_y(c: Vector3, r: float, h: float, col: Color) -> void:

@@ -21,6 +21,8 @@ const METAL_WALL := ["#c9cbc8", "#b9b4a6", "#d8d6cf", "#8e9aa3", "#a7aba9", "#c2
 const WAINSCOT := ["#4a4c4f", "#5a2a26", "#2f3b4a", "#6b6458"]
 const GRAVEL := Color("#8d877c")
 const LINE := Color("#e8e6df")
+## Set by the art gallery to draw one kind of shop.
+static var force_shop := ""
 
 ## The business's sign, from Families.sign_of ({text, style, panel, letter,
 ## since}); empty paints generic lettering. Every sign band then carries it.
@@ -36,11 +38,45 @@ static func build_shop(seed: int, to_curb: float, lot := {}, spec := {}) -> Arra
 	b.sign_spec = spec
 	b._fit(lot)
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
-	if b.rng.randf() < 0.4:
-		b._main_street(to_curb)
-	else:
-		b._retail(to_curb)
+	b._shop(to_curb, lot)
 	return [b._commit_house(), b._commit_flat(), b.trees, b.labels]
+
+
+## One shop of a kind that fits the lot and the street's era. Main Street
+## blocks are left out where the street has its own mixed-use type.
+func _shop(to_curb: float, lot: Dictionary, main_street := true) -> void:
+	var kind: String = force_shop if force_shop != "" else _shop_kind(lot)
+	if kind == "main_street" and not main_street and force_shop == "":
+		kind = "retail"
+	match kind:
+		"main_street": _main_street(to_curb)
+		"strip": _strip_center(to_curb)
+		"gas": _shop_gas_station(to_curb)
+		"diner": _shop_diner(to_curb)
+		"bank": _bank(to_curb)
+		"church": _church(to_curb)
+		_: _retail(to_curb)
+
+
+## Which kind of shop fits this lot: strip centers need a wide lot, gas
+## stations like corners, and main-street blocks the old part of town.
+func _shop_kind(lot: Dictionary) -> String:
+	var w := half * 2.0
+	var picks := ["retail", "retail", "diner", "bank"]
+	if era == "prewar":
+		picks += ["main_street", "main_street", "main_street", "church"]
+	else:
+		picks += ["main_street", "retail"]
+	if w >= 26.0 and depth >= 36.0:
+		picks += ["strip", "strip", "strip"]
+	if lot.get("corner", false) and w >= 20.0 and depth >= 30.0:
+		picks += ["gas", "gas", "gas"]
+	elif w >= 24.0 and depth >= 36.0:
+		picks += ["gas"]
+	var k: String = _pick(picks)
+	if k in ["diner", "bank", "church"] and (w < 18.0 or depth < 30.0):
+		k = "retail"
+	return k
 
 
 static func build_factory(seed: int, to_curb: float, lot := {}, spec := {}) -> Array:
@@ -91,7 +127,7 @@ func _retail(to_curb: float) -> void:
 		_box("metal", Vector3(1.8, 1.1, 1.2), p + Vector3(0, 0.55, 0), Color("#b9bcbc"))
 		_box("paint", Vector3(1.0, 0.08, 0.8), p + Vector3(0, 1.14, 0), Color("#3a3c3e"))
 	# Back service door.
-	_box("paint", Vector3(1.0, 2.1, 0.06), Vector3(w * 0.3, 1.35, zf + d + 0.03), Color("#5a5e60"))
+	_steel_door(Vector3(w * 0.3, 1.35, zf + d + 0.03), 1.0)
 	# Parking: a walk along the front, a row of stalls, the aisle and the curb cut.
 	_flat_rect("drive", -w * 0.5 - 0.5, w * 0.5 + 0.5, zf - 2.2, zf, 0.08)
 	var lot0 := -half + 0.6
@@ -162,8 +198,8 @@ func _main_street(to_curb: float) -> void:
 func _flat_roofed(mat: String, w: float, d: float, cz: float, deck: float, top: float, wall: Color) -> void:
 	_box(mat, Vector3(w, deck, d), Vector3(0, deck * 0.5, cz), wall)
 	var y := deck + 0.02
-	_quad("paint", Vector3(-w * 0.5, y, cz - d * 0.5), Vector3(w * 0.5, y, cz - d * 0.5),
-		Vector3(w * 0.5, y, cz + d * 0.5), Vector3(-w * 0.5, y, cz + d * 0.5), Color("#bdbbb4"), [], Vector3.UP)
+	_quad("membrane", Vector3(-w * 0.5, y, cz - d * 0.5), Vector3(w * 0.5, y, cz - d * 0.5),
+		Vector3(w * 0.5, y, cz + d * 0.5), Vector3(-w * 0.5, y, cz + d * 0.5), _low_slope(w, d, cz), [], Vector3.UP)
 	var ph := top - deck
 	var t := 0.25
 	_box(mat, Vector3(w, ph, t), Vector3(0, deck + ph * 0.5, cz - d * 0.5 + t * 0.5), wall)
@@ -171,6 +207,18 @@ func _flat_roofed(mat: String, w: float, d: float, cz: float, deck: float, top: 
 	_box(mat, Vector3(t, ph, d), Vector3(-w * 0.5 + t * 0.5, deck + ph * 0.5, cz), wall)
 	_box(mat, Vector3(t, ph, d), Vector3(w * 0.5 - t * 0.5, deck + ph * 0.5, cz), wall)
 	_coping(w, d, cz, top)
+
+
+## What a flat roof is covered with, picked from the building's size so it
+## doesn't move the builder's random sequence: weathered white TPO (most
+## re-roofs since 2000), black EPDM rubber, or tar and gravel on older ones.
+static func _low_slope(w: float, d: float, cz: float) -> Color:
+	var k := int(absf(w * 13.0 + d * 7.0 + cz * 3.0)) % 20
+	if k < 9:
+		return Color("#b1afa8")
+	if k < 15:
+		return Color("#4a4a47")
+	return Color("#8a847a", 0.5)
 
 
 func _coping(w: float, d: float, cz: float, top: float) -> void:
@@ -205,6 +253,229 @@ func _awning(cx: float, w: float, zf: float, y: float, col: Color) -> void:
 	var d := Vector3(cx - w * 0.5, y, zf - 1.3)
 	_quad("paint", d, c, b, a, col, [], Vector3.UP)
 	_quad("paint", d, c, c + Vector3(0, -0.3, 0), d + Vector3(0, -0.3, 0), col.darkened(0.15), [], Vector3.FORWARD)
+
+
+# ---------------------------------------------------------------- more shops
+
+## A strip center, 1960s-now: one long flat-roofed building split into three
+## to five tenants, each its own storefront and sign, under a continuous
+## canopy on square columns, with a parking field in front.
+func _strip_center(to_curb: float) -> void:
+	var w := half * 2.0 - 2.0
+	var d := rng.randf_range(14.0, minf(18.0, maxf(depth - 18.0, 14.0)))
+	var h := rng.randf_range(5.2, 6.0)
+	var zf := rng.randf_range(16.0, 18.0)
+	var cz := zf + d * 0.5
+	var wall := Color(_pick(BLOCK + ["#c9b79a", "#b8a58a"]))
+	var mull: Color = MULLION[rng.randi() % 2]
+	_box("paint", Vector3(w + 0.1, 0.3, d + 0.1), Vector3(0, 0.15, cz), FOUNDATION)
+	_flat_roofed("paint", w, d, cz, h, h + 1.2, wall)
+	var n := clampi(int(w / 7.0), 3, 5)
+	var bay := w / n
+	for i in n:
+		var x := -w * 0.5 + (i + 0.5) * bay
+		var sw := bay - 1.4
+		_glass(Vector3(x - 0.4, 1.7, zf - 0.03), Vector3(-1, 0, 0), sw - 1.4, 2.3, rng.randf_range(0.0, 0.2))
+		_glass(Vector3(x + sw * 0.5 - 0.5, 1.45, zf - 0.03), Vector3(-1, 0, 0), 0.95, 2.4, 0.0)
+		_box("paint", Vector3(sw, 0.1, 0.12), Vector3(x, 2.9, zf - 0.06), mull)
+		_box("paint", Vector3(sw, 0.35, 0.12), Vector3(x, 0.47, zf - 0.06), mull)
+		_box("paint", Vector3(0.5, 3.0, 0.2), Vector3(x - bay * 0.5, 1.8, zf - 0.1), wall.darkened(0.1))
+		# The owner's own store takes the first bay; the other tenants' signs
+		# are their own businesses, drawn as stand-in lettering.
+		var spec := sign_spec
+		if i > 0:
+			sign_spec = {}
+		_sign(Vector3(x, 3.9, zf - 2.55), sw * rng.randf_range(0.5, 0.8), 0.7)
+		sign_spec = spec
+	# Canopy over the walk on square columns.
+	_box("paint", Vector3(w + 0.4, 0.5, 2.6), Vector3(0, 3.65, zf - 1.3), wall.lightened(0.1))
+	_quad("paint", Vector3(-w * 0.5 - 0.2, 3.39, zf - 2.6), Vector3(w * 0.5 + 0.2, 3.39, zf - 2.6),
+		Vector3(w * 0.5 + 0.2, 3.39, zf), Vector3(-w * 0.5 - 0.2, 3.39, zf), SOFFIT, [], Vector3.DOWN)
+	var x := -w * 0.5
+	while x <= w * 0.5 + 0.01:
+		_box("paint", Vector3(0.45, 3.0, 0.45), Vector3(clampf(x, -w * 0.5 + 0.3, w * 0.5 - 0.3), 1.9, zf - 2.3), wall.lightened(0.1))
+		x += bay
+	_rooftop(w, d, cz, h, n)
+	_shop_parking(to_curb, w, zf - 2.6, 0.0)
+
+
+## A gas station: a lit canopy over two or three pump islands, a
+## convenience store behind it, a price sign on a pole by the street.
+func _shop_gas_station(to_curb: float) -> void:
+	var sw := minf(16.0, half * 2.0 - 4.0)
+	var sd := 10.0
+	var zf := minf(24.0, depth - sd - 2.0)
+	var cz := zf + sd * 0.5
+	var brand := Color(_pick(["#c8102e", "#00529b", "#007a33", "#f2a900", "#1d1d1d"]))
+	var wall := Color(_pick(BLOCK + ["#d8d2c2"]))
+	_box("paint", Vector3(sw + 0.1, 0.3, sd + 0.1), Vector3(0, 0.15, cz), FOUNDATION)
+	_flat_roofed("paint", sw, sd, cz, 4.2, 4.8, wall)
+	_box("paint", Vector3(sw + 0.1, 0.7, 0.2), Vector3(0, 4.45, zf - 0.1), brand)
+	for i in 4:
+		_glass(Vector3(-sw * 0.3 + i * 1.6, 1.7, zf - 0.03), Vector3(-1, 0, 0), 1.5, 2.3, 0.0)
+	_box("paint", Vector3(6.6, 0.1, 0.12), Vector3(-sw * 0.3 + 2.4, 2.9, zf - 0.06), MULLION[1])
+	# Canopy: a deep flat roof on columns, its fascia in the brand colour.
+	var cw := minf(sw + 2.0, half * 2.0 - 2.0)
+	var cd := 10.0
+	var ccz := zf - 4.0 - cd * 0.5
+	_box("paint", Vector3(cw, 0.9, cd), Vector3(0, 5.25, ccz), brand)
+	_quad("paint", Vector3(-cw * 0.5, 4.79, ccz - cd * 0.5), Vector3(cw * 0.5, 4.79, ccz - cd * 0.5),
+		Vector3(cw * 0.5, 4.79, ccz + cd * 0.5), Vector3(-cw * 0.5, 4.79, ccz + cd * 0.5), Color("#e8e6df"), [], Vector3.DOWN)
+	var islands := 2 if cw < 16.0 else 3
+	for i in islands:
+		var x := (i - (islands - 1) * 0.5) * cw / islands
+		_box("concrete", Vector3(1.2, 0.2, 5.5), Vector3(x, 0.1, ccz), FOUNDATION)
+		_box("paint", Vector3(0.4, 4.6, 0.4), Vector3(x, 2.5, ccz), Color("#d8d6cf"))
+		for s in [-1.0, 1.0]:
+			_box("paint", Vector3(0.8, 1.6, 0.55), Vector3(x, 1.0, ccz + s * 1.5), Color("#e8e6df"))
+			_box("paint", Vector3(0.82, 0.3, 0.57), Vector3(x, 1.65, ccz + s * 1.5), brand)
+	# Price sign on a pole near the street.
+	var px := -half + 1.5
+	_box("paint", Vector3(0.3, 6.0, 0.3), Vector3(px, 3.0, 1.0), Color("#5a5e60"))
+	_box("paint", Vector3(2.2, 1.4, 0.3), Vector3(px, 6.3, 1.0), brand)
+	_box("paint", Vector3(2.0, 1.6, 0.32), Vector3(px, 4.7, 1.0), Color("#1d1d1d"))
+	# Concrete under the canopy, asphalt round it, two curb cuts.
+	_flat_rect("drive", -cw * 0.5 - 1.0, cw * 0.5 + 1.0, ccz - cd * 0.5 - 1.0, ccz + cd * 0.5 + 1.0, 0.09)
+	_flat_rect("asphalt", -half + 0.6, half - 0.6, 0.0, zf, 0.06)
+	for x in [-half * 0.55, half * 0.55]:
+		_flat_rect("asphalt", x - 3.6, x + 3.6, -to_curb, 0.0, 0.1)
+	_steel_door(Vector3(sw * 0.3, 1.35, zf + sd + 0.03), 1.0)
+
+
+## A diner or family restaurant: one storey, a long band of windows with a
+## stainless or coloured band above and below, a big pole sign.
+func _shop_diner(to_curb: float) -> void:
+	var w := minf(rng.randf_range(14.0, 18.0), half * 2.0 - 4.0)
+	var d := 11.0
+	var zf := rng.randf_range(13.0, 15.0)
+	var cz := zf + d * 0.5
+	var band := Color(_pick(["#c8102e", "#1f3b6e", "#2a7a6e", "#d8d6cf"]))
+	var wall := Color(_pick(["#e9e6dc", "#d8d2c2", "#a8775c"]))
+	_box("paint", Vector3(w + 0.1, 0.3, d + 0.1), Vector3(0, 0.15, cz), FOUNDATION)
+	_flat_roofed("paint", w, d, cz, 4.0, 4.6, wall)
+	_box("metal", Vector3(w + 0.1, 0.45, 0.12), Vector3(0, 1.0, zf - 0.06), Color("#c9cbc8"))
+	_box("paint", Vector3(w + 0.1, 0.55, 0.14), Vector3(0, 3.3, zf - 0.07), band)
+	var n := int((w - 3.0) / 1.5)
+	for i in n:
+		_glass(Vector3(-w * 0.5 + 2.6 + i * 1.5, 2.15, zf - 0.03), Vector3(-1, 0, 0), 1.4, 1.6, 0.05)
+	# Entry vestibule.
+	_box("paint", Vector3(2.6, 3.0, 2.0), Vector3(-w * 0.5 + 1.0, 1.8, zf - 1.0), band)
+	_glass(Vector3(-w * 0.5 + 1.0, 1.4, zf - 2.02), Vector3(-1, 0, 0), 1.6, 2.2, 0.0)
+	# Pole sign.
+	var px := half - 2.0
+	_box("paint", Vector3(0.35, 7.5, 0.35), Vector3(px, 3.75, 1.5), Color("#5a5e60"))
+	_sign(Vector3(px, 6.8, 1.3), 3.4, 1.6)
+	_rooftop(w, d, cz, 4.0, 2)
+	_shop_parking(to_curb, w, zf, 0.0)
+
+
+## A small-town bank: brick, two storeys of tall windows, a stone portico
+## with columns over the door, a drive-up lane with a canopy at the side.
+func _bank(to_curb: float) -> void:
+	var w := minf(rng.randf_range(12.0, 15.0), half * 2.0 - 8.0)
+	var d := 14.0
+	var zf := rng.randf_range(9.0, 11.0)
+	var cz := zf + d * 0.5
+	var brick := Color(_pick(FACADE_BRICK))
+	var stone := Color("#d8d2c2")
+	_box("paint", Vector3(w + 0.1, 0.6, d + 0.1), Vector3(0, 0.3, cz), stone)
+	_box("brick", Vector3(w, 6.6, d), Vector3(0, 3.9, cz), brick)
+	_hip_roof(0.0, cz, 7.2, w, d, 2.0, Color(_pick(ROOF)))
+	_box("paint", Vector3(w + 0.2, 0.3, d + 0.2), Vector3(0, 7.1, cz), stone)
+	for i in 4:
+		var x := lerpf(-w * 0.5 + 1.6, w * 0.5 - 1.6, i / 3.0)
+		if i == 1 or i == 2:
+			continue
+		for y in [2.3, 5.2]:
+			_window(Vector3(x, y, zf), Vector3(-1, 0, 0), 1.2, 1.9, true, false, stone)
+	# Portico: four columns, an entablature and a pediment.
+	_stoop(0.0, zf, 6.0, 3.0, 0.6)
+	for k in 4:
+		_cylinder("paint", Vector3(-2.4 + k * 1.6, 0.6, zf - 2.5), 0.28, 5.4, stone, 10)
+	_box("paint", Vector3(6.4, 0.8, 3.2), Vector3(0, 6.4, zf - 1.5), stone)
+	_tri("paint", Vector3(-3.2, 6.8, zf - 3.1), Vector3(3.2, 6.8, zf - 3.1), Vector3(0, 8.0, zf - 3.1), stone, [], Vector3.FORWARD)
+	_quad("roof", Vector3(-3.3, 6.8, zf - 3.1), Vector3(0, 8.0, zf - 3.1), Vector3(0, 8.0, zf), Vector3(-3.3, 6.8, zf), Color(ROOF[0]), [], Vector3(-1, 3, 0))
+	_quad("roof", Vector3(3.3, 6.8, zf - 3.1), Vector3(0, 8.0, zf - 3.1), Vector3(0, 8.0, zf), Vector3(3.3, 6.8, zf), Color(ROOF[0]), [], Vector3(1, 3, 0))
+	_box("paint", Vector3(1.8, 2.8, 0.08), Vector3(0, 2.0, zf - 0.04), Color("#3a3530"))
+	_sign(Vector3(0, 4.3, zf - 0.08), 4.0, 0.5)
+	# Drive-up lane and canopy beside the building.
+	var lx := w * 0.5 + 3.0
+	_box("paint", Vector3(4.0, 0.6, 7.0), Vector3(lx, 4.3, cz), stone)
+	for s in [-1.0, 1.0]:
+		_box("brick", Vector3(0.5, 4.0, 0.5), Vector3(lx + 1.7, 2.0, cz + s * 3.0), brick)
+	_box("metal", Vector3(0.8, 1.4, 0.8), Vector3(lx - 1.2, 0.7, cz), Color("#b9bcbc"))
+	_flat_rect("asphalt", lx - 2.2, lx + 2.2, 0.0, depth - 1.0, 0.07)
+	_shop_parking(to_curb, w, zf - 3.2, -3.0)
+
+
+## A small brick church on the main street: a steep gable to the street,
+## tall arched-looking windows down the sides, a square bell tower with a
+## spire over the front doors.
+func _church(to_curb: float) -> void:
+	var w := minf(rng.randf_range(10.0, 12.0), half * 2.0 - 4.0)
+	var d := rng.randf_range(20.0, minf(26.0, maxf(depth - 12.0, 20.0)))
+	var zf := rng.randf_range(7.0, 9.0)
+	var cz := zf + d * 0.5
+	var white := rng.randf() < 0.35
+	var wall := CLAPBOARD_WHITE if white else Color(_pick(FACADE_BRICK))
+	var mat := "siding" if white else "brick"
+	var roof := Color(_pick(ROOF))
+	_box("paint", Vector3(w + 0.1, 0.8, d + 0.1), Vector3(0, 0.4, cz), FOUNDATION)
+	_box(mat, Vector3(w, 6.2, d), Vector3(0, 3.9, cz), wall)
+	_gable_roof(0.0, cz, 7.0, w, w * 0.5 * 1.1, d, false, roof, wall)
+	for s in [-1.0, 1.0]:
+		for i in 4:
+			var z := zf + 4.0 + i * (d - 6.0) / 3.0
+			_window(Vector3(s * w * 0.5, 3.8, z), Vector3(0, 0, -s), 1.1, 3.2, false, false, TRIM)
+	# Tower and spire, centred on the front.
+	var tw := 3.6
+	var tz := zf - tw * 0.5 + 0.5
+	_box(mat, Vector3(tw, 11.0, tw), Vector3(0, 5.5 + 0.4, tz), wall)
+	_box("paint", Vector3(tw + 0.3, 0.3, tw + 0.3), Vector3(0, 11.55, tz), TRIM)
+	for k in 4:
+		var dir := Vector3(sin(k * PI * 0.5), 0, -cos(k * PI * 0.5))
+		_box("paint", Vector3(1.0, 1.6, 0.08), Vector3(0, 10.0, tz) + dir * (tw * 0.5 + 0.03), Color("#2a2a2c"), Basis(Vector3.UP, -k * PI * 0.5))
+	var sh := rng.randf_range(7.0, 10.0)
+	var b := 11.7
+	var r := tw * 0.5
+	var c := [Vector3(-r, b, tz - r), Vector3(r, b, tz - r), Vector3(r, b, tz + r), Vector3(-r, b, tz + r)]
+	for k in 4:
+		var p: Vector3 = c[k]
+		var q: Vector3 = c[(k + 1) % 4]
+		_tri("roof", p, q, Vector3(0, b + sh, tz), roof, [], (p + q) * 0.5 - Vector3(0, b, tz))
+	_box("paint", Vector3(1.8, 3.0, 0.12), Vector3(0, 2.3, tz - tw * 0.5 - 0.02), Color("#5a2a1a"))
+	_box("paint", Vector3(2.2, 0.2, 0.15), Vector3(0, 3.9, tz - tw * 0.5 - 0.07), TRIM)
+	_stoop(0.0, tz - tw * 0.5, 4.0, 2.0, 0.8)
+	_window(Vector3(0, 6.5, tz - tw * 0.5), Vector3(-1, 0, 0), 1.2, 1.6, false, false, TRIM)
+	_flat_rect("drive", -1.5, 1.5, -0.3, tz - tw * 0.5 - 2.0, 0.06)
+	if depth > zf + d + 6.0:
+		_flat_rect("asphalt", -half + 0.6, half - 0.6, zf + d + 1.0, depth - 0.6, 0.06)
+	for i in 2:
+		var pick := TreeField.pick(rng, true)
+		var p := Vector3((i * 2 - 1) * (half - 2.5), 0, rng.randf_range(2.0, zf))
+		if _in_lot(p):
+			trees.append([p, pick[0], pick[1], rng.randf_range(0.9, 1.15)])
+
+
+func _rooftop(w: float, d: float, cz: float, h: float, n: int) -> void:
+	for i in n:
+		var p := Vector3(rng.randf_range(-w * 0.35, w * 0.35), h, cz + rng.randf_range(-d * 0.2, d * 0.3))
+		_box("metal", Vector3(1.8, 1.1, 1.2), p + Vector3(0, 0.55, 0), Color("#b9bcbc"))
+		_box("paint", Vector3(1.0, 0.08, 0.8), p + Vector3(0, 1.14, 0), Color("#3a3c3e"))
+
+
+## Front parking: a walk along the building, striped stalls and a curb cut.
+func _shop_parking(to_curb: float, w: float, zw: float, cut_x: float) -> void:
+	_flat_rect("drive", -w * 0.5 - 0.5, w * 0.5 + 0.5, zw - 2.0, zw, 0.08)
+	var lot0 := -half + 0.6
+	var lot1 := half - 0.6
+	_flat_rect("asphalt", lot0, lot1, 0.0, zw - 2.0, 0.06)
+	_flat_rect("asphalt", cut_x - 3.6, cut_x + 3.6, -to_curb, 0.0, 0.1)
+	if zw - 2.0 > 6.0:
+		var x := lot0
+		while x <= lot1 + 0.01:
+			_flat_rect("line", x - 0.06, x + 0.06, zw - 2.0 - 5.5, zw - 2.0, 0.07, LINE)
+			x += 2.75
 
 
 # ---------------------------------------------------------------- factories

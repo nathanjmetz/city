@@ -100,6 +100,14 @@ func _fill() -> void:
 		_col.add_child(_button("Main menu", func():
 			Session.save_city(game.sim)
 			Session.to_menu()))
+	var q := GraphicsQuality.current
+	if q and q.active:
+		# Auto picks what this computer can draw smoothly; the rest are fixed.
+		var gfx := _button("Graphics: " + q.label(), func(): pass)
+		gfx.pressed.connect(func():
+			q.cycle()
+			gfx.text = "Graphics: " + q.label())
+		_col.add_child(gfx)
 	_col.add_child(_button("Credits", func(): _note.text = SoundCredits.text()))
 	if not OS.has_feature("web"):
 		_col.add_child(_button("Quit to desktop", func():

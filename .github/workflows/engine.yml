@@ -1,0 +1,47 @@
+# Builds the slim web engine (see web/engine/custom.py) once per Godot
+# version and profile, and keeps it in the Actions cache. Web preview uses
+# it when it's there and the stock engine when it isn't, so a deploy never
+# waits on this build.
+name: Web engine
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: engine
+  cancel-in-progress: false
+
+env:
+  GODOT_VERSION: 4.7.2
+  EM_VERSION: 4.0.11
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Already built?
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/slim-engine
+          key: slim-web-${{ env.GODOT_VERSION }}-${{ hashFiles('web/engine/custom.py') }}
+
+      - name: Build the engine
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git clone -q --depth 1 https://github.com/emscripten-core/emsdk.git ~/emsdk
+          ~/emsdk/emsdk install "$EM_VERSION" >/dev/null
+          ~/emsdk/emsdk activate "$EM_VERSION" >/dev/null
+          source ~/emsdk/emsdk_env.sh
+          pip install -q scons
+          git clone -q --depth 1 -b "${GODOT_VERSION}-stable" https://github.com/godotengine/godot.git ~/godot-src
+          cd ~/godot-src
+          scons -j"$(nproc)" platform=web target=template_release profile="$GITHUB_WORKSPACE/web/engine/custom.py"
+          mkdir -p ~/slim-engine
+          cp bin/godot.web.template_release.wasm32.nothreads.zip ~/slim-engine/web_nothreads_release.zip
+          ls -la ~/slim-engine

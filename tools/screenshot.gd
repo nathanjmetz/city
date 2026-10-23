@@ -35,6 +35,10 @@ func _demo_town() -> void:
 	var sim: CitySim = _main.sim
 	sim.apply({"type": "clear"})
 	sim.economy.money = 20_000_000  # a demo town, built in one go
+	if OS.get_environment("SHOT_MONTH") != "":
+		# Months from January, e.g. 0.5 for mid-January snow.
+		var m := float(OS.get_environment("SHOT_MONTH")) - Seasons.START_MONTH
+		sim.tick_count = int(fposmod(m, 12.0) * Seasons.TICKS_PER_DAY)
 	var args0 := OS.get_cmdline_user_args()
 	if args0.size() >= 5 and args0[4] == "warehouses":
 		# Every warehouse size along an industrial avenue; the big one has grown.
@@ -66,6 +70,28 @@ func _demo_town() -> void:
 		return
 	if args0.size() >= 5 and args0[4] == "mail":
 		_demo_mail(sim)
+		_aim_camera()
+		return
+	if args0.size() >= 5 and args0[4] == "factories":
+		# One factory of each chain along an industrial street.
+		sim.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0], "road": 1})
+		for id in sim.network.segments.keys():
+			for side in [-1, 1]:
+				sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": ZoneMap.Zone.INDUSTRIAL})
+		for entry in [[Services.Kind.SUBSTATION, Vector3(-280, 0, 40)], [Services.Kind.WATER_TOWER, Vector3(-250, 0, -40)]]:
+			var site := Services.site_near(sim.network, entry[0], entry[1])
+			if not site.is_empty():
+				sim.apply({"type": "place_service", "kind": entry[0], "pos": [site[0].x, site[0].z],
+					"dir": [site[1].x, site[1].z]})
+		for key in sim.empty_zoned_lots():
+			sim.buildings[key] = {"zone": ZoneMap.Zone.INDUSTRIAL, "seed": hash(key), "built": 0,
+				"cap": sim.capacity(ZoneMap.Zone.INDUSTRIAL, hash(key)), "occ": 0}
+		var chains := ["mill", "sawmill", "refinery", "metal", "general", "general"]
+		var keys := sim.buildings.keys()
+		keys.sort()
+		for i in keys.size():
+			sim.buildings[keys[i]].chain = chains[i % chains.size()]
+		sim.buildings_changed.emit()
 		_aim_camera()
 		return
 	if args0.size() >= 5 and args0[4] == "junction":
@@ -117,8 +143,10 @@ func _demo_town() -> void:
 				if v > best_v:
 					best_v = v
 					best = Vector3(x, 0, z)
-		sim.apply({"type": "build_road", "start": [best.x - 600, best.z - 60], "ctrl": [best.x, best.z - 60], "end": [best.x + 600, best.z - 60]})
-		sim.apply({"type": "place_industry", "kind": kind, "pos": [best.x, best.z + 20], "dir": [0, -1]})
+		# The road and plant sit just off the richest ground, so the company
+		# works it from its own side of the road.
+		sim.apply({"type": "build_road", "start": [best.x - 600, best.z - 260], "ctrl": [best.x, best.z - 260], "end": [best.x + 600, best.z - 260]})
+		sim.apply({"type": "place_industry", "kind": kind, "pos": [best.x, best.z - 180], "dir": [0, -1]})
 		for i in 1440 * 4:
 			sim.tick()
 		for c in _main.get_children():

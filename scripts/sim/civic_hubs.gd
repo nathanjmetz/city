@@ -58,6 +58,9 @@ var policies: Policies
 var _next_id := 1
 var _net_dirty := true
 var _hooked: RoadNetwork
+var _vf_tick := -1
+var _vf_sig := []
+var _vf_cache := {}  # lot key -> [its spot, value_factor there]
 
 
 static func is_waste(kind: String) -> bool:
@@ -154,6 +157,8 @@ func _cell_problem(sim: CitySim, h: Dictionary, c: Vector2i, id: int, auto: bool
 			return "That ground is a campus."
 		if id != -2 and sim.mail.covers(p):
 			return "Overlaps the post office."
+		if sim.telecom.covers(p):
+			return "That ground belongs to the phone company."
 		if sim.banks.covers(p):
 			return "That ground is a bank."
 	if auto:
@@ -352,7 +357,21 @@ func lot_factor(sim: CitySim, key: String) -> float:
 	if not sim.lots.has(key):
 		return 1.0
 	var lot: Dictionary = sim.lots[key]
-	var f := value_factor(lot.pos)
+	# The hubs' pull on a spot only changes with their land, what they've
+	# built and an old landfill's scar, so each lot's is kept until then.
+	if _vf_tick != sim.tick_count:
+		_vf_tick = sim.tick_count
+		var sig := [version]
+		for id in hubs:
+			sig.append([id, Array(hubs[id].get("built", [])).duplicate(), hubs[id].scar])
+		if sig != _vf_sig:
+			_vf_sig = sig
+			_vf_cache.clear()
+	var row: Array = _vf_cache.get(key, [])
+	if row.is_empty() or row[0] != lot.pos:
+		row = [lot.pos, value_factor(lot.pos)]
+		_vf_cache[key] = row
+	var f: float = row[1]
 	if trash.get(lot.seg, 0.0) >= Balance.GARBAGE_PILE_LB:
 		f += Balance.GARBAGE_PILE_VALUE
 	return f
@@ -738,7 +757,8 @@ func _trade(sim: CitySim) -> void:
 		sim.trade.offer(g, totals[g])
 	sim.trade.offer("garbage", totals.garbage if not dumps.is_empty() else 0.0)
 	var need := 0.0
-	if dumps.is_empty():
+	# A neighbor's trucks under a signed deal take it instead (Interlocal).
+	if dumps.is_empty() and not sim.interlocal.serves("trash"):
 		var out := 0.0
 		for seg in trash:
 			out += trash[seg]

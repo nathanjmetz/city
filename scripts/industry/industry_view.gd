@@ -76,26 +76,19 @@ func _site(id: int, s: Dictionary) -> Node3D:
 	st.set_color(LANE)
 	if s.drive.size() >= 2:
 		RoadMesh.add_strip(st, Terrain.densify(PackedVector3Array(s.drive), 6.0), -Farms.DRIVE_WIDTH * 0.5, Farms.DRIVE_WIDTH * 0.5, 0.12)
-	# Each pad's track runs to the neighbour nearer the main building.
+	# Each pad's lease road or skid trail joins the nearest pad that's nearer
+	# the main building, so they branch like real lease roads.
 	for c in s.pads:
 		if s.kind == "ore":
-			break  # the quarry's ramp is its track
-		var to: Vector2i = c
-		for d in [Vector2i(-signi(c.x), 0), Vector2i(0, -signi(c.y))]:
-			if d != Vector2i.ZERO and (c + d == Vector2i.ZERO or (c + d) in s.pads):
-				to = c + d
-				break
-		if to == c:
-			to = Vector2i.ZERO
-		RoadMesh.add_strip(st, PackedVector3Array([Industry.pad_center(s, c), Industry.pad_center(s, to)]),
-			-2.0, 2.0, 0.1)
+			break  # the strip mine's haul road is its track
+		RoadMesh.add_strip(st, _track(s, c), -2.0, 2.0, 0.1)
 	var flat := MeshInstance3D.new()
 	flat.mesh = Terrain.drape(st.commit(), true, 8.0)
-	flat.material_override = _mat(LANE)
+	flat.material_override = Surfaces.lane(LANE)
 	flat.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(flat)
 	if s.kind == "forest":
-		_forest(s, root, pines)
+		_forest(id, s, root, pines)
 	else:
 		_mine(id, s, root)
 	_trees.set_trees("site:%d" % id, pines)
@@ -108,22 +101,20 @@ func _site(id: int, s: Dictionary) -> Node3D:
 
 ## Oil and ore: the office yard and every pad from IndustryBuilder, merged
 ## into one mesh per material. Pumpjack walking beams stay separate nodes.
+## One strip mine cut and its spoil ridge, metres across.
+const STRIP_PITCH := 30.0
+
+
 func _mine(id: int, s: Dictionary, root: Node3D) -> void:
 	var merged := {}
 	var none := []
 	var hq := Transform3D(Basis.looking_at(s.dir, Vector3.UP), s.pos)
-	_put(merged, IndustryBuilder.build_hq(s.kind, id) + [none], hq, none)
+	_hq(id, s, root, IndustryBuilder.build_hq(s.kind, id), [])
 	if s.kind == "ore" and not s.pads.is_empty():
-		# One quarry over every pad the company has opened.
-		var inv := hq.affine_inverse()
-		var cells := []
-		for c in s.pads:
-			var l: Vector3 = inv * Industry.pad_center(s, c)
-			cells.append(Vector2(l.x, l.z))
-		_put(merged, IndustryBuilder.build_quarry(id, cells, Industry.PAD, Vector2.ZERO) + [none], hq, none)
+		_strip_mine(s, hq, root)
 	for c in s.pads:
 		if s.kind == "ore":
-			continue
+			break
 		var at := Transform3D(hq.basis, Industry.pad_center(s, c))
 		_put(merged, IndustryBuilder.build_pad(s.kind, hash([id, c])) + [none], at, none)
 		if s.kind == "oil":
@@ -139,7 +130,7 @@ func _mine(id: int, s: Dictionary, root: Node3D) -> void:
 		var mi := MeshInstance3D.new()
 		# On the land: ground work drapes over it, the rest stands on it.
 		mi.mesh = Terrain.drape((merged[mat][0] as SurfaceTool).commit(), true, 8.0 if merged[mat][1] else 0.0)
-		mi.material_override = mat
+		mi.material_override = merged[mat][2]
 		if merged[mat][1]:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(mi)
@@ -148,11 +139,11 @@ func _mine(id: int, s: Dictionary, root: Node3D) -> void:
 ## Forestry: the sawmill yard, each logging stand as a cut inside woods,
 ## and untouched woods on the forest land around them. Trees go to one
 ## shared TreeField, keyed by the company.
-func _forest(s: Dictionary, root: Node3D, trees: Array) -> void:
+func _forest(id: int, s: Dictionary, root: Node3D, trees: Array) -> void:
 	var basis := Basis.looking_at(s.dir, Vector3.UP)
 	var merged := {}  # material -> SurfaceTool, every cell merged
 	var seed0 := hash([roundi(s.pos.x), roundi(s.pos.z)])
-	_put(merged, ForestryBuilder.mill(seed0, Industry.HQ_SIZE), Transform3D(basis, s.pos), trees)
+	_hq(id, s, root, ForestryBuilder.mill(seed0, Industry.HQ_SIZE), trees)
 	# Which cells are wooded: the stands, the mill's own cell, and every free
 	# forest cell next to them.
 	var wooded := {Vector2i.ZERO: true}
@@ -171,6 +162,9 @@ func _forest(s: Dictionary, root: Node3D, trees: Array) -> void:
 					and sim.field_usable(mid, Industry.pad_corners(s, n)) and not _near_road(mid):
 				wooded[n] = true
 				woods.append(n)
+	var tracks := []
+	for c in s.pads:
+		tracks.append(_track(s, c))
 	for c in wooded:
 		if not wooded[c]:
 			continue
@@ -178,13 +172,20 @@ func _forest(s: Dictionary, root: Node3D, trees: Array) -> void:
 		var open := []
 		for d in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]:
 			open.append(not wooded.get(c + d, false))
-		# Keep trees off the company's drive.
+		# Keep trees off the company's drive and its logging roads.
 		var clear := []
 		var inv := frame.affine_inverse()
 		for i in s.drive.size() - 1:
 			var a: Vector3 = inv * s.drive[i]
 			var b: Vector3 = inv * s.drive[i + 1]
 			clear.append([Vector2(a.x, a.z), Vector2(b.x, b.z), 6.0])
+		for road in tracks:
+			for i in road.size() - 1:
+				var a: Vector3 = inv * road[i]
+				var b: Vector3 = inv * road[i + 1]
+				var reach := Industry.PAD * 0.5 + 8.0
+				if minf(absf(a.x), absf(b.x)) < reach and minf(absf(a.z), absf(b.z)) < reach:
+					clear.append([Vector2(a.x, a.z), Vector2(b.x, b.z), 5.0])
 		var cseed := hash([seed0, c])
 		if c == Vector2i.ZERO:
 			# The mill's clearing.
@@ -199,10 +200,86 @@ func _forest(s: Dictionary, root: Node3D, trees: Array) -> void:
 		var mi := MeshInstance3D.new()
 		# On the land: ground work drapes over it, the rest stands on it.
 		mi.mesh = Terrain.drape((merged[mat][0] as SurfaceTool).commit(), true, 8.0 if merged[mat][1] else 0.0)
-		mi.material_override = mat
+		mi.material_override = merged[mat][2]
 		if merged[mat][1]:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(mi)
+
+
+## The map's ore is Pike County coal, so a mining company is a surface
+## strip mine (Brawn: everything against its real version; benchmark:
+## aerial photos of Pike and Warrick County, Indiana strip mines). One mine
+## over all its ground, never a pit per cell: long parallel cuts across the
+## seam, the open cut with its dark coal face where the newest ground is,
+## grey-brown spoil ridges behind it, older cuts left as lakes, and the
+## oldest ground reclaimed to grass.
+func _strip_mine(s: Dictionary, hq: Transform3D, root: Node3D) -> void:
+	var inv := hq.affine_inverse()
+	var union := []
+	for i in s.pads.size():
+		var sq := PackedVector2Array()
+		for p in Industry.pad_corners(s, s.pads[i]):
+			var q: Vector3 = inv * Vector3(p.x, 0.0, p.y)
+			sq.append(Vector2(q.x, q.z))
+		if Geometry2D.is_polygon_clockwise(sq):
+			sq.reverse()
+		union = _merge(union, Geometry2D.offset_polygon(sq, 0.5)[0])
+	var outlines := []
+	var lo := INF
+	var hi := -INF
+	var x0 := INF
+	var x1 := -INF
+	for poly in union:
+		# Round it off like ground dug along a seam, not cut on a grid.
+		for q in Geometry2D.offset_polygon(poly, -26.0, Geometry2D.JOIN_ROUND):
+			for o in Geometry2D.offset_polygon(q, 18.0, Geometry2D.JOIN_ROUND):
+				if not Geometry2D.is_polygon_clockwise(o):
+					outlines.append(o)
+					for p in o:
+						lo = minf(lo, p.y)
+						hi = maxf(hi, p.y)
+						x0 = minf(x0, p.x)
+						x1 = maxf(x1, p.x)
+	if outlines.is_empty():
+		return
+	# How new the ground under each cut is: the newest pad it crosses.
+	var n: int = s.pads.size()
+	var rows := []
+	var z := lo
+	while z < hi:
+		var mid := z + STRIP_PITCH * 0.5
+		var newest := -1
+		for i in n:
+			var c: Vector3 = inv * Industry.pad_center(s, s.pads[i])
+			if absf(c.z - mid) <= Industry.PAD * 0.5:
+				newest = maxi(newest, i)
+		rows.append([z, float(n - 1 - newest)])  # 0: the pad opened last
+		z += STRIP_PITCH
+	var merged := {}
+	var none := []
+	_put(merged, IndustryBuilder.build_strip_mine(hash(s.pos), outlines, rows, STRIP_PITCH) + [none], hq, none)
+	for mat in merged:
+		var mi := MeshInstance3D.new()
+		mi.mesh = Terrain.drape((merged[mat][0] as SurfaceTool).commit(), true, 8.0 if merged[mat][1] else 0.0)
+		mi.material_override = merged[mat][2]
+		if merged[mat][1]:
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(mi)
+
+
+## Adds a polygon into a set of merged outlines.
+static func _merge(polys: Array, add: PackedVector2Array) -> Array:
+	var out := []
+	var cur := add
+	for p in polys:
+		var m := Geometry2D.merge_polygons(p, cur)
+		var outer := m.filter(func(q): return not Geometry2D.is_polygon_clockwise(q))
+		if outer.size() == 1:
+			cur = outer[0]  # joined (holes dropped: a quarry has none)
+		else:
+			out.append(p)
+	out.append(cur)
+	return out
 
 
 ## True when a public road runs through or beside this cell.
@@ -210,26 +287,78 @@ func _near_road(mid: Vector3) -> bool:
 	return not sim.network.find_segment_near(mid, Industry.PAD * 0.75, 1.0).is_empty()
 
 
-## The pad a stand's haul track runs to (as drawn in _site).
+## The pad a pad's track runs to: the neighbour nearer the main building.
 func _track_to(s: Dictionary, c: Vector2i) -> Vector2i:
-	for d in [Vector2i(-signi(c.x), 0), Vector2i(0, -signi(c.y))]:
-		if d != Vector2i.ZERO and (c + d == Vector2i.ZERO or (c + d) in s.pads):
-			return c + d
-	return Vector2i.ZERO
+	var home := Industry.pad_center(s, Vector2i.ZERO)
+	var mine := Industry.pad_center(s, c)
+	var best := Vector2i.ZERO
+	var best_d := mine.distance_to(home)
+	for o in s.pads:
+		var p := Industry.pad_center(s, o)
+		var d := mine.distance_to(p)
+		if o != c and p.distance_to(home) < mine.distance_to(home) - 1.0 and d < best_d:
+			best_d = d
+			best = o
+	return best
+
+
+## A pad's track in world space. Well pads and pits get a straight lease
+## road. Logging roads bend: real ones (US Forest Service and Indiana DNR
+## forestry road guides) follow the contour and swing around wet ground
+## and big trees, so each one leaves its stand straight past the landing
+## and bows to one side on its way to the next.
+func _track(s: Dictionary, c: Vector2i) -> PackedVector3Array:
+	var a := Industry.pad_center(s, c)
+	var b := Industry.pad_center(s, _track_to(s, c))
+	if s.kind != "forest":
+		return PackedVector3Array([a, b])
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([roundi(s.pos.x), roundi(s.pos.z), c])
+	var dir := (b - a).normalized()
+	var side := Vector3(-dir.z, 0.0, dir.x) * rng.randf_range(10.0, 20.0) * (1.0 if rng.randf() < 0.5 else -1.0)
+	var length := a.distance_to(b)
+	var p1 := a + dir * length * 0.3
+	var p2 := b - dir * length * 0.3 + side
+	var wiggle := rng.randf_range(1.0, 2.5)
+	var pts := PackedVector3Array()
+	for i in 17:
+		var t := i / 16.0
+		var u := 1.0 - t
+		var p := a * u * u * u + p1 * 3.0 * u * u * t + p2 * 3.0 * u * t * t + b * t * t * t
+		pts.append(p + side.normalized() * sin(t * TAU) * wiggle * sin(t * PI))
+	return pts
 
 
 ## Adds a builder's meshes at `frame` into `merged` (one surface per
 ## material; flat ground work casts no shadow), and its trees in world space.
+## The company's main building on its own node, so it goes up stage by
+## stage (ConstructionSite) like any steel-frame plant.
+func _hq(id: int, s: Dictionary, root: Node3D, built: Array, trees: Array) -> void:
+	var node := Node3D.new()
+	root.add_child(node)
+	node.transform = Transform3D(Basis.looking_at(s.dir, Vector3.UP),
+		Vector3(s.pos.x, Terrain.ground_y(s.pos.x, s.pos.z), s.pos.z))
+	var parts := [built[0], Terrain.drape_local(built[1], node.transform)]
+	if built.size() > 2:
+		_put({}, [ArrayMesh.new(), ArrayMesh.new(), built[2]], Transform3D(node.basis, s.pos), trees)
+	var ref := "ind:%d" % id
+	ConstructionSite.add_to(node, parts, "factory", func(): return sim.construction.state(ref, sim.tick_count),
+		func(): pass)
+
+
 func _put(merged: Dictionary, built: Array, frame: Transform3D, trees: Array) -> void:
 	for k in 2:
 		var mesh: ArrayMesh = built[k]
 		for i in mesh.get_surface_count():
 			var mat := mesh.surface_get_material(i)
-			if not merged.has(mat):
+			# Ground work and buildings stay apart even with one material:
+			# only ground work is cut finer to follow the land.
+			var key := [mat, k == 1]
+			if not merged.has(key):
 				var st := SurfaceTool.new()
 				st.begin(Mesh.PRIMITIVE_TRIANGLES)
-				merged[mat] = [st, k == 1]
-			(merged[mat][0] as SurfaceTool).append_from(mesh, i, frame)
+				merged[key] = [st, k == 1, mat]
+			(merged[key][0] as SurfaceTool).append_from(mesh, i, frame)
 	for t in built[2]:
 		var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
 		var at := frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])

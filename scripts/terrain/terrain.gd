@@ -39,8 +39,11 @@ static var _loaded := false
 static var _layers := {}
 ## Flattening under roads and lots, written by TerrainView: chunk -> weights.
 static var _flat := {}
+static var _mow := {}
 const FLAT_CELL := 8.0
 const FLAT_CHUNK := 64  # cells per side
+## A road's mowed verge fades into the wild cover over this many metres.
+const MOW_FADE := 6.0
 
 
 static func _load() -> void:
@@ -49,7 +52,17 @@ static func _load() -> void:
 	_loaded = true
 	for name in ["ground", "base", "wlevel", "cover", "resources"]:
 		var img := Image.new()
-		var err := img.load_png_from_buffer(FileAccess.get_file_as_bytes(DIR + name + ".bin"))
+		var bytes := FileAccess.get_file_as_bytes(DIR + name + ".bin")
+		var err: int
+		# Lossless WebP (about 30% smaller to download) or PNG. WebP has no
+		# grey-plus-alpha mode, so height layers come back as RGBA with
+		# R = G = B and are packed back into two bytes a sample.
+		if bytes.slice(0, 4).get_string_from_ascii() == "RIFF":
+			err = img.load_webp_from_buffer(bytes)
+			if err == OK and name in ["ground", "base", "wlevel"]:
+				img.convert(Image.FORMAT_LA8)
+		else:
+			err = img.load_png_from_buffer(bytes)
 		if err != OK:
 			push_error("Terrain: can't load %s (%d)" % [name, err])
 			img = Image.create(2, 2, false, Image.FORMAT_RGBA8)
@@ -367,14 +380,18 @@ static func _split(arrays: Array, max_edge: float) -> Array:
 
 ## A copy of a flat mesh placed by `xform` (a node standing on the land),
 ## bent so each vertex keeps its height above the ground as drawn rather
-## than above the node.
-static func drape_local(mesh: Mesh, xform: Transform3D) -> ArrayMesh:
+## than above the node. Long triangles are split first (no side over
+## `max_edge` metres) so a big yard follows the slope instead of a corner
+## sinking into it and leaving a wedge showing.
+static func drape_local(mesh: Mesh, xform: Transform3D, max_edge := 4.0) -> ArrayMesh:
 	var out := ArrayMesh.new()
 	if mesh == null:
 		return out
 	var inv := xform.affine_inverse()
 	for s in mesh.get_surface_count():
 		var arrays := mesh.surface_get_arrays(s)
+		if max_edge > 0.0 and mesh.surface_get_primitive_type(s) == Mesh.PRIMITIVE_TRIANGLES:
+			arrays = _split(arrays, max_edge)
 		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 		for i in verts.size():
 			var w := xform * verts[i]
@@ -421,7 +438,27 @@ static func ray_hit(from: Vector3, dir: Vector3, max_dist := 20000.0):
 
 ## How flat the ground is graded at a point on screen, 0 to 1.
 static func flat_weight(x: float, z: float) -> float:
-	if _flat.is_empty():
+	return _weight(_flat, x, z)
+
+
+## How far the wild cover is cleared at a point on screen, 0 to 1: the road
+## itself and a mowed verge beside it, narrower than the grading.
+static func mow_weight(x: float, z: float) -> float:
+	return _weight(_mow, x, z)
+
+
+## True when any land in a box (view coordinates) is mowed.
+static func any_mowed(box: Rect2) -> bool:
+	var span := FLAT_CELL * FLAT_CHUNK
+	for cz in range(floori((box.position.y - FLAT_CELL) / span), floori((box.end.y + FLAT_CELL) / span) + 1):
+		for cx in range(floori((box.position.x - FLAT_CELL) / span), floori((box.end.x + FLAT_CELL) / span) + 1):
+			if _mow.has(Vector2i(cx, cz)):
+				return true
+	return false
+
+
+static func _weight(layer: Dictionary, x: float, z: float) -> float:
+	if layer.is_empty():
 		return 0.0
 	var u := x / FLAT_CELL - 0.5
 	var v := z / FLAT_CELL - 0.5
@@ -429,21 +466,25 @@ static func flat_weight(x: float, z: float) -> float:
 	var j0 := floori(v)
 	var fu := u - i0
 	var fv := v - j0
-	return lerpf(lerpf(_flat_cell(i0, j0), _flat_cell(i0 + 1, j0), fu),
-		lerpf(_flat_cell(i0, j0 + 1), _flat_cell(i0 + 1, j0 + 1), fu), fv)
+	return lerpf(lerpf(_cell(layer, i0, j0), _cell(layer, i0 + 1, j0), fu),
+		lerpf(_cell(layer, i0, j0 + 1), _cell(layer, i0 + 1, j0 + 1), fu), fv)
 
 
-static func _flat_cell(i: int, j: int) -> float:
+static func _cell(layer: Dictionary, i: int, j: int) -> float:
 	var key := Vector2i(floori(float(i) / FLAT_CHUNK), floori(float(j) / FLAT_CHUNK))
-	var cells = _flat.get(key)
+	var cells = layer.get(key)
 	if cells == null:
 		return 0.0
 	return (cells as PackedFloat32Array)[posmod(j, FLAT_CHUNK) * FLAT_CHUNK + posmod(i, FLAT_CHUNK)]
 
 
-## Clears the flattening in a box (view coordinates), returning the chunks
-## it touched.
+## Clears the flattening (and mowing) in a box (view coordinates).
 static func clear_flat(box: Rect2) -> void:
+	for layer in [_flat, _mow]:
+		_clear(layer, box)
+
+
+static func _clear(layer: Dictionary, box: Rect2) -> void:
 	var c0 := Vector2i(floori(box.position.x / FLAT_CELL / FLAT_CHUNK), floori(box.position.y / FLAT_CELL / FLAT_CHUNK))
 	var c1 := Vector2i(floori(box.end.x / FLAT_CELL / FLAT_CHUNK), floori(box.end.y / FLAT_CELL / FLAT_CHUNK))
 	var i0 := floori(box.position.x / FLAT_CELL)
@@ -453,18 +494,27 @@ static func clear_flat(box: Rect2) -> void:
 	for cy in range(c0.y, c1.y + 1):
 		for cx in range(c0.x, c1.x + 1):
 			var key := Vector2i(cx, cy)
-			if not _flat.has(key):
+			if not layer.has(key):
 				continue
-			var cells: PackedFloat32Array = _flat[key]
+			var cells: PackedFloat32Array = layer[key]
+			layer.erase(key)  # so the writes below don't copy it
 			for j in range(maxi(j0, cy * FLAT_CHUNK), mini(j1, (cy + 1) * FLAT_CHUNK - 1) + 1):
 				for i in range(maxi(i0, cx * FLAT_CHUNK), mini(i1, (cx + 1) * FLAT_CHUNK - 1) + 1):
 					cells[posmod(j, FLAT_CHUNK) * FLAT_CHUNK + posmod(i, FLAT_CHUNK)] = 0.0
-			_flat[key] = cells
+			layer[key] = cells
 
 
 ## Grades a strip along a polyline flat: fully within `inner` metres of it,
-## fading out by `outer`. Only cells inside `clip` change, when given.
-static func stamp_flat(pts: PackedVector3Array, inner: float, outer: float, clip := Rect2()) -> void:
+## fading out by `outer`. With `mow` (metres) it also clears the wild cover
+## that close, fading over MOW_FADE. Only cells inside `clip` change, when
+## given.
+static func stamp_flat(pts: PackedVector3Array, inner: float, outer: float, clip := Rect2(), mow := -1.0) -> void:
+	_stamp(_flat, pts, inner, outer, clip)
+	if mow >= 0.0:
+		_stamp(_mow, pts, mow, mow + MOW_FADE, clip)
+
+
+static func _stamp(layer: Dictionary, pts: PackedVector3Array, inner: float, outer: float, clip: Rect2) -> void:
 	var line := PackedVector2Array()
 	for p in pts:
 		line.append(Vector2(p.x, p.z))
@@ -484,9 +534,9 @@ static func stamp_flat(pts: PackedVector3Array, inner: float, outer: float, clip
 		for cx in range(floori(float(i0) / FLAT_CHUNK), floori(float(i1) / FLAT_CHUNK) + 1):
 			var key := Vector2i(cx, cy)
 			var cells := PackedFloat32Array()
-			if _flat.has(key):
-				cells = _flat[key]
-				_flat.erase(key)  # so the writes below don't copy it
+			if layer.has(key):
+				cells = layer[key]
+				layer.erase(key)  # so the writes below don't copy it
 			else:
 				cells.resize(FLAT_CHUNK * FLAT_CHUNK)
 			for j in range(maxi(j0, cy * FLAT_CHUNK), mini(j1, (cy + 1) * FLAT_CHUNK - 1) + 1):
@@ -502,4 +552,4 @@ static func stamp_flat(pts: PackedVector3Array, inner: float, outer: float, clip
 					var idx := (j - cy * FLAT_CHUNK) * FLAT_CHUNK + (i - cx * FLAT_CHUNK)
 					if w > cells[idx]:
 						cells[idx] = w
-			_flat[key] = cells
+			layer[key] = cells

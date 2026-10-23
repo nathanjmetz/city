@@ -32,6 +32,16 @@ func setup(s: CitySim) -> void:
 			_stale[c] = true)
 
 
+## Redraws the chunks in a box (view coordinates): the land there was
+## regraded, so verges may have been mowed or let go.
+func regraded(box: Rect2) -> void:
+	var size := Vegetation.CHUNK
+	for x in range(floori(box.position.x / size), floori(box.end.x / size) + 1):
+		for z in range(floori(box.position.y / size), floori(box.end.y / size) + 1):
+			if _chunks.has(Vector2i(x, z)):
+				_stale[Vector2i(x, z)] = true
+
+
 func _process(_delta: float) -> void:
 	if sim == null:
 		return
@@ -40,8 +50,14 @@ func _process(_delta: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
 		return
-	var focus := _ground_focus(cam)
-	var radius := reach(cam.global_position.y)
+	var height := maxf(cam.global_position.y - Terrain.ground_y(cam.global_position.x, cam.global_position.z), 1.0)
+	# Lower graphics tiers draw the woods less far; the ground's painted
+	# canopy carries on past them.
+	var radius := reach(height) * clampf(GraphicsQuality.detail, 0.6, 1.0)
+	var focus := _ground_focus(cam, radius)
+	# Trees thin out and shrink toward the edge (TreeField's shader), where
+	# the ground's painted canopy takes over.
+	RenderingServer.global_shader_parameter_set("tree_fade", Vector4(focus.x, focus.y, radius, 0.0))
 	var size := Vegetation.CHUNK
 	var day := sim.tick_count / REGROW_REDRAW
 	if day != _last_regrow:
@@ -95,10 +111,16 @@ func _draw_chunk(c: Vector2i, detail: bool) -> void:
 	var plants := sim.vegetation.plants_in(Rect2(Vector2(c) * size, Vector2(size, size)), sim.tick_count, detail)
 	if not _chunks.has(c):
 		var field := TreeField.new()
+		field.fades = true
 		add_child(field)
 		_chunks[c] = field
+	# Roads the town doesn't own (a neighbor's, the county highways out to
+	# the horizon) keep their mowed verges clear too.
+	var mowed := Terrain.any_mowed(Rect2(Vector2(c) * size, Vector2(size, size)))
 	var trees := []
 	for p in plants:
+		if mowed and Terrain.mow_weight(p.pos.x, p.pos.z) > 0.5:
+			continue
 		trees.append([placement(p), p.species, p.tint])
 	_chunks[c].set_trees("wild", trees)
 	_shade.append(_chunks[c])
@@ -127,11 +149,17 @@ func _centre(c: Vector2i) -> Vector2:
 	return (Vector2(c) + Vector2(0.5, 0.5)) * Vegetation.CHUNK
 
 
-## Where the camera's view meets the ground (or below it, looking flat).
-func _ground_focus(cam: Camera3D) -> Vector2:
+## The centre of the trees drawn: from the camera toward where it looks, but
+## never more than part of the reach ahead, so a low, flat view doesn't
+## swing it far off (and reload everything) with each small move.
+func _ground_focus(cam: Camera3D, radius: float) -> Vector2:
 	var from := cam.global_position
 	var dir := -cam.global_basis.z
+	var flat := Vector2(dir.x, dir.z)
+	if flat.length() < 0.001:
+		return Vector2(from.x, from.z)
+	var height := maxf(from.y - Terrain.ground_y(from.x, from.z), 1.0)
+	var ahead := radius * 0.45
 	if dir.y < -0.05:
-		var p := from + dir * (from.y / -dir.y)
-		return Vector2(p.x, p.z)
-	return Vector2(from.x, from.z)
+		ahead = minf(height / -dir.y * flat.length(), ahead)
+	return Vector2(from.x, from.z) + flat.normalized() * ahead

@@ -8,8 +8,23 @@ more pickups because this is the Midwest.
 
 Household: sedan, hatchback, crossover, SUV, pickup (crew cab), work pickup
 (regular cab, toolbox, ladder rack), minivan, sports car, motorcycle, van.
-Freight: delivery (step) van, 26 ft box truck, dump truck, tow truck, and
-semis with a 53 ft dry van, flatbed, grain hopper or tanker.
+Most household kinds come in several body styles (compact and full-size
+sedans, crew and mid-size pickups, wagon, EV crossover and more); a car's id
+picks its style (`VehicleModels.variant()`), so it never changes.
+Freight: delivery (step) van, 26 ft box truck, dump truck, concrete mixer,
+tow truck, and semis with a 53 ft dry van, flatbed, grain hopper, tanker,
+log trailer, end dump, USPS trailer, pot-belly livestock trailer or a
+flatbed of sawmill lumber.
+Utility: bucket truck (Altec AT40G) for phone and power line crews.
+Camping: Class C RV, Class A motorhome and a pickup with a slide-in camper,
+used by out-of-town visitors (purpose "visitor").
+Farm: tractor, combine, and a tractor towing a gravity wagon of grain to the
+elevator (some grain hauls).
+Farm country: Amish black top buggy at a trot (about 10 mph); Daviess County,
+next to Petersburg, has one of Indiana's largest Amish settlements. Buggies
+turn up now and then on shopping trips.
+Winter: while snow is on the ground, dump trucks and one contractor pickup in
+three wear a plow blade (`VehicleModels.WINTER`).
 Services: school bus, city bus, garbage truck, fire engine, police
 interceptor, ambulance. Farm: row-crop tractor, combine.
 
@@ -32,3 +47,7 @@ engine). `pick()` is the fallback for background trips.
   Bodies point from the front bumper to the rear axle, so long vehicles
   swing wide in turns; semi trailers hinge at the fifth wheel.
 - `tools/vehicle_shot.gd`: lines up every model for photo checks.
+
+## Ultra close-ups
+
+On the desktop Ultra and Cinematic tiers (`GraphicsQuality`), vehicles within 75 m use `VehicleModels.LOD_ULTRA`. These have rounded bodies, alloy wheels with brake discs, door seams, handles and plates, and use the clear-coat material (`VehicleMaterial.get_material(true)`). Each model's close-up mesh is built the first time one comes close, so the browser and the lower tiers never pay for it. Bench: `godot --headless -s tools/vehicle_bench.gd -- small 200 ultra`.

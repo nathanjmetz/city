@@ -11,6 +11,9 @@ const TOWN_REACH := 60.0
 
 var network: RoadNetwork
 var sim: CitySim
+## Draws every street and avenue as a country road (the county highways
+## running on past the town to the horizon).
+var all_rural := false
 var _rural := {}  # segment id -> true
 var _recheck := -1.0  # seconds until the town edge is checked again, or -1
 var _redraw := false  # a new drive needs the poles moved
@@ -19,6 +22,7 @@ var _trees := TreeField.new()  # street trees down planted medians
 var _mats := {
 	"asphalt": Surfaces.asphalt(),
 	"curb": Surfaces.concrete(RoadStyle.CURB_COLOR),
+	"curb_face": Surfaces.concrete(RoadStyle.CURB_COLOR.darkened(0.45)),
 	"walk": Surfaces.concrete(RoadStyle.SIDEWALK_COLOR, true),
 	"median": Ground.grass(),
 	"yellow": Surfaces.paint(RoadStyle.MARKING_YELLOW),
@@ -61,6 +65,10 @@ func _process(delta: float) -> void:
 ## Streets and avenues with no zoned lot, building or service near them.
 func _rural_segments() -> Dictionary:
 	var out := {}
+	if all_rural:
+		for id in network.segments:
+			out[id] = true
+		return out
 	if sim == null:
 		return out
 	var cell := TOWN_REACH
@@ -94,7 +102,9 @@ func _rural_segments() -> Dictionary:
 func rebuild() -> void:
 	# Neighbors' cities are drawn moved over to their place on the land.
 	Terrain.shift = Terrain.shift_for(self)
+	var t := Perf.now()
 	_rebuild_all()
+	Perf.add("frame.roads", t)
 	Terrain.shift = Vector2.ZERO
 
 

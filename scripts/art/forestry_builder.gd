@@ -122,7 +122,8 @@ func _stand(size: float, track_dir: Vector2, extra: Array, open: Array) -> void:
 	var td := track_dir.normalized() if track_dir.length() > 0.1 else Vector2(0, -1)
 	# The landing sits toward the haul track; skid trails wind back into the cut.
 	var land := td * rng.randf_range(8.0, 14.0)
-	var clear := [[Vector2.ZERO, td * h, 4.0], [land, land, 15.0]]
+	# (The haul road out of the stand comes in with the extra clearings.)
+	var clear := [[Vector2.ZERO, td * 16.0, 4.0], [land, land, 15.0]]
 	var trail_pts := []
 	for k in rng.randi_range(3, 4):
 		var a := atan2(-td.y, -td.x) + rng.randf_range(-1.3, 1.3)
@@ -262,7 +263,7 @@ func _mill(size: Vector2) -> void:
 	_box("paint", Vector3(0.1, 4.0, 5.0), Vector3(sx - sw * 0.5 - 0.05, 2.3, sz), DARK)
 	_box("metal", Vector3(6.0, 0.4, 1.2), Vector3(sx - sw * 0.5 - 3.0, 1.0, sz), Color("#5a5e60"))
 	_box("siding", Vector3(4.0, 4.2, 0.08), Vector3(sx + 6.0, 2.4, sz - sd * 0.5 - 0.04), Color(TRIM, 0.0))
-	_box("paint", Vector3(0.95, 2.1, 0.06), Vector3(sx - 4.0, 1.35, sz - sd * 0.5 - 0.04), Color("#5a5e60"))
+	_steel_door(Vector3(sx - 4.0, 1.35, sz - sd * 0.5 - 0.04), -1.0)
 	# Sawdust: a conveyor up to a tan pile at the back corner.
 	var pile := Vector3(hx - 5.0, 0, hz - 5.0)
 	_cone_pile(pile, 4.5, 3.6, Color("#b08a5c"))

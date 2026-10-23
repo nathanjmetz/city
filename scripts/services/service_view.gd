@@ -15,6 +15,9 @@ var _coverage := MeshInstance3D.new()
 var _cover_mat := StandardMaterial3D.new()
 var _trees := TreeField.new()
 static var _footing_mat: Material
+## Parts of a site taller than this (metres) are buildings that need a
+## foundation; fences, bollards and pads are lower.
+const FOOTING_ABOVE := 2.4
 
 
 func setup(s: CitySim) -> void:
@@ -42,6 +45,11 @@ func _sync() -> void:
 			_nodes[id].queue_free()
 			_nodes.erase(id)
 	for id in sim.services.buildings:
+		# A hospital that grew (or gave back) a building is drawn afresh.
+		if _nodes.has(id) and _nodes[id].get_meta("look") != _look(id):
+			_trees.remove(_nodes[id].get_meta("tree_key"))
+			_nodes[id].queue_free()
+			_nodes.erase(id)
 		if not _nodes.has(id):
 			_nodes[id] = _spawn(id, sim.services.buildings[id])
 	_draw_coverage()
@@ -69,6 +77,14 @@ func _draw_coverage() -> void:
 		_coverage.mesh = Terrain.drape(st.commit())
 
 
+## What a building looks like, so a change shows: its size, and a hospital's
+## buildings.
+func _look(id: int) -> String:
+	var b: Dictionary = sim.services.buildings[id]
+	var hub: Dictionary = sim.healthcare.hubs.get(id, {})
+	return str([Services.size_of(b), hub.get("pieces", []), hub.get("level", 0)])
+
+
 func _spawn(id: int, b: Dictionary) -> Node3D:
 	var root := Node3D.new()
 	add_child(root)
@@ -78,22 +94,21 @@ func _spawn(id: int, b: Dictionary) -> Node3D:
 	root.set_meta("at", root.transform)
 	var size: Vector2 = Services.size_of(b)
 	root.set_meta("size", size)
-	# Paved footing under the site, its edge running down into the ground on a slope.
-	var footing := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(size.x, 3.0, size.y)
-	footing.mesh = box
-	footing.position = Vector3(0, -1.55, 0)
-	if _footing_mat == null:
-		_footing_mat = Surfaces.concrete(Color(0.55, 0.54, 0.51))
-	footing.material_override = _footing_mat
-	footing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(footing)
 	var to_curb := Services.SETBACK + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
-	var seed := int(b.pos.x * 73.0) ^ int(b.pos.z * 151.0) ^ (int(b.kind) << 20)
-	var built := CivicBuilder.build_service(int(b.kind), seed, size, to_curb)
+	# Seeded from the front door, which stays put as a hospital grows.
+	var door: Vector3 = sim.healthcare.hubs[id].front if sim.healthcare.hubs.has(id) else b.pos + b.dir * size.y * 0.5
+	var seed := int(door.x * 73.0) ^ int(door.z * 151.0) ^ (int(b.kind) << 20)
+	var built: Array
+	if int(b.kind) in Services.CARE:
+		built = HealthBuilder.build_care(int(b.kind), seed, size, to_curb, sim.healthcare.hubs.get(id, {}))
+	else:
+		built = CivicBuilder.build_service(int(b.kind), seed, size, to_curb)
 	built[1] = Terrain.drape_local(built[1], Transform3D(root.basis, root.position))
+	var footing := _footing(built[0])
+	if footing != null:
+		root.add_child(footing)
 	root.set_meta("tree_key", str(b.pos))
+	root.set_meta("look", _look(id))
 	# It goes up stage by stage (ConstructionSite); trees go in at the end.
 	var ref := "svc:%d" % id
 	ConstructionSite.add_to(root, built, "civic", func(): return sim.construction.state(ref, sim.tick_count),
@@ -109,3 +124,27 @@ func _spawn(id: int, b: Dictionary) -> Node3D:
 	return root
 
 
+## A foundation under the site's buildings, running down into the ground on
+## a slope, or null. Only under what stands taller than the fences: the yard
+## itself follows the ground, as a real site's lawn and gravel do, so a
+## site-wide slab doesn't show above the low side of the slope.
+func _footing(building: Mesh) -> MeshInstance3D:
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	for s in building.get_surface_count():
+		for v in building.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]:
+			if v.y > FOOTING_ABOVE:
+				lo = Vector2(minf(lo.x, v.x), minf(lo.y, v.z))
+				hi = Vector2(maxf(hi.x, v.x), maxf(hi.y, v.z))
+	if lo.x > hi.x:
+		return null
+	var footing := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(hi.x - lo.x + 0.4, 3.0, hi.y - lo.y + 0.4)
+	footing.mesh = box
+	footing.position = Vector3((lo.x + hi.x) * 0.5, -1.55, (lo.y + hi.y) * 0.5)
+	if _footing_mat == null:
+		_footing_mat = Surfaces.concrete(Color(0.55, 0.54, 0.51))
+	footing.material_override = _footing_mat
+	footing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return footing

@@ -51,6 +51,20 @@ jobs:
           dest=~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
           mkdir -p "$dest" && cp ~/godot-cache/templates/* "$dest/"
 
+      # The slim web engine from the Web engine workflow, when it's built.
+      - name: Slim engine
+        id: slim
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/slim-engine
+          key: slim-web-${{ env.GODOT_VERSION }}-${{ hashFiles('web/engine/custom.py') }}
+
+      - name: Use the slim engine
+        if: steps.slim.outputs.cache-hit == 'true'
+        run: |
+          sed -i "s|^custom_template/release=.*|custom_template/release=\"$HOME/slim-engine/web_nothreads_release.zip\"|" export_presets.cfg
+          grep -n custom_template/release export_presets.cfg
+
       - name: Run tests
         run: |
           ~/godot-cache/godot --headless --import
@@ -58,6 +72,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_sim.gd
           ~/godot-cache/godot --headless -s tests/test_water.gd
           ~/godot-cache/godot --headless -s tests/test_advisor.gd
+          ~/godot-cache/godot --headless -s tests/test_pad.gd
           ~/godot-cache/godot --headless -s tests/test_road_tools.gd
           ~/godot-cache/godot --headless -s tests/test_grid_fill.gd
           ~/godot-cache/godot --headless -s tests/test_move_it.gd
@@ -73,7 +88,9 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_terrain.gd
           ~/godot-cache/godot --headless -s tests/test_permits.gd
           ~/godot-cache/godot --headless -s tests/test_rail.gd
+          ~/godot-cache/godot --headless -s tests/test_rail_grain.gd
           ~/godot-cache/godot --headless -s tests/test_families.gd
+          ~/godot-cache/godot --headless -s tests/test_streets.gd
           ~/godot-cache/godot --headless -s tests/test_lots.gd
           ~/godot-cache/godot --headless -s tests/test_building_types.gd
           ~/godot-cache/godot --headless -s tests/test_hubs.gd
@@ -81,18 +98,27 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_big_factories.gd
           ~/godot-cache/godot --headless -s tests/test_parks.gd
           ~/godot-cache/godot --headless -s tests/test_tourism.gd
+          ~/godot-cache/godot --headless -s tests/test_trails.gd
           ~/godot-cache/godot --headless -s tests/test_power.gd
           ~/godot-cache/godot --headless -s tests/test_vegetation.gd
           ~/godot-cache/godot --headless -s tests/test_education.gd
+          ~/godot-cache/godot --headless -s tests/test_telecom.gd
           ~/godot-cache/godot --headless -s tests/test_banks.gd
           ~/godot-cache/godot --headless -s tests/test_mail.gd
           ~/godot-cache/godot --headless -s tests/test_economy.gd
           ~/godot-cache/godot --headless -s tests/test_construction.gd
+          ~/godot-cache/godot --headless -s tests/test_telemetry.gd
+          ~/godot-cache/godot --headless -s tests/test_pollution.gd
+          ~/godot-cache/godot --headless -s tests/test_health.gd
+          ~/godot-cache/godot --headless -s tests/test_interlocal.gd
+          ~/godot-cache/godot --headless -s tests/test_regional.gd
+          ~/godot-cache/godot --headless -s tests/test_desktop.gd
+          ~/godot-cache/godot --headless -s tests/test_heritage.gd
 
       - name: Stamp the build
         run: |
           # Shown in the game's corner so you can tell which version you're playing.
-          printf 'const BUILD := "%s  %s"\n' "${GITHUB_SHA::7}" "$(date -u '+%b %d %H:%M UTC')" > scripts/build_info.gd
+          python3 tools/stamp_build.py
 
       - name: Export for the web
         run: |
@@ -100,20 +126,36 @@ jobs:
           ~/godot-cache/godot --headless --export-release "Web" build/web/index.html
           test -f build/web/index.wasm
 
-      - name: Give files versioned names
+      - name: Name files by what's inside them
         run: |
-          # Browsers cache the game files, so each build gets new file names
-          # and a refresh always loads the latest version.
-          v=${GITHUB_SHA::8}
+          # File names come from what's inside each file. The engine (js, wasm
+          # and audio worklets) only changes with the Godot version, so the
+          # browser keeps it between builds and only the game data (pck)
+          # downloads again after a merge.
           cd build/web
+          e=engine-$(cat index.js index.wasm | sha256sum | cut -c1-10)
+          g=game-$(sha256sum index.pck | cut -c1-10)
+          v=${GITHUB_SHA::8}
           for f in index.*; do
-            [ "$f" = index.html ] && continue
-            mv "$f" "index-$v.${f#index.}"
+            case "$f" in
+              index.html) ;;
+              index.pck) mv "$f" "$g.pck" ;;
+              index.js|index.wasm|index.audio.*) mv "$f" "$e.${f#index.}" ;;
+              *) mv "$f" "index-$v.${f#index.}" ;;
+            esac
           done
-          sed -i -E "s/index\.(js|pck|wasm|audio|icon|apple-touch-icon|png)/index-$v.\1/g; s/\"executable\":\"index\"/\"executable\":\"index-$v\"/" index.html
-          grep -q "index-$v.js" index.html
-          grep -q "\"executable\":\"index-$v\"" index.html
+          sed -i -E "s/index\.(icon|apple-touch-icon|png)/index-$v.\1/g; s/\"index\.js\"/\"$e.js\"/g; s/\"index\.pck\"/\"$g.pck\"/; s/\"index\.wasm\"/\"$e.wasm\"/; s/\"executable\":\"index\"/\"executable\":\"$e\",\"mainPack\":\"$g.pck\"/" index.html
+          grep -q "src=\"$e.js\"" index.html
+          grep -q "\"mainPack\":\"$g.pck\"" index.html
+          grep -q "\"$e.wasm\":" index.html
           ls
+
+      - name: Add the desktop download page
+        run: |
+          mkdir -p build/web/download
+          cp web/download.html build/web/download/index.html
+          cp assets/brand/logos/neighbors-horizontal-on-dark.png build/web/download/logo.png
+          cp web/download-mac-blocked.png build/web/download/mac-blocked.png
 
       - uses: actions/upload-pages-artifact@v3
         with:

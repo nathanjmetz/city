@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Get Neighbors</title>
+<meta name="description" content="Free Neighbors app for Mac and Windows. No installer, and it updates itself.">
+<link rel="icon" href="logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@500;600&family=Outfit:wght@600;700&display=swap" rel="stylesheet">
+<style>
+/* The Neighbors brand kit, Game theme (scripts/ui/brand.gd). Coral = the one primary action. */
+:root {
+	--surface: #10272b; --panel: #16343a; --raised: #1f454c; --line: #2c5a62;
+	--ink: #f6f4ef; --muted: #a9c1c0; --faint: #6f8f93;
+	--teal: #3a9a94; --mint: #8fcfbf; --coral: #ef6f51; --on-coral: #10272b;
+}
+* { box-sizing: border-box; }
+body {
+	margin: 0; background: var(--surface); color: var(--ink);
+	font: 500 16px/1.5 Figtree, system-ui, sans-serif;
+}
+main { max-width: 720px; margin: 0 auto; padding: 40px 16px 56px; }
+.logo { display: block; height: 64px; margin: 0 0 28px; }
+h1 { font: 700 clamp(28px, 6vw, 40px)/1.15 Outfit, system-ui, sans-serif; margin: 0 0 8px; }
+h2 { font: 600 20px/1.3 Outfit, system-ui, sans-serif; margin: 0 0 10px; }
+p { margin: 0 0 12px; }
+.lead { color: var(--muted); font-size: 18px; margin-bottom: 28px; }
+.buttons { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.btn {
+	display: block; padding: 16px 20px; border-radius: 10px; text-decoration: none;
+	background: var(--raised); color: var(--ink); border: 1px solid var(--line);
+}
+.btn strong { display: block; font: 600 20px/1.2 Outfit, system-ui, sans-serif; }
+.btn span { color: var(--muted); font-size: 14px; }
+.btn.primary { background: var(--coral); border-color: var(--coral); color: var(--on-coral); }
+.btn.primary span { color: var(--on-coral); opacity: .8; }
+.btn:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
+.small { color: var(--muted); font-size: 14px; }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-top: 20px; }
+ol { margin: 0; padding-left: 22px; }
+li { margin-bottom: 6px; }
+b { font-weight: 600; }
+a { color: var(--mint); }
+.shot { display: block; max-width: 100%; height: auto; border-radius: 10px; margin: 4px 0 14px; }
+/* A drawing of the Security part of System Settings on macOS Sequoia. */
+.mock { margin: 10px 0 4px; padding: 10px 12px; border-radius: 10px; background: #f5f5f7; color: #1d1d1f; font: 13px/1.4 -apple-system, system-ui, sans-serif; max-width: 460px; }
+.mock-h { font-weight: 700; margin: 0 0 6px; }
+.mock-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 10px; background: #fff; border-radius: 8px; margin-top: 4px; }
+.mock-dim { color: #6e6e73; }
+.mock-btn { flex: none; padding: 3px 10px; border-radius: 6px; background: #fff; border: 1px solid #c7c7cc; box-shadow: 0 0 0 3px #ef6f51; }
+.cmd { display: flex; gap: 8px; align-items: flex-start; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.cmd code { flex: 1; min-width: 0; overflow-wrap: anywhere; font: 13px/1.5 ui-monospace, Menlo, monospace; color: var(--ink); }
+.cmd button { flex: none; font: 600 14px Figtree, system-ui, sans-serif; padding: 6px 12px; border-radius: 6px; border: 0; background: var(--teal); color: var(--ink); cursor: pointer; }
+</style>
+</head>
+<body>
+<main>
+	<img class="logo" src="logo.png" alt="Neighbors">
+	<h1>Play Neighbors on your computer</h1>
+	<p class="lead">Free for Mac and Windows. No installer and no admin password. It looks sharper than the browser version, sets its own graphics to fit your computer, and updates itself.</p>
+
+	<div class="buttons">
+		<a class="btn" id="mac" href="https://github.com/nathanjmetz/city/releases/download/desktop/Neighbors-mac.zip">
+			<strong>Download for Mac</strong><span>Apple silicon and Intel, about 70 MB</span>
+		</a>
+		<a class="btn" id="win" href="https://github.com/nathanjmetz/city/releases/download/desktop/Neighbors-windows.exe">
+			<strong>Download for Windows</strong><span>Windows 10 or 11, 64-bit, about 120 MB</span>
+		</a>
+	</div>
+	<p class="small">Same towns and same neighbors as the browser. Your invite code works in both.</p>
+
+	<section>
+		<h2>First time on a Mac</h2>
+		<p>We don't pay Apple to check the app, so the first time you open it the Mac stops it with this box:</p>
+		<img class="shot" src="mac-blocked.png" width="254" height="226" alt="&ldquo;Neighbors&rdquo; Not Opened. Apple could not verify &ldquo;Neighbors&rdquo; is free of malware. Buttons: Done, Move to Trash.">
+		<ol>
+			<li>Click <b>Done</b>. (Not Move to Trash.)</li>
+			<li>Open the <b>Apple menu</b>, then <b>System Settings</b>, then <b>Privacy &amp; Security</b> in the sidebar.</li>
+			<li>Scroll down to <b>Security</b>. Under &ldquo;Allow applications from&rdquo; a new line says Neighbors was blocked. Click <b>Open Anyway</b> there.
+				<div class="mock" aria-hidden="true">
+					<div class="mock-h">Security</div>
+					<div class="mock-row"><span>Allow applications from</span><span class="mock-dim">App Store &amp; Known Developers</span></div>
+					<div class="mock-row"><span>&ldquo;Neighbors&rdquo; was blocked to protect your Mac.</span><span class="mock-btn">Open Anyway</span></div>
+				</div>
+			</li>
+			<li>A box asks again. Click <b>Open Anyway</b> and type your Mac password (or use Touch ID).</li>
+		</ol>
+		<p class="small" style="margin-top:10px">You only do this once. After that it opens like any app and updates itself. The Open Anyway line shows up only for about an hour after the Mac blocks the app, so if it's missing, double-click Neighbors again first.</p>
+
+		<h2 style="margin-top:20px">Or one line in Terminal, on your own Mac</h2>
+		<p>This downloads the app into your Applications folder and opens it, with no warning boxes. Open <b>Terminal</b> (press &#8984; Space and type Terminal), paste this line and press Return:</p>
+		<div class="cmd"><code id="cmd">curl -fL https://github.com/nathanjmetz/city/releases/download/desktop/Neighbors-mac.zip -o /tmp/Neighbors.zip &amp;&amp; ditto -xk /tmp/Neighbors.zip ~/Applications &amp;&amp; open ~/Applications/Neighbors.app</code><button type="button" id="copy">Copy</button></div>
+		<p class="small" style="margin-top:10px">Next time, open Neighbors from Launchpad or Spotlight. Only do this on a Mac that's yours. The warning box only shows for files a web browser downloaded, and this is the same file.</p>
+	</section>
+
+	<section>
+		<h2>First time on Windows</h2>
+		<ol>
+			<li>Double-click <b>Neighbors-windows.exe</b>. Nothing gets installed.</li>
+			<li>If a blue box says <b>Windows protected your PC</b>, click <b>More info</b>, then <b>Run anyway</b>.</li>
+		</ol>
+		<p class="small" style="margin-top:10px">You only do this once.</p>
+	</section>
+
+	<section>
+		<h2>A work or school computer?</h2>
+		<p>Some are set up to block apps from outside the company. If yours is, please follow its rules and ask your IT team, or just <a href="../">play in the browser</a>. It needs nothing installed.</p>
+	</section>
+</main>
+<script>
+	// The download for this computer is the one primary button.
+	const p = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
+	const id = /win/i.test(p) ? "win" : /mac/i.test(p) ? "mac" : "";
+	if (id) document.getElementById(id).classList.add("primary");
+	const copy = document.getElementById("copy");
+	copy.onclick = () => navigator.clipboard.writeText(document.getElementById("cmd").textContent)
+		.then(() => { copy.textContent = "Copied"; }, () => {});
+</script>
+</body>
+</html>

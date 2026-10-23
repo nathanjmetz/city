@@ -35,6 +35,8 @@ var sky_mat := ProceduralSkyMaterial.new()
 ## 0 in full daylight, 1 at full night. DayNight reads it.
 var darkness := 0.0
 var _day := {}  # the fixed late-morning look, to go back to
+## How far from the camera shadows reach at most, in metres (Quality sets it).
+var shadow_reach := 2000.0
 
 
 func _ready() -> void:
@@ -43,7 +45,9 @@ func _ready() -> void:
 	sky_mat.sky_curve = 0.12
 	sky_mat.sky_energy_multiplier = 1.0
 	sky_mat.ground_horizon_color = HAZE
-	sky_mat.ground_bottom_color = Color(0.32, 0.34, 0.30)
+	# Below the horizon the sky shows only past the farthest land: the same
+	# haze, so there is no grey band where the land runs out.
+	sky_mat.ground_bottom_color = HAZE
 	sky_mat.ground_curve = 0.05
 	sky_mat.sun_angle_max = 20.0
 	sky_mat.sun_curve = 0.08
@@ -69,7 +73,10 @@ func _ready() -> void:
 	env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
 	env.fog_light_color = HAZE
 	env.fog_light_energy = 1.0
-	env.fog_density = 0.00025
+	# About 24 km visibility, a clear Midwestern day (extinction 3.9 / range):
+	# fields 2-3 km off keep their colour, and the land 20 km out, where it is
+	# last drawn, is all but haze.
+	env.fog_density = 0.00016
 	env.fog_sun_scatter = 0.15
 	env.fog_sky_affect = 0.25
 	# AgX mutes colour, so bring saturation and contrast back up to photo levels.
@@ -103,6 +110,56 @@ func _ready() -> void:
 	_day = {"top": sky_mat.sky_top_color, "horizon": sky_mat.sky_horizon_color,
 		"ambient": env.ambient_light_energy, "ambient_color": env.ambient_light_color,
 		"sun_color": sun.light_color, "sun_energy": sun.light_energy, "rot": sun.rotation_degrees}
+	if GraphicsQuality.current:
+		GraphicsQuality.current.changed.connect(_apply_quality)
+		_apply_quality()
+
+
+## The desktop app's quality tier (see Quality). Ambient occlusion darkens
+## the creases real photos show: under eaves, where walls meet the ground,
+## between houses close together. The browser build keeps the look above.
+func _apply_quality() -> void:
+	var q := GraphicsQuality.current
+	if q == null or not q.active:
+		return
+	var t := q.settings()
+	shadow_reach = t.shadow_reach
+	sun.directional_shadow_max_distance = minf(sun.directional_shadow_max_distance, shadow_reach)
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS if t.splits == 4 \
+		else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	if q.browser:
+		return  # the effects below need Forward+
+	env.ssao_enabled = t.ssao
+	env.ssao_radius = 1.5
+	env.ssao_intensity = 1.6
+	env.ssao_power = 1.5
+	env.ssao_light_affect = 0.1
+	env.ssil_enabled = t.ssil
+	env.ssil_radius = 6.0
+	env.ssil_intensity = 0.6
+	# Sky and clouds mirrored in ponds, the river and wet pavement.
+	env.ssr_enabled = t.ssr
+	env.ssr_max_steps = 48
+	env.ssr_fade_out = 2.0
+	# Sunlight bouncing off lawns, walls and streets into the shade, the
+	# way a real street's shadows are never black (Cinematic only).
+	env.sdfgi_enabled = t.sdfgi
+	env.sdfgi_use_occlusion = true
+	env.sdfgi_cascades = 6
+	env.sdfgi_min_cell_size = 0.4
+	env.sdfgi_energy = 0.8
+	# Light you can see in the air: low sun through haze, shafts between
+	# buildings. Thin, so the aerial perspective above still does the
+	# distance (Cinematic only). Clear Midwestern air sees 20-40 km, about
+	# 0.0001-0.0002 extinction per metre, and the depth fog already gives
+	# that; 0.0012 laid a 30% grey veil over a town seen from 300 m and made
+	# Cinematic duller than Ultra.
+	env.volumetric_fog_enabled = t.fog
+	env.volumetric_fog_density = 0.0003
+	env.volumetric_fog_albedo = HAZE
+	env.volumetric_fog_anisotropy = 0.6
+	env.volumetric_fog_length = 600.0
+	env.volumetric_fog_sky_affect = 0.0
 
 
 ## Back to the fixed late-morning look (day/night cycle off).
@@ -111,6 +168,7 @@ func set_fixed() -> void:
 	sky_mat.sky_top_color = _day.top
 	sky_mat.sky_horizon_color = _day.horizon
 	sky_mat.ground_horizon_color = _day.horizon
+	sky_mat.ground_bottom_color = _day.horizon
 	sky_mat.sky_cover_modulate = Color(1, 1, 1, 0)
 	sky_mat.sky_energy_multiplier = 1.0
 	env.fog_light_color = _day.horizon
@@ -153,6 +211,7 @@ func set_time(hour: float, months: float) -> void:
 	sky_mat.sky_top_color = top
 	sky_mat.sky_horizon_color = horizon
 	sky_mat.ground_horizon_color = horizon
+	sky_mat.ground_bottom_color = horizon
 	sky_mat.sky_cover_modulate = Color(1, 1, 1, smoothstep(0.5, 1.0, darkness) * 0.9)
 	# The air itself only takes a little of the sunset colour; the land
 	# under a dusk sky is lit by the blue of the open sky.
@@ -212,7 +271,7 @@ func _process(_delta: float) -> void:
 		reach = cam.global_position.y / -dir.y
 	# Change the range only in big steps: a shadow map that resizes every
 	# frame makes every shadow edge crawl while the camera moves.
-	var want := clampf(reach * 2.0, 120.0, 2000.0)
+	var want := clampf(reach * 2.0, 120.0, shadow_reach)
 	var cur := sun.directional_shadow_max_distance
 	if want > cur or want < cur * 0.55:
-		sun.directional_shadow_max_distance = minf(120.0 * pow(1.5, ceilf(log(want / 120.0) / log(1.5))), 2000.0)
+		sun.directional_shadow_max_distance = minf(120.0 * pow(1.5, ceilf(log(want / 120.0) / log(1.5))), shadow_reach)

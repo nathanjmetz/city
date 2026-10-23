@@ -33,6 +33,16 @@ func _ready() -> void:
 	var roads := RoadView.new()
 	add_child(roads)
 	roads.setup(sim.network, sim)
+	var street_signs := StreetSignView.new()
+	add_child(street_signs)
+	street_signs.setup(sim)
+	var welcome := WelcomeSignView.new()
+	add_child(welcome)
+	welcome.setup(sim)
+	# Roadside historical markers for the town's firsts.
+	var markers := MarkerView.new()
+	add_child(markers)
+	markers.setup(sim)
 
 	var zone_view := ZoneView.new()
 	zone_view.setup(sim)
@@ -80,6 +90,9 @@ func _ready() -> void:
 	add_child(campus_view)
 	campus_view.setup(sim)
 
+	var telecom_view := TelecomView.new()
+	add_child(telecom_view)
+	telecom_view.setup(sim)
 	var bank_view := BankView.new()
 	add_child(bank_view)
 	bank_view.setup(sim)
@@ -96,6 +109,10 @@ func _ready() -> void:
 	var rail_view := RailView.new()
 	rail_view.setup(sim, terrain)
 	add_child(rail_view)
+	var walkers := WalkerView.new()
+	walkers.setup(sim.traffic, _tick_fraction)
+	add_child(walkers)
+
 	var look := DayNight.new()
 	look.setup(sim, sky, _tick_fraction)
 	add_child(look)
@@ -112,14 +129,17 @@ func _ready() -> void:
 	var cam := CityCamera.new()
 	add_child(cam)
 	terrain.setup(cam.camera, sim.network)
+	terrain.graded.connect(wild.regraded)
+	# The county highways run on past the town's links to the horizon.
+	var exits := ExitRoads.new()
+	add_child(exits)
+	exits.setup(sim, terrain, "exits")
 	# Wild trees and brush (WildView) grow from the real land cover; past
 	# where they're drawn, the ground paints the woods' canopy.
 	Vegetation.cover_source = func(p: Vector3) -> Array:
 		var x := p.x + sim.terrain_offset.x
 		var z := p.z + sim.terrain_offset.y
 		return Terrain.wild_cover(x, z) + [Terrain.crops(x, z)]
-	terrain.trees_drawn_to = func() -> float:
-		return WildView.reach(cam.camera.global_position.y)
 
 	var audio := CityAudio.new()
 	audio.setup(sim, cam.camera, func(): return _tick_time * CitySim.TICKS_PER_SECOND)
@@ -175,6 +195,9 @@ func _ready() -> void:
 	campus_tool.setup(sim, cam)
 	add_child(campus_tool)
 
+	var telecom_tool := TelecomTool.new()
+	telecom_tool.setup(sim, cam)
+	add_child(telecom_tool)
 	var bank_tool := BankTool.new()
 	bank_tool.setup(sim, cam)
 	add_child(bank_tool)
@@ -186,6 +209,9 @@ func _ready() -> void:
 	var move_tool := MoveTool.new()
 	move_tool.setup(sim, cam)
 	add_child(move_tool)
+	var neighborhood_tool := NeighborhoodTool.new()
+	neighborhood_tool.setup(sim, cam)
+	add_child(neighborhood_tool)
 
 	# Only one tool is active at a time.
 	var others := func(keep: Object):
@@ -201,6 +227,8 @@ func _ready() -> void:
 			industry_tool.set_kind("")
 		if keep != campus_tool and campus_tool.kind != "":
 			campus_tool.set_kind("")
+		if keep != telecom_tool and telecom_tool.kind != "":
+			telecom_tool.set_kind("")
 		if keep != bank_tool and bank_tool.kind != "":
 			bank_tool.set_kind("")
 		if keep != warehouse_tool and warehouse_tool.kind != "":
@@ -213,6 +241,8 @@ func _ready() -> void:
 			park_tool.set_kind("")
 		if keep != move_tool and move_tool.active:
 			move_tool.set_active(false)
+		if keep != neighborhood_tool and neighborhood_tool.kind != "":
+			neighborhood_tool.set_kind("")
 	# Picking a tool also plays the tool sound.
 	var picked := func(tool: Object):
 		others.call(tool)
@@ -224,18 +254,20 @@ func _ready() -> void:
 	traffic_tool.mode_changed.connect(func(m): if m != TrafficTool.Mode.NONE: picked.call(traffic_tool))
 	industry_tool.kind_changed.connect(func(k): if k != "": picked.call(industry_tool))
 	campus_tool.kind_changed.connect(func(k): if k != "": picked.call(campus_tool))
+	telecom_tool.kind_changed.connect(func(k): if k != "": picked.call(telecom_tool))
 	bank_tool.kind_changed.connect(func(k): if k != "": picked.call(bank_tool))
 	warehouse_tool.kind_changed.connect(func(k): if k != "": picked.call(warehouse_tool))
 	big_tool.kind_changed.connect(func(k): if k != "": picked.call(big_tool))
 	park_tool.kind_changed.connect(func(k): if k != "": picked.call(park_tool))
 	move_tool.active_changed.connect(func(on): if on: picked.call(move_tool))
+	neighborhood_tool.kind_changed.connect(func(k): if k != "": picked.call(neighborhood_tool))
 
 	var select_tool := SelectTool.new()
 	select_tool.setup(sim, cam, func(): return road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
-		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or bank_tool.kind != "" or move_tool.active \
-		or big_tool.kind != "")
+		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or bank_tool.kind != "" or telecom_tool.kind != "" or move_tool.active \
+		or neighborhood_tool.kind != "" or big_tool.kind != "")
 	add_child(select_tool)
 
 	var water_view := WaterView.new()
@@ -248,18 +280,24 @@ func _ready() -> void:
 	hud.farm_tool = farm_tool
 	hud.industry_tool = industry_tool
 	hud.campus_tool = campus_tool
+	hud.telecom_tool = telecom_tool
 	hud.bank_tool = bank_tool
 	hud.warehouse_tool = warehouse_tool
 	hud.big_tool = big_tool
 	hud.park_tool = park_tool
 	hud.traffic_tool = traffic_tool
 	hud.move_tool = move_tool
+	hud.neighborhood_tool = neighborhood_tool
 	hud.info_view = info_view
 	hud.service_view = service_view
 	hud.bus_view = bus_view
+	hud.rail_view = rail_view
 	hud.select_tool = select_tool
 	hud.lot_alerts = lot_alerts
 	add_child(hud)
+
+	# Hidden performance readout (F3).
+	add_child(PerfOverlay.new())
 
 	var menu := GameMenu.new()
 	menu.game = self
@@ -270,6 +308,8 @@ func _ready() -> void:
 	if Session.online():
 		var region := RegionView.new()
 		region.setup(Session.client, cam, road_tool)
+		region.terrain = terrain
+		region.exits = exits
 		add_child(region)
 		var chat := ChatPanel.new()
 		chat.setup(cam, region)
@@ -283,7 +323,7 @@ func _ready() -> void:
 	await _settle()
 	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed, sim.water_changed,
 			sim.industry_changed, sim.warehouses_changed, sim.parks_changed, sim.education_changed, sim.power_changed, sim.banks_changed,
-			sim.big_factories_changed]:
+			sim.telecom_changed, sim.big_factories_changed]:
 		sig.connect(func(): _save_pending = true)
 
 
@@ -314,10 +354,12 @@ func _process(delta: float) -> void:
 	_tick_time += delta * SPEEDS[speed]
 	var step := 1.0 / CitySim.TICKS_PER_SECOND
 	var guard := 0
+	var t := Perf.now()
 	while _tick_time >= step and guard < 20:
 		_tick_time -= step
 		guard += 1
 		sim.tick()
+	Perf.add("frame.sim", t)
 	_tick_time = minf(_tick_time, step)
 	_save_wait -= delta
 	if Session.online():
@@ -343,11 +385,16 @@ func set_speed(s: int) -> void:
 	speed_changed.emit(speed)
 
 
+## Pauses, or resumes at the last speed.
+func toggle_pause() -> void:
+	set_speed(0 if speed != 0 else _resume_speed)
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	# Space pauses and resumes, like Cities: Skylines.
 	if event is InputEventKey and event.pressed and not event.echo \
 			and (event as InputEventKey).keycode == KEY_SPACE:
-		set_speed(0 if speed != 0 else _resume_speed)
+		toggle_pause()
 
 
 func _load() -> bool:

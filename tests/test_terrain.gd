@@ -67,6 +67,46 @@ func _init() -> void:
 		var meshes := TerrainView.build_chunk(Vector2(-256, z * 512.0), 512.0, 32.0)
 		any_water = any_water or meshes[1] != null
 	_check(any_water, "the river gets a water surface")
+	# Each vertex knows where it sits on the next coarser level, so detail can
+	# slide off with distance instead of popping: on the coarse grid points it
+	# is the same height, and halfway along a coarse edge it is the average.
+	var fine: ArrayMesh = TerrainView.build_chunk(Vector2(-512, -512), 512.0, 8.0)[0]
+	var arr := fine.surface_get_arrays(0)
+	var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	var low: PackedFloat32Array = arr[Mesh.ARRAY_CUSTOM0]
+	var row := 65
+	var same := true
+	var halfway := true
+	for j in range(0, 64, 2):
+		for i in range(0, 64, 2):
+			var k := j * row + i
+			same = same and absf(low[k * 4] - v[k].y) < 0.01
+			halfway = halfway and absf(low[(k + 1) * 4] - (v[k].y + v[k + 2].y) * 0.5) < 0.01
+	_check(same and halfway, "ground detail slides smoothly to the coarser level")
+	# Water lies flat in every square, even on the coarse levels where a
+	# square reaches from the water up onto dry land (it once tilted 22 m).
+	var tilt := 0.0
+	for cz in range(-6, 2):
+		for cx in range(2, 8):
+			var wm = TerrainView.build_chunk(Vector2(cx, cz) * 512.0, 512.0, 128.0, 0.0)[1]
+			if wm == null:
+				continue
+			var wa: Array = (wm as ArrayMesh).surface_get_arrays(0)
+			var wv: PackedVector3Array = wa[Mesh.ARRAY_VERTEX]
+			var wi: PackedInt32Array = wa[Mesh.ARRAY_INDEX]
+			for t in range(0, wi.size(), 3):
+				var ys := [wv[wi[t]].y, wv[wi[t + 1]].y, wv[wi[t + 2]].y]
+				tilt = maxf(tilt, ys.max() - ys.min())
+	_check(tilt < 0.01, "water lies flat on every level of detail")
+	# The land runs on past the chunks, out to where the haze takes it.
+	var job := TerrainView.far_job(Vector2.ZERO, ceili(TerrainView.FAR_REACH / TerrainView.CHUNK))
+	while not TerrainView.far_step(job):
+		pass
+	var box: AABB = job.mesh.get_aabb()
+	_check(box.position.x <= -TerrainView.FAR_REACH and box.end.z >= TerrainView.FAR_REACH,
+		"the land goes on to the haze, past the detailed chunks")
+	_check(TerrainView.REACH[-1] * TerrainView.FAR_CUT < TerrainView.REACH[-1] and TerrainView.FAR_REACH < 24000.0,
+		"the far land starts inside the chunks and ends inside the camera's view")
 	print("ALL TESTS PASSED" if _failed == 0 else "SOME TESTS FAILED")
 	quit(1 if _failed > 0 else 0)
 

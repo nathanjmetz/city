@@ -61,6 +61,35 @@ func _init() -> void:
 		if JSON.stringify(da[k]) != JSON.stringify(db.get(k)):
 			diff.append(k)
 	_check(diff.is_empty(), "copies stay in sync %s" % str(diff))
+	# A big town (here the copy acts big) puts a zoning or road edit in at
+	# once and plans its lots over the next ticks, the same on every copy,
+	# even one saved halfway through.
+	copy.replan_lots = 0
+	var side_seg: int = copy.network.segments.keys()[1]
+	var before_lots := copy.lots.duplicate()
+	copy.apply({"type": "zone_frontage", "seg": side_seg, "side": 1, "zone": ZoneMap.Zone.COMMERCIAL})
+	copy.apply({"type": "build_road", "start": [60, 0], "ctrl": [60, 40], "end": [60, 80]})
+	_check(copy._replan_at > copy.tick_count and copy.lots == before_lots, "a big town's lots catch up after the edit")
+	var half: CitySim
+	for i in CitySim.REPLAN_ROAD_TICKS + 5:
+		if i == 7:
+			half = CitySim.new()
+			half.from_dict(JSON.parse_string(JSON.stringify(copy.to_dict(), "", false, true)))
+			half.replan_lots = 0
+		copy.tick()
+		if half != null:
+			half.tick()
+	_check(copy._replan_at == 0 and copy.lots != before_lots, "the lots caught up")
+	for key in copy.lots:
+		var c: PackedVector2Array = copy.lots[key].corners
+		_check(not Geometry2D.is_point_in_polygon(Vector2(60, 40), c), "no lot under the new road (%s)" % key)
+	da = half.to_dict()
+	db = copy.to_dict()
+	diff = []
+	for k in da:
+		if JSON.stringify(da[k]) != JSON.stringify(db.get(k)):
+			diff.append(k)
+	_check(diff.is_empty(), "a copy saved while catching up stays in sync %s" % str(diff))
 	# Merge two neighbours, then split them again (business agency).
 	var face := LotPlanner.block_face(sim, built)
 	_check(face.size() >= 2, "block face lists the street's lots (%d)" % face.size())

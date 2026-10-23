@@ -6,7 +6,8 @@ extends RefCounted
 ##
 ## Sizes, prices and reach follow real US practice for a small town.
 
-enum Kind { SUBSTATION, WATER_TOWER, FIRE, POLICE, CLINIC, SCHOOL, POWER_FEED, WELL, BUS_DEPOT, WATER_UTILITY }
+enum Kind { SUBSTATION, WATER_TOWER, FIRE, POLICE, CLINIC, SCHOOL, POWER_FEED, WELL, BUS_DEPOT, WATER_UTILITY, TAXI_COMPANY,
+	HOSPITAL, NURSING_HOME, DAYCARE }
 
 ## Each kind: name, icon, footprint (width along the road x depth, metres),
 ## and its build cost, monthly upkeep and `reach` or `capacity` from Balance.
@@ -48,11 +49,27 @@ const KINDS := {
 	# next door; its monthly cost is the subsidy the player sets.
 	Kind.BUS_DEPOT: {"name": "Bus depot", "icon": "bus", "size": Vector2(36, 44),
 		"cost": Balance.SERVICES["bus_depot"]["cost"], "upkeep": Balance.SERVICES["bus_depot"]["upkeep"], "transit": true},
+	# A cab company: a storefront dispatch office with a lot of cab stalls
+	# behind it. Its owner runs it on fares (TaxiCo) and grows next door.
+	Kind.TAXI_COMPANY: {"name": "Taxi company", "icon": "taxi", "size": Vector2(30, 34),
+		"cost": Balance.SERVICES["taxi_company"]["cost"], "upkeep": Balance.SERVICES["taxi_company"]["upkeep"], "transit": true},
+	# A 25-bed county hospital with an ER; its administrator grows it from
+	# there (see Healthcare). It counts as a clinic for the homes it reaches.
+	Kind.HOSPITAL: {"name": "Hospital", "icon": "health", "size": Vector2(70, 60),
+		"cost": Balance.SERVICES["hospital"]["cost"], "upkeep": Balance.SERVICES["hospital"]["upkeep"], "reach": Balance.SERVICES["hospital"]["reach"]},
+	# A 60-bed nursing home on about an acre.
+	Kind.NURSING_HOME: {"name": "Nursing home", "icon": "people", "size": Vector2(50, 46),
+		"cost": Balance.SERVICES["nursing_home"]["cost"], "upkeep": Balance.SERVICES["nursing_home"]["upkeep"], "reach": Balance.SERVICES["nursing_home"]["reach"]},
+	# A daycare center with a fenced play yard.
+	Kind.DAYCARE: {"name": "Daycare", "icon": "homes", "size": Vector2(30, 32),
+		"cost": Balance.SERVICES["daycare"]["cost"], "upkeep": Balance.SERVICES["daycare"]["upkeep"], "reach": Balance.SERVICES["daycare"]["reach"]},
 }
 ## Which kinds supply each utility.
 const UTILITIES := {"power": [Kind.SUBSTATION, Kind.POWER_FEED], "water": [Kind.WATER_TOWER, Kind.WELL]}
 ## Kinds that cover homes by distance (the rest are utilities).
 const COVERAGE := [Kind.FIRE, Kind.POLICE, Kind.CLINIC, Kind.SCHOOL]
+## Care that reaches homes by distance too, but isn't one of the four basics.
+const CARE := [Kind.HOSPITAL, Kind.NURSING_HOME, Kind.DAYCARE]
 ## Water and sewer bills the city collects, per month.
 const WATER_FEE := Balance.WATER_FEE
 ## How much each building draws, in homes-equivalent.
@@ -61,10 +78,11 @@ const LOAD := Balance.UTILITY_LOAD
 const SETBACK := 2.0
 
 
-## The service buildings: id -> {kind, pos: Vector3 (centre), dir: Vector3
-## (unit, from the building toward its road)}.
 ## Where the city sits in the shared region (set by CitySim).
 var terrain_offset := Vector2.ZERO
+## The service buildings: id -> {kind, pos: Vector3 (centre), dir: Vector3
+## (unit, from the building toward its road), and "size" (Vector2) once a
+## hub has grown past its first footprint}.
 var buildings := {}
 ## What each lot gets: lot key -> {"power": bool, "water": bool, Kind: bool...}
 var served := {}
@@ -80,26 +98,60 @@ var plants := []
 ## The town's Funding slider: a lean department costs less and covers less.
 var policies: Policies
 var _next_id := 1
+## Kept road distances and reach (see update) and what they were worked out for.
+var _dist_key := []
+var _lengths := {}
+var _reach := {}
+var _plant_dist := {}
+## Coverage a neighbor town gives under a signed deal (Interlocal): kind ->
+## [{"node": county road end, "offset": road metres from their station to
+## it, "reach": metres}]. Set by Interlocal, never saved.
+var contracts := {}
+## ...and the road distances from it: kind -> [[node -> metres, reach]].
+var _by_contract := {}
+var _geo := []
+var _geo_lots := {}
+var _by_dist := {"power": [], "water": []}  # lots with a road to each utility, nearest first
+var _on_mains := {}
+var _lot_rows := {}  # lot key -> [where it is, _lot_reach]
+var _rows_key := []
+## Each lot's Dictionary as `served` last saw it (LotPlanner hands back the
+## same one for a lot it cut the same), for redoing only what changed.
+var _served_lot := {}
+var _inc := false  # served, _by_dist and _on_mains match _rows_key
+var _loads := {}  # building key -> [its dictionary, power and water draw]
+var _alloc_dirty := true
+var _alloc_caps := {}
+var _alloc_use := {"power": [0, 0], "water": [0, 0]}
 
 
 ## The Economy page area a service kind belongs to.
 static func area_of(kind: int) -> String:
+	if kind in CARE:
+		return "health"
 	match kind:
 		Kind.BUS_DEPOT:
 			return "transit"
 		Kind.WATER_UTILITY:
 			return "water"
+		Kind.TAXI_COMPANY:
+			return "taxis"
 	return "utilities" if KINDS[kind].has("utility") else "public"
 
 
-## The sliders' key for service `id`: a bus depot and the water utility run
-## themselves as hubs, so they go by their leader's kind.
+## The sliders' key for service `id`: a bus depot, the water utility, a taxi
+## company and a hospital run themselves as hubs, so they go by their
+## leader's kind.
 func key_of(id: int) -> String:
 	match int(buildings[id].kind) if buildings.has(id) else -1:
 		Kind.BUS_DEPOT:
 			return "bus_depot:%d" % id
 		Kind.WATER_UTILITY:
 			return "water:%d" % id
+		Kind.TAXI_COMPANY:
+			return "taxi:%d" % id
+		Kind.HOSPITAL:
+			return "hospital:%d" % id
 	return "service:%d" % id
 
 
@@ -236,74 +288,233 @@ func monthly_upkeep() -> int:
 
 ## Works out what every lot gets, from distances along the roads.
 func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) -> void:
-	served.clear()
-	reach_by_kind.clear()
 	water.prune(buildings)
 	water.refresh(network)
-	var lengths := {}
-	for id in network.segments:
-		lengths[id] = RoadNetwork.polyline_length(network.sample_segment(id, 16))
-	for kind in KINDS:
-		var dist := {}
-		for id in buildings:
-			if buildings[id].kind == kind:
-				_spread(network, lengths, buildings[id], dist, funding(id, Balance.POLICY_EFFECT))
-		reach_by_kind[kind] = dist
-	var plant_dist := {}
-	for pl in plants:
-		_spread_from(network, lengths, pl.front, plant_dist)
-	var keys := lots.keys()
-	keys.sort()
-	# Utilities serve the nearest buildings first, up to their capacity.
-	var by_dist := {"power": [], "water": []}
-	# Lots on a utility's mains get their water from it: id -> [[dist, key]].
-	var on_mains := {}
-	for key in keys:
-		var lot: Dictionary = lots[key]
-		var s := {}
-		for kind in COVERAGE:
-			s[kind] = _lot_distance(network, lengths, reach_by_kind[kind], lot) <= KINDS[kind].reach
-		served[key] = s
-		var owner := water.main_owner(lot.seg)
-		if owner != -1:
-			s["water_linked"] = true
-			if not on_mains.has(owner):
-				on_mains[owner] = []
-			on_mains[owner].append([lot.pos.distance_to(buildings[owner].pos), key, lot.seg])
-		for u in ["power", "water"]:
-			s[u] = false
-			if u == "water" and owner != -1:
-				continue
-			var d := INF
-			for kind in UTILITIES[u]:
-				d = minf(d, _lot_distance(network, lengths, reach_by_kind[kind], lot))
-			if u == "power":
-				d = minf(d, _lot_distance(network, lengths, plant_dist, lot))
-			# Joined to a source by road at all (before capacity is shared out).
-			s[u + "_linked"] = d < INF
-			if d < INF:
-				by_dist[u].append([d, key])
+	# Road distances from each service only change when the roads, the
+	# services, their funding or the power plants do, so they are kept.
+	var effects := {}
+	for id in buildings:
+		effects[id] = funding(id, Balance.POLICY_EFFECT)
+	var dist_key := [network.get_instance_id(), network.revision, buildings.keys(), effects.values(),
+		buildings.values().map(func(b): return [b.kind, b.pos, b.dir, b.get("size")]), plants.map(func(pl): return pl.front),
+		contracts]
+	if dist_key != _dist_key:
+		_dist_key = dist_key
+		_lengths = {}
+		for id in network.segments:
+			_lengths[id] = RoadNetwork.polyline_length(network.sample_segment(id, 16))
+		_reach = {}
+		for kind in KINDS:
+			var dist := {}
+			for id in buildings:
+				if buildings[id].kind == kind:
+					_spread(network, _lengths, buildings[id], dist, effects[id])
+			_reach[kind] = dist
+		_plant_dist = {}
+		for pl in plants:
+			_spread_from(network, _lengths, pl.front, _plant_dist)
+		# A neighbor's station under contract reaches in over the county road.
+		_by_contract = {}
+		for kind in contracts:
+			_by_contract[kind] = []
+			for c in contracts[kind]:
+				var dist := {}
+				if network.nodes.has(c.node):
+					_spread_nodes(network, _lengths, {c.node: c.offset}, dist)
+				_by_contract[kind].append([dist, c.reach])
+	reach_by_kind = _reach.duplicate()
+	# Which utility's mains run along each street (as water.main_owner does).
+	var owners := {}
+	var wids := water.utilities.keys()
+	wids.sort()
+	for id in wids:
+		if water.live.has(id):
+			for seg in water.live[id].mains:
+				if not owners.has(seg):
+					owners[seg] = id
+	# What each lot is in reach of only changes with those distances, the
+	# lots, or the water mains.
+	var geo := [dist_key, lots.size(), owners]
+	if geo != _geo or not is_same(lots, _geo_lots):
+		_geo = geo
+		_geo_lots = lots
+		_update_reach(network, lots, owners)
+		_alloc_dirty = true
+	# Power and water go to the nearest lots first, up to capacity. The
+	# shares only change with the lots in reach, the capacity, or a building
+	# going up, coming down or changing (which replaces its dictionary).
+	var caps := {}
 	for u in ["power", "water"]:
 		var cap := 0
 		for id in buildings:
 			if buildings[id].kind in UTILITIES[u]:
-				cap += roundi(int(KINDS[buildings[id].kind].capacity) * funding(id, Balance.POLICY_EFFECT))
+				cap += roundi(int(KINDS[buildings[id].kind].capacity) * effects[id])
 		if u == "power":
 			for pl in plants:
 				cap += int(pl.capacity)
-		var used := 0
-		by_dist[u].sort()
-		for entry in by_dist[u]:
-			var key: String = entry[1]
-			var load := 1
-			if city_buildings.has(key):
-				load = LOAD[int(city_buildings[key].zone)] * BuildingTypes.load_of(city_buildings[key])
-				if used + load > cap:
-					continue
-				used += load
-			served[key][u] = used <= cap
-		utility_use[u] = [used, cap]
-	_serve_from_utilities(on_mains, city_buildings)
+		caps[u] = cap
+	if _sync_loads(city_buildings) or _alloc_dirty or caps != _alloc_caps:
+		_alloc_dirty = false
+		_alloc_caps = caps
+		for u in ["power", "water"]:
+			var cap: int = caps[u]
+			var used := 0
+			for entry in _by_dist[u]:
+				var key: String = entry[1]
+				var row: Array = _loads.get(key, [])
+				if not row.is_empty():
+					var load: int = row[1]
+					if used + load > cap:
+						served[key][u] = false
+						continue
+					used += load
+				served[key][u] = used <= cap
+			_alloc_use[u] = [used, cap]
+	utility_use = {"power": _alloc_use.power.duplicate(), "water": _alloc_use.water.duplicate()}
+	_serve_from_utilities(_on_mains, city_buildings)
+
+
+## Keeps each building's draw, worked out again only for buildings that
+## are new or were replaced. True when any changed.
+func _sync_loads(city_buildings: Dictionary) -> bool:
+	var changed := false
+	for key in city_buildings:
+		var b: Dictionary = city_buildings[key]
+		var row: Array = _loads.get(key, [])
+		if row.is_empty() or not is_same(row[0], b):
+			_loads[key] = [b, LOAD[int(b.zone)] * BuildingTypes.load_of(b)]
+			changed = true
+	if _loads.size() != city_buildings.size():
+		for key in _loads.keys():
+			if not city_buildings.has(key):
+				_loads.erase(key)
+		changed = true
+	return changed
+
+
+## Works out what every lot is in reach of: the four coverage services by
+## road distance, and how far it is to power and water.
+func _update_reach(network: RoadNetwork, lots: Dictionary, owners: Dictionary) -> void:
+	# A lot's reach only depends on where it is, the road distances and the
+	# mains, so after a zoning or road edit only new or moved lots are redone.
+	var rows_key := [_dist_key, owners]
+	if rows_key != _rows_key:
+		_rows_key = rows_key
+		_lot_rows.clear()
+		_inc = false
+	elif _lot_rows.size() > lots.size():
+		for key in _lot_rows.keys():
+			if not lots.has(key):
+				_lot_rows.erase(key)
+	if _inc:
+		_update_changed(network, lots, owners)
+		return
+	_inc = true
+	served.clear()
+	_served_lot.clear()
+	var keys := lots.keys()
+	keys.sort()
+	# Utilities serve the nearest buildings first, up to their capacity.
+	_by_dist = {"power": [], "water": []}
+	# Lots on a utility's mains get their water from it: id -> [[dist, key]].
+	_on_mains = {}
+	for key in keys:
+		var lot: Dictionary = lots[key]
+		var sig := [lot.seg, lot.at_frac, lot.pos]
+		var row: Array = _lot_rows.get(key, [])
+		if row.is_empty() or row[0] != sig:
+			row = [sig, _lot_reach(network, lot, owners)]
+			_lot_rows[key] = row
+		_serve_lot(network, key, lot, row[1])
+	for u in _by_dist:
+		_by_dist[u].sort()
+
+
+## A lot's fresh row in `served`, and its place in the utilities' lists.
+func _serve_lot(network: RoadNetwork, key: String, lot: Dictionary, base: Dictionary) -> void:
+	var s: Dictionary = base.s.duplicate()
+	# Coverage a neighbor gives this town under a service deal (Interlocal).
+	for kind in _by_contract:
+		for c in _by_contract[kind]:
+			s[kind] = s[kind] or _lot_distance(network, _lengths, c[0], lot) <= c[1]
+	served[key] = s
+	_served_lot[key] = lot
+	var owner: int = base.owner
+	if owner != -1:
+		if not _on_mains.has(owner):
+			_on_mains[owner] = []
+		_on_mains[owner].append([base.mains_d, key, lot.seg])
+	for u in ["power", "water"]:
+		if base.has(u):
+			_by_dist[u].append([base[u], key])
+
+
+## The roads, services and mains are as before: only lots that are new,
+## gone or cut again (a different Dictionary) are redone. The shares are
+## worked out again for everyone after (_alloc_dirty).
+func _update_changed(network: RoadNetwork, lots: Dictionary, owners: Dictionary) -> void:
+	var redo := {}
+	for key in lots:
+		if not is_same(_served_lot.get(key), lots[key]):
+			redo[key] = true
+	for key in _served_lot:
+		if not lots.has(key):
+			redo[key] = true
+	if redo.is_empty():
+		return
+	for key in redo:
+		served.erase(key)
+		_served_lot.erase(key)
+	for u in _by_dist:
+		_by_dist[u] = _by_dist[u].filter(func(e): return not redo.has(e[1]))
+	for id in _on_mains.keys():
+		_on_mains[id] = _on_mains[id].filter(func(e): return not redo.has(e[1]))
+		if _on_mains[id].is_empty():
+			_on_mains.erase(id)
+	var keys := redo.keys()
+	keys.sort()
+	for key in keys:
+		if not lots.has(key):
+			continue
+		var lot: Dictionary = lots[key]
+		var sig := [lot.seg, lot.at_frac, lot.pos]
+		var row: Array = _lot_rows.get(key, [])
+		if row.is_empty() or row[0] != sig:
+			row = [sig, _lot_reach(network, lot, owners)]
+			_lot_rows[key] = row
+		_serve_lot(network, key, lot, row[1])
+	for u in _by_dist:
+		_by_dist[u].sort()
+
+
+## What one lot is in reach of: {s: its served entry before sharing out,
+## owner: the utility whose mains it's on, mains_d, power/water: distance}.
+func _lot_reach(network: RoadNetwork, lot: Dictionary, owners: Dictionary) -> Dictionary:
+	var s := {}
+	var out := {"s": s, "owner": -1}
+	for kind in COVERAGE + CARE:
+		s[kind] = _lot_distance(network, _lengths, _reach[kind], lot) <= KINDS[kind].reach
+	# A hospital's doctors see the homes it reaches, as a clinic would.
+	s[Kind.CLINIC] = s[Kind.CLINIC] or s[Kind.HOSPITAL]
+	var owner: int = owners.get(lot.seg, -1)
+	if owner != -1:
+		s["water_linked"] = true
+		out.owner = owner
+		out.mains_d = lot.pos.distance_to(buildings[owner].pos)
+	for u in ["power", "water"]:
+		s[u] = false
+		if u == "water" and owner != -1:
+			continue
+		var d := INF
+		for kind in UTILITIES[u]:
+			d = minf(d, _lot_distance(network, _lengths, _reach[kind], lot))
+		if u == "power":
+			d = minf(d, _lot_distance(network, _lengths, _plant_dist, lot))
+		# Joined to a source by road at all (before capacity is shared out).
+		s[u + "_linked"] = d < INF
+		if d < INF:
+			out[u] = d
+	return out
 
 
 ## Shares each utility's water (and sewer) among the lots on its pipes,
@@ -328,6 +539,9 @@ func _serve_from_utilities(on_mains: Dictionary, city_buildings: Dictionary) -> 
 			if city_buildings.has(key):
 				load = LOAD[int(city_buildings[key].zone)]
 				if used + load > cap:
+					# Out of water: none, and no sewer (not last time's).
+					s["water"] = false
+					s["sewer"] = false
 					continue
 				used += load
 			s["water"] = used <= cap
@@ -363,11 +577,14 @@ func has_utilities(key: String) -> bool:
 
 ## Share of the four coverage services a lot gets, 0 to 1.
 func coverage(key: String) -> float:
-	if not served.has(key):
-		return 0.0
+	return coverage_of(served[key]) if served.has(key) else 0.0
+
+
+## The same from a lot's row in `served`.
+static func coverage_of(s: Dictionary) -> float:
 	var n := 0
 	for kind in COVERAGE:
-		if served[key][kind]:
+		if s[kind]:
 			n += 1
 	return n / float(COVERAGE.size())
 
@@ -389,6 +606,12 @@ func _spread_from(network: RoadNetwork, lengths: Dictionary, front: Vector3, dis
 	var k := 1.0 / maxf(effect, 0.01)
 	frontier[s.a] = near.t * l * k
 	frontier[s.b] = (1.0 - near.t) * l * k
+	_spread_nodes(network, lengths, frontier, dist, k)
+
+
+## Road distance out from the starting nodes (node -> metres already
+## travelled), keeping the shortest in `dist`. Each road metre counts `k`.
+func _spread_nodes(network: RoadNetwork, lengths: Dictionary, frontier: Dictionary, dist: Dictionary, k := 1.0) -> void:
 	var done := {}
 	while not frontier.is_empty():
 		var best := -1
@@ -445,4 +668,5 @@ func from_dict(d: Dictionary) -> void:
 			buildings[int(k)].size = Vector2(a[5], a[6])
 			buildings[int(k)].subsidy = int(a[7])
 	_next_id = int(d.get("next_id", 1))
+	_inc = false
 	water.from_dict(d.get("water", {}))

@@ -3,6 +3,7 @@ extends Node3D
 ## Click anything with no tool in hand to select it, like Cities: Skylines 2:
 ## a building, lot, farm or road. A ring marks it, and the info panel shows
 ## what it's doing. Esc or a click on open ground clears the selection.
+## A selected vehicle or person can be followed with the camera.
 
 signal selected(sel: Dictionary)
 
@@ -11,6 +12,9 @@ var cam: CityCamera
 ## Returns true while a tool is in hand (clicks belong to the tool then).
 var busy := Callable()
 var selection := {}
+## While a pollution view is on, a click on open ground shows the pollution
+## there and who makes it.
+var spot_clicks := false
 
 var _ring := MeshInstance3D.new()
 var _press := Vector2(-1, -1)
@@ -41,6 +45,8 @@ func _ready() -> void:
 
 
 func select(sel: Dictionary) -> void:
+	if sel != selection:
+		cam.following = false
 	selection = sel
 	_ring.visible = false
 	selected.emit(sel)
@@ -58,7 +64,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif _press.x >= 0.0 and mb.position.distance_to(_press) < 6.0:
 		_press = Vector2(-1, -1)
 		var hit = cam.mouse_ground_point()
-		select({} if hit == null else Inspect.pick(sim, hit))
+		var sel := {} if hit == null else Inspect.pick(sim, hit)
+		if sel.is_empty() and hit != null and spot_clicks:
+			sel = {"type": "spot", "id": [snappedf(hit.x, 0.1), snappedf(hit.z, 0.1)]}
+		select(sel)
 
 
 func _process(_delta: float) -> void:
@@ -71,7 +80,14 @@ func _process(_delta: float) -> void:
 	if at.is_empty():
 		select({})
 		return
-	_ring.visible = true
+	if cam.following:
+		cam.follow_point(at[0])
 	var r: float = at[1]
+	_ring.visible = r > 0.0
 	_ring.position = Vector3(at[0].x, Terrain.ground_y(at[0].x, at[0].z) + 0.4, at[0].z)
 	_ring.scale = Vector3(r, 0.6, r)
+
+
+## Rides along with the selection (a vehicle or a person out walking).
+func follow(on := true) -> void:
+	cam.following = on and not selection.is_empty()

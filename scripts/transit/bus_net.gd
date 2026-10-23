@@ -195,7 +195,7 @@ func _sync(sim: CitySim) -> void:
 	for bid in buses.keys():
 		var bus: Dictionary = buses[bid]
 		if not sim.services.buildings.has(bus.depot) and bus.state != "driving":
-			buses.erase(bid)
+			_drop(sim, bid)
 			changed = true
 	if changed:
 		_plan(sim)
@@ -538,13 +538,15 @@ func _graph(net: RoadNetwork) -> Dictionary:
 		var s: Dictionary = net.segments[seg]
 		var length := RoadNetwork.polyline_length(net.sample_segment(seg, 16))
 		lens[seg] = length
+		# Routes lean onto avenues with bus lanes, where buses run faster.
+		var cost := length * (Balance.BUS_LANE_ROUTE_COST if RoadStyle.bus_lane(int(s.type)) >= 0 else 1.0)
 		if not adj.has(s.a):
 			adj[s.a] = []
 		if not adj.has(s.b):
 			adj[s.b] = []
-		adj[s.a].append([s.b, seg, length, true])
+		adj[s.a].append([s.b, seg, cost, true])
 		if not net.is_oneway(seg):
-			adj[s.b].append([s.a, seg, length, false])
+			adj[s.b].append([s.a, seg, cost, false])
 	return {"adj": adj, "len": lens}
 
 
@@ -614,11 +616,15 @@ func _path(net: RoadNetwork, g: Dictionary, from: Dictionary, to: Dictionary) ->
 	var pts := PackedVector3Array()
 	var first: Array = legs[0]
 	pts.append_array(_part(net, from.seg, from.t, 1.0 if first[2] else 0.0))
+	# The real distance driven (the search weighs bus-lane roads lighter).
+	var length: float = ((1.0 - from.t) if first[2] else from.t) * fl
 	for i in range(1, legs.size()):
 		var l: Array = legs[i]
 		pts.append_array(_part(net, l[1], 0.0 if l[2] else 1.0, 1.0 if l[2] else 0.0))
+		length += float(lens[l[1]])
 	pts.append_array(_part(net, to.seg, 0.0 if end == ts.a else 1.0, to.t))
-	return {"len": best, "pts": pts}
+	length += (to.t if end == ts.a else 1.0 - to.t) * tl
+	return {"len": length, "pts": pts}
 
 
 ## Points along a road from t0 to t1 (either way).
@@ -975,7 +981,7 @@ func _grow(sim: CitySim, id: int) -> String:
 		if new_size.x * new_size.y > first.x * first.y * Balance.HUB_MAX_GROWTH:
 			continue
 		var pos: Vector3 = b.pos + t[1]
-		var why := _land_free(sim, id, pos, b.dir, new_size)
+		var why := land_free(sim, id, pos, b.dir, new_size)
 		if why == "":
 			b.pos = pos
 			b.size = new_size
@@ -991,7 +997,7 @@ func _grow(sim: CitySim, id: int) -> String:
 
 ## "" when the land is free, "built" when only homes or businesses stand on
 ## it (the player can let the depot buy them), else "no".
-func _land_free(sim: CitySim, id: int, pos: Vector3, dir: Vector3, size: Vector2) -> String:
+static func land_free(sim: CitySim, id: int, pos: Vector3, dir: Vector3, size: Vector2) -> String:
 	var poly := PackedVector2Array()
 	for p in Services.corners(Services.Kind.BUS_DEPOT, pos, dir, size):
 		poly.append(Vector2(p.x, p.z))
@@ -1057,7 +1063,7 @@ func _take_strip(sim: CitySim, id: int, req: Dictionary) -> bool:
 		if sim.lots.has(key) and Geometry2D.is_point_in_polygon(Vector2(sim.lots[key].pos.x, sim.lots[key].pos.z), outline):
 			sim.buildings.erase(key)
 	dep.strip = []
-	if _land_free(sim, id, pos, b.dir, size) != "":
+	if land_free(sim, id, pos, b.dir, size) != "":
 		return false  # the player trimmed the area: not enough land to grow
 	b.pos = pos
 	b.size = size
@@ -1155,6 +1161,15 @@ func _add_bus(sim: CitySim, home: int, kind: String) -> int:
 	return id
 
 
+## A bus leaves the city's books, and its vehicle leaves the road if it's
+## parked somewhere (one still driving finishes its trip first).
+func _drop(sim: CitySim, bid: int) -> void:
+	var bus: Dictionary = buses.get(bid, {})
+	if int(bus.get("vid", -1)) != -1 and bus.get("state", "") != "driving":
+		sim.traffic.retire_vehicle(int(bus.vid))
+	buses.erase(bid)
+
+
 func _retire_one(id: int) -> bool:
 	var bids := buses.keys()
 	bids.sort()
@@ -1185,6 +1200,8 @@ func _arrivals(sim: CitySim) -> void:
 			trips.erase(tid)
 			list.remove_at(i)
 			if buses.has(bid):
+				if a.has("vid"):
+					buses[bid].vid = int(a.vid)
 				_arrived(sim, buses[bid], ok)
 
 
@@ -1196,9 +1213,10 @@ func _arrived(sim: CitySim, bus: Dictionary, ok: bool) -> void:
 		bus.until = sim.tick_count + RETRY_TICKS
 		return
 	if bus.target == -1:
-		# Home: into its bay.
+		# Home: in through the garage and into its bay (off the road).
+		_off_road(sim, bus)
 		if bus.get("retire", false) or not sim.services.buildings.has(bus.depot):
-			buses.erase(bus.id)
+			_drop(sim, bus.id)
 			return
 		var pose := bay_pose(sim, bus)
 		bus.at = pose[0]
@@ -1210,6 +1228,7 @@ func _arrived(sim: CitySim, bus: Dictionary, ok: bool) -> void:
 		return
 	if bus.target == -2:
 		# Off the map edge to the neighboring towns; back after the layover.
+		_off_road(sim, bus)
 		bus.at = _link_pos(sim)
 		bus.load = 0
 		bus.state = "away"
@@ -1303,7 +1322,7 @@ func _drive(sim: CitySim) -> void:
 func _coach_next(sim: CitySim, bus: Dictionary) -> void:
 	if bus.state == "parked":
 		if bus.get("retire", false) or not _has_coach_built(depots.get(bus.depot, {})):
-			buses.erase(bus.id)
+			_drop(sim, bus.id)
 			return
 		bus.load = mini(ceili(coach_riders(sim, bus.depot) / 2.0), Balance.BUS_COACH_SEATS)
 		if not _send(sim, bus, -2):
@@ -1321,7 +1340,7 @@ func _send(sim: CitySim, bus: Dictionary, target: int) -> bool:
 	if target == -1:
 		var b: Dictionary = sim.services.buildings.get(bus.depot, {})
 		if b.is_empty():
-			buses.erase(bus.id)
+			_drop(sim, bus.id)
 			return false
 		to = _gate(b)
 	elif target == -2:
@@ -1337,10 +1356,16 @@ func _send(sim: CitySim, bus: Dictionary, target: int) -> bool:
 	if bus.state == "parked":
 		from = _gate(sim.services.buildings[bus.depot])
 	var purpose := "school" if bus.kind == "school_bus" else "transit"
+	var kind: String = bus.kind if bus.kind == "school_bus" or bus.kind == "coach" else "city_bus"
+	var cargo := {"riders": bus.load, "bus": bus.id}
+	var dest := {"ref": "edge" if target == -2 else "bus:%d" % bus.id, "pos": [to.x, to.z]}
+	var tid := -1
 	if bus.state == "away":
-		from = _link_pos(sim)
-	var tid := sim.traffic.dispatch({"ref": "bus:%d" % bus.id, "pos": [from.x, from.z]},
-		{"ref": "bus:%d" % bus.id, "pos": [to.x, to.z]}, purpose, {"riders": bus.load, "bus": bus.id})
+		# Back in off the county highway from the neighboring towns.
+		var link := _link_pos(sim)
+		tid = sim.traffic.dispatch({"ref": "edge", "pos": [link.x, link.z]}, dest, purpose, cargo, kind)
+	else:
+		tid = leg(sim.traffic, bus, "bus:%d" % bus.id, from, dest, purpose, cargo, kind)
 	if tid == -1:
 		bus.until = sim.tick_count + RETRY_TICKS
 		if bus.state != "parked":
@@ -1351,6 +1376,36 @@ func _send(sim: CitySim, bus: Dictionary, target: int) -> bool:
 	bus.target = target
 	bus.state = "driving"
 	return true
+
+
+## One traffic vehicle per bus (or cab) for its whole run: put on the road
+## at `from` when it pulls out of its yard, sent stop to stop with
+## TrafficSim.move (so it parks at each stop, no trip back), and taken off
+## the road again when it pulls into its yard (_off_road). Returns the trip
+## id, or -1 if it can't go yet.
+static func leg(traffic: TrafficSim, v: Dictionary, ref: String, from: Vector3, to: Dictionary,
+		purpose: String, cargo: Dictionary, kind: String) -> int:
+	var fresh := int(v.get("vid", -1)) == -1
+	if fresh:
+		var at := traffic.register({"ref": ref, "pos": [from.x, from.z]})
+		if at == "":
+			return -1
+		var vid := traffic.new_vehicle(kind, at, -1, at)
+		if vid == -1:
+			return -1
+		v.vid = vid
+	var tid := traffic.move(int(v.vid), to, purpose, cargo)
+	if tid == -1 and fresh:
+		traffic.retire_vehicle(int(v.vid))
+		v.vid = -1
+	return tid
+
+
+## Into the garage (or off the map edge): its vehicle leaves the road.
+func _off_road(sim: CitySim, bus: Dictionary) -> void:
+	if int(bus.get("vid", -1)) != -1:
+		sim.traffic.retire_vehicle(int(bus.vid))
+		bus.vid = -1
 
 
 # --- School buses -----------------------------------------------------------------
@@ -1416,7 +1471,7 @@ func _plan_schools(sim: CitySim) -> void:
 			if have <= need:
 				break
 			if buses[bid].depot == sid and buses[bid].kind == "school_bus" and buses[bid].state == "parked":
-				buses.erase(bid)
+				_drop(sim, bid)
 				have -= 1
 		# Each bus takes a slice of the pickups around the school.
 		var center: Vector3 = b.pos
@@ -1493,7 +1548,7 @@ func _school_next(sim: CitySim, bus: Dictionary) -> void:
 		bus.from_school = false
 		var b: Dictionary = sim.services.buildings.get(bus.depot, {})
 		if b.is_empty():
-			buses.erase(bus.id)
+			_drop(sim, bus.id)
 			return
 		bus.at = _gate(b)
 		if bus.run.is_empty():
@@ -1511,7 +1566,7 @@ func _school_next(sim: CitySim, bus: Dictionary) -> void:
 # --- What the panels show ---------------------------------------------------------
 
 ## Buses that aren't on Traffic's roads right now (in a bay, at a stop):
-## [kind, front of the bus, facing, load].
+## [kind, front of the bus, facing, load, drawn by Traffic (parked on the road)].
 func standing(sim: CitySim) -> Array:
 	var out := []
 	var bids := buses.keys()
@@ -1520,6 +1575,7 @@ func standing(sim: CitySim) -> Array:
 		var bus: Dictionary = buses[bid]
 		if bus.state == "driving" or bus.state == "away":
 			continue
+		var on_road := int(bus.get("vid", -1)) != -1  # Traffic draws it where it's parked
 		var dir: Vector3 = bus.dir
 		if bus.state == "parked":
 			var pose := bay_pose(sim, bus)
@@ -1529,9 +1585,9 @@ func standing(sim: CitySim) -> Array:
 			var s: Dictionary = stops[bus.stop]
 			# Pulled in at the curb, facing the way traffic on that side goes.
 			dir = s.dir * (-s.side)
-			out.append([bus.kind, s.pos + dir * 6.0, dir, bus.load])
+			out.append([bus.kind, s.pos + dir * 6.0, dir, bus.load, on_road])
 		else:
-			out.append([bus.kind, bus.at, dir if dir.length() > 0.5 else Vector3.FORWARD, bus.load])
+			out.append([bus.kind, bus.at, dir if dir.length() > 0.5 else Vector3.FORWARD, bus.load, on_road])
 	return out
 
 
@@ -1636,7 +1692,7 @@ func to_dict() -> Dictionary:
 			"stop": bus.stop, "target": bus.target, "load": bus.load, "until": bus.until, "bay": bus.bay,
 			"at": [bus.at.x, bus.at.z], "dir": [bus.dir.x, bus.dir.z], "run": run,
 			"retire": bus.get("retire", false), "morning": bus.get("morning", true),
-			"from_school": bus.get("from_school", false)})
+			"from_school": bus.get("from_school", false), "vid": bus.get("vid", -1)})
 	for id in depots:
 		var dep: Dictionary = depots[id]
 		d.depots[str(id)] = {"cash": dep.cash, "fare": dep.fare, "fare_day": dep.fare_day, "wanted": dep.wanted,
@@ -1672,7 +1728,8 @@ func from_dict(sim: CitySim, d: Dictionary) -> void:
 			"route": int(a.route), "stop": int(a.stop), "target": int(a.target), "load": int(a.load),
 			"until": int(a.until), "bay": int(a.bay), "at": Vector3(a.at[0], 0.0, a.at[1]),
 			"dir": Vector3(a.dir[0], 0.0, a.dir[1]), "run": run, "retire": bool(a.get("retire", false)),
-			"morning": bool(a.get("morning", true)), "from_school": bool(a.get("from_school", false))}
+			"morning": bool(a.get("morning", true)), "from_school": bool(a.get("from_school", false)),
+			"vid": int(a.get("vid", -1))}
 	depots.clear()
 	for k in d.get("depots", {}):
 		var dep := _new_depot()

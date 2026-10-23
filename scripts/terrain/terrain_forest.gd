@@ -84,6 +84,8 @@ func _process(_delta: float) -> void:
 	if camera == null or not camera.is_inside_tree():
 		return
 	var f := _focus()
+	# The ground paints the canopy out past these trees.
+	RenderingServer.global_shader_parameter_set("tree_fade", Vector4(f.x, f.y, REACH, 0.0))
 	var start := Time.get_ticks_msec()
 	var r := ceili(REACH / CHUNK)
 	var fc := Vector2i(floori(f.x / CHUNK), floori(f.y / CHUNK))
@@ -93,7 +95,7 @@ func _process(_delta: float) -> void:
 			var key := Vector2i(cx, cz)
 			var d := (Vector2(key) * CHUNK + Vector2(CHUNK, CHUNK) * 0.5).distance_to(f)
 			if d < REACH:
-				want[key] = d < NEAR
+				want[key] = d < NEAR * GraphicsQuality.detail
 	for key in _chunks.keys():
 		if not want.has(key):
 			_chunks[key].node.queue_free()

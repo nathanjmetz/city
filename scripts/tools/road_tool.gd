@@ -325,6 +325,9 @@ func _click() -> void:
 			elif sim.education.covers(hit):
 				# One campus building at a time (its first building closes it).
 				sim.apply({"type": "remove_campus_block", "pos": [hit.x, hit.z]})
+			elif sim.telecom.covers(hit):
+				# One tower or block at a time (its office closes the company).
+				sim.apply({"type": "remove_telecom_at", "pos": [hit.x, hit.z]})
 		Mode.UPGRADE:
 			if _hover_seg != -1:
 				sim.apply({"type": "upgrade_road", "seg": _hover_seg, "road": road_type})
@@ -412,7 +415,7 @@ func _grid_corner(p: Vector3) -> Vector3:
 ## junction on its line stops exactly on it.
 func _rect_corner(p: Vector3) -> Vector3:
 	var a: Vector3 = _points[0]
-	var g := _rect_angle(a)
+	var g := _rect_angle(a, p)
 	_guide_angle = g
 	_guide_kind = ""
 	var u := Vector3(cos(g), 0.0, sin(g))
@@ -428,9 +431,42 @@ func _rect_corner(p: Vector3) -> Vector3:
 	return a + u * du + v * dv
 
 
-## Which way a rectangle starting at `a` lines up.
-func _rect_angle(a: Vector3) -> float:
+## Which way a rectangle from `a` toward `p` lines up. At a junction it
+## lines up with the road that lets its sides run along roads there, rather
+## than one that would cut across it from the corner.
+func _rect_angle(a: Vector3, p: Vector3) -> float:
 	var refs := _reference_angles(a)
+	var n := network.find_node_near(a, 0.5)
+	if refs.size() > 1 and n != -1 and grid_side == 0:
+		var outs := []  # the ways roads leave the corner
+		for id in network.segments_at(n):
+			var c := network.curve_of(id)
+			var at_a: bool = network.segments[id].a == n
+			var tan := RoadNetwork.bezier_tangent(c[0], c[1], c[2], 0.0 if at_a else 1.0)
+			outs.append(Vector2(tan.x, tan.z).normalized() * (1.0 if at_a else -1.0))
+		var d := Vector2(p.x - a.x, p.z - a.z)
+		var best := -INF
+		var pick: float = refs[0]
+		for g in refs:
+			var u := Vector2(cos(g), sin(g))
+			var v := Vector2(-u.y, u.x)
+			var su := u * signf(d.dot(u))
+			var sv := v * signf(d.dot(v))
+			# A rectangle squeezed thin along a road is not what was dragged.
+			var du := absf(d.dot(u))
+			var dv := absf(d.dot(v))
+			var score := minf(du, dv) / maxf(maxf(du, dv), 1.0) * 0.5
+			if minf(du, dv) < minf(grid_block, grid_across) * 0.5:
+				score -= 1.0
+			for o in outs:
+				if o.dot(su) > 0.999 or o.dot(sv) > 0.999:
+					score += 1.0  # a side runs along it
+				elif o.dot(su) > 0.0 and o.dot(sv) > 0.0:
+					score -= 1.0  # it would cut across the grid
+			if score > best:
+				best = score
+				pick = g
+		return pick
 	if refs.is_empty():
 		var near := network.find_segment_near(a, RECT_ALIGN_REACH, RoadNetwork.SAME_LEVEL)
 		if not near.is_empty():
@@ -511,8 +547,8 @@ func _show_guide(at: Vector3) -> void:
 	var dir := Vector3(cos(_guide_angle), 0.0, sin(_guide_angle))
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	RoadMesh.add_strip(st, PackedVector3Array([at - dir * 400.0, at + dir * 400.0]), -0.25, 0.25, 0.3)
-	_guide.mesh = st.commit()
+	RoadMesh.add_strip(st, Terrain.densify(PackedVector3Array([at - dir * 400.0, at + dir * 400.0]), 6.0), -0.25, 0.25, 0.3)
+	_guide.mesh = Terrain.drape(st.commit(), true)
 	_guide.visible = true
 
 
