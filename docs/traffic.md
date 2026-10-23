@@ -127,6 +127,24 @@ loading dock, at the curb, or inside a factory bay, and later drives back out.
 - Saves: `"people"` in the city save, and `parked`, `walkers` inside
   `"traffic"`. Loaded copies run identically.
 
+## Streets closed to cars (plazas)
+
+`traffic.close_segment(seg, on, deliveries := "night")` closes a road piece to cars without
+removing it, as for a pedestrian mall (benchmark: real downtown pedestrian malls such as
+Boulder's Pearl Street, where delivery trucks get set hours). The lots along it keep their
+frontage. Routing never drives onto it, people drive to a lot nearby (`_parking_near`) and walk
+the rest, and trucks drive in only when `deliveries` allows: `"never"`, `"night"` (10 pm to
+6 am) or `"always"`. `may_enter(seg, truck)` answers for one vehicle now. Closed streets are
+saved with the traffic state.
+
+## Performance
+
+`tools/perf_run.gd -- big 300` is the benchmark (budget in `scripts/perf/perf_budget.gd`).
+Route planning uses a packed-array heap with turn costs precomputed per way (`_tcost`) and road
+costs refreshed with speeds (`_wcost`). At most `REPLANS_PER_TICK` drivers look for a better
+route each tick. `CitySim.zone_keys(zone)` caches sorted lot keys per zone. The sim is lockstep,
+so nothing in it may depend on a camera; detail by distance belongs in the views only.
+
 ## Next
 
 - Parking garages in real sizes, grown where parking runs short or placed by

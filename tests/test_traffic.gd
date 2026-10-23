@@ -324,6 +324,38 @@ func _init() -> void:
 	_check(p1.traffic.parked.size() > 0 and JSON.stringify(p1.to_dict()) == JSON.stringify(p2.to_dict()),
 		"parked cars, walkers and people load back exactly (%d parked)" % p1.traffic.parked.size())
 
+	# A street closed to cars for a plaza: nobody drives in, people park
+	# nearby, trucks deliver only when allowed, and it's saved.
+	var pz := _crossroads()
+	pz.economy.money = 1.0e9
+	pz.tick()
+	var west := -1
+	var west_lot := ""
+	var east_lot := ""
+	var plots: Array = pz.lots.keys()
+	plots.sort()
+	for k in plots:
+		var l: Dictionary = pz.lots[k]
+		if l.pos.z > 5.0 and absf(l.pos.z) < 40.0 and l.pos.x < -60.0 and west_lot == "":
+			west_lot = k
+			west = int(l.seg)
+		elif l.pos.z > 5.0 and absf(l.pos.z) < 40.0 and l.pos.x > 60.0 and east_lot == "":
+			east_lot = k
+	var prng := RandomNumberGenerator.new()
+	prng.seed = 5
+	pz.traffic.close_segment(west, true, "never")
+	_check(west >= 0 and not pz.traffic.add_trip(pz.lots[east_lot], pz.lots[west_lot], prng),
+		"no car drives onto a street closed to cars")
+	_check(not pz.traffic.may_enter(west, true), "and no truck when deliveries are never allowed")
+	pz.traffic.close_segment(west, true, "always")
+	_check(pz.traffic.may_enter(west, true) and not pz.traffic.may_enter(west, false),
+		"trucks may deliver when allowed, cars still may not")
+	var pz2 := CitySim.new()
+	pz2.from_dict(JSON.parse_string(JSON.stringify(pz.to_dict())))
+	_check(pz2.traffic.closed.get(west, pz2.traffic.closed.get(str(west), "")) == "always", "a closed street stays closed after a load")
+	pz.traffic.close_segment(west, false)
+	_check(pz.traffic.add_trip(pz.lots[east_lot], pz.lots[west_lot], prng), "reopened, cars drive there again")
+
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
