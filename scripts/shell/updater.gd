@@ -53,6 +53,7 @@ static var current: GameUpdater
 var _http: HTTPRequest
 var _manifest := {}
 var _restart_when_ready := false
+var _check_tries := 0
 
 
 func _init() -> void:
@@ -129,7 +130,10 @@ func check(restart_when_ready := false) -> void:
 	if _http != null:
 		return
 	_http = HTTPRequest.new()
-	_http.timeout = 20.0
+	# On its own thread with a long timeout: the first launch can block the
+	# main thread for 30 s compiling shaders, which timed the check out.
+	_http.use_threads = true
+	_http.timeout = 90.0
 	add_child(_http)
 	_http.request_completed.connect(_on_manifest)
 	var url := OS.get_environment("NEIGHBORS_MANIFEST")  # for testing the updater
@@ -159,8 +163,13 @@ func on_version_mismatch() -> void:
 func _on_manifest(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	_done()
 	if result != HTTPRequest.RESULT_SUCCESS or code != 200:
-		_tell("update_check_failed", {"result": result, "code": code})
+		_tell("update_check_failed", {"result": result, "code": code, "try": _check_tries})
+		# Try again a little later (a busy start, a blip in the network).
+		_check_tries += 1
+		if _check_tries < 4:
+			get_tree().create_timer(30.0 * _check_tries).timeout.connect(check)
 		return
+	_check_tries = 0
 	var m = JSON.parse_string(body.get_string_from_utf8())
 	if typeof(m) != TYPE_DICTIONARY:
 		return
