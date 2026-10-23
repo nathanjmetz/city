@@ -8,7 +8,7 @@ func _init() -> void:
 	sim.apply({"type": "build_road", "start": [-100, 0], "ctrl": [-20, 0], "end": [40, 60]})
 	_check(Advisor.is_new_city(sim), "a fresh town counts as new")
 	var first := Advisor.first_ideas(sim)
-	_check(first.size() == 2, "two ideas for a new town (%d)" % first.size())
+	_check(first.size() == 3, "three first steps for a new town (%d)" % first.size())
 	_check(_ids(Advisor.tips(sim)).has("first_streets"), "a new town gets nudged toward streets")
 	_check(not _kinds(Advisor.tips(sim)).has(Advisor.Kind.PROBLEM), "nothing's wrong with a new town")
 
