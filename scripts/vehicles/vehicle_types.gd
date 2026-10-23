@@ -40,6 +40,7 @@ const SPECS := {
 	"tanker":        {"len": 20.50, "width": 2.60, "height": 3.60, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"flatbed":       {"len": 20.30, "width": 2.60, "height": 3.30, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"dump_truck":    {"len": 9.00, "width": 2.60, "height": 3.40, "acc": 0.9, "brake": 2.3, "top_speed": 29.0, "pref": 0.93},
+	"concrete_mixer": {"len": 10.40, "width": 2.60, "height": 3.95, "acc": 0.8, "brake": 2.2, "top_speed": 29.0, "pref": 0.92},
 	"tow_truck":     {"len": 7.00, "width": 2.40, "height": 2.80, "acc": 1.3, "brake": 2.6, "top_speed": 36.0, "pref": 0.97},
 	"school_bus":    {"len": 12.20, "width": 2.44, "height": 3.20, "acc": 1.0, "brake": 2.3, "top_speed": 27.0, "pref": 0.92},
 	"city_bus":      {"len": 12.20, "width": 2.60, "height": 3.30, "acc": 1.0, "brake": 2.0, "top_speed": 27.0, "pref": 0.92},
@@ -99,6 +100,8 @@ const LIVERY := {
 	"police": [[Color(0.05, 0.05, 0.06), 1.0], [Color(0.93, 0.93, 0.92), 1.0]],
 	"garbage_truck": [[Color(0.93, 0.93, 0.92), 3.0], [Color(0.16, 0.36, 0.20), 1.0]],
 	"delivery_van": [[Color(0.93, 0.93, 0.92), 3.0], [Color(0.33, 0.22, 0.13), 1.0]],
+	# Ready-mix fleets: white drums with a coloured cab, or all one colour.
+	"concrete_mixer": [[Color(0.93, 0.93, 0.92), 3.0], [Color(0.92, 0.52, 0.05), 1.0], [Color(0.10, 0.22, 0.50), 1.0], [Color(0.70, 0.07, 0.07), 1.0]],
 	"dump_truck": [[Color(0.92, 0.92, 0.91), 2.0], [Color(0.92, 0.52, 0.05), 1.0], [Color(0.90, 0.72, 0.05), 1.0]],
 	"tow_truck": [[Color(0.92, 0.92, 0.91), 1.0], [Color(0.70, 0.07, 0.07), 1.0], [Color(0.05, 0.05, 0.06), 1.0]],
 	# John Deere green, Case IH red, New Holland blue.
@@ -122,7 +125,7 @@ const PURPOSE := {
 	"raw": {"log_truck": 3.0, "ore_truck": 3.0, "flatbed": 2.0, "dump_truck": 2.0},  # logs, ore, steel, gravel
 	"parcels": {"delivery_van": 7.0, "van": 3.0},
 	"food": {"box_truck": 5.0, "semi": 3.0},              # to grocery stores and restaurants
-	"construction": {"dump_truck": 4.0, "flatbed": 2.0, "work_pickup": 3.0},
+	"construction": {"dump_truck": 3.0, "concrete_mixer": 2.0, "flatbed": 2.0, "work_pickup": 3.0},
 	"field_work": {"tractor": 4.0, "combine": 1.0},       # farmhouse to its own fields
 	"harvest": {"combine": 1.0},
 	# Services.

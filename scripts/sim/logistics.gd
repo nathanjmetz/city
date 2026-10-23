@@ -62,7 +62,9 @@ func tick(sim: CitySim) -> void:
 	ids.sort()
 	for id in ids:
 		var s: Dictionary = sim.industry.sites[id]
-		if s.stock >= 1.0 and sent < MAX_PER_ROUND and not s.drive.is_empty():
+		# A company on a rail siding ships by train instead (see Rail).
+		if s.stock >= 1.0 and sent < MAX_PER_ROUND and not s.drive.is_empty() \
+				and not sim.rail.ships_by_rail(sim, "site:%d" % id):
 			var k: Dictionary = Industry.KINDS[s.kind]
 			if _send(sim, {"ref": "site:%d" % id, "pos": _xz(s.drive[-1]), "drive": _lane(s.drive)}, _buyer(sim, s.drive[-1], "raw", Industry.KINDS[s.kind].cargo),
 					k.purpose, {"good": k.cargo, "amount": 1}, "site"):

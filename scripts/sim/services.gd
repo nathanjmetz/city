@@ -84,14 +84,30 @@ var _next_id := 1
 
 ## The Economy page area a service kind belongs to.
 static func area_of(kind: int) -> String:
+	match kind:
+		Kind.BUS_DEPOT:
+			return "transit"
+		Kind.WATER_UTILITY:
+			return "water"
 	return "utilities" if KINDS[kind].has("utility") else "public"
+
+
+## The sliders' key for service `id`: a bus depot and the water utility run
+## themselves as hubs, so they go by their leader's kind.
+func key_of(id: int) -> String:
+	match int(buildings[id].kind) if buildings.has(id) else -1:
+		Kind.BUS_DEPOT:
+			return "bus_depot:%d" % id
+		Kind.WATER_UTILITY:
+			return "water:%d" % id
+	return "service:%d" % id
 
 
 ## Upkeep and reach (or capacity) multipliers for service `id` from Funding.
 func funding(id: int, list: Array) -> float:
 	if policies == null or not buildings.has(id):
 		return 1.0
-	return policies.pick(list, "funding", area_of(buildings[id].kind), "service:%d" % id)
+	return policies.pick(list, "funding", area_of(buildings[id].kind), key_of(id))
 
 
 ## This service's monthly upkeep at its Funding.

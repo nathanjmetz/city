@@ -94,6 +94,7 @@ var _guide_mat := RoadStyle.material(Color(1, 1, 1, 0.45), true)
 ## Angle of the guide the current road snapped to, or NAN.
 var _guide_angle := NAN
 var _guide_kind := ""
+var _left_down := false  # the left button went down on the map, not on a panel
 ## The last grid plan, kept while the shape and cursor stay put.
 var _grid_key := ""
 var _grid_plan := []
@@ -235,10 +236,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	if mb.button_index == MOUSE_BUTTON_RIGHT and not mb.pressed and not cam.right_dragged:
 		_cancel()
 	elif mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not mb.alt_pressed:
+		_left_down = true
 		_click()
-	elif mb.button_index == MOUSE_BUTTON_LEFT and not mb.pressed and mode == Mode.GRID and not grid_free \
-			and _points.size() == 1:
-		_click()  # a rectangle can be dragged out, corner to corner, as well as clicked
+	elif mb.button_index == MOUSE_BUTTON_LEFT and not mb.pressed:
+		# A rectangle can be dragged out, corner to corner, as well as clicked;
+		# letting go after an Alt-drag of the camera builds nothing.
+		if _left_down and mode == Mode.GRID and not grid_free and _points.size() == 1:
+			_click()
+		_left_down = false
 
 
 func _process(_delta: float) -> void:
