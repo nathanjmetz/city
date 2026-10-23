@@ -780,7 +780,7 @@ func update_stats() -> void:
 	# Shops and factories still going up count toward demand (they're
 	# coming) but nobody works there yet.
 	var unfinished_jobs := 0
-	var unfinished_homes := 0
+	var presold := 0  # buyers waiting on homes going up (see _move_in)
 	for key in buildings:
 		var b: Dictionary = buildings[key]
 		if int(b.zone) != ZoneMap.Zone.RESIDENTIAL and _utilities_ok(key) \
@@ -791,7 +791,7 @@ func update_stats() -> void:
 				pop += b.occ
 				home_cap += b.cap
 				if not construction.is_done("lot:" + key, tick_count):
-					unfinished_homes += b.cap
+					presold += mini(b.cap, 2)
 			ZoneMap.Zone.COMMERCIAL:
 				# Flats above a shop count as homes.
 				pop += int(b.get("focc", 0))
@@ -814,16 +814,17 @@ func update_stats() -> void:
 	var workers := int(pop * WORKER_SHARE)
 	var jobs := shop_jobs + factory_jobs
 	# Demand plans ahead, as builders do: homes going up are people on the
-	# way, and jobs at shops and factories going up are jobs on the way.
-	var coming := pop + unfinished_homes
+	# way (their pre-sold buyers; the rest of a new home is still for sale),
+	# and jobs at shops and factories going up are jobs on the way.
+	var coming := pop + presold
 	var coming_workers := int(coming * WORKER_SHARE)
-	var free := home_cap - unfinished_homes - pop
+	var free := home_cap - presold - pop
 	var open_jobs := maxi(jobs - unfinished_jobs, 0)
 	stats = {"population": pop, "workers": workers, "jobs": open_jobs,
 		"employed": mini(workers, open_jobs), "homes_free": free}
 	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(
 		0.6 + 0.6 * float(jobs - coming_workers) / maxf(coming_workers, 40.0)
-		- float(free) / maxf(home_cap - unfinished_homes, 30.0), 0.0, 1.0)
+		- float(free) / maxf(home_cap, 30.0), 0.0, 1.0)
 	demand[ZoneMap.Zone.COMMERCIAL] = clampf(
 		0.05 + (coming * 0.12 - shop_jobs) / maxf(shop_jobs, 12.0), 0.0, 1.0)
 	demand[ZoneMap.Zone.INDUSTRIAL] = clampf(
