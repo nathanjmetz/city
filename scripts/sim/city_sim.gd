@@ -144,6 +144,8 @@ var _lots_dirty := true
 ## Roads changed since the world last made way for them (see RoadWins).
 var _roads_moved := false
 var _usable_cache := {}  # field cell -> bool, cleared when roads or lots change
+var _zone_check := []  # what _refresh last checked buildings against
+var _zone_check_lots := {}
 
 
 func _init() -> void:
@@ -713,12 +715,21 @@ func _road_wins() -> void:
 
 
 func tick() -> void:
+	var t0 := Perf.now()
 	tick_count += 1
+	var t := Perf.now()
 	_refresh()
+	Perf.add("sim.lots", t)
+	t = Perf.now()
 	vegetation.update(self)
+	Perf.add("sim.vegetation", t)
+	t = Perf.now()
 	if tick_count % MOVE_EVERY == 0:
 		_move_in()
-		update_stats()
+		# The budget only pays out on the hour, so it's worked out then.
+		update_stats(tick_count % TICKS_PER_HOUR == 0)
+	Perf.add("sim.people", t)
+	t = Perf.now()
 	if tick_count % GROW_EVERY == 0:
 		_grow_one()
 		# A builder with a construction loan from a bank in town puts up one more.
@@ -726,6 +737,8 @@ func tick() -> void:
 			var key := _grow_one(1)
 			if key != "":
 				banks.financed(self, key)
+	Perf.add("sim.growth", t)
+	t = Perf.now()
 	if tick_count % Balance.DEVELOP_EVERY == 0:
 		_develop_one()
 	if tick_count % Farms.DECIDE_EVERY == 0 and not farms.farms.is_empty():
@@ -734,28 +747,42 @@ func tick() -> void:
 		if farms.decide(field_usable):
 			_lots_dirty = true  # lots under new fields go away
 			farms_changed.emit()
+	Perf.add("sim.farms", t)
+	t = Perf.now()
 	if tick_count % Industry.DECIDE_EVERY == 0 and not industry.sites.is_empty():
 		industry.tax_rate = economy.tax[ZoneMap.Zone.INDUSTRIAL]
 		if industry.decide(field_usable):
 			_lots_dirty = true
 			industry_changed.emit()
+	Perf.add("sim.industry", t)
+	t = Perf.now()
 	if tick_count % Balance.EDUCATION_DECIDE_EVERY == 0 and not education.campuses.is_empty():
 		if education.decide(self):
 			_lots_dirty = true
 			education_changed.emit()
+	Perf.add("sim.education", t)
+	t = Perf.now()
 	# Farms and companies that want the land next door ask the banks for a loan.
 	if tick_count % Balance.BANK_LEND_EVERY == 0 and not banks.banks.is_empty():
 		_bank_changes(banks.lend(self))
 	if tick_count % Balance.BANK_DECIDE_EVERY == 0 and not banks.banks.is_empty():
 		_bank_changes(banks.decide(self))
+	Perf.add("sim.banks", t)
+	t = Perf.now()
 	if tick_count % Balance.WAREHOUSE_DECIDE_EVERY == 0 and not warehouses.buildings.is_empty():
 		if warehouses.decide(self):
 			_lots_dirty = true
 			warehouses_changed.emit()
+	Perf.add("sim.warehouses", t)
+	t = Perf.now()
 	permits.tick(self)
+	Perf.add("sim.permits", t)
+	t = Perf.now()
 	# Events at the fairgrounds and the football field, and their visitors.
 	if not parks.tourism.venues.is_empty():
 		parks.tourism.tick(self)
+	Perf.add("sim.tourism", t)
+	t = Perf.now()
 	if tick_count % Balance.PARK_DECIDE_EVERY == 0 and not parks.sites.is_empty():
 		var sizes := parks.sites.values().map(func(s): return s.size)
 		if parks.decide(self):
@@ -766,42 +793,70 @@ func tick() -> void:
 				_lots_dirty = true
 				zones_changed.emit()
 			parks_changed.emit()
+	Perf.add("sim.parks", t)
+	t = Perf.now()
 	if tick_count % Power.DECIDE_EVERY == 0 and not power.sites.is_empty():
 		if _decide_power():
 			power_changed.emit()
+	Perf.add("sim.power", t)
+	t = Perf.now()
 	# Once a month every hub's leader looks at its development tree (Agency).
 	if tick_count % (24 * TICKS_PER_HOUR) == 12 * TICKS_PER_HOUR:
 		_develop_hubs()
+	Perf.add("sim.hub_leaders", t)
+	t = Perf.now()
 	# ...and every family looks at what it owns, and whether to branch out.
 	if tick_count % (24 * TICKS_PER_HOUR) == 13 * TICKS_PER_HOUR:
 		families.month(self)
+	Perf.add("sim.families", t)
+	t = Perf.now()
 	if tick_count % WaterUtility.DECIDE_EVERY == 0 and not services.water.utilities.is_empty():
 		var res := services.water.decide(self, yard_usable)
 		economy.money += int(res[1])
 		if res[0]:
 			_lots_dirty = true  # lots under new yard pieces go away
 			water_changed.emit()
+	Perf.add("sim.water", t)
 	# Taxes come in and upkeep goes out every game hour, a day settling a month.
 	if tick_count % TICKS_PER_HOUR == 0:
 		economy.money += roundi(economy.monthly_net() / 24.0)
 	# Before logistics, which clears Traffic's arrivals.
+	t = Perf.now()
 	hubs.tick(self)
 	construction.tick(self)
+	Perf.add("sim.civic_hubs", t)
 	if not in_region and tick_count % (24 * TICKS_PER_HOUR) == 0:
+		t = Perf.now()
 		Trade.settle({"me": self}, {})
+		Perf.add("sim.trade", t)
+	t = Perf.now()
 	mail.tick(self)
+	Perf.add("sim.mail", t)
+	t = Perf.now()
 	rail.tick(self)
+	Perf.add("sim.rail", t)
 	if not simulate_traffic:
+		Perf.add("sim.tick", t0)
 		return
+	t = Perf.now()
 	# Before logistics, which clears Traffic's arrival list.
 	for id in buses.tick(self):
 		_clear_zones_under(services.footprint(id))
 		_lots_dirty = true
+	Perf.add("sim.buses", t)
+	t = Perf.now()
 	logistics.tick(self)
+	Perf.add("sim.logistics", t)
+	t = Perf.now()
 	education.trips(self)
+	Perf.add("sim.school_trips", t)
+	t = Perf.now()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([city_seed, tick_count, "traffic"])
 	traffic.step(self, rng)
+	Perf.add("sim.traffic", t)
+	Perf.count("vehicles", traffic.cars.size())
+	Perf.add("sim.tick", t0)
 
 
 ## Game time as a Dictionary (year, month, day, weekday, hour, minute).
@@ -816,7 +871,8 @@ func clock() -> Dictionary:
 ## Recounts people and jobs, then works out demand the way Cities: Skylines
 ## does in spirit: homes are wanted while there are jobs, jobs while people
 ## need work, and shops while residents need somewhere to shop.
-func update_stats() -> void:
+## `budget` false skips the month's budget (the tick only needs it hourly).
+func update_stats(budget := true) -> void:
 	var pop := 0
 	var home_cap := 0
 	var shop_jobs := 0
@@ -888,7 +944,8 @@ func update_stats() -> void:
 	# Parks and landmarks make a town nicer to live in.
 	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL]
 		+ Balance.AMENITY_DEMAND * parks.average_happiness(self), 0.0, 1.0)
-	economy.update_budget(self)
+	if budget:
+		economy.update_budget(self)
 	stats_changed.emit()
 
 
@@ -1620,7 +1677,13 @@ func _refresh() -> void:
 		services.plants = power.sources()
 		services.update(network, lots, buildings)
 		lots_changed.emit()
-	# Buildings go away when their lot disappears or its zone changes.
+	# Buildings go away when their lot disappears or its zone changes, so
+	# this only needs a look after zoning, lots or buildings change.
+	var check := [zones.revision, lots.size(), buildings.size()]
+	if check == _zone_check and is_same(lots, _zone_check_lots):
+		return
+	_zone_check = check
+	_zone_check_lots = lots
 	var removed := false
 	for key in buildings.keys():
 		if not lots.has(key) or zones.zone_at(lots[key].zone_pt) != buildings[key].zone:

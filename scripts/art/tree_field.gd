@@ -154,6 +154,12 @@ func _process(_delta: float) -> void:
 
 
 func _rebuild() -> void:
+	var t := Perf.now()
+	_rebuild_now()
+	Perf.add("frame.trees", t)
+
+
+func _rebuild_now() -> void:
 	var groups := {}  # "cx,cz,species" -> Array of trees
 	for list in _trees.values():
 		for t in list:

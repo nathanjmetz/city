@@ -104,6 +104,12 @@ func _flat(stream: AudioStream, bus: String) -> AudioStreamPlayer:
 
 
 func _process(delta: float) -> void:
+	var t := Perf.now()
+	_update(delta)
+	Perf.add("frame.audio", t)
+
+
+func _update(delta: float) -> void:
 	if camera == null:
 		return
 	var ear := camera.global_position

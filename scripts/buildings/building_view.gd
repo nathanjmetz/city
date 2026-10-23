@@ -25,7 +25,9 @@ func setup(s: CitySim) -> void:
 func _sync() -> void:
 	# Neighbors' cities are drawn moved over to their place on the land.
 	Terrain.shift = Terrain.shift_for(self)
+	var t := Perf.now()
 	_sync_all()
+	Perf.add("frame.buildings", t)
 	Terrain.shift = Vector2.ZERO
 
 

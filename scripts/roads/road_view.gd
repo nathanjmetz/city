@@ -94,7 +94,9 @@ func _rural_segments() -> Dictionary:
 func rebuild() -> void:
 	# Neighbors' cities are drawn moved over to their place on the land.
 	Terrain.shift = Terrain.shift_for(self)
+	var t := Perf.now()
 	_rebuild_all()
+	Perf.add("frame.roads", t)
 	Terrain.shift = Vector2.ZERO
 
 

@@ -249,6 +249,9 @@ func _ready() -> void:
 	hud.lot_alerts = lot_alerts
 	add_child(hud)
 
+	# Hidden performance readout (F3).
+	add_child(PerfOverlay.new())
+
 	var menu := GameMenu.new()
 	menu.game = self
 	hud.nothing_to_close.connect(menu.toggle)
@@ -303,10 +306,12 @@ func _process(delta: float) -> void:
 	_tick_time += delta * SPEEDS[speed]
 	var step := 1.0 / CitySim.TICKS_PER_SECOND
 	var guard := 0
+	var t := Perf.now()
 	while _tick_time >= step and guard < 20:
 		_tick_time -= step
 		guard += 1
 		sim.tick()
+	Perf.add("frame.sim", t)
 	_tick_time = minf(_tick_time, step)
 	_save_wait -= delta
 	if _save_pending and _save_wait <= 0.0:

@@ -34,6 +34,8 @@ var trips := {}
 var stuck := {}
 ## Origins that already sent a truck this round: one at a time out of each gate.
 var _left := {}
+## Where trips on the road now are headed (ref -> true), kept for a round.
+var _to_refs := {}
 ## Running totals for panels.
 var delivered := 0
 var exported := 0
@@ -57,13 +59,16 @@ func tick(sim: CitySim) -> void:
 	sim.traffic.background_freight = sim.farms.farms.is_empty() and sim.industry.sites.is_empty() \
 		and sim.count_buildings(ZoneMap.Zone.INDUSTRIAL) == 0
 	_left.clear()
+	_to_refs.clear()
+	for id in trips:
+		_to_refs[trips[id].to.ref] = true
 	var sent := 0
 	var ids := sim.industry.sites.keys()
 	ids.sort()
 	for id in ids:
 		var s: Dictionary = sim.industry.sites[id]
 		# A company on a rail siding ships by train instead (see Rail).
-		if s.stock >= 1.0 and sent < MAX_PER_ROUND and not s.drive.is_empty() \
+		if s.stock >= 1.0 and sent < MAX_PER_ROUND and _room(sim) and not s.drive.is_empty() \
 				and not sim.rail.ships_by_rail(sim, "site:%d" % id):
 			var k: Dictionary = Industry.KINDS[s.kind]
 			if _send(sim, {"ref": "site:%d" % id, "pos": _xz(s.drive[-1]), "drive": _lane(s.drive)}, _buyer(sim, s.drive[-1], "raw", Industry.KINDS[s.kind].cargo),
@@ -74,7 +79,7 @@ func tick(sim: CitySim) -> void:
 	ids.sort()
 	for id in ids:
 		var f: Dictionary = sim.farms.farms[id]
-		if grain.get(id, 0.0) >= Balance.GRAIN_TRUCK_BUSHELS and sent < MAX_PER_ROUND and not f.drive.is_empty():
+		if grain.get(id, 0.0) >= Balance.GRAIN_TRUCK_BUSHELS and sent < MAX_PER_ROUND and _room(sim) and not f.drive.is_empty():
 			if _send(sim, {"ref": "farm:%d" % id, "pos": _xz(f.drive[-1]), "drive": _lane(f.drive)}, _buyer(sim, f.drive[-1], "raw", f.crop),
 					"grain", {"good": f.crop, "amount": int(Balance.GRAIN_TRUCK_BUSHELS)}, "farm"):
 				grain[id] -= Balance.GRAIN_TRUCK_BUSHELS
@@ -87,6 +92,8 @@ func tick(sim: CitySim) -> void:
 			stock.erase(key)
 			continue
 		var lot: Dictionary = sim.lots[key]
+		if not _room(sim):
+			continue  # every vehicle is out: loads wait for the next round
 		if stock.get(key, 0.0) >= Balance.FACTORY_LOADS_PER_GOODS and sent < MAX_PER_ROUND:
 			if _send(sim, {"ref": "lot:" + key, "pos": _xz(lot.front)}, _buyer(sim, lot.front, "goods"),
 					"goods", {"good": "goods", "amount": 1}, "factory"):
@@ -110,7 +117,7 @@ func tick(sim: CitySim) -> void:
 	ids.sort()
 	for id in ids:
 		var w: Dictionary = sim.warehouses.buildings[id]
-		if sent >= MAX_PER_ROUND:
+		if sent >= MAX_PER_ROUND or not _room(sim):
 			break
 		var wh := {"ref": "wh:%d" % id, "pos": _xz(w.pos)}
 		# Goods a neighbouring town bought (regional DC) go first.
@@ -237,6 +244,7 @@ func _send(sim: CitySim, from: Dictionary, to: Dictionary, purpose: String, carg
 		return false
 	trips[id] = {"from": from, "to": to, "purpose": purpose, "cargo": cargo, "kind": kind}
 	_left[from.ref] = true
+	_to_refs[to.ref] = true
 	return true
 
 
@@ -305,10 +313,13 @@ static func input_of(sim: CitySim, key: String) -> String:
 
 
 func _inbound(key: String) -> bool:
-	for id in trips:
-		if trips[id].to.ref == "lot:" + key:
-			return true
-	return false
+	return _to_refs.has("lot:" + key)
+
+
+## True while Traffic has room for another vehicle. When every vehicle is
+## out, nobody looks for a buyer or plans a route this round.
+func _room(sim: CitySim) -> bool:
+	return sim.traffic.cars.size() < TrafficSim.MAX_CARS
 
 
 ## Trucks on the road now that left from or are headed to this place.
