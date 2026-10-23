@@ -45,13 +45,22 @@ func _process(_delta: float) -> bool:
 				for k in 40:
 					sim.tick()
 		call_group("first_town_tour", "stop")
+		# No tool cursor or hints in the shot.
+		for c in _main.get_children():
+			if c is RoadTool:
+				c.process_mode = Node.PROCESS_MODE_DISABLED
+				for k in c.get_children():
+					if k is Node3D:
+						k.visible = false
+			if c is CanvasLayer:
+				c.visible = false
 		print("filming car ", _car.get("id", -1), " ", _car.get("kind", ""))
 		_end = _frames + int(float(args[1] if args.size() > 1 else "10") * 30.0)
 		_main.set_speed(1)
 		if not _car.is_empty():
 			var p: Vector3 = sim.traffic.car_pose(_car)[0]
 			_cam.look_at_point(p)
-			_cam.set_view(deg_to_rad(35.0), deg_to_rad(52.0), 26.0 if _what != "semi" else 50.0)
+			_cam.set_view(deg_to_rad(35.0), deg_to_rad(62.0), 28.0 if _what != "semi" else 50.0)
 		return false
 	if _frames < 2:
 		return false
