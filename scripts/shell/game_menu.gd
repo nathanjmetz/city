@@ -58,6 +58,10 @@ func _ready() -> void:
 	add_child(_preview)
 
 
+func _exit_tree() -> void:
+	MenuState.showing = false  # leaving for the title screen with the menu up
+
+
 ## N: "that sound was bad". Opens the Audio page with what just played.
 func _unhandled_key_input(event: InputEvent) -> void:
 	var k := event as InputEventKey
@@ -67,6 +71,33 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		open()
 	_audio()
 	get_viewport().set_input_as_handled()
+
+
+## While the menu is up it owns the keyboard: Escape (or the pad's B) goes
+## back a page, then resumes, even with a tool in hand; N still flags a sound;
+## every other key stays out of the town (Space can't unpause it, 1 can't
+## pick up a road, WASD can't move the camera).
+func _input(event: InputEvent) -> void:
+	if not _shade.visible or not event is InputEventKey:
+		return
+	var k := event as InputEventKey
+	if k.keycode == KEY_N:
+		return
+	get_viewport().set_input_as_handled()
+	if k.pressed and not k.echo and k.keycode == KEY_ESCAPE:
+		var back := _back_button()
+		if back != null:
+			back.pressed.emit()
+		elif _title.text != "Connection lost":
+			close()
+
+
+## The Back button of the Graphics or Audio page, if one is showing.
+func _back_button() -> Button:
+	for c in _col.get_children():
+		if c is Button and c.text == "Back" and not c.is_queued_for_deletion():
+			return c
+	return null
 
 
 func toggle() -> void:
@@ -80,6 +111,7 @@ func open() -> void:
 	_just_heard = SoundSettings.recent()
 	_fill()
 	_shade.visible = true
+	MenuState.showing = true
 	_was_speed = game.speed
 	game.set_speed(0)
 
@@ -87,6 +119,7 @@ func open() -> void:
 func close() -> void:
 	_preview.stop()
 	_shade.visible = false
+	MenuState.showing = false
 	game.set_speed(_was_speed)
 
 
@@ -315,6 +348,7 @@ func _play(id: String) -> void:
 func _lost_connection() -> void:
 	_fill()
 	_shade.visible = true
+	MenuState.showing = true
 	_title.text = "Connection lost"
 	_note.text = "The region's server stopped answering. Your city is safe on the server."
 	for c in _col.get_children():

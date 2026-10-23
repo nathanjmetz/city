@@ -34,6 +34,8 @@ func _init() -> void:
 static func prompts_for(hud: Node) -> Array:
 	if hud == null:
 		return [[["a"], "Select"], [["b"], "Back"]]
+	if hud.shape_open():
+		return [[["a"], "Add point"], [["rs"], "Click: finish"], [["x"], "Cancel"], [["b"], "Back"]]
 	if hud.anything_open():
 		return [[["a"], "Use"], [["x"], "Cancel"], [["lb", "rb"], "Size"], [["dpad"], "Height · speed"],
 			[["b"], "Back"], [["y"], "Tools"]]

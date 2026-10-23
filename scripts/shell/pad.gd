@@ -12,6 +12,7 @@ extends Node
 ##   D-pad up / down: raise / lower new roads
 ##   D-pad left / right: slower / faster
 ##   Click the left stick: hold for Shift (snap angles)
+##   Click the right stick: finish a shape (like Enter), else fly home
 ##   Menu (Start): pause menu      View (Back): pause the clock
 ## Mouse and keyboard keep working: moving the mouse puts the pad cursor away.
 ## An autoload (Pad); other scripts reach it with Gamepad.find().
@@ -157,7 +158,7 @@ func _on_button(b: int, pressed: bool) -> void:
 			if pressed:
 				_tap(KEY_ESCAPE)
 		JOY_BUTTON_Y:
-			if pressed:
+			if pressed and not MenuState.showing:
 				_open_wheel()
 		JOY_BUTTON_LEFT_SHOULDER:
 			if pressed:
@@ -173,16 +174,20 @@ func _on_button(b: int, pressed: bool) -> void:
 				_tap(KEY_PAGEDOWN)
 		JOY_BUTTON_DPAD_LEFT, JOY_BUTTON_DPAD_RIGHT:
 			var game := get_tree().current_scene
-			if pressed and game != null and game.has_method("set_speed"):
+			if pressed and game != null and game.has_method("set_speed") and not MenuState.showing:
 				game.set_speed(game.speed + (1 if b == JOY_BUTTON_DPAD_RIGHT else -1))
 		JOY_BUTTON_LEFT_STICK:
 			_key(KEY_SHIFT, pressed)
+		JOY_BUTTON_RIGHT_STICK:
+			if pressed and not MenuState.showing:
+				var hud := _hud()
+				_tap(KEY_ENTER if hud != null and hud.shape_open() else KEY_HOME)
 		JOY_BUTTON_START:
 			if pressed:
 				_toggle_menu()
 		JOY_BUTTON_BACK:
 			var game := get_tree().current_scene
-			if pressed and game != null and game.has_method("toggle_pause"):
+			if pressed and game != null and game.has_method("toggle_pause") and not MenuState.showing:
 				game.toggle_pause()
 
 

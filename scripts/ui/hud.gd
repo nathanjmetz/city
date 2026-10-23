@@ -227,6 +227,12 @@ func pad_wheel_pick(key: String) -> void:
 		_open(key)
 
 
+## A grid shape or an outline is being drawn, so Enter finishes it (the
+## pad's right stick click does the same).
+func shape_open() -> bool:
+	return road_tool.mode == RoadTool.Mode.GRID and road_tool.is_drawing() or farm_tool.is_drawing()
+
+
 ## How tall the bottom dock is, so the pad's prompts sit just above it.
 func pad_bottom_height() -> float:
 	return _bottom.size.y
@@ -1529,14 +1535,22 @@ func _build_help() -> void:
 	_help.add_child(col)
 	col.add_child(UiStyle.label("CAMERA", 10, UiStyle.MUTED))
 	for line in ["W A S D  move  (Shift: faster)", "Q / E  rotate", "T / G  tilt", "R / F or scroll  zoom",
-			"Right drag  move the map", "Middle drag or Option + drag  rotate", "Space  pause"]:
+			"Right drag  move the map", "Middle drag or Option + drag  rotate", "Home  back to your town"]:
 		col.add_child(UiStyle.label(line, 12))
 	col.add_child(UiStyle.label("TOOLS", 10, UiStyle.MUTED))
-	for line in ["1 2 3 4  road, curve, grid, roundabout", "U upgrade   P parallel   B bulldoze",
-			"Page Up / Down  bridge or tunnel", "5 6 7 8  homes, shops, industry, dezone",
-			"Services: place beside a road; green roads show coverage",
-			"J  traffic view; Traffic: set lights or stop signs",
+	for line in ["1 2 3 4  road, curve, grid, roundabout", "U upgrade   P parallel   B bulldoze   M move it",
+			"[ ]  size   Page Up / Down  bridge or tunnel", "Grid: Enter builds the shape, Tab turns it",
+			"5 6 7 8  homes, shops, industry, dezone   Tab  brush",
+			"J  traffic view   Ctrl+Z  undo a move",
 			"Right click  stop drawing", "Esc  stop drawing, then close everything"]:
+		col.add_child(UiStyle.label(line, 12))
+	col.add_child(UiStyle.label("GAME", 10, UiStyle.MUTED))
+	for line in ["Space  pause", "Enter  chat (in a region)", "N  flag the sound you just heard"]:
+		col.add_child(UiStyle.label(line, 12))
+	col.add_child(UiStyle.label("CONTROLLER", 10, UiStyle.MUTED))
+	for line in ["Left stick  cursor (push the edge to move)", "Right stick  turn and tilt   LT / RT  zoom",
+			"A  use   X  cancel   B  back   Y  tool wheel", "LB / RB  size or turn   D-pad  height, speed",
+			"Click right stick  finish a shape, or go home", "Menu  pause menu   View  pause"]:
 		col.add_child(UiStyle.label(line, 12))
 	var guide := Button.new()
 	guide.text = "Guided tour (first town)"
