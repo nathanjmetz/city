@@ -779,8 +779,35 @@ func _corners(x0: float, x1: float, z0: float, z1: float, y0: float, y1: float) 
 			_box("paint", Vector3(0.14, y1 - y0, 0.14), Vector3(x, (y0 + y1) * 0.5, z), TRIM)
 
 
+## A concrete landing at the door, with steps down to the walk: risers of
+## at most 7 3/4 in and 11 in treads (IRC R311.7), and a pipe handrail on
+## each side once there are four or more risers.
 func _stoop(x: float, zf: float, w: float, d: float, h: float) -> void:
 	_box("concrete", Vector3(w, h, d), Vector3(x, h * 0.5, zf - d * 0.5), FOUNDATION)
+	if h < 0.25:
+		return
+	var n := ceili(h / 0.195)
+	var rise := h / n
+	var run := 0.28
+	var sw := minf(w, 1.3)
+	var z0 := zf - d
+	for k in range(1, n):
+		var sh := h - k * rise
+		_box("concrete", Vector3(sw, sh, run + 0.02), Vector3(x, sh * 0.5, z0 - (k - 0.5) * run), FOUNDATION.lightened(0.04))
+	if n < 4:
+		return
+	var rail := Color("#222222")
+	var zb := z0 - (n - 1) * run + 0.12
+	var zt := z0 + 0.15
+	var yb := rise + 0.86
+	var yt := h + 0.86
+	var tilt := Basis(Vector3.RIGHT, -atan2(yt - yb, zt - zb))
+	for side in [-1.0, 1.0]:
+		var rx: float = x + side * (sw * 0.5 - 0.06)
+		_box("metal", Vector3(0.045, 0.86, 0.045), Vector3(rx, rise + 0.43, zb), rail)
+		_box("metal", Vector3(0.045, 0.86, 0.045), Vector3(rx, h + 0.43, zt), rail)
+		_box("metal", Vector3(0.045, 0.045, Vector2(zt - zb, yt - yb).length() + 0.05),
+			Vector3(rx, (yb + yt) * 0.5, (zb + zt) * 0.5), rail, tilt)
 
 
 func _front_door(x: float, zf: float, sill: float, c: Color) -> void:
