@@ -29,8 +29,9 @@ const SHRUB_SPACING := 7.0
 const CHUNK := 256.0
 const TICKS_PER_YEAR := 12 * 24 * 60  # 12 game days (one a month), 1 minute a tick
 
-## Swappable natural cover: a Callable(p: Vector3) -> [tree share, brush share],
-## each 0 to 1. The terrain thread plugs real land-cover data in here.
+## Swappable natural cover: a Callable(p: Vector3) -> [tree share, brush
+## share, crop share], each 0 to 1 (crop share may be left off). The game
+## plugs the real land cover in here.
 static var cover_source := Callable()
 
 ## Cell -> tick the land there was last cleared and left empty.
@@ -249,13 +250,14 @@ func growing_in(chunk: Vector2i, tick: int) -> bool:
 ## lone trees are scattered through the open land in between.
 static func natural_cover(p: Vector3) -> Array:
 	if cover_source.is_valid():
-		return cover_source.call(p)
+		var c: Array = cover_source.call(p)
+		return c if c.size() >= 3 else [c[0], c[1], 0.0]
 	var wood := Resources.at(Resources.Kind.FOREST, p)
 	var grove := smoothstep(0.55, 0.8, Resources.value_noise(Vector2(p.x, p.z) / 140.0, 911))
 	var trees := clampf(0.025 + wood * 0.9 + grove * 0.22, 0.0, 0.95)
 	# Brush is thickest along woodland edges, thin under a closed canopy.
 	var brush := clampf(0.04 + 0.35 * 4.0 * trees * (1.0 - trees) + grove * 0.08, 0.0, 0.6)
-	return [trees, brush]
+	return [trees, brush, 0.0]
 
 
 ## The wild plants in a square of land at a moment in time. Each is a
@@ -275,6 +277,7 @@ func plants_in(area: Rect2, tick: int, shrubs := true) -> Array:
 	_layer(out, area, tick, Kind.TREE, TREE_SPACING, 31, lattice, built)
 	if shrubs:
 		_layer(out, area, tick, Kind.SHRUB, SHRUB_SPACING, 57, lattice, built)
+	_fencerows(out, area, lattice, built, shrubs)
 	return out
 
 
@@ -300,7 +303,8 @@ static func _blend(lattice: Dictionary, p: Vector3) -> Array:
 	var c: Array = lattice[i + Vector2i(0, 1)]
 	var d: Array = lattice[i + Vector2i(1, 1)]
 	return [lerpf(lerpf(a[0], b[0], t.x), lerpf(c[0], d[0], t.x), t.y),
-		lerpf(lerpf(a[1], b[1], t.x), lerpf(c[1], d[1], t.x), t.y)]
+		lerpf(lerpf(a[1], b[1], t.x), lerpf(c[1], d[1], t.x), t.y),
+		lerpf(lerpf(a[2], b[2], t.x), lerpf(c[2], d[2], t.x), t.y)]
 
 
 func _layer(out: Array, area: Rect2, tick: int, kind: int, spacing: float, salt: int, lattice: Dictionary, built: bool) -> void:
@@ -347,7 +351,7 @@ func plant_at(p: Vector3, i: Vector2i, kind: int, salt: int, tick: int, cover: A
 			if roll >= lerpf(Balance.WILD_REGROW_BRUSH, cover[1], grow) or years < Balance.WILD_BRUSH_YEARS * 0.5:
 				return {}
 			size *= 0.3 + 0.7 * brush_grow
-	elif roll >= (cover[0] if kind == Kind.TREE else cover[1]):
+	elif roll >= _natural_chance(p, kind, cover):
 		return {}
 	var pick := _h(i, salt + 4)
 	var sp: int
@@ -361,12 +365,95 @@ func plant_at(p: Vector3, i: Vector2i, kind: int, salt: int, tick: int, cover: A
 		# Southern Indiana woods: oak-hickory with maples, a few cedars.
 		sp = TreeField.Species.OAK if pick < 0.4 else (TreeField.Species.MAPLE if pick < 0.75 \
 			else (TreeField.Species.LOCUST if pick < 0.9 else TreeField.Species.SPRUCE))
+	return _dressed(p, kind, sp, size, _h(i, salt + 5))
+
+
+## How likely a spot of untouched land holds a tree or a shrub. Woods are
+## full; their edges break into clumps; brush in open grass and old fields
+## grows in thickets, not an even scatter; and nothing wild grows inside a
+## crop field (its fencerows are drawn separately).
+static func _natural_chance(p: Vector3, kind: int, cover: Array) -> float:
+	var crops := smoothstep(0.25, 0.55, float(cover[2]))
+	# Thickets about 20 m across, gathered in the rougher corners of the land
+	# (a draw, an old pasture) a few hundred metres apart.
+	var q := Vector2(p.x, p.z)
+	var clump := smoothstep(0.6, 0.82, Resources.value_noise(q / 24.0, 401 if kind == Kind.TREE else 433)) \
+		* smoothstep(0.45, 0.7, Resources.value_noise(q / 150.0, 419))
+	if kind == Kind.TREE:
+		var t: float = cover[0]
+		# Closed woods stay closed; thinner cover gathers into groves.
+		var chance := t if t >= 0.6 else lerpf(minf(t * clump * 7.0, 0.9), t, smoothstep(0.35, 0.6, t))
+		return chance * (1.0 - crops)
+	return minf(float(cover[1]) * clump * 7.0, 0.9) * (1.0 - crops)
+
+
+## A plant's look: summer leaf colour per species, nudged a little per plant.
+static func _dressed(p: Vector3, kind: int, sp: int, size: float, shade: float) -> Dictionary:
 	var tint: Color = TreeField.LEAF[sp]
 	if kind == Kind.SHRUB:
 		tint = Color("#4b5a22")  # sumac and dogwood: duller, yellower than yard trees
-	var shade := _h(i, salt + 5)
 	tint = tint.lightened(shade * 0.12) if shade < 0.5 else tint.darkened((shade - 0.5) * 0.25)
 	return {"pos": p, "kind": kind, "species": sp, "size": size, "tint": tint}
+
+
+## Fencerows: lines of trees and brush along old field edges. In southern
+## Indiana fields follow the Public Land Survey, so fencerows run north-south
+## and east-west on the eighth-mile lines (every 201 m), most of all on the
+## quarter-quarter lines every 402 m, with gaps where a gate or a tractor
+## crossing is. They stand between crop fields; inside woods and water they
+## don't show, and the city clears them like any other plant.
+const FENCE_GRID := 201.17
+const FENCE_STEP := 6.0
+
+
+func _fencerows(out: Array, area: Rect2, lattice: Dictionary, built: bool, shrubs: bool) -> void:
+	for axis in 2:
+		# axis 0: lines of constant x running north-south; 1: constant z.
+		var across_lo: float = area.position.x if axis == 0 else area.position.y
+		var across_hi: float = area.end.x if axis == 0 else area.end.y
+		var along_lo: float = area.position.y if axis == 0 else area.position.x
+		var along_hi: float = area.end.y if axis == 0 else area.end.x
+		for k in range(floori((across_lo - 3.0) / FENCE_GRID), floori((across_hi + 3.0) / FENCE_GRID) + 1):
+			for seg in range(floori(along_lo / FENCE_GRID), floori(along_hi / FENCE_GRID) + 1):
+				var line := Vector2i(k * 2 + axis, seg)
+				if _h(line, 801) >= (0.75 if k % 2 == 0 else 0.35):
+					continue
+				var n := int(FENCE_GRID / FENCE_STEP)
+				for j in n:
+					var id := Vector2i(line.x * 4096 + j, line.y)
+					# Gaps of about 30 m: gates, crossings, a dead tree long gone.
+					if _h(Vector2i(id.x / 5, id.y), 811) < 0.18:
+						continue
+					var along := seg * FENCE_GRID + (j + 0.5) * FENCE_STEP + (_h(id, 821) - 0.5) * 2.0
+					var off := k * FENCE_GRID + (_h(id, 823) - 0.5) * 3.0
+					var p := Vector3(off, 0.0, along) if axis == 0 else Vector3(along, 0.0, off)
+					if not area.has_point(Vector2(p.x, p.z)):
+						continue
+					var kind := Kind.TREE if _h(id, 827) < 0.4 else Kind.SHRUB
+					if kind == Kind.SHRUB and not shrubs:
+						continue
+					var cover := _blend(lattice, p)
+					# None in the water, and no line drawn through the woods.
+					if float(cover[0]) + float(cover[1]) < 0.01 or float(cover[0]) > 0.6:
+						continue
+					if built:
+						var c := cell_of(p)
+						if cleared.has(c) or _occupied.has(c):
+							continue
+						if kind == Kind.TREE:
+							var hit := false
+							for dx in range(-1, 2):
+								for dz in range(-1, 2):
+									hit = hit or _occupied.has(c + Vector2i(dx, dz))
+							if hit:
+								continue
+					var pick := _h(id, 829)
+					# Hackberry, osage orange and oak along the wire, and red cedar.
+					var sp: int = TreeField.Species.CRABAPPLE
+					if kind == Kind.TREE:
+						sp = TreeField.Species.OAK if pick < 0.3 else (TreeField.Species.LOCUST if pick < 0.6 \
+							else (TreeField.Species.SPRUCE if pick < 0.8 else TreeField.Species.MAPLE))
+					out.append(_dressed(p, kind, sp, 0.8 + 0.4 * _h(id, 831), _h(id, 833)))
 
 
 static func _h(i: Vector2i, salt: int) -> float:

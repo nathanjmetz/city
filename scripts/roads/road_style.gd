@@ -8,7 +8,7 @@ enum Type { STREET, AVENUE, BOULEVARD, HIGHWAY, RAMP, RING, RING2,
 	AVENUE_TURN, AVENUE_BIKE, AVENUE_DIVIDED, AVENUE_ONEWAY,
 	STRIP, PARKWAY,
 	FREEWAY2, FREEWAY4, DIVIDED_HWY, STATE_HWY,
-	RAMP2 }
+	RAMP2, AVENUE_BUS }
 
 ## The five road menus. Each variant names its menu with "group"; a type
 ## without one is the menu's own first road.
@@ -117,6 +117,12 @@ const TYPES := [
 	# Two-lane ramp: 8 ft right and 4 ft left shoulders.
 	{"name": "Ramp, 2 lanes", "short": "2 lanes", "group": Type.RAMP, "lanes": 2, "width": 10.8, "median": 0.0,
 		"oneway": true, "lots": false, "grade": 0.08, "mph": 35},
+
+	# Four lanes with the curb lane each way for buses only (MUTCD 3D
+	# preferential lanes; red paint per FHWA Interim Approval IA-22). Cars
+	# may cross into it to turn right at the next corner or reach a driveway.
+	{"name": "Avenue with bus lanes", "short": "Bus lanes", "group": Type.AVENUE, "lanes": 4, "width": 15.0,
+		"median": 0.0, "oneway": false, "lots": true, "grade": 0.10, "mph": 35, "bus": true},
 ]
 ## Raised concrete ring inside a roundabout that long trucks can ride over
 ## with their back wheels (FHWA: typically 10-15 ft).
@@ -181,6 +187,14 @@ static func is_freeway(type: int) -> bool:
 static func raised_median(type: int) -> bool:
 	var spec: Dictionary = TYPES[type]
 	return spec.median > 0.0 and not spec.get("turn", false) and not spec.get("rural", false)
+
+
+## The bus-only lane on each way of a road (its curb lane), or -1.
+static func bus_lane(type: int) -> int:
+	var spec: Dictionary = TYPES[type]
+	if not spec.get("bus", false):
+		return -1
+	return (spec.lanes if spec.oneway else spec.lanes / 2) - 1
 
 
 ## Width of the parking lane each side (0 without parking).

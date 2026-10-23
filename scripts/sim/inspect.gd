@@ -159,7 +159,8 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 		for key in sim.services.served:
 			if sim.services.served[key].get(u + "_linked", false):
 				reached += 1
-		rows.append(["This building serves", "%s homes" % CitySim.money_text(int(k.capacity))])
+		rows.append(["This building serves", "%s homes" % CitySim.money_text(
+			roundi(int(k.capacity) * sim.services.funding(id, Balance.POLICY_EFFECT)))])
 		rows.append(["Town %s in use" % u, "%s of %s homes" % [CitySim.money_text(use[0]), CitySim.money_text(use[1])]])
 		rows.append(["Lots it reaches by road", str(reached)])
 		if not linked:
@@ -183,13 +184,13 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 				homes += 1
 				if sim.services.served.get(key, {}).get(b.kind, false):
 					covered += 1
-		rows.append(["Reach by road", "%.1f miles" % (float(k.reach) / 1609.0)])
+		rows.append(["Reach by road", "%.1f miles" % (float(k.reach) * sim.services.funding(id, Balance.POLICY_EFFECT) / 1609.0)])
 		rows.append(["Homes covered", "%d of %d" % [covered, homes]])
 		if not linked:
 			problems.append("Not beside a road, so it can't respond.")
 		status = "Working: covering %d homes" % covered if ok else "Not working"
 		rows.append_array(sim.buses.school_rows(id))
-	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(int(k.upkeep))])
+	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(sim.services.upkeep_of(id))])
 	rows.append(["Built for", "$%s" % CitySim.money_text(int(k.cost))])
 	return {"title": k.name, "kind": "Utility" if k.has("utility") else "City service", "icon": k.icon,
 		"ok": ok and problems.is_empty(), "status": status, "rows": rows, "problems": problems}

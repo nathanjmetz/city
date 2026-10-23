@@ -77,9 +77,9 @@ var _cars := UiStyle.label("", 13, UiStyle.MUTED)
 var _demand_bars := {}
 var _money := UiStyle.label("", 14)
 var _net := UiStyle.label("", 13)
+## The Economy page (the bottom bar's Economy button) is open.
 var _budget_open := false
-var _budget_rows := {}   # key -> value Label
-var _tax_labels := {}    # zone -> rate Label
+var economy_page := EconomyPage.new()
 var _help := PanelContainer.new()
 var _top_bar: PanelContainer
 var _views_panel := PanelContainer.new()
@@ -113,6 +113,7 @@ func _ready() -> void:
 	_build_permits()
 	_info_panel.setup(sim, select_tool)
 	_root.add_child(_info_panel)
+	_build_economy()
 
 	road_tool.mode_changed.connect(func(_m): _sync())
 	road_tool.options_changed.connect(_sync)
@@ -200,8 +201,14 @@ func close_all() -> void:
 
 func _process(_delta: float) -> void:
 	_views_panel.position = Vector2(0, _top_bar.size.y)
-	# The info panel sits beside the Views column when that's open.
-	_info_panel.position = Vector2(_views_panel.size.x if _views_panel.visible else 0.0, _top_bar.size.y)
+	# The Economy page fills the left edge between the bars.
+	economy_page.position = Vector2(0, _top_bar.size.y)
+	economy_page.size = Vector2(EconomyPage.WIDTH, _root.size.y - _top_bar.size.y - _bottom.size.y)
+	# The info panel sits beside the Views column or Economy page when open.
+	var left := _views_panel.size.x if _views_panel.visible else 0.0
+	if economy_page.visible:
+		left = economy_page.size.x
+	_info_panel.position = Vector2(left, _top_bar.size.y)
 	var t := sim.clock()
 	var hour: int = t.hour % 12
 	# A game day is a month (see Seasons), so the date is month and year.
@@ -424,7 +431,6 @@ func _build_bottom_bar() -> void:
 	_drawers["services"] = _services_drawer()
 	_drawers["parks"] = _parks_drawer()
 	_drawers["industry"] = _industry_drawer()
-	_drawers["budget"] = _budget_drawer()
 	for key in _drawers:
 		_drawers[key].add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 		holder.add_child(_drawers[key])
@@ -439,7 +445,7 @@ func _build_bottom_bar() -> void:
 	# Traffic lives under Roads and Farming under Industry, as in CS2.
 	for entry in [["roads", "Roads"], ["zones", "Zoning"], ["industry", "Industry"], ["services", "Services"], ["parks", "Parks"],
 			["bulldoze", "Bulldoze"], ["move", "Move It"],
-			["budget", "Budget"]]:
+			["budget", "Economy"]]:
 		var b := _category_button(entry[0], entry[1])
 		b.pressed.connect(func(): _open(entry[0]))
 		row.add_child(b)
@@ -612,6 +618,8 @@ static func _road_tip(t: int) -> String:
 		bits.append("parking")
 	if spec.get("bike", false):
 		bits.append("bike lanes")
+	if spec.get("bus", false):
+		bits.append("curb lanes for buses only")
 	if spec.get("surface", "asphalt") != "asphalt":
 		bits.append(spec.surface)
 	if not spec.lots:
@@ -817,98 +825,6 @@ func _fill_traffic_row(row: HBoxContainer) -> void:
 		_traffic_cards[m] = b
 
 
-## Taxes and running costs per month, with a rate to set for each zone.
-func _budget_drawer() -> PanelContainer:
-	var drawer := PanelContainer.new()
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 18)
-	drawer.add_child(row)
-	var income := VBoxContainer.new()
-	income.add_theme_constant_override("separation", 2)
-	row.add_child(income)
-	income.add_child(UiStyle.label("PROPERTY TAX  ·  RATE PER YEAR, INCOME PER MONTH", 10, UiStyle.MUTED))
-	for entry in [[ZoneMap.Zone.RESIDENTIAL, "homes", "Homes"], [ZoneMap.Zone.COMMERCIAL, "shops", "Shops"],
-			[ZoneMap.Zone.INDUSTRIAL, "industry", "Industry"]]:
-		var z: int = entry[0]
-		var line := HBoxContainer.new()
-		line.add_theme_constant_override("separation", 6)
-		income.add_child(line)
-		var ic := Icon.new(entry[1], 18)
-		ic.accent = ZoneMap.COLORS[z]
-		line.add_child(ic)
-		var title := UiStyle.label(entry[2], 13)
-		title.custom_minimum_size.x = 64
-		line.add_child(title)
-		for step in [-0.1, 0.1]:
-			var b := Button.new()
-			b.text = "–" if step < 0 else "+"
-			b.focus_mode = Control.FOCUS_NONE
-			b.custom_minimum_size = Vector2(24, 22)
-			b.tooltip_text = "Lower taxes bring more demand" if step < 0 else "Higher taxes bring in more but cut demand"
-			b.pressed.connect(func(): _change_tax(z, step))
-			line.add_child(b)
-			if step < 0:
-				var rate := UiStyle.label("", 13)
-				rate.custom_minimum_size.x = 40
-				rate.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-				line.add_child(rate)
-				_tax_labels[z] = rate
-		_budget_rows[z] = _value_label(line, 84)
-	row.add_child(VSeparator.new())
-	var costs := VBoxContainer.new()
-	costs.add_theme_constant_override("separation", 2)
-	row.add_child(costs)
-	costs.add_child(UiStyle.label("COSTS PER MONTH", 10, UiStyle.MUTED))
-	var upkeep := HBoxContainer.new()
-	upkeep.add_theme_constant_override("separation", 6)
-	costs.add_child(upkeep)
-	upkeep.add_child(Icon.new("roads", 18))
-	upkeep.add_child(UiStyle.label("Road upkeep", 13))
-	_budget_rows["upkeep"] = _value_label(upkeep, 84)
-	var serv := HBoxContainer.new()
-	serv.add_theme_constant_override("separation", 6)
-	costs.add_child(serv)
-	serv.add_child(Icon.new("services", 18))
-	serv.add_child(UiStyle.label("Services", 13))
-	_budget_rows["services"] = _value_label(serv, 112)
-	var schools := HBoxContainer.new()
-	schools.add_theme_constant_override("separation", 6)
-	costs.add_child(schools)
-	schools.add_child(Icon.new("school", 18))
-	schools.add_child(UiStyle.label("Schools and colleges", 13))
-	_budget_rows["education"] = _value_label(schools, 40)
-	var fees := HBoxContainer.new()
-	fees.add_theme_constant_override("separation", 6)
-	income.add_child(fees)
-	fees.add_child(Icon.new("water", 18))
-	var fee_title := UiStyle.label("Water and sewer bills", 13)
-	fee_title.custom_minimum_size.x = 64 + 24 * 2 + 40 + 18
-	fees.add_child(fee_title)
-	_budget_rows["fees"] = _value_label(fees, 84)
-	var net := HBoxContainer.new()
-	net.add_theme_constant_override("separation", 6)
-	costs.add_child(net)
-	net.add_child(UiStyle.label("Balance", 13))
-	_budget_rows["net"] = _value_label(net, 132)
-	costs.add_child(UiStyle.label("One day settles one month's budget.", 11, UiStyle.MUTED))
-	_budget_rows["grant"] = UiStyle.label("", 11, UiStyle.MUTED)
-	costs.add_child(_budget_rows["grant"])
-	return drawer
-
-
-func _value_label(parent: Container, width: int) -> Label:
-	var l := UiStyle.label("", 13)
-	l.custom_minimum_size.x = width
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	parent.add_child(l)
-	return l
-
-
-func _change_tax(zone: int, step: float) -> void:
-	sim.apply({"type": "set_tax", "zone": zone, "rate": sim.economy.tax[zone] + step})
-	_update_stats()
-
-
 ## A titled group of cards inside a drawer; returns the row to fill.
 func _section(parent: Container, title: String) -> HBoxContainer:
 	var col := VBoxContainer.new()
@@ -1002,7 +918,13 @@ func _open(cat: String) -> void:
 			traffic_tool.set_mode(TrafficTool.Mode.NONE)
 			park_tool.set_kind("")
 			move_tool.set_active(false)
+			# Docked on the left, like the Views column and the info panel.
+			_show_view("")
+			_views_panel.visible = false
+			_views_button.set_pressed_no_signal(false)
+			select_tool.select({})
 			_budget_open = true
+			economy_page.refresh()
 			_sync()
 
 
@@ -1039,6 +961,7 @@ func _sync() -> void:
 	else:
 		_category = "budget" if _budget_open else ""
 	_budget_open = _category == "budget"
+	economy_page.visible = _budget_open
 	for key in _category_buttons:
 		_category_buttons[key].set_pressed_no_signal(key == _category)
 	for key in _drawers:
@@ -1110,16 +1033,6 @@ func _update_stats() -> void:
 	var net := e.monthly_net()
 	_net.text = "%s$%s/mo" % ["+" if net >= 0 else "–", _thousands(absi(net))]
 	_net.add_theme_color_override("font_color", GOOD if net >= 0 else BAD)
-	for z in _tax_labels:
-		_tax_labels[z].text = "%.1f%%" % e.tax[z]
-		_budget_rows[z].text = "$" + _thousands(int(e.budget.income.get(z, 0)))
-	_budget_rows.upkeep.text = "–$" + _thousands(int(e.budget.upkeep))
-	_budget_rows.services.text = "–$" + _thousands(int(e.budget.services))
-	_budget_rows.education.text = "–$" + _thousands(int(e.budget.get("education", 0)))
-	_budget_rows.fees.text = "$" + _thousands(int(e.budget.fees))
-	_budget_rows.grant.text = "" if e.milestone >= Economy.MILESTONES.size() else \
-		"Next grant: $%s at %s people" % [_thousands(Economy.MILESTONES[e.milestone][1]),
-		_thousands(Economy.MILESTONES[e.milestone][0])]
 	var unserved := sim.unserved_count()
 	# A short chip, like CS2's problem counter; the full story is in its tooltip.
 	var short := sim.utility_summary()
@@ -1130,8 +1043,21 @@ func _update_stats() -> void:
 			"%d buildings without power or water: people are leaving" % unserved
 	_warning.text = ("⚠ " + short) if short != "" else ""
 	_warning.tooltip_text = full + ". Click a lot or building to see what it lacks." if full != "" else ""
-	_budget_rows.net.text = "%s$%s / month" % ["+" if net >= 0 else "–", _thousands(absi(net))]
-	_budget_rows.net.add_theme_color_override("font_color", GOOD if net >= 0 else BAD)
+
+
+# --- Economy page (the bottom bar's Economy button) ------------------------
+
+func _build_economy() -> void:
+	economy_page.setup(sim)
+	_root.add_child(economy_page)
+	economy_page.closed.connect(func():
+		_budget_open = false
+		_sync())
+	_info_panel.open_economy.connect(func():
+		if not _budget_open:
+			var sel := select_tool.selection.duplicate()
+			_open("budget")
+			select_tool.select(sel))
 
 
 # --- Advisor (from the top bar) --------------------------------------------

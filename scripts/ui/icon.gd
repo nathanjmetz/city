@@ -501,6 +501,9 @@ func _road_type(P: Callable, w: float, type: int) -> void:
 		for i in range(1, spec.lanes / 2):
 			_dash(P, 0.5 - inner - lane * i, color, w * 0.4)
 			_dash(P, 0.5 + inner + lane * i, color, w * 0.4)
+	if spec.get("bus", false):
+		for x0 in [0.5 - edge, 0.5 + edge - lane]:
+			_poly([P.call(x0, 0.05), P.call(x0 + lane, 0.05), P.call(x0 + lane, 0.95), P.call(x0, 0.95)], Color(0.75, 0.22, 0.18))
 	if spec.get("bike", false) or (rural and not RoadStyle.is_freeway(type)):
 		for x in [0.5 - edge, 0.5 + edge]:
 			draw_line(P.call(x, 0.05), P.call(x, 0.95), color, w * 0.35)

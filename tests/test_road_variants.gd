@@ -12,7 +12,7 @@ func _init() -> void:
 		_check(v[0] == g and v.size() >= 2, "%s menu starts with itself and has variants %s" % [RoadStyle.TYPES[g].name, v])
 
 	var mats := {}
-	for key in ["asphalt", "curb", "walk", "median", "yellow", "white", "gravel", "concrete"]:
+	for key in ["asphalt", "curb", "walk", "median", "yellow", "white", "gravel", "concrete", "bus"]:
 		mats[key] = StandardMaterial3D.new()
 	var line := PackedVector3Array([Vector3(0, 0, 0), Vector3(0, 0, -60), Vector3(0, 0, -120)])
 	for t in RoadStyle.TYPES.size():
@@ -34,6 +34,12 @@ func _init() -> void:
 		var expect: int = spec.lanes if spec.oneway else spec.lanes / 2
 		_check(offs.size() == expect, "%s: %d lanes each way" % [spec.name, expect])
 		_check(RoadMesh.street(line, t, mats).get_surface_count() > 0, "%s draws" % spec.name)
+
+	var bus_mesh := RoadMesh.street(line, RoadStyle.Type.AVENUE_BUS, mats)
+	var red := false
+	for i in bus_mesh.get_surface_count():
+		red = red or bus_mesh.surface_get_material(i) == mats.bus
+	_check(red, "bus lanes are painted red")
 
 	# Each variant builds, drives and survives a save.
 	var sim := CitySim.new()
@@ -77,6 +83,29 @@ func _init() -> void:
 	net.build_road(Vector3(0, 0, 0), Vector3(100, 0, 10), Vector3(200, 0, 60), RoadStyle.Type.RAMP2)
 	var merges := RampMerge.merges(net)
 	_check(merges.size() == 1 and RampMerge.ramp_cut(merges[0]) > 0.0, "2-lane ramp merges with a 2-lane freeway")
+
+	# Bus lanes: a car leaves the curb lane and keeps out of it mid-block;
+	# a bus may use it.
+	var b2 := CitySim.new()
+	b2.economy.money = 1.0e9
+	b2.apply({"type": "build_road", "start": [-700, 0], "ctrl": [0, 0], "end": [700, 0], "road": RoadStyle.Type.AVENUE_BUS})
+	b2.tick()
+	b2.traffic.dispatch({"ref": "home", "pos": [-680, 20]}, {"ref": "work", "pos": [680, 20]}, "commute")
+	b2.traffic.dispatch({"ref": "bus:1", "pos": [-660, 20]}, {"ref": "bus:1", "pos": [660, 20]}, "transit")
+	var bus_lane := RoadStyle.bus_lane(RoadStyle.Type.AVENUE_BUS)
+	var samples := {"commute": [0, 0], "transit": [0, 0]}
+	for i in 2500:
+		b2.tick()
+		for car in b2.traffic.cars:
+			var w: Dictionary = b2.traffic.ways[car.route[car.leg]]
+			var ds: float = car.end_d - car.d if car.leg == car.route.size() - 1 else w.s1 - car.d
+			if car.d > 200.0 and ds > 120.0 and samples.has(car.purpose):
+				samples[car.purpose][0] += 1
+				if car.lane == bus_lane:
+					samples[car.purpose][1] += 1
+	_check(samples.commute[0] > 50 and samples.commute[1] == 0,
+		"cars keep out of the bus lane mid-block (%d of %d samples in it)" % [samples.commute[1], samples.commute[0]])
+	_check(samples.transit[0] > 50, "the bus drives the avenue (%d samples)" % samples.transit[0])
 
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)

@@ -96,10 +96,12 @@ func _init() -> void:
 	sim.update_stats()
 	_check(sim.stats.jobs > jobs0, "office and teaching jobs count as jobs")
 
-	# Inspect shows its head and a funding lever.
-	var d := Inspect.describe(sim, Inspect.pick(sim, site[0]))
+	# Inspect shows its head; its funding lever is the Funding slider below.
+	var sel := Inspect.pick(sim, site[0])
+	var d := Inspect.describe(sim, sel)
 	_check(d.get("title", "") == "High school", "clicking the campus inspects it")
-	_check(not d.get("actions", []).is_empty(), "the panel offers funding buttons")
+	_check(HubSliders.takes(sim, sel) and sim.policies.step("funding", "schools", "campus:%d" % id) == 4,
+		"the panel has Funding and Growth sliders, and funding is its Funding step")
 
 	# The player can clear one block; the head won't buy it straight back.
 	if not u.blocks.is_empty():
