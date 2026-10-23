@@ -19,6 +19,7 @@ var _trees := TreeField.new()  # street trees down planted medians
 var _mats := {
 	"asphalt": Surfaces.asphalt(),
 	"curb": Surfaces.concrete(RoadStyle.CURB_COLOR),
+	"curb_face": Surfaces.concrete(RoadStyle.CURB_COLOR.darkened(0.45)),
 	"walk": Surfaces.concrete(RoadStyle.SIDEWALK_COLOR, true),
 	"median": Ground.grass(),
 	"yellow": Surfaces.paint(RoadStyle.MARKING_YELLOW),
