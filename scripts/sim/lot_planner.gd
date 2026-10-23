@@ -30,6 +30,16 @@ const POLE := 6.0
 const FLAG_MIN := 24.0
 ## How deep a flag lot's back yard can go.
 const REAR_CAP := 40.0
+## Back lanes (US subdivision practice): homes and shops front a paved
+## street, and an alley or a gravel lane behind them serves only the backs
+## of the lots (garages, trash, utilities). So a paved street's lots run
+## right back to the lane, and a gravel road gets lots of its own only
+## beyond this far (a deep town lot, about 150 ft) from any paved street.
+const REAR_LANE_DEPTH := 45.0
+## How each road's land claim works: a paved street claims land halfway to
+## the next; a gravel road gives way to a paved street; an alley claims
+## only its own right of way.
+enum Rank { LANE, GRAVEL, PAVED }
 
 ## Real lot sizes in metres (zone ints match ZoneMap.Zone: 1 homes, 2 shops,
 ## 3 industry). w: width range along the street; cap: usual depth;
@@ -380,12 +390,13 @@ func update(network: RoadNetwork) -> void:
 		_sig[id] = sig
 		var pts := _sample(network, id)
 		var half := RoadStyle.right_of_way_half(network.segments[id].type)
+		var rank := _rank(network.segments[id].type)
 		var pieces := []
 		var box := Rect2(Vector2(pts[0].x, pts[0].z), Vector2.ZERO)
 		for i in range(pts.size() - 1):
 			var a := Vector2(pts[i].x, pts[i].z)
 			var b := Vector2(pts[i + 1].x, pts[i + 1].z)
-			pieces.append([a, b, half, Rect2(a, Vector2.ZERO).expand(b), id])
+			pieces.append([a, b, half, Rect2(a, Vector2.ZERO).expand(b), id, rank])
 			box = box.expand(b)
 		_pieces[id] = pieces
 		_seg_box[id] = box
@@ -548,7 +559,7 @@ func _resurvey(s: Dictionary, hits: Array) -> void:
 	var moved := false
 	for i in raw.size():
 		var r: Array = raw[i]
-		var near := 2.0 * maxf(r[3], 0.0) + _kmax_() + 1.0
+		var near := 2.0 * maxf(r[3], 0.0) + _kmax_() + 1.0 + (REAR_LANE_DEPTH if _rank(s.type) == Rank.GRAVEL else 0.0)
 		for b in hits:
 			if _rect_dist(b, r[1]) <= near:
 				_fresh_claims(s)
@@ -663,6 +674,7 @@ static func _converged(raw: Array) -> Array:
 ## (that road's half right-of-way, or -1 when it ran to REACH), claiming road
 ## id (or -1)].
 static func _ray(s: Dictionary, a: float) -> Array:
+	var rank := _rank(s.type)
 	var at := _on_curve(s, a)
 	var dir: Vector3 = at[1]
 	var n: Vector2 = Vector2(-dir.z, dir.x) * s.side
@@ -674,17 +686,23 @@ static func _ray(s: Dictionary, a: float) -> Array:
 	var claim: Array = s.claim
 	var claim_d: Array = s.claim_d
 	var off: float = f.distance_to(s.mid)
+	var lead := REAR_LANE_DEPTH if rank == Rank.GRAVEL else 0.0
 	for i in claim.size():
 		# The rest are at least this far from f: none can claim it sooner.
-		if claim_d[i] - off > best * 2.0 + _kmax_() + 0.25:
+		if claim_d[i] - off > best * 2.0 + _kmax_() + lead + 0.25:
 			break
 		var p: Array = claim[i]
 		var box: Rect2 = p[3]
 		var k: float = p[2] + 0.25
+		# A gravel road's land starts a full lot back from a paved street.
+		if p[5] == Rank.PAVED:
+			k += lead
 		# Too far away to reach this line within `best`.
 		if _rect_dist(box, f) > best * 2.0 + k:
 			continue
-		var t := _first_claim(f, n, p[0], p[1], k)
+		# A back lane (an alley, or a gravel lane behind a paved street's
+		# lots) stops the lots only at its edge.
+		var t := _first_touch(f, n, p[0], p[1], k) if p[5] < rank else _first_claim(f, n, p[0], p[1], k)
 		if t < 0.0:
 			return [a, f, n, -1.0, p[2], p[4]]
 		if t < best:
@@ -765,6 +783,46 @@ static func _first_claim(f: Vector2, n: Vector2, a: Vector2, b: Vector2, k: floa
 		if Geometry2D.get_closest_point_to_segment(p, a, b).distance_to(p) <= t + k + 0.01:
 			return t
 	return INF
+
+
+## First distance t along the line f + n·t that comes within k of the road
+## piece a-b (its right of way). -1 if f is inside it; INF if never.
+static func _first_touch(f: Vector2, n: Vector2, a: Vector2, b: Vector2, k: float) -> float:
+	var d0 := Geometry2D.get_closest_point_to_segment(f, a, b).distance_to(f)
+	if d0 <= k - 0.3:
+		return -1.0
+	if d0 <= k:
+		return 0.0
+	var cands := []
+	var d := b - a
+	var l := d.length()
+	if l > 0.0001:
+		var m := Vector2(-d.y, d.x) / l
+		var s0 := m.dot(f - a)
+		var s1 := m.dot(n)
+		if absf(s1) > 0.000001:
+			for sg in [1.0, -1.0]:
+				cands.append((sg * k - s0) / s1)
+	for e in [a, b]:
+		var w: Vector2 = f - e
+		var h := n.dot(w)
+		var disc := h * h - w.length_squared() + k * k
+		if disc >= 0.0:
+			cands.append(-h - sqrt(disc))
+	cands.sort()
+	for t in cands:
+		if t < 0.0 or t > REACH:
+			continue
+		var p: Vector2 = f + n * t
+		if Geometry2D.get_closest_point_to_segment(p, a, b).distance_to(p) <= k + 0.01:
+			return t
+	return INF
+
+
+static func _rank(type: int) -> int:
+	if type == RoadStyle.Type.ALLEY:
+		return Rank.LANE
+	return Rank.GRAVEL if RoadStyle.TYPES[type].get("surface", "") == "gravel" else Rank.PAVED
 
 
 static func _rect_dist(r: Rect2, p: Vector2) -> float:

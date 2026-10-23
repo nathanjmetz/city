@@ -137,6 +137,33 @@ func _init() -> void:
 		curve.apply({"type": "zone_frontage", "seg": curve.network.segments.keys()[0], "side": side, "zone": ZoneMap.Zone.RESIDENTIAL})
 	_check(curve.lots.size() >= 20, "lots along a curve (%d)" % curve.lots.size())
 	_check(_overlaps(curve) == 0, "curve lots don't overlap")
+	# Back lanes: homes front the paved street and their lots run back to an
+	# alley or a gravel lane behind; nothing fronts the lane on that side.
+	for lane in [RoadStyle.Type.ALLEY, RoadStyle.Type.GRAVEL]:
+		var town := CitySim.new()
+		town.simulate_traffic = false
+		town.apply({"type": "build_road", "start": [0, 0], "ctrl": [150, 0], "end": [300, 0]})
+		town.apply({"type": "build_road", "start": [0, 70], "ctrl": [150, 70], "end": [300, 70], "road": lane})
+		for id in town.network.segments:
+			for side in [-1, 1]:
+				town.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": ZoneMap.Zone.RESIDENTIAL})
+		town.tick()
+		var fronting := 0
+		var shallow := 0
+		var between := 0
+		for k in town.lots:
+			var l: Dictionary = town.lots[k]
+			if l.pos.z <= 0.0 or l.pos.z >= 70.0:
+				continue
+			between += 1
+			if town.network.segments[l.seg].type == lane:
+				fronting += 1
+			elif l.depth < 50.0:
+				shallow += 1
+		var name: String = RoadStyle.TYPES[lane].name
+		_check(between >= 10 and fronting == 0, "no homes front the %s behind a street (%d of %d)" % [name, fronting, between])
+		_check(shallow == 0, "street lots run back to the %s (%d short)" % [name, shallow])
+		_check(_overlaps(town) == 0, "lots by the %s don't overlap" % name)
 	if failed:
 		print("SOME TESTS FAILED")
 	else:
