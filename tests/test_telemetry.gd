@@ -165,6 +165,7 @@ func _test_insights() -> void:
 			events.append({"k": "perf", "fps": 50.0, "worst_ms": 40, "hitches": 0, "scene": "main",
 				"free_mb": 180, "vram_mb": 2900})
 			events.append({"k": "crashed", "t": 80.0, "replay": [[62.4, "x", "build_road", true, "road=0"]]})
+			events.append({"k": "stall", "ms": 3364000, "scene": "menu", "ctx": "", "stages": {}})
 			events.append({"k": "stall", "ms": 4350, "scene": "main", "ctx": "Grid", "stages": {"frame.roads": 4200.0}})
 		if who != "Cy":
 			events.append({"k": "error", "sig": "x:1 boom", "file": "res://scripts/traffic/traffic_sim.gd", "line": 1,
