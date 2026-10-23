@@ -1590,6 +1590,35 @@ func _spans(t: Dictionary, length: float, reach: float) -> Array:
 	return out
 
 
+## The next grade crossing ahead of a train's head on its route, within
+## `look` metres: {index (into crossings), dist (m)}, or {}. The engineer
+## blows for it 15 to 20 seconds out (FRA, 49 CFR 222.21).
+func next_crossing(tid: int, look := 800.0) -> Dictionary:
+	var t: Dictionary = trains[tid]
+	if crossings.is_empty() or t.route.is_empty() or t.state != "run":
+		return {}
+	var ahead := 0.0
+	for i in t.route.size():
+		var pid: int = t.route[i][0]
+		var dir: int = t.route[i][1]
+		var from_s: float = t.s if i == 0 else (0.0 if dir > 0 else _length(pid))
+		var best := INF
+		var found := -1
+		for k in crossings.size():
+			if crossings[k].piece != pid:
+				continue
+			var d: float = (float(crossings[k].s) - from_s) * dir
+			if d >= 0.0 and d < best:
+				best = d
+				found = k
+		if found != -1:
+			return {"index": found, "dist": ahead + best} if ahead + best <= look else {}
+		ahead += (_length(pid) - from_s) if dir > 0 else from_s
+		if ahead > look:
+			break
+	return {}
+
+
 ## True if a car must stop for a crossing at this point (gates down).
 func gate_down_near(p: Vector3, radius := 12.0) -> bool:
 	for c in crossings:
