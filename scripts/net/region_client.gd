@@ -134,6 +134,40 @@ func leave() -> void:
 	_join_retry = -1.0
 
 
+## The region runs another version of the game. When it's newer, the
+## browser loads the new game once by itself (the invite in the address
+## brings the player back) and the desktop app updates; when it's older,
+## the host's computer updates itself shortly (a game already playing
+## keeps trying).
+func _version_mismatch(theirs: int) -> void:
+	var newer := theirs == 0 or theirs > RegionServer.PROTOCOL  # old servers don't say
+	if newer and OS.has_feature("web"):
+		var tried = JavaScriptBridge.eval("sessionStorage.getItem('neighbors_reload') || ''", true)
+		if str(tried) != str(theirs):
+			JavaScriptBridge.eval("sessionStorage.setItem('neighbors_reload', '%d'); location.reload()" % theirs)
+			return
+	var updater := GameUpdater.current
+	if newer and updater and updater.active:
+		# The desktop app fetches the newest game data and restarts.
+		updater.on_version_mismatch()
+		if not reconnecting:
+			leave()
+			failed.emit("This region runs a newer version. Updating...")
+		return
+	if reconnecting:
+		_peer.close()
+		_peer = null
+		_connected = false
+		return
+	leave()
+	if theirs == 0:
+		failed.emit("This page and the region's computer are on different versions of the game. Refresh once; if this keeps showing, the host's computer needs updating.")
+	elif newer:
+		failed.emit("This region runs a newer version of the game. Refresh the page to get it.")
+	else:
+		failed.emit("The host's computer is still on the last version. It updates by itself within a few minutes: try again then.")
+
+
 ## Sends what's queued before the connection closes: the town going out
 ## on leaving is a few MB, and the game may be about to quit. The browser
 ## sends on its own, so there it can't be waited for (or needn't be).
@@ -466,18 +500,9 @@ func _handle(msg: Dictionary) -> void:
 			failed.emit("You're playing this town on another computer now. Play here again to bring it back.")
 		"reject":
 			var reason := str(msg.get("reason", "The region turned you away."))
-			if reconnecting and "version" in reason and OS.has_feature("web"):
-				# The host's computer updated to a new version of the game:
-				# load it (the invite link in the address bar brings you back).
-				JavaScriptBridge.eval("location.reload()")
+			if "version" in reason:
+				_version_mismatch(int(msg.get("v", 0)))
 				return
-			var updater := GameUpdater.current
-			if "version" in reason and updater and updater.active:
-				# The desktop app fetches the newest game data and restarts.
-				updater.on_version_mismatch()
-				if reconnecting:
-					return
-				reason = "This region runs a newer version. Updating..."
 			if reconnecting:
 				# Say the server still holds the old connection: try again soon.
 				_peer.close()
@@ -485,10 +510,6 @@ func _handle(msg: Dictionary) -> void:
 				_connected = false
 				return
 			leave()
-			if "version" in reason:
-				# Old servers say "Refresh to update", which can't help when
-				# the page is the newer one.
-				reason = "This page and the region's computer are on different versions of the game. Refresh once; if this keeps showing, the host's computer needs updating."
 			failed.emit(reason)
 		"region":
 			var t0 := Time.get_ticks_usec()

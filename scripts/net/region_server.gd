@@ -255,9 +255,14 @@ func _handle(from: int, msg: Dictionary) -> void:
 func _hello(from: int, msg: Dictionary) -> void:
 	var v := int(msg.get("v", 0))
 	if v < MIN_PROTOCOL or PROTOCOL < int(msg.get("min", v)):
-		_reject(from, "This region runs a different version of the game. Refresh to update.")
+		# Says its own version, so the game can tell which side is behind.
+		_send(from, {"t": "reject", "v": PROTOCOL, "reason": "This region runs a different version of the game."})
+		_log("Turned away peer %d: version %d, the region's is %d" % [from, v, PROTOCOL])
 		return
-	if str(msg.get("code", "")).to_upper().replace("-", "").strip_edges() != invite_code:
+	# A device that has played here before comes in by its sign-in, even
+	# with an old or mistyped code (the code may have changed since).
+	if str(msg.get("code", "")).to_upper().replace("-", "").strip_edges() != invite_code \
+			and _account_by_token(str(msg.get("token", ""))).is_empty():
 		_log("%s sent invite code \"%s\"" % [str(msg.get("name", "?")), str(msg.get("code", "")).left(16)])
 		_reject(from, "That invite code doesn't match this region.")
 		return
