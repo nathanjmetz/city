@@ -539,8 +539,62 @@ func _init() -> void:
 	var bs: float = fl.traffic._fshare.get(bw, 1.0)
 	_check(absf(bs - 1.0 / (1.0 + 0.15 * pow(1.5, 4.0))) < 0.05, "BPR: 1.5 times capacity drives at %.2f of the limit" % bs)
 
+	# Multiplayer: a player joins from a save while the host keeps running.
+	# The host's city and the joiner's copy must drive tick for tick the same
+	# for a long while (cars pulling out of their spots, walkers, parking).
+	var host := CitySim.new()
+	host.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0], "road": RoadStyle.Type.AVENUE})
+	host.apply({"type": "build_road", "start": [0, -300], "ctrl": [0, 0], "end": [0, 300], "road": RoadStyle.Type.AVENUE})
+	for k in range(-280, 280, 10):
+		if absi(k) < 30:
+			continue
+		for side in [-20, 20]:
+			host.apply({"type": "paint_zone", "center": [k, side], "radius": 11, "zone": ZoneMap.Zone.RESIDENTIAL})
+			host.apply({"type": "paint_zone", "center": [side, k], "radius": 11,
+				"zone": ZoneMap.Zone.COMMERCIAL if k < 0 else ZoneMap.Zone.INDUSTRIAL})
+	for i in 3000:
+		host.tick()
+	var joiner := CitySim.new()
+	joiner.from_dict(JSON.parse_string(JSON.stringify(host.to_dict())))
+	var apart := -1
+	for i in 2000:
+		host.tick()
+		joiner.tick()
+		if i % 50 == 49 and _canon_traffic(host) != _canon_traffic(joiner):
+			apart = i + 1
+			break
+	_check(apart < 0 and not host.traffic.cars.is_empty(),
+		"a copy loaded from a save drives the same as the city it came from, 2,000 ticks on" + ("" if apart < 0 else " (apart at tick %d)" % apart))
+
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
+
+
+## Traffic's saved state as values only: the same whether a dictionary was
+## built in play or loaded (key order, String or StringName keys).
+## (Compared with ==, so 0.0 and -0.0 count the same.)
+func _canon_traffic(sim: CitySim) -> Array:
+	return _canon(Marshalls.base64_to_variant(str(sim.traffic.to_dict().bin)))
+
+
+func _canon(v):
+	if v is Dictionary:
+		var keys := []
+		for k in v:
+			keys.append(str(k))
+		keys.sort()
+		var by := {}
+		for k in v:
+			by[str(k)] = v[k]
+		var out := []
+		for k in keys:
+			out.append([k, _canon(by[k])])
+		return out
+	if v is Array:
+		return v.map(func(x): return _canon(x))
+	if v is StringName:
+		return str(v)
+	return v
 
 
 func _l_town() -> CitySim:
@@ -638,3 +692,4 @@ func _check(ok: bool, what: String) -> void:
 	print(("PASS " if ok else "FAIL ") + what)
 	if not ok:
 		_failed = true
+
