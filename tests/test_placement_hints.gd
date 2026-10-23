@@ -36,6 +36,13 @@ func _init() -> void:
 
 	# The wind is the real one: from the southwest, so smoke drifts northeast.
 	_check(Pollution.wind_words() == ["southwest", "northeast"], "wind words (%s)" % [Pollution.wind_words()])
+	# Services: green well within reach, yellow in the last quarter, the
+	# ones already built found by kind.
+	_check(ServiceView.edge_color(500.0, 2400.0) == ServiceView.COVER_COLOR, "well inside reach is green")
+	_check(ServiceView.edge_color(2200.0, 2400.0) == ServiceView.EDGE_COLOR, "the edge of reach is yellow")
+	var store := {1: {"kind": 2, "pos": Vector3(1, 0, 1)}, 2: {"kind": 3, "pos": Vector3(2, 0, 2)}, 3: {"kind": 2, "pos": Vector3(3, 0, 3)}}
+	_check(PlacementHints.built_of(store, [2]) == [Vector3(1, 0, 1), Vector3(3, 0, 3)], "finds the ones of its kind")
+	_check(PlacementHints.built_of(store).size() == 3, "or all of them")
 	hints.free()
 	print("FAILED" if _failed else "ALL PASSED")
 	quit(1 if _failed else 0)

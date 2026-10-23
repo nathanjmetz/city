@@ -82,12 +82,26 @@ var _fresh := {}
 var _homes_ready := false
 var _index_age := INF
 var _time := 0.0
+## The card's text from the tool, and the line about what's already built.
+var _base := ""
+var _marks_line := ""
+var _mark_wait := 0.0
+var _beacons := MultiMeshInstance3D.new()
+var _halos := MultiMeshInstance3D.new()
+var _mark_at := []
 
 
-func setup(s: CitySim, camera: CityCamera, wanted: Callable) -> void:
+## Returns what the tool in hand would build more of: {} for nothing, or
+## {"what": "police stations", "at": [Vector3]} for the ones already built,
+## which light up on the map.
+var marks := Callable()
+
+
+func setup(s: CitySim, camera: CityCamera, wanted: Callable, built := Callable()) -> void:
 	sim = s
 	cam = camera
 	want = wanted
+	marks = built
 
 
 func _ready() -> void:
@@ -112,7 +126,13 @@ func _ready() -> void:
 	_plume_mat.no_depth_test = true
 	_plume_mat.disable_fog = true
 	_plume.material_override = _plume_mat
-	for mi in [_plume, _rings, _arrows]:
+	for entry in [[_beacons, _beacon_mesh()], [_halos, _halo_mesh()]]:
+		var bm := MultiMesh.new()
+		bm.transform_format = MultiMesh.TRANSFORM_3D
+		bm.mesh = entry[1]
+		entry[0].multimesh = bm
+		entry[0].material_override = line_mat
+	for mi in [_plume, _rings, _arrows, _beacons, _halos]:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mi.visible = false
 		add_child(mi)
@@ -131,14 +151,24 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	_time += delta
 	var w: Dictionary = want.call() if want.is_valid() else {}
 	var key := str(w)
 	if key != _key:
 		_key = key
 		_use(w)
+	_mark_wait -= delta
+	if _mark_wait <= 0.0:
+		_mark_wait = 0.25
+		_update_marks()
+	if not _mark_at.is_empty():
+		_place_marks()
 	if w.is_empty():
+		_card.visible = _marks_line != ""
+		if _card.visible:
+			_set_base("")
+			_place_card()
 		return
-	_time += delta
 	_place_arrows()
 	var hit = cam.mouse_ground_point()
 	if hit != null:
@@ -152,7 +182,7 @@ func _process(delta: float) -> void:
 	_place_card()
 	if _hover == Vector3.INF or not (_source != "" or _spot):
 		_card.visible = _hover != Vector3.INF
-		_text.text = _wind_line()
+		_set_base(_wind_line())
 		return
 	_card.visible = true
 	if _source != "":
@@ -161,8 +191,7 @@ func _process(delta: float) -> void:
 	if _count_wait <= 0.0 and _hover.distance_to(_counted_at) > COUNT_MOVE:
 		_count_wait = COUNT_EVERY
 		_counted_at = _hover
-		_text.text = _source_text() if _source != "" else _spot_text()
-		_card.reset_size()
+		_set_base(_source_text() if _source != "" else _spot_text())
 
 
 ## Shows (or hides) everything for what the tool wants.
@@ -173,7 +202,7 @@ func _use(w: Dictionary) -> void:
 	_spot = bool(w.get("spot", false))
 	_arrows.visible = not w.is_empty()
 	_card.visible = false
-	_text.text = _wind_line()
+	_set_base(_wind_line())
 	_plume.visible = false
 	_rings.visible = false
 	_counted_at = Vector3.INF
@@ -184,6 +213,14 @@ func _use(w: Dictionary) -> void:
 		_ring_width = 0.0
 
 
+func _set_base(text: String) -> void:
+	_base = text
+	var t := "\n".join([text, _marks_line].filter(func(x): return x != ""))
+	if t != _text.text:
+		_text.text = t
+		_card.reset_size()
+
+
 ## Keeps the card just below and right of the mouse, on screen.
 func _place_card() -> void:
 	var vp := get_viewport()
@@ -191,6 +228,88 @@ func _place_card() -> void:
 	var size := vp.get_visible_rect().size
 	var c := _card.size
 	_card.position = Vector2(clampf(m.x + 22.0, 0.0, size.x - c.x), clampf(m.y + 22.0, 0.0, size.y - c.y))
+
+
+# --- What's already built --------------------------------------------------------
+
+func _update_marks() -> void:
+	var m: Dictionary = marks.call() if marks.is_valid() else {}
+	_mark_at = m.get("at", [])
+	var n := _mark_at.size()
+	_marks_line = "" if m.is_empty() else ("You have no %s yet." % m.what if n == 0 \
+		else "You have %d %s, lit on the map." % [n, m.what if n > 1 else str(m.get("one", m.what))])
+	_beacons.visible = n > 0
+	_halos.visible = n > 0
+	_beacons.multimesh.instance_count = n
+	_halos.multimesh.instance_count = n
+	_set_base(_base)
+
+
+## A beacon over each one, sized to stay visible at any zoom.
+func _place_marks() -> void:
+	var dist := cam.camera.global_position.distance_to(cam.focus())
+	var tall := clampf(dist * 0.18, 30.0, 900.0)
+	var pulse := 1.0 + 0.12 * sin(_time * 4.0)
+	for i in _mark_at.size():
+		var p: Vector3 = _mark_at[i]
+		var base := Vector3(p.x, Terrain.ground_y(p.x, p.z), p.z)
+		_beacons.multimesh.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3(tall * 0.07, tall, tall * 0.07)), base))
+		var r := maxf(tall * 0.16, 20.0) * pulse
+		_halos.multimesh.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3(r, 1.0, r)), base + Vector3(0, 1.5, 0)))
+
+
+## A tall thin beam, bright at the foot and fading upward, one metre tall.
+static func _beacon_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var foot := Brand.BRAND_MINT
+	var top := Color(foot, 0.0)
+	foot.a = 1.0
+	var n := 8
+	for k in n:
+		var a0 := TAU * k / n
+		var a1 := TAU * (k + 1) / n
+		var o0 := Vector3(cos(a0), 0, sin(a0)) * 0.5
+		var o1 := Vector3(cos(a1), 0, sin(a1)) * 0.5
+		for v in [[o0, foot], [o1, foot], [o1 + Vector3.UP, top], [o0, foot], [o1 + Vector3.UP, top], [o0 + Vector3.UP, top]]:
+			st.set_color(v[1])
+			st.set_normal(Vector3.UP)
+			st.add_vertex(v[0])
+	return st.commit()
+
+
+## A ring on the ground, radius 1.
+static func _halo_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var col := Brand.BRAND_MINT
+	col.a = 0.85
+	var n := 48
+	for k in n:
+		var a0 := TAU * k / n
+		var a1 := TAU * (k + 1) / n
+		var o0 := Vector3(cos(a0), 0, sin(a0))
+		var o1 := Vector3(cos(a1), 0, sin(a1))
+		for v in [o0 * 0.8, o0, o1, o0 * 0.8, o1, o1 * 0.8]:
+			st.set_color(col)
+			st.set_normal(Vector3.UP)
+			st.add_vertex(v)
+	return st.commit()
+
+
+## The ones already built of whatever the town keeps in `store` (id -> {pos,
+## kind}), of these kinds (any kind when empty).
+static func built_of(store: Dictionary, kinds := []) -> Array:
+	var out := []
+	var ids := store.keys()
+	ids.sort()
+	for id in ids:
+		var e: Dictionary = store[id]
+		if not e.has("pos"):
+			continue
+		if kinds.is_empty() or e.get("kind") in kinds:
+			out.append(e.pos)
+	return out
 
 
 # --- Wind arrows ----------------------------------------------------------------
