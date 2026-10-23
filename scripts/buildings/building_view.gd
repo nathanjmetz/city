@@ -101,7 +101,13 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 	match BuildingTypes.type_of(b):
 		"house": built = HouseBuilder.build(s, lot.to_curb, fit, storeys)
 		"row_home": built = MetroBuilder.build_row(s, lot.to_curb, fit, int(b.get("units", 2)), storeys)
-		"apartments": built = MetroBuilder.build_apartments(s, lot.to_curb, fit, storeys)
+		"apartments":
+			# A high-rise is a tower like the offices (860-880 Lake Shore
+			# Drive is apartments).
+			if storeys >= 8:
+				built = TowerBuilder.build_tower(s, lot.to_curb, fit, storeys)
+			else:
+				built = MetroBuilder.build_apartments(s, lot.to_curb, fit, storeys)
 		"shop": built = DenseBuilder.build_retail(s, lot.to_curb, fit, spec)
 		"mixed_use": built = DenseBuilder.build_mixed(s, lot.to_curb, fit, storeys, spec)
 		"office":

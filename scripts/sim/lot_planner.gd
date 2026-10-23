@@ -49,6 +49,9 @@ const MAX_LOT := {
 	"main_street": [30.0, 1500.0],
 	"highway_shop": [120.0, 20000.0],  # a big box, about 5 acres
 	"industry": [200.0, 80000.0],  # about 20 acres
+	# A tower site in a core zoned for towers (Balance.ASSEMBLE_FAR): up to
+	# about half a Chicago Loop block (100 by 60 m).
+	"downtown": [120.0, 6000.0],
 }
 
 ## How well-off the neighbourhood at a point is, 0 (struggling) to 1
@@ -1223,7 +1226,9 @@ static func union(a: PackedVector2Array, b: PackedVector2Array) -> PackedVector2
 # --------------------------------------------------------- parcels (agency)
 
 ## Real size limit for a lot of this zone on this road.
-static func max_lot(zone: int, road_type: int) -> Array:
+static func max_lot(zone: int, road_type: int, far := 0.0) -> Array:
+	if far >= Balance.ASSEMBLE_FAR and zone != ZoneMap.Zone.INDUSTRIAL:
+		return MAX_LOT.downtown
 	match zone:
 		1: return MAX_LOT.home
 		2: return MAX_LOT.main_street if RoadStyle.TYPES[road_type].lanes <= 2 else MAX_LOT.highway_shop
@@ -1318,7 +1323,9 @@ func _clip_roads(poly: PackedVector2Array, box: Rect2) -> PackedVector2Array:
 
 ## True if lots a and b can become one: same zone, sharing at least 3 m of
 ## lot line, and the result inside the zone's real size limit.
-static func can_merge(sim, a: String, b: String) -> bool:
+## `far` is the floor-area ratio zoning allows there (a tower core allows
+## bigger sites).
+static func can_merge(sim, a: String, b: String, far := 0.0) -> bool:
 	if a == b or not sim.lots.has(a) or not sim.lots.has(b):
 		return false
 	var la: Dictionary = sim.lots[a]
@@ -1333,15 +1340,15 @@ static func can_merge(sim, a: String, b: String) -> bool:
 		len = maxf(len, _span(p))
 	if len < 3.0:
 		return false
-	var cap := max_lot(za, _road_type(sim, la))
+	var cap := max_lot(za, _road_type(sim, la), far)
 	var width: float = la.width + (lb.width if lb.seg == la.seg and lb.side == la.side else 0.0)
 	return width <= cap[0] and la.area + lb.area <= cap[1]
 
 
 ## Joins lot b into lot a. a keeps its key (and its building); b is gone, so
 ## move or drop anything keyed by b. Returns a, or "" if they can't merge.
-static func merge_lots(sim, a: String, b: String) -> String:
-	if not can_merge(sim, a, b):
+static func merge_lots(sim, a: String, b: String, far := 0.0) -> String:
+	if not can_merge(sim, a, b, far):
 		return ""
 	var la: Dictionary = sim.lots[a]
 	var lb: Dictionary = sim.lots[b]

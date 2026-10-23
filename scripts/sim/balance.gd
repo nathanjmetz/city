@@ -170,6 +170,24 @@ const DEVELOP_CHANCE := 0.35
 const DEVELOP_KEEN := 0.25
 const DEVELOP_KEEN_WEALTH := 0.6
 
+## Floor-area ratio (floor space ÷ lot area) zoning allows, the way US codes
+## cap a building's bulk. The steps are Chicago Zoning Ordinance districts:
+## homes RS-3 0.9, RT-4 1.2, RM-5 2.0, RM-6 4.4, RM-6.5 6.6; shops B3-2
+## 2.2, B3-3 3.0, B3-5 5.0; downtown DX-7, DX-12 and DC-16; industry M1-2.
+## A town's districts step up as it fills in; only a city's core reaches the
+## downtown steps.
+const FAR_HOMES := [0.9, 1.2, 2.0, 4.4, 6.6]
+const FAR_SHOPS := [2.2, 3.0, 5.0]
+const FAR_DOWNTOWN := [7.0, 12.0, 16.0]
+const FAR_INDUSTRY := 2.0
+## A downtown: this many buildings within CORE_RADIUS, in a town of at least
+## DOWNTOWN_TOWNS[i] people for FAR_DOWNTOWN[i].
+const DOWNTOWN_DENSITY := 60
+const DOWNTOWN_TOWNS := [25_000, 50_000, 100_000]
+## Where zoning allows at least this FAR, an owner may buy out a low
+## neighbour (not just an empty or vacant lot) to assemble a tower site.
+const ASSEMBLE_FAR := 4.0
+
 # --- Farms -------------------------------------------------------------------
 
 const FARMHOUSE_COST := 350_000

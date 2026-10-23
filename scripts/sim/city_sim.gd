@@ -2556,6 +2556,9 @@ func _develop_one() -> void:
 		var key: String = keys[rng.randi() % keys.size()]
 		var opts := BuildingTypes.options(self, key)
 		if opts.is_empty():
+			# Room to go up but not on this lot: buy the lot next door.
+			if BuildingTypes.assemble(self, key) != "":
+				return
 			continue
 		var o: Array = opts[rng.randi() % opts.size()]
 		# Protected old buildings stay as they are; a charming one asks the
