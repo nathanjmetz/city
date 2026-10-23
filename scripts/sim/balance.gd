@@ -587,6 +587,10 @@ const INDUSTRY_MAX_LEASES := 3
 const INDUSTRY_ROAD_MAX := 1_600.0
 const INDUSTRY_ROAD_WAIT_DAYS := 12.0
 ## Longest lease road a company lays out to one new pad (m).
+## Working ground a company keeps around each pad, its tank battery and
+## turnaround (m): no one else plants or builds there. About 80 ft, the
+## fenced work area around an Indiana well pad.
+const INDUSTRY_CLAIM_BUFFER := 25.0
 const INDUSTRY_PAD_ROAD_MAX := 600.0
 ## Ore: one quarry that widens bench by bench beside its plant, never
 ## separate holes (Indiana limestone quarries, Iron Range pits).
