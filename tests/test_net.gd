@@ -55,9 +55,18 @@ func _run() -> void:
 	var sneaky := _client()
 	var sneaky_told := []
 	sneaky.failed.connect(func(r): sneaky_told.append(r))
+	var ann_told := []
+	ann.failed.connect(func(r): ann_told.append(r))
 	sneaky.join(url, "ABC123", "p-sneak", "Ann")
 	await _until(func(): return not sneaky_told.is_empty())
-	_check(not sneaky_told.is_empty() and "host" in sneaky_told[0], "nobody else can play as the host")
+	await _until(func(): return sneaky.my_city != "" and not ann_told.is_empty())
+	_check(sneaky.my_city == ann.my_city and sneaky.is_host, "the host's name on a new computer is the host, with her town")
+	_check(not ann_told.is_empty() and "another computer" in ann_told[0] and not ann.reconnecting,
+		"the old window is told and stops, so the two don't fight over the town")
+	sneaky.leave()
+	ann.join(url, "ABC123", "p-ann", "Ann")
+	await _until(func(): return ann.my_city != "" and ann.is_joined)
+	_check(ann.is_joined and ann.is_host, "and playing on the first computer again brings it back")
 	var eve := _client()
 	var eve_told := []
 	eve.failed.connect(func(r): eve_told.append(r))

@@ -329,6 +329,11 @@ func _handle(msg: Dictionary) -> void:
 			if sim and str(msg.get("good", "")) == "money":
 				sim.economy.money -= float(msg.get("amount", 0.0))
 				send_town(true)
+		"elsewhere":
+			# The same player opened the region on another computer or window:
+			# that one has the town now.
+			leave()
+			failed.emit("You're playing this town on another computer now. Play here again to bring it back.")
 		"reject":
 			var reason := str(msg.get("reason", "The region turned you away."))
 			if reconnecting and "version" in reason and OS.has_feature("web"):
