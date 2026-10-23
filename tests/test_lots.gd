@@ -114,6 +114,21 @@ func _init() -> void:
 				if bend.lots[key].side == 1 and Vector2(c[1].x - c[0].x, c[1].z - c[0].z).normalized().dot(Vector2(c[2].x - c[1].x, c[2].z - c[1].z).normalized()) < 0.5:
 					on_bends[bend.lots[key].seg] = true
 			_check(on_bends.size() == 4, "every rounded corner has lots fanning round it (%d of 4)" % on_bends.size())
+	# A local street 50 m from an arterial: one row of real-depth house lots
+	# fronting the local street, backing onto the arterial, not two 15 m rows.
+	var strip := CitySim.new()
+	strip.simulate_traffic = false
+	strip.apply({"type": "build_road", "start": [0, -150], "ctrl": [0, 0], "end": [0, 150], "road": 1})
+	strip.apply({"type": "build_road", "start": [50, -100], "ctrl": [50, 0], "end": [50, 100]})
+	for id in strip.network.segments.keys():
+		strip.apply({"type": "zone_frontage", "seg": id, "side": 1, "both": true, "zone": ZoneMap.Zone.RESIDENTIAL})
+	var in_strip := []
+	for key in strip.lots:
+		var l: Dictionary = strip.lots[key]
+		if l.pos.x > 0.0 and l.pos.x < 50.0 and absf(l.pos.z) < 80.0:
+			in_strip.append(l)
+	_check(not in_strip.is_empty() and in_strip.all(func(l): return strip.network.segments[l.seg].type != 1 and l.depth > 25.0),
+		"one row of full-depth lots between a street and an arterial (%s)" % str(in_strip.map(func(l): return [strip.network.segments[l.seg].type, snappedf(l.depth, 0.1)])))
 	# A zoning drag: the zones go in at once, the lots once, when it ends.
 	var drag := CitySim.new()
 	drag.apply({"type": "build_road", "start": [0, 0], "ctrl": [100, 0], "end": [200, 0]})
