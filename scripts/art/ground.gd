@@ -88,7 +88,16 @@ func _ready() -> void:
 	material_override = grass()
 
 
-static func noise(size: int, freq: float, octaves: int, seed: int) -> NoiseTexture2D:
+## A tiling noise texture. The baked ones in res://art/noise (tools/
+## bake_noise.py) are truly periodic: Godot's seamless NoiseTexture2D blends
+## its edges, which leaves low-contrast bands along every tile border, and
+## repeated every few metres those bands read as a grid of lines over the
+## grass, roofs and roads. They keep the same spectrum and histogram, so
+## every shader's thresholds look the same.
+static func noise(size: int, freq: float, octaves: int, seed: int) -> Texture2D:
+	var baked := "res://art/noise/noise_%d_%s_%d_%d.png" % [size, str(freq), octaves, seed]
+	if ResourceLoader.exists(baked):
+		return load(baked)
 	var n := FastNoiseLite.new()
 	n.seed = seed
 	n.frequency = freq
