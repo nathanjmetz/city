@@ -47,6 +47,12 @@ func _ready() -> void:
 	_load_profile()
 	_migrate_old_save()
 	_read_page_invite()
+	# A scripted play-through for the performance check (tools/playtest/).
+	var playtest := Playtest.wanted()
+	if playtest > 0.0:
+		var bot := Playtest.new()
+		bot.run_seconds = playtest
+		add_child(bot)
 
 
 func online() -> bool:
