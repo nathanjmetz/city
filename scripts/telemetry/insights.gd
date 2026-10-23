@@ -215,8 +215,9 @@ static func _speed_fixes(ev: Dictionary, fixes: Array) -> void:
 				longest = one
 		_fix(fixes, 90 + 3 * _who(stalls) + mini(stalls.size(), 10), "Freezes: %d frames over a second (longest %.1f s)" \
 			% [stalls.size(), int(longest.ms) / 1000.0],
-			"Longest in %s while using %s. Slowest timed stages then: %s." \
-			% [longest.get("scene", "?"), longest.get("ctx", "") if longest.get("ctx", "") != "" else "nothing", str(longest.get("stages", {}))],
+			"Longest in %s while using %s. Slowest timed stages then: %s. %d of %d came with shader compiles." \
+			% [longest.get("scene", "?"), longest.get("ctx", "") if longest.get("ctx", "") != "" else "nothing", str(longest.get("stages", {})),
+				stalls.filter(func(x): return int(x.get("pipelines", 0)) > 0).size(), stalls.size()],
 			PERF_OWNER, "speed", _who(stalls))
 	# Desktop only: memory left on the machine. Near zero means macOS starts
 	# swapping, which looks like a freeze to the player.
