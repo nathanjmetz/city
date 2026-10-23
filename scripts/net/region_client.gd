@@ -61,10 +61,22 @@ var _sent_sig := []
 var _land_sent := 0  # hash of the land last sent
 ## A neighbor's newest copy is unpacked into its simulation (a second or so
 ## for a grown town) one town at a time, this many seconds apart.
-const NEIGHBOR_EVERY := 15.0
+const NEIGHBOR_EVERY := 60.0
 const NEIGHBOR_FIRST := 2.0
 var _neighbor_wait := NEIGHBOR_FIRST
 var _unseen := []  # neighbors not unpacked since joining
+## Copies being packed or unpacked on another core (a grown town takes the
+## better part of a second, which froze the game every time a neighbor
+## built): [{task, ...}], finished in order.
+var _incoming := []
+var _outgoing := []
+var _drawn_look := {}  # town id -> look_of the copy its simulation holds
+var _look_waiting := {}  # town id -> look_of its newest copy, not unpacked yet
+var _unpacked := {}  # town id -> [bytes, unpack ms] of the copy waiting to load
+var _drawn_at := {}  # town id -> seconds when its copy was last unpacked
+## A neighbor that looks the same is still unpacked this often, for its
+## money, jobs and trade.
+const NEIGHBOR_REFRESH := 600.0
 ## A game month (a game day) in ticks: agreements are paid once a month.
 const MONTH_TICKS := 24 * CitySim.TICKS_PER_HOUR
 var _booked_month := -1
@@ -100,7 +112,7 @@ func _connect() -> int:
 
 func leave() -> void:
 	if _peer:
-		send_town(true)
+		send_town(true, true)
 		_peer.poll()
 		_peer.close()
 	_peer = null
@@ -112,7 +124,7 @@ func leave() -> void:
 ## Copying a town takes a moment (a tenth of a second or more for a grown
 ## one), so it goes out only when something visible changed, and at least
 ## this often (seconds) for the money and the people; `now` sends anyway.
-func send_town(now := false) -> void:
+func send_town(now := false, leaving := false) -> void:
 	var sim := my_sim()
 	if sim == null or not is_joined:
 		return
@@ -123,14 +135,25 @@ func send_town(now := false) -> void:
 		return
 	_sent_at = t
 	_sent_sig = sig
-	var msg := {"t": "city", "z": RegionServer.pack(sim.to_dict()), "pop": int(sim.stats.population)}
+	var msg := {"t": "city", "pop": int(sim.stats.population)}
 	# Where the town has built, only when that changed (it can be long).
 	var land := region.land_of_sim(my_city)
 	if land.hash() != _land_sent:
 		_land_sent = land.hash()
 		region.take_land(my_city, land)
 		msg.land = land
-	_send(msg)
+	# The copy is taken now (the town keeps changing); packing it happens on
+	# another core, except when leaving, which can't wait.
+	var d := sim.to_dict().duplicate(true)
+	if leaving:
+		msg.z = RegionServer.pack(d)
+		_send(msg)
+		return
+	var job := {"msg": msg}
+	job.task = _on_another_core(func():
+		msg.z = RegionServer.pack(d)
+		job.bytes = JSON.stringify(msg, "", false, true).to_utf8_buffer())
+	_outgoing.append(job)
 
 
 ## Sends a batch of play telemetry (see Telemetry); telemetry_acked says when it's kept.
@@ -237,6 +260,7 @@ func _process(delta: float) -> void:
 				return
 			_retry_in = RECONNECT_EVERY
 			_connect()
+	_finish_packing()
 	if is_joined:
 		_book_agreements()
 		_neighbor_wait -= delta
@@ -244,7 +268,15 @@ func _process(delta: float) -> void:
 			# Towns never drawn yet come first, and quicker.
 			var next: String = _unseen.pop_front() if not _unseen.is_empty() else region.stale_ids()[0]
 			_neighbor_wait = NEIGHBOR_FIRST if not _unseen.is_empty() else NEIGHBOR_EVERY
+			var t0 := Time.get_ticks_usec()
 			region.load_stale(next)
+			var got: Array = _unpacked.get(next, [0, 0.0])
+			_unpacked.erase(next)
+			town_loaded.emit(next, got[0], got[1], (Time.get_ticks_usec() - t0) / 1000.0)
+			if _look_waiting.has(next):
+				_drawn_look[next] = _look_waiting[next]
+				_look_waiting.erase(next)
+			_drawn_at[next] = Time.get_ticks_msec() / 1000.0
 		_sync_deals()
 	if _peer == null:
 		return
@@ -377,14 +409,17 @@ func _handle(msg: Dictionary) -> void:
 		"city":
 			# A neighbor's town, fresh from their computer.
 			var id := str(msg.get("id", ""))
-			var t0 := Time.get_ticks_usec()
-			var d = RegionServer.unpack(str(msg.get("z", "")))
-			var t1 := Time.get_ticks_usec()
-			if id != my_city and region.cities.has(id) and typeof(d) == TYPE_DICTIONARY:
-				region.update_city(id, d)
-				if msg.get("land") is Array:
-					region.take_land(id, msg.land)
-				town_loaded.emit(id, str(msg.get("z", "")).length(), (t1 - t0) / 1000.0, (Time.get_ticks_usec() - t1) / 1000.0)
+			if id != my_city and region.cities.has(id):
+				var job := {"id": id, "msg": msg}
+				var z := str(msg.get("z", ""))
+				job.task = _on_another_core(func():
+					var t0 := Time.get_ticks_usec()
+					var d = RegionServer.unpack(z)
+					job.unpack_ms = (Time.get_ticks_usec() - t0) / 1000.0
+					if typeof(d) == TYPE_DICTIONARY:
+						job.d = d
+						job.look = look_of(d))
+				_incoming.append(job)
 		"apply":
 			# Roads the region built in your town (a new neighbor's county road).
 			for cmd in msg.get("cmds", []):
@@ -400,6 +435,61 @@ func _handle(msg: Dictionary) -> void:
 		"cursor":
 			if msg.get("p") is Array and msg.p.size() == 2:
 				cursor_moved.emit(str(msg.id), Vector2(float(msg.p[0]), float(msg.p[1])))
+
+
+## Hands over copies packed or unpacked on another core, oldest first.
+func _finish_packing() -> void:
+	while not _outgoing.is_empty() and _done(_outgoing[0].task):
+		var job: Dictionary = _outgoing.pop_front()
+		if _peer != null and _connected:
+			_peer.put_packet(job.bytes)
+	while not _incoming.is_empty() and _done(_incoming[0].task):
+		var job: Dictionary = _incoming.pop_front()
+		var id: String = job.id
+		if not job.has("d") or not region.cities.has(id):
+			continue
+		if job.msg.get("land") is Array:
+			region.take_land(id, job.msg.land)
+		var now := Time.get_ticks_msec() / 1000.0
+		if _drawn_look.get(id) == job.look and not region.stale_ids().has(id) \
+				and now - float(_drawn_at.get(id, -1e9)) < NEIGHBOR_REFRESH:
+			# Nothing you can see changed (their people come and go): keep
+			# the town as drawn and just note its size.
+			region.cities[id].sim.stats.population = int(job.msg.get("pop", region.cities[id].sim.stats.population))
+			town_loaded.emit(id, str(job.msg.get("z", "")).length(), job.unpack_ms, 0.0)
+			continue
+		region.update_city(id, job.d)
+		_look_waiting[id] = job.look
+		_unpacked[id] = [str(job.msg.get("z", "")).length(), job.unpack_ms]
+
+
+## Runs `job` on a worker thread; the browser build without threads runs it
+## at once. Returns a task id, or -1 when it's already done.
+static func _on_another_core(job: Callable) -> int:
+	if OS.has_feature("web") and not OS.has_feature("threads"):
+		job.call()
+		return -1
+	return WorkerThreadPool.add_task(job)
+
+
+static func _done(task: int) -> bool:
+	if task < 0:
+		return true
+	if not WorkerThreadPool.is_task_completed(task):
+		return false
+	WorkerThreadPool.wait_for_task_completion(task)
+	return true
+
+
+## What a neighbor's town looks like from here: its roads, lots and
+## buildings (not who lives in them).
+static func look_of(d: Dictionary) -> int:
+	var looks := []
+	var b: Dictionary = d.get("buildings", {})
+	for key in b:
+		looks.append([key, b[key].get("type", ""), b[key].get("zone", 0), b[key].get("level", 0),
+			b[key].get("units", 1), b[key].get("chain", "")])
+	return [d.get("roads", {}), d.get("parcels", {}), looks].hash()
 
 
 ## Loads a fresh copy into the existing city sims, so the views drawing them

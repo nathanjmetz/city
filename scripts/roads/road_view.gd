@@ -20,6 +20,12 @@ var _redraw := false  # a new drive needs the poles moved
 var _drawn_drives := []
 var _trees := TreeField.new()  # street trees down planted medians
 var _street_cache := {}  # segment id -> [what it was drawn from, its mesh]
+var _pole_cache := {}  # segment id -> [what they were drawn from, wood, wire]
+var _bridge_cache := {}  # segment id -> [what it was drawn from, piers or null]
+var _junction_cache := {}  # node -> [its plan, {part: mesh}]
+var _later := {}  # segment id -> what to redraw it from, a few each frame
+var _seg_mi := {}  # segment id -> its street
+const REMESH_MS := 8.0  # redraw changed streets for this long, then finish them later
 
 var _mats := {
 	"asphalt": Surfaces.asphalt(),
@@ -57,6 +63,8 @@ func setup(net: RoadNetwork, s: CitySim = null) -> void:
 ## Rebuilds when a road has turned from country road to town street or back
 ## (checked at most once a second while the town grows).
 func _process(delta: float) -> void:
+	if not _later.is_empty():
+		_remesh_later()
 	if _recheck < 0.0:
 		return
 	_recheck -= delta
@@ -133,16 +141,11 @@ func _rebuild_all() -> void:
 	if _trees.get_parent() == null:
 		add_child(_trees)
 	var median_trees := []
-	var piers := SurfaceTool.new()
-	piers.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var any_bridge := false
+	var piers := []
 	_rural = _rural_segments()
 	_redraw = false
-	var wood := SurfaceTool.new()
-	var wire := SurfaceTool.new()
-	wood.begin(Mesh.PRIMITIVE_TRIANGLES)
-	wire.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var any_pole := false
+	var wood := []
+	var wire := []
 	var drives := _drives()
 	_drawn_drives = drives
 	# Ramps joining highways start where they clear the through lanes.
@@ -160,6 +163,11 @@ func _rebuild_all() -> void:
 	# Town street junctions get real corners; their roads stop short of them.
 	var junctions := Junction.plan(network, _rural)
 	var street_cache := {}
+	var t0 := Perf.now()
+	_later.clear()
+	_seg_mi.clear()
+	var pole_cache := {}
+	var bridge_cache := {}
 	for id in network.segments:
 		var pts := network.sample_segment(id)
 		var type: int = network.segments[id].type
@@ -201,20 +209,48 @@ func _rebuild_all() -> void:
 			var key := [pts, type, rural, seg_gaps, Terrain.shift]
 			var cached: Array = _street_cache.get(id, [])
 			if cached.is_empty() or cached[0] != key:
-				cached = [key, Terrain.drape(RoadMesh.street(pts, type, _mats, seg_gaps, rural))]
+				if not cached.is_empty() and cached[0][0] == pts and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+					# When the town edge moves, many streets turn from country
+					# road to town street at once; a street that didn't move
+					# keeps its old look a few frames while they're redrawn.
+					_later[id] = [key, pts, type, seg_gaps, rural]
+				else:
+					cached = [key, Terrain.drape(RoadMesh.street(pts, type, _mats, seg_gaps, rural))]
 			street_cache[id] = cached
 			mi.mesh = cached[1]
+			_seg_mi[id] = mi
 			if rural:
 				# Poles run down one side of a country road, and down the
 				# alley behind the homes in town.
 				var side := 1.0 if hash(id) % 2 == 0 else -1.0
-				RoadMesh.add_poles(wood, wire, pts, side * (RoadStyle.half_width(type) + spec.get("verge", 4.0)), drives)
-				any_pole = true
+				var off: float = side * (RoadStyle.half_width(type) + spec.get("verge", 4.0))
+				var near := _drives_near(drives, pts)
+				var pkey := [pts, off, near, Terrain.shift]
+				var poles: Array = _pole_cache.get(id, [])
+				if poles.is_empty() or poles[0] != pkey:
+					var w := SurfaceTool.new()
+					var r := SurfaceTool.new()
+					w.begin(Mesh.PRIMITIVE_TRIANGLES)
+					r.begin(Mesh.PRIMITIVE_TRIANGLES)
+					RoadMesh.add_poles(w, r, pts, off, near)
+					poles = [pkey, Terrain.drape(w.commit(), true), Terrain.drape(r.commit(), true)]
+				pole_cache[id] = poles
+				wood.append(poles[1])
+				wire.append(poles[2])
 			if spec.get("trees", false):
 				median_trees.append_array(_median_trees(id, pts, type))
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			any_bridge = RoadMesh.bridge(Terrain.lift_all(pts), RoadStyle.right_of_way_half(type), piers,
-				Terrain.ground_y) or any_bridge
+			var bkey := [pts, type, Terrain.shift]
+			var span: Array = _bridge_cache.get(id, [])
+			if span.is_empty() or span[0] != bkey:
+				var pst := SurfaceTool.new()
+				pst.begin(Mesh.PRIMITIVE_TRIANGLES)
+				var any := RoadMesh.bridge(Terrain.lift_all(pts), RoadStyle.right_of_way_half(type), pst,
+					Terrain.ground_y)
+				span = [bkey, pst.commit() if any else null]
+			bridge_cache[id] = span
+			if span[1] != null:
+				piers.append(span[1])
 		add_child(mi)
 	if not merges.is_empty():
 		var layers := {"asphalt": SurfaceTool.new(), "white": SurfaceTool.new(), "cover": SurfaceTool.new(),
@@ -229,19 +265,20 @@ func _rebuild_all() -> void:
 			mi.material_override = {"white": _mats.white, "barrier": _mats.curb}.get(key, _mats.asphalt)
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(mi)
-	if any_pole:
+	if not wood.is_empty():
 		for entry in [[wood, _mats.pole], [wire, _mats.wire]]:
 			var pm := MeshInstance3D.new()
-			pm.mesh = Terrain.drape(entry[0].commit(), true)
+			pm.mesh = _merge(entry[0])
 			pm.material_override = entry[1]
 			add_child(pm)
-	if any_bridge:
-		piers.generate_normals()
+	if not piers.is_empty():
 		var mi := MeshInstance3D.new()
-		mi.mesh = piers.commit()
+		mi.mesh = _merge(piers, true)
 		mi.material_override = _mats.concrete
 		add_child(mi)
 	_street_cache = street_cache
+	_pole_cache = pole_cache
+	_bridge_cache = bridge_cache
 	_trees.set_trees("medians", median_trees)
 	# Fill each junction and road end so curves meet cleanly; where only
 	# gravel roads or alleys meet, the junction is gravel or concrete too.
@@ -278,20 +315,80 @@ func _rebuild_all() -> void:
 		mi.material_override = _mats.asphalt
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mi)
+	# Each corner keeps its mesh until its own plan changes.
+	var junction_cache := {}
+	var corners := {"asphalt": [], "curb": [], "walk": [], "domes": []}
+	for node in junctions:
+		var jkey := [junctions[node], Terrain.shift]
+		var drawn: Array = _junction_cache.get(node, [])
+		if drawn.is_empty() or drawn[0] != jkey:
+			var parts := {"asphalt": SurfaceTool.new(), "curb": SurfaceTool.new(), "walk": SurfaceTool.new(),
+				"domes": SurfaceTool.new()}
+			for p in parts.values():
+				p.begin(Mesh.PRIMITIVE_TRIANGLES)
+			Junction.draw({node: junctions[node]}, parts.asphalt, parts.curb, parts.walk, parts.domes)
+			var meshes := {}
+			for key in parts:
+				meshes[key] = Terrain.drape(parts[key].commit(), false, 6.0)
+			drawn = [jkey, meshes]
+		junction_cache[node] = drawn
+		for key in corners:
+			corners[key].append(drawn[1][key])
+	_junction_cache = junction_cache
 	if not junctions.is_empty():
-		var parts := {"asphalt": SurfaceTool.new(), "curb": SurfaceTool.new(), "walk": SurfaceTool.new(),
-			"domes": SurfaceTool.new()}
-		for p in parts.values():
-			p.begin(Mesh.PRIMITIVE_TRIANGLES)
-		Junction.draw(junctions, parts.asphalt, parts.curb, parts.walk, parts.domes)
-		for key in parts:
+		for key in corners:
 			var mi := MeshInstance3D.new()
-			mi.mesh = Terrain.drape(parts[key].commit(), false, 6.0)
+			mi.mesh = _merge(corners[key])
 			mi.material_override = _mats[key]
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(mi)
 
 	_build_roundabouts(ring_nodes)
+
+
+## Redraws streets left over from the last rebuild, for a few ms a frame.
+func _remesh_later() -> void:
+	var t := Perf.now()
+	Terrain.shift = Terrain.shift_for(self)
+	for id in _later.keys():
+		var job: Array = _later[id]
+		_later.erase(id)
+		var mi: MeshInstance3D = _seg_mi.get(id)
+		if mi == null or not is_instance_valid(mi):
+			continue
+		var mesh := Terrain.drape(RoadMesh.street(job[1], job[2], _mats, job[3], job[4]))
+		_street_cache[id] = [job[0], mesh]
+		mi.mesh = mesh
+		if (Perf.now() - t) / 1000.0 > REMESH_MS:
+			break
+	Terrain.shift = Vector2.ZERO
+	Perf.add("frame.roads", t)
+
+
+## Drives close enough to a road to move one of its poles.
+static func _drives_near(drives: Array, pts: PackedVector3Array) -> Array:
+	var box := AABB(pts[0], Vector3.ZERO)
+	for p in pts:
+		box = box.expand(p)
+	box = box.grow(40.0)
+	var out := []
+	for q in drives:
+		if q.x >= box.position.x and q.x <= box.end.x and q.z >= box.position.z and q.z <= box.end.z:
+			out.append(q)
+	return out
+
+
+## Joins the cached pieces into one mesh, so the town still draws them in
+## one go.
+static func _merge(meshes: Array, normals := false) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for m in meshes:
+		if m != null and m.get_surface_count() > 0:
+			st.append_from(m, 0, Transform3D.IDENTITY)
+	if normals:
+		st.generate_normals()
+	return st.commit()
 
 
 ## The surface of a junction: gravel or concrete only if every road there is.
