@@ -417,7 +417,7 @@ func decide(sim: CitySim, usable: Callable) -> Array:
 		var project := next_project(sim, id) if stance != "hold" else ""
 		if project != "":
 			var price := project_cost(project)
-			if u.cash - price >= floor_cash + reserve * 0.5:
+			if affords(id, price, cost):
 				if _build(sim, id, project, usable):
 					u.cash -= price
 					var note: String = _node(project).get("note", "")
@@ -437,6 +437,31 @@ func decide(sim: CitySim, usable: Callable) -> Array:
 			returned += give
 		u.cash = roundf(u.cash)
 	return [changed, returned]
+
+
+## True when the utility can pay `price` from its own money and keep its
+## reserve (the manager's own rule for building). `monthly`: its costs a
+## month, interest included (worked out when left out).
+func affords(id: int, price: float, monthly := -1.0) -> bool:
+	var u: Dictionary = utilities[id]
+	if monthly < 0.0:
+		monthly = monthly_cost(id) + maxf(0.0, -float(u.cash)) * Balance.WATER_INTEREST
+	var reserve: float = monthly * (Balance.WATER_RESERVE_MONTHS + 2.0 * u.leader.caution)
+	return u.cash - price >= cash_floor(id) + reserve * 0.5
+
+
+## The utility's next step to deliver more water (a well, the river intake,
+## or a tower), whatever it can afford; "" when it can't grow at all.
+func supply_step(sim: CitySim, id: int) -> String:
+	var ok := func(key: String) -> bool:
+		return (key in ["well", "tower"] or not key in utilities[id].built) and _locked(sim, id, key) == ""
+	var supply := count_work(id, "well") * int(Balance.WATER_WORKS.well.capacity) + count_work(id, "intake") * int(Balance.WATER_WORKS.intake.capacity)
+	if supply > water_capacity(id) and ok.call("tower"):
+		return "tower"
+	for key in ["well", "intake", "tower"]:
+		if ok.call(key):
+			return key
+	return ""
 
 
 ## What a step costs the utility after grants.

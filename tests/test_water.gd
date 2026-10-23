@@ -106,6 +106,36 @@ func _init() -> void:
 	bad.update_stats()
 	_check(bad.services.water.boil_share(bad) > 0.0, "a boil-water notice reaches the homes")
 
+	# Three quarters full and broke: the superintendent asks the town to pay
+	# for the next well. Yes builds it now.
+	var ask := _town()
+	var aid: int = ask.services.water.utilities.keys()[0]
+	var au: Dictionary = ask.services.water.utilities[aid]
+	for i in 3000:
+		ask.tick()
+	au.cash = -1_000_000_000.0
+	ask.services.water.live[aid].load = ask.services.water.water_capacity(aid) / 2
+	_check(ask.leaders._plan_water(ask).is_empty(), "no ask while the system has room")
+	ask.services.water.live[aid].load = ask.services.water.water_capacity(aid)
+	var plan: Dictionary = ask.leaders._plan_water(ask)
+	_check(not plan.is_empty() and str(plan.title).begins_with("Pay for a new"), "a full system with no money asks the town (%s)" % plan.get("title", ""))
+	var wells := ask.services.water.count_work(aid, "well") + ask.services.water.count_work(aid, "tower") + ask.services.water.count_work(aid, "intake")
+	ask.leaders.month(ask)
+	var rid := -1
+	for r in ask.permits.requests:
+		if str(ask.permits.requests[r].get("ask", "")) == "water":
+			rid = r
+	_check(rid != -1, "the ask comes on the bell ahead of the others")
+	var before := int(ask.economy.money)
+	ask.apply({"type": "permit", "id": rid, "answer": "approve"})
+	ask.leaders.carry_out(ask)
+	var after := ask.services.water.count_work(aid, "well") + ask.services.water.count_work(aid, "tower") + ask.services.water.count_work(aid, "intake")
+	_check(after == wells + 1 and int(ask.economy.money) < before, "a yes builds it and the town pays ($%d)" % (before - int(ask.economy.money)))
+	ask.services.water.live[aid].load = ask.services.water.water_capacity(aid)
+	_check(not ask.leaders._cooled(ask, "water"), "it doesn't ask again right away")
+	au.cash = 1_000_000_000.0
+	_check(ask.leaders._plan_water(ask).is_empty(), "a utility with the money builds it itself")
+
 	# Removing the utility drops its manager.
 	sim.apply({"type": "remove_service", "id": id})
 	sim.update_stats()

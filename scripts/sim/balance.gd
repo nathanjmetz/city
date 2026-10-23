@@ -323,6 +323,10 @@ const NEEDS_DOUBLE_MILES := 30.0
 const NEEDS_LOCAL_MILES := 5.0
 const NEEDS_IMPORT_MILES := 40.0
 const NEEDS_IMPORT_SLOW := 0.25
+## Ready-mix concrete a home takes (cubic yards) and the haul charge a
+## yard a mile past a nearby plant.
+const NEEDS_CONCRETE_YD_PER_HOME := 45
+const NEEDS_CONCRETE_HAUL := 1.0
 ## Builders: about one crew per 1,500 people (at least 2), each with about
 ## 6 houses going up at once; past that, labor costs climb about $15,000 a
 ## home at double the load.
@@ -2768,7 +2772,9 @@ const TIMELAPSE_RECORDS_PER_MONTH := 120
 ## Leader requests: at most one new one a month, with this chance, and each
 ## kind waits this many game months after it was last asked.
 const ASK_CHANCE := 0.5
-const ASK_COOLDOWN := {"abatement": 18, "pave": 12, "signal": 12, "festival": 11}
+const ASK_COOLDOWN := {"abatement": 18, "pave": 12, "signal": 12, "festival": 11, "water": 6}
+## The water superintendent asks once the system is this full (percent).
+const ASK_WATER_PCT := 75
 ## Indiana tax abatement (IC 6-1.1-12.1): the town council declares an
 ## Economic Revitalization Area and the new investment's property tax phases
 ## in over up to 10 years. The town forgoes about this share of the

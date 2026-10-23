@@ -13,6 +13,11 @@ extends RefCounted
 ##   street, foundation and driveway (NSSGA). Crushed stone sells for about
 ##   $16 a ton at the quarry (USGS 2023), and its delivered price about
 ##   doubles every 30 miles it's trucked, so towns build near quarries.
+## - Concrete: about 45 cubic yards a home (footings, slab, driveway and
+##   walks). Ready-mix has to be poured within 90 minutes of batching
+##   (ASTM C94), so plants sit by the quarries they draw stone from, and a
+##   job far from one pays a haul charge of about $1 a yard a mile. It
+##   shares the gravel line on the card: same trucks, same quarry.
 ## - Builders: a small market has only so many crews; stretched thin, every
 ##   job slows and labor costs climb.
 ## - Utilities: a water or sewer system at capacity stops new hookups (a
@@ -42,7 +47,7 @@ static func check(sim, homes: int) -> Dictionary:
 	return out
 
 
-## Gravel: from the town's own quarry, or trucked in.
+## Gravel and concrete: from the town's own quarry, or trucked in.
 static func _gravel(sim, homes: int, out: Dictionary) -> void:
 	var tons := homes * Balance.NEEDS_TONS_PER_HOME
 	var quarry := ""
@@ -55,14 +60,15 @@ static func _gravel(sim, homes: int, out: Dictionary) -> void:
 				quarry = "the mining company"
 			break
 	if quarry != "":
-		out.lines.append([State.OK, "ore", "Gravel from %s's quarry here in town" % quarry])
+		out.lines.append([State.OK, "ore", "Gravel and concrete from %s's quarry here in town" % quarry])
 		return
 	var local := Balance.NEEDS_STONE_PER_TON * (1.0 + Balance.NEEDS_LOCAL_MILES / Balance.NEEDS_DOUBLE_MILES)
 	var far := Balance.NEEDS_STONE_PER_TON * (1.0 + Balance.NEEDS_IMPORT_MILES / Balance.NEEDS_DOUBLE_MILES)
 	var extra := roundi(tons * (far - local))
+	extra += roundi(homes * Balance.NEEDS_CONCRETE_YD_PER_HOME * Balance.NEEDS_CONCRETE_HAUL * (Balance.NEEDS_IMPORT_MILES - Balance.NEEDS_LOCAL_MILES))
 	out.extra += extra
 	out.slow += Balance.NEEDS_IMPORT_SLOW
-	out.lines.append([State.SLOW, "ore", "No quarry in town: gravel is trucked about %d miles, $%s more" % [
+	out.lines.append([State.SLOW, "ore", "No quarry in town: gravel and concrete come about %d miles, $%s more" % [
 		int(Balance.NEEDS_IMPORT_MILES), CitySim.money_text(extra)]])
 
 
