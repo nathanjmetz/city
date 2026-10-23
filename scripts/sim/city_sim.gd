@@ -922,9 +922,15 @@ func tick() -> void:
 	t = Perf.now()
 	if tick_count % MOVE_EVERY == 0:
 		_move_in()
-		# The budget only pays out on the hour, so it's worked out then.
-		update_stats(tick_count % TICKS_PER_HOUR == 0)
 	Perf.add("sim.people", t)
+	t = Perf.now()
+	if tick_count % MOVE_EVERY == 0:
+		# The homes' scan and the budget's buildings go a slice at a time; the
+		# budget only pays out on the hour (slice 0).
+		var slice := (tick_count / MOVE_EVERY) % Economy.SLICES
+		update_stats(false, slice)
+		economy.budget_step(self, slice)
+	Perf.add("sim.stats", t)
 	t = Perf.now()
 	if tick_count % GROW_EVERY == 0 and _replan_at == 0:
 		_grow_one()
@@ -1139,7 +1145,10 @@ func clock() -> Dictionary:
 ## does in spirit: homes are wanted while there are jobs, jobs while people
 ## need work, and shops while residents need somewhere to shop.
 ## `budget` false skips the month's budget (the tick only needs it hourly).
-func update_stats(budget := true) -> void:
+## `slice` (0 to Economy.SLICES - 1) refreshes only that share of the
+## homes' service and park scan (the tick passes one each time); -1 does
+## all of them, -2 none (a loaded town keeps the parts it saved).
+func update_stats(budget := true, slice := -1) -> void:
 	var pop := 0
 	var home_cap := 0
 	var shop_jobs := 0
@@ -1177,7 +1186,7 @@ func update_stats(budget := true) -> void:
 	services.plants = power.sources()
 	services.update(network, lots, buildings)
 	parks.update_effects(self)
-	var homes := _home_scan()
+	var homes := _home_scan(slice)
 	factory_jobs += farms.jobs() + industry.jobs() + warehouses.jobs() + power.jobs() + rail.jobs()
 	# Teachers, and office and tech jobs for the town's graduates (less the
 	# ones already counted in office buildings, which house those jobs).
@@ -1236,18 +1245,46 @@ func update_stats(budget := true) -> void:
 	stats_changed.emit()
 
 
-## The town's homes in one pass, as their own functions would each work
-## them out: share under a boil notice (water.boil_share), care
-## (healthcare.care), service coverage (service_coverage) and park
-## happiness (parks.average_happiness).
-func _home_scan() -> Dictionary:
+## The town's homes, as their own functions would each work them out:
+## share under a boil notice (water.boil_share), care (healthcare.care),
+## service coverage (service_coverage) and park happiness
+## (parks.average_happiness). Kept as Economy.SLICES parts so the tick can
+## redo one part at a time; the parts are saved, so a loaded copy matches.
+var _home_parts := []
+
+
+func _home_scan(slice := -1) -> Dictionary:
+	if _home_parts.size() != Economy.SLICES or slice == -1:
+		_home_parts = []
+		for i in Economy.SLICES:
+			_home_parts.append(_home_part(i))
+	elif slice >= 0:
+		_home_parts[slice] = _home_part(slice)
+	var n := 0
+	var boil := 0
+	var care := 0.0
+	var cover := 0.0
+	var happy := 0.0
+	for part in _home_parts:
+		n += int(part.n)
+		boil += int(part.boil)
+		care += float(part.care)
+		cover += float(part.cover)
+		happy += float(part.happy)
+	if n == 0:
+		return {"boil": 0.0, "care": 0.0, "cover": 0.0, "happy": 0.0}
+	return {"boil": float(boil) / n, "care": clampf(care / n + healthcare.region_care, 0.0, 1.0),
+		"cover": cover / n, "happy": happy / n}
+
+
+func _home_part(slice: int) -> Dictionary:
 	var n := 0
 	var boil := 0
 	var care := 0.0
 	var cover := 0.0
 	var happy := 0.0
 	for key in buildings:
-		if int(buildings[key].zone) != ZoneMap.Zone.RESIDENTIAL:
+		if int(buildings[key].zone) != ZoneMap.Zone.RESIDENTIAL or key.hash() % Economy.SLICES != slice:
 			continue
 		n += 1
 		var s: Dictionary = services.served.get(key, {})
@@ -1257,10 +1294,7 @@ func _home_scan() -> Dictionary:
 		if not s.is_empty():
 			cover += Services.coverage_of(s)
 		happy += float(parks.lot_happy.get(key, 0.0))
-	if n == 0:
-		return {"boil": 0.0, "care": 0.0, "cover": 0.0, "happy": 0.0}
-	return {"boil": float(boil) / n, "care": clampf(care / n + healthcare.region_care, 0.0, 1.0),
-		"cover": cover / n, "happy": happy / n}
+	return {"n": n, "boil": boil, "care": care, "cover": cover, "happy": happy}
 
 
 ## New residents move into homes with room, faster when homes are in demand.
@@ -2639,6 +2673,7 @@ func to_dict() -> Dictionary:
 		"parcels": _parcels_to_save(),
 		"plan": _plan_to_save(),
 		"economy": economy.to_dict(),
+		"home_parts": _home_parts,
 		"services": services.to_dict(),
 		"farms": farms.to_dict(),
 		"industry": industry.to_dict(),
@@ -2701,6 +2736,10 @@ func from_dict(d: Dictionary) -> void:
 				_paint_frontage(id, side, ZoneMap.Zone.RESIDENTIAL)
 	_upgrade_old_rings()
 	economy.from_dict(d.get("economy", {}))
+	_home_parts = []
+	for part in d.get("home_parts", []):
+		_home_parts.append({"n": int(part.n), "boil": int(part.boil), "care": float(part.care),
+			"cover": float(part.cover), "happy": float(part.happy)})
 	families.from_dict(d.get("families", {}))
 	streets.from_dict(self, d.get("streets", {}))
 	services.from_dict(d.get("services", {}))
@@ -2802,7 +2841,7 @@ func from_dict(d: Dictionary) -> void:
 	pollution.after_load(self)
 	heritage.ensure(self)
 	timelapse.from_dict(self, d.get("timelapse", {}))
-	update_stats()
+	update_stats(true, -2)
 	buses = BusNet.new()
 	buses.from_dict(self, d.get("buses", {}))
 	taxis = TaxiCo.new()
