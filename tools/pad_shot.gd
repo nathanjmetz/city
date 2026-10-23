@@ -1,10 +1,11 @@
 extends SceneTree
 ## Pictures of the game controller's cursor, prompts and tool wheel.
-## Run: godot -s tools/pad_shot.gd -- xbox|playstation|nintendo out.png [wheel]
+## Run: godot -s tools/pad_shot.gd -- xbox|playstation|nintendo out.png [wheel|ring2 [menu]]
 
 var _frames := 0
 var _out := "pad.png"
 var _wheel := false
+var _ring2 := ""  # a menu whose second ring of tools to show
 var _pad: Gamepad
 
 
@@ -12,6 +13,8 @@ func _initialize() -> void:
 	var args := OS.get_cmdline_user_args()
 	_out = args[1] if args.size() > 1 else "pad.png"
 	_wheel = args.size() > 2 and args[2] == "wheel"
+	if args.size() > 2 and args[2] == "ring2":
+		_ring2 = args[3] if args.size() > 3 else "roads"
 	_pad = Gamepad.find()
 	_pad.style = {"xbox": 0, "playstation": 1, "nintendo": 2}.get(args[0] if args.size() > 0 else "xbox", 0)
 	var session := root.get_node("Session")
@@ -25,7 +28,10 @@ func _process(_delta: float) -> bool:
 		_pad.call("_set_active", true)
 		_pad.cursor = Vector2(700, 520)
 		_pad.call("_move", Vector2.ZERO)
-		if _wheel:
+		if _ring2 != "":
+			_pad.call("_wheel_picked", _ring2)
+			_pad.get("_wheel").aim(Vector2(1, -0.4))
+		elif _wheel:
 			_pad.call("_open_wheel")
 			_pad.get("_wheel").aim(Vector2(1, -0.4))
 		else:

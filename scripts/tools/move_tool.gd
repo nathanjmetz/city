@@ -76,26 +76,24 @@ func clear_selection() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	var k := event as InputEventKey
 	if k != null and k.pressed and not k.echo:
-		if k.keycode == KEY_M and not k.ctrl_pressed and not k.meta_pressed:
+		if KeyBinds.matches(k, "move_it") and not k.ctrl_pressed and not k.meta_pressed:
 			set_active(not active)
 			get_viewport().set_input_as_handled()
 			return
 		if not active:
 			return
 		var fine := FINE_TURN if k.shift_pressed else TURN_STEP
-		match k.keycode:
-			# [ and ] too, so a controller's LB / RB turn what's held.
-			KEY_COMMA, KEY_BRACKETLEFT: _commit(Vector3.ZERO, -fine, 0.0)
-			KEY_PERIOD, KEY_BRACKETRIGHT: _commit(Vector3.ZERO, fine, 0.0)
-			KEY_PAGEUP: _commit(Vector3.ZERO, 0.0, RoadTool.ELEVATION_STEP)
-			KEY_PAGEDOWN: _commit(Vector3.ZERO, 0.0, -RoadTool.ELEVATION_STEP)
-			KEY_Z:
-				if k.ctrl_pressed or k.meta_pressed:
+		# Smaller / bigger ([ ]) turn too, so a controller's LB / RB turn what's held.
+		match KeyBinds.action(k, ["turn_left", "smaller", "turn_right", "bigger", "raise", "lower"]):
+			"turn_left", "smaller": _commit(Vector3.ZERO, -fine, 0.0)
+			"turn_right", "bigger": _commit(Vector3.ZERO, fine, 0.0)
+			"raise": _commit(Vector3.ZERO, 0.0, RoadTool.ELEVATION_STEP)
+			"lower": _commit(Vector3.ZERO, 0.0, -RoadTool.ELEVATION_STEP)
+			_:
+				if k.keycode == KEY_Z and (k.ctrl_pressed or k.meta_pressed):
 					undo()
 				else:
 					return
-			_:
-				return
 		get_viewport().set_input_as_handled()
 		return
 	if not active:

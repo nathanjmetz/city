@@ -76,7 +76,7 @@ func _unhandled_input(event: InputEvent) -> void:
 ## J opens and closes the traffic view.
 func _unhandled_key_input(event: InputEvent) -> void:
 	var k := event as InputEventKey
-	if k != null and k.pressed and not k.echo and k.keycode == KEY_J:
+	if k != null and k.pressed and not k.echo and KeyBinds.matches(k, "traffic"):
 		set_mode(Mode.VIEW if mode == Mode.NONE else Mode.NONE)
 		get_viewport().set_input_as_handled()
 

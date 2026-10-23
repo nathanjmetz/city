@@ -273,6 +273,18 @@ func split_segment(seg_id: int, t: float) -> int:
 
 # --- Saving (also the future network format) --------------------------------
 
+## A copy of the roads to put back later (UndoLog), cheaper than to_dict.
+func snapshot() -> Dictionary:
+	return {"nodes": nodes.duplicate(), "segments": segments.duplicate(true), "next_id": _next_id}
+
+
+func restore(snap: Dictionary) -> void:
+	nodes = snap.nodes.duplicate()
+	segments = snap.segments.duplicate(true)
+	_next_id = snap.next_id
+	_changed()
+
+
 func to_dict() -> Dictionary:
 	var n := {}
 	for id in nodes:

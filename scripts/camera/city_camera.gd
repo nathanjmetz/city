@@ -112,30 +112,30 @@ func _process(delta: float) -> void:
 	if not (focus is LineEdit or focus is TextEdit or MenuState.showing):
 		var boost := FAST if Input.is_key_pressed(KEY_SHIFT) else 1.0
 		var move := Vector2.ZERO
-		if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP):
+		if KeyBinds.held("move_forward") or Input.is_key_pressed(KEY_UP):
 			move.y -= 1.0
-		if Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN):
+		if KeyBinds.held("move_back") or Input.is_key_pressed(KEY_DOWN):
 			move.y += 1.0
-		if Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT):
+		if KeyBinds.held("move_left") or Input.is_key_pressed(KEY_LEFT):
 			move.x -= 1.0
-		if Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT):
+		if KeyBinds.held("move_right") or Input.is_key_pressed(KEY_RIGHT):
 			move.x += 1.0
 		if move != Vector2.ZERO:
 			following = false
 			_slow = 0.0
 			var speed := _dist * 1.1 * delta * boost
 			_goal_target += (_right() * move.x - _forward() * move.y).normalized() * speed
-		if Input.is_key_pressed(KEY_Q):
+		if KeyBinds.held("rotate_left"):
 			_goal_yaw += 1.6 * delta * boost
-		if Input.is_key_pressed(KEY_E):
+		if KeyBinds.held("rotate_right"):
 			_goal_yaw -= 1.6 * delta * boost
-		if Input.is_key_pressed(KEY_T):
+		if KeyBinds.held("tilt_up"):
 			_goal_pitch = clampf(_goal_pitch + 1.0 * delta * boost, MIN_PITCH, MAX_PITCH)
-		if Input.is_key_pressed(KEY_G):
+		if KeyBinds.held("tilt_down"):
 			_goal_pitch = clampf(_goal_pitch - 1.0 * delta * boost, MIN_PITCH, MAX_PITCH)
-		if Input.is_key_pressed(KEY_R):
+		if KeyBinds.held("zoom_in"):
 			_zoom(1.0 - 1.5 * delta * boost)
-		if Input.is_key_pressed(KEY_F):
+		if KeyBinds.held("zoom_out"):
 			_zoom(1.0 + 1.5 * delta * boost)
 	if _pad != null and not MenuState.showing:
 		_pad_input(delta)

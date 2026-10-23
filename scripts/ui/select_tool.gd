@@ -17,6 +17,8 @@ var selection := {}
 var spot_clicks := false
 
 var _ring := MeshInstance3D.new()
+## Arcs to where a selected home's people work, or a workplace's staff live.
+var _lines := ConnectionLines.new()
 var _press := Vector2(-1, -1)
 
 
@@ -42,6 +44,7 @@ func _ready() -> void:
 	_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_ring.visible = false
 	add_child(_ring)
+	add_child(_lines)
 
 
 func select(sel: Dictionary) -> void:
@@ -49,6 +52,8 @@ func select(sel: Dictionary) -> void:
 		cam.following = false
 	selection = sel
 	_ring.visible = false
+	_lines.sim = sim
+	_lines.show_for(sel)
 	selected.emit(sel)
 
 
