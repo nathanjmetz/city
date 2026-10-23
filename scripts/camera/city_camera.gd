@@ -5,7 +5,7 @@ extends Node3D
 ##   WASD / arrows: move     Q / E: rotate     T / G: tilt     R / F: zoom
 ##   Hold Shift: move faster
 ##   Middle mouse drag: rotate and tilt     Right mouse drag: move
-##   Scroll / pinch: zoom
+##   Scroll / pinch: zoom (a Mac's Magic Mouse and trackpad scroll too)
 ## Mac trackpads have no middle button, so Option + drag also rotates and tilts.
 ## Game controllers (Pad): right stick rotates and tilts, LT / RT zoom, and
 ## the pad cursor moves the map at the screen edge.
@@ -91,6 +91,11 @@ func _input(event: InputEvent) -> void:
 				_goal_target -= (_right() * mm.relative.x - _forward() * mm.relative.y) * scale
 	elif event is InputEventMagnifyGesture:
 		_zoom(1.0 / (event as InputEventMagnifyGesture).factor)
+	elif event is InputEventPanGesture:
+		# The desktop app on a Mac: a Magic Mouse or a two-finger trackpad
+		# scroll arrives as a pan gesture, not wheel clicks (the browser turns
+		# them into wheel events). Scrolling down zooms out, like the wheel.
+		_zoom(exp(clampf((event as InputEventPanGesture).delta.y, -4.0, 4.0) * 0.25))
 
 
 func _process(delta: float) -> void:

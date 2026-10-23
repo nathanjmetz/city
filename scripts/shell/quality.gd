@@ -11,8 +11,8 @@ extends Node
 ## frames take: when the computer struggles it lowers the render scale
 ## first (upscaled with FSR), then the tier, and when there is plenty of
 ## room it climbs back. Where it settles is saved for next time, so the
-## guess only happens once per machine. The pause menu's Graphics button
-## cycles Auto and the fixed tiers.
+## guess only happens once per machine. The pause menu's Graphics page
+## offers Auto (the default) and fixed tiers up to one above the guess.
 ##
 ## Cinematic is as close to real life as the engine gets: global
 ## illumination (SDFGI), volumetric light in the air, screen-space
@@ -35,6 +35,9 @@ enum { LOW, MEDIUM, HIGH, ULTRA, CINEMATIC }
 const NAMES := ["Low", "Medium", "High", "Ultra", "Cinematic"]
 const AUTO := -1
 const SAVE_PATH := "user://quality.json"
+## Bumped when guess_tier changes, so Auto guesses again on machines that
+## were first guessed by an older version.
+const GUESS_VERSION := 2
 
 ## What each tier turns on. msaa: 0 off, 1 2x, 2 4x. soft: RenderingServer
 ## shadow filter quality (2 low, 3 medium, 4 high, 5 ultra). detail scales
@@ -104,6 +107,8 @@ var _slow := 0
 var _room := 0
 ## No climbing back to a tier this session once it proved too slow.
 var _ceiling := CINEMATIC
+## The hardware guess (guess_tier) for this computer.
+var _guess := HIGH
 
 
 func _ready() -> void:
@@ -116,11 +121,19 @@ func _ready() -> void:
 	if browser:
 		_ceiling = MEDIUM
 	process_priority = 1000  # after the frame's own work
+	_guess = MEDIUM if browser else guess_tier(adapter, RenderingServer.get_video_adapter_type(),
+		OS.get_processor_count(), float(OS.get_memory_info().get("physical", 0)) / 1e9)
 	var saved := _read()
 	mode = clampi(int(saved.get("mode", AUTO)), AUTO, _ceiling)
+	# A tier this computer can't carry (picked by an older menu that only
+	# cycled upward) goes back to Auto rather than crash it again.
+	if mode > top():
+		mode = AUTO
 	if mode != AUTO:
 		tier = mode
-	elif str(saved.get("adapter", "")) == adapter and saved.has("tier"):
+		scale = clampf(float(saved.get("scale", 1.0)), min_scale(), 1.0)
+	elif str(saved.get("adapter", "")) == adapter and saved.has("tier") \
+			and int(saved.get("guess", 1)) == GUESS_VERSION:
 		tier = clampi(int(saved.tier), LOW, _ceiling)
 		scale = clampf(float(saved.get("scale", 1.0)), min_scale(), 1.0)
 	else:
@@ -165,8 +178,7 @@ func _first_guess() -> void:
 		tier = LOW
 		scale = 0.75 if is_handheld() else 1.0
 	else:
-		tier = guess_tier(adapter, RenderingServer.get_video_adapter_type(),
-			OS.get_processor_count(), float(OS.get_memory_info().get("physical", 0)) / 1e9)
+		tier = _guess
 		scale = 1.0
 
 
@@ -182,8 +194,9 @@ static func guess_tier(name: String, type: int, cores: int, memory_gb: float) ->
 			return CINEMATIC if memory_gb >= 30.0 else ULTRA
 		if "pro" in n:
 			return HIGH
-		# A base chip: an 8 GB Mac mini starts at Medium and stays smooth.
-		return HIGH if memory_gb >= 15.0 else MEDIUM
+		# A base chip: an 8 GB Mac mini starts on Low (Brawn's mini struggled
+		# on Medium in a fresh town) and climbs if there's room.
+		return MEDIUM if memory_gb >= 15.0 else LOW
 	if type == RenderingDevice.DEVICE_TYPE_DISCRETE_GPU:
 		if cores >= 8 and memory_gb >= 30.0:
 			return CINEMATIC
@@ -209,17 +222,32 @@ func label() -> String:
 	return "Auto (%s)" % NAMES[tier] if mode == AUTO else NAMES[mode]
 
 
-## The pause menu's Graphics button: Auto, then each tier, then Auto again.
-func cycle() -> void:
-	var top := MEDIUM if browser else CINEMATIC
-	mode = AUTO if mode >= top else mode + 1
-	_ceiling = top
+## The highest tier the Graphics menu offers here: one above the hardware
+## guess, so a small computer can try a step up but is never handed a tier
+## that's far beyond it (Cinematic on an 8 GB Mac mini runs it out of
+## memory). The browser draws Low and Medium only.
+func top() -> int:
+	return MEDIUM if browser else mini(_guess + 1, CINEMATIC)
+
+
+## What the Graphics menu picked: AUTO, or a fixed tier up to top().
+func choose(m: int) -> void:
+	m = clampi(m, AUTO, top())
+	mode = m
+	_ceiling = MEDIUM if browser else CINEMATIC
 	if mode == AUTO:
 		_first_guess()
 	else:
 		tier = mode
-		scale = 1.0
 	_reset()
+	apply()
+	_save()
+
+
+## The Graphics menu's sharpness: the 3D render scale, for a fixed tier
+## (Auto sets its own).
+func set_scale(s: float) -> void:
+	scale = clampf(s, min_scale(), 1.0)
 	apply()
 	_save()
 
@@ -268,7 +296,8 @@ func _process(delta: float) -> void:
 	if frame_ms > slow_ms:
 		_room = 0
 		_slow += 1
-		if _slow >= 2:
+		# Far too slow steps down at once; just slow waits for a second window.
+		if _slow >= 2 or frame_ms > slow_ms * 2.0:
 			_slow = 0
 			_step_down(gpu_ms > cpu_ms)
 	elif frame_ms < ROOM_FRAME_MS and gpu_ms < ROOM_PART_MS and cpu_ms < ROOM_PART_MS:
@@ -327,7 +356,8 @@ func _step_up() -> void:
 func _save() -> void:
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify({"mode": mode, "tier": tier, "scale": scale, "adapter": adapter}))
+		f.store_string(JSON.stringify({"mode": mode, "tier": tier, "scale": scale, "adapter": adapter,
+			"guess": GUESS_VERSION}))
 
 
 static func _read() -> Dictionary:

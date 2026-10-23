@@ -65,6 +65,7 @@ func _ready() -> void:
 	event("start", {"os": OS.get_name(), "build": build(), "screen": [size.x, size.y],
 		"window": [get_viewport().get_visible_rect().size.x, get_viewport().get_visible_rect().size.y],
 		"gpu": RenderingServer.get_video_adapter_name(), "web": _browser(), "cores": OS.get_processor_count(),
+		"ram_gb": snappedf(float(OS.get_memory_info().get("physical", 0)) / 1e9, 0.1),
 		"renderer": RenderingServer.get_current_rendering_method(), "app": "web" if OS.has_feature("web") else "desktop"})
 
 
