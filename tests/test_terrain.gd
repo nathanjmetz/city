@@ -83,6 +83,21 @@ func _init() -> void:
 			same = same and absf(low[k * 4] - v[k].y) < 0.01
 			halfway = halfway and absf(low[(k + 1) * 4] - (v[k].y + v[k + 2].y) * 0.5) < 0.01
 	_check(same and halfway, "ground detail slides smoothly to the coarser level")
+	# Water lies flat in every square, even on the coarse levels where a
+	# square reaches from the water up onto dry land (it once tilted 22 m).
+	var tilt := 0.0
+	for cz in range(-6, 2):
+		for cx in range(2, 8):
+			var wm = TerrainView.build_chunk(Vector2(cx, cz) * 512.0, 512.0, 128.0, 0.0)[1]
+			if wm == null:
+				continue
+			var wa: Array = (wm as ArrayMesh).surface_get_arrays(0)
+			var wv: PackedVector3Array = wa[Mesh.ARRAY_VERTEX]
+			var wi: PackedInt32Array = wa[Mesh.ARRAY_INDEX]
+			for t in range(0, wi.size(), 3):
+				var ys := [wv[wi[t]].y, wv[wi[t + 1]].y, wv[wi[t + 2]].y]
+				tilt = maxf(tilt, ys.max() - ys.min())
+	_check(tilt < 0.01, "water lies flat on every level of detail")
 	# The land runs on past the chunks, out to where the haze takes it.
 	var job := TerrainView.far_job(Vector2.ZERO, ceili(TerrainView.FAR_REACH / TerrainView.CHUNK))
 	while not TerrainView.far_step(job):
