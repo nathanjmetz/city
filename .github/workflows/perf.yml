@@ -13,7 +13,9 @@ permissions:
 
 concurrency:
   group: perf
-  cancel-in-progress: true
+  # Merges land minutes apart and a run takes about 10 minutes: let a run
+  # finish (only the newest waiting one runs next), or none ever would.
+  cancel-in-progress: false
 
 env:
   GODOT_VERSION: 4.7.2
