@@ -5,10 +5,11 @@ extends RefCounted
 ## off it, and other industries leave it alone. It's only an intention: the
 ## farms and companies themselves decide what to use, by what the land holds.
 
-const KINDS := {"farm": "farming", "oil": "oil", "ore": "ore", "forest": "forestry"}
+const KINDS := {"farm": "farming", "oil": "oil", "ore": "ore", "forest": "forestry", "airport": "the airport"}
 const COLORS := {
 	"farm": Color(0.55, 0.8, 0.3), "oil": Color(0.35, 0.3, 0.5),
 	"ore": Color(0.8, 0.45, 0.25), "forest": Color(0.2, 0.55, 0.3),
+	"airport": Color(0.35, 0.6, 0.85),
 }
 
 ## Outlines in the order drawn: {points: PackedVector2Array, kind}. A later

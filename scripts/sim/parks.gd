@@ -166,6 +166,8 @@ func ground_problem(sim: CitySim, poly: PackedVector2Array, skip := -1) -> Strin
 			return "That ground is a landfill, recycling yard or cemetery."
 		if sim.mail.covers(q):
 			return "That ground is the post office."
+		if sim.airports.owns(q):
+			return "That's airport land."
 		if sim.education.covers(q):
 			return "That ground is a campus."
 		if sim.telecom.covers(q):

@@ -91,6 +91,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_transit.gd
           ~/godot-cache/godot --headless -s tests/test_loading.gd
           ~/godot-cache/godot --headless -s tests/test_terrain.gd
+          ~/godot-cache/godot --headless -s tests/test_airport.gd
           ~/godot-cache/godot --headless -s tests/test_permits.gd
           ~/godot-cache/godot --headless -s tests/test_rail.gd
           ~/godot-cache/godot --headless -s tests/test_rail_grain.gd

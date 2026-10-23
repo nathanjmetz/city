@@ -2578,3 +2578,39 @@ const ASK_FESTIVAL_COST := 15_000
 const ASK_FESTIVAL_DEMAND := 0.15
 ## Fall festival season (Indiana's harvest and heritage festivals).
 const ASK_FESTIVAL_MONTHS := [9, 10]
+
+
+# --- Airports -----------------------------------------------------------------
+# Brawn's airport hub (2026-10-22): the player places a grass strip and its
+# manager runs it as a business, growing it when it pays and the land allows.
+
+## What the player pays to open a grass strip: clearing and seeding about
+## 20 acres of turf, a T-hangar, a fuel pump and a windsock.
+const AIRPORT_COST := 250_000
+## Monthly running cost of each tier (a grass strip is mostly mowing and
+## insurance; a regional airport pays staff, a tower and fire rescue).
+## Grass strip, paved, regional, international.
+const AIRPORT_UPKEEP := [600, 9_000, 60_000, 250_000]
+## What the manager must have saved to build the next tier: the local share
+## of the job. FAA Airport Improvement Program grants pay 90 to 95% of
+## runway work at public-use airports; this is the rest. Index = the tier
+## being built.
+const AIRPORT_UPGRADE := [0, 400_000, 3_000_000, 25_000_000]
+## Hangar or tie-down rent for each plane based there, dollars a month
+## (Midwest T-hangars rent for about $250 to $450).
+const AIRPORT_HANGAR_RENT := 350.0
+## Aerial application, dollars an acre per pass (Midwest custom rates for a
+## fungicide pass on corn run about $10 to $14).
+const AIRPORT_DUSTING_PER_ACRE := 12.0
+## Fuel margin and landing fee on each flight in or out.
+const AIRPORT_FEE_PER_FLIGHT := 45.0
+## A crop duster for about this many acres of farmland within reach
+## (an AT-502 treats about 1,500 to 3,000 acres a week in season).
+const AIRPORT_ACRES_PER_DUSTER := 2_000.0
+## A privately owned plane based here per this many residents (the US has
+## one active general aviation plane for about 1,600 people; small towns
+## with a strip run higher).
+const AIRPORT_PEOPLE_PER_PLANE := 500.0
+## Jobs at each tier, and the assessed value the town taxes (industrial rate).
+const AIRPORT_JOBS := [2, 10, 120, 1_500]
+const AIRPORT_VALUE := [250_000, 2_500_000, 40_000_000, 400_000_000]

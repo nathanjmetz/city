@@ -12,7 +12,7 @@ signal nothing_to_close
 
 const GOOD := Color(0.5, 0.85, 0.5)
 ## The bottom bar's tool categories: [key, title].
-const CATEGORIES := [["roads", "Roads"], ["zones", "Zoning"], ["industry", "Industry"], ["services", "Services"],
+const CATEGORIES := [["roads", "Roads"], ["zones", "Zoning"], ["industry", "Industry"], ["airport", "Airport"], ["services", "Services"],
 	["parks", "Parks"], ["bulldoze", "Bulldoze"], ["move", "Move It"], ["budget", "Economy"]]
 const BAD := Color(0.95, 0.45, 0.4)
 
@@ -35,6 +35,8 @@ var _bank_cards := {}  # "community"/"farm_credit" -> Button
 var _campus_cards := {}  # "high_school"/"college"/"university" -> Button
 var telecom_tool: TelecomTool
 var _telecom_card: Button
+var airport_tool: AirportTool
+var _airport_cards := {}  # "strip"/"reserve"/"release" -> Button
 var _warehouse_cards := {}  # Warehouses size -> Button
 var big_tool: BigFactoryTool
 var _big_cards := {}  # BigFactories kind -> Button
@@ -175,6 +177,8 @@ func _ready() -> void:
 	bank_tool.hint_changed.connect(_show_hint)
 	neighborhood_tool.kind_changed.connect(func(_k): _sync())
 	neighborhood_tool.hint_changed.connect(_show_hint)
+	airport_tool.active_changed.connect(func(_on): _sync())
+	airport_tool.hint_changed.connect(_show_hint)
 	traffic_tool.mode_changed.connect(func(_m): _sync())
 	traffic_tool.hint_changed.connect(_show_hint)
 	park_tool.kind_changed.connect(func(_k): _sync())
@@ -238,7 +242,7 @@ func anything_open() -> bool:
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
 		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or bank_tool.kind != "" or telecom_tool.kind != "" or move_tool.active \
-		or neighborhood_tool.kind != "" or big_tool.kind != ""
+		or neighborhood_tool.kind != "" or big_tool.kind != "" or airport_tool.active
 
 
 ## Puts every tool away and closes every panel.
@@ -267,6 +271,7 @@ func close_all() -> void:
 	campus_tool.set_kind("")
 	telecom_tool.set_kind("")
 	bank_tool.set_kind("")
+	airport_tool.set_active(false)
 	traffic_tool.set_mode(TrafficTool.Mode.NONE)
 	park_tool.set_kind("")
 	move_tool.set_active(false)
@@ -649,6 +654,7 @@ func _build_bottom_bar() -> void:
 	_drawers["services"] = _services_drawer()
 	_drawers["parks"] = _parks_drawer()
 	_drawers["industry"] = _industry_drawer()
+	_drawers["airport"] = _airport_drawer()
 	for key in _drawers:
 		_drawers[key].add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 		holder.add_child(_drawers[key])
@@ -1112,6 +1118,34 @@ func _industry_drawer() -> PanelContainer:
 	return drawer
 
 
+## Airports (Brawn's hub): place a grass strip; its manager grows it. Reserve
+## gives it land to grow into.
+func _airport_drawer() -> PanelContainer:
+	var drawer := PanelContainer.new()
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	drawer.add_child(row)
+	var place := _section(row, "Airfield  ·  open land beside a road")
+	var area := _section(row, "Give it land")
+	var b := _card("airport", "Grass strip", "")
+	b.tooltip_text = "Grass strip ($%s): crop dusters and private planes. Shows the land every bigger size would need." \
+		% CitySim.money_text(Balance.AIRPORT_COST)
+	b.pressed.connect(func(): airport_tool.set_active(true))
+	place.add_child(b)
+	_airport_cards["strip"] = b
+	for entry in [["reserve", "reserve", "Reserve", FarmTool.Mode.RESERVE, "Outline land for the airport to grow into: no roads or zoning there"],
+			["release", "dezone", "Release", FarmTool.Mode.CLEAR, "Release reserved land"]]:
+		var m: int = entry[3]
+		var c := _card(entry[1], entry[2], "")
+		c.tooltip_text = entry[4]
+		c.pressed.connect(func():
+			farm_tool.reserve_kind = "airport"
+			farm_tool.set_mode(m))
+		area.add_child(c)
+		_airport_cards[entry[0]] = c
+	return drawer
+
+
 ## The traffic controls, shown above the road menus while Traffic is open.
 func _fill_traffic_row(row: HBoxContainer) -> void:
 	var view := _section(row, "View")
@@ -1227,6 +1261,9 @@ func _open(cat: String) -> void:
 					farm_tool.set_mode(FarmTool.Mode.CORN)
 				else:
 					industry_tool.set_kind(_industry_kind)
+		"airport":
+			if not airport_tool.active:
+				airport_tool.set_active(true)
 		"services":
 			if service_tool.kind == ServiceTool.OFF:
 				service_tool.set_kind(Services.Kind.POWER_FEED)
@@ -1244,6 +1281,7 @@ func _open(cat: String) -> void:
 			campus_tool.set_kind("")
 			telecom_tool.set_kind("")
 			bank_tool.set_kind("")
+			airport_tool.set_active(false)
 			traffic_tool.set_mode(TrafficTool.Mode.NONE)
 			park_tool.set_kind("")
 			move_tool.set_active(false)
@@ -1276,6 +1314,9 @@ func _sync() -> void:
 	elif service_tool.kind != ServiceTool.OFF or campus_tool.kind != "" or industry_tool.kind == "power" \
 			or bank_tool.kind != "" or telecom_tool.kind != "":
 		_category = "services"
+	elif airport_tool.active or (farm_tool.mode in [FarmTool.Mode.RESERVE, FarmTool.Mode.CLEAR]
+			and farm_tool.reserve_kind == "airport"):
+		_category = "airport"
 	elif park_tool.kind != "":
 		_category = "parks"
 	elif industry_tool.kind != "" or warehouse_tool.kind != "" or big_tool.kind != "" or farm_tool.mode != FarmTool.Mode.NONE:
@@ -1348,6 +1389,9 @@ func _sync() -> void:
 		_warehouse_cards[k].set_pressed_no_signal(k == warehouse_tool.kind)
 	for k in _big_cards:
 		_big_cards[k].set_pressed_no_signal(k == big_tool.kind)
+	_airport_cards.strip.set_pressed_no_signal(airport_tool.active)
+	_airport_cards.reserve.set_pressed_no_signal(_category == "airport" and farm_tool.mode == FarmTool.Mode.RESERVE)
+	_airport_cards.release.set_pressed_no_signal(_category == "airport" and farm_tool.mode == FarmTool.Mode.CLEAR)
 	for m in _traffic_cards:
 		_traffic_cards[m].set_pressed_no_signal(m == traffic_tool.mode)
 	_parallel_card.set_pressed_no_signal(road_tool.parallel)

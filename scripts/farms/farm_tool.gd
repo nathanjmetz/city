@@ -78,7 +78,7 @@ func _view() -> int:
 	if mode == Mode.CORN or mode == Mode.SOYBEANS:
 		return InfoView.Mode.FERTILITY
 	return {"farm": InfoView.Mode.FERTILITY, "oil": InfoView.Mode.OIL, "ore": InfoView.Mode.ORE,
-		"forest": InfoView.Mode.FOREST}.get(reserve_kind, InfoView.Mode.FERTILITY)
+		"forest": InfoView.Mode.FOREST, "airport": InfoView.Mode.NONE}.get(reserve_kind, InfoView.Mode.FERTILITY)
 
 
 func is_drawing() -> bool:
@@ -148,7 +148,9 @@ func _process(_delta: float) -> void:
 	else:
 		_draw_outline()
 	var fert := "Soil here: %d%% fertile." % roundi(Farms.fertility_at(_hover) * 100.0)
-	if reserve_kind != "farm":
+	if reserve_kind == "airport":
+		fert = "Outline land the airport can grow into."
+	elif reserve_kind != "farm":
 		var res: int = Industry.KINDS[reserve_kind].resource
 		fert = "%s here: %d%%." % [Industry.KINDS[reserve_kind].cargo.capitalize(), roundi(Resources.at(res, _hover) * 100.0)]
 	if fert != _problem and _nodes.is_empty() and mode != Mode.CORN and mode != Mode.SOYBEANS:

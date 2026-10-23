@@ -64,6 +64,9 @@ static func pick(sim: CitySim, p: Vector3) -> Dictionary:
 	var tid := sim.telecom.at(p) if not sim.telecom.companies.is_empty() else -1
 	if tid != -1:
 		return {"type": "telecom", "id": tid}
+	var aid := sim.airports.site_at(p)
+	if aid != -1:
+		return {"type": "airport", "id": aid}
 	var fid := sim.farms.farm_at(p)
 	if fid == -1:
 		fid = sim.farms.field_at(p)
@@ -142,6 +145,9 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 			return [sim.banks.banks[sel.id].pos, Banks.CELL * 0.75]
 		"farm":
 			return [sim.farms.farms[sel.id].pos, Farms.FARMHOUSE_SIZE.length() * 0.5 + 3.0]
+		"airport":
+			var a: Dictionary = sim.airports.sites[sel.id]
+			return [Airports.at(a, 0.0, (Airports.tier(a.tier).rofa * Airports.FT * 0.5 + 30.0) * a.side), 40.0]
 		"lot":
 			return [sim.lots[sel.id].pos, LotPlanner.DEPTH * 0.5 + 2.0]
 		"road":
@@ -173,6 +179,7 @@ static func exists(sim: CitySim, sel: Dictionary) -> bool:
 		"big": return sim.big.sites.has(sel.id)
 		"park": return sim.parks.sites.has(sel.id)
 		"power": return sim.power.sites.has(sel.id)
+		"airport": return sim.airports.sites.has(sel.id)
 		"lot": return sim.lots.has(sel.id)
 		"road": return sim.network.segments.has(sel.id)
 		"spot": return true
@@ -213,6 +220,7 @@ static func _describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 		"big": return BigFactoryInfo.describe(sim, sel.id)
 		"park": return _park(sim, sel.id)
 		"power": return _power(sim, sel.id)
+		"airport": return sim.airports.describe(sim, sel.id)
 		"lot": return _lot(sim, sel.id)
 		"road": return _road(sim, sel.id)
 	return {}

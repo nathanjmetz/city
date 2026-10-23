@@ -186,6 +186,8 @@ func _finish_budget(sim: CitySim, sums: Dictionary) -> void:
 		* tax[ZoneMap.Zone.COMMERCIAL] / 100.0 / 12.0
 	# The phone company pays property tax on its towers and fiber.
 	income[ZoneMap.Zone.COMMERCIAL] += sim.telecom.taxable_value() * tax[ZoneMap.Zone.COMMERCIAL] / 100.0 / 12.0
+	# And airports.
+	income[ZoneMap.Zone.INDUSTRIAL] += sim.airports.taxable_value() * tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
 	# Road upkeep only changes with the roads.
 	if _roads_rev != [sim.network.get_instance_id(), sim.network.revision]:
 		_roads_rev = [sim.network.get_instance_id(), sim.network.revision]

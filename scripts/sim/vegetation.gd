@@ -52,7 +52,7 @@ var _rail_version := -1
 func watch(sim: Object) -> void:
 	_sim = sim
 	for sig in [sim.buildings_changed, sim.lots_changed, sim.farms_changed, sim.industry_changed, sim.warehouses_changed,
-			sim.parks_changed, sim.water_changed, sim.banks_changed, sim.power_changed, sim.network.changed]:
+			sim.parks_changed, sim.water_changed, sim.banks_changed, sim.power_changed, sim.network.changed, sim.airports.changed]:
 		sig.connect(_mark)
 	if sim.has_signal("telecom_changed"):
 		sim.telecom_changed.connect(_mark)
@@ -244,6 +244,14 @@ static func sources(sim: Object) -> Dictionary:
 		var line := PackedVector3Array(pts.slice(0, upto))
 		if line.size() >= 2:
 			out["rp%d %d" % [pid, line.size()]] = _line_cells.bind(line, 8.0)
+	# Airports: the runway's clear area, the building area, and the
+	# protection zones off each end (kept clear of trees, as the FAA asks).
+	for id in sim.airports.sites:
+		var a: Dictionary = sim.airports.sites[id]
+		var polys := Airports.owned(a, a.tier) + [Airports.rpz(a, a.tier, 1), Airports.rpz(a, a.tier, -1)]
+		for i in polys.size():
+			out["a%d %d %s %d" % [id, a.tier, a.pos, i]] = _poly_cells.bind(polys[i])
+		out["ad%d %d" % [id, a.drive.size()]] = _line_cells.bind(PackedVector3Array(a.drive), Farms.DRIVE_WIDTH * 0.5 + 1.5)
 	return out
 
 

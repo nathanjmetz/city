@@ -149,6 +149,12 @@ func _draw() -> void:
 			for x in [0.3, 0.5, 0.7]:
 				draw_rect(Rect2(P.call(x - 0.07, 0.58), Vector2(0.14, 0.3) * s), color, false, w * 0.7)
 			draw_rect(Rect2(P.call(0.12, 0.56), Vector2(0.08, 0.1) * s), color)
+		"airport":
+			# A small plane seen from above, nose up.
+			_poly([P.call(0.46, 0.12), P.call(0.54, 0.12), P.call(0.56, 0.4), P.call(0.92, 0.5),
+				P.call(0.92, 0.58), P.call(0.56, 0.54), P.call(0.54, 0.76), P.call(0.68, 0.84), P.call(0.68, 0.9),
+				P.call(0.32, 0.9), P.call(0.32, 0.84), P.call(0.46, 0.76), P.call(0.44, 0.54), P.call(0.08, 0.58),
+				P.call(0.08, 0.5), P.call(0.44, 0.4)], color)
 		"dezone":
 			draw_rect(Rect2(P.call(0.12, 0.12), Vector2(0.76, 0.76) * s), Color(color, 0.5), false, w * 0.6)
 			line.call(P.call(0.25, 0.25), P.call(0.75, 0.75), w * 1.3, Color(1, 0.45, 0.4))
