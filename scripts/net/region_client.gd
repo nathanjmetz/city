@@ -200,6 +200,7 @@ func _tick(msg: Dictionary) -> void:
 func _replace_region(d: Dictionary) -> void:
 	region.tick_count = int(d.tick)
 	region.chat = d.get("chat", [])
+	region.load_pacts(d)
 	for id in d.cities:
 		var c: Dictionary = d.cities[id]
 		if region.cities.has(id):

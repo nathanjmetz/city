@@ -77,6 +77,10 @@ var water := WaterUtility.new()
 ## Power companies' plants (Power.sources(), set by the city): more power
 ## sources, each feeding the lines from its yard gate.
 var plants := []
+## Coverage a neighbor town gives under a signed deal (Interlocal): kind ->
+## [{"node": county road end, "offset": road metres from their station to
+## it, "reach": metres}]. Set by Interlocal, never saved.
+var contracts := {}
 var _next_id := 1
 
 
@@ -214,6 +218,15 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 			if buildings[id].kind == kind:
 				_spread(network, lengths, buildings[id], dist)
 		reach_by_kind[kind] = dist
+	# A neighbor's station under contract reaches in over the county road.
+	var by_contract := {}
+	for kind in contracts:
+		by_contract[kind] = []
+		for c in contracts[kind]:
+			var dist := {}
+			if network.nodes.has(c.node):
+				_spread_nodes(network, lengths, {c.node: c.offset}, dist)
+			by_contract[kind].append([dist, c.reach])
 	var plant_dist := {}
 	for pl in plants:
 		_spread_from(network, lengths, pl.front, plant_dist)
@@ -228,6 +241,8 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 		var s := {}
 		for kind in COVERAGE:
 			s[kind] = _lot_distance(network, lengths, reach_by_kind[kind], lot) <= KINDS[kind].reach
+			for c in by_contract.get(kind, []):
+				s[kind] = s[kind] or _lot_distance(network, lengths, c[0], lot) <= c[1]
 		served[key] = s
 		var owner := water.main_owner(lot.seg)
 		if owner != -1:
@@ -351,6 +366,12 @@ func _spread_from(network: RoadNetwork, lengths: Dictionary, front: Vector3, dis
 	var frontier := {}
 	frontier[s.a] = near.t * l
 	frontier[s.b] = (1.0 - near.t) * l
+	_spread_nodes(network, lengths, frontier, dist)
+
+
+## Road distance out from the starting nodes (node -> metres already
+## travelled), keeping the shortest in `dist`.
+func _spread_nodes(network: RoadNetwork, lengths: Dictionary, frontier: Dictionary, dist: Dictionary) -> void:
 	var done := {}
 	while not frontier.is_empty():
 		var best := -1

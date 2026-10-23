@@ -809,6 +809,12 @@ func _budget_drawer() -> PanelContainer:
 	schools.add_child(Icon.new("school", 18))
 	schools.add_child(UiStyle.label("Schools and colleges", 13))
 	_budget_rows["education"] = _value_label(schools, 40)
+	var deals := HBoxContainer.new()
+	deals.add_theme_constant_override("separation", 6)
+	costs.add_child(deals)
+	deals.add_child(Icon.new("services", 18))
+	deals.add_child(UiStyle.label("Shared with neighbors", 13))
+	_budget_rows["deals"] = _value_label(deals, 40)
 	var fees := HBoxContainer.new()
 	fees.add_theme_constant_override("separation", 6)
 	income.add_child(fees)
@@ -1031,6 +1037,8 @@ func _update_stats() -> void:
 	_budget_rows.upkeep.text = "–$" + _thousands(int(e.budget.upkeep))
 	_budget_rows.services.text = "–$" + _thousands(int(e.budget.services))
 	_budget_rows.education.text = "–$" + _thousands(int(e.budget.get("education", 0)))
+	var deals := int(e.budget.get("deals", 0))
+	_budget_rows.deals.text = ("+" if deals > 0 else ("–" if deals < 0 else "")) + "$" + _thousands(absi(deals))
 	_budget_rows.fees.text = "$" + _thousands(int(e.budget.fees))
 	_budget_rows.grant.text = "" if e.milestone >= Economy.MILESTONES.size() else \
 		"Next grant: $%s at %s people" % [_thousands(Economy.MILESTONES[e.milestone][1]),

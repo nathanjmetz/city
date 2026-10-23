@@ -89,6 +89,8 @@ var hubs := CivicHubs.new()
 var parks := Parks.new()
 ## The post office, its postmaster, and the carriers on their routes.
 var mail := Mail.new()
+## Services shared with neighbor towns under signed deals (Interlocal).
+var interlocal := Interlocal.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -444,6 +446,9 @@ func apply_now(cmd: Dictionary) -> bool:
 		"guide":
 			# The player's word to a hub's leader (grow, hold off, pre-approve).
 			ok = permits.guide(self, cmd)
+		"end_deal":
+			# Notice to end a service deal with a neighbor town.
+			ok = interlocal.end(self, int(cmd.get("id", -1)))
 		"set_junction":
 			# Traffic lights, stop signs or none at a junction (-1 = automatic).
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
@@ -694,6 +699,7 @@ func tick() -> void:
 	if not in_region and tick_count % (24 * TICKS_PER_HOUR) == 0:
 		Trade.settle({"me": self}, {})
 	mail.tick(self)
+	interlocal.tick(self)
 	if not simulate_traffic:
 		return
 	# Before logistics, which clears Traffic's arrival list.
@@ -1670,6 +1676,7 @@ func to_dict() -> Dictionary:
 		"hubs": hubs.to_dict(),
 		"parks": parks.to_dict(),
 		"mail": mail.to_dict(),
+		"interlocal": interlocal.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
 		"buses": buses.to_dict(),
@@ -1713,6 +1720,8 @@ func from_dict(d: Dictionary) -> void:
 	hubs.from_dict(d.get("hubs", {}))
 	parks.from_dict(d.get("parks", {}))
 	mail.from_dict(d.get("mail", {}))
+	interlocal.from_dict(d.get("interlocal", {}))
+	services.contracts = interlocal.coverage()
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:

@@ -33,6 +33,13 @@ var chat := []  # [{"from", "text", "tick"}]
 var joins := []
 var tick_count := 0
 var region_seed := 1
+## Service deals offered between towns and waiting on both players' bells
+## (Interlocal): id -> {kind, host, served, fee, host_req, served_req,
+## host_link, served_link, offset, homes}. The next deal's id, and when an
+## offer turned down may come again ("kind:host:served" -> tick).
+var pacts := {}
+var next_pact := 1
+var pact_wait := {}
 
 
 ## The city a player owns, or "" if they have none yet.
@@ -105,6 +112,7 @@ func tick() -> void:
 		cities[id].sim.tick()
 	if tick_count % TRADE_EVERY == 0:
 		settle_trade()
+		Interlocal.region_step(self)
 
 
 ## A month of trade between every city: neighbors joined by county road
@@ -239,7 +247,8 @@ func to_dict() -> Dictionary:
 		var c: Dictionary = cities[id]
 		cs[id] = {"owner": c.owner, "player": c.player, "name": c.name, "origin": [c.origin.x, c.origin.y],
 			"color": c.color, "city": c.sim.to_dict()}
-	return {"version": 1, "tick": tick_count, "seed": region_seed, "cities": cs, "chat": chat, "joins": joins}
+	return {"version": 1, "tick": tick_count, "seed": region_seed, "cities": cs, "chat": chat, "joins": joins,
+		"pacts": pacts, "next_pact": next_pact, "pact_wait": pact_wait}
 
 
 func from_dict(d: Dictionary) -> void:
@@ -249,6 +258,7 @@ func from_dict(d: Dictionary) -> void:
 	joins = []
 	for j in d.get("joins", []):
 		joins.append({"a": str(j.a), "a_node": int(j.a_node), "b": str(j.b), "b_node": int(j.b_node)})
+	load_pacts(d)
 	cities.clear()
 	var cs: Dictionary = d.get("cities", {})
 	for id in cs:
@@ -258,3 +268,17 @@ func from_dict(d: Dictionary) -> void:
 		sim.from_dict(c.city)
 		cities[id] = {"owner": str(c.owner), "player": str(c.get("player", "")), "name": str(c.name),
 			"origin": Vector2(float(c.origin[0]), float(c.origin[1])), "color": int(c.color), "sim": sim}
+
+
+## Service deals still waiting on both bells (also on a resync).
+func load_pacts(d: Dictionary) -> void:
+	pacts = {}
+	for k in d.get("pacts", {}):
+		var p: Dictionary = d.pacts[k]
+		pacts[int(k)] = {"kind": str(p.kind), "host": str(p.host), "served": str(p.served), "fee": int(p.fee),
+			"host_req": int(p.host_req), "served_req": int(p.served_req), "host_link": int(p.host_link),
+			"served_link": int(p.served_link), "offset": int(p.offset), "homes": int(p.homes)}
+	next_pact = int(d.get("next_pact", 1))
+	pact_wait = {}
+	for k in d.get("pact_wait", {}):
+		pact_wait[str(k)] = int(d.pact_wait[k])

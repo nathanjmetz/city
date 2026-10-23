@@ -1070,3 +1070,47 @@ const BANK_LEND_EVERY := 360
 const BANK_DECIDE_EVERY := 1440
 ## Assessed value of a block of bank premises, for commercial property tax.
 const BANK_PREMISES_VALUE := 900_000
+
+# --- Shared services between towns -----------------------------------------------
+# Brawn (2026-10-22): a hub leader can offer a neighbor town a service deal
+# through the permit bell on both sides. Modelled on Indiana interlocal
+# agreements (Interlocal Cooperation Act, IC 36-1-7): a written agreement
+# between two units that says what is served, how the cost is shared and
+# how either side ends it. Real cases: a town contracting a neighbor's fire
+# department (IC 36-8-13 township fire contracts), a sheriff or town marshal
+# patrolling a smaller town, transfer students taught by the next school
+# corporation (IC 20-26-11), and trash hauled under a solid waste contract
+# (IC 36-9-30).
+
+## The services a town can share. `upkeep` is the host's cost the served
+## town shares in (one station or site); `reach` is how far by road, from the
+## host's building through the county road, a home can be and still be
+## served (metres). ISO counts a home as protected within 5 road miles of a
+## fire station; a sheriff's deputy or a rural school bus covers more.
+const INTERLOCAL := {
+	"trash": {"upkeep": 20_000, "reach": INF},
+	"fire": {"upkeep": 45_000, "reach": 8047.0},
+	"police": {"upkeep": 50_000, "reach": 12875.0},
+	"school": {"upkeep": 95_000, "reach": 16093.0},
+}
+## The fee: the host's cost shared by households (each town's homes), plus
+## an administrative share, as most Indiana interlocals split costs. It
+## never drops below the minimum.
+const INTERLOCAL_ADMIN := 0.1
+const INTERLOCAL_MIN_FEE := 1_500
+## A leader offers a service only to a town with at least this many homes.
+const INTERLOCAL_MIN_HOMES := 25
+## Either town ends a deal with this much notice (game ticks; 90 days, the
+## usual termination clause), and the fee is re-figured once a year.
+const INTERLOCAL_NOTICE := 3 * 24 * 60
+const INTERLOCAL_REPRICE := 12 * 24 * 60
+## After a "no", the same offer waits this long before it comes again
+## (game ticks; six months).
+const INTERLOCAL_RETRY := 6 * 24 * 60
+## Garbage trucks a hauling contract runs in the served town at once, and
+## school buses: one 72-seat bus for about this many homes, up to the cap.
+const INTERLOCAL_TRASH_TRUCKS := 2
+const INTERLOCAL_HOMES_PER_BUS := 60
+const INTERLOCAL_MAX_BUSES := 4
+## Stops a contract school bus makes on its morning and afternoon run.
+const INTERLOCAL_BUS_STOPS := 5
