@@ -18,6 +18,8 @@ const FLUSH_EVERY := 30.0
 const PERF_EVERY := 15.0
 ## A frame longer than this is a hitch (a visible stutter).
 const HITCH := 0.1
+## A frame this long (seconds) is a freeze the player sees: sent at once.
+const STALL := 1.0
 ## The outbox keeps at most this many batches (oldest dropped first).
 const OUTBOX_MAX := 300
 ## Batches sent per flush, and how long to wait for the server to confirm.
@@ -39,6 +41,7 @@ var _flush_time := 0.0
 var _perf_time := 0.0
 var _frames := 0
 var _worst := 0.0
+var _last_us := 0
 var _frame_ms := PackedFloat32Array()   # this window's frame times
 var _quality_hooked := false
 var _hitches := 0
@@ -219,17 +222,24 @@ func _process(delta: float) -> void:
 	_watch_client()
 	for err in _logger.take() if _logger else []:
 		_error(err)
+	# The engine caps delta at a few physics steps (about 150 ms), so a long
+	# freeze would hide inside it: time frames on the wall clock instead.
+	var us := Time.get_ticks_usec()
+	var dt := delta if _last_us == 0 else (us - _last_us) / 1000000.0
+	_last_us = us
 	_frames += 1
 	if not LoadingScreen.is_open():
-		_worst = maxf(_worst, delta)
-		_frame_ms.append(delta * 1000.0)
-		if delta > HITCH:
+		_worst = maxf(_worst, dt)
+		_frame_ms.append(dt * 1000.0)
+		if dt > HITCH:
 			_hitches += 1
-	_perf_time += delta
+		if dt > STALL:
+			_stall(dt)
+	_perf_time += dt
 	if _perf_time >= PERF_EVERY:
 		_perf_sample()
 	tracker.tick(now, _camera_height())
-	_flush_time += delta
+	_flush_time += dt
 	if _flush_time >= FLUSH_EVERY:
 		flush()
 
@@ -257,6 +267,22 @@ func _perf_sample() -> void:
 	_frames = 0
 	_worst = 0.0
 	_hitches = 0
+
+
+## A freeze: how long, where the player was, and the Perf stages with the
+## longest single run since the last sample (the freeze is among them when
+## the code that froze is timed). Flushed at once in case it happens again.
+func _stall(dt: float) -> void:
+	var stages := []
+	for key in Perf.stats:
+		if (key.begins_with("frame.") or key.begins_with("sim.")) and Perf.stats[key].n > 0:
+			stages.append([key, Perf.stats[key].max])
+	stages.sort_custom(func(a, b): return a[1] > b[1])
+	var top := {}
+	for st in stages.slice(0, 5):
+		top[st[0]] = snappedf(st[1], 0.1)
+	event("stall", {"ms": int(dt * 1000.0), "scene": _scene, "ctx": tracker.context, "stages": top})
+	flush()
 
 
 ## Per-system timings from Perf for this window: the sim tick (mean and
