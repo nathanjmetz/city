@@ -248,6 +248,41 @@ void fragment() {
 
 ## Reclaimed pasture and hay ground laid as a flat (strip mine grading):
 ## vertex colour as the grass, with the lawn's seasons and snow, no sheen.
+## Low-slope commercial roofs (alpha picks the kind): single-ply membrane
+## (alpha 1, weathered white TPO or black EPDM by colour) laid in 10 ft
+## sheets with lapped seams, or tar and gravel built-up roof (alpha 0.5).
+## Dirt and ponding stains, and snow in winter. Benchmark: aerial photos
+## of Indiana Main Street blocks and strip centres.
+const MEMBRANE := """
+void fragment() {
+	vec2 p = world_pos.xz;
+	vec3 col = lin(COLOR.rgb);
+	float big = texture(noise_soft, p / 18.0).r;
+	float spot = texture(noise_soft, p / 4.0 + 0.37).r;
+	float grain = texture(noise_grain, p / 0.6).r;
+	if (COLOR.a > 0.75) {
+		// Sheets 3.05 m wide with a lapped, welded seam; a lighter line on
+		// dark rubber, a darker one on white.
+		float sx = fract(p.x / 3.05);
+		float seam = 1.0 - smoothstep(0.0, 0.03, min(sx, 1.0 - sx));
+		seam *= 1.0 - smoothstep(0.3, 0.8, fwidth(p.x / 3.05) * 15.0);
+		float dark = step(dot(col, vec3(0.33)), 0.1);
+		col *= 1.0 + seam * mix(-0.12, 0.35, dark);
+		col *= 0.92 + grain * 0.08;
+	} else {
+		// Gravel ballast: speckled stone.
+		col *= 0.75 + grain * 0.5;
+	}
+	// Dirt washed toward the drains, and dried ponding rings.
+	col *= 1.0 - smoothstep(0.55, 0.85, big) * 0.18;
+	col *= 1.0 - smoothstep(0.7, 0.78, spot) * (1.0 - smoothstep(0.78, 0.86, spot)) * 0.12;
+	float cover = snow_cover(0.8, 0.95);
+	col = mix(col, vec3(0.86, 0.88, 0.92), cover);
+	ALBEDO = col;
+	ROUGHNESS = mix(0.85, 0.7, cover);
+	SPECULAR = 0.25;
+}
+"""
 const PASTURE := """
 global uniform vec4 season_look;
 void fragment() {
@@ -310,6 +345,7 @@ static func get_mat(key: String) -> Material:
 		"sign": mat = _shader(SIGN)
 		"pasture": mat = _shader(PASTURE)
 		"far": mat = _shader(FAR)
+		"membrane": mat = _shader(MEMBRANE)
 		"foliage": mat = _plain(1.0)
 		_: mat = _plain(0.55)  # paint, shutters, trim
 	_cache[key] = mat

@@ -198,8 +198,8 @@ func _main_street(to_curb: float) -> void:
 func _flat_roofed(mat: String, w: float, d: float, cz: float, deck: float, top: float, wall: Color) -> void:
 	_box(mat, Vector3(w, deck, d), Vector3(0, deck * 0.5, cz), wall)
 	var y := deck + 0.02
-	_quad("paint", Vector3(-w * 0.5, y, cz - d * 0.5), Vector3(w * 0.5, y, cz - d * 0.5),
-		Vector3(w * 0.5, y, cz + d * 0.5), Vector3(-w * 0.5, y, cz + d * 0.5), Color("#bdbbb4"), [], Vector3.UP)
+	_quad("membrane", Vector3(-w * 0.5, y, cz - d * 0.5), Vector3(w * 0.5, y, cz - d * 0.5),
+		Vector3(w * 0.5, y, cz + d * 0.5), Vector3(-w * 0.5, y, cz + d * 0.5), _low_slope(w, d, cz), [], Vector3.UP)
 	var ph := top - deck
 	var t := 0.25
 	_box(mat, Vector3(w, ph, t), Vector3(0, deck + ph * 0.5, cz - d * 0.5 + t * 0.5), wall)
@@ -207,6 +207,18 @@ func _flat_roofed(mat: String, w: float, d: float, cz: float, deck: float, top: 
 	_box(mat, Vector3(t, ph, d), Vector3(-w * 0.5 + t * 0.5, deck + ph * 0.5, cz), wall)
 	_box(mat, Vector3(t, ph, d), Vector3(w * 0.5 - t * 0.5, deck + ph * 0.5, cz), wall)
 	_coping(w, d, cz, top)
+
+
+## What a flat roof is covered with, picked from the building's size so it
+## doesn't move the builder's random sequence: weathered white TPO (most
+## re-roofs since 2000), black EPDM rubber, or tar and gravel on older ones.
+static func _low_slope(w: float, d: float, cz: float) -> Color:
+	var k := int(absf(w * 13.0 + d * 7.0 + cz * 3.0)) % 20
+	if k < 9:
+		return Color("#b1afa8")
+	if k < 15:
+		return Color("#4a4a47")
+	return Color("#8a847a", 0.5)
 
 
 func _coping(w: float, d: float, cz: float, top: float) -> void:
