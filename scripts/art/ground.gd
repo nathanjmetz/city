@@ -15,7 +15,7 @@ render_mode specular_schlick_ggx, cull_disabled;
 uniform sampler2D noise_soft : filter_linear_mipmap, repeat_enable;
 uniform sampler2D noise_grain : filter_linear_mipmap, repeat_enable;
 uniform vec4 lush : source_color = vec4(0.29, 0.38, 0.17, 1.0);
-uniform vec4 dry : source_color = vec4(0.46, 0.46, 0.27, 1.0);
+uniform vec4 dry : source_color = vec4(0.45, 0.47, 0.25, 1.0);
 uniform vec4 dark : source_color = vec4(0.20, 0.28, 0.12, 1.0);
 uniform vec4 soil : source_color = vec4(0.46, 0.40, 0.29, 1.0);
 uniform vec4 dormant : source_color = vec4(0.55, 0.49, 0.34, 1.0);
@@ -42,7 +42,7 @@ void fragment() {
 	float blades = texture(noise_grain, turn(p, 2.9) / 0.6 + 0.5).r;
 
 	float dryness = smoothstep(0.42, 0.78, big * 0.55 + mid * 0.45);
-	vec3 col = mix(lush.rgb, dry.rgb, dryness * 0.75);
+	vec3 col = mix(lush.rgb, dry.rgb, dryness * 0.55);
 	col = mix(col, dark.rgb, smoothstep(0.35, 0.9, clump) * 0.35);
 	// The odd bare, worn spot where the grass is driest.
 	col = mix(col, soil.rgb, smoothstep(0.80, 0.95, mid * 0.6 + clump * 0.4) * 0.35);
