@@ -563,7 +563,7 @@ func _resurvey(s: Dictionary, hits: Array) -> void:
 		for b in hits:
 			if _rect_dist(b, r[1]) <= near:
 				_fresh_claims(s)
-				var again := _ray(s, r[0])
+				var again := _ray_raw(s, r[0])
 				_work += 1
 				if again != r:
 					raw[i] = again
@@ -654,7 +654,7 @@ static func _survey(s: Dictionary) -> Array:
 	if s.rays.is_empty():
 		var raw := []
 		for f in s.fronts:
-			raw.append(_ray(s, f[0]))
+			raw.append(_ray_raw(s, f[0]))
 		s.raw = raw
 		s.rays = _converged(raw)
 	return s.rays
@@ -674,6 +674,32 @@ static func _converged(raw: Array) -> Array:
 ## (that road's half right-of-way, or -1 when it ran to REACH), claiming road
 ## id (or -1)].
 static func _ray(s: Dictionary, a: float) -> Array:
+	var rules: Array = s.get("sq", [])
+	if rules.is_empty():
+		return _ray_raw(s, a)
+	var r := _ray_raw(s, a)
+	if r[3] < 0.0:
+		return r
+	var lanes := {}
+	for ru in rules:
+		var d := _dist_to(r[1], ru.pieces)
+		if not ru.win and d < ru.k + 0.3 + ru.depth + 0.5:
+			# The corner lot of the cross street that holds the corner.
+			return [a, r[1], r[2], -1.0, ru.k, ru.seg]
+		if d < ru.k + REACH:
+			lanes[ru.seg] = ru
+	if lanes.is_empty():
+		return r
+	r = _ray_raw(s, a, lanes)
+	for o in lanes:
+		if lanes[o].win and r[3] >= 0.0:
+			r[3] = minf(r[3], lanes[o].depth)
+	return r
+
+
+## A survey line as the roads alone give it. Roads in `lanes` stop it only
+## at their edge (see _corner_rules).
+static func _ray_raw(s: Dictionary, a: float, lanes := {}) -> Array:
 	var rank := _rank(s.type)
 	var at := _on_curve(s, a)
 	var dir: Vector3 = at[1]
@@ -702,7 +728,8 @@ static func _ray(s: Dictionary, a: float) -> Array:
 			continue
 		# A back lane (an alley, or a gravel lane behind a paved street's
 		# lots) stops the lots only at its edge.
-		var t := _first_touch(f, n, p[0], p[1], k) if p[5] < rank else _first_claim(f, n, p[0], p[1], k)
+		var t := _first_touch(f, n, p[0], p[1], k) if p[5] < rank or lanes.has(p[4]) \
+			else _first_claim(f, n, p[0], p[1], k)
 		if t < 0.0:
 			return [a, f, n, -1.0, p[2], p[4]]
 		if t < best:
@@ -819,6 +846,89 @@ static func _first_touch(f: Vector2, n: Vector2, a: Vector2, b: Vector2, k: floa
 	return INF
 
 
+## Real plats square their corners: where two streets meet, one holds the
+## corner and its lots run square to it right up to the cross street, and
+## the cross street's lots start behind that corner lot (a plain Midwestern
+## grid; Sanborn maps of Petersburg, Jasper). Without this the land splits
+## along the diagonal between the two streets: triangles at every corner.
+## The street that holds the corner: the zoned one; if both are, the longer
+## block face (lots front the long sides of a block), then the lower id.
+## Returns rules, one per cross street, for _ray: {seg, win, depth, k,
+## pieces}.
+func _corner_rules(s: Dictionary, rays: Array, zones: ZoneMap) -> Array:
+	var rules := []
+	var seen := {}
+	for r in rays:
+		var o: int = r[5]
+		if o < 0 or r[3] < 0.0 or seen.has(o) or not _pieces.has(o):
+			continue
+		seen[o] = true
+		var piece: Array = _nearest_piece(r[1], _pieces[o])
+		var d: Vector2 = (piece[1] - piece[0]).normalized()
+		# Only a street running along the survey lines is a cross street.
+		if absf(d.dot(r[2])) < 0.7:
+			continue
+		var k: float = piece[2]
+		var inside: Vector2 = r[1] + r[2] * 20.0
+		var c := Geometry2D.get_closest_point_to_segment(inside, piece[0], piece[1])
+		var n_o := Vector2(-d.y, d.x)
+		if n_o.dot(r[1] - c) < 0.0:
+			n_o = -n_o
+		var zone_o := zones.zone_at(_v3(c + n_o * (k + 0.3 + ZONE_PROBE)))
+		var zone_s := zones.zone_at(_v3(r[1] + r[2] * ZONE_PROBE))
+		var len_o := 0.0
+		for q in _pieces[o]:
+			len_o += (q[0] as Vector2).distance_to(q[1])
+		var win: bool = zone_o == 0 or s.len > len_o + 1.0 or absf(s.len - len_o) <= 1.0 and s.seg < o
+		var holder := zone_s if win else zone_o
+		if not SIZES.has(holder):
+			continue
+		rules.append({"seg": o, "win": win, "depth": SIZES[holder].cap, "k": k,
+			"pieces": _pieces[o].map(func(q): return [q[0], q[1]])})
+	return rules
+
+
+## Whether this side holds the squared corner at cross street `seg`, or
+## starts behind the corner lot of a cross street that holds it.
+static func _holds_corner(s: Dictionary, seg: int) -> bool:
+	for ru in s.get("sq", []):
+		if ru.seg == seg:
+			return ru.win
+	return false
+
+
+static func _behind_corner(s: Dictionary, seg: int) -> bool:
+	for ru in s.get("sq", []):
+		if ru.seg == seg:
+			return not ru.win
+	return false
+
+
+static func _near_rule(p: Vector2, rules: Array) -> bool:
+	for ru in rules:
+		if _dist_to(p, ru.pieces) < ru.k + REACH:
+			return true
+	return false
+
+
+static func _dist_to(p: Vector2, pieces: Array) -> float:
+	var best := INF
+	for q in pieces:
+		best = minf(best, Geometry2D.get_closest_point_to_segment(p, q[0], q[1]).distance_to(p))
+	return best
+
+
+static func _nearest_piece(p: Vector2, pieces: Array) -> Array:
+	var best: Array = pieces[0]
+	var bd := INF
+	for q in pieces:
+		var d := Geometry2D.get_closest_point_to_segment(p, q[0], q[1]).distance_to(p)
+		if d < bd:
+			bd = d
+			best = q
+	return best
+
+
 static func _rank(type: int) -> int:
 	if type == RoadStyle.Type.ALLEY:
 		return Rank.LANE
@@ -868,6 +978,14 @@ func _plan_side(s: Dictionary, zones: ZoneMap, index: Dictionary) -> Array:
 	if s.rays.is_empty():
 		_work += s.fronts.size()
 	var rays := _survey(s)
+	var rules := _corner_rules(s, rays, zones)
+	s.sq = rules
+	if not rules.is_empty():
+		var raw := []
+		for r in s.raw:
+			raw.append(_ray(s, r[0]) if _near_rule(r[1], rules) else r)
+		rays = _converged(raw)
+	s.sq_rays = rays
 	# What each survey line is: its zone, or 0 when it can't hold a lot.
 	var kinds := []
 	var free_kinds := []
@@ -877,7 +995,8 @@ func _plan_side(s: Dictionary, zones: ZoneMap, index: Dictionary) -> Array:
 			k = zones.zone_at(_v3((r[1] as Vector2) + (r[2] as Vector2) * ZONE_PROBE))
 		free_kinds.append(k)
 		kinds.append(0 if k != 0 and _in_parcel(r[1], parcels) else k)
-	var sig := hash([kinds, near_keys, rich])
+	var corners := rules.map(func(ru): return [ru.seg, ru.win, ru.depth])
+	var sig := hash([kinds, near_keys, rich, corners])
 	if sig == s.cut_sig:
 		_inputs(s, zones, index, rich)
 		return s.cut
@@ -886,7 +1005,7 @@ func _plan_side(s: Dictionary, zones: ZoneMap, index: Dictionary) -> Array:
 	# the rest of it stands as it is, so a city and a reloaded copy of it
 	# agree on every empty lot whatever order things were built in.
 	_work += WORK_STEP
-	var free_sig := hash([free_kinds, rich])
+	var free_sig := hash([free_kinds, rich, corners])
 	if free_sig != s.get("free_sig", 0):
 		s.free_sig = free_sig
 		s.free = _cut_side(s, zones, rays, free_kinds, [])
@@ -948,12 +1067,12 @@ func _cut_side(s: Dictionary, zones: ZoneMap, rays: Array, kinds: Array, parcels
 		# Find the exact ends of the run between survey lines.
 		if i > 0:
 			a0 = _edge(s, rays[i - 1][0], a0, kinds[i - 1], kinds[i], zones, parcels)
-			start_corner = rays[i - 1][3] < 0.0
+			start_corner = rays[i - 1][3] < 0.0 and not _behind_corner(s, rays[i - 1][5])
 		elif rays[i][3] < SIZES[kinds[i]].cap * 0.5 and rays[i][4] >= 0.0:
 			start_corner = true
 		if j < rays.size() - 1:
 			a1 = _edge(s, a1, rays[j + 1][0], kinds[j], kinds[j + 1], zones, parcels)
-			end_corner = rays[j + 1][3] < 0.0
+			end_corner = rays[j + 1][3] < 0.0 and not _behind_corner(s, rays[j + 1][5])
 		elif rays[j][3] < SIZES[kinds[j]].cap * 0.5 and rays[j][4] >= 0.0:
 			end_corner = true
 		out.append_array(_cut_run(s, kinds[i], a0, a1, start_corner, end_corner))
@@ -1057,7 +1176,11 @@ func _cut_run(s: Dictionary, zone: int, a0: float, a1: float, start_corner: bool
 			by.append(_ray(s, b0)[5])
 		if k == n - 1 and end_corner:
 			by.append(_ray(s, b1)[5])
-		if by.any(func(x): return x >= 0):
+		# Holding a squared corner, it is the corner lot whole; otherwise the
+		# two halves of the corner are joined (_join_corners).
+		if by.any(func(x): return _holds_corner(s, x)):
+			lot.corner = true
+		elif by.any(func(x): return x >= 0):
 			lot["corner_by"] = by
 		if lot.area >= wmin * size.min_d * 0.5:
 			out.append(lot)
@@ -1095,7 +1218,7 @@ func _median_depth(s: Dictionary, a0: float, a1: float) -> float:
 ## Survey lines from a0 to a1: exact ones at both ends, cached ones between.
 func _rays_between(s: Dictionary, a0: float, a1: float) -> Array:
 	var out := [_ray(s, a0)]
-	for r in _survey(s):
+	for r in (s.sq_rays if not s.get("sq", []).is_empty() else _survey(s)):
 		if r[0] > a0 + 0.5 and r[0] < a1 - 0.5:
 			out.append(r.duplicate())
 	out.append(_ray(s, a1))

@@ -681,8 +681,15 @@ func _extend(sim: CitySim, id: int, keep: float, ambition: float) -> bool:
 			var best_score := 0.0
 			var best_cost := 0.0
 			for seg in _candidates(sim.network, id, kind):
-				var n: int = lots_on.get(seg, 0)
-				if n == 0:
+				# A street with no lots of its own (the side of corner lots)
+				# still carries the main on to the next block's lots.
+				var n: float = lots_on.get(seg, 0)
+				var s: Dictionary = sim.network.segments[seg]
+				for node in [s.a, s.b]:
+					for other in sim.network.segments_at(node):
+						if other != seg and not l[kind].has(other):
+							n += 0.5 * int(lots_on.get(other, 0))
+				if n == 0.0:
 					continue
 				var cost := RoadNetwork.polyline_length(sim.network.sample_segment(seg, 16)) * per_m
 				var score := n / maxf(cost, 1.0)

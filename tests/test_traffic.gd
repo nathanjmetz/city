@@ -494,7 +494,10 @@ func _init() -> void:
 		_check(not tw.traffic.stroll(walker_pid), "not twice at once")
 		for i in int(sw.len / (TrafficSim.WALK_V * 0.85 * TrafficSim.DT)) + 5:
 			tw.tick()
-		_check(tw.people.people[walker_pid].at == "", "and home again after the walk")
+		# Home again (and maybe off on an errand already, by this tick).
+		var p: Dictionary = tw.people.people[walker_pid]
+		_check(not tw.traffic.walkers.has(sw) and sw.d == sw.len and sw.then.enter == "lot:" + p.home
+			and (p.at == "" or tw.traffic.walker_of(walker_pid) != sw), "and home again after the walk")
 
 	# A big town: household cars drive as traffic flows (BPR timing), park
 	# where they were going, and a saved town picks up exactly.

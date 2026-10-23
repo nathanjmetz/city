@@ -137,6 +137,35 @@ func _init() -> void:
 		curve.apply({"type": "zone_frontage", "seg": curve.network.segments.keys()[0], "side": side, "zone": ZoneMap.Zone.RESIDENTIAL})
 	_check(curve.lots.size() >= 20, "lots along a curve (%d)" % curve.lots.size())
 	_check(_overlaps(curve) == 0, "curve lots don't overlap")
+	# One street side zoned in a grid: plain rectangles right to the cross
+	# streets, no triangles at the corners (real plats square their corners).
+	var sq := CitySim.new()
+	sq.simulate_traffic = false
+	sq.apply({"type": "build_grid", "a": [0, 0], "b": [360, 0], "c": [360, 240], "block": 120.0})
+	var street := -1
+	var near := INF
+	for id in sq.network.segments:
+		var d: float = sq.network.sample_segment(id, 2)[1].distance_to(Vector3(180, 0, 120))
+		if d < near:
+			near = d
+			street = id
+	sq.apply({"type": "zone_frontage", "seg": street, "side": 1, "zone": ZoneMap.Zone.RESIDENTIAL})
+	sq.tick()
+	var skewed := 0
+	for k in sq.lots:
+		# Its outline against the rectangle around it, square to its street.
+		var l: Dictionary = sq.lots[k]
+		var u := Vector2(l.dir.x, l.dir.z)
+		var v := Vector2(l.normal.x, l.normal.z)
+		var lo := Vector2(INF, INF)
+		var hi := -lo
+		for c in l.corners:
+			var q := Vector2(c.dot(u), c.dot(v))
+			lo = Vector2(minf(lo.x, q.x), minf(lo.y, q.y))
+			hi = Vector2(maxf(hi.x, q.x), maxf(hi.y, q.y))
+		if l.area < (hi.x - lo.x) * (hi.y - lo.y) * 0.9:
+			skewed += 1
+	_check(sq.lots.size() >= 4 and skewed == 0, "lots are rectangles out to the corners (%d of %d skewed)" % [skewed, sq.lots.size()])
 	# Back lanes: homes front the paved street and their lots run back to an
 	# alley or a gravel lane behind; nothing fronts the lane on that side.
 	for lane in [RoadStyle.Type.ALLEY, RoadStyle.Type.GRAVEL]:
