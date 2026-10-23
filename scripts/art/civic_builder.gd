@@ -47,6 +47,7 @@ static func build_service(kind: int, seed: int, size: Vector2, to_curb: float) -
 		Services.Kind.WELL, Services.Kind.WATER_UTILITY: b._well(front, to_curb)
 		Services.Kind.POWER_FEED: b._power_feed()
 		Services.Kind.BUS_DEPOT: b._bus_depot(size, front, to_curb)
+		Services.Kind.TAXI_COMPANY: b._taxi_company(size, front, to_curb)
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 
@@ -578,6 +579,37 @@ func _bus_depot(size: Vector2, front: float, to_curb: float) -> void:
 	_fence(Vector2(-w * 0.5 + 0.2, yard_z), Vector2(-w * 0.5 + 0.4, back - 0.3), 2.1)
 	_fence(Vector2(w * 0.5 - 0.4, yard_z), Vector2(w * 0.5 - 0.2, back - 0.3), 2.1)
 	_fence(Vector2(-w * 0.5 + 0.2, back - 0.5), Vector2(w * 0.5 - 0.2, back - 0.3), 2.1)
+
+
+## A small-town cab company: a one-story brick storefront for the dispatch
+## office and drivers' room at the street, with a TAXI sign, and an asphalt
+## lot of striped stalls behind it reached by a side driveway.
+func _taxi_company(size: Vector2, front: float, to_curb: float) -> void:
+	var w := size.x
+	var back := size.y * 0.5
+	var trim := Color(_pick(["#d9d3c3", "#cfc8b6", "#efede6"]))
+	var brick := Color(_pick(["#8a4a38", "#9b5a42", "#a8775c", "#b59a7c"]))
+	var drive_x := w * 0.5 - 4.0
+	var lot_z := front + TaxiCo.OFFICE_D
+	_flat_rect("asphalt", drive_x - 3.2, drive_x + 3.2, front - to_curb, lot_z, 0.1)
+	_flat_rect("asphalt", -w * 0.5 + 0.5, w * 0.5 - 0.5, lot_z, back - 0.5, 0.07)
+	for slot in TaxiCo.stall_slots(size):
+		var p: Vector3 = slot[0]
+		for e in [-1.0, 1.0]:
+			var x: float = p.x + e * TaxiCo.STALL_W * 0.5
+			_flat_rect("line", x - 0.05, x + 0.05, p.z - 0.3, p.z - 0.3 + TaxiCo.STALL_D, 0.08, LINE)
+	# The storefront: brick, a glass front with the door, a parapet sign.
+	var ow := minf(w - 9.0, 16.0)
+	var ox := drive_x - 3.8 - ow * 0.5
+	var od := TaxiCo.OFFICE_D - 3.0
+	var oz := front + 1.0
+	_slab(ox, ow, oz, od)
+	_flat_roofed_at("brick", ox, ow, od, oz + od * 0.5, 4.0, 4.8, brick)
+	_glass(Vector3(ox - ow * 0.2, 1.6, oz - 0.03), Vector3(-1, 0, 0), ow * 0.45, 2.0, 0.0)
+	_entry(ox + ow * 0.25, oz, trim)
+	_sign(Vector3(ox, 4.3, oz - 0.04), ow * 0.5, 0.7)
+	_fence(Vector2(-w * 0.5 + 0.2, lot_z), Vector2(-w * 0.5 + 0.4, back - 0.3), 1.2)
+	_fence(Vector2(-w * 0.5 + 0.2, back - 0.5), Vector2(w * 0.5 - 0.2, back - 0.3), 1.2)
 
 
 # ---------------------------------------------------------------- shared parts

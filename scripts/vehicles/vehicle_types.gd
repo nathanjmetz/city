@@ -45,6 +45,7 @@ const SPECS := {
 	"city_bus":      {"len": 12.20, "width": 2.60, "height": 3.30, "acc": 1.0, "brake": 2.0, "top_speed": 27.0, "pref": 0.92},
 	"garbage_truck": {"len": 9.80, "width": 2.60, "height": 3.70, "acc": 0.9, "brake": 2.3, "top_speed": 25.0, "pref": 0.9},
 	"fire_engine":   {"len": 10.40, "width": 2.60, "height": 3.10, "acc": 1.2, "brake": 2.6, "top_speed": 30.0, "pref": 1.0},
+	"taxi":          {"len": 4.88, "width": 1.84, "height": 1.62, "acc": 2.0, "brake": 3.0, "top_speed": 50.0, "pref": 1.0},
 	"police":        {"len": 5.05, "width": 2.00, "height": 1.78, "acc": 2.4, "brake": 3.5, "top_speed": 66.0, "pref": 1.0},
 	"ambulance":     {"len": 7.00, "width": 2.40, "height": 3.00, "acc": 1.4, "brake": 2.8, "top_speed": 40.0, "pref": 1.0},
 	"tractor":       {"len": 5.60, "width": 2.60, "height": 3.30, "acc": 0.8, "brake": 2.0, "top_speed": 11.2, "pref": 1.0},
@@ -97,6 +98,7 @@ const LIVERY := {
 	"mail_truck": [[Color(0.95, 0.95, 0.94), 1.0]],     # postal white
 	"mail_semi": [[Color(0.92, 0.92, 0.91), 3.0], [Color(0.10, 0.22, 0.50), 2.0], [Color(0.65, 0.07, 0.07), 1.0]],
 	"police": [[Color(0.05, 0.05, 0.06), 1.0], [Color(0.93, 0.93, 0.92), 1.0]],
+	"taxi": [[Color(0.97, 0.76, 0.05), 3.0], [Color(0.91, 0.91, 0.90), 1.0]],  # cab yellow, or a white fleet
 	"garbage_truck": [[Color(0.93, 0.93, 0.92), 3.0], [Color(0.16, 0.36, 0.20), 1.0]],
 	"delivery_van": [[Color(0.93, 0.93, 0.92), 3.0], [Color(0.33, 0.22, 0.13), 1.0]],
 	"dump_truck": [[Color(0.92, 0.92, 0.91), 2.0], [Color(0.92, 0.52, 0.05), 1.0], [Color(0.90, 0.72, 0.05), 1.0]],
@@ -132,6 +134,7 @@ const PURPOSE := {
 	"medical": {"ambulance": 1.0},
 	"school": {"school_bus": 1.0},
 	"transit": {"city_bus": 1.0},
+	"taxi": {"taxi": 1.0},                               # the cab company's own cars
 	"tow": {"tow_truck": 1.0},
 	"service_call": {"work_pickup": 3.0, "van": 2.0},     # plumbers, electricians
 	# Mail (Mail in scripts/sim/mail.gd).

@@ -975,7 +975,7 @@ func _grow(sim: CitySim, id: int) -> String:
 		if new_size.x * new_size.y > first.x * first.y * Balance.HUB_MAX_GROWTH:
 			continue
 		var pos: Vector3 = b.pos + t[1]
-		var why := _land_free(sim, id, pos, b.dir, new_size)
+		var why := land_free(sim, id, pos, b.dir, new_size)
 		if why == "":
 			b.pos = pos
 			b.size = new_size
@@ -991,7 +991,7 @@ func _grow(sim: CitySim, id: int) -> String:
 
 ## "" when the land is free, "built" when only homes or businesses stand on
 ## it (the player can let the depot buy them), else "no".
-func _land_free(sim: CitySim, id: int, pos: Vector3, dir: Vector3, size: Vector2) -> String:
+static func land_free(sim: CitySim, id: int, pos: Vector3, dir: Vector3, size: Vector2) -> String:
 	var poly := PackedVector2Array()
 	for p in Services.corners(Services.Kind.BUS_DEPOT, pos, dir, size):
 		poly.append(Vector2(p.x, p.z))
@@ -1057,7 +1057,7 @@ func _take_strip(sim: CitySim, id: int, req: Dictionary) -> bool:
 		if sim.lots.has(key) and Geometry2D.is_point_in_polygon(Vector2(sim.lots[key].pos.x, sim.lots[key].pos.z), outline):
 			sim.buildings.erase(key)
 	dep.strip = []
-	if _land_free(sim, id, pos, b.dir, size) != "":
+	if land_free(sim, id, pos, b.dir, size) != "":
 		return false  # the player trimmed the area: not enough land to grow
 	b.pos = pos
 	b.size = size

@@ -546,19 +546,22 @@ func _services_drawer() -> PanelContainer:
 	for group in [["Utilities", [Services.Kind.POWER_FEED, Services.Kind.WELL, Services.Kind.SUBSTATION,
 				Services.Kind.WATER_TOWER, Services.Kind.WATER_UTILITY]],
 			["Safety, health and schools", [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.CLINIC, Services.Kind.SCHOOL]],
-			["Transit", [Services.Kind.BUS_DEPOT]]]:
+			["Transit", [Services.Kind.BUS_DEPOT, Services.Kind.TAXI_COMPANY]]]:
 		if row.get_child_count() > 0:
 			row.add_child(VSeparator.new())
 		var cards := _section(row, group[0])
 		for k in group[1]:
 			var s: Dictionary = Services.KINDS[k]
 			var short := {Services.Kind.WATER_TOWER: "Water tower", Services.Kind.POWER_FEED: "Power line",
-				Services.Kind.WELL: "Well", Services.Kind.SCHOOL: "School", Services.Kind.WATER_UTILITY: "Water utility"}
+				Services.Kind.WELL: "Well", Services.Kind.SCHOOL: "School", Services.Kind.WATER_UTILITY: "Water utility",
+				Services.Kind.TAXI_COMPANY: "Taxis"}
 			var b := _card(s.icon, short.get(k, s.name.split(" ")[0]),
 				"%s: $%s, $%s a month" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)])
 			b.tooltip_text = "%s: $%s to build, $%s a month" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
-			if s.has("transit"):
+			if k == Services.Kind.BUS_DEPOT:
 				b.tooltip_text = "%s: $%s to build, with two buses. It plans its own stops, routes and fare; you set its funding." % [s.name, CitySim.money_text(s.cost)]
+			elif k == Services.Kind.TAXI_COMPANY:
+				b.tooltip_text = "%s: $%s to bring one to town, with two cabs. Its owner runs it on fares: the fleet, the meter and the lot." % [s.name, CitySim.money_text(s.cost)]
 			b.pressed.connect(func(): service_tool.set_kind(k))
 			cards.add_child(b)
 			_service_cards[k] = b
