@@ -42,6 +42,7 @@ const SPECS := {
 	"flatbed":       {"len": 20.30, "width": 2.60, "height": 3.30, "acc": 0.7, "brake": 2.0, "top_speed": 29.0, "pref": 0.94},
 	"dump_truck":    {"len": 9.00, "width": 2.60, "height": 3.40, "acc": 0.9, "brake": 2.3, "top_speed": 29.0, "pref": 0.93},
 	"concrete_mixer": {"len": 10.40, "width": 2.60, "height": 3.95, "acc": 0.8, "brake": 2.2, "top_speed": 29.0, "pref": 0.92},
+	"bucket_truck":  {"len": 8.70, "width": 2.40, "height": 3.30, "acc": 1.2, "brake": 2.6, "top_speed": 33.0, "pref": 0.96},
 	"tow_truck":     {"len": 7.00, "width": 2.40, "height": 2.80, "acc": 1.3, "brake": 2.6, "top_speed": 36.0, "pref": 0.97},
 	"school_bus":    {"len": 12.20, "width": 2.44, "height": 3.20, "acc": 1.0, "brake": 2.3, "top_speed": 27.0, "pref": 0.92},
 	"city_bus":      {"len": 12.20, "width": 2.60, "height": 3.30, "acc": 1.0, "brake": 2.0, "top_speed": 27.0, "pref": 0.92},
@@ -106,6 +107,8 @@ const LIVERY := {
 	# Ready-mix fleets: white drums with a coloured cab, or all one colour.
 	"concrete_mixer": [[Color(0.93, 0.93, 0.92), 3.0], [Color(0.92, 0.52, 0.05), 1.0], [Color(0.10, 0.22, 0.50), 1.0], [Color(0.70, 0.07, 0.07), 1.0]],
 	"dump_truck": [[Color(0.92, 0.92, 0.91), 2.0], [Color(0.92, 0.52, 0.05), 1.0], [Color(0.90, 0.72, 0.05), 1.0]],
+	# Utility fleets are nearly all white; some co-ops run yellow.
+	"bucket_truck": [[Color(0.92, 0.92, 0.91), 6.0], [Color(0.90, 0.72, 0.05), 1.0]],
 	"tow_truck": [[Color(0.92, 0.92, 0.91), 1.0], [Color(0.70, 0.07, 0.07), 1.0], [Color(0.05, 0.05, 0.06), 1.0]],
 	# John Deere green, Case IH red, New Holland blue.
 	"tractor": [[Color(0.21, 0.49, 0.17), 5.0], [Color(0.70, 0.08, 0.07), 3.0], [Color(0.10, 0.28, 0.58), 1.0]],
@@ -145,7 +148,8 @@ const PURPOSE := {
 	"mail": {"mail_truck": 1.0},                         # Oshkosh NGDV
 	"rural_mail": {"rural_mail": 1.0},                   # carrier's own RHD Jeep
 	"mail_freight": {"mail_semi": 1.0},                  # USPS 53 ft trailer
-	"telecom": {"van": 4.0, "work_pickup": 3.0, "box_truck": 1.0},  # splicing vans, line crews, reel trucks
+	"telecom": {"van": 4.0, "work_pickup": 3.0, "bucket_truck": 2.0, "box_truck": 1.0},  # splicing vans, line crews, reel trucks
+	"power_line": {"bucket_truck": 3.0, "work_pickup": 1.0},  # electric co-op line crews
 }
 
 ## Some cargo needs its own rig, whatever the job is called: logs ride a
