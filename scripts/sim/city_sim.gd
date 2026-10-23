@@ -164,6 +164,8 @@ var redevelopment := Redevelopment.new()
 var subdivisions := Subdivisions.new()
 ## Streets wear out and come due for resurfacing (StreetAge).
 var street_age := StreetAge.new()
+## The city engineer: counts rush-hour traffic and proposes fixes (CityEngineer).
+var engineer := CityEngineer.new()
 ## The town's numbers over time, for the top bar's charts (StatHistory).
 var history := StatHistory.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
@@ -852,6 +854,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			redevelopment.from_dict({})
 			subdivisions.from_dict({})
 			street_age.from_dict({})
+			engineer.from_dict({})
 			timelapse.from_dict(self, {})
 			history.from_dict({})
 			_lever_steps.clear()
@@ -1234,11 +1237,23 @@ func tick() -> void:
 		t = Perf.now()
 		economy.money -= street_age.month(self)
 		Perf.add("sim.street_age", t)
+	elif hour == 21 * TICKS_PER_HOUR + 10:
+		# The city engineer brings the month's worst traffic problem.
+		t = Perf.now()
+		engineer.month(self)
+		Perf.add("sim.engineer", t)
 	if tick_count % TICKS_PER_HOUR == 20 and not subdivisions.scout.is_empty():
-		# ...a few roads an hour.
+		# Home builders scout a few roads an hour.
 		t = Perf.now()
 		subdivisions.hour(self)
 		Perf.add("sim.subdivisions", t)
+	if hour % TICKS_PER_HOUR == 15 and hour / TICKS_PER_HOUR in Balance.ENGINEER_COUNT_HOURS:
+		# The engineer's traffic counts, at rush hour.
+		t = Perf.now()
+		engineer.count(self)
+		Perf.add("sim.engineer", t)
+	if tick_count % TICKS_PER_HOUR == 35 and not engineer.pending.is_empty() and engineer.carry_out(self):
+		_lots_dirty = true
 	t = Perf.now()
 	if tick_count % WaterUtility.DECIDE_EVERY == 0 and not services.water.utilities.is_empty():
 		var res := services.water.decide(self, yard_usable)
@@ -3877,6 +3892,7 @@ func save_steps(postcard := false) -> Array:
 		["redevelopment", func(): return redevelopment.to_dict()],
 		["subdivisions", func(): return subdivisions.to_dict()],
 		["street_age", func(): return street_age.to_dict()],
+		["engineer", func(): return engineer.to_dict()],
 		["junctions", func(): return traffic.rules_to_dict()],
 		["vegetation", func(): return vegetation.to_dict()],
 	]
@@ -3971,6 +3987,7 @@ func from_dict(d: Dictionary) -> void:
 	redevelopment.from_dict(d.get("redevelopment", {}))
 	subdivisions.from_dict(d.get("subdivisions", {}))
 	street_age.from_dict(d.get("street_age", {}))
+	engineer.from_dict(d.get("engineer", {}))
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:

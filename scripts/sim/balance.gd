@@ -286,6 +286,24 @@ const STREET_REPAVE_PER_LANE_M := 130.0
 const STREET_AGE_CELL := 40.0
 const STREET_FORECAST_YEARS := 30
 
+## The city engineer (CityEngineer). Hired at this size for road upgrades;
+## a hub road used as a shortcut is flagged from a smaller size. Counts are
+## taken at these rush hours. A road is jammed when cars there manage under
+## this share of the speed limit (Highway Capacity Manual level of service
+## E or F) in at least this share of the counts; an alley is busy when it
+## has cars in this share of them; a hub road is a shortcut once this many
+## through cars are counted in a month. One job covers up to this many road
+## pieces. "Local traffic only" signs and a gate arm cost this much.
+const ENGINEER_MIN_POP := 10000
+const ENGINEER_CUT_MIN_POP := 2000
+const ENGINEER_COUNT_HOURS := [7, 8, 16, 17]
+const ENGINEER_SLOW_SHARE := 0.4
+const ENGINEER_JAMMED := 0.75
+const ENGINEER_ALLEY_BUSY := 0.75
+const ENGINEER_CUT_CARS := 4
+const ENGINEER_RUN := 12
+const ENGINEER_SIGN_COST := 6_000
+
 ## The future land use map (LandPlan). Land planned for homes is looked at
 ## before any other (as if this many metres nearer the middle of town), and
 ## a subdivision inside the plan opens each phase in this share of the time:
