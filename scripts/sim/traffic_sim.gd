@@ -23,6 +23,8 @@ extends RefCounted
 const MAX_CARS := 400
 ## Real seconds of driving per tick, so cars move at true speeds on screen.
 const DT := 0.1
+## Ticks between drivers' decisions (see _drive).
+const THINK_EVERY := 3
 const CAR_LEN := 4.6
 const LANE_W := 3.6
 ## Trips that may drive in bus lanes, and how far before a corner or
@@ -150,6 +152,8 @@ var _approach := {}  # node -> [{car, conn, ds}] for the first car in each lane
 var _xings := {}     # way -> [[s along the way, rail crossing]] (_find_xings)
 var _by_vid := {}    # vehicle id -> its record in `parked`
 var _due := {}       # tick -> parked vehicles due to head off then (_due_at)
+var _outs := {}      # vehicle id -> [key, path out of its spot] while it waits to pull out
+var _due_done := -1  # the last tick _rest took its due vehicles for (-1: look through all)
 var _pend := {}      # vehicle id -> parked vehicle waiting for a gap to pull out
 var _slow := {}      # ways whose _speed is below 1 (or has cars), kept up to date each tick
 var _slow_ok := -1   # the lane version _slow was gathered on
@@ -179,9 +183,10 @@ var closed := {}
 var _truck_plan := false  # the route being planned is for a truck (close_segment)
 var _walk_lines := {} # segment * 2 + side -> sidewalk line
 var _rings := {}      # node -> sidewalk ends around it (_corner_ring)
-var _marks := []
+var _marks := []      # crosswalks on the walk just planned: [point, node, way in]
 var _xbusy := {}      # node -> [[from step, to step, segment, walker]] on its crosswalks
-const _NO_XINGS := []      # crosswalks on the walk just planned: [point, node, way in]
+const _NO_XINGS := []
+const _NO_PEND := {}
 var _next_trip := 1
 var _next_walker := 1
 var _restoring := false   # just loaded: junction paths still saved as keys
@@ -568,10 +573,12 @@ func to_dict() -> Dictionary:
 
 func from_dict(d: Dictionary) -> void:
 	cars.clear()
+	_outs.clear()
 	_waiting.clear()
 	parked.clear()
 	_by_vid.clear()
 	_due.clear()
+	_due_done = -1
 	_pend.clear()
 	_pseq.clear()
 	walkers.clear()
@@ -1720,7 +1727,17 @@ func _launch(car: Dictionary, lanes := {}) -> bool:
 	var from_ref: String = car.get("from_place", "")
 	var from_pl: Dictionary = place(from_ref) if from_ref != "" else {}
 	if not from_pl.is_empty() and car.get("from_spot", -1) >= 0 and car.from_spot < from_pl.spots.size():
-		out = _out_path(car, from_pl, car.from_spot, w, car.lane, car.d)
+		# The way out only changes with the roads or the place, so a car
+		# waiting for a gap works it out once (not saved: it's rebuilt the same).
+		var key := [version, from_pl.get("seed", 0), from_ref, car.from_spot, w.id, car.lane, car.d]
+		var kept: Array = _outs.get(car.id, [])
+		if not kept.is_empty() and kept[0] == key:
+			out = kept[1]
+		else:
+			out = _out_path(car, from_pl, car.from_spot, w, car.lane, car.d)
+			if _outs.size() > 4000:
+				_outs.clear()  # (cars that left town while waiting)
+			_outs[car.id] = [key, out]
 		exit_d = out.exit_d
 	elif exit_d <= car.d + 1.0 and last:
 		return false  # next door: walk
@@ -1741,6 +1758,7 @@ func _launch(car: Dictionary, lanes := {}) -> bool:
 		for od in lanes.get(Vector2i(car.route[0], car.lane), []):
 			if od > car.d - 30.0 and od < exit_d + 12.0:
 				return false
+	_outs.erase(car.id)
 	if not out.is_empty():
 		car.j = out
 		car.jd = 0.0
@@ -2072,6 +2090,8 @@ func _vehicle_parked(vid: int) -> Dictionary:
 ## A parked vehicle is due to head off at `tick`.
 func _due_at(car: Dictionary, tick: int) -> void:
 	car.until = tick
+	if tick <= _due_done:
+		_due_done = -1  # filed in the past: the next tick looks through every bucket
 	if not _due.has(tick):
 		_due[tick] = []
 	_due[tick].append(car)
@@ -2081,6 +2101,7 @@ func _due_at(car: Dictionary, tick: int) -> void:
 func _index_parked() -> void:
 	_by_vid.clear()
 	_due.clear()
+	_due_done = -1
 	_pend.clear()
 	_pseq.clear()
 	_next_pseq = 0
@@ -2207,9 +2228,11 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 
 
 ## A parked vehicle with a trip pulls out if there's a gap in traffic.
-func _try_launch(car: Dictionary) -> bool:
-	if cars.size() >= MAX_CARS or not _launch(car):
+func _try_launch(car: Dictionary, lanes := {}) -> bool:
+	if cars.size() >= MAX_CARS or not _launch(car, lanes):
 		return false
+	if not lanes.is_empty():
+		_lane_add(lanes, car)
 	_release(car.at_place, car.spot, car.id)
 	_unpark(car)
 	for k in ["at_place", "spot", "pos", "face", "hidden", "pending"]:
@@ -2358,6 +2381,34 @@ func _out_path(car: Dictionary, pl: Dictionary, spot: int, w: Dictionary, lane: 
 	if s.kind == "curb":
 		# Pull away from the curb into the lane.
 		var df := _nearest_d(w, front)
+		if s.face.dot(_way_dir(w, df)) < 0.0:
+			# Parked facing the other way (double-parked across the street):
+			# a U-turn out into the lane, as drivers do on a quiet street.
+			var lat := _lane_point(w, lane, df) - front
+			lat -= s.face * lat.dot(s.face)
+			lat.y = 0.0
+			var ld := lat.normalized() if lat.length() > 0.1 else Vector3(-s.face.z, 0.0, s.face.x)
+			var r := maxf(lat.length(), 3.0) * 0.5
+			var u := PackedVector3Array()
+			for k in 13:
+				var ang := PI * k / 12.0
+				u.append(front + ld * (r - r * cos(ang)) + s.face * (r * sin(ang)))
+			var du := _nearest_d(w, u[u.size() - 1])
+			var go_u := clampf(du + 6.0, bot, top)
+			for q in _lane_run(w, lane, minf(du + 1.5, go_u - 0.5), go_u):
+				u.append(Vector3(q.x, 0.0, q.z))
+			return _poly_path({"node": -1, "wi": -1, "li": -1, "wo": w.id, "lo": lane, "turn": Turn.RIGHT,
+				"vt": 4.0, "exit_d": go_u}, u, 0.0)
+		if df > top - 3.0:
+			# No room ahead (the road was rebuilt short of the spot): back out
+			# into the lane, then pull forward to where it joins traffic.
+			var back_to := clampf(minf(df, top) - 9.0, bot, top)
+			var rp := _smooth([front, _lane_point(w, lane, back_to)])
+			var rev := _polylen(rp)
+			for q in _lane_run(w, lane, back_to, top).slice(1):
+				rp.append(Vector3(q.x, 0.0, q.z))
+			return _poly_path({"node": -1, "wi": -1, "li": -1, "wo": w.id, "lo": lane, "turn": Turn.RIGHT,
+				"vt": 4.0, "exit_d": top}, rp, rev)
 		var go := clampf(df + 7.0, bot, top)
 		var pts := _smooth([front, front + s.face * 2.0] + _lane_run(w, lane, minf(clampf(df + 4.0, bot, top), go - 3.0), go))
 		return _poly_path({"node": -1, "wi": -1, "li": -1, "wo": w.id, "lo": lane, "turn": Turn.RIGHT,
@@ -2468,8 +2519,8 @@ func _poly_pose(c: Dictionary, jd: float) -> Array:
 			hi = c.rev
 		else:
 			lo = c.rev
-	var a := _poly_point(c.pts, c.cum, maxf(jd - 0.5, lo))
-	var b := _poly_point(c.pts, c.cum, minf(jd + 0.5, hi))
+	var a := _poly_point(c.pts, c.cum, maxf(jd - 1.5, lo))
+	var b := _poly_point(c.pts, c.cum, minf(jd + 1.5, hi))
 	var dir := _flat_dir(b - a)
 	if b.distance_to(a) < 0.05:
 		dir = c.d1 if jd >= c.rev else -c.d0
@@ -2535,15 +2586,21 @@ func _rest() -> void:
 	# order they parked, as a loaded town would.
 	var due := []
 	var ticks := []
-	for t in _due:
-		if t <= _tick:
-			ticks.append(t)
+	if _due_done >= 0 and _due_done == _tick - 1:
+		if _due.has(_tick):
+			ticks.append(_tick)  # the usual case: only this tick's bucket is new
+	else:
+		for t in _due:
+			if t <= _tick:
+				ticks.append(t)
+	_due_done = _tick
 	for t in ticks:
 		for car in _due[t]:
 			if car.until == t and is_same(_by_vid.get(car.id), car):
 				due.append(car)
 		_due.erase(t)
-	for vid in _pend:
+	# Cars waiting for a gap to pull out look when drivers decide (_drive).
+	for vid in (_pend if _tick % THINK_EVERY == 0 else _NO_PEND):
 		var car: Dictionary = _pend[vid]
 		if car.has("pending") and is_same(_by_vid.get(vid), car):
 			due.append(car)
@@ -2551,12 +2608,17 @@ func _rest() -> void:
 		return
 	due.sort_custom(func(a, b): return _pseq[a.id] < _pseq[b.id])
 	var last := -1
+	var lanes := {}  # where the moving cars are, filed once for every pull-out
 	for car in due:
 		if car.id == last:
 			continue
 		last = car.id
 		if car.get("pending", false):
-			if _try_launch(car):
+			if lanes.is_empty():
+				lanes[Vector2i(-1, -1)] = []  # (so it isn't filed again when empty)
+				for other in cars:
+					_lane_add(lanes, other)
+			if _try_launch(car, lanes):
 				_pend.erase(car.id)
 			continue
 		var back: String = car.get("next", "")
@@ -3241,6 +3303,14 @@ static func parked_pose(car: Dictionary) -> Array:
 # --- Driving ----------------------------------------------------------------
 
 func _drive(_rng: RandomNumberGenerator) -> void:
+	# Drivers look and decide every THINK_EVERY ticks (a 0.2 s reaction, well
+	# under a real driver's ~1 s, AASHTO); cars move every tick on what they
+	# decided, so stop lines and parking stay exact.
+	var think := _tick % THINK_EVERY == 0
+	if not think:
+		_drive_move()
+		_keep_gaps()
+		return
 	# Vehicles with a job that were waiting for a gap to pull out. Routes
 	# only break when the roads are rebuilt, so they're checked once a version.
 	var lanes := {}
@@ -3267,7 +3337,32 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 		for car in _box[n]:
 			car.a = _accel_in_box(car)
 	_lane_changes()
-	_replan_some()
+	_replan_some(THINK_EVERY)
+	_drive_move()
+
+
+## Between decisions nobody runs into the car ahead: a follower closing in
+## on a braking leader stops short at the jam gap, as it would have braked.
+func _keep_gaps() -> void:
+	for key in _lanes:
+		var list: Array = _lanes[key]
+		for i in range(1, list.size()):
+			var car: Dictionary = list[i]
+			var lead: Dictionary = list[i - 1]
+			# (Either may have parked since the lanes were filed.)
+			if not car.has("route") or not lead.has("route") or lead.has("at_place") or car.get("j") != null or lead.get("j") != null \
+					or car.route[car.leg] != lead.route[lead.leg] \
+					or car.lane != lead.lane:
+				continue
+			var room: float = lead.d - lead.len - 1.0
+			if car.d > room:
+				car.d = maxf(room, car.d - car.v * DT)
+				car.v = minf(car.v, lead.v)
+
+
+## Moves every car on by its speed and does what it reached: a junction,
+## its spot, the end of its road.
+func _drive_move() -> void:
 	var done := []
 	var speed_sum := 0.0
 	var limit_sum := 0.0
@@ -3783,12 +3878,13 @@ static func _lane_dist(lane: int, desired: Array) -> int:
 
 ## A few cars each tick look again at the rest of their trip with live
 ## travel times, and switch if another way is clearly faster.
-func _replan_some() -> void:
-	var budget := REPLANS_PER_TICK  # route plans are the costly part of a tick
+func _replan_some(every := 1) -> void:
+	var budget := REPLANS_PER_TICK * every  # route plans are the costly part of a tick
+	var round := _tick / every
 	for car in cars:
 		if budget == 0:
 			return
-		if (car.id * 7 + _tick) % 300 != 0 or car.j != null or car.commit:
+		if (car.id * 7 + round) % (300 / every) != 0 or car.j != null or car.commit:
 			continue
 		if car.leg >= car.route.size() - 1:
 			continue
