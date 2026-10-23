@@ -64,6 +64,17 @@ const CROSS_PEN := 6.0
 ## MUTCD design walking speed is 3.5 ft/s for crossings, people stroll faster).
 const MAX_WALKERS := 800
 const WALK_V := 1.4
+## Big towns (Brawn, 2026-10-23): past this many residents, people's own
+## cars drive as traffic flows, not one by one: each trip is timed over its
+## route with the FHWA's BPR curve, t = t0 (1 + 0.15 (v/c)^4), and loads
+## the roads it uses, so jams still build where the player sends too many
+## cars. Trucks, buses and service vehicles stay full agents.
+const FLOW_FROM := 25000
+## Road capacity per lane, vehicles an hour (the HCM's base saturation
+## flow, 1,900 for a signalized lane).
+const LANE_CAP := 1900.0
+## Flow counts are taken over this many ticks (a minute of driving).
+const FLOW_WINDOW := 600
 ## How close a trail must pass a home's sidewalk to be walked to from it.
 const TRAIL_ACCESS := 40.0
 
@@ -144,6 +155,15 @@ var _slow := {}      # ways whose _speed is below 1 (or has cars), kept up to da
 var _slow_ok := -1   # the lane version _slow was gathered on
 var _wstep := 0      # walker steps taken since load: a walker is _wstep - w.t0 steps along
 var _wdone := {}     # walker step -> walkers who get where they're going then
+## Cars driving as part of a traffic flow (see FLOW_FROM): parked nowhere,
+## drawn by the view near the camera, arriving at `flow_end`.
+var flowing := []
+## Residents past which household trips become flows (a setting, for tests).
+var flows_from := FLOW_FROM
+var _flow_due := {}   # tick -> flowing cars arriving then
+var _flow_in := {}    # tick -> [way ids a flowing car turns onto then]
+var _fq := {}         # way -> cars that turned onto it this flow window
+var _fshare := {}     # way -> BPR share of the limit from last window's flow
 var _pseq := {}      # vehicle id -> its place in `parked` order (for _rest)
 var _next_pseq := 0
 var _xing_key := []
@@ -180,9 +200,129 @@ func step(sim: CitySim, rng: RandomNumberGenerator) -> void:
 	time += DT
 	_find_xings()
 	_rest()
+	_step_flows()
 	_spawn(sim, rng)
 	_drive(rng)
 	_step_walkers()
+
+
+## Whether household trips drive as flows now (a big town).
+func _flows_on() -> bool:
+	return _sim != null and _sim.people.people.size() >= flows_from
+
+
+## A household car joins the traffic flow: it leaves its spot, and its trip
+## is timed way by way at today's speeds (BPR-slowed where flows are heavy),
+## loading each road as it turns onto it.
+func _flow_start(car: Dictionary) -> void:
+	_release(car.at_place, car.spot, car.id)
+	_unpark(car)
+	for k in ["at_place", "spot", "pos", "face", "hidden", "pending"]:
+		car.erase(k)
+	var t := float(_tick)
+	var ins := []
+	var route: Array = car.route
+	for i in route.size():
+		var wid: int = route[i]
+		if not ways.has(wid):
+			continue
+		var w: Dictionary = ways[wid]
+		ins.append([int(t), wid])
+		var metres: float = w.len
+		if i == 0:
+			metres = maxf(w.len - car.d, 0.0)
+		if i == route.size() - 1:
+			metres = minf(metres, car.end_d)
+		var secs: float = metres / (minf(w.vmax * car.pref, car.top) * maxf(_speed.get(wid, 1.0), 0.15))
+		if i > 0 and _tcost.has(route[i - 1]):
+			var k: int = _turns[route[i - 1]].find(wid)
+			if k >= 0:
+				secs += minf(_tcost[route[i - 1]][k], 30.0)
+		t += secs / DT
+	car.flow_end = maxi(ceili(t), _tick + 1)
+	var metres := 0.0
+	for e in ins:
+		metres += float(ways[int(e[1])].len)
+	car.flow_v = snappedf(metres / maxf((car.flow_end - _tick) * DT, DT), 0.001)
+	car.flow_in = ins
+	flowing.append(car)
+	_file_flow(car)
+
+
+## Where a car in a traffic flow is by now, on its route's right lane:
+## [position, direction]. `ahead` is metres on, for smooth drawing.
+func flow_pose(car: Dictionary, ahead := 0.0) -> Array:
+	var ins: Array = car.flow_in
+	if ins.is_empty():
+		return [Vector3.ZERO, Vector3.FORWARD]
+	var i := 0
+	while i + 1 < ins.size() and int(ins[i + 1][0]) <= _tick:
+		i += 1
+	var wid: int = ins[i][1]
+	if not ways.has(wid):
+		return [Vector3.ZERO, Vector3.FORWARD]
+	var w: Dictionary = ways[wid]
+	var t0: float = ins[i][0]
+	var t1: float = ins[i + 1][0] if i + 1 < ins.size() else float(car.flow_end)
+	var d0: float = car.d if i == 0 else 0.0
+	var d1: float = car.end_d if i == ins.size() - 1 else w.len
+	var f := clampf((_tick - t0) / maxf(t1 - t0, 1.0), 0.0, 1.0)
+	var d := minf(lerpf(d0, d1, f) + ahead, w.len)
+	return _way_pose(w, w.lanes - 1, d)
+
+
+func _file_flow(car: Dictionary) -> void:
+	var at: int = car.flow_end
+	if not _flow_due.has(at):
+		_flow_due[at] = []
+	_flow_due[at].append(car)
+	for e in car.flow_in:
+		if int(e[0]) >= _tick:
+			if not _flow_in.has(int(e[0])):
+				_flow_in[int(e[0])] = []
+			_flow_in[int(e[0])].append(int(e[1]))
+
+
+## Flows on: cars turning onto roads are counted, each window's count sets
+## the roads' BPR speeds, and cars whose trip is done park.
+func _step_flows() -> void:
+	for wid in _flow_in.get(_tick, []):
+		_fq[wid] = int(_fq.get(wid, 0)) + 1
+	_flow_in.erase(_tick)
+	if _tick % FLOW_WINDOW == 0 and (not _fq.is_empty() or not _fshare.is_empty()):
+		var next := {}
+		for wid in _fq:
+			if not ways.has(wid):
+				continue
+			var w: Dictionary = ways[wid]
+			var vph: float = float(_fq[wid]) * 3600.0 / (FLOW_WINDOW * DT)
+			var x: float = vph / (LANE_CAP * maxi(int(w.lanes), 1))
+			var share := snappedf(1.0 / (1.0 + 0.15 * pow(x, 4.0)), 0.000001)
+			if share < 0.9999:
+				next[wid] = share
+		_fshare = next
+		_fq.clear()
+	var due: Array = _flow_due.get(_tick, [])
+	_flow_due.erase(_tick)
+	for car in due:
+		flowing.erase(car)
+		car.erase("flow_end")
+		car.erase("flow_in")
+		car.erase("flow_v")
+		if car.get("retire", false):
+			_release(car.get("to_place", ""), car.get("to_spot", -1), car.id)
+		elif place(car.get("to_place", "")).is_empty():
+			# Where it was going was cleared away on the way: it goes home
+			# instead (vehicles never vanish).
+			var home := place(str(car.get("base", "")))
+			var spot := -1 if home.is_empty() else _reserve(home, car.id, car.len > 6.5)
+			if spot >= 0:
+				car.to_place = home.ref
+				car.to_ref = home.ref
+				car.to_spot = spot
+				var drv: int = car.get("after", {}).get("driver", -1)
+				car.after = {"report": false} if drv == -1 else {"report": false, "driver": drv, "stay": -1}
+		_arrive(car)
 
 
 ## Where the railroad crosses each way, refreshed when track or roads change.
@@ -225,6 +365,8 @@ func _find_xings() -> void:
 func car_pose(car: Dictionary, ahead := 0.0) -> Array:
 	if _dirty:
 		_rebuild()  # a loaded city that hasn't run yet (a neighbor's, say)
+	if car.has("flow_end"):
+		return flow_pose(car, ahead)
 	if car.j != null:
 		return _conn_pose(car.j, minf(car.jd + ahead, car.j.len))
 	var w: Dictionary = ways[car.route[car.leg]]
@@ -414,7 +556,7 @@ func to_dict() -> Dictionary:
 	var state := {"cars": list, "waiting": _waiting.size(), "next_id": _next_id, "time": time,
 		"gave_up": gave_up, "speed": _speed, "dirty": _dirty, "arrivals": arrivals, "failed": failed,
 		"parked": parked, "walkers": _walkers_saved(), "next_trip": _next_trip, "next_walker": _next_walker,
-		"sites": _sites, "extra": _extra, "closed": closed}
+		"sites": _sites, "extra": _extra, "closed": closed, "flowing": flowing, "fq": _fq, "fshare": _fshare}
 	# Binary, so every float comes back exactly and copies stay in step
 	# (var_to_str rounds to 15 digits).
 	return {"bin": Marshalls.variant_to_base64(state)}
@@ -433,6 +575,11 @@ func from_dict(d: Dictionary) -> void:
 	_sites.clear()
 	_extra.clear()
 	closed.clear()
+	flowing.clear()
+	_flow_due.clear()
+	_flow_in.clear()
+	_fq.clear()
+	_fshare.clear()
 	_places.clear()
 	parked_version += 1
 	_dirty = true
@@ -468,6 +615,11 @@ func from_dict(d: Dictionary) -> void:
 	_sites = state.get("sites", {})
 	_extra = state.get("extra", {})
 	closed = state.get("closed", {})
+	flowing = state.get("flowing", [])
+	_fq = state.get("fq", {})
+	_fshare = state.get("fshare", {})
+	for car in flowing:
+		_file_flow(car)
 	_places.clear()
 	parked_version += 1
 	# Junction paths are rebuilt from the roads; keep every car's plan as it
@@ -1884,7 +2036,7 @@ func retire_vehicle(vid: int) -> void:
 			_release(car.at_place, car.spot, vid)
 			_unpark(car)
 			return
-	for car in cars + _waiting:
+	for car in cars + _waiting + flowing:
 		if car.id == vid:
 			car.owner = -1
 			car.retire = true  # gone once it gets where it's going
@@ -2030,6 +2182,9 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 		"stuck": 0.0, "lc_from": 0.0, "lc_t": 1.0, "lc_cool": 2.0, "a": 0.0, "held": false,
 		"from_place": car.get("at_place", ""), "from_spot": car.get("spot", -1), "until": -1}, true)
 	_next_trip += 1
+	if car.has("at_place") and after.get("driver", -1) != -1 and _flows_on():
+		_flow_start(car)
+		return true
 	_fix_end(car)
 	if car.has("at_place"):
 		car.pending = true  # pulls out as soon as there's a gap
@@ -2805,6 +2960,9 @@ func find_vehicle(vid: int) -> Dictionary:
 	for car in _waiting:
 		if car.id == vid:
 			return {"car": car, "state": "waiting"}
+	for car in flowing:
+		if car.id == vid:
+			return {"car": car, "state": "flowing"}
 	return {}
 
 
@@ -3000,13 +3158,17 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 	for wid in way_sum:
 		if _speed.has(wid):
 			_slow[wid] = true
+	for wid in _fshare:
+		if _speed.has(wid):
+			_slow[wid] = true
 	for wid in _slow.keys():
 		var sp: float
+		var fs: float = _fshare.get(wid, 1.0)
 		if way_sum.has(wid):
-			sp = snappedf(lerpf(_speed[wid], way_sum[wid][0] / way_sum[wid][1], 0.05), 0.000001)
+			sp = snappedf(lerpf(_speed[wid], minf(way_sum[wid][0] / way_sum[wid][1], fs), 0.05), 0.000001)
 		else:
-			sp = snappedf(lerpf(_speed[wid], 1.0, 0.02), 0.000001)
-		if sp > 0.9999:
+			sp = snappedf(lerpf(_speed[wid], fs, 0.02), 0.000001)
+		if sp > 0.9999 and fs >= 1.0:
 			sp = 1.0  # all but recovered (snapping would leave it just short)
 			_slow.erase(wid)
 		_speed[wid] = sp

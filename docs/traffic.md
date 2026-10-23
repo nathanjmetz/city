@@ -155,6 +155,27 @@ the same way, like neighbours on an Indiana greenway (the Monon Trail or a
 small-town riverwalk). Each walk counts toward the trails' "walked" figure,
 and the person panel says "Out for a walk on the trail".
 
+## Big towns: traffic flows (past 25,000 residents)
+
+Brawn's decision (2026-10-23). Once a town has `FLOW_FROM` (25,000) residents,
+people's own cars no longer drive one by one. Each household trip is timed over
+its planned route at the roads' current speeds and then joins `flowing`. The
+car leaves its spot, counts on each road it turns onto, and parks at its
+destination when the time is up (vehicles never vanish: if the place was
+cleared away, it goes home).
+
+Every `FLOW_WINDOW` (a minute of driving), the cars that turned onto a road
+give its hourly volume. The FHWA BPR curve, t = t0 (1 + 0.15 (v/c)^4), with
+c = 1,900 vehicles an hour per lane (HCM base saturation flow), then sets that
+road's share of the limit. That share pulls the road's speed down, which
+routing and the traffic view already use, so jams build where the player sends
+too many cars.
+
+Trucks, buses, taxis and service vehicles stay full agents. The view draws
+flowing cars within 900 m of the camera at their place on the route
+(`flow_pose`), and they can be clicked like any car. Everything is in the sim
+and saved, so towns stay in lockstep.
+
 ## Performance
 
 `tools/perf_run.gd -- big 300` is the benchmark (budget in `scripts/perf/perf_budget.gd`).
