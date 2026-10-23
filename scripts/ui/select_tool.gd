@@ -3,6 +3,7 @@ extends Node3D
 ## Click anything with no tool in hand to select it, like Cities: Skylines 2:
 ## a building, lot, farm or road. A ring marks it, and the info panel shows
 ## what it's doing. Esc or a click on open ground clears the selection.
+## A selected vehicle or person can be followed with the camera.
 
 signal selected(sel: Dictionary)
 
@@ -44,6 +45,8 @@ func _ready() -> void:
 
 
 func select(sel: Dictionary) -> void:
+	if sel != selection:
+		cam.following = false
 	selection = sel
 	_ring.visible = false
 	selected.emit(sel)
@@ -77,7 +80,14 @@ func _process(_delta: float) -> void:
 	if at.is_empty():
 		select({})
 		return
+	if cam.following:
+		cam.follow_point(at[0])
 	var r: float = at[1]
 	_ring.visible = r > 0.0
 	_ring.position = Vector3(at[0].x, Terrain.ground_y(at[0].x, at[0].z) + 0.4, at[0].z)
 	_ring.scale = Vector3(r, 0.6, r)
+
+
+## Rides along with the selection (a vehicle or a person out walking).
+func follow(on := true) -> void:
+	cam.following = on and not selection.is_empty()

@@ -25,6 +25,7 @@ var _action_key := ""
 ## A hub's development tree (built, next up, locked), when it has one.
 var _tree := VBoxContainer.new()
 var _tree_text := ""
+var _follow := Button.new()
 var _icon_name := ""
 ## Asks the HUD to open the Economy page (from a hub's sliders).
 signal open_economy
@@ -80,6 +81,11 @@ func _ready() -> void:
 	col.add_child(_notes)
 	_actions.add_theme_constant_override("separation", 4)
 	col.add_child(_actions)
+	_follow.text = "Follow"
+	_follow.toggle_mode = true
+	_follow.tooltip_text = "Keep the camera on it"
+	_follow.toggled.connect(func(on): tool.follow(on))
+	col.add_child(_follow)
 
 
 func _process(delta: float) -> void:
@@ -104,6 +110,8 @@ func _refresh() -> void:
 		var ic := Icon.new(d.icon, 28)
 		ic.size = Vector2(28, 28)
 		_icon_slot.add_child(ic)
+	_follow.visible = d.get("follow", false)
+	_follow.set_pressed_no_signal(tool.cam.following)
 	_title.text = d.title
 	_kind.text = d.kind.to_upper()
 	_status.text = "●  " + d.status

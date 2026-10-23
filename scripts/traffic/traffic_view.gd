@@ -7,15 +7,13 @@ extends Node3D
 ## the rear axle, so long vehicles swing wide through turns like real ones.
 ## Semis draw the tractor and trailer apart, hitched at the fifth wheel.
 ## Close vehicles get the detailed model, far ones a simple one, and very far
-## ones aren't drawn.
+## ones aren't drawn. Parked vehicles in stalls, driveways and at docks
+## are drawn too; ones inside a garage or bay are out of sight.
 
 ## Metres from the camera where models switch to the simple version, and
 ## where they stop being drawn.
 const NEAR := 240.0
 const FAR := 2600.0
-## Kinds from before vehicle types existed. A plain "car" becomes a
-## household vehicle from the real fleet mix, fixed by its id.
-const OLD_KINDS := {"truck": "box_truck"}
 ## Kinds whose emergency lights run.
 const EMERGENCY := ["fire_engine", "ambulance"]
 
@@ -31,6 +29,8 @@ var _snow_check := 0.0
 var _batches := {}  # mesh key -> [near MultiMeshInstance3D, far one]
 var _xf := {}       # mesh key * lod -> [transforms]
 var _cu := {}       # mesh key * lod -> [custom colours]
+var _parked := []   # [front, mesh key, transform, custom], for parked vehicles in sight
+var _parked_version := -1
 
 
 func setup(t: TrafficSim, fraction: Callable) -> void:
@@ -80,6 +80,13 @@ func _draw_cars(_delta: float) -> void:
 		_snow_check = 1.0
 		var v = RenderingServer.global_shader_parameter_get("snow")
 		_snow = float(v) if v != null else 0.0
+	if traffic.parked_version != _parked_version:
+		_parked_version = traffic.parked_version
+		_rebuild_parked()
+	for item in _parked:
+		var dist: float = item[0].distance_to(eye)
+		if dist <= FAR:
+			_add(item[1], 0 if dist < NEAR else 1, item[2], item[3])
 	for car in traffic.cars:
 		var ahead: float = car.v * TrafficSim.DT * frac
 		var front: Vector3 = Terrain.lift(traffic.car_pose(car, ahead)[0])
@@ -87,12 +94,7 @@ func _draw_cars(_delta: float) -> void:
 		if dist > FAR:
 			continue
 		var lod := 0 if dist < NEAR else 1
-		var kind: String = car.get("kind", "car")
-		if kind == "car":
-			kind = VehicleTypes.household(car.id)
-		kind = OLD_KINDS.get(kind, kind)
-		if not VehicleTypes.SPECS.has(kind):
-			kind = "sedan"
+		var kind := _kind(car)
 		var flags := 0.0
 		if car.a < -1.2:
 			flags += 1.0
@@ -183,3 +185,36 @@ func _add(key: String, lod: int, xf: Transform3D, custom: Color) -> void:
 		_cu[k] = []
 	_xf[k].append(xf)
 	_cu[k].append(custom)
+
+
+static func _kind(car: Dictionary) -> String:
+	return TrafficSim.vehicle_kind(car)
+
+
+## Parked vehicles only move when one parks or leaves, so their places are
+## worked out once then.
+func _rebuild_parked() -> void:
+	_parked.clear()
+	for car in traffic.parked:
+		if car.get("hidden", false):
+			continue
+		var pose := TrafficSim.parked_pose(car)
+		var flat: Vector3 = pose[1]
+		if flat.length() < 0.5:
+			flat = Vector3.FORWARD
+		var kind := _kind(car)
+		# Front and back on the ground, so it sits level with the slope.
+		var front: Vector3 = Terrain.lift(pose[0])
+		var dir: Vector3 = (front - Terrain.lift(pose[0] - flat * float(VehicleModels.AXLE.get(kind, 3.5)))).normalized()
+		var paint := VehicleTypes.paint(kind, car.id)
+		var custom := Color(paint.r, paint.g, paint.b, 0.0)
+		if VehicleModels.ARTIC.has(kind):
+			# A rig parked straight: the trailer lined up behind the cab.
+			var art: Dictionary = VehicleModels.ARTIC[kind]
+			var xf := Transform3D(Basis.looking_at(dir, Vector3.UP), front)
+			_parked.append([front, art.cab, xf, custom])
+			var hitch: Vector3 = xf * Vector3(0, 0, art.hitch)
+			_parked.append([front, art.trailer, Transform3D(xf.basis, hitch + dir * float(art.pin)),
+				Color(1, 1, 1, 0.0)])
+		else:
+			_parked.append([front, kind, Transform3D(Basis.looking_at(dir, Vector3.UP), front), custom])

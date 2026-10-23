@@ -57,6 +57,8 @@ const TICKS_PER_HOUR := 60 / MINUTES_PER_TICK
 var network := RoadNetwork.new()
 var zones := ZoneMap.new()
 var traffic := TrafficSim.new(network)
+## Everyone in town by name, and the names of places (owned by Traffic work).
+var people := People.new()
 var economy := Economy.new()
 var services := Services.new()
 var farms := Farms.new()
@@ -608,6 +610,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			trade = Trade.new()
 			traffic.overrides.clear()
 			traffic.from_dict({})
+			people = People.new()
 			network.clear()
 			zones.cells.clear()
 			planner = LotPlanner.new()
@@ -961,6 +964,12 @@ func tick() -> void:
 	t = Perf.now()
 	logistics.tick(self)
 	Perf.add("sim.logistics", t)
+	t = Perf.now()
+	var prng := RandomNumberGenerator.new()
+	prng.seed = hash([city_seed, tick_count, "people"])
+	people.sync(self, traffic, prng)
+	people.plan(self, traffic, prng)
+	Perf.add("sim.people", t)
 	t = Perf.now()
 	education.trips(self)
 	telecom.trips(self)
@@ -2314,6 +2323,7 @@ func to_dict() -> Dictionary:
 		"traffic": traffic.to_dict(),
 		"buses": buses.to_dict(),
 		"taxis": taxis.to_dict(),
+		"people": people.to_dict(),
 		"vegetation": vegetation.to_dict(),
 	}
 
@@ -2371,6 +2381,7 @@ func from_dict(d: Dictionary) -> void:
 			f.drive = farm_drive(f.pos, f.dir)
 	traffic.rules_from_dict(d.get("junctions", {}))
 	traffic.from_dict(d.get("traffic", {}))
+	people.from_dict(d.get("people", {}))
 	tick_count = int(d.get("tick", 0))
 	city_seed = int(d.get("seed", 1))
 	# Parcels: the lots buildings stand on.
