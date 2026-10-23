@@ -1018,6 +1018,9 @@ static func _report(car: Dictionary, into: Array) -> void:
 
 ## After the roads change, every car finds its way again (or gives up).
 func _reroute_all() -> void:
+	# Spots added out front were for the old roads: curb cars find new ones.
+	_extra.clear()
+	_places.clear()
 	var kept := []
 	for car in cars:
 		var wid: int = car.route[car.leg]
