@@ -16,8 +16,9 @@ permissions:
 
 concurrency:
   group: desktop
-  # Only the newest build matters: a newer push replaces an older run.
-  cancel-in-progress: true
+  # Threads merge minutes apart: let a running build finish and publish
+  # (only the newest waiting one runs next), or nothing would ever ship.
+  cancel-in-progress: false
 
 env:
   GODOT_VERSION: 4.7.2
