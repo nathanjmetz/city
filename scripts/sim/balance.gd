@@ -1893,3 +1893,22 @@ const POLICY_PARK_RESIDENTS := [INF, 2.0, 1.0, 0.7, 0.5]
 ## Basic). A bus depot's subsidy is BUS_FUNDING_LEVELS at the same step.
 const POLICY_WATER_SUBSIDY := [0, 2_500, 5_000, 12_000, 25_000]
 const POLICY_MAIL_FUNDING := [0, 0, 1, 2, 3]
+
+# --- Growth pacing targets ---------------------------------------------------
+# Metro scale plan (2026-10-23, approved direction): how long a steady player
+# should take to reach each size, in game days at 1x (a day is about 2.5
+# real minutes; fast-forward compresses these). Benchmarked on CS1/CS2
+# player hours. The balance harness checks pacing against these; the early
+# curve runs faster today and gets slowed once stage gates land.
+const STAGE_TARGET_DAYS := {
+	100: 8,       # Village, ~20 min
+	500: 24,      # Town, ~1 h
+	2000: 72,     # Large town, ~3 h
+	8000: 144,    # Small city, ~6 h
+	25000: 288,   # City, ~12 h
+	80000: 660,   # Metropolis, ~25-30 h
+	150000: 960,  # Manhattan-style core, 40 h and up
+}
+## How far from a target the harness tolerates before flagging it (0.5 =
+## anywhere from half to one and a half times the target).
+const STAGE_TARGET_SLACK := 0.5
