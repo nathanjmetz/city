@@ -133,7 +133,10 @@ var _committed := {} # node -> cars about to cross it
 var _approach := {}  # node -> [{car, conn, ds}] for the first car in each lane
 var _xings := {}     # way -> [[s along the way, rail crossing]] (_find_xings)
 var _by_vid := {}    # vehicle id -> its record in `parked`
-var _rest_at := 0    # no parked vehicle is due before this tick (_rest)
+var _due := {}       # tick -> parked vehicles due to head off then (_due_at)
+var _pend := {}      # vehicle id -> parked vehicle waiting for a gap to pull out
+var _pseq := {}      # vehicle id -> its place in `parked` order (for _rest)
+var _next_pseq := 0
 var _xing_key := []
 var _merging := {}   # lane key -> cars pulling out of a driveway into it
 var _acc := ACCEL    # acceleration of the vehicle being worked out
@@ -413,7 +416,9 @@ func from_dict(d: Dictionary) -> void:
 	_waiting.clear()
 	parked.clear()
 	_by_vid.clear()
-	_rest_at = 0
+	_due.clear()
+	_pend.clear()
+	_pseq.clear()
 	walkers.clear()
 	_sites.clear()
 	_extra.clear()
@@ -440,8 +445,7 @@ func from_dict(d: Dictionary) -> void:
 	arrivals = state.arrivals
 	failed = state.failed
 	parked = state.get("parked", [])
-	for car in parked:
-		_by_vid[car.id] = car
+	_index_parked()
 	walkers = state.get("walkers", [])
 	_next_trip = state.get("next_trip", _next_id)
 	_next_walker = state.get("next_walker", 1)
@@ -1216,6 +1220,7 @@ func _cancel(car: Dictionary) -> void:
 	_release(car.get("to_place", ""), car.get("to_spot", -1), car.id)
 	_report(car, failed)
 	car.erase("pending")
+	_pend.erase(car.id)
 	for k in ["route", "leg", "d", "end_d", "goal", "dest", "park", "home", "to_place", "to_spot", "lane",
 			"to_stop", "after"]:
 		car.erase(k)
@@ -1854,15 +1859,36 @@ func _vehicle_parked(vid: int) -> Dictionary:
 	return _by_vid.get(vid, {})
 
 
-## A parked vehicle is due to head off at `tick` (or now, with 0).
+## A parked vehicle is due to head off at `tick`.
 func _due_at(car: Dictionary, tick: int) -> void:
 	car.until = tick
-	_rest_at = mini(_rest_at, tick)
+	if not _due.has(tick):
+		_due[tick] = []
+	_due[tick].append(car)
+
+
+## Rebuilds the due list from the parked vehicles (after a load).
+func _index_parked() -> void:
+	_by_vid.clear()
+	_due.clear()
+	_pend.clear()
+	_pseq.clear()
+	_next_pseq = 0
+	for car in parked:
+		_by_vid[car.id] = car
+		_pseq[car.id] = _next_pseq
+		_next_pseq += 1
+		if car.has("pending"):
+			_pend[car.id] = car
+		if car.until >= 0:
+			_due_at(car, car.until)
 
 
 func _unpark(car: Dictionary) -> void:
 	parked.erase(car)
 	_by_vid.erase(car.id)
+	_pend.erase(car.id)
+	_pseq.erase(car.id)
 	parked_version += 1
 
 
@@ -1886,6 +1912,8 @@ func _park(car: Dictionary, pl: Dictionary, spot: int) -> void:
 		car.until = -1
 	parked.append(car)
 	_by_vid[car.id] = car
+	_pseq[car.id] = _next_pseq
+	_next_pseq += 1
 	parked_version += 1
 
 
@@ -1958,7 +1986,7 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 	_fix_end(car)
 	if car.has("at_place"):
 		car.pending = true  # pulls out as soon as there's a gap
-		_rest_at = 0
+		_pend[car.id] = car
 		_try_launch(car)
 	elif not _launch(car):
 		_waiting.append(car)
@@ -2289,21 +2317,34 @@ func _arrive(car: Dictionary) -> void:
 func _rest() -> void:
 	# Most parked vehicles are just parked: pick out the few with somewhere
 	# to be first, without copying the whole list.
-	# And skip even that until the soonest one is due.
-	if _tick < _rest_at:
-		return
+	# Each is filed under the tick it's due; entries a vehicle has since
+	# outgrown (it left, or its time changed) are dropped. Taken in the
+	# order they parked, as a loaded town would.
 	var due := []
-	var soonest := 1 << 62
-	for car in parked:
-		if car.has("pending") or (car.until >= 0 and car.until <= _tick):
+	var ticks := []
+	for t in _due:
+		if t <= _tick:
+			ticks.append(t)
+	for t in ticks:
+		for car in _due[t]:
+			if car.until == t and is_same(_by_vid.get(car.id), car):
+				due.append(car)
+		_due.erase(t)
+	for vid in _pend:
+		var car: Dictionary = _pend[vid]
+		if car.has("pending") and is_same(_by_vid.get(vid), car):
 			due.append(car)
-		elif car.until >= 0:
-			soonest = mini(soonest, car.until)
-	_rest_at = soonest
+	if due.is_empty():
+		return
+	due.sort_custom(func(a, b): return _pseq[a.id] < _pseq[b.id])
+	var last := -1
 	for car in due:
+		if car.id == last:
+			continue
+		last = car.id
 		if car.get("pending", false):
-			if not _try_launch(car):
-				_rest_at = 0  # try again next tick
+			if _try_launch(car):
+				_pend.erase(car.id)
 			continue
 		var back: String = car.get("next", "")
 		var stop: Dictionary = car.get("next_stop", {})
