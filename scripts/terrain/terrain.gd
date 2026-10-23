@@ -443,6 +443,16 @@ static func mow_weight(x: float, z: float) -> float:
 	return _weight(_mow, x, z)
 
 
+## True when any land in a box (view coordinates) is mowed.
+static func any_mowed(box: Rect2) -> bool:
+	var span := FLAT_CELL * FLAT_CHUNK
+	for cz in range(floori((box.position.y - FLAT_CELL) / span), floori((box.end.y + FLAT_CELL) / span) + 1):
+		for cx in range(floori((box.position.x - FLAT_CELL) / span), floori((box.end.x + FLAT_CELL) / span) + 1):
+			if _mow.has(Vector2i(cx, cz)):
+				return true
+	return false
+
+
 static func _weight(layer: Dictionary, x: float, z: float) -> float:
 	if layer.is_empty():
 		return 0.0

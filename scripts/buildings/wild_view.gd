@@ -32,6 +32,16 @@ func setup(s: CitySim) -> void:
 			_stale[c] = true)
 
 
+## Redraws the chunks in a box (view coordinates): the land there was
+## regraded, so verges may have been mowed or let go.
+func regraded(box: Rect2) -> void:
+	var size := Vegetation.CHUNK
+	for x in range(floori(box.position.x / size), floori(box.end.x / size) + 1):
+		for z in range(floori(box.position.y / size), floori(box.end.y / size) + 1):
+			if _chunks.has(Vector2i(x, z)):
+				_stale[Vector2i(x, z)] = true
+
+
 func _process(_delta: float) -> void:
 	if sim == null:
 		return
@@ -102,8 +112,13 @@ func _draw_chunk(c: Vector2i, detail: bool) -> void:
 		field.fades = true
 		add_child(field)
 		_chunks[c] = field
+	# Roads the town doesn't own (a neighbor's, the county highways out to
+	# the horizon) keep their mowed verges clear too.
+	var mowed := Terrain.any_mowed(Rect2(Vector2(c) * size, Vector2(size, size)))
 	var trees := []
 	for p in plants:
+		if mowed and Terrain.mow_weight(p.pos.x, p.pos.z) > 0.5:
+			continue
 		trees.append([placement(p), p.species, p.tint])
 	_chunks[c].set_trees("wild", trees)
 	_shade.append(_chunks[c])

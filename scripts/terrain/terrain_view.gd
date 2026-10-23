@@ -210,6 +210,11 @@ static var _water_mat: ShaderMaterial
 var camera: Camera3D
 var network: RoadNetwork
 
+## More roads to grade besides the town's own: name -> [RoadNetwork,
+## Vector2 offset where it is drawn, lots] for a neighbor's town, or
+## [strips] (see add_strips) for the county highways out to the horizon.
+var _others := {}
+
 ## Vector2i chunk -> {lod, ground: MeshInstance3D, water: MeshInstance3D}
 var _chunks := {}
 var _dirty := {}  # Vector2i chunks to rebuild for grading
@@ -521,18 +526,49 @@ func regrade() -> void:
 	_regrade()
 
 
+## Grades the ground under another road network too, drawn moved over by
+## `offset` (a neighbor's town); `lots` false grades only the road itself
+## (no town lots along it). Setting a name again replaces it.
+func add_network(name: String, net: RoadNetwork, offset := Vector2.ZERO, lots := true) -> void:
+	remove_network(name, false)
+	_others[name] = [net, offset, lots]
+	if not net.changed.is_connected(_regrade):
+		net.changed.connect(_regrade)
+	_regrade()
+
+
+## Grades strips that aren't part of any network: key -> [points (view
+## coordinates), graded half width, fade-out half width, mowed half width].
+## Setting a name again replaces them.
+func add_strips(name: String, strips: Dictionary) -> void:
+	remove_network(name, false)
+	_others[name] = [strips]
+	_regrade()
+
+
+func remove_network(name: String, now := true) -> void:
+	if not _others.has(name):
+		return
+	if _others[name][0] is RoadNetwork and _others[name][0].changed.is_connected(_regrade):
+		_others[name][0].changed.disconnect(_regrade)
+	_others.erase(name)
+	if now:
+		_regrade()
+
+
 ## Grades the ground under every road that changed, and marks those chunks
 ## to be rebuilt.
 func _regrade() -> void:
 	var now := {}
-	for id in network.segments:
-		var pts := network.sample_segment(id, 24)
-		var type: int = network.segments[id].type
-		if absf(pts[0].y) > 3.0 and absf(pts[pts.size() - 1].y) > 3.0 and absf(pts[pts.size() / 2].y) > 3.0:
-			continue  # bridges and tunnels leave the ground alone
-		var inner := RoadStyle.right_of_way_half(type) + (LOT_GRADE if RoadStyle.TYPES[type].lots else 2.0)
-		# The verge is mowed a few metres past the shoulder; woods start there.
-		now[id] = [pts, inner, inner + GRADE_FADE, RoadStyle.right_of_way_half(type) + MOW_VERGE]
+	if network != null:
+		_grade_network(now, network, Vector2.ZERO, true, "")
+	for name in _others:
+		var o: Array = _others[name]
+		if o[0] is RoadNetwork:
+			_grade_network(now, o[0], o[1], o[2], name + ":")
+		else:
+			for key in o[0]:
+				now[name + ":" + str(key)] = o[0][key]
 	if extra_grades.is_valid():
 		now.merge(extra_grades.call())
 	var changed := []
@@ -561,6 +597,42 @@ func _regrade() -> void:
 		for cz in range(c0.y, c1.y + 1):
 			for cx in range(c0.x, c1.x + 1):
 				_dirty[Vector2i(cx, cz)] = true
+
+
+## The strips to grade under one network's roads, keyed by segment id
+## (with `prefix` for networks other than the town's own).
+static func _grade_network(now: Dictionary, net: RoadNetwork, offset: Vector2, lots: bool, prefix: String) -> void:
+	var shift := Vector3(offset.x, 0.0, offset.y)
+	for id in net.segments:
+		var pts := _straightened(net.sample_segment(id, 24))
+		var type: int = net.segments[id].type
+		if absf(pts[0].y) > 3.0 and absf(pts[pts.size() - 1].y) > 3.0 and absf(pts[pts.size() / 2].y) > 3.0:
+			continue  # bridges and tunnels leave the ground alone
+		if offset != Vector2.ZERO:
+			for i in pts.size():
+				pts[i] += shift
+		var inner := RoadStyle.right_of_way_half(type) + (LOT_GRADE if lots and RoadStyle.TYPES[type].lots else 2.0)
+		# The verge is mowed a few metres past the shoulder; woods start there.
+		now[id if prefix == "" else prefix + str(id)] = [pts, inner, inner + GRADE_FADE,
+			RoadStyle.right_of_way_half(type) + MOW_VERGE]
+
+
+## A straight road's samples cut down to its two ends (grading costs one
+## pass over the ground per piece of line); curves keep every point.
+static func _straightened(pts: PackedVector3Array) -> PackedVector3Array:
+	var a := pts[0]
+	var b := pts[pts.size() - 1]
+	var dir := Vector2(b.x - a.x, b.z - a.z)
+	var length := dir.length()
+	if length < 1.0:
+		return pts
+	dir /= length
+	for p in pts:
+		if absf((p.y - a.y) - (b.y - a.y) * Vector2(p.x - a.x, p.z - a.z).dot(dir) / length) > 0.2:
+			return pts
+		if absf(Vector2(p.x - a.x, p.z - a.z).cross(dir)) > 0.25:
+			return pts
+	return PackedVector3Array([a, b])
 
 
 static func _same(a: Array, b: Array) -> bool:
