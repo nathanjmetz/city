@@ -19,10 +19,18 @@ const SAVE_EVERY := 10.0
 ## WebSocket buffer size: a whole region goes out in one message when a
 ## player joins or resyncs (Godot's 64 KB default is far too small).
 const BUFFER_BYTES := 16 * 1024 * 1024
+## Biggest telemetry batch kept, unpacked (anything bigger is dropped).
+const TELEMETRY_MAX := 512 * 1024
+## How often the fix list (report.md in the telemetry folder) is redone
+## when new play data has come in, in seconds.
+const REPORT_EVERY := 1800.0
 
 var region := Region.new()
 var invite_code := ""
 var data_path := ""
+## Where play telemetry is kept, one JSON line per batch in a file per day
+## (default: next to the region file, as <name>-telemetry/).
+var telemetry_dir := ""
 ## Player accounts, kept on the server only (never sent to players):
 ## lowercase name -> {"name", "salt", "hash", "status": "pending" | "approved"
 ## | "declined", "player": player id, "host": bool, "tokens": [token hashes]}.
@@ -41,6 +49,8 @@ var _waiting := {}   # peer id -> account key, signed up but not approved yet
 var _trade_time := 0.0
 var _save_time := 0.0
 var _dirty := false
+var _report_time := 0.0
+var _new_telemetry := false
 
 
 ## Starts listening. Returns an error code (OK when it worked).
@@ -48,6 +58,8 @@ func start(port: int, code: String, path: String, host := "") -> int:
 	data_path = path
 	invite_code = code.to_upper()
 	host_name = host.strip_edges()
+	if telemetry_dir == "" and data_path != "":
+		telemetry_dir = data_path.get_basename() + "-telemetry"
 	_load()
 	if invite_code == "":
 		invite_code = new_code()
@@ -66,6 +78,8 @@ func start(port: int, code: String, path: String, host := "") -> int:
 
 func stop() -> void:
 	save()
+	if _new_telemetry:
+		write_report()
 	_peer.close()
 	_players.clear()
 	_waiting.clear()
@@ -99,6 +113,11 @@ func _process(delta: float) -> void:
 		_save_time = 0.0
 		if _dirty:
 			save()
+	_report_time += delta
+	if _report_time >= REPORT_EVERY:
+		_report_time = 0.0
+		if _new_telemetry:
+			write_report()
 
 
 ## A month of trade between the towns that are running now; each player's
@@ -155,6 +174,10 @@ func _handle(from: int, msg: Dictionary) -> void:
 				var line := region.add_chat(p.name, text)
 				_dirty = true
 				_broadcast({"t": "chat", "line": line})
+		"telemetry":
+			var batch = unpack(str(msg.get("z", "")))
+			if typeof(batch) == TYPE_DICTIONARY and store_telemetry(p, batch):
+				_send(from, {"t": "telemetry_ok", "id": str(batch.get("id", ""))})
 		"cursor":
 			_broadcast({"t": "cursor", "id": p.id, "p": msg.get("p")}, from)
 		"approve":
@@ -404,6 +427,38 @@ func _broadcast(msg: Dictionary, except := 0) -> void:
 		if peer != except:
 			_peer.set_target_peer(peer)
 			_peer.put_packet(bytes)
+
+
+## Keeps a batch of a player's play telemetry: one line in today's file.
+## Returns false when there's nowhere to keep it (so the player holds on).
+func store_telemetry(p: Dictionary, batch: Dictionary) -> bool:
+	if telemetry_dir == "":
+		return false
+	batch["from"] = p.name
+	batch["pid"] = p.id
+	batch["recv"] = int(Time.get_unix_time_from_system())
+	var line := JSON.stringify(batch, "", false, true)
+	if line.length() > TELEMETRY_MAX:
+		return true   # kept nothing, but sending it again won't help
+	DirAccess.make_dir_recursive_absolute(telemetry_dir)
+	var path := telemetry_dir.path_join(Time.get_date_string_from_system() + ".jsonl")
+	var f := FileAccess.open(path, FileAccess.READ_WRITE if FileAccess.file_exists(path) else FileAccess.WRITE)
+	if f == null:
+		_log("Couldn't keep telemetry in %s" % path)
+		return false
+	f.seek_end()
+	f.store_line(line)
+	_new_telemetry = true
+	return true
+
+
+## Redoes the ranked fix list from the last two weeks of play.
+func write_report() -> void:
+	_new_telemetry = false
+	var batches := Insights.read_dir(telemetry_dir, 14)
+	var f := FileAccess.open(telemetry_dir.path_join("report.md"), FileAccess.WRITE)
+	if f:
+		f.store_string(Insights.to_markdown(Insights.analyze(batches)))
 
 
 func save() -> void:

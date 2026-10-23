@@ -34,6 +34,9 @@ signal water_changed
 signal power_changed
 ## A player command went through (sounds and other feedback listen to this).
 signal command_applied(cmd: Dictionary)
+## A player command was turned down (Telemetry counts these to find where
+## players get stuck).
+signal command_refused(cmd: Dictionary)
 
 const TICKS_PER_SECOND := 10
 ## A new building can start every this many ticks.
@@ -216,7 +219,10 @@ func apply(cmd: Dictionary) -> bool:
 	if send_command.is_valid():
 		send_command.call(cmd)
 		return true
-	return apply_now(cmd)
+	var ok := apply_now(cmd)
+	if not ok:
+		command_refused.emit(cmd)
+	return ok
 
 
 ## Applies a command right away, even online (the region does this).

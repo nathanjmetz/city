@@ -13,6 +13,7 @@ config/windows_native_icon="res://assets/brand/app-icons/neighbors.ico"
 [autoload]
 
 Session="*res://scripts/shell/session.gd"
+Telemetry="*res://scripts/telemetry/telemetry.gd"
 Pad="*res://scripts/shell/pad.gd"
 
 [display]

@@ -106,6 +106,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_mail.gd
           ~/godot-cache/godot --headless -s tests/test_economy.gd
           ~/godot-cache/godot --headless -s tests/test_construction.gd
+          ~/godot-cache/godot --headless -s tests/test_telemetry.gd
           ~/godot-cache/godot --headless -s tests/test_pollution.gd
           ~/godot-cache/godot --headless -s tests/test_health.gd
 
