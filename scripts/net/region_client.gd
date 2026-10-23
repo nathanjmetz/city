@@ -56,6 +56,11 @@ const RECONNECT_FOR := 300.0
 var reconnecting := false
 const TOWN_GAP := 20.0
 const TOWN_MAX_GAP := 120.0
+## The whole town goes to the region at least this often (seconds), and on
+## leaving; postcards in between. A computer that dies loses at most this
+## much of its town.
+const FULL_EVERY := 120.0
+var _full_at := 0.0
 var _sent_at := -1000.0
 var _sent_sig := []
 var _land_sent := 0  # hash of the land last sent
@@ -148,16 +153,22 @@ func _send_town(sim: CitySim, now: bool, leaving: bool) -> void:
 		_land_sent = land.hash()
 		region.take_land(my_city, land)
 		msg.land = land
-	# The copy is taken now (the town keeps changing); packing it happens on
-	# another core, except when leaving, which can't wait.
-	var d := sim.to_dict().duplicate(true)
+	# Neighbors only need a postcard; the whole town (its people, cars and
+	# plans, which take most of the time) goes now and then and on leaving,
+	# for the region to keep. The copy is taken now, as bytes (the town keeps
+	# changing); packing it happens on another core, except when leaving,
+	# which can't wait.
+	var full := leaving or t - _full_at >= FULL_EVERY
+	if full:
+		_full_at = t
+	var raw := var_to_bytes(sim.to_dict(not full))
 	if leaving:
-		msg.z = RegionServer.pack(d)
+		msg.z = RegionServer.pack_bytes(raw)
 		_send(msg)
 		return
 	var job := {"msg": msg}
 	job.task = _on_another_core(func():
-		msg.z = RegionServer.pack(d)
+		msg.z = RegionServer.pack_bytes(raw)
 		job.bytes = JSON.stringify(msg, "", false, true).to_utf8_buffer())
 	_outgoing.append(job)
 
@@ -333,6 +344,7 @@ func _handle(msg: Dictionary) -> void:
 	match msg.get("t", ""):
 		"welcome":
 			player_id = str(msg.you)
+			_full_at = Time.get_ticks_msec() / 1000.0
 			player_name = str(msg.get("name", player_name))
 			is_host = bool(msg.get("host", false))
 			if str(msg.get("token", "")) != "":
@@ -352,6 +364,8 @@ func _handle(msg: Dictionary) -> void:
 				for id in region.cities:
 					if not id in old_ids:
 						city_added.emit(id)
+				# The whole town: the region may have restarted from its save.
+				_full_at = -FULL_EVERY
 				send_town(true)
 				reconnected.emit()
 				return
