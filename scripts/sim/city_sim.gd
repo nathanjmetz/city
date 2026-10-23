@@ -272,6 +272,8 @@ func _init() -> void:
 	_wire_policies()
 	# Streets are named before any view draws their signs.
 	network.changed.connect(func(): streets.sync(self))
+	# The county seat: county roads count from the courthouse once it stands.
+	parks_changed.connect(func(): streets.seat(self))
 	_hook_pollution()
 	network.changed.connect(func():
 		_lots_light = true
@@ -2993,7 +2995,7 @@ func _join_county(p: Vector3) -> bool:
 	economy.money = money  # the county hands it over
 	county_joined[mile.key] = true
 	streets.name_road(self, network.segments.keys().filter(func(id): return not id in before),
-		CountyGrid.road_name(mile.key))
+		streets.grid_name(mile.key))
 	streets.sync(self)
 	return true
 

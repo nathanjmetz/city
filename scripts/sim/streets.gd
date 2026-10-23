@@ -48,6 +48,9 @@ var main_dir := Vector2.ZERO
 var main_at := Vector2.ZERO
 ## Each named segment's shape, to hand its name on when it's cut or rebuilt.
 var _shapes := {}    # segment id -> PackedVector2Array
+## The county seat's courthouse, region coordinates (INF until there is
+## one). County roads are numbered from its section lines once it stands.
+var courthouse := Vector2.INF
 ## True while a road is built that gets its name afterwards (name_road).
 var hold := false
 
@@ -139,16 +142,74 @@ func town_road(seed: int) -> String:
 	return _first_free(TOWNS.map(func(t): return t + " Road"), seed, "Road")
 
 
-## A county road's name from where it runs: an east-west road is numbered
-## by its distance north or south of the middle of town, a north-south one
-## east or west, in hundredths of a mile rounded to 25 (Indiana county grid).
-static func county_name(a: Vector2, b: Vector2) -> String:
-	var mid := (a + b) * 0.5
+## A county road's name from where it runs (`a`, `b` in region
+## coordinates): an east-west road is numbered by its distance north or
+## south of `origin`, a north-south one east or west, in hundredths of a
+## mile rounded to 25 (the Indiana county grid: County Road 300 N is three
+## miles north of the courthouse).
+static func county_name(a: Vector2, b: Vector2, origin := Vector2.ZERO) -> String:
+	var mid := (a + b) * 0.5 - origin
 	var ew := absf(b.x - a.x) >= absf(b.y - a.y)
 	var off := mid.y if ew else mid.x
-	var n := maxi(25, roundi(absf(off) / 1609.0 * 100.0 / 25.0) * 25)
+	var n := maxi(25, roundi(absf(off) / CountyGrid.SECTION * 100.0 / 25.0) * 25)
 	var side := ("S" if off > 0.0 else "N") if ew else ("E" if off > 0.0 else "W")
 	return "County Road %d %s" % [n, side]
+
+
+## The name of a mile of section-line county road (CountyGrid key "ns:3"
+## or "ew:-2"): counted from the courthouse's own section lines once the
+## county seat has one, 100 to the mile; the lines through the courthouse
+## are Meridian Road and Base Line Road, as in counties that name them.
+## Before that, CountyGrid's numbering.
+func grid_name(key: String) -> String:
+	if courthouse == Vector2.INF:
+		return CountyGrid.road_name(key)
+	var parts := key.split(":")
+	var ns := parts[0] == "ns"
+	var home := roundi((courthouse.x if ns else courthouse.y) / CountyGrid.SECTION)
+	var n := int(parts[1]) - home
+	if n == 0:
+		return "Meridian Road" if ns else "Base Line Road"
+	return "County Road %d %s" % [absi(n) * 100, ("E" if n > 0 else "W") if ns else ("S" if n > 0 else "N")]
+
+
+## The county seat: when the town's courthouse goes up (or moves), every
+## county road outside town is renamed from it, the way a county's road
+## grid counts from its courthouse. True if anything was renamed.
+func seat(sim) -> bool:
+	var at := Vector2.INF
+	var ids: Array = sim.parks.sites.keys()
+	ids.sort()
+	for id in ids:
+		var site: Dictionary = sim.parks.sites[id]
+		if site.kind == "courthouse":
+			at = Vector2(site.pos.x, site.pos.z) + sim.terrain_offset
+			break
+	if at == Vector2.INF or at.is_equal_approx(courthouse):
+		return false
+	var rename := {}
+	for key in sim.county_joined:
+		rename[grid_name(key)] = key
+	var county := {}
+	for id in names:
+		if int(sim.network.segments[id].type) == RoadStyle.Type.COUNTY and str(names[id]).begins_with("County Road"):
+			county[names[id]] = id
+	courthouse = at
+	var to := {}
+	for old in rename:
+		to[old] = grid_name(rename[old])
+	for old in county:
+		var c: Array = sim.network.curve_of(county[old])
+		var o: Vector2 = sim.terrain_offset
+		to[old] = county_name(Vector2(c[0].x, c[0].z) + o, Vector2(c[2].x, c[2].z) + o, courthouse)
+	var any := false
+	for id in names:
+		if to.has(names[id]) and to[names[id]] != names[id]:
+			names[id] = to[names[id]]
+			any = true
+	if any:
+		changed.emit()
+	return any
 
 
 func to_dict() -> Dictionary:
@@ -159,7 +220,8 @@ func to_dict() -> Dictionary:
 	for k in numbered:
 		num[str(k)] = numbered[k]
 	return {"names": n, "used": used.keys(), "numbered": num,
-		"main": [main_dir.x, main_dir.y, main_at.x, main_at.y]}
+		"main": [main_dir.x, main_dir.y, main_at.x, main_at.y],
+		"courthouse": [] if courthouse == Vector2.INF else [courthouse.x, courthouse.y]}
 
 
 func from_dict(sim, d: Dictionary) -> void:
@@ -177,6 +239,8 @@ func from_dict(sim, d: Dictionary) -> void:
 	var m: Array = d.get("main", [0, 0, 0, 0])
 	main_dir = Vector2(float(m[0]), float(m[1]))
 	main_at = Vector2(float(m[2]), float(m[3]))
+	var c: Array = d.get("courthouse", [])
+	courthouse = Vector2.INF if c.size() < 2 else Vector2(float(c[0]), float(c[1]))
 	# Roads from a save made before streets had names get theirs now.
 	sync(sim)
 	changed.emit()
@@ -234,7 +298,8 @@ func _new_name(sim, id: int) -> String:
 		RoadStyle.Type.DIVIDED_HWY, RoadStyle.Type.STATE_HWY:
 			return _first_free(STATE_ROADS.map(func(n): return "State Road %d" % n), seed, "Highway")
 		RoadStyle.Type.COUNTY:
-			return county_name(a, b)
+			var o: Vector2 = sim.terrain_offset
+			return county_name(a + o, b + o, courthouse if courthouse != Vector2.INF else o)
 		RoadStyle.Type.GRAVEL:
 			return _first_free([], seed, "Road")
 	var suffix := _suffix(type)
