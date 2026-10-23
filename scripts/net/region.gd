@@ -110,6 +110,21 @@ func update_city(id: String, d: Dictionary) -> void:
 		var sim: CitySim = cities[id].sim
 		sim.terrain_offset = cities[id].origin
 		sim.from_dict(d)
+		share_care()
+
+
+## Neighbors' hospitals draw patients from every town in the region, and
+## their helipads and specialty centers lift care in the others.
+func share_care() -> void:
+	for id in cities:
+		var others := 0
+		var offered := 0.0
+		for other in cities:
+			if other != id:
+				others += int(cities[other].sim.stats.get("population", 0))
+				offered = maxf(offered, cities[other].sim.healthcare.care_offered())
+		cities[id].sim.healthcare.region_pop = others
+		cities[id].sim.healthcare.region_care = offered
 
 
 ## A month of trade between towns: neighbors joined by county road first,

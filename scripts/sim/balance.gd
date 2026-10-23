@@ -101,6 +101,16 @@ const SERVICES := {
 	# The town's share of bringing a cab company in (office, lot and its
 	# first two cabs); after that it runs on its own fares.
 	"taxi_company": {"cost": 150_000, "upkeep": 0},
+	# A 25-bed critical access hospital with an ER, the kind most rural US
+	# counties have. Its ambulances answer calls within about 6 road miles.
+	# The city's upkeep is its county hospital levy; the hospital earns the
+	# rest itself (see HOSPITAL_*).
+	"hospital": {"cost": 8_000_000, "upkeep": 70_000, "reach": 9600.0},
+	# A 60-bed skilled nursing home, the usual size in small Midwest towns.
+	"nursing_home": {"cost": 3_500_000, "upkeep": 15_000, "reach": 4800.0},
+	# A licensed daycare center for about 60 children; parents drive up to a
+	# mile or so out of their way.
+	"daycare": {"cost": 450_000, "upkeep": 4_000, "reach": 1600.0},
 }
 ## Water and sewer bills the city collects, per building per month. The
 ## average US household pays about $100 a month for water and sewer
@@ -1352,6 +1362,107 @@ const FAMILY_REBRAND_YEARS := 20
 const FAMILY_REBRAND_COST := 40_000
 ## Signs read "SINCE 2031" once a business is this many years old.
 const FAMILY_SINCE_SHOWN := 10
+
+# --- Healthcare --------------------------------------------------------------
+# Brawn's hub-with-a-leader model (2026-10-22): the hospital is run by its
+# own administrator, whose schooling follows the town's schools. They grow
+# it from a county hospital into a regional medical center through a tree of
+# new buildings, each on land right next to what it has.
+
+## Jobs the nursing home and the daycare offer (staff for 60 residents, and
+## for 60 children at state ratios).
+const NURSING_HOME_JOBS := 60
+const DAYCARE_JOBS := 12
+## What the hospital keeps each month for every person it serves, after
+## paying its staff and supplies: its savings for new buildings. (About 7%
+## of the ~$350 a month Americans spend per person on hospital care.)
+const HOSPITAL_NET_PER_PERSON := 25.0
+## Share of the neighboring towns' people who come here for care, plus this
+## much more for each specialty center the hospital has built.
+const HOSPITAL_REGION_SHARE := 0.2
+const HOSPITAL_REGION_SHARE_PER_CENTER := 0.15
+## Without neighbors, the countryside around town: people per region link
+## (the county highway's ends) who come in for care.
+const HOSPITAL_COUNTY_POP := 1500
+## Fixed monthly running costs at each level, which a hospital too big for
+## its town can't cover (it then closes its newest building).
+const HOSPITAL_OVERHEAD := [0, 40_000, 140_000]
+## Names, beds and staff at each level.
+const HOSPITAL_LEVELS := [
+	{"name": "County Hospital", "beds": 25, "jobs": 150, "floors": 2, "ambulances": 2},
+	{"name": "Community Hospital", "beds": 100, "jobs": 450, "floors": 4, "ambulances": 3},
+	{"name": "Regional Medical Center", "beds": 300, "jobs": 1200, "floors": 7, "ambulances": 4},
+]
+## The administrator's down payment before a project: this share of its
+## cost, plus up to `CAUTION` more for a careful one (the rest is bonds and
+## donors). A well educated one plans for up to `EDU_SAVING` less.
+const HOSPITAL_DOWN_PAYMENT := 0.15
+const HOSPITAL_DOWN_PAYMENT_CAUTION := 0.35
+const HOSPITAL_EDU_SAVING := 0.15
+## Buying out the homes or shops in the way costs their assessed value times this.
+const HOSPITAL_BUYOUT_PREMIUM := 1.3
+## Building up instead of out (when boxed in) costs this much more.
+const HOSPITAL_BUILD_UP_COST := 1.25
+## Ground a parking garage frees for later buildings, square metres.
+const HOSPITAL_GARAGE_FREES := 3000.0
+## The administrator weighs a project this often, in ticks (6 game hours).
+const HOSPITAL_DECIDE_EVERY := 360
+## Game days an administrator serves before retiring (a game day is a
+## month: about 10 years).
+const HOSPITAL_TENURE_DAYS := 120
+## Ambulance calls a year per resident (US EMS: about 0.12), and minutes an
+## ambulance crew spends with the patient before heading back.
+const EMS_CALLS_PER_PERSON_YEAR := 0.12
+const EMS_ON_SCENE_MINUTES := 15
+## How much better care lifts the want to live here, at most (people stay,
+## and families move in), and what the maternity ward adds to that.
+const CARE_DEMAND := 0.15
+const CARE_MATERNITY := 0.04
+## The development tree, in the shared Agency format (scripts/sim/agency.gd).
+## Hospital extras: `tier` is the hospital level it needs; `area` the new
+## land it takes in square metres (0 builds on what it has); `height` in
+## metres; `level` raises the hospital. Needs beyond Agency's own
+## (education = homes near a school, leader_edu = the administrator's):
+## pop (people its ambulances reach), catchment (those plus the region's),
+## region_pop (people in neighboring towns), daycare / nursing_home (one in
+## town), boxed (out of land). Effects: jobs+, ambulances+, staffing+
+## (share of jobs locals fill), education+ (town education), region_care+
+## (care it adds in neighboring towns), center+ (a specialty center that
+## draws patients from the region).
+const HOSPITAL_TREE := [
+	{"id": "er", "name": "ER and ambulance bay", "tier": 0, "cost": 2_000_000, "area": 1200.0, "height": 5.0,
+		"needs": {"pop": 800}, "effects": {"jobs+": 30, "ambulances+": 2}, "note": "more ambulances, faster"},
+	{"id": "offices", "name": "Medical office building", "tier": 0, "cost": 3_000_000, "area": 1500.0, "height": 10.0,
+		"needs": {"pop": 1500, "leader_edu": 0.3}, "effects": {"jobs+": 60}, "note": "doctors' offices next door"},
+	{"id": "maternity", "name": "Maternity ward", "tier": 0, "cost": 2_500_000, "area": 1000.0, "height": 5.0,
+		"needs": {"pop": 1200, "daycare": 1}, "effects": {"jobs+": 40}, "note": "young families move in"},
+	{"id": "community", "name": "Community hospital tower", "tier": 0, "level": 1, "cost": 15_000_000, "area": 2500.0,
+		"height": 16.0, "requires": ["er"], "needs": {"pop": 3000}, "effects": {}, "note": "100 beds"},
+	{"id": "surgery", "name": "Outpatient surgery center", "tier": 1, "cost": 6_000_000, "area": 1800.0, "height": 6.0,
+		"needs": {"pop": 3500}, "effects": {"jobs+": 80, "center+": 1}},
+	{"id": "rehab", "name": "Rehab and therapy center", "tier": 1, "cost": 4_000_000, "area": 1500.0, "height": 5.0,
+		"needs": {"nursing_home": 1}, "effects": {"jobs+": 50}, "note": "with the nursing home"},
+	{"id": "nursing_school", "name": "Nursing school", "tier": 1, "cost": 7_000_000, "area": 2000.0, "height": 10.0,
+		"needs": {"education": 0.5}, "effects": {"jobs+": 40, "staffing+": 0.15, "education+": 0.1},
+		"note": "trains the town's own nurses"},
+	{"id": "helipad", "name": "Helipad", "tier": 1, "cost": 2_000_000, "area": 900.0, "height": 0.0,
+		"needs": {"region_pop": 3000}, "effects": {"jobs+": 12, "region_care+": 0.1},
+		"note": "flies in patients from neighboring towns"},
+	{"id": "garage", "name": "Parking garage", "tier": 1, "cost": 5_000_000, "area": 0.0, "height": 12.0,
+		"needs": {"boxed": 1}, "effects": {"jobs+": 4}, "note": "frees the front lot for building"},
+	{"id": "regional", "name": "Regional medical center tower", "tier": 1, "level": 2, "cost": 45_000_000, "area": 4000.0,
+		"height": 30.0, "requires": ["surgery"], "needs": {"pop": 8000, "catchment": 15000}, "effects": {},
+		"note": "300 beds"},
+	{"id": "heart", "name": "Heart center", "tier": 2, "cost": 18_000_000, "area": 2500.0, "height": 12.0,
+		"needs": {"pop": 8000}, "effects": {"jobs+": 150, "center+": 1, "region_care+": 0.05}},
+	{"id": "cancer", "name": "Cancer center", "tier": 2, "cost": 25_000_000, "area": 3000.0, "height": 12.0,
+		"needs": {"leader_edu": 0.6, "catchment": 20000}, "effects": {"jobs+": 200, "center+": 1, "region_care+": 0.1}},
+	{"id": "teaching", "name": "Teaching hospital", "tier": 2, "cost": 40_000_000, "area": 4000.0, "height": 18.0,
+		"requires": ["nursing_school"], "needs": {"leader_edu": 0.75, "catchment": 30000},
+		"effects": {"jobs+": 400, "center+": 1, "staffing+": 0.1, "education+": 0.15, "region_care+": 0.05},
+		"note": "trains doctors"},
+]
+
 # --- Water and sewer utility ---------------------------------------------------
 # Brawn's green (2026-10-22): the player places a water utility and sets its
 # subsidy; its superintendent runs it like a small business and climbs a
