@@ -137,8 +137,7 @@ func _connect() -> int:
 func leave() -> void:
 	if _peer:
 		send_town(true, true)
-		_flush()
-		_peer.close()
+		_linger(_peer, _connected)
 	_peer = null
 	_connected = false
 	is_joined = false
@@ -179,18 +178,49 @@ func _version_mismatch(theirs: int) -> void:
 		failed.emit("The host's computer is still on the last version. It updates by itself within a few minutes: try again then.")
 
 
-## Sends what's queued before the connection closes: the town going out
-## on leaving is a few MB, and the game may be about to quit. The browser
-## sends on its own, so there it can't be waited for (or needn't be).
-func _flush() -> void:
-	_peer.poll()
-	if OS.has_feature("web"):
+## Closes once the server has the town sent on leaving: closing at once
+## can lose it (the server drops a connection's last messages when the
+## goodbye comes in with them), so wait for its "bye", a moment at most.
+## The desktop game may be about to quit, so it waits here; the browser
+## can't wait, so a small node finishes the job.
+const BYE_WAIT := 2.5
+
+
+func _linger(peer: WebSocketMultiplayerPeer, said_hello: bool) -> void:
+	if not said_hello:
+		peer.close()
 		return
-	var ws: WebSocketPeer = _peer.get_peer(1) if _connected else null
-	var until := Time.get_ticks_msec() + 5000
-	while ws and ws.get_current_outbound_buffered_amount() > 0 and Time.get_ticks_msec() < until:
+	if OS.has_feature("web") or not is_inside_tree():
+		var closer := _Closer.new()
+		closer.peer = peer
+		(get_tree().root if is_inside_tree() else Engine.get_main_loop().root).add_child.call_deferred(closer)
+		return
+	var until := Time.get_ticks_msec() + int(BYE_WAIT * 1000.0)
+	while Time.get_ticks_msec() < until and not _Closer.got_bye(peer):
 		OS.delay_msec(5)
-		_peer.poll()
+	peer.close()
+
+
+class _Closer extends Node:
+	var peer: WebSocketMultiplayerPeer
+	var _left := BYE_WAIT
+
+	func _process(delta: float) -> void:
+		_left -= delta
+		if _left <= 0.0 or got_bye(peer):
+			peer.close()
+			queue_free()
+
+	## Polls the connection; true once the server said bye (or it closed).
+	static func got_bye(p: WebSocketMultiplayerPeer) -> bool:
+		p.poll()
+		if p.get_connection_status() == MultiplayerPeer.CONNECTION_DISCONNECTED:
+			return true
+		while p.get_available_packet_count() > 0:
+			var msg = JSON.parse_string(p.get_packet().get_string_from_utf8())
+			if typeof(msg) == TYPE_DICTIONARY and msg.get("t", "") == "bye":
+				return true
+		return false
 
 
 ## Sends the server a copy of your town, for the neighbors and to keep.
@@ -231,6 +261,7 @@ func _send_town(sim: CitySim, now: bool, leaving: bool) -> void:
 		whole.finish()
 		_snapshot = {}
 		msg.z = RegionServer.pack_bytes(whole.bytes())
+		msg.leaving = true  # the server says bye once it has it
 		_send(msg)
 		return
 	if _snapshot:

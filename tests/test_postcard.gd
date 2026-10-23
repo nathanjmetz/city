@@ -65,6 +65,20 @@ func _init() -> void:
 	_check(again.buildings.size() == sim.buildings.size() and again.people.people.size() == sim.people.people.size(),
 		"and loads back whole")
 
+	# Leaving takes it all at once, every part (a player's whole town goes
+	# to the region as they leave).
+	var last := TownSnapshot.new(sim)
+	last.finish()
+	var left = RegionServer.unpack(RegionServer.pack_bytes(last.bytes()))
+	_check(left is Dictionary and left.keys().size() == sim.to_dict().keys().size() and left.has("roads") and not sim.held,
+		"taken all at once on leaving, it's the whole town (%d of %d parts)" % [left.keys().size() if left is Dictionary else 0, sim.to_dict().keys().size()])
+	# A cut-short full copy never replaces a town on the server.
+	var r2 := Region.new()
+	var cid := r2.add_city("p9", "Nine")
+	r2.update_city(cid, sim.to_dict())
+	r2.update_city(cid, {"version": 2})
+	_check(r2.city_data(cid).has("roads"), "a broken full copy doesn't replace the town")
+
 	_saves.call_deferred(sim)
 
 

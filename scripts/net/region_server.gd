@@ -106,6 +106,9 @@ static func new_code() -> String:
 	return s
 
 
+var _left := []  # peers that disconnected this poll (see _gone)
+
+
 func _process(delta: float) -> void:
 	_peer.poll()
 	while _peer.get_available_packet_count() > 0:
@@ -113,6 +116,11 @@ func _process(delta: float) -> void:
 		var msg = JSON.parse_string(_peer.get_packet().get_string_from_utf8())
 		if typeof(msg) == TYPE_DICTIONARY:
 			_handle(from, msg)
+	# Players who left go only now: the town a player sends as they leave
+	# often comes in with the goodbye, and is theirs to keep.
+	for peer in _left:
+		_gone(peer)
+	_left.clear()
 	_trade_time += delta
 	if _trade_time >= Region.TRADE_SECONDS:
 		_trade_time = 0.0
@@ -208,6 +216,8 @@ func _handle(from: int, msg: Dictionary) -> void:
 					region.take_land(p.city, msg.land)
 					relay.land = msg.land
 				_broadcast(relay, from)
+				if msg.get("leaving", false):
+					_send(from, {"t": "bye"})  # it can close now (RegionClient._linger)
 				# Its population, for the metro (older games don't send it).
 				if msg.has("pop") and region.ledger.set_population(p.city, int(msg.pop)) and region.update_metro():
 					_ledger_changed()
@@ -458,6 +468,10 @@ func _send_requests() -> void:
 
 
 func _on_left(peer: int) -> void:
+	_left.append(peer)
+
+
+func _gone(peer: int) -> void:
 	_waiting.erase(peer)
 	if not _players.has(peer):
 		return
