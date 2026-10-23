@@ -72,7 +72,7 @@ var _t1 := -1.0
 var _t0 := -1.0
 var _step := TrafficSim.DT
 var _rt := 0.0
-var _rate := 0.0
+var _rate := 1.0
 var _win_real := 0.0
 var _win_t := 0.0
 
@@ -95,6 +95,9 @@ class Motion:
 	var tr0 := Vector3.ZERO
 	var tr1 := Vector3.ZERO
 	var a := Vector3.ZERO
+	## Where the front axle has been lately (oldest first): the rear axle and
+	## a trailer's axles run in these tracks.
+	var trail := PackedVector3Array()
 	var rear := Vector3.ZERO
 	var trailer := Vector3.ZERO
 	var started := false
@@ -236,7 +239,7 @@ func _draw_cars(_delta: float) -> void:
 			m.started = false  # out of sight: it picks up afresh when back
 			continue
 		var wb: float = info[11]
-		var h := _steer(m, a, wb)
+		var h := _steer(m, a, wb, info[12])
 		var flat_front := a + h * fo
 		var front := Terrain.lift(flat_front)
 		var d2 := front.distance_squared_to(eye)
@@ -305,7 +308,8 @@ func _draw_cars(_delta: float) -> void:
 
 ## What doesn't change over a vehicle's life, worked out once:
 ## [sim kind, kind, model, paint, emergency flag, may haul a rig's load,
-## long body, rear axle, far model, Motion, front axle, wheelbase]. Far away
+## long body, rear axle, far model, Motion, front axle, wheelbase, track to
+## keep]. Far away
 ## every body style of a kind shares one simple model, so the distance costs
 ## one draw per kind.
 func _describe(car: Dictionary) -> Array:
@@ -319,8 +323,13 @@ func _describe(car: Dictionary) -> Array:
 	var body: String = VehicleModels.ARTIC[kind].cab if VehicleModels.ARTIC.has(kind) else model
 	var rear := float(VehicleModels.AXLE.get(body, 3.5))
 	var fo := float(FRONT.get(body, 1.0))
+	var wb := maxf(rear - fo, 1.0)
+	var need := wb + 1.0
+	if VehicleModels.ARTIC.has(kind):
+		var art: Dictionary = VehicleModels.ARTIC[kind]
+		need = float(art.hitch) - fo + float(art.axle) - float(art.pin) + 1.0
 	return [car.get("kind", "car"), kind, model, VehicleTypes.paint(kind, car.id), flags,
-		VehicleModels.ARTIC.has(kind), long, rear, _far(kind, model), Motion.new(), fo, maxf(rear - fo, 1.0)]
+		VehicleModels.ARTIC.has(kind), long, rear, _far(kind, model), Motion.new(), fo, wb, need]
 
 
 func _info_of(car: Dictionary) -> Array:
@@ -467,10 +476,13 @@ func _axle_at(m: Motion) -> Vector3:
 
 
 ## Moves the rear axle on behind the front axle `a` and returns the body's
-## heading. Driving forward the rear axle trails the front one (it moves
-## toward it and stays a wheelbase back, a tractrix), the way rear wheels
-## follow steered front ones; backing up it comes from the path.
-func _steer(m: Motion, a: Vector3, wb: float) -> Vector3:
+## heading. Driving forward the rear axle runs in the front axle's own
+## tracks, a wheelbase back (the front wheels steer along the lane, the rear
+## ones follow them), so the body turns about its middle, not its bumper,
+## and lines up again once the rear wheels are round the corner. Backing up
+## the rear leads, so it comes from the path. `need` is how much track to
+## keep: a wheelbase, or back to a trailer's axles.
+func _steer(m: Motion, a: Vector3, wb: float, need: float) -> Vector3:
 	if m.rev1:
 		var span := m.t1 - m.t0
 		var u := 1.0 if span <= 0.0 else clampf((_rt - m.t0) / span, 0.0, 1.0)
@@ -478,20 +490,26 @@ func _steer(m: Motion, a: Vector3, wb: float) -> Vector3:
 		m.rear = Vector3(r.x, a.y, r.z)
 		var t := m.tr0.lerp(m.tr1, u)
 		m.trailer = Vector3(t.x, a.y, t.z)
-	elif not m.started:
-		m.rear = a - m.h1 * wb
-		m.trailer = Vector3.INF  # set by _trail from the kingpin
-		m.heading = m.h1
-		m.roll = 0.0
+		m.trail.clear()  # starts afresh, from the rear, once it drives off
 	else:
-		# Short steps, so the trail stays true on a slow frame.
-		var moved := Vector2(a.x - m.a.x, a.z - m.a.z).length()
-		if moved > wb * 4.0:
-			m.rear = a - m.h1 * wb
+		var flat := Vector2(a.x - m.a.x, a.z - m.a.z).length()
+		if not m.started or flat > need * 2.0:
+			m.heading = m.h1
+			m.roll = 0.0
+			m.trail = PackedVector3Array([a - m.h1 * need, a])
+		elif m.trail.size() < 2:
+			# Just stopped backing: the track runs back through the rear axle,
+			# as the body stands.
+			var hh := Vector3(a.x - m.rear.x, 0.0, a.z - m.rear.z).normalized()
+			m.trail = PackedVector3Array([m.rear - hh * maxf(need - wb, 1.0), m.rear, a])
 		else:
-			var n := mini(ceili(moved / (wb * 0.3)), 8)
-			for k in range(1, n + 1):
-				m.rear = _pull(m.rear, m.a.lerp(a, float(k) / n), wb)
+			var last := m.trail[m.trail.size() - 1]
+			if Vector2(a.x - last.x, a.z - last.z).length() > 0.3:
+				m.trail.append(a)
+				# Drop track that's further back than the body reaches.
+				while m.trail.size() > 3 and Vector2(a.x - m.trail[1].x, a.z - m.trail[1].z).length() > need:
+					m.trail.remove_at(0)
+		m.rear = _on_trail(m.trail, a, wb)
 	m.started = true
 	m.a = a
 	var h := Vector3(a.x - m.rear.x, 0.0, a.z - m.rear.z)
@@ -500,24 +518,37 @@ func _steer(m: Motion, a: Vector3, wb: float) -> Vector3:
 	return h.normalized()
 
 
-## The trailer's axles, `l` metres behind the kingpin `k`, trailing it.
+## The point on a track `l` metres in a straight line from `from`, searching
+## back from the newest end (past it, straight on from the oldest piece).
+static func _on_trail(trail: PackedVector3Array, from: Vector3, l: float) -> Vector3:
+	var near := 0.0
+	var i := trail.size() - 1
+	var l2 := l * l
+	while i >= 0:
+		var p := trail[i]
+		var d2 := (p.x - from.x) * (p.x - from.x) + (p.z - from.z) * (p.z - from.z)
+		if d2 >= l2 and i < trail.size() - 1:
+			# Between this point and the newer one: where it's `l` away.
+			var q := trail[i + 1]
+			var far := sqrt(d2)
+			var t := clampf((l - near) / maxf(far - near, 1e-4), 0.0, 1.0)
+			return Vector3(lerpf(q.x, p.x, t), from.y, lerpf(q.z, p.z, t))
+		near = sqrt(d2)
+		i -= 1
+	var o := trail[0]
+	var back := Vector3(o.x - from.x, 0.0, o.z - from.z)
+	if back.length_squared() < 1e-6:
+		return from
+	return from + back.normalized() * l
+
+
+## The trailer's axles, `l` metres behind the kingpin `k`, in the tracks
+## the tractor laid down.
 func _trail(m: Motion, k: Vector3, l: float) -> Vector3:
 	if m.rev1:
 		return m.trailer
-	if not m.trailer.is_finite() or Vector2(k.x - m.trailer.x, k.z - m.trailer.z).length() > l * 2.0:
-		m.trailer = k - m.heading * l
-	else:
-		m.trailer = _pull(m.trailer, k, l)
+	m.trailer = _on_trail(m.trail, k, l)
 	return m.trailer
-
-
-## A point dragged along behind `to` on a rod `l` long.
-static func _pull(from: Vector3, to: Vector3, l: float) -> Vector3:
-	var d := Vector3(to.x - from.x, 0.0, to.z - from.z)
-	var n := d.length()
-	if n < 1e-4:
-		return from
-	return Vector3(to.x - d.x / n * l, to.y, to.z - d.z / n * l)
 
 
 ## The body's orientation: along its heading, tipped to the ground under
