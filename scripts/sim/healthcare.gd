@@ -697,6 +697,9 @@ func _roll_call(sim: CitySim) -> void:
 		return
 	var patient: String = FIRST[rng.randi() % FIRST.size()] + " " + LAST[rng.randi() % LAST.size()]
 	var call: String = CALLS[rng.randi() % CALLS.size()]
+	# Smoke: a home over the smoke line calls more, often for breathing trouble.
+	if str(scene.ref).begins_with("lot:") and sim.pollution.breathing_call(sim, str(scene.ref).substr(4), rng.randf()):
+		call = "trouble breathing"
 	# The nearest hospital with an ambulance in the bay answers.
 	var at := Vector3(scene.pos[0], 0.0, scene.pos[1])
 	var best := -1
@@ -741,7 +744,17 @@ func _scene(sim: CitySim, rng: RandomNumberGenerator) -> Dictionary:
 		return {"ref": "service:%d" % id, "pos": _xz(b.pos + b.dir * Services.size_of(b).y * 0.5)}
 	if homes.is_empty():
 		return {}
-	var key: String = homes[rng.randi() % homes.size()]
+	# Homes in heavy smoke call more often (Pollution.call_weight).
+	var total := 0.0
+	for k in homes:
+		total += sim.pollution.call_weight(k)
+	var pick := rng.randf() * total
+	var key: String = homes[-1]
+	for k in homes:
+		pick -= sim.pollution.call_weight(k)
+		if pick < 0.0:
+			key = k
+			break
 	return {"ref": "lot:" + key, "pos": _xz(sim.lots[key].front)}
 
 

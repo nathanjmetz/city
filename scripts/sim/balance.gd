@@ -765,6 +765,13 @@ const CLEAN_COMPLAINT_MAX := 2.0
 ## road (a wall costs about $2,500 a metre; federal aid pays 80% of one
 ## on a federal-aid highway), and how many decibels it takes off (FHWA: a
 ## wall that breaks the line of sight cuts 5 to 10 dBA).
+## Smoke and breathing (EPA: each 10 ug/m3 more fine particles means a few
+## percent more respiratory hospital visits; asthma ER visits rise most). As
+## gameplay: a home over the smoke line is this much more likely to call an
+## ambulance per HURT_SMOKE of smoke, and that share of its calls are
+## breathing trouble, counted against the source.
+const SMOKE_CALL_WEIGHT := 0.5
+const SMOKE_BREATHING_SHARE := 0.5
 const NOISE_WALL_PER_M := 500
 const NOISE_WALL_DB := 8.0
 
