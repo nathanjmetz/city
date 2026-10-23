@@ -33,6 +33,7 @@ const ASPHALT := """
 uniform vec4 fresh : source_color = vec4(0.28, 0.27, 0.27, 1.0);
 uniform vec4 faded : source_color = vec4(0.42, 0.41, 0.39, 1.0);
 uniform vec4 tar : source_color = vec4(0.13, 0.13, 0.13, 1.0);
+global uniform float snow;
 void fragment() {
 	vec2 p = world_pos.xz;
 	float close = clamp(1.0 - length(VERTEX) / 220.0, 0.0, 1.0);
@@ -88,8 +89,15 @@ void fragment() {
 	// Aggregate speckle up close.
 	float g = texture(noise_grain, p / 0.31).r;
 	col *= 1.0 + (g - 0.5) * 0.28 * close;
+	// Winter: plowed and salted. Indiana streets go a chalky pale grey
+	// with white road-salt residue drying in streaks, and a skim of packed
+	// snow survives in patches between the wheel paths.
+	float salt = snow * (0.55 + 0.45 * texture(noise_soft, turn(p, 0.3) / 18.0).r);
+	col = mix(col, vec3(0.50, 0.50, 0.49) * (0.95 + g * 0.1), salt * 0.55);
+	float packed = smoothstep(0.72, 0.9, texture(noise_soft, turn(p, 1.2) / 11.0 + 0.7).r) * snow;
+	col = mix(col, vec3(0.72, 0.74, 0.77) * (0.92 + g * 0.1), packed * 0.45);
 	ALBEDO = col;
-	ROUGHNESS = 0.9 - crack * 0.4;
+	ROUGHNESS = 0.9 - crack * 0.4 - packed * 0.15;
 	SPECULAR = 0.3;
 }
 """
@@ -97,6 +105,7 @@ void fragment() {
 const CONCRETE := """
 uniform vec4 base : source_color = vec4(0.70, 0.69, 0.65, 1.0);
 uniform float joints = 1.0;
+global uniform float snow;
 void fragment() {
 	vec2 p = world_pos.xz;
 	float close = clamp(1.0 - length(VERTEX) / 200.0, 0.0, 1.0);
@@ -116,6 +125,11 @@ void fragment() {
 	float joint = 1.0 - smoothstep(0.012, 0.012 + fwidth(along) * 1.5, d);
 	joint *= clamp(0.024 / max(fwidth(along), 0.0001), 0.0, 1.0);  // thinner than a pixel: fade
 	col *= 1.0 - joint * joints * 0.45 * close;
+	// Winter: some owners shovel their stretch of walk and some don't, so
+	// snow lies in runs of whole slabs with thin trodden traces between.
+	float unshoveled = step(0.5, texture(noise_soft, p / 30.0 + 0.4).r);
+	float cover = snow * mix(0.25 * smoothstep(0.5, 0.8, texture(noise_soft, p / 2.0).r), 0.95, unshoveled);
+	col = mix(col, vec3(0.80, 0.83, 0.88) * (0.95 + tint * 0.05), cover);
 	ALBEDO = col;
 	ROUGHNESS = 0.88;
 	SPECULAR = 0.3;
