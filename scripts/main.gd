@@ -488,7 +488,7 @@ func toggle_pause() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	# Space pauses and resumes, like Cities: Skylines.
 	if event is InputEventKey and event.pressed and not event.echo \
-			and (event as InputEventKey).keycode == KEY_SPACE:
+			and KeyBinds.matches(event as InputEventKey, "pause"):
 		toggle_pause()
 
 

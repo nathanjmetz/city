@@ -272,18 +272,19 @@ func set_grid_exact(on: bool) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	# Shift + a number opens a bottom bar menu instead (Hud.hotkey_category).
 	if event is InputEventKey and event.pressed and not event.echo and not (event as InputEventKey).shift_pressed:
-		match (event as InputEventKey).keycode:
-			KEY_1: set_mode(Mode.STRAIGHT)
-			KEY_2: set_mode(Mode.CURVED)
-			KEY_3: set_mode(Mode.GRID)
-			KEY_4: set_mode(Mode.ROUNDABOUT)
-			KEY_B: set_mode(Mode.BULLDOZE)
-			KEY_U: set_mode(Mode.UPGRADE)
-			KEY_P: set_parallel(not parallel)
-			KEY_PAGEUP: change_elevation(1)
-			KEY_PAGEDOWN: change_elevation(-1)
-			KEY_BRACKETLEFT: _resize(1.0 / 1.2)
-			KEY_BRACKETRIGHT: _resize(1.2)
+		match KeyBinds.action(event as InputEventKey, ["road", "curve", "grid", "roundabout", "bulldoze", "upgrade", "parallel",
+				"raise", "lower", "smaller", "bigger"]):
+			"road": set_mode(Mode.STRAIGHT)
+			"curve": set_mode(Mode.CURVED)
+			"grid": set_mode(Mode.GRID)
+			"roundabout": set_mode(Mode.ROUNDABOUT)
+			"bulldoze": set_mode(Mode.BULLDOZE)
+			"upgrade": set_mode(Mode.UPGRADE)
+			"parallel": set_parallel(not parallel)
+			"raise": change_elevation(1)
+			"lower": change_elevation(-1)
+			"smaller": _resize(1.0 / 1.2)
+			"bigger": _resize(1.2)
 	if not event is InputEventMouseButton:
 		return
 	var mb := event as InputEventMouseButton

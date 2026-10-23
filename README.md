@@ -38,6 +38,9 @@ An open map where you draw roads, paint zones along them, and buildings grow, li
 | Home key, or the house button (top left) | Glides back to the middle of your town (its Main Street). The arrow beside it lists every town in the region, yours and your neighbors', to fly to any of them. |
 | Esc | Stop drawing; press again to put every tool away and close panels. |
 | Shift + 1 to 0, V, F1 | Open a bottom bar menu (each button's tooltip names its key), the Views, or the controls list. |
+| / or the magnifier (bottom left) | Find any tool by name; the last five tools you picked sit just above it. |
+| Ctrl+Z | Undo the last road or building placed in the last 30 seconds, with a full refund. |
+| Pause menu, Controls | Change any key. |
 
 | Space, or Pause / 1x / 2x / 4x | Pause and game speed. |
 | Bell (top right) | Permit requests. Leaders of hubs (the railroad, the bus company...) build freely on their own land, but ask here before they cross your roads, lay track through town or take anything you built. Click one to see its plan on the map, then Approve, Deny, or Edit route (drag the bends; they re-cost your way and go ahead if they can afford it). It never pops up; a request nobody answers is shelved after a week. It works both ways: a hub's info panel lets you tell its leader to grow, use their own judgment, or hold off, and pre-approve permits near it. |

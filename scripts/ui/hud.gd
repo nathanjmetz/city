@@ -109,6 +109,7 @@ var _warning_box: PanelContainer
 var _budget_open := false
 var economy_page := EconomyPage.new()
 var _help := PanelContainer.new()
+var _help_keys := VBoxContainer.new()
 var _top_bar: PanelContainer
 var _town_button: Button  # top bar buttons from elsewhere go just before it
 var _views_panel := PanelContainer.new()
@@ -231,7 +232,7 @@ func _input(event: InputEvent) -> void:
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	var k := event as InputEventKey
-	if k != null and k.pressed and not k.echo and k.keycode == KEY_HOME:
+	if k != null and k.pressed and not k.echo and KeyBinds.matches(k, "home"):
 		jump.go_home()
 		get_viewport().set_input_as_handled()
 		return
@@ -248,16 +249,16 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_open(cat)
 			get_viewport().set_input_as_handled()
 			return
-		if k.keycode == KEY_SLASH and not k.shift_pressed:
+		if KeyBinds.matches(k, "search") and not k.shift_pressed:
 			var find := _quick.get_child(0) as Button
 			find.button_pressed = not find.button_pressed
 			get_viewport().set_input_as_handled()
 			return
-		if k.keycode == KEY_V and not k.shift_pressed:
+		if KeyBinds.matches(k, "views") and not k.shift_pressed:
 			_views_button.button_pressed = not _views_button.button_pressed
 			get_viewport().set_input_as_handled()
 			return
-		if k.keycode == KEY_F1 or k.keycode == KEY_SLASH and k.shift_pressed:
+		if KeyBinds.matches(k, "help") or k.keycode == KEY_SLASH and k.shift_pressed:
 			_help_button.button_pressed = not _help_button.button_pressed
 			get_viewport().set_input_as_handled()
 			return
@@ -789,6 +790,7 @@ func _build_top_bar() -> void:
 	_help_button.toggled.connect(func(on):
 		_help.visible = on
 		if on:
+			_fill_help()
 			advisor.close_panel()
 			permits.close_panel()
 			town.close_panel()
@@ -1896,27 +1898,9 @@ func _build_help() -> void:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 2)
 	_help.add_child(col)
-	col.add_child(UiStyle.label("CAMERA", 10, UiStyle.MUTED))
-	for line in ["W A S D  move  (Shift: faster)", "Q / E  rotate", "T / G  tilt", "R / F or scroll  zoom",
-			"Right drag  move the map", "Middle drag or Option + drag  rotate", "Home  back to your town"]:
-		col.add_child(UiStyle.label(line, 12))
-	col.add_child(UiStyle.label("TOOLS", 10, UiStyle.MUTED))
-	for line in ["Shift + 1 to 0  open a menu (shown on each button)   V  views",
-			"1 2 3 4  road, curve, grid, roundabout", "U upgrade   P parallel   B bulldoze   M move it",
-			"[ ]  size   Page Up / Down  bridge or tunnel", "Grid: Enter builds the shape, Tab turns it",
-			"5 6 7 8  homes, shops, industry, dezone   Tab  brush",
-			"J  traffic view   Ctrl+Z  undo a move",
-			"Right click  stop drawing", "Esc  stop drawing, then close everything"]:
-		col.add_child(UiStyle.label(line, 12))
-	col.add_child(UiStyle.label("GAME", 10, UiStyle.MUTED))
-	for line in ["Space  pause", "Enter  chat (in a region)", "N  flag the sound you just heard"]:
-		col.add_child(UiStyle.label(line, 12))
-	col.add_child(UiStyle.label("CONTROLLER", 10, UiStyle.MUTED))
-	for line in ["Left stick  cursor (push the edge to move)", "Right stick  turn and tilt   LT / RT  zoom",
-			"A  use   X  cancel   B  back   Y  tool wheel, then its tools",
-			"LB / RB  size or turn   D-pad  height, speed; steps between buttons over a menu",
-			"Click right stick  finish a shape, or go home", "Menu  pause menu   View  pause   View + X  undo"]:
-		col.add_child(UiStyle.label(line, 12))
+	_help_keys.add_theme_constant_override("separation", 2)
+	col.add_child(_help_keys)
+	_fill_help()
 	var guide := Button.new()
 	guide.text = "Guided tour (first town)"
 	guide.focus_mode = Control.FOCUS_NONE
@@ -1931,6 +1915,42 @@ func _build_help() -> void:
 	_help.visible = false
 	_root.add_child(_help)
 	_pin(_help, Control.PRESET_TOP_RIGHT, Vector2(-6, 42))
+
+
+## The key list follows the Controls page, so it's refilled each time it opens.
+func _fill_help() -> void:
+	for c in _help_keys.get_children():
+		c.queue_free()
+	var k := func(a: String) -> String: return KeyBinds.text(a)
+	var lines := [
+		"CAMERA",
+		"%s %s %s %s  move  (Shift: faster)" % [k.call("move_forward"), k.call("move_left"), k.call("move_back"), k.call("move_right")],
+		"%s / %s  rotate   %s / %s  tilt" % [k.call("rotate_left"), k.call("rotate_right"), k.call("tilt_up"), k.call("tilt_down")],
+		"%s / %s or scroll  zoom" % [k.call("zoom_in"), k.call("zoom_out")],
+		"Right drag  move the map", "Middle drag or Option + drag  rotate", "%s  back to your town" % k.call("home"),
+		"TOOLS",
+		"Shift + 1 to 0  open a menu (shown on each button)   %s  views   %s  find" % [k.call("views"), k.call("search")],
+		"%s %s %s %s  road, curve, grid, roundabout" % [k.call("road"), k.call("curve"), k.call("grid"), k.call("roundabout")],
+		"%s upgrade   %s parallel   %s bulldoze   %s move it" % [k.call("upgrade"), k.call("parallel"), k.call("bulldoze"), k.call("move_it")],
+		"%s %s  size   %s / %s  bridge or tunnel" % [k.call("smaller"), k.call("bigger"), k.call("raise"), k.call("lower")],
+		"Grid: Enter builds the shape, Tab turns it",
+		"%s %s %s %s  homes, shops, industry, dezone   %s  brush" % [k.call("homes"), k.call("shops"), k.call("industry"),
+			k.call("dezone"), k.call("brush")],
+		"%s  traffic view   Ctrl+Z  undo the last build" % k.call("traffic"),
+		"Right click  stop drawing", "Esc  stop drawing, then close everything",
+		"GAME",
+		"%s  pause   Enter  chat (in a region)   %s  flag a bad sound" % [k.call("pause"), k.call("flag_sound")],
+		"Change keys: pause menu, Controls",
+		"CONTROLLER",
+		"Left stick  cursor (push the edge to move)", "Right stick  turn and tilt   LT / RT  zoom",
+		"A  use   X  cancel   B  back   Y  tool wheel, then its tools",
+		"LB / RB  size or turn   D-pad  height, speed; steps between buttons over a menu",
+		"Click right stick  finish a shape, or go home", "Menu  pause menu   View  pause   View + X  undo"]
+	for line in lines:
+		if line == line.to_upper():
+			_help_keys.add_child(UiStyle.label(line, 10, UiStyle.MUTED))
+		else:
+			_help_keys.add_child(UiStyle.label(line, 12))
 
 
 ## The build stamp written by the web preview workflow, or "dev" locally:

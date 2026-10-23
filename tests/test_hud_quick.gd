@@ -56,6 +56,24 @@ func _process(_delta: float) -> bool:
 	_check(hud._category == "zones", "Shift+2 opens Zoning (%s)" % hud._category)
 	hud.close_all()
 
+	# Changing a key: Road onto 9 takes it from nobody; Bulldoze onto 9 bumps Road.
+	KeyBinds.reset()
+	_check(KeyBinds.bind("road", KEY_9) == "", "Road moves onto 9")
+	var nine := InputEventKey.new()
+	nine.keycode = KEY_9
+	nine.pressed = true
+	hud.road_tool._unhandled_input(nine)
+	_check(hud.road_tool.mode == RoadTool.Mode.STRAIGHT, "9 now takes the road tool")
+	hud.close_all()
+	var one := InputEventKey.new()
+	one.keycode = KEY_1
+	one.pressed = true
+	hud.road_tool._unhandled_input(one)
+	_check(hud.road_tool.mode == RoadTool.Mode.NONE, "1 no longer does")
+	_check(KeyBinds.bind("bulldoze", KEY_9) == "road" and KeyBinds.key("road") == KEY_NONE, "a key taken by another action bumps it")
+	KeyBinds.reset()
+	_check(KeyBinds.key("road") == KEY_1 and KeyBinds.key("bulldoze") == KEY_B, "reset puts every key back")
+
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 	return true

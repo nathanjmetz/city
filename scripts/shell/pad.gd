@@ -173,10 +173,10 @@ func _on_button(b: int, pressed: bool) -> void:
 				_open_wheel()
 		JOY_BUTTON_LEFT_SHOULDER:
 			if pressed:
-				_tap(KEY_BRACKETLEFT)
+				_tap(KeyBinds.key("smaller"))
 		JOY_BUTTON_RIGHT_SHOULDER:
 			if pressed:
-				_tap(KEY_BRACKETRIGHT)
+				_tap(KeyBinds.key("bigger"))
 		JOY_BUTTON_DPAD_UP, JOY_BUTTON_DPAD_DOWN, JOY_BUTTON_DPAD_LEFT, JOY_BUTTON_DPAD_RIGHT:
 			if not pressed:
 				return
@@ -186,9 +186,9 @@ func _on_button(b: int, pressed: bool) -> void:
 			if active and (MenuState.showing or _over_ui()) and _step(dir):
 				return
 			if b == JOY_BUTTON_DPAD_UP:
-				_tap(KEY_PAGEUP)
+				_tap(KeyBinds.key("raise"))
 			elif b == JOY_BUTTON_DPAD_DOWN:
-				_tap(KEY_PAGEDOWN)
+				_tap(KeyBinds.key("lower"))
 			else:
 				var game := get_tree().current_scene
 				if game != null and game.has_method("set_speed") and not MenuState.showing:
@@ -198,7 +198,7 @@ func _on_button(b: int, pressed: bool) -> void:
 		JOY_BUTTON_RIGHT_STICK:
 			if pressed and not MenuState.showing:
 				var hud := _hud()
-				_tap(KEY_ENTER if hud != null and hud.shape_open() else KEY_HOME)
+				_tap(KEY_ENTER if hud != null and hud.shape_open() else KeyBinds.key("home"))
 		JOY_BUTTON_START:
 			if pressed:
 				_toggle_menu()
