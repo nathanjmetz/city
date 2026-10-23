@@ -704,7 +704,9 @@ func _services_drawer() -> PanelContainer:
 	drawer.add_child(row)
 	for group in [["Utilities", [Services.Kind.POWER_FEED, Services.Kind.WELL, Services.Kind.SUBSTATION,
 				Services.Kind.WATER_TOWER, Services.Kind.WATER_UTILITY]],
-			["Safety, health and schools", [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.CLINIC, Services.Kind.SCHOOL]],
+			["Safety and schools", [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.SCHOOL]],
+			["Health and care", [Services.Kind.CLINIC, Services.Kind.HOSPITAL, Services.Kind.NURSING_HOME,
+				Services.Kind.DAYCARE]],
 			["Transit", [Services.Kind.BUS_DEPOT, Services.Kind.TAXI_COMPANY]]]:
 		if row.get_child_count() > 0:
 			row.add_child(VSeparator.new())

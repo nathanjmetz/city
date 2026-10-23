@@ -110,6 +110,8 @@ var policies := Policies.new()
 var construction := Construction.new()
 ## Smoke, noise and dirty ground, each traced to the source that makes it.
 var pollution := Pollution.new()
+## Hospitals run by their administrators, ambulances, nursing homes, daycare.
+var healthcare := Healthcare.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -624,6 +626,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			_lever_steps.clear()
 			pollution = Pollution.new()
 			_hook_pollution()
+			healthcare = Healthcare.new()
 			farms.reserves = reserves
 			industry.reserves = reserves
 			vegetation.reset()
@@ -911,6 +914,9 @@ func tick() -> void:
 	t = Perf.now()
 	rail.tick(self)
 	Perf.add("sim.rail", t)
+	t = Perf.now()
+	healthcare.tick(self)
+	Perf.add("sim.healthcare", t)
 	if not simulate_traffic:
 		Perf.add("sim.tick", t0)
 		return
@@ -994,7 +1000,7 @@ func update_stats(budget := true) -> void:
 	shop_jobs += banks.jobs()
 	economy.reach_milestones(pop)
 	var workers := int(pop * WORKER_SHARE)
-	var jobs := shop_jobs + factory_jobs + telecom.jobs()
+	var jobs := shop_jobs + factory_jobs + telecom.jobs() + healthcare.jobs(self)
 	# Demand plans ahead, as builders do: homes going up are people on the
 	# way (their pre-sold buyers; the rest of a new home is still for sale),
 	# and jobs at shops and factories going up are jobs on the way.
@@ -1017,6 +1023,8 @@ func update_stats(budget := true) -> void:
 	# A boil-water notice, or a steep water bill, puts people off moving in.
 	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL]
 		- Balance.WATER_BOIL_DEMAND * services.water.boil_share(self) - services.water.rate_penalty(self), 0.0, 1.0)
+	# Good care keeps people in town and draws families.
+	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL] + healthcare.demand_shift(self), 0.0, 1.0)
 	# Past village size, people want fire, police, a clinic and a school nearby.
 	if pop > 300:
 		demand[ZoneMap.Zone.RESIDENTIAL] = clampf(
@@ -1412,6 +1420,13 @@ func _hub_command(cmd: Dictionary) -> bool:
 			return false
 	_lots_dirty = true
 	return true
+## A hub grew onto (or gave back) this ground: zoning there goes, and the
+## lots are re-cut around it (bought-out buildings go with their lots).
+func land_taken(poly: PackedVector2Array) -> void:
+	if not poly.is_empty():
+		_clear_zones_under(poly)
+	_lots_dirty = true
+	zones_changed.emit()
 
 
 ## Lots are worked out again on the next refresh (new track took some).
@@ -1526,6 +1541,8 @@ func hub_area(key: String) -> String:
 			return "schools" if education.campuses.has(id) else ""
 		"bank":
 			return "banks" if banks.banks.has(id) else ""
+		"hospital":
+			return "health" if services.buildings.has(id) and services.buildings[id].kind == Services.Kind.HOSPITAL else ""
 	return ""
 
 
@@ -1566,13 +1583,14 @@ func _sync_stances() -> void:
 func _leader_keys() -> Array:
 	var out := []
 	for kind in ["farm", "industry", "service", "hub", "park", "campus", "bank", "bus_depot", "water",
-			"post_office", "warehouse", "taxi", "telecom"]:
+			"post_office", "warehouse", "taxi", "telecom", "hospital"]:
 		if not permits.locators.has(kind):
 			continue
 		var ids: Array = {"farm": farms.farms, "industry": industry.sites, "service": services.buildings,
 			"hub": hubs.hubs, "park": parks.sites, "campus": education.campuses, "bank": banks.banks,
 			"bus_depot": buses.depots, "water": services.water.utilities, "post_office": mail.offices,
-			"warehouse": warehouses.buildings, "taxi": taxis.companies, "telecom": telecom.companies}[kind].keys()
+			"warehouse": warehouses.buildings, "taxi": taxis.companies, "telecom": telecom.companies,
+			"hospital": healthcare.hubs}[kind].keys()
 		for id in ids:
 			out.append("%s:%d" % [kind, id])
 	return out
@@ -2233,6 +2251,7 @@ func to_dict() -> Dictionary:
 		"streets": streets.to_dict(),
 		"policies": policies.to_dict(),
 		"pollution": pollution.to_dict(),
+		"healthcare": healthcare.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
 		"buses": buses.to_dict(),
@@ -2284,6 +2303,7 @@ func from_dict(d: Dictionary) -> void:
 	mail.from_dict(d.get("mail", {}))
 	policies.from_dict(d.get("policies", {}))
 	pollution.from_dict(d.get("pollution", {}))
+	healthcare.from_dict(d.get("healthcare", {}))
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:

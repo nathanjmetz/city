@@ -42,6 +42,11 @@ func _sync() -> void:
 			_nodes[id].queue_free()
 			_nodes.erase(id)
 	for id in sim.services.buildings:
+		# A hospital that grew (or gave back) a building is drawn afresh.
+		if _nodes.has(id) and _nodes[id].get_meta("look") != _look(id):
+			_trees.remove(_nodes[id].get_meta("tree_key"))
+			_nodes[id].queue_free()
+			_nodes.erase(id)
 		if not _nodes.has(id):
 			_nodes[id] = _spawn(id, sim.services.buildings[id])
 	_draw_coverage()
@@ -69,6 +74,14 @@ func _draw_coverage() -> void:
 		_coverage.mesh = Terrain.drape(st.commit())
 
 
+## What a building looks like, so a change shows: its size, and a hospital's
+## buildings.
+func _look(id: int) -> String:
+	var b: Dictionary = sim.services.buildings[id]
+	var hub: Dictionary = sim.healthcare.hubs.get(id, {})
+	return str([Services.size_of(b), hub.get("pieces", []), hub.get("level", 0)])
+
+
 func _spawn(id: int, b: Dictionary) -> Node3D:
 	var root := Node3D.new()
 	add_child(root)
@@ -90,10 +103,17 @@ func _spawn(id: int, b: Dictionary) -> Node3D:
 	footing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(footing)
 	var to_curb := Services.SETBACK + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
-	var seed := int(b.pos.x * 73.0) ^ int(b.pos.z * 151.0) ^ (int(b.kind) << 20)
-	var built := CivicBuilder.build_service(int(b.kind), seed, size, to_curb)
+	# Seeded from the front door, which stays put as a hospital grows.
+	var door: Vector3 = sim.healthcare.hubs[id].front if sim.healthcare.hubs.has(id) else b.pos + b.dir * size.y * 0.5
+	var seed := int(door.x * 73.0) ^ int(door.z * 151.0) ^ (int(b.kind) << 20)
+	var built: Array
+	if int(b.kind) in Services.CARE:
+		built = HealthBuilder.build_care(int(b.kind), seed, size, to_curb, sim.healthcare.hubs.get(id, {}))
+	else:
+		built = CivicBuilder.build_service(int(b.kind), seed, size, to_curb)
 	built[1] = Terrain.drape_local(built[1], Transform3D(root.basis, root.position))
 	root.set_meta("tree_key", str(b.pos))
+	root.set_meta("look", _look(id))
 	# It goes up stage by stage (ConstructionSite); trees go in at the end.
 	var ref := "svc:%d" % id
 	ConstructionSite.add_to(root, built, "civic", func(): return sim.construction.state(ref, sim.tick_count),
