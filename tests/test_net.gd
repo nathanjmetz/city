@@ -202,6 +202,12 @@ func _run() -> void:
 	_check(not back.is_empty() and kid2.is_joined, "the game reconnects by itself")
 	third.region.load_stale()
 	_check(third.region.cities[kid_city].sim.network.segments.size() > segs, "and the road built while away reaches the server")
+	# A device that has played here gets in by its sign-in even with an old code.
+	var kid3 := _client()
+	kid3.join("ws://127.0.0.1:%d" % (PORT + 1), "OLD999", "p-kid", "Sammy", "", false, kid2.token)
+	await _until(func(): return kid3.my_city != "")
+	_check(kid3.my_city == kid_city, "a returning device gets in by its sign-in even with an old invite code")
+	await _frames(10)
 	third.stop()
 	# A first try that doesn't get through (the region still starting, a slow
 	# link) is tried again before the player hears about it.
