@@ -229,6 +229,10 @@ static func sources(sim: Object) -> Dictionary:
 		out["id%d %d" % [id, s.drive.size()]] = _line_cells.bind(PackedVector3Array(s.drive), Farms.DRIVE_WIDTH * 0.5 + 1.5)
 		for pad in s.pads:
 			out["ip%d %s" % [id, pad]] = _poly_cells.bind(Industry.pad_corners(s, pad))
+			# The lease road or skid trail to it, cut through the woods with
+			# a few metres cleared each side (the strip mine's is its own).
+			if s.kind != "ore":
+				out["it%d %s %s" % [id, pad, s.pos]] = _line_cells.bind(Industry.track(s, pad), 4.0)
 	# Rail yards and the track laid so far, with its cleared right of way.
 	for id in sim.rail.depots:
 		var poly: PackedVector2Array = sim.rail.yard_poly(id)

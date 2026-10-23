@@ -140,6 +140,9 @@ func _demo_town() -> void:
 		for x in range(-1500, 1501, 100):
 			for z in range(-1500, 1501, 100):
 				var v := Resources.at(res, Vector3(x, 0, z))
+				# Dry ground for the field and for the road and plant beside it.
+				if Terrain.is_water(x, z) or Terrain.is_water(x, z - 260) or Terrain.is_water(x, z - 180):
+					continue
 				if v > best_v:
 					best_v = v
 					best = Vector3(x, 0, z)
