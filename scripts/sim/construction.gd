@@ -57,6 +57,22 @@ const PROFILES := {
 	"barn": {"frame": "pole", "weeks": [1, 1, 2, 2, 1, 1, 1], "found": 0.2,
 		"words": ["Clearing the yard", "Setting the posts", "Girts and trusses", "Steel roof and walls",
 			"Doors and trim", "Wiring and stalls", "Gravel and seeding"]},
+	# A rural electric co-op's line extension: stake the route, set the poles,
+	# hang the transformer, string the wire, then energize. Co-ops quote about
+	# 4 to 8 weeks once the work order is in. The town has no power from it
+	# until it's energized (see CitySim._update_services).
+	"power_feed": {"frame": "pole", "weeks": [1, 1, 1, 1, 1, 1, 1], "found": 0.1,
+		"words": ["Staking the line", "Setting the poles", "Hanging the transformer", "Stringing the wire",
+			"Setting the meters", "Testing the line", "Energizing"],
+		"deliveries": {"foundation": [["flatbed", "utility poles"]], "frame": [["bucket_truck", "transformer"]],
+			"dry_in": [["bucket_truck", "wire reels"]]}},
+	# A small public well: drilled and cased, a block pump house over it,
+	# then the pump and pressure tank, and the new well is disinfected and
+	# sampled before it goes on line (AWWA C654). Six to ten weeks.
+	"well": {"frame": "steel", "weeks": [1, 2, 1, 1, 1, 1, 1], "found": 0.3,
+		"words": ["Clearing the site", "Drilling the well", "Framing the pump house", "Roofing",
+			"Block and doors", "Setting the pump and tank", "Disinfecting and testing"],
+		"deliveries": {"foundation": [["flatbed", "well casing"]], "interior": [["box_truck", "pump and pressure tank"]]}},
 }
 ## What each stage sends: [vehicle kind, cargo] (the crew's pickup comes for
 ## the whole job). A kind the fleet doesn't have yet falls back to the next.
@@ -173,7 +189,7 @@ func tick(sim: CitySim) -> void:
 			elif sim.simulate_traffic:
 				if not _has_crew(ref):
 					_send(sim, ref, "work_pickup", "crew", "building crew", _crew_base(sim, s))
-				for d in DELIVERIES[STAGES[stage]]:
+				for d in PROFILES[s.profile].get("deliveries", DELIVERIES).get(STAGES[stage], []):
 					var cargo: String = d[1]
 					if STAGES[stage] == "frame" and d[0] == "flatbed":
 						cargo = FRAME_CARGO[PROFILES[s.profile].frame]

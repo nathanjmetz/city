@@ -346,6 +346,8 @@ func _settle() -> void:
 	if screen != null and screen.has_method("finish"):
 		screen.finish()
 	loading = false
+	# A brand-new town gets the guided first town.
+	get_tree().call_group("first_town_tour", "maybe_start")
 
 
 func _process(delta: float) -> void:

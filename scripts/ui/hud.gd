@@ -109,6 +109,8 @@ var town := TownPanel.new()
 var timelapse := TimelapseView.new()
 ## What's behind each top bar readout: a chart and its numbers.
 var stats_panel := StatsPanel.new()
+## The guided first town (FirstTown): plan, streets, power, water, homes.
+var tour := FirstTownTour.new()
 ## Back to your town centre, or to a neighbor's.
 var jump: TownJump
 var _towns_panel := PanelContainer.new()
@@ -143,6 +145,8 @@ func _ready() -> void:
 	_root.add_child(_info_panel)
 	_build_economy()
 	_build_stats()
+	tour.setup(sim, self, info_view.cam, game)
+	_root.add_child(tour)
 
 	road_tool.mode_changed.connect(func(_m): _sync())
 	road_tool.options_changed.connect(_sync)
@@ -1142,6 +1146,27 @@ func _icon_button(icon: String, px: int, tip: String) -> Button:
 	return b
 
 
+## A button the guided first town points at, or null: "cat:roads",
+## "road:grid", "grid:5" (a GridFill preset), "svc:6" (a Services kind),
+## "zone:1" (a ZoneMap zone).
+func tour_target(key: String) -> Control:
+	var i := key.find(":")
+	var what := key.substr(0, i)
+	var arg := key.substr(i + 1)
+	match what:
+		"cat":
+			return _category_buttons.get(arg)
+		"road":
+			return _tool_cards.get(RoadTool.Mode.GRID) if arg == "grid" else null
+		"grid":
+			return _grid_size_cards[int(arg)] if int(arg) < _grid_size_cards.size() else null
+		"svc":
+			return _service_cards.get(int(arg))
+		"zone":
+			return _zone_cards.get(int(arg))
+	return null
+
+
 ## Opens a tool category (or closes it if it's already open).
 func _open(cat: String) -> void:
 	_budget_open = false
@@ -1343,6 +1368,9 @@ func _build_economy() -> void:
 
 ## Docked flush to the right edge, just under the top bar.
 func _build_advisor() -> void:
+	# The guided first town says hello instead, the first time.
+	tour._load_settings()
+	advisor.hold_welcome = not tour.settings.finished
 	_root.add_child(advisor)
 	advisor.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	advisor.grow_horizontal = Control.GROW_DIRECTION_BEGIN
@@ -1439,6 +1467,11 @@ func _build_help() -> void:
 			"J  traffic view; Traffic: set lights or stop signs",
 			"Right click  stop drawing", "Esc  stop drawing, then close everything"]:
 		col.add_child(UiStyle.label(line, 12))
+	var guide := Button.new()
+	guide.text = "Guided tour (first town)"
+	guide.focus_mode = Control.FOCUS_NONE
+	guide.pressed.connect(func(): tour.start())
+	col.add_child(guide)
 	var clear := Button.new()
 	clear.text = "Start over (clear the map)"
 	clear.focus_mode = Control.FOCUS_NONE

@@ -22,6 +22,8 @@ var sim: CitySim
 var category := func() -> String: return ""
 ## {"welcomed": bool, "auto": bool, "interrupt": bool}
 var settings := {"welcomed": false, "auto": true, "interrupt": false}
+## True while the guided first town (FirstTownTour) does the welcoming.
+var hold_welcome := false
 
 var _button: Button
 var _dot := _Dot.new()
@@ -235,6 +237,8 @@ func _show_tips() -> void:
 
 
 func _show_welcome() -> void:
+	if hold_welcome:
+		return
 	settings.welcomed = true
 	_save_settings()
 	_welcome = true
