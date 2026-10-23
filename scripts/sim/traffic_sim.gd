@@ -178,6 +178,8 @@ var _extra := {}      # place ref -> spots added beyond its layout, in order (_a
 var closed := {}
 var _truck_plan := false  # the route being planned is for a truck (close_segment)
 var _walk_lines := {} # segment * 2 + side -> sidewalk line
+var _rings := {}      # node -> sidewalk ends around it (_corner_ring)
+var _marks := []      # crosswalks on the walk just planned: [point, node, way in]
 var _next_trip := 1
 var _next_walker := 1
 var _restoring := false   # just loaded: junction paths still saved as keys
@@ -677,6 +679,7 @@ func _rebuild() -> void:
 	ways.clear()
 	_places.clear()
 	_walk_lines.clear()
+	_rings.clear()
 	junctions.clear()
 	_in.clear()
 	_out.clear()
@@ -2601,12 +2604,31 @@ func _walk(pid: int, pts: PackedVector3Array, then: Dictionary) -> void:
 	var cum := PackedFloat32Array([0.0])
 	for i in range(1, pts.size()):
 		cum.append(cum[i - 1] + pts[i].distance_to(pts[i - 1]))
-	walkers.append({"id": _next_walker, "person": pid, "pts": pts, "cum": cum, "len": cum[cum.size() - 1],
+	var w := {"id": _next_walker, "person": pid, "pts": pts, "cum": cum, "len": cum[cum.size() - 1],
 		"d": 0.0, "t": 0, "then": then, "t0": _wstep,
 		# Walking pace in whole cm/s, and distance worked out from the ticks
 		# walked, so a saved and loaded walker is exactly where it was.
-		"v": float(roundi(WALK_V * (85 + hash([pid, _next_walker]) % 31))) / 100.0})
-	_file_walker(walkers[walkers.size() - 1])
+		"v": float(roundi(WALK_V * (85 + hash([pid, _next_walker]) % 31))) / 100.0}
+	# At a signal, people wait at the kerb until the cars on the road they
+	# cross have a red (MUTCD Walk / Don't Walk with the parallel green):
+	# worked out now, since the lights run on a fixed cycle.
+	var holds := []
+	var waited := 0
+	for m in _marks:
+		var i := pts.find(m[0])
+		if i < 0 or not junctions.has(int(m[1])):
+			continue
+		var steps: float = cum[i] / (w.v * DT) + waited
+		var wait := _red_wait(int(m[1]), int(m[2]), time + steps * DT)
+		if wait > 0.0:
+			var ws := ceili(wait / DT)
+			holds.append([cum[i], ws])
+			waited += ws
+	_marks.clear()
+	if not holds.is_empty():
+		w.holds = holds
+	walkers.append(w)
+	_file_walker(w)
 	_next_walker += 1
 
 
@@ -2618,6 +2640,8 @@ func _file_walker(w: Dictionary) -> void:
 		t -= 1
 	while t * w.v * DT < w.len:
 		t += 1
+	for h in w.get("holds", []):
+		t += int(h[1])
 	var at: int = int(w.t0) + t
 	if not _wdone.has(at):
 		_wdone[at] = []
@@ -2626,7 +2650,38 @@ func _file_walker(w: Dictionary) -> void:
 
 ## Metres a walker has gone (worked out from the steps, not stored).
 func _walker_d(w: Dictionary) -> float:
-	return (_wstep - int(w.t0)) * w.v * DT
+	var steps := float(_wstep - int(w.t0))
+	if not w.has("holds"):
+		return steps * w.v * DT
+	var step_m: float = w.v * DT
+	var d := 0.0
+	for h in w.holds:
+		var to_h: float = (float(h[0]) - d) / step_m
+		if steps <= to_h:
+			return d + steps * step_m
+		steps -= to_h
+		d = h[0]
+		if steps <= float(h[1]):
+			return d  # waiting at the kerb
+		steps -= float(h[1])
+	return minf(d + steps * step_m, w.len)
+
+
+## Seconds until the cars coming in on `way` get a red at a signal, from
+## driving time `t` (0 if they already have one, or there's no signal).
+func _red_wait(node: int, way: int, t: float) -> float:
+	var j: Dictionary = junctions[node]
+	if j.control != Rule.SIGNAL:
+		return 0.0
+	var tt := fposmod(t + j.offset, j.cycle)
+	var start := 0.0
+	for ph in j.phases:
+		if ph.ways.has(way):
+			if tt >= start and tt < ph.y_end:
+				return ph.y_end - tt
+			return 0.0
+		start = ph.end
+	return 0.0
 
 
 ## Walkers as saved: with how far they've got, and without the step they
@@ -2636,7 +2691,7 @@ func _walkers_saved() -> Array:
 	for w in walkers:
 		var e: Dictionary = w.duplicate()
 		e.t = _wstep - int(w.t0)
-		e.d = e.t * w.v * DT
+		e.d = _walker_d(w)
 		e.erase("t0")
 		out.append(e)
 	return out
@@ -2657,7 +2712,7 @@ func _step_walkers() -> void:
 			continue  # stopped walking (left town)
 		walkers.erase(w)
 		w.t = _wstep - int(w.t0)
-		w.d = w.t * w.v * DT
+		w.d = w.len
 		_walked(w)
 
 
@@ -2834,66 +2889,165 @@ func _walk_between(a: Dictionary, b: Dictionary) -> PackedVector3Array:
 
 ## Sidewalk points between two lots' fronts (not including either end).
 func _sidewalks(la: Dictionary, lb: Dictionary) -> PackedVector3Array:
+	_marks.clear()
 	var out := PackedVector3Array()
 	if la.seg == lb.seg and la.side == lb.side:
 		var line := _walk_line(la.seg, la.side)
 		_append_span(out, line, _frac(la), _frac(lb))
 		return out
-	# Shortest way over the street network, by node.
-	var seg_a: Dictionary = network.segments.get(la.seg, {})
-	var seg_b: Dictionary = network.segments.get(lb.seg, {})
-	if seg_a.is_empty() or seg_b.is_empty():
+	# Shortest way over the sidewalks: along the blocks, around corners and
+	# over the crosswalks at junctions (never mid-block), with a wait for
+	# the light at signals.
+	if not network.segments.has(la.seg) or not network.segments.has(lb.seg):
 		return out
-	var len_a := _seg_len(la.seg)
-	var len_b := _seg_len(lb.seg)
-	var dist := {seg_a.a: _frac(la) * len_a, seg_a.b: (1.0 - _frac(la)) * len_a}
-	var prev := {seg_a.a: [-1, -1], seg_a.b: [-1, -1]}
-	var goal := {seg_b.a: _frac(lb) * len_b, seg_b.b: (1.0 - _frac(lb)) * len_b}
-	var open := dist.keys()
+	var start_f := _frac(la)
+	var goal_f := _frac(lb)
+	var dist := {}
+	var prev := {}
+	var open := []
+	for end in [0, 1]:
+		var st := Vector3i(_seg_node(la.seg, end), la.seg, la.side)
+		var f := _walk_end(la.seg, end)
+		dist[st] = absf(f - start_f) * _seg_len(la.seg)
+		prev[st] = null
+		open.append(st)
 	var seen := {}
-	var best_end := -1
-	var best_cost := People.WALK_MAX * 2.0
+	var best := People.WALK_MAX * 2.0
+	var best_end = null
 	while not open.is_empty():
-		var n: int = open[0]
+		var u: Vector3i = open[0]
 		for m in open:
-			if dist[m] < dist[n]:
-				n = m
-		open.erase(n)
-		if seen.has(n):
+			if dist[m] < dist[u] or (dist[m] == dist[u] and (m.x < u.x or m.x == u.x and (m.y < u.y or m.y == u.y and m.z < u.z))):
+				u = m
+		open.erase(u)
+		if seen.has(u):
 			continue
-		seen[n] = true
-		if dist[n] > best_cost:
+		seen[u] = true
+		var du: float = dist[u]
+		if du > best:
 			break
-		if goal.has(n) and dist[n] + goal[n] < best_cost:
-			best_cost = dist[n] + goal[n]
-			best_end = n
-		for sid in network.segments_at(n):
-			if not RoadStyle.TYPES[network.segments[sid].type].lots:
-				continue
-			var s: Dictionary = network.segments[sid]
-			var m: int = s.b if s.a == n else s.a
-			var nd: float = dist[n] + _seg_len(sid)
-			if nd < dist.get(m, INF):
-				dist[m] = nd
-				prev[m] = [n, sid]
-				open.append(m)
-	if best_end == -1:
+		if u.y == lb.seg and u.z == lb.side:
+			var e := 0 if u.x == _seg_node(u.y, 0) else 1
+			var total := du + absf(_walk_end(u.y, e) - goal_f) * _seg_len(u.y)
+			if total < best:
+				best = total
+				best_end = u
+		for step in _walk_steps(u):
+			var v: Vector3i = step[0]
+			var nd: float = du + step[1]
+			if nd < dist.get(v, INF):
+				dist[v] = nd
+				prev[v] = [u, step[2]]
+				open.append(v)
+	if best_end == null:
 		return out
-	var chain := []  # [[from node, segment, to node]] from lot a's road
-	var n := best_end
-	while prev.has(n) and prev[n][0] != -1:
-		chain.push_front([prev[n][0], prev[n][1], n])
-		n = prev[n][0]
-	var start_node := n
-	# Along lot a's side to the first corner.
-	_append_span(out, _walk_line(la.seg, la.side), _frac(la), 0.0 if start_node == seg_a.a else 1.0)
+	var chain := []
+	var x = best_end
+	while prev[x] != null:
+		chain.push_front([prev[x][0], x, prev[x][1]])
+		x = prev[x][0]
+	var first: Vector3i = x
+	_append_span(out, _walk_line(la.seg, la.side), start_f, _walk_end(first.y, 0 if first.x == _seg_node(first.y, 0) else 1))
 	for c in chain:
-		var s: Dictionary = network.segments[c[1]]
-		var fwd: bool = s.a == c[0]
-		var side := 1 if fwd else -1  # keep to the right
-		_append_span(out, _walk_line(c[1], side), 0.0 if fwd else 1.0, 1.0 if fwd else 0.0)
-	_append_span(out, _walk_line(lb.seg, lb.side), 0.0 if best_end == seg_b.a else 1.0, _frac(lb))
+		var from: Vector3i = c[0]
+		var to: Vector3i = c[1]
+		var f0 := _walk_end(from.y, 0 if from.x == _seg_node(from.y, 0) else 1)
+		var f1 := _walk_end(to.y, 0 if to.x == _seg_node(to.y, 0) else 1)
+		match c[2]:
+			"along":
+				_append_span(out, _walk_line(to.y, to.z), f0, f1)
+			"cross":
+				# Wait at the kerb for the light, then over.
+				var at := _line_at(_walk_line(from.y, from.z), f0 * (_walk_line(from.y, from.z).size() - 1))
+				out.append(at)
+				var way_in: int = from.y * 2 + (1 if from.x == _seg_node(from.y, 1) else 0)
+				_marks.append([at, from.x, way_in])
+				out.append(_line_at(_walk_line(to.y, to.z), f1 * (_walk_line(to.y, to.z).size() - 1)))
+			_:
+				out.append(_line_at(_walk_line(to.y, to.z), f1 * (_walk_line(to.y, to.z).size() - 1)))
+	var last: Vector3i = best_end
+	_append_span(out, _walk_line(lb.seg, lb.side), _walk_end(last.y, 0 if last.x == _seg_node(last.y, 0) else 1), goal_f)
 	return out
+
+
+## A segment's node at one end (0: a, 1: b).
+func _seg_node(sid: int, end: int) -> int:
+	var sg: Dictionary = network.segments[sid]
+	return sg.a if end == 0 else sg.b
+
+
+## Where a sidewalk stops short of the junction at one end of a segment, as
+## a share of its length: at the stop line, where the crosswalk is.
+func _walk_end(sid: int, end: int) -> float:
+	var w: Dictionary = ways.get(sid * 2 + 1, ways.get(sid * 2, {}))
+	if w.is_empty():
+		return 0.0 if end == 0 else 1.0
+	var fwd: bool = w.fwd
+	var s0: float = w.s0 if fwd else w.len - w.s1
+	var s1: float = w.s1 if fwd else w.len - w.s0
+	return clampf((s0 if end == 0 else s1) / maxf(w.len, 0.1), 0.0, 1.0)
+
+
+## From the end of one sidewalk at a junction: along it to the far end,
+## around the corner to the next sidewalk, or over the crosswalk to the
+## other side of the same road. [[state, metres, kind]].
+func _walk_steps(u: Vector3i) -> Array:
+	var outs := []
+	var sid := u.y
+	var n := u.x
+	var other := _seg_node(sid, 1) if n == _seg_node(sid, 0) else _seg_node(sid, 0)
+	var e_here := 0 if n == _seg_node(sid, 0) else 1
+	outs.append([Vector3i(other, sid, u.z), absf(_walk_end(sid, 1) - _walk_end(sid, 0)) * _seg_len(sid), "along"])
+	var ring := _corner_ring(n)
+	var k := -1
+	for i in ring.size():
+		if ring[i][0] == sid and ring[i][1] == u.z:
+			k = i
+	if k < 0:
+		return outs
+	for dk in [-1, 1]:
+		var nb: Array = ring[(k + dk + ring.size()) % ring.size()]
+		if nb[0] < 0:
+			continue  # a road with no sidewalks between
+		var here: Vector3 = ring[k][2]
+		var d: float = here.distance_to(nb[2])
+		if nb[0] == sid:
+			outs.append([Vector3i(n, sid, nb[1]), d + 10.0, "cross"])
+		else:
+			outs.append([Vector3i(n, nb[0], nb[1]), d, "corner"])
+	return outs
+
+
+## The sidewalk ends around a junction, leg by leg in order of the roads'
+## headings, each leg's two ends in turn: [segment, side, point]. A road
+## without sidewalks is [-1, 0, point] and nobody walks past it.
+func _corner_ring(n: int) -> Array:
+	if _rings.has(n):
+		return _rings[n]
+	var c: Vector3 = network.nodes[n]
+	var legs := []
+	for sid in network.segments_at(n):
+		var e := 0 if n == _seg_node(sid, 0) else 1
+		var samp := network.sample_segment(sid, 8)
+		var toward: Vector3 = samp[1] if e == 0 else samp[samp.size() - 2]
+		var ang := atan2(toward.z - c.z, toward.x - c.x)
+		var ends := []
+		if not RoadStyle.TYPES[network.segments[sid].type].lots:
+			ends.append([0.0, [-1, 0, toward]])
+		else:
+			for side in [1, -1]:
+				var line := _walk_line(sid, side)
+				var pt := _line_at(line, _walk_end(sid, e) * (line.size() - 1))
+				ends.append([wrapf(atan2(pt.z - c.z, pt.x - c.x) - ang, -PI, PI), [sid, side, pt]])
+			ends.sort_custom(func(p, q): return p[0] < q[0])
+		legs.append([ang, sid, ends])
+	legs.sort_custom(func(p, q): return p[0] < q[0] or (p[0] == q[0] and p[1] < q[1]))
+	var ring := []
+	for leg in legs:
+		for e in leg[2]:
+			ring.append(e[1])
+	_rings[n] = ring
+	return ring
 
 
 func _seg_len(sid: int) -> float:

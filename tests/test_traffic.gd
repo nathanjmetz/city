@@ -402,6 +402,50 @@ func _init() -> void:
 					last_d.erase(key)
 	_check(went > 0, "the gates lift and cars drive over the track (%d)" % went)
 
+	# On foot across a signalized junction: around the corners and over the
+	# crosswalks, never through the middle, waiting at the kerb for the light.
+	var wk := rx
+	var west_home := ""
+	var north_shop := ""
+	var wkeys: Array = wk.lots.keys()
+	wkeys.sort()
+	for k in wkeys:
+		var l: Dictionary = wk.lots[k]
+		if west_home == "" and l.pos.x < -60.0 and l.pos.x > -150.0 and l.pos.z > 5.0 and absf(l.pos.z) < 40.0:
+			west_home = k
+		if north_shop == "" and l.pos.z < -60.0 and l.pos.z > -150.0 and l.pos.x > 5.0 and absf(l.pos.x) < 40.0:
+			north_shop = k
+	var through := 0
+	var crossings := 0
+	var waits := 0
+	var held_still := true
+	if west_home != "" and north_shop != "":
+		var path := wk.traffic._walk_between(wk.traffic.place("lot:" + west_home), wk.traffic.place("lot:" + north_shop))
+		for q in path:
+			if Vector2(q.x, q.z).length() < 9.0:
+				through += 1
+		crossings = wk.traffic._marks.size()
+		for k in 40:
+			var pp := wk.traffic._walk_between(wk.traffic.place("lot:" + west_home), wk.traffic.place("lot:" + north_shop))
+			wk.traffic._walk(-1, pp, {"enter": "lot:" + north_shop})
+			var nw: Dictionary = wk.traffic.walkers[wk.traffic.walkers.size() - 1]
+			if nw.has("holds"):
+				waits += 1
+				var h: Array = nw.holds[0]
+				if int(h[1]) >= 10:
+					# Two moments inside the wait: standing at the same spot.
+					var t0_was: int = nw.t0
+					var at_h := ceili(float(h[0]) / (nw.v * TrafficSim.DT))
+					nw.t0 = wk.traffic._wstep - at_h - 2
+					var d1: float = wk.traffic._walker_d(nw)
+					nw.t0 = wk.traffic._wstep - at_h - 7
+					held_still = held_still and absf(wk.traffic._walker_d(nw) - d1) < 0.01 and absf(d1 - float(h[0])) < 0.01
+					nw.t0 = t0_was
+			wk.tick()
+	_check(west_home != "" and north_shop != "" and through == 0 and crossings >= 1,
+		"walkers cross at the crosswalks, not through the junction (%d crossings)" % crossings)
+	_check(waits > 0 and held_still, "and wait at the kerb for the light (%d of 40 waited)" % waits)
+
 	# A walk on the trail: out along the sidewalk to where the trail crosses
 	# the street, along it and back home.
 	var tw := rx
