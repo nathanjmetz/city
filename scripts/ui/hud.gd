@@ -768,7 +768,7 @@ func _roads_drawer() -> PanelContainer:
 	_parallel_card = _card("parallel", "Parallel", "P")
 	_parallel_card.pressed.connect(func(): road_tool.set_parallel(not road_tool.parallel))
 	opts.add_child(_parallel_card)
-	_shape_card = _card("grid", "Any shape", "Tab: rectangle or any shape")
+	_shape_card = _card("grid", "Any shape", "Tab: three clicks or any shape")
 	_shape_card.pressed.connect(func(): road_tool.set_grid_free(not road_tool.grid_free))
 	opts.add_child(_shape_card)
 	_exact_card = _card("grid", "Exact", "Exact: whole blocks of the chosen size only (a section is a true mile).\nAdaptive: blocks flex to fit what you drag, never bigger than the chosen size.")
