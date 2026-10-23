@@ -1,7 +1,8 @@
 class_name BuildingView
 extends Node3D
 ## Draws the buildings the simulation has grown, using the art library's
-## HouseBuilder (homes) and CommercialBuilder (shops and factories).
+## HouseBuilder (homes) and CommercialBuilder (shops and factories). New ones
+## go up stage by stage (ConstructionSite).
 
 var sim: CitySim
 var _nodes := {}  # lot key -> Node3D
@@ -55,21 +56,31 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 		ZoneMap.Zone.INDUSTRIAL: built = CommercialBuilder.build_factory(rng.randi(), lot.to_curb, fit)
 	if built.is_empty():
 		return root
-	_add_built(root, built)
-	# Trees go to the shared tree field, placed in world space.
+	# Drives, walks and beds lie on the ground, following it.
+	built[1] = Terrain.drape_local(built[1], root.transform)
+	# It goes up stage by stage; the trees go in once the yard is done.
+	var ref := "lot:" + key
+	ConstructionSite.add_to(root, built, CitySim.PROFILE_OF_ZONE.get(int(b.zone), "house"),
+		func(): return sim.construction.state(ref, sim.tick_count), _plant.bind(key, root, built[2]),
+		_footing(built[0]))
+	return root
+
+
+## Trees go to the shared tree field, placed in world space on the ground.
+func _plant(key: String, root: Node3D, planted: Array) -> void:
+	if not is_instance_valid(root) or _nodes.get(key, root) != root:
+		return
+	var was := Terrain.shift
+	Terrain.shift = Terrain.shift_for(self)
 	var frame := Transform3D(root.basis, root.position)
 	var trees := []
-	for t in built[2]:
+	for t in planted:
 		var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
 		var at := frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])
 		at.origin.y = Terrain.ground_y(at.origin.x, at.origin.z) + t[0].y
 		trees.append([at, t[1], t[2]])
+	Terrain.shift = was
 	_trees.set_trees(key, trees)
-	# Grow in, like a new building going up.
-	root.scale = Vector3(1.0, 0.01, 1.0)
-	create_tween().tween_property(root, "scale", Vector3.ONE, 0.45) \
-		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	return root
 
 
 ## The lot as the art builders want it: width, depth, flag pad, and the
@@ -87,27 +98,18 @@ static func _local_lot(lot: Dictionary, frame: Transform3D) -> Dictionary:
 	return fit
 
 
-## Adds a building from the art builders: the building, then its flat ground
-## work (drives, lots, beds), which casts no shadow.
-func _add_built(root: Node3D, meshes: Array) -> void:
-	var building := MeshInstance3D.new()
-	building.mesh = meshes[0]
-	root.add_child(building)
-	# A foundation down into the ground, for lots on a slope.
-	var box := (meshes[0] as Mesh).get_aabb()
-	if box.size.x > 0.5:
-		var footing := MeshInstance3D.new()
-		var cube := BoxMesh.new()
-		cube.size = Vector3(box.size.x * 0.96, 3.0, box.size.z * 0.96)
-		footing.mesh = cube
-		footing.position = Vector3(box.get_center().x, -1.45, box.get_center().z)
-		if _footing_mat == null:
-			_footing_mat = Surfaces.concrete(Color(0.55, 0.54, 0.51))
-		footing.material_override = _footing_mat
-		footing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		root.add_child(footing)
-	var ground := MeshInstance3D.new()
-	# Drives, walks and beds lie on the ground, following it.
-	ground.mesh = Terrain.drape_local(meshes[1], root.transform)
-	ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(ground)
+## A foundation down into the ground, for lots on a slope (or null).
+func _footing(building: Mesh) -> MeshInstance3D:
+	var box := building.get_aabb()
+	if box.size.x <= 0.5:
+		return null
+	var footing := MeshInstance3D.new()
+	var cube := BoxMesh.new()
+	cube.size = Vector3(box.size.x * 0.96, 3.0, box.size.z * 0.96)
+	footing.mesh = cube
+	footing.position = Vector3(box.get_center().x, -1.45, box.get_center().z)
+	if _footing_mat == null:
+		_footing_mat = Surfaces.concrete(Color(0.55, 0.54, 0.51))
+	footing.material_override = _footing_mat
+	footing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return footing

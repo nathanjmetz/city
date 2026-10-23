@@ -38,6 +38,31 @@ const STUB := 20.0
 const MIN_PIECE := 20.0
 ## Distance at which an end counts as touching a road.
 const TOUCH := 0.5
+## A side this close to an old road's line is drawn along it: the old road
+## is reused where they overlap and the side carries straight on past its
+## end, the way a real street is extended.
+const ON_LINE := 4.0
+
+
+## Real US grid sizes, largest first, as centre-line spacing in metres:
+## "block" runs along the first side drawn, "across" square to it.
+## PLSS sections are a mile square with county roads on the section lines;
+## Chicago puts streets every 1/8 and 1/16 mile; Manhattan's avenues are
+## ~900 ft apart and its streets 20 to the mile (264 ft); an old Midwest
+## town plat is about 400 x 300 ft; Portland's are 200 ft blocks on 60 ft
+## streets (260 ft).
+const PRESETS := [
+	{"name": "Section", "block": 1609.0, "across": 1609.0, "about": "Farm section: 1 mile square (PLSS)"},
+	{"name": "Half mile", "block": 805.0, "across": 805.0, "about": "Half-mile grid: quarter sections"},
+	{"name": "Quarter mile", "block": 402.0, "across": 402.0, "about": "Quarter-mile grid: arterials and big farm lots"},
+	{"name": "Manhattan", "block": 274.0, "across": 80.0, "about": "Manhattan: 900 x 264 ft"},
+	{"name": "Chicago", "block": 201.0, "across": 101.0, "about": "Chicago: 1/8 x 1/16 mile (660 x 330 ft)"},
+	{"name": "Town", "block": 122.0, "across": 91.0, "about": "Midwest town plat: 400 x 300 ft"},
+	{"name": "Portland", "block": 79.0, "across": 79.0, "about": "Portland: 260 ft square"},
+]
+const BLOCK_MIN := 60.0
+const BLOCK_MAX := 1700.0
+const ACROSS_MIN := 70.0
 
 
 ## Centre-line distance two streets running side by side must keep: both
@@ -227,6 +252,13 @@ static func _free_runs(a: Vector2, b: Vector2, refs: Array, type: int) -> Array:
 					lo = m1
 			var best := (lo + hi) * 0.5
 			if f.call(best) >= gap:
+				continue
+			var line := Geometry2D.get_closest_point_to_segment_uncapped
+			if line.call(pts[j], a, b).distance_to(pts[j]) < ON_LINE \
+					and line.call(pts[j + 1], a, b).distance_to(pts[j + 1]) < ON_LINE:
+				var t0 := (pts[j] - a).dot(w) / length
+				var t1 := (pts[j + 1] - a).dot(w) / length
+				blocked.append([minf(t0, t1), maxf(t0, t1)])
 				continue
 			blocked.append([_edge_of(f, gap, best, 0.0), _edge_of(f, gap, best, 1.0)])
 	blocked.sort_custom(func(x, y): return x[0] < y[0])

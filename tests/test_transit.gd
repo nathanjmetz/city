@@ -94,15 +94,40 @@ func _init() -> void:
 	_check(sim.buses._fleet(id) < had, "broke and unsubsidised, it retires a bus")
 	# A full yard buys the land next door, and only next door.
 	var b: Dictionary = sim.services.buildings[id]
+	var taken := {}
 	for key in sim.buildings.keys():
-		if sim.lots[key].pos.distance_to(b.pos) < 80.0:
+		if sim.lots[key].pos.distance_to(b.pos) < 200.0:
+			taken[key] = sim.buildings[key]
 			sim.buildings.erase(key)  # empty lots next door are for sale
 	var size0: Vector2 = Services.size_of(b)
 	var pos0: Vector3 = b.pos
-	_check(sim.buses._grow(sim, id), "the depot can buy free land beside it")
+	_check(sim.buses._grow(sim, id) == "ok", "the depot can buy free land beside it")
 	_check(Services.size_of(b).x * Services.size_of(b).y > size0.x * size0.y, "its site grew")
 	_check(b.pos.distance_to(pos0) <= BusNet.GROW_STEP, "it grew in place, not to a second site")
 	_check(BusNet.bays_for(Services.size_of(b)) > BusNet.bays_for(size0), "more land, more bays")
+	# Homes in the way: the director asks the player first (Permits), and
+	# buys them out only once the player says yes.
+	for key in taken:
+		sim.buildings[key] = taken[key]
+	var size1: Vector2 = Services.size_of(b)
+	_check(sim.buses._grow(sim, id) == "built", "homes stand on the land it wants next")
+	_check(Services.size_of(b) == size1, "it doesn't take them on its own")
+	dep.cash = 5_000_000
+	sim.buses._ask_for_land(sim, id, 100_000)
+	var asks: Array = sim.permits.listed(Permits.State.OPEN).filter(func(r): return r.hub == "bus_depot")
+	_check(asks.size() == 1, "it files a land permit for the player")
+	if asks.size() == 1:
+		_check(sim.apply({"type": "permit", "id": asks[0].id, "answer": "approve"}), "the player approves it")
+		sim.buses._decide(sim, id, false)
+		_check(Services.size_of(b).x * Services.size_of(b).y > size1.x * size1.y, "approved, it buys the homes and grows")
+		_check(sim.permits.state_of(asks[0].id) == Permits.State.DONE, "and marks the permit done")
+	# Its director and development tree (the shared Agency API).
+	_check(dep.leader.has("edu") and dep.leader.has("caution"), "a director runs the depot")
+	dep.cash = 5_000_000
+	var node := Agency.develop(sim, dep, sim.buses._open_tree(sim, id), BusNet._gate(b), 1_000_000.0)
+	_check(not node.is_empty() and node.id in dep.built, "the director develops the depot (%s)" % str(dep.built))
+	var intercity := sim.buses._open_tree(sim, id).filter(func(n): return n.id == "intercity")
+	_check(intercity.is_empty(), "no intercity coach without neighbors")
 	# Save and load: same state, and two copies stay in step.
 	var copy := CitySim.new()
 	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
@@ -110,12 +135,15 @@ func _init() -> void:
 	_check(copy.buses.stops.size() == sim.buses.stops.size(), "stops saved")
 	_check(Services.size_of(copy.services.buildings[id]) == Services.size_of(b), "grown site saved")
 	_check(int(copy.services.buildings[id].subsidy) == int(b.subsidy), "subsidy saved")
+	_check(copy.buses.depots[id].built == sim.buses.depots[id].built, "what it built is saved")
+	_check(copy.buses.depots[id].leader == sim.buses.depots[id].leader, "its director is saved")
 	var copy2 := CitySim.new()
 	copy2.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
 	for i in 200:
 		copy.tick()
 		copy2.tick()
 	_check(JSON.stringify(copy.buses.to_dict()) == JSON.stringify(copy2.buses.to_dict()), "two copies run the buses the same")
+	_coach(sim, id)
 	# Bulldozing the depot sells its parked buses.
 	sim.apply({"type": "remove_service", "id": id})
 	sim.tick()
@@ -124,6 +152,41 @@ func _init() -> void:
 	_schools()
 	print("TESTS FAILED" if _fails > 0 else "ALL TESTS PASSED")
 	quit(1 if _fails > 0 else 0)
+
+
+## The intercity coach: with a neighbor and a road out of the region, it
+## drives to the county highway's link, spends a while away, and comes home.
+func _coach(sim: CitySim, id: int) -> void:
+	sim.region = {"neighbors": [{"name": "Oakland City"}]}
+	var edge := -1
+	for n in sim.network.nodes:
+		if edge == -1 or sim.network.nodes[n].x > sim.network.nodes[edge].x:
+			edge = n
+	sim.region_links = [edge]
+	_check(not sim.buses._open_tree(sim, id).filter(func(n): return n.id == "intercity").is_empty(),
+		"a neighbor opens up the intercity coach")
+	sim.buses.depots[id].built.append("intercity")
+	sim.buses.depots[id].cash = 5_000_000
+	sim.buses._decide(sim, id, false)
+	_check(sim.buses._has_coach(id), "it buys a coach")
+	var seen := {}
+	var loaded := 0
+	for i in 9000:
+		sim.tick()
+		for bid in sim.buses.buses:
+			var bus: Dictionary = sim.buses.buses[bid]
+			if bus.kind == "coach":
+				if bus.state == "driving" and not seen.has("away"):
+					loaded = maxi(loaded, int(bus.load))
+				seen[bus.state] = true
+				if seen.has("away") and bus.state == "parked":
+					seen["home"] = true
+		if seen.has("home"):
+			break
+	_check(seen.has("away"), "the coach reaches the region link (%s)" % str(seen.keys()))
+	_check(loaded > 0, "with riders aboard (%d)" % loaded)
+	_check(seen.has("home"), "and comes back to its bay")
+	_check(sim.buses.describe(sim, id).rows.any(func(r): return r[0] == "Coach riders"), "the panel shows coach riders")
 
 
 ## School buses: a school with pupils living far away keeps yellow buses and

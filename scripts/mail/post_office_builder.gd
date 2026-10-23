@@ -36,7 +36,7 @@ static func build_office(h: Dictionary, seed: int, to_curb: float) -> Array:
 	b._office(h, to_curb)
 	for node in h.lands:
 		if not h.lands[node].is_empty():
-			b._annex(node, h.lands[node], h.tree.has(node))
+			b._annex(node, h.lands[node], Mail.done(h, node))
 	b._fleet_lots(Mail.fleet_cells(h))
 	return [b._commit_house(), b._commit_flat(), b.trees, b.stalls]
 

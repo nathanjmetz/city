@@ -14,6 +14,7 @@ var sim: CitySim
 var _rural := {}  # segment id -> true
 var _recheck := -1.0  # seconds until the town edge is checked again, or -1
 var _redraw := false  # a new drive needs the poles moved
+var _trees := TreeField.new()  # street trees down planted medians
 
 var _mats := {
 	"asphalt": Surfaces.asphalt(),
@@ -23,11 +24,13 @@ var _mats := {
 	"yellow": Surfaces.paint(RoadStyle.MARKING_YELLOW),
 	"white": Surfaces.paint(RoadStyle.MARKING_WHITE),
 	"gravel": Surfaces.gravel(),
+	"bus": Surfaces.paint(Color(0.56, 0.17, 0.14)),  # red transit lane
 	"pole": RoadStyle.material(Color(0.33, 0.27, 0.21)),
 	"wire": RoadStyle.material(Color(0.12, 0.12, 0.12)),
 	"concrete": Surfaces.concrete(Color(0.66, 0.65, 0.62)),
 	"apron": RoadStyle.material(Color(0.5, 0.44, 0.38)),  # tinted, textured-look concrete
 	"tunnel": RoadStyle.material(Color(0.1, 0.1, 0.12, 0.45), true),
+	"domes": Surfaces.concrete(Junction.DOMES_COLOR),
 }
 
 
@@ -97,7 +100,11 @@ func rebuild() -> void:
 
 func _rebuild_all() -> void:
 	for child in get_children():
-		child.queue_free()
+		if child != _trees:
+			child.queue_free()
+	if _trees.get_parent() == null:
+		add_child(_trees)
+	var median_trees := []
 	var piers := SurfaceTool.new()
 	piers.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var any_bridge := false
@@ -126,10 +133,16 @@ func _rebuild_all() -> void:
 				gaps[seg] = {}
 			for side in g[seg]:
 				gaps[seg][side] = g[seg][side]
+	# Town street junctions get real corners; their roads stop short of them.
+	var junctions := Junction.plan(network, _rural)
 	for id in network.segments:
 		var pts := network.sample_segment(id)
 		var type: int = network.segments[id].type
 		var sg: Dictionary = network.segments[id]
+		var ja := Junction.trim(junctions, sg.a, id)
+		var jb := Junction.trim(junctions, sg.b, id)
+		if ja > 0.0 or jb > 0.0:
+			pts = RoadMesh._between(pts, ja, RoadNetwork.polyline_length(pts) - jb)
 		var seg_gaps: Dictionary = gaps.get(id, {})
 		var cut_a: float = cuts.get([id, sg.a], 0.0)
 		pts = RampMerge.trim_ramp(pts, cut_a, true)
@@ -156,12 +169,17 @@ func _rebuild_all() -> void:
 			mi.mesh = Terrain.drape(st.commit(), true)
 			mi.material_override = _mats.tunnel
 		else:
-			var rural: bool = _rural.has(id) and pts[pts.size() / 2].y < 1.0
+			var spec: Dictionary = RoadStyle.TYPES[type]
+			var rural: bool = (_rural.has(id) or spec.get("rural", false)) and pts[pts.size() / 2].y < 1.0
 			mi.mesh = Terrain.drape(RoadMesh.street(pts, type, _mats, seg_gaps, rural))
 			if rural:
+				# Poles run down one side of a country road, and down the
+				# alley behind the homes in town.
 				var side := 1.0 if hash(id) % 2 == 0 else -1.0
-				RoadMesh.add_poles(wood, wire, pts, side * (RoadStyle.half_width(type) + 4.0), drives)
+				RoadMesh.add_poles(wood, wire, pts, side * (RoadStyle.half_width(type) + spec.get("verge", 4.0)), drives)
 				any_pole = true
+			if spec.get("trees", false):
+				median_trees.append_array(_median_trees(id, pts, type))
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			any_bridge = RoadMesh.bridge(Terrain.lift_all(pts), RoadStyle.right_of_way_half(type), piers,
 				Terrain.ground_y) or any_bridge
@@ -191,9 +209,12 @@ func _rebuild_all() -> void:
 		mi.mesh = piers.commit()
 		mi.material_override = _mats.concrete
 		add_child(mi)
-	# Fill each junction and road end so curves meet cleanly.
+	_trees.set_trees("medians", median_trees)
+	# Fill each junction and road end so curves meet cleanly; where only
+	# gravel roads or alleys meet, the junction is gravel or concrete too.
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var plain := {}  # surface -> SurfaceTool
 	var ring_nodes := {}
 	for id in network.segments:
 		if RoadStyle.is_ring(network.segments[id].type):
@@ -201,19 +222,78 @@ func _rebuild_all() -> void:
 			ring_nodes[network.segments[id].a] = hw
 			ring_nodes[network.segments[id].b] = hw
 	for id in network.nodes:
-		if network.nodes[id].y < -1.0 or ring_nodes.has(id):
+		if network.nodes[id].y < -1.0 or ring_nodes.has(id) or junctions.has(id):
 			continue  # rings meet their roads without a pad over the island
 		var r := RoadStyle.half_width(network.widest_at(id))
+		var surface := _junction_surface(id)
+		if surface != "asphalt":
+			if not plain.has(surface):
+				plain[surface] = SurfaceTool.new()
+				plain[surface].begin(Mesh.PRIMITIVE_TRIANGLES)
+			RoadMesh.add_disc(plain[surface], network.nodes[id], r, RoadStyle.Y_JUNCTION)
+			continue
 		RoadMesh.add_disc(st, network.nodes[id], r, RoadStyle.Y_JUNCTION)
+	for surface in plain:
+		var mi := MeshInstance3D.new()
+		mi.mesh = Terrain.drape(plain[surface].commit())
+		mi.material_override = _mats[surface]
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mi)
 	if not network.nodes.is_empty():
 		var mi := MeshInstance3D.new()
 		mi.mesh = Terrain.drape(st.commit())
 		mi.material_override = _mats.asphalt
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mi)
-
+	if not junctions.is_empty():
+		var parts := {"asphalt": SurfaceTool.new(), "curb": SurfaceTool.new(), "walk": SurfaceTool.new(),
+			"domes": SurfaceTool.new()}
+		for p in parts.values():
+			p.begin(Mesh.PRIMITIVE_TRIANGLES)
+		Junction.draw(junctions, parts.asphalt, parts.curb, parts.walk, parts.domes)
+		for key in parts:
+			var mi := MeshInstance3D.new()
+			mi.mesh = Terrain.drape(parts[key].commit(), false, 6.0)
+			mi.material_override = _mats[key]
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(mi)
 
 	_build_roundabouts(ring_nodes)
+
+
+## The surface of a junction: gravel or concrete only if every road there is.
+func _junction_surface(node: int) -> String:
+	var surface := ""
+	for seg in network.segments_at(node):
+		var here: String = RoadStyle.TYPES[network.segments[seg].type].get("surface", "asphalt")
+		if surface != "" and here != surface:
+			return "asphalt"
+		surface = here
+	return surface if surface != "" else "asphalt"
+
+
+## Street trees down a planted median, about every 12 m (40 ft, a common
+## city street tree spacing), clear of the junctions. Honey locust, maple
+## and oak, the usual Midwest boulevard trees; no spruce, which would block
+## drivers' view.
+func _median_trees(id: int, pts: PackedVector3Array, type: int) -> Array:
+	var out := []
+	var hw := RoadStyle.half_width(type)
+	var length := RoadNetwork.polyline_length(pts)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = id * 7919 + 17
+	var at := hw + 10.0
+	while at < length - hw - 10.0:
+		var p: Vector3 = LotPlanner.point_at(pts, at)[0]
+		at += rng.randf_range(11.0, 13.0)
+		if p.y > 1.0 or p.y < -1.0:
+			continue  # on a bridge or in a tunnel
+		var sp: int = [TreeField.Species.LOCUST, TreeField.Species.MAPLE, TreeField.Species.OAK][rng.randi() % 3]
+		var tint: Color = TreeField.LEAF[sp].lightened(rng.randf_range(-0.05, 0.08))
+		var size := rng.randf_range(0.7, 0.95) if RoadStyle.TYPES[type].median < 6.0 else rng.randf_range(0.85, 1.1)
+		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * size)
+		out.append([Transform3D(basis, Terrain.lift(Vector3(p.x, 0.0, p.z))), sp, tint])
+	return out
 
 
 ## Each roundabout's planted centre island and concrete truck apron, and a

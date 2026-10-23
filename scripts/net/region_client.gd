@@ -13,6 +13,10 @@ signal chat_received(line: Dictionary)
 signal players_changed
 signal cursor_moved(player_id: String, pos: Vector2)
 signal city_added(city_id: String)
+## Signed up; the host still has to let you in. You join once they do.
+signal waiting(message: String)
+## (Host only) the list of players waiting to be let in changed.
+signal requests_changed
 
 var region := Region.new()
 var player_id := ""
@@ -24,19 +28,32 @@ var my_city := ""
 ## Who is online: [{"id", "name"}].
 var players := []
 var is_joined := false
+## Saved on this device so the password isn't needed every time.
+var token := ""
+## True for the region's host, who decides who may play.
+var is_host := false
+## (Host only) names waiting to be let in.
+var requests := []
 ## Seconds since the last tick arrived, for smooth car movement.
 var since_tick := 0.0
 
 var _peer: WebSocketMultiplayerPeer
 var _connected := false
+var _password := ""
+var _new_account := false
 
 
-## Connects and joins. Watch the joined and failed signals.
-func join(server_url: String, code: String, id: String, name: String) -> void:
+## Connects and logs in (or, with new_account, signs up). Watch the joined,
+## waiting and failed signals. A saved token stands in for the password.
+func join(server_url: String, code: String, id: String, name: String, password := "",
+		new_account := false, saved_token := "") -> void:
 	url = server_url
 	invite_code = code
 	player_id = id
 	player_name = name
+	_password = password
+	_new_account = new_account
+	token = saved_token
 	_peer = WebSocketMultiplayerPeer.new()
 	var err := _peer.create_client(server_url)
 	if err != OK:
@@ -55,6 +72,11 @@ func leave() -> void:
 ## Sends one of your commands to the server. It applies in a coming tick.
 func send_command(cmd: Dictionary) -> void:
 	_send({"t": "cmd", "cmd": cmd})
+
+
+## (Host only) lets a waiting player in, or turns them away.
+func approve(name: String, ok: bool) -> void:
+	_send({"t": "approve", "name": name, "ok": ok})
 
 
 func send_chat(text: String) -> void:
@@ -89,7 +111,8 @@ func _process(delta: float) -> void:
 	if state == MultiplayerPeer.CONNECTION_CONNECTED and not _connected:
 		_connected = true
 		_send({"t": "hello", "v": RegionServer.PROTOCOL, "code": invite_code,
-			"id": player_id, "name": player_name})
+			"id": player_id, "name": player_name, "password": _password, "new": _new_account, "token": token})
+		_password = ""
 	elif state == MultiplayerPeer.CONNECTION_DISCONNECTED:
 		var was_joined := is_joined
 		_peer = null
@@ -109,12 +132,23 @@ func _process(delta: float) -> void:
 func _handle(msg: Dictionary) -> void:
 	match msg.get("t", ""):
 		"welcome":
+			player_id = str(msg.you)
+			player_name = str(msg.get("name", player_name))
+			is_host = bool(msg.get("host", false))
+			if str(msg.get("token", "")) != "":
+				token = str(msg.token)
 			region.from_dict(msg.region)
 			my_city = region.city_of(player_id)
 			is_joined = true
 			# New players get their city in the next tick.
 			if my_city != "":
 				joined.emit()
+		"waiting":
+			token = str(msg.get("token", token))
+			waiting.emit(str(msg.get("reason", "")))
+		"requests":
+			requests = msg.list
+			requests_changed.emit()
 		"reject":
 			var reason := str(msg.get("reason", "The region turned you away."))
 			leave()

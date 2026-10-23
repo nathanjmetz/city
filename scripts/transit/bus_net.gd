@@ -13,8 +13,13 @@ extends RefCounted
 ##   - it sets its own fare from its costs and what its riders earn, and
 ##   - when its yard is full and it can afford more, it buys the land next
 ##     door (only next door: a hub never opens a second site).
-## Its director is more or less educated depending on how much the town has
-## put into schools, and that changes how it decides (see `_set_fare`).
+## Its director (an Agency leader) is more or less educated depending on how
+## much the town has put into schools, and that changes how it decides (see
+## `_set_fare`). The director also works through the depot's development
+## tree (TREE, below) with the depot's own money: shelters, a transfer
+## center, cleaner buses, park-and-ride, dial-a-ride, a school bus contract
+## and coaches to the neighboring towns, each opening up only when the town
+## and region around it call for it.
 ##
 ## Buses are real vehicles on Traffic's trips: they drive stop to stop, wait at
 ## the curb while people get on and off, and park in their bay at the depot.
@@ -39,6 +44,7 @@ const DWELL_PER_RIDER := 20
 ## Ticks between buses leaving the depot, so they spread along the route.
 const LAUNCH_GAP := 250
 ## How long a bus waits before trying again when no road leads on.
+const BUS_COACH_AWAY_TICKS := Balance.BUS_COACH_AWAY
 const RETRY_TICKS := 300
 ## Hard cap on stops in town (keeps planning fast on the web).
 const MAX_STOPS := 160
@@ -55,6 +61,41 @@ const AISLE := 7.0
 const GARAGE_D := 16.0
 ## A depot buys land in strips this wide.
 const GROW_STEP := AISLE + STALL_D
+
+## The depot's development tree, in Agency's format. Besides Agency's
+## conditions, a node can need "neighbors" (neighboring towns that trade
+## with this one) or "school" (elementary schools in town); BusNet checks
+## those itself. Costs come from the depot's own cash. Effects:
+##   riders*  more people ride; cost*  cheaper to run (negative);
+##   riders+  riders a day outside the buses (dial-a-ride vans);
+##   income+  dollars a month from a contract; coach* more coach riders.
+const TREE := [
+	{"id": "shelters", "name": "Shelters and benches", "cost": 60_000, "needs": {},
+		"effects": {"riders*": 0.04}, "note": "people wait out of the weather at the busy stops"},
+	{"id": "transfer_center", "name": "Downtown transfer center", "cost": 900_000, "requires": ["shelters"],
+		"needs": {"population": 2500}, "effects": {"riders*": 0.08},
+		"note": "every route meets downtown under one roof"},
+	{"id": "cng", "name": "Natural gas buses", "cost": 400_000, "requires": ["shelters"],
+		"needs": {"leader_edu": 0.55, "education": 0.4}, "effects": {"cost*": -0.12},
+		"note": "cheaper fuel and cleaner air"},
+	{"id": "electric", "name": "Electric buses and chargers", "cost": 1_500_000, "requires": ["cng"],
+		"needs": {"leader_edu": 0.75, "profit": 200_000}, "effects": {"cost*": -0.12},
+		"note": "quiet, and cheaper to run per mile"},
+	{"id": "park_ride", "name": "Park-and-ride lot", "cost": 700_000, "requires": ["transfer_center"],
+		"needs": {"population": 5000, "link": 1}, "effects": {"riders*": 0.08},
+		"note": "commuters leave their cars at the edge of town"},
+	{"id": "dial_a_ride", "name": "Dial-a-ride vans", "cost": 250_000, "needs": {"population": 1500},
+		"effects": {"riders+": 30.0}, "note": "door-to-door rides for seniors and riders with disabilities (ADA paratransit)"},
+	{"id": "school_contract", "name": "School bus contract", "cost": 150_000,
+		"needs": {"education": 0.3, "school": 1}, "effects": {"income+": 12_000.0},
+		"note": "the school district pays the depot to keep its buses"},
+	{"id": "intercity", "name": "Intercity coach", "cost": 600_000,
+		"needs": {"link": 1, "neighbors": 1, "population": 1500}, "effects": {"coach*": 0.0},
+		"note": "a coach runs to the neighboring towns along the county highway"},
+	{"id": "regional", "name": "Shared regional routes", "cost": 1_200_000, "requires": ["intercity"],
+		"needs": {"neighbors": 2, "leader_edu": 0.5}, "effects": {"coach*": 0.5, "riders*": 0.03},
+		"note": "timed transfers with the neighbors' buses"},
+]
 
 var depots := {}  # service id -> depot state (see _new_depot)
 var stops := {}   # stop id -> {pt, dir, side, pos, name, people, res, jobs, depot, riders}
@@ -77,6 +118,7 @@ func on_placed(sim: CitySim, id: int) -> void:
 	b.size = Services.KINDS[b.kind].size
 	b.subsidy = Balance.BUS_START_SUBSIDY
 	depots[id] = _new_depot()
+	depots[id].leader = Agency.leader(sim, hash([id, "bus_depot"]))
 	for i in 2:
 		_add_bus(sim, id, "city_bus")
 	_plan(sim)
@@ -100,6 +142,11 @@ func apply(sim: CitySim, cmd: Dictionary) -> bool:
 ## Steps every bus. Returns the ids of depots that bought land this tick, so
 ## the city can clear lots and zoning under them.
 func tick(sim: CitySim) -> Array:
+	if not sim.permits.locators.has("bus_depot"):
+		# Lets the player guide the depot's director from its panel.
+		sim.permits.locators["bus_depot"] = func(s: CitySim, id: int) -> Vector2:
+			var b: Dictionary = s.services.buildings.get(id, {})
+			return Vector2(b.pos.x, b.pos.z) if not b.is_empty() else Vector2.ZERO
 	_sync(sim)
 	_arrivals(sim)
 	var grown := []
@@ -129,6 +176,7 @@ func _sync(sim: CitySim) -> void:
 				b.size = Services.KINDS[b.kind].size
 				b.subsidy = Balance.BUS_START_SUBSIDY
 			depots[id] = _new_depot()
+			depots[id].leader = Agency.leader(sim, hash([id, "bus_depot"]))
 			changed = true
 		elif b.kind == Services.Kind.SCHOOL and not schools.has(id):
 			schools[id] = {"riders": 0, "pickups": [], "runs": []}
@@ -155,7 +203,8 @@ func _sync(sim: CitySim) -> void:
 
 func _new_depot() -> Dictionary:
 	return {"cash": 0, "fare": Balance.BUS_START_FARE, "fare_day": -99, "wanted": 2, "target": 2,
-		"riders": 0, "month": {}, "log": [], "wealth": 0.5, "education": 0.5}
+		"riders": 0, "month": {}, "log": [], "wealth": 0.5, "education": 0.5,
+		"leader": {"edu": 0.5, "caution": 0.5, "ambition": 0.5}, "built": [], "why": "", "strip": []}
 
 
 # --- Stops and routes ---------------------------------------------------------
@@ -623,8 +672,9 @@ func _decide(sim: CitySim, id: int, settle: bool) -> bool:
 	var dep: Dictionary = depots[id]
 	var b: Dictionary = sim.services.buildings[id]
 	var list: Array = routes.get(id, [])
-	dep.education = education(sim)
+	dep.education = float(dep.leader.edu)
 	dep.wealth = _wealth(sim, id)
+	var stance: String = sim.permits.guidance("bus_depot", id).stance
 	var fleet := _fleet(id)
 	var riders := _ridership(id, dep.fare)
 	dep.riders = roundi(riders)
@@ -632,13 +682,19 @@ func _decide(sim: CitySim, id: int, settle: bool) -> bool:
 		var in_service := 0
 		for r in list:
 			in_service += r.buses
-		var cost := in_service * Balance.BUS_MONTHLY_COST
+		var cost := roundi(in_service * Balance.BUS_MONTHLY_COST * Agency.effect(dep, TREE, "cost*"))
 		var fares := roundi(riders * 30.0 * dep.fare)
+		# The coach to the neighbors pays its own way (or doesn't).
+		var coach := coach_riders(sim, id) if _has_coach(id) else 0
+		fares += roundi(coach * 30.0 * Balance.BUS_COACH_FARE)
+		if _has_coach(id):
+			cost += Balance.BUS_COACH_MONTHLY
 		var grant := roundi(Balance.BUS_GRANT_SHARE * maxf(0.0, cost - fares))
 		var subsidy := int(b.get("subsidy", 0))
-		dep.cash += fares + grant + subsidy - cost
+		var contract := roundi(Agency.effect(dep, TREE, "income+"))
+		dep.cash += fares + grant + subsidy + contract - cost
 		dep.month = {"riders": dep.riders, "fares": fares, "grant": grant, "subsidy": subsidy, "cost": cost,
-			"net": fares + grant + subsidy - cost}
+			"contract": contract, "coach": coach, "net": fares + grant + subsidy + contract - cost}
 	# How many buses a bus every half hour on every route takes, plus one
 	# where the busiest trip would be crowded.
 	var wanted := 0
@@ -651,11 +707,11 @@ func _decide(sim: CitySim, id: int, settle: bool) -> bool:
 	# How many the money carries: the city's subsidy and the federal grant
 	# against what each bus costs beyond the fares it brings in.
 	var per_bus_fares: float = riders * 30.0 * dep.fare / maxf(fleet, 1.0)
-	var net_cost: float = Balance.BUS_MONTHLY_COST - per_bus_fares
+	var net_cost: float = Balance.BUS_MONTHLY_COST * Agency.effect(dep, TREE, "cost*") - per_bus_fares
 	var afford := 99 if net_cost <= 0.0 else floori(int(b.get("subsidy", 0)) / (1.0 - Balance.BUS_GRANT_SHARE) / net_cost)
 	# A more educated director projects ahead and keeps less idle cash; a
 	# less educated one waits until the money is in the bank.
-	var reserve := roundi(Balance.BUS_MONTHLY_COST * (1.5 - dep.education))
+	var reserve := roundi(Balance.BUS_MONTHLY_COST * (0.5 + float(dep.leader.caution) - 0.5 * dep.education))
 	var bays := bays_for(Services.size_of(b))
 	dep.wanted = wanted
 	dep.target = mini(mini(wanted, afford), bays)
@@ -668,12 +724,33 @@ func _decide(sim: CitySim, id: int, settle: bool) -> bool:
 		if _retire_one(id):
 			dep.cash += Balance.BUS_RESALE
 			_note(id, "Retired a bus: the money no longer covers %d." % fleet)
-	elif mini(wanted, afford) > bays and fleet >= bays:
+	elif stance != "hold" and fleet >= bays - (1 if stance == "grow" else 0) \
+			and (mini(wanted, afford) > bays or stance == "grow"):
+		# The yard is full (or the player said grow): buy the land next door.
 		var cost := _grow_cost(b)
-		if dep.cash >= cost + reserve and _grow(sim, id):
-			dep.cash -= cost
+		if dep.cash >= cost + reserve:
+			var got := _grow(sim, id)
+			if got == "ok":
+				dep.cash -= cost
+				bought_land = true
+				_note(id, "Bought the land next door for more bus bays.")
+			elif got == "built":
+				_ask_for_land(sim, id, cost)
+	# Land the player said yes to: buy out what stands there and move in.
+	for req in sim.permits.approved("bus_depot", id):
+		if _take_strip(sim, id, req):
+			dep.cash -= int(req.cost)
 			bought_land = true
-			_note(id, "Bought the land next door for more bus bays.")
+			_note(id, "Bought the homes next door, as you approved, for more bus bays.")
+		sim.permits.done(req.id)
+	# The development tree, from the depot's own money.
+	if _has_coach_built(dep) and not _has_coach(id):
+		_add_bus(sim, id, "coach")
+	var profit: float = float(dep.month.get("net", 0)) * 12.0
+	var node := Agency.develop(sim, dep, _open_tree(sim, id), _gate(b), profit)
+	if not node.is_empty():
+		dep.cash -= int(node.cost)
+		_note(id, str(dep.why))
 	var day := sim.tick_count / DECIDE_EVERY
 	if day - int(dep.fare_day) >= FARE_EVERY_DAYS:
 		_set_fare(id, b)
@@ -736,6 +813,8 @@ func _ridership(id: int, fare: float) -> float:
 				stops[sid].riders += n
 		r.riders = day
 		total += day
+	if depots.has(id):
+		total += Agency.effect(depots[id], TREE, "riders+")
 	return total
 
 
@@ -751,6 +830,8 @@ func _stop_riders(sid: int, fare: float, headway: float, id: int) -> float:
 	share *= clampf(pow(Balance.BUS_TARGET_HEADWAY_MIN / headway, Balance.BUS_SERVICE_ELASTICITY), 0.3, 1.6)
 	# Households with less money ride more (ACS commuting by income).
 	share *= 1.6 - 1.2 * wealth
+	if not dep.is_empty():
+		share *= Agency.effect(dep, TREE, "riders*")
 	var on_routes := 0
 	for r in routes.get(id, []):
 		if sid in r.stops:
@@ -766,20 +847,6 @@ func _per_trip(r: Dictionary, fare: float, headway: float) -> float:
 	# A trip carries its share of the day's riders; the busiest hour has
 	# about twice the average hour's riders and about half are aboard at once.
 	return day * headway / (Balance.BUS_SERVICE_HOURS * 60.0)
-
-
-## How educated the town's leaders are, 0 to 1: from how much of the town
-## its schools reach. (The Build loop's agency code will supply this for
-## every hub; until then the depot reads it here.)
-static func education(sim: CitySim) -> float:
-	var homes := 0
-	var schooled := 0
-	for key in sim.buildings:
-		if sim.buildings[key].zone == ZoneMap.Zone.RESIDENTIAL:
-			homes += 1
-			if sim.services.served.get(key, {}).get(Services.Kind.SCHOOL, false):
-				schooled += 1
-	return 0.3 + 0.6 * schooled / maxf(homes, 1.0)
 
 
 ## How well off the depot's riders are, 0 to 1, from the things the
@@ -890,53 +957,181 @@ func _grow_cost(b: Dictionary) -> int:
 ## as deep as it gets: only free land (no road, building, farm, company or
 ## land saved for something else), never more than Balance.HUB_MAX_GROWTH
 ## times the first site.
-func _grow(sim: CitySim, id: int) -> bool:
+func _grow(sim: CitySim, id: int) -> String:
 	var b: Dictionary = sim.services.buildings[id]
 	var size := Services.size_of(b)
 	var first: Vector2 = Services.KINDS[b.kind].size
 	if (size.x + GROW_STEP) * size.y > first.x * first.y * Balance.HUB_MAX_GROWTH \
 			and size.x * (size.y + GROW_STEP) > first.x * first.y * Balance.HUB_MAX_GROWTH:
-		return false
+		return "no"
 	var side := Vector3(-b.dir.z, 0.0, b.dir.x)
 	var tries := [[Vector2(0, GROW_STEP), -b.dir * GROW_STEP * 0.5],
 		[Vector2(GROW_STEP, 0), side * GROW_STEP * 0.5], [Vector2(GROW_STEP, 0), -side * GROW_STEP * 0.5]]
 	if size.y >= size.x * 2.0:
 		tries = [tries[1], tries[2], tries[0]]  # deep enough: go sideways first
+	var built := []
 	for t in tries:
 		var new_size: Vector2 = size + t[0]
 		if new_size.x * new_size.y > first.x * first.y * Balance.HUB_MAX_GROWTH:
 			continue
 		var pos: Vector3 = b.pos + t[1]
-		if _land_free(sim, id, pos, b.dir, new_size):
+		var why := _land_free(sim, id, pos, b.dir, new_size)
+		if why == "":
 			b.pos = pos
 			b.size = new_size
-			return true
-	return false
+			return "ok"
+		if why == "built" and built.is_empty():
+			built = [pos, new_size]
+	# Only homes or shops stand in the way: the director may ask to buy them.
+	if not built.is_empty():
+		depots[id].strip = [[built[0].x, built[0].z], [built[1].x, built[1].y]]
+		return "built"
+	return "no"
 
 
-func _land_free(sim: CitySim, id: int, pos: Vector3, dir: Vector3, size: Vector2) -> bool:
+## "" when the land is free, "built" when only homes or businesses stand on
+## it (the player can let the depot buy them), else "no".
+func _land_free(sim: CitySim, id: int, pos: Vector3, dir: Vector3, size: Vector2) -> String:
 	var poly := PackedVector2Array()
 	for p in Services.corners(Services.Kind.BUS_DEPOT, pos, dir, size):
 		poly.append(Vector2(p.x, p.z))
 	if Services.road_clash(sim.network, poly):
-		return false
+		return "no"
 	var off: Vector2 = sim.services.terrain_offset
 	if not Terrain.buildable(pos.x + off.x, pos.z + off.y, size.length() * 0.5):
-		return false  # water or a steep slope
+		return "no"  # water or a steep slope
 	for oid in sim.services.buildings:
 		if oid != id and not Geometry2D.intersect_polygons(poly, sim.services.footprint(oid)).is_empty():
-			return false
+			return "no"
 	for i in 9:
 		var t := Vector2((i % 3) / 2.0, (i / 3) / 2.0)
 		var q: Vector2 = poly[0].lerp(poly[1], t.x).lerp(poly[3].lerp(poly[2], t.x), t.y)
 		var p := Vector3(q.x, 0.0, q.y)
 		if sim.farms.covers(p) or sim.farms.field_at(p) != -1 or sim.industry.covers(p) or sim.reserves.kind_at(p) != "":
-			return false
-	# Homes and businesses already built are not for sale; empty lots are.
+			return "no"
+	# Homes and businesses already built aren't the depot's to take; empty
+	# lots are.
 	for key in sim.buildings:
 		if sim.lots.has(key) and Geometry2D.is_point_in_polygon(Vector2(sim.lots[key].pos.x, sim.lots[key].pos.z), poly):
-			return false
+			return "built"
+	return ""
+
+
+## The homes or shops behind the depot are in the way: ask the player, through
+## a land permit, to let the depot buy them out (Permits never forces it).
+func _ask_for_land(sim: CitySim, id: int, cost: int) -> void:
+	var dep: Dictionary = depots[id]
+	if dep.strip.is_empty() or not sim.permits.can_file(sim, "bus_depot", id):
+		return
+	var b: Dictionary = sim.services.buildings[id]
+	var pos := Vector3(dep.strip[0][0], 0.0, dep.strip[0][1])
+	var size := Vector2(dep.strip[1][0], dep.strip[1][1])
+	var area := []
+	for p in Services.corners(Services.Kind.BUS_DEPOT, pos, b.dir, size):
+		area.append([p.x, p.z])
+	var hits := sim.permits.check(sim, area, 0.0, true)
+	var homes := 0
+	for h in hits.get("buildings", []):
+		if h.what == "lot":
+			homes += 1
+	sim.permits.file(sim, {"hub": "bus_depot", "hub_id": id, "leader": "The transit director",
+		"title": "Buy %d building%s next to the bus depot" % [homes, "" if homes == 1 else "s"],
+		"why": "The bus yard is full; more bays let the depot run the buses the town needs.",
+		"area": area, "change": "Homes and shops to bus yard", "per_m2": roundi(Balance.BUS_LAND_PER_M2 * 6.0),
+		"base": cost, "budget": int(dep.cash)})
+
+
+## Carries out an approved land permit: the buildings on the strip are bought
+## and cleared, and the yard grows over them.
+func _take_strip(sim: CitySim, id: int, req: Dictionary) -> bool:
+	var dep: Dictionary = depots[id]
+	var b: Dictionary = sim.services.buildings.get(id, {})
+	if b.is_empty() or dep.strip.is_empty():
+		return false
+	var pos := Vector3(dep.strip[0][0], 0.0, dep.strip[0][1])
+	var size := Vector2(dep.strip[1][0], dep.strip[1][1])
+	var outline := PackedVector2Array()
+	for p in req.route:
+		outline.append(Vector2(float(p[0]), float(p[1])))
+	for key in sim.buildings.keys():
+		if sim.lots.has(key) and Geometry2D.is_point_in_polygon(Vector2(sim.lots[key].pos.x, sim.lots[key].pos.z), outline):
+			sim.buildings.erase(key)
+	dep.strip = []
+	if _land_free(sim, id, pos, b.dir, size) != "":
+		return false  # the player trimmed the area: not enough land to grow
+	b.pos = pos
+	b.size = size
+	sim.buildings_changed.emit()
 	return true
+
+
+## The tree nodes whose BusNet-only needs hold, with those needs taken out
+## so Agency checks the rest.
+func _open_tree(sim: CitySim, id: int) -> Array:
+	var out := []
+	var schools_in_town := 0
+	for sid in sim.services.buildings:
+		if sim.services.buildings[sid].kind == Services.Kind.SCHOOL:
+			schools_in_town += 1
+	var near := neighbors(sim)
+	for node in TREE:
+		var needs: Dictionary = node.get("needs", {}).duplicate()
+		var ok := true
+		if needs.has("neighbors"):
+			ok = ok and near >= int(needs.neighbors)
+			needs.erase("neighbors")
+		if needs.has("school"):
+			ok = ok and schools_in_town >= int(needs.school)
+			needs.erase("school")
+		if ok:
+			var n: Dictionary = node.duplicate()
+			n.needs = needs
+			out.append(n)
+	return out
+
+
+## Neighboring towns this one trades with (last month's deals, plus what the
+## region server reports). Solo towns have none.
+static func neighbors(sim: CitySim) -> int:
+	var towns := {}
+	for d in sim.trade.last_deals:
+		for side in ["buyer", "seller"]:
+			var t := str(d.get(side, "outside"))
+			if t != "outside" and t != "me" and t != "":
+				towns[t] = true
+	for town in sim.region.get("neighbors", []):
+		towns[str(town.get("name", ""))] = true
+	return towns.size()
+
+
+func _has_coach_built(dep: Dictionary) -> bool:
+	return "intercity" in dep.get("built", [])
+
+
+func _has_coach(id: int) -> bool:
+	for bid in buses:
+		if buses[bid].depot == id and buses[bid].kind == "coach":
+			return true
+	return false
+
+
+## People a day riding the coach to and from the neighboring towns.
+func coach_riders(sim: CitySim, id: int) -> int:
+	if not depots.has(id):
+		return 0
+	var share := Balance.BUS_COACH_DAILY_SHARE * Agency.effect(depots[id], TREE, "coach*")
+	return roundi(sim.stats.population * share * neighbors(sim))
+
+
+## Where the county highway leaves for the region (the coach's far end).
+static func _link_pos(sim: CitySim) -> Vector3:
+	for n in sim.region_links:
+		if sim.network.nodes.has(n):
+			return sim.network.nodes[n]
+	return Vector3.INF
+
+
+
 
 
 # --- Buses on the road ----------------------------------------------------------
@@ -1010,6 +1205,15 @@ func _arrived(sim: CitySim, bus: Dictionary, ok: bool) -> void:
 		bus.dir = pose[1]
 		bus.state = "parked"
 		bus.load = 0
+		if bus.kind == "coach":
+			bus.until = sim.tick_count + BUS_COACH_AWAY_TICKS
+		return
+	if bus.target == -2:
+		# Off the map edge to the neighboring towns; back after the layover.
+		bus.at = _link_pos(sim)
+		bus.load = 0
+		bus.state = "away"
+		bus.until = sim.tick_count + BUS_COACH_AWAY_TICKS
 		return
 	bus.stop = bus.target
 	var riders := 0
@@ -1073,6 +1277,9 @@ func _drive(sim: CitySim) -> void:
 		if bus.kind == "school_bus":
 			_school_next(sim, bus)
 			continue
+		if bus.kind == "coach":
+			_coach_next(sim, bus)
+			continue
 		var list: Array = routes.get(bus.depot, [])
 		var on_route: bool = bus.route >= 0 and bus.route < list.size() and list[bus.route].stops.size() >= 2
 		if bus.state == "parked":
@@ -1091,6 +1298,22 @@ func _drive(sim: CitySim) -> void:
 		_send(sim, bus, ids[(i + 1) % ids.size()] if i != -1 else ids[0])
 
 
+## The coach: out to the county highway's region link, a layover in the
+## neighboring towns, then home to its bay until the next run.
+func _coach_next(sim: CitySim, bus: Dictionary) -> void:
+	if bus.state == "parked":
+		if bus.get("retire", false) or not _has_coach_built(depots.get(bus.depot, {})):
+			buses.erase(bus.id)
+			return
+		bus.load = mini(ceili(coach_riders(sim, bus.depot) / 2.0), Balance.BUS_COACH_SEATS)
+		if not _send(sim, bus, -2):
+			bus.load = 0
+		return
+	if bus.state == "away":
+		bus.load = mini(ceili(coach_riders(sim, bus.depot) / 2.0), Balance.BUS_COACH_SEATS)
+	_send(sim, bus, -1)
+
+
 ## Puts a bus on the road to a stop (-1: home to its depot). False if no
 ## road leads there yet; it tries again later.
 func _send(sim: CitySim, bus: Dictionary, target: int) -> bool:
@@ -1101,6 +1324,11 @@ func _send(sim: CitySim, bus: Dictionary, target: int) -> bool:
 			buses.erase(bus.id)
 			return false
 		to = _gate(b)
+	elif target == -2:
+		to = _link_pos(sim)
+		if to == Vector3.INF:
+			bus.until = sim.tick_count + RETRY_TICKS
+			return false
 	elif bus.kind == "school_bus":
 		to = bus.run[target]
 	else:
@@ -1109,6 +1337,8 @@ func _send(sim: CitySim, bus: Dictionary, target: int) -> bool:
 	if bus.state == "parked":
 		from = _gate(sim.services.buildings[bus.depot])
 	var purpose := "school" if bus.kind == "school_bus" else "transit"
+	if bus.state == "away":
+		from = _link_pos(sim)
 	var tid := sim.traffic.dispatch({"ref": "bus:%d" % bus.id, "pos": [from.x, from.z]},
 		{"ref": "bus:%d" % bus.id, "pos": [to.x, to.z]}, purpose, {"riders": bus.load, "bus": bus.id})
 	if tid == -1:
@@ -1288,7 +1518,7 @@ func standing(sim: CitySim) -> Array:
 	bids.sort()
 	for bid in bids:
 		var bus: Dictionary = buses[bid]
-		if bus.state == "driving":
+		if bus.state == "driving" or bus.state == "away":
 			continue
 		var dir: Vector3 = bus.dir
 		if bus.state == "parked":
@@ -1336,6 +1566,11 @@ func describe(sim: CitySim, id: int) -> Dictionary:
 		rows.append(["Running costs", "$%s / month" % CitySim.money_text(int(m.cost))])
 	rows.append(["Depot's cash", ("-$%s" if dep.cash < 0 else "$%s") % CitySim.money_text(absi(int(dep.cash)))])
 	rows.append(["Director", "%s, riders %s" % [_education_words(dep.education), _wealth_words(dep.wealth)]])
+	if _has_coach(id):
+		rows.append(["Coach riders", "%d a day to %d neighboring town%s" % [coach_riders(sim, id), neighbors(sim),
+			"" if neighbors(sim) == 1 else "s"]])
+	var profit: float = float(dep.month.get("net", 0)) * 12.0
+	rows.append_array(Inspect._development(sim, dep, _open_tree(sim, id), _gate(b), profit))
 	var linked := not sim.network.find_segment_near(_gate(b), 80.0, 1.0).is_empty()
 	var status := ""
 	if not linked:
@@ -1404,7 +1639,8 @@ func to_dict() -> Dictionary:
 	for id in depots:
 		var dep: Dictionary = depots[id]
 		d.depots[str(id)] = {"cash": dep.cash, "fare": dep.fare, "fare_day": dep.fare_day, "wanted": dep.wanted,
-			"target": dep.target, "riders": dep.riders, "month": dep.month, "log": dep.log}
+			"target": dep.target, "riders": dep.riders, "month": dep.month, "log": dep.log,
+			"leader": dep.leader, "built": dep.built, "why": dep.why, "strip": dep.strip}
 	for tid in trips:
 		d.trips[str(tid)] = trips[tid]
 	for id in _next_launch:
@@ -1445,6 +1681,10 @@ func from_dict(sim: CitySim, d: Dictionary) -> void:
 		dep.fare = float(v.get("fare", dep.fare))
 		dep.month = v.get("month", {})
 		dep.log = v.get("log", [])
+		dep.leader = v.get("leader", Agency.leader(sim, hash([int(k), "bus_depot"])))
+		dep.built = v.get("built", [])
+		dep.why = str(v.get("why", ""))
+		dep.strip = v.get("strip", [])
 		depots[int(k)] = dep
 	trips.clear()
 	for k in d.get("trips", {}):

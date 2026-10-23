@@ -110,13 +110,32 @@ func tick(sim: CitySim) -> void:
 	ids.sort()
 	for id in ids:
 		var w: Dictionary = sim.warehouses.buildings[id]
-		if sent >= MAX_PER_ROUND or Warehouses.stored(w, Warehouses.GOODS) < 1:
+		if sent >= MAX_PER_ROUND:
+			break
+		var wh := {"ref": "wh:%d" % id, "pos": _xz(w.pos)}
+		# Goods a neighbouring town bought (regional DC) go first.
+		if int(w.get("owed", 0)) > 0 and Warehouses.stored(w, Warehouses.GOODS) >= 1:
+			var sold := sim.warehouses.take_load(id, Warehouses.GOODS)
+			if _send(sim, wh, _edge(sim, w.pos), "goods", sold, "regional"):
+				w.owed = int(w.owed) - 1
+				sent += 1
+				continue
+			sim.warehouses.put_back(id, sold, Warehouses.GOODS)
+		# A trailer of online orders to the post office (fulfillment).
+		if int(w.get("parcels", 0)) >= Balance.WAREHOUSE_PARCEL_TRUCK:
+			var post: Dictionary = sim.mail.parcel_dropoff(w.pos)
+			if not post.is_empty() and _send(sim, wh, {"ref": post.ref, "pos": post.pos}, "mail_freight",
+					{"good": "parcels", "amount": Balance.WAREHOUSE_PARCEL_TRUCK}, "parcels"):
+				w.parcels = int(w.parcels) - Balance.WAREHOUSE_PARCEL_TRUCK
+				sent += 1
+				continue
+		if Warehouses.stored(w, Warehouses.GOODS) < 1:
 			continue
 		var shop := _buyer(sim, w.pos, "shop")
 		if shop.is_empty() or shop.ref == "edge":
 			continue  # no shop yet: the goods wait
 		var cargo := sim.warehouses.take_load(id, Warehouses.GOODS)
-		if _send(sim, {"ref": "wh:%d" % id, "pos": _xz(w.pos)}, shop, "goods", cargo, "wh"):
+		if _send(sim, wh, shop, "goods", cargo, "wh"):
 			sent += 1
 		else:
 			sim.warehouses.put_back(id, cargo, Warehouses.GOODS)
@@ -242,6 +261,8 @@ func _arrive(sim: CitySim, t: Dictionary) -> void:
 		return
 	if to == "edge":
 		exported += 1
+	elif to.begins_with("mail:"):
+		sim.mail.receive_parcels(int(to.substr(5)), int(t.cargo.amount))
 	elif to.begins_with("wh:"):
 		sim.warehouses.receive(int(to.substr(3)), t.cargo, Warehouses.GOODS if t.purpose == "goods" else Warehouses.RAW)
 	elif to.begins_with("lot:") and t.purpose != "goods":
@@ -282,8 +303,14 @@ func _return(sim: CitySim, t: Dictionary) -> void:
 	elif ref.begins_with("lot:") and t.kind == "factory":
 		var key := ref.substr(4)
 		stock[key] = stock.get(key, 0.0) + Balance.FACTORY_LOADS_PER_GOODS
-	elif ref.begins_with("wh:"):
-		sim.warehouses.put_back(int(ref.substr(3)), t.cargo, Warehouses.GOODS if t.purpose == "goods" else Warehouses.RAW)
+	elif ref.begins_with("wh:") and sim.warehouses.buildings.has(int(ref.substr(3))):
+		var w: Dictionary = sim.warehouses.buildings[int(ref.substr(3))]
+		if t.kind == "parcels":
+			w.parcels = int(w.get("parcels", 0)) + int(t.cargo.amount)
+		else:
+			sim.warehouses.put_back(int(ref.substr(3)), t.cargo, Warehouses.GOODS if t.purpose == "goods" else Warehouses.RAW)
+			if t.kind == "regional":
+				w.owed = int(w.get("owed", 0)) + 1
 	_release(sim, t.to)
 	if str(t.to.ref).begins_with("lot:") and t.kind in ["site", "farm"]:
 		var key: String = str(t.to.ref).substr(4)

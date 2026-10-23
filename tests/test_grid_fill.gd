@@ -39,6 +39,22 @@ func _init() -> void:
 	_check(_overlaps(c.network) == "", "no doubled road " + _overlaps(c.network))
 	_check(_dead_ends(c.network) == 2, "only the old road's own two ends are dead ends (got %d)" % _dead_ends(c.network))
 
+	# Brawn's case: a side street off the county road, then a grid dragged up
+	# along it past its end. The street is reused and carried straight on to
+	# the grid's corner, with no gap and no loose ends.
+	var k := CitySim.new()
+	k.apply({"type": "build_road", "start": [-500, 0], "ctrl": [0, 0], "end": [500, 0]})
+	k.apply({"type": "build_road", "start": [200, 0], "ctrl": [200, -125], "end": [200, -250]})
+	k.apply({"type": "build_grid_shape", "points": [[200, 0], [200, -300], [-160, -300], [-160, 0]], "block": 120})
+	var along := 0.0
+	for id in k.network.segments:
+		var cv := k.network.curve_of(id)
+		if absf(cv[0].x - 200) < 0.5 and absf(cv[2].x - 200) < 0.5:
+			along += absf(cv[2].z - cv[0].z)
+	_check(absf(along - 300.0) < 1.0, "street along the side runs the full 300 m (got %.0f)" % along)
+	_check(_dead_ends(k.network) == 2, "only the county road's ends are loose (got %d)" % _dead_ends(k.network))
+	_check(_overlaps(k.network) == "", "street extended: no overlaps " + _overlaps(k.network))
+
 	# An odd, concave shape: everything stays inside it and joins up.
 	var d := CitySim.new()
 	var shape := [[0, 0], [300, -40], [340, 180], [160, 120], [120, 300], [-20, 220]]
@@ -75,6 +91,39 @@ func _init() -> void:
 		s.apply({"type": "build_road", "start": [-30, 40], "ctrl": [100, 60], "end": [250, 20]})
 		s.apply({"type": "build_grid_shape", "points": shape, "block": 90})
 	_check(JSON.stringify(x.network.to_dict()) == JSON.stringify(y.network.to_dict()), "same result on every copy")
+
+	# Rectangle mode: a side dragged a few degrees off a diagonal county road
+	# snaps exactly parallel, and the depth keeps every corner square.
+	var r := CitySim.new()
+	r.apply({"type": "build_road", "start": [-300, -200], "ctrl": [0, 0], "end": [300, 200]})
+	var t := RoadTool.new()
+	t.sim = r
+	t.network = r.network
+	t.mode = RoadTool.Mode.GRID
+	var a0 := Vector3(0, 0, 30)
+	t._points.append(a0)
+	var road := atan2(200.0, 300.0)
+	var off := road + deg_to_rad(6.0)
+	var b0 := t._grid_corner(a0 + Vector3(cos(off), 0, sin(off)) * 300.0)
+	_check(absf(angle_difference(atan2(b0.z - a0.z, b0.x - a0.x), road)) < 0.0001, "rectangle side snaps parallel to the road")
+	t._points.append(b0)
+	var rect := t._rect(t._grid_corner(b0 + Vector3(-40, 0, 170)))
+	_check(absf((rect[1] - rect[0]).normalized().dot((rect[2] - rect[1]).normalized())) < 0.0001, "rectangle corners are square")
+	t.free()
+
+	# Every size preset plans a clean grid quickly, from a farm section
+	# down to a city block, with the long side and the short side kept.
+	for pr in GridFill.PRESETS:
+		var g := CitySim.new()
+		g.economy.money = 100000000
+		var w: float = pr.block * 2.0
+		var h: float = pr.across * 2.0
+		var t0 := Time.get_ticks_msec()
+		g.apply({"type": "build_grid_shape", "points": [[0, 0], [w, 0], [w, h], [0, h]],
+			"block": pr.block, "across": pr.across})
+		var ms := Time.get_ticks_msec() - t0
+		_check(g.network.segments.size() >= 8 and _dead_ends(g.network) == 0 and ms < 3000,
+			"%s preset: %d streets, %d dead ends, %d ms" % [pr.name, g.network.segments.size(), _dead_ends(g.network), ms])
 
 	print("ALL TESTS PASSED" if not failed else "TESTS FAILED")
 	quit(1 if failed else 0)

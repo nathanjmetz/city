@@ -52,10 +52,27 @@ FTA National Transit Database and TCRP reports (see `Balance`, "Buses").
   its lists.
 - `tests/test_transit.gd`, `tools/bus_shot.gd`.
 
-## Next: the development tree
+## The director and development tree
 
-The director unlocks each option from its money, its education and what's
-around it, both in town and regionally: shelters and benches, a downtown
-transfer center, CNG or electric buses, park-and-ride, dial-a-ride vans, school
-bus contracts, intercity coaches to a neighbor's town, and shared routes with a
-neighbor's depot.
+The depot's director is an Agency leader (`scripts/sim/agency.gd`): their
+schooling follows the town's education spending, and their caution sets how
+much cash they keep in reserve. With the depot's own money they build from
+`BusNet.TREE` as the town and region allow:
+
+- Shelters and benches (busy stops get a shelter in the game world).
+- Downtown transfer center, natural gas buses, electric buses.
+- Park-and-ride, dial-a-ride vans, a school bus contract.
+- Intercity coach: once the town has a neighbor and a county highway link,
+  a coach drives out to the link (the map edge), spends a while in the
+  neighboring towns, and comes home with riders. Fares and running costs go
+  in the depot's books.
+- Regional routes shared with two or more neighbors.
+
+Land: free land beside the yard is bought outright. When homes or shops
+stand there, the director files a land permit (`scripts/sim/permits.gd`) and
+buys them out only after the player approves. The player's word on the
+depot's panel (grow, your call, hold off) sets how eager it is to grow.
+
+## Next
+
+A taxi company hub, and switching to Traffic's round-trip `move()` once it lands.
