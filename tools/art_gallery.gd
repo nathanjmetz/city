@@ -3,7 +3,9 @@ extends SceneTree
 ## realism loop, so they can be compared side by side with real photos.
 ## Run: godot -s tools/art_gallery.gd -- out.png [kind] [seed] [yaw pitch dist]
 ## Kinds: house, shop, factory, row, apartments, mixed, office, main (a
-## Main Street of mixed blocks, storeys 2 to 4), types (one of each type).
+## Main Street of mixed blocks, storeys 2 to 4), types (one of each type),
+## care (one house from derelict to showpiece, PropertyCare's tiers -2..2)
+## and careshop (the same for a shop).
 
 var _frames := 0
 
@@ -51,7 +53,9 @@ func _init() -> void:
 		var k := kind
 		if kind == "types":
 			k = ["house", "row", "apartments", "mixed", "office"][i]
-		var w: float = {"row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "office": 40.0, "towers": 44.0, "hometowers": 54.0, "towerfar": 44.0, "flats": 24.0, "courtyard": 48.0, "walkup": 26.0, "garage": 44.0}.get(k, 20.0)
+		if kind in ["care", "careshop"]:
+			HouseBuilder.care = i - 2
+		var w: float = {"care": 24.0, "careshop": 26.0, "row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "office": 40.0, "towers": 44.0, "hometowers": 54.0, "towerfar": 44.0, "flats": 24.0, "courtyard": 48.0, "walkup": 26.0, "garage": 44.0}.get(k, 20.0)
 		var sd := seed * 100 + i
 		match k:
 			"shop": meshes = CommercialBuilder.build_shop(sd, 3.9)
@@ -70,7 +74,10 @@ func _init() -> void:
 			"courtyard": meshes = MetroBuilder.build_apartments(sd, 3.9, {"width": w, "depth": 55.0, "era": "prewar"}, 3)
 			"walkup": meshes = MetroBuilder.build_apartments(sd, 3.9, {"width": w, "depth": 40.0, "era": "prewar"}, 5)
 			"garage": meshes = MetroBuilder.build_garage(sd, 3.9, {"width": w, "depth": 60.0}, 4 + i % 3)
+			"care": meshes = HouseBuilder.build(seed * 100, 3.9, {"width": w, "depth": 48.0}, 1)
+			"careshop": meshes = DenseBuilder.build_retail(seed * 100, 3.9, {"width": w, "depth": 40.0})
 			_: meshes = HouseBuilder.build(sd, 3.9)
+		HouseBuilder.care = 0
 		var at := Vector3(x + w * 0.5, 0, 0)
 		x += w
 		for m in meshes.slice(0, 2):

@@ -70,6 +70,13 @@ const TYPES := {
 		{"name": "Office high-rise", "storeys": 16, "cap": [300, 360], "load": 22, "plate": 1200.0},
 		{"name": "Skyscraper", "storeys": 30, "cap": [600, 700], "load": 42, "plate": 1400.0},
 	]},
+	# Only a rezoning makes one (Redevelopment): a developer buys a row of
+	# houses on a busy road. ICSC: a strip center under about 30,000 sq ft;
+	# a neighborhood center with a grocery anchor, 30,000-125,000 sq ft.
+	"shopping_center": {"zone": COM, "name": "Shopping center", "cover": 0.25, "stages": [
+		{"name": "Strip shopping center", "storeys": 1, "cap": [25, 45], "load": 3},
+		{"name": "Neighborhood shopping center", "storeys": 1, "cap": [80, 140], "load": 8},
+	]},
 	"factory": {"zone": IND, "name": "Factory", "cover": 0.5, "stages": [
 		{"name": "Factory", "storeys": 1, "cap": [18, 36]},
 	]},
@@ -399,6 +406,9 @@ static func ambition(b: Dictionary) -> float:
 static func ready(sim, key: String) -> bool:
 	var b: Dictionary = sim.buildings[key]
 	if sim.tick_count - int(b.get("changed", b.built)) < Balance.DEVELOP_AGE or not sim.utilities_ok(key):
+		return false
+	# An owner letting the place run down doesn't build on (PropertyCare).
+	if sim.care.tier_of(key) < 0:
 		return false
 	var p: Vector3 = sim.lots[key].pos
 	if ambition(b) > Balance.DEVELOP_KEEN + Balance.DEVELOP_KEEN_WEALTH * sim.wealth_at(Vector2(p.x, p.z)):

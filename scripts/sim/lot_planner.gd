@@ -1506,7 +1506,9 @@ func _clip_roads(poly: PackedVector2Array, box: Rect2) -> PackedVector2Array:
 ## lot line, and the result inside the zone's real size limit.
 ## `far` is the floor-area ratio zoning allows there (a tower core allows
 ## bigger sites).
-static func can_merge(sim, a: String, b: String, far := 0.0) -> bool:
+## `cap_kind` (a MAX_LOT key) sets the size cap for a rezoned site (a
+## developer's assembled apartment or shopping center site, Redevelopment).
+static func can_merge(sim, a: String, b: String, far := 0.0, cap_kind := "") -> bool:
 	if a == b or not sim.lots.has(a) or not sim.lots.has(b):
 		return false
 	var la: Dictionary = sim.lots[a]
@@ -1521,15 +1523,15 @@ static func can_merge(sim, a: String, b: String, far := 0.0) -> bool:
 		len = maxf(len, _span(p))
 	if len < 3.0:
 		return false
-	var cap := max_lot(za, _road_type(sim, la), far)
+	var cap: Array = MAX_LOT[cap_kind] if cap_kind != "" else max_lot(za, _road_type(sim, la), far)
 	var width: float = la.width + (lb.width if lb.seg == la.seg and lb.side == la.side else 0.0)
 	return width <= cap[0] and la.area + lb.area <= cap[1]
 
 
 ## Joins lot b into lot a. a keeps its key (and its building); b is gone, so
 ## move or drop anything keyed by b. Returns a, or "" if they can't merge.
-static func merge_lots(sim, a: String, b: String, far := 0.0) -> String:
-	if not can_merge(sim, a, b, far):
+static func merge_lots(sim, a: String, b: String, far := 0.0, cap_kind := "") -> String:
+	if not can_merge(sim, a, b, far, cap_kind):
 		return ""
 	var la: Dictionary = sim.lots[a]
 	var lb: Dictionary = sim.lots[b]
