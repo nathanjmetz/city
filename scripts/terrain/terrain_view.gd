@@ -91,6 +91,9 @@ uniform vec2 region_origin;
 // County road miles not painted (CountyGrid.hidden_texture): bulldozed ones.
 // r north-south, g east-west.
 uniform sampler2D county_hidden : hint_default_black, filter_nearest, repeat_enable;
+// The state highways (Highways.texture): signed metres from each group of
+// routes' middle line + 128, one group per channel, over the region map.
+uniform sampler2D highway_field : hint_default_white, filter_nearest;
 // The far land (TerrainView's far sheet) is cut away nearer than this, where
 // the chunks draw the ground; 0 for the chunks themselves.
 uniform float far_cut = 0.0;
@@ -138,6 +141,22 @@ float county_has(int line, int seg) {
 // Coverage, 0 to 1, of a strip `half_w` metres each side of the county
 // roads near region point r, spread over `px` metres (its pixel footprint),
 // so far off it thins out instead of crawling.
+// Metres from the middle of the nearest state highway (up to 127). Past
+// the map the land mirrors (Terrain), and so do the highways.
+float highway_d(vec2 r) {
+	// Filtered here, not by the sampler: its weights are too coarse.
+	int n = textureSize(highway_field, 0).x;
+	vec2 g = (1.0 - abs(mod((r + 16384.0) / 32768.0, 2.0) - 1.0)) * float(n) - 0.5;
+	ivec2 i = ivec2(floor(g));
+	vec2 f = g - vec2(i);
+	ivec2 lo = clamp(i, ivec2(0), ivec2(n - 1));
+	ivec2 hi = clamp(i + 1, ivec2(0), ivec2(n - 1));
+	vec3 a = mix(texelFetch(highway_field, lo, 0).rgb, texelFetch(highway_field, ivec2(hi.x, lo.y), 0).rgb, f.x);
+	vec3 b = mix(texelFetch(highway_field, ivec2(lo.x, hi.y), 0).rgb, texelFetch(highway_field, hi, 0).rgb, f.x);
+	vec3 v = abs(mix(a, b, f.y) * 255.0 - 128.0);
+	return min(v.r, min(v.g, v.b));
+}
+
 float county_road(vec2 r, float half_w, float px) {
 	float w = max(half_w, px * 0.5);
 	float soft = max(0.5, px * 0.5);
@@ -263,6 +282,26 @@ void fragment() {
 	ditch = mix(ditch, dormant.rgb, brown);
 	col = mix(col, ditch * (0.92 + 0.16 * clump), verge * 0.65);
 	col = mix(col, gravel.rgb * (0.88 + 0.24 * grain) * (0.95 + 0.1 * clump), county);
+	// State highways (SR 57, SR 61, SR 56; Highways): two 12 ft lanes and
+	// 8 ft paved shoulders (INDOT), white edge lines and a yellow centre line
+	// in a mowed right of way. Cut through the bluffs, so only the water and
+	// the town's own roads stop them. Plowed in winter.
+	float hd = highway_d(r);
+	float hw_land = (1.0 - smoothstep(0.06, 0.12, cover.g)) * (1.0 - smoothstep(0.2, 0.6, max(town.x, town.y)));
+	float hw_aa = max(px, 0.05);
+	float hw_verge = (1.0 - smoothstep(13.0, 16.0, hd)) * hw_land;
+	float hw_paved = (1.0 - smoothstep(6.0 - hw_aa, 6.0 + hw_aa, hd)) * hw_land;
+	float hw_lane = 1.0 - smoothstep(3.6 - hw_aa, 3.6 + hw_aa, hd);
+	col = mix(col, ditch * (0.95 + 0.12 * clump), hw_verge * 0.75);
+	vec3 asphalt = vec3(0.25, 0.25, 0.25) * (0.9 + 0.2 * grain) * (0.96 + 0.08 * clump);
+	vec3 hw_col = mix(asphalt * 1.25, asphalt, hw_lane);
+	// Painted lines 4 in (0.1 m) wide fade to their share of the pixel.
+	float line_k = min(1.0, 0.1 / hw_aa);
+	float edge_line = (1.0 - smoothstep(0.05, 0.05 + hw_aa, abs(hd - 3.55))) * line_k;
+	float mid_line = (1.0 - smoothstep(0.15, 0.15 + hw_aa, hd)) * min(1.0, 0.3 / hw_aa);
+	hw_col = mix(hw_col, vec3(0.82, 0.82, 0.78), edge_line * 0.9);
+	hw_col = mix(hw_col, vec3(0.80, 0.62, 0.12), mid_line * 0.9);
+	col = mix(col, hw_col, hw_paved);
 	// Strip mine spoil and gravel.
 	col = mix(col, spoil.rgb * (0.85 + 0.3 * clump), smoothstep(0.3, 0.7, cover.a));
 	// Muddy, sandy banks by the water.
@@ -276,6 +315,7 @@ void fragment() {
 	float under = smoothstep(0.3, 0.65, cover.r) * (1.0 - painted) * 0.45 + smoothstep(0.2, 0.45, steep) * 0.4;
 	float lies = smoothstep(0.05, 0.45, snow * 1.15 - clump * 0.35 - (1.0 - mid) * 0.15 + 0.1 - under);
 	lies *= 1.0 - smoothstep(0.03, 0.3, cover.g) * 0.5;
+	lies *= 1.0 - hw_paved * 0.85;
 	vec3 snowy = vec3(0.80, 0.83, 0.88) * (0.94 + big * 0.08) * (1.0 + (blades - 0.5) * 0.08 * fade);
 	// Fields read through the snow from the air: corn stubble and tilled
 	// clods poke through, and each field drifts a little differently.
@@ -365,6 +405,7 @@ static func ground_material() -> ShaderMaterial:
 		_ground_mat.shader = sh
 		_ground_mat.set_shader_parameter("noise_soft", Ground.noise(512, 0.012, 4, 11))
 		_ground_mat.set_shader_parameter("noise_grain", Ground.noise(256, 0.09, 2, 23))
+		_ground_mat.set_shader_parameter("highway_field", Highways.texture())
 	return _ground_mat
 
 

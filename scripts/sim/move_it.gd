@@ -625,9 +625,10 @@ static func _building_problem(sim: CitySim, type: String, id: int, pos: Vector3,
 				for q in [mid] + Array(cell).map(func(v): return mid.lerp(Vector3(v.x, 0.0, v.y), 0.9)):
 					if sim.reserves.kind_at(q) != "":
 						return "That land is reserved for %s." % Reserves.KINDS[sim.reserves.kind_at(q)]
-					if sim.farms.covers(q) or sim.farms.field_at(q) != -1:
+					var owner := Capital.owner_of(sim, q)
+					if owner.begins_with("farm:"):
 						return "That ground is farmland."
-					if sim.industry.covers(q):
+					if owner.begins_with("site:"):
 						return "That ground belongs to a company."
 					var other := sim.hubs.at(q)
 					if other != -1 and other != id:
@@ -642,9 +643,10 @@ static func _building_problem(sim: CitySim, type: String, id: int, pos: Vector3,
 			if sim.reserves.kind_at(mid) != "":
 				return "That land is reserved for %s." % Reserves.KINDS[sim.reserves.kind_at(mid)]
 			for p in pts + [mid]:
-				if sim.farms.covers(p) or sim.farms.field_at(p) != -1:
+				var owner := Capital.owner_of(sim, p)
+				if owner.begins_with("farm:"):
 					return "That ground is farmland."
-				if sim.industry.covers(p):
+				if owner.begins_with("site:"):
 					return "That ground belongs to a company."
 		"service":
 			for p in pts:

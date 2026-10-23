@@ -277,7 +277,9 @@ func _ready() -> void:
 	# smoke and noise it would make; zoning homes or shops shows what is
 	# already in the air there (PlacementHints).
 	var hints := PlacementHints.new()
-	hints.setup(sim, cam, func() -> Dictionary:
+	# Any building tool also lights up the ones already built, so a player
+	# sees they have one and where (Brawn, 2026-10-23).
+	var hint_for := func() -> Dictionary:
 		if industry_tool.kind == "power":
 			return {"source": "power_" + industry_tool.likely} if industry_tool.likely != "" else {"wind": true}
 		if industry_tool.kind != "":
@@ -290,7 +292,9 @@ func _ready() -> void:
 			return {"source": CivicHubs.TOOL_KINDS[service_tool.kind]}
 		if info_view.mode == InfoView.Mode.SMOKE:
 			return {"wind": true}
-		return {})
+		return {}
+	hints.setup(sim, cam, hint_for, _already_built.bind(service_tool, industry_tool, campus_tool, bank_tool,
+		telecom_tool, warehouse_tool, big_tool, park_tool))
 	add_child(hints)
 
 	var select_tool := SelectTool.new()
@@ -360,6 +364,57 @@ func _ready() -> void:
 
 
 ## The loading screen (the branding thread's LoadingScreen), if one is up.
+## The ones already built of whatever the tool in hand places (PlacementHints
+## lights them up): {what (plural), one (singular), at: [Vector3]}, or {}.
+func _already_built(service_tool: ServiceTool, industry_tool: IndustryTool, campus_tool: CampusTool,
+		bank_tool: BankTool, telecom_tool: TelecomTool, warehouse_tool: WarehouseTool, big_tool: BigFactoryTool,
+		park_tool: ParkTool) -> Dictionary:
+	var name := ""
+	var at := []
+	var k = service_tool.kind
+	if k == Mail.TOOL_KIND:
+		name = "Post office"
+		at = PlacementHints.built_of(sim.mail.offices)
+	elif k == Rail.TOOL_KIND:
+		name = "Rail depot"
+		at = PlacementHints.built_of(sim.rail.depots)
+	elif CivicHubs.TOOL_KINDS.has(k):
+		var hub: String = CivicHubs.TOOL_KINDS[k]
+		name = str(CivicHubs.KINDS[hub].get("name", hub))
+		# Recycling grows through bigger plants; they're all recycling.
+		var kinds := [hub] if not hub.begins_with("recycling") \
+			else CivicHubs.KINDS.keys().filter(func(h): return str(h).begins_with("recycling"))
+		at = PlacementHints.built_of(sim.hubs.hubs, kinds)
+	elif Services.KINDS.has(k):
+		name = Services.KINDS[k].name
+		# A hospital counts as a clinic for the homes it reaches.
+		at = PlacementHints.built_of(sim.services.buildings,
+			[k, Services.Kind.HOSPITAL] if k == Services.Kind.CLINIC else [k])
+	elif industry_tool.kind == "power":
+		name = "Power company"
+		at = PlacementHints.built_of(sim.power.sites)
+	elif industry_tool.kind != "":
+		name = str(Industry.KINDS[industry_tool.kind].name)
+		at = PlacementHints.built_of(sim.industry.sites, [industry_tool.kind])
+	else:
+		for t in [[campus_tool.kind, Education.KINDS, sim.education.campuses], [bank_tool.kind, Banks.KINDS, sim.banks.banks],
+				[warehouse_tool.kind, Warehouses.KINDS, sim.warehouses.buildings], [big_tool.kind, BigFactories.KINDS, sim.big.sites],
+				[park_tool.kind, Parks.KINDS, sim.parks.sites]]:
+			if t[0] != "":
+				name = str(t[1].get(t[0], {}).get("name", t[0]))
+				at = PlacementHints.built_of(t[2], [t[0]])
+				break
+		if name == "" and telecom_tool.kind != "":
+			name = "Telecom company"
+			at = PlacementHints.built_of(sim.telecom.companies)
+	if name == "":
+		return {}
+	var one := name.to_lower()
+	var many := one.substr(0, one.length() - 1) + "ies" if one.ends_with("y") and not one.ends_with("ay") \
+		else one + ("es" if one.ends_with("s") or one.ends_with("ch") else "s")
+	return {"what": many, "one": one, "at": at}
+
+
 func _progress(fraction: float, status := "") -> void:
 	var screen := get_tree().root.get_node_or_null("LoadingScreen")
 	if screen != null and screen.has_method("set_progress"):

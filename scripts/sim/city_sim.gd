@@ -162,6 +162,10 @@ var redevelopment := Redevelopment.new()
 ## Home builders who ask to build subdivisions on farmland at the edge of
 ## town, each with a choice of sites (Subdivisions).
 var subdivisions := Subdivisions.new()
+## Streets wear out and come due for resurfacing (StreetAge).
+var street_age := StreetAge.new()
+## The city engineer: counts rush-hour traffic and proposes fixes (CityEngineer).
+var engineer := CityEngineer.new()
 ## The town's numbers over time, for the top bar's charts (StatHistory).
 var history := StatHistory.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
@@ -849,6 +853,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			care.from_dict({})
 			redevelopment.from_dict({})
 			subdivisions.from_dict({})
+			street_age.from_dict({})
+			engineer.from_dict({})
 			timelapse.from_dict(self, {})
 			history.from_dict({})
 			_lever_steps.clear()
@@ -1226,11 +1232,28 @@ func tick() -> void:
 		t = Perf.now()
 		subdivisions.month(self)
 		Perf.add("sim.subdivisions", t)
+	elif hour == 20 * TICKS_PER_HOUR + 40:
+		# Streets that have worn out are resurfaced, on the town's bill.
+		t = Perf.now()
+		economy.money -= street_age.month(self)
+		Perf.add("sim.street_age", t)
+	elif hour == 21 * TICKS_PER_HOUR + 10:
+		# The city engineer brings the month's worst traffic problem.
+		t = Perf.now()
+		engineer.month(self)
+		Perf.add("sim.engineer", t)
 	if tick_count % TICKS_PER_HOUR == 20 and not subdivisions.scout.is_empty():
-		# ...a few roads an hour.
+		# Home builders scout a few roads an hour.
 		t = Perf.now()
 		subdivisions.hour(self)
 		Perf.add("sim.subdivisions", t)
+	if hour % TICKS_PER_HOUR == 15 and hour / TICKS_PER_HOUR in Balance.ENGINEER_COUNT_HOURS:
+		# The engineer's traffic counts, at rush hour.
+		t = Perf.now()
+		engineer.count(self)
+		Perf.add("sim.engineer", t)
+	if tick_count % TICKS_PER_HOUR == 35 and not engineer.pending.is_empty() and engineer.carry_out(self):
+		_lots_dirty = true
 	t = Perf.now()
 	if tick_count % WaterUtility.DECIDE_EVERY == 0 and not services.water.utilities.is_empty():
 		var res := services.water.decide(self, yard_usable)
@@ -1602,7 +1625,7 @@ func farmhouse_problem(pos: Vector3, dir: Vector3) -> String:
 		if farms.farms[id].pos.distance_to(pos) < Farms.FARMHOUSE_SIZE.length():
 			return "Too close to another farm."
 	for p in [pos] + Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y)):
-		if industry.covers(p) or power.covers(p):
+		if Capital.owner_of(self, p).begins_with("site:") or power.covers(p):
 			return "That ground belongs to a company."
 		if rail.covers(p):
 			return "That ground belongs to the railroad."
@@ -1646,9 +1669,10 @@ func industry_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 		if not Geometry2D.intersect_polygons(poly, services.footprint(id)).is_empty():
 			return "Overlaps a service building."
 	for p in [pos] + Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y)):
-		if farms.covers(p) or farms.field_at(p) != -1:
+		var owner := Capital.owner_of(self, p)
+		if owner.begins_with("farm:"):
 			return "That ground is farmland."
-		if industry.covers(p) or power.covers(p):
+		if owner.begins_with("site:") or power.covers(p):
 			return "Too close to another company."
 		if rail.covers(p):
 			return "That ground belongs to the railroad."
@@ -1685,9 +1709,10 @@ func warehouse_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 		if not Geometry2D.intersect_polygons(poly, warehouses.footprint(id)).is_empty():
 			return "Overlaps another warehouse."
 	for p in _grid_in(poly):
-		if farms.covers(p) or farms.field_at(p) != -1:
+		var owner := Capital.owner_of(self, p)
+		if owner.begins_with("farm:"):
 			return "That ground is farmland."
-		if industry.covers(p):
+		if owner.begins_with("site:"):
 			return "That ground belongs to a company."
 		if rail.covers(p):
 			return "That ground belongs to the railroad."
@@ -1725,7 +1750,7 @@ func warehouse_ground_ok(poly: PackedVector2Array, id: int) -> bool:
 		if wid != id and not Geometry2D.intersect_polygons(poly, warehouses.footprint(wid)).is_empty():
 			return false
 	for p in _grid_in(poly):
-		if farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) or reserves.kind_at(p) != "" \
+		if Capital.owner_of(self, p) != "" or reserves.kind_at(p) != "" \
 				or hubs.covers(p) or education.covers(p) or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p) or big.covers(p):
 			return false
 	for key in lots:
@@ -1789,9 +1814,10 @@ func power_problem(pos: Vector3, dir: Vector3) -> String:
 		if not Geometry2D.intersect_polygons(poly, services.footprint(id)).is_empty():
 			return "Overlaps a service building."
 	for p in pts:
-		if farms.covers(p) or farms.field_at(p) != -1:
+		var owner := Capital.owner_of(self, p)
+		if owner.begins_with("farm:"):
 			return "That ground is farmland."
-		if industry.covers(p) or power.covers(p):
+		if owner.begins_with("site:") or power.covers(p):
 			return "Too close to another company."
 		if hubs.covers(p):
 			return "Overlaps a landfill, recycling center or cemetery."
@@ -2215,14 +2241,9 @@ func _ground_free(mid: Vector3, corners: PackedVector2Array, in_fields: bool) ->
 ## its leases: Industry.claim_at), "hub" for any other hub or
 ## service, or "" for open land.
 func land_owner(p: Vector3) -> String:
-	var id := farms.farm_at(p)
-	if id == -1:
-		id = farms.field_at(p)
-	if id != -1:
-		return "farm:%d" % id
-	id = industry.claim_at(p)
-	if id != -1:
-		return "site:%d" % id
+	var owner := Capital.owner_of(self, p)
+	if owner != "":
+		return owner
 	if services.covers(p) or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
 			or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p):
 		return "hub"
@@ -2312,6 +2333,14 @@ func _farm_sell_outs() -> bool:
 		if not sale.is_empty():
 			var state := permits.state_of(int(sale.req))
 			if state == Permits.State.OPEN:
+				# Developers stopped bidding (or never would have): the
+				# family takes the farm off the market.
+				if not Capital.sell_out(self, f.pos):
+					permits.withdraw(int(sale.req))
+					f.sale = {}
+					f.sale_year = farms.year
+					f.why = "No developer wants the land after all, so the family farms on."
+					changed = true
 				continue
 			f.sale = {}
 			if state == Permits.State.APPROVED:
@@ -2529,7 +2558,7 @@ func yard_usable(corners: PackedVector2Array) -> bool:
 	for c in corners:
 		pts.append(mid.lerp(Vector3(c.x, 0.0, c.y), 0.9))
 	for p in pts:
-		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) or reserves.kind_at(p) != "":
+		if services.covers(p) or Capital.owner_of(self, p) != "" or reserves.kind_at(p) != "":
 			return false
 	for id in services.buildings:
 		if not Geometry2D.intersect_polygons(corners, services.footprint(id)).is_empty():
@@ -2752,7 +2781,7 @@ func land_factor(key: String) -> float:
 
 func _lot_blocked(lot: Dictionary) -> bool:
 	for p in [lot.pos, lot.front, lot.zone_pt]:
-		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) \
+		if services.covers(p) or Capital.owner_of(self, p) != "" \
 				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
 				or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p) or big.covers(p):
 			return true
@@ -3359,6 +3388,8 @@ const COUNTY_PIECE := 200.0
 const COUNTY_STEP := 8.0
 ## A road's dead end this near a county road is taken on to it, metres.
 const COUNTY_REACH := 15.0
+## A joined state highway is taken on this far each way, metres (a mile).
+const HIGHWAY_JOIN := 1608.0
 
 
 ## Joins the mile of county road at `p` (if one runs there) to the town: it
@@ -3387,53 +3418,7 @@ func _join_county(p: Vector3, way := 0, key := "") -> bool:
 		if length < RoadNetwork.MIN_LENGTH:
 			continue
 		var dir := (stop - on) / length
-		var prev := on
-		var d := 0.0
-		var met := false
-		var blocked := false
-		while d < length - 1.0 and not met and not blocked:
-			var next := minf(d + COUNTY_PIECE, length)
-			# Out to the first of the town's roads it meets, and no further:
-			# a road already on the line keeps its place. It stops short of
-			# zoned lots and farmyards, which are the town's.
-			var s := d + COUNTY_STEP
-			while s <= next:
-				var q := on + dir * s
-				var at := Vector3(q.x, 0, q.y)
-				if not network.find_segment_near(at, COUNTY_STEP * 0.6).is_empty():
-					next = s
-					met = true
-					break
-				if zones.zone_at(at) != ZoneMap.Zone.NONE or farms.covers(at):
-					next = s - COUNTY_STEP
-					blocked = true
-					break
-				s += COUNTY_STEP
-			if met and next <= COUNTY_STEP:
-				break  # a road already runs along the line here
-			var q := on + dir * next
-			var c := [Vector3(prev.x, 0, prev.y), Vector3((prev.x + q.x) * 0.5, 0, (prev.y + q.y) * 0.5), Vector3(q.x, 0, q.y)]
-			if land_problem([c]) != "":
-				# Only as far as the town may build (its land, in a region).
-				while next - d > COUNTY_STEP and land_problem([c]) != "":
-					next -= COUNTY_STEP
-					q = on + dir * next
-					c = [c[0], (c[0] + Vector3(q.x, 0, q.y)) * 0.5, Vector3(q.x, 0, q.y)]
-				if land_problem([c]) != "":
-					break
-				met = false
-				blocked = true
-			if prev.distance_to(q) < RoadNetwork.MIN_LENGTH:
-				break
-			if met:
-				# Right onto the road it meets, so the two join there.
-				var hit := network.find_segment_near(c[2], COUNTY_STEP)
-				if not hit.is_empty():
-					c[2] = Vector3(hit.point.x, 0, hit.point.z)
-					c[1] = (c[0] + c[2]) * 0.5
-			pieces.append(c)
-			prev = q
-			d = next
+		pieces.append_array(_pieces_along(func(d): return on + dir * d, length))
 	if pieces.is_empty():
 		return false
 	var before := network.segments.keys()
@@ -3450,6 +3435,111 @@ func _join_county(p: Vector3, way := 0, key := "") -> bool:
 	county_changed.emit()
 	streets.name_road(self, network.segments.keys().filter(func(id): return not id in before),
 		streets.grid_name(mile.key))
+	streets.sync(self)
+	return true
+
+
+## The pieces of road to lay along a line out from a join, `at`(metres
+## along) giving each point (town coordinates), up to `length` metres: out
+## to the first of the town's roads it meets (and onto it), and no further,
+## so a road already on the line keeps its place. It stops short of zoned
+## lots and farmyards, which are the town's, of the edge of the town's land
+## and, with `dry`, of the water.
+func _pieces_along(at: Callable, length: float, dry := false) -> Array:
+	var o := terrain_offset
+	var pieces := []
+	var d := 0.0
+	var met := false
+	var blocked := false
+	while d < length - 1.0 and not met and not blocked:
+		var next := minf(d + COUNTY_PIECE, length)
+		var s := d + COUNTY_STEP
+		while s <= next:
+			var q: Vector2 = at.call(s)
+			var here := Vector3(q.x, 0, q.y)
+			if not network.find_segment_near(here, COUNTY_STEP * 0.6).is_empty():
+				next = s
+				met = true
+				break
+			if zones.zone_at(here) != ZoneMap.Zone.NONE or farms.covers(here) \
+					or (dry and Terrain.water(q.x + o.x, q.y + o.y) >= 0.1):
+				next = s - COUNTY_STEP
+				blocked = true
+				break
+			s += COUNTY_STEP
+		if met and next <= COUNTY_STEP:
+			break  # a road already runs along the line here
+		var c := _piece(at, d, next)
+		if land_problem([c]) != "":
+			# Only as far as the town may build (its land, in a region).
+			while next - d > COUNTY_STEP and land_problem([c]) != "":
+				next -= COUNTY_STEP
+				c = _piece(at, d, next)
+			if land_problem([c]) != "":
+				break
+			met = false
+			blocked = true
+		if c[0].distance_to(c[2]) < RoadNetwork.MIN_LENGTH:
+			break
+		if met:
+			# Right onto the road it meets, so the two join there.
+			var hit := network.find_segment_near(c[2], COUNTY_STEP)
+			if not hit.is_empty():
+				c[2] = Vector3(hit.point.x, 0, hit.point.z)
+				c[1] = (c[0] + c[2]) * 0.5
+		pieces.append(c)
+		d = next
+	return pieces
+
+
+## A piece of road from `a` to `b` metres along `at`, bowed through the
+## line's middle.
+static func _piece(at: Callable, a: float, b: float) -> Array:
+	var pa: Vector2 = at.call(a)
+	var pb: Vector2 = at.call(b)
+	var k: Vector2 = at.call((a + b) * 0.5) * 2.0 - (pa + pb) * 0.5
+	return [Vector3(pa.x, 0, pa.y), Vector3(k.x, 0, k.y), Vector3(pb.x, 0, pb.y)]
+
+
+## Joins the state highway at `p` (route, if given, else the nearest within
+## COUNTY_REACH) to the town, the way a county road joins: a STATE_HWY road
+## of its own, free, laid where the highway runs, from `p` out HIGHWAY_JOIN
+## metres each way (or only `way`: -1 back toward the route's start, +1 on),
+## stopping at the town's roads (joining them), the water, zoned lots and
+## the edge of its land. True if any road was laid.
+func _join_highway(p: Vector3, way := 0, route := -1) -> bool:
+	if absf(p.y) > 1.0:
+		return false  # a bridge or tunnel end
+	var o := terrain_offset
+	var hit := Highways.near(p.x + o.x, p.z + o.y, COUNTY_REACH, route)
+	if hit.is_empty():
+		return false
+	var r: int = hit.route
+	var from: float = hit.along
+	var on: Vector2 = hit.on - o
+	var here := Vector2(p.x, p.z)
+	var pieces := []
+	for e in [-1, 1]:
+		if way != 0 and way != e:
+			continue
+		var at := func(d): return Highways.point(r, from + e * d) - o
+		var length := absf(clampf(from + e * HIGHWAY_JOIN, 0.0, Highways.length(r)) - from)
+		if length >= RoadNetwork.MIN_LENGTH:
+			pieces.append_array(_pieces_along(at, length, true))
+	if pieces.is_empty():
+		return false
+	var before := network.segments.keys()
+	var money := economy.money
+	network.begin_batch()
+	if here.distance_to(on) > 0.5:
+		var m := (here + on) * 0.5
+		network.build_road(p, Vector3(m.x, 0, m.y), Vector3(on.x, 0, on.y), RoadStyle.Type.STATE_HWY)
+	for c in pieces:
+		network.build_road(c[0], c[1], c[2], RoadStyle.Type.STATE_HWY)
+	network.end_batch()
+	economy.money = money  # the state hands it over
+	streets.name_road(self, network.segments.keys().filter(func(id): return not id in before),
+		Highways.all()[r].name)
 	streets.sync(self)
 	return true
 
@@ -3487,9 +3577,25 @@ func _join_crossings(curves: Array) -> void:
 				if along < lo - 0.5 or along > lo + CountyGrid.SECTION + 0.5:
 					continue  # on the line, but the next mile's stretch
 				_touch(touch, mile.key, along, q)
-		# A road ending just short of a county road is taken on to it.
+		# Where it crosses a state highway.
+		for i in pts.size() - 1:
+			var a: Vector3 = pts[i]
+			var b: Vector3 = pts[i + 1]
+			if absf(a.y) > 1.0 or absf(b.y) > 1.0:
+				continue
+			var hw := Highways.crossing(Vector2(a.x + o.x, a.z + o.y), Vector2(b.x + o.x, b.z + o.y))
+			if not hw.is_empty():
+				var on: Vector2 = hw.on - o
+				_touch(touch, "hw:%d" % hw.route, hw.along, Vector3(on.x, 0, on.y))
+		# A road ending just short of a county road or highway is taken on to it.
 		for end in [c[0], c[2]]:
 			if absf(end.y) > 1.0 or network.segments_at(network.find_node_near(end, 0.5)).size() != 1:
+				continue
+			var hw := Highways.near(end.x + o.x, end.z + o.y, COUNTY_REACH)
+			if not hw.is_empty() and not touch.has("hw:%d" % hw.route):
+				var on: Vector2 = hw.on - o
+				_touch(touch, "hw:%d" % hw.route, hw.along, end if end.distance_to(Vector3(on.x, 0, on.y)) > 0.5 \
+					else Vector3(on.x, 0, on.y))
 				continue
 			var near := CountyGrid.mile_at(end.x + o.x, end.z + o.y, COUNTY_REACH)
 			if near.is_empty() or county_removed.has(near.key) or touch.has(near.key):
@@ -3498,6 +3604,14 @@ func _join_crossings(curves: Array) -> void:
 				continue
 	for key in touch:
 		var t: Array = touch[key]
+		if key.begins_with("hw:"):
+			var r := int(key.substr(3))
+			if t[2] - t[0] < 20.0:
+				_join_highway(t[1], 0, r)
+			else:
+				_join_highway(t[1], -1, r)
+				_join_highway(t[3], 1, r)
+			continue
 		if t[2] - t[0] < 20.0:
 			_join_county(t[1], 0, key)
 		else:
@@ -3532,8 +3646,9 @@ func _county_road(a: Vector2, b: Vector2, link_ends: Array) -> Array:
 	network.end_batch()
 	streets.hold = false
 	# A road out of town is named for the town it leads to.
-	streets.name_road(self, network.segments.keys().filter(func(id): return not id in before),
-		streets.town_road(hash([city_seed, a, b])))
+	var made := network.segments.keys().filter(func(id): return not id in before)
+	streets.name_road(self, made, streets.town_road(hash([city_seed, a, b])))
+	street_age.note_old(self, made)
 	streets.sync(self)
 	economy.money = money
 	var ends := [network.find_node_near(pts[0], 1.0), network.find_node_near(pts[-1], 1.0)]
@@ -3774,6 +3889,8 @@ func save_steps(postcard := false) -> Array:
 		["care", func(): return care.to_dict()],
 		["redevelopment", func(): return redevelopment.to_dict()],
 		["subdivisions", func(): return subdivisions.to_dict()],
+		["street_age", func(): return street_age.to_dict()],
+		["engineer", func(): return engineer.to_dict()],
 		["junctions", func(): return traffic.rules_to_dict()],
 		["vegetation", func(): return vegetation.to_dict()],
 	]
@@ -3867,6 +3984,8 @@ func from_dict(d: Dictionary) -> void:
 	care.from_dict(d.get("care", {}))
 	redevelopment.from_dict(d.get("redevelopment", {}))
 	subdivisions.from_dict(d.get("subdivisions", {}))
+	street_age.from_dict(d.get("street_age", {}))
+	engineer.from_dict(d.get("engineer", {}))
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:

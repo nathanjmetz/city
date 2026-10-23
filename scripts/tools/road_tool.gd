@@ -93,7 +93,7 @@ var _cursor := MeshInstance3D.new()
 var _ok_mat := RoadStyle.material(Color(0.3, 0.85, 1.0, 0.85), true)
 var _bad_mat := RoadStyle.material(Color(1.0, 0.3, 0.25, 0.75), true)
 var _snap_mat := RoadStyle.material(Color(1.0, 0.85, 0.2, 0.95), true)  # on a road
-var _snap_kind := "free"  # what the last point snapped to: node, segment, county or free
+var _snap_kind := "free"  # what the last point snapped to: node, segment, highway, county or free
 var _square := false  # Shift squared the third grid point: a rectangle
 var _dot_mat := RoadStyle.material(Color(1.0, 1.0, 1.0, 0.95), true)
 const FT := 3.28084  # feet in a metre: the readouts are in US units
@@ -768,6 +768,17 @@ func _county_at(p: Vector3, reach := 0.5) -> Dictionary:
 	return mile
 
 
+## The state highway (Highways.near) under `p` out in the country, if any.
+func _highway_at(p: Vector3, reach := 0.5) -> Dictionary:
+	if absf(p.y) > 0.5 or Terrain.flat_weight(p.x, p.z) > 0.3 or Terrain.mow_weight(p.x, p.z) > 0.3:
+		return {}
+	var o := sim.terrain_offset
+	var hw := Highways.near(p.x + o.x, p.z + o.y, reach)
+	if hw.is_empty() or Terrain.water(hw.on.x, hw.on.y) >= 0.1:
+		return {}
+	return hw
+
+
 ## Closest two roads can run side by side: sidewalk to sidewalk.
 func _min_gap() -> float:
 	return RoadStyle.right_of_way_half(road_type) * 2.0
@@ -893,7 +904,13 @@ func _snapped(hit: Vector3) -> Vector3:
 	var snap := network.snap(hit, _snap_reach(SNAP_NODE, SNAP_PX * 1.3), _snap_reach(SNAP_ROAD + 5.0, SNAP_PX))
 	_snap_kind = snap.kind
 	if snap.kind == "free":
-		# Onto a county road out in the country, which joins it to town.
+		# Onto a state highway or county road out in the country, which
+		# joins it to town.
+		var hw := _highway_at(Vector3(hit.x, 0.0 if mode == Mode.GRID else elevation, hit.z),
+			_snap_reach(SNAP_ROAD + 5.0, SNAP_PX))
+		if not hw.is_empty():
+			_snap_kind = "highway"
+			return Vector3(hw.on.x - sim.terrain_offset.x, 0.0, hw.on.y - sim.terrain_offset.y)
 		var mile := _county_at(Vector3(hit.x, 0.0 if mode == Mode.GRID else elevation, hit.z),
 			_snap_reach(SNAP_ROAD + 5.0, SNAP_PX))
 		if not mile.is_empty():

@@ -76,49 +76,80 @@ static func service(hub: Dictionary) -> float:
 	return float(hub.get("debt", 0.0)) * payment_rate()
 
 
-## What an acre sells for at pos: farm value plus what nearby development
-## adds, up to CAPITAL_URBAN_MAX times more for ground at a growing town's
-## edge. Buildings within a mile count, the nearer the more.
+## What an acre sells for at pos: farm value, plus a development premium
+## only where developers would really bid (see premium).
 static func land_price(sim: CitySim, pos: Vector3) -> float:
 	return Balance.CAPITAL_LAND_PER_ACRE * (1.0 + premium(sim, pos))
 
 
-## The development premium at pos, as a share of farm value (0 out in the
-## country, up to CAPITAL_URBAN_MAX).
+## The development premium at pos, as a share of farm value. Developers
+## pay over farm value only for ground (Brawn: not when there's open land
+## all around):
+##   - at the town's built edge, fading out CAPITAL_FRINGE beyond it;
+##   - in a town big enough to need the land: the premium a town can carry
+##     grows with its people, CAPITAL_URBAN_MAX for a city of
+##     CAPITAL_URBAN_POP and more, little for a small town (Purdue: farm
+##     ground in rural counties sells near farm value; "transition land"
+##     fetches multiples only at growing cities' edges);
+##   - where cheaper open land at the edge is scarce: when most of the
+##     ground around town is open, the developer buys that instead.
 static func premium(sim: CitySim, pos: Vector3) -> float:
-	var grid := _grid(sim)
-	var r := float(Balance.CAPITAL_URBAN_REACH)
+	var town := _town(sim)
+	if town.built.is_empty():
+		return 0.0
+	var fringe := float(Balance.CAPITAL_FRINGE)
+	var d := _edge_distance(town.built, pos)
+	if d >= fringe:
+		return 0.0
+	var size := 1.0 - exp(-float(sim.stats.get("population", 0)) / float(Balance.CAPITAL_URBAN_POP))
+	return float(Balance.CAPITAL_URBAN_MAX) * size * (1.0 - d / fringe) * float(town.scarcity)
+
+
+## How far pos is from the nearest built ground (m, to the grid's
+## resolution; CAPITAL_FRINGE or more when none is that near).
+static func _edge_distance(built: Dictionary, pos: Vector3) -> float:
 	var g := float(Balance.CAPITAL_GRID)
 	var b := Vector2i(floori(pos.x / g), floori(pos.z / g))
-	var span := ceili(r / g)
-	var weight := 0.0
+	var span := ceili(float(Balance.CAPITAL_FRINGE) / g)
+	var best := INF
 	for dx in range(-span, span + 1):
 		for dz in range(-span, span + 1):
-			var k := b + Vector2i(dx, dz)
-			if not grid.has(k):
-				continue
-			var mid := Vector3((k.x + 0.5) * g, 0.0, (k.y + 0.5) * g)
-			var d := mid.distance_to(Vector3(pos.x, 0.0, pos.z))
-			if d < r:
-				weight += float(grid[k]) * (1.0 - d / r)
-	return float(Balance.CAPITAL_URBAN_MAX) * (1.0 - exp(-weight / float(Balance.CAPITAL_URBAN_SCALE)))
+			if built.has(b + Vector2i(dx, dz)):
+				var mid := Vector3((b.x + dx + 0.5) * g, 0.0, (b.y + dz + 0.5) * g)
+				best = minf(best, maxf(0.0, mid.distance_to(Vector3(pos.x, 0.0, pos.z)) - g * 0.5))
+	return best
 
 
-## Built lots counted on a coarse grid, once a tick.
-static func _grid(sim: CitySim) -> Dictionary:
-	var at := [sim.get_instance_id(), sim.tick_count, sim.buildings.size()]
+## The town's built ground on a grid, and how scarce open land at its edge
+## is (0: open land all around, 1: every bit of the edge farmed), worked
+## out once a game day.
+static func _town(sim: CitySim) -> Dictionary:
+	var at := [sim.get_instance_id(), sim.buildings.size(), sim.tick_count / (24 * CitySim.TICKS_PER_HOUR)]
 	if _memo.get("_at", []) == at:
-		return _memo.grid
+		return _memo.town
 	var g := float(Balance.CAPITAL_GRID)
-	var grid := {}
+	var built := {}
 	for key in sim.buildings:
 		if not sim.lots.has(key):
 			continue
 		var p: Vector3 = sim.lots[key].pos
-		var k := Vector2i(floori(p.x / g), floori(p.z / g))
-		grid[k] = int(grid.get(k, 0)) + 1
-	_memo = {"_at": at, "grid": grid}
-	return grid
+		built[Vector2i(floori(p.x / g), floori(p.z / g))] = true
+	# The ring of ground around town a developer could build on next.
+	var ring := {}
+	for k in built:
+		for dx in [-1, 0, 1]:
+			for dz in [-1, 0, 1]:
+				var n: Vector2i = k + Vector2i(dx, dz)
+				if not built.has(n):
+					ring[n] = true
+	var taken := 0
+	for k in ring:
+		var mid := Vector3((k.x + 0.5) * g, 0.0, (k.y + 0.5) * g)
+		if sim.farms.field_at(mid) != -1 or sim.farms.farm_at(mid) != -1:
+			taken += 1
+	var scarcity := float(taken) / ring.size() if not ring.is_empty() else 0.0
+	_memo = {"_at": at, "town": {"built": built, "scarcity": scarcity}}
+	return _memo.town
 
 
 ## The least a purchase needs down (a lender's minimum).
@@ -173,6 +204,22 @@ static func kept(hub: Dictionary, kind: String, profit: float) -> float:
 ## "site:5"): the one gate a hub passes before it builds on or plants
 ## ground (Brawn, 2026-10-23: land has one owner, and a hub buys a parcel
 ## before it builds there). Owners come from CitySim.land_owner.
+## Who holds private land at p: "farm:<id>" (a farmyard, lane or field),
+## "site:<id>" (a company's yard, pads with their working ground, leases:
+## Industry.claim_at) or "" (open, or a public hub's). Every hub that builds
+## checks this before it takes ground.
+static func owner_of(sim, p: Vector3) -> String:
+	var id: int = sim.farms.farm_at(p)
+	if id == -1:
+		id = sim.farms.field_at(p)
+	if id != -1:
+		return "farm:%d" % id
+	id = sim.industry.claim_at(p)
+	if id != -1:
+		return "site:%d" % id
+	return ""
+
+
 static func land_free(sim, pts: Array, who: String) -> bool:
 	for p in pts:
 		var owner: String = sim.land_owner(p)

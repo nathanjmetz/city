@@ -39,6 +39,25 @@ The card shows these needs for each phase. The bell's PROJECTS list shows each s
 
 In Zoning, the player can outline big, soft areas as a future land use map: homes, shops, jobs or farms, plus Erase. It is a plan, not zoning, so nothing is blocked. Builders never propose homes on land planned for something else. They look at land planned for homes first. A subdivision inside the plan opens each phase in 75% of the time (`PLAN_FASTER`), because a plat that matches the comprehensive plan is routine for the plan commission. Real reference: Indiana's comprehensive plan and its future land use map (IC 36-7-4-500). A new area is cut out of the older ones, so the map stays a handful of pieces. The command is `paint_plan` {points, kind}, it is saved as `land_plan`, and the screenshot is `tools/permit_shot.gd -- plan out.png`.
 
+## Streets wear out (StreetAge)
+
+Every paved street is resurfaced about 25 game years (`STREET_LIFE_YEARS`) after it is built or last resurfaced. The town pays then, about $130 a lane-metre: a mill and overlay at INDOT prices, with a 20 to 30 year asphalt life per FHWA. A builder's streets are free today and a bill in 25 years. A town that grew fast meets the whole bill at once, which is Strong Towns' warning.
+
+- Ages are kept on 40 m squares, so a street split by a new junction keeps its age. The county's roads a town starts on get spread-out ages.
+- The builder card shows the repair bill.
+- The Economy page shows STREETS COMING DUE: what was paid this past year, and a forecast in five-year bars.
+- It runs once a month: about 3 ms on a huge town, and about 22 ms the first month after loading, when every street is measured.
+
+## The city engineer (CityEngineer)
+
+The engineer takes a traffic count at four rush hours each game month (`ENGINEER_COUNT_HOURS`): every car on the roads, whether that road is moving under 40% of its speed limit (Highway Capacity Manual level of service E or F), and whether a car on a hub's own road has any business with that hub. Once a month the worst problem goes to the bell, one at a time, each with a ghost, an argument for why, and what the town pays:
+
+- **A hub road used as a shortcut** (from 2,000 people): a farm lane or an oil company's lease road with through cars. Choose between paving it as a town street or "local traffic only", with signs and a gate arm that let the hub's trucks through (`TrafficSim.close_segment(seg, true, "always")`). This is Brawn's tension between hub leaders and the mayor.
+- **A jammed two-lane road** (from 10,000 people): widen the jammed stretch to four lanes, or add a centre turn lane.
+- **A busy alley**: pave it into a narrow street.
+
+The town pays on approval. When the money isn't there, the job waits. Counts are saved. The cost is four counts and one look a month. `tools/permit_shot.gd -- engineer` shows the card.
+
 ## Code
 
 - Logic is in `scripts/sim/subdivisions.gd` (`Subdivisions`, `sim.subdivisions`). Numbers are in Balance under `SUBDIV_*`. The test is `tests/test_subdivisions.gd`.

@@ -276,6 +276,34 @@ const SUBDIV_KIDS_PER_HOME := 0.6
 const SUBDIV_TRIPS_PER_HOME := 9.4
 const SUBDIV_PEAK_PER_HOME := 1.0
 
+## Streets wear out (StreetAge): resurfaced about this many years after
+## they're built (asphalt lasts about 20 to 30 years, FHWA), at about $130 a
+## lane-metre (INDOT mill and overlay, about $30 a square yard). Ages are
+## kept on squares this many metres across; the Economy page looks this
+## many years ahead.
+const STREET_LIFE_YEARS := 25
+const STREET_REPAVE_PER_LANE_M := 130.0
+const STREET_AGE_CELL := 40.0
+const STREET_FORECAST_YEARS := 30
+
+## The city engineer (CityEngineer). Hired at this size for road upgrades;
+## a hub road used as a shortcut is flagged from a smaller size. Counts are
+## taken at these rush hours. A road is jammed when cars there manage under
+## this share of the speed limit (Highway Capacity Manual level of service
+## E or F) in at least this share of the counts; an alley is busy when it
+## has cars in this share of them; a hub road is a shortcut once this many
+## through cars are counted in a month. One job covers up to this many road
+## pieces. "Local traffic only" signs and a gate arm cost this much.
+const ENGINEER_MIN_POP := 10000
+const ENGINEER_CUT_MIN_POP := 2000
+const ENGINEER_COUNT_HOURS := [7, 8, 16, 17]
+const ENGINEER_SLOW_SHARE := 0.4
+const ENGINEER_JAMMED := 0.75
+const ENGINEER_ALLEY_BUSY := 0.75
+const ENGINEER_CUT_CARS := 4
+const ENGINEER_RUN := 12
+const ENGINEER_SIGN_COST := 6_000
+
 ## The future land use map (LandPlan). Land planned for homes is looked at
 ## before any other (as if this many metres nearer the middle of town), and
 ## a subdivision inside the plan opens each phase in this share of the time:
@@ -404,15 +432,18 @@ const CAPITAL_TERM_YEARS := 25
 const CAPITAL_AVG_YEARS := 3.0
 ## What a lender wants kept profit to cover: payments times this.
 const CAPITAL_COVERAGE := 1.25
-## Development within this far raises land prices (m; about a mile).
-const CAPITAL_URBAN_REACH := 1_600.0
+## Developers pay over farm value only within this far of the town's built
+## edge (m; about half a mile).
+const CAPITAL_FRINGE := 800.0
 ## The most development adds, as a multiple of farm value: ground at the
-## edge of a growing town sells for up to 3x farm value (transition land).
+## edge of a growing city sells for up to 3x farm value (transition land).
 const CAPITAL_URBAN_MAX := 2.0
-## Built lots (weighted by nearness) that bring about 63% of that premium.
-const CAPITAL_URBAN_SCALE := 150.0
-## Grid the built lots are counted on (m).
-const CAPITAL_GRID := 400.0
+## A town of about this many people carries about 63% of that premium; a
+## town of 1,500 carries under a tenth of it (rural Indiana: ground by a
+## small town sells near farm value).
+const CAPITAL_URBAN_POP := 20_000.0
+## Grid the town's built ground is mapped on (m).
+const CAPITAL_GRID := 200.0
 ## Land worth this many times farm value tempts an owner to sell out.
 const CAPITAL_SELL_RATIO := 2.0
 ## Rented ground: the landowner's share of what a field makes (Midwest

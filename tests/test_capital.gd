@@ -47,16 +47,41 @@ func _land_price() -> void:
 	var sim := CitySim.new()
 	var far := Vector3(0, 0, 0)
 	_check(Capital.land_price(sim, far) == Balance.CAPITAL_LAND_PER_ACRE, "open country sells at farm value")
+	# Brawn's town: 1,400 people with open land all around it.
 	_town(sim, Vector3(0, 0, 0), 400)
-	sim.tick_count += 1
-	var near := Capital.land_price(sim, Vector3(300, 0, 0))
-	var mile := Capital.land_price(sim, Vector3(1200, 0, 0))
-	var out := Capital.land_price(sim, Vector3(5000, 0, 0))
-	_check(near > mile and mile > out and out == Balance.CAPITAL_LAND_PER_ACRE,
-		"land sells for more the nearer town ($%d, $%d, $%d an acre)" % [near, mile, out])
+	sim.stats.population = 1_400
+	sim.tick_count += 24 * 60
+	var edge := Capital.land_price(sim, Vector3(400, 0, 0))
+	_check(edge < Balance.CAPITAL_LAND_PER_ACRE * 1.1 and not Capital.sell_out(sim, Vector3(400, 0, 0)),
+		"a small town with open land all round: ground at its edge sells near farm value ($%d an acre)" % edge)
+	# A city of 60,000 whose edge is all farmland.
+	var city := _farm_sim()
+	if city == null:
+		return
+	var f: Dictionary = city.farms.farms.values()[0]
+	_ring_with_fields(f)
+	_town(city, f.pos + Vector3(0, 0, 300), 400)
+	city.stats.population = 60_000
+	city.tick_count += 24 * 60
+	var near := Capital.land_price(city, f.pos + Vector3(0, 0, -50))
+	var off := Capital.land_price(city, f.pos + Vector3(0, 0, 1500))
+	var out := Capital.land_price(city, f.pos + Vector3(5000, 0, 0))
+	_check(near > off and off >= out and out == Balance.CAPITAL_LAND_PER_ACRE,
+		"a city hemmed in by farms: land sells for more the nearer its edge ($%d, $%d, $%d an acre)" % [near, off, out])
 	_check(near <= Balance.CAPITAL_LAND_PER_ACRE * (1.0 + Balance.CAPITAL_URBAN_MAX) + 1.0, "up to a set multiple of farm value")
-	_check(Capital.sell_out(sim, Vector3(200, 0, 0)) and not Capital.sell_out(sim, Vector3(5000, 0, 0)),
-		"only land the town has grown around tempts an owner to sell")
+	_check(Capital.sell_out(city, f.pos) and not Capital.sell_out(city, f.pos + Vector3(5000, 0, 0)),
+		"only land at a big town's edge tempts an owner to sell")
+	city.stats.population = 1_400
+	city.tick_count += 24 * 60
+	_check(not Capital.sell_out(city, f.pos), "the same farm by a small town doesn't")
+
+
+## Farm f's fields all round its farmyard, for a town at its back to sit in.
+func _ring_with_fields(f: Dictionary) -> void:
+	for x in range(-25, 26):
+		for y in range(-3, 26):
+			if not Vector2i(x, y) in f.cells and Vector2i(x, y) != Vector2i.ZERO:
+				f.cells.append(Vector2i(x, y))
 
 
 func _farm_pace() -> void:
@@ -108,14 +133,30 @@ func _sell_out() -> void:
 	var id: int = sim.farms.farms.keys()[0]
 	var f: Dictionary = sim.farms.farms[id]
 	f.barn = true
-	f.cells.append(Vector2i(1, 1))
+	_ring_with_fields(f)
 	_town(sim, f.pos + Vector3(0, 0, 300), 400)
-	sim.tick_count += 1
+	sim.stats.population = 60_000
+	sim.tick_count += 24 * 60
 	sim.farms.year = 3
 	sim._farm_sell_outs()
 	var sale: Dictionary = f.get("sale", {})
 	_check(not sale.is_empty(), "with the town grown around it, the family asks to sell the farm")
 	if sale.is_empty():
+		return
+	# The town shrinks before the player answers: the offer goes away.
+	sim.stats.population = 1_400
+	sim.tick_count += 24 * 60
+	sim._farm_sell_outs()
+	_check(f.get("sale", {}).is_empty() and sim.permits.state_of(int(sale.req)) == Permits.State.WITHDRAWN,
+		"when developers stop bidding, the family takes the farm off the market")
+	sim.stats.population = 60_000
+	sim.tick_count += Permits.SHELF_WAIT + 24 * 60
+	sim.farms.year += 1
+	_town(sim, f.pos + Vector3(0, 0, 300), 400)
+	sim._farm_sell_outs()
+	sale = f.get("sale", {})
+	if sale.is_empty():
+		_check(false, "and asks again when they do")
 		return
 	var req: Dictionary = sim.permits.requests[int(sale.req)]
 	_check(str(req.get("ask", "")) == "sell_farm" and str(req.why).contains("an acre"), "the bell says what developers offer (%s)" % req.why)
@@ -126,6 +167,7 @@ func _sell_out() -> void:
 	sim.farms.year = int(f.sale_year) + 1
 	sim.tick_count += Permits.DENY_WAIT + 1
 	_town(sim, f.pos + Vector3(0, 0, 300), 400)
+	sim.stats.population = 60_000
 	sim._farm_sell_outs()
 	sale = f.get("sale", {})
 	_check(not sale.is_empty(), "years later it asks again")

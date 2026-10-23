@@ -18,6 +18,12 @@ static var _footing_mat: Material
 ## Parts of a site taller than this (metres) are buildings that need a
 ## foundation; fences, bollards and pads are lower.
 const FOOTING_ABOVE := 2.4
+## The last share of a service's reach counted as its edge (yellow).
+const EDGE_SHARE := 0.25
+## Roads are coloured in pieces about this long, metres.
+const COVER_STEP := 40.0
+const COVER_COLOR := Color(0.3, 0.9, 0.45, 0.75)
+const EDGE_COLOR := Color(1.0, 0.82, 0.2, 0.8)
 
 
 func setup(s: CitySim) -> void:
@@ -27,7 +33,8 @@ func setup(s: CitySim) -> void:
 	sim.stats_changed.connect(_draw_coverage)
 	_cover_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_cover_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_cover_mat.albedo_color = Color(0.35, 0.85, 0.45, 0.45)
+	_cover_mat.vertex_color_use_as_albedo = true
+	_cover_mat.disable_fog = true
 	_cover_mat.no_depth_test = true
 	_coverage.material_override = _cover_mat
 	_coverage.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -55,8 +62,11 @@ func _sync() -> void:
 	_draw_coverage()
 
 
-## Roads within reach of the shown kind turn green; utilities light up every
-## road they flow along.
+## Roads within reach of the shown kind light up, like Cities: Skylines 2's
+## coverage: green well inside it, yellow in its last stretch
+## (EDGE_SHARE of the reach, where response times run long), nothing past
+## it. So a player sees where another station would fill a gap rather than
+## double up.
 func _draw_coverage() -> void:
 	_coverage.visible = show_kind != -1 and sim.services.reach_by_kind.has(show_kind)
 	if not _coverage.visible:
@@ -68,13 +78,38 @@ func _draw_coverage() -> void:
 	var any := false
 	for id in sim.network.segments:
 		var s: Dictionary = sim.network.segments[id]
-		if dist.get(s.a, INF) <= reach or dist.get(s.b, INF) <= reach:
-			var hw := RoadStyle.half_width(s.type)
-			RoadMesh.add_strip(st, sim.network.sample_segment(id), -hw, hw, 0.35)
+		var da: float = dist.get(s.a, INF)
+		var db: float = dist.get(s.b, INF)
+		if minf(da, db) > reach:
+			continue
+		# Wider than the road, so it reads from high up.
+		var hw := maxf(RoadStyle.half_width(s.type) * 1.6, 9.0)
+		# Coloured piece by piece: the distance along a long road grows from
+		# whichever end is nearer a station, so its far part can be the edge
+		# or past it.
+		var pts := Terrain.densify(sim.network.sample_segment(id), COVER_STEP)
+		var total := 0.0
+		for i in range(1, pts.size()):
+			total += pts[i - 1].distance_to(pts[i])
+		var run := 0.0
+		for i in range(1, pts.size()):
+			var piece := pts[i - 1].distance_to(pts[i])
+			var mid := run + piece * 0.5
+			run += piece
+			var d := minf(da + mid, db + total - mid)
+			if d > reach:
+				continue
+			st.set_color(edge_color(d, reach))
+			RoadMesh.add_strip(st, PackedVector3Array([pts[i - 1], pts[i]]), -hw, hw, 0.35)
 			any = true
 	_coverage.visible = any
 	if any:
 		_coverage.mesh = Terrain.drape(st.commit())
+
+
+## Green well within reach, yellow at its edge.
+static func edge_color(d: float, reach: float) -> Color:
+	return EDGE_COLOR if d > reach * (1.0 - EDGE_SHARE) else COVER_COLOR
 
 
 ## What a building looks like, so a change shows: its size, and a hospital's

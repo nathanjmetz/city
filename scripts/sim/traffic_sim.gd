@@ -413,7 +413,9 @@ func car_pose(car: Dictionary, ahead := 0.0) -> Array:
 		var s := smoothstep(0.0, 1.0, car.lc_t)
 		var lat: float = lerpf(car.lc_from, w.offs[car.lane], s) - w.offs[car.lane]
 		var slide: float = (w.offs[car.lane] - car.lc_from) * 6.0 * car.lc_t * (1.0 - car.lc_t) / LC_TIME
-		pose = [pose[0] + right * lat, (fwd + right * slide / maxf(car.v, 2.0)).normalized()]
+		# Angled in no more than a driver steers for a lane change (about
+		# 20 degrees), even edging over from a standstill.
+		pose = [pose[0] + right * lat, (fwd + right * clampf(slide / maxf(car.v, 2.0), -0.36, 0.36)).normalized()]
 	return pose
 
 
@@ -2056,21 +2058,28 @@ func _curb_at(line: Array, d: float) -> Dictionary:
 
 ## A new curb space for a full place, saved with it: the nearest one to the
 ## stop along the kerb that's clear of the curb spaces already marked there
-## (a 23 ft parallel stall, as painted downtown) and of driveway aprons
-## (no parking across a driveway: UVC 11-1003). Tried every half stall out
-## to about 40 m each way. If the kerb is full a truck double-parks out front
-## to unload, as delivery trucks do; otherwise -1.
-func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1, double_park := false) -> int:
+## (a 23 ft parallel stall, as painted downtown) and of driveway aprons (no
+## parking across a driveway: UVC 11-1003), tried every half stall out to
+## about 40 m each way. With none free that close the vehicle double-parks
+## out front, as delivery trucks do. -1 if the road has no kerb to park on.
+func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1) -> int:
 	var line := _curb_line(stop)
 	if line.is_empty():
 		return -1
+	# Curb spaces with a vehicle in them or on its way (a free one marked
+	# earlier is just kerb again).
 	var taken := []
 	for ref in _extra:
-		for e in _extra[ref]:
-			if e.get("kind", "") == "curb":
-				taken.append(e.pos)
+		var other := place(ref)
+		var list: Array = _extra[ref]
+		var first: int = other.get("spots", []).size() - list.size()
+		for k in list.size():
+			if list[k].get("kind", "") == "curb" and (first < 0 or other.taken[first + k] != -1):
+				taken.append(list[k].pos)
+	var w: Dictionary = line[0]
+	var tries := mini(int((w.s1 - w.s0 - 24.0) / (CURB_STALL * 0.5)) * 2 + 1, CURB_TRIES)
 	var aprons := _aprons(stop)
-	for k in CURB_TRIES:
+	for k in tries:
 		var off := ceilf(k * 0.5) * (1.0 if k % 2 == 1 else -1.0) * CURB_STALL * 0.5
 		var c := _curb_at(line, float(line[1]) + off)
 		var ok := true
@@ -2084,7 +2093,7 @@ func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1, double_park := false
 				break
 		if ok:
 			return _add_spot(pl, c, vid)
-	return _add_spot(pl, _curb_at(line, float(line[1])), vid) if double_park else -1
+	return _add_spot(pl, _curb_at(line, float(line[1])), vid)
 
 
 ## Where the driveways of the built lots on a stop's side of its street meet
@@ -2137,7 +2146,9 @@ func _claim_spots(pl: Dictionary) -> void:
 	for car in parked:
 		if car.at_place == pl.ref and car.spot >= 0 and car.spot < pl.taken.size():
 			pl.taken[car.spot] = car.id
-	for list in [cars, _waiting, flowing]:
+	# Where vehicles are headed, whether driving already or parked waiting
+	# for a gap to pull out with a spot held at the other end.
+	for list in [parked, cars, _waiting, flowing]:
 		for car in list:
 			if car.get("to_place", "") == pl.ref and car.get("to_spot", -1) >= 0 and car.to_spot < pl.taken.size():
 				pl.taken[car.to_spot] = car.id
@@ -2347,7 +2358,7 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 		if spot < 0:
 			# Nowhere to park: double-park at the curb out front, as delivery
 			# trucks do, or (for a car) take a curb space anyway.
-			spot = _new_curb(to_pl, to_pl.stop, car.id, truck)
+			spot = _new_curb(to_pl, to_pl.stop, car.id)
 			if spot < 0:
 				return false
 	car.merge(trip, true)
@@ -2487,6 +2498,12 @@ func _approach_pts(pl: Dictionary, spot: int, car_len: float) -> Array:
 		"stall":
 			pts.append(Vector2(cut, lay.aisle_z))
 			pts.append(Vector2(sp.x, lay.aisle_z))
+			# Square to the stall at its mouth, then straight in, clear of
+			# the cars either side.
+			var mouth := sp - Vector2(s.face.dot(SiteLayout.world_dir(lot, Vector2(1, 0))),
+				s.face.dot(SiteLayout.world_dir(lot, Vector2(0, 1)))) * (SiteLayout.STALL_DEPTH * 0.5 + 0.3)
+			if mouth.distance_to(Vector2(sp.x, lay.aisle_z)) > 1.0:
+				pts.append(mouth)
 		"bay":
 			pts.append(Vector2(cut, sp.y - 13.0))
 			pts.append(Vector2(sp.x, sp.y - 9.0))
@@ -2576,7 +2593,10 @@ func _out_path(car: Dictionary, pl: Dictionary, spot: int, w: Dictionary, lane: 
 	var swing := side if side.dot(entry - s.pos) < 0.0 else -side
 	var back: float = car.len + (7.0 if s.kind == "bay" else 1.5)
 	var mid: Vector3 = front - s.face * back
-	var rev_pts := _smooth([front, mid, mid + swing * 4.5])
+	# Straight back until the nose is out of the row, then turn: turning any
+	# sooner swings the front into the car parked alongside.
+	var clear: Vector3 = front - s.face * minf(SiteLayout.STALL_DEPTH, back - 1.0)
+	var rev_pts := _smooth([front, clear, mid, mid + swing * 4.5])
 	var fwd := [rev_pts[rev_pts.size() - 1], mid]
 	if not pl.drive.is_empty():
 		for i in range(1, pl.drive.size()):

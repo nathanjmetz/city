@@ -207,7 +207,7 @@ func site_problem(sim: CitySim, pos: Vector3, dir: Vector3, axis: Vector3) -> St
 			return "There are buildings in the way. Pick open ground."
 	for p in poly:
 		var q := Vector3(p.x, 0.0, p.y)
-		if sim.farms.covers(q) or sim.farms.field_at(q) != -1 or sim.industry.covers(q):
+		if Capital.owner_of(sim, q) != "":
 			return "That ground belongs to a farm or company."
 	for p in [pos] + Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y)):
 		if not sim.land_ok(p, 20.0):

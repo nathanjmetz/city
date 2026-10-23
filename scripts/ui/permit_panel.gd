@@ -15,7 +15,7 @@ const WIDTH := 340
 ## What each kind of hub is called on its card.
 const HUB_NAMES := {"rail": "Railroad", "bus": "Bus company", "family": "Family business", "developer": "Land developer",
 	"interlocal": "Shared service", "heritage": "Historical society", "owner": "Building owner", "farm": "Farm",
-	"industry": "Resource company", "subdivision": "Home builder"}
+	"industry": "Resource company", "subdivision": "Home builder", "engineer": "City engineer"}
 ## Leader requests (asks of the town) by kind (LeaderAsks, Heritage).
 const ASK_NAMES := {"abatement": "Company", "pave": "Farm", "signal": "Business", "festival": "Main Street",
 	"district": "Historical society", "demolish": "Building owner"}
@@ -383,7 +383,7 @@ func _sites(col: VBoxContainer, req: Dictionary, picked: bool) -> void:
 		col.add_child(tabs)
 		for k in opts.size():
 			var b := Button.new()
-			b.text = "Site " + str(opts[k].get("letter", k + 1))
+			b.text = ("Option " if req.hub == CityEngineer.HUB else "Site ") + str(opts[k].get("letter", k + 1))
 			b.toggle_mode = true
 			b.button_pressed = k == i
 			b.focus_mode = Control.FOCUS_NONE
@@ -391,6 +391,9 @@ func _sites(col: VBoxContainer, req: Dictionary, picked: bool) -> void:
 			b.tooltip_text = str(opts[k].get("name", ""))
 			b.pressed.connect(func(): _select(int(req.id), k))
 			tabs.add_child(b)
+	if req.hub == CityEngineer.HUB:
+		_fix(col, req, o, i, picked)
+		return
 	var e: Dictionary = o.get("effects", {})
 	col.add_child(_text("%s: %d homes in %d phases, about %s years" % [o.get("name", "Site"), int(o.homes), int(o.phases),
 		_num(float(e.get("years", 0)))], UiStyle.TEXT, 600, 12))
@@ -412,6 +415,25 @@ func _sites(col: VBoxContainer, req: Dictionary, picked: bool) -> void:
 	row.add_theme_constant_override("separation", 6)
 	col.add_child(row)
 	row.add_child(_action("Build site " + str(o.get("letter", i + 1)), true, func(): _answer("approve")))
+	row.add_child(_action("Say no", false, func(): _answer("deny")))
+
+
+## One of the city engineer's fixes: what it does and what the town pays.
+func _fix(col: VBoxContainer, req: Dictionary, o: Dictionary, i: int, picked: bool) -> void:
+	col.add_child(_text(str(o.get("name", "")), UiStyle.TEXT, 600, 12))
+	col.add_child(_fact("money", "The town pays $%s" % CitySim.money_text(int(o.cost)), UiStyle.TEXT, int(o.cost) > sim.economy.money))
+	for l in o.get("lines", []):
+		col.add_child(_fact("road", str(l), UiStyle.MUTED, false))
+	if req.state == Permits.State.OPEN:
+		var left := Permits.SHELVE_AFTER - (sim.tick_count - int(req.filed))
+		col.add_child(_text("Shelved in " + _days(left) + " if you don't answer", Brand.INK_FAINT, 500, 11))
+	if not picked:
+		return
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	col.add_child(row)
+	var label := "Do it" if req.options.size() == 1 else "Do " + str(o.get("letter", i + 1))
+	row.add_child(_action(label, true, func(): _answer("approve")))
 	row.add_child(_action("Say no", false, func(): _answer("deny")))
 
 
@@ -439,6 +461,9 @@ func effects(col: VBoxContainer, e: Dictionary) -> void:
 	if e.has("upkeep"):
 		col.add_child(_fact("road", "The town takes over the streets: $%s a year to keep up" % CitySim.money_text(int(e.upkeep)),
 			UiStyle.TEXT, false))
+	if e.has("repave"):
+		col.add_child(_fact("road", "In about %d years they wear out: $%s to resurface them, on the town" % [Balance.STREET_LIFE_YEARS,
+			CitySim.money_text(int(e.repave))], UiStyle.TEXT, false))
 	if e.has("taxes"):
 		col.add_child(_fact("money", "About $%s a year in property tax once it's built out" % CitySim.money_text(int(e.taxes)),
 			Brand.POSITIVE, false))

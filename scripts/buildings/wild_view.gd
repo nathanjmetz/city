@@ -134,8 +134,11 @@ func _draw_chunk(c: Vector2i, detail: bool) -> void:
 	for p in plants:
 		if mowed and Terrain.mow_weight(p.pos.x, p.pos.z) > 0.5:
 			continue
-		# Nor on the county roads out in the country (in town, lots win).
-		if CountyGrid.clears(p.pos.x + o.x, p.pos.z + o.y, CountyGrid.TREE_CLEAR) and Terrain.flat_weight(p.pos.x, p.pos.z) < 0.5:
+		# Nor on the county roads and state highways out in the country (in
+		# town, lots win).
+		if (CountyGrid.clears(p.pos.x + o.x, p.pos.z + o.y, CountyGrid.TREE_CLEAR)
+				or Highways.clears(p.pos.x + o.x, p.pos.z + o.y, Highways.TREE_CLEAR)) \
+				and Terrain.flat_weight(p.pos.x, p.pos.z) < 0.5:
 			continue
 		trees.append([placement(p), p.species, p.tint])
 	_chunks[c].set_trees("wild", trees)
