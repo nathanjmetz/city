@@ -81,6 +81,48 @@ static func pad_center(s: Dictionary, c: Vector2i) -> Vector3:
 	return Vector3(p.x, 0.0, p.z)
 
 
+## The pad a pad's track runs to: the neighbour nearer the main building.
+static func track_to(s: Dictionary, c: Vector2i) -> Vector2i:
+	var home := pad_center(s, Vector2i.ZERO)
+	var mine := pad_center(s, c)
+	var best := Vector2i.ZERO
+	var best_d := mine.distance_to(home)
+	for o in s.pads:
+		var p := pad_center(s, o)
+		var d := mine.distance_to(p)
+		if o != c and p.distance_to(home) < mine.distance_to(home) - 1.0 and d < best_d:
+			best_d = d
+			best = o
+	return best
+
+
+## A pad's track in world space. Well pads and pits get a straight lease
+## road. Logging roads bend: real ones (US Forest Service and Indiana DNR
+## forestry road guides) follow the contour and swing around wet ground
+## and big trees, so each one leaves its stand straight past the landing
+## and bows to one side on its way to the next.
+static func track(s: Dictionary, c: Vector2i) -> PackedVector3Array:
+	var a := pad_center(s, c)
+	var b := pad_center(s, track_to(s, c))
+	if s.kind != "forest":
+		return PackedVector3Array([a, b])
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([roundi(s.pos.x), roundi(s.pos.z), c])
+	var dir := (b - a).normalized()
+	var side := Vector3(-dir.z, 0.0, dir.x) * rng.randf_range(10.0, 20.0) * (1.0 if rng.randf() < 0.5 else -1.0)
+	var length := a.distance_to(b)
+	var p1 := a + dir * length * 0.3
+	var p2 := b - dir * length * 0.3 + side
+	var wiggle := rng.randf_range(1.0, 2.5)
+	var pts := PackedVector3Array()
+	for i in 17:
+		var t := i / 16.0
+		var u := 1.0 - t
+		var p := a * u * u * u + p1 * 3.0 * u * u * t + p2 * 3.0 * u * t * t + b * t * t * t
+		pts.append(p + side.normalized() * sin(t * TAU) * wiggle * sin(t * PI))
+	return pts
+
+
 static func pad_corners(s: Dictionary, c: Vector2i) -> PackedVector2Array:
 	var mid := pad_center(s, c)
 	# A producing well pad is about an acre of gravel (64 m square).
