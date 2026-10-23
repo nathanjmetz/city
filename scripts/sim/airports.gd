@@ -353,6 +353,28 @@ func blockers(sim: CitySim, a: Dictionary, t: int, corr: Array, skip := -1) -> D
 			if _hits_any(clear, Education.block_corners(c, blk.c)):
 				add.call("campuses")
 				break
+	# Rail yards and track, phone company sites and big factories: sampled
+	# every 25 m over the runway's clear area and the building area.
+	var others := {"rail": sim.rail, "telecom": sim.telecom, "big factories": sim.big}
+	for kind in others.keys():
+		var o = others[kind]
+		var hit := false
+		for poly in clear:
+			var r := Rect2(poly[0], Vector2.ZERO)
+			for p in poly:
+				r = r.expand(p)
+			var x := r.position.x
+			while x <= r.end.x and not hit:
+				var y := r.position.y
+				while y <= r.end.y and not hit:
+					var q := Vector2(x, y)
+					hit = Geometry2D.is_point_in_polygon(q, poly) and o.covers(Vector3(q.x, 0.0, q.y))
+					y += 25.0
+				x += 25.0
+			if hit:
+				break
+		if hit:
+			add.call(kind)
 	for id in sites:
 		if id == skip:
 			continue
@@ -422,7 +444,8 @@ static func describe_blockers(b: Dictionary) -> String:
 		"airports": "another airport", "water": "a river or lake", "steep ground": "ground too steep to grade",
 		"warehouses": "a warehouse", "landfills": "a landfill", "recycling centers": "a recycling center",
 		"cemeteries": "a cemetery", "post offices": "the post office",
-		"power plants": "a power plant", "banks": "a bank", "water works": "the water works", "parks": "a park", "campuses": "a campus",
+		"power plants": "a power plant", "banks": "a bank", "rail": "a railroad",
+		"telecom": "a phone company site", "big factories": "a big factory", "water works": "the water works", "parks": "a park", "campuses": "a campus",
 		"reserved land": "land reserved for something else"}
 	var parts := []
 	var keys := b.keys()
