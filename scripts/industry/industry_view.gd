@@ -66,6 +66,8 @@ func _site(id: int, s: Dictionary) -> Node3D:
 		RoadMesh.add_strip(st, Terrain.densify(PackedVector3Array(s.drive), 6.0), -Farms.DRIVE_WIDTH * 0.5, Farms.DRIVE_WIDTH * 0.5, 0.12)
 	# Each pad's track runs to the neighbour nearer the main building.
 	for c in s.pads:
+		if s.kind == "ore":
+			break  # the quarry's ramp is its track
 		var to: Vector2i = c
 		for d in [Vector2i(-signi(c.x), 0), Vector2i(0, -signi(c.y))]:
 			if d != Vector2i.ZERO and (c + d == Vector2i.ZERO or (c + d) in s.pads):
@@ -99,7 +101,17 @@ func _mine(id: int, s: Dictionary, root: Node3D) -> void:
 	var none := []
 	var hq := Transform3D(Basis.looking_at(s.dir, Vector3.UP), s.pos)
 	_put(merged, IndustryBuilder.build_hq(s.kind, id) + [none], hq, none)
+	if s.kind == "ore" and not s.pads.is_empty():
+		# One quarry over every pad the company has opened.
+		var inv := hq.affine_inverse()
+		var cells := []
+		for c in s.pads:
+			var l: Vector3 = inv * Industry.pad_center(s, c)
+			cells.append(Vector2(l.x, l.z))
+		_put(merged, IndustryBuilder.build_quarry(id, cells, Industry.PAD, Vector2.ZERO) + [none], hq, none)
 	for c in s.pads:
+		if s.kind == "ore":
+			continue
 		var at := Transform3D(hq.basis, Industry.pad_center(s, c))
 		_put(merged, IndustryBuilder.build_pad(s.kind, hash([id, c])) + [none], at, none)
 		if s.kind == "oil":

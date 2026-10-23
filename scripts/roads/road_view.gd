@@ -24,6 +24,7 @@ var _mats := {
 	"yellow": Surfaces.paint(RoadStyle.MARKING_YELLOW),
 	"white": Surfaces.paint(RoadStyle.MARKING_WHITE),
 	"gravel": Surfaces.gravel(),
+	"bus": Surfaces.paint(Color(0.56, 0.17, 0.14)),  # red transit lane
 	"pole": RoadStyle.material(Color(0.33, 0.27, 0.21)),
 	"wire": RoadStyle.material(Color(0.12, 0.12, 0.12)),
 	"concrete": Surfaces.concrete(Color(0.66, 0.65, 0.62)),

@@ -53,7 +53,13 @@ func _init() -> void:
 	for i in 30:
 		sim.tick()
 		copy.tick()
-	_check(JSON.stringify(copy.to_dict()) == JSON.stringify(sim.to_dict()), "copies stay in sync")
+	var da := copy.to_dict()
+	var db := sim.to_dict()
+	var diff := []
+	for k in da:
+		if JSON.stringify(da[k]) != JSON.stringify(db.get(k)):
+			diff.append(k)
+	_check(diff.is_empty(), "copies stay in sync %s" % str(diff))
 	# Merge two neighbours, then split them again (business agency).
 	var face := LotPlanner.block_face(sim, built)
 	_check(face.size() >= 2, "block face lists the street's lots (%d)" % face.size())

@@ -42,24 +42,20 @@ func _spawn(id: int, w: Dictionary) -> Node3D:
 	var to_curb := Warehouses.SETBACK + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
 	var seed := int(w.pos.x * 73.0) ^ int(w.pos.z * 151.0) ^ (id << 16)
 	var built := WarehouseBuilder.build_warehouse(w, seed, to_curb)
-	var building := MeshInstance3D.new()
-	building.mesh = built[0]
-	root.add_child(building)
-	var ground := MeshInstance3D.new()
-	ground.mesh = Terrain.drape_local(built[1], Transform3D(root.basis, root.position))
-	ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(ground)
-	var frame := Transform3D(root.basis, root.position)
-	var trees := []
-	for t in built[2]:
-		var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
-		var at: Transform3D = frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])
-		at.origin.y = Terrain.ground_y(at.origin.x, at.origin.z)
-		trees.append([at, t[1], t[2]])
+	built[1] = Terrain.drape_local(built[1], Transform3D(root.basis, root.position))
 	var key := "wh:%d" % id
-	_trees.set_trees(key, trees)
 	root.set_meta("tree_key", key)
-	root.scale = Vector3(1.0, 0.01, 1.0)
-	create_tween().tween_property(root, "scale", Vector3.ONE, 0.45) \
-		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	# Concrete tilt-up, stage by stage (ConstructionSite); trees go in at the end.
+	ConstructionSite.add_to(root, built, "warehouse", func(): return sim.construction.state(key, sim.tick_count),
+		func():
+			if not is_instance_valid(root):
+				return
+			var frame := Transform3D(root.basis, root.position)
+			var trees := []
+			for t in built[2]:
+				var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
+				var at: Transform3D = frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])
+				at.origin.y = Terrain.ground_y(at.origin.x, at.origin.z)
+				trees.append([at, t[1], t[2]])
+			_trees.set_trees(key, trees))
 	return root
