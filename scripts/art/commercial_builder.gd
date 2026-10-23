@@ -38,16 +38,24 @@ static func build_shop(seed: int, to_curb: float, lot := {}, spec := {}) -> Arra
 	b.sign_spec = spec
 	b._fit(lot)
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var kind: String = force_shop if force_shop != "" else b._shop_kind(lot)
-	match kind:
-		"main_street": b._main_street(to_curb)
-		"strip": b._strip_center(to_curb)
-		"gas": b._gas_station(to_curb)
-		"diner": b._diner(to_curb)
-		"bank": b._bank(to_curb)
-		"church": b._church(to_curb)
-		_: b._retail(to_curb)
+	b._shop(to_curb, lot)
 	return [b._commit_house(), b._commit_flat(), b.trees, b.labels]
+
+
+## One shop of a kind that fits the lot and the street's era. Main Street
+## blocks are left out where the street has its own mixed-use type.
+func _shop(to_curb: float, lot: Dictionary, main_street := true) -> void:
+	var kind: String = force_shop if force_shop != "" else _shop_kind(lot)
+	if kind == "main_street" and not main_street and force_shop == "":
+		kind = "retail"
+	match kind:
+		"main_street": _main_street(to_curb)
+		"strip": _strip_center(to_curb)
+		"gas": _gas_station(to_curb)
+		"diner": _diner(to_curb)
+		"bank": _bank(to_curb)
+		"church": _church(to_curb)
+		_: _retail(to_curb)
 
 
 ## Which kind of shop fits this lot: strip centers need a wide lot, gas
@@ -61,7 +69,7 @@ func _shop_kind(lot: Dictionary) -> String:
 		picks += ["main_street", "retail"]
 	if w >= 26.0 and depth >= 36.0:
 		picks += ["strip", "strip", "strip"]
-	if lot.get("corner", false) and w >= 22.0 and depth >= 36.0:
+	if lot.get("corner", false) and w >= 20.0 and depth >= 30.0:
 		picks += ["gas", "gas", "gas"]
 	elif w >= 24.0 and depth >= 36.0:
 		picks += ["gas"]
