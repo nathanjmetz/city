@@ -246,6 +246,7 @@ func _ready() -> void:
 	hud.info_view = info_view
 	hud.service_view = service_view
 	hud.bus_view = bus_view
+	hud.rail_view = rail_view
 	hud.select_tool = select_tool
 	hud.lot_alerts = lot_alerts
 	add_child(hud)
