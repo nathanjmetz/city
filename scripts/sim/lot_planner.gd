@@ -72,6 +72,25 @@ static var _kmax := -1.0  # the widest road's half right-of-way (see kmax)
 var _piece_ids := []  # _pieces' keys in order, rebuilt when roads change
 ## Areas where roads changed on the last plan (for saved parcels).
 var changed_boxes: Array = []
+var _pending := {}  # "seg:side" -> changed road boxes its survey hasn't caught up with
+var _zone_dirty: Array = []  # this plan's zoning changes
+var _warm_list := []  # sides warm() will cut ahead of the next plan()
+var _warm_rev := -1
+var _warm_parcels := {}
+var _warm_next := []
+## Work done this warm() call, in steps of about a quarter millisecond: 1 a
+## street side looked at or survey line redone, WORK_STEP a side cut again.
+var _work := 0
+## Bumped whenever update() finds a road changed.
+var _net_rev := 0
+## Parcels warm() checked against the changed roads: key -> [lot, result],
+## good while _reval_rev == _net_rev.
+var _reval := {}
+var _reval_rev := -1
+var _reval_todo := []
+var _reval_n := 0
+## Each parcel's last outline and entry, by lot key (see _parcels).
+var _by_key := {}
 
 
 ## Returns an Array of lot Dictionaries:
@@ -98,12 +117,14 @@ func plan(network: RoadNetwork, zones: ZoneMap, frozen: Dictionary) -> Array:
 	for h in now:
 		_last_parcels[h] = now[h][0]
 	_dirty.append_array(zones.dirty)
+	_zone_dirty = zones.dirty.duplicate()
 	zones.dirty.clear()
 	if _grown.size() > parcels.size() * 2 + 64:
 		var keep := {}
 		for p in parcels:
 			keep[p[2]] = _grown[p[2]]
 		_grown = keep
+	var index := _index(parcels)
 	var all := []
 	var corners := []
 	var ids := network.segments.keys()
@@ -115,16 +136,25 @@ func plan(network: RoadNetwork, zones: ZoneMap, frozen: Dictionary) -> Array:
 			var s := _side(network, id, side)
 			if s.is_empty():
 				continue
+			_settle(s)
 			var lots_here: Array = s.cut
 			if _fresh or s.cut_sig == 0 or _near_dirty(s):
-				lots_here = _plan_side(s, zones, parcels)
+				# Zoning changed nearby: a run's exact end can move between
+				# survey lines, so the plat as if unbuilt is cut again too.
+				if _near(s, _zone_dirty) and s.get("free_zrev", -1) != zones.revision:
+					s.free_sig = 0
+				lots_here = _plan_side(s, zones, index)
 			for cached in lots_here:
 				var lot: Dictionary = cached.duplicate()
 				all.append(lot)
 				if lot.has("corner_by"):
 					corners.append(lot)
 	_dirty.clear()
+	_zone_dirty = []
 	_fresh = false
+	_warm_list.clear()
+	_warm_next = []
+	_warm_rev = -1  # every side is planned now
 	_join_corners(all, corners)
 	var out := []
 	for lot in all:
@@ -144,12 +174,53 @@ func _parcels(frozen: Dictionary) -> Array:
 		var c: PackedVector2Array = frozen[key].corners
 		if c.size() < 3:
 			continue
+		# The same outline as last time (not just an equal one): no rehash.
+		var kept: Array = _by_key.get(key, [])
+		if not kept.is_empty() and is_same(kept[0], c):
+			parcels.append(kept[1])
+			continue
 		var h := hash([key, c])
 		if not _grown.has(h):
 			var grown := Geometry2D.offset_polygon(c, 0.3)
 			_grown[h] = [_box(c).grow(0.5), grown[0] if not grown.is_empty() else c, h, c, key]
+		_by_key[key] = [c, _grown[h]]
 		parcels.append(_grown[h])
+	if _by_key.size() > parcels.size() * 2 + 64:
+		var keep := {}
+		for p in parcels:
+			keep[p[4]] = _by_key[p[4]]
+		_by_key = keep
 	return parcels
+
+
+## The parcels bucketed by PARCEL_CELL squares, so a street side looks only
+## at the parcels near it.
+static func _index(parcels: Array) -> Dictionary:
+	var cells := {}
+	for i in parcels.size():
+		var r: Rect2 = parcels[i][0]
+		for x in range(floori(r.position.x / PARCEL_CELL), floori(r.end.x / PARCEL_CELL) + 1):
+			for y in range(floori(r.position.y / PARCEL_CELL), floori(r.end.y / PARCEL_CELL) + 1):
+				var c := Vector2i(x, y)
+				if not cells.has(c):
+					cells[c] = []
+				cells[c].append(i)
+	return {"list": parcels, "cells": cells, "sig": hash(parcels.map(func(p): return p[2]))}
+
+
+## The parcels whose box meets `area`, in key order.
+static func _parcels_in(index: Dictionary, area: Rect2) -> Array:
+	var list: Array = index.list
+	var cells: Dictionary = index.cells
+	var seen := {}
+	for x in range(floori(area.position.x / PARCEL_CELL), floori(area.end.x / PARCEL_CELL) + 1):
+		for y in range(floori(area.position.y / PARCEL_CELL), floori(area.end.y / PARCEL_CELL) + 1):
+			for i in cells.get(Vector2i(x, y), []):
+				if not seen.has(i) and area.intersects(list[i][0]):
+					seen[i] = true
+	var picks := seen.keys()
+	picks.sort()
+	return picks.map(func(i): return list[i])
 
 
 ## Every planned street side's lots (before corners are joined), for a save:
@@ -173,7 +244,11 @@ func cuts_to_save(zones: ZoneMap) -> Dictionary:
 	var dirty := []
 	for r in zones.dirty:
 		dirty.append([r.position.x, r.position.y, r.size.x, r.size.y])
-	return {"cuts": cuts, "known": known, "zones_dirty": dirty}
+	var pending := {}
+	for key in _pending:
+		pending[key] = (_pending[key] as Array).map(func(r): return [r.position.x, r.position.y, r.size.x, r.size.y])
+	var boxes := changed_boxes.map(func(r): return [r.position.x, r.position.y, r.size.x, r.size.y])
+	return {"cuts": cuts, "known": known, "zones_dirty": dirty, "pending": pending, "changed": boxes}
 
 
 ## Takes back a save's planned sides (see cuts_to_save) for a town whose
@@ -193,6 +268,12 @@ func restore(network: RoadNetwork, zones: ZoneMap, saved: Dictionary) -> void:
 	_last_parcels.clear()
 	for k in saved.get("known", []):
 		_last_parcels[int(k[0])] = Rect2(float(k[1]), float(k[2]), float(k[3]), float(k[4]))
+	_pending.clear()
+	var pend: Dictionary = saved.get("pending", {})
+	for key in pend:
+		_pending[key] = (pend[key] as Array).map(func(r): return Rect2(float(r[0]), float(r[1]), float(r[2]), float(r[3])))
+	changed_boxes = (saved.get("changed", []) as Array).map(
+		func(r): return Rect2(float(r[0]), float(r[1]), float(r[2]), float(r[3])))
 	_dirty.clear()
 	for r in saved.get("zones_dirty", []):
 		zones.dirty.append(Rect2(float(r[0]), float(r[1]), float(r[2]), float(r[3])))
@@ -241,6 +322,7 @@ func side_survey(network: RoadNetwork, id: int, side: int) -> Dictionary:
 	if not network.segments.has(id) or not _lot_road(network, id):
 		return {}
 	var s := _side(network, id, side)
+	_settle(s)
 	_fresh_claims(s)
 	_survey(s)
 	return s
@@ -248,7 +330,7 @@ func side_survey(network: RoadNetwork, id: int, side: int) -> Dictionary:
 
 ## Brings the survey up to date with the roads. Call before plan().
 func update(network: RoadNetwork) -> void:
-	changed_boxes.clear()
+	var boxes := []
 	var seen := {}
 	for id in network.segments:
 		seen[id] = true
@@ -257,7 +339,7 @@ func update(network: RoadNetwork) -> void:
 		if _sig.get(id, "") == sig:
 			continue
 		if _seg_box.has(id):
-			changed_boxes.append(_seg_box[id])
+			boxes.append(_seg_box[id])
 		_sig[id] = sig
 		var pts := _sample(network, id)
 		var half := RoadStyle.right_of_way_half(network.segments[id].type)
@@ -270,15 +352,17 @@ func update(network: RoadNetwork) -> void:
 			box = box.expand(b)
 		_pieces[id] = pieces
 		_seg_box[id] = box
-		changed_boxes.append(box)
+		boxes.append(box)
 	for id in _sig.keys():
 		if not seen.has(id):
-			changed_boxes.append(_seg_box[id])
+			boxes.append(_seg_box[id])
 			_sig.erase(id)
 			_pieces.erase(id)
 			_seg_box.erase(id)
-	if changed_boxes.is_empty():
+	if boxes.is_empty():
 		return
+	_net_rev += 1
+	changed_boxes.append_array(boxes)
 	_piece_ids = []
 	# Sides whose survey could reach a changed road look again at the lines
 	# that road could touch; the rest of their survey (and their lots, if no
@@ -288,14 +372,127 @@ func update(network: RoadNetwork) -> void:
 		var s: Dictionary = _sides[key]
 		if not network.segments.has(s.seg) or _sig.get(s.seg, "") != s.sig:
 			_sides.erase(key)
+			_pending.erase(key)
 			continue
 		var box: Rect2 = (s.box as Rect2).grow(reach)
 		var hits := []
-		for b in changed_boxes:
+		for b in boxes:
 			if box.intersects(b):
 				hits.append(b)
 		if not hits.is_empty():
-			_resurvey(s, hits)
+			# Surveyed again when next used, or a little each tick (warm).
+			if not _pending.has(key):
+				_pending[key] = []
+			_pending[key].append_array(hits)
+
+
+## Roads changed since parcels were last checked against them (see
+## revalidate): call once every parcel has been.
+func revalidated() -> void:
+	changed_boxes.clear()
+	_reval.clear()
+	_reval_todo.clear()
+
+
+## Brings a side's survey up to date with roads changed since it was made.
+func _settle(s: Dictionary) -> void:
+	var key := "%d:%d" % [s.seg, s.side]
+	if _pending.has(key):
+		var hits: Array = _pending[key]
+		_pending.erase(key)
+		_work += 1
+		_resurvey(s, hits)
+
+
+## Does up to `budget` sides' worth of the survey work a road change left,
+## ahead of the next plan(): the sides it touched, then new streets' zoned
+## sides. Only caches: plan() gives the same lots with or without it, so a
+## big town can spread an edit's work over ticks.
+func warm(network: RoadNetwork, zones: ZoneMap, built: Callable, blocked: Callable, budget: int) -> void:
+	update(network)
+	_work = 0
+	var keys := _pending.keys()
+	keys.sort()
+	for key in keys:
+		if _work >= budget:
+			return
+		if _sides.has(key):
+			_settle(_sides[key])
+		else:
+			_pending.erase(key)
+	# Then the parcels against the changed roads, as the catch-up will check
+	# them (it takes these results while the roads stay as they are).
+	if not changed_boxes.is_empty() and _reval_rev != _net_rev:
+		_reval_rev = _net_rev
+		_reval.clear()
+		_reval_todo = (built.call() as Dictionary).values()
+		_warm_list.clear()
+		_warm_rev = -1
+	while _work < budget and not _reval_todo.is_empty():
+		var lot: Dictionary = _reval_todo.pop_back()
+		var moved: bool = not network.segments.has(lot.seg) or _sig.get(lot.seg, "") != lot.sig
+		_reval[lot.key] = [lot, _revalidate(network, lot, moved)]
+		_work += 1 if moved else 0
+		_reval_n += 1
+		if _reval_n % REVAL_STEP == 0:
+			_work += 1
+	if _work >= budget:
+		return
+	# Then the street sides plan() will cut again, in order, with the
+	# parcels as they will stand (the town doesn't grow while it catches up).
+	# Worked out over two ticks: the parcels, then the sides near changes.
+	var rev := zones.revision + network.segments.size() * 7919 + _net_rev * 104729
+	if _warm_list.is_empty() and _warm_rev != rev:
+		if _warm_next.is_empty() or _warm_next[0] != rev:
+			var frozen := {}
+			var lots: Dictionary = built.call()
+			for key in lots:
+				var lot := revalidate(network, lots[key])
+				if is_same(lot, lots[key]) or not lot.is_empty() and not blocked.call(lot):
+					frozen[key] = lot
+			_warm_next = [rev, _parcels(frozen)]
+			return
+		var parcels: Array = _warm_next[1]
+		_warm_next = []
+		_warm_rev = rev
+		_warm_parcels = _index(parcels)
+		# The ground plan() will look at again: zoning changes, and parcels
+		# that came, went or changed since it last ran.
+		var near := _dirty + zones.dirty
+		var now := {}
+		for p in parcels:
+			now[p[2]] = true
+			if not _last_parcels.has(p[2]):
+				near.append((p[0] as Rect2).grow(1.0))
+		for h in _last_parcels:
+			if not now.has(h):
+				near.append((_last_parcels[h] as Rect2).grow(1.0))
+		var ids := network.segments.keys()
+		ids.sort()
+		for id in ids:
+			if _lot_road(network, id):
+				for side in [-1, 1]:
+					var s := _side(network, id, side)
+					if s.cut_sig == 0 or _near(s, near):
+						_warm_list.append(s)
+		return
+	while _work < budget and not _warm_list.is_empty():
+		var s: Dictionary = _warm_list.pop_front()
+		if not _sides.has("%d:%d" % [s.seg, s.side]):
+			continue
+		_settle(s)
+		if _near(s, zones.dirty) and s.get("free_zrev", -1) != zones.revision:
+			s.free_sig = 0
+			s.free_zrev = zones.revision
+		_plan_side(s, zones, _warm_parcels)
+
+
+## Whether any of a side's frontage is zoned.
+static func _zoned(s: Dictionary, zones: ZoneMap) -> bool:
+	for f in s.fronts:
+		if zones.zone_at(_v3((f[1] as Vector2) + (f[2] as Vector2) * ZONE_PROBE)) != 0:
+			return true
+	return false
 
 
 ## Redoes the survey lines a changed road (its centre line within `hits`)
@@ -319,6 +516,7 @@ func _resurvey(s: Dictionary, hits: Array) -> void:
 			if _rect_dist(b, r[1]) <= near:
 				_fresh_claims(s)
 				var again := _ray(s, r[0])
+				_work += 1
 				if again != r:
 					raw[i] = again
 					moved = true
@@ -542,32 +740,38 @@ static func _rect_dist(r: Rect2, p: Vector2) -> float:
 
 ## Cuts one street side's zoned frontage into lots.
 func _near_dirty(s: Dictionary) -> bool:
+	return _near(s, _dirty)
+
+
+static func _near(s: Dictionary, rects: Array) -> bool:
 	var area := (s.box as Rect2).grow(REACH + 10.0)
-	for r in _dirty:
+	for r in rects:
 		if area.intersects(r):
 			return true
 	return false
 
 
-func _plan_side(s: Dictionary, zones: ZoneMap, all_parcels: Array) -> Array:
+func _plan_side(s: Dictionary, zones: ZoneMap, index: Dictionary) -> Array:
+	var mid: Vector2 = s.fronts[s.fronts.size() / 2][1]
+	var rich: float = wealth.call(mid) if wealth.is_valid() else 0.5
+	# Nothing it depends on changed since it was last cut (often by warm()).
+	var key := [zones.revision, index.sig, rich, s.cut_sig]
+	_work += 1
+	if s.get("in_key", []) == key and is_same(s.get("in_rays"), s.rays):
+		return s.cut
+
 	# Zones first: most street sides aren't zoned and need no survey.
-	var any := false
-	for f in s.fronts:
-		if zones.zone_at(_v3((f[1] as Vector2) + (f[2] as Vector2) * ZONE_PROBE)) != 0:
-			any = true
-			break
-	if not any:
+	if not _zoned(s, zones):
 		s.cut_sig = 1
 		s.cut = []
+		_inputs(s, zones, index, rich)
 		return []
 	_fresh_claims(s)
 	var area := (s.box as Rect2).grow(REACH + 10.0)
-	var parcels := []
-	var near_keys := []
-	for p in all_parcels:
-		if area.intersects(p[0]):
-			parcels.append(p)
-			near_keys.append(p[2])
+	var parcels := _parcels_in(index, area)
+	var near_keys := parcels.map(func(p): return p[2])
+	if s.rays.is_empty():
+		_work += s.fronts.size()
 	var rays := _survey(s)
 	# What each survey line is: its zone, or 0 when it can't hold a lot.
 	var kinds := []
@@ -578,16 +782,16 @@ func _plan_side(s: Dictionary, zones: ZoneMap, all_parcels: Array) -> Array:
 			k = zones.zone_at(_v3((r[1] as Vector2) + (r[2] as Vector2) * ZONE_PROBE))
 		free_kinds.append(k)
 		kinds.append(0 if k != 0 and _in_parcel(r[1], parcels) else k)
-	var mid: Vector2 = s.fronts[s.fronts.size() / 2][1]
-	var rich: float = wealth.call(mid) if wealth.is_valid() else 0.5
 	var sig := hash([kinds, near_keys, rich])
 	if sig == s.cut_sig:
+		_inputs(s, zones, index, rich)
 		return s.cut
 	# The plat as if nothing were built yet. Where the parcels are lots of
 	# that same plat (the usual case: homes went up on the lots offered),
 	# the rest of it stands as it is, so a city and a reloaded copy of it
 	# agree on every empty lot whatever order things were built in.
-	var free_sig := hash([free_kinds, rich, zones.revision])
+	_work += WORK_STEP
+	var free_sig := hash([free_kinds, rich])
 	if free_sig != s.get("free_sig", 0):
 		s.free_sig = free_sig
 		s.free = _cut_side(s, zones, rays, free_kinds, [])
@@ -597,7 +801,14 @@ func _plan_side(s: Dictionary, zones: ZoneMap, all_parcels: Array) -> Array:
 		out = _clear_of_parcels(_cut_side(s, zones, rays, kinds, parcels), parcels)
 	s.cut_sig = sig
 	s.cut = out
+	_inputs(s, zones, index, rich)
 	return out
+
+
+## Notes what a side's cut was made from, so an unchanged side is skipped.
+static func _inputs(s: Dictionary, zones: ZoneMap, index: Dictionary, rich: float) -> void:
+	s.in_key = [zones.revision, index.sig, rich, s.cut_sig]
+	s.in_rays = s.rays
 
 
 ## The free plat's lots that aren't parcels, or [null] if a parcel cuts into
@@ -892,6 +1103,9 @@ static func _lot(s: Dictionary, key: String, poly: PackedVector2Array, mid: Arra
 ## A lot's measures on a fine binary grid (about a micron), so they come
 ## back exactly from a save even though saves print numbers to 15-16 digits:
 ## a reloaded copy of the city then matches the city itself bit for bit.
+const PARCEL_CELL := 64.0
+const WORK_STEP := 6
+const REVAL_STEP := 24
 const SNAP := 1.0 / 1048576.0
 const SNAPPED := ["pad", "at_frac", "to_curb", "width", "depth", "area"]
 
@@ -987,10 +1201,22 @@ static func max_lot(zone: int, road_type: int) -> Array:
 ## or {} when a road now runs through it.
 func revalidate(network: RoadNetwork, lot: Dictionary) -> Dictionary:
 	var moved: bool = not network.segments.has(lot.seg) or _sig.get(lot.seg, "") != lot.sig
+	if not moved and changed_boxes.is_empty():
+		return lot
+	# Checked already while the town caught up (warm) against these roads.
+	if _reval_rev == _net_rev:
+		var done = _reval.get(lot.key)
+		if done != null and is_same(done[0], lot):
+			return done[1]
+	return _revalidate(network, lot, moved)
+
+
+func _revalidate(network: RoadNetwork, lot: Dictionary, moved: bool) -> Dictionary:
 	var box := _box(lot.corners)
 	var touched := moved
+	var reach := box.grow(30.0)
 	for b in changed_boxes:
-		touched = touched or box.grow(30.0).intersects(b)
+		touched = touched or reach.intersects(b)
 	if not touched:
 		return lot
 	if not moved:

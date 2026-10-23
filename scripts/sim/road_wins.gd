@@ -20,6 +20,9 @@ const MIN_FIELD_SHARE := 0.4
 ## Pieces smaller than this (square metres) are slivers and go back to grass.
 const MIN_PIECE := 150.0
 
+## Road outlines already worked out: "id|extra" -> [the road's shape, outline].
+static var _kept := {}
+
 
 ## The ground every road takes: one outline per segment, round at the ends
 ## so junctions are covered, widened by `extra` metres each side. Each
@@ -29,6 +32,15 @@ static func corridors(net: RoadNetwork, extra: float) -> Array:
 	var ids := net.segments.keys()
 	ids.sort()
 	for id in ids:
+		# Each road's outline is kept until the road changes: a big town
+		# has thousands, and only the edited ones need working out again.
+		var c := net.curve_of(id)
+		var sig := "%s|%s|%s|%d|%s" % [c[0], c[1], c[2], net.segments[id].type, extra]
+		var key := "%d|%s" % [id, extra]
+		var kept: Array = _kept.get(key, [])
+		if not kept.is_empty() and kept[0] == sig:
+			out.append(kept[1])
+			continue
 		var half := RoadStyle.right_of_way_half(net.segments[id].type) + extra
 		var line := PackedVector2Array()
 		for p in net.sample_segment(id):
@@ -37,7 +49,9 @@ static func corridors(net: RoadNetwork, extra: float) -> Array:
 		var box := Rect2(line[0], Vector2.ZERO)
 		for p in line:
 			box = box.expand(p)
-		out.append({"bounds": box.grow(half), "polys": polys})
+		var corr := {"bounds": box.grow(half), "polys": polys}
+		_kept[key] = [sig, corr]
+		out.append(corr)
 	return out
 
 
