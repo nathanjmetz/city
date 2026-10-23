@@ -17,6 +17,7 @@ func _init() -> void:
 	_check(VehicleTypes.for_purpose("fire", rng) == "fire_engine", "fire call sends a fire engine")
 	_check(VehicleTypes.for_purpose("milk", rng) == "tanker", "milk goes by tanker")
 	_check(VehicleTypes.for_purpose("livestock", rng) == "livestock_truck", "cattle go by livestock trailer")
+	_check(VehicleTypes.spec("buggy").top_speed < 6.0, "a buggy goes at a horse's trot")
 	var campers := 0
 	for i in 400:
 		if VehicleTypes.for_purpose("visitor", rng) in ["rv", "motorhome", "pickup_camper"]:

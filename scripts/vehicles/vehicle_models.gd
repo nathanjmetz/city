@@ -67,7 +67,7 @@ const VARIANTS := {
 const AXLE := {
 	"sedan": 3.9, "hatchback": 3.4, "crossover": 3.6, "suv": 4.2, "pickup": 4.7, "work_pickup": 4.8,
 	"minivan": 4.0, "sports": 3.8, "motorcycle": 1.8, "van": 4.4, "delivery_van": 5.3,
-	"box_truck": 7.9, "dump_truck": 6.7, "tow_truck": 5.2, "rv": 5.9, "motorhome": 7.1, "pickup_camper": 4.8, "bucket_truck": 5.6, "school_bus": 8.9, "city_bus": 9.2,
+	"box_truck": 7.9, "dump_truck": 6.7, "tow_truck": 5.2, "buggy": 4.9, "rv": 5.9, "motorhome": 7.1, "pickup_camper": 4.8, "bucket_truck": 5.6, "school_bus": 8.9, "city_bus": 9.2,
 	"garbage_truck": 7.3, "fire_engine": 7.4, "police": 3.9, "taxi": 3.9, "ambulance": 5.1, "tractor": 4.2,
 	"combine": 7.0, "tractor_sleeper": 6.4, "mail_truck": 4.3, "concrete_mixer": 7.0, "sedan_compact": 3.6, "sedan_fullsize": 4.0,
 	"pickup_ext": 4.6, "pickup_mid": 4.4, "suv_mid": 3.9, "wagon": 3.7, "ev_crossover": 3.8, "hatch_box": 3.4, "van_low": 4.4,
@@ -1031,6 +1031,67 @@ func _motorcycle() -> void:  # cruiser (Harley-Davidson Street Glide) with rider
 	_box(Vector3(0, 1.55, 1.15), Vector3(0.24, 0.26, 0.26), Color(0.06, 0.06, 0.07, 0.2))
 	_box(Vector3(0, 0.95, 0.27), Vector3(0.16, 0.1, 0.06), HEAD, true)
 	_box(Vector3(0, 0.85, 2.15), Vector3(0.14, 0.06, 0.04), TAIL, true)
+
+
+## An Amish black top buggy (Daviess County, Indiana) behind a bay
+## Standardbred: tall thin wheels, shafts to the harness, the driver under
+## the top, and the orange slow-moving-vehicle triangle on the back.
+func _buggy() -> void:
+	var bay := Color(0.48, 0.29, 0.15, 0.4)
+	var dark := Color(0.08, 0.06, 0.05, 0.4)
+	# Horse: barrel, chest, neck and head, legs mid-trot, tail.
+	_loft([
+		[0.75, 1.0, 1.35, 1.55, 0.2, 0.28, 0.18],
+		[1.1, 0.95, 1.35, 1.6, 0.26, 0.32, 0.22],
+		[2.0, 0.95, 1.35, 1.6, 0.27, 0.33, 0.23],
+		[2.4, 1.05, 1.35, 1.55, 0.22, 0.28, 0.18],
+	], [_edges(bay, bay)], bay, bay)
+	_beam(Vector3(0, 1.35, 0.95), Vector3(0, 1.95, 0.55), 0.24, bay)
+	_beam(Vector3(0, 1.95, 0.6), Vector3(0, 1.75, 0.08), 0.18, bay)
+	_beam(Vector3(0, 1.62, 1.0), Vector3(0, 2.12, 0.66), 0.07, dark)  # mane
+	var legs := [[0.95, 0.15], [1.05, -0.2], [2.15, -0.15], [2.25, 0.2]]
+	for i in 4:
+		var s := -1.0 if i % 2 == 0 else 1.0
+		var z: float = legs[i][0]
+		_beam(Vector3(s * 0.15, 1.0, z), Vector3(s * 0.15, 0.0, z + legs[i][1]), 0.1, dark if _lo else bay)
+	_beam(Vector3(0, 1.45, 2.4), Vector3(0, 0.75, 2.65), 0.1, dark)
+	# Shafts and harness.
+	for s in [-1.0, 1.0]:
+		_beam(Vector3(s * 0.42, 1.15, 0.9), Vector3(s * 0.5, 0.95, 3.4), 0.05, TRIM)
+	_box(Vector3(0, 1.4, 1.25), Vector3(0.7, 0.08, 0.12), TRIM)
+	# Buggy: box seat body, black top, open front with the driver.
+	_box(Vector3(0, 0.95, 4.3), Vector3(1.3, 0.5, 1.9), PAINT)
+	_loft([
+		[3.6, 1.2, 2.25, 2.35, 0.62, 0.66, 0.6],
+		[5.25, 1.2, 2.25, 2.35, 0.62, 0.66, 0.6],
+	], [_edges(PAINT, PAINT)], PAINT, PAINT)
+	_box(Vector3(0, 1.65, 3.62), Vector3(0.9, 0.7, 0.02), Color(0.03, 0.03, 0.03, 0.4))
+	_box(Vector3(0.18, 1.45, 3.9), Vector3(0.38, 0.6, 0.3), Color(0.10, 0.12, 0.18, 0.4))
+	_box(Vector3(0.18, 1.9, 3.9), Vector3(0.22, 0.24, 0.22), Color(0.82, 0.68, 0.5, 0.4))
+	_box(Vector3(0.18, 2.06, 3.9), Vector3(0.4, 0.04, 0.4), Color(0.06, 0.06, 0.06, 0.4))
+	# Tall wooden-spoke wheels, black with steel tyres.
+	for z in [3.45, 4.9]:
+		var r := 0.55 if z < 4.0 else 0.65
+		for s in [-1.0, 1.0]:
+			var c := Vector3(s * 0.78, r, z)
+			if _lo:
+				_box(c, Vector3(0.05, r * 1.6, r * 1.6), dark)
+				continue
+			# Steel tyre round the rim, and spokes you can see through.
+			var n := 12
+			for i in n:
+				var a0 := TAU * i / n
+				var a1 := TAU * (i + 1) / n
+				_beam(c + Vector3(0, cos(a0), sin(a0)) * r, c + Vector3(0, cos(a1), sin(a1)) * r, 0.05, dark)
+			for i in 6:
+				var a := TAU * i / 12.0
+				var d := Vector3(0, cos(a), sin(a)) * r
+				_beam(c - d, c + d, 0.025, dark)
+	# Slow-moving-vehicle emblem and battery lamps.
+	_tri(Vector3(-0.2, 1.35, 5.27), Vector3(0.2, 1.35, 5.27), Vector3(0, 1.7, 5.27),
+		Color(1.0, 0.35, 0.05, 0.4), Vector3(0, 1.5, 4.0))
+	_box(Vector3(0.62, 1.9, 5.27), Vector3(0.08, 0.1, 0.03), TAIL, true)
+	_box(Vector3(0.62, 1.9, 3.59), Vector3(0.08, 0.1, 0.03), HEAD, true)
 
 
 # --- Building blocks --------------------------------------------------------
