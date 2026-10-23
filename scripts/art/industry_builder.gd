@@ -389,7 +389,7 @@ func _ridge(outlines: Array, zc: float, pitch: float, h: float, col: Color) -> v
 func _ridge_on(span: Vector2, zc: float, pitch: float, h: float, col: Color) -> void:
 	var x0 := span.x + 6.0
 	var x1 := span.y - 6.0
-	if x1 - x0 < 16.0:
+	if x1 - x0 < 50.0:  # a stub of spoil reads as a heap, not a ridge
 		return
 	var hw := pitch * 0.5 + 1.0
 	var noise := FastNoiseLite.new()
