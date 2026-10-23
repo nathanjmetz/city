@@ -34,9 +34,13 @@ func _init() -> void:
 	_check(int(l.fees) > 0 and sim.economy.budget.fees == 0, "the utility collects the water bills, not the city ($%d)" % l.fees)
 	_check(sim.economy.budget.services >= int(u.subsidy), "the city pays the subsidy")
 	var d := Inspect.describe(sim, Inspect.pick(sim, sim.services.buildings[id].pos))
-	_check(d.kind == "Utility hub" and d.has("tree") and d.has("lever"), "its panel shows the tree and the subsidy lever")
-	_check(sim.apply(d.lever.up) and int(u.subsidy) == Balance.WATER_SUBSIDY.start + Balance.WATER_SUBSIDY.step,
-		"the + button raises the subsidy")
+	_check(d.kind == "Utility hub" and d.has("tree") and d.rows.any(func(r): return r[0] == "City subsidy"),
+		"its panel shows the tree and the subsidy")
+	# The subsidy is the utility's Funding slider on the Economy page.
+	_check(sim.apply({"type": "policy", "scope": "water:%d" % id, "slider": "funding", "step": 3})
+		and int(u.subsidy) == Balance.POLICY_WATER_SUBSIDY[3], "Well funded raises the subsidy ($%d)" % int(u.subsidy))
+	_check(sim.apply({"type": "set_water_subsidy", "id": id, "amount": 24_000}) and int(u.subsidy) == 24_000
+		and sim.policies.step("funding", "water", "water:%d" % id) == 4, "an exact subsidy shows as the nearest step")
 	# Every yard piece touches the yard (no second sites).
 	var cells := {Vector2i.ZERO: true}
 	for wk in u.works:

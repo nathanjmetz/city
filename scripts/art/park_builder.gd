@@ -63,8 +63,8 @@ const ALUMINUM := Color("#c4c8c8")
 static var _lawn_mat: ShaderMaterial
 
 var _lawn := SurfaceTool.new()
-## Text painted on the site: [{pos, normal (facing out), text, height, color}].
-var labels := []
+## Text painted on the site goes in labels (CommercialBuilder):
+## [{pos, normal (facing out), text, height, color}].
 ## 0 struggling .. 3 thriving, and how well it is kept (0 to 1).
 var tier := 2
 var care := 0.7

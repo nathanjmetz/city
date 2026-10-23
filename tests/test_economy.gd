@@ -39,6 +39,31 @@ func _init() -> void:
 	_check(sim.apply({"type": "policy", "scope": "service:%d" % sid, "slider": "funding", "step": -1}), "back to following")
 	_check(p.own("service:%d" % sid, "funding") == -1 and sim.services.upkeep_of(sid) == base, "following again")
 
+	# Hubs with their own money lever take it from Funding: the post office.
+	var ps := CivicHubs.site_near(sim.network, Vector3(250, 0, 40))
+	_check(sim.apply({"type": "place_post_office", "pos": [ps[0].x, ps[0].z], "dir": [ps[1].x, ps[1].z]}), "a post office")
+	var po: int = sim.mail.offices.keys()[0]
+	var pkey := "post_office:%d" % po
+	_check(sim.hub_area(pkey) == "mail" and sim.mail.offices[po].funding == 1, "it's on the page, at Basic (Standard)")
+	sim.apply({"type": "policy", "scope": "area:mail", "slider": "funding", "step": 4})
+	_check(sim.mail.offices[po].funding == Balance.POLICY_MAIL_FUNDING[4], "Generous: Lavish funding")
+	_check(sim.apply({"type": "post_office_funding", "id": po, "level": 0}) and sim.mail.offices[po].funding == 0
+		and p.own(pkey, "funding") == 0, "the old command still works and sets the slider")
+	_check(sim.apply({"type": "policy", "scope": pkey, "slider": "funding", "step": -1})
+		and sim.mail.offices[po].funding == 3, "following the area again")
+	sim.apply({"type": "policy", "scope": "area:mail", "slider": "funding", "step": -1})
+	_check(sim.mail.offices[po].funding == 1, "and back to Standard")
+	sim.tick()  # the postmaster signs up with Permits on the first tick
+	sim.apply({"type": "policy", "scope": pkey, "slider": "growth", "step": 0})
+	_check(sim.permits.guidance("post_office", po).stance == "hold", "Growth Hold tells the postmaster to hold off")
+	sim.apply({"type": "policy", "scope": pkey, "slider": "growth", "step": -1})
+	_check(not sim.apply({"type": "policy", "scope": "power:9", "slider": "growth", "step": 0}), "no such power company")
+	var pw := Power.new()
+	var pwp := Policies.new()
+	pw.policies = pwp
+	pwp.set_step("area:power", "growth", 0)
+	_check(pw.on_hold(1), "power companies on Hold add no units")
+
 	# Farms: Growth Hold buys nothing; Funding is aid the town pays.
 	var farm := Farms.new()
 	var fp := Policies.new()
@@ -113,6 +138,11 @@ func _init() -> void:
 	var copy := CitySim.new()
 	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
 	_check(copy.policies.step("growth", "waste") == 1 and copy.policies.step("growth", "homes") == 4, "sliders save and load")
+	sim.apply({"type": "post_office_funding", "id": po, "level": 3})
+	var copy2 := CitySim.new()
+	copy2.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
+	_check(copy2.mail.offices[po].funding == 3 and copy2.policies.step("funding", "mail", pkey) == 4,
+		"a saved lever keeps its amount and its slider")
 	copy.apply({"type": "clear"})
 	_check(copy.policies.levels.is_empty() and copy.farms.policies == copy.policies, "a new map starts at Standard")
 

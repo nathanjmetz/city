@@ -22,12 +22,14 @@ var _trees := TreeField.new()
 static var _beam_mesh: ArrayMesh
 ## Companies already drawn once, so a reload doesn't replay the grow-in.
 var _loaded := false
+var _signs := {}  # "site:<id>" -> the company's gate sign
 
 
 func setup(s: CitySim) -> void:
 	sim = s
 	add_child(_trees)
 	sim.industry_changed.connect(_rebuild)
+	sim.families.changed.connect(_sync_signs)
 	_rebuild()
 	_loaded = true
 
@@ -51,6 +53,16 @@ func _rebuild() -> void:
 	for id in sim.industry.sites:
 		if not _sites.has(id):
 			_sites[id] = _site(id, sim.industry.sites[id])
+	_sync_signs()
+
+
+## The company's sign at the gate where its road meets the street, like a
+## quarry's or an oil lease's.
+func _sync_signs() -> void:
+	var lanes := {}
+	for id in sim.industry.sites:
+		lanes["site:%d" % id] = sim.industry.sites[id].drive
+	SignText.sync_lanes(self, _signs, sim, lanes, true)
 
 
 func _site(id: int, s: Dictionary) -> Node3D:

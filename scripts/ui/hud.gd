@@ -219,9 +219,10 @@ func _process(_delta: float) -> void:
 	var t := sim.clock()
 	var hour: int = t.hour % 12
 	# A game day is a month (see Seasons), so the date is month and year.
-	_clock.text = "%s, Year %d  %d:%02d %s" % [
+	# Calendar years, matching the "since" on business signs.
+	_clock.text = "%s %d  %d:%02d %s" % [
 		["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][t.month - 1],
-		t.year, 12 if hour == 0 else hour, t.minute, "AM" if t.hour < 12 else "PM"]
+		Families.calendar(t.year), 12 if hour == 0 else hour, t.minute, "AM" if t.hour < 12 else "PM"]
 	_money.text = "$" + _thousands(sim.economy.money)
 	_money.add_theme_color_override("font_color", UiStyle.TEXT if sim.economy.money >= 0 else BAD)
 	_cars.text = "%d  ·  %d%% flow" % [sim.traffic.cars.size(), roundi(sim.traffic.flow * 100.0)]
@@ -739,6 +740,15 @@ func _services_drawer() -> PanelContainer:
 		CitySim.money_text(Balance.TELECOM_COST), CitySim.money_text(Balance.TELECOM_GRANT)]
 	_telecom_card.pressed.connect(func(): telecom_tool.set_kind("telecom"))
 	phone.add_child(_telecom_card)
+	# The railroad: its leader plans the track and asks before building.
+	row.add_child(VSeparator.new())
+	var rail := _section(row, "Rail")
+	var rb := _card("train", "Rail depot", "")
+	rb.tooltip_text = "Rail depot: $%s. Its leader lays track to the region and to industry, by your permit." % \
+		CitySim.money_text(Balance.RAIL_DEPOT_COST)
+	rb.pressed.connect(func(): service_tool.set_kind(Rail.TOOL_KIND))
+	rail.add_child(rb)
+	_service_cards[Rail.TOOL_KIND] = rb
 	# Banks lend to the farms, companies and builders (Brawn's hub model).
 	row.add_child(VSeparator.new())
 	var bank := _section(row, "Banks")
