@@ -861,7 +861,9 @@ static func _person(sim: CitySim, pid: int) -> Dictionary:
 	var w := sim.traffic.walker_of(pid)
 	if not w.is_empty():
 		var then: Dictionary = w.then
-		if then.has("enter"):
+		if then.has("stroll"):
+			status = "Out for a walk on the trail"
+		elif then.has("enter"):
 			status = "Walking to %s" % place_name(sim, then.enter)
 		elif then.has("drive"):
 			status = "Walking to the car, off to %s" % place_name(sim, then.get("to", ""))

@@ -402,6 +402,32 @@ func _init() -> void:
 					last_d.erase(key)
 	_check(went > 0, "the gates lift and cars drive over the track (%d)" % went)
 
+	# A walk on the trail: out along the sidewalk to where the trail crosses
+	# the street, along it and back home.
+	var tw := rx
+	while tw.people.people.size() < 20 and tw.tick_count < 6000:
+		tw.tick()
+	tw.parks.trails.paths.append({"kind": "greenway", "pts": [[-200, -300], [-200, -100], [-200, 100], [-200, 300]]})
+	var walker_pid := -1
+	var pids: Array = tw.people.people.keys()
+	pids.sort()
+	for pid in pids:
+		if tw.people.people[pid].at == "" and tw.traffic.stroll(pid):
+			walker_pid = pid
+			break
+	_check(walker_pid != -1, "someone at home goes for a walk on the trail")
+	if walker_pid != -1:
+		var sw := tw.traffic.walker_of(walker_pid)
+		var on_trail := false
+		for q in sw.pts:
+			on_trail = on_trail or (absf(q.x + 200.0) < 0.5 and absf(q.z) > 30.0)
+		_check(on_trail and sw.pts[0].distance_to(sw.pts[sw.pts.size() - 1]) < 0.01 and sw.len > 800.0,
+			"along the trail and back to the same door (%d m)" % roundi(sw.len))
+		_check(not tw.traffic.stroll(walker_pid), "not twice at once")
+		for i in int(sw.len / (TrafficSim.WALK_V * 0.85 * TrafficSim.DT)) + 5:
+			tw.tick()
+		_check(tw.people.people[walker_pid].at == "", "and home again after the walk")
+
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
