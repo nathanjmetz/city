@@ -12,6 +12,11 @@ const CAR_RANGE := 260.0
 const AREA_RANGE := 420.0
 ## How often (seconds) to re-pick the nearest sources.
 const PICK_EVERY := 0.25
+## Homes, shops and fields stand still, so their sounds are picked again
+## only once the camera has moved this far, or every AREA_EVERY seconds
+## (for the hour of day and new buildings).
+const AREA_MOVE := 15.0
+const AREA_EVERY := 2.0
 const FADE_PER_SEC := 2.5
 
 var sim: CitySim
@@ -35,6 +40,8 @@ var _ear := Vector3.ZERO
 ## the spot the camera looks at: both found PICK_EVERY, not every frame.
 var _live := {}
 var _hum_cars := 0
+var _area_ear := Vector3.INF
+var _area_wait := 0.0
 
 
 func setup(s: CitySim, cam: Camera3D, fraction: Callable) -> void:
@@ -136,7 +143,11 @@ func _update(delta: float) -> void:
 			_day = day
 			_sources_dirty = true
 		_pick_cars(ear)
-		_pick_areas(ear)
+		_area_wait -= PICK_EVERY
+		if _sources_dirty or _area_wait <= 0.0 or ear.distance_to(_area_ear) > AREA_MOVE:
+			_area_wait = AREA_EVERY
+			_area_ear = ear
+			_pick_areas(ear)
 	_move_cars()
 	var step := FADE_PER_SEC * delta
 	for s in _cars:

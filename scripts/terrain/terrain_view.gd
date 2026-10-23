@@ -579,6 +579,7 @@ func _drop(key: Vector2i) -> void:
 		if c[k] != null:
 			c[k].queue_free()
 	_chunks.erase(key)
+	_dirty.erase(key)
 
 
 func _build(key: Vector2i, lod: int) -> void:
@@ -1027,6 +1028,9 @@ func _mark_dirty(g: Array) -> void:
 		for cz in range(c0.y, c1.y + 1):
 			for cx in range(c0.x, c1.x + 1):
 				var key := Vector2i(cx, cz)
+				# A chunk not built yet gets the grading when it is built.
+				if not _chunks.has(key):
+					continue
 				if not _dirty.has(key):
 					_dirty[key] = []
 				_dirty[key].append(box)
