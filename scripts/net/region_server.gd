@@ -189,6 +189,7 @@ func _handle(from: int, msg: Dictionary) -> void:
 			var amount := float(msg.get("amount", 0.0))
 			if p.city == "" or good != "money" or not is_finite(amount) or amount <= 0.0:
 				return
+			region.load_stale(p.city)
 			amount = minf(amount, maxf(0.0, region.cities[p.city].sim.economy.money))
 			var took := region.ledger.pledge(p.city, str(msg.get("project", "")), good, amount)
 			if took > 0.0:
@@ -369,8 +370,12 @@ func _admit(from: int, account: Dictionary, token: String) -> void:
 			for peer in _players:
 				if _players[peer].city == other:
 					_send(peer, {"t": "apply", "cmds": region.handed[other]})
+		# Everyone else gets the new town and the neighbors it joined; the
+		# rest they already have.
+		var fresh: Array = [city] + region.handed.keys()
 		for peer in _players:
-			_send(peer, {"t": "region", "z": pack(region.to_dict_without(_players[peer].city))})
+			var d := region.to_dict_with(fresh.filter(func(id): return id != _players[peer].city))
+			_send(peer, {"t": "region", "z": pack(d)})
 	elif region.cities[city].player != name:
 		region.cities[city].player = name
 	_players[from] = {"id": pid, "name": name, "city": city, "host": account.host}

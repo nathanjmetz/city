@@ -51,6 +51,14 @@ const RECONNECT_EVERY := 5.0
 ## Gives up (and says so) after this long without the region.
 const RECONNECT_FOR := 300.0
 var reconnecting := false
+const TOWN_GAP := 20.0
+const TOWN_MAX_GAP := 120.0
+var _sent_at := -1000.0
+var _sent_sig := []
+## A neighbor's newest copy is unpacked into its simulation (a second or so
+## for a grown town) one town at a time, this many seconds apart.
+const NEIGHBOR_EVERY := 15.0
+var _neighbor_wait := NEIGHBOR_EVERY
 ## A game month (a game day) in ticks: agreements are paid once a month.
 const MONTH_TICKS := 24 * CitySim.TICKS_PER_HOUR
 var _booked_month := -1
@@ -84,7 +92,7 @@ func _connect() -> int:
 
 func leave() -> void:
 	if _peer:
-		send_town()
+		send_town(true)
 		_peer.poll()
 		_peer.close()
 	_peer = null
@@ -93,10 +101,21 @@ func leave() -> void:
 
 
 ## Sends the server a copy of your town, for the neighbors and to keep.
-func send_town() -> void:
+## Copying a town takes a moment (a tenth of a second or more for a grown
+## one), so it goes out only when something visible changed, and at least
+## this often (seconds) for the money and the people; `now` sends anyway.
+func send_town(now := false) -> void:
 	var sim := my_sim()
-	if sim and is_joined:
-		_send({"t": "city", "z": RegionServer.pack(sim.to_dict())})
+	if sim == null or not is_joined:
+		return
+	var t := Time.get_ticks_msec() / 1000.0
+	var sig := [sim.network.segments.size(), sim.buildings.size(), sim.zones.cells.size(),
+		sim.stats.population / 25]
+	if not now and (t - _sent_at < TOWN_GAP or (sig == _sent_sig and t - _sent_at < TOWN_MAX_GAP)):
+		return
+	_sent_at = t
+	_sent_sig = sig
+	_send({"t": "city", "z": RegionServer.pack(sim.to_dict())})
 
 
 ## Sends a batch of play telemetry (see Telemetry); telemetry_acked says when it's kept.
@@ -184,6 +203,10 @@ func _process(delta: float) -> void:
 			_connect()
 	if is_joined:
 		_book_agreements()
+		_neighbor_wait -= delta
+		if _neighbor_wait <= 0.0 and not region.stale_ids().is_empty():
+			_neighbor_wait = NEIGHBOR_EVERY
+			region.load_stale(region.stale_ids()[0])
 	if _peer == null:
 		return
 	_peer.poll()
@@ -235,7 +258,7 @@ func _handle(msg: Dictionary) -> void:
 				for id in region.cities:
 					if not id in old_ids:
 						city_added.emit(id)
-				send_town()
+				send_town(true)
 				reconnected.emit()
 				return
 			region.from_dict(d)
@@ -259,7 +282,7 @@ func _handle(msg: Dictionary) -> void:
 			var sim := my_sim()
 			if sim and str(msg.get("good", "")) == "money":
 				sim.economy.money -= float(msg.get("amount", 0.0))
-				send_town()
+				send_town(true)
 		"reject":
 			var reason := str(msg.get("reason", "The region turned you away."))
 			if reconnecting and "version" in reason and OS.has_feature("web"):
