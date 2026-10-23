@@ -1672,7 +1672,7 @@ func _register(e: Dictionary) -> String:
 	# One caller ref can name many spots (a bus going stop to stop), so a
 	# site is also keyed by where it is; reports drop the "@x,z" again.
 	ref = "%s@%d,%d" % [ref if ref != "" else "at", roundi(float(e.pos[0])), roundi(float(e.pos[1]))]
-	if _sites.has(ref) and _places.has(ref):
+	if _sites.has(ref) and not place(ref).is_empty():
 		return ref
 	var site := e.duplicate()
 	site.ref = ref
@@ -1715,7 +1715,10 @@ func _launch(car: Dictionary, lanes := {}) -> bool:
 	var limit: float = car.end_d - 4.0 if last else w.s1 - 0.5
 	var exit_d := minf(car.d + DRIVEWAY_LEAD + 2.0, limit)
 	var out := {}
-	var from_pl: Dictionary = _places.get(car.get("from_place", ""), {})
+	# place(), not the cache: a loaded copy builds it on first use, and must
+	# pull out the same way as the city it was saved from.
+	var from_ref: String = car.get("from_place", "")
+	var from_pl: Dictionary = place(from_ref) if from_ref != "" else {}
 	if not from_pl.is_empty() and car.get("from_spot", -1) >= 0 and car.from_spot < from_pl.spots.size():
 		out = _out_path(car, from_pl, car.from_spot, w, car.lane, car.d)
 		exit_d = out.exit_d
@@ -1970,7 +1973,7 @@ func _claim_spots(pl: Dictionary) -> void:
 	for car in parked:
 		if car.at_place == pl.ref and car.spot >= 0 and car.spot < pl.taken.size():
 			pl.taken[car.spot] = car.id
-	for car in cars + _waiting:
+	for car in cars + _waiting + flowing:
 		if car.get("to_place", "") == pl.ref and car.get("to_spot", -1) >= 0 and car.to_spot < pl.taken.size():
 			pl.taken[car.to_spot] = car.id
 
