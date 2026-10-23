@@ -11,6 +11,8 @@ func _init() -> void:
 	sim.apply({"type": "build_road", "start": [-900, -300], "ctrl": [-300, -300], "end": [300, -300]})
 	for x in range(-900, -549, 10):
 		sim.apply({"type": "paint_zone", "center": [x, -325], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
+	for x in range(-870, -569, 10):
+		sim.apply({"type": "paint_zone", "center": [x, -275], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
 	for i in 3000:
 		sim.tick()
 	_check(sim.stats.population > 0, "homes filled (%d people)" % sim.stats.population)
@@ -112,9 +114,60 @@ func _init() -> void:
 	_check(not far.parks.trails.on_foot(far, "", "", rng), "no trails: every trip is by car")
 	t.paths.pop_back()
 
+	# A pedestrian plaza: cross streets make a downtown block, its shops fill
+	# up, and the director asks the bell to close it to cars.
+	sim.apply({"type": "build_road", "start": [-880, -250], "ctrl": [-880, -300], "end": [-880, -380]})
+	sim.apply({"type": "build_road", "start": [-560, -250], "ctrl": [-560, -300], "end": [-560, -380]})
+	for i in 3000:
+		sim.tick()
+	var on_block := {}
+	for key in sim.buildings:
+		if sim.lots.has(key):
+			var sg := int(sim.lots[key].get("seg", -1))
+			on_block[sg] = on_block.get(sg, []) + [key]
+	var block := -1
+	for sg in on_block:
+		if block == -1 or on_block[sg].size() > on_block[block].size():
+			block = sg
+	_check(block != -1 and on_block[block].size() >= Balance.PLAZA_SHOPS,
+		"a block with %d buildings on it" % (on_block[block].size() if block != -1 else 0))
+	if block == -1 or on_block[block].size() < Balance.PLAZA_SHOPS:
+		print("TESTS FAILED")
+		quit(1)
+		return
+	_check(t.problem(sim, "plaza") != "", "no plaza before there's a busy downtown")
+	for key in on_block[block]:
+		sim.buildings[key].zone = ZoneMap.Zone.COMMERCIAL
+	_check(t.plaza_block(sim) == block, "the shops' block is the busy one (%d)" % t.plaza_block(sim))
+	sim.stats.population = 5_000
+	# Say no to the next street's bike lanes: one ask at a time.
+	for lrid in t.asked.keys():
+		sim.apply({"type": "permit", "id": lrid, "answer": "deny"})
+	sim.permits.wait_until.clear()  # (a no waits a while before the next ask)
+	for k in 3:
+		_month(sim)
+	_check("plaza" in t.hub.built, "a plaza is in the plan (%s)" % str(t.hub.built))
+	_check(t.asked_plaza.size() == 1, "the plaza goes to the permit bell")
+	if t.asked_plaza.size() == 1:
+		var prid: int = t.asked_plaza.keys()[0]
+		_check(t.asked_plaza[prid] == block, "for the busy block")
+		_check(not sim.traffic.closed.has(block), "the street stays open until you say yes")
+		var before := sim.economy.money
+		sim.apply({"type": "permit", "id": prid, "answer": "approve"})
+		_month(sim)
+		_check(block in t.plazas and t.asked_plaza.is_empty(), "approved: the block is a plaza")
+		_check(sim.traffic.closed.has(block), "and closed to cars")
+		_check(not sim.traffic.may_enter(block, false), "cars can't drive it")
+		_check(sim.economy.money < before, "the town paid for the pavers")
+		var shop: String = on_block[block][0]
+		_check(t.lift(sim, shop, "value") > 0.0, "shops on the plaza are worth more")
+		var art := ParkBuilder.plaza_mesh([{"pts": sim.network.sample_segment(block, 12), "w": 10.0}])
+		_check(art[0].get_surface_count() > 0 and art[1].get_surface_count() > 0, "the plaza draws pavers and benches")
+
 	# The panel, the save and the art.
 	var info := JSON.stringify(Inspect.describe(sim, {"type": "park", "id": hid}))
-	_check(info.contains("Parks and trails") and info.contains("Bike lanes"), "the panel shows the director and lanes")
+	_check(info.contains("Parks and trails") and info.contains("Bike lanes") and info.contains("Plazas"),
+		"the panel shows the director, lanes and plazas")
 	var copy := CitySim.new()
 	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
 	_check(JSON.stringify(copy.parks.to_dict()) == JSON.stringify(sim.parks.to_dict()), "save round trip keeps the trails")

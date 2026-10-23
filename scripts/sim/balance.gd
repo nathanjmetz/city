@@ -1200,7 +1200,20 @@ const TRAIL_TREE := [
 	{"id": "county_greenway", "name": "County greenway extension", "cost": 1_500_000, "requires": ["greenway"],
 		"needs": {"population": 3_000, "link": 1}, "effects": {"length+": 3_400.0},
 		"note": "the creek path runs on toward the towns around"},
+	{"id": "plaza", "name": "Pedestrian plaza", "cost": 250_000, "requires": ["bike_lanes"],
+		"needs": {"population": 4_000}, "effects": {"plazas+": 1.0},
+		"note": "a busy downtown block closed to cars, once you say yes"},
 ]
+## A plaza block: a street with at least this many shops on it, of a type a
+## town would close (not a county road or a highway). Built like small-town
+## Midwest plazas (Burlington's Church Street, smaller Main Street blocks):
+## curb-to-curb pavers about $600 a metre of block plus planters and seating.
+const PLAZA_SHOPS := 6
+const PLAZA_TYPES := [RoadStyle.Type.STREET, RoadStyle.Type.STREET_NARROW, RoadStyle.Type.STREET_BIKE,
+	RoadStyle.Type.MAIN_STREET, RoadStyle.Type.STREET_ONEWAY]
+const PLAZA_PER_M := 600
+const PLAZA_BASE := 150_000
+const PLAZA_BUDGET := 400_000
 ## Width of a trail (10 ft shared-use path) and the strip kept clear for it.
 const TRAIL_WIDTH := 3.0
 const TRAIL_CLEAR := 6.0

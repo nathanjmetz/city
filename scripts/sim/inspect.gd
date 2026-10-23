@@ -538,6 +538,8 @@ static func _trails(sim: CitySim, id: int, rows: Array) -> String:
 	rows.append(["Trails", "%.1f mi%s" % [miles, (", %d to parks" % connectors) if connectors > 0 else ""]])
 	if not t.lanes.is_empty() or "bike_lanes" in t.hub.built:
 		rows.append(["Bike lanes", "%d streets%s" % [t.lanes.size(), ", one waiting on you" if not t.asked.is_empty() else ""]])
+	if not t.plazas.is_empty() or "plaza" in t.hub.built:
+		rows.append(["Plazas", "%d downtown blocks%s" % [t.plazas.size(), ", one waiting on you" if not t.asked_plaza.is_empty() else ""]])
 	if t.walked_last > 0 or t.walked > 0:
 		rows.append(["Trips on foot or by bike", "%s last month" % CitySim.money_text(maxi(t.walked_last, t.walked))])
 	if str(t.hub.why) != "":

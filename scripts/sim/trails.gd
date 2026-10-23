@@ -28,6 +28,10 @@ var paths := []
 var lanes := []
 ## Open bike-lane permits: request id -> segment.
 var asked := {}
+## Downtown blocks closed to cars as pedestrian plazas, and open requests
+## for them (request id -> segment).
+var plazas := []
+var asked_plaza := {}
 ## Trips walked or biked, this month and last (for the panel; not saved).
 var walked := 0
 var walked_last := 0
@@ -81,6 +85,8 @@ func sync(sim: CitySim) -> void:
 func decide(sim: CitySim) -> bool:
 	sync(sim)
 	var changed := _carry_out(sim)
+	if _open_plazas(sim):
+		changed = true
 	var m := Seasons.month(sim.tick_count)
 	if m == _month:
 		return changed
@@ -104,6 +110,7 @@ func decide(sim: CitySim) -> bool:
 		changed = true
 	if _grow(sim):
 		changed = true
+	_ask_for_plaza(sim)
 	_ask_for_lanes(sim)
 	_roads.clear()
 	_lots.clear()
@@ -137,6 +144,8 @@ func problem(sim: CitySim, key: String) -> String:
 		return "needs a creek or river within half a mile"
 	if key == "connectors" and _parks_near(sim).is_empty():
 		return "needs a park within a mile"
+	if key == "plaza" and plaza_block(sim) == -1:
+		return "needs a busy downtown block (%d shops on one street)" % Balance.PLAZA_SHOPS
 	var g: Dictionary = sim.permits.guidance("trails", int(hub.id))
 	if g.stance == "hold":
 		return "told to hold off"
@@ -409,7 +418,7 @@ func _on_road(sim: CitySim, q: Vector2, pad: float) -> bool:
 
 ## One street at a time, nearest the trailhead first, each through the bell.
 func _ask_for_lanes(sim: CitySim) -> void:
-	if not "bike_lanes" in hub.built or not asked.is_empty():
+	if not "bike_lanes" in hub.built or not asked.is_empty() or not asked_plaza.is_empty():
 		return
 	if lanes.size() >= int(Agency.effect(hub, Balance.TRAIL_TREE, "lanes+")):
 		return
@@ -468,6 +477,86 @@ func _carry_out(sim: CitySim) -> bool:
 	return changed
 
 
+# --- Plazas ---------------------------------------------------------------------
+
+## The busiest downtown block that could become a plaza: the street segment
+## with the most shops along it (at least PLAZA_SHOPS), where cars can still
+## get around (both ends join other streets). -1 if none.
+func plaza_block(sim: CitySim) -> int:
+	var shops := {}
+	for key in sim.buildings:
+		if sim.buildings[key].zone == ZoneMap.Zone.COMMERCIAL and sim.lots.has(key):
+			var seg := int(sim.lots[key].get("seg", -1))
+			shops[seg] = int(shops.get(seg, 0)) + 1
+	var best := -1
+	var most := Balance.PLAZA_SHOPS - 1
+	var ids := shops.keys()
+	ids.sort()
+	for seg in ids:
+		if seg in plazas or not sim.network.segments.has(seg) or int(shops[seg]) <= most:
+			continue
+		var s: Dictionary = sim.network.segments[seg]
+		if not s.type in Balance.PLAZA_TYPES:
+			continue
+		if sim.network.segments_at(int(s.a)).size() < 2 or sim.network.segments_at(int(s.b)).size() < 2:
+			continue
+		most = int(shops[seg])
+		best = seg
+	return best
+
+
+## Asks the bell to close the busiest block to cars, one plaza at a time.
+func _ask_for_plaza(sim: CitySim) -> void:
+	if not "plaza" in hub.built or not asked.is_empty() or not asked_plaza.is_empty():
+		return
+	if plazas.size() >= int(Agency.effect(hub, Balance.TRAIL_TREE, "plazas+")):
+		return
+	if sim.permits.guidance("trails", int(hub.id)).stance == "hold":
+		return
+	var seg := plaza_block(sim)
+	if seg == -1:
+		return
+	var route := []
+	for p in sim.network.sample_segment(seg, 8):
+		route.append([p.x, p.z])
+	var id := sim.permits.file(sim, {"hub": "trails", "hub_id": int(hub.id), "leader": hub.leader.name,
+		"title": "A pedestrian plaza on a downtown block",
+		"why": "Close this busy block to cars for a plaza: pavers, benches, trees in planters and cafe tables. Delivery trucks still come at night, and drivers park around the corner.",
+		"route": route, "width": RoadStyle.half_width(sim.network.segments[seg].type) * 2.0,
+		"per_m": Balance.PLAZA_PER_M, "base": Balance.PLAZA_BASE, "budget": Balance.PLAZA_BUDGET})
+	if id != -1:
+		asked_plaza[id] = seg
+
+
+## An approved plaza closes its block to cars (trucks at night only).
+func _open_plazas(sim: CitySim) -> bool:
+	var changed := false
+	for seg in plazas.duplicate():
+		if not sim.network.segments.has(seg):
+			# The street was taken out: so is its plaza.
+			plazas.erase(seg)
+			changed = true
+	var ids := asked_plaza.keys()
+	ids.sort()
+	for rid in ids:
+		var state := sim.permits.state_of(rid)
+		if state == Permits.State.APPROVED:
+			var seg: int = asked_plaza[rid]
+			if sim.network.segments.has(seg) and not seg in plazas:
+				var req: Dictionary = sim.permits.requests.get(rid, {})
+				sim.economy.money -= int(req.get("cost", 0))
+				sim.traffic.close_segment(seg, true, "night")
+				plazas.append(seg)
+				changed = true
+			sim.permits.done(rid)
+			asked_plaza.erase(rid)
+		elif state != Permits.State.OPEN:
+			asked_plaza.erase(rid)
+	if changed:
+		_rev = ""
+	return changed
+
+
 # --- What trails do for the town ----------------------------------------------
 
 ## True when p is on a trail's cleared strip (no lots or fields there).
@@ -501,7 +590,7 @@ func on_path(p: Vector3) -> bool:
 
 ## Land value or happiness a lot gets from a trail nearby.
 func lift(sim: CitySim, key: String, effect: String) -> float:
-	if paths.is_empty():
+	if paths.is_empty() and plazas.is_empty():
 		return 0.0
 	_refresh(sim)
 	var near: Array = _near.get(key, [INF, false])
@@ -514,7 +603,7 @@ func lift(sim: CitySim, key: String, effect: String) -> float:
 ## Asked by the traffic sim before a trip by car: true when this one goes on
 ## foot or by bike instead (both ends near the trails, and not too far).
 func on_foot(sim: CitySim, from_key: String, to_key: String, rng: RandomNumberGenerator) -> bool:
-	if paths.is_empty() and lanes.is_empty():
+	if paths.is_empty() and lanes.is_empty() and plazas.is_empty():
 		return false
 	_refresh(sim)
 	var a: Array = _near.get(from_key, [])
@@ -546,7 +635,7 @@ func upkeep() -> float:
 ## Rebuilds the lookup of trail pieces and how near each lot is, when the
 ## trails, lanes or lots changed.
 func _refresh(sim: CitySim) -> void:
-	var rev := "%d|%d|%d|%d" % [paths.size(), int(length()), lanes.size(), sim.lots.size()]
+	var rev := "%d|%d|%d|%d|%d" % [paths.size(), int(length()), lanes.size(), sim.lots.size(), plazas.size()]
 	if rev == _rev:
 		return
 	_rev = rev
@@ -560,6 +649,12 @@ func _refresh(sim: CitySim) -> void:
 			var pts := sim.network.sample_segment(seg, 8)
 			for i in pts.size() - 1:
 				_add_piece(Vector2(pts[i].x, pts[i].z), Vector2(pts[i + 1].x, pts[i + 1].z), true)
+	# A plaza is a walking place too: the shops on it gain like trailside homes.
+	for seg in plazas:
+		if sim.network.segments.has(seg):
+			var pts := sim.network.sample_segment(seg, 8)
+			for i in pts.size() - 1:
+				_add_piece(Vector2(pts[i].x, pts[i].z), Vector2(pts[i + 1].x, pts[i + 1].z), false)
 	var reach := maxf(Balance.TRAIL_REACH, Balance.WALK_NEAR)
 	var span := ceili(reach / CELL)
 	for key in sim.lots:
@@ -617,7 +712,11 @@ func to_dict() -> Dictionary:
 	var a := {}
 	for rid in asked:
 		a[str(rid)] = asked[rid]
-	return {"hub": hub, "paths": paths, "lanes": lanes, "asked": a, "month": _month}
+	var ap := {}
+	for rid in asked_plaza:
+		ap[str(rid)] = asked_plaza[rid]
+	return {"hub": hub, "paths": paths, "lanes": lanes, "asked": a, "month": _month, "plazas": plazas,
+		"asked_plaza": ap}
 
 
 func from_dict(d: Dictionary) -> void:
@@ -640,5 +739,9 @@ func from_dict(d: Dictionary) -> void:
 	asked = {}
 	for k in d.get("asked", {}):
 		asked[int(k)] = int(d.asked[k])
+	plazas = Array(d.get("plazas", [])).map(func(x): return int(x))
+	asked_plaza = {}
+	for k in d.get("asked_plaza", {}):
+		asked_plaza[int(k)] = int(d.asked_plaza[k])
 	_month = int(d.get("month", -1))
 	_rev = ""

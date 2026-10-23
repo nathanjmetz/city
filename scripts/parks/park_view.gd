@@ -13,6 +13,7 @@ var _stamps := {}  # site id -> what it was drawn from
 var _trees := TreeField.new()
 var _trail_mesh: MeshInstance3D
 var _trail_stamp := ""
+var _plaza_mesh: MeshInstance3D
 ## How far a park's ground cover rides above the drawn land, metres.
 const LIFT := 0.12
 
@@ -42,7 +43,7 @@ func _sync() -> void:
 ## The town's trails, laid over the land, redrawn when they grow.
 func _draw_trails() -> void:
 	var t := sim.parks.trails
-	var stamp := "%d|%d|%d" % [t.paths.size(), int(t.length()), sim.network.segments.size()]
+	var stamp := "%d|%d|%d|%d" % [t.paths.size(), int(t.length()), sim.network.segments.size(), t.plazas.size()]
 	if stamp == _trail_stamp:
 		return
 	_trail_stamp = stamp
@@ -50,6 +51,7 @@ func _draw_trails() -> void:
 		_trail_mesh = MeshInstance3D.new()
 		_trail_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(_trail_mesh)
+	_draw_plazas(t)
 	if t.paths.is_empty():
 		_trail_mesh.mesh = null
 		return
@@ -58,6 +60,35 @@ func _draw_trails() -> void:
 		return t._on_road(sim, Vector2(p.x, p.z), 0.5))
 	t._roads.clear()
 	_trail_mesh.mesh = Terrain.drape_local(_split(flat, 4.0, LIFT), Transform3D.IDENTITY)
+
+
+## Plazas: pavers over the closed block, with benches, planters and cafe tables.
+func _draw_plazas(t: Trails) -> void:
+	if _plaza_mesh == null:
+		_plaza_mesh = MeshInstance3D.new()
+		add_child(_plaza_mesh)
+	for c in _plaza_mesh.get_children():
+		c.queue_free()
+	var blocks := []
+	for seg in t.plazas:
+		if sim.network.segments.has(seg):
+			blocks.append({"pts": sim.network.sample_segment(seg, 12),
+				"w": RoadStyle.half_width(sim.network.segments[seg].type) * 2.0})
+	if blocks.is_empty():
+		_plaza_mesh.mesh = null
+		_trees.remove("plazas")
+		return
+	var art := ParkBuilder.plaza_mesh(blocks)
+	_plaza_mesh.mesh = Terrain.drape_local(_split(art[0], 4.0, LIFT + 0.04), Transform3D.IDENTITY)
+	var things := MeshInstance3D.new()
+	things.mesh = Terrain.drape_local(art[1], Transform3D.IDENTITY)
+	_plaza_mesh.add_child(things)
+	var trees := []
+	for tr in art[2]:
+		var tf := Transform3D(Basis(Vector3.UP, fposmod(tr[0].x * 7.3 + tr[0].z * 3.1, TAU)).scaled(Vector3.ONE * tr[3]), tr[0])
+		tf.origin.y += Terrain.ground_y(tf.origin.x, tf.origin.z)
+		trees.append([tf, tr[1], tr[2]])
+	_trees.set_trees("plazas", trees)
 
 
 func _stamp(id: int) -> String:

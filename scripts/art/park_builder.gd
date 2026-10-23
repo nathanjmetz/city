@@ -1260,3 +1260,74 @@ static func trails_mesh(paths: Array, on_road: Callable) -> ArrayMesh:
 				if k % 2 == 0:
 					b._strip(p0.lerp(p1, 0.15), p0.lerp(p1, 0.85), 0.1, "line", Color("#d8b030"), 0.055)
 	return b._commit_flat()
+
+
+## Pedestrian plazas on closed downtown blocks, like the Kalamazoo Mall or
+## Iowa City's Ped Mall: brick pavers curb to curb with concrete bands,
+## planters and benches down the middle, cafe tables out front of the
+## shops, and bollards at each end that drop for night deliveries.
+## blocks: [{pts (PackedVector3Array along the street), w (curb to curb)}].
+## Returns [flat, furniture, trees ([pos, species, variant, scale])].
+static func plaza_mesh(blocks: Array) -> Array:
+	var b := ParkBuilder.new()
+	b.rng = RandomNumberGenerator.new()
+	b.rng.seed = 11
+	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
+	b._lawn.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for block in blocks:
+		var pts: PackedVector3Array = block.pts
+		var w := float(block.w)
+		var along := 0.0
+		var next_band := 6.0
+		var next_spot := 10.0
+		var spot := 0
+		for i in pts.size() - 1:
+			var p0 := Vector3(pts[i].x, 0, pts[i].z)
+			var p1 := Vector3(pts[i + 1].x, 0, pts[i + 1].z)
+			var seg := p0.distance_to(p1)
+			if seg < 0.1:
+				continue
+			var d := (p1 - p0) / seg
+			var side := Vector3(-d.z, 0, d.x)
+			var yaw := atan2(d.x, d.z)
+			b._strip(p0 - d * 0.5, p1 + d * 0.5, w, "line", Color("#8a5e4e"), 0.06)
+			while next_band < along + seg:
+				var c := p0 + d * (next_band - along)
+				b._strip(c - d * 0.25, c + d * 0.25, w, "drive", Color("#b8b2a6"), 0.07)
+				next_band += 12.0
+			while next_spot < along + seg:
+				var c := p0 + d * (next_spot - along)
+				if spot % 2 == 0:
+					# A raised limestone planter with a honey locust, the downtown
+					# mall tree: light shade, small leaves that don't need raking.
+					b._box("paint", Vector3(1.8, 0.5, 3.2), c + Vector3(0, 0.25, 0), LIMESTONE, Basis(Vector3.UP, yaw))
+					b._box("paint", Vector3(1.5, 0.04, 2.9), c + Vector3(0, 0.5, 0), MULCH, Basis(Vector3.UP, yaw))
+					var tint: Color = TreeField.LEAF[TreeField.Species.LOCUST]
+					b.trees.append([c + Vector3(0, 0.5, 0), TreeField.Species.LOCUST,
+						tint.lightened(b.rng.randf_range(-0.06, 0.08)), b.rng.randf_range(0.6, 0.75)])
+					b._bench(c + side * 1.8, yaw + PI * 0.5)
+					b._bench(c - side * 1.8, yaw - PI * 0.5)
+				else:
+					for s in [-1.0, 1.0]:
+						var t: Vector3 = c + side * s * (w * 0.5 - 2.2)
+						b._cylinder("paint", t + Vector3(0, 0.72, 0), 0.4, 0.04, Color("#2c3a34"), 10)
+						b._cyl_y(t + Vector3(0, 0.36, 0), 0.04, 0.72, Color("#202224"))
+						for k in 2:
+							var ch: Vector3 = t + d * (0.75 if k == 0 else -0.75)
+							b._box("paint", Vector3(0.42, 0.45, 0.42), ch + Vector3(0, 0.22, 0), Color("#2c3a34"))
+					b._lamp(c)
+				spot += 1
+				next_spot += 9.0
+			along += seg
+		# Bollards across each end.
+		for e in [0, pts.size() - 1]:
+			var o := Vector3(pts[e].x, 0, pts[e].z)
+			var nb := pts[1] if e == 0 else pts[pts.size() - 2]
+			var d2 := (Vector3(nb.x, 0, nb.z) - o).normalized()
+			var side2 := Vector3(-d2.z, 0, d2.x)
+			o += d2 * 2.0
+			var n := maxi(2, int(w / 1.6))
+			for k in n + 1:
+				var q := o + side2 * lerpf(-w * 0.5 + 0.6, w * 0.5 - 0.6, float(k) / n)
+				b._cyl_y(q + Vector3(0, 0.45, 0), 0.11, 0.9, Color("#2a2c2e"))
+	return [b._commit_flat(), b._commit_house(), b.trees]
