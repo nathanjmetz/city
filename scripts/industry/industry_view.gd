@@ -88,7 +88,7 @@ func _site(id: int, s: Dictionary) -> Node3D:
 	flat.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(flat)
 	if s.kind == "forest":
-		_forest(s, root, pines)
+		_forest(id, s, root, pines)
 	else:
 		_mine(id, s, root)
 	_trees.set_trees("site:%d" % id, pines)
@@ -109,7 +109,7 @@ func _mine(id: int, s: Dictionary, root: Node3D) -> void:
 	var merged := {}
 	var none := []
 	var hq := Transform3D(Basis.looking_at(s.dir, Vector3.UP), s.pos)
-	_put(merged, IndustryBuilder.build_hq(s.kind, id) + [none], hq, none)
+	_hq(id, s, root, IndustryBuilder.build_hq(s.kind, id), [])
 	if s.kind == "ore" and not s.pads.is_empty():
 		_strip_mine(s, hq, root)
 	for c in s.pads:
@@ -139,11 +139,11 @@ func _mine(id: int, s: Dictionary, root: Node3D) -> void:
 ## Forestry: the sawmill yard, each logging stand as a cut inside woods,
 ## and untouched woods on the forest land around them. Trees go to one
 ## shared TreeField, keyed by the company.
-func _forest(s: Dictionary, root: Node3D, trees: Array) -> void:
+func _forest(id: int, s: Dictionary, root: Node3D, trees: Array) -> void:
 	var basis := Basis.looking_at(s.dir, Vector3.UP)
 	var merged := {}  # material -> SurfaceTool, every cell merged
 	var seed0 := hash([roundi(s.pos.x), roundi(s.pos.z)])
-	_put(merged, ForestryBuilder.mill(seed0, Industry.HQ_SIZE), Transform3D(basis, s.pos), trees)
+	_hq(id, s, root, ForestryBuilder.mill(seed0, Industry.HQ_SIZE), trees)
 	# Which cells are wooded: the stands, the mill's own cell, and every free
 	# forest cell next to them.
 	var wooded := {Vector2i.ZERO: true}
@@ -331,6 +331,21 @@ func _track(s: Dictionary, c: Vector2i) -> PackedVector3Array:
 
 ## Adds a builder's meshes at `frame` into `merged` (one surface per
 ## material; flat ground work casts no shadow), and its trees in world space.
+## The company's main building on its own node, so it goes up stage by
+## stage (ConstructionSite) like any steel-frame plant.
+func _hq(id: int, s: Dictionary, root: Node3D, built: Array, trees: Array) -> void:
+	var node := Node3D.new()
+	root.add_child(node)
+	node.transform = Transform3D(Basis.looking_at(s.dir, Vector3.UP),
+		Vector3(s.pos.x, Terrain.ground_y(s.pos.x, s.pos.z), s.pos.z))
+	var parts := [built[0], Terrain.drape_local(built[1], node.transform)]
+	if built.size() > 2:
+		_put({}, [ArrayMesh.new(), ArrayMesh.new(), built[2]], Transform3D(node.basis, s.pos), trees)
+	var ref := "ind:%d" % id
+	ConstructionSite.add_to(node, parts, "factory", func(): return sim.construction.state(ref, sim.tick_count),
+		func(): pass)
+
+
 func _put(merged: Dictionary, built: Array, frame: Transform3D, trees: Array) -> void:
 	for k in 2:
 		var mesh: ArrayMesh = built[k]

@@ -334,7 +334,13 @@ func apply_now(cmd: Dictionary) -> bool:
 			if not Industry.KINDS.has(kind) or dir.length() < 0.5 or industry_problem(kind, pos, dir) != "" \
 					or int(Industry.KINDS[kind].cost) > economy.money:
 				return false
-			industry.add_site(kind, pos, dir, industry_drive(pos, dir))
+			var drive := industry_drive(pos, dir)
+			var iid := industry.add_site(kind, pos, dir, drive)
+			# The main building goes up like any steel-frame plant; the crews
+			# park where its road meets the street.
+			var gate: Vector3 = drive[-1] if drive.size() >= 2 else pos
+			var out: Vector3 = (drive[-1] - drive[-2]).normalized() if drive.size() >= 2 else dir
+			construction.start("ind:%d" % iid, "factory", tick_count, gate - out * 2.0, out, 0.5)
 			economy.money -= int(Industry.KINDS[kind].cost)
 			_lots_dirty = true
 			industry_changed.emit()
