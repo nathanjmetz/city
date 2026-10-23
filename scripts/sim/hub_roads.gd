@@ -62,7 +62,7 @@ static func reach(sim, far_end: Vector3, toward: Vector3, max_len: float) -> Vec
 static func _county(sim, p: Vector3, tried: Dictionary) -> Dictionary:
 	var o: Vector2 = sim.terrain_offset
 	var mile := CountyGrid.mile_at(p.x + o.x, p.z + o.y, 5.0)
-	if mile.is_empty() or sim.county_joined.has(mile.key):
+	if mile.is_empty() or sim.county_joined.has(mile.key) or sim.county_removed.has(mile.key):
 		return {}
 	if not tried.has(mile.key):
 		tried[mile.key] = _county_meets_town(sim, mile)
