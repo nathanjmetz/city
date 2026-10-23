@@ -28,6 +28,27 @@ func _process(_delta: float) -> bool:
 	_check(not wells.is_empty() and (wells[0].get_meta("title") as Label).text == "Well", "\"well\" finds the Well first")
 	_check(not hud.search_cards("school").is_empty(), "\"school\" finds the schools")
 	_check(hud.search_cards("zzzz").is_empty(), "nonsense finds nothing")
+	# What players hunted longest for (telemetry, 2026-10-23).
+	var first := func(w: String) -> String:
+		var h := hud.search_cards(w)
+		return Hud.card_title(h[0]) if not h.is_empty() else ""
+	_check(first.call("police") == "Police", "\"police\" finds Police first")
+	_check(first.call("traffic light") == "Lights", "\"traffic light\" finds Lights first (%s)" % first.call("traffic light"))
+	_check(first.call("signal") == "Lights", "\"signal\" finds Lights")
+	_check(first.call("town") == "Town", "\"town\" finds the Town grid size first")
+	_check(first.call("forestry") == "Forestry", "\"forestry\" finds Forestry")
+	_check(first.call("smoke") == "Smoke", "\"smoke\" finds the Smoke view (%s)" % first.call("smoke"))
+	# Start over needs a second click.
+	var people_before = hud.sim.people
+	hud._clear_button.pressed.emit()
+	_check(hud.sim.people == people_before, "one click on Start over clears nothing")
+	_check(hud._clear_button.text.begins_with("Click again"), "it asks for a second click")
+	hud._clear_button.pressed.emit()
+	_check(hud.sim.people != people_before, "the second click clears the map")
+	_check(hud._clear_button.disabled and hud._clear_button.text == "Map cleared", "and says so, resting a moment")
+	hud.press_card(hud.search_cards("smoke")[0])
+	_check(hud._view == "smoke" and hud.views_open(), "picking it opens Views on Smoke")
+	hud.close_all()
 	hud.press_card(wells[0])
 	_check(hud.service_tool.kind == Services.Kind.WELL, "picking it from search takes the well in hand")
 	_check(hud._category == "utilities", "and opens Utilities (%s)" % hud._category)
