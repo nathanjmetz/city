@@ -54,6 +54,7 @@ func _init() -> void:
 	b.seed = 9
 	_check(VehicleTypes.pick(ZoneMap.Zone.INDUSTRIAL, 10, a) == VehicleTypes.pick(ZoneMap.Zone.INDUSTRIAL, 10, b), "pick is deterministic")
 	_check(VehicleTypes.paint("school_bus", 5) == VehicleTypes.paint("school_bus", 99), "school buses are all yellow")
+	_check_motion()
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
@@ -63,3 +64,37 @@ func _check(ok: bool, what: String) -> void:
 	print(("PASS " if ok else "FAIL ") + what)
 	if not ok:
 		_failed = true
+
+
+## Bodies turn about their rear wheels, not their bumpers: the rear axle
+## trails the front one a wheelbase back and cuts inside on a corner (the
+## AASHTO off-tracking of a car on a 10 m turn is about 0.4 m).
+func _check_motion() -> void:
+	var view := TrafficView.new()
+	var m := TrafficView.Motion.new()
+	var wb := 2.8
+	var r := 10.0
+	m.h1 = Vector3.FORWARD
+	var worst_turn := 0.0
+	var inside := r
+	var last := Vector3.FORWARD
+	# Straight up to the corner, then a quarter circle left about (-10, 0, -20).
+	var pts := []
+	for k in 40:
+		pts.append(Vector3(0, 0, -k * 0.5))
+	for k in range(1, 63):
+		var t := k / 62.0 * PI * 0.5
+		pts.append(Vector3(-r + r * cos(t), 0, -20.0 - r * sin(t)))
+	for p in pts:
+		var h := view._steer(m, p, wb)
+		worst_turn = maxf(worst_turn, absf(last.signed_angle_to(h, Vector3.UP)))
+		last = h
+		m.heading = h
+		if p.z < -20.0:
+			inside = minf(inside, Vector2(m.rear.x + r, m.rear.z + 20.0).length())
+	_check(absf(Vector2(pts[-1].x - m.rear.x, pts[-1].z - m.rear.z).length() - wb) < 0.01, "the rear axle stays a wheelbase back")
+	_check(r - inside > 0.25 and r - inside < 0.6, "a car's rear wheels cut inside a 10 m turn (%.2f m)" % (r - inside))
+	# A 0.25 m step on a 10 m curve turns a body about 1.4 degrees; pivoting
+	# on the bumper would swing it far more at the start of the turn.
+	_check(worst_turn < deg_to_rad(2.0), "the body swings round smoothly (%.2f deg a step at most)" % rad_to_deg(worst_turn))
+	view.free()
