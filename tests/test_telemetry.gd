@@ -161,6 +161,9 @@ func _test_insights() -> void:
 				"tick_ms": 40.0, "tick_max_ms": 90.0, "top_sim": {"sim.traffic": 14.0, "sim.lots": 6.0}},
 			{"k": "boot", "page_ms": 70000, "download_ms": 65000, "start_ms": 3000, "bytes": 49 * 1048576},
 		]
+		if who == "Ann":
+			events.append({"k": "perf", "fps": 50.0, "worst_ms": 40, "hitches": 0, "scene": "main",
+				"free_mb": 180, "vram_mb": 2900})
 		if who != "Cy":
 			events.append({"k": "error", "sig": "x:1 boom", "file": "res://scripts/traffic/traffic_sim.gd", "line": 1,
 				"msg": "Invalid access to key 'lane'", "type": "script", "trace": "", "ctx": "Roads"})
@@ -177,6 +180,7 @@ func _test_insights() -> void:
 		"slow finds become fixes, quick ones don't")
 	_check(titles.any(func(x): return x.begins_with("Slow loading screen")), "slow loads become fixes")
 	_check(titles.any(func(x): return x.begins_with("Low frame rate")), "low frame rate becomes a fix")
+	_check(titles.has("Machine nearly out of memory: 180 MB free"), "low free memory becomes a fix")
 	_check(titles.any(func(x): return x.begins_with("The download takes")) \
 		and not titles.any(func(x): return x.begins_with("The engine takes")), "a slow line is told apart from a slow start")
 	var tick: Array = r.fixes.filter(func(f): return f.title.begins_with("Sim ticks"))
