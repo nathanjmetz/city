@@ -149,12 +149,12 @@ func _init() -> void:
 		copy.tick()
 		copy2.tick()
 	_check(JSON.stringify(copy.buses.to_dict()) == JSON.stringify(copy2.buses.to_dict()), "two copies run the buses the same")
-	_coach(sim, id)
 	# Bulldozing the depot sells its parked buses.
 	sim.apply({"type": "remove_service", "id": id})
 	sim.tick()
 	for bid in sim.buses.buses:
 		_check(sim.buses.buses[bid].state == "driving", "only buses still on a trip remain after the depot goes")
+	_coach()
 	_schools()
 	_taxis()
 	_bus_lanes()
@@ -165,7 +165,7 @@ func _init() -> void:
 ## Taxis: the owner sizes the fleet to the rides people call for, sets the
 ## meter, and each cab drives real fares and comes back to its stall.
 func _taxis() -> void:
-	var sim := _town()
+	var sim := _town(500)
 	var placed := false
 	for spot in [Vector3(260, 0, 420), Vector3(-260, 0, 380), Vector3(500, 0, 220), Vector3(-600, 0, 620)]:
 		var site := Services.site_near(sim.network, Services.Kind.TAXI_COMPANY, spot)
@@ -241,11 +241,22 @@ func _bus_lanes() -> void:
 
 ## The intercity coach: with a neighbor and a road out of the region, it
 ## drives to the county highway's link, spends a while away, and comes home.
-func _coach(sim: CitySim, id: int) -> void:
+func _coach() -> void:
+	var sim := _town(500)
+	var site := Services.site_near(sim.network, Services.Kind.BUS_DEPOT, Vector3(-40, 0, 220))
+	sim.apply({"type": "place_service", "kind": Services.Kind.BUS_DEPOT, "pos": [site[0].x, site[0].z],
+		"dir": [site[1].x, site[1].z]})
+	var id: int = sim.services.buildings.keys().filter(func(k): return sim.services.buildings[k].kind == Services.Kind.BUS_DEPOT)[0]
 	sim.region = {"neighbors": [{"name": "Oakland City"}]}
+	# The link is the nearest corner 400 m or more from the depot, so the run
+	# is a real drive without taking the test all night.
+	var depot: Vector3 = sim.services.buildings[id].pos
 	var edge := -1
+	var best := INF
 	for n in sim.network.nodes:
-		if edge == -1 or sim.network.nodes[n].x > sim.network.nodes[edge].x:
+		var d: float = sim.network.nodes[n].distance_to(depot)
+		if d >= 400.0 and d < best:
+			best = d
 			edge = n
 	sim.region_links = [edge]
 	_check(not sim.buses._open_tree(sim, id).filter(func(n): return n.id == "intercity").is_empty(),
@@ -302,12 +313,12 @@ func _schools() -> void:
 
 
 ## A grid town with homes, shops and jobs already built (as if grown).
-func _town() -> CitySim:
+func _town(half := 1000) -> CitySim:
 	var sim := CitySim.new()
 	sim.simulate_traffic = true
 	for z in range(0, 801, 200):
-		sim.apply({"type": "build_road", "start": [-1000, z], "ctrl": [0, z], "end": [1000, z]})
-	for x in range(-1000, 1001, 250):
+		sim.apply({"type": "build_road", "start": [-half, z], "ctrl": [0, z], "end": [half, z]})
+	for x in range(-half, half + 1, 250):
 		sim.apply({"type": "build_road", "start": [x, 0], "ctrl": [x, 400], "end": [x, 800]})
 	sim.economy.money = 50_000_000
 	# Zone every block face: shops downtown, homes around.
