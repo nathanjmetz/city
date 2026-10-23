@@ -7,8 +7,10 @@ extends SceneTree
 ##   --port N      CITY_PORT    port to listen on (default 9080)
 ##   --code ABC123 CITY_CODE    invite code (default: made up once, then kept in the data file)
 ##   --data FILE   CITY_DATA    where the region is saved (default user://region.json)
-##   --host NAME   CITY_HOST    the host's player name: approves who may play
-##                              (default: whoever makes the first account)
+##   --host NAME   CITY_HOST    the host's player name
+##                              (default: whoever comes in first)
+##   --approve yes CITY_APPROVE the host lets each new player in (default: the
+##                              invite code is the only key)
 
 var server: RegionServer
 
@@ -19,6 +21,7 @@ func _init() -> void:
 		"code": OS.get_environment("CITY_CODE"),
 		"data": OS.get_environment("CITY_DATA"),
 		"host": OS.get_environment("CITY_HOST"),
+		"approve": OS.get_environment("CITY_APPROVE"),
 	}
 	var args := OS.get_cmdline_user_args()
 	for i in args.size() - 1:
@@ -29,6 +32,7 @@ func _init() -> void:
 	if not data.begins_with("user://") and not data.begins_with("/"):
 		data = OS.get_environment("PWD").path_join(data)
 	server = RegionServer.new()
+	server.require_approval = opts.approve in ["yes", "true", "1"]
 	root.add_child.call_deferred(server)
 	var err := server.start(port, opts.code, data, opts.host)
 	if err != OK:

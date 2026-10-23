@@ -3,7 +3,9 @@ extends Node3D
 ## brand kit: the logo and a short menu docked down the left edge, over a
 ## deep-ink fade into a slowly turning view of your latest city.
 ##
-## Continue · New city · Load city · Play together · Quit
+## There is one shared map and one way to play: Play · Profile · Quit.
+## Play drops you into your town; the first time, it asks for the invite
+## code the host sent you, and that code is the only key.
 
 var _panel := PanelContainer.new()
 var _pages := {}       # name -> Control
@@ -13,15 +15,9 @@ var _angle := 0.4
 var _code := LineEdit.new()
 var _server := LineEdit.new()
 var _name := LineEdit.new()
-var _password := LineEdit.new()
-var _signup := CheckButton.new()
-var _join_button: Button
-var _city_name := LineEdit.new()
-var _difficulty := "normal"
-var _diff_buttons := {}  # difficulty -> Button
-var _saves_list := VBoxContainer.new()
 var _host_info := ShellStyle.text("", 14)
 var _joining := false
+var _published_server := ""  # from Session.REGION_CONFIG
 
 
 func _ready() -> void:
@@ -59,7 +55,7 @@ func _ready() -> void:
 	tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(tag)
 	col.add_child(_gap(24))
-	for page in [_home_page(), _new_page(), _load_page(), _together_page()]:
+	for page in [_home_page(), _code_page(), _profile_page()]:
 		col.add_child(page)
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -73,12 +69,10 @@ func _ready() -> void:
 		_code.text = Session.pending_invite.get("join", "")
 		_server.text = Session.pending_invite.get("server", "")
 		Session.pending_invite = {}
-		# First time on this device: they're signing up, not logging in.
-		if not Session.has_login(_server.text, _code.text):
-			_signup.button_pressed = true
-		_show("together")
+		_show("code")
 	else:
 		_show("home")
+	_fetch_server()
 
 
 func _process(delta: float) -> void:
@@ -97,97 +91,19 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _home_page() -> Control:
 	var col := _page("home")
-	var saves := Session.list_saves()
-	if not saves.is_empty():
-		var latest: Dictionary = saves[0]
-		var b := _big_button("Continue", "%s  ·  %s people" % [latest.name, CitySim.money_text(latest.population)])
-		b.pressed.connect(func(): Session.play_solo(latest.path))
-		ShellStyle.primary(b)
-		col.add_child(b)
-	var fresh := _big_button("New city", "Start fresh on open land", func(): _show("new"))
-	if saves.is_empty():
-		ShellStyle.primary(fresh)
-	col.add_child(fresh)
-	if not saves.is_empty():
-		col.add_child(_big_button("Load city", "%d saved" % saves.size(), func(): _show("load")))
-	col.add_child(_big_button("Play together", "Build next to family and friends", func(): _show("together")))
+	var play := _big_button("Play", "Your town, next to the neighbors", _play)
+	ShellStyle.primary(play)
+	col.add_child(play)
+	col.add_child(_big_button("Profile", "How neighbors see you", func(): _show("profile")))
 	if not OS.has_feature("web"):
 		col.add_child(_big_button("Quit", "", func(): get_tree().quit()))
 	return col
 
 
-func _new_page() -> Control:
-	var col := _page("new")
-	col.add_child(ShellStyle.title("Name your city"))
-	_city_name.placeholder_text = "Maple Falls"
-	_city_name.custom_minimum_size = Vector2(0, 40)
-	_city_name.text_submitted.connect(func(_t): _start_new())
-	col.add_child(_city_name)
-	col.add_child(_gap(4))
-	col.add_child(_label("DIFFICULTY"))
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 6)
-	var group := ButtonGroup.new()
-	for diff in Economy.DIFFICULTIES:
-		var d: Dictionary = Economy.DIFFICULTIES[diff]
-		var b := Button.new()
-		b.text = "%s\n$%s" % [d.name, CitySim.money_text(d.start)]
-		b.toggle_mode = true
-		b.button_group = group
-		b.button_pressed = diff == _difficulty
-		b.focus_mode = Control.FOCUS_NONE
-		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		b.custom_minimum_size = Vector2(0, 50)
-		b.tooltip_text = "Start with $%s. Income x%.2f, upkeep x%.2f, grants x%.2f." \
-			% [CitySim.money_text(d.start), d.income, d.upkeep, d.grants]
-		b.pressed.connect(func(): _difficulty = diff)
-		row.add_child(b)
-	col.add_child(row)
-	col.add_child(_gap(4))
-	var start := _big_button("Start", "", _start_new)
-	ShellStyle.primary(start)
-	col.add_child(start)
-	col.add_child(_back())
-	return col
-
-
-func _load_page() -> Control:
-	var col := _page("load")
-	col.add_child(ShellStyle.title("Your cities"))
-	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(0, 340)
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_saves_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_saves_list.add_theme_constant_override("separation", 6)
-	scroll.add_child(_saves_list)
-	col.add_child(scroll)
-	col.add_child(_back())
-	return col
-
-
-func _together_page() -> Control:
-	var col := _page("together")
-	col.add_child(ShellStyle.title("Play together"))
-	col.add_child(_label("YOUR NAME"))
-	_name.text = Session.profile.name
-	_name.placeholder_text = "What neighbors see over your city"
-	_name.max_length = 24
-	_name.custom_minimum_size = Vector2(0, 38)
-	col.add_child(_name)
-	col.add_child(_gap(6))
-	col.add_child(_label("PASSWORD"))
-	_password.secret = true
-	_password.placeholder_text = "Saved on this device" if Session.has_login(Session.profile.server, Session.profile.code) else ""
-	_password.custom_minimum_size = Vector2(0, 38)
-	_password.text_submitted.connect(func(_t): _join())
-	col.add_child(_password)
-	_signup.text = "I'm new here: create my account"
-	_signup.focus_mode = Control.FOCUS_NONE
-	_signup.add_theme_color_override("font_color", Brand.INK_MUTED)
-	_signup.toggled.connect(func(on): _sync_join_button())
-	col.add_child(_signup)
-	col.add_child(_gap(6))
-	col.add_child(_label("INVITE CODE"))
+func _code_page() -> Control:
+	var col := _page("code")
+	col.add_child(ShellStyle.title("Invite code"))
+	col.add_child(_label("FROM THE HOST"))
 	_code.text = Session.profile.code
 	_code.placeholder_text = "ABC123"
 	_code.max_length = 12
@@ -197,133 +113,121 @@ func _together_page() -> Control:
 	_code.add_theme_font_size_override("font_size", 24)
 	_code.text_submitted.connect(func(_t): _join())
 	col.add_child(_code)
-	var adv := Button.new()
-	adv.text = "Server address ›"
-	adv.flat = true
-	adv.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	adv.add_theme_color_override("font_color", Brand.INK_MUTED)
-	adv.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
-	adv.add_theme_stylebox_override("hover", StyleBoxEmpty.new())
-	col.add_child(adv)
+	col.add_child(_gap(6))
+	col.add_child(_label("YOUR NAME"))
+	var who := LineEdit.new()
+	who.text = Session.profile.name
+	who.placeholder_text = "Who you are, over your town"
+	who.max_length = 24
+	who.custom_minimum_size = Vector2(0, 38)
+	who.text_changed.connect(func(t):
+		Session.profile.name = t.strip_edges()
+		_name.text = t
+		Session.save_profile())
+	who.text_submitted.connect(func(_t): _join())
+	col.add_child(who)
+	# The server comes from the invite link or the region's config; there's
+	# nothing to type.
 	_server.text = Session.profile.server
-	_server.placeholder_text = Session.LOCAL_SERVER
-	_server.custom_minimum_size = Vector2(0, 36)
-	_server.visible = _server.text != ""
-	adv.pressed.connect(func(): _server.visible = not _server.visible)
-	col.add_child(_server)
-	_join_button = _big_button("Join", "Your city starts next to theirs", _join)
-	ShellStyle.primary(_join_button)
-	col.add_child(_join_button)
+	var play := _big_button("Play", "", _join)
+	ShellStyle.primary(play)
+	col.add_child(play)
 	if not OS.has_feature("web"):
 		col.add_child(_gap(8))
 		col.add_child(_label("OR HOST ONE ON THIS COMPUTER"))
-		col.add_child(_big_button("Host a region", "Friends join with your code", _host))
+		col.add_child(_big_button("Host a region", "Family joins with your code", _host))
 		_host_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		col.add_child(_host_info)
 	col.add_child(_back())
 	return col
 
 
-func _sync_join_button() -> void:
-	var title := _join_button.get_meta("title") as Label if _join_button.has_meta("title") else null
-	if title:
-		title.text = "Create account and join" if _signup.button_pressed else "Join"
+func _profile_page() -> Control:
+	var col := _page("profile")
+	col.add_child(ShellStyle.title("Profile"))
+	col.add_child(_label("NAME OVER YOUR TOWN"))
+	_name.text = Session.profile.name
+	_name.placeholder_text = "Who you are, over your town"
+	_name.max_length = 24
+	_name.custom_minimum_size = Vector2(0, 38)
+	_name.text_changed.connect(func(t):
+		Session.profile.name = t.strip_edges()
+		Session.save_profile())
+	col.add_child(_name)
+	col.add_child(_back())
+	return col
 
 
 func _show(page: String) -> void:
 	for p in _pages:
 		_pages[p].visible = p == page
 	_status.text = ""
-	if page == "load":
-		_fill_saves()
-	elif page == "new":
-		_city_name.grab_focus.call_deferred()
-	elif page == "together":
-		(_name if _name.text == "" else (_password if _code.text != "" else _code)).grab_focus.call_deferred()
-
-
-func _fill_saves() -> void:
-	for c in _saves_list.get_children():
-		c.queue_free()
-	for s in Session.list_saves():
-		var row := HBoxContainer.new()
-		var when := Time.get_datetime_string_from_unix_time(s.saved, true).left(16)
-		var b := _big_button(s.name, "%s people  ·  $%s  ·  %s" % [
-			CitySim.money_text(s.population), CitySim.money_text(s.money), when])
-		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		b.pressed.connect(func(): Session.play_solo(s.path))
-		row.add_child(b)
-		var del := Button.new()
-		del.text = "×"
-		del.tooltip_text = "Delete this city (click twice)"
-		del.custom_minimum_size = Vector2(36, 0)
-		del.pressed.connect(func():
-			if del.text == "Delete?":
-				Session.delete_save(s.path)
-				_fill_saves()
-			else:
-				del.text = "Delete?")
-		row.add_child(del)
-		_saves_list.add_child(row)
+	if page == "code":
+		_code.grab_focus.call_deferred()
 
 
 # --- Actions -----------------------------------------------------------------
 
-func _start_new() -> void:
-	var n := _city_name.text.strip_edges()
-	if n == "":
-		n = _city_name.placeholder_text
-	Session.new_city(n, _difficulty)
+## Play: straight into your town if this device has been in before,
+## otherwise ask for the invite code first.
+func _play() -> void:
+	if Session.profile.code != "" and Session.has_login(_server_address(), Session.profile.code):
+		_code.text = Session.profile.code
+		_join()
+	else:
+		_show("code")
 
 
 func _join() -> void:
 	if _joining:
 		return
-	var n := _name.text.strip_edges()
-	if n == "":
-		_status.text = "Pick a name first."
-		_name.grab_focus()
-		return
 	if _code.text.strip_edges() == "":
-		_status.text = "Type the invite code you were sent."
+		_status.text = "Type the invite code the host sent you."
 		_code.grab_focus()
 		return
-	var new_account := _signup.button_pressed
-	if _password.text == "" and (new_account or not Session.has_login(_server.text, _code.text)):
-		_status.text = "Pick a password for your account." if new_account else "Type your password, or tick \"I'm new here\"."
-		_password.grab_focus()
-		return
-	Session.profile.name = n
-	Session.save_profile()
 	_joining = true
 	_status.text = "Joining..."
-	var c := Session.join_region(_server.text, _code.text, _password.text, new_account)
-	_password.text = ""
+	var c := Session.join_region(_server_address(), _code.text)
 	c.joined.connect(func(): Session.enter_region())
-	c.waiting.connect(func(message):
-		_status.text = message
-		_signup.button_pressed = false)
+	c.waiting.connect(func(message): _status.text = message)
 	c.failed.connect(func(reason):
 		_joining = false
 		_status.text = reason)
 
 
+## Where the region is: the invite link's address, else the one the region
+## publishes (its quick tunnel changes on every restart), else the last used.
+func _server_address() -> String:
+	if _server.text != "" and _server.text != Session.profile.server:
+		return _server.text
+	if _published_server != "":
+		return _published_server
+	return _server.text
+
+
+func _fetch_server() -> void:
+	var http := HTTPRequest.new()
+	http.timeout = 8.0
+	add_child(http)
+	http.request_completed.connect(func(result, code, _h, body):
+		if result == HTTPRequest.RESULT_SUCCESS and code == 200:
+			var d = JSON.parse_string(body.get_string_from_utf8())
+			if d is Dictionary and str(d.get("server", "")).begins_with("ws"):
+				_published_server = str(d.server)
+		http.queue_free())
+	if http.request(Session.REGION_CONFIG) != OK:
+		http.queue_free()
+
+
 func _host() -> void:
-	if _name.text.strip_edges() == "":
-		_status.text = "Pick your name first: you'll be the host."
-		_name.grab_focus()
-		return
-	Session.profile.name = _name.text.strip_edges()
-	Session.save_profile()
 	var code := Session.host_region()
 	if code == "":
 		_status.text = "Couldn't start a region: port 9080 is busy."
 		return
 	_code.text = code
 	_server.text = Session.LOCAL_SERVER
-	_host_info.text = "Region running. Invite code: %s\nFriends on your network join with this computer's address, port 9080. You approve who gets in." % code
-	if not Session.has_login(_server.text, code):
-		_signup.button_pressed = true
+	_published_server = ""
+	_host_info.text = "Region running. Invite code: %s\nFamily on your network join with this computer's address, port 9080." % code
 	_join()
 
 
