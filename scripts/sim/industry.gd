@@ -57,6 +57,11 @@ var day := 0.0
 ## Set by the city: an oil or timber company that has worked out its lease
 ## builds a gravel lease road to new ground (CitySim._industry_road).
 var expand := Callable()
+## Set by the city: what an acre sells for at a point (Capital.land_price).
+var land_price_of := Callable()
+## Set by the city: lays the lease or logging road out to a new pad, paid
+## from the company's cash; false when no road can reach it (CitySim._pad_road).
+var pad_road := Callable()
 var _next_id := 1
 
 
@@ -64,8 +69,32 @@ func add_site(kind: String, pos: Vector3, dir: Vector3, drive: Array) -> int:
 	var id := _next_id
 	_next_id += 1
 	sites[id] = {"kind": kind, "pos": pos, "dir": dir, "drive": drive, "pads": [], "stock": 0.0,
-		"loss_streak": 0}
+		"loss_streak": 0, "owned": {}}
+	# Its startup cash buys its first few pads (Capital).
+	Capital.start(sites[id], kind)
 	return id
+
+
+## What opening a pad on cell c costs the company: the ground (leased for
+## oil, bought for a quarry or timber it doesn't hold yet) and the work to
+## open it (Balance INDUSTRY_PAD_CAPEX).
+func pad_price(s: Dictionary, c: Vector2i) -> float:
+	var capex := float(Balance.INDUSTRY_PAD_CAPEX[s.kind])
+	if s.kind == "oil":
+		return capex + Balance.INDUSTRY_OIL_BONUS_PER_ACRE * Balance.INDUSTRY_OIL_UNIT_ACRES
+	if s.get("owned", {}).has(c):
+		return capex  # its own ground, cut before or worked out
+	var acre: float = land_price_of.call(pad_center(s, c)) if land_price_of.is_valid() \
+		else Balance.CAPITAL_LAND_PER_ACRE
+	return capex + acre * PAD * PAD / 4046.86
+
+
+## What a lender counts on the company keeping a year: what it already
+## produces, not the pad it hasn't opened yet (reserve-based lenders lend on
+## proven production), so a new company's first pads are paid in cash.
+func _income(id: int, _c: Vector2i) -> float:
+	var s: Dictionary = sites[id]
+	return Capital.kept(s, "company", Capital.steady(s, yearly_profit(id)))
 
 
 static func _right(s: Dictionary) -> Vector3:
@@ -200,10 +229,13 @@ func decide(usable: Callable) -> bool:
 		var margin := buy_margin(id)
 		var best := Vector2i.MAX
 		var best_score := -INF
+		var ranked := []  # [score, cell] of every pad it could open
 		# What stopped a new company, for its panel: 0 nothing rich, 1 nothing pays, 2 all taken.
 		var why := 0
 		if s.kind == "forest":
 			changed = _rotate(s) or changed
+		# Its own money: kept profit in, land loan payments out (Capital).
+		Capital.step(s, "company", yearly_profit(id), day)
 		if s.pads.size() < _max_pads(s) and margin < INF:
 			for c in _candidates(s):
 				if richness(s, c) < MIN_RICHNESS:
@@ -219,6 +251,7 @@ func decide(usable: Callable) -> bool:
 				var score := p + (COMPACT_BONUS * _neighbors(s, c) if s.kind == "ore" else 0.0)
 				if reserves != null and reserves.kind_at(pad_center(s, c)) == s.kind:
 					score += RESERVE_BONUS
+				ranked.append([score, c])
 				if score > best_score or (score == best_score and best != Vector2i.MAX and _less(c, best)):
 					best = c
 					best_score = score
@@ -233,9 +266,25 @@ func decide(usable: Callable) -> bool:
 				s.loss_streak = 0
 				changed = true
 		elif best != Vector2i.MAX:
-			s.pads.append(best)
-			s.loss_streak = 0
-			changed = true
+			# The best few it can reach with a road, paid for from its own
+			# cash and a land loan, never the town's money. Short of cash it
+			# saves up: growth comes from what it keeps.
+			ranked.sort_custom(func(a, b): return a[0] > b[0] or (a[0] == b[0] and _less(a[1], b[1])))
+			for e in ranked.slice(0, 6):
+				var c: Vector2i = e[1]
+				var price := pad_price(s, c)
+				if not Capital.can_buy(s, price, _income(id, c)):
+					break
+				if pad_road.is_valid() and not pad_road.call(id, c, float(s.cash) - Capital.cash_needed(s, price, _income(id, c))):
+					continue
+				Capital.buy(s, price, _income(id, c))
+				if not s.has("owned"):
+					s.owned = {}
+				s.owned[c] = day
+				s.pads.append(c)
+				s.loss_streak = 0
+				changed = true
+				break
 		elif expand.is_valid() and wants_road(id, usable):
 			changed = expand.call(id) or changed
 		var idle := ""
@@ -246,6 +295,8 @@ func decide(usable: Callable) -> bool:
 				"Every rich spot within 400 m is built on, farmed or reserved for something else."][why]
 			if why < 2:
 				idle = idle % k.cargo
+			if best != Vector2i.MAX and s.pads.is_empty():
+				idle = "Saving up for its first %s ($%s)." % [k.pad, CitySim.money_text(roundi(pad_price(s, best)))]
 			if margin == INF:
 				idle = "On hold: it opens no pads until its Growth is raised."
 		if s.get("idle", "") != idle:
@@ -307,8 +358,22 @@ func _candidates(s: Dictionary) -> Array:
 				seen[c] = true
 				if s.kind == "oil" and not _spaced(s, c):
 					continue
+				if not s.pads.is_empty() and not _beside_worked(s, c):
+					continue
 				out.append(c)
 	return out
+
+
+## True when cell c grows the company's ground from what it already works:
+## an offset to a well it has, or the woods next to units it has cut.
+static func _beside_worked(s: Dictionary, c: Vector2i) -> bool:
+	var reach: int = Balance.OIL_OFFSET_CELLS if s.kind == "oil" else Balance.FOREST_NEXT_CELLS
+	var worked: Array = [Vector2i.ZERO] + s.pads + s.get("leases", []) + s.get("cut", {}).keys() \
+		+ s.get("regrow", {}).keys()
+	for o in worked:
+		if maxi(absi(o.x - c.x), absi(o.y - c.y)) <= reach:
+			return true
+	return false
 
 
 ## True when company `id` has worked out its lease and should take on new
@@ -353,7 +418,7 @@ func next_lease(id: int, usable: Callable) -> Vector2i:
 				for q in centres:
 					near = minf(near, (c - q).length())
 				# Past what it holds, but next to it: tracts touch.
-				if near <= r * 0.75 or near > r * 2:
+				if near <= r * 0.75 or near > r * 1.25:
 					continue
 				if richness(s, c) < MIN_RICHNESS or (s.kind == "oil" and not _spaced(s, c)):
 					continue
@@ -565,6 +630,7 @@ func to_dict() -> Dictionary:
 			"leader": s.get("leader", {}), "built": s.get("built", []), "why": s.get("why", ""),
 			"cut": _cells_out(s.get("cut", {})), "regrow": _cells_out(s.get("regrow", {})),
 			"leases": s.get("leases", []).map(func(c): return [c.x, c.y]),
+			"owned": _cells_out(s.get("owned", {})), "capital": Capital.save(s),
 			"road_wait": s.get("road_wait", 0.0), "pending": s.get("pending", {})}
 	return {"sites": out, "next_id": _next_id}
 
@@ -589,6 +655,11 @@ func from_dict(d: Dictionary) -> void:
 		sites[int(k)].cut = _cells_in(s.get("cut", []))
 		sites[int(k)].regrow = _cells_in(s.get("regrow", []))
 		sites[int(k)].leases = s.get("leases", []).map(func(c): return Vector2i(int(c[0]), int(c[1])))
+		sites[int(k)].owned = _cells_in(s.get("owned", []))
+		if s.has("capital"):
+			Capital.load(sites[int(k)], s.capital)
+		else:
+			Capital.start(sites[int(k)], str(s.kind))
 		sites[int(k)].road_wait = float(s.get("road_wait", 0.0))
 		sites[int(k)].pending = Dictionary(s.get("pending", {}))
 	_next_id = int(d.get("next_id", 1))

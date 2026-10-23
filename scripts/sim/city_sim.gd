@@ -329,11 +329,25 @@ func apply_now(cmd: Dictionary) -> bool:
 	match cmd.get("type", ""):
 		"build_road":
 			var c := [_v(cmd.start), _v(cmd.ctrl), _v(cmd.end)]
+			# A raised road climbs over what it crosses (Overpass).
+			var pieces := [c]
+			if cmd.get("over", false):
+				var plan := Overpass.plan(self, c, _road(cmd))
+				pieces = plan.pieces
 			# The server checks real road rules too, not just the player's screen.
-			if road_problem(c, _road(cmd)) == "":
+			if pieces.size() == 1 and road_problem(c, _road(cmd)) == "":
 				ok = _build_over(c, _road(cmd))
 				if ok and cmd.get("join", false):
 					_join_crossings([c])
+			elif pieces.size() > 1 and pieces_problem(pieces, _road(cmd)) == "":
+				network.begin_batch()
+				for q in pieces:
+					ok = network.build_road(q[0], q[1], q[2], _road(cmd)) or ok
+				network.end_batch()
+				if ok:
+					economy.money -= shapes_cost(pieces, _road(cmd))
+					if cmd.get("join", false):
+						_join_crossings(pieces)
 		"join_county":
 			# A road drawn onto a county road (hub roads too).
 			ok = _join_county(_v(cmd.at), int(cmd.get("way", 0)))
@@ -1906,6 +1920,8 @@ func _wire_policies() -> void:
 	# asks on the bell when that road would cross the player's things.
 	farms.expand = _farm_road
 	industry.expand = _industry_road
+	industry.land_price_of = func(p: Vector3) -> float: return Capital.land_price(self, p)
+	industry.pad_road = _pad_road
 	# What farmland sells for, nearby development included (Capital).
 	farms.land_price_of = func(p: Vector3) -> float: return Capital.land_price(self, p)
 
@@ -2295,11 +2311,55 @@ func _farm_sell_outs() -> bool:
 ## Builds a farm's road and opens the block beyond it.
 func _farm_open(id: int, block: Vector2i, route: Array, leader: String) -> bool:
 	var f: Dictionary = farms.farms[id]
-	if route.size() < 2 or HubRoads.build(self, route).is_empty():
+	if route.size() < 2 or HubRoads.build(self, route, "farm:%d" % id).is_empty():
 		f.road_wait = farms.day + Balance.FARM_ROAD_WAIT_DAYS
 		return false
 	f.blocks.append(block)
 	f.why = "%s filled its 80 acres, so it built a gravel road on the survey line to farm the next 80. It's a town road now." % leader
+	_lots_dirty = true
+	_usable_cache.clear()
+	return true
+
+
+## A new well pad or harvest unit needs a way in for its trucks: the
+## company lays a gravel lease (or logging) road to it from the nearest
+## road, most often the one it built to its last pad, so its roads branch
+## out across its ground the way an operator lays them out. They are public
+## roads: trucks and anyone else may use them, and in time they may become
+## shortcuts the mayor has to deal with (Brawn, 2026-10-23). Paid from the
+## company's cash. A quarry hauls inside its pit and needs none. True when
+## the pad can be reached (road built or already there).
+func _pad_road(id: int, cell: Vector2i, spare: float) -> bool:
+	var s: Dictionary = industry.sites[id]
+	if s.kind == "ore":
+		return true
+	var mid := Industry.pad_center(s, cell)
+	if not network.find_segment_near(mid, Industry.PAD * 0.9, 2.0).is_empty():
+		return true  # already beside a road
+	var home := Vector3(s.pos.x, 0.0, s.pos.z) - mid
+	var right := Vector3(-s.dir.z, 0.0, s.dir.x)
+	var ways := [s.dir, -s.dir, right, -right]
+	if home.length() > 1.0:
+		ways.push_front(home.normalized())
+	var best := {}
+	var best_len := INF
+	for d in ways:
+		var edge: Vector3 = mid + d * (Industry.PAD * 0.5)
+		var start := HubRoads.reach(self, edge, d, Balance.INDUSTRY_PAD_ROAD_MAX)
+		if start == Vector3.INF or start.distance_to(edge) <= HubRoads.SNAP:
+			continue
+		var plan := HubRoads.check(self, [start, edge], "site:%d" % id)
+		# A road through the player's things goes to the bell, as the big
+		# lease road does; a pad that needs one waits for another spot.
+		if not plan.ok or plan.permit or plan.length >= best_len:
+			continue
+		best_len = plan.length
+		best = plan
+	if best.is_empty() or spare < float(best.cost):
+		return false
+	if HubRoads.build(self, best.route, "site:%d" % id).is_empty():
+		return false
+	s.cash = float(s.cash) - float(best.cost)
 	_lots_dirty = true
 	_usable_cache.clear()
 	return true
@@ -2323,7 +2383,8 @@ func _industry_road(id: int) -> bool:
 			var route := HubRoads.from_flat(self, permits.requests[int(pending.req)].route)
 			permits.done(int(pending.req))
 			s.pending = {}
-			return _industry_open(id, Vector2i(int(pending.cell[0]), int(pending.cell[1])), route, leader)
+			return _industry_open(id, Vector2i(int(pending.cell[0]), int(pending.cell[1])), route, leader,
+				float(pending.get("cost", 0.0)))
 		if state != Permits.State.OPEN:
 			s.pending = {}
 			s.road_wait = industry.day + Balance.INDUSTRY_ROAD_WAIT_DAYS
@@ -2355,11 +2416,12 @@ func _industry_road(id: int) -> bool:
 		if score > best_score:
 			best_score = score
 			best = plan
-	if best.is_empty():
+	# The company pays for its road from what it has saved (Capital).
+	if best.is_empty() or float(s.get("cash", 0.0)) < float(best.cost) + Balance.CAPITAL_RESERVE:
 		s.road_wait = industry.day + Balance.INDUSTRY_ROAD_WAIT_DAYS
 		return false
 	if not best.permit:
-		return _industry_open(id, cell, best.route, leader)
+		return _industry_open(id, cell, best.route, leader, float(best.cost))
 	var what := "logging road" if s.kind == "forest" else "lease road"
 	var req := permits.file(self, {"hub": "industry", "hub_id": id, "leader": leader,
 		"title": "A gravel %s to new ground" % what,
@@ -2370,16 +2432,17 @@ func _industry_road(id: int) -> bool:
 	if req == -1:
 		s.road_wait = industry.day + Balance.INDUSTRY_ROAD_WAIT_DAYS
 		return false
-	s.pending = {"req": req, "cell": [cell.x, cell.y]}
+	s.pending = {"req": req, "cell": [cell.x, cell.y], "cost": float(best.cost)}
 	return false
 
 
 ## Builds a company's lease road and takes on the tract beyond it.
-func _industry_open(id: int, cell: Vector2i, route: Array, leader: String) -> bool:
+func _industry_open(id: int, cell: Vector2i, route: Array, leader: String, cost: float) -> bool:
 	var s: Dictionary = industry.sites[id]
-	if route.size() < 2 or HubRoads.build(self, route).is_empty():
+	if route.size() < 2 or HubRoads.build(self, route, "site:%d" % id).is_empty():
 		s.road_wait = industry.day + Balance.INDUSTRY_ROAD_WAIT_DAYS
 		return false
+	s.cash = float(s.get("cash", 0.0)) - cost
 	if not s.has("leases"):
 		s.leases = []
 	s.leases.append(cell)
@@ -2781,6 +2844,21 @@ func road_problem(c: Array, type: int) -> String:
 	if problem == "" and Economy.road_cost(c, type) > economy.money:
 		return "Not enough money: this road costs $%s." % money_text(Economy.road_cost(c, type))
 	return problem
+
+
+## Why a road built as these pieces (an overpass and its approaches) can't
+## go in ("" if it can): each piece meets the road rules, and the town can
+## pay for them all.
+func pieces_problem(pieces: Array, type: int) -> String:
+	if pieces.size() == 1:
+		return road_problem(pieces[0], type)
+	for q in pieces:
+		var why := road_problem(q, type)
+		if why != "" and not why.begins_with("Not enough money"):
+			return why
+	if shapes_cost(pieces, type) > economy.money:
+		return "Not enough money: this road costs $%s." % money_text(shapes_cost(pieces, type))
+	return ""
 
 
 ## Whose land these road pieces cross ("" when it's this town's or open

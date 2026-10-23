@@ -177,8 +177,13 @@ static func sell_out(sim: CitySim, pos: Vector3) -> bool:
 
 
 static func save(hub: Dictionary) -> Dictionary:
-	return {"cash": float(hub.get("cash", 0.0)), "debt": float(hub.get("debt", 0.0)),
-		"cap_day": float(hub.get("cap_day", -1.0)), "avg": float(hub.get("avg_profit", 0.0))}
+	var out := {"cash": float(hub.get("cash", 0.0)), "debt": float(hub.get("debt", 0.0)),
+		"cap_day": float(hub.get("cap_day", -1.0))}
+	# Only once it has one: a copy loaded before its first step must not
+	# start from an average of 0 (lenders would count on nothing).
+	if hub.has("avg_profit"):
+		out.avg = float(hub.avg_profit)
+	return out
 
 
 static func load(hub: Dictionary, d: Dictionary) -> void:

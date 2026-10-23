@@ -150,7 +150,10 @@ static func check(sim, route: Array, self_ref: String) -> Dictionary:
 
 ## Lays the road (the hub pays; the town's money is untouched) and returns
 ## the new segment ids. From here on it is a public road like any other.
-static func build(sim, route: Array) -> Array:
+## `by` tags the new pieces with who built them ("site:3", "farm:5"), kept
+## on the segment so the civil engineer can find a hub road carrying through
+## traffic.
+static func build(sim, route: Array, by := "") -> Array:
 	var money: int = sim.economy.money
 	var before: Array = sim.network.segments.keys()
 	# Starting on a county road: the town takes over that mile first (free,
@@ -168,7 +171,11 @@ static func build(sim, route: Array) -> Array:
 			sim.network.build_road(p, (p + q) * 0.5, q, TYPE)
 	sim.network.end_batch()
 	sim.economy.money = money
-	return sim.network.segments.keys().filter(func(id): return not id in before)
+	var made: Array = sim.network.segments.keys().filter(func(id): return not id in before)
+	if by != "":
+		for id in made:
+			sim.network.segments[id].built_by = by
+	return made
 
 
 ## The route as [[x, z], ...] for a permit request.
