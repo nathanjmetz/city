@@ -40,6 +40,7 @@ func _done() -> Array:
 static func build_retail(seed: int, to_curb: float, lot := {}, spec := {}) -> Array:
 	var b := _start(seed, lot, spec)
 	b._shop(to_curb, lot, false)
+	b._service_yard(b.era == "prewar")
 	return b._done()
 
 
@@ -176,6 +177,7 @@ func _apartments(to_curb: float, width: float, storeys: int) -> void:
 static func build_mixed(seed: int, to_curb: float, lot: Dictionary, storeys: int, spec := {}) -> Array:
 	var b := _start(seed, lot, spec)
 	b._mixed(to_curb, b.half * 2.0, storeys)
+	b._service_yard(b.era == "prewar")
 	return b._done()
 
 
@@ -288,6 +290,7 @@ func _downtown_walk(to_curb: float, width: float, zf: float) -> void:
 static func build_office(seed: int, to_curb: float, lot: Dictionary, storeys: int, spec := {}) -> Array:
 	var b := _start(seed, lot, spec)
 	b._office(to_curb, b.half * 2.0, storeys)
+	b._service_yard(false)
 	return b._done()
 
 
