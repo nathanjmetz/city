@@ -196,11 +196,14 @@ const FARM_LAND_PER_ACRE := 10_000
 ## Farmland is taxed on what it produces, not its sale price (US "use value"
 ## assessment), roughly a quarter of market value.
 const FARM_AG_ASSESSMENT := 0.25
-## Yearly gross per acre at full fertility: corn about 180 bu x $4.50.
-const FARM_GROSS_PER_ACRE := {"corn": 810.0, "soybeans": 600.0}
+## Yearly gross per acre at full fertility: corn about 180 bu x $4.50,
+## soybeans 55 bu x $11, soft red winter wheat 80 bu x $5.50, mixed
+## alfalfa-grass hay 4 tons x $120 sold off the farm with no livestock
+## buyer nearby (Purdue Crop Cost and Return Guide).
+const FARM_GROSS_PER_ACRE := {"corn": 810.0, "soybeans": 600.0, "wheat": 440.0, "hay": 480.0}
 ## Yearly cost per acre (seed, fuel, fertiliser, machinery; USDA operating
 ## costs with the land owned). Soybeans need no nitrogen, so they cost less.
-const FARM_COST_PER_ACRE := {"corn": 420.0, "soybeans": 280.0}
+const FARM_COST_PER_ACRE := {"corn": 420.0, "soybeans": 280.0, "wheat": 240.0, "hay": 300.0}
 ## Extra yearly cost per acre for each km a field lies from the farmhouse.
 const FARM_COST_PER_ACRE_PER_KM := 260.0
 ## Jobs: the farm family (2) plus a hired hand per this many cells (~40 acres).
@@ -214,6 +217,47 @@ const FARM_RESERVE_BONUS := 40.0
 const FARM_PRICE_CYCLE_DAYS := 48.0
 ## Farms decide to buy or sell land this often, in ticks (6 game hours).
 const FARM_DECIDE_EVERY := 360
+
+# --- Crop rotation (CropPlan) ----------------------------------------------------
+
+## Yield against a rotated field, by crop then last year's crop (Purdue and
+## Iowa State rotation trials: corn after corn about 10% less, soybeans
+## after soybeans 8% less to cyst nematode and disease, wheat after corn
+## risks head scab, corn after alfalfa a little more).
+const CROP_ROTATION_YIELD := {
+	"corn": {"corn": 0.9, "hay": 1.05},
+	"soybeans": {"soybeans": 0.92},
+	"wheat": {"wheat": 0.85, "corn": 0.95},
+}
+## Fertiliser saved, dollars an acre: the nitrogen credit to corn from last
+## year's soybeans (about 40 lb N) or alfalfa (about 120 lb), at $0.60 a lb.
+const CROP_N_CREDIT := {"corn": {"soybeans": 25.0, "hay": 75.0}}
+## Southern Indiana (Pike County, 38.5 N) double-crops soybeans after the
+## wheat harvest in June: net dollars an acre from that second crop.
+const CROP_DOUBLE_CROP := 90.0
+## Yield swing from soil health 0..1: plus or minus 5% at the ends.
+const CROP_HEALTH_YIELD := 0.1
+## What buyers in and around town add, dollars an acre: a grain mill's basis
+## for corn (about 15 cents a bushel) and flour wheat, the co-op elevator's
+## for corn and soybeans, a neighbouring town importing soybeans, and the
+## fairgrounds' livestock barns buying hay.
+const CROP_DEMAND := {"mill_corn": 25.0, "mill_wheat": 20.0, "elevator": 15.0, "region": 15.0, "fair_hay": 80.0}
+## How hard a careful leader splits the farm: dollars an acre against a crop
+## for its share of the fields already planned.
+const CROP_SPREAD_PER_ACRE := 200.0
+## Ground steeper than this (rise over run) is "highly erodible" (NRCS):
+## row crops there lose this many dollars an acre per unit of extra slope.
+const CROP_ERODIBLE_SLOPE := 0.06
+const CROP_EROSION_PER_ACRE := 3000.0
+## Cereal rye cover crop: seed and drilling about $37 an acre; what an
+## educated leader counts it worth to the soil (only they sow it, like the
+## roughly one Indiana farmer in six who does).
+const CROP_COVER_COST := 37.0
+const CROP_COVER_SOIL_VALUE := 45.0
+## An alfalfa stand is kept this many years, and keeping it saves the
+## establishment cost (dollars an acre).
+const CROP_HAY_STAND_YEARS := 4
+const CROP_HAY_ESTABLISH := 120.0
 
 # --- Resource industry -------------------------------------------------------
 
@@ -362,7 +406,7 @@ const POWER_SOLAR_LEASE_PER_ACRE := 1000.0
 
 ## Grain a farm ships: bushels an acre a year at full fertility (USDA Iowa
 ## yields), and one hopper semi's load.
-const FARM_BUSHELS_PER_ACRE := {"corn": 180.0, "soybeans": 55.0}
+const FARM_BUSHELS_PER_ACRE := {"corn": 180.0, "soybeans": 55.0, "wheat": 80.0}
 const GRAIN_TRUCK_BUSHELS := 1_000.0
 ## A factory ships one load of goods to the shops for this many loads in.
 const FACTORY_LOADS_PER_GOODS := 2.0

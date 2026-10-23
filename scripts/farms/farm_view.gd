@@ -65,21 +65,37 @@ static func _look(f: Dictionary) -> int:
 	return 1 + (1 if f.cells.size() >= 30 else 0) + (1 if f.cells.size() >= 100 else 0)
 
 
-## What a field looks like this month in the Midwest.
-func _season_color(crop: String) -> Color:
+## What a field looks like this month in southern Indiana, by its crop
+## (CropPlan): from the air corn is a dark blue-green and soybeans a
+## brighter yellow-green; winter wheat greens up in March, turns gold and
+## is cut in June, then double-crop soybeans follow; hay stays green all
+## season. A rye cover crop greens the stubble in November (`cover`) and
+## again in March and April before planting (`cover_prev`).
+func _season_color(crop: String, cover_prev := false, cover := false) -> Color:
 	var m := maxi(_month, 1)
 	if m <= 2 or m == 12:
 		return Color(0.84, 0.85, 0.88)  # snow over the stubble
+	match crop:
+		"wheat":
+			return [Color(0.34, 0.47, 0.2), Color(0.3, 0.5, 0.18), Color(0.4, 0.5, 0.22), Color(0.78, 0.66, 0.32),
+				Color(0.44, 0.43, 0.25), Color(0.3, 0.44, 0.2), Color(0.32, 0.45, 0.19), Color(0.68, 0.6, 0.25),
+				Color(0.66, 0.56, 0.36)][m - 3]
+		"hay":
+			return [Color(0.5, 0.5, 0.3), Color(0.36, 0.5, 0.22), Color(0.45, 0.52, 0.25), Color(0.36, 0.5, 0.22),
+				Color(0.42, 0.5, 0.24), Color(0.38, 0.5, 0.23), Color(0.45, 0.48, 0.25), Color(0.5, 0.5, 0.3),
+				Color(0.52, 0.5, 0.32)][m - 3]
 	if m == 3:
-		return Color(0.6, 0.52, 0.38)  # winter stubble
+		return Color(0.4, 0.48, 0.24) if cover_prev else Color(0.6, 0.52, 0.38)  # rye, or winter stubble
 	if m == 4:
-		return Color(0.36, 0.27, 0.19)  # tilled black soil
+		return Color(0.38, 0.47, 0.24) if cover_prev else Color(0.36, 0.27, 0.19)  # rye, or tilled black soil
 	if m == 5:
 		return Color(0.42, 0.42, 0.24)  # rows just up
 	if m <= 8:
-		return Color(0.2, 0.38, 0.13) if crop == "corn" else Color(0.26, 0.42, 0.18)
+		return Color(0.18, 0.34, 0.12) if crop == "corn" else Color(0.32, 0.46, 0.16)
 	if m == 9:
-		return Color(0.62, 0.58, 0.3) if crop == "corn" else Color(0.68, 0.6, 0.25)
+		return Color(0.62, 0.58, 0.3) if crop == "corn" else Color(0.7, 0.62, 0.22)
+	if m == 11 and cover:
+		return Color(0.42, 0.48, 0.26)  # rye coming up in the stubble
 	return Color(0.66, 0.56, 0.36)  # harvested
 
 
@@ -96,9 +112,10 @@ func _draw_fields() -> void:
 	var any_lane := false
 	for id in sim.farms.farms:
 		var f: Dictionary = sim.farms.farms[id]
-		var col := _season_color(f.crop)
 		var trimmed: Dictionary = sim.farms.trim.get(id, {})
 		for c in f.cells:
+			var fl := CropPlan.field(f, c)
+			var col := _season_color(fl.crop, fl.cover_prev, fl.cover)
 			# A field a road ran through stops at the road's edge.
 			for poly in trimmed.get(c, [Farms.cell_corners(f, c)]):
 				_add_poly(st, f, poly, 0.06, col)
