@@ -26,6 +26,16 @@ vec2 turn(vec2 p, float a) {
 }
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	// Far off, the land is drawn coarser (TerrainView) and the depth buffer
+	// gets coarse too, so a road lying on the land could sink into it. Past
+	// 400 m each vertex is drawn a little nearer the camera (0.4% of the way)
+	// along its own line of sight: it stays exactly where it was on screen,
+	// but always wins against the land under it.
+	vec4 eye = MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
+	float dist = length(eye.xyz);
+	float pull = max(dist - 400.0, 0.0) * 0.004;
+	eye.xyz *= 1.0 - pull / max(dist, 1.0);
+	POSITION = PROJECTION_MATRIX * eye;
 }
 """
 

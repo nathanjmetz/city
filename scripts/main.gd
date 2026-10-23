@@ -126,6 +126,11 @@ func _ready() -> void:
 	var cam := CityCamera.new()
 	add_child(cam)
 	terrain.setup(cam.camera, sim.network)
+	terrain.graded.connect(wild.regraded)
+	# The county highways run on past the town's links to the horizon.
+	var exits := ExitRoads.new()
+	add_child(exits)
+	exits.setup(sim, terrain, "exits")
 	# Wild trees and brush (WildView) grow from the real land cover; past
 	# where they're drawn, the ground paints the woods' canopy.
 	Vegetation.cover_source = func(p: Vector3) -> Array:
@@ -293,6 +298,8 @@ func _ready() -> void:
 	if Session.online():
 		var region := RegionView.new()
 		region.setup(Session.client, cam, road_tool)
+		region.terrain = terrain
+		region.exits = exits
 		add_child(region)
 		var chat := ChatPanel.new()
 		chat.setup(cam, region)

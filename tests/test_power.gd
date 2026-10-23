@@ -96,8 +96,12 @@ func _init() -> void:
 	_check(spans.size() >= 4 and longest <= Balance.POWER_TIE_SPAN + 0.5, "poles about a span apart (%d, longest %.0f m)" % [spans.size(), longest])
 	sim.power_changed.emit()
 	sim.vegetation.update(sim)
+	var sub := Power.substation(line)
+	_check(sub.size() == 2 and Vector2(sub[0].x - out_at.x, sub[0].z - out_at.z).length() < 60.0, "a substation stands where the line meets the road out")
 	var under := line[line.size() / 2]
 	_check(sim.vegetation.is_occupied(Vegetation.cell_of(under)), "the corridor under the line is kept clear")
+	if sub.size() == 2:
+		_check(sim.vegetation.is_occupied(Vegetation.cell_of(sub[0])), "and the substation yard")
 	s.built.erase("tie_line")
 	sim.power_changed.emit()
 

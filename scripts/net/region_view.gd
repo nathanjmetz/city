@@ -10,9 +10,17 @@ extends Node3D
 ## How often your pointer position is sent, per second.
 const CURSOR_RATE := 5.0
 
+## A county highway drawn on toward another town stops this far from its
+## centre (metres) if it hasn't already met that town's land.
+const TOWN_CLEAR := 1500.0
+
 var client: RegionClient
 var cam: CityCamera
 var road_tool: RoadTool
+## The land (neighbors' roads are graded into it too) and your own town's
+## county highways out to the horizon, set before this joins the tree.
+var terrain: TerrainView
+var exits: ExitRoads
 
 var _cities := {}   # city id -> {"root": Node3D, "tag": Label3D}
 var _cursors := {}  # player id -> Node3D
@@ -29,7 +37,17 @@ func setup(c: RegionClient, camera: CityCamera, rt: RoadTool) -> void:
 func _ready() -> void:
 	for id in client.region.cities:
 		_add_city(id)
-	client.city_added.connect(_add_city)
+	client.city_added.connect(func(id: String):
+		_add_city(id)
+		# A new town may stand where a county highway was drawn on before.
+		for other in _cities:
+			if _cities[other].exits != null:
+				_cities[other].exits.refresh()
+		if exits != null:
+			exits.refresh())
+	if exits != null:
+		exits.stop = _stop_for(client.my_city)
+		exits.refresh()
 	var lines := CityLines.new()
 	lines.setup(client, func(p: Vector2): return _to_world(p))
 	add_child(lines)
@@ -78,6 +96,7 @@ func _add_city(id: String) -> void:
 	var root := Node3D.new()
 	root.position = _to_world(c.origin)
 	add_child(root)
+	var their_exits: ExitRoads = null
 	if id != client.my_city:
 		var roads := RoadView.new()
 		root.add_child(roads)
@@ -89,12 +108,42 @@ func _add_city(id: String) -> void:
 		# Their cars as their computer last sent them.
 		cars.setup(c.sim.traffic, func(): return 0.0)
 		root.add_child(cars)
+		if terrain != null:
+			# Their roads sit on graded, mowed land, like yours.
+			terrain.add_network("city " + id, c.sim.network, Vector2(root.position.x, root.position.z))
+			their_exits = ExitRoads.new()
+			root.add_child(their_exits)
+			their_exits.setup(c.sim, terrain, "exits " + id, _stop_for(id))
 	# Name tags over the neighbors' cities (not your own).
 	var tag := _label(client.region.color_of(id, client.my_city), 34)
 	tag.position = Vector3(0, 70, 0)
 	tag.visible = id != client.my_city
 	root.add_child(tag)
-	_cities[id] = {"root": root, "tag": tag}
+	_cities[id] = {"root": root, "tag": tag, "exits": their_exits}
+
+
+## Where a town's county highways must stop on their way to the horizon:
+## at a link shared with a neighbor (their road carries on from there), and
+## short of any other town. Takes points in that town's own coordinates.
+func _stop_for(id: String) -> Callable:
+	return func(p: Vector2) -> bool:
+		var region := client.region
+		if not region.cities.has(id):
+			return false
+		for j in region.joins:
+			for side in [["a", "a_at"], ["b", "b_at"]]:
+				if j.get(side[0]) == id and Vector2(j[side[1]][0], j[side[1]][1]).distance_to(p) < 30.0:
+					return true
+		var r: Vector2 = p + region.cities[id].origin
+		var cell := Vector2i((r / Balance.LAND_CELL).floor())
+		for other in region.cities:
+			if other == id:
+				continue
+			if r.distance_to(region.cities[other].origin) < TOWN_CLEAR:
+				return true
+			if region.land.has(other) and region.land[other].has(cell):
+				return true
+		return false
 
 
 func _move_cursor(player_id: String, p: Vector2) -> void:
