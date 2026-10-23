@@ -113,26 +113,43 @@ static func plan(network: RoadNetwork, shape: Array, block: float, type := 0, si
 		if Geometry2D.is_point_in_polygon(q, poly) or _dist_to_outline(q, poly) < 2.0:
 			inside.append(q)
 
-	# Candidates: the shape's sides first, then both families of grid streets.
-	var cands := []
-	for i in poly.size():
-		cands.append([poly[i], poly[(i + 1) % poly.size()]])
-	cands.append_array(_family(poly, o, u, v, across, inside))
-	cands.append_array(_family(poly, o, v, u, block, inside))
+	# Old roads through the shape split it into areas. A thin wedge between a
+	# side and a road crossing it at a shallow angle gets no streets: the old
+	# road is its edge, as a real plat stops at the county road.
+	var areas := _areas(poly, refs, minf(block, across))
+	if areas.is_empty():
+		return []
+	var corners := PackedVector2Array()  # the player's corners still in use
+	for p in poly:
+		for ar in areas:
+			if _dist_to_outline(p, ar) < 1.0:
+				corners.append(p)
+				break
+
+	# Candidates: the areas' sides first, then both families of grid streets.
+	var cands := []  # [a, b, is_side]
+	for ar in areas:
+		for i in ar.size():
+			cands.append([ar[i], ar[(i + 1) % ar.size()], true])
+	for line in _family(poly, o, u, v, across, inside) + _family(poly, o, v, u, block, inside):
+		for ar in areas:
+			for part in Geometry2D.intersect_polyline_with_polygon(PackedVector2Array(line), ar):
+				if part.size() >= 2:
+					cands.append([part[0], part[part.size() - 1], false])
 
 	# Keep only the parts that don't run alongside a road (old or new).
 	var pieces := []  # [a, b, is_side]
-	for ci in cands.size():
-		for run in _free_runs(cands[ci][0], cands[ci][1], refs, type):
-			pieces.append([run[0], run[1], ci < poly.size()])
+	for c in cands:
+		for run in _free_runs(c[0], c[1], refs, type):
+			pieces.append([run[0], run[1], c[2]])
 			refs.append(_ref([run[0], run[1]], type))
 
 	# Tidy the ends: join loose ones to roads, cut stubs, merge near-junctions.
 	var targets := junctions.duplicate()
-	targets.append_array(poly)
+	targets.append_array(corners)
 	for i in pieces.size():
 		for k in 2:
-			if not _is_corner(pieces[i][k], poly):  # the player's corners stay put
+			if not _is_corner(pieces[i][k], corners):  # the player's corners stay put
 				_settle_end(pieces, i, k, refs, targets)
 	var out_pieces := []
 	for i in pieces.size():
@@ -162,12 +179,70 @@ static func plan(network: RoadNetwork, shape: Array, block: float, type := 0, si
 	# Ends that land on an old road or junction take its exact position.
 	var curves := []
 	var old := refs.filter(func(r): return r.old)
-	for p in _drop_wedges(out_pieces, old, u, across, block, junctions, poly):
+	for p in _drop_wedges(out_pieces, old, u, across, block, junctions, corners):
 		var a := _on_network(network, p[0], old, junctions, junction_ids)
 		var b := _on_network(network, p[1], old, junctions, junction_ids)
 		if a.distance_to(b) >= RoadNetwork.MIN_LENGTH:
 			curves.append([a, a.lerp(b, 0.5), b])
 	return curves
+
+
+## The shape cut into areas by the old roads that cross it, leaving out thin
+## wedges: an area thinner than half a block (twice its area over its
+## perimeter) with a corner sharper than 50°.
+static func _areas(poly: PackedVector2Array, refs: Array, spacing: float) -> Array:
+	var inner := Geometry2D.offset_polygon(poly, -1.0)
+	if inner.size() != 1:
+		return [poly]
+	var ccw := poly.duplicate()
+	if Geometry2D.is_polygon_clockwise(ccw):
+		ccw.reverse()
+	var areas := [ccw]
+	for r in refs:
+		for part in Geometry2D.intersect_polyline_with_polygon(r.pts, inner[0]):
+			if part.size() < 2:
+				continue
+			var cut := Geometry2D.offset_polyline(part, TOUCH * 0.5, Geometry2D.JOIN_MITER, Geometry2D.END_BUTT)
+			var next := []
+			for ar in areas:
+				for c in cut:
+					for piece in Geometry2D.clip_polygons(ar, c):
+						if not Geometry2D.is_polygon_clockwise(piece):  # clockwise ones are holes
+							next.append(piece)
+					break
+			if not next.is_empty():
+				areas = next
+	if areas.size() == 1:
+		return [poly]
+	var out := []
+	for ar in areas:
+		var a := absf(_area(ar))
+		var perimeter := 0.0
+		for i in ar.size():
+			perimeter += ar[i].distance_to(ar[(i + 1) % ar.size()])
+		if a < 400.0:
+			continue
+		if 2.0 * a / perimeter < spacing * 0.5 and _sharpest(ar) < deg_to_rad(50.0):
+			continue
+		out.append(ar)
+	return out
+
+
+## The sharpest outward corner of a polygon, ignoring edges under 2 m.
+static func _sharpest(ar: PackedVector2Array) -> float:
+	var pts := PackedVector2Array()
+	for p in ar:
+		if pts.is_empty() or pts[pts.size() - 1].distance_to(p) > 2.0:
+			pts.append(p)
+	var best := PI
+	var n := pts.size()
+	var turn := signf(_area(pts))
+	for i in n:
+		var a := pts[(i + n - 1) % n] - pts[i]
+		var b := pts[(i + 1) % n] - pts[i]
+		if a.length() > 0.001 and b.length() > 0.001 and (-a).cross(b) * turn > 0.0:  # convex corners only
+			best = minf(best, absf(a.angle_to(b)))
+	return best
 
 
 ## The shape's outline as curves, for drawing it while it is placed.
@@ -366,6 +441,18 @@ static func _drop_wedges(pieces: Array, old: Array, u: Vector2, across: float, b
 					for m in 2:
 						if f[m].distance_to(at) <= TOUCH:
 							f[m] = to
+	# A grid street running into an old road less than half a block on would
+	# only cut off a strip too shallow for lots (the tip of a wedge).
+	var shallow := minf(across, block) * 0.5
+	for i in range(edges.size() - 1, -1, -1):
+		var e: Array = edges[i]
+		if e[0].distance_to(e[1]) >= shallow:
+			continue
+		var on_old := [not _old_dirs(e[0], old).is_empty(), not _old_dirs(e[1], old).is_empty()]
+		if not e[2] and (on_old[0] or on_old[1]):
+			edges.remove_at(i)
+		elif e[2] and ((on_old[0] and _is_corner(e[1], corners)) or (on_old[1] and _is_corner(e[0], corners))):
+			edges.remove_at(i)  # a corner poking just past an old road
 	for i in range(edges.size() - 1, -1, -1):
 		if edges[i][0].distance_to(edges[i][1]) < RoadNetwork.MIN_LENGTH:
 			edges.remove_at(i)
@@ -384,7 +471,17 @@ static func _drop_wedges(pieces: Array, old: Array, u: Vector2, across: float, b
 	while changed:
 		changed = false
 		for i in edges.size():
-			if gone[i] or edges[i][2]:
+			if gone[i]:
+				continue
+			if edges[i][2]:
+				# The player's sides stay, except a stretch that leaves an old
+				# road at a sharp angle (a wedge too thin to build on).
+				for k in 2:
+					var dir: Vector2 = (edges[i][1 - k] - edges[i][k]).normalized()
+					for dj in _old_dirs(edges[i][k], old):
+						if dir.dot(dj) > 0.0 and absf(dir.cross(dj)) < SKEW:
+							gone[i] = true
+							changed = true
 				continue
 			for k in 2:
 				var at: Vector2 = edges[i][k]
