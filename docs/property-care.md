@@ -59,7 +59,7 @@ outages, boil notices, gridlock and then decline.
 
 ## Art and performance
 
-`HouseBuilder.care` (set by `BuildingView` around each build) drives it for
+`HouseBuilder.owner_care` (set by `BuildingView` around each build) drives it for
 every builder, since all of them extend `HouseBuilder`. Colours ride in the
 vertex colours and add-ons join the shared surfaces, so a property costs no
 extra draw calls at any tier. Measured: a house is about 1,980 triangles and

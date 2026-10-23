@@ -65,7 +65,7 @@ static var force_kind := ""
 ## privacy fence too). Every builder extends this one, so shops, offices,
 ## apartments and factories weather the same way. It costs no draw calls:
 ## colours ride in the vertex colours and add-ons join the shared surfaces.
-static var care := 0
+static var owner_care := 0
 const PLYWOOD := Color("#b59a6c")
 ## Unmown lawn: tall grass gone to seed, dandelion and plantain, dead patches.
 const WEEDS := [Color("#8e9a55"), Color("#9ba05f"), Color("#7f8f4b"), Color("#a29f6a")]
@@ -178,7 +178,7 @@ func _house(to_curb: float, storeys := 0) -> Array:
 		"midcentury": info = _midcentury(zf, gs, gw, roof, door, brick)
 		_: info = _ranch(zf, gs, gw, siding, roof, shutters, shutter, door, brick_style, brick)
 	_yard(info, to_curb)
-	if care >= 1:
+	if owner_care >= 1:
 		_improve()
 	_yard_trees(info, to_curb)
 	_back_yard(info)
@@ -202,7 +202,7 @@ func _improve() -> void:
 	_gable_roof(sx, sz, 2.22, 2.4, 0.75, 3.0, true, Color(_pick(ROOF)), shed_col, false)
 	_box("paint", Vector3(1.2, 1.85, 0.05), Vector3(sx, 1.05, sz - 1.22), TRIM)
 	_improved = Rect2(sx - 1.8, sz - 1.5, 3.6, 3.0)
-	if care < 2:
+	if owner_care < 2:
 		return
 	# The fence runs from the back corners of the house to the back line.
 	var fh := 1.8
@@ -1359,7 +1359,7 @@ func _quad(mat: String, a: Vector3, b: Vector3, c: Vector3, d: Vector3, col: Col
 	if uvs.is_empty():
 		uvs = [_auto_uv(a, n), _auto_uv(b, n), _auto_uv(c, n), _auto_uv(d, n)]
 	_reach = maxf(_reach, maxf(maxf(a.z, b.z), maxf(c.z, d.z)))
-	if care != 0:
+	if owner_care != 0:
 		col = _weather(mat, col)
 	var st := _tool(mat)
 	for i in [0, 2, 1, 0, 3, 2]:
@@ -1382,7 +1382,7 @@ func _tri(mat: String, a: Vector3, b: Vector3, c: Vector3, col: Color, uvs := []
 	if uvs.is_empty():
 		uvs = [_auto_uv(a, n), _auto_uv(b, n), _auto_uv(c, n)]
 	_reach = maxf(_reach, maxf(a.z, maxf(b.z, c.z)))
-	if care != 0:
+	if owner_care != 0:
 		col = _weather(mat, col)
 	var st := _tool(mat)
 	for i in [0, 2, 1]:
@@ -1407,17 +1407,17 @@ func _weather(mat: String, col: Color) -> Color:
 	if mat in ["glass", "sign", "foliage", "far"] or col == PLYWOOD:
 		return col
 	var out := col
-	if care < 0:
-		var k := 0.4 if care == -1 else 0.8
+	if owner_care < 0:
+		var k := 0.4 if owner_care == -1 else 0.8
 		var l := col.get_luminance()
 		match mat:
 			"roof": out = col.lerp(Color("#a09783"), k * 0.75)
 			"brick", "concrete": out = col.lerp(Color(l, l, l), k * 0.35).darkened(k * 0.25)
 			_: out = col.lerp(Color(l * 0.9, l * 0.88, l * 0.8), k).darkened(k * 0.3)
 	elif mat == "roof":
-		out = col.darkened(0.06 * care)
+		out = col.darkened(0.06 * owner_care)
 	else:
-		out = Color.from_hsv(col.h, minf(col.s * (1.0 + 0.06 * care), 1.0), minf(col.v * (1.0 + 0.025 * care), 1.0))
+		out = Color.from_hsv(col.h, minf(col.s * (1.0 + 0.06 * owner_care), 1.0), minf(col.v * (1.0 + 0.025 * owner_care), 1.0))
 	out.a = col.a
 	return out
 
@@ -1428,7 +1428,7 @@ func _weather(mat: String, col: Color) -> Color:
 func _glass(c: Vector3, right: Vector3, w: float, h: float, blinds: float) -> void:
 	var r := right * w * 0.5
 	var u := Vector3(0, h * 0.5, 0)
-	if care <= -2 and c.y < 3.6:
+	if owner_care <= -2 and c.y < 3.6:
 		var out := right.cross(Vector3.UP).normalized()
 		_box("paint", Vector3(w + 0.12, h + 0.12, 0.05), c + out * 0.07, PLYWOOD, Basis(right.normalized(), Vector3.UP, out))
 	_quad("glass", c - r - u, c + r - u, c + r + u, c - r + u, Color(0.85, 0.82, 0.74, blinds),
@@ -1450,7 +1450,7 @@ func _flat_rect(kind: String, x0: float, x1: float, z0: float, z1: float, y: flo
 
 
 func _commit_house() -> ArrayMesh:
-	if care < 0:
+	if owner_care < 0:
 		_weeds()
 	var mesh := ArrayMesh.new()
 	for mat in _st:
@@ -1474,7 +1474,7 @@ func _weeds() -> void:
 	rng = RandomNumberGenerator.new()
 	rng.seed = hash([was.seed, "weeds"])
 	# Run-down: ragged patches; derelict: the whole lawn, every 3 m or so.
-	var share := 0.3 if care == -1 else 0.85
+	var share := 0.3 if owner_care == -1 else 0.85
 	var z := 1.2
 	while z < depth - 0.5:
 		var x := -half + 1.2
@@ -1484,7 +1484,7 @@ func _weeds() -> void:
 					WEEDS[rng.randi() % WEEDS.size()])
 			x += 3.0
 		z += 3.0
-	if care <= -2:
+	if owner_care <= -2:
 		for i in 6:
 			var side := -1.0 if i % 2 == 0 else 1.0
 			var p := Vector3(side * (half - rng.randf_range(0.4, 1.2)), 0.0, rng.randf_range(1.0, maxf(depth - 1.0, 1.0)))

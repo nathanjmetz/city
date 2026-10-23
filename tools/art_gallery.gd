@@ -54,7 +54,7 @@ func _init() -> void:
 		if kind == "types":
 			k = ["house", "row", "apartments", "mixed", "office"][i]
 		if kind in ["care", "careshop"]:
-			HouseBuilder.care = i - 2
+			HouseBuilder.owner_care = i - 2
 		var w: float = {"care": 24.0, "careshop": 26.0, "row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "office": 40.0, "towers": 44.0, "hometowers": 54.0, "towerfar": 44.0, "flats": 24.0, "courtyard": 48.0, "walkup": 26.0, "garage": 44.0}.get(k, 20.0)
 		var sd := seed * 100 + i
 		match k:
@@ -77,7 +77,7 @@ func _init() -> void:
 			"care": meshes = HouseBuilder.build(seed * 100, 3.9, {"width": w, "depth": 48.0}, 1)
 			"careshop": meshes = DenseBuilder.build_retail(seed * 100, 3.9, {"width": w, "depth": 40.0})
 			_: meshes = HouseBuilder.build(sd, 3.9)
-		HouseBuilder.care = 0
+		HouseBuilder.owner_care = 0
 		var at := Vector3(x + w * 0.5, 0, 0)
 		x += w
 		for m in meshes.slice(0, 2):
