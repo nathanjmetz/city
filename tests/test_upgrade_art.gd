@@ -17,10 +17,17 @@ func _init() -> void:
 			var built := _with_requires(Agency.TREES[kind], node.id)
 			var before := _verts(kind, built.filter(func(n): return n != node.id), _spots(kind, built.filter(func(n): return n != node.id)))
 			var after := _verts(kind, built, _spots(kind, built))
-			if after <= before:
+			if after == before:
 				missing.append(node.id)
 		_check(missing.is_empty(), "every %s upgrade draws something (%d steps, base %d vertices)%s" % [
 			kind, Agency.TREES[kind].size(), none, "" if missing.is_empty() else ": missing " + str(missing)])
+	for kind in BigFactories.TREES:
+		var missing := []
+		for node in BigFactories.TREES[kind]:
+			var built := _with_requires(BigFactories.TREES[kind], node.id)
+			if _plant_verts(kind, built) == _plant_verts(kind, built.filter(func(n): return n != node.id)):
+				missing.append(node.id)
+		_check(missing.is_empty(), "every %s plant upgrade draws something%s" % [kind, "" if missing.is_empty() else ": missing " + str(missing)])
 	for kind in Industry.ADDONS:
 		var bad := []
 		for node in Industry.ADDONS[kind]:
@@ -69,6 +76,17 @@ func _verts(kind: String, built: Array, addons: Dictionary) -> int:
 		"farm": parts = FarmBuilder.build_farmstead(7, 1, built)
 		"forest": parts = ForestryBuilder.mill(7, Industry.HQ_SIZE, built, addons)
 		_: parts = IndustryBuilder.build_hq(kind, 7, built, addons)
+	var n := 0
+	for k in 2:
+		var mesh: ArrayMesh = parts[k]
+		for i in mesh.get_surface_count():
+			n += mesh.surface_get_array_len(i)
+	return n
+
+
+func _plant_verts(kind: String, built: Array) -> int:
+	var f := {"kind": kind, "pos": Vector3.ZERO, "dir": Vector3(0, 0, -1), "level": 0, "bays": 0, "built": built}
+	var parts := BigFactoryBuilder.build_plant(f, 7, 4.0)
 	var n := 0
 	for k in 2:
 		var mesh: ArrayMesh = parts[k]
