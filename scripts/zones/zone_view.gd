@@ -20,8 +20,14 @@ var preview: Array = []:
 		_dirty = true
 var preview_zone := 0
 
+## Lot outlines go in square blocks, so a change redraws (and drapes on the
+## ground) only the blocks it touched; the street-side band is its own mesh.
+const BLOCK := 128.0
+
 var _mesh := MeshInstance3D.new()
 var _dirty := true
+var _blocks := {}  # Vector2i -> MeshInstance3D
+var _block_sig := {}  # Vector2i -> hash of what the block shows
 
 
 func setup(s: CitySim) -> void:
@@ -48,18 +54,41 @@ func _process(_delta: float) -> void:
 
 
 func _rebuild() -> void:
+	# What each block shows: its lots' outlines, zones and whether built.
+	var shows := {}  # Vector2i -> [[key, lot, zone, built], ...]
+	for key in (sim.lots if show_all else {}):
+		var lot: Dictionary = sim.lots[key]
+		var b := Vector2i(floori(lot.pos.x / BLOCK), floori(lot.pos.z / BLOCK))
+		if not shows.has(b):
+			shows[b] = []
+		shows[b].append([key, lot, sim.zones.zone_at(lot.zone_pt), sim.buildings.has(key)])
+	for b in _blocks.keys():
+		if not shows.has(b):
+			_blocks[b].queue_free()
+			_blocks.erase(b)
+			_block_sig.erase(b)
+	for b in shows:
+		var sig := hash(shows[b].map(func(e): return [e[0], e[1].corners, e[2], e[3]]))
+		if _block_sig.get(b) == sig:
+			continue
+		_block_sig[b] = sig
+		var bst := SurfaceTool.new()
+		bst.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for e in shows[b]:
+			var c: Color = ZoneMap.COLORS[e[2]]
+			var fill := 0.0 if e[2] == ZoneMap.Zone.NONE else (0.18 if e[3] else 0.42)
+			var edge := 0.75
+			_lot(bst, e[1].corners, Color(c, fill), Color(c, maxf(edge, fill + 0.2)))
+		if not _blocks.has(b):
+			var mi := MeshInstance3D.new()
+			mi.material_override = _mesh.material_override
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(mi)
+			_blocks[b] = mi
+		_blocks[b].mesh = Terrain.drape(bst.commit(), true)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var any := false
-	for key in (sim.lots if show_all else {}):
-		var lot: Dictionary = sim.lots[key]
-		var zone := sim.zones.zone_at(lot.zone_pt)
-		var built := sim.buildings.has(key)
-		var c: Color = ZoneMap.COLORS[zone]
-		var fill := 0.0 if zone == ZoneMap.Zone.NONE else (0.18 if built else 0.42)
-		var edge := 0.75
-		_lot(st, lot.corners, Color(c, fill), Color(c, maxf(edge, fill + 0.2)))
-		any = true
 	var band: Color = ZoneMap.COLORS[preview_zone] if preview_zone != ZoneMap.Zone.NONE else Color(1, 0.35, 0.3)
 	for part in preview:
 		var s := sim.planner.side_survey(sim.network, part[0], part[1])

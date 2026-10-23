@@ -156,8 +156,19 @@ func describe(ref: String, tick: int) -> String:
 	return "Under construction: %s (%d%% done)" % [st.words, roundi(float(st.total) * 100.0)]
 
 
+## The same answer as state(ref, tick).is_empty(), without working out the
+## stage: the town asks this of every building every few ticks.
 func is_done(ref: String, tick: int) -> bool:
-	return state(ref, tick).is_empty()
+	var s = sites.get(ref)
+	if s == null:
+		return true
+	var profile: String = s.profile
+	if not _durations.has(profile):
+		_durations[profile] = duration(profile)
+	return float(maxi(tick - int(s.start), 0)) >= float(_durations[profile])
+
+
+static var _durations := {}  # profile -> duration(profile)
 
 
 func tick(sim: CitySim) -> void:

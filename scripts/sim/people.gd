@@ -36,6 +36,11 @@ const STROLL_SHARE := 0.2
 var _due := {}   # tick -> ids of people who may head off then (set_until)
 var _ids := []  # people.keys(), kept until someone moves in or out
 var _ids_sig := []
+## Working-age people without a job, so hiring looks only at them, not the
+## whole town. Kept as people move in, lose a job or are hired; rebuilt from
+## `people` after a load (not saved).
+var _seekers := {}  # id -> true
+var _seekers_ok := false
 
 
 ## Keeps a person for every resident, fills open jobs, names new places.
@@ -43,8 +48,7 @@ func sync(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void
 	_families = sim.families
 	if sim.tick_count % SYNC_EVERY != SYNC_AT:
 		return
-	var keys := sim.buildings.keys()
-	keys.sort()
+	var keys: Array = sim.ledger().sorted
 	for key in keys:
 		var b: Dictionary = sim.buildings[key]
 		var ref: String = "lot:" + key
@@ -99,6 +103,7 @@ func sync(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void
 			if p.job != "" and not _job_open(sim, p.job):
 				_staff[p.job] = _staff.get(p.job, 1) - 1
 				p.job = ""
+				_seek(p)
 		for ref in shut:
 			if _staff.get(ref, 0) <= 0:
 				_staff.erase(ref)
@@ -236,6 +241,7 @@ func _move_in(key: String, household: Array, traffic: TrafficSim, rng: RandomNum
 	var p := {"id": id, "first": PersonNames.first(rng), "last": last, "age": age, "home": key, "job": "",
 		"car": -1, "at": "", "until": -1}
 	people[id] = p
+	_seek(p)
 	var cars := 0
 	for h in household:
 		if people[h].car != -1:
@@ -250,6 +256,7 @@ func _move_out(id: int, traffic: TrafficSim) -> void:
 	if not people.has(id):
 		return
 	var p: Dictionary = people[id]
+	_seekers.erase(id)
 	if p.job != "":
 		_staff[p.job] = _staff.get(p.job, 1) - 1
 	if p.car != -1 and traffic != null:
@@ -271,6 +278,11 @@ func _forget(_zone: int, ref: String) -> void:
 		names.erase(ref)
 
 
+func _seek(p: Dictionary) -> void:
+	if p.job == "" and p.age >= WORK_AGE[0] and p.age <= WORK_AGE[1]:
+		_seekers[p.id] = true
+
+
 func _job_open(sim: CitySim, ref: String) -> bool:
 	return ref.begins_with("lot:") and sim.buildings.has(ref.substr(4))
 
@@ -284,14 +296,21 @@ func _hire(sim: CitySim, keys: Array, rng: RandomNumberGenerator) -> void:
 			open.append("lot:" + key)
 	if open.is_empty():
 		return
-	var ids := people.keys()
+	if not _seekers_ok:
+		_seekers.clear()
+		for id in people:
+			_seek(people[id])
+		_seekers_ok = true
+	var ids := _seekers.keys()
 	ids.sort()
 	for id in ids:
 		var p: Dictionary = people[id]
 		if p.job != "" or p.age < WORK_AGE[0] or p.age > WORK_AGE[1]:
+			_seekers.erase(id)
 			continue
 		var ref: String = open[rng.randi() % open.size()]
 		p.job = ref
+		_seekers.erase(id)
 		_staff[ref] = staff(ref) + 1
 		if staff(ref) >= sim.buildings[ref.substr(4)].cap:
 			open.erase(ref)
@@ -311,6 +330,8 @@ func from_dict(d: Dictionary) -> void:
 	_homes.clear()
 	_staff.clear()
 	_due.clear()
+	_seekers.clear()
+	_seekers_ok = false
 	_next = 1
 	if not d.has("state") and not d.has("bin"):
 		return

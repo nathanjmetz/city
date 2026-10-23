@@ -31,6 +31,10 @@ var _hum: AudioStreamPlayer
 var _known_buildings := {}
 var _build_sound: AudioStream
 var _ear := Vector3.ZERO
+## Ids of the cars on the road at the last pick, and how many were around
+## the spot the camera looks at: both found PICK_EVERY, not every frame.
+var _live := {}
+var _hum_cars := 0
 
 
 func setup(s: CitySim, cam: Camera3D, fraction: Callable) -> void:
@@ -124,13 +128,13 @@ func _update(delta: float) -> void:
 		return
 	var ear := camera.global_position
 	_ear = ear
-	var day := SoundSources.is_day(int(sim.clock().hour))
-	if day != _day:
-		_day = day
-		_sources_dirty = true
 	_pick_wait -= delta
 	if _pick_wait <= 0.0:
 		_pick_wait = PICK_EVERY
+		var day := SoundSources.is_day(int(sim.clock().hour))
+		if day != _day:
+			_day = day
+			_sources_dirty = true
 		_pick_cars(ear)
 		_pick_areas(ear)
 	_move_cars()
@@ -147,10 +151,24 @@ func _update(delta: float) -> void:
 func _pick_cars(ear: Vector3) -> void:
 	var near := []
 	var max2 := CAR_RANGE * CAR_RANGE
+	# The far-off hum is the traffic actually in view: cars around the spot
+	# the camera looks at, within a radius that grows with height.
+	var h := maxf(ear.y, 1.0)
+	var fwd := -camera.global_basis.z
+	var look := ear
+	if fwd.y < -0.05:
+		look = ear + fwd * (ear.y / -fwd.y)
+	var r2 := pow(h * 1.4, 2.0)
+	_hum_cars = 0
+	_live.clear()
 	for car in sim.traffic.cars:
-		var d2 := ear.distance_squared_to(sim.traffic.car_pose(car)[0])
+		_live[car.id] = true
+		var p: Vector3 = sim.traffic.car_pose(car)[0]
+		var d2 := ear.distance_squared_to(p)
 		if d2 < max2:
 			near.append([d2, car])
+		if Vector2(p.x - look.x, p.z - look.z).length_squared() < r2:
+			_hum_cars += 1
 	near.sort_custom(func(a, b): return a[0] < b[0])
 	var chosen := []
 	for e in near.slice(0, CAR_SLOTS):
@@ -186,7 +204,7 @@ func _move_cars() -> void:
 		var car = s.car
 		if car == null:
 			continue
-		if not sim.traffic.cars.has(car):
+		if not _live.has(car.id):
 			s.want = 0.0  # arrived; let it fade where it stopped
 			continue
 		var p: AudioStreamPlayer3D = s.player
@@ -264,19 +282,7 @@ func _update_beds(ear: Vector3) -> void:
 	# Wind grows as you climb: barely there at street level, broad from above.
 	var wind := clampf((h - 20.0) / 500.0, 0.05, 0.8)
 	_wind.volume_db = SoundSettings.level("world/wind_high", linear_to_db(wind) - 8.0)
-	# The far-off hum is the traffic actually in view: count cars around the
-	# spot the camera looks at, within a radius that grows with height.
-	var fwd := -camera.global_basis.z
-	var look := ear
-	if fwd.y < -0.05:
-		look = ear + fwd * (ear.y / -fwd.y)
-	var r2 := pow(h * 1.4, 2.0)
-	var n := 0
-	for car in sim.traffic.cars:
-		var p: Vector3 = sim.traffic.car_pose(car)[0]
-		if Vector2(p.x - look.x, p.z - look.z).length_squared() < r2:
-			n += 1
-	var hum := clampf(n / 60.0, 0.0, 1.0) * clampf((h - 60.0) / 300.0, 0.0, 1.0)
+	var hum := clampf(_hum_cars / 60.0, 0.0, 1.0) * clampf((h - 60.0) / 300.0, 0.0, 1.0)
 	_hum.volume_db = SoundSettings.level("world/traffic_far", linear_to_db(maxf(hum, 0.0001)))
 
 
