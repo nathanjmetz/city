@@ -54,6 +54,9 @@ var price := 1.0
 ## True when a public road runs between two points (set by CitySim).
 var road_between: Callable
 var day := 0.0
+## Set by the city: an oil or timber company that has worked out its lease
+## builds a gravel lease road to new ground (CitySim._industry_road).
+var expand := Callable()
 var _next_id := 1
 
 
@@ -191,6 +194,8 @@ func decide(usable: Callable) -> bool:
 			s.pads.append(best)
 			s.loss_streak = 0
 			changed = true
+		elif expand.is_valid() and wants_road(id, usable):
+			changed = expand.call(id) or changed
 		var idle := ""
 		if s.pads.is_empty():
 			var k: Dictionary = KINDS[s.kind]
@@ -247,15 +252,77 @@ func _candidates(s: Dictionary) -> Array:
 	var out := []
 	var r := Balance.LEASE_REACH_CELLS if not s.pads.is_empty() else SEED_REACH
 	var resting: Dictionary = s.get("regrow", {})
-	for y in range(-r, r + 1):
-		for x in range(-r, r + 1):
-			var c := Vector2i(x, y)
-			if c == Vector2i.ZERO or c.length_squared() > r * r or c in s.pads or resting.has(c):
-				continue
-			if s.kind == "oil" and not _spaced(s, c):
-				continue
-			out.append(c)
+	var seen := {}
+	# Its first lease around the main building, then any tracts it has
+	# bought since, each reached by its own lease road.
+	for o in [Vector2i.ZERO] + s.get("leases", []):
+		for y in range(-r, r + 1):
+			for x in range(-r, r + 1):
+				var c: Vector2i = o + Vector2i(x, y)
+				if seen.has(c) or c == Vector2i.ZERO or (c - o).length_squared() > r * r or c in s.pads \
+						or resting.has(c):
+					continue
+				seen[c] = true
+				if s.kind == "oil" and not _spaced(s, c):
+					continue
+				out.append(c)
 	return out
+
+
+## True when company `id` has worked out its lease and should take on new
+## ground with a road (Brawn: hubs grow to a real size, then build a road).
+## Real reference: Illinois Basin operators lease the next tract and run a
+## gravel lease road to it from the county road; timber companies buy
+## stumpage on the next woods and cut a logging road in. Quarries don't: a
+## pit keeps widening from its plant.
+func wants_road(id: int, usable: Callable) -> bool:
+	var s: Dictionary = sites[id]
+	if s.kind == "ore" or s.pads.is_empty() or buy_margin(id) == INF or day < float(s.get("road_wait", 0.0)):
+		return false
+	if not s.get("pending", {}).is_empty():
+		return true  # a road it asked the player for
+	if s.get("leases", []).size() >= Balance.INDUSTRY_MAX_LEASES \
+			or yearly_profit(id) < Balance.INDUSTRY_ROAD_MIN_PROFIT:
+		return false
+	# Worked out: nothing left on its leases that pays and is free.
+	var sup := support(id)
+	var margin := buy_margin(id)
+	for c in _candidates(s):
+		if richness(s, c) >= MIN_RICHNESS and pad_profit(s, c) + sup > margin and _free(id, s, c, usable):
+			return false
+	return true
+
+
+## The centre cell of the next tract company `id` would lease: the best
+## paying free ground just past its leases, or Vector2i.MAX.
+func next_lease(id: int, usable: Callable) -> Vector2i:
+	var s: Dictionary = sites[id]
+	var r := Balance.LEASE_REACH_CELLS
+	var centres: Array = [Vector2i.ZERO] + s.get("leases", [])
+	var sup := support(id)
+	var margin := maxf(buy_margin(id), 0.0)
+	var best := Vector2i.MAX
+	var best_score := -INF
+	for o in centres:
+		for y in range(-r * 2, r * 2 + 1, 2):
+			for x in range(-r * 2, r * 2 + 1, 2):
+				var c: Vector2i = o + Vector2i(x, y)
+				var near := INF
+				for q in centres:
+					near = minf(near, (c - q).length())
+				# Past what it holds, but next to it: tracts touch.
+				if near <= r * 0.75 or near > r * 2:
+					continue
+				if richness(s, c) < MIN_RICHNESS or (s.kind == "oil" and not _spaced(s, c)):
+					continue
+				var p := pad_profit(s, c) + sup
+				if p <= margin or not _free(id, s, c, usable):
+					continue
+				var score := p - near * 100.0
+				if score > best_score or (score == best_score and _less(c, best)):
+					best = c
+					best_score = score
+	return best
 
 
 ## True when a new well pad here keeps the spacing from the company's others.
@@ -454,7 +521,9 @@ func to_dict() -> Dictionary:
 		out[str(id)] = {"kind": s.kind, "pos": [s.pos.x, s.pos.z], "dir": [s.dir.x, s.dir.z],
 			"drive": lane, "pads": pads, "stock": s.stock, "loss": s.loss_streak,
 			"leader": s.get("leader", {}), "built": s.get("built", []), "why": s.get("why", ""),
-			"cut": _cells_out(s.get("cut", {})), "regrow": _cells_out(s.get("regrow", {}))}
+			"cut": _cells_out(s.get("cut", {})), "regrow": _cells_out(s.get("regrow", {})),
+			"leases": s.get("leases", []).map(func(c): return [c.x, c.y]),
+			"road_wait": s.get("road_wait", 0.0), "pending": s.get("pending", {})}
 	return {"sites": out, "next_id": _next_id}
 
 
@@ -477,6 +546,9 @@ func from_dict(d: Dictionary) -> void:
 		sites[int(k)].why = str(s.get("why", ""))
 		sites[int(k)].cut = _cells_in(s.get("cut", []))
 		sites[int(k)].regrow = _cells_in(s.get("regrow", []))
+		sites[int(k)].leases = s.get("leases", []).map(func(c): return Vector2i(int(c[0]), int(c[1])))
+		sites[int(k)].road_wait = float(s.get("road_wait", 0.0))
+		sites[int(k)].pending = Dictionary(s.get("pending", {}))
 	_next_id = int(d.get("next_id", 1))
 
 

@@ -207,23 +207,44 @@ static func _free_lots(sim, zone: int) -> int:
 ## The best run of farm field along a road at the edge of town:
 ## {farm, outline [[x, z], ...], road}, or {} when there's none. The
 ## outline is a strip one deep lot back from the road.
+##
+## Real rules (Brawn: towns grow the way real towns do): a developer buys
+## the farm next to town, not one out in the country, because Indiana only
+## lets a town annex land that touches it (IC 36-4-3-13 asks for an eighth
+## of the boundary) and water and sewer lines run out from the town's edge.
+## Shops and offices front a paved through road, never a gravel farm road
+## or a freeway (no driveways on a limited-access road), and a project goes
+## in one phase at a time, about a quarter mile of frontage.
 static func _farm_frontage(sim) -> Dictionary:
 	var centre := Vector3.ZERO
 	var n := 0
+	# The built-up town on a 100 m grid, to tell the edge of town.
+	var built := {}
 	for key in sim.buildings:
 		if sim.lots.has(key):
-			centre += sim.lots[key].pos
+			var p: Vector3 = sim.lots[key].pos
+			centre += p
 			n += 1
-	if n > 0:
-		centre /= n
+			built[Vector2i(floori(p.x / 100.0), floori(p.z / 100.0))] = true
+	if n == 0:
+		return {}
+	centre /= n
+	var by_town := func(p: Vector3) -> bool:
+		var c := Vector2i(floori(p.x / 100.0), floori(p.z / 100.0))
+		for dx in [-1, 0, 1]:
+			for dz in [-1, 0, 1]:
+				if built.has(c + Vector2i(dx, dz)):
+					return true
+		return false
 	var best := {}
 	var best_score := -INF
 	var ids: Array = sim.network.segments.keys()
 	ids.sort()
 	for seg in ids:
 		var type := int(sim.network.segments[seg].get("type", 0))
-		# Nothing fronts a highway, its ramps, or an alley.
-		if type in [RoadStyle.Type.HIGHWAY, RoadStyle.Type.RAMP, RoadStyle.Type.ALLEY]:
+		# Nothing fronts a freeway or its ramps, an alley or a gravel farm road.
+		if type in [RoadStyle.Type.HIGHWAY, RoadStyle.Type.RAMP, RoadStyle.Type.RAMP2, RoadStyle.Type.FREEWAY2,
+				RoadStyle.Type.FREEWAY4, RoadStyle.Type.ALLEY, RoadStyle.Type.GRAVEL]:
 			continue
 		var rough: PackedVector3Array = sim.network.sample_segment(seg, 8)
 		var length := 0.0
@@ -247,10 +268,14 @@ static func _farm_frontage(sim) -> Dictionary:
 					farm = f
 					run.append([pts[i], nrm])
 				if (not ok or i == pts.size() - 1) and not run.is_empty():
-					var span := (run[-1][0] as Vector3).distance_to(run[0][0])
+					run = _phase(run, by_town)
+					var span := 0.0 if run.is_empty() else (run[-1][0] as Vector3).distance_to(run[0][0])
 					if span >= Balance.CULTURE_FRONTAGE_MIN:
 						var mid: Vector3 = run[run.size() / 2][0]
-						var score := span - mid.distance_to(centre) * 0.25
+						# The nearest the middle of town, on the busiest road.
+						var through := 0.0 if type in [RoadStyle.Type.STREET, RoadStyle.Type.STREET_NARROW,
+							RoadStyle.Type.STREET_BIKE, RoadStyle.Type.STREET_ONEWAY] else 150.0
+						var score := span * 0.25 + through - mid.distance_to(centre)
 						if score > best_score:
 							best_score = score
 							var inner := []
@@ -268,6 +293,30 @@ static func _farm_frontage(sim) -> Dictionary:
 					if farm != -1:
 						run.append([pts[i], nrm])
 	return best
+
+
+## The part of a run of frontage a developer would take: it starts where
+## the run touches the built-up town and reaches one phase
+## (CULTURE_FRONTAGE_MAX) along the road. Empty when it doesn't touch town.
+static func _phase(run: Array, by_town: Callable) -> Array:
+	var k := -1
+	for i in run.size():
+		if by_town.call(run[i][0]):
+			k = i
+			break
+	if k == -1:
+		return []
+	var lo := k
+	var hi := k
+	var span := 0.0
+	while span < Balance.CULTURE_FRONTAGE_MAX and (lo > 0 or hi < run.size() - 1):
+		# Grow along the road on whichever side keeps it closest to town.
+		if hi < run.size() - 1 and (lo == 0 or by_town.call(run[hi + 1][0]) or not by_town.call(run[lo - 1][0])):
+			hi += 1
+		else:
+			lo -= 1
+		span = (run[hi][0] as Vector3).distance_to(run[lo][0])
+	return run.slice(lo, hi + 1)
 
 
 ## Carries out an approved rezoning: the farm sells every field the outline
