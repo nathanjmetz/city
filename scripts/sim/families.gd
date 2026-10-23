@@ -381,19 +381,24 @@ func _start_plan(sim, fam: Dictionary) -> Dictionary:
 			continue
 		if float(sim.demand.get(z, 0.0)) < 0.05 or not sim.utilities_ok(key):
 			continue
+		var at := Vector2(sim.lots[key].pos.x, sim.lots[key].pos.z)
 		var what := ""
 		var name := ""
 		if z == ZoneMap.Zone.INDUSTRIAL:
 			what = sim.factory_chain(sim.lots[key].pos)
-			name = _name_for(fam, what, hash([fam.id, key]))
+			if spaced(sim, int(fam.id), at, what):
+				name = _name_for(fam, what, hash([fam.id, key]))
 		else:
-			for j in Names.TRADES.size():
+			# A new trade first; the family's own trade again only as a
+			# real second location, out of the first one's trade area.
+			for j in Names.TRADES.size() * 2:
 				var t: Dictionary = Names.trade(hash([fam.id, key, j]))
-				if not have.has(t.trade):
-					what = t.trade
-					name = _name_for(fam, what, hash([fam.id, key, j]))
-					if name != "":
-						break
+				if (j < Names.TRADES.size()) == have.has(t.trade) or not spaced(sim, int(fam.id), at, t.trade):
+					continue
+				what = t.trade
+				name = _name_for(fam, what, hash([fam.id, key, j]))
+				if name != "":
+					break
 		if name == "":
 			continue
 		var size := "factory" if z == ZoneMap.Zone.INDUSTRIAL else "shop"
@@ -423,6 +428,9 @@ func _buy_plan(sim, fam: Dictionary) -> Dictionary:
 		# owners are nearing retirement is the classic sale.
 		var other: Dictionary = families[int(b.family)]
 		if not other.plan.is_empty():
+			continue
+		var at := pos_of(sim, ref)
+		if at == Vector2.INF or not spaced(sim, int(fam.id), at, b.what):
 			continue
 		var name := _name_for(fam, b.what, hash([fam.id, ref]))
 		if name == "":
@@ -494,14 +502,42 @@ func _carry_out(sim, fam: Dictionary) -> bool:
 ## Where a family stands (its oldest business), for pre-approved permits.
 func locate(sim, fam_id: int) -> Vector2:
 	for ref in hubs_of(fam_id):
-		var parts: PackedStringArray = ref.split(":", true, 1)
-		match parts[0]:
-			"farm": return Vector2(sim.farms.farms[int(parts[1])].pos.x, sim.farms.farms[int(parts[1])].pos.z)
-			"site": return Vector2(sim.industry.sites[int(parts[1])].pos.x, sim.industry.sites[int(parts[1])].pos.z)
-			"lot":
-				if sim.lots.has(parts[1]):
-					return Vector2(sim.lots[parts[1]].pos.x, sim.lots[parts[1]].pos.z)
+		var p := pos_of(sim, ref)
+		if p != Vector2.INF:
+			return p
 	return Vector2.INF
+
+
+## Where a business stands, or INF if it's gone.
+static func pos_of(sim, ref: String) -> Vector2:
+	var parts: PackedStringArray = ref.split(":", true, 1)
+	match parts[0]:
+		"farm":
+			if sim.farms.farms.has(int(parts[1])):
+				return Vector2(sim.farms.farms[int(parts[1])].pos.x, sim.farms.farms[int(parts[1])].pos.z)
+		"site":
+			if sim.industry.sites.has(int(parts[1])):
+				return Vector2(sim.industry.sites[int(parts[1])].pos.x, sim.industry.sites[int(parts[1])].pos.z)
+		"lot":
+			if sim.lots.has(parts[1]):
+				return Vector2(sim.lots[parts[1]].pos.x, sim.lots[parts[1]].pos.z)
+	return Vector2.INF
+
+
+## True when a new business doing `what` at `at` keeps its distance from
+## the family's others (Balance.FAMILY_SPACING): never next to its own.
+func spaced(sim, fam_id: int, at: Vector2, what: String) -> bool:
+	for ref in hubs_of(fam_id):
+		var p := pos_of(sim, ref)
+		if p == Vector2.INF:
+			continue
+		var mine: String = owned[ref].what
+		if mine == "farm" and what == "farm":
+			continue
+		var need := Balance.FAMILY_SAME_TRADE_SPACING if mine == what else Balance.FAMILY_SPACING
+		if p.distance_to(at) < need:
+			return false
+	return true
 
 
 # ------------------------------------------------------------- saving
