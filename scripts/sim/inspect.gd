@@ -732,6 +732,7 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 	else:
 		rows.append(["Can grow into", ", ".join(next) if not next.is_empty() else "Nothing yet"])
 	rows.append_array(sim.heritage.rows(sim, key))
+	rows.append_array(sim.care.rows(sim, key))
 	var going_up := sim.construction.describe("lot:" + key, sim.tick_count)
 	if going_up != "":
 		status = going_up

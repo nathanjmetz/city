@@ -148,6 +148,10 @@ var heritage := Heritage.new()
 var markers := HistoricMarkers.new()
 var leaders := LeaderAsks.new()
 var timelapse := Timelapse.new()
+## How well every owner keeps their property up, from what the town gives
+## it (PropertyCare), and developers' asks to build denser (Redevelopment).
+var care := PropertyCare.new()
+var redevelopment := Redevelopment.new()
 ## The town's numbers over time, for the top bar's charts (StatHistory).
 var history := StatHistory.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
@@ -776,6 +780,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			heritage.from_dict({})
 			markers.from_dict({})
 			leaders.from_dict({})
+			care.from_dict({})
+			redevelopment.from_dict({})
 			timelapse.from_dict(self, {})
 			history.from_dict({})
 			_lever_steps.clear()
@@ -1115,7 +1121,21 @@ func tick() -> void:
 	if tick_count % TICKS_PER_HOUR == 30:
 		heritage.carry_out(self)
 		leaders.carry_out(self)
+		redevelopment.carry_out(self)
 	Perf.add("sim.heritage", t)
+	t = Perf.now()
+	# Every owner looks after their property, a slice of town an hour;
+	# developers ask to build denser in the evening.
+	if hour == 5:
+		care.start_month(self)
+	elif hour % 30 == 10:
+		if care.slice(self, (hour / 30) % PropertyCare.SLICES):
+			buildings_changed.emit()
+	Perf.add("sim.care", t)
+	if hour == 19 * TICKS_PER_HOUR + 50:
+		t = Perf.now()
+		redevelopment.month(self)
+		Perf.add("sim.redevelop", t)
 	t = Perf.now()
 	if tick_count % WaterUtility.DECIDE_EVERY == 0 and not services.water.utilities.is_empty():
 		var res := services.water.decide(self, yard_usable)
@@ -1380,7 +1400,7 @@ func _move_in() -> void:
 	keys0.sort()
 	for key in keys0:
 		var nb: Dictionary = buildings[key]
-		if nb.zone == ZoneMap.Zone.RESIDENTIAL and nb.occ == 0 and _utilities_ok(key):
+		if nb.zone == ZoneMap.Zone.RESIDENTIAL and nb.occ == 0 and _utilities_ok(key) and care.livable(key):
 			var since: int = tick_count - int(nb.built) - Construction.duration("house")
 			if since >= 0 and since < MOVE_EVERY * 6:
 				nb.occ = mini(nb.cap, 2)
@@ -1391,6 +1411,8 @@ func _move_in() -> void:
 	keys.sort()
 	for key in keys:
 		var b: Dictionary = buildings[key]
+		if not care.livable(key):
+			continue
 		if b.zone == ZoneMap.Zone.RESIDENTIAL and b.occ < b.cap and _utilities_ok(key) \
 				and construction.is_done("lot:" + key, tick_count):
 			b.occ += 1
@@ -2457,7 +2479,7 @@ func _hook_pollution() -> void:
 ## A lot's land value factor (1.0 = no change): the hubs nearby, trash left
 ## out, pollution, and an old building's charm.
 func land_factor(key: String) -> float:
-	return hubs.lot_factor(self, key) * pollution.lot_factor(self, key) * heritage.land(key)
+	return hubs.lot_factor(self, key) * pollution.lot_factor(self, key) * heritage.land(key) * care.land(key)
 
 
 func _lot_blocked(lot: Dictionary) -> bool:
@@ -2890,8 +2912,10 @@ func redevelop(key: String, type: String, level: int) -> void:
 	var b := BuildingTypes.make(self, key, buildings[key], type, level)
 	b.changed = tick_count
 	if type != BuildingTypes.type_of(buildings[key]):
-		# Torn down and rebuilt as something else: its age starts again.
+		# Torn down and rebuilt as something else: its age starts again,
+		# and it's new.
 		b.fabric = tick_count
+		care.forget(key)
 	buildings[key] = b
 	buildings_changed.emit()
 
@@ -3150,6 +3174,8 @@ func to_dict() -> Dictionary:
 		"heritage": heritage.to_dict(),
 		"markers": markers.to_dict(),
 		"leaders": leaders.to_dict(),
+		"care": care.to_dict(),
+		"redevelopment": redevelopment.to_dict(),
 		"timelapse": timelapse.to_dict(),
 		"history": history.to_dict(),
 		"junctions": traffic.rules_to_dict(),
@@ -3222,6 +3248,8 @@ func from_dict(d: Dictionary) -> void:
 	heritage.from_dict(d.get("heritage", {}))
 	markers.from_dict(d.get("markers", {}))
 	leaders.from_dict(d.get("leaders", {}))
+	care.from_dict(d.get("care", {}))
+	redevelopment.from_dict(d.get("redevelopment", {}))
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:
