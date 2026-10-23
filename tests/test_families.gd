@@ -74,6 +74,15 @@ func _init() -> void:
 		_month(sim)
 		if not owner.plan.is_empty():
 			sim.apply({"type": "permit", "id": int(owner.plan.req), "answer": "approve"})
+	# Never next door to its own: each of the family's businesses keeps out
+	# of the others' trade areas.
+	var hubs := fam.hubs_of(int(owner.id))
+	for i in hubs.size():
+		for j in range(i + 1, hubs.size()):
+			var d := Families.pos_of(sim, hubs[i]).distance_to(Families.pos_of(sim, hubs[j]))
+			var same: bool = fam.owned[hubs[i]].what == fam.owned[hubs[j]].what
+			_check(d >= (Balance.FAMILY_SAME_TRADE_SPACING if same else Balance.FAMILY_SPACING),
+				"%s and %s are %d m apart" % [fam.name_of(hubs[i]), fam.name_of(hubs[j]), d])
 	_check(fam.hubs_of(int(owner.id)).size() <= Balance.FAMILY_MAX_HUBS,
 		"a family owns at most %d businesses (%d)" % [Balance.FAMILY_MAX_HUBS, fam.hubs_of(int(owner.id)).size()])
 	_check(int(owner.gen) >= 2, "after %d years a new generation runs it (%s)" % [Balance.FAMILY_GENERATION_YEARS, owner.head])
@@ -109,11 +118,14 @@ func _town(seed: int) -> CitySim:
 	var sim := CitySim.new()
 	sim.city_seed = seed
 	sim.simulate_traffic = false
-	sim.apply({"type": "build_road", "start": [-100, 0], "ctrl": [0, 0], "end": [100, 0]})
-	for x in range(-100, 101, 10):
-		sim.apply({"type": "paint_zone", "center": [x, -25], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
-		sim.apply({"type": "paint_zone", "center": [x, 25], "radius": 12,
-			"zone": ZoneMap.Zone.COMMERCIAL if x < 40 else ZoneMap.Zone.INDUSTRIAL})
+	# Two main streets half a kilometre apart, so a family has somewhere
+	# to branch out to that isn't next door to its first business.
+	for x0 in [-100, 500]:
+		sim.apply({"type": "build_road", "start": [x0, 0], "ctrl": [x0 + 100, 0], "end": [x0 + 200, 0]})
+		for x in range(x0, x0 + 201, 10):
+			sim.apply({"type": "paint_zone", "center": [x, -25], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
+			sim.apply({"type": "paint_zone", "center": [x, 25], "radius": 12,
+				"zone": ZoneMap.Zone.COMMERCIAL if x < x0 + 140 else ZoneMap.Zone.INDUSTRIAL})
 	for i in 600:
 		sim.tick()
 	# Fill most of the shop and factory lots straight away (leaving a few

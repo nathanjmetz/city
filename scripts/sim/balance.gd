@@ -1609,6 +1609,16 @@ const FAMILY_REBRAND_YEARS := 20
 const FAMILY_REBRAND_COST := 40_000
 ## Signs read "SINCE 2031" once a business is this many years old.
 const FAMILY_SINCE_SHOWN := 10
+## Where a family puts another business (Brawn: the way real businesses
+## spread). A second store in the same trade keeps out of the first one's
+## trade area: franchise agreements protect a radius of about 1 to 3 miles
+## around each store in small markets, so 1.5 miles here (in a small town
+## that means the far side of town or the next town over). A different
+## trade still goes in its own part of town, at least a quarter mile (about
+## three blocks, a walk-in shop's trade area) from the family's others.
+## Farms are the exception: farm families buy the farm next door.
+const FAMILY_SAME_TRADE_SPACING := 2414.0
+const FAMILY_SPACING := 402.0
 
 # --- Healthcare --------------------------------------------------------------
 # Brawn's hub-with-a-leader model (2026-10-22): the hospital is run by its
