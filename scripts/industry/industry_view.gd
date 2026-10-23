@@ -23,12 +23,18 @@ static var _beam_mesh: ArrayMesh
 ## Companies already drawn once, so a reload doesn't replay the grow-in.
 var _loaded := false
 var _signs := {}  # "site:<id>" -> the company's gate sign
+var _redo := {}  # logging companies whose woods were built into
+var _redo_at := -10.0
+var _quiet := false
 
 
 func setup(s: CitySim) -> void:
 	sim = s
 	add_child(_trees)
 	sim.industry_changed.connect(_rebuild)
+	# A road or a home built in a company's woods clears its trees there
+	# (any road can go anywhere; the logging company works around it).
+	sim.vegetation.changed.connect(_cleared)
 	sim.families.changed.connect(_sync_signs)
 	_rebuild()
 	_loaded = true
@@ -36,6 +42,8 @@ func setup(s: CitySim) -> void:
 
 func _process(delta: float) -> void:
 	_time += delta
+	if not _redo.is_empty() and _time - _redo_at > 1.0:
+		_redraw_cleared()
 	for i in _beams.size():
 		var b = _beams[i]
 		if is_instance_valid(b):
@@ -56,6 +64,40 @@ func _rebuild() -> void:
 	_sync_signs()
 
 
+## Redraws the logging companies whose woods take in land that was just
+## built on or given up (Vegetation chunks).
+func _cleared(chunks: Array) -> void:
+	var boxes := []
+	for c in chunks:
+		boxes.append(Rect2(Vector2(c) * Vegetation.CHUNK, Vector2.ONE * Vegetation.CHUNK).grow(Industry.PAD * 1.5))
+	for id in _sites.keys():
+		var s = sim.industry.sites.get(id)
+		if s == null or s.kind != "forest":
+			continue
+		var hit := false
+		for c in s.pads + [Vector2i.ZERO]:
+			var mid := Industry.pad_center(s, c)
+			for b: Rect2 in boxes:
+				hit = hit or b.has_point(Vector2(mid.x, mid.z))
+		if hit:
+			_redo[id] = true
+
+
+## Redraws the woods marked by _cleared, at most once a second (a street of
+## homes going up beside them changes the land many times over).
+func _redraw_cleared() -> void:
+	_redo_at = _time
+	for id in _redo:
+		if _sites.has(id):
+			_sites[id].queue_free()
+			_sites.erase(id)
+			_trees.remove("site:%d" % id)
+	_redo.clear()
+	_quiet = true  # no grow-in: the company was already there
+	_rebuild()
+	_quiet = false
+
+
 ## The company's sign at the gate where its road meets the street, like a
 ## quarry's or an oil lease's.
 func _sync_signs() -> void:
@@ -66,6 +108,7 @@ func _sync_signs() -> void:
 
 
 func _site(id: int, s: Dictionary) -> Node3D:
+	sim.vegetation.update(sim)
 	var pines := []
 	var root := Node3D.new()
 	root.set_meta("pads", s.pads.size())
@@ -93,7 +136,7 @@ func _site(id: int, s: Dictionary) -> Node3D:
 	else:
 		_mine(id, s, root)
 	_trees.set_trees("site:%d" % id, pines)
-	if not _loaded:
+	if not _loaded or _quiet:
 		return root
 	root.scale = Vector3(1.0, 0.01, 1.0)
 	create_tween().tween_property(root, "scale", Vector3.ONE, 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
@@ -166,6 +209,7 @@ func _forest(id: int, s: Dictionary, root: Node3D, trees: Array) -> void:
 	var tracks := []
 	for c in s.pads:
 		tracks.append(Industry.track(s, c))
+	var built := _built_besides(id)
 	for c in wooded:
 		if not wooded[c]:
 			continue
@@ -191,12 +235,12 @@ func _forest(id: int, s: Dictionary, root: Node3D, trees: Array) -> void:
 		if c == Vector2i.ZERO:
 			# The mill's clearing.
 			clear.append([Vector2(-6, 0), Vector2(6, 0), 34.0])
-			_put(merged, ForestryBuilder.woods(cseed, Industry.PAD, 1.0, clear, open), frame, trees)
+			_put(merged, ForestryBuilder.woods(cseed, Industry.PAD, 1.0, clear, open), frame, trees, built)
 		elif c in s.pads:
 			var dir: Vector3 = basis.inverse() * (Industry.pad_center(s, Industry.track_to(s, c)) - Industry.pad_center(s, c))
-			_put(merged, ForestryBuilder.stand(cseed, Industry.PAD, Vector2(dir.x, dir.z), clear, open), frame, trees)
+			_put(merged, ForestryBuilder.stand(cseed, Industry.PAD, Vector2(dir.x, dir.z), clear, open), frame, trees, built)
 		else:
-			_put(merged, ForestryBuilder.woods(cseed, Industry.PAD, 1.0, clear, open), frame, trees)
+			_put(merged, ForestryBuilder.woods(cseed, Industry.PAD, 1.0, clear, open), frame, trees, built)
 	for mat in merged:
 		var mi := MeshInstance3D.new()
 		# On the land: ground work drapes over it, the rest stands on it.
@@ -305,7 +349,7 @@ func _hq(id: int, s: Dictionary, root: Node3D, built: Array, trees: Array) -> vo
 		func(): pass)
 
 
-func _put(merged: Dictionary, built: Array, frame: Transform3D, trees: Array) -> void:
+func _put(merged: Dictionary, built: Array, frame: Transform3D, trees: Array, built_cells := {}) -> void:
 	for k in 2:
 		var mesh: ArrayMesh = built[k]
 		for i in mesh.get_surface_count():
@@ -321,8 +365,32 @@ func _put(merged: Dictionary, built: Array, frame: Transform3D, trees: Array) ->
 	for t in built[2]:
 		var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
 		var at := frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])
+		# Not on a road, a home's lot or anything else built there since.
+		if cleared(built_cells, at.origin):
+			continue
 		at.origin.y += Terrain.ground_y(at.origin.x, at.origin.z)
 		trees.append([at, t[1], t[2]])
+
+
+## True when the land at `p` is built on (one of `cells`, Vegetation's), or
+## close enough that a tree's crown would hang over it: as for wild trees.
+static func cleared(cells: Dictionary, p: Vector3) -> bool:
+	if cells.is_empty():
+		return false
+	var c := Vegetation.cell_of(p)
+	for dx in range(-1, 2):
+		for dz in range(-1, 2):
+			if cells.has(c + Vector2i(dx, dz)):
+				return true
+	return false
+
+
+## The land built on by anything but this company itself (its yard, drive,
+## stands and skid trails are its own to clear).
+func _built_besides(id: int) -> Dictionary:
+	return sim.vegetation.built_cells(func(key: String) -> bool:
+		return key == "iy%d" % id or key.begins_with("id%d " % id) or key.begins_with("ip%d " % id) \
+			or key.begins_with("it%d " % id))
 
 
 func _mat(color: Color) -> Material:
