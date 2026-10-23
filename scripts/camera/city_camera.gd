@@ -36,6 +36,9 @@ var _pan_moved := 0.0
 ## Height of the land under the orbit point, eased.
 var _ground := NAN
 var _pad: Gamepad
+## True while the camera rides along with a selected vehicle or person; any
+## pan by the player lets go.
+var following := false
 
 
 func _ready() -> void:
@@ -80,6 +83,7 @@ func _input(event: InputEvent) -> void:
 			_pan_moved += mm.relative.length()
 			if _pan_moved > DRAG_THRESHOLD:
 				right_dragged = true
+				following = false
 				# Drag the ground: the map follows the mouse.
 				var scale := _dist * 0.0016
 				_goal_target -= (_right() * mm.relative.x - _forward() * mm.relative.y) * scale
@@ -102,6 +106,7 @@ func _process(delta: float) -> void:
 		if Input.is_key_pressed(KEY_D) or Input.is_key_pressed(KEY_RIGHT):
 			move.x += 1.0
 		if move != Vector2.ZERO:
+			following = false
 			var speed := _dist * 1.1 * delta * boost
 			_goal_target += (_right() * move.x - _forward() * move.y).normalized() * speed
 		if Input.is_key_pressed(KEY_Q):
@@ -146,6 +151,12 @@ func mouse_ground_point():
 
 
 ## The point on the ground the camera is looking at.
+## Keeps the view centred on a moving point (call each frame while following).
+func follow_point(p: Vector3) -> void:
+	_goal_target = Vector3(p.x, 0.0, p.z)
+	_goal_dist = minf(_goal_dist, 140.0)
+
+
 func focus() -> Vector3:
 	return _target
 
@@ -174,6 +185,7 @@ func is_dragging() -> bool:
 ## right stick rotates and tilts, the triggers zoom.
 func _pad_input(delta: float) -> void:
 	if _pad.pan != Vector2.ZERO:
+		following = false
 		var speed := _dist * 1.1 * delta
 		_goal_target += (_right() * _pad.pan.x - _forward() * _pad.pan.y) * speed
 	if _pad.turn != Vector2.ZERO:

@@ -255,7 +255,7 @@ func _process(delta: float) -> void:
 				_lost_for = 0.0
 				_retry_in = RECONNECT_EVERY
 		else:
-			failed.emit("Couldn't connect to the region. Check the address, and that the server is running.")
+			failed.emit("The region isn't answering. The host's computer may be off, asleep or restarting: try again in a minute.")
 		return
 	while _peer and _peer.get_available_packet_count() > 0:
 		var msg = JSON.parse_string(_peer.get_packet().get_string_from_utf8())
@@ -333,6 +333,10 @@ func _handle(msg: Dictionary) -> void:
 				_connected = false
 				return
 			leave()
+			if "version" in reason:
+				# Old servers say "Refresh to update", which can't help when
+				# the page is the newer one.
+				reason = "This page and the region's computer are on different versions of the game. Refresh once; if this keeps showing, the host's computer needs updating."
 			failed.emit(reason)
 		"region":
 			var d = RegionServer.unpack(str(msg.get("z", "")))

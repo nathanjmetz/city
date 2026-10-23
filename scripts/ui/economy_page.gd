@@ -22,6 +22,8 @@ var _net := UiStyle.label("", 14, UiStyle.TEXT, 600)
 var _short := UiStyle.label("", 12, Brand.WARNING)
 var _lines := {}        # budget key -> value Label
 var _grant := UiStyle.label("", 11, UiStyle.MUTED)
+var _identity := UiStyle.label("", 15, UiStyle.TEXT, 600)
+var _sectors := UiStyle.label("", 11, UiStyle.MUTED)
 var _town := {}         # slider -> StepSlider
 var _areas := VBoxContainer.new()
 var _open_areas := {}   # area -> true while expanded
@@ -100,6 +102,13 @@ func _ready() -> void:
 	body.add_child(note)
 	body.add_child(_grant)
 
+	# What kind of town this is, and what's rising (TownCulture).
+	body.add_child(HSeparator.new())
+	body.add_child(UiStyle.label("TOWN CHARACTER", 10, UiStyle.MUTED))
+	body.add_child(_identity)
+	_sectors.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.add_child(_sectors)
+
 	# The whole town: the default every area follows.
 	body.add_child(HSeparator.new())
 	var town_head := HBoxContainer.new()
@@ -169,11 +178,39 @@ func refresh() -> void:
 	_grant.text = "" if e.milestone >= Economy.MILESTONES.size() else \
 		"Next grant: $%s at %s people" % [CitySim.money_text(Economy.MILESTONES[e.milestone][1]),
 		CitySim.money_text(Economy.MILESTONES[e.milestone][0])]
+	var who := character(sim.culture)
+	_identity.text = who[0]
+	_sectors.text = who[1]
 	for area in _area_rows:
 		_area_rows[area].sum.text = _summary(area)
 		if _open_areas.has(area) and _hub_sig.get(area, []) != hubs_in(area):
 			_fill_hubs(area)
 	_sync_sliders()
+
+
+## Sector names for the town character breakdown.
+const SECTOR_NAMES := {"farm": "Farming", "mining": "Coal and oil", "timber": "Timber",
+	"manufacturing": "Manufacturing", "trade": "Shops and trade", "office": "Banks and offices",
+	"campus": "Colleges and hospitals", "transport": "Rail and power"}
+
+
+## [the town's title, a few lines on its strongest trades]: how many times
+## the US share of jobs each one has (its location quotient) and whether
+## it's rising or fading against what the town is known for.
+static func character(c: TownCulture) -> Array:
+	if c.shares.is_empty():
+		return ["Too small for a reputation yet", "Once a few hundred people work here, the county will know what kind of town this is."]
+	var title := c.title() if c.title() != "" else "A town of all trades"
+	var ranked: Array = TownCulture.SECTORS.keys()
+	ranked.sort_custom(func(a, b): return c.lq(a) > c.lq(b))
+	var lines := []
+	for k in ranked.slice(0, 3):
+		var m := c.momentum(k)
+		var trend := "▲ rising" if m > 0.1 else ("▼ fading" if m < -0.1 else "steady")
+		lines.append("%s: %.1f× the US share of jobs, %s" % [SECTOR_NAMES.get(k, k), c.lq(k), trend])
+	if c.identity != "":
+		lines.append("Known for it since year %d." % (c.since / 12 + 1))
+	return [title, "\n".join(lines)]
 
 
 func _money_line(key: String, v: int) -> void:

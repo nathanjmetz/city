@@ -29,7 +29,7 @@ const BRICK := ["#8a4a38", "#9b5a42", "#7a4234", "#a8775c", "#b59a7c"]
 const TRIM := Color("#efede6")
 const SOFFIT := Color("#b9b6ad")
 const FOUNDATION := Color("#9d9a92")
-const SHRUB := [Color("#2f4a24"), Color("#3a5a2a"), Color("#29401f"), Color("#4a5e2c")]
+const SHRUB := [Color("#41633a"), Color("#4c6f35"), Color("#3a5a32"), Color("#5c7238")]  # yew, boxwood, arborvitae, spirea
 const MULCH := Color("#4a3426")
 const LOT_HALF := 10.0  # half a lot's width when no lot is given
 ## House types by the era a street was built in. Before the war: American
@@ -81,7 +81,9 @@ func _fit(lot: Dictionary) -> void:
 	outline = lot.get("outline", PackedVector2Array())
 	depth = float(lot.get("depth", 32.0)) - pad
 	# The era comes from where the lot is, in blocks of about a quarter mile.
-	if lot.has("at"):
+	if lot.has("era"):
+		era = lot.era
+	elif lot.has("at"):
 		var at: Vector2 = lot.at
 		var cell := Vector2i(floori(at.x / 400.0), floori(at.y / 400.0))
 		era = ["prewar", "postwar", "postwar", "recent", "recent"][posmod(hash(cell), 5)]
@@ -815,7 +817,13 @@ func _front_door(x: float, zf: float, sill: float, c: Color) -> void:
 	_box("paint", Vector3(1.25, 0.14, 0.1), Vector3(x, sill + 2.17, zf - 0.05), TRIM)
 	for s in [-1.0, 1.0]:
 		_box("paint", Vector3(0.12, 2.2, 0.1), Vector3(x + s * 0.55, sill + 1.1, zf - 0.05), TRIM)
-	# Storm door glass and a porch light.
+	# Raised panels below the lite, a brass knob at 36 in, the aluminium
+	# sill; storm door glass and a porch light.
+	var panel := c.lightened(0.14) if c.get_luminance() < 0.3 else c.darkened(0.1)
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(0.3, 0.62, 0.02), Vector3(x + s * 0.2, sill + 0.5, zf - 0.055), panel)
+	_box("metal", Vector3(0.07, 0.07, 0.07), Vector3(x + 0.36, sill + 0.92, zf - 0.09), Color("#b08d48"))
+	_box("metal", Vector3(1.1, 0.04, 0.16), Vector3(x, sill + 0.02, zf - 0.08), Color("#a9acae"))
 	_glass(Vector3(x, sill + 1.45, zf - 0.06), Vector3(-1, 0, 0), 0.6, 0.8, 0.0)
 	_box("paint", Vector3(0.14, 0.26, 0.1), Vector3(x + 0.85, sill + 1.75, zf - 0.06), Color("#1c1c1c"))
 
@@ -972,16 +980,23 @@ func _shrub(p: Vector3, r: float) -> void:
 			var k := r * rng.randf_range(0.82, 1.12)
 			row.append(p + Vector3(sin(t) * cos(a) * k, (1.0 - cos(t)) * k * 0.8, sin(t) * sin(a) * k))
 		pts.append(row)
+	# Smooth normals from the middle, so it shades as a rounded clipped
+	# yew or boxwood rather than a cut stone; alpha marks it as foliage.
+	var mid := p + Vector3(0, r * 0.8, 0)
+	var st := _tool("foliage")
 	for i in rings:
 		for j in segs:
-			var a: Vector3 = pts[i][j]
-			var b: Vector3 = pts[i][(j + 1) % segs]
-			var c: Vector3 = pts[i + 1][(j + 1) % segs]
-			var d: Vector3 = pts[i + 1][j]
-			var shade := col.darkened(0.25 * (1.0 - float(i) / rings))
-			var outward := (a + c) * 0.5 - (p + Vector3(0, r * 0.8, 0))
-			_tri("foliage", a, b, c, shade, [], outward)
-			_tri("foliage", a, c, d, shade, [], outward)
+			var quad: Array = [pts[i][j], pts[i][(j + 1) % segs], pts[i + 1][(j + 1) % segs], pts[i + 1][j]]
+			var face_n: Vector3 = (quad[1] - quad[0]).cross(quad[3] - quad[0])
+			var order := [0, 2, 1, 0, 3, 2] if face_n.dot((quad[0] + quad[2]) * 0.5 - mid) >= 0.0 else [0, 1, 2, 0, 2, 3]
+			for k in order:
+				var v: Vector3 = quad[k]
+				var shade := col.darkened(0.25 * (1.0 - (v.y - p.y) / (r * 1.6)))
+				shade.a = 0.3
+				st.set_normal(((v - mid).normalized() + Vector3(0, 0.4, 0)).normalized())
+				st.set_color(shade)
+				st.set_uv(Vector2(v.x, v.z))
+				st.add_vertex(v)
 
 
 # ---------------------------------------------------------------- geometry

@@ -13,7 +13,8 @@ signal opened
 
 const WIDTH := 340
 ## What each kind of hub is called on its card.
-const HUB_NAMES := {"rail": "Railroad", "bus": "Bus company", "family": "Family business", "interlocal": "Shared service"}
+const HUB_NAMES := {"rail": "Railroad", "bus": "Bus company", "family": "Family business", "developer": "Land developer",
+	"interlocal": "Shared service"}
 
 var sim: CitySim
 var view := PermitView.new()

@@ -47,8 +47,7 @@ func _init() -> void:
 			saw_stop = saw_stop or sim.mail.trips[t].prev >= 0
 		if i % 97 == 0 and not sim.mail.trips.is_empty():
 			# Cars on the road or pulling out, or just arrived (handled next tick).
-			var ids := (sim.traffic.cars + sim.traffic._waiting + sim.traffic.arrivals + sim.traffic.failed).map(
-				func(c): return c.id)
+			var ids := sim.traffic.trip_ids()
 			for t in sim.mail.trips:
 				if not t in ids:
 					cars_seen = false

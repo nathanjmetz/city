@@ -2052,3 +2052,42 @@ const STAGE_TARGET_DAYS := {
 ## How far from a target the harness tolerates before flagging it (0.5 =
 ## anywhere from half to one and a half times the target).
 const STAGE_TARGET_SLACK := 0.5
+
+
+# --- Town culture ------------------------------------------------------------
+# Brawn's core idea (2026-10-22): a town's character drifts with its work and
+# tilts which hubs thrive. Measured as location quotients (TownCulture).
+
+## A town needs this many jobs before it has a character of its own.
+const CULTURE_MIN_JOBS := 40
+## How slowly culture follows the jobs: half the gap closes in this many game
+## days (a game day is a month, so three years; a town's reputation for a
+## trade outlasts the trade by years).
+const CULTURE_HALF_LIFE_DAYS := 36.0
+## The location quotient economic developers count as a specialisation.
+const CULTURE_SPECIALISED_LQ := 1.25
+## A known identity holds until another sector beats it by this much LQ.
+const CULTURE_HOLD_LQ := 0.5
+## The LQ where a sector's pull (or, at its inverse, its drag) is full.
+const CULTURE_FULL_PULL_LQ := 4.0
+## How much thinner a margin a town's own trade will buy land on, at full
+## pull, a year: about a quarter of a growth-slider step (Balance POLICY_*).
+const CULTURE_MARGIN_PER_ACRE := 5.0
+const CULTURE_MARGIN_PER_PAD := 1_000.0
+## A developer asks to rezone farm ground for a trade when its pull plus
+## how fast it is rising passes this...
+const CULTURE_DEVELOP_SCORE := 0.25
+## ...and builders want that zone (its demand, 0 to 1)...
+const CULTURE_DEVELOP_DEMAND := 0.6
+## ...and fewer than this many zoned lots for it stand empty.
+const CULTURE_DEVELOP_FREE_LOTS := 3
+## What a developer pays for Indiana farm ground, $ per square metre (about
+## $11,000 an acre, Purdue Farmland Value Survey 2023, before rezoning).
+const CULTURE_FARMLAND_PER_M2 := 3
+## How far back from the road a rezoning reaches (one deep commercial or
+## industrial lot, metres) and the least road frontage worth asking for.
+const CULTURE_FRONTAGE_DEPTH := 60.0
+const CULTURE_FRONTAGE_MIN := 80.0
+## How long (game days; a day is a month) the advisor mentions that the town
+## has a new reputation (TownCulture identity).
+const CULTURE_NEWS_DAYS := 12

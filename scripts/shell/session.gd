@@ -139,7 +139,9 @@ func join_region(server: String, code: String, password := "", new_account := fa
 	client.waiting.connect(func(_message):
 		_keep_token(server, code, client.token)
 		LoadingScreen.close())
-	client.joined.connect(func(): _keep_token(server, code, client.token))
+	client.joined.connect(func():
+		_keep_token(server, code, client.token)
+		_keep_page_invite(code))
 	client.join(server, code, profile.id, str(profile.name), password, new_account,
 		"" if password != "" else _token_for(code))
 	return client
@@ -204,6 +206,9 @@ func leave_region(stop_host := true) -> void:
 
 func to_menu() -> void:
 	leave_region(false)
+	if OS.has_feature("web"):
+		# Left on purpose: a refresh stays on the title screen.
+		JavaScriptBridge.eval("history.replaceState(null, '', window.location.pathname)")
 	mode = Mode.SOLO
 	get_tree().change_scene_to_file(MENU_SCENE)
 
@@ -272,6 +277,18 @@ func _read_page_invite() -> void:
 		var kv := part.split("=", true, 1)
 		if kv.size() == 2 and kv[0] in ["join", "server"]:
 			pending_invite[kv[0]] = kv[1].uri_decode()
+
+
+## Puts the invite code in the page's address once you're in, so a refresh
+## brings you straight back to your town instead of the title screen.
+func _keep_page_invite(code: String) -> void:
+	if not OS.has_feature("web"):
+		return
+	var query := "?join=" + code.uri_encode()
+	var server = JavaScriptBridge.eval("new URLSearchParams(window.location.search).get('server') || ''", true)
+	if typeof(server) == TYPE_STRING and server != "":
+		query += "&server=" + str(server).uri_encode()
+	JavaScriptBridge.eval("history.replaceState(null, '', window.location.pathname + %s)" % JSON.stringify(query))
 
 
 static func _read(path: String) -> Dictionary:

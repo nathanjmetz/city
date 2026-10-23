@@ -87,7 +87,48 @@ var id := sim.traffic.dispatch({"ref": "farm:1", "pos": [x, z]}, {"ref": "mill:2
 - In-flight trips are saved exactly (`"traffic"` in the save) and two copies
   loaded from the same save drive identically, as multiplayer needs.
 
+## Parking, people and walkers (loop 4)
+
+Benchmark: CS2's parking and citizens (cars park in real spaces, drivers walk
+in, every citizen has a name, the vehicle info panel), with CS1's rule that a
+vehicle only leaves the map at the map edge. Brawn's rule on top: **vehicles
+never disappear**. Every trip ends parked in a stall, driveway, garage, at a
+loading dock, at the curb, or inside a factory bay, and later drives back out.
+
+- **Places** (`traffic.place(ref)`): a lot, a dispatch site or the county
+  highway edge, with its spots. `SiteLayout` replays the art builders' first
+  random draws, fitted to the lot's real width and depth, so the stalls,
+  garages, driveways, bays and doors match what is painted. If the art
+  builders change their first draws, update `scripts/sim/site_layout.gd`.
+- **Parked vehicles** live in `traffic.parked` (`at_place`, `spot`, `pos`,
+  `face`, `hidden` inside a garage or bay, `owner`, `base`). A vehicle keeps
+  its `id` for life; `trip` is the id of its current trip.
+- **dispatch()** reuses an idle, unowned vehicle already parked at `from`
+  (a depot's truck, or one that just finished a leg), else makes one there.
+  After unloading it returns to its base, unless the trip ends at its base.
+  Arrivals now carry `vid`, the vehicle's id.
+- **move(vid, to, purpose, cargo)** sends a parked vehicle one more leg with
+  no return, for buses going stop to stop or trucks on a round of calls.
+- **People** (`sim.people`, `scripts/sim/people.gd`): one named person per
+  resident, households sharing a surname and up to two cars, jobs filled every
+  30 ticks, and outings by the clock (work 6 to 10, home 15 to 18, shopping in
+  between). Every home, shop, factory, farm, company and service gets a unique
+  name (`scripts/sim/names.gd`).
+- **Walkers** (`traffic.walkers`) follow the sidewalks, keep to the right and
+  cross at corners. People walk if it's under 260 m or their car isn't there,
+  otherwise they walk to the car, drive, park and walk to the door.
+  Everyone is simulated; `WalkerView` draws only those within 320 m.
+- **Clicking** a vehicle or a walker (`Inspect.pick`) shows what it is, where
+  it's coming from and going, why, its cargo, driver and owner, with a
+  Follow button for the camera (CS2's vehicle panel). Lots show their name and
+  who lives there.
+- A driver stuck in a lane that can't reach the place parks at the curb just
+  ahead and walks, instead of stopping in the road.
+- Saves: `"people"` in the city save, and `parked`, `walkers` inside
+  `"traffic"`. Loaded copies run identically.
+
 ## Next
 
-- Parking (CS2 style), bus and transit routes (`add_route_vehicle`), service
-  vehicles answering calls.
+- Parking garages in real sizes, grown where parking runs short or placed by
+  the player; people riding buses (with the Bus depot work); service vehicles
+  answering calls.

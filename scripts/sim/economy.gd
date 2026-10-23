@@ -83,10 +83,16 @@ func update_budget(sim: CitySim) -> void:
 		income[z] = 0.0
 	var staffed := float(sim.stats.employed) / maxf(sim.stats.jobs, 1.0)
 	var care := 0.0
+	# The sliders are per area, so each is read once rather than per building.
+	var care_of := {}
+	var land_of := {}
 	for key in sim.buildings:
 		var b: Dictionary = sim.buildings[key]
 		var area: String = ZONE_AREA.get(int(b.zone), "homes")
-		care += sim.policies.pick(Balance.POLICY_CARE_PER_BUILDING, "funding", area)
+		if not care_of.has(area):
+			care_of[area] = sim.policies.pick(Balance.POLICY_CARE_PER_BUILDING, "funding", area)
+			land_of[area] = sim.policies.pick(Balance.POLICY_LAND_VALUE, "funding", area)
+		care += float(care_of[area])
 		if int(b.zone) != ZoneMap.Zone.RESIDENTIAL and not sim.utilities_ok(key):
 			continue  # a business with no power or water is closed
 		# Land near a landfill is worth less, near a cemetery a little more,
@@ -94,7 +100,7 @@ func update_budget(sim: CitySim) -> void:
 		# too, and so do well-kept streets (Funding) and fiber and cell service;
 		# a smelly sewer plant and pollution lower it.
 		var tax_due := building_tax(b, staffed, sim.parks.lot_value.get(key, 0.0) + sim.telecom.lot_lift(key)) * sim.land_factor(key) \
-			* sim.mail.lot_factor(sim, key) * sim.policies.pick(Balance.POLICY_LAND_VALUE, "funding", area) / 12.0
+			* sim.mail.lot_factor(sim, key) * float(land_of[area]) / 12.0
 		if sim.lots.has(key):
 			tax_due *= sim.services.water.land_value_factor(sim.services.buildings, sim.lots[key].pos)
 		income[int(b.zone)] += tax_due
