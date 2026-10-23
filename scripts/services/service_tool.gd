@@ -186,7 +186,7 @@ func _update_hint() -> void:
 	elif s.get("hub", false):
 		text += " Its superintendent lays mains and sewers, drills wells and builds plants on their own. You set its subsidy."
 	elif s.has("reach"):
-		text += " Covers homes within %.1f road miles (green)." % (s.reach / 1609.0)
+		text += " Covers homes within %.1f road miles: green roads are covered, yellow is the edge of a station's reach." % (s.reach / 1609.0)
 	else:
 		text += " Serves about %s homes along connected roads." % CitySim.money_text(s.capacity)
 	if _problem != "":
