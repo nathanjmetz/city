@@ -11,6 +11,10 @@ const MENU_SCENE := "res://scenes/menu.tscn"
 const GAME_SCENE := "res://scenes/main.tscn"
 ## Address used when an invite has none: a region on this computer.
 const LOCAL_SERVER := "ws://localhost:9080"
+## Where the region publishes its current address ({"server": "wss://..."}),
+## so Play works with just the invite code even after the host restarts.
+## It lives on its own branch, so updating it doesn't rebuild the game.
+const REGION_CONFIG := "https://raw.githubusercontent.com/nathanjmetz/city/region/server.json"
 
 enum Mode { SOLO, ONLINE }
 
@@ -134,24 +138,31 @@ func join_region(server: String, code: String, password := "", new_account := fa
 		_keep_token(server, code, client.token)
 		LoadingScreen.close())
 	client.joined.connect(func(): _keep_token(server, code, client.token))
-	var key := _token_key(server, code, profile.name)
-	client.join(server, code, profile.id, profile.name, password, new_account,
-		"" if password != "" else str(profile.tokens.get(key, "")))
+	client.join(server, code, profile.id, str(profile.name), password, new_account,
+		"" if password != "" else _token_for(code))
 	return client
 
 
-## Whether this device has logged in to a region as this name before.
-func has_login(server: String, code: String) -> bool:
-	return profile.tokens.has(_token_key(normalize_server(server), code.strip_edges().to_upper().replace("-", ""), profile.name))
+## Whether this device has been in the region with this invite code before.
+func has_login(_server: String, code: String) -> bool:
+	return _token_for(code.strip_edges().to_upper().replace("-", "")) != ""
 
 
-func _token_key(server: String, code: String, name: String) -> String:
-	return "%s|%s|%s" % [server, code, name.to_lower()]
+## This device's sign-in for a region, by its invite code (the server's
+## address can change; older saves keyed it "server|code|name").
+func _token_for(code: String) -> String:
+	if profile.tokens.has(code):
+		return str(profile.tokens[code])
+	for key in profile.tokens:
+		var parts := str(key).split("|")
+		if parts.size() == 3 and parts[1] == code:
+			return str(profile.tokens[key])
+	return ""
 
 
-func _keep_token(server: String, code: String, token: String) -> void:
+func _keep_token(_server: String, code: String, token: String) -> void:
 	if token != "":
-		profile.tokens[_token_key(server, code, profile.name)] = token
+		profile.tokens[code] = token
 		save_profile()
 
 
