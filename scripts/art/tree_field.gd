@@ -47,6 +47,7 @@ varying vec3 crown_normal;
 varying vec3 leaf_pos;
 varying float species;
 varying float tree_rand;
+varying float far_card;
 vec3 lin(vec3 c) {
 	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
 }
@@ -66,6 +67,7 @@ void vertex() {
 	leaf_pos = VERTEX;
 	species = floor(INSTANCE_CUSTOM.a * 8.0);
 	tree_rand = fract(sin(dot(origin.xz, vec2(12.9898, 78.233))) * 43758.5453);
+	far_card = step(COLOR.a, 0.75);  // a far tree's few big cards (see _card)
 	float phase = TIME * 1.1 + origin.x * 0.31 + origin.z * 0.17;
 	float sway = sin(phase + VERTEX.y * 0.25) * 0.025 * VERTEX.y;
 	VERTEX.x += sway;
@@ -126,6 +128,14 @@ void fragment() {
 		// the snow or leaf litter through them), so the twigs get much less
 		// of the far-off alpha boost than leaves do.
 		tw.a *= 1.0 + lod * 0.12;
+		// A far tree has a few big cards instead of many small ones, so the
+		// same thin twigs would leave its crown empty and its trunk standing
+		// alone (black poles in winter woods). Seen across the woods, a
+		// line of sight passes through many crowns and they close into a
+		// grey-brown haze, so its twigs get the boost a whole near crown's
+		// overlapping cards add up to; from straight above they stay thin.
+		float across = 1.0 - smoothstep(0.55, 0.9, abs(dot(normalize(-VERTEX), (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz)));
+		tw.a *= 1.0 + far_card * lod * 0.35 * across;
 		float h = fract(sin(dot(floor(leaf_pos * 0.55), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
 		alpha = mix(alpha, tw.a * step(bare * 0.3, h), b);
 		t.rgb = mix(t.rgb, tw.rgb, b);
@@ -404,7 +414,7 @@ static func _broadleaf(sp: int, rng: RandomNumberGenerator, leaves: SurfaceTool,
 		var hue := rng.randf()
 		for i in cards_per:
 			var p := cc + Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.7, 0.7), rng.randf_range(-1, 1)) * card * 0.6
-			_card(leaves, rng, p, center, rad, card * rng.randf_range(0.8, 1.2), hue)
+			_card(leaves, rng, p, center, rad, card * rng.randf_range(0.8, 1.2), hue, far)
 
 
 static func _spruce(rng: RandomNumberGenerator, leaves: SurfaceTool, wood: SurfaceTool, far := false) -> void:
@@ -425,7 +435,8 @@ static func _spruce(rng: RandomNumberGenerator, leaves: SurfaceTool, wood: Surfa
 
 
 ## One leaf card, randomly turned, with normals out from the crown centre.
-static func _card(st: SurfaceTool, rng: RandomNumberGenerator, p: Vector3, center: Vector3, rad: Vector3, size: float, hue: float) -> void:
+static func _card(st: SurfaceTool, rng: RandomNumberGenerator, p: Vector3, center: Vector3, rad: Vector3, size: float, hue: float,
+		far := false) -> void:
 	var basis := Basis.from_euler(Vector3(rng.randf_range(-PI, PI), rng.randf_range(-PI, PI), rng.randf_range(-PI, PI)))
 	var u := basis.x * size * 0.5
 	var v := basis.y * size * 0.5
@@ -437,7 +448,7 @@ static func _card(st: SurfaceTool, rng: RandomNumberGenerator, p: Vector3, cente
 		var out := (rel + Vector3(0, 0.35, 0)).normalized()
 		st.set_normal(out)
 		# How far out in the crown: inner leaves are shaded by outer ones.
-		st.set_color(Color(clampf(rel.length(), 0.0, 1.0), 0, 0))
+		st.set_color(Color(clampf(rel.length(), 0.0, 1.0), 0, 0, 0.5 if far else 1.0))
 		st.set_uv(uvs[i])
 		st.add_vertex(q)
 
