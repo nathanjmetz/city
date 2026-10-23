@@ -43,6 +43,9 @@ var _pending: Array = []  # lot keys waiting to be built, nearest last
 var _recheck: Array = []  # lot keys still to look over since the last change
 var _recheck_again := false  # changed again while a look-over was under way
 var _first := true  # the town as it loads goes in at once
+## A neighbor's whole town lands at once, while you play: drawn a few
+## buildings a frame even then, its far boxes once it's all in (RegionView).
+var sliced := false
 ## Finished buildings are drawn merged, one mesh per material for each
 ## 128 m square, instead of a dozen draw calls each: a town of a few
 ## hundred homes was thousands of draw calls, most of the frame on a Mac.
@@ -125,7 +128,7 @@ func _sync_all() -> void:
 		_recheck = _nodes.keys()
 	# Build: everything at once for a big batch (loading a town), otherwise
 	# nearest first until the frame's share is used.
-	var all_now := _first or _pending.size() > SPAWN_ALL
+	var all_now := not sliced and (_first or _pending.size() > SPAWN_ALL)
 	_first = false
 	while not _pending.is_empty():
 		var key: String = _pending.pop_back()
@@ -140,6 +143,8 @@ func _sync_all() -> void:
 		_far_dirty[c] = true
 		if not all_now and Time.get_ticks_usec() - start > SPAWN_MS * 1000:
 			break
+	if sliced and not _pending.is_empty():
+		return
 	for c in _far_dirty:
 		var had := _far.has(c)
 		_build_far(c)

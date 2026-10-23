@@ -25,8 +25,8 @@ var _bridge_cache := {}  # segment id -> [what it was drawn from, piers or null]
 var _junction_cache := {}  # node -> [its plan, {part: mesh}]
 var _later := {}  # segment id -> what to redraw it from, a few each frame
 var _seg_mi := {}  # segment id -> its street
-var _poles_later := {}  # segment id -> [key, pts, offset, drives near], drawn later (sliced)
-var _corners_later := {}  # node -> [key, its plan], drawn later (sliced)
+var _poles_later := {}  # segment id -> [key, pts, offset, drives near], drawn when a rebuild runs out of time
+var _corners_later := {}  # node -> [key, its plan], drawn when a rebuild runs out of time
 var _merged := []  # the merged pole and corner meshes, redone once the later ones are drawn
 var _gen := 0  # which rebuild is current; a sliced one left behind stops
 var _building := false  # a sliced rebuild is part way through
@@ -254,9 +254,9 @@ func _rebuild_all(gen: int) -> void:
 				var near := _drives_near(drives, pts)
 				var pkey := [pts, off, near, Terrain.shift]
 				var poles: Array = _pole_cache.get(id, [])
-				if (poles.is_empty() or poles[0] != pkey) and sliced and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+				if (poles.is_empty() or poles[0] != pkey) and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+					# Out of time: drawn a few frames later, the old ones up meanwhile.
 					_poles_later[id] = [pkey, pts, off, near]
-					poles = []
 				elif poles.is_empty() or poles[0] != pkey:
 					var w := SurfaceTool.new()
 					var r := SurfaceTool.new()
@@ -347,10 +347,12 @@ func _rebuild_all(gen: int) -> void:
 	for node in junctions:
 		var jkey := [junctions[node], Terrain.shift]
 		var drawn: Array = _junction_cache.get(node, [])
-		if (drawn.is_empty() or drawn[0] != jkey) and sliced and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+		if (drawn.is_empty() or drawn[0] != jkey) and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+			# Out of time: drawn a few frames later, the old corner up meanwhile.
 			_corners_later[node] = [jkey, junctions[node]]
-			continue
-		if drawn.is_empty() or drawn[0] != jkey:
+			if drawn.is_empty():
+				continue
+		elif drawn.is_empty() or drawn[0] != jkey:
 			drawn = [jkey, _corner_meshes(node, junctions[node])]
 		junction_cache[node] = drawn
 		for key in corners:
