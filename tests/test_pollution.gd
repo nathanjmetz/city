@@ -104,6 +104,15 @@ func _init() -> void:
 	_check(named, "a hurt home names the source behind it")
 	_check(not pol.hurts.is_empty(), "sources know how many homes they hurt")
 
+	# The advisor names the source bothering the most homes, and where to look.
+	var most := ""
+	for ref in pol.hurts:
+		if most == "" or pol.hurts[ref].homes > pol.hurts[most].homes:
+			most = ref
+	var tip: Array = Advisor.tips(sim).filter(func(t): return t.id == "pollution")
+	_check(pol.hurts[most].homes < 3 or (not tip.is_empty() and tip[0].text.contains(pol.sources[most].name)
+		and tip[0].text.length() <= 170), "the advisor names the worst polluter (%s)" % (tip[0].text if not tip.is_empty() else "none"))
+
 	# A source panel says who it hurts and how to fix it.
 	var fd := Inspect.describe(sim, f.select)
 	_check(fd.title == f.name, "the factory panel uses its name")
