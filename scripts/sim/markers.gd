@@ -56,7 +56,11 @@ var _oldest_of = null
 func month(sim) -> void:
 	var before := markers.size()
 	_oldest_of = {}
+	# A few a month: a town that appears at once gets its markers over a
+	# season, as a real historical society would put them up.
 	for f in FIRSTS:
+		if markers.size() - before >= Balance.MARKERS_PER_MONTH:
+			break
 		if not seen.has(f[0]):
 			var found := _find(sim, str(f[0]))
 			if not found.is_empty():
@@ -64,6 +68,8 @@ func month(sim) -> void:
 	# Hoosier Homestead: a farm kept by one family for a generation (the real
 	# award is for a century; Families passes a farm on every 25 game years).
 	for ref in sim.families.owned:
+		if markers.size() - before >= Balance.MARKERS_PER_MONTH:
+			break
 		if not str(ref).begins_with("farm:") or seen.has("homestead:" + ref):
 			continue
 		var o: Dictionary = sim.families.owned[ref]

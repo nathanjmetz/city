@@ -2551,6 +2551,14 @@ const NICKNAME_HISTORIC_SHARE := 0.2
 const NICKNAME_HISTORIC_LEAN := 0.03
 const NICKNAME_LEAN_HALF_LIFE_DAYS := 24.0
 
+## Historic markers put up in one month, at most.
+const MARKERS_PER_MONTH := 4
+
+## The timelapse notes at most this many new roads and buildings a month
+## (each is a footprint or a traced road): a town that appears at once is
+## caught up over a few months rather than in one long tick.
+const TIMELAPSE_RECORDS_PER_MONTH := 120
+
 ## Leader requests: at most one new one a month, with this chance, and each
 ## kind waits this many game months after it was last asked.
 const ASK_CHANCE := 0.5
