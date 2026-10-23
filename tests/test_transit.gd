@@ -255,7 +255,7 @@ func _coach(sim: CitySim, id: int) -> void:
 	_check(sim.buses._has_coach(id), "it buys a coach")
 	var seen := {}
 	var loaded := 0
-	for i in 9000:
+	for i in 15000:
 		sim.tick()
 		for bid in sim.buses.buses:
 			var bus: Dictionary = sim.buses.buses[bid]
