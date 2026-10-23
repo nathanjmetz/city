@@ -726,7 +726,7 @@ func _back(x0: float, x1: float, zb: float, floors: Array, sill: float) -> void:
 			if f == 0 and i == slider:
 				_box("paint", Vector3(1.95, 2.25, 0.04), Vector3(x, sill + 1.1, zb), TRIM)
 				_glass(Vector3(x, sill + 1.05, zb + 0.03), Vector3(1, 0, 0), 1.8, 2.1, rng.randf_range(0.0, 0.3))
-				_box("concrete", Vector3(3.0, sill, 2.5), Vector3(x, sill * 0.5, zb + 1.25), FOUNDATION)
+				_rear_deck(x, zb, sill)
 			else:
 				_window(Vector3(x, floors[f], zb), Vector3(1, 0, 0), 0.9, 1.35, true, false, TRIM)
 
@@ -810,6 +810,62 @@ func _stoop(x: float, zf: float, w: float, d: float, h: float) -> void:
 		_box("metal", Vector3(0.045, 0.86, 0.045), Vector3(rx, h + 0.43, zt), rail)
 		_box("metal", Vector3(0.045, 0.045, Vector2(zt - zb, yt - yb).length() + 0.05),
 			Vector3(rx, (yb + yt) * 0.5, (zb + zt) * 0.5), rail, tilt)
+
+
+## What a back slider opens onto (Midwestern backyards): low floors step
+## down onto a concrete patio at grade; higher ones open onto a
+## pressure-treated deck on posts with stairs down to the yard, and guards
+## once the deck is over 30 in up (IRC R312). It reaches back (+z) from the
+## wall at `zb`.
+func _rear_deck(x: float, zb: float, sill: float) -> void:
+	if sill <= 0.45:
+		_box("concrete", Vector3(3.6, 0.1, 3.0), Vector3(x, 0.05, zb + 1.5), FOUNDATION)
+		_box("concrete", Vector3(1.6, sill, 0.5), Vector3(x, sill * 0.5, zb + 0.25), FOUNDATION)
+		return
+	var wood := Color("#8d7b5f")  # weathered treated lumber
+	var top := sill - 0.1  # a step down from the door, as decks are built
+	var w := 3.6
+	var d := 3.0
+	_box("paint", Vector3(w, 0.05, d), Vector3(x, top - 0.025, zb + d * 0.5), wood)
+	_box("paint", Vector3(w - 0.1, 0.24, d - 0.05), Vector3(x, top - 0.18, zb + d * 0.5), wood.darkened(0.25))
+	for px in [-1.0, 1.0]:
+		for pz in [0.6, d - 0.1]:
+			_box("paint", Vector3(0.1, top - 0.29, 0.1), Vector3(x + px * (w * 0.5 - 0.1), (top - 0.29) * 0.5, zb + pz), wood.darkened(0.15))
+	# Stairs off the far side, open treads on two stringers.
+	var n := ceili(top / 0.19)
+	var rise := top / n
+	var run := 0.27
+	var sw := 1.0
+	var sx := x + w * 0.5 - sw * 0.5 - 0.2
+	for k in range(1, n):
+		_box("paint", Vector3(sw, 0.04, run + 0.02), Vector3(sx, top - k * rise, zb + d + (k - 0.5) * run), wood)
+	var length := Vector2((n - 1) * run + 0.2, top).length()
+	var tilt := Basis(Vector3.RIGHT, atan2(top, (n - 1) * run + 0.2))
+	for side in [-1.0, 1.0]:
+		_box("paint", Vector3(0.05, 0.24, length), Vector3(sx + side * (sw * 0.5 - 0.03), top * 0.5 - 0.1,
+			zb + d + ((n - 1) * run) * 0.5), wood.darkened(0.15), tilt)
+	if top <= 0.76:
+		return
+	# Guards: a top rail 36 in up on the open sides, with balusters.
+	var rail_y := top + 0.91
+	var runs := [[Vector3(x - w * 0.5 + 0.03, 0, zb + 0.1), Vector3(x - w * 0.5 + 0.03, 0, zb + d - 0.03)],
+		[Vector3(x - w * 0.5 + 0.03, 0, zb + d - 0.03), Vector3(sx - sw * 0.5, 0, zb + d - 0.03)],
+		[Vector3(x + w * 0.5 - 0.03, 0, zb + 0.1), Vector3(x + w * 0.5 - 0.03, 0, zb + d - 0.03)]]
+	for r in runs:
+		var a: Vector3 = r[0]
+		var b: Vector3 = r[1]
+		var span := a.distance_to(b)
+		if span < 0.2:
+			continue
+		var along := (b - a) / span
+		var basis := Basis(along.cross(Vector3.UP), Vector3.UP, along)
+		var mid := (a + b) * 0.5
+		_box("paint", Vector3(0.09, 0.05, span), Vector3(mid.x, rail_y, mid.z), wood, basis)
+		_box("paint", Vector3(0.05, 0.05, span), Vector3(mid.x, top + 0.1, mid.z), wood, basis)
+		var m := maxi(2, int(span / 0.45))
+		for i in m + 1:
+			var p := a.lerp(b, float(i) / m)
+			_box("paint", Vector3(0.04, 0.86, 0.04), Vector3(p.x, top + 0.48, p.z), wood)
 
 
 func _front_door(x: float, zf: float, sill: float, c: Color) -> void:
