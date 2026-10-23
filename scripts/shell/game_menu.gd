@@ -108,6 +108,7 @@ func toggle() -> void:
 
 
 func open() -> void:
+	GameMusic.play(get_tree(), GameMusic.Mode.MENU)
 	_just_heard = SoundSettings.recent()
 	_fill()
 	_shade.visible = true
@@ -117,6 +118,7 @@ func open() -> void:
 
 
 func close() -> void:
+	GameMusic.play(get_tree(), GameMusic.Mode.TOWN)
 	_preview.stop()
 	_shade.visible = false
 	MenuState.showing = false
@@ -247,7 +249,7 @@ func _audio() -> void:
 		row.add_child(slider)
 		row.add_child(pct)
 		_col.add_child(row)
-	_col.add_child(ShellStyle.text("Music is for your own songs; none are in the game yet.", 13, 500, Brand.INK_MUTED))
+	_col.add_child(ShellStyle.text("Music by metzguy: the theme in menus, %d songs in town." % GameMusic.playlist().size(), 13, 500, Brand.INK_MUTED))
 	var silent := SoundSettings.why_silent()
 	if silent != "":
 		_col.add_child(ShellStyle.text(silent, 14, 600, Brand.BRAND_CORAL))

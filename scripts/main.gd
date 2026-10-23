@@ -152,6 +152,7 @@ func _ready() -> void:
 		var z := p.z + sim.terrain_offset.y
 		return Terrain.wild_cover(x, z) + [Terrain.crops(x, z)]
 
+	GameMusic.play(get_tree(), GameMusic.Mode.TOWN)
 	var audio := CityAudio.new()
 	audio.setup(sim, cam.camera, func(): return _tick_time * CitySim.TICKS_PER_SECOND)
 	add_child(audio)

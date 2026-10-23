@@ -109,6 +109,24 @@ func _init() -> void:
 		{"k": "sound_flag", "t": 3.0, "sound": "ui/click", "label": "Button click", "on": false, "how": "list"}]}
 	var titles: Array = Insights.analyze([batch]).fixes.filter(func(f): return f.kind == "sound").map(func(f): return f.title)
 	_check(titles.size() == 1 and "car_engine" in titles[0], "flagged sounds become fixes (%s)" % str(titles))
+	# Music: the theme in menus, the gameplay playlist in town, on the Music bus.
+	_check(ResourceLoader.exists(GameMusic.THEME), "the theme song exists")
+	var songs := GameMusic.playlist()
+	_check(songs.size() >= 2 and songs.all(func(f): return ResourceLoader.exists(f)), "gameplay songs are found (%s)" % str(songs))
+	GameMusic.play(self, GameMusic.Mode.MENU)
+	await process_frame
+	var music := root.get_node_or_null(GameMusic.NODE) as AudioStreamPlayer
+	_check(music != null and music.bus == "Music" and music.playing and music.stream.resource_path == GameMusic.THEME,
+		"the theme plays in menus, on the Music bus")
+	GameMusic.play(self, GameMusic.Mode.TOWN)
+	await process_frame
+	var town_song: String = music.stream.resource_path
+	_check(town_song in songs, "a gameplay song plays in town (%s)" % town_song)
+	_check(root.get_children().filter(func(n): return n.name == GameMusic.NODE).size() == 1, "one music player for everything")
+	GameMusic.play(self, GameMusic.Mode.MENU)
+	_check(music.stream.resource_path == GameMusic.THEME, "the pause menu brings the theme back")
+	GameMusic.play(self, GameMusic.Mode.TOWN)
+	_check(music.stream.resource_path == town_song, "closing it picks the town song up again")
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
