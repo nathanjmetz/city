@@ -33,7 +33,7 @@ var _by_chunk := {}  # Vector2i -> {lot key: true}, the buildings in each square
 ## The town changes many times a second while it grows, so a change only
 ## marks the view dirty: the next frame finds what was added or removed,
 ## builds new buildings a few at a time (nearest the camera first, within
-## SPAWN_MS; a big batch such as a load goes in at once), and rechecks the
+## SPAWN_MS; a big batch such as a load, see LOAD_MS), and rechecks the
 ## rest for a new look or sign in slices of RECHECK_MS.
 const SPAWN_MS := 4
 const RECHECK_MS := 2
@@ -42,7 +42,12 @@ var _dirty := false
 var _pending: Array = []  # lot keys waiting to be built, nearest last
 var _recheck: Array = []  # lot keys still to look over since the last change
 var _recheck_again := false  # changed again while a look-over was under way
-var _first := true  # the town as it loads goes in at once
+var _first := true  # the town as it loads: nearest the camera first, for up to LOAD_MS
+## Opening a town draws what's around the camera behind the loading screen,
+## then the rest FILL_MS a frame while you play (far boxes once it's all in).
+const LOAD_MS := 1500
+const FILL_MS := 8
+var _filling := false
 ## A neighbor's whole town lands at once, while you play: drawn a few
 ## buildings a frame even then, its far boxes once it's all in (RegionView).
 var sliced := false
@@ -126,10 +131,13 @@ func _sync_all() -> void:
 	if _recheck.is_empty() and _recheck_again:
 		_recheck_again = false
 		_recheck = _nodes.keys()
-	# Build: everything at once for a big batch (loading a town), otherwise
-	# nearest first until the frame's share is used.
-	var all_now := not sliced and (_first or _pending.size() > SPAWN_ALL)
-	_first = false
+	# Build nearest first until the frame's share is used. A town opening (or any big batch) gets LOAD_MS now, nearest the camera
+	# first, and the rest FILL_MS a frame after.
+	var budget := FILL_MS if _filling else SPAWN_MS
+	if not sliced and not _filling and not _pending.is_empty() and (_first or _pending.size() > SPAWN_ALL):
+		_first = false
+		_filling = true
+		budget = LOAD_MS
 	while not _pending.is_empty():
 		var key: String = _pending.pop_back()
 		if _nodes.has(key) or not sim.buildings.has(key) or not sim.lots.has(key):
@@ -141,10 +149,11 @@ func _sync_all() -> void:
 			_by_chunk[c] = {}
 		_by_chunk[c][key] = true
 		_far_dirty[c] = true
-		if not all_now and Time.get_ticks_usec() - start > SPAWN_MS * 1000:
+		if Time.get_ticks_usec() - start > budget * 1000:
 			break
-	if sliced and not _pending.is_empty():
+	if (sliced or _filling) and not _pending.is_empty():
 		return
+	_filling = false
 	for c in _far_dirty:
 		var had := _far.has(c)
 		_build_far(c)
