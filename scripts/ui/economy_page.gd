@@ -250,6 +250,22 @@ func hubs_in(area: String) -> Array:
 			for id in sim.services.buildings:
 				if Services.area_of(sim.services.buildings[id].kind) == area:
 					out.append("service:%d" % id)
+		"transit":
+			for id in sim.buses.depots:
+				if sim.services.buildings.has(id):
+					out.append("bus_depot:%d" % id)
+		"water":
+			for id in sim.services.water.utilities:
+				out.append("water:%d" % id)
+		"mail":
+			for id in sim.mail.offices:
+				out.append("post_office:%d" % id)
+		"power":
+			for id in sim.power.sites:
+				out.append("power:%d" % id)
+		"warehouses":
+			for id in sim.warehouses.buildings:
+				out.append("warehouse:%d" % id)
 		"waste", "cemetery":
 			for id in sim.hubs.hubs:
 				if CivicHubs.area_of(sim.hubs.hubs[id].kind) == area:
@@ -317,6 +333,20 @@ func hub_name(key: String) -> String:
 		"service":
 			return "%s %d  ·  $%s a month" % [Services.KINDS[sim.services.buildings[id].kind].name, id,
 				CitySim.money_text(sim.services.upkeep_of(id))]
+		"bus_depot":
+			return "Bus depot %d  ·  $%s a month" % [id, CitySim.money_text(int(sim.services.buildings[id].get("subsidy", 0)))]
+		"water":
+			var u: Dictionary = sim.services.water.utilities[id]
+			return "%s Water and Sewer  ·  $%s a month" % [str(u.name).get_slice(" ", 1), CitySim.money_text(int(u.subsidy))]
+		"post_office":
+			var h: Dictionary = sim.mail.offices[id]
+			return "Post office %d  ·  $%s a month" % [id, CitySim.money_text(int(Balance.MAIL_FUNDING[h.funding].monthly))]
+		"power":
+			var p: Dictionary = sim.power.sites[id]
+			var k: Dictionary = Power.PLANTS[p.plant]
+			return "%s %d  ·  %d %s%s" % [k.name, id, p.cells.size(), k.unit, "" if p.cells.size() == 1 else "s"]
+		"warehouse":
+			return "%s %d" % [Warehouses.KINDS[sim.warehouses.buildings[id].kind].name, id]
 		"hub":
 			return "%s %d  ·  $%s a month" % [CivicHubs.KINDS[sim.hubs.hubs[id].kind].name, id,
 				CitySim.money_text(sim.hubs.cost_of(id))]
@@ -352,6 +382,22 @@ func _summary(area: String) -> String:
 					n += 1
 					cost += sim.services.upkeep_of(id)
 			return "%d  ·  $%s upkeep" % [n, CitySim.money_text(cost)]
+		"transit":
+			var cost := 0
+			for key in hubs_in(area):
+				cost += int(sim.services.buildings[int(key.get_slice(":", 1))].get("subsidy", 0))
+			return "%d  ·  $%s subsidy" % [hubs_in(area).size(), CitySim.money_text(cost)]
+		"water":
+			return "%d  ·  $%s subsidy" % [sim.services.water.utilities.size(), CitySim.money_text(sim.services.water.monthly_subsidy())]
+		"mail":
+			var cost := 0
+			for id in sim.mail.offices:
+				cost += int(Balance.MAIL_FUNDING[sim.mail.offices[id].funding].monthly)
+			return "%d  ·  $%s funding" % [sim.mail.offices.size(), CitySim.money_text(cost)]
+		"power":
+			return "%d companies" % sim.power.sites.size() if sim.power.sites.size() != 1 else "1 company"
+		"warehouses":
+			return "%d" % sim.warehouses.buildings.size()
 		"waste", "cemetery":
 			var n := 0
 			var cost := 0

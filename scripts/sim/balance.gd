@@ -1401,3 +1401,9 @@ const POLICY_BUY_MARGIN_PER_PAD := [INF, 8_000.0, 0.0, -2_000.0, -4_000.0]
 ## Growth for parks: times how many people must live nearby before a park
 ## buys the strip next door (PARK_GROW_MIN_RESIDENTS). Hold buys none.
 const POLICY_PARK_RESIDENTS := [INF, 2.0, 1.0, 0.7, 0.5]
+## Hubs with their own money lever take it from their Funding step (Lean ..
+## Generous): the water utility's monthly subsidy (Standard is where a new
+## utility starts), and the post office's MAIL_FUNDING level (Standard is
+## Basic). A bus depot's subsidy is BUS_FUNDING_LEVELS at the same step.
+const POLICY_WATER_SUBSIDY := [0, 2_500, 5_000, 12_000, 25_000]
+const POLICY_MAIL_FUNDING := [0, 0, 1, 2, 3]

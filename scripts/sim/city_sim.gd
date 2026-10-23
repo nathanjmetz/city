@@ -390,7 +390,7 @@ func apply_now(cmd: Dictionary) -> bool:
 				# A campus's funding is its Funding slider on the Economy page.
 				policies.set_step("campus:%d" % int(cmd.id), "funding",
 					clampi(int(cmd.level), 0, Balance.EDUCATION_FUNDING_LEVELS.size() - 1))
-				_sync_campus_funding()
+				_sync_levers()
 				update_stats()
 		"remove_industry":
 			ok = industry.sites.has(int(cmd.id))
@@ -424,6 +424,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			# The player's one lever on the water utility: its monthly subsidy.
 			ok = services.water.set_subsidy(int(cmd.id), int(cmd.amount))
 			if ok:
+				# An exact amount: the Economy page's slider shows the nearest step.
+				_adopt_levers("water:%d" % int(cmd.id))
 				update_stats()
 			return ok
 		"remove_service":
@@ -459,6 +461,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			ok = true
 		"set_bus_subsidy":
 			ok = buses.apply(self, cmd)
+			if ok:
+				_adopt_levers("bus_depot:%d" % int(cmd.id))
 		"zone_frontage":
 			# Zones a whole block face: one side of a street from junction to
 			# junction ("both" does the other side too, "single" only this
@@ -517,7 +521,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			ok = policies.reset_below(str(cmd.get("scope", "")), hub_area)
 			if ok:
 				_sync_stances()
-				_sync_campus_funding()
+				_sync_levers()
 		"set_junction":
 			# Traffic lights, stop signs or none at a junction (-1 = automatic).
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
@@ -525,6 +529,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			ok = mail.command(self, cmd)
 			if ok and cmd.type != "post_office_funding":
 				_lots_dirty = true
+			elif ok:
+				_adopt_levers("post_office:%d" % int(cmd.id))
 		"clear":
 			region_links.clear()
 			trade = Trade.new()
@@ -560,6 +566,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			parks_changed.emit()
 			mail = Mail.new()
 			policies.from_dict({})
+			_lever_steps.clear()
 			farms.reserves = reserves
 			industry.reserves = reserves
 			vegetation.reset()
@@ -572,9 +579,9 @@ func apply_now(cmd: Dictionary) -> bool:
 			ok = true
 	if ok:
 		if cmd.type in ["place_campus", "place_park", "place_bank", "place_hub", "place_service", "place_farmhouse",
-				"place_industry", "clear"]:
+				"place_industry", "place_post_office", "place_warehouse", "place_power", "clear"]:
 			# A new hub takes its area's sliders (and its leader the stance).
-			_sync_campus_funding()
+			_sync_levers()
 			_sync_stances()
 		if _roads_moved:
 			_road_wins()
@@ -1273,12 +1280,67 @@ func _wire_policies() -> void:
 	services.policies = policies
 	hubs.policies = policies
 	parks.policies = policies
+	power.policies = policies
 
 
-## A campus keeps its funding level as its Funding slider's step.
-func _sync_campus_funding() -> void:
-	for id in education.campuses:
-		education.campuses[id].funding = policies.step("funding", "schools", "campus:%d" % id)
+## Hubs with their own money lever (a campus's funding level, a post
+## office's, the water utility's and a bus depot's subsidy) take it from
+## their Funding slider. Each: its hub kind, Economy page area, the hubs,
+## and the lever's value at each step (see Balance).
+func _levers() -> Array:
+	var depots := []
+	for id in buses.depots:
+		if services.buildings.has(id):
+			depots.append(id)
+	var bus := []
+	for level in Balance.BUS_FUNDING_LEVELS:
+		bus.append(int(level[1]))
+	return [
+		{"kind": "campus", "area": "schools", "hubs": education.campuses, "field": "funding", "values": [0, 1, 2, 3, 4]},
+		{"kind": "post_office", "area": "mail", "hubs": mail.offices, "field": "funding", "values": Balance.POLICY_MAIL_FUNDING},
+		{"kind": "water", "area": "water", "hubs": services.water.utilities, "field": "subsidy", "values": Balance.POLICY_WATER_SUBSIDY},
+		{"kind": "bus_depot", "area": "transit", "hubs": services.buildings, "ids": depots, "field": "subsidy", "values": bus},
+	]
+
+
+## The step each lever hub was last set to, so a lever is only rewritten
+## when its slider moves (an exact amount from an old save or a command
+## stays put until then).
+var _lever_steps := {}
+
+
+## Writes every lever whose Funding step has moved since it was last set.
+func _sync_levers() -> void:
+	var seen := {}
+	for lv in _levers():
+		for id in lv.get("ids", lv.hubs.keys()):
+			var key := "%s:%d" % [lv.kind, id]
+			var now := policies.step("funding", lv.area, key)
+			seen[key] = true
+			if int(_lever_steps.get(key, -1)) != now:
+				lv.hubs[id][lv.field] = lv.values[now]
+				_lever_steps[key] = now
+	for key in _lever_steps.keys():
+		if not seen.has(key):
+			_lever_steps.erase(key)
+
+
+## A lever was set to an exact amount (a command, an old save): its slider
+## takes the nearest step, and the amount stays as it is.
+func _adopt_levers(only := "") -> void:
+	for lv in _levers():
+		for id in lv.get("ids", lv.hubs.keys()):
+			var key := "%s:%d" % [lv.kind, id]
+			if only != "" and key != only:
+				continue
+			var value := float(lv.hubs[id].get(lv.field, 0))
+			var best := Policies.STANDARD
+			for i in lv.values.size():
+				if absf(float(lv.values[i]) - value) < absf(float(lv.values[best]) - value):
+					best = i
+			if best != policies.step("funding", lv.area, key):
+				policies.set_step(key, "funding", best)
+			_lever_steps[key] = best
 
 
 ## The Economy page area of a hub key ("farm:3", "service:5", "hub:1"...),
@@ -1294,7 +1356,19 @@ func hub_area(key: String) -> String:
 		"industry":
 			return "resources" if industry.sites.has(id) else ""
 		"service":
-			return Services.area_of(services.buildings[id].kind) if services.buildings.has(id) else ""
+			# A bus depot and the water utility go by their own keys below.
+			return Services.area_of(services.buildings[id].kind) \
+				if services.buildings.has(id) and services.key_of(id) == key else ""
+		"bus_depot":
+			return "transit" if buses.depots.has(id) and services.buildings.has(id) else ""
+		"water":
+			return "water" if services.water.utilities.has(id) else ""
+		"post_office":
+			return "mail" if mail.offices.has(id) else ""
+		"power":
+			return "power" if power.sites.has(id) else ""
+		"warehouse":
+			return "warehouses" if warehouses.buildings.has(id) else ""
 		"hub":
 			return CivicHubs.area_of(hubs.hubs[id].kind) if hubs.hubs.has(id) else ""
 		"park":
@@ -1321,7 +1395,7 @@ func _set_policy(scope: String, slider: String, s: int) -> bool:
 		return false
 	if slider == "growth":
 		_sync_stances()
-	_sync_campus_funding()
+	_sync_levers()
 	economy.update_budget(self)
 	return true
 
@@ -1342,11 +1416,14 @@ func _sync_stances() -> void:
 ## Hub keys of every hub whose kind has a leader (signed up with Permits).
 func _leader_keys() -> Array:
 	var out := []
-	for kind in ["farm", "industry", "service", "hub", "park", "campus", "bank"]:
+	for kind in ["farm", "industry", "service", "hub", "park", "campus", "bank", "bus_depot", "water",
+			"post_office", "warehouse"]:
 		if not permits.locators.has(kind):
 			continue
 		var ids: Array = {"farm": farms.farms, "industry": industry.sites, "service": services.buildings,
-			"hub": hubs.hubs, "park": parks.sites, "campus": education.campuses, "bank": banks.banks}[kind].keys()
+			"hub": hubs.hubs, "park": parks.sites, "campus": education.campuses, "bank": banks.banks,
+			"bus_depot": buses.depots, "water": services.water.utilities, "post_office": mail.offices,
+			"warehouse": warehouses.buildings}[kind].keys()
 		for id in ids:
 			out.append("%s:%d" % [kind, id])
 	return out
@@ -2014,11 +2091,6 @@ func from_dict(d: Dictionary) -> void:
 	parks.from_dict(d.get("parks", {}))
 	mail.from_dict(d.get("mail", {}))
 	policies.from_dict(d.get("policies", {}))
-	# Campuses saved before the Economy page kept their own funding level.
-	for id in education.campuses:
-		var level := int(education.campuses[id].funding)
-		if level != policies.step("funding", "schools", "campus:%d" % id):
-			policies.set_step("campus:%d" % id, "funding", level)
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:
@@ -2064,6 +2136,18 @@ func from_dict(d: Dictionary) -> void:
 	update_stats()
 	buses = BusNet.new()
 	buses.from_dict(self, d.get("buses", {}))
+	# Levers keep the exact amounts they were saved with (old saves had their
+	# own buttons); each slider shows the nearest step.
+	_lever_steps.clear()
+	_adopt_levers()
+	# A word to a leader saved before its hub was on the Economy page.
+	for key in permits.guided:
+		var area := hub_area(key)
+		if area != "":
+			var now := policies.step("growth", area, key)
+			var want := Policies.growth_for(str(permits.guided[key].stance), now)
+			if want != now:
+				policies.set_step(key, "growth", want)
 	buildings_changed.emit()
 
 
