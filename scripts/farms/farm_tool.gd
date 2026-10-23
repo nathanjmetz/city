@@ -7,11 +7,13 @@ extends Node3D
 ## - Reserve: click to drop nodes around land to save for farming; click the
 ##   first node (or press Enter) to close it. Roads and zoning stay off it.
 ## - Clear reserve: the same, to release land.
+## - Plan (in Zoning): the same, to outline the town's future land use map
+##   (LandPlan) for homes, shops, jobs or farming; Unplan takes land out.
 
 signal mode_changed(mode: int)
 signal hint_changed(text: String)
 
-enum Mode { NONE, RESERVE, CLEAR, CORN, SOYBEANS }
+enum Mode { NONE, RESERVE, CLEAR, CORN, SOYBEANS, PLAN, UNPLAN }
 
 const CLOSE_DIST := 14.0
 
@@ -20,6 +22,8 @@ var cam: CityCamera
 var info: InfoView
 ## What the Reserve tool saves land for.
 var reserve_kind := "farm"
+## What the Plan tool outlines land for (a LandPlan kind).
+var plan_kind := "homes"
 var _opened_view := false
 var mode := Mode.NONE
 
@@ -60,13 +64,19 @@ func set_mode(m: int) -> void:
 	mode = m
 	_nodes.clear()
 	var view := _view()
-	if mode != Mode.NONE and info.mode != view:
+	if _planning():
+		# The plan is its own map: no resource view under it.
+		if _opened_view:
+			_opened_view = false
+			info.set_mode(InfoView.Mode.NONE)
+	elif mode != Mode.NONE and info.mode != view:
 		info.set_mode(view)
 		_opened_view = true
 	elif mode == Mode.NONE and _opened_view:
 		_opened_view = false
 		info.set_mode(InfoView.Mode.NONE)
-	info.show_reserves = mode != Mode.NONE
+	info.show_reserves = mode != Mode.NONE and not _planning()
+	info.show_plan = _planning()
 	_outline.visible = false
 	_ghost.visible = false
 	mode_changed.emit(mode)
@@ -79,6 +89,10 @@ func _view() -> int:
 		return InfoView.Mode.FERTILITY
 	return {"farm": InfoView.Mode.FERTILITY, "oil": InfoView.Mode.OIL, "ore": InfoView.Mode.ORE,
 		"forest": InfoView.Mode.FOREST}.get(reserve_kind, InfoView.Mode.FERTILITY)
+
+
+func _planning() -> bool:
+	return mode == Mode.PLAN or mode == Mode.UNPLAN
 
 
 func is_drawing() -> bool:
@@ -131,7 +145,10 @@ func _close() -> void:
 		var pts := []
 		for n in _nodes:
 			pts.append([n.x, n.z])
-		sim.apply({"type": "paint_reserve", "points": pts, "kind": reserve_kind if mode == Mode.RESERVE else ""})
+		if _planning():
+			sim.apply({"type": "paint_plan", "points": pts, "kind": plan_kind if mode == Mode.PLAN else ""})
+		else:
+			sim.apply({"type": "paint_reserve", "points": pts, "kind": reserve_kind if mode == Mode.RESERVE else ""})
 	_nodes.clear()
 	_update_hint()
 
@@ -147,6 +164,8 @@ func _process(_delta: float) -> void:
 		_place_ghost()
 	else:
 		_draw_outline()
+	if _planning():
+		return
 	var fert := "Soil here: %d%% fertile." % roundi(Farms.fertility_at(_hover) * 100.0)
 	if reserve_kind != "farm":
 		var res: int = Industry.KINDS[reserve_kind].resource
@@ -215,6 +234,15 @@ func _update_hint() -> void:
 				else "reserved land to release"
 			if _nodes.is_empty():
 				text = "Click to start outlining %s. %s" % [verb, _problem]
+			elif _nodes.size() < 3:
+				text = "Click to add corners."
+			else:
+				text = "Click to add corners. Click the first corner or press Enter to finish."
+		Mode.PLAN, Mode.UNPLAN:
+			var what := "an area of your land use plan for %s. Builders look there first, and plans that match move faster" \
+				% LandPlan.KINDS[plan_kind] if mode == Mode.PLAN else "land to take out of your land use plan"
+			if _nodes.is_empty():
+				text = "Click to start outlining %s." % what
 			elif _nodes.size() < 3:
 				text = "Click to add corners."
 			else:
