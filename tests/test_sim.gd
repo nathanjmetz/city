@@ -476,6 +476,9 @@ func _identity_shift() -> void:
 	sim.economy.money = 10_000_000
 	sim.apply({"type": "build_road", "start": [-600, 0], "ctrl": [0, 0], "end": [600, 0]})
 	sim.apply({"type": "place_farmhouse", "pos": [0, 60], "dir": [0, -1], "crop": "corn"})
+	# Homes across the road: the farm is at the edge of town.
+	for x in range(-300, 301, 10):
+		sim.apply({"type": "paint_zone", "center": [x, -25], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
 	for i in Farms.DECIDE_EVERY * 40:
 		sim.tick()
 	var farm: Dictionary = sim.farms.farms.values()[0]
@@ -490,14 +493,23 @@ func _identity_shift() -> void:
 	var asked: Array = sim.permits.listed(Permits.State.OPEN).filter(func(r): return r.hub == TownCulture.HUB)
 	_check(asked.size() == 1 and asked[0].change == "Farmland to offices" and asked[0].shape == "area",
 		"a rising office trade asks to rezone farm ground (%s)" % [asked.map(func(r): return r.change)])
-	_check(farm.cells.size() == fields and sim.zones.cells.is_empty(), "nothing changes before the player says yes")
+	var zoned: int = sim.zones.cells.size()
+	_check(farm.cells.size() == fields and sim.zones.cells.size() == zoned, "nothing changes before the player says yes")
 	if asked.is_empty():
 		return
 	sim.apply({"type": "permit", "id": asked[0].id, "answer": "approve"})
 	sim.culture.develop(sim)
-	_check(farm.cells.size() < fields and not sim.zones.cells.is_empty(),
+	_check(farm.cells.size() < fields and sim.zones.cells.size() > zoned,
 		"approved: the fields along the road are sold and zoned (%d of %d fields left)" % [farm.cells.size(), fields])
-	_check(sim.zones.cells.values().all(func(z): return z == ZoneMap.Zone.COMMERCIAL), "zoned for offices")
+	_check(sim.zones.cells.values().count(ZoneMap.Zone.COMMERCIAL) == sim.zones.cells.size() - zoned, "zoned for offices")
+	# Out in the country, with no town beside it, no developer comes.
+	var country := CitySim.new()
+	country.apply({"type": "build_road", "start": [-600, 0], "ctrl": [0, 0], "end": [600, 0]})
+	country.apply({"type": "place_farmhouse", "pos": [0, 60], "dir": [0, -1], "crop": "corn"})
+	for i in Farms.DECIDE_EVERY * 10:
+		country.tick()
+	_check(TownCulture._farm_frontage(country).is_empty(), "a farm out in the country isn't the edge of town")
+	_check(not sim.buildings.is_empty(), "homes went up across the road (%d)" % sim.buildings.size())
 
 
 ## Starting over keeps the county highway out to the region, and gives a

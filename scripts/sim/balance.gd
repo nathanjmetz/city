@@ -312,6 +312,14 @@ const INDUSTRY_DECIDE_EVERY := 360
 const OIL_SPACING_CELLS := 3  # pads at least this many 80 m cells apart
 ## How far out a company's lease or timber reaches, in 80 m cells.
 const LEASE_REACH_CELLS := 12
+## An oil or timber company that has worked out its lease takes on the next
+## tract with a gravel lease or logging road it pays for, once it makes this
+## much a year; at most this many extra tracts, a road at most this long (m),
+## and after a road it couldn't build it waits this many game days.
+const INDUSTRY_ROAD_MIN_PROFIT := 50_000.0
+const INDUSTRY_MAX_LEASES := 3
+const INDUSTRY_ROAD_MAX := 1_600.0
+const INDUSTRY_ROAD_WAIT_DAYS := 12.0
 ## Ore: one quarry that widens bench by bench beside its plant, never
 ## separate holes (Indiana limestone quarries, Iron Range pits).
 ## Forest: a few harvest units worked at a time inside the woods, each cut
@@ -2320,6 +2328,9 @@ const CULTURE_FARMLAND_PER_M2 := 3
 ## industrial lot, metres) and the least road frontage worth asking for.
 const CULTURE_FRONTAGE_DEPTH := 60.0
 const CULTURE_FRONTAGE_MIN := 80.0
+## The most frontage one rezoning takes: about a quarter mile, one phase of
+## a real commercial or industrial development.
+const CULTURE_FRONTAGE_MAX := 400.0
 ## How long (game days; a day is a month) the advisor mentions that the town
 ## has a new reputation (TownCulture identity).
 const CULTURE_NEWS_DAYS := 12
