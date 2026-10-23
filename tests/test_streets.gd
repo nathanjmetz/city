@@ -51,6 +51,12 @@ func _init() -> void:
 	fresh.build_county_road(Vector2(-800, 0), Vector2(800, 0), [0, 1])
 	var hw := fresh.streets.name_of(fresh.network.segments.keys()[0])
 	_check(hw.ends_with(" Road") and hw != "Main Street", "the highway a town starts on leads to a real town (%s)" % hw)
+	var welcome := WelcomeSignView.new()
+	welcome.sim = fresh
+	var spots := welcome._spots()
+	_check(spots.size() == 2 and absf(spots[0][0].length() - WelcomeSignView.MIN_REACH) < 25.0,
+		"a welcome sign stands at each way into town (%s)" % [spots])
+	welcome.free()
 	# Lots along Main get addresses: odd on one side, even on the other.
 	for x in range(-140, 141, 10):
 		for z in [-25, 25]:

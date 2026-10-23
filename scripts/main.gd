@@ -36,6 +36,9 @@ func _ready() -> void:
 	var street_signs := StreetSignView.new()
 	add_child(street_signs)
 	street_signs.setup(sim)
+	var welcome := WelcomeSignView.new()
+	add_child(welcome)
+	welcome.setup(sim)
 	# Roadside historical markers for the town's firsts.
 	var markers := MarkerView.new()
 	add_child(markers)
