@@ -157,7 +157,7 @@ static func build_mixed(seed: int, to_curb: float, lot: Dictionary, storeys: int
 	return b._done()
 
 
-func _mixed(_to_curb: float, width: float, storeys: int) -> void:
+func _mixed(to_curb: float, width: float, storeys: int) -> void:
 	var w := width - 0.4  # wall to wall with its neighbours
 	var d := rng.randf_range(18.0, 24.0)
 	var zf := 0.4
@@ -166,8 +166,13 @@ func _mixed(_to_curb: float, width: float, storeys: int) -> void:
 	var floor_h := 3.4
 	var deck := shop_h + floor_h * (storeys - 1)
 	var top := deck + 0.7
-	var wall := Color(_pick(FACADE_BRICK))
+	# Most downtown fronts are red brick; some are buff brick, and some were
+	# painted over in the last century.
+	var wall := Color(_pick(FACADE_BRICK + FACADE_BRICK + ["#c9b48a", "#d6c39b", "#e6dfcf", "#6f7f86"]))
 	var trim := Color(_pick(["#d9d3c3", "#cfc8b6", "#efede6", "#3a3530"]))
+	# 1870s-1900s Italianate fronts carry a deep bracketed metal cornice and
+	# hooded window caps; later commercial-style fronts a plain corbelled top.
+	var italianate := rng.randf() < 0.55
 	var mull: Color = MULLION[rng.randi() % 2]
 	_block("brick", 0.0, w, d, cz, deck, top, wall)
 	# One storefront every 7-8 m, each with its own sign and maybe an awning.
@@ -206,10 +211,24 @@ func _mixed(_to_curb: float, width: float, storeys: int) -> void:
 			var wh := rng.randf_range(1.8, 2.0)
 			_glass(Vector3(x, y, zf - 0.02), Vector3(-1, 0, 0), 1.0, wh, rng.randf_range(0.0, 0.7))
 			_box("paint", Vector3(1.3, 0.1, 0.16), Vector3(x, y - wh * 0.5 - 0.05, zf - 0.08), trim)
-			_box("paint", Vector3(1.4, 0.26, 0.1), Vector3(x, y + wh * 0.5 + 0.13, zf - 0.05), trim)
-	# Corbelled cornice and coping.
-	_box("brick", Vector3(w, 0.3, 0.2), Vector3(0, top - 0.5, zf - 0.1), wall.darkened(0.1))
-	_box("paint", Vector3(w + 0.1, 0.25, 0.4), Vector3(0, top - 0.15, zf - 0.15), trim)
+			if italianate:
+				# A hood mould: a wider cap with a raised crown.
+				_box("paint", Vector3(1.5, 0.3, 0.16), Vector3(x, y + wh * 0.5 + 0.15, zf - 0.08), trim)
+				_box("paint", Vector3(0.7, 0.16, 0.18), Vector3(x, y + wh * 0.5 + 0.38, zf - 0.09), trim)
+			else:
+				_box("paint", Vector3(1.4, 0.26, 0.12), Vector3(x, y + wh * 0.5 + 0.13, zf - 0.06), trim)
+	if italianate:
+		# Bracketed cornice: a deep frieze, paired brackets, a projecting crown.
+		_box("paint", Vector3(w, 0.7, 0.2), Vector3(0, top - 0.55, zf - 0.1), trim)
+		var nb := maxi(3, int(w / 1.3))
+		for i in nb:
+			var bx := lerpf(-w * 0.5 + 0.3, w * 0.5 - 0.3, float(i) / (nb - 1))
+			_box("paint", Vector3(0.22, 0.6, 0.5), Vector3(bx, top - 0.5, zf - 0.25), trim.darkened(0.08))
+		_box("paint", Vector3(w + 0.2, 0.25, 0.75), Vector3(0, top - 0.1, zf - 0.33), trim)
+	else:
+		# Corbelled cornice and coping.
+		_box("brick", Vector3(w, 0.3, 0.2), Vector3(0, top - 0.5, zf - 0.1), wall.darkened(0.1))
+		_box("paint", Vector3(w + 0.1, 0.25, 0.4), Vector3(0, top - 0.15, zf - 0.15), trim)
 	_box("metal", Vector3(1.8, 1.1, 1.2), Vector3(rng.randf_range(-w * 0.3, w * 0.3), deck + 0.55, cz + 2.0),
 		Color("#b9bcbc"))
 	# The flats' stair door at one end, and the alley at the back.
@@ -217,6 +236,29 @@ func _mixed(_to_curb: float, width: float, storeys: int) -> void:
 	_box("paint", Vector3(1.0, 2.2, 0.06), Vector3(sx, 1.1, zf - 0.05), Color(_pick(DOOR)))
 	if depth > zf + d + 3.0:
 		_flat_rect("asphalt", -width * 0.5, width * 0.5, zf + d, minf(depth, zf + d + 10.0), 0.06)
+	_downtown_walk(to_curb, width, zf)
+
+
+## A downtown sidewalk: concrete from the shopfronts all the way to the curb
+## (no grass strip), a street tree in an iron grate on most fronts and an
+## acorn lamp now and then, as on Main Street in Jasper or Washington, Indiana.
+func _downtown_walk(to_curb: float, width: float, zf: float) -> void:
+	_flat_rect("drive", -width * 0.5, width * 0.5, -to_curb + RoadStyle.CURB_WIDTH, zf, 0.06)
+	var tz := -to_curb + RoadStyle.CURB_WIDTH + 0.9
+	if rng.randf() < 0.6:
+		var tx := rng.randf_range(-width * 0.25, width * 0.25)
+		_flat_rect("line", tx - 0.6, tx + 0.6, tz - 0.6, tz + 0.6, 0.07, Color("#2a2a28"))
+		# Downtown street trees are mostly thornless honey locust, which
+		# tolerates grates and salt, with the odd maple.
+		var sp: int = TreeField.Species.LOCUST if rng.randf() < 0.75 else TreeField.Species.MAPLE
+		trees.append([Vector3(tx, 0, tz), sp, TreeField.LEAF[sp], rng.randf_range(0.55, 0.75)])
+	if rng.randf() < 0.4:
+		var lx := (width * 0.5 - 0.4) * (-1.0 if rng.randf() < 0.5 else 1.0)
+		var black := Color("#1f2224")
+		_box("paint", Vector3(0.45, 0.5, 0.45), Vector3(lx, 0.25, tz), black)
+		_box("paint", Vector3(0.14, 3.6, 0.14), Vector3(lx, 2.3, tz), black)
+		_box("paint", Vector3(0.42, 0.55, 0.42), Vector3(lx, 4.35, tz), Color("#efe9d8"))  # the acorn globe
+		_box("paint", Vector3(0.3, 0.12, 0.3), Vector3(lx, 4.7, tz), black)
 
 
 # ---------------------------------------------------------------- offices
