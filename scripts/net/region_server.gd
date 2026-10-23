@@ -168,6 +168,9 @@ func _handle(from: int, msg: Dictionary) -> void:
 				region.update_city(p.city, d)
 				_dirty = true
 				_broadcast({"t": "city", "id": p.city, "z": msg.z}, from)
+				# Its population, for the metro (older games don't send it).
+				if msg.has("pop") and region.ledger.set_population(p.city, int(msg.pop)) and region.update_metro():
+					_ledger_changed()
 		"chat":
 			var text := str(msg.get("text", "")).strip_edges()
 			if text != "":
@@ -365,6 +368,7 @@ func _admit(from: int, account: Dictionary, token: String) -> void:
 		# A new town, on its county roads; the neighbors' halves of those
 		# roads go to their computers too, if they're running.
 		city = region.add_city(pid, name)
+		region.update_metro()
 		_dirty = true
 		for other in region.handed:
 			for peer in _players:

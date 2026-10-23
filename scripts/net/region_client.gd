@@ -117,7 +117,7 @@ func send_town(now := false) -> void:
 		return
 	_sent_at = t
 	_sent_sig = sig
-	_send({"t": "city", "z": RegionServer.pack(sim.to_dict())})
+	_send({"t": "city", "z": RegionServer.pack(sim.to_dict()), "pop": int(sim.stats.population)})
 
 
 ## Sends a batch of play telemetry (see Telemetry); telemetry_acked says when it's kept.

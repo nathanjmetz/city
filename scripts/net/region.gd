@@ -171,6 +171,15 @@ func share_care() -> void:
 		cities[id].sim.healthcare.region_care = offered
 
 
+## Works out the metro again (see Ledger.update_metro). Returns whether it
+## changed.
+func update_metro() -> bool:
+	var towns := {}
+	for id in cities:
+		towns[id] = cities[id].name
+	return ledger.update_metro(towns, joins)
+
+
 ## A month of trade between towns: neighbors joined by county road first,
 ## then the outside world (see Trade). Only the listed towns take part
 ## (the ones whose players are online; the others are waiting).
