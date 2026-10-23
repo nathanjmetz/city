@@ -2320,6 +2320,14 @@ func _farm_sell_outs() -> bool:
 		if not sale.is_empty():
 			var state := permits.state_of(int(sale.req))
 			if state == Permits.State.OPEN:
+				# Developers stopped bidding (or never would have): the
+				# family takes the farm off the market.
+				if not Capital.sell_out(self, f.pos):
+					permits.withdraw(int(sale.req))
+					f.sale = {}
+					f.sale_year = farms.year
+					f.why = "No developer wants the land after all, so the family farms on."
+					changed = true
 				continue
 			f.sale = {}
 			if state == Permits.State.APPROVED:
