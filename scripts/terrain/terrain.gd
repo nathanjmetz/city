@@ -395,6 +395,9 @@ static func drape_local(mesh: Mesh, xform: Transform3D, max_edge := 4.0) -> Arra
 	if mesh == null:
 		return out
 	var inv := xform.affine_inverse()
+	# Triangles share corners (each one is listed again for every triangle
+	# that meets there), so each spot's ground is looked up once.
+	var seen := {}
 	for s in mesh.get_surface_count():
 		var arrays := mesh.surface_get_arrays(s)
 		if max_edge > 0.0 and mesh.surface_get_primitive_type(s) == Mesh.PRIMITIVE_TRIANGLES:
@@ -402,7 +405,12 @@ static func drape_local(mesh: Mesh, xform: Transform3D, max_edge := 4.0) -> Arra
 		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 		for i in verts.size():
 			var w := xform * verts[i]
-			w.y = ground_y(w.x, w.z) + verts[i].y
+			var at := Vector2(w.x, w.z)
+			var g = seen.get(at)
+			if g == null:
+				g = ground_y(w.x, w.z)
+				seen[at] = g
+			w.y = g + verts[i].y
 			verts[i] = inv * w
 		arrays[Mesh.ARRAY_VERTEX] = verts
 		out.add_surface_from_arrays(mesh.surface_get_primitive_type(s), arrays)
