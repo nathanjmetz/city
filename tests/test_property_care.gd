@@ -171,6 +171,7 @@ func _town(seed: int, road: int, span: int) -> CitySim:
 
 func _care_month(sim: CitySim) -> void:
 	sim.tick_count += MONTH
+	sim.care.start_month(sim)
 	for i in PropertyCare.SLICES:
 		sim.care.slice(sim, i)
 

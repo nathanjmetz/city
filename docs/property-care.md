@@ -19,7 +19,7 @@ Each building has a condition from 0 to 1 and a tier the art draws:
 | 1 Improved | < 0.88 | fresh paint, a new roof, a shed out back |
 | 2 Showpiece | >= 0.88 | also an in-ground pool and a privacy fence |
 
-Once a game month, a sixth of the town an hour (game hours 1-6), each owner
+Once a game month, a 48th of the town every half game hour, each owner
 weighs what it gets and moves toward it: up at most 0.03 a month, down at
 most 0.09. The needs (each 0-1, weighted):
 
@@ -30,7 +30,7 @@ most 0.09. The needs (each 0-1, weighted):
 - a street that moves (traffic speed on its own street)
 - land value (parks, landfills, pollution, heritage; not its own condition)
 - homes: jobs in town and being lived in; shops: customers; factories: workers
-- kept-up neighbours within 70 m (blight spreads)
+- kept-up neighbours (its 80 m grid cell and the eight around it; blight spreads)
 - the Economy page's Funding slider for its area
 
 Effects: land value by tier (0.75 to 1.08), so taxes follow; nobody moves
@@ -65,6 +65,6 @@ vertex colours and add-ons join the shared surfaces, so a property costs no
 extra draw calls at any tier. Measured: a house is about 1,980 triangles and
 6 surfaces; a showpiece adds about 100 triangles, a derelict house about 440
 (boards and brush) plus about 1,000 flat ground triangles of weeds. A rebuild
-takes about 9-10 ms on the main thread, so at most 12 buildings change look
-per slice (72 a month). See `tools/art_gallery.gd -- out.png care` and
+takes about 9-10 ms on the main thread, so at most 3 buildings change look
+per slice. See `tools/art_gallery.gd -- out.png care` and
 `careshop`.

@@ -1116,16 +1116,18 @@ func tick() -> void:
 		redevelopment.carry_out(self)
 	Perf.add("sim.heritage", t)
 	t = Perf.now()
-	# Every owner looks after their property, a slice of town an hour in the
-	# small hours; developers ask to build denser in the evening.
-	if hour % TICKS_PER_HOUR == 40:
-		var h := hour / TICKS_PER_HOUR
-		if h >= 1 and h <= PropertyCare.SLICES:
-			if care.slice(self, h - 1):
-				buildings_changed.emit()
-		elif h == 19:
-			redevelopment.month(self)
+	# Every owner looks after their property, a slice of town an hour;
+	# developers ask to build denser in the evening.
+	if hour == 5:
+		care.start_month(self)
+	elif hour % 30 == 10:
+		if care.slice(self, (hour / 30) % PropertyCare.SLICES):
+			buildings_changed.emit()
 	Perf.add("sim.care", t)
+	if hour == 19 * TICKS_PER_HOUR + 50:
+		t = Perf.now()
+		redevelopment.month(self)
+		Perf.add("sim.redevelop", t)
 	t = Perf.now()
 	if tick_count % WaterUtility.DECIDE_EVERY == 0 and not services.water.utilities.is_empty():
 		var res := services.water.decide(self, yard_usable)

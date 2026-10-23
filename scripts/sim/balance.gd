@@ -187,14 +187,13 @@ const CARE_STICKY := 0.02
 const CARE_NO_UTILITY := 0.1
 ## How much owners differ in keeping their place up (target +/- half this).
 const CARE_OWNER_SPREAD := 0.12
-## Neighbours within this many metres count toward a street's condition.
-const CARE_NEAR := 70.0
 ## Land value from a property's own condition, by tier -2..2. A boarded
 ## house is worth far less; a showpiece a little more.
 const CARE_LAND := [0.75, 0.9, 1.0, 1.04, 1.08]
 ## Buildings that change look per slice of the month (each redraw costs
-## about 9 ms on the main thread; spread out, never a whole street at once).
-const CARE_REDRAWS_PER_SLICE := 12
+## about 10 ms on the main thread, so a slice an hour redraws at most ~30 ms
+## of buildings; never a whole street at once).
+const CARE_REDRAWS_PER_SLICE := 3
 ## Months a vacant derelict building stands before it's ordered down as
 ## unsafe (Indiana Code 36-7-9).
 const CARE_UNSAFE_MONTHS := 24
@@ -204,6 +203,8 @@ const CARE_UNSAFE_MONTHS := 24
 const REDEV_CHANCE := 0.5
 const REDEV_COOLDOWN_MONTHS := 3
 const REDEV_DEMAND := 0.45
+## Street sides a developer looks over a month (a window that moves on).
+const REDEV_FACES_PER_MONTH := 60
 ## Towns this size see houses bought for a walk-up (small Indiana county
 ## seats have a few), a 12-storey apartment tower (a city's core) and a
 ## shopping center on a busy road (an ICSC strip center serves a few

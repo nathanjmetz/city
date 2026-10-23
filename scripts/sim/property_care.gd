@@ -37,8 +37,9 @@ const TIER_LOOKS := {
 	1: "fresh paint and a new roof%s",
 	2: "a pool and a privacy fence%s",
 }
-## The tick slices the month runs in (game hours 1 to SLICES).
-const SLICES := 6
+## The month runs in a slice of town every half game hour, so no tick
+## carries much; the neighbourhood grid is rebuilt on a tick of its own.
+const SLICES := 48
 const NEAR_CELL := 80.0
 
 ## lot key -> condition, 0 to 1
@@ -49,10 +50,14 @@ var tier := {}
 var derelict_since := {}
 ## lot key -> the need it lacks most, for the inspector
 var lacking := {}
-## Neighbourhood grid of conditions, rebuilt at the month's first slice.
+## Neighbourhood grid of buildings, and each cell's average condition with
+## the cells around it, rebuilt at the month's first slice.
 var _grid := {}
+var _cell_avg := {}
 ## Buildings whose tier changed this slice (BuildingView redraws them).
 var changed_keys := []
+## Funding by area, read once per slice.
+var _fund := {}
 
 
 ## A new building starts kept up, the way new construction looks.
@@ -82,15 +87,11 @@ func forget(key: String) -> void:
 	lacking.erase(key)
 
 
-## Runs one slice of the month (CitySim calls it at game hours 1..SLICES).
+## Runs one slice of the month (CitySim calls it every half game hour).
 ## Returns true when some building's look changed.
 func slice(sim, i: int) -> bool:
 	changed_keys = []
-	if i == 0:
-		_build_grid(sim)
-		for k in cond.keys():
-			if not sim.buildings.has(k):
-				forget(k)
+	_fund = {}
 	var keys := []
 	for key in sim.buildings:
 		if key.hash() % SLICES == i and sim.lots.has(key):
@@ -165,7 +166,9 @@ func needs(sim, key: String) -> Dictionary:
 		parts["Workers"] = [clampf(float(sim.stats.workers) / maxf(float(sim.stats.jobs), 1.0), 0.0, 1.0), 1.0]
 	parts["Kept-up neighbours"] = [_near(lot.pos, key), 1.0]
 	var area: String = Economy.ZONE_AREA.get(z, "homes")
-	var fund: float = sim.policies.pick(Balance.POLICY_LAND_VALUE, "funding", area)
+	if not _fund.has(area):
+		_fund[area] = sim.policies.pick(Balance.POLICY_LAND_VALUE, "funding", area)
+	var fund: float = _fund[area]
 	parts["Town upkeep (Funding)"] = [clampf(0.5 + (fund - 1.0) * 10.0, 0.0, 1.0), 0.6]
 	var total := 0.0
 	var weight := 0.0
@@ -231,6 +234,15 @@ func _occupancy(sim, key: String) -> void:
 	b.focc = maxi(0, int(b.get("focc", 0)) - maxi(1, int(b.get("flats", 0)) / 4))
 
 
+## The month's start: forget torn-down buildings and rebuild the
+## neighbourhood grid (CitySim, on a tick of its own before slice 0).
+func start_month(sim) -> void:
+	for k in cond.keys():
+		if not sim.buildings.has(k):
+			forget(k)
+	_build_grid(sim)
+
+
 func _build_grid(sim) -> void:
 	_grid = {}
 	for key in sim.buildings:
@@ -241,20 +253,35 @@ func _build_grid(sim) -> void:
 		if not _grid.has(c):
 			_grid[c] = []
 		_grid[c].append([p, key])
+	_cell_avg = {}
+	var sums := {}
+	for c in _grid:
+		var t := 0.0
+		for e in _grid[c]:
+			t += cond_of(e[1])
+		sums[c] = [t, _grid[c].size()]
+	for c in _grid:
+		var t := 0.0
+		var n := 0
+		for dx in [-1, 0, 1]:
+			for dz in [-1, 0, 1]:
+				var s: Array = sums.get(c + Vector2i(dx, dz), [0.0, 0])
+				t += float(s[0])
+				n += int(s[1])
+		_cell_avg[c] = [t, n]
 
 
-## Average condition of the buildings around a point (the lot itself left
-## out), or neutral when it stands alone.
+## Average condition of the buildings around a point (its 80 m cell and
+## the eight around it, as they stood at the start of the month; the lot
+## itself left out), or neutral when it stands alone.
 func _near(p: Vector3, key: String) -> float:
 	var c := Vector2i(floori(p.x / NEAR_CELL), floori(p.z / NEAR_CELL))
-	var total := 0.0
-	var n := 0
-	for dx in [-1, 0, 1]:
-		for dz in [-1, 0, 1]:
-			for e in _grid.get(c + Vector2i(dx, dz), []):
-				if e[1] != key and (e[0] as Vector3).distance_to(p) <= Balance.CARE_NEAR:
-					total += cond_of(e[1])
-					n += 1
+	var s: Array = _cell_avg.get(c, [0.0, 0])
+	var total: float = float(s[0])
+	var n: int = int(s[1])
+	if n > 0 and cond.has(key):
+		total -= cond_of(key)
+		n -= 1
 	if n == 0:
 		return 0.7
 	# Condition 0.6 and up reads as a fine street.

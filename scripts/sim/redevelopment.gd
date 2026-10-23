@@ -37,6 +37,8 @@ const KINDS := ["apartments", "highrise", "shopping"]
 var asks := {}
 ## kind -> tick it was last asked
 var last := {}
+## Which month it is (for the window of street sides looked at).
+var _month_no := 0
 
 
 ## Once a game month: maybe a developer asks.
@@ -44,6 +46,7 @@ func month(sim) -> void:
 	for id in asks:
 		if sim.permits.state_of(id) == Permits.State.OPEN:
 			return  # one at a time
+	_month_no = sim.tick_count / _month_ticks()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([sim.city_seed, sim.tick_count, "redevelop"])
 	if rng.randf() >= Balance.REDEV_CHANCE:
@@ -312,23 +315,31 @@ func build(sim, a: Dictionary) -> bool:
 ## Every street side's lots in order along it: "seg:side" -> [keys].
 static func _faces(sim) -> Dictionary:
 	var faces := {}
-	var keys: Array = sim.lots.keys()
-	keys.sort()
-	for k in keys:
+	for k in sim.lots:
 		var lot: Dictionary = sim.lots[k]
-		var f := "%d:%d" % [int(lot.seg), int(lot.side)]
+		var f := Vector2i(int(lot.seg), int(lot.side))
 		if not faces.has(f):
 			faces[f] = []
-		faces[f].append(k)
+		faces[f].append([float(lot.at_frac), k])
 	for f in faces:
-		faces[f].sort_custom(func(a, b): return sim.lots[a].at_frac < sim.lots[b].at_frac)
+		var list: Array = faces[f]
+		list.sort()
+		faces[f] = list.map(func(e): return e[1])
 	return faces
 
 
-static func _sorted(faces: Dictionary) -> Array:
+## The street sides a developer looks at this month: a window of them,
+## moving on each month, so a big town's month stays a few milliseconds.
+func _sorted(faces: Dictionary) -> Array:
 	var out := faces.keys()
 	out.sort()
-	return out
+	if out.size() <= Balance.REDEV_FACES_PER_MONTH:
+		return out
+	var start := (_month_no * Balance.REDEV_FACES_PER_MONTH) % out.size()
+	var win := out.slice(start, start + Balance.REDEV_FACES_PER_MONTH)
+	if win.size() < Balance.REDEV_FACES_PER_MONTH:
+		win.append_array(out.slice(0, Balance.REDEV_FACES_PER_MONTH - win.size()))
+	return win
 
 
 static func _zone(sim, key: String) -> int:
@@ -387,16 +398,20 @@ static func _runs(sim, face: Array, types: Array, min_n: int, max_n: int, cap: A
 	return out
 
 
-## Buildings within the core radius, from PropertyCare's grid.
+## About how many buildings stand within the core radius: whole cells of
+## PropertyCare's grid whose middles are in reach (cheap enough to ask for
+## every run of lots in a big town).
 static func _density(sim, p: Vector3) -> int:
-	var c := Vector2i(floori(p.x / PropertyCare.NEAR_CELL), floori(p.z / PropertyCare.NEAR_CELL))
-	var r := ceili(Balance.CORE_RADIUS / PropertyCare.NEAR_CELL)
+	var size := PropertyCare.NEAR_CELL
+	var c := Vector2i(floori(p.x / size), floori(p.z / size))
+	var r := ceili(Balance.CORE_RADIUS / size)
 	var n := 0
 	for dx in range(-r, r + 1):
 		for dz in range(-r, r + 1):
-			for e in sim.care._grid.get(c + Vector2i(dx, dz), []):
-				if (e[0] as Vector3).distance_to(p) <= Balance.CORE_RADIUS:
-					n += 1
+			var cell := c + Vector2i(dx, dz)
+			var mid := Vector2((cell.x + 0.5) * size, (cell.y + 0.5) * size)
+			if mid.distance_to(Vector2(p.x, p.z)) <= Balance.CORE_RADIUS:
+				n += sim.care._grid.get(cell, []).size()
 	return n
 
 
