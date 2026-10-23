@@ -96,6 +96,28 @@ func _test_join() -> void:
 	copy.from_dict(sim.to_dict())
 	_check(copy.county_joined.size() == 1, "joined county roads are saved")
 
+	# Founding the county seat: county roads are renamed from its courthouse.
+	var key: String = sim.county_joined.keys()[0]
+	var before := sim.streets.grid_name(key)
+	_check(sim.streets.courthouse == Vector2.INF and _named(sim, before), "before a courthouse: %s" % before)
+	sim.parks.sites[999] = {"kind": "courthouse", "pos": Vector3(x + 2.0 * CountyGrid.SECTION + 100.0, 0, z)}
+	_check(sim.streets.seat(sim), "the courthouse renames the county roads")
+	_check(_named(sim, "County Road 200 W"), "two miles west of the courthouse is County Road 200 W")
+	sim.parks.sites[999].pos = Vector3(x + 50.0, 0, z)
+	sim.streets.seat(sim)
+	sim.parks.sites.erase(999)  # a stand-in courthouse, not a full park site
+	_check(_named(sim, "Meridian Road"), "the road through the courthouse's own line is Meridian Road")
+	var saved := CitySim.new()
+	saved.from_dict(sim.to_dict())
+	_check(saved.streets.courthouse.is_equal_approx(sim.streets.courthouse), "the county seat is saved")
+
+
+func _named(sim: CitySim, name: String) -> bool:
+	for id in sim.network.segments:
+		if sim.streets.name_of(id) == name:
+			return true
+	return false
+
 
 func _check(ok: bool, what: String) -> void:
 	if ok:
