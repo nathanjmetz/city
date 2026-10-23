@@ -62,6 +62,7 @@ uniform vec4 crop_tan : source_color = vec4(0.55, 0.47, 0.30, 1.0);
 uniform vec4 tilled : source_color = vec4(0.40, 0.33, 0.24, 1.0);
 uniform vec4 litter : source_color = vec4(0.22, 0.20, 0.12, 1.0);
 uniform vec4 canopy : source_color = vec4(0.13, 0.22, 0.09, 1.0);
+uniform vec4 gravel : source_color = vec4(0.58, 0.55, 0.49, 1.0);
 uniform vec4 spoil : source_color = vec4(0.52, 0.49, 0.43, 1.0);
 uniform vec4 mud : source_color = vec4(0.42, 0.37, 0.27, 1.0);
 // Where wild trees are drawn (WildView): centre x, z and reach. Past them
@@ -102,6 +103,23 @@ void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	cover = COLOR;
 	steep = 1.0 - NORMAL.y;
+}
+
+// Section lines run every mile (4 of the quarter-mile fields); each mile of
+// line has a road about three times in four. Coverage, 0 to 1, of a 7 m
+// roadway widened to `w` metres (its pixel footprint far off, so it thins
+// out instead of crawling).
+float county_line(float across, float along, float line_id, float w) {
+	float d = abs(fract(across / 1608.0 + 0.5) - 0.5) * 1608.0;
+	float has = step(0.27, fract(sin(floor(along / 1608.0) * 12.9898 + line_id * 78.233) * 43758.5453));
+	float half_w = max(3.5, w * 0.5);
+	return has * (1.0 - smoothstep(half_w - 0.5, half_w + 0.5, d)) * clamp(3.5 / half_w, 0.0, 1.0);
+}
+
+float county_road(vec2 p, float w) {
+	float ns = county_line(p.x, p.y, floor(p.x / 1608.0 + 0.5), w);
+	float ew = county_line(p.y, p.x, 1000.0 + floor(p.y / 1608.0 + 0.5), w);
+	return max(ns, ew);
 }
 
 void fragment() {
@@ -166,6 +184,14 @@ void fragment() {
 	// A ragged edge, as real woods have, not the straight line between samples.
 	col = mix(col, woods, smoothstep(0.3, 0.65, cover.r + (clump - 0.5) * 0.45 + (mid - 0.5) * 0.25));
 
+	// County roads on the section lines of the PLSS mile grid (CR 100 N,
+	// 200 E...): gravel with a mowed verge. Not every line has one, and
+	// they stop at the water and on steep bluffs. Scenery only.
+	float off_road = (1.0 - smoothstep(0.02, 0.2, cover.g)) * (1.0 - smoothstep(0.15, 0.3, steep));
+	float county = county_road(p, fwidth(p.x) + fwidth(p.y)) * off_road;
+	float verge = county_road(p, 13.0) * off_road;
+	col = mix(col, mix(lush.rgb, dry.rgb, 0.3), verge * 0.6);
+	col = mix(col, gravel.rgb * (0.9 + 0.2 * grain), county);
 	// Strip mine spoil and gravel.
 	col = mix(col, spoil.rgb * (0.85 + 0.3 * clump), smoothstep(0.3, 0.7, cover.a));
 	// Muddy, sandy banks by the water.
