@@ -216,7 +216,6 @@ func _forest(s: Dictionary, root: Node3D, trees: Array) -> void:
 func _strip_mine(s: Dictionary, hq: Transform3D, root: Node3D) -> void:
 	var inv := hq.affine_inverse()
 	var union := []
-	var rows := {}  # local z band -> newest pad index on it
 	for i in s.pads.size():
 		var sq := PackedVector2Array()
 		for p in Industry.pad_corners(s, s.pads[i]):
@@ -245,10 +244,8 @@ func _strip_mine(s: Dictionary, hq: Transform3D, root: Node3D) -> void:
 		return
 	# How new the ground under each cut is: the newest pad it crosses.
 	var n: int = s.pads.size()
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rows := []
 	var z := lo
-	var k := 0
 	while z < hi:
 		var mid := z + STRIP_PITCH * 0.5
 		var newest := -1
@@ -256,46 +253,18 @@ func _strip_mine(s: Dictionary, hq: Transform3D, root: Node3D) -> void:
 			var c: Vector3 = inv * Industry.pad_center(s, s.pads[i])
 			if absf(c.z - mid) <= Industry.PAD * 0.5:
 				newest = maxi(newest, i)
-		var age := n - 1 - newest  # 0: the pad opened last
-		var bands := []  # [from, to, colour] across the cut, metres
-		if age < 2:
-			bands = [[0.0, 9.0, Color("#33302b")], [9.0, 12.0, Color("#6e675d")], [12.0, STRIP_PITCH, Color("#c2b69c")]]
-		elif age < 8:
-			bands = [[0.0, 7.0, Color("#4f7280") if age > 4 else Color("#45413b")],
-				[7.0, 16.0, Color("#cbbfa5")], [16.0, STRIP_PITCH, Color("#a89c84")]]
-		else:
-			bands = [[0.0, 10.0, Color("#8fb05c")], [10.0, STRIP_PITCH, Color("#7a9a4c")]]
-		for band in bands:
-			var rect := PackedVector2Array([Vector2(x0 - 1.0, z + band[0]), Vector2(x1 + 1.0, z + band[0]),
-				Vector2(x1 + 1.0, minf(z + band[1], hi)), Vector2(x0 - 1.0, minf(z + band[1], hi))])
-			for o in outlines:
-				for part in Geometry2D.intersect_polygons(rect, o):
-					if Geometry2D.is_polygon_clockwise(part) != Geometry2D.is_polygon_clockwise(rect):
-						continue
-					var tris := Geometry2D.triangulate_polygon(part)
-					for t in range(0, tris.size(), 3):
-						for v in [tris[t], tris[t + 2], tris[t + 1]]:
-							st.set_color(band[2])
-							st.set_normal(Vector3.UP)
-							st.add_vertex(hq * Vector3(part[v].x, 0.13 + k * 0.0001, part[v].y))
+		rows.append([z, float(n - 1 - newest)])  # 0: the pad opened last
 		z += STRIP_PITCH
-		k += 1
-	var mi := MeshInstance3D.new()
-	mi.mesh = Terrain.drape(st.commit(), true, 8.0)
-	mi.material_override = _mine_mat()
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(mi)
-
-
-func _mine_mat() -> Material:
-	if not _mats.has("mine"):
-		var m := StandardMaterial3D.new()
-		m.vertex_color_use_as_albedo = true
-		m.vertex_color_is_srgb = true
-		m.roughness = 0.95
-		m.cull_mode = BaseMaterial3D.CULL_DISABLED
-		_mats["mine"] = m
-	return _mats["mine"]
+	var merged := {}
+	var none := []
+	_put(merged, IndustryBuilder.build_strip_mine(hash(s.pos), outlines, rows, STRIP_PITCH) + [none], hq, none)
+	for mat in merged:
+		var mi := MeshInstance3D.new()
+		mi.mesh = Terrain.drape((merged[mat][0] as SurfaceTool).commit(), true, 8.0 if merged[mat][1] else 0.0)
+		mi.material_override = mat
+		if merged[mat][1]:
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(mi)
 
 
 ## Adds a polygon into a set of merged outlines.
