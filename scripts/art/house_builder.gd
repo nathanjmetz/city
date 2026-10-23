@@ -53,6 +53,7 @@ var half := LOT_HALF
 var depth := 32.0
 var outline := PackedVector2Array()
 var _back_z := -INF  # the furthest back anything built so far reaches (for the back yard)
+var _mass_back_z := -INF  # the same for building masses only
 var pad := 0.0
 var era := "recent"
 ## Set by the art gallery to draw one type.
@@ -1268,7 +1269,10 @@ func _tool(mat: String) -> SurfaceTool:
 
 func _box(mat: String, size: Vector3, center: Vector3, col: Color, basis := Basis.IDENTITY) -> void:
 	var h := size * 0.5
-	_back_z = maxf(_back_z, center.z + (h.z if basis == Basis.IDENTITY else h.length()))
+	var reach := center.z + (h.z if basis == Basis.IDENTITY else h.length())
+	_back_z = maxf(_back_z, reach)
+	if size.y > 2.5 and minf(size.x, size.z) > 2.0:
+		_mass_back_z = maxf(_mass_back_z, reach)  # buildings, not poles or yard things
 	var p := func(x: float, y: float, z: float) -> Vector3:
 		return center + basis * Vector3(x * h.x, y * h.y, z * h.z)
 	var faces := [

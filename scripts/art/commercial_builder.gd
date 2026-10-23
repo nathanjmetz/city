@@ -209,6 +209,47 @@ func _flat_roofed(mat: String, w: float, d: float, cz: float, deck: float, top: 
 	_coping(w, d, cz, top)
 
 
+## Paves the rest of the lot behind the building out to the side and rear
+## lines, the way a shop's alley side or a plant's yard is: asphalt behind
+## newer shops, gravel behind older ones and factories, with a front-load
+## dumpster (2 yd, 6 ft wide) by the back door of a shop. Runs last, so its
+## random draws move nothing else.
+func _service_yard(gravel: bool, dumpster := true) -> void:
+	var pts := outline
+	if pts.size() < 3:
+		pts = PackedVector2Array([Vector2(-half, 0), Vector2(half, 0), Vector2(half, depth), Vector2(-half, depth)])
+	var z0 := _mass_back_z + 0.4
+	if depth - z0 < 2.0:
+		return
+	var back := PackedVector2Array([Vector2(-1000, z0), Vector2(1000, z0), Vector2(1000, depth + 1.0), Vector2(-1000, depth + 1.0)])
+	var col := Color("#8d877c") if gravel else Color("#4a4a48")
+	for poly in Geometry2D.intersect_polygons(pts, back):
+		_flat_ground("gravel" if gravel else "asphalt", poly, 0.05, col)  # 1 cm under any parking already drawn
+	if dumpster and depth - z0 > 3.0:
+		var at := Vector3(rng.randf_range(-half * 0.5, half * 0.5), 0, z0 + 1.2)
+		if _in_lot(at, 1.5):
+			var bin := Color(_pick(["#2f4a3a", "#2a3a5a", "#4a4e52"]))
+			_box("metal", Vector3(1.83, 1.07, 1.07), at + Vector3(0, 0.6, 0), bin)
+			_box("paint", Vector3(1.87, 0.06, 1.12), at + Vector3(0, 1.16, 0), Color("#1c1d1f"))
+
+
+## Flat ground work over a polygon (x, z), as _flat_rect does for a rectangle.
+func _flat_ground(kind: String, poly: PackedVector2Array, y: float, col: Color) -> void:
+	var alpha := {"drive": 0.0, "asphalt": 0.4, "line": 0.72, "mulch": 1.0, "gravel": 1.0}
+	col.a = alpha[kind]
+	var idx := Geometry2D.triangulate_polygon(poly)
+	for k in range(0, idx.size(), 3):
+		var tri := [poly[idx[k]], poly[idx[k + 1]], poly[idx[k + 2]]]
+		# Wound clockwise seen from above, like _flat_rect.
+		if (tri[1] - tri[0]).cross(tri[2] - tri[0]) < 0.0:
+			tri = [tri[0], tri[2], tri[1]]
+		for q in tri:
+			_flat.set_normal(Vector3.UP)
+			_flat.set_color(col)
+			_flat.set_uv(q * 0.25)
+			_flat.add_vertex(Vector3(q.x, y, q.y))
+
+
 ## What a flat roof is covered with, picked from the building's size so it
 ## doesn't move the builder's random sequence: weathered white TPO (most
 ## re-roofs since 2000), black EPDM rubber, or tar and gravel on older ones.
