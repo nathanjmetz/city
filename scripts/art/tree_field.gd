@@ -229,13 +229,29 @@ func _chunk(g: String, sp: int, far: bool, centre: Vector3) -> MultiMeshInstance
 	# The two overlap by OVERLAP with no margins: Godot treats margins without
 	# fade as hysteresis, so a camera hovering near NEAR could leave both
 	# hidden and a whole chunk of woods would vanish under it.
-	if far:
+	add_child(mmi)
+	_multis[key] = mmi
+	_fit(key, mmi)
+	return mmi
+
+
+func _ready() -> void:
+	if GraphicsQuality.current:
+		GraphicsQuality.current.changed.connect(func():
+			for key in _multis:
+				_fit(key, _multis[key]))
+
+
+## Where the full tree gives way to the light one, by the quality tier; the
+## wild woods' full trees cast shadows only on tiers that afford them.
+func _fit(key: String, mmi: MultiMeshInstance3D) -> void:
+	if key.ends_with("f"):
 		mmi.visibility_range_begin = NEAR * GraphicsQuality.detail - OVERLAP
 	else:
 		mmi.visibility_range_end = NEAR * GraphicsQuality.detail + OVERLAP
-	add_child(mmi)
-	_multis[key] = mmi
-	return mmi
+		if fades:
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if GraphicsQuality.tree_shadows \
+				else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 ## Picks a species and colour for a yard tree.

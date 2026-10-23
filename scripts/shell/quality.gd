@@ -40,21 +40,28 @@ const SAVE_PATH := "user://quality.json"
 ## shadow filter quality (2 low, 3 medium, 4 high, 5 ultra). detail scales
 ## how far full trees and close-up detail reach; lod is the mesh LOD
 ## threshold in pixels (lower keeps more detail); shadow_reach caps how far
-## from the camera shadows are drawn, in metres. ssao: ambient occlusion,
+## from the camera shadows are drawn, in metres. tree_shadows: whether the
+## wild woods cast sun shadows (thousands of trees, drawn again for every
+## shadow split: the biggest single cost in a wooded town). ssao: ambient occlusion,
 ## ssil: bounced light between nearby surfaces, ssr: reflections in water
 ## and glass, sdfgi: sunlight bouncing around the whole town, fog: light
 ## shafts and haze in the air (volumetric fog).
 const TIERS := [
 	{"msaa": 0, "fxaa": true, "ssao": false, "ssil": false, "ssr": false, "sdfgi": false, "fog": false,
-		"shadow_size": 2048, "soft": 2, "splits": 2, "detail": 0.75, "lod": 2.0, "shadow_reach": 900.0},
+		"shadow_size": 2048, "soft": 2, "splits": 2, "detail": 0.4, "lod": 2.0, "shadow_reach": 300.0,
+		"tree_shadows": false},
 	{"msaa": 1, "fxaa": false, "ssao": false, "ssil": false, "ssr": false, "sdfgi": false, "fog": false,
-		"shadow_size": 4096, "soft": 3, "splits": 4, "detail": 1.0, "lod": 1.0, "shadow_reach": 1400.0},
+		"shadow_size": 4096, "soft": 3, "splits": 2, "detail": 0.7, "lod": 1.0, "shadow_reach": 700.0,
+		"tree_shadows": false},
 	{"msaa": 2, "fxaa": false, "ssao": true, "ssil": false, "ssr": false, "sdfgi": false, "fog": false,
-		"shadow_size": 4096, "soft": 4, "splits": 4, "detail": 1.4, "lod": 1.0, "shadow_reach": 2000.0},
+		"shadow_size": 4096, "soft": 4, "splits": 4, "detail": 1.4, "lod": 1.0, "shadow_reach": 2000.0,
+		"tree_shadows": true},
 	{"msaa": 2, "fxaa": false, "ssao": true, "ssil": true, "ssr": true, "sdfgi": false, "fog": false,
-		"shadow_size": 8192, "soft": 5, "splits": 4, "detail": 1.8, "lod": 0.5, "shadow_reach": 2000.0},
+		"shadow_size": 8192, "soft": 5, "splits": 4, "detail": 1.8, "lod": 0.5, "shadow_reach": 2000.0,
+		"tree_shadows": true},
 	{"msaa": 2, "fxaa": false, "ssao": true, "ssil": true, "ssr": true, "sdfgi": true, "fog": true,
-		"shadow_size": 8192, "soft": 5, "splits": 4, "detail": 2.5, "lod": 0.25, "shadow_reach": 2000.0},
+		"shadow_size": 8192, "soft": 5, "splits": 4, "detail": 2.5, "lod": 0.25, "shadow_reach": 2000.0,
+		"tree_shadows": true},
 ]
 
 ## Frame times are judged over windows of this many seconds.
@@ -81,6 +88,9 @@ var scale := 1.0
 ## GraphicsQuality.detail, since class scripts compile before autoloads
 ## exist in tests). 1.0 when inactive.
 static var detail := 1.0
+## Whether the wild woods cast shadows (the tier's tree_shadows). True when
+## inactive.
+static var tree_shadows := true
 ## The autoload, for class scripts (null in tests and tools).
 static var current: GraphicsQuality
 var adapter := ""
@@ -149,9 +159,10 @@ func min_scale() -> float:
 
 func _first_guess() -> void:
 	if browser:
-		# Phones start low and with fewer pixels; a computer's browser
-		# starts on the browser's full look. Either way the governor moves.
-		tier = LOW if is_handheld() else MEDIUM
+		# Every browser starts on Low (a fresh town's woods alone are
+		# millions of triangles on Medium's old look) and climbs when there's
+		# room; phones also start with fewer pixels.
+		tier = LOW
 		scale = 0.75 if is_handheld() else 1.0
 	else:
 		tier = guess_tier(adapter, RenderingServer.get_video_adapter_type(),
@@ -228,6 +239,7 @@ func apply() -> void:
 	RenderingServer.directional_soft_shadow_filter_set_quality(t.soft)
 	RenderingServer.positional_soft_shadow_filter_set_quality(t.soft)
 	detail = t.detail
+	tree_shadows = t.tree_shadows
 	changed.emit()
 
 
