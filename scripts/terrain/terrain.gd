@@ -380,14 +380,18 @@ static func _split(arrays: Array, max_edge: float) -> Array:
 
 ## A copy of a flat mesh placed by `xform` (a node standing on the land),
 ## bent so each vertex keeps its height above the ground as drawn rather
-## than above the node.
-static func drape_local(mesh: Mesh, xform: Transform3D) -> ArrayMesh:
+## than above the node. Long triangles are split first (no side over
+## `max_edge` metres) so a big yard follows the slope instead of a corner
+## sinking into it and leaving a wedge showing.
+static func drape_local(mesh: Mesh, xform: Transform3D, max_edge := 4.0) -> ArrayMesh:
 	var out := ArrayMesh.new()
 	if mesh == null:
 		return out
 	var inv := xform.affine_inverse()
 	for s in mesh.get_surface_count():
 		var arrays := mesh.surface_get_arrays(s)
+		if max_edge > 0.0 and mesh.surface_get_primitive_type(s) == Mesh.PRIMITIVE_TRIANGLES:
+			arrays = _split(arrays, max_edge)
 		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 		for i in verts.size():
 			var w := xform * verts[i]
