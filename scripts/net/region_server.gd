@@ -377,10 +377,17 @@ func _rename(account: Dictionary, name: String) -> void:
 	_dirty = true
 
 
+## How long a new connection has to finish its handshake.
+const HANDSHAKE_SECONDS := 30.0
+
+
 static func use_big_buffers(peer: WebSocketMultiplayerPeer) -> void:
 	peer.inbound_buffer_size = BUFFER_BYTES
 	peer.outbound_buffer_size = BUFFER_BYTES
 	peer.max_queued_packets = 4096
+	# Godot gives a new connection 3 s to finish saying hello, too short for
+	# a browser still loading the game or a slow link through the tunnel.
+	peer.handshake_timeout = HANDSHAKE_SECONDS
 
 
 ## A slow salted hash, so a copied save file doesn't give passwords away.

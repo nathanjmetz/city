@@ -90,6 +90,11 @@ var _booked_month := -1
 var _deals_hour := -1
 var _retry_in := 0.0
 var _lost_for := 0.0
+## A first connection that drops before joining is tried again this many
+## times, a few seconds apart, before the player hears about it.
+const JOIN_TRIES := 3
+var _join_tries := 0
+var _join_retry := -1.0
 
 
 ## Connects and logs in (or, with new_account, signs up). Watch the joined,
@@ -103,6 +108,8 @@ func join(server_url: String, code: String, id: String, name: String, password :
 	_password = password
 	_new_account = new_account
 	token = saved_token
+	_join_tries = 0
+	_join_retry = -1.0
 	if _connect() != OK:
 		failed.emit("Couldn't reach %s." % server_url)
 
@@ -119,11 +126,26 @@ func _connect() -> int:
 func leave() -> void:
 	if _peer:
 		send_town(true, true)
-		_peer.poll()
+		_flush()
 		_peer.close()
 	_peer = null
 	_connected = false
 	is_joined = false
+	_join_retry = -1.0
+
+
+## Sends what's queued before the connection closes: the town going out
+## on leaving is a few MB, and the game may be about to quit. The browser
+## sends on its own, so there it can't be waited for (or needn't be).
+func _flush() -> void:
+	_peer.poll()
+	if OS.has_feature("web"):
+		return
+	var ws: WebSocketPeer = _peer.get_peer(1) if _connected else null
+	var until := Time.get_ticks_msec() + 5000
+	while ws and ws.get_current_outbound_buffered_amount() > 0 and Time.get_ticks_msec() < until:
+		OS.delay_msec(5)
+		_peer.poll()
 
 
 ## Sends the server a copy of your town, for the neighbors and to keep.
@@ -309,6 +331,10 @@ func _poll(delta: float) -> void:
 				return
 			_retry_in = RECONNECT_EVERY
 			_connect()
+	if _join_retry >= 0.0:
+		_join_retry -= delta
+		if _join_retry < 0.0:
+			_connect()
 	var t := Perf.now()
 	_finish_packing()
 	Perf.add("net.packing", t)
@@ -345,6 +371,7 @@ func _poll(delta: float) -> void:
 		_password = ""
 	elif state == MultiplayerPeer.CONNECTION_DISCONNECTED:
 		var was_joined := is_joined
+		var said_hello := _connected
 		_peer = null
 		_connected = false
 		is_joined = false
@@ -353,6 +380,11 @@ func _poll(delta: float) -> void:
 				reconnecting = true
 				_lost_for = 0.0
 				_retry_in = RECONNECT_EVERY
+		elif not said_hello and _join_tries < JOIN_TRIES - 1:
+			# Never got through (a slow link or a busy computer): try again.
+			# A region that answered and said no isn't asked again.
+			_join_tries += 1
+			_join_retry = RECONNECT_EVERY
 		else:
 			failed.emit("The region isn't answering. The host's computer may be off, asleep or restarting: try again in a minute.")
 		return

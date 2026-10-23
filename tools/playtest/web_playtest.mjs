@@ -2,8 +2,8 @@
 // playing) and saves its result, plus the browser's own memory (the page's
 // renderer and GPU processes, which is what runs out on an 8 GB Mac).
 //
-// Run: node tools/playtest/web_playtest.mjs <exported web dir> <seconds> <out.json> [ws://host:port/CODE]
-// The last, optional, plays in that region instead of alone.
+// Run: node tools/playtest/web_playtest.mjs <exported web dir> <seconds> <out.json> [ws://host:port/CODE] [name]
+// The optional region plays in that region instead of alone, as the player name given.
 // Needs Playwright (NODE_PATH pointing at a global install is fine).
 import { createServer } from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
@@ -14,7 +14,7 @@ import { createRequire } from "node:module";
 // require() honours NODE_PATH, so a global Playwright works too.
 const { chromium } = createRequire(import.meta.url)("playwright");
 
-const [dir, seconds = "120", out = "playtest-web.json", region = ""] = process.argv.slice(2);
+const [dir, seconds = "120", out = "playtest-web.json", region = "", name = ""] = process.argv.slice(2);
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".wasm": "application/wasm",
   ".pck": "application/octet-stream", ".png": "image/png" };
 
@@ -74,7 +74,8 @@ const timer = setInterval(() => {
 }, 2000);
 
 const t0 = Date.now();
-await page.goto(`http://localhost:${port}/?playtest=${seconds}` + (region ? `&region=${encodeURIComponent(region)}` : ""));
+await page.goto(`http://localhost:${port}/?playtest=${seconds}` + (region ? `&region=${encodeURIComponent(region)}` : "") +
+  (name ? `&name=${encodeURIComponent(name)}` : ""));
 // The load, the build steps and the run, with room to spare.
 const limit = (Number(seconds) + 600) * 1000;
 while (!result && !crashed && Date.now() - t0 < limit) {

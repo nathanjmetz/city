@@ -215,6 +215,13 @@ func enter_region() -> void:
 	get_tree().change_scene_to_file(GAME_SCENE)
 
 
+## Closing the window (or Quit) while in a region sends the whole town
+## first, so the server keeps it as you left it.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST and client:
+		leave_region()
+
+
 func leave_region(stop_host := true) -> void:
 	if client:
 		client.leave()
