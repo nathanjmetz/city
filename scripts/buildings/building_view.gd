@@ -77,7 +77,12 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 		"apartments": built = DenseBuilder.build_apartments(s, lot.to_curb, fit, storeys)
 		"shop": built = DenseBuilder.build_retail(s, lot.to_curb, fit, spec)
 		"mixed_use": built = DenseBuilder.build_mixed(s, lot.to_curb, fit, storeys, spec)
-		"office": built = DenseBuilder.build_office(s, lot.to_curb, fit, storeys, spec)
+		"office":
+			# Eight storeys and up is a downtown tower, built for its era.
+			if storeys >= 8:
+				built = TowerBuilder.build_tower(s, lot.to_curb, fit, storeys, spec)
+			else:
+				built = DenseBuilder.build_office(s, lot.to_curb, fit, storeys, spec)
 		_: built = FactoryBuilder.build_chain(b.get("chain", "general"), s, lot.to_curb, fit, spec)
 	if built.is_empty():
 		return root
