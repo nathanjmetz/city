@@ -692,6 +692,12 @@ const POLLUTION_SOURCES := {
 	"power_coal": {"smoke": 14.0, "noise": 70.0, "ground": 0.4, "reach": 250.0},
 	"power_gas": {"smoke": 1.5, "noise": 72.0, "ground": 0.0, "reach": 0.0},
 	"power_wind": {"smoke": 0.0, "noise": 70.0, "ground": 0.0, "reach": 0.0},
+	# A freight railroad: a few trains a day average about 65 dBA at 50 ft
+	# (FTA noise manual; a line source like a road), plus diesel exhaust.
+	"rail": {"smoke": 0.4, "noise": 64.0, "ground": 0.0, "reach": 0.0},
+	# The horn at each grade crossing: 96-110 dBA for the long-long-short-long
+	# (49 CFR 222.21), averaged over the day it adds about 75 dBA at 50 ft.
+	"rail_horn": {"smoke": 0.0, "noise": 76.0, "ground": 0.0, "reach": 0.0},
 	# Fertilizer washing off fields: nitrate in wells is a real Indiana issue.
 	# Per field cell, so a big farm adds up.
 	"farm": {"smoke": 0.0, "noise": 0.0, "ground": 0.03, "reach": 70.0},
@@ -779,6 +785,10 @@ const CLEAN_COMPLAINT_MAX := 2.0
 ## breathing trouble, counted against the source.
 const SMOKE_CALL_WEIGHT := 0.5
 const SMOKE_BREATHING_SHARE := 0.5
+## A quiet zone (49 CFR 222): the town adds supplementary safety measures
+## (four-quadrant gates or raised medians) at every crossing so engineers
+## stop sounding the horn. Real cost runs about $30k to $500k a crossing.
+const QUIET_ZONE_PER_CROSSING := 250_000
 const NOISE_WALL_PER_M := 500
 const NOISE_WALL_DB := 8.0
 

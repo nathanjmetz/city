@@ -173,6 +173,10 @@ static func _source_part(sim: CitySim, ref: String, d: Dictionary) -> void:
 		var next := p.next_equipment(ref, s.owner)
 		d.actions.append({"label": "Help pay for %s ($%s)" % [next.name, CitySim.money_text(help)],
 			"cmd": {"type": "fund_cleanup", "ref": ref}, "enabled": help <= sim.economy.money})
+	var hush := p.quiet_cost(sim, ref)
+	if hush >= 0:
+		d.actions.append({"label": "Make a quiet zone ($%s)" % CitySim.money_text(hush),
+			"cmd": {"type": "quiet_zone", "ref": ref}, "enabled": hush <= sim.economy.money})
 	var wall := p.wall_cost(sim, ref)
 	if wall >= 0:
 		d.actions.append({"label": "Build noise walls ($%s)" % CitySim.money_text(wall),
@@ -207,6 +211,12 @@ static func fixes(sim: CitySim, s: Dictionary) -> Array:
 				out.append("It has noise walls.")
 		"landfill":
 			out.append("Replace it with a recycling centre: far less dust, smell and dirty ground.")
+		"railroad":
+			if p.quiet_cost(sim, s.ref) >= 0:
+				out.append("Its horns at %d crossing%s are the worst of it. A quiet zone (gates on all four corners or raised medians) lets engineers skip the horn." % [
+					s.points.size(), "" if s.points.size() == 1 else "s"])
+			elif p.quiet.has(int(s.ref.substr(5))):
+				out.append("Its crossings are a quiet zone: no horns.")
 		"recycling_1", "recycling_2":
 			out.append("Upgrade it to cut its noise and dirt further.")
 	for f in s.get("fixes", []):
@@ -251,6 +261,9 @@ static func quick_fix(sim: CitySim, s: Dictionary, kind: String) -> String:
 				return "Noise walls on it would help."
 		"landfill":
 			return "Replacing it with recycling would help."
+		"railroad":
+			if kind == "noise" and sim.pollution.quiet_cost(sim, s.ref) >= 0:
+				return "A quiet zone at its crossings would help."
 		"power_coal":
 			if not s.fixes.is_empty():
 				return "Smokestack scrubbers or a switch to gas there would help."
