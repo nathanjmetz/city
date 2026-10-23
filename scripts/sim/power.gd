@@ -118,6 +118,33 @@ func river_at(p: Vector3) -> float:
 	return clampf(Terrain.water(p.x + offset.x, p.z + offset.y), 0.0, 1.0)
 
 
+## Where a dam at `p` spans the river: [one bank, the other bank], across
+## the flow (the flow runs along the longest stretch of water through p).
+## Empty when p isn't on the water.
+func dam_span(p: Vector3) -> Array:
+	if river_at(p) < 0.5:
+		return []
+	var best := Vector3.RIGHT
+	var best_run := -1.0
+	for k in 12:
+		var a := PI * k / 12.0
+		var d := Vector3(cos(a), 0.0, sin(a))
+		var run := _wet_run(p, d, 400.0) + _wet_run(p, -d, 400.0)
+		if run > best_run:
+			best_run = run
+			best = d
+	var across := Vector3(-best.z, 0.0, best.x)
+	return [p - across * _wet_run(p, -across, 300.0), p + across * _wet_run(p, across, 300.0)]
+
+
+## How far the water reaches from p along d, up to `most` metres.
+func _wet_run(p: Vector3, d: Vector3, most: float) -> float:
+	var t := 0.0
+	while t < most and river_at(p + d * (t + 6.0)) >= 0.5:
+		t += 6.0
+	return t
+
+
 ## How well a plant of this kind works at a point, 0 to 1 (0 = can't).
 func quality(plant: String, p: Vector3) -> float:
 	match plant:

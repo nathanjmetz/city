@@ -183,6 +183,14 @@ func _init() -> void:
 		sol2.from_dict(JSON.parse_string(JSON.stringify(sol.to_dict())))
 		_check(is_equal_approx(sol2.power.farm_rent(sfid), sol.power.farm_rent(sfid)), "a save keeps the leases")
 
+	# A dam spans the river bank to bank, across the flow.
+	var rp := Power.new()
+	rp.river = func(q): return 1.0 if absf(q.z - 500.0) < 45.0 else 0.0
+	var dspan: Array = rp.dam_span(Vector3(200, 0, 500))
+	_check(dspan.size() == 2 and absf(dspan[0].x - dspan[1].x) < 1.0 and absf(dspan[0].distance_to(dspan[1]) - 84.0) < 13.0,
+		"a dam runs across a 90 m river (%s)" % str(dspan))
+	_check(rp.dam_span(Vector3(200, 0, 700)).is_empty(), "and only where there's a river")
+
 	# Saves and copies stay in step.
 	var copy := CitySim.new()
 	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
