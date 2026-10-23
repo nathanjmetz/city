@@ -41,9 +41,11 @@ func _spawn(id: int, h: Dictionary) -> Node3D:
 	var to_curb := CivicHubs.SETBACK + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
 	var seed := int(h.pos.x * 73.0) ^ int(h.pos.z * 151.0) ^ (id << 16)
 	var built := HubBuilder.build_hub(h, seed, to_curb)
-	var building := MeshInstance3D.new()
-	building.mesh = built[0]
-	root.add_child(building)
+	# The hub's own building, then the rest of the site (mound, yard, fences).
+	for mesh in [built[0], built[3]]:
+		var part := MeshInstance3D.new()
+		part.mesh = mesh
+		root.add_child(part)
 	var ground := MeshInstance3D.new()
 	ground.mesh = Terrain.drape_local(built[1], Transform3D(root.basis, root.position))
 	ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
