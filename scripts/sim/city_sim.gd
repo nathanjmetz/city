@@ -240,6 +240,9 @@ func _init() -> void:
 		return Vector2(b.pos.x, b.pos.z)
 	farms.reserves = reserves
 	industry.reserves = reserves
+	permits.locators["farm"] = func(_sim, id: int) -> Vector2:
+		var f: Dictionary = farms.farms.get(id, {"pos": Vector3.ZERO})
+		return Vector2(f.pos.x, f.pos.z)
 	# New businesses get their names before any view draws them, so signs go
 	# up with the building (connected ahead of the views).
 	for sig in [buildings_changed, farms_changed, industry_changed]:
@@ -946,6 +949,7 @@ func tick() -> void:
 	if tick_count % Farms.DECIDE_EVERY == 0 and not farms.farms.is_empty():
 		farms.tax_rate = economy.tax[ZoneMap.Zone.INDUSTRIAL]
 		farms.price = Farms.price_on(tick_count / (24.0 * TICKS_PER_HOUR))
+		farms.day = tick_count / (24.0 * TICKS_PER_HOUR)
 		if farms.decide(field_usable):
 			_lots_dirty = true  # lots under new fields go away
 			farms_changed.emit()
@@ -1721,6 +1725,9 @@ func _wire_policies() -> void:
 	power.pad_usable = pad_usable
 	farms.lease_of = power.lease_in
 	farms.rent_of = power.farm_rent
+	# A farm whose block is full builds a road to the next (HubRoads), and
+	# asks on the bell when that road would cross the player's things.
+	farms.expand = _farm_road
 
 
 ## Hubs with their own money lever (a campus's funding level, a post
@@ -1957,6 +1964,122 @@ func _ground_free(mid: Vector3, corners: PackedVector2Array, in_fields: bool) ->
 				break
 	_usable_cache[key] = ok
 	return ok
+
+
+## Whose land a point is: "farm:<id>" for a farm's yard, lane or fields,
+## "site:<id>" for an industry company's, "hub" for any other hub or
+## service, or "" for open land.
+func land_owner(p: Vector3) -> String:
+	var id := farms.farm_at(p)
+	if id == -1:
+		id = farms.field_at(p)
+	if id != -1:
+		return "farm:%d" % id
+	id = industry.site_at(p)
+	if id == -1:
+		id = industry.pad_at(p)
+	if id != -1:
+		return "site:%d" % id
+	if services.covers(p) or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
+			or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p):
+		return "hub"
+	return ""
+
+
+## Farm `id` has filled its block: it builds a gravel road along the survey
+## line to the next block (Brawn: hubs grow to a real size, then build a
+## road, which joins the town's network). It picks the next block with the
+## most good free soil for the shortest road. Roads that would cross the
+## player's roads, lots or buildings go to the bell first. True when
+## anything changed.
+func _farm_road(id: int) -> bool:
+	var f: Dictionary = farms.farms[id]
+	var name := families.name_of("farm:%d" % id)
+	var leader := name if name != "" else "The farm"
+	var pending: Dictionary = f.get("pending", {})
+	if not pending.is_empty():
+		var state := permits.state_of(int(pending.req))
+		if state == Permits.State.APPROVED:
+			var route := HubRoads.from_flat(self, permits.requests[int(pending.req)].route)
+			permits.done(int(pending.req))
+			f.pending = {}
+			return _farm_open(id, Vector2i(int(pending.block[0]), int(pending.block[1])), route, leader)
+		if state != Permits.State.OPEN:
+			# Told no, shelved or withdrawn: try again later, maybe elsewhere.
+			f.pending = {}
+			f.road_wait = farms.day + Balance.FARM_ROAD_WAIT_DAYS
+		return false
+	var best := {}
+	var best_score := -INF
+	for pair in Farms.next_blocks(f):
+		var soil := _block_soil(id, pair[1])
+		if soil <= 0:
+			continue
+		for line in Farms.road_lines(f, pair[0], pair[1]):
+			var far: Vector3 = line[0]
+			var start := HubRoads.reach(self, far, line[1], Balance.FARM_ROAD_MAX)
+			if start == Vector3.INF:
+				continue
+			var route := [start, far] if start.distance_to(far) > HubRoads.SNAP else [start]
+			route.append_array(line[2])
+			var end := HubRoads.on_road(self, route[-1])
+			if route.size() >= 2 and end != Vector3.INF and end.distance_to(route[0]) > HubRoads.SNAP:
+				route[-1] = end
+			var plan := HubRoads.check(self, route, "farm:%d" % id)
+			if not plan.ok or plan.length > Balance.FARM_ROAD_MAX:
+				continue
+			# Good soil it can farm, less the road it has to build (and a
+			# road through the player's things is a last resort).
+			var score: float = soil * 100.0 - plan.length - (2000.0 if plan.permit else 0.0)
+			if score > best_score:
+				best_score = score
+				best = {"block": pair[1], "plan": plan}
+	if best.is_empty():
+		f.road_wait = farms.day + Balance.FARM_ROAD_WAIT_DAYS
+		return false
+	if not best.plan.permit:
+		return _farm_open(id, best.block, best.plan.route, leader)
+	var req := permits.file(self, {"hub": "farm", "hub_id": id, "leader": leader,
+		"title": "A gravel road to farm the next 80 acres",
+		"why": "%s has filled its 80 acres and wants the next block. The road would join the town's roads." \
+			% leader,
+		"route": HubRoads.flat(best.plan.route), "width": RoadStyle.right_of_way_half(HubRoads.TYPE) * 2.0,
+		"per_m": int(Economy.BUILD_PER_M[HubRoads.TYPE]), "base": 0, "budget": 0})
+	if req == -1:
+		f.road_wait = farms.day + Balance.FARM_ROAD_WAIT_DAYS
+		return false
+	f.pending = {"req": req, "block": [best.block.x, best.block.y]}
+	return false
+
+
+## Builds a farm's road and opens the block beyond it.
+func _farm_open(id: int, block: Vector2i, route: Array, leader: String) -> bool:
+	var f: Dictionary = farms.farms[id]
+	if route.size() < 2 or HubRoads.build(self, route).is_empty():
+		f.road_wait = farms.day + Balance.FARM_ROAD_WAIT_DAYS
+		return false
+	f.blocks.append(block)
+	f.why = "%s filled its 80 acres, so it built a gravel road on the survey line to farm the next 80. It's a town road now." % leader
+	_lots_dirty = true
+	_usable_cache.clear()
+	return true
+
+
+## How many cells of block b farm `id` could plant: free ground worth farming.
+func _block_soil(id: int, b: Vector2i) -> int:
+	var f: Dictionary = farms.farms[id]
+	var n := 0
+	var x0 := b.x * (Farms.BLOCK.x + 1) - Farms.BLOCK.x / 2
+	var y0 := 0 if b.y == 0 else b.y * (Farms.BLOCK.y + 1)
+	# Every other cell is enough to judge it.
+	for i in range(0, Farms.BLOCK.x, 2):
+		for j in range(0, Farms.BLOCK.y, 2):
+			var c := Vector2i(x0 + i, y0 + j)
+			var mid := Farms.cell_center(f, c)
+			if farms.reserved_ok(mid) and farms.field_profit(f, c) + farms.support(id) > maxf(farms.buy_margin(id), 0.0) \
+					and field_usable(mid, Farms.cell_corners(f, c)):
+				n += 4
+	return n
 
 
 ## Whether a water utility can put a piece of its yard on this square: no

@@ -14,7 +14,7 @@ signal opened
 const WIDTH := 340
 ## What each kind of hub is called on its card.
 const HUB_NAMES := {"rail": "Railroad", "bus": "Bus company", "family": "Family business", "developer": "Land developer",
-	"interlocal": "Shared service", "heritage": "Historical society", "owner": "Building owner"}
+	"interlocal": "Shared service", "heritage": "Historical society", "owner": "Building owner", "farm": "Farm"}
 ## Leader requests (asks of the town) by kind (LeaderAsks, Heritage).
 const ASK_NAMES := {"abatement": "Company", "pave": "Farm", "signal": "Business", "festival": "Main Street",
 	"district": "Historical society", "demolish": "Building owner"}
