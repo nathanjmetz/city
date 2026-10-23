@@ -42,6 +42,8 @@ CS2 trains, with track drawing replaced by the leader's own planning.
     "proceed" when a train leaves after standing (GCOR 5.8.2).
   - The crossing bell rings while the gates are down (MUTCD 8C; 150 strokes a
     minute). The horn carries about 2.4 km, the bell about 350 m.
+  - Whistle posts (a white sign with a black W) stand on the engineer's right
+    a quarter mile before each crossing, in both directions.
 - **Development tree** (`Rail.TREE`, on `Agency`): team track, then engine
   house, grain elevator spur, station, car shop, intercity stop, commuter
   trains, unit-train loop, intermodal yard, interchange and classification yard.

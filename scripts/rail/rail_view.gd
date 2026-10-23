@@ -27,6 +27,8 @@ const TIE_EVERY := 0.6
 ## Above the water at a bridge (m).
 const BRIDGE_CLEAR := 5.5
 const FAR := 3200.0
+## Whistle posts stand a quarter mile before each crossing (m).
+const WHISTLE_POST := 402.0
 
 var sim: CitySim
 var terrain: TerrainView
@@ -233,6 +235,7 @@ func _draw_track() -> void:
 				k += TIE_EVERY
 	for c in sim.rail.crossings:
 		_crossing_pad(st, c)
+		_whistle_posts(st, c)
 	_track.visible = any
 	if any:
 		st.generate_normals()
@@ -362,6 +365,54 @@ func _crossing_pad(st: SurfaceTool, c: Dictionary) -> void:
 		var o: Vector3 = n * k * RailModels.GAUGE * 0.5
 		_quad(st, c0 + o - side * 0.04 + Vector3(0, 0.02, 0), c0 + o + side * 0.04 + Vector3(0, 0.02, 0),
 			c1 + o + side * 0.04 + Vector3(0, 0.02, 0), c1 + o - side * 0.04 + Vector3(0, 0.02, 0), RAIL_TOP)
+
+
+## Whistle posts: a white sign with a black W on the engineer's right, a
+## quarter mile before each crossing in both directions, where the horn
+## pattern starts (FRA 49 CFR 222.21; railroads' timetable instructions).
+func _whistle_posts(st: SurfaceTool, c: Dictionary) -> void:
+	if not sim.rail.pieces.has(int(c.piece)):
+		return
+	for dir: int in [-1, 1]:
+		var at := _walk(int(c.piece), float(c.s), dir, WHISTLE_POST)
+		if at.is_empty():
+			continue
+		var heading: Vector3 = -at[1]   # a train coming toward the crossing
+		var right := Vector3(-heading.z, 0.0, heading.x)
+		var p: Vector3 = at[0] + right * 3.4
+		var f := Transform3D(Basis(right, Vector3.UP, -heading), Vector3(p.x, Terrain.ground_y(p.x, p.z), p.z))
+		_box(st, f, Vector3(0, 1.3, 0), Vector3(0.1, 2.6, 0.1), Color("#8a8a86"))
+		_box(st, f, Vector3(0, 2.25, 0.07), Vector3(0.7, 0.85, 0.04), Color("#f2f2ee"))
+		for k in 4:
+			var x := -0.18 + k * 0.12
+			var lean := 0.32 if k % 2 == 0 else -0.32
+			var stroke := f * Transform3D(Basis(Vector3.BACK, lean), Vector3(x, 2.25, 0.1))
+			_box(st, stroke, Vector3.ZERO, Vector3(0.05, 0.5, 0.01), Color("#1e1e1e"))
+
+
+## A point `dist` metres along the track from (piece, s), going `dir`,
+## carrying on through joints: [pos, direction of travel], or [] at a dead end.
+func _walk(pid: int, s: float, dir: int, dist: float) -> Array:
+	var rail := sim.rail
+	for guard in 12:
+		var L := rail._length(pid)
+		var room: float = (L - s) if dir > 0 else s
+		if dist <= room:
+			var pose := rail.pose_at(pid, s + dir * dist)
+			return [pose[0], (pose[1] as Vector3) * dir]
+		dist -= room
+		var node: int = rail.pieces[pid].b if dir > 0 else rail.pieces[pid].a
+		var next := -1
+		for q in rail._pieces_at(node):
+			if q != pid and rail._complete(q):
+				next = q
+				break
+		if next == -1:
+			return []
+		pid = next
+		dir = 1 if rail.pieces[pid].a == node else -1
+		s = 0.0 if dir > 0 else rail._length(pid)
+	return []
 
 
 func _road_dir(c: Dictionary) -> Vector3:
