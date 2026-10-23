@@ -376,6 +376,14 @@ func rebuild(sim: CitySim, grid := true) -> void:
 			pts.append([Farms.cell_center(f, c), 1.0])
 		_add(sim, "farm:%d" % id, _unique(used_names, _named(sim, "farm:%d" % id, farm_name(id))), "farm", "farm",
 			{"type": "farm", "id": id}, pts)
+		# Its livestock barns, a source of their own (Livestock).
+		var stock := Livestock.kind(f)
+		if Balance.POLLUTION_SOURCES.has(stock) and not Livestock.sites(f).is_empty():
+			var barns := []
+			for site in Livestock.sites(f):
+				barns.append([Livestock.site_center(f, site), 1.0])
+			var label := "%s %s" % [_named(sim, "farm:%d" % id, farm_name(id)), str(Balance.LIVESTOCK[stock].name).to_lower()]
+			_add(sim, "barns:%d" % id, _unique(used_names, label), stock, "farm", {"type": "farm", "id": id}, barns)
 	var refs := emitters.keys()
 	refs.sort()
 	for ref in refs:

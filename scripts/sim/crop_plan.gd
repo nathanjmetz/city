@@ -24,6 +24,15 @@ extends RefCounted
 ## local (bales for livestock).
 const CROPS := ["corn", "soybeans", "wheat", "hay"]
 const GRAIN := ["corn", "soybeans", "wheat"]
+## A farm with a beef herd (Livestock "cattle") can also put fields in
+## pasture: perennial grass the cows graze, which holds steep ground like
+## hay and makes something of poor soil.
+const WITH_PASTURE := ["corn", "soybeans", "wheat", "hay", "pasture"]
+
+
+## The crops farm f can choose from.
+static func crops_for(f: Dictionary) -> Array:
+	return WITH_PASTURE if Livestock.kind(f) == "cattle" else CROPS
 
 
 ## The field (a 40-acre "forty") a cell belongs to, in the farm's own frame.
@@ -71,6 +80,8 @@ static func relative_price(crop: String, day: float) -> float:
 ## `boost` multiplies the gross (what the farm has built, see Agency).
 static func net_per_acre(crop: String, prev: String, health: float, fertility: float, price: float,
 		boost := 1.0) -> float:
+	if crop == "pasture":
+		fertility = Balance.PASTURE_SOIL_FLOOR + (1.0 - Balance.PASTURE_SOIL_FLOOR) * fertility
 	var gross: float = Balance.FARM_GROSS_PER_ACRE[crop] * fertility * price * boost \
 		* rotation(crop, prev) * (1.0 + (health - 0.5) * Balance.CROP_HEALTH_YIELD)
 	var second := Balance.CROP_DOUBLE_CROP * fertility if crop == "wheat" else 0.0
@@ -80,8 +91,8 @@ static func net_per_acre(crop: String, prev: String, health: float, fertility: f
 ## Soil health after a year of `crop` following `prev` (0..1): the same
 ## crop again wears it down, a change builds it, hay and cover crops most.
 static func next_health(health: float, crop: String, prev: String, cover: bool) -> float:
-	var d := -0.1 if crop == prev else 0.05
-	if crop == "hay":
+	var d := -0.1 if crop == prev and crop != "pasture" else 0.05
+	if crop in ["hay", "pasture"]:
 		d += 0.05
 	if cover:
 		d += 0.05
@@ -118,6 +129,12 @@ static func demand(sim: CitySim) -> Dictionary:
 			"a neighbouring town is buying soybeans" if p[1] == "" else p[1] + ", and a neighbouring town buys soybeans"]
 	if fair:
 		out["hay"] = [Balance.CROP_DEMAND.fair_hay, "the fairgrounds' livestock barns buy hay"]
+	for id in sim.farms.farms:
+		if not Livestock.sites(sim.farms.farms[id]).is_empty():
+			var p: Array = out.get("corn", [0.0, ""])
+			out["corn"] = [p[0] + Balance.CROP_DEMAND_FEED,
+				"the livestock barns' feed mill buys corn" if p[1] == "" else p[1] + ", and the livestock barns need feed"]
+			break
 	return out
 
 
@@ -140,6 +157,7 @@ static func plan(f: Dictionary, demand: Dictionary, price: float, day: float, fe
 	var keys := cells_of.keys()
 	keys.sort()
 	var lead: Dictionary = f.get("leader", {"edu": 0.5, "caution": 0.5, "ambition": 0.5})
+	var crops := crops_for(f)
 	var planned := {}
 	var total := 0
 	var changed := 0
@@ -156,9 +174,9 @@ static func plan(f: Dictionary, demand: Dictionary, price: float, day: float, fe
 		var prev := str(old.crop)
 		var health := float(old.health)
 		var options := []
-		for crop in CROPS:
+		for crop in crops:
 			options.append(_option(crop, prev, health, int(old.years), fertility, steep, price, day, demand,
-				float(planned.get(crop, 0) + cells.size()) / maxf(f.cells.size(), 1.0)))
+				float(planned.get(crop, 0) + cells.size()) / maxf(f.cells.size(), 1.0), crops))
 		var pick := Agency.choose(lead, options)
 		var crop: String = pick.id
 		# Cover crops: rye after a corn or soybean harvest, kept by leaders
@@ -186,7 +204,7 @@ static func plan(f: Dictionary, demand: Dictionary, price: float, day: float, fe
 
 ## One crop as a choice for a field, with the reasons a leader weighs.
 static func _option(crop: String, prev: String, health: float, years: int, fertility: float, steep: float,
-		price: float, day: float, demand: Dictionary, share: float) -> Dictionary:
+		price: float, day: float, demand: Dictionary, share: float, crops := CROPS) -> Dictionary:
 	var p := price * relative_price(crop, day)
 	var now := net_per_acre(crop, prev, health, fertility, p)
 	var factors := {}
@@ -196,12 +214,14 @@ static func _option(crop: String, prev: String, health: float, years: int, ferti
 	elif rotation(crop, prev) < 1.0:
 		said = "yields less after %s" % prev
 	factors["money"] = [now, said]
-	# Next year: the best crop to follow this one, at half weight.
+	# Next year: the best crop to follow this one, at half weight (row
+	# crops on steep ground lose what washes away, as below).
+	var wash := maxf(steep - Balance.CROP_ERODIBLE_SLOPE, 0.0) * Balance.CROP_EROSION_PER_ACRE
 	var h2 := next_health(health, crop, prev, false)
 	var then := -INF
 	var follow := ""
-	for c2 in CROPS:
-		var v := net_per_acre(c2, crop, h2, fertility, price)
+	for c2 in crops:
+		var v := net_per_acre(c2, crop, h2, fertility, price) - (0.0 if c2 in ["hay", "pasture"] else wash)
 		if v > then:
 			then = v
 			follow = c2
@@ -213,10 +233,19 @@ static func _option(crop: String, prev: String, health: float, years: int, ferti
 	factors["risk"] = [-0.1 * Balance.FARM_COST_PER_ACRE[crop], "costs less to put in"]
 	# Splitting the farm spreads work at planting and harvest, and price
 	# risk: past half the farm in one crop, more of it counts against it.
+	# (Pasture is the herd's ground, not a crop to balance.)
+	if crop == "pasture":
+		share = 0.0
 	factors["spread"] = [-Balance.CROP_SPREAD_PER_ACRE * maxf(share - 0.5, 0.0) * 2.0, "balances the farm between crops"]
 	# Steep ground washes under row crops (NRCS erodible land): hay holds it.
-	var wash := maxf(steep - Balance.CROP_ERODIBLE_SLOPE, 0.0) * Balance.CROP_EROSION_PER_ACRE
-	if crop == "hay":
+	if crop == "pasture":
+		factors["land"] = [wash, "the herd grazes steep ground where row crops would wash"]
+		if prev == "pasture":
+			factors["money"][0] += Balance.CROP_HAY_ESTABLISH
+			factors["money"][1] = "keeps pasture that is already fenced and seeded"
+		else:
+			factors["money"][1] = "feeds the beef herd for about $%d an acre" % roundi(now)
+	elif crop == "hay":
 		factors["land"] = [wash, "holds the steep ground where row crops would wash"]
 		# An alfalfa stand lasts three or four years once it's paid for.
 		if prev == "hay" and years < Balance.CROP_HAY_STAND_YEARS:

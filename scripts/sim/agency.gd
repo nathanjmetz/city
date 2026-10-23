@@ -113,8 +113,29 @@ static func _cents(v: float) -> float:
 	return roundi(v * 100.0) / 100.0
 
 
+## Town-wide facts worked out once and reused by every hub deciding in the
+## same tick (a monthly round asks the same things thousands of times in a
+## big town): "edu" and "local" -> value, "_at" -> what they were measured
+## on. Anything that adds buildings, farms or sites starts it over.
+static var _memo := {}
+
+
+static func _fresh(sim: CitySim) -> void:
+	var at := [sim.get_instance_id(), sim.tick_count, sim.buildings.size(), sim.services.served.size(),
+		sim.farms.farms.size(), sim.industry.sites.size()]
+	if _memo.get("_at", []) != at:
+		_memo = {"_at": at}
+
+
 ## The town's education: the share of homes a school covers.
 static func education(sim: CitySim) -> float:
+	_fresh(sim)
+	if not _memo.has("edu"):
+		_memo["edu"] = _education(sim)
+	return _memo.edu
+
+
+static func _education(sim: CitySim) -> float:
 	var homes := 0
 	var schooled := 0
 	for key in sim.buildings:
@@ -253,23 +274,47 @@ static func effect(hub: Dictionary, tree: Array, key: String) -> float:
 
 
 ## Hubs of a kind within reach: factory chains, resource companies or farms.
+## Counted from buckets FACTORY_CHAIN_REACH across, built once a tick, so a
+## check looks at the hubs in nine buckets instead of every building.
 static func _local(sim: CitySim, at: Vector3, what: String) -> int:
+	_fresh(sim)
+	if not _memo.has("local"):
+		_memo["local"] = _local_index(sim)
 	var reach := Balance.FACTORY_CHAIN_REACH
+	var kinds: Dictionary = _memo.local
+	if not kinds.has(what):
+		return 0
+	var b := Vector2i(floori(at.x / reach), floori(at.z / reach))
 	var n := 0
-	if Balance.FACTORY_CHAINS.has(what):
-		for key in sim.buildings:
-			var b: Dictionary = sim.buildings[key]
-			if b.get("chain", "") == what and sim.lots.has(key) and sim.lots[key].pos.distance_to(at) < reach:
-				n += 1
-	elif what == "farm":
-		for id in sim.farms.farms:
-			if sim.farms.farms[id].pos.distance_to(at) < reach:
-				n += 1
-	else:
-		for id in sim.industry.sites:
-			if sim.industry.sites[id].kind == what and sim.industry.sites[id].pos.distance_to(at) < reach:
-				n += 1
+	for dx in [-1, 0, 1]:
+		for dz in [-1, 0, 1]:
+			for p in kinds[what].get(b + Vector2i(dx, dz), []):
+				if p.distance_to(at) < reach:
+					n += 1
 	return n
+
+
+## kind -> bucket -> positions of every factory (by chain), farm and
+## resource company (by kind).
+static func _local_index(sim: CitySim) -> Dictionary:
+	var reach := Balance.FACTORY_CHAIN_REACH
+	var out := {}
+	var put := func(kind: String, p: Vector3) -> void:
+		if not out.has(kind):
+			out[kind] = {}
+		var b := Vector2i(floori(p.x / reach), floori(p.z / reach))
+		if not out[kind].has(b):
+			out[kind][b] = []
+		out[kind][b].append(p)
+	for key in sim.buildings:
+		var chain := str(sim.buildings[key].get("chain", ""))
+		if chain != "" and sim.lots.has(key):
+			put.call(chain, sim.lots[key].pos)
+	for id in sim.farms.farms:
+		put.call("farm", sim.farms.farms[id].pos)
+	for id in sim.industry.sites:
+		put.call(str(sim.industry.sites[id].kind), sim.industry.sites[id].pos)
+	return out
 
 
 ## Neighbouring towns that import or export a good: from last month's

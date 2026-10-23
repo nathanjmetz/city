@@ -1035,7 +1035,12 @@ func tick() -> void:
 				farms.slope_of = func(p: Vector3) -> float:
 					return Terrain.slope(p.x + terrain_offset.x, p.z + terrain_offset.y)
 			farms.year = crop_year
-		if farms.decide(field_usable):
+		var farmed := farms.decide(field_usable)
+		# Hog, dairy and turkey barns and beef herds, picked by farm leaders.
+		if Livestock.step(self):
+			farmed = true
+			_usable_cache.clear()
+		if farmed:
 			_lots_dirty = true  # lots under new fields go away
 			farms_changed.emit()
 	Perf.add("sim.farms", t)

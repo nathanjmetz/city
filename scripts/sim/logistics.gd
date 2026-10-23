@@ -157,6 +157,8 @@ func _produce(sim: CitySim) -> void:
 		var f: Dictionary = sim.farms.farms[id]
 		var bushels := 0.0
 		for c in f.cells:
+			if CropPlan.crop_at(f, c) == "pasture":
+				continue  # the herd's grass, not grain
 			bushels += Balance.FARM_BUSHELS_PER_ACRE[f.crop] * Farms.ACRES_PER_CELL \
 				* sim.farms.fertility_at(Farms.cell_center(f, c)) * sim.farms.share(id, c)
 		grain[id] = grain.get(id, 0.0) + bushels * share * Agency.effect(f, Agency.TREES.farm, "output*")

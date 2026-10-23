@@ -347,7 +347,7 @@ static func _farm(sim: CitySim, id: int, at := []) -> Dictionary:
 	var rows := [
 		["Crops this year", _crops(f)],
 		["Fields", "%d (%.0f acres)" % [f.cells.size(), acres]],
-		["Jobs", str(2 + f.cells.size() / Farms.CELLS_PER_WORKER)],
+		["Jobs", str(2 + f.cells.size() / Farms.CELLS_PER_WORKER + Livestock.jobs(f))],
 		["Profit", "%s$%s / year" % ["" if profit >= 0.0 else "-", CitySim.money_text(absi(roundi(profit)))]],
 		["Property tax to town", "$%s / month" % CitySim.money_text(roundi(acres * Farms.LAND_PER_ACRE
 			* Farms.AG_ASSESSMENT * sim.economy.tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0))],
@@ -361,6 +361,20 @@ static func _farm(sim: CitySim, id: int, at := []) -> Dictionary:
 	if lease > 0.0:
 		rows.insert(4, ["Wind leases", "$%s / year (%d turbines in its fields)" % [CitySim.money_text(roundi(lease)),
 			roundi(lease / Balance.POWER_WIND_LEASE)]])
+	# Livestock: what the farm keeps and why its leader chose it (Livestock).
+	var stock := Livestock.kind(f)
+	if stock != "":
+		var n := Livestock.head(f)
+		var what := "%s %s" % [CitySim.money_text(n), Livestock.head_name(stock)] if n > 0 else "Planning a %s" % (
+			"beef herd" if stock == "cattle" else str(Balance.LIVESTOCK[stock].name).to_lower())
+		if Balance.LIVESTOCK.has(stock) and n > 0:
+			what += " (%s, $%s / year with manure)" % [str(Balance.LIVESTOCK[stock].name).to_lower(),
+				CitySim.money_text(roundi(Livestock.yearly(f, sim.farms.day)))]
+		elif stock == "cattle" and n > 0:
+			what += " on %d acres of pasture" % roundi(Livestock.pasture_acres(f))
+		rows.insert(1, ["Livestock", what])
+	if str(f.get("stock", {}).get("why", "")) != "":
+		rows.insert(2 if stock != "" else 1, ["Livestock plan", str(f.stock.why)])
 	var problems := []
 	var status := "Growing: buying land where the soil pays"
 	if not f.barn:
@@ -374,6 +388,9 @@ static func _farm(sim: CitySim, id: int, at := []) -> Dictionary:
 		var p := Vector3(float(at[0]), 0.0, float(at[1]))
 		var local := Farms._local(f, p)
 		var c := Vector2i(roundi(local.x / Farms.CELL), roundi(local.y / Farms.CELL))
+		if c in Livestock.site_cells(f):
+			rows.insert(1, ["Here", "%s, %s %s" % [str(Balance.LIVESTOCK[stock].name), CitySim.money_text(
+				int(Balance.LIVESTOCK[stock].per_site)), Livestock.head_name(stock)]])
 		if c in f.cells:
 			var fl := CropPlan.field(f, c)
 			var note := "%s%s" % [str(fl.crop).capitalize(), " after %s" % fl.prev if str(fl.prev) != "" else ""]

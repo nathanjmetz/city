@@ -174,6 +174,8 @@ static func sources(sim: Object) -> Dictionary:
 		out["fd%d %d" % [id, f.drive.size()]] = _line_cells.bind(PackedVector3Array(f.drive), Farms.DRIVE_WIDTH * 0.5 + 1.5)
 		for cell in f.cells:
 			out["fc%d %s" % [id, cell]] = _poly_cells.bind(Farms.cell_corners(f, cell))
+		for cell in Livestock.site_cells(f):
+			out["fc%d %s" % [id, cell]] = _poly_cells.bind(Farms.cell_corners(f, cell))  # barn pads
 	for id in sim.warehouses.buildings:
 		var poly: PackedVector2Array = sim.warehouses.footprint(id)
 		out["w%d %s" % [id, poly]] = _poly_cells.bind(poly)

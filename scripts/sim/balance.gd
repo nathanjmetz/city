@@ -253,10 +253,10 @@ const FARM_AG_ASSESSMENT := 0.25
 ## soybeans 55 bu x $11, soft red winter wheat 80 bu x $5.50, mixed
 ## alfalfa-grass hay 4 tons x $120 sold off the farm with no livestock
 ## buyer nearby (Purdue Crop Cost and Return Guide).
-const FARM_GROSS_PER_ACRE := {"corn": 810.0, "soybeans": 600.0, "wheat": 440.0, "hay": 480.0}
+const FARM_GROSS_PER_ACRE := {"corn": 810.0, "soybeans": 600.0, "wheat": 440.0, "hay": 480.0, "pasture": 440.0}
 ## Yearly cost per acre (seed, fuel, fertiliser, machinery; USDA operating
 ## costs with the land owned). Soybeans need no nitrogen, so they cost less.
-const FARM_COST_PER_ACRE := {"corn": 420.0, "soybeans": 280.0, "wheat": 240.0, "hay": 300.0}
+const FARM_COST_PER_ACRE := {"corn": 420.0, "soybeans": 280.0, "wheat": 240.0, "hay": 300.0, "pasture": 290.0}
 ## Extra yearly cost per acre for each km a field lies from the farmhouse.
 const FARM_COST_PER_ACRE_PER_KM := 260.0
 ## Jobs: the farm family (2) plus a hired hand per this many cells (~40 acres).
@@ -329,6 +329,68 @@ const CROP_COVER_SOIL_VALUE := 45.0
 ## establishment cost (dollars an acre).
 const CROP_HAY_STAND_YEARS := 4
 const CROP_HAY_ESTABLISH := 120.0
+
+# --- Livestock (Livestock) -------------------------------------------------------
+# Brawn (2026-10-23): livestock on farms, chosen by the farm's leader. Real
+# references: Purdue and Iowa State livestock enterprise budgets (2023-24),
+# IDEM confined feeding rules, and southwest Indiana's own operations:
+# contract hog and turkey barns around Dubois County (Farbest Foods in
+# Huntingburg), freestall dairies, and beef cows on hill ground and
+# reclaimed strip-mine land in Pike and Gibson counties.
+
+## A beef cow and her calf graze about 2 acres of Indiana pasture (Purdue
+## forage guide); the "pasture" crop above is that herd's net an acre with
+## weaned calves near $1,000 (2024-25). Pasture cares less about the soil
+## than row crops: the gross is scaled by this plus the rest by fertility.
+const PASTURE_SOIL_FLOOR := 0.6
+const PASTURE_ACRES_PER_COW := 2.0
+
+## Barn enterprises. Each "site" is one barn group on two field cells (an
+## 80 x 40 m pad beside the farmyard):
+##   per_site   head it holds: two 41 x 204 ft tunnel-ventilated finishing
+##              barns of 1,200 pigs; a 500-cow freestall barn and parlor;
+##              two 50 x 500 ft turkey barns of 8,000 toms
+##   cost       what the site costs to build ($330 a pig space, $10,000 a
+##              dairy stall, $25 a turkey space)
+##   net        yearly net a head after feed, labour, utilities and the barn
+##              loan (contract growers are paid per space; a dairy keeps its
+##              milk check), and how far it swings with prices
+##   manure     acres of corn a head's manure fertilises a year (about
+##              13 lb N a pig space, 160 lb a cow, 2 lb a turkey, against
+##              180 lb an acre of corn)
+##   permit_at  IDEM confined feeding approval: 600 hogs, 300 cattle,
+##              30,000 poultry (IC 13-11-2-40)
+##   reach      setback the leader keeps from homes, metres (Indiana county
+##              ordinances run 1,000 to 2,640 ft from a residence)
+##   jobs       hired workers a site
+##   max_sites  how far one farm grows it
+##   edu        the leader's schooling it takes
+const LIVESTOCK := {
+	"hogs": {"name": "Hog barns", "head_name": "hogs", "per_site": 2400, "cost": 790_000, "net": 6.0, "swing": 2.0,
+		"manure": 0.075, "permit_at": 600, "reach": 400.0, "jobs": 1, "max_sites": 3, "edu": 0.0,
+		"buyer": "a pork packer in the region (like Indiana Packers in Delphi)"},
+	"dairy": {"name": "Dairy", "head_name": "cows", "per_site": 500, "cost": 5_000_000, "net": 240.0, "swing": 400.0,
+		"manure": 0.9, "permit_at": 300, "reach": 300.0, "jobs": 6, "max_sites": 2, "edu": 0.6,
+		"buyer": "a milk co-op's tanker"},
+	"turkeys": {"name": "Turkey barns", "head_name": "turkeys", "per_site": 16000, "cost": 400_000, "net": 0.5,
+		"swing": 0.3, "manure": 0.008, "permit_at": 30000, "reach": 300.0, "jobs": 1, "max_sites": 3, "edu": 0.0,
+		"buyer": "a turkey processor in the region (like Farbest Foods in Huntingburg)"},
+}
+## Manure saves this many dollars an acre of corn in fertiliser (about
+## 165 lb N at $0.60 a lb, less hauling and spreading).
+const MANURE_CREDIT_PER_ACRE := 85.0
+## What a leader counts against a new barn: this share of its cost, scaled
+## by caution (Agency weight "risk").
+const LIVESTOCK_RISK_SHARE := 0.03
+## Livestock losing money this many years running is given up: the barns
+## come down and the ground goes back to crops (retooling, Brawn's fork).
+const LIVESTOCK_LOSS_YEARS := 3
+## A farm waits this many years after giving livestock up, or after the town
+## says no to a barn, before thinking about it again.
+const LIVESTOCK_WAIT_YEARS := 3
+## Corn buyers in town add this for feed, dollars an acre, once any farm
+## keeps barns (the feed mill that supplies them).
+const CROP_DEMAND_FEED := 20.0
 
 # --- Resource industry -------------------------------------------------------
 
@@ -845,6 +907,13 @@ const POLLUTION_SOURCES := {
 	"forest": {"smoke": 0.5, "noise": 66.0, "ground": 0.05, "reach": 60.0, "pad_share": 0.6},
 	# Landfill: dust and odor, trucks and dozers, and leachate seeping out.
 	"landfill": {"smoke": 4.0, "noise": 64.0, "ground": 0.7, "reach": 220.0},
+	# Livestock barns (Livestock): ammonia and dust from the fans (fine
+	# particles downwind), tunnel fans about 60 dBA close by, and manure
+	# pits or lagoons that can seep. Odor reaches past all of it; the
+	# leader's setback (LIVESTOCK reach) is that.
+	"hogs": {"smoke": 2.0, "noise": 60.0, "ground": 0.4, "reach": 150.0},
+	"dairy": {"smoke": 1.5, "noise": 58.0, "ground": 0.5, "reach": 150.0},
+	"turkeys": {"smoke": 1.5, "noise": 56.0, "ground": 0.3, "reach": 120.0},
 	"recycling_1": {"smoke": 1.0, "noise": 64.0, "ground": 0.1, "reach": 80.0},
 	"recycling_2": {"smoke": 0.6, "noise": 62.0, "ground": 0.05, "reach": 60.0},
 	"recycling_3": {"smoke": 0.3, "noise": 58.0, "ground": 0.0, "reach": 0.0},
