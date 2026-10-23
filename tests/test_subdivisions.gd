@@ -141,6 +141,25 @@ func _init() -> void:
 				"changed": sim.tick_count, "occ": 2}, "house", 0)
 	sim.subdivisions.month(sim)
 	_check(int(sim.subdivisions.active[sid].phase) == 2, "once it has sold, the next phase opens")
+	print("  homes ", site.homes, ", phases ", site.phases)
+	var keep_tick: int = sim.tick_count
+	while int(sim.subdivisions.active[sid].phase) <= int(site.phases) / 2:
+		sim.tick_count += roundi(Balance.SUBDIV_PHASE_MIN_MONTHS * 2.0) * MONTH + MONTH
+		while Seasons.month(sim.tick_count) in Balance.NEEDS_WINTER_MONTHS:
+			sim.tick_count += MONTH
+		sim._refresh()
+		for key in sim.lots:
+			if not sim.buildings.has(key) and sim.zones.zone_at(sim.lots[key].zone_pt) == ZoneMap.Zone.RESIDENTIAL:
+				sim.buildings[key] = BuildingTypes.make(sim, key, {"zone": ZoneMap.Zone.RESIDENTIAL, "seed": hash(key), "built": sim.tick_count,
+					"changed": sim.tick_count, "occ": 2}, "house", 0)
+		var ph := int(sim.subdivisions.active[sid].phase)
+		sim.subdivisions.month(sim)
+		if int(sim.subdivisions.active[sid].phase) == ph:
+			break
+	if int(site.homes) >= Balance.SUBDIV_PARK_HOMES:
+		var a2: Dictionary = sim.subdivisions.active[sid]
+		_check(a2.has("park") and sim.parks.sites.has(int(a2.park)) and sim.economy.money == money,
+			"halfway through, the builder sets aside a park at its own cost")
 
 	# --- What the other leaders say.
 	var n := ProjectNeeds.check(sim, 20)
@@ -166,8 +185,10 @@ func _init() -> void:
 	# --- A save keeps it.
 	var copy := CitySim.new()
 	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
-	_check(copy.subdivisions.active.size() == 1 and int(copy.subdivisions.active[sid].phase) == 2, "a save keeps the subdivision")
+	_check(copy.subdivisions.active.size() == 1 and int(copy.subdivisions.active[sid].phase) == int(sim.subdivisions.active[sid].phase), "a save keeps the subdivision")
 	_check(JSON.stringify(copy.subdivisions.to_dict()) == JSON.stringify(sim.subdivisions.to_dict()), "the loaded copy matches")
+	_check(int(copy.subdivisions.active[sid].get("park", -1)) == int(sim.subdivisions.active[sid].get("park", -2)) and copy.parks.sites.size() == sim.parks.sites.size(),
+		"a save keeps the builder's park")
 	_finish()
 
 

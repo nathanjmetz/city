@@ -267,6 +267,8 @@ const SUBDIV_TRIES_PER_HOUR := 2
 ## in a market that absorbs a few sales a month: about a year a phase).
 const SUBDIV_NEXT_PHASE_FILL := 0.7
 const SUBDIV_PHASE_MIN_MONTHS := 9
+## Subdivisions this big set aside a pocket park (park land dedication).
+const SUBDIV_PARK_HOMES := 60
 ## What a yes means: about 2.5 people a household (US Census), about 0.6
 ## school-age children per new single-family home (pupil yield studies),
 ## about 9.4 car trips a day per house and about 1 at rush hour (ITE Trip

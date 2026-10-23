@@ -49,6 +49,10 @@ Every paved street is resurfaced about 25 game years (`STREET_LIFE_YEARS`) after
 - The Economy page shows STREETS COMING DUE: what was paid this past year, and a forecast in five-year bars.
 - It runs once a month: about 3 ms on a huge town, and about 22 ms the first month after loading, when every street is measured.
 
+## The builder's park
+
+A subdivision of 60 homes or more sets aside a pocket park halfway through, on the middle of that phase's cross street, at the builder's cost (Indiana subdivision rules ask for park land dedication or a fee in lieu). The town keeps it up after, and the park board grows it like any other park. Nothing new on the card.
+
 ## The city engineer (CityEngineer)
 
 The engineer takes a traffic count at four rush hours each game month (`ENGINEER_COUNT_HOURS`): every car on the roads, whether that road is moving under 40% of its speed limit (Highway Capacity Manual level of service E or F), and whether a car on a hub's own road has any business with that hub. Once a month the worst problem goes to the bell, one at a time, each with a ghost, an argument for why, and what the town pays:
