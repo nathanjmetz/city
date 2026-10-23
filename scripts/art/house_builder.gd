@@ -52,6 +52,7 @@ const CLAPBOARD_WHITE := Color("#f1efe8")
 var half := LOT_HALF
 var depth := 32.0
 var outline := PackedVector2Array()
+var _back_z := -INF  # the furthest back anything built so far reaches (for the back yard)
 var pad := 0.0
 var era := "recent"
 ## Set by the art gallery to draw one type.
@@ -160,6 +161,7 @@ func _house(to_curb: float, storeys := 0) -> Array:
 		_: info = _ranch(zf, gs, gw, siding, roof, shutters, shutter, door, brick_style, brick)
 	_yard(info, to_curb)
 	_yard_trees(info, to_curb)
+	_back_yard(info)
 	return [_commit_house(), _commit_flat(), trees]
 
 
@@ -765,6 +767,152 @@ func _yard_trees(h: Dictionary, to_curb: float) -> void:
 		trees.append([p, pick[0], pick[1], rng.randf_range(0.75, 1.15)])
 
 
+## The back yard out to the lot lines, so a block reads as yards meeting at
+## the back line: a fence on the side and rear lines (4 ft galvanised
+## chain-link on older streets, 6 ft dog-ear cedar or white vinyl privacy
+## on newer ones, some lots left open), and now and then a garden shed, a
+## vegetable bed, a metal A-frame swing set or a T-post clothesline.
+## Runs last, so its random draws move nothing else.
+func _back_yard(h: Dictionary) -> void:
+	if pad > 0.0:
+		return  # flag lots: the strip and pad make fencing guesswork
+	var pts := outline
+	if pts.size() < 3:
+		pts = PackedVector2Array([Vector2(-half, 0), Vector2(half, 0), Vector2(half, depth), Vector2(-half, depth)])
+	var z0: float = maxf(float(h.front_z) + 9.0, _back_z + 1.0)  # side fences start behind the house
+	if depth - z0 < 6.0:
+		return
+	var odds: Array = {
+		"prewar": [["none", 0.35], ["chain", 0.4], ["wood", 0.25]],
+		"postwar": [["none", 0.3], ["chain", 0.45], ["wood", 0.25]],
+	}.get(era, [["none", 0.35], ["wood", 0.45], ["vinyl", 0.15], ["chain", 0.05]])
+	var kind := "none"
+	var roll := rng.randf()
+	for o in odds:
+		roll -= o[1]
+		if roll <= 0.0:
+			kind = o[0]
+			break
+	if kind != "none":
+		var mid := Vector2.ZERO
+		for p in pts:
+			mid += p
+		mid /= pts.size()
+		var gate := z0
+		if h.has("keep_out"):
+			gate = maxf(gate, (h.keep_out as Rect2).end.y + 1.0)
+		for i in pts.size():
+			var a := pts[i]
+			var b := pts[(i + 1) % pts.size()]
+			# Only the part behind the house; the drive side opens behind the garage.
+			var start := gate if absf((a.x + b.x) * 0.5 - float(h.drive_x)) < half * 0.6 else z0
+			if maxf(a.y, b.y) <= start:
+				continue
+			if a.y < start:
+				a = a.lerp(b, (start - a.y) / (b.y - a.y))
+			elif b.y < start:
+				b = b.lerp(a, (start - b.y) / (a.y - b.y))
+			if a.distance_to(b) < 1.0:
+				continue
+			# 12 cm inside the line, so a neighbour's fence never shares its plane.
+			var along := (b - a).normalized()
+			var inward := Vector2(-along.y, along.x)
+			if inward.dot(mid - (a + b) * 0.5) < 0.0:
+				inward = -inward
+			_lot_fence(a + inward * 0.12, b + inward * 0.12, kind)
+	# One thing out back, clear of the house, garage and trees.
+	var spot := Vector3(rng.randf_range(-half + 3.0, half - 3.0), 0, rng.randf_range(z0 + 3.0, depth - 3.0))
+	var thing := rng.randf()
+	if not _in_lot(spot, 2.5):
+		return
+	if h.has("keep_out") and (h.keep_out as Rect2).grow(2.5).has_point(Vector2(spot.x, spot.z)):
+		return
+	for tr in trees:
+		if Vector2(tr[0].x, tr[0].z).distance_to(Vector2(spot.x, spot.z)) < 3.5:
+			return
+	if thing < 0.3:
+		_yard_shed(spot)
+	elif thing < 0.48:
+		_flat_rect("mulch", spot.x - 1.5, spot.x + 1.5, spot.z - 2.5, spot.z + 2.5, 0.05, Color("#5a4330"))
+		for r in 4:
+			for k in 6:
+				_box("paint", Vector3(0.35, 0.3, 0.35), Vector3(spot.x - 1.05 + r * 0.7, 0.2, spot.z - 2.0 + k * 0.8), SHRUB[(r + k) % SHRUB.size()])
+	elif thing < 0.62:
+		_swing_set(spot)
+	elif thing < 0.76 and era != "recent":
+		for s in [-1.0, 1.0]:
+			var post := spot + Vector3(0, 0, s * 3.0)
+			_box("metal", Vector3(0.06, 2.0, 0.06), post + Vector3(0, 1.0, 0), Color("#9a9c9e"))
+			_box("metal", Vector3(1.2, 0.05, 0.05), post + Vector3(0, 1.95, 0), Color("#9a9c9e"))
+		for k in 3:
+			_box("metal", Vector3(0.012, 0.012, 6.0), spot + Vector3(-0.5 + k * 0.5, 1.93, 0), Color("#d8d6d0"))
+
+
+## A fence along one lot line, `kind` chain, wood or vinyl.
+func _lot_fence(a: Vector2, b: Vector2, kind: String) -> void:
+	var p := Vector3(a.x, 0, a.y)
+	var q := Vector3(b.x, 0, b.y)
+	var len := p.distance_to(q)
+	var dir := (q - p) / len
+	var yaw := Basis(Vector3.UP, atan2(dir.x, dir.z))
+	if kind == "chain":
+		# 4 ft galvanised: line posts every 10 ft, a top rail, a tension wire.
+		var galv := Color("#a9acae")
+		var n := maxi(1, int(len / 3.0))
+		for k in n + 1:
+			_box("metal", Vector3(0.05, 1.22, 0.05), p + dir * (len * k / n) + Vector3(0, 0.61, 0), galv)
+		_box("metal", Vector3(0.04, 0.04, len), (p + q) * 0.5 + Vector3(0, 1.2, 0), galv, yaw)
+		_box("metal", Vector3(0.015, 0.015, len), (p + q) * 0.5 + Vector3(0, 0.08, 0), galv, yaw)
+		return
+	# 6 ft privacy: boards between 4x4 posts every 8 ft.
+	var board := Color("#f0eee8") if kind == "vinyl" else Color("#8f7a60")
+	_box("paint", Vector3(0.03, 1.83, len), (p + q) * 0.5 + Vector3(0, 0.95, 0), board, yaw)
+	var n := maxi(1, int(len / 2.44))
+	for k in n + 1:
+		_box("paint", Vector3(0.1, 1.95, 0.1), p + dir * (len * k / n) + Vector3(0, 0.975, 0), board.darkened(0.12))
+
+
+## An 8 x 10 ft garden shed: a gable roof of shingles, T1-11 siding, double doors.
+func _yard_shed(at: Vector3) -> void:
+	var col := Color(_pick(["#c8b89a", "#8a3a2a", "#9aa48c", "#d8d4c8", "#b8a98c"]))
+	var w := 2.44
+	var d := 3.05
+	var wall := 2.1
+	_box("siding", Vector3(w, wall, d), at + Vector3(0, wall * 0.5 + 0.1, 0), col)
+	_box("paint", Vector3(1.4, 1.8, 0.04), at + Vector3(0, 1.0, -d * 0.5 - 0.03), col.darkened(0.2))
+	var roof := Color(_pick(ROOF))
+	var y := wall + 0.1
+	var rise := 0.9
+	for s in [-1.0, 1.0]:
+		var eave := Vector3(at.x + s * (w * 0.5 + 0.15), y - 0.1, 0)
+		var ridge := Vector3(at.x, y + rise, 0)
+		_quad("roof", Vector3(eave.x, eave.y, at.z - d * 0.5 - 0.15), Vector3(ridge.x, ridge.y, at.z - d * 0.5 - 0.15),
+			Vector3(ridge.x, ridge.y, at.z + d * 0.5 + 0.15), Vector3(eave.x, eave.y, at.z + d * 0.5 + 0.15), roof, [],
+			Vector3(s * rise, w * 0.5, 0).normalized())
+	for s in [-1.0, 1.0]:
+		var z: float = at.z + s * d * 0.5
+		_tri("siding", Vector3(at.x - w * 0.5, y, z), Vector3(at.x + w * 0.5, y, z), Vector3(at.x, y + rise - 0.05, z), col, [],
+			Vector3(0, 0, s))
+
+
+## A metal A-frame swing set: a 3 m top bar 2.1 m up, two splayed legs at
+## each end, two swings on chains.
+func _swing_set(at: Vector3) -> void:
+	var col := Color(_pick(["#3f6a3a", "#6b4a2e", "#2f4a6a"]))
+	var top := 2.1
+	for s in [-1.0, 1.0]:
+		for k in [-1.0, 1.0]:
+			var foot := at + Vector3(s * 1.5, 0, k * 0.8)
+			var head := at + Vector3(s * 1.5, top, 0)
+			var mid := (foot + head) * 0.5
+			_box("metal", Vector3(0.06, foot.distance_to(head), 0.06), mid, col, Basis(Vector3.RIGHT, -k * atan2(0.8, top)))
+	_box("metal", Vector3(3.2, 0.07, 0.07), at + Vector3(0, top, 0), col)
+	for x in [-0.6, 0.6]:
+		for k in [-0.2, 0.2]:
+			_box("metal", Vector3(0.015, top - 0.45, 0.015), at + Vector3(x + k, (top + 0.45) * 0.5, 0), Color("#9a9c9e"))
+		_box("paint", Vector3(0.5, 0.04, 0.18), at + Vector3(x, 0.45, 0), Color("#1c1d1f"))
+
+
 ## The middle of a flag lot's drive strip, `z` metres along it.
 func _strip_x(z: float) -> float:
 	if outline.size() < 3:
@@ -1120,6 +1268,7 @@ func _tool(mat: String) -> SurfaceTool:
 
 func _box(mat: String, size: Vector3, center: Vector3, col: Color, basis := Basis.IDENTITY) -> void:
 	var h := size * 0.5
+	_back_z = maxf(_back_z, center.z + (h.z if basis == Basis.IDENTITY else h.length()))
 	var p := func(x: float, y: float, z: float) -> Vector3:
 		return center + basis * Vector3(x * h.x, y * h.y, z * h.z)
 	var faces := [
