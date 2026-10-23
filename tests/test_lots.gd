@@ -90,6 +90,27 @@ func _init() -> void:
 		if JSON.stringify(da[k]) != JSON.stringify(db.get(k)):
 			diff.append(k)
 	_check(diff.is_empty(), "a copy saved while catching up stays in sync %s" % str(diff))
+	# A zoning drag: the zones go in at once, the lots once, when it ends.
+	var drag := CitySim.new()
+	drag.apply({"type": "build_road", "start": [0, 0], "ctrl": [100, 0], "end": [200, 0]})
+	drag.apply({"type": "build_road", "start": [200, 0], "ctrl": [200, 100], "end": [200, 200]})
+	var ids: Array = drag.network.segments.keys()
+	drag.apply({"type": "zone_frontage", "seg": ids[0], "side": 1, "zone": ZoneMap.Zone.RESIDENTIAL, "hold": true})
+	drag.tick()
+	drag.apply({"type": "zone_frontage", "seg": ids[1], "side": -1, "zone": ZoneMap.Zone.RESIDENTIAL, "hold": true})
+	_check(drag.lots.is_empty() and drag._hold_until > 0, "no lots while the drag goes on")
+	var mid := CitySim.new()
+	mid.from_dict(JSON.parse_string(JSON.stringify(drag.to_dict(), "", false, true)))
+	drag.apply({"type": "zone_done"})
+	mid.apply({"type": "zone_done"})
+	_check(not drag.lots.is_empty() and drag._hold_until == 0, "the lots come when the drag ends (%d)" % drag.lots.size())
+	_check(mid.lots.keys() == drag.lots.keys(), "a copy saved mid-drag cuts the same lots")
+	var lone := CitySim.new()
+	lone.apply({"type": "build_road", "start": [0, 0], "ctrl": [100, 0], "end": [200, 0]})
+	lone.apply({"type": "zone_frontage", "seg": lone.network.segments.keys()[0], "side": 1, "zone": ZoneMap.Zone.RESIDENTIAL, "hold": true})
+	for i in CitySim.HOLD_TICKS:
+		lone.tick()
+	_check(not lone.lots.is_empty() and lone._hold_until == 0, "a drag that never ends still gets its lots")
 	# Merge two neighbours, then split them again (business agency).
 	var face := LotPlanner.block_face(sim, built)
 	_check(face.size() >= 2, "block face lists the street's lots (%d)" % face.size())

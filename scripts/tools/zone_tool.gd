@@ -24,6 +24,7 @@ var _painting := false
 var _last_paint := Vector3.INF
 var _hover := []      # [seg, side] under the mouse, or []
 var _done := {}       # street sides zoned in this drag
+var _held := false    # this drag sent zoning whose lots wait for its end
 var _ring := MeshInstance3D.new()
 var _ring_mat := StandardMaterial3D.new()
 
@@ -46,7 +47,7 @@ func _ready() -> void:
 
 func set_zone(z: int) -> void:
 	zone = z
-	_painting = false
+	_stop()
 	zone_view.show_all = zone != OFF
 	zone_view.preview_zone = maxi(zone, 0)
 	if zone == OFF:
@@ -73,6 +74,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if zone == OFF:
 		return
 	if event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+		if not event.pressed:
+			_stop()
 		_painting = event.pressed and not (event as InputEventMouseButton).alt_pressed
 		_last_paint = Vector3.INF
 		_done.clear()
@@ -92,7 +95,7 @@ func _process(_delta: float) -> void:
 		return
 	_ring.position = Vector3(hit.x, Terrain.ground_y(hit.x, hit.z) + 0.4, hit.z)
 	if _painting and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-		_painting = false
+		_stop()
 	if _painting:
 		_paint()
 
@@ -125,8 +128,8 @@ func _paint() -> void:
 		if _hover.is_empty() or _done.has(str(_hover)):
 			return
 		_done[str(_hover)] = true
-		sim.apply({"type": "zone_frontage", "seg": _hover[0], "side": _hover[1], "zone": zone,
-			"both": Input.is_key_pressed(KEY_SHIFT)})
+		_held = sim.apply({"type": "zone_frontage", "seg": _hover[0], "side": _hover[1], "zone": zone,
+			"both": Input.is_key_pressed(KEY_SHIFT), "hold": true}) or _held
 		return
 	var hit = cam.mouse_ground_point()
 	if hit == null:
@@ -135,7 +138,16 @@ func _paint() -> void:
 	if _last_paint != Vector3.INF and p.distance_to(_last_paint) < radius * 0.25:
 		return
 	_last_paint = p
-	sim.apply({"type": "paint_zone", "center": [p.x, p.z], "radius": radius, "zone": zone})
+	_held = sim.apply({"type": "paint_zone", "center": [p.x, p.z], "radius": radius, "zone": zone,
+		"hold": true}) or _held
+
+
+## Ends a drag: its streets' lots are cut now, once (see CitySim "hold").
+func _stop() -> void:
+	_painting = false
+	if _held:
+		_held = false
+		sim.apply({"type": "zone_done"})
 
 
 func _resize(f: float) -> void:

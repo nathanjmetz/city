@@ -211,6 +211,10 @@ const REPLAN_TICKS := 15
 const REPLAN_ROAD_TICKS := 50
 const REPLAN_WARM := 32
 var _replan_at := 0
+## A zoning drag still going (its commands carry "hold"): the lots are cut
+## once, when it ends ("zone_done") or HOLD_TICKS after its last street.
+var _hold_until := 0
+const HOLD_TICKS := 50
 ## What the last lots_changed changed: the keys of lots added, removed or
 ## reshaped. lots_delta_full is true when every lot should be treated as new
 ## (a load, or a full replan), though the keys are still listed.
@@ -223,6 +227,12 @@ var _lots_light := false
 ## Roads changed since the world last made way for them (see RoadWins).
 var _roads_moved := false
 var _usable_cache := {}  # field cell -> bool, cleared when roads or lots change
+## Whether each planned lot was blocked: key -> [the lot Dictionary, bool].
+## A zoning-only replan changes nothing that blocks lots, so a lot the
+## planner hands back unchanged keeps its answer.
+var _blocked_by := {}
+## Land checks for lots by position (the terrain never changes).
+var _land_ok := {}
 var _zone_check := []  # what _refresh last checked buildings against
 var _zone_check_lots := {}
 
@@ -671,6 +681,10 @@ func apply_now(cmd: Dictionary) -> bool:
 			ok = buses.apply(self, cmd)
 			if ok:
 				_adopt_levers("bus_depot:%d" % int(cmd.id))
+		"zone_done":
+			# The zoning drag ended: its lots are cut now.
+			_hold_until = 0
+			ok = true
 		"zone_frontage":
 			# Zones a whole block face: one side of a street from junction to
 			# junction ("both" does the other side too, "single" only this
@@ -832,7 +846,10 @@ func apply_now(cmd: Dictionary) -> bool:
 		var roads := _roads_moved
 		if roads:
 			_road_wins()
-		if not _lots_dirty and _lots_light and lots.size() >= replan_lots:
+		if bool(cmd.get("hold", false)) and not _lots_dirty:
+			# Mid-drag: the zones show now, the lots when the drag ends.
+			_hold_until = tick_count + HOLD_TICKS
+		elif not _lots_dirty and _lots_light and lots.size() >= replan_lots:
 			# A big town: the road or zoning is in at once, and its lots
 			# catch up over a few ticks, so no single tick does it all (the
 			# same ticks on every copy).
@@ -991,7 +1008,7 @@ func tick() -> void:
 	var t0 := Perf.now()
 	tick_count += 1
 	var t := Perf.now()
-	if _replan_at > tick_count:
+	if _replan_at > tick_count or _hold_until > tick_count:
 		planner.warm(network, zones, _parcel_lots, _lot_blocked, REPLAN_WARM)
 		Perf.add("sim.lots.warm", t)
 	_refresh()
@@ -2515,7 +2532,12 @@ func _lot_blocked(lot: Dictionary) -> bool:
 				or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p) or big.covers(p):
 			return true
 	# No lots in the water or on ground too steep to build on.
-	return not land_ok(lot.pos, LotPlanner.FRONTAGE * 0.5)
+	var at: Vector3 = lot.pos
+	if not _land_ok.has(at):
+		if _land_ok.size() > 200_000:
+			_land_ok.clear()
+		_land_ok[at] = land_ok(at, LotPlanner.FRONTAGE * 0.5)
+	return not _land_ok[at]
 
 
 ## Notes which lots changed (for lots_changed listeners), when only these did.
@@ -2550,6 +2572,10 @@ func _parcel_lots() -> Dictionary:
 
 
 func _refresh() -> void:
+	if _hold_until > 0:
+		if tick_count < _hold_until and not _lots_dirty:
+			return
+		_hold_until = 0
 	if _replan_at > 0:
 		# A big town's road or zoning edit: the lots catch up when it's due.
 		if tick_count < _replan_at:
@@ -2591,10 +2617,15 @@ func _refresh() -> void:
 		lots = frozen.duplicate()
 		if not lost.is_empty():
 			parcels_lost.emit(lost)
+		var blocked := {}
 		for lot in planner.plan(network, zones, frozen):
 			# No lots under a service building.
-			if not _lot_blocked(lot):
+			var had: Array = _blocked_by.get(lot.key, [])
+			var no: bool = had[1] if not full and not had.is_empty() and is_same(had[0], lot) else _lot_blocked(lot)
+			blocked[lot.key] = [lot, no]
+			if not no:
 				lots[lot.key] = lot
+		_blocked_by = blocked
 		_usable_cache.clear()
 		_lots_delta(was, full)
 		Perf.add("sim.lots.plan", tr)
@@ -3227,15 +3258,34 @@ func _parcels_to_save() -> Dictionary:
 ## town's lots without planning it all again (see LotPlanner.cuts_to_save).
 func _plan_to_save() -> Dictionary:
 	var out := planner.cuts_to_save(zones)
-	var empty := []
+	# The empty lots are the saved cuts' lots, less any blocked ones (just
+	# their keys are saved), unless the town hasn't caught up with them.
+	var cut := {}
+	for lot in planner.cut_lots(network, buildings):
+		cut[lot.key] = lot
 	var keys := lots.keys()
 	keys.sort()
+	var same := true
 	for key in keys:
-		if not buildings.has(key):
-			empty.append(LotPlanner.lot_to_save(lots[key]))
-	out.empty = empty
+		if not buildings.has(key) and cut.get(key, {}) != lots[key]:
+			same = false
+			break
+	if same:
+		var skip := []
+		for key in cut:
+			if not lots.has(key):
+				skip.append(key)
+		skip.sort()
+		out.skip = skip
+	else:
+		var empty := []
+		for key in keys:
+			if not buildings.has(key):
+				empty.append(LotPlanner.lot_to_save(lots[key]))
+		out.empty = empty
 	out.flags = [_lots_dirty, _lots_light, _roads_moved]
 	out.replan_at = _replan_at
+	out.hold_until = _hold_until
 	return out
 
 
@@ -3408,6 +3458,13 @@ func from_dict(d: Dictionary) -> void:
 		# The town's own lots and planning state, as saved: no need to plan
 		# the whole town again, and a copy re-plans just when the town does.
 		planner.restore(network, zones, d.plan)
+		if d.plan.has("skip"):
+			var skip := {}
+			for key in d.plan.skip:
+				skip[key] = true
+			for lot in planner.cut_lots(network, buildings):
+				if not skip.has(lot.key):
+					lots[lot.key] = lot
 		for e in d.plan.get("empty", []):
 			var lot := LotPlanner.lot_from_save(e)
 			lots[lot.key] = lot
@@ -3420,6 +3477,7 @@ func from_dict(d: Dictionary) -> void:
 		_lots_light = bool(flags[1])
 		_roads_moved = bool(flags[2])
 		_replan_at = int(d.plan.get("replan_at", 0))
+		_hold_until = int(d.plan.get("hold_until", 0))
 		_usable_cache.clear()
 		lots_delta = lots.keys()
 		lots_delta_full = true
