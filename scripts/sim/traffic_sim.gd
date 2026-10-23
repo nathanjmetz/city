@@ -117,6 +117,8 @@ var _turns := {}  # way -> [ways it may turn into]
 var _arrows := {} # way -> {next way: [lanes that may take it]}
 var _kind := {}   # Vector2i(way, next) -> Turn
 var _tcost := {}  # way -> PackedFloat64Array, _turn_cost for each of _turns[way]
+var _wend := {}   # way -> where it ends (x, z), for the route planner's estimate
+var _vtop := 1.0  # the fastest limit on any way, m/s
 var _wcost := {}  # way -> _way_cost now (_refresh_wcost)
 var _cfor := {}   # Vector3i(way, lane, next) -> _conn_for's answer
 var _conns := {}  # Vector4i(way, lane, next, lane) -> junction path
@@ -871,9 +873,14 @@ func _turn_cost(wi: int, wo: int) -> float:
 ## every way so route planning doesn't call a function per road).
 func _refresh_wcost() -> void:
 	_wcost.clear()
+	_wend.clear()
+	_vtop = 1.0
 	for wid in ways:
 		var w: Dictionary = ways[wid]
 		_wcost[wid] = w.len / (w.vmax * maxf(_speed.get(wid, 1.0), 0.15))
+		var e: Vector3 = w.pts[w.pts.size() - 1]
+		_wend[wid] = Vector2(e.x, e.z)
+		_vtop = maxf(_vtop, w.vmax)
 
 
 func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
@@ -890,8 +897,18 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 				best_route = [s[0]]
 	var dist := {}
 	var prev := {}
-	# A binary heap of (cost, way) in two packed arrays, kept inline: ties
-	# go to the lower way id, so every copy picks the same route.
+	# A*: the estimate is the straight line from the end of a way to the
+	# nearest target at the fastest limit in town, which no real route
+	# beats, so the route found is still the fastest.
+	var goals := PackedVector2Array()
+	for t in targets:
+		if ways.has(t):
+			var p0: Vector3 = ways[t].pts[0]
+			goals.append(Vector2(p0.x, p0.z))
+	var inv_v := 1.0 / _vtop
+	var hcache := {}
+	# A binary heap of (cost + estimate, way) in two packed arrays, kept
+	# inline: ties go to the lower way id, so every copy picks the same route.
 	var hg := PackedFloat64Array()
 	var hu := PackedInt32Array()
 	for s in starts:
@@ -899,18 +916,19 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 		var g: float = maxf(w.len - s[1], 0.0) / w.vmax + (s[2] if s.size() > 2 else 0.0)
 		if g < dist.get(s[0], INF):
 			dist[s[0]] = g
-			_hpush(hg, hu, g, s[0])
+			_hpush(hg, hu, g + _h_est(s[0], goals, inv_v, hcache), s[0])
 	var end := -1
 	var end_prev := -1
 	var first := lane >= 0
 	var none := PackedFloat64Array()
 	while not hg.is_empty():
-		var g: float = hg[0]
+		var f: float = hg[0]
 		var u: int = hu[0]
 		_hpop(hg, hu)
-		if g > dist[u] + 0.0001:
+		var g: float = dist[u]
+		if f > g + hcache[u] + 0.0001:
 			continue
-		if g >= best:
+		if f >= best:
 			break
 		var outs: Array = _turns.get(u, [])
 		var tc: PackedFloat64Array = _tcost.get(u, none)
@@ -932,7 +950,7 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 			if ng < dist.get(nx, INF):
 				dist[nx] = ng
 				prev[nx] = u
-				_hpush(hg, hu, ng, nx)
+				_hpush(hg, hu, ng + _h_est(nx, goals, inv_v, hcache), nx)
 		first = false
 	if best_route.is_empty() and end != -1:
 		var route := [end]
@@ -946,6 +964,19 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 			guard += 1
 		return route
 	return best_route
+
+
+## The planner's estimate of seconds left from the end of way `u`.
+func _h_est(u: int, goals: PackedVector2Array, inv_v: float, hcache: Dictionary) -> float:
+	if hcache.has(u):
+		return hcache[u]
+	var e: Vector2 = _wend.get(u, Vector2.ZERO)
+	var best := INF
+	for q in goals:
+		best = minf(best, e.distance_to(q))
+	var h := 0.0 if best == INF else best * inv_v
+	hcache[u] = h
+	return h
 
 
 static func _hpush(hg: PackedFloat64Array, hu: PackedInt32Array, g: float, u: int) -> void:
