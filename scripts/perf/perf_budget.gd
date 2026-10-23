@@ -54,6 +54,7 @@ const FRAME := {
 	"frame.roads":     {"avg": 0.3, "max": 30.0, "what": "Road meshes (rebuilt after an edit)"},
 	"frame.audio":     {"avg": 0.5, "max": 2.0, "what": "Placing sounds on real objects"},
 	"frame.ui":        {"avg": 0.5, "max": 3.0, "what": "HUD and panels"},
+	"frame.quality":   {"avg": 0.05, "max": 0.5, "what": "Desktop quality governor"},
 }
 
 ## Whole-frame limits for the drawing side.

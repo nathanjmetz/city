@@ -230,9 +230,9 @@ func _chunk(g: String, sp: int, far: bool, centre: Vector3) -> MultiMeshInstance
 	# fade as hysteresis, so a camera hovering near NEAR could leave both
 	# hidden and a whole chunk of woods would vanish under it.
 	if far:
-		mmi.visibility_range_begin = NEAR - OVERLAP
+		mmi.visibility_range_begin = NEAR * GraphicsQuality.detail - OVERLAP
 	else:
-		mmi.visibility_range_end = NEAR + OVERLAP
+		mmi.visibility_range_end = NEAR * GraphicsQuality.detail + OVERLAP
 	add_child(mmi)
 	_multis[key] = mmi
 	return mmi

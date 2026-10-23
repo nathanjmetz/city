@@ -74,6 +74,7 @@ func _ready() -> void:
 	col.add_child(spacer)
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(_status)
+	col.add_child(_app_line())
 	col.add_child(ShellStyle.text("Build " + Hud._build_name(), 11, 500, Brand.INK_FAINT))
 
 	if not Session.pending_invite.is_empty():
@@ -375,6 +376,36 @@ func _back() -> Button:
 
 
 ## An uppercase label above a field, like the kit's "label" style.
+## The desktop app: a link to it from the browser, and in the app what the
+## updater is doing (or a link to a new app when the engine changed).
+func _app_line() -> Control:
+	var row := VBoxContainer.new()
+	row.add_theme_constant_override("separation", 2)
+	var link := LinkButton.new()
+	link.text = "Get the free Mac and Windows app"
+	link.add_theme_font_override("font", Brand.ui(600))
+	link.add_theme_font_size_override("font_size", 13)
+	link.add_theme_color_override("font_color", Brand.INK_MUTED)
+	link.focus_mode = Control.FOCUS_NONE
+	link.pressed.connect(func(): OS.shell_open(Updater.DOWNLOAD_PAGE))
+	link.visible = OS.has_feature("web")
+	row.add_child(link)
+	var note := ShellStyle.text(Updater.last_status, 12, 500, Brand.INK_MUTED)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.visible = note.text != ""
+	row.add_child(note)
+	var show := func(text: String):
+		note.text = text
+		note.visible = text != ""
+		if Updater.new_app:
+			link.text = "Download the new version"
+			link.visible = true
+	Updater.status.connect(show)
+	if Updater.new_app:
+		show.call(Updater.last_status)
+	return row
+
+
 func _label(s: String) -> Label:
 	var l := ShellStyle.text(s, 11, 600, Brand.INK_MUTED)
 	return l

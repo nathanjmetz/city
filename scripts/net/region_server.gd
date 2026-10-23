@@ -13,6 +13,12 @@ extends Node
 signal log_line(text: String)
 
 const PROTOCOL := 3
+## The oldest version this server still lets in, and (sent in the hello)
+## the oldest server a client can talk to. Desktop apps can trail the live
+## build by one launch, so small gaps still play together: raise this only
+## when an older game would really break. Unknown message types are ignored
+## on both sides.
+const MIN_PROTOCOL := 3
 ## How often the region is written to disk, in seconds (a server that's
 ## switched off loses at most this much).
 const SAVE_EVERY := 10.0
@@ -218,7 +224,8 @@ func _handle(from: int, msg: Dictionary) -> void:
 
 
 func _hello(from: int, msg: Dictionary) -> void:
-	if int(msg.get("v", 0)) != PROTOCOL:
+	var v := int(msg.get("v", 0))
+	if v < MIN_PROTOCOL or PROTOCOL < int(msg.get("min", v)):
 		_reject(from, "This region runs a different version of the game. Refresh to update.")
 		return
 	if str(msg.get("code", "")).to_upper().replace("-", "").strip_edges() != invite_code:

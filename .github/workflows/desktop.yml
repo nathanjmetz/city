@@ -1,0 +1,103 @@
+# Builds the Mac and Windows apps on every push to main and puts them on the
+# "desktop" release: https://github.com/nathanjmetz/city/releases/tag/desktop
+# The download page (https://nathanjmetz.github.io/city/download/) links to
+# the apps there. The apps read latest.json from the same release each launch
+# and download only the game data pack (.pck) when it's newer (see
+# scripts/shell/updater.gd), so most updates are a few MB.
+name: Desktop apps
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop
+  # Only the newest build matters: a newer push replaces an older run.
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: 4.7.2
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/godot-cache
+          key: godot-${{ env.GODOT_VERSION }}-desktop
+
+      - name: Download Godot and desktop export templates
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/godot-cache/templates && cd ~/godot-cache
+          base=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          curl -fsSL -o godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip && rm godot.zip
+          mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 godot
+          curl -fsSL -o templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -qj templates.tpz 'templates/macos.zip' 'templates/windows_release_x86_64.exe' 'templates/version.txt' -d templates
+          rm templates.tpz
+
+      - name: Install templates
+        run: |
+          dest=~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          mkdir -p "$dest" && cp ~/godot-cache/templates/* "$dest/"
+
+      - name: Stamp the build
+        run: |
+          # The same stamp as the web build, plus the shader globals an
+          # update can add at runtime (see tools/stamp_build.py).
+          mkdir -p out
+          python3 tools/stamp_build.py --globals out/meta.json
+
+      - name: Export the apps and their game data
+        run: |
+          ~/godot-cache/godot --headless --import >/dev/null 2>&1 || true
+          mkdir -p build/mac build/windows out
+          ~/godot-cache/godot --headless --export-release "macOS" build/mac/Neighbors.zip
+          ~/godot-cache/godot --headless --export-release "Windows" build/windows/Neighbors.exe
+          ~/godot-cache/godot --headless --export-pack "macOS" out/game-macos.pck
+          ~/godot-cache/godot --headless --export-pack "Windows" out/game-windows.pck
+          test -s build/mac/Neighbors.zip && test -s build/windows/Neighbors.exe
+          test -s out/game-macos.pck && test -s out/game-windows.pck
+          cp build/mac/Neighbors.zip out/Neighbors-mac.zip
+          cp build/windows/Neighbors.exe out/Neighbors-windows.exe
+          ls -la out
+
+      - name: Write latest.json
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          url = "https://github.com/%s/releases/download/desktop" % os.environ["GITHUB_REPOSITORY"]
+          m = json.load(open("out/meta.json"))
+          m["engine"] = os.environ["GODOT_VERSION"]
+          m["packs"] = {}
+          for p in ["macos", "windows"]:
+              data = open("out/game-%s.pck" % p, "rb").read()
+              m["packs"][p] = {"url": "%s/game-%s.pck" % (url, p), "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
+          json.dump(m, open("out/latest.json", "w"), indent=2)
+          print(json.dumps(m, indent=2))
+          PY
+
+      - name: Publish to the desktop release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view desktop >/dev/null 2>&1; then
+            gh release create desktop --title "Neighbors for Mac and Windows" --latest \
+              --notes "Free downloads: https://nathanjmetz.github.io/city/download/ . The apps update themselves."
+          fi
+          # Apps and packs first, latest.json last, so it never points at a
+          # pack that isn't there yet.
+          gh release upload desktop out/Neighbors-mac.zip out/Neighbors-windows.exe \
+            out/game-macos.pck out/game-windows.pck --clobber
+          gh release upload desktop out/latest.json --clobber
