@@ -159,7 +159,7 @@ static func _speed_fixes(ev: Dictionary, fixes: Array) -> void:
 		if med > budget:
 			_fix(fixes, 60 + 10 * med / budget + 3 * _who(g), "Slow loading screen \"%s\": %.1f s" % [what, med],
 				"Median %.1f s over %d loads (budget %.0f s, slowest %.1f s)." % [med, g.size(), budget,
-				g.map(func(l): return float(l.s)).max()], PERF_OWNER, "speed", _who(g))
+				g.map(func(l): return float(l.s)).max()] + _load_split(g), PERF_OWNER, "speed", _who(g))
 	var boots: Array = ev.get("boot", []).filter(func(b): return int(b.get("page_ms", 0)) > 0)
 	if not boots.is_empty():
 		var med := median(boots.map(func(b): return b.page_ms / 1000.0))
@@ -369,6 +369,37 @@ static func to_markdown(r: Dictionary) -> String:
 		for t in s.top_features:
 			md += "- %s: %d\n" % [t[0], t[1]]
 	return md
+
+
+## Where slow loads spent their time: median seconds per loading-screen
+## status, and for region joins the link, the welcome, the unpack and the
+## retries, so the tunnel, retries and drawing read apart.
+static func _load_split(g: Array) -> String:
+	var per := {}
+	for l in g:
+		var steps: Dictionary = l.get("steps", {})
+		for k in steps:
+			if not per.has(k):
+				per[k] = []
+			per[k].append(float(steps[k]))
+	var out := ""
+	if not per.is_empty():
+		var keys := per.keys()
+		keys.sort_custom(func(a, b): return median(per[a]) > median(per[b]))
+		var parts := PackedStringArray()
+		for k in keys:
+			parts.append("%s %.1f s" % [k, median(per[k])])
+		out += " By step (median): %s." % ", ".join(parts)
+	var nets: Array = g.filter(func(l): return l.get("net", {}).has("welcome"))
+	if not nets.is_empty():
+		var link := median(nets.map(func(l): return float(l.net.get("connected", 0.0))))
+		var welcome := median(nets.map(func(l): return float(l.net.welcome) - float(l.net.get("connected", 0.0))))
+		var unpack := median(nets.map(func(l): return float(l.net.get("unpack", 0.0))))
+		var drawing := median(nets.map(func(l): return float(l.s) - float(l.net.welcome) - float(l.net.get("unpack", 0.0))))
+		var retried := nets.filter(func(l): return int(l.net.get("tries", 1)) > 1).size()
+		out += " Region joins (median of %d): link open %.1f s, welcome %.1f s, unpack %.1f s, drawing after %.1f s; %d of them needed a retry." \
+			% [nets.size(), link, welcome, unpack, maxf(drawing, 0.0), retried]
+	return out
 
 
 static func median(xs: Array) -> float:
