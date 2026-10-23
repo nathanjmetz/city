@@ -55,8 +55,8 @@ const ON_LINE := 4.0
 ## town plat is about 400 x 300 ft; Portland's are 200 ft blocks on 60 ft
 ## streets (260 ft).
 const PRESETS := [
-	{"name": "Section", "block": 1609.0, "across": 1609.0, "about": "Farm section: 1 mile square (PLSS)"},
-	{"name": "Half mile", "block": 805.0, "across": 805.0, "about": "Half-mile grid: quarter sections"},
+	{"name": "Section", "block": 1608.0, "across": 1608.0, "about": "Farm section: 1 mile square (PLSS)"},
+	{"name": "Half mile", "block": 804.0, "across": 804.0, "about": "Half-mile grid: quarter sections"},
 	{"name": "Quarter mile", "block": 402.0, "across": 402.0, "about": "Quarter-mile grid: arterials and big farm lots"},
 	{"name": "Manhattan", "block": 274.0, "across": 80.0, "about": "Manhattan: 900 x 264 ft"},
 	{"name": "Chicago", "block": 201.0, "across": 101.0, "about": "Chicago: 1/8 x 1/16 mile (660 x 330 ft)"},
