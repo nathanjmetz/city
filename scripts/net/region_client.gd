@@ -21,6 +21,9 @@ signal waiting(message: String)
 signal requests_changed
 ## The server has stored a telemetry batch (by its id), so it can be dropped here.
 signal telemetry_acked(id: String)
+## A neighbor's town (or the whole region, id "") arrived and was loaded:
+## its packed size and the main-thread time to unpack and to load it.
+signal town_loaded(id: String, bytes: int, unpack_ms: float, load_ms: float)
 ## Regional projects or service agreements changed (region.ledger).
 signal ledger_changed
 
@@ -356,21 +359,27 @@ func _handle(msg: Dictionary) -> void:
 				reason = "This page and the region's computer are on different versions of the game. Refresh once; if this keeps showing, the host's computer needs updating."
 			failed.emit(reason)
 		"region":
+			var t0 := Time.get_ticks_usec()
 			var d = RegionServer.unpack(str(msg.get("z", "")))
+			var t1 := Time.get_ticks_usec()
 			if typeof(d) == TYPE_DICTIONARY:
 				var old_ids := region.cities.keys()
 				_replace_region(d)
 				for id in region.cities:
 					if not id in old_ids:
 						city_added.emit(id)
+				town_loaded.emit("", str(msg.get("z", "")).length(), (t1 - t0) / 1000.0, (Time.get_ticks_usec() - t1) / 1000.0)
 		"city":
 			# A neighbor's town, fresh from their computer.
 			var id := str(msg.get("id", ""))
+			var t0 := Time.get_ticks_usec()
 			var d = RegionServer.unpack(str(msg.get("z", "")))
+			var t1 := Time.get_ticks_usec()
 			if id != my_city and region.cities.has(id) and typeof(d) == TYPE_DICTIONARY:
 				region.update_city(id, d)
 				if msg.get("land") is Array:
 					region.take_land(id, msg.land)
+				town_loaded.emit(id, str(msg.get("z", "")).length(), (t1 - t0) / 1000.0, (Time.get_ticks_usec() - t1) / 1000.0)
 		"apply":
 			# Roads the region built in your town (a new neighbor's county road).
 			for cmd in msg.get("cmds", []):
