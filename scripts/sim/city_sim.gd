@@ -741,11 +741,17 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			var sides := [int(cmd.side)]
 			if bool(cmd.get("both", false)):
 				sides.append(-int(cmd.side))
+			# "span": [from, to] metres along the street, just that stretch
+			# (a drag over part of a block face).
+			var span: Array = cmd.get("span", [])
 			for side in sides:
-				var parts := [[int(cmd.seg), side]] if bool(cmd.get("single", false)) \
+				var parts := [[int(cmd.seg), side]] if bool(cmd.get("single", false)) or not span.is_empty() \
 					else frontage_chain(int(cmd.seg), side)
 				for part in parts:
-					_paint_frontage(part[0], part[1], int(cmd.zone))
+					if span.size() == 2:
+						_paint_frontage(part[0], part[1], int(cmd.zone), float(span[0]), float(span[1]))
+					else:
+						_paint_frontage(part[0], part[1], int(cmd.zone))
 			_clear_reserved_zones()
 			_usable_cache.clear()
 			_lots_light = true
@@ -2758,13 +2764,15 @@ func zone_new_streets(segs: Array, zone: int) -> void:
 	zones_changed.emit()
 
 
-func _paint_frontage(seg: int, side: int, zone: int) -> void:
+func _paint_frontage(seg: int, side: int, zone: int, from := -INF, to := INF) -> void:
 	var s := planner.side_survey(network, seg, side)
 	if s.is_empty():
 		return
 	# A strip from the sidewalk back about 17 m, so the zone stays when the
 	# street is widened later (a Street to a Boulevard moves lots 8.5 m).
 	for r in s.rays:
+		if r[0] < from or r[0] > to:
+			continue
 		if r[3] >= 3.0:
 			var p: Vector2 = (r[1] as Vector2) + (r[2] as Vector2) * LotPlanner.ZONE_PROBE
 			zones.paint(Vector3(p.x, 0.0, p.y), 4.5, zone)

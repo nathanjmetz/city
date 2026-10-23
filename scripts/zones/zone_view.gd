@@ -13,7 +13,8 @@ var show_all := false:
 		show_all = v
 		_dirty = true
 
-## Street sides to highlight: [[seg, side], ...] and the zone colour.
+## Street sides to highlight: [[seg, side], ...] (or [seg, side, from, to]
+## for a stretch of one) and the zone colour.
 var preview: Array = []:
 	set(v):
 		preview = v
@@ -99,6 +100,8 @@ func _rebuild() -> void:
 			var a: Array = rays[i]
 			var b: Array = rays[i + 1]
 			if a[3] < 0.0 or b[3] < 0.0:
+				continue
+			if part.size() == 4 and (a[0] < part[2] - 0.01 or b[0] > part[3] + 0.01):
 				continue
 			var da := minf(a[3], 8.0)
 			var db := minf(b[3], 8.0)
