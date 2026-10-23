@@ -17,6 +17,8 @@ log trailer, end dump, USPS trailer or pot-belly livestock trailer.
 Utility: bucket truck (Altec AT40G) for phone and power line crews.
 Camping: Class C RV, Class A motorhome and a pickup with a slide-in camper,
 used by out-of-town visitors (purpose "visitor").
+Farm country: Amish black top buggy at a trot (about 10 mph); Daviess County,
+next to Petersburg, has one of Indiana's largest Amish settlements.
 Services: school bus, city bus, garbage truck, fire engine, police
 interceptor, ambulance. Farm: row-crop tractor, combine.
 
