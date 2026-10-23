@@ -30,6 +30,12 @@ const FAR := 3200.0
 
 var sim: CitySim
 var terrain: TerrainView
+## The Rail view (Views, top left): every line coloured by what it's doing,
+## with what it carries, and the trains with their loads.
+var show_lines := false:
+	set(v):
+		show_lines = v
+		_overlay_sig = ""
 
 var _track := MeshInstance3D.new()
 var _ties := MultiMeshInstance3D.new()
@@ -38,6 +44,9 @@ var _stakes := MeshInstance3D.new()
 var _gates := MeshInstance3D.new()
 var _lights := MeshInstance3D.new()
 var _cars := {}     # stock kind -> MultiMeshInstance3D
+var _overlay := MeshInstance3D.new()
+var _labels := []   # Label3D pool for the Rail view
+var _overlay_sig := ""
 var _sig := ""
 var _gate_sig := ""
 var _wait := 0.0
@@ -82,6 +91,18 @@ func _ready() -> void:
 	_lights.material_override = glow
 	_lights.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_lights)
+	var line_mat := StandardMaterial3D.new()
+	line_mat.vertex_color_use_as_albedo = true
+	line_mat.vertex_color_is_srgb = true
+	line_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	line_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	line_mat.no_depth_test = true
+	line_mat.disable_fog = true
+	line_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_overlay.material_override = line_mat
+	_overlay.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_overlay.visible = false
+	add_child(_overlay)
 	var car_mat := StandardMaterial3D.new()
 	car_mat.vertex_color_use_as_albedo = true
 	car_mat.vertex_color_is_srgb = true
@@ -115,6 +136,7 @@ func _process(delta: float) -> void:
 				terrain.regrade()
 	_draw_gates()
 	_draw_trains()
+	_draw_overlay()
 
 
 ## Changes whenever something drawn would: track laid, lines, the tree.
@@ -588,6 +610,101 @@ func _draw_trains() -> void:
 		for i in list.size():
 			mm.set_instance_transform(i, list[i])
 		mm.visible_instance_count = list.size()
+
+
+# --- The Rail view -----------------------------------------------------------
+
+const LINE_COLORS := {"open": Color("#2a9d8f"), "building": Color("#f4a261"), "permit": Color("#9be3c6"),
+	"denied": Color("#9aa0a2"), "shelved": Color("#9aa0a2")}
+
+
+func _draw_overlay() -> void:
+	if not show_lines:
+		_overlay.visible = false
+		for l in _labels:
+			l.visible = false
+		return
+	var labels := []
+	for lid in sim.rail.lines:
+		var l: Dictionary = sim.rail.lines[lid]
+		var route: Array = l.route
+		if route.size() < 2 or not l.state in LINE_COLORS:
+			continue
+		var mid: Vector3 = route[route.size() / 2]
+		var what := "Main line to the region" if l.kind == "main" else "Spur to the %s" % str(l.target.name).to_lower()
+		var line2: String = {"open": "open", "building": "crews laying track", "permit": "waiting on your permit",
+			"denied": "you said no", "shelved": "shelved"}[l.state]
+		if l.state == "open" and l.kind == "spur":
+			line2 = "%d cars waiting" % int(l.cars) if int(l.cars) > 0 else "open"
+		labels.append([Vector3(mid.x, height_at(mid) + 14.0, mid.z), "%s\n%s" % [what, line2]])
+	for tid in sim.rail.trains:
+		var t: Dictionary = sim.rail.trains[tid]
+		var poses := sim.rail.car_poses(tid)
+		if poses.is_empty():
+			continue
+		var p: Vector3 = poses[0][1]
+		var load: String = "%d riders" % int(t.riders) if t.kind == "passenger" else (
+			"%d cars of %s" % [int(t.cars), t.cargo] if str(t.cargo) != "" else "empty")
+		labels.append([Vector3(p.x, height_at(p) + 9.0, p.z), "%s to %s\n%s" % [
+			"Passenger" if t.kind == "passenger" else "Freight", str(t.to).to_lower() if str(t.to).begins_with("The") else t.to, load]])
+	while _labels.size() < labels.size():
+		var lb := Label3D.new()
+		lb.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		lb.no_depth_test = true
+		lb.fixed_size = true
+		lb.pixel_size = 0.0012
+		lb.font_size = 22
+		lb.outline_size = 6
+		lb.modulate = Color.WHITE
+		lb.outline_modulate = Color(0.1, 0.12, 0.14)
+		add_child(lb)
+		_labels.append(lb)
+	for i in _labels.size():
+		var lb: Label3D = _labels[i]
+		lb.visible = i < labels.size()
+		if lb.visible:
+			lb.position = labels[i][0]
+			lb.text = labels[i][1]
+	# The ribbons only change when the lines do.
+	var sig := _sig + str(sim.rail.lines.size())
+	for lid in sim.rail.lines:
+		sig += sim.rail.lines[lid].state
+	if sig == _overlay_sig:
+		return
+	_overlay_sig = sig
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var any := false
+	for lid in sim.rail.lines:
+		var l: Dictionary = sim.rail.lines[lid]
+		if not l.state in LINE_COLORS:
+			continue
+		var col: Color = LINE_COLORS[l.state]
+		var route: Array = l.route
+		for i in route.size() - 1:
+			if l.state in ["permit", "shelved", "denied"] and i % 2 == 1:
+				continue  # dashed: not built
+			var a: Vector3 = route[i]
+			var b: Vector3 = route[i + 1]
+			var d := Vector3(b.x - a.x, 0.0, b.z - a.z)
+			if d.length() < 0.01:
+				continue
+			var n := Vector3(-d.z, 0.0, d.x).normalized() * 3.0
+			var ya := Vector3(0, height_at(a) + 1.5, 0)
+			var yb := Vector3(0, height_at(b) + 1.5, 0)
+			_quad(st, Vector3(a.x, 0, a.z) - n + ya, Vector3(a.x, 0, a.z) + n + ya,
+				Vector3(b.x, 0, b.z) + n + yb, Vector3(b.x, 0, b.z) - n + yb, Color(col, 0.85))
+			any = true
+	for id in sim.rail.depots:
+		var poly := sim.rail.yard_poly(id)
+		var g := []
+		for p in poly:
+			g.append(Vector3(p.x, Terrain.base_y(p.x, p.y) + 1.5, p.y))
+		_quad(st, g[0], g[1], g[2], g[3], Color(LINE_COLORS.open, 0.35))
+		any = true
+	_overlay.visible = any
+	if any:
+		_overlay.mesh = st.commit()
 
 
 # --- Mesh helpers --------------------------------------------------------------

@@ -35,6 +35,7 @@ var move_tool: MoveTool
 var info_view: InfoView
 var service_view: ServiceView
 var bus_view: BusView
+var rail_view: RailView
 var select_tool: SelectTool
 var lot_alerts: LotAlerts
 var _info_panel := InfoPanel.new()
@@ -242,6 +243,7 @@ const VIEWS := [
 	["traffic", "flow", "Traffic", "How freely traffic moves"],
 	["bus", "bus", "Buses", "Bus routes and stops the depots planned, and how full the buses are"],
 	["network", "tower", "Cell and fiber", "Cell signal across the map, and the streets with fiber"],
+	["rail", "train", "Rail", "Rail lines, what they carry, and new track waiting on your permit"],
 ]
 
 
@@ -291,6 +293,8 @@ func _show_view(key: String) -> void:
 		service_view.show_kind = -1
 	if bus_view:
 		bus_view.show_routes = key == "bus"
+	if rail_view:
+		rail_view.show_lines = key == "rail"
 	if key == "traffic":
 		traffic_tool.set_mode(TrafficTool.Mode.VIEW)
 	elif traffic_tool.mode == TrafficTool.Mode.VIEW:

@@ -201,6 +201,22 @@ const INDUSTRY_MIN_RICHNESS := 0.25
 const INDUSTRY_STOCK_CAP := 12.0
 ## Companies decide to open or close a pad this often, in ticks (6 game hours).
 const INDUSTRY_DECIDE_EVERY := 360
+## How each kind spreads, after real operations (Brawn: everything against
+## its real version):
+## Oil: one producing well pad per spacing unit (Indiana's Illinois Basin
+## fields drill on about 10-acre spacing; pads end up 200-400 m apart and
+## offset, not on a grid), lease roads back to the tank battery.
+const OIL_SPACING_CELLS := 3  # pads at least this many 80 m cells apart
+## How far out a company's lease or timber reaches, in 80 m cells.
+const LEASE_REACH_CELLS := 12
+## Ore: one quarry that widens bench by bench beside its plant, never
+## separate holes (Indiana limestone quarries, Iron Range pits).
+## Forest: a few harvest units worked at a time inside the woods, each cut
+## for a couple of years and then left to regrow (Indiana DNR selective
+## harvests run on a 15-20 year cutting cycle). Game years are 12 days.
+const FOREST_ACTIVE_UNITS := 6
+const FOREST_CUT_DAYS := 24.0
+const FOREST_REGROW_DAYS := 180.0
 
 # --- Power companies ----------------------------------------------------------
 # Brawn's hub-with-a-leader model (Best of CS pitch #6). A plant is built

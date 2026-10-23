@@ -61,15 +61,13 @@ func toggle() -> void:
 func open() -> void:
 	_fill()
 	_shade.visible = true
-	if Session.mode == Session.Mode.SOLO:
-		_was_speed = game.speed
-		game.set_speed(0)
+	_was_speed = game.speed
+	game.set_speed(0)
 
 
 func close() -> void:
 	_shade.visible = false
-	if Session.mode == Session.Mode.SOLO:
-		game.set_speed(_was_speed)
+	game.set_speed(_was_speed)
 
 
 func _fill() -> void:
@@ -88,7 +86,7 @@ func _fill() -> void:
 	if Session.mode == Session.Mode.ONLINE:
 		var c := Session.client
 		_title.text = c.region.cities[c.my_city].name
-		_note.text = "Shared region  ·  invite code %s\nYour city keeps growing while you're away." % c.invite_code
+		_note.text = "Shared region  ·  invite code %s\nYour town waits for you while you're away." % c.invite_code
 		_col.add_child(_button("Copy invite", func():
 			DisplayServer.clipboard_set(Session.invite_link(c.url, c.invite_code) if c.url.begins_with("wss://") \
 				else "Invite code %s, server %s" % [c.invite_code, c.url])
