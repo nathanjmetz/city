@@ -43,7 +43,8 @@ const RUNNING_PATH := "user://quality_running"
 ## were first guessed by an older version.
 const GUESS_VERSION := 2
 
-## What each tier turns on. msaa: 0 off, 1 2x, 2 4x. soft: RenderingServer
+## What each tier turns on. msaa: 0 off, 1 2x, 2 4x (only the hardware
+## guess's counts: see msaa()). soft: RenderingServer
 ## shadow filter quality (2 low, 3 medium, 4 high, 5 ultra). detail scales
 ## how far full trees and close-up detail reach; lod is the mesh LOD
 ## threshold in pixels (lower keeps more detail); shadow_reach caps how far
@@ -276,9 +277,11 @@ func set_scale(s: float) -> void:
 func apply() -> void:
 	var t: Dictionary = TIERS[tier]
 	var vp := get_tree().root
-	# The browser's Medium keeps the 4x MSAA it has always had.
-	vp.msaa_3d = 2 if browser and tier == MEDIUM else t.msaa
-	vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if t.fxaa else Viewport.SCREEN_SPACE_AA_DISABLED
+	# Antialiasing stays as this machine started (msaa()): a change of MSAA
+	# recompiles every pipeline, a freeze each time the tier moved.
+	var m := msaa()
+	vp.msaa_3d = m
+	vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if m == 0 else Viewport.SCREEN_SPACE_AA_DISABLED
 	vp.mesh_lod_threshold = t.lod
 	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if scale < 0.99 and _fsr_ok() else Viewport.SCALING_3D_MODE_BILINEAR
 	vp.scaling_3d_scale = scale
@@ -378,6 +381,16 @@ func _step_up() -> void:
 		return
 	apply()
 	_save()
+
+
+## MSAA for this machine, fixed whatever the tier (Performance, 2026-10-23:
+## each MSAA change set off a storm of 120+ pipeline compiles on the Macs).
+## The desktop takes it from its hardware guess; a computer's browser 2x;
+## a phone none, with FXAA instead.
+func msaa() -> int:
+	if browser:
+		return 0 if is_handheld() else 1
+	return TIERS[_guess].msaa
 
 
 ## FSR upscaling, for fewer pixels than the screen. Not in the browser, and
