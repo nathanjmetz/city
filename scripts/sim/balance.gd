@@ -330,6 +330,9 @@ const POWER_TIE_SPAN := 90.0
 const POWER_TIE_SETBACK := 3.0
 const POWER_TIE_CLEAR := 7.5
 const POWER_TIE_SAG := 1.5
+## The fenced metering substation where the line meets the road out: a
+## typical rural 69 kV tie station's yard, metres along the road x deep.
+const POWER_SUBSTATION_SIZE := Vector2(36.0, 26.0)
 ## A wind company pays the farmer a lease for each turbine in a field, about
 ## $8,000 a year (Benton County, Indiana leases run $7,000 to $10,000).
 const POWER_WIND_LEASE := 8000.0

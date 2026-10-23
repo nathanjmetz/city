@@ -722,6 +722,36 @@ func tie_route(net: RoadNetwork, links: Array, s: Dictionary) -> PackedVector3Ar
 	return out
 
 
+## Where a line to the neighbors ends: a small fenced metering substation
+## beside the road out, on the line's side. [centre, facing] or [] (no line).
+static func substation(route: PackedVector3Array) -> Array:
+	if route.size() < 3:
+		return []
+	var t := route[-1] - route[-2]
+	t.y = 0.0
+	if t.length() < 0.01:
+		return []
+	t = t.normalized()
+	var side := Vector3(-t.z, 0.0, t.x)
+	return [route[-1] + side * (Balance.POWER_SUBSTATION_SIZE.y * 0.5 + 2.0), t]
+
+
+## The substation's ground, as an outline.
+static func substation_corners(route: PackedVector3Array) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var sub := substation(route)
+	if sub.is_empty():
+		return out
+	var c: Vector3 = sub[0]
+	var t: Vector3 = sub[1]
+	var side := Vector3(-t.z, 0.0, t.x)
+	var h: Vector2 = Balance.POWER_SUBSTATION_SIZE * 0.5
+	for k in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+		var p: Vector3 = c + t * h.x * k.x + side * h.y * k.y
+		out.append(Vector2(p.x, p.z))
+	return out
+
+
 ## Pole spots along a line, about one span apart, ends included.
 static func poles(route: PackedVector3Array) -> PackedVector3Array:
 	var out := PackedVector3Array()

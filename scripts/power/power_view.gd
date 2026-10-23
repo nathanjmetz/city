@@ -19,6 +19,7 @@ const COAL := Color(0.12, 0.12, 0.13)
 const POLE := Color(0.36, 0.29, 0.22)  # weathered treated pine
 const INSULATOR := Color(0.62, 0.64, 0.6)
 const WIRE := Color(0.32, 0.33, 0.34)
+const FENCE := Color(0.6, 0.62, 0.62)
 
 var sim: CitySim
 var _sites := {}  # site id -> Node3D
@@ -97,7 +98,9 @@ func _site(s: Dictionary) -> Node3D:
 			"hydro": pass
 	if s.plant == "hydro" and not s.cells.is_empty():
 		_dam(root, s)
-	_line(root, _tie(s))
+	var tie := _tie(s)
+	_line(root, tie)
+	_substation(root, tie)
 	for color in _batch:
 		var mi := MeshInstance3D.new()
 		mi.mesh = (_batch[color] as SurfaceTool).commit()
@@ -200,6 +203,38 @@ func _wire(a: Vector3, b: Vector3) -> void:
 		_batch[WIRE] = st
 	var basis := Basis.looking_at((b - a).normalized(), Vector3.UP if absf((b - a).normalized().y) < 0.99 else Vector3.RIGHT)
 	(_batch[WIRE] as SurfaceTool).append_from(m, 0, Transform3D(basis, (a + b) * 0.5))
+
+
+## The metering substation at the end of the line: a gravel yard inside
+## a chain-link fence, a wood H-frame dead-end where the line lands, a bank
+## of three regulators, the meter cabinet and a small control house.
+func _substation(root: Node3D, route: PackedVector3Array) -> void:
+	var sub := Power.substation(route)
+	if sub.is_empty():
+		return
+	var t: Vector3 = sub[1]
+	var n := _node(root, sub[0], Basis.looking_at(Vector3(-t.z, 0.0, t.x), Vector3.UP))
+	var w: float = Balance.POWER_SUBSTATION_SIZE.x
+	var d: float = Balance.POWER_SUBSTATION_SIZE.y
+	# Graded flat: the pad is cut into the slope, its top just above grade.
+	_box(n, Vector3(w, 1.6, d), Vector3(0, -0.5, 0), GRAVEL)
+	# Chain-link: posts every 3 m with a top rail and line wires.
+	for side in [-1.0, 1.0]:
+		for i in int(w / 3.0) + 1:
+			_box(n, Vector3(0.08, 2.4, 0.08), Vector3(-w * 0.5 + i * w / int(w / 3.0), 1.5, side * d * 0.5), FENCE)
+		for i in int(d / 3.0) + 1:
+			_box(n, Vector3(0.08, 2.4, 0.08), Vector3(side * w * 0.5, 1.5, -d * 0.5 + i * d / int(d / 3.0)), FENCE)
+		for y in [0.9, 1.8, 2.6]:
+			_box(n, Vector3(w, 0.04, 0.04), Vector3(0, y, side * d * 0.5), FENCE)
+			_box(n, Vector3(0.04, 0.04, d), Vector3(side * w * 0.5, y, 0), FENCE)
+	# The line comes in from the road side (-z) onto the H-frame.
+	for x in [-3.0, 3.0]:
+		_cyl(n, 0.2, 14.0, Vector3(x, 7.0, d * 0.5 - 5.0), POLE)
+	_box(n, Vector3(7.6, 0.3, 0.3), Vector3(0, 12.8, d * 0.5 - 5.0), POLE)
+	for i in 3:
+		_box(n, Vector3(1.6, 3.0, 1.6), Vector3(-4.0 + i * 4.0, 1.5, 0.0), Color(0.5, 0.53, 0.5))  # regulators
+	_box(n, Vector3(1.2, 2.0, 0.8), Vector3(8.0, 1.0, -2.0), STEEL)  # meter cabinet
+	_box(n, Vector3(6.0, 3.2, 4.0), Vector3(-w * 0.5 + 5.0, 1.6, -d * 0.5 + 4.0), Color(0.78, 0.76, 0.7))  # control house
 
 
 ## Fixed-tilt rows facing south-ish: eight rows of panels on an 80 m cell.
