@@ -84,8 +84,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		var fine := FINE_TURN if k.shift_pressed else TURN_STEP
 		match k.keycode:
-			KEY_COMMA: _commit(Vector3.ZERO, -fine, 0.0)
-			KEY_PERIOD: _commit(Vector3.ZERO, fine, 0.0)
+			# [ and ] too, so a controller's LB / RB turn what's held.
+			KEY_COMMA, KEY_BRACKETLEFT: _commit(Vector3.ZERO, -fine, 0.0)
+			KEY_PERIOD, KEY_BRACKETRIGHT: _commit(Vector3.ZERO, fine, 0.0)
 			KEY_PAGEUP: _commit(Vector3.ZERO, 0.0, RoadTool.ELEVATION_STEP)
 			KEY_PAGEDOWN: _commit(Vector3.ZERO, 0.0, -RoadTool.ELEVATION_STEP)
 			KEY_Z:
@@ -344,7 +345,7 @@ func _update_hint() -> void:
 		return
 	var text := "Move It: click a road, junction or building you placed to pick it up (Shift adds more)."
 	if not selection.is_empty():
-		text = "Drag to slide   ,  .  turn (Shift: 1°)   Page Up/Down raise roads   Ctrl+Z undo"
+		text = "Drag to slide   ,  .  or [ ]  turn (Shift: 1°)   Page Up/Down raise roads   Ctrl+Z undo"
 	if _grown:
 		text += "\nHomes, shops, fields and pads grew on their own, so they stay put."
 	if _problem != "":

@@ -63,6 +63,10 @@ func _input(event: InputEvent) -> void:
 		# The right stick scrolls lists with wheel clicks; those never zoom.
 		if mb.device == Gamepad.DEVICE and mb.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
 			return
+		# The wheel over a list (or the pause menu) scrolls it, like CS2,
+		# instead of zooming the map behind it as well.
+		if mb.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN] and (MenuState.showing or _over_list()):
+			return
 		match mb.button_index:
 			MOUSE_BUTTON_WHEEL_UP:
 				if mb.pressed:
@@ -103,9 +107,9 @@ func _input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
-	# Ignore keys while typing in a text box.
+	# Ignore keys while typing in a text box or with the pause menu up.
 	var focus := get_viewport().gui_get_focus_owner()
-	if not (focus is LineEdit or focus is TextEdit):
+	if not (focus is LineEdit or focus is TextEdit or MenuState.showing):
 		var boost := FAST if Input.is_key_pressed(KEY_SHIFT) else 1.0
 		var move := Vector2.ZERO
 		if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_UP):
@@ -133,7 +137,7 @@ func _process(delta: float) -> void:
 			_zoom(1.0 - 1.5 * delta * boost)
 		if Input.is_key_pressed(KEY_F):
 			_zoom(1.0 + 1.5 * delta * boost)
-	if _pad != null:
+	if _pad != null and not MenuState.showing:
 		_pad_input(delta)
 	# Ease toward the goal, like CS2's smoothed camera.
 	var rate := 12.0
@@ -218,6 +222,16 @@ func _pad_input(delta: float) -> void:
 		_goal_pitch = clampf(_goal_pitch + _pad.turn.y * 1.1 * delta, MIN_PITCH, MAX_PITCH)
 	if _pad.zoom != 0.0:
 		_zoom(1.0 - _pad.zoom * 1.6 * delta)
+
+
+## True when the mouse is over a scrolling list in a panel.
+func _over_list() -> bool:
+	var c := get_viewport().gui_get_hovered_control()
+	while c != null:
+		if c is ScrollContainer:
+			return true
+		c = c.get_parent() as Control
+	return false
 
 
 func _zoom(f: float) -> void:

@@ -109,7 +109,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey and event.pressed and not event.echo \
 			and (event as InputEventKey).keycode in [KEY_ENTER, KEY_KP_ENTER]:
-		_close()
+		if is_drawing():
+			_close()
+			get_viewport().set_input_as_handled()  # not the chat's Enter too
 		return
 	if not event is InputEventMouseButton:
 		return

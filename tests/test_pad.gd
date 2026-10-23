@@ -60,6 +60,19 @@ func _initialize() -> void:
 	_check(_keys.has(KEY_ESCAPE), "B backs out like Esc")
 	_check(_keys.has(KEY_BRACKETLEFT) and _keys.has(KEY_BRACKETRIGHT), "LB / RB size tools like [ ]")
 
+	# Clicking the right stick flies home when no shape is being drawn.
+	_press(JOY_BUTTON_RIGHT_STICK, true)
+	await process_frame
+	await process_frame
+	_check(_keys.has(KEY_HOME), "clicking the right stick flies home")
+
+	# With the pause menu up, the pad leaves the town alone.
+	MenuState.showing = true
+	_press(JOY_BUTTON_Y, true)
+	await process_frame
+	_check(not Pad._wheel.visible, "Y doesn't open the tool wheel over the pause menu")
+	MenuState.showing = false
+
 	# Moving the real mouse hands control back to it.
 	var m := InputEventMouseMotion.new()
 	m.position = Vector2(50, 50)
