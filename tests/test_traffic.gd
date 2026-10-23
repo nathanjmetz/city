@@ -176,11 +176,15 @@ func _init() -> void:
 		if i % 6 == 0:
 			e.traffic.add_trip(e.lots[elots[erng.randi() % elots.size()]], e.lots[elots[erng.randi() % elots.size()]], erng)
 		e.tick()
+		# A vehicle keeps its id for life, so only compare it with the tick
+		# before if it was driving then too (not parked between trips).
+		var now := {}
 		for car in e.traffic.cars:
 			var pose := e.traffic.car_pose(car)
 			if last.has(car.id) and absf(last[car.id].signed_angle_to(pose[1], Vector3.UP)) > deg_to_rad(25.0):
 				jumps += 1
-			last[car.id] = pose[1]
+			now[car.id] = pose[1]
+		last = now
 	_check(jumps == 0, "no car turns more than 25 degrees in a tenth of a second (%d)" % jumps)
 
 	# A truck with a job: grain from a farm gate to a mill, reported on arrival,

@@ -1289,6 +1289,20 @@ func dispatch(from: Dictionary, to: Dictionary, purpose: String, cargo := {}, ki
 	return id if _send(car, rt, purpose, cargo, after, edge_to) else -1
 
 
+## Every trip that's under way: driving, waiting to pull out, or just
+## arrived or given up (handled by its caller next tick).
+func trip_ids() -> Array:
+	var out := []
+	for c in cars + _waiting:
+		out.append(c.get("trip", c.id))
+	for p in parked:
+		if p.get("pending", false):
+			out.append(p.trip)
+	for r in arrivals + failed:
+		out.append(r.id)
+	return out
+
+
 ## Sends a vehicle that's parked somewhere on one more leg, with no trip
 ## back: a bus going stop to stop, a truck on a round of calls. `to` is a
 ## dispatch endpoint. Returns the trip id (it shows up in `arrivals` with
@@ -1320,7 +1334,9 @@ func _register(e: Dictionary) -> String:
 	ref = "%s@%d,%d" % [ref if ref != "" else "at", roundi(float(e.pos[0])), roundi(float(e.pos[1]))]
 	if _sites.has(ref) and _places.has(ref):
 		return ref
-	_sites[ref] = e
+	var site := e.duplicate()
+	site.ref = ref
+	_sites[ref] = site
 	_places.erase(ref)
 	return ref if not place(ref).is_empty() else ""
 
@@ -1524,6 +1540,28 @@ func _curb_start(s: Dictionary, stop: Dictionary) -> Dictionary:
 	return a
 
 
+## A driveway near a corner: the car leaves by the side of the street where
+## it has room before the junction, backing out (a home's driveway) or
+## pulling forward (a lot or yard), and doesn't back or drive into the junction.
+func _out_way(pl: Dictionary, spot: int, stop: Dictionary) -> Dictionary:
+	var backs: bool = pl.spots[spot].kind in ["drive", "garage"]
+	var e := _entrance(pl, spot)
+	var ok := []
+	for fwd in [true, false]:
+		var wid: int = stop.seg * 2 + (1 if fwd else 0)
+		if not ways.has(wid):
+			continue
+		var w: Dictionary = ways[wid]
+		var de := _nearest_d(w, e)
+		if (de - 8.0 >= w.s0 + 0.5) if backs else (de + DRIVEWAY_LEAD + 2.0 <= w.s1 - 0.5):
+			ok.append(wid)
+	if ok.size() != 1:
+		return stop
+	var a := stop.duplicate()
+	a.only_way = ok[0]
+	return a
+
+
 ## Places at the side of the road in front of a stop, as on a main street.
 func _curb_spots(stop: Dictionary, n: int) -> Array:
 	var out := []
@@ -1695,8 +1733,11 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 	var a: Dictionary = from_pl.stop if not from_pl.is_empty() else car.get("from_stop", {})
 	if a.is_empty():
 		return false
-	if not from_pl.is_empty() and car.spot < from_pl.spots.size() and from_pl.spots[car.spot].kind == "curb":
-		a = _curb_start(from_pl.spots[car.spot], a)
+	if not from_pl.is_empty() and car.spot < from_pl.spots.size():
+		if from_pl.spots[car.spot].kind == "curb":
+			a = _curb_start(from_pl.spots[car.spot], a)
+		else:
+			a = _out_way(from_pl, car.spot, a)
 	var trip := _route(a, to_pl.stop)
 	if trip.is_empty():
 		return false
@@ -1881,23 +1922,26 @@ func _in_path(car: Dictionary) -> Dictionary:
 func _out_path(car: Dictionary, pl: Dictionary, spot: int, w: Dictionary, lane: int, d: float) -> Dictionary:
 	var s: Dictionary = pl.spots[spot]
 	var top: float = maxf(w.s1 - 0.5, 1.0)  # back in the lane before the junction
+	var bot: float = minf(w.s0 + 0.5, top)  # and clear of the one behind
 	var front: Vector3 = s.pos + s.face * car.len * 0.5
 	var entry := _entrance(pl, spot)
 	var de := _nearest_d(w, entry)
 	if s.kind == "curb":
 		# Pull away from the curb into the lane.
 		var df := _nearest_d(w, front)
-		var go := clampf(df + 7.0, 0.5, top)
-		var pts := _smooth([front, front + s.face * 2.0, _lane_point(w, lane, minf(clampf(df + 4.0, 0.5, top), go - 3.0)),
+		var go := clampf(df + 7.0, bot, top)
+		var pts := _smooth([front, front + s.face * 2.0, _lane_point(w, lane, minf(clampf(df + 4.0, bot, top), go - 3.0)),
 			_lane_point(w, lane, go)])
 		return _poly_path({"node": -1, "wi": -1, "li": -1, "wo": w.id, "lo": lane, "turn": Turn.RIGHT,
 			"vt": 4.0, "exit_d": go}, pts, 0.0)
 	if s.kind == "drive" or s.kind == "garage":
 		# Straight back down the driveway and out into the street, ending up
 		# pointed the way the car is going.
-		var back_d := clampf(de - 8.0, 0.5, top)
+		# (A driveway at a corner backs out along the street, clear of the junction.)
+		de = clampf(de, minf(bot + 8.0, top), top)
+		var back_d := clampf(de - 8.0, bot, top)
 		var rev := [front, entry]
-		rev.append(_lane_point(w, lane, clampf(de, 0.5, top)))
+		rev.append(_lane_point(w, lane, de))
 		rev.append(_lane_point(w, lane, back_d))
 		var pts := _smooth(rev)
 		return _poly_path({"node": -1, "wi": -1, "li": -1, "wo": w.id, "lo": lane, "turn": Turn.RIGHT,
@@ -1917,9 +1961,10 @@ func _out_path(car: Dictionary, pl: Dictionary, spot: int, w: Dictionary, lane: 
 		if s.kind == "stall":
 			fwd.append(SiteLayout.world(pl.lot, Vector2(pl.lay.cut_x, pl.lay.aisle_z)))
 		fwd.append(entry)
-	var exit_d := clampf(de + DRIVEWAY_LEAD + 2.0, 0.5, top)
+	de = minf(de, maxf(top - DRIVEWAY_LEAD - 2.0, bot))
+	var exit_d := clampf(de + DRIVEWAY_LEAD + 2.0, bot, top)
 	# The last few metres run along the lane, so it joins the traffic straight.
-	fwd.append(_lane_point(w, lane, minf(clampf(de + 2.0, 0.5, top), exit_d - 3.0)))
+	fwd.append(_lane_point(w, lane, minf(clampf(de + 2.0, bot, top), exit_d - 3.0)))
 	fwd.append(_lane_point(w, lane, exit_d))
 	var fwd_pts := _smooth(fwd)
 	var all := rev_pts.duplicate()
