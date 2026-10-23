@@ -547,6 +547,8 @@ static func effects_of(sim, homes: int, street_m: float) -> Dictionary:
 		"water": _pct(int(water[0]) + load, int(water[1])),
 		"power": _pct(int(power[0]) + load, int(power[1])),
 		"upkeep": roundi(street_m * RoadStyle.TYPES[TYPE].lanes * Balance.ROAD_UPKEEP_PER_LANE_M * 12.0),
+		# ...and resurfacing them when they wear out (StreetAge).
+		"repave": StreetAge.repave_cost(street_m * RoadStyle.TYPES[TYPE].lanes, TYPE),
 		"taxes": roundi(people * Balance.VALUE_PER_PLACE[ZoneMap.Zone.RESIDENTIAL] * tax / 100.0),
 	}
 
