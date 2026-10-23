@@ -115,6 +115,35 @@ func _init() -> void:
 	_check(tri.size() == 3 and tri[2].distance_to(a0 + Vector3(90, 0, 200)) < 0.01, "third click without Shift: a triangle")
 	t.free()
 
+	# Brawn: keep clicking points for any shape, then Enter builds it.
+	var pg := CitySim.new()
+	pg.economy.money = 100000000
+	var tp := RoadTool.new()
+	tp.sim = pg
+	tp.network = pg.network
+	tp.mode = RoadTool.Mode.GRID
+	tp.grid_exact = false
+	tp.set_grid_preset(5)
+	for corner in [Vector3(0, 0, 0), Vector3(400, 0, 0), Vector3(520, 0, 260), Vector3(260, 0, 420), Vector3(-60, 0, 300)]:
+		tp._points.append(corner)
+	tp._finish_grid()
+	_check(tp._points.is_empty() and pg.network.segments.size() > 10, "five clicked points and Enter build a grid (%d streets)" % pg.network.segments.size())
+	# Every point snaps onto a road under the cursor, zoomed out too.
+	var sn := CitySim.new()
+	sn.apply({"type": "build_road", "start": [-500, 0], "ctrl": [0, 0], "end": [500, 0]})
+	tp.sim = sn
+	tp.network = sn.network
+	tp._px = 0.1
+	var near := tp._snapped(Vector3(50, 0, 9))
+	_check(tp._snap_kind == "segment" and absf(near.z) < 0.01, "close up, a point 30 ft off the road snaps onto it")
+	tp._px = 2.0
+	near = tp._snapped(Vector3(50, 0, 24))
+	_check(tp._snap_kind == "segment" and absf(near.z) < 0.01, "zoomed out, the snap reaches 14 pixels")
+	tp._px = 0.1
+	tp._snapped(Vector3(50, 0, 24))
+	_check(tp._snap_kind == "free", "close up, a point 80 ft away stays free")
+	tp.free()
+
 	# Brawn's street: a first side clicked just past a street's end stops
 	# exactly on it.
 	var q := CitySim.new()
@@ -266,7 +295,8 @@ func _three_clicks(tool: RoadTool, a: Vector3, b: Vector3, c: Vector3, square: b
 	tool._points.clear()
 	tool._points.append(a)
 	tool._points.append(tool._side_end(b))
-	return tool._three(tool._third(c, square), square)
+	tool._square = false
+	return tool._pending_shape(tool._square_off(c) if square else c)
 
 
 func _leaving(net: RoadNetwork, id: int, n: int) -> Vector2:

@@ -43,7 +43,6 @@ func _process(_delta: float) -> bool:
 		sim.apply({"type": "clear"})
 		sim.apply({"type": "build_road", "start": [-400, -260], "ctrl": [0, 0], "end": [400, 260]})
 		_tool.set_mode(RoadTool.Mode.GRID)
-		_tool.set_grid_free(false)
 		var a := Vector3(-150, 0, -60)
 		_tool._points.append(a)
 		_tool._update_hint()
