@@ -58,6 +58,34 @@ func _init() -> void:
 			differ.append("lot %d" % i)
 	_check(differ.is_empty(), "a plan laid out without drawing matches the drawn one %s" % [differ.slice(0, 3)])
 
+	# A plan is drawn once per shape and each lot paints, mirrors and
+	# weathers it: every upkeep tier of every lot needs few drawings, no
+	# lot shows the stand-in paint, and mirrored houses face out.
+	HouseBuilder._plans.clear()
+	var was_drawn := HouseBuilder.drawn
+	var leaks := []
+	var inside := []
+	var builds := 0
+	for i in lots.size():
+		for care in [-2, -1, 0, 1, 2]:
+			HouseBuilder.owner_care = care
+			var built: Array = HouseBuilder.build(i * 131, 6.0, lots[i], 0)
+			builds += 1
+			var mesh: ArrayMesh = built[0]
+			for s in mesh.get_surface_count():
+				var a := mesh.surface_get_arrays(s)
+				for c: Color in a[Mesh.ARRAY_COLOR]:
+					if c.g == HouseBuilder.STAND_IN.siding.g and c.b == HouseBuilder.STAND_IN.siding.b:
+						leaks.append("lot %d care %d" % [i, care])
+						break
+				if not _faces_out(a):
+					inside.append("lot %d care %d surface %d" % [i, care, s])
+	HouseBuilder.owner_care = 0
+	var drawings := HouseBuilder.drawn - was_drawn
+	_check(drawings <= lots.size(), "%d houses in every upkeep need only %d drawings" % [builds, drawings])
+	_check(leaks.is_empty(), "every lot is painted in its own scheme %s" % [leaks.slice(0, 3)])
+	_check(inside.is_empty(), "mirrored and unmirrored houses face out %s" % [inside.slice(0, 3)])
+
 	# The car's garage and drive spots lie on the painted drive.
 	var off := []
 	for i in lots.size():
@@ -143,6 +171,27 @@ func _woodlot() -> Vector3:
 
 
 ## True when a spot lies on a concrete drive (yard alpha 0) in the flat mesh.
+## Every triangle winds clockwise seen from the side its normal faces
+## (Godot's front face), mirrored or not. Shrubs (alpha 0.3) have rounded
+## normals, so they are left out.
+func _faces_out(a: Array) -> bool:
+	var v: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+	var n: PackedVector3Array = a[Mesh.ARRAY_NORMAL]
+	var col: PackedColorArray = a[Mesh.ARRAY_COLOR]
+	var idx: PackedInt32Array = a[Mesh.ARRAY_INDEX] if a[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+	var count := idx.size() if not idx.is_empty() else v.size()
+	for t in range(0, count - 2, 3):
+		var i0 := idx[t] if not idx.is_empty() else t
+		var i1 := idx[t + 1] if not idx.is_empty() else t + 1
+		var i2 := idx[t + 2] if not idx.is_empty() else t + 2
+		var face := (v[i1] - v[i0]).cross(v[i2] - v[i0])
+		if absf(col[i0].a - 0.3) < 0.002:
+			continue
+		if face.length() > 1e-6 and face.dot(n[i0]) > 0.0:
+			return false
+	return true
+
+
 func _on_drive(flat: ArrayMesh, p: Vector2) -> bool:
 	if flat.get_surface_count() == 0:
 		return false
