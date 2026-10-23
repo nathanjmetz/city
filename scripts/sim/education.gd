@@ -189,6 +189,8 @@ static func site_problem(sim: CitySim, kind: String, pos: Vector3, dir: Vector3)
 	for p in _probe_points(pos, poly):
 		if not sim.land_ok(p):
 			return "Can't build in the water or on a slope that steep."
+		if sim.banks.covers(p):
+			return "That ground is a bank."
 		if sim.education.covers(p):
 			return "Too close to another campus. Campuses grow on their own, so give it room."
 		if sim.telecom.covers(p):
@@ -589,7 +591,7 @@ func usable(sim: CitySim, id: int, c: Dictionary, cell: Vector2i, corr: Array, l
 			return false
 		if not sim.land_ok(p) or sim.services.covers(p) or sim.farms.covers(p) or sim.farms.field_at(p) != -1 \
 				or sim.industry.covers(p) or sim.reserves.kind_at(p) != "" or sim.hubs.covers(p) \
-				or sim.warehouses.covers(p) or sim.parks.covers(p) or sim.mail.covers(p) or sim.telecom.covers(p):
+				or sim.warehouses.covers(p) or sim.parks.covers(p) or sim.mail.covers(p) or sim.banks.covers(p) or sim.telecom.covers(p):
 			return false
 	if lots_ok:
 		return true

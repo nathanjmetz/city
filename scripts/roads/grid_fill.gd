@@ -40,6 +40,27 @@ const MIN_PIECE := 20.0
 const TOUCH := 0.5
 
 
+## Real US grid sizes, largest first, as centre-line spacing in metres:
+## "block" runs along the first side drawn, "across" square to it.
+## PLSS sections are a mile square with county roads on the section lines;
+## Chicago puts streets every 1/8 and 1/16 mile; Manhattan's avenues are
+## ~900 ft apart and its streets 20 to the mile (264 ft); an old Midwest
+## town plat is about 400 x 300 ft; Portland's are 200 ft blocks on 60 ft
+## streets (260 ft).
+const PRESETS := [
+	{"name": "Section", "block": 1609.0, "across": 1609.0, "about": "Farm section: 1 mile square (PLSS)"},
+	{"name": "Half mile", "block": 805.0, "across": 805.0, "about": "Half-mile grid: quarter sections"},
+	{"name": "Quarter mile", "block": 402.0, "across": 402.0, "about": "Quarter-mile grid: arterials and big farm lots"},
+	{"name": "Manhattan", "block": 274.0, "across": 80.0, "about": "Manhattan: 900 x 264 ft"},
+	{"name": "Chicago", "block": 201.0, "across": 101.0, "about": "Chicago: 1/8 x 1/16 mile (660 x 330 ft)"},
+	{"name": "Town", "block": 122.0, "across": 91.0, "about": "Midwest town plat: 400 x 300 ft"},
+	{"name": "Portland", "block": 79.0, "across": 79.0, "about": "Portland: 260 ft square"},
+]
+const BLOCK_MIN := 60.0
+const BLOCK_MAX := 1700.0
+const ACROSS_MIN := 70.0
+
+
 ## Centre-line distance two streets running side by side must keep: both
 ## right-of-ways (curb, parkway, sidewalk) plus a row of lots between.
 static func side_gap(type_a: int, type_b: int) -> float:

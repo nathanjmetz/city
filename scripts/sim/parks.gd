@@ -118,6 +118,8 @@ func ground_problem(sim: CitySim, poly: PackedVector2Array, skip := -1) -> Strin
 			return "That ground is a campus."
 		if sim.telecom.covers(q):
 			return "That ground belongs to the phone company."
+		if sim.banks.covers(q):
+			return "That ground is a bank."
 		if sim.reserves.kind_at(q) != "":
 			return "That land is reserved for %s." % Reserves.KINDS[sim.reserves.kind_at(q)]
 	return ""

@@ -280,18 +280,21 @@ static func limit(type: int) -> float:
 static func lane_offsets(type: int, oneway_flag: bool) -> PackedFloat32Array:
 	var spec: Dictionary = RoadStyle.TYPES[type]
 	var offs := PackedFloat32Array()
-	if spec.oneway:
+	if RoadStyle.is_freeway(type):
 		# Highways and ramps: 4 ft shoulder on the left.
 		for k in spec.lanes:
 			offs.append(-spec.width * 0.5 + 1.2 + LANE_W * (k + 0.5))
-	elif oneway_flag:
+	elif oneway_flag or spec.oneway:
 		# A one-way street (a roundabout ring): every lane goes one way.
 		for k in spec.lanes:
 			offs.append(-LANE_W * spec.lanes * 0.5 + LANE_W * (k + 0.5))
 	else:
-		var inner: float = spec.median * 0.5 + (RoadStyle.CURB_WIDTH if spec.median > 0.0 else 0.0)
+		var inner: float = spec.median * 0.5 + (RoadStyle.CURB_WIDTH if RoadStyle.raised_median(type) else 0.0)
+		# Gravel roads and alleys have no lane lines: cars share what width
+		# there is and squeeze by each other.
+		var lane: float = LANE_W if spec.get("surface", "asphalt") == "asphalt" else minf(LANE_W, spec.width * 0.5 - inner)
 		for k in spec.lanes / 2:
-			offs.append(inner + LANE_W * (k + 0.5))
+			offs.append(inner + lane * (k + 0.5))
 	return offs
 
 
@@ -601,7 +604,8 @@ func _build_control(n: int, segs: Array) -> void:
 
 
 func _rank(seg: int) -> int:
-	return [0, 1, 2, 3, 1, 1, 1][mini(network.segments[seg].type, 6)]
+	var type: int = network.segments[seg].type
+	return [0, 1, 2, 3, 1, 1, 1][mini(type if RoadStyle.is_ring(type) else RoadStyle.group(type), 6)]
 
 
 ## Roundabout ring pieces: one-way roads that aren't highways or ramps.
