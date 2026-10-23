@@ -2806,12 +2806,14 @@ func _lot_blocked(lot: Dictionary) -> bool:
 				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
 				or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p) or big.covers(p):
 			return true
-	# No lots in the water or on ground too steep to build on.
+	# No lots in the water, on ground too steep to build on, or on a state
+	# highway's right of way (the state's land, joined or not).
 	var at: Vector3 = lot.pos
 	if not _land_ok.has(at):
 		if _land_ok.size() > 200_000:
 			_land_ok.clear()
-		_land_ok[at] = land_ok(at, LotPlanner.FRONTAGE * 0.5)
+		_land_ok[at] = land_ok(at, LotPlanner.FRONTAGE * 0.5) \
+			and Highways.distance(at.x + terrain_offset.x, at.z + terrain_offset.y) >= HIGHWAY_LOT_CLEAR
 	return not _land_ok[at]
 
 
@@ -3435,6 +3437,9 @@ const COUNTY_STEP := 8.0
 const COUNTY_REACH := 15.0
 ## A joined state highway is taken on this far each way, metres (a mile).
 const HIGHWAY_JOIN := 1608.0
+## No lot's middle stands nearer a state highway than this, metres: its
+## right of way (Highways.HALF_CLEAR) and half a lot's depth.
+const HIGHWAY_LOT_CLEAR := Highways.HALF_CLEAR + 12.0
 
 
 ## Joins the mile of county road at `p` (if one runs there) to the town: it

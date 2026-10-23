@@ -92,6 +92,17 @@ func _init() -> void:
 	plain.apply({"type": "build_road", "start": [a.x, a.y], "ctrl": [on.x, on.y], "end": [b.x, b.y],
 		"road": RoadStyle.Type.STREET})
 	_check(_highway(plain).is_empty(), "building a road alone never joins one (the road tool asks)")
+	# Zoned along a street that crosses it, no lot is platted on the highway.
+	for id in plain.network.segments:
+		for sd in [-1, 1]:
+			plain.apply({"type": "zone_frontage", "seg": id, "side": sd, "zone": ZoneMap.Zone.RESIDENTIAL})
+	plain._refresh()
+	var nearest := INF
+	for key in plain.lots:
+		var lp: Vector3 = plain.lots[key].pos
+		nearest = minf(nearest, Highways.distance(lp.x + o.x, lp.z + o.y))
+	_check(not plain.lots.is_empty() and nearest >= Highways.HALF_CLEAR,
+		"lots stay off the highway's right of way (%d lots, nearest %.0f m)" % [plain.lots.size(), nearest])
 	var copy := CitySim.new()
 	copy.from_dict(sim.to_dict())
 	_check(_highway(copy).size() == _highway(sim).size(), "the joined highway is saved with the town")

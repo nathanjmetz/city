@@ -294,10 +294,12 @@ void fragment() {
 	col = mix(col, gravel.rgb * (0.88 + 0.24 * grain) * (0.95 + 0.1 * clump), county);
 	// State highways (SR 57, SR 61, SR 56; Highways): two 12 ft lanes and
 	// 8 ft paved shoulders (INDOT), white edge lines and a yellow centre line
-	// in a mowed right of way. Cut through the bluffs, so only the water and
-	// the town's own roads stop them. Plowed in winter.
+	// in a mowed right of way. Cut through the bluffs, so only the water
+	// stops them. No lots are platted on them (CitySim._lot_blocked), and
+	// they run on under the town's roads (whose own pavement lies on top),
+	// so a road crossing one meets it at a junction. Plowed in winter.
 	float hd = highway_d(r);
-	float hw_land = (1.0 - smoothstep(0.06, 0.12, cover.g)) * (1.0 - smoothstep(0.2, 0.6, max(town.x, town.y)));
+	float hw_land = 1.0 - smoothstep(0.06, 0.12, cover.g);
 	float hw_aa = max(px, 0.05);
 	float hw_verge = (1.0 - smoothstep(13.0, 16.0, hd)) * hw_land;
 	float hw_paved = (1.0 - smoothstep(6.0 - hw_aa, 6.0 + hw_aa, hd)) * hw_land;
