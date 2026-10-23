@@ -11,6 +11,9 @@ extends CanvasLayer
 signal nothing_to_close
 
 const GOOD := Color(0.5, 0.85, 0.5)
+## The bottom bar's tool categories: [key, title].
+const CATEGORIES := [["roads", "Roads"], ["zones", "Zoning"], ["industry", "Industry"], ["services", "Services"],
+	["parks", "Parks"], ["bulldoze", "Bulldoze"], ["move", "Move It"], ["budget", "Economy"]]
 const BAD := Color(0.95, 0.45, 0.4)
 
 var road_tool: RoadTool
@@ -103,6 +106,7 @@ func setup(rt: RoadTool, zt: ZoneTool, s: CitySim, g: Node) -> void:
 
 
 func _ready() -> void:
+	add_to_group("pad_hud")
 	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.theme = UiStyle.theme()
@@ -170,6 +174,24 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	else:
 		nothing_to_close.emit()  # the pause menu opens
 	get_viewport().set_input_as_handled()
+
+
+## Game controllers (Pad): the tool wheel holds the bottom bar's categories
+## and the Views.
+func pad_wheel_items() -> Array:
+	return CATEGORIES + [["views", "Views"]]
+
+
+func pad_wheel_pick(key: String) -> void:
+	if key == "views":
+		_views_button.button_pressed = not _views_button.button_pressed
+	elif key != _category or key == "bulldoze":
+		_open(key)
+
+
+## How tall the bottom dock is, so the pad's prompts sit just above it.
+func pad_bottom_height() -> float:
+	return _bottom.size.y
 
 
 ## True while a tool is in hand, a panel or view is open, or something is selected.
@@ -464,9 +486,7 @@ func _build_bottom_bar() -> void:
 	row.add_theme_constant_override("separation", 4)
 	bar.add_child(row)
 	# Traffic lives under Roads and Farming under Industry, as in CS2.
-	for entry in [["roads", "Roads"], ["zones", "Zoning"], ["industry", "Industry"], ["services", "Services"], ["parks", "Parks"],
-			["bulldoze", "Bulldoze"], ["move", "Move It"],
-			["budget", "Economy"]]:
+	for entry in CATEGORIES:
 		var b := _category_button(entry[0], entry[1])
 		b.pressed.connect(func(): _open(entry[0]))
 		row.add_child(b)
