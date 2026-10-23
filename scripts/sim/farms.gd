@@ -51,6 +51,8 @@ var reserves: Reserves
 ## The town's sliders: Funding is support per acre, Growth how eagerly a
 ## farm buys more fields (see Policies).
 var policies: Policies
+## The town's character: a farm town's farmers buy land more readily.
+var culture: TownCulture
 ## Farmland outlines from older saves, for the city to turn into reserves.
 var legacy_outlines: Array = []
 ## Farms: id -> {pos, dir, crop, cells: Array of Vector2i in the farm's own
@@ -204,7 +206,10 @@ func support(id: int) -> float:
 func buy_margin(id: int) -> float:
 	if policies == null:
 		return 0.0
-	return policies.pick(Balance.POLICY_BUY_MARGIN_PER_ACRE, "growth", "farms", "farm:%d" % id) * ACRES_PER_CELL
+	var m: float = policies.pick(Balance.POLICY_BUY_MARGIN_PER_ACRE, "growth", "farms", "farm:%d" % id)
+	if culture != null and m < INF:
+		m -= culture.pull("farm") * Balance.CULTURE_MARGIN_PER_ACRE
+	return m * ACRES_PER_CELL
 
 
 ## What the town pays all its farms a year (negative: what it collects).

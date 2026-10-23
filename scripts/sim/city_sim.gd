@@ -109,6 +109,8 @@ var streets := Streets.new()
 ## The town's broad Funding and Growth sliders for every area and hub (no
 ## tax fiddling: Brawn). Set on the Economy page or a hub's panel.
 var policies := Policies.new()
+## What kind of town this is, from where its jobs are (TownCulture).
+var culture := TownCulture.new()
 ## Buildings going up, stage by stage, with their crews and deliveries.
 var construction := Construction.new()
 ## Smoke, noise and dirty ground, each traced to the source that makes it.
@@ -639,6 +641,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			parks_changed.emit()
 			mail = Mail.new()
 			policies.from_dict({})
+			culture.from_dict({})
 			_lever_steps.clear()
 			pollution = Pollution.new()
 			_hook_pollution()
@@ -899,6 +902,14 @@ func tick() -> void:
 		_develop_hubs()
 	Perf.add("sim.hub_leaders", t)
 	t = Perf.now()
+	# The town's character drifts toward where its jobs are.
+	if tick_count % (24 * TICKS_PER_HOUR) == 11 * TICKS_PER_HOUR:
+		culture.update(self, tick_count / (24 * TICKS_PER_HOUR))
+		if culture.develop(self):
+			_usable_cache.clear()
+			_lots_dirty = true
+			farms_changed.emit()
+			zones_changed.emit()
 	# ...and every family looks at what it owns, and whether to branch out.
 	if tick_count % (24 * TICKS_PER_HOUR) == 13 * TICKS_PER_HOUR:
 		families.month(self)
@@ -1476,6 +1487,8 @@ func mark_lots_dirty() -> void:
 func _wire_policies() -> void:
 	farms.policies = policies
 	industry.policies = policies
+	farms.culture = culture
+	industry.culture = culture
 	services.policies = policies
 	hubs.policies = policies
 	parks.policies = policies
@@ -2294,6 +2307,7 @@ func to_dict() -> Dictionary:
 		"families": families.to_dict(),
 		"streets": streets.to_dict(),
 		"policies": policies.to_dict(),
+		"culture": culture.to_dict(),
 		"pollution": pollution.to_dict(),
 		"healthcare": healthcare.to_dict(),
 		"junctions": traffic.rules_to_dict(),
@@ -2346,6 +2360,7 @@ func from_dict(d: Dictionary) -> void:
 	parks.from_dict(d.get("parks", {}))
 	mail.from_dict(d.get("mail", {}))
 	policies.from_dict(d.get("policies", {}))
+	culture.from_dict(d.get("culture", {}))
 	pollution.from_dict(d.get("pollution", {}))
 	healthcare.from_dict(d.get("healthcare", {}))
 	for legacy in farms.legacy_outlines:
