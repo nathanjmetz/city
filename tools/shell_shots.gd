@@ -35,13 +35,14 @@ func _start_online() -> void:
 		root.add_child(_friend)
 		_friend.joined.connect(func():
 			var fs := _friend.my_sim()
-			_friend.send_command({"type": "build_grid", "a": [-150, -100], "b": [150, -100], "c": [150, 120], "block": 80})
+			fs.apply_now({"type": "build_grid", "a": [-150, -100], "b": [150, -100], "c": [150, 120], "block": 80})
 			for x in range(-150, 151, 20):
 				for z in range(-100, 121, 20):
-					_friend.send_command({"type": "paint_zone", "center": [x, z], "radius": 14, "zone": 1})
+					fs.apply_now({"type": "paint_zone", "center": [x, z], "radius": 14, "zone": 1})
+			_friend.send_town()
 			_friend.send_chat("Hey! I started my town just east of yours")
 			_friend.send_cursor(c.region.cities[c.my_city].origin + Vector2(60, 40)))
-		_friend.join("ws://127.0.0.1:19580", code, "friend-1", "Sam", "secret2", true)
+		_friend.join("ws://127.0.0.1:19580", code, "friend-1", "Sam")
 		session.enter_region())
 
 

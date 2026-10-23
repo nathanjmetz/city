@@ -30,6 +30,11 @@ const KINDS := {
 	"water_tower": {"name": "Town water tower", "icon": "water_landmark", "landmark": true},
 	"grain_elevator": {"name": "Grain elevator", "icon": "elevator", "landmark": true},
 	"football": {"name": "Football field", "icon": "football", "landmark": true},
+	"fairgrounds": {"name": "County fairgrounds", "icon": "fairgrounds", "landmark": true},
+	# Opened by themselves for visitors (Tourism), never placed by the player.
+	"gas_station": {"name": "Gas station", "icon": "car", "landmark": false, "auto": true},
+	"diner": {"name": "Diner", "icon": "shops", "landmark": false, "auto": true},
+	"motel": {"name": "Motel", "icon": "homes", "landmark": false, "auto": true},
 }
 ## Every park gets its own name, like real Midwestern town parks.
 const PARK_NAMES := ["Lincoln", "Riverside", "Memorial", "Oak Grove", "Maple", "Veterans", "Washington",
@@ -37,7 +42,8 @@ const PARK_NAMES := ["Lincoln", "Riverside", "Memorial", "Oak Grove", "Maple", "
 	"Hilltop", "Cedar", "Prairie", "Jaycee", "Elm Street", "Walnut", "Fairview", "Shady Lane",
 	"Greenwood", "Burr Oak", "Cardinal", "Meadowbrook", "Founders", "Harmony", "Lakeview"]
 const LANDMARK_NAMES := {"courthouse": "Courthouse Square", "water_tower": "Water tower",
-	"grain_elevator": "Farmers Co-op Elevator", "football": "Memorial Field"}
+	"grain_elevator": "Farmers Co-op Elevator", "football": "Memorial Field", "fairgrounds": "County Fairgrounds",
+	"gas_station": "Gas station", "diner": "Diner", "motel": "Motel"}
 ## What the basics are called, for the info panel.
 const FEATURE_NAMES := {"paths": "paths", "playground": "playground", "pavilion": "picnic pavilion",
 	"court": "basketball court", "ball_diamond": "ball diamond", "flower_beds": "flower beds",
@@ -62,7 +68,12 @@ var lot_happy := {}
 ## land around it, Growth how soon a park buys more land (see Policies).
 var policies: Policies
 var _next_id := 1
+var _effects_key := []
+var _effects_lots := {}
 static var _nodes := {}
+## The fairgrounds and football field as event venues, and the visitors
+## they bring (see Tourism).
+var tourism := Tourism.new()
 
 
 ## A Balance list's value for site `id`'s step of a slider.
@@ -139,6 +150,8 @@ func ground_problem(sim: CitySim, poly: PackedVector2Array, skip := -1) -> Strin
 			return "That ground is the post office."
 		if sim.education.covers(q):
 			return "That ground is a campus."
+		if sim.telecom.covers(q):
+			return "That ground belongs to the phone company."
 		if sim.banks.covers(q):
 			return "That ground is a bank."
 		if sim.reserves.kind_at(q) != "":
@@ -150,6 +163,8 @@ func ground_problem(sim: CitySim, poly: PackedVector2Array, skip := -1) -> Strin
 func site_problem(sim: CitySim, kind: String, pos: Vector3, dir: Vector3) -> String:
 	if not KINDS.has(kind):
 		return "Unknown kind."
+	if KINDS[kind].get("auto", false):
+		return "That opens by itself when visitors come."
 	if KINDS[kind].landmark and has_kind(kind):
 		return "The town already has its %s (one per town)." % KINDS[kind].name.to_lower()
 	return ground_problem(sim, corners(pos, dir, size_of(kind)))
@@ -175,6 +190,8 @@ func add(sim: CitySim, kind: String, pos: Vector3, dir: Vector3) -> int:
 	var t := Neighborhood.target(sim, pos, lift_at(pos, "value", id))
 	s.score = _quantize(t.score)
 	s.tier = Neighborhood.tier_for(s.score, -1)
+	if Tourism.is_venue(kind):
+		tourism.sync(sim)
 	return id
 
 
@@ -310,6 +327,13 @@ func lift_at(p: Vector3, effect: String, skip := -1) -> float:
 
 ## Works out the lift each building's lot gets (after stats update).
 func update_effects(sim: CitySim) -> void:
+	# The lifts only change when parks, lots or buildings do (and are
+	# refreshed every game hour regardless).
+	var sig := [sites.hash(), sim.buildings.size(), sim.lots.size(), sim.tick_count / CitySim.TICKS_PER_HOUR]
+	if sig == _effects_key and is_same(sim.lots, _effects_lots):
+		return
+	_effects_key = sig
+	_effects_lots = sim.lots
 	lot_value.clear()
 	lot_happy.clear()
 	if sites.is_empty():
@@ -337,6 +361,7 @@ func average_happiness(sim: CitySim) -> float:
 ## true when anything visible changed.
 func decide(sim: CitySim) -> bool:
 	_sign_up(sim)
+	tourism.sync(sim)
 	var changed := false
 	var ids := sites.keys()
 	ids.sort()
@@ -698,7 +723,7 @@ func to_dict() -> Dictionary:
 			"size": [s.size.x, s.size.y], "start_area": s.start_area, "founded": s.founded, "features": fs,
 			"score": s.score, "tier": s.tier, "next_feature": s.next_feature, "grew": s.grew,
 			"leader": s.leader, "why": s.why}
-	return {"next_id": _next_id, "sites": out}
+	return {"next_id": _next_id, "sites": out, "tourism": tourism.to_dict()}
 
 
 func from_dict(d: Dictionary) -> void:
@@ -716,6 +741,7 @@ func from_dict(d: Dictionary) -> void:
 			"tier": int(e.tier), "next_feature": int(e.next_feature), "grew": int(e.grew),
 			"leader": _leader(e.get("leader", {})), "why": str(e.get("why", ""))}
 	_next_id = int(d.get("next_id", 1))
+	tourism.from_dict(d.get("tourism", {}))
 
 
 ## A park board chair: an Agency leader with a name of their own.

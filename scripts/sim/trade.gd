@@ -130,7 +130,8 @@ static func _book(cities: Dictionary, seller: String, buyer: String, good: Strin
 		var t: Trade = sim.trade
 		var other: String = side[1]
 		var link: int = links.get(id, {}).get(other, sim.region_links[0] if not sim.region_links.is_empty() else -1)
-		var d := {"good": good, "amount": amount, "price": price, "seller": seller, "buyer": buyer, "link": link}
+		var d := {"good": good, "amount": amount, "price": price, "seller": seller, "buyer": buyer, "link": link,
+			"sold": side[2] > 0}
 		sim.economy.money += money * side[2]
 		t.net += money * side[2]
 		if side[2] > 0:
@@ -139,6 +140,31 @@ static func _book(cities: Dictionary, seller: String, buyer: String, good: Strin
 			t.bought[good] = t.bought.get(good, 0.0) + amount
 		t.last_deals.append(d)
 		t.deal.emit(d)
+
+
+## Takes a month's deals settled by the region's server for this city:
+## the money moves and the deal signals fire here, on the player's own
+## computer, which runs the town.
+func receive(sim: CitySim, deals: Array) -> void:
+	bought = {}
+	sold_last = {}
+	net = 0
+	last_deals = []
+	for d in deals:
+		var amount := float(d.amount)
+		var money := roundi(amount * float(d.price))
+		var selling := bool(d.get("sold", false))
+		if selling:
+			sold_last[d.good] = sold_last.get(d.good, 0.0) + amount
+			net += money
+		else:
+			bought[d.good] = bought.get(d.good, 0.0) + amount
+			net -= money
+		var copy: Dictionary = d.duplicate()
+		copy.erase("sold")
+		last_deals.append(copy)
+		deal.emit(copy)
+	sim.economy.money += net
 
 
 func to_dict() -> Dictionary:

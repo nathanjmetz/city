@@ -40,8 +40,12 @@ func _process(_delta: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
 		return
-	var focus := _ground_focus(cam)
-	var radius := reach(cam.global_position.y)
+	var height := maxf(cam.global_position.y - Terrain.ground_y(cam.global_position.x, cam.global_position.z), 1.0)
+	var radius := reach(height)
+	var focus := _ground_focus(cam, radius)
+	# Trees thin out and shrink toward the edge (TreeField's shader), where
+	# the ground's painted canopy takes over.
+	RenderingServer.global_shader_parameter_set("tree_fade", Vector4(focus.x, focus.y, radius, 0.0))
 	var size := Vegetation.CHUNK
 	var day := sim.tick_count / REGROW_REDRAW
 	if day != _last_regrow:
@@ -95,6 +99,7 @@ func _draw_chunk(c: Vector2i, detail: bool) -> void:
 	var plants := sim.vegetation.plants_in(Rect2(Vector2(c) * size, Vector2(size, size)), sim.tick_count, detail)
 	if not _chunks.has(c):
 		var field := TreeField.new()
+		field.fades = true
 		add_child(field)
 		_chunks[c] = field
 	var trees := []
@@ -127,11 +132,17 @@ func _centre(c: Vector2i) -> Vector2:
 	return (Vector2(c) + Vector2(0.5, 0.5)) * Vegetation.CHUNK
 
 
-## Where the camera's view meets the ground (or below it, looking flat).
-func _ground_focus(cam: Camera3D) -> Vector2:
+## The centre of the trees drawn: from the camera toward where it looks, but
+## never more than part of the reach ahead, so a low, flat view doesn't
+## swing it far off (and reload everything) with each small move.
+func _ground_focus(cam: Camera3D, radius: float) -> Vector2:
 	var from := cam.global_position
 	var dir := -cam.global_basis.z
+	var flat := Vector2(dir.x, dir.z)
+	if flat.length() < 0.001:
+		return Vector2(from.x, from.z)
+	var height := maxf(from.y - Terrain.ground_y(from.x, from.z), 1.0)
+	var ahead := radius * 0.45
 	if dir.y < -0.05:
-		var p := from + dir * (from.y / -dir.y)
-		return Vector2(p.x, p.z)
-	return Vector2(from.x, from.z)
+		ahead = minf(height / -dir.y * flat.length(), ahead)
+	return Vector2(from.x, from.z) + flat.normalized() * ahead

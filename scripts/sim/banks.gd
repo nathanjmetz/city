@@ -79,7 +79,7 @@ const TREE := {
 			"effects": {"losses+": 0.25, "jobs+": 2}},
 		{"id": "young_farmers", "name": "Young and beginning farmers program", "art": "hall",
 			"needs": {"local:farm": 5}, "effects": {"farm+": 0.3}},
-		{"id": "leasing", "name": "Equipment leasing yard", "art": "yard", "requires": ["appraisal"],
+		{"id": "leasing", "name": "Equipment leasing office", "art": "office", "requires": ["appraisal"],
 			"needs": {"local:farm": 4}, "effects": {"farm+": 0.15, "jobs+": 3}},
 		{"id": "timber", "name": "Timber and agribusiness lending", "art": "office", "needs": {"local:forest": 1},
 			"effects": {"timber+": 0.4, "jobs+": 2}},

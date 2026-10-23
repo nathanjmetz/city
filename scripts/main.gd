@@ -15,6 +15,8 @@ var _tick_time := 0.0
 var speed := 1
 var _resume_speed := 1
 var _save_wait := 0.0
+## Online, a copy of your town goes to the region this often, in seconds.
+const TOWN_SEND_EVERY := 10.0
 ## True until the whole town is built and drawn; the clock waits for it.
 var loading := true
 
@@ -22,7 +24,6 @@ var loading := true
 func _ready() -> void:
 	if Session.online():
 		sim = Session.client.my_sim()
-		sim.send_command = Session.client.send_command
 	sim.require_utilities = true
 	var sky := SkyLight.new()
 	add_child(sky)
@@ -32,6 +33,9 @@ func _ready() -> void:
 	var roads := RoadView.new()
 	add_child(roads)
 	roads.setup(sim.network, sim)
+	var street_signs := StreetSignView.new()
+	add_child(street_signs)
+	street_signs.setup(sim)
 
 	var zone_view := ZoneView.new()
 	zone_view.setup(sim)
@@ -76,6 +80,9 @@ func _ready() -> void:
 	add_child(campus_view)
 	campus_view.setup(sim)
 
+	var telecom_view := TelecomView.new()
+	add_child(telecom_view)
+	telecom_view.setup(sim)
 	var bank_view := BankView.new()
 	add_child(bank_view)
 	bank_view.setup(sim)
@@ -88,12 +95,17 @@ func _ready() -> void:
 	var bus_view := BusView.new()
 	bus_view.setup(sim)
 	add_child(bus_view)
+
+	var rail_view := RailView.new()
+	rail_view.setup(sim, terrain)
+	add_child(rail_view)
 	var look := DayNight.new()
 	look.setup(sim, sky, _tick_fraction)
 	add_child(look)
 
 	var signals := JunctionView.new()
 	signals.setup(sim.traffic)
+	signals.roads = roads
 	add_child(signals)
 
 	var flow_view := FlowView.new()
@@ -109,8 +121,6 @@ func _ready() -> void:
 		var x := p.x + sim.terrain_offset.x
 		var z := p.z + sim.terrain_offset.y
 		return Terrain.wild_cover(x, z) + [Terrain.crops(x, z)]
-	terrain.trees_drawn_to = func() -> float:
-		return WildView.reach(cam.camera.global_position.y)
 
 	var audio := CityAudio.new()
 	audio.setup(sim, cam.camera, func(): return _tick_time * CitySim.TICKS_PER_SECOND)
@@ -163,6 +173,9 @@ func _ready() -> void:
 	campus_tool.setup(sim, cam)
 	add_child(campus_tool)
 
+	var telecom_tool := TelecomTool.new()
+	telecom_tool.setup(sim, cam)
+	add_child(telecom_tool)
 	var bank_tool := BankTool.new()
 	bank_tool.setup(sim, cam)
 	add_child(bank_tool)
@@ -189,6 +202,8 @@ func _ready() -> void:
 			industry_tool.set_kind("")
 		if keep != campus_tool and campus_tool.kind != "":
 			campus_tool.set_kind("")
+		if keep != telecom_tool and telecom_tool.kind != "":
+			telecom_tool.set_kind("")
 		if keep != bank_tool and bank_tool.kind != "":
 			bank_tool.set_kind("")
 		if keep != warehouse_tool and warehouse_tool.kind != "":
@@ -210,6 +225,7 @@ func _ready() -> void:
 	traffic_tool.mode_changed.connect(func(m): if m != TrafficTool.Mode.NONE: picked.call(traffic_tool))
 	industry_tool.kind_changed.connect(func(k): if k != "": picked.call(industry_tool))
 	campus_tool.kind_changed.connect(func(k): if k != "": picked.call(campus_tool))
+	telecom_tool.kind_changed.connect(func(k): if k != "": picked.call(telecom_tool))
 	bank_tool.kind_changed.connect(func(k): if k != "": picked.call(bank_tool))
 	warehouse_tool.kind_changed.connect(func(k): if k != "": picked.call(warehouse_tool))
 	park_tool.kind_changed.connect(func(k): if k != "": picked.call(park_tool))
@@ -219,7 +235,7 @@ func _ready() -> void:
 	select_tool.setup(sim, cam, func(): return road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
-		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or bank_tool.kind != "" or move_tool.active)
+		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or bank_tool.kind != "" or telecom_tool.kind != "" or move_tool.active)
 	add_child(select_tool)
 
 	var water_view := WaterView.new()
@@ -232,6 +248,7 @@ func _ready() -> void:
 	hud.farm_tool = farm_tool
 	hud.industry_tool = industry_tool
 	hud.campus_tool = campus_tool
+	hud.telecom_tool = telecom_tool
 	hud.bank_tool = bank_tool
 	hud.warehouse_tool = warehouse_tool
 	hud.park_tool = park_tool
@@ -240,9 +257,13 @@ func _ready() -> void:
 	hud.info_view = info_view
 	hud.service_view = service_view
 	hud.bus_view = bus_view
+	hud.rail_view = rail_view
 	hud.select_tool = select_tool
 	hud.lot_alerts = lot_alerts
 	add_child(hud)
+
+	# Hidden performance readout (F3).
+	add_child(PerfOverlay.new())
 
 	var menu := GameMenu.new()
 	menu.game = self
@@ -265,7 +286,8 @@ func _ready() -> void:
 		_starter_road()
 	await _settle()
 	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed, sim.water_changed,
-			sim.industry_changed, sim.warehouses_changed, sim.parks_changed, sim.education_changed, sim.power_changed, sim.banks_changed]:
+			sim.industry_changed, sim.warehouses_changed, sim.parks_changed, sim.education_changed, sim.power_changed, sim.banks_changed,
+			sim.telecom_changed]:
 		sig.connect(func(): _save_pending = true)
 
 
@@ -293,18 +315,23 @@ func _settle() -> void:
 func _process(delta: float) -> void:
 	if loading:
 		return
-	if Session.online():
-		return  # The region's server steps the city.
 	_tick_time += delta * SPEEDS[speed]
 	var step := 1.0 / CitySim.TICKS_PER_SECOND
 	var guard := 0
+	var t := Perf.now()
 	while _tick_time >= step and guard < 20:
 		_tick_time -= step
 		guard += 1
 		sim.tick()
+	Perf.add("frame.sim", t)
 	_tick_time = minf(_tick_time, step)
 	_save_wait -= delta
-	if _save_pending and _save_wait <= 0.0:
+	if Session.online():
+		# Your town runs here; the region keeps a copy for the neighbors.
+		if _save_wait <= 0.0:
+			_save_wait = TOWN_SEND_EVERY
+			Session.client.send_town()
+	elif _save_pending and _save_wait <= 0.0:
 		_save_pending = false
 		_save_wait = 2.0
 		Session.save_city(sim)
@@ -312,14 +339,10 @@ func _process(delta: float) -> void:
 
 ## How far through the current tick the clock is, 0 to 1.
 func _tick_fraction() -> float:
-	if Session.online():
-		return minf(Session.client.since_tick * CitySim.TICKS_PER_SECOND, 1.0)
 	return _tick_time * CitySim.TICKS_PER_SECOND
 
 
 func set_speed(s: int) -> void:
-	if Session.online():
-		return  # Everyone in a region shares one clock.
 	speed = clampi(s, 0, SPEEDS.size() - 1)
 	if speed != 0:
 		_resume_speed = speed

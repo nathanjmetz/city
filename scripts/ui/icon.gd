@@ -192,6 +192,17 @@ func _draw() -> void:
 		"power":
 			_poly([P.call(0.58, 0.06), P.call(0.22, 0.56), P.call(0.48, 0.56), P.call(0.4, 0.94),
 				P.call(0.78, 0.4), P.call(0.52, 0.4)], Color(1.0, 0.82, 0.3))
+		"tower":
+			# A lattice cell tower sending out signal arcs.
+			line.call(P.call(0.5, 0.22), P.call(0.3, 0.94))
+			line.call(P.call(0.5, 0.22), P.call(0.7, 0.94))
+			line.call(P.call(0.36, 0.72), P.call(0.64, 0.72), w * 0.7)
+			line.call(P.call(0.42, 0.5), P.call(0.58, 0.5), w * 0.7)
+			draw_circle(P.call(0.5, 0.2), s * 0.06, accent)
+			for k in 2:
+				var r := s * (0.17 + k * 0.12)
+				draw_arc(P.call(0.5, 0.2), r, -PI * 0.85, -PI * 0.55, 8, color, w * 0.7, true)
+				draw_arc(P.call(0.5, 0.2), r, -PI * 0.45, -PI * 0.15, 8, color, w * 0.7, true)
 		"water":
 			# Water tower: a round tank on legs.
 			draw_circle(P.call(0.5, 0.32), s * 0.24, Color(0.55, 0.78, 0.95))
@@ -229,6 +240,14 @@ func _draw() -> void:
 				var fwd := Vector2(-sin(a0 + TAU / 3.0 - 0.25), cos(a0 + TAU / 3.0 - 0.25))
 				var side := Vector2(cos(a0 + TAU / 3.0 - 0.25), sin(a0 + TAU / 3.0 - 0.25))
 				_poly([tip + fwd * s * 0.12, tip + side * s * 0.09, tip - side * s * 0.09], Color(0.45, 0.8, 0.5))
+		"train", "rail":
+			# A diesel locomotive from the side, on its rail.
+			_poly([P.call(0.08, 0.7), P.call(0.08, 0.46), P.call(0.6, 0.46), P.call(0.6, 0.7)], color)
+			_poly([P.call(0.6, 0.7), P.call(0.6, 0.26), P.call(0.86, 0.26), P.call(0.92, 0.4), P.call(0.92, 0.7)], color)
+			draw_rect(Rect2(P.call(0.66, 0.32), Vector2(0.16, 0.1) * s), Color(0.12, 0.14, 0.16))
+			for x in [0.2, 0.36, 0.64, 0.8]:
+				draw_circle(P.call(x, 0.76), s * 0.07, color)
+			line.call(P.call(0.02, 0.86), P.call(0.98, 0.86), w)
 		"mail":
 			# A curbside mailbox on its post, flag up.
 			line.call(P.call(0.42, 0.56), P.call(0.42, 0.94), w * 1.4)
@@ -379,6 +398,15 @@ func _draw() -> void:
 			line.call(P.call(0.26, 0.5), P.call(0.74, 0.5), w, Color(1.0, 0.82, 0.3))
 			line.call(P.call(0.26, 0.5), P.call(0.26, 0.1), w, Color(1.0, 0.82, 0.3))
 			line.call(P.call(0.74, 0.5), P.call(0.74, 0.1), w, Color(1.0, 0.82, 0.3))
+		"fairgrounds":
+			# A Ferris wheel on its legs.
+			draw_arc(P.call(0.5, 0.42), s * 0.3, 0, TAU, 24, color, w, true)
+			for k in 4:
+				var a := PI * k / 4.0
+				var d := Vector2(cos(a), sin(a)) * s * 0.3
+				line.call(P.call(0.5, 0.42) - d, P.call(0.5, 0.42) + d, w * 0.6)
+			line.call(P.call(0.5, 0.42), P.call(0.3, 0.92), w)
+			line.call(P.call(0.5, 0.42), P.call(0.7, 0.92), w)
 		"advice":
 			# A speech bubble with three dots.
 			var bubble := PackedVector2Array([P.call(0.12, 0.18), P.call(0.88, 0.18), P.call(0.88, 0.68),

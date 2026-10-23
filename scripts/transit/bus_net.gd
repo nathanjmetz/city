@@ -1559,6 +1559,8 @@ func describe(sim: CitySim, id: int) -> Dictionary:
 		rows.append(["A bus every", "%d minutes" % roundi(headway)])
 	rows.append(["Riders", "%s a day" % CitySim.money_text(int(dep.riders))])
 	rows.append(["Fare", "$%.2f (set by the depot)" % dep.fare])
+	# Set by the depot's Funding slider (Economy page).
+	rows.append(["City funding", "$%s / month" % CitySim.money_text(int(b.get("subsidy", 0)))])
 	var m: Dictionary = dep.month
 	if not m.is_empty():
 		rows.append(["Fares", "$%s / month" % CitySim.money_text(int(m.fares))])
@@ -1588,8 +1590,7 @@ func describe(sim: CitySim, id: int) -> Dictionary:
 	if mini(dep.wanted, dep.target) >= bays and dep.wanted > bays:
 		problems.append("The yard is full: it will buy the land next door when it's free and it can afford it.")
 	return {"title": k.name, "kind": "Transit", "icon": k.icon, "ok": linked and problems.is_empty() and fleet > 0,
-		"status": status, "rows": rows, "problems": problems, "log": dep.log.duplicate(),
-		"subsidy": {"id": id, "amount": int(b.get("subsidy", 0))}}
+		"status": status, "rows": rows, "problems": problems, "log": dep.log.duplicate()}
 
 
 static func _education_words(e: float) -> String:

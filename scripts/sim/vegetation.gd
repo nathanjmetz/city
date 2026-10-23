@@ -45,6 +45,7 @@ var _dirty_tick := 0
 var _sim: Object
 var _hubs_version := -1
 var _mail_version := -1
+var _rail_version := -1
 
 
 ## Follows the city: anything built or removed marks the land for a re-check.
@@ -53,6 +54,8 @@ func watch(sim: Object) -> void:
 	for sig in [sim.buildings_changed, sim.lots_changed, sim.farms_changed, sim.industry_changed, sim.warehouses_changed,
 			sim.parks_changed, sim.water_changed, sim.banks_changed, sim.power_changed, sim.network.changed]:
 		sig.connect(_mark)
+	if sim.has_signal("telecom_changed"):
+		sim.telecom_changed.connect(_mark)
 
 
 func _mark() -> void:
@@ -86,6 +89,10 @@ func update(sim: Object) -> void:
 	# So does the post office.
 	if sim.mail.version != _mail_version:
 		_mail_version = sim.mail.version
+		_mark()
+	# And the railroad, as its crews lay track.
+	if sim.rail.version != _rail_version:
+		_rail_version = sim.rail.version
 		_mark()
 	if not _dirty:
 		return
@@ -181,6 +188,12 @@ static func sources(sim: Object) -> Dictionary:
 		var o: Dictionary = sim.mail.offices[id]
 		for cell in o.cells:
 			out["m%d %s %s" % [id, cell, o.pos]] = _poly_cells.bind(CivicHubs.cell_poly(o, cell))
+	for id in sim.telecom.companies:
+		var tc: Dictionary = sim.telecom.companies[id]
+		for cell in [Vector2i.ZERO] + tc.blocks.map(func(b): return b.c):
+			out["t%d %s %s" % [id, cell, tc.pos]] = _poly_cells.bind(Telecom.block_corners(tc, cell))
+		for t in tc.towers:
+			out["tt%d %s" % [id, t.pos]] = _poly_cells.bind(Telecom.compound(Vector2(t.pos[0], t.pos[1])))
 	for id in sim.banks.banks:
 		var b: Dictionary = sim.banks.banks[id]
 		out["k%d %s" % [id, b.pos]] = _poly_cells.bind(Banks.block_corners(b, Vector2i.ZERO))
@@ -205,6 +218,17 @@ static func sources(sim: Object) -> Dictionary:
 		out["id%d %d" % [id, s.drive.size()]] = _line_cells.bind(PackedVector3Array(s.drive), Farms.DRIVE_WIDTH * 0.5 + 1.5)
 		for pad in s.pads:
 			out["ip%d %s" % [id, pad]] = _poly_cells.bind(Industry.pad_corners(s, pad))
+	# Rail yards and the track laid so far, with its cleared right of way.
+	for id in sim.rail.depots:
+		var poly: PackedVector2Array = sim.rail.yard_poly(id)
+		out["ry%d %s" % [id, poly[0]]] = _poly_cells.bind(poly)
+	for pid in sim.rail.pieces:
+		var pc: Dictionary = sim.rail.pieces[pid]
+		var pts: Array = pc.pts
+		var upto := pts.size() if float(pc.built) < 0.0 else mini(pts.size(), int(float(pc.built) / 10.0) + 2)
+		var line := PackedVector3Array(pts.slice(0, upto))
+		if line.size() >= 2:
+			out["rp%d %d" % [pid, line.size()]] = _line_cells.bind(line, 8.0)
 	return out
 
 

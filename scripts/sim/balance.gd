@@ -201,6 +201,22 @@ const INDUSTRY_MIN_RICHNESS := 0.25
 const INDUSTRY_STOCK_CAP := 12.0
 ## Companies decide to open or close a pad this often, in ticks (6 game hours).
 const INDUSTRY_DECIDE_EVERY := 360
+## How each kind spreads, after real operations (Brawn: everything against
+## its real version):
+## Oil: one producing well pad per spacing unit (Indiana's Illinois Basin
+## fields drill on about 10-acre spacing; pads end up 200-400 m apart and
+## offset, not on a grid), lease roads back to the tank battery.
+const OIL_SPACING_CELLS := 3  # pads at least this many 80 m cells apart
+## How far out a company's lease or timber reaches, in 80 m cells.
+const LEASE_REACH_CELLS := 12
+## Ore: one quarry that widens bench by bench beside its plant, never
+## separate holes (Indiana limestone quarries, Iron Range pits).
+## Forest: a few harvest units worked at a time inside the woods, each cut
+## for a couple of years and then left to regrow (Indiana DNR selective
+## harvests run on a 15-20 year cutting cycle). Game years are 12 days.
+const FOREST_ACTIVE_UNITS := 6
+const FOREST_CUT_DAYS := 24.0
+const FOREST_REGROW_DAYS := 180.0
 
 # --- Power companies ----------------------------------------------------------
 # Brawn's hub-with-a-leader model (Best of CS pitch #6). A plant is built
@@ -708,7 +724,98 @@ const AMENITIES := {
 	# and lights (Friday nights are a small-town institution).
 	"football": {"cost": 4_000_000, "upkeep": 15_000, "size": Vector2(140, 84),
 		"value": 0.06, "value_reach": 600.0, "happy": 0.12, "happy_reach": 1600.0},
+	# The county fairgrounds: show barns, an exhibit hall, a grandstand and
+	# open ground for the midway, about 40 acres at the start (Indiana
+	# county fairgrounds run 30 to 100 acres).
+	"fairgrounds": {"cost": 3_000_000, "upkeep": 12_000, "size": Vector2(240, 170),
+		"value": 0.02, "value_reach": 500.0, "happy": 0.10, "happy_reach": 2500.0},
+	# Businesses that open by themselves for visitors (Tourism): a motel, a
+	# diner and a gas station on free road frontage near a venue. They are
+	# private, so the town pays nothing for them and gets nothing back when
+	# a road takes one.
+	"motel": {"cost": 0, "upkeep": 0, "size": Vector2(46, 30), "value": 0.0, "value_reach": 1.0, "happy": 0.0, "happy_reach": 1.0},
+	"diner": {"cost": 0, "upkeep": 0, "size": Vector2(26, 30), "value": 0.0, "value_reach": 1.0, "happy": 0.0, "happy_reach": 1.0},
+	"gas_station": {"cost": 0, "upkeep": 0, "size": Vector2(40, 36), "value": 0.0, "value_reach": 1.0, "happy": 0.0, "happy_reach": 1.0},
 }
+# --- Tourism and events --------------------------------------------------------
+# Brawn green-lit (2026-10-22): a fairgrounds hub whose fair board grows it
+# and runs a county fair each summer, and the football field as a stadium
+# hub for Friday-night football and concerts. Visitors drive in from the
+# neighboring towns as real trips, and once enough come, a gas station, a
+# diner and a motel open on their own nearby.
+
+## What each venue puts on. `months` (1 to 12) it runs in, the `hours` of
+## the day, `local` (share of the town who come) and `region` (share of the
+## people in the neighboring towns), and the `ticket` price. `seats` caps a
+## single event before the tree adds room. Real figures: an Indiana county
+## fair draws 30,000 to 100,000 over a week in a county of 20,000 to 40,000;
+## a small-town Friday game 1,000 to 3,000; gate about $5 to $10.
+const VENUES := {
+	"fairgrounds": {"seats": 15_000, "events": [
+		{"name": "County fair", "months": [7], "hours": [9, 23], "local": 0.6, "region": 0.25, "ticket": 8.0}]},
+	"football": {"seats": 2_500, "events": [
+		{"name": "Friday night football", "months": [9, 10, 11], "hours": [18, 22], "local": 0.15, "region": 0.03,
+			"ticket": 6.0}]},
+}
+## People in the county around a town that has no neighbors yet (solo
+## play): Pike County, Indiana has about 12,000.
+const TOURISM_COUNTY_POP := 12_000
+## What a visitor from out of town spends in town (food, gas, a room), and
+## the share the town keeps as its food-and-beverage and innkeeper's taxes
+## (Indiana counties levy 1% to 5% each).
+const TOURISM_SPEND := 35.0
+const TOURISM_LOCAL_TAX := 0.04
+## Visitors each car on the road stands for (about 2.5 to a car, and only a
+## sample of the cars is driven, to keep the game light), and the most cars
+## a venue sends out in an hour.
+const TOURISM_VISITORS_PER_CAR := 120
+const TOURISM_MAX_CARS_HOUR := 6
+## What opens by itself for out-of-town visitors, in order, once a year's
+## visitors from outside reach `visitors`: assessed value and jobs.
+const TOURISM_BUSINESSES := [
+	{"kind": "gas_station", "visitors": 4_000, "value": 900_000, "jobs": 6},
+	{"kind": "diner", "visitors": 8_000, "value": 700_000, "jobs": 14},
+	{"kind": "motel", "visitors": 15_000, "value": 2_000_000, "jobs": 8},
+]
+## How far from a venue they open, metres.
+const TOURISM_BUSINESS_REACH := 900.0
+## Venue development trees, in the Agency format (see agency.gd). The fair
+## board or the boosters pay from the venue's own gate money. Effects:
+## `draw+` (more come), `seats+` (room), `months+` (an extra event month).
+const VENUE_TREES := {
+	"fairgrounds": [
+		{"id": "show_barns", "name": "4-H show barns", "cost": 400_000, "needs": {"local:farm": 1},
+			"effects": {"draw+": 0.1}, "note": "farm kids show their animals"},
+		{"id": "grandstand", "name": "Grandstand", "cost": 900_000, "needs": {"population": 1_500},
+			"effects": {"seats+": 5_000.0, "draw+": 0.05}},
+		{"id": "midway", "name": "Carnival midway contract", "cost": 250_000, "needs": {"link": 1},
+			"effects": {"draw+": 0.15}, "note": "a traveling carnival brings rides"},
+		{"id": "derby", "name": "Demolition derby pit", "cost": 300_000, "requires": ["grandstand"],
+			"needs": {"profit": 60_000}, "effects": {"draw+": 0.1}},
+		{"id": "harness", "name": "Harness racing track", "cost": 1_200_000, "requires": ["grandstand"],
+			"needs": {"local:farm": 3, "region_makes:grain": 1}, "effects": {"draw+": 0.1, "months+": 1.0},
+			"note": "spring races for the farm towns around"},
+		{"id": "expo_hall", "name": "Exposition hall", "cost": 2_000_000, "requires": ["show_barns"],
+			"needs": {"population": 4_000, "leader_edu": 0.4}, "effects": {"months+": 2.0, "seats+": 3_000.0},
+			"note": "shows and auctions all year"},
+	],
+	"football": [
+		{"id": "home_stands", "name": "Home grandstand", "cost": 800_000, "needs": {"population": 2_000},
+			"effects": {"seats+": 2_000.0}},
+		{"id": "turf", "name": "Artificial turf", "cost": 900_000, "needs": {"profit": 40_000},
+			"effects": {"draw+": 0.05}},
+		{"id": "track", "name": "Running track", "cost": 600_000, "needs": {"education": 0.3},
+			"effects": {"months+": 1.0}, "note": "spring track meets"},
+		{"id": "concerts", "name": "Summer concert stage", "cost": 500_000, "requires": ["home_stands"],
+			"needs": {"link": 1}, "effects": {"months+": 1.0, "draw+": 0.1}, "note": "bands tour the county"},
+		{"id": "playoffs", "name": "Regional playoff host", "cost": 1_500_000, "requires": ["home_stands", "turf"],
+			"needs": {"population": 5_000, "link": 1}, "effects": {"draw+": 0.2, "seats+": 2_000.0},
+			"note": "teams and fans from towns around"},
+	],
+}
+## Months the tree's extra events fall in, in order: spring then summer.
+const VENUE_EXTRA_MONTHS := [5, 6, 8, 4, 10]
+
 ## Most land value and happiness a home can get from parks and landmarks
 ## together.
 const AMENITY_VALUE_CAP := 0.25
@@ -959,6 +1066,44 @@ const MAIL_TREE := {
 	"air_mail": {"cost": 700_000, "land": 0, "days": 2, "weight": 3},
 }
 
+# --- Families and their businesses ---------------------------------------------
+# Brawn (2026-10-22): every business has a believable name, printed on its
+# sign, and a family behind it. A family that does well branches out the way
+# real small-town families do (the one with the grain elevator also buys the
+# diner and opens the hardware store), under one brand. It may only open on a
+# lot the player zoned or buy a business that's already there, each move is a
+# permit the player answers, and a family holds a few businesses at most in a
+# town. Each new business then follows the normal hub rules (grows next door
+# only).
+
+## Most businesses one family may own in a town (real small-town family
+## groups hold a handful: the elevator, the implement dealer, a restaurant).
+const FAMILY_MAX_HUBS := 4
+## Years in business before a family thinks of branching out.
+const FAMILY_EXPAND_AFTER := 2
+## Chance a month that a family ready to branch out asks, at full ambition.
+const FAMILY_EXPAND_CHANCE := 0.25
+## What the owners draw a month: a share of a farm's or company's profit,
+## and per job at an open shop or factory. A 10-job shop pays its owners
+## about $54,000 a year, near the median small-business owner's income (SBA).
+const FAMILY_PROFIT_SHARE := 0.3
+const FAMILY_PER_JOB := 450
+## A new family's savings when it opens its first business.
+const FAMILY_START_CASH := 50_000
+## Opening a business on an empty zoned lot: a small-town restaurant or
+## store costs about $175,000-$750,000 to open; a small plant more.
+const FAMILY_START_COST := {"shop": 250_000, "factory": 900_000}
+## Buying a going business: small businesses sell for 2-3x what they pay
+## their owners (BizBuySell). Farms sell for their land.
+const FAMILY_BUY_COST := {"shop": 180_000, "factory": 750_000, "company": 1_200_000}
+## A new generation takes over after this many years.
+const FAMILY_GENERATION_YEARS := 25
+## After this many years a family redoes its look (new signs, modern
+## lettering), for about this much.
+const FAMILY_REBRAND_YEARS := 20
+const FAMILY_REBRAND_COST := 40_000
+## Signs read "SINCE 2031" once a business is this many years old.
+const FAMILY_SINCE_SHOWN := 10
 # --- Water and sewer utility ---------------------------------------------------
 # Brawn's green (2026-10-22): the player places a water utility and sets its
 # subsidy; its superintendent runs it like a small business and climbs a
@@ -1066,6 +1211,158 @@ const WATER_INTEREST := 0.004
 ## and beyond this many months' worth the surplus goes back to the city.
 const WATER_RESERVE_MONTHS := 2.0
 const WATER_SURPLUS_MONTHS := 18.0
+
+# --- Phone, cell and internet ---------------------------------------------------
+# Brawn greened it (2026-10-22, Best of CS #17): a local phone company the
+# player places once. Its general manager runs it like a real rural
+# telephone co-op trying to stay in business: fiber goes down the streets
+# that pay back first (the densest), cell towers go up where too many
+# households get one bar or none (each tower is a zoning request on the
+# permit bell, as at a real county board of zoning appeals), and the
+# office grows only into the land right next to it. Coverage draws people,
+# remote workers and offices, and fiber lifts home values. Rural edges stay
+# spotty unless the town pays to reach them. Benchmark: CS2's telecom
+# (network quality drives offices) and real Indiana co-ops.
+
+## The central office (the exchange building with its switch and fiber
+## hut): what the player pays, and the city's standard monthly broadband
+## grant (the player can set it from half to one and a half times, like
+## Indiana's Next Level Connections grants).
+const TELECOM_COST := 2_500_000
+const TELECOM_GRANT := 15_000
+const TELECOM_FUNDING_LEVELS := [0.5, 0.75, 1.0, 1.25, 1.5]
+## People per household (US Census: 2.5).
+const TELECOM_PEOPLE_PER_HOUSEHOLD := 2.5
+## Fiber: build cost per metre of street (aerial on existing poles runs
+## about $60,000 a mile), the drop to each home that signs up, upkeep per
+## metre a year (about $1,000 a route mile), and what one crew strings in a
+## month (a real aerial crew does about a kilometre a week).
+const TELECOM_FIBER_PER_M := 38.0
+const TELECOM_FIBER_DROP := 900.0
+const TELECOM_FIBER_UPKEEP_M := 0.6
+const TELECOM_FIBER_M_PER_CREW := 4_000.0
+## Share of households passed that sign up for fiber (US average about 40%
+## a few years in), and of businesses on a fiber street.
+const TELECOM_FIBER_TAKE := 0.4
+const TELECOM_BUSINESS_TAKE := 0.6
+## A month's bill: home fiber (rural Indiana co-ops charge about $70),
+## business fiber, fixed wireless home internet, and cell service per
+## household on this carrier (about 2.5 lines at $50, with a third of the
+## market against the national carriers).
+const TELECOM_FIBER_ARPU := 70.0
+const TELECOM_BUSINESS_ARPU := 150.0
+const TELECOM_FIXED_ARPU := 55.0
+const TELECOM_FIXED_TAKE := 0.25
+const TELECOM_WIRELESS_ARPU := 40.0
+## Running a tower a month: ground lease (about $1,500), power, backhaul
+## and maintenance.
+const TELECOM_TOWER_MONTH := 2_700.0
+## The office's own overhead a month, before the land it grows into.
+const TELECOM_OVERHEAD := 12_000.0
+## How many years ahead a manager plans: TELECOM_HORIZON years plus up to
+## TELECOM_HORIZON_EDU more for a well-schooled one. A build goes ahead when
+## it pays back within that horizon.
+const TELECOM_HORIZON := 4.0
+const TELECOM_HORIZON_EDU := 8.0
+## Most the company will owe (a rural utility loan) before it stops building.
+const TELECOM_MAX_DEBT := 2_500_000.0
+## A tower's site: the fenced compound's side, how near a road it must be
+## for its gravel drive, and the least spacing between towers.
+const TELECOM_COMPOUND := 24.0
+const TELECOM_TOWER_ROAD := 90.0
+const TELECOM_TOWER_SPACING := 900.0
+## A household counts as poorly served below this signal (one bar).
+const TELECOM_GOOD_SIGNAL := 0.55
+## Share of workers who work from home when the house has fiber (about one
+## in eight US workers is fully remote), or only good cell service.
+const TELECOM_REMOTE_SHARE := 0.12
+const TELECOM_REMOTE_CELL := 0.03
+## Property value lift: about 3.1% for a home with fiber (FTTH Council /
+## Molnar study), and up to 1% for a full cell signal.
+const TELECOM_FIBER_LIFT := 0.031
+const TELECOM_CELL_LIFT := 0.01
+## Good coverage raises demand: for homes (people pick towns with good
+## internet) and for shops and offices on fiber streets.
+const TELECOM_HOME_DEMAND := 0.08
+const TELECOM_OFFICE_DEMAND := 0.12
+## Assessed value per tower and per metre of fiber, for property tax.
+const TELECOM_TOWER_VALUE := 250_000
+const TELECOM_FIBER_VALUE_M := 20.0
+## Each block of land next to the office: what buying and building on it
+## costs, and the most it will ever own.
+const TELECOM_BLOCK_COST := 450_000
+const TELECOM_MAX_BLOCKS := 8
+## The company decides once a game day (a month).
+const TELECOM_DECIDE_EVERY := 1440
+# --- Rail -----------------------------------------------------------------------
+# Brawn's model (2026-10-22): a rail depot is a hub whose leader runs it as a
+# business on its own money. The town only places it and can subsidize it.
+
+## What the town pays to place a depot (the land, station and yard grading).
+const RAIL_DEPOT_COST := 400_000
+## Money the railroad's investors put in when it opens.
+const RAIL_START_CAPITAL := 6_000_000
+## New track, dollars per metre: about $1M a mile for industry track and
+## $1.5M a mile for main line (US short-line construction costs).
+const RAIL_TRACK_PER_M := {"main": 930, "spur": 620}
+## Share of new track that state and federal rail grants pay (Indiana's
+## Industrial Rail Service Fund, federal CRISI grants), as public money pays
+## for most new roads. The railroad pays the rest.
+const RAIL_GRANT_SHARE := 0.75
+## A turnout where a spur leaves the main line (a #10 turnout, installed).
+const RAIL_TURNOUT_COST := 150_000
+## A grade crossing's lights, bells and gates, about $300,000 (FHWA).
+const RAIL_CROSSING_COST := 300_000
+## Track upkeep, dollars per metre per month (about $20,000 a mile a year).
+const RAIL_TRACK_UPKEEP_PER_M := 1.0
+## The depot's crew, dispatcher and office, per month, and its jobs.
+const RAIL_DEPOT_UPKEEP := 9_000
+const RAIL_DEPOT_JOBS := 12
+## What the railroad earns for each loaded car it hands to the region
+## (US average revenue is about $3,500 a carload, AAR).
+const RAIL_CAR_RATE := 3_500
+## Truck loads that fill one rail car: a tank car holds about 3.5 tanker
+## trucks of crude, an open hopper five dump trucks of ore, a bulkhead flat
+## three log trucks, a covered hopper about 3,400 bushels of grain.
+const RAIL_LOADS_PER_CAR := {"crude oil": 3.5, "ore": 5.0, "logs": 3.0, "grain": 3.4}
+## Grain truck loads the co-op elevator holds for the railroad.
+const RAIL_ELEVATOR_LOADS := 60
+## Running a train, dollars per train-km (fuel), plus the crew for each run.
+const RAIL_TRAIN_KM_COST := 60.0
+const RAIL_CREW_PER_RUN := 900.0
+## Passenger trains: rides each resident takes a month, the fare, the town
+## size a leader starts them at, the trainset's lease and how often one runs.
+const RAIL_RIDES_PER_RESIDENT := 0.3
+const RAIL_FARE := 12
+const RAIL_PASSENGER_MIN_POP := 800
+const RAIL_TRAINSET_LEASE := 6_000
+const RAIL_PAX_EVERY_HOURS := 6
+## Game days a train spends in the region before it comes back.
+const RAIL_REGION_DAYS := 0.4
+const RAIL_PAX_AWAY_DAYS := 0.25
+## A local freight leaves once this many cars wait at a siding, or once the
+## first has waited this many game days.
+const RAIL_TRAIN_MIN_CARS := 3
+const RAIL_TRAIN_MAX_WAIT_DAYS := 2.0
+## Metres of track a crew lays in a game day.
+const RAIL_BUILD_M_PER_DAY := 600.0
+## Leaders decide this often, in ticks (6 game hours).
+const RAIL_DECIDE_EVERY := 360
+## Years a leader waits for new track to pay off: a bold one, a modest one.
+## Track lasts 40 years or more, so railroads accept long paybacks.
+const RAIL_PAYBACK_YEARS := [25.0, 10.0]
+## Share of a spur's cost the company it serves pays (in the US the shipper
+## usually pays for its industry track; the railroad pays the rest).
+const RAIL_SHIPPER_SHARE := 0.5
+## Money a leader keeps in hand (scaled by caution).
+const RAIL_CUSHION := 500_000.0
+## Game days before a leader asks again about something the town turned
+## down or never answered (the permit bell has its own waits too).
+const RAIL_DENIED_DAYS := 24
+## Game days in the red before a railroad closes.
+const RAIL_BANKRUPT_DAYS := 6
+## Most the town can subsidize a depot, per month.
+const RAIL_MAX_SUBSIDY := 100_000
 # --- Banks and lending ---------------------------------------------------------
 # Brawn (2026-10-22, Best of CS pitch #20): a bank is a hub that lends to the
 # other hubs. A farm borrows to buy the field next door, a company to put
@@ -1209,3 +1506,9 @@ const POLICY_BUY_MARGIN_PER_PAD := [INF, 8_000.0, 0.0, -2_000.0, -4_000.0]
 ## Growth for parks: times how many people must live nearby before a park
 ## buys the strip next door (PARK_GROW_MIN_RESIDENTS). Hold buys none.
 const POLICY_PARK_RESIDENTS := [INF, 2.0, 1.0, 0.7, 0.5]
+## Hubs with their own money lever take it from their Funding step (Lean ..
+## Generous): the water utility's monthly subsidy (Standard is where a new
+## utility starts), and the post office's MAIL_FUNDING level (Standard is
+## Basic). A bus depot's subsidy is BUS_FUNDING_LEVELS at the same step.
+const POLICY_WATER_SUBSIDY := [0, 2_500, 5_000, 12_000, 25_000]
+const POLICY_MAIL_FUNDING := [0, 0, 1, 2, 3]

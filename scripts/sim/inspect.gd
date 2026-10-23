@@ -9,6 +9,13 @@ extends RefCounted
 ## The thing under a ground point: {type: "service"|"farm"|"lot"|"road", id},
 ## or {} for open ground. Buildings win over the road they stand on.
 static func pick(sim: CitySim, p: Vector3) -> Dictionary:
+	if not sim.rail.trains.is_empty():
+		var tid := sim.rail.train_at(p)
+		if tid != -1:
+			return {"type": "train", "id": tid}
+	var rid := sim.rail.depot_at(p)
+	if rid != -1:
+		return {"type": "rail", "id": rid}
 	var mid := sim.mail.at(p)
 	if mid != -1:
 		return {"type": "post_office", "id": mid}
@@ -44,6 +51,9 @@ static func pick(sim: CitySim, p: Vector3) -> Dictionary:
 	var cid := sim.education.at(p) if not sim.education.campuses.is_empty() else -1
 	if cid != -1:
 		return {"type": "campus", "id": cid}
+	var tid := sim.telecom.at(p) if not sim.telecom.companies.is_empty() else -1
+	if tid != -1:
+		return {"type": "telecom", "id": tid}
 	var fid := sim.farms.farm_at(p)
 	if fid == -1:
 		fid = sim.farms.field_at(p)
@@ -90,6 +100,15 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 			return [sim.education.campuses[sel.id].pos, Education.CELL * 0.75]
 		"post_office":
 			return sim.mail.extent(sel.id)
+		"telecom":
+			return [sim.telecom.companies[sel.id].pos, Telecom.CELL * 0.75]
+		"rail":
+			return [sim.rail.depots[sel.id].pos, Rail.YARD_LEN * 0.5 + Rail.LADDER]
+		"train":
+			var cars := sim.rail.car_poses(sel.id)
+			if cars.is_empty():
+				return []
+			return [(cars[0][1] + cars[-1][2]) * 0.5, maxf(12.0, (cars[0][1] as Vector3).distance_to(cars[-1][2]) * 0.5 + 4.0)]
 		"bank":
 			return [sim.banks.banks[sel.id].pos, Banks.CELL * 0.75]
 		"farm":
@@ -108,9 +127,12 @@ static func exists(sim: CitySim, sel: Dictionary) -> bool:
 		"water": return sim.services.water.utilities.has(sel.id) and sim.services.buildings.has(sel.id)
 		"hub": return sim.hubs.hubs.has(sel.id)
 		"post_office": return sim.mail.offices.has(sel.id)
+		"rail": return sim.rail.depots.has(sel.id)
+		"train": return sim.rail.trains.has(sel.id)
 		"farm": return sim.farms.farms.has(sel.id)
 		"industry": return sim.industry.sites.has(sel.id)
 		"campus": return sim.education.campuses.has(sel.id)
+		"telecom": return sim.telecom.companies.has(sel.id)
 		"bank": return sim.banks.banks.has(sel.id)
 		"warehouse": return sim.warehouses.buildings.has(sel.id)
 		"park": return sim.parks.sites.has(sel.id)
@@ -130,9 +152,12 @@ static func describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 		"water": return WaterUtility.describe(sim, sel.id)
 		"hub": return HubInfo.describe(sim, sel.id)
 		"post_office": return MailInfo.describe(sim, sel.id)
+		"rail": return RailInfo.depot(sim, sel.id)
+		"train": return RailInfo.train(sim, sel.id)
 		"farm": return _farm(sim, sel.id)
 		"industry": return _industry(sim, sel.id)
 		"campus": return CampusInfo.describe(sim, sel.id)
+		"telecom": return TelecomInfo.describe(sim, sel.id)
 		"bank": return BankInfo.describe(sim, sel.id)
 		"warehouse": return _warehouse(sim, sel.id)
 		"park": return _park(sim, sel.id)
@@ -221,7 +246,8 @@ static func _farm(sim: CitySim, id: int) -> Dictionary:
 	elif profit < 0.0:
 		status = "Losing money: will sell its worst field"
 	rows.append_array(_development(sim, f, Agency.TREES.farm, f.pos, profit))
-	return {"title": "Farm", "kind": "Farming", "icon": "farms", "ok": problems.is_empty() and profit >= 0.0,
+	rows.append_array(sim.families.rows(sim, "farm:%d" % id))
+	return {"title": _named(sim, "farm:%d" % id, "Farm"), "kind": "Farming", "icon": "farms", "ok": problems.is_empty() and profit >= 0.0,
 		"status": status, "rows": rows, "problems": problems}
 
 
@@ -257,7 +283,8 @@ static func _industry(sim: CitySim, id: int) -> Dictionary:
 	rows.append_array(_development(sim, s, Agency.TREES[s.kind], s.pos, profit))
 	if s.stock >= Industry.stock_cap(s):
 		problems.append("The yard is full, so it has stopped producing.")
-	return {"title": k.name, "kind": "Resource industry", "icon": s.kind, "ok": problems.is_empty(),
+	rows.append_array(sim.families.rows(sim, ref))
+	return {"title": _named(sim, ref, k.name), "kind": k.name if sim.families.owned.has(ref) else "Resource industry", "icon": s.kind, "ok": problems.is_empty(),
 		"status": status, "rows": rows, "problems": problems}
 
 
@@ -333,11 +360,49 @@ static func _park(sim: CitySim, id: int) -> Dictionary:
 			rows.append(["Last move", s.why])
 		# Its development tree, a branch a row.
 		rows.append_array(sim.parks.tree_status(sim, id))
+	var biz := Tourism.business(s.kind)
+	if not biz.is_empty():
+		return {"title": s.name, "kind": k.name, "icon": k.icon, "ok": true,
+			"status": "Opened for the visitors to town's events", "rows": [["Jobs", str(biz.jobs)],
+				["Assessed value", "$%s" % CitySim.money_text(int(biz.value))],
+				["Visitors from out of town", "%s a year" % CitySim.money_text(roundi(sim.parks.tourism.outside_year()))]],
+			"problems": []}
+	if sim.parks.tourism.venues.has(id):
+		status = _venue(sim, id, rows)
 	rows.append(["Land value nearby", "up to +%d%%" % roundi((float(a.value) * q + sim.parks.tree_lift(id, "value")) * 100.0)])
 	rows.append(["Happiness nearby", "up to +%d%%" % roundi((float(a.happy) * q + sim.parks.tree_lift(id, "happy")) * 100.0)])
 	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(roundi(sim.parks.site_upkeep(id)))])
 	return {"title": s.name, "kind": "Park" if s.kind == "park" else "Landmark  ·  " + k.name, "icon": k.icon,
 		"ok": true, "status": status, "rows": rows, "problems": []}
+
+
+## A venue's rows (who runs it, its events and crowds, its gate money and
+## its development tree). Returns its status line.
+static func _venue(sim: CitySim, id: int, rows: Array) -> String:
+	var t := sim.parks.tourism
+	var v: Dictionary = t.venues[id]
+	var s: Dictionary = sim.parks.sites[id]
+	var who := "Fair board" if v.kind == "fairgrounds" else "Boosters"
+	rows.append([who, "led by %s, %s" % [v.leader.name, Education.leader_style(v.leader)]])
+	var events := []
+	for m in range(1, 13):
+		var ev := t.event_in(id, m)
+		if not ev.is_empty():
+			events.append("%s (%s)" % [ev.name, ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
+				"Nov", "Dec"][m - 1]])
+	rows.append(["Events", ", ".join(events)])
+	rows.append(["Visitors this year", "%s (%s from out of town)" % [CitySim.money_text(roundi(v.visitors)),
+		CitySim.money_text(roundi(v.outside))]])
+	if float(v.visitors_last) > 0.0:
+		rows.append(["Last year", "%s visitors" % CitySim.money_text(roundi(v.visitors_last))])
+	rows.append(["Gate money saved", "$%s" % CitySim.money_text(roundi(v.savings))])
+	# The tree rows, without the "Run by ... owner" line (shown above).
+	var h := v.duplicate()
+	h.erase("leader")
+	rows.append_array(_development(sim, h, Balance.VENUE_TREES[v.kind], s.pos, v.profit))
+	if not v.crowd.is_empty():
+		return "%s on now: %s people" % [v.crowd.name, CitySim.money_text(int(v.crowd.visitors))]
+	return "Between events"
 
 
 ## A power company: its leader and why they built what they did, what it
@@ -465,6 +530,9 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 		rows.insert(1, ["Flats upstairs", "%d of %d residents" % [int(b.focc), int(b.flats)]])
 	if BuildingTypes.storeys(b) > 0:
 		rows.insert(0, ["Storeys", str(BuildingTypes.storeys(b))])
+	var address := sim.streets.address(sim, key)
+	if address != "":
+		rows.insert(0, ["Address", address])
 	if str(b.get("why", "")) != "":
 		rows.append(["Why this", b.why])
 	var next := []
@@ -493,10 +561,26 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 		problems.append(trash)
 	var icons := {ZoneMap.Zone.RESIDENTIAL: "homes", ZoneMap.Zone.COMMERCIAL: "shops", ZoneMap.Zone.INDUSTRIAL: "industry"}
 	var title: String = BuildingTypes.name_of(b)
+	var kind: String = BuildingTypes.TYPES[BuildingTypes.type_of(b)].name
 	if z == ZoneMap.Zone.INDUSTRIAL:
 		title = Balance.FACTORY_CHAINS[b.get("chain", "general")].name
-	return {"title": title, "kind": BuildingTypes.TYPES[BuildingTypes.type_of(b)].name, "icon": icons[z], "ok": problems.is_empty(),
+	var ref := "lot:" + key
+	if sim.families.owned.has(ref):
+		rows.insert(0, ["Building", title])
+		kind = Names.trade_word(sim.families.owned[ref].what).capitalize() if z == ZoneMap.Zone.COMMERCIAL else title
+		title = sim.families.name_of(ref)
+		rows.append_array(sim.families.rows(sim, ref))
+	elif z == ZoneMap.Zone.RESIDENTIAL:
+		rows.insert(0, ["Building", title])
+		title = Families.home_name(b)
+	return {"title": title, "kind": kind, "icon": icons[z], "ok": problems.is_empty(),
 		"status": status, "rows": rows, "problems": problems}
+
+
+## A business's own name if it has one ("Miller Farms"), else `plain`.
+static func _named(sim: CitySim, ref: String, plain: String) -> String:
+	var n := sim.families.name_of(ref)
+	return n if n != "" else plain
 
 
 static func _road(sim: CitySim, seg: int) -> Dictionary:
@@ -526,6 +610,7 @@ static func _road(sim: CitySim, seg: int) -> Dictionary:
 	var problems := []
 	if flow < 0.5:
 		problems.append("Congested: cars manage under half the speed limit.")
-	return {"title": spec.name, "kind": "Road", "icon": "road", "ok": problems.is_empty(),
+	var street := sim.streets.name_of(seg)
+	return {"title": street if street != "" else spec.name, "kind": spec.name if street != "" else "Road", "icon": "road", "ok": problems.is_empty(),
 		"status": "Flowing freely" if flow >= 0.8 else ("Busy" if flow >= 0.5 else "Jammed"),
 		"rows": rows, "problems": problems}

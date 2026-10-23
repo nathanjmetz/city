@@ -42,9 +42,14 @@ func _init() -> void:
 			kinds[car.kind] = true
 	_check(kinds.has("work_pickup"), "the crew comes in a work pickup (%s)" % str(kinds.keys()))
 	# Copies stay in step, and a save keeps every site where it was.
+	# As the region server does: it and every player reload the same snapshot.
+	var snapshot = JSON.parse_string(JSON.stringify(sim.to_dict(), "", false, true))
+	var sites := sim.construction.sites.size()
+	sim = CitySim.new()
+	sim.from_dict(snapshot)
 	var copy := CitySim.new()
-	copy.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
-	_check(copy.construction.sites.size() == sim.construction.sites.size(), "a save keeps the building sites")
+	copy.from_dict(snapshot)
+	_check(copy.construction.sites.size() == sites, "a save keeps the building sites")
 	for i in 30:
 		sim.tick()
 		copy.tick()
