@@ -75,6 +75,9 @@ var river := Callable()
 ## Last decide step's sales, per company id: {"town": homes, "export": homes,
 ## "profit": $ a year}. Shown in the panel; worked out again each step.
 var sales := {}
+## Line crews out on the road: trip id -> {"site", "home"} (home: on the
+## way back to the yard).
+var crews := {}
 var _next_id := 1
 ## The Economy page's sliders: a company on Growth Hold adds no units or
 ## buildings beyond its first unit (set by CitySim).
@@ -483,43 +486,6 @@ func status(id: int) -> String:
 	return "Doing well" if p > Balance.POWER_THRIVING_PROFIT else "Getting by"
 
 
-## How much a point's land value drops from smoke and noise, 0 to about
-## -0.3 (-0.2 = 20% lower). An old coal plant smokes up the land around it,
-## a gas plant a little; solar, wind and hydro leave it be.
-func land_value_effect(p: Vector3) -> float:
-	var total := 0.0
-	for id in sites:
-		var s: Dictionary = sites[id]
-		var k: Dictionary = PLANTS[s.plant]
-		if float(k.value) >= 0.0 or s.cells.is_empty():
-			continue
-		var d := INF
-		for c in s.cells:
-			d = minf(d, cell_center(s, c).distance_to(Vector3(p.x, 0.0, p.z)))
-		if d < float(k.reach):
-			total += float(k.value) * (1.0 - d / float(k.reach)) * minf(1.0, s.cells.size() / 2.0 + 0.5) \
-				* Agency.effect(s, TREE, "smoke*")
-	return maxf(total, Balance.POWER_SMOKE_FLOOR)
-
-
-## The smokiest plant near a point, for the lot panel: id or -1.
-func smoke_from(p: Vector3) -> int:
-	var worst := -1
-	var worst_v := 0.0
-	for id in sites:
-		var s: Dictionary = sites[id]
-		var k: Dictionary = PLANTS[s.plant]
-		if float(k.value) >= 0.0:
-			continue
-		for c in s.cells:
-			var d := cell_center(s, c).distance_to(Vector3(p.x, 0.0, p.z))
-			var v := float(k.value) * (1.0 - d / float(k.reach))
-			if d < float(k.reach) and v < worst_v:
-				worst = id
-				worst_v = v
-	return worst
-
-
 ## Cells a new company may open its first unit on.
 static func _seeds() -> Array:
 	var out := []
@@ -733,6 +699,46 @@ static func poles(route: PackedVector3Array) -> PackedVector3Array:
 	return out
 
 
+## Line crews: every morning each company sends a bucket truck out to
+## check its units, and one along its line to the neighbors, trimming trees
+## and fixing what the weather broke (as co-op line crews do). A crew parks
+## at the job, then drives back to the yard.
+func crew_tick(sim: Object) -> void:
+	for a in sim.traffic.arrivals:
+		if crews.has(a.id):
+			var c: Dictionary = crews[a.id]
+			crews.erase(a.id)
+			if not c.home and sites.has(c.site):
+				var s: Dictionary = sites[c.site]
+				_send(sim, c.site, c.at, s.drive[-1], true)
+	for f in sim.traffic.failed:
+		crews.erase(f.id)
+	if sim.tick_count % (CitySim.TICKS_PER_HOUR * 24) != CitySim.TICKS_PER_HOUR * 7:
+		return
+	var ids := sites.keys()
+	ids.sort()
+	var day := int(sim.tick_count / (CitySim.TICKS_PER_HOUR * 24))
+	for id in ids:
+		var s: Dictionary = sites[id]
+		if s.drive.is_empty() or s.cells.is_empty():
+			continue
+		var jobs := []
+		var c: Vector2i = s.cells[absi(hash([id, day])) % s.cells.size()]
+		jobs.append(cell_center(s, c))
+		var line := tie_route(sim.network, sim.region_links, s)
+		if line.size() > 2:
+			jobs.append(line[2 + absi(hash([id, day, "line"])) % (line.size() - 2)])
+		for at in jobs:
+			_send(sim, id, s.drive[-1], at, false)
+
+
+func _send(sim: Object, id: int, from: Vector3, to: Vector3, home: bool) -> void:
+	var trip: int = sim.traffic.dispatch({"ref": "power:%d" % id, "pos": [from.x, from.z]},
+		{"ref": "power:%d" % id if home else "line:%d" % id, "pos": [to.x, to.z]}, "power_line")
+	if trip != -1:
+		crews[trip] = {"site": id, "home": home, "at": to}
+
+
 func yard(s: Dictionary) -> PackedVector2Array:
 	var side := _right(s)
 	var out := PackedVector2Array()
@@ -760,6 +766,7 @@ func to_dict() -> Dictionary:
 
 func from_dict(d: Dictionary) -> void:
 	sites.clear()
+	crews.clear()
 	sales.clear()
 	for k in d.get("sites", {}):
 		var s: Dictionary = d.sites[k]

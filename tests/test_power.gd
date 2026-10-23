@@ -61,18 +61,22 @@ func _init() -> void:
 	_check(wells == 0, "no substation or feed")
 	var site := Services.site_near(sim.network, Services.Kind.WELL, o + Vector3(-300, 0, 30))
 	sim.apply({"type": "place_service", "kind": Services.Kind.WELL, "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})
+	var crewed := 0
 	for i in 3000:
 		sim.tick()
+		crewed = maxi(crewed, sim.power.crews.size())
 	var powered := 0
 	for key in sim.buildings:
 		if sim.services.served[key].power:
 			powered += 1
+	_check(crewed > 0, "a line crew drives out from the yard")
 	_check(powered > 0, "homes grow on the company's power alone (%d)" % powered)
 	print("  cells %d, capacity %d, sales %s, built %s" % [s.cells.size(), sim.power.capacity(id),
 		str(sim.power.sales.get(id)), str(s.built)])
 	if s.plant == "coal":
-		_check(sim.power.land_value_effect(Power.cell_center(s, s.cells[0])) < -0.1, "coal smoke lowers land value next door")
-		_check(sim.power.land_value_effect(Power.cell_center(s, s.cells[0]) + Vector3(3000, 0, 0)) == 0.0, "but not far away")
+		var next_door: Vector3 = Power.cell_center(s, s.cells[0]) + s.dir * 150.0
+		_check(sim.power_nuisance(next_door) < -0.05, "coal smoke lowers land value next door (%.2f)" % sim.power_nuisance(next_door))
+		_check(sim.power_nuisance(next_door + Vector3(5000, 0, 0)) == 0.0, "but not far away")
 
 	# Wild trees clear off the yard and every unit.
 	sim.vegetation.update(sim)
