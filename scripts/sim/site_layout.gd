@@ -77,11 +77,18 @@ static func house(art_seed: int, fit := {"half": LOT_HALF, "depth": 32.0}, store
 	var h := HouseBuilder.plan_info(art_seed, fit.get("art", {"width": fit.half * 2.0, "depth": fit.depth}), storeys)
 	var drive_x: float = h.drive_x
 	var gz: float = h.garage_z
-	var spots := [{"pos": Vector2(drive_x, gz + 3.0), "face": Vector2(0, 1), "kind": "garage"}]
-	if h.drive_w > 8.0:
-		spots.append({"pos": Vector2(drive_x + 3.0, gz + 3.0), "face": Vector2(0, 1), "kind": "garage"})
-	if h.drive_w > 4.0 and gz - 3.2 >= 2.6:
-		spots.append({"pos": Vector2(drive_x, gz - 3.2), "face": Vector2(0, 1), "kind": "drive"})
+	# One car per garage bay (a 9 ft door each), and on a two- or three-car
+	# drive one more parks out front beside, in front of the last bay, so
+	# the car in the garage can back out past it, as on a real wide drive.
+	var bays := 1 if h.drive_w < 4.5 else (2 if h.drive_w < 8.5 else 3)
+	var bay: float = h.drive_w / bays
+	var spots := []
+	for i in maxi(bays - 1, 1):
+		spots.append({"pos": Vector2(drive_x + (i - (bays - 1) * 0.5) * bay, gz + 3.0), "face": Vector2(0, 1),
+			"kind": "garage"})
+	if bays > 1 and gz - 3.2 >= 2.6:
+		spots.append({"pos": Vector2(drive_x + (bays - 1) * 0.5 * bay, gz - 3.2), "face": Vector2(0, 1),
+			"kind": "drive"})
 	return {"spots": spots, "door": Vector2(h.door_x, h.front_z), "cut_x": drive_x, "aisle_z": 0.0,
 		"walk_z": h.walk_z, "main_street": false}
 

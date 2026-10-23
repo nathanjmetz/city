@@ -25,6 +25,11 @@ const MAX_CARS := 400
 const DT := 0.1
 ## Ticks between drivers' decisions (see _drive).
 const THINK_EVERY := 3
+## Curb spaces: a 23 ft parallel stall; kept this far from a driveway's
+## centre; how many places along the kerb to try.
+const CURB_STALL := 7.0
+const CURB_APRON := 5.0
+const CURB_TRIES := 25
 ## How far a road's running speed eases each decision: 5% (with cars on it)
 ## and 2% (empty) a tenth of a second.
 const EASE_BUSY := 1.0 - 0.95 * 0.95 * 0.95
@@ -1396,10 +1401,9 @@ func _reroute_all() -> void:
 			ok = (s.pos + s.face * car.len * 0.5).distance_to(car.pos) < 0.5
 		if ok:
 			continue
-		var curb := _curb_spots(pl.stop, 3)
-		for c in curb:
-			_add_spot(pl, c)
 		var at := _reserve(pl, car.id, car.len > 6.5)
+		if at < 0:
+			at = _new_curb(pl, pl.stop, car.id)
 		if at >= 0:
 			var s: Dictionary = pl.spots[at]
 			car.spot = at
@@ -1955,24 +1959,84 @@ func _out_way(pl: Dictionary, spot: int, stop: Dictionary) -> Dictionary:
 ## Places at the side of the road in front of a stop, as on a main street.
 func _curb_spots(stop: Dictionary, n: int) -> Array:
 	var out := []
+	var line := _curb_line(stop)
+	for k in (n if not line.is_empty() else 0):
+		out.append(_curb_at(line, line[1] + (k - (n - 1) * 0.5) * CURB_STALL))
+	return out
+
+
+## The kerb a stop's curb spaces line: [way, where the stop is along it,
+## facing, offset from the centre line]. [] if there's no room to park.
+func _curb_line(stop: Dictionary) -> Array:
 	var wid: int = stop.seg * 2 + 1
 	if not ways.has(wid):
 		wid = stop.seg * 2
 	if not ways.has(wid):
-		return out
+		return []
 	var w: Dictionary = ways[wid]
 	if w.s1 - w.s0 < 24.0:
-		return out  # too short a piece of road to park along
+		return []  # too short a piece of road to park along
 	var mid: float = _frac(stop) * w.len if w.fwd else w.len - _frac(stop) * w.len
 	var face := 1.0 if (stop.side > 0) == w.fwd else -1.0
-	var edge := RoadStyle.half_width(w.type) - 1.1
-	for k in n:
-		# Clear of the junctions at both ends, with room to pull away.
-		var d := clampf(mid + (k - (n - 1) * 0.5) * 7.0, w.s0 + 12.0, w.s1 - 12.0)
-		var dir := _way_dir(w, d) * face
-		var right := Vector3(-dir.z, 0.0, dir.x)
-		var p := _poly_point(w.pts, w.cum, d) + right * edge
-		out.append({"pos": p, "face": dir, "kind": "curb", "hidden": false, "local": Vector2.ZERO})
+	return [w, mid, face, RoadStyle.half_width(w.type) - 1.1]
+
+
+func _curb_at(line: Array, d: float) -> Dictionary:
+	var w: Dictionary = line[0]
+	# Clear of the junctions at both ends, with room to pull away.
+	d = clampf(d, w.s0 + 12.0, w.s1 - 12.0)
+	var dir := _way_dir(w, d) * float(line[2])
+	var right := Vector3(-dir.z, 0.0, dir.x)
+	var p := _poly_point(w.pts, w.cum, d) + right * float(line[3])
+	return {"pos": p, "face": dir, "kind": "curb", "hidden": false, "local": Vector2.ZERO}
+
+
+## A new curb space for a full place, saved with it: the nearest one to the
+## stop along the kerb that's clear of the curb spaces already marked there
+## (a 23 ft parallel stall, as painted downtown) and of driveway aprons
+## (no parking across a driveway: UVC 11-1003). Tried every half stall out
+## to about 40 m each way. If the kerb is full a truck double-parks out front
+## to unload, as delivery trucks do; otherwise -1.
+func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1, double_park := false) -> int:
+	var line := _curb_line(stop)
+	if line.is_empty():
+		return -1
+	var taken := []
+	for ref in _extra:
+		for e in _extra[ref]:
+			if e.get("kind", "") == "curb":
+				taken.append(e.pos)
+	var aprons := _aprons(stop)
+	for k in CURB_TRIES:
+		var off := ceilf(k * 0.5) * (1.0 if k % 2 == 1 else -1.0) * CURB_STALL * 0.5
+		var c := _curb_at(line, float(line[1]) + off)
+		var ok := true
+		for q in taken:
+			if c.pos.distance_squared_to(q) < (CURB_STALL - 0.5) * (CURB_STALL - 0.5):
+				ok = false
+				break
+		for q in aprons if ok else []:
+			if c.pos.distance_squared_to(q) < CURB_APRON * CURB_APRON:
+				ok = false
+				break
+		if ok:
+			return _add_spot(pl, c, vid)
+	return _add_spot(pl, _curb_at(line, float(line[1])), vid) if double_park else -1
+
+
+## Where the driveways of the built lots on a stop's side of its street meet
+## the road.
+func _aprons(stop: Dictionary) -> Array:
+	var out := []
+	if _sim == null:
+		return out
+	for id in _sim.lots:
+		var lot: Dictionary = _sim.lots[id]
+		if lot.get("seg", -1) != stop.seg or lot.get("side", 0) != stop.side or not _sim.buildings.has(id):
+			continue
+		var lp := place("lot:" + id)
+		if not lp.is_empty() and lp.lay.has("cut_x"):
+			out.append(SiteLayout.world(lot, Vector2(lp.lay.cut_x, -float(lot.get("to_curb", 0.0)))))
 	return out
 
 
@@ -2209,10 +2273,9 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 		if spot < 0:
 			# Nowhere to park: double-park at the curb out front, as delivery
 			# trucks do, or (for a car) take a curb space anyway.
-			var curb := _curb_spots(to_pl.stop, 1)
-			if curb.is_empty():
+			spot = _new_curb(to_pl, to_pl.stop, car.id, truck)
+			if spot < 0:
 				return false
-			spot = _add_spot(to_pl, curb[0], car.id)
 	car.merge(trip, true)
 	car.to_stop = to_pl.stop
 	if not car.has("at_place"):
@@ -2261,10 +2324,9 @@ func _dest(car: Dictionary) -> Dictionary:
 	if i < 0 or i >= pl.spots.size() or (pl.taken[i] != car.id and pl.taken[i] != -1):
 		i = _reserve(pl, car.id, car.len > 6.5)
 		if i < 0:
-			var curb := _curb_spots(pl.stop, 1)
-			if curb.is_empty():
+			i = _new_curb(pl, pl.stop, car.id)
+			if i < 0:
 				return {}
-			i = _add_spot(pl, curb[0], car.id)
 		car.to_spot = i
 	pl.taken[i] = car.id
 	return pl
@@ -2309,11 +2371,12 @@ func _pull_over(car: Dictionary, w: Dictionary) -> void:
 		return
 	var at := clampf(car.d + 14.0, 0.0, w.len)
 	var frac: float = at / w.len if w.fwd else 1.0 - at / w.len
-	var curb := _curb_spots({"seg": w.seg, "at_frac": frac, "side": 1 if w.fwd else -1}, 1)
-	if curb.is_empty():
+	var stop := {"seg": w.seg, "at_frac": frac, "side": 1 if w.fwd else -1}
+	var ci := _new_curb(pl, stop, car.id)
+	if ci < 0:
 		return
 	_release(pl.ref, car.get("to_spot", -1), car.id)
-	car.to_spot = _add_spot(pl, curb[0], car.id)
+	car.to_spot = ci
 	car.pulled_over = true
 	car.end_d = clampf(_nearest_d(w, _entrance(pl, car.to_spot)), car.d + PARK_LEAD, w.len - 0.5)
 

@@ -32,6 +32,29 @@ func _init() -> void:
 	_check(most > 3, "cars on the road (most at once %d, pop %d)" % [most, sim.stats.population])
 	_check(finished > 3, "cars finish their trips (%d)" % finished)
 	_check(parked_posed > 0, "a car held after it parks still has a pose (%d)" % parked_posed)
+
+	# A full place's overflow cars park one after another along the kerb,
+	# not on top of each other, and never across a driveway.
+	var cpl := {}
+	for id in sim.lots:
+		if sim.buildings.has(id) and not t.place("lot:" + id).is_empty():
+			cpl = t.place("lot:" + id)
+			break
+	var cps := []
+	for k in 5:
+		var ci: int = t._new_curb(cpl, cpl.stop, 90000 + k)
+		if ci >= 0:
+			cps.append(cpl.spots[ci].pos)
+	var cgap := INF
+	for i in cps.size():
+		for j in range(i + 1, cps.size()):
+			cgap = minf(cgap, cps[i].distance_to(cps[j]))
+	var capron := INF
+	for q in t._aprons(cpl.stop):
+		for p in cps:
+			capron = minf(capron, p.distance_to(q))
+	_check(cps.size() >= 3 and cgap > 6.0 and capron > 5.0,
+		"overflow cars park a stall apart along the kerb (%d spaces, %.1f m apart, %.1f m from a drive)" % [cps.size(), cgap, capron])
 	_check(too_close == 0, "cars keep their distance (%d too close)" % too_close)
 
 	# The same commands give the same cars (needed for multiplayer).
