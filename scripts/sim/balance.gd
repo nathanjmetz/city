@@ -201,6 +201,22 @@ const INDUSTRY_MIN_RICHNESS := 0.25
 const INDUSTRY_STOCK_CAP := 12.0
 ## Companies decide to open or close a pad this often, in ticks (6 game hours).
 const INDUSTRY_DECIDE_EVERY := 360
+## How each kind spreads, after real operations (Brawn: everything against
+## its real version):
+## Oil: one producing well pad per spacing unit (Indiana's Illinois Basin
+## fields drill on about 10-acre spacing; pads end up 200-400 m apart and
+## offset, not on a grid), lease roads back to the tank battery.
+const OIL_SPACING_CELLS := 3  # pads at least this many 80 m cells apart
+## How far out a company's lease or timber reaches, in 80 m cells.
+const LEASE_REACH_CELLS := 12
+## Ore: one quarry that widens bench by bench beside its plant, never
+## separate holes (Indiana limestone quarries, Iron Range pits).
+## Forest: a few harvest units worked at a time inside the woods, each cut
+## for a couple of years and then left to regrow (Indiana DNR selective
+## harvests run on a 15-20 year cutting cycle). Game years are 12 days.
+const FOREST_ACTIVE_UNITS := 6
+const FOREST_CUT_DAYS := 24.0
+const FOREST_REGROW_DAYS := 180.0
 
 # --- Power companies ----------------------------------------------------------
 # Brawn's hub-with-a-leader model (Best of CS pitch #6). A plant is built
@@ -1188,6 +1204,76 @@ const WATER_INTEREST := 0.004
 ## and beyond this many months' worth the surplus goes back to the city.
 const WATER_RESERVE_MONTHS := 2.0
 const WATER_SURPLUS_MONTHS := 18.0
+
+# --- Rail -----------------------------------------------------------------------
+# Brawn's model (2026-10-22): a rail depot is a hub whose leader runs it as a
+# business on its own money. The town only places it and can subsidize it.
+
+## What the town pays to place a depot (the land, station and yard grading).
+const RAIL_DEPOT_COST := 400_000
+## Money the railroad's investors put in when it opens.
+const RAIL_START_CAPITAL := 6_000_000
+## New track, dollars per metre: about $1M a mile for industry track and
+## $1.5M a mile for main line (US short-line construction costs).
+const RAIL_TRACK_PER_M := {"main": 930, "spur": 620}
+## Share of new track that state and federal rail grants pay (Indiana's
+## Industrial Rail Service Fund, federal CRISI grants), as public money pays
+## for most new roads. The railroad pays the rest.
+const RAIL_GRANT_SHARE := 0.75
+## A turnout where a spur leaves the main line (a #10 turnout, installed).
+const RAIL_TURNOUT_COST := 150_000
+## A grade crossing's lights, bells and gates, about $300,000 (FHWA).
+const RAIL_CROSSING_COST := 300_000
+## Track upkeep, dollars per metre per month (about $20,000 a mile a year).
+const RAIL_TRACK_UPKEEP_PER_M := 1.0
+## The depot's crew, dispatcher and office, per month, and its jobs.
+const RAIL_DEPOT_UPKEEP := 9_000
+const RAIL_DEPOT_JOBS := 12
+## What the railroad earns for each loaded car it hands to the region
+## (US average revenue is about $3,500 a carload, AAR).
+const RAIL_CAR_RATE := 3_500
+## Truck loads that fill one rail car: a tank car holds about 3.5 tanker
+## trucks of crude, an open hopper five dump trucks of ore, a bulkhead flat
+## three log trucks, a covered hopper about 3,400 bushels of grain.
+const RAIL_LOADS_PER_CAR := {"crude oil": 3.5, "ore": 5.0, "logs": 3.0, "grain": 3.4}
+## Grain truck loads the co-op elevator holds for the railroad.
+const RAIL_ELEVATOR_LOADS := 60
+## Running a train, dollars per train-km (fuel), plus the crew for each run.
+const RAIL_TRAIN_KM_COST := 60.0
+const RAIL_CREW_PER_RUN := 900.0
+## Passenger trains: rides each resident takes a month, the fare, the town
+## size a leader starts them at, the trainset's lease and how often one runs.
+const RAIL_RIDES_PER_RESIDENT := 0.3
+const RAIL_FARE := 12
+const RAIL_PASSENGER_MIN_POP := 800
+const RAIL_TRAINSET_LEASE := 6_000
+const RAIL_PAX_EVERY_HOURS := 6
+## Game days a train spends in the region before it comes back.
+const RAIL_REGION_DAYS := 0.4
+const RAIL_PAX_AWAY_DAYS := 0.25
+## A local freight leaves once this many cars wait at a siding, or once the
+## first has waited this many game days.
+const RAIL_TRAIN_MIN_CARS := 3
+const RAIL_TRAIN_MAX_WAIT_DAYS := 2.0
+## Metres of track a crew lays in a game day.
+const RAIL_BUILD_M_PER_DAY := 600.0
+## Leaders decide this often, in ticks (6 game hours).
+const RAIL_DECIDE_EVERY := 360
+## Years a leader waits for new track to pay off: a bold one, a modest one.
+## Track lasts 40 years or more, so railroads accept long paybacks.
+const RAIL_PAYBACK_YEARS := [25.0, 10.0]
+## Share of a spur's cost the company it serves pays (in the US the shipper
+## usually pays for its industry track; the railroad pays the rest).
+const RAIL_SHIPPER_SHARE := 0.5
+## Money a leader keeps in hand (scaled by caution).
+const RAIL_CUSHION := 500_000.0
+## Game days before a leader asks again about something the town turned
+## down or never answered (the permit bell has its own waits too).
+const RAIL_DENIED_DAYS := 24
+## Game days in the red before a railroad closes.
+const RAIL_BANKRUPT_DAYS := 6
+## Most the town can subsidize a depot, per month.
+const RAIL_MAX_SUBSIDY := 100_000
 # --- Banks and lending ---------------------------------------------------------
 # Brawn (2026-10-22, Best of CS pitch #20): a bank is a hub that lends to the
 # other hubs. A farm borrows to buy the field next door, a company to put
@@ -1331,3 +1417,9 @@ const POLICY_BUY_MARGIN_PER_PAD := [INF, 8_000.0, 0.0, -2_000.0, -4_000.0]
 ## Growth for parks: times how many people must live nearby before a park
 ## buys the strip next door (PARK_GROW_MIN_RESIDENTS). Hold buys none.
 const POLICY_PARK_RESIDENTS := [INF, 2.0, 1.0, 0.7, 0.5]
+## Hubs with their own money lever take it from their Funding step (Lean ..
+## Generous): the water utility's monthly subsidy (Standard is where a new
+## utility starts), and the post office's MAIL_FUNDING level (Standard is
+## Basic). A bus depot's subsidy is BUS_FUNDING_LEVELS at the same step.
+const POLICY_WATER_SUBSIDY := [0, 2_500, 5_000, 12_000, 25_000]
+const POLICY_MAIL_FUNDING := [0, 0, 1, 2, 3]

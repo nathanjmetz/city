@@ -1,7 +1,7 @@
 extends SceneTree
 ## Renders one building of a kind at every stage of going up, side by side,
 ## for checking ConstructionSite against photos of real job sites.
-## Run: godot -s tools/construction_shot.gd -- out.png [house|shop|factory|civic|warehouse|barn]
+## Run: godot -s tools/construction_shot.gd -- out.png [house|shop|factory|civic|warehouse|barn|landfill|cemetery]
 ##      [seed] [t] [yaw pitch dist] [only stage]
 
 var _frames := 0
@@ -26,7 +26,7 @@ func _init() -> void:
 	road.material_override = Surfaces.asphalt()
 	road.position = Vector3(0, 0.09, -8.4)
 	world.add_child(road)
-	var profile := kind
+	var profile := "shop" if kind in ["landfill", "cemetery", "recycling"] else kind
 	for n in stages.size():
 		var i: int = stages[n]
 		var built: Array
@@ -38,6 +38,11 @@ func _init() -> void:
 			"warehouse": built = WarehouseBuilder.build_warehouse({"kind": Warehouses.KINDS.keys()[seed % Warehouses.KINDS.size()],
 				"level": 0, "bays": 0, "pos": Vector3.ZERO, "dir": Vector3.FORWARD}, seed, 3.9)
 			"barn": built = FarmBuilder.build_farmstead(seed, 1)
+			"landfill", "cemetery", "recycling":
+				var hubs := CivicHubs.new()
+				var hid := hubs.add(kind, Vector3.ZERO, Vector3.FORWARD, 0)
+				built = HubBuilder.build_hub(hubs.hubs[hid], seed, 3.9)
+				built.resize(3)
 			_: built = HouseBuilder.build(seed * 100 + 7, 3.9)
 		var holder := Node3D.new()
 		holder.position = Vector3((n - (stages.size() - 1) * 0.5) * gap, 0, 0)

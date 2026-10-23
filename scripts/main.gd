@@ -15,6 +15,8 @@ var _tick_time := 0.0
 var speed := 1
 var _resume_speed := 1
 var _save_wait := 0.0
+## Online, a copy of your town goes to the region this often, in seconds.
+const TOWN_SEND_EVERY := 10.0
 ## True until the whole town is built and drawn; the clock waits for it.
 var loading := true
 
@@ -22,7 +24,6 @@ var loading := true
 func _ready() -> void:
 	if Session.online():
 		sim = Session.client.my_sim()
-		sim.send_command = Session.client.send_command
 	sim.require_utilities = true
 	var sky := SkyLight.new()
 	add_child(sky)
@@ -91,6 +92,10 @@ func _ready() -> void:
 	var bus_view := BusView.new()
 	bus_view.setup(sim)
 	add_child(bus_view)
+
+	var rail_view := RailView.new()
+	rail_view.setup(sim, terrain)
+	add_child(rail_view)
 	var look := DayNight.new()
 	look.setup(sim, sky, _tick_fraction)
 	add_child(look)
@@ -248,6 +253,9 @@ func _ready() -> void:
 	hud.lot_alerts = lot_alerts
 	add_child(hud)
 
+	# Hidden performance readout (F3).
+	add_child(PerfOverlay.new())
+
 	var menu := GameMenu.new()
 	menu.game = self
 	hud.nothing_to_close.connect(menu.toggle)
@@ -297,18 +305,23 @@ func _settle() -> void:
 func _process(delta: float) -> void:
 	if loading:
 		return
-	if Session.online():
-		return  # The region's server steps the city.
 	_tick_time += delta * SPEEDS[speed]
 	var step := 1.0 / CitySim.TICKS_PER_SECOND
 	var guard := 0
+	var t := Perf.now()
 	while _tick_time >= step and guard < 20:
 		_tick_time -= step
 		guard += 1
 		sim.tick()
+	Perf.add("frame.sim", t)
 	_tick_time = minf(_tick_time, step)
 	_save_wait -= delta
-	if _save_pending and _save_wait <= 0.0:
+	if Session.online():
+		# Your town runs here; the region keeps a copy for the neighbors.
+		if _save_wait <= 0.0:
+			_save_wait = TOWN_SEND_EVERY
+			Session.client.send_town()
+	elif _save_pending and _save_wait <= 0.0:
 		_save_pending = false
 		_save_wait = 2.0
 		Session.save_city(sim)
@@ -316,14 +329,10 @@ func _process(delta: float) -> void:
 
 ## How far through the current tick the clock is, 0 to 1.
 func _tick_fraction() -> float:
-	if Session.online():
-		return minf(Session.client.since_tick * CitySim.TICKS_PER_SECOND, 1.0)
 	return _tick_time * CitySim.TICKS_PER_SECOND
 
 
 func set_speed(s: int) -> void:
-	if Session.online():
-		return  # Everyone in a region shares one clock.
 	speed = clampi(s, 0, SPEEDS.size() - 1)
 	if speed != 0:
 		_resume_speed = speed
