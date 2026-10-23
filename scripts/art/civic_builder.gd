@@ -361,7 +361,7 @@ func _substation(front: float, to_curb: float) -> void:
 	_box("paint", Vector3(5.0, 0.3, 3.6), Vector3(9.5, 0.15, front + 4.5), CONCRETE)
 	_box("brick", Vector3(4.6, 3.0, 3.2), Vector3(9.5, 1.8, front + 4.5), Color(_pick(["#b8b2a4", "#a49d8f", "#8a4a38"])))
 	_box("paint", Vector3(4.9, 0.15, 3.5), Vector3(9.5, 3.35, front + 4.5), Color("#cfcbc2"))
-	_box("paint", Vector3(0.95, 2.1, 0.06), Vector3(8.6, 1.35, front + 2.88), Color("#5a5e60"))
+	_steel_door(Vector3(8.6, 1.35, front + 2.88), -1.0)
 	_sign(Vector3(-1.6, 1.2, front + 1.9), 1.2, 0.4)
 
 
@@ -442,7 +442,7 @@ func _water_tower(front: float, to_curb: float) -> void:
 	_box("paint", Vector3(7.4, 0.3, 5.4), Vector3(px, 0.15, pz), CONCRETE)
 	_box("brick", Vector3(7.0, 3.2, 5.0), Vector3(px, 1.9, pz), Color(_pick(["#8a4a38", "#a8775c", "#b8b2a4"])))
 	_metal_roof(px, pz, 3.5, 7.0, 5.0, Color(_pick(["#7a7874", "#3e5a48", "#5a2a26"])))
-	_box("paint", Vector3(0.95, 2.1, 0.06), Vector3(px - 1.8, 1.35, pz - 2.53), Color("#5a5e60"))
+	_steel_door(Vector3(px - 1.8, 1.35, pz - 2.53), -1.0)
 	_flat_rect("gravel", px - 3.0, px + 3.0, front - to_curb, pz - 2.7, 0.08, Color("#8d877c"))
 	_fence(Vector2(-13.5, front + 1.5), Vector2(13.5, front + 28.0), 2.0)
 
@@ -509,7 +509,7 @@ func _well(front: float, to_curb: float) -> void:
 	_box("paint", Vector3(6.4, 0.3, 5.4), c + Vector3(0, 0.15, 0), CONCRETE)
 	_box("brick", Vector3(6.0, 3.0, 5.0), c + Vector3(0, 1.8, 0), Color(_pick(["#8a4a38", "#a8775c", "#b8b2a4"])))
 	_metal_roof(c.x, c.z, 3.3, 6.0, 5.0, Color(_pick(["#7a7874", "#3e5a48", "#5a2a26"])))
-	_box("paint", Vector3(0.95, 2.1, 0.06), c + Vector3(-1.4, 1.35, -2.53), Color("#5a5e60"))
+	_steel_door(c + Vector3(-1.4, 1.35, -2.53), -1.0)
 	_box("metal", Vector3(1.0, 0.6, 0.6), c + Vector3(2.2, 2.4, -2.8), Color("#b9bcbc"))  # louvre vent
 	# Hydropneumatic tank on saddles, and the capped well head.
 	var t := Vector3(5.5, 0, front + 9.0)

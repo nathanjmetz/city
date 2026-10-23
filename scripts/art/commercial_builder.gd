@@ -127,7 +127,7 @@ func _retail(to_curb: float) -> void:
 		_box("metal", Vector3(1.8, 1.1, 1.2), p + Vector3(0, 0.55, 0), Color("#b9bcbc"))
 		_box("paint", Vector3(1.0, 0.08, 0.8), p + Vector3(0, 1.14, 0), Color("#3a3c3e"))
 	# Back service door.
-	_box("paint", Vector3(1.0, 2.1, 0.06), Vector3(w * 0.3, 1.35, zf + d + 0.03), Color("#5a5e60"))
+	_steel_door(Vector3(w * 0.3, 1.35, zf + d + 0.03), 1.0)
 	# Parking: a walk along the front, a row of stalls, the aisle and the curb cut.
 	_flat_rect("drive", -w * 0.5 - 0.5, w * 0.5 + 0.5, zf - 2.2, zf, 0.08)
 	var lot0 := -half + 0.6
@@ -339,7 +339,7 @@ func _shop_gas_station(to_curb: float) -> void:
 	_flat_rect("asphalt", -half + 0.6, half - 0.6, 0.0, zf, 0.06)
 	for x in [-half * 0.55, half * 0.55]:
 		_flat_rect("asphalt", x - 3.6, x + 3.6, -to_curb, 0.0, 0.1)
-	_box("paint", Vector3(1.0, 2.1, 0.06), Vector3(sw * 0.3, 1.35, zf + sd + 0.03), Color("#5a5e60"))
+	_steel_door(Vector3(sw * 0.3, 1.35, zf + sd + 0.03), 1.0)
 
 
 ## A diner or family restaurant: one storey, a long band of windows with a

@@ -263,7 +263,7 @@ func _mill(size: Vector2) -> void:
 	_box("paint", Vector3(0.1, 4.0, 5.0), Vector3(sx - sw * 0.5 - 0.05, 2.3, sz), DARK)
 	_box("metal", Vector3(6.0, 0.4, 1.2), Vector3(sx - sw * 0.5 - 3.0, 1.0, sz), Color("#5a5e60"))
 	_box("siding", Vector3(4.0, 4.2, 0.08), Vector3(sx + 6.0, 2.4, sz - sd * 0.5 - 0.04), Color(TRIM, 0.0))
-	_box("paint", Vector3(0.95, 2.1, 0.06), Vector3(sx - 4.0, 1.35, sz - sd * 0.5 - 0.04), Color("#5a5e60"))
+	_steel_door(Vector3(sx - 4.0, 1.35, sz - sd * 0.5 - 0.04), -1.0)
 	# Sawdust: a conveyor up to a tan pile at the back corner.
 	var pile := Vector3(hx - 5.0, 0, hz - 5.0)
 	_cone_pile(pile, 4.5, 3.6, Color("#b08a5c"))
