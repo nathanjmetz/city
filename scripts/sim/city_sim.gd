@@ -143,6 +143,8 @@ var heritage := Heritage.new()
 var markers := HistoricMarkers.new()
 var leaders := LeaderAsks.new()
 var timelapse := Timelapse.new()
+## The town's numbers over time, for the top bar's charts (StatHistory).
+var history := StatHistory.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -734,6 +736,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			markers.from_dict({})
 			leaders.from_dict({})
 			timelapse.from_dict(self, {})
+			history.from_dict({})
 			_lever_steps.clear()
 			pollution = Pollution.new()
 			_hook_pollution()
@@ -1060,6 +1063,8 @@ func tick() -> void:
 		leaders.month(self)
 	elif hour == 18 * TICKS_PER_HOUR:
 		timelapse.month(self)
+	if tick_count % TICKS_PER_HOUR == 0:
+		history.hour(self)
 	if tick_count % TICKS_PER_HOUR == 30:
 		heritage.carry_out(self)
 		leaders.carry_out(self)
@@ -2841,6 +2846,7 @@ func to_dict() -> Dictionary:
 		"markers": markers.to_dict(),
 		"leaders": leaders.to_dict(),
 		"timelapse": timelapse.to_dict(),
+		"history": history.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
 		"buses": buses.to_dict(),
@@ -2978,6 +2984,7 @@ func from_dict(d: Dictionary) -> void:
 	pollution.after_load(self)
 	heritage.ensure(self)
 	timelapse.from_dict(self, d.get("timelapse", {}))
+	history.from_dict(d.get("history", {}))
 	update_stats(true, -2)
 	buses = BusNet.new()
 	buses.from_dict(self, d.get("buses", {}))
