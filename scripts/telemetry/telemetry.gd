@@ -237,6 +237,8 @@ func _process(delta: float) -> void:
 func _perf_sample() -> void:
 	var e := {"fps": snappedf(_frames / _perf_time, 0.1), "worst_ms": int(_worst * 1000.0), "hitches": _hitches,
 		"mem_mb": int(OS.get_static_memory_usage() / 1048576.0),
+		"vram_mb": int(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0),
+		"free_mb": int(OS.get_memory_info().get("available", 0) / 1048576.0),
 		"draw": int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
 		"nodes": int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)), "scene": _scene}
 	if not _frame_ms.is_empty():
@@ -300,7 +302,11 @@ func _hook_quality() -> void:
 	if q == null or _quality_hooked:
 		return
 	_quality_hooked = true
-	q.changed.connect(func(): event("quality", _quality_now()))
+	# Send a tier change at once: if the new tier stalls the machine, the
+	# report still shows what it was switched to.
+	q.changed.connect(func():
+		event("quality", _quality_now())
+		flush())
 	event("quality", _quality_now())
 
 

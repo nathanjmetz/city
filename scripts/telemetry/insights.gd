@@ -21,6 +21,7 @@ const START_BUDGET := 5.0
 const TICK_BUDGET_MS := 25.0
 const FPS_FLOOR := 30.0
 const HITCHES_PER_MINUTE := 2.0
+const LOW_FREE_MB := 400
 ## A thing is hard to find when it takes longer or more clicks than this.
 const FIND_SECONDS := 6.0
 const FIND_CLICKS := 3.0
@@ -203,6 +204,14 @@ static func _speed_fixes(ev: Dictionary, fixes: Array) -> void:
 		_fix(fixes, 55 + 2 * per_min, "Stutters: %.1f hitches a minute" % per_min,
 			"Frames over 100 ms while playing (worst %d ms)." % perf.map(func(p): return int(p.get("worst_ms", 0))).max(),
 			PERF_OWNER, "speed", _who(perf))
+	# Desktop only: memory left on the machine. Near zero means macOS starts
+	# swapping, which looks like a freeze to the player.
+	var tight: Array = ev.get("perf", []).filter(func(p): return int(p.get("free_mb", 0)) > 0 and int(p.free_mb) < LOW_FREE_MB)
+	if not tight.is_empty():
+		var low: int = tight.map(func(p): return int(p.free_mb)).min()
+		_fix(fixes, 65 + 3 * _who(tight), "Machine nearly out of memory: %d MB free" % low,
+			"%d samples under %d MB free (graphics memory up to %d MB). Lower the default tier or texture sizes on small machines." \
+			% [tight.size(), LOW_FREE_MB, tight.map(func(p): return int(p.get("vram_mb", 0))).max()], PERF_OWNER, "speed", _who(tight))
 
 
 static func _finding_fixes(ev: Dictionary, fixes: Array) -> void:
