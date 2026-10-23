@@ -2853,6 +2853,18 @@ func _walk_to_car(from_pl: Dictionary, car: Dictionary) -> PackedVector3Array:
 	var car_pl := place(car.at_place)
 	if car_pl.is_empty():
 		return PackedVector3Array()
+	var kerb := _kerb_stop(car.pos)
+	if not kerb.is_empty() and not from_pl.lot.is_empty() and not from_pl.lay.is_empty():
+		# Parked on the street: along the sidewalks (over at the crosswalks)
+		# to the car, then off the kerb beside it.
+		var walk := _door_out(from_pl)
+		walk.append(SiteLayout.world(from_pl.lot, Vector2(from_pl.lay.door.x, SiteLayout.WALK_Z)))
+		var mid := _sidewalks(from_pl.lot, kerb)
+		if not mid.is_empty() or (from_pl.lot.seg == kerb.seg and from_pl.lot.side == kerb.side):
+			walk.append_array(mid)
+			walk.append(kerb.walk_pt)
+			walk.append(_car_side(car))
+			return walk
 	var out := PackedVector3Array()
 	if car_pl.ref != from_pl.ref:
 		out = _walk_between(from_pl, car_pl)
@@ -2873,6 +2885,19 @@ func _walk_from_car(car: Dictionary, dest: String) -> PackedVector3Array:
 	var out := PackedVector3Array([_car_side(car)])
 	if dest_pl.is_empty() or car_pl.is_empty():
 		return out
+	var kerb := _kerb_stop(car.pos)
+	if not kerb.is_empty() and not dest_pl.lot.is_empty() and not dest_pl.lay.is_empty():
+		# Parked on the street: up onto the sidewalk beside the car, along it
+		# (over at the crosswalks, never mid-block) and up the front walk.
+		var mid := _sidewalks(kerb, dest_pl.lot)
+		if not mid.is_empty() or (dest_pl.lot.seg == kerb.seg and dest_pl.lot.side == kerb.side):
+			out.append(kerb.walk_pt)
+			out.append_array(mid)
+			out.append(SiteLayout.world(dest_pl.lot, Vector2(dest_pl.lay.door.x, SiteLayout.WALK_Z)))
+			var inward_k := _door_out(dest_pl)
+			inward_k.reverse()
+			out.append_array(inward_k)
+			return out
 	if dest_pl.ref == car_pl.ref:
 		var inward := _door_out(car_pl)
 		inward.reverse()
@@ -2883,6 +2908,28 @@ func _walk_from_car(car: Dictionary, dest: String) -> PackedVector3Array:
 		path.remove_at(0)
 	out.append_array(path)
 	return out
+
+
+## Where a car parked on the street meets the sidewalk: {seg, side, at_frac,
+## walk_pt}, lot-like for _sidewalks, or {} if it isn't on a street.
+func _kerb_stop(pos: Vector3) -> Dictionary:
+	var near := network.find_segment_near(pos, 20.0)
+	if near.is_empty():
+		return {}
+	var seg: int = near.seg
+	var type: int = network.segments[seg].type
+	if RoadStyle.is_freeway(type) or not RoadStyle.TYPES[type].get("walk", true) \
+			or float(near.dist) > RoadStyle.half_width(type) + RoadStyle.CURB_WIDTH:
+		return {}  # in a lot or driveway, or a road with no sidewalks
+	var c := network.curve_of(seg)
+	var t: float = near.t
+	var dir := _flat_dir(RoadNetwork.bezier(c[0], c[1], c[2], minf(t + 0.01, 1.0))
+		- RoadNetwork.bezier(c[0], c[1], c[2], maxf(t - 0.01, 0.0)))
+	var side := 1 if (pos - near.point).dot(Vector3(-dir.z, 0.0, dir.x)) >= 0.0 else -1
+	var stop := {"seg": seg, "side": side, "at_frac": t}
+	var line := _walk_line(seg, side)
+	stop.walk_pt = _line_at(line, _frac(stop) * (line.size() - 1))
+	return stop
 
 
 ## Beside the driver's door of a parked car.
