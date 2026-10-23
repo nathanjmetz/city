@@ -109,6 +109,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_telemetry.gd
           ~/godot-cache/godot --headless -s tests/test_pollution.gd
           ~/godot-cache/godot --headless -s tests/test_health.gd
+          ~/godot-cache/godot --headless -s tests/test_heritage.gd
 
       - name: Stamp the build
         run: |

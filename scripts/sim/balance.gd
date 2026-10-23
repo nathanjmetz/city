@@ -1879,3 +1879,121 @@ const POLICY_PARK_RESIDENTS := [INF, 2.0, 1.0, 0.7, 0.5]
 ## Basic). A bus depot's subsidy is BUS_FUNDING_LEVELS at the same step.
 const POLICY_WATER_SUBSIDY := [0, 2_500, 5_000, 12_000, 25_000]
 const POLICY_MAIL_FUNDING := [0, 0, 1, 2, 3]
+
+# --- Town heritage, culture and leader requests -------------------------------
+# Brawn (2026-10-23): a town earns nicknames from what it really is, puts up
+# roadside markers for its firsts, its old buildings gain charm, and its
+# leaders ask the town for things that cost something either way. Everything
+# here runs once a game month (scripts/sim/culture.gd, heritage.gd,
+# markers.gd, leader_asks.gd).
+
+## A game day is a month, so a town lives decades in an evening. The
+## National Register of Historic Places takes buildings at 50 years old; here
+## a building counts as historic at this many game years (about five hours at
+## normal speed, an hour and a quarter at 4x). It is the same decade Families
+## waits before a sign may say "SINCE 2031".
+const HERITAGE_AGE_YEARS := 10
+## Charm starts building this many game years after a building went up, and
+## is full at HERITAGE_FULL_YEARS.
+const HERITAGE_CHARM_FROM_YEARS := 4
+const HERITAGE_FULL_YEARS := 25
+## How much character each kind of building carries when it is old. Real
+## county surveys (Indiana's Historic Sites and Structures Inventory) rate
+## Main Street commercial blocks and old homes highest, plain offices lowest.
+const HERITAGE_TYPE_WEIGHT := {"house": 1.0, "row_home": 1.0, "mixed_use": 1.2, "shop": 0.8,
+	"apartments": 0.6, "office": 0.4, "factory": 0.7}
+## Land value lift at full charm for an old building on its own, and for one
+## inside a protected local historic district. Studies of US local districts
+## (Rypkema; Indianapolis, and others) find designated homes and storefronts
+## worth about 5 to 20% more than the same buildings outside.
+const HERITAGE_LAND_LIFT := 0.06
+const HERITAGE_DISTRICT_LIFT := 0.15
+## Districts: the town is looked at in squares this big (metres). A square
+## counts once at least HERITAGE_DISTRICT_MIN of its buildings are historic
+## and they are HERITAGE_DISTRICT_SHARE of all of them (the Register wants
+## most buildings in a district to "contribute"). Squares that touch join up.
+const HERITAGE_CELL := 120.0
+const HERITAGE_DISTRICT_MIN := 4
+const HERITAGE_DISTRICT_SHARE := 0.6
+## Buildings in a protected district gain charm faster: the federal 20%
+## historic rehabilitation tax credit pays owners to restore, not replace.
+const HERITAGE_PROTECTED_CHARM := 1.25
+## A historic preservation commission costs the town this much a month for
+## each protected district (a part-time planner in a small Indiana town;
+## Certified Local Government grants pay part of it).
+const HERITAGE_COMMISSION_MONTHLY := 1_500
+## Heritage tourism: visitors come to walk an old downtown (Madison,
+## Indiana's 133-block district draws most of its visitors). Shop demand
+## lift for each protected district, at HERITAGE_TOURISM_FULL buildings.
+const HERITAGE_TOURISM_DEMAND := 0.05
+const HERITAGE_TOURISM_FULL := 30
+## An old building this charming, outside a protected district, can't come
+## down without a word to the town: Bloomington and other Indiana towns hold
+## a demolition delay on buildings their survey lists. The owner asks on the
+## bell; a no means the town buys a preservation easement.
+const HERITAGE_DELAY_CHARM := 0.45
+## A facade easement costs the town about a tenth of the building's value
+## (Indiana Landmarks holds hundreds): this much plus this much a storey.
+const HERITAGE_EASEMENT_BASE := 30_000
+const HERITAGE_EASEMENT_PER_STOREY := 25_000
+## After a no, the historical society waits this many game years to ask
+## about the same district again.
+const HERITAGE_REASK_YEARS := 5
+
+## What a town can be known for. Culture follows where its people work.
+const CULTURE_AXES := ["farm", "industry", "trade", "office", "college", "heritage"]
+## Culture follows the jobs slowly: half the gap closes in this many game
+## days (two years). Reputations lag what a town has become.
+const CULTURE_HALF_LIFE_DAYS := 24.0
+## A yes to a leader leans the town toward their kind of place (in share
+## points); a no leans it a little toward what the leader would have
+## replaced. The lean fades with the same half-life.
+const CULTURE_YES_LEAN := 0.05
+const CULTURE_NO_LEAN := 0.02
+## Each building in a protected historic district counts as this many jobs'
+## worth of what the town is known for.
+const CULTURE_HERITAGE_PER_BUILDING := 6.0
+## How much the culture tilts what owners build on a new lot: a town known
+## for offices sees more office buildings, a market town more shops.
+const CULTURE_TILT := 1.5
+## How much keener a leader of the town's own kind is to build (their
+## development budget, Agency.develop): bankers thrive in a banking town.
+const CULTURE_LEADER_BOOST := 0.5
+## Earned nicknames: the town needs this many people, and its leading
+## culture this big a share...
+const NICKNAME_MIN_POP := 150
+const NICKNAME_MIN_SHARE := 0.28
+## ...and a new identity must lead the current one by this much to replace
+## it, so a nickname doesn't flicker.
+const NICKNAME_SWITCH := 0.06
+
+## Leader requests: at most one new one a month, with this chance, and each
+## kind waits this many game months after it was last asked.
+const ASK_CHANCE := 0.5
+const ASK_COOLDOWN := {"abatement": 18, "pave": 12, "signal": 12, "festival": 11, "offices": 24}
+## Indiana tax abatement (IC 6-1.1-12.1): the town council declares an
+## Economic Revitalization Area and the new investment's property tax phases
+## in over up to 10 years. The town forgoes about this share of the
+## investment a year (business property is capped at 3% of value, the town's
+## part is about half), for ASK_ABATE_YEARS.
+const ASK_ABATE_RATE := 0.015
+const ASK_ABATE_YEARS := 5
+## A new traffic signal at a stop-sign corner: warrant study (MUTCD chapter
+## 4C), mast arms, heads and detection run about $250,000 in a small town.
+const ASK_SIGNAL_COST := 250_000
+## A junction needs this many cars through it in its busiest stretch to meet
+## the signal warrant (scaled from MUTCD warrant 1's 500 vehicles an hour).
+const ASK_SIGNAL_MIN_CARS := 6
+## Paving a gravel road, the town's share per metre: Indiana's Community
+## Crossings grants pay 75% for small towns, and new asphalt on a county
+## road runs about $300 a metre.
+const ASK_PAVE_PER_M := 75
+## A street festival on Main Street: police overtime, barricades, porta-johns
+## and cleanup. The festival month lifts shop demand this much.
+const ASK_FESTIVAL_COST := 15_000
+const ASK_FESTIVAL_DEMAND := 0.15
+## Fall festival season (Indiana's harvest and heritage festivals).
+const ASK_FESTIVAL_MONTHS := [9, 10]
+## Farmland to offices: the bank wants this much road frontage (metres) of
+## farm country near town turned into an office park.
+const ASK_OFFICE_FRONTAGE := 240.0

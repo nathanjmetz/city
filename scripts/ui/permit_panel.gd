@@ -13,7 +13,11 @@ signal opened
 
 const WIDTH := 340
 ## What each kind of hub is called on its card.
-const HUB_NAMES := {"rail": "Railroad", "bus": "Bus company", "family": "Family business"}
+const HUB_NAMES := {"rail": "Railroad", "bus": "Bus company", "family": "Family business",
+	"heritage": "Historical society", "owner": "Building owner"}
+## Leader requests (asks of the town) by kind (LeaderAsks, Heritage).
+const ASK_NAMES := {"abatement": "Company", "pave": "Farm", "signal": "Business", "festival": "Main Street",
+	"offices": "Bank", "district": "Historical society", "demolish": "Building owner"}
 
 var sim: CitySim
 var view := PermitView.new()
@@ -213,10 +217,26 @@ func _card(req: Dictionary) -> Control:
 	var name := UiStyle.label(req.leader if req.leader != "" else "A leader in town", 13, UiStyle.TEXT, 600)
 	name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	who.add_child(name)
-	who.add_child(UiStyle.label(HUB_NAMES.get(req.hub, str(req.hub).capitalize()), 11, UiStyle.MUTED))
+	var ask := str(req.get("ask", ""))
+	who.add_child(UiStyle.label(ASK_NAMES.get(ask, "Leader") if ask != "" else HUB_NAMES.get(req.hub, str(req.hub).capitalize()),
+		11, UiStyle.MUTED))
 	col.add_child(_text(req.title, UiStyle.TEXT, 600))
 	if req.why != "" and (picked or req.state == Permits.State.OPEN):
 		col.add_child(_text(req.why, UiStyle.MUTED, 500, 12))
+	if ask != "":
+		# An ask of the town: what a yes and a no each bring.
+		col.add_child(_fact("check", "If yes: " + str(req.yes), UiStyle.TEXT, false))
+		col.add_child(_fact("close", "If no: " + str(req.no), UiStyle.MUTED, false))
+		if req.state == Permits.State.OPEN:
+			var wait := Permits.SHELVE_AFTER - (sim.tick_count - int(req.filed))
+			col.add_child(_text("Shelved in " + _days(wait) + " if you don't answer", Brand.INK_FAINT, 500, 11))
+		if picked:
+			var yes_no := HBoxContainer.new()
+			yes_no.add_theme_constant_override("separation", 6)
+			col.add_child(yes_no)
+			yes_no.add_child(_action("Yes", true, func(): _answer("approve")))
+			yes_no.add_child(_action("No", false, func(): _answer("deny")))
+		return card
 
 	var hits: Dictionary = view.hits if picked and _editing else req.hits
 	var cost: int = sim.permits.cost_of(sim, req, view.route, hits) if picked and _editing else req.cost
@@ -295,7 +315,7 @@ static func _acres(a: float) -> String:
 static func _days(ticks: int) -> String:
 	var hours := maxi(ticks, 0) / CitySim.TICKS_PER_HOUR
 	if hours < 24:
-		return "%d hour%s" % [maxi(hours, 1), "" if hours == 1 else "s"]
+		return "%d hour%s" % [maxi(hours, 1), "" if hours <= 1 else "s"]
 	var days := roundi(hours / 24.0)
 	return "%d day%s" % [days, "" if days == 1 else "s"]
 

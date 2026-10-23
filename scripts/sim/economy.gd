@@ -142,7 +142,7 @@ func update_budget(sim: CitySim) -> void:
 	var support := (sim.farms.yearly_support() + sim.industry.yearly_support()) / 12.0
 	budget = {"income": income, "upkeep": roundi(upkeep * d.upkeep), "fees": roundi(fees * d.income),
 		"services": roundi((sim.services.monthly_upkeep() + sim.hubs.monthly_cost() + sim.parks.monthly_upkeep()
-			+ sim.mail.monthly_cost()) * d.upkeep),
+			+ sim.mail.monthly_cost() + sim.heritage.monthly_cost()) * d.upkeep + sim.leaders.monthly_cost()),
 		"education": roundi(sim.education.monthly_upkeep() * d.upkeep),
 		"care": roundi(care * d.upkeep), "support": roundi(support),
 		"telecom": roundi(sim.telecom.monthly_upkeep() * d.upkeep)}

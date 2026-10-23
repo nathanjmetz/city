@@ -115,6 +115,15 @@ var construction := Construction.new()
 var pollution := Pollution.new()
 ## Hospitals run by their administrators, ambulances, nursing homes, daycare.
 var healthcare := Healthcare.new()
+## What the town is known for and the nickname it earns (TownCulture), its
+## old buildings and historic districts (Heritage), the roadside markers for
+## its firsts (HistoricMarkers), what its leaders ask of the town
+## (LeaderAsks), and the record its timelapse plays back (Timelapse).
+var culture := TownCulture.new()
+var heritage := Heritage.new()
+var markers := HistoricMarkers.new()
+var leaders := LeaderAsks.new()
+var timelapse := Timelapse.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -586,6 +595,9 @@ func apply_now(cmd: Dictionary) -> bool:
 			if ok:
 				_sync_stances()
 				_sync_levers()
+		"heritage":
+			# Protect a historic district, or lift its protection.
+			ok = heritage.set_protected(self, int(cmd.get("district", -1)), bool(cmd.get("protect", true)))
 		"set_junction":
 			# Traffic lights, stop signs or none at a junction (-1 = automatic).
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
@@ -898,6 +910,26 @@ func tick() -> void:
 		families.month(self)
 	Perf.add("sim.families", t)
 	t = Perf.now()
+	# The town's story, one part an hour so no tick carries it all: charm
+	# and districts, its firsts and culture, its leaders' asks, and the
+	# timelapse's record.
+	var hour := tick_count % (24 * TICKS_PER_HOUR)
+	if hour == 14 * TICKS_PER_HOUR:
+		heritage.month(self)
+	elif hour == 15 * TICKS_PER_HOUR:
+		heritage.month_charm(self)
+	elif hour == 16 * TICKS_PER_HOUR:
+		markers.month(self)
+	elif hour == 17 * TICKS_PER_HOUR:
+		culture.month(self)
+		leaders.month(self)
+	elif hour == 18 * TICKS_PER_HOUR:
+		timelapse.month(self)
+	if tick_count % TICKS_PER_HOUR == 30:
+		heritage.carry_out(self)
+		leaders.carry_out(self)
+	Perf.add("sim.heritage", t)
+	t = Perf.now()
 	if tick_count % WaterUtility.DECIDE_EVERY == 0 and not services.water.utilities.is_empty():
 		var res := services.water.decide(self, yard_usable)
 		economy.money += int(res[1])
@@ -950,6 +982,17 @@ func tick() -> void:
 	Perf.add("sim.traffic", t)
 	Perf.count("vehicles", traffic.cars.size())
 	Perf.add("sim.tick", t0)
+
+
+## The town's heritage, firsts, culture, leaders' asks and timelapse record
+## all at once (tests and tools; the tick spreads them over the afternoon).
+func town_month() -> void:
+	heritage.month(self)
+	heritage.month_charm(self)
+	markers.month(self)
+	culture.month(self)
+	leaders.month(self)
+	timelapse.month(self)
 
 
 ## Game time as a Dictionary (year, month, day, weekday, hour, minute).
@@ -1030,6 +1073,9 @@ func update_stats(budget := true) -> void:
 		+ 0.4 * (shop_jobs * 0.8 - factory_jobs) / maxf(factory_jobs, 20.0), 0.0, 1.0)
 	for z in demand:
 		demand[z] = clampf(demand[z] + economy.demand_shift(z) + mail.demand_shift(z), 0.0, 1.0)
+	# Visitors who come to walk the old districts, and the fall festival.
+	demand[ZoneMap.Zone.COMMERCIAL] = clampf(demand[ZoneMap.Zone.COMMERCIAL] + heritage.tourism_demand()
+		+ LeaderAsks.festival_demand(self), 0.0, 1.0)
 	# A boil-water notice, or a steep water bill, puts people off moving in.
 	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL]
 		- Balance.WATER_BOIL_DEMAND * services.water.boil_share(self) - services.water.rate_penalty(self), 0.0, 1.0)
@@ -1855,9 +1901,9 @@ func _hook_pollution() -> void:
 
 
 ## A lot's land value factor (1.0 = no change): the hubs nearby, trash left
-## out, and pollution.
+## out, pollution, and an old building's charm.
 func land_factor(key: String) -> float:
-	return hubs.lot_factor(self, key) * pollution.lot_factor(self, key)
+	return hubs.lot_factor(self, key) * pollution.lot_factor(self, key) * heritage.land(key)
 
 
 func _lot_blocked(lot: Dictionary) -> bool:
@@ -2076,7 +2122,7 @@ func _develop_hubs() -> void:
 		var f: Dictionary = farms.farms[id]
 		if not f.has("leader"):
 			f.leader = Agency.leader(self, hash([city_seed, "farm", id]))
-		if not Agency.develop(self, f, Agency.TREES.farm, f.pos, farms.yearly_profit(id)).is_empty():
+		if not Agency.develop(self, f, Agency.TREES.farm, f.pos, farms.yearly_profit(id), culture.boost("farm")).is_empty():
 			farm_built = true
 	ids = industry.sites.keys()
 	ids.sort()
@@ -2085,7 +2131,8 @@ func _develop_hubs() -> void:
 		var s: Dictionary = industry.sites[id]
 		if not s.has("leader"):
 			s.leader = Agency.leader(self, hash([city_seed, "site", id]))
-		if not Agency.develop(self, s, Agency.TREES[s.kind], s.pos, industry.yearly_profit(id)).is_empty():
+		if not Agency.develop(self, s, Agency.TREES[s.kind], s.pos, industry.yearly_profit(id),
+				culture.boost("industry")).is_empty():
 			site_built = true
 	if farm_built:
 		farms_changed.emit()
@@ -2154,6 +2201,10 @@ func _develop_one() -> void:
 		if opts.is_empty():
 			continue
 		var o: Array = opts[rng.randi() % opts.size()]
+		# Protected old buildings stay as they are; a charming one asks the
+		# town before it comes down (Heritage).
+		if not heritage.allow(self, key, o[0], o[1]):
+			continue
 		redevelop(key, o[0], o[1])
 		return
 
@@ -2165,6 +2216,9 @@ func redevelop(key: String, type: String, level: int) -> void:
 		return
 	var b := BuildingTypes.make(self, key, buildings[key], type, level)
 	b.changed = tick_count
+	if type != BuildingTypes.type_of(buildings[key]):
+		# Torn down and rebuilt as something else: its age starts again.
+		b.fabric = tick_count
 	buildings[key] = b
 	buildings_changed.emit()
 
@@ -2266,6 +2320,11 @@ func to_dict() -> Dictionary:
 		"policies": policies.to_dict(),
 		"pollution": pollution.to_dict(),
 		"healthcare": healthcare.to_dict(),
+		"culture": culture.to_dict(),
+		"heritage": heritage.to_dict(),
+		"markers": markers.to_dict(),
+		"leaders": leaders.to_dict(),
+		"timelapse": timelapse.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
 		"buses": buses.to_dict(),
@@ -2318,6 +2377,10 @@ func from_dict(d: Dictionary) -> void:
 	policies.from_dict(d.get("policies", {}))
 	pollution.from_dict(d.get("pollution", {}))
 	healthcare.from_dict(d.get("healthcare", {}))
+	culture.from_dict(d.get("culture", {}))
+	heritage.from_dict(d.get("heritage", {}))
+	markers.from_dict(d.get("markers", {}))
+	leaders.from_dict(d.get("leaders", {}))
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:
@@ -2351,6 +2414,8 @@ func from_dict(d: Dictionary) -> void:
 			"type": BuildingTypes.type_of(b), "level": int(b.get("level", 0)),
 			"units": int(b.get("units", 1)), "flats": int(b.get("flats", 0)), "focc": int(b.get("focc", 0)),
 			"changed": int(b.get("changed", b.built)), "why": str(b.get("why", ""))}
+		if b.has("fabric"):
+			buildings[key].fabric = int(b.fabric)
 		if z == ZoneMap.Zone.INDUSTRIAL and b.has("chain"):
 			buildings[key].chain = str(b.chain)
 	_road_wins()
@@ -2361,6 +2426,8 @@ func from_dict(d: Dictionary) -> void:
 		if buildings[key].zone == ZoneMap.Zone.INDUSTRIAL and not buildings[key].has("chain"):
 			buildings[key].chain = factory_chain(lots[key].pos) if lots.has(key) else "general"
 	pollution.after_load(self)
+	heritage.ensure(self)
+	timelapse.from_dict(self, d.get("timelapse", {}))
 	update_stats()
 	buses = BusNet.new()
 	buses.from_dict(self, d.get("buses", {}))

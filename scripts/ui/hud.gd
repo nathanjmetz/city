@@ -96,6 +96,9 @@ var _view := ""
 var _help_button: Button
 var advisor := AdvisorPanel.new()
 var permits := PermitPanel.new()
+## The town's nickname, history, districts and markers, and its timelapse.
+var town := TownPanel.new()
+var timelapse := TimelapseView.new()
 
 
 func setup(rt: RoadTool, zt: ZoneTool, s: CitySim, g: Node) -> void:
@@ -119,6 +122,7 @@ func _ready() -> void:
 	_build_views()
 	_build_advisor()
 	_build_permits()
+	_build_town()
 	_info_panel.setup(sim, select_tool)
 	_root.add_child(_info_panel)
 	_build_economy()
@@ -197,6 +201,7 @@ func pad_bottom_height() -> float:
 ## True while a tool is in hand, a panel or view is open, or something is selected.
 func anything_open() -> bool:
 	return _budget_open or _view != "" or _views_panel.visible or _help.visible or advisor.visible or permits.visible \
+		or town.visible or timelapse.visible \
 		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
@@ -214,6 +219,8 @@ func close_all() -> void:
 	_help_button.set_pressed_no_signal(false)
 	advisor.close_panel()
 	permits.close_panel()
+	town.close_panel()
+	timelapse.close_view()
 	road_tool.set_mode(RoadTool.Mode.NONE)
 	zone_tool.set_zone(ZoneTool.OFF)
 	service_tool.set_kind(ServiceTool.OFF)
@@ -409,6 +416,8 @@ func _build_top_bar() -> void:
 	seasons.toggled.connect(DayNight.set_seasons)
 	row.add_child(seasons)
 	row.add_child(VSeparator.new())
+	town.setup(sim, info_view.cam)
+	row.add_child(town.make_button())
 	permits.setup(sim, game, info_view.cam)
 	row.add_child(permits.make_button())
 	advisor.setup(sim, func(): return _advisor_key() if _category != "" or _view == "" else "view_" + _view)
@@ -418,7 +427,8 @@ func _build_top_bar() -> void:
 		_help.visible = on
 		if on:
 			advisor.close_panel()
-			permits.close_panel())
+			permits.close_panel()
+			town.close_panel())
 	row.add_child(_help_button)
 
 
@@ -1151,6 +1161,7 @@ func _build_advisor() -> void:
 	place.call_deferred()
 	advisor.opened.connect(func():
 		permits.close_panel()
+		town.close_panel()
 		_help.visible = false
 		_help_button.set_pressed_no_signal(false))
 
@@ -1168,8 +1179,31 @@ func _build_permits() -> void:
 	place.call_deferred()
 	permits.opened.connect(func():
 		advisor.close_panel()
+		town.close_panel()
 		_help.visible = false
 		_help_button.set_pressed_no_signal(false))
+
+
+## The Town panel, docked where the bell's is, and the timelapse over it all.
+func _build_town() -> void:
+	_root.add_child(town)
+	town.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	town.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	var place := func():
+		town.offset_right = 0
+		town.offset_left = 0
+		town.offset_top = _top_bar.size.y
+	_top_bar.resized.connect(place)
+	place.call_deferred()
+	town.opened.connect(func():
+		advisor.close_panel()
+		permits.close_panel()
+		_help.visible = false
+		_help_button.set_pressed_no_signal(false))
+	_root.add_child(timelapse)
+	town.watch_timelapse.connect(func():
+		town.close_panel()
+		timelapse.open(sim))
 
 
 # --- Help (from the top bar) -----------------------------------------------

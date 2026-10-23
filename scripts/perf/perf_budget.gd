@@ -33,6 +33,7 @@ const SIM := {
 	"sim.water":        {"per_tick": 0.05, "max": 6.0, "what": "Water utility decisions"},
 	"sim.hub_leaders":  {"per_tick": 0.1, "max": 8.0, "what": "Monthly leader decisions (development trees)"},
 	"sim.families":     {"per_tick": 0.05, "max": 6.0, "what": "Monthly family business decisions"},
+	"sim.heritage":     {"per_tick": 0.05, "max": 6.0, "what": "Monthly heritage, markers, culture, leader asks, timelapse"},
 	"sim.civic_hubs":   {"per_tick": 0.2, "max": 6.0, "what": "Landfill, recycling, cemetery, garbage trucks"},
 	"sim.mail":         {"per_tick": 0.1, "max": 4.0, "what": "Mail carriers and routes"},
 	"sim.rail":         {"per_tick": 0.1, "max": 4.0, "what": "Rail depots, trains and crossings"},

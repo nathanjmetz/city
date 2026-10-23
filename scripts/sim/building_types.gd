@@ -199,6 +199,10 @@ static func pick(sim, key: String, zone: int, rng: RandomNumberGenerator) -> Arr
 				weights.append(["office", 0.6 + dens / 50.0, "The town has college graduates to hire"])
 		_:
 			weights.append([default_type(zone), 1.0, ""])
+	# The town's culture tilts it: a banking town builds more offices.
+	if "culture" in sim:
+		for w in weights:
+			w[1] *= sim.culture.tilt(w[0])
 	var total := 0.0
 	for w in weights:
 		total += w[1]
