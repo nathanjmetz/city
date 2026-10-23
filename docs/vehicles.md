@@ -15,6 +15,8 @@ Freight: delivery (step) van, 26 ft box truck, dump truck, concrete mixer,
 tow truck, and semis with a 53 ft dry van, flatbed, grain hopper, tanker,
 log trailer, end dump, USPS trailer or pot-belly livestock trailer.
 Utility: bucket truck (Altec AT40G) for phone and power line crews.
+Camping: Class C RV, Class A motorhome and a pickup with a slide-in camper,
+used by out-of-town visitors (purpose "visitor").
 Services: school bus, city bus, garbage truck, fire engine, police
 interceptor, ambulance. Farm: row-crop tractor, combine.
 

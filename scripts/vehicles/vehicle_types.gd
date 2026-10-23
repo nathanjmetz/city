@@ -43,6 +43,9 @@ const SPECS := {
 	"dump_truck":    {"len": 9.00, "width": 2.60, "height": 3.40, "acc": 0.9, "brake": 2.3, "top_speed": 29.0, "pref": 0.93},
 	"concrete_mixer": {"len": 10.40, "width": 2.60, "height": 3.95, "acc": 0.8, "brake": 2.2, "top_speed": 29.0, "pref": 0.92},
 	"bucket_truck":  {"len": 8.70, "width": 2.40, "height": 3.30, "acc": 1.2, "brake": 2.6, "top_speed": 33.0, "pref": 0.96},
+	"rv":            {"len": 9.40, "width": 2.45, "height": 3.45, "acc": 1.0, "brake": 2.4, "top_speed": 31.0, "pref": 0.93},
+	"motorhome":     {"len": 11.30, "width": 2.55, "height": 3.80, "acc": 0.9, "brake": 2.3, "top_speed": 31.0, "pref": 0.92},
+	"pickup_camper": {"len": 6.70, "width": 2.40, "height": 3.30, "acc": 1.3, "brake": 2.6, "top_speed": 36.0, "pref": 0.95},
 	"tow_truck":     {"len": 7.00, "width": 2.40, "height": 2.80, "acc": 1.3, "brake": 2.6, "top_speed": 36.0, "pref": 0.97},
 	"school_bus":    {"len": 12.20, "width": 2.44, "height": 3.20, "acc": 1.0, "brake": 2.3, "top_speed": 27.0, "pref": 0.92},
 	"city_bus":      {"len": 12.20, "width": 2.60, "height": 3.30, "acc": 1.0, "brake": 2.0, "top_speed": 27.0, "pref": 0.92},
@@ -109,6 +112,9 @@ const LIVERY := {
 	"dump_truck": [[Color(0.92, 0.92, 0.91), 2.0], [Color(0.92, 0.52, 0.05), 1.0], [Color(0.90, 0.72, 0.05), 1.0]],
 	# Utility fleets are nearly all white; some co-ops run yellow.
 	"bucket_truck": [[Color(0.92, 0.92, 0.91), 6.0], [Color(0.90, 0.72, 0.05), 1.0]],
+	# RVs are white or tan; the paint is the swoosh graphic down the side.
+	"rv": [[Color(0.38, 0.27, 0.18), 3.0], [Color(0.25, 0.27, 0.30), 3.0], [Color(0.12, 0.22, 0.40), 1.0], [Color(0.50, 0.10, 0.08), 1.0]],
+	"motorhome": [[Color(0.38, 0.27, 0.18), 3.0], [Color(0.25, 0.27, 0.30), 3.0], [Color(0.12, 0.22, 0.40), 1.0]],
 	"tow_truck": [[Color(0.92, 0.92, 0.91), 1.0], [Color(0.70, 0.07, 0.07), 1.0], [Color(0.05, 0.05, 0.06), 1.0]],
 	# John Deere green, Case IH red, New Holland blue.
 	"tractor": [[Color(0.21, 0.49, 0.17), 5.0], [Color(0.70, 0.08, 0.07), 3.0], [Color(0.10, 0.28, 0.58), 1.0]],
@@ -121,6 +127,12 @@ const LIVERY := {
 ## that can do it, with weights.
 const PURPOSE := {
 	"commute": PERSONAL,
+	# Out-of-town visitors: mostly ordinary cars, some on a camping trip.
+	"visitor": {
+		"pickup": 20.0, "work_pickup": 2.0, "crossover": 20.0, "suv": 12.0, "sedan": 15.0,
+		"hatchback": 4.0, "minivan": 7.0, "sports": 1.5, "motorcycle": 1.5, "van": 1.0,
+		"rv": 3.0, "motorhome": 1.5, "pickup_camper": 2.0,
+	},
 	"shopping": PERSONAL,
 	# Freight.
 	"grain": {"grain_truck": 8.0, "tractor": 2.0},       # hopper semis, tractors with wagons
