@@ -161,7 +161,8 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 		for key in sim.services.served:
 			if sim.services.served[key].get(u + "_linked", false):
 				reached += 1
-		rows.append(["This building serves", "%s homes" % CitySim.money_text(int(k.capacity))])
+		rows.append(["This building serves", "%s homes" % CitySim.money_text(
+			roundi(int(k.capacity) * sim.services.funding(id, Balance.POLICY_EFFECT)))])
 		rows.append(["Town %s in use" % u, "%s of %s homes" % [CitySim.money_text(use[0]), CitySim.money_text(use[1])]])
 		rows.append(["Lots it reaches by road", str(reached)])
 		if not linked:
@@ -185,14 +186,17 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 				homes += 1
 				if sim.services.served.get(key, {}).get(b.kind, false):
 					covered += 1
-		rows.append(["Reach by road", "%.1f miles" % (float(k.reach) / 1609.0)])
+		rows.append(["Reach by road", "%.1f miles" % (float(k.reach) * sim.services.funding(id, Balance.POLICY_EFFECT) / 1609.0)])
 		rows.append(["Homes covered", "%d of %d" % [covered, homes]])
 		if not linked:
 			problems.append("Not beside a road, so it can't respond.")
 		status = "Working: covering %d homes" % covered if ok else "Not working"
 		rows.append_array(sim.buses.school_rows(id))
-	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(int(k.upkeep))])
+	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(sim.services.upkeep_of(id))])
 	rows.append(["Built for", "$%s" % CitySim.money_text(int(k.cost))])
+	var going_up := sim.construction.describe("svc:%d" % id, sim.tick_count)
+	if going_up != "":
+		rows.append(["Building", going_up.trim_prefix("Under construction: ")])
 	return {"title": k.name, "kind": "Utility" if k.has("utility") else "City service", "icon": k.icon,
 		"ok": ok and problems.is_empty(), "status": status, "rows": rows, "problems": problems}
 
@@ -310,12 +314,11 @@ static func _park(sim: CitySim, id: int) -> Dictionary:
 	var rows := [["Neighborhood", "%s (%d%%)" % [tier.name, roundi(s.score * 100.0)]]]
 	var status := "A town landmark"
 	if s.kind == "park":
-		var names := {"paths": "paths", "playground": "playground", "pavilion": "picnic pavilion",
-			"court": "basketball court", "ball_diamond": "ball diamond", "flower_beds": "flower beds",
-			"fountain": "fountain"}
+		var names := Parks.FEATURE_NAMES
 		var has := []
 		for f in s.features:
-			has.append(names.get(f.type, f.type))
+			if names.has(f.type):
+				has.append(names[f.type])
 		var next := ""
 		for f in sim.parks.wanted_features(id):
 			if not sim.parks.has_feature(id, f.type):
@@ -326,8 +329,14 @@ static func _park(sim: CitySim, id: int) -> Dictionary:
 		status = ("Filling in: %s next" % next) if next != "" else "Filled in"
 		status += {"struggling": ", worn and patchy", "working": ", plain and tidy", "comfortable": ", well kept",
 			"thriving": ", lovingly curated"}.get(tier.key, "")
-	rows.append(["Land value nearby", "up to +%d%%" % roundi(float(a.value) * q * 100.0)])
-	rows.append(["Happiness nearby", "up to +%d%%" % roundi(float(a.happy) * q * 100.0)])
+		var l: Dictionary = s.leader
+		rows.append(["Park board", "chaired by %s, %s" % [l.name, Education.leader_style(l)]])
+		if str(s.get("why", "")) != "":
+			rows.append(["Last move", s.why])
+		# Its development tree, a branch a row.
+		rows.append_array(sim.parks.tree_status(sim, id))
+	rows.append(["Land value nearby", "up to +%d%%" % roundi((float(a.value) * q + sim.parks.tree_lift(id, "value")) * 100.0)])
+	rows.append(["Happiness nearby", "up to +%d%%" % roundi((float(a.happy) * q + sim.parks.tree_lift(id, "happy")) * 100.0)])
 	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(roundi(sim.parks.site_upkeep(id)))])
 	return {"title": s.name, "kind": "Park" if s.kind == "park" else "Landmark  ·  " + k.name, "icon": k.icon,
 		"ok": true, "status": status, "rows": rows, "problems": []}
@@ -420,7 +429,6 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 	if smell > 0.1:
 		problems.append("The sewer plant smells here, so the land is worth %d%% less." % roundi(
 			100.0 * (1.0 - sim.services.water.land_value_factor(sim.services.buildings, lot.pos))))
-	var names := {ZoneMap.Zone.RESIDENTIAL: "Home", ZoneMap.Zone.COMMERCIAL: "Shop", ZoneMap.Zone.INDUSTRIAL: "Factory"}
 	if not sim.buildings.has(key):
 		var status := "Empty lot, waiting to be built"
 		if not problems.is_empty():
@@ -455,6 +463,19 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 			rows.append(["%s in the yard" % chain.input.capitalize(), "%d loads" % floori(sim.logistics.stock.get(key, 0.0))])
 		rows.append(["Trucks on the road", str(sim.logistics.trucks_for("lot:" + key))])
 		status = "Open for business" if problems.is_empty() else "Closed: no power or water"
+	if int(b.get("flats", 0)) > 0:
+		rows.insert(1, ["Flats upstairs", "%d of %d residents" % [int(b.focc), int(b.flats)]])
+	if BuildingTypes.storeys(b) > 0:
+		rows.insert(0, ["Storeys", str(BuildingTypes.storeys(b))])
+	if str(b.get("why", "")) != "":
+		rows.append(["Why this", b.why])
+	var next := []
+	for o in BuildingTypes.options(sim, key):
+		next.append(BuildingTypes.TYPES[o[0]].stages[o[1]].name)
+	rows.append(["Can grow into", ", ".join(next) if not next.is_empty() else "Nothing yet"])
+	var going_up := sim.construction.describe("lot:" + key, sim.tick_count)
+	if going_up != "":
+		status = going_up
 	var staffed := float(sim.stats.employed) / maxf(sim.stats.jobs, 1.0)
 	var lift: float = sim.parks.lot_value.get(key, 0.0)
 	var land := sim.hubs.lot_factor(sim, key) * sim.mail.lot_factor(sim, key) * (1.0 + lift)
@@ -473,10 +494,10 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 	if trash != "":
 		problems.append(trash)
 	var icons := {ZoneMap.Zone.RESIDENTIAL: "homes", ZoneMap.Zone.COMMERCIAL: "shops", ZoneMap.Zone.INDUSTRIAL: "industry"}
-	var title: String = names[z]
+	var title: String = BuildingTypes.name_of(b)
 	if z == ZoneMap.Zone.INDUSTRIAL:
 		title = Balance.FACTORY_CHAINS[b.get("chain", "general")].name
-	return {"title": title, "kind": ZoneMap.NAMES[z], "icon": icons[z], "ok": problems.is_empty(),
+	return {"title": title, "kind": BuildingTypes.TYPES[BuildingTypes.type_of(b)].name, "icon": icons[z], "ok": problems.is_empty(),
 		"status": status, "rows": rows, "problems": problems}
 
 

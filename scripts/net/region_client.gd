@@ -37,8 +37,17 @@ var requests := []
 ## Seconds since the last tick arrived, for smooth car movement.
 var since_tick := 0.0
 
+## Only your own town runs on this computer; the neighbors' copies are
+## refreshed from the server this often, in seconds. (Running every town in
+## every browser made the game lag with four players.)
+const REFRESH_EVERY := 60.0
+## A town whose copy drifts asks for a fresh one at most this often.
+const RESYNC_GAP := 30.0
+
 var _peer: WebSocketMultiplayerPeer
 var _connected := false
+var _since_refresh := 0.0
+var _since_resync := RESYNC_GAP
 var _password := ""
 var _new_account := false
 
@@ -55,6 +64,7 @@ func join(server_url: String, code: String, id: String, name: String, password :
 	_new_account = new_account
 	token = saved_token
 	_peer = WebSocketMultiplayerPeer.new()
+	RegionServer.use_big_buffers(_peer)
 	var err := _peer.create_client(server_url)
 	if err != OK:
 		failed.emit("Couldn't reach %s." % server_url)
@@ -104,8 +114,12 @@ func name_of(id: String) -> String:
 
 func _process(delta: float) -> void:
 	since_tick += delta
+	_since_refresh += delta
+	_since_resync += delta
 	if _peer == null:
 		return
+	if is_joined and _since_refresh >= REFRESH_EVERY:
+		_ask_fresh_copy()
 	_peer.poll()
 	var state := _peer.get_connection_status()
 	if state == MultiplayerPeer.CONNECTION_CONNECTED and not _connected:
@@ -157,8 +171,9 @@ func _handle(msg: Dictionary) -> void:
 			_tick(msg)
 		"sums":
 			# Our copy drifted from the server's: ask for a fresh one.
-			if int(msg.n) == region.tick_count and msg.sums != _sums_as_json():
-				_send({"t": "resync"})
+			if int(msg.n) == region.tick_count and _since_resync >= RESYNC_GAP \
+					and msg.sums.get(my_city) != _sums_as_json().get(my_city):
+				_ask_fresh_copy()
 		"region":
 			var old_ids := region.cities.keys()
 			_replace_region(msg.region)
@@ -191,8 +206,20 @@ func _tick(msg: Dictionary) -> void:
 					joined.emit()
 			"cmd":
 				region.apply(e[1], e[2])
-	region.tick()
+	if region.cities.has(my_city):
+		region.tick_count += 1
+		region.cities[my_city].sim.tick()
+		if region.tick_count % Region.TRADE_EVERY == 0:
+			region.settle_trade()
+	else:
+		region.tick()
 	since_tick = 0.0
+
+
+func _ask_fresh_copy() -> void:
+	_since_refresh = 0.0
+	_since_resync = 0.0
+	_send({"t": "resync"})
 
 
 ## Loads a fresh copy into the existing city sims, so the views drawing them
