@@ -105,6 +105,8 @@ var _px := 0.1  # metres per screen pixel where the cursor is
 var _hover_seg := -1
 var _hover_service := -1
 var _hover_warehouse := -1
+## The scenery county mile under the mouse, to bulldoze (CountyGrid.mile_at).
+var _hover_county := {}
 var _hover_farm := -1
 var _hover_park := -1
 var _shown_problem := ""
@@ -373,6 +375,9 @@ func _click() -> void:
 			elif _hover_seg != -1:
 				sim.apply({"type": "remove_road", "seg": _hover_seg})
 				_hover_seg = -1
+			elif not _hover_county.is_empty():
+				sim.apply({"type": "remove_county", "key": _hover_county.key})
+				_hover_county = {}
 			elif sim.banks.covers(hit):
 				# One block of the bank at a time (its first building closes it).
 				sim.apply({"type": "remove_bank_block", "pos": [hit.x, hit.z]})
@@ -740,7 +745,7 @@ func _county_at(p: Vector3, reach := 0.5) -> Dictionary:
 		return {}
 	var o := sim.terrain_offset
 	var mile := CountyGrid.mile_at(p.x + o.x, p.z + o.y, reach)
-	if mile.is_empty() or sim.county_joined.has(mile.key) or not CountyGrid.clears(mile.on.x, mile.on.y):
+	if mile.is_empty() or sim.county_joined.has(mile.key) or sim.county_removed.has(mile.key) or not CountyGrid.clears(mile.on.x, mile.on.y):
 		return {}
 	return mile
 
@@ -960,6 +965,20 @@ func _preview_pick(hit: Vector3) -> void:
 		box.size = Vector3(size.x + 1.0, 6.0, size.y + 1.0)
 		_preview.mesh = box
 		_preview.transform = Transform3D(Basis.looking_at(b.dir, Vector3.UP), Terrain.lift(b.pos) + Vector3(0, 3, 0))
+		_preview.material_override = mat
+		_preview.visible = true
+		return
+	_hover_county = _county_at(hit, 6.0) if mode == Mode.BULLDOZE and _hover_seg == -1 else {}
+	if not _hover_county.is_empty():
+		# A county road out in the country: the whole mile goes.
+		var o := sim.terrain_offset
+		var a: Vector2 = _hover_county.a - o
+		var b: Vector2 = _hover_county.b - o
+		var cst := SurfaceTool.new()
+		cst.begin(Mesh.PRIMITIVE_TRIANGLES)
+		RoadMesh.add_strip(cst, Terrain.densify(PackedVector3Array([Vector3(a.x, 0, a.y), Vector3(b.x, 0, b.y)]), 6.0),
+			-CountyGrid.HALF_WIDTH - 0.5, CountyGrid.HALF_WIDTH + 0.5, 0.2)
+		_preview.mesh = Terrain.drape(cst.commit())
 		_preview.material_override = mat
 		_preview.visible = true
 		return

@@ -29,6 +29,11 @@ func _ready() -> void:
 	add_child(sky)
 	var terrain := TerrainView.new()
 	add_child(terrain)
+	# County miles joined to town or bulldozed stop being painted.
+	var hide_county := func() -> void:
+		TerrainView.set_county_hidden(sim.county_joined.keys() + sim.county_removed.keys())
+	hide_county.call()
+	sim.county_changed.connect(hide_county)
 
 	var roads := RoadView.new()
 	add_child(roads)

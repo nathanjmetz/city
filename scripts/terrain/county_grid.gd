@@ -16,7 +16,7 @@ const HALF_WIDTH := 3.5
 ## Half the cleared strip: the roadway, ditches and mowed verge.
 const HALF_CLEAR := 8.0
 ## Share of the miles of section line that have a road.
-const SHARE := 0.73
+const SHARE := 0.95
 ## No road where the land is steeper than this (bluffs above the river).
 const MAX_SLOPE := 0.18
 
@@ -108,12 +108,42 @@ static func run(on: Vector2, to: Vector2) -> Vector2:
 const STEP := 10.0
 
 
-## A county road's name, as Indiana counties number them: hundreds for each
-## eighth of a mile from the county's base lines, N/S or E/W of them.
+## A county road's name, as Indiana counties number them: 100 for each mile
+## from the county's base lines (CR 300 N is three miles north), N/S or E/W
+## of them. Once a town has a courthouse, Streets.grid_name counts from it.
 static func road_name(key: String) -> String:
 	var parts := key.split(":")
 	var n := int(parts[1])
-	# A mile is 800 in the county numbering (100 per eighth of a mile).
 	if parts[0] == "ns":
-		return "County Road %d %s" % [absi(n) * 800, "E" if n >= 0 else "W"]
-	return "County Road %d %s" % [absi(n) * 800, "S" if n >= 0 else "N"]
+		return "County Road %d %s" % [absi(n) * 100, "E" if n >= 0 else "W"]
+	return "County Road %d %s" % [absi(n) * 100, "S" if n >= 0 else "N"]
+
+
+## True for a mile key as mile_at makes them ("ns:3:-2", "ew:0:5").
+static func valid_key(key: String) -> bool:
+	var parts := key.split(":")
+	return parts.size() == 3 and parts[0] in ["ns", "ew"] and parts[1].is_valid_int() and parts[2].is_valid_int()
+
+
+## Size of the table of miles the ground shader hides (HIDDEN x HIDDEN,
+## wrapping): joined to a town (its own road draws it) or bulldozed.
+const HIDDEN := 64
+
+
+## That table as a texture: red for north-south miles, green for east-west,
+## at (line, mile) wrapped to HIDDEN.
+static func hidden_texture(keys: Array) -> ImageTexture:
+	var img := Image.create(HIDDEN, HIDDEN, false, Image.FORMAT_RG8)
+	for key in keys:
+		if not valid_key(key):
+			continue
+		var parts: PackedStringArray = key.split(":")
+		var x := posmod(int(parts[1]), HIDDEN)
+		var y := posmod(int(parts[2]), HIDDEN)
+		var c := img.get_pixel(x, y)
+		if parts[0] == "ns":
+			c.r = 1.0
+		else:
+			c.g = 1.0
+		img.set_pixel(x, y, c)
+	return ImageTexture.create_from_image(img)
