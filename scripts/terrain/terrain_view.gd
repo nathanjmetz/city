@@ -39,6 +39,7 @@ const HYST_OUT := 0.95
 ## and the 32 m lots), fading out over the next few metres.
 const LOT_GRADE := 34.0
 const GRADE_FADE := 14.0
+const REGRADE_CELL := 256.0  # metres: the grid _regrade finds touched strips with
 ## Mowed grass past a road's right of way before the wild cover starts.
 const MOW_VERGE := 3.0
 ## How much of the woods floor a yard thins to lawn (see build_chunk).
@@ -1031,17 +1032,34 @@ func remove_network(name: String, now := true) -> void:
 
 ## Grades the ground under every road that changed, and marks those chunks
 ## to be rebuilt.
+## Each neighbor network's strips from the last regrade: name -> [sig, strips].
+var _net_strips := {}
+
+
 func _regrade() -> void:
 	var now := {}
 	if network != null:
 		_grade_network(now, network, Vector2.ZERO, true, "")
+	var keep := {}
 	for name in _others:
 		var o: Array = _others[name]
 		if o[0] is RoadNetwork:
-			_grade_network(now, o[0], o[1], o[2], name + ":")
+			# A neighbor's roads that haven't changed since last time keep
+			# their strips as they were (edits there bump its revision).
+			var sig := [o[0].get_instance_id(), o[0].revision, o[0].segments.size(), o[1], o[2]]
+			var last: Array = _net_strips.get(name, [])
+			if not last.is_empty() and last[0] == sig:
+				now.merge(last[1])
+				keep[name] = last
+				continue
+			var mine := {}
+			_grade_network(mine, o[0], o[1], o[2], name + ":")
+			now.merge(mine)
+			keep[name] = [sig, mine]
 		else:
 			for key in o[0]:
 				now[name + ":" + str(key)] = o[0][key]
+	_net_strips = keep
 	if extra_grades.is_valid():
 		now.merge(extra_grades.call())
 	# Roads removed long ago needn't be remembered.
@@ -1062,13 +1080,34 @@ func _regrade() -> void:
 		return
 	for box in changed:
 		Terrain.clear_flat(box)
+	# Each strip is stamped once over all the cleared boxes it touches, found
+	# through a coarse grid rather than by testing every box. Stamping keeps
+	# the higher value and a strip never reaches past its bounds, so cells
+	# it covers outside those boxes (never cleared) already hold the same.
+	var grid := {}
+	for n in changed.size():
+		var box: Rect2 = changed[n]
+		for cz in range(floori(box.position.y / REGRADE_CELL), floori(box.end.y / REGRADE_CELL) + 1):
+			for cx in range(floori(box.position.x / REGRADE_CELL), floori(box.end.x / REGRADE_CELL) + 1):
+				var cell := Vector2i(cx, cz)
+				if not grid.has(cell):
+					grid[cell] = []
+				grid[cell].append(n)
 	for id in _graded:
 		var g: Array = _graded[id]
 		var b := _bounds(g)
-		for box in changed:
-			if b.intersects(box):
-				# Cover is cleared to the mowed verge (or, without one, the graded strip).
-				Terrain.stamp_flat(g[0], g[1], g[2], box, g[3] if g.size() > 3 else g[1])
+		var clip := Rect2()
+		var hit := false
+		for cz in range(floori(b.position.y / REGRADE_CELL), floori(b.end.y / REGRADE_CELL) + 1):
+			for cx in range(floori(b.position.x / REGRADE_CELL), floori(b.end.x / REGRADE_CELL) + 1):
+				for n in grid.get(Vector2i(cx, cz), []):
+					var box: Rect2 = changed[n]
+					if b.intersects(box):
+						clip = clip.merge(box) if hit else box
+						hit = true
+		if hit:
+			# Cover is cleared to the mowed verge (or, without one, the graded strip).
+			Terrain.stamp_flat(g[0], g[1], g[2], clip.intersection(b), g[3] if g.size() > 3 else g[1])
 	for box in changed:
 		graded.emit(box)
 	for g in changed_strips:
