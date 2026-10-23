@@ -116,8 +116,10 @@ func rebuild(sim: CitySim) -> void:
 		var b: Dictionary = sim.buildings[key]
 		if int(b.zone) != ZoneMap.Zone.INDUSTRIAL or not sim.lots.has(key):
 			continue
-		_add(sim, "lot:" + key, _unique(used_names, factory_name(key, int(b.seed))), "factory", "factory",
-			{"type": "lot", "id": key}, [[sim.lots[key].pos, 1.0]])
+		var chain := str(b.get("chain", "general"))
+		_add(sim, "lot:" + key, _unique(used_names, factory_name(key, int(b.seed), chain)), "factory", "factory",
+			{"type": "lot", "id": key}, [[sim.lots[key].pos, 1.0]],
+			Balance.POLLUTION_SOURCES.factory_chains.get(chain, {}))
 	var ids := sim.industry.sites.keys()
 	ids.sort()
 	for id in ids:
@@ -237,11 +239,12 @@ static func road_pieces(net: RoadNetwork, id: int) -> int:
 
 ## A source from Balance numbers, made cleaner by any equipment its owner
 ## has bought.
-func _add(_sim: CitySim, ref: String, name: String, kind: String, owner: String, sel: Dictionary, pts: Array) -> void:
+func _add(_sim: CitySim, ref: String, name: String, kind: String, owner: String, sel: Dictionary, pts: Array,
+		scale := {}) -> void:
 	var spec: Dictionary = Balance.POLLUTION_SOURCES[kind]
-	var smoke: float = spec.smoke
-	var noise: float = spec.noise
-	var ground: float = spec.ground
+	var smoke: float = spec.smoke * scale.get("smoke", 1.0)
+	var noise: float = spec.noise + scale.get("noise", 0.0)
+	var ground: float = spec.ground * scale.get("ground", 1.0)
 	var tech := equipment(ref, owner)
 	if not tech.is_empty():
 		smoke *= float(tech.smoke)
@@ -730,9 +733,16 @@ const _PLANTS := ["Feed Mill", "Tool & Die", "Plastics", "Foundry", "Box Co.", "
 	"Cannery", "Brick Works", "Coatings", "Millwork", "Fabrication"]
 
 
-static func factory_name(key: String, bseed: int) -> String:
+## What each industry chain's plants are called.
+const _CHAIN_PLANTS := {"mill": ["Feed Mill", "Grain Mill", "Ethanol Plant", "Cannery"],
+	"sawmill": ["Sawmill", "Millwork", "Pallet Co.", "Furniture"], "refinery": ["Refinery", "Asphalt Plant"],
+	"metal": ["Foundry", "Steel Works", "Machine Works", "Fabrication"]}
+
+
+static func factory_name(key: String, bseed: int, chain := "general") -> String:
 	var h := absi(hash([key, bseed]))
-	return "%s %s" % [_SURNAMES[h % _SURNAMES.size()], _PLANTS[(h / 7) % _PLANTS.size()]]
+	var plants: Array = _CHAIN_PLANTS.get(chain, _PLANTS)
+	return "%s %s" % [_SURNAMES[h % _SURNAMES.size()], plants[(h / 7) % plants.size()]]
 
 
 static func company_name(kind: String, id: int) -> String:

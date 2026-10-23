@@ -600,6 +600,16 @@ const POLLUTION_SOURCES := {
 	# A small plant: stack and loading-dock dust, forklifts and fans, and
 	# spills soaking into the yard.
 	"factory": {"smoke": 6.0, "noise": 68.0, "ground": 0.3, "reach": 90.0},
+	# Factories by the chain they serve (see CitySim.factory_chain), as a
+	# multiple of "factory": a refinery's flares and a foundry's furnaces
+	# smoke the most, a sawmill is the loudest, a grain mill is mostly dust.
+	"factory_chains": {
+		"mill": {"smoke": 0.8, "noise": 0.0, "ground": 0.5},
+		"sawmill": {"smoke": 0.7, "noise": 6.0, "ground": 0.4},
+		"refinery": {"smoke": 2.0, "noise": 2.0, "ground": 2.0},
+		"metal": {"smoke": 1.6, "noise": 4.0, "ground": 1.4},
+		"general": {"smoke": 1.0, "noise": 0.0, "ground": 1.0},
+	},
 	# Pump jacks hum about 60 dBA nearby; flaring, and brine spills (the
 	# Illinois Basin's real groundwater problem).
 	"oil": {"smoke": 4.0, "noise": 62.0, "ground": 0.5, "reach": 140.0, "pad_share": 0.5},
