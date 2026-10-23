@@ -183,6 +183,21 @@ var neighbor_power_short := 0.0
 var region := {}
 
 var _lots_dirty := true
+## Towns with replan_lots lots plan a zoning edit's lots over the next
+## REPLAN_TICKS ticks (a road's over REPLAN_ROAD_TICKS: it touches more),
+## doing REPLAN_WARM units of the work a tick (see LotPlanner.warm), then
+## finishing on the tick it's due (_replan_at).
+## (Tests make a small town act big.)
+var replan_lots := 1500
+const REPLAN_TICKS := 15
+const REPLAN_ROAD_TICKS := 50
+const REPLAN_WARM := 32
+var _replan_at := 0
+## What the last lots_changed changed: the keys of lots added, removed or
+## reshaped. lots_delta_full is true when every lot should be treated as new
+## (a load, or a full replan), though the keys are still listed.
+var lots_delta := []
+var lots_delta_full := true
 ## Only zoning or roads changed: built parcels need checking only where a
 ## road moved (the rest can't have changed), which keeps edits in a big
 ## town quick.
@@ -737,9 +752,17 @@ func apply_now(cmd: Dictionary) -> bool:
 			# A new hub takes its area's sliders (and its leader the stance).
 			_sync_levers()
 			_sync_stances()
-		if _roads_moved:
+		var roads := _roads_moved
+		if roads:
 			_road_wins()
-		_refresh()
+		if not _lots_dirty and _lots_light and lots.size() >= replan_lots:
+			# A big town: the road or zoning is in at once, and its lots
+			# catch up over a few ticks, so no single tick does it all (the
+			# same ticks on every copy).
+			_replan_at = maxi(_replan_at, tick_count + (REPLAN_ROAD_TICKS if roads else REPLAN_TICKS))
+		else:
+			_replan_at = 0
+			_refresh()
 		zones_changed.emit()
 		command_applied.emit(cmd)
 	return ok
@@ -859,16 +882,23 @@ func _road_wins() -> void:
 			var lane := industry_drive(s.pos, s.dir)
 			if not lane.is_empty():
 				s.drive = lane
+	# Lots are planned again only if a road took some of a hub's ground.
 	if not education.campuses.is_empty():
+		var was := hash(education.campuses)
 		economy.money += education.make_way(corr)
-		_lots_dirty = true
+		if hash(education.campuses) != was:
+			_lots_dirty = true
 	if not telecom.companies.is_empty():
+		var was := hash(telecom.companies)
 		economy.money += telecom.make_way(corr)
-		_lots_dirty = true
+		if hash(telecom.companies) != was:
+			_lots_dirty = true
 		telecom_changed.emit()
 	if not banks.banks.is_empty():
+		var was := hash(banks.banks)
 		economy.money += banks.make_way(corr)
-		_lots_dirty = true
+		if hash(banks.banks) != was:
+			_lots_dirty = true
 	farms_changed.emit()
 	industry_changed.emit()
 	warehouses_changed.emit()
@@ -881,6 +911,9 @@ func tick() -> void:
 	var t0 := Perf.now()
 	tick_count += 1
 	var t := Perf.now()
+	if _replan_at > tick_count:
+		planner.warm(network, zones, _parcel_lots, _lot_blocked, REPLAN_WARM)
+		Perf.add("sim.lots.warm", t)
 	_refresh()
 	Perf.add("sim.lots", t)
 	t = Perf.now()
@@ -893,7 +926,7 @@ func tick() -> void:
 		update_stats(tick_count % TICKS_PER_HOUR == 0)
 	Perf.add("sim.people", t)
 	t = Perf.now()
-	if tick_count % GROW_EVERY == 0:
+	if tick_count % GROW_EVERY == 0 and _replan_at == 0:
 		_grow_one()
 		# A builder with a construction loan from a bank in town puts up one more.
 		if not banks.banks.is_empty() and banks.builds_more(self):
@@ -902,7 +935,7 @@ func tick() -> void:
 				banks.financed(self, key)
 	Perf.add("sim.growth", t)
 	t = Perf.now()
-	if tick_count % Balance.DEVELOP_EVERY == 0:
+	if tick_count % Balance.DEVELOP_EVERY == 0 and _replan_at == 0:
 		_develop_one()
 	if tick_count % Farms.DECIDE_EVERY == 0 and not farms.farms.is_empty():
 		farms.tax_rate = economy.tax[ZoneMap.Zone.INDUSTRIAL]
@@ -2089,9 +2122,49 @@ func _lot_blocked(lot: Dictionary) -> bool:
 	return not land_ok(lot.pos, LotPlanner.FRONTAGE * 0.5)
 
 
+## Notes which lots changed (for lots_changed listeners), when only these did.
+func note_lots(keys: Array) -> void:
+	lots_delta = keys
+	lots_delta_full = false
+
+
+## Works out lots_delta: lots added, gone or changed since `was`. Unchanged
+## lots are the same Dictionary (LotPlanner hands back a lot cut the same way
+## as before as the same one), so this is a quick identity check.
+func _lots_delta(was: Dictionary, full: bool) -> void:
+	var keys := []
+	for key in lots:
+		if not is_same(was.get(key), lots[key]):
+			keys.append(key)
+	for key in was:
+		if not lots.has(key):
+			keys.append(key)
+	keys.sort()
+	lots_delta = keys
+	lots_delta_full = full
+
+
+## The lots buildings stand on, by key.
+func _parcel_lots() -> Dictionary:
+	var out := {}
+	for key in buildings:
+		if lots.has(key):
+			out[key] = lots[key]
+	return out
+
+
 func _refresh() -> void:
+	if _replan_at > 0:
+		# A big town's road or zoning edit: the lots catch up when it's due.
+		if tick_count < _replan_at:
+			return
+		_replan_at = 0
+	if _roads_moved:
+		_road_wins()
 	if _lots_dirty or _lots_light:
+		var tr := Perf.now()
 		var full := _lots_dirty
+		var was := lots
 		_lots_dirty = false
 		_lots_light = false
 		planner.update(network)
@@ -2101,6 +2174,12 @@ func _refresh() -> void:
 		var lost := []
 		var keys := buildings.keys()
 		keys.sort()
+		if not full and planner.changed_boxes.is_empty():
+			# No road changed: every parcel stands as it is.
+			for key in keys:
+				if lots.has(key):
+					frozen[key] = lots[key]
+			keys = []
 		for key in keys:
 			if lots.has(key):
 				var lot := planner.revalidate(network, lots[key])
@@ -2110,6 +2189,9 @@ func _refresh() -> void:
 					frozen[key] = lot
 				else:
 					lost.append(key)
+		planner.revalidated()
+		Perf.add("sim.lots.revalidate", tr)
+		tr = Perf.now()
 		lots = frozen.duplicate()
 		if not lost.is_empty():
 			parcels_lost.emit(lost)
@@ -2118,8 +2200,12 @@ func _refresh() -> void:
 			if not _lot_blocked(lot):
 				lots[lot.key] = lot
 		_usable_cache.clear()
+		_lots_delta(was, full)
+		Perf.add("sim.lots.plan", tr)
+		tr = Perf.now()
 		services.plants = power.sources()
 		services.update(network, lots, buildings)
+		Perf.add("sim.lots.services", tr)
 		lots_changed.emit()
 	# Buildings go away when their lot disappears or its zone changes, so
 	# this only needs a look after zoning, lots or buildings change.
@@ -2535,6 +2621,7 @@ func _plan_to_save() -> Dictionary:
 			empty.append(LotPlanner.lot_to_save(lots[key]))
 	out.empty = empty
 	out.flags = [_lots_dirty, _lots_light, _roads_moved]
+	out.replan_at = _replan_at
 	return out
 
 
@@ -2689,13 +2776,18 @@ func from_dict(d: Dictionary) -> void:
 		for e in d.plan.get("empty", []):
 			var lot := LotPlanner.lot_from_save(e)
 			lots[lot.key] = lot
-		# Fields trimmed by roads aren't saved: work them out again.
-		_road_wins()
 		var flags: Array = d.plan.get("flags", [false, false, false])
+		# Fields trimmed by roads aren't saved: work them out again (unless
+		# a new road is still waiting to make way, as the town's is).
+		if not bool(flags[2]):
+			_road_wins()
 		_lots_dirty = bool(flags[0])
 		_lots_light = bool(flags[1])
 		_roads_moved = bool(flags[2])
+		_replan_at = int(d.plan.get("replan_at", 0))
 		_usable_cache.clear()
+		lots_delta = lots.keys()
+		lots_delta_full = true
 		services.plants = power.sources()
 		services.update(network, lots, buildings)
 		lots_changed.emit()
