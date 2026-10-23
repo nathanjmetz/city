@@ -1024,7 +1024,17 @@ func _reroute_all() -> void:
 			else:
 				_report(car, arrivals)
 			continue  # was parking: it has arrived
-		if car.j != null or not ways.has(wid):
+		var out_ok: bool = car.j != null and car.j.node == -1 and ways.has(car.j.wo) \
+			and car.j.exit_d <= ways[car.j.wo].len \
+			and _lane_point(ways[car.j.wo], mini(car.j.lo, ways[car.j.wo].lanes - 1), car.j.exit_d).distance_to(
+				car.j.pts[car.j.pts.size() - 1]) < 1.0
+		if out_ok:
+			# Still pulling out onto a road that's still there: finish doing so.
+			wid = car.j.wo
+			car.route = [wid]
+			car.leg = 0
+			car.d = car.j.exit_d
+		elif car.j != null or not ways.has(wid):
 			# Its road was split or replaced: find the new piece under it.
 			var found := _locate(car.get("at", null), car.get("facing", Vector3.ZERO))
 			if found.is_empty():
@@ -1828,6 +1838,15 @@ func _fix_end(car: Dictionary, may_replan := true) -> void:
 	var w: Dictionary = ways[car.route[car.route.size() - 1]]
 	var e := _entrance(pl, car.to_spot)
 	var d := _nearest_d(w, e)
+	if d < w.s0 and car.route.size() >= 2 and car.leg < car.route.size() - 1:
+		# The driveway opens off the junction just before this road (a lot on
+		# a roundabout, say): turn in from the road before it instead.
+		var pw: Dictionary = ways[car.route[car.route.size() - 2]]
+		var dp := _nearest_d(pw, e)
+		if dp > pw.s1 - PARK_LEAD and _lane_point(pw, 0, dp).distance_to(e) < 30.0:
+			car.route.pop_back()
+			car.end_d = clampf(dp, 0.5, pw.len - 0.5)
+			return
 	var stop: Dictionary = pl.get("stop", {})
 	if may_replan and not car.get("pulled_over", false) and _lane_point(w, 0, d).distance_to(e) > 30.0 \
 			and stop.has("seg"):
@@ -1930,8 +1949,7 @@ func _out_path(car: Dictionary, pl: Dictionary, spot: int, w: Dictionary, lane: 
 		# Pull away from the curb into the lane.
 		var df := _nearest_d(w, front)
 		var go := clampf(df + 7.0, bot, top)
-		var pts := _smooth([front, front + s.face * 2.0, _lane_point(w, lane, minf(clampf(df + 4.0, bot, top), go - 3.0)),
-			_lane_point(w, lane, go)])
+		var pts := _smooth([front, front + s.face * 2.0] + _lane_run(w, lane, minf(clampf(df + 4.0, bot, top), go - 3.0), go))
 		return _poly_path({"node": -1, "wi": -1, "li": -1, "wo": w.id, "lo": lane, "turn": Turn.RIGHT,
 			"vt": 4.0, "exit_d": go}, pts, 0.0)
 	if s.kind == "drive" or s.kind == "garage":
@@ -1941,8 +1959,7 @@ func _out_path(car: Dictionary, pl: Dictionary, spot: int, w: Dictionary, lane: 
 		de = clampf(de, minf(bot + 8.0, top), top)
 		var back_d := clampf(de - 8.0, bot, top)
 		var rev := [front, entry]
-		rev.append(_lane_point(w, lane, de))
-		rev.append(_lane_point(w, lane, back_d))
+		rev.append_array(_lane_run(w, lane, de, back_d))
 		var pts := _smooth(rev)
 		return _poly_path({"node": -1, "wi": -1, "li": -1, "wo": w.id, "lo": lane, "turn": Turn.RIGHT,
 			"vt": 4.0, "exit_d": back_d}, pts, _polylen(pts))
@@ -1964,8 +1981,7 @@ func _out_path(car: Dictionary, pl: Dictionary, spot: int, w: Dictionary, lane: 
 	de = minf(de, maxf(top - DRIVEWAY_LEAD - 2.0, bot))
 	var exit_d := clampf(de + DRIVEWAY_LEAD + 2.0, bot, top)
 	# The last few metres run along the lane, so it joins the traffic straight.
-	fwd.append(_lane_point(w, lane, minf(clampf(de + 2.0, bot, top), exit_d - 3.0)))
-	fwd.append(_lane_point(w, lane, exit_d))
+	fwd.append_array(_lane_run(w, lane, minf(clampf(de + 2.0, bot, top), exit_d - 3.0), exit_d))
 	var fwd_pts := _smooth(fwd)
 	var all := rev_pts.duplicate()
 	for i in range(1, fwd_pts.size()):
@@ -1975,6 +1991,19 @@ func _out_path(car: Dictionary, pl: Dictionary, spot: int, w: Dictionary, lane: 
 
 
 ## A path through these points with the corners rounded off.
+## Points along a lane from `a` to `b` (either way), close enough to follow
+## a curved street, and ending pointed along it.
+func _lane_run(w: Dictionary, lane: int, a: float, b: float) -> Array:
+	var out := []
+	var n := maxi(1, ceili(absf(b - a) / 3.0))
+	for k in n:
+		out.append(_lane_point(w, lane, lerpf(a, b, float(k) / n)))
+	if absf(b - a) > 1.6:
+		out.append(_lane_point(w, lane, b - signf(b - a) * 0.8))
+	out.append(_lane_point(w, lane, b))
+	return out
+
+
 static func _smooth(wps: Array) -> PackedVector3Array:
 	var p := []
 	for q in wps:
