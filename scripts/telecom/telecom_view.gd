@@ -44,6 +44,9 @@ func _sync() -> void:
 			want["%d:%d,%d:%s:%d:%.1f:%.1f" % [id, blk.c.x, blk.c.y, blk.use, blk.levels, c.pos.x, c.pos.z]] = [c, blk, null]
 		for t in c.towers:
 			want["%d:tower:%s:%.1f:%.1f:%s" % [id, t.kind, t.pos[0], t.pos[1], ",".join(c.built)]] = [c, null, t]
+		if "small_cells" in c.built:
+			for q in small_cells(c):
+				want["%d:cell:%.1f:%.1f" % [id, q[0].x, q[0].z]] = [c, null, q]
 	for key in _nodes.keys():
 		if not want.has(key):
 			_trees.remove(key)
@@ -52,7 +55,10 @@ func _sync() -> void:
 	for key in want:
 		if not _nodes.has(key):
 			var w: Array = want[key]
-			_nodes[key] = _spawn_tower(key, w[0], w[2]) if w[2] != null else _spawn(key, w[0], w[1])
+			if w[2] is Array:
+				_nodes[key] = _spawn_cell(key, w[2])
+			else:
+				_nodes[key] = _spawn_tower(key, w[0], w[2]) if w[2] != null else _spawn(key, w[0], w[1])
 	_sync_posts()
 
 
@@ -67,7 +73,7 @@ func _spawn(key: String, c: Dictionary, blk) -> Node3D:
 	var built: Array
 	if blk == null:
 		var to_curb := Services.SETBACK + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
-		built = TelecomBuilder.build_office(seed, to_curb)
+		built = TelecomBuilder.build_office(seed, to_curb, c.built)
 	else:
 		built = TelecomBuilder.build_block(Telecom.dev(blk.use).get("land", "garage"), blk.levels, seed)
 	_finish(key, root, built)
@@ -97,9 +103,50 @@ func _spawn_tower(key: String, c: Dictionary, t: Dictionary) -> Node3D:
 	root.basis = Basis.looking_at(dir, Vector3.UP)
 	root.position = Terrain.lift(p)
 	var kind: String = t.kind
+	if kind == "monopole" and "stealth" in c.built and sim.telecom._homes_within(sim, Vector2(p.x, p.z), 250.0):
+		# Stealth retrofit: branch kits dress the old pole near homes as a pine.
+		kind = "monopine"
 	if kind != "monopine" and "lte_5g" in c.built:
 		kind += "_5g"
-	_finish(key, root, TelecomBuilder.build_tower(kind, absi(hash(key)), drive))
+	_finish(key, root, TelecomBuilder.build_tower(kind, absi(hash(key)), drive, "fixed_wireless" in c.built))
+	return root
+
+
+## Where a company's small cells stand: on its fiber streets nearest its
+## office (downtown), one between each pair of marker posts, up to eight. Each is
+## [foot of the pole, toward the street].
+static func small_cells(c: Dictionary) -> Array:
+	var out := []
+	for f in c.fiber:
+		var pts: Array = f.pts
+		for i in range(1, pts.size()):
+			var a := Vector3(pts[i - 1][0], 0, pts[i - 1][1])
+			var b := Vector3(pts[i][0], 0, pts[i][1])
+			var len := a.distance_to(b)
+			if len < 1.0:
+				continue
+			var run := POST_EVERY
+			while run <= len:
+				var q := a.lerp(b, run / len)
+				if q.distance_to(c.pos) < 600.0:
+					var along := (b - a) / len
+					out.append([q, Vector3(along.z, 0, -along.x)])
+				run += POST_EVERY
+	out.sort_custom(func(x, y): return x[0].distance_squared_to(c.pos) < y[0].distance_squared_to(c.pos))
+	return out.slice(0, 8)
+
+
+func _spawn_cell(key: String, q: Array) -> Node3D:
+	var root := Node3D.new()
+	add_child(root)
+	var side: Vector3 = q[1]
+	var seg := sim.network.find_segment_near(q[0], 40.0)
+	var off := 6.0
+	if not seg.is_empty():
+		off = RoadStyle.right_of_way_half(sim.network.segments[seg.seg].type) - 0.6
+	root.basis = Basis.looking_at(side, Vector3.UP)
+	root.position = Terrain.lift(q[0] - side * off)
+	_finish(key, root, TelecomBuilder.build_small_cell(absi(hash(key))))
 	return root
 
 

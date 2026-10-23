@@ -35,9 +35,11 @@ const FLEET := Color("#eeeeec")
 
 
 ## [building mesh, ground mesh, trees] for the central office block.
-static func build_office(seed: int, to_curb: float) -> Array:
+static func build_office(seed: int, to_curb: float, built := []) -> Array:
 	var b := _start(seed)
 	b._office(to_curb)
+	if "middle_mile" in built:
+		b._fiber_hut()
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 
@@ -54,8 +56,9 @@ static func build_block(art: String, levels: int, seed: int) -> Array:
 
 
 ## A tower with its compound: kind is "monopole", "lattice" or "monopine",
-## with "_5g" when it carries 5G radios too.
-static func build_tower(kind: String, seed: int, drive: float) -> Array:
+## with "_5g" when it carries 5G radios too. `fixed` hangs fixed-wireless
+## gear for farms on it too.
+static func build_tower(kind: String, seed: int, drive: float, fixed := false) -> Array:
 	var b := _start(seed)
 	var five := kind.ends_with("_5g")
 	var k := kind.trim_suffix("_5g")
@@ -64,6 +67,24 @@ static func build_tower(kind: String, seed: int, drive: float) -> Array:
 		"lattice": b._lattice_tower(Telecom.TOWERS.lattice.height, five)
 		"monopine": b._monopine(Telecom.TOWERS.monopine.height)
 		_: b._monopole(Telecom.TOWERS.monopole.height, five)
+	if fixed and k != "monopine":
+		b._fixed_wireless(Telecom.TOWERS[k].height * (0.4 if k == "lattice" else 0.55), 0.9 if k == "monopole" else 2.6)
+	return [b._commit_house(), b._commit_flat(), b.trees]
+
+
+## A small cell on a downtown street: a 30-ft steel streetlight pole with
+## the radio in a round shroud on top and its power and fiber cabinet at the
+## foot (the usual carrier small-cell pole). -z faces the street.
+static func build_small_cell(seed: int) -> Array:
+	var b := _start(seed)
+	b._box("paint", Vector3(0.7, 0.2, 0.7), Vector3(0, 0.1, 0), CONCRETE)
+	b._lathe(Vector3.ZERO, [Vector2(0.16, 0.2), Vector2(0.11, 8.0)], DARK, 8)
+	b._cylinder("paint", Vector3(0, 8.0, 0), 0.24, 1.6, Color("#3b3f42"), 10)
+	b._box("paint", Vector3(0.05, 0.6, 0.05), Vector3(0, 9.9, 0), DARK)
+	# The streetlight arm and its cobra head, out over the street.
+	b._strut(Vector3(0, 7.4, 0), Vector3(0, 7.7, -2.2), 0.08, DARK)
+	b._box("paint", Vector3(0.35, 0.16, 0.7), Vector3(0, 7.6, -2.4), Color("#565b5e"))
+	b._box("metal", Vector3(0.55, 1.3, 0.35), Vector3(0, 0.85, 0.3), Color("#3b3f42"))
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 
@@ -105,6 +126,19 @@ func _office(to_curb: float) -> void:
 		_van(Vector3(x, 0, zf - 8.6), i == 2)
 	_bed(-13.0, zf - 6.2, 7.0)
 	_tree_row(-17.0, -6.0, zf + 25.5, 7.0)
+
+
+## Middle-mile fiber: a precast regeneration hut where the regional ring
+## comes in, with its HVAC unit and a handhole for the splice.
+func _fiber_hut() -> void:
+	var zf := -S + 12.0
+	var c := Vector3(-7.0, 0, zf + 21.4)
+	_box("paint", Vector3(6.6, 0.3, 4.2), c + Vector3(0, 0.15, 0), CONCRETE)
+	_box("paint", Vector3(6.0, 3.0, 3.6), c + Vector3(0, 1.8, 0), SHELTER)
+	_box("paint", Vector3(6.2, 0.15, 3.8), c + Vector3(0, 3.35, 0), Color("#b9b5ab"))
+	_box("paint", Vector3(1.0, 2.1, 0.06), c + Vector3(-1.6, 1.35, 1.83), Color("#7a7d7f"))
+	_box("metal", Vector3(0.5, 0.9, 1.2), c + Vector3(3.05, 1.6, 0.4), Color("#c5c8c4"))
+	_box("paint", Vector3(1.2, 0.1, 0.9), c + Vector3(4.2, 0.05, 1.2), Color("#3a3d40"))
 
 
 ## A fleet van or pickup, nose toward the building (+z).
@@ -216,6 +250,21 @@ func _lattice_tower(height: float, five: bool) -> void:
 	for i in 3:
 		var p: Vector3 = at.call(i, height * 0.5)
 		_box("paint", Vector3(0.3, 0.4, 0.3), p + Vector3(0, 0.3, 0), RED_LIGHT)
+
+
+## Fixed wireless for farms (a rural WISP's kit): a ring of small sector
+## access points and a backhaul dish on a side arm, below the carriers.
+func _fixed_wireless(y: float, r: float) -> void:
+	for s in 4:
+		var a := TAU * s / 4.0 + PI / 4.0
+		var out := Vector3(cos(a), 0, sin(a))
+		var yaw := Basis(Vector3.UP, atan2(out.x, out.z))
+		_strut(Vector3(0, y, 0), out * (r + 0.3) + Vector3(0, y, 0), 0.06, GALV)
+		_box("paint", Vector3(0.18, 0.75, 0.1), out * (r + 0.4) + Vector3(0, y + 0.3, 0), PANEL, yaw)
+	# The backhaul dish to the office.
+	var d := Vector3(r + 0.6, y - 1.5, 0)
+	_strut(Vector3(0, y - 1.5, 0), d, 0.06, GALV)
+	UpgradeKits._drum(self, d + Vector3(0.15, 0, 0), 0.4, 0.25, Color("#efefec"), true, 10)
 
 
 ## A monopole in fake pine bark and branches, its antennas painted green

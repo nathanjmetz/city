@@ -39,6 +39,7 @@ func _init() -> void:
 		_check(bad.is_empty(), "%s add-ons stay inside the main building's own 80 m cell %s" % [kind, bad])
 	_railroad()
 	_services()
+	_telecom()
 	_oil_company()
 	_done()
 
@@ -160,6 +161,30 @@ func _services() -> void:
 		counts.append(view._stops.mesh.surface_get_array_len(0))
 	view.free()
 	_check(counts[1] > counts[0] and counts[2] > counts[1], "the transfer center and park-and-ride show at the stops %s" % [counts])
+
+
+## The phone company: middle-mile hut at the office, fixed wireless on the
+## towers, small cells along its downtown fiber. (Stealth re-dresses poles
+## near homes as monopines in TelecomView.)
+func _telecom() -> void:
+	var off := _mesh_verts(TelecomBuilder.build_office(7, 3.9, []))
+	var on := _mesh_verts(TelecomBuilder.build_office(7, 3.9, ["middle_mile"]))
+	var bare := _mesh_verts(TelecomBuilder.build_tower("monopole", 7, 10.0))
+	var fw := _mesh_verts(TelecomBuilder.build_tower("monopole", 7, 10.0, true))
+	var c := {"pos": Vector3.ZERO, "fiber": [{"seg": 1, "pts": [[0.0, 0.0], [2000.0, 0.0]]}]}
+	var cells := TelecomView.small_cells(c)
+	_check(on > off and fw > bare and cells.size() >= 2 and cells.size() <= 8
+		and _mesh_verts(TelecomBuilder.build_small_cell(7)) > 0,
+		"the phone company's middle mile, fixed wireless and small cells show (%d cells)" % cells.size())
+
+
+func _mesh_verts(parts: Array) -> int:
+	var n := 0
+	for k in 2:
+		var mesh: ArrayMesh = parts[k]
+		for i in mesh.get_surface_count():
+			n += mesh.surface_get_array_len(i)
+	return n
 
 
 func _svc_verts(kind: int, size: Vector2, built: Array) -> int:
