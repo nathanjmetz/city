@@ -366,8 +366,8 @@ func _demo_county(sim: CitySim) -> void:
 			var z := (seg + 0.5) * CountyGrid.SECTION
 			if not CountyGrid.clears(x, z):
 				continue
-			sim.apply({"type": "build_road", "start": [x - 300, z], "ctrl": [x - 150, z], "end": [x, z], "road": 1})
-			sim.apply({"type": "join_county", "at": [x, z]})
+			sim.apply({"type": "build_road", "start": [x - 300, z], "ctrl": [x - 150, z], "end": [x, z], "road": 1,
+				"join": true})
 			print("joined ", sim.county_joined.keys())
 			for c in _main.get_children():
 				if c is CityCamera:

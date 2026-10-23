@@ -82,8 +82,8 @@ uniform vec3 lod_eye;
 // Where this town sits in the region (Terrain.view_origin): the field and
 // county road grid is the region's.
 uniform vec2 region_origin;
-// County road miles not painted (CountyGrid.hidden_texture): joined to a
-// town, which draws its own road there, or bulldozed. r north-south, g east-west.
+// County road miles not painted (CountyGrid.hidden_texture): bulldozed ones.
+// r north-south, g east-west.
 uniform sampler2D county_hidden : hint_default_black, filter_nearest, repeat_enable;
 // The far land (TerrainView's far sheet) is cut away nearer than this, where
 // the chunks draw the ground; 0 for the chunks themselves.

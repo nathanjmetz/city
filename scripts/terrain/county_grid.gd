@@ -126,7 +126,7 @@ static func valid_key(key: String) -> bool:
 
 
 ## Size of the table of miles the ground shader hides (HIDDEN x HIDDEN,
-## wrapping): joined to a town (its own road draws it) or bulldozed.
+## wrapping): the ones bulldozed.
 const HIDDEN := 64
 
 
