@@ -65,3 +65,55 @@ static func clears(x: float, z: float) -> bool:
 	if distance(x, z) > HALF_CLEAR:
 		return false
 	return Terrain.water(x, z) < 0.1 and Terrain.slope(x, z) < MAX_SLOPE
+
+
+## The mile of county road nearest a point (region coordinates), if one
+## runs within `reach` metres: {key, a, b (its ends, Vector2), on (the
+## point on it nearest p)}, or {} where none does.
+static func mile_at(x: float, z: float, reach: float) -> Dictionary:
+	var best := {}
+	var best_d := reach
+	var ns := _line(x)
+	var seg := floori(z / SECTION)
+	if has_mile(ns, seg) and absf(x - ns * SECTION) <= best_d:
+		best_d = absf(x - ns * SECTION)
+		best = {"key": "ns:%d:%d" % [ns, seg], "a": Vector2(ns * SECTION, seg * SECTION),
+			"b": Vector2(ns * SECTION, (seg + 1) * SECTION), "on": Vector2(ns * SECTION, z)}
+	var ew := _line(z)
+	seg = floori(x / SECTION)
+	if has_mile(ew + (1 << 20), seg) and absf(z - ew * SECTION) <= best_d:
+		best = {"key": "ew:%d:%d" % [ew, seg], "a": Vector2(seg * SECTION, ew * SECTION),
+			"b": Vector2((seg + 1) * SECTION, ew * SECTION), "on": Vector2(x, ew * SECTION)}
+	return best
+
+
+## How far the road runs from `on` toward `to` (both on one mile) before
+## the water or a bluff stops it, in steps of STEP metres.
+static func run(on: Vector2, to: Vector2) -> Vector2:
+	var length := on.distance_to(to)
+	if length < 1.0:
+		return on
+	var dir := (to - on) / length
+	var d := 0.0
+	while d + STEP <= length:
+		var q := on + dir * (d + STEP)
+		if Terrain.water(q.x, q.y) >= 0.1 or Terrain.slope(q.x, q.y) >= MAX_SLOPE:
+			# Stop short of the bank, at a turnaround.
+			return on + dir * maxf(d - STEP, 0.0)
+		d += STEP
+	return to
+
+
+## Sampling step when following a county road onto the land, metres.
+const STEP := 10.0
+
+
+## A county road's name, as Indiana counties number them: hundreds for each
+## eighth of a mile from the county's base lines, N/S or E/W of them.
+static func road_name(key: String) -> String:
+	var parts := key.split(":")
+	var n := int(parts[1])
+	# A mile is 800 in the county numbering (100 per eighth of a mile).
+	if parts[0] == "ns":
+		return "County Road %d %s" % [absi(n) * 800, "E" if n >= 0 else "W"]
+	return "County Road %d %s" % [absi(n) * 800, "S" if n >= 0 else "N"]

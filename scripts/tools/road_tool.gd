@@ -740,8 +740,26 @@ func _resize(f: float) -> void:
 
 
 func _build(curve: Array) -> bool:
-	return sim.apply({"type": "build_road", "start": _xz(curve[0]), "ctrl": _xz(curve[1]),
+	var ok := sim.apply({"type": "build_road", "start": _xz(curve[0]), "ctrl": _xz(curve[1]),
 		"end": _xz(curve[2]), "road": road_type})
+	if ok:
+		# An end drawn onto a county road joins that mile to town.
+		for p: Vector3 in [curve[0], curve[2]]:
+			if _county_at(p) != {}:
+				sim.apply({"type": "join_county", "at": _xz(p)})
+	return ok
+
+
+## The county road (CountyGrid.mile_at) a point is on, out in the country
+## and not joined yet, or {}. In town the lots and streets have its place.
+func _county_at(p: Vector3, reach := 0.5) -> Dictionary:
+	if absf(p.y) > 0.5 or Terrain.flat_weight(p.x, p.z) > 0.3 or Terrain.mow_weight(p.x, p.z) > 0.3:
+		return {}
+	var o := sim.terrain_offset
+	var mile := CountyGrid.mile_at(p.x + o.x, p.z + o.y, reach)
+	if mile.is_empty() or sim.county_joined.has(mile.key) or not CountyGrid.clears(mile.on.x, mile.on.y):
+		return {}
+	return mile
 
 
 ## Closest two roads can run side by side: sidewalk to sidewalk.
@@ -859,6 +877,11 @@ func _snapped(hit: Vector3) -> Vector3:
 		return Vector3(snap.pos.x, 0.0, snap.pos.z)  # grids are built on the ground
 	var snap := network.snap(hit, SNAP_NODE, SNAP_ROAD)
 	if snap.kind == "free":
+		# Onto a county road out in the country, which joins it to town.
+		var mile := _county_at(Vector3(hit.x, elevation, hit.z), SNAP_ROAD)
+		if not mile.is_empty():
+			var o := sim.terrain_offset
+			return Vector3(mile.on.x - o.x, 0.0, mile.on.y - o.y)
 		return Vector3(hit.x, elevation, hit.z)
 	return snap.pos
 
