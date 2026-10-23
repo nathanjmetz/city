@@ -73,6 +73,29 @@ stand there, the director files a land permit (`scripts/sim/permits.gd`) and
 buys them out only after the player approves. The player's word on the
 depot's panel (grow, your call, hold off) sets how eager it is to grow.
 
+## Taxi companies
+
+`scripts/transit/taxi_co.gd` (class `TaxiCo`, `sim.taxis`). The player places a
+taxi company (Transit drawer). Its owner, an Agency leader, runs it on fares:
+
+- Rides a day: everyone takes a few, people without a car take many more
+  (US: about 8% of households, more in poorer towns), and shop jobs bring
+  the late-night run home. About 0.5 cabs per 1,000 people, as in smaller
+  US cities (Schaller Consulting).
+- Fleet: about 20 rides a cab a day, as many as the lot's stalls and the
+  money allow. Drivers keep half the meter; each cab costs about $1,400 a
+  month in insurance, fuel and repairs, plus the office.
+- Meter: a $3 flag drop plus $2.00 to $3.25 a mile, capped by what riders
+  here can pay. An educated owner picks the lowest rate that turns a profit;
+  others nudge it after each month.
+- Cabs on shift follow the hour (a morning bump and bar close at 3 am).
+  Each cab drives real Traffic trips (purpose `taxi`): out to a pickup, on
+  to the drop-off, back to its stall.
+- Land and tree: like the depot, it grows next door (a permit when homes
+  stand there), and builds radio dispatch, a late-night shift, a
+  wheelchair van (Medicaid rides to the clinic), hybrid cabs, campus
+  pickups, a booking app and airport runs (with a neighbor and a link).
+
 ## Next
 
-A taxi company hub, and switching to Traffic's round-trip `move()` once it lands.
+Switching to Traffic's round-trip `move()` once it lands.

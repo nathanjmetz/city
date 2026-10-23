@@ -71,6 +71,8 @@ var logistics := Logistics.new()
 var reserves := Reserves.new()
 ## Bus depots and school buses, which run themselves (scripts/transit/).
 var buses := BusNet.new()
+## Cab companies, which run themselves too.
+var taxis := TaxiCo.new()
 ## Where this city sits in the shared region (its own coordinates start at
 ## 0): the land under it is read there. 0 in solo play.
 var terrain_offset := Vector2.ZERO:
@@ -275,6 +277,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			economy.money -= cost
 			if kind == Services.Kind.BUS_DEPOT:
 				buses.on_placed(self, sid)
+			if kind == Services.Kind.TAXI_COMPANY:
+				taxis.on_placed(self, sid)
 			if kind == Services.Kind.WATER_UTILITY:
 				services.water.found(self, sid)
 				water_changed.emit()
@@ -599,6 +603,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			warehouses = Warehouses.new()
 			reserves = Reserves.new()
 			buses = BusNet.new()
+			taxis = TaxiCo.new()
 			education = Education.new()
 			telecom = Telecom.new()
 			banks = Banks.new()
@@ -909,7 +914,7 @@ func tick() -> void:
 		return
 	t = Perf.now()
 	# Before logistics, which clears Traffic's arrival list.
-	for id in buses.tick(self):
+	for id in buses.tick(self) + taxis.tick(self):
 		_clear_zones_under(services.footprint(id))
 		_lots_dirty = true
 	Perf.add("sim.buses", t)
@@ -2224,6 +2229,7 @@ func to_dict() -> Dictionary:
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
 		"buses": buses.to_dict(),
+		"taxis": taxis.to_dict(),
 		"vegetation": vegetation.to_dict(),
 	}
 
@@ -2317,6 +2323,8 @@ func from_dict(d: Dictionary) -> void:
 	update_stats()
 	buses = BusNet.new()
 	buses.from_dict(self, d.get("buses", {}))
+	taxis = TaxiCo.new()
+	taxis.from_dict(self, d.get("taxis", {}))
 	# Levers keep the exact amounts they were saved with (old saves had their
 	# own buttons); each slider shows the nearest step.
 	_lever_steps.clear()

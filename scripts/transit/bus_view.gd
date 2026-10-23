@@ -3,7 +3,8 @@ extends Node3D
 ## Draws what the bus depots run: a sign at every stop (and a shelter where
 ## many people wait, once its depot has built shelters), and the buses standing still: in their bays, at the
 ## curb while people get on, or parked at a school. Moving buses are drawn
-## by TrafficView like any vehicle.
+## by TrafficView like any vehicle. Cabs waiting in their company's lot or
+## at the curb are drawn here too.
 ##
 ## The Bus view (Views, top left) adds each route as a coloured line, the
 ## stops sized by riders, and how many people are aboard each bus.
@@ -36,7 +37,7 @@ func setup(s: CitySim) -> void:
 
 func _ready() -> void:
 	var mat := VehicleMaterial.get_material()
-	for kind in ["city_bus", "school_bus"]:
+	for kind in ["city_bus", "school_bus", "taxi"]:
 		var pair := []
 		for lod in 2:
 			var mm := MultiMesh.new()
@@ -85,11 +86,11 @@ func _draw_buses() -> void:
 	var eye := cam.global_position if cam else Vector3.ZERO
 	var lists := {}
 	var labels := []
-	for entry in sim.buses.standing(sim):
+	for entry in sim.buses.standing(sim) + sim.taxis.standing(sim):
 		var kind: String = "city_bus" if entry[0] == "coach" else entry[0]  # no coach model yet
 		var front: Vector3 = entry[1]
 		var dist := front.distance_to(eye)
-		if show_routes and entry[3] > 0 and dist < FAR:
+		if show_routes and entry[3] > 0 and dist < FAR and kind != "taxi":
 			labels.append([front - (entry[2] as Vector3) * 6.0 + Vector3(0, 5.0, 0), entry[3]])
 		if dist > FAR:
 			continue

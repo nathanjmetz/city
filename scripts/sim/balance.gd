@@ -98,6 +98,9 @@ const SERVICES := {
 	# pays 80% of transit capital, so this is the city's 20% share. It has no
 	# fixed upkeep: the player sets a monthly subsidy instead (BusNet).
 	"bus_depot": {"cost": 1_400_000, "upkeep": 0},
+	# The town's share of bringing a cab company in (office, lot and its
+	# first two cabs); after that it runs on its own fares.
+	"taxi_company": {"cost": 150_000, "upkeep": 0},
 }
 ## Water and sewer bills the city collects, per building per month. The
 ## average US household pays about $100 a month for water and sewer
@@ -511,6 +514,48 @@ const BUS_COACH_SEATS := 56
 ## The depot buys land next door at about $50,000 an acre (Midwest town
 ## edge), dollars per square metre.
 const BUS_LAND_PER_M2 := 12.0
+
+# --- Taxis --------------------------------------------------------------------
+# A small-town cab company (Brawn, 2026-10-22): its owner sizes the fleet to
+# ride demand and sets the meter. Rides are the real daily numbers; the cabs
+# you see drive real trips.
+
+## Cab rides a day per person, and extra per person in a home without a car
+## (US: about 8% of households, more in poorer towns; carless people make
+## most taxi trips outside big cities, TCRP Report 75).
+const TAXI_TRIPS_PER_PERSON := 0.003
+const TAXI_TRIPS_PER_CARLESS := 0.03
+const TAXI_CARLESS_POOR := 0.15
+const TAXI_CARLESS_RICH := 0.03
+## Late-night rides home from bars and restaurants, per shop job.
+const TAXI_TRIPS_PER_SHOP_JOB := 0.004
+## Rides one cab gives in a day across its shifts (about 20 in smaller US
+## cities, Schaller Consulting).
+const TAXI_RIDES_PER_CAB := 20.0
+## The meter: a flag drop plus a rate a mile (the owner sets the rate within
+## these bounds), and the average ride's length.
+const TAXI_FLAG := 3.0
+const TAXI_RATE_MIN := 2.0
+const TAXI_RATE_MAX := 3.25
+const TAXI_START_RATE := 2.5
+const TAXI_AVG_MILES := 4.0
+## How riders respond to the fare (about -0.3, Schaller 1999).
+const TAXI_ELASTICITY := -0.3
+## Drivers keep about half the meter (commission or lease), and each cab
+## costs this much a month in commercial insurance, fuel and repairs; the
+## office and dispatcher cost the rest.
+const TAXI_DRIVER_SHARE := 0.5
+const TAXI_CAB_MONTHLY := 1400
+const TAXI_OFFICE_MONTHLY := 4000
+## A used sedan or minivan set up as a cab, and what it sells for later.
+const TAXI_CAB_PRICE := 22_000
+const TAXI_CAB_RESALE := 4_000
+## The owner's own money at the start.
+const TAXI_START_CASH := 40_000
+## Share of the day's rides in each hour, midnight first: a morning bump, a
+## steady day, and the late-night run home (Indiana bars close at 3 am).
+const TAXI_HOURLY := [5.0, 5.0, 6.0, 3.0, 1.0, 1.5, 3.0, 5.0, 5.0, 4.0, 4.0, 4.0,
+	4.5, 4.0, 4.0, 4.5, 5.0, 5.5, 5.0, 4.5, 4.5, 5.0, 5.0, 5.5]
 
 ## School buses (Type C, 72 elementary pupils, 3 to a seat). Districts bus
 ## pupils who live farther than about a mile by road; 0.8 mile straight-line

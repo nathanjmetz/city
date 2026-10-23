@@ -6,7 +6,7 @@ extends RefCounted
 ##
 ## Sizes, prices and reach follow real US practice for a small town.
 
-enum Kind { SUBSTATION, WATER_TOWER, FIRE, POLICE, CLINIC, SCHOOL, POWER_FEED, WELL, BUS_DEPOT, WATER_UTILITY }
+enum Kind { SUBSTATION, WATER_TOWER, FIRE, POLICE, CLINIC, SCHOOL, POWER_FEED, WELL, BUS_DEPOT, WATER_UTILITY, TAXI_COMPANY }
 
 ## Each kind: name, icon, footprint (width along the road x depth, metres),
 ## and its build cost, monthly upkeep and `reach` or `capacity` from Balance.
@@ -48,6 +48,10 @@ const KINDS := {
 	# next door; its monthly cost is the subsidy the player sets.
 	Kind.BUS_DEPOT: {"name": "Bus depot", "icon": "bus", "size": Vector2(36, 44),
 		"cost": Balance.SERVICES["bus_depot"]["cost"], "upkeep": Balance.SERVICES["bus_depot"]["upkeep"], "transit": true},
+	# A cab company: a storefront dispatch office with a lot of cab stalls
+	# behind it. Its owner runs it on fares (TaxiCo) and grows next door.
+	Kind.TAXI_COMPANY: {"name": "Taxi company", "icon": "taxi", "size": Vector2(30, 34),
+		"cost": Balance.SERVICES["taxi_company"]["cost"], "upkeep": Balance.SERVICES["taxi_company"]["upkeep"], "transit": true},
 }
 ## Which kinds supply each utility.
 const UTILITIES := {"power": [Kind.SUBSTATION, Kind.POWER_FEED], "water": [Kind.WATER_TOWER, Kind.WELL]}

@@ -58,7 +58,7 @@ const AXLE := {
 	"sedan": 3.9, "hatchback": 3.4, "crossover": 3.6, "suv": 4.2, "pickup": 4.7, "work_pickup": 4.8,
 	"minivan": 4.0, "sports": 3.8, "motorcycle": 1.8, "van": 4.4, "delivery_van": 5.3,
 	"box_truck": 7.9, "dump_truck": 6.7, "tow_truck": 5.2, "school_bus": 8.9, "city_bus": 9.2,
-	"garbage_truck": 7.3, "fire_engine": 7.4, "police": 3.9, "ambulance": 5.1, "tractor": 4.2,
+	"garbage_truck": 7.3, "fire_engine": 7.4, "police": 3.9, "taxi": 3.9, "ambulance": 5.1, "tractor": 4.2,
 	"combine": 7.0, "tractor_sleeper": 6.4, "mail_truck": 4.3, "concrete_mixer": 7.0, "rural_mail": 3.9, "tractor_day": 4.8,
 }
 
@@ -189,6 +189,15 @@ func _sports() -> void:  # Ford Mustang
 		"b": 2.55, "c": 3.2, "e": 4.25, "tail": 0.98, "wr": 0.35, "axles": [1.0, 3.75]})
 	if not _lo:
 		_box(Vector3(0, 1.06, 4.7), Vector3(1.4, 0.04, 0.16), PAINT)  # spoiler
+
+
+func _taxi() -> void:  # Toyota Camry Hybrid, the usual small-town cab now
+	_sedan()
+	# Lit roof sign and a checker stripe along the doors.
+	_box(Vector3(0, 1.55, 2.6), Vector3(0.75, 0.2, 0.28), WHITE)
+	if not _lo:
+		for s in [-1.0, 1.0]:
+			_box(Vector3(s * 0.925, 0.78, 2.4), Vector3(0.004, 0.1, 1.9), TRIM)
 
 
 func _police() -> void:  # Ford Explorer Police Interceptor Utility
