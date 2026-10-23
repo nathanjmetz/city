@@ -59,7 +59,7 @@ render_mode specular_schlick_ggx;
 uniform sampler2D noise_soft : filter_linear_mipmap, repeat_enable;
 uniform sampler2D noise_grain : filter_linear_mipmap, repeat_enable;
 uniform vec4 lush : source_color = vec4(0.29, 0.38, 0.17, 1.0);
-uniform vec4 dry : source_color = vec4(0.46, 0.46, 0.27, 1.0);
+uniform vec4 dry : source_color = vec4(0.45, 0.47, 0.25, 1.0);
 uniform vec4 dark : source_color = vec4(0.20, 0.28, 0.12, 1.0);
 uniform vec4 soil : source_color = vec4(0.46, 0.40, 0.29, 1.0);
 uniform vec4 crop_green : source_color = vec4(0.36, 0.45, 0.17, 1.0);
@@ -194,7 +194,7 @@ void fragment() {
 	// soft lighter and darker greens, never the dark tussocks of a pasture.
 	float mowed = smoothstep(0.2, 0.6, max(town.x, town.y));
 	float dryness = smoothstep(0.42, 0.78, big * 0.55 + mid * 0.45);
-	vec3 col = mix(lush.rgb, dry.rgb, dryness * mix(0.75, 0.45, mowed));
+	vec3 col = mix(lush.rgb, dry.rgb, dryness * mix(0.55, 0.4, mowed));
 	// Darker, lusher clumps; in a lawn only where it's green, since a dry
 	// patch goes straw-light, and dark clumps in tan read as bare dirt.
 	col = mix(col, dark.rgb, smoothstep(0.35, 0.95, clump) * mix(0.3, 0.14 * (1.0 - dryness), mowed));
