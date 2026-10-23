@@ -66,6 +66,8 @@ const VARIANTS := {
 	"suv": ["suv", "suv_mid", "suv_jeep"],
 	"minivan": ["minivan", "minivan_pacifica"],
 	"garbage_truck": ["garbage_truck", "garbage_side"],
+	"police": ["police", "police", "police_charger", "police_tahoe"],
+	"fire_engine": ["fire_engine", "fire_engine", "fire_tender"],
 	"crossover": ["crossover", "wagon", "ev_crossover", "crossover_compact"],
 	"hatchback": ["hatchback", "hatch_box"],
 	"van": ["van", "van_low"],
@@ -74,7 +76,7 @@ const VARIANTS := {
 const AXLE := {
 	"sedan": 3.9, "hatchback": 3.4, "crossover": 3.6, "suv": 4.2, "pickup": 4.7, "work_pickup": 4.8,
 	"minivan": 4.0, "sports": 3.8, "motorcycle": 1.8, "van": 4.4, "delivery_van": 5.3,
-	"box_truck": 7.9, "dump_truck": 6.7, "tow_truck": 5.2, "garbage_side": 7.3, "pickup_old": 4.4, "suv_jeep": 3.9, "minivan_pacifica": 4.0, "crossover_compact": 3.5, "work_pickup_plow": 4.8, "dump_truck_plow": 6.7, "buggy": 4.9, "rv": 5.9, "motorhome": 7.1, "pickup_camper": 4.8, "bucket_truck": 5.6, "school_bus": 8.9, "city_bus": 9.2,
+	"box_truck": 7.9, "dump_truck": 6.7, "tow_truck": 5.2, "police_charger": 3.95, "police_tahoe": 4.15, "fire_tender": 7.2, "garbage_side": 7.3, "pickup_old": 4.4, "suv_jeep": 3.9, "minivan_pacifica": 4.0, "crossover_compact": 3.5, "work_pickup_plow": 4.8, "dump_truck_plow": 6.7, "buggy": 4.9, "rv": 5.9, "motorhome": 7.1, "pickup_camper": 4.8, "bucket_truck": 5.6, "school_bus": 8.9, "city_bus": 9.2,
 	"garbage_truck": 7.3, "fire_engine": 7.4, "police": 3.9, "taxi": 3.9, "ambulance": 5.1, "tractor": 4.2,
 	"combine": 7.0, "tractor_sleeper": 6.4, "mail_truck": 4.3, "concrete_mixer": 7.0, "sedan_compact": 3.6, "sedan_fullsize": 4.0,
 	"pickup_ext": 4.6, "pickup_mid": 4.4, "suv_mid": 3.9, "wagon": 3.7, "ev_crossover": 3.8, "hatch_box": 3.4, "van_low": 4.4,
@@ -329,6 +331,29 @@ func _police() -> void:  # Ford Explorer Police Interceptor Utility
 	_box(Vector3(0.32, 1.86, 2.5), Vector3(0.55, 0.08, 0.26), BEACON_BLUE)
 	if not _lo:
 		_box(Vector3(0, 0.6, -0.08), Vector3(1.1, 0.5, 0.08), TRIM)
+
+
+## Police light bar and push bumper, shared by the patrol cars.
+func _patrol_gear(W: float, roof: float, z: float, doors: Array) -> void:
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * (W * 0.5 + 0.002), doors[0], doors[1]), Vector3(0.004, doors[2], doors[3]), WHITE)
+	_box(Vector3(0, roof + 0.02, z), Vector3(1.2, 0.06, 0.3), TRIM)
+	_box(Vector3(-0.32, roof + 0.08, z), Vector3(0.55, 0.08, 0.26), BEACON_RED)
+	_box(Vector3(0.32, roof + 0.08, z), Vector3(0.55, 0.08, 0.26), BEACON_BLUE)
+	if not _lo:
+		_box(Vector3(0, 0.55, -0.08), Vector3(1.1, 0.45, 0.08), TRIM)
+
+
+func _police_charger() -> void:  # Dodge Charger Pursuit
+	_car({"L": 5.1, "W": 1.9, "H": 1.48, "clear": 0.14, "hood": 0.86, "belt": 1.0, "a": 1.45,
+		"b": 2.3, "c": 3.45, "e": 4.25, "tail": 1.02, "wr": 0.37, "axles": [1.05, 4.1]})
+	_patrol_gear(1.9, 1.48, 2.85, [0.7, 2.75, 0.5, 1.9])
+
+
+func _police_tahoe() -> void:  # Chevrolet Tahoe PPV, the county sheriff's usual
+	_car({"L": 5.35, "W": 2.06, "H": 1.93, "clear": 0.26, "hood": 1.2, "belt": 1.3, "a": 1.45,
+		"b": 2.15, "c": 4.95, "e": 5.2, "tail": 1.3, "wr": 0.4, "axles": [1.05, 4.15], "c_pillar": false})
+	_patrol_gear(2.06, 1.93, 2.6, [0.85, 2.7, 0.65, 2.0])
 
 
 # --- Pickups ----------------------------------------------------------------
@@ -789,6 +814,31 @@ func _fire_engine() -> void:  # custom-cab pumper (Pierce Enforcer)
 			_box(Vector3(s * (hw + 0.004), 1.65, 4.0 + i * 0.85 + (1.6 if i > 2 else 0.0)), Vector3(0.006, 1.6, 0.04), CHROME)
 	for x in [-1.2, 1.2]:
 		_box(Vector3(x, 2.9, L - 0.05), Vector3(0.12, 0.14, 0.08), BEACON_RED)
+
+
+## A rural water tender (Pierce or KME on a commercial chassis): a 3,000
+## gal elliptical tank, a portable drop tank racked on the side and a dump
+## chute at the back. Volunteer departments without hydrants run them.
+func _fire_tender() -> void:
+	var L := 10.4
+	_md_cab(2.5)
+	_box(Vector3(0, 0.75, 6.7), Vector3(1.0, 0.3, 7.2), TRIM)
+	_loft([
+		[3.2, 1.0, 2.0, 3.0, 0.9, 1.25, 0.95],
+		[L - 0.4, 1.0, 2.0, 3.0, 0.9, 1.25, 0.95],
+		[L - 0.1, 1.1, 2.0, 2.9, 0.8, 1.15, 0.85],
+	], [_edges(PAINT, PAINT)], PAINT, PAINT)
+	_wheels([1.2, 7.2, 8.5], 0.52, 1.25, 0.3)
+	_box(Vector3(0, 2.84, 1.8), Vector3(2.0, 0.12, 0.3), BEACON_RED)
+	_box(Vector3(1.1, 1.0, L + 0.01), Vector3(0.12, 0.2, 0.04), TAIL, true)
+	_box(Vector3(-1.1, 1.0, L + 0.01), Vector3(0.12, 0.2, 0.04), TAIL, true)
+	if not _lo:
+		for s in [-1.0, 1.0]:
+			_box(Vector3(s * 1.255, 1.55, 6.5), Vector3(0.006, 0.12, 6.4), WHITE)
+		_box(Vector3(-1.32, 2.1, 6.0), Vector3(0.12, 0.7, 2.6), STEEL)  # folded drop tank
+		_box(Vector3(0, 1.1, L + 0.15), Vector3(0.5, 0.3, 0.3), CHROME)  # dump chute
+		for x in [-1.15, 1.15]:
+			_box(Vector3(x, 2.85, L - 0.2), Vector3(0.12, 0.14, 0.08), BEACON_RED)
 
 
 func _school_bus() -> void:  # Type C conventional (Blue Bird Vision, IC CE)
