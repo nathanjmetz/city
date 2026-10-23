@@ -129,6 +129,18 @@ func _init() -> void:
 	else:
 		print("  (no home over the smoke line in this town)")
 
+	# Each pollution view opens on the town's worst sources, worst first, with Go to.
+	for kind in Pollution.KINDS:
+		var td := Inspect.describe(sim, {"type": "pollution", "id": kind})
+		_check(not td.is_empty() and td.rows.size() >= 1 and td.notes.size() >= 1, "the %s view lists the town's sources" % kind)
+	var gd := Inspect.describe(sim, {"type": "pollution", "id": "ground"})
+	var top_ground := 0
+	for ref in pol.hurts:
+		top_ground = maxi(top_ground, int(pol.hurts[ref].kinds.get("ground", 0)))
+	_check(gd.rows[0][1] == "bothers %d home%s" % [top_ground, "" if top_ground == 1 else "s"] or top_ground == 0,
+		"the worst for dirty ground is listed first (%s: %s)" % [gd.rows[0][0], gd.rows[0][1]])
+	_check(gd.actions.any(func(a): return a.has("go")), "with a Go to button")
+
 	# A source panel says who it hurts and how to fix it.
 	var fd := Inspect.describe(sim, f.select)
 	_check(fd.title == f.name, "the factory panel uses its name")

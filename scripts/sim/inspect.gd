@@ -120,6 +120,8 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 			return [RoadNetwork.bezier(c[0], c[1], c[2], 0.5), RoadStyle.half_width(sim.network.segments[sel.id].type) + 4.0]
 		"spot":
 			return [Vector3(sel.id[0], 0.0, sel.id[1]), 8.0]
+		"pollution":
+			return [Vector3.ZERO, 0.0]  # the whole town: no ring
 	return []
 
 
@@ -142,6 +144,7 @@ static func exists(sim: CitySim, sel: Dictionary) -> bool:
 		"lot": return sim.lots.has(sel.id)
 		"road": return sim.network.segments.has(sel.id)
 		"spot": return true
+		"pollution": return sel.id in Pollution.KINDS
 	return false
 
 
@@ -153,6 +156,8 @@ static func describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 		return {}
 	if sel.type == "spot":
 		return PollutionInfo.spot(sim, Vector3(sel.id[0], 0.0, sel.id[1]))
+	if sel.type == "pollution":
+		return PollutionInfo.town(sim, sel.id)
 	return PollutionInfo.add(sim, sel, _describe(sim, sel))
 
 

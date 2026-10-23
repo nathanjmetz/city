@@ -70,6 +70,57 @@ static func spot(sim: CitySim, p: Vector3) -> Dictionary:
 	return d
 
 
+## The whole town in one pollution view: how many homes are over the line,
+## and the sources bothering the most homes, each with a Go to button.
+static func town(sim: CitySim, kind: String) -> Dictionary:
+	var p := sim.pollution
+	if p.sources.is_empty() and p.version == 0:
+		p.rebuild(sim)
+	var d := {"title": label(kind) + " in town", "kind": "Pollution", "icon": "pollution", "ok": true,
+		"status": "", "rows": [], "problems": [], "notes": [], "actions": []}
+	var homes := 0
+	var over := 0
+	for key in p.lots:
+		var b: Dictionary = sim.buildings.get(key, {})
+		if b.is_empty() or int(b.zone) != ZoneMap.Zone.RESIDENTIAL:
+			continue
+		homes += 1
+		if hurts(kind, float(p.lots[key][kind])):
+			over += 1
+	d.ok = over == 0
+	d.status = "No homes over the line" if over == 0 else "%d home%s over the line" % [over, "" if over == 1 else "s"]
+	# Sources that put this out, most homes bothered first.
+	var ranked := []
+	for ref in p.sources:
+		var src: Dictionary = p.sources[ref]
+		var makes: bool = src[kind] > 0.0
+		if kind != "ground":
+			for l in src.lines:
+				makes = makes or (l[2] > 0.0 if kind == "noise" else l[3] > 0.0)
+		if makes:
+			ranked.append([int(p.hurts.get(ref, {}).get("kinds", {}).get(kind, 0)), src.name, ref])
+	ranked.sort_custom(func(a, b): return a[0] > b[0] or (a[0] == b[0] and a[1] < b[1]))
+	for i in mini(ranked.size(), TOWN_TOP):
+		var src: Dictionary = p.sources[ranked[i][2]]
+		d.rows.append([src.name, "bothers %d home%s" % [ranked[i][0], "" if ranked[i][0] == 1 else "s"] if ranked[i][0] > 0 else "no homes"])
+		if not src.select.is_empty() and i < 4:
+			d.actions.append({"label": "Go to " + src.name, "go": src.select, "at": src.center})
+	if ranked.is_empty():
+		d.rows.append(["Sources", "None yet"])
+	d.notes.append("Click anywhere on the map to see who %s that spot, and how to fix it." % {
+		"smoke": "smokes up", "noise": "makes the noise at", "ground": "dirties"}[kind])
+	if kind == "smoke":
+		var w := Pollution.wind_words()
+		d.notes.append("The wind blows from the %s, so smoke drifts %s." % [w[0], w[1]])
+	elif kind == "ground":
+		d.notes.append("Dirty ground seeps downhill, toward the creeks and the river.")
+	return d
+
+
+## Sources listed in a pollution view's town panel.
+const TOWN_TOP := 6
+
+
 static func _lot_part(sim: CitySim, key: String, d: Dictionary) -> void:
 	var lot: Dictionary = sim.lots[key]
 	var s := sim.pollution.sample(lot.pos)
