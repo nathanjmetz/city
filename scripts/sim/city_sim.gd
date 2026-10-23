@@ -374,7 +374,7 @@ func apply_now(cmd: Dictionary) -> bool:
 					or education.covers(pos) or banks.covers(pos) or telecom.covers(pos):
 				return false
 			var sid := services.add(kind, pos, dir)
-			construction.start("svc:%d" % sid, "civic", tick_count, pos, dir, Services.SETBACK
+			construction.start("svc:%d" % sid, Services.profile_of(kind), tick_count, pos, dir, Services.SETBACK
 				+ RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH)
 			economy.money -= cost
 			if kind == Services.Kind.BUS_DEPOT:
@@ -1243,8 +1243,7 @@ func update_stats(budget := true, slice := -1) -> void:
 			ZoneMap.Zone.INDUSTRIAL:
 				if ok:
 					factory_jobs += b.cap
-	services.plants = power.sources()
-	services.update(network, lots, buildings)
+	_update_services()
 	parks.update_effects(self)
 	var homes := _home_scan(slice)
 	factory_jobs += farms.jobs() + industry.jobs() + warehouses.jobs() + power.jobs() + rail.jobs() + big.jobs()
@@ -2317,7 +2316,11 @@ func _utility_report() -> Array:
 			continue
 		shorts.append("%d lots: no %s" % [missing[u], u] if shorts.is_empty() else "%d: no %s" % [missing[u], u])
 		var text := "%d zoned lots have no %s" % [missing[u], u]
-		if unlinked[u] > 0 and u == "water" and not services.water.utilities.is_empty():
+		var going_up := utilities_going_up().filter(func(g): return g.utility == u)
+		if not going_up.is_empty():
+			text += ": the %s is still going in (%d%% done)" % [Services.KINDS[going_up[0].kind].name.to_lower(),
+				roundi(float(going_up[0].state.total) * 100.0)]
+		elif unlinked[u] > 0 and u == "water" and not services.water.utilities.is_empty():
 			text += ": the water utility hasn't laid mains under their streets yet"
 		elif unlinked[u] > 0:
 			text += ": their streets aren't joined by road to a %s" % ("power line" if u == "power" else "water source")
@@ -2327,6 +2330,36 @@ func _utility_report() -> Array:
 				"Substation" if u == "power" else "Water tower"]
 		fulls.append(text)
 	return [" · ".join(shorts), ". ".join(fulls)]
+
+
+## Works out what every lot gets. A power line or well still going up
+## supplies nothing until its crew is done, as a real one doesn't.
+func _update_services() -> void:
+	services.plants = power.sources()
+	var off := {}
+	for id in services.buildings:
+		var kind: int = services.buildings[id].kind
+		if (kind in Services.UTILITIES.power or kind in Services.UTILITIES.water) \
+				and not construction.is_done("svc:%d" % id, tick_count):
+			off[id] = true
+	services.offline = off
+	services.update(network, lots, buildings)
+
+
+## Utilities still going up: [{id, kind, utility ("power"/"water"), state}],
+## oldest first.
+func utilities_going_up() -> Array:
+	var out := []
+	var ids := services.offline.keys()
+	ids.sort()
+	for id in ids:
+		if not services.buildings.has(id):
+			continue
+		var kind: int = services.buildings[id].kind
+		var st := construction.state("svc:%d" % id, tick_count)
+		if not st.is_empty():
+			out.append({"id": id, "kind": kind, "utility": Services.KINDS[kind].utility, "state": st})
+	return out
 
 
 ## Buildings on zoned lots that lack power or water.
@@ -2509,8 +2542,7 @@ func _refresh() -> void:
 		_lots_delta(was, full)
 		Perf.add("sim.lots.plan", tr)
 		tr = Perf.now()
-		services.plants = power.sources()
-		services.update(network, lots, buildings)
+		_update_services()
 		Perf.add("sim.lots.services", tr)
 		lots_changed.emit()
 	# Buildings go away when their lot disappears or its zone changes, so
@@ -3183,8 +3215,7 @@ func from_dict(d: Dictionary) -> void:
 		_usable_cache.clear()
 		lots_delta = lots.keys()
 		lots_delta_full = true
-		services.plants = power.sources()
-		services.update(network, lots, buildings)
+		_update_services()
 		lots_changed.emit()
 	else:
 		_road_wins()

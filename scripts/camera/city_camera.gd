@@ -41,6 +41,8 @@ var _pad: Gamepad
 ## True while the camera rides along with a selected vehicle or person; any
 ## pan by the player lets go.
 var following := false
+## Seconds left of a slow, cinematic glide (glide_to); any move cuts it short.
+var _slow := 0.0
 
 
 func _ready() -> void:
@@ -116,6 +118,7 @@ func _process(delta: float) -> void:
 			move.x += 1.0
 		if move != Vector2.ZERO:
 			following = false
+			_slow = 0.0
 			var speed := _dist * 1.1 * delta * boost
 			_goal_target += (_right() * move.x - _forward() * move.y).normalized() * speed
 		if Input.is_key_pressed(KEY_Q):
@@ -133,11 +136,15 @@ func _process(delta: float) -> void:
 	if _pad != null:
 		_pad_input(delta)
 	# Ease toward the goal, like CS2's smoothed camera.
-	var k := 1.0 - exp(-12.0 * delta)
+	var rate := 12.0
+	if _slow > 0.0:
+		_slow -= delta
+		rate = 2.2
+	var k := 1.0 - exp(-rate * delta)
 	_target = _target.lerp(_goal_target, k)
 	_yaw = lerpf(_yaw, _goal_yaw, k)
 	_pitch = lerpf(_pitch, _goal_pitch, k)
-	_dist = lerpf(_dist, _goal_dist, 1.0 - exp(-10.0 * delta))
+	_dist = lerpf(_dist, _goal_dist, 1.0 - exp(-rate * 0.85 * delta))
 	_apply()
 
 
@@ -145,6 +152,15 @@ func _process(delta: float) -> void:
 func fly_to(p: Vector3) -> void:
 	_goal_target = Vector3(p.x, 0.0, p.z)
 	_goal_dist = maxf(_goal_dist, 420.0)
+
+
+## A slow glide over to a spot, ending `dist` metres away (the guided first
+## town takes the camera to each step this way).
+func glide_to(p: Vector3, dist: float) -> void:
+	following = false
+	_goal_target = Vector3(p.x, 0.0, p.z)
+	_goal_dist = dist
+	_slow = 2.5
 
 
 ## Where the mouse (or the pad cursor) ray meets the ground, or null if it
@@ -205,6 +221,7 @@ func _pad_input(delta: float) -> void:
 
 
 func _zoom(f: float) -> void:
+	_slow = 0.0
 	_goal_dist = clampf(_goal_dist * f, MIN_DIST, MAX_DIST)
 
 
