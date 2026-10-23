@@ -256,6 +256,35 @@ func _init() -> void:
 	_check(downhill > uphill * 2.0, "dirty ground seeps downhill (%.3f vs %.3f)" % [downhill, uphill])
 	pol.height = Callable()
 
+	# Measuring keeps up a little at a time: a quiet hour re-measures nothing,
+	# a change re-measures only the lots it can reach, and the result matches
+	# measuring everything at once.
+	pol.rebuild(sim)
+	pol.measure_lots(sim)
+	pol._refresh(sim)
+	_check(pol._queue.is_empty(), "a quiet hour re-measures nothing")
+	var gone := ""
+	for key in sim.buildings:
+		if int(sim.buildings[key].zone) == ZoneMap.Zone.INDUSTRIAL:
+			gone = key
+	var gone_b: Dictionary = sim.buildings[gone]
+	sim.buildings.erase(gone)
+	pol._refresh(sim)
+	var built := 0
+	for key in sim.buildings:
+		built += 1 if sim.lots.has(key) else 0
+	_check(not pol._queue.is_empty() and pol._queue.size() < built, "a factory closing re-measures only the lots near it (%d of %d)" % [pol._queue.size(), built])
+	var ticks := 0
+	while not pol._queue.is_empty() and ticks < 10000:
+		pol._work(sim, Pollution.CHECKS_PER_TICK)
+		ticks += 1
+	var bit := JSON.stringify(pol.lots)
+	pol.measure_lots(sim)
+	_check(bit == JSON.stringify(pol.lots), "a little at a time ends the same as all at once (%d ticks)" % ticks)
+	sim.buildings[gone] = gone_b
+	pol.rebuild(sim)
+	pol.measure_lots(sim)
+
 	# Saves keep walls, owners, readings and wear.
 	pol.rebuild(sim)
 	pol.measure_lots(sim)
