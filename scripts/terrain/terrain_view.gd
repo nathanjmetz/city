@@ -189,15 +189,20 @@ void fragment() {
 	float blades = texture(noise_grain, turn(p, 2.9) / 0.6 + 0.5).r;
 	float fade = clamp(1.0 - dist / 180.0, 0.0, 1.0);
 
-	// Pasture and lawn: the grass of the old ground.
+	// Pasture and lawn: the grass of the old ground. Mowed lawns, lots and
+	// verges in town are an even turf: photos of Indiana yards in July show
+	// soft lighter and darker greens, never the dark tussocks of a pasture.
+	float mowed = smoothstep(0.2, 0.6, max(town.x, town.y));
 	float dryness = smoothstep(0.42, 0.78, big * 0.55 + mid * 0.45);
-	vec3 col = mix(lush.rgb, dry.rgb, dryness * 0.75);
-	col = mix(col, dark.rgb, smoothstep(0.35, 0.9, clump) * 0.35);
+	vec3 col = mix(lush.rgb, dry.rgb, dryness * mix(0.75, 0.45, mowed));
+	// Darker, lusher clumps; in a lawn only where it's green, since a dry
+	// patch goes straw-light, and dark clumps in tan read as bare dirt.
+	col = mix(col, dark.rgb, smoothstep(0.35, 0.95, clump) * mix(0.3, 0.14 * (1.0 - dryness), mowed));
 	// Spring green-up, then cool-season grass going tan and dormant in the
 	// late-summer dry spell and over winter (Indiana pasture).
 	col = mix(col, col * vec3(0.92, 1.12, 0.78), season_look.z);
 	float brown = clamp(season_look.w * 1.1 - (1.0 - dryness) * 0.3, 0.0, 0.85);
-	col = mix(col, dormant.rgb * (0.85 + big * 0.3), brown);
+	col = mix(col, dormant.rgb * (0.85 + big * 0.3) * mix(1.0, 0.92 + 0.16 * clump, mowed), brown);
 
 	// Crop fields: whole fields of one crop, a quarter mile across, in green
 	// beans, tan corn stubble or tilled soil, with rows running north-south
@@ -259,7 +264,12 @@ void fragment() {
 	float reach_d = distance(p, tree_fade.xy) + (crown_hash - 0.5) * 0.3 * tree_fade.z;
 	float painted = max(smoothstep(tree_fade.z * 0.55, tree_fade.z * 0.97, reach_d),
 		smoothstep(250.0, 1100.0, tree_fade.w));
-	vec3 woods = mix(litter.rgb * (0.8 + 0.4 * clump), tops, painted);
+	// In a yard the trees stay but the ground under them is shaded, thin
+	// lawn (TerrainView.YARD_THIN), not the woods' brown leaf litter, which
+	// read as patches of bare dirt across every lot.
+	float yard = clamp(town.y - town.x, 0.0, 1.0);
+	vec3 yard_floor = mix(litter.rgb * (0.8 + 0.4 * clump), col * vec3(0.82, 0.86, 0.76), yard);
+	vec3 woods = mix(yard_floor, tops, painted);
 	// A ragged edge, as real woods have, not the straight line between samples.
 	float in_woods = smoothstep(0.3, 0.65, cover.r + (clump - 0.5) * 0.45 + (mid - 0.5) * 0.25);
 	col = mix(col, woods, in_woods);
@@ -309,7 +319,7 @@ void fragment() {
 	// Worn, bare soil on steep banks.
 	col = mix(col, soil.rgb * 0.9, smoothstep(0.2, 0.45, steep) * 0.6);
 
-	col *= 1.0 + (grain - 0.5) * 0.4 * fade + (blades - 0.5) * 0.3 * fade * fade;
+	col *= 1.0 + (grain - 0.5) * mix(0.4, 0.22, mowed) * fade + (blades - 0.5) * 0.3 * fade * fade;
 	// Snow lies thinner under the woods and on steep banks, and drifts in
 	// patches before it covers everything.
 	float under = smoothstep(0.3, 0.65, cover.r) * (1.0 - painted) * 0.45 + smoothstep(0.2, 0.45, steep) * 0.4;
