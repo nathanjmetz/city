@@ -55,6 +55,12 @@ func _init() -> void:
 	_check(VehicleTypes.pick(ZoneMap.Zone.INDUSTRIAL, 10, a) == VehicleTypes.pick(ZoneMap.Zone.INDUSTRIAL, 10, b), "pick is deterministic")
 	_check(VehicleTypes.paint("school_bus", 5) == VehicleTypes.paint("school_bus", 99), "school buses are all yellow")
 	_check_motion()
+	# A flatbed heading back after a drop-off runs a bare deck.
+	_check(VehicleModels.trailer_for("trailer_flat", {"good": "empty", "amount": 0}) == "trailer_flat_empty", "an emptied flatbed is drawn bare")
+	_check(VehicleModels.trailer_for("trailer_flat", {}) == "trailer_flat_empty", "a flatbed with no cargo is drawn bare")
+	_check(VehicleModels.trailer_for("trailer_flat", {"good": "steel", "amount": 1}) == "trailer_flat", "a loaded flatbed shows its load")
+	_check(VehicleModels.trailer_for("trailer_box", {}) == "trailer_box", "closed trailers look the same either way")
+	_check("trailer_flat_empty" in VehicleModels.mesh_keys(), "the bare flatbed has a batch")
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 

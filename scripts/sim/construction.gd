@@ -325,7 +325,7 @@ func _leave(sim: CitySim, ref: String, job: String) -> void:
 		if _budget <= 0 and sim.simulate_traffic:
 			keep.append(p)  # it pulls out next round
 			continue
-		var dest := _crew_base(sim, s) if job == "crew" else sim.logistics._edge(sim, _pos(s))
+		var dest := _crew_base(sim, s) if job == "crew" else _edge_ahead(sim, s)
 		var id := -1
 		if not dest.is_empty() and sim.simulate_traffic:
 			_budget -= 1
@@ -336,6 +336,28 @@ func _leave(sim: CitySim, ref: String, job: String) -> void:
 		else:
 			trips[id] = {"ref": ref, "kind": p.kind, "job": job, "cargo": "", "inbound": false}
 	s.parked = keep
+
+
+## Where an emptied truck leaves town: the nearest way off the map ahead of
+## it at the curb, so a 70 ft rig drives on (through town if need be)
+## rather than hunting for room to turn around on a two-lane highway.
+static func _edge_ahead(sim: CitySim, s: Dictionary) -> Dictionary:
+	var pos := _pos(s)
+	var o := Vector3(float(s.out[0]), 0.0, float(s.out[1]))
+	var fwd := Vector3.UP.cross(-o).normalized()  # lot on the driver's right
+	var best := -1
+	var best_d := INF
+	for n in sim.region_links:
+		if not sim.network.nodes.has(n):
+			continue
+		var to: Vector3 = sim.network.nodes[n] - pos
+		to.y = 0.0
+		if to.normalized().dot(fwd) > 0.2 and to.length() < best_d:
+			best_d = to.length()
+			best = n
+	if best == -1:
+		return sim.logistics._edge(sim, pos)
+	return {"ref": "edge", "pos": Logistics._xz(sim.network.nodes[best])}
 
 
 func _leave_all(sim: CitySim, ref: String) -> void:

@@ -255,6 +255,17 @@ static func for_cargo(cargo) -> String:
 	return ""
 
 
+## Whether a trip's load is aboard: false for no cargo, a zero amount, or
+## a truck sent back "empty" after dropping off.
+static func is_loaded(cargo) -> bool:
+	if not cargo is Dictionary or cargo.is_empty():
+		return false
+	if str(cargo.get("good", "")) == "empty":
+		return false
+	var amount = cargo.get("amount", 1)
+	return not (amount is float or amount is int) or float(amount) > 0.0
+
+
 ## The jobs a kind can do (for tooltips and checks).
 static func purposes_of(kind: String) -> Array:
 	var out := []
