@@ -27,8 +27,15 @@ var difficulty := "normal"
 ## How many milestones the city has reached.
 var milestone := 0
 var tax := DEFAULT_TAX.duplicate()
-## This month's budget, per month: {"income": {zone: $}, "upkeep": $}.
-var budget := {"income": {}, "upkeep": 0, "fees": 0, "services": 0, "education": 0}
+## This month's budget, per month: {"income": {zone: $}, "upkeep": $, ...}.
+## "care" is the town's spending on homes, shops and factories from their
+## Funding sliders and "support" its aid to farms and companies (both
+## negative when Lean saves or collects money).
+var budget := {"income": {}, "upkeep": 0, "fees": 0, "services": 0, "education": 0, "care": 0, "support": 0}
+
+## Each zone's area on the Economy page.
+const ZONE_AREA := {ZoneMap.Zone.RESIDENTIAL: "homes", ZoneMap.Zone.COMMERCIAL: "shops",
+	ZoneMap.Zone.INDUSTRIAL: "factories"}
 
 
 ## What it costs to build a road along this curve.
@@ -68,15 +75,22 @@ func update_budget(sim: CitySim) -> void:
 	for z in DEFAULT_TAX:
 		income[z] = 0.0
 	var staffed := float(sim.stats.employed) / maxf(sim.stats.jobs, 1.0)
+	var care := 0.0
 	for key in sim.buildings:
 		var b: Dictionary = sim.buildings[key]
+		var area: String = ZONE_AREA.get(int(b.zone), "homes")
+		care += sim.policies.pick(Balance.POLICY_CARE_PER_BUILDING, "funding", area)
 		if int(b.zone) != ZoneMap.Zone.RESIDENTIAL and not sim.utilities_ok(key):
 			continue  # a business with no power or water is closed
 		# Land near a landfill is worth less, near a cemetery a little more,
-		# and parks and landmarks lift it.
-		# Good mail service lifts it a little too.
-		income[int(b.zone)] += building_tax(b, staffed, sim.parks.lot_value.get(key, 0.0)) * sim.hubs.lot_factor(sim, key) \
-			* sim.mail.lot_factor(sim, key) / 12.0
+		# and parks and landmarks lift it. Good mail service lifts it a little
+		# too, and so do well-kept streets (Funding); a smelly sewer plant
+		# lowers it.
+		var tax_due := building_tax(b, staffed, sim.parks.lot_value.get(key, 0.0)) * sim.hubs.lot_factor(sim, key) \
+			* sim.mail.lot_factor(sim, key) * sim.policies.pick(Balance.POLICY_LAND_VALUE, "funding", area) / 12.0
+		if sim.lots.has(key):
+			tax_due *= sim.services.water.land_value_factor(sim.services.buildings, sim.lots[key].pos)
+		income[int(b.zone)] += tax_due
 	# Farmland pays property tax at the industrial rate.
 	income[ZoneMap.Zone.INDUSTRIAL] += sim.farms.total_acres() * Farms.LAND_PER_ACRE * Farms.AG_ASSESSMENT \
 		* tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
@@ -87,6 +101,8 @@ func update_budget(sim: CitySim) -> void:
 	income[ZoneMap.Zone.INDUSTRIAL] += sim.power.taxable_value() * tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
 	# Offices that opened for the town's graduates pay commercial property tax
 	# (campuses themselves are tax-exempt, as in real life).
+	# Bank buildings pay commercial property tax too.
+	income[ZoneMap.Zone.COMMERCIAL] += sim.banks.taxable_value() * tax[ZoneMap.Zone.COMMERCIAL] / 100.0 / 12.0
 	income[ZoneMap.Zone.COMMERCIAL] += sim.education.office_jobs() * Balance.EDUCATION_OFFICE_VALUE \
 		* tax[ZoneMap.Zone.COMMERCIAL] / 100.0 / 12.0
 	var upkeep := 0.0
@@ -97,19 +113,24 @@ func update_budget(sim: CitySim) -> void:
 	# Water and sewer bills from every building on the water system.
 	var fees := 0
 	for key in sim.buildings:
-		if sim.services.served.has(key) and sim.services.served[key].get("water", false):
+		# Water utilities collect their own bills (see WaterUtility).
+		if sim.services.served.has(key) and sim.services.served[key].get("water", false) \
+				and sim.services.served[key].get("water_by", -1) == -1:
 			fees += int(Services.WATER_FEE[int(sim.buildings[key].zone)])
 	var d: Dictionary = DIFFICULTIES[difficulty]
 	for z in income:
 		income[z] = roundi(income[z] * d.income)
+	var support := (sim.farms.yearly_support() + sim.industry.yearly_support()) / 12.0
 	budget = {"income": income, "upkeep": roundi(upkeep * d.upkeep), "fees": roundi(fees * d.income),
 		"services": roundi((sim.services.monthly_upkeep() + sim.hubs.monthly_cost() + sim.parks.monthly_upkeep()
 			+ sim.mail.monthly_cost()) * d.upkeep),
-		"education": roundi(sim.education.monthly_upkeep() * d.upkeep)}
+		"education": roundi(sim.education.monthly_upkeep() * d.upkeep),
+		"care": roundi(care * d.upkeep), "support": roundi(support)}
 
 
 func monthly_net() -> int:
-	var total := -int(budget.upkeep) - int(budget.services) - int(budget.get("education", 0)) + int(budget.fees)
+	var total := -int(budget.upkeep) - int(budget.services) - int(budget.get("education", 0)) + int(budget.fees) \
+		- int(budget.get("care", 0)) - int(budget.get("support", 0))
 	for z in budget.income:
 		total += int(budget.income[z])
 	return total

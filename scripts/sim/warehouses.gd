@@ -12,6 +12,13 @@ extends RefCounted
 ## up (taller racks) and then out, one structural bay at a time into the free
 ## land right behind it. It never opens a second site. When it sits empty for
 ## months it gives the extra bays back.
+##
+## Its leader (Agency.leader) also builds from the warehouse's development
+## tree (TREE, via Agency.develop): cold storage, a tank farm, a truck yard,
+## cross-docking, a regional distribution center and more, each opened by
+## the leader's schooling and profit, what's nearby in town, and what the
+## neighbouring towns buy. Each one that needs ground is a real annex on the
+## warehouse's own land, behind the building (`land` metres deep).
 
 ## Sizes in Balance.WAREHOUSE; names here.
 const KINDS := {
@@ -45,6 +52,8 @@ const GOODS := "goods"
 ## its owner removes it with buildings.erase(id).
 var buildings := {}
 var _next_id := 1
+## The month whose trade sales the regional DCs last took on.
+var trade_month := -1
 
 
 func add(kind: String, pos: Vector3, dir: Vector3) -> int:
@@ -74,6 +83,41 @@ static func takes(w: Dictionary, good: String) -> bool:
 	return w.get("accepts", []).is_empty() or good in w.accepts
 
 
+## The development tree (Agency format). `land` is the annex depth it adds
+## behind the building, in metres (0 for changes inside the building).
+## Effects: "cap*" storage, "fee*" what each load handled earns, "jobs+".
+## "regional" sells goods to neighbouring towns through Trade; "parcels"
+## hands online orders to the post office as parcels.
+const TREE := [
+	{"id": "truck_yard", "name": "Truck yard", "cost": 150_000, "land": 20.0, "needs": {},
+		"effects": {"fee*": 0.05, "jobs+": 4}, "note": "its own trucks park here"},
+	{"id": "repair_shop", "name": "Truck repair shop", "cost": 250_000, "land": 16.0, "requires": ["truck_yard"],
+		"needs": {"profit": 60_000}, "effects": {"fee*": 0.05, "jobs+": 6}},
+	{"id": "fuel_island", "name": "Fuel island", "cost": 180_000, "land": 14.0, "requires": ["repair_shop"],
+		"needs": {"local:refinery": 1}, "effects": {"fee*": 0.05, "jobs+": 2}, "note": "fuel from the plastics plant down the road"},
+	{"id": "cold_storage", "name": "Cold storage", "cost": 600_000, "land": 24.0, "needs": {"local:farm": 1},
+		"effects": {"cap*": 0.15, "fee*": 0.2, "jobs+": 6}, "note": "keeps the farms' produce fresh"},
+	{"id": "freezer", "name": "Freezer warehouse", "cost": 900_000, "land": 18.0, "requires": ["cold_storage"],
+		"needs": {"population": 2000}, "effects": {"fee*": 0.2, "jobs+": 8}, "note": "frozen food for the town's grocers"},
+	{"id": "tank_farm", "name": "Tank farm", "cost": 700_000, "land": 26.0, "needs": {"local:oil": 1},
+		"effects": {"cap*": 0.2, "fee*": 0.1, "jobs+": 3}, "note": "stores crude from the oil field"},
+	{"id": "cross_dock", "name": "Cross-dock", "cost": 800_000, "land": 30.0, "requires": ["truck_yard"],
+		"needs": {"local:general": 2, "link": 1}, "effects": {"fee*": 0.2, "jobs+": 10},
+		"note": "docks out back too, so loads go straight from truck to truck"},
+	{"id": "sortation", "name": "Automated sortation", "cost": 1_200_000, "land": 0.0, "requires": ["cross_dock"],
+		"needs": {"leader_edu": 0.5, "education": 0.4}, "effects": {"fee*": 0.2, "jobs+": 5}},
+	{"id": "robotics", "name": "Robotic storage", "cost": 2_500_000, "land": 0.0, "requires": ["sortation"],
+		"needs": {"leader_edu": 0.7, "profit": 400_000}, "effects": {"cap*": 0.3, "fee*": 0.15, "jobs+": 3},
+		"note": "robots pick from racks packed twice as dense"},
+	{"id": "co_packing", "name": "Co-packing line", "cost": 500_000, "land": 20.0, "requires": ["cross_dock"],
+		"needs": {"population": 3000}, "effects": {"fee*": 0.15, "jobs+": 15}, "note": "boxes and labels goods for the stores"},
+	{"id": "regional_dc", "name": "Regional distribution center", "cost": 1_500_000, "land": 30.0, "requires": ["cross_dock"],
+		"needs": {"region_buys:goods": 1, "link": 1}, "effects": {"fee*": 0.25, "jobs+": 20, "regional+": 1.0},
+		"note": "stocks the shops in the neighbouring towns"},
+	{"id": "fulfillment", "name": "Online order fulfillment", "cost": 1_800_000, "land": 0.0, "requires": ["sortation"],
+		"needs": {"population": 5000, "leader_edu": 0.6}, "effects": {"fee*": 0.3, "jobs+": 25, "parcels+": 1.0},
+		"note": "packs online orders; the post office delivers them"},
+]
 ## A registered store has no footprint of its own here.
 const _NO_SITE := {"w": 0.0, "d": 1.0, "court": 0.0, "docks": 0, "cost": 0, "jobs": 0, "value": 0.0}
 
@@ -87,9 +131,18 @@ static func building_depth(w: Dictionary) -> float:
 	return float(spec(w).d) + Balance.WAREHOUSE_BAY * int(w.bays)
 
 
-## The whole site, front to back: truck court, building, fire lane.
+## Ground its built annexes take behind the building.
+static func annex_depth(w: Dictionary) -> float:
+	var total := 0.0
+	for node in TREE:
+		if node.id in w.get("built", []):
+			total += float(node.land)
+	return total
+
+
+## The whole site, front to back: truck court, building, annexes, fire lane.
 static func site_depth(w: Dictionary) -> float:
-	return float(spec(w).court) + building_depth(w) + REAR
+	return float(spec(w).court) + building_depth(w) + annex_depth(w) + REAR
 
 
 static func site_width(w: Dictionary) -> float:
@@ -112,14 +165,15 @@ static func corners(w: Dictionary, extra := 0) -> PackedVector2Array:
 	return out
 
 
-## The strip of land the next bay would take, behind the site.
-static func next_bay(w: Dictionary) -> PackedVector2Array:
+## The strip of land the next bay (or an annex this deep) would take,
+## behind the site.
+static func next_bay(w: Dictionary, depth := Balance.WAREHOUSE_BAY) -> PackedVector2Array:
 	var side := Vector3(-w.dir.z, 0.0, w.dir.x)
 	var hw := site_width(w) * 0.5
 	var back: Vector3 = w.pos - w.dir * site_depth(w)
 	var out := PackedVector2Array()
-	for p in [back - side * hw, back + side * hw, back + side * hw - w.dir * Balance.WAREHOUSE_BAY,
-			back - side * hw - w.dir * Balance.WAREHOUSE_BAY]:
+	for p in [back - side * hw, back + side * hw, back + side * hw - w.dir * depth,
+			back - side * hw - w.dir * depth]:
 		out.append(Vector2(p.x, p.z))
 	return out
 
@@ -148,7 +202,17 @@ static func capacity(w: Dictionary) -> int:
 		return int(w.cap)
 	var floor_m2: float = float(spec(w).w) * building_depth(w)
 	var tall: float = Balance.WAREHOUSE_HEIGHTS[int(w.level)] / Balance.WAREHOUSE_HEIGHTS[0]
-	return int(floor_m2 * tall / Balance.WAREHOUSE_M2_PER_LOAD)
+	return int(floor_m2 * tall * Agency.effect(w, TREE, "cap*") / Balance.WAREHOUSE_M2_PER_LOAD)
+
+
+## Its yearly profit: what it earns per load handled, less running the
+## building (about $0.75 a sq ft a year).
+static func yearly_profit(w: Dictionary) -> float:
+	if is_store(w):
+		return 0.0
+	var per_year := float(w.get("flow", 0.0)) * 12.0 * 24.0 * CitySim.TICKS_PER_HOUR / Balance.WAREHOUSE_DECIDE_EVERY
+	var floor_m2: float = float(spec(w).w) * building_depth(w)
+	return per_year * Balance.WAREHOUSE_FEE * Agency.effect(w, TREE, "fee*") - floor_m2 * Balance.WAREHOUSE_UPKEEP_M2
 
 
 static func stored(w: Dictionary, what := "") -> int:
@@ -254,7 +318,7 @@ func nearest_with(what: String, from: Vector3, skip: Dictionary = {}) -> int:
 ## that land is free (`usable(poly, id)` comes from the city) and the site
 ## stays within the zoning caps. Empty and idle for months: it gives back a
 ## bay. Returns true when any building changed shape.
-func decide(usable: Callable) -> bool:
+func decide(sim: CitySim) -> bool:
 	var changed := false
 	var ids := buildings.keys()
 	ids.sort()
@@ -262,20 +326,27 @@ func decide(usable: Callable) -> bool:
 		var w: Dictionary = buildings[id]
 		if is_store(w):
 			continue  # its owner grows it
+		if not w.has("leader"):
+			w.leader = Agency.leader(sim, hash([sim.city_seed, "warehouse", id]))
 		var f := fill(w)
+		var stance: String = sim.permits.guidance("warehouse", id).stance
 		w.busy = int(w.busy) + 1 if f >= Balance.WAREHOUSE_BUSY else 0
 		w.idle = int(w.idle) + 1 if f <= Balance.WAREHOUSE_IDLE and int(w.handled) == 0 else 0
+		w.flow = snappedf(0.8 * float(w.get("flow", 0.0)) + 0.2 * int(w.handled), 0.01)
 		w.handled = 0
-		w.erase("why")
-		if int(w.busy) >= 2:
+		w.erase("boxed")
+		# Told to grow, it builds out as soon as it's full.
+		if int(w.busy) >= (1 if stance == "grow" else 2):
 			w.busy = 0
 			if int(w.level) < Balance.WAREHOUSE_HEIGHTS.size() - 1:
 				w.level = int(w.level) + 1
 				changed = true
+			elif stance == "hold":
+				w.boxed = "You asked its owner to hold off buying land."
 			elif not can_extend(w):
-				w.why = "It's as big as the zoning allows."
-			elif not usable.call(next_bay(w), id):
-				w.why = "No free land behind it to grow into."
+				w.boxed = "It's as big as the zoning allows."
+			elif not sim.warehouse_ground_ok(next_bay(w), id):
+				w.boxed = "No free land behind it to grow into."
 			else:
 				w.bays = int(w.bays) + 1
 				changed = true
@@ -283,17 +354,56 @@ func decide(usable: Callable) -> bool:
 			w.idle = 0
 			w.bays = int(w.bays) - 1
 			changed = true
+		# The owner's next step from its tree: an annex on free land behind
+		# it (none while held off), or an upgrade inside.
+		var tree := TREE.filter(func(node): return float(node.land) <= 0.0 or (stance != "hold"
+			and can_extend(w, float(node.land)) and sim.warehouse_ground_ok(next_bay(w, float(node.land)), id)))
+		if not Agency.develop(sim, w, tree, w.pos, yearly_profit(w)).is_empty():
+			changed = true
+		# Online order fulfillment packs the town's orders into parcels.
+		if Agency.effect(w, TREE, "parcels+") > 0.0:
+			w.parcels = int(w.get("parcels", 0)) + roundi(sim.stats.population * Balance.WAREHOUSE_PARCELS_PER_PERSON
+				* Balance.WAREHOUSE_DECIDE_EVERY / (24.0 * CitySim.TICKS_PER_HOUR))
+	_regional(sim)
 	return changed
+
+
+## Regional distribution centers stock the shops in the neighbouring towns:
+## they offer the goods they hold through Trade, and each month's sales go
+## out to the region link by truck ("owed" loads, see Logistics).
+func _regional(sim: CitySim) -> void:
+	var dcs := []
+	for id in buildings:
+		if not is_store(buildings[id]) and Agency.effect(buildings[id], TREE, "regional+") > 0.0:
+			dcs.append(id)
+	dcs.sort()
+	var month := int(sim.tick_count / (24 * CitySim.TICKS_PER_HOUR))
+	if month != trade_month:
+		trade_month = month
+		var sold := int(sim.trade.sold("goods"))
+		var i := 0
+		var tries := sold * maxi(1, dcs.size())
+		while sold > 0 and i < tries:
+			var w: Dictionary = buildings[dcs[i % dcs.size()]]
+			if int(w.get("owed", 0)) < stored(w, GOODS):
+				w.owed = int(w.get("owed", 0)) + 1
+				sold -= 1
+			i += 1
+	var spare := 0
+	for id in dcs:
+		var w: Dictionary = buildings[id]
+		spare += clampi(stored(w, GOODS) - int(w.get("owed", 0)), 0, Balance.WAREHOUSE_REGIONAL_LOADS)
+	sim.trade.offer("goods", float(spare))
 
 
 ## True while one more bay keeps the site inside the caps: the industrial
 ## lot size, and Balance.HUB_MAX_GROWTH times the first building.
-static func can_extend(w: Dictionary) -> bool:
+static func can_extend(w: Dictionary, annex := 0.0) -> bool:
 	var s := spec(w)
-	var depth := site_depth(w) + Balance.WAREHOUSE_BAY
+	var more := Balance.WAREHOUSE_BAY if annex <= 0.0 else annex
 	var first: float = float(s.w) * float(s.d)
-	return site_width(w) * depth <= MAX_SITE_M2 \
-		and float(s.w) * (building_depth(w) + Balance.WAREHOUSE_BAY) <= first * Balance.HUB_MAX_GROWTH
+	return site_width(w) * (site_depth(w) + more) <= MAX_SITE_M2 \
+		and (annex > 0.0 or float(s.w) * (building_depth(w) + more) <= first * Balance.HUB_MAX_GROWTH)
 
 
 ## The warehouse whose site holds this point, or -1.
@@ -318,8 +428,15 @@ func jobs() -> int:
 	for id in buildings:
 		var w: Dictionary = buildings[id]
 		var s := spec(w)
-		total += int(round(float(s.jobs) * building_depth(w) / float(s.d)))
+		total += job_count(w)
 	return total
+
+
+static func job_count(w: Dictionary) -> int:
+	if is_store(w):
+		return 0
+	var s := spec(w)
+	return int(round(float(s.jobs) * building_depth(w) / float(s.d) + Agency.effect(w, TREE, "jobs+")))
 
 
 ## Assessed value the city taxes (bays and taller racks add to it).
@@ -341,8 +458,10 @@ func to_dict() -> Dictionary:
 		var w: Dictionary = buildings[id]
 		out[str(id)] = {"kind": w.kind, "pos": [w.pos.x, w.pos.z], "dir": [w.dir.x, w.dir.z], "level": w.level,
 			"bays": w.bays, "stock": w.stock, "units": w.units, "incoming": w.incoming, "handled": w.handled,
-			"busy": w.busy, "idle": w.idle, "accepts": w.get("accepts", []), "cap": w.get("cap", 0)}
-	return {"buildings": out, "next_id": _next_id}
+			"busy": w.busy, "idle": w.idle, "accepts": w.get("accepts", []), "cap": w.get("cap", 0),
+			"leader": w.get("leader", {}), "built": w.get("built", []), "flow": w.get("flow", 0.0), "why": w.get("why", ""),
+			"owed": w.get("owed", 0), "parcels": w.get("parcels", 0)}
+	return {"buildings": out, "next_id": _next_id, "trade_month": trade_month}
 
 
 func from_dict(d: Dictionary) -> void:
@@ -359,6 +478,15 @@ func from_dict(d: Dictionary) -> void:
 			"bays": int(w.get("bays", 0)), "stock": stock, "units": w.get("units", {}),
 			"incoming": int(w.get("incoming", 0)), "handled": int(w.get("handled", 0)),
 			"busy": int(w.get("busy", 0)), "idle": int(w.get("idle", 0)), "accepts": w.get("accepts", []).duplicate()}
+		if not (w.get("leader", {}) as Dictionary).is_empty():
+			buildings[int(k)].leader = w.leader.duplicate()
+		buildings[int(k)].built = (w.get("built", []) as Array).map(func(b): return str(b))
+		buildings[int(k)].flow = float(w.get("flow", 0.0))
+		buildings[int(k)].owed = int(w.get("owed", 0))
+		buildings[int(k)].parcels = int(w.get("parcels", 0))
+		if str(w.get("why", "")) != "":
+			buildings[int(k)].why = str(w.why)
 		if str(w.kind) == "store":
 			buildings[int(k)].cap = int(w.get("cap", 0))
 	_next_id = int(d.get("next_id", 1))
+	trade_month = int(d.get("trade_month", -1))

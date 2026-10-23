@@ -46,6 +46,10 @@ func _demo_town() -> void:
 		var big: Dictionary = sim.warehouses.buildings[3]
 		big.level = 2
 		big.bays = 2
+		# What owners build from their trees, behind the buildings.
+		sim.warehouses.buildings[2].built = ["truck_yard", "repair_shop", "fuel_island", "cold_storage", "freezer"]
+		big.built = ["truck_yard", "tank_farm", "cross_dock"]
+		sim.warehouses.buildings[4].built = ["truck_yard", "cross_dock", "co_packing", "regional_dc"]
 		sim.warehouses_changed.emit()
 		_aim_camera()
 		return

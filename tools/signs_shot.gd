@@ -53,6 +53,8 @@ func _demo_town() -> void:
 			b.name = name
 			sim.families._used[name] = ref
 	sim.families._stale = true
+	# Skip the building work: show the finished street.
+	sim.construction.sites.clear()
 	# An old business: "SINCE" on its sign.
 	sim.families.owned[refs[1]].since = Seasons.year(sim.tick_count) - 20
 	sim.families.changed.emit()

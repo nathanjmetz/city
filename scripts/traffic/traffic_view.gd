@@ -22,6 +22,9 @@ const EMERGENCY := ["fire_engine", "ambulance"]
 var traffic: TrafficSim
 ## Returns how far through the current tick the clock is, 0 to 1.
 var tick_fraction: Callable
+## Vehicles standing still off the traffic list (a crew's pickup at a job
+## site): returns [[kind, Transform3D at the front bumper, id], ...].
+var parked := Callable()
 
 var _batches := {}  # mesh key -> [near MultiMeshInstance3D, far one]
 var _xf := {}       # mesh key * lod -> [transforms]
@@ -106,6 +109,9 @@ func _draw_cars(_delta: float) -> void:
 			_add(art.trailer, lod, Transform3D(Basis.looking_at(dir, Vector3.UP), origin), Color(1, 1, 1, flags))
 		else:
 			_add(kind, lod, _place(car, ahead, front, VehicleModels.AXLE.get(kind, 3.5)), custom)
+	if parked.is_valid():
+		for p in parked.call():
+			_add_parked(p[0], p[1], p[2], eye)
 	for key in _batches:
 		for lod in 2:
 			var k: String = key + str(lod)
@@ -118,6 +124,23 @@ func _draw_cars(_delta: float) -> void:
 				mm.set_instance_custom_data(i, _cu[k][i])
 				mm.set_instance_color(i, Color.WHITE)
 			mm.visible_instance_count = list.size()
+
+
+func _add_parked(kind: String, xf: Transform3D, id: int, eye: Vector3) -> void:
+	var dist := xf.origin.distance_to(eye)
+	if dist > FAR or not VehicleTypes.SPECS.has(kind):
+		return
+	var lod := 0 if dist < NEAR else 1
+	var paint := VehicleTypes.paint(kind, id)
+	if VehicleModels.ARTIC.has(kind):
+		var art: Dictionary = VehicleModels.ARTIC[kind]
+		_add(art.cab, lod, xf, Color(paint.r, paint.g, paint.b, 0.0))
+		# Parked straight: the trailer lines up behind the cab.
+		var fwd := -xf.basis.z
+		var origin: Vector3 = xf * Vector3(0, 0, art.hitch) + fwd * float(art.pin)
+		_add(art.trailer, lod, Transform3D(xf.basis, origin), Color(1, 1, 1, 0.0))
+	else:
+		_add(kind, lod, xf, Color(paint.r, paint.g, paint.b, 0.0))
 
 
 ## The body's transform: front bumper on the path, pointed back at the rear

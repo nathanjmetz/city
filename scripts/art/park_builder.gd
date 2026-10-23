@@ -121,9 +121,10 @@ func _park(site: Dictionary, size: Vector2, to_curb: float) -> void:
 		var l: Vector3 = frame * (f.pos - site.pos)
 		spots.append([Vector3(l.x, 0, l.z), f.size, f.type])
 	var entrance := Vector3(0, 0, -hz)
-	var has_paths := false
+	var has := {}
 	for f in site.features:
-		has_paths = has_paths or f.type == "paths"
+		has[f.type] = true
+	var has_paths: bool = has.has("paths")
 	# Walks from the street to each thing, and a loop round the lawn in
 	# kept parks. Worn parks get dirt desire lines instead.
 	if has_paths:
@@ -131,9 +132,26 @@ func _park(site: Dictionary, size: Vector2, to_curb: float) -> void:
 		var col := Color("#8f7a5c") if tier == 0 else MULCH
 		var w := 2.4 if tier >= 1 else 1.4
 		_strip(entrance + Vector3(0, 0, -to_curb), entrance + Vector3(0, 0, 6.0), w, kind, col)
-		for s in spots:
-			_strip(entrance + Vector3(0, 0, 6.0), s[0] + Vector3(0, 0, -s[1].y * 0.5), w, kind, col)
-		if tier >= 2 and size.x > 40.0 and size.y > 40.0:
+		if tier == 0:
+			# Worn desire lines, straight from the gate to each thing.
+			for s in spots:
+				_strip(entrance + Vector3(0, 0, 6.0), s[0] + Vector3(0, 0, -s[1].y * 0.5), w, kind, col)
+		else:
+			# A main walk from the gate back into the park, with a side
+			# walk out to each thing, the way a parks department lays them.
+			var back := -hz + 6.0
+			for s in spots:
+				back = maxf(back, minf(s[0].z, hz - 8.0))
+			_strip(entrance + Vector3(0, 0, 6.0 - w * 0.5), Vector3(0, 0, back + w * 0.5), w, kind, col)
+			for s in spots:
+				var z: float = clampf(s[0].z, -hz + 6.0, back)
+				var edge: float = s[0].x - signf(s[0].x) * s[1].x * 0.5
+				if absf(s[0].x) < s[1].x * 0.5:
+					# Right on the main walk: meet it at its near end.
+					_strip(Vector3(0, 0, z), Vector3(0, 0, s[0].z - signf(s[0].z - z) * s[1].y * 0.5), w, kind, col)
+				else:
+					_strip(Vector3(-signf(s[0].x) * w * 0.5, 0, z), Vector3(edge, 0, z), w, kind, col)
+		if has.has("walking_loop") and size.x > 40.0 and size.y > 40.0:
 			var ix := hx - 6.0
 			var iz := hz - 6.0
 			var loop := [Vector3(-ix, 0, -iz), Vector3(ix, 0, -iz), Vector3(ix, 0, iz), Vector3(-ix, 0, iz)]
@@ -148,6 +166,20 @@ func _park(site: Dictionary, size: Vector2, to_curb: float) -> void:
 			"ball_diamond": _park_diamond(s[0], s[1])
 			"flower_beds": _flower_beds(s[0], s[1])
 			"fountain": _fountain(s[0])
+			"splash_pad": _splash_pad(s[0], s[1])
+			"all_abilities": _all_abilities(s[0], s[1])
+			"youth_complex": _youth_complex(s[0], s[1], has.has("field_lights"))
+			"tournament": _concessions(s[0], s[1])
+			"bandstand": _bandstand(s[0], s[1])
+			"pond": _pond(s[0], s[1])
+			"pool": _pool(s[0], s[1], false)
+			"aquatic_center": _pool(s[0], s[1], true)
+	if has.has("field_lights"):
+		for s in spots:
+			if s[2] == "ball_diamond":
+				_field_lights(s[0] + Vector3(0, 0, s[1].y * 0.5 - 8.0))
+	if has.has("nature_trail"):
+		_nature_trail(size, spots)
 	# A sign at the entrance with the park's name; benches, bins and lamps.
 	_park_sign(entrance + Vector3(-4.0, 0, 2.5), str(site.name))
 	if has_paths:
@@ -181,14 +213,23 @@ func _park_trees(size: Vector2, spots: Array) -> void:
 		edge.append(Vector3(-hx + 3.5, 0, z))
 		edge.append(Vector3(hx - 3.5, 0, z))
 		z += gap
-	for i in 6:
+	# Shade trees out on the lawn too, more the bigger the park.
+	for i in maxi(6, int(size.x * size.y / 900.0)):
 		edge.append(Vector3(rng.randf_range(-hx + 8.0, hx - 8.0), 0, rng.randf_range(-hz + 10.0, hz - 6.0)))
 	for p in edge:
-		if rng.randf() < skip or _in_spots(p, spots, 5.0) or absf(p.x) < 4.0 and p.z < -hz + 30.0:
+		if rng.randf() < skip or _in_spots(p, spots, 5.0) or absf(p.x) < 4.0 or _on_walk(p, spots):
 			continue
 		var pick := TreeField.pick(rng)
 		var q := Vector3(p.x + rng.randf_range(-1.5, 1.5), 0, p.z + rng.randf_range(-1.5, 1.5))
 		trees.append([q, pick[0], pick[1], rng.randf_range(0.85, 1.2)])
+
+
+## True when a point is on a side walk out to one of the things.
+func _on_walk(p: Vector3, spots: Array) -> bool:
+	for s in spots:
+		if absf(p.z - s[0].z) < 3.5 and signf(p.x) == signf(s[0].x) and absf(p.x) < absf(s[0].x):
+			return true
+	return false
 
 
 func _in_spots(p: Vector3, spots: Array, pad: float) -> bool:
@@ -636,3 +677,262 @@ func _bleachers(c: Vector3, length: float, rows: int, far: bool) -> void:
 		_strut(Vector3(x, 0, c.z), Vector3(x, 0.5 + rows * 0.42, c.z + s * depth), 0.12, GALV.darkened(0.2))
 		_box("paint", Vector3(0.12, 0.5 + rows * 0.42, 0.12), Vector3(x, (0.5 + rows * 0.42) * 0.5, c.z + s * depth), GALV.darkened(0.2))
 	_box("paint", Vector3(length, 1.0, 0.05), Vector3(c.x, 1.0 + rows * 0.42, c.z + s * (depth + 0.1)), ALUMINUM)
+
+
+# ---------------------------------------------------------------- park tree
+
+## A splash pad: coloured rubber surfacing with spray posts and a dumping
+## bucket, the standard small-town install of the 2010s.
+func _splash_pad(c: Vector3, size: Vector2) -> void:
+	var r := minf(size.x, size.y) * 0.5 - 0.5
+	_cylinder("paint", c, r + 0.6, 0.06, CONCRETE, 24)
+	_cylinder("paint", c + Vector3(0, 0.01, 0), r, 0.07, Color("#3f8fb0"), 24)
+	_cylinder("paint", c + Vector3(0, 0.02, 0), r * 0.45, 0.07, Color("#e0b23a"), 20)
+	var cols := [Color("#d24a3a"), Color("#2f7ac0"), Color("#e8c23a"), Color("#4aa86a")]
+	for i in 6:
+		var a := TAU * i / 6.0
+		var p := c + Vector3(cos(a), 0, sin(a)) * r * 0.7
+		_cyl_y(p + Vector3(0, 0.9, 0), 0.12, 1.8, cols[i % cols.size()])
+		_cylinder("paint", p + Vector3(0, 1.8, 0), 0.35, 0.15, cols[(i + 1) % cols.size()], 10)
+	# The tipping bucket on its arch.
+	_cyl_y(c + Vector3(-1.2, 1.6, 0), 0.15, 3.2, cols[1])
+	_cyl_y(c + Vector3(1.2, 1.6, 0), 0.15, 3.2, cols[1])
+	_box("paint", Vector3(2.6, 0.2, 0.2), c + Vector3(0, 3.2, 0), cols[1])
+	_cylinder("paint", c + Vector3(0, 2.4, 0), 0.55, 0.7, cols[2], 12)
+	_bench(c + Vector3(r + 2.0, 0, 0), PI * 0.5)
+	_bench(c + Vector3(-r - 2.0, 0, 0), -PI * 0.5)
+
+
+## An inclusive playground on poured rubber: ramps up to the decks, wide
+## slides, a group swing and shade sails.
+func _all_abilities(c: Vector3, size: Vector2) -> void:
+	_flat_rect("asphalt", c.x - size.x * 0.5, c.x + size.x * 0.5, c.z - size.y * 0.5, c.z + size.y * 0.5, 0.055)
+	_flat_rect("line", c.x - size.x * 0.5 + 0.8, c.x + size.x * 0.5 - 0.8, c.z - size.y * 0.5 + 0.8,
+		c.z + size.y * 0.5 - 0.8, 0.06, Color("#3d7a6a"))
+	_flat_rect("line", c.x - 4.0, c.x + 4.0, c.z - 3.0, c.z + 3.0, 0.065, Color("#c27a3a"))
+	var green := Color("#4f9a4a")
+	var tan := Color("#d9c08a")
+	# Two decks joined by a ramp, with a roof over the high one.
+	_box("paint", Vector3(4.0, 0.15, 4.0), c + Vector3(-7.0, 1.0, -2.0), tan)
+	_box("paint", Vector3(4.0, 0.15, 4.0), c + Vector3(-1.0, 1.8, -2.0), tan)
+	_box("paint", Vector3(2.0, 0.12, 6.0), c + Vector3(-7.0, 0.5, 3.0), tan, Basis(Vector3.RIGHT, 0.17))
+	_box("paint", Vector3(2.0, 0.12, 2.2), c + Vector3(-4.0, 1.4, -2.0), tan, Basis(Vector3.BACK, -0.25))
+	for d in [Vector3(-7.0, 0, -2.0), Vector3(-1.0, 0, -2.0)]:
+		for sx in [-1.0, 1.0]:
+			for sz in [-1.0, 1.0]:
+				_cyl_y(c + d + Vector3(sx * 1.9, 1.3, sz * 1.9), 0.09, 2.6, green)
+	_box("paint", Vector3(4.4, 0.15, 4.4), c + Vector3(-1.0, 3.6, -2.0), green)
+	_box("paint", Vector3(1.4, 0.08, 4.5), c + Vector3(-1.0, 0.95, 2.0), Color("#e8c23a"), Basis(Vector3.RIGHT, -0.35))
+	# A group (basket) swing and a spinner.
+	var sw := c + Vector3(7.0, 0, -1.0)
+	_box("paint", Vector3(5.0, 0.12, 0.12), sw + Vector3(0, 2.6, 0), DARK)
+	for sx in [-1.0, 1.0]:
+		_box("paint", Vector3(0.1, 2.7, 0.1), sw + Vector3(sx * 2.4, 1.3, 0), DARK)
+	_cylinder("paint", sw + Vector3(0, 0.55, 0), 0.6, 0.12, Color("#c23a3a"), 14)
+	_cylinder("paint", c + Vector3(6.0, 0.06, 6.0), 1.4, 0.2, Color("#2f7ac0"), 16)
+	# Shade sails on tall posts.
+	for i in 3:
+		var p := c + Vector3(-size.x * 0.3 + i * size.x * 0.3, 0, size.y * 0.5 - 2.0)
+		_cyl_y(p + Vector3(0, 2.4, 0), 0.08, 4.8, GALV)
+	_quad("paint", c + Vector3(-size.x * 0.3, 4.6, size.y * 0.5 - 2.0), c + Vector3(size.x * 0.3, 4.6, size.y * 0.5 - 2.0),
+		c + Vector3(size.x * 0.2, 3.8, size.y * 0.5 - 8.0), c + Vector3(-size.x * 0.2, 3.8, size.y * 0.5 - 8.0), Color("#e8e2d0"))
+	_bench(c + Vector3(size.x * 0.5 + 1.5, 0, 0), PI * 0.5)
+
+
+## Four Little League diamonds back to back round a central concession
+## stand, the usual layout of a county youth sports complex.
+func _youth_complex(c: Vector3, size: Vector2, lights: bool) -> void:
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			# Home plates face the middle, so the outfields fan out to the corners.
+			var home := c + Vector3(sx * 9.0, 0, sz * 9.0)
+			_diamond_facing(home, Vector3(sx, 0, sz).normalized(), lights)
+	_flat_rect("drive", c.x - 6.0, c.x + 6.0, c.z - 6.0, c.z + 6.0, 0.05)
+	_box("paint", Vector3(6.0, 3.0, 5.0), c + Vector3(0, 1.5, 0), Color("#a8462e"))
+	_hip_roof(c.x, c.z, 3.0, 6.6, 5.6, 1.0, Color("#3e4448"))
+	_flagpole(c + Vector3(4.5, 0, 4.5))
+
+
+## A Little League diamond with its home plate at `home`, the field running
+## out along `out`: the infield, a backstop, a fence 46 m out, dugout
+## benches and (when lit) four light poles.
+func _diamond_facing(home: Vector3, out: Vector3, lights: bool) -> void:
+	var yaw := atan2(out.x, out.z)
+	var b := Basis(Vector3.UP, yaw)
+	# A skinned infield: a fan of dirt from home plate out past the bases
+	# (18.3 m apart), with white bases and a mound.
+	var pts := [home]
+	for i in 9:
+		var a := lerpf(-PI * 0.25, PI * 0.25, i / 8.0)
+		pts.append(home + b * Vector3(sin(a), 0, cos(a)) * 25.0)
+	_flat_poly(pts, 0.05, DIRT)
+	for v in [Vector3(12.9, 0, 12.9), Vector3(0, 0, 25.9), Vector3(-12.9, 0, 12.9)]:
+		_box("paint", Vector3(0.4, 0.08, 0.4), home + b * v + Vector3(0, 0.06, 0), WHITE)
+	for sx in [-1.0, 1.0]:
+		_strut(home + Vector3(0, 0.07, 0), home + b * Vector3(sx * 30.0, 0.07, 30.0), 0.05, WHITE)
+	_cylinder("paint", home + b * Vector3(0, 0, 14.0), 2.6, 0.08, DIRT.darkened(0.08), 12)
+	# Backstop behind the plate.
+	for i in 5:
+		var a := lerpf(-0.8, 0.8, i / 4.0)
+		var p := home + b * Vector3(sin(a) * 6.0, 0, -cos(a) * 6.0)
+		_box("paint", Vector3(0.08, 4.0, 0.08), p + Vector3(0, 2.0, 0), GALV)
+	_strut(home + b * Vector3(-4.3, 4.0, -4.2), home + b * Vector3(4.3, 4.0, -4.2), 0.05, GALV)
+	var prev := Vector3.ZERO
+	for i in 11:
+		var a := lerpf(-PI * 0.25, PI * 0.25, i / 10.0)
+		var p := home + b * Vector3(sin(a), 0, cos(a)) * 46.0
+		_box("paint", Vector3(0.08, 1.8, 0.08), p + Vector3(0, 0.9, 0), GALV)
+		if i > 0:
+			_strut(prev + Vector3(0, 1.8, 0), p + Vector3(0, 1.8, 0), 0.05, GALV)
+		prev = p
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(5.0, 0.45, 0.5), home + b * Vector3(s * 9.0, 0.22, 1.0), ALUMINUM, b * Basis(Vector3.UP, s * 0.8))
+	if lights:
+		_field_lights(home, out)
+
+
+## Four galvanized light poles round a diamond, 20 m tall with a head of
+## floodlights each.
+func _field_lights(home: Vector3, out := Vector3(0, 0, -1)) -> void:
+	var b := Basis(Vector3.UP, atan2(out.x, out.z))
+	for v in [Vector3(-8.0, 0, 2.0), Vector3(8.0, 0, 2.0), Vector3(-26.0, 0, 34.0), Vector3(26.0, 0, 34.0)]:
+		var p: Vector3 = home + b * v
+		_cyl_y(p + Vector3(0, 10.0, 0), 0.2, 20.0, GALV)
+		_box("paint", Vector3(2.4, 1.2, 0.3), p + Vector3(0, 20.2, 0), GALV.darkened(0.2), b)
+
+
+## Concessions and restrooms with a paved lot, for tournament weekends.
+func _concessions(c: Vector3, size: Vector2) -> void:
+	_flat_rect("asphalt", c.x - size.x * 0.5, c.x + size.x * 0.5, c.z - size.y * 0.5, c.z + size.y * 0.5 - 10.0, 0.05)
+	var x := c.x - size.x * 0.5 + 3.0
+	while x < c.x + size.x * 0.5 - 2.0:
+		_flat_rect("line", x - 0.06, x + 0.06, c.z - size.y * 0.5 + 1.0, c.z - size.y * 0.5 + 6.5, 0.055, LINE)
+		_flat_rect("line", x - 0.06, x + 0.06, c.z + size.y * 0.5 - 16.5, c.z + size.y * 0.5 - 11.0, 0.055, LINE)
+		x += 2.8
+	var hc := c + Vector3(0, 0, size.y * 0.5 - 5.0)
+	_box("paint", Vector3(14.0, 3.2, 7.0), hc + Vector3(0, 1.6, 0), Color("#b8ad98"))
+	_hip_roof(hc.x, hc.z, 3.2, 14.6, 7.6, 1.2, Color("#2f4a5a"))
+	_box("paint", Vector3(4.0, 1.0, 0.1), hc + Vector3(-3.0, 1.6, -3.55), Color("#3a3a36"))
+	for i in 3:
+		_table(hc + Vector3(-5.0 + i * 5.0, 0, -6.0))
+
+
+## An octagonal bandstand on a raised deck, white with a shingled roof, as on
+## so many Midwestern town squares.
+func _bandstand(c: Vector3, size: Vector2) -> void:
+	var r := minf(size.x, size.y) * 0.5 - 1.0
+	_cylinder("paint", c, r + 0.4, 0.9, Color("#8a8a84") if tier < 2 else Color("#a89a84"), 8)
+	_cylinder("paint", c + Vector3(0, 0.9, 0), r + 0.2, 0.12, WOOD.lightened(0.2), 8)
+	var white := WHITE if tier >= 1 else WHITE.darkened(0.15)
+	for i in 8:
+		var a := TAU * (i + 0.5) / 8.0
+		var p := c + Vector3(cos(a), 0, sin(a)) * r
+		_cyl_y(p + Vector3(0, 2.4, 0), 0.12, 3.0, white)
+		var a2 := TAU * (i + 1.5) / 8.0
+		var q := c + Vector3(cos(a2), 0, sin(a2)) * r
+		if i != 6:  # the steps side stays open
+			_strut(p + Vector3(0, 1.8, 0), q + Vector3(0, 1.8, 0), 0.06, white)
+	_lathe(c + Vector3(0, 3.9, 0), [Vector2(r + 0.8, 0.0), Vector2(r * 0.3, 1.6), Vector2(0.2, 2.1), Vector2(0.0, 2.3)], Color("#4a4d52"), 8)
+	_box("paint", Vector3(2.4, 0.9, 1.6), c + Vector3(0, 0.45, -r - 0.8), CONCRETE)
+	for i in 3:
+		_bench(c + Vector3(-4.0 + i * 4.0, 0, -r - 5.0), 0.0)
+
+
+## A dug fishing pond with a grassy bank, a gravel edge and a small dock.
+func _pond(c: Vector3, size: Vector2) -> void:
+	var pts := []
+	var water := []
+	for i in 20:
+		var a := TAU * i / 20.0
+		var k := 0.9 + 0.1 * sin(a * 3.0 + rng.randf())
+		pts.append(c + Vector3(cos(a) * size.x * 0.5 * k, 0, sin(a) * size.y * 0.5 * k))
+		water.append(c + Vector3(cos(a) * (size.x * 0.5 * k - 2.0), 0, sin(a) * (size.y * 0.5 * k - 2.0)))
+	_flat_poly(pts, 0.05, Color("#8a7a5a"))
+	_flat_poly(water, 0.07, Color("#3e5a52") if tier >= 1 else Color("#4f5a3e"))
+	var dock := c + Vector3(0, 0, -size.y * 0.5 + 3.0)
+	_box("paint", Vector3(1.8, 0.15, 6.0), dock + Vector3(0, 0.45, 1.5), WOOD.lightened(0.15))
+	for sx in [-1.0, 1.0]:
+		_cyl_y(dock + Vector3(sx * 0.8, 0.25, 4.0), 0.08, 0.6, WOOD)
+	for i in 5:
+		var a := rng.randf() * TAU
+		_shrub(c + Vector3(cos(a) * size.x * 0.5, 0, sin(a) * size.y * 0.5), rng.randf_range(0.5, 0.9))
+	_bench(dock + Vector3(4.0, 0, -1.5), 0.0)
+
+
+## A town pool: a rectangle of blue with lane lines, a white deck, a diving
+## board, a guard chair, a bathhouse and a chain-link fence. The aquatic
+## center adds a zero-depth entry pool and a pair of slides off a tower.
+func _pool(c: Vector3, size: Vector2, big: bool) -> void:
+	var hx := size.x * 0.5 - 1.0
+	var hz := size.y * 0.5 - 1.0
+	var pw := 25.0 if not big else 50.0
+	var pd := 15.0 if not big else 21.0
+	var pc := c + Vector3(-hx + pw * 0.5 + (7.0 if big else 3.0), 0, hz - pd * 0.5 - 3.0)
+	# A concrete deck round the pools; the rest is lawn for towels.
+	_flat_rect("drive", c.x - hx, pc.x + pw * 0.5 + 4.0, pc.z - pd * 0.5 - 5.0, c.z + hz, 0.05)
+	if big:
+		_flat_rect("drive", c.x + hx - 20.0, c.x + hx, c.z + hz - 19.0, c.z + hz, 0.05)
+	_flat_rect("drive", c.x + hx - 14.0, c.x + hx, c.z - hz, c.z - hz + 10.0, 0.05)
+	_box("paint", Vector3(pw, 0.1, pd), pc + Vector3(0, 0.06, 0), Color("#4fa8c8"))
+	var lanes := int(pd / 2.5)
+	for i in range(1, lanes):
+		_box("paint", Vector3(pw - 2.0, 0.02, 0.15), pc + Vector3(0, 0.12, -pd * 0.5 + i * pd / lanes), Color("#2a4a8a"))
+	_box("paint", Vector3(0.5, 0.15, 3.5), pc + Vector3(pw * 0.5 - 1.0, 0.8, 0.0), WHITE)
+	_cyl_y(pc + Vector3(-pw * 0.5 - 1.0, 1.0, 0), 0.08, 2.0, WHITE)
+	_box("paint", Vector3(0.7, 0.1, 0.7), pc + Vector3(-pw * 0.5 - 1.0, 2.0, 0), WHITE)
+	# Bathhouse by the entrance.
+	var bh := c + Vector3(hx - 7.0, 0, -hz + 4.5)
+	_box("paint", Vector3(12.0, 3.4, 7.0), bh + Vector3(0, 1.7, 0), Color("#c9bfa8"))
+	_hip_roof(bh.x, bh.z, 3.4, 12.6, 7.6, 1.1, Color("#2f5a6a"))
+	if big:
+		# Zero-depth play pool with a mushroom fountain, and a slide tower.
+		var zp := c + Vector3(hx - 10.0, 0, hz - 9.0)
+		_cylinder("paint", zp, 7.0, 0.1, Color("#6cc0d8"), 20)
+		_cyl_y(zp + Vector3(0, 1.2, 0), 0.2, 2.4, Color("#e8c23a"))
+		_cylinder("paint", zp + Vector3(0, 2.4, 0), 1.6, 0.2, Color("#d24a3a"), 14)
+		# The tower stands on the deck at the deep end; the flumes land in the pool.
+		var t := pc + Vector3(-pw * 0.5 - 3.5, 0, pd * 0.5 - 2.0)
+		for sx in [-1.0, 1.0]:
+			for sz in [-1.0, 1.0]:
+				_cyl_y(t + Vector3(sx * 1.6, 5.0, sz * 1.6), 0.15, 10.0, GALV)
+		_box("paint", Vector3(3.6, 0.2, 3.6), t + Vector3(0, 10.0, 0), Color("#2f7ac0"))
+		_box("paint", Vector3(3.8, 1.0, 3.8), t + Vector3(0, 10.6, 0), Color("#2f7ac0"))
+		# Two flume slides spiralling down to the pool.
+		for k in 2:
+			var col: Color = [Color("#e8c23a"), Color("#d24a3a")][k]
+			var prev := t + Vector3(0, 10.0, 0)
+			for i in range(1, 13):
+				var a := i * 0.55 + k * PI
+				var p := t + Vector3(cos(a) * 3.0 + i * 0.6, 10.0 - i * 0.78, sin(a) * 3.0 - i * 0.25)
+				_strut(prev, p, 0.55, col)
+				prev = p
+	for i in 6:
+		_lounge(pc + Vector3(-pw * 0.5 + 2.0 + i * 3.0, 0, -pd * 0.5 - 2.0))
+	_box("paint", Vector3(0.8, 0.1, 0.8), pc + Vector3(0, 2.0, -pd * 0.5 - 1.2), WHITE)
+	_cyl_y(pc + Vector3(0, 1.0, -pd * 0.5 - 1.2), 0.06, 2.0, WHITE)
+	_fence(Vector2(c.x - hx, c.z - hz), Vector2(c.x + hx, c.z + hz), 1.8)
+
+
+func _lounge(p: Vector3) -> void:
+	_box("paint", Vector3(0.7, 0.08, 1.9), p + Vector3(0, 0.35, 0), WHITE)
+	_box("paint", Vector3(0.7, 0.08, 0.7), p + Vector3(0, 0.6, 0.85), WHITE, Basis(Vector3.RIGHT, -0.7))
+
+
+## A dirt trail winding round the back of the park under extra trees.
+func _nature_trail(size: Vector2, spots: Array) -> void:
+	var hx := size.x * 0.5 - 3.0
+	var hz := size.y * 0.5 - 2.5
+	var prev := Vector3(-hx, 0, hz * 0.2)
+	var n := maxi(8, int(size.x / 6.0))
+	for i in range(1, n + 1):
+		var t := float(i) / n
+		var p := Vector3(lerpf(-hx, hx, t), 0, hz - 1.5 + sin(t * 9.0) * 1.2)
+		_strip(prev, p, 1.2, "gravel", Color("#7a6248"))
+		prev = p
+		if i % 2 == 0 and not _in_spots(p, spots, 3.0):
+			var pick := TreeField.pick(rng)
+			trees.append([p + Vector3(rng.randf_range(-2.5, 2.5), 0, -3.5), pick[0], pick[1], rng.randf_range(0.9, 1.25)])
+	_strip(Vector3(-hx, 0, hz * 0.2), Vector3(-hx, 0, hz - 1.5), 1.2, "gravel", Color("#7a6248"))
+	var sign := Vector3(-hx + 1.0, 0, hz * 0.2)
+	_box("paint", Vector3(0.15, 1.3, 0.15), sign + Vector3(0, 0.65, 0), WOOD)
+	_box("paint", Vector3(0.9, 0.5, 0.08), sign + Vector3(0, 1.1, 0), Color("#5a3e2a"))

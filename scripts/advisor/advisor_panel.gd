@@ -242,7 +242,7 @@ func _show_welcome() -> void:
 	open_panel()
 	for c in _list.get_children():
 		c.queue_free()
-	_list.add_child(_text("Well hey there, welcome to town! Couple ideas to get you rolling:"))
+	_list.add_child(_text("Well hey there, welcome to town! Here's how folks usually get rolling:" if Advisor.is_new_city(sim) else "Well hey there, welcome to town! Couple ideas to get you rolling:"))
 	var ideas := Advisor.first_ideas(sim) if Advisor.is_new_city(sim) else \
 		_tips.filter(func(t): return t.kind != Advisor.Kind.TOOL).map(func(t): return t.text).slice(0, 2)
 	for idea in ideas:

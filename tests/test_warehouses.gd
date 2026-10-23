@@ -89,7 +89,7 @@ func _init() -> void:
 	var levels := []
 	for round in 8:
 		g.stock.goods["goods"] = Warehouses.capacity(g)
-		grow.warehouses.decide(grow.warehouse_ground_ok)
+		grow.warehouses.decide(grow)
 		levels.append([g.level, g.bays])
 	_check(levels[1] == [1, 0] and levels[3] == [2, 0], "it builds up to taller racks before it buys land (%s)" % str(levels))
 	_check(g.bays >= 1, "then it adds bays at the back (%s)" % str(levels))
@@ -99,18 +99,80 @@ func _init() -> void:
 		and grow.warehouses.buildings.has(1), "a road can run just behind it")
 	for round in 6:
 		g.stock.goods["goods"] = Warehouses.capacity(g)
-		grow.warehouses.decide(grow.warehouse_ground_ok)
-	_check(g.bays <= before + 1 and g.get("why", "") != "", "a road behind it stops it growing that way: %s" % g.get("why", ""))
+		grow.warehouses.decide(grow)
+	_check(g.bays <= before + 1 and g.get("boxed", "") != "", "a road behind it stops it growing that way: %s" % g.get("boxed", ""))
 	g.stock.goods.clear()
 	var bays_full: int = g.bays
 	for round in Balance.WAREHOUSE_IDLE_STREAK * 2:
-		grow.warehouses.decide(grow.warehouse_ground_ok)
+		grow.warehouses.decide(grow)
 	_check(g.bays < bays_full, "an empty warehouse gives bays back")
 	# The road wins: a road through it bulldozes it and pays it back.
 	var c := Warehouses.center(g)
 	money = grow.economy.money
 	grow.apply({"type": "build_road", "start": [c.x - 100, c.z - 1], "ctrl": [c.x, c.z], "end": [c.x + 100, c.z + 1]})
 	_check(grow.warehouses.buildings.is_empty() and grow.economy.money > money, "a road through it bulldozes it and pays it back")
+	# Its owner develops it from its tree with its own profit: a truck yard
+	# first, on free land behind it, unless you've told them to hold off.
+	var dev := CitySim.new()
+	dev.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0]})
+	var ds := Warehouses.site_near(dev.network, Vector3(0, 0, 60))
+	dev.apply({"type": "place_warehouse", "kind": "medium", "pos": [ds[0].x, ds[0].z], "dir": [ds[1].x, ds[1].z]})
+	var d: Dictionary = dev.warehouses.buildings[1]
+	_check(dev.apply({"type": "guide", "hub": "warehouse", "hub_id": 1, "stance": "hold", "grant": 0}),
+		"you can give its owner your word")
+	d.flow = 60.0
+	d.handled = 60
+	var depth0 := Warehouses.site_depth(d)
+	dev.warehouses.decide(dev)
+	_check(d.has("leader") and not "truck_yard" in d.get("built", []), "held off, it buys no land for a truck yard")
+	dev.apply({"type": "guide", "hub": "warehouse", "hub_id": 1, "stance": "steady", "grant": 0})
+	var jobs0 := Warehouses.job_count(d)
+	d.handled = 60
+	dev.warehouses.decide(dev)
+	_check(Warehouses.yearly_profit(d) > 0.0 and "truck_yard" in d.get("built", []),
+		"a profitable owner builds a truck yard (%s, $%d/yr)" % [str(d.get("built", [])), int(Warehouses.yearly_profit(d))])
+	_check(is_equal_approx(Warehouses.site_depth(d), depth0 + 20.0) and Warehouses.job_count(d) == jobs0 + 4,
+		"the yard takes 20 m behind it and adds 4 jobs")
+	_check(str(d.get("why", "")).contains("truck yard"), "its panel says why: %s" % d.get("why", ""))
+	var dsave := CitySim.new()
+	dsave.from_dict(JSON.parse_string(JSON.stringify(dev.to_dict())))
+	var d2: Dictionary = dsave.warehouses.buildings[1]
+	# (Compared as saved text: a snapped float like 0.35 isn't exact in binary.)
+	_check(d2.built == d.built and JSON.stringify(d2.leader, "", true) == JSON.stringify(d.leader, "", true) and is_equal_approx(Warehouses.site_depth(d2), Warehouses.site_depth(d)),
+		"a save keeps its owner and what they built")
+	var rows: Array = Inspect.describe(dev, {"type": "warehouse", "id": 1}).rows
+	_check(rows.any(func(r): return r[0] == "Built" and str(r[1]).contains("Truck yard")), "the panel lists what it has built")
+	_check(dev.permits.locators.has("warehouse"), "its info panel offers your word to the owner")
+	# A regional DC trucks what neighbouring towns bought out to the county
+	# road; a fulfillment center sends trailers of parcels to the post office.
+	var hub := CitySim.new()
+	hub.economy.money = 50_000_000
+	hub.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0]})
+	hub.build_county_road(Vector2(300, 0), Vector2(2000, 0), [1])
+	var hs := Warehouses.site_near(hub.network, Vector3(-150, 0, 60))
+	hub.apply({"type": "place_warehouse", "kind": "large", "pos": [hs[0].x, hs[0].z], "dir": [hs[1].x, hs[1].z]})
+	var ps := CivicHubs.site_near(hub.network, Vector3(200, 0, -60))
+	_check(hub.apply({"type": "place_post_office", "pos": [ps[0].x, ps[0].z], "dir": [ps[1].x, ps[1].z]}), "a post office down the street")
+	var r: Dictionary = hub.warehouses.buildings[1]
+	r.built = ["truck_yard", "cross_dock", "regional_dc", "sortation", "fulfillment"]
+	r.stock.goods["goods"] = 6
+	hub.trade.sold_last["goods"] = 3.0
+	hub.warehouses.decide(hub)
+	_check(int(r.get("owed", 0)) == 3 and hub.trade.offers.has("goods"),
+		"it owes the neighbours 3 loads and offers them more (%s)" % str(hub.trade.offers.get("goods")))
+	r.parcels = Balance.WAREHOUSE_PARCEL_TRUCK
+	var to_edge := 0
+	var to_post := 0
+	for i in 1440:
+		hub.tick()
+		for id in hub.logistics.trips:
+			var t: Dictionary = hub.logistics.trips[id]
+			if t.from.ref == "wh:1" and t.to.ref == "edge" and t.kind == "regional":
+				to_edge += 1
+			if t.from.ref == "wh:1" and str(t.to.ref).begins_with("mail:"):
+				to_post += 1
+	_check(to_edge > 0 and int(r.get("owed", 0)) < 3, "trucks took the neighbours' goods out of town (%d owed)" % int(r.get("owed", 0)))
+	_check(to_post > 0, "a trailer of parcels drove to the post office")
 	# Another thread's building (a grain elevator) can store loads too.
 	var region := CitySim.new()
 	region.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0]})
@@ -122,7 +184,7 @@ func _init() -> void:
 	var st: Dictionary = saved.warehouses.buildings[elevator]
 	_check(Warehouses.capacity(st) == 40 and st.accepts == ["corn", "soybeans"] and st.incoming == 1,
 		"a save keeps what it takes and its size")
-	_check(region.warehouses.at(Vector3(0, 0, 14)) == -1 and region.warehouses.decide(region.warehouse_ground_ok) == false,
+	_check(region.warehouses.at(Vector3(0, 0, 14)) == -1 and region.warehouses.decide(region) == false,
 		"it isn't drawn, picked or grown as a warehouse")
 	if _failed == 0:
 		print("ALL TESTS PASSED")

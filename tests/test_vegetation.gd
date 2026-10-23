@@ -77,8 +77,30 @@ func _init() -> void:
 	print("one 256 m chunk of woods: %.1f ms" % ms)
 	_check(ms < 60.0, "a chunk lays out quickly (%.1f ms)" % ms)
 
+	# Farm country: nothing wild inside a crop field, only fencerows on its edges.
+	Vegetation.cover_source = func(_p: Vector3) -> Array: return [0.1, 0.1, 1.0]
+	var farm := CitySim.new().vegetation.plants_in(Rect2(0, 0, 1000, 1000), 0)
+	var off_line := farm.filter(_off_fence)
+	_check(farm.size() > 200 and off_line.is_empty(),
+		"crop fields are clear; trees and brush stand in fencerows (%d plants, %d off the lines)" % [farm.size(), off_line.size()])
+	# Open grass: brush gathers in thickets rather than an even scatter.
+	Vegetation.cover_source = func(_p: Vector3) -> Array: return [0.05, 0.15, 0.0]
+	var grass := CitySim.new().vegetation.plants_in(Rect2(5000, 5000, 1000, 1000), 0)
+	var cells := {}
+	for p in grass.filter(_off_fence):
+		var c := Vector2i(floori(p.pos.x / 50.0), floori(p.pos.z / 50.0))
+		cells[c] = cells.get(c, 0) + 1
+	_check(cells.size() < 300, "open-ground brush is clumped (%d plants in %d of 400 50 m squares)" % [grass.size(), cells.size()])
+	Vegetation.cover_source = Callable()
+
 	print("ALL TESTS PASSED" if not _failed else "SOME TESTS FAILED")
 	quit(1 if _failed else 0)
+
+
+func _off_fence(p: Dictionary) -> bool:
+	var dx := absf(p.pos.x - roundf(p.pos.x / Vegetation.FENCE_GRID) * Vegetation.FENCE_GRID)
+	var dz := absf(p.pos.z - roundf(p.pos.z / Vegetation.FENCE_GRID) * Vegetation.FENCE_GRID)
+	return minf(dx, dz) > 2.0
 
 
 func _woodlot() -> Vector3:

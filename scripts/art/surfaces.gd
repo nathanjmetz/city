@@ -3,7 +3,7 @@ extends RefCounted
 ## Road and pavement materials, benchmarked against photos of real
 ## Midwestern residential streets:
 ##   - asphalt is a mid grey that varies by age from block to block, with
-##     darker repair patches, black crack-sealer squiggles, oil drips and a
+##     darker repair patches, crack sealer across the lanes, oil drips and a
 ##     speckled aggregate grain up close
 ##   - sidewalks are pale concrete slabs with a joint every 5 ft and slightly
 ##     different tints from slab to slab
@@ -32,7 +32,7 @@ void vertex() {
 const ASPHALT := """
 uniform vec4 fresh : source_color = vec4(0.28, 0.27, 0.27, 1.0);
 uniform vec4 faded : source_color = vec4(0.42, 0.41, 0.39, 1.0);
-uniform vec4 tar : source_color = vec4(0.10, 0.10, 0.10, 1.0);
+uniform vec4 tar : source_color = vec4(0.13, 0.13, 0.13, 1.0);
 void fragment() {
 	vec2 p = world_pos.xz;
 	float close = clamp(1.0 - length(VERTEX) / 220.0, 0.0, 1.0);
@@ -55,13 +55,33 @@ void fragment() {
 		* smoothstep(s0, s0 + 0.1, mod(along, 14.0) + ragged * 4.0)
 		* smoothstep(s0 + 2.5 + h2 * 2.0, s0 + 2.4 + h2 * 2.0, mod(along, 14.0) + ragged * 4.0);
 	col *= 1.0 - in_patch * 0.13;
-	// Crack sealer: thin black squiggles along noise contour lines, only in
-	// older stretches.
-	float c = texture(noise_soft, turn(p, 2.0) / 23.0 + 0.7).r;
-	float crack = 1.0 - smoothstep(0.0, fwidth(c) * 0.9 + 0.0008, abs(c - 0.5));
-	float cracked = smoothstep(0.66, 0.74, texture(noise_soft, p / 90.0 + 0.2).r);
+	// Crack sealer ("tar snakes"), an inch or two wide whatever the view:
+	// the straight, branching block cracks of an ageing street, sealed in
+	// some places and not others. Sealant is dark and a little glossy, not
+	// ink black. Drawn in world space from a jittered cell pattern.
 	float footprint = length(fwidth(p));  // metres per pixel
-	col = mix(col, tar.rgb, crack * cracked * close * 0.6 * (1.0 - smoothstep(0.05, 0.2, footprint)));
+	float cracked = smoothstep(0.35, 0.55, texture(noise_soft, p / 90.0 + 0.2).r);
+	vec2 q = turn(p, 0.6) / 4.5;
+	vec2 qi = floor(q);
+	float f1 = 9.0;
+	float f2 = 9.0;
+	vec2 c1 = vec2(0.0);
+	for (int j = -1; j <= 1; j++) {
+		for (int i = -1; i <= 1; i++) {
+			vec2 g = qi + vec2(float(i), float(j));
+			vec2 o = fract(sin(vec2(dot(g, vec2(127.1, 311.7)), dot(g, vec2(269.5, 183.3)))) * 43758.5453);
+			vec2 d = g + 0.15 + o * 0.7 - q;
+			float l = dot(d, d);
+			if (l < f1) { f2 = f1; f1 = l; c1 = d; } else if (l < f2) { f2 = l; }
+		}
+	}
+	float edge = (sqrt(f2) - sqrt(f1)) * 0.5 * 4.5;  // metres to the nearest cell edge
+	edge += (texture(noise_grain, p / 1.7).r - 0.5) * 0.05;
+	float run = smoothstep(0.46, 0.52, texture(noise_soft, p / 7.0 + 0.5).r);
+	float wide = 0.025;
+	float crack = (1.0 - smoothstep(wide, wide + footprint, edge)) * run * cracked;
+	crack *= close * clamp(wide * 2.0 / max(footprint, 1e-4), 0.0, 1.0);  // thins out with distance
+	col = mix(col, tar.rgb, crack * 0.75);
 	// Oil drips and tyre grime.
 	float oil = smoothstep(0.70, 0.86, texture(noise_grain, turn(p, 1.4) / 3.3).r);
 	col *= 1.0 - oil * 0.1 * close;
@@ -69,7 +89,7 @@ void fragment() {
 	float g = texture(noise_grain, p / 0.31).r;
 	col *= 1.0 + (g - 0.5) * 0.28 * close;
 	ALBEDO = col;
-	ROUGHNESS = 0.9;
+	ROUGHNESS = 0.9 - crack * 0.4;
 	SPECULAR = 0.3;
 }
 """
@@ -171,6 +191,74 @@ void fragment() {
 }
 """
 
+## Limestone quarries, benchmarked against aerial photos of Indiana crushed
+## stone quarries. UV.x is metres in from the pit's rim (negative out on
+## the berm); COLOR.r is where the floor starts (/ 100 m) and COLOR.g how
+## far off the haul ramp's centre line (/ 14 m).
+##   - near-vertical faces every 15 m, lit or in shadow by which way they
+##     face, with thin bedding lines and a pale lip along the top
+##   - benches greyer and dustier the deeper they are
+##   - a floor of blasted rock with rain water standing in the low spots
+##   - a grassed berm of stripped overburden round the rim
+const QUARRY := """
+void fragment() {
+	vec2 p = world_pos.xz;
+	float s = UV.x;
+	float floor_at = COLOR.r * 100.0;
+	if (s < -9.0) {
+		discard;
+	}
+	float close = clamp(1.0 - length(VERTEX) / 400.0, 0.0, 1.0);
+	float grain = texture(noise_grain, p / 0.9).r;
+	float patch = texture(noise_soft, p / 25.0).r;
+	// Which way the ground falls, in world space, from the slope of s.
+	vec2 dx = dFdx(p);
+	vec2 dy = dFdy(p);
+	float sx = dFdx(s);
+	float sy = dFdy(s);
+	float det = dx.x * dy.y - dx.y * dy.x;
+	vec2 g = vec2(0.0);
+	if (abs(det) > 1e-9) {
+		g = vec2(sx * dy.y - sy * dx.y, dx.x * sy - dy.x * sx) / det;
+	}
+	vec3 stone = vec3(0.60, 0.57, 0.50);
+	vec3 col;
+	if (s < 0.0) {
+		col = mix(vec3(0.27, 0.23, 0.16), vec3(0.17, 0.21, 0.08), smoothstep(0.3, 0.7, patch));
+	} else {
+		float cycle = 15.0;
+		float level = min(floor(s / cycle), 5.0);
+		float t = s - floor(s / cycle) * cycle;
+		vec3 bench = stone * (1.0 - level * 0.05) * (0.92 + patch * 0.16);
+		{
+			float aa = fwidth(s);
+			float face = 1.0 - smoothstep(5.0 - aa, 5.0 + aa, t);
+			float lit = 0.0;
+			if (length(g) > 0.01) {
+				lit = dot(-normalize(g), normalize(vec2(0.55, 0.83)));
+			}
+			vec3 wall = vec3(0.46, 0.42, 0.35) * (0.62 + lit * 0.3) * (1.0 - level * 0.04);
+			float bed = smoothstep(0.35, 0.65, fract(t * 1.4 + texture(noise_soft, p / 30.0).r * 2.0));
+			wall *= 0.9 + bed * 0.12;
+			float lip = 1.0 - smoothstep(0.0, 0.7 + aa, t);
+			col = mix(bench, wall, face);
+			col = mix(col, stone * 1.08, lip * 0.6);
+		}
+		// The floor: blasted rock, with rain water standing in the low spots.
+		vec3 rock = bench * 0.85;
+		float wet = smoothstep(0.56, 0.62, texture(noise_soft, p / 60.0 + 0.3).r);
+		rock = mix(rock, vec3(0.14, 0.22, 0.20), wet);
+		col = mix(col, rock, smoothstep(floor_at, floor_at + 3.0, s));
+	}
+	float ramp = (1.0 - step(0.5, COLOR.g)) * step(s, floor_at + 4.0);
+	col = mix(col, vec3(0.56, 0.53, 0.46) * (0.95 + patch * 0.1), ramp);
+	col *= 1.0 + (grain - 0.5) * 0.25 * close;
+	ALBEDO = col;
+	ROUGHNESS = 0.95;
+	SPECULAR = 0.2;
+}
+"""
+
 static var _cache := {}
 static var _soft: NoiseTexture2D
 static var _grain: NoiseTexture2D
@@ -188,6 +276,10 @@ static func concrete(color: Color, slabs := false) -> ShaderMaterial:
 
 static func gravel() -> ShaderMaterial:
 	return _make("gravel", GRAVEL, {})
+
+
+static func quarry() -> ShaderMaterial:
+	return _make("quarry", QUARRY, {})
 
 
 static func field() -> ShaderMaterial:

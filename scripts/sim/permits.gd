@@ -171,6 +171,10 @@ func _granted(sim, req: Dictionary) -> bool:
 func can_file(sim, hub: String, hub_id: int) -> bool:
 	if guidance(hub, hub_id).stance == "hold":
 		return false
+	# Growth on Hold (for this hub, its area or the whole town) is the same word.
+	var key := _key(hub, hub_id)
+	if "policies" in sim and sim.policies.step("growth", sim.hub_area(key), key) == 0:
+		return false
 	if int(sim.tick_count) < int(wait_until.get(_key(hub, hub_id), -1)):
 		return false
 	var open := 0

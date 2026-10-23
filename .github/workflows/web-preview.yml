@@ -56,10 +56,12 @@ jobs:
           ~/godot-cache/godot --headless --import
           ~/godot-cache/godot --headless -s tests/test_roads.gd
           ~/godot-cache/godot --headless -s tests/test_sim.gd
+          ~/godot-cache/godot --headless -s tests/test_water.gd
           ~/godot-cache/godot --headless -s tests/test_advisor.gd
           ~/godot-cache/godot --headless -s tests/test_road_tools.gd
           ~/godot-cache/godot --headless -s tests/test_grid_fill.gd
           ~/godot-cache/godot --headless -s tests/test_move_it.gd
+          ~/godot-cache/godot --headless -s tests/test_road_variants.gd
           ~/godot-cache/godot --headless -s tests/test_traffic.gd
           ~/godot-cache/godot --headless -s tests/test_net.gd
           ~/godot-cache/godot --headless -s tests/test_vehicles.gd
@@ -78,7 +80,10 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_power.gd
           ~/godot-cache/godot --headless -s tests/test_vegetation.gd
           ~/godot-cache/godot --headless -s tests/test_education.gd
+          ~/godot-cache/godot --headless -s tests/test_banks.gd
           ~/godot-cache/godot --headless -s tests/test_mail.gd
+          ~/godot-cache/godot --headless -s tests/test_economy.gd
+          ~/godot-cache/godot --headless -s tests/test_construction.gd
 
       - name: Stamp the build
         run: |

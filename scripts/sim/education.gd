@@ -29,70 +29,86 @@ const KINDS := {
 ## The development tree (Brawn 2026-10-22): every block a campus buys
 ## becomes one of these. Its head can only build what it is capable of and
 ## what the town and region around it call for, so two towns' universities
-## grow up differently. Each: `name`, `art` (how CampusBuilder draws it),
-## `seats` (times the kind's block_seats), `rep` (reputation it adds),
-## `draw` (extra pull on students from the region), `jobs` (office, research
-## or tech jobs it brings), `stay` (extra share of graduates who settle here
-## because local employers want what it teaches), `repeat` (can be built
-## more than once), and `needs`:
-##   edu: the head's schooling (0 to 1)   rep: reputation   enrolled: students
-##   farms / industry / shops: farms, companies and factories, or shops in
-##     town (plus neighbors' towns in a shared region, see `region`)
-##   clinic: a clinic in town   pop: people in town   region: a road out to
-##   the region   funding: the city's funding share   has: built first
+## grow up differently. Nodes follow the shared Agency shape ({id, name,
+## requires, needs, effects, note}, see scripts/sim/agency.gd), plus `art`
+## (how CampusBuilder draws it) and `repeat` (can be built more than once:
+## a campus buys land block by block). Effects: `seats` (times the kind's
+## block_seats), `rep` (reputation), `draw` (extra pull on students from the
+## region), `jobs` (office, research or tech jobs it brings) and `stay`
+## (extra share of graduates who settle here because local employers want
+## what it teaches). `needs` takes any Agency condition (leader_edu,
+## population, link, local:farm, local:<chain>, region_makes:<good>,
+## region_buys:<good>, education) and these campus ones:
+##   rep: reputation   enrolled: students   funding: the city's funding share
+##   industry / shops: companies and factories, or shops, in town
+##   clinic: a clinic in town
 const TREE := {
-	"high_school": {
-		"classrooms": {"name": "Classroom wing", "art": "hall", "seats": 1.0, "repeat": true, "needs": {}},
-		"gym": {"name": "Gym", "art": "gym", "seats": 0.3, "rep": 0.03, "needs": {}},
-		"fields": {"name": "Practice fields", "art": "fields", "rep": 0.02, "needs": {}},
-		"parking": {"name": "Student parking", "art": "parking", "seats": 0.2, "needs": {"enrolled": 400}},
-		"stadium": {"name": "Football stadium", "art": "stadium", "rep": 0.05, "needs": {"enrolled": 600, "has": ["fields"]}},
-		"arts": {"name": "Fine arts wing", "art": "hall", "seats": 0.5, "rep": 0.04,
-			"needs": {"edu": 0.45, "funding": 1.0, "has": ["classrooms"]}},
-		"ag_shop": {"name": "FFA ag barn and shop", "art": "hall", "seats": 0.4, "stay": 0.05, "needs": {"farms": 2}},
-		"career": {"name": "Career center (welding, auto, building trades)", "art": "hall", "seats": 0.6, "stay": 0.05,
-			"needs": {"industry": 3}},
-		"natatorium": {"name": "Natatorium", "art": "gym", "rep": 0.03, "needs": {"pop": 8000, "has": ["gym"]}},
-	},
-	"college": {
-		"classrooms": {"name": "Classroom building", "art": "hall", "seats": 1.0, "repeat": true, "needs": {}},
-		"parking": {"name": "Commuter parking", "art": "parking", "seats": 0.3, "repeat": true, "needs": {}},
-		"fields": {"name": "Athletic fields", "art": "fields", "rep": 0.02, "needs": {"enrolled": 800}},
-		"tech_center": {"name": "Advanced manufacturing center", "art": "tech", "seats": 0.7, "stay": 0.1, "jobs": 10,
-			"needs": {"industry": 3}},
-		"nursing": {"name": "Nursing and health sciences", "art": "lab", "seats": 0.6, "stay": 0.1, "needs": {"clinic": 1}},
-		"ag_diesel": {"name": "Ag and diesel tech", "art": "tech", "seats": 0.5, "stay": 0.1, "needs": {"farms": 2}},
-		"business": {"name": "Business and IT center", "art": "hall", "seats": 0.6, "stay": 0.05, "jobs": 10,
-			"needs": {"shops": 15, "edu": 0.5}},
-		"workforce": {"name": "Workforce training center", "art": "tech", "seats": 0.4, "jobs": 25,
-			"needs": {"edu": 0.55, "has": ["tech_center"]}},
-	},
-	"university": {
-		"hall": {"name": "Academic hall", "art": "hall", "seats": 1.0, "repeat": true, "needs": {}},
-		"quad": {"name": "Quad", "art": "quad", "rep": 0.02, "repeat": true, "needs": {"has": ["hall"]}},
-		"library": {"name": "Library", "art": "library", "seats": 0.3, "rep": 0.06, "needs": {"has": ["hall"]}},
-		"parking": {"name": "Parking", "art": "parking", "seats": 0.2, "repeat": true, "needs": {"enrolled": 2000}},
-		"dorm": {"name": "Residence hall", "art": "dorm", "seats": 0.8, "draw": 0.15, "repeat": true,
-			"needs": {"region": true, "enrolled": 1800}},
-		"fields": {"name": "Rec fields", "art": "fields", "rep": 0.02, "needs": {"enrolled": 2000}},
-		"stadium": {"name": "Football stadium", "art": "stadium", "rep": 0.06, "draw": 0.2,
-			"needs": {"enrolled": 3500, "has": ["fields"]}},
-		"ag_extension": {"name": "College of Agriculture and extension office", "art": "hall", "seats": 0.6,
-			"stay": 0.1, "jobs": 15, "draw": 0.05, "needs": {"farms": 3}},
-		"engineering": {"name": "College of Engineering", "art": "lab", "seats": 0.8, "rep": 0.04, "stay": 0.1,
-			"jobs": 10, "needs": {"industry": 3, "edu": 0.75}},
-		"business": {"name": "School of Business", "art": "hall", "seats": 0.8, "stay": 0.1, "jobs": 15,
-			"needs": {"shops": 20}},
-		"lab": {"name": "Science research lab", "art": "lab", "seats": 0.3, "rep": 0.06, "jobs": 30,
-			"needs": {"edu": 0.8, "rep": 0.45}},
-		"research_park": {"name": "Research park", "art": "tech", "rep": 0.05, "stay": 0.15, "jobs": 120,
-			"needs": {"edu": 0.85, "rep": 0.55, "has": ["lab"]}},
-		"med_school": {"name": "School of Medicine", "art": "lab", "seats": 0.5, "rep": 0.08, "jobs": 60,
-			"needs": {"clinic": 1, "rep": 0.6, "pop": 5000}},
-		"arena": {"name": "Basketball arena", "art": "gym", "rep": 0.04, "draw": 0.1,
-			"needs": {"enrolled": 6000, "has": ["stadium"]}},
-	},
+	"high_school": [
+		{"id": "classrooms", "name": "Classroom wing", "art": "hall", "repeat": true, "effects": {"seats": 1.0}},
+		{"id": "gym", "name": "Gym", "art": "gym", "effects": {"seats": 0.3, "rep": 0.03}},
+		{"id": "fields", "name": "Practice fields", "art": "fields", "effects": {"rep": 0.02}},
+		{"id": "parking", "name": "Student parking", "art": "parking", "needs": {"enrolled": 400}, "effects": {"seats": 0.2}},
+		{"id": "stadium", "name": "Football stadium", "art": "stadium", "requires": ["fields"],
+			"needs": {"enrolled": 600}, "effects": {"rep": 0.05}},
+		{"id": "arts", "name": "Fine arts wing", "art": "hall", "requires": ["classrooms"],
+			"needs": {"leader_edu": 0.45, "funding": 1.0}, "effects": {"seats": 0.5, "rep": 0.04}},
+		{"id": "ag_shop", "name": "FFA ag barn and shop", "art": "hall", "needs": {"local:farm": 2},
+			"effects": {"seats": 0.4, "stay": 0.05}, "note": "farm kids learn to run the farm"},
+		{"id": "career", "name": "Career center (welding, auto, building trades)", "art": "hall",
+			"needs": {"industry": 3}, "effects": {"seats": 0.6, "stay": 0.05}},
+		{"id": "area_career", "name": "Area career center", "art": "tech", "requires": ["career"],
+			"needs": {"link": 1, "population": 4000}, "effects": {"seats": 0.5, "draw": 0.05, "stay": 0.05},
+			"note": "shared with the districts around it, like Indiana's area career centers"},
+		{"id": "natatorium", "name": "Natatorium", "art": "gym", "requires": ["gym"],
+			"needs": {"population": 8000}, "effects": {"rep": 0.03}},
+	],
+	"college": [
+		{"id": "classrooms", "name": "Classroom building", "art": "hall", "repeat": true, "effects": {"seats": 1.0}},
+		{"id": "parking", "name": "Commuter parking", "art": "parking", "repeat": true, "effects": {"seats": 0.3}},
+		{"id": "fields", "name": "Athletic fields", "art": "fields", "needs": {"enrolled": 800}, "effects": {"rep": 0.02}},
+		{"id": "tech_center", "name": "Advanced manufacturing center", "art": "tech", "needs": {"industry": 3},
+			"effects": {"seats": 0.7, "stay": 0.1, "jobs": 10}},
+		{"id": "nursing", "name": "Nursing and health sciences", "art": "lab", "needs": {"clinic": 1},
+			"effects": {"seats": 0.6, "stay": 0.1}},
+		{"id": "ag_diesel", "name": "Ag and diesel tech", "art": "tech", "needs": {"local:farm": 2},
+			"effects": {"seats": 0.5, "stay": 0.1}},
+		{"id": "agribusiness", "name": "Agribusiness program", "art": "hall", "requires": ["classrooms"],
+			"needs": {"region_makes:grain": 1, "link": 1}, "effects": {"seats": 0.4, "draw": 0.1, "stay": 0.05},
+			"note": "a neighbouring farm town sends its students"},
+		{"id": "business", "name": "Business and IT center", "art": "hall", "needs": {"shops": 15, "leader_edu": 0.5},
+			"effects": {"seats": 0.6, "stay": 0.05, "jobs": 10}},
+		{"id": "workforce", "name": "Workforce training center", "art": "tech", "requires": ["tech_center"],
+			"needs": {"leader_edu": 0.55}, "effects": {"seats": 0.4, "jobs": 25}},
+	],
+	"university": [
+		{"id": "hall", "name": "Academic hall", "art": "hall", "repeat": true, "effects": {"seats": 1.0}},
+		{"id": "quad", "name": "Quad", "art": "quad", "repeat": true, "requires": ["hall"], "effects": {"rep": 0.02}},
+		{"id": "library", "name": "Library", "art": "library", "requires": ["hall"], "effects": {"seats": 0.3, "rep": 0.06}},
+		{"id": "parking", "name": "Parking", "art": "parking", "repeat": true, "needs": {"enrolled": 2000},
+			"effects": {"seats": 0.2}},
+		{"id": "dorm", "name": "Residence hall", "art": "dorm", "repeat": true, "needs": {"link": 1, "enrolled": 1800},
+			"effects": {"seats": 0.8, "draw": 0.15}},
+		{"id": "fields", "name": "Rec fields", "art": "fields", "needs": {"enrolled": 2000}, "effects": {"rep": 0.02}},
+		{"id": "stadium", "name": "Football stadium", "art": "stadium", "requires": ["fields"],
+			"needs": {"enrolled": 3500}, "effects": {"rep": 0.06, "draw": 0.2}},
+		{"id": "ag_extension", "name": "College of Agriculture and extension office", "art": "hall",
+			"needs": {"local:farm": 3}, "effects": {"seats": 0.6, "stay": 0.1, "jobs": 15, "draw": 0.05}},
+		{"id": "engineering", "name": "College of Engineering", "art": "lab", "needs": {"industry": 3, "leader_edu": 0.75},
+			"effects": {"seats": 0.8, "rep": 0.04, "stay": 0.1, "jobs": 10}},
+		{"id": "business", "name": "School of Business", "art": "hall", "needs": {"shops": 20},
+			"effects": {"seats": 0.8, "stay": 0.1, "jobs": 15}},
+		{"id": "lab", "name": "Science research lab", "art": "lab", "needs": {"leader_edu": 0.8, "rep": 0.45},
+			"effects": {"seats": 0.3, "rep": 0.06, "jobs": 30}},
+		{"id": "research_park", "name": "Research park", "art": "tech", "requires": ["lab"],
+			"needs": {"leader_edu": 0.85, "rep": 0.55}, "effects": {"rep": 0.05, "stay": 0.15, "jobs": 120}},
+		{"id": "med_school", "name": "School of Medicine", "art": "lab",
+			"needs": {"clinic": 1, "rep": 0.6, "population": 5000}, "effects": {"seats": 0.5, "rep": 0.08, "jobs": 60}},
+		{"id": "arena", "name": "Basketball arena", "art": "gym", "requires": ["stadium"],
+			"needs": {"enrolled": 6000}, "effects": {"rep": 0.04, "draw": 0.1}},
+	],
 }
+## Conditions only a campus has (the rest go to Agency.holds).
+const CAMPUS_NEEDS := ["rep", "enrolled", "funding", "industry", "shops", "clinic"]
 ## Arts drawn as a building, which can rise when the campus is boxed in.
 const BUILDING_ARTS := ["hall", "lab", "tech", "library", "dorm", "gym"]
 
@@ -104,14 +120,17 @@ const LAST := ["Harmon", "Schroeder", "Whitfield", "Baker", "Lindqvist", "Hayes"
 ## Campuses: id -> {kind, pos (centre of the first building's block), dir
 ## (unit, toward its road), blocks: [{c: Vector2i in its own frame, use,
 ## levels}], funding (index into Balance.EDUCATION_FUNDING_LEVELS), savings,
-## applicants, enrolled, reputation, leader {name, education, caution,
-## ambition}, grads (everyone it has graduated), idle (why it isn't growing, not saved)}
+## applicants, enrolled, reputation, leader (Agency.leader plus a name:
+## {name, edu, caution, ambition}), built and why (Agency), asking (its
+## open land request to the player: {req, cell, use}), grads (everyone it
+## has graduated), idle (why it isn't growing, not saved)}
 var campuses := {}
 ## Graduates of the town's own schools who live and work here (people).
 var locals := {"high_school": 0.0, "associate": 0.0, "degree": 0.0}
-## Neighbors' towns in a shared region, for the tree and for students:
-## {"population", "farms", "industry", "shops"}. The region client fills
-## this in; a solo city has none, and only its own road out matters.
+## Neighbors' towns in a shared region, for the student draw:
+## {"population"}. The region client fills this in; a solo city has none,
+## and only its own road out matters. (The tree reads neighbours through
+## Agency: sim.trade.last_deals and sim.region.)
 var region := {}
 var _next_id := 1
 
@@ -170,6 +189,8 @@ static func site_problem(sim: CitySim, kind: String, pos: Vector3, dir: Vector3)
 	for p in _probe_points(pos, poly):
 		if not sim.land_ok(p):
 			return "Can't build in the water or on a slope that steep."
+		if sim.banks.covers(p):
+			return "That ground is a bank."
 		if sim.education.covers(p):
 			return "Too close to another campus. Campuses grow on their own, so give it room."
 		if sim.services.covers(p):
@@ -195,36 +216,36 @@ static func _probe_points(mid: Vector3, poly: PackedVector2Array) -> Array:
 	return pts
 
 
-## Opens a campus and hires its head. `town_edu` is leader_education() and
-## `seed` makes the hire the same on every copy of the city.
-func add(kind: String, pos: Vector3, dir: Vector3, town_edu: float, seed: int, tick: int) -> int:
+## Opens a campus and hires its head. `seed` makes the hire the same on
+## every copy of the city.
+func add(sim: CitySim, kind: String, pos: Vector3, dir: Vector3, seed: int, tick: int) -> int:
 	var id := _next_id
 	_next_id += 1
-	campuses[id] = {"kind": kind, "pos": pos, "dir": dir, "blocks": [], "funding": 2, "savings": 0.0,
-		"applicants": 0, "enrolled": 0, "reputation": Balance.EDUCATION_START_REPUTATION,
-		"leader": hire(kind, town_edu, hash([seed, id, kind])), "grads": 0.0, "founded": tick, "idle": "",
-		"cleared": []}
+	campuses[id] = {"kind": kind, "pos": pos, "dir": dir, "blocks": [], "built": [], "why": "", "funding": 2,
+		"savings": 0.0, "applicants": 0, "enrolled": 0, "reputation": Balance.EDUCATION_START_REPUTATION,
+		"leader": hire(sim, kind, hash([seed, id, kind])), "grads": 0.0, "founded": tick, "idle": "",
+		"cleared": [], "asking": {}}
 	return id
 
 
-## A new principal or president. Their schooling follows the town's (a
-## university always hires someone with a doctorate); caution and ambition
-## are their own.
-static func hire(kind: String, town_edu: float, seed: int) -> Dictionary:
+## A new principal or president: an Agency leader (schooling follows the
+## town's, caution and ambition are their own) with a name, and the degree
+## the job calls for (a university always hires a doctorate).
+static func hire(sim: CitySim, kind: String, seed: int) -> Dictionary:
+	var l := Agency.leader(sim, seed)
+	if kind == "university":
+		l.edu = maxf(l.edu, 0.75)
+	elif kind == "college":
+		l.edu = maxf(l.edu, 0.4)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
-	var edu := clampf(town_edu + rng.randf_range(-0.15, 0.15), 0.0, 1.0)
-	if kind == "university":
-		edu = maxf(edu, 0.75)
-	elif kind == "college":
-		edu = maxf(edu, 0.4)
-	return {"name": "%s %s" % [FIRST[rng.randi() % FIRST.size()], LAST[rng.randi() % LAST.size()]],
-		"education": edu, "caution": rng.randf_range(0.2, 0.8), "ambition": rng.randf_range(0.2, 0.8)}
+	l.name = "%s %s" % [FIRST[rng.randi() % FIRST.size()], LAST[rng.randi() % LAST.size()]]
+	return l
 
 
 ## "Dr. Linda Harmon" for a doctorate, else the plain name.
 static func leader_name(l: Dictionary) -> String:
-	return ("Dr. " if l.education >= 0.7 else "") + str(l.name)
+	return ("Dr. " if l.edu >= 0.7 else "") + str(l.name)
 
 
 static func degree_name(edu: float) -> String:
@@ -255,27 +276,31 @@ static func seats(c: Dictionary) -> int:
 	var b: Dictionary = spec(c.kind)
 	var n: float = b.seats
 	for blk in c.blocks:
-		n += float(b.block_seats) * float(dev(c.kind, blk.use).get("seats", 0.0)) * int(blk.levels)
+		n += float(b.block_seats) * float(dev(c.kind, blk.use).get("effects", {}).get("seats", 0.0)) * int(blk.levels)
 	return roundi(n)
 
 
 ## One development in the tree (empty if unknown, as in an older save).
 static func dev(kind: String, use: String) -> Dictionary:
-	return TREE[kind].get(use, {})
+	for node in TREE[kind]:
+		if node.id == use:
+			return node
+	return {}
 
 
-## The sum of one effect (rep, draw, jobs, stay) over a campus's blocks.
+## The sum of one effect (seats, rep, draw, jobs, stay) over a campus's
+## blocks. Like Agency.effect, but a repeatable node counts once per block.
 static func effect(c: Dictionary, what: String) -> float:
 	var total := 0.0
 	for blk in c.blocks:
-		total += float(dev(c.kind, blk.use).get(what, 0.0))
+		total += float(dev(c.kind, blk.use).get("effects", {}).get(what, 0.0))
 	return total
 
 
-## What the town (and region) around it offers, for the tree.
+## What the town offers, for the campus-only conditions (the rest, local
+## and regional, are Agency's).
 static func town_facts(sim: CitySim) -> Dictionary:
-	var f := {"farms": sim.farms.farms.size(), "industry": sim.industry.sites.size(), "shops": 0, "clinic": 0,
-		"pop": int(sim.stats.population), "region": not sim.region_links.is_empty()}
+	var f := {"industry": sim.industry.sites.size(), "shops": 0, "clinic": 0}
 	for key in sim.buildings:
 		match int(sim.buildings[key].zone):
 			ZoneMap.Zone.INDUSTRIAL: f.industry += 1
@@ -283,75 +308,93 @@ static func town_facts(sim: CitySim) -> Dictionary:
 	for id in sim.services.buildings:
 		if sim.services.buildings[id].kind == Services.Kind.CLINIC:
 			f.clinic += 1
-	# Neighbors count too: a university next to a farming county teaches farming.
-	var r: Dictionary = sim.education.region
-	for k in ["farms", "industry", "shops"]:
-		f[k] += int(r.get(k, 0))
 	return f
 
 
 ## Why a development isn't open to this campus yet, or "" if it is.
-static func locked_by(c: Dictionary, use: String, facts: Dictionary) -> String:
+static func locked_by(sim: CitySim, c: Dictionary, use: String, facts: Dictionary) -> String:
 	var d := dev(c.kind, use)
-	var n: Dictionary = d.get("needs", {})
-	var built := {}
-	for blk in c.blocks:
-		built[blk.use] = true
-	if built.has(use) and not d.get("repeat", false):
+	if d.is_empty():
+		return "unknown"
+	if use in c.get("built", []) and not d.get("repeat", false):
 		return "built"
-	for h in n.get("has", []):
-		if not built.has(h):
+	for h in d.get("requires", []):
+		if not h in c.get("built", []):
 			return "needs a %s first" % dev(c.kind, h).name.to_lower()
-	if c.leader.education < n.get("edu", 0.0):
-		return "needs a head with a %s" % degree_name(n.edu)
-	if c.reputation < n.get("rep", 0.0):
-		return "needs a %d%% reputation" % roundi(n.rep * 100.0)
-	if c.enrolled < n.get("enrolled", 0):
-		return "needs %s students" % CitySim.money_text(int(n.enrolled))
-	if funding_share(c) < n.get("funding", 0.0):
-		return "needs full funding"
-	if facts.pop < n.get("pop", 0):
-		return "needs a town of %s" % CitySim.money_text(int(n.pop))
-	if facts.farms < n.get("farms", 0):
-		return "needs %d farms nearby" % int(n.farms)
-	if facts.industry < n.get("industry", 0):
-		return "needs %d companies or factories nearby" % int(n.industry)
-	if facts.shops < n.get("shops", 0):
-		return "needs %d shops in town" % int(n.shops)
-	if facts.clinic < n.get("clinic", 0):
-		return "needs a clinic in town"
-	if n.get("region", false) and not facts.region:
-		return "needs a road out to the region"
+	var n: Dictionary = d.get("needs", {})
+	for cond in n:
+		var v = n[cond]
+		var ok: bool
+		match cond:
+			"rep": ok = c.reputation >= float(v)
+			"enrolled": ok = c.enrolled >= int(v)
+			"funding": ok = funding_share(c) >= float(v)
+			"industry", "shops", "clinic": ok = int(facts.get(cond, 0)) >= int(v)
+			_: ok = Agency.holds(sim, c, c.pos, c.savings, cond, v)
+		if not ok:
+			return _need_text(cond, v)
 	return ""
+
+
+## "needs a head with a doctorate" and so on, for the info panel.
+static func _need_text(cond: String, v) -> String:
+	match cond:
+		"leader_edu": return "needs a head with a %s" % degree_name(float(v))
+		"rep": return "needs a %d%% reputation" % roundi(float(v) * 100.0)
+		"enrolled": return "needs %s students" % CitySim.money_text(int(v))
+		"funding": return "needs full funding"
+		"population": return "needs a town of %s" % CitySim.money_text(int(v))
+		"industry": return "needs %d companies or factories in town" % int(v)
+		"shops": return "needs %d shops in town" % int(v)
+		"clinic": return "needs a clinic in town"
+		"link": return "needs a road out to the region"
+		"education": return "needs more of the town's homes near a school"
+	if cond == "local:farm":
+		return "needs %d farms nearby" % int(v)
+	if cond.begins_with("local:"):
+		return "needs a %s nearby" % cond.substr(6)
+	if cond.begins_with("region_makes:"):
+		return "needs a neighbouring town that sells %s" % cond.substr(13)
+	if cond.begins_with("region_buys:"):
+		return "needs a neighbouring town that buys %s" % cond.substr(12)
+	return "needs " + cond
 
 
 ## Which open development its head builds next: room when it's full, and
 ## otherwise what fits their ambition and schooling. "" if nothing is open.
-static func pick_next(c: Dictionary, facts: Dictionary, crowded: bool) -> String:
+static func pick_next(sim: CitySim, c: Dictionary, facts: Dictionary, crowded: bool) -> String:
 	var l: Dictionary = c.leader
 	var count := {}
 	for blk in c.blocks:
 		count[blk.use] = count.get(blk.use, 0) + 1
 	var best := ""
 	var best_score := -INF
-	var keys: Array = TREE[c.kind].keys()
-	keys.sort()
-	for use in keys:
-		if locked_by(c, use, facts) != "":
+	for d in TREE[c.kind]:
+		var use: String = d.id
+		if locked_by(sim, c, use, facts) != "":
 			continue
-		var d: Dictionary = TREE[c.kind][use]
-		var score: float = float(d.get("seats", 0.0)) * (2.0 if crowded else 0.3) \
-			+ float(d.get("rep", 0.0)) * 20.0 * (0.5 + l.ambition) \
-			+ float(d.get("draw", 0.0)) * 5.0 * l.ambition \
-			+ float(d.get("jobs", 0.0)) / 30.0 * (0.5 + l.education) \
-			+ float(d.get("stay", 0.0)) * 6.0 \
+		var e: Dictionary = d.get("effects", {})
+		var score: float = float(e.get("seats", 0.0)) * (2.0 if crowded else 0.3) \
+			+ float(e.get("rep", 0.0)) * 20.0 * (0.5 + l.ambition) \
+			+ float(e.get("draw", 0.0)) * 5.0 * l.ambition \
+			+ float(e.get("jobs", 0.0)) / 30.0 * (0.5 + l.edu) \
+			+ float(e.get("stay", 0.0)) * 6.0 \
 			- 0.4 * count.get(use, 0)
 		if not count.has(use):
 			score += 1.0  # something new for the campus beats one more of the same
-		if score > best_score + 0.0001:
+		if score > best_score + 0.0001 or (absf(score - best_score) <= 0.0001 and use < best):
 			best_score = score
 			best = use
 	return best
+
+
+## Records a new block's development: Agency's "built" list (each id once)
+## and "why", which the info panel shows.
+static func _record(c: Dictionary, use: String) -> void:
+	_sync_built(c)
+	var d := dev(c.kind, use)
+	c.why = "%s %s built the %s%s." % [KINDS[c.kind].head, leader_name(c.leader), str(d.get("name", use)).to_lower(),
+		(": " + str(d.note)) if d.has("note") else ""]
 
 
 static func funding_share(c: Dictionary) -> float:
@@ -374,7 +417,7 @@ static func quality(c: Dictionary) -> float:
 static func books(c: Dictionary, enrolled: int) -> Array:
 	var b: Dictionary = spec(c.kind)
 	var income: float = (float(b.aid) + float(b.tuition)) * enrolled / 12.0 + monthly_funding(c)
-	var costs: float = float(b.spend) * enrolled / 12.0 * (1.0 - 0.1 * float(c.leader.education)) \
+	var costs: float = float(b.spend) * enrolled / 12.0 * (1.0 - 0.1 * float(c.leader.edu)) \
 		+ 0.5 * float(b.funding) * (1.0 + 0.15 * c.blocks.size())
 	return [income, costs]
 
@@ -410,7 +453,7 @@ func decide(sim: CitySim) -> bool:
 		var into: String = {"high_school": "high_school", "college": "associate", "university": "degree"}[c.kind]
 		locals[into] += grads * minf(0.95, float(b.stay) + effect(c, "stay"))
 		# Reputation follows funding, its head and how much campus it has.
-		var target := 0.2 + 0.35 * (quality(c) - 0.75) / 0.5 + 0.25 * float(c.leader.education) \
+		var target := 0.2 + 0.35 * (quality(c) - 0.75) / 0.5 + 0.25 * float(c.leader.edu) \
 			+ 0.1 * minf(1.0, c.blocks.size() / 10.0) + effect(c, "rep")
 		c.reputation += (target - c.reputation) * Balance.EDUCATION_REPUTATION_PULL
 		var l: Dictionary = c.leader
@@ -426,6 +469,7 @@ func decide(sim: CitySim) -> bool:
 		var down: float = float(b.block_cost) * Balance.EDUCATION_DOWN_PAYMENT * (1.0 + l.caution)
 		if c.savings < -Balance.EDUCATION_SELL_DEBT * float(b.block_cost) and not c.blocks.is_empty():
 			c.blocks.pop_back()
+			_sync_built(c)
 			c.savings += float(b.block_cost) * 0.5
 			changed = true
 		elif crowded and c.blocks.size() >= int(b.max_blocks):
@@ -436,10 +480,16 @@ func decide(sim: CitySim) -> bool:
 			if corr.is_empty():
 				corr = RoadWins.corridors(sim.network, 2.0)
 			var cell := _best_block(sim, id, c, corr)
-			var use := pick_next(c, facts, true)
+			var use := pick_next(sim, c, facts, true)
 			if cell != Vector2i.MAX and use != "":
 				c.blocks.append({"c": cell, "use": use, "levels": 1})
+				_record(c, use)
 				c.savings -= float(b.block_cost)
+				changed = true
+			elif use != "" and l.ambition > l.caution and c.asking.is_empty() and _ask_for_land(sim, id, c, use, corr):
+				# Boxed in by homes and shops: an ambitious head asks the
+				# player to let it buy them out, as real campuses do.
+				idle = "Full and boxed in. Asking you to let it buy the land next door."
 				changed = true
 			else:
 				# Boxed in: build up instead (no second sites, ever).
@@ -452,8 +502,11 @@ func decide(sim: CitySim) -> bool:
 					c.blocks[up].levels += 1
 					c.savings -= float(b.block_cost) * 0.6
 					changed = true
+				elif not c.asking.is_empty():
+					idle = "Full and boxed in. Waiting on your answer about the land next door."
 				else:
 					idle = "Full and boxed in: no free land next to it, and nothing left to build up."
+		changed = _carry_out(sim, id, c, corr) or changed
 		if c.idle != idle:
 			c.idle = idle
 			changed = true
@@ -525,7 +578,7 @@ func _best_block(sim: CitySim, id: int, c: Dictionary, corr: Array) -> Vector2i:
 ## True when a block is free to buy: no road, building, zoned or built lot,
 ## farm, company, reserve or other campus on it. Campuses buy only empty land
 ## (anything the player built or zoned stays theirs).
-func usable(sim: CitySim, id: int, c: Dictionary, cell: Vector2i, corr: Array) -> bool:
+func usable(sim: CitySim, id: int, c: Dictionary, cell: Vector2i, corr: Array, lots_ok := false) -> bool:
 	var poly := block_corners(c, cell)
 	if RoadWins.hits(corr, poly):
 		return false
@@ -534,16 +587,93 @@ func usable(sim: CitySim, id: int, c: Dictionary, cell: Vector2i, corr: Array) -
 		var other := at(p)
 		if other != -1 and other != id:
 			return false
-		if sim.services.covers(p) or sim.farms.covers(p) or sim.farms.field_at(p) != -1 \
+		if not sim.land_ok(p) or sim.services.covers(p) or sim.farms.covers(p) or sim.farms.field_at(p) != -1 \
 				or sim.industry.covers(p) or sim.reserves.kind_at(p) != "" or sim.hubs.covers(p) \
-				or sim.warehouses.covers(p) or sim.parks.covers(p) or sim.mail.covers(p):
+				or sim.warehouses.covers(p) or sim.parks.covers(p) or sim.mail.covers(p) or sim.banks.covers(p):
 			return false
+	if lots_ok:
+		return true
 	for key in sim.lots:
 		if not sim.buildings.has(key) and sim.zones.zone_at(sim.lots[key].zone_pt) == ZoneMap.Zone.NONE:
 			continue
 		if Geometry2D.is_point_in_polygon(Vector2(sim.lots[key].pos.x, sim.lots[key].pos.z), poly) \
 				or sim.lots[key].pos.distance_to(mid) < CELL * 0.5:
 			return false
+	return true
+
+
+## Agency's "built": each development a campus has, once, in build order.
+static func _sync_built(c: Dictionary) -> void:
+	c.built = []
+	for blk in c.blocks:
+		if not blk.use in c.built:
+			c.built.append(blk.use)
+
+
+## Files a land-use request (Permits) for the block next door that only
+## the player's homes and shops stand on. Returns true if it was filed.
+func _ask_for_land(sim: CitySim, id: int, c: Dictionary, use: String, corr: Array) -> bool:
+	if not sim.permits.can_file(sim, "campus", id):
+		return false
+	for cell in _frontier(c):
+		if usable(sim, id, c, cell, corr) or not usable(sim, id, c, cell, corr, true):
+			continue
+		var outline := []
+		for p in block_corners(c, cell):
+			outline.append([p.x, p.y])
+		var hits := sim.permits.check(sim, outline, 0.0, true)
+		if not hits.roads.is_empty() or hits.buildings.is_empty():
+			continue
+		var homes := 0
+		for h in hits.buildings:
+			if h.what != "lot":
+				outline = []
+				break
+			homes += 1
+		if outline.is_empty():
+			continue
+		var name := str(dev(c.kind, use).get("name", use))
+		var req := sim.permits.file(sim, {"hub": "campus", "hub_id": id, "leader": leader_name(c.leader),
+			"title": "%s wants the block next door" % KINDS[c.kind].name,
+			"why": "It is full and boxed in. It would buy out %d %s there for a %s." % [homes,
+				"property" if homes == 1 else "properties", name.to_lower()],
+			"change": "Homes and shops to campus", "area": outline,
+			"per_m2": Balance.EDUCATION_LAND_PER_M2, "budget": maxi(roundi(c.savings), 0)})
+		if req != -1:
+			c.asking = {"req": req, "cell": cell, "use": use}
+			return true
+		return false
+	return false
+
+
+## Carries out an approved land request (the player may have reshaped it):
+## buys out what stands there and builds the block, if the block's middle
+## is still inside the land the player gave. Drops a request that was
+## denied or shelved.
+func _carry_out(sim: CitySim, id: int, c: Dictionary, corr: Array) -> bool:
+	if c.asking.is_empty():
+		return false
+	var req: Dictionary = sim.permits.requests.get(int(c.asking.req), {})
+	if req.is_empty() or req.state in [Permits.State.DENIED, Permits.State.SHELVED, Permits.State.WITHDRAWN, Permits.State.DONE]:
+		c.asking = {}
+		return true
+	if req.state != Permits.State.APPROVED:
+		return false
+	var cell: Vector2i = c.asking.cell
+	var mid := block_center(c, cell)
+	var area := PackedVector2Array()
+	for p in req.route:
+		area.append(Vector2(p[0], p[1]))
+	var b: Dictionary = spec(c.kind)
+	if Geometry2D.is_point_in_polygon(Vector2(mid.x, mid.z), area) and usable(sim, id, c, cell, corr, true):
+		c.blocks.append({"c": cell, "use": c.asking.use, "levels": 1})
+		_record(c, c.asking.use)
+		c.savings -= float(b.block_cost) + float(req.cost)
+		# The homes and shops on it are bought out: their lots give way to
+		# the campus at the next re-plat.
+		sim._lots_dirty = true
+	sim.permits.done(int(c.asking.req))
+	c.asking = {}
 	return true
 
 
@@ -610,6 +740,7 @@ func remove_at(p: Vector3) -> bool:
 	for blk in c.blocks:
 		if blk.c == cell:
 			c.blocks.erase(blk)
+			_sync_built(c)
 			# Its head won't buy that block straight back.
 			c.cleared.append(cell)
 			return true
@@ -671,6 +802,7 @@ func make_way(corr: Array) -> int:
 		for blk in c.blocks.duplicate():
 			if RoadWins.hits(corr, block_corners(c, blk.c)):
 				c.blocks.erase(blk)
+		_sync_built(c)
 	return back
 
 
@@ -736,7 +868,8 @@ func to_dict() -> Dictionary:
 			blocks.append([blk.c.x, blk.c.y, blk.use, blk.levels])
 		out[str(id)] = {"kind": c.kind, "pos": [c.pos.x, c.pos.z], "dir": [c.dir.x, c.dir.z], "blocks": blocks,
 			"funding": c.funding, "savings": c.savings, "applicants": c.applicants, "enrolled": c.enrolled,
-			"reputation": c.reputation, "leader": c.leader, "grads": c.grads, "founded": c.founded,
+			"reputation": c.reputation, "leader": c.leader, "grads": c.grads, "founded": c.founded, "why": c.why,
+			"asking": [] if c.asking.is_empty() else [c.asking.req, c.asking.cell.x, c.asking.cell.y, c.asking.use],
 			"cleared": c.get("cleared", []).map(func(v): return [v.x, v.y])}
 	return {"campuses": out, "locals": locals, "next_id": _next_id}
 
@@ -754,10 +887,15 @@ func from_dict(d: Dictionary) -> void:
 			"funding": int(s.get("funding", 2)), "savings": float(s.get("savings", 0.0)),
 			"applicants": int(s.get("applicants", 0)), "enrolled": int(s.get("enrolled", 0)),
 			"reputation": float(s.get("reputation", Balance.EDUCATION_START_REPUTATION)),
-			"leader": {"name": str(l.get("name", "Pat Lee")), "education": float(l.get("education", 0.5)),
+			"leader": {"name": str(l.get("name", "Pat Lee")), "edu": float(l.get("edu", l.get("education", 0.5))),
 				"caution": float(l.get("caution", 0.5)), "ambition": float(l.get("ambition", 0.5))},
 			"grads": float(s.get("grads", 0.0)), "founded": int(s.get("founded", 0)), "idle": "",
-			"cleared": s.get("cleared", []).map(func(v): return Vector2i(int(v[0]), int(v[1])))}
+			"cleared": s.get("cleared", []).map(func(v): return Vector2i(int(v[0]), int(v[1]))),
+			"why": str(s.get("why", "")), "asking": {}}
+		var ask: Array = s.get("asking", [])
+		if ask.size() == 4:
+			campuses[int(k)].asking = {"req": int(ask[0]), "cell": Vector2i(int(ask[1]), int(ask[2])), "use": str(ask[3])}
+		_sync_built(campuses[int(k)])
 	locals = {"high_school": 0.0, "associate": 0.0, "degree": 0.0}
 	var l2: Dictionary = d.get("locals", {})
 	for k in locals:
