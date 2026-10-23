@@ -202,14 +202,47 @@ void fragment() {
 	float crowns = texture(noise_soft, p / 11.0).r * 0.6 + clump * 0.4;
 	vec3 leaves = mix(canopy.rgb, fall_leaves.rgb * (0.8 + 0.5 * mid), season_look.x);
 	leaves = mix(leaves, twigs.rgb, season_look.y);
-	vec3 tops = leaves * (0.65 + 0.7 * crowns) * (0.85 + 0.3 * big);
-	// Painted past the trees drawn (fading in as they thin out), and under
+	// Crowns: aerial photos of hardwoods show each crown as a lit dome
+	// about 8 m across with dark gaps between, not a flat green. A jittered
+	// cell pattern gives each painted crown its own dome (lit by the real sun
+	// through NORMAL below), tint and gap, fading to its average where a
+	// crown is smaller than a few pixels so it never crawls.
+	vec2 cq = turn(p, 0.4) / 7.5;
+	vec2 ci = floor(cq);
+	float f1 = 9.0;
+	vec2 to_c = vec2(0.0);
+	vec2 cell = vec2(0.0);
+	for (int j = -1; j <= 1; j++) {
+		for (int i = -1; i <= 1; i++) {
+			vec2 g = ci + vec2(float(i), float(j));
+			vec2 o = fract(sin(vec2(dot(g, vec2(127.1, 311.7)), dot(g, vec2(269.5, 183.3)))) * 43758.5453);
+			vec2 dd = g + 0.15 + o * 0.7 - cq;
+			float l = dot(dd, dd);
+			if (l < f1) { f1 = l; to_c = dd; cell = g; }
+		}
+	}
+	float crown_hash = fract(sin(dot(cell, vec2(41.3, 289.1))) * 43758.5453);
+	float relief = 1.0 - smoothstep(0.12, 0.45, length(fwidth(cq)));
+	vec2 slope = -to_c / 0.62;
+	float gap = smoothstep(0.75, 1.05, length(slope));
+	vec3 tint = mix(vec3(1.08, 1.04, 0.82), vec3(0.9, 1.0, 1.08), crown_hash);
+	vec3 tops = leaves * 1.5 * mix(vec3(1.0), tint, 0.6) * (0.85 + 0.3 * big) * (0.8 + 0.4 * crowns);
+	tops *= mix(0.88, 1.0 - gap * 0.55, relief);
+	// Painted past the trees drawn (fading in as they thin out, each crown
+	// at its own distance, so the edge is ragged like the trees'), and under
 	// them too from high up, as the woods look from a plane: all canopy.
-	float painted = max(smoothstep(tree_fade.z * 0.55, tree_fade.z * 0.97, distance(p, tree_fade.xy)),
+	float reach_d = distance(p, tree_fade.xy) + (crown_hash - 0.5) * 0.3 * tree_fade.z;
+	float painted = max(smoothstep(tree_fade.z * 0.55, tree_fade.z * 0.97, reach_d),
 		smoothstep(250.0, 1100.0, tree_fade.w));
 	vec3 woods = mix(litter.rgb * (0.8 + 0.4 * clump), tops, painted);
 	// A ragged edge, as real woods have, not the straight line between samples.
-	col = mix(col, woods, smoothstep(0.3, 0.65, cover.r + (clump - 0.5) * 0.45 + (mid - 0.5) * 0.25));
+	float in_woods = smoothstep(0.3, 0.65, cover.r + (clump - 0.5) * 0.45 + (mid - 0.5) * 0.25);
+	col = mix(col, woods, in_woods);
+	// The dome of each painted crown, leaning the ground normal toward its edge.
+	float dome = in_woods * painted * relief * (1.0 - gap) * (1.0 - season_look.y * 0.7);
+	vec3 up_n = (INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz;
+	vec3 crown_n = normalize(up_n + vec3(slope.x, 0.0, slope.y) * 1.1 * dome);
+	NORMAL = normalize((VIEW_MATRIX * vec4(crown_n, 0.0)).xyz);
 
 	// County roads on the section lines of the PLSS mile grid (CR 100 N,
 	// 200 E...): gravel with mowed ditches. They stop at the water and on
@@ -245,7 +278,9 @@ void fragment() {
 	float through = (worked < 0.33 ? 0.22 : (pick < 0.8 && pick >= 0.45 ? 0.3 : 0.12)) * (0.6 + 0.8 * clump);
 	snowy = mix(snowy * (0.95 + 0.06 * fract(pick * 3.7)), poking, through * in_field);
 	// Far canopy shows dark trunks through the snow.
-	snowy = mix(snowy, twigs.rgb * 1.3, smoothstep(0.3, 0.65, cover.r) * painted * 0.45);
+	// From the air bare woods read grey-brown against snowy fields, with the
+	// snow showing in the gaps between crowns.
+	snowy = mix(snowy, twigs.rgb * 1.05 * (0.85 + 0.3 * crown_hash), in_woods * painted * mix(0.8, 0.55, gap * relief));
 	col = mix(col, snowy, lies);
 	ALBEDO = col;
 	ROUGHNESS = mix(0.93, 0.75, lies);

@@ -52,7 +52,10 @@ void vertex() {
 	if (fade_on) {
 		// Toward the edge of the woods drawn, and from high up, where each
 		// tree is a speck and the ground's painted canopy reads better.
-		fade = (1.0 - smoothstep(tree_fade.z * 0.55, tree_fade.z * 0.97, distance(origin.xz, tree_fade.xy)))
+		// Each tree drops out at its own distance, so the edge of the drawn
+		// woods is ragged, not a circle round the camera.
+		float jitter = (fract(sin(dot(floor(origin.xz), vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * 0.3 * tree_fade.z;
+		fade = (1.0 - smoothstep(tree_fade.z * 0.55, tree_fade.z * 0.97, distance(origin.xz, tree_fade.xy) + jitter))
 			* (1.0 - smoothstep(1200.0, 1700.0, tree_fade.w));
 	}
 	VERTEX *= mix(0.4, 1.0, fade) * step(0.001, fade);
@@ -147,7 +150,10 @@ void vertex() {
 	float fade = 1.0;
 	if (fade_on) {
 		vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-		fade = (1.0 - smoothstep(tree_fade.z * 0.55, tree_fade.z * 0.97, distance(origin.xz, tree_fade.xy)))
+		// Each tree drops out at its own distance, so the edge of the drawn
+		// woods is ragged, not a circle round the camera.
+		float jitter = (fract(sin(dot(floor(origin.xz), vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * 0.3 * tree_fade.z;
+		fade = (1.0 - smoothstep(tree_fade.z * 0.55, tree_fade.z * 0.97, distance(origin.xz, tree_fade.xy) + jitter))
 			* (1.0 - smoothstep(1200.0, 1700.0, tree_fade.w));
 	}
 	VERTEX *= fade;
