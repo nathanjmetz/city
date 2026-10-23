@@ -146,6 +146,16 @@ const CORE_RADIUS := 200.0
 ## too dear for a detached house on every lot), apartments from DENSE_CORE.
 const ROW_HOME_DENSITY := 30
 const DENSE_CORE := 20
+## Town size matters as much as the block (Census ACS: Petersburg, IN,
+## about 2,300 people, is ~85% detached houses, ~6% small walk-ups and
+## almost no row houses; townhouse rows are a metro type). Row homes start
+## once the town has ROW_HOME_TOWN people and are fully in favour by
+## ROW_HOME_CITY; apartments in a small town are rarer by SMALL_TOWN_FLATS,
+## reaching their full share by FLATS_TOWN people.
+const ROW_HOME_TOWN := 25_000
+const ROW_HOME_CITY := 100_000
+const SMALL_TOWN_FLATS := 0.15
+const FLATS_TOWN := 25_000
 ## A street side becomes a Main Street once this many shops line it, and
 ## new shops there get flats upstairs (the classic Midwestern main street).
 const MAIN_STREET_SHOPS := 2

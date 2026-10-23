@@ -152,7 +152,18 @@ static func context(sim, key: String) -> Dictionary:
 		"avenue": road == RoadStyle.Type.AVENUE or road == RoadStyle.Type.BOULEVARD,
 		"wealth": sim.wealth_at(Vector2(p.x, p.z)),
 		"graduates_free": graduates_free(sim),
+		"town": int(sim.stats.population),
 	}
+
+
+## How far the town is along to row homes (0 below ROW_HOME_TOWN people, 1
+## by ROW_HOME_CITY) and to its full share of apartments.
+static func row_town(c: Dictionary) -> float:
+	return clampf(float(c.town - Balance.ROW_HOME_TOWN) / (Balance.ROW_HOME_CITY - Balance.ROW_HOME_TOWN), 0.0, 1.0)
+
+
+static func flats_town(c: Dictionary) -> float:
+	return lerpf(Balance.SMALL_TOWN_FLATS, 1.0, clampf(float(c.town) / Balance.FLATS_TOWN, 0.0, 1.0))
 
 
 ## Office jobs the town's college graduates support (scripts/sim/education.gd)
@@ -182,12 +193,13 @@ static func pick(sim, key: String, zone: int, rng: RandomNumberGenerator) -> Arr
 	match zone:
 		RES:
 			weights.append(["house", maxf(0.2, 1.0 - dens / 80.0) * (0.5 + rich), "Room for a house and yard"])
-			if c.density >= Balance.ROW_HOME_DENSITY:
+			if c.density >= Balance.ROW_HOME_DENSITY and row_town(c) > 0.0:
 				weights.append(["row_home", clampf((dens - Balance.ROW_HOME_DENSITY) / 30.0 + 0.4, 0.0, 1.5)
-					* (1.3 - rich), "Land is dear here, so homes share walls"])
+					* (1.3 - rich) * row_town(c), "A big town, and land is dear here, so homes share walls"])
 			if c.density >= Balance.DENSE_CORE or c.avenue:
 				var w := (0.8 if c.avenue else 0.0) + clampf((dens - Balance.DENSE_CORE) / 40.0, 0.0, 1.0)
-				weights.append(["apartments", w * (1.3 - rich), "On an avenue" if c.avenue else "Close to the centre of town"])
+				weights.append(["apartments", w * (1.3 - rich) * flats_town(c),
+					"On an avenue" if c.avenue else "Close to the centre of town"])
 		COM:
 			if c.main_street:
 				weights.append(["mixed_use", 1.5, "A busy Main Street: shop below, flats above"])
@@ -230,7 +242,7 @@ static func options(sim, key: String) -> Array:
 static func _stage_ok(sim, b: Dictionary, type: String, level: int, c: Dictionary) -> bool:
 	match [type, level]:
 		["house", 1]: return true
-		["row_home", 0]: return c.density >= Balance.ROW_HOME_DENSITY * 2 and c.wealth < 0.7
+		["row_home", 0]: return c.density >= Balance.ROW_HOME_DENSITY * 2 and c.wealth < 0.7 and row_town(c) > 0.0
 		["row_home", 1]: return c.density >= Balance.ROW_HOME_DENSITY + 15
 		["apartments", 1]: return c.density >= Balance.DENSE_CORE + 10
 		["apartments", 2]: return c.density >= Balance.DENSE_CORE * 3 or (c.avenue and c.density >= Balance.DENSE_CORE * 2)
