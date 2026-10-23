@@ -53,6 +53,16 @@ static func mean(key: String) -> float:
 	return 0.0 if s.is_empty() or s.n == 0 else s.sum / s.n
 
 
+## Starts a new window for n, sum and max, keeping the smoothed avg and
+## peak (and counts) the overlay shows. Telemetry calls this after each
+## sample so its windows don't overlap.
+static func reset_window() -> void:
+	for key in stats:
+		stats[key].n = 0
+		stats[key].sum = 0.0
+		stats[key].max = 0.0
+
+
 static func reset() -> void:
 	stats.clear()
 	counts.clear()
