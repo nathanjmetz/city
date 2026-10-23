@@ -145,6 +145,18 @@ When the gates are down (`sim.rail.crossings[i].closed`), cars stop at a line
 at a hard brake goes on through, as a driver would at a late signal. Traffic
 finds where each crossing sits on each way again when track or roads change.
 
+## Crosswalks and Walk signals
+
+People on foot find their way over a graph of sidewalk ends. They walk along
+a block, round a corner to the next road's sidewalk, or cross a road on the
+crosswalk at the junction, where the sidewalk stops at the stop line. They
+never cross mid-block or through the middle of the junction. Each crossing
+costs 10 m extra, so people don't zig-zag. At a signal, a walker waits at
+the kerb until the cars coming in on the road they cross have a red (the
+MUTCD's Walk with the parallel green). The lights run on a fixed cycle, so
+the waits are worked out when the walk starts and stored as `holds`
+([metres along, steps]) on the walker. No per-tick work is added.
+
 ## Walks on the trail
 
 People at home go out for a walk on the trail now and then. In the daytime,
