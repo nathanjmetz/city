@@ -134,6 +134,18 @@ func is_occupied(c: Vector2i) -> bool:
 	return _occupied.has(c)
 
 
+## The cells something stands on, leaving out the things whose source key
+## `skip` accepts (a logging company leaves out its own yard and stands).
+func built_cells(skip: Callable) -> Dictionary:
+	var out := {}
+	for key in _sources:
+		if skip.call(key):
+			continue
+		for c in _sources[key]:
+			out[c] = true
+	return out
+
+
 static func cell_of(p: Vector3) -> Vector2i:
 	return Vector2i(floori(p.x / CELL), floori(p.z / CELL))
 
