@@ -134,6 +134,10 @@ var _sim: CitySim
 var _places := {}     # place ref -> place (see place())
 var _sites := {}      # place ref -> dispatch endpoint, for places off the lots
 var _extra := {}      # place ref -> spots added beyond its layout, in order (_add_spot)
+## Streets closed to cars (a pedestrian plaza): segment -> who may still
+## drive in to deliver: "never", "night" (10 pm to 6 am) or "always".
+var closed := {}
+var _truck_plan := false  # the route being planned is for a truck (close_segment)
 var _walk_lines := {} # segment * 2 + side -> sidewalk line
 var _next_trip := 1
 var _next_walker := 1
@@ -358,7 +362,7 @@ func to_dict() -> Dictionary:
 	var state := {"cars": list, "waiting": _waiting.size(), "next_id": _next_id, "time": time,
 		"gave_up": gave_up, "speed": _speed, "dirty": _dirty, "arrivals": arrivals, "failed": failed,
 		"parked": parked, "walkers": walkers, "next_trip": _next_trip, "next_walker": _next_walker,
-		"sites": _sites, "extra": _extra}
+		"sites": _sites, "extra": _extra, "closed": closed}
 	# Binary, so every float comes back exactly and copies stay in step
 	# (var_to_str rounds to 15 digits).
 	return {"bin": Marshalls.variant_to_base64(state)}
@@ -371,6 +375,7 @@ func from_dict(d: Dictionary) -> void:
 	walkers.clear()
 	_sites.clear()
 	_extra.clear()
+	closed.clear()
 	_places.clear()
 	parked_version += 1
 	_dirty = true
@@ -398,6 +403,7 @@ func from_dict(d: Dictionary) -> void:
 	_next_walker = state.get("next_walker", 1)
 	_sites = state.get("sites", {})
 	_extra = state.get("extra", {})
+	closed = state.get("closed", {})
 	_places.clear()
 	parked_version += 1
 	# Junction paths are rebuilt from the roads; keep every car's plan as it
@@ -851,6 +857,8 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 			var nx: int = outs[k]
 			if first and not _arrows[u][nx].has(lane):
 				continue
+			if not closed.is_empty() and not may_enter(nx >> 1, _truck_plan):
+				continue
 			var e: float = g + tc[k]
 			if targets.has(nx):
 				var cand: float = e + targets[nx] / ways[nx].vmax + pen.get(nx, 0.0)
@@ -991,7 +999,9 @@ func _replan(car: Dictionary, lane := -1) -> bool:
 	if targets.is_empty():
 		return false
 	var wid: int = car.route[car.leg]
+	_truck_plan = car.len > 6.5
 	var route := _plan([[wid, car.d]], targets, lane, _side_pen(car.goal.seg, car.goal.get("side", 1)))
+	_truck_plan = false
 	if route.is_empty():
 		return false
 	car.route = route
@@ -1148,7 +1158,9 @@ func _replan_start(car: Dictionary, from_stop: Dictionary) -> bool:
 		if pl.is_empty():
 			return false
 		car.to_stop = pl.stop
+	_truck_plan = car.len > 6.5
 	var trip := _route(from_stop, car.to_stop)
+	_truck_plan = false
 	if trip.is_empty():
 		return false
 	car.merge(trip, true)
@@ -1359,6 +1371,33 @@ func move(vid: int, to: Dictionary, purpose: String, cargo := {}) -> int:
 
 
 ## Remembers a dispatch endpoint as a place; returns its ref ("" if no road).
+## Closes a road piece to cars without removing it, as for a pedestrian
+## plaza (or opens it again). The lots along it keep their frontage; cars
+## route around it and park nearby, and trucks may still drive in to
+## deliver: `deliveries` is "never", "night" (10 pm to 6 am) or "always".
+func close_segment(seg: int, on: bool, deliveries := "night") -> void:
+	if on:
+		closed[seg] = deliveries
+	else:
+		closed.erase(seg)
+	_dirty = true  # every car on the road finds its way again
+
+
+## Whether a vehicle may drive on a road piece now (see close_segment).
+func may_enter(seg: int, truck: bool) -> bool:
+	if not closed.has(seg):
+		return true
+	if not truck:
+		return false
+	match str(closed[seg]):
+		"always":
+			return true
+		"night":
+			var hour: int = _sim.clock().hour if _sim != null else 12
+			return hour >= 22 or hour < 6
+	return false
+
+
 ## Makes a dispatch endpoint {"ref", "pos"} a place vehicles can be based
 ## at and driven to (a bus stop, a yard). Returns its place ref, or "" if
 ## no road is near.
@@ -1718,7 +1757,7 @@ func _parking_near(pl: Dictionary, vid: int) -> Array:
 		if d >= best_d:
 			continue
 		var other := place("lot:" + key)
-		if other.is_empty() or other.ref == pl.ref:
+		if other.is_empty() or other.ref == pl.ref or closed.has(int(other.stop.get("seg", -1))):
 			continue
 		for i in other.spots.size():
 			if other.taken[i] == -1 and other.spots[i].kind == "stall":
@@ -1817,21 +1856,36 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 			a = _curb_start(from_pl.spots[car.spot], a)
 		else:
 			a = _out_way(from_pl, car.spot, a)
-	var trip := _route(a, to_pl.stop)
-	if trip.is_empty():
+	# A place on a street closed to cars (a plaza): drivers park nearby and
+	# walk; trucks drive in only when deliveries are allowed.
+	var truck: bool = car.len > 6.5
+	var shut: bool = not to_pl.get("edge", false) and to_pl.stop.has("seg") \
+		and not may_enter(int(to_pl.stop.seg), truck)
+	if shut and after.get("driver", -1) == -1:
+		return false
+	_truck_plan = truck
+	var trip := {} if shut else _route(a, to_pl.stop)
+	_truck_plan = false
+	if trip.is_empty() and not shut:
 		return false
 	var spot := -1
 	var park_ref: String = to_pl.ref
 	if not to_pl.get("edge", false):
-		spot = _reserve(to_pl, car.id, car.len > 6.5)
+		spot = -1 if shut else _reserve(to_pl, car.id, truck)
 		if spot < 0 and after.get("driver", -1) != -1:
 			var alt := _parking_near(to_pl, car.id)
 			if not alt.is_empty():
-				park_ref = alt[0]
-				spot = alt[1]
-				var alt_trip := _route(a, place(park_ref).stop)
+				_truck_plan = truck
+				var alt_trip := _route(a, place(alt[0]).stop)
+				_truck_plan = false
 				if not alt_trip.is_empty():
+					park_ref = alt[0]
+					spot = alt[1]
 					trip = alt_trip
+				else:
+					_release(alt[0], alt[1], car.id)
+		if shut and trip.is_empty():
+			return false
 		if spot < 0:
 			# Nowhere to park: double-park at the curb out front, as delivery
 			# trucks do, or (for a car) take a curb space anyway.
