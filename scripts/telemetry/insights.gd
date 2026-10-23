@@ -213,7 +213,8 @@ static func _speed_fixes(ev: Dictionary, fixes: Array) -> void:
 			"The game died or hung and was force quit; each session's last actions are in its replay.",
 			PERF_OWNER, "speed", _who(crashes), crashes)
 	# Whole-second freezes: the game looks hung to the player.
-	var stalls: Array = ev.get("stall", [])
+	# (Older games counted a sleeping machine as one long freeze.)
+	var stalls: Array = ev.get("stall", []).filter(func(x): return int(x.get("ms", 0)) < 30000)
 	if not stalls.is_empty():
 		var longest: Dictionary = stalls[0]
 		for one in stalls:

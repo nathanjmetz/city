@@ -24,6 +24,9 @@ const PERF_EVERY := 15.0
 const HITCH := 0.1
 ## A frame this long (seconds) is a freeze the player sees: sent at once.
 const STALL := 1.0
+## A gap this long (seconds) is the game not running at all (the machine
+## slept, the window was hidden or minimized), not a freeze.
+const SUSPENDED := 30.0
 ## The outbox keeps at most this many batches (oldest dropped first).
 const OUTBOX_MAX := 300
 ## Batches sent per flush, and how long to wait for the server to confirm.
@@ -242,6 +245,9 @@ func _process(delta: float) -> void:
 	var pipes := _pipelines()
 	var compiled := pipes - _pipes_frame
 	_pipes_frame = pipes
+	if dt > SUSPENDED:
+		event("suspended", {"s": snappedf(dt, 0.1)})
+		dt = delta
 	_frames += 1
 	if not LoadingScreen.is_open():
 		_worst = maxf(_worst, dt)
