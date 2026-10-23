@@ -58,6 +58,7 @@ jobs:
           ~/godot-cache/godot --headless -s tests/test_sim.gd
           ~/godot-cache/godot --headless -s tests/test_water.gd
           ~/godot-cache/godot --headless -s tests/test_advisor.gd
+          ~/godot-cache/godot --headless -s tests/test_pad.gd
           ~/godot-cache/godot --headless -s tests/test_road_tools.gd
           ~/godot-cache/godot --headless -s tests/test_grid_fill.gd
           ~/godot-cache/godot --headless -s tests/test_move_it.gd

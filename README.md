@@ -53,6 +53,23 @@ The camera uses the Cities: Skylines 2 default keys:
 | R / F, scroll, or pinch | Zoom. |
 | Middle mouse drag, or Option (Alt) + drag on a Mac trackpad | Rotate and tilt. |
 
+Any game controller works too (Xbox, PlayStation, Switch Pro and most others, wired or wireless, in the browser or the desktop builds), like the console editions of Cities: Skylines. Press any button to wake it; the button prompts match the pad in hand. Moving the mouse switches back.
+
+| Controller | What it does |
+| --- | --- |
+| Left stick | Move the cursor. Push it against the screen edge to move the map. |
+| Right stick | Rotate and tilt (scrolls a list when the cursor is over one). |
+| LT / RT | Zoom out / in. |
+| A | Click. Hold to drag or paint zones. |
+| B | Back, like Esc. |
+| X | Cancel, like a right click. |
+| Y | Tool wheel: point the left stick at a category, press A. |
+| LB / RB | Smaller / bigger, like `[` `]`. |
+| D-pad up / down | Raise / lower new roads. |
+| D-pad left / right | Slower / faster. |
+| Click the left stick | Hold for Shift (snap angles). |
+| Menu (Start) / View (Back) | Pause menu / pause the clock. |
+
 Roads snap to junctions and to other roads, and crossing roads make a junction.
 Road rules come from US standards (AASHTO): grades up to 12% on streets, 8% on ramps and 5% on highways, and 16.5 ft (5 m) of clearance where one road passes over another. The drawing label shows the safe speed of each curve.
 While drawing, a straight road snaps straight on or at 90° to the road it starts from, with a guide line, and shows its length in metres and feet.
