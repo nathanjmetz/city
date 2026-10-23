@@ -1088,6 +1088,23 @@ const LAND_CELL := 100.0
 ## metres; about 0.7 acre, a US "mini park") and what the city pays for it.
 const PARK_START_SIZE := Vector2(60, 50)
 const PARK_COST := 250_000
+## The park sizes the player picks from, after the NRPA park classes (Mertes
+## and Hall, Park, Recreation, Open Space and Greenway Guidelines): a mini
+## park is under an acre and serves a few blocks; a neighborhood park is
+## about 5 acres for a half-mile walk; a community park is 20 acres or more
+## and draws from 1 to 3 miles. `size` is the first ground (width along the
+## road x depth, metres), `reach` stretches how far it lifts land value and
+## happiness, and `max_acres` is as big as it grows by itself (the hub cap).
+## Costs run about $150,000 to $340,000 an acre to build (US parks
+## departments), cheaper an acre the bigger the lawn.
+const PARK_SIZES := [
+	{"name": "Pocket", "size": PARK_START_SIZE, "cost": PARK_COST, "reach": 1.0, "max_acres": 4.5,
+		"about": "Pocket park, about 3/4 acre: a playground and benches for a few blocks (NRPA mini park)"},
+	{"name": "Neighborhood", "size": Vector2(150, 135), "cost": 1_000_000, "reach": 1.6, "max_acres": 15.0,
+		"about": "Neighborhood park, 5 acres: a ball diamond, court and shelter for a half-mile walk (NRPA)"},
+	{"name": "Community", "size": Vector2(300, 270), "cost": 3_000_000, "reach": 3.0, "max_acres": 50.0,
+		"about": "Community park, 20 acres: ball fields and a pond, drawing from 1 to 3 miles (NRPA)"},
+]
 ## Town land a park buys when it grows, dollars an acre (Midwestern town
 ## land outside downtown).
 const PARK_LAND_PER_ACRE := 15_000

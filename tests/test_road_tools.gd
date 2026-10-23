@@ -107,8 +107,23 @@ func _init() -> void:
 	var big := CitySim.new()
 	big.apply({"type": "build_roundabout", "center": [0, 0], "radius": 14, "road": RoadStyle.Type.AVENUE})
 	var c0: Array = big.network.curve_of(big.network.segments.keys()[0])
-	_check(big.network.segments.values()[0].type == RoadStyle.Type.RING2 and absf(c0[0].length() - 23.0) < 0.5,
+	_check(big.network.segments.values()[0].type == RoadStyle.Type.RING2 and absf(c0[0].length() - RoadShapes.radius_for_icd(150.0 / 3.28084, RoadStyle.Type.RING2)) < 0.5,
 		"avenue roundabout is two lanes, at least 150 ft across (FHWA)")
+	# The size row: each real FHWA size builds at its own diameter and lanes.
+	for size in RoadShapes.ROUNDABOUT_SIZES:
+		var ring := RoadShapes.ring_for_lanes(int(size.lanes))
+		var rs := CitySim.new()
+		rs.apply({"type": "build_roundabout", "center": [0, 0], "lanes": size.lanes,
+			"radius": RoadShapes.radius_for_icd(float(size.icd) / 3.28084, ring)})
+		var first: Dictionary = rs.network.segments.values()[0]
+		var r0: float = rs.network.curve_of(rs.network.segments.keys()[0])[0].length()
+		_check(first.type == ring and absf(RoadShapes.icd_of(r0, ring) * 3.28084 - float(size.icd)) < 2.0,
+			"%s roundabout is %d ft across with %d lane(s)" % [size.name, size.icd, size.lanes])
+		_check(RoadShapes.is_mini(r0, ring) == (float(size.icd) <= 90.0), "%s: mini only at 90 ft or less" % size.name)
+	var one := CitySim.new()
+	one.apply({"type": "build_roundabout", "center": [0, 0], "lanes": 1, "radius": 200})
+	_check(RoadShapes.icd_of(one.network.curve_of(one.network.segments.keys()[0])[0].length(), RoadStyle.Type.RING) * 3.28084 < 181.0,
+		"a one-lane roundabout tops out at 180 ft (NCHRP 672)")
 	_check(not rb.apply({"type": "upgrade_road", "seg": rb.network.segments.keys()[0], "road": RoadStyle.Type.RING}),
 		"no upgrading to ring types")
 	# Old saves: two-way rings become real roundabouts on load.

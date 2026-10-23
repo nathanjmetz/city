@@ -86,8 +86,15 @@ func policy(id: int, slider: String, list: Array) -> float:
 	return policies.pick(list, slider, "parks", "park:%d" % id)
 
 
-static func size_of(kind: String) -> Vector2:
-	return Balance.PARK_START_SIZE if kind == "park" else Balance.AMENITIES[kind].size
+## First ground for a kind; a park's comes from its size class
+## (Balance.PARK_SIZES), landmarks have one real size each.
+static func size_of(kind: String, size_class := 0) -> Vector2:
+	return park_size(size_class).size if kind == "park" else Balance.AMENITIES[kind].size
+
+
+## One of Balance.PARK_SIZES, clamped to the list.
+static func park_size(size_class: int) -> Dictionary:
+	return Balance.PARK_SIZES[clampi(size_class, 0, Balance.PARK_SIZES.size() - 1)]
 
 
 ## How a site's building goes up (Construction.PROFILES), or "" for a park
@@ -98,8 +105,8 @@ static func profile_of(kind: String) -> String:
 	return "shop" if KINDS.get(kind, {}).get("auto", false) else "civic"
 
 
-static func cost_of(kind: String) -> int:
-	return int(Balance.AMENITIES[kind].cost)
+static func cost_of(kind: String, size_class := 0) -> int:
+	return int(park_size(size_class).cost) if kind == "park" else int(Balance.AMENITIES[kind].cost)
 
 
 ## The four corners of a footprint on the ground.
@@ -114,7 +121,7 @@ static func corners(pos: Vector3, dir: Vector3, size: Vector2) -> PackedVector2A
 
 ## Where a park or landmark goes when placed beside the road nearest `hit`:
 ## [centre, dir toward the road], or [] if no road is near.
-static func site_near(network: RoadNetwork, kind: String, hit: Vector3) -> Array:
+static func site_near(network: RoadNetwork, kind: String, hit: Vector3, size_class := 0) -> Array:
 	var near := network.find_segment_near(hit, 90.0, 1.0)
 	if near.is_empty() or not RoadStyle.TYPES[network.segments[near.seg].type].lots:
 		return []
@@ -127,7 +134,7 @@ static func site_near(network: RoadNetwork, kind: String, hit: Vector3) -> Array
 	if (hit - p).dot(normal) < 0.0:
 		normal = -normal
 	var front := RoadStyle.right_of_way_half(network.segments[near.seg].type) + SETBACK
-	return [Vector3(p.x, 0.0, p.z) + normal * (front + size_of(kind).y * 0.5), -normal]
+	return [Vector3(p.x, 0.0, p.z) + normal * (front + size_of(kind, size_class).y * 0.5), -normal]
 
 
 ## Why this ground can't be taken, or "" if it can. `skip` is a site to
@@ -171,14 +178,14 @@ func ground_problem(sim: CitySim, poly: PackedVector2Array, skip := -1) -> Strin
 
 
 ## Why a park or landmark can't go here, or "" if it can.
-func site_problem(sim: CitySim, kind: String, pos: Vector3, dir: Vector3) -> String:
+func site_problem(sim: CitySim, kind: String, pos: Vector3, dir: Vector3, size_class := 0) -> String:
 	if not KINDS.has(kind):
 		return "Unknown kind."
 	if KINDS[kind].get("auto", false):
 		return "That opens by itself when visitors come."
 	if KINDS[kind].landmark and has_kind(kind):
 		return "The town already has its %s (one per town)." % KINDS[kind].name.to_lower()
-	return ground_problem(sim, corners(pos, dir, size_of(kind)))
+	return ground_problem(sim, corners(pos, dir, size_of(kind, size_class)))
 
 
 func has_kind(kind: String) -> bool:
@@ -188,11 +195,12 @@ func has_kind(kind: String) -> bool:
 	return false
 
 
-func add(sim: CitySim, kind: String, pos: Vector3, dir: Vector3) -> int:
+func add(sim: CitySim, kind: String, pos: Vector3, dir: Vector3, size_class := 0) -> int:
 	var id := _next_id
 	_next_id += 1
-	var size := size_of(kind)
+	var size := size_of(kind, size_class)
 	var s := {"kind": kind, "name": _new_name(kind, id), "pos": pos, "dir": dir, "size": size,
+		"class": clampi(size_class, 0, Balance.PARK_SIZES.size() - 1) if kind == "park" else 0,
 		"start_area": size.x * size.y, "founded": sim.tick_count, "features": [], "score": 0.5, "tier": -1,
 		"next_feature": sim.tick_count + Balance.PARK_DECIDE_EVERY, "grew": 0,
 		"leader": _hire(sim, hash([sim.city_seed, id, kind])), "why": ""}
@@ -330,6 +338,13 @@ func distance_to(id: int, p: Vector3) -> float:
 	return Vector2(u, v).length()
 
 
+## How far past a pocket park's reach this site's pull goes (a community
+## park draws from further off than a tot lot).
+func reach_of(id: int) -> float:
+	var s: Dictionary = sites[id]
+	return float(park_size(int(s.get("class", 0))).reach) if s.kind == "park" else 1.0
+
+
 ## The lift every park and landmark gives at a point: "value" or "happy".
 func lift_at(p: Vector3, effect: String, skip := -1) -> float:
 	var total := 0.0
@@ -337,7 +352,7 @@ func lift_at(p: Vector3, effect: String, skip := -1) -> float:
 		if id == skip:
 			continue
 		var a: Dictionary = Balance.AMENITIES[sites[id].kind]
-		var reach: float = a[effect + "_reach"]
+		var reach: float = a[effect + "_reach"] * reach_of(id)
 		var d := distance_to(id, p)
 		if d < reach:
 			total += (float(a[effect]) * quality(id) + tree_lift(id, effect)) * (1.0 - d / reach)
@@ -353,8 +368,9 @@ func update_effects(sim: CitySim) -> void:
 	for id in sites:
 		var a: Dictionary = Balance.AMENITIES[sites[id].kind]
 		var q := quality(id)
-		coefs[id] = [float(a.value) * q + tree_lift(id, "value"), float(a.value_reach),
-			float(a.happy) * q + tree_lift(id, "happy"), float(a.happy_reach)]
+		var r := reach_of(id)
+		coefs[id] = [float(a.value) * q + tree_lift(id, "value"), float(a.value_reach) * r,
+			float(a.happy) * q + tree_lift(id, "happy"), float(a.happy_reach) * r]
 	var sig := [sites.hash(), coefs, sim.buildings.size(), sim.lots.size(), trails.paths.size(), trails.lanes.size()]
 	if sig == _effects_key and is_same(sim.lots, _effects_lots):
 		return
@@ -615,7 +631,8 @@ func _grow(sim: CitySim, id: int, need := Vector2.ZERO, extra := 0.0) -> bool:
 	var s: Dictionary = sites[id]
 	var step := Balance.PARK_GROW_STEP
 	var side := Vector3(-s.dir.z, 0.0, s.dir.x)
-	var cap := float(s.start_area) * Balance.HUB_MAX_GROWTH + extra
+	var cap := minf(float(s.start_area) * Balance.HUB_MAX_GROWTH,
+		float(park_size(int(s.get("class", 0))).max_acres) * 4046.86) + extra
 	for f in s.features:
 		var t := node(f.type)
 		if not t.is_empty():
@@ -692,7 +709,7 @@ func road_wins(sim: CitySim, corr: Array) -> bool:
 			continue
 		changed = true
 		if s.kind != "park":
-			sim.economy.money += cost_of(s.kind)
+			sim.economy.money += cost_of(s.kind, int(s.get("class", 0)))
 			sites.erase(id)
 			continue
 		var side := Vector3(-s.dir.z, 0.0, s.dir.x)
@@ -756,7 +773,7 @@ func to_dict() -> Dictionary:
 		for f in s.features:
 			fs.append([f.type, f.pos.x, f.pos.z, f.size.x, f.size.y])
 		out[str(id)] = {"kind": s.kind, "name": s.name, "pos": [s.pos.x, s.pos.z], "dir": [s.dir.x, s.dir.z],
-			"size": [s.size.x, s.size.y], "start_area": s.start_area, "founded": s.founded, "features": fs,
+			"size": [s.size.x, s.size.y], "class": s.get("class", 0), "start_area": s.start_area, "founded": s.founded, "features": fs,
 			"score": s.score, "tier": s.tier, "next_feature": s.next_feature, "grew": s.grew,
 			"leader": s.leader, "why": s.why}
 	return {"next_id": _next_id, "sites": out, "tourism": tourism.to_dict(), "trails": trails.to_dict()}
@@ -773,6 +790,7 @@ func from_dict(d: Dictionary) -> void:
 			fs.append({"type": str(f[0]), "pos": Vector3(f[1], 0.0, f[2]), "size": Vector2(f[3], f[4])})
 		sites[int(k)] = {"kind": str(e.kind), "name": str(e.name), "pos": Vector3(e.pos[0], 0.0, e.pos[1]),
 			"dir": Vector3(e.dir[0], 0.0, e.dir[1]).normalized(), "size": Vector2(e.size[0], e.size[1]),
+			"class": int(e.get("class", 0)),
 			"start_area": float(e.start_area), "founded": int(e.get("founded", e.get("built", 0))), "features": fs, "score": float(e.score),
 			"tier": int(e.tier), "next_feature": int(e.next_feature), "grew": int(e.grew),
 			"leader": _leader(e.get("leader", {})), "why": str(e.get("why", ""))}
