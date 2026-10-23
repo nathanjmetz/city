@@ -2,7 +2,8 @@ extends SceneTree
 ## Renders a test town with a rail depot, its main line and a spur to a mine
 ## (permits approved, a bold leader), to check how the railroad looks.
 ## Run: xvfb-run godot -s tools/rail_shot.gd -- out.png yaw pitch dist [focus] [days]
-## focus: yard (default), crossing, train, or x,z.
+## focus: yard (default), crossing, train, pax, or x,z. Add "pax" after days
+## for passenger service and a station.
 
 var _main: Node
 var _frames := 0
@@ -63,7 +64,13 @@ func _town() -> void:
 	d.leader.ambition = 1.0
 	d.leader.caution = 0.1
 	var days := int(args[5]) if args.size() > 5 else 20
+	var pax := args.size() > 6 and args[6] == "pax"
 	for i in 24 * 60 * days:
+		if pax and i == 24 * 60 * 9 and not d.pax:
+			# Passenger service and a station, as a bigger town would have.
+			d.pax = true
+			d.pax_train = sim.rail._new_train(did, "passenger")
+			d.built.append("station")
 		sim.tick()
 		if i % 60 == 0:
 			for lid in sim.rail.open_requests():
@@ -78,6 +85,9 @@ func _town() -> void:
 			_focus = d.pos
 		"crossing":
 			_focus = sim.rail.crossings[0].pos if not sim.rail.crossings.is_empty() else d.pos
+		"pax":
+			var poses := sim.rail.car_poses(d.pax_train)
+			_focus = poses[0][1] if not poses.is_empty() else d.pos
 		"train":
 			var poses := sim.rail.car_poses(d.freight_train)
 			_focus = poses[0][1] if not poses.is_empty() else d.pos
