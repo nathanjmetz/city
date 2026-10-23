@@ -52,7 +52,17 @@ static func _load() -> void:
 	_loaded = true
 	for name in ["ground", "base", "wlevel", "cover", "resources"]:
 		var img := Image.new()
-		var err := img.load_png_from_buffer(FileAccess.get_file_as_bytes(DIR + name + ".bin"))
+		var bytes := FileAccess.get_file_as_bytes(DIR + name + ".bin")
+		var err: int
+		# Lossless WebP (about 30% smaller to download) or PNG. WebP has no
+		# grey-plus-alpha mode, so height layers come back as RGBA with
+		# R = G = B and are packed back into two bytes a sample.
+		if bytes.slice(0, 4).get_string_from_ascii() == "RIFF":
+			err = img.load_webp_from_buffer(bytes)
+			if err == OK and name in ["ground", "base", "wlevel"]:
+				img.convert(Image.FORMAT_LA8)
+		else:
+			err = img.load_png_from_buffer(bytes)
 		if err != OK:
 			push_error("Terrain: can't load %s (%d)" % [name, err])
 			img = Image.create(2, 2, false, Image.FORMAT_RGBA8)
