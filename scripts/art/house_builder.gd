@@ -884,6 +884,28 @@ func _front_door(x: float, zf: float, sill: float, c: Color) -> void:
 	_box("paint", Vector3(0.14, 0.26, 0.1), Vector3(x + 0.85, sill + 1.75, zf - 0.06), Color("#1c1c1c"))
 
 
+## A hollow-metal service door (3 ft x 7 ft, flush steel, as on every shop
+## back and utility building): pressed-steel frame, lever at 38 in, a
+## surface closer at the head, a wall-pack light above and a concrete stoop.
+## `c` is the door's centre on the wall face; `out_z` is the wall's outward
+## z direction (+1 or -1).
+func _steel_door(c: Vector3, out_z: float, col := Color("#5a5e60")) -> void:
+	var o := out_z
+	var bottom := c.y - 1.05
+	var frame := col.darkened(0.25)
+	_box("paint", Vector3(0.92, 2.1, 0.06), c, col)
+	_box("paint", Vector3(1.12, 0.1, 0.1), Vector3(c.x, bottom + 2.15, c.z + o * 0.02), frame)
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(0.1, 2.2, 0.1), Vector3(c.x + s * 0.51, bottom + 1.1, c.z + o * 0.02), frame)
+	_box("metal", Vector3(0.14, 0.03, 0.05), Vector3(c.x + 0.3, bottom + 0.97, c.z + o * 0.06), Color("#a9acae"))
+	_box("metal", Vector3(0.3, 0.07, 0.07), Vector3(c.x - 0.22, bottom + 1.98, c.z + o * 0.07), Color("#8a8c8e"))
+	_box("metal", Vector3(0.26, 0.2, 0.14), Vector3(c.x, bottom + 2.55, c.z + o * 0.07), Color("#2a2b2c"))
+	_box("paint", Vector3(0.2, 0.06, 0.02), Vector3(c.x, bottom + 2.47, c.z + o * 0.145), Color("#e8e2c8"))
+	if bottom > 0.05:
+		# 4 cm proud of any slab it meets so the two tops don't flicker.
+		_box("paint", Vector3(1.5, bottom + 0.04, 1.1), Vector3(c.x, (bottom + 0.04) * 0.5, c.z + o * 0.61), Color("#b9b5ab"))
+
+
 func _garage(gx: float, gz0: float, gw: float, h: float) -> void:
 	var doors := [[gx, gw - 1.7]] if gw > 5.0 else [[gx, gw - 1.2]]
 	if gw > 8.0:
