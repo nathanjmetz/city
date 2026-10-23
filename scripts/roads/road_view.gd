@@ -234,11 +234,12 @@ func _rebuild_all(gen: int) -> void:
 			var key := [pts, type, rural, seg_gaps, Terrain.shift]
 			var cached: Array = _street_cache.get(id, [])
 			if cached.is_empty() or cached[0] != key:
-				if (sliced or not cached.is_empty() and cached[0][0] == pts) and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+				if (sliced or not cached.is_empty()) and (Perf.now() - t0) / 1000.0 > REMESH_MS:
 					# When the town edge moves, many streets turn from country
-					# road to town street at once; a street that didn't move
-					# keeps its old look a few frames while they're redrawn.
-					# A neighbor's new streets just appear a few frames late.
+					# road to town street at once (and their corners trim
+					# them); a street keeps its old look a few frames while
+					# they're redrawn. A new street is drawn at once, except a
+					# neighbor's, which just appears a few frames late.
 					_later[id] = [key, pts, type, seg_gaps, rural]
 				else:
 					cached = [key, Terrain.drape(RoadMesh.street(pts, type, _mats, seg_gaps, rural))]
