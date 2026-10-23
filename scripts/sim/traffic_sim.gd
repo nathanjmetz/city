@@ -135,6 +135,8 @@ var _xings := {}     # way -> [[s along the way, rail crossing]] (_find_xings)
 var _by_vid := {}    # vehicle id -> its record in `parked`
 var _due := {}       # tick -> parked vehicles due to head off then (_due_at)
 var _pend := {}      # vehicle id -> parked vehicle waiting for a gap to pull out
+var _slow := {}      # ways whose _speed is below 1 (or has cars), kept up to date each tick
+var _slow_ok := -1   # the lane version _slow was gathered on
 var _pseq := {}      # vehicle id -> its place in `parked` order (for _rest)
 var _next_pseq := 0
 var _xing_key := []
@@ -442,6 +444,7 @@ func from_dict(d: Dictionary) -> void:
 	time = state.time
 	gave_up = state.gave_up
 	_speed = state.speed
+	_slow_ok = -1
 	arrivals = state.arrivals
 	failed = state.failed
 	parked = state.get("parked", [])
@@ -2825,14 +2828,30 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 		cars.erase(car)
 	# Snapped so the value survives a save and load exactly (saves and region
 	# snapshots must give the same city).
-	for wid in _speed:
+	# Only roads with cars on them or still recovering from a jam change;
+	# the rest are at the limit already.
+	if _slow_ok != version:
+		_slow_ok = version
+		_slow.clear()
+		for wid in _speed:
+			if _speed[wid] < 1.0:
+				_slow[wid] = true
+	for wid in way_sum:
+		if _speed.has(wid):
+			_slow[wid] = true
+	for wid in _slow.keys():
+		var sp: float
 		if way_sum.has(wid):
-			_speed[wid] = snappedf(lerpf(_speed[wid], way_sum[wid][0] / way_sum[wid][1], 0.05), 0.000001)
+			sp = snappedf(lerpf(_speed[wid], way_sum[wid][0] / way_sum[wid][1], 0.05), 0.000001)
 		else:
-			_speed[wid] = snappedf(lerpf(_speed[wid], 1.0, 0.02), 0.000001)
+			sp = snappedf(lerpf(_speed[wid], 1.0, 0.02), 0.000001)
+		if sp > 0.9999:
+			sp = 1.0  # all but recovered (snapping would leave it just short)
+			_slow.erase(wid)
+		_speed[wid] = sp
 		if ways.has(wid):
 			var sw: Dictionary = ways[wid]
-			_wcost[wid] = sw.len / (sw.vmax * maxf(_speed[wid], 0.15))
+			_wcost[wid] = sw.len / (sw.vmax * maxf(sp, 0.15))
 	flow = 1.0 if limit_sum == 0.0 else clampf(speed_sum / limit_sum, 0.0, 1.0)
 
 
