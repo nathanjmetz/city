@@ -33,12 +33,11 @@ const REAR_CAP := 40.0
 
 ## Real lot sizes in metres (zone ints match ZoneMap.Zone: 1 homes, 2 shops,
 ## 3 industry). w: width range along the street; cap: usual depth;
-## min_d: shallowest buildable lot. Homes are post-war Midwestern suburban
-## lots (60 to 85 ft wide, 130 ft deep), shops and plants the sizes the
-## current building art fits.
+## min_d: shallowest buildable lot. Homes and shops run 50 to 80 ft wide
+## (real Midwestern town and suburban lots, 130 ft deep); plants are wider.
 const SIZES := {
-	1: {"w": [18.0, 26.0], "cap": 40.0, "min_d": 18.0, "flags": true},
-	2: {"w": [18.0, 24.0], "cap": 38.0, "min_d": 18.0, "flags": false},
+	1: {"w": [15.0, 24.0], "cap": 40.0, "min_d": 18.0, "flags": true},
+	2: {"w": [15.0, 24.0], "cap": 38.0, "min_d": 18.0, "flags": false},
 	3: {"w": [26.0, 44.0], "cap": 60.0, "min_d": 26.0, "flags": false},
 }
 ## The most a lot can grow to by merging: [frontage m, area m²], from typical

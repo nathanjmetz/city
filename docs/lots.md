@@ -18,7 +18,8 @@ so every bit of a block goes to its nearest street and the backs of the lots
 meet in the middle. Lines along a curve fan out, so lots on bends come out
 pie-shaped. The frontage is then cut into lots:
 
-- Widths vary within real ranges per zone (`SIZES`), scaled by neighbourhood
+- Widths vary within real ranges per zone (`SIZES`; homes and shops 15 to
+  24 m, 50 to 80 ft), scaled by neighbourhood
   wealth (`CitySim.wealth_at`, 0.85x to 1.3x).
 - Corner lots are platted wider, and the two halves of a corner join into one
   lot with frontage on both streets. It fronts the busier street.

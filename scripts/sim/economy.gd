@@ -66,7 +66,10 @@ func building_tax(b: Dictionary, staffed: float, lift := 0.0) -> float:
 	var used := staffed
 	if z == ZoneMap.Zone.RESIDENTIAL:
 		used = float(b.occ) / maxf(b.cap, 1.0)
-	return value * (0.5 + 0.5 * used) * tax[z] / 100.0
+	var flats := float(b.get("flats", 0))
+	# Flats above a shop are assessed like homes, at the shop's rate.
+	var homes: float = VALUE_PER_PLACE[ZoneMap.Zone.RESIDENTIAL] * flats * (0.5 + 0.5 * float(b.get("focc", 0)) / maxf(flats, 1.0))
+	return (value * (0.5 + 0.5 * used) + homes) * tax[z] / 100.0
 
 
 ## Works out this month's budget from the buildings and roads.
@@ -99,11 +102,13 @@ func update_budget(sim: CitySim) -> void:
 	# So do warehouses.
 	income[ZoneMap.Zone.INDUSTRIAL] += sim.warehouses.taxable_value() * tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
 	income[ZoneMap.Zone.INDUSTRIAL] += sim.power.taxable_value() * tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
-	# Offices that opened for the town's graduates pay commercial property tax
-	# (campuses themselves are tax-exempt, as in real life).
 	# Bank buildings pay commercial property tax too.
 	income[ZoneMap.Zone.COMMERCIAL] += sim.banks.taxable_value() * tax[ZoneMap.Zone.COMMERCIAL] / 100.0 / 12.0
-	income[ZoneMap.Zone.COMMERCIAL] += sim.education.office_jobs() * Balance.EDUCATION_OFFICE_VALUE \
+	# Offices that opened for the town's graduates pay commercial property tax
+	# (campuses themselves are tax-exempt, as in real life). Office buildings
+	# pay their own tax, so only the jobs not yet in one count here.
+	income[ZoneMap.Zone.COMMERCIAL] += maxi(0, sim.education.office_jobs() - BuildingTypes.office_jobs(sim)) \
+		* Balance.EDUCATION_OFFICE_VALUE \
 		* tax[ZoneMap.Zone.COMMERCIAL] / 100.0 / 12.0
 	var upkeep := 0.0
 	for id in sim.network.segments:

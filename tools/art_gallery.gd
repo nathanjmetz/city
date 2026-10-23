@@ -1,7 +1,9 @@
 extends SceneTree
 ## Renders a row of generated buildings on a plain street for the art
 ## realism loop, so they can be compared side by side with real photos.
-## Run: godot -s tools/art_gallery.gd -- out.png [house|shop|factory] [seed] [yaw pitch dist]
+## Run: godot -s tools/art_gallery.gd -- out.png [kind] [seed] [yaw pitch dist]
+## Kinds: house, shop, factory, row, apartments, mixed, office, main (a
+## Main Street of mixed blocks, storeys 2 to 4), types (one of each type).
 
 var _frames := 0
 
@@ -17,7 +19,7 @@ func _init() -> void:
 	# A street along x in front of the lots (lots face -z, toward it).
 	var road := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(140, 9.0)
+	plane.size = Vector2(260, 9.0)
 	road.mesh = plane
 	road.material_override = Surfaces.asphalt()
 	road.position = Vector3(0, 0.09, -8.4)
@@ -36,13 +38,24 @@ func _init() -> void:
 				mi.mesh = m
 				mi.position = part[1]
 				world.add_child(mi)
+	var x := -50.0
 	for i in (0 if kind in ["oil", "ore"] else 5):
 		var meshes: Array
-		match kind:
-			"shop": meshes = CommercialBuilder.build_shop(seed * 100 + i, 3.9)
-			"factory": meshes = CommercialBuilder.build_factory(seed * 100 + i, 3.9)
-			_: meshes = HouseBuilder.build(seed * 100 + i, 3.9)
-		var at := Vector3((i - 2) * 20.0, 0, 0)
+		var k := kind
+		if kind == "types":
+			k = ["house", "row", "apartments", "mixed", "office"][i]
+		var w: float = {"row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "office": 40.0}.get(k, 20.0)
+		var sd := seed * 100 + i
+		match k:
+			"shop": meshes = CommercialBuilder.build_shop(sd, 3.9)
+			"factory": meshes = CommercialBuilder.build_factory(sd, 3.9)
+			"row": meshes = DenseBuilder.build_row(sd, 3.9, {"width": w, "depth": 45.0}, 3, 2 + i % 2)
+			"apartments": meshes = DenseBuilder.build_apartments(sd, 3.9, {"width": w, "depth": 45.0}, [2, 3, 5][i % 3])
+			"mixed", "main": meshes = DenseBuilder.build_mixed(sd, 3.9, {"width": w, "depth": 45.0}, 2 + i % 3)
+			"office": meshes = DenseBuilder.build_office(sd, 3.9, {"width": w, "depth": 55.0}, [3, 5, 8][i % 3])
+			_: meshes = HouseBuilder.build(sd, 3.9)
+		var at := Vector3(x + w * 0.5, 0, 0)
+		x += w
 		for m in meshes.slice(0, 2):
 			var mi := MeshInstance3D.new()
 			mi.mesh = m

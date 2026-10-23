@@ -427,7 +427,7 @@ func _pile_up(sim: CitySim) -> void:
 		if lb <= 0.0:
 			continue
 		var seg: int = sim.lots[key].seg
-		trash[seg] = minf(trash.get(seg, 0.0) + lb * share, Balance.GARBAGE_PILE_LB * 4.0)
+		trash[seg] = _snap(minf(trash.get(seg, 0.0) + lb * share, Balance.GARBAGE_PILE_LB * 4.0))
 	for seg in trash.keys():
 		if not sim.network.segments.has(seg):
 			trash.erase(seg)
@@ -718,7 +718,7 @@ func _trade(sim: CitySim) -> void:
 	if taken > 0.0 and wanted > 0.0:
 		var keep := 1.0 - clampf(taken / wanted, 0.0, 1.0)
 		for seg in trash:
-			trash[seg] *= keep
+			trash[seg] = _snap(trash[seg] * keep)
 	# What neighbors' trash came in raises the mound.
 	var brought := sim.trade.sold("garbage")
 	var totals := {"power": 0.0, "compost": 0.0, "scrap": 0.0, "garbage": 0.0}
@@ -981,3 +981,9 @@ func from_dict(d: Dictionary) -> void:
 static func _truck(t: Dictionary) -> Dictionary:
 	return {"hub": int(t.hub), "load": float(t.load), "stops": int(t.stops), "seg": int(t.seg),
 		"prev": int(t.get("prev", -1)), "at": [float(t.at[0]), float(t.at[1])]}
+
+
+## Pounds of trash in 1/1024 lb steps: exact in a JSON save, so a loaded copy
+## of the city carries on exactly the same.
+static func _snap(lb: float) -> float:
+	return snappedf(lb, 1.0 / 1024.0)

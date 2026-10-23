@@ -107,7 +107,7 @@ var lots := {}       # lot key -> lot Dictionary (from LotPlanner)
 ## Surveys lots from the roads and zones; lots with buildings are saved
 ## parcels that stay put.
 var planner := LotPlanner.new()
-var buildings := {}  # lot key -> {"zone", "seed", "built", "cap", "occ"}
+var buildings := {}  # lot key -> building Dictionary (see BuildingTypes)
 var tick_count := 0
 var city_seed := 1
 
@@ -685,6 +685,8 @@ func tick() -> void:
 			var key := _grow_one(1)
 			if key != "":
 				banks.financed(self, key)
+	if tick_count % Balance.DEVELOP_EVERY == 0:
+		_develop_one()
 	if tick_count % Farms.DECIDE_EVERY == 0 and not farms.farms.is_empty():
 		farms.tax_rate = economy.tax[ZoneMap.Zone.INDUSTRIAL]
 		farms.price = Farms.price_on(tick_count / (24.0 * TICKS_PER_HOUR))
@@ -787,6 +789,9 @@ func update_stats() -> void:
 				if not construction.is_done("lot:" + key, tick_count):
 					unfinished_homes += b.cap
 			ZoneMap.Zone.COMMERCIAL:
+				# Flats above a shop count as homes.
+				pop += int(b.get("focc", 0))
+				home_cap += int(b.get("flats", 0))
 				if _utilities_ok(key):  # closed without power or water
 					shop_jobs += b.cap
 			ZoneMap.Zone.INDUSTRIAL:
@@ -796,8 +801,9 @@ func update_stats() -> void:
 	services.update(network, lots, buildings)
 	parks.update_effects(self)
 	factory_jobs += farms.jobs() + industry.jobs() + warehouses.jobs() + power.jobs()
-	# Teachers, and office and tech jobs for the town's graduates.
-	shop_jobs += education.jobs()
+	# Teachers, and office and tech jobs for the town's graduates (less the
+	# ones already counted in office buildings, which house those jobs).
+	shop_jobs += education.jobs() - mini(BuildingTypes.office_jobs(self), education.office_jobs())
 	# Tellers and loan officers.
 	shop_jobs += banks.jobs()
 	economy.reach_milestones(pop)
@@ -843,6 +849,8 @@ func _move_in() -> void:
 			var home: Dictionary = buildings[key]
 			if home.zone == ZoneMap.Zone.RESIDENTIAL and home.occ > 0 and not _utilities_ok(key):
 				home.occ -= 1
+			elif int(home.get("focc", 0)) > 0 and not _utilities_ok(key):
+				home.focc -= 1
 	# A new home is built for a buyer: they move in when it's finished.
 	var keys0 := buildings.keys()
 	keys0.sort()
@@ -863,8 +871,12 @@ func _move_in() -> void:
 				and construction.is_done("lot:" + key, tick_count):
 			b.occ += 1
 			arrivals -= 1
-			if arrivals == 0:
-				return
+		elif int(b.get("focc", 0)) < int(b.get("flats", 0)) and _utilities_ok(key) \
+				and construction.is_done("lot:" + key, tick_count):
+			b.focc += 1
+			arrivals -= 1
+		if arrivals == 0:
+			return
 
 
 ## Lots that are zoned but have nothing on them yet.
@@ -1662,8 +1674,12 @@ func _grow_one(salt := 0) -> String:
 				and rng.randf() < -power.land_value_effect(lots[key].pos) * Balance.POWER_SMOKE_GROWTH:
 			continue
 		var bseed := rng.randi()
-		buildings[key] = {"zone": z, "seed": bseed, "built": tick_count,
-			"cap": capacity(z, bseed), "occ": 0}
+		# The lot's owner picks what to build from what is around it.
+		var choice := BuildingTypes.pick(self, key, z, rng)
+		var b := {"zone": z, "seed": bseed, "built": tick_count, "changed": tick_count, "occ": 0}
+		b = BuildingTypes.make(self, key, b, choice[0], 0)
+		b.why = choice[1]
+		buildings[key] = b
 		if z == ZoneMap.Zone.INDUSTRIAL:
 			buildings[key].chain = factory_chain(lots[key].pos)
 		var lot: Dictionary = lots[key]
@@ -1748,6 +1764,44 @@ func factory_chain(at: Vector3) -> String:
 			best_v = score[k]
 			best = k
 	return best
+
+
+## Now and then a grown building moves up its growth path (a starter home
+## adds a storey, a Main Street block goes up a floor), or turns into another
+## type when the area calls for it. One building per check, chosen the same
+## way on every copy of the city.
+func _develop_one() -> void:
+	var keys := []
+	for key in buildings:
+		if lots.has(key) and BuildingTypes.ready(self, key):
+			keys.append(key)
+	if keys.is_empty():
+		return
+	keys.sort()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([city_seed, tick_count, "develop"])
+	if rng.randf() >= Balance.DEVELOP_CHANCE:
+		return
+	# Try a few owners: not every one has somewhere to go.
+	for i in mini(keys.size(), 6):
+		var key: String = keys[rng.randi() % keys.size()]
+		var opts := BuildingTypes.options(self, key)
+		if opts.is_empty():
+			continue
+		var o: Array = opts[rng.randi() % opts.size()]
+		redevelop(key, o[0], o[1])
+		return
+
+
+## Rebuilds a building as another type or stage (the owner's call). Residents
+## stay up to the new size. Build's agency can call this too.
+func redevelop(key: String, type: String, level: int) -> void:
+	if not buildings.has(key):
+		return
+	var b := BuildingTypes.make(self, key, buildings[key], type, level)
+	b.changed = tick_count
+	buildings[key] = b
+	buildings_changed.emit()
 
 
 ## People a home holds, or jobs a shop or factory offers.
@@ -1910,9 +1964,13 @@ func from_dict(d: Dictionary) -> void:
 		var b: Dictionary = d.buildings[key]
 		var z := int(b.zone)
 		var cap := int(b.get("cap", capacity(z, int(b.seed))))
-		# Older saves had no residents yet: assume the homes were full.
+		# Older saves had no residents yet: assume the homes were full. Their
+		# buildings are the plain type for the zone, first stage.
 		buildings[key] = {"zone": z, "seed": int(b.seed), "built": int(b.built), "cap": cap,
-			"occ": int(b.get("occ", cap if z == ZoneMap.Zone.RESIDENTIAL else 0))}
+			"occ": int(b.get("occ", cap if z == ZoneMap.Zone.RESIDENTIAL else 0)),
+			"type": BuildingTypes.type_of(b), "level": int(b.get("level", 0)),
+			"units": int(b.get("units", 1)), "flats": int(b.get("flats", 0)), "focc": int(b.get("focc", 0)),
+			"changed": int(b.get("changed", b.built)), "why": str(b.get("why", ""))}
 		if z == ZoneMap.Zone.INDUSTRIAL and b.has("chain"):
 			buildings[key].chain = str(b.chain)
 	_road_wins()
