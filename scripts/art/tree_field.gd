@@ -119,6 +119,11 @@ void fragment() {
 	// Snow resting on the tops of the crowns.
 	leaf = mix(leaf, vec3(0.4, 0.42, 0.45), snow * smoothstep(0.35, 0.95, top) * 0.75);
 	ALBEDO = leaf * t.rgb * mix(0.6, 1.15, inner) * mix(0.85, 1.2, top) * 2.0;
+	// A card seen edge-on smears its leaves into long streaks; real crowns
+	// never show them. Fade each card out as it turns edge-on, judged by its
+	// own flat face (from screen derivatives), not the crown normal.
+	vec3 face = normalize(cross(dFdx(VERTEX), dFdy(VERTEX)));
+	alpha *= smoothstep(0.1, 0.35, abs(dot(face, normalize(-VERTEX))));
 	ALPHA = alpha * mix(0.3, 1.0, fade);
 	ALPHA_SCISSOR_THRESHOLD = 0.45;
 	// With MSAA, leaf edges become partial coverage instead of popping on
