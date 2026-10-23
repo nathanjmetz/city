@@ -86,7 +86,8 @@ func _add_city(id: String) -> void:
 		root.add_child(buildings)
 		buildings.setup(c.sim)
 		var cars := TrafficView.new()
-		cars.setup(c.sim.traffic, func(): return minf(client.since_tick * CitySim.TICKS_PER_SECOND, 1.0))
+		# Their cars as their computer last sent them.
+		cars.setup(c.sim.traffic, func(): return 0.0)
 		root.add_child(cars)
 	# Name tags over the neighbors' cities (not your own).
 	var tag := _label(client.region.color_of(id, client.my_city), 34)
