@@ -20,6 +20,8 @@ signal farms_changed
 signal industry_changed
 ## A campus opened, closed, or bought, built up or sold a block.
 signal education_changed
+## The phone company opened or closed, strung fiber, raised a tower or grew.
+signal telecom_changed
 ## A bank opened, closed, bought a block or changed hands.
 signal banks_changed
 ## A warehouse was built, grew, shrank or went away.
@@ -79,6 +81,8 @@ var terrain_offset := Vector2.ZERO:
 		_lots_dirty = true
 ## High schools, colleges and universities, and the town's graduates.
 var education := Education.new()
+## The town's phone company: its office, cell towers and fiber.
+var telecom := Telecom.new()
 ## Banks that lend to the farms, companies and builders (see Banks).
 var banks := Banks.new()
 ## Requests from hub leaders for big moves (track through town, crossing
@@ -163,6 +167,13 @@ func _init() -> void:
 		var w = warehouses.buildings.get(id)
 		var c := Vector3.ZERO if w == null else Warehouses.center(w)
 		return Vector2(c.x, c.z)
+	# The phone company's manager files tower requests on the bell, and takes
+	# the player's word the same way.
+	permits.locators["telecom"] = func(_sim, id: int) -> Vector2:
+		var c: Dictionary = telecom.companies.get(id, {"pos": Vector3.ZERO})
+		return Vector2(c.pos.x, c.pos.z)
+	permits.costers["telecom"] = func(_sim, req: Dictionary, _route: Array, _hits: Dictionary) -> int:
+		return int(req.base)
 	rail.attach(self)
 	# Bank presidents take the player's word too.
 	permits.locators["bank"] = func(_sim, id: int) -> Vector2:
@@ -253,7 +264,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			if cost > economy.money or services.site_problem(network, kind, pos, dir) != "" \
 					or _on_warehouse(Services.corners(kind, pos, dir)) \
 					or parks.overlaps(Services.corners(kind, pos, dir).map(func(q): return Vector2(q.x, q.z))) \
-					or education.covers(pos) or banks.covers(pos):
+					or education.covers(pos) or banks.covers(pos) or telecom.covers(pos):
 				return false
 			var sid := services.add(kind, pos, dir)
 			construction.start("svc:%d" % sid, "civic", tick_count, pos, dir, Services.SETBACK
@@ -396,6 +407,31 @@ func apply_now(cmd: Dictionary) -> bool:
 				policies.set_step("campus:%d" % int(cmd.id), "funding",
 					clampi(int(cmd.level), 0, Balance.EDUCATION_FUNDING_LEVELS.size() - 1))
 				_sync_levers()
+				update_stats()
+		"place_telecom":
+			var pos := _v(cmd.pos)
+			var dir := _v(cmd.dir).normalized()
+			if dir.length() < 0.5 or Telecom.site_problem(self, pos, dir) != "" or Balance.TELECOM_COST > economy.money:
+				return false
+			telecom.add(self, pos, dir, city_seed, tick_count)
+			economy.money -= Balance.TELECOM_COST
+			_clear_zones_under(Telecom.block_corners({"pos": pos, "dir": dir}, Vector2i.ZERO))
+			_lots_dirty = true
+			telecom_changed.emit()
+			ok = true
+		"remove_telecom":
+			ok = telecom.companies.erase(int(cmd.id))
+			telecom.mark_dirty()
+			_lots_dirty = true
+			telecom_changed.emit()
+		"remove_telecom_at":
+			ok = telecom.remove_at(_v(cmd.pos))
+			_lots_dirty = true
+			telecom_changed.emit()
+		"set_telecom_funding":
+			ok = telecom.companies.has(int(cmd.id))
+			if ok:
+				telecom.companies[int(cmd.id)].funding = clampi(int(cmd.level), 0, Balance.TELECOM_FUNDING_LEVELS.size() - 1)
 				update_stats()
 		"remove_industry":
 			ok = industry.sites.has(int(cmd.id))
@@ -559,6 +595,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			reserves = Reserves.new()
 			buses = BusNet.new()
 			education = Education.new()
+			telecom = Telecom.new()
 			banks = Banks.new()
 			banks_changed.emit()
 			permits.from_dict({})
@@ -582,6 +619,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			warehouses_changed.emit()
 			power_changed.emit()
 			education_changed.emit()
+			telecom_changed.emit()
 			ok = true
 	if ok:
 		if cmd.type in ["place_campus", "place_park", "place_bank", "place_hub", "place_service", "place_farmhouse",
@@ -714,6 +752,10 @@ func _road_wins() -> void:
 	if not education.campuses.is_empty():
 		economy.money += education.make_way(corr)
 		_lots_dirty = true
+	if not telecom.companies.is_empty():
+		economy.money += telecom.make_way(corr)
+		_lots_dirty = true
+		telecom_changed.emit()
 	if not banks.banks.is_empty():
 		economy.money += banks.make_way(corr)
 		_lots_dirty = true
@@ -774,6 +816,12 @@ func tick() -> void:
 			_lots_dirty = true
 			education_changed.emit()
 	Perf.add("sim.education", t)
+	t = Perf.now()
+	if tick_count % Balance.TELECOM_DECIDE_EVERY == 0 and not telecom.companies.is_empty():
+		if telecom.decide(self):
+			_lots_dirty = true
+			telecom_changed.emit()
+	Perf.add("sim.telecom", t)
 	t = Perf.now()
 	# Farms and companies that want the land next door ask the banks for a loan.
 	if tick_count % Balance.BANK_LEND_EVERY == 0 and not banks.banks.is_empty():
@@ -862,6 +910,7 @@ func tick() -> void:
 	Perf.add("sim.logistics", t)
 	t = Perf.now()
 	education.trips(self)
+	telecom.trips(self)
 	Perf.add("sim.school_trips", t)
 	t = Perf.now()
 	var rng := RandomNumberGenerator.new()
@@ -923,11 +972,14 @@ func update_stats(budget := true) -> void:
 	shop_jobs += education.jobs() - mini(BuildingTypes.office_jobs(self), education.office_jobs())
 	# The gas station, diner and motel that opened for visitors.
 	shop_jobs += Tourism.jobs(self)
+	# The phone company's staff, and remote workers who bring their jobs.
+	telecom.mark_dirty()
+	telecom.refresh(self)
 	# Tellers and loan officers.
 	shop_jobs += banks.jobs()
 	economy.reach_milestones(pop)
 	var workers := int(pop * WORKER_SHARE)
-	var jobs := shop_jobs + factory_jobs
+	var jobs := shop_jobs + factory_jobs + telecom.jobs()
 	# Demand plans ahead, as builders do: homes going up are people on the
 	# way (their pre-sold buyers; the rest of a new home is still for sale),
 	# and jobs at shops and factories going up are jobs on the way.
@@ -957,6 +1009,11 @@ func update_stats(budget := true) -> void:
 	# Parks and landmarks make a town nicer to live in.
 	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL]
 		+ Balance.AMENITY_DEMAND * parks.average_happiness(self), 0.0, 1.0)
+	# Good cell service and internet draw people, and fiber draws offices.
+	if not telecom.companies.is_empty():
+		demand[ZoneMap.Zone.RESIDENTIAL] = clampf(demand[ZoneMap.Zone.RESIDENTIAL]
+			+ Balance.TELECOM_HOME_DEMAND * telecom.town_signal, 0.0, 1.0)
+		demand[ZoneMap.Zone.COMMERCIAL] = clampf(demand[ZoneMap.Zone.COMMERCIAL] + telecom.office_demand(), 0.0, 1.0)
 	if budget:
 		economy.update_budget(self)
 	stats_changed.emit()
@@ -1040,6 +1097,8 @@ func farmhouse_problem(pos: Vector3, dir: Vector3) -> String:
 			return "That ground belongs to the railroad."
 		if education.covers(p):
 			return "That ground is a campus."
+		if telecom.covers(p):
+			return "That ground belongs to the phone company."
 		if banks.covers(p):
 			return "That ground is a bank."
 	if _on_warehouse(Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y))):
@@ -1081,6 +1140,8 @@ func industry_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 			return "That ground belongs to the railroad."
 		if education.covers(p):
 			return "That ground is a campus."
+		if telecom.covers(p):
+			return "That ground belongs to the phone company."
 		if banks.covers(p):
 			return "That ground is a bank."
 	if _on_warehouse(Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y))):
@@ -1124,6 +1185,8 @@ func warehouse_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 			return "Overlaps the post office."
 		if education.covers(p):
 			return "That ground is a campus."
+		if telecom.covers(p):
+			return "That ground belongs to the phone company."
 		if banks.covers(p):
 			return "That ground is a bank."
 	if parks.overlaps(Array(poly)):
@@ -1147,7 +1210,7 @@ func warehouse_ground_ok(poly: PackedVector2Array, id: int) -> bool:
 			return false
 	for p in _grid_in(poly):
 		if farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) or reserves.kind_at(p) != "" \
-				or hubs.covers(p) or education.covers(p) or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p):
+				or hubs.covers(p) or education.covers(p) or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p):
 			return false
 	for key in lots:
 		if not buildings.has(key) and zones.zone_at(lots[key].zone_pt) == ZoneMap.Zone.NONE:
@@ -1547,7 +1610,7 @@ func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
 		for p in pts:
 			if services.covers(p) or farms.covers(p) or industry.covers(p) or farms.field_at(p) != -1 \
 					or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
-					or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) \
+					or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p) \
 					or not land_ok(p):
 				ok = false
 	if ok:
@@ -1741,7 +1804,7 @@ func _lot_blocked(lot: Dictionary) -> bool:
 	for p in [lot.pos, lot.front, lot.zone_pt]:
 		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) \
 				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
-				or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p):
+				or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p):
 			return true
 	# No lots in the water or on ground too steep to build on.
 	return not land_ok(lot.pos, LotPlanner.FRONTAGE * 0.5)
@@ -2123,6 +2186,7 @@ func to_dict() -> Dictionary:
 		"industry": industry.to_dict(),
 		"power": power.to_dict(),
 		"education": education.to_dict(),
+		"telecom": telecom.to_dict(),
 		"banks": banks.to_dict(),
 		"logistics": logistics.to_dict(),
 		"construction": construction.to_dict(),
@@ -2173,6 +2237,7 @@ func from_dict(d: Dictionary) -> void:
 	industry.from_dict(d.get("industry", {}))
 	power.from_dict(d.get("power", {}))
 	education.from_dict(d.get("education", {}))
+	telecom.from_dict(d.get("telecom", {}))
 	banks.from_dict(d.get("banks", {}))
 	logistics.from_dict(d.get("logistics", {}))
 	construction.from_dict(d.get("construction", {}))

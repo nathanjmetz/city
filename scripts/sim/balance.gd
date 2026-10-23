@@ -1205,6 +1205,88 @@ const WATER_INTEREST := 0.004
 const WATER_RESERVE_MONTHS := 2.0
 const WATER_SURPLUS_MONTHS := 18.0
 
+# --- Phone, cell and internet ---------------------------------------------------
+# Brawn greened it (2026-10-22, Best of CS #17): a local phone company the
+# player places once. Its general manager runs it like a real rural
+# telephone co-op trying to stay in business: fiber goes down the streets
+# that pay back first (the densest), cell towers go up where too many
+# households get one bar or none (each tower is a zoning request on the
+# permit bell, as at a real county board of zoning appeals), and the
+# office grows only into the land right next to it. Coverage draws people,
+# remote workers and offices, and fiber lifts home values. Rural edges stay
+# spotty unless the town pays to reach them. Benchmark: CS2's telecom
+# (network quality drives offices) and real Indiana co-ops.
+
+## The central office (the exchange building with its switch and fiber
+## hut): what the player pays, and the city's standard monthly broadband
+## grant (the player can set it from half to one and a half times, like
+## Indiana's Next Level Connections grants).
+const TELECOM_COST := 2_500_000
+const TELECOM_GRANT := 15_000
+const TELECOM_FUNDING_LEVELS := [0.5, 0.75, 1.0, 1.25, 1.5]
+## People per household (US Census: 2.5).
+const TELECOM_PEOPLE_PER_HOUSEHOLD := 2.5
+## Fiber: build cost per metre of street (aerial on existing poles runs
+## about $60,000 a mile), the drop to each home that signs up, upkeep per
+## metre a year (about $1,000 a route mile), and what one crew strings in a
+## month (a real aerial crew does about a kilometre a week).
+const TELECOM_FIBER_PER_M := 38.0
+const TELECOM_FIBER_DROP := 900.0
+const TELECOM_FIBER_UPKEEP_M := 0.6
+const TELECOM_FIBER_M_PER_CREW := 4_000.0
+## Share of households passed that sign up for fiber (US average about 40%
+## a few years in), and of businesses on a fiber street.
+const TELECOM_FIBER_TAKE := 0.4
+const TELECOM_BUSINESS_TAKE := 0.6
+## A month's bill: home fiber (rural Indiana co-ops charge about $70),
+## business fiber, fixed wireless home internet, and cell service per
+## household on this carrier (about 2.5 lines at $50, with a third of the
+## market against the national carriers).
+const TELECOM_FIBER_ARPU := 70.0
+const TELECOM_BUSINESS_ARPU := 150.0
+const TELECOM_FIXED_ARPU := 55.0
+const TELECOM_FIXED_TAKE := 0.25
+const TELECOM_WIRELESS_ARPU := 40.0
+## Running a tower a month: ground lease (about $1,500), power, backhaul
+## and maintenance.
+const TELECOM_TOWER_MONTH := 2_700.0
+## The office's own overhead a month, before the land it grows into.
+const TELECOM_OVERHEAD := 12_000.0
+## How many years ahead a manager plans: TELECOM_HORIZON years plus up to
+## TELECOM_HORIZON_EDU more for a well-schooled one. A build goes ahead when
+## it pays back within that horizon.
+const TELECOM_HORIZON := 4.0
+const TELECOM_HORIZON_EDU := 8.0
+## Most the company will owe (a rural utility loan) before it stops building.
+const TELECOM_MAX_DEBT := 2_500_000.0
+## A tower's site: the fenced compound's side, how near a road it must be
+## for its gravel drive, and the least spacing between towers.
+const TELECOM_COMPOUND := 24.0
+const TELECOM_TOWER_ROAD := 90.0
+const TELECOM_TOWER_SPACING := 900.0
+## A household counts as poorly served below this signal (one bar).
+const TELECOM_GOOD_SIGNAL := 0.55
+## Share of workers who work from home when the house has fiber (about one
+## in eight US workers is fully remote), or only good cell service.
+const TELECOM_REMOTE_SHARE := 0.12
+const TELECOM_REMOTE_CELL := 0.03
+## Property value lift: about 3.1% for a home with fiber (FTTH Council /
+## Molnar study), and up to 1% for a full cell signal.
+const TELECOM_FIBER_LIFT := 0.031
+const TELECOM_CELL_LIFT := 0.01
+## Good coverage raises demand: for homes (people pick towns with good
+## internet) and for shops and offices on fiber streets.
+const TELECOM_HOME_DEMAND := 0.08
+const TELECOM_OFFICE_DEMAND := 0.12
+## Assessed value per tower and per metre of fiber, for property tax.
+const TELECOM_TOWER_VALUE := 250_000
+const TELECOM_FIBER_VALUE_M := 20.0
+## Each block of land next to the office: what buying and building on it
+## costs, and the most it will ever own.
+const TELECOM_BLOCK_COST := 450_000
+const TELECOM_MAX_BLOCKS := 8
+## The company decides once a game day (a month).
+const TELECOM_DECIDE_EVERY := 1440
 # --- Rail -----------------------------------------------------------------------
 # Brawn's model (2026-10-22): a rail depot is a hub whose leader runs it as a
 # business on its own money. The town only places it and can subsidize it.
