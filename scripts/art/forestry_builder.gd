@@ -20,6 +20,9 @@ const LUMBER := Color("#d8c08e")
 const YELLOW := Color("#d9a520")
 const SKIDDER := Color("#3f6b2e")
 
+## Where the last stand's landing went (planted rows keep off it).
+var _landing := Vector2.ZERO
+
 
 ## A cell of woods, `size` metres square, centred on the origin. `keep` is
 ## the share of trees left standing (1 for untouched woods). `clear` holds
@@ -37,16 +40,23 @@ static func woods(seed: int, size: float, keep: float, clear := [], open := [fal
 
 ## A logging stand: thinned woods, skid trails and a landing with a deck.
 ## `track_dir` points (in local x/z) to where the haul track leaves.
-static func stand(seed: int, size: float, track_dir: Vector2, clear := [], open := [false, false, false, false]) -> Array:
+## `replanted`: the company has a replanting crew (Agency "replanting"), so
+## the cut shows rows of tree shelters.
+static func stand(seed: int, size: float, track_dir: Vector2, clear := [], open := [false, false, false, false],
+		replanted := false) -> Array:
 	var b := ForestryBuilder.new()
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 	b._stand(size, track_dir, clear, open)
+	if replanted:
+		UpgradeKits.planted_rows(b, b._landing, size * 0.5)
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 
-static func mill(seed: int, size: Vector2, built := []) -> Array:
+## The sawmill yard, with what its leader has built (Agency.TREES) and the
+## add-ons beside it where Industry.ADDONS placed them (UpgradeKits).
+static func mill(seed: int, size: Vector2, built := [], addons := {}) -> Array:
 	var b := ForestryBuilder.new()
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
@@ -54,6 +64,13 @@ static func mill(seed: int, size: Vector2, built := []) -> Array:
 	b._mill(size)
 	if "chip_plant" in built:
 		b._chip_mill(size)
+	for node in addons:
+		var at := Vector3(float(addons[node][0]), 0, float(addons[node][1]))
+		match str(node):
+			"log_yard": UpgradeKits.wet_deck(b, at)
+			"dry_kiln": UpgradeKits.dry_kilns(b, at)
+			"pellet_mill": UpgradeKits.pellet_mill(b, at)
+			"replanting": UpgradeKits.seedling_cooler(b, at)
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 
@@ -124,6 +141,7 @@ func _stand(size: float, track_dir: Vector2, extra: Array, open: Array) -> void:
 	var td := track_dir.normalized() if track_dir.length() > 0.1 else Vector2(0, -1)
 	# The landing sits toward the haul track; skid trails wind back into the cut.
 	var land := td * rng.randf_range(8.0, 14.0)
+	_landing = land
 	# (The haul road out of the stand comes in with the extra clearings.)
 	var clear := [[Vector2.ZERO, td * 16.0, 4.0], [land, land, 15.0]]
 	var trail_pts := []

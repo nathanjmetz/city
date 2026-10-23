@@ -21,6 +21,39 @@ const MAX_PADS := 60
 const SEED_REACH := 5
 ## The main building's yard.
 const HQ_SIZE := Vector2(40, 40)
+## What a company's leader builds beside its main yard (Agency.TREES), each
+## drawn after a real example by UpgradeKits (Brawn 2026-10-23: every
+## upgrade shows). node id -> [width, depth] in metres and the spots it may
+## take, [x, z] centres in the company's frame (x to its right, z away from
+## its drive), first choice first. It takes the first spot whose ground is
+## free; with none free it can't build. Upgrades drawn in place (the tank
+## battery, the crusher, the chip mill) need no spot.
+const ADDONS := {
+	"oil": {
+		"gas_plant": [[28, 24], [[-24, 22], [24, 26], [-26, -26]]],
+		"pipeline": [[12, 8], [[27, 4], [27, -12], [-28, 4]]],
+		"frac_crew": [[22, 20], [[-29, -8], [29, -12], [-28, 28]]],
+		"terminal": [[34, 28], [[22, 26], [-22, 26], [0, 26]]],
+	},
+	"ore": {
+		"wash_plant": [[20, 36], [[28, -18], [-29, -18]]],
+		"conveyor": [[24, 6], [[28, 6]]],
+		"rail_loadout": [[14, 80], [[-33, 0]]],
+	},
+	"forest": {
+		"log_yard": [[14, 40], [[-31, -4], [31, -4]]],
+		"dry_kiln": [[16, 36], [[31, -2], [-31, -2]]],
+		"pellet_mill": [[36, 16], [[-14, 31], [14, 31], [14, -31]]],
+		"replanting": [[8, 18], [[31, 30], [-31, 30], [-31, -30], [31, -30]]],
+	},
+}
+## What the main yard already holds in each company's frame: [x0, z0, x1, z1].
+const ADDON_BASE := {
+	"oil": [[-16, -23, 21, 12]],
+	"ore": [[-16, -23, 0, -4], [-24, -4, 15, 20], [-24, 19, 35, 37]],
+	"forest": [[-20, -20, 20, 20]],
+}
+
 ## Names, the resource each works and its cargo; the numbers are in Balance.
 const KINDS := {
 	"oil": {"name": "Oil company", "resource": Resources.Kind.OIL, "cargo": "crude oil", "purpose": "fuel",
@@ -517,7 +550,57 @@ func site_at(p: Vector3) -> int:
 			return id
 		if Farms._near_drive(s, p, Farms.DRIVE_WIDTH * 0.5 + 3.0):
 			return id
+		if not s.get("addons", {}).is_empty() and _in_addon(s, p):
+			return id
 	return -1
+
+
+## True when p is on ground one of the company's add-ons stands on.
+static func _in_addon(s: Dictionary, p: Vector3) -> bool:
+	var d: Vector3 = p - s.pos
+	var local := Vector2(d.dot(_right(s)), -d.dot(s.dir))
+	for node in s.addons:
+		if addon_rect(s, node).grow(2.0).has_point(local):
+			return true
+	return false
+
+
+## The ground an add-on stands on, in the company's frame (x, z).
+static func addon_rect(s: Dictionary, node: String) -> Rect2:
+	var at: Array = s.addons[node]
+	var size: Array = ADDONS[s.kind][node][0]
+	return Rect2(float(at[0]) - size[0] * 0.5, float(at[1]) - size[1] * 0.5, size[0], size[1])
+
+
+## Finds ground for what the leader just built (`node`) and records it in
+## s.addons. False when every spot is taken (a road, homes, another hub or
+## land that won't build): the company then can't build it. `free` is
+## Callable(world point) -> bool for ground the company may use.
+func place_addon(id: int, node: String, free: Callable) -> bool:
+	var s: Dictionary = sites[id]
+	if not ADDONS.get(s.kind, {}).has(node):
+		return true  # drawn in its yard
+	if not s.has("addons"):
+		s.addons = {}
+	var spec: Array = ADDONS[s.kind][node]
+	for at in spec[1]:
+		s.addons[node] = [float(at[0]), float(at[1])]
+		var r := addon_rect(s, node)
+		var ok := true
+		for b in ADDON_BASE[s.kind]:
+			ok = ok and not r.intersects(Rect2(b[0], b[1], b[2] - b[0], b[3] - b[1]))
+		for other in s.addons:
+			ok = ok and (other == node or not r.intersects(addon_rect(s, other)))
+		if ok:
+			# Ground under it: its corners, edges and middle.
+			for fx in [0.05, 0.5, 0.95]:
+				for fz in [0.05, 0.5, 0.95]:
+					var q := r.position + r.size * Vector2(fx, fz)
+					ok = ok and free.call(s.pos + _right(s) * q.x - s.dir * q.y)
+		if ok:
+			return true
+	s.addons.erase(node)
+	return false
 
 
 ## The company with a pad on this point.
@@ -669,7 +752,7 @@ func to_dict() -> Dictionary:
 			"cut": _cells_out(s.get("cut", {})), "regrow": _cells_out(s.get("regrow", {})),
 			"leases": s.get("leases", []).map(func(c): return [c.x, c.y]),
 			"owned": _cells_out(s.get("owned", {})), "capital": Capital.save(s),
-			"road_wait": s.get("road_wait", 0.0), "pending": s.get("pending", {})}
+			"road_wait": s.get("road_wait", 0.0), "pending": s.get("pending", {}), "addons": s.get("addons", {})}
 	return {"sites": out, "next_id": _next_id}
 
 
@@ -700,6 +783,12 @@ func from_dict(d: Dictionary) -> void:
 			Capital.start(sites[int(k)], str(s.kind))
 		sites[int(k)].road_wait = float(s.get("road_wait", 0.0))
 		sites[int(k)].pending = Dictionary(s.get("pending", {}))
+		var addons := {}
+		var saved_addons: Dictionary = s.get("addons", {})
+		for node in saved_addons:
+			addons[str(node)] = [float(saved_addons[node][0]), float(saved_addons[node][1])]
+		if not addons.is_empty():
+			sites[int(k)].addons = addons
 	_next_id = int(d.get("next_id", 1))
 
 

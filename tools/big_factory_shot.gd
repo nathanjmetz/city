@@ -1,7 +1,8 @@
 extends SceneTree
 ## Renders a big local factory on a plain street, for the art realism loop
 ## (compare with the real plants in docs/big_factories.md).
-## Run: godot -s tools/big_factory_shot.gd -- out.png kind [level] [yaw pitch dist]
+## Run: godot -s tools/big_factory_shot.gd -- out.png kind [level] [yaw pitch dist] [all]
+## ("all": with every step of its development tree built)
 
 var _frames := 0
 
@@ -14,7 +15,9 @@ func _init() -> void:
 	root.add_child(world)
 	world.add_child(SkyLight.new())
 	world.add_child(Ground.new())
-	var f := {"kind": kind, "pos": Vector3.ZERO, "dir": Vector3(0, 0, -1), "level": level, "bays": 0}
+	var f := {"kind": kind, "pos": Vector3.ZERO, "dir": Vector3(0, 0, -1), "level": level, "bays": 0, "built": []}
+	if "all" in args:
+		f.built = BigFactories.TREES[kind].map(func(n): return n.id)
 	var d := BigFactories.site_depth(f)
 	var road := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
