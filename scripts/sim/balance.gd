@@ -913,6 +913,23 @@ const TRADE_PRICE := {
 	# A truckload of general merchandise from a regional DC: the
 	# distributor's margin on it.
 	"goods": 2500.0,
+	# Big local factories, per truckload (see BIG_FACTORY). Corn: 1,000 bu at
+	# $4.50. Ethanol: an 8,000 gal tanker at $2.00. Distillers grains: 25 t at
+	# $180. Hogs: a pot-belly trailer of 170 market hogs, 285 lb at $0.75.
+	# Pork: a 40,000 lb reefer of boxed cuts, bacon and ham at about $1.45. Logs: 25 t of hardwood. Furniture:
+	# a 53 ft van of case goods at wholesale. Steel: 22 t of coil and tube.
+	# RVs: a toter hauls one towable at about $44,000 dealer cost.
+	"corn": 4_500.0,
+	"soybeans": 5_500.0,
+	"ethanol": 16_000.0,
+	"distillers grains": 4_500.0,
+	"livestock": 36_000.0,
+	"pork": 58_000.0,
+	"logs": 1_800.0,
+	"furniture": 45_000.0,
+	"steel": 19_000.0,
+	"rv": 44_000.0,
+	"co2": 1_200.0,
 }
 ## Price for a good with no entry above.
 const TRADE_PRICE_DEFAULT := 100.0
@@ -1395,6 +1412,84 @@ const GARBAGE_BASE_TAKE_TONS := 150.0
 ## A town with no landfill or recycling of its own pays a neighbor to take its
 ## trash, if one will (otherwise it piles up).
 const GARBAGE_TONS_PER_RESIDENT_MONTH := 0.07
+
+# --- Big local factories -----------------------------------------------------------
+# Brawn (2026-10-22, pitch #16 "bright bright bright green"): unique plants
+# that turn several local goods into one product, one of each per town. Each
+# is a hub with a leader and a development tree (BigFactories.TREES) that
+# buys its inputs from the town's farms and companies first, then neighbors,
+# then the outside world, and grows only into the land right behind it.
+# Benchmarks (docs/big_factories.md): Indiana dry-mill ethanol plants, a Jasper
+# (Dubois County) hardwood furniture plant, an Elkhart County RV plant and a
+# Midwest hog packing plant, scaled down to a small town's share.
+#
+# Each kind when first built: site width along the road and depth (metres),
+# what the player pays for the site and hookups, the owner's starting money,
+# jobs, assessed value, loads in per batch (`in`: good -> loads; a list of
+# goods means any of them), what one batch makes (`out` and any `by`
+# byproduct loads), processing cost per batch, batches a month at the first
+# level, and fixed costs a month.
+const BIG_FACTORY := {
+	# 3 loads of corn (3,000 bu) make 8,400 gal of ethanol (2.8 gal/bu) and
+	# 51,000 lb of distillers grains (17 lb/bu): one tanker and one hopper.
+	"ethanol": {"w": 170.0, "d": 220.0, "cost": 3_500_000, "cash": 1_500_000, "jobs": 45, "value": 12_000_000.0,
+		"in": {"corn": 3.0}, "out": "ethanol", "by": {"distillers grains": 1.0}, "process": 3_400.0,
+		"batches": 4.0, "fixed": 6_000.0},
+	# A pot-belly trailer of hogs plus half a load of feed for the holding
+	# pens makes one reefer of boxed pork (170 hogs x 285 lb x 74% yield).
+	"meatpacker": {"w": 150.0, "d": 170.0, "cost": 3_000_000, "cash": 1_200_000, "jobs": 260, "value": 10_000_000.0,
+		"in": {"livestock": 1.0, "feed": 0.5}, "out": "pork", "by": {}, "process": 4_800.0,
+		"batches": 10.0, "fixed": 25_000.0},
+	# Two log trucks of hardwood (about 9,000 board feet) make a van of
+	# solid-wood case goods once sawn, kiln-dried, machined and finished.
+	"furniture": {"w": 130.0, "d": 150.0, "cost": 2_000_000, "cash": 800_000, "jobs": 180, "value": 6_000_000.0,
+		"in": {"logs": 2.0}, "out": "furniture", "by": {}, "process": 36_000.0,
+		"batches": 4.0, "fixed": 10_000.0},
+	# One towable RV: a steel chassis and frame, wood framing and plywood,
+	# and two loads of parts (windows, appliances, axles) from suppliers.
+	"rv": {"w": 170.0, "d": 200.0, "cost": 4_000_000, "cash": 1_500_000, "jobs": 220, "value": 10_000_000.0,
+		"in": {"steel": 0.5, "logs": 0.5, "parts": 1.0}, "out": "rv", "by": {}, "process": 14_000.0,
+		"batches": 6.0, "fixed": 25_000.0},
+}
+## Goods that count as each input (anything local of these fills the need).
+const BIG_FACTORY_ACCEPTS := {
+	"corn": ["corn"],
+	"livestock": ["livestock"],
+	"feed": ["distillers grains", "corn", "soybeans"],
+	"logs": ["logs"],
+	"steel": ["steel"],
+	"parts": ["goods"],
+}
+## The good each input is bought as from neighbors and the outside world.
+const BIG_FACTORY_TRADE_AS := {"corn": "corn", "livestock": "livestock", "feed": "distillers grains",
+	"logs": "logs", "steel": "steel", "parts": "goods"}
+## Inputs kept on hand, in months of full running, before it stops ordering.
+const BIG_FACTORY_STOCK_MONTHS := 1.5
+## Finished loads that can wait in the yard before the line stops.
+const BIG_FACTORY_YARD := 16.0
+## Building up: each level adds this share of capacity (a second fermenter,
+## another line); the levels a site can build up through before it buys the
+## land behind it.
+const BIG_FACTORY_LEVEL_LIFT := 0.5
+const BIG_FACTORY_LEVELS := 3
+## Building out: one bay of land behind the site this deep, adding this
+## share of capacity. Each costs the owner its share of the site's value.
+const BIG_FACTORY_BAY := 25.0
+const BIG_FACTORY_BAY_LIFT := 0.2
+const BIG_FACTORY_GROW_COST := 0.08
+## Busy this much of capacity two months running, and making money, it
+## grows; losing money this many months running, it gives back a bay or
+## a level.
+const BIG_FACTORY_BUSY := 0.85
+const BIG_FACTORY_LOSS_STREAK := 4
+## What it pays to buy out homes and shops on land it grows onto (with a
+## permit), per m² of lot: a small-town Indiana home of about $150,000 on a
+## 700 m² lot.
+const BIG_FACTORY_LAND_PER_M2 := 220
+## Contract growers are paid this share of the market price for each load of
+## hogs (the plant owns the pigs and feed; the grower is paid for the barn
+## space and work).
+const BIG_FACTORY_CONTRACT_SHARE := 0.85
 # --- Schools and universities -------------------------------------------------
 # Brawn's model (2026-10-22): the player places a high school, community
 # college or university and sets its funding. Its principal or president

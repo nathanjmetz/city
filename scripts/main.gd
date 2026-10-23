@@ -82,6 +82,9 @@ func _ready() -> void:
 	var warehouse_view := WarehouseView.new()
 	add_child(warehouse_view)
 	warehouse_view.setup(sim)
+	var big_view := BigFactoryView.new()
+	add_child(big_view)
+	big_view.setup(sim)
 
 	var campus_view := CampusView.new()
 	add_child(campus_view)
@@ -181,6 +184,9 @@ func _ready() -> void:
 	var warehouse_tool := WarehouseTool.new()
 	warehouse_tool.setup(sim, cam)
 	add_child(warehouse_tool)
+	var big_tool := BigFactoryTool.new()
+	big_tool.setup(sim, cam)
+	add_child(big_tool)
 	var park_tool := ParkTool.new()
 	park_tool.setup(sim, cam)
 	add_child(park_tool)
@@ -227,6 +233,8 @@ func _ready() -> void:
 			bank_tool.set_kind("")
 		if keep != warehouse_tool and warehouse_tool.kind != "":
 			warehouse_tool.set_kind("")
+		if keep != big_tool and big_tool.kind != "":
+			big_tool.set_kind("")
 		if keep != traffic_tool and traffic_tool.mode != TrafficTool.Mode.NONE:
 			traffic_tool.set_mode(TrafficTool.Mode.NONE)
 		if keep != park_tool and park_tool.kind != "":
@@ -249,6 +257,7 @@ func _ready() -> void:
 	telecom_tool.kind_changed.connect(func(k): if k != "": picked.call(telecom_tool))
 	bank_tool.kind_changed.connect(func(k): if k != "": picked.call(bank_tool))
 	warehouse_tool.kind_changed.connect(func(k): if k != "": picked.call(warehouse_tool))
+	big_tool.kind_changed.connect(func(k): if k != "": picked.call(big_tool))
 	park_tool.kind_changed.connect(func(k): if k != "": picked.call(park_tool))
 	move_tool.active_changed.connect(func(on): if on: picked.call(move_tool))
 	neighborhood_tool.kind_changed.connect(func(k): if k != "": picked.call(neighborhood_tool))
@@ -258,7 +267,7 @@ func _ready() -> void:
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
 		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or bank_tool.kind != "" or telecom_tool.kind != "" or move_tool.active \
-		or neighborhood_tool.kind != "")
+		or neighborhood_tool.kind != "" or big_tool.kind != "")
 	add_child(select_tool)
 
 	var water_view := WaterView.new()
@@ -274,6 +283,7 @@ func _ready() -> void:
 	hud.telecom_tool = telecom_tool
 	hud.bank_tool = bank_tool
 	hud.warehouse_tool = warehouse_tool
+	hud.big_tool = big_tool
 	hud.park_tool = park_tool
 	hud.traffic_tool = traffic_tool
 	hud.move_tool = move_tool
@@ -313,7 +323,7 @@ func _ready() -> void:
 	await _settle()
 	for sig in [sim.buildings_changed, sim.zones_changed, sim.network.changed, sim.stats_changed, sim.farms_changed, sim.water_changed,
 			sim.industry_changed, sim.warehouses_changed, sim.parks_changed, sim.education_changed, sim.power_changed, sim.banks_changed,
-			sim.telecom_changed]:
+			sim.telecom_changed, sim.big_factories_changed]:
 		sig.connect(func(): _save_pending = true)
 
 

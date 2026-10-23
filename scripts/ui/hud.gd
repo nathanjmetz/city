@@ -34,6 +34,8 @@ var _campus_cards := {}  # "high_school"/"college"/"university" -> Button
 var telecom_tool: TelecomTool
 var _telecom_card: Button
 var _warehouse_cards := {}  # Warehouses size -> Button
+var big_tool: BigFactoryTool
+var _big_cards := {}  # BigFactories kind -> Button
 var traffic_tool: TrafficTool
 var move_tool: MoveTool
 var info_view: InfoView
@@ -154,6 +156,8 @@ func _ready() -> void:
 	industry_tool.hint_changed.connect(_show_hint)
 	warehouse_tool.kind_changed.connect(func(_k): _sync())
 	warehouse_tool.hint_changed.connect(_show_hint)
+	big_tool.kind_changed.connect(func(_k): _sync())
+	big_tool.hint_changed.connect(_show_hint)
 	campus_tool.kind_changed.connect(func(_k): _sync())
 	campus_tool.hint_changed.connect(_show_hint)
 	telecom_tool.kind_changed.connect(func(_k): _sync())
@@ -226,7 +230,7 @@ func anything_open() -> bool:
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
 		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or bank_tool.kind != "" or telecom_tool.kind != "" or move_tool.active \
-		or neighborhood_tool.kind != ""
+		or neighborhood_tool.kind != "" or big_tool.kind != ""
 
 
 ## Puts every tool away and closes every panel.
@@ -251,6 +255,7 @@ func close_all() -> void:
 	farm_tool.set_mode(FarmTool.Mode.NONE)
 	industry_tool.set_kind("")
 	warehouse_tool.set_kind("")
+	big_tool.set_kind("")
 	campus_tool.set_kind("")
 	telecom_tool.set_kind("")
 	bank_tool.set_kind("")
@@ -1019,6 +1024,15 @@ func _industry_drawer() -> PanelContainer:
 	var hq := _section(row, "Main building  ·  near the resource")
 	var area := _section(row, "Save land")
 	var stores := _section(row, "Warehouses  ·  beside a street")
+	var plants := _section(row, "Big factories  ·  one per town")
+	for k in BigFactories.ORDER:
+		var kk: Dictionary = BigFactories.KINDS[k]
+		var b := _card(kk.icon, kk.short, "")
+		b.tooltip_text = "%s ($%s): makes %s from what your farms and companies bring in" \
+			% [kk.name, CitySim.money_text(int(Balance.BIG_FACTORY[k].cost)), kk.makes]
+		b.pressed.connect(func(): big_tool.set_kind(k))
+		plants.add_child(b)
+		_big_cards[k] = b
 	for k in Warehouses.ORDER:
 		var spec: Dictionary = Balance.WAREHOUSE[k]
 		var b := _card("warehouse", ["Small", "Medium", "Large", "Distrib."][Warehouses.ORDER.find(k)], "")
@@ -1159,6 +1173,7 @@ func _open(cat: String) -> void:
 			farm_tool.set_mode(FarmTool.Mode.NONE)
 			industry_tool.set_kind("")
 			warehouse_tool.set_kind("")
+			big_tool.set_kind("")
 			campus_tool.set_kind("")
 			telecom_tool.set_kind("")
 			bank_tool.set_kind("")
@@ -1196,7 +1211,7 @@ func _sync() -> void:
 		_category = "services"
 	elif park_tool.kind != "":
 		_category = "parks"
-	elif industry_tool.kind != "" or warehouse_tool.kind != "" or farm_tool.mode != FarmTool.Mode.NONE:
+	elif industry_tool.kind != "" or warehouse_tool.kind != "" or big_tool.kind != "" or farm_tool.mode != FarmTool.Mode.NONE:
 		_category = "industry"
 	elif traffic_tool.mode != TrafficTool.Mode.NONE or neighborhood_tool.kind != "":
 		_category = "roads"
@@ -1261,6 +1276,8 @@ func _sync() -> void:
 		_industry_cards[k].set_pressed_no_signal(on)
 	for k in _warehouse_cards:
 		_warehouse_cards[k].set_pressed_no_signal(k == warehouse_tool.kind)
+	for k in _big_cards:
+		_big_cards[k].set_pressed_no_signal(k == big_tool.kind)
 	for m in _traffic_cards:
 		_traffic_cards[m].set_pressed_no_signal(m == traffic_tool.mode)
 	_parallel_card.set_pressed_no_signal(road_tool.parallel)
