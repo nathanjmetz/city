@@ -2102,6 +2102,9 @@ func _curb_at(line: Array, d: float) -> Dictionary:
 ## parking across a driveway: UVC 11-1003), tried every half stall out to
 ## about 40 m each way. With none free that close the vehicle double-parks
 ## out front, as delivery trucks do. -1 if the road has no kerb to park on.
+## The space is only somewhere to stop: no new vehicle is based in it, as it
+## may face away from where that vehicle's trips go (a truck there would
+## have to drive on to find room to turn round).
 func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1) -> int:
 	var line := _curb_line(stop)
 	if line.is_empty():
@@ -2132,8 +2135,11 @@ func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1) -> int:
 				ok = false
 				break
 		if ok:
+			c.stop_only = true
 			return _add_spot(pl, c, vid)
-	return _add_spot(pl, _curb_at(line, float(line[1])), vid)
+	var last := _curb_at(line, float(line[1]))
+	last.stop_only = true
+	return _add_spot(pl, last, vid)
 
 
 ## Where the driveways of the built lots on a stop's side of its street meet
@@ -2200,7 +2206,7 @@ func _reserve(pl: Dictionary, vid: int, truck: bool) -> int:
 	var order := ["dock", "bay", "stall", "drive", "curb"] if truck else ["garage", "drive", "stall", "curb"]
 	for kind in order:
 		for i in pl.spots.size():
-			if pl.taken[i] == -1 and pl.spots[i].kind == kind:
+			if pl.taken[i] == -1 and pl.spots[i].kind == kind and not pl.spots[i].get("stop_only", false):
 				pl.taken[i] = vid
 				return i
 	return -1
@@ -2509,8 +2515,20 @@ func _fix_end(car: Dictionary, may_replan := true) -> void:
 	if pl.is_empty():
 		return
 	var w: Dictionary = ways[car.route[car.route.size() - 1]]
-	var e := _entrance(pl, car.to_spot)
+	var e := _entrance(pl, car.to_spot, car.len)
 	var d := _nearest_d(w, e)
+	var s: Dictionary = pl.spots[car.to_spot]
+	if s.kind == "curb" and car.len > 6.5 and s.face.dot(_way_dir(w, clampf(d, 0.0, w.len))) < 0.0:
+		# A truck can't swing a U-turn across a two-lane road to the far
+		# curb (a WB-67 needs a 45 ft radius): it stops at the curb on its
+		# own side, across from the place, as delivery drivers do.
+		var frac: float = d / w.len if w.fwd else 1.0 - d / w.len
+		var ci := _new_curb(pl, {"seg": w.seg, "at_frac": frac, "side": 1 if w.fwd else -1}, car.id)
+		if ci >= 0:
+			_release(pl.ref, car.to_spot, car.id)
+			car.to_spot = ci
+			e = _entrance(pl, ci, car.len)
+			d = _nearest_d(w, e)
 	if d < w.s0 and car.route.size() >= 2 and car.leg < car.route.size() - 1:
 		# The driveway opens off the junction just before this road (a lot on
 		# a roundabout, say): turn in from the road before it instead.
@@ -2545,15 +2563,17 @@ func _pull_over(car: Dictionary, w: Dictionary) -> void:
 	_release(pl.ref, car.get("to_spot", -1), car.id)
 	car.to_spot = ci
 	car.pulled_over = true
-	car.end_d = clampf(_nearest_d(w, _entrance(pl, car.to_spot)), car.d + PARK_LEAD, w.len - 0.5)
+	car.end_d = clampf(_nearest_d(w, _entrance(pl, car.to_spot, car.len)), car.d + PARK_LEAD, w.len - 0.5)
 
 
 ## Where cars leave the road for a spot: the curb cut, the lane's road end,
 ## or the curb space itself.
-func _entrance(pl: Dictionary, spot: int) -> Vector3:
+func _entrance(pl: Dictionary, spot: int, car_len := 0.0) -> Vector3:
 	var s: Dictionary = pl.spots[spot]
 	if s.kind == "curb":
-		return s.pos - s.face * 9.0
+		# Far enough back that a long rig's tail is behind it as it pulls in
+		# straight, rather than looping back on itself to line up.
+		return s.pos - s.face * maxf(9.0, car_len * 0.5 + 2.5)
 	if not pl.drive.is_empty():
 		return pl.drive[pl.drive.size() - 1]
 	return SiteLayout.world(pl.lot, Vector2(pl.lay.cut_x, -pl.lot.to_curb))
@@ -2610,9 +2630,24 @@ func _in_path(car: Dictionary) -> Dictionary:
 	var w: Dictionary = ways[car.route[car.leg]]
 	# Start along the car's own heading, so the turn in begins smoothly.
 	var here := car_pose(car)
-	var wps := [here[0], here[0] + here[1] * 2.0,
-		_lane_point(w, car.lane, clampf(car.end_d - 1.0, car.d + 2.5, w.len))]
-	wps.append_array(_approach_pts(pl, car.to_spot, car.len))
+	var ld := clampf(car.end_d - 1.0, car.d + 2.5, w.len)
+	var wps := [here[0], here[0] + here[1] * 2.0, _lane_point(w, car.lane, ld)]
+	var s: Dictionary = pl.spots[car.to_spot]
+	var dir := _way_dir(w, ld)
+	if s.kind == "curb" and s.face.dot(dir) < 0.0:
+		# A curb space across the street: a U-turn over to it, as a driver
+		# swings round on a quiet street, rather than cutting straight back.
+		var lat: Vector3 = s.pos - wps[2]
+		lat -= dir * lat.dot(dir)
+		lat.y = 0.0
+		var r := maxf(lat.length(), 3.0) * 0.5
+		var side := lat.normalized() if lat.length() > 0.1 else Vector3(dir.z, 0.0, -dir.x)
+		for k in range(1, 13):
+			var ang := PI * k / 12.0
+			wps.append(wps[2] + dir * (r * sin(ang)) + side * (r - r * cos(ang)))
+		wps.append(s.pos + s.face * car.len * 0.5)
+	else:
+		wps.append_array(_approach_pts(pl, car.to_spot, car.len))
 	return _poly_path({"node": -1, "wi": w.id, "li": car.lane, "wo": -1, "lo": -1, "turn": Turn.RIGHT,
 		"vt": 4.0, "exit_d": 0.0}, _smooth(wps), 0.0)
 
@@ -4019,6 +4054,8 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 	# Don't block the box: there must be room on the far side.
 	var queued := 0
 	for b in occupants:
+		if b.j == null and b.get("conn") == null:
+			continue  # parked earlier this tick, right after committing
 		var bc: Dictionary = b.j if b.j != null else b.conn
 		if b.id != car.id and bc.wo == c.wo and bc.lo == c.lo:
 			queued += 1
@@ -4032,7 +4069,7 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 		return false
 	# Nothing crossing our path in the junction.
 	for b in occupants:
-		if b.id == car.id:
+		if b.id == car.id or b.j == null and b.get("conn") == null:
 			continue
 		var bc: Dictionary = b.j if b.j != null else b.conn
 		if _conflicts(c, bc):
