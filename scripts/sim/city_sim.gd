@@ -154,6 +154,9 @@ var timelapse := Timelapse.new()
 ## it (PropertyCare), and developers' asks to build denser (Redevelopment).
 var care := PropertyCare.new()
 var redevelopment := Redevelopment.new()
+## Home builders who ask to build subdivisions on farmland at the edge of
+## town, each with a choice of sites (Subdivisions).
+var subdivisions := Subdivisions.new()
 ## The town's numbers over time, for the top bar's charts (StatHistory).
 var history := StatHistory.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
@@ -829,6 +832,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			leaders.from_dict({})
 			care.from_dict({})
 			redevelopment.from_dict({})
+			subdivisions.from_dict({})
 			timelapse.from_dict(self, {})
 			history.from_dict({})
 			_lever_steps.clear()
@@ -1184,6 +1188,8 @@ func tick() -> void:
 		heritage.carry_out(self)
 		leaders.carry_out(self)
 		redevelopment.carry_out(self)
+		if subdivisions.carry_out(self):
+			farms_changed.emit()
 	Perf.add("sim.heritage", t)
 	t = Perf.now()
 	# Every owner looks after their property, a slice of town an hour;
@@ -1198,6 +1204,17 @@ func tick() -> void:
 		t = Perf.now()
 		redevelopment.month(self)
 		Perf.add("sim.redevelop", t)
+	elif hour == 20 * TICKS_PER_HOUR + 20:
+		# Home builders: the next phase of a subdivision, or start scouting
+		# for land for a new one...
+		t = Perf.now()
+		subdivisions.month(self)
+		Perf.add("sim.subdivisions", t)
+	if tick_count % TICKS_PER_HOUR == 20 and not subdivisions.scout.is_empty():
+		# ...a few roads an hour.
+		t = Perf.now()
+		subdivisions.hour(self)
+		Perf.add("sim.subdivisions", t)
 	t = Perf.now()
 	if tick_count % WaterUtility.DECIDE_EVERY == 0 and not services.water.utilities.is_empty():
 		var res := services.water.decide(self, yard_usable)
@@ -2667,6 +2684,20 @@ func frontage_chain(seg: int, side: int) -> Array:
 
 
 ## Paints a zone along one street side's frontage, where its lots read it.
+## Zones both sides of new streets a builder laid (Subdivisions), the way
+## the player zones a block face, and replans the lots.
+func zone_new_streets(segs: Array, zone: int) -> void:
+	planner.update(network)
+	for seg in segs:
+		if network.segments.has(seg):
+			for side in [1, -1]:
+				_paint_frontage(seg, side, zone)
+	_clear_reserved_zones()
+	_usable_cache.clear()
+	_lots_dirty = true
+	zones_changed.emit()
+
+
 func _paint_frontage(seg: int, side: int, zone: int) -> void:
 	var s := planner.side_survey(network, seg, side)
 	if s.is_empty():
@@ -3683,6 +3714,7 @@ func to_dict(postcard := false) -> Dictionary:
 		"leaders": leaders.to_dict(),
 		"care": care.to_dict(),
 		"redevelopment": redevelopment.to_dict(),
+		"subdivisions": subdivisions.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"vegetation": vegetation.to_dict(),
 	}
@@ -3773,6 +3805,7 @@ func from_dict(d: Dictionary) -> void:
 	leaders.from_dict(d.get("leaders", {}))
 	care.from_dict(d.get("care", {}))
 	redevelopment.from_dict(d.get("redevelopment", {}))
+	subdivisions.from_dict(d.get("subdivisions", {}))
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:

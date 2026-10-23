@@ -26,6 +26,11 @@ var editing := false
 
 var _imm := ImmediateMesh.new()
 var _mesh := MeshInstance3D.new()
+## The ghost of what a request would build (a builder's homes), drawn over
+## everything so woods don't hide it. Only while a card is open: nothing is
+## drawn or kept otherwise.
+var _ghost_imm := ImmediateMesh.new()
+var _ghost := MeshInstance3D.new()
 var _drag := -1
 var _hover := -1   # handle under the mouse: bends 0..n-1, then midpoints n..
 
@@ -48,6 +53,19 @@ func _ready() -> void:
 	_mesh.material_override = m
 	_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_mesh)
+	var g := StandardMaterial3D.new()
+	g.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	g.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	g.vertex_color_use_as_albedo = true
+	g.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# Seen through trees and hills, like the rest of the plan.
+	g.no_depth_test = true
+	g.render_priority = 9
+	g.disable_fog = true
+	_ghost.mesh = _ghost_imm
+	_ghost.material_override = g
+	_ghost.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_ghost)
 	visible = false
 
 
@@ -60,6 +78,7 @@ func show_plan(req: Dictionary) -> void:
 	_drag = -1
 	visible = true
 	_redraw()
+	_draw_ghost()
 
 
 func hide_plan() -> void:
@@ -67,6 +86,7 @@ func hide_plan() -> void:
 	editing = false
 	_drag = -1
 	visible = false
+	_ghost_imm.clear_surfaces()
 
 
 func set_editing(on: bool) -> void:
@@ -197,6 +217,9 @@ func _redraw() -> void:
 	for p in route:
 		line.append(Vector2(p[0], p[1]))
 	var w := float(request.width)
+	# The streets it would lay, as pale bands.
+	for st in request.get("streets", []):
+		_bar(Vector2(st[0][0], st[0][1]), Vector2(st[1][0], st[1][1]), 9.0, Color(Brand.BRAND_CREAM, 0.55))
 	if _is_area():
 		# The land asked for, with its boundary.
 		_fill(line, Color(Brand.BRAND_MINT, 0.22))
@@ -239,6 +262,48 @@ func _redraw() -> void:
 			_disc(Vector2(p.x, p.z), r + 1.5 * scale, Brand.BRAND_INK)
 			_disc(Vector2(p.x, p.z), r, c)
 	_imm.surface_end()
+
+
+## The ghost of the homes a request would build: [x, z, angle, w, d, h]
+## boxes with a gable roof, see-through, on the ground.
+func _draw_ghost() -> void:
+	_ghost_imm.clear_surfaces()
+	var list: Array = request.get("ghost", [])
+	if list.is_empty():
+		return
+	var wall := Color(Brand.BRAND_CREAM, 0.3)
+	var roof := Color(Brand.BRAND_CORAL, 0.75)
+	_ghost_imm.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	for h in list:
+		var c := Vector2(float(h[0]), float(h[1]))
+		var a := float(h[2])
+		var ax := Vector2(cos(a), sin(a)) * float(h[3]) * 0.5
+		var az := Vector2(-sin(a), cos(a)) * float(h[4]) * 0.5
+		var y0 := Terrain.ground_y(c.x, c.y)
+		var y1 := y0 + float(h[5]) * 0.6
+		var y2 := y0 + float(h[5])
+		var q := [c - ax - az, c + ax - az, c + ax + az, c - ax + az]
+		for i in 4:
+			var p0: Vector2 = q[i]
+			var p1: Vector2 = q[(i + 1) % 4]
+			_gtri(Vector3(p0.x, y0, p0.y), Vector3(p1.x, y0, p1.y), Vector3(p1.x, y1, p1.y), wall)
+			_gtri(Vector3(p0.x, y0, p0.y), Vector3(p1.x, y1, p1.y), Vector3(p0.x, y1, p0.y), wall)
+		# The ridge runs along the house's width.
+		var r0 := c - ax
+		var r1 := c + ax
+		_gtri(Vector3(q[0].x, y1, q[0].y), Vector3(q[1].x, y1, q[1].y), Vector3(r1.x, y2, r1.y), roof)
+		_gtri(Vector3(q[0].x, y1, q[0].y), Vector3(r1.x, y2, r1.y), Vector3(r0.x, y2, r0.y), roof)
+		_gtri(Vector3(q[3].x, y1, q[3].y), Vector3(q[2].x, y1, q[2].y), Vector3(r1.x, y2, r1.y), roof)
+		_gtri(Vector3(q[3].x, y1, q[3].y), Vector3(r1.x, y2, r1.y), Vector3(r0.x, y2, r0.y), roof)
+		_gtri(Vector3(q[0].x, y1, q[0].y), Vector3(q[3].x, y1, q[3].y), Vector3(r0.x, y2, r0.y), wall)
+		_gtri(Vector3(q[1].x, y1, q[1].y), Vector3(q[2].x, y1, q[2].y), Vector3(r1.x, y2, r1.y), wall)
+	_ghost_imm.surface_end()
+
+
+func _gtri(a: Vector3, b: Vector3, c: Vector3, col: Color) -> void:
+	for p in [a, b, c]:
+		_ghost_imm.surface_set_color(col)
+		_ghost_imm.surface_add_vertex(p)
 
 
 ## Where a road meets the route: the middle of its samples inside the corridor.

@@ -223,6 +223,59 @@ const REDEV_CENTER_AREA := 12_000.0
 const REDEV_TRIPS_PER_FLAT := 6.7
 const REDEV_TRIPS_PER_KSQFT := 37.75
 
+## Home builders and their subdivisions (Subdivisions, Brawn 2026-10-23).
+## Who comes at each size: [population, phases, who]. A local builder does a
+## street or two, a regional developer a neighborhood, and a city draws a
+## builder of master-planned communities.
+const SUBDIV_TIERS := [[300, 2, "a local builder"], [2000, 4, "a regional developer"],
+	[8000, 6, "a master-planned community builder"]]
+## A builder only asks when the town wants homes this much and has fewer
+## than this many empty home lots left.
+const SUBDIV_DEMAND := 0.5
+const SUBDIV_FREE_LOTS := 8
+## Subdivisions still building at once (a new builder waits for one to finish).
+const SUBDIV_MAX_ACTIVE := 2
+## The site: frontage along the road (about 1,000 ft), a row of homes every
+## SUBDIV_ROW metres back (two 130 ft lots and a street), the first cross
+## street this far in (lots back onto the road, as in most Midwest
+## subdivisions), the entrances this far in from each end.
+const SUBDIV_WIDTH := 300.0
+const SUBDIV_ROW := 100.0
+const SUBDIV_FIRST_ROW := 55.0
+const SUBDIV_SPINE_IN := 45.0
+## How far a phase's spine streets run on past its last cross street, for
+## the next phase to continue from (a stub street).
+const SUBDIV_STUB := 30.0
+## A house lot's frontage (about 72 ft) and front setback (about 25 ft).
+const SUBDIV_LOT_W := 22.0
+const SUBDIV_SETBACK := 7.5
+## Looking for land: points along each road this far apart, sites at least
+## this far apart so the choice is a real one, and the most candidates
+## looked at in one month (it's a monthly check: keep it cheap).
+const SUBDIV_SITE_STEP := 75.0
+const SUBDIV_SITE_APART := 450.0
+const SUBDIV_MAX_TRIES := 80
+## A big town's roads are scouted this many pieces a month, a window that
+## moves on each month.
+const SUBDIV_SEGS_PER_MONTH := 120
+## Roads scouted a game hour (the window takes about a game day, a month).
+const SUBDIV_SEGS_PER_HOUR := 5
+## ...or fewer, once this many sites have been looked at closely that hour.
+const SUBDIV_TRIES_PER_HOUR := 2
+## The next phase opens when this share of the last one is built, and not
+## sooner than this many months (a builder platting 20 to 60 lots a phase
+## in a market that absorbs a few sales a month: about a year a phase).
+const SUBDIV_NEXT_PHASE_FILL := 0.7
+const SUBDIV_PHASE_MIN_MONTHS := 9
+## What a yes means: about 2.5 people a household (US Census), about 0.6
+## school-age children per new single-family home (pupil yield studies),
+## about 9.4 car trips a day per house and about 1 at rush hour (ITE Trip
+## Generation, code 210).
+const SUBDIV_PEOPLE_PER_HOME := 2.5
+const SUBDIV_KIDS_PER_HOME := 0.6
+const SUBDIV_TRIPS_PER_HOME := 9.4
+const SUBDIV_PEAK_PER_HOME := 1.0
+
 ## Floor-area ratio (floor space ÷ lot area) zoning allows, the way US codes
 ## cap a building's bulk. The steps are Chicago Zoning Ordinance districts:
 ## homes RS-3 0.9, RT-4 1.2, RM-5 2.0, RM-6 4.4, RM-6.5 6.6; shops B3-2
