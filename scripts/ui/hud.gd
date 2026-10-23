@@ -791,7 +791,7 @@ func _parks_drawer() -> PanelContainer:
 			continue
 		var a: Dictionary = Balance.AMENITIES[k]
 		var short := {"park": "Park", "courthouse": "Courthouse", "water_tower": "Water tower",
-			"grain_elevator": "Elevator", "football": "Football", "fairgrounds": "Fairgrounds"}
+			"grain_elevator": "Elevator", "football": "Football", "fairgrounds": "Fairgrounds", "trailhead": "Trails"}
 		var tip := "%s: $%s" % [spec.name, CitySim.money_text(int(a.cost))]
 		if spec.landmark:
 			tip += ", $%s a month" % CitySim.money_text(int(a.upkeep))

@@ -31,6 +31,8 @@ const KINDS := {
 	"grain_elevator": {"name": "Grain elevator", "icon": "elevator", "landmark": true},
 	"football": {"name": "Football field", "icon": "football", "landmark": true},
 	"fairgrounds": {"name": "County fairgrounds", "icon": "fairgrounds", "landmark": true},
+	# Where the town's trails start; its director grows them (Trails).
+	"trailhead": {"name": "Trailhead", "icon": "trailhead", "landmark": true},
 	# Opened by themselves for visitors (Tourism), never placed by the player.
 	"gas_station": {"name": "Gas station", "icon": "car", "landmark": false, "auto": true},
 	"diner": {"name": "Diner", "icon": "shops", "landmark": false, "auto": true},
@@ -42,7 +44,7 @@ const PARK_NAMES := ["Lincoln", "Riverside", "Memorial", "Oak Grove", "Maple", "
 	"Hilltop", "Cedar", "Prairie", "Jaycee", "Elm Street", "Walnut", "Fairview", "Shady Lane",
 	"Greenwood", "Burr Oak", "Cardinal", "Meadowbrook", "Founders", "Harmony", "Lakeview"]
 const LANDMARK_NAMES := {"courthouse": "Courthouse Square", "water_tower": "Water tower",
-	"grain_elevator": "Farmers Co-op Elevator", "football": "Memorial Field", "fairgrounds": "County Fairgrounds",
+	"grain_elevator": "Farmers Co-op Elevator", "football": "Memorial Field", "fairgrounds": "County Fairgrounds", "trailhead": "Trailhead",
 	"gas_station": "Gas station", "diner": "Diner", "motel": "Motel"}
 ## What the basics are called, for the info panel.
 const FEATURE_NAMES := {"paths": "paths", "playground": "playground", "pavilion": "picnic pavilion",
@@ -74,6 +76,7 @@ static var _nodes := {}
 ## The fairgrounds and football field as event venues, and the visitors
 ## they bring (see Tourism).
 var tourism := Tourism.new()
+var trails := Trails.new()
 
 
 ## A Balance list's value for site `id`'s step of a slider.
@@ -192,6 +195,8 @@ func add(sim: CitySim, kind: String, pos: Vector3, dir: Vector3) -> int:
 	s.tier = Neighborhood.tier_for(s.score, -1)
 	if Tourism.is_venue(kind):
 		tourism.sync(sim)
+	if kind == "trailhead":
+		trails.sync(sim)
 	return id
 
 
@@ -224,7 +229,7 @@ func at(p: Vector3) -> int:
 
 
 func covers(p: Vector3) -> bool:
-	return at(p) != -1
+	return at(p) != -1 or trails.on_path(p)
 
 
 func acres(id: int) -> float:
@@ -243,6 +248,8 @@ func monthly_upkeep() -> int:
 func site_upkeep(id: int) -> float:
 	var s: Dictionary = sites[id]
 	var funding := policy(id, "funding", Balance.POLICY_UPKEEP)
+	if s.kind == "trailhead":
+		return (float(Balance.AMENITIES[s.kind].upkeep) + trails.upkeep()) * funding
 	if s.kind != "park":
 		return float(Balance.AMENITIES[s.kind].upkeep) * funding
 	var tree := tree_effect(id, "upkeep+")
@@ -336,14 +343,15 @@ func update_effects(sim: CitySim) -> void:
 	_effects_lots = sim.lots
 	lot_value.clear()
 	lot_happy.clear()
-	if sites.is_empty():
+	if sites.is_empty() and trails.paths.is_empty():
 		return
 	for key in sim.buildings:
 		if not sim.lots.has(key):
 			continue
 		var p: Vector3 = sim.lots[key].pos
-		lot_value[key] = lift_at(p, "value")
-		lot_happy[key] = lift_at(p, "happy")
+		# Homes along a trail are worth a little more, too.
+		lot_value[key] = minf(lift_at(p, "value") + trails.lift(sim, key, "value"), Balance.AMENITY_VALUE_CAP)
+		lot_happy[key] = minf(lift_at(p, "happy") + trails.lift(sim, key, "happy"), Balance.AMENITY_HAPPY_CAP)
 
 
 ## Average happiness lift across the town's homes, 0 to AMENITY_HAPPY_CAP.
@@ -362,7 +370,7 @@ func average_happiness(sim: CitySim) -> float:
 func decide(sim: CitySim) -> bool:
 	_sign_up(sim)
 	tourism.sync(sim)
-	var changed := false
+	var changed := trails.decide(sim)
 	var ids := sites.keys()
 	ids.sort()
 	for id in ids:
@@ -723,7 +731,7 @@ func to_dict() -> Dictionary:
 			"size": [s.size.x, s.size.y], "start_area": s.start_area, "founded": s.founded, "features": fs,
 			"score": s.score, "tier": s.tier, "next_feature": s.next_feature, "grew": s.grew,
 			"leader": s.leader, "why": s.why}
-	return {"next_id": _next_id, "sites": out, "tourism": tourism.to_dict()}
+	return {"next_id": _next_id, "sites": out, "tourism": tourism.to_dict(), "trails": trails.to_dict()}
 
 
 func from_dict(d: Dictionary) -> void:
@@ -742,6 +750,7 @@ func from_dict(d: Dictionary) -> void:
 			"leader": _leader(e.get("leader", {})), "why": str(e.get("why", ""))}
 	_next_id = int(d.get("next_id", 1))
 	tourism.from_dict(d.get("tourism", {}))
+	trails.from_dict(d.get("trails", {}))
 
 
 ## A park board chair: an Agency leader with a name of their own.

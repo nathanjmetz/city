@@ -180,6 +180,14 @@ static func sources(sim: Object) -> Dictionary:
 	for id in sim.parks.sites:
 		var poly: PackedVector2Array = sim.parks.footprint(id)
 		out["p%d %s" % [id, poly]] = _poly_cells.bind(poly)
+	# A trail's cleared strip through the woods.
+	for i in sim.parks.trails.paths.size():
+		var pts: Array = sim.parks.trails.paths[i].pts
+		var line := PackedVector3Array()
+		for q in pts:
+			line.append(Vector3(float(q[0]), 0.0, float(q[1])))
+		out["t%d %d %s" % [i, pts.size(), line[0] if not line.is_empty() else Vector3.ZERO]] = \
+			_line_cells.bind(line, Balance.TRAIL_CLEAR * 0.5 + 1.0)
 	for id in sim.hubs.hubs:
 		var h: Dictionary = sim.hubs.hubs[id]
 		for cell in h.cells:
