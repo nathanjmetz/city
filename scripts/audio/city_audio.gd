@@ -215,7 +215,7 @@ func _move_cars() -> void:
 		var car = s.car
 		if car == null:
 			continue
-		if not _live.has(car.id):
+		if not _live.has(car.id) or not car.has("route"):
 			s.want = 0.0  # arrived; let it fade where it stopped
 			continue
 		var p: AudioStreamPlayer3D = s.player

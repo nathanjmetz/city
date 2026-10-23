@@ -9,6 +9,8 @@ func _init() -> void:
 	var finished := 0
 	var seen := {}
 	var too_close := 0
+	var held := []
+	var parked_posed := 0
 	for i in 12000:
 		sim.tick()
 		most = maxi(most, t.cars.size())
@@ -19,10 +21,17 @@ func _init() -> void:
 			if not now.has(id):
 				finished += 1
 		seen = now
+		# A view (the engine sounds) can hold a car between frames after it
+		# parks: asking where it is must still work.
+		for car in held:
+			if not now.has(car.id) and t.car_pose(car).size() == 2:
+				parked_posed += 1
+		held = t.cars.duplicate()
 		if i % 50 == 0:
 			too_close += _crowding(t)
 	_check(most > 3, "cars on the road (most at once %d, pop %d)" % [most, sim.stats.population])
 	_check(finished > 3, "cars finish their trips (%d)" % finished)
+	_check(parked_posed > 0, "a car held after it parks still has a pose (%d)" % parked_posed)
 	_check(too_close == 0, "cars keep their distance (%d too close)" % too_close)
 
 	# The same commands give the same cars (needed for multiplayer).
