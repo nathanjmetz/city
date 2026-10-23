@@ -70,8 +70,9 @@ const TREES := {
 	"forest": [
 		{"id": "log_yard", "name": "Log yard", "cost": 150_000, "needs": {},
 			"effects": {"stock+": 6.0, "jobs+": 4}},
-		{"id": "chip_plant", "name": "Chip plant", "cost": 500_000, "requires": ["log_yard"],
-			"needs": {"profit": 100_000}, "effects": {"output*": 0.1, "jobs+": 6}, "note": "sells the tops and slash"},
+		{"id": "chip_plant", "name": "Wood chip mill", "cost": 500_000, "requires": ["log_yard"],
+			"needs": {"profit": 100_000}, "effects": {"output*": 0.1, "jobs+": 6},
+			"note": "chips the tops and slash for paper mills and power plants"},
 		{"id": "replanting", "name": "Replanting crew", "cost": 250_000, "requires": ["log_yard"],
 			"needs": {"leader_edu": 0.5}, "effects": {"output*": 0.15, "jobs+": 8}, "note": "stands come back faster"},
 		{"id": "dry_kiln", "name": "Dry kiln", "cost": 900_000, "requires": ["chip_plant"],

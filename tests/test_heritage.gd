@@ -173,6 +173,43 @@ func _init() -> void:
 		_hour(sim)
 		_check(sim.network.segments[gseg].type == RoadStyle.Type.COUNTY, "approved, it's a paved county road")
 
+	# --- A logging company asks for a tax break on a wood chip mill at its own
+	# yard (Brawn: "somebody asked to build a chip plant ... I clicked yes and
+	# nothing happened"). Yes builds it and the bell says so.
+	_clear_bell(sim)
+	sim.economy.money = 10_000_000
+	var forest := _best(Industry.KINDS["forest"].resource)
+	sim.apply({"type": "build_road", "start": [forest.x - 1800, forest.z], "ctrl": [forest.x, forest.z],
+		"end": [forest.x + 1800, forest.z]})
+	var site := -1
+	for dx in [0, 200, -200, 400, -400]:
+		if sim.apply({"type": "place_industry", "kind": "forest", "pos": [forest.x + dx, forest.z + 30], "dir": [0, -1]}):
+			site = sim.industry.sites.keys()[-1]
+			break
+	_check(site >= 0, "a logging company opens in the woods")
+	if site >= 0:
+		var s: Dictionary = sim.industry.sites[site]
+		s.built = ["log_yard", "replanting"]
+		s.leader = {"edu": 0.5, "caution": 1.0, "ambition": 0.0}
+		for cand in sim.industry._candidates(s):
+			if s.pads.size() < 12 and sim.industry.pad_profit(s, cand) > 0.0:
+				s.pads.append(cand)
+		plan = sim.leaders._plan_abatement(sim)
+		_check(not plan.is_empty() and str(plan.do.node) == "chip_plant",
+			"with a log yard paid off, it asks for a chip mill (%s)" % str(plan.get("do", {})))
+		if not plan.is_empty():
+			_check(str(plan.title).contains("wood chip mill") and str(plan.why).contains("own yard")
+				and str(plan.why).contains("no new land"), "the card says it's a wood chip mill at its own yard: %s" % plan.why)
+			sim.leaders._file(sim, plan)
+			var ask := _ask_for(sim, "abatement")
+			_check(ask > 0, "the abatement ask is on the bell")
+			sim.apply({"type": "permit", "id": ask, "answer": "approve"})
+			_hour(sim)
+			_check("chip_plant" in s.built, "approved, the chip mill is built")
+			_check(str(s.why).contains("wood chip mill"), "the company says what it built (%s)" % s.why)
+			_check(sim.permits.requests[ask].note == "Done.", "and the bell marks the ask done")
+			_check(sim.permits.state_of(ask) == Permits.State.DONE, "the request is closed")
+
 	# --- Saved and loaded, the story is the same.
 	_month(sim)
 	var copy := CitySim.new()
@@ -235,6 +272,18 @@ func _town(seed: int) -> CitySim:
 	for i in 1200:
 		sim.tick()
 	return sim
+
+
+func _best(res: int) -> Vector3:
+	var best := Vector3.ZERO
+	var best_v := 0.0
+	for x in range(-3000, 3001, 150):
+		for z in range(-3000, 3001, 150):
+			var v := Resources.at(res, Vector3(x, 0, z))
+			if v > best_v:
+				best_v = v
+				best = Vector3(x, 0, z)
+	return best
 
 
 func _month(sim: CitySim) -> void:

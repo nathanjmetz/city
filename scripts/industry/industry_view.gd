@@ -45,7 +45,7 @@ func _process(delta: float) -> void:
 func _rebuild() -> void:
 	for id in _sites.keys():
 		var s = sim.industry.sites.get(id)
-		if s == null or _sites[id].get_meta("pads") != s.pads.size():
+		if s == null or _sites[id].get_meta("pads") != s.pads.size() or _sites[id].get_meta("built") != s.get("built", []).size():
 			_sites[id].queue_free()
 			_sites.erase(id)
 			_trees.remove("site:%d" % id)
@@ -69,6 +69,7 @@ func _site(id: int, s: Dictionary) -> Node3D:
 	var pines := []
 	var root := Node3D.new()
 	root.set_meta("pads", s.pads.size())
+	root.set_meta("built", s.get("built", []).size())
 	add_child(root)
 	# Lanes in one mesh, in world space.
 	var st := SurfaceTool.new()
@@ -143,7 +144,7 @@ func _forest(id: int, s: Dictionary, root: Node3D, trees: Array) -> void:
 	var basis := Basis.looking_at(s.dir, Vector3.UP)
 	var merged := {}  # material -> SurfaceTool, every cell merged
 	var seed0 := hash([roundi(s.pos.x), roundi(s.pos.z)])
-	_hq(id, s, root, ForestryBuilder.mill(seed0, Industry.HQ_SIZE), trees)
+	_hq(id, s, root, ForestryBuilder.mill(seed0, Industry.HQ_SIZE, s.get("built", [])), trees)
 	# Which cells are wooded: the stands, the mill's own cell, and every free
 	# forest cell next to them.
 	var wooded := {Vector2i.ZERO: true}
