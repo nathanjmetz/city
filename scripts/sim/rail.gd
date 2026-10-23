@@ -868,9 +868,11 @@ func _construct(sim: CitySim) -> void:
 		d.money -= m * rate
 		d.ledger.costs += m * rate
 		pc.built += m
+		l.built = pc.built
 		_dirty = true
 		if pc.built >= total - 0.01:
 			pc.built = -1.0  # complete
+			l.built = total
 			l.state = "open"
 			if l.kind == "main":
 				_region_run(l)
