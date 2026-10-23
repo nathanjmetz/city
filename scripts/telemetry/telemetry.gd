@@ -39,6 +39,8 @@ var _flush_time := 0.0
 var _perf_time := 0.0
 var _frames := 0
 var _worst := 0.0
+var _frame_ms := PackedFloat32Array()   # this window's frame times
+var _quality_hooked := false
 var _hitches := 0
 var _load_start := -1.0
 var _load_status := ""
@@ -64,7 +66,7 @@ func _ready() -> void:
 		"window": [get_viewport().get_visible_rect().size.x, get_viewport().get_visible_rect().size.y],
 		"gpu": RenderingServer.get_video_adapter_name(), "web": _browser(), "cores": OS.get_processor_count(),
 		"ram_gb": snappedf(float(OS.get_memory_info().get("physical", 0)) / 1e9, 0.1),
-		"app": not OS.has_feature("web") and OS.has_feature("template")})
+		"renderer": RenderingServer.get_current_rendering_method(), "app": "web" if OS.has_feature("web") else "desktop"})
 
 
 ## Records something worth knowing (a join failure, a slow step, ...).
@@ -103,6 +105,14 @@ func _input(e: InputEvent) -> void:
 			_world_at(e.position) if over == "" else Vector2.INF)
 	elif e is InputEventMouseButton and not e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
 		tracker.release(e.position / get_viewport().get_visible_rect().size, now, _world_at(e.position))
+	elif e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN,
+			MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT]:
+		tracker.scroll(["wheel_up", "wheel_down", "wheel_left", "wheel_right"][e.button_index - MOUSE_BUTTON_WHEEL_UP],
+			e.factor if e.factor > 0.0 else 1.0, _camera_height(), now)
+	elif e is InputEventPanGesture:
+		tracker.scroll("pan", e.delta.length(), _camera_height(), now)
+	elif e is InputEventMagnifyGesture:
+		tracker.scroll("magnify", absf(e.factor - 1.0), _camera_height(), now)
 	elif e is InputEventKey and e.pressed and not e.echo:
 		var focus := get_viewport().gui_get_focus_owner()
 		if focus is LineEdit or focus is TextEdit:
@@ -123,9 +133,20 @@ static func label_of(c: Control) -> String:
 		# "Views: see the map by ..." -> "Views"
 		s = c.tooltip_text.get_slice("\n", 0).get_slice(": ", 0)
 	else:
-		s = str(c.name)
+		s = _inner_text(c)
+		if s == "" and "icon" in c and c.icon and c.icon.resource_path != "":
+			s = c.icon.resource_path.get_file().get_basename()
+		if s == "":
+			s = str(c.name)
+			if s.begins_with("@") and c.get_parent() is Control:
+				s = "%s/%s" % [str(c.get_parent().name), c.get_class()]
 	var re := RegEx.create_from_string("[0-9][0-9,.]*")
 	return re.sub(s.strip_edges(), "#", true).left(48)
+
+
+func _camera_height() -> float:
+	var cam := get_viewport().get_camera_3d()
+	return cam.global_position.y if cam else 0.0
 
 
 ## Where on the ground (x, z in town meters) a screen point is, or INF.
@@ -158,6 +179,18 @@ static func brief(cmd: Dictionary) -> String:
 	return " ".join(parts).left(200)
 
 
+## The first text shown inside a control (a card's caption).
+static func _inner_text(n: Node, depth := 0) -> String:
+	for ch in n.get_children():
+		if (ch is Label or ch is RichTextLabel) and str(ch.text).strip_edges() != "":
+			return str(ch.text).get_slice("\n", 0)
+		if depth < 2:
+			var t := _inner_text(ch, depth + 1)
+			if t != "":
+				return t
+	return ""
+
+
 static func _button_of(c: Control) -> BaseButton:
 	var n: Node = c
 	for i in 4:
@@ -180,6 +213,7 @@ func _process(delta: float) -> void:
 		var boot := {"engine_ms": Time.get_ticks_msec(), "page_ms": _page_ms()}
 		boot.merge(_web_load())
 		event("boot", boot)
+		_hook_quality()
 	_watch_scene()
 	_watch_loading(now)
 	_watch_client()
@@ -188,12 +222,13 @@ func _process(delta: float) -> void:
 	_frames += 1
 	if not LoadingScreen.is_open():
 		_worst = maxf(_worst, delta)
+		_frame_ms.append(delta * 1000.0)
 		if delta > HITCH:
 			_hitches += 1
 	_perf_time += delta
 	if _perf_time >= PERF_EVERY:
 		_perf_sample()
-	tracker.tick(now)
+	tracker.tick(now, _camera_height())
 	_flush_time += delta
 	if _flush_time >= FLUSH_EVERY:
 		flush()
@@ -204,8 +239,13 @@ func _perf_sample() -> void:
 		"mem_mb": int(OS.get_static_memory_usage() / 1048576.0),
 		"draw": int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
 		"nodes": int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)), "scene": _scene}
-	if GraphicsQuality.current and GraphicsQuality.current.active:
-		e["gfx"] = GraphicsQuality.current.describe()
+	if not _frame_ms.is_empty():
+		var sorted := _frame_ms.duplicate()
+		sorted.sort()
+		e["p50_ms"] = snappedf(sorted[sorted.size() / 2], 0.1)
+		e["p95_ms"] = snappedf(sorted[mini(int(sorted.size() * 0.95), sorted.size() - 1)], 0.1)
+	_frame_ms.clear()
+	e.merge(_quality_now())
 	_perf_systems(e)
 	if _sim and is_instance_valid(_sim) and "stats" in _sim:
 		e["pop"] = int(_sim.stats.population)
@@ -238,6 +278,30 @@ func _perf_systems(e: Dictionary) -> void:
 	if not top.is_empty():
 		e["top_sim"] = top
 	Perf.reset_window()
+
+
+## The graphics tier, render scale and what the graphics chip and the CPU
+## spend on the last frame (desktop; the browser can't time the chip).
+func _quality_now() -> Dictionary:
+	var q := get_node_or_null("/root/Quality")
+	if q == null or not q.active:
+		return {}
+	var out := {"tier": GraphicsQuality.NAMES[q.tier], "auto": q.mode == GraphicsQuality.AUTO, "scale": snappedf(q.scale, 0.01)}
+	var vp := get_viewport().get_viewport_rid()
+	var gpu := RenderingServer.viewport_get_measured_render_time_gpu(vp)
+	if gpu > 0.0:
+		out["gpu_ms"] = snappedf(gpu, 0.1)
+		out["cpu_ms"] = snappedf(RenderingServer.viewport_get_measured_render_time_cpu(vp), 0.1)
+	return out
+
+
+func _hook_quality() -> void:
+	var q := get_node_or_null("/root/Quality")
+	if q == null or _quality_hooked:
+		return
+	_quality_hooked = true
+	q.changed.connect(func(): event("quality", _quality_now()))
+	event("quality", _quality_now())
 
 
 func _error(err: Dictionary) -> void:

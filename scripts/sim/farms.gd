@@ -74,6 +74,13 @@ var tax_rate := 1.5
 ## Crop prices against normal (1.0). They rise and fall over the years like
 ## real commodity cycles, so farms grow in good years and sell in bad ones.
 var price := 1.0
+## Set by the city: the game day (for each crop's own price swing), the
+## year (farms plan their crops each new year), what buyers around town
+## want (CropPlan.demand) and the ground's steepness at a point.
+var day := 0.0
+var year := 0
+var demand := {}
+var slope_of := Callable()
 
 
 ## How good the soil is at a point (see Resources). Fixed forever.
@@ -114,7 +121,7 @@ func add_farm(pos: Vector3, dir: Vector3, crop: String, drive: Array) -> int:
 	var id := _next_id
 	_next_id += 1
 	farms[id] = {"pos": pos, "dir": dir, "crop": crop, "cells": [], "loss_streak": 0,
-		"barn": false, "drive": drive}
+		"barn": false, "drive": drive, "fields": {}, "plan_year": year}
 	return id
 
 
@@ -234,13 +241,28 @@ func yearly_support() -> float:
 func field_profit(f: Dictionary, c: Vector2i) -> float:
 	var mid := cell_center(f, c)
 	var km := mid.distance_to(Vector3(f.pos.x, 0.0, f.pos.z)) / 1000.0
-	var gross: float = GROSS_PER_ACRE[f.crop] * fertility_at(mid) * price \
-		* Agency.effect(f, Agency.TREES.farm, "output*") * Agency.effect(f, Agency.TREES.farm, "price*")
+	# This year's crop on the field, after last year's (CropPlan).
+	var fl := CropPlan.field(f, c)
+	var net := CropPlan.net_per_acre(fl.crop, fl.prev, fl.health, fertility_at(mid),
+		price * CropPlan.relative_price(fl.crop, day),
+		Agency.effect(f, Agency.TREES.farm, "output*") * Agency.effect(f, Agency.TREES.farm, "price*"))
 	var tax := LAND_PER_ACRE * AG_ASSESSMENT * tax_rate / 100.0
 	var lease := 0.0
 	if lease_of.is_valid():
 		lease = lease_of.call(cell_corners(f, c))
-	return (gross - COST_PER_ACRE[f.crop] - COST_PER_ACRE_PER_KM * km - tax) * ACRES_PER_CELL + lease
+	return (net - COST_PER_ACRE_PER_KM * km - tax) * ACRES_PER_CELL + lease
+
+
+## The best a new farm here could make a year from a field beside its yard,
+## over every crop it could grow ($; 0 or less means no field would pay, as
+## on poor, wooded ground nobody farms).
+func start_profit(pos: Vector3, dir: Vector3) -> float:
+	var best := -INF
+	for crop in GROSS_PER_ACRE:
+		var f := {"pos": pos, "dir": dir, "crop": crop, "cells": []}
+		for c in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 1), Vector2i(1, 1)]:
+			best = maxf(best, field_profit(f, c))
+	return best
 
 
 ## Every farm takes its next step. A new farm puts up its barn first. Then
@@ -259,6 +281,13 @@ func decide(usable: Callable) -> bool:
 			f.barn = true
 			changed = true
 			continue
+		# Each new year the leader picks every field's crop (CropPlan).
+		if year > int(f.get("plan_year", 0)):
+			f.plan_year = year
+			if not f.cells.is_empty():
+				CropPlan.plan(f, demand, price, day, func(c): return fertility_at(cell_center(f, c)),
+					func(c): return slope_of.call(cell_center(f, c)) if slope_of.is_valid() else 0.0)
+				changed = true
 		var profit := yearly_profit(id)
 		var sup := support(id)
 		var margin := buy_margin(id)
@@ -427,8 +456,20 @@ func to_dict() -> Dictionary:
 			lane.append([p.x, p.z])
 		fs[str(id)] = {"pos": [f.pos.x, f.pos.z], "dir": [f.dir.x, f.dir.z], "crop": f.crop,
 			"cells": owned, "loss": f.loss_streak, "barn": f.barn, "drive": lane, "frame": 2,
-			"leader": f.get("leader", {}), "built": f.get("built", []), "why": f.get("why", "")}
+			"leader": f.get("leader", {}), "built": f.get("built", []), "why": f.get("why", ""),
+			"plan_year": f.get("plan_year", 0), "fields": _fields_out(f)}
 	return {"farms": fs, "next_id": _next_id}
+
+
+## Each field's crop record as [x, y, crop, prev, years, health, cover, cover_prev, why].
+static func _fields_out(f: Dictionary) -> Array:
+	var out := []
+	var keys: Array = f.get("fields", {}).keys()
+	keys.sort()
+	for k in keys:
+		var r: Dictionary = f.fields[k]
+		out.append([k.x, k.y, r.crop, r.prev, r.years, r.health, r.cover, r.cover_prev, r.why])
+	return out
 
 
 func from_dict(d: Dictionary) -> void:
@@ -458,7 +499,11 @@ func from_dict(d: Dictionary) -> void:
 		farms[int(k)] = {"pos": Vector3(f.pos[0], 0.0, f.pos[1]),
 			"dir": Vector3(f.dir[0], 0.0, f.dir[1]).normalized(), "crop": str(f.crop),
 			"cells": owned, "loss_streak": int(f.get("loss", 0)), "barn": bool(f.get("barn", true)),
-			"drive": lane, "built": Array(f.get("built", [])), "why": str(f.get("why", ""))}
+			"drive": lane, "built": Array(f.get("built", [])), "why": str(f.get("why", "")),
+			"plan_year": int(f.get("plan_year", 0)), "fields": {}}
+		for r in f.get("fields", []):
+			farms[int(k)].fields[Vector2i(int(r[0]), int(r[1]))] = {"crop": str(r[2]), "prev": str(r[3]),
+				"years": int(r[4]), "health": float(r[5]), "cover": bool(r[6]), "cover_prev": bool(r[7]), "why": str(r[8])}
 		if not f.get("leader", {}).is_empty():
 			farms[int(k)].leader = f.leader
 	_next_id = int(d.get("next_id", 1))

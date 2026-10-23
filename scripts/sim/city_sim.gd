@@ -946,6 +946,15 @@ func tick() -> void:
 	if tick_count % Farms.DECIDE_EVERY == 0 and not farms.farms.is_empty():
 		farms.tax_rate = economy.tax[ZoneMap.Zone.INDUSTRIAL]
 		farms.price = Farms.price_on(tick_count / (24.0 * TICKS_PER_HOUR))
+		farms.day = game_day()
+		# Each January the farm leaders plan the year's crops (CropPlan).
+		var crop_year := Seasons.year(tick_count)
+		if crop_year != farms.year:
+			farms.demand = CropPlan.demand(self)
+			if not farms.slope_of.is_valid():
+				farms.slope_of = func(p: Vector3) -> float:
+					return Terrain.slope(p.x + terrain_offset.x, p.z + terrain_offset.y)
+			farms.year = crop_year
 		if farms.decide(field_usable):
 			_lots_dirty = true  # lots under new fields go away
 			farms_changed.emit()
@@ -1383,6 +1392,9 @@ func farmhouse_problem(pos: Vector3, dir: Vector3) -> String:
 		return "Overlaps a warehouse."
 	if parks.overlaps(Array(poly)):
 		return "That ground is a park."
+	# Nobody sets up a farmstead where no field would pay.
+	if farms.start_profit(pos, dir) <= 0.0:
+		return "Soil here is too poor to farm: %d%% fertile." % roundi(Farms.fertility_at(pos - dir * Farms.CELL) * 100.0)
 	return ""
 
 

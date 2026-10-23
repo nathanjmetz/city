@@ -177,6 +177,11 @@ func _init() -> void:
 	_check(oil_seen > 0.5, "oil turns up somewhere on the map")
 	_check(fm.apply({"type": "place_farmhouse", "pos": [0, 60], "dir": [0, -1], "crop": "corn"}), "farmhouse placed")
 	_check(not fm.apply({"type": "place_farmhouse", "pos": [0, 560], "dir": [0, -1]}), "farmhouse needs a road near")
+	# The critic's woods (round 19): 35% fertile, no field would ever pay.
+	var woods := CitySim.new()
+	_check(woods.farms.start_profit(Vector3(300, 0, -120), Vector3(0, 0, 1)) <= 0.0
+		and fm.farms.start_profit(Vector3(0, 0, 60), Vector3(0, 0, -1)) > 0.0,
+		"a farmstead only goes where a field would pay")
 	var farm: Dictionary = fm.farms.farms.values()[0]
 	_check(farm.drive.size() >= 2 and absf(farm.drive[-1].z) < 1.0, "a farm lane runs out to the road")
 	fm.farms.decide(fm.field_usable)

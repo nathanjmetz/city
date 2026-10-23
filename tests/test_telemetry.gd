@@ -16,6 +16,7 @@ func _run() -> void:
 	_test_stuck()
 	_test_insights()
 	_test_replays()
+	_test_scroll()
 	_test_perf_window()
 	await _test_server()
 	print("SOME TESTS FAILED" if _failed else "ALL TESTS PASSED")
@@ -118,6 +119,34 @@ func _test_replays() -> void:
 	var md := Insights.to_markdown(r)
 	_check(md.contains("What Ann did") and md.contains("build_grid_shape done (block=120)") and md.contains("dragged 120, -40 to 300, 20"),
 		"the report shows the moment step by step")
+
+
+func _test_scroll() -> void:
+	var t := TelemetryTracker.new()
+	# Three bursts of Magic Mouse panning; the camera never moves.
+	for burst in 3:
+		for i in 4:
+			t.scroll("pan", 2.0, 300.0, 10.0 * burst + i * 0.05)
+		t.tick(10.0 * burst + 1.0, 300.0)
+	var dead := t.events.filter(func(e): return e.k == "scroll_dead")
+	_check(dead.size() == 1 and dead[0].kind == "pan", "scrolling that never zooms is caught")
+	var s: Array = t.actions.filter(func(a): return a[1] == "s")
+	_check(s.size() == 3 and s[0][3] == 4, "each burst is one action (%s)" % str(s))
+	_check(Insights.action_text(s[0]).contains("didn't move"), "replays say the camera didn't move")
+	# A wheel that zooms is fine.
+	var ok := TelemetryTracker.new()
+	for burst in 3:
+		ok.scroll("wheel_up", 1.0, 300.0, 10.0 * burst)
+		ok.scroll("wheel_up", 1.0, 290.0, 10.0 * burst + 0.1)
+		ok.tick(10.0 * burst + 1.0, 250.0)
+	_check(not ok.events.any(func(e): return e.k == "scroll_dead"), "a wheel that zooms isn't flagged")
+	# Icon cards are named by their caption.
+	var card := Button.new()
+	var cap := Label.new()
+	cap.text = "Water tower"
+	card.add_child(cap)
+	_check(load("res://scripts/telemetry/telemetry.gd").label_of(card) == "Water tower", "a card without text is named by its caption")
+	card.free()
 
 
 func _test_insights() -> void:
