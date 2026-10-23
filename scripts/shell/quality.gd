@@ -76,6 +76,9 @@ const SLOW_MS := 22.0
 const ROOM_FRAME_MS := 18.0
 const ROOM_PART_MS := 8.0
 const MIN_SCALE := 0.7
+## A single frame longer than this is a stall (a town loading, a shader
+## compiling), not drawing load: it's left out rather than lowering the look.
+const STALL_MS := 250.0
 
 ## False in headless runs (servers, tests): the look stays as the project sets it.
 var active := false
@@ -100,6 +103,7 @@ var adapter := ""
 
 var _rid: RID
 var _time := 0.0
+var _last_us := 0
 var _frames := 0
 var _gpu := 0.0
 var _cpu := 0.0
@@ -271,14 +275,21 @@ func apply() -> void:
 	changed.emit()
 
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	if not active or mode != AUTO or not _watching():
 		_reset()
+		_last_us = 0
 		return
 	var t0 := Perf.now()
-	# A hitch (a shader compiling, a big rebuild) shouldn't count as much
-	# as a long run of slow frames.
-	_time += minf(delta, 0.1)
+	# Real time between frames: the engine's delta is capped, so a long
+	# freeze would hide in it. A stall is skipped, not counted.
+	var now := Time.get_ticks_usec()
+	var dt := (now - _last_us) / 1e6 if _last_us > 0 else -1.0
+	_last_us = now
+	if dt < 0.0 or dt * 1000.0 > STALL_MS:
+		Perf.add("frame.quality", t0)
+		return
+	_time += dt
 	_frames += 1
 	_gpu += RenderingServer.viewport_get_measured_render_time_gpu(_rid)
 	_cpu += RenderingServer.viewport_get_measured_render_time_cpu(_rid) \
