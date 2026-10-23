@@ -61,6 +61,7 @@ const TOWN_MAX_GAP := 120.0
 ## much of its town.
 const FULL_EVERY := 120.0
 var _full_at := 0.0
+var _snapshot := {}  # a whole-town copy under way: {"msg", "snap": TownSnapshot}
 var _sent_at := -1000.0
 var _sent_sig := []
 var _land_sent := 0  # hash of the land last sent
@@ -158,19 +159,43 @@ func _send_town(sim: CitySim, now: bool, leaving: bool) -> void:
 	# for the region to keep. The copy is taken now, as bytes (the town keeps
 	# changing); packing it happens on another core, except when leaving,
 	# which can't wait.
-	var full := leaving or t - _full_at >= FULL_EVERY
-	if full:
-		_full_at = t
-	var raw := var_to_bytes(sim.to_dict(not full))
 	if leaving:
-		msg.z = RegionServer.pack_bytes(raw)
+		var whole: TownSnapshot = _snapshot.snap if _snapshot else TownSnapshot.new(sim)
+		whole.finish()
+		_snapshot = {}
+		msg.z = RegionServer.pack_bytes(whole.bytes())
 		_send(msg)
 		return
+	if _snapshot:
+		return  # the whole town is on its way; it carries all this too
+	if t - _full_at >= FULL_EVERY:
+		# The whole town, a few parts per frame (see _step_snapshot).
+		_full_at = t
+		_snapshot = {"msg": msg, "snap": TownSnapshot.new(sim)}
+		return
+	_pack_and_send(msg, var_to_bytes(sim.to_dict(true)))
+
+
+## Packs a copy on another core, then sends it (see _finish_packing).
+func _pack_and_send(msg: Dictionary, raw: PackedByteArray) -> void:
 	var job := {"msg": msg}
 	job.task = _on_another_core(func():
 		msg.z = RegionServer.pack_bytes(raw)
 		job.bytes = JSON.stringify(msg, "", false, true).to_utf8_buffer())
 	_outgoing.append(job)
+
+
+## Takes some more of a whole-town copy; sends it once it's all taken.
+func _step_snapshot() -> void:
+	if _snapshot.is_empty():
+		return
+	var snap: TownSnapshot = _snapshot.snap
+	if not snap.step():
+		return
+	var msg: Dictionary = _snapshot.msg
+	_snapshot = {}
+	if is_joined:
+		_pack_and_send(msg, snap.bytes())
 
 
 ## Sends a batch of play telemetry (see Telemetry); telemetry_acked says when it's kept.
@@ -268,6 +293,7 @@ func name_of(id: String) -> String:
 
 func _process(delta: float) -> void:
 	var t_all := Perf.now()
+	_step_snapshot()
 	_poll(delta)
 	Perf.add("net.client", t_all)
 

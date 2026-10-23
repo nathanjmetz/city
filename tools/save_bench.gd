@@ -35,6 +35,30 @@ func _init() -> void:
 		print("%s: to_dict %.0f ms, to bytes %.0f ms, pack %.0f ms (%.2f MB sent), unpack %.0f ms, load %.0f ms" % [
 			what, t_dict / 1000.0, t_bytes / 1000.0, t_pack / 1000.0, z.length() / 1e6, t_unpack / 1000.0, t_load / 1000.0])
 		print("  loaded copy: %d buildings, %d lots, population %d" % [copy.buildings.size(), copy.lots.size(), copy.stats.population])
+	sim.to_dict()  # as a town that has saved before
+	# Each part's own cost (taking it and turning it into bytes).
+	var costs := []
+	for st in sim.save_steps(false):
+		var tp := Time.get_ticks_usec()
+		var _b := var_to_bytes(st[1].call())
+		costs.append([Time.get_ticks_usec() - tp, st[0]])
+	costs.sort()
+	costs.reverse()
+	for c in costs.slice(0, 8):
+		print("  part %-14s %5.0f ms" % [c[1], c[0] / 1000.0])
+	# The whole town over several frames, as the game takes it now.
+	var snap := TownSnapshot.new(sim)
+	var worst := 0
+	var frames := 0
+	var done := false
+	while not done:
+		var ts := Time.get_ticks_usec()
+		done = snap.step()
+		worst = maxi(worst, Time.get_ticks_usec() - ts)
+		frames += 1
+	var tb := Time.get_ticks_usec()
+	var whole := snap.bytes()
+	print("full copy in steps: %d frames, worst %.0f ms, joining %.0f ms" % [frames, worst / 1000.0, (Time.get_ticks_usec() - tb) / 1000.0])
 	var t0 := Time.get_ticks_usec()
 	var old := JSON.stringify(sim.to_dict())
 	print("before: JSON full copy %.0f ms (%.1f MB)" % [(Time.get_ticks_usec() - t0) / 1000.0, old.length() / 1e6])
