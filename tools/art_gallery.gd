@@ -48,7 +48,7 @@ func _init() -> void:
 				mi.position = part[1]
 				world.add_child(mi)
 	var x := -50.0
-	for i in (0 if kind in ["oil", "ore"] else 5):
+	for i in (0 if kind in ["oil", "ore"] else (8 if kind.begins_with("tract") else 5)):
 		var meshes: Array
 		var k := kind
 		if kind == "types":
@@ -78,6 +78,8 @@ func _init() -> void:
 			"courtyard": meshes = MetroBuilder.build_apartments(sd, 3.9, {"width": w, "depth": 55.0, "era": "prewar"}, 3)
 			"walkup": meshes = MetroBuilder.build_apartments(sd, 3.9, {"width": w, "depth": 40.0, "era": "prewar"}, 5)
 			"garage": meshes = MetroBuilder.build_garage(sd, 3.9, {"width": w, "depth": 60.0}, 4 + i % 3)
+			"tract", "tractold": meshes = HouseBuilder.build(sd, 3.9, {"width": w, "depth": 40.0, "at": Vector2(x, 0) + (Vector2(seed * 400.0, 0)),
+				"era": "postwar" if k == "tract" else "prewar"})
 			"care": meshes = HouseBuilder.build(seed * 100, 3.9, {"width": w, "depth": 48.0}, 1)
 			"careshop": meshes = DenseBuilder.build_retail(seed * 100, 3.9, {"width": w, "depth": 40.0})
 			_: meshes = HouseBuilder.build(sd, 3.9)
