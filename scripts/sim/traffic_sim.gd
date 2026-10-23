@@ -179,7 +179,9 @@ var closed := {}
 var _truck_plan := false  # the route being planned is for a truck (close_segment)
 var _walk_lines := {} # segment * 2 + side -> sidewalk line
 var _rings := {}      # node -> sidewalk ends around it (_corner_ring)
-var _marks := []      # crosswalks on the walk just planned: [point, node, way in]
+var _marks := []
+var _xbusy := {}      # node -> [[from step, to step, segment, walker]] on its crosswalks
+const _NO_XINGS := []      # crosswalks on the walk just planned: [point, node, way in]
 var _next_trip := 1
 var _next_walker := 1
 var _restoring := false   # just loaded: junction paths still saved as keys
@@ -609,9 +611,12 @@ func from_dict(d: Dictionary) -> void:
 	walkers = state.get("walkers", [])
 	_wstep = 0
 	_wdone.clear()
+	_xbusy.clear()
 	for w in walkers:
 		w.t0 = -int(w.get("t", 0))
 		_file_walker(w)
+		if w.has("xings"):
+			_note_xings(w)
 	_next_trip = state.get("next_trip", _next_id)
 	_next_walker = state.get("next_walker", 1)
 	_sites = state.get("sites", {})
@@ -2613,10 +2618,11 @@ func _walk(pid: int, pts: PackedVector3Array, then: Dictionary) -> void:
 	# cross have a red (MUTCD Walk / Don't Walk with the parallel green):
 	# worked out now, since the lights run on a fixed cycle.
 	var holds := []
+	var xings := []
 	var waited := 0
 	for m in _marks:
 		var i := pts.find(m[0])
-		if i < 0 or not junctions.has(int(m[1])):
+		if i < 0 or i + 1 >= pts.size() or not junctions.has(int(m[1])):
 			continue
 		var steps: float = cum[i] / (w.v * DT) + waited
 		var wait := _red_wait(int(m[1]), int(m[2]), time + steps * DT)
@@ -2624,9 +2630,15 @@ func _walk(pid: int, pts: PackedVector3Array, then: Dictionary) -> void:
 			var ws := ceili(wait / DT)
 			holds.append([cum[i], ws])
 			waited += ws
+		# When they're out on the crosswalk, in steps from setting off.
+		var on: float = cum[i] / (w.v * DT) + waited
+		xings.append([floori(on), ceili(on + (cum[i + 1] - cum[i]) / (w.v * DT)), int(m[1]), int(m[2]) >> 1])
 	_marks.clear()
 	if not holds.is_empty():
 		w.holds = holds
+	if not xings.is_empty():
+		w.xings = xings
+		_note_xings(w)
 	walkers.append(w)
 	_file_walker(w)
 	_next_walker += 1
@@ -2667,6 +2679,38 @@ func _walker_d(w: Dictionary) -> float:
 	return minf(d + steps * step_m, w.len)
 
 
+## Puts a walker's crosswalk crossings on the junctions' lists.
+func _note_xings(w: Dictionary) -> void:
+	for x in w.xings:
+		var n: int = x[2]
+		if not _xbusy.has(n):
+			_xbusy[n] = []
+		_xbusy[n].append([int(w.t0) + int(x[0]), int(w.t0) + int(x[1]), int(x[3]), w])
+
+
+## Whether someone is out on the crosswalk over road `seg` at junction `n`
+## right now: turning cars wait for them (pedestrians have the right of way
+## in a crosswalk, as every US state's code has it).
+func crosswalk_busy(n: int, seg: int) -> bool:
+	var list: Array = _xbusy.get(n, _NO_XINGS)
+	if list.is_empty():
+		return false
+	var busy := false
+	var keep := []
+	for e in list:
+		if int(e[1]) < _wstep or e[3].has("gone"):
+			continue
+		keep.append(e)
+		if int(e[2]) == seg and int(e[0]) <= _wstep:
+			busy = true
+	if keep.size() != list.size():
+		if keep.is_empty():
+			_xbusy.erase(n)
+		else:
+			_xbusy[n] = keep
+	return busy
+
+
 ## Seconds until the cars coming in on `way` get a red at a signal, from
 ## driving time `t` (0 if they already have one, or there's no signal).
 func _red_wait(node: int, way: int, t: float) -> float:
@@ -2702,6 +2746,9 @@ func _step_walkers() -> void:
 	# Only the ones arriving this step are touched; where the rest are is
 	# worked out from the step count when it's wanted.
 	_wstep += 1
+	if _wstep % 600 == 0:
+		for n in _xbusy.keys():
+			crosswalk_busy(n, -1)  # drops crossings that are over
 	var done: Array = _wdone.get(_wstep, [])
 	_wdone.erase(_wstep)
 	if done.is_empty():
@@ -3562,6 +3609,9 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 		var room: float = list[list.size() - 1].d - ways[c.wo].s0
 		if room < (queued + 1) * (car.len + JAM_GAP):
 			return false
+	# Someone on the crosswalk over the road we're turning onto.
+	if c.wo >= 0 and crosswalk_busy(n, c.wo >> 1):
+		return false
 	# Nothing crossing our path in the junction.
 	for b in occupants:
 		if b.id == car.id:
