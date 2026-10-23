@@ -284,6 +284,13 @@ const POWER_BLADE_YARD_SALES := 200_000.0
 const POWER_LEADER_TERM_DAYS := 120.0
 ## A training center lifts a successor's education by this much.
 const POWER_TRAINING_LIFT := 0.15
+## A 69 kV line to the neighbors: wood poles about 300 ft apart (typical
+## rural subtransmission spans), set back from the road right of way, with
+## a cleared corridor about 50 ft wide (25 ft either side).
+const POWER_TIE_SPAN := 90.0
+const POWER_TIE_SETBACK := 3.0
+const POWER_TIE_CLEAR := 7.5
+const POWER_TIE_SAG := 1.5
 
 # --- Freight -----------------------------------------------------------------
 

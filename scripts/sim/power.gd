@@ -611,6 +611,118 @@ func taxable_value() -> float:
 	return total
 
 
+## The service lanes between units: each unit hooks to the one next to it
+## on the way back to the yard (cell 0,0 is the yard itself).
+static func lanes(s: Dictionary) -> Array:
+	var out := []
+	for c in s.cells:
+		var to := Vector2i.ZERO
+		for d in [Vector2i(-signi(c.x), 0), Vector2i(0, -signi(c.y))]:
+			if d != Vector2i.ZERO and (c + d == Vector2i.ZERO or (c + d) in s.cells):
+				to = c + d
+				break
+		out.append([cell_center(s, c), cell_center(s, to)])
+	return out
+
+
+## The line to the neighbors, once its leader has built one: a 69 kV
+## wood-pole line from the yard that follows the county roads (as rural
+## co-op lines do, in the road right of way) to the nearest road out of
+## town. Empty when there's no line or no road out.
+func tie_route(net: RoadNetwork, links: Array, s: Dictionary) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	if Agency.effect(s, TREE, "tie+") <= 0.0 or links.is_empty() or s.drive.is_empty() or net.segments.is_empty():
+		return out
+	var gate: Vector3 = s.drive[-1]
+	var hit := net.find_segment_near(gate, 60.0)
+	if hit.is_empty():
+		return out
+	# Shortest way along the roads to any road out of town, starting both
+	# ways from the yard's gate.
+	var first: Dictionary = net.segments[hit.seg]
+	var c0 := net.curve_of(hit.seg)
+	var whole: float = c0[0].distance_to(c0[1]) + c0[1].distance_to(c0[2])
+	var dist := {first.a: whole * hit.t, first.b: whole * (1.0 - hit.t)}
+	var came := {first.a: [-1, hit.seg], first.b: [-1, hit.seg]}
+	var open := [first.a, first.b]
+	var goal := -1
+	while not open.is_empty():
+		var bi := 0
+		for i in open.size():
+			if dist[open[i]] < dist[open[bi]]:
+				bi = i
+		var n: int = open[bi]
+		open.remove_at(bi)
+		if n in links:
+			goal = n
+			break
+		for sid in net.segments_at(n):
+			var seg: Dictionary = net.segments[sid]
+			var m: int = seg.b if seg.a == n else seg.a
+			var c := net.curve_of(sid)
+			var d: float = dist[n] + c[0].distance_to(c[1]) + c[1].distance_to(c[2])
+			if d < dist.get(m, INF):
+				dist[m] = d
+				came[m] = [n, sid]
+				if not m in open:
+					open.append(m)
+	if goal == -1:
+		return out
+	# Each leg: [segment, node it starts from (-1: the gate), node it ends at].
+	var legs := []
+	var n := goal
+	while true:
+		legs.push_front([came[n][1], came[n][0], n])
+		if came[n][0] == -1:
+			break
+		n = came[n][0]
+	out.append(s.pos)
+	out.append(gate)
+	for leg in legs:
+		var sid: int = leg[0]
+		var seg: Dictionary = net.segments[sid]
+		var pts := net.sample_segment(sid, 16)
+		if leg[1] == -1:
+			# Only the part of the gate's road from the gate onward.
+			var k := clampi(roundi(hit.t * 16.0), 0, 16)
+			pts = pts.slice(k) if leg[2] == seg.b else pts.slice(0, k + 1)
+		if seg.b != leg[2]:
+			pts.reverse()
+		# Poles stand just outside the right of way, on the right-hand side.
+		var off := RoadStyle.right_of_way_half(seg.type) + Balance.POWER_TIE_SETBACK
+		for i in pts.size():
+			var t := (pts[mini(i + 1, pts.size() - 1)] - pts[maxi(i - 1, 0)])
+			t.y = 0.0
+			if t.length() < 0.01:
+				continue
+			t = t.normalized()
+			var q := pts[i] + Vector3(-t.z, 0.0, t.x) * off
+			out.append(Vector3(q.x, 0.0, q.z))
+	return out
+
+
+## Pole spots along a line, about one span apart, ends included.
+static func poles(route: PackedVector3Array) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	if route.size() < 2:
+		return out
+	out.append(route[0])
+	var since := 0.0
+	for i in range(1, route.size()):
+		var a := route[i - 1]
+		var b := route[i]
+		var len := a.distance_to(b)
+		var at := 0.0
+		while since + (len - at) >= Balance.POWER_TIE_SPAN:
+			at += Balance.POWER_TIE_SPAN - since
+			since = 0.0
+			out.append(a.lerp(b, at / len))
+		since += len - at
+	if out[-1].distance_to(route[-1]) > 5.0:
+		out.append(route[-1])
+	return out
+
+
 func yard(s: Dictionary) -> PackedVector2Array:
 	var side := _right(s)
 	var out := PackedVector2Array()

@@ -51,7 +51,7 @@ var _mail_version := -1
 func watch(sim: Object) -> void:
 	_sim = sim
 	for sig in [sim.buildings_changed, sim.lots_changed, sim.farms_changed, sim.industry_changed, sim.warehouses_changed,
-			sim.parks_changed, sim.water_changed, sim.banks_changed, sim.network.changed]:
+			sim.parks_changed, sim.water_changed, sim.banks_changed, sim.power_changed, sim.network.changed]:
 		sig.connect(_mark)
 
 
@@ -186,6 +186,19 @@ static func sources(sim: Object) -> Dictionary:
 		out["k%d %s" % [id, b.pos]] = _poly_cells.bind(Banks.block_corners(b, Vector2i.ZERO))
 		for blk in b.blocks:
 			out["k%d %s %s" % [id, blk.c, b.pos]] = _poly_cells.bind(Banks.block_corners(b, blk.c))
+	# Power companies: the yard, its lane, every unit and the lanes between
+	# them, and the cleared corridor under a line to the neighbors.
+	for id in sim.power.sites:
+		var s: Dictionary = sim.power.sites[id]
+		out["ey%d %s" % [id, s.pos]] = _poly_cells.bind(sim.power.yard(s))
+		out["ed%d %d" % [id, s.drive.size()]] = _line_cells.bind(PackedVector3Array(s.drive), Farms.DRIVE_WIDTH * 0.5 + 1.5)
+		for c in s.cells:
+			out["ec%d %s %s %s" % [id, s.plant, c, s.pos]] = _poly_cells.bind(Power.cell_corners(s, c))
+		for lane in Power.lanes(s):
+			out["el%d %s %s" % [id, lane[0], lane[1]]] = _line_cells.bind(PackedVector3Array(lane), 3.5)
+		var tie: PackedVector3Array = sim.power.tie_route(sim.network, sim.region_links, s)
+		if tie.size() >= 2:
+			out["et%d %d %s" % [id, tie.size(), tie[-1]]] = _line_cells.bind(tie, Balance.POWER_TIE_CLEAR)
 	for id in sim.industry.sites:
 		var s: Dictionary = sim.industry.sites[id]
 		out["iy%d" % id] = _poly_cells.bind(sim.industry._yard(s))
