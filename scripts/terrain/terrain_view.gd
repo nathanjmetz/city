@@ -239,7 +239,7 @@ var _others := {}
 
 ## Vector2i chunk -> {lod, ground: MeshInstance3D, water: MeshInstance3D}
 var _chunks := {}
-var _dirty := {}  # Vector2i chunks to rebuild for grading
+var _dirty := {}  # Vector2i chunk -> [Rect2] graded since it was built
 var _graded := {}  # segment id -> [points, inner, outer, bounds]
 var _first := true
 var _far: MeshInstance3D
@@ -295,6 +295,7 @@ func focus() -> Vector2:
 
 
 func _process(_delta: float) -> void:
+	var t0 := Perf.now()
 	var eye := _eye()
 	if _ground_mat != null:
 		_ground_mat.set_shader_parameter("lod_eye", Vector3(eye.x, eye.z, eye.y))
@@ -331,7 +332,13 @@ func _process(_delta: float) -> void:
 	todo.sort_custom(func(a, b): return a[0] < b[0])
 	for item in todo:
 		var key: Vector2i = item[1]
-		_build(key, want[key])
+		var have = _chunks.get(key)
+		if have != null and have.lod == want[key] and _dirty.has(key):
+			# Graded under a new road: redo just that strip of the chunk.
+			patch_chunk(have.data, _dirty[key])
+			have.ground.mesh = have.data.ground
+		else:
+			_build(key, want[key])
 		_dirty.erase(key)
 		# Build everything at once the first time, so the land is there
 		# when the game opens; then a little each frame.
@@ -339,6 +346,7 @@ func _process(_delta: float) -> void:
 			break
 	_update_far(flat_eye, _first)
 	_first = false
+	Perf.add("frame.terrain", t0)
 
 
 ## The far land: one coarse sheet around the camera out to FAR_REACH, cut
@@ -458,8 +466,9 @@ func _drop(key: Vector2i) -> void:
 func _build(key: Vector2i, lod: int) -> void:
 	if _chunks.has(key):
 		_drop(key)
-	var meshes := build_chunk(Vector2(key) * CHUNK, CHUNK, STEPS[lod], REACH[lod] if lod < STEPS.size() - 1 else 0.0)
-	var entry := {"lod": lod, "ground": null, "water": null}
+	var data := chunk_data(Vector2(key) * CHUNK, CHUNK, STEPS[lod], REACH[lod] if lod < STEPS.size() - 1 else 0.0)
+	var meshes := [data.ground, data.water]
+	var entry := {"lod": lod, "ground": null, "water": null, "data": data}
 	var g := MeshInstance3D.new()
 	g.mesh = meshes[0]
 	g.material_override = ground_material()
@@ -523,32 +532,130 @@ static func _coarse_at(hs: PackedFloat32Array, m: int, i: int, j: int, step: flo
 ## The ground mesh and the water mesh (or null) for one square chunk with
 ## its corner at `origin`, a grid `step` metres apart. View coordinates.
 static func build_chunk(origin: Vector2, size: float, step: float, reach := 0.0) -> Array:
+	var d := chunk_data(origin, size, step, reach)
+	return [d.ground, d.water]
+
+
+## A chunk's samples, vertices and meshes, kept so patch_chunk can redo only
+## the part a new road grades.
+static func chunk_data(origin: Vector2, size: float, step: float, reach := 0.0) -> Dictionary:
 	var n := int(size / step)
 	var m := n + 5  # two extra samples all round, for normals at both levels
-	var hs := PackedFloat32Array()
-	hs.resize(m * m)
-	for j in m:
-		for i in m:
-			hs[j * m + i] = Terrain.ground_y(origin.x + (i - 2) * step, origin.y + (j - 2) * step)
-	var verts := PackedVector3Array()
-	var normals := PackedVector3Array()
-	var colors := PackedColorArray()
+	var count := (n + 1) * (n + 1)
+	var d := {"origin": origin, "step": step, "reach": reach, "n": n, "m": m,
+		"hs": PackedFloat32Array(), "verts": PackedVector3Array(), "normals": PackedVector3Array(),
+		"colors": PackedColorArray(), "coarse": PackedFloat32Array(), "wet": PackedFloat32Array(),
+		"idx": PackedInt32Array(), "water": null}
+	d.hs.resize(m * m)
+	d.verts.resize(count)
+	d.normals.resize(count)
+	d.colors.resize(count)
 	# Each vertex also carries where it sits on the next coarser level (its
 	# height and normal there), for the shader to slide toward with distance.
-	var coarse := PackedFloat32Array()
-	var wet := PackedFloat32Array()
-	var count := (n + 1) * (n + 1)
-	verts.resize(count)
-	normals.resize(count)
-	colors.resize(count)
-	coarse.resize(count * 4)
-	wet.resize(count)
-	var any_water := false
+	d.coarse.resize(count * 4)
+	d.wet.resize(count)
+	d.idx.resize(n * n * 6)
+	_sample_heights(d, 0, m - 1, 0, m - 1)
+	var any_water := _fill_vertices(d, 0, n, 0, n)
+	_fill_squares(d, 0, n - 1, 0, n - 1)
+	d.ground = _ground_mesh(d)
+	if any_water:
+		d.water = _water_mesh(d)
+	return d
+
+
+## Redoes a chunk's ground under `boxes` (view coordinates) after grading:
+## the samples there, the vertices whose normals and coarser level read
+## them, and the squares between, then the mesh once. The water stays.
+static func patch_chunk(d: Dictionary, boxes: Array) -> void:
+	var o: Vector2 = d.origin
+	var step: float = d.step
+	var n: int = d.n
+	var m: int = d.m
+	# Per row, the columns to redo (boxes along one road overlap; each
+	# point is done once). Sample indices are grid indices plus 2.
+	var samples := _spans(m)
+	var verts := _spans(n + 1)
+	var squares := _spans(n)
+	for box: Rect2 in boxes:
+		var i0 := floori((box.position.x - o.x) / step)
+		var i1 := ceili((box.end.x - o.x) / step)
+		var j0 := floori((box.position.y - o.y) / step)
+		var j1 := ceili((box.end.y - o.y) / step)
+		_widen(samples, i0 + 1, i1 + 3, j0 + 1, j1 + 3)
+		_widen(verts, i0 - 3, i1 + 3, j0 - 3, j1 + 3)
+		_widen(squares, i0 - 4, i1 + 3, j0 - 4, j1 + 3)
+	var changed := false
+	for j in m:
+		if samples[0][j] <= samples[1][j]:
+			_sample_heights(d, samples[0][j], samples[1][j], j, j)
 	for j in n + 1:
-		for i in n + 1:
+		if verts[0][j] <= verts[1][j]:
+			_fill_vertices(d, verts[0][j], verts[1][j], j, j)
+			changed = true
+	for j in n:
+		if squares[0][j] <= squares[1][j]:
+			_fill_squares(d, squares[0][j], squares[1][j], j, j)
+	if changed:
+		d.ground = _ground_mesh(d)
+
+
+## Empty column spans for `size` rows: [lows, highs].
+static func _spans(size: int) -> Array:
+	var lo := PackedInt32Array()
+	var hi := PackedInt32Array()
+	lo.resize(size)
+	hi.resize(size)
+	lo.fill(size)
+	hi.fill(-1)
+	return [lo, hi]
+
+
+static func _widen(spans: Array, i0: int, i1: int, j0: int, j1: int) -> void:
+	var lo: PackedInt32Array = spans[0]
+	var hi: PackedInt32Array = spans[1]
+	var size := lo.size()
+	i0 = maxi(i0, 0)
+	i1 = mini(i1, size - 1)
+	if i0 > i1:
+		return
+	for j in range(maxi(j0, 0), mini(j1, size - 1) + 1):
+		lo[j] = mini(lo[j], i0)
+		hi[j] = maxi(hi[j], i1)
+	spans[0] = lo
+	spans[1] = hi
+
+
+static func _sample_heights(d: Dictionary, a0: int, a1: int, b0: int, b1: int) -> void:
+	var o: Vector2 = d.origin
+	var step: float = d.step
+	var m: int = d.m
+	var hs: PackedFloat32Array = d.hs
+	for j in range(b0, b1 + 1):
+		for i in range(a0, a1 + 1):
+			hs[j * m + i] = Terrain.ground_y(o.x + (i - 2) * step, o.y + (j - 2) * step)
+	d.hs = hs
+
+
+## Fills grid vertices i0..i1, j0..j1; true when any of them is wet.
+static func _fill_vertices(d: Dictionary, i0: int, i1: int, j0: int, j1: int) -> bool:
+	var o: Vector2 = d.origin
+	var step: float = d.step
+	var n: int = d.n
+	var m: int = d.m
+	var reach: float = d.reach
+	var hs: PackedFloat32Array = d.hs
+	var verts: PackedVector3Array = d.verts
+	var normals: PackedVector3Array = d.normals
+	var colors: PackedColorArray = d.colors
+	var coarse: PackedFloat32Array = d.coarse
+	var wet: PackedFloat32Array = d.wet
+	var any_water := false
+	for j in range(j0, j1 + 1):
+		for i in range(i0, i1 + 1):
 			var k := j * (n + 1) + i
-			var x := origin.x + i * step
-			var z := origin.y + j * step
+			var x := o.x + i * step
+			var z := o.y + j * step
 			var c := (j + 2) * m + (i + 2)
 			verts[k] = Vector3(x, hs[c], z)
 			normals[k] = Vector3(hs[c - 1] - hs[c + 1], 2.0 * step, hs[c - m] - hs[c + m]).normalized()
@@ -569,15 +676,50 @@ static func build_chunk(origin: Vector2, size: float, step: float, reach := 0.0)
 			colors[k] = Color(cov.r * keep * (1.0 - YARD_THIN * yard), cov.g, cov.b * keep, cov.a * keep)
 			wet[k] = cov.g
 			any_water = any_water or cov.g > 0.02
-	var idx := PackedInt32Array()
-	for j in n:
-		for i in n:
+	d.verts = verts
+	d.normals = normals
+	d.colors = colors
+	d.coarse = coarse
+	d.wet = wet
+	return any_water
+
+
+## Splits each square i0..i1, j0..j1 along the diagonal that follows the land.
+static func _fill_squares(d: Dictionary, i0: int, i1: int, j0: int, j1: int) -> void:
+	var n: int = d.n
+	var verts: PackedVector3Array = d.verts
+	var idx: PackedInt32Array = d.idx
+	for j in range(j0, j1 + 1):
+		for i in range(i0, i1 + 1):
 			var a := j * (n + 1) + i
-			# Split each square along the diagonal that follows the land.
+			var s := (j * n + i) * 6
 			if absf(verts[a].y - verts[a + n + 2].y) < absf(verts[a + 1].y - verts[a + n + 1].y):
-				idx.append_array([a, a + 1, a + n + 2, a, a + n + 2, a + n + 1])
+				idx[s] = a
+				idx[s + 1] = a + 1
+				idx[s + 2] = a + n + 2
+				idx[s + 3] = a
+				idx[s + 4] = a + n + 2
+				idx[s + 5] = a + n + 1
 			else:
-				idx.append_array([a, a + 1, a + n + 1, a + 1, a + n + 2, a + n + 1])
+				idx[s] = a
+				idx[s + 1] = a + 1
+				idx[s + 2] = a + n + 1
+				idx[s + 3] = a + 1
+				idx[s + 4] = a + n + 2
+				idx[s + 5] = a + n + 1
+	d.idx = idx
+
+
+static func _ground_mesh(d: Dictionary) -> ArrayMesh:
+	var n: int = d.n
+	var step: float = d.step
+	var reach: float = d.reach
+	var count := (n + 1) * (n + 1)
+	var verts: PackedVector3Array = d.verts.duplicate()
+	var normals: PackedVector3Array = d.normals.duplicate()
+	var colors: PackedColorArray = d.colors.duplicate()
+	var coarse: PackedFloat32Array = d.coarse.duplicate()
+	var idx: PackedInt32Array = d.idx.duplicate()
 	# A skirt hangs from each edge to hide cracks against coarser neighbours.
 	var drop := step * 0.6 + 1.0
 	var edges := [range(0, n + 1), range(n * (n + 1), count), range(0, count, n + 1), range(n, count, n + 1)]
@@ -604,10 +746,15 @@ static func build_chunk(origin: Vector2, size: float, step: float, reach := 0.0)
 	var ground := ArrayMesh.new()
 	ground.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {},
 		Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
-	if not any_water:
-		return [ground, null]
-	# Water: a sheet at the water level over every square that touches water.
-	# The banks rise above it, so the shore draws itself where they meet.
+	return ground
+
+
+## Water: a sheet at the water level over every square that touches water.
+## The banks rise above it, so the shore draws itself where they meet.
+static func _water_mesh(d: Dictionary) -> ArrayMesh:
+	var n: int = d.n
+	var verts: PackedVector3Array = d.verts
+	var wet: PackedFloat32Array = d.wet
 	var wverts := PackedVector3Array()
 	var widx := PackedInt32Array()
 	var index := {}
@@ -633,7 +780,7 @@ static func build_chunk(origin: Vector2, size: float, step: float, reach := 0.0)
 				wverts.append(Vector3(verts[c].x, level, verts[c].z))
 			widx.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
 	if widx.is_empty():
-		return [ground, null]
+		return null
 	var wn := PackedVector3Array()
 	wn.resize(wverts.size())
 	wn.fill(Vector3.UP)
@@ -644,7 +791,7 @@ static func build_chunk(origin: Vector2, size: float, step: float, reach := 0.0)
 	warrays[Mesh.ARRAY_INDEX] = widx
 	var water := ArrayMesh.new()
 	water.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, warrays)
-	return [ground, water]
+	return water
 
 
 # --- Grading under roads ----------------------------------------------------
@@ -704,12 +851,15 @@ func _regrade() -> void:
 	if extra_grades.is_valid():
 		now.merge(extra_grades.call())
 	var changed := []
+	var changed_strips := []
 	for id in _graded:
 		if not now.has(id) or not _same(now[id], _graded[id]):
 			changed.append(_bounds(_graded[id]))
+			changed_strips.append(_graded[id])
 	for id in now:
 		if not _graded.has(id) or not _same(now[id], _graded[id]):
 			changed.append(_bounds(now[id]))
+			changed_strips.append(now[id])
 	_graded = now
 	if changed.is_empty():
 		return
@@ -724,11 +874,35 @@ func _regrade() -> void:
 				Terrain.stamp_flat(g[0], g[1], g[2], box, g[3] if g.size() > 3 else g[1])
 	for box in changed:
 		graded.emit(box)
+	for g in changed_strips:
+		_mark_dirty(g)
+
+
+## Marks the chunks a graded strip runs through, with the boxes along it in
+## each (a long diagonal road touches a thin band, not its whole bounds).
+func _mark_dirty(g: Array) -> void:
+	var pts: PackedVector3Array = g[0]
+	var grow: float = g[2] + Terrain.FLAT_CELL
+	var pieces := []
+	if pts.size() == 1:
+		pieces.append(Rect2(Vector2(pts[0].x, pts[0].z), Vector2.ZERO).grow(grow))
+	for k in pts.size() - 1:
+		var a := Vector2(pts[k].x, pts[k].z)
+		var b := Vector2(pts[k + 1].x, pts[k + 1].z)
+		var cuts := maxi(1, ceili(a.distance_to(b) / 64.0))
+		for c in cuts:
+			var p := a.lerp(b, float(c) / cuts)
+			var q := a.lerp(b, float(c + 1) / cuts)
+			pieces.append(Rect2(p, Vector2.ZERO).expand(q).grow(grow))
+	for box: Rect2 in pieces:
 		var c0 := Vector2i(floori(box.position.x / CHUNK), floori(box.position.y / CHUNK))
 		var c1 := Vector2i(floori(box.end.x / CHUNK), floori(box.end.y / CHUNK))
 		for cz in range(c0.y, c1.y + 1):
 			for cx in range(c0.x, c1.x + 1):
-				_dirty[Vector2i(cx, cz)] = true
+				var key := Vector2i(cx, cz)
+				if not _dirty.has(key):
+					_dirty[key] = []
+				_dirty[key].append(box)
 
 
 ## The strips to grade under one network's roads, keyed by segment id

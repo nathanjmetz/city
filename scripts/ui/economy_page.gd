@@ -305,6 +305,9 @@ func hubs_in(area: String) -> Array:
 		"warehouses":
 			for id in sim.warehouses.buildings:
 				out.append("warehouse:%d" % id)
+		"big":
+			for id in sim.big.sites:
+				out.append("big:%d" % id)
 		"taxis":
 			for id in sim.taxis.companies:
 				if sim.services.buildings.has(id):
@@ -396,6 +399,9 @@ func hub_name(key: String) -> String:
 			return "%s %d  ·  %d %s%s" % [k.name, id, p.cells.size(), k.unit, "" if p.cells.size() == 1 else "s"]
 		"warehouse":
 			return "%s %d" % [Warehouses.KINDS[sim.warehouses.buildings[id].kind].name, id]
+		"big":
+			var f: Dictionary = sim.big.sites[id]
+			return "%s  ·  %s" % [f.name, BigFactories.KINDS[f.kind].name]
 		"taxi":
 			return "Taxi company %d" % id
 		"telecom":
@@ -454,6 +460,8 @@ func _summary(area: String) -> String:
 			return "%d companies" % sim.power.sites.size() if sim.power.sites.size() != 1 else "1 company"
 		"warehouses":
 			return "%d" % sim.warehouses.buildings.size()
+		"big":
+			return "%d" % sim.big.sites.size()
 		"taxis":
 			return "%d" % hubs_in(area).size()
 		"telecom":

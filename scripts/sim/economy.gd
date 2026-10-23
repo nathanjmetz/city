@@ -170,6 +170,8 @@ func _finish_budget(sim: CitySim, sums: Dictionary) -> void:
 	# So do warehouses.
 	income[ZoneMap.Zone.INDUSTRIAL] += sim.warehouses.taxable_value() * tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
 	income[ZoneMap.Zone.INDUSTRIAL] += sim.power.taxable_value() * tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
+	# And the big local factories.
+	income[ZoneMap.Zone.INDUSTRIAL] += sim.big.taxable_value() * tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0
 	# Bank buildings pay commercial property tax too.
 	income[ZoneMap.Zone.COMMERCIAL] += sim.banks.taxable_value() * tax[ZoneMap.Zone.COMMERCIAL] / 100.0 / 12.0
 	# Visitors to the fair and the games: what they spend is taxed, and the

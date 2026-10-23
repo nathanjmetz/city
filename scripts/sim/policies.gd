@@ -46,6 +46,8 @@ const AREAS := {
 		"growth": "How eagerly companies open new pads."},
 	"warehouses": {"name": "Warehouses", "icon": "warehouse", "sliders": ["growth"],
 		"growth": "Your word to their owners: how readily they add bays. They're private, so the town doesn't fund them."},
+	"big": {"name": "Big factories", "icon": "industry", "sliders": ["growth"],
+		"growth": "Your word to their owners: how readily they add lines and buy the land behind them. They're private, so the town doesn't fund them."},
 	"power": {"name": "Power companies", "icon": "power", "sliders": ["growth"],
 		"growth": "Your word to their owners: Hold adds no new units. They sell power, so the town doesn't fund them."},
 	"utilities": {"name": "Substations and wells", "icon": "power", "sliders": ["funding"],

@@ -26,6 +26,8 @@ signal telecom_changed
 signal banks_changed
 ## A warehouse was built, grew, shrank or went away.
 signal warehouses_changed
+## A big local factory was built, grew, built something new or went away.
+signal big_factories_changed
 ## A park or landmark was placed, filled in, grew, changed tier or went away.
 signal parks_changed
 ## A water utility laid pipe, built a piece of its yard, or its troubles changed.
@@ -68,6 +70,9 @@ var farms := Farms.new()
 var industry := Industry.new()
 ## Warehouses that buffer loads between them (hubs that grow in place).
 var warehouses := Warehouses.new()
+## Big local factories: the ethanol plant, meatpacker, furniture maker and
+## RV plant (one of each, hubs run by their owners).
+var big := BigFactories.new()
 ## Power companies (Brawn's hub-with-a-leader model): a yard whose leader
 ## picks the plant and grows it. The regional grid stays the default.
 var power := Power.new()
@@ -143,6 +148,8 @@ var heritage := Heritage.new()
 var markers := HistoricMarkers.new()
 var leaders := LeaderAsks.new()
 var timelapse := Timelapse.new()
+## The town's numbers over time, for the top bar's charts (StatHistory).
+var history := StatHistory.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -440,6 +447,24 @@ func apply_now(cmd: Dictionary) -> bool:
 			_lots_dirty = true
 			warehouses_changed.emit()
 			ok = true
+		"place_big_factory":
+			var kind := str(cmd.get("kind", ""))
+			var pos := _v(cmd.pos)
+			var dir := _v(cmd.dir).normalized()
+			if not BigFactories.KINDS.has(kind) or dir.length() < 0.5 or big.site_problem(self, kind, pos, dir) != "" \
+					or int(Balance.BIG_FACTORY[kind].cost) > economy.money:
+				return false
+			var bid := big.add(self, kind, pos, dir)
+			economy.money -= int(Balance.BIG_FACTORY[kind].cost)
+			_clear_zones_under(BigFactories.corners(big.sites[bid]))
+			_lots_dirty = true
+			big_factories_changed.emit()
+			ok = true
+		"remove_big_factory":
+			ok = big.sites.has(int(cmd.id))
+			big.sites.erase(int(cmd.id))
+			_lots_dirty = true
+			big_factories_changed.emit()
 		"remove_warehouse":
 			ok = warehouses.buildings.has(int(cmd.id))
 			warehouses.buildings.erase(int(cmd.id))
@@ -688,6 +713,10 @@ func apply_now(cmd: Dictionary) -> bool:
 			elif ok:
 				_adopt_levers("post_office:%d" % int(cmd.id))
 		"clear":
+			# Starting over keeps the way out: the county highways to the
+			# neighbouring towns (trade comes and goes on them), rebuilt
+			# after the wipe, with a crossroads to start the town from.
+			var links_kept := _link_roads()
 			region_links.clear()
 			trade = Trade.new()
 			traffic.overrides.clear()
@@ -708,6 +737,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			logistics = Logistics.new()
 			construction = Construction.new()
 			warehouses = Warehouses.new()
+			big = BigFactories.new()
+			big_factories_changed.emit()
 			reserves = Reserves.new()
 			buses = BusNet.new()
 			taxis = TaxiCo.new()
@@ -734,6 +765,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			markers.from_dict({})
 			leaders.from_dict({})
 			timelapse.from_dict(self, {})
+			history.from_dict({})
 			_lever_steps.clear()
 			pollution = Pollution.new()
 			_hook_pollution()
@@ -748,6 +780,9 @@ func apply_now(cmd: Dictionary) -> bool:
 			power_changed.emit()
 			education_changed.emit()
 			telecom_changed.emit()
+			for road in links_kept:
+				_county_road(road[0], road[1], road[2])
+			_start_crossroads()
 			ok = true
 	if ok:
 		if cmd.type in ["place_campus", "place_park", "place_bank", "place_hub", "place_service", "place_farmhouse",
@@ -867,6 +902,9 @@ func _road_wins() -> void:
 			economy.money += int(Balance.WAREHOUSE[warehouses.buildings[id].kind].cost)
 			warehouses.buildings.erase(id)
 			_lots_dirty = true
+	if big.road_wins(self, corr):
+		_lots_dirty = true
+		big_factories_changed.emit()
 	if parks.road_wins(self, corr):
 		_lots_dirty = true
 		parks_changed.emit()
@@ -1060,6 +1098,8 @@ func tick() -> void:
 		leaders.month(self)
 	elif hour == 18 * TICKS_PER_HOUR:
 		timelapse.month(self)
+	if tick_count % TICKS_PER_HOUR == 0:
+		history.hour(self)
 	if tick_count % TICKS_PER_HOUR == 30:
 		heritage.carry_out(self)
 		leaders.carry_out(self)
@@ -1075,6 +1115,11 @@ func tick() -> void:
 	# Taxes come in and upkeep goes out every game hour, a day settling a month.
 	if tick_count % TICKS_PER_HOUR == 0:
 		economy.money += roundi(economy.monthly_net() / 24.0)
+	# Before trade settles: last month's deals, and this month's asks.
+	big.tick(self)
+	if big.take_changed():
+		_lots_dirty = true
+		big_factories_changed.emit()
 	# Before logistics, which clears Traffic's arrivals.
 	t = Perf.now()
 	hubs.tick(self)
@@ -1199,7 +1244,7 @@ func update_stats(budget := true, slice := -1) -> void:
 	services.update(network, lots, buildings)
 	parks.update_effects(self)
 	var homes := _home_scan(slice)
-	factory_jobs += farms.jobs() + industry.jobs() + warehouses.jobs() + power.jobs() + rail.jobs()
+	factory_jobs += farms.jobs() + industry.jobs() + warehouses.jobs() + power.jobs() + rail.jobs() + big.jobs()
 	# Teachers, and office and tech jobs for the town's graduates (less the
 	# ones already counted in office buildings, which house those jobs).
 	shop_jobs += education.jobs() - mini(office_cap, education.office_jobs())
@@ -1482,6 +1527,8 @@ func warehouse_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 			return "That ground belongs to the phone company."
 		if banks.covers(p):
 			return "That ground is a bank."
+	if big.overlaps(poly):
+		return "Overlaps a big factory."
 	if parks.overlaps(Array(poly)):
 		return "That ground is a park."
 	return ""
@@ -1503,7 +1550,7 @@ func warehouse_ground_ok(poly: PackedVector2Array, id: int) -> bool:
 			return false
 	for p in _grid_in(poly):
 		if farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) or reserves.kind_at(p) != "" \
-				or hubs.covers(p) or education.covers(p) or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p):
+				or hubs.covers(p) or education.covers(p) or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p) or big.covers(p):
 			return false
 	for key in lots:
 		if not buildings.has(key) and zones.zone_at(lots[key].zone_pt) == ZoneMap.Zone.NONE:
@@ -1828,6 +1875,8 @@ func hub_area(key: String) -> String:
 			return "power" if power.sites.has(id) else ""
 		"warehouse":
 			return "warehouses" if warehouses.buildings.has(id) else ""
+		"big":
+			return "big" if big.sites.has(id) else ""
 		"taxi":
 			return "taxis" if taxis.companies.has(id) and services.buildings.has(id) else ""
 		"telecom":
@@ -1882,14 +1931,14 @@ func _sync_stances() -> void:
 func _leader_keys() -> Array:
 	var out := []
 	for kind in ["farm", "industry", "service", "hub", "park", "campus", "bank", "bus_depot", "water",
-			"post_office", "warehouse", "taxi", "telecom", "hospital"]:
+			"post_office", "warehouse", "taxi", "telecom", "hospital", "big"]:
 		if not permits.locators.has(kind):
 			continue
 		var ids: Array = {"farm": farms.farms, "industry": industry.sites, "service": services.buildings,
 			"hub": hubs.hubs, "park": parks.sites, "campus": education.campuses, "bank": banks.banks,
 			"bus_depot": buses.depots, "water": services.water.utilities, "post_office": mail.offices,
 			"warehouse": warehouses.buildings, "taxi": taxis.companies, "telecom": telecom.companies,
-			"hospital": healthcare.hubs}[kind].keys()
+			"hospital": healthcare.hubs, "big": big.sites}[kind].keys()
 		for id in ids:
 			out.append("%s:%d" % [kind, id])
 	return out
@@ -1962,7 +2011,7 @@ func _ground_free(mid: Vector3, corners: PackedVector2Array, in_fields: bool) ->
 		for p in pts:
 			if services.covers(p) or farms.covers(p) or industry.covers(p) or (not in_fields and farms.field_at(p) != -1) \
 					or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
-					or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p) \
+					or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p) or big.covers(p) \
 					or not land_ok(p):
 				ok = false
 	if ok:
@@ -2284,7 +2333,7 @@ func _lot_blocked(lot: Dictionary) -> bool:
 	for p in [lot.pos, lot.front, lot.zone_pt]:
 		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) \
 				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
-				or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p):
+				or mail.covers(p) or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p) or big.covers(p):
 			return true
 	# No lots in the water or on ground too steep to build on.
 	return not land_ok(lot.pos, LotPlanner.FRONTAGE * 0.5)
@@ -2770,6 +2819,84 @@ func _county_road(a: Vector2, b: Vector2, link_ends: Array) -> Array:
 	return ends
 
 
+## The roads out to the region, as straight county highways to rebuild:
+## [[a, b, link_ends], ...]. Each runs from one region link along the road,
+## straight on through any junctions, to the other link or the road's end.
+func _link_roads() -> Array:
+	var out := []
+	var done := {}
+	var links := region_links.duplicate()
+	links.sort()
+	for start in links:
+		if done.has(start) or not network.nodes.has(start):
+			continue
+		done[start] = true
+		var at: int = start
+		var came := -1
+		var heading := Vector3.ZERO
+		var steps := 0
+		while steps < 200:
+			steps += 1
+			var next := -1
+			var best := -1.0
+			for seg in network.segments_at(at):
+				if seg == came:
+					continue
+				var sd: Dictionary = network.segments[seg]
+				var other: int = sd.b if sd.a == at else sd.a
+				var dir: Vector3 = network.nodes[other] - network.nodes[at]
+				dir.y = 0.0
+				dir = dir.normalized()
+				# The first step takes the only road; then straight on (within 25°).
+				var straight := 1.0 if heading == Vector3.ZERO else dir.dot(heading)
+				if straight > best and (heading == Vector3.ZERO or straight > 0.9):
+					best = straight
+					next = seg
+			if next == -1:
+				break
+			var nd: Dictionary = network.segments[next]
+			var to: int = nd.b if nd.a == at else nd.a
+			heading = network.nodes[to] - network.nodes[at]
+			heading.y = 0.0
+			heading = heading.normalized()
+			came = next
+			at = to
+			if at in region_links:
+				break
+		var a: Vector3 = network.nodes[start]
+		var b: Vector3 = network.nodes[at]
+		var ends := [0]
+		if at in region_links and at != start:
+			done[at] = true
+			ends.append(1)
+		if a.distance_to(b) >= RoadNetwork.MIN_LENGTH:
+			out.append([Vector2(a.x, a.z), Vector2(b.x, b.z), ends])
+	return out
+
+
+## A fresh start gets a crossroads on its county highway, nearest the
+## town's middle: a street across it, 300 m each way, to grow from.
+func _start_crossroads() -> void:
+	var near := network.find_segment_near(Vector3.ZERO, 5000.0)
+	if near.is_empty():
+		return
+	var at: Vector3 = near.point
+	var hub := network.find_node_near(at, 60.0)
+	if hub != -1 and network.segments_at(hub).size() >= 3:
+		return
+	var sd: Dictionary = network.segments[int(near.seg)]
+	var along: Vector3 = network.nodes[sd.b] - network.nodes[sd.a]
+	along.y = 0.0
+	var across := Vector3(-along.z, 0.0, along.x).normalized() * 300.0
+	var a := at - across
+	var b := at + across
+	if not land_ok(a) or not land_ok(b) or not land_ok(at):
+		return
+	var money := economy.money
+	network.build_road(a, at, b, RoadStyle.Type.STREET)
+	economy.money = money
+
+
 func _parcels_to_save() -> Dictionary:
 	var out := {}
 	var keys := buildings.keys()
@@ -2821,6 +2948,7 @@ func to_dict() -> Dictionary:
 		"logistics": logistics.to_dict(),
 		"construction": construction.to_dict(),
 		"warehouses": warehouses.to_dict(),
+		"big_factories": big.to_dict(),
 		"reserves": reserves.to_dict(),
 		"rail": rail.to_dict(),
 		"permits": permits.to_dict(),
@@ -2841,6 +2969,7 @@ func to_dict() -> Dictionary:
 		"markers": markers.to_dict(),
 		"leaders": leaders.to_dict(),
 		"timelapse": timelapse.to_dict(),
+		"history": history.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
 		"buses": buses.to_dict(),
@@ -2889,6 +3018,7 @@ func from_dict(d: Dictionary) -> void:
 	logistics.from_dict(d.get("logistics", {}))
 	construction.from_dict(d.get("construction", {}))
 	warehouses.from_dict(d.get("warehouses", {}))
+	big.from_dict(d.get("big_factories", {}))
 	reserves.from_list(d.get("reserves", []))
 	rail.from_dict(d.get("rail", {}))
 	permits.from_dict(d.get("permits", {}))
@@ -2978,6 +3108,7 @@ func from_dict(d: Dictionary) -> void:
 	pollution.after_load(self)
 	heritage.ensure(self)
 	timelapse.from_dict(self, d.get("timelapse", {}))
+	history.from_dict(d.get("history", {}))
 	update_stats(true, -2)
 	buses = BusNet.new()
 	buses.from_dict(self, d.get("buses", {}))

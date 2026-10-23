@@ -79,7 +79,8 @@ static func _mirror(i: int, n: int) -> int:
 ## A layer value at a point, blended between the four nearest samples.
 ## Height layers return metres; others return 0 to 1 for channel `ch`.
 static func _sample(name: String, x: float, z: float, ch := 0) -> float:
-	_load()
+	if not _loaded:
+		_load()
 	var layer: Array = _layers[name]
 	var n: int = layer[0]
 	var data: PackedByteArray = layer[1]
@@ -91,10 +92,16 @@ static func _sample(name: String, x: float, z: float, ch := 0) -> float:
 	var j0 := floori(v)
 	var fu := u - i0
 	var fv := v - j0
-	var ia := _mirror(i0, n)
-	var ib := _mirror(i0 + 1, n)
-	var ja := _mirror(j0, n) * n
-	var jb := _mirror(j0 + 1, n) * n
+	var ia := i0
+	var ib := i0 + 1
+	var ja := j0 * n
+	var jb := (j0 + 1) * n
+	# Past the edge of the data the land mirrors (rarely: it's 32 km wide).
+	if i0 < 0 or i0 + 1 >= n or j0 < 0 or j0 + 1 >= n:
+		ia = _mirror(i0, n)
+		ib = _mirror(i0 + 1, n)
+		ja = _mirror(j0, n) * n
+		jb = _mirror(j0 + 1, n) * n
 	if bpp == 2:
 		var a := data[(ja + ia) * 2] * 256 + data[(ja + ia) * 2 + 1]
 		var b := data[(ja + ib) * 2] * 256 + data[(ja + ib) * 2 + 1]
@@ -466,6 +473,16 @@ static func _weight(layer: Dictionary, x: float, z: float) -> float:
 	var j0 := floori(v)
 	var fu := u - i0
 	var fv := v - j0
+	# Mostly all four cells are in one chunk: look it up once.
+	var ci := posmod(i0, FLAT_CHUNK)
+	var cj := posmod(j0, FLAT_CHUNK)
+	if ci < FLAT_CHUNK - 1 and cj < FLAT_CHUNK - 1:
+		var cells = layer.get(Vector2i(floori(float(i0) / FLAT_CHUNK), floori(float(j0) / FLAT_CHUNK)))
+		if cells == null:
+			return 0.0
+		var c: PackedFloat32Array = cells
+		var at := cj * FLAT_CHUNK + ci
+		return lerpf(lerpf(c[at], c[at + 1], fu), lerpf(c[at + FLAT_CHUNK], c[at + FLAT_CHUNK + 1], fu), fv)
 	return lerpf(lerpf(_cell(layer, i0, j0), _cell(layer, i0 + 1, j0), fu),
 		lerpf(_cell(layer, i0, j0 + 1), _cell(layer, i0 + 1, j0 + 1), fu), fv)
 
