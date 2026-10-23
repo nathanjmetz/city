@@ -36,7 +36,7 @@ const GROUND_FLOOR := 0.02
 const REF_M := 15.0
 ## Source checks a tick may spend re-measuring lots (a fixed amount, so every
 ## copy of the city measures the same lots on the same tick). Under 4 ms.
-const CHECKS_PER_TICK := 450
+const CHECKS_PER_TICK := 300
 ## Lots are found near a source through buckets this many metres across.
 const BUCKET := 400.0
 ## Roads are measured in straight pieces about this long, metres.
@@ -86,6 +86,24 @@ var _known := {}
 var _grid := {}
 ## A fingerprint of everything sources and lots are read from, last hour.
 var _inputs := 0
+## Lots finished measuring: count who hurts whom on the next tick.
+var _recount := false
+## Whether this hour's fingerprint differed from the last re-read's (not
+## saved: a loaded copy simply re-reads, which comes out the same).
+var _changed := true
+var _seen := 0
+## Measured lots by BUCKET square, and where each was (kept up as lots come
+## and go; not saved).
+var _lot_buckets := {}
+var _lot_pos := {}
+var _keys_hash := 0
+## Last hour's sources while rebuilding, so unchanged ones are kept.
+var _prev := {}
+## Factory lots found on the hour, for the re-read a tick later.
+var _facs := []
+var _facs_ready := false
+## Boxes reached by sources that changed, until their lots are queued.
+var _pending := []
 
 
 # --- Other systems' sources ----------------------------------------------------
@@ -108,11 +126,35 @@ func stop(ref: String) -> void:
 # --- Stepping ----------------------------------------------------------------------
 
 func tick(sim: CitySim) -> void:
-	if sim.tick_count % UPDATE_EVERY == 0:
-		_refresh(sim)
+	# Counting who hurts whom waits for a tick of its own.
+	# Each tick does one heavy job at most, so none goes over a few ms.
+	var busy := false
+	if _recount:
+		_recount = false
+		count_hurts(sim)
+		busy = true
+	# The hourly re-read, spread over three ticks: has anything changed,
+	# re-read the sources, then queue the lots they could have changed.
+	match sim.tick_count % UPDATE_EVERY:
+		0:
+			_seen = _fingerprint(sim)
+			_changed = _seen != _inputs or sources.is_empty()
+			# Finding the factories is a third of the re-read: do it now.
+			if _changed:
+				_facs = factory_keys(sim)
+				_facs_ready = true
+			busy = true
+		1:
+			if _changed:
+				_reread(sim, _seen)
+				busy = true
+		2:
+			if _changed or not _pending.is_empty():
+				_scan(sim)
+				busy = true
 	# Lots are measured a few a tick, against the sources read on the hour,
 	# so a big town never stalls on one frame.
-	if not _queue.is_empty():
+	if not _queue.is_empty() and not busy:
 		_work(sim, CHECKS_PER_TICK)
 	if sim.tick_count % TICKS_PER_DAY == 0:
 		_daily(sim)
@@ -122,17 +164,26 @@ func tick(sim: CitySim) -> void:
 ## changed: new lots, and lots within reach of a source that appeared,
 ## went away or changed. A quiet town re-measures nothing.
 func _refresh(sim: CitySim) -> void:
-	# Nothing a source or lot is read from has changed: nothing to do.
-	var inputs := hash([sim.buildings.keys(), sim.network.segments, sim.industry.sites, sim.farms.farms,
+	if _fingerprint(sim) != _inputs or sources.is_empty():
+		_reread(sim)
+	_scan(sim)
+
+
+## A hash of everything sources and lots are read from.
+func _fingerprint(sim: CitySim) -> int:
+	return hash([sim.buildings.keys(), sim.network.segments, sim.industry.sites, sim.farms.farms,
 		sim.power.sites, sim.hubs.hubs, sim.rail.pieces, sim.rail.crossings.size(), sim.families.owned, emitters,
 		owners, walls, quiet, _height_gen])
-	if inputs == _inputs and not sources.is_empty():
-		return
-	_inputs = inputs
+
+
+## Re-reads the sources, and notes where any that appeared, went away or
+## changed can reach (for _scan).
+func _reread(sim: CitySim, inputs := 0) -> void:
+	_inputs = inputs if inputs != 0 else _fingerprint(sim)
 	var old := sources.duplicate()
-	rebuild(sim)
+	rebuild(sim, false)
 	_prune(sim)
-	var boxes := []
+	var changed := []
 	var refs := old.keys()
 	for ref in sources:
 		if not old.has(ref):
@@ -142,42 +193,76 @@ func _refresh(sim: CitySim) -> void:
 		var a: Dictionary = old.get(ref, {})
 		var b: Dictionary = sources.get(ref, {})
 		if a.is_empty() or b.is_empty() or a.sig != b.sig:
-			for s in [a, b]:
-				if not s.is_empty():
-					boxes.append(s.box)
-	var now := {}
+			changed.append(ref)
+			for src in [a, b]:
+				if not src.is_empty():
+					_pending.append(src.box)
+	# The grid only changes where sources did.
+	if changed.size() > 40:
+		_build_grid()
+	else:
+		for ref in changed:
+			if old.has(ref):
+				_grid_each(old[ref].box, func(list: Array): list.erase(ref))
+			if sources.has(ref):
+				_grid_each(sources[ref].box, func(list: Array): list.insert(list.bsearch(ref), ref))
+
+
+## Queues the lots whose readings could have changed: new lots, and lots
+## within reach of a source that changed (_pending). A quiet town re-measures
+## nothing.
+func _scan(sim: CitySim) -> void:
+	var boxes := _pending
+	_pending = []
 	var dirty := {}
-	var buckets := {}
-	for key in sim.buildings:
-		if not sim.lots.has(key):
-			continue
-		now[key] = true
-		if not _known.has(key):
-			dirty[key] = true
-		if not boxes.is_empty():
-			var p: Vector3 = sim.lots[key].pos
-			var bk := Vector2i(floori(p.x / BUCKET), floori(p.z / BUCKET))
-			if not buckets.has(bk):
-				buckets[bk] = []
-			buckets[bk].append(key)
+	# Lots built or gone since the last scan (when the set changed at all).
+	var keys := sim.buildings.keys()
+	var kh := hash(keys)
+	if kh != _keys_hash or _lot_buckets.is_empty():
+		_keys_hash = kh
+		if _lot_buckets.is_empty():
+			for key in _known:
+				if sim.lots.has(key):
+					_bucket_lot(sim, key, true)
+		for key in keys:
+			if not _known.has(key) and sim.lots.has(key):
+				_known[key] = true
+				_bucket_lot(sim, key, true)
+				dirty[key] = true
+		for key in _known.keys():
+			if not sim.buildings.has(key) or not sim.lots.has(key):
+				_bucket_lot(sim, key, false)
+				_known.erase(key)
+				lots.erase(key)
 	for box in boxes:
 		for bx in range(floori(box.position.x / BUCKET), floori(box.end.x / BUCKET) + 1):
 			for bz in range(floori(box.position.y / BUCKET), floori(box.end.y / BUCKET) + 1):
-				for key in buckets.get(Vector2i(bx, bz), []):
+				for key in _lot_buckets.get(Vector2i(bx, bz), []):
 					var p: Vector3 = sim.lots[key].pos
 					if box.has_point(Vector2(p.x, p.z)):
 						dirty[key] = true
-	for key in lots.keys():
-		if not now.has(key):
-			lots.erase(key)
 	for key in _queue:
-		if now.has(key):
+		if _known.has(key):
 			dirty[key] = true
-	_known = now
 	_queue = dirty.keys()
 	_queue.sort()
 	if _queue.is_empty():
-		count_hurts(sim)
+		_recount = true
+
+
+## Adds a measured lot to (or takes it from) its bucket.
+func _bucket_lot(sim: CitySim, key: String, add: bool) -> void:
+	var p: Vector3 = _lot_pos.get(key, sim.lots[key].pos if sim.lots.has(key) else Vector3.ZERO)
+	var bk := Vector2i(floori(p.x / BUCKET), floori(p.z / BUCKET))
+	if add:
+		_lot_pos[key] = p
+		if not _lot_buckets.has(bk):
+			_lot_buckets[bk] = []
+		_lot_buckets[bk].append(key)
+	else:
+		_lot_pos.erase(key)
+		if _lot_buckets.has(bk):
+			_lot_buckets[bk].erase(key)
 
 
 ## Measures queued lots until `budget` source checks are spent.
@@ -188,7 +273,17 @@ func _work(sim: CitySim, budget: int) -> void:
 		i += 1
 	_queue = _queue.slice(i)
 	if _queue.is_empty():
-		count_hurts(sim)
+		_recount = true
+
+
+## Calls `f` with the grid list of every square `box` reaches (made if new).
+func _grid_each(box: Rect2, f: Callable) -> void:
+	for bx in range(floori(box.position.x / BUCKET), floori(box.end.x / BUCKET) + 1):
+		for bz in range(floori(box.position.y / BUCKET), floori(box.end.y / BUCKET) + 1):
+			var bk := Vector2i(bx, bz)
+			if not _grid.has(bk):
+				_grid[bk] = []
+			f.call(_grid[bk])
 
 
 func _build_grid() -> void:
@@ -206,16 +301,28 @@ func _build_grid() -> void:
 
 
 ## Reads every source from the city as it is now.
-func rebuild(sim: CitySim) -> void:
+## Lots with a factory on them, in order.
+static func factory_keys(sim: CitySim) -> Array:
+	var keys := []
+	for key in sim.buildings:
+		if int(sim.buildings[key].zone) == ZoneMap.Zone.INDUSTRIAL and sim.lots.has(key):
+			keys.append(key)
+	keys.sort()
+	return keys
+
+
+func rebuild(sim: CitySim, grid := true) -> void:
 	var old := sources.duplicate()
+	_prev = old
 	sources.clear()
 	var used_names := {}
 	_add_roads(sim, used_names)
-	var keys := sim.buildings.keys()
-	keys.sort()
+	var keys := _facs if _facs_ready else factory_keys(sim)
+	_facs_ready = false
 	for key in keys:
-		var b: Dictionary = sim.buildings[key]
-		if int(b.zone) != ZoneMap.Zone.INDUSTRIAL or not sim.lots.has(key):
+		# (A factory that went in since the hour is read next hour.)
+		var b: Dictionary = sim.buildings.get(key, {})
+		if b.is_empty() or int(b.zone) != ZoneMap.Zone.INDUSTRIAL or not sim.lots.has(key):
 			continue
 		var ref: String = "lot:" + key
 		var chain := str(b.get("chain", "general"))
@@ -287,7 +394,9 @@ func rebuild(sim: CitySim) -> void:
 	if sig != _source_sig:
 		_source_sig = sig
 		version += 1
-	_build_grid()
+	_prev = {}
+	if grid:
+		_build_grid()
 
 
 ## Forgets walls on roads that are gone and owners that closed (only on the
@@ -448,7 +557,16 @@ func _add(_sim: CitySim, ref: String, name: String, kind: String, owner: String,
 		smoke *= float(tech.smoke)
 		noise += float(tech.noise)
 		ground *= float(tech.ground)
+	# A source just like last hour is kept as it was.
+	var key := hash([kind, owner, sel, pts, smoke, noise, ground, _height_gen])
+	var was: Dictionary = _prev.get(ref, {})
+	if not was.is_empty() and was.get("key", 0) == key:
+		was.name = name
+		sources[ref] = was
+		return
 	_finish(_make(ref, name, kind, owner, sel, pts, [], smoke, noise, ground, float(spec.reach)))
+	if sources.has(ref):
+		sources[ref].key = key
 
 
 func _make(ref: String, name: String, kind: String, owner: String, sel: Dictionary, pts: Array, lines: Array,
@@ -706,12 +824,16 @@ func sample(p: Vector3) -> Dictionary:
 func measure_lots(sim: CitySim) -> void:
 	lots.clear()
 	_known.clear()
+	_lot_buckets.clear()
+	_lot_pos.clear()
 	for key in sim.buildings:
 		if sim.lots.has(key):
 			_known[key] = true
 	_queue = _known.keys()
 	_queue.sort()
 	_work(sim, 1 << 62)
+	count_hurts(sim)
+	_recount = false
 
 
 ## Measures one built lot against the sources that can reach its square.
@@ -1029,6 +1151,9 @@ func to_dict() -> Dictionary:
 	var known := _known.keys()
 	known.sort()
 	out.known = known
+	if _facs_ready:
+		out.facs = _facs
+	out.pending = _pending.map(func(r: Rect2): return [r.position.x, r.position.y, r.size.x, r.size.y])
 	return out
 
 
@@ -1101,6 +1226,13 @@ func from_dict(d: Dictionary) -> void:
 		_source_in(src)
 	_build_grid()
 	_queue = Array(d.get("queue", []))
+	_pending = Array(d.get("pending", [])).map(func(r): return Rect2(r[0], r[1], r[2], r[3]))
+	_changed = true
+	_facs_ready = d.has("facs")
+	_facs = Array(d.get("facs", []))
+	_lot_buckets.clear()
+	_lot_pos.clear()
+	_keys_hash = 0
 	_known.clear()
 	for key in d.get("known", []):
 		_known[key] = true
