@@ -514,7 +514,7 @@ func _well(front: float, to_curb: float) -> void:
 	# Hydropneumatic tank on saddles, and the capped well head.
 	var t := Vector3(5.5, 0, front + 9.0)
 	_box("paint", Vector3(2.4, 0.3, 5.0), t + Vector3(0, 0.15, 0), CONCRETE)
-	_cylinder("paint", t + Vector3(0, 0.3, 0), 1.1, 3.8, Color("#d8dadb"), 14)
+	_tank_on_saddles(t + Vector3(0, 0.3, 0), 0.9, 4.2, Color("#d8dadb"))
 	_cyl_y(Vector3(-2.0, 0.5, front + 14.5), 0.3, 1.0, Color("#3a5a8a"))
 	_flat_rect("gravel", -5.0, 7.0, front - to_curb, front + 6.0, 0.06, Color("#8d877c"))
 	_fence(Vector2(-7.0, front + 2.0), Vector2(8.5, front + 17.0), 1.8)
@@ -746,6 +746,35 @@ func _fence(a: Vector2, b: Vector2, h: float, barbed := false) -> void:
 		if barbed:
 			for k in 3:
 				_box("paint", Vector3(0.02, 0.02, len), (p + q) * 0.5 + Vector3(0, h + 0.15 + k * 0.15, 0), DARK, yaw)
+
+
+## A horizontal pressure tank lying along z on two concrete saddles, with
+## shallow dished heads (an ASME hydropneumatic tank, 6 ft by 14 ft for a
+## small town well). `base` is the middle of the slab top it stands on.
+func _tank_on_saddles(base: Vector3, r: float, length: float, col: Color) -> void:
+	var c := base + Vector3(0, 0.45 + r, 0)
+	var h := length * 0.5
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(r * 1.6, 0.45 + r * 0.4, 0.35), base + Vector3(0, (0.45 + r * 0.4) * 0.5, s * h * 0.6), CONCRETE)
+	var segs := 16
+	var dish := r * 0.3
+	for i in segs:
+		var a0 := TAU * i / segs
+		var a1 := TAU * (i + 1) / segs
+		var d0 := Vector3(cos(a0), sin(a0), 0)
+		var d1 := Vector3(cos(a1), sin(a1), 0)
+		var p0 := c + d0 * r
+		var p1 := c + d1 * r
+		var out := (d0 + d1) * 0.5
+		_quad("paint", p0 + Vector3(0, 0, -h), p1 + Vector3(0, 0, -h), p1 + Vector3(0, 0, h), p0 + Vector3(0, 0, h), col, [], out)
+		for s in [-1.0, 1.0]:
+			# Dished head: a ring in to 60 % of the radius, then a flat cap.
+			var q0 := c + d0 * r * 0.6 + Vector3(0, 0, s * (h + dish))
+			var q1 := c + d1 * r * 0.6 + Vector3(0, 0, s * (h + dish))
+			var e0 := p0 + Vector3(0, 0, s * h)
+			var e1 := p1 + Vector3(0, 0, s * h)
+			_quad("paint", e0, e1, q1, q0, col.darkened(0.05), [], out + Vector3(0, 0, s))
+			_tri("paint", c + Vector3(0, 0, s * (h + dish)), q0, q1, col.darkened(0.08), [], Vector3(0, 0, s))
 
 
 func _cyl_y(c: Vector3, r: float, h: float, col: Color) -> void:
