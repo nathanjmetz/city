@@ -1,9 +1,9 @@
 extends SceneTree
 ## Pictures of the permit bell for checking the look, with a made-up railroad
 ## request across the starter road (no real hub files one yet).
-## Run: godot -s tools/permit_shot.gd -- list|edit|land|guide|deal|homes|projects|plan out.png
+## Run: godot -s tools/permit_shot.gd -- list|edit|land|guide|deal|homes|projects|plan|engineer out.png
 ## ("homes" is a real home builder's subdivision, with its choice of sites;
-## "projects" is one under way; "plan" is the land use plan tool.)
+## "projects" is one under way; "plan" is the land use plan tool; "engineer" a city engineer's proposal.)
 
 var _frames := 0
 var _mode := "list"
@@ -29,6 +29,25 @@ func _process(_delta: float) -> bool:
 			sim.apply({"type": "paint_zone", "center": [x, 35], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
 		for i in 600:
 			sim.tick()
+		if _mode == "engineer":
+			# The city engineer's proposal for a jammed road.
+			sim.stats.population = 12000
+			for seg in sim.network.segments:
+				sim.engineer.counts[seg] = [4, 4, 0]
+			sim.engineer.samples = 4
+			sim.engineer.month(sim)
+			var he: Hud = main.get_children().filter(func(n): return n is Hud)[0]
+			he.advisor.settings.welcomed = true
+			he.advisor.close_panel()
+			he.tour.stop()
+			he.permits.open_panel()
+			var eid: int = sim.engineer.pending.keys()[0] if not sim.engineer.pending.is_empty() else -1
+			print("engineer request ", eid)
+			he.permits.call("_select", eid, 0)
+			var ce: CityCamera = he.info_view.cam
+			ce.set_view(0.7, 0.8, 600.0)
+			ce.look_at_point(he.permits.view.center())
+			return false
 		if _mode == "plan":
 			# A land use plan: homes north of the road, shops along it, jobs
 			# and farms beyond, and the Plan tool out.

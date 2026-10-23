@@ -48,6 +48,16 @@ Every paved street is resurfaced about 25 game years (`STREET_LIFE_YEARS`) after
 - The Economy page shows STREETS COMING DUE: what was paid this past year, and a forecast in five-year bars.
 - It runs once a month: about 3 ms on a huge town, and about 22 ms the first month after loading, when every street is measured.
 
+## The city engineer (CityEngineer)
+
+The engineer takes a traffic count at four rush hours each game month (`ENGINEER_COUNT_HOURS`): every car on the roads, whether that road is moving under 40% of its speed limit (Highway Capacity Manual level of service E or F), and whether a car on a hub's own road has any business with that hub. Once a month the worst problem goes to the bell, one at a time, each with a ghost, an argument for why, and what the town pays:
+
+- **A hub road used as a shortcut** (from 2,000 people): a farm lane or an oil company's lease road with through cars. Choose between paving it as a town street or "local traffic only", with signs and a gate arm that let the hub's trucks through (`TrafficSim.close_segment(seg, true, "always")`). This is Brawn's tension between hub leaders and the mayor.
+- **A jammed two-lane road** (from 10,000 people): widen the jammed stretch to four lanes, or add a centre turn lane.
+- **A busy alley**: pave it into a narrow street.
+
+The town pays on approval. When the money isn't there, the job waits. Counts are saved. The cost is four counts and one look a month. `tools/permit_shot.gd -- engineer` shows the card.
+
 ## Code
 
 - Logic is in `scripts/sim/subdivisions.gd` (`Subdivisions`, `sim.subdivisions`). Numbers are in Balance under `SUBDIV_*`. The test is `tests/test_subdivisions.gd`.
