@@ -68,6 +68,8 @@ var lot_happy := {}
 ## land around it, Growth how soon a park buys more land (see Policies).
 var policies: Policies
 var _next_id := 1
+var _effects_key := []
+var _effects_lots := {}
 static var _nodes := {}
 ## The fairgrounds and football field as event venues, and the visitors
 ## they bring (see Tourism).
@@ -148,6 +150,8 @@ func ground_problem(sim: CitySim, poly: PackedVector2Array, skip := -1) -> Strin
 			return "That ground is the post office."
 		if sim.education.covers(q):
 			return "That ground is a campus."
+		if sim.telecom.covers(q):
+			return "That ground belongs to the phone company."
 		if sim.banks.covers(q):
 			return "That ground is a bank."
 		if sim.reserves.kind_at(q) != "":
@@ -323,6 +327,13 @@ func lift_at(p: Vector3, effect: String, skip := -1) -> float:
 
 ## Works out the lift each building's lot gets (after stats update).
 func update_effects(sim: CitySim) -> void:
+	# The lifts only change when parks, lots or buildings do (and are
+	# refreshed every game hour regardless).
+	var sig := [sites.hash(), sim.buildings.size(), sim.lots.size(), sim.tick_count / CitySim.TICKS_PER_HOUR]
+	if sig == _effects_key and is_same(sim.lots, _effects_lots):
+		return
+	_effects_key = sig
+	_effects_lots = sim.lots
 	lot_value.clear()
 	lot_happy.clear()
 	if sites.is_empty():

@@ -154,6 +154,8 @@ func _cell_problem(sim: CitySim, h: Dictionary, c: Vector2i, id: int, auto: bool
 			return "That ground is a campus."
 		if id != -2 and sim.mail.covers(p):
 			return "Overlaps the post office."
+		if sim.telecom.covers(p):
+			return "That ground belongs to the phone company."
 		if sim.banks.covers(p):
 			return "That ground is a bank."
 	if auto:

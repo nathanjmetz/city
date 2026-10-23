@@ -28,7 +28,7 @@ const _FILES := {
 	"fire": "fire", "police": "police", "health": "health", "school": "school", "services": "services",
 	"farms": "farms", "farmland": "farms", "traffic": "traffic", "signal": "signal", "views": "views",
 	"help": "help", "grid": "grid", "curve": "curve", "roundabout": "roundabout",
-	"bus": "bus", "transit": "bus",
+	"bus": "bus", "transit": "bus", "taxi": "taxi",
 	"permits": "permits", "check": "check", "close": "close",
 }
 ## These get a soft `accent` fill behind the line (zone tints and the like).
@@ -192,6 +192,17 @@ func _draw() -> void:
 		"power":
 			_poly([P.call(0.58, 0.06), P.call(0.22, 0.56), P.call(0.48, 0.56), P.call(0.4, 0.94),
 				P.call(0.78, 0.4), P.call(0.52, 0.4)], Color(1.0, 0.82, 0.3))
+		"tower":
+			# A lattice cell tower sending out signal arcs.
+			line.call(P.call(0.5, 0.22), P.call(0.3, 0.94))
+			line.call(P.call(0.5, 0.22), P.call(0.7, 0.94))
+			line.call(P.call(0.36, 0.72), P.call(0.64, 0.72), w * 0.7)
+			line.call(P.call(0.42, 0.5), P.call(0.58, 0.5), w * 0.7)
+			draw_circle(P.call(0.5, 0.2), s * 0.06, accent)
+			for k in 2:
+				var r := s * (0.17 + k * 0.12)
+				draw_arc(P.call(0.5, 0.2), r, -PI * 0.85, -PI * 0.55, 8, color, w * 0.7, true)
+				draw_arc(P.call(0.5, 0.2), r, -PI * 0.45, -PI * 0.15, 8, color, w * 0.7, true)
 		"water":
 			# Water tower: a round tank on legs.
 			draw_circle(P.call(0.5, 0.32), s * 0.24, Color(0.55, 0.78, 0.95))
@@ -396,6 +407,24 @@ func _draw() -> void:
 				line.call(P.call(0.5, 0.42) - d, P.call(0.5, 0.42) + d, w * 0.6)
 			line.call(P.call(0.5, 0.42), P.call(0.3, 0.92), w)
 			line.call(P.call(0.5, 0.42), P.call(0.7, 0.92), w)
+		"smoke", "pollution":
+			# A stack with a drifting plume.
+			_poly([P.call(0.18, 0.92), P.call(0.18, 0.5), P.call(0.32, 0.5), P.call(0.32, 0.92)], color)
+			for c in [[0.36, 0.38, 0.12], [0.55, 0.26, 0.15], [0.76, 0.18, 0.13]]:
+				draw_circle(P.call(c[0], c[1]), s * c[2], Color(color, 0.55))
+		"noise":
+			# A speaker with sound rings.
+			_poly([P.call(0.1, 0.38), P.call(0.26, 0.38), P.call(0.46, 0.18), P.call(0.46, 0.82),
+				P.call(0.26, 0.62), P.call(0.1, 0.62)], color)
+			for r in [0.18, 0.32]:
+				draw_arc(P.call(0.48, 0.5), s * r, -0.9, 0.9, 12, color, w * 0.8, true)
+		"ground":
+			# A drop seeping into the ground.
+			_poly([P.call(0.08, 0.92), P.call(0.92, 0.92), P.call(0.92, 0.68), P.call(0.08, 0.68)], Color(0.55, 0.42, 0.28))
+			_poly([P.call(0.5, 0.08), P.call(0.68, 0.38), P.call(0.6, 0.52), P.call(0.4, 0.52), P.call(0.32, 0.38)], color)
+			draw_circle(P.call(0.5, 0.42), s * 0.12, color)
+			for x in [0.3, 0.55, 0.75]:
+				draw_circle(P.call(x, 0.8), s * 0.04, Color(0.25, 0.2, 0.1))
 		"advice":
 			# A speech bubble with three dots.
 			var bubble := PackedVector2Array([P.call(0.12, 0.18), P.call(0.88, 0.18), P.call(0.88, 0.68),

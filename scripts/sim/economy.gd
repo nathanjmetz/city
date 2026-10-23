@@ -31,7 +31,7 @@ var tax := DEFAULT_TAX.duplicate()
 ## "care" is the town's spending on homes, shops and factories from their
 ## Funding sliders and "support" its aid to farms and companies (both
 ## negative when Lean saves or collects money).
-var budget := {"income": {}, "upkeep": 0, "fees": 0, "services": 0, "education": 0, "care": 0, "support": 0}
+var budget := {"income": {}, "upkeep": 0, "fees": 0, "services": 0, "education": 0, "care": 0, "support": 0, "telecom": 0}
 
 ## Each zone's area on the Economy page.
 const ZONE_AREA := {ZoneMap.Zone.RESIDENTIAL: "homes", ZoneMap.Zone.COMMERCIAL: "shops",
@@ -72,6 +72,10 @@ func building_tax(b: Dictionary, staffed: float, lift := 0.0) -> float:
 	return (value * (0.5 + 0.5 * used) + homes) * tax[z] / 100.0
 
 
+var _roads_rev := []
+var _roads_upkeep := 0.0
+
+
 ## Works out this month's budget from the buildings and roads.
 func update_budget(sim: CitySim) -> void:
 	var income := {}
@@ -87,9 +91,9 @@ func update_budget(sim: CitySim) -> void:
 			continue  # a business with no power or water is closed
 		# Land near a landfill is worth less, near a cemetery a little more,
 		# and parks and landmarks lift it. Good mail service lifts it a little
-		# too, and so do well-kept streets (Funding); a smelly sewer plant
-		# lowers it.
-		var tax_due := building_tax(b, staffed, sim.parks.lot_value.get(key, 0.0)) * sim.hubs.lot_factor(sim, key) \
+		# too, and so do well-kept streets (Funding) and fiber and cell service;
+		# a smelly sewer plant and pollution lower it.
+		var tax_due := building_tax(b, staffed, sim.parks.lot_value.get(key, 0.0) + sim.telecom.lot_lift(key)) * sim.land_factor(key) \
 			* sim.mail.lot_factor(sim, key) * sim.policies.pick(Balance.POLICY_LAND_VALUE, "funding", area) / 12.0
 		if sim.lots.has(key):
 			tax_due *= sim.services.water.land_value_factor(sim.services.buildings, sim.lots[key].pos)
@@ -114,9 +118,15 @@ func update_budget(sim: CitySim) -> void:
 	income[ZoneMap.Zone.COMMERCIAL] += maxi(0, sim.education.office_jobs() - BuildingTypes.office_jobs(sim)) \
 		* Balance.EDUCATION_OFFICE_VALUE \
 		* tax[ZoneMap.Zone.COMMERCIAL] / 100.0 / 12.0
-	var upkeep := 0.0
-	for id in sim.network.segments:
-		upkeep += road_upkeep(sim.network.curve_of(id), sim.network.segments[id].type)
+	# The phone company pays property tax on its towers and fiber.
+	income[ZoneMap.Zone.COMMERCIAL] += sim.telecom.taxable_value() * tax[ZoneMap.Zone.COMMERCIAL] / 100.0 / 12.0
+	# Road upkeep only changes with the roads.
+	if _roads_rev != [sim.network.get_instance_id(), sim.network.revision]:
+		_roads_rev = [sim.network.get_instance_id(), sim.network.revision]
+		_roads_upkeep = 0.0
+		for id in sim.network.segments:
+			_roads_upkeep += road_upkeep(sim.network.curve_of(id), sim.network.segments[id].type)
+	var upkeep := _roads_upkeep
 	for z in income:
 		income[z] = roundi(income[z])
 	# Water and sewer bills from every building on the water system.
@@ -135,13 +145,14 @@ func update_budget(sim: CitySim) -> void:
 			+ sim.mail.monthly_cost()) * d.upkeep),
 		"education": roundi(sim.education.monthly_upkeep() * d.upkeep),
 		"care": roundi(care * d.upkeep), "support": roundi(support),
+		"telecom": roundi(sim.telecom.monthly_upkeep() * d.upkeep),
 		# Service deals with neighbor towns: fees in as host, out as served.
 		"deals": sim.interlocal.monthly_net()}
 
 
 func monthly_net() -> int:
 	var total := -int(budget.upkeep) - int(budget.services) - int(budget.get("education", 0)) + int(budget.fees) \
-		- int(budget.get("care", 0)) - int(budget.get("support", 0)) + int(budget.get("deals", 0))
+		- int(budget.get("care", 0)) - int(budget.get("support", 0)) - int(budget.get("telecom", 0)) + int(budget.get("deals", 0))
 	for z in budget.income:
 		total += int(budget.income[z])
 	return total

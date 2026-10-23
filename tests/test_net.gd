@@ -151,7 +151,25 @@ func _run() -> void:
 	await _until(func(): return kid2.my_city != "")
 	_check(kid2.my_city == kid_city and again.region.cities[kid_city].player == "Sammy", "back by its sign-in, with the name picked in Profile")
 	_check(ann2.region.chat.any(func(l): return l.text == "Hi neighbor!"), "chat history kept")
+	# The host's computer restarts (an update, say): Sammy's town keeps
+	# running, the game reconnects by itself and the server gets the latest.
+	var back := []
+	kid2.reconnected.connect(func(): back.append(true))
 	again.stop()
+	again.queue_free()
+	await _frames(10)
+	var kid_sim := kid2.my_sim()
+	var segs := kid_sim.network.segments.size()
+	kid_sim.apply_now({"type": "build_road", "start": [0, 0], "ctrl": [0, 60], "end": [0, 120]})
+	_check(kid2.reconnecting, "a dropped connection keeps the town running and tries again")
+	var third := RegionServer.new()
+	root.add_child(third)
+	_check(third.start(PORT + 1, "", data) == OK, "the host's server comes back")
+	await _until(func(): return not back.is_empty(), 20.0)
+	await _frames(20)
+	_check(not back.is_empty() and kid2.is_joined, "the game reconnects by itself")
+	_check(third.region.cities[kid_city].sim.network.segments.size() > segs, "and the road built while away reaches the server")
+	third.stop()
 	DirAccess.remove_absolute(data)
 
 	print("SOME TESTS FAILED" if _failed else "ALL TESTS PASSED")

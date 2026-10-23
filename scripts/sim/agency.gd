@@ -34,6 +34,8 @@ extends RefCounted
 ##   region_buys:<good>   a neighbouring town imports that good
 ##   region_makes:<good>  a neighbouring town exports that good
 ##   link           the town has a way out to the region
+##   hub:<fact>     a number the hub keeps in its own "facts" dictionary
+##                  (e.g. the phone company's "towers" or "fiber_km")
 
 ## Development trees for the hubs this thread owns. Costs come out of the
 ## hub's own money (its profit), never the city budget.
@@ -129,6 +131,8 @@ static func holds(sim: CitySim, hub: Dictionary, at: Vector3, profit: float, con
 		"profit": return profit >= float(value)
 		"population": return sim.stats.population >= int(value)
 		"link": return not sim.region_links.is_empty()
+	if cond.begins_with("hub:"):
+		return float(hub.get("facts", {}).get(cond.substr(4), 0.0)) >= float(value)
 	if cond.begins_with("local:"):
 		return _local(sim, at, cond.substr(6)) >= int(value)
 	if cond.begins_with("region_buys:"):

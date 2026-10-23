@@ -27,12 +27,15 @@ var campus_tool: CampusTool
 var bank_tool: BankTool
 var _bank_cards := {}  # "community"/"farm_credit" -> Button
 var _campus_cards := {}  # "high_school"/"college"/"university" -> Button
+var telecom_tool: TelecomTool
+var _telecom_card: Button
 var _warehouse_cards := {}  # Warehouses size -> Button
 var traffic_tool: TrafficTool
 var move_tool: MoveTool
 var info_view: InfoView
 var service_view: ServiceView
 var bus_view: BusView
+var rail_view: RailView
 var select_tool: SelectTool
 var lot_alerts: LotAlerts
 var _info_panel := InfoPanel.new()
@@ -131,6 +134,9 @@ func _ready() -> void:
 	warehouse_tool.hint_changed.connect(_show_hint)
 	campus_tool.kind_changed.connect(func(_k): _sync())
 	campus_tool.hint_changed.connect(_show_hint)
+	telecom_tool.kind_changed.connect(func(_k): _sync())
+	telecom_tool.hint_changed.connect(_show_hint)
+	sim.telecom_changed.connect(_sync)
 	bank_tool.kind_changed.connect(func(_k): _sync())
 	bank_tool.hint_changed.connect(_show_hint)
 	traffic_tool.mode_changed.connect(func(_m): _sync())
@@ -172,7 +178,7 @@ func anything_open() -> bool:
 		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
-		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or bank_tool.kind != "" or move_tool.active
+		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or bank_tool.kind != "" or telecom_tool.kind != "" or move_tool.active
 
 
 ## Puts every tool away and closes every panel.
@@ -193,6 +199,7 @@ func close_all() -> void:
 	industry_tool.set_kind("")
 	warehouse_tool.set_kind("")
 	campus_tool.set_kind("")
+	telecom_tool.set_kind("")
 	bank_tool.set_kind("")
 	traffic_tool.set_mode(TrafficTool.Mode.NONE)
 	park_tool.set_kind("")
@@ -235,6 +242,11 @@ const VIEWS := [
 	["school", "school", "Schools", "Roads within reach of a school"],
 	["traffic", "flow", "Traffic", "How freely traffic moves"],
 	["bus", "bus", "Buses", "Bus routes and stops the depots planned, and how full the buses are"],
+	["network", "tower", "Cell and fiber", "Cell signal across the map, and the streets with fiber"],
+	["rail", "train", "Rail", "Rail lines, what they carry, and new track waiting on your permit"],
+	["smoke", "smoke", "Smoke", "Where smoke drifts and who makes it. Click anywhere to see who pollutes it."],
+	["noise", "noise", "Noise", "How loud it is and what's making the noise. Click anywhere to see the sources."],
+	["ground", "ground", "Dirty ground", "Dirty ground and groundwater, and where it comes from. Click anywhere to trace it."],
 ]
 
 
@@ -274,8 +286,13 @@ func _build_views() -> void:
 func _show_view(key: String) -> void:
 	_view = key
 	var resource := {"fertility": InfoView.Mode.FERTILITY, "oil": InfoView.Mode.OIL,
-		"ore": InfoView.Mode.ORE, "forest": InfoView.Mode.FOREST}
+		"ore": InfoView.Mode.ORE, "forest": InfoView.Mode.FOREST, "network": InfoView.Mode.NETWORK,
+		"smoke": InfoView.Mode.SMOKE, "noise": InfoView.Mode.NOISE, "ground": InfoView.Mode.GROUND}
 	info_view.set_mode(resource.get(key, InfoView.Mode.NONE))
+	# In a pollution view any click on the map says who pollutes that spot.
+	select_tool.spot_clicks = key in ["smoke", "noise", "ground"]
+	if not select_tool.spot_clicks and select_tool.selection.get("type", "") == "spot":
+		select_tool.select({})
 	var cover := {"fire": Services.Kind.FIRE, "police": Services.Kind.POLICE,
 		"health": Services.Kind.CLINIC, "school": Services.Kind.SCHOOL}
 	if cover.has(key):
@@ -284,6 +301,8 @@ func _show_view(key: String) -> void:
 		service_view.show_kind = -1
 	if bus_view:
 		bus_view.show_routes = key == "bus"
+	if rail_view:
+		rail_view.show_lines = key == "rail"
 	if key == "traffic":
 		traffic_tool.set_mode(TrafficTool.Mode.VIEW)
 	elif traffic_tool.mode == TrafficTool.Mode.VIEW:
@@ -304,7 +323,7 @@ func _build_top_bar() -> void:
 	row.add_theme_constant_override("separation", 8)
 	bar.add_child(row)
 
-	_views_button = _icon_button("views", 24, "Views: see the map by fertility, oil, ore, forest, services and traffic")
+	_views_button = _icon_button("views", 24, "Views: see the map by fertility, oil, ore, forest, services, traffic and pollution")
 	_views_button.toggled.connect(func(on): _views_panel.visible = on)
 	row.add_child(_views_button)
 	row.add_child(VSeparator.new())
@@ -666,19 +685,22 @@ func _services_drawer() -> PanelContainer:
 	for group in [["Utilities", [Services.Kind.POWER_FEED, Services.Kind.WELL, Services.Kind.SUBSTATION,
 				Services.Kind.WATER_TOWER, Services.Kind.WATER_UTILITY]],
 			["Safety, health and schools", [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.CLINIC, Services.Kind.SCHOOL]],
-			["Transit", [Services.Kind.BUS_DEPOT]]]:
+			["Transit", [Services.Kind.BUS_DEPOT, Services.Kind.TAXI_COMPANY]]]:
 		if row.get_child_count() > 0:
 			row.add_child(VSeparator.new())
 		var cards := _section(row, group[0])
 		for k in group[1]:
 			var s: Dictionary = Services.KINDS[k]
 			var short := {Services.Kind.WATER_TOWER: "Water tower", Services.Kind.POWER_FEED: "Power line",
-				Services.Kind.WELL: "Well", Services.Kind.SCHOOL: "School", Services.Kind.WATER_UTILITY: "Water utility"}
+				Services.Kind.WELL: "Well", Services.Kind.SCHOOL: "School", Services.Kind.WATER_UTILITY: "Water utility",
+				Services.Kind.TAXI_COMPANY: "Taxis"}
 			var b := _card(s.icon, short.get(k, s.name.split(" ")[0]),
 				"%s: $%s, $%s a month" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)])
 			b.tooltip_text = "%s: $%s to build, $%s a month" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
-			if s.has("transit"):
+			if k == Services.Kind.BUS_DEPOT:
 				b.tooltip_text = "%s: $%s to build, with two buses. It plans its own stops, routes and fare; you set its funding." % [s.name, CitySim.money_text(s.cost)]
+			elif k == Services.Kind.TAXI_COMPANY:
+				b.tooltip_text = "%s: $%s to bring one to town, with two cabs. Its owner runs it on fares: the fleet, the meter and the lot." % [s.name, CitySim.money_text(s.cost)]
 			b.pressed.connect(func(): service_tool.set_kind(k))
 			cards.add_child(b)
 			_service_cards[k] = b
@@ -725,6 +747,14 @@ func _services_drawer() -> PanelContainer:
 	pb.pressed.connect(func(): service_tool.set_kind(Mail.TOOL_KIND))
 	mail.add_child(pb)
 	_service_cards[Mail.TOOL_KIND] = pb
+	# The phone company: placed once, then it builds its own network.
+	row.add_child(VSeparator.new())
+	var phone := _section(row, "Phone and internet")
+	_telecom_card = _card("tower", "Phone co.", "")
+	_telecom_card.tooltip_text = "Phone company: $%s to build, $%s a month grant. Its manager strings fiber and puts up cell towers where they pay off. One per town." % [
+		CitySim.money_text(Balance.TELECOM_COST), CitySim.money_text(Balance.TELECOM_GRANT)]
+	_telecom_card.pressed.connect(func(): telecom_tool.set_kind("telecom"))
+	phone.add_child(_telecom_card)
 	# The railroad: its leader plans the track and asks before building.
 	row.add_child(VSeparator.new())
 	var rail := _section(row, "Rail")
@@ -934,6 +964,7 @@ func _open(cat: String) -> void:
 			industry_tool.set_kind("")
 			warehouse_tool.set_kind("")
 			campus_tool.set_kind("")
+			telecom_tool.set_kind("")
 			bank_tool.set_kind("")
 			traffic_tool.set_mode(TrafficTool.Mode.NONE)
 			park_tool.set_kind("")
@@ -964,7 +995,7 @@ func _sync() -> void:
 	if zone_tool.zone != ZoneTool.OFF:
 		_category = "zones"
 	elif service_tool.kind != ServiceTool.OFF or campus_tool.kind != "" or industry_tool.kind == "power" \
-			or bank_tool.kind != "":
+			or bank_tool.kind != "" or telecom_tool.kind != "":
 		_category = "services"
 	elif park_tool.kind != "":
 		_category = "parks"
@@ -1016,6 +1047,9 @@ func _sync() -> void:
 		_power_card.set_pressed_no_signal(industry_tool.kind == "power")
 	for k in _campus_cards:
 		_campus_cards[k].set_pressed_no_signal(k == campus_tool.kind)
+	if _telecom_card != null:
+		_telecom_card.set_pressed_no_signal(telecom_tool.kind != "")
+		_telecom_card.disabled = not sim.telecom.companies.is_empty()
 	for k in _bank_cards:
 		_bank_cards[k].set_pressed_no_signal(k == bank_tool.kind)
 	for m in _farm_cards:

@@ -53,13 +53,24 @@ const ARTIC := {
 	"mail_semi": {"cab": "tractor_day", "trailer": "trailer_usps", "hitch": 5.0, "pin": 0.9, "axle": 14.4},
 	"tanker": {"cab": "tractor_day", "trailer": "trailer_tank", "hitch": 5.0, "pin": 0.9, "axle": 13.4},
 }
+## Body styles within one kind, all close to its length (see VehicleTypes).
+const VARIANTS := {
+	"sedan": ["sedan", "sedan_compact", "sedan_fullsize"],
+	"pickup": ["pickup", "pickup_ext", "pickup_mid"],
+	"suv": ["suv", "suv_mid"],
+	"crossover": ["crossover", "wagon", "ev_crossover"],
+	"hatchback": ["hatchback", "hatch_box"],
+	"van": ["van", "van_low"],
+}
 ## Where the (rear) axle that steers the body sits, metres behind the front.
 const AXLE := {
 	"sedan": 3.9, "hatchback": 3.4, "crossover": 3.6, "suv": 4.2, "pickup": 4.7, "work_pickup": 4.8,
 	"minivan": 4.0, "sports": 3.8, "motorcycle": 1.8, "van": 4.4, "delivery_van": 5.3,
 	"box_truck": 7.9, "dump_truck": 6.7, "tow_truck": 5.2, "school_bus": 8.9, "city_bus": 9.2,
-	"garbage_truck": 7.3, "fire_engine": 7.4, "police": 3.9, "ambulance": 5.1, "tractor": 4.2,
-	"combine": 7.0, "tractor_sleeper": 6.4, "mail_truck": 4.3, "concrete_mixer": 7.0, "rural_mail": 3.9, "tractor_day": 4.8,
+	"garbage_truck": 7.3, "fire_engine": 7.4, "police": 3.9, "taxi": 3.9, "ambulance": 5.1, "tractor": 4.2,
+	"combine": 7.0, "tractor_sleeper": 6.4, "mail_truck": 4.3, "concrete_mixer": 7.0, "sedan_compact": 3.6, "sedan_fullsize": 4.0,
+	"pickup_ext": 4.6, "pickup_mid": 4.4, "suv_mid": 3.9, "wagon": 3.7, "ev_crossover": 3.8, "hatch_box": 3.4, "van_low": 4.4,
+	"rural_mail": 3.9, "tractor_day": 4.8,
 }
 
 var _st := SurfaceTool.new()
@@ -88,8 +99,19 @@ static func mesh_keys() -> Array:
 				if not out.has(p):
 					out.append(p)
 		else:
-			out.append(k)
+			out.append_array(VARIANTS.get(k, [k]))
 	return out
+
+
+## The model one vehicle of a kind uses, fixed by its id, so a street of
+## pickups is a mix of crew cabs, extended cabs and midsize ones.
+static func variant(kind: String, id: int) -> String:
+	var list: Array = VARIANTS.get(kind, [])
+	if list.is_empty():
+		return kind
+	var h := (id * 2246822519 + 3266489917) & 0xffffffff
+	h = ((h >> 15) ^ h) * 668265263 & 0xffffffff
+	return list[(h >> 8) % list.size()]
 
 
 # --- Cars -------------------------------------------------------------------
@@ -191,6 +213,66 @@ func _sports() -> void:  # Ford Mustang
 		_box(Vector3(0, 1.06, 4.7), Vector3(1.4, 0.04, 0.16), PAINT)  # spoiler
 
 
+func _taxi() -> void:  # Toyota Camry Hybrid, the usual small-town cab now
+	_sedan()
+	# Lit roof sign and a checker stripe along the doors.
+	_box(Vector3(0, 1.55, 2.6), Vector3(0.75, 0.2, 0.28), WHITE)
+	if not _lo:
+		for s in [-1.0, 1.0]:
+			_box(Vector3(s * 0.925, 0.78, 2.4), Vector3(0.004, 0.1, 1.9), TRIM)
+
+
+func _sedan_compact() -> void:  # Toyota Corolla
+	_car({"L": 4.63, "W": 1.78, "H": 1.43, "clear": 0.14, "hood": 0.8, "belt": 0.96, "a": 1.15,
+		"b": 1.95, "c": 3.1, "e": 3.8, "tail": 0.98, "wr": 0.32, "axles": [0.92, 3.62]})
+
+
+func _sedan_fullsize() -> void:  # Chevrolet Impala: long hood and trunk, chrome grille
+	_car({"L": 5.11, "W": 1.86, "H": 1.47, "clear": 0.15, "hood": 0.86, "belt": 1.0, "a": 1.45,
+		"b": 2.25, "c": 3.45, "e": 4.15, "tail": 1.02, "wr": 0.34, "axles": [1.05, 3.98], "grille": CHROME})
+
+
+func _suv_mid() -> void:  # Ford Explorer
+	_car({"L": 5.05, "W": 2.0, "H": 1.78, "clear": 0.2, "hood": 1.05, "belt": 1.15, "a": 1.3,
+		"b": 2.0, "c": 4.45, "e": 4.85, "tail": 1.15, "wr": 0.38, "axles": [0.98, 3.9], "c_pillar": false})
+	if not _lo:
+		for x in [-0.78, 0.78]:
+			_box(Vector3(x, 1.81, 3.2), Vector3(0.05, 0.05, 2.0), TRIM)
+
+
+func _wagon() -> void:  # Subaru Outback: low wagon roof, rails, cladding
+	_car({"L": 4.87, "W": 1.86, "H": 1.67, "clear": 0.22, "hood": 0.95, "belt": 1.08, "a": 1.25,
+		"b": 2.05, "c": 4.45, "e": 4.72, "tail": 1.1, "wr": 0.36, "axles": [0.95, 3.7], "c_pillar": false})
+	if not _lo:
+		for x in [-0.75, 0.75]:
+			_box(Vector3(x, 1.71, 3.2), Vector3(0.05, 0.06, 2.4), TRIM)
+
+
+func _ev_crossover() -> void:  # Tesla Model Y: smooth nose, no grille, fastback
+	_car({"L": 4.75, "W": 1.92, "H": 1.62, "clear": 0.17, "hood": 0.88, "belt": 1.02, "a": 1.2,
+		"b": 2.2, "c": 3.35, "e": 4.45, "tail": 1.05, "wr": 0.37, "axles": [0.95, 3.8], "grille": PAINT})
+
+
+func _hatch_box() -> void:  # Kia Soul: tall, upright box
+	_car({"L": 4.2, "W": 1.8, "H": 1.61, "clear": 0.16, "hood": 0.86, "belt": 1.0, "a": 0.95,
+		"b": 1.5, "c": 3.85, "e": 4.08, "tail": 1.02, "wr": 0.34, "axles": [0.88, 3.45], "c_pillar": false})
+
+
+func _pickup_ext() -> void:  # Chevrolet Silverado double cab, 6.5 ft bed
+	_truck(5.84, 3.75, [1.15, 4.6], false)
+
+
+func _pickup_mid() -> void:  # Toyota Tacoma double cab, 5 ft bed
+	_truck(5.39, 3.95, [1.0, 4.4], false, 1.9, 1.8)
+
+
+func _van_low() -> void:  # Ford Transit low roof
+	_van_body(5.98, 2.07, 2.08, 2.2, 2.08, PAINT)
+	_wheels([1.1, 4.4], 0.37, 1.035, 0.24)
+	if not _lo:
+		_box(Vector3(1.04, 1.6, 3.0), Vector3(0.004, 0.4, 0.9), GLASS, true)
+
+
 func _police() -> void:  # Ford Explorer Police Interceptor Utility
 	_car({"L": 5.05, "W": 2.0, "H": 1.78, "clear": 0.2, "hood": 1.05, "belt": 1.15, "a": 1.3,
 		"b": 2.0, "c": 4.45, "e": 4.85, "tail": 1.15, "wr": 0.38, "axles": [0.98, 3.9], "c_pillar": false})
@@ -207,11 +289,10 @@ func _police() -> void:  # Ford Explorer Police Interceptor Utility
 # --- Pickups ----------------------------------------------------------------
 
 ## A body-on-frame pickup: hood, cab (crew or regular) and an open bed.
-func _truck(L: float, cab_end: float, wb: Array, work: bool) -> void:
-	var W := 2.03
+func _truck(L: float, cab_end: float, wb: Array, work: bool, W := 2.03, H := 1.96) -> void:
 	var hw := W * 0.5
 	var c := 0.32
-	var belt := 1.32
+	var belt := 1.32 * H / 1.96
 	var body := [
 		[0.0, c + 0.14, 1.06, 1.2, hw - 0.1, hw - 0.06, hw - 0.18],
 		[0.18, c, 1.18, 1.28, hw - 0.03, hw, hw - 0.06],
@@ -224,9 +305,9 @@ func _truck(L: float, cab_end: float, wb: Array, work: bool) -> void:
 	var r := hw - 0.2
 	var gh := [
 		[1.75, belt - 0.03, belt, belt + 0.01, g, g, g - 0.02],
-		[2.45, belt - 0.03, belt + 0.05, 1.96, g, g, r],
-		[cab_end - 0.08, belt - 0.03, belt + 0.05, 1.96, g, g, r],
-		[cab_end, belt - 0.03, belt + 0.05, 1.94, g, g, r],
+		[2.45, belt - 0.03, belt + 0.05, H, g, g, r],
+		[cab_end - 0.08, belt - 0.03, belt + 0.05, H, g, g, r],
+		[cab_end, belt - 0.03, belt + 0.05, H - 0.02, g, g, r],
 	]
 	_loft(gh, [_edges(GLASS, PAINT, PAINT, GLASS), _edges(GLASS, PAINT, GLASS, PAINT),
 		_edges(PAINT, PAINT, PAINT, PAINT)], PAINT, PAINT)
