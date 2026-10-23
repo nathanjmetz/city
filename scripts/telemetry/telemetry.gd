@@ -97,7 +97,10 @@ func _input(e: InputEvent) -> void:
 		if hovered and hovered.mouse_filter != Control.MOUSE_FILTER_IGNORE:
 			button = _button_of(hovered)
 			over = label_of(button if button else hovered)
-		tracker.click(e.position / size, over, button != null, button != null and button.disabled, now)
+		tracker.click(e.position / size, over, button != null, button != null and button.disabled, now,
+			_world_at(e.position) if over == "" else Vector2.INF)
+	elif e is InputEventMouseButton and not e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+		tracker.release(e.position / get_viewport().get_visible_rect().size, now, _world_at(e.position))
 	elif e is InputEventKey and e.pressed and not e.echo:
 		var focus := get_viewport().gui_get_focus_owner()
 		if focus is LineEdit or focus is TextEdit:
@@ -121,6 +124,36 @@ static func label_of(c: Control) -> String:
 		s = str(c.name)
 	var re := RegEx.create_from_string("[0-9][0-9,.]*")
 	return re.sub(s.strip_edges(), "#", true).left(48)
+
+
+## Where on the ground (x, z in town meters) a screen point is, or INF.
+## One ray-plane test, only on clicks.
+func _world_at(screen: Vector2) -> Vector2:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return Vector2.INF
+	var hit = Plane(Vector3.UP, 0.0).intersects_ray(cam.project_ray_origin(screen), cam.project_ray_normal(screen))
+	return Vector2(hit.x, hit.z) if hit != null else Vector2.INF
+
+
+## A command's settings in a few words for replays: plain values as they
+## are, points as their count and first point.
+static func brief(cmd: Dictionary) -> String:
+	var parts := PackedStringArray()
+	for k in cmd:
+		if k == "type":
+			continue
+		var v = cmd[k]
+		match typeof(v):
+			TYPE_INT, TYPE_BOOL, TYPE_STRING, TYPE_STRING_NAME:
+				parts.append("%s=%s" % [k, str(v).left(24)])
+			TYPE_FLOAT:
+				parts.append("%s=%s" % [k, snappedf(v, 0.1)])
+			TYPE_VECTOR2, TYPE_VECTOR3:
+				parts.append("%s=%s" % [k, str(v.snapped(Vector3.ONE * 0.1) if v is Vector3 else v.snapped(Vector2.ONE * 0.1))])
+			TYPE_ARRAY:
+				parts.append("%s=[%d]" % [k, v.size()])
+	return " ".join(parts).left(200)
 
 
 static func _button_of(c: Control) -> BaseButton:
@@ -223,8 +256,12 @@ func _watch_scene() -> void:
 	event("scene", {"name": name})
 	if s and "sim" in s and s.sim is CitySim:
 		_sim = s.sim
-		_sim.command_applied.connect(func(cmd: Dictionary): tracker.command(str(cmd.get("type", "")), true, _now()))
-		_sim.command_refused.connect(func(cmd: Dictionary): tracker.command(str(cmd.get("type", "")), false, _now()))
+		_sim.command_applied.connect(func(cmd: Dictionary): tracker.command(str(cmd.get("type", "")), true, _now(), brief(cmd)))
+		_sim.command_refused.connect(func(cmd: Dictionary): tracker.command(str(cmd.get("type", "")), false, _now(), brief(cmd)))
+		# What each tool tells the player (its hint line), for replays.
+		for n in s.get_children():
+			if n.has_signal("hint_changed"):
+				n.hint_changed.connect(func(text): tracker.hint(str(text), _now()))
 
 
 func _watch_loading(now: float) -> void:
