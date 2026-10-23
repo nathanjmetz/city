@@ -61,7 +61,7 @@ const DEPTHS := [24.0, 28.0, 32.0, 36.0, 42.0, 50.0]
 static var _plan_cap := 64 if OS.has_feature("web") else 192
 static var _plans := {}
 ## Plan info alone (where the drive, garage and door are), by plan without
-## the care tier: what the traffic sim asks for, worked out without drawing.
+## the care tier or paint: what the traffic sim asks for, worked out without drawing.
 static var _infos := {}
 ## Lays a plan out without making its surfaces (plan_info): every random draw
 ## and measurement still happens, so the info matches the drawn plan.
@@ -212,13 +212,16 @@ func _plan(storeys: int, any_care := false, info_only := false) -> Dictionary:
 				body = _plans.get(key, {})
 		key[8] = owner_care
 	if info_only:
+		# Nor does the paint scheme move the garage, drive or door, so one
+		# dry run serves all its schemes too.
 		var ik := key.duplicate()
+		ik[2] = 0
 		ik[8] = 0
 		if not body.is_empty():
 			return body
 		if not _infos.has(ik):
 			_dry = true
-			_infos[ik] = _draw_plan(key, wide, deep, zf, gs, storeys).info
+			_infos[ik] = _draw_plan(ik, wide, deep, zf, gs, storeys).info
 			_dry = false
 		return {"info": _infos[ik]}
 	if body.is_empty():
