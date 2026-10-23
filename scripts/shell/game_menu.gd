@@ -102,18 +102,57 @@ func _fill() -> void:
 			Session.to_menu()))
 	var q := GraphicsQuality.current
 	if q and q.active:
-		# Auto picks what this computer can draw smoothly; the rest are fixed.
-		var gfx := _button("Graphics: " + q.label(), func(): pass)
-		gfx.pressed.connect(func():
-			q.cycle()
-			gfx.text = "Graphics: " + q.label())
-		_col.add_child(gfx)
+		_col.add_child(_button("Graphics: " + q.label(), _graphics))
 	_col.add_child(_button("Credits", func(): _note.text = SoundCredits.text()))
 	if not OS.has_feature("web"):
 		_col.add_child(_button("Quit to desktop", func():
 			if Session.mode == Session.Mode.SOLO:
 				Session.save_city(game.sim)
 			get_tree().quit()))
+
+
+## The Graphics page, in place of the buttons: Auto (the default) or a
+## fixed tier, and for a fixed tier how sharp to draw. Like CS2's graphics
+## presets, but only tiers this computer can carry are offered (see
+## GraphicsQuality.top), and nothing changes until you pick one.
+func _graphics() -> void:
+	var q := GraphicsQuality.current
+	for c in _col.get_children():
+		if c != _title and c != _note:
+			c.queue_free()
+	_title.text = "Graphics"
+	_note.text = "Auto picks what this computer draws smoothly and adjusts while you play."
+	var desc := ["fastest, shorter detail", "balanced", "soft shading, tree shadows",
+		"adds reflections and bounced light", "lifelike light and haze"]
+	var options := [GraphicsQuality.AUTO]
+	for t in q.top() + 1:
+		options.append(t)
+	for m in options:
+		var text: String = "%s  ·  %s" % [GraphicsQuality.NAMES[m], desc[m]] if m != GraphicsQuality.AUTO \
+			else "Auto  ·  now %s" % GraphicsQuality.NAMES[q.tier] if q.mode == GraphicsQuality.AUTO \
+			else "Auto  ·  recommended"
+		var b := _button(text, func():
+			q.choose(m)
+			_graphics())
+		if m == q.mode:
+			ShellStyle.primary(b)
+		_col.add_child(b)
+	if q.top() < GraphicsQuality.CINEMATIC and not q.browser:
+		_col.add_child(ShellStyle.text("Higher settings are too much for this computer.", 14, 500, Brand.INK_MUTED))
+	if q.mode != GraphicsQuality.AUTO:
+		_col.add_child(ShellStyle.text("Sharpness", 15, 600))
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		for s in ([1.0, 0.85, 0.7, 0.5] if q.browser else [1.0, 0.85, 0.7]):
+			var b := _button("%d%%" % roundi(s * 100.0), func():
+				q.set_scale(s)
+				_graphics())
+			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			if absf(q.scale - s) < 0.01:
+				ShellStyle.primary(b)
+			row.add_child(b)
+		_col.add_child(row)
+	_col.add_child(_button("Back", _fill))
 
 
 func _lost_connection() -> void:

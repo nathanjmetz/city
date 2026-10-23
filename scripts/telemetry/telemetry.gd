@@ -62,7 +62,9 @@ func _ready() -> void:
 	var size := DisplayServer.screen_get_size()
 	event("start", {"os": OS.get_name(), "build": build(), "screen": [size.x, size.y],
 		"window": [get_viewport().get_visible_rect().size.x, get_viewport().get_visible_rect().size.y],
-		"gpu": RenderingServer.get_video_adapter_name(), "web": _browser(), "cores": OS.get_processor_count()})
+		"gpu": RenderingServer.get_video_adapter_name(), "web": _browser(), "cores": OS.get_processor_count(),
+		"ram_gb": snappedf(float(OS.get_memory_info().get("physical", 0)) / 1e9, 0.1),
+		"app": not OS.has_feature("web") and OS.has_feature("template")})
 
 
 ## Records something worth knowing (a join failure, a slow step, ...).
@@ -202,6 +204,8 @@ func _perf_sample() -> void:
 		"mem_mb": int(OS.get_static_memory_usage() / 1048576.0),
 		"draw": int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
 		"nodes": int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)), "scene": _scene}
+	if GraphicsQuality.current and GraphicsQuality.current.active:
+		e["gfx"] = GraphicsQuality.current.describe()
 	_perf_systems(e)
 	if _sim and is_instance_valid(_sim) and "stats" in _sim:
 		e["pop"] = int(_sim.stats.population)
