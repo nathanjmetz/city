@@ -57,6 +57,9 @@ var _grades := {}   # chunk key -> [pts, inner, outer] for the terrain
 func setup(s: CitySim, t: TerrainView = null) -> void:
 	sim = s
 	terrain = t
+	var sounds := RailSounds.new()
+	sounds.setup(s, height_at)
+	add_child(sounds)
 	if terrain != null:
 		terrain.extra_grades = func() -> Dictionary: return _grades
 
