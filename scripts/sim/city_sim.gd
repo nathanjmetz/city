@@ -1949,6 +1949,9 @@ func _wire_policies() -> void:
 	industry.expand = _industry_road
 	industry.land_price_of = func(p: Vector3) -> float: return Capital.land_price(self, p)
 	industry.pad_road = _pad_road
+	# Land has one owner: hubs plant and build only on open land or their own.
+	industry.land_free = func(pts: Array, who: String) -> bool: return Capital.land_free(self, pts, who)
+	farms.land_free = industry.land_free
 	# What farmland sells for, nearby development included (Capital).
 	farms.land_price_of = func(p: Vector3) -> float: return Capital.land_price(self, p)
 
@@ -2192,7 +2195,8 @@ func _ground_free(mid: Vector3, corners: PackedVector2Array, in_fields: bool) ->
 
 
 ## Whose land a point is: "farm:<id>" for a farm's yard, lane or fields,
-## "site:<id>" for an industry company's, "hub" for any other hub or
+## "site:<id>" for an industry company's (pads, the ground around them and
+## its leases: Industry.claim_at), "hub" for any other hub or
 ## service, or "" for open land.
 func land_owner(p: Vector3) -> String:
 	var id := farms.farm_at(p)
@@ -2200,9 +2204,7 @@ func land_owner(p: Vector3) -> String:
 		id = farms.field_at(p)
 	if id != -1:
 		return "farm:%d" % id
-	id = industry.site_at(p)
-	if id == -1:
-		id = industry.pad_at(p)
+	id = industry.claim_at(p)
 	if id != -1:
 		return "site:%d" % id
 	if services.covers(p) or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
