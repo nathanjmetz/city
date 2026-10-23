@@ -34,6 +34,10 @@ func _build() -> void:
 	var sim: CitySim = _main.sim
 	sim.apply({"type": "clear"})
 	sim.economy.money = 50_000_000
+	if OS.get_environment("SHOT_MONTH") != "":
+		# Months from January, as in screenshot.gd (0.5 is mid-January snow).
+		var m := float(OS.get_environment("SHOT_MONTH")) - Seasons.START_MONTH
+		sim.tick_count = int(fposmod(m, 12.0) * Seasons.TICKS_PER_DAY)
 	root.get_node("Session").set("current_name", "Petersburg")
 	var look := Vector3.ZERO
 	if scene == "trails":

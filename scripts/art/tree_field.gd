@@ -21,6 +21,7 @@ const LEAF := [Color("#46661f"), Color("#3f5c1e"), Color("#627424"), Color("#2c4
 ## Chunk size, and the distance where the full tree gives way to the light one.
 const CHUNK := 256.0
 const NEAR := 380.0
+const OVERLAP := 20.0
 
 const LEAF_SHADER := """
 shader_type spatial;
@@ -225,12 +226,13 @@ func _chunk(g: String, sp: int, far: bool, centre: Vector3) -> MultiMeshInstance
 	mm.mesh = tree_mesh(sp, far, fades)
 	mmi.multimesh = mm
 	mmi.position = centre
+	# The two overlap by OVERLAP with no margins: Godot treats margins without
+	# fade as hysteresis, so a camera hovering near NEAR could leave both
+	# hidden and a whole chunk of woods would vanish under it.
 	if far:
-		mmi.visibility_range_begin = NEAR
-		mmi.visibility_range_begin_margin = 20.0
+		mmi.visibility_range_begin = NEAR - OVERLAP
 	else:
-		mmi.visibility_range_end = NEAR
-		mmi.visibility_range_end_margin = 20.0
+		mmi.visibility_range_end = NEAR + OVERLAP
 	add_child(mmi)
 	_multis[key] = mmi
 	return mmi
