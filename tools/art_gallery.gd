@@ -51,7 +51,7 @@ func _init() -> void:
 		var k := kind
 		if kind == "types":
 			k = ["house", "row", "apartments", "mixed", "office"][i]
-		var w: float = {"row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "office": 40.0}.get(k, 20.0)
+		var w: float = {"row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "office": 40.0, "towers": 44.0}.get(k, 20.0)
 		var sd := seed * 100 + i
 		match k:
 			"shop": meshes = CommercialBuilder.build_shop(sd, 3.9)
@@ -60,6 +60,8 @@ func _init() -> void:
 			"apartments": meshes = DenseBuilder.build_apartments(sd, 3.9, {"width": w, "depth": 45.0}, [2, 3, 5][i % 3])
 			"mixed", "main": meshes = DenseBuilder.build_mixed(sd, 3.9, {"width": w, "depth": 45.0}, 2 + i % 3)
 			"office": meshes = DenseBuilder.build_office(sd, 3.9, {"width": w, "depth": 55.0}, [3, 5, 8][i % 3])
+			"towers": meshes = TowerBuilder.build_tower(sd, 3.9, {"width": w, "depth": 55.0}, [12, 22, 24, 10, 16][i],
+				{}, ["chicago", "deco", "glass", "chicago", "glass"][i])
 			_: meshes = HouseBuilder.build(sd, 3.9)
 		var at := Vector3(x + w * 0.5, 0, 0)
 		x += w
@@ -80,6 +82,8 @@ func _init() -> void:
 	var pitch := deg_to_rad(float(args[4])) if args.size() > 5 else deg_to_rad(18.0)
 	var dist := float(args[5]) if args.size() > 5 else 70.0
 	var target := Vector3(0, 3, 8)
+	if args.size() > 7:
+		target = Vector3(float(args[6]), float(args[7]), 8)
 	cam.position = target + Vector3(sin(yaw) * cos(pitch), sin(pitch), -cos(yaw) * cos(pitch)) * dist
 	cam.basis = Basis.looking_at(target - cam.position)
 	cam.current = true
