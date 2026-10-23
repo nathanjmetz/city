@@ -59,6 +59,8 @@ The engineer takes a traffic count at four rush hours each game month (`ENGINEER
 
 The town pays on approval. When the money isn't there, the job waits. Counts are saved. The cost is four counts and one look a month. `tools/permit_shot.gd -- engineer` shows the card.
 
+A neighborhood with more than 30 homes and only one road in (a road whose removal cuts it off) comes first: the engineer proposes a new street from it to a public road at least 150 m from the first way in, through open ground only. The fire code asks for two separate ways in past 30 homes (International Fire Code D107), and subdivision rules make builders stub streets to the next parcel for the same reason. A neighborhood the town turned down, or that has no room for one, comes up again after three years. The network walk (Tarjan's bridges) runs only in a month after the roads change.
+
 ## Code
 
 - Logic is in `scripts/sim/subdivisions.gd` (`Subdivisions`, `sim.subdivisions`). Numbers are in Balance under `SUBDIV_*`. The test is `tests/test_subdivisions.gd`.

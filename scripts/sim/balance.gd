@@ -303,6 +303,16 @@ const ENGINEER_ALLEY_BUSY := 0.75
 const ENGINEER_CUT_CARS := 4
 const ENGINEER_RUN := 12
 const ENGINEER_SIGN_COST := 6_000
+## A neighborhood with one road in gets a second past this many homes, a
+## street ENGINEER_LINK_MIN..MAX metres long, its far end at least
+## ENGINEER_LINK_APART from the first road in. The engineer looks again at
+## one it couldn't fix (or the town turned down) after ENGINEER_REASK_YEARS.
+const ENGINEER_ONE_WAY_HOMES := 30
+const ENGINEER_LINK_MIN := 30.0
+const ENGINEER_LINK_MAX := 450.0
+const ENGINEER_LINK_APART := 150.0
+const ENGINEER_LINK_TRIES := 40
+const ENGINEER_REASK_YEARS := 3
 
 ## The future land use map (LandPlan). Land planned for homes is looked at
 ## before any other (as if this many metres nearer the middle of town), and

@@ -38,7 +38,7 @@ const SIM := {
 	"sim.care":         {"per_tick": 0.05, "max": 8.0, "what": "Monthly property upkeep, a slice of town an hour"},
 	"sim.redevelop":    {"per_tick": 0.05, "max": 8.0, "what": "Monthly developers' asks to build denser"},
 	"sim.subdivisions": {"per_tick": 0.05, "max": 25.0, "what": "Monthly home builders: next phase, or a search for land"},
-	"sim.engineer": {"per_tick": 0.02, "max": 10.0, "what": "Rush-hour traffic counts and the engineer's monthly proposal"},
+	"sim.engineer": {"per_tick": 0.02, "max": 25.0, "what": "Rush-hour traffic counts and the engineer's monthly proposal (a month after the roads change it walks the whole network for neighborhoods with one road in: about 6 ms for 1,000 junctions)"},
 	"sim.street_age": {"per_tick": 0.02, "max": 30.0, "what": "Monthly: streets due for resurfacing and the forecast (about 3 ms; 22 ms on a huge town the month after loading, measuring every street)"},
 	"sim.civic_hubs":   {"per_tick": 0.2, "max": 6.0, "what": "Landfill, recycling, cemetery, garbage trucks"},
 	"sim.construction": {"per_tick": 0.2, "max": 6.0, "what": "Building sites: stages, crews and deliveries (inside sim.civic_hubs)"},
