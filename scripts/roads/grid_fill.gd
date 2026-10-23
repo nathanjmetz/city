@@ -20,6 +20,9 @@ extends RefCounted
 ## Shallowest lot worth platting between two side-by-side streets: 80 ft,
 ## the shallow end of US single-family lots.
 const MIN_LOT_DEPTH := 24.0
+## Deepest strip still too shallow to plat: 300 ft, two 150 ft lots back to
+## back (a Midwest town block). Past it, even a mile grid keeps its streets.
+const SHALLOW_MAX := 91.0
 ## Streets within this angle of each other count as side by side (sin 12°).
 const ALONGSIDE := 0.21
 ## Ends this close to a junction move onto it, instead of making a second
@@ -71,11 +74,19 @@ static func side_gap(type_a: int, type_b: int) -> float:
 	return RoadStyle.right_of_way_half(type_a) + RoadStyle.right_of_way_half(type_b) + MIN_LOT_DEPTH
 
 
+## How block sizes fit a shape: as near the chosen size as fits (the old
+## rule), never bigger than it (Adaptive), or exactly it, with streets that
+## don't shift to line up with old junctions (Exact).
+const FIT_ROUND := 0
+const FIT_AT_MOST := 1
+const FIT_EXACT := 2
+
+
 ## The streets to build for a grid filling `shape` (corner points, in order).
 ## Grid streets run square to side number `side`. `across` is the spacing of
 ## streets parallel to that side, `block` the spacing of the cross streets.
 static func plan(network: RoadNetwork, shape: Array, block: float, type := 0, side := 0,
-		across := RoadShapes.GRID_ACROSS) -> Array:
+		across := RoadShapes.GRID_ACROSS, fit := FIT_ROUND) -> Array:
 	var poly := _clean(shape)
 	if poly.size() < 3 or absf(_area(poly)) < 400.0:
 		return []
@@ -131,7 +142,7 @@ static func plan(network: RoadNetwork, shape: Array, block: float, type := 0, si
 	for ar in areas:
 		for i in ar.size():
 			cands.append([ar[i], ar[(i + 1) % ar.size()], true])
-	for line in _family(poly, o, u, v, across, inside) + _family(poly, o, v, u, block, inside):
+	for line in _family(poly, o, u, v, across, inside, fit) + _family(poly, o, v, u, block, inside, fit):
 		for ar in areas:
 			for part in Geometry2D.intersect_polyline_with_polygon(PackedVector2Array(line), ar):
 				if part.size() >= 2:
@@ -263,7 +274,7 @@ static func outline(shape: Array, closed: bool) -> Array:
 ## to the shape. Each line shifts onto a junction inside the shape if one is
 ## close, so old streets carry straight on through the grid.
 static func _family(poly: PackedVector2Array, o: Vector2, w: Vector2, n: Vector2,
-		spacing: float, inside: Array) -> Array:
+		spacing: float, inside: Array, fit := FIT_ROUND) -> Array:
 	var lo := INF
 	var hi := -INF
 	var wlo := INF
@@ -273,12 +284,12 @@ static func _family(poly: PackedVector2Array, o: Vector2, w: Vector2, n: Vector2
 		hi = maxf(hi, (p - o).dot(n))
 		wlo = minf(wlo, (p - o).dot(w))
 		whi = maxf(whi, (p - o).dot(w))
-	var count := maxi(1, roundi((hi - lo) / spacing))
+	var count := maxi(1, roundi((hi - lo) / spacing) if fit == FIT_ROUND else ceili((hi - lo) / spacing - 0.001))
 	var step := (hi - lo) / count
 	var out := []
 	for i in range(1, count):
 		var d := lo + i * step
-		var best := minf(ALIGN, step * 0.3)
+		var best := 0.0 if fit == FIT_EXACT else minf(ALIGN, step * 0.3)
 		for q in inside:
 			var dq: float = (q - o).dot(n)
 			if absf(dq - d) < best:
@@ -443,7 +454,7 @@ static func _drop_wedges(pieces: Array, old: Array, u: Vector2, across: float, b
 							f[m] = to
 	# A grid street running into an old road less than half a block on would
 	# only cut off a strip too shallow for lots (the tip of a wedge).
-	var shallow := minf(across, block) * 0.5
+	var shallow := minf(minf(across, block) * 0.5, SHALLOW_MAX)
 	for i in range(edges.size() - 1, -1, -1):
 		var e: Array = edges[i]
 		if e[0].distance_to(e[1]) >= shallow:

@@ -74,6 +74,7 @@ var _warning := UiStyle.label("", 13, Color(1.0, 0.75, 0.3))
 var _parallel_card: Button
 ## Grid only: any shape instead of a rectangle.
 var _shape_card: Button
+var _exact_card: Button
 ## Grid only: a row of real-world grid sizes above the road tools.
 var _grid_sizes: Control
 var _grid_size_cards := []
@@ -766,6 +767,9 @@ func _roads_drawer() -> PanelContainer:
 	_shape_card = _card("grid", "Any shape", "Tab: rectangle or any shape")
 	_shape_card.pressed.connect(func(): road_tool.set_grid_free(not road_tool.grid_free))
 	opts.add_child(_shape_card)
+	_exact_card = _card("grid", "Exact", "Exact: whole blocks of the chosen size only (a section is a true mile).\nAdaptive: blocks flex to fit what you drag, never bigger than the chosen size.")
+	_exact_card.pressed.connect(func(): road_tool.set_grid_exact(not road_tool.grid_exact))
+	opts.add_child(_exact_card)
 	var lower := _card("lower", "Lower", "Page Down", false)
 	lower.pressed.connect(func(): road_tool.change_elevation(-1))
 	opts.add_child(lower)
@@ -1117,6 +1121,7 @@ func _card(icon: String, title: String, detail: String, toggle := true) -> Butto
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(t)
 	b.set_meta("icon", ic)
+	b.set_meta("title", t)
 	return b
 
 
@@ -1283,6 +1288,9 @@ func _sync() -> void:
 	_parallel_card.set_pressed_no_signal(road_tool.parallel)
 	_shape_card.set_pressed_no_signal(road_tool.grid_free)
 	_shape_card.visible = road_tool.mode == RoadTool.Mode.GRID
+	_exact_card.visible = road_tool.mode == RoadTool.Mode.GRID and not road_tool.grid_free
+	_exact_card.set_pressed_no_signal(road_tool.grid_exact)
+	(_exact_card.get_meta("title") as Label).text = "Exact" if road_tool.grid_exact else "Adaptive"
 	_grid_sizes.visible = road_tool.mode == RoadTool.Mode.GRID and not _kinds_open and not in_traffic
 	for i in _grid_size_cards.size():
 		_grid_size_cards[i].set_pressed_no_signal(i == road_tool.grid_preset)
