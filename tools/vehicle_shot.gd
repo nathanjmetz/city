@@ -54,7 +54,7 @@ func _lineup() -> void:
 		mm.set_instance_color(0, Color.WHITE)
 		mm.set_instance_custom_data(0, Color(paint.r, paint.g, paint.b, 2.0))
 		var w: float = VehicleTypes.spec(kind).width if VehicleTypes.SPECS.has(kind) else 2.6
-		mm.set_instance_transform(0, Transform3D(Basis.IDENTITY, Vector3(x, 0, row * 26.0)))
+		mm.set_instance_transform(0, Transform3D(Basis.IDENTITY, Vector3(x, Terrain.ground_y(x, row * 26.0), row * 26.0)))
 		var mi := MultiMeshInstance3D.new()
 		mi.multimesh = mm
 		mi.material_override = VehicleMaterial.get_material()
@@ -75,7 +75,7 @@ func _lineup() -> void:
 				if k is Node3D:
 					k.visible = false
 		if c is CityCamera:
-			c.look_at_point(Vector3(cx, 0, cz))
+			c.look_at_point(Vector3(cx, Terrain.ground_y(cx, cz), cz))
 			c.set_view(deg_to_rad(float(args[1]) if args.size() > 1 else 30.0),
 				deg_to_rad(float(args[2]) if args.size() > 2 else 30.0), float(args[3]) if args.size() > 3 else 70.0)
 	_main.set_speed(0)
