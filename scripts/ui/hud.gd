@@ -212,6 +212,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		jump.go_home()
 		get_viewport().set_input_as_handled()
 		return
+	# Ctrl+Z (Cmd+Z on a Mac; View + X on a controller): undo the last build.
+	# Move It keeps its own undo while it's in hand.
+	if k != null and k.pressed and not k.echo and k.keycode == KEY_Z and (k.ctrl_pressed or k.meta_pressed) \
+			and not move_tool.active:
+		undo_last()
+		get_viewport().set_input_as_handled()
+		return
 	if k != null and k.pressed and not k.echo and not (k.ctrl_pressed or k.meta_pressed or k.alt_pressed):
 		var cat := hotkey_category(k)
 		if cat != "":
@@ -239,6 +246,20 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	else:
 		nothing_to_close.emit()  # the pause menu opens
 	get_viewport().set_input_as_handled()
+
+
+## Takes back the last road or building placed in the last 30 seconds, with
+## a full refund.
+func undo_last() -> void:
+	var e := sim.undo.last(sim)
+	if e.is_empty() or Time.get_ticks_msec() - int(e.at_ms) > UndoLog.WINDOW_MS:
+		_show_hint("Nothing to undo.")
+		return
+	sim.apply({"type": "undo"})
+	var was := _hint.text
+	var note := "Undone. $%s back." % _thousands(int(e.refund))
+	_show_hint(note)
+	get_tree().create_timer(3.0).timeout.connect(func(): if _hint.text == note: _show_hint(was))
 
 
 ## The bottom bar menus Shift + 1 to 0 open, in bar order (Bulldoze and

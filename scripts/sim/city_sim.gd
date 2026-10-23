@@ -62,6 +62,8 @@ const WORKER_SHARE := Balance.WORKER_SHARE
 const TICKS_PER_HOUR := 60 / MINUTES_PER_TICK
 
 var network := RoadNetwork.new()
+## The last builds, for Ctrl+Z (not saved).
+var undo := UndoLog.new()
 var zones := ZoneMap.new()
 var traffic := TrafficSim.new(network)
 ## Everyone in town by name, and the names of places (owned by Traffic work).
@@ -340,6 +342,16 @@ func zone_keys(zone: int) -> Array:
 
 
 func apply_now(cmd: Dictionary) -> bool:
+	if cmd.get("type", "") == "undo":
+		return undo.undo(self)
+	var snap: Variant = undo.before(self, cmd)
+	var ok := _apply_cmd(cmd)
+	if ok and snap != null:
+		undo.after(self, snap)
+	return ok
+
+
+func _apply_cmd(cmd: Dictionary) -> bool:
 	var ok := false
 	match cmd.get("type", ""):
 		"build_road":
@@ -798,6 +810,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			# neighbouring towns (trade comes and goes on them), rebuilt
 			# after the wipe, with a crossroads to start the town from.
 			var links_kept := _link_roads()
+			undo = UndoLog.new()
 			region_links.clear()
 			trade = Trade.new()
 			traffic.overrides.clear()
