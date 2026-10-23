@@ -414,15 +414,18 @@ const CAPITAL_TERM_YEARS := 25
 const CAPITAL_AVG_YEARS := 3.0
 ## What a lender wants kept profit to cover: payments times this.
 const CAPITAL_COVERAGE := 1.25
-## Development within this far raises land prices (m; about a mile).
-const CAPITAL_URBAN_REACH := 1_600.0
+## Developers pay over farm value only within this far of the town's built
+## edge (m; about half a mile).
+const CAPITAL_FRINGE := 800.0
 ## The most development adds, as a multiple of farm value: ground at the
-## edge of a growing town sells for up to 3x farm value (transition land).
+## edge of a growing city sells for up to 3x farm value (transition land).
 const CAPITAL_URBAN_MAX := 2.0
-## Built lots (weighted by nearness) that bring about 63% of that premium.
-const CAPITAL_URBAN_SCALE := 150.0
-## Grid the built lots are counted on (m).
-const CAPITAL_GRID := 400.0
+## A town of about this many people carries about 63% of that premium; a
+## town of 1,500 carries under a tenth of it (rural Indiana: ground by a
+## small town sells near farm value).
+const CAPITAL_URBAN_POP := 20_000.0
+## Grid the town's built ground is mapped on (m).
+const CAPITAL_GRID := 200.0
 ## Land worth this many times farm value tempts an owner to sell out.
 const CAPITAL_SELL_RATIO := 2.0
 ## Rented ground: the landowner's share of what a field makes (Midwest
