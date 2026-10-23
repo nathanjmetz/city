@@ -132,6 +132,8 @@ var _box := {}       # node -> cars crossing it
 var _committed := {} # node -> cars about to cross it
 var _approach := {}  # node -> [{car, conn, ds}] for the first car in each lane
 var _xings := {}     # way -> [[s along the way, rail crossing]] (_find_xings)
+var _by_vid := {}    # vehicle id -> its record in `parked`
+var _rest_at := 0    # no parked vehicle is due before this tick (_rest)
 var _xing_key := []
 var _merging := {}   # lane key -> cars pulling out of a driveway into it
 var _acc := ACCEL    # acceleration of the vehicle being worked out
@@ -410,6 +412,8 @@ func from_dict(d: Dictionary) -> void:
 	cars.clear()
 	_waiting.clear()
 	parked.clear()
+	_by_vid.clear()
+	_rest_at = 0
 	walkers.clear()
 	_sites.clear()
 	_extra.clear()
@@ -436,6 +440,8 @@ func from_dict(d: Dictionary) -> void:
 	arrivals = state.arrivals
 	failed = state.failed
 	parked = state.get("parked", [])
+	for car in parked:
+		_by_vid[car.id] = car
 	walkers = state.get("walkers", [])
 	_next_trip = state.get("next_trip", _next_id)
 	_next_walker = state.get("next_walker", 1)
@@ -1154,8 +1160,7 @@ func _reroute_all() -> void:
 	# Vehicles on a lot that was cleared away go with it.
 	for car in parked.duplicate():
 		if place(car.at_place).is_empty():
-			parked.erase(car)
-			parked_version += 1
+			_unpark(car)
 			_report(car, failed)
 	# Cars parked at a curb that was rebuilt move to the new curb.
 	for car in parked:
@@ -1826,8 +1831,7 @@ func retire_vehicle(vid: int) -> void:
 	for car in parked:
 		if car.id == vid:
 			_release(car.at_place, car.spot, vid)
-			parked.erase(car)
-			parked_version += 1
+			_unpark(car)
 			return
 	for car in cars + _waiting:
 		if car.id == vid:
@@ -1847,10 +1851,19 @@ func forget_person(pid: int) -> void:
 
 
 func _vehicle_parked(vid: int) -> Dictionary:
-	for car in parked:
-		if car.id == vid:
-			return car
-	return {}
+	return _by_vid.get(vid, {})
+
+
+## A parked vehicle is due to head off at `tick` (or now, with 0).
+func _due_at(car: Dictionary, tick: int) -> void:
+	car.until = tick
+	_rest_at = mini(_rest_at, tick)
+
+
+func _unpark(car: Dictionary) -> void:
+	parked.erase(car)
+	_by_vid.erase(car.id)
+	parked_version += 1
 
 
 ## Puts a vehicle at rest in a spot.
@@ -1872,6 +1885,7 @@ func _park(car: Dictionary, pl: Dictionary, spot: int) -> void:
 	if not car.has("until"):
 		car.until = -1
 	parked.append(car)
+	_by_vid[car.id] = car
 	parked_version += 1
 
 
@@ -1944,6 +1958,7 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 	_fix_end(car)
 	if car.has("at_place"):
 		car.pending = true  # pulls out as soon as there's a gap
+		_rest_at = 0
 		_try_launch(car)
 	elif not _launch(car):
 		_waiting.append(car)
@@ -1955,8 +1970,7 @@ func _try_launch(car: Dictionary) -> bool:
 	if cars.size() >= MAX_CARS or not _launch(car):
 		return false
 	_release(car.at_place, car.spot, car.id)
-	parked.erase(car)
-	parked_version += 1
+	_unpark(car)
 	for k in ["at_place", "spot", "pos", "face", "hidden", "pending"]:
 		car.erase(k)
 	return true
@@ -2263,7 +2277,7 @@ func _arrive(car: Dictionary) -> void:
 		car.until = -1
 		_walk(driver, _walk_from_car(car, dest), {"enter": dest, "stay": stay})
 	elif after.has("back"):
-		car.until = _tick + maxi(stay, 1)
+		_due_at(car, _tick + maxi(stay, 1))
 		car.next = after.back
 		if after.has("back_stop"):
 			car.next_stop = after.back_stop
@@ -2275,13 +2289,21 @@ func _arrive(car: Dictionary) -> void:
 func _rest() -> void:
 	# Most parked vehicles are just parked: pick out the few with somewhere
 	# to be first, without copying the whole list.
+	# And skip even that until the soonest one is due.
+	if _tick < _rest_at:
+		return
 	var due := []
+	var soonest := 1 << 62
 	for car in parked:
 		if car.has("pending") or (car.until >= 0 and car.until <= _tick):
 			due.append(car)
+		elif car.until >= 0:
+			soonest = mini(soonest, car.until)
+	_rest_at = soonest
 	for car in due:
 		if car.get("pending", false):
-			_try_launch(car)
+			if not _try_launch(car):
+				_rest_at = 0  # try again next tick
 			continue
 		var back: String = car.get("next", "")
 		var stop: Dictionary = car.get("next_stop", {})
@@ -2291,7 +2313,7 @@ func _rest() -> void:
 		if back == "":
 			continue
 		if cars.size() >= MAX_CARS or not _send(car, back, "return", {}, {"report": false}, stop):
-			car.until = _tick + 20  # try again shortly
+			_due_at(car, _tick + 20)  # try again shortly
 			car.next = back
 			car.next_stop = stop
 
