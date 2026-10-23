@@ -912,6 +912,8 @@ func tick() -> void:
 	t = Perf.now()
 	hubs.tick(self)
 	construction.tick(self)
+	if simulate_traffic:
+		power.crew_tick(self)
 	Perf.add("sim.civic_hubs", t)
 	pollution.tick(self)
 	if not in_region and tick_count % (24 * TICKS_PER_HOUR) == 0:
@@ -1364,6 +1366,25 @@ func _decide_power() -> bool:
 
 
 ## What a power company's leader can see around it (see Power.decide).
+## How much the power plants' smoke, noise and ash lower land value at a
+## point (0 to about -0.3), as Pollution measures them.
+func power_nuisance(p: Vector3) -> float:
+	var smoke := 0.0
+	var energy := 0.0
+	var clean := 1.0
+	for id in power.sites:
+		var src: Dictionary = pollution.sources.get("power:%d" % id, {})
+		if src.is_empty():
+			continue
+		var v := pollution.source_at(src, p)
+		smoke += v.x
+		energy += v.y
+		clean *= 1.0 - v.z
+	if smoke == 0.0 and energy == 0.0 and clean == 1.0:
+		return 0.0
+	return Pollution.penalty({"smoke": smoke, "noise": Pollution.db(energy), "ground": 1.0 - clean})
+
+
 func power_context() -> Dictionary:
 	var has_school := false
 	for id in services.buildings:
@@ -2020,7 +2041,7 @@ func _grow_one(salt := 0) -> String:
 		var key: String = list[rng.randi() % list.size()]
 		# Nobody wants to build next to a smoky old power plant.
 		if z != ZoneMap.Zone.INDUSTRIAL and not power.sites.is_empty() \
-				and rng.randf() < -power.land_value_effect(lots[key].pos) * Balance.POWER_SMOKE_GROWTH:
+				and rng.randf() < -power_nuisance(lots[key].pos) * Balance.POWER_SMOKE_GROWTH:
 			continue
 		var bseed := rng.randi()
 		# The lot's owner picks what to build from what is around it.

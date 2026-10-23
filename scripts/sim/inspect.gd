@@ -534,7 +534,7 @@ static func _power(sim: CitySim, id: int) -> Dictionary:
 	if s.get("idle", "") != "":
 		problems.append(s.idle)
 	if float(k.value) < 0.0:
-		problems.append("Its smoke lowers land value up to %d m away." % int(k.reach))
+		problems.append("Its smoke and ash lower land value nearby (see the Pollution view).")
 	var title: String = "%s %s" % [s.leader.name.split(" ")[-1], k.name.to_lower()]
 	return {"title": title, "kind": "Power company: " + sim.power.status(id), "icon": "power",
 		"ok": s.get("idle", "") == "", "status": s.reason, "rows": rows, "problems": problems}
@@ -580,10 +580,6 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 			else "The water utility hasn't laid a main under this street yet." if not sim.services.water.utilities.is_empty()
 			else "Build a Well on a connected street."))
 	rows.append(["Power", "Yes" if power else "No"])
-	var smoke := sim.power.smoke_from(lot.pos)
-	if smoke != -1:
-		rows.append(["Land value", "%d%% (smoke from the %s)" % [roundi(sim.power.land_value_effect(lot.pos) * 100.0),
-			Power.PLANTS[sim.power.sites[smoke].plant].name.to_lower()]])
 	rows.append(["Water", "Yes" if water else "No"])
 	if by != -1 and sim.services.water.utilities.has(by):
 		rows.append(["Sewer", "Yes" if s.get("sewer", false) else "Septic tank"])
