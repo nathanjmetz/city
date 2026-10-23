@@ -39,6 +39,11 @@ func _init() -> void:
 		_check(bad.is_empty(), "%s add-ons stay inside the main building's own 80 m cell %s" % [kind, bad])
 	_railroad()
 	_services()
+	_telecom()
+	_warehouse()
+	_water()
+	_mail()
+	_venues()
 	_oil_company()
 	_done()
 
@@ -160,6 +165,121 @@ func _services() -> void:
 		counts.append(view._stops.mesh.surface_get_array_len(0))
 	view.free()
 	_check(counts[1] > counts[0] and counts[2] > counts[1], "the transfer center and park-and-ride show at the stops %s" % [counts])
+
+
+## The phone company: middle-mile hut at the office, fixed wireless on the
+## towers, small cells along its downtown fiber. (Stealth re-dresses poles
+## near homes as monopines in TelecomView.)
+func _telecom() -> void:
+	var off := _mesh_verts(TelecomBuilder.build_office(7, 3.9, []))
+	var on := _mesh_verts(TelecomBuilder.build_office(7, 3.9, ["middle_mile"]))
+	var bare := _mesh_verts(TelecomBuilder.build_tower("monopole", 7, 10.0))
+	var fw := _mesh_verts(TelecomBuilder.build_tower("monopole", 7, 10.0, true))
+	var c := {"pos": Vector3.ZERO, "fiber": [{"seg": 1, "pts": [[0.0, 0.0], [2000.0, 0.0]]}]}
+	var cells := TelecomView.small_cells(c)
+	_check(on > off and fw > bare and cells.size() >= 2 and cells.size() <= 8
+		and _mesh_verts(TelecomBuilder.build_small_cell(7)) > 0,
+		"the phone company's middle mile, fixed wireless and small cells show (%d cells)" % cells.size())
+
+
+## A warehouse's inside-the-walls steps show from outside.
+func _warehouse() -> void:
+	var missing := []
+	for id in ["sortation", "robotics", "fulfillment"]:
+		var built := _with_requires(Warehouses.TREE, id)
+		var w := {"kind": Warehouses.KINDS.keys()[0], "level": 1, "bays": 1, "pos": Vector3.ZERO, "dir": Vector3.FORWARD}
+		w.built = built.filter(func(n): return n != id)
+		var before := _mesh_verts(WarehouseBuilder.build_warehouse(w, 7, 3.9))
+		w.built = built
+		if _mesh_verts(WarehouseBuilder.build_warehouse(w, 7, 3.9)) == before:
+			missing.append(id)
+	_check(missing.is_empty(), "a warehouse's automation shows%s" % ["" if missing.is_empty() else ": missing " + str(missing)])
+
+
+## The water utility's meters and big main at the tower, nutrient removal
+## and biosolids at the plant.
+func _water() -> void:
+	var view := WaterView.new()
+	var b := {"pos": Vector3(500, 0, 500), "dir": Vector3(0, 0, -1)}
+	var missing := []
+	for pair in [["tower", "meters"], ["tower", "industrial_main"], ["plant", "nutrient"], ["plant", "biosolids"]]:
+		var bare := view._spawn(b, pair[0], Vector2i(1, 0), [])
+		var with := view._spawn(b, pair[0], Vector2i(1, 0), [pair[1]])
+		if with.get_child_count() <= bare.get_child_count():
+			missing.append(pair[1])
+	view.free()
+	_check(missing.is_empty(), "the water utility's upgrades show%s" % ["" if missing.is_empty() else ": missing " + str(missing)])
+
+
+## The post office's counter steps, electric fleet and air mail show at the
+## office; cluster mailboxes replace curb boxes on the longer streets.
+func _mail() -> void:
+	var missing := []
+	var lands := {"more_vans": [Vector2i(2, 0)], "regional_hub": [Vector2i(-2, 0)]}
+	for node in ["po_boxes", "passports", "kiosk", "mural", "electric_fleet", "air_mail"]:
+		var h := Mail.draft(Vector3.ZERO, Vector3(0, 0, -1))
+		h.merge({"built": ["po_boxes", "passports", "more_vans", "regional_hub"], "project": {}, "lands": lands})
+		var before := _mesh_verts(PostOfficeBuilder.build_office(h, 7, 3.9))
+		if not node in h.built:
+			h.built.append(node)
+		else:
+			h.built.erase(node)
+			before = _mesh_verts(PostOfficeBuilder.build_office(h, 7, 3.9))
+			h.built.append(node)
+		if _mesh_verts(PostOfficeBuilder.build_office(h, 7, 3.9)) == before:
+			missing.append(node)
+	_check(missing.is_empty(), "the post office's upgrades show%s" % ["" if missing.is_empty() else ": missing " + str(missing)])
+	var sim := CitySim.new()
+	for i in 20:
+		var key := "1:0:%d" % i
+		sim.buildings[key] = {"zone": ZoneMap.Zone.RESIDENTIAL}
+		sim.lots[key] = {"pos": Vector3(i * 15.0, 0, 20), "front": Vector3(i * 15.0, 0, 10), "normal": Vector3(0, 0, 1),
+			"dir": Vector3(1, 0, 0), "width": 15.0, "seg": 1, "side": 0}
+	var h := Mail.draft(Vector3(0, 0, -200), Vector3(0, 0, -1))
+	h.merge({"built": [], "project": {}, "lands": {}})
+	sim.mail.offices[1] = h
+	var view := MailView.new()
+	view.setup(sim)
+	view._mailboxes()
+	var curb := view._boxes.multimesh.instance_count
+	h.built.append("cluster_boxes")
+	view._mailboxes()
+	_check(curb == 20 and view._boxes.multimesh.instance_count == 0 and view._cbus.multimesh.instance_count == 2,
+		"cluster mailboxes replace the curb boxes on a long street")
+	view.free()
+
+
+## The football stadium and the fairgrounds draw each step of their trees.
+func _venues() -> void:
+	for kind in Balance.VENUE_TREES:
+		var missing := []
+		for node in Balance.VENUE_TREES[kind]:
+			var built := _with_requires(Balance.VENUE_TREES[kind], node.id)
+			var site := {"kind": kind, "tier": 2, "size": Balance.AMENITIES[kind].size, "name": "Pike County",
+				"venue_built": built.filter(func(n): return n != node.id)}
+			var before := _all_verts(ParkBuilder.build_site(site, 7, 3.9, "Petersburg"))
+			site.venue_built = built
+			if _all_verts(ParkBuilder.build_site(site, 7, 3.9, "Petersburg")) == before:
+				missing.append(node.id)
+		_check(missing.is_empty(), "every %s upgrade draws something%s" % [kind, "" if missing.is_empty() else ": missing " + str(missing)])
+
+
+func _all_verts(parts: Array) -> int:
+	var n := 0
+	for p in parts:
+		if p is ArrayMesh:
+			for i in p.get_surface_count():
+				n += p.surface_get_array_len(i)
+	return n
+
+
+func _mesh_verts(parts: Array) -> int:
+	var n := 0
+	for k in 2:
+		var mesh: ArrayMesh = parts[k]
+		for i in mesh.get_surface_count():
+			n += mesh.surface_get_array_len(i)
+	return n
 
 
 func _svc_verts(kind: int, size: Vector2, built: Array) -> int:
