@@ -46,6 +46,20 @@ const ERA_TYPES := {
 const ONE_STOREY := ["ranch", "midcentury", "bungalow", "cape"]
 const OLD_MIN_WIDTH := {"foursquare": 11.5, "bungalow": 11.0, "i_house": 15.5, "farmhouse": 17.0, "cape": 12.0}
 const CLAPBOARD_WHITE := Color("#f1efe8")
+## Each era's pattern book: [plans in the book, plans one builder offers,
+## paint schemes one builder offers]. Prewar lots were built one at a time
+## from catalogues (Sears, Aladdin, Gordon-Van Tine), so a block shows many
+## plans; postwar and recent tracts repeat a builder's few models.
+const PLAN_BOOK := {"prewar": [40, 10, 10], "postwar": [24, 5, 6], "recent": [24, 6, 6]}
+const SCHEMES := 16
+## Lot width and depth classes a plan is drawn for (m): 40 to 100 ft
+## frontages, 80 to 165 ft deep. A plan sits on the widest class the lot holds.
+const WIDTHS := [12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 27.0, 30.0]
+const DEPTHS := [24.0, 28.0, 32.0, 36.0, 42.0, 50.0]
+## Plans kept drawn (about 300 KB each), oldest dropped first; fewer in a
+## browser, where memory is tighter.
+static var _plan_cap := 64 if OS.has_feature("web") else 192
+static var _plans := {}
 
 ## The lot, in local space: half its width, how far back it runs, its
 ## outline (x, z), and for a flag lot how far the pad sits behind the street.
@@ -56,6 +70,8 @@ var _back_z := -INF  # the furthest back anything built so far reaches (for the 
 var _mass_back_z := -INF  # the same for building masses only
 var pad := 0.0
 var era := "recent"
+var _cell_seed := 0  # the street block this lot is in (its builder)
+var _body := {}  # the plan's surfaces, material -> arrays, merged at commit
 ## Set by the art gallery to draw one type.
 static var force_kind := ""
 ## How well the owner keeps the place (PropertyCare's tier, set by
@@ -111,6 +127,8 @@ func _fit(lot: Dictionary) -> void:
 		era = ["prewar", "postwar", "postwar", "recent", "recent"][posmod(hash(cell), 5)]
 	else:
 		era = _pick(["prewar", "postwar", "recent"])
+	# The builder works one quarter-mile block (see _house).
+	_cell_seed = hash(Vector2i(floori(lot.at.x / 400.0), floori(lot.at.y / 400.0))) if lot.has("at") else hash(rng.seed)
 	if outline.size() >= 3:
 		depth = -INF
 		for q in outline:
@@ -134,22 +152,87 @@ func _in_lot(p: Vector3, margin := 1.5) -> bool:
 
 func _house(to_curb: float, storeys := 0) -> Array:
 	_flat.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# Houses come from a pattern book, as real ones do: Sears sold about 370
+	# mail-order plans from 1908 to 1940, and a postwar tract builder put up
+	# 4 to 8 models per subdivision (Levittown had a handful) in a few paint
+	# schemes. Each quarter-mile street block has one builder with its own
+	# setback, a few plans from its era's book and a few colour schemes;
+	# each lot takes one plan, built for the lot's width class, and one
+	# scheme. The same plan on the same width class is drawn once and kept.
+	var crew := RandomNumberGenerator.new()
+	crew.seed = hash([_cell_seed, "builder"])
+	var book: Array = PLAN_BOOK[era]
+	var plans: Array = []
+	for i in book[1]:
+		plans.append(crew.randi() % book[0])
+	var schemes: Array = []
+	for i in book[2]:
+		schemes.append(crew.randi() % SCHEMES)
+	var setback := snappedf(crew.randf_range(7.0, 9.5), 0.5)  # front wall, back from the lot edge
+	var plan: int = plans[rng.randi() % plans.size()]
+	var scheme: int = schemes[rng.randi() % schemes.size()]
+	var gs := -1.0 if rng.randf() < 0.5 else 1.0  # which side the garage is on
+	var wide := _bucket(half * 2.0, WIDTHS)
+	var deep := _bucket(depth, DEPTHS)
+	var zf := setback
+	if deep < 30.0:
+		zf = snappedf(clampf(deep * 0.22, 4.5, zf), 0.5)
+	var key := [era, plan, scheme, gs, wide, deep, zf, storeys, owner_care, force_kind]
+	var body: Dictionary = _plans.get(key, {})
+	if body.is_empty():
+		body = _draw_plan(key, wide, deep, zf, gs, storeys)
+		if _plans.size() >= _plan_cap:
+			_plans.erase(_plans.keys()[0])
+		_plans[key] = body
+	_body = body.arrays
+	_reach = body.reach
+	_back_z = body.back_z
+	_mass_back_z = body.mass_back_z
+	var info: Dictionary = body.info.duplicate()
+	_yard(info, to_curb)
+	if owner_care >= 1:
+		_improve()
+	_yard_trees(info, to_curb)
+	_back_yard(info)
+	return [_commit_house(), _commit_flat(), trees]
+
+
+## Draws one plan of the book on a lot of its width class, with its own
+## random stream (so the same plan comes out the same on every lot), into
+## its own surfaces, kept as arrays to merge into each lot's house.
+func _draw_plan(key: Array, wide: float, deep: float, zf: float, gs: float, storeys: int) -> Dictionary:
+	var was_rng := rng
+	var was_st := _st
+	var was_half := half
+	var was_depth := depth
+	var was_outline := outline
+	rng = RandomNumberGenerator.new()
+	var paint := RandomNumberGenerator.new()
+	paint.seed = hash([era, "scheme", key[2]])
+	rng.seed = hash([era, "plan", key[1], wide, storeys, force_kind])
+	_st = {}
+	half = wide * 0.5
+	depth = deep
+	outline = PackedVector2Array()
+	_reach = 0.0
+	_back_z = -INF
+	_mass_back_z = -INF
+	# The paint scheme: siding, roof, shutters, door and brick.
+	var colours := rng
+	rng = paint
 	var siding := Color(_pick(SIDING))
 	var roof := Color(_pick(ROOF))
 	var shutter_hex: String = _pick(SHUTTER)
 	var door := Color(_pick(DOOR))
 	var brick_style: String = _pick(["none", "none", "wainscot", "wainscot", "full"])
 	var brick := Color(_pick(BRICK))
-	var gs := -1.0 if rng.randf() < 0.5 else 1.0  # which side the garage is on
+	rng = colours
 	# Two-car garage mostly; one-car on narrow lots, three bays on wide ones.
 	var gw := 6.6 if rng.randf() < 0.85 else 3.8
 	if _avail() < 16.0:
 		gw = 3.8
 	elif _avail() >= 22.0 and rng.randf() < 0.4:
 		gw = 9.8
-	var zf := rng.randf_range(7.0, 9.5)  # front wall, back from the lot edge
-	if depth < 30.0:
-		zf = clampf(depth * 0.22, 4.5, zf)
 	var shutters := shutter_hex != ""
 	var shutter := Color(shutter_hex) if shutters else TRIM
 	var info: Dictionary
@@ -180,12 +263,24 @@ func _house(to_curb: float, storeys := 0) -> Array:
 		"cape": info = _cape(zf, gs, siding, roof, shutters, shutter, door)
 		"midcentury": info = _midcentury(zf, gs, gw, roof, door, brick)
 		_: info = _ranch(zf, gs, gw, siding, roof, shutters, shutter, door, brick_style, brick)
-	_yard(info, to_curb)
-	if owner_care >= 1:
-		_improve()
-	_yard_trees(info, to_curb)
-	_back_yard(info)
-	return [_commit_house(), _commit_flat(), trees]
+	var arrays := {}
+	for mat in _st:
+		arrays[mat] = _st[mat].commit_to_arrays()
+	var body := {"arrays": arrays, "info": info, "reach": _reach, "back_z": _back_z, "mass_back_z": _mass_back_z}
+	rng = was_rng
+	_st = was_st
+	half = was_half
+	depth = was_depth
+	outline = was_outline
+	return body
+
+
+static func _bucket(v: float, steps: Array) -> float:
+	var out: float = steps[0]
+	for s in steps:
+		if s <= v + 0.01:
+			out = s
+	return out
 
 
 ## What a thriving owner adds out back (care 1 and up): a 10 by 8 ft shed;
@@ -1456,10 +1551,29 @@ func _commit_house() -> ArrayMesh:
 	if owner_care < 0:
 		_weeds()
 	var mesh := ArrayMesh.new()
+	var mats: Array = _body.keys()
 	for mat in _st:
-		_st[mat].commit(mesh)
+		if not mat in mats:
+			mats.append(mat)
+	for mat in mats:
+		var arrays: Array = _st[mat].commit_to_arrays() if _st.has(mat) else []
+		if _body.has(mat):
+			arrays = _merged(_body[mat], arrays)
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, HouseMaterials.get_mat(mat))
 	return mesh
+
+
+## A plan's surface with this lot's own parts of the same material added.
+static func _merged(plan: Array, own: Array) -> Array:
+	if own.is_empty() or own[Mesh.ARRAY_VERTEX] == null or own[Mesh.ARRAY_VERTEX].is_empty():
+		return plan
+	var out := plan.duplicate()
+	for i in out.size():
+		if out[i] != null and own[i] != null:
+			out[i] = out[i].duplicate()
+			out[i].append_array(own[i])
+	return out
 
 
 func _commit_flat() -> ArrayMesh:
