@@ -92,6 +92,39 @@ static func set_volume(channel: String, v: float) -> void:
 	save()
 
 
+## Volumes back to 100%, unmuted. Flags stay.
+static func reset() -> void:
+	for k in volume:
+		volume[k] = 1.0
+	muted = false
+	apply()
+	save()
+
+
+## Why nothing can be heard, in plain words, or "" when sound should play.
+static func why_silent() -> String:
+	ensure_loaded()
+	if muted:
+		return "All sounds are muted."
+	if volume.master <= 0.0:
+		return "Master volume is at 0%."
+	if AudioServer.get_bus_index("Master") != -1 and AudioServer.is_bus_mute(0):
+		return "The game's sound is switched off."
+	if AudioServer.get_output_device() == "" or AudioServer.get_mix_rate() <= 0.0:
+		return "No speaker or headphones found."
+	return ""
+
+
+## The audio setup, for the play notes when sound goes missing.
+static func state() -> Dictionary:
+	var buses := {}
+	for i in AudioServer.bus_count:
+		buses[AudioServer.get_bus_name(i)] = [snappedf(AudioServer.get_bus_volume_db(i), 0.1), AudioServer.is_bus_mute(i)]
+	return {"volume": volume.duplicate(), "muted": muted, "flagged": flagged.keys(), "buses": buses,
+		"device": AudioServer.get_output_device(), "mix_rate": AudioServer.get_mix_rate(),
+		"latency": snappedf(AudioServer.get_output_latency(), 0.001)}
+
+
 static func set_muted(on: bool) -> void:
 	muted = on
 	apply()
@@ -124,6 +157,7 @@ static func flag(id: String, on: bool, how := "list") -> void:
 		heard_ago = snappedf(_now() - float(_heard[id].t), 0.1)
 	var tel = _telemetry()
 	if tel:
+		tel.event("audio", state())
 		tel.event("sound_flag", {"sound": id, "label": info(id)[1], "on": on, "how": how, "heard_ago": heard_ago,
 			"volume": volume.duplicate(), "muted": muted})
 
