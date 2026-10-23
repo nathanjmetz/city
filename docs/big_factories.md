@@ -74,5 +74,8 @@ Real plants serve whole regions. A Pike County town in the game is a few thousan
 - Each plant is one per town and never opens a second site.
 - It builds up first (more lines), then buys the land directly behind it, one 25 m bay at a time, up to the industrial lot cap.
 - If homes or shops stand on that land, the owner asks through the permit bell. When approved, it buys them out.
-- Money for growth and for its development tree comes from the plant's own profit. The town gets property tax and jobs.
+- Startup cash builds and runs the plant at first. After that it grows only from what the owner keeps of its profit (Capital, shared by every hub). A company pays out part as dividends.
+- Growth takes game years. The plant must run near capacity for six months, and it waits at least two years between expansions, about how long a real plant expansion takes to plan, finance and build. A new line is paid from savings. Land behind it is bought with a down payment and a commercial loan its profit can carry, at what land sells for there, so ground near a growing town costs more.
+- If the plant keeps losing money on ground the town has made worth far more to developers, its owner may ask on the bell to sell. If you say yes, it closes and the land opens up. If you say no, it won't ask again for five years.
+- The town gets property tax and jobs.
 - The player sets its course with grow, steady or hold, and can pre-approve land around it.
