@@ -43,6 +43,7 @@ func _init() -> void:
 	_warehouse()
 	_water()
 	_mail()
+	_venues()
 	_oil_company()
 	_done()
 
@@ -246,6 +247,30 @@ func _mail() -> void:
 	_check(curb == 20 and view._boxes.multimesh.instance_count == 0 and view._cbus.multimesh.instance_count == 2,
 		"cluster mailboxes replace the curb boxes on a long street")
 	view.free()
+
+
+## The football stadium and the fairgrounds draw each step of their trees.
+func _venues() -> void:
+	for kind in Balance.VENUE_TREES:
+		var missing := []
+		for node in Balance.VENUE_TREES[kind]:
+			var built := _with_requires(Balance.VENUE_TREES[kind], node.id)
+			var site := {"kind": kind, "tier": 2, "size": Balance.AMENITIES[kind].size, "name": "Pike County",
+				"venue_built": built.filter(func(n): return n != node.id)}
+			var before := _all_verts(ParkBuilder.build_site(site, 7, 3.9, "Petersburg"))
+			site.venue_built = built
+			if _all_verts(ParkBuilder.build_site(site, 7, 3.9, "Petersburg")) == before:
+				missing.append(node.id)
+		_check(missing.is_empty(), "every %s upgrade draws something%s" % [kind, "" if missing.is_empty() else ": missing " + str(missing)])
+
+
+func _all_verts(parts: Array) -> int:
+	var n := 0
+	for p in parts:
+		if p is ArrayMesh:
+			for i in p.get_surface_count():
+				n += p.surface_get_array_len(i)
+	return n
 
 
 func _mesh_verts(parts: Array) -> int:

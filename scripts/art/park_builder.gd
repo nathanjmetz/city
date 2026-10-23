@@ -660,7 +660,35 @@ func _football(size: Vector2, to_curb: float, built := [], on := false) -> void:
 	# Home bleachers on the far side, a press box on top; visitors near the street.
 	# The boosters' home grandstand doubles the home side.
 	_bleachers(Vector3(0, 0, fz + 5.0), 80.0 if "home_stands" in built else 60.0, 14 if "home_stands" in built else 10, true)
-	_bleachers(Vector3(0, 0, -fz - 5.0), 30.0, 5, false)
+	# A regional playoff host brings in portable visitor stands and a gate.
+	_bleachers(Vector3(0, 0, -fz - 5.0), 54.0 if "playoffs" in built else 30.0, 7 if "playoffs" in built else 5, false)
+	if "playoffs" in built:
+		var gate := Vector3(5.5, 0, -hz + 3.0)
+		_box("siding", Vector3(3.0, 2.6, 2.4), gate + Vector3(0, 1.3, 0), Color("#d8d2c2"))
+		_box("paint", Vector3(3.4, 0.2, 2.8), gate + Vector3(0, 2.7, 0), Color("#6e1f2a"))
+		_glass(Vector3(gate.x, 1.5, gate.z - 1.23), Vector3(-1, 0, 0), 2.0, 0.9, 0.0)
+	if "turf" in built:
+		# Synthetic turf has its yard numbers inlaid: 10 to 50 and back,
+		# both sides, 12 yards in from the sidelines.
+		for i in range(1, 10):
+			var x := -50.0 * yd + i * 10.0 * yd
+			for z in [-fz + 11.0 * yd, fz - 11.0 * yd]:
+				_flat_rect("line", x - 1.0, x - 0.3, z - 0.9, z + 0.9, 0.065, LINE)
+				_flat_rect("line", x + 0.3, x + 1.0, z - 0.9, z + 0.9, 0.065, LINE)
+	if "track" in built:
+		# Track and field where a small school's site has room (no full
+		# 400 m oval): a four-lane red straightaway behind the visitor
+		# stands, a long-jump runway and sand pit, and a shot put ring.
+		var t0 := -fz - 11.2
+		_flat_rect("gravel", 6.0, hx - 4.0, t0 - 4.9, t0, 0.07, Color("#a8452f"))
+		for k in 5:
+			_flat_rect("line", 6.0, hx - 4.0, t0 - k * 1.22 - 0.03, t0 - k * 1.22 + 0.03, 0.075, LINE)
+		_flat_rect("gravel", -hx + 6.0, -24.0, t0 - 2.6, t0 - 1.4, 0.07, Color("#a8452f"))
+		_flat_rect("gravel", -24.0, -15.0, t0 - 3.4, t0 - 0.6, 0.07, Color("#d9c79a"))
+		var shot := []
+		for i in 16:
+			shot.append(Vector3(-10.0 + cos(TAU * i / 16.0) * 1.07, 0, t0 - 2.0 + sin(TAU * i / 16.0) * 1.07))
+		_flat_poly(shot, 0.07, CONCRETE)
 	if "concerts" in built:
 		# A summer stage at the west end zone, its roof on four trusses.
 		var st := Vector3(-fx - 6.0, 0, 0)
@@ -1046,6 +1074,14 @@ func _fairgrounds(size: Vector2, to_curb: float, name: String, built: Array, on:
 	# The midway: open gravel ground, with the carnival only in fair week.
 	var mid := Vector3(-20.0, 0, 10.0)
 	_flat_rect("gravel", mid.x - 30.0, mid.x + 30.0, mid.z - 25.0, mid.z + 25.0, 0.05, gravel)
+	if "midway" in built:
+		# The carnival's contract brings permanent power to the midway:
+		# rows of service pedestals the rides plug into all fair week.
+		for i in 4:
+			for j in 3:
+				var q := mid + Vector3(-22.5 + i * 15.0, 0, -12.0 + j * 12.0)
+				_box("paint", Vector3(0.5, 1.2, 0.4), q + Vector3(0, 0.6, 0), Color("#8d918f"))
+				_box("paint", Vector3(0.6, 0.1, 0.5), q + Vector3(0, 1.25, 0), Color("#5a5e60"))
 	if on and "midway" in built:
 		_ferris_wheel(mid + Vector3(-14.0, 0, 8.0))
 		_ride(mid + Vector3(10.0, 0, 10.0))
