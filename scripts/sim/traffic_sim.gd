@@ -137,6 +137,8 @@ var _due := {}       # tick -> parked vehicles due to head off then (_due_at)
 var _pend := {}      # vehicle id -> parked vehicle waiting for a gap to pull out
 var _slow := {}      # ways whose _speed is below 1 (or has cars), kept up to date each tick
 var _slow_ok := -1   # the lane version _slow was gathered on
+var _wstep := 0      # walker steps taken since load: a walker is _wstep - w.t0 steps along
+var _wdone := {}     # walker step -> walkers who get where they're going then
 var _pseq := {}      # vehicle id -> its place in `parked` order (for _rest)
 var _next_pseq := 0
 var _xing_key := []
@@ -406,7 +408,7 @@ func to_dict() -> Dictionary:
 		list.append(e)
 	var state := {"cars": list, "waiting": _waiting.size(), "next_id": _next_id, "time": time,
 		"gave_up": gave_up, "speed": _speed, "dirty": _dirty, "arrivals": arrivals, "failed": failed,
-		"parked": parked, "walkers": walkers, "next_trip": _next_trip, "next_walker": _next_walker,
+		"parked": parked, "walkers": _walkers_saved(), "next_trip": _next_trip, "next_walker": _next_walker,
 		"sites": _sites, "extra": _extra, "closed": closed}
 	# Binary, so every float comes back exactly and copies stay in step
 	# (var_to_str rounds to 15 digits).
@@ -422,6 +424,7 @@ func from_dict(d: Dictionary) -> void:
 	_pend.clear()
 	_pseq.clear()
 	walkers.clear()
+	_wdone.clear()
 	_sites.clear()
 	_extra.clear()
 	closed.clear()
@@ -450,6 +453,11 @@ func from_dict(d: Dictionary) -> void:
 	parked = state.get("parked", [])
 	_index_parked()
 	walkers = state.get("walkers", [])
+	_wstep = 0
+	_wdone.clear()
+	for w in walkers:
+		w.t0 = -int(w.get("t", 0))
+		_file_walker(w)
 	_next_trip = state.get("next_trip", _next_id)
 	_next_walker = state.get("next_walker", 1)
 	_sites = state.get("sites", {})
@@ -1852,6 +1860,7 @@ func retire_vehicle(vid: int) -> void:
 func forget_person(pid: int) -> void:
 	for w in walkers.duplicate():
 		if w.person == pid:
+			w.gone = true
 			walkers.erase(w)
 	for car in parked:
 		if car.get("driver", -1) == pid:
@@ -2403,23 +2412,62 @@ func _walk(pid: int, pts: PackedVector3Array, then: Dictionary) -> void:
 	for i in range(1, pts.size()):
 		cum.append(cum[i - 1] + pts[i].distance_to(pts[i - 1]))
 	walkers.append({"id": _next_walker, "person": pid, "pts": pts, "cum": cum, "len": cum[cum.size() - 1],
-		"d": 0.0, "t": 0, "then": then,
+		"d": 0.0, "t": 0, "then": then, "t0": _wstep,
 		# Walking pace in whole cm/s, and distance worked out from the ticks
 		# walked, so a saved and loaded walker is exactly where it was.
 		"v": float(roundi(WALK_V * (85 + hash([pid, _next_walker]) % 31))) / 100.0})
+	_file_walker(walkers[walkers.size() - 1])
 	_next_walker += 1
+
+
+## Files a walker under the step they arrive: the first whole step count t
+## with t * v * DT >= len.
+func _file_walker(w: Dictionary) -> void:
+	var t := maxi(ceili(w.len / (w.v * DT)), 1)
+	while t > 1 and (t - 1) * w.v * DT >= w.len:
+		t -= 1
+	while t * w.v * DT < w.len:
+		t += 1
+	var at: int = int(w.t0) + t
+	if not _wdone.has(at):
+		_wdone[at] = []
+	_wdone[at].append(w)
+
+
+## Metres a walker has gone (worked out from the steps, not stored).
+func _walker_d(w: Dictionary) -> float:
+	return (_wstep - int(w.t0)) * w.v * DT
+
+
+## Walkers as saved: with how far they've got, and without the step they
+## set off on (that counts from the load).
+func _walkers_saved() -> Array:
+	var out := []
+	for w in walkers:
+		var e: Dictionary = w.duplicate()
+		e.t = _wstep - int(w.t0)
+		e.d = e.t * w.v * DT
+		e.erase("t0")
+		out.append(e)
+	return out
 
 
 ## Moves everyone on foot along, and lets them do what they set out to.
 func _step_walkers() -> void:
-	var done := []
-	for w in walkers:
-		w.t = int(w.get("t", 0)) + 1
-		w.d = w.t * w.v * DT
-		if w.d >= w.len:
-			done.append(w)
+	# Only the ones arriving this step are touched; where the rest are is
+	# worked out from the step count when it's wanted.
+	_wstep += 1
+	var done: Array = _wdone.get(_wstep, [])
+	_wdone.erase(_wstep)
+	if done.is_empty():
+		return
+	done.sort_custom(func(a, b): return a.id < b.id)
 	for w in done:
+		if w.has("gone"):
+			continue  # stopped walking (left town)
 		walkers.erase(w)
+		w.t = _wstep - int(w.t0)
+		w.d = w.t * w.v * DT
 		_walked(w)
 
 
@@ -2624,7 +2672,7 @@ static func _line_at(line: PackedVector3Array, f: float) -> Vector3:
 
 ## Where a person on foot is and which way they face.
 func walker_pose(w: Dictionary, ahead := 0.0) -> Array:
-	var d := minf(w.d + ahead, w.len)
+	var d := minf(_walker_d(w) + ahead, w.len)
 	var p := _poly_point(w.pts, w.cum, d)
 	var q := _poly_point(w.pts, w.cum, minf(d + 0.5, w.len))
 	if q.distance_to(p) < 0.01:
