@@ -60,6 +60,12 @@ const DEPTHS := [24.0, 28.0, 32.0, 36.0, 42.0, 50.0]
 ## browser, where memory is tighter.
 static var _plan_cap := 64 if OS.has_feature("web") else 192
 static var _plans := {}
+## Plan info alone (where the drive, garage and door are), by plan without
+## the care tier: what the traffic sim asks for, worked out without drawing.
+static var _infos := {}
+## Lays a plan out without making its surfaces (plan_info): every random draw
+## and measurement still happens, so the info matches the drawn plan.
+var _dry := false
 
 ## The lot, in local space: half its width, how far back it runs, its
 ## outline (x, z), and for a flag lot how far the pad sits behind the street.
@@ -177,7 +183,7 @@ func _house(to_curb: float, storeys := 0) -> Array:
 
 ## The plan this lot gets from its block's builder, drawn or from the
 ## kept ones (see _house).
-func _plan(storeys: int, any_care := false) -> Dictionary:
+func _plan(storeys: int, any_care := false, info_only := false) -> Dictionary:
 	var crew := RandomNumberGenerator.new()
 	crew.seed = hash([_cell_seed, "builder"])
 	var book: Array = PLAN_BOOK[era]
@@ -205,6 +211,16 @@ func _plan(storeys: int, any_care := false) -> Dictionary:
 			if body.is_empty():
 				body = _plans.get(key, {})
 		key[8] = owner_care
+	if info_only:
+		var ik := key.duplicate()
+		ik[8] = 0
+		if not body.is_empty():
+			return body
+		if not _infos.has(ik):
+			_dry = true
+			_infos[ik] = _draw_plan(key, wide, deep, zf, gs, storeys).info
+			_dry = false
+		return {"info": _infos[ik]}
 	if body.is_empty():
 		body = _draw_plan(key, wide, deep, zf, gs, storeys)
 		if _plans.size() >= _plan_cap:
@@ -221,7 +237,7 @@ static func plan_info(seed: int, lot := {}, storeys := 0) -> Dictionary:
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
 	b._fit(lot)
-	return b._plan(storeys, true).info
+	return b._plan(storeys, true, true).info
 
 
 ## Draws one plan of the book on a lot of its width class, with its own
@@ -1481,6 +1497,12 @@ func _box(mat: String, size: Vector3, center: Vector3, col: Color, basis := Basi
 		_mass_back_z = maxf(_mass_back_z, reach)  # buildings, not poles or yard things
 		var foot := Vector2(h.x, h.z) if basis == Basis.IDENTITY else Vector2.ONE * h.length()
 		_masses.append(Rect2(center.x - foot.x, center.z - foot.y, foot.x * 2.0, foot.y * 2.0))
+	if _dry:
+		# Only how far back it reaches counts (as _quad keeps it).
+		for c in 8:
+			var q := center + basis * Vector3((c & 1) * 2 - 1, (c >> 1 & 1) * 2 - 1, (c >> 2) * 2 - 1) * h
+			_reach = maxf(_reach, q.z)
+		return
 	var p := func(x: float, y: float, z: float) -> Vector3:
 		return center + basis * Vector3(x * h.x, y * h.y, z * h.z)
 	var faces := [
@@ -1511,6 +1533,8 @@ func _quad(mat: String, a: Vector3, b: Vector3, c: Vector3, d: Vector3, col: Col
 	if uvs.is_empty():
 		uvs = [_auto_uv(a, n), _auto_uv(b, n), _auto_uv(c, n), _auto_uv(d, n)]
 	_reach = maxf(_reach, maxf(maxf(a.z, b.z), maxf(c.z, d.z)))
+	if _dry:
+		return
 	if owner_care != 0:
 		col = _weather(mat, col)
 	var st := _tool(mat)
@@ -1534,6 +1558,8 @@ func _tri(mat: String, a: Vector3, b: Vector3, c: Vector3, col: Color, uvs := []
 	if uvs.is_empty():
 		uvs = [_auto_uv(a, n), _auto_uv(b, n), _auto_uv(c, n)]
 	_reach = maxf(_reach, maxf(a.z, maxf(b.z, c.z)))
+	if _dry:
+		return
 	if owner_care != 0:
 		col = _weather(mat, col)
 	var st := _tool(mat)
@@ -1590,6 +1616,8 @@ func _glass(c: Vector3, right: Vector3, w: float, h: float, blinds: float) -> vo
 ## Flat ground work. Kinds (packed into vertex alpha for the yard shader):
 ## drive (concrete), asphalt, line (painted, in `col`), mulch or gravel (in `col`).
 func _flat_rect(kind: String, x0: float, x1: float, z0: float, z1: float, y: float, col := MULCH) -> void:
+	if _dry:
+		return
 	var alpha := {"drive": 0.0, "asphalt": 0.4, "line": 0.72, "mulch": 1.0, "gravel": 1.0}
 	col.a = alpha[kind]
 	var pts := [Vector3(x0, y, z0), Vector3(x1, y, z0), Vector3(x1, y, z1), Vector3(x0, y, z1)]
