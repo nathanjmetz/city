@@ -2181,11 +2181,15 @@ func _arrive(car: Dictionary) -> void:
 
 ## Vehicles whose time is up head off again.
 func _rest() -> void:
-	for car in parked.duplicate():
+	# Most parked vehicles are just parked: pick out the few with somewhere
+	# to be first, without copying the whole list.
+	var due := []
+	for car in parked:
+		if car.has("pending") or (car.until >= 0 and car.until <= _tick):
+			due.append(car)
+	for car in due:
 		if car.get("pending", false):
 			_try_launch(car)
-			continue
-		if car.until < 0 or car.until > _tick:
 			continue
 		var back: String = car.get("next", "")
 		var stop: Dictionary = car.get("next_stop", {})
@@ -2624,7 +2628,9 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 		way_sum[w.id][1] += 1
 		if car.leg == car.route.size() - 1:
 			# Start turning in a few metres early, so the driveway is a smooth arc.
-			if car.has("to_place") and car.d >= car.end_d - 40.0 and car.to_place != "edge":
+			if car.has("to_place") and car.d >= car.end_d - 40.0 and car.to_place != "edge" \
+					and car.get("end_fixed", -1) != car.leg:
+				car.end_fixed = car.leg
 				_fix_end(car)  # the lot may have been built on since the trip began
 			if car.has("to_place") and car.d >= car.end_d - PARK_LEAD:
 				if car.to_place == "edge":
@@ -2669,7 +2675,9 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 			_speed[wid] = snappedf(lerpf(_speed[wid], way_sum[wid][0] / way_sum[wid][1], 0.05), 0.000001)
 		else:
 			_speed[wid] = snappedf(lerpf(_speed[wid], 1.0, 0.02), 0.000001)
-	_refresh_wcost()
+		if ways.has(wid):
+			var sw: Dictionary = ways[wid]
+			_wcost[wid] = sw.len / (sw.vmax * maxf(_speed[wid], 0.15))
 	flow = 1.0 if limit_sum == 0.0 else clampf(speed_sum / limit_sum, 0.0, 1.0)
 
 
