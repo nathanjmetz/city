@@ -118,6 +118,7 @@ var _arrows := {} # way -> {next way: [lanes that may take it]}
 var _kind := {}   # Vector2i(way, next) -> Turn
 var _tcost := {}  # way -> PackedFloat64Array, _turn_cost for each of _turns[way]
 var _wcost := {}  # way -> _way_cost now (_refresh_wcost)
+var _cfor := {}   # Vector3i(way, lane, next) -> _conn_for's answer
 var _conns := {}  # Vector4i(way, lane, next, lane) -> junction path
 var _conflict := {}
 var _next_conn := 1
@@ -527,6 +528,7 @@ func _rebuild() -> void:
 	_arrows.clear()
 	_kind.clear()
 	_conns.clear()
+	_cfor.clear()
 	_conflict.clear()
 	var seg_ids := network.segments.keys()
 	seg_ids.sort()
@@ -2965,9 +2967,12 @@ func _snapshot() -> void:
 func _conn_for(car: Dictionary) -> Dictionary:
 	var wi: int = car.route[car.leg]
 	var wo: int = car.route[car.leg + 1]
-	if not lanes_for(wi, wo).has(car.lane):
-		return {}
-	return _connector(wi, car.lane, wo, _out_lane(wi, car.lane, wo))
+	var key := Vector3i(wi, car.lane, wo)
+	var c = _cfor.get(key)
+	if c == null:
+		c = {} if not lanes_for(wi, wo).has(car.lane) else _connector(wi, car.lane, wo, _out_lane(wi, car.lane, wo))
+		_cfor[key] = c
+	return c
 
 
 ## Intelligent Driver Model: acceleration for speed v wanting v0, with a gap
@@ -3096,13 +3101,13 @@ func _through_leader(c: Dictionary, ds: float, me: Dictionary) -> Array:
 	var blen := CAR_LEN
 	var list: Array = _lanes.get(c.wo * 8 + c.lo, [])
 	for k in range(list.size() - 1, -1, -1):
-		if list[k] != me and list[k].d > mine:
+		if list[k].id != me.id and list[k].d > mine:
 			best = list[k].d
 			bv = list[k].v
 			blen = list[k].len
 			break
 	for b in _box.get(c.node, []):
-		if b == me or b.j.wo != c.wo or b.j.lo != c.lo:
+		if b.id == me.id or b.j.wo != c.wo or b.j.lo != c.lo:
 			continue
 		var pos: float = b.j.exit_d - (b.j.len - b.jd)
 		if pos > mine and pos < best:
@@ -3123,7 +3128,7 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 	var queued := 0
 	for b in occupants:
 		var bc: Dictionary = b.j if b.j != null else b.conn
-		if b != car and bc.wo == c.wo and bc.lo == c.lo:
+		if b.id != car.id and bc.wo == c.wo and bc.lo == c.lo:
 			queued += 1
 	var list: Array = _lanes.get(c.wo * 8 + c.lo, [])
 	if not list.is_empty():
@@ -3132,7 +3137,7 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 			return false
 	# Nothing crossing our path in the junction.
 	for b in occupants:
-		if b == car:
+		if b.id == car.id:
 			continue
 		var bc: Dictionary = b.j if b.j != null else b.conn
 		if _conflicts(c, bc):
@@ -3152,7 +3157,7 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 			elif st == Light.YELLOW and car.v * car.v / (2.0 * BRAKE) < ds - 1.0:
 				return false
 			for ap in _approach.get(n, []):
-				if ap.car == car or ap.conn.wi == c.wi or light(n, ap.conn.wi) != Light.GREEN:
+				if ap.car.id == car.id or ap.conn.wi == c.wi or light(n, ap.conn.wi) != Light.GREEN:
 					continue
 				var theirs_minor: bool = ap.conn.turn == Turn.LEFT or ap.conn.turn == Turn.UTURN
 				if (on_red or (mine_minor_turn and not theirs_minor)) and _soon(ap) and _conflicts(c, ap.conn):
@@ -3161,14 +3166,14 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 			if not stopped:
 				return false
 			for ap in _approach.get(n, []):
-				if ap.car != car and ap.conn.wi != c.wi and _first(ap.car, car) and _conflicts(c, ap.conn):
+				if ap.car.id != car.id and ap.conn.wi != c.wi and _first(ap.car, car) and _conflicts(c, ap.conn):
 					return false
 		Rule.PRIORITY:
 			if not j.major.has(c.wi):
 				if j.sign == "stop" and not stopped:
 					return false
 				for ap in _approach.get(n, []):
-					if ap.car == car or ap.conn.wi == c.wi:
+					if ap.car.id == car.id or ap.conn.wi == c.wi:
 						continue
 					if j.major.has(ap.conn.wi):
 						if _soon(ap) and _conflicts(c, ap.conn):
@@ -3177,7 +3182,7 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 						return false
 			elif mine_minor_turn:
 				for ap in _approach.get(n, []):
-					if ap.car == car or ap.conn.wi == c.wi or not j.major.has(ap.conn.wi):
+					if ap.car.id == car.id or ap.conn.wi == c.wi or not j.major.has(ap.conn.wi):
 						continue
 					var theirs_minor: bool = ap.conn.turn == Turn.LEFT or ap.conn.turn == Turn.UTURN
 					if not theirs_minor and _soon(ap) and _conflicts(c, ap.conn):
