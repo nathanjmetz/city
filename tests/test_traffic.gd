@@ -470,6 +470,30 @@ func _init() -> void:
 	_check(yielded, "a car turning onto the road waits while someone is on its crosswalk")
 	_check(cleared, "and may go once they've crossed")
 
+	# Parked across the street: up onto that sidewalk, over at the corner's
+	# crosswalk and back along to the door, never straight across mid-block.
+	var on_road := 0
+	var reached := false
+	if west_home != "":
+		var hl: Dictionary = wk.lots[west_home]
+		var hw := RoadStyle.half_width(RoadStyle.Type.AVENUE)
+		var parked_car := {"pos": Vector3(hl.front.x, 0.0, -(hw - 1.1)), "face": Vector3(-1, 0, 0), "len": 4.8,
+			"at_place": "lot:" + west_home}
+		var wpath := wk.traffic._walk_from_car(parked_car, "lot:" + west_home)
+		var along := 0.0
+		for i in range(1, wpath.size()):
+			var pa: Vector3 = wpath[i - 1]
+			var pb: Vector3 = wpath[i]
+			var pn := maxi(1, ceili(pa.distance_to(pb)))
+			for k in pn:
+				var q := pa.lerp(pb, float(k) / pn)
+				along += pa.distance_to(pb) / pn
+				if along > 3.0 and absf(q.z) < hw - 0.3 and absf(q.x) > 16.0:
+					on_road += 1
+		reached = wpath.size() > 2 and wpath[wpath.size() - 1].distance_to(wk.traffic.place("lot:" + west_home).door) < 0.5
+	_check(west_home != "" and on_road == 0 and reached,
+		"from a car parked across the street people walk round by the crosswalk, not across the road (%d m on it)" % on_road)
+
 	# A walk on the trail: out along the sidewalk to where the trail crosses
 	# the street, along it and back home.
 	var tw := rx
