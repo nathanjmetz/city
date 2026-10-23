@@ -153,6 +153,7 @@ func _signature() -> String:
 		parts.append(sim.rail.lines[lid].state)
 	for id in sim.rail.depots:
 		parts.append(sim.rail.depots[id].get("built", []).size())
+	parts.append(sim.pollution.quiet.size())
 	return str(parts)
 
 
@@ -372,6 +373,9 @@ func _crossing_pad(st: SurfaceTool, c: Dictionary) -> void:
 ## pattern starts (FRA 49 CFR 222.21; railroads' timetable instructions).
 func _whistle_posts(st: SurfaceTool, c: Dictionary) -> void:
 	if not sim.rail.pieces.has(int(c.piece)):
+		return
+	# A quiet zone takes its whistle posts down.
+	if sim.pollution.quiet.has(int(sim.rail.pieces[int(c.piece)].depot)):
 		return
 	for dir: int in [-1, 1]:
 		var at := _walk(int(c.piece), float(c.s), dir, WHISTLE_POST)

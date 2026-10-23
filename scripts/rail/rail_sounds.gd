@@ -7,7 +7,8 @@ extends Node3D
 ## crossing: FRA 49 CFR 222.21, GCOR 5.8.2), two long blasts when a train
 ## leaves the yard ("proceed"), and the crossing bell ringing while the
 ## lights flash and the gates are down (MUTCD 8C). Everything is placed in
-## the world and fades with distance; the camera is the listener.
+## the world and fades with distance; the camera is the listener. In a
+## quiet zone the horn stays silent at crossings; the bells still ring.
 
 ## Train-time before a crossing (s) at which the horn starts: FRA says at
 ## least 15 and no more than 20.
@@ -136,6 +137,9 @@ func _watch_trains(dt: float) -> void:
 		if _honked.has(tid) and (nc.is_empty() or int(nc.index) != int(_honked[tid])):
 			_honked.erase(tid)
 		if nc.is_empty() or _honked.get(tid, -1) == int(nc.index):
+			continue
+		# A quiet zone (49 CFR 222): no routine horn at the town's crossings.
+		if sim.pollution.quiet.has(int(t.depot)):
 			continue
 		if horn_due(float(nc.dist), float(t.v)) and (b.is_empty() or int(b.crossing) == -1):
 			_honked[tid] = int(nc.index)
