@@ -497,12 +497,7 @@ func _draw_yards() -> void:
 		# Gravel lot for the crews' trucks beside it.
 		_box(st, _frame(d, -half + 66.0, 7.0, y), Vector3(0, 0.05, 0), Vector3(24.0, 0.1, 10.0), Color("#77736a"))
 		if "station" in built:
-			# Platform and canopy beside the passenger track.
-			var plat := _frame(d, 0.0, float(Rail.TRACK_V[0]) - 3.4, y)
-			_box(st, plat, Vector3(0, 0.45, 0), Vector3(120.0, 0.9, 3.6), CONCRETE)
-			for k in 7:
-				_box(st, plat, Vector3(-48.0 + k * 16.0, 2.4, -0.8), Vector3(0.25, 3.2, 0.25), Color("#2f4a3a"))
-			_box(st, plat, Vector3(0, 4.05, -0.3), Vector3(100.0, 0.18, 4.4), Color("#2f4a3a"))
+			_station(st, d, y)
 		if "engine_house" in built:
 			# A two-stall engine house straddling the far yard track.
 			var eh := _frame(d, half - 30.0, float(Rail.TRACK_V[2]) + 2.3, y)
@@ -522,6 +517,41 @@ func _draw_yards() -> void:
 	if any:
 		st.generate_normals()
 		_yard.mesh = st.commit()
+
+
+## A small-town Amtrak stop, like the Midwest's restored depots: a brick
+## waiting room with wide bracketed eaves, a concrete platform long enough
+## for the train (an 8 in. high platform with the ADA's 24 in. yellow
+## tactile strip along the edge), a short canopy by the door, lamp posts,
+## and a small paved lot with a drive in from the road.
+func _station(st: SurfaceTool, d: Dictionary, y: float) -> void:
+	var edge := float(Rail.TRACK_V[0]) - 1.6   # platform edge, clear of the train
+	var plat := _frame(d, 0.0, edge - 2.0, y)
+	_box(st, plat, Vector3(0, 0.1, 0), Vector3(122.0, 0.2, 4.0), CONCRETE)
+	_box(st, plat, Vector3(0, 0.205, 1.7), Vector3(122.0, 0.01, 0.6), Color("#e3b51e"))
+	for k in 9:
+		var lamp := Vector3(-56.0 + k * 14.0, 0, -1.4)
+		_box(st, plat, lamp + Vector3(0, 2.2, 0), Vector3(0.14, 4.4, 0.14), Color("#22262a"))
+		_box(st, plat, lamp + Vector3(0, 4.35, 0.25), Vector3(0.3, 0.2, 0.6), Color("#22262a"))
+	# The canopy: a short one over the door, not the whole platform.
+	for x: float in [-10.0, 0.0, 10.0]:
+		_box(st, plat, Vector3(x, 1.7, -0.6), Vector3(0.22, 3.4, 0.22), Color("#2f4a3a"))
+	_box(st, plat, Vector3(0, 3.5, 0), Vector3(24.0, 0.16, 3.6), Color("#2f4a3a"))
+	# The depot: waiting room and ticket office, door to the platform.
+	var depot := _frame(d, 0.0, edge - 8.5, y)
+	_building(st, depot, Vector3(16.0, 4.4, 7.0), Color("#7a3b2c"), Color("#3c3a37"))
+	# A white station-name board on the platform side, like the old depots'.
+	_box(st, depot, Vector3(0, 3.6, 3.56), Vector3(5.0, 0.6, 0.06), Color("#f2f2ee"))
+	_box(st, depot, Vector3(0, 3.6, 3.6), Vector3(4.0, 0.22, 0.02), Color("#1e1e1e"))
+	# Parking: a paved lot with 2.7 m stalls, opening straight off the road,
+	# built up on fill where the ground falls away.
+	var lot := _frame(d, 36.0, 5.0, y)
+	_box(st, lot, Vector3(0, -0.7, 0), Vector3(36.0, 1.5, 9.0), Color("#4e4f4e"))
+	for k in 13:
+		_box(st, lot, Vector3(-16.2 + k * 2.7, 0.055, 1.5), Vector3(0.1, 0.01, 5.4), Color("#e8e8e2"))
+	# A walk from the lot to the platform.
+	_box(st, _frame(d, 16.0, (9.5 + edge - 4.0) * 0.5, y), Vector3(0, -0.6, 0),
+		Vector3(2.0, 1.4, edge - 4.0 - 9.5), CONCRETE)
 
 
 ## A frame on the yard: x along the tracks, z away from the road (+z back).
