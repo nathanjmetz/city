@@ -129,7 +129,7 @@ func _plan_abatement(sim) -> Dictionary:
 		return {"kind": "abatement", "hub_id": id,
 			"leader": "%s, %s" % [fam.head, company] if not fam.is_empty() else company.capitalize(),
 			"title": "A tax abatement for a %s" % str(want.name).to_lower(),
-			"why": "%s would build a %s%s now if the new investment's taxes phase in over %d years." % [
+			"why": "%s would build a %s%s at its own yard now if the new investment's taxes phase in over %d years. It needs no new land." % [
 				company.capitalize(), str(want.name).to_lower(), (" (%s)" % want.note) if want.has("note") else "",
 				Balance.ASK_ABATE_YEARS],
 			"area": _square(s.pos, 60.0),
@@ -300,6 +300,8 @@ func carry_out(sim) -> void:
 		if st == Permits.State.APPROVED:
 			sim.permits.done(id)
 			if _yes(sim, a):
+				# The bell's history says it happened (Brawn: a yes must visibly do something).
+				sim.permits.requests[id].note = "Done."
 				sim.culture.nudge(_sector(sim, kind, a), Balance.CULTURE_YES_LEAN)
 		changed.emit()
 
@@ -324,7 +326,7 @@ func _yes(sim, a: Dictionary) -> bool:
 			for n in Agency.TREES[s.kind]:
 				if n.id == str(a.node):
 					node = n
-			s.why = "Built %s with a tax abatement from the town." % str(node.get("name", "it")).to_lower()
+			s.why = "Built a %s with a tax abatement from the town." % str(node.get("name", "it")).to_lower()
 			abatements.append({"who": "site:%d" % int(a.site), "monthly": int(a.monthly),
 				"until": sim.tick_count + Balance.ASK_ABATE_YEARS * 12 * TICKS_PER_MONTH})
 			sim.industry_changed.emit()

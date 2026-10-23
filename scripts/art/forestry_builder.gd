@@ -46,12 +46,14 @@ static func stand(seed: int, size: float, track_dir: Vector2, clear := [], open 
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 
-static func mill(seed: int, size: Vector2) -> Array:
+static func mill(seed: int, size: Vector2, built := []) -> Array:
 	var b := ForestryBuilder.new()
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 	b._mill(size)
+	if "chip_plant" in built:
+		b._chip_mill(size)
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 
@@ -291,6 +293,26 @@ func _mill(size: Vector2) -> void:
 	_sign(Vector3(ox, 3.6, oz - 2.35), 4.0, 0.6)
 	# Truck scale in front of the office.
 	_flat_rect("drive", ox + 5.0, ox + 8.5, -hz, -hz + 18.0, 0.08)
+
+
+## A wood chip mill in the back corner of the yard (Agency "chip_plant"):
+## a drum chipper fed tops and slash, a blower spout throwing chips onto a
+## tall pale pile, and a chip van waiting to haul them to a paper mill or a
+## power plant, as at chip mills beside southern Indiana sawmills.
+func _chip_mill(size: Vector2) -> void:
+	var hx := size.x * 0.5
+	var hz := size.y * 0.5
+	var at := Vector3(-hx + 13.0, 0, hz - 8.0)
+	_box("paint", Vector3(6.5, 0.3, 3.4), at + Vector3(0, 0.15, 0), FOUNDATION)
+	_box("metal", Vector3(5.0, 2.4, 2.6), at + Vector3(0, 1.5, 0), Color("#c9a227"))  # chipper
+	_box("metal", Vector3(1.6, 1.2, 2.8), at + Vector3(-3.0, 1.0, 0), Color("#5a5e60"))  # infeed
+	var pile := Vector3(-hx + 6.0, 0, hz - 6.0)
+	_cone_pile(pile, 5.5, 4.6, Color("#cfae74"))
+	_strut(at + Vector3(1.0, 2.8, 0), pile + Vector3(0.5, 5.2, 0.5), 0.35, Color("#6b6e70"))
+	# A chip van: a 53 ft open-top aluminium trailer, by the pile.
+	_box("metal", Vector3(2.6, 3.6, 15.0), Vector3(-hx + 15.0, 2.2, -hz + 22.0), Color("#c4c8ca"))
+	for z in [-5.5, 5.5]:
+		_box("paint", Vector3(2.5, 0.9, 1.2), Vector3(-hx + 15.0, 0.45, -hz + 22.0 + z), Color("#262626"))
 
 
 func _cone_pile(c: Vector3, r: float, h: float, col: Color) -> void:
