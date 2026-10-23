@@ -26,6 +26,8 @@ var tick_fraction: Callable
 ## site): returns [[kind, Transform3D at the front bumper, id], ...].
 var parked := Callable()
 
+var _snow := 0.0
+var _snow_check := 0.0
 var _batches := {}  # mesh key -> [near MultiMeshInstance3D, far one]
 var _xf := {}       # mesh key * lod -> [transforms]
 var _cu := {}       # mesh key * lod -> [custom colours]
@@ -72,6 +74,12 @@ func _draw_cars(_delta: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	var eye := cam.global_position if cam else Vector3.ZERO
 	var frac: float = tick_fraction.call()
+	# Snow cover (set on the shaders by DayNight), checked once a second.
+	_snow_check -= _delta
+	if _snow_check <= 0.0:
+		_snow_check = 1.0
+		var v = RenderingServer.global_shader_parameter_get("snow")
+		_snow = float(v) if v != null else 0.0
 	for car in traffic.cars:
 		var ahead: float = car.v * TrafficSim.DT * frac
 		var front: Vector3 = Terrain.lift(traffic.car_pose(car, ahead)[0])
@@ -111,6 +119,9 @@ func _draw_cars(_delta: float) -> void:
 			_add(art.trailer, lod, Transform3D(Basis.looking_at(dir, Vector3.UP), origin), Color(1, 1, 1, flags))
 		else:
 			var model := VehicleModels.variant(kind, car.id)
+			# In snow, dump trucks and one contractor pickup in three plow.
+			if _snow > 0.4 and VehicleModels.WINTER.has(model) and (kind == "dump_truck" or car.id % 3 == 0):
+				model = VehicleModels.WINTER[model]
 			_add(model, lod, _place(car, ahead, front, VehicleModels.AXLE.get(model, 3.5)), custom)
 	if parked.is_valid():
 		for p in parked.call():
