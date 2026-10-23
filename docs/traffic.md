@@ -137,6 +137,14 @@ the rest, and trucks drive in only when `deliveries` allows: `"never"`, `"night"
 6 am) or `"always"`. `may_enter(seg, truck)` answers for one vehicle now. Closed streets are
 saved with the traffic state.
 
+## Railroad crossings
+
+When the gates are down (`sim.rail.crossings[i].closed`), cars stop at a line
+5.4 m before the track's centre, which is the MUTCD and Uniform Vehicle Code
+15 ft from the nearest rail plus half the gauge. A car too close to stop even
+at a hard brake goes on through, as a driver would at a late signal. Traffic
+finds where each crossing sits on each way again when track or roads change.
+
 ## Performance
 
 `tools/perf_run.gd -- big 300` is the benchmark (budget in `scripts/perf/perf_budget.gd`).
