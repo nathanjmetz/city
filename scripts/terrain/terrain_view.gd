@@ -41,6 +41,8 @@ const LOT_GRADE := 34.0
 const GRADE_FADE := 14.0
 ## Mowed grass past a road's right of way before the wild cover starts.
 const MOW_VERGE := 3.0
+## How much of the woods floor a yard thins to lawn (see build_chunk).
+const YARD_THIN := 0.6
 ## Milliseconds per frame spent building chunks after the first frame.
 const BUDGET_MS := 6
 
@@ -558,8 +560,13 @@ static func build_chunk(origin: Vector2, size: float, step: float, reach := 0.0)
 			var cov := Terrain.cover(x + Terrain.view_origin.x, z + Terrain.view_origin.y)
 			# r trees, g water, b crops, a bare (as the shader reads them),
 			# cleared off the road and its mowed verge.
-			var keep := 1.0 - Terrain.mow_weight(x, z)
-			colors[k] = Color(cov.r * keep, cov.g, cov.b * keep, cov.a * keep)
+			var mowed := Terrain.mow_weight(x, z)
+			var keep := 1.0 - mowed
+			# Yards (graded for lots but past the mowed verge) keep their trees,
+			# but the ground under them is thin, patchy lawn with some leaves,
+			# not the bare leaf litter of the woods.
+			var yard := clampf(Terrain.flat_weight(x, z) - mowed, 0.0, 1.0)
+			colors[k] = Color(cov.r * keep * (1.0 - YARD_THIN * yard), cov.g, cov.b * keep, cov.a * keep)
 			wet[k] = cov.g
 			any_water = any_water or cov.g > 0.02
 	var idx := PackedInt32Array()
