@@ -2,7 +2,7 @@ extends SceneTree
 ## Renders a test town with a rail depot, its main line and a spur to a mine
 ## (permits approved, a bold leader), to check how the railroad looks.
 ## Run: xvfb-run godot -s tools/rail_shot.gd -- out.png yaw pitch dist [focus] [days]
-## focus: yard (default), crossing, train, pax, or x,z. Add "pax" after days
+## focus: yard (default), crossing, whistle, train, pax, or x,z. Add "pax" after days
 ## for passenger service and a station ("-" for none), then "view" for the Rail view.
 
 var _main: Node
@@ -83,7 +83,7 @@ func _town() -> void:
 	match focus:
 		"yard":
 			_focus = d.pos
-		"crossing":
+		"crossing", "whistle":
 			_focus = sim.rail.crossings[0].pos if not sim.rail.crossings.is_empty() else d.pos
 		"pax":
 			var poses := sim.rail.car_poses(d.pax_train)
@@ -101,6 +101,14 @@ func _town() -> void:
 
 func _aim() -> void:
 	var args := OS.get_cmdline_user_args()
+	for c in _main.get_children():
+		if c is RailView and args.size() > 4 and args[4] == "whistle" and not _main.sim.rail.crossings.is_empty():
+			var cr: Dictionary = _main.sim.rail.crossings[0]
+			var at: Array = c._walk(int(cr.piece), float(cr.s), 1, RailView.WHISTLE_POST)
+			if at.is_empty():
+				at = c._walk(int(cr.piece), float(cr.s), -1, RailView.WHISTLE_POST)
+			if not at.is_empty():
+				_focus = at[0]
 	for c in _main.get_children():
 		if c is RailView and args.size() > 7 and args[7] == "view":
 			c.show_lines = true
