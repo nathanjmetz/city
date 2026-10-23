@@ -58,12 +58,20 @@ func _process(delta: float) -> void:
 		if _brush_wait > 0.0:
 			return
 		_brush_wait = BRUSH_GAP
+	if SoundSettings.is_flagged("ui/" + _file(name)):
+		return
+	SoundSettings.heard("ui/" + _file(name), db_to_linear(VOLUME.get(name, -6.0)))
 	var p: AudioStreamPlayer = _players[_next]
 	_next = (_next + 1) % _players.size()
 	p.stream = _streams[name]
 	p.volume_db = VOLUME.get(name, -6.0)
 	p.pitch_scale = randf_range(0.97, 1.03) if name in ["click", "brush", "road", "bulldoze"] else 1.0
 	p.play()
+
+
+## The file a sound plays: zone painting uses the click.
+static func _file(name: String) -> String:
+	return "click" if name == "brush" else name
 
 
 func _hook_all(n: Node) -> void:

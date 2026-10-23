@@ -30,6 +30,7 @@ var _wind: AudioStreamPlayer
 var _hum: AudioStreamPlayer
 var _known_buildings := {}
 var _build_sound: AudioStream
+var _ear := Vector3.ZERO
 
 
 func setup(s: CitySim, cam: Camera3D, fraction: Callable) -> void:
@@ -57,12 +58,13 @@ func _ready() -> void:
 	_known_buildings = sim.buildings.duplicate()
 
 
-## UI, World and Ambience buses under Master, plus a muffled "Distant" bus
-## for far-off traffic. Made in code so there is no bus layout file to keep.
+## UI, World (effects), Ambience and Music buses under Master, plus a
+## muffled "Distant" bus for far-off traffic. Made in code so there is no
+## bus layout file to keep. The player's volumes (SoundSettings) go on them.
 static func setup_buses() -> void:
 	if AudioServer.get_bus_index("World") != -1:
 		return
-	for name in ["UI", "World", "Ambience", "Distant"]:
+	for name in ["UI", "World", "Ambience", "Music", "Distant"]:
 		AudioServer.add_bus()
 		var i := AudioServer.bus_count - 1
 		AudioServer.set_bus_name(i, name)
@@ -72,6 +74,7 @@ static func setup_buses() -> void:
 	var lp := AudioEffectLowPassFilter.new()
 	lp.cutoff_hz = 500.0
 	AudioServer.add_bus_effect(AudioServer.get_bus_index("Distant"), lp)
+	SoundSettings.apply()
 
 
 static func load_loop(path: String) -> AudioStream:
@@ -113,6 +116,7 @@ func _update(delta: float) -> void:
 	if camera == null:
 		return
 	var ear := camera.global_position
+	_ear = ear
 	var day := SoundSources.is_day(int(sim.clock().hour))
 	if day != _day:
 		_day = day
@@ -188,7 +192,8 @@ func _move_cars() -> void:
 func _fade(s: Dictionary, step: float) -> void:
 	s.amp = move_toward(s.amp, s.want, step)
 	var p: AudioStreamPlayer3D = s.player
-	p.volume_db = linear_to_db(maxf(s.amp, 0.0001)) + s.get("speed_db", 0.0)
+	p.volume_db = SoundSettings.level3d("world/car_engine", p,
+		linear_to_db(maxf(s.amp, 0.0001)) + s.get("speed_db", 0.0), _ear)
 	if s.amp <= 0.0 and s.want <= 0.0:
 		s.car = null
 		if p.playing:
@@ -231,10 +236,15 @@ func _fade_area(s: Dictionary, step: float) -> void:
 		s.sound = c.sound
 		s.want = 1.0
 		p.stream = _streams[c.sound]
+		# Birds, katydids, leaves and fields are ambience; the rest effects.
+		p.bus = "Ambience" if SoundSettings.info("world/" + c.sound)[2] == "ambience" else "World"
 		p.position = Terrain.lift(c.pos)
 		p.play(randf() * 4.0)
 	s.amp = move_toward(s.amp, s.want, step)
-	p.volume_db = linear_to_db(maxf(s.amp, 0.0001)) + SoundSources.GAIN.get(s.get("sound", ""), 0.0)
+	var sound: String = s.get("sound", "")
+	p.volume_db = linear_to_db(maxf(s.amp, 0.0001)) + SoundSources.GAIN.get(sound, 0.0)
+	if sound != "" and p.playing:
+		p.volume_db = SoundSettings.level3d("world/" + sound, p, p.volume_db, _ear)
 	if s.amp <= 0.0 and s.want <= 0.0 and s.next == null and p.playing:
 		p.stop()
 		s.key = ""
@@ -246,7 +256,7 @@ func _update_beds(ear: Vector3) -> void:
 	var h := maxf(ear.y, 1.0)
 	# Wind grows as you climb: barely there at street level, broad from above.
 	var wind := clampf((h - 20.0) / 500.0, 0.05, 0.8)
-	_wind.volume_db = linear_to_db(wind) - 8.0
+	_wind.volume_db = SoundSettings.level("world/wind_high", linear_to_db(wind) - 8.0)
 	# The far-off hum is the traffic actually in view: count cars around the
 	# spot the camera looks at, within a radius that grows with height.
 	var fwd := -camera.global_basis.z
@@ -260,7 +270,7 @@ func _update_beds(ear: Vector3) -> void:
 		if Vector2(p.x - look.x, p.z - look.z).length_squared() < r2:
 			n += 1
 	var hum := clampf(n / 60.0, 0.0, 1.0) * clampf((h - 60.0) / 300.0, 0.0, 1.0)
-	_hum.volume_db = linear_to_db(maxf(hum, 0.0001))
+	_hum.volume_db = SoundSettings.level("world/traffic_far", linear_to_db(maxf(hum, 0.0001)))
 
 
 # --- New buildings -------------------------------------------------------------
@@ -275,6 +285,8 @@ func _on_buildings() -> void:
 	# A whole town appearing at once is a save loading, not construction.
 	if fresh.size() > 4:
 		return
+	if SoundSettings.is_flagged("ui/build"):
+		return
 	var plays := 0
 	for key in fresh:
 		if not sim.lots.has(key) or plays >= 2:
@@ -288,3 +300,4 @@ func _on_buildings() -> void:
 			p.volume_db = -10.0
 			p.finished.connect(p.queue_free)
 			p.play()
+			SoundSettings.level3d("ui/build", p, p.volume_db, ear)
