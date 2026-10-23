@@ -38,6 +38,7 @@ static func build_office(h: Dictionary, seed: int, to_curb: float) -> Array:
 		if not h.lands[node].is_empty():
 			b._annex(node, h.lands[node], Mail.done(h, node))
 	b._fleet_lots(Mail.fleet_cells(h))
+	b._counter_and_fleet(h)
 	return [b._commit_house(), b._commit_flat(), b.trees, b.stalls]
 
 
@@ -97,6 +98,66 @@ func _office(h: Dictionary, to_curb: float) -> void:
 	_flat_rect("asphalt", -cell * 1.5 + 2.0, cell * 1.5 - 2.0, back + 0.5, cell * 2.0 - 2.0, 0.06)
 	_stall_row(-cell * 1.5 + 4.0, cx - 2.0, cell * 2.0 - 2.5, PI)
 	_fence(Vector2(-cell * 1.5 + 1.5, back + 0.5), Vector2(cell * 1.5 - 1.5, cell * 2.0 - 1.5), 1.8)
+
+
+## The counter steps and the electric fleet, as they show from outside
+## (Mail.TREE).
+func _counter_and_fleet(h: Dictionary) -> void:
+	var cx := -4.0
+	var zf := 9.0
+	if Mail.done(h, "po_boxes"):
+		# The 24-hour box lobby: a glass vestibule on the side of the
+		# building with its own door and lettering, open after hours.
+		var v := Vector3(cx - 11.6, 0, zf + 3.5)
+		_box("paint", Vector3(3.4, 0.3, 3.4), v + Vector3(0, 0.15, 0), LIMESTONE)
+		for q in [[Vector3(-1.6, 0, 0), Vector3(0, 0, 1), 3.0], [Vector3(0, 0, -1.6), Vector3(-1, 0, 0), 3.0],
+				[Vector3(0, 0, 1.6), Vector3(1, 0, 0), 3.0]]:
+			_glass(v + q[0] + Vector3(0, 1.75, 0), q[1], q[2], 2.6, 0.0)
+		_box("paint", Vector3(3.4, 0.4, 3.4), v + Vector3(0, 3.2, 0), Color("#f1eee6"))
+		_box("paint", Vector3(1.6, 0.25, 0.04), v + Vector3(0, 2.75, -1.72), Color("#f1eee6"))
+		_box("paint", Vector3(2.6, 2.1, 0.4), v + Vector3(0.0, 1.35, 1.2), Color("#b08d57"))  # the brass boxes
+		if Mail.done(h, "kiosk"):
+			# The self-service kiosk stands in the lobby, by the glass.
+			_box("paint", Vector3(0.8, 1.6, 0.6), v + Vector3(-0.9, 1.1, -0.6), USPS_BLUE)
+			_box("paint", Vector3(0.5, 0.35, 0.03), v + Vector3(-0.9, 1.5, -0.92), Color("#20262c"))
+	if Mail.done(h, "passports"):
+		# "Passport Acceptance Facility": the placard beside the door.
+		_box("paint", Vector3(0.6, 0.45, 0.04), Vector3(cx + 2.4, 1.7, zf - 0.08), USPS_BLUE)
+		_box("paint", Vector3(0.44, 0.08, 0.02), Vector3(cx + 2.4, 1.8, zf - 0.1), Color("#f1eee6"))
+	if Mail.done(h, "mural"):
+		# The county's mural on the blank back wall by the carrier lot, where
+		# the town sees it (the 1930s Section of Fine Arts style: farms,
+		# the river, sky).
+		var z := zf + 14.04
+		var mx := cx - 5.5
+		for band in [[1.2, 0.9, Color("#5b7d3a")], [2.1, 0.5, Color("#4f7f9a")], [2.6, 0.9, Color("#c9a65a")],
+				[3.5, 1.0, Color("#9fc0d4")]]:
+			_box("paint", Vector3(7.6, band[1], 0.04), Vector3(mx, band[0] + band[1] * 0.5, z), band[2])
+		_box("paint", Vector3(0.8, 1.6, 0.05), Vector3(mx - 1.8, 2.6, z + 0.01), Color("#7a3b2c"))
+		_box("paint", Vector3(2.2, 0.5, 0.05), Vector3(mx + 2.0, 3.1, z + 0.01), Color("#3f5a2a"))
+		for y in [1.14, 4.56]:
+			_box("paint", Vector3(8.0, 0.12, 0.06), Vector3(mx, y, z), Color("#f1eee6"))
+	if Mail.done(h, "electric_fleet"):
+		# Chargers for the electric carrier trucks: a pedestal at the head
+		# of every other stall, and the switchgear by the dock.
+		var i := 0
+		for st in stalls:
+			if i % 2 == 0:
+				var p: Vector3 = st[0]
+				_box("paint", Vector3(0.45, 0.12, 0.45), p + Vector3(1.35, 0.06, 1.0), CONCRETE)
+				_box("paint", Vector3(0.4, 1.5, 0.3), p + Vector3(1.35, 0.85, 1.0), Color("#e4e6e3"))
+				_box("paint", Vector3(0.25, 0.25, 0.03), p + Vector3(1.35, 1.2, 0.84), USPS_BLUE)
+			i += 1
+		_box("paint", Vector3(2.4, 1.8, 0.9), Vector3(cx - 4.0, 0.9, zf + 15.0), Color("#c4c7c6"))
+	if Mail.done(h, "air_mail") and h.lands.has("regional_hub") and not h.lands.regional_hub.is_empty():
+		# Overnight air mail goes out in LD3 air cargo containers, staged on
+		# dollies by the hub's docks for the truck to the airport.
+		var c: Vector2i = h.lands.regional_hub[0]
+		var z := c.y * cell + cell + 1.0
+		for k in 3:
+			var x := c.x * cell - 4.0 + k * 2.4
+			_box("paint", Vector3(1.9, 0.35, 1.7), Vector3(x, 0.4, z), Color("#3a3d40"))
+			_box("metal", Vector3(1.53, 1.63, 1.56), Vector3(x, 1.4, z), Color("#c9ccca"))
 
 
 ## A row of carrier stalls along z = zb (vehicles face +z when yaw = 0).

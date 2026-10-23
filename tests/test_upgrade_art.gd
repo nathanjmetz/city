@@ -42,6 +42,7 @@ func _init() -> void:
 	_telecom()
 	_warehouse()
 	_water()
+	_mail()
 	_oil_company()
 	_done()
 
@@ -207,6 +208,44 @@ func _water() -> void:
 			missing.append(pair[1])
 	view.free()
 	_check(missing.is_empty(), "the water utility's upgrades show%s" % ["" if missing.is_empty() else ": missing " + str(missing)])
+
+
+## The post office's counter steps, electric fleet and air mail show at the
+## office; cluster mailboxes replace curb boxes on the longer streets.
+func _mail() -> void:
+	var missing := []
+	var lands := {"more_vans": [Vector2i(2, 0)], "regional_hub": [Vector2i(-2, 0)]}
+	for node in ["po_boxes", "passports", "kiosk", "mural", "electric_fleet", "air_mail"]:
+		var h := Mail.draft(Vector3.ZERO, Vector3(0, 0, -1))
+		h.merge({"built": ["po_boxes", "passports", "more_vans", "regional_hub"], "project": {}, "lands": lands})
+		var before := _mesh_verts(PostOfficeBuilder.build_office(h, 7, 3.9))
+		if not node in h.built:
+			h.built.append(node)
+		else:
+			h.built.erase(node)
+			before = _mesh_verts(PostOfficeBuilder.build_office(h, 7, 3.9))
+			h.built.append(node)
+		if _mesh_verts(PostOfficeBuilder.build_office(h, 7, 3.9)) == before:
+			missing.append(node)
+	_check(missing.is_empty(), "the post office's upgrades show%s" % ["" if missing.is_empty() else ": missing " + str(missing)])
+	var sim := CitySim.new()
+	for i in 20:
+		var key := "1:0:%d" % i
+		sim.buildings[key] = {"zone": ZoneMap.Zone.RESIDENTIAL}
+		sim.lots[key] = {"pos": Vector3(i * 15.0, 0, 20), "front": Vector3(i * 15.0, 0, 10), "normal": Vector3(0, 0, 1),
+			"dir": Vector3(1, 0, 0), "width": 15.0, "seg": 1, "side": 0}
+	var h := Mail.draft(Vector3(0, 0, -200), Vector3(0, 0, -1))
+	h.merge({"built": [], "project": {}, "lands": {}})
+	sim.mail.offices[1] = h
+	var view := MailView.new()
+	view.setup(sim)
+	view._mailboxes()
+	var curb := view._boxes.multimesh.instance_count
+	h.built.append("cluster_boxes")
+	view._mailboxes()
+	_check(curb == 20 and view._boxes.multimesh.instance_count == 0 and view._cbus.multimesh.instance_count == 2,
+		"cluster mailboxes replace the curb boxes on a long street")
+	view.free()
 
 
 func _mesh_verts(parts: Array) -> int:
