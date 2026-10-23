@@ -30,6 +30,8 @@ var _homes := {}   # lot key -> [person ids], oldest first
 var _staff := {}   # job ref -> number of people working there
 var _next := 1
 var _families: Families  # names on the signs, set each sync
+var _ids := []  # people.keys(), kept until someone moves in or out
+var _ids_sig := []
 
 
 ## Keeps a person for every resident, fills open jobs, names new places.
@@ -114,7 +116,10 @@ func plan(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void
 	# At rush hour, about one outing a second for every 200 people.
 	if rng.randf() > rate * people.size() / 1200.0:
 		return
-	var ids := people.keys()
+	if _ids_sig != [people.size(), _next]:
+		_ids_sig = [people.size(), _next]
+		_ids = people.keys()
+	var ids := _ids
 	for attempt in 6:
 		var p: Dictionary = people[ids[rng.randi() % ids.size()]]
 		if p.at != "" or p.age < 12:
@@ -140,11 +145,7 @@ func _shop_for(sim: CitySim, p: Dictionary, rng: RandomNumberGenerator) -> Strin
 		return ""
 	var best := ""
 	var best_score := INF
-	var keys := sim.buildings.keys()
-	keys.sort()
-	for key in keys:
-		if sim.buildings[key].zone != ZoneMap.Zone.COMMERCIAL or not sim.lots.has(key):
-			continue
+	for key in sim.zone_keys(ZoneMap.Zone.COMMERCIAL):
 		var d: float = home.pos.distance_to(sim.lots[key].pos)
 		var score := d * (0.5 + rng.randf())
 		if score < best_score:
