@@ -740,21 +740,38 @@ func _candidates(network: RoadNetwork, id: int, kind: String) -> Array:
 
 ## How much a sewer plant's smell lowers land value here, 0 to 1.
 func odor_at(buildings: Dictionary, p: Vector3) -> float:
-	var worst := 0.0
+	return odor_from(odor_sources(buildings), p)
+
+
+## The lagoons and sewer plants that smell: [[centre, odor], ...]. Worked
+## out once for a whole pass over the town's lots (see Economy).
+func odor_sources(buildings: Dictionary) -> Array:
+	var out := []
 	for id in utilities:
 		var u: Dictionary = utilities[id]
 		if u.odor <= 0.0 or not buildings.has(id):
 			continue
 		for w in u.works:
 			if w[0] in ["lagoon", "plant"]:
-				var d := cell_center(buildings[id], w[1]).distance_to(Vector3(p.x, 0.0, p.z))
-				worst = maxf(worst, u.odor * clampf(1.0 - d / Balance.WATER_ODOR_REACH, 0.0, 1.0))
+				out.append([cell_center(buildings[id], w[1]), float(u.odor)])
+	return out
+
+
+static func odor_from(sources: Array, p: Vector3) -> float:
+	var worst := 0.0
+	for src in sources:
+		var d: float = src[0].distance_to(Vector3(p.x, 0.0, p.z))
+		worst = maxf(worst, src[1] * clampf(1.0 - d / Balance.WATER_ODOR_REACH, 0.0, 1.0))
 	return worst
 
 
 ## Land value here as a share of normal (1.0 = no smell).
 func land_value_factor(buildings: Dictionary, p: Vector3) -> float:
-	return 1.0 - Balance.WATER_ODOR_VALUE * odor_at(buildings, p)
+	return value_from(odor_sources(buildings), p)
+
+
+static func value_from(sources: Array, p: Vector3) -> float:
+	return 1.0 - Balance.WATER_ODOR_VALUE * odor_from(sources, p)
 
 
 ## How much the utilities' water rates above the usual bill put people off

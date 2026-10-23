@@ -245,10 +245,11 @@ static func graduates_free(sim) -> int:
 
 ## Jobs in office buildings across town (each needs a graduate).
 static func office_jobs(sim) -> int:
+	# As type_of: no zone's default is an office, so only a set type is one.
 	var n := 0
-	for k in sim.buildings:
-		if type_of(sim.buildings[k]) == "office":
-			n += int(sim.buildings[k].cap)
+	for b in sim.buildings.values():
+		if b.get("type", "") == "office":
+			n += int(b.cap)
 	return n
 
 
