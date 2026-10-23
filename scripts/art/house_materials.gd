@@ -250,6 +250,31 @@ void fragment() {
 }
 """
 
+## Distant towers: the wall colour with a window grid drawn from UVs in
+## metres (x along the wall, y up it), the share of glass in vertex alpha.
+## Lit rooms after dark, as on near windows.
+const FAR := """
+void fragment() {
+	float fy = fract(UV.y / 3.7);
+	float fx = fract(UV.x / 2.0);
+	float aa = clamp(1.0 / max(fwidth(UV.x) * 2.0, 0.001), 0.0, 1.0);
+	// Punched windows in masonry; a curtain wall (alpha 1) is all glass
+	// but thin mullions and floor lines.
+	float curtain = step(0.97, COLOR.a);
+	float ylo = mix(0.3, 0.06, curtain);
+	float xlo = mix(0.12, 0.04, curtain);
+	float win = step(ylo, fy) * step(fy, 0.86 + curtain * 0.1) * step(xlo, fx) * step(fx, 1.0 - xlo) * step(0.01, COLOR.a);
+	win = mix(COLOR.a * 0.55, win, aa);  // too small to draw: an even darkening
+	vec3 glass = vec3(0.025, 0.03, 0.035) + vec3(0.06, 0.08, 0.1) * (1.0 - night * 0.85);
+	ALBEDO = mix(lin(COLOR.rgb), glass, win);
+	ROUGHNESS = mix(0.85, 0.15, win);
+	SPECULAR = mix(0.3, 0.6, win);
+	vec2 cell = vec2(floor(UV.x / 2.0), floor(UV.y / 3.7));
+	float on = step(hash(cell + floor(world_pos.xz / 50.0)), windows_lit) * smoothstep(0.2, 0.6, night);
+	EMISSION = vec3(1.0, 0.7, 0.42) * on * win * 1.6;
+}
+"""
+
 static var _cache := {}
 static var _soft: NoiseTexture2D
 static var _grain: NoiseTexture2D
@@ -268,6 +293,7 @@ static func get_mat(key: String) -> Material:
 		"metal": mat = _shader(METAL)
 		"sign": mat = _shader(SIGN)
 		"pasture": mat = _shader(PASTURE)
+		"far": mat = _shader(FAR)
 		"foliage": mat = _plain(1.0)
 		_: mat = _plain(0.55)  # paint, shutters, trim
 	_cache[key] = mat

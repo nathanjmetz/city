@@ -26,10 +26,27 @@ const TW_STEEL := Color("#1d1f21")  # Mies's black-painted steel
 const TW_TANK := Color("#6b4f36")
 
 
+var _far := false  # only the massing, for far away (build_far)
+
+
 ## The era follows the street's (prewar streets get masonry towers; a tall
 ## prewar tower is a setback Deco one).
 static func build_tower(seed: int, to_curb: float, lot: Dictionary, storeys: int, spec := {}, era_pick := "") -> Array:
+	var b := _tw_start(seed, to_curb, lot, storeys, spec, era_pick, false)
+	return b._done()
+
+
+## The same tower as build_tower (same origin, footprint and heights) as a
+## few boxes for distant views: walls carry a window grid in the "far"
+## shader, a couple of hundred triangles at most.
+static func build_far(seed: int, to_curb: float, lot: Dictionary, storeys: int, era_pick := "") -> ArrayMesh:
+	var b := _tw_start(seed, to_curb, lot, storeys, {}, era_pick, true)
+	return b._commit_house()
+
+
+static func _tw_start(seed: int, to_curb: float, lot: Dictionary, storeys: int, spec: Dictionary, era_pick: String, far: bool) -> TowerBuilder:
 	var b := TowerBuilder.new()
+	b._far = far
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
 	b.sign_spec = spec
@@ -45,7 +62,7 @@ static func build_tower(seed: int, to_curb: float, lot: Dictionary, storeys: int
 		"chicago": b._tw_chicago(to_curb, b.half * 2.0, storeys)
 		"deco": b._tw_deco(to_curb, b.half * 2.0, storeys)
 		_: b._tw_glass(to_curb, b.half * 2.0, storeys)
-	return b._done()
+	return b
 
 
 # ---------------------------------------------------------------- Chicago School
@@ -62,6 +79,12 @@ func _tw_chicago(to_curb: float, width: float, storeys: int) -> void:
 	var top := ground_h + floor_h * (storeys - 1)
 	var stone := Color(_pick(TW_STONE))
 	var shaft := Color(_pick(TW_SHAFT))
+	if _far:
+		_tw_far_box(Vector3(w, y_base, d), Vector3(0, y_base * 0.5, cz), stone, 0.7)
+		_tw_far_box(Vector3(w, top - y_base, d), Vector3(0, (y_base + top) * 0.5, cz), shaft, 0.9)
+		_tw_far_box(Vector3(w + 2.4, 0.8, d + 2.4), Vector3(0, top + 0.4, cz), stone.lightened(0.12), 0.0)
+		_tw_far_box(Vector3(w, 1.1, d), Vector3(0, top + 1.35, cz), shaft, 0.0)
+		return
 	_downtown_walk(to_curb, width, zf)
 	# The stone base with its tall shop and lobby windows.
 	_box("brick", Vector3(w, y_base, d), Vector3(0, y_base * 0.5, cz), stone)
@@ -132,12 +155,20 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 	var floor_h := 3.7
 	var stone := Color(_pick(TW_LIMESTONE))
 	var spandrel := Color(_pick(TW_SPANDREL))
-	_downtown_walk(to_curb, width, zf)
 	# The 1916 rule: the street wall rises about a third of the way, then
 	# each tier steps back, ending in a slim tower and a stepped crown.
 	var tiers := [[w, d, ceili(storeys * 0.4)], [w - 6.0, d - 6.0, ceili(storeys * 0.7)], [w - 12.0, d - 12.0, storeys]]
 	if storeys < 12:
 		tiers = [[w, d, ceili(storeys * 0.6)], [w - 6.0, d - 6.0, storeys]]
+	if _far:
+		var fy := 0.0
+		for t in tiers:
+			var y1: float = ground_h + floor_h * (int(t[2]) - 1)
+			_tw_far_box(Vector3(t[0], y1 - fy, t[1]), Vector3(0, (fy + y1) * 0.5, zf + d * 0.5), stone, 0.9)
+			fy = y1
+		_tw_far_box(Vector3(tiers[-1][0] - 4.0, 3.5, tiers[-1][1] - 4.0), Vector3(0, fy + 1.75, zf + d * 0.5), stone, 0.0)
+		return
+	_downtown_walk(to_curb, width, zf)
 	var y0 := 0.0
 	var f0 := 0
 	for t in tiers:
@@ -149,15 +180,16 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 		_box("brick", Vector3(tw, y1 - y0, td), Vector3(0, (y0 + y1) * 0.5, cz), stone)
 		for f in range(maxi(f0, 1), f1):
 			var y := ground_h + floor_h * (f - 1) + 1.8
+			# One band of windows and one of dark cast spandrels per facade
+			# and floor; the piers in front divide them into bays.
 			for face in _tw_faces(tw, td, cz):
-				var n := maxi(3, roundi(face[2] / 2.4))
-				var len_b: float = face[2] / n
-				for i in n:
-					var c: Vector3 = face[0] + face[1] * (-face[2] * 0.5 + (i + 0.5) * len_b)
-					c.y = y
-					_glass(c, face[1], len_b - 0.9, 2.0, rng.randf_range(0.0, 0.5))
-					# The dark cast spandrel panel under each window.
-					_box("paint", Vector3(len_b - 0.9, 1.1, 0.05), c + Vector3(0, -1.65, 0) + face[1].cross(Vector3.UP) * 0.02, spandrel, _tw_yaw(face[1]))
+				var c: Vector3 = face[0]
+				c.y = y
+				_glass(c, face[1], face[2] - 0.6, 2.0, rng.randf_range(0.0, 0.5))
+				var r: Vector3 = face[1] * (face[2] - 0.6) * 0.5
+				var o: Vector3 = face[1].cross(Vector3.UP) * 0.02 + Vector3(0, -1.65, 0)
+				_quad("paint", c + o - r - Vector3(0, 0.55, 0), c + o + r - Vector3(0, 0.55, 0), c + o + r + Vector3(0, 0.55, 0),
+					c + o - r + Vector3(0, 0.55, 0), spandrel, [], face[1].cross(Vector3.UP))
 		# Piers run unbroken to the top of each tier and stand above it.
 		for face in _tw_faces(tw, td, cz):
 			var n := maxi(3, roundi(face[2] / 2.4))
@@ -202,7 +234,10 @@ func _tw_glass(to_curb: float, width: float, storeys: int) -> void:
 	var w := minf(width - 8.0, rng.randf_range(24.0, 36.0))
 	var d := minf(depth - 16.0, rng.randf_range(18.0, 26.0))
 	if w < 12.0 or d < 10.0:
-		_office(to_curb, width, storeys)
+		if _far:
+			_tw_far_box(Vector3(width - 8.0, 3.9 * storeys, 18.0), Vector3(0, 3.9 * storeys * 0.5, 18.0), Color(_pick(SPANDREL)), 0.9)
+		else:
+			_office(to_curb, width, storeys)
 		return
 	var zf := minf(rng.randf_range(10.0, 16.0), depth - d - 2.0)  # set back on a plaza
 	var cz := zf + d * 0.5
@@ -211,6 +246,11 @@ func _tw_glass(to_curb: float, width: float, storeys: int) -> void:
 	var top := ground_h + floor_h * (storeys - 1)
 	var tint := Color(0.42, 0.40, 0.36) if rng.randf() < 0.6 else Color(0.36, 0.42, 0.46)
 	var mech := 3.6
+	if _far:
+		_tw_far_box(Vector3(w - 6.0, ground_h, d - 6.0), Vector3(0, ground_h * 0.5, cz), Color("#2a2c2e"), 0.0)
+		_tw_far_box(Vector3(w, top - ground_h, d), Vector3(0, (ground_h + top) * 0.5, cz), tint.darkened(0.55), 1.0)
+		_tw_far_box(Vector3(w, mech, d), Vector3(0, top + mech * 0.5, cz), Color("#2b2d2f"), 0.0)
+		return
 	# The core and lobby, recessed behind the columns.
 	_box("paint", Vector3(w - 6.0, ground_h, d - 6.0), Vector3(0, ground_h * 0.5, cz), Color("#2a2c2e"))
 	for face in _tw_faces(w - 6.0, d - 6.0, cz):
@@ -256,6 +296,28 @@ func _tw_glass(to_curb: float, width: float, storeys: int) -> void:
 
 
 # ---------------------------------------------------------------- parts
+
+## A box for the far version: four walls with their own metre UVs (along
+## the wall, up it) so the "far" shader can draw a window grid on them,
+## `windows` (0..1, in vertex alpha) saying how much of the wall is glass,
+## and a flat top. Ten triangles.
+func _tw_far_box(size: Vector3, center: Vector3, col: Color, windows: float) -> void:
+	var h := size * 0.5
+	var y0 := center.y - h.y
+	var y1 := center.y + h.y
+	col.a = windows
+	for face in _tw_faces(size.x, size.z, center.z):
+		var c: Vector3 = face[0]
+		var r: Vector3 = face[1] * face[2] * 0.5
+		var l: float = face[2]
+		_quad("far", Vector3(c.x - r.x, y0, c.z - r.z), Vector3(c.x + r.x, y0, c.z + r.z), Vector3(c.x + r.x, y1, c.z + r.z),
+			Vector3(c.x - r.x, y1, c.z - r.z), col, [Vector2(0, y0), Vector2(l, y0), Vector2(l, y1), Vector2(0, y1)], face[1].cross(Vector3.UP))
+	var top := col
+	top.a = 0.0
+	_quad("far", Vector3(center.x - h.x, y1, center.z - h.z), Vector3(center.x + h.x, y1, center.z - h.z),
+		Vector3(center.x + h.x, y1, center.z + h.z), Vector3(center.x - h.x, y1, center.z + h.z), top.darkened(0.25),
+		[Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO], Vector3.UP)
+
 
 ## The four faces of a box footprint: [centre at y 0, along (right as seen
 ## from outside), length, is it the street front or back].
