@@ -169,6 +169,9 @@ func _build(key: Vector2i, near: bool) -> void:
 			continue
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
+		# White instance colours: the browser's renderer multiplies COLOR by
+		# the instance colour even without use_colors, and that is black.
+		mm.use_colors = true
 		mm.use_custom_data = true
 		mm.mesh = tree_mesh(conifer, near)
 		mm.instance_count = count
@@ -177,6 +180,7 @@ func _build(key: Vector2i, near: bool) -> void:
 			if kinds[k] != conifer:
 				continue
 			mm.set_instance_transform(at, xforms[k])
+			mm.set_instance_color(at, Color.WHITE)
 			mm.set_instance_custom_data(at, tints[k])
 			at += 1
 		var mi := MultiMeshInstance3D.new()
