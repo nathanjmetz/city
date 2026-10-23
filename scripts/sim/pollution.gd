@@ -60,6 +60,8 @@ var wear := {}
 var hurts := {}
 ## Ambulance calls for breathing trouble blamed on each source's smoke.
 var calls := {}
+## Railroads whose crossings are a quiet zone (no horns): depot id -> true.
+var quiet := {}
 ## Ground height at a point, metres (Callable(Vector3) -> float). The terrain
 ## sets this so dirty ground seeps downhill; flat ground when unset.
 var height := Callable()
@@ -145,6 +147,7 @@ func rebuild(sim: CitySim) -> void:
 		var name: String = "Town " + CivicHubs.KINDS[h.kind].name.to_lower()
 		_add(sim, "hub:%d" % id, _unique(used_names, name), h.kind, "", {"type": "hub", "id": id}, pts)
 	_add_power(sim, used_names)
+	_add_rail(sim, used_names)
 	ids = sim.farms.farms.keys()
 	ids.sort()
 	for id in ids:
@@ -188,6 +191,9 @@ func _prune(sim: CitySim) -> void:
 	for ref in calls.keys():
 		if not sources.has(ref):
 			calls.erase(ref)
+	for id in quiet.keys():
+		if not sim.rail.depots.has(id):
+			quiet.erase(id)
 
 
 ## Highways and ramps, then boulevards, each joined into one source per
@@ -264,6 +270,53 @@ func _add_power(sim: CitySim, used_names: Dictionary) -> void:
 		if site.plant == "coal":
 			s.fixes.append("Power companies run by better-schooled leaders build clean plants: schools in town help the next one.")
 		_finish(s)
+
+
+## Railroads: every finished piece of track is a line source, and each grade
+## crossing a horn (unless the town made its crossings a quiet zone).
+func _add_rail(sim: CitySim, used_names: Dictionary) -> void:
+	var rail := sim.rail
+	var ids := rail.depots.keys()
+	ids.sort()
+	var pids := rail.pieces.keys()
+	pids.sort()
+	var spec: Dictionary = Balance.POLLUTION_SOURCES.rail
+	for id in ids:
+		var lines := []
+		var mine := {}
+		for pid in pids:
+			var pc: Dictionary = rail.pieces[pid]
+			if int(pc.depot) != id or float(pc.built) >= 0.0:
+				continue
+			mine[pid] = true
+			# Every ~60 m of the track's points (they come every ~10 m).
+			var pts: Array = pc.pts
+			var step := maxi(1, roundi(ROAD_PIECE_M / 10.0))
+			var i := 0
+			while i < pts.size() - 1:
+				var j := mini(i + step, pts.size() - 1)
+				lines.append([pts[i], pts[j], float(spec.noise), float(spec.smoke)])
+				i = j
+		if lines.is_empty():
+			continue
+		var horns := []
+		if not quiet.has(id):
+			for c in rail.crossings:
+				if mine.has(c.piece):
+					horns.append([c.pos, 1.0])
+		var ref := "rail:%d" % id
+		var s := _make(ref, _unique(used_names, str(rail.depots[id].name)), "railroad", "", {"type": "rail", "id": id},
+			horns, lines, 0.0, float(Balance.POLLUTION_SOURCES.rail_horn.noise) if not horns.is_empty() else 0.0, 0.0, 0.0)
+		_finish(s)
+
+
+## What a quiet zone costs on a railroad's crossings, or -1 when it has none
+## to quiet (or already is one).
+func quiet_cost(sim: CitySim, ref: String) -> int:
+	if not ref.begins_with("rail:") or quiet.has(int(ref.substr(5))) or not sources.has(ref):
+		return -1
+	var n: int = sources[ref].points.size()
+	return n * Balance.QUIET_ZONE_PER_CROSSING if n > 0 else -1
 
 
 static func road_pieces(net: RoadNetwork, id: int) -> int:
@@ -756,7 +809,8 @@ func wall_cost(sim: CitySim, ref: String) -> int:
 
 
 ## Player commands: {type: "fund_cleanup", ref} pays the rest of an owner's
-## next upgrade; {type: "noise_wall", ref} walls a road source.
+## next upgrade; {type: "noise_wall", ref} walls a road source;
+## {type: "quiet_zone", ref} quiets a railroad's crossings.
 func command(sim: CitySim, cmd: Dictionary) -> bool:
 	var ref := str(cmd.get("ref", ""))
 	match cmd.type:
@@ -776,6 +830,12 @@ func command(sim: CitySim, cmd: Dictionary) -> bool:
 			sim.economy.money -= cost
 			for seg in sources[ref].segs:
 				walls[seg] = true
+		"quiet_zone":
+			var cost := quiet_cost(sim, ref)
+			if cost < 0 or cost > sim.economy.money:
+				return false
+			sim.economy.money -= cost
+			quiet[int(ref.substr(5))] = true
 		_:
 			return false
 	rebuild(sim)
@@ -838,7 +898,7 @@ func to_dict() -> Dictionary:
 	for key in wear:
 		wear_out[key] = snappedf(wear[key], 0.0001)
 	var out := {"walls": walls.keys(), "owners": owners.duplicate(true), "lots": lot_out, "wear": wear_out,
-		"calls": calls.duplicate()}
+		"calls": calls.duplicate(), "quiet": quiet.keys()}
 	if _mid_pass:
 		var srcs := []
 		var refs := sources.keys()
@@ -904,6 +964,9 @@ func from_dict(d: Dictionary) -> void:
 	var w: Dictionary = d.get("wear", {})
 	for key in w:
 		wear[key] = float(w[key])
+	quiet.clear()
+	for id in d.get("quiet", []):
+		quiet[int(id)] = true
 	calls.clear()
 	var c: Dictionary = d.get("calls", {})
 	for ref in c:

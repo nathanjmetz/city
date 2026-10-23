@@ -206,6 +206,35 @@ func _init() -> void:
 	sim.power.sites.erase(pid)
 	pol.rebuild(sim)
 
+	# A railroad: its track hums, its crossing horns blare, and a quiet zone stops the horns.
+	var did := sim.rail.add_depot(sim, Vector3(6000, 0, -6000), Vector3(0, 0, 1), Vector3(1, 0, 0))
+	var track := []
+	for i in 101:
+		track.append(Vector3(5000 + i * 10.0, 0, -5000))
+	var a := sim.rail._add_node(track[0])
+	var b := sim.rail._add_node(track[-1])
+	var tp := sim.rail._add_piece(a, b, track, "main", did, -1, -1.0)
+	sim.rail.pieces[tp].built = -1.0
+	sim.rail.crossings.append({"seg": -1, "pos": Vector3(5500, 0, -5000), "piece": tp, "s": 500.0, "closed": false})
+	pol.rebuild(sim)
+	var rref := "rail:%d" % did
+	_check(pol.sources.has(rref) and pol.sources[rref].points.size() == 1, "a railroad is a source, with a horn at its crossing")
+	var by_track: float = pol.sample(Vector3(5200, 0, -4985)).noise
+	var by_horn: float = pol.sample(Vector3(5500, 0, -4985)).noise
+	_check(by_horn > by_track + 5.0, "the crossing is louder than open track (%.1f vs %.1f dB)" % [by_horn, by_track])
+	var rd := Inspect.describe(sim, {"type": "spot", "id": [5500.0, -4985.0]})
+	_check(rd.rows.any(func(r): return r[1] == str(sim.rail.depots[did].name)), "a spot by the crossing names the railroad")
+	var qcost := pol.quiet_cost(sim, rref)
+	money = sim.economy.money
+	_check(qcost == Balance.QUIET_ZONE_PER_CROSSING and sim.apply({"type": "quiet_zone", "ref": rref}), "the town can make a quiet zone")
+	_check(sim.economy.money == money - qcost, "a quiet zone costs what it said ($%d)" % qcost)
+	var hushed: float = pol.sample(Vector3(5500, 0, -4985)).noise
+	_check(hushed < by_horn - 5.0 and pol.quiet_cost(sim, rref) < 0, "no more horns (%.1f -> %.1f dB)" % [by_horn, hushed])
+	sim.rail.remove_depot(sim, did)
+	pol._prune(sim)
+	pol.rebuild(sim)
+	_check(not pol.sources.has(rref) and pol.quiet.is_empty(), "a closed railroad stops and forgets its quiet zone")
+
 	# Dirty ground seeps downhill.
 	pol.height = func(p: Vector3) -> float: return -p.x * 0.05
 	pol.rebuild(sim)

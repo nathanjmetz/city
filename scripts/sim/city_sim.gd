@@ -499,7 +499,7 @@ func apply_now(cmd: Dictionary) -> bool:
 		"move":
 			# Move It: slide, turn or raise what the player placed (MoveIt).
 			ok = MoveIt.apply(self, cmd)
-		"fund_cleanup", "noise_wall":
+		"fund_cleanup", "noise_wall", "quiet_zone":
 			ok = pollution.command(self, cmd)
 		"set_difficulty":
 			# A city that hasn't started yet also gets that difficulty's start money.
@@ -913,7 +913,6 @@ func tick() -> void:
 	hubs.tick(self)
 	construction.tick(self)
 	Perf.add("sim.civic_hubs", t)
-	pollution.tick(self)
 	if not in_region and tick_count % (24 * TICKS_PER_HOUR) == 0:
 		t = Perf.now()
 		Trade.settle({"me": self}, {})
@@ -924,6 +923,10 @@ func tick() -> void:
 	t = Perf.now()
 	rail.tick(self)
 	Perf.add("sim.rail", t)
+	# After rail, so a loaded copy has its grade crossings back first.
+	t = Perf.now()
+	pollution.tick(self)
+	Perf.add("sim.pollution", t)
 	t = Perf.now()
 	healthcare.tick(self)
 	Perf.add("sim.healthcare", t)
