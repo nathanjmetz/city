@@ -43,10 +43,15 @@ static func month_of(tick: int) -> int:
 
 
 ## Once a game month: note what came and went. New records are added in
-## sorted order, so every copy of the town keeps the same record.
+## sorted order, so every copy of the town keeps the same record. At most
+## Balance.TIMELAPSE_RECORDS_PER_MONTH new ones a month: a town that appears
+## all at once (an old save, the test town) is caught up over a few months
+## instead of in one long tick. A building's record starts the month it went
+## up, however late it is noticed.
 func month(sim) -> void:
 	var m := month_of(sim.tick_count)
 	months = maxi(months, m + 1)
+	var room: int = Balance.TIMELAPSE_RECORDS_PER_MONTH
 	# Roads.
 	var fresh := []
 	var segs: Dictionary = sim.network.segments
@@ -59,6 +64,9 @@ func month(sim) -> void:
 			roads[_live_roads[seg][0]].to = m
 			_live_roads.erase(seg)
 	fresh.sort()
+	if fresh.size() > room:
+		fresh.resize(room)
+	room -= fresh.size()
 	for seg in fresh:
 		if _live_roads.has(seg):
 			roads[_live_roads[seg][0]].to = m
@@ -98,6 +106,8 @@ func month(sim) -> void:
 			continue
 		fresh.append(key)
 	fresh.sort()
+	if fresh.size() > room:
+		fresh.resize(room)
 	for key in fresh:
 		var b: Dictionary = sim.buildings[key]
 		if _live_bldg.has(key):
@@ -107,8 +117,9 @@ func month(sim) -> void:
 			corners.append([snappedf(p.x, 0.1), snappedf(p.y, 0.1)])
 		var type := BuildingTypes.type_of(b)
 		var storeys := BuildingTypes.storeys(b)
+		var since := m if _live_bldg.has(key) else mini(m, month_of(int(b.get("fabric", b.built))))
 		buildings.append({"key": key, "zone": int(b.zone), "type": type,
-			"storeys": storeys, "corners": corners, "from": m, "to": -1})
+			"storeys": storeys, "corners": corners, "from": since, "to": -1})
 		_live_bldg[key] = [buildings.size() - 1, type, storeys, b.get("type"), b.get("level")]
 	# Farm fields: only farms whose fields changed are looked at.
 	var farms: Dictionary = sim.farms.farms
