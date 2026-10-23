@@ -1,0 +1,287 @@
+class_name GraphicsQuality
+extends Node
+## How good the game looks on this computer, picked silently. An autoload
+## (Quality). Benchmark: how PC games do it (Cities: Skylines 2, Forza
+## Horizon): presets from Low to a top tier, a guess from the hardware on
+## first run, dynamic resolution, and a Graphics setting that defaults to
+## Auto.
+##
+## The first time the desktop app runs it guesses a tier from the graphics
+## chip, cores and memory. In Auto, while you play it watches how long
+## frames take: when the computer struggles it lowers the render scale
+## first (upscaled with FSR), then the tier, and when there is plenty of
+## room it climbs back. Where it settles is saved for next time, so the
+## guess only happens once per machine. The pause menu's Graphics button
+## cycles Auto and the fixed tiers.
+##
+## Cinematic is as close to real life as the engine gets: global
+## illumination (SDFGI), volumetric light in the air, screen-space
+## reflections, the biggest shadow maps and the longest detail. Ultra and
+## below drop those one by one.
+##
+## The browser build keeps its fixed look (Compatibility renderer); only the
+## desktop app (Forward+) changes tier. This only touches drawing, never the
+## simulation, so every computer in a region still steps towns the same way.
+## `--quality low|medium|high|ultra|cinematic` on the command line pins a
+## tier (for screenshots).
+
+signal changed
+
+enum { LOW, MEDIUM, HIGH, ULTRA, CINEMATIC }
+const NAMES := ["Low", "Medium", "High", "Ultra", "Cinematic"]
+const AUTO := -1
+const SAVE_PATH := "user://quality.json"
+
+## What each tier turns on. msaa: 0 off, 1 2x, 2 4x. soft: RenderingServer
+## shadow filter quality (2 low, 3 medium, 4 high, 5 ultra). detail scales
+## how far full trees and close-up detail reach; lod is the mesh LOD
+## threshold in pixels (lower keeps more detail); shadow_reach caps how far
+## from the camera shadows are drawn, in metres. ssao: ambient occlusion,
+## ssil: bounced light between nearby surfaces, ssr: reflections in water
+## and glass, sdfgi: sunlight bouncing around the whole town, fog: light
+## shafts and haze in the air (volumetric fog).
+const TIERS := [
+	{"msaa": 0, "fxaa": true, "ssao": false, "ssil": false, "ssr": false, "sdfgi": false, "fog": false,
+		"shadow_size": 2048, "soft": 2, "splits": 2, "detail": 0.75, "lod": 2.0, "shadow_reach": 900.0},
+	{"msaa": 1, "fxaa": false, "ssao": false, "ssil": false, "ssr": false, "sdfgi": false, "fog": false,
+		"shadow_size": 4096, "soft": 3, "splits": 4, "detail": 1.0, "lod": 1.0, "shadow_reach": 1400.0},
+	{"msaa": 2, "fxaa": false, "ssao": true, "ssil": false, "ssr": false, "sdfgi": false, "fog": false,
+		"shadow_size": 4096, "soft": 4, "splits": 4, "detail": 1.4, "lod": 1.0, "shadow_reach": 2000.0},
+	{"msaa": 2, "fxaa": false, "ssao": true, "ssil": true, "ssr": true, "sdfgi": false, "fog": false,
+		"shadow_size": 8192, "soft": 5, "splits": 4, "detail": 1.8, "lod": 0.5, "shadow_reach": 2000.0},
+	{"msaa": 2, "fxaa": false, "ssao": true, "ssil": true, "ssr": true, "sdfgi": true, "fog": true,
+		"shadow_size": 8192, "soft": 5, "splits": 4, "detail": 2.5, "lod": 0.25, "shadow_reach": 2000.0},
+]
+
+## Frame times are judged over windows of this many seconds.
+const WINDOW := 3.0
+## Slower than this on average (about 45 fps) counts against the tier.
+const SLOW_MS := 22.0
+## Room to spare: frames keep up with a 60 Hz screen and the graphics chip
+## and the game's own work each take under half a frame.
+const ROOM_FRAME_MS := 18.0
+const ROOM_PART_MS := 8.0
+const MIN_SCALE := 0.7
+
+## False in the browser, the editor, headless runs and the Compatibility
+## renderer: the look stays as the project sets it.
+var active := false
+var tier := HIGH
+## AUTO, or the tier the player picked (the governor then leaves it alone).
+var mode := AUTO
+## 3D render scale (1.0 = native pixels). Below 1 is upscaled with FSR.
+var scale := 1.0
+## Multiplier for how far detail reaches (Views read it as
+## GraphicsQuality.detail, since class scripts compile before autoloads
+## exist in tests). 1.0 when inactive.
+static var detail := 1.0
+## The autoload, for class scripts (null in tests and tools).
+static var current: GraphicsQuality
+var adapter := ""
+
+var _rid: RID
+var _time := 0.0
+var _frames := 0
+var _gpu := 0.0
+var _cpu := 0.0
+var _slow := 0
+var _room := 0
+## No climbing back to a tier this session once it proved too slow.
+var _ceiling := CINEMATIC
+
+
+func _ready() -> void:
+	current = self
+	adapter = RenderingServer.get_video_adapter_name()
+	active = not OS.has_feature("web") and DisplayServer.get_name() != "headless" \
+		and RenderingServer.get_current_rendering_method() != "gl_compatibility"
+	if not active:
+		return
+	process_priority = 1000  # after the frame's own work
+	var saved := _read()
+	mode = clampi(int(saved.get("mode", AUTO)), AUTO, CINEMATIC)
+	if mode != AUTO:
+		tier = mode
+	elif str(saved.get("adapter", "")) == adapter and saved.has("tier"):
+		tier = clampi(int(saved.tier), LOW, CINEMATIC)
+		scale = clampf(float(saved.get("scale", 1.0)), MIN_SCALE, 1.0)
+	else:
+		tier = guess_tier(adapter, RenderingServer.get_video_adapter_type(),
+			OS.get_processor_count(), float(OS.get_memory_info().get("physical", 0)) / 1e9)
+		_save()
+	var args := OS.get_cmdline_user_args() + OS.get_cmdline_args()
+	for i in args.size():
+		var a: String = args[i]
+		var want := ""
+		if a.begins_with("--quality="):
+			want = a.trim_prefix("--quality=")
+		elif a == "--quality" and i + 1 < args.size():
+			want = args[i + 1]
+		var t := NAMES.map(func(n): return n.to_lower()).find(want.to_lower())
+		if t >= 0:
+			mode = t
+			tier = t
+			scale = 1.0
+	_rid = get_tree().root.get_viewport_rid()
+	RenderingServer.viewport_set_measure_render_time(_rid, true)
+	apply()
+
+
+## A first guess from the hardware alone; in Auto the governor corrects it
+## in play. Apple chips share memory with the GPU, so memory says a lot.
+static func guess_tier(name: String, type: int, cores: int, memory_gb: float) -> int:
+	var n := name.to_lower()
+	if type == RenderingDevice.DEVICE_TYPE_CPU or "llvmpipe" in n or "swiftshader" in n:
+		return LOW
+	if n.begins_with("apple"):
+		# Max and Ultra chips have big GPUs (Mac Studio, big MacBook Pro).
+		if "ultra" in n or "max" in n:
+			return CINEMATIC if memory_gb >= 30.0 else ULTRA
+		if "pro" in n:
+			return HIGH
+		# A base chip: an 8 GB Mac mini starts at Medium and stays smooth.
+		return HIGH if memory_gb >= 15.0 else MEDIUM
+	if type == RenderingDevice.DEVICE_TYPE_DISCRETE_GPU:
+		if cores >= 8 and memory_gb >= 30.0:
+			return CINEMATIC
+		return ULTRA if cores >= 8 and memory_gb >= 15.0 else HIGH
+	# Integrated graphics (Intel, AMD laptop chips) and anything unknown.
+	return MEDIUM if cores >= 8 and memory_gb >= 15.0 else LOW
+
+
+func settings() -> Dictionary:
+	return TIERS[tier]
+
+
+func describe() -> String:
+	if not active:
+		return "fixed (%s)" % RenderingServer.get_current_rendering_method()
+	return "%s %s, %d%% scale" % ["Auto:" if mode == AUTO else "Fixed:", NAMES[tier], roundi(scale * 100.0)]
+
+
+## The Graphics setting's label, e.g. "Auto (High)" or "Cinematic".
+func label() -> String:
+	return "Auto (%s)" % NAMES[tier] if mode == AUTO else NAMES[mode]
+
+
+## The pause menu's Graphics button: Auto, then each tier, then Auto again.
+func cycle() -> void:
+	mode = AUTO if mode == CINEMATIC else mode + 1
+	_ceiling = CINEMATIC
+	if mode == AUTO:
+		tier = guess_tier(adapter, RenderingServer.get_video_adapter_type(),
+			OS.get_processor_count(), float(OS.get_memory_info().get("physical", 0)) / 1e9)
+	else:
+		tier = mode
+	scale = 1.0
+	_reset()
+	apply()
+	_save()
+
+
+## Pushes the tier and scale to the screen. Views listen to `changed` for
+## the parts they own (SkyLight: ambient occlusion, shadow splits and reach).
+func apply() -> void:
+	var t: Dictionary = TIERS[tier]
+	var vp := get_tree().root
+	vp.msaa_3d = t.msaa
+	vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if t.fxaa else Viewport.SCREEN_SPACE_AA_DISABLED
+	vp.mesh_lod_threshold = t.lod
+	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if scale < 0.99 else Viewport.SCALING_3D_MODE_BILINEAR
+	vp.scaling_3d_scale = scale
+	RenderingServer.directional_shadow_atlas_set_size(t.shadow_size, true)
+	RenderingServer.directional_soft_shadow_filter_set_quality(t.soft)
+	RenderingServer.positional_soft_shadow_filter_set_quality(t.soft)
+	detail = t.detail
+	changed.emit()
+
+
+func _process(delta: float) -> void:
+	if not active or mode != AUTO or not _watching():
+		_reset()
+		return
+	var t0 := Perf.now()
+	# A hitch (a shader compiling, a big rebuild) shouldn't count as much
+	# as a long run of slow frames.
+	_time += minf(delta, 0.1)
+	_frames += 1
+	_gpu += RenderingServer.viewport_get_measured_render_time_gpu(_rid)
+	_cpu += RenderingServer.viewport_get_measured_render_time_cpu(_rid) \
+		+ Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+	if _time < WINDOW:
+		Perf.add("frame.quality", t0)
+		return
+	var frame_ms := _time * 1000.0 / _frames
+	var gpu_ms := _gpu / _frames
+	var cpu_ms := _cpu / _frames
+	_reset()
+	if frame_ms > SLOW_MS:
+		_room = 0
+		_slow += 1
+		if _slow >= 2:
+			_slow = 0
+			_step_down(gpu_ms > cpu_ms)
+	elif frame_ms < ROOM_FRAME_MS and gpu_ms < ROOM_PART_MS and cpu_ms < ROOM_PART_MS:
+		_slow = 0
+		_room += 1
+		if _room >= 4:
+			_room = 0
+			_step_up()
+	else:
+		_slow = 0
+		_room = 0
+	Perf.add("frame.quality", t0)
+
+
+## Only in a town that has finished loading, in a window you're looking at.
+func _watching() -> bool:
+	var w := get_window()
+	if not w.has_focus() or w.mode == Window.MODE_MINIMIZED:
+		return false
+	var scene := get_tree().current_scene
+	return scene != null and "loading" in scene and not scene.loading
+
+
+func _reset() -> void:
+	_time = 0.0
+	_frames = 0
+	_gpu = 0.0
+	_cpu = 0.0
+
+
+## The graphics chip is the bottleneck: fewer pixels first. Otherwise (or
+## once pixels are as low as they go) a lower tier draws less.
+func _step_down(gpu_bound: bool) -> void:
+	if gpu_bound and scale > MIN_SCALE + 0.01:
+		scale = maxf(MIN_SCALE, scale - 0.15)
+	elif tier > LOW:
+		_ceiling = tier - 1
+		tier -= 1
+	else:
+		return
+	apply()
+	_save()
+
+
+func _step_up() -> void:
+	if scale < 0.99:
+		scale = minf(1.0, scale + 0.15)
+	elif tier < _ceiling:
+		tier += 1
+	else:
+		return
+	apply()
+	_save()
+
+
+func _save() -> void:
+	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify({"mode": mode, "tier": tier, "scale": scale, "adapter": adapter}))
+
+
+static func _read() -> Dictionary:
+	if not FileAccess.file_exists(SAVE_PATH):
+		return {}
+	var d = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
+	return d if typeof(d) == TYPE_DICTIONARY else {}

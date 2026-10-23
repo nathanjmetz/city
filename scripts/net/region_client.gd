@@ -249,7 +249,7 @@ func _process(delta: float) -> void:
 	var state := _peer.get_connection_status()
 	if state == MultiplayerPeer.CONNECTION_CONNECTED and not _connected:
 		_connected = true
-		_send({"t": "hello", "v": RegionServer.PROTOCOL, "code": invite_code,
+		_send({"t": "hello", "v": RegionServer.PROTOCOL, "min": RegionServer.MIN_PROTOCOL, "code": invite_code,
 			"id": player_id, "name": player_name, "password": _password, "new": _new_account, "token": token})
 		_password = ""
 	elif state == MultiplayerPeer.CONNECTION_DISCONNECTED:
@@ -336,6 +336,13 @@ func _handle(msg: Dictionary) -> void:
 				# load it (the invite link in the address bar brings you back).
 				JavaScriptBridge.eval("location.reload()")
 				return
+			var updater := GameUpdater.current
+			if "version" in reason and updater and updater.active:
+				# The desktop app fetches the newest game data and restarts.
+				updater.on_version_mismatch()
+				if reconnecting:
+					return
+				reason = "This region runs a newer version. Updating..."
 			if reconnecting:
 				# Say the server still holds the old connection: try again soon.
 				_peer.close()

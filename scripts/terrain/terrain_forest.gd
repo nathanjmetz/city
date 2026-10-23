@@ -95,7 +95,7 @@ func _process(_delta: float) -> void:
 			var key := Vector2i(cx, cz)
 			var d := (Vector2(key) * CHUNK + Vector2(CHUNK, CHUNK) * 0.5).distance_to(f)
 			if d < REACH:
-				want[key] = d < NEAR
+				want[key] = d < NEAR * GraphicsQuality.detail
 	for key in _chunks.keys():
 		if not want.has(key):
 			_chunks[key].node.queue_free()

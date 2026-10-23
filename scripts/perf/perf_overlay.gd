@@ -52,6 +52,7 @@ static func text() -> String:
 	var fps := Performance.get_monitor(Performance.TIME_FPS)
 	out.append("[b]%s fps[/b]  frame %.1f ms  (%s)" % [_paint(fps, PerfBudget.RENDER.fps[where], true),
 		Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, where])
+	out.append("  graphics %s" % GraphicsQuality.current.describe() if GraphicsQuality.current else "fixed")
 	out.append("[b]Simulation[/b] ms per tick (avg / recent worst)")
 	for key in PerfBudget.SIM:
 		if Perf.stats.has(key):
