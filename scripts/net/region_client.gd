@@ -17,6 +17,8 @@ signal city_added(city_id: String)
 signal waiting(message: String)
 ## (Host only) the list of players waiting to be let in changed.
 signal requests_changed
+## The server has stored a telemetry batch (by its id), so it can be dropped here.
+signal telemetry_acked(id: String)
 
 var region := Region.new()
 var player_id := ""
@@ -75,6 +77,11 @@ func send_town() -> void:
 	var sim := my_sim()
 	if sim and is_joined:
 		_send({"t": "city", "z": RegionServer.pack(sim.to_dict())})
+
+
+## Sends a batch of play telemetry (see Telemetry); telemetry_acked says when it's kept.
+func send_telemetry(batch: Dictionary) -> void:
+	_send({"t": "telemetry", "z": RegionServer.pack(batch)})
 
 
 ## (Host only) lets a waiting player in, or turns them away.
@@ -151,6 +158,8 @@ func _handle(msg: Dictionary) -> void:
 		"waiting":
 			token = str(msg.get("token", token))
 			waiting.emit(str(msg.get("reason", "")))
+		"telemetry_ok":
+			telemetry_acked.emit(str(msg.get("id", "")))
 		"requests":
 			requests = msg.list
 			requests_changed.emit()
