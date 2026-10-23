@@ -521,11 +521,14 @@ func has_utilities(key: String) -> bool:
 
 ## Share of the four coverage services a lot gets, 0 to 1.
 func coverage(key: String) -> float:
-	if not served.has(key):
-		return 0.0
+	return coverage_of(served[key]) if served.has(key) else 0.0
+
+
+## The same from a lot's row in `served`.
+static func coverage_of(s: Dictionary) -> float:
 	var n := 0
 	for kind in COVERAGE:
-		if served[key][kind]:
+		if s[kind]:
 			n += 1
 	return n / float(COVERAGE.size())
 

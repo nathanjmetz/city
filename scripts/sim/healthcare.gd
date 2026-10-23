@@ -639,18 +639,23 @@ func care(sim: CitySim) -> float:
 		if sim.buildings[key].zone != ZoneMap.Zone.RESIDENTIAL:
 			continue
 		homes += 1
-		var s: Dictionary = sim.services.served.get(key, {})
-		var health := 1.0 if s.get(Services.Kind.HOSPITAL, false) else (0.6 if s.get(Services.Kind.CLINIC, false) else 0.0)
-		total += 0.5 * health + 0.25 * (1.0 if s.get(Services.Kind.NURSING_HOME, false) else 0.0) \
-			+ 0.25 * (1.0 if s.get(Services.Kind.DAYCARE, false) else 0.0)
+		total += care_of(sim.services.served.get(key, {}))
 	if homes == 0:
 		return 0.0
 	return clampf(total / homes + region_care, 0.0, 1.0)
 
 
+## One home's care, 0 to 1, from its row in Services.served.
+static func care_of(s: Dictionary) -> float:
+	var health := 1.0 if s.get(Services.Kind.HOSPITAL, false) else (0.6 if s.get(Services.Kind.CLINIC, false) else 0.0)
+	return 0.5 * health + 0.25 * (1.0 if s.get(Services.Kind.NURSING_HOME, false) else 0.0) \
+		+ 0.25 * (1.0 if s.get(Services.Kind.DAYCARE, false) else 0.0)
+
+
 ## How much good care lifts the want for homes (people stay, families come).
-func demand_shift(sim: CitySim) -> float:
-	var shift := Balance.CARE_DEMAND * care(sim)
+## `care_now` is care(sim) when the caller already has it.
+func demand_shift(sim: CitySim, care_now := -1.0) -> float:
+	var shift := Balance.CARE_DEMAND * (care(sim) if care_now < 0.0 else care_now)
 	for id in hubs:
 		if has_piece(id, "maternity"):
 			shift += Balance.CARE_MATERNITY

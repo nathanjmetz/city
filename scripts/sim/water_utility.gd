@@ -770,10 +770,15 @@ func boil_share(sim: CitySim) -> float:
 		if sim.buildings[key].zone != ZoneMap.Zone.RESIDENTIAL:
 			continue
 		homes += 1
-		var by: int = sim.services.served.get(key, {}).get("water_by", -1)
-		if by != -1 and utilities.has(by) and utilities[by].boil:
+		if boils(sim.services.served.get(key, {})):
 			boiling += 1
 	return 0.0 if homes == 0 else float(boiling) / homes
+
+
+## True when the lot (its row in Services.served) is under a boil notice.
+func boils(s: Dictionary) -> bool:
+	var by: int = s.get("water_by", -1)
+	return by != -1 and utilities.has(by) and utilities[by].boil
 
 
 ## True when a point is on a yard piece (lots there go away).
