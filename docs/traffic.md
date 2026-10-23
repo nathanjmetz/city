@@ -157,6 +157,16 @@ MUTCD's Walk with the parallel green). The lights run on a fixed cycle, so
 the waits are worked out when the walk starts and stored as `holds`
 ([metres along, steps]) on the walker. No per-tick work is added.
 
+Cars yield to people in the crosswalk, as the Uniform Vehicle Code (§11-502)
+and every US state's code require. When a walk starts, each crossing's time
+window ([from step, to step], road) is stored as `xings` on the walker and
+noted per junction in `_xbusy`. A car turning onto a road waits at the stop
+line while someone is out on that road's crosswalk (`crosswalk_busy`), mostly
+right turns on a green or on red. Walkers never wait for cars, so nothing can
+deadlock. Finished crossings are pruned when they're looked up, and every 600
+steps. `_xbusy` isn't saved, because it's rebuilt from the walkers when a game
+loads.
+
 ## Walks on the trail
 
 People at home go out for a walk on the trail now and then. In the daytime,

@@ -124,6 +124,8 @@ func _has(utility: String) -> bool:
 ## Builds the starter source, then a bigger one (or another starter) when
 ## use passes 80% of what's built.
 func _utility(utility: String, small: int, big: int) -> void:
+	if sim.utilities_going_up().any(func(g): return g.utility == utility):
+		return  # one's already going in: wait for the crew
 	var use: Array = sim.services.utility_use[utility]
 	if int(use[1]) > 0 and float(use[0]) < 0.8 * float(use[1]):
 		return

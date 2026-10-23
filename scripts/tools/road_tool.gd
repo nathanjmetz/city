@@ -59,6 +59,12 @@ var grid_preset := -1
 var grid_side := 0
 ## Any shape instead of a rectangle.
 var grid_free := false
+## Exact: a rectangle grows only in whole blocks of the chosen size, so a
+## section is a true mile. Adaptive: blocks flex to fit what was dragged,
+## never bigger than the chosen size.
+var grid_exact := true
+var _exact_next := ""  # how much further to drag for the next whole block
+var _exact_past := [false, false]  # the cursor is past the last whole block along, across
 var roundabout_radius := 20.0
 var road_type := 0
 var parallel := false
@@ -89,6 +95,7 @@ var _hover_farm := -1
 var _hover_park := -1
 var _shown_problem := ""
 var _guide := MeshInstance3D.new()
+var _ghost := MeshInstance3D.new()  # Exact: the next whole block, faint
 var _label := Label3D.new()
 var _guide_mat := RoadStyle.material(Color(1, 1, 1, 0.45), true)
 ## Angle of the guide the current road snapped to, or NAN.
@@ -128,6 +135,9 @@ func _ready() -> void:
 	_guide.material_override = _guide_mat
 	_guide.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_guide)
+	_ghost.material_override = RoadStyle.material(Color(1, 1, 1, 0.85), true)
+	_ghost.visible = false
+	add_child(_ghost)
 	_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_label.fixed_size = true
 	# Small and compact beside the cursor, like CS2's tool readout.
@@ -207,6 +217,19 @@ func set_grid_preset(i: int) -> void:
 	_update_hint()
 
 
+## How the planner fits blocks: exact in an Exact rectangle, else never
+## bigger than the chosen size.
+func _fit() -> int:
+	return GridFill.FIT_EXACT if grid_exact and not grid_free else GridFill.FIT_AT_MOST
+
+
+## Switches the grid between exact whole blocks and blocks that flex to fit.
+func set_grid_exact(on: bool) -> void:
+	grid_exact = on
+	options_changed.emit()
+	_update_hint()
+
+
 ## Switches the grid between a rectangle and any shape.
 func set_grid_free(on: bool) -> void:
 	grid_free = on
@@ -251,6 +274,7 @@ func _process(_delta: float) -> void:
 	_preview.visible = false
 	_preview.transform = Transform3D.IDENTITY
 	_guide.visible = false
+	_ghost.visible = false
 	_label.visible = false
 	_dots.visible = false
 	_centre.visible = false
@@ -370,7 +394,7 @@ func _finish_grid(shape: Array = _points) -> void:
 	for q in shape:
 		pts.append(_xz(q))
 	if sim.apply({"type": "build_grid_shape", "points": pts, "block": grid_block, "across": grid_across,
-			"side": 0 if not grid_free else grid_side, "road": road_type}):
+			"side": 0 if not grid_free else grid_side, "road": road_type, "fit": _fit()}):
 		_points.clear()
 	_update_hint()
 
@@ -422,6 +446,9 @@ func _rect_corner(p: Vector3) -> Vector3:
 	var v := Vector3(-u.z, 0.0, u.x)
 	var du := (p - a).dot(u)
 	var dv := (p - a).dot(v)
+	if grid_exact:
+		_exact_next = ""
+		return a + u * _whole(du, grid_block, 0) + v * _whole(dv, grid_across, 1)
 	var n := network.find_node_near(a + u * du, SNAP_NODE)
 	if n != -1 and absf((network.nodes[n] - a).dot(v)) < 1.0:
 		du = (network.nodes[n] - a).dot(u)
@@ -429,6 +456,26 @@ func _rect_corner(p: Vector3) -> Vector3:
 	if n != -1 and absf((network.nodes[n] - a).dot(u)) < 1.0:
 		dv = (network.nodes[n] - a).dot(v)
 	return a + u * du + v * dv
+
+
+## Exact mode: `d` cut back to whole blocks of `size` (one at least),
+## noting how much further the cursor must go for the next block.
+func _whole(d: float, size: float, axis: int) -> float:
+	var n := maxi(1, floori(absf(d) / size + 0.001))
+	var more := (n + 1) * size - absf(d)
+	_exact_past[axis] = more < size * 0.999
+	if _exact_past[axis]:
+		var txt := "%s more for the next block %s" % [_distance_text(more), "along" if axis == 0 else "across"]
+		_exact_next = txt if _exact_next == "" else _exact_next + "\n" + txt
+	return (1.0 if d >= 0.0 else -1.0) * n * size
+
+
+## A distance in US units: miles past a quarter mile, else feet.
+static func _distance_text(m: float) -> String:
+	var ft := m * FT
+	if ft >= 1320.0:
+		return "%s mi" % String.num(ft / 5280.0, 2).trim_suffix("0").trim_suffix(".")
+	return "%s ft" % CitySim.money_text(roundi(ft))
 
 
 ## Which way a rectangle from `a` toward `p` lines up. At a junction it
@@ -503,12 +550,12 @@ func _show_grid(p: Vector3) -> void:
 	_show_guide(_points[0])
 	var plan := []
 	if shape.size() >= 3:
-		var key := "%s|%s|%s|%d|%d|%d" % [str(shape), str(grid_block), str(grid_across), grid_side, road_type,
-			sim.network.segments.size()]
+		var key := "%s|%s|%s|%d|%d|%d|%d" % [str(shape), str(grid_block), str(grid_across), grid_side, road_type,
+			sim.network.segments.size(), _fit()]
 		# Big towns take a moment to plan, so replan at most a few times a second.
 		if key != _grid_key and Time.get_ticks_msec() - _grid_planned_at > 120:
 			_grid_key = key
-			_grid_plan = GridFill.plan(network, shape, grid_block, road_type, grid_side if grid_free else 0, grid_across)
+			_grid_plan = GridFill.plan(network, shape, grid_block, road_type, grid_side if grid_free else 0, grid_across, _fit())
 			_grid_planned_at = Time.get_ticks_msec()
 		plan = _grid_plan
 	var st := SurfaceTool.new()
@@ -519,6 +566,22 @@ func _show_grid(p: Vector3) -> void:
 		RoadMesh.add_strip(st, Terrain.densify(RoadNetwork.sample_curve(c[0], c[1], c[2], 2), 6.0), -hw, hw, 0.2)
 	for c in GridFill.outline(shape, shape.size() >= 3):
 		RoadMesh.add_strip(st, Terrain.densify(RoadNetwork.sample_curve(c[0], c[1], c[2], 2), 6.0), -edge, edge, 0.35)
+	var ghost := []  # Exact: where the next whole block would reach
+	if grid_exact and not grid_free and shape.size() == 4:
+		var r: Array = shape
+		for axis in 2:
+			if _exact_past[axis]:
+				var from: Vector3 = r[1] if axis == 0 else r[3]
+				var r0: Vector3 = r[0]
+				var step: Vector3 = (from - r0).normalized() * (grid_block if axis == 0 else grid_across)
+				var x: Vector3 = r[2] + step
+				ghost.append([from, from + step])
+				ghost.append([r[2], x])
+				ghost.append([from + step, x])
+	var gst := SurfaceTool.new()
+	gst.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for g in ghost:
+		RoadMesh.add_strip(gst, Terrain.densify(PackedVector3Array([g[0], g[1]]), 6.0), -hw * 0.6, hw * 0.6, 0.35)
 	var cost := CitySim.shapes_cost(plan, road_type)
 	var ok := cost <= sim.economy.money
 	var dims := ""
@@ -526,6 +589,12 @@ func _show_grid(p: Vector3) -> void:
 		dims = "%s ft" % CitySim.money_text(roundi(_flat_dist(shape[0], shape[1]) * FT))
 	if not grid_free and shape.size() == 4:
 		dims += " × %s ft" % CitySim.money_text(roundi(_flat_dist(shape[1], shape[2]) * FT))
+		if grid_exact:
+			dims = "Exact: %d × %d blocks, %s × %s" % [roundi(_flat_dist(shape[0], shape[1]) / grid_block),
+				roundi(_flat_dist(shape[1], shape[2]) / grid_across), _distance_text(_flat_dist(shape[0], shape[1])),
+				_distance_text(_flat_dist(shape[1], shape[2]))]
+			if _exact_next != "":
+				dims += "\n" + _exact_next
 	if not is_nan(_guide_angle):
 		dims += "  " + _guide_kind
 	if not plan.is_empty() or dims != "":
@@ -538,6 +607,9 @@ func _show_grid(p: Vector3) -> void:
 	_preview.mesh = Terrain.drape(st.commit())
 	_preview.material_override = _ok_mat if ok else _bad_mat
 	_preview.visible = true
+	if not ghost.is_empty():
+		_ghost.mesh = Terrain.drape(gst.commit(), true)
+		_ghost.visible = true
 
 
 ## Draws the guide line the grid's side snapped to, through `at`.
@@ -804,10 +876,11 @@ func _update_hint() -> void:
 			if _points.size() == 2 and _shown_problem != "":
 				text = _shown_problem
 		Mode.GRID:
-			var size := "Blocks %d × %d ft  [ ]" % [roundi(grid_block * FT), roundi(grid_across * FT)]
+			var size := "Blocks %s × %s  [ ]" % [_distance_text(grid_block), _distance_text(grid_across)]
 			if grid_preset >= 0:
 				size = "%s, %s" % [GridFill.PRESETS[grid_preset].name, size]
 			if not grid_free:
+				size = ("Exact, whole blocks only. " if grid_exact else "Adaptive, blocks up to ") + size
 				match _points.size():
 					0: text = "Rectangle: drag from one corner to the other. Tab for any shape.  " + size
 					_: text = "Drag or click the opposite corner, any direction. Sides line up with the road.  " + size

@@ -95,6 +95,10 @@ static func _problems(sim: CitySim, out: Array) -> void:
 		if short > 0:
 			text = "Folks won't build where there's no %s, and we're about $%s short for it. The Economy page is worth a look." % [" or ".join(missing), CitySim.money_text(short)]
 		_add(out, "no_utilities", Kind.PROBLEM, text)
+	elif missing.is_empty() and not sim.utilities_going_up().is_empty():
+		var g: Dictionary = sim.utilities_going_up()[0]
+		_add(out, "going_in", Kind.HEADS_UP, "The %s's still going in, about %d%% done. Homes hook up once the crew's finished." % [
+			Services.KINDS[g.kind].name.to_lower(), roundi(float(g.state.total) * 100.0)])
 	elif missing.is_empty():
 		var unserved := sim.unserved_count()
 		var full := []

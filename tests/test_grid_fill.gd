@@ -100,6 +100,7 @@ func _init() -> void:
 	t.sim = r
 	t.network = r.network
 	t.mode = RoadTool.Mode.GRID
+	t.grid_exact = false
 	var a0 := Vector3(0, 0, 30)
 	var road := atan2(200.0, 300.0)
 	for drag in [Vector3(250, 0, 120), Vector3(-260, 0, 40), Vector3(-90, 0, -230), Vector3(150, 0, -200)]:
@@ -122,6 +123,7 @@ func _init() -> void:
 	tq.sim = q
 	tq.network = q.network
 	tq.mode = RoadTool.Mode.GRID
+	tq.grid_exact = false
 	tq._points.append(Vector3(200, 0, 0))
 	var rq := tq._rect(tq._grid_corner(Vector3(-150, 0, -255)))
 	_check(rq[2].distance_to(Vector3(-150, 0, -250)) < 0.01 or rq[1].distance_to(Vector3(200, 0, -250)) < 0.01,
@@ -170,6 +172,58 @@ func _init() -> void:
 	_check(sharp == 0, "junction grid: no streets meet under 30 degrees (got %d)" % sharp)
 	_check(strips == 0, "junction grid: no shallow strips (got %d)" % strips)
 	_check(_overlaps(jn.network) == "", "junction grid: no overlaps " + _overlaps(jn.network))
+
+	# Exact: a section grid dragged to 1.6 miles stops at one whole mile and
+	# says how far the next mile is; every block is exactly a mile.
+	var ex := CitySim.new()
+	ex.economy.money = 1000000000
+	var te := RoadTool.new()
+	te.sim = ex
+	te.network = ex.network
+	te.mode = RoadTool.Mode.GRID
+	te.set_grid_preset(0)
+	te._points.append(Vector3.ZERO)
+	var re := te._rect(te._grid_corner(Vector3(2575, 0, 1300)))
+	_check(re[1].distance_to(Vector3(1609, 0, 0)) < 0.01 and re[2].distance_to(Vector3(1609, 0, 1609)) < 0.01,
+		"exact: 1.6 x 0.8 mi drag stops at one whole section (got %s)" % str(re))
+	_check(te._exact_next.contains("0.4 mi more"), "exact: says 0.4 mi to the next section (got %s)" % te._exact_next)
+	re = te._rect(te._grid_corner(Vector3(-3300, 0, 3250)))
+	_check(re[2].distance_to(Vector3(-3218, 0, 3218)) < 0.01, "exact: 2 x 2 sections dragged up and left")
+	var pts_e := []
+	for corner in re:
+		pts_e.append([corner.x, corner.z])
+	_check(ex.apply({"type": "build_grid_shape", "points": pts_e, "block": 1609, "across": 1609, "fit": te._fit()}),
+		"exact: grid built")
+	var odd_len := 0
+	for id in ex.network.segments:
+		var cv := ex.network.curve_of(id)
+		if absf(cv[0].distance_to(cv[2]) - 1609.0) > 0.5:
+			odd_len += 1
+	_check(odd_len == 0 and ex.network.segments.size() == 12, "exact: 12 streets, each a mile (got %d, %d off)" % [ex.network.segments.size(), odd_len])
+	# A mile grid across a county highway keeps the streets that cross it:
+	# a strip 700 m deep is plenty for lots, unlike a sliver by a town block.
+	var hwy := CitySim.new()
+	hwy.economy.money = 1000000000
+	hwy.apply({"type": "build_road", "start": [-2000, 0], "ctrl": [0, 0], "end": [2000, 0]})
+	var crossing := GridFill.plan(hwy.network, [Vector3(-1300, 0, -700), Vector3(1275, 0, -700), Vector3(1275, 0, 590),
+		Vector3(-1300, 0, 590)], 1609.0, 0, 0, 1609.0, GridFill.FIT_AT_MOST)
+	_check(crossing.size() == 10, "mile grid over a highway keeps its cross streets (got %d)" % crossing.size())
+	# Adaptive: the same drag flexes the blocks to fit, never over a mile.
+	te.set_grid_exact(false)
+	var ra := te._rect(te._grid_corner(Vector3(2575, 0, 1300)))
+	_check(ra[2].distance_to(Vector3(2575, 0, 1300)) < 0.01, "adaptive: the rectangle follows the cursor")
+	var ad := CitySim.new()
+	ad.economy.money = 1000000000
+	var pts_a := []
+	for corner in ra:
+		pts_a.append([corner.x, corner.z])
+	ad.apply({"type": "build_grid_shape", "points": pts_a, "block": 1609, "across": 1609, "fit": te._fit()})
+	var longest := 0.0
+	for id in ad.network.segments:
+		var cv := ad.network.curve_of(id)
+		longest = maxf(longest, cv[0].distance_to(cv[2]))
+	_check(longest <= 1609.5 and ad.network.segments.size() > 4, "adaptive: no block over a mile (longest %.0f m)" % longest)
+	te.free()
 
 	# Every size preset plans a clean grid quickly, from a farm section
 	# down to a city block, with the long side and the short side kept.

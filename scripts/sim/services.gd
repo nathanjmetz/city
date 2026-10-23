@@ -76,6 +76,8 @@ const WATER_FEE := Balance.WATER_FEE
 const LOAD := Balance.UTILITY_LOAD
 ## Gap kept between a service's front and the road's edge.
 const SETBACK := 2.0
+## How each kind goes up (Construction.PROFILES); the rest are "civic".
+const PROFILE := {Kind.POWER_FEED: "power_feed", Kind.WELL: "well"}
 
 
 ## Where the city sits in the shared region (set by CitySim).
@@ -95,6 +97,9 @@ var water := WaterUtility.new()
 ## Power companies' plants (Power.sources(), set by the city): more power
 ## sources, each feeding the lines from its yard gate.
 var plants := []
+## Utilities still going up (id -> true): they supply nothing yet. Set by
+## the city from Construction before each update.
+var offline := {}
 ## The town's Funding slider: a lean department costs less and covers less.
 var policies: Policies
 var _next_id := 1
@@ -123,6 +128,11 @@ var _loads := {}  # building key -> [its dictionary, power and water draw]
 var _alloc_dirty := true
 var _alloc_caps := {}
 var _alloc_use := {"power": [0, 0], "water": [0, 0]}
+
+
+## How a kind is built (a Construction profile).
+static func profile_of(kind: int) -> String:
+	return PROFILE.get(kind, "civic")
 
 
 ## The Economy page area a service kind belongs to.
@@ -347,7 +357,7 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 	for u in ["power", "water"]:
 		var cap := 0
 		for id in buildings:
-			if buildings[id].kind in UTILITIES[u]:
+			if buildings[id].kind in UTILITIES[u] and not offline.has(id):
 				cap += roundi(int(KINDS[buildings[id].kind].capacity) * effects[id])
 		if u == "power":
 			for pl in plants:

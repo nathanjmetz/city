@@ -185,7 +185,10 @@ func _taxis() -> void:
 	for i in 8:
 		sim.taxis._decide(sim, id)
 	_check(co.rides > 0, "people call for cabs (%d rides a day, pop %d)" % [co.rides, sim.stats.population])
-	_check(sim.taxis.fleet_of(id) == mini(co.wanted, stalls), "it runs the cabs the rides need (%d of %d)" % [sim.taxis.fleet_of(id), co.wanted])
+	# It keeps one spare cab before selling (TaxiCo._decide).
+	var fleet: int = sim.taxis.fleet_of(id)
+	_check(fleet >= mini(co.wanted, stalls) and fleet <= mini(co.wanted + 1, stalls),
+		"it runs the cabs the rides need (%d of %d)" % [fleet, co.wanted])
 	_check(co.rate >= Balance.TAXI_RATE_MIN and co.rate <= Balance.TAXI_RATE_MAX, "it sets its own meter ($%.2f a mile)" % co.rate)
 	co.wealth = 0.1
 	var poor := sim.taxis.rides_wanted(sim, id, co.rate)

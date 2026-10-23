@@ -38,6 +38,8 @@ const SHELL := {
 	"factory": [Color("#c4c8ca"), Color("#b4b9bb")], # bare galvalume panels
 	"warehouse": [Color("#b9b5ab"), Color("#8e959a")],  # tilt-up concrete, deck
 	"barn": [Color("#aab1b5"), Color("#aab1b5")],    # galvanized steel
+	"power_feed": [Color("#7a6248"), Color("#7a6248")],  # creosoted poles
+	"well": [Color("#a8a49b"), Color("#8e959a")],    # block pump house, steel deck
 }
 ## What the frame looks like from far away.
 const FRAME_FAR := {"wood": FrameBuilder.LUMBER, "steel": FrameBuilder.PRIMER, "pole": FrameBuilder.LUMBER,

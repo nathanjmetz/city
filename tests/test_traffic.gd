@@ -446,6 +446,30 @@ func _init() -> void:
 		"walkers cross at the crosswalks, not through the junction (%d crossings)" % crossings)
 	_check(waits > 0 and held_still, "and wait at the kerb for the light (%d of 40 waited)" % waits)
 
+	# Someone out on a crosswalk: cars turning onto that road wait for them.
+	var yielded := false
+	var cleared := false
+	if west_home != "" and north_shop != "":
+		var pp := wk.traffic._walk_between(wk.traffic.place("lot:" + west_home), wk.traffic.place("lot:" + north_shop))
+		wk.traffic._walk(-1, pp, {"enter": "lot:" + north_shop})
+		var xw: Dictionary = wk.traffic.walkers[wk.traffic.walkers.size() - 1]
+		if not xw.get("xings", []).is_empty():
+			var xg: Array = xw.xings[0]
+			var n: int = xg[2]
+			var seg: int = xg[3]
+			var from_step: int = int(xw.t0) + int(xg[0])
+			var to_step: int = int(xw.t0) + int(xg[1])
+			while wk.traffic._wstep < from_step:
+				wk.tick()
+			var turning := {"id": -99, "len": 4.5, "arrive": -1.0, "v": 0.0}
+			var onto := {"node": n, "wo": seg * 2, "lo": 0, "wi": -1, "turn": 0}
+			yielded = wk.traffic.crosswalk_busy(n, seg) and not wk.traffic._may_enter(turning, onto, 20.0)
+			while wk.traffic._wstep <= to_step:
+				wk.tick()
+			cleared = not wk.traffic.crosswalk_busy(n, seg)
+	_check(yielded, "a car turning onto the road waits while someone is on its crosswalk")
+	_check(cleared, "and may go once they've crossed")
+
 	# A walk on the trail: out along the sidewalk to where the trail crosses
 	# the street, along it and back home.
 	var tw := rx
@@ -470,7 +494,10 @@ func _init() -> void:
 		_check(not tw.traffic.stroll(walker_pid), "not twice at once")
 		for i in int(sw.len / (TrafficSim.WALK_V * 0.85 * TrafficSim.DT)) + 5:
 			tw.tick()
-		_check(tw.people.people[walker_pid].at == "", "and home again after the walk")
+		# Home again (and maybe off on an errand already, by this tick).
+		var p: Dictionary = tw.people.people[walker_pid]
+		_check(not tw.traffic.walkers.has(sw) and sw.d == sw.len and sw.then.enter == "lot:" + p.home
+			and (p.at == "" or tw.traffic.walker_of(walker_pid) != sw), "and home again after the walk")
 
 	# A big town: household cars drive as traffic flows (BPR timing), park
 	# where they were going, and a saved town picks up exactly.

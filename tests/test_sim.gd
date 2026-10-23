@@ -258,6 +258,10 @@ func _init() -> void:
 		"dir": [feed[1].x, feed[1].z]})
 	for i in 50:
 		ws.tick()
+	_check(ws.utility_problem().contains("still going in"), "while the line crew works, the warning says so: " + ws.utility_problem())
+	# Power lines and wells supply nothing till their crews finish.
+	for i in maxi(Construction.duration("power_feed"), Construction.duration("well")):
+		ws.tick()
 	_check(ws.utility_problem() == "", "power and water: no warning")
 	# The Critic's case: power reaches one street, water another, so no lot
 	# has both. The warning has to say so.
@@ -271,7 +275,7 @@ func _init() -> void:
 	for entry in [[Services.Kind.POWER_FEED, Vector3(150, 0, -30)], [Services.Kind.WELL, Vector3(150, 0, 270)]]:
 		var spot := Services.site_near(split.network, entry[0], entry[1])
 		split.apply({"type": "place_service", "kind": entry[0], "pos": [spot[0].x, spot[0].z], "dir": [spot[1].x, spot[1].z]})
-	for i in 50:
+	for i in Construction.duration("well") + 20:
 		split.tick()
 	_check(split.utility_problem().contains("no power: their streets aren't joined by road to a power line")
 		and split.utility_problem().contains("no water: their streets aren't joined by road to a water source"),

@@ -111,7 +111,7 @@ func _spawn(id: int, b: Dictionary) -> Node3D:
 	root.set_meta("look", _look(id))
 	# It goes up stage by stage (ConstructionSite); trees go in at the end.
 	var ref := "svc:%d" % id
-	ConstructionSite.add_to(root, built, "civic", func(): return sim.construction.state(ref, sim.tick_count),
+	ConstructionSite.add_to(root, built, Services.profile_of(int(b.kind)), func(): return sim.construction.state(ref, sim.tick_count),
 		func():
 			if not is_instance_valid(root):
 				return
