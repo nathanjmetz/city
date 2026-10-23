@@ -43,7 +43,9 @@ static func add(sim: CitySim, sel: Dictionary, d: Dictionary) -> Dictionary:
 	var ref := ref_of(sim, sel)
 	if ref != "":
 		_source_part(sim, ref, d)
-	if sel.type == "lot":
+	# A factory's own lot is a source: its panel is about what it puts out,
+	# not what it breathes.
+	if sel.type == "lot" and ref == "":
 		_lot_part(sim, str(sel.id), d)
 	return d
 
@@ -211,9 +213,12 @@ static func fixes(sim: CitySim, s: Dictionary) -> Array:
 	var loud: float = s.noise
 	for l in s.lines:
 		loud = maxf(loud, l[2])
-	if loud > Balance.HURT_NOISE_DB:
-		reach.append("its noise carries about %d m" % roundi(Pollution.REF_M * pow(10.0, (loud - Balance.HURT_NOISE_DB) / 20.0)))
-	if s.smoke > Balance.HURT_SMOKE * 0.5 and s.lines.is_empty():
+	if loud > Balance.NOISE_QUIET_DB:
+		# Out to where it fades under EPA's 55 dB outdoor level (a road is a
+		# line, so it carries farther).
+		var per := 10.0 if s.lines.is_empty() else 20.0
+		reach.append("its noise carries about %d m" % roundi(Pollution.REF_M * pow(10.0, (loud - Balance.NOISE_QUIET_DB) / per)))
+	if s.smoke >= NOTICE_SMOKE and s.lines.is_empty():
 		reach.append("its smoke drifts %s about %d m" % [Pollution.wind_words()[1], roundi(smoke_reach(s.smoke))])
 	if s.ground >= Pollution.GROUND_FLOOR * 3.0:
 		reach.append("dirty ground spreads about %d m%s" % [roundi(s.reach * 1.5), " and seeps downhill" if s.flow.length() > 1.0 else ""])
@@ -223,11 +228,15 @@ static func fixes(sim: CitySim, s: Dictionary) -> Array:
 	return out
 
 
-## Distance downwind where a source's smoke falls under EPA's yearly limit.
+## Smoke you can notice (a light haze), ug/m3.
+const NOTICE_SMOKE := 2.0
+
+
+## Distance downwind where a source's smoke thins to a light haze.
 static func smoke_reach(q: float) -> float:
 	var w := Pollution.wind()
 	var d := 50.0
-	while d < 5000.0 and Pollution._plume(q, w * d, w) >= Balance.HURT_SMOKE:
+	while d < 5000.0 and Pollution._plume(q, w * d, w) >= NOTICE_SMOKE:
 		d += 25.0
 	return d
 

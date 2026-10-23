@@ -16,6 +16,8 @@ const POLLUTION_RES := 128
 const POLLUTION_SCALE := {Mode.SMOKE: [1.0, 35.0], Mode.NOISE: [52.0, 80.0], Mode.GROUND: [0.03, 0.7]}
 ## Milliseconds a frame spent painting a pollution wash.
 const PAINT_BUDGET_USEC := 5000
+## Source names closer than this to a bigger one's (metres) show just a dot.
+const PIN_SPACING := 260.0
 
 ## Map area covered by one wash, in metres, and its pixels across. Linear
 ## filtering blends the pixels into a smooth field.
@@ -309,6 +311,9 @@ func _draw_pins() -> void:
 	var keys := pol.sources.keys()
 	keys.sort()
 	var tint: Color = RAMPS[mode][2]
+	# Strongest sources get their names first; one close to a named one
+	# keeps just its dot, so a row of factories stays readable.
+	var pins := []
 	for ref in keys:
 		var s: Dictionary = pol.sources[ref]
 		if not s.boxes.has(kind):
@@ -318,6 +323,23 @@ func _draw_pins() -> void:
 			# Roads: pin the middle piece of the road, not the open middle of a loop.
 			var l: Array = s.lines[s.lines.size() / 2]
 			at = (l[0] as Vector3).lerp(l[1], 0.5)
+		var strength: float = {"smoke": s.smoke, "noise": s.noise, "ground": s.ground}[kind]
+		for l in s.lines:
+			strength = maxf(strength, l[3] if kind == "smoke" else (l[2] if kind == "noise" else 0.0))
+		pins.append([strength, ref, at])
+	pins.sort_custom(func(a, b): return a[0] > b[0] or (a[0] == b[0] and a[1] < b[1]))
+	var named := []
+	for pin in pins:
+		var s: Dictionary = pol.sources[pin[1]]
+		var at: Vector3 = pin[2]
+		var crowded := false
+		for p in named:
+			crowded = crowded or Vector2(p.x - at.x, p.z - at.z).length() < PIN_SPACING
+		var ground := Terrain.ground_y(at.x, at.z)
+		_add_dot(at, ground, tint)
+		if crowded:
+			continue
+		named.append(at)
 		var label := Label3D.new()
 		label.text = s.name
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -330,23 +352,25 @@ func _draw_pins() -> void:
 		label.outline_modulate = Color(tint, 0.95)
 		label.render_priority = 20
 		label.outline_render_priority = 19
-		var ground := Terrain.ground_y(at.x, at.z)
 		label.position = Vector3(at.x, ground + 22.0, at.z)
 		_pins.add_child(label)
-		var dot := MeshInstance3D.new()
-		var m := SphereMesh.new()
-		m.radius = 4.0
-		m.height = 8.0
-		dot.mesh = m
-		var mat := StandardMaterial3D.new()
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mat.albedo_color = tint
-		mat.no_depth_test = true
-		mat.render_priority = 18
-		dot.material_override = mat
-		dot.position = Vector3(at.x, ground + 6.0, at.z)
-		dot.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		_pins.add_child(dot)
+
+
+func _add_dot(at: Vector3, ground: float, tint: Color) -> void:
+	var dot := MeshInstance3D.new()
+	var m := SphereMesh.new()
+	m.radius = 4.0
+	m.height = 8.0
+	dot.mesh = m
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = tint
+	mat.no_depth_test = true
+	mat.render_priority = 18
+	dot.material_override = mat
+	dot.position = Vector3(at.x, ground + 6.0, at.z)
+	dot.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_pins.add_child(dot)
 
 
 ## Reserved land: a tinted fill and a bright border in its industry's colour.
