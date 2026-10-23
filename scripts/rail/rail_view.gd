@@ -489,12 +489,18 @@ func _draw_yards() -> void:
 		var built: Array = d.get("built", [])
 		var half := Rail.YARD_LEN * 0.5
 		var y := Terrain.base_y(d.pos.x, d.pos.z)
-		# Gravel over the whole yard.
-		var poly := Rail.yard_corners(d.pos, d.dir, d.axis)
-		var g := []
-		for p in poly:
-			g.append(Vector3(p.x, Terrain.base_y(p.x, p.y) + 0.06, p.y))
-		_quad(st, g[0], g[1], g[2], g[3], Color("#8a857a"))
+		# No paved pad: grass and weeds between the tracks, as at a real
+		# small-town siding, and a gravel lane alongside for the crews' trucks.
+		var u := -half + 54.0
+		while u < half - 12.0:
+			var a := Rail._yard_pt(d, u, 12.0)
+			var b := Rail._yard_pt(d, minf(u + 10.0, half - 12.0), 12.0)
+			var n: Vector3 = -d.dir * 1.75
+			var ya := Terrain.ground_y(a.x, a.z) + 0.08
+			var yb := Terrain.ground_y(b.x, b.z) + 0.08
+			_quad(st, Vector3(a.x, ya, a.z) - n, Vector3(a.x, ya, a.z) + n, Vector3(b.x, yb, b.z) + n,
+				Vector3(b.x, yb, b.z) - n, Color("#7d776b"))
+			u += 10.0
 		# Office: a one-storey brick depot facing the road, at the yard's near end.
 		var office := _frame(d, -half + 40.0, 7.0, y)
 		_building(st, office, Vector3(20.0, 4.6, 9.0), Color("#6e3428"), Color("#3a3734"))
