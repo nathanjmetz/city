@@ -95,13 +95,14 @@ func _run() -> void:
 	_check(not line.is_empty() and line[0].from == "Ann", "Bob gets Ann's chat message")
 	_check(bob.players.size() == 2, "both players listed online")
 
-	# Let the cities grow a while: everyone's copy stays identical.
+	# Let the cities grow a while: each player's own town stays identical.
 	await _until(func(): return server.region.cities[ann.my_city].sim.buildings.size() > 3, 60.0)
 	await _frames(10)
 	var t: int = server.region.tick_count
 	await _until(func(): return ann.region.tick_count == t and bob.region.tick_count == t)
-	_check(ann.region.checksums() == server.region.checksums(), "Ann's copy matches the server")
-	_check(bob.region.checksums() == server.region.checksums(), "Bob's copy matches the server")
+	# Each computer runs only its own town; the neighbors' copies refresh now and then.
+	_check(ann.region.checksums()[ann.my_city] == server.region.checksums()[ann.my_city], "Ann's town matches the server")
+	_check(bob.region.checksums()[bob.my_city] == server.region.checksums()[bob.my_city], "Bob's town matches the server")
 	_check(server.region.cities[ann.my_city].sim.buildings.size() > 0, "homes grew in Ann's city")
 
 	# The region is saved, and Ann gets the same city back when she returns.

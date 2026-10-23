@@ -14,6 +14,9 @@ const PROTOCOL := 2
 ## How often the region is written to disk, in seconds (a server that's
 ## switched off loses at most this much).
 const SAVE_EVERY := 10.0
+## WebSocket buffer size: a whole region goes out in one message when a
+## player joins or resyncs (Godot's 64 KB default is far too small).
+const BUFFER_BYTES := 16 * 1024 * 1024
 ## How often players get checksums to compare against, in ticks.
 const CHECK_EVERY := 50
 
@@ -50,6 +53,7 @@ func start(port: int, code: String, path: String, host := "") -> int:
 	if invite_code == "":
 		invite_code = new_code()
 		_dirty = true
+	use_big_buffers(_peer)
 	var err := _peer.create_server(port)
 	if err != OK:
 		return err
@@ -274,6 +278,12 @@ func _rename(account: Dictionary, name: String) -> void:
 	account.name = name
 	accounts[key] = account
 	_dirty = true
+
+
+static func use_big_buffers(peer: WebSocketMultiplayerPeer) -> void:
+	peer.inbound_buffer_size = BUFFER_BYTES
+	peer.outbound_buffer_size = BUFFER_BYTES
+	peer.max_queued_packets = 4096
 
 
 ## A slow salted hash, so a copied save file doesn't give passwords away.
