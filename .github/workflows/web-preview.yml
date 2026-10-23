@@ -97,7 +97,7 @@ jobs:
       - name: Stamp the build
         run: |
           # Shown in the game's corner so you can tell which version you're playing.
-          printf 'const BUILD := "%s  %s"\n' "${GITHUB_SHA::7}" "$(date -u '+%b %d %H:%M UTC')" > scripts/build_info.gd
+          printf 'const BUILD := "%s"\nconst BUILT_AT := %s\n' "${GITHUB_SHA::7}" "$(date -u +%s)" > scripts/build_info.gd
 
       - name: Export for the web
         run: |
