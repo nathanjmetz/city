@@ -129,6 +129,9 @@ func _ready() -> void:
 	for entry in [[_beacons, _beacon_mesh()], [_halos, _halo_mesh()]]:
 		var bm := MultiMesh.new()
 		bm.transform_format = MultiMesh.TRANSFORM_3D
+		# White instance colours: the browser's renderer multiplies vertex
+		# COLOR by the instance colour even without use_colors (black).
+		bm.use_colors = true
 		bm.mesh = entry[1]
 		entry[0].multimesh = bm
 		entry[0].material_override = line_mat
@@ -242,6 +245,9 @@ func _update_marks() -> void:
 	_halos.visible = n > 0
 	_beacons.multimesh.instance_count = n
 	_halos.multimesh.instance_count = n
+	for i in n:
+		_beacons.multimesh.set_instance_color(i, Color.WHITE)
+		_halos.multimesh.set_instance_color(i, Color.WHITE)
 	_set_base(_base)
 
 

@@ -31,6 +31,9 @@ func setup(s: CitySim) -> void:
 	add_child(_parked)
 	var bm := MultiMesh.new()
 	bm.transform_format = MultiMesh.TRANSFORM_3D
+	# White instance colours: the browser's renderer multiplies vertex COLOR
+	# by the instance colour even without use_colors, and that is black.
+	bm.use_colors = true
 	bm.mesh = _mailbox_mesh()
 	_boxes.multimesh = bm
 	_boxes.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -147,6 +150,7 @@ func _mailboxes() -> void:
 	mm.instance_count = xs.size()
 	for i in xs.size():
 		mm.set_instance_transform(i, xs[i])
+		mm.set_instance_color(i, Color.WHITE)
 
 
 ## A black rural mailbox on a wooden post; the door faces the street (-z).

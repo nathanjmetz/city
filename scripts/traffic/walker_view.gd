@@ -27,6 +27,9 @@ func setup(t: TrafficSim, fraction: Callable) -> void:
 func _ready() -> void:
 	_mm = MultiMesh.new()
 	_mm.transform_format = MultiMesh.TRANSFORM_3D
+	# White instance colours: the browser's renderer multiplies vertex COLOR
+	# by the instance colour even without use_colors, and that is black.
+	_mm.use_colors = true
 	_mm.use_custom_data = true
 	_mm.mesh = _person_mesh()
 	var mat := ShaderMaterial.new()
@@ -81,6 +84,7 @@ func _draw_walkers() -> void:
 		if dir.length() < 0.5:
 			dir = Vector3.FORWARD
 		_mm.set_instance_transform(n, Transform3D(Basis.looking_at(Vector3(dir.x, 0.0, dir.z).normalized(), Vector3.UP), p))
+		_mm.set_instance_color(n, Color.WHITE)
 		# Standing at the kerb, the phase stays put: feet together if it's 0.
 		var shirt: Color = SHIRTS[int(w.person) % SHIRTS.size()]
 		shirt.a = fposmod(float(pose[2]), STRIDE) / STRIDE
