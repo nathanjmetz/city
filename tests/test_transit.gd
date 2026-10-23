@@ -267,8 +267,11 @@ func _coach() -> void:
 	_check(sim.buses._has_coach(id), "it buys a coach")
 	var seen := {}
 	var loaded := 0
+	var as_coach := false
 	for i in 15000:
 		sim.tick()
+		for car in sim.traffic.cars:
+			as_coach = as_coach or car.kind == "coach"
 		for bid in sim.buses.buses:
 			var bus: Dictionary = sim.buses.buses[bid]
 			if bus.kind == "coach":
@@ -281,6 +284,7 @@ func _coach() -> void:
 			break
 	_check(seen.has("away"), "the coach reaches the region link (%s)" % str(seen.keys()))
 	_check(loaded > 0, "with riders aboard (%d)" % loaded)
+	_check(as_coach, "it drives as a motorcoach, not a city bus")
 	_check(seen.has("home"), "and comes back to its bay")
 	_check(sim.buses.describe(sim, id).rows.any(func(r): return r[0] == "Coach riders"), "the panel shows coach riders")
 

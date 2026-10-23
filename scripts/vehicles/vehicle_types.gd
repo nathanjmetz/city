@@ -52,6 +52,7 @@ const SPECS := {
 	"tow_truck":     {"len": 7.00, "width": 2.40, "height": 2.80, "acc": 1.3, "brake": 2.6, "top_speed": 36.0, "pref": 0.97},
 	"school_bus":    {"len": 12.20, "width": 2.44, "height": 3.20, "acc": 1.0, "brake": 2.3, "top_speed": 27.0, "pref": 0.92},
 	"city_bus":      {"len": 12.20, "width": 2.60, "height": 3.30, "acc": 1.0, "brake": 2.0, "top_speed": 27.0, "pref": 0.92},
+	"coach":         {"len": 13.80, "width": 2.59, "height": 3.50, "acc": 0.9, "brake": 2.0, "top_speed": 31.0, "pref": 0.93},
 	"garbage_truck": {"len": 9.80, "width": 2.60, "height": 3.70, "acc": 0.9, "brake": 2.3, "top_speed": 25.0, "pref": 0.9},
 	"fire_engine":   {"len": 10.40, "width": 2.60, "height": 3.10, "acc": 1.2, "brake": 2.6, "top_speed": 30.0, "pref": 1.0},
 	"taxi":          {"len": 4.88, "width": 1.84, "height": 1.62, "acc": 2.0, "brake": 3.0, "top_speed": 50.0, "pref": 1.0},
@@ -104,6 +105,7 @@ const SEMI_COLORS := [
 const LIVERY := {
 	"school_bus": [[Color(0.97, 0.71, 0.0), 1.0]],    # National School Bus Glossy Yellow
 	"city_bus": [[Color(0.93, 0.93, 0.92), 1.0]],
+	"coach": [[Color(0.94, 0.94, 0.93), 3.0], [Color(0.70, 0.71, 0.72), 1.0]],
 	"fire_engine": [[Color(0.72, 0.04, 0.06), 1.0]],
 	"ambulance": [[Color(0.95, 0.95, 0.94), 1.0]],
 	"mail_truck": [[Color(0.95, 0.95, 0.94), 1.0]],     # postal white

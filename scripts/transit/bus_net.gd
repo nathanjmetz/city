@@ -1356,7 +1356,7 @@ func _send(sim: CitySim, bus: Dictionary, target: int) -> bool:
 	if bus.state == "parked":
 		from = _gate(sim.services.buildings[bus.depot])
 	var purpose := "school" if bus.kind == "school_bus" else "transit"
-	var kind := "school_bus" if bus.kind == "school_bus" else "city_bus"
+	var kind: String = bus.kind if bus.kind == "school_bus" or bus.kind == "coach" else "city_bus"
 	var cargo := {"riders": bus.load, "bus": bus.id}
 	var dest := {"ref": "edge" if target == -2 else "bus:%d" % bus.id, "pos": [to.x, to.z]}
 	var tid := -1
