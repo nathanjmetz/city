@@ -18,7 +18,10 @@ Utility: bucket truck (Altec AT40G) for phone and power line crews.
 Camping: Class C RV, Class A motorhome and a pickup with a slide-in camper,
 used by out-of-town visitors (purpose "visitor").
 Farm country: Amish black top buggy at a trot (about 10 mph); Daviess County,
-next to Petersburg, has one of Indiana's largest Amish settlements.
+next to Petersburg, has one of Indiana's largest Amish settlements. Buggies
+turn up now and then on shopping trips.
+Winter: while snow is on the ground, dump trucks and one contractor pickup in
+three wear a plow blade (`VehicleModels.WINTER`).
 Services: school bus, city bus, garbage truck, fire engine, police
 interceptor, ambulance. Farm: row-crop tractor, combine.
 

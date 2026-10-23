@@ -136,7 +136,12 @@ const PURPOSE := {
 		"hatchback": 4.0, "minivan": 7.0, "sports": 1.5, "motorcycle": 1.5, "van": 1.0,
 		"rv": 3.0, "motorhome": 1.5, "pickup_camper": 2.0,
 	},
-	"shopping": PERSONAL,
+	# Amish families drive their buggies to town to shop (Washington and Odon
+	# stores keep hitching rails), so now and then one turns up.
+	"shopping": {
+		"pickup": 20.0, "work_pickup": 4.0, "crossover": 20.0, "suv": 12.0, "sedan": 15.0,
+		"hatchback": 4.0, "minivan": 5.0, "sports": 1.5, "motorcycle": 1.0, "van": 2.0, "buggy": 0.4,
+	},
 	# Freight.
 	"grain": {"grain_truck": 8.0, "tractor": 2.0},       # hopper semis, tractors with wagons
 	"livestock": {"livestock_truck": 1.0},  # pot-belly cattle and hog trailers
