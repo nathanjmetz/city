@@ -19,14 +19,34 @@ const YARD_GRAVEL := Color("#b5ad9c")  # crushed limestone, pale in the sun
 
 
 ## [house mesh, ground mesh, trees] for a farmstead at growth stage `look`
-## (0 house only, 1 barn, 2 grain bins, 3 silo).
-static func build_farmstead(seed: int, look: int) -> Array:
+## (0 house only, 1 barn, 2 grain bins, 3 silo), with what the farmer has
+## built (Agency.TREES.farm) in the yard (UpgradeKits).
+static func build_farmstead(seed: int, look: int, built := []) -> Array:
 	var b := FarmBuilder.new()
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
-	b._farmstead(look)
+	b._farmstead(maxi(look, 2) if "grain_bins" in built else look)
+	b._farm_upgrades(built)
 	return [b._commit_house(), b._commit_flat(), b.trees]
+
+
+## The farm tree's steps, each where it would stand on a real farmstead:
+## the bigger bin on the bin row, the dryer and leg between the bins, the
+## planter and grain trailer parked by the lane, the dealer sign out front.
+func _farm_upgrades(built: Array) -> void:
+	if "grain_bins" in built:
+		UpgradeKits.big_bin(self, Vector3(-13.6, 0, 2.2))
+	if "dryer" in built:
+		UpgradeKits.dryer_leg(self, Vector3(-8.0, 0, 16.8), Vector3(-8.25, 0, 13.9),
+			[Vector3(-12.0, 9.6, 10.0), Vector3(-4.5, 9.6, 10.0), Vector3(-13.6, 10.4, 2.2)])
+	if "precision" in built:
+		UpgradeKits.precision(self, Vector3(16.5, 0, 18.0), Vector3(9.0, 0, -17.5),
+			Color(_pick(["#a52a1f", "#2f6b2a", "#c46a12"])))
+	if "co_op" in built:
+		UpgradeKits.grain_trailer(self, Vector3(9.0, 0, -11.0))
+	if "seed_dealer" in built:
+		UpgradeKits.seed_dealer(self, Vector3(-16.8, 0, -19.4), Vector3(14.5, 0, 9.5))
 
 
 func _farmstead(look: int) -> void:
