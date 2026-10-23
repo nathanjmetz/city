@@ -1,6 +1,6 @@
 extends SceneTree
 ## Pictures of the game shell for checking the look.
-## Run: godot -s tools/shell_shots.gd -- menu|together|online|neighbor|pause out.png
+## Run: godot -s tools/shell_shots.gd -- menu|together|online|neighbor|neighborhood|pause out.png
 
 var _frames := 0
 var _mode := "menu"
@@ -12,7 +12,7 @@ func _initialize() -> void:
 	var args := OS.get_cmdline_user_args()
 	_mode = args[0] if args.size() > 0 else "menu"
 	_out = args[1] if args.size() > 1 else "shot.png"
-	if _mode in ["online", "neighbor"]:
+	if _mode in ["online", "neighbor", "neighborhood"]:
 		_start_online.call_deferred()
 	elif _mode == "pause":
 		(func(): root.get_node("Session").new_city("Shots")).call_deferred()
@@ -67,9 +67,14 @@ func _process(_delta: float) -> bool:
 		esc.keycode = KEY_ESCAPE
 		esc.pressed = true
 		root.push_input(esc)
+	if _mode == "neighborhood" and _frames == 600:
+		# The Neighborhood tool in hand, pointing at open land.
+		for n in current_scene.get_children():
+			if n is Hud:
+				n.neighborhood_tool.set_kind("found")
 	if _mode == "together" and _frames == 5:
 		current_scene.call("_show", "code")
-	if _frames == (900 if _mode in ["online", "neighbor"] else 180 if _mode == "pause" else 60):
+	if _frames == (900 if _mode in ["online", "neighbor", "neighborhood"] else 180 if _mode == "pause" else 60):
 		root.get_viewport().get_texture().get_image().save_png(_out)
 		print("saved ", _out)
 		quit()

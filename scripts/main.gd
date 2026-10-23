@@ -191,6 +191,9 @@ func _ready() -> void:
 	var move_tool := MoveTool.new()
 	move_tool.setup(sim, cam)
 	add_child(move_tool)
+	var neighborhood_tool := NeighborhoodTool.new()
+	neighborhood_tool.setup(sim, cam)
+	add_child(neighborhood_tool)
 
 	# Only one tool is active at a time.
 	var others := func(keep: Object):
@@ -218,6 +221,8 @@ func _ready() -> void:
 			park_tool.set_kind("")
 		if keep != move_tool and move_tool.active:
 			move_tool.set_active(false)
+		if keep != neighborhood_tool and neighborhood_tool.kind != "":
+			neighborhood_tool.set_kind("")
 	# Picking a tool also plays the tool sound.
 	var picked := func(tool: Object):
 		others.call(tool)
@@ -234,12 +239,14 @@ func _ready() -> void:
 	warehouse_tool.kind_changed.connect(func(k): if k != "": picked.call(warehouse_tool))
 	park_tool.kind_changed.connect(func(k): if k != "": picked.call(park_tool))
 	move_tool.active_changed.connect(func(on): if on: picked.call(move_tool))
+	neighborhood_tool.kind_changed.connect(func(k): if k != "": picked.call(neighborhood_tool))
 
 	var select_tool := SelectTool.new()
 	select_tool.setup(sim, cam, func(): return road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
-		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or bank_tool.kind != "" or telecom_tool.kind != "" or move_tool.active)
+		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or bank_tool.kind != "" or telecom_tool.kind != "" or move_tool.active \
+		or neighborhood_tool.kind != "")
 	add_child(select_tool)
 
 	var water_view := WaterView.new()
@@ -258,6 +265,7 @@ func _ready() -> void:
 	hud.park_tool = park_tool
 	hud.traffic_tool = traffic_tool
 	hud.move_tool = move_tool
+	hud.neighborhood_tool = neighborhood_tool
 	hud.info_view = info_view
 	hud.service_view = service_view
 	hud.bus_view = bus_view

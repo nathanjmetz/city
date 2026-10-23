@@ -37,6 +37,7 @@ signal command_applied(cmd: Dictionary)
 ## A player command was turned down (Telemetry counts these to find where
 ## players get stuck).
 signal command_refused(cmd: Dictionary)
+signal neighborhoods_changed
 
 const TICKS_PER_SECOND := 10
 ## A new building can start every this many ticks.
@@ -109,6 +110,14 @@ var mail := Mail.new()
 var interlocal := Interlocal.new()
 ## What the region's shared projects do in this town (Regional).
 var regional := Regional.new()
+## The town's other neighborhoods, out on open land (Neighborhoods).
+var neighborhoods := Neighborhoods.new()
+## In a region, set by RegionClient: whose land these points (town
+## coordinates) are on. Returns "" when this town may build there, or why
+## not. Unset in a lone town.
+var land_check: Callable
+## In a region: why a new neighborhood can't start at a spot ("" if it can).
+var site_check: Callable
 ## Who owns each business, its name and its family's brand (Families).
 var families := Families.new()
 var streets := Streets.new()
@@ -252,7 +261,7 @@ func apply_now(cmd: Dictionary) -> bool:
 				clampf(float(cmd.get("across", RoadShapes.GRID_ACROSS)), GridFill.ACROSS_MIN, GridFill.BLOCK_MAX))
 			if shape.size() == 2:
 				lines = [[shape[0], shape[0].lerp(shape[1], 0.5), shape[1]]]
-			if lines.is_empty() or not _can_afford(lines, _road(cmd)):
+			if lines.is_empty() or not _can_afford(lines, _road(cmd)) or land_problem(lines) != "":
 				return false
 			network.begin_batch()
 			for l in lines:
@@ -264,7 +273,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			var ring := RoadStyle.ring_type(_road(cmd))
 			var radius := RoadShapes.roundabout_radius(float(cmd.radius), _road(cmd))
 			var arcs := RoadShapes.roundabout(_v(cmd.center), radius)
-			if not _can_afford(arcs, ring):
+			if not _can_afford(arcs, ring) or land_problem(arcs) != "":
 				return false
 			ok = _build_roundabout(_v(cmd.center), radius, ring)
 			if ok:
@@ -279,6 +288,21 @@ func apply_now(cmd: Dictionary) -> bool:
 			ok = network.set_type(int(cmd.seg), _road(cmd))
 			if ok:
 				economy.money -= cost
+		"found_neighborhood":
+			var at := _v(cmd.pos)
+			var spot := Vector2(at.x, at.z)
+			if neighborhood_problem(spot) != "":
+				return false
+			var from := _nearest_road_xz(spot)
+			economy.money -= neighborhoods.fee()
+			var name := str(cmd.get("name", "")).strip_edges().left(40)
+			if name == "":
+				name = Neighborhoods.side_name(spot)
+			neighborhoods.add(spot, name, tick_count)
+			if from.distance_to(spot) >= RoadNetwork.MIN_LENGTH:
+				_county_road(from, spot, [])
+			neighborhoods_changed.emit()
+			ok = true
 		"place_service":
 			var kind := int(cmd.kind)
 			if not Services.KINDS.has(kind):
@@ -650,6 +674,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			parks = Parks.new()
 			parks_changed.emit()
 			mail = Mail.new()
+			neighborhoods = Neighborhoods.new()
+			neighborhoods_changed.emit()
 			policies.from_dict({})
 			culture.from_dict({})
 			_lever_steps.clear()
@@ -910,6 +936,11 @@ func tick() -> void:
 	# Once a month every hub's leader looks at its development tree (Agency).
 	if tick_count % (24 * TICKS_PER_HOUR) == 12 * TICKS_PER_HOUR:
 		_develop_hubs()
+		if not neighborhoods.sites.is_empty():
+			var before := neighborhoods.sites.size()
+			neighborhoods.check(self)
+			if neighborhoods.sites.size() != before:
+				neighborhoods_changed.emit()
 	Perf.add("sim.hub_leaders", t)
 	t = Perf.now()
 	# The town's character drifts toward where its jobs are.
@@ -2015,12 +2046,75 @@ func road_problem(c: Array, type: int) -> String:
 		return "Too steep: %d%% grade. A %s can climb at most %d%% (AASHTO)." \
 			% [roundi(grade * 100.0), spec.name, roundi(spec.grade * 100.0)]
 	var problem := network.crossing_problem(c[0], c[1], c[2])
+	if problem == "":
+		problem = land_problem([c])
 	var saved := reserves.crosses(RoadNetwork.sample_curve(c[0], c[1], c[2], 24))
 	if problem == "" and saved != "":
 		problem = "That land is reserved for %s. Clear the reserve first." % Reserves.KINDS[saved]
 	if problem == "" and Economy.road_cost(c, type) > economy.money:
 		return "Not enough money: this road costs $%s." % money_text(Economy.road_cost(c, type))
 	return problem
+
+
+## Whose land these road pieces cross ("" when it's this town's or open
+## land). Only in a region (land_check).
+func land_problem(curves: Array) -> String:
+	if not land_check.is_valid():
+		return ""
+	var pts := []
+	for c in curves:
+		for q in RoadNetwork.sample_curve(c[0], c[1], c[2], 8):
+			pts.append(Vector2(q.x, q.z))
+	return land_check.call(pts)
+
+
+## Why a new neighborhood can't start here ("" if it can).
+func neighborhood_problem(spot: Vector2) -> String:
+	if neighborhoods.slots_free(int(stats.population)) <= 0:
+		if neighborhoods.sites.size() >= Balance.NEIGHBORHOOD_MAX:
+			return "A town can have %d neighborhoods." % Balance.NEIGHBORHOOD_MAX
+		return "Grow to the next town stage to earn another neighborhood."
+	if neighborhoods.fee() > economy.money:
+		return "Not enough money: a new neighborhood costs $%s." % money_text(neighborhoods.fee())
+	if network.nodes.is_empty():
+		return "Build your first roads at home first."
+	if site_check.is_valid():
+		return site_check.call(spot)
+	return ""
+
+
+## The nearest road node to a spot, on the ground plane.
+func _nearest_road_xz(to: Vector2) -> Vector2:
+	var best := Vector2.ZERO
+	var best_d := INF
+	for n in network.nodes:
+		var q: Vector3 = network.nodes[n]
+		var d := Vector2(q.x, q.z).distance_squared_to(to)
+		if d < best_d:
+			best_d = d
+			best = Vector2(q.x, q.z)
+	return best
+
+
+## The land this town has built on, as LAND_CELL squares (centres, town
+## coordinates): its buildings, its town centre and its neighborhood sites.
+## Neighbors use it to tell whose land is whose without the whole town.
+func land_cells() -> PackedVector2Array:
+	var cell := Balance.LAND_CELL
+	var seen := {}
+	var add := func(p: Vector2):
+		seen[Vector2i(floori(p.x / cell), floori(p.y / cell))] = true
+	add.call(Vector2.ZERO)
+	for s in neighborhoods.sites:
+		add.call(s.at)
+	for key in buildings:
+		if lots.has(key):
+			var p: Vector3 = lots[key].pos
+			add.call(Vector2(p.x, p.z))
+	var out := PackedVector2Array()
+	for k in seen:
+		out.append((Vector2(k) + Vector2(0.5, 0.5)) * cell)
+	return out
 
 
 ## What it costs to build these road pieces.
@@ -2336,6 +2430,7 @@ func to_dict() -> Dictionary:
 		"permits": permits.to_dict(),
 		"hubs": hubs.to_dict(),
 		"parks": parks.to_dict(),
+		"neighborhoods": neighborhoods.to_dict(),
 		"mail": mail.to_dict(),
 		"interlocal": interlocal.to_dict(),
 		"regional": regional.to_dict(),
@@ -2394,6 +2489,7 @@ func from_dict(d: Dictionary) -> void:
 	permits.from_dict(d.get("permits", {}))
 	hubs.from_dict(d.get("hubs", {}))
 	parks.from_dict(d.get("parks", {}))
+	neighborhoods.from_dict(d.get("neighborhoods", {}))
 	mail.from_dict(d.get("mail", {}))
 	interlocal.from_dict(d.get("interlocal", {}))
 	regional.from_dict(d.get("regional", {}))

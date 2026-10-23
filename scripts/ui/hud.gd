@@ -28,6 +28,7 @@ var _industry_kind := "oil"  # what the industry Reserve tool saves land for
 var warehouse_tool: WarehouseTool
 var campus_tool: CampusTool
 var bank_tool: BankTool
+var neighborhood_tool: NeighborhoodTool
 var _bank_cards := {}  # "community"/"farm_credit" -> Button
 var _campus_cards := {}  # "high_school"/"college"/"university" -> Button
 var telecom_tool: TelecomTool
@@ -62,6 +63,7 @@ var _variant_of := {}     # road menu -> the variant last picked in it
 var _kinds_open := false  # the road kinds row is up instead of grid sizes
 var _traffic_row := HBoxContainer.new()
 var _traffic_card: Button
+var _neighborhood_card: Button
 var _zone_cards := {}    # ZoneMap.Zone -> Button
 var _power_card: Button
 var _service_cards := {} # Services.Kind -> Button
@@ -146,6 +148,8 @@ func _ready() -> void:
 	sim.telecom_changed.connect(_sync)
 	bank_tool.kind_changed.connect(func(_k): _sync())
 	bank_tool.hint_changed.connect(_show_hint)
+	neighborhood_tool.kind_changed.connect(func(_k): _sync())
+	neighborhood_tool.hint_changed.connect(_show_hint)
 	traffic_tool.mode_changed.connect(func(_m): _sync())
 	traffic_tool.hint_changed.connect(_show_hint)
 	park_tool.kind_changed.connect(func(_k): _sync())
@@ -203,7 +207,8 @@ func anything_open() -> bool:
 		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
-		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or bank_tool.kind != "" or telecom_tool.kind != "" or move_tool.active
+		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or bank_tool.kind != "" or telecom_tool.kind != "" or move_tool.active \
+		or neighborhood_tool.kind != ""
 
 
 ## Puts every tool away and closes every panel.
@@ -230,6 +235,7 @@ func close_all() -> void:
 	traffic_tool.set_mode(TrafficTool.Mode.NONE)
 	park_tool.set_kind("")
 	move_tool.set_active(false)
+	neighborhood_tool.set_kind("")
 	_sync()
 
 
@@ -635,6 +641,15 @@ func _roads_drawer() -> PanelContainer:
 		else:
 			road_tool.set_mode(road_tool.last_draw))
 	traffic.add_child(_traffic_card)
+
+	# A town hemmed in by its neighbors starts a new neighborhood on open land.
+	row.add_child(VSeparator.new())
+	var town := _section(row, "Town")
+	_neighborhood_card = _card("homes", "Neighborhood", "")
+	_neighborhood_card.tooltip_text = "New neighborhood: start part of your town out on open land, linked by a free county road. You earn one per town stage."
+	_neighborhood_card.pressed.connect(func():
+		neighborhood_tool.set_kind("" if neighborhood_tool.kind != "" else "found"))
+	town.add_child(_neighborhood_card)
 	return drawer
 
 
@@ -1038,7 +1053,7 @@ func _sync() -> void:
 		_category = "parks"
 	elif industry_tool.kind != "" or warehouse_tool.kind != "" or farm_tool.mode != FarmTool.Mode.NONE:
 		_category = "industry"
-	elif traffic_tool.mode != TrafficTool.Mode.NONE:
+	elif traffic_tool.mode != TrafficTool.Mode.NONE or neighborhood_tool.kind != "":
 		_category = "roads"
 	elif move_tool.active:
 		_category = "move"
@@ -1073,6 +1088,7 @@ func _sync() -> void:
 	_variant_row.get_parent().visible = not in_traffic and _kinds_open
 	_traffic_row.visible = in_traffic
 	_traffic_card.set_pressed_no_signal(in_traffic)
+	_neighborhood_card.set_pressed_no_signal(neighborhood_tool.kind != "")
 	for z in _zone_cards:
 		_zone_cards[z].set_pressed_no_signal(z == zone_tool.zone)
 	for k in _service_cards:
