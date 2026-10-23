@@ -51,6 +51,20 @@ jobs:
           dest=~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
           mkdir -p "$dest" && cp ~/godot-cache/templates/* "$dest/"
 
+      # The slim web engine from the Web engine workflow, when it's built.
+      - name: Slim engine
+        id: slim
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/slim-engine
+          key: slim-web-${{ env.GODOT_VERSION }}-${{ hashFiles('web/engine/custom.py') }}
+
+      - name: Use the slim engine
+        if: steps.slim.outputs.cache-hit == 'true'
+        run: |
+          sed -i "s|^custom_template/release=.*|custom_template/release=\"$HOME/slim-engine/web_nothreads_release.zip\"|" export_presets.cfg
+          grep -n custom_template/release export_presets.cfg
+
       - name: Run tests
         run: |
           ~/godot-cache/godot --headless --import
