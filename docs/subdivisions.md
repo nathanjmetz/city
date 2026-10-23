@@ -28,7 +28,8 @@ Brawn (2026-10-23): the game starts as a classic city builder, and as the town g
 
 Every phase checks with the town's other leaders before it starts. Shortages cost the builder and slow the job, never the town's money.
 
-- **Gravel:** about 400 tons a home (NSSGA) at about $16 a ton (USGS), with the price doubling every 30 miles. With a quarry (an ore company) in town it's local. Without one it's trucked about 40 miles: the builder pays more and the job takes 25% longer.
+- **Gravel:** about 400 tons a home (NSSGA) at about $16 a ton (USGS), with the price doubling every 30 miles. With a quarry (an ore company) in town it's local. Without one it's trucked about 40 miles: the builder pays more and the job takes 25% longer. Concrete rides the same line: about 45 cubic yards a home, poured within 90 minutes of batching (ASTM C94), so ready-mix plants sit by quarries; without one the builder pays a haul charge of about $1 a yard a mile.
+- **Water ahead of time:** once the water system is three quarters full and the utility can't pay for its next well, intake or tower, the superintendent asks the town to pay for it on the bell (plan at 75%, build by 90%: Texas's 75/90 rule; big utility projects go to the council). A yes builds it now; a no lets it save up, and a full system stops new hookups.
 - **Builders:** about one crew per 1,500 people (at least 2), each with about 6 houses going up. Past that, labor costs climb and the phase takes longer.
 - **Water and power:** a warning past 90% of capacity (the Texas 75/90 rule). At 100% there are no new hookups, a moratorium, and the next phase waits.
 - **Winter:** paving season closes December through February, so new phases wait for spring.

@@ -26,6 +26,14 @@ extends RefCounted
 ##   festival   Main Street merchants ask to close the street for the fall
 ##              festival (a special event permit). Yes: the town pays police
 ##              and cleanup; shops do a month's extra business.
+##   water      The water superintendent asks the town to pay for the next
+##              well (or river intake, or tower) when the system passes
+##              three quarters full and the utility can't pay for it itself.
+##              Utilities plan expansion at 75% of capacity and build by 90%
+##              (Texas's 75/90 rule), and a big project goes to the council
+##              as a bond or a rate case. Yes: built now. No: it saves up,
+##              and a full system stops new hookups. Asked ahead of the
+##              others, since it can't wait its turn.
 ## Farmland turned into an office park or a shopping strip, Brawn's example
 ## of a town changing identity, is asked by a land developer (TownCulture).
 ## Heritage asks (protect a district, tear down an old building) live in
@@ -55,13 +63,18 @@ var festival_until := -1
 ## Once a game month: maybe one leader asks for something.
 func month(sim) -> void:
 	_expire(sim)
+	if _cooled(sim, "water"):
+		var w := _plan_water(sim)
+		if not w.is_empty():
+			_file(sim, w)
+			return
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([sim.city_seed, sim.tick_count, "asks"])
 	if rng.randf() >= Balance.ASK_CHANCE:
 		return
 	var options := []
 	for kind in ["abatement", "pave", "signal", "festival"]:
-		if sim.tick_count - int(last.get(kind, -1_000_000_000)) < int(Balance.ASK_COOLDOWN[kind]) * TICKS_PER_MONTH:
+		if not _cooled(sim, kind):
 			continue
 		var plan: Dictionary = call("_plan_" + kind, sim)
 		if plan.is_empty():
@@ -82,6 +95,11 @@ func month(sim) -> void:
 			pick = o
 			break
 	_file(sim, pick)
+
+
+## True when `kind` hasn't been asked for its cooldown.
+func _cooled(sim, kind: String) -> bool:
+	return sim.tick_count - int(last.get(kind, -1_000_000_000)) >= int(Balance.ASK_COOLDOWN[kind]) * TICKS_PER_MONTH
 
 
 func _file(sim, plan: Dictionary) -> void:
@@ -224,6 +242,37 @@ func _plan_signal(sim) -> Dictionary:
 	return {}
 
 
+## The water system three quarters full, and no money for its next well.
+func _plan_water(sim) -> Dictionary:
+	var w: WaterUtility = sim.services.water
+	for id in w._sorted_ids():
+		if not w.live.has(id) or not sim.services.buildings.has(id):
+			continue
+		if str(sim.permits.guidance("water", id).stance) == "hold":
+			continue
+		var cap := w.water_capacity(id)
+		var pct := roundi(100.0 * float(w.live[id].load) / maxf(cap, 1.0))
+		if cap <= 0 or pct < Balance.ASK_WATER_PCT:
+			continue
+		var key := w.supply_step(sim, id)
+		if key == "":
+			continue
+		var cost := roundi(WaterUtility.project_cost(key))
+		if w.affords(id, cost):
+			continue
+		var what := str(WaterUtility.NAMES[key].name).to_lower()
+		var b: Dictionary = sim.services.buildings[id]
+		return {"kind": "water", "hub_id": 300000 + id,
+			"leader": "%s, water superintendent" % str(w.utilities[id].name),
+			"title": "Pay for a new %s" % what.trim_prefix("elevated ").get_slice(" and ", 0),
+			"why": "The water system is %d%% full and the utility can't pay for its next %s. When it's full, new homes can't hook up." % [pct, what],
+			"area": _square(b.pos, 40.0), "change": "",
+			"yes": "The town pays $%s and it's built now." % CitySim.money_text(cost),
+			"no": "The utility saves up for it.",
+			"do": {"utility": id, "key": key, "cost": cost}}
+	return {}
+
+
 ## A bank president or a family business owner near a point.
 static func _leader_near(sim, at: Vector3) -> String:
 	var ids: Array = sim.banks.banks.keys()
@@ -302,7 +351,8 @@ func carry_out(sim) -> void:
 			if _yes(sim, a):
 				# The bell's history says it happened (Brawn: a yes must visibly do something).
 				sim.permits.requests[id].note = "Done."
-				sim.culture.nudge(_sector(sim, kind, a), Balance.CULTURE_YES_LEAN)
+				if kind != "water":
+					sim.culture.nudge(_sector(sim, kind, a), Balance.CULTURE_YES_LEAN)
 		changed.emit()
 
 
@@ -342,6 +392,17 @@ func _yes(sim, a: Dictionary) -> bool:
 		"festival":
 			sim.economy.money -= int(a.cost)
 			festival_until = sim.tick_count + TICKS_PER_MONTH
+		"water":
+			var w: WaterUtility = sim.services.water
+			var id := int(a.utility)
+			if not w.utilities.has(id) or not sim.services.buildings.has(id):
+				return false
+			if not w._build(sim, id, str(a.key), sim.yard_usable):
+				return false
+			w.utilities[id].last = "Built a %s the town paid for" % str(WaterUtility.NAMES[str(a.key)].name).to_lower()
+			sim.economy.money -= int(a.cost)
+			sim._lots_dirty = true
+			sim.water_changed.emit()
 	return true
 
 
