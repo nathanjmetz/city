@@ -129,6 +129,25 @@ func _init() -> void:
 			in_strip.append(l)
 	_check(not in_strip.is_empty() and in_strip.all(func(l): return strip.network.segments[l.seg].type != 1 and l.depth > 25.0),
 		"one row of full-depth lots between a street and an arterial (%s)" % str(in_strip.map(func(l): return [strip.network.segments[l.seg].type, snappedf(l.depth, 0.1)])))
+	# Zoning just a stretch of a street (a drag over part of a block face):
+	# a few shop lots there, none along the rest of the street.
+	var bit := CitySim.new()
+	bit.simulate_traffic = false
+	bit.apply({"type": "build_road", "start": [0, 0], "ctrl": [150, 0], "end": [300, 0]})
+	var bit_seg: int = bit.network.segments.keys()[0]
+	bit.apply({"type": "zone_frontage", "seg": bit_seg, "side": 1, "zone": ZoneMap.Zone.COMMERCIAL, "span": [120.0, 170.0]})
+	var xs := bit.lots.values().map(func(l): return l.pos.x)
+	_check(xs.size() >= 1 and xs.size() <= 3 and xs.all(func(x): return x > 105.0 and x < 185.0),
+		"a stretch zones just a few lots there (%s)" % str(xs))
+	# The tool: a short drag still zones a lot's width; one ending near a
+	# corner runs on to it.
+	var zt := ZoneTool.new()
+	zt.sim = bit
+	zt._spans = {"a": [bit_seg, -1, 140.0, 142.0], "b": [bit_seg, 1, 5.0, 60.0]}
+	var runs := zt._runs()
+	_check(runs[0][3] - runs[0][2] >= ZoneTool.MIN_RUN - 0.01 and runs[1][2] == 0.0,
+		"a short drag zones a lot's width, and one near the corner runs to it (%s)" % str(runs))
+	zt.free()
 	# A zoning drag: the zones go in at once, the lots once, when it ends.
 	var drag := CitySim.new()
 	drag.apply({"type": "build_road", "start": [0, 0], "ctrl": [100, 0], "end": [200, 0]})
