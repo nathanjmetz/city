@@ -24,6 +24,9 @@ uniform sampler2D noise_soft : filter_linear_mipmap, repeat_enable;
 uniform sampler2D noise_grain : filter_linear_mipmap, repeat_enable;
 uniform vec4 dry : source_color = vec4(0.50, 0.48, 0.28, 1.0);
 uniform vec4 soil : source_color = vec4(0.47, 0.40, 0.29, 1.0);
+// Set by DayNight: snow cover, and the season as (autumn, bare, spring, dry).
+global uniform float snow;
+global uniform vec4 season_look;
 varying vec3 world_pos;
 vec3 lin(vec3 c) {
 	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
@@ -49,6 +52,15 @@ void fragment() {
 	col *= 1.0 + (stripe - 0.5) * 0.12 * smoothstep(0.75, 1.0, care);
 	float fade = clamp(1.0 - length(VERTEX) / 160.0, 0.0, 1.0);
 	col *= 1.0 + (grain - 0.5) * 0.3 * fade;
+	// Seasons, as on the open ground around it: fresh in spring, tan and
+	// dormant after hard frosts (a fed, watered lawn holds its green a
+	// little longer), and under the same snow as the fields in winter.
+	// Benchmark: Indiana town parks in March and January.
+	col = mix(col, col * vec3(0.92, 1.12, 0.78), season_look.z);
+	vec3 dormant = lin(vec3(0.55, 0.49, 0.34)) * (0.85 + mid * 0.3);
+	col = mix(col, dormant, clamp(season_look.w * 1.1 - clump * 0.2 - care * 0.15, 0.0, 0.85));
+	float cover = smoothstep(0.05, 0.45, snow * 1.15 - clump * 0.35 + 0.1);
+	col = mix(col, vec3(0.80, 0.83, 0.88) * (0.94 + mid * 0.08), cover);
 	ALBEDO = col;
 	ROUGHNESS = 0.92;
 	SPECULAR = 0.25;
