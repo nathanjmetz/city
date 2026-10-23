@@ -27,6 +27,10 @@ var _who := LineEdit.new()  # your name, on the invite code page
 var _first := LineEdit.new()  # your name, the first time you press Play
 var _published_code := ""  # the family region's invite code, from REGION_CONFIG
 var _offline: Button  # shown when the region can't be reached
+## Other invite codes to try if the region turns this one away (an old code
+## kept on this device, or a typo): the family never sees "wrong code".
+var _other_codes := []
+var _retrying := false
 
 
 func _ready() -> void:
@@ -267,15 +271,31 @@ func _join() -> void:
 		return
 	_joining = true
 	_status.text = "Joining..."
+	if not _retrying:
+		_other_codes = []
+		for code in [_published_code, Session.FAMILY_CODE, str(Session.profile.get("code", ""))]:
+			if code != "" and code != _clean(_code.text) and not code in _other_codes:
+				_other_codes.append(code)
+	_retrying = false
 	var c := Session.join_region(_server_address(), _code.text)
 	c.joined.connect(func(): Session.enter_region())
 	c.waiting.connect(func(message): _status.text = message)
 	c.failed.connect(func(reason):
 		_joining = false
+		if "invite code" in reason and not _other_codes.is_empty():
+			# Try the region's own code before bothering anyone.
+			_code.text = _other_codes.pop_front()
+			_retrying = true
+			_join.call_deferred()
+			return
 		_status.text = reason
 		# The region's computer is off, asleep or out of date: don't leave
 		# anyone stuck on the title screen.
 		_offline.visible = "answering" in reason or "version" in reason or "reach" in reason)
+
+
+static func _clean(code: String) -> String:
+	return code.strip_edges().to_upper().replace("-", "").replace(" ", "")
 
 
 ## Where the region is: the invite link's address, else the one the region

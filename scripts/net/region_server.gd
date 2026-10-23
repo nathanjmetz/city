@@ -229,6 +229,7 @@ func _hello(from: int, msg: Dictionary) -> void:
 		_reject(from, "This region runs a different version of the game. Refresh to update.")
 		return
 	if str(msg.get("code", "")).to_upper().replace("-", "").strip_edges() != invite_code:
+		_log("%s sent invite code \"%s\"" % [str(msg.get("name", "?")), str(msg.get("code", "")).left(16)])
 		_reject(from, "That invite code doesn't match this region.")
 		return
 	# The invite code is the only key: no name or password to type. A device
