@@ -447,7 +447,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			ok = buses.apply(self, cmd)
 		"zone_frontage":
 			# Zones a whole block face: one side of a street from junction to
-			# junction ("both" does the other side too).
+			# junction ("both" does the other side too, "single" only this
+			# piece of street, not on round bends).
 			if not network.segments.has(int(cmd.seg)):
 				return false
 			planner.update(network)
@@ -455,7 +456,9 @@ func apply_now(cmd: Dictionary) -> bool:
 			if bool(cmd.get("both", false)):
 				sides.append(-int(cmd.side))
 			for side in sides:
-				for part in frontage_chain(int(cmd.seg), side):
+				var parts := [[int(cmd.seg), side]] if bool(cmd.get("single", false)) \
+					else frontage_chain(int(cmd.seg), side)
+				for part in parts:
 					_paint_frontage(part[0], part[1], int(cmd.zone))
 			_clear_reserved_zones()
 			_usable_cache.clear()

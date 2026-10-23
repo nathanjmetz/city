@@ -204,4 +204,5 @@ func _zone(z: float, side: float, zone: int) -> void:
 		# A street side is left (+1) of its a-to-b direction.
 		var dx: float = c[2].x - c[0].x
 		var s := 1 if (dx > 0.0) == (side > 0.0) else -1
-		sim.apply({"type": "zone_frontage", "seg": id, "side": s, "zone": zone})
+		# Just this street: the scripted player zones street by street.
+		sim.apply({"type": "zone_frontage", "seg": id, "side": s, "zone": zone, "single": true})
