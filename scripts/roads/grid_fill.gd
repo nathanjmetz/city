@@ -148,10 +148,13 @@ static func plan(network: RoadNetwork, shape: Array, block: float, type := 0, si
 				if part.size() >= 2:
 					cands.append([part[0], part[part.size() - 1], false])
 
-	# Keep only the parts that don't run alongside a road (old or new).
+	# Keep only the parts that don't run alongside a road (old or new). The
+	# player's own sides are all kept, though, even where two meet at a
+	# sharp corner: only old roads cut them.
 	var pieces := []  # [a, b, is_side]
+	var old_refs := refs.duplicate()
 	for c in cands:
-		for run in _free_runs(c[0], c[1], refs, type):
+		for run in _free_runs(c[0], c[1], old_refs if c[2] else refs, type):
 			pieces.append([run[0], run[1], c[2]])
 			refs.append(_ref([run[0], run[1]], type))
 
@@ -237,6 +240,14 @@ static func _areas(poly: PackedVector2Array, refs: Array, spacing: float) -> Arr
 			continue
 		out.append(ar)
 	return out
+
+
+## True when `q` lies on one of the player's sides.
+static func _on_sides(q: Vector2, sides: Array) -> bool:
+	for sd in sides:
+		if Geometry2D.get_closest_point_to_segment(q, sd[0], sd[1]).distance_to(q) < 0.5:
+			return true
+	return false
 
 
 ## The sharpest outward corner of a polygon, ignoring edges under 2 m.
@@ -429,22 +440,27 @@ static func _drop_wedges(pieces: Array, old: Array, u: Vector2, across: float, b
 	var fixed := junctions.duplicate()
 	fixed.append_array(corners)
 	var merge := NODE_SNAP * 0.75
+	var sides := pieces.filter(func(pc): return pc[2])
 	for e in edges:
 		for k in 2:
 			var at: Vector2 = e[k]
 			if _is_corner(at, corners) or _near_any(at, junctions, TOUCH):
 				continue
+			# A junction on the player's side only slides along that side,
+			# so the outline stays straight and whole.
+			var on_side := _on_sides(at, sides)
 			var best := merge
 			var to := at
 			for q in fixed:
-				if q.distance_to(at) < best and q.distance_to(e[1 - k]) > MIN_PIECE:
+				if q.distance_to(at) < best and q.distance_to(e[1 - k]) > MIN_PIECE and (not on_side or _on_sides(q, sides)):
 					best = q.distance_to(at)
 					to = q
 			if to == at:
 				for f in edges:
 					for m in 2:
 						var q: Vector2 = f[m]
-						if q.distance_to(at) > TOUCH and q.distance_to(at) < best and q.distance_to(e[1 - k]) > MIN_PIECE:
+						if q.distance_to(at) > TOUCH and q.distance_to(at) < best and q.distance_to(e[1 - k]) > MIN_PIECE \
+								and (not on_side or _on_sides(q, sides)):
 							best = q.distance_to(at)
 							to = q
 			if to != at:
