@@ -1387,7 +1387,7 @@ static func leg(traffic: TrafficSim, v: Dictionary, ref: String, from: Vector3, 
 		purpose: String, cargo: Dictionary, kind: String) -> int:
 	var fresh := int(v.get("vid", -1)) == -1
 	if fresh:
-		var at := traffic._register({"ref": ref, "pos": [from.x, from.z]})
+		var at := traffic.register({"ref": ref, "pos": [from.x, from.z]})
 		if at == "":
 			return -1
 		var vid := traffic.new_vehicle(kind, at, -1, at)
