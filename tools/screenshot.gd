@@ -19,7 +19,7 @@ func _process(_delta: float) -> bool:
 	_frames += 1
 	if _frames == 2:
 		_demo_town()
-	if _frames == 40:
+	if _frames == (int(OS.get_environment("SHOT_FRAMES")) if OS.get_environment("SHOT_FRAMES") != "" else 40):
 		var args := OS.get_cmdline_user_args()
 		var out := args[0] if args.size() > 0 else "shot.png"
 		root.get_viewport().get_texture().get_image().save_png(out)
@@ -392,7 +392,17 @@ func _demo_state(sim: CitySim) -> void:
 		if not hit.is_empty():
 			break
 	var at: Vector2 = hit.on - o
-	var join := OS.get_cmdline_user_args().size() < 6 or OS.get_cmdline_user_args()[5] != "plain"
+	var mode := OS.get_cmdline_user_args()[5] if OS.get_cmdline_user_args().size() >= 6 else ""
+	var join := mode != "plain" and mode != "cross"
+	if mode == "cross":
+		# Where one of the town's roads crosses a highway, unjoined.
+		for id in sim.network.segments:
+			var pts := sim.network.sample_segment(id)
+			for i in pts.size() - 1:
+				var x := Highways.crossing(Vector2(pts[i].x, pts[i].z) + o, Vector2(pts[i + 1].x, pts[i + 1].z) + o)
+				if not x.is_empty():
+					at = x.on - o
+		print("crossing at ", at)
 	if join:
 		var r: Dictionary = Highways.all()[hit.route]
 		var t: Vector2 = (Highways.point(hit.route, hit.along + 20.0) - Highways.point(hit.route, hit.along - 20.0)).normalized()
