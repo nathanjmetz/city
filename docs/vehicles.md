@@ -14,6 +14,7 @@ picks its style (`VehicleModels.variant()`), so it never changes.
 Freight: delivery (step) van, 26 ft box truck, dump truck, concrete mixer,
 tow truck, and semis with a 53 ft dry van, flatbed, grain hopper, tanker,
 log trailer, end dump, USPS trailer or pot-belly livestock trailer.
+Utility: bucket truck (Altec AT40G) for phone and power line crews.
 Services: school bus, city bus, garbage truck, fire engine, police
 interceptor, ambulance. Farm: row-crop tractor, combine.
 
