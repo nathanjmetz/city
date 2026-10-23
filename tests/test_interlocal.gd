@@ -1,24 +1,31 @@
 extends SceneTree
 ## Run: godot --headless -s tests/test_interlocal.gd
-## Shared services between towns: a host town's leaders offer what a
-## neighbor lacks on both bells, a deal both approve is signed, the served
-## town pays its share each month, the host's garbage trucks and coverage
-## reach over the county road, it comes out the same on every copy, and
-## either town can end it with notice.
+## Shared services between towns, the way the game runs them: each player's
+## computer runs only its own town and sends the region server a copy; once
+## a game month the server's ledger files offers on both bells, signs deals
+## both approve and passes on the month's numbers. The served town pays its
+## share, the host's garbage trucks and fire coverage reach over the county
+## road, a deal runs on while a player is away, and either town can end it
+## with notice.
 
+const MONTH := 24 * 60
 var _failed := false
+var r := Region.new()
+## The players' own computers: city id -> CitySim (only the online ones run).
+var homes := {}
 
 
 func _init() -> void:
-	var r := Region.new()
 	r.add_city("p1", "Ann")
 	r.add_city("p2", "Bob")
-	var ann: CitySim = r.cities.c1.sim
-	var bob: CitySim = r.cities.c2.sim
+	for id in ["c1", "c2"]:
+		homes[id] = _welcome(id)
+	var ann: CitySim = homes.c1
+	var bob: CitySim = homes.c2
 	for sim in [ann, bob]:
 		sim.require_utilities = false
 		sim.economy.money = 50_000_000
-		# A street off the county road, with homes along it.
+		# A street off the county road, homes on one side and work on the other.
 		_check(sim.apply_now({"type": "build_road", "start": [0, 0], "ctrl": [0, 400], "end": [0, 800]}), "a street")
 		for z in range(20, 800, 10):
 			sim.apply_now({"type": "paint_zone", "center": [-25, z], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
@@ -31,8 +38,8 @@ func _init() -> void:
 	_check(ann.apply_now({"type": "place_service", "kind": Services.Kind.FIRE, "pos": [fs[0].x, fs[0].z],
 		"dir": [fs[1].x, fs[1].z]}), "Ann builds a fire station")
 
-	# Let the towns fill in and a month or two pass: offers come to both bells.
-	_ticks(r, 4 * Region.TRADE_EVERY)
+	# Both play a few months: offers come to both bells.
+	_months(4, ["c1", "c2"])
 	_check(Interlocal.homes(bob) >= Balance.INTERLOCAL_MIN_HOMES, "Bob's town has homes (%d)" % Interlocal.homes(bob))
 	var asks := _open(bob)
 	var host_asks := _open(ann)
@@ -46,17 +53,18 @@ func _init() -> void:
 		_check(q.cost == 0 and q.hits.roads.is_empty(), "a service deal builds nothing")
 	_check(not bob.permits.answer(bob, {"id": asks[0].id, "answer": "edit", "route": [[0, 0], [1, 1]]}),
 		"a deal can't be redrawn, only approved or denied")
+	_months(1, ["c1", "c2"])
+	_check(_open(bob).size() == asks.size(), "an offer isn't filed twice")
 
 	# Both approve trash and fire.
-	var bob_money_line: int = bob.economy.budget.get("deals", 0)
 	for q in asks:
 		bob.apply_now({"type": "permit", "id": q.id, "answer": "approve"})
 	for q in host_asks:
 		ann.apply_now({"type": "permit", "id": q.id, "answer": "approve"})
-	_ticks(r, Region.TRADE_EVERY)
-	_check(bob.interlocal.served_by("trash").size() > 0 and bob.interlocal.served_by("fire").size() > 0,
+	_months(1, ["c1", "c2"])
+	_check(not bob.interlocal.served_by("trash").is_empty() and not bob.interlocal.served_by("fire").is_empty(),
 		"both deals are signed")
-	_check(r.pacts.is_empty(), "nothing left waiting")
+	_check(r.pacts.is_empty() and r.deals.size() == 2, "the region's ledger has them")
 	var trash: Dictionary = bob.interlocal.served_by("trash")
 	var host_trash: Dictionary = ann.interlocal.deals[trash.id]
 	_check(host_trash.role == "host" and host_trash.fee == trash.fee, "Ann's half has the same terms")
@@ -65,62 +73,75 @@ func _init() -> void:
 	bob.economy.update_budget(bob)
 	var fees: int = trash.fee + bob.interlocal.served_by("fire").fee
 	_check(bob.economy.budget.deals == -fees and ann.economy.budget.deals == fees,
-		"Bob pays Ann each month (%d, %d, was %d)" % [bob.economy.budget.deals, ann.economy.budget.deals, bob_money_line])
+		"Bob pays Ann each month (%d, %d)" % [bob.economy.budget.deals, ann.economy.budget.deals])
 
 	# Fire: Bob's homes are covered from Ann's station over the county road.
-	r.tick()  # lots are re-figured on the next step
+	bob.tick()  # lots are re-figured on the next step
 	var covered := 0
 	for key in bob.buildings:
 		if bob.buildings[key].zone == ZoneMap.Zone.RESIDENTIAL and bob.services.served.get(key, {}).get(Services.Kind.FIRE, false):
 			covered += 1
 	_check(covered > 0, "Bob's homes have fire protection from Ann's station (%d)" % covered)
 
-	# Trash: Ann's trucks come into Bob's town from the county road.
+	# Trash: Ann's trucks come into Bob's town and haul it back home. The
+	# county road is a few miles long, so a run takes a while.
 	var saw_pickup := false
 	var saw_haul := false
-	var received: float = ann.hubs.hubs.values()[0].received
-	# The county road is a few miles long: a run takes a while.
-	for i in 24 * Region.TRADE_EVERY:
-		r.tick()
-		for t in bob.interlocal.trips:
-			saw_pickup = saw_pickup or bob.interlocal.trips[t].what == "pickup"
-		for t in ann.interlocal.trips:
-			saw_haul = saw_haul or ann.interlocal.trips[t].what == "haul"
-		if saw_haul and ann.hubs.hubs.values()[0].received > received and i % Region.TRADE_EVERY == 0:
+	for m in 24:
+		for i in MONTH:
+			ann.tick()
+			bob.tick()
+			for t in bob.interlocal.trips:
+				saw_pickup = saw_pickup or bob.interlocal.trips[t].what == "pickup"
+			for t in ann.interlocal.trips:
+				saw_haul = saw_haul or ann.interlocal.trips[t].what == "haul"
+		_month_end(["c1", "c2"])
+		if saw_haul:
 			break
 	_check(saw_pickup, "contract garbage trucks pick up in Bob's town")
-	_check(saw_haul, "Ann's trucks drive out to the county road and back")
-	_check(ann.hubs.hubs.values()[0].received > received, "Bob's trash reaches Ann's landfill")
+	_check(float(bob.interlocal.served_by("trash").picked) > 0.0, "Bob's trash is counted as picked up")
+	_check(saw_haul, "Ann's trucks drive out to the county road and back for it")
 	_check(not bob.trade.wants.has("garbage"), "Bob no longer pays an outside hauler")
 
-	# A save carries the deals, the offers and the trucks on their runs.
+	# Ann goes offline: Bob keeps being served on the last terms.
+	var ann_money := ann.economy.money
+	var bob_fire: Dictionary = bob.interlocal.served_by("fire").duplicate()
+	_months(2, ["c2"])
+	_check(ann.economy.money == ann_money, "Ann's town waits while she's away")
+	_check(bob.interlocal.served_by("fire").fee == bob_fire.fee and bob.services.contracts.has(Services.Kind.FIRE),
+		"Bob is still covered on the last terms")
+	# She comes back to the region's copy of her town, deals and all.
+	homes.c1 = _welcome("c1")
+	ann = homes.c1
+	ann.require_utilities = false
+	_check(ann.interlocal.deals.has(trash.id) and ann.interlocal.deals.size() == 2, "Ann's deals are waiting for her")
+
+	# A save carries the ledger.
 	var copy := Region.new()
 	copy.from_dict(JSON.parse_string(JSON.stringify(r.to_dict(), "", false, true)))
-	for id in ["c1", "c2"]:
-		var a: Interlocal = r.cities[id].sim.interlocal
-		var b: Interlocal = copy.cities[id].sim.interlocal
-		_check(var_to_str(a.deals) == var_to_str(b.deals) and var_to_str(a.trips) == var_to_str(b.trips),
-			"%s's deals and runs come back exactly from a save" % id)
-	_check(copy.next_pact == r.next_pact and copy.pact_wait == r.pact_wait, "the region's offers are saved")
+	_check(var_to_str(copy.deals) == var_to_str(r.deals) and copy.month == r.month and copy.next_pact == r.next_pact,
+		"the region's ledger comes back from a save")
+	_check(var_to_str(copy.cities.c2.sim.interlocal.deals) == var_to_str(r.cities.c2.sim.interlocal.deals),
+		"each town's deals come back exactly")
 
 	# Bob gives notice: it runs through the notice, then ends on both sides.
 	_check(bob.apply_now({"type": "end_deal", "id": trash.id}), "Bob gives notice")
 	_check(not bob.apply_now({"type": "end_deal", "id": trash.id}), "once is enough")
-	_ticks(r, Region.TRADE_EVERY)
-	_check(ann.interlocal.deals.has(trash.id) and int(ann.interlocal.deals[trash.id].ends) > 0, "Ann hears the notice")
-	_ticks(r, Balance.INTERLOCAL_NOTICE + Region.TRADE_EVERY)
+	_months(1, ["c1", "c2"])
+	_check(int(ann.interlocal.deals[trash.id].left) == Balance.INTERLOCAL_NOTICE, "Ann hears the notice")
+	_months(Balance.INTERLOCAL_NOTICE, ["c1", "c2"])
 	_check(not bob.interlocal.deals.has(trash.id) and not ann.interlocal.deals.has(trash.id), "the deal ends on both sides")
-	_check(bob.interlocal.served_by("fire").size() > 0, "the fire deal carries on")
+	_check(not bob.interlocal.served_by("fire").is_empty(), "the fire deal carries on")
 
 	# A "no" from either side drops the offer, and it waits before coming back.
-	_ticks(r, Region.TRADE_EVERY)
+	_months(1, ["c1", "c2"])
 	var again := _open(bob).filter(func(q): return q.deal.kind == "trash")
 	_check(again.size() == 1, "the trash offer comes again (%d)" % again.size())
 	if again.size() == 1:
 		bob.apply_now({"type": "permit", "id": again[0].id, "answer": "deny"})
-		_ticks(r, Region.TRADE_EVERY)
+		_months(1, ["c1", "c2"])
 		_check(_open(ann).filter(func(q): return q.deal.kind == "trash").is_empty(), "Ann's half is withdrawn")
-		_ticks(r, Region.TRADE_EVERY)
+		_months(1, ["c1", "c2"])
 		_check(_open(bob).filter(func(q): return q.deal.kind == "trash").is_empty(), "and it isn't offered again right away")
 
 	# The fee: the host's cost shared by homes, plus the administrative share.
@@ -131,9 +152,33 @@ func _init() -> void:
 	quit(1 if _failed else 0)
 
 
-func _ticks(r: Region, n: int) -> void:
-	for i in n:
-		r.tick()
+## A player's computer starting from the region's copy of their town.
+func _welcome(id: String) -> CitySim:
+	var sim := Region.new_sim()
+	sim.terrain_offset = r.cities[id].origin
+	sim.from_dict(JSON.parse_string(JSON.stringify(r.cities[id].sim.to_dict(), "", false, true)))
+	return sim
+
+
+## Game months: the online towns play, then the month ends on the server.
+func _months(n: int, online: Array) -> void:
+	for m in n:
+		for i in MONTH:
+			for id in online:
+				homes[id].tick()
+		_month_end(online)
+
+
+## What the server does: takes each running town's copy, settles trade and
+## the deals, and sends each running town its own steps (as JSON, like the wire).
+func _month_end(online: Array) -> void:
+	for id in online:
+		r.update_city(id, JSON.parse_string(JSON.stringify(homes[id].to_dict(), "", false, true)))
+	r.settle_trade(online)
+	var steps := Interlocal.region_step(r)
+	for id in online:
+		if steps.has(id):
+			homes[id].interlocal.receive(homes[id], JSON.parse_string(JSON.stringify(steps[id])))
 
 
 func _open(sim: CitySim) -> Array:

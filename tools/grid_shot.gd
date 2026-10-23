@@ -46,10 +46,9 @@ func _process(_delta: float) -> bool:
 		_tool.set_grid_free(false)
 		var a := Vector3(-150, 0, -60)
 		_tool._points.append(a)
-		_tool._points.append(_tool._grid_corner(a + Vector3(cos(0.62), 0, sin(0.62)) * 320.0))
 		_tool._update_hint()
 		_tool.set_process(false)
-		_tool._show_grid(_tool._points[1] + Vector3(-120, 0, 200))
+		_tool._show_grid(a + Vector3(80, 0, 300))
 		_aim(Vector3(0, 0, 60), 20.0, 55.0, 650.0)
 	if _frames == 100:
 		_save(out + "_preview.png")

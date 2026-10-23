@@ -76,6 +76,14 @@ var river := Callable()
 ## "profit": $ a year}. Shown in the panel; worked out again each step.
 var sales := {}
 var _next_id := 1
+## The Economy page's sliders: a company on Growth Hold adds no units or
+## buildings beyond its first unit (set by CitySim).
+var policies: Policies
+
+
+## True if the player has told company `id` to hold off growing.
+func on_hold(id: int) -> bool:
+	return policies != null and policies.step("growth", "power", "power:%d" % id) == 0
 
 
 # --- Where power comes from ---------------------------------------------------
@@ -379,7 +387,7 @@ func decide(usable: Callable, load: float, can_export: bool, ctx := {}) -> bool:
 				* Balance.POWER_MWH_PER_HOME - float(k.capex) / horizon(s.leader) \
 				- float(k.capex) * tax_rate / 100.0
 			# A new company always opens its first unit: the player paid for it.
-			if s.cells.is_empty() or gain > 0.0:
+			if s.cells.is_empty() or gain > 0.0 and not on_hold(id):
 				s.cells.append(best)
 				s.loss_streak = 0
 				changed = true
@@ -419,6 +427,8 @@ func develop(sim: CitySim, id: int, ctx: Dictionary) -> bool:
 		s.leader = hire(edu, int(s.leader.name.hash()), id + int(day))
 		s.hired = day
 		changed = true
+	if on_hold(id):
+		return changed
 	var built := Agency.develop(sim, s, tree_for(id, ctx), s.pos, float(sales.get(id, {}).get("profit", 0.0)))
 	if built.is_empty():
 		return changed

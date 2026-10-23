@@ -42,8 +42,8 @@ func _process(_delta: float) -> bool:
 				"why": "We'd serve your town from Bobville over the county road, for $12,400 a month: your share of our cost, by homes.",
 				"route": [[200, 60]], "deal": {"kind": "fire", "fee": 12400, "other": "c2", "pays": true}})
 			sim.interlocal.deals[3] = {"id": 3, "kind": "trash", "role": "served", "other": "c2", "other_name": "Bobville",
-				"fee": 5600, "signed": 0, "link": sim.network.nodes.keys()[0], "offset": 0, "ends": -1, "priced": 0,
-				"tons": 0.0, "haul": 0.0, "homes": 40}
+				"fee": 5600, "link": sim.network.nodes.keys()[0], "offset": 0, "left": -1, "picked": 0.0, "haul": 0.0,
+				"homes": 40}
 		sim.permits.file(sim, {"hub": "bus", "hub_id": 1, "leader": "Marcy Lindqvist",
 			"title": "Bus turnaround on Main", "why": "Riders wait too long at the far end of the line.",
 			"route": [[-60, -30], [-20, -10]], "width": 12.0, "per_m": 400, "budget": 120000})

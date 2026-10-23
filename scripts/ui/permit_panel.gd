@@ -13,7 +13,7 @@ signal opened
 
 const WIDTH := 340
 ## What each kind of hub is called on its card.
-const HUB_NAMES := {"rail": "Railroad", "bus": "Bus company", "interlocal": "Shared service"}
+const HUB_NAMES := {"rail": "Railroad", "bus": "Bus company", "family": "Family business", "interlocal": "Shared service"}
 
 var sim: CitySim
 var view := PermitView.new()
@@ -216,13 +216,14 @@ func _agreements() -> void:
 		var serving := int(d.offset) >= 0
 		col.add_child(_fact("money", "%s$%s a month%s" % ["+" if host else "–", CitySim.money_text(int(d.fee)),
 			"" if serving else " (on hold: nothing to serve from)"], UiStyle.MUTED, not serving))
-		if int(d.ends) >= 0:
-			col.add_child(_text("Ends in " + _days(int(d.ends) - sim.tick_count), Brand.INK_FAINT, 500, 11))
+		if int(d.left) >= 0:
+			col.add_child(_text("Notice given: ends in about %s" % _months(maxi(int(d.left), 1) * 24 * CitySim.TICKS_PER_HOUR),
+				Brand.INK_FAINT, 500, 11))
 		else:
 			var row := HBoxContainer.new()
 			col.add_child(row)
 			row.add_child(_action("Give notice", false, func(): sim.apply({"type": "end_deal", "id": id})))
-			row.tooltip_text = "Ends the deal after %s' notice, as the agreement says." % _months(Balance.INTERLOCAL_NOTICE)
+			row.tooltip_text = "Ends the deal after %s' notice, as the agreement says." % _months(Balance.INTERLOCAL_NOTICE * 24 * CitySim.TICKS_PER_HOUR)
 		_list.add_child(card)
 
 
@@ -262,7 +263,7 @@ func _card(req: Dictionary) -> Control:
 		# A service deal: what it costs or brings in each month, and nothing built.
 		col.add_child(_fact("money", ("Costs us $%s a month" if deal.get("pays", false) else "Brings in $%s a month")
 			% CitySim.money_text(int(deal.fee)), UiStyle.MUTED, false))
-		col.add_child(_fact("check", "Builds nothing. Either town can end it with %s' notice" % _months(Balance.INTERLOCAL_NOTICE),
+		col.add_child(_fact("check", "Builds nothing. Either town can end it with %s' notice" % _months(Balance.INTERLOCAL_NOTICE * 24 * CitySim.TICKS_PER_HOUR),
 			Brand.POSITIVE, false))
 		if req.state == Permits.State.OPEN:
 			var left := Permits.SHELVE_AFTER - (sim.tick_count - int(req.filed))
