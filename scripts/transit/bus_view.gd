@@ -26,7 +26,7 @@ var show_routes := false:
 
 var _stops := MeshInstance3D.new()
 var _routes := MeshInstance3D.new()
-var _batches := {}  # kind -> [near, far] MultiMeshInstance3D
+var _batches := {}  # kind -> [near, far, Ultra close-up] MultiMeshInstance3D
 var _labels := []   # Label3D pool
 var _version := -1
 
@@ -86,6 +86,7 @@ func _draw_buses() -> void:
 	var eye := cam.global_position if cam else Vector3.ZERO
 	var lists := {}
 	var labels := []
+	var ultra := TrafficView._ultra_wanted()
 	for entry in sim.buses.standing(sim) + sim.taxis.standing(sim):
 		var kind: String = entry[0]
 		var front: Vector3 = entry[1]
@@ -95,6 +96,8 @@ func _draw_buses() -> void:
 		if dist > FAR or entry.size() > 4 and entry[4]:
 			continue  # parked on the road: TrafficView draws it
 		var lod := 0 if dist < NEAR else 1
+		if ultra and dist < TrafficView.ULTRA_NEAR:
+			lod = 2  # desktop Ultra tier: the close-up model, as TrafficView does
 		var key := kind + str(lod)
 		if not lists.has(key):
 			lists[key] = []
@@ -113,9 +116,13 @@ func _draw_buses() -> void:
 					if p.distance_to(eye) < FAR:
 						labels.append([p + Vector3(0, 5.0, 0), aboard[int(car.get("trip", car.id))]])
 	for kind in _batches:
-		for lod in 2:
-			var mm: MultiMesh = _batches[kind][lod].multimesh
+		for lod in 3:
 			var list: Array = lists.get(kind + str(lod), [])
+			if lod == 2 and _batches[kind].size() < 3:
+				if list.is_empty():
+					continue
+				_add_ultra_batch(kind)
+			var mm: MultiMesh = _batches[kind][lod].multimesh
 			if list.size() > mm.instance_count:
 				mm.instance_count = maxi(list.size() * 2, 8)
 			var paint := VehicleTypes.paint(kind, 0)
@@ -142,6 +149,20 @@ func _draw_buses() -> void:
 		if l.visible:
 			l.position = labels[i][0]
 			l.text = "%d aboard" % labels[i][1]
+
+
+## The close-up model for one kind, built the first time one stands close.
+func _add_ultra_batch(kind: String) -> void:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_custom_data = true
+	mm.use_colors = true
+	mm.mesh = VehicleModels.build(kind, VehicleModels.LOD_ULTRA)
+	var mi := MultiMeshInstance3D.new()
+	mi.multimesh = mm
+	mi.material_override = VehicleMaterial.get_material(true)
+	add_child(mi)
+	_batches[kind].append(mi)
 
 
 ## A bus stop sign on a pole in the grass strip at each stop, and at busy
