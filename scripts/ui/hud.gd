@@ -134,6 +134,17 @@ var _towns_list := VBoxContainer.new()
 var _towns_button: Button
 ## The cards the pad wheel's second ring offers ("tool:<n>" picks one).
 var _wheel_tools: Array[Button] = []
+## Every card in every drawer: [Button, category], for search and recents.
+var _all_cards: Array = []
+## The last tools picked, newest first (Anno's and Frostpunk's quick row).
+var _recent: Array[Button] = []
+const RECENT_MAX := 5
+var _quick := VBoxContainer.new()  # search, then the recent tools, bottom left
+var _search_panel := PanelContainer.new()
+var _search := LineEdit.new()
+var _results := VBoxContainer.new()
+## A building's name (and problem) when the cursor rests on it.
+var hover := HoverCard.new()
 
 
 func setup(rt: RoadTool, zt: ZoneTool, s: CitySim, g: Node) -> void:
@@ -163,6 +174,9 @@ func _ready() -> void:
 	_root.add_child(_info_panel)
 	_build_economy()
 	_build_stats()
+	_build_quick()
+	hover.setup(sim, info_view.cam, select_tool, anything_open)
+	_root.add_child(hover)
 	tour.setup(sim, self, info_view.cam, game)
 	_root.add_child(tour)
 
@@ -206,6 +220,15 @@ func _ready() -> void:
 	road_tool.set_mode(road_tool.mode)  # shows the first hint
 
 
+func _input(event: InputEvent) -> void:
+	# Escape while typing in the search box closes it.
+	if _search.has_focus() and event is InputEventKey and event.pressed \
+			and (event as InputEventKey).keycode == KEY_ESCAPE:
+		_open_search(false)
+		(_quick.get_child(0) as Button).set_pressed_no_signal(false)
+		get_viewport().set_input_as_handled()
+
+
 func _unhandled_key_input(event: InputEvent) -> void:
 	var k := event as InputEventKey
 	if k != null and k.pressed and not k.echo and k.keycode == KEY_HOME:
@@ -223,6 +246,11 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		var cat := hotkey_category(k)
 		if cat != "":
 			_open(cat)
+			get_viewport().set_input_as_handled()
+			return
+		if k.keycode == KEY_SLASH and not k.shift_pressed:
+			var find := _quick.get_child(0) as Button
+			find.button_pressed = not find.button_pressed
 			get_viewport().set_input_as_handled()
 			return
 		if k.keycode == KEY_V and not k.shift_pressed:
@@ -246,6 +274,119 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	else:
 		nothing_to_close.emit()  # the pause menu opens
 	get_viewport().set_input_as_handled()
+
+
+# --- Search and recent tools (bottom left, above the bar) --------------------
+
+func _build_quick() -> void:
+	for cat in _drawers:
+		var found := []
+		_cards_in(_drawers[cat], found)
+		for b in found:
+			_all_cards.append([b, cat])
+			b.pressed.connect(_remember.bind(b))
+	_quick.add_theme_constant_override("separation", 2)
+	_quick.alignment = BoxContainer.ALIGNMENT_END
+	_root.add_child(_quick)
+	var find := _icon_button("search", 22, "Find a building or tool  (/)")
+	find.toggle_mode = true
+	find.toggled.connect(_open_search)
+	_quick.add_child(find)
+	_search_panel.add_theme_stylebox_override("panel", UiStyle.panel())
+	_search_panel.visible = false
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 2)
+	_search_panel.add_child(col)
+	_search.placeholder_text = "Find: school, park, well..."
+	_search.custom_minimum_size = Vector2(220, 0)
+	_search.text_changed.connect(_find)
+	_search.text_submitted.connect(func(_t): _pick_result(0))
+	col.add_child(_search)
+	col.add_child(_results)
+	_root.add_child(_search_panel)
+
+
+func _cards_in(n: Node, out: Array) -> void:
+	for c in n.get_children():
+		if c is Button and c.has_meta("title"):
+			out.append(c)
+		elif c is Control:
+			_cards_in(c, out)
+
+
+func _open_search(on: bool) -> void:
+	_search_panel.visible = on
+	if on:
+		_search.clear()
+		_find("")
+		_search.grab_focus()
+	else:
+		_search.release_focus()
+
+
+## The cards whose name or tooltip has every word typed, best first.
+func search_cards(text: String) -> Array[Button]:
+	var out: Array[Button] = []
+	var words := text.to_lower().split(" ", false)
+	if words.is_empty():
+		return out
+	var starts: Array[Button] = []
+	for entry in _all_cards:
+		var b: Button = entry[0]
+		var title := (b.get_meta("title") as Label).text.to_lower()
+		var hay := title + " " + b.tooltip_text.to_lower()
+		if Array(words).all(func(w): return w in hay):
+			if title.begins_with(words[0]):
+				starts.append(b)
+			elif not b in out:
+				out.append(b)
+	return starts + out
+
+
+func _find(text: String) -> void:
+	for c in _results.get_children():
+		c.queue_free()
+	var hits := search_cards(text)
+	for i in mini(hits.size(), 8):
+		var b := hits[i]
+		var r := Button.new()
+		r.text = (b.get_meta("title") as Label).text
+		r.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		r.focus_mode = Control.FOCUS_NONE
+		r.pressed.connect(_pick_result.bind(i))
+		_results.add_child(r)
+
+
+func _pick_result(i: int) -> void:
+	var hits := search_cards(_search.text)
+	if i < hits.size():
+		press_card(hits[i])
+	_open_search(false)
+	(_quick.get_child(0) as Button).set_pressed_no_signal(false)
+
+
+## Picks a card from anywhere (search, recents): opens its menu, then the tool.
+func press_card(b: Button) -> void:
+	for entry in _all_cards:
+		if entry[0] == b and entry[1] != _category:
+			_open(entry[1])
+	b.pressed.emit()
+	_sync()
+
+
+func _remember(b: Button) -> void:
+	_recent.erase(b)
+	_recent.push_front(b)
+	if _recent.size() > RECENT_MAX:
+		_recent.pop_back()
+	# Newest at the bottom, nearest the bar; the search button stays on top.
+	for i in range(_quick.get_child_count() - 1, 0, -1):
+		_quick.get_child(i).queue_free()
+	for r in _recent:
+		var q := _icon_button((r.get_meta("icon") as Icon).kind, 22, (r.get_meta("title") as Label).text)
+		q.pressed.connect(press_card.bind(r))
+		_quick.add_child(q)
+		_quick.move_child(q, 1)
 
 
 ## Takes back the last road or building placed in the last 30 seconds, with
@@ -371,7 +512,7 @@ func pad_bottom_height() -> float:
 
 ## True while a tool is in hand, a panel or view is open, or something is selected.
 func anything_open() -> bool:
-	return _budget_open or _view != "" or _views_panel.visible or _help.visible or advisor.visible or permits.visible or region_panel.visible \
+	return _budget_open or _view != "" or _views_panel.visible or _help.visible or _search_panel.visible or advisor.visible or permits.visible or region_panel.visible \
 		or town.visible or timelapse.visible or stats_panel.visible or _towns_panel.visible \
 		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
@@ -383,6 +524,8 @@ func anything_open() -> bool:
 ## Puts every tool away and closes every panel.
 func close_all() -> void:
 	_budget_open = false
+	_open_search(false)
+	(_quick.get_child(0) as Button).set_pressed_no_signal(false)
 	_show_view("")
 	_views_panel.visible = false
 	_views_button.set_pressed_no_signal(false)
@@ -427,6 +570,12 @@ func _process(_delta: float) -> void:
 	if economy_page.visible:
 		left = economy_page.size.x
 	_info_panel.position = Vector2(left, _top_bar.size.y)
+	# Search and recent tools sit on the left edge just above the bottom dock.
+	_quick.reset_size()
+	_quick.position = Vector2(6, _root.size.y - _bottom.size.y - _quick.size.y - 6)
+	if _search_panel.visible:
+		_search_panel.reset_size()
+		_search_panel.position = Vector2(_quick.size.x + 12, _root.size.y - _bottom.size.y - _search_panel.size.y - 6)
 	var t := sim.clock()
 	var hour: int = t.hour % 12
 	# A game day is a month (see Seasons), so the date is month and year.

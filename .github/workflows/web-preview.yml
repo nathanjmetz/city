@@ -89,6 +89,7 @@ jobs:
           run_test tests/test_first_town.gd
           run_test tests/test_pad.gd
           run_test tests/test_undo.gd
+          run_test tests/test_hud_quick.gd
           run_test tests/test_road_tools.gd
           run_test tests/test_grid_fill.gd
           run_test tests/test_move_it.gd

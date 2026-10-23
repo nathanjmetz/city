@@ -67,6 +67,10 @@ func _draw() -> void:
 				var a := TAU * i / 32.0
 				pts.append(c + Vector2(cos(a) * s * 0.16, sin(a) * s * 0.38))
 			draw_polyline(pts, color, w, true)
+		"search":
+			# A magnifying glass: find a building or tool.
+			draw_arc(P.call(0.42, 0.42), s * 0.26, 0.0, TAU, 28, color, w, true)
+			line.call(P.call(0.61, 0.61), P.call(0.86, 0.86), w * 1.4)
 		"chat":
 			# A speech bubble: the region chat.
 			var box := PackedVector2Array([P.call(0.12, 0.16), P.call(0.88, 0.16), P.call(0.88, 0.66),
