@@ -701,7 +701,98 @@ const AMENITIES := {
 	# and lights (Friday nights are a small-town institution).
 	"football": {"cost": 4_000_000, "upkeep": 15_000, "size": Vector2(140, 84),
 		"value": 0.06, "value_reach": 600.0, "happy": 0.12, "happy_reach": 1600.0},
+	# The county fairgrounds: show barns, an exhibit hall, a grandstand and
+	# open ground for the midway, about 40 acres at the start (Indiana
+	# county fairgrounds run 30 to 100 acres).
+	"fairgrounds": {"cost": 3_000_000, "upkeep": 12_000, "size": Vector2(240, 170),
+		"value": 0.02, "value_reach": 500.0, "happy": 0.10, "happy_reach": 2500.0},
+	# Businesses that open by themselves for visitors (Tourism): a motel, a
+	# diner and a gas station on free road frontage near a venue. They are
+	# private, so the town pays nothing for them and gets nothing back when
+	# a road takes one.
+	"motel": {"cost": 0, "upkeep": 0, "size": Vector2(46, 30), "value": 0.0, "value_reach": 1.0, "happy": 0.0, "happy_reach": 1.0},
+	"diner": {"cost": 0, "upkeep": 0, "size": Vector2(26, 30), "value": 0.0, "value_reach": 1.0, "happy": 0.0, "happy_reach": 1.0},
+	"gas_station": {"cost": 0, "upkeep": 0, "size": Vector2(40, 36), "value": 0.0, "value_reach": 1.0, "happy": 0.0, "happy_reach": 1.0},
 }
+# --- Tourism and events --------------------------------------------------------
+# Brawn green-lit (2026-10-22): a fairgrounds hub whose fair board grows it
+# and runs a county fair each summer, and the football field as a stadium
+# hub for Friday-night football and concerts. Visitors drive in from the
+# neighboring towns as real trips, and once enough come, a gas station, a
+# diner and a motel open on their own nearby.
+
+## What each venue puts on. `months` (1 to 12) it runs in, the `hours` of
+## the day, `local` (share of the town who come) and `region` (share of the
+## people in the neighboring towns), and the `ticket` price. `seats` caps a
+## single event before the tree adds room. Real figures: an Indiana county
+## fair draws 30,000 to 100,000 over a week in a county of 20,000 to 40,000;
+## a small-town Friday game 1,000 to 3,000; gate about $5 to $10.
+const VENUES := {
+	"fairgrounds": {"seats": 15_000, "events": [
+		{"name": "County fair", "months": [7], "hours": [9, 23], "local": 0.6, "region": 0.25, "ticket": 8.0}]},
+	"football": {"seats": 2_500, "events": [
+		{"name": "Friday night football", "months": [9, 10, 11], "hours": [18, 22], "local": 0.15, "region": 0.03,
+			"ticket": 6.0}]},
+}
+## People in the county around a town that has no neighbors yet (solo
+## play): Pike County, Indiana has about 12,000.
+const TOURISM_COUNTY_POP := 12_000
+## What a visitor from out of town spends in town (food, gas, a room), and
+## the share the town keeps as its food-and-beverage and innkeeper's taxes
+## (Indiana counties levy 1% to 5% each).
+const TOURISM_SPEND := 35.0
+const TOURISM_LOCAL_TAX := 0.04
+## Visitors each car on the road stands for (about 2.5 to a car, and only a
+## sample of the cars is driven, to keep the game light), and the most cars
+## a venue sends out in an hour.
+const TOURISM_VISITORS_PER_CAR := 120
+const TOURISM_MAX_CARS_HOUR := 6
+## What opens by itself for out-of-town visitors, in order, once a year's
+## visitors from outside reach `visitors`: assessed value and jobs.
+const TOURISM_BUSINESSES := [
+	{"kind": "gas_station", "visitors": 4_000, "value": 900_000, "jobs": 6},
+	{"kind": "diner", "visitors": 8_000, "value": 700_000, "jobs": 14},
+	{"kind": "motel", "visitors": 15_000, "value": 2_000_000, "jobs": 8},
+]
+## How far from a venue they open, metres.
+const TOURISM_BUSINESS_REACH := 900.0
+## Venue development trees, in the Agency format (see agency.gd). The fair
+## board or the boosters pay from the venue's own gate money. Effects:
+## `draw+` (more come), `seats+` (room), `months+` (an extra event month).
+const VENUE_TREES := {
+	"fairgrounds": [
+		{"id": "show_barns", "name": "4-H show barns", "cost": 400_000, "needs": {"local:farm": 1},
+			"effects": {"draw+": 0.1}, "note": "farm kids show their animals"},
+		{"id": "grandstand", "name": "Grandstand", "cost": 900_000, "needs": {"population": 1_500},
+			"effects": {"seats+": 5_000.0, "draw+": 0.05}},
+		{"id": "midway", "name": "Carnival midway contract", "cost": 250_000, "needs": {"link": 1},
+			"effects": {"draw+": 0.15}, "note": "a traveling carnival brings rides"},
+		{"id": "derby", "name": "Demolition derby pit", "cost": 300_000, "requires": ["grandstand"],
+			"needs": {"profit": 60_000}, "effects": {"draw+": 0.1}},
+		{"id": "harness", "name": "Harness racing track", "cost": 1_200_000, "requires": ["grandstand"],
+			"needs": {"local:farm": 3, "region_makes:grain": 1}, "effects": {"draw+": 0.1, "months+": 1.0},
+			"note": "spring races for the farm towns around"},
+		{"id": "expo_hall", "name": "Exposition hall", "cost": 2_000_000, "requires": ["show_barns"],
+			"needs": {"population": 4_000, "leader_edu": 0.4}, "effects": {"months+": 2.0, "seats+": 3_000.0},
+			"note": "shows and auctions all year"},
+	],
+	"football": [
+		{"id": "home_stands", "name": "Home grandstand", "cost": 800_000, "needs": {"population": 2_000},
+			"effects": {"seats+": 2_000.0}},
+		{"id": "turf", "name": "Artificial turf", "cost": 900_000, "needs": {"profit": 40_000},
+			"effects": {"draw+": 0.05}},
+		{"id": "track", "name": "Running track", "cost": 600_000, "needs": {"education": 0.3},
+			"effects": {"months+": 1.0}, "note": "spring track meets"},
+		{"id": "concerts", "name": "Summer concert stage", "cost": 500_000, "requires": ["home_stands"],
+			"needs": {"link": 1}, "effects": {"months+": 1.0, "draw+": 0.1}, "note": "bands tour the county"},
+		{"id": "playoffs", "name": "Regional playoff host", "cost": 1_500_000, "requires": ["home_stands", "turf"],
+			"needs": {"population": 5_000, "link": 1}, "effects": {"draw+": 0.2, "seats+": 2_000.0},
+			"note": "teams and fans from towns around"},
+	],
+}
+## Months the tree's extra events fall in, in order: spring then summer.
+const VENUE_EXTRA_MONTHS := [5, 6, 8, 4, 10]
+
 ## Most land value and happiness a home can get from parks and landmarks
 ## together.
 const AMENITY_VALUE_CAP := 0.25

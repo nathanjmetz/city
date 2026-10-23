@@ -340,11 +340,49 @@ static func _park(sim: CitySim, id: int) -> Dictionary:
 			rows.append(["Last move", s.why])
 		# Its development tree, a branch a row.
 		rows.append_array(sim.parks.tree_status(sim, id))
+	var biz := Tourism.business(s.kind)
+	if not biz.is_empty():
+		return {"title": s.name, "kind": k.name, "icon": k.icon, "ok": true,
+			"status": "Opened for the visitors to town's events", "rows": [["Jobs", str(biz.jobs)],
+				["Assessed value", "$%s" % CitySim.money_text(int(biz.value))],
+				["Visitors from out of town", "%s a year" % CitySim.money_text(roundi(sim.parks.tourism.outside_year()))]],
+			"problems": []}
+	if sim.parks.tourism.venues.has(id):
+		status = _venue(sim, id, rows)
 	rows.append(["Land value nearby", "up to +%d%%" % roundi((float(a.value) * q + sim.parks.tree_lift(id, "value")) * 100.0)])
 	rows.append(["Happiness nearby", "up to +%d%%" % roundi((float(a.happy) * q + sim.parks.tree_lift(id, "happy")) * 100.0)])
 	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(roundi(sim.parks.site_upkeep(id)))])
 	return {"title": s.name, "kind": "Park" if s.kind == "park" else "Landmark  ·  " + k.name, "icon": k.icon,
 		"ok": true, "status": status, "rows": rows, "problems": []}
+
+
+## A venue's rows (who runs it, its events and crowds, its gate money and
+## its development tree). Returns its status line.
+static func _venue(sim: CitySim, id: int, rows: Array) -> String:
+	var t := sim.parks.tourism
+	var v: Dictionary = t.venues[id]
+	var s: Dictionary = sim.parks.sites[id]
+	var who := "Fair board" if v.kind == "fairgrounds" else "Boosters"
+	rows.append([who, "led by %s, %s" % [v.leader.name, Education.leader_style(v.leader)]])
+	var events := []
+	for m in range(1, 13):
+		var ev := t.event_in(id, m)
+		if not ev.is_empty():
+			events.append("%s (%s)" % [ev.name, ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
+				"Nov", "Dec"][m - 1]])
+	rows.append(["Events", ", ".join(events)])
+	rows.append(["Visitors this year", "%s (%s from out of town)" % [CitySim.money_text(roundi(v.visitors)),
+		CitySim.money_text(roundi(v.outside))]])
+	if float(v.visitors_last) > 0.0:
+		rows.append(["Last year", "%s visitors" % CitySim.money_text(roundi(v.visitors_last))])
+	rows.append(["Gate money saved", "$%s" % CitySim.money_text(roundi(v.savings))])
+	# The tree rows, without the "Run by ... owner" line (shown above).
+	var h := v.duplicate()
+	h.erase("leader")
+	rows.append_array(_development(sim, h, Balance.VENUE_TREES[v.kind], s.pos, v.profit))
+	if not v.crowd.is_empty():
+		return "%s on now: %s people" % [v.crowd.name, CitySim.money_text(int(v.crowd.visitors))]
+	return "Between events"
 
 
 ## A power company: its leader and why they built what they did, what it

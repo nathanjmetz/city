@@ -762,6 +762,9 @@ func tick() -> void:
 			_lots_dirty = true
 			warehouses_changed.emit()
 	permits.tick(self)
+	# Events at the fairgrounds and the football field, and their visitors.
+	if not parks.tourism.venues.is_empty():
+		parks.tourism.tick(self)
 	if tick_count % Balance.PARK_DECIDE_EVERY == 0 and not parks.sites.is_empty():
 		var sizes := parks.sites.values().map(func(s): return s.size)
 		if parks.decide(self):
@@ -855,6 +858,8 @@ func update_stats() -> void:
 	# Teachers, and office and tech jobs for the town's graduates (less the
 	# ones already counted in office buildings, which house those jobs).
 	shop_jobs += education.jobs() - mini(BuildingTypes.office_jobs(self), education.office_jobs())
+	# The gas station, diner and motel that opened for visitors.
+	shop_jobs += Tourism.jobs(self)
 	# The phone company's staff, and remote workers who bring their jobs.
 	telecom.mark_dirty()
 	telecom.refresh(self)
