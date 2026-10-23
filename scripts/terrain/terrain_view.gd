@@ -121,6 +121,8 @@ void fragment() {
 	crop = mix(crop, ripe, season_look.x * step(pick, 0.8));
 	float worked = fract(pick * 7.31);
 	vec3 after = worked < 0.33 ? tilled.rgb : stubble.rgb * (pick < 0.45 ? vec3(0.9, 0.92, 0.95) : vec3(1.0));
+	// About one field in ten is winter wheat or a cover crop, green all winter.
+	after = fract(pick * 13.1) < 0.1 ? vec3(0.33, 0.40, 0.20) : after;
 	crop = mix(crop, after, season_look.y);
 	crop = mix(crop, tilled.rgb, season_look.z * (1.0 - season_look.y) * 0.6);
 	crop *= 0.9 + 0.2 * mid;
