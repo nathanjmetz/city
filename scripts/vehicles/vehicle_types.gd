@@ -58,6 +58,8 @@ const SPECS := {
 	"police":        {"len": 5.05, "width": 2.00, "height": 1.78, "acc": 2.4, "brake": 3.5, "top_speed": 66.0, "pref": 1.0},
 	"ambulance":     {"len": 7.00, "width": 2.40, "height": 3.00, "acc": 1.4, "brake": 2.8, "top_speed": 40.0, "pref": 1.0},
 	"tractor":       {"len": 5.60, "width": 2.60, "height": 3.30, "acc": 0.8, "brake": 2.0, "top_speed": 11.2, "pref": 1.0},
+	# A tractor towing a 500 bu gravity wagon to the elevator.
+	"tractor_wagon": {"len": 11.80, "width": 2.60, "height": 3.30, "acc": 0.6, "brake": 1.8, "top_speed": 11.2, "pref": 1.0},
 	"combine":       {"len": 9.00, "width": 3.60, "height": 4.00, "acc": 0.6, "brake": 1.8, "top_speed": 8.9, "pref": 1.0},
 }
 
@@ -123,6 +125,7 @@ const LIVERY := {
 	# John Deere green, Case IH red, New Holland blue.
 	"tractor": [[Color(0.21, 0.49, 0.17), 5.0], [Color(0.70, 0.08, 0.07), 3.0], [Color(0.10, 0.28, 0.58), 1.0]],
 	"grain_truck": [[Color(0.65, 0.07, 0.07), 3.0], [Color(0.92, 0.92, 0.91), 3.0], [Color(0.10, 0.22, 0.50), 2.0], [Color(0.05, 0.05, 0.06), 2.0]],
+	"tractor_wagon": [[Color(0.21, 0.49, 0.17), 5.0], [Color(0.70, 0.08, 0.07), 3.0], [Color(0.10, 0.28, 0.58), 1.0]],
 	"combine": [[Color(0.21, 0.49, 0.17), 3.0], [Color(0.70, 0.08, 0.07), 2.0]],
 }
 ## Every vehicle has a purpose. The simulation names the job (what the trip
@@ -144,7 +147,7 @@ const PURPOSE := {
 		"hatchback": 4.0, "minivan": 5.0, "sports": 1.5, "motorcycle": 1.0, "van": 2.0, "buggy": 0.4,
 	},
 	# Freight.
-	"grain": {"grain_truck": 8.0, "tractor": 2.0},       # hopper semis, tractors with wagons
+	"grain": {"grain_truck": 8.0, "tractor_wagon": 2.0},  # hopper semis, tractors with wagons
 	"livestock": {"livestock_truck": 1.0},  # pot-belly cattle and hog trailers
 	"milk": {"tanker": 1.0},
 	"fuel": {"tanker": 1.0},
@@ -234,7 +237,13 @@ static func pick(dest_zone: int, hour: int, rng: RandomNumberGenerator, ctx := {
 static func for_purpose(purpose: String, rng: RandomNumberGenerator, cargo := {}) -> String:
 	var r := rng.randf()
 	var rig := for_cargo(cargo)
-	return rig if rig != "" else _weighted(PURPOSE.get(purpose, PERSONAL), r)
+	var kind := _weighted(PURPOSE.get(purpose, PERSONAL), r)
+	return rig if rig != "" and not kind in CARGO_ALT.get(rig, []) else kind
+
+
+## Other rigs that can carry what a rig carries, so the cargo doesn't
+## override them: a farmer hauls his own corn to the elevator by wagon.
+const CARGO_ALT := {"grain_truck": ["tractor_wagon"]}
 
 
 ## The rig a load needs ({"good": "logs", ...}), or "" if any truck will do.

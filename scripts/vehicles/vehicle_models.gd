@@ -53,6 +53,7 @@ const ARTIC := {
 	"ore_truck": {"cab": "tractor_day", "trailer": "trailer_end_dump", "hitch": 5.0, "pin": 0.9, "axle": 12.6},
 	"mail_semi": {"cab": "tractor_day", "trailer": "trailer_usps", "hitch": 5.0, "pin": 0.9, "axle": 14.4},
 	"livestock_truck": {"cab": "tractor_sleeper", "trailer": "trailer_livestock", "hitch": 6.6, "pin": 0.9, "axle": 14.4},
+	"tractor_wagon": {"cab": "tractor", "trailer": "trailer_gravity_wagon", "hitch": 5.6, "pin": 0.0, "axle": 5.3},
 	"tanker": {"cab": "tractor_day", "trailer": "trailer_tank", "hitch": 5.0, "pin": 0.9, "axle": 13.4},
 }
 ## What some kinds wear while snow is on the ground: plows go on contractors'
@@ -1055,6 +1056,28 @@ func _tractor() -> void:  # John Deere 8R row-crop tractor
 	_wheel(Vector3(hw + 0.15, 0.0, 4.2), 1.0, 0.6, rim)
 	_box(Vector3(0, 1.4, 0.04), Vector3(0.6, 0.12, 0.1), HEAD, true)
 	_box(Vector3(0, 0.75, 5.4), Vector3(0.6, 0.15, 0.4), TRIM)
+
+
+## A 500 bu gravity wagon (Parker, Brent) on a four-wheel running gear:
+## steep front and back, the floor sloping to the side door, a tarp roll.
+func _trailer_gravity_wagon() -> void:
+	var red := Color(0.62, 0.09, 0.06, 0.4)
+	_box(Vector3(0, 0.75, 1.0), Vector3(0.12, 0.1, 2.0), TRIM)  # tongue
+	_box(Vector3(0, 0.75, 3.9), Vector3(0.5, 0.15, 3.4), TRIM)   # running gear
+	_loft([
+		[1.6, 1.9, 2.25, 2.95, 0.5, 1.15, 1.2],
+		[2.6, 1.05, 2.25, 2.95, 1.0, 1.15, 1.2],
+		[5.2, 1.05, 2.25, 2.95, 1.0, 1.15, 1.2],
+		[6.2, 1.9, 2.25, 2.95, 0.5, 1.15, 1.2],
+	], [_edges(red, red)], red, red)
+	_box(Vector3(0, 2.97, 3.9), Vector3(2.2, 0.04, 4.3), Color(0.85, 0.72, 0.30, 0.4))  # corn heaped
+	for z in [2.3, 5.3]:
+		for s in [-1.0, 1.0]:
+			_wheel(Vector3(s * 0.95, 0.0, z), 0.45, 0.3, Color(0.85, 0.85, 0.82, 0.4))
+	if not _lo:
+		_box(Vector3(1.2, 1.4, 3.9), Vector3(0.05, 0.5, 0.6), STEEL)  # side door
+		_box(Vector3(0, 0.9, 6.25), Vector3(0.6, 0.35, 0.02), Color(1.0, 0.35, 0.05, 0.4))  # SMV sign
+		_box(Vector3(1.15, 1.2, 6.22), Vector3(0.1, 0.1, 0.03), TAIL, true)
 
 
 func _combine() -> void:  # John Deere S790, header off for the road

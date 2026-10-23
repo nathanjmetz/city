@@ -19,6 +19,11 @@ func _init() -> void:
 	_check(VehicleTypes.for_purpose("livestock", rng) == "livestock_truck", "cattle go by livestock trailer")
 	_check(VehicleTypes.spec("buggy").top_speed < 6.0, "a buggy goes at a horse's trot")
 	_check(VehicleTypes.for_cargo({"good": "lumber"}) == "lumber_truck", "lumber leaves the mill on a flatbed")
+	var wagons := 0
+	for i in 200:
+		if VehicleTypes.for_purpose("grain", rng, {"good": "corn"}) == "tractor_wagon":
+			wagons += 1
+	_check(wagons > 10 and wagons < 100, "some farmers haul corn by wagon (%d of 200)" % wagons)
 	var campers := 0
 	for i in 400:
 		if VehicleTypes.for_purpose("visitor", rng) in ["rv", "motorhome", "pickup_camper"]:
