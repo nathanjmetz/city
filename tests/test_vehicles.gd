@@ -17,6 +17,11 @@ func _init() -> void:
 	_check(VehicleTypes.for_purpose("fire", rng) == "fire_engine", "fire call sends a fire engine")
 	_check(VehicleTypes.for_purpose("milk", rng) == "tanker", "milk goes by tanker")
 	_check(VehicleTypes.for_purpose("livestock", rng) == "livestock_truck", "cattle go by livestock trailer")
+	var campers := 0
+	for i in 400:
+		if VehicleTypes.for_purpose("visitor", rng) in ["rv", "motorhome", "pickup_camper"]:
+			campers += 1
+	_check(campers > 4 and campers < 60, "some visitors come camping (%d of 400)" % campers)
 	_check(VehicleTypes.for_purpose("power_line", rng) in ["bucket_truck", "work_pickup"], "line crews take bucket trucks")
 	_check(VehicleTypes.for_cargo({"good": "hogs"}) == "livestock_truck", "hogs ride a livestock trailer")
 	_check(VehicleTypes.for_purpose("raw", rng, {"good": "logs"}) == "log_truck", "logs go on a log truck")
