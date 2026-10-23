@@ -51,10 +51,16 @@ func erase_cell(c: Vector2i) -> void:
 
 func to_dict() -> Dictionary:
 	# One string per zone type: "x,y;x,y;..." keeps saves small.
-	var out := {}
+	# Joined once at the end: adding to one long string each cell was slow.
+	var parts := {}
 	for c in cells:
 		var key := str(cells[c])
-		out[key] = out.get(key, "") + "%d,%d;" % [c.x, c.y]
+		if not parts.has(key):
+			parts[key] = PackedStringArray()
+		parts[key].append("%d,%d;" % [c.x, c.y])
+	var out := {}
+	for key in parts:
+		out[key] = "".join(parts[key])
 	return out
 
 
