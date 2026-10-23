@@ -880,7 +880,9 @@ func _industry_drawer() -> PanelContainer:
 		b.tooltip_text = entry[3]
 		b.pressed.connect(func():
 			_industry_kind = "farm"
-			farm_tool.set_mode(m))
+			farm_tool.set_mode(m)
+			# As in CS2: placing a farm shows where the soil is good.
+			_show_view("fertility"))
 		farms.add_child(b)
 		_farm_cards[m] = b
 	var hq := _section(row, "Main building  ·  near the resource")
@@ -902,7 +904,8 @@ func _industry_drawer() -> PanelContainer:
 		b.tooltip_text = "%s ($%s)" % [entry[3], CitySim.money_text(int(Industry.KINDS[k].cost))]
 		b.pressed.connect(func():
 			_industry_kind = k
-			industry_tool.set_kind(k))
+			industry_tool.set_kind(k)
+			_show_view(k))
 		hq.add_child(b)
 		_industry_cards[k] = b
 	for entry in [["reserve", "reserve", "Reserve", FarmTool.Mode.RESERVE, "Outline land to save for this industry: no roads or zoning there"],

@@ -155,6 +155,7 @@ jobs:
           mkdir -p build/web/download
           cp web/download.html build/web/download/index.html
           cp assets/brand/logos/neighbors-horizontal-on-dark.png build/web/download/logo.png
+          cp web/download-mac-blocked.png build/web/download/mac-blocked.png
 
       - uses: actions/upload-pages-artifact@v3
         with:
