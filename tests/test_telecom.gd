@@ -127,7 +127,11 @@ func _init() -> void:
 	# Inspect shows its manager and the grant lever.
 	var d := Inspect.describe(sim, Inspect.pick(sim, site[0]))
 	_check(d.get("title", "") == "Phone company", "clicking the office inspects it")
-	_check(not d.get("actions", []).is_empty(), "the panel offers grant buttons")
+	_check(d.rows.any(func(r): return r[0] == "City grant"), "the panel shows the grant")
+	# The grant is the company's Funding slider on the Economy page.
+	_check(sim.hub_area("telecom:%d" % id) == "telecom", "it's on the Economy page")
+	sim.apply({"type": "policy", "scope": "telecom:%d" % id, "slider": "funding", "step": 1})
+	_check(int(c.funding) == 1, "Thrifty: a smaller grant")
 
 	# Saves round-trip.
 	var copy := CitySim.new()

@@ -266,6 +266,13 @@ func hubs_in(area: String) -> Array:
 		"warehouses":
 			for id in sim.warehouses.buildings:
 				out.append("warehouse:%d" % id)
+		"taxis":
+			for id in sim.taxis.companies:
+				if sim.services.buildings.has(id):
+					out.append("taxi:%d" % id)
+		"telecom":
+			for id in sim.telecom.companies:
+				out.append("telecom:%d" % id)
 		"waste", "cemetery":
 			for id in sim.hubs.hubs:
 				if CivicHubs.area_of(sim.hubs.hubs[id].kind) == area:
@@ -347,6 +354,10 @@ func hub_name(key: String) -> String:
 			return "%s %d  ·  %d %s%s" % [k.name, id, p.cells.size(), k.unit, "" if p.cells.size() == 1 else "s"]
 		"warehouse":
 			return "%s %d" % [Warehouses.KINDS[sim.warehouses.buildings[id].kind].name, id]
+		"taxi":
+			return "Taxi company %d" % id
+		"telecom":
+			return "Phone company %d  ·  $%s a month" % [id, CitySim.money_text(Telecom.monthly_grant(sim.telecom.companies[id]))]
 		"hub":
 			return "%s %d  ·  $%s a month" % [CivicHubs.KINDS[sim.hubs.hubs[id].kind].name, id,
 				CitySim.money_text(sim.hubs.cost_of(id))]
@@ -398,6 +409,13 @@ func _summary(area: String) -> String:
 			return "%d companies" % sim.power.sites.size() if sim.power.sites.size() != 1 else "1 company"
 		"warehouses":
 			return "%d" % sim.warehouses.buildings.size()
+		"taxis":
+			return "%d" % hubs_in(area).size()
+		"telecom":
+			var grant := 0
+			for id in sim.telecom.companies:
+				grant += Telecom.monthly_grant(sim.telecom.companies[id])
+			return "%d  ·  $%s grant" % [sim.telecom.companies.size(), CitySim.money_text(grant)]
 		"waste", "cemetery":
 			var n := 0
 			var cost := 0
