@@ -22,14 +22,14 @@ const WALK_Z := -1.05
 ## "aisle_z": float (z of the lane inside the lot cars drive along),
 ## "walk_z": float (front walk), "main_street": bool}. `lot` is the sim's
 ## lot, which the builders are fitted to (width, depth, outline).
-static func for_building(zone: int, bseed: int, lot := {}) -> Dictionary:
+static func for_building(zone: int, bseed: int, lot := {}, storeys := 0) -> Dictionary:
 	var r := RandomNumberGenerator.new()
 	r.seed = bseed
 	var art_seed := r.randi()  # BuildingView passes this to the builder
 	var fit := _fit(lot)
 	match zone:
 		ZoneMap.Zone.RESIDENTIAL:
-			return house(art_seed, fit)
+			return house(art_seed, fit, storeys)
 		ZoneMap.Zone.COMMERCIAL:
 			return shop(art_seed, fit)
 		ZoneMap.Zone.INDUSTRIAL:
@@ -48,7 +48,20 @@ static func _fit(lot: Dictionary) -> Dictionary:
 		depth = -INF
 		for c in corners:
 			depth = maxf(depth, (inv * Vector3(c.x, 0.0, c.y)).z)
-	return {"half": half, "depth": depth}
+	var out := {"half": half, "depth": depth}
+	if lot.has("front") and lot.has("normal"):
+		# The lot exactly as BuildingView._local_lot hands it to the builders.
+		var art := {"width": lot.get("width", LOT_HALF * 2.0), "depth": lot.get("depth", 32.0),
+			"pad": lot.get("pad", 0.0), "at": Vector2(lot.front.x, lot.front.z), "corner": lot.get("corner", false)}
+		if corners.size() >= 3:
+			var inv := frame(lot).affine_inverse()
+			var local := PackedVector2Array()
+			for c in corners:
+				var q := inv * Vector3(c.x, 0.0, c.y)
+				local.append(Vector2(q.x, q.z))
+			art.outline = local
+		out.art = art
+	return out
 
 
 ## A lot with nothing built: room to pull onto it at the front.
@@ -57,54 +70,20 @@ static func empty_lot() -> Dictionary:
 		"door": Vector2(0.0, 10.0), "cut_x": 0.0, "aisle_z": 1.0, "walk_z": 1.0, "main_street": false}
 
 
-## HouseBuilder._house: garage, driveway and front door.
-static func house(art_seed: int, fit := {"half": LOT_HALF, "depth": 32.0}) -> Dictionary:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = art_seed
-	var avail: float = fit.half * 2.0 - 3.0
-	for i in 6:
-		rng.randi()  # siding, roof, shutter, door, brick style, brick colours
-	var gs := -1.0 if rng.randf() < 0.5 else 1.0
-	var gw := 6.6 if rng.randf() < 0.85 else 3.8
-	if avail < 16.0:
-		gw = 3.8
-	elif avail >= 22.0 and rng.randf() < 0.4:
-		gw = 9.8
-	var zf := rng.randf_range(7.0, 9.5)
-	if fit.depth < 30.0:
-		zf = clampf(fit.depth * 0.22, 4.5, zf)
-	var kind := rng.randf()
-	var room := avail - gw
-	var drive_x: float
-	var gz := zf - 0.35  # colonial garages sit about here
-	var door_x: float
-	var walk_z := zf - 1.9
-	if kind < 0.38:
-		var w := rng.randf_range(minf(9.0, room), clampf(room, 7.2, 11.5 + clampf(room - 12.0, 0.0, 2.5)))
-		drive_x = gs * w * 0.5
-		door_x = -gs * gw * 0.5
-	elif kind < 0.58 and avail >= 15.0:
-		# Split-level: a tuck-under garage in the two-storey block.
-		var tw := rng.randf_range(7.0, 8.2)
-		var ww := rng.randf_range(7.6, minf(9.2, avail - tw))
-		drive_x = gs * ww * 0.5
-		gz = zf
-		door_x = -gs * tw * 0.5 + gs * (ww * 0.5 - 1.1)
-		walk_z = zf - 2.6
-		gw = 3.8
-	else:
-		var w := rng.randf_range(minf(10.0, room), clampf(room, 7.0, 13.0 + clampf(room - 14.0, 0.0, 3.0)))
-		rng.randf_range(8.4, 9.6)  # depth
-		gz = zf - rng.randf_range(0.0, 1.5)
-		drive_x = gs * w * 0.5
-		door_x = -gs * gw * 0.5 + gs * 1.75
+## HouseBuilder._house: garage, driveway and front door, read from the
+## plan the art draws for the lot (HouseBuilder.plan_info), so cars use
+## the drive that is painted.
+static func house(art_seed: int, fit := {"half": LOT_HALF, "depth": 32.0}, storeys := 0) -> Dictionary:
+	var h := HouseBuilder.plan_info(art_seed, fit.get("art", {"width": fit.half * 2.0, "depth": fit.depth}), storeys)
+	var drive_x: float = h.drive_x
+	var gz: float = h.garage_z
 	var spots := [{"pos": Vector2(drive_x, gz + 3.0), "face": Vector2(0, 1), "kind": "garage"}]
-	if gw > 9.0:
+	if h.drive_w > 8.0:
 		spots.append({"pos": Vector2(drive_x + 3.0, gz + 3.0), "face": Vector2(0, 1), "kind": "garage"})
-	if gw > 5.0 and gz - 3.2 >= 2.6:
+	if h.drive_w > 4.0 and gz - 3.2 >= 2.6:
 		spots.append({"pos": Vector2(drive_x, gz - 3.2), "face": Vector2(0, 1), "kind": "drive"})
-	return {"spots": spots, "door": Vector2(door_x, zf), "cut_x": drive_x, "aisle_z": 0.0,
-		"walk_z": walk_z, "main_street": false}
+	return {"spots": spots, "door": Vector2(h.door_x, h.front_z), "cut_x": drive_x, "aisle_z": 0.0,
+		"walk_z": h.walk_z, "main_street": false}
 
 
 ## CommercialBuilder.build_shop: a retail lot with a row of stalls in front,

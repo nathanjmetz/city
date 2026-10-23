@@ -49,7 +49,7 @@ static func build_chain(chain: String, seed: int, to_curb: float, lot := {}, spe
 				2: b._brick_works(to_curb)
 				3: b._sawtooth(to_curb)
 				_: b._quonset_shop(to_curb)
-	b._service_yard(true, false)
+	b._service_yard(true, false, INF)
 	return [b._commit_house(), b._commit_flat(), b.trees, b.labels]
 
 

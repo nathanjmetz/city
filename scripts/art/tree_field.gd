@@ -14,6 +14,10 @@ extends Node3D
 ## for the web build.
 
 enum Species { MAPLE, OAK, LOCUST, SPRUCE, CRABAPPLE }
+## How far each species' crown reaches out from the trunk at full size (m),
+## from the crown shapes below, so planters can keep crowns off walls.
+const SPREAD := {Species.MAPLE: 6.0, Species.OAK: 7.5, Species.LOCUST: 6.0, Species.SPRUCE: 4.0,
+	Species.CRABAPPLE: 3.0}
 
 ## Summer leaf colours (sRGB) and how much each tree can vary from them.
 const LEAF := [Color("#46661f"), Color("#3f5c1e"), Color("#627424"), Color("#2c4433"), Color("#4a6326")]
