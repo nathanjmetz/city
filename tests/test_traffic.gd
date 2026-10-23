@@ -356,6 +356,52 @@ func _init() -> void:
 	pz.traffic.close_segment(west, false)
 	_check(pz.traffic.add_trip(pz.lots[east_lot], pz.lots[west_lot], prng), "reopened, cars drive there again")
 
+	# A railroad crossing with the gates down: cars stop at the line short of
+	# the track and wait, and go on once the gates lift.
+	var rx := _crossroads()
+	rx.economy.money = 1.0e9
+	for i in 900:
+		rx.tick()
+	var xseg := -1
+	for sid in rx.network.segments:
+		var cv: Array = rx.network.curve_of(sid)
+		if absf(cv[0].z) < 1.0 and absf(cv[2].z) < 1.0 and minf(cv[0].x, cv[2].x) < -100.0:
+			xseg = sid
+	var xing := {"seg": xseg, "pos": Vector3(-200, 0, 0), "piece": -1, "s": 0.0, "closed": true}
+	rx.rail.crossings.append(xing)
+	var crossed := 0
+	var waiting := 0
+	var last_d := {}
+	for i in 400:
+		rx.tick()
+		for car in rx.traffic.cars:
+			if car.j != null or not rx.traffic._xings.has(car.route[car.leg]):
+				continue
+			var cs: float = rx.traffic._xings[car.route[car.leg]][0][0]
+			var line := cs - TrafficSim.XING_STOP
+			var key := Vector2i(car.id, car.route[car.leg])
+			if car.d + car.v * car.v / (2.0 * TrafficSim.MAX_BRAKE) < line:
+				last_d[key] = car.d  # could still stop for the gates
+			elif last_d.has(key) and car.d > cs - 3.0:
+				crossed += 1
+				last_d.erase(key)
+			if car.d < line + 1.5 and car.d > line - 8.0 and car.v < 0.3:
+				waiting += 1
+	_check(xseg >= 0 and crossed == 0, "no car drives onto a crossing with the gates down (%d did)" % crossed)
+	_check(waiting > 0, "cars wait at the crossing line")
+	xing.closed = false
+	var went := 0
+	for i in 300:
+		rx.tick()
+		for car in rx.traffic.cars:
+			if car.j == null and rx.traffic._xings.has(car.route[car.leg]):
+				var cs2: float = rx.traffic._xings[car.route[car.leg]][0][0]
+				var key := Vector2i(car.id, car.route[car.leg])
+				if last_d.has(key) and last_d[key] < cs2 - 3.0 and car.d > cs2 + 3.0:
+					went += 1
+					last_d.erase(key)
+	_check(went > 0, "the gates lift and cars drive over the track (%d)" % went)
+
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
