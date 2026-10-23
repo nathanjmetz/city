@@ -105,7 +105,7 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 			# A high-rise is a tower like the offices (860-880 Lake Shore
 			# Drive is apartments).
 			if storeys >= 8:
-				built = TowerBuilder.build_tower(s, lot.to_curb, fit, storeys)
+				built = TowerBuilder.build_tower(s, lot.to_curb, fit, storeys, {}, "", true)
 			else:
 				built = MetroBuilder.build_apartments(s, lot.to_curb, fit, storeys)
 		"shop": built = DenseBuilder.build_retail(s, lot.to_curb, fit, spec)
