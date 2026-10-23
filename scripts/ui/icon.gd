@@ -407,6 +407,24 @@ func _draw() -> void:
 				line.call(P.call(0.5, 0.42) - d, P.call(0.5, 0.42) + d, w * 0.6)
 			line.call(P.call(0.5, 0.42), P.call(0.3, 0.92), w)
 			line.call(P.call(0.5, 0.42), P.call(0.7, 0.92), w)
+		"smoke", "pollution":
+			# A stack with a drifting plume.
+			_poly([P.call(0.18, 0.92), P.call(0.18, 0.5), P.call(0.32, 0.5), P.call(0.32, 0.92)], color)
+			for c in [[0.36, 0.38, 0.12], [0.55, 0.26, 0.15], [0.76, 0.18, 0.13]]:
+				draw_circle(P.call(c[0], c[1]), s * c[2], Color(color, 0.55))
+		"noise":
+			# A speaker with sound rings.
+			_poly([P.call(0.1, 0.38), P.call(0.26, 0.38), P.call(0.46, 0.18), P.call(0.46, 0.82),
+				P.call(0.26, 0.62), P.call(0.1, 0.62)], color)
+			for r in [0.18, 0.32]:
+				draw_arc(P.call(0.48, 0.5), s * r, -0.9, 0.9, 12, color, w * 0.8, true)
+		"ground":
+			# A drop seeping into the ground.
+			_poly([P.call(0.08, 0.92), P.call(0.92, 0.92), P.call(0.92, 0.68), P.call(0.08, 0.68)], Color(0.55, 0.42, 0.28))
+			_poly([P.call(0.5, 0.08), P.call(0.68, 0.38), P.call(0.6, 0.52), P.call(0.4, 0.52), P.call(0.32, 0.38)], color)
+			draw_circle(P.call(0.5, 0.42), s * 0.12, color)
+			for x in [0.3, 0.55, 0.75]:
+				draw_circle(P.call(x, 0.8), s * 0.04, Color(0.25, 0.2, 0.1))
 		"advice":
 			# A speech bubble with three dots.
 			var bubble := PackedVector2Array([P.call(0.12, 0.18), P.call(0.88, 0.18), P.call(0.88, 0.68),

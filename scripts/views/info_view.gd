@@ -3,8 +3,21 @@ extends Node3D
 ## Map views, like the info views in Cities: Skylines 2: tint the land by
 ## what it holds (soil fertility, oil, ore, forest) as one smooth, gridless
 ## wash, and outline the land the player has reserved.
+##
+## The pollution views (smoke, noise, dirty ground) wash the map the same way
+## and pin every source's name over it, so each plume and ring shows where it
+## comes from.
 
-enum Mode { NONE, FERTILITY, OIL, ORE, FOREST, NETWORK }
+enum Mode { NONE, FERTILITY, OIL, ORE, FOREST, NETWORK, SMOKE, NOISE, GROUND }
+const POLLUTION := {Mode.SMOKE: "smoke", Mode.NOISE: "noise", Mode.GROUND: "ground"}
+## Pollution washes: pixels across (each about 32 m; linear filtering
+## smooths them), and the levels where the colour starts and peaks.
+const POLLUTION_RES := 128
+const POLLUTION_SCALE := {Mode.SMOKE: [1.0, 35.0], Mode.NOISE: [52.0, 80.0], Mode.GROUND: [0.03, 0.7]}
+## Milliseconds a frame spent painting a pollution wash.
+const PAINT_BUDGET_USEC := 5000
+## Source names closer than this to a bigger one's (metres) show just a dot.
+const PIN_SPACING := 260.0
 
 ## Map area covered by one wash, in metres, and its pixels across. Linear
 ## filtering blends the pixels into a smooth field.
@@ -25,6 +38,11 @@ const RAMPS := {
 	# Cell signal, like CS2's network quality view: grey where there's none,
 	# through amber (one bar) to a strong blue; fiber streets glow cyan.
 	Mode.NETWORK: [Color(0.8, 0.8, 0.78, 0.5), Color(0.95, 0.66, 0.2, 0.7), Color(0.12, 0.38, 0.9, 0.85)],
+	# Pollution: the map greys out, clean air stays grey, and the pollution
+	# shows from a light tint to a strong one.
+	Mode.SMOKE: [Color(0.82, 0.82, 0.8, 0.42), Color(0.95, 0.78, 0.35, 0.7), Color(0.45, 0.22, 0.1, 0.92)],
+	Mode.NOISE: [Color(0.82, 0.82, 0.8, 0.42), Color(0.98, 0.85, 0.3, 0.72), Color(0.85, 0.1, 0.35, 0.92)],
+	Mode.GROUND: [Color(0.82, 0.82, 0.8, 0.42), Color(0.7, 0.68, 0.3, 0.72), Color(0.3, 0.22, 0.08, 0.94)],
 }
 const FIBER_COLOR := Color(0.2, 0.95, 0.95, 0.95)
 
@@ -44,6 +62,12 @@ var _wash_mat := StandardMaterial3D.new()
 var _reserves := MeshInstance3D.new()
 var _center := Vector2(INF, INF)
 var _fiber := MeshInstance3D.new()
+## Name pins over each pollution source.
+var _pins := Node3D.new()
+## A pollution wash being painted a few rows a frame: {mode, version, center,
+## acc, clean, refs, i, row, box}.
+var _job := {}
+var _painted_version := -1
 
 
 func setup(s: CitySim, camera: CityCamera) -> void:
@@ -72,13 +96,17 @@ func setup(s: CitySim, camera: CityCamera) -> void:
 	sim.telecom_changed.connect(func():
 		if mode == Mode.NETWORK:
 			_center = Vector2(INF, INF))
+	add_child(_pins)
 
 
 func set_mode(m: int) -> void:
 	mode = m
 	_center = Vector2(INF, INF)
-	_wash.visible = mode != Mode.NONE
 	_fiber.visible = false
+	_job = {}
+	_painted_version = -1
+	_wash.visible = false if POLLUTION.has(mode) else mode != Mode.NONE
+	_draw_pins()
 	_draw_reserves()
 	mode_changed.emit(mode)
 
@@ -87,9 +115,20 @@ func _process(_delta: float) -> void:
 	if mode == Mode.NONE:
 		return
 	var t := cam.focus()
-	if Vector2(t.x, t.z).distance_to(_center) > RECENTER:
+	var moved := Vector2(t.x, t.z).distance_to(_center) > RECENTER
+	if moved:
 		_center = Vector2(roundf(t.x / RECENTER) * RECENTER, roundf(t.z / RECENTER) * RECENTER)
-		_paint()
+	if not POLLUTION.has(mode):
+		if moved:
+			_paint()
+		return
+	var pol := sim.pollution
+	if pol.sources.is_empty() and pol.version == 0:
+		pol.rebuild(sim)
+	if _job.is_empty() and (moved or pol.version != _painted_version):
+		_start_pollution()
+	if not _job.is_empty():
+		_paint_pollution()
 
 
 ## Samples the resource across the area into a small texture.
@@ -171,6 +210,167 @@ static func _land_sheet(center: Vector2) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return mesh
+
+
+# --- Pollution ------------------------------------------------------------------
+
+func _start_pollution() -> void:
+	var pol := sim.pollution
+	var n := POLLUTION_RES * POLLUTION_RES
+	var acc := PackedFloat32Array()
+	acc.resize(n)
+	var clean := PackedFloat32Array()
+	clean.resize(n)
+	clean.fill(1.0)
+	var kind: String = POLLUTION[mode]
+	var refs := []
+	var keys := pol.sources.keys()
+	keys.sort()
+	for ref in keys:
+		if pol.sources[ref].boxes.has(kind):
+			refs.append(ref)
+	_job = {"mode": mode, "kind": kind, "version": pol.version, "center": _center, "acc": acc, "clean": clean,
+		"refs": refs, "i": 0, "row": -1, "rows": Vector2i.ZERO, "cols": Vector2i.ZERO}
+
+
+## Paints the wash source by source, a few rows a frame, then shows it.
+func _paint_pollution() -> void:
+	var pol := sim.pollution
+	var j := _job
+	var step := EXTENT / POLLUTION_RES
+	var origin: Vector2 = j.center - Vector2(EXTENT, EXTENT) * 0.5
+	var start := Time.get_ticks_usec()
+	var acc: PackedFloat32Array = j.acc
+	var clean: PackedFloat32Array = j.clean
+	while j.i < j.refs.size():
+		if not pol.sources.has(j.refs[j.i]):
+			j.i += 1
+			j.row = -1
+			continue
+		var s: Dictionary = pol.sources[j.refs[j.i]]
+		if j.row < 0:
+			var box: Rect2 = s.boxes[j.kind]
+			j.cols = Vector2i(clampi(floori((box.position.x - origin.x) / step), 0, POLLUTION_RES),
+				clampi(ceili((box.end.x - origin.x) / step), 0, POLLUTION_RES))
+			j.rows = Vector2i(clampi(floori((box.position.y - origin.y) / step), 0, POLLUTION_RES),
+				clampi(ceili((box.end.y - origin.y) / step), 0, POLLUTION_RES))
+			j.row = j.rows.x
+		while j.row < j.rows.y:
+			var y: int = j.row
+			for x in range(j.cols.x, j.cols.y):
+				var p := Vector3(origin.x + (x + 0.5) * step, 0.0, origin.y + (y + 0.5) * step)
+				var v := pol.source_at(s, p, j.kind)
+				var k := y * POLLUTION_RES + x
+				match j.kind:
+					"smoke": acc[k] += v.x
+					"noise": acc[k] += v.y
+					_: clean[k] *= 1.0 - v.z
+			j.row += 1
+			if Time.get_ticks_usec() - start > PAINT_BUDGET_USEC:
+				j.acc = acc
+				j.clean = clean
+				return
+		j.i += 1
+		j.row = -1
+	# Done: colour it in.
+	var ramp: Array = RAMPS[j.mode]
+	var scale: Array = POLLUTION_SCALE[j.mode]
+	var img := Image.create(POLLUTION_RES, POLLUTION_RES, false, Image.FORMAT_RGBA8)
+	for y in POLLUTION_RES:
+		for x in POLLUTION_RES:
+			var k := y * POLLUTION_RES + x
+			var v: float
+			match j.kind:
+				"smoke": v = acc[k]
+				"noise": v = Pollution.db(acc[k])
+				_: v = 1.0 - clean[k]
+			var t := clampf((v - float(scale[0])) / (float(scale[1]) - float(scale[0])), 0.0, 1.0)
+			# Grey where it's clean, fading into the tint as it climbs, so
+			# ordinary town sound and faint haze stay out of the way.
+			var col: Color = (ramp[1] as Color).lerp(ramp[2], sqrt(t))
+			col = (ramp[0] as Color).lerp(col, smoothstep(0.0, 0.3, t))
+			img.set_pixel(x, y, col)
+	_wash_mat.albedo_texture = ImageTexture.create_from_image(img)
+	_wash.mesh = _land_sheet(j.center)
+	_wash.visible = true
+	_painted_version = j.version
+	_job = {}
+	_draw_pins()
+
+
+## A floating name over each source of this view's pollution, so every
+## plume and ring is labelled with what makes it.
+func _draw_pins() -> void:
+	for c in _pins.get_children():
+		_pins.remove_child(c)
+		c.queue_free()
+	if not POLLUTION.has(mode) or sim == null:
+		return
+	var kind: String = POLLUTION[mode]
+	var pol := sim.pollution
+	var keys := pol.sources.keys()
+	keys.sort()
+	var tint: Color = RAMPS[mode][2]
+	# Strongest sources get their names first; one close to a named one
+	# keeps just its dot, so a row of factories stays readable.
+	var pins := []
+	for ref in keys:
+		var s: Dictionary = pol.sources[ref]
+		if not s.boxes.has(kind):
+			continue
+		var at: Vector3 = s.center
+		if not s.lines.is_empty():
+			# Roads: pin the middle piece of the road, not the open middle of a loop.
+			var l: Array = s.lines[s.lines.size() / 2]
+			at = (l[0] as Vector3).lerp(l[1], 0.5)
+		var strength: float = {"smoke": s.smoke, "noise": s.noise, "ground": s.ground}[kind]
+		for l in s.lines:
+			strength = maxf(strength, l[3] if kind == "smoke" else (l[2] if kind == "noise" else 0.0))
+		pins.append([strength, ref, at])
+	pins.sort_custom(func(a, b): return a[0] > b[0] or (a[0] == b[0] and a[1] < b[1]))
+	var named := []
+	for pin in pins:
+		var s: Dictionary = pol.sources[pin[1]]
+		var at: Vector3 = pin[2]
+		var crowded := false
+		for p in named:
+			crowded = crowded or Vector2(p.x - at.x, p.z - at.z).length() < PIN_SPACING
+		var ground := Terrain.ground_y(at.x, at.z)
+		_add_dot(at, ground, tint)
+		if crowded:
+			continue
+		named.append(at)
+		var label := Label3D.new()
+		label.text = s.name
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		label.no_depth_test = true
+		label.fixed_size = true
+		label.pixel_size = 0.0009
+		label.font_size = 26
+		label.outline_size = 10
+		label.modulate = Color.WHITE
+		label.outline_modulate = Color(tint, 0.95)
+		label.render_priority = 20
+		label.outline_render_priority = 19
+		label.position = Vector3(at.x, ground + 22.0, at.z)
+		_pins.add_child(label)
+
+
+func _add_dot(at: Vector3, ground: float, tint: Color) -> void:
+	var dot := MeshInstance3D.new()
+	var m := SphereMesh.new()
+	m.radius = 4.0
+	m.height = 8.0
+	dot.mesh = m
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = tint
+	mat.no_depth_test = true
+	mat.render_priority = 18
+	dot.material_override = mat
+	dot.position = Vector3(at.x, ground + 6.0, at.z)
+	dot.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_pins.add_child(dot)
 
 
 ## Reserved land: a tinted fill and a bright border in its industry's colour.

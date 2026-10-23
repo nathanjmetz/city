@@ -17,6 +17,8 @@ var _status := UiStyle.label("", 13)
 var _rows := GridContainer.new()
 var _problems := VBoxContainer.new()
 var _log := VBoxContainer.new()
+## Tips in plain words (how to fix a pollution source, say).
+var _notes := VBoxContainer.new()
 ## Buttons for what the selection can do (upgrade, demolish), when it says.
 var _actions := VBoxContainer.new()
 var _action_key := ""
@@ -74,6 +76,8 @@ func _ready() -> void:
 	col.add_child(_problems)
 	_log.add_theme_constant_override("separation", 1)
 	col.add_child(_log)
+	_notes.add_theme_constant_override("separation", 2)
+	col.add_child(_notes)
 	_actions.add_theme_constant_override("separation", 4)
 	col.add_child(_actions)
 
@@ -147,6 +151,14 @@ func _refresh() -> void:
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		l.custom_minimum_size = Vector2(236, 0)
 		_log.add_child(l)
+	for c in _notes.get_children():
+		_notes.remove_child(c)
+		c.queue_free()
+	for n in d.get("notes", []):
+		var l := UiStyle.label("•  " + n, 12, UiStyle.MUTED)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size = Vector2(236, 0)
+		_notes.add_child(l)
 	_show_actions(d.get("actions", []))
 	_sync_guide()
 	reset_size()
@@ -166,6 +178,15 @@ func _show_actions(actions: Array) -> void:
 		b.disabled = not a.get("enabled", true)
 		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		b.custom_minimum_size = Vector2(236, 0)
+		if a.has("go"):
+			# Jump to another thing (a pollution source) and select it.
+			var go: Dictionary = a.go
+			var at: Vector3 = a.at
+			b.pressed.connect(func():
+				tool.cam.fly_to(at)
+				tool.select(go))
+			_actions.add_child(b)
+			continue
 		var cmd: Dictionary = a.cmd
 		b.pressed.connect(func():
 			sim.apply(cmd)

@@ -106,6 +106,8 @@ var streets := Streets.new()
 var policies := Policies.new()
 ## Buildings going up, stage by stage, with their crews and deliveries.
 var construction := Construction.new()
+## Smoke, noise and dirty ground, each traced to the source that makes it.
+var pollution := Pollution.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
 ## The game turns this on; tests about other things can leave it off.
 var require_utilities := false
@@ -192,6 +194,7 @@ func _init() -> void:
 	_wire_policies()
 	# Streets are named before any view draws their signs.
 	network.changed.connect(func(): streets.sync(self))
+	_hook_pollution()
 	network.changed.connect(func():
 		_lots_dirty = true
 		_roads_moved = true
@@ -478,6 +481,8 @@ func apply_now(cmd: Dictionary) -> bool:
 		"move":
 			# Move It: slide, turn or raise what the player placed (MoveIt).
 			ok = MoveIt.apply(self, cmd)
+		"fund_cleanup", "noise_wall":
+			ok = pollution.command(self, cmd)
 		"set_difficulty":
 			# A city that hasn't started yet also gets that difficulty's start money.
 			ok = economy.set_difficulty(str(cmd.difficulty), tick_count == 0 and network.segments.size() <= 2)
@@ -610,6 +615,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			mail = Mail.new()
 			policies.from_dict({})
 			_lever_steps.clear()
+			pollution = Pollution.new()
+			_hook_pollution()
 			farms.reserves = reserves
 			industry.reserves = reserves
 			vegetation.reset()
@@ -886,6 +893,7 @@ func tick() -> void:
 	hubs.tick(self)
 	construction.tick(self)
 	Perf.add("sim.civic_hubs", t)
+	pollution.tick(self)
 	if not in_region and tick_count % (24 * TICKS_PER_HOUR) == 0:
 		t = Perf.now()
 		Trade.settle({"me": self}, {})
@@ -1800,6 +1808,18 @@ func wealth_at(_p: Vector2) -> float:
 	return 0.5
 
 
+## Dirty ground seeps down the real land.
+func _hook_pollution() -> void:
+	pollution.height = func(p: Vector3) -> float:
+		return Terrain.height(p.x + terrain_offset.x, p.z + terrain_offset.y)
+
+
+## A lot's land value factor (1.0 = no change): the hubs nearby, trash left
+## out, and pollution.
+func land_factor(key: String) -> float:
+	return hubs.lot_factor(self, key) * pollution.lot_factor(self, key)
+
+
 func _lot_blocked(lot: Dictionary) -> bool:
 	for p in [lot.pos, lot.front, lot.zone_pt]:
 		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) \
@@ -2200,6 +2220,7 @@ func to_dict() -> Dictionary:
 		"families": families.to_dict(),
 		"streets": streets.to_dict(),
 		"policies": policies.to_dict(),
+		"pollution": pollution.to_dict(),
 		"junctions": traffic.rules_to_dict(),
 		"traffic": traffic.to_dict(),
 		"buses": buses.to_dict(),
@@ -2249,6 +2270,7 @@ func from_dict(d: Dictionary) -> void:
 	parks.from_dict(d.get("parks", {}))
 	mail.from_dict(d.get("mail", {}))
 	policies.from_dict(d.get("policies", {}))
+	pollution.from_dict(d.get("pollution", {}))
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:
@@ -2291,6 +2313,7 @@ func from_dict(d: Dictionary) -> void:
 	for key in buildings:
 		if buildings[key].zone == ZoneMap.Zone.INDUSTRIAL and not buildings[key].has("chain"):
 			buildings[key].chain = factory_chain(lots[key].pos) if lots.has(key) else "general"
+	pollution.after_load(self)
 	update_stats()
 	buses = BusNet.new()
 	buses.from_dict(self, d.get("buses", {}))

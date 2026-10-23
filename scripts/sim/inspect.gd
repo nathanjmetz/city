@@ -118,6 +118,8 @@ static func place(sim: CitySim, sel: Dictionary) -> Array:
 		"road":
 			var c := sim.network.curve_of(sel.id)
 			return [RoadNetwork.bezier(c[0], c[1], c[2], 0.5), RoadStyle.half_width(sim.network.segments[sel.id].type) + 4.0]
+		"spot":
+			return [Vector3(sel.id[0], 0.0, sel.id[1]), 8.0]
 	return []
 
 
@@ -139,14 +141,22 @@ static func exists(sim: CitySim, sel: Dictionary) -> bool:
 		"power": return sim.power.sites.has(sel.id)
 		"lot": return sim.lots.has(sel.id)
 		"road": return sim.network.segments.has(sel.id)
+		"spot": return true
 	return false
 
 
 ## {title, kind (a line under the title), icon, ok: bool, status, rows:
-## [[label, value]], problems: [text]}.
+## [[label, value]], problems: [text]}, and optionally notes: [text] and
+## actions (see HubInfo). Pollution is added to everything (PollutionInfo).
 static func describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 	if not exists(sim, sel):
 		return {}
+	if sel.type == "spot":
+		return PollutionInfo.spot(sim, Vector3(sel.id[0], 0.0, sel.id[1]))
+	return PollutionInfo.add(sim, sel, _describe(sim, sel))
+
+
+static func _describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 	match sel.type:
 		"service": return _service(sim, sel.id)
 		"water": return WaterUtility.describe(sim, sel.id)
@@ -544,7 +554,7 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 		status = going_up
 	var staffed := float(sim.stats.employed) / maxf(sim.stats.jobs, 1.0)
 	var lift: float = sim.parks.lot_value.get(key, 0.0)
-	var land := sim.hubs.lot_factor(sim, key) * sim.mail.lot_factor(sim, key) * (1.0 + lift)
+	var land := sim.land_factor(key) * sim.mail.lot_factor(sim, key) * (1.0 + lift)
 	if absf(land - 1.0) >= 0.005:
 		rows.append(["Land value nearby", "%+d%%" % roundi((land - 1.0) * 100.0)])
 	if lift > 0.005:
@@ -552,7 +562,7 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 	if not sim.mail.offices.is_empty():
 		rows.append(["Mail", "Delivered" if sim.mail.served(sim, sim.lots[key].seg) else "Not lately"])
 	rows.append(["Property tax", "$%s / month" % CitySim.money_text(roundi(sim.economy.building_tax(b, staffed, lift)
-		* sim.hubs.lot_factor(sim, key) * sim.mail.lot_factor(sim, key) / 12.0))])
+		* sim.land_factor(key) * sim.mail.lot_factor(sim, key) / 12.0))])
 	var mail := sim.mail.lot_problem(sim, key)
 	if mail != "":
 		problems.append(mail)
