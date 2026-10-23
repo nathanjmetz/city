@@ -11,6 +11,8 @@ var town := ""
 var _nodes := {}  # site id -> Node3D
 var _stamps := {}  # site id -> what it was drawn from
 var _trees := TreeField.new()
+## How far a park's ground cover rides above the drawn land, metres.
+const LIFT := 0.12
 
 
 func setup(s: CitySim) -> void:
@@ -48,11 +50,19 @@ func _spawn(id: int, fresh: bool) -> Node3D:
 	root.basis = Basis.looking_at(s.dir, Vector3.UP)
 	var to_curb := Parks.SETBACK + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
 	var town_name := town if town != "" else (Session.current_name if Session.current_name != "" else "My Town")
-	var built := ParkBuilder.build_site(s, id * 7919 + int(s.built), to_curb, town_name)
+	var built := ParkBuilder.build_site(s, id * 7919 + int(s.founded), to_curb, town_name)
+	var xform := Transform3D(root.basis, root.position)
 	for i in [0, 1, 4]:
 		var mi := MeshInstance3D.new()
-		# Paths and lawns lie on the land, following it.
-		mi.mesh = built[i] if i == 0 else Terrain.drape_local(built[i], Transform3D(root.basis, root.position))
+		# Paths and lawns lie on the land, following it, cut small enough
+		# to bend over a big park's rises. A park's things stand on the
+		# ground under them; a landmark stands level as one building.
+		# Everything rides LIFT above the drawn ground, so the land's own
+		# triangles never poke through a lawn.
+		if i == 0:
+			mi.mesh = Terrain.drape_local(_split(built[i], 8.0, LIFT), xform) if s.kind == "park" else built[i]
+		else:
+			mi.mesh = Terrain.drape_local(_split(built[i], 6.0, LIFT), xform)
 		if i != 0:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(mi)
@@ -72,10 +82,27 @@ func _spawn(id: int, fresh: bool) -> Node3D:
 	var trees := []
 	for t in built[2]:
 		var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
-		trees.append([frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0]), t[1], t[2]])
+		var tf := frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])
+		tf.origin.y = Terrain.ground_y(tf.origin.x, tf.origin.z)
+		trees.append([tf, t[1], t[2]])
 	_trees.set_trees("park:%d" % id, trees)
 	if fresh:
 		root.scale = Vector3(1.0, 0.01, 1.0)
 		create_tween().tween_property(root, "scale", Vector3.ONE, 0.45) \
 			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	return root
+
+
+## A copy of a mesh with no triangle edge longer than `edge` metres, raised
+## by `dy`.
+static func _split(mesh: ArrayMesh, edge: float, dy := 0.0) -> ArrayMesh:
+	var out := ArrayMesh.new()
+	for i in mesh.get_surface_count():
+		var arrays := Terrain._split(mesh.surface_get_arrays(i), edge)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		for k in verts.size():
+			verts[k].y += dy
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		out.surface_set_material(i, mesh.surface_get_material(i))
+	return out

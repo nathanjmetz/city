@@ -134,6 +134,7 @@ func _init() -> void:
 	# Removing it frees the ground.
 	s.apply({"type": "remove_park", "id": s.parks.sites.keys()[0]})
 	_check(s.parks.sites.is_empty(), "park removed")
+	_tree()
 	print("ALL TESTS PASSED" if not _failed else "SOME TESTS FAILED")
 	quit(1 if _failed else 0)
 
@@ -149,3 +150,59 @@ func _check(ok: bool, what: String) -> void:
 	if not ok:
 		_failed = true
 		print("FAIL: ", what)
+
+
+## The park development tree: what each step waits on, the board building
+## and paying for it, and the player's word to the board.
+func _tree() -> void:
+	var t := CitySim.new()
+	t.apply({"type": "build_road", "start": [-400, 0], "ctrl": [0, 0], "end": [400, 0]})
+	var ps := Parks.site_near(t.network, "park", Vector3(0, 0, 40))
+	t.economy.money = 50_000_000
+	t.apply({"type": "place_park", "kind": "park", "pos": [ps[0].x, ps[0].z], "dir": [ps[1].x, ps[1].z]})
+	var tid: int = t.parks.sites.keys()[0]
+	var pk: Dictionary = t.parks.sites[tid]
+	_check(str(pk.leader.name) != "", "the park board has a chair (%s)" % pk.leader.name)
+	pk.tier = 3
+	pk.score = 0.9
+	for type in ["paths", "playground", "pavilion", "ball_diamond"]:
+		pk.features.append({"type": type, "pos": pk.pos, "size": Vector2.ZERO})
+	t.stats.population = 3_000
+	_check(t.parks.tree_problem(t, tid, "all_abilities").begins_with("needs the splash pad"),
+		"a step waits on the one before it (%s)" % t.parks.tree_problem(t, tid, "all_abilities"))
+	_check(t.parks.tree_problem(t, tid, "splash_pad") == "needs town water", "a splash pad needs town water")
+	_check(t.parks.tree_problem(t, tid, "field_lights") == "needs town power", "field lights need power")
+	for e in [[Services.Kind.WATER_TOWER, -300.0], [Services.Kind.SUBSTATION, 300.0]]:
+		var site := Services.site_near(t.network, e[0], Vector3(e[1], 0, -40))
+		t.apply({"type": "place_service", "kind": e[0], "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})
+	_check(t.parks.tree_problem(t, tid, "splash_pad") == "", "with water, the splash pad is next")
+	_check(t.parks.tree_problem(t, tid, "youth_complex").begins_with("needs the field lights"), "the complex waits on lights")
+	var up0 := t.parks.site_upkeep(tid)
+	var m0 := t.economy.money
+	var hold := t.apply({"type": "guide", "hub": "park", "hub_id": tid, "stance": "hold", "grant": 0})
+	_check(hold and t.parks.tree_problem(t, tid, "splash_pad") == "told to hold off", "told to hold off, the board waits")
+	for i in 4:
+		t.parks._fill_in(t, tid, 100)
+	_check(not t.parks.has_feature(tid, "splash_pad"), "and builds nothing from its tree")
+	t.apply({"type": "guide", "hub": "park", "hub_id": tid, "stance": "steady", "grant": 0})
+	for i in 40:
+		t.stats.population = 3_000
+		t.parks._fill_in(t, tid, 100)
+	for key in ["splash_pad", "field_lights", "bandstand", "walking_loop", "pool"]:
+		_check(t.parks.has_feature(tid, key), "the board added the %s" % key)
+	_check(t.parks.tree_problem(t, tid, "youth_complex").contains("school"), "the youth complex needs a school nearby")
+	_check(t.economy.money < m0 - Parks.node("pool").cost, "the board paid for what it built")
+	_check(t.parks.site_upkeep(tid) > up0, "and it costs more to keep up")
+	_check(t.parks.tree_lift(tid, "happy") > 0.1, "tree items make the park pull harder (%.2f)" % t.parks.tree_lift(tid, "happy"))
+	var d := Inspect.describe(t, {"type": "park", "id": tid})
+	var labels: Array = d.rows.map(func(r): return r[0])
+	_check("Play" in labels and "Sports" in labels and "Park board" in labels, "the info panel shows the tree (%s)" % str(labels))
+	_check(HubSliders.takes(t, {"type": "park", "id": tid}), "the player can guide the park board")
+	for f in pk.features:
+		if f.size != Vector2.ZERO:
+			_check(t.parks._inside(tid, f.pos, f.size), "%s fits inside the park" % f.type)
+	var copy := CitySim.new()
+	copy.from_dict(JSON.parse_string(JSON.stringify(t.to_dict())))
+	_check(JSON.stringify(copy.parks.to_dict()) == JSON.stringify(t.parks.to_dict()), "save keeps the tree and board")
+	var art := ParkBuilder.build_site(pk, 7, 8.0, "Petersburg")
+	_check((art[0] as ArrayMesh).get_surface_count() > 0, "the tree items build their art")
