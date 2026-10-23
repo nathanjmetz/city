@@ -36,6 +36,9 @@ const HEADWAY := 1.4
 const ACCEL := 2.0
 const BRAKE := 3.0
 const MAX_BRAKE := 8.0
+## Where cars stop for a railroad crossing, metres before the track's centre:
+## 15 ft from the nearest rail plus half the gauge.
+const XING_STOP := 5.4
 ## Seconds a lane change takes.
 const LC_TIME := 2.5
 ## A car that hasn't moved for this long gives up (like CS1 despawning).
@@ -128,6 +131,8 @@ var _lanes := {}     # way * 8 + lane -> cars, front first
 var _box := {}       # node -> cars crossing it
 var _committed := {} # node -> cars about to cross it
 var _approach := {}  # node -> [{car, conn, ds}] for the first car in each lane
+var _xings := {}     # way -> [[s along the way, rail crossing]] (_find_xings)
+var _xing_key := []
 var _merging := {}   # lane key -> cars pulling out of a driveway into it
 var _acc := ACCEL    # acceleration of the vehicle being worked out
 var _sim: CitySim
@@ -159,10 +164,43 @@ func step(sim: CitySim, rng: RandomNumberGenerator) -> void:
 	_tick = sim.tick_count
 	_sim = sim
 	time += DT
+	_find_xings()
 	_rest()
 	_spawn(sim, rng)
 	_drive(rng)
 	_step_walkers()
+
+
+## Where the railroad crosses each way, refreshed when track or roads change.
+func _find_xings() -> void:
+	var rail: Rail = _sim.rail
+	if rail.crossings.is_empty():
+		_xings = {}
+		return
+	var key := [rail.version, version, rail.crossings.size()]
+	if key == _xing_key:
+		return
+	_xing_key = key
+	_xings = {}
+	for c in rail.crossings:
+		for wid in [int(c.seg) * 2, int(c.seg) * 2 + 1]:
+			if not ways.has(wid):
+				continue
+			var w: Dictionary = ways[wid]
+			var at := Vector2(c.pos.x, c.pos.z)
+			var best := INF
+			var bs := 0.0
+			for k in w.pts.size() - 1:
+				var a := Vector2(w.pts[k].x, w.pts[k].z)
+				var b := Vector2(w.pts[k + 1].x, w.pts[k + 1].z)
+				var q := Geometry2D.get_closest_point_to_segment(at, a, b)
+				if q.distance_to(at) < best:
+					best = q.distance_to(at)
+					bs = float(w.cum[k]) + a.distance_to(q)
+			if best < 10.0:
+				if not _xings.has(wid):
+					_xings[wid] = []
+				_xings[wid].append([bs, c])
 
 
 # --- Public helpers -----------------------------------------------------------
@@ -2832,6 +2870,18 @@ func _accel_on_way(car: Dictionary, list: Array, i: int) -> float:
 		if pos > car.d and pos - car.d - m.len < gap:
 			gap = pos - car.d - m.len
 			vl = m.v
+	# Railroad crossing with the gates down: stop at the line, which the
+	# MUTCD and the Uniform Vehicle Code put 15 to 50 ft short of the
+	# nearest rail. A car too close to stop at a hard brake goes on through.
+	for x in _xings.get(w.id, []):
+		if not x[1].closed:
+			continue
+		var line: float = x[0] - XING_STOP
+		if car.d > line + 1.5 or car.v * car.v / (2.0 * MAX_BRAKE) > line + 1.5 - car.d:
+			continue
+		if line - car.d < gap:
+			gap = maxf(line - car.d, 0.0)
+			vl = 0.0
 	if car.leg == car.route.size() - 1:
 		# Slow to turn into the driveway (by where the turn starts).
 		var turn_at: float = car.end_d - (PARK_LEAD if car.has("to_place") else 0.0)
