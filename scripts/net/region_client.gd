@@ -28,6 +28,10 @@ signal town_loaded(id: String, bytes: int, unpack_ms: float, load_ms: float)
 signal ledger_changed
 
 var region := Region.new()
+## When a join's steps happened, in seconds from join(): the link open, the
+## welcome in, and how long it took to unpack (telemetry's load event).
+var join_marks := {}
+var _join_from := 0
 var player_id := ""
 var player_name := ""
 var invite_code := ""
@@ -110,8 +114,15 @@ func join(server_url: String, code: String, id: String, name: String, password :
 	token = saved_token
 	_join_tries = 0
 	_join_retry = -1.0
+	join_marks = {}
+	_join_from = Time.get_ticks_msec()
 	if _connect() != OK:
 		failed.emit("Couldn't reach %s." % server_url)
+
+
+func _mark(what: String) -> void:
+	if not join_marks.has(what):
+		join_marks[what] = (Time.get_ticks_msec() - _join_from) / 1000.0
 
 
 func _connect() -> int:
@@ -400,6 +411,7 @@ func _poll(delta: float) -> void:
 	var state := _peer.get_connection_status()
 	if state == MultiplayerPeer.CONNECTION_CONNECTED and not _connected:
 		_connected = true
+		_mark("connected")
 		_send({"t": "hello", "v": RegionServer.PROTOCOL, "min": RegionServer.MIN_PROTOCOL, "code": invite_code,
 			"id": player_id, "name": player_name, "password": _password, "new": _new_account, "token": token})
 		_password = ""
@@ -435,6 +447,8 @@ func _poll(delta: float) -> void:
 func _handle(msg: Dictionary) -> void:
 	match msg.get("t", ""):
 		"welcome":
+			_mark("welcome")
+			var unpack_from := Time.get_ticks_msec()
 			player_id = str(msg.you)
 			_full_at = Time.get_ticks_msec() / 1000.0
 			player_name = str(msg.get("name", player_name))
@@ -468,6 +482,8 @@ func _handle(msg: Dictionary) -> void:
 				if str(d.cities[id].owner) == player_id:
 					mine = id
 			region.from_dict(d, mine)
+			join_marks["unpack"] = (Time.get_ticks_msec() - unpack_from) / 1000.0
+			join_marks["tries"] = _join_tries + 1
 			my_city = region.city_of(player_id)
 			_land_sent = 0
 			_hook_land()
