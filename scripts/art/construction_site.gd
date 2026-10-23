@@ -229,6 +229,9 @@ func _near() -> bool:
 
 ## The finished building's mesh drawn plain in two colours (walls, roofs)
 ## and clipped to a height band.
+## The windows are in by then: a house is dried in with its windows set in
+## the wrap (photos of houses at dry-in show dark openings in white wrap),
+## so the glass is drawn dark in every shell, never wrapped over.
 func _clipped(wall: Color, roof: Color) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = _built[0]
@@ -236,21 +239,34 @@ func _clipped(wall: Color, roof: Color) -> MeshInstance3D:
 	mat.shader = shader()
 	mat.set_shader_parameter("wall_color", wall)
 	mat.set_shader_parameter("roof_color", roof)
-	mi.material_override = mat
+	var glazed := mat.duplicate() as ShaderMaterial
+	glazed.set_shader_parameter("wall_color", GLAZING)
+	glazed.set_shader_parameter("roof_color", GLAZING)
+	glazed.set_shader_parameter("glazing", true)
+	var glass := HouseMaterials.get_mat("glass")
+	for i in mi.mesh.get_surface_count():
+		mi.set_surface_override_material(i, glazed if mi.mesh.surface_get_material(i) == glass else mat)
+	mi.set_meta("mats", [mat, glazed])
 	add_child(mi)
 	return mi
 
 
+## New windows in a wrapped wall, seen from outside: dark glass.
+const GLAZING := Color("#262c31")
+
+
 func _shell_look(wall: Color, roof: Color, inflate: float) -> void:
-	var mat: ShaderMaterial = _shell.material_override
-	mat.set_shader_parameter("walls_only", inflate > 0.06)
-	mat.set_shader_parameter("wall_color", wall)
-	mat.set_shader_parameter("roof_color", roof)
-	mat.set_shader_parameter("inflate", inflate)
+	var mats: Array = _shell.get_meta("mats")
+	for mat: ShaderMaterial in mats:
+		mat.set_shader_parameter("walls_only", inflate > 0.06)
+		mat.set_shader_parameter("inflate", inflate)
+	mats[0].set_shader_parameter("wall_color", wall)
+	mats[0].set_shader_parameter("roof_color", roof)
 
 
 static func _param(mi: MeshInstance3D, param: String, v: float) -> void:
-	(mi.material_override as ShaderMaterial).set_shader_parameter(param, v)
+	for mat: ShaderMaterial in mi.get_meta("mats"):
+		mat.set_shader_parameter(param, v)
 
 
 static func shader() -> Shader:
@@ -263,6 +279,7 @@ uniform float cut = 1000.0;
 uniform float floor_cut = -1000.0;
 uniform float inflate = 0.0;
 uniform bool walls_only = false;
+uniform bool glazing = false;
 uniform vec3 wall_color : source_color = vec3(0.9);
 uniform vec3 roof_color : source_color = vec3(0.3);
 varying vec3 lp;
@@ -276,7 +293,7 @@ void vertex() {
 	plant = COLOR.g > COLOR.r * 1.2 && COLOR.g > COLOR.b * 1.25 ? 1.0 : 0.0;
 }
 void fragment() {
-	if (lp.y > cut || lp.y < floor_cut || plant > 0.5 || walls_only && abs(ln.y) > 0.3) {
+	if (lp.y > cut || lp.y < floor_cut || plant > 0.5 || walls_only && abs(ln.y) > 0.3 && !glazing) {
 		discard;
 	}
 	ALBEDO = abs(ln.y) > 0.3 ? roof_color : wall_color;
