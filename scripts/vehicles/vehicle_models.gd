@@ -65,6 +65,7 @@ const VARIANTS := {
 	"pickup": ["pickup", "pickup_ext", "pickup_mid", "pickup_old"],
 	"suv": ["suv", "suv_mid", "suv_jeep"],
 	"minivan": ["minivan", "minivan_pacifica"],
+	"garbage_truck": ["garbage_truck", "garbage_side"],
 	"crossover": ["crossover", "wagon", "ev_crossover", "crossover_compact"],
 	"hatchback": ["hatchback", "hatch_box"],
 	"van": ["van", "van_low"],
@@ -73,7 +74,7 @@ const VARIANTS := {
 const AXLE := {
 	"sedan": 3.9, "hatchback": 3.4, "crossover": 3.6, "suv": 4.2, "pickup": 4.7, "work_pickup": 4.8,
 	"minivan": 4.0, "sports": 3.8, "motorcycle": 1.8, "van": 4.4, "delivery_van": 5.3,
-	"box_truck": 7.9, "dump_truck": 6.7, "tow_truck": 5.2, "pickup_old": 4.4, "suv_jeep": 3.9, "minivan_pacifica": 4.0, "crossover_compact": 3.5, "work_pickup_plow": 4.8, "dump_truck_plow": 6.7, "buggy": 4.9, "rv": 5.9, "motorhome": 7.1, "pickup_camper": 4.8, "bucket_truck": 5.6, "school_bus": 8.9, "city_bus": 9.2,
+	"box_truck": 7.9, "dump_truck": 6.7, "tow_truck": 5.2, "garbage_side": 7.3, "pickup_old": 4.4, "suv_jeep": 3.9, "minivan_pacifica": 4.0, "crossover_compact": 3.5, "work_pickup_plow": 4.8, "dump_truck_plow": 6.7, "buggy": 4.9, "rv": 5.9, "motorhome": 7.1, "pickup_camper": 4.8, "bucket_truck": 5.6, "school_bus": 8.9, "city_bus": 9.2,
 	"garbage_truck": 7.3, "fire_engine": 7.4, "police": 3.9, "taxi": 3.9, "ambulance": 5.1, "tractor": 4.2,
 	"combine": 7.0, "tractor_sleeper": 6.4, "mail_truck": 4.3, "concrete_mixer": 7.0, "sedan_compact": 3.6, "sedan_fullsize": 4.0,
 	"pickup_ext": 4.6, "pickup_mid": 4.4, "suv_mid": 3.9, "wagon": 3.7, "ev_crossover": 3.8, "hatch_box": 3.4, "van_low": 4.4,
@@ -717,6 +718,43 @@ func _garbage_truck() -> void:  # rear loader on a Mack LR cab-over
 	_box(Vector3(0, 0.9, 0.0), Vector3(2.2, 0.3, 0.1), TRIM)
 	_box(Vector3(hw - 0.25, 1.1, -0.02), Vector3(0.3, 0.16, 0.06), HEAD, true)
 	_box(Vector3(hw - 0.15, 2.4, L + 0.01), Vector3(0.14, 0.14, 0.04), TAIL, true)
+	_box(Vector3(0, 2.86, 1.2), Vector3(0.9, 0.1, 0.2), BEACON_AMBER)
+
+
+## An automated side loader (Heil Rapid Rail on an Autocar ACX): the same
+## low cab, a hopper right behind it with the gripper arm on the curb side
+## that tips the cart, and a rounded tailgate. Most towns' home routes now.
+func _garbage_side() -> void:
+	var L := 9.8
+	var hw := 1.3
+	_loft([
+		[0.0, 0.55, 1.4, 1.5, hw - 0.1, hw - 0.05, hw - 0.1],
+		[2.3, 0.55, 1.4, 1.5, hw - 0.05, hw, hw - 0.05],
+	], [_edges(WHITE, TRIM)], WHITE, WHITE)
+	_loft([
+		[0.0, 1.45, 1.5, 1.52, hw - 0.1, hw - 0.1, hw - 0.1],
+		[0.25, 1.45, 1.5, 2.8, hw - 0.1, hw - 0.1, hw - 0.12],
+		[2.3, 1.45, 1.5, 2.8, hw - 0.05, hw - 0.05, hw - 0.1],
+	], [_edges(GLASS, WHITE, WHITE, GLASS), _edges(GLASS, WHITE, WHITE, WHITE)], WHITE, WHITE)
+	# Hopper, open on top, then the packer body and a rounded tailgate.
+	_loft([
+		[2.45, 0.9, 3.4, 3.5, hw, hw, hw - 0.05],
+		[3.9, 0.9, 3.4, 3.5, hw, hw, hw - 0.05],
+	], [_edges(PAINT, TRIM)], PAINT, PAINT)
+	_box(Vector3(0, 3.48, 3.18), Vector3(2.3, 0.01, 1.3), DARK)
+	_loft([
+		[3.95, 0.9, 3.55, 3.75, hw, hw, hw - 0.08],
+		[L - 1.1, 0.9, 3.55, 3.75, hw, hw, hw - 0.08],
+		[L - 0.3, 1.0, 3.3, 3.45, hw - 0.05, hw - 0.05, hw - 0.2],
+		[L, 1.3, 2.8, 2.95, hw - 0.15, hw - 0.15, hw - 0.4],
+	], [_edges(PAINT, TRIM)], PAINT, PAINT)
+	# The arm, folded in against the curb side, and its two grabbers.
+	_box(Vector3(hw + 0.12, 1.3, 3.2), Vector3(0.22, 0.9, 1.1), TRIM)
+	_box(Vector3(hw + 0.2, 1.1, 3.2), Vector3(0.08, 0.5, 0.9), STEEL)
+	_wheels([1.0, 6.6, 7.9], 0.52, hw, 0.3)
+	_box(Vector3(0, 0.9, 0.0), Vector3(2.2, 0.3, 0.1), TRIM)
+	_box(Vector3(hw - 0.25, 1.1, -0.02), Vector3(0.3, 0.16, 0.06), HEAD, true)
+	_box(Vector3(hw - 0.2, 2.2, L - 0.15), Vector3(0.14, 0.14, 0.04), TAIL, true)
 	_box(Vector3(0, 2.86, 1.2), Vector3(0.9, 0.1, 0.2), BEACON_AMBER)
 
 
