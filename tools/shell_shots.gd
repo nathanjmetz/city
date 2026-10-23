@@ -39,7 +39,7 @@ func _start_online() -> void:
 			for x in range(-150, 151, 20):
 				for z in range(-100, 121, 20):
 					fs.apply_now({"type": "paint_zone", "center": [x, z], "radius": 14, "zone": 1})
-			_friend.send_town()
+			_friend.send_town(true)
 			_friend.send_chat("Hey! I started my town just east of yours")
 			_friend.send_cursor(c.region.cities[c.my_city].origin + Vector2(60, 40)))
 		_friend.join("ws://127.0.0.1:19580", code, "friend-1", "Sam")

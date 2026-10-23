@@ -84,8 +84,12 @@ func _run() -> void:
 	for i in 3000:
 		sim.tick()
 	_check(sim.buildings.size() > 0, "homes grow in Ann's town on her own computer")
-	ann.send_town()
-	await _until(func(): return bob.region.cities[ann.my_city].sim.network.segments.size() > roads_before)
+	ann.send_town(true)
+	await _until(func(): return bob.region.stale_ids().has(ann.my_city))
+	_check(server.region.stale_ids().has(ann.my_city), "the server keeps Ann's copy as data until it needs it")
+	# Copies are unpacked one town at a time, a few seconds apart; now, here.
+	bob.region.load_stale()
+	server.region.load_stale()
 	_check(bob.region.cities[ann.my_city].sim.network.segments.size() > roads_before, "Bob sees Ann's new road")
 	_check(bob.region.cities[ann.my_city].sim.buildings.size() == sim.buildings.size(), "and her homes")
 	_check(server.region.cities[ann.my_city].sim.buildings.size() == sim.buildings.size(), "the server keeps a copy")
@@ -93,15 +97,15 @@ func _run() -> void:
 	# Bob's copy only ever updates Bob's own town.
 	var ann_roads: int = server.region.cities[ann.my_city].sim.network.segments.size()
 	bob.my_sim().apply({"type": "clear"})
-	bob.send_town()
+	bob.send_town(true)
 	await _frames(20)
 	_check(server.region.cities[ann.my_city].sim.network.segments.size() == ann_roads, "Bob can't change Ann's town")
 
 	# Trade between the two computers, settled by the server.
 	sim.trade.offer("power", 50.0)
 	bob.my_sim().trade.want("power", 30.0)
-	ann.send_town()
-	bob.send_town()
+	ann.send_town(true)
+	bob.send_town(true)
 	await _frames(20)
 	var bob_money := bob.my_sim().economy.money
 	server.settle_trade()
@@ -181,6 +185,7 @@ func _run() -> void:
 	await _until(func(): return not back.is_empty(), 20.0)
 	await _frames(20)
 	_check(not back.is_empty() and kid2.is_joined, "the game reconnects by itself")
+	third.region.load_stale()
 	_check(third.region.cities[kid_city].sim.network.segments.size() > segs, "and the road built while away reaches the server")
 	third.stop()
 	DirAccess.remove_absolute(data)
@@ -204,6 +209,9 @@ func _test_region_copies() -> void:
 	for i in 2000:
 		ann.tick()
 	c.update_city("c1", JSON.parse_string(JSON.stringify(ann.to_dict(), "", false, true)))
+	_check(c.cities.c1.sim.buildings.is_empty() and c.city_data("c1").buildings.size() == ann.buildings.size(),
+		"a new copy waits as data, unpacked only when needed")
+	c.load_stale()
 	_check(c.cities.c1.sim.buildings.size() == ann.buildings.size() and ann.buildings.size() > 0, "a town's new copy replaces the old")
 	_check(not r.to_dict_without("c1").cities.c1.has("city"), "a player isn't sent their own town while it runs")
 
