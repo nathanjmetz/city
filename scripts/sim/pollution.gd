@@ -20,7 +20,8 @@ extends RefCounted
 ## else.
 
 const KINDS := ["smoke", "noise", "ground"]
-## Sources are re-read and every lot re-measured once a game hour.
+## Sources are re-read once a game hour; lots near anything that changed are
+## then re-measured a few at a time.
 const UPDATE_EVERY := 60
 const TICKS_PER_DAY := 24 * 60
 ## Noise below this is lost under ordinary town sound (dBA).
@@ -33,10 +34,11 @@ const LINE_SMOKE_M := 60.0
 const GROUND_FLOOR := 0.02
 ## Reference distance for noise levels, metres (50 ft, as FHWA uses).
 const REF_M := 15.0
-## Lots are re-measured in this many slices, one a tick, after the hour.
-const SLICES := 10
+## Source checks a tick may spend re-measuring lots (a fixed amount, so every
+## copy of the city measures the same lots on the same tick). Under 4 ms.
+const CHECKS_PER_TICK := 450
 ## Lots are found near a source through buckets this many metres across.
-const BUCKET := 200.0
+const BUCKET := 400.0
 ## Roads are measured in straight pieces about this long, metres.
 const ROAD_PIECE_M := 60.0
 
@@ -65,14 +67,25 @@ var calls := {}
 var quiet := {}
 ## Ground height at a point, metres (Callable(Vector3) -> float). The terrain
 ## sets this so dirty ground seeps downhill; flat ground when unset.
-var height := Callable()
+var height := Callable():
+	set(v):
+		height = v
+		_flows.clear()
+		_height_gen += 1
+var _height_gen := 0
+## Downhill drift worked out for a source centre: Vector3 -> Vector3.
+var _flows := {}
 ## Bumped whenever sources change, so views know to repaint.
 var version := 0
 var _source_sig := 0
-## True between reading the sources on the hour and measuring the last slice
-## of lots (saves made then keep the sources, so a loaded copy measures the
-## rest against the very same ones).
-var _mid_pass := false
+## Built lots still to be re-measured against the current sources, in order.
+var _queue := []
+## Built lots measured (or queued) against the current sources: key -> true.
+var _known := {}
+## Which sources can reach each BUCKET square: Vector2i -> [refs], sorted.
+var _grid := {}
+## A fingerprint of everything sources and lots are read from, last hour.
+var _inputs := 0
 
 
 # --- Other systems' sources ----------------------------------------------------
@@ -95,23 +108,106 @@ func stop(ref: String) -> void:
 # --- Stepping ----------------------------------------------------------------------
 
 func tick(sim: CitySim) -> void:
-	var t := sim.tick_count % UPDATE_EVERY
-	if t == 0:
-		rebuild(sim)
-		_prune(sim)
-		_mid_pass = true
-	# Lots are measured a slice a tick, against the sources read on the hour,
+	if sim.tick_count % UPDATE_EVERY == 0:
+		_refresh(sim)
+	# Lots are measured a few a tick, against the sources read on the hour,
 	# so a big town never stalls on one frame.
-	if t < SLICES and _mid_pass:
-		measure_lots(sim, t)
-		if t == SLICES - 1:
-			_mid_pass = false
+	if not _queue.is_empty():
+		_work(sim, CHECKS_PER_TICK)
 	if sim.tick_count % TICKS_PER_DAY == 0:
 		_daily(sim)
 
 
+## Re-reads the sources and queues the lots whose readings could have
+## changed: new lots, and lots within reach of a source that appeared,
+## went away or changed. A quiet town re-measures nothing.
+func _refresh(sim: CitySim) -> void:
+	# Nothing a source or lot is read from has changed: nothing to do.
+	var inputs := hash([sim.buildings.keys(), sim.network.segments, sim.industry.sites, sim.farms.farms,
+		sim.power.sites, sim.hubs.hubs, sim.rail.pieces, sim.rail.crossings.size(), sim.families.owned, emitters,
+		owners, walls, quiet, _height_gen])
+	if inputs == _inputs and not sources.is_empty():
+		return
+	_inputs = inputs
+	var old := sources.duplicate()
+	rebuild(sim)
+	_prune(sim)
+	var boxes := []
+	var refs := old.keys()
+	for ref in sources:
+		if not old.has(ref):
+			refs.append(ref)
+	refs.sort()
+	for ref in refs:
+		var a: Dictionary = old.get(ref, {})
+		var b: Dictionary = sources.get(ref, {})
+		if a.is_empty() or b.is_empty() or a.sig != b.sig:
+			for s in [a, b]:
+				if not s.is_empty():
+					boxes.append(s.box)
+	var now := {}
+	var dirty := {}
+	var buckets := {}
+	for key in sim.buildings:
+		if not sim.lots.has(key):
+			continue
+		now[key] = true
+		if not _known.has(key):
+			dirty[key] = true
+		if not boxes.is_empty():
+			var p: Vector3 = sim.lots[key].pos
+			var bk := Vector2i(floori(p.x / BUCKET), floori(p.z / BUCKET))
+			if not buckets.has(bk):
+				buckets[bk] = []
+			buckets[bk].append(key)
+	for box in boxes:
+		for bx in range(floori(box.position.x / BUCKET), floori(box.end.x / BUCKET) + 1):
+			for bz in range(floori(box.position.y / BUCKET), floori(box.end.y / BUCKET) + 1):
+				for key in buckets.get(Vector2i(bx, bz), []):
+					var p: Vector3 = sim.lots[key].pos
+					if box.has_point(Vector2(p.x, p.z)):
+						dirty[key] = true
+	for key in lots.keys():
+		if not now.has(key):
+			lots.erase(key)
+	for key in _queue:
+		if now.has(key):
+			dirty[key] = true
+	_known = now
+	_queue = dirty.keys()
+	_queue.sort()
+	if _queue.is_empty():
+		count_hurts(sim)
+
+
+## Measures queued lots until `budget` source checks are spent.
+func _work(sim: CitySim, budget: int) -> void:
+	var i := 0
+	while i < _queue.size() and budget > 0:
+		budget -= _measure_one(sim, _queue[i])
+		i += 1
+	_queue = _queue.slice(i)
+	if _queue.is_empty():
+		count_hurts(sim)
+
+
+func _build_grid() -> void:
+	_grid.clear()
+	var refs := sources.keys()
+	refs.sort()
+	for ref in refs:
+		var box: Rect2 = sources[ref].box
+		for bx in range(floori(box.position.x / BUCKET), floori(box.end.x / BUCKET) + 1):
+			for bz in range(floori(box.position.y / BUCKET), floori(box.end.y / BUCKET) + 1):
+				var bk := Vector2i(bx, bz)
+				if not _grid.has(bk):
+					_grid[bk] = []
+				_grid[bk].append(ref)
+
+
 ## Reads every source from the city as it is now.
 func rebuild(sim: CitySim) -> void:
+	var old := sources.duplicate()
 	sources.clear()
 	var used_names := {}
 	_add_roads(sim, used_names)
@@ -121,10 +217,23 @@ func rebuild(sim: CitySim) -> void:
 		var b: Dictionary = sim.buildings[key]
 		if int(b.zone) != ZoneMap.Zone.INDUSTRIAL or not sim.lots.has(key):
 			continue
+		var ref: String = "lot:" + key
 		var chain := str(b.get("chain", "general"))
-		_add(sim, "lot:" + key, _unique(used_names, _named(sim, "lot:" + key, factory_name(key, int(b.seed), chain))), "factory", "factory",
+		# A factory just like last hour keeps its source (most of a big town).
+		var inp := [chain, int(b.seed), int(owners.get(ref, {}).get("level", 0)), sim.families.name_of(ref),
+			sim.lots[key].pos, _height_gen]
+		var was: Dictionary = old.get(ref, {})
+		if not was.is_empty() and was.get("inp", []) == inp:
+			was.name = _unique(used_names, was.base)
+			sources[ref] = was
+			continue
+		var base := _named(sim, ref, factory_name(key, int(b.seed), chain))
+		_add(sim, ref, _unique(used_names, base), "factory", "factory",
 			{"type": "lot", "id": key}, [[sim.lots[key].pos, 1.0]],
 			Balance.POLLUTION_SOURCES.factory_chains.get(chain, {}))
+		if sources.has(ref):
+			sources[ref].inp = inp
+			sources[ref].base = base
 	var ids := sim.industry.sites.keys()
 	ids.sort()
 	for id in ids:
@@ -178,6 +287,7 @@ func rebuild(sim: CitySim) -> void:
 	if sig != _source_sig:
 		_source_sig = sig
 		version += 1
+	_build_grid()
 
 
 ## Forgets walls on roads that are gone and owners that closed (only on the
@@ -377,11 +487,13 @@ func _finish(s: Dictionary, find_flow := true) -> void:
 	s.center.y = 0.0
 	if find_flow and height.is_valid() and s.ground > 0.0:
 		var c: Vector3 = s.center
-		var gx: float = (height.call(c + Vector3(30, 0, 0)) - height.call(c - Vector3(30, 0, 0))) / 60.0
-		var gz: float = (height.call(c + Vector3(0, 0, 30)) - height.call(c - Vector3(0, 0, 30))) / 60.0
-		var grad := Vector3(gx, 0.0, gz)
-		if grad.length() > 0.002:
-			s.flow = -grad.normalized() * Balance.GROUND_FLOW_M * clampf(grad.length() / 0.05, 0.0, 1.5)
+		if not _flows.has(c):
+			var gx: float = (height.call(c + Vector3(30, 0, 0)) - height.call(c - Vector3(30, 0, 0))) / 60.0
+			var gz: float = (height.call(c + Vector3(0, 0, 30)) - height.call(c - Vector3(0, 0, 30))) / 60.0
+			var grad := Vector3(gx, 0.0, gz)
+			_flows[c] = -grad.normalized() * Balance.GROUND_FLOW_M * clampf(grad.length() / 0.05, 0.0, 1.5) \
+				if grad.length() > 0.002 else Vector3.ZERO
+		s.flow = _flows[c]
 	var core := Rect2(lo, hi - lo)
 	var boxes := {}
 	if loudest > NOISE_FLOOR_DB:
@@ -404,7 +516,26 @@ func _finish(s: Dictionary, find_flow := true) -> void:
 		box = boxes[k] if box.size == Vector2.ZERO else box.merge(boxes[k])
 	s.boxes = boxes
 	s.box = box
+	# Worked out once here rather than for every lot.
+	s.nreach = noise_reach(s.noise) if s.noise > NOISE_FLOOR_DB else 0.0
+	s.loud = pow(10.0, s.noise / 10.0)
+	s.greach = s.reach * 2.5 + s.flow.length()
+	var lc := []
+	for l in s.lines:
+		var a2 := Vector2(l[0].x, l[0].z)
+		var ab := Vector2(l[1].x, l[1].z) - a2
+		if ab.length() < 0.01:
+			continue
+		lc.append([a2, ab.normalized(), ab.length(), pow(10.0, l[2] / 10.0), noise_reach(l[2]), float(l[3])])
+	s.lc = lc
+	s.sig = hash([s.kind, snappedf(s.smoke, 0.0001), snappedf(s.noise, 0.0001), snappedf(s.ground, 0.0001),
+		snappedf(s.reach, 0.01), _snap3(s.flow), s.points.map(func(pw): return [_snap3(pw[0]), snappedf(pw[1], 0.0001)]),
+		s.lines.map(func(l): return [_snap3(l[0]), _snap3(l[1]), snappedf(l[2], 0.0001), snappedf(l[3], 0.0001)])])
 	sources[s.ref] = s
+
+
+static func _snap3(v: Vector3) -> Array:
+	return [snappedf(v.x, 0.01), snappedf(v.y, 0.01), snappedf(v.z, 0.01)]
 
 
 static func noise_reach(level: float) -> float:
@@ -413,11 +544,21 @@ static func noise_reach(level: float) -> float:
 
 ## How far downwind a source's smoke stays above the floor, metres.
 static func smoke_reach(q: float) -> float:
-	var w := wind()
+	if _reaches.has(q):
+		return _reaches[q]
+	var w := WIND
 	var d := 100.0
 	while d < 5000.0 and _plume(q, w * d, w) >= SMOKE_FLOOR:
 		d += 50.0
+	_reaches[q] = d
 	return d
+
+
+static var _reaches := {}
+
+
+## The way smoke drifts, worked out once.
+static var WIND := wind()
 
 
 ## The way smoke drifts, on the ground (x east, z south).
@@ -451,10 +592,10 @@ func source_at(s: Dictionary, p: Vector3, only := "") -> Vector3:
 	var smoke := 0.0
 	var energy := 0.0
 	var clean := 1.0
-	var w := wind()
-	var nreach := noise_reach(s.noise) if s.noise > NOISE_FLOOR_DB else 0.0
-	var loud := pow(10.0, s.noise / 10.0)
-	var greach: float = s.reach * 2.5 + s.flow.length()
+	var w := WIND
+	var nreach: float = s.nreach
+	var loud: float = s.loud
+	var greach: float = s.greach
 	for pw in s.points:
 		var c: Vector3 = pw[0]
 		var weight: float = pw[1]
@@ -466,28 +607,22 @@ func source_at(s: Dictionary, p: Vector3, only := "") -> Vector3:
 			smoke += weight * _plume(s.smoke, d, w)
 		if do_ground and r < greach:
 			clean *= 1.0 - minf(weight * _seep(s.ground, s.reach, s.flow, d), 0.99)
-	if not s.lines.is_empty() and (do_noise or do_smoke):
+	if not s.lc.is_empty() and (do_noise or do_smoke):
 		var line_smoke := 0.0
-		for l in s.lines:
-			var a: Vector3 = l[0]
-			var e: Vector3 = l[1]
-			var a2 := Vector2(a.x, a.z)
-			var ab := Vector2(e.x, e.z) - a2
-			var len := ab.length()
-			if len < 0.01:
-				continue
-			var dir := ab / len
-			var rel := q - a2
+		for l in s.lc:
+			var dir: Vector2 = l[1]
+			var len: float = l[2]
+			var rel: Vector2 = q - l[0]
 			var x := rel.dot(dir)
 			var dist := maxf(absf(rel.x * dir.y - rel.y * dir.x), 5.0)
 			var gap := Vector2(x - clampf(x, 0.0, len), dist).length()
-			if do_noise and gap < noise_reach(l[2]):
+			if do_noise and gap < l[4]:
 				# A stretch of road: sound from every metre of it, added up
 				# (3 dB quieter per doubling of distance from a long road).
-				energy += pow(10.0, l[2] / 10.0) * REF_M / PI \
+				energy += l[3] * REF_M / PI \
 					* (atan((len - x) / dist) - atan(-x / dist)) / dist * exp(-gap / 2000.0)
 			if do_smoke and gap < LINE_SMOKE_M * 4.0:
-				line_smoke = maxf(line_smoke, float(l[3]) * exp(-gap / LINE_SMOKE_M))
+				line_smoke = maxf(line_smoke, float(l[5]) * exp(-gap / LINE_SMOKE_M))
 		smoke += line_smoke
 	return Vector3(smoke, energy, 1.0 - clean)
 
@@ -541,9 +676,7 @@ func sample(p: Vector3) -> Dictionary:
 	var parts := {"smoke": [], "noise": [], "ground": []}
 	var total := Vector3.ZERO
 	var clean := 1.0
-	var refs := sources.keys()
-	refs.sort()
-	for ref in refs:
+	for ref in _grid.get(Vector2i(floori(p.x / BUCKET), floori(p.z / BUCKET)), []):
 		var v := source_at(sources[ref], p)
 		if v == Vector3.ZERO:
 			continue
@@ -568,87 +701,64 @@ func sample(p: Vector3) -> Dictionary:
 	return {"smoke": total.x, "noise": db(total.y), "ground": 1.0 - clean, "by": parts}
 
 
-## Re-measures built lots (all, or one slice of SLICES), source by source,
-## through buckets of nearby lots.
-func measure_lots(sim: CitySim, slice := -1) -> void:
-	var buckets := {}
-	var keys := sim.lots.keys()
-	keys.sort()
-	var mine := []
-	var n := 0
-	for key in keys:
-		# Only built lots carry land value (a click measures empty ground live).
-		if not sim.buildings.has(key):
+## Re-measures every built lot now (tests, tools; the game itself measures a
+## few lots a tick, see tick).
+func measure_lots(sim: CitySim) -> void:
+	lots.clear()
+	_known.clear()
+	for key in sim.buildings:
+		if sim.lots.has(key):
+			_known[key] = true
+	_queue = _known.keys()
+	_queue.sort()
+	_work(sim, 1 << 62)
+
+
+## Measures one built lot against the sources that can reach its square.
+## Returns how many source checks it took.
+func _measure_one(sim: CitySim, key: String) -> int:
+	lots.erase(key)
+	if not sim.lots.has(key) or not sim.buildings.has(key):
+		return 1
+	var p: Vector3 = sim.lots[key].pos
+	var checks := 1
+	var a := [0.0, 0.0, 1.0, {}]   # smoke, energy, clean, {ref: Vector3}
+	for ref in _grid.get(Vector2i(floori(p.x / BUCKET), floori(p.z / BUCKET)), []):
+		checks += 1
+		var v := source_at(sources[ref], p)
+		if v == Vector3.ZERO:
 			continue
-		n += 1
-		if slice >= 0 and (n - 1) % SLICES != slice:
+		a[0] += v.x
+		a[1] += v.y
+		a[2] *= 1.0 - v.z
+		a[3][ref] = v
+	# Rounded as saved, so a loaded copy has exactly the same land values.
+	var e := {"smoke": snappedf(a[0], 0.001), "noise": snappedf(db(a[1]), 0.001),
+		"ground": snappedf(1.0 - a[2], 0.0001), "hurt": []}
+	if e.smoke < SMOKE_FLOOR and e.noise < Balance.NOISE_QUIET_DB - 5.0 and e.ground < GROUND_FLOOR:
+		return checks
+	# Who hurts it: the biggest share of each kind that is over the line.
+	var hurt := {}
+	var worst := {}
+	for k in [["smoke", 0, Balance.HURT_SMOKE], ["noise", 1, Balance.HURT_NOISE_DB], ["ground", 2, Balance.HURT_GROUND]]:
+		if e[k[0]] < k[2]:
 			continue
-		mine.append(key)
-		var p: Vector3 = sim.lots[key].pos
-		var b := Vector2i(floori(p.x / BUCKET), floori(p.z / BUCKET))
-		if not buckets.has(b):
-			buckets[b] = []
-		buckets[b].append(key)
-	var acc := {}   # key -> [smoke, energy, clean, {ref: Vector3}]
-	var refs := sources.keys()
-	refs.sort()
-	for ref in refs:
-		var s: Dictionary = sources[ref]
-		var box: Rect2 = s.box
-		for bx in range(floori(box.position.x / BUCKET), floori(box.end.x / BUCKET) + 1):
-			for bz in range(floori(box.position.y / BUCKET), floori(box.end.y / BUCKET) + 1):
-				for key in buckets.get(Vector2i(bx, bz), []):
-					var v := source_at(s, sim.lots[key].pos)
-					if v == Vector3.ZERO:
-						continue
-					if not acc.has(key):
-						acc[key] = [0.0, 0.0, 1.0, {}]
-					var a: Array = acc[key]
-					a[0] += v.x
-					a[1] += v.y
-					a[2] *= 1.0 - v.z
-					a[3][ref] = v
-	if slice < 0:
-		lots.clear()
-	else:
-		for key in mine:
-			lots.erase(key)
-		if slice == SLICES - 1:
-			for key in lots.keys():
-				if not sim.buildings.has(key):
-					lots.erase(key)
-	var akeys := acc.keys()
-	akeys.sort()
-	for key in akeys:
-		var a: Array = acc[key]
-		# Rounded as saved, so a loaded copy has exactly the same land values.
-		var e := {"smoke": snappedf(a[0], 0.001), "noise": snappedf(db(a[1]), 0.001),
-			"ground": snappedf(1.0 - a[2], 0.0001), "hurt": []}
-		if e.smoke < SMOKE_FLOOR and e.noise < Balance.NOISE_QUIET_DB - 5.0 and e.ground < GROUND_FLOOR:
-			continue
-		# Who hurts it: the biggest share of each kind that is over the line.
-		var hurt := {}
-		var worst := {}
-		for k in [["smoke", 0, Balance.HURT_SMOKE], ["noise", 1, Balance.HURT_NOISE_DB], ["ground", 2, Balance.HURT_GROUND]]:
-			if e[k[0]] < k[2]:
-				continue
-			var best := ""
-			var best_v := 0.0
-			for ref in a[3]:
-				var v: Vector3 = a[3][ref]
-				if v[k[1]] > best_v:
-					best_v = v[k[1]]
-					best = ref
-			if best != "":
-				hurt[best] = true
-				worst[k[0]] = best
-		var h := hurt.keys()
-		h.sort()
-		e.hurt = h
-		e.by = worst
-		lots[key] = e
-	if slice < 0 or slice == SLICES - 1:
-		count_hurts(sim)
+		var best := ""
+		var best_v := 0.0
+		for ref in a[3]:
+			var v: Vector3 = a[3][ref]
+			if v[k[1]] > best_v:
+				best_v = v[k[1]]
+				best = ref
+		if best != "":
+			hurt[best] = true
+			worst[k[0]] = best
+	var h := hurt.keys()
+	h.sort()
+	e.hurt = h
+	e.by = worst
+	lots[key] = e
+	return checks
 
 
 func count_hurts(sim: CitySim) -> void:
@@ -846,8 +956,7 @@ func command(sim: CitySim, cmd: Dictionary) -> bool:
 			quiet[int(ref.substr(5))] = true
 		_:
 			return false
-	rebuild(sim)
-	measure_lots(sim)
+	_refresh(sim)
 	return true
 
 
@@ -908,13 +1017,18 @@ func to_dict() -> Dictionary:
 		wear_out[key] = snappedf(wear[key], 0.0001)
 	var out := {"walls": walls.keys(), "owners": owners.duplicate(true), "lots": lot_out, "wear": wear_out,
 		"calls": calls.duplicate(), "quiet": quiet.keys()}
-	if _mid_pass:
-		var srcs := []
-		var refs := sources.keys()
-		refs.sort()
-		for ref in refs:
-			srcs.append(_source_out(sources[ref]))
-		out.pass = srcs
+	# The sources lots are measured against, and where measuring is, so a
+	# loaded copy carries on exactly the same way.
+	var srcs := []
+	var refs := sources.keys()
+	refs.sort()
+	for ref in refs:
+		srcs.append(_source_out(sources[ref]))
+	out.sources = srcs
+	out.queue = _queue.duplicate()
+	var known := _known.keys()
+	known.sort()
+	out.known = known
 	return out
 
 
@@ -948,11 +1062,10 @@ func _source_in(d: Dictionary) -> void:
 	_finish(s, false)
 
 
-## After loading: the sources as the save had them mid-measure, or as the
-## city is now.
+## After loading: the sources as the save had them.
 func after_load(sim: CitySim) -> void:
-	if not _mid_pass:
-		rebuild(sim)
+	if sources.is_empty():
+		rebuild(sim)  # an older save without its sources
 	count_hurts(sim)
 
 
@@ -984,7 +1097,11 @@ func from_dict(d: Dictionary) -> void:
 	sources.clear()
 	hurts.clear()
 	_source_sig = 0
-	_mid_pass = d.has("pass")
-	for src in d.get("pass", []):
+	for src in d.get("sources", d.get("pass", [])):
 		_source_in(src)
+	_build_grid()
+	_queue = Array(d.get("queue", []))
+	_known.clear()
+	for key in d.get("known", []):
+		_known[key] = true
 	version += 1
