@@ -27,26 +27,28 @@ const TW_TANK := Color("#6b4f36")
 
 
 var _far := false  # only the massing, for far away (build_far)
+var _homes := false  # an apartment tower: balconies, no business sign
 
 
 ## The era follows the street's (prewar streets get masonry towers; a tall
 ## prewar tower is a setback Deco one).
-static func build_tower(seed: int, to_curb: float, lot: Dictionary, storeys: int, spec := {}, era_pick := "") -> Array:
-	var b := _tw_start(seed, to_curb, lot, storeys, spec, era_pick, false)
+static func build_tower(seed: int, to_curb: float, lot: Dictionary, storeys: int, spec := {}, era_pick := "", homes := false) -> Array:
+	var b := _tw_start(seed, to_curb, lot, storeys, spec, era_pick, false, homes)
 	return b._done()
 
 
 ## The same tower as build_tower (same origin, footprint and heights) as a
 ## few boxes for distant views: walls carry a window grid in the "far"
 ## shader, a couple of hundred triangles at most.
-static func build_far(seed: int, to_curb: float, lot: Dictionary, storeys: int, era_pick := "") -> ArrayMesh:
-	var b := _tw_start(seed, to_curb, lot, storeys, {}, era_pick, true)
+static func build_far(seed: int, to_curb: float, lot: Dictionary, storeys: int, era_pick := "", homes := false) -> ArrayMesh:
+	var b := _tw_start(seed, to_curb, lot, storeys, {}, era_pick, true, homes)
 	return b._commit_house()
 
 
-static func _tw_start(seed: int, to_curb: float, lot: Dictionary, storeys: int, spec: Dictionary, era_pick: String, far: bool) -> TowerBuilder:
+static func _tw_start(seed: int, to_curb: float, lot: Dictionary, storeys: int, spec: Dictionary, era_pick: String, far: bool, homes: bool) -> TowerBuilder:
 	var b := TowerBuilder.new()
 	b._far = far
+	b._homes = homes
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
 	b.sign_spec = spec
@@ -61,7 +63,11 @@ static func _tw_start(seed: int, to_curb: float, lot: Dictionary, storeys: int, 
 	match kind:
 		"chicago": b._tw_chicago(to_curb, b.half * 2.0, storeys)
 		"deco": b._tw_deco(to_curb, b.half * 2.0, storeys)
-		_: b._tw_glass(to_curb, b.half * 2.0, storeys)
+		_:
+			if homes:
+				b._tw_slab(to_curb, b.half * 2.0, storeys)
+			else:
+				b._tw_glass(to_curb, b.half * 2.0, storeys)
 	return b
 
 
@@ -103,7 +109,8 @@ func _tw_chicago(to_curb: float, width: float, storeys: int) -> void:
 	var door_x := -w * 0.5 + (floori(bays * 0.5) + 0.5) * bw
 	_box("paint", Vector3(2.4, 2.8, 0.1), Vector3(door_x, 1.4, zf - 0.06), Color("#2c2620"))
 	_box("paint", Vector3(bw - 0.6, 0.5, 1.6), Vector3(door_x, 4.3, zf - 0.8), Color("#2a2a2a"))  # marquee
-	_sign(Vector3(door_x, 4.6, zf - 1.62), bw - 1.0, 0.8)
+	if not _homes:
+		_sign(Vector3(door_x, 4.6, zf - 1.62), bw - 1.0, 0.8)
 	# The shaft: a Chicago window in every bay of every floor, between piers.
 	for f in range(base_floors, storeys - 1):
 		var y := ground_h + floor_h * (f - 1) + 1.9
@@ -213,7 +220,8 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 			_glass(c, face[1], w / n - 1.2, 3.8, 0.0)
 	_box("brick", Vector3(5.0, 8.0, 0.6), Vector3(0, 4.0, zf - 0.3), stone.lightened(0.1))
 	_box("paint", Vector3(3.0, 6.5, 0.1), Vector3(0, 3.25, zf - 0.62), Color("#3b2f22"))  # bronze and glass
-	_sign(Vector3(0, 7.3, zf - 0.66), 4.2, 0.6)
+	if not _homes:
+		_sign(Vector3(0, 7.3, zf - 0.66), 4.2, 0.6)
 	# The crown: two more small steps.
 	var top := y0
 	var cw: float = tiers[-1][0]
@@ -293,6 +301,93 @@ func _tw_glass(to_curb: float, width: float, storeys: int) -> void:
 	for s in [-1.0, 1.0]:
 		var pick := TreeField.pick(rng)
 		trees.append([Vector3(s * (width * 0.5 - 3.0), 0, zf * 0.6), pick[0], pick[1], rng.randf_range(0.8, 1.0)])
+
+
+# ---------------------------------------------------------------- postwar apartments
+
+## A 1960s-70s concrete-frame apartment slab (Riley Towers in Indianapolis,
+## Carl Sandburg Village in Chicago): a double-loaded slab about 17 m deep,
+## 9 ft 6 in floors, brick or painted concrete between exposed slab edges,
+## cantilevered balconies stacked in columns with aluminium guards, set back
+## on a lawn behind a lobby canopy with the street number on it.
+func _tw_slab(to_curb: float, width: float, storeys: int) -> void:
+	var w := minf(width - 8.0, rng.randf_range(30.0, 46.0))
+	var d := minf(depth - 14.0, rng.randf_range(16.0, 19.0))
+	if w < 14.0 or d < 12.0:
+		_tw_glass(to_curb, width, storeys)
+		return
+	var zf := minf(rng.randf_range(8.0, 14.0), depth - d - 2.0)
+	var cz := zf + d * 0.5
+	var ground_h := 4.5
+	var floor_h := 2.9
+	var top := ground_h + floor_h * (storeys - 1)
+	var wall := Color(_pick(["#c9b48a", "#d8ccb0", "#b89b72", "#e4e0d6"]))  # buff, cream, tan brick, painted concrete
+	var slab := Color("#cfcbc2")
+	var guard := Color("#3a3c3e") if rng.randf() < 0.6 else Color("#e8e6e0")
+	var mech := 3.2
+	if _far:
+		_tw_far_box(Vector3(w, top, d), Vector3(0, top * 0.5, cz), wall, 0.55)
+		_tw_far_box(Vector3(w * 0.3, mech, d * 0.6), Vector3(0, top + 0.8 + mech * 0.5, cz), slab.darkened(0.1), 0.0)
+		return
+	_box("brick", Vector3(w, top, d), Vector3(0, top * 0.5, cz), wall)
+	var bays := maxi(4, roundi(w / 3.6))
+	var bw := w / bays
+	var side_bays := maxi(3, roundi(d / 3.6))
+	var sbw := d / side_bays
+	# Balconies run the whole width on some slabs, every other bay on most.
+	var every := 1 if rng.randf() < 0.35 else 2
+	for f in range(1, storeys):
+		var y0 := ground_h + floor_h * (f - 1)
+		_box("paint", Vector3(w + 0.12, 0.22, d + 0.12), Vector3(0, y0 + 0.11, cz), slab)  # exposed slab edge
+		for face in _tw_faces(w, d, cz):
+			var n: int = bays if face[3] else side_bays
+			var len_b: float = bw if face[3] else sbw
+			var out: Vector3 = face[1].cross(Vector3.UP)
+			var wall_at: Vector3 = face[0] - out * 0.03
+			for i in n:
+				var c: Vector3 = face[0] + face[1] * (-face[2] * 0.5 + (i + 0.5) * len_b)
+				var balcony: bool = face[3] and i > 0 and i < n - 1 and i % every == every - 1
+				if not balcony:
+					c.y = y0 + 1.55
+					_glass(c, face[1], len_b - 1.4, 1.5, rng.randf_range(0.1, 0.7))
+					continue
+				# A sliding door out to a cantilevered slab with an aluminium guard.
+				c.y = y0 + 0.22 + 1.05
+				_glass(c, face[1], len_b - 1.2, 2.1, rng.randf_range(0.1, 0.6))
+				var b0: Vector3 = wall_at + face[1] * (-face[2] * 0.5 + (i + 0.5) * len_b)
+				var yaw := _tw_yaw(face[1])
+				_box("paint", Vector3(len_b - 0.4, 0.24, 1.54), b0 + out * 0.72 + Vector3(0, y0 + 0.14, 0), slab, yaw)
+				_box("metal", Vector3(len_b - 0.4, 1.05, 0.05), b0 + out * 1.47 + Vector3(0, y0 + 0.785, 0), guard, yaw)
+				for s in [-1.0, 1.0]:
+					_box("metal", Vector3(0.05, 1.05, 1.36), b0 + out * 0.78 + face[1] * s * (len_b * 0.5 - 0.22) + Vector3(0, y0 + 0.785, 0), guard, yaw)
+	# The lobby: glass across the middle bays under a canopy with the number.
+	var lobby := minf(w * 0.3, 11.0)
+	_glass(Vector3(0, 2.0, zf - 0.03), Vector3(-1, 0, 0), lobby, 3.4, 0.0)
+	for i in bays:
+		var x := -w * 0.5 + (i + 0.5) * bw
+		if absf(x) > lobby * 0.5 + 0.5:
+			_glass(Vector3(x, 2.1, zf - 0.03), Vector3(-1, 0, 0), bw - 1.4, 1.6, rng.randf_range(0.2, 0.7))
+	_box("paint", Vector3(5.0, 0.3, 4.0), Vector3(0, 3.35, zf - 2.0), slab)
+	for s in [-1.0, 1.0]:
+		_box("metal", Vector3(0.15, 3.2, 0.15), Vector3(s * 2.2, 1.6, zf - 3.7), guard)
+	_box("paint", Vector3(1.4, 0.22, 0.04), Vector3(0, 3.35, zf - 4.03), Color("#c8b27a"))  # brass street number
+	# A concrete parapet, the roof and the elevator and fan penthouse.
+	_box("paint", Vector3(w + 0.12, 0.8, d + 0.12), Vector3(0, top + 0.4, cz), slab)
+	_tw_roof(w, d, cz, top + 0.8)
+	_box("brick", Vector3(w * 0.3, mech, d * 0.6), Vector3(0, top + 0.8 + mech * 0.5, cz), wall.darkened(0.1))
+	# The lawn: a walk to the curb, foundation shrubs, shade trees, parking behind.
+	_flat_rect("drive", -1.5, 1.5, -to_curb + RoadStyle.CURB_WIDTH, zf - 4.0, 0.06)
+	_flat_rect("drive", -2.5, 2.5, zf - 4.0, zf, 0.06)
+	var sx := -w * 0.5 + 1.0
+	while sx < w * 0.5 - 1.0:
+		if absf(sx) > 3.5:
+			_shrub(Vector3(sx, 0, zf - 0.9), rng.randf_range(0.5, 0.8))
+		sx += rng.randf_range(2.2, 3.4)
+	if depth - (zf + d) > 12.0:
+		_parking(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 2.0, depth - 1.0, width)
+	for s in [-1.0, 1.0]:
+		var pick := TreeField.pick(rng)
+		trees.append([Vector3(s * (width * 0.5 - 4.0), 0, zf * 0.5), pick[0], pick[1], rng.randf_range(0.8, 1.0)])
 
 
 # ---------------------------------------------------------------- parts
