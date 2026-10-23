@@ -279,6 +279,17 @@ func _perf_systems(e: Dictionary) -> void:
 		top[s[0]] = snappedf(s[1], 0.01)
 	if not top.is_empty():
 		e["top_sim"] = top
+	# The frame.* stages with the worst single frame: what a hitch was doing.
+	var stages := []
+	for key in Perf.stats:
+		if key.begins_with("frame.") and Perf.stats[key].n > 0:
+			stages.append([key, Perf.stats[key].max])
+	stages.sort_custom(func(a, b): return a[1] > b[1])
+	var worst := {}
+	for s in stages.slice(0, 3):
+		worst[s[0]] = snappedf(s[1], 0.1)
+	if not worst.is_empty():
+		e["worst_frame"] = worst
 	Perf.reset_window()
 
 
@@ -293,7 +304,10 @@ func _quality_now() -> Dictionary:
 	var gpu := RenderingServer.viewport_get_measured_render_time_gpu(vp)
 	if gpu > 0.0:
 		out["gpu_ms"] = snappedf(gpu, 0.1)
-		out["cpu_ms"] = snappedf(RenderingServer.viewport_get_measured_render_time_cpu(vp), 0.1)
+	# Always sent: some drivers (Metal) give no chip timing, and then the
+	# CPU side is what tells a slow sim or view from a slow chip.
+	out["cpu_ms"] = snappedf(RenderingServer.viewport_get_measured_render_time_cpu(vp), 0.1)
+	out["process_ms"] = snappedf(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, 0.1)
 	return out
 
 
