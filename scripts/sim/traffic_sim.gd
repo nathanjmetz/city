@@ -1273,7 +1273,7 @@ func _cancel(car: Dictionary) -> void:
 	if pid != -1 and _sim != null and _sim.people.people.has(pid):
 		var p: Dictionary = _sim.people.people[pid]
 		p.at = "" if car.at_place == "lot:" + p.home else car.at_place
-		p.until = -1 if p.at == "" else _tick + 30
+		_sim.people.set_until(p, -1 if p.at == "" else _tick + 30)
 
 
 # --- Trips ------------------------------------------------------------------
@@ -2436,7 +2436,7 @@ func go(pid: int, to_ref: String, purpose: String, stay: int) -> bool:
 			return false
 		_walk(pid, path, {"enter": to_ref, "stay": stay})
 	p.at = "travel"
-	p.until = -1
+	_sim.people.set_until(p, -1)
 	return true
 
 
@@ -2512,7 +2512,7 @@ func _walked(w: Dictionary) -> void:
 	if then.has("enter"):
 		var home_ref: String = "lot:" + p.home
 		p.at = "" if then.enter == home_ref else then.enter
-		p.until = -1 if then.enter == home_ref else _tick + maxi(int(then.get("stay", 30)), 1)
+		_sim.people.set_until(p, -1 if then.enter == home_ref else _tick + maxi(int(then.get("stay", 30)), 1))
 	elif then.has("drive"):
 		var car := _vehicle_parked(int(then.drive))
 		if car.is_empty() or not _send(car, then.to, then.purpose, {}, {"driver": w.person, "stay": then.stay}):
@@ -2520,7 +2520,7 @@ func _walked(w: Dictionary) -> void:
 			if not car.is_empty():
 				car.driver = -1
 			p.at = "" if car.is_empty() or car.at_place == "lot:" + p.home else car.at_place
-			p.until = _tick + 30 if p.at != "" else -1
+			_sim.people.set_until(p, _tick + 30 if p.at != "" else -1)
 			return
 
 
