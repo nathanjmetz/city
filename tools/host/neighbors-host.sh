@@ -1,8 +1,10 @@
 #!/bin/bash
 # Keeps the Neighbors region running on the host's Mac, hands-free:
-#   - runs the same version of the game as the website (checks every minute,
-#     and when a new version goes live, updates and restarts the server; the
-#     players' games reconnect on their own and reload the new version)
+#   - runs the same version of the game as the website (checks every few
+#     minutes, and when a new version goes live, updates and restarts the
+#     server; the players' games reconnect on their own and reload the new
+#     version). It updates itself too: a newer copy of this script in the repo
+#     replaces the one in ~/.neighbors and takes over, keeping the tunnel.
 #   - keeps a free Cloudflare tunnel open so browsers can reach it (wss://)
 #   - publishes the tunnel's address to the repo's `region` branch, so the
 #     invite link never changes: https://nathanjmetz.github.io/city/?join=CODE
@@ -25,15 +27,25 @@ mkdir -p "$STATE"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 GODOT=$(command -v godot || echo /Applications/Godot.app/Contents/MacOS/Godot)
 API=https://api.github.com/repos/nathanjmetz/city
+# How often to ask GitHub for the live version (seconds). Asking anonymously
+# allows 60 calls an hour, shared with everything else on this network.
+CHECK_EVERY=${NEIGHBORS_CHECK_EVERY:-300}
+SELF=$STATE/neighbors-host.sh
 SERVER_PID=""
-TUNNEL_PID=""
-CURRENT=""
-TUNNEL_URL=""
+# Handed over by an older copy of this script when it updates itself.
+TUNNEL_PID=${NEIGHBORS_TUNNEL_PID:-}
+TUNNEL_URL=${NEIGHBORS_TUNNEL_URL:-}
+CURRENT=${NEIGHBORS_CURRENT:-}
+CHECKED=0
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*"; }
 
 # The commit the website is running: the newest successful web build.
 live_sha() {
+	if command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
+		gh api "repos/nathanjmetz/city/actions/workflows/web-preview.yml/runs?status=success&branch=main&per_page=1" \
+			--jq '.workflow_runs[0].head_sha' 2>/dev/null && return
+	fi
 	curl -fsS "$API/actions/workflows/web-preview.yml/runs?status=success&branch=main&per_page=1" 2>/dev/null \
 		| grep -m1 '"head_sha"' | sed 's/.*"head_sha": *"\([0-9a-f]*\)".*/\1/'
 }
@@ -61,8 +73,23 @@ stop_server() {
 
 update_to() {
 	log "Updating the game to $1"
-	git -C "$REPO" fetch -q origin && git -C "$REPO" checkout -q --detach "$1" \
-		&& (cd "$REPO" && "$GODOT" --headless --import >/dev/null 2>&1)
+	# Forced: a file the editor or an import left behind (a stray .import,
+	# say) must never block an update.
+	git -C "$REPO" fetch -q origin && git -C "$REPO" checkout -q -f --detach "$1" || return 1
+	(cd "$REPO" && "$GODOT" --headless --import >/dev/null 2>&1)
+	return 0
+}
+
+# A newer copy of this script came with the update: put it in place and let
+# it take over, handing it the tunnel so the address doesn't change.
+update_self() {
+	local new=$REPO/tools/host/neighbors-host.sh
+	[ -f "$new" ] && ! cmp -s "$new" "$SELF" || return 0
+	log "Updating the host script"
+	cp "$new" "$SELF.new" && chmod +x "$SELF.new" && mv "$SELF.new" "$SELF" || return 0
+	stop_server
+	export NEIGHBORS_TUNNEL_PID=$TUNNEL_PID NEIGHBORS_TUNNEL_URL=$TUNNEL_URL NEIGHBORS_CURRENT=$CURRENT
+	exec /bin/bash "$SELF"
 }
 
 start_tunnel() {
@@ -109,13 +136,28 @@ publish() {
 
 trap 'stop_server; [ -n "$TUNNEL_PID" ] && kill "$TUNNEL_PID" 2>/dev/null; exit 0' INT TERM
 
-log "Neighbors host starting"
+log "Neighbors host starting on $(git -C "$REPO" rev-parse --short HEAD)"
+# A server or tunnel left by an earlier copy of this script (one that was
+# stopped, or that an update replaced) would hold the port.
+if [ -z "$TUNNEL_PID" ]; then
+	pkill -f "cloudflared tunnel.*localhost:$PORT" 2>/dev/null
+fi
+pkill -f "scripts/net/server_main.gd" 2>/dev/null && sleep 3
+[ -z "$CURRENT" ] && CURRENT=$(git -C "$REPO" rev-parse HEAD 2>/dev/null)
+update_self
 while true; do
-	sha=$(live_sha)
-	if [ -n "$sha" ] && [ "$sha" != "$CURRENT" ]; then
-		if update_to "$sha"; then
-			stop_server
-			CURRENT=$sha
+	now=$(date +%s)
+	if [ $((now - CHECKED)) -ge "$CHECK_EVERY" ]; then
+		CHECKED=$now
+		sha=$(live_sha)
+		if [ -n "$sha" ] && [ "$sha" != "$CURRENT" ]; then
+			if update_to "$sha"; then
+				stop_server
+				CURRENT=$sha
+				update_self
+			else
+				log "Couldn't update to $sha; will try again"
+			fi
 		fi
 	fi
 	if [ -z "$SERVER_PID" ] || ! kill -0 "$SERVER_PID" 2>/dev/null; then
