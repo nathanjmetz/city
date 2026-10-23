@@ -43,6 +43,16 @@ ol { margin: 0; padding-left: 22px; }
 li { margin-bottom: 6px; }
 b { font-weight: 600; }
 a { color: var(--mint); }
+.shot { display: block; max-width: 100%; height: auto; border-radius: 10px; margin: 4px 0 14px; }
+/* A drawing of the Security part of System Settings on macOS Sequoia. */
+.mock { margin: 10px 0 4px; padding: 10px 12px; border-radius: 10px; background: #f5f5f7; color: #1d1d1f; font: 13px/1.4 -apple-system, system-ui, sans-serif; max-width: 460px; }
+.mock-h { font-weight: 700; margin: 0 0 6px; }
+.mock-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 10px; background: #fff; border-radius: 8px; margin-top: 4px; }
+.mock-dim { color: #6e6e73; }
+.mock-btn { flex: none; padding: 3px 10px; border-radius: 6px; background: #fff; border: 1px solid #c7c7cc; box-shadow: 0 0 0 3px #ef6f51; }
+.cmd { display: flex; gap: 8px; align-items: flex-start; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.cmd code { flex: 1; min-width: 0; overflow-wrap: anywhere; font: 13px/1.5 ui-monospace, Menlo, monospace; color: var(--ink); }
+.cmd button { flex: none; font: 600 14px Figtree, system-ui, sans-serif; padding: 6px 12px; border-radius: 6px; border: 0; background: var(--teal); color: var(--ink); cursor: pointer; }
 </style>
 </head>
 <body>
@@ -63,12 +73,26 @@ a { color: var(--mint); }
 
 	<section>
 		<h2>First time on a Mac</h2>
+		<p>We don't pay Apple to check the app, so the first time you open it the Mac stops it with this box:</p>
+		<img class="shot" src="mac-blocked.png" width="254" height="226" alt="&ldquo;Neighbors&rdquo; Not Opened. Apple could not verify &ldquo;Neighbors&rdquo; is free of malware. Buttons: Done, Move to Trash.">
 		<ol>
-			<li>Open the download. You get the <b>Neighbors</b> app. Keep it anywhere you like, such as your Desktop.</li>
-			<li>Double-click it. The Mac says it can't check the app, because we don't pay Apple to sign it. Click <b>Done</b>.</li>
-			<li>Open <b>System Settings</b>, then <b>Privacy &amp; Security</b>. Scroll down and click <b>Open Anyway</b> next to Neighbors, then <b>Open</b>.</li>
+			<li>Click <b>Done</b>. (Not Move to Trash.)</li>
+			<li>Open the <b>Apple menu</b>, then <b>System Settings</b>, then <b>Privacy &amp; Security</b> in the sidebar.</li>
+			<li>Scroll down to <b>Security</b>. Under &ldquo;Allow applications from&rdquo; a new line says Neighbors was blocked. Click <b>Open Anyway</b> there.
+				<div class="mock" aria-hidden="true">
+					<div class="mock-h">Security</div>
+					<div class="mock-row"><span>Allow applications from</span><span class="mock-dim">App Store &amp; Known Developers</span></div>
+					<div class="mock-row"><span>&ldquo;Neighbors&rdquo; was blocked to protect your Mac.</span><span class="mock-btn">Open Anyway</span></div>
+				</div>
+			</li>
+			<li>A box asks again. Click <b>Open Anyway</b> and type your Mac password (or use Touch ID).</li>
 		</ol>
-		<p class="small" style="margin-top:10px">You only do this once. After that it opens like any app.</p>
+		<p class="small" style="margin-top:10px">You only do this once. After that it opens like any app and updates itself. The Open Anyway line shows up only for about an hour after the Mac blocks the app, so if it's missing, double-click Neighbors again first.</p>
+
+		<h2 style="margin-top:20px">Or one line in Terminal, on your own Mac</h2>
+		<p>This downloads the app into your Applications folder and opens it, with no warning boxes. Open <b>Terminal</b> (press &#8984; Space and type Terminal), paste this line and press Return:</p>
+		<div class="cmd"><code id="cmd">curl -fL https://github.com/nathanjmetz/city/releases/download/desktop/Neighbors-mac.zip -o /tmp/Neighbors.zip &amp;&amp; ditto -xk /tmp/Neighbors.zip ~/Applications &amp;&amp; open ~/Applications/Neighbors.app</code><button type="button" id="copy">Copy</button></div>
+		<p class="small" style="margin-top:10px">Next time, open Neighbors from Launchpad or Spotlight. Only do this on a Mac that's yours. The warning box only shows for files a web browser downloaded, and this is the same file.</p>
 	</section>
 
 	<section>
@@ -90,6 +114,9 @@ a { color: var(--mint); }
 	const p = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
 	const id = /win/i.test(p) ? "win" : /mac/i.test(p) ? "mac" : "";
 	if (id) document.getElementById(id).classList.add("primary");
+	const copy = document.getElementById("copy");
+	copy.onclick = () => navigator.clipboard.writeText(document.getElementById("cmd").textContent)
+		.then(() => { copy.textContent = "Copied"; }, () => {});
 </script>
 </body>
 </html>
