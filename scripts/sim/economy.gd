@@ -92,8 +92,8 @@ func update_budget(sim: CitySim) -> void:
 		# Land near a landfill is worth less, near a cemetery a little more,
 		# and parks and landmarks lift it. Good mail service lifts it a little
 		# too, and so do well-kept streets (Funding) and fiber and cell service;
-		# a smelly sewer plant lowers it.
-		var tax_due := building_tax(b, staffed, sim.parks.lot_value.get(key, 0.0) + sim.telecom.lot_lift(key)) * sim.hubs.lot_factor(sim, key) \
+		# a smelly sewer plant and pollution lower it.
+		var tax_due := building_tax(b, staffed, sim.parks.lot_value.get(key, 0.0) + sim.telecom.lot_lift(key)) * sim.land_factor(key) \
 			* sim.mail.lot_factor(sim, key) * sim.policies.pick(Balance.POLICY_LAND_VALUE, "funding", area) / 12.0
 		if sim.lots.has(key):
 			tax_due *= sim.services.water.land_value_factor(sim.services.buildings, sim.lots[key].pos)

@@ -572,6 +572,129 @@ const HUB_SHRINK_QUIET := 8
 ## A cemetery takes one more piece of land for every this many residents.
 const CEMETERY_PEOPLE_PER_PIECE := 1_200
 
+# --- Pollution -------------------------------------------------------------------
+# Brawn (2026-10-22): pollution must be easier to trace than in Cities:
+# Skylines. Every number here is a real-world figure, so a player who looks
+# one up finds the same thing.
+
+## Which way the wind blows from, compass degrees. Indiana's prevailing wind
+## is from the southwest (NOAA wind roses for Evansville and Indianapolis),
+## so smoke drifts northeast.
+const WIND_FROM_DEG := 225.0
+## What each kind of source puts out:
+## - smoke: fine particles (PM2.5) it adds 100 m downwind, in micrograms per
+##   cubic metre. EPA's yearly limit is 9 and its daily limit 35.
+## - noise: sound level 15 m (50 ft) away in dBA, the FHWA reference
+##   distance. For roads it is the level beside a long straight stretch.
+## - ground: how dirty it leaves the ground and shallow groundwater right
+##   beside it, 0 (clean) to 1 (a cleanup site).
+## - reach: how far dirty ground spreads, metres (it also seeps downhill).
+## Industry companies emit `pad_share` of this from each well, pit or stand,
+## and the full amount at the main yard.
+const POLLUTION_SOURCES := {
+	# FHWA traffic noise model: a 65 mph highway is 72-80 dBA at 50 ft.
+	# Near-road PM2.5 runs 1-2 ug/m3 above background within 150 m.
+	"highway": {"smoke": 1.5, "noise": 75.0, "ground": 0.0, "reach": 0.0},
+	"ramp": {"smoke": 0.6, "noise": 68.0, "ground": 0.0, "reach": 0.0},
+	"boulevard": {"smoke": 0.5, "noise": 70.0, "ground": 0.0, "reach": 0.0},
+	# A small plant: stack and loading-dock dust, forklifts and fans, and
+	# spills soaking into the yard.
+	"factory": {"smoke": 6.0, "noise": 68.0, "ground": 0.3, "reach": 90.0},
+	# Pump jacks hum about 60 dBA nearby; flaring, and brine spills (the
+	# Illinois Basin's real groundwater problem).
+	"oil": {"smoke": 4.0, "noise": 62.0, "ground": 0.5, "reach": 140.0, "pad_share": 0.5},
+	# Limestone quarry: crusher and blasting noise, rock dust, muddy runoff.
+	"ore": {"smoke": 8.0, "noise": 74.0, "ground": 0.35, "reach": 120.0, "pad_share": 0.4},
+	# Logging: chainsaws and skidders (about 85 dBA up close), little else.
+	"forest": {"smoke": 0.5, "noise": 66.0, "ground": 0.05, "reach": 60.0, "pad_share": 0.6},
+	# Landfill: dust and odor, trucks and dozers, and leachate seeping out.
+	"landfill": {"smoke": 4.0, "noise": 64.0, "ground": 0.7, "reach": 220.0},
+	"recycling_1": {"smoke": 1.0, "noise": 64.0, "ground": 0.1, "reach": 80.0},
+	"recycling_2": {"smoke": 0.6, "noise": 62.0, "ground": 0.05, "reach": 60.0},
+	"recycling_3": {"smoke": 0.3, "noise": 58.0, "ground": 0.0, "reach": 0.0},
+	# Fertilizer washing off fields: nitrate in wells is a real Indiana issue.
+	# Per field cell, so a big farm adds up.
+	"farm": {"smoke": 0.0, "noise": 0.0, "ground": 0.03, "reach": 70.0},
+}
+## Smoke spreads out as it drifts: how wide the plume is at the source, how
+## much wider it gets per metre downwind, and the distance over which it
+## thins out to a third (EPA screening models).
+const SMOKE_WIDTH := 30.0
+const SMOKE_SPREAD := 0.22
+const SMOKE_FADE_M := 1400.0
+## Dirty ground seeps downhill this far, metres, on a 5% slope.
+const GROUND_FLOW_M := 160.0
+
+## What pollution does to land value, as a share (-0.006 = 0.6% lower).
+## Noise: about 0.6% per decibel over 55 dBA (EPA's healthy-outdoors level),
+## the usual figure in US home-price studies. Smoke: about 0.6% per ug/m3
+## (hedonic studies of the Clean Air Act). Dirty ground: up to 20% next to a
+## contaminated site (brownfield studies). Total is capped.
+const NOISE_QUIET_DB := 55.0
+const NOISE_VALUE_PER_DB := -0.006
+const SMOKE_VALUE_PER_UG := -0.006
+const GROUND_VALUE := -0.2
+const POLLUTION_VALUE_FLOOR := -0.3
+## Homes feel it fully; shops less; factories hardly at all.
+const POLLUTION_ZONE_WEIGHT := {ZoneMap.Zone.RESIDENTIAL: 1.0, ZoneMap.Zone.COMMERCIAL: 0.5, ZoneMap.Zone.INDUSTRIAL: 0.15}
+## A home counts as hurt by pollution above these levels: FHWA's noise
+## abatement level for homes (67 dBA, with a margin), EPA's yearly PM2.5
+## limit, and ground dirty enough to test wells.
+const HURT_NOISE_DB := 62.0
+const HURT_SMOKE := 9.0
+const HURT_GROUND := 0.15
+## Homes in pollution wear down (stained siding, peeling paint, unkept
+## yards): half the gap closes in this many game days, and wear lowers land
+## value by up to this share on top.
+const WEAR_HALF_LIFE_DAYS := 6.0
+const WEAR_VALUE := -0.08
+
+## Cleaner equipment owners can buy, in order. Each level replaces the one
+## before it: smoke and ground are multiplied, noise drops by `noise` dB.
+const CLEAN_TECH := {
+	"factory": [
+		{"name": "dust filters", "cost": 150_000, "smoke": 0.5, "noise": 0.0, "ground": 0.8},
+		{"name": "scrubbers and sealed floors", "cost": 400_000, "smoke": 0.25, "noise": -3.0, "ground": 0.4},
+		{"name": "an enclosed, all-electric plant", "cost": 1_000_000, "smoke": 0.08, "noise": -8.0, "ground": 0.15},
+	],
+	"oil": [
+		{"name": "vapor recovery units", "cost": 200_000, "smoke": 0.4, "noise": 0.0, "ground": 1.0},
+		{"name": "lined pits and brine pipelines", "cost": 450_000, "smoke": 0.4, "noise": 0.0, "ground": 0.3},
+		{"name": "electric pump motors", "cost": 600_000, "smoke": 0.2, "noise": -8.0, "ground": 0.3},
+	],
+	"ore": [
+		{"name": "water dust sprays", "cost": 120_000, "smoke": 0.5, "noise": 0.0, "ground": 1.0},
+		{"name": "settling ponds", "cost": 300_000, "smoke": 0.5, "noise": 0.0, "ground": 0.35},
+		{"name": "enclosed crushers and conveyors", "cost": 800_000, "smoke": 0.2, "noise": -10.0, "ground": 0.35},
+	],
+	"forest": [
+		{"name": "quieter, newer machines", "cost": 150_000, "smoke": 0.6, "noise": -6.0, "ground": 1.0},
+		{"name": "silt fences on every stand", "cost": 60_000, "smoke": 0.6, "noise": -6.0, "ground": 0.3},
+	],
+	"farm": [
+		{"name": "cover crops", "cost": 30_000, "smoke": 1.0, "noise": 0.0, "ground": 0.6},
+		{"name": "grass buffer strips", "cost": 60_000, "smoke": 1.0, "noise": 0.0, "ground": 0.3},
+	],
+}
+## What owners set aside a month toward the next level. A fully educated
+## owner (Education.leader_education 1.0) saves the full amount, an
+## uneducated one only CLEAN_UNEDUCATED of it; a school nearby makes an owner
+## at least CLEAN_SCHOOL_EDUCATION educated. Each home their pollution hurts
+## adds CLEAN_COMPLAINT_PER_HOME more (neighbors complain), up to
+## CLEAN_COMPLAINT_MAX extra.
+const CLEAN_SAVE_PER_MONTH := {"factory": 12_000, "oil": 20_000, "ore": 16_000, "forest": 8_000, "farm": 3_000}
+const CLEAN_UNEDUCATED := 0.2
+const CLEAN_SCHOOL_EDUCATION := 0.75
+const CLEAN_COMPLAINT_PER_HOME := 0.05
+const CLEAN_COMPLAINT_MAX := 2.0
+
+## Highway noise walls the city can put up: what the city pays per metre of
+## road (a wall costs about $2,500 a metre; federal aid pays 80% of one
+## on a federal-aid highway), and how many decibels it takes off (FHWA: a
+## wall that breaks the line of sight cuts 5 to 10 dBA).
+const NOISE_WALL_PER_M := 500
+const NOISE_WALL_DB := 8.0
+
 # --- Region and trade ----------------------------------------------------------
 
 ## Price of a unit of each traded good or service, in dollars. Hubs add their

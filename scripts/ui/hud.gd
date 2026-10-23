@@ -244,6 +244,9 @@ const VIEWS := [
 	["bus", "bus", "Buses", "Bus routes and stops the depots planned, and how full the buses are"],
 	["network", "tower", "Cell and fiber", "Cell signal across the map, and the streets with fiber"],
 	["rail", "train", "Rail", "Rail lines, what they carry, and new track waiting on your permit"],
+	["smoke", "smoke", "Smoke", "Where smoke drifts and who makes it. Click anywhere to see who pollutes it."],
+	["noise", "noise", "Noise", "How loud it is and what's making the noise. Click anywhere to see the sources."],
+	["ground", "ground", "Dirty ground", "Dirty ground and groundwater, and where it comes from. Click anywhere to trace it."],
 ]
 
 
@@ -283,8 +286,13 @@ func _build_views() -> void:
 func _show_view(key: String) -> void:
 	_view = key
 	var resource := {"fertility": InfoView.Mode.FERTILITY, "oil": InfoView.Mode.OIL,
-		"ore": InfoView.Mode.ORE, "forest": InfoView.Mode.FOREST, "network": InfoView.Mode.NETWORK}
+		"ore": InfoView.Mode.ORE, "forest": InfoView.Mode.FOREST, "network": InfoView.Mode.NETWORK,
+		"smoke": InfoView.Mode.SMOKE, "noise": InfoView.Mode.NOISE, "ground": InfoView.Mode.GROUND}
 	info_view.set_mode(resource.get(key, InfoView.Mode.NONE))
+	# In a pollution view any click on the map says who pollutes that spot.
+	select_tool.spot_clicks = key in ["smoke", "noise", "ground"]
+	if not select_tool.spot_clicks and select_tool.selection.get("type", "") == "spot":
+		select_tool.select({})
 	var cover := {"fire": Services.Kind.FIRE, "police": Services.Kind.POLICE,
 		"health": Services.Kind.CLINIC, "school": Services.Kind.SCHOOL}
 	if cover.has(key):
@@ -315,7 +323,7 @@ func _build_top_bar() -> void:
 	row.add_theme_constant_override("separation", 8)
 	bar.add_child(row)
 
-	_views_button = _icon_button("views", 24, "Views: see the map by fertility, oil, ore, forest, services and traffic")
+	_views_button = _icon_button("views", 24, "Views: see the map by fertility, oil, ore, forest, services, traffic and pollution")
 	_views_button.toggled.connect(func(on): _views_panel.visible = on)
 	row.add_child(_views_button)
 	row.add_child(VSeparator.new())
