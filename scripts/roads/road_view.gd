@@ -11,6 +11,9 @@ const TOWN_REACH := 60.0
 
 var network: RoadNetwork
 var sim: CitySim
+## Draws every street and avenue as a country road (the county highways
+## running on past the town to the horizon).
+var all_rural := false
 var _rural := {}  # segment id -> true
 var _recheck := -1.0  # seconds until the town edge is checked again, or -1
 var _redraw := false  # a new drive needs the poles moved
@@ -62,6 +65,10 @@ func _process(delta: float) -> void:
 ## Streets and avenues with no zoned lot, building or service near them.
 func _rural_segments() -> Dictionary:
 	var out := {}
+	if all_rural:
+		for id in network.segments:
+			out[id] = true
+		return out
 	if sim == null:
 		return out
 	var cell := TOWN_REACH
