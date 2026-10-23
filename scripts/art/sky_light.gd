@@ -145,9 +145,12 @@ func _apply_quality() -> void:
 	env.sdfgi_energy = 0.8
 	# Light you can see in the air: low sun through haze, shafts between
 	# buildings. Thin, so the aerial perspective above still does the
-	# distance (Cinematic only).
+	# distance (Cinematic only). Clear Midwestern air sees 20-40 km, about
+	# 0.0001-0.0002 extinction per metre, and the depth fog already gives
+	# that; 0.0012 laid a 30% grey veil over a town seen from 300 m and made
+	# Cinematic duller than Ultra.
 	env.volumetric_fog_enabled = t.fog
-	env.volumetric_fog_density = 0.0012
+	env.volumetric_fog_density = 0.0003
 	env.volumetric_fog_albedo = HAZE
 	env.volumetric_fog_anisotropy = 0.6
 	env.volumetric_fog_length = 600.0
