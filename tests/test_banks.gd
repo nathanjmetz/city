@@ -23,12 +23,18 @@ func _init() -> void:
 	# A bold manager, so the comparison isn't left to chance.
 	b.leader.caution = 0.1
 	b.leader.ambition = 0.8
+	# Farms buy and sell whole rows, so sizes step; compare them over the run.
+	var f0 := 0
+	var f1 := 0
 	for i in Farms.DECIDE_EVERY * 60:
 		plain.tick()
 		lent.tick()
-	var f0: int = plain.farms.farms.values()[0].cells.size()
-	var f1: int = lent.farms.farms.values()[0].cells.size()
-	_check(f1 > f0, "the farm with a lender grows faster (%d fields against %d)" % [f1, f0])
+		if i % Farms.DECIDE_EVERY == 0:
+			f0 += plain.farms.farms.values()[0].cells.size()
+			f1 += lent.farms.farms.values()[0].cells.size()
+	f0 /= 60
+	f1 /= 60
+	_check(f1 > f0, "the farm with a lender grows faster (%d fields against %d on average)" % [f1, f0])
 	_check(not b.loans.is_empty() and Banks.loans_total(b) > 0.0, "the farm borrowed ($%d)" % roundi(Banks.loans_total(b)))
 	_check(b.made > 0 and b.year.lent + float(b.get("last_year", {}).get("lent", 0.0)) > 0.0, "loans are on the books")
 	var who := "farm:%d" % lent.farms.farms.keys()[0]

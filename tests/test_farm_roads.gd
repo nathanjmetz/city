@@ -56,11 +56,27 @@ func _farm(sim: CitySim) -> int:
 func _fill(sim: CitySim, id: int) -> void:
 	var f: Dictionary = sim.farms.farms[id]
 	f.barn = true
-	for i in range(-10, 10):
-		for j in range(-12, 10):
-			var c := Vector2i(i, j)
-			if c != Vector2i.ZERO and not c in f.cells and sim.farms.field_profit(f, c) > 0.0 and sim.field_usable(Farms.cell_center(f, c), Farms.cell_corners(f, c)):
-				f.cells.append(c)
+	sim.farms.price = 1.2
+	for _k in 600:
+		var c := sim.farms.best_field(id, sim.field_usable)
+		if c == Vector2i.MAX:
+			break
+		f.cells.append(c)
+
+
+## Every field the farm works is whole: the only cells it skips in it are
+## ground it can't work.
+func _whole_fields(sim: CitySim, id: int) -> bool:
+	var f: Dictionary = sim.farms.farms[id]
+	var forties := {}
+	for c in f.cells:
+		forties[Farms.field_of(c)] = true
+	for k in forties:
+		for c in Farms.field_cells(f, k):
+			if not c in f.cells and sim.farms._free(id, f, c, sim.field_usable):
+				print("  hole at ", c, " in field ", k)
+				return false
+	return true
 
 
 func _road_to_next_block() -> void:
@@ -74,6 +90,7 @@ func _road_to_next_block() -> void:
 	var f: Dictionary = sim.farms.farms[id]
 	_check(sim.farms.wants_road(id) == false, "a new farm doesn't want a road")
 	_fill(sim, id)
+	_check(_whole_fields(sim, id), "it farms whole rectangular fields, not soil-chasing scraps")
 	# Its block is full: the next field it would buy lies past a survey line.
 	var left := sim.farms.best_field(id, sim.field_usable)
 	_check(left == Vector2i.MAX, "a full block has no more fields to buy (%s)" % str(left))

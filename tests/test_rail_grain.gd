@@ -28,7 +28,7 @@ func _init() -> void:
 	_check(eid != -1, "the co-op elevator goes up")
 	# Farms across the highway, with their fields grown.
 	var farms := 0
-	for x in range(-1500, 1500, 300):
+	for x in range(-1950, 1950, 300):
 		if sim.apply({"type": "place_farmhouse", "pos": [x, -90], "dir": [0, 1], "crop": "corn"}):
 			farms += 1
 	_check(farms >= 2, "farms around town (%d)" % farms)

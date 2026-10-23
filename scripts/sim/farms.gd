@@ -52,6 +52,15 @@ const PRICE_CYCLE_DAYS := Balance.FARM_PRICE_CYCLE_DAYS
 const DECIDE_EVERY := Balance.FARM_DECIDE_EVERY
 ## One block of land between roads, in cells (along the road, back from it).
 const BLOCK := Balance.FARM_BLOCK_CELLS
+## The fewest workable cells in a row worth planting (120 m, room to run a
+## planter and turn at the ends).
+const MIN_ROW_CELLS := 3
+## The front rows a new field must pay over to be opened (3 rows, 120 m
+## deep: a field of about 15 acres, the smallest worth bringing equipment to).
+const OPEN_ROWS := 3
+## A farmer would rather make a field it works deeper than open a new one
+## (dollars a year per acre-cell of preference).
+const EXTEND_BONUS := 60.0
 
 ## Land the player has set aside (Reserves): farms stay off land saved for
 ## other industries and favour land saved for farming.
@@ -151,6 +160,16 @@ static func forty_of(c: Vector2i) -> Vector2i:
 	var b := block_of(c)
 	var half := 1 if posmod(c.x + BLOCK.x / 2, BLOCK.x + 1) >= BLOCK.x / 2 else 0
 	return Vector2i(b.x * 2 + half, b.y)
+
+
+## Which field cell c is in: the farmer's working unit, half a forty side
+## by side (200 m across, the long way back from the road), about 20 acres
+## when it runs the forty's full depth. Southern Indiana fields run 20 to 40
+## acres, broken up by woods and creeks.
+static func field_of(c: Vector2i) -> Vector2i:
+	var b := block_of(c)
+	var quarter := posmod(c.x + BLOCK.x / 2, BLOCK.x + 1) / (BLOCK.x / 4)
+	return Vector2i(b.x * 4 + mini(quarter, 3), b.y)
 
 
 ## The first row of cells on the farm's side of its own road: the road its
@@ -333,11 +352,12 @@ func yearly_support() -> float:
 ## One field's yearly profit: what it grows, less farming costs and the
 ## property tax on the land. A family with modern machinery works a farm
 ## this size, so it doesn't wait on hired hands.
-func field_profit(f: Dictionary, c: Vector2i) -> float:
+func field_profit(f: Dictionary, c: Vector2i, crop := "") -> float:
 	var mid := cell_center(f, c)
 	var km := mid.distance_to(Vector3(f.pos.x, 0.0, f.pos.z)) / 1000.0
-	# This year's crop on the field, after last year's (CropPlan).
-	var fl := CropPlan.field(f, c)
+	# This year's crop on the field, after last year's (CropPlan), or the
+	# crop a farmer weighing new ground would plant there.
+	var fl := CropPlan.field(f, c) if crop == "" else {"crop": crop, "prev": "", "health": 0.5}
 	var net := CropPlan.net_per_acre(fl.crop, fl.prev, fl.health, fertility_at(mid),
 		price * CropPlan.relative_price(fl.crop, day),
 		Agency.effect(f, Agency.TREES.farm, "output*") * Agency.effect(f, Agency.TREES.farm, "price*"))
@@ -355,8 +375,14 @@ func start_profit(pos: Vector3, dir: Vector3) -> float:
 	var best := -INF
 	for crop in CropPlan.CROPS:
 		var f := {"pos": pos, "dir": dir, "crop": crop, "cells": []}
-		for c in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 1), Vector2i(1, 1)]:
-			best = maxf(best, field_profit(f, c))
+		# Either field beside the farmyard, opened the way best_field opens
+		# one: its front rows, planted whole.
+		for k in _next_fields(f, {}):
+			var total := 0.0
+			for y in OPEN_ROWS:
+				for c in row_cells(f, k, y):
+					total += field_profit(f, c)
+			best = maxf(best, total / (OPEN_ROWS * BLOCK.x / 4))
 	return best
 
 
@@ -386,17 +412,64 @@ func decide(usable: Callable) -> bool:
 		var profit := yearly_profit(id)
 		var sup := support(id)
 		var margin := buy_margin(id)
+		# A field part way through planting is finished first.
+		var planting := _planting(id, f, _rows(f), usable) if f.cells.size() < MAX_CELLS else Vector2i.MAX
+		if planting != Vector2i.MAX:
+			f.cells.append(planting)
+			changed = true
+			continue
 		var best := best_field(id, usable)
-		var worst := Vector2i.MAX
+		# A field is judged as a whole, poor spots and all. When one loses
+		# money, the poorer of its front and back rows goes, so what's left
+		# stays rectangular.
+		var worst := []
+		var worst_avg := INF
+		var rows := _rows(f)
+		var each := {}
+		var sums := {}
 		for c in f.cells:
-			if worst == Vector2i.MAX or field_profit(f, c) < field_profit(f, worst):
-				worst = c
+			var k := field_of(c)
+			each[c] = field_profit(f, c)
+			if not sums.has(k):
+				sums[k] = [0.0, 0]
+			sums[k][0] += each[c]
+			sums[k][1] += 1
+		for k in rows:
+			# A field that would pay in another crop isn't sold: the leader
+			# switches crops at the new year instead.
+			var avg: float = sums[k][0] / sums[k][1]
+			if avg < 0.0:
+				for crop in CropPlan.CROPS:
+					var total := 0.0
+					for c in f.cells:
+						if field_of(c) == k:
+							total += field_profit(f, c, crop)
+					avg = maxf(avg, total / sums[k][1])
+			if avg >= worst_avg:
+				continue
+			var low := INF
+			for y in [rows[k].min(), rows[k].max()]:
+				var total := 0.0
+				var n := 0
+				for c in row_cells(f, k, y):
+					if each.has(c):
+						total += each[c]
+						n += 1
+				if n > 0 and total / n < low:
+					low = total / n
+					worst = [k, y]
+			worst_avg = avg
 		# A farm told to expand keeps thin fields a little longer.
-		if worst != Vector2i.MAX and field_profit(f, worst) + sup < minf(margin, 0.0):
-			# A field that loses money twice running is sold off.
+		if not worst.is_empty() and worst_avg + sup < minf(margin, 0.0):
+			# A row that loses money for a month running (four looks) is sold
+			# off: ten cells at once, so it waits longer than one would.
 			f.loss_streak += 1
-			if f.loss_streak >= 2:
-				f.cells.erase(worst)
+			if f.loss_streak >= 4:
+				# A field cut back to less than its opening depth isn't worth
+				# working: it goes whole.
+				var gone: Array = row_cells(f, worst[0], worst[1]) \
+					if rows[worst[0]].size() > OPEN_ROWS else field_cells(f, worst[0])
+				f.cells = f.cells.filter(func(c): return not c in gone)
 				f.loss_streak = 0
 				changed = true
 		elif best != Vector2i.MAX and (f.cells.is_empty() or profit >= 0.0):
@@ -432,34 +505,203 @@ func wants_road(id: int) -> bool:
 ## land, or Vector2i.MAX if none pays or it has all it will ever farm.
 func best_field(id: int, usable: Callable) -> Vector2i:
 	var f: Dictionary = farms[id]
-	var best := Vector2i.MAX
-	var best_profit := -INF
 	# Town aid or fees count, and Growth sets how much a field must pay.
 	var sup := support(id)
 	var margin := buy_margin(id)
 	if f.cells.size() >= MAX_CELLS or margin == INF:
-		return best
-	for c in _frontier(f):
-		if not _free(id, f, c, usable):
+		return Vector2i.MAX
+	# Farmers keep fields rectangular (Brawn: odd shapes are hard to work
+	# with big equipment, so they only happen where they have to). A field
+	# is half a forty (200 m across, square to the farm's road, about 20
+	# acres) worked in whole rows: the farmer plants a row end to end, poor
+	# spots and all, skipping only ground it can't work (woods, water,
+	# steep banks, its lane, roads), and makes a field deeper a whole row
+	# at a time. Soil only decides whether a field pays as a whole.
+	var rows := _rows(f)
+	var keys := rows.keys()
+	keys.sort_custom(_less)
+	var owned := {}
+	for c in f.cells:
+		owned[c] = true
+	# Finish planting the field it has started first.
+	var started := _planting(id, f, rows, usable)
+	if started != Vector2i.MAX:
+		return started
+	var best := Vector2i.MAX
+	var best_score := -INF
+	# Then one more row across a field it works, front or back, while the
+	# field as a whole still pays with it (poor spots and all) ...
+	for k in keys:
+		var lo: int = rows[k].min()
+		var hi: int = rows[k].max()
+		for y in [lo - 1, hi + 1]:
+			if not y in forty_rows(f, k):
+				continue
+			var plan := _field_plan(id, f, k, [y], owned, usable)
+			if plan.next.size() < MIN_ROW_CELLS or plan.avg + sup <= margin:
+				continue
+			var score: float = plan.avg + EXTEND_BONUS + (RESERVE_BONUS if plan.reserved else 0.0)
+			if score > best_score:
+				best_score = score
+				best = _nearest(plan.next)
+	# ... or a new field beside its land, started at its front, the rows
+	# nearest the farmyard's road (past any ground it can't work), when
+	# those first rows would pay as one field.
+	for k in _next_fields(f, rows):
+		var ys := []
+		for y in forty_rows(f, k):
+			if row_cells(f, k, y).filter(func(c): return _free(id, f, c, usable)).size() >= MIN_ROW_CELLS:
+				ys.append(y)
+				if ys.size() == OPEN_ROWS:
+					break
+		if ys.is_empty():
 			continue
-		var p := field_profit(f, c) + sup
+		var plan := _field_plan(id, f, k, ys, owned, usable)
 		# A new farm's first field has to pay, whatever it's told.
-		if p <= (maxf(margin, 0.0) if f.cells.is_empty() else margin):
+		if plan.avg + sup <= (maxf(margin, 0.0) if f.cells.is_empty() else margin):
 			continue
-		# Farmers square off their fields: land that rounds out what
-		# they already work beats a slightly richer odd corner.
-		var score := p + COMPACT_BONUS * _owned_neighbors(f, c)
-		if reserves != null and reserves.kind_at(cell_center(f, c)) == "farm":
-			score += RESERVE_BONUS
-		if score > best_profit or (score == best_profit and best != Vector2i.MAX and _less(c, best)):
-			best = c
-			best_profit = score
+		var score: float = plan.avg + (RESERVE_BONUS if plan.reserved else 0.0)
+		if score > best_score:
+			best_score = score
+			best = _nearest(row_cells(f, k, ys[0]).filter(func(c): return _free(id, f, c, usable)))
 	return best
+
+
+## The next cell of a field farm f is part way through planting (a started
+## row, or the rows a new field was opened on), or Vector2i.MAX. A farmer
+## plants a field through once it starts, whatever the year looks like.
+func _planting(id: int, f: Dictionary, rows: Dictionary, usable: Callable) -> Vector2i:
+	var keys := rows.keys()
+	keys.sort_custom(_less)
+	var owned := {}
+	for c in f.cells:
+		owned[c] = true
+	for k in keys:
+		for y in rows[k]:
+			var left := []
+			for c in row_cells(f, k, y):
+				if not owned.has(c) and _free(id, f, c, usable):
+					left.append(c)
+			if not left.is_empty():
+				return _nearest(left)
+		# A new field is planted to its opening depth as one, the rows it
+		# was judged on, before anything else.
+		if rows[k].size() < OPEN_ROWS:
+			for y in forty_rows(f, k):
+				if y <= rows[k].max():
+					continue
+				var left := row_cells(f, k, y).filter(func(c): return _free(id, f, c, usable))
+				if left.size() >= MIN_ROW_CELLS:
+					return _nearest(left)
+	return Vector2i.MAX
+
+
+## Of a row's cells, the one nearest the farmyard's side: a farmer plants a
+## row from the end nearest the barn.
+static func _nearest(cells: Array) -> Vector2i:
+	var out: Vector2i = cells[0]
+	for c in cells:
+		if absi(c.x) < absi(out.x):
+			out = c
+	return out
+
+
+## The rows each field of farm f has planted: field -> sorted rows.
+static func _rows(f: Dictionary) -> Dictionary:
+	var out := {}
+	for c in f.cells:
+		var k := field_of(c)
+		if not out.has(k):
+			out[k] = []
+		if not c.y in out[k]:
+			out[k].append(c.y)
+	for k in out:
+		out[k].sort()
+	return out
+
+
+## Rows `ys` of field k, planted with what farm f already works there: the
+## cells it can still plant in those rows, the average yearly profit per
+## cell over the lot, and whether the player reserved it for farming.
+func _field_plan(id: int, f: Dictionary, k: Vector2i, ys: Array, owned: Dictionary, usable: Callable) -> Dictionary:
+	var out := {"next": [], "avg": -INF, "reserved": false}
+	var mine := []
+	for c in f.cells:
+		if field_of(c) == k:
+			mine.append(c)
+	for y in ys:
+		for c in row_cells(f, k, y):
+			if not owned.has(c) and _free(id, f, c, usable):
+				out.next.append(c)
+	var n: int = mine.size() + out.next.size()
+	if n > 0:
+		var kept := 0.0
+		for c in mine:
+			kept += field_profit(f, c)
+		# New ground is judged on the grain that would pay best there (the
+		# leader picks the crops each year, CropPlan).
+		for crop in CropPlan.CROPS:
+			var total := kept
+			for c in out.next:
+				total += field_profit(f, c, crop)
+			out.avg = maxf(out.avg, total / n)
+		if reserves != null and not out.next.is_empty():
+			out.reserved = reserves.kind_at(cell_center(f, out.next[0])) == "farm"
+	return out
+
+
+## The rows of field k in farm f's frame: the half of its block it
+## lies in, on the farm's side of its road.
+static func forty_rows(f: Dictionary, k: Vector2i) -> Array:
+	if k.y == 0:
+		return range(front_row(f), BLOCK.y)
+	return range(k.y * (BLOCK.y + 1), k.y * (BLOCK.y + 1) + BLOCK.y)
+
+
+## The cells of one row across field k.
+static func row_cells(f: Dictionary, k: Vector2i, y: int) -> Array:
+	var bx := floori(k.x / 4.0)
+	var x0 := bx * (BLOCK.x + 1) - BLOCK.x / 2 + (k.x - bx * 4) * (BLOCK.x / 4)
+	var out := []
+	for x in range(x0, x0 + BLOCK.x / 4):
+		if Vector2i(x, y) != Vector2i.ZERO:
+			out.append(Vector2i(x, y))
+	return out
+
+
+## Every cell of field k, front row first.
+static func field_cells(f: Dictionary, k: Vector2i) -> Array:
+	var out := []
+	for y in forty_rows(f, k):
+		out.append_array(row_cells(f, k, y))
+	return out
+
+
+## Fields next to the ones a farm works (or its farmyard's), in blocks it
+## has opened, that it hasn't started.
+static func _next_fields(f: Dictionary, started: Dictionary) -> Array:
+	var blocks: Array = f.get("blocks", [Vector2i.ZERO])
+	var out := []
+	if started.is_empty():
+		return [field_of(Vector2i(-1, 0)), field_of(Vector2i.ZERO)]
+	var from := started.keys()
+	for k in from:
+		for d in [Vector2i.ZERO, Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var n: Vector2i = k + d
+			if n.y < 0 or started.has(n) or n in out:
+				continue
+			if Vector2i(floori(n.x / 4.0), n.y) in blocks:
+				out.append(n)
+	out.sort_custom(_less)
+	return out
 
 
 ## Can farm `id` plant cell c: farmland, clear of its lane, other farms and
 ## anything the city has built?
 func _free(id: int, f: Dictionary, c: Vector2i, usable: Callable) -> bool:
+	# Its own livestock barns stand there (Livestock).
+	if f.has("stock") and c in Livestock.site_cells(f):
+		return false
 	var mid := cell_center(f, c)
 	if not reserved_ok(mid):
 		return false
@@ -486,32 +728,6 @@ func _free(id: int, f: Dictionary, c: Vector2i, usable: Callable) -> bool:
 ## False on land the player saved for another industry.
 func reserved_ok(p: Vector3) -> bool:
 	return reserves == null or reserves.kind_at(p) in ["", "farm"]
-
-
-## Cells next to the farm's fields, or next to the farmyard to start, so
-## the fields always spread out from the farmhouse. Only in the blocks the
-## farm has opened, and across its roads (the survey lines) into the next.
-func _frontier(f: Dictionary) -> Array:
-	var out := []
-	var seen := {Vector2i.ZERO: true}
-	for c in f.cells:
-		seen[c] = true
-	for c in Livestock.site_cells(f):
-		seen[c] = true
-	var from: Array = f.cells.duplicate()
-	from.append(Vector2i.ZERO)
-	var blocks: Array = f.get("blocks", [Vector2i.ZERO])
-	var front := front_row(f)
-	for c in from:
-		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-			var n: Vector2i = c + d
-			if on_line(n):
-				n += d  # over the road to the field beyond
-			if not seen.has(n):
-				seen[n] = true
-				if block_of(n) in blocks and not on_line(n) and n.y >= front:
-					out.append(n)
-	return out
 
 
 static func _owned_neighbors(f: Dictionary, c: Vector2i) -> int:
