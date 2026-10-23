@@ -23,6 +23,13 @@ done
 command -v godot >/dev/null || [ -x /Applications/Godot.app/Contents/MacOS/Godot ] \
 	|| { echo "Installing Godot"; brew install --cask godot; }
 
+plist="$HOME/Library/LaunchAgents/com.neighbors.host.plist"
+# An earlier install's host stops first (it keeps its own save), so what's
+# left running is a region started by hand.
+launchctl unload "$plist" 2>/dev/null || true
+pkill -f "neighbors-host.sh" 2>/dev/null || true
+sleep 3
+
 # A region already running by hand: keep its save, then stop it and its
 # tunnel so the new one can take over.
 data=${NEIGHBORS_DATA:-}
@@ -37,7 +44,9 @@ for pid in $(pgrep -f "scripts/net/server_main.gd" || true); do
 		/*) ;;
 		*) file="$cwd/$file" ;;
 	esac
-	if [ -z "$data" ] && [ -f "$file" ]; then
+	# (A server an earlier install left behind uses the default save; the
+	# hand-started one is the region people are playing.)
+	if [ -z "$data" ] && [ -f "$file" ] && [ "$file" != "$HOME/neighbors-region.json" ]; then
 		data=$file
 	fi
 	echo "Stopping the region started by hand (its save: $file)"
@@ -56,7 +65,6 @@ if [ -z "$data" ]; then
 fi
 echo "The region's save: $data"
 
-plist="$HOME/Library/LaunchAgents/com.neighbors.host.plist"
 cat >"$plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
