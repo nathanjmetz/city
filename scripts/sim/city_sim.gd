@@ -120,6 +120,8 @@ var land_check: Callable
 var site_check: Callable
 ## Who owns each business, its name and its family's brand (Families).
 var families := Families.new()
+var _zone_keys := {}  # zone_keys() cache
+var _zone_sig := []
 var streets := Streets.new()
 ## The town's broad Funding and Growth sliders for every area and hub (no
 ## tax fiddling: Brawn). Set on the Economy page or a hub's panel.
@@ -215,6 +217,7 @@ func _init() -> void:
 	# up with the building (connected ahead of the views).
 	for sig in [buildings_changed, farms_changed, industry_changed]:
 		sig.connect(func(): families.sync(self))
+	buildings_changed.connect(func(): _zone_keys = {})
 	permits.costers[Families.HUB] = func(_sim, req: Dictionary, _route, _hits) -> int:
 		return int(req.base)
 	permits.locators[Families.HUB] = func(_sim, id: int) -> Vector2:
@@ -243,6 +246,21 @@ func apply(cmd: Dictionary) -> bool:
 
 
 ## Applies a command right away, even online (the region does this).
+## The lot keys of every building in a zone, sorted (where people shop and
+## work, where freight goes). Cached until the buildings change.
+func zone_keys(zone: int) -> Array:
+	var sig := [buildings.size(), lots.size()]
+	if _zone_keys.is_empty() or _zone_sig != sig:
+		_zone_sig = sig
+		_zone_keys = {ZoneMap.Zone.RESIDENTIAL: [], ZoneMap.Zone.COMMERCIAL: [], ZoneMap.Zone.INDUSTRIAL: []}
+		for key in buildings:
+			if lots.has(key) and _zone_keys.has(buildings[key].zone):
+				_zone_keys[buildings[key].zone].append(key)
+		for z in _zone_keys:
+			_zone_keys[z].sort()
+	return _zone_keys.get(zone, [])
+
+
 func apply_now(cmd: Dictionary) -> bool:
 	var ok := false
 	match cmd.get("type", ""):
@@ -1008,8 +1026,12 @@ func tick() -> void:
 	t = Perf.now()
 	var prng := RandomNumberGenerator.new()
 	prng.seed = hash([city_seed, tick_count, "people"])
+	var tq := Perf.now()
 	people.sync(self, traffic, prng)
+	Perf.add("x.people_sync", tq)
+	tq = Perf.now()
 	people.plan(self, traffic, prng)
+	Perf.add("x.people_plan", tq)
 	Perf.add("sim.people", t)
 	t = Perf.now()
 	education.trips(self)

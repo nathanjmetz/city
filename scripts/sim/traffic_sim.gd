@@ -51,6 +51,8 @@ enum Light { GREEN, YELLOW, RED }
 const DRIVEWAY_LEAD := 6.0
 ## Metres before a lot's entrance a car starts its turn into it.
 const PARK_LEAD := 9.0
+## At most this many drivers look for a better route each tick.
+const REPLANS_PER_TICK := 2
 ## Seconds a driver would rather spend than turn left across traffic into
 ## or out of a driveway.
 const CROSS_PEN := 6.0
@@ -111,6 +113,8 @@ var _out := {}    # node -> [way ids leaving]
 var _turns := {}  # way -> [ways it may turn into]
 var _arrows := {} # way -> {next way: [lanes that may take it]}
 var _kind := {}   # Vector2i(way, next) -> Turn
+var _tcost := {}  # way -> PackedFloat64Array, _turn_cost for each of _turns[way]
+var _wcost := {}  # way -> _way_cost now (_refresh_wcost)
 var _conns := {}  # Vector4i(way, lane, next, lane) -> junction path
 var _conflict := {}
 var _next_conn := 1
@@ -522,6 +526,13 @@ func _rebuild() -> void:
 	for wid in ways:
 		if not _speed.has(wid):
 			_speed[wid] = 1.0
+	_tcost.clear()
+	for wi in _turns:
+		var tc := PackedFloat64Array()
+		for wo in _turns[wi]:
+			tc.append(_turn_cost(wi, wo))
+		_tcost[wi] = tc
+	_refresh_wcost()
 	if _restoring:
 		_restoring = false
 		for car in cars + _waiting:
@@ -789,7 +800,18 @@ func _turn_cost(wi: int, wo: int) -> float:
 ## Fastest route from any start [way, d] to any target way (value: where on
 ## it to stop). Returns the ways in order, or [] if none. `lane` >= 0 limits
 ## the first turn to ones that lane is allowed to make.
+## Seconds to drive each way at its current speed (_way_cost, kept for
+## every way so route planning doesn't call a function per road).
+func _refresh_wcost() -> void:
+	_wcost.clear()
+	for wid in ways:
+		var w: Dictionary = ways[wid]
+		_wcost[wid] = w.len / (w.vmax * maxf(_speed.get(wid, 1.0), 0.15))
+
+
 func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
+	if _wcost.size() != ways.size():
+		_refresh_wcost()
 	var best := INF
 	var best_route := []
 	for s in starts:
@@ -801,28 +823,35 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 				best_route = [s[0]]
 	var dist := {}
 	var prev := {}
-	var heap := []
+	# A binary heap of (cost, way) in two packed arrays, kept inline: ties
+	# go to the lower way id, so every copy picks the same route.
+	var hg := PackedFloat64Array()
+	var hu := PackedInt32Array()
 	for s in starts:
 		var w: Dictionary = ways[s[0]]
 		var g: float = maxf(w.len - s[1], 0.0) / w.vmax + (s[2] if s.size() > 2 else 0.0)
 		if g < dist.get(s[0], INF):
 			dist[s[0]] = g
-			_push(heap, [g, s[0]])
+			_hpush(hg, hu, g, s[0])
 	var end := -1
 	var end_prev := -1
 	var first := lane >= 0
-	while not heap.is_empty():
-		var top: Array = _pop(heap)
-		var g: float = top[0]
-		var u: int = top[1]
+	var none := PackedFloat64Array()
+	while not hg.is_empty():
+		var g: float = hg[0]
+		var u: int = hu[0]
+		_hpop(hg, hu)
 		if g > dist[u] + 0.0001:
 			continue
 		if g >= best:
 			break
-		for nx in _turns.get(u, []):
+		var outs: Array = _turns.get(u, [])
+		var tc: PackedFloat64Array = _tcost.get(u, none)
+		for k in outs.size():
+			var nx: int = outs[k]
 			if first and not _arrows[u][nx].has(lane):
 				continue
-			var e: float = g + _turn_cost(u, nx)
+			var e: float = g + tc[k]
 			if targets.has(nx):
 				var cand: float = e + targets[nx] / ways[nx].vmax + pen.get(nx, 0.0)
 				if cand < best:
@@ -830,11 +859,11 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 					end = nx
 					end_prev = u
 					best_route = []
-			var ng := e + _way_cost(nx)
+			var ng: float = e + _wcost.get(nx, INF)
 			if ng < dist.get(nx, INF):
 				dist[nx] = ng
 				prev[nx] = u
-				_push(heap, [ng, nx])
+				_hpush(hg, hu, ng, nx)
 		first = false
 	if best_route.is_empty() and end != -1:
 		var route := [end]
@@ -850,45 +879,44 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 	return best_route
 
 
-static func _push(heap: Array, item: Array) -> void:
-	heap.append(item)
-	var i := heap.size() - 1
+static func _hpush(hg: PackedFloat64Array, hu: PackedInt32Array, g: float, u: int) -> void:
+	hg.append(g)
+	hu.append(u)
+	var i := hg.size() - 1
 	while i > 0:
-		var p := (i - 1) / 2
-		if _less(heap[i], heap[p]):
-			var t = heap[i]
-			heap[i] = heap[p]
-			heap[p] = t
-			i = p
-		else:
+		var p := (i - 1) >> 1
+		if hg[p] < g or (hg[p] == g and hu[p] <= u):
 			break
+		hg[i] = hg[p]
+		hu[i] = hu[p]
+		i = p
+	hg[i] = g
+	hu[i] = u
 
 
-static func _pop(heap: Array) -> Array:
-	var top: Array = heap[0]
-	var last: Array = heap.pop_back()
-	if not heap.is_empty():
-		heap[0] = last
-		var i := 0
-		while true:
-			var l := i * 2 + 1
-			var r := l + 1
-			var m := i
-			if l < heap.size() and _less(heap[l], heap[m]):
-				m = l
-			if r < heap.size() and _less(heap[r], heap[m]):
-				m = r
-			if m == i:
-				break
-			var t = heap[i]
-			heap[i] = heap[m]
-			heap[m] = t
-			i = m
-	return top
-
-
-static func _less(a: Array, b: Array) -> bool:
-	return a[0] < b[0] or (a[0] == b[0] and a[1] < b[1])
+static func _hpop(hg: PackedFloat64Array, hu: PackedInt32Array) -> void:
+	var n := hg.size() - 1
+	var g: float = hg[n]
+	var u: int = hu[n]
+	hg.resize(n)
+	hu.resize(n)
+	if n == 0:
+		return
+	var i := 0
+	while true:
+		var l := i * 2 + 1
+		if l >= n:
+			break
+		var m := l
+		if l + 1 < n and (hg[l + 1] < hg[l] or (hg[l + 1] == hg[l] and hu[l + 1] < hu[l])):
+			m = l + 1
+		if g < hg[m] or (g == hg[m] and u <= hu[m]):
+			break
+		hg[i] = hg[m]
+		hu[i] = hu[m]
+		i = m
+	hg[i] = g
+	hu[i] = u
 
 
 ## Where on each way of a road piece a car would stop for a lot.
@@ -1160,15 +1188,9 @@ func _spawn(sim: CitySim, rng: RandomNumberGenerator) -> void:
 	# At rush hour, about one trip a second for every 200 people.
 	if rng.randf() > rate * sim.stats.population / 1200.0:
 		return
-	var by_zone := {ZoneMap.Zone.RESIDENTIAL: [], ZoneMap.Zone.COMMERCIAL: [], ZoneMap.Zone.INDUSTRIAL: []}
-	for key in sim.buildings:
-		if sim.lots.has(key) and by_zone.has(sim.buildings[key].zone):
-			by_zone[sim.buildings[key].zone].append(key)
-	for z in by_zone:
-		by_zone[z].sort()
-	var homes: Array = by_zone[ZoneMap.Zone.RESIDENTIAL]
-	var shops: Array = by_zone[ZoneMap.Zone.COMMERCIAL]
-	var plants: Array = by_zone[ZoneMap.Zone.INDUSTRIAL]
+	var homes: Array = sim.zone_keys(ZoneMap.Zone.RESIDENTIAL)
+	var shops: Array = sim.zone_keys(ZoneMap.Zone.COMMERCIAL)
+	var plants: Array = sim.zone_keys(ZoneMap.Zone.INDUSTRIAL)
 	if background_freight and hour >= 6 and hour < 20 and not shops.is_empty() and not plants.is_empty() \
 			and rng.randf() < 0.12:
 		add_trip(sim.lots[plants[rng.randi() % plants.size()]], sim.lots[shops[rng.randi() % shops.size()]],
@@ -2638,6 +2660,7 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 			_speed[wid] = snappedf(lerpf(_speed[wid], way_sum[wid][0] / way_sum[wid][1], 0.05), 0.000001)
 		else:
 			_speed[wid] = snappedf(lerpf(_speed[wid], 1.0, 0.02), 0.000001)
+	_refresh_wcost()
 	flow = 1.0 if limit_sum == 0.0 else clampf(speed_sum / limit_sum, 0.0, 1.0)
 
 
@@ -2667,7 +2690,16 @@ func _snapshot() -> void:
 				_committed[car.conn.node] = []
 			_committed[car.conn.node].append(car)
 	for key in _lanes:
-		_lanes[key].sort_custom(func(x, y): return x.d > y.d or (x.d == y.d and x.id < y.id))
+		# Front car first. Cars rarely pass within a lane and `cars` keeps
+		# last tick's order, so an insertion sort is nearly a single pass.
+		var l: Array = _lanes[key]
+		for i in range(1, l.size()):
+			var c: Dictionary = l[i]
+			var k := i - 1
+			while k >= 0 and (l[k].d < c.d or (l[k].d == c.d and l[k].id > c.id)):
+				l[k + 1] = l[k]
+				k -= 1
+			l[k + 1] = c
 		# Cars held up by the car in front count against traffic flow; a car
 		# slowing on an open road for a turn, sign or light does not.
 		var list: Array = _lanes[key]
@@ -3015,7 +3047,10 @@ static func _lane_dist(lane: int, desired: Array) -> int:
 ## A few cars each tick look again at the rest of their trip with live
 ## travel times, and switch if another way is clearly faster.
 func _replan_some() -> void:
+	var budget := REPLANS_PER_TICK  # route plans are the costly part of a tick
 	for car in cars:
+		if budget == 0:
+			return
 		if (car.id * 7 + _tick) % 300 != 0 or car.j != null or car.commit:
 			continue
 		if car.leg >= car.route.size() - 1:
@@ -3023,6 +3058,7 @@ func _replan_some() -> void:
 		var w: Dictionary = ways[car.route[car.leg]]
 		if w.s1 - car.d < 30.0:
 			continue
+		budget -= 1
 		var old_cost := _route_cost(car)
 		var keep := {"route": car.route, "leg": car.leg, "end_d": car.end_d}
 		if _replan(car) and _route_cost(car) > old_cost * 0.9:

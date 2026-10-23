@@ -140,11 +140,7 @@ func _shop_for(sim: CitySim, p: Dictionary, rng: RandomNumberGenerator) -> Strin
 		return ""
 	var best := ""
 	var best_score := INF
-	var keys := sim.buildings.keys()
-	keys.sort()
-	for key in keys:
-		if sim.buildings[key].zone != ZoneMap.Zone.COMMERCIAL or not sim.lots.has(key):
-			continue
+	for key in sim.zone_keys(ZoneMap.Zone.COMMERCIAL):
 		var d: float = home.pos.distance_to(sim.lots[key].pos)
 		var score := d * (0.5 + rng.randf())
 		if score < best_score:
