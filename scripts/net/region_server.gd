@@ -167,7 +167,12 @@ func _handle(from: int, msg: Dictionary) -> void:
 			if p.city != "" and typeof(d) == TYPE_DICTIONARY:
 				region.update_city(p.city, d)
 				_dirty = true
-				_broadcast({"t": "city", "id": p.city, "z": msg.z}, from)
+				var relay := {"t": "city", "id": p.city, "z": msg.z}
+				# Its land, when it changed (see Region.land).
+				if msg.get("land") is Array:
+					region.take_land(p.city, msg.land)
+					relay.land = msg.land
+				_broadcast(relay, from)
 				# Its population, for the metro (older games don't send it).
 				if msg.has("pop") and region.ledger.set_population(p.city, int(msg.pop)) and region.update_metro():
 					_ledger_changed()

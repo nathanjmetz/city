@@ -945,6 +945,27 @@ const REGION_PROJECT_GATES := {"power": METRO_MICRO_MIN, "i69": METRO_METRO_MIN,
 ## (STAGE_TARGET_DAYS), and reach the airport gate in about that full time.
 const METRO_PACING_TOWNS := 4
 
+## A town's other neighborhoods (Brawn 2026-10-23; see Neighborhoods and
+## neighborhoods-risks.md). The first costs this (land and a start on
+## streets; Midwestern farmland runs about $10,000 an acre, and a new
+## subdivision buys a quarter section or so), and each one after costs
+## double the one before. A town may have up to NEIGHBORHOOD_MAX.
+const NEIGHBORHOOD_FEE := 1_000_000
+const NEIGHBORHOOD_MAX := 6
+## A neighborhood starts at least this far from any other town's buildings
+## (a mile), on open land.
+const NEIGHBORHOOD_SPACING := 1609.0
+## A site with no building within NEIGHBORHOOD_USE_RADIUS metres after this
+## many game days is let go.
+const NEIGHBORHOOD_USE_DAYS := 30
+const NEIGHBORHOOD_USE_RADIUS := 400.0
+## Land: a town's buildings claim the land nearer to them than to any other
+## town's, out to this far (half a mile); past that it is open land anyone
+## may build on. Roads and zoning claim nothing. Footprints are sent as
+## cells this size, metres.
+const LAND_CLAIM := 800.0
+const LAND_CELL := 100.0
+
 # --- Parks and landmarks -------------------------------------------------------
 # Brawn's rules (2026-10-22): a park is a hub. You place it and it fills in by
 # itself over time (paths, a playground, a pavilion, a ball diamond), growing

@@ -19,6 +19,7 @@ func _run() -> void:
 	_test_elbow_room()
 	_test_city_lines()
 	_test_ledger()
+	_test_land_and_neighborhoods()
 
 	var data := OS.get_user_data_dir().path_join("test-region.json")
 	DirAccess.remove_absolute(data)
@@ -395,6 +396,78 @@ func _test_ledger() -> void:
 	_check(copy.projects.i69.stages[1].status == "open" and is_equal_approx(copy.share("i69", "c2"), 0.75) \
 		and copy.agreements[id].status == "active", "the ledger saves and loads")
 	_check(l.end(id, "c2") and l.book_month("c1") == 0.0, "either side can end it")
+
+
+## Whose land is whose, and a hemmed-in town starting a new neighborhood
+## out on open land (neighborhoods-risks.md).
+func _test_land_and_neighborhoods() -> void:
+	var r := Region.new()
+	r.add_city("p1", "Ann")
+	r.add_city("p2", "Bob")
+	var ann: CitySim = r.cities.c1.sim
+	ann.land_check = func(pts): return r.land_problem("c1", pts)
+	ann.site_check = func(spot): return r.site_problem("c1", spot)
+	var bob_at: Vector2 = r.cities.c2.origin - r.cities.c1.origin  # Bob's centre, in Ann's coordinates
+	var toward := bob_at.normalized()
+	_check(r.land.has("c1") and r.land.has("c2"), "each new town has land from the start")
+	# A road into the middle of Bob's town is Bob's land; one at home is fine.
+	var into := [Vector3(bob_at.x - toward.x * 150.0, 0, bob_at.y - toward.y * 150.0),
+		Vector3(bob_at.x - toward.x * 100.0, 0, bob_at.y - toward.y * 100.0), Vector3(bob_at.x, 0, bob_at.y)]
+	_check(ann.land_problem([into]) == "That's Bobville's land.", "a road into a neighbor's town is refused (%s)" % ann.land_problem([into]))
+	var home := [Vector3(0, 0, 300), Vector3(50, 0, 300), Vector3(100, 0, 300)]
+	_check(ann.land_problem([home]) == "", "a road at home is fine")
+	# Roads claim nothing: Bob's county road ends halfway, yet the open land
+	# beside it past his half-mile is anyone's.
+	var mid := bob_at * 0.5
+	var open_land := [Vector3(mid.x, 0, mid.y), Vector3(mid.x + 50, 0, mid.y), Vector3(mid.x + 100, 0, mid.y)]
+	_check(ann.land_problem([open_land]) == "", "open land between towns is anyone's, roads or not")
+	# Bob builds up next to the halfway point: now that land is his.
+	var near_mid := Vector2i(((r.cities.c1.origin + mid + toward * 300.0) / Balance.LAND_CELL).floor())
+	var flat := r.land_flat("c2")
+	flat.append_array([near_mid.x, near_mid.y])
+	r.take_land("c2", flat)
+	var past := mid + toward * 250.0
+	_check(ann.land_problem([[Vector3(past.x, 0, past.y), Vector3(past.x + 10, 0, past.y), Vector3(past.x + 20, 0, past.y)]]) != "",
+		"land nearer a neighbor's houses is theirs")
+
+	# Neighborhoods: earned, priced, linked by county road, use it or lose it.
+	ann.stats.population = 50
+	_check(ann.neighborhood_problem(-bob_at) != "", "a village has no neighborhood to start yet")
+	ann.stats.population = 600
+	_check(Neighborhoods.slots_for(600) == 1 and Neighborhoods.slots_for(150_000) == Balance.NEIGHBORHOOD_MAX,
+		"one neighborhood per town stage, up to the cap")
+	_check(ann.neighborhood_problem(bob_at * 0.9) != "", "not right next to another town")
+	var spot := Vector2.ZERO
+	for i in 24:
+		var a := TAU * i / 24.0
+		var p := -toward.rotated(a * 0.5 * (1 if i % 2 == 0 else -1)) * 2600.0
+		if ann.neighborhood_problem(p) == "":
+			spot = p
+			break
+	_check(spot != Vector2.ZERO, "open land a mile and more from everyone takes a neighborhood")
+	var money := ann.economy.money
+	var roads := ann.network.segments.size()
+	var fee := ann.neighborhoods.fee()
+	_check(ann.apply_now({"type": "found_neighborhood", "pos": [spot.x, spot.y]}), "Ann starts a neighborhood")
+	_check(ann.neighborhoods.sites.size() == 1 and ann.network.segments.size() > roads, "with a county road out to it")
+	_check(is_equal_approx(money - ann.economy.money, fee) and ann.neighborhoods.fee() == fee * 2,
+		"it costs its fee, and the next costs double")
+	_check(not ann.apply_now({"type": "found_neighborhood", "pos": [-spot.x, -spot.y]}), "one per stage")
+	var cell := Vector2i((spot / Balance.LAND_CELL).floor())
+	_check(Array(ann.land_cells()).any(func(c): return Vector2i((c / Balance.LAND_CELL).floor()) == cell),
+		"the site counts as the town's land")
+	_check(ann.neighborhoods.sites[0].name.ends_with("End") or ann.neighborhoods.sites[0].name.ends_with("Side"),
+		"named for where it lies (%s)" % ann.neighborhoods.sites[0].name)
+	var copy := CitySim.new()
+	copy.from_dict(JSON.parse_string(JSON.stringify(ann.to_dict(), "", false, true)))
+	_check(copy.neighborhoods.sites.size() == 1 and copy.neighborhoods.founded == 1, "neighborhoods save and load")
+	ann.tick_count += Balance.NEIGHBORHOOD_USE_DAYS * CitySim.TICKS_PER_HOUR * 24 + 1
+	_check(ann.neighborhoods.check(ann).size() == 1 and ann.neighborhoods.sites.is_empty(),
+		"an empty site is let go after its time")
+	_check(ann.neighborhoods.slots_free(600) == 1 and ann.neighborhoods.fee() == fee * 2,
+		"the slot comes back, the fee doesn't go down")
+	var placed := r.to_dict()
+	_check(placed.cities.c2.land.size() == r.land_flat("c2").size(), "land is saved with the region")
 
 
 ## Grow the metro: towns joined by road count together, ranked on the real

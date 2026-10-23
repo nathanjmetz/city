@@ -55,6 +55,7 @@ const TOWN_GAP := 20.0
 const TOWN_MAX_GAP := 120.0
 var _sent_at := -1000.0
 var _sent_sig := []
+var _land_sent := 0  # hash of the land last sent
 ## A neighbor's newest copy is unpacked into its simulation (a second or so
 ## for a grown town) one town at a time, this many seconds apart.
 const NEIGHBOR_EVERY := 15.0
@@ -119,7 +120,14 @@ func send_town(now := false) -> void:
 		return
 	_sent_at = t
 	_sent_sig = sig
-	_send({"t": "city", "z": RegionServer.pack(sim.to_dict()), "pop": int(sim.stats.population)})
+	var msg := {"t": "city", "z": RegionServer.pack(sim.to_dict()), "pop": int(sim.stats.population)}
+	# Where the town has built, only when that changed (it can be long).
+	var land := region.land_of_sim(my_city)
+	if land.hash() != _land_sent:
+		_land_sent = land.hash()
+		region.take_land(my_city, land)
+		msg.land = land
+	_send(msg)
 
 
 ## Sends a batch of play telemetry (see Telemetry); telemetry_acked says when it's kept.
@@ -297,6 +305,8 @@ func _handle(msg: Dictionary) -> void:
 					mine = id
 			region.from_dict(d, mine)
 			my_city = region.city_of(player_id)
+			_land_sent = 0
+			_hook_land()
 			_unseen = region.stale_ids()
 			is_joined = true
 			joined.emit()
@@ -352,6 +362,8 @@ func _handle(msg: Dictionary) -> void:
 			var d = RegionServer.unpack(str(msg.get("z", "")))
 			if id != my_city and region.cities.has(id) and typeof(d) == TYPE_DICTIONARY:
 				region.update_city(id, d)
+				if msg.get("land") is Array:
+					region.take_land(id, msg.land)
 		"apply":
 			# Roads the region built in your town (a new neighbor's county road).
 			for cmd in msg.get("cmds", []):
@@ -379,6 +391,8 @@ func _replace_region(d: Dictionary) -> void:
 	region.ledger.from_dict(d.get("ledger", {}))
 	for id in d.cities:
 		var c: Dictionary = d.cities[id]
+		if id != my_city and c.get("land") is Array and not c.land.is_empty():
+			region.take_land(id, c.land)
 		if id == my_city or not c.has("city"):
 			continue
 		if region.cities.has(id):
@@ -390,6 +404,17 @@ func _replace_region(d: Dictionary) -> void:
 			region.cities[id] = {"owner": str(c.owner), "player": str(c.get("player", "")),
 				"name": str(c.name), "origin": Vector2(float(c.origin[0]), float(c.origin[1])),
 				"color": int(c.color), "sim": sim}
+
+
+## Your town keeps to its own land and open land, and starts neighborhoods
+## only where there's room (see Region.land_problem, site_problem).
+func _hook_land() -> void:
+	var sim := my_sim()
+	if sim == null:
+		return
+	var me := my_city
+	sim.land_check = func(pts: Array) -> String: return region.land_problem(me, pts)
+	sim.site_check = func(spot: Vector2) -> String: return region.site_problem(me, spot)
 
 
 func _send(msg: Dictionary) -> void:
