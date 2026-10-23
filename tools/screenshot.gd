@@ -170,6 +170,9 @@ func _demo_town() -> void:
 	if args0.size() >= 5 and args0[4] == "forest":
 		_demo_forest(sim)
 		return
+	if args0.size() >= 5 and args0[4] == "state":
+		_demo_state(sim)
+		return
 	if args0.size() >= 5 and args0[4] == "county":
 		_demo_county(sim)
 		return
@@ -378,6 +381,31 @@ func _demo_county(sim: CitySim) -> void:
 					c.look_at_point(Vector3(x, 0, z))
 					c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
 			return
+
+
+## A street drawn out to the nearest state highway, which joins it to town.
+func _demo_state(sim: CitySim) -> void:
+	var o: Vector2 = sim.terrain_offset
+	var hit := {}
+	for reach in [1000.0, 2000.0, 4000.0, 8000.0]:
+		hit = Highways.near(o.x, o.y, reach)
+		if not hit.is_empty():
+			break
+	var at: Vector2 = hit.on - o
+	var join := OS.get_cmdline_user_args().size() < 6 or OS.get_cmdline_user_args()[5] != "plain"
+	if join:
+		var r: Dictionary = Highways.all()[hit.route]
+		var t: Vector2 = (Highways.point(hit.route, hit.along + 20.0) - Highways.point(hit.route, hit.along - 20.0)).normalized()
+		var side := Vector2(-t.y, t.x)
+		var a := at + side * 300.0
+		sim.apply({"type": "build_road", "start": [a.x, a.y], "ctrl": [(a.x + at.x) * 0.5, (a.y + at.y) * 0.5],
+			"end": [at.x, at.y], "road": 1, "join": true})
+		print("joined ", r.name, " ", sim.get("highways_joined"))
+	for c in _main.get_children():
+		if c is CityCamera:
+			var args := OS.get_cmdline_user_args()
+			c.look_at_point(Vector3(at.x, 0, at.y))
+			c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
 
 
 ## A landfill, a recycling plant and a cemetery that have grown for a while.

@@ -3375,6 +3375,8 @@ const COUNTY_PIECE := 200.0
 const COUNTY_STEP := 8.0
 ## A road's dead end this near a county road is taken on to it, metres.
 const COUNTY_REACH := 15.0
+## A joined state highway is taken on this far each way, metres (a mile).
+const HIGHWAY_JOIN := 1608.0
 
 
 ## Joins the mile of county road at `p` (if one runs there) to the town: it
@@ -3403,53 +3405,7 @@ func _join_county(p: Vector3, way := 0, key := "") -> bool:
 		if length < RoadNetwork.MIN_LENGTH:
 			continue
 		var dir := (stop - on) / length
-		var prev := on
-		var d := 0.0
-		var met := false
-		var blocked := false
-		while d < length - 1.0 and not met and not blocked:
-			var next := minf(d + COUNTY_PIECE, length)
-			# Out to the first of the town's roads it meets, and no further:
-			# a road already on the line keeps its place. It stops short of
-			# zoned lots and farmyards, which are the town's.
-			var s := d + COUNTY_STEP
-			while s <= next:
-				var q := on + dir * s
-				var at := Vector3(q.x, 0, q.y)
-				if not network.find_segment_near(at, COUNTY_STEP * 0.6).is_empty():
-					next = s
-					met = true
-					break
-				if zones.zone_at(at) != ZoneMap.Zone.NONE or farms.covers(at):
-					next = s - COUNTY_STEP
-					blocked = true
-					break
-				s += COUNTY_STEP
-			if met and next <= COUNTY_STEP:
-				break  # a road already runs along the line here
-			var q := on + dir * next
-			var c := [Vector3(prev.x, 0, prev.y), Vector3((prev.x + q.x) * 0.5, 0, (prev.y + q.y) * 0.5), Vector3(q.x, 0, q.y)]
-			if land_problem([c]) != "":
-				# Only as far as the town may build (its land, in a region).
-				while next - d > COUNTY_STEP and land_problem([c]) != "":
-					next -= COUNTY_STEP
-					q = on + dir * next
-					c = [c[0], (c[0] + Vector3(q.x, 0, q.y)) * 0.5, Vector3(q.x, 0, q.y)]
-				if land_problem([c]) != "":
-					break
-				met = false
-				blocked = true
-			if prev.distance_to(q) < RoadNetwork.MIN_LENGTH:
-				break
-			if met:
-				# Right onto the road it meets, so the two join there.
-				var hit := network.find_segment_near(c[2], COUNTY_STEP)
-				if not hit.is_empty():
-					c[2] = Vector3(hit.point.x, 0, hit.point.z)
-					c[1] = (c[0] + c[2]) * 0.5
-			pieces.append(c)
-			prev = q
-			d = next
+		pieces.append_array(_pieces_along(func(d): return on + dir * d, length))
 	if pieces.is_empty():
 		return false
 	var before := network.segments.keys()
@@ -3466,6 +3422,111 @@ func _join_county(p: Vector3, way := 0, key := "") -> bool:
 	county_changed.emit()
 	streets.name_road(self, network.segments.keys().filter(func(id): return not id in before),
 		streets.grid_name(mile.key))
+	streets.sync(self)
+	return true
+
+
+## The pieces of road to lay along a line out from a join, `at`(metres
+## along) giving each point (town coordinates), up to `length` metres: out
+## to the first of the town's roads it meets (and onto it), and no further,
+## so a road already on the line keeps its place. It stops short of zoned
+## lots and farmyards, which are the town's, of the edge of the town's land
+## and, with `dry`, of the water.
+func _pieces_along(at: Callable, length: float, dry := false) -> Array:
+	var o := terrain_offset
+	var pieces := []
+	var d := 0.0
+	var met := false
+	var blocked := false
+	while d < length - 1.0 and not met and not blocked:
+		var next := minf(d + COUNTY_PIECE, length)
+		var s := d + COUNTY_STEP
+		while s <= next:
+			var q: Vector2 = at.call(s)
+			var here := Vector3(q.x, 0, q.y)
+			if not network.find_segment_near(here, COUNTY_STEP * 0.6).is_empty():
+				next = s
+				met = true
+				break
+			if zones.zone_at(here) != ZoneMap.Zone.NONE or farms.covers(here) \
+					or (dry and Terrain.water(q.x + o.x, q.y + o.y) >= 0.1):
+				next = s - COUNTY_STEP
+				blocked = true
+				break
+			s += COUNTY_STEP
+		if met and next <= COUNTY_STEP:
+			break  # a road already runs along the line here
+		var c := _piece(at, d, next)
+		if land_problem([c]) != "":
+			# Only as far as the town may build (its land, in a region).
+			while next - d > COUNTY_STEP and land_problem([c]) != "":
+				next -= COUNTY_STEP
+				c = _piece(at, d, next)
+			if land_problem([c]) != "":
+				break
+			met = false
+			blocked = true
+		if c[0].distance_to(c[2]) < RoadNetwork.MIN_LENGTH:
+			break
+		if met:
+			# Right onto the road it meets, so the two join there.
+			var hit := network.find_segment_near(c[2], COUNTY_STEP)
+			if not hit.is_empty():
+				c[2] = Vector3(hit.point.x, 0, hit.point.z)
+				c[1] = (c[0] + c[2]) * 0.5
+		pieces.append(c)
+		d = next
+	return pieces
+
+
+## A piece of road from `a` to `b` metres along `at`, bowed through the
+## line's middle.
+static func _piece(at: Callable, a: float, b: float) -> Array:
+	var pa: Vector2 = at.call(a)
+	var pb: Vector2 = at.call(b)
+	var k: Vector2 = at.call((a + b) * 0.5) * 2.0 - (pa + pb) * 0.5
+	return [Vector3(pa.x, 0, pa.y), Vector3(k.x, 0, k.y), Vector3(pb.x, 0, pb.y)]
+
+
+## Joins the state highway at `p` (route, if given, else the nearest within
+## COUNTY_REACH) to the town, the way a county road joins: a STATE_HWY road
+## of its own, free, laid where the highway runs, from `p` out HIGHWAY_JOIN
+## metres each way (or only `way`: -1 back toward the route's start, +1 on),
+## stopping at the town's roads (joining them), the water, zoned lots and
+## the edge of its land. True if any road was laid.
+func _join_highway(p: Vector3, way := 0, route := -1) -> bool:
+	if absf(p.y) > 1.0:
+		return false  # a bridge or tunnel end
+	var o := terrain_offset
+	var hit := Highways.near(p.x + o.x, p.z + o.y, COUNTY_REACH, route)
+	if hit.is_empty():
+		return false
+	var r: int = hit.route
+	var from: float = hit.along
+	var on: Vector2 = hit.on - o
+	var here := Vector2(p.x, p.z)
+	var pieces := []
+	for e in [-1, 1]:
+		if way != 0 and way != e:
+			continue
+		var at := func(d): return Highways.point(r, from + e * d) - o
+		var length := absf(clampf(from + e * HIGHWAY_JOIN, 0.0, Highways.length(r)) - from)
+		if length >= RoadNetwork.MIN_LENGTH:
+			pieces.append_array(_pieces_along(at, length, true))
+	if pieces.is_empty():
+		return false
+	var before := network.segments.keys()
+	var money := economy.money
+	network.begin_batch()
+	if here.distance_to(on) > 0.5:
+		var m := (here + on) * 0.5
+		network.build_road(p, Vector3(m.x, 0, m.y), Vector3(on.x, 0, on.y), RoadStyle.Type.STATE_HWY)
+	for c in pieces:
+		network.build_road(c[0], c[1], c[2], RoadStyle.Type.STATE_HWY)
+	network.end_batch()
+	economy.money = money  # the state hands it over
+	streets.name_road(self, network.segments.keys().filter(func(id): return not id in before),
+		Highways.all()[r].name)
 	streets.sync(self)
 	return true
 
@@ -3503,9 +3564,25 @@ func _join_crossings(curves: Array) -> void:
 				if along < lo - 0.5 or along > lo + CountyGrid.SECTION + 0.5:
 					continue  # on the line, but the next mile's stretch
 				_touch(touch, mile.key, along, q)
-		# A road ending just short of a county road is taken on to it.
+		# Where it crosses a state highway.
+		for i in pts.size() - 1:
+			var a: Vector3 = pts[i]
+			var b: Vector3 = pts[i + 1]
+			if absf(a.y) > 1.0 or absf(b.y) > 1.0:
+				continue
+			var hw := Highways.crossing(Vector2(a.x + o.x, a.z + o.y), Vector2(b.x + o.x, b.z + o.y))
+			if not hw.is_empty():
+				var on: Vector2 = hw.on - o
+				_touch(touch, "hw:%d" % hw.route, hw.along, Vector3(on.x, 0, on.y))
+		# A road ending just short of a county road or highway is taken on to it.
 		for end in [c[0], c[2]]:
 			if absf(end.y) > 1.0 or network.segments_at(network.find_node_near(end, 0.5)).size() != 1:
+				continue
+			var hw := Highways.near(end.x + o.x, end.z + o.y, COUNTY_REACH)
+			if not hw.is_empty() and not touch.has("hw:%d" % hw.route):
+				var on: Vector2 = hw.on - o
+				_touch(touch, "hw:%d" % hw.route, hw.along, end if end.distance_to(Vector3(on.x, 0, on.y)) > 0.5 \
+					else Vector3(on.x, 0, on.y))
 				continue
 			var near := CountyGrid.mile_at(end.x + o.x, end.z + o.y, COUNTY_REACH)
 			if near.is_empty() or county_removed.has(near.key) or touch.has(near.key):
@@ -3514,6 +3591,14 @@ func _join_crossings(curves: Array) -> void:
 				continue
 	for key in touch:
 		var t: Array = touch[key]
+		if key.begins_with("hw:"):
+			var r := int(key.substr(3))
+			if t[2] - t[0] < 20.0:
+				_join_highway(t[1], 0, r)
+			else:
+				_join_highway(t[1], -1, r)
+				_join_highway(t[3], 1, r)
+			continue
 		if t[2] - t[0] < 20.0:
 			_join_county(t[1], 0, key)
 		else:
