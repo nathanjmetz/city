@@ -73,6 +73,9 @@ func _ready() -> void:
 		_code.text = Session.pending_invite.get("join", "")
 		_server.text = Session.pending_invite.get("server", "")
 		Session.pending_invite = {}
+		# First time on this device: they're signing up, not logging in.
+		if not Session.has_login(_server.text, _code.text):
+			_signup.button_pressed = true
 		_show("together")
 	else:
 		_show("home")
@@ -236,7 +239,7 @@ func _show(page: String) -> void:
 	elif page == "new":
 		_city_name.grab_focus.call_deferred()
 	elif page == "together":
-		(_name if _name.text == "" else _code).grab_focus.call_deferred()
+		(_name if _name.text == "" else (_password if _code.text != "" else _code)).grab_focus.call_deferred()
 
 
 func _fill_saves() -> void:

@@ -20,6 +20,8 @@ signal farms_changed
 signal industry_changed
 ## A campus opened, closed, or bought, built up or sold a block.
 signal education_changed
+## A bank opened, closed, bought a block or changed hands.
+signal banks_changed
 ## A warehouse was built, grew, shrank or went away.
 signal warehouses_changed
 ## A park or landmark was placed, filled in, grew, changed tier or went away.
@@ -76,6 +78,8 @@ var terrain_offset := Vector2.ZERO:
 		_lots_dirty = true
 ## High schools, colleges and universities, and the town's graduates.
 var education := Education.new()
+## Banks that lend to the farms, companies and builders (see Banks).
+var banks := Banks.new()
 ## Requests from hub leaders for big moves (track through town, crossing
 ## your roads), answered from the bell up top. See Permits.
 var permits := Permits.new()
@@ -146,6 +150,10 @@ func _init() -> void:
 		var w = warehouses.buildings.get(id)
 		var c := Vector3.ZERO if w == null else Warehouses.center(w)
 		return Vector2(c.x, c.z)
+	# Bank presidents take the player's word too.
+	permits.locators["bank"] = func(_sim, id: int) -> Vector2:
+		var b: Dictionary = banks.banks.get(id, {"pos": Vector3.ZERO})
+		return Vector2(b.pos.x, b.pos.z)
 	farms.reserves = reserves
 	industry.reserves = reserves
 	network.changed.connect(func():
@@ -178,7 +186,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			# Old three-click grids are a rectangle; new ones any shape.
 			var shape: Array = GridFill.rect(_v(cmd.a), _v(cmd.b), _v(cmd.c)) if cmd.type == "build_grid" \
 				else cmd.points.map(_v)
-			var lines := GridFill.plan(network, shape, float(cmd.block), _road(cmd), int(cmd.get("side", 0)))
+			var lines := GridFill.plan(network, shape, float(cmd.block), _road(cmd), int(cmd.get("side", 0)),
+				clampf(float(cmd.get("across", RoadShapes.GRID_ACROSS)), GridFill.ACROSS_MIN, GridFill.BLOCK_MAX))
 			if shape.size() == 2:
 				lines = [[shape[0], shape[0].lerp(shape[1], 0.5), shape[1]]]
 			if lines.is_empty() or not _can_afford(lines, _road(cmd)):
@@ -218,7 +227,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			if cost > economy.money or services.site_problem(network, kind, pos, dir) != "" \
 					or _on_warehouse(Services.corners(kind, pos, dir)) \
 					or parks.overlaps(Services.corners(kind, pos, dir).map(func(q): return Vector2(q.x, q.z))) \
-					or education.covers(pos):
+					or education.covers(pos) or banks.covers(pos):
 				return false
 			var sid := services.add(kind, pos, dir)
 			economy.money -= cost
@@ -317,6 +326,27 @@ func apply_now(cmd: Dictionary) -> bool:
 			_lots_dirty = true
 			education_changed.emit()
 			ok = true
+		"place_bank":
+			var kind := str(cmd.get("kind", ""))
+			var pos := _v(cmd.pos)
+			var dir := _v(cmd.dir).normalized()
+			if not Banks.KINDS.has(kind) or dir.length() < 0.5 or Banks.site_problem(self, kind, pos, dir) != "" \
+					or int(Banks.spec(kind).cost) > economy.money:
+				return false
+			banks.add(self, kind, pos, dir, city_seed, tick_count)
+			economy.money -= int(Banks.spec(kind).cost)
+			_clear_zones_under(Banks.block_corners({"pos": pos, "dir": dir}, Vector2i.ZERO))
+			_lots_dirty = true
+			banks_changed.emit()
+			ok = true
+		"remove_bank":
+			ok = banks.banks.erase(int(cmd.id))
+			_lots_dirty = true
+			banks_changed.emit()
+		"remove_bank_block":
+			ok = banks.remove_at(_v(cmd.pos))
+			_lots_dirty = true
+			banks_changed.emit()
 		"remove_campus":
 			ok = education.campuses.erase(int(cmd.id))
 			_lots_dirty = true
@@ -447,6 +477,8 @@ func apply_now(cmd: Dictionary) -> bool:
 			buses = BusNet.new()
 			taxis = TaxiCo.new()
 			education = Education.new()
+			banks = Banks.new()
+			banks_changed.emit()
 			permits.from_dict({})
 			hubs = CivicHubs.new()
 			parks = Parks.new()
@@ -587,11 +619,15 @@ func _road_wins() -> void:
 	if not education.campuses.is_empty():
 		economy.money += education.make_way(corr)
 		_lots_dirty = true
+	if not banks.banks.is_empty():
+		economy.money += banks.make_way(corr)
+		_lots_dirty = true
 	farms_changed.emit()
 	industry_changed.emit()
 	warehouses_changed.emit()
 	education_changed.emit()
 	power_changed.emit()
+	banks_changed.emit()
 
 
 func tick() -> void:
@@ -603,6 +639,11 @@ func tick() -> void:
 		update_stats()
 	if tick_count % GROW_EVERY == 0:
 		_grow_one()
+		# A builder with a construction loan from a bank in town puts up one more.
+		if not banks.banks.is_empty() and banks.builds_more(self):
+			var key := _grow_one(1)
+			if key != "":
+				banks.financed(self, key)
 	if tick_count % Farms.DECIDE_EVERY == 0 and not farms.farms.is_empty():
 		farms.tax_rate = economy.tax[ZoneMap.Zone.INDUSTRIAL]
 		farms.price = Farms.price_on(tick_count / (24.0 * TICKS_PER_HOUR))
@@ -618,6 +659,11 @@ func tick() -> void:
 		if education.decide(self):
 			_lots_dirty = true
 			education_changed.emit()
+	# Farms and companies that want the land next door ask the banks for a loan.
+	if tick_count % Balance.BANK_LEND_EVERY == 0 and not banks.banks.is_empty():
+		_bank_changes(banks.lend(self))
+	if tick_count % Balance.BANK_DECIDE_EVERY == 0 and not banks.banks.is_empty():
+		_bank_changes(banks.decide(self))
 	if tick_count % Balance.WAREHOUSE_DECIDE_EVERY == 0 and not warehouses.buildings.is_empty():
 		if warehouses.decide(self):
 			_lots_dirty = true
@@ -701,6 +747,8 @@ func update_stats() -> void:
 	factory_jobs += farms.jobs() + industry.jobs() + warehouses.jobs() + power.jobs()
 	# Teachers, and office and tech jobs for the town's graduates.
 	shop_jobs += education.jobs()
+	# Tellers and loan officers.
+	shop_jobs += banks.jobs()
 	economy.reach_milestones(pop)
 	var workers := int(pop * WORKER_SHARE)
 	var jobs := shop_jobs + factory_jobs
@@ -790,6 +838,8 @@ func farmhouse_problem(pos: Vector3, dir: Vector3) -> String:
 			return "That ground belongs to a company."
 		if education.covers(p):
 			return "That ground is a campus."
+		if banks.covers(p):
+			return "That ground is a bank."
 	if _on_warehouse(Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y))):
 		return "Overlaps a warehouse."
 	if parks.overlaps(Array(poly)):
@@ -827,6 +877,8 @@ func industry_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 			return "Too close to another company."
 		if education.covers(p):
 			return "That ground is a campus."
+		if banks.covers(p):
+			return "That ground is a bank."
 	if _on_warehouse(Array(poly).map(func(q): return Vector3(q.x, 0.0, q.y))):
 		return "Overlaps a warehouse."
 	if parks.overlaps(Array(poly)):
@@ -866,6 +918,8 @@ func warehouse_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 			return "Overlaps the post office."
 		if education.covers(p):
 			return "That ground is a campus."
+		if banks.covers(p):
+			return "That ground is a bank."
 	if parks.overlaps(Array(poly)):
 		return "That ground is a park."
 	return ""
@@ -887,7 +941,7 @@ func warehouse_ground_ok(poly: PackedVector2Array, id: int) -> bool:
 			return false
 	for p in _grid_in(poly):
 		if farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) or reserves.kind_at(p) != "" \
-				or hubs.covers(p) or education.covers(p) or mail.covers(p) or power.covers(p):
+				or hubs.covers(p) or education.covers(p) or mail.covers(p) or power.covers(p) or banks.covers(p):
 			return false
 	for key in lots:
 		if not buildings.has(key) and zones.zone_at(lots[key].zone_pt) == ZoneMap.Zone.NONE:
@@ -1113,7 +1167,7 @@ func field_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
 		for p in pts:
 			if services.covers(p) or farms.covers(p) or industry.covers(p) or farms.field_at(p) != -1 \
 					or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
-					or mail.covers(p) or power.covers(p) or not land_ok(p):
+					or mail.covers(p) or power.covers(p) or banks.covers(p) or not land_ok(p):
 				ok = false
 	if ok:
 		for key2 in lots:
@@ -1306,7 +1360,7 @@ func _lot_blocked(lot: Dictionary) -> bool:
 	for p in [lot.pos, lot.front, lot.zone_pt]:
 		if services.covers(p) or farms.covers(p) or farms.field_at(p) != -1 or industry.covers(p) \
 				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
-				or mail.covers(p) or power.covers(p):
+				or mail.covers(p) or power.covers(p) or banks.covers(p):
 			return true
 	# No lots in the water or on ground too steep to build on.
 	return not land_ok(lot.pos, LotPlanner.FRONTAGE * 0.5)
@@ -1426,12 +1480,14 @@ func _build_roundabout(center: Vector3, radius: float, type: int) -> bool:
 	return ok
 
 
-func _grow_one() -> void:
+## Starts one new building on an empty zoned lot, by demand. Returns its lot
+## key, or "". `salt` gives a second, different pick in the same tick.
+func _grow_one(salt := 0) -> String:
 	var empty := empty_zoned_lots()
 	if empty.is_empty():
-		return
+		return ""
 	var rng := RandomNumberGenerator.new()
-	rng.seed = hash([city_seed, tick_count])
+	rng.seed = hash([city_seed, tick_count]) if salt == 0 else hash([city_seed, tick_count, salt])
 	# Each zone gets a chance to build in proportion to its demand.
 	var by_zone := {}
 	for key in empty:
@@ -1456,7 +1512,21 @@ func _grow_one() -> void:
 		if z == ZoneMap.Zone.INDUSTRIAL:
 			buildings[key].chain = factory_chain(lots[key].pos)
 		buildings_changed.emit()
-		return
+		return key
+	return ""
+
+
+## What a bank's month or lending round changed.
+func _bank_changes(c: Dictionary) -> void:
+	if c.get("farms", false):
+		_lots_dirty = true
+		farms_changed.emit()
+	if c.get("industry", false):
+		_lots_dirty = true
+		industry_changed.emit()
+	if c.get("banks", false):
+		_lots_dirty = true
+		banks_changed.emit()
 
 
 ## Each farm and company leader takes their next step up their tree.
@@ -1597,6 +1667,7 @@ func to_dict() -> Dictionary:
 		"industry": industry.to_dict(),
 		"power": power.to_dict(),
 		"education": education.to_dict(),
+		"banks": banks.to_dict(),
 		"logistics": logistics.to_dict(),
 		"warehouses": warehouses.to_dict(),
 		"reserves": reserves.to_dict(),
@@ -1640,6 +1711,7 @@ func from_dict(d: Dictionary) -> void:
 	industry.from_dict(d.get("industry", {}))
 	power.from_dict(d.get("power", {}))
 	education.from_dict(d.get("education", {}))
+	banks.from_dict(d.get("banks", {}))
 	logistics.from_dict(d.get("logistics", {}))
 	warehouses.from_dict(d.get("warehouses", {}))
 	reserves.from_list(d.get("reserves", []))

@@ -137,7 +137,8 @@ func _init() -> void:
 	var dsave := CitySim.new()
 	dsave.from_dict(JSON.parse_string(JSON.stringify(dev.to_dict())))
 	var d2: Dictionary = dsave.warehouses.buildings[1]
-	_check(d2.built == d.built and d2.leader == d.leader and is_equal_approx(Warehouses.site_depth(d2), Warehouses.site_depth(d)),
+	# (Compared as saved text: a snapped float like 0.35 isn't exact in binary.)
+	_check(d2.built == d.built and JSON.stringify(d2.leader, "", true) == JSON.stringify(d.leader, "", true) and is_equal_approx(Warehouses.site_depth(d2), Warehouses.site_depth(d)),
 		"a save keeps its owner and what they built")
 	var rows: Array = Inspect.describe(dev, {"type": "warehouse", "id": 1}).rows
 	_check(rows.any(func(r): return r[0] == "Built" and str(r[1]).contains("Truck yard")), "the panel lists what it has built")

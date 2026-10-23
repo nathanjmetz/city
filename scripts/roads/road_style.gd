@@ -2,7 +2,23 @@ class_name RoadStyle
 extends RefCounted
 ## Road types and their real US sizes, in metres.
 
-enum Type { STREET, AVENUE, BOULEVARD, HIGHWAY, RAMP, RING, RING2 }
+## Saves store a road's type by number, so new types are always appended.
+enum Type { STREET, AVENUE, BOULEVARD, HIGHWAY, RAMP, RING, RING2,
+	STREET_NARROW, STREET_BIKE, STREET_ONEWAY, MAIN_STREET, ALLEY, GRAVEL, COUNTY,
+	AVENUE_TURN, AVENUE_BIKE, AVENUE_DIVIDED, AVENUE_ONEWAY,
+	STRIP, PARKWAY,
+	FREEWAY2, FREEWAY4, DIVIDED_HWY, STATE_HWY,
+	RAMP2, AVENUE_BUS }
+
+## The five road menus. Each variant names its menu with "group"; a type
+## without one is the menu's own first road.
+const GROUPS := [Type.STREET, Type.AVENUE, Type.BOULEVARD, Type.HIGHWAY, Type.RAMP]
+## Parallel parking lane, 8 ft (AASHTO), and the depth of a 45-degree angled
+## stall measured out from the curb (about 18 ft, ITE parking guide).
+const PARKING_WIDTH := 2.4
+const ANGLE_STALL := 5.5
+## Bike lane, 5 ft (AASHTO Guide for the Development of Bicycle Facilities).
+const BIKE_WIDTH := 1.5
 
 ## Each type: name, lanes, paved width, planted median width, whether it is
 ## one-way (traffic runs the way it was drawn), whether buildings can face it,
@@ -25,6 +41,88 @@ const TYPES := [
 	{"name": "Roundabout", "lanes": 1, "width": 6.0, "median": 0.0, "oneway": true, "lots": false, "grade": 0.05, "mph": 20, "menu": false},
 	# Two-lane (multilane) ring, about 32 ft.
 	{"name": "Roundabout, 2 lanes", "lanes": 2, "width": 9.6, "median": 0.0, "oneway": true, "lots": false, "grade": 0.05, "mph": 25, "menu": false},
+
+	# --- Variants, picked from the row above each road menu ---
+	# Extra fields: group (its menu), short (its card name), parking (sides
+	# with parallel parking), angle (45-degree angled parking instead), bike
+	# (bike lane each side), turn (the median is a painted two-way left-turn
+	# lane), trees (street trees down the median), rural (no curbs or
+	# sidewalks: shoulders run off into the grass), shoulder (paved, outside
+	# the edge line), surface (gravel or concrete), walk (sidewalks).
+	# Every lane is 3.6 m, so the widths below add up from their parts.
+
+	# Newer subdivision street, no parking: 24 ft of pavement (AASHTO local
+	# street minimum for low-volume residential streets).
+	{"name": "Narrow street", "short": "No parking", "group": Type.STREET, "lanes": 2, "width": 7.8, "median": 0.0,
+		"oneway": false, "lots": true, "grade": 0.12, "mph": 25},
+	# Two lanes and a 5 ft bike lane each side.
+	{"name": "Street with bike lanes", "short": "Bike lanes", "group": Type.STREET, "lanes": 2, "width": 10.8,
+		"median": 0.0, "oneway": false, "lots": true, "grade": 0.12, "mph": 25, "bike": true},
+	# Downtown one-way pair: two lanes one way, parking both sides.
+	{"name": "One-way street", "short": "One-way", "group": Type.STREET, "lanes": 2, "width": 12.6, "median": 0.0,
+		"oneway": true, "lots": true, "grade": 0.12, "mph": 25, "parking": 2},
+	# Courthouse-square main street: two lanes with 45-degree angled parking
+	# both sides (Petersburg, Jasper, Washington IN).
+	{"name": "Main street", "short": "Main St", "group": Type.STREET, "lanes": 2, "width": 18.8, "median": 0.0,
+		"oneway": false, "lots": true, "grade": 0.10, "mph": 20, "angle": true},
+	# Alley behind the homes: 16 ft of concrete, no curbs, sidewalks or lines.
+	# Garages open onto it; houses still face the street.
+	{"name": "Alley", "short": "Alley", "group": Type.STREET, "lanes": 2, "width": 5.0, "median": 0.0,
+		"oneway": false, "lots": false, "grade": 0.12, "mph": 15, "surface": "concrete", "walk": false, "rural": true,
+		"verge": 1.0},
+	# Indiana county gravel road: 20 ft of crushed limestone, no lines.
+	{"name": "Gravel road", "short": "Gravel", "group": Type.STREET, "lanes": 2, "width": 6.0, "median": 0.0,
+		"oneway": false, "lots": true, "grade": 0.10, "mph": 40, "surface": "gravel", "walk": false, "rural": true},
+	# Paved county road: two 11-12 ft lanes, edge lines, gravel shoulders.
+	{"name": "County road", "short": "County", "group": Type.STREET, "lanes": 2, "width": 7.8, "median": 0.0,
+		"oneway": false, "lots": true, "grade": 0.10, "mph": 55, "walk": false, "rural": true},
+
+	# Three-lane road: one lane each way and a two-way left-turn lane, the
+	# usual Midwest "road diet" (FHWA Road Diet Informational Guide).
+	{"name": "Avenue, center turn lane", "short": "Turn lane", "group": Type.AVENUE, "lanes": 2, "width": 11.4,
+		"median": 3.6, "oneway": false, "lots": true, "grade": 0.10, "mph": 35, "turn": true},
+	{"name": "Avenue with bike lanes", "short": "Bike lanes", "group": Type.AVENUE, "lanes": 4, "width": 18.0,
+		"median": 0.0, "oneway": false, "lots": true, "grade": 0.10, "mph": 35, "bike": true},
+	# Four lanes split by a 16 ft raised median with trees, which leaves
+	# room for left-turn bays (AASHTO Green Book).
+	{"name": "Divided avenue", "short": "Divided", "group": Type.AVENUE, "lanes": 4, "width": 20.4, "median": 4.8,
+		"oneway": false, "lots": true, "grade": 0.10, "mph": 35, "trees": true},
+	# Downtown one-way avenue: three lanes, parking both sides.
+	{"name": "One-way avenue", "short": "One-way", "group": Type.AVENUE, "lanes": 3, "width": 16.2, "median": 0.0,
+		"oneway": true, "lots": true, "grade": 0.10, "mph": 30, "parking": 2},
+
+	# Five-lane commercial strip: two lanes each way and a center turn lane.
+	{"name": "Five-lane strip", "short": "Strip", "group": Type.BOULEVARD, "lanes": 4, "width": 18.6, "median": 3.6,
+		"oneway": false, "lots": true, "grade": 0.08, "mph": 45, "turn": true},
+	# Historic parkway: four lanes either side of a 30 ft tree-lined median
+	# (Indianapolis park and boulevard system).
+	{"name": "Parkway", "short": "Parkway", "group": Type.BOULEVARD, "lanes": 4, "width": 24.6, "median": 9.0,
+		"oneway": false, "lots": true, "grade": 0.08, "mph": 40, "trees": true},
+
+	# Freeways, one direction each: 10 ft right and 4 ft left shoulders.
+	# Rural interstate (I-64, I-69 in southern Indiana): two lanes, 70 mph.
+	{"name": "Freeway, 2 lanes", "short": "2 lanes", "group": Type.HIGHWAY, "lanes": 2, "width": 11.4, "median": 0.0,
+		"oneway": true, "lots": false, "grade": 0.05, "mph": 70},
+	{"name": "Freeway, 4 lanes", "short": "4 lanes", "group": Type.HIGHWAY, "lanes": 4, "width": 18.6, "median": 0.0,
+		"oneway": true, "lots": false, "grade": 0.05, "mph": 65},
+	# Divided highway (US-231, SR-57): two lanes each way, a 40 ft grass
+	# median with 4 ft inside shoulders, 10 ft outside shoulders, crossroads
+	# and driveways at grade (AASHTO rural arterial).
+	{"name": "Divided highway", "short": "Divided", "group": Type.HIGHWAY, "lanes": 4, "width": 34.8, "median": 14.4,
+		"oneway": false, "lots": true, "grade": 0.05, "mph": 60, "walk": false, "rural": true, "shoulder": 3.0},
+	# Two-lane state highway with 8 ft paved shoulders.
+	{"name": "State highway", "short": "2-lane", "group": Type.HIGHWAY, "lanes": 2, "width": 12.0, "median": 0.0,
+		"oneway": false, "lots": true, "grade": 0.06, "mph": 55, "walk": false, "rural": true, "shoulder": 2.4},
+
+	# Two-lane ramp: 8 ft right and 4 ft left shoulders.
+	{"name": "Ramp, 2 lanes", "short": "2 lanes", "group": Type.RAMP, "lanes": 2, "width": 10.8, "median": 0.0,
+		"oneway": true, "lots": false, "grade": 0.08, "mph": 35},
+
+	# Four lanes with the curb lane each way for buses only (MUTCD 3D
+	# preferential lanes; red paint per FHWA Interim Approval IA-22). Cars
+	# may cross into it to turn right at the next corner or reach a driveway.
+	{"name": "Avenue with bus lanes", "short": "Bus lanes", "group": Type.AVENUE, "lanes": 4, "width": 15.0,
+		"median": 0.0, "oneway": false, "lots": true, "grade": 0.10, "mph": 35, "bus": true},
 ]
 ## Raised concrete ring inside a roundabout that long trucks can ride over
 ## with their back wheels (FHWA: typically 10-15 ft).
@@ -66,6 +164,47 @@ static func is_ring(type: int) -> bool:
 	return type == Type.RING or type == Type.RING2
 
 
+## The menu a road type belongs to (STREET, AVENUE, BOULEVARD, HIGHWAY or RAMP).
+static func group(type: int) -> int:
+	return TYPES[type].get("group", type)
+
+
+## The road types in one menu, its own first.
+static func variants(menu: int) -> Array:
+	var out := []
+	for t in TYPES.size():
+		if TYPES[t].get("menu", true) and group(t) == menu:
+			out.append(t)
+	return out
+
+
+## Freeways and ramps: one-way, walled, no driveways.
+static func is_freeway(type: int) -> bool:
+	return TYPES[type].oneway and not TYPES[type].lots
+
+
+## A median with curbs (planted), not a painted turn lane or a grass ditch.
+static func raised_median(type: int) -> bool:
+	var spec: Dictionary = TYPES[type]
+	return spec.median > 0.0 and not spec.get("turn", false) and not spec.get("rural", false)
+
+
+## The bus-only lane on each way of a road (its curb lane), or -1.
+static func bus_lane(type: int) -> int:
+	var spec: Dictionary = TYPES[type]
+	if not spec.get("bus", false):
+		return -1
+	return (spec.lanes if spec.oneway else spec.lanes / 2) - 1
+
+
+## Width of the parking lane each side (0 without parking).
+static func parking_width(type: int) -> float:
+	var spec: Dictionary = TYPES[type]
+	if spec.get("angle", false):
+		return ANGLE_STALL
+	return PARKING_WIDTH if spec.get("parking", 0) > 0 else 0.0
+
+
 ## Half the curb-to-curb width.
 static func half_width(type := 0) -> float:
 	return TYPES[type].width * 0.5
@@ -73,8 +212,10 @@ static func half_width(type := 0) -> float:
 
 ## Distance from the road's centre line to the back of the sidewalk.
 static func right_of_way_half(type := 0) -> float:
-	if TYPES[type].oneway:
+	if is_freeway(type):
 		return half_width(type) + 1.5  # barrier and clear zone, no sidewalk
+	if TYPES[type].get("rural", false):
+		return half_width(type) + TYPES[type].get("verge", 3.0)  # gravel shoulder and a mowed verge
 	return half_width(type) + CURB_WIDTH + PARKWAY_WIDTH + SIDEWALK_WIDTH
 
 

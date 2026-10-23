@@ -51,6 +51,10 @@ var mode := Mode.STRAIGHT
 ## with the same road type and options, as in CS2 (Brawn's ask).
 var last_draw := Mode.STRAIGHT
 var grid_block := 120.0
+## Spacing of the streets parallel to the first side.
+var grid_across := RoadShapes.GRID_ACROSS
+## Index into GridFill.PRESETS, or -1 once [ ] has changed the size.
+var grid_preset := -1
 ## Which side of the shape the grid runs square to.
 var grid_side := 0
 ## Any shape instead of a rectangle.
@@ -65,8 +69,19 @@ var elevation := 0.0
 var _points: Array[Vector3] = []
 var _preview := MeshInstance3D.new()
 var _cursor := MeshInstance3D.new()
-var _ok_mat := RoadStyle.material(Color(0.35, 0.65, 1.0, 0.55), true)
-var _bad_mat := RoadStyle.material(Color(1.0, 0.3, 0.25, 0.6), true)
+## The ghost road: bright, drawn over trees and hills, and never thinner on
+## screen than GHOST_PX however far out the camera is (as in CS2).
+var _ok_mat := RoadStyle.material(Color(0.3, 0.85, 1.0, 0.85), true)
+var _bad_mat := RoadStyle.material(Color(1.0, 0.3, 0.25, 0.75), true)
+var _dot_mat := RoadStyle.material(Color(1.0, 1.0, 1.0, 0.95), true)
+const FT := 3.28084  # feet in a metre: the readouts are in US units
+const GHOST_PX := 14.0  # least on-screen width of the ghost road
+const LINE_PX := 3.0    # least width of outlines and the centre line
+const DOT_PX := 9.0     # radius of the clicked-point markers
+const CURSOR_PX := 16.0 # radius of the cursor ring
+var _dots := MeshInstance3D.new()
+var _centre := MeshInstance3D.new()  # the ghost road's centre line
+var _px := 0.1  # metres per screen pixel where the cursor is
 var _hover_seg := -1
 var _hover_service := -1
 var _hover_warehouse := -1
@@ -102,14 +117,24 @@ func _ready() -> void:
 	_cursor.material_override = _ok_mat
 	_cursor.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_cursor)
+	_dot_mat.render_priority = 1  # over the ghost road
+	_centre.material_override = _dot_mat
+	_centre.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_centre)
+	_dots.material_override = _dot_mat
+	_dots.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_dots)
 	_guide.material_override = _guide_mat
 	_guide.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_guide)
 	_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_label.fixed_size = true
-	_label.pixel_size = 0.0012
-	_label.font_size = 28
-	_label.outline_size = 8
+	# Small and compact beside the cursor, like CS2's tool readout.
+	_label.pixel_size = 0.0005
+	_label.font_size = 30
+	_label.outline_size = 10
+	_label.font = Brand.font("ui", 600)
+	_label.offset = Vector2(0, 90)  # just above the cursor ring
 	_label.no_depth_test = true
 	add_child(_label)
 	set_mode(mode)
@@ -170,6 +195,17 @@ func _input(event: InputEvent) -> void:
 	get_viewport().set_input_as_handled()
 
 
+## Picks one of the real-world grid sizes (GridFill.PRESETS).
+func set_grid_preset(i: int) -> void:
+	grid_preset = i
+	grid_block = GridFill.PRESETS[i].block
+	grid_across = GridFill.PRESETS[i].across
+	if mode != Mode.GRID:
+		set_mode(Mode.GRID)
+	options_changed.emit()
+	_update_hint()
+
+
 ## Switches the grid between a rectangle and any shape.
 func set_grid_free(on: bool) -> void:
 	grid_free = on
@@ -208,9 +244,14 @@ func _process(_delta: float) -> void:
 	_preview.transform = Transform3D.IDENTITY
 	_guide.visible = false
 	_label.visible = false
+	_dots.visible = false
+	_centre.visible = false
 	_cursor.visible = hit != null and mode != Mode.NONE
 	if hit == null or mode == Mode.NONE:
 		return
+	_px = _metres_per_px(Terrain.lift(hit))
+	_cursor.scale = Vector3.ONE * maxf(1.0, CURSOR_PX * _px / 3.0)
+	_show_dots()
 	if mode == Mode.BULLDOZE or mode == Mode.UPGRADE:
 		_preview_pick(hit)
 		return
@@ -270,6 +311,9 @@ func _click() -> void:
 			elif _hover_seg != -1:
 				sim.apply({"type": "remove_road", "seg": _hover_seg})
 				_hover_seg = -1
+			elif sim.banks.covers(hit):
+				# One block of the bank at a time (its first building closes it).
+				sim.apply({"type": "remove_bank_block", "pos": [hit.x, hit.z]})
 			elif sim.education.covers(hit):
 				# One campus building at a time (its first building closes it).
 				sim.apply({"type": "remove_campus_block", "pos": [hit.x, hit.z]})
@@ -311,7 +355,7 @@ func _finish_grid(shape: Array = _points) -> void:
 	var pts := []
 	for q in shape:
 		pts.append(_xz(q))
-	if sim.apply({"type": "build_grid_shape", "points": pts, "block": grid_block,
+	if sim.apply({"type": "build_grid_shape", "points": pts, "block": grid_block, "across": grid_across,
 			"side": 0 if not grid_free else grid_side, "road": road_type}):
 		_points.clear()
 	_update_hint()
@@ -404,7 +448,7 @@ static func _flat_dist(a: Vector3, b: Vector3) -> float:
 ## Shows the shape being drawn and the streets it would get, with the price.
 func _show_grid(p: Vector3) -> void:
 	p = _grid_corner(p)
-	_cursor.position = p + Vector3.UP * 0.3
+	_cursor.position = Terrain.lift(p) + Vector3.UP * 0.3
 	var shape: Array = _points.duplicate()
 	var closing := shape.size() >= 3 and p.distance_to(shape[0]) < 0.01
 	if not grid_free and shape.size() == 2:
@@ -414,27 +458,29 @@ func _show_grid(p: Vector3) -> void:
 	_show_guide(_points[_points.size() - 1] if not grid_free and _points.size() == 2 else _points[0])
 	var plan := []
 	if shape.size() >= 3:
-		var key := "%s|%s|%d|%d|%d" % [str(shape), str(grid_block), grid_side, road_type, sim.network.segments.size()]
+		var key := "%s|%s|%s|%d|%d|%d" % [str(shape), str(grid_block), str(grid_across), grid_side, road_type,
+			sim.network.segments.size()]
 		# Big towns take a moment to plan, so replan at most a few times a second.
 		if key != _grid_key and Time.get_ticks_msec() - _grid_planned_at > 120:
 			_grid_key = key
-			_grid_plan = GridFill.plan(network, shape, grid_block, road_type, grid_side)
+			_grid_plan = GridFill.plan(network, shape, grid_block, road_type, grid_side, grid_across)
 			_grid_planned_at = Time.get_ticks_msec()
 		plan = _grid_plan
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var hw := RoadStyle.half_width(road_type)
+	var hw := maxf(RoadStyle.half_width(road_type), GHOST_PX * 0.5 * _px)
+	var edge := maxf(0.4, LINE_PX * 0.5 * _px)
 	for c in plan:
-		RoadMesh.add_strip(st, RoadNetwork.sample_curve(c[0], c[1], c[2], 2), -hw, hw, 0.2)
+		RoadMesh.add_strip(st, Terrain.densify(RoadNetwork.sample_curve(c[0], c[1], c[2], 2), 6.0), -hw, hw, 0.2)
 	for c in GridFill.outline(shape, shape.size() >= 3):
-		RoadMesh.add_strip(st, RoadNetwork.sample_curve(c[0], c[1], c[2], 2), -0.4, 0.4, 0.35)
+		RoadMesh.add_strip(st, Terrain.densify(RoadNetwork.sample_curve(c[0], c[1], c[2], 2), 6.0), -edge, edge, 0.35)
 	var cost := CitySim.shapes_cost(plan, road_type)
 	var ok := cost <= sim.economy.money
 	var dims := ""
 	if shape.size() >= 2:
-		dims = "%d m" % roundi(_flat_dist(shape[0], shape[1]))
+		dims = "%s ft" % CitySim.money_text(roundi(_flat_dist(shape[0], shape[1]) * FT))
 	if not grid_free and shape.size() == 4:
-		dims += " × %d m" % roundi(_flat_dist(shape[1], shape[2]))
+		dims += " × %s ft" % CitySim.money_text(roundi(_flat_dist(shape[1], shape[2]) * FT))
 	if not is_nan(_guide_angle):
 		dims += "  " + _guide_kind
 	if not plan.is_empty() or dims != "":
@@ -442,9 +488,9 @@ func _show_grid(p: Vector3) -> void:
 		if not plan.is_empty():
 			_label.text += "\n%d streets  $%s" % [plan.size(), CitySim.money_text(cost)] \
 				+ ("" if ok else "\nNot enough money")
-		_label.position = p + Vector3(0, 6, 0)
+		_label.position = Terrain.lift(p) + Vector3(0, 6, 0)
 		_label.visible = true
-	_preview.mesh = st.commit()
+	_preview.mesh = Terrain.drape(st.commit())
 	_preview.material_override = _ok_mat if ok else _bad_mat
 	_preview.visible = true
 
@@ -463,7 +509,10 @@ func _show_guide(at: Vector3) -> void:
 
 func _resize(f: float) -> void:
 	if mode == Mode.GRID:
-		grid_block = clampf(grid_block * f, RoadShapes.GRID_BLOCK_MIN, RoadShapes.GRID_BLOCK_MAX)
+		grid_block = clampf(grid_block * f, GridFill.BLOCK_MIN, GridFill.BLOCK_MAX)
+		grid_across = clampf(grid_across * f, GridFill.ACROSS_MIN, GridFill.BLOCK_MAX)
+		grid_preset = -1
+		options_changed.emit()
 	elif mode == Mode.ROUNDABOUT:
 		roundabout_radius = clampf(roundabout_radius * f, RoadShapes.ROUNDABOUT_MIN, RoadShapes.ROUNDABOUT_MAX)
 	elif parallel and (mode == Mode.STRAIGHT or mode == Mode.CURVED):
@@ -553,15 +602,14 @@ func _reference_angles(at: Vector3) -> Array:
 func _show_length(curve: Array) -> void:
 	var pts := RoadNetwork.sample_curve(curve[0], curve[1], curve[2])
 	var m := RoadNetwork.polyline_length(pts)
-	_label.text = "%d m  (%d ft)" % [roundi(m), roundi(m * 3.28084)]
-	var cost := Economy.road_cost(curve, road_type) * (2 if parallel else 1)
-	_label.text += "\n$%s  (you have $%s)" % [CitySim.money_text(cost), CitySim.money_text(sim.economy.money)]
+	_label.text = "%s ft  ·  $%s" % [CitySim.money_text(roundi(m * FT)),
+		CitySim.money_text(Economy.road_cost(curve, road_type) * (2 if parallel else 1))]
 	var r := RoadNetwork.min_radius(curve[0], curve[1], curve[2])
 	if r < 2000.0:
 		_label.text += "\nCurve safe at %d mph" % RoadStyle.safe_speed_mph(r)
 	if absf(curve[2].y) > 0.1 or absf(curve[0].y) > 0.1:
 		var flat := Vector2(curve[2].x - curve[0].x, curve[2].z - curve[0].z).length()
-		_label.text += "\nHeight %+.1f m, grade %d%%" % [curve[2].y,
+		_label.text += "\nHeight %+d ft, grade %d%%" % [roundi(curve[2].y * FT),
 			roundi(absf(curve[2].y - curve[0].y) / maxf(flat, 0.1) * 100.0)]
 	if not is_nan(_guide_angle):
 		_label.text += "\n" + _guide_kind
@@ -569,7 +617,8 @@ func _show_length(curve: Array) -> void:
 		var st := SurfaceTool.new()
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
 		var line := PackedVector3Array([curve[0] - dir * 400.0, curve[0] + dir * 400.0])
-		RoadMesh.add_strip(st, line, -0.25, 0.25, 0.3)
+		var g := maxf(0.25, LINE_PX * 0.5 * _px)
+		RoadMesh.add_strip(st, line, -g, g, 0.3)
 		_guide.mesh = Terrain.drape(st.commit(), true, 8.0)
 		_guide.visible = true
 	_label.position = Terrain.lift(curve[2]) + Vector3(0, 6, 0)
@@ -601,10 +650,44 @@ func _preview_mesh(curves: Array) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var hw := RoadStyle.half_width(RoadStyle.ring_type(road_type) if mode == Mode.ROUNDABOUT else road_type)
+	hw = maxf(hw, GHOST_PX * 0.5 * _px)
+	var line := LINE_PX * 0.5 * _px
 	for curve in curves:
 		var pts := Terrain.densify(RoadNetwork.sample_curve(curve[0], curve[1], curve[2]), 6.0)
 		RoadMesh.add_strip(st, pts, -hw, hw, 0.2)
+	# A white centre line on top, so the ghost reads over light ground too.
+	var centre := SurfaceTool.new()
+	centre.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for curve in curves:
+		var pts := Terrain.densify(RoadNetwork.sample_curve(curve[0], curve[1], curve[2]), 6.0)
+		RoadMesh.add_strip(centre, pts, -line, line, 0.3)
+	_centre.mesh = Terrain.drape(centre.commit())
+	_centre.visible = true
 	return Terrain.drape(st.commit())
+
+
+## Metres covered by one screen pixel at a point, so markers can keep their
+## size on screen at any zoom.
+func _metres_per_px(at: Vector3) -> float:
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return 0.1
+	var dist := camera.global_position.distance_to(at)
+	return 2.0 * dist * tan(deg_to_rad(camera.fov) * 0.5) / maxf(get_viewport().get_visible_rect().size.y, 1.0)
+
+
+## A white dot on every point already clicked (the road's start, a curve's
+## bend, the grid's corners), the same size on screen at any zoom.
+func _show_dots() -> void:
+	if _points.is_empty():
+		return
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for q in _points:
+		var at := Terrain.lift(Vector3(q.x, 0.0, q.z))
+		RoadMesh.add_disc(st, Vector3(at.x, at.y + q.y, at.z), DOT_PX * _metres_per_px(at), 0.5, 20)
+	_dots.mesh = st.commit()
+	_dots.visible = true
 
 
 ## Highlights the road under the mouse: red to bulldoze, blue to upgrade.
@@ -647,6 +730,7 @@ func _preview_pick(hit: Vector3) -> void:
 	if _hover_seg == -1:
 		return
 	var w := RoadStyle.half_width(road_type if mode == Mode.UPGRADE else network.segments[_hover_seg].type)
+	w = maxf(w, GHOST_PX * 0.5 * _px)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	RoadMesh.add_strip(st, Terrain.densify(network.sample_segment(_hover_seg), 6.0), -w - 0.5, w + 0.5, 0.2)
@@ -675,7 +759,9 @@ func _update_hint() -> void:
 			if _points.size() == 2 and _shown_problem != "":
 				text = _shown_problem
 		Mode.GRID:
-			var size := "Blocks %d m long  [ ]" % int(grid_block)
+			var size := "Blocks %d × %d ft  [ ]" % [roundi(grid_block * FT), roundi(grid_across * FT)]
+			if grid_preset >= 0:
+				size = "%s, %s" % [GridFill.PRESETS[grid_preset].name, size]
 			if not grid_free:
 				match _points.size():
 					0: text = "Rectangle: click the first corner. Tab for any shape.  " + size
@@ -687,15 +773,15 @@ func _update_hint() -> void:
 					1, 2: text = "Click the next corner. Shift snaps angles, Backspace undoes.  " + size
 					_: text = "Click the first corner or press Enter to build. Shift+Tab turns the grid.  " + size
 		Mode.ROUNDABOUT:
-			text = "Click to place a roundabout. Roads it crosses join it.  Size %d m  [ ]" \
-				% int(RoadShapes.roundabout_radius(roundabout_radius, road_type) * 2.0)
+			text = "Click to place a roundabout. Roads it crosses join it.  Size %d ft  [ ]" \
+				% roundi(RoadShapes.roundabout_radius(roundabout_radius, road_type) * 2.0 * FT)
 		Mode.BULLDOZE:
 			text = "Click a road, service building or farmhouse to remove it."
 		Mode.UPGRADE:
 			text = "Click a road to make it a %s." % RoadStyle.TYPES[road_type].name
 	if elevation != 0.0 and mode != Mode.BULLDOZE and mode != Mode.UPGRADE:
-		text += "\n%s: new roads at %+.1f m  (Page Up / Page Down)" \
-			% ["Bridge" if elevation > 0.0 else "Tunnel", elevation]
+		text += "\n%s: new roads at %+d ft  (Page Up / Page Down)" \
+			% ["Bridge" if elevation > 0.0 else "Tunnel", roundi(elevation * FT)]
 	if parallel and (mode == Mode.STRAIGHT or mode == Mode.CURVED):
-		text += "\nParallel on (P): second road %d m away  [ ]" % int(parallel_gap)
+		text += "\nParallel on (P): second road %d ft away  [ ]" % roundi(parallel_gap * FT)
 	hint_changed.emit(text)

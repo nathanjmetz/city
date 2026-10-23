@@ -24,6 +24,8 @@ var _industry_cards := {}  # "oil"/"ore"/"forest"/"reserve"/"release" -> Button
 var _industry_kind := "oil"  # what the industry Reserve tool saves land for
 var warehouse_tool: WarehouseTool
 var campus_tool: CampusTool
+var bank_tool: BankTool
+var _bank_cards := {}  # "community"/"farm_credit" -> Button
 var _campus_cards := {}  # "high_school"/"college"/"university" -> Button
 var _warehouse_cards := {}  # Warehouses size -> Button
 var traffic_tool: TrafficTool
@@ -45,7 +47,14 @@ var _drawers := {}
 var _drawer_dock := PanelContainer.new()
 var _bottom := VBoxContainer.new()
 var _tool_cards := {}    # RoadTool.Mode -> Button
-var _type_cards := {}    # RoadStyle.Type -> Button
+var _type_cards := {}    # road menu (RoadStyle.GROUPS) -> Button
+var _variant_cards := {} # RoadStyle.Type -> Button, in the row above
+var _variant_row := HBoxContainer.new()
+var _variant_title := UiStyle.label("", 10, UiStyle.MUTED)
+var _variant_group := -1  # the menu whose variants the row shows
+var _variant_of := {}     # road menu -> the variant last picked in it
+var _traffic_row := HBoxContainer.new()
+var _traffic_card: Button
 var _zone_cards := {}    # ZoneMap.Zone -> Button
 var _power_card: Button
 var _service_cards := {} # Services.Kind -> Button
@@ -54,6 +63,9 @@ var _warning := UiStyle.label("", 13, Color(1.0, 0.75, 0.3))
 var _parallel_card: Button
 ## Grid only: any shape instead of a rectangle.
 var _shape_card: Button
+## Grid only: a row of real-world grid sizes above the road tools.
+var _grid_sizes: Control
+var _grid_size_cards := []
 var _elevation := UiStyle.label("Ground", 12)
 var _speed_buttons := []
 var _clock := UiStyle.label("", 14)
@@ -117,6 +129,8 @@ func _ready() -> void:
 	warehouse_tool.hint_changed.connect(_show_hint)
 	campus_tool.kind_changed.connect(func(_k): _sync())
 	campus_tool.hint_changed.connect(_show_hint)
+	bank_tool.kind_changed.connect(func(_k): _sync())
+	bank_tool.hint_changed.connect(_show_hint)
 	traffic_tool.mode_changed.connect(func(_m): _sync())
 	traffic_tool.hint_changed.connect(_show_hint)
 	park_tool.kind_changed.connect(func(_k): _sync())
@@ -156,7 +170,7 @@ func anything_open() -> bool:
 		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
-		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or move_tool.active
+		or industry_tool.kind != "" or warehouse_tool.kind != "" or park_tool.kind != "" or campus_tool.kind != "" or bank_tool.kind != "" or move_tool.active
 
 
 ## Puts every tool away and closes every panel.
@@ -177,6 +191,7 @@ func close_all() -> void:
 	industry_tool.set_kind("")
 	warehouse_tool.set_kind("")
 	campus_tool.set_kind("")
+	bank_tool.set_kind("")
 	traffic_tool.set_mode(TrafficTool.Mode.NONE)
 	park_tool.set_kind("")
 	move_tool.set_active(false)
@@ -346,7 +361,7 @@ func _build_top_bar() -> void:
 	row.add_child(VSeparator.new())
 	permits.setup(sim, game, info_view.cam)
 	row.add_child(permits.make_button())
-	advisor.setup(sim, func(): return _category if _category != "" or _view == "" else "view_" + _view)
+	advisor.setup(sim, func(): return _advisor_key() if _category != "" or _view == "" else "view_" + _view)
 	row.add_child(advisor.make_button())
 	_help_button = _icon_button("help", 24, "Controls")
 	_help_button.toggled.connect(func(on):
@@ -408,9 +423,7 @@ func _build_bottom_bar() -> void:
 	_drawers["zones"] = _zones_drawer()
 	_drawers["services"] = _services_drawer()
 	_drawers["parks"] = _parks_drawer()
-	_drawers["farms"] = _farms_drawer()
 	_drawers["industry"] = _industry_drawer()
-	_drawers["traffic"] = _traffic_drawer()
 	_drawers["budget"] = _budget_drawer()
 	for key in _drawers:
 		_drawers[key].add_theme_stylebox_override("panel", StyleBoxEmpty.new())
@@ -423,7 +436,8 @@ func _build_bottom_bar() -> void:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 4)
 	bar.add_child(row)
-	for entry in [["roads", "Roads"], ["zones", "Zoning"], ["farms", "Farming"], ["industry", "Industry"], ["services", "Services"], ["parks", "Parks"], ["traffic", "Traffic"],
+	# Traffic lives under Roads and Farming under Industry, as in CS2.
+	for entry in [["roads", "Roads"], ["zones", "Zoning"], ["industry", "Industry"], ["services", "Services"], ["parks", "Parks"],
 			["bulldoze", "Bulldoze"], ["move", "Move It"],
 			["budget", "Budget"]]:
 		var b := _category_button(entry[0], entry[1])
@@ -464,11 +478,43 @@ func _category_button(icon: String, title: String) -> Button:
 	return b
 
 
+## Roads: draw tools, the five road menus, options and Traffic along the
+## bottom; above them, a row with the open menu's road variants (CS2 shows
+## each road category's assets the same way), or the traffic controls.
 func _roads_drawer() -> PanelContainer:
 	var drawer := PanelContainer.new()
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 6)
+	drawer.add_child(stack)
+	var sizes_row := HBoxContainer.new()
+	sizes_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	stack.add_child(sizes_row)
+	var sizes := _section(sizes_row, "Grid size  ·  largest to smallest  ·  [ ] fine-tune")
+	for i in GridFill.PRESETS.size():
+		var p: Dictionary = GridFill.PRESETS[i]
+		var b := _card("grid", p.name, "%s, %d × %d ft" % [p.about, roundi(p.block * RoadTool.FT), roundi(p.across * RoadTool.FT)])
+		b.pressed.connect(func(): road_tool.set_grid_preset(i))
+		sizes.add_child(b)
+		_grid_size_cards.append(b)
+	_grid_sizes = sizes_row
+
+	var upper := VBoxContainer.new()
+	upper.add_theme_constant_override("separation", 2)
+	stack.add_child(upper)
+	_variant_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	upper.add_child(_variant_title)
+	_variant_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_variant_row.add_theme_constant_override("separation", 3)
+	upper.add_child(_variant_row)
+	_traffic_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_traffic_row.add_theme_constant_override("separation", 10)
+	stack.add_child(_traffic_row)
+	_fill_traffic_row(_traffic_row)
+	stack.add_child(HSeparator.new())
+
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
-	drawer.add_child(row)
+	stack.add_child(row)
 
 	var tools := _section(row, "Draw")
 	for entry in [
@@ -485,16 +531,13 @@ func _roads_drawer() -> PanelContainer:
 		_tool_cards[m] = b
 
 	row.add_child(VSeparator.new())
-	var types := _section(row, "Road type")
-	for t in RoadStyle.TYPES.size():
-		var spec: Dictionary = RoadStyle.TYPES[t]
-		if not spec.get("menu", true):
-			continue
-		var b := _card(spec.name.to_lower(), spec.name,
-			"%d lane%s, %d mph" % [spec.lanes, "" if spec.lanes == 1 else "s", spec.mph])
-		b.pressed.connect(func(): road_tool.set_road_type(t))
+	var types := _section(row, "Road type  ·  pick a kind above")
+	for g in RoadStyle.GROUPS:
+		var spec: Dictionary = RoadStyle.TYPES[g]
+		var b := _card(spec.name.to_lower(), spec.name, "%d kinds" % RoadStyle.variants(g).size())
+		b.pressed.connect(func(): _pick_road(_variant_of.get(g, g)))
 		types.add_child(b)
-		_type_cards[t] = b
+		_type_cards[g] = b
 
 	row.add_child(VSeparator.new())
 	var opts := _section(row, "Options")
@@ -514,7 +557,69 @@ func _roads_drawer() -> PanelContainer:
 	var raise := _card("raise", "Raise", "Page Up", false)
 	raise.pressed.connect(func(): road_tool.change_elevation(1))
 	opts.add_child(raise)
+
+	row.add_child(VSeparator.new())
+	var traffic := _section(row, "Traffic")
+	_traffic_card = _card("traffic", "Traffic", "J")
+	_traffic_card.tooltip_text = "Traffic flow, lights and stop signs  (J)"
+	_traffic_card.pressed.connect(func():
+		if traffic_tool.mode == TrafficTool.Mode.NONE:
+			traffic_tool.set_mode(TrafficTool.Mode.VIEW)
+		else:
+			road_tool.set_mode(road_tool.last_draw))
+	traffic.add_child(_traffic_card)
 	return drawer
+
+
+## Picks a road type, and remembers it as its menu's choice.
+func _pick_road(t: int) -> void:
+	_variant_of[RoadStyle.group(t)] = t
+	road_tool.set_road_type(t)
+
+
+## Fills the row above the road menus with the open menu's variants.
+func _show_variants(menu: int) -> void:
+	if menu == _variant_group:
+		return
+	_variant_group = menu
+	for c in _variant_row.get_children():
+		c.queue_free()
+	_variant_cards.clear()
+	_variant_title.text = ("%s  ·  %d kinds" % [RoadStyle.TYPES[menu].name, RoadStyle.variants(menu).size()]).to_upper()
+	for t in RoadStyle.variants(menu):
+		var spec: Dictionary = RoadStyle.TYPES[t]
+		var b := _card("road:%d" % t, spec.get("short", "Standard" if t == menu else spec.name), "")
+		b.custom_minimum_size = Vector2(72, 50)
+		b.tooltip_text = _road_tip(t)
+		b.pressed.connect(func(): _pick_road(t))
+		_variant_row.add_child(b)
+		_variant_cards[t] = b
+
+
+## A road's tooltip: what it is, in plain words, with its lanes, speed and price.
+static func _road_tip(t: int) -> String:
+	var spec: Dictionary = RoadStyle.TYPES[t]
+	var bits := ["%d lane%s%s" % [spec.lanes, "" if spec.lanes == 1 else "s", ", one way" if spec.oneway else ""]]
+	if spec.get("turn", false):
+		bits.append("center turn lane")
+	elif spec.get("trees", false):
+		bits.append("tree median")
+	elif spec.median > 0.0:
+		bits.append("median")
+	if spec.get("angle", false):
+		bits.append("angled parking")
+	elif spec.get("parking", 0) > 0 or t == RoadStyle.Type.STREET:
+		bits.append("parking")
+	if spec.get("bike", false):
+		bits.append("bike lanes")
+	if spec.get("bus", false):
+		bits.append("curb lanes for buses only")
+	if spec.get("surface", "asphalt") != "asphalt":
+		bits.append(spec.surface)
+	if not spec.lots:
+		bits.append("no driveways")
+	bits.append("%d mph" % spec.mph)
+	return "%s: %s. $%s a metre." % [spec.name, ", ".join(bits), CitySim.money_text(int(Economy.BUILD_PER_M[t]))]
 
 
 func _zones_drawer() -> PanelContainer:
@@ -608,6 +713,17 @@ func _services_drawer() -> PanelContainer:
 	pb.pressed.connect(func(): service_tool.set_kind(Mail.TOOL_KIND))
 	mail.add_child(pb)
 	_service_cards[Mail.TOOL_KIND] = pb
+	# Banks lend to the farms, companies and builders (Brawn's hub model).
+	row.add_child(VSeparator.new())
+	var bank := _section(row, "Banks")
+	for k in ["community", "farm_credit"]:
+		var b := _card("bank", {"community": "Bank", "farm_credit": "Farm Credit"}[k], "")
+		b.tooltip_text = "%s: $%s for the lot. Its %s lends to %s, and buys the land next door as it grows." % [
+			Banks.KINDS[k].name, CitySim.money_text(int(Banks.spec(k).cost)), Banks.KINDS[k].head.to_lower(),
+			{"community": "farms, companies and builders", "farm_credit": "farms and timber"}[k]]
+		b.pressed.connect(func(): bank_tool.set_kind(k))
+		bank.add_child(b)
+		_bank_cards[k] = b
 	return drawer
 
 
@@ -634,28 +750,6 @@ func _parks_drawer() -> PanelContainer:
 	return drawer
 
 
-func _farms_drawer() -> PanelContainer:
-	var drawer := PanelContainer.new()
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	drawer.add_child(row)
-	var houses := _section(row, "Farmhouse  ·  near green soil")
-	var area := _section(row, "Save land")
-	for entry in [[FarmTool.Mode.CORN, "corn", "Corn", "Corn farm: more income on rich soil", houses],
-			[FarmTool.Mode.SOYBEANS, "soybeans", "Soybeans", "Soybean farm: steadier on poorer soil", houses],
-			[FarmTool.Mode.RESERVE, "reserve", "Reserve", "Outline land to save for farming: no roads or zoning there", area],
-			[FarmTool.Mode.CLEAR, "dezone", "Release", "Release reserved land", area]]:
-		var m: int = entry[0]
-		var b := _card(entry[1], entry[2], "")
-		b.tooltip_text = entry[3]
-		b.pressed.connect(func():
-			farm_tool.reserve_kind = "farm"
-			farm_tool.set_mode(m))
-		(entry[4] as HBoxContainer).add_child(b)
-		_farm_cards[m] = b
-	return drawer
-
-
 ## Resource industry (Brawn's model): place a company's main building near
 ## the resource; its pads spread on their own. Reserve saves land for it.
 func _industry_drawer() -> PanelContainer:
@@ -663,6 +757,17 @@ func _industry_drawer() -> PanelContainer:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	drawer.add_child(row)
+	var farms := _section(row, "Farmhouse  ·  near green soil")
+	for entry in [[FarmTool.Mode.CORN, "corn", "Corn", "Corn farm: more income on rich soil"],
+			[FarmTool.Mode.SOYBEANS, "soybeans", "Soybeans", "Soybean farm: steadier on poorer soil"]]:
+		var m: int = entry[0]
+		var b := _card(entry[1], entry[2], "")
+		b.tooltip_text = entry[3]
+		b.pressed.connect(func():
+			_industry_kind = "farm"
+			farm_tool.set_mode(m))
+		farms.add_child(b)
+		_farm_cards[m] = b
 	var hq := _section(row, "Main building  ·  near the resource")
 	var area := _section(row, "Save land")
 	var stores := _section(row, "Warehouses  ·  beside a street")
@@ -693,16 +798,14 @@ func _industry_drawer() -> PanelContainer:
 		b.pressed.connect(func():
 			farm_tool.reserve_kind = _industry_kind
 			farm_tool.set_mode(m))
+		b.tooltip_text = entry[4].replace("this industry", "the farm or company you last picked")
 		area.add_child(b)
 		_industry_cards[entry[0]] = b
 	return drawer
 
 
-func _traffic_drawer() -> PanelContainer:
-	var drawer := PanelContainer.new()
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	drawer.add_child(row)
+## The traffic controls, shown above the road menus while Traffic is open.
+func _fill_traffic_row(row: HBoxContainer) -> void:
 	var view := _section(row, "View")
 	var junctions := _section(row, "Junctions  ·  click one to set it")
 	for entry in [[TrafficTool.Mode.VIEW, "flow", "Flow", "Roads coloured by traffic flow  (J)", view],
@@ -717,7 +820,6 @@ func _traffic_drawer() -> PanelContainer:
 		b.pressed.connect(func(): traffic_tool.set_mode(m))
 		(entry[4] as HBoxContainer).add_child(b)
 		_traffic_cards[m] = b
-	return drawer
 
 
 ## Taxes and running costs per month, with a rate to set for each zone.
@@ -881,15 +983,12 @@ func _open(cat: String) -> void:
 			road_tool.set_mode(RoadTool.Mode.BULLDOZE)
 		"move":
 			move_tool.set_active(true)
-		"farms":
-			if farm_tool.mode == FarmTool.Mode.NONE:
-				farm_tool.set_mode(FarmTool.Mode.CORN)
 		"industry":
-			if industry_tool.kind == "":
-				industry_tool.set_kind(_industry_kind)
-		"traffic":
-			if traffic_tool.mode == TrafficTool.Mode.NONE:
-				traffic_tool.set_mode(TrafficTool.Mode.VIEW)
+			if industry_tool.kind == "" and farm_tool.mode == FarmTool.Mode.NONE:
+				if _industry_kind == "farm":
+					farm_tool.set_mode(FarmTool.Mode.CORN)
+				else:
+					industry_tool.set_kind(_industry_kind)
 		"services":
 			if service_tool.kind == ServiceTool.OFF:
 				service_tool.set_kind(Services.Kind.POWER_FEED)
@@ -904,6 +1003,7 @@ func _open(cat: String) -> void:
 			industry_tool.set_kind("")
 			warehouse_tool.set_kind("")
 			campus_tool.set_kind("")
+			bank_tool.set_kind("")
 			traffic_tool.set_mode(TrafficTool.Mode.NONE)
 			park_tool.set_kind("")
 			move_tool.set_active(false)
@@ -911,21 +1011,30 @@ func _open(cat: String) -> void:
 			_sync()
 
 
+## The advisor's notes follow the tool in hand, so Farming and Traffic keep
+## their own tips inside Industry and Roads.
+func _advisor_key() -> String:
+	if traffic_tool.mode != TrafficTool.Mode.NONE:
+		return "traffic"
+	if farm_tool.mode in [FarmTool.Mode.CORN, FarmTool.Mode.SOYBEANS] or (farm_tool.mode != FarmTool.Mode.NONE
+			and farm_tool.reserve_kind == "farm"):
+		return "farms"
+	return _category
+
+
 ## Brings every button in line with the tools (keys change them too).
 func _sync() -> void:
 	if zone_tool.zone != ZoneTool.OFF:
 		_category = "zones"
-	elif service_tool.kind != ServiceTool.OFF or campus_tool.kind != "" or industry_tool.kind == "power":
+	elif service_tool.kind != ServiceTool.OFF or campus_tool.kind != "" or industry_tool.kind == "power" \
+			or bank_tool.kind != "":
 		_category = "services"
 	elif park_tool.kind != "":
 		_category = "parks"
-	elif industry_tool.kind != "" or warehouse_tool.kind != "" or (farm_tool.mode in [FarmTool.Mode.RESERVE, FarmTool.Mode.CLEAR]
-			and farm_tool.reserve_kind != "farm"):
+	elif industry_tool.kind != "" or warehouse_tool.kind != "" or farm_tool.mode != FarmTool.Mode.NONE:
 		_category = "industry"
-	elif farm_tool.mode != FarmTool.Mode.NONE:
-		_category = "farms"
 	elif traffic_tool.mode != TrafficTool.Mode.NONE:
-		_category = "traffic"
+		_category = "roads"
 	elif move_tool.active:
 		_category = "move"
 	elif road_tool.mode == RoadTool.Mode.BULLDOZE:
@@ -944,8 +1053,20 @@ func _sync() -> void:
 	_fit_bottom.call_deferred()
 	for m in _tool_cards:
 		_tool_cards[m].set_pressed_no_signal(m == road_tool.mode)
-	for t in _type_cards:
-		_type_cards[t].set_pressed_no_signal(t == road_tool.road_type)
+	var menu := RoadStyle.group(road_tool.road_type)
+	_variant_of[menu] = road_tool.road_type
+	var in_traffic := traffic_tool.mode != TrafficTool.Mode.NONE
+	for g in _type_cards:
+		_type_cards[g].set_pressed_no_signal(g == menu and not in_traffic)
+		# The menu card shows the kind picked in it.
+		(_type_cards[g].get_meta("icon") as Icon).kind = \
+			RoadStyle.TYPES[g].name.to_lower() if _variant_of.get(g, g) == g else "road:%d" % _variant_of[g]
+	_show_variants(menu)
+	for t in _variant_cards:
+		_variant_cards[t].set_pressed_no_signal(t == road_tool.road_type and not in_traffic)
+	_variant_row.get_parent().visible = not in_traffic
+	_traffic_row.visible = in_traffic
+	_traffic_card.set_pressed_no_signal(in_traffic)
 	for z in _zone_cards:
 		_zone_cards[z].set_pressed_no_signal(z == zone_tool.zone)
 	for k in _service_cards:
@@ -957,8 +1078,10 @@ func _sync() -> void:
 		_power_card.set_pressed_no_signal(industry_tool.kind == "power")
 	for k in _campus_cards:
 		_campus_cards[k].set_pressed_no_signal(k == campus_tool.kind)
+	for k in _bank_cards:
+		_bank_cards[k].set_pressed_no_signal(k == bank_tool.kind)
 	for m in _farm_cards:
-		_farm_cards[m].set_pressed_no_signal(m == farm_tool.mode and _category == "farms")
+		_farm_cards[m].set_pressed_no_signal(m == farm_tool.mode)
 	for k in _industry_cards:
 		var on: bool = k == industry_tool.kind
 		if k == "reserve":
@@ -973,7 +1096,10 @@ func _sync() -> void:
 	_parallel_card.set_pressed_no_signal(road_tool.parallel)
 	_shape_card.set_pressed_no_signal(road_tool.grid_free)
 	_shape_card.visible = road_tool.mode == RoadTool.Mode.GRID
-	_elevation.text = "Ground" if road_tool.elevation == 0.0 else "%+.1f m" % road_tool.elevation
+	_grid_sizes.visible = road_tool.mode == RoadTool.Mode.GRID
+	for i in _grid_size_cards.size():
+		_grid_size_cards[i].set_pressed_no_signal(i == road_tool.grid_preset)
+	_elevation.text = "Ground" if road_tool.elevation == 0.0 else "%+d ft" % roundi(road_tool.elevation * RoadTool.FT)
 	if _category == "" or _category == "budget":
 		_show_hint("")
 

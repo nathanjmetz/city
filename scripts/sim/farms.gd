@@ -219,23 +219,7 @@ func decide(usable: Callable) -> bool:
 			changed = true
 			continue
 		var profit := yearly_profit(id)
-		var best := Vector2i.MAX
-		var best_profit := 0.0
-		if f.cells.size() < MAX_CELLS:
-			for c in _frontier(f):
-				if not _free(id, f, c, usable):
-					continue
-				var p := field_profit(f, c)
-				if p <= 0.0:
-					continue
-				# Farmers square off their fields: land that rounds out what
-				# they already work beats a slightly richer odd corner.
-				var score := p + COMPACT_BONUS * _owned_neighbors(f, c)
-				if reserves != null and reserves.kind_at(cell_center(f, c)) == "farm":
-					score += RESERVE_BONUS
-				if score > best_profit or (score == best_profit and best != Vector2i.MAX and _less(c, best)):
-					best = c
-					best_profit = score
+		var best := best_field(id, usable)
 		var worst := Vector2i.MAX
 		for c in f.cells:
 			if worst == Vector2i.MAX or field_profit(f, c) < field_profit(f, worst):
@@ -252,6 +236,31 @@ func decide(usable: Callable) -> bool:
 			f.loss_streak = 0
 			changed = true
 	return changed
+
+
+## The field a farm would buy next: the best paying free one next to its
+## land, or Vector2i.MAX if none pays or it has all it will ever farm.
+func best_field(id: int, usable: Callable) -> Vector2i:
+	var f: Dictionary = farms[id]
+	var best := Vector2i.MAX
+	var best_profit := 0.0
+	if f.cells.size() >= MAX_CELLS:
+		return best
+	for c in _frontier(f):
+		if not _free(id, f, c, usable):
+			continue
+		var p := field_profit(f, c)
+		if p <= 0.0:
+			continue
+		# Farmers square off their fields: land that rounds out what
+		# they already work beats a slightly richer odd corner.
+		var score := p + COMPACT_BONUS * _owned_neighbors(f, c)
+		if reserves != null and reserves.kind_at(cell_center(f, c)) == "farm":
+			score += RESERVE_BONUS
+		if score > best_profit or (score == best_profit and best != Vector2i.MAX and _less(c, best)):
+			best = c
+			best_profit = score
+	return best
 
 
 ## Can farm `id` plant cell c: farmland, clear of its lane, other farms and

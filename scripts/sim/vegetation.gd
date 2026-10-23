@@ -50,7 +50,7 @@ var _mail_version := -1
 func watch(sim: Object) -> void:
 	_sim = sim
 	for sig in [sim.buildings_changed, sim.lots_changed, sim.farms_changed, sim.industry_changed, sim.warehouses_changed,
-			sim.parks_changed, sim.water_changed, sim.network.changed]:
+			sim.parks_changed, sim.water_changed, sim.banks_changed, sim.network.changed]:
 		sig.connect(_mark)
 
 
@@ -180,6 +180,11 @@ static func sources(sim: Object) -> Dictionary:
 		var o: Dictionary = sim.mail.offices[id]
 		for cell in o.cells:
 			out["m%d %s %s" % [id, cell, o.pos]] = _poly_cells.bind(CivicHubs.cell_poly(o, cell))
+	for id in sim.banks.banks:
+		var b: Dictionary = sim.banks.banks[id]
+		out["k%d %s" % [id, b.pos]] = _poly_cells.bind(Banks.block_corners(b, Vector2i.ZERO))
+		for blk in b.blocks:
+			out["k%d %s %s" % [id, blk.c, b.pos]] = _poly_cells.bind(Banks.block_corners(b, blk.c))
 	for id in sim.industry.sites:
 		var s: Dictionary = sim.industry.sites[id]
 		out["iy%d" % id] = _poly_cells.bind(sim.industry._yard(s))

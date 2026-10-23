@@ -32,7 +32,10 @@ static func merges(network: RoadNetwork) -> Array:
 		var highways := []
 		var ramps := []
 		for seg in network.segments_at(n):
-			match int(network.segments[seg].type):
+			var type: int = network.segments[seg].type
+			if not RoadStyle.is_freeway(type):
+				continue
+			match RoadStyle.group(type):
 				RoadStyle.Type.HIGHWAY: highways.append(seg)
 				RoadStyle.Type.RAMP: ramps.append(seg)
 		if highways.size() != 2 or ramps.is_empty():
@@ -54,7 +57,8 @@ static func merges(network: RoadNetwork) -> Array:
 				continue
 			out.append({"node": n, "ramp": r, "ramp_out": ramp_pts, "along": along, "other": b if first else a,
 				"along_seg": along_seg, "other_seg": highways[1] if first else highways[0], "sign": sgn,
-				"exit": network.segments[r].a == n})
+				"exit": network.segments[r].a == n, "hw_type": network.segments[along_seg].type,
+				"ramp_type": network.segments[r].type})
 	return out
 
 
@@ -62,7 +66,7 @@ static func merges(network: RoadNetwork) -> Array:
 ## lane lines up with the auxiliary lane beside the through lanes, so the
 ## ramp carries straight on from it. 0 if it isn't a merge.
 static func ramp_cut(m: Dictionary) -> float:
-	var target := _edge_offset() + _ramp_inner()
+	var target := _edge_offset(m) + _ramp_inner(m)
 	var pts: PackedVector3Array = m.ramp_out
 	var d := 0.0
 	for i in pts.size():
@@ -76,7 +80,7 @@ static func ramp_cut(m: Dictionary) -> float:
 ## Where the painted gore ends: the ramp distance at which its inner edge
 ## line is GORE_NOSE metres from the highway's edge line (or GORE_MAX on).
 static func nose(m: Dictionary) -> float:
-	var edge := _edge_offset()
+	var edge := _edge_offset(m)
 	var length := RoadNetwork.polyline_length(m.ramp_out)
 	var s := ramp_cut(m)
 	while s < length - 1.0 and s < GORE_MAX:
@@ -128,8 +132,8 @@ static func trim_ramp(pts: PackedVector3Array, cut: float, at_start: bool) -> Pa
 static func draw(m: Dictionary, asphalt: SurfaceTool, white: SurfaceTool, cover: SurfaceTool,
 		barrier: SurfaceTool) -> void:
 	var sgn: float = m.sign
-	var edge := _edge_offset()
-	var hw := RoadStyle.half_width(RoadStyle.Type.HIGHWAY)
+	var edge := _edge_offset(m)
+	var hw := RoadStyle.half_width(m.hw_type)
 	var outer := edge + LANE + SHOULDER  # the auxiliary lane's paved edge
 	var y_road := RoadStyle.Y_ASPHALT + 0.004
 	var y_mark := RoadStyle.Y_ASPHALT + 0.02
@@ -175,7 +179,7 @@ static func draw(m: Dictionary, asphalt: SurfaceTool, white: SurfaceTool, cover:
 	# lane, out to the nose, with chevrons between the two edge lines
 	# (MUTCD 3B.05).
 	var s_nose := nose(m)
-	var rhw := RoadStyle.half_width(RoadStyle.Type.RAMP)
+	var rhw := RoadStyle.half_width(m.ramp_type)
 	var hw_side := PackedVector3Array()
 	var ramp_side := PackedVector3Array()
 	var steps := maxi(2, int((s_nose - cut) / 2.0))
@@ -227,17 +231,17 @@ static func _inward(m: Dictionary, ramp_dir: Vector3) -> Vector3:
 ## A point on the ramp's inner edge line (its 4 ft left shoulder side).
 static func _inner_line(m: Dictionary, s: float) -> Vector3:
 	var q := LotPlanner.point_at(m.ramp_out, s)
-	return q[0] + _inward(m, q[1]) * _ramp_inner()
+	return q[0] + _inward(m, q[1]) * _ramp_inner(m)
 
 
 ## Ramp centre to its inner edge line.
-static func _ramp_inner() -> float:
-	return RoadStyle.half_width(RoadStyle.Type.RAMP) - 1.2
+static func _ramp_inner(m: Dictionary) -> float:
+	return RoadStyle.half_width(m.ramp_type) - 1.2
 
 
-static func _edge_offset() -> float:
+static func _edge_offset(m: Dictionary) -> float:
 	# Right edge line of the one-way highway, measured from its centre.
-	return -RoadStyle.half_width(RoadStyle.Type.HIGHWAY) + 1.2 + LANE * RoadStyle.TYPES[RoadStyle.Type.HIGHWAY].lanes
+	return -RoadStyle.half_width(m.hw_type) + 1.2 + LANE * RoadStyle.TYPES[m.hw_type].lanes
 
 
 ## A strip `from` to `to` metres out on the ramp's side.
