@@ -860,6 +860,44 @@ const REGION_PROJECTS := [
 		]},
 ]
 
+# --- Grow the metro (the long game) ------------------------------------------
+# Agreed with Brawn 2026-10-23: the road-linked towns of a region count as
+# one metro, ranked against real US metros. Ranks gate regional projects.
+
+## Census (OMB) area types: a micropolitan area has an urban core of 10k to
+## 50k people, a metropolitan area 50k or more.
+const METRO_MICRO_MIN := 10_000
+const METRO_METRO_MIN := 50_000
+## Real US areas to pass, smallest first: [name, population]. These are 2020
+## Census CBSA totals rounded to the thousand, from memory, so verify them
+## before showing them as exact. Southern Indiana and nearby first, since
+## the region sits near Petersburg, IN.
+const METRO_LADDER := [
+	["Connersville, IN", 23_000], ["Greensburg, IN", 26_000], ["North Vernon, IN", 28_000],
+	["Wabash, IN", 31_000], ["Madison, IN", 33_000], ["Washington, IN", 33_000],
+	["Vincennes, IN", 37_000], ["Logansport, IN", 38_000], ["Crawfordsville, IN", 38_000],
+	["Seymour, IN", 45_000], ["Bedford, IN", 45_000], ["Jasper, IN", 56_000],
+	["Richmond, IN", 66_000], ["Marion, IN", 66_000], ["Warsaw, IN", 80_000],
+	["Columbus, IN", 82_000], ["Kokomo, IN", 84_000], ["Michigan City-La Porte, IN", 112_000],
+	["Muncie, IN", 112_000], ["Owensboro, KY", 121_000], ["Bloomington, IN", 161_000],
+	["Terre Haute, IN", 185_000], ["Elkhart-Goshen, IN", 207_000],
+	["Lafayette-West Lafayette, IN", 223_000], ["Evansville, IN-KY", 315_000],
+	["South Bend-Mishawaka, IN-MI", 324_000], ["Fort Wayne, IN", 420_000],
+	["Lexington-Fayette, KY", 517_000], ["Louisville/Jefferson County, KY-IN", 1_285_000],
+	["Indianapolis-Carmel-Anderson, IN", 2_111_000],
+]
+## Metro population each regional project needs before its first stage
+## opens (later stages still open by funding). Real references: rural
+## power co-ops serve micropolitan areas; an interstate link follows a
+## metropolitan area; scheduled airline service in the Midwest starts
+## around Evansville's size (Bloomington at 161k and Terre Haute at 185k
+## have none today).
+const REGION_PROJECT_GATES := {"power": METRO_MICRO_MIN, "i69": METRO_METRO_MIN, "airport": 300_000}
+## Pacing check: a family region of this many active towns should become
+## metropolitan in about a third of the solo hamlet-to-metropolis time
+## (STAGE_TARGET_DAYS), and reach the airport gate in about that full time.
+const METRO_PACING_TOWNS := 4
+
 # --- Parks and landmarks -------------------------------------------------------
 # Brawn's rules (2026-10-22): a park is a hub. You place it and it fills in by
 # itself over time (paths, a playground, a pavilion, a ball diamond), growing
