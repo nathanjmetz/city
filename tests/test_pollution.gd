@@ -160,6 +160,27 @@ func _init() -> void:
 	pol.rebuild(sim)
 	_check(not pol.sources.has("plant:1"), "stop() removes it")
 
+	# An old coal plant: traced by name, with its own fixes; scrubbers halve the smoke.
+	var pid := sim.power.add_site(Vector3(-4000, 0, 4000), Vector3(0, 0, -1), [], 0.1, 7)
+	var site: Dictionary = sim.power.sites[pid]
+	site.plant = "coal"
+	site.cells = [Vector2i(1, 0), Vector2i(-1, 0)]
+	pol.rebuild(sim)
+	var downwind := Vector3(-4000, 0, 4000) + Vector3(w.x, 0, w.y) * 300.0
+	var cs := pol.sample(downwind)
+	_check(not cs.by.smoke.is_empty() and cs.by.smoke[0][0] == "power:%d" % pid, "coal plant smoke is traced to the plant")
+	var cd := Inspect.describe(sim, {"type": "spot", "id": [downwind.x, downwind.z]})
+	_check(cd.problems.any(func(p): return p.contains("scrubbers")), "the fix for coal smoke names scrubbers (%.1f ug/m3)" % cs.smoke)
+	var coal_smoke: float = cs.smoke
+	site.built.append("scrubbers")
+	pol.rebuild(sim)
+	_check(absf(pol.sample(downwind).smoke - coal_smoke * 0.5) < 0.05 * coal_smoke, "scrubbers halve the smoke")
+	site.plant = "solar"
+	pol.rebuild(sim)
+	_check(not pol.sources.has("power:%d" % pid), "a solar farm doesn't pollute")
+	sim.power.sites.erase(pid)
+	pol.rebuild(sim)
+
 	# Dirty ground seeps downhill.
 	pol.height = func(p: Vector3) -> float: return -p.x * 0.05
 	pol.rebuild(sim)
