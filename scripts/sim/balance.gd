@@ -276,6 +276,16 @@ const SUBDIV_KIDS_PER_HOME := 0.6
 const SUBDIV_TRIPS_PER_HOME := 9.4
 const SUBDIV_PEAK_PER_HOME := 1.0
 
+## Streets wear out (StreetAge): resurfaced about this many years after
+## they're built (asphalt lasts about 20 to 30 years, FHWA), at about $130 a
+## lane-metre (INDOT mill and overlay, about $30 a square yard). Ages are
+## kept on squares this many metres across; the Economy page looks this
+## many years ahead.
+const STREET_LIFE_YEARS := 25
+const STREET_REPAVE_PER_LANE_M := 130.0
+const STREET_AGE_CELL := 40.0
+const STREET_FORECAST_YEARS := 30
+
 ## The future land use map (LandPlan). Land planned for homes is looked at
 ## before any other (as if this many metres nearer the middle of town), and
 ## a subdivision inside the plan opens each phase in this share of the time:

@@ -439,6 +439,9 @@ func effects(col: VBoxContainer, e: Dictionary) -> void:
 	if e.has("upkeep"):
 		col.add_child(_fact("road", "The town takes over the streets: $%s a year to keep up" % CitySim.money_text(int(e.upkeep)),
 			UiStyle.TEXT, false))
+	if e.has("repave"):
+		col.add_child(_fact("road", "In about %d years they wear out: $%s to resurface them, on the town" % [Balance.STREET_LIFE_YEARS,
+			CitySim.money_text(int(e.repave))], UiStyle.TEXT, false))
 	if e.has("taxes"):
 		col.add_child(_fact("money", "About $%s a year in property tax once it's built out" % CitySim.money_text(int(e.taxes)),
 			Brand.POSITIVE, false))

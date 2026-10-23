@@ -162,6 +162,8 @@ var redevelopment := Redevelopment.new()
 ## Home builders who ask to build subdivisions on farmland at the edge of
 ## town, each with a choice of sites (Subdivisions).
 var subdivisions := Subdivisions.new()
+## Streets wear out and come due for resurfacing (StreetAge).
+var street_age := StreetAge.new()
 ## The town's numbers over time, for the top bar's charts (StatHistory).
 var history := StatHistory.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
@@ -849,6 +851,7 @@ func apply_now(cmd: Dictionary) -> bool:
 			care.from_dict({})
 			redevelopment.from_dict({})
 			subdivisions.from_dict({})
+			street_age.from_dict({})
 			timelapse.from_dict(self, {})
 			history.from_dict({})
 			_lever_steps.clear()
@@ -1226,6 +1229,11 @@ func tick() -> void:
 		t = Perf.now()
 		subdivisions.month(self)
 		Perf.add("sim.subdivisions", t)
+	elif hour == 20 * TICKS_PER_HOUR + 40:
+		# Streets that have worn out are resurfaced, on the town's bill.
+		t = Perf.now()
+		economy.money -= street_age.month(self)
+		Perf.add("sim.street_age", t)
 	if tick_count % TICKS_PER_HOUR == 20 and not subdivisions.scout.is_empty():
 		# ...a few roads an hour.
 		t = Perf.now()
@@ -3532,8 +3540,9 @@ func _county_road(a: Vector2, b: Vector2, link_ends: Array) -> Array:
 	network.end_batch()
 	streets.hold = false
 	# A road out of town is named for the town it leads to.
-	streets.name_road(self, network.segments.keys().filter(func(id): return not id in before),
-		streets.town_road(hash([city_seed, a, b])))
+	var made := network.segments.keys().filter(func(id): return not id in before)
+	streets.name_road(self, made, streets.town_road(hash([city_seed, a, b])))
+	street_age.note_old(self, made)
 	streets.sync(self)
 	economy.money = money
 	var ends := [network.find_node_near(pts[0], 1.0), network.find_node_near(pts[-1], 1.0)]
@@ -3774,6 +3783,7 @@ func save_steps(postcard := false) -> Array:
 		["care", func(): return care.to_dict()],
 		["redevelopment", func(): return redevelopment.to_dict()],
 		["subdivisions", func(): return subdivisions.to_dict()],
+		["street_age", func(): return street_age.to_dict()],
 		["junctions", func(): return traffic.rules_to_dict()],
 		["vegetation", func(): return vegetation.to_dict()],
 	]
@@ -3867,6 +3877,7 @@ func from_dict(d: Dictionary) -> void:
 	care.from_dict(d.get("care", {}))
 	redevelopment.from_dict(d.get("redevelopment", {}))
 	subdivisions.from_dict(d.get("subdivisions", {}))
+	street_age.from_dict(d.get("street_age", {}))
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:
