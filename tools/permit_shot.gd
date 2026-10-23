@@ -1,7 +1,8 @@
 extends SceneTree
 ## Pictures of the permit bell for checking the look, with a made-up railroad
 ## request across the starter road (no real hub files one yet).
-## Run: godot -s tools/permit_shot.gd -- list|edit|land|guide|deal out.png
+## Run: godot -s tools/permit_shot.gd -- list|edit|land|guide|deal|homes out.png
+## ("homes" is a real home builder's subdivision, with its choice of sites.)
 
 var _frames := 0
 var _mode := "list"
@@ -27,6 +28,27 @@ func _process(_delta: float) -> bool:
 			sim.apply({"type": "paint_zone", "center": [x, 35], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
 		for i in 600:
 			sim.tick()
+		if _mode == "homes":
+			for key in sim.lots:
+				if sim.buildings.has(key) or sim.zones.zone_at(sim.lots[key].zone_pt) != ZoneMap.Zone.RESIDENTIAL:
+					continue
+				sim.buildings[key] = BuildingTypes.make(sim, key, {"zone": ZoneMap.Zone.RESIDENTIAL, "seed": hash(key),
+					"built": sim.tick_count, "changed": sim.tick_count, "occ": 2}, "house", 0)
+			sim.stats.population = 2500
+			sim.demand[ZoneMap.Zone.RESIDENTIAL] = 1.0
+			sim.subdivisions.month(sim)
+			var hud0: Hud = main.get_children().filter(func(n): return n is Hud)[0]
+			hud0.advisor.settings.welcomed = true
+			hud0.advisor.close_panel()
+			hud0.tour.stop()
+			hud0.permits.open_panel()
+			var id: int = sim.subdivisions.pending.keys()[0] if not sim.subdivisions.pending.is_empty() else -1
+			print("subdivision request ", id)
+			hud0.permits.call("_select", id, 1)
+			var cam0: CityCamera = hud0.info_view.cam
+			cam0.set_view(0.7, 0.75, 700.0)
+			cam0.look_at_point(hud0.permits.view.center())
+			return false
 		sim.permits.file(sim, {"hub": "rail", "hub_id": 1, "leader": "Dale Hoffman",
 			"title": "Rail spur to the grain elevator", "why": "Grain sits waiting on trucks. A spur would move it by the carload.",
 			"route": [[120, -120], [130, 20], [150, 140]], "width": 8.0, "per_m": 900, "budget": 900000})

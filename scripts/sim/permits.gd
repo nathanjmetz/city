@@ -124,6 +124,15 @@ func file(sim, plan: Dictionary) -> int:
 		"yes": str(plan.get("yes", "")),
 		"no": str(plan.get("no", "")),
 	}
+	if plan.has("options"):
+		# A choice of sites (Subdivisions): the player picks one when they
+		# approve. Each has its own outline, ghost, cost and effects.
+		req.options = plan.options
+		req.pick = 0
+	if plan.has("effects"):
+		req.effects = plan.effects
+	if plan.has("who"):
+		req.who = str(plan.who)
 	if shape == "deal":
 		# A service deal with a neighbor town (Interlocal): {kind, fee, other}.
 		req.deal = plan.deal
@@ -132,7 +141,12 @@ func file(sim, plan: Dictionary) -> int:
 		requests[req.id] = req
 		changed.emit()
 		return req.id
-	_price(sim, req, route)
+	if req.has("options"):
+		# Its sites were checked for anything of yours when they were found.
+		req.hits = {"roads": [], "buildings": []}
+		req.cost = cost_of(sim, req, route, req.hits)
+	else:
+		_price(sim, req, route)
 	next_id += 1
 	requests[req.id] = req
 	if _granted(sim, req) and (req.budget <= 0 or req.cost <= req.budget):
@@ -218,7 +232,14 @@ func check(sim, route: Array, width: float, area := false) -> Dictionary:
 		"polys": [line] if area else Geometry2D.offset_polyline(line, width * 0.5, Geometry2D.JOIN_ROUND, Geometry2D.END_BUTT)}]
 	var ids: Array = sim.network.segments.keys()
 	ids.sort()
+	var reach: Rect2 = corr[0].bounds
 	for seg in ids:
+		# A curve stays inside its control points: skip roads nowhere near.
+		var c: Array = sim.network.curve_of(seg)
+		var hull := Rect2(Vector2(c[0].x, c[0].z), Vector2.ZERO).expand(Vector2(c[1].x, c[1].z)) \
+			.expand(Vector2(c[2].x, c[2].z)).grow(RoadStyle.half_width(sim.network.segments[seg].type) + 1.0)
+		if not hull.intersects(reach):
+			continue
 		var road := PackedVector2Array()
 		for p in sim.network.sample_segment(seg):
 			road.append(Vector2(p.x, p.z))
@@ -242,10 +263,19 @@ func check(sim, route: Array, width: float, area := false) -> Dictionary:
 		if RoadWins.hits(corr, sim.industry._yard(sim.industry.sites[id])):
 			out.buildings.append({"what": "industry", "id": id,
 				"name": str(Industry.KINDS.get(sim.industry.sites[id].kind, {}).get("name", "company")).to_lower()})
-	ids = sim.buildings.keys()
+	# Only lots near the plan, in key order (the biggest, industrial at
+	# 200 m, reach this far from their middle).
+	var near := reach.grow(250.0)
+	ids = []
+	for key in sim.buildings:
+		var lot: Dictionary = sim.lots.get(key, {})
+		if not lot.is_empty():
+			var at: Vector3 = lot.pos
+			if near.has_point(Vector2(at.x, at.z)):
+				ids.append(key)
 	ids.sort()
 	for key in ids:
-		if sim.lots.has(key) and RoadWins.hits(corr, sim.lots[key].corners):
+		if RoadWins.hits(corr, sim.lots[key].corners):
 			out.buildings.append({"what": "lot", "id": key,
 				"name": ["building", "home", "shop", "workplace"][clampi(int(sim.buildings[key].zone), 0, 3)]})
 	return out
@@ -262,6 +292,8 @@ static func needs(hits: Dictionary) -> bool:
 func cost_of(sim, req: Dictionary, route: Array, hits: Dictionary) -> int:
 	if req.shape == "deal":
 		return 0  # a service deal builds nothing; its monthly fee is on the card
+	if req.has("options"):
+		return int(req.options[clampi(int(req.get("pick", 0)), 0, req.options.size() - 1)].get("cost", 0))
 	if costers.has(req.hub) and (costers[req.hub] as Callable).is_valid():
 		return int(costers[req.hub].call(sim, req, route, hits))
 	if req.shape == "area":
@@ -285,21 +317,28 @@ static func length(route: Array) -> float:
 
 
 ## A player's answer, from CitySim.apply: {"type": "permit", "id", "answer":
-## "approve" | "deny" | "edit", "route" (for edit)}. Shelved requests can
-## still be answered.
+## "approve" | "deny" | "edit", "route" (for edit), "pick" (which site, for
+## a request with options)}. Shelved requests can still be answered.
 func answer(sim, cmd: Dictionary) -> bool:
 	var req: Dictionary = requests.get(int(cmd.get("id", -1)), {})
 	if req.is_empty() or not req.state in [State.OPEN, State.SHELVED]:
 		return false
 	match str(cmd.get("answer", "")):
 		"approve":
+			if req.has("options"):
+				var pick := int(cmd.get("pick", 0))
+				if pick < 0 or pick >= req.options.size():
+					return false
+				req.pick = pick
+				req.route = _route(req.options[pick].outline)
+				req.cost = int(req.options[pick].get("cost", 0))
 			req.state = State.APPROVED
 			req.note = ""
 		"deny":
 			req.state = State.DENIED
 			wait_until[_key(req.hub, req.hub_id)] = int(sim.tick_count) + DENY_WAIT
 		"edit":
-			if req.shape == "deal" or str(req.get("ask", "")) != "":
+			if req.shape == "deal" or str(req.get("ask", "")) != "" or req.has("options"):
 				return false
 			var route := _route(cmd.get("route", []))
 			if route.size() < (3 if req.shape == "area" else 2):
@@ -442,6 +481,13 @@ func from_dict(d: Dictionary) -> void:
 			"edits": int(r.edits), "note": str(r.get("note", "")),
 			"ask": str(r.get("ask", "")), "yes": str(r.get("yes", "")), "no": str(r.get("no", "")),
 		}
+		if r.has("options"):
+			req.options = Array(r.options).map(func(o): return Subdivisions.site_from(o))
+			req.pick = int(r.get("pick", 0))
+		if r.has("effects"):
+			req.effects = Subdivisions.site_from({"effects": r.effects}).effects
+		if r.has("who"):
+			req.who = str(r.who)
 		if not r.get("deal", {}).is_empty():
 			var dl: Dictionary = r.deal
 			req.deal = {"kind": str(dl.get("kind", "")), "fee": int(dl.get("fee", 0)), "other": str(dl.get("other", ""))}

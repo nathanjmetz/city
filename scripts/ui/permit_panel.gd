@@ -15,7 +15,7 @@ const WIDTH := 340
 ## What each kind of hub is called on its card.
 const HUB_NAMES := {"rail": "Railroad", "bus": "Bus company", "family": "Family business", "developer": "Land developer",
 	"interlocal": "Shared service", "heritage": "Historical society", "owner": "Building owner", "farm": "Farm",
-	"industry": "Resource company"}
+	"industry": "Resource company", "subdivision": "Home builder"}
 ## Leader requests (asks of the town) by kind (LeaderAsks, Heritage).
 const ASK_NAMES := {"abatement": "Company", "pave": "Farm", "signal": "Business", "festival": "Main Street",
 	"district": "Historical society", "demolish": "Building owner"}
@@ -27,6 +27,8 @@ var _button: Button
 var _badge := _Badge.new()
 var _list := VBoxContainer.new()
 var _selected := -1
+## Which of a request's sites is shown (a request with options).
+var _site := 0
 var _editing := false
 var _show_shelved := false
 var _shown_key := ""
@@ -123,11 +125,22 @@ func _update_badge() -> void:
 		"Permit requests: %d waiting on you" % n
 
 
-func _select(id: int) -> void:
+func _select(id: int, site := 0) -> void:
 	_selected = id
+	_site = site
 	_editing = false
 	var req: Dictionary = sim.permits.requests.get(id, {})
-	if req.is_empty():
+	if req.has("options") and not req.options.is_empty():
+		# One of the sites: its land, streets and the ghost of its homes.
+		var o: Dictionary = req.options[clampi(_site, 0, req.options.size() - 1)]
+		var shown := req.duplicate()
+		shown.route = o.outline
+		shown.ghost = o.get("ghost", [])
+		shown.streets = o.get("streets", [])
+		view.show_plan(shown)
+		if view.cam:
+			view.cam.fly_to(view.center())
+	elif req.is_empty():
 		_selected = -1
 		view.hide_plan()
 	elif req.get("shape", "route") == "deal":
@@ -144,6 +157,8 @@ func _select(id: int) -> void:
 
 func _answer(answer: String) -> void:
 	var cmd := {"type": "permit", "id": _selected, "answer": answer}
+	if sim.permits.requests.get(_selected, {}).has("options"):
+		cmd.pick = _site
 	if answer == "edit":
 		cmd.route = view.route.duplicate(true)
 	var id := _selected
@@ -168,7 +183,7 @@ func _rebuild(force := false) -> void:
 		view.hide_plan()
 	var open := sim.permits.listed(Permits.State.OPEN)
 	var shelved := sim.permits.listed(Permits.State.SHELVED)
-	var key := "%s|%s|%d|%s|%s|%d|%s" % [open.map(_card_key), shelved.map(_card_key), _selected, _editing,
+	var key := "%s|%s|%d|%d|%s|%s|%d|%s" % [open.map(_card_key), shelved.map(_card_key), _selected, _site, _editing,
 		_show_shelved, int(sim.tick_count / (CitySim.TICKS_PER_HOUR * 6)), str(sim.interlocal.deals)]
 	if key == _shown_key and not force:
 		return
@@ -277,6 +292,10 @@ func _card(req: Dictionary) -> Control:
 			yes_no.add_child(_action("No", false, func(): _answer("deny")))
 		return card
 
+	if req.has("options"):
+		_sites(col, req, picked)
+		return card
+
 	var hits: Dictionary = view.hits if picked and _editing else req.hits
 	var cost: int = sim.permits.cost_of(sim, req, view.route, hits) if picked and _editing else req.cost
 	var deal: Dictionary = req.get("deal", {})
@@ -348,6 +367,82 @@ func _card(req: Dictionary) -> Control:
 			_rebuild(true)))
 		row.add_child(_action("Deny", false, func(): _answer("deny")))
 	return card
+
+
+## A request with a choice of sites (a home builder's subdivision): a tab
+## for each site, what it is, what it costs the builder, and what a yes
+## means for the town. Approving builds the site shown.
+func _sites(col: VBoxContainer, req: Dictionary, picked: bool) -> void:
+	var opts: Array = req.options
+	var i := clampi(_site if picked else 0, 0, opts.size() - 1)
+	var o: Dictionary = opts[i]
+	if picked and opts.size() > 1:
+		var tabs := HBoxContainer.new()
+		tabs.add_theme_constant_override("separation", 4)
+		col.add_child(tabs)
+		for k in opts.size():
+			var b := Button.new()
+			b.text = "Site " + str(opts[k].get("letter", k + 1))
+			b.toggle_mode = true
+			b.button_pressed = k == i
+			b.focus_mode = Control.FOCUS_NONE
+			b.add_theme_font_size_override("font_size", 12)
+			b.tooltip_text = str(opts[k].get("name", ""))
+			b.pressed.connect(func(): _select(int(req.id), k))
+			tabs.add_child(b)
+	var e: Dictionary = o.get("effects", {})
+	col.add_child(_text("%s: %d homes in %d phases, about %s years" % [o.get("name", "Site"), int(o.homes), int(o.phases),
+		_num(float(e.get("years", 0)))], UiStyle.TEXT, 600, 12))
+	col.add_child(_fact("money", "The builder pays $%s for %s acres and the streets" % [CitySim.money_text(int(o.cost)),
+		_acres(float(e.get("acres", 0)))], UiStyle.MUTED, false))
+	effects(col, e)
+	if req.state == Permits.State.OPEN:
+		var left := Permits.SHELVE_AFTER - (sim.tick_count - int(req.filed))
+		col.add_child(_text("Shelved in " + _days(left) + " if you don't answer", Brand.INK_FAINT, 500, 11))
+	if not picked:
+		return
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	col.add_child(row)
+	row.add_child(_action("Build site " + str(o.get("letter", i + 1)), true, func(): _answer("approve")))
+	row.add_child(_action("Say no", false, func(): _answer("deny")))
+
+
+## "If yes": what a request means for the town, from its effects (any
+## request can carry them; see Subdivisions.effects_of).
+func effects(col: VBoxContainer, e: Dictionary) -> void:
+	if e.is_empty():
+		return
+	col.add_child(UiStyle.label("IF YOU SAY YES", 10, UiStyle.MUTED))
+	if e.has("people"):
+		col.add_child(_fact("people", "About %s new residents, %s school-age kids" % [_count(int(e.people)), _count(int(e.get("kids", 0)))],
+			UiStyle.TEXT, false))
+	if e.has("trips"):
+		col.add_child(_fact("car", "%s more car trips a day, about %s at rush hour" % [_count(int(e.trips)), _count(int(e.get("peak", 0)))],
+			UiStyle.TEXT, false))
+	for u in ["water", "power"]:
+		if e.has(u):
+			var pct := int(e[u])
+			if pct < 0:
+				col.add_child(_fact(u, "No %s service out there yet: homes won't fill until you bring it" % u, Brand.WARNING, true))
+			else:
+				var over := pct > 100
+				col.add_child(_fact(u, "%s use goes to %d%% of what the town has%s" % [u.capitalize(), pct, " (more than you have)" if over else ""],
+					Brand.WARNING if over else UiStyle.TEXT, over))
+	if e.has("upkeep"):
+		col.add_child(_fact("road", "The town takes over the streets: $%s a year to keep up" % CitySim.money_text(int(e.upkeep)),
+			UiStyle.TEXT, false))
+	if e.has("taxes"):
+		col.add_child(_fact("money", "About $%s a year in property tax once it's built out" % CitySim.money_text(int(e.taxes)),
+			Brand.POSITIVE, false))
+
+
+static func _count(n: int) -> String:
+	return CitySim.money_text(n)
+
+
+static func _num(x: float) -> String:
+	return str(int(x)) if is_equal_approx(x, roundf(x)) else "%.1f" % x
 
 
 ## "home", "2 homes and a farmhouse"...

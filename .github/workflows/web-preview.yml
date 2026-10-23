@@ -102,6 +102,7 @@ jobs:
           run_test tests/test_loading.gd
           run_test tests/test_terrain.gd
           run_test tests/test_permits.gd
+          run_test tests/test_subdivisions.gd
           run_test tests/test_rail.gd
           run_test tests/test_rail_grain.gd
           run_test tests/test_farm_roads.gd
