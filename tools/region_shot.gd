@@ -31,6 +31,9 @@ func _process(_delta: float) -> bool:
 		sim.stats.population = 41_200
 		r.cities.c2.sim.stats.population = 12_600
 		sim.economy.money = 6_000_000
+		r.ledger.set_population("c1", 41_200)
+		r.ledger.set_population("c2", 12_600)
+		r.update_metro()
 		for i in 3:
 			r.ledger.pledge("c1", "power", "money", 3_000_000.0 if i == 0 else 2_500_000.0)
 		r.ledger.pledge("c2", "power", "money", 1_000_000.0)

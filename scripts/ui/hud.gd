@@ -417,8 +417,10 @@ func _build_top_bar() -> void:
 	seasons.toggled.connect(DayNight.set_seasons)
 	row.add_child(seasons)
 	row.add_child(VSeparator.new())
-	if Session.online():
-		var c := Session.client
+	# (The Session autoload by path: tools and tests load the HUD before it exists.)
+	var session := get_node_or_null("/root/Session")
+	if session and session.online():
+		var c: RegionClient = session.client
 		region_panel.setup(sim, c.region, c.my_city, c.pledge)
 		row.add_child(region_panel.make_button())
 	permits.setup(sim, game, info_view.cam)
