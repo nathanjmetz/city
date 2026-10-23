@@ -79,6 +79,12 @@ void vertex() {
 	tint = lin(INSTANCE_CUSTOM.rgb) * mix(vec3(0.9, 0.98, 1.08), vec3(1.1, 1.04, 0.86), COLOR.b);
 }
 void fragment() {
+	if (UV.x < -0.5) {
+		// A far tree's trunk (see tree_mesh): plain bark grey-brown.
+		ALBEDO = vec3(0.075, 0.062, 0.05) * (0.85 + tree_rand * 0.3);
+		NORMAL = crown_normal;
+		ROUGHNESS = 0.9;
+	} else {
 	vec4 t = texture(leaf_tex, UV);
 	// Mipmaps average the leaf alpha toward the gaps, so distant cards
 	// would fall under the cut-off and vanish. Boost alpha with the mip level.
@@ -142,6 +148,7 @@ void fragment() {
 	ALPHA_TEXTURE_COORDINATE = UV * 128.0;
 	ROUGHNESS = 0.75;
 	SPECULAR = 0.3;
+	}
 }
 """
 
@@ -340,10 +347,23 @@ static func tree_mesh(sp: int, far := false, fades := false) -> ArrayMesh:
 		Species.SPRUCE: _spruce(rng, leaves, wood, far)
 		_: _broadleaf(sp, rng, leaves, wood, far)
 	var mesh := ArrayMesh.new()
+	if far:
+		# Far off a trunk is a few pixels of grey-brown: it rides in the
+		# leaf surface (marked by UV.x < 0, drawn plain by the leaf shader),
+		# so a distant chunk of woods costs one draw call per species, not two.
+		var bark: Array = wood.commit_to_arrays()
+		var v: PackedVector3Array = bark[Mesh.ARRAY_VERTEX]
+		var n: PackedVector3Array = bark[Mesh.ARRAY_NORMAL]
+		for i in v.size():
+			leaves.set_color(Color(0.5, 0.2, 0.0))
+			leaves.set_uv(Vector2(-1.0, -1.0))
+			leaves.set_normal(n[i] if i < n.size() else Vector3.UP)
+			leaves.add_vertex(v[i])
 	leaves.commit(mesh)
 	mesh.surface_set_material(0, _leaf_material(fades))
-	wood.commit(mesh)
-	mesh.surface_set_material(1, _bark_material(fades))
+	if not far:
+		wood.commit(mesh)
+		mesh.surface_set_material(1, _bark_material(fades))
 	_meshes[key] = mesh
 	return mesh
 
