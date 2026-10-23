@@ -116,10 +116,21 @@ void fragment() {
 	float blinds = step(1.0 - COLOR.a, UV.y);
 	float slat = 0.85 + 0.15 * smoothstep(0.3, 0.5, fract(UV.y * 28.0));
 	vec3 col = mix(room, lin(COLOR.rgb) * 0.3 * slat, blinds);
+	// Curtains drawn back to the sides in about half the windows, in
+	// whites, creams and the odd colour, and a glimpse of the room's back
+	// wall lower down: a window in daylight reads as a dim room, not a hole.
+	vec2 wcell = vec2(floor(dot(world_pos.xz, vec2(0.7071, 0.7071)) / 1.3), floor(world_pos.y / 2.9));
+	wcell += floor(dot(world_pos.xz, vec2(-0.7071, 0.7071)) / 1.3) * 17.0;
+	float h1 = hash(wcell + 11.3);
+	vec3 drape = mix(vec3(0.62, 0.58, 0.50), vec3(0.75, 0.74, 0.70), hash(wcell + 2.7));
+	drape = mix(drape, vec3(0.30, 0.34, 0.42), step(0.85, hash(wcell + 5.1)));
+	float side = max(1.0 - smoothstep(0.17, 0.24, UV.x), smoothstep(0.76, 0.83, UV.x));
+	col = mix(col, lin(drape) * 0.55, side * step(h1, 0.6) * (1.0 - blinds * 0.7));
+	col += vec3(0.022, 0.02, 0.017) * (1.0 - UV.y) * (1.0 - blinds);
 	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
 	vec3 sky = mix(vec3(0.20, 0.26, 0.34), vec3(0.45, 0.52, 0.60), UV.y);
 	sky *= 1.0 - night * 0.85;
-	ALBEDO = mix(col, sky, 0.12 + 0.55 * fres);
+	ALBEDO = mix(col, sky, 0.18 + 0.5 * fres);
 	ROUGHNESS = 0.08;
 	SPECULAR = 0.6;
 	// After dark some rooms have a light on: one pick per window-sized patch
@@ -224,9 +235,14 @@ const PLAIN := """
 uniform float rough = 0.55;
 void fragment() {
 	float cover = snow_cover(0.88, 0.97);
-	ALBEDO = mix(lin(COLOR.rgb), vec3(0.86, 0.88, 0.92), cover);
-	ROUGHNESS = mix(rough, 0.7, cover);
-	SPECULAR = 0.4;
+	// Vertex alpha under 0.5 marks foliage (shrubs and hedges share this
+	// surface to save draw calls): matte, broken up into leaf clumps.
+	float leafy = step(COLOR.a, 0.5);
+	float clumps = texture(noise_grain, world_pos.xz / 0.35 + world_pos.y * 0.7).r;
+	vec3 base = lin(COLOR.rgb) * mix(1.0, 0.7 + clumps * 0.6, leafy);
+	ALBEDO = mix(base, vec3(0.86, 0.88, 0.92), cover * mix(1.0, smoothstep(0.35, 0.7, clumps), leafy));
+	ROUGHNESS = mix(mix(rough, 1.0, leafy), 0.7, cover);
+	SPECULAR = mix(0.4, 0.1, leafy);
 }
 """
 
