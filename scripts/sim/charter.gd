@@ -36,6 +36,9 @@ signal changed
 const HUB := "charter"
 ## What the town's charter asks on the bell.
 const ASK_KINDS := ["incorporate", "city_vote", "special_census", "second_class"]
+## A new town within 3 miles of a city needs that city's consent
+## (IC 36-5-1-7); metres.
+const CONSENT_REACH := 4828.0
 const TICKS_PER_MONTH := 24 * CitySim.TICKS_PER_HOUR
 
 ## The ladder in order of size. "track": "law" steps are charters the town
@@ -72,11 +75,23 @@ var last := {}
 var declined := {}
 ## The latest census: {"year", "people", "homes", "special": bool}.
 var census := {}
+## Cities within 3 miles, from the last region sync (not saved; re-read hourly).
+var _near_cities := {}
 ## People in the metro this town belongs to (the region's road-linked towns),
 ## from the region server; 0 when there's no region (then the town's own).
 var metro_people := 0
 ## The last city vote: {"year", "yes": share 0..1, "passed"}.
 var vote := {}
+## Our petition waiting on neighbor cities' consent: {"asked": tick,
+## "cities": {city id: name}, "said": {city id: bool}}. A city that doesn't
+## answer in Balance.CHARTER_CONSENT_MONTHS consents (Brawn, 2026-10-24).
+var consent := {}
+## Our answers to neighbors' petitions: their city id -> true (yes) / false.
+var consents := {}
+## Neighbors' petitions on our bell: permit id -> their city id.
+var consent_asks := {}
+## The last petition a neighbor city turned down: {"by": name, "tick"}.
+var refused := {}
 
 
 ## The town's legal standing right now: "settlement", "town", "city" or "city2".
@@ -102,12 +117,17 @@ func steps_reached() -> int:
 
 ## The next step and what it takes, in a line, for the Town panel. "" at the top.
 func next_line(sim) -> String:
+	if not reached.has("town") and not refused.is_empty() and consent.is_empty() and not coming.has("town") \
+			and sim.tick_count - int(refused.tick) < int(Balance.CHARTER_ASK_WAIT_MONTHS.incorporate) * TICKS_PER_MONTH:
+		return "Town: the City of %s said no. Residents can petition again in a few years." % refused.by
 	if not reached.has("town"):
 		var have := services_given(sim)
 		return "Town: %s people and %d of the 11 town services (you give %d)." % [
 			_n(Balance.CHARTER_TOWN_PEOPLE), Balance.CHARTER_SERVICES_NEEDED, have.size()]
 	if coming.has("town"):
 		return "Town: the county commissioners are reviewing the petition."
+	if not consent.is_empty():
+		return "Town: waiting on the %s to consent." % " and ".join(consent.cities.values().map(func(n): return "City of " + str(n)))
 	if not reached.has("city"):
 		if coming.has("city"):
 			return "City: voters said yes. The town becomes a city on January 1."
@@ -183,7 +203,8 @@ func month(sim) -> void:
 	if Seasons.month(sim.tick_count) == 4 and year % 10 == 0 and int(census.get("year", 0)) != year:
 		_count(sim, year, false)
 	_in_force(sim)
-	if not reached.has("town") and not coming.has("town"):
+	_consent_month(sim)
+	if not reached.has("town") and not coming.has("town") and consent.is_empty():
 		if people >= Balance.CHARTER_TOWN_PEOPLE and services_given(sim).size() >= Balance.CHARTER_SERVICES_NEEDED:
 			_ask(sim, "incorporate")
 	elif reached.has("town") and not reached.has("city") and not coming.has("city"):
@@ -222,6 +243,23 @@ func _count(sim, year: int, special: bool) -> void:
 			and people >= Balance.CHARTER_CITY2_PEOPLE:
 		declined.erase("city2")
 		_ask(sim, "second_class")
+
+
+## Our petition's consent: any city's no ends it; all yes, or no answer in
+## time, sends it on to the county.
+func _consent_month(sim) -> void:
+	if consent.is_empty():
+		return
+	for id in consent.cities:
+		if consent.said.has(id) and not bool(consent.said[id]):
+			refused = {"by": str(consent.cities[id]), "tick": sim.tick_count}
+			consent = {}
+			last["incorporate"] = sim.tick_count
+			return
+	var waited: bool = sim.tick_count - int(consent.asked) >= Balance.CHARTER_CONSENT_MONTHS * TICKS_PER_MONTH
+	if waited or consent.said.size() >= consent.cities.size():
+		consent = {}
+		coming["town"] = sim.tick_count + Balance.CHARTER_REVIEW_MONTHS * TICKS_PER_MONTH
 
 
 ## Charters granted earlier that take effect now.
@@ -351,6 +389,9 @@ func carry_out(sim) -> void:
 func _yes(sim, kind: String) -> String:
 	match kind:
 		"incorporate":
+			if not _near_cities.is_empty():
+				consent = {"asked": sim.tick_count, "cities": _near_cities.duplicate(), "said": {}}
+				return "Sent to the %s for consent first." % " and ".join(_near_cities.values().map(func(n): return "City of " + str(n)))
 			coming["town"] = sim.tick_count + Balance.CHARTER_REVIEW_MONTHS * TICKS_PER_MONTH
 			return "The county commissioners approved it."
 		"city_vote":
@@ -392,9 +433,78 @@ static func next_january(tick: int) -> int:
 
 ## Reads the metro this town is in (called with the town's region view,
 ## like Market).
-func sync(region, me: String) -> void:
+func sync(region, me: String, sim = null) -> void:
 	var m: Dictionary = region.ledger.metro
 	metro_people = int(m.get("population", 0)) if me in m.get("towns", []) else 0
+	if sim == null or not region.cities.has(me):
+		return
+	var here: Vector2 = region.cities[me].origin + sim.streets.main_at
+	_near_cities = {}
+	var ids: Array = region.cities.keys()
+	ids.sort()
+	for id in ids:
+		if id == me:
+			continue
+		var c: Dictionary = region.cities[id]
+		var them = c.sim
+		if them == null:
+			continue
+		var name := str(c.get("name", id))
+		# A city near enough that our petition needs its say.
+		if them.charter.status() in ["city", "city2"] and _gap(them, c.origin, here) <= CONSENT_REACH:
+			_near_cities[id] = name
+		# Its answer to our petition.
+		if not consent.is_empty() and consent.cities.has(id) and them.charter.consents.has(me):
+			consent.said[id] = bool(them.charter.consents[me])
+		# Its petition, asking us.
+		if status() in ["city", "city2"] and them.charter.consent.get("cities", {}).has(me) \
+				and not consents.has(id) and not consent_asks.values().has(id):
+			_ask_consent(sim, id, name)
+	_carry_consents(sim)
+
+
+## How far a town's nearest building is from `at` (region metres).
+static func _gap(town, origin: Vector2, at: Vector2) -> float:
+	var best := INF
+	for k in town.lots:
+		if town.buildings.has(k):
+			var f: Vector3 = town.lots[k].front
+			best = minf(best, (origin + Vector2(f.x, f.z)).distance_to(at))
+	return best
+
+
+## A neighbor settlement within 3 miles petitions to incorporate: our council's say.
+func _ask_consent(sim, id: String, name: String) -> void:
+	var hub_id := 100 + absi(hash(id)) % 100_000
+	if not sim.permits.can_file(sim, HUB, hub_id, true):
+		return
+	var at: Vector2 = sim.streets.main_at
+	var req: int = sim.permits.file(sim, {"hub": HUB, "hub_id": hub_id, "leader": "City council",
+		"title": "Let %s incorporate?" % name, "ask": "consent",
+		"why": "%s, within 3 miles of the city, has petitioned to become a town. The law gives the city council a say." % name,
+		"yes": "%s becomes a town, with its own council and services." % name,
+		"no": "It stays a settlement. It can petition again in a few years.",
+		"area": [[at.x - 40, at.y - 40], [at.x + 40, at.y - 40], [at.x + 40, at.y + 40], [at.x - 40, at.y + 40]]})
+	if req > 0:
+		consent_asks[req] = id
+		changed.emit()
+
+
+## Our council's answers to neighbors' petitions. Unanswered or shelved
+## counts as yes when their wait runs out on their side.
+func _carry_consents(sim) -> void:
+	for req in consent_asks.keys():
+		var st: int = sim.permits.state_of(req)
+		if st == Permits.State.OPEN:
+			continue
+		var id: String = consent_asks[req]
+		consent_asks.erase(req)
+		if st == Permits.State.APPROVED:
+			sim.permits.done(req)
+			consents[id] = true
+		elif st == Permits.State.DENIED:
+			consents[id] = false
+		changed.emit()
 
 
 static func _n(n: int) -> String:
@@ -403,7 +513,8 @@ static func _n(n: int) -> String:
 
 func to_dict() -> Dictionary:
 	return {"reached": reached, "coming": coming, "asks": asks, "last": last, "declined": declined,
-		"census": census, "metro": metro_people, "vote": vote}
+		"census": census, "metro": metro_people, "vote": vote, "consent": consent, "consents": consents,
+		"consent_asks": consent_asks, "refused": refused}
 
 
 func from_dict(d: Dictionary) -> void:
@@ -428,4 +539,20 @@ func from_dict(d: Dictionary) -> void:
 	metro_people = int(d.get("metro", 0))
 	var v: Dictionary = d.get("vote", {})
 	vote = {} if v.is_empty() else {"year": int(v.year), "yes": float(v.yes), "passed": bool(v.passed)}
+	var cs: Dictionary = d.get("consent", {})
+	consent = {}
+	if not cs.is_empty():
+		consent = {"asked": int(cs.asked), "cities": {}, "said": {}}
+		for k in cs.get("cities", {}):
+			consent.cities[str(k)] = str(cs.cities[k])
+		for k in cs.get("said", {}):
+			consent.said[str(k)] = bool(cs.said[k])
+	consents = {}
+	for k in d.get("consents", {}):
+		consents[str(k)] = bool(d.consents[k])
+	consent_asks = {}
+	for k in d.get("consent_asks", {}):
+		consent_asks[int(k)] = str(d.consent_asks[k])
+	var rf: Dictionary = d.get("refused", {})
+	refused = {} if rf.is_empty() else {"by": str(rf.by), "tick": int(rf.tick)}
 	changed.emit()

@@ -2867,6 +2867,9 @@ const CHARTER_TOWN_PEOPLE := 100
 ## Of the 11 services IC 36-5-1-8 lists, the county must find the town can
 ## give at least six.
 const CHARTER_SERVICES_NEEDED := 6
+## A neighbor city within 3 miles has this long to answer our petition
+## (game months); no answer counts as yes.
+const CHARTER_CONSENT_MONTHS := 1
 ## The county commissioners' review, game months.
 const CHARTER_REVIEW_MONTHS := 1
 ## A town needs at least 2,000 people to become a city (IC 36-4-1.5-1).

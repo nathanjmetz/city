@@ -125,6 +125,48 @@ func _init() -> void:
 		sim3.charter.carry_out(sim3)
 		_check(sim3.charter.status() == "city" and sim3.charter.declined.has("city2"), "it can say no and stay third class")
 
+	# --- A city within 3 miles has a say (IC 36-5-1-7).
+	var city := _town(8)
+	city.charter.reached["town"] = 0
+	city.charter.reached["city"] = 0
+	var hamlet := _town(9)
+	hamlet.stats.population = 150
+	for k in [Services.Kind.POLICE, Services.Kind.FIRE, Services.Kind.SCHOOL, Services.Kind.CLINIC, Services.Kind.WELL]:
+		hamlet.services.buildings[fake] = {"kind": k, "pos": Vector3.ZERO, "dir": Vector3.FORWARD}
+		fake += 1
+	var region := FakeRegion.new()
+	region.cities = {"a": {"name": "Marion", "origin": Vector2.ZERO, "sim": city},
+		"b": {"name": "Upland", "origin": Vector2(3000, 0), "sim": hamlet}}
+	hamlet.charter.sync(region, "b", hamlet)
+	_month(hamlet)
+	var p := _ask_for(hamlet, "incorporate")
+	_check(p > 0, "the settlement near a city petitions")
+	hamlet.apply({"type": "permit", "id": p, "answer": "approve"})
+	hamlet.charter.carry_out(hamlet)
+	_check(hamlet.charter.consent.get("cities", {}).has("a") and not hamlet.charter.coming.has("town"),
+		"the petition goes to the nearby city first")
+	city.charter.sync(region, "a", city)
+	var cq := _ask_for(city, "consent")
+	_check(cq > 0, "the city's council gets a consent card")
+	city.apply({"type": "permit", "id": cq, "answer": "deny"})
+	city.charter.sync(region, "a", city)
+	_check(city.charter.consents.get("b") == false, "the city's no is recorded")
+	hamlet.charter.sync(region, "b", hamlet)
+	_month(hamlet)
+	_check(hamlet.charter.consent.is_empty() and not hamlet.charter.coming.has("town") and hamlet.charter.status() == "settlement",
+		"a no ends the petition")
+	_check(hamlet.charter.next_line(hamlet).find("said no") != -1, "and the Town panel says why")
+	# No answer in a month counts as yes.
+	var hamlet2 := CitySim.new()
+	hamlet2.charter.consent = {"asked": hamlet2.tick_count, "cities": {"a": "Marion"}, "said": {}}
+	_month(hamlet2)
+	_month(hamlet2)
+	_check(hamlet2.charter.coming.has("town") or hamlet2.charter.status() == "town", "silence counts as consent")
+	# A far city has no say.
+	region.cities.b.origin = Vector2(9000, 0)
+	hamlet.charter.sync(region, "b", hamlet)
+	_check(hamlet.charter._near_cities.is_empty(), "a city 9 km away has no say")
+
 	# --- Saving keeps it all.
 	var copy := Charter.new()
 	copy.from_dict(JSON.parse_string(JSON.stringify(sim3.charter.to_dict())))
@@ -133,6 +175,11 @@ func _init() -> void:
 
 	print("FAIL" if _failed else "PASS")
 	quit(1 if _failed else 0)
+
+
+class FakeRegion:
+	var cities := {}
+	var ledger := {"metro": {}}
 
 
 func _town(seed: int) -> CitySim:
