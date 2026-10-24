@@ -308,6 +308,21 @@ func farm_at(p: Vector3) -> int:
 	return -1
 
 
+## True when a point is on a farmyard or its barns, not its lane: a lane
+## coming out on a county road doesn't stop the road (Brawn 2026-10-24).
+func yard_at(p: Vector3) -> bool:
+	for id in farms:
+		if Geometry2D.is_point_in_polygon(Vector2(p.x, p.z), _yard(farms[id])):
+			return true
+		if farms[id].has("stock") and not farms[id].stock.sites.is_empty():
+			var f: Dictionary = farms[id]
+			var local := _local(f, p)
+			var c := Vector2i(roundi(local.x / CELL), roundi(local.y / CELL))
+			if c in Livestock.site_cells(f) and Geometry2D.is_point_in_polygon(Vector2(p.x, p.z), cell_corners(f, c)):
+				return true
+	return false
+
+
 ## True when a point is on a farmyard or farm lane (no lots there).
 func covers(p: Vector3) -> bool:
 	return farm_at(p) != -1

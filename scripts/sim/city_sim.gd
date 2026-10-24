@@ -1102,6 +1102,8 @@ func tick() -> void:
 		Perf.add("sim.lots.warm", t)
 	_refresh()
 	Perf.add("sim.lots", t)
+	if tick_count % COUNTY_ENDS_EVERY == 7:
+		_extend_county_ends()
 	t = Perf.now()
 	vegetation.update(self)
 	Perf.add("sim.vegetation", t)
@@ -3524,6 +3526,8 @@ func build_county_road(a: Vector2, b: Vector2, link_ends: Array) -> Array:
 
 ## How near a road's end must come to a county road to join it, metres.
 const COUNTY_JOIN := 6.0
+## How often (ticks) county stubs are taken on along their line.
+const COUNTY_ENDS_EVERY := 1440
 ## A joined county road is laid in pieces this long, metres, and looked
 ## along every COUNTY_STEP metres for the town's roads.
 const COUNTY_PIECE := 200.0
@@ -3589,6 +3593,44 @@ func _join_county(p: Vector3, way := 0, key := "") -> bool:
 	return true
 
 
+## Joined county road that stopped short and left a dead end on its line
+## (at a farm lane, say, before lanes no longer stopped it: Brawn
+## 2026-10-24, roads ending in round pads where the paint carried on) is
+## taken on along the line, as far as the town may build. True if any was.
+func _extend_county_ends() -> bool:
+	var o := terrain_offset
+	var any := false
+	for n in network.nodes.keys():
+		if not network.nodes.has(n):
+			continue
+		var segs := network.segments_at(n)
+		if segs.size() != 1 or int(network.segments[segs[0]].type) != RoadStyle.Type.GRAVEL:
+			continue
+		var p: Vector3 = network.nodes[n]
+		if absf(p.y) > 1.0:
+			continue
+		var c := network.curve_of(segs[0])
+		var other: Vector3 = c[2] if c[0].distance_to(p) < c[2].distance_to(p) else c[0]
+		for mile in CountyGrid.miles_at(p.x + o.x, p.z + o.y, 1.0):
+			if county_removed.has(mile.key):
+				continue
+			var ns: bool = mile.key.begins_with("ns")
+			var line: float = mile.a.x if ns else mile.a.y
+			# Only a stub running along the line, out the way it points.
+			if absf((other.x + o.x if ns else other.z + o.y) - line) > 2.0:
+				continue
+			var at: float = p.z + o.y if ns else p.x + o.x
+			var from: float = other.z + o.y if ns else other.x + o.x
+			var lo: float = mile.a.y if ns else mile.a.x
+			var forward := at > from
+			if at > lo + CountyGrid.SECTION - 2.0 or at < lo + 2.0:
+				continue  # at the crossing: that mile was joined to its end
+			if _join_county(p, 1 if forward else -1, mile.key):
+				any = true
+				break
+	return any
+
+
 ## The pieces of road to lay along a line out from a join, `at`(metres
 ## along) giving each point (town coordinates), up to `length` metres: out
 ## to the first of the town's roads it meets (and onto it), and no further,
@@ -3612,7 +3654,8 @@ func _pieces_along(at: Callable, length: float, dry := false) -> Array:
 				met = true
 				break
 			var zoned := zones.zone_at(here) != ZoneMap.Zone.NONE
-			if zoned or farms.covers(here) or (dry and Terrain.water(q.x + o.x, q.y + o.y) >= 0.1):
+			# A farm lane coming out on the line doesn't stop it; a yard does.
+			if zoned or farms.yard_at(here) or (dry and Terrain.water(q.x + o.x, q.y + o.y) >= 0.1):
 				# A street's zoned frontage doesn't keep the road from the
 				# street itself: it runs through to meet it, as a county road
 				# meets a town's street (the lots are platted around it).
@@ -3661,7 +3704,7 @@ func _street_ahead(at: Callable, from: float, to: float, dry: bool) -> float:
 		var here := Vector3(q.x, 0, q.y)
 		if not network.find_segment_near(here, COUNTY_STEP * 0.6).is_empty():
 			return s
-		if farms.covers(here) or (dry and Terrain.water(q.x + o.x, q.y + o.y) >= 0.1):
+		if farms.yard_at(here) or (dry and Terrain.water(q.x + o.x, q.y + o.y) >= 0.1):
 			return -1.0
 		s += COUNTY_STEP
 	return -1.0

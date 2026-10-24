@@ -195,7 +195,9 @@ void fragment() {
 	float close = clamp(1.0 - length(VERTEX) / 180.0, 0.0, 1.0);
 	float patch = texture(noise_soft, p / 11.0).r;
 	float grain = texture(noise_grain, p / 0.35).r;
-	vec3 col = mix(vec3(0.42, 0.39, 0.34), vec3(0.55, 0.52, 0.46), patch);
+	// The same crushed limestone as the county roads painted on the land
+	// (TerrainView gravel), so a joined stretch runs on into the paint.
+	vec3 col = mix(vec3(0.50, 0.47, 0.41), vec3(0.62, 0.59, 0.52), patch);
 	col *= 1.0 + (grain - 0.5) * 0.35 * close;
 	float weeds = smoothstep(0.62, 0.78, texture(noise_soft, turn(p, 1.7) / 4.0).r);
 	col = mix(col, vec3(0.16, 0.22, 0.08) * (0.8 + grain * 0.4), weeds * 0.85);
