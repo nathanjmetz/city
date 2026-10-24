@@ -541,9 +541,15 @@ func _admit(from: int, account: Dictionary, token: String) -> void:
 	_players[from] = {"id": pid, "name": name, "city": city, "host": account.host}
 	_log("%s joined" % name)
 	# Everything as it is now, their own town included: the server's copy is
-	# what they play from.
-	_send(from, {"t": "welcome", "you": pid, "name": name, "code": invite_code, "z": pack(region.to_dict(city)),
-		"token": token, "host": account.host})
+	# what they play from. Back from a while away: what the neighbors did
+	# meanwhile, for their town to catch up on (CatchUp).
+	var welcome := {"t": "welcome", "you": pid, "name": name, "code": invite_code, "z": pack(region.to_dict(city)),
+		"token": token, "host": account.host}
+	var away := region.away_report(city)
+	if not away.is_empty():
+		welcome.away = away
+		_dirty = true
+	_send(from, welcome)
 	_send_players()
 	_send_requests()
 	_send_pins()
@@ -568,6 +574,9 @@ func _gone(peer: int) -> void:
 	if not _players.has(peer):
 		return
 	var name: String = _players[peer].name
+	if _players[peer].city != "":
+		region.mark_away(_players[peer].city)
+		_dirty = true
 	_players.erase(peer)
 	_log("%s left" % name)
 	_send_players()
@@ -637,6 +646,7 @@ func save() -> void:
 	var d := region.to_dict()
 	d["code"] = invite_code
 	d["accounts"] = accounts
+	d["away"] = region.away
 	var f := FileAccess.open(data_path + ".tmp", FileAccess.WRITE)
 	if f == null:
 		_log("Couldn't save to %s" % data_path)
@@ -655,6 +665,7 @@ func _load() -> void:
 		_log("Couldn't read %s, starting a new region" % data_path)
 		return
 	region.from_dict(d)
+	region.away = d.get("away", {}) if d.get("away") is Dictionary else {}
 	accounts = {}
 	var saved: Dictionary = d.get("accounts", {})
 	for key in saved:

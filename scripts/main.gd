@@ -357,6 +357,12 @@ func _ready() -> void:
 		chat.setup(cam, region)
 		add_child(chat)
 		hud.add_top_button(chat.make_button())
+		# Back after a while: the town lives the time the neighbors played.
+		var client := Session.client
+		if CatchUp.ticks_for(client.away) > 0:
+			var away := AwayCard.new()
+			away.setup(CatchUp.new(sim, client.region, client.my_city, client.away), client, hud, self)
+			hud._root.add_child(away)
 		await _settle()
 		return
 	_progress(0.5, "Opening your town")
