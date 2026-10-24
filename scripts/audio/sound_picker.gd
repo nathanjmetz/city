@@ -36,6 +36,9 @@ func _ready() -> void:
 	_preview.finished.connect(_stopped)
 	# No timeout in the browser: there it can fire after the answer arrived.
 	_http.timeout = 0.0 if OS.has_feature("web") else 20.0
+	# The browser unzips what the site sends zipped (GitHub Pages zips the
+	# list); unzipping it again fails, so don't ask for zipped answers there.
+	_http.accept_gzip = not OS.has_feature("web")
 	add_child(_http)
 	_http.request_completed.connect(_done)
 	_play_icon = _triangle()
@@ -252,6 +255,13 @@ func _done(result: int, code: int, _headers: PackedStringArray, body: PackedByte
 		if f:
 			f.store_buffer(body)
 			f.close()
+	if not ok:
+		# In the play notes, so a picker that can't load shows up in report.md.
+		var tel := get_node_or_null("/root/Telemetry")
+		if tel:
+			var msg := "Sound picker couldn't load %s (result %d, HTTP %d)" % [job[0], result, code]
+			tel.event("error", {"type": "error", "file": "res://scripts/audio/sound_picker.gd", "line": 0, "msg": msg,
+				"sig": "sound_picker.gd:0 " + msg.left(80)})
 	job[1].call(ok or FileAccess.file_exists(path))
 	_next()
 
