@@ -389,21 +389,33 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			# Old three-click grids are a rectangle; new ones any shape.
 			var shape: Array = GridFill.rect(_v(cmd.a), _v(cmd.b), _v(cmd.c)) if cmd.type == "build_grid" \
 				else cmd.points.map(_v)
+			var join: bool = cmd.get("join", false)
+			var painted := painted_near(shape) if join else []
 			var lines := GridFill.plan(network, shape, float(cmd.block), _road(cmd), int(cmd.get("side", 0)),
 				clampf(float(cmd.get("across", RoadShapes.GRID_ACROSS)), GridFill.ACROSS_MIN, GridFill.BLOCK_MAX),
-				int(cmd.get("fit", GridFill.FIT_ROUND)))
+				int(cmd.get("fit", GridFill.FIT_ROUND)), painted)
 			if shape.size() == 2:
 				lines = [[shape[0], shape[0].lerp(shape[1], 0.5), shape[1]]]
 			if lines.is_empty() or not _can_afford(lines, _road(cmd)) or land_problem(lines) != "":
 				return false
+			# A county road or highway the grid meets along its side becomes
+			# the town's between the grid's streets, so its blocks front it.
+			var taken := GridFill.taken_over(lines, painted)
 			network.begin_batch()
 			for l in lines:
 				ok = network.build_road(l[0], l[1], l[2], _road(cmd)) or ok
+			for t in taken:
+				var hwy: bool = t.type == RoadStyle.Type.STATE_HWY
+				for l in t.curves:
+					network.build_road(l[0], l[1], l[2], RoadStyle.Type.STATE_HWY if hwy else _road(cmd))
 			network.end_batch()
 			if ok:
 				economy.money -= shapes_cost(lines, _road(cmd))
-				if cmd.get("join", false):
-					_join_crossings(lines)
+				if join:
+					var all := lines.duplicate()
+					for t in taken:
+						all.append_array(t.curves)
+					_join_crossings(all)
 		"build_roundabout":
 			# The size row picks the lanes; older commands took them from the road type.
 			var ring := RoadShapes.ring_for_lanes(int(cmd.lanes)) if cmd.has("lanes") else RoadStyle.ring_type(_road(cmd))
@@ -3629,6 +3641,48 @@ func _join_highway(p: Vector3, way := 0, route := -1) -> bool:
 		Highways.all()[r].name)
 	streets.sync(self)
 	return true
+
+
+## County roads (miles not bulldozed) and state highways near a shape, as
+## lines a grid plan meets: {"pts" (town coordinates), "type"}.
+func painted_near(shape: Array) -> Array:
+	var box := Rect2(Vector2(shape[0].x, shape[0].z), Vector2.ZERO)
+	for p in shape:
+		box = box.expand(Vector2(p.x, p.z))
+	box = box.grow(200.0)
+	var o := terrain_offset
+	var sec := CountyGrid.SECTION
+	var out := []
+	var lo := ((box.position + o) / sec).floor()
+	var hi := ((box.end + o) / sec).floor()
+	for k in range(int(lo.x), int(hi.x) + 2):  # north-south lines
+		for seg in range(int(lo.y), int(hi.y) + 1):
+			if CountyGrid.has_mile(k, seg) and not county_removed.has("ns:%d:%d" % [k, seg]):
+				out.append({"pts": PackedVector2Array([Vector2(k * sec, seg * sec) - o, Vector2(k * sec, (seg + 1) * sec) - o]),
+					"type": RoadStyle.Type.COUNTY})
+	for k in range(int(lo.y), int(hi.y) + 2):  # east-west lines
+		for seg in range(int(lo.x), int(hi.x) + 1):
+			if CountyGrid.has_mile(k + (1 << 20), seg) and not county_removed.has("ew:%d:%d" % [k, seg]):
+				out.append({"pts": PackedVector2Array([Vector2(seg * sec, k * sec) - o, Vector2((seg + 1) * sec, k * sec) - o]),
+					"type": RoadStyle.Type.COUNTY})
+	var routes := Highways.all()
+	for r in routes.size():
+		var pts: PackedVector2Array = routes[r].pts
+		var run := PackedVector2Array()
+		for i in pts.size():
+			var q: Vector2 = pts[i] - o
+			var inside := box.has_point(q) or (i > 0 and box.intersects(Rect2(pts[i - 1] - o, Vector2.ZERO).expand(q)))
+			if inside:
+				if run.is_empty() and i > 0:
+					run.append(pts[i - 1] - o)
+				run.append(q)
+			elif not run.is_empty():
+				run.append(q)
+				out.append({"pts": run, "type": RoadStyle.Type.STATE_HWY, "route": r})
+				run = PackedVector2Array()
+		if run.size() >= 2:
+			out.append({"pts": run, "type": RoadStyle.Type.STATE_HWY, "route": r})
+	return out
 
 
 ## Where roads just built (curves) cross or end on a county road out in the

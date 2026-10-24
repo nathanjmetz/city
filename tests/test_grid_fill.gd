@@ -287,6 +287,89 @@ func _init() -> void:
 		_check(g.network.segments.size() >= 8 and _dead_ends(g.network) == 0 and ms < 3000,
 			"%s preset: %d streets, %d dead ends, %d ms" % [pr.name, g.network.segments.size(), _dead_ends(g.network), ms])
 
+	# Brawn (Portland, Exact): a near-rectangle stretched off an old Town grid
+	# came out with streets bent over to the old junctions. Every street
+	# stays square to the grid now, with no junctions jammed together.
+	var bw := CitySim.new()
+	bw.economy.money = 100000000
+	var tilt := deg_to_rad(10.0)
+	var rot := func(x: float, z: float) -> Array:
+		return [300 + x * cos(tilt) - z * sin(tilt), x * sin(tilt) + z * cos(tilt)]
+	bw.apply({"type": "build_grid_shape", "points": [rot.call(0, 0), rot.call(488, 0), rot.call(488, 182), rot.call(0, 182)],
+		"block": 122.0, "across": 91.0, "fit": GridFill.FIT_EXACT})
+	_check(bw.apply({"type": "build_grid_shape", "fit": GridFill.FIT_EXACT, "block": 79.0, "across": 79.0,
+		"points": [rot.call(0, 182), rot.call(488, 182), rot.call(488, 577), rot.call(0, 577)]}), "Portland grid off the old one built")
+	var skewed := 0
+	for id in bw.network.segments:
+		var cb := bw.network.curve_of(id)
+		var ang := rad_to_deg(atan2(cb[2].z - cb[0].z, cb[2].x - cb[0].x)) - 10.0
+		if absf(fposmod(ang + 45.0, 90.0) - 45.0) > 0.3:
+			skewed += 1
+	_check(skewed <= 1, "streets stay square to the grid (%d turned; the short last side may be)" % skewed)
+	var jammed := 0
+	var ids := bw.network.nodes.keys()
+	for i in ids.size():
+		for j2 in range(i + 1, ids.size()):
+			if bw.network.nodes[ids[i]].distance_to(bw.network.nodes[ids[j2]]) < 15.0:
+				jammed += 1
+	_check(jammed == 0, "no junctions jammed together (%d pairs under 15 m)" % jammed)
+
+	# Brawn: odd shapes are fine, but the grid wants to be regular. A third
+	# point a few degrees off square snaps square, whole blocks deep in Exact,
+	# and the fourth then snaps to close the rectangle.
+	var rs := CitySim.new()
+	var rt := RoadTool.new()
+	rt.sim = rs
+	rt.network = rs.network
+	rt.mode = RoadTool.Mode.GRID
+	rt.grid_exact = true
+	rt.grid_block = 79.0
+	rt.grid_across = 79.0
+	rt._snap_kind = "free"
+	rt._points = [Vector3(0, 0, 0), Vector3(158, 0, 0)]
+	var off := deg_to_rad(6.0)
+	var p3 := rt._grid_corner(Vector3(158, 0, 0) + Vector3(-sin(off), 0, cos(off)) * 300.0)
+	_check(absf(p3.x - 158.0) < 0.01 and absf(fposmod(p3.z, 79.0)) < 0.01 and p3.z > 0.0,
+		"third point 6° off snaps square, whole blocks deep (got %s)" % p3)
+	rt._points.append(p3)
+	var p4 := rt._grid_corner(Vector3(-12, 0, p3.z + 9))
+	_check(p4.distance_to(Vector3(0, 0, p3.z)) < 0.01, "the fourth snaps to close the rectangle (got %s)" % p4)
+	var odd := rt._grid_corner(Vector3(-150, 0, p3.z + 200))
+	_check(odd.distance_to(Vector3(-150, 0, p3.z + 200)) < 0.01, "a clearly odd point stays where it is")
+	rt.free()
+
+	# A grid side along a county road (painted on the ground, not yet the
+	# town's), even drawn a little off it: no road doubled beside it, no
+	# stubs, and the county road between the grid's streets is the town's.
+	var cy := CitySim.new()
+	cy.economy.money = 100000000
+	var line_x := -cy.terrain_offset.x + roundf(cy.terrain_offset.x / CountyGrid.SECTION) * CountyGrid.SECTION
+	var z0 := 100.0
+	_check(CountyGrid.has_mile(roundi((line_x + cy.terrain_offset.x) / CountyGrid.SECTION),
+		floori((z0 + cy.terrain_offset.y) / CountyGrid.SECTION)), "a county road runs there")
+	_check(cy.apply({"type": "build_grid_shape", "fit": GridFill.FIT_EXACT, "block": 79.0, "across": 79.0, "join": true,
+		"points": [[line_x - 158, z0], [line_x, z0], [line_x - 10, z0 + 553], [line_x - 158, z0 + 553]]}), "grid on the county road built")
+	var on_line := 0
+	var beside := 0
+	for id in cy.network.segments:
+		var cc := cy.network.curve_of(id)
+		var mx: float = (cc[0].x + cc[2].x) * 0.5
+		var mz: float = (cc[0].z + cc[2].z) * 0.5
+		if mz > z0 + 5 and mz < z0 + 540 and absf(cc[2].x - cc[0].x) < 1.0:
+			if absf(mx - line_x) < 1.0:
+				on_line += 1
+			elif absf(mx - line_x) < 30.0:
+				beside += 1
+	_check(on_line >= 6, "the county road along the grid is the town's (%d pieces)" % on_line)
+	_check(beside == 0, "no street doubled beside it (%d)" % beside)
+	var stubs := 0
+	for id in cy.network.nodes:
+		var nq: Vector3 = cy.network.nodes[id]
+		if cy.network.segments_at(id).size() == 1 and nq.z > z0 - 5 and nq.z < z0 + 560:
+			stubs += 1
+			print("  stub at (%.1f, %.1f), line at %.1f" % [nq.x, nq.z, line_x])
+	_check(stubs == 0, "no stubs left short of it (%d)" % stubs)
+
 	print("ALL TESTS PASSED" if not failed else "TESTS FAILED")
 	quit(1 if failed else 0)
 

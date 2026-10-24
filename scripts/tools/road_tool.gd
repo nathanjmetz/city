@@ -43,6 +43,8 @@ const DRAG_PX := 8.0
 const ANGLE_STEP := deg_to_rad(15.0)
 ## Guide lines catch the mouse within this angle.
 const GUIDE_SNAP := deg_to_rad(4.0)
+## A grid's next side snaps square to the last one within this.
+const REGULAR_SNAP := deg_to_rad(8.0)
 ## A grid's first side lines up with a road or the compass within this.
 const SIDE_SNAP := deg_to_rad(5.0)
 const PARALLEL_MAX := 200.0
@@ -485,20 +487,30 @@ func _grid_corner(p: Vector3) -> Vector3:
 	if _points.size() == 1:
 		return _side_end(p)
 	if _points.size() == 3:
+		# The fourth corner of a rectangle (or parallelogram) pulls hard.
 		var q: Vector3 = _points[0] + _points[2] - _points[1]
-		if _flat_dist(p, q) < _snap_reach(SNAP_NODE):
+		if _flat_dist(p, q) < maxf(_snap_reach(SNAP_NODE, SNAP_PX * 3.0), _flat_dist(_points[1], _points[2]) * 0.12):
 			return q
 	if Input.is_key_pressed(KEY_SHIFT):
 		return _square_off(p)
+	# Brawn: odd shapes are fine, but the grid wants to be regular. A side
+	# near square to the last one (or straight on) lines up exactly, and in
+	# Exact runs whole blocks: along the first side's blocks, or across.
 	var last: Vector3 = _points[_points.size() - 1]
 	var prev: Vector3 = _points[_points.size() - 2]
 	var d := p - last
 	var ref := atan2(last.z - prev.z, last.x - prev.x)
+	var first := atan2(_points[1].z - _points[0].z, _points[1].x - _points[0].x)
 	var ang := atan2(d.z, d.x)
 	for k in 4:
 		var g: float = ref + k * PI * 0.5
-		if absf(angle_difference(ang, g)) < GUIDE_SNAP:
-			return last + Vector3(cos(g), 0.0, sin(g)) * Vector2(d.x, d.z).length()
+		if absf(angle_difference(ang, g)) < REGULAR_SNAP:
+			_guide_angle = g
+			var len := Vector2(d.x, d.z).length()
+			if grid_exact:
+				var along := absf(cos(angle_difference(g, first))) > 0.7
+				len = absf(_whole(len, grid_block if along else grid_across, 0 if along else 1))
+			return last + Vector3(cos(g), 0.0, sin(g)) * len
 	return p
 
 
@@ -666,7 +678,8 @@ func _show_grid(p: Vector3) -> void:
 		# Big towns take a moment to plan, so replan at most a few times a second.
 		if key != _grid_key and Time.get_ticks_msec() - _grid_planned_at > 120:
 			_grid_key = key
-			_grid_plan = GridFill.plan(network, shape, grid_block, road_type, grid_side, grid_across, _fit())
+			_grid_plan = GridFill.plan(network, shape, grid_block, road_type, grid_side, grid_across, _fit(),
+				sim.painted_near(shape))
 			_grid_planned_at = Time.get_ticks_msec()
 		plan = _grid_plan
 	var st := SurfaceTool.new()
