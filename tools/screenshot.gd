@@ -395,6 +395,30 @@ func _demo_brawn_grid(sim: CitySim) -> void:
 	var z0 := -340.0 + 40.0
 	var b := line - 50.0
 	var args0 := OS.get_cmdline_user_args()
+	if args0.size() >= 6 and args0[5] == "end":
+		# Joined gravel ending at a mile's corner, the painted road going on,
+		# and an unjoined link road crossing a painted line.
+		for k in [1, -1, 2, -2, 3, -3]:
+			var lx: float = (roundf(o.x / CountyGrid.SECTION) + k) * CountyGrid.SECTION - o.x
+			var ok := true
+			for zz in range(-900, 900, 20):
+				ok = ok and CountyGrid.clears(lx + o.x, zz + o.y)
+			if ok:
+				line = lx
+				break
+		var zc := roundf(o.y / CountyGrid.SECTION) * CountyGrid.SECTION - o.y + CountyGrid.SECTION * 0.5
+		sim.apply({"type": "build_road", "start": [line - 250, zc], "ctrl": [line - 125, zc], "end": [line, zc], "road": 0,
+			"join": true})
+		var corner := zc + CountyGrid.SECTION * 0.5
+		sim.network.build_road(Vector3(line - 300, 0, corner - 200), Vector3(line, 0, corner - 200),
+			Vector3(line + 300, 0, corner - 200), RoadStyle.Type.STREET)
+		for i in 300:
+			sim.tick()
+		for c in _main.get_children():
+			if c is CityCamera:
+				c.look_at_point(Vector3(line, 0, corner - 100))
+				c.set_view(deg_to_rad(float(args0[1])), deg_to_rad(float(args0[2])), float(args0[3]))
+		return
 	if args0.size() >= 6 and args0[5] == "town":
 		# A zoned street crossing a county road it hasn't joined: the lots
 		# keep off the gravel and the paint runs on through.
