@@ -33,6 +33,9 @@ const _FILES := {
 	"power_line": "power_line", "substation": "substation", "power_co": "power_co",
 	"well": "well", "water_tower": "water_tower", "water_utility": "water_utility",
 	"landfill": "landfill", "recycling": "recycling", "phone_co": "phone_co", "tower": "phone_co",
+	"elementary": "elementary", "daycare": "daycare", "high_school": "high_school", "college": "college",
+	"university": "university", "clinic": "clinic", "hospital": "hospital", "nursing_home": "nursing_home",
+	"cemetery": "cemetery",
 }
 ## These get a soft `accent` fill behind the line (zone tints and the like).
 const _DUOTONE := ["homes", "zones", "shops", "industry", "farms", "farmland"]
@@ -41,7 +44,8 @@ const _DUOTONE := ["homes", "zones", "shops", "industry", "farms", "farmland"]
 ## piece like the mark's roof, then the line art. Files: name, name-shade,
 ## name-accent.
 const _LAYERED := ["power_line", "substation", "power_co", "well", "water_tower",
-	"water_utility", "landfill", "recycling", "phone_co"]
+	"water_utility", "landfill", "recycling", "phone_co", "elementary", "daycare", "high_school",
+	"college", "university", "clinic", "hospital", "nursing_home", "cemetery"]
 static var _textures := {}
 
 
@@ -64,7 +68,9 @@ func _draw() -> void:
 		if kind in _DUOTONE:
 			draw_texture_rect(_texture(_FILES[kind] + "-fill"), rect, false, Color(accent, 0.45))
 		elif _FILES[kind] in _LAYERED:
-			draw_texture_rect(_texture(_FILES[kind] + "-shade"), rect, false, Color(color, 0.5))
+			# Bold single-front icons have no shade layer.
+			if ResourceLoader.exists("res://assets/brand/icons/%s-shade.svg" % _FILES[kind]):
+				draw_texture_rect(_texture(_FILES[kind] + "-shade"), rect, false, Color(color, 0.5))
 			draw_texture_rect(_texture(_FILES[kind] + "-accent"), rect, false, Brand.BRAND_MINT)
 		draw_texture_rect(_texture(_FILES[kind]), rect, false, color)
 		return
@@ -302,13 +308,6 @@ func _draw() -> void:
 			for i in 4:
 				draw_rect(Rect2(P.call(0.17 + i * 0.19, 0.44), Vector2(0.09, 0.32) * s), color)
 			draw_rect(Rect2(P.call(0.08, 0.8), Vector2(0.84, 0.1) * s), color)
-		"cemetery":
-			# A rounded headstone on a lawn.
-			_poly([P.call(0.06, 0.9), P.call(0.94, 0.9), P.call(0.94, 0.8), P.call(0.06, 0.8)], Color(0.5, 0.7, 0.4))
-			draw_rect(Rect2(P.call(0.3, 0.38), Vector2(0.4, 0.42) * s), Color(0.78, 0.78, 0.76))
-			draw_circle(P.call(0.5, 0.38), s * 0.2, Color(0.78, 0.78, 0.76))
-			line.call(P.call(0.5, 0.3), P.call(0.5, 0.6), w * 0.8, Color(0.35, 0.35, 0.36))
-			line.call(P.call(0.4, 0.4), P.call(0.6, 0.4), w * 0.8, Color(0.35, 0.35, 0.36))
 		"services":
 			draw_rect(Rect2(P.call(0.14, 0.4), Vector2(0.72, 0.5) * s), color, false, w)
 			_poly([P.call(0.08, 0.42), P.call(0.5, 0.1), P.call(0.92, 0.42)], Color(color, 0.6))

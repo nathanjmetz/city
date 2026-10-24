@@ -21,9 +21,9 @@ const CELL := 120.0
 const MAX_LEVELS := 3
 ## Names and who runs it.
 const KINDS := {
-	"high_school": {"name": "High school", "head": "Principal", "icon": "school"},
-	"college": {"name": "Community college", "head": "President", "icon": "school"},
-	"university": {"name": "University", "head": "President", "icon": "school"},
+	"high_school": {"name": "High school", "head": "Principal", "icon": "high_school"},
+	"college": {"name": "Community college", "head": "President", "icon": "college"},
+	"university": {"name": "University", "head": "President", "icon": "university"},
 }
 
 ## The development tree (Brawn 2026-10-22): every block a campus buys

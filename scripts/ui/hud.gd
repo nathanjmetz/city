@@ -1639,7 +1639,7 @@ func _education_drawer() -> PanelContainer:
 	var campus := []
 	for k in ["high_school", "college", "university"]:
 		var e: Dictionary = Education.spec(k)
-		var b := _card("school", {"high_school": "High school", "college": "College", "university": "University"}[k], "")
+		var b := _card(k, {"high_school": "High school", "college": "College", "university": "University"}[k], "")
 		b.tooltip_text = "%s: $%s to build, $%s a month. Its %s buys the free land next to it as it fills." % [
 			Education.KINDS[k].name, CitySim.money_text(e.cost), CitySim.money_text(e.funding), Education.KINDS[k].head.to_lower()]
 		b.pressed.connect(func(): campus_tool.set_kind(k))
