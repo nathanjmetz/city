@@ -229,7 +229,7 @@ func set_mode(m: int) -> void:
 ## Grid keys come before the chat's Enter, while a grid shape is being drawn
 ## and nobody is typing.
 func _input(event: InputEvent) -> void:
-	if mode != Mode.GRID or get_viewport().gui_get_focus_owner() != null:
+	if mode != Mode.GRID or Hud.typing(get_viewport()):
 		return
 	if not (event is InputEventKey and event.pressed and not event.echo):
 		return

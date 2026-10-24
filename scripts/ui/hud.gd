@@ -663,7 +663,20 @@ func pad_tool_selected(items: Array = []) -> int:
 ## A grid shape or an outline is being drawn, so Enter finishes it (the
 ## pad's right stick click does the same).
 func shape_open() -> bool:
-	return road_tool.mode == RoadTool.Mode.GRID and road_tool.is_drawing() or farm_tool.is_drawing()
+	return road_tool.mode == RoadTool.Mode.GRID and road_tool.is_drawing() or farm_tool.is_drawing() \
+		or zone_tool.is_waiting()
+
+
+## A fresh Enter press (either Enter key).
+static func is_enter(event: InputEvent) -> bool:
+	return event is InputEventKey and event.pressed and not event.echo \
+		and (event as InputEventKey).keycode in [KEY_ENTER, KEY_KP_ENTER]
+
+
+## True while a text box has the keys, so Enter belongs to it.
+static func typing(vp: Viewport) -> bool:
+	var f := vp.gui_get_focus_owner()
+	return f is LineEdit or f is TextEdit
 
 
 ## How tall the bottom dock is, so the pad's prompts sit just above it.
