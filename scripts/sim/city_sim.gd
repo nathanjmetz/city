@@ -162,6 +162,8 @@ var nicknames := TownNickname.new()
 var heritage := Heritage.new()
 var markers := HistoricMarkers.new()
 var leaders := LeaderAsks.new()
+## The town's place on the real ladder: Indiana charters and federal place types.
+var charter := Charter.new()
 var timelapse := Timelapse.new()
 ## How well every owner keeps their property up, from what the town gives
 ## it (PropertyCare), and developers' asks to build denser (Redevelopment).
@@ -1256,12 +1258,14 @@ func tick() -> void:
 		nicknames.month(self)
 		leaders.month(self)
 	elif hour == 18 * TICKS_PER_HOUR:
+		charter.month(self)
 		timelapse.month(self)
 	if tick_count % TICKS_PER_HOUR == 0:
 		history.hour(self)
 	if tick_count % TICKS_PER_HOUR == 30:
 		heritage.carry_out(self)
 		leaders.carry_out(self)
+		charter.carry_out(self)
 		redevelopment.carry_out(self)
 		if subdivisions.carry_out(self):
 			farms_changed.emit()
@@ -1389,6 +1393,7 @@ func town_month() -> void:
 	markers.month(self)
 	nicknames.month(self)
 	leaders.month(self)
+	charter.month(self)
 	timelapse.month(self)
 
 
@@ -4147,6 +4152,7 @@ func save_steps(postcard := false) -> Array:
 		["heritage", func(): return heritage.to_dict()],
 		["markers", func(): return markers.to_dict()],
 		["leaders", func(): return leaders.to_dict()],
+		["charter", func(): return charter.to_dict()],
 		["care", func(): return care.to_dict()],
 		["redevelopment", func(): return redevelopment.to_dict()],
 		["subdivisions", func(): return subdivisions.to_dict()],
@@ -4243,6 +4249,7 @@ func from_dict(d: Dictionary) -> void:
 	heritage.from_dict(d.get("heritage", {}))
 	markers.from_dict(d.get("markers", {}))
 	leaders.from_dict(d.get("leaders", {}))
+	charter.from_dict(d.get("charter", {}))
 	care.from_dict(d.get("care", {}))
 	redevelopment.from_dict(d.get("redevelopment", {}))
 	subdivisions.from_dict(d.get("subdivisions", {}))

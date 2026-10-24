@@ -146,6 +146,7 @@ jobs:
           run_test tests/test_regional.gd
           run_test tests/test_desktop.gd
           run_test tests/test_heritage.gd
+          run_test tests/test_charter.gd
           run_test tests/test_crops.gd
           run_test tests/test_stats.gd
           run_test tests/test_upgrade_art.gd
