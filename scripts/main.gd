@@ -43,6 +43,10 @@ func _ready() -> void:
 	add_child(sky)
 	var terrain := TerrainView.new()
 	add_child(terrain)
+	# Graded under the roads before anything is laid on the land, so lots,
+	# drives and yards drawn as the town loads sit on the graded ground (the
+	# camera comes later).
+	terrain.setup(null, sim.network)
 	# Bulldozed county miles stop being painted. (A joined one stays: the
 	# town's gravel road covers it as far as it runs.)
 	var hide_county := func() -> void:
@@ -148,8 +152,10 @@ func _ready() -> void:
 
 	var cam := CityCamera.new()
 	add_child(cam)
-	terrain.setup(cam.camera, sim.network)
+	terrain.camera = cam.camera
 	terrain.graded.connect(wild.regraded)
+	terrain.graded.connect(buildings.regraded)
+	terrain.graded.connect(service_view.regraded)
 	# The county highways run on past the town's links to the horizon.
 	var exits := ExitRoads.new()
 	add_child(exits)
