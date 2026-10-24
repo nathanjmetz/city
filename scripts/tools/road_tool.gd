@@ -126,6 +126,7 @@ var _guide_kind := ""
 const ALIGN_PX := 10.0  # how near the cursor comes to a guide line to snap onto it
 const ALIGN_REACH := 500.0  # junctions this near offer guide lines (more when zoomed out)
 const ALIGN_NODES := 16  # the nearest this many junctions only
+const ROAD_SQUARE_SNAP := deg_to_rad(12.0)  # a grid corner on a road squares onto it this near
 const DASH_PX := 9.0  # dash length on screen
 ## AASHTO Green Book: roads should cross near 90° and no sharper than about
 ## 60°, or drivers can't see along the other road.
@@ -483,6 +484,8 @@ func _grid_corner(p: Vector3) -> Vector3:
 	if _points.size() >= 3 and _flat_dist(p, _points[0]) < _snap_reach(SNAP_NODE):
 		return _points[0]
 	if _snap_kind != "free":
+		if _points.size() >= 2 and _snap_kind == "segment":
+			return _square_onto_road(p)
 		return p
 	if _points.size() == 1:
 		return _side_end(p)
@@ -491,7 +494,7 @@ func _grid_corner(p: Vector3) -> Vector3:
 		var q: Vector3 = _points[0] + _points[2] - _points[1]
 		if _flat_dist(p, q) < maxf(_snap_reach(SNAP_NODE, SNAP_PX * 3.0), _flat_dist(_points[1], _points[2]) * 0.12):
 			return q
-	if Input.is_key_pressed(KEY_SHIFT):
+	if _shift():
 		return _square_off(p)
 	# Brawn: odd shapes are fine, but the grid wants to be regular. A side
 	# near square to the last one (or straight on) lines up exactly, and in
@@ -510,8 +513,53 @@ func _grid_corner(p: Vector3) -> Vector3:
 			if grid_exact:
 				var along := absf(cos(angle_difference(g, first))) > 0.7
 				len = absf(_whole(len, grid_block if along else grid_across, 0 if along else 1))
-			return last + Vector3(cos(g), 0.0, sin(g)) * len
-	return p
+				return last + Vector3(cos(g), 0.0, sin(g)) * len
+			# Along the square side to where it lines up with a junction.
+			return _align(last + Vector3(cos(g), 0.0, sin(g)) * len, last, g)
+	return p if grid_exact else _align(p, last)
+
+
+## Brawn: a corner dragged onto a road lands where the square (or straight
+## on) side meets that road, so the shape closes square against it, the way
+## a new subdivision's streets meet the road it fronts.
+func _square_onto_road(p: Vector3) -> Vector3:
+	var s := network.find_segment_near(p, 0.5)
+	if s.is_empty():
+		return p
+	var c := network.curve_of(s.seg)
+	var tan := RoadNetwork.bezier_tangent(c[0], c[1], c[2], s.t)
+	var last: Vector3 = _points[_points.size() - 1]
+	var prev: Vector3 = _points[_points.size() - 2]
+	var ref := atan2(last.z - prev.z, last.x - prev.x)
+	var l2 := Vector2(last.x, last.z)
+	var p2 := Vector2(p.x, p.z)
+	var ang := atan2(p.z - last.z, p.x - last.x)
+	var best := INF
+	var out := p
+	for k in 4:
+		var shift := _shift()
+		if shift and k % 2 == 0:
+			continue  # Shift squares off the last side
+		var g: float = ref + k * PI * 0.5
+		if not shift and absf(angle_difference(ang, g)) > ROAD_SQUARE_SNAP:
+			continue
+		var dir := Vector2(cos(g), sin(g))
+		var x = Geometry2D.line_intersects_line(l2, dir, p2, Vector2(tan.x, tan.z))
+		if x == null or (x - l2).dot(dir) <= 1.0:
+			continue
+		var d := (x as Vector2).distance_to(p2)
+		if d < best and d < maxf(_snap_reach(SNAP_ROAD + 5.0, SNAP_PX) * 3.0, l2.distance_to(p2) * 0.15):
+			best = d
+			_guide_angle = g
+			_square = shift and _points.size() == 2
+			out = Vector3(x.x, 0.0, x.y)
+	return out
+
+
+## Shift, but not as part of Cmd+Shift (the Mac screenshot keys) or the
+## Windows key's shortcuts.
+func _shift() -> bool:
+	return Input.is_key_pressed(KEY_SHIFT) and not Input.is_key_pressed(KEY_META)
 
 
 ## Three clicks: the first corner, then the end of the first side, which
@@ -526,7 +574,7 @@ func _side_end(p: Vector3) -> Vector3:
 	_guide_kind = ""
 	_exact_past = [false, false]
 	var snapped := false
-	if Input.is_key_pressed(KEY_SHIFT):
+	if _shift():
 		ang = snappedf(ang, ANGLE_STEP)
 		snapped = true
 	else:
@@ -670,7 +718,16 @@ func _show_grid(p: Vector3) -> void:
 	_cursor.position = Terrain.lift(p) + Vector3.UP * 0.3
 	var shape := _pending_shape(p)
 	_show_snap(_snap_kind != "free" or (_points.size() >= 3 and p.distance_to(_points[0]) < 0.01))
-	_show_guide(_points[0])
+	if _points.size() >= 2:
+		# The square side as a dotted line on past the corner, and the
+		# junctions the corner lines up with.
+		var lines := _align_lines.duplicate()
+		if not is_nan(_guide_angle):
+			var last: Vector3 = _points[_points.size() - 1]
+			lines.append([last, p + Vector3(cos(_guide_angle), 0.0, sin(_guide_angle)) * maxf(150.0, 200.0 * _px)])
+		_dashes(lines)
+	else:
+		_show_guide(_points[0])
 	var plan := []
 	if shape.size() >= 3:
 		var key := "%s|%s|%s|%d|%d|%d|%d" % [str(shape), str(grid_block), str(grid_across), grid_side, road_type,
@@ -850,7 +907,7 @@ func _pending_curve(p: Vector3) -> Array:
 		return [a, bend, p]
 	var d := p - a
 	_guide_angle = NAN
-	if mode != Mode.CURVED and Input.is_key_pressed(KEY_SHIFT):
+	if mode != Mode.CURVED and _shift():
 		var ang := snappedf(atan2(d.z, d.x), ANGLE_STEP)
 		p = a + Vector3(cos(ang), 0.0, sin(ang)) * d.length()
 		if _snap_kind == "free":
