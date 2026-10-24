@@ -94,6 +94,17 @@ var _cursor := MeshInstance3D.new()
 ## screen than GHOST_PX however far out the camera is (as in CS2).
 var _ok_mat := RoadStyle.material(Color(0.3, 0.85, 1.0, 0.85), true)
 var _bad_mat := RoadStyle.material(Color(1.0, 0.3, 0.25, 0.75), true)
+## A road that would wipe something out (a park, homes, a hub) shows amber,
+## says what, and asks again before it's built.
+var _warn_mat := RoadStyle.material(Color(1.0, 0.68, 0.15, 0.85), true)
+const WARN_TEXT := Color(1.0, 0.78, 0.3)
+var _losses := []
+var _loss_key := ""
+var _loss_at := -1000
+## Set by the first click on a road that wipes something out: {p, go}. The
+## road holds still at `p`; the next click runs `go`, right click or Esc
+## goes back.
+var _armed := {}
 var _snap_mat := RoadStyle.material(Color(1.0, 0.85, 0.2, 0.95), true)  # on a road
 var _snap_kind := "free"  # what the last point snapped to: node, segment, highway, county or free
 var _square := false  # Shift squared the third grid point: a rectangle
@@ -222,6 +233,7 @@ func set_mode(m: int) -> void:
 	if m != Mode.NONE and m != Mode.BULLDOZE:
 		last_draw = m
 	_points.clear()
+	_armed = {}
 	_hover_seg = -1
 	mode_changed.emit(mode)
 	_update_hint()
@@ -338,6 +350,7 @@ func _process(_delta: float) -> void:
 	_guide.visible = false
 	_ghost.visible = false
 	_label.visible = false
+	_label.modulate = Color(1, 1, 1)
 	for l in _angle_labels:
 		l.visible = false
 	_dots.visible = false
@@ -351,7 +364,7 @@ func _process(_delta: float) -> void:
 	if mode == Mode.BULLDOZE or mode == Mode.UPGRADE:
 		_preview_pick(hit)
 		return
-	var p := _snapped(hit)
+	var p: Vector3 = _armed.p if not _armed.is_empty() else _snapped(hit)
 	_cursor.position = Terrain.lift(p) + Vector3.UP * 0.3
 	_show_snap(_snap_kind != "free")
 	var curves := []
@@ -387,10 +400,20 @@ func _process(_delta: float) -> void:
 		_label.visible = true
 	_preview.mesh = _preview_mesh(curves)
 	_preview.material_override = _ok_mat if ok else _bad_mat
+	if ok and not _check_losses(curves, _ring() if mode == Mode.ROUNDABOUT else road_type).is_empty():
+		_preview.material_override = _warn_mat
+		_warn_label()
 	_preview.visible = true
 
 
 func _click() -> void:
+	if not _armed.is_empty():
+		# The second click: build it anyway.
+		var go: Callable = _armed.go
+		_armed = {}
+		go.call()
+		_update_hint()
+		return
 	var hit = cam.mouse_ground_point()
 	if hit == null:
 		return
@@ -433,11 +456,17 @@ func _click() -> void:
 				_points.append(p)
 			else:
 				var curve := _pending_curve(p)
-				if _is_valid(curve) and _build(curve):
+				if _is_valid(curve):
+					var curves := [curve]
 					if parallel:
-						_build(RoadShapes.offset(curve, parallel_gap))
-					_points.clear()
-					_points.append(curve[2])
+						curves.append(RoadShapes.offset(curve, parallel_gap))
+					var go := func() -> void:
+						if _build(curve):
+							if parallel:
+								_build(RoadShapes.offset(curve, parallel_gap))
+							_points.clear()
+							_points.append(curve[2])
+					_ask_first(p, curves, road_type, go)
 		Mode.GRID:
 			var raw := _snapped(hit)
 			var p := _grid_corner(raw)
@@ -452,22 +481,68 @@ func _click() -> void:
 			elif _points.is_empty() or _flat_dist(p, _points[_points.size() - 1]) > RECT_MIN:
 				_points.append(p)
 		Mode.ROUNDABOUT:
-			sim.apply({"type": "build_roundabout", "center": _xz(_snapped(hit)),
-				"radius": _ring_radius(), "lanes": roundabout_lanes, "road": road_type})
+			var at := _snapped(hit)
+			var cmd := {"type": "build_roundabout", "center": _xz(at),
+				"radius": _ring_radius(), "lanes": roundabout_lanes, "road": road_type}
+			_ask_first(at, RoadShapes.roundabout(at, _ring_radius()), _ring(), func(): sim.apply(cmd))
 	_update_hint()
 
 
 ## Builds the grid inside the shape drawn so far.
 func _finish_grid(shape: Array = _points) -> void:
+	if not _armed.is_empty():
+		_click()  # Enter again: build it anyway
+		return
 	if shape.size() < 3:
 		return
 	var pts := []
 	for q in shape:
 		pts.append(_xz(q))
-	if sim.apply({"type": "build_grid_shape", "points": pts, "block": grid_block, "across": grid_across,
-			"side": grid_side, "road": road_type, "fit": _fit(), "join": true}):
-		_points.clear()
+	var cmd := {"type": "build_grid_shape", "points": pts, "block": grid_block, "across": grid_across,
+		"side": grid_side, "road": road_type, "fit": _fit(), "join": true}
+	var lines := GridFill.plan(network, shape, grid_block, road_type, grid_side, grid_across, _fit(),
+		sim.painted_near(shape))
+	var go := func() -> void:
+		if sim.apply(cmd):
+			_points.clear()
+	# Held at the first corner: the shape shows closed while it asks.
+	_ask_first(shape[0], lines, road_type, go)
 	_update_hint()
+
+
+## Runs `go` now, unless the road would wipe something out: then the first
+## click holds the road still and asks, and the next click runs it.
+func _ask_first(p: Vector3, curves: Array, type: int, go: Callable) -> void:
+	_loss_key = ""  # look again now, whatever was shown last
+	_loss_at = -1000
+	if _check_losses(curves, type).is_empty():
+		go.call()
+		return
+	_armed = {"p": p, "go": go}
+
+
+## What these roads would wipe out (CitySim.road_losses), looked up again at
+## most a few times a second while the preview moves.
+func _check_losses(curves: Array, type: int) -> Array:
+	var key := "%s|%d|%d|%d|%d|%d" % [str(curves), type, sim.network.revision, sim.buildings.size(),
+		sim.parks.sites.size(), sim.services.buildings.size()]
+	if key != _loss_key and (Time.get_ticks_msec() - _loss_at > 120 or _loss_key == ""):
+		_loss_key = key
+		_loss_at = Time.get_ticks_msec()
+		_losses = sim.road_losses(curves, type)
+	return _losses
+
+
+## The cursor label's warning, and the question once the road is held.
+func _warn_label() -> void:
+	var what := RoadWins.loss_text(_losses)
+	var lead := "Are you sure? It removes %s.\nClick again to build, right click to go back" % what \
+		if not _armed.is_empty() else "Removes %s" % what
+	_label.text = (_label.text + "\n" if _label.visible and _label.text != "" else "") + lead
+	if not _label.visible:
+		_label.position = _cursor.position + Vector3(0, 6, 0)
+	_label.modulate = WARN_TEXT
+	_label.visible = true
 
 
 ## Where the next corner of a grid shape goes. An old road or junction
@@ -800,6 +875,9 @@ func _show_grid(p: Vector3) -> void:
 		_label.visible = true
 	_preview.mesh = Terrain.drape(st.commit())
 	_preview.material_override = _ok_mat if ok else _bad_mat
+	if ok and not plan.is_empty() and not _check_losses(plan, road_type).is_empty():
+		_preview.material_override = _warn_mat
+		_warn_label()
 	_preview.visible = true
 	if not ghost.is_empty():
 		_ghost.mesh = Terrain.drape(gst.commit(), true)
@@ -885,7 +963,7 @@ static func _xz(v: Vector3) -> Array:
 
 ## True while a road is half drawn.
 func is_drawing() -> bool:
-	return not _points.is_empty()
+	return not _points.is_empty() or not _armed.is_empty()
 
 
 ## Drops the road being drawn (Esc and right click).
@@ -894,6 +972,11 @@ func cancel() -> void:
 
 
 func _cancel() -> void:
+	if not _armed.is_empty():
+		# Back to drawing: the road stays as it was.
+		_armed = {}
+		_update_hint()
+		return
 	_points.clear()
 	_update_hint()
 
@@ -1367,4 +1450,7 @@ func _update_hint() -> void:
 			text += "\nRoads and track it crosses: it climbs over them, piers and all."
 	if parallel and (mode == Mode.STRAIGHT or mode == Mode.CURVED):
 		text += "\nParallel on (P): second road %d ft away  [ ]" % roundi(parallel_gap * FT)
+	if not _armed.is_empty():
+		text = "This road removes %s. Click again to build it anyway, or right click to go back." \
+			% RoadWins.loss_text(_losses)
 	hint_changed.emit(text)

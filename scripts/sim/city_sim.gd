@@ -977,6 +977,56 @@ func _guess_link() -> void:
 	_county_road(Vector2(end.x, end.z), Vector2(end.x + out.x, end.z + out.z), [1])
 
 
+## What a road not built yet would wipe out (Brawn 2026-10-24: a grid drawn
+## over a park that had grown for years took it with no warning): every
+## park, landmark, hub building and built lot its ground takes, as
+## _road_wins would clear them. Fields and pads it only trims are left
+## out. Each: {what, at, named} (named: `what` is the place's own name).
+func road_losses(curves: Array, type: int) -> Array:
+	var out := []
+	if curves.is_empty():
+		return out
+	var corr := RoadWins.corridors_of(curves, type, RoadWins.BUILDING_SLACK)
+	var box: Rect2 = corr[0].bounds
+	for c in corr:
+		box = box.merge(c.bounds)
+	var hit := func(poly: PackedVector2Array) -> bool:
+		return box.intersects(RoadWins._bounds(poly)) and RoadWins.hits(corr, poly)
+	for id in parks.sites:
+		var s: Dictionary = parks.sites[id]
+		if hit.call(parks.footprint(id)):
+			out.append({"what": str(s.get("name", Parks.KINDS[s.kind].name)), "at": s.pos, "named": true})
+	for id in services.buildings:
+		if hit.call(services.footprint(id)):
+			out.append({"what": Services.KINDS[services.buildings[id].kind].name, "at": services.buildings[id].pos})
+	for id in farms.farms:
+		if hit.call(farms._yard(farms.farms[id])):
+			out.append({"what": "Farmhouse", "at": farms.farms[id].pos})
+	for id in industry.sites:
+		if hit.call(industry._yard(industry.sites[id])):
+			out.append({"what": Industry.KINDS[industry.sites[id].kind].name, "at": industry.sites[id].pos})
+	for id in warehouses.buildings:
+		var w: Dictionary = warehouses.buildings[id]
+		if not Warehouses.is_store(w) and hit.call(warehouses.footprint(id)):
+			out.append({"what": Warehouses.KINDS[w.kind].name, "at": w.pos})
+	for id in power.sites:
+		if hit.call(power.yard(power.sites[id])):
+			out.append({"what": "Power plant", "at": power.sites[id].pos})
+	for id in big.sites:
+		if hit.call(BigFactories.corners(big.sites[id])):
+			out.append({"what": "Factory", "at": big.sites[id].pos})
+	for key in buildings:
+		if lots.has(key) and hit.call(lots[key].corners):
+			var b: Dictionary = buildings[key]
+			var what := "Home" if int(b.zone) == ZoneMap.Zone.RESIDENTIAL else "Building"
+			var mid := Vector2.ZERO
+			for q in lots[key].corners:
+				mid += q
+			mid /= maxf(1.0, lots[key].corners.size())
+			out.append({"what": what, "at": Vector3(mid.x, 0.0, mid.y)})
+	return out
+
+
 ## The road wins (Brawn): whatever a new road runs through makes way for it.
 ## Buildings the player paid for are bulldozed and paid back, fields are
 ## trimmed to the road's edge, cut lanes find the nearest road again, and
