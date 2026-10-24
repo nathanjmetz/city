@@ -4,7 +4,7 @@ extends Node3D
 ## edge of town, one facing each way in. Modelled on small-town Indiana
 ## welcome signs: a routed cedar panel on two 6x6 posts over a low brick
 ## planter, the town's name large, its nickname under it once it has earned
-## one (Town heritage: "Corn Capital of Pike County"), and the year it was
+## one (Town heritage: "Corn Capital of Grant County"), and the year it was
 ## founded. The sign moves out as the town grows: it stands a little past
 ## the farthest building from the middle of town, as city-limit signs do.
 
