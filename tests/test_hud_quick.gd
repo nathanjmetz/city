@@ -142,6 +142,39 @@ func _process(_delta: float) -> bool:
 	KeyBinds.reset()
 	_check(KeyBinds.key("pie_1") == KEY_1 and KeyBinds.key("bulldoze") == KEY_B, "reset puts every key back")
 
+	# Enter finishes a shape, never opens the region chat (Brawn 2026-10-24:
+	# a land use outline opened chat instead). A stand-in chat sits last in
+	# the tree, where the real one is, so it sees unhandled Enter first.
+	var chat := Node.new()
+	var src := GDScript.new()
+	src.source_code = "extends Node\nvar got := 0\nfunc _unhandled_input(e):\n\tif e is InputEventKey and e.pressed and e.keycode == KEY_ENTER:\n\t\tgot += 1\n\t\tget_viewport().set_input_as_handled()\n"
+	src.reload()
+	chat.set_script(src)
+	_main.add_child(chat)
+	hud.farm_tool.set_mode(FarmTool.Mode.PLAN)
+	hud.farm_tool._nodes.assign([Vector3(0, 0, 0), Vector3(200, 0, 0), Vector3(200, 0, 200)])
+	root.push_input(_key(KEY_ENTER, true))
+	root.push_input(_key(KEY_ENTER, false))
+	_check(not hud.farm_tool.is_drawing() and chat.got == 0, "Enter finishes a land use outline, not the chat (chat got %d)" % chat.got)
+	hud.close_all()
+	hud.road_tool.set_mode(RoadTool.Mode.GRID)
+	hud.road_tool._points.assign([Vector3(0, 0, 0), Vector3(150, 0, 0)])
+	root.push_input(_key(KEY_ENTER, true))
+	root.push_input(_key(KEY_ENTER, false))
+	_check(chat.got == 0, "Enter finishes a grid, not the chat")
+	hud.close_all()
+	hud.zone_tool.set_zone(ZoneMap.Zone.RESIDENTIAL)
+	hud.zone_tool._waiting = true
+	hud.zone_tool._plan = {"parts": []}
+	_check(hud.shape_open(), "a waiting smart plan counts as a shape (the pad's stick click paints it)")
+	root.push_input(_key(KEY_ENTER, true))
+	root.push_input(_key(KEY_ENTER, false))
+	_check(not hud.zone_tool.is_waiting() and chat.got == 0, "Enter paints a smart plan, not the chat")
+	hud.close_all()
+	root.push_input(_key(KEY_ENTER, true))
+	root.push_input(_key(KEY_ENTER, false))
+	_check(chat.got == 1, "with nothing drawn, Enter still opens the chat")
+
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 	return true

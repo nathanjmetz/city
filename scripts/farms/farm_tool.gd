@@ -104,14 +104,17 @@ func cancel() -> void:
 	_update_hint()
 
 
+## Enter finishes the outline. It is caught here, before anything else
+## sees it: the region chat opens on Enter too, and it is added after the
+## tools, so it would get an unhandled Enter first.
+func _input(event: InputEvent) -> void:
+	if mode != Mode.NONE and is_drawing() and Hud.is_enter(event) and not Hud.typing(get_viewport()):
+		_close()
+		get_viewport().set_input_as_handled()
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if mode == Mode.NONE:
-		return
-	if event is InputEventKey and event.pressed and not event.echo \
-			and (event as InputEventKey).keycode in [KEY_ENTER, KEY_KP_ENTER]:
-		if is_drawing():
-			_close()
-			get_viewport().set_input_as_handled()  # not the chat's Enter too
 		return
 	if not event is InputEventMouseButton:
 		return

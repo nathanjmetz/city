@@ -119,10 +119,18 @@ func _unhandled_input(event: InputEvent) -> void:
 			cancel_smart()
 		else:
 			set_zone(OFF)
-	elif _waiting and event is InputEventKey and event.pressed and not event.echo \
-			and (event as InputEventKey).keycode in [KEY_ENTER, KEY_KP_ENTER]:
+
+
+## Enter paints a waiting smart plan, ahead of the region chat's Enter.
+func _input(event: InputEvent) -> void:
+	if _waiting and Hud.is_enter(event) and not Hud.typing(get_viewport()):
 		approve_smart()
 		get_viewport().set_input_as_handled()
+
+
+## True while a smart paint plan waits for Paint it or Cancel.
+func is_waiting() -> bool:
+	return _waiting
 
 
 func _process(_delta: float) -> void:
