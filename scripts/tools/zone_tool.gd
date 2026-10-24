@@ -266,6 +266,12 @@ func _update_hover(hit) -> void:
 		parts.append_array(sim.frontage_chain(h[0], -h[1]))
 	zone_view.preview_zones = []
 	zone_view.preview = parts
+	# Zoned but no lots on part of it: say what's in the way.
+	var why := sim.lots_blocked_why(h[0], h[1])
+	if why != "":
+		hint_changed.emit("No lots here: %s.  Tab: tool   Right click to stop." % why)
+	else:
+		_update_hint()
 
 
 ## Plans the area around a street with the scope and zones chosen, and shows

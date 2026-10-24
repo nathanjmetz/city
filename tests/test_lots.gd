@@ -349,6 +349,12 @@ func _init() -> void:
 		if pk.services.overlaps(pk.lots[k].corners):
 			on_it += 1
 	_check(in_block >= 9 and on_it == 0, "a block with a parking lot still gets its lots, round it (%d, %d on it)" % [in_block, on_it])
+	# The zone tool says what's in the way where zoning gets no lots.
+	var pid: int = pk.services.buildings.keys()[0]
+	var fp := pk.services.footprint(pid)
+	var at := Vector3(fp[0].x, 0.0, fp[0].y)
+	var why := pk._block_reason({"corners": fp, "pos": at, "front": at, "zone_pt": at})
+	_check(why.contains("parking"), "the zone tool can say a parking lot is in the way (%s)" % why)
 	if failed:
 		print("SOME TESTS FAILED")
 	else:
