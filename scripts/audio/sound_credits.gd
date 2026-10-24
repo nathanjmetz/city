@@ -12,6 +12,7 @@ const LINES := [
 	"Highway: stephan (public domain)",
 	"Air conditioner: Ranch9613 (CC0)",
 	"All via Wikimedia Commons.",
+	"Sound picker options: Kenney and the Versilian Community Sample Library (CC0)",
 ]
 
 

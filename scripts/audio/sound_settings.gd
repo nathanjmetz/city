@@ -5,6 +5,10 @@ extends RefCounted
 ## A flagged sound goes silent at once wherever it plays, and the flag goes
 ## to the region server with the play notes so the sound gets replaced.
 ##
+## Picks from the Sound picker (Audio page) swap in another recording for
+## a sound: the file is kept in user://sfx/ and stream() hands it out
+## instead of the one in assets/audio/.
+##
 ## It also remembers what was heard lately, so "that sound was bad" (N, or
 ## the pause menu's Audio page) can offer the sounds that just played.
 
@@ -46,6 +50,11 @@ const AUDIBLE := 0.03
 static var volume := {"master": 1.0, "music": 1.0, "ambience": 1.0, "effects": 1.0, "ui": 1.0}
 static var muted := false
 static var flagged := {}
+## Sound id -> the option picked for it in the Sound picker ({file, name, source}).
+static var picks := {}
+## Goes up on every pick, so players holding a stream fetch it again.
+static var picks_version := 0
+static var _picked_streams := {}
 static var _heard := {}   # id -> {"t": seconds, "peak": loudness}
 static var _loaded := false
 
@@ -66,12 +75,15 @@ static func ensure_loaded() -> void:
 	muted = bool(d.get("muted", false))
 	for id in d.get("flagged", []):
 		flagged[str(id)] = true
+	var p = d.get("picks", {})
+	if typeof(p) == TYPE_DICTIONARY:
+		picks = p
 
 
 static func save() -> void:
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify({"volume": volume, "muted": muted, "flagged": flagged.keys()}, "\t"))
+		f.store_string(JSON.stringify({"volume": volume, "muted": muted, "flagged": flagged.keys(), "picks": picks}, "\t"))
 
 
 ## Sets the buses from the settings (CityAudio.setup_buses makes them).
@@ -160,6 +172,46 @@ static func flag(id: String, on: bool, how := "list") -> void:
 		tel.event("audio", state())
 		tel.event("sound_flag", {"sound": id, "label": info(id)[1], "on": on, "how": how, "heard_ago": heard_ago,
 			"volume": volume.duplicate(), "muted": muted})
+
+
+## The recording to play for a sound: the one picked in the Sound picker
+## if there is one, else the game's own. Loops are set to loop.
+static func stream(id: String) -> AudioStream:
+	ensure_loaded()
+	var s: AudioStream = null
+	if picks.has(id):
+		var path := picked_path(str(picks[id].get("file", "")))
+		if _picked_streams.has(path):
+			return _picked_streams[path]
+		if FileAccess.file_exists(path):
+			s = AudioStreamOggVorbis.load_from_file(path)
+			_picked_streams[path] = s
+	if s == null:
+		s = load("res://assets/audio/%s.ogg" % id)
+	if s is AudioStreamOggVorbis:
+		(s as AudioStreamOggVorbis).loop = bool(info(id)[3])
+	return s
+
+
+## Where a downloaded option is kept on this computer.
+static func picked_path(file: String) -> String:
+	return "user://sfx/" + file
+
+
+## Makes `option` ({file, name, source}, already downloaded) the sound for
+## `id`, or the game's own again for {}. Takes effect at once.
+static func pick(id: String, option: Dictionary) -> void:
+	ensure_loaded()
+	if option.is_empty():
+		picks.erase(id)
+	else:
+		picks[id] = {"file": option.file, "name": option.get("name", ""), "source": option.get("source", "")}
+	picks_version += 1
+	save()
+	var tel = _telemetry()
+	if tel:
+		tel.event("sound_pick", {"sound": id, "label": info(id)[1], "file": option.get("file", ""),
+			"name": option.get("name", ""), "source": option.get("source", ""), "picks": picks.duplicate(true)})
 
 
 ## The level to play a sound at: silent once flagged. Remembers that it was

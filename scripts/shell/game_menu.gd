@@ -109,8 +109,11 @@ func _input(event: InputEvent) -> void:
 ## The Back button of the Graphics or Audio page, if one is showing.
 func _back_button() -> Button:
 	for c in _col.get_children():
-		if c is Button and c.text == "Back" and not c.is_queued_for_deletion():
-			return c
+		if c.is_queued_for_deletion():
+			continue
+		for b in [c] + c.get_children():
+			if b is Button and b.text == "Back":
+				return b
 	return null
 
 
@@ -310,9 +313,32 @@ func _audio() -> void:
 	scroll.add_child(list)
 	_col.add_child(scroll)
 	_col.add_child(ShellStyle.text("Press N any time to flag what you just heard.", 13, 500, Brand.INK_MUTED))
-	_col.add_child(_button("Back", func():
+	# Side by side, so Back still fits on a short screen.
+	var end := HBoxContainer.new()
+	end.add_theme_constant_override("separation", 8)
+	var picker := _button("Sound picker", _picker)
+	picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	end.add_child(picker)
+	var back := _button("Back", func():
 		_preview.stop()
-		_fill()))
+		_fill())
+	back.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	end.add_child(back)
+	_col.add_child(end)
+
+
+## The Sound picker (SoundPicker), in place of the Audio page.
+func _picker() -> void:
+	_preview.stop()
+	for c in _col.get_children():
+		if c != _title and c != _note:
+			c.queue_free()
+	_title.text = "Sound picker"
+	_note.text = "Play the options for each sound and check the one you like. It's the sound in the game right away."
+	var picker := SoundPicker.new()
+	picker.say = func(line: String): _note.text = line
+	_col.add_child(picker)
+	_col.add_child(_button("Back", _audio))
 
 
 ## One sound: its name, Play (always plays, even when flagged, so you can

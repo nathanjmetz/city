@@ -19,6 +19,7 @@ var _next := 0
 var _pending := ""
 var _brush_wait := 0.0
 var _milestone := 0
+var _picks := -1
 
 
 func setup(s: CitySim) -> void:
@@ -27,9 +28,7 @@ func setup(s: CitySim) -> void:
 
 func _ready() -> void:
 	CityAudio.setup_buses()
-	for name in ["click", "tool", "road", "build", "bulldoze", "money", "milestone"]:
-		_streams[name] = load("res://assets/audio/ui/%s.ogg" % name)
-	_streams.brush = _streams.click
+	_load_streams()
 	for i in 4:
 		var p := AudioStreamPlayer.new()
 		p.bus = "UI"
@@ -43,6 +42,14 @@ func _ready() -> void:
 	_hook_all(get_tree().root)
 
 
+## The recordings, again after a pick in the Sound picker.
+func _load_streams() -> void:
+	_picks = SoundSettings.picks_version
+	for name in ["click", "tool", "road", "build", "bulldoze", "money", "milestone"]:
+		_streams[name] = SoundSettings.stream("ui/" + name)
+	_streams.brush = _streams.click
+
+
 func play(name: String) -> void:
 	if _pending == "" or PRIORITY.get(name, 0) > PRIORITY.get(_pending, 0):
 		_pending = name
@@ -54,6 +61,8 @@ func _process(delta: float) -> void:
 		return
 	var name := _pending
 	_pending = ""
+	if _picks != SoundSettings.picks_version:
+		_load_streams()
 	if name == "brush":
 		if _brush_wait > 0.0:
 			return

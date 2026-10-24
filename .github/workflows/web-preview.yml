@@ -189,6 +189,12 @@ jobs:
           cp assets/brand/logos/neighbors-horizontal-on-dark.png build/web/download/logo.png
           cp web/download-mac-blocked.png build/web/download/mac-blocked.png
 
+      - name: Add the Sound picker's options
+        run: |
+          mkdir -p build/web/sfx
+          cp -r web/sfx/. build/web/sfx/
+          rm -f build/web/sfx/.gdignore
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: build/web

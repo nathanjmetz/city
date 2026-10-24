@@ -114,7 +114,7 @@ func _ready() -> void:
 	_body.add_child(_line)
 
 	# The brand's doorbell (E-C) means a neighbor did something.
-	_bell.stream = load("res://assets/audio/ui/doorbell.ogg")
+	_bell.stream = SoundSettings.stream("ui/doorbell")
 	_bell.bus = "UI" if AudioServer.get_bus_index("UI") != -1 else "Master"
 	_bell.volume_db = -6.0
 	add_child(_bell)
@@ -410,4 +410,5 @@ func _ring() -> void:
 	if SoundSettings.is_flagged("ui/doorbell"):
 		return
 	SoundSettings.heard("ui/doorbell", db_to_linear(_bell.volume_db))
+	_bell.stream = SoundSettings.stream("ui/doorbell")
 	_bell.play()
