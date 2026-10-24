@@ -108,6 +108,36 @@ func district(sim, d: Dictionary, outline: Array) -> void:
 	changed.emit()
 
 
+## A marker for a step on the charter ladder (Charter): on Main Street, in
+## front of the lot nearest the town's centre.
+func charter(sim, step: String, words: Array) -> void:
+	var key := "charter:" + step
+	if seen.has(key):
+		return
+	var at: Vector2 = sim.streets.main_at
+	var best := ""
+	var best_d := INF
+	for k in sim.lots:
+		if not sim.buildings.has(k):
+			continue
+		var f: Vector3 = sim.lots[k].front
+		var d := Vector2(f.x, f.z).distance_squared_to(at)
+		if d < best_d or (d == best_d and k < best):
+			best = k
+			best_d = d
+	if best == "":
+		return
+	var spot := _lot_spot(sim, best)
+	# Beside any marker already standing there.
+	for m in markers:
+		if Vector2(m.pos[0], m.pos[1]).distance_to(Vector2(spot.pos[0], spot.pos[1])) < 2.0:
+			spot.pos = [snappedf(float(spot.pos[0]) + float(spot.face[1]) * 2.5, 0.01),
+				snappedf(float(spot.pos[1]) - float(spot.face[0]) * 2.5, 0.01)]
+	_add(sim, key, str(words[0]), str(words[1]), spot, "state")
+	version += 1
+	changed.emit()
+
+
 func _add(sim, key: String, title: String, text: String, found: Dictionary, kind: String) -> void:
 	var year := int(found.get("year", Families.calendar(Seasons.year(sim.tick_count))))
 	var fill := {"{name}": str(found.get("name", "")), "{year}": str(year), "{street}": str(found.get("street", "this street")),

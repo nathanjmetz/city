@@ -2841,3 +2841,44 @@ const ASK_FESTIVAL_COST := 15_000
 const ASK_FESTIVAL_DEMAND := 0.15
 ## Fall festival season (Indiana's harvest and heritage festivals).
 const ASK_FESTIVAL_MONTHS := [9, 10]
+
+# --- The charter ladder (Charter) ---------------------------------------------
+# Brawn, 2026-10-24: Indiana charters plus federal place types. Real rules
+# are in charter.gd; the game never shows the statute numbers.
+
+## People before landowners petition to incorporate. Indiana law sets no
+## minimum (IC 36-5-1); real Indiana towns run from under 100 people up, and
+## the guided first town reaches this in its first season.
+const CHARTER_TOWN_PEOPLE := 100
+## Of the 11 services IC 36-5-1-8 lists, the county must find the town can
+## give at least six.
+const CHARTER_SERVICES_NEEDED := 6
+## The county commissioners' review, game months.
+const CHARTER_REVIEW_MONTHS := 1
+## A town needs at least 2,000 people to become a city (IC 36-4-1.5-1).
+const CHARTER_CITY_PEOPLE := 2_000
+## Census urban area (2020 rule): 5,000 people or 2,000 housing units.
+const CHARTER_URBAN_PEOPLE := 5_000
+const CHARTER_URBAN_HOMES := 2_000
+## Second-class city: 35,000 at a federal decennial census (IC 36-4-1-1).
+const CHARTER_CITY2_PEOPLE := 35_000
+## NCHS medium metro: 250,000 to 999,999 people.
+const CHARTER_MEDIUM_PEOPLE := 250_000
+## The clerk offers a special census once the town is this far past a step
+## the last count missed.
+const CHARTER_SPECIAL_MARGIN := 1.1
+## A special census, dollars per person counted (the Census Bureau charges
+## the town its cost; a few dollars a head, from memory, so tune).
+const CHARTER_SPECIAL_PER_PERSON := 6
+## Game months before the same ask comes again after a no (or after it was
+## asked): the incorporation petition, the city vote, the special census, the
+## second-class ordinance (that one also waits for the next census).
+const CHARTER_ASK_WAIT_MONTHS := {"incorporate": 36, "city_vote": 36, "special_census": 24, "second_class": 120}
+## How residents vote on becoming a city: a base, plus service coverage, care
+## and park happiness, less the share under a boil-water notice. A town that
+## looks after people passes easily; a neglected one can fail.
+const CHARTER_VOTE_BASE := 0.36
+const CHARTER_VOTE_COVER := 0.2
+const CHARTER_VOTE_CARE := 0.1
+const CHARTER_VOTE_HAPPY := 0.1
+const CHARTER_VOTE_BOIL := 0.5
