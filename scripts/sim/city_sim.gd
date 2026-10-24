@@ -100,6 +100,9 @@ var terrain_offset := Vector2.ZERO:
 		terrain_offset = v
 		services.terrain_offset = v
 		power.offset = v
+		# Farms, companies and parks read the land under the town, not at
+		# the region's corner (they were, until 2026-10-24).
+		Resources.follow(v)
 		_lots_dirty = true
 ## High schools, colleges and universities, and the town's graduates.
 var education := Education.new()
@@ -252,6 +255,7 @@ var _zone_check_lots := {}
 
 
 func _init() -> void:
+	Resources.follow(terrain_offset)
 	# The water utility's manager takes the player's word (Permits guidance).
 	permits.locators["water"] = func(c: CitySim, id: int) -> Vector2:
 		var b: Dictionary = c.services.buildings.get(id, {})

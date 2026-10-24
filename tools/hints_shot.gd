@@ -39,6 +39,10 @@ func _process(_delta: float) -> bool:
 			"industry": hud.zone_tool.set_zone(ZoneMap.Zone.INDUSTRIAL)
 			"homes": hud.zone_tool.set_zone(ZoneMap.Zone.RESIDENTIAL)
 			"coal": hud.industry_tool.set_kind("power")
+			"ore": hud.industry_tool.set_kind("ore")
+			"farm":
+				cam.set_view(deg_to_rad(0.0), deg_to_rad(75.0), 3200.0)
+				hud.farm_tool.set_mode(FarmTool.Mode.CORN)
 			"police":
 				# Two stations on a long road, so their coverage shows its edge.
 				sim.apply({"type": "build_road", "start": [-5600, 300], "ctrl": [-2650, 300], "end": [300, 300]})

@@ -430,6 +430,28 @@ func start_profit(pos: Vector3, dir: Vector3) -> float:
 	return best
 
 
+
+## The poorest soil a new farm could still make money on today: the
+## fertility where its best crop just covers costs, haul from the yard and
+## tax. The soil view draws its "farmable" line here.
+func break_even_fertility() -> float:
+	var tax := LAND_PER_ACRE * AG_ASSESSMENT * tax_rate / 100.0
+	# A first field sits beside the yard, about a quarter mile of haul.
+	var cost := tax + COST_PER_ACRE_PER_KM * 0.4
+	var lo := 0.0
+	var hi := 1.0
+	for i in 16:
+		var mid := (lo + hi) * 0.5
+		var best := -INF
+		for crop in CropPlan.CROPS:
+			best = maxf(best, CropPlan.net_per_acre(crop, "", 0.5, mid,
+				price * CropPlan.relative_price(crop, day)))
+		if best > cost:
+			hi = mid
+		else:
+			lo = mid
+	return hi
+
 ## Every farm takes its next step. A new farm puts up its barn first. Then
 ## it buys the best field next to its land (if that field would pay and the
 ## farm is making money) or sells its worst one (if it keeps losing money).
