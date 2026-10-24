@@ -2801,6 +2801,8 @@ func land_factor(key: String) -> float:
 
 
 func _lot_blocked(lot: Dictionary) -> bool:
+	if services.overlaps(lot.corners):
+		return true
 	for p in [lot.pos, lot.front, lot.zone_pt]:
 		if services.covers(p) or Capital.owner_of(self, p) != "" \
 				or reserves.kind_at(p) != "" or hubs.covers(p) or warehouses.covers(p) or parks.covers(p) or education.covers(p) \
@@ -2924,6 +2926,13 @@ func _refresh() -> void:
 			removed = true
 	if removed:
 		buildings_changed.emit()
+
+
+## Whether a built parcel reaches into this outline by more than a sliver
+## (a back yard counts, not just the house): a service growing there has to
+## buy it whole.
+func parcel_under(key: String, poly: PackedVector2Array) -> bool:
+	return lots.has(key) and Services.shared_area(lots[key].corners, poly) > 4.0
 
 
 ## True when the land at a point (and `radius` around it) is dry and gentle

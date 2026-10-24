@@ -322,6 +322,36 @@ func at(p: Vector3) -> int:
 	return -1
 
 
+## True when a lot (or any outline) shares more than a sliver of ground with a
+## service's footprint: the town buys the whole parcel for the building, so
+## no back yard, fence or yard tree is left under it.
+func overlaps(poly: PackedVector2Array, min_area := 4.0) -> bool:
+	var mid := Vector2.ZERO
+	var reach := 0.0
+	for q in poly:
+		mid += q / poly.size()
+	for q in poly:
+		reach = maxf(reach, q.distance_to(mid))
+	for id in buildings:
+		var b: Dictionary = buildings[id]
+		if Vector2(b.pos.x - mid.x, b.pos.z - mid.y).length() > reach + size_of(b).length() * 0.5:
+			continue
+		if shared_area(poly, footprint(id)) > min_area:
+			return true
+	return false
+
+
+## Ground two outlines share, in square metres.
+static func shared_area(a: PackedVector2Array, b: PackedVector2Array) -> float:
+	var total := 0.0
+	for piece in Geometry2D.intersect_polygons(a, b):
+		var area := 0.0
+		for i in piece.size():
+			area += piece[i].cross(piece[(i + 1) % piece.size()])
+		total += absf(area) * 0.5
+	return total
+
+
 ## True when a point sits on any service's footprint or a water utility's
 ## yard (lots there are dropped).
 func covers(p: Vector3) -> bool:

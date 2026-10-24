@@ -139,11 +139,13 @@ func _init() -> void:
 	var t := CitySim.new()
 	t.economy.money = 500_000_000
 	t.build_county_road(Vector2(-400, 0), Vector2(400, 0), [0, 1])
-	t.apply({"type": "build_road", "start": [-300, 125], "ctrl": [0, 125], "end": [300, 125]})
+	# The next street back far enough that its back yards meet the hospital's
+	# rear wall rather than run under it.
+	t.apply({"type": "build_road", "start": [-300, 145], "ctrl": [0, 145], "end": [300, 145]})
 	var hs := Services.site_near(t.network, Services.Kind.HOSPITAL, Vector3(0, 0, 60))
 	t.apply({"type": "place_service", "kind": Services.Kind.HOSPITAL, "pos": [hs[0].x, hs[0].z], "dir": [hs[1].x, hs[1].z]})
 	for x in range(-280, 281, 10):
-		for z in [25, 100]:
+		for z in [25, 120]:
 			t.apply({"type": "paint_zone", "center": [x, z], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
 	for i in 1500:
 		t.tick()
