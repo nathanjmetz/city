@@ -1,0 +1,20 @@
+{
+  "_note": "Most scenarios (per 1000) each problem may show up in. Set from main 61f4ad2 (2026-10-24). Lower a number when a fix brings it down; never raise one to make CI pass.",
+  "overlap": 343,
+  "on_road": 0,
+  "bowtie": 66,
+  "sliver": 1,
+  "neck": 10,
+  "tiny": 64,
+  "landlocked": 0,
+  "long_strip": 0,
+  "jagged": 184,
+  "odd_unforced": 773,
+  "empty_frontage": 596,
+  "gap_backs": 618,
+  "gap_sides": 727,
+  "click_order": 0,
+  "save_reload": 0,
+  "grid_not_rect": 361,
+  "script_error": 0
+}
