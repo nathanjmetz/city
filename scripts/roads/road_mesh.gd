@@ -38,13 +38,16 @@ static func add_disc(st: SurfaceTool, center: Vector3, radius: float, y: float, 
 ## walk, median, yellow, white, gravel, concrete.
 ## `gaps` leaves a one-way road's barrier out where a ramp opens off it:
 ## {side (+1/-1): [from, to] metres along pts}.
-static func street(pts: PackedVector3Array, type: int, mats: Dictionary, gaps := {}, rural := false) -> ArrayMesh:
+## `cuts`: how far from each end (start, end) a town street's painted lines
+## stop, at a junction's crosswalk (JunctionMarks.line_cut).
+static func street(pts: PackedVector3Array, type: int, mats: Dictionary, gaps := {}, rural := false,
+		cuts := Vector2.ZERO) -> ArrayMesh:
 	var spec: Dictionary = RoadStyle.TYPES[type]
 	if RoadStyle.is_freeway(type):
 		return _oneway(pts, spec, mats, gaps)
 	if spec.get("rural", false) or (rural and spec.median == 0.0):
 		return _rural(pts, type, mats)
-	return _town(pts, type, mats)
+	return _town(pts, type, mats, cuts)
 
 
 ## A town street with curbs and sidewalks. Markings follow MUTCD Part 3B:
@@ -52,7 +55,7 @@ static func street(pts: PackedVector3Array, type: int, mats: Dictionary, gaps :=
 ## yellow pair each side of a two-way left-turn lane, white dashes between
 ## lanes going the same way, a solid white bike lane line, and white stall
 ## marks where parking is metered downtown.
-static func _town(pts: PackedVector3Array, type: int, mats: Dictionary) -> ArrayMesh:
+static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := Vector2.ZERO) -> ArrayMesh:
 	var spec: Dictionary = RoadStyle.TYPES[type]
 	var hw := RoadStyle.half_width(type)
 	var cw := RoadStyle.CURB_WIDTH
@@ -111,7 +114,10 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary) -> Array
 		layers = layers.filter(func(l): return l[3] != "dashed" or l[0] != "white")
 		layers.append(["bus", [[-lane_edge, -inside - 0.2], [inside + 0.2, lane_edge]], y_mark - 0.004, ""])
 		layers.append(["white", [[-inside - 0.2, -inside], [inside, inside + 0.2]], y_mark, ""])
-	var mesh := _build_layers(pts, layers, trimmed(pts, hw + 2.0), mats)
+	var marks := pts
+	if cuts != Vector2.ZERO:
+		marks = _between(pts, cuts.x, RoadNetwork.polyline_length(pts) - cuts.y)
+	var mesh := _build_layers(pts, layers, trimmed(pts, hw + 2.0), mats, marks)
 	# Downtown stall marks: T marks every 22 ft along parallel parking, and
 	# 45-degree stall lines 9 ft wide for angled parking.
 	var stalls := SurfaceTool.new()
@@ -310,17 +316,21 @@ static func _between(pts: PackedVector3Array, from: float, to: float) -> PackedV
 
 
 static func _build_layers(pts: PackedVector3Array, layers: Array, inner: PackedVector3Array,
-		mats: Dictionary) -> ArrayMesh:
-	# Medians stop short of the junctions so turning cars can cross.
+		mats: Dictionary, marks := PackedVector3Array()) -> ArrayMesh:
+	# Medians stop short of the junctions so turning cars can cross; painted
+	# lines stop at the crosswalks (`marks`, when given).
 	var mesh := ArrayMesh.new()
 	for layer in layers:
 		var st := SurfaceTool.new()
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var along := pts
+		if not marks.is_empty() and layer[0] in ["yellow", "white", "bus"]:
+			along = marks
 		for span in layer[1]:
 			match layer[3]:
-				"dashed": add_dashed_strip(st, pts, span[0], span[1], layer[2])
+				"dashed": add_dashed_strip(st, along, span[0], span[1], layer[2])
 				"median": add_strip(st, inner, span[0], span[1], layer[2])
-				_: add_strip(st, pts, span[0], span[1], layer[2])
+				_: add_strip(st, along, span[0], span[1], layer[2])
 		st.commit(mesh)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, mats[layer[0]])
 	return mesh
