@@ -36,11 +36,13 @@ static func build_hq(kind: String, seed: int, built := [], addons := {}) -> Arra
 				b._crusher(Vector3(8, 0, 4))
 			else:
 				# Trucks tip run-of-mine coal straight onto the pile.
-				b._cone(Vector3(8.0, 0, 6.0), 6.0, 4.0, COAL.lightened(0.05), 16, "paint")
-			# Raw coal waiting for the plant and washed coal waiting for trucks.
-			b._flat_rect("gravel", -28, 34, 20, 36, 0.09, COAL.lightened(0.15))
-			b._cone(Vector3(-14.0, 0, 28.0), 9.0, 6.0, COAL.lightened(0.05), 18, "paint")
-			b._cone(Vector3(16.0, 0, 28.0), 8.0, 5.5, COAL, 18, "paint")
+				b._pile(Vector3(8.0, 0, 6.0), 6.0, 4.0, COAL_PILE)
+			# Raw coal waiting for the plant and washed coal waiting for trucks,
+			# on a pad gone black with coal dust that fades out into the yard.
+			b._flat_rect("gravel", -32, 38, 17, 39, 0.085, COAL_DUST.lerp(YARD_GRAVEL, 0.5))
+			b._flat_rect("gravel", -28, 34, 20, 36, 0.09, COAL_DUST)
+			b._pile(Vector3(-14.0, 0, 28.0), 9.0, 6.0, COAL_PILE)
+			b._pile(Vector3(16.0, 0, 28.0), 8.0, 5.5, COAL_PILE.darkened(0.08))
 	for node in addons:
 		var at := Vector3(float(addons[node][0]), 0, float(addons[node][1]))
 		match str(node):
@@ -196,7 +198,51 @@ func _pit() -> void:
 		y += 0.02
 	_flat_rect("gravel", -4.0, 4.0, -4.0, 4.0, y, Color("#6d7466"))  # rain water on the floor
 	_flat_rect("gravel", 30.0, 34.0, -36.0, 30.0, y + 0.01, QUARRY.darkened(0.1))  # haul ramp
-	_cone(Vector3(28, 0, -28), 6.0, 4.5, Color("#b5ae9e"), 16, "paint")
+	_pile(Vector3(28, 0, -28), 6.0, 4.5, Color("#b5ae9e"))
+
+
+## A stockpile as photos of coal and stone yards show it: a cone at the
+## material's angle of repose with a rounded crest where the loader works
+## it and a toe that spreads out flat, shaded smooth, never a faceted cone.
+func _pile(base: Vector3, r: float, h: float, col: Color, segs := 28) -> void:
+	# Profile, from the toe up: radius and height, as fractions.
+	var prof := [Vector2(1.18, 0.0), Vector2(0.96, 0.12), Vector2(0.55, 0.6), Vector2(0.24, 0.9), Vector2(0.0, 1.0)]
+	var pts := []
+	var nor := []
+	for i in prof.size():
+		var below: Vector2 = prof[maxi(i - 1, 0)]
+		var above: Vector2 = prof[mini(i + 1, prof.size() - 1)]
+		var slope := Vector2((below.x - above.x) * r, (above.y - below.y) * h)
+		var row := []
+		var nrow := []
+		for j in segs:
+			var a := TAU * j / segs
+			var k := 1.0 + 0.05 * sin(a * 3.0 + float(base.x)) if i < prof.size() - 1 else 1.0
+			var out := Vector3(cos(a), 0, sin(a))
+			row.append(base + out * prof[i].x * r * k + Vector3(0, prof[i].y * h, 0))
+			# Normal of the profile's tangent, swung round the pile.
+			nrow.append((out * slope.y + Vector3(0, slope.x, 0)).normalized())
+		pts.append(row)
+		nor.append(nrow)
+	var st := _tool("paint")
+	_note("paint", Weathers.KEEP, (prof.size() - 1) * segs * 6)
+	_reach = maxf(_reach, base.z + r * 1.2)
+	if _dry:
+		return
+	for i in prof.size() - 1:
+		for j in segs:
+			var jj := (j + 1) % segs
+			var quad := [[i, j], [i, jj], [i + 1, jj], [i + 1, j]]
+			var q0: Vector3 = pts[i][j]
+			var face_n: Vector3 = (pts[i][jj] - q0).cross(pts[i + 1][j] - q0)
+			var order := [0, 2, 1, 0, 3, 2] if face_n.dot(nor[i][j]) >= 0.0 else [0, 1, 2, 0, 2, 3]
+			for q in order:
+				var v: Vector3 = pts[quad[q][0]][quad[q][1]]
+				var shade := col.darkened(0.12 * (1.0 - (v.y - base.y) / h))
+				st.set_normal(nor[quad[q][0]][quad[q][1]])
+				st.set_color(shade)
+				st.set_uv(Vector2(v.x, v.z))
+				st.add_vertex(v)
 
 
 ## A square ring between two half-widths.
@@ -226,7 +272,7 @@ func _crusher(at: Vector3) -> void:
 	for t in [0.3, 0.65]:
 		var p: Vector3 = top.lerp(foot, t)
 		_box("paint", Vector3(0.25, p.y, 0.25), Vector3(p.x, p.y * 0.5, p.z), Color("#6b6f73"))
-	_cone(pile, 9.0, 7.0, COAL, 18, "paint")
+	_pile(pile, 9.0, 7.0, COAL_PILE)
 
 
 ## A surface coal mine in the company's local frame. Benchmark: aerial
@@ -273,6 +319,10 @@ const SPOIL := Color("#8b8170")      # fresh cast overburden: grey-brown shale a
 const SPOIL_OLD := Color("#7d8459")  # a few years on: weeds coming in
 const SPOIL_GREEN := Color("#667f45") # fescue, broomsedge and autumn olive over the ridge
 const COAL := Color("#24221f")
+## Coal piles in the sun read dark grey, not black: every lump catches a
+## little light. The ground under them is dust over gravel.
+const COAL_PILE := Color("#46433f")
+const COAL_DUST := Color("#5c5852")
 const BENCH := Color("#857358")      # subsoil left after the topsoil is scraped off
 const TOPSOIL := Color("#5a4a37")
 const UNDERCLAY := Color("#6f6b62")  # the grey fireclay under the seam

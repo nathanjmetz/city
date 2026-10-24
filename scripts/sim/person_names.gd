@@ -83,7 +83,7 @@ static func _other_once(kind: String, rng: RandomNumberGenerator) -> String:
 		"oil":
 			return ["%s Oil Co." % local, "%s Petroleum" % last(rng), "%s Energy" % local][rng.randi() % 3]
 		"ore":
-			return ["%s Mining" % last(rng), "%s Stone & Ore" % local, "%s Quarry" % tree][rng.randi() % 3]
+			return ["%s Mining" % last(rng), "%s Coal Co." % local, "%s Coal & Mining" % tree][rng.randi() % 3]
 		"forest":
 			return ["%s Timber" % tree, "%s Lumber Co." % last(rng), "%s Woodlands" % local][rng.randi() % 3]
 	return "%s %s" % [local, kind]
