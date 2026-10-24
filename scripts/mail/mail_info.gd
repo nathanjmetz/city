@@ -65,7 +65,7 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 		problems.append("No free land next to it to grow into.")
 	var actions := []
 	actions.append({"label": "Demolish", "cmd": {"type": "remove_post_office", "id": id}, "enabled": true})
-	return {"title": "Post Office", "kind": "Mail · ZIP %d" % int(h.zip), "icon": "mail",
+	return {"title": "Post Office", "kind": "Mail · ZIP %d" % int(h.zip), "icon": "post_office",
 		"ok": problems.is_empty() and linked, "status": status, "rows": rows, "problems": problems,
 		"actions": actions}
 

@@ -22,13 +22,13 @@ extends RefCounted
 ## Names and what each makes; the numbers are in Balance.BIG_FACTORY.
 const KINDS := {
 	"ethanol": {"name": "Ethanol plant", "short": "Ethanol", "makes": "fuel ethanol and distillers grains",
-		"purpose": "fuel", "to": "edge", "icon": "corn"},
+		"purpose": "fuel", "to": "edge", "icon": "ethanol"},
 	"meatpacker": {"name": "Meatpacking plant", "short": "Meatpacker", "makes": "boxed pork for the stores",
-		"purpose": "food", "to": "shop", "icon": "farms"},
+		"purpose": "food", "to": "shop", "icon": "meatpacker"},
 	"furniture": {"name": "Furniture maker", "short": "Furniture", "makes": "solid hardwood furniture",
-		"purpose": "goods", "to": "shop", "icon": "forest"},
+		"purpose": "goods", "to": "shop", "icon": "furniture"},
 	"rv": {"name": "RV plant", "short": "RV plant", "makes": "travel trailers and fifth wheels",
-		"purpose": "goods", "to": "edge", "icon": "industry"},
+		"purpose": "goods", "to": "edge", "icon": "rv_plant"},
 }
 const ORDER := ["ethanol", "meatpacker", "furniture", "rv"]
 ## Truck purpose for each input coming in (Vehicles picks the rig).

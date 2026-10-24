@@ -29,8 +29,8 @@ extends RefCounted
 ## brick bank on the square with its drive-up lanes behind fills one).
 const CELL := 36.0
 const KINDS := {
-	"community": {"name": "Community bank", "head": "President", "icon": "bank"},
-	"farm_credit": {"name": "Farm Credit office", "head": "Branch manager", "icon": "bank"},
+	"community": {"name": "Community bank", "head": "President", "icon": "bank_co"},
+	"farm_credit": {"name": "Farm Credit office", "head": "Branch manager", "icon": "farm_credit"},
 }
 ## Names a small-town bank takes (the common ones across rural Indiana).
 const NAMES := ["First National Bank", "Farmers & Merchants Bank", "Peoples State Bank", "Citizens State Bank",
