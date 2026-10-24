@@ -6,6 +6,7 @@ var _frames := 0
 var _mode := "menu"
 var _out := "shot.png"
 var _friend: RegionClient
+var _sam_asked := false
 
 
 func _initialize() -> void:
@@ -42,7 +43,13 @@ func _start_online() -> void:
 			_friend.send_town(true)
 			_friend.send_chat("Hey! I started my town just east of yours")
 			_friend.send_cursor(c.region.cities[c.my_city].origin + Vector2(60, 40)))
-		_friend.join("ws://127.0.0.1:19580", code, "friend-1", "Sam")
+		# The host adds Sam, and Sam comes in with only that PIN.
+		c.pins_changed.connect(func():
+			for p in c.pins:
+				if p.name == "Sam" and not _sam_asked:
+					_sam_asked = true
+					_friend.join("ws://127.0.0.1:19580", "", "friend-1", "", "", false, "", p.pin))
+		c.add_player("Sam")
 		session.enter_region())
 
 

@@ -19,6 +19,8 @@ signal city_added(city_id: String)
 signal waiting(message: String)
 ## (Host only) the list of players waiting to be let in changed.
 signal requests_changed
+## (Host only) the players and their PINs changed (see pins).
+signal pins_changed
 ## The server has stored a telemetry batch (by its id), so it can be dropped here.
 signal telemetry_acked(id: String)
 ## A neighbor's town (or the whole region, id "") arrived and was loaded:
@@ -47,6 +49,8 @@ var token := ""
 var is_host := false
 ## (Host only) names waiting to be let in.
 var requests := []
+## (Host only) every player and the PIN that lets them in: [{name, pin, host}].
+var pins := []
 ## What the neighbors did while you were away (Region.away_report), from
 ## the welcome; CatchUp plays it out and clears it. {} if nothing to tell.
 var away := {}
@@ -54,6 +58,7 @@ var away := {}
 var _peer: WebSocketMultiplayerPeer
 var _connected := false
 var _password := ""
+var _pin := ""
 var _new_account := false
 ## Your town keeps running when the connection drops (the host's computer
 ## restarting for an update, say); the game reconnects in the background.
@@ -107,7 +112,8 @@ var _join_retry := -1.0
 ## Connects and logs in (or, with new_account, signs up). Watch the joined,
 ## waiting and failed signals. A saved token stands in for the password.
 func join(server_url: String, code: String, id: String, name: String, password := "",
-		new_account := false, saved_token := "") -> void:
+		new_account := false, saved_token := "", pin := "") -> void:
+	_pin = pin
 	url = server_url
 	invite_code = code
 	player_id = id
@@ -365,6 +371,16 @@ func _sync_deals() -> void:
 
 
 ## (Host only) lets a waiting player in, or turns them away.
+## (Host) adds a player, or makes them a new PIN; pins_changed brings it.
+func add_player(name: String) -> void:
+	_send({"t": "add_player", "name": name})
+
+
+## (Host) takes a player's PIN away.
+func remove_pin(name: String) -> void:
+	_send({"t": "remove_pin", "name": name})
+
+
 func approve(name: String, ok: bool) -> void:
 	_send({"t": "approve", "name": name, "ok": ok})
 
@@ -447,7 +463,7 @@ func _poll(delta: float) -> void:
 		_connected = true
 		_mark("connected")
 		_send({"t": "hello", "v": RegionServer.PROTOCOL, "min": RegionServer.MIN_PROTOCOL, "code": invite_code,
-			"id": player_id, "name": player_name, "password": _password, "new": _new_account, "token": token})
+			"id": player_id, "name": player_name, "password": _password, "new": _new_account, "token": token, "pin": _pin})
 		_password = ""
 	elif state == MultiplayerPeer.CONNECTION_DISCONNECTED:
 		var was_joined := is_joined
@@ -525,6 +541,9 @@ func _handle(msg: Dictionary) -> void:
 			_unseen = region.stale_ids()
 			is_joined = true
 			joined.emit()
+		"pins":
+			pins = msg.get("list", []) if msg.get("list") is Array else []
+			pins_changed.emit()
 		"waiting":
 			token = str(msg.get("token", token))
 			waiting.emit(str(msg.get("reason", "")))

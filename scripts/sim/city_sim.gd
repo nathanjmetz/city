@@ -3444,6 +3444,9 @@ const COUNTY_PIECE := 200.0
 const COUNTY_STEP := 8.0
 ## A road's dead end this near a county road is taken on to it, metres.
 const COUNTY_REACH := 15.0
+## A joined county road goes on through a street's zoned frontage this far
+## to meet the street: about a lot's depth, metres.
+const COUNTY_THROUGH := 64.0
 ## A joined state highway is taken on this far each way, metres (a mile).
 const HIGHWAY_JOIN := 1608.0
 ## No lot's middle stands nearer a state highway than this, metres: its
@@ -3520,8 +3523,16 @@ func _pieces_along(at: Callable, length: float, dry := false) -> Array:
 				next = s
 				met = true
 				break
-			if zones.zone_at(here) != ZoneMap.Zone.NONE or farms.covers(here) \
-					or (dry and Terrain.water(q.x + o.x, q.y + o.y) >= 0.1):
+			var zoned := zones.zone_at(here) != ZoneMap.Zone.NONE
+			if zoned or farms.covers(here) or (dry and Terrain.water(q.x + o.x, q.y + o.y) >= 0.1):
+				# A street's zoned frontage doesn't keep the road from the
+				# street itself: it runs through to meet it, as a county road
+				# meets a town's street (the lots are platted around it).
+				var street := _street_ahead(at, s, minf(length, s + COUNTY_THROUGH), dry) if zoned else -1.0
+				if street > 0.0:
+					next = street
+					met = true
+					break
 				next = s - COUNTY_STEP
 				blocked = true
 				break
@@ -3549,6 +3560,23 @@ func _pieces_along(at: Callable, length: float, dry := false) -> Array:
 		pieces.append(c)
 		d = next
 	return pieces
+
+
+## How far along `at` the first of the town's roads lies between `from`
+## and `to` metres, over land a road may cross (zoned or not, but no farmyard
+## or water), or -1.
+func _street_ahead(at: Callable, from: float, to: float, dry: bool) -> float:
+	var o := terrain_offset
+	var s := from + COUNTY_STEP
+	while s <= to:
+		var q: Vector2 = at.call(s)
+		var here := Vector3(q.x, 0, q.y)
+		if not network.find_segment_near(here, COUNTY_STEP * 0.6).is_empty():
+			return s
+		if farms.covers(here) or (dry and Terrain.water(q.x + o.x, q.y + o.y) >= 0.1):
+			return -1.0
+		s += COUNTY_STEP
+	return -1.0
 
 
 ## A piece of road from `a` to `b` metres along `at`, bowed through the

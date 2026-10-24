@@ -2,6 +2,37 @@ extends SceneTree
 ## Run: godot --headless -s tests/test_road_tools.gd
 
 func _init() -> void:
+	# Brawn (CS2): drawing a road lines it up with nearby junctions and road
+	# ends, along their roads or square to them, with dotted lines; and shows
+	# the angle it makes with the road it starts on.
+	var al := CitySim.new()
+	al.apply({"type": "build_road", "start": [0, 0], "ctrl": [50, 0], "end": [100, 0]})
+	al.apply({"type": "build_road", "start": [200, 100], "ctrl": [200, 200], "end": [200, 300]})
+	var at := RoadTool.new()
+	at.sim = al
+	at.network = al.network
+	at.mode = RoadTool.Mode.STRAIGHT
+	at._px = 1.0
+	var none := Vector3(INF, 0, INF)
+	var q := at._align(Vector3(150, 0, 4), none)
+	_check(q.distance_to(Vector3(150, 0, 0)) < 0.01 and at._align_lines.size() == 1, "a point lines up straight on from a road end")
+	q = at._align(Vector3(203, 0, 5), none)
+	_check(q.distance_to(Vector3(200, 0, 0)) < 0.01 and at._align_lines.size() == 2, "where two guide lines cross, it snaps to the crossing")
+	q = at._align(Vector3(150, 0, 60), none)
+	_check(q.distance_to(Vector3(150, 0, 60)) < 0.01 and at._align_lines.is_empty(), "far from every guide it stays free")
+	q = at._align(Vector3(150, 0, -6), Vector3(150, 0, -100), PI * 0.5)
+	_check(q.distance_to(Vector3(150, 0, 0)) < 0.01, "along a fixed direction it slides to where a guide crosses")
+	var c30 := Vector3(50, 0, 0) + Vector3(cos(deg_to_rad(30.0)), 0, sin(deg_to_rad(30.0))) * 80.0
+	at._show_angles([Vector3(50, 0, 0), Vector3(50, 0, 0).lerp(c30, 0.5), c30])
+	_check(at._angle_labels[0].text == "30° sharp", "a 30° crossing reads sharp (got %s)" % at._angle_labels[0].text)
+	at._show_angles([Vector3(50, 0, 0), Vector3(50, 0, 40), Vector3(50, 0, 80)])
+	_check(at._angle_labels[0].text == "90°", "a square crossing reads 90° (got %s)" % at._angle_labels[0].text)
+	at._show_angles([Vector3(100, 0, 0), Vector3(150, 0, 0), Vector3(200, 0, 0)])
+	_check(at._angle_labels[0].text == "180°", "straight on from a road end reads 180° (got %s)" % at._angle_labels[0].text)
+	for l in at._angle_labels:
+		l.free()
+	at.free()
+
 	# A 3 x 2 block grid: 3 streets one way, 4 the other, all joined.
 	var sim := CitySim.new()
 	var changes := [0]

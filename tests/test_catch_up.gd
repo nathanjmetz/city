@@ -143,8 +143,15 @@ func _test_server() -> void:
 	ann.join(url, "ABC123", "p-ann", "Ann")
 	await _until(func(): return ann.is_joined)
 	_check(ann.away.is_empty(), "a first visit has nothing to catch up")
+	# The host adds Bob; he gets in with his PIN.
+	ann.add_player("Bob")
+	await _until(func(): return ann.pins.size() == 2)
+	var bob_pin := ""
+	for pp in ann.pins:
+		if pp.name == "Bob":
+			bob_pin = str(pp.pin)
 	var bob := _client()
-	bob.join(url, "ABC123", "p-bob", "Bob")
+	bob.join(url, "", "p-bob", "", "", false, "", bob_pin)
 	await _until(func(): return bob.is_joined)
 	ann.leave()
 	await _until(func(): return server.region.away.has(ann.my_city))

@@ -147,7 +147,7 @@ func play_solo(path: String) -> void:
 # --- Shared regions ----------------------------------------------------------
 
 ## Starts joining a region. The client's joined or failed signal says how it went.
-func join_region(server: String, code: String, password := "", new_account := false) -> RegionClient:
+func join_region(server: String, code: String, password := "", new_account := false, pin := "") -> RegionClient:
 	leave_region(false)
 	server = normalize_server(server)
 	code = code.strip_edges().to_upper().replace("-", "").replace(" ", "")
@@ -163,9 +163,13 @@ func join_region(server: String, code: String, password := "", new_account := fa
 		LoadingScreen.close())
 	client.joined.connect(func():
 		_keep_token(server, code, client.token)
+		# The name the host gave you (with a PIN) is yours on this device.
+		if client.player_name != "" and client.player_name != str(profile.name):
+			profile.name = client.player_name
+			save_profile()
 		_keep_page_invite(code))
 	client.join(server, code, profile.id, str(profile.name), password, new_account,
-		"" if password != "" else _token_for(code))
+		"" if password != "" or pin != "" else _token_for(code), pin)
 	return client
 
 

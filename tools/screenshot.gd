@@ -170,6 +170,9 @@ func _demo_town() -> void:
 	if args0.size() >= 5 and args0[4] == "forest":
 		_demo_forest(sim)
 		return
+	if args0.size() >= 5 and args0[4] == "brawn_grid":
+		_demo_brawn_grid(sim)
+		return
 	if args0.size() >= 5 and args0[4] == "state":
 		_demo_state(sim)
 		return
@@ -381,6 +384,39 @@ func _demo_county(sim: CitySim) -> void:
 					c.look_at_point(Vector3(x, 0, z))
 					c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
 			return
+
+
+## Brawn's county road report (2026-10-24): a grid of blocks beside the
+## county highway he started on, with a section line just past its end.
+func _demo_brawn_grid(sim: CitySim) -> void:
+	var o: Vector2 = sim.terrain_offset
+	# The first north-south section line east of the town's middle.
+	var line := ceilf((o.x + 200.0) / CountyGrid.SECTION) * CountyGrid.SECTION - o.x
+	var z0 := -340.0 + 40.0
+	var b := line - 50.0
+	var a := b - 480.0
+	print("line x ", line, " grid ", a, "..", b)
+	sim.apply({"type": "build_grid", "a": [a, z0], "b": [b, z0], "c": [a, z0 + 240.0], "block": 120.0, "join": true})
+	print("joined ", sim.county_joined.keys())
+	var args := OS.get_cmdline_user_args()
+	if args.size() >= 6 and args[5] == "street":
+		# Zoned like Brawn's town, the county highway's frontage too.
+		for id in sim.network.segments.keys():
+			if sim.network.segments.has(id) and not sim.is_link_segment(id):
+				for side in [-1, 1]:
+					sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": ZoneMap.Zone.RESIDENTIAL})
+		sim.apply({"type": "build_road", "start": [b, z0 + 120.0], "ctrl": [(b + line) * 0.5, z0 + 120.0],
+			"end": [line, z0 + 120.0], "road": 0, "join": true})
+		print("joined after street ", sim.county_joined.keys())
+	var gravel := 0
+	for id in sim.network.segments:
+		if sim.network.segments[id].type == RoadStyle.Type.GRAVEL:
+			gravel += 1
+			print("gravel ", sim.network.curve_of(id)[0], sim.network.curve_of(id)[2])
+	for c in _main.get_children():
+		if c is CityCamera:
+			c.look_at_point(Vector3(line - 150.0, 0, z0 + 50.0))
+			c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
 
 
 ## A street drawn out to the nearest state highway, which joins it to town.
