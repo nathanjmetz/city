@@ -35,6 +35,9 @@ const ISSUES := {
 	"tiny": ["2 impossible", "a lot too small for a building (under 140 m², 1,500 sq ft)"],
 	"landlocked": ["2 impossible", "a lot with under 4 m on any street"],
 	"long_strip": ["2 impossible", "a lot over 6 times deeper than wide"],
+	"too_deep": ["4 rare", "a home or shop lot over 60 m (200 ft) deep"],
+	"depth_jump": ["4 rare", "a lot over 1.8 times deeper than its neighbour on the same street"],
+	"shop_behind": ["2 impossible", "a shop or plant lot set behind other lots (a flag lot)"],
 	"jagged": ["2 impossible", "a jagged or L-shaped lot (under 80% of its hull)"],
 	"odd_unforced": ["4 rare", "an odd-shaped lot where the street is straight and the corner square"],
 	"odd_forced": ["1 possible", "an odd-shaped lot where a curve or skewed road forces it (fine)"],
@@ -49,8 +52,16 @@ const ISSUES := {
 
 const FAMILIES := ["grid", "rotated_grid", "odd_grid", "skew_cross", "triangle", "curves",
 	"rounded", "deep", "t_junction", "arterial", "radial", "cul_de_sac", "lanes"]
+## Smart paint (SmartZoning.plan) on towns partly zoned already, with homes
+## going up between steps: scenarios from SMART_FROM on.
+const SMART_FAMILIES := ["smart_grid", "smart_rotated_grid", "smart_arterial", "smart_odd_grid"]
+const SMART_FROM := 1000
+## A full run: the 1000 hand-zoned towns and 200 smart-painted ones. Budgets
+## are per full run.
+const RUN := 1200
 ## Families where every street is straight and every corner square.
-const SQUARE := ["grid", "rotated_grid", "deep", "lanes", "t_junction", "cul_de_sac"]
+const SQUARE := ["grid", "rotated_grid", "deep", "lanes", "t_junction", "cul_de_sac",
+	"smart_grid", "smart_rotated_grid"]
 
 var budgets := {}
 var pngs := 0
@@ -71,7 +82,7 @@ func _init() -> void:
 	if args.has("merge"):
 		report = _merge(str(args.merge).split(","))
 	else:
-		var count := int(args.get("count", "1000"))
+		var count := int(args.get("count", str(RUN)))
 		var seed := int(args.get("seed", "1"))
 		var idx := []
 		if args.has("only"):
@@ -138,8 +149,8 @@ func run(seed: int, idx: Array, verbose: bool) -> Dictionary:
 func scenario(seed: int, i: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([seed, i, "zoning"])
-	var family: String = FAMILIES[i % FAMILIES.size()]
-	return {"index": i, "family": family, "roads": _roads(family, rng), "rng": rng,
+	var family: String = FAMILIES[i % FAMILIES.size()] if i < SMART_FROM else SMART_FAMILIES[i % SMART_FAMILIES.size()]
+	return {"index": i, "family": family, "roads": _roads(family.trim_prefix("smart_"), rng), "rng": rng,
 		# A third of scenarios have homes going up between clicks.
 		"grow": rng.randf() < 0.35,
 		# Half zone one kind only, so the click order can't matter.
@@ -318,6 +329,22 @@ func play(sc: Dictionary) -> Dictionary:
 					grown += 1
 			sim.tick()
 			continue
+		if step.type == "smart":
+			# Smart paint as the zone tool sends it: each planned street side
+			# held, then the lots cut once.
+			var plan := SmartZoning.plan(sim, int(step.seg), int(step.scope), step.kinds)
+			for part in plan.parts:
+				var cmd := {"type": "zone_frontage", "seg": part.seg, "side": part.side, "zone": part.zone, "hold": true}
+				if part.span.size() == 2:
+					cmd.span = part.span
+				else:
+					cmd.single = true
+				sc.log.append(cmd)
+				if not sim.apply(cmd):
+					_add(issues, "script_error", {"at": [0, 0], "what": JSON.stringify(cmd)})
+			sc.log.append({"type": "zone_done"})
+			sim.apply({"type": "zone_done"})
+			continue
 		sc.log.append(step)
 		if not sim.apply(step) and step.type != "zone_done":
 			_add(issues, "script_error", {"at": [0, 0], "what": JSON.stringify(step)})
@@ -376,6 +403,9 @@ static func _settle(sim: CitySim) -> void:
 ## with Shift for both sides), drags along part of a street, a round brush in
 ## odd spots, now and then an erase, and homes going up between clicks.
 func _zoning(sim: CitySim, sc: Dictionary, rng: RandomNumberGenerator) -> Array:
+	if sc.family.begins_with("smart_"):
+		sc.one_zone = false
+		sc.grow = rng.randf() < 0.7
 	var faces := []
 	for id in sim.network.segments:
 		for side in [-1, 1]:
@@ -387,7 +417,8 @@ func _zoning(sim: CitySim, sc: Dictionary, rng: RandomNumberGenerator) -> Array:
 		var t = faces[k]
 		faces[k] = faces[j]
 		faces[j] = t
-	var take := maxi(1, int(faces.size() * rng.randf_range(0.4, 1.0)))
+	var smart: bool = sc.family.begins_with("smart_")
+	var take := maxi(1, int(faces.size() * (rng.randf_range(0.0, 0.5) if smart else rng.randf_range(0.4, 1.0))))
 	var out := []
 	var zone_of := func() -> int:
 		if sc.one_zone:
@@ -428,6 +459,19 @@ func _zoning(sim: CitySim, sc: Dictionary, rng: RandomNumberGenerator) -> Array:
 				out.append({"type": "zone_done"})
 				dragging = false
 			out.append({"type": "grow", "n": rng.randi_range(2, 8)})
+	if smart:
+		# Then Smart paint from one to three spots, homes going up between.
+		if dragging:
+			out.append({"type": "zone_done"})
+		var segs := sim.network.segments.keys()
+		segs.sort()
+		for k in rng.randi_range(1, 3):
+			var kinds := {ZoneMap.Zone.RESIDENTIAL: true, ZoneMap.Zone.COMMERCIAL: true}
+			if rng.randf() < 0.25:
+				kinds[ZoneMap.Zone.INDUSTRIAL] = true
+			out.append({"type": "smart", "seg": segs[rng.randi() % segs.size()], "scope": rng.randi_range(1, 2), "kinds": kinds})
+			if sc.grow:
+				out.append({"type": "grow", "n": rng.randi_range(3, 10)})
 	return out
 
 
@@ -466,6 +510,12 @@ func score(sim: CitySim, sc: Dictionary) -> Dictionary:
 			_add(issues, "tiny", _what(hit, "%.0f m²" % area))
 		if not lot.flag and lot.width > 0.0 and lot.depth / lot.width > 6.0:
 			_add(issues, "long_strip", _what(hit, "%.0f x %.0f m" % [lot.width, lot.depth]))
+		# Real plats: shops and homes 30-50 m deep, 60 m at most; shops and
+		# plants always on the street, never down a drive.
+		if not lot.flag and zone != ZoneMap.Zone.INDUSTRIAL and lot.depth > 60.0:
+			_add(issues, "too_deep", _what(hit, "%.0f m deep" % lot.depth))
+		if lot.flag and zone != ZoneMap.Zone.RESIDENTIAL:
+			_add(issues, "shop_behind", _what(hit, ZoneMap.NAMES[zone]))
 		var hull := Geometry2D.convex_hull(c)
 		if not lot.flag and area < absf(LotPlanner._area(hull)) * 0.8:
 			_add(issues, "jagged", _what(hit, "%.0f%% of hull" % (100.0 * area / absf(LotPlanner._area(hull)))))
@@ -502,6 +552,7 @@ func score(sim: CitySim, sc: Dictionary) -> Dictionary:
 			else:
 				_add(issues, "odd_unforced", _what(hit, "%.0f%% of its rectangle" % (rect * 100.0)))
 	_overlaps(sim, keys, issues)
+	_depth_jumps(sim, keys, issues)
 	_empty_frontage(sim, issues)
 	_gaps(sim, roads, issues)
 	return {"issues": issues, "lots": keys.size(), "grid_lots": grid_lots, "grid_rect": grid_rect}
@@ -596,6 +647,34 @@ static func _forced(sim: CitySim, lot: Dictionary, c: PackedVector2Array, near: 
 		if minf(off, 90.0 - off) > 6.0:
 			return true
 	return false
+
+
+## Neighbouring lots along one street side whose depths differ a lot: a real
+## block face has one depth, back to the same line.
+static func _depth_jumps(sim: CitySim, keys: Array, issues: Dictionary) -> void:
+	var faces := {}
+	for k in keys:
+		var l: Dictionary = sim.lots[k]
+		if l.flag:
+			continue
+		var f := "%d:%d" % [l.seg, l.side]
+		if not faces.has(f):
+			faces[f] = []
+		faces[f].append(k)
+	for f in faces:
+		var row: Array = faces[f]
+		row.sort_custom(func(a, b): return sim.lots[a].at_frac < sim.lots[b].at_frac)
+		for i in row.size() - 1:
+			var a: Dictionary = sim.lots[row[i]]
+			var b: Dictionary = sim.lots[row[i + 1]]
+			if not LotPlanner._box(a.corners).grow(1.0).intersects(LotPlanner._box(b.corners)):
+				continue
+			var hi := maxf(a.depth, b.depth)
+			var lo := minf(a.depth, b.depth)
+			if lo > 0.0 and hi / lo > 1.8:
+				var at := LotPlanner._centroid(a.corners)
+				_add(issues, "depth_jump", {"at": [snappedf(at.x, 0.1), snappedf(at.y, 0.1)], "lots": [row[i], row[i + 1]],
+					"what": "%.0f m next to %.0f m" % [hi, lo]})
 
 
 static func _overlaps(sim: CitySim, keys: Array, issues: Dictionary) -> void:
@@ -815,7 +894,7 @@ func _over_budget(report: Dictionary) -> Array:
 	for k in budgets:
 		if k.begins_with("_"):
 			continue
-		var limit: float = float(budgets[k]) * report.scenarios / 1000.0
+		var limit: float = float(budgets[k]) * report.scenarios / RUN
 		var seen := int(report.issues.get(k, {}).get("scenarios", 0))
 		if seen > ceili(limit):
 			over.append("%s in %d scenarios, budget %d" % [k, seen, ceili(limit)])
