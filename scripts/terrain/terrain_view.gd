@@ -105,6 +105,7 @@ varying vec3 world_pos;
 varying vec4 cover;
 varying float steep;
 varying vec2 town;
+varying float lift;
 
 vec2 turn(vec2 p, float a) {
 	return vec2(p.x * cos(a) - p.y * sin(a), p.x * sin(a) + p.y * cos(a));
@@ -117,6 +118,20 @@ void vertex() {
 	vec3 coarse = vec3(CUSTOM0.y, sqrt(max(1.0 - CUSTOM0.y * CUSTOM0.y - CUSTOM0.z * CUSTOM0.z, 0.0)), CUSTOM0.z);
 	NORMAL = normalize(mix(NORMAL, coarse, morph));
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	// Woods past the drawn trees stand up as their canopy, about as tall as
+	// the trees (a hardwood woodlot is 15-25 m): a shell over the land with a
+	// shaded wall at each edge, as Flight Simulator and Anno draw far
+	// forest, so they keep their volume and skyline where the trees stop,
+	// not a flat painted ring. Lower in winter, when the crowns are bare
+	// twigs; never on graded or mowed town land, where roads and lots lie.
+	float reach_v = distance(world_pos.xz, tree_fade.xy);
+	float painted_v = max(smoothstep(tree_fade.z * 0.55, tree_fade.z * 0.97, reach_v),
+		smoothstep(250.0, 1100.0, tree_fade.w));
+	lift = smoothstep(0.45, 0.8, COLOR.r) * painted_v * (1.0 - clamp(max(UV.x, UV.y) * 4.0, 0.0, 1.0));
+	// Uneven, as crowns of different ages and species are: 10-20 m.
+	float rough = textureLod(noise_soft, world_pos.xz / 90.0, 0.0).r;
+	VERTEX.y += lift * mix(10.0, 20.0, rough) * (1.0 - season_look.y * 0.5);
+	world_pos.y = (MODEL_MATRIX * vec4(VERTEX, 1.0)).y;
 	cover = COLOR;
 	steep = 1.0 - NORMAL.y;
 	town = UV;
@@ -257,6 +272,12 @@ void fragment() {
 	float gap = smoothstep(0.75, 1.05, length(slope));
 	vec3 tint = mix(vec3(1.08, 1.04, 0.82), vec3(0.9, 1.0, 1.08), crown_hash);
 	vec3 tops = leaves * 1.5 * mix(vec3(1.0), tint, 0.6) * (0.85 + 0.3 * big) * (0.8 + 0.4 * crowns);
+	// As dark as the drawn woods it carries on from: their crowns shade
+	// each other and the gaps between are in shadow, so seen from above they
+	// read darker and a little bluer than a lit crown top (measured where
+	// they meet in the browser, 2026-10-24; the canopy shell's own shaded
+	// sides do the rest).
+	tops *= vec3(0.9, 0.88, 0.93);
 	tops *= mix(0.88, 1.0 - gap * 0.55, relief);
 	// Painted past the trees drawn (fading in as they thin out, each crown
 	// at its own distance, so the edge is ragged like the trees'), and under
@@ -276,6 +297,13 @@ void fragment() {
 	// The dome of each painted crown, leaning the ground normal toward its edge.
 	float dome = in_woods * painted * relief * (1.0 - gap) * (1.0 - season_look.y * 0.7);
 	vec3 up_n = (INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz;
+	// The canopy shell's own slopes (its edges) from the drawn surface: they
+	// face the sun or turn away from it, and are the woods' shaded sides.
+	vec3 shell_n = normalize(cross(dFdy(world_pos), dFdx(world_pos)));
+	shell_n *= sign(shell_n.y + 0.0001);
+	float side = (1.0 - shell_n.y) * smoothstep(0.02, 0.2, lift);
+	up_n = normalize(mix(up_n, shell_n, smoothstep(0.02, 0.2, lift)));
+	col *= 1.0 - side * 0.45;
 	vec3 crown_n = normalize(up_n + vec3(slope.x, 0.0, slope.y) * 1.1 * dome);
 	NORMAL = normalize((VIEW_MATRIX * vec4(crown_n, 0.0)).xyz);
 
