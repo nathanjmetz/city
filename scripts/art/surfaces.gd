@@ -276,8 +276,8 @@ void fragment() {
 	crop *= 1.0 - gap * 0.22 - tram * 0.12;
 	crop *= 0.96 + grain * 0.08;
 	// Fencerow verge: rough grass with brushy darker clumps.
-	vec3 verge = mix(vec3(0.11, 0.16, 0.05), vec3(0.17, 0.17, 0.08), mid);
-	verge *= 0.75 + grain * 0.45;
+	vec3 verge = mix(vec3(0.15, 0.21, 0.07), vec3(0.21, 0.22, 0.1), mid);
+	verge *= 0.85 + grain * 0.3;
 	ALBEDO = mix(verge, crop, COLOR.a);
 	ROUGHNESS = 0.95;
 	SPECULAR = 0.25;

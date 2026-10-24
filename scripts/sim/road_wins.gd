@@ -15,8 +15,10 @@ const VERGE := 1.0
 ## Buildings may stand flush with the right of way (placing allows half a
 ## metre over it), so only a road that takes more than this clears them.
 const BUILDING_SLACK := -1.0
-## A trimmed field keeps going while this much of it is left.
-const MIN_FIELD_SHARE := 0.4
+## A trimmed field keeps going while this much of it is left: farmers
+## plant right up to the ditch, so the field's edge runs along the road
+## instead of leaving a 40 m notch where a road clipped a corner.
+const MIN_FIELD_SHARE := 0.15
 ## Pieces smaller than this (square metres) are slivers and go back to grass.
 const MIN_PIECE := 150.0
 
