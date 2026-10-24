@@ -7,23 +7,18 @@ extends Node3D
 ## Three tool types, like CS2's (Tab steps through them):
 ## - Street: a click zones the block face, a drag just that stretch.
 ## - Brush: a round brush for odd spots; [ and ] (or the size meter) size it.
-## - Smart: zones each street side the way you have zoned that kind of street
-##   before, matched to what's across the street and around it (a planner
-##   extends the zoning a town already has; Euclidean zoning maps run along
-##   street types: shops on the avenues, homes on the local streets).
+## - Smart: plans a street or a whole neighborhood the way a town planner
+##   would (SmartZoning), with only the zones you tick, shows the plan and
+##   paints it when you approve; it never paints over zoning already there.
 
 signal zone_changed(zone: int)
 signal hint_changed(text: String)
 signal mode_changed(mode: int)
+## A smart plan waits for approval: its summary, or "" when none waits.
+signal smart_plan_changed(text: String)
 
 enum Mode { STREET, BRUSH, SMART }
 const MODE_NAMES := ["Street", "Brush", "Smart"]
-const HABITS_PATH := "user://zone_habits.cfg"
-## How much each clue counts in a smart guess (habits add up to 1).
-const ACROSS_WEIGHT := 0.8
-const AROUND_WEIGHT := 0.5
-const AROUND_RADIUS := 120.0
-const AROUND_STEP := 30.0
 
 const OFF := -1
 const MIN_RADIUS := 4.0
@@ -44,12 +39,12 @@ var mode := Mode.STREET
 ## The round brush (read-only: mode is the switch).
 var brush: bool:
 	get: return mode == Mode.BRUSH
-## How this player has zoned each street type: {type: {zone: count}}. Kept
-## on this computer (it's how you like to zone, not part of the town).
-var habits := {}
-## Smart guesses for this hover or drag, so they don't flicker: "seg:side" -> zone.
-var _guesses := {}
-var _smart_sides := {}  # "seg:side" -> [seg, side] a smart drag went over
+## Smart paint: how much to plan, and which zones it may use.
+var smart_scope := SmartZoning.Scope.SMALL
+var smart_kinds := {ZoneMap.Zone.RESIDENTIAL: true, ZoneMap.Zone.COMMERCIAL: true, ZoneMap.Zone.INDUSTRIAL: false}
+var _plan := {}         # the smart plan shown (SmartZoning.plan)
+var _plan_seg := -1     # the street it was planned from
+var _waiting := false   # a clicked plan waits for Paint it or Cancel
 
 var _painting := false
 var _last_paint := Vector3.INF
@@ -69,7 +64,6 @@ func setup(s: CitySim, camera: CityCamera, view: ZoneView) -> void:
 
 
 func _ready() -> void:
-	_load_habits()
 	_ring_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_ring_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_ring_mat.no_depth_test = true
@@ -85,6 +79,8 @@ func set_zone(z: int) -> void:
 	zone_view.show_all = zone != OFF
 	zone_view.preview_zone = maxi(zone, 0)
 	if zone == OFF:
+		if _waiting:
+			cancel_smart()
 		_hover = []
 		zone_view.preview = []
 	_update_ring()
@@ -113,14 +109,20 @@ func _unhandled_input(event: InputEvent) -> void:
 		_painting = event.pressed and not (event as InputEventMouseButton).alt_pressed
 		_last_paint = Vector3.INF
 		_spans.clear()
-		_smart_sides.clear()
 		_dragging = false
 		_press = (event as InputEventMouseButton).position
 		if _painting and brush:
 			_paint()
 	elif event is InputEventMouseButton and not event.pressed \
 			and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_RIGHT and not cam.right_dragged:
-		set_zone(OFF)
+		if _waiting:
+			cancel_smart()
+		else:
+			set_zone(OFF)
+	elif _waiting and event is InputEventKey and event.pressed and not event.echo \
+			and (event as InputEventKey).keycode in [KEY_ENTER, KEY_KP_ENTER]:
+		approve_smart()
+		get_viewport().set_input_as_handled()
 
 
 func _process(_delta: float) -> void:
@@ -139,9 +141,7 @@ func _process(_delta: float) -> void:
 	elif _painting:
 		if not _dragging and get_viewport().get_mouse_position().distance_to(_press) > DRAG_PX:
 			_dragging = true
-		if _dragging and mode == Mode.SMART:
-			_smart_extend()
-		elif _dragging:
+		if _dragging and mode != Mode.SMART:
 			_extend(hit)
 
 
@@ -211,28 +211,22 @@ func _release() -> void:
 		return
 	var both := Input.is_key_pressed(KEY_SHIFT)
 	if mode == Mode.SMART:
-		var sides := _smart_sides.values() if _dragging else ([_hover] if not _hover.is_empty() else [])
-		for sd in _with_across(sides, both):
-			_held = sim.apply({"type": "zone_frontage", "seg": sd[0], "side": sd[1], "zone": guess(sd[0], sd[1]),
-				"hold": true}) or _held
-		_smart_sides.clear()
-		_guesses.clear()
+		# A click holds the plan shown for approval (a drag only looks around).
+		if not _dragging and not _waiting and not (_plan.get("parts", []) as Array).is_empty():
+			_waiting = true
+			smart_plan_changed.emit(smart_summary())
 		_dragging = false
-		_hover = []
-		_update_hint()
 		return
 	if _dragging:
 		for r in _runs():
 			_held = sim.apply({"type": "zone_frontage", "seg": r[0], "side": r[1], "zone": zone,
 				"span": [r[2], r[3]], "both": both, "hold": true}) or _held
-			_learn(r[0], zone)
 		_spans.clear()
 		_dragging = false
 		_hover = []  # shows the block face under the mouse again
 		_update_hint()
 	elif not _hover.is_empty():
 		sim.apply({"type": "zone_frontage", "seg": _hover[0], "side": _hover[1], "zone": zone, "both": both})
-		_learn(_hover[0], zone)
 
 
 ## The street side under the mouse, with its whole block face shown.
@@ -255,8 +249,8 @@ func _update_hover(hit) -> void:
 		zone_view.preview = []
 		return
 	if mode == Mode.SMART:
-		_guesses.clear()
-		_show_smart([h])
+		if not _waiting:
+			_show_plan(h[0])
 		return
 	var parts := sim.frontage_chain(h[0], h[1])
 	if Input.is_key_pressed(KEY_SHIFT):
@@ -265,178 +259,99 @@ func _update_hover(hit) -> void:
 	zone_view.preview = parts
 
 
-## A smart drag: every street side it crosses, each zoned its own way.
-func _smart_extend() -> void:
-	if _hover.is_empty():
-		return
-	var key := "%d:%d" % [_hover[0], _hover[1]]
-	if _smart_sides.has(key):
-		return
-	_smart_sides[key] = _hover.duplicate()
-	_show_smart(_smart_sides.values())
-
-
-## Shows street sides' whole block faces in the zones a smart click would give them.
-func _show_smart(sides: Array) -> void:
+## Plans the area around a street with the scope and zones chosen, and shows
+## it (each part in its zone's colour).
+func _show_plan(seg: int) -> void:
+	_plan_seg = seg
+	_plan = SmartZoning.plan(sim, seg, smart_scope, _kinds())
 	var parts := []
 	var zones := []
-	var counts := {}
-	for sd in _with_across(sides, Input.is_key_pressed(KEY_SHIFT)):
-		var z := guess(sd[0], sd[1])
-		counts[z] = counts.get(z, 0) + 1
-		for part in sim.frontage_chain(sd[0], sd[1]):
-			parts.append(part)
-			zones.append(z)
+	for p in _plan.parts:
+		parts.append([p.seg, p.side, p.span[0], p.span[1]] if p.span.size() == 2 else [p.seg, p.side])
+		zones.append(p.zone)
 	zone_view.preview_zones = zones
 	zone_view.preview = parts
-	if sides.size() == 1:
-		hint_changed.emit("Smart: %s here (%s).  Click to zone it, or drag across streets.  Shift: both sides   Tab: tool   Right click to stop." \
-			% [ZoneMap.NAMES[guess(sides[0][0], sides[0][1])], why(sides[0][0], sides[0][1])])
+	if parts.is_empty():
+		hint_changed.emit("Smart paint: nothing unzoned here to plan.  Tab: tool   Right click to stop.")
 	else:
-		var bits := []
-		for z in counts:
-			bits.append("%d %s" % [counts[z], ZoneMap.NAMES[z]])
-		hint_changed.emit("Smart: %d street sides (%s).  Let go to zone them." % [sides.size(), ", ".join(bits)])
+		hint_changed.emit("Smart paint: %s.  Click to review the plan.  Tab: tool   Right click to stop." % smart_summary())
 
 
-func _with_across(sides: Array, both: bool) -> Array:
-	var out := []
+func _kinds() -> Dictionary:
+	var k := {}
+	for z in smart_kinds:
+		if smart_kinds[z]:
+			k[z] = true
+	return k
+
+
+## The plan in a line: how many street sides of each zone, and why.
+func smart_summary() -> String:
+	var sides := {}
+	var count := {}
 	var seen := {}
-	for sd in sides:
-		for side in ([sd[1], -sd[1]] if both else [sd[1]]):
-			var key := "%d:%d" % [sd[0], side]
-			if not seen.has(key):
-				seen[key] = true
-				out.append([sd[0], side])
-	return out
-
-
-## The zone smart paint gives a street side: how you've zoned that street type
-## before, what's across the street, and what's around it.
-func guess(seg: int, side: int) -> int:
-	var key := "%d:%d" % [seg, side]
-	if _guesses.has(key):
-		return _guesses[key]
-	var sc := _scores(seg, side)
-	var best := ZoneMap.Zone.RESIDENTIAL
-	for z in [ZoneMap.Zone.RESIDENTIAL, ZoneMap.Zone.COMMERCIAL, ZoneMap.Zone.INDUSTRIAL]:
-		if sc[z] > sc[best] + 0.001:
-			best = z
-	_guesses[key] = best
-	return best
-
-
-func _scores(seg: int, side: int) -> Dictionary:
-	var sc := {ZoneMap.Zone.RESIDENTIAL: 0.0, ZoneMap.Zone.COMMERCIAL: 0.0, ZoneMap.Zone.INDUSTRIAL: 0.0}
-	if not sim.network.segments.has(seg):
-		return sc
-	var t: int = sim.network.segments[seg].type
-	var h: Dictionary = habits.get(t, {})
-	var total := 0.0
-	for z in h:
-		total += h[z]
-	if total > 0.0:
-		for z in h:
-			if sc.has(z):
-				sc[z] += h[z] / total
-	else:
-		# Nothing learned yet: shops on the busy streets, homes on the rest.
-		var lanes: int = RoadStyle.TYPES[t].get("lanes", 2)
-		sc[ZoneMap.Zone.COMMERCIAL if lanes >= 4 else ZoneMap.Zone.RESIDENTIAL] += 0.6
-	var across := _side_zone(seg, -side)
-	if sc.has(across):
-		sc[across] += ACROSS_WEIGHT
-	var around := _around(seg, side)
-	var n := 0.0
-	for z in around:
-		n += around[z]
-	for z in around:
-		if sc.has(z):
-			sc[z] += AROUND_WEIGHT * around[z] / n
-	return sc
-
-
-## Why smart paint picked what it did, in a few words.
-func why(seg: int, side: int) -> String:
-	var z := guess(seg, side)
-	var t: int = sim.network.segments[seg].type
-	var h: Dictionary = habits.get(t, {})
-	var total := 0
-	for k in h:
-		total += h[k]
-	var road: String = RoadStyle.TYPES[t].name.to_lower()
+	for p in _plan.get("parts", []):
+		sides["%d:%d" % [p.seg, p.side]] = true
+		var key := "%d:%d:%d" % [p.seg, p.side, p.zone]
+		if not seen.has(key):
+			seen[key] = true
+			count[p.zone] = count.get(p.zone, 0) + 1
 	var bits := []
-	if total > 0 and h.get(z, 0) > 0:
-		bits.append("you zone %ss as %s %d of %d times" % [road, ZoneMap.NAMES[z].to_lower(), h[z], total])
-	if _side_zone(seg, -side) == z:
-		bits.append("matches across the street")
-	var around := _around(seg, side)
-	var top := -1
-	for k in around:
-		if top < 0 or around[k] > around[top]:
-			top = k
-	if top == z:
-		bits.append("fits the area")
-	if bits.is_empty():
-		bits.append("a usual fit for a %s" % road)
-	return ", ".join(bits)
+	for z in [ZoneMap.Zone.RESIDENTIAL, ZoneMap.Zone.COMMERCIAL, ZoneMap.Zone.INDUSTRIAL]:
+		if count.has(z):
+			bits.append("%d %s" % [count[z], {ZoneMap.Zone.RESIDENTIAL: "homes", ZoneMap.Zone.COMMERCIAL: "shops",
+				ZoneMap.Zone.INDUSTRIAL: "industry"}[z]])
+	var area: String = ["This street", "This neighborhood", "The wider neighborhood"][smart_scope]
+	return "%s: %d street sides (%s): %s" % [area, sides.size(), ", ".join(bits), ", ".join(_plan.get("why", []))]
 
 
-## The zone of a street side, read at the middle of its frontage (0 if none).
-func _side_zone(seg: int, side: int) -> int:
-	var s := sim.planner.side_survey(sim.network, seg, side)
-	if s.is_empty() or s.rays.is_empty():
-		return 0
-	var r: Array = s.rays[s.rays.size() / 2]
-	if r[3] < 0.0:
-		return 0
-	var p: Vector2 = (r[1] as Vector2) + (r[2] as Vector2) * LotPlanner.ZONE_PROBE
-	return sim.zones.zone_at(Vector3(p.x, 0.0, p.y))
-
-
-## Zoned ground around a street side's middle: {zone: samples}.
-func _around(seg: int, side: int) -> Dictionary:
-	var out := {}
-	var s := sim.planner.side_survey(sim.network, seg, side)
-	if s.is_empty() or s.fronts.is_empty():
-		return out
-	var mid: Vector2 = s.fronts[s.fronts.size() / 2][1]
-	var steps := int(AROUND_RADIUS / AROUND_STEP)
-	for i in range(-steps, steps + 1):
-		for j in range(-steps, steps + 1):
-			var off := Vector2(i, j) * AROUND_STEP
-			if off.length() > AROUND_RADIUS:
-				continue
-			var z := sim.zones.zone_at(Vector3(mid.x + off.x, 0.0, mid.y + off.y))
-			if z != 0:
-				out[z] = out.get(z, 0) + 1
-	return out
-
-
-## Remembers that the player zoned a street of this type this way.
-func _learn(seg: int, z: int) -> void:
-	if z == ZoneMap.Zone.NONE or not sim.network.segments.has(seg):
+## Paints the plan waiting for approval, all at once.
+func approve_smart() -> void:
+	if not _waiting:
 		return
-	var t: int = sim.network.segments[seg].type
-	var h: Dictionary = habits.get(t, {})
-	h[z] = h.get(z, 0) + 1
-	habits[t] = h
-	var cfg := ConfigFile.new()
-	for k in habits:
-		for zz in habits[k]:
-			cfg.set_value(str(k), str(zz), habits[k][zz])
-	cfg.save(HABITS_PATH)
+	for p in _plan.parts:
+		var cmd := {"type": "zone_frontage", "seg": p.seg, "side": p.side, "zone": p.zone, "hold": true}
+		if p.span.size() == 2:
+			cmd.span = p.span
+		else:
+			cmd.single = true
+		_held = sim.apply(cmd) or _held
+	_stop()
+	cancel_smart()
 
 
-func _load_habits() -> void:
-	var cfg := ConfigFile.new()
-	if cfg.load(HABITS_PATH) != OK:
-		return
-	for k in cfg.get_sections():
-		var h := {}
-		for zz in cfg.get_section_keys(k):
-			h[int(zz)] = int(cfg.get_value(k, zz, 0))
-		habits[int(k)] = h
+## Drops the plan waiting (or shown); the hover plans afresh.
+func cancel_smart() -> void:
+	var was := _waiting
+	_waiting = false
+	_plan = {}
+	_plan_seg = -1
+	_hover = []
+	zone_view.preview = []
+	if was:
+		smart_plan_changed.emit("")
+	_update_hint()
+
+
+func set_smart_scope(sc: int) -> void:
+	smart_scope = sc
+	_replan()
+
+
+func toggle_smart_kind(z: int) -> void:
+	smart_kinds[z] = not smart_kinds.get(z, false)
+	_replan()
+
+
+func _replan() -> void:
+	if _plan_seg >= 0 and sim.network.segments.has(_plan_seg):
+		_show_plan(_plan_seg)
+		if _waiting:
+			if (_plan.parts as Array).is_empty():
+				cancel_smart()
+			else:
+				smart_plan_changed.emit(smart_summary())
+	mode_changed.emit(mode)
 
 
 func set_mode(m: int) -> void:
@@ -444,8 +359,8 @@ func set_mode(m: int) -> void:
 	_painting = false
 	_dragging = false
 	_spans.clear()
-	_smart_sides.clear()
-	_guesses.clear()
+	if _waiting or mode != Mode.SMART:
+		cancel_smart()
 	_hover = []
 	zone_view.preview = []
 	_update_hint()
@@ -499,7 +414,8 @@ func _update_hint() -> void:
 		return
 	var verb: String = "Dezone" if zone == ZoneMap.Zone.NONE else "Zone " + ZoneMap.NAMES[zone]
 	if mode == Mode.SMART:
-		hint_changed.emit("Smart paint: point at a street side to see the zone it guesses from how you zone.  Click or drag across streets.  Tab: tool   Right click to stop.")
+		hint_changed.emit("Smart paint: point at a street to plan %s with the zones ticked.  Click to review it.  Tab: tool   Right click to stop." \
+			% ["it", "its neighborhood", "its wider neighborhood"][smart_scope])
 	elif brush:
 		hint_changed.emit("%s with the brush: drag over the street edge.  Brush %d m  [ ]   Tab: tool   Right click to stop." \
 			% [verb, int(radius)])
