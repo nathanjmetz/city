@@ -1,5 +1,5 @@
 # Zones 1000 made-up towns (grids, curves, skewed crossings, triangles,
-# deep blocks, odd land) in random click, drag and brush orders, with homes
+# deep blocks, odd land), plus 200 partly zoned ones finished with Smart paint, in random click, drag and brush orders, with homes
 # going up between clicks, and scores every lot (tools/zoning_stress.gd).
 # The summary page ranks the lot-shape problems found; the run turns red when
 # a problem shows up in more towns than tools/zoning_stress_budgets.json
@@ -14,6 +14,7 @@ on:
       - scripts/sim/lot_planner.gd
       - scripts/sim/city_sim.gd
       - scripts/sim/zone_map.gd
+      - scripts/tools/smart_zoning.gd
       - scripts/roads/**
       - tools/zoning_stress.gd
       - tools/zoning_stress_budgets.json
@@ -22,7 +23,7 @@ on:
     inputs:
       count:
         description: Scenarios
-        default: "1000"
+        default: "1200"
 
 permissions:
   contents: read
@@ -33,7 +34,7 @@ concurrency:
 
 env:
   GODOT_VERSION: 4.7.2
-  COUNT: ${{ github.event.inputs.count || '1000' }}
+  COUNT: ${{ github.event.inputs.count || '1200' }}
 
 jobs:
   stress:
@@ -58,7 +59,7 @@ jobs:
           unzip -q godot.zip && rm godot.zip
           mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 godot
 
-      - name: Zone 1000 towns
+      - name: Zone 1200 towns
         run: |
           ~/godot-perf/godot --headless --import >/dev/null 2>&1 || true
           # Four at once, one per core.

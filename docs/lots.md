@@ -77,9 +77,13 @@ impossible, plain rectangles the easy default on square streets, and odd
 shapes where the street is straight and the corner square rare. It also
 checks zoned frontage that got no lots, unused land between lots, that the
 same zoning in reverse order gives the same lots, and that a save and reload
-keeps them.
+keeps them. Another 200 towns are partly zoned by hand, with homes going
+up, then finished with Smart paint (`SmartZoning.plan`) from one to three
+spots. It also flags home and shop lots over 60 m deep, a lot over 1.8 times
+deeper than its neighbour on the same street, and shops or plants on flag
+lots.
 
-    godot --headless -s tools/zoning_stress.gd -- --count=1000 --out=out --pngs=2
+    godot --headless -s tools/zoning_stress.gd -- --out=out --pngs=2
     godot --headless -s tools/zoning_stress.gd -- --only=123 --out=out   # one town, its commands and a plat
 
 `out/report.md` ranks the problems by how many towns show them, with an
