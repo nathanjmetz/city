@@ -37,6 +37,7 @@ const CURB_STALL := 7.0
 const CURB_APRON := 5.0
 const CURB_TRIES := 25
 const PARK_WALK := 250.0  # how far a driver walks from a stall to a full destination
+const CURB_SPACE := 6.7   # a parallel parking space at the curb, 22 ft (MUTCD 3B.19)
 ## How far a road's running speed eases each decision: 5% (with cars on it)
 ## and 2% (empty) a tenth of a second.
 const EASE_BUSY := 1.0 - 0.95 * 0.95 * 0.95
@@ -1981,6 +1982,15 @@ func _park_place(ref: String) -> Dictionary:
 	if stop.is_empty():
 		return {}
 	var hidden: bool = int(lay.levels) > 1
+	# People on foot leave by the walk beside the driveway: across the front
+	# drive, through the planted strip and out to the public sidewalk.
+	var wx: float = lay.walk_x
+	var zc: float = lay.front_z
+	var door := xf * Vector3(wx, 0.0, gate.y + ParkingLots.EDGE)
+	var at_walk := _walk_stop(xf * Vector3(wx, 0.0, gate.y - to_curb * 0.5))
+	var walk_out := PackedVector3Array([door, xf * Vector3(wx, 0.0, gate.y)])
+	if not at_walk.is_empty():
+		walk_out.append(at_walk.walk_pt)
 	var spots := []
 	for s in lay.spots:
 		var via := []
@@ -1989,12 +1999,21 @@ func _park_place(ref: String) -> Dictionary:
 		var out := []
 		for q in s.out:
 			out.append(xf * Vector3(q.x, 0.0, q.y))
+		# From behind the car out into the aisle, up it to the front drive and
+		# along to the walk.
+		var behind: Vector2 = s.pos - s.face * (ParkingLots.STALL_L * 0.5 + 1.0)
+		var walk := PackedVector3Array([xf * Vector3(behind.x, 0.0, behind.y), xf * Vector3(behind.x, 0.0, zc),
+			xf * Vector3(wx, 0.0, zc)])
 		spots.append({"pos": xf * Vector3(s.pos.x, 0.0, s.pos.y), "face": (xf.basis * Vector3(s.face.x, 0.0,
 			s.face.y)).normalized(), "kind": "stall", "hidden": hidden, "local": s.pos, "ada": s.ada,
-			"via": via, "out": out, "back_pad": s.back_pad})
-	return {"ref": ref, "stop": stop, "lot": {}, "lay": {}, "spots": spots, "taken": _fill(spots.size()),
-		"door": xf * Vector3(gate.x, 0.0, gate.y), "drive": PackedVector3Array([xf * Vector3(gate.x, 0.0,
+			"via": via, "out": out, "back_pad": s.back_pad, "walk": walk})
+	var pl := {"ref": ref, "stop": stop, "lot": {}, "lay": {}, "spots": spots, "taken": _fill(spots.size()),
+		"door": door, "drive": PackedVector3Array([xf * Vector3(gate.x, 0.0,
 		gate.y + 1.0), road_end]), "zone": -1, "seed": _place_seed(ref), "parking": true}
+	if not at_walk.is_empty():
+		pl.walk_lot = at_walk
+		pl.walk_out = walk_out
+	return pl
 
 
 func _site_place(e: Dictionary) -> Dictionary:
@@ -2222,22 +2241,63 @@ func _release(ref: String, i: int, vid: int) -> void:
 		pl.taken[i] = -1
 
 
+## Lots by the 250 m cell their front lies in, kept until lots are planned
+## again, so a search reads the nine cells round a door, not every lot.
+func _index_lots() -> void:
+	var key := [_sim.zones.revision, network.revision, _sim.lots.size()]
+	if key == _lot_cells_key:
+		return
+	_lot_cells_key = key
+	_lot_cells.clear()
+	for id in _sim.lots:
+		var c := _cell(_sim.lots[id].front)
+		if not _lot_cells.has(c):
+			_lot_cells[c] = []
+		_lot_cells[c].append(id)
+
+
+## How short of parking the businesses within a walk of `at` are at their
+## busiest: {"places": how many, "stalls": how many stalls short}. Peak
+## demand after ITE Parking Generation (5th ed.): a shop or diner fills
+## about 1.3 stalls for each worker (staff plus customers, about 3 per
+## 1,000 sq ft of a small store), an office or plant about 0.9 per worker
+## (ITE 710 and 110). Against that go its own stalls and the curb along its
+## front (a 22 ft parallel space each, MUTCD 3B.19). Homes park in their
+## own driveways and at the curb.
+## Reads the layouts only (no places are made), so the tool can ask freely.
+func parking_need(at: Vector3) -> Dictionary:
+	var out := {"places": 0, "stalls": 0}
+	if _sim == null:
+		return out
+	_index_lots()
+	var c := _cell(at)
+	for dx in range(-1, 2):
+		for dz in range(-1, 2):
+			for id in _lot_cells.get(c + Vector2i(dx, dz), []):
+				var b = _sim.buildings.get(id)
+				if b == null or int(b.zone) == ZoneMap.Zone.RESIDENTIAL or not _sim.lots.has(id):
+					continue
+				var lot: Dictionary = _sim.lots[id]
+				if lot.front.distance_to(at) >= PARK_WALK:
+					continue
+				var rate := 1.3 if int(b.zone) == ZoneMap.Zone.COMMERCIAL else 0.9
+				var need := ceili(float(b.get("cap", 0)) * rate)
+				var own := int(float(lot.get("width", 0.0)) / CURB_SPACE)
+				for sp in SiteLayout.for_building(int(b.zone), int(b.seed), lot, BuildingTypes.storeys(b)).spots:
+					if sp.kind == "stall":
+						own += 1
+				if need > own:
+					out.places += 1
+					out.stalls += need - own
+	return out
+
+
 ## Where a car parks when its own destination is full: the nearest lot with
 ## a free stall within a short walk, like CS2 drivers looking for parking.
 func _parking_near(pl: Dictionary, vid: int) -> Array:
 	if _sim == null:
 		return []
-	# Lots by the 250 m cell their front lies in, kept until lots are planned
-	# again, so a search reads the nine cells round the door, not every lot.
-	var key := [_sim.zones.revision, network.revision, _sim.lots.size()]
-	if key != _lot_cells_key:
-		_lot_cells_key = key
-		_lot_cells.clear()
-		for id in _sim.lots:
-			var c := _cell(_sim.lots[id].front)
-			if not _lot_cells.has(c):
-				_lot_cells[c] = []
-			_lot_cells[c].append(id)
+	_index_lots()
 	# Nearest first, ties by name, as a sorted walk over every lot would.
 	var near := []
 	var at := _cell(pl.door)
@@ -2431,7 +2491,11 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 	var park_ref: String = to_pl.ref
 	if not to_pl.get("edge", false):
 		spot = -1 if shut else _reserve(to_pl, car.id, truck)
-		if spot < 0 and after.get("driver", -1) != -1:
+		# A full driveway at home: the extra car goes on the street out front,
+		# as in any real neighbourhood; a town lot is for shoppers, workers
+		# and visitors (many towns, Marion among them, ban overnight parking
+		# in municipal lots for snow plowing).
+		if spot < 0 and after.get("driver", -1) != -1 and int(to_pl.get("zone", -1)) != ZoneMap.Zone.RESIDENTIAL:
 			var alt := _parking_near(to_pl, car.id)
 			if not alt.is_empty():
 				_truck_plan = truck
@@ -3163,7 +3227,13 @@ func _walk_to_car(from_pl: Dictionary, car: Dictionary) -> PackedVector3Array:
 		out = _walk_between(from_pl, car_pl)
 		if out.is_empty():
 			return out
-		out.remove_at(out.size() - 1)  # not to the door: to the car
+		if car_pl.has("walk_lot") and car.spot < car_pl.spots.size():
+			# Into a parking lot by its walk, and down the aisle to the car.
+			var aisle: PackedVector3Array = car_pl.spots[car.spot].walk.duplicate()
+			aisle.reverse()
+			out.append_array(aisle)
+		else:
+			out.remove_at(out.size() - 1)  # not to the door: to the car
 	else:
 		out = _door_out(from_pl)
 	var side := _car_side(car)
@@ -3197,7 +3267,12 @@ func _walk_from_car(car: Dictionary, dest: String) -> PackedVector3Array:
 		out.append_array(inward)
 		return out
 	var path := _walk_between(car_pl, dest_pl)
-	if path.size() > 1:
+	if path.is_empty():
+		return out
+	if car_pl.has("walk_lot") and car.spot < car_pl.spots.size():
+		# Out of a parking lot: up the aisle to its walk, then the sidewalks.
+		out.append_array(car_pl.spots[car.spot].walk)
+	elif path.size() > 1:
 		path.remove_at(0)
 	out.append_array(path)
 	return out
@@ -3206,13 +3281,20 @@ func _walk_from_car(car: Dictionary, dest: String) -> PackedVector3Array:
 ## Where a car parked on the street meets the sidewalk: {seg, side, at_frac,
 ## walk_pt}, lot-like for _sidewalks, or {} if it isn't on a street.
 func _kerb_stop(pos: Vector3) -> Dictionary:
-	var near := network.find_segment_near(pos, 20.0)
+	return _walk_stop(pos, true)
+
+
+## Where the sidewalk beside `pos` is: {seg, side, at_frac, walk_pt}, or {}
+## if no street with sidewalks runs by. With `kerb`, only for a spot out on
+## the street itself (a car parked at the kerb).
+func _walk_stop(pos: Vector3, kerb := false) -> Dictionary:
+	var near := network.find_segment_near(pos, 20.0 if kerb else 40.0)
 	if near.is_empty():
 		return {}
 	var seg: int = near.seg
 	var type: int = network.segments[seg].type
 	if RoadStyle.is_freeway(type) or not RoadStyle.TYPES[type].get("walk", true) \
-			or float(near.dist) > RoadStyle.half_width(type) + RoadStyle.CURB_WIDTH:
+			or kerb and float(near.dist) > RoadStyle.half_width(type) + RoadStyle.CURB_WIDTH:
 		return {}  # in a lot or driveway, or a road with no sidewalks
 	var c := network.curve_of(seg)
 	var t: float = near.t
@@ -3322,21 +3404,32 @@ func stroll(pid: int) -> bool:
 ## On foot from one place's door to another's, along the sidewalks and
 ## across at the corners.
 func _walk_between(a: Dictionary, b: Dictionary) -> PackedVector3Array:
-	var out := _door_out(a)
-	if a.lot.is_empty() or b.lot.is_empty():
+	var fa := _front_walk(a)
+	var fb := _front_walk(b)
+	if fa.is_empty() or fb.is_empty():
 		return PackedVector3Array()
-	var sa := SiteLayout.world(a.lot, Vector2(a.lay.door.x, SiteLayout.WALK_Z))
-	var sb := SiteLayout.world(b.lot, Vector2(b.lay.door.x, SiteLayout.WALK_Z))
-	out.append(sa)
-	var mid := _sidewalks(a.lot, b.lot)
-	if mid.is_empty() and a.lot.seg != b.lot.seg:
+	var out: PackedVector3Array = fa.path.duplicate()
+	var mid := _sidewalks(fa.lot, fb.lot)
+	if mid.is_empty() and fa.lot.seg != fb.lot.seg:
 		return PackedVector3Array()
 	out.append_array(mid)
-	out.append(sb)
-	var inward := _door_out(b)
+	var inward: PackedVector3Array = fb.path.duplicate()
 	inward.reverse()
 	out.append_array(inward)
 	return out
+
+
+## How a place meets the sidewalk on foot: {"lot": where on the street
+## (seg, side, at_frac), "path": from its door out to the sidewalk}, or {}.
+## A town parking lot goes out by its own walk (_park_place).
+func _front_walk(pl: Dictionary) -> Dictionary:
+	if pl.has("walk_lot"):
+		return {"lot": pl.walk_lot, "path": pl.walk_out}
+	if pl.lot.is_empty() or pl.lay.is_empty():
+		return {}
+	var path := _door_out(pl)
+	path.append(SiteLayout.world(pl.lot, Vector2(pl.lay.door.x, SiteLayout.WALK_Z)))
+	return {"lot": pl.lot, "path": path}
 
 
 ## Sidewalk points between two lots' fronts (not including either end).

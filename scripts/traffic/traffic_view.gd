@@ -247,7 +247,7 @@ func _draw_cars(_delta: float) -> void:
 		var wb: float = info[11]
 		var h := _steer(m, a, wb, info[12], _delta)
 		var flat_front := a + h * fo
-		var front := Terrain.lift(flat_front)
+		var front := Terrain.stand(flat_front)
 		var d2 := front.distance_squared_to(eye)
 		if d2 > far2:
 			continue
@@ -276,7 +276,7 @@ func _draw_cars(_delta: float) -> void:
 			var hitch: Vector3 = xf * Vector3(0, 0, art.hitch)
 			var tl: float = float(art.axle) - float(art.pin)
 			var back := _trail(m, Vector3(hitch.x, a.y, hitch.z), tl)
-			var dir := hitch - (Terrain.lift(back) if lod != 1 else Vector3(back.x, hitch.y, back.z))
+			var dir := hitch - (Terrain.stand(back) if lod != 1 else Vector3(back.x, hitch.y, back.z))
 			if dir.length() < 1.0:
 				dir = -xf.basis.z
 			dir = dir.normalized()
@@ -599,7 +599,7 @@ func _trail(m: Motion, k: Vector3, l: float) -> Vector3:
 func _body(m: Motion, car: Dictionary, h: Vector3, front: Vector3, lod: int, blend: float, delta: float) -> Basis:
 	var dir := h
 	if lod != 1:
-		var back := Terrain.lift(m.rear)
+		var back := Terrain.stand(m.rear)
 		dir = (front - back).normalized() if (front - back).length_squared() > 0.25 else h
 	var basis := Basis.looking_at(dir, Vector3.UP)
 	if lod != 1 and delta > 0.0:
@@ -639,8 +639,8 @@ func _rebuild_parked() -> void:
 			flat = Vector3.FORWARD
 		var kind := _kind(car)
 		# Front and back on the ground, so it sits level with the slope.
-		var front: Vector3 = Terrain.lift(pose[0])
-		var dir: Vector3 = (front - Terrain.lift(pose[0] - flat * float(VehicleModels.AXLE.get(kind, 3.5)))).normalized()
+		var front: Vector3 = Terrain.stand(pose[0])
+		var dir: Vector3 = (front - Terrain.stand(pose[0] - flat * float(VehicleModels.AXLE.get(kind, 3.5)))).normalized()
 		var paint := VehicleTypes.paint(kind, car.id)
 		var custom := Color(paint.r, paint.g, paint.b, 0.0)
 		if VehicleModels.ARTIC.has(kind):

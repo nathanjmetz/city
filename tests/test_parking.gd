@@ -83,6 +83,13 @@ func _drivers() -> void:
 	if placed == -1:
 		return
 	var b: Dictionary = sim.services.buildings[placed]
+	# The placement hint: shops round the downtown lot are short of
+	# parking; a lot among nothing but houses would sit empty.
+	var down := sim.traffic.parking_need(b.pos + b.dir * Services.size_of(b).y * 0.5)
+	_check(int(down.stalls) > 0, "the shops round the downtown lot are short of parking %s" % [down])
+	var homes := sim.traffic.parking_need(Vector3(-1200, 0, -340))
+	_check(int(homes.stalls) == 0, "a lot out in the country has no one to serve %s" % [homes])
+	_check(ServiceTool.need_words(homes, 20).contains("mostly empty"), "the hint says it will sit mostly empty")
 	_check(b.get("angled", false), "it keeps the 60 degree choice")
 	# The town buys every parcel it paves over: no back yard (fence, yard
 	# trees) is left under the stalls (Game critic round 28).
@@ -117,13 +124,33 @@ func _drivers() -> void:
 		t._release(with_placard[0], with_placard[1], 16)
 	# Drivers bound for the shops round it park there.
 	var seen := 0
+	var walks := 0
+	var short := 0
+	var reach := Services.size_of(b).length() * 0.5
 	for i in 3000:
 		sim.tick()
 		if i % 50 == 0:
 			for car in t.parked:
 				if str(car.get("at_place", "")) == "svc:%d" % placed:
 					seen += 1
+		# Everyone who gets out in the lot walks out by its walk to the
+		# sidewalk and on to the door: nobody vanishes beside their car.
+		for w in t.walkers:
+			if w.pts[0].distance_to(b.pos) < reach and int(w.get("seen", -1)) != w.id:
+				w.seen = w.id
+				if w.len > 15.0 and w.pts[w.pts.size() - 1].distance_to(b.pos) > reach:
+					walks += 1
+				else:
+					short += 1
 	_check(seen > 0, "shoppers park in the town's lot (%d sightings)" % seen)
+	_check(walks > 0 and short == 0, "drivers walk from the lot to their door (%d walks, %d cut short)" % [walks, short])
+	# Homes on the block: an extra car goes on the street out front, never in
+	# the town's lot.
+	var homers := 0
+	for car in t.parked:
+		if str(car.get("at_place", "")) == "svc:%d" % placed and str(car.get("purpose", "")) == "home":
+			homers += 1
+	_check(homers == 0, "nobody heading home parks in the town's lot (%d)" % homers)
 
 
 ## A stall's painted rectangle, a hair inside its lines.
