@@ -7,7 +7,7 @@ extends SceneTree
 ##   --port N      CITY_PORT    port to listen on (default 9080)
 ##   --code ABC123 CITY_CODE    invite code (default: made up once, then kept in the data file)
 ##   --data FILE   CITY_DATA    where the region is saved (default user://region.json)
-##   --host NAME   CITY_HOST    the host's player name
+##   --host NAMES  CITY_HOST    the host's player name(s), comma separated
 ##                              (default: whoever comes in first)
 ##   --telemetry DIR CITY_TELEMETRY_DIR  where play telemetry and its fix
 ##                              list (report.md) go (default: next to the
@@ -41,7 +41,12 @@ func _init() -> void:
 		server.telemetry_dir = opts.telemetry if opts.telemetry.begins_with("/") or opts.telemetry.begins_with("user://") \
 			else OS.get_environment("PWD").path_join(opts.telemetry)
 	root.add_child.call_deferred(server)
-	var err := server.start(port, opts.code, data, opts.host)
+	var host: String = opts.host
+	# The Mac mini's installed host script still passes its old default,
+	# "Brawn"; Brawn plays as "Nathan Metz" (2026-10-24).
+	if host == "Brawn":
+		host = "Brawn,Nathan Metz"
+	var err := server.start(port, opts.code, data, host)
 	if err != OK:
 		printerr("Couldn't open port %d (error %d)" % [port, err])
 		quit(1)

@@ -69,19 +69,12 @@ func _ready() -> void:
 	_toggle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_toggle.pressed.connect(func(): _set_open(false))
 	head.add_child(_toggle)
-	var invite := Button.new()
-	invite.text = "Invite"
-	invite.focus_mode = Control.FOCUS_NONE
-	invite.tooltip_text = "Copy an invite link for family and friends"
-	invite.pressed.connect(func():
-		DisplayServer.clipboard_set(_invite_text())
-		_add_line({"from": "", "text": "Invite copied: " + _invite_text()}))
-	head.add_child(invite)
 	# The host adds players here and sends each their PIN.
 	_players_button.text = "Players"
 	_players_button.toggle_mode = true
 	_players_button.focus_mode = Control.FOCUS_NONE
 	_players_button.tooltip_text = "Add a player and get the PIN to send them"
+	_players_button.add_theme_font_override("font", Brand.ui(700))
 	_players_button.toggled.connect(func(on): _players.visible = on)
 	head.add_child(_players_button)
 
@@ -396,13 +389,6 @@ static func _dot(color: Color, filled: bool) -> ImageTexture:
 				a *= clampf(d - (S * 0.5 - 3.0), 0.0, 1.0)
 			img.set_pixel(x, y, Color(color, a))
 	return ImageTexture.create_from_image(img)
-
-
-func _invite_text() -> String:
-	var c := Session.client
-	if c.url.begins_with("wss://"):
-		return Session.invite_link(c.url, c.invite_code)
-	return "Invite code %s, server %s" % [c.invite_code, c.url]
 
 
 ## The doorbell, unless the player flagged it as a bad sound.

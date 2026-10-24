@@ -275,6 +275,12 @@ func _run() -> void:
 	await _until(func(): return not kid4_told.is_empty())
 	_check(fifth.region.cities.is_empty() and not kid4_told.is_empty(), "removing a player takes their town off the map and lets them know")
 	fifth.stop()
+	# The host plays under another name too: that account gets the Players list.
+	var sixth := RegionServer.new()
+	root.add_child(sixth)
+	_check(sixth.start(PORT + 2, "", data, "Nobody, Bob") == OK, "the region starts with two host names")
+	_check(sixth.accounts["bob"].host, "an account under any of the host's names is a host")
+	sixth.stop()
 	DirAccess.remove_absolute(data)
 
 	print("SOME TESTS FAILED" if _failed else "ALL TESTS PASSED")

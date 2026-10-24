@@ -47,7 +47,9 @@ var telemetry_dir := ""
 var accounts := {}
 ## The host's player name: their account is approved from the start and
 ## they approve everyone else. Empty means the first account made.
-var host_name := ""
+## Names of the host's accounts (lower case): --host takes a comma list, so
+## the host has the Players list whichever name they play under.
+var host_names := []
 ## Whether the host must let each new player in. Off: the invite code is
 ## the key (Brawn: "if you have the invite code, you can play").
 var require_approval := false
@@ -66,7 +68,10 @@ var _new_telemetry := false
 func start(port: int, code: String, path: String, host := "") -> int:
 	data_path = path
 	invite_code = code.to_upper()
-	host_name = host.strip_edges()
+	host_names = []
+	for n in host.split(","):
+		if n.strip_edges() != "":
+			host_names.append(n.strip_edges().to_lower())
 	if telemetry_dir == "" and data_path != "":
 		telemetry_dir = data_path.get_basename() + "-telemetry"
 	_load()
@@ -348,7 +353,7 @@ func requests() -> Array:
 
 
 func _new_account(name: String, password: String, device_id: String) -> Dictionary:
-	var is_host := (host_name == "" and accounts.is_empty()) or name.to_lower() == host_name.to_lower()
+	var is_host := (host_names.is_empty() and accounts.is_empty()) or name.to_lower() in host_names
 	# The device's id is the player id, so a city made before accounts stays theirs.
 	var pid := device_id
 	for a in accounts.values():
@@ -486,8 +491,8 @@ func _rename(account: Dictionary, name: String) -> void:
 	if name == "" or key == account.name.to_lower() or accounts.has(key):
 		return
 	accounts.erase(account.name.to_lower())
-	if account.host and host_name.to_lower() == account.name.to_lower():
-		host_name = name
+	if account.name.to_lower() in host_names:
+		host_names.append(key)
 	account.name = name
 	accounts[key] = account
 	_dirty = true
@@ -694,6 +699,10 @@ func _load() -> void:
 			"pin": str(a.get("pin", ""))}
 	# Regions from before PINs: every player gets one, and the first player
 	# is the host if nobody is.
+	for key in accounts:
+		if key in host_names:
+			accounts[key].host = true
+			accounts[key].status = "approved"
 	var any_host := false
 	for key in accounts:
 		any_host = any_host or accounts[key].host
