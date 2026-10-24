@@ -198,7 +198,8 @@ static func far_limit(c: Dictionary, zone: int) -> float:
 				return f[4]
 			if Market.supports(c.market, "apartments", 3) and c.density >= Balance.DENSE_CORE * 3:
 				return f[3]
-			if (c.density >= Balance.DENSE_CORE or c.avenue) and Market.supports(c.market, "apartments"):
+			# Zoning stays as it is; what's built on it waits on the market.
+			if c.density >= Balance.DENSE_CORE or c.avenue:
 				return f[2]
 			if c.density >= Balance.ROW_HOME_DENSITY and Market.supports(c.market, "row_home"):
 				return f[1]
