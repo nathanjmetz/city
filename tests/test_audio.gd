@@ -113,20 +113,34 @@ func _init() -> void:
 	_check(ResourceLoader.exists(GameMusic.THEME), "the theme song exists")
 	var songs := GameMusic.playlist()
 	_check(songs.size() >= 2 and songs.all(func(f): return ResourceLoader.exists(f)), "gameplay songs are found (%s)" % str(songs))
+	_check(songs.size() >= 9, "all of Brawn's gameplay songs are in (%d)" % songs.size())
+	_check(GameMusic.title(GameMusic.GAMEPLAY_DIR + "/porch_swing.ogg") == "Porch Swing", "a song is named from its file")
 	GameMusic.play(self, GameMusic.Mode.MENU)
 	await process_frame
-	var music := root.get_node_or_null(GameMusic.NODE) as AudioStreamPlayer
-	_check(music != null and music.bus == "Music" and music.playing and music.stream.resource_path == GameMusic.THEME,
+	var music := root.get_node_or_null(GameMusic.NODE) as GameMusic
+	_check(music != null and music.player.bus == "Music" and music.player.playing and music.song() == GameMusic.THEME,
 		"the theme plays in menus, on the Music bus")
+	_check(music.player.get_playback_position() < 1.0, "the theme starts from the beginning when the game opens")
 	GameMusic.play(self, GameMusic.Mode.TOWN)
 	await process_frame
-	var town_song: String = music.stream.resource_path
+	var town_song := music.song()
 	_check(town_song in songs, "a gameplay song plays in town (%s)" % town_song)
 	_check(root.get_children().filter(func(n): return n.name == GameMusic.NODE).size() == 1, "one music player for everything")
 	GameMusic.play(self, GameMusic.Mode.MENU)
-	_check(music.stream.resource_path == GameMusic.THEME, "the pause menu brings the theme back")
+	var theme_len := (load(GameMusic.THEME) as AudioStream).get_length()
+	_check(music.song() == GameMusic.THEME and music.player.get_playback_position() > theme_len * 0.2,
+		"the pause menu fades to the middle of the theme")
+	_check(music._other.playing and music._other.stream.resource_path == town_song, "the town song fades out under it")
 	GameMusic.play(self, GameMusic.Mode.TOWN)
-	_check(music.stream.resource_path == town_song, "closing it picks the town song up again")
+	_check(music.song() == town_song, "closing it picks the town song up again")
+	# Skipping goes on to another song, and the skip is noted.
+	var skips := []
+	music.skipped.connect(func(info): skips.append(info))
+	music.skip()
+	_check(music.song() != town_song and music.song() in songs, "Skip plays another song")
+	music.choose(songs[0] if music.song() != songs[0] else songs[1])
+	_check(skips.size() == 2 and skips[0].song == GameMusic.title(town_song) and skips[1].how == "pick",
+		"skips are recorded (%s)" % str(skips))
 
 	# Sound picker: every option is a real file for a real sound.
 	var listing = JSON.parse_string(FileAccess.get_file_as_string("res://web/sfx/candidates.json"))

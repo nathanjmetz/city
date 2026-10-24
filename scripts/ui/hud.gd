@@ -147,6 +147,7 @@ var tour := FirstTownTour.new()
 ## Back to your town centre, or to a neighbor's.
 var jump: TownJump
 var _towns_panel := PanelContainer.new()
+var music := MusicPlayer.new()
 var _towns_list := VBoxContainer.new()
 var _towns_button: Button
 ## The cards the pad wheel's second ring offers ("tool:<n>" picks one).
@@ -673,7 +674,7 @@ func pad_bottom_height() -> float:
 ## True while a tool is in hand, a panel or view is open, or something is selected.
 func anything_open() -> bool:
 	return _budget_open or _view != "" or _views_panel.visible or _help.visible or _search_panel.visible or advisor.visible or permits.visible or region_panel.visible \
-		or town.visible or timelapse.visible or stats_panel.visible or _towns_panel.visible \
+		or town.visible or timelapse.visible or stats_panel.visible or _towns_panel.visible or music.visible \
 		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
 		or farm_tool.mode != FarmTool.Mode.NONE or traffic_tool.mode != TrafficTool.Mode.NONE \
@@ -700,6 +701,7 @@ func close_all() -> void:
 	timelapse.close_view()
 	stats_panel.close_panel()
 	_show_towns(false)
+	music.close_panel()
 	road_tool.set_mode(RoadTool.Mode.NONE)
 	zone_tool.set_zone(ZoneTool.OFF)
 	service_tool.set_kind(ServiceTool.OFF)
@@ -920,6 +922,12 @@ func _build_top_bar() -> void:
 		row.add_child(b)
 		_speed_buttons.append(b)
 	row.add_child(VSeparator.new())
+	# The music player: the song playing, and a drop-down to skip or pick one.
+	var tune := music.make_button()
+	tune.toggled.connect(func(on):
+		if on:
+			music.position = Vector2(minf(tune.global_position.x, _root.size.x - music.size.x - 8.0), _top_bar.size.y))
+	row.add_child(tune)
 	# How the town looks (Cities: Skylines 2 keeps these in its settings):
 	# the day/night cycle (off: always late morning) and seasons (off:
 	# always summer). Each player picks for themselves.
@@ -1033,6 +1041,7 @@ func _build_stats() -> void:
 		if _category != "zones":
 			_open("zones")
 		zone_tool.set_zone(z))
+	_root.add_child(music)
 	# The list of towns drops down under its arrow.
 	_towns_panel.add_theme_stylebox_override("panel", UiStyle.dock(true))
 	_towns_panel.visible = false
