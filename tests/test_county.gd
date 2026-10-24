@@ -48,6 +48,7 @@ func _init() -> void:
 	_test_meet()
 	_test_overlay()
 	_test_through_zoning()
+	_test_grid_over_joined()
 	print("ALL TESTS PASSED" if _failed == 0 else "SOME TESTS FAILED")
 	quit(1 if _failed > 0 else 0)
 
@@ -374,6 +375,57 @@ func _test_through_zoning() -> void:
 		for id in sim.network.segments_at(meet):
 			gravel_there = gravel_there or sim.network.segments[id].type == RoadStyle.Type.GRAVEL
 	_check(gravel_there, "the joined county road runs through the zoned frontage and meets the street")
+
+
+## Brawn (2026-10-24): a grid whose side lies on a county road the town
+## had already joined laid its street over the gravel, leaving a doubled
+## stretch, a turnaround bulb and a broken edge street. The grid side takes
+## the gravel over in place.
+func _test_grid_over_joined() -> void:
+	var S := CountyGrid.SECTION
+	var x := 0.0
+	var z := 0.0
+	var found := false
+	for line in range(-6, 6):
+		for seg in range(-6, 6):
+			if found or not CountyGrid.has_mile(line, seg):
+				continue
+			var ok := true
+			for k in range(-12, 13):
+				ok = ok and CountyGrid.clears(line * S, (seg + 0.5) * S + k * 30.0) \
+					and Terrain.slope(line * S - 200.0, (seg + 0.5) * S + k * 30.0) < 0.06
+			if ok:
+				x = line * S
+				z = (seg + 0.5) * S
+				found = true
+	_check(found, "found a dry mile for a grid beside it")
+	if not found:
+		return
+	var sim := CitySim.new()
+	sim.apply({"type": "build_road", "start": [x - 200, z + 400], "ctrl": [x - 100, z + 400], "end": [x, z + 400],
+		"road": RoadStyle.Type.STREET, "join": true})
+	sim.apply({"type": "build_grid", "a": [x - 357, z - 200], "b": [x + 3, z - 200], "c": [x - 357, z + 40],
+		"block": 120.0, "join": true})
+	var ids := sim.network.segments.keys()
+	var doubled := 0
+	for i in ids.size():
+		var ci: Array = sim.network.curve_of(ids[i])
+		var mid: Vector3 = (ci[0] + ci[2]) * 0.5
+		if absf(mid.x - x) > 15.0 or mid.z < z - 300.0 or mid.z > z + 100.0 or ci[0].distance_to(ci[2]) < 10.0:
+			continue
+		for j in ids.size():
+			if i == j:
+				continue
+			var cj: Array = sim.network.curve_of(ids[j])
+			if Geometry3D.get_closest_point_to_segment(mid, cj[0], cj[2]).distance_to(mid) < 4.0:
+				doubled += 1
+	var dead := 0
+	for n in sim.network.nodes:
+		var p: Vector3 = sim.network.nodes[n]
+		if absf(p.x - x) < 30.0 and p.z > z - 300.0 and p.z < z + 100.0 and sim.network.segments_at(n).size() == 1:
+			dead += 1
+	_check(doubled == 0 and dead == 0,
+		"a grid side on joined gravel takes it over: no doubled road (%d), no dead ends (%d)" % [doubled, dead])
 
 
 func _gravel(sim: CitySim) -> Array:

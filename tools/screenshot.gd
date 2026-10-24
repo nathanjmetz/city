@@ -394,19 +394,37 @@ func _demo_brawn_grid(sim: CitySim) -> void:
 	var line := ceilf((o.x + 200.0) / CountyGrid.SECTION) * CountyGrid.SECTION - o.x
 	var z0 := -340.0 + 40.0
 	var b := line - 50.0
+	var args0 := OS.get_cmdline_user_args()
+	if args0.size() >= 6 and args0[5] == "over":
+		# His later shot: the grid's east side on gravel the town had
+		# already joined from the south, on a dry stretch of line.
+		for k in [1, -1, 2, -2, 3, -3]:
+			var lx: float = (roundf(o.x / CountyGrid.SECTION) + k) * CountyGrid.SECTION - o.x
+			var ok := true
+			for zz in range(-200, 900, 20):
+				ok = ok and CountyGrid.clears(lx + o.x, z0 + zz + o.y)
+			if ok:
+				line = lx
+				break
+		sim.apply({"type": "build_road", "start": [line - 200, z0 + 700], "ctrl": [line - 100, z0 + 700],
+			"end": [line, z0 + 700], "road": 0, "join": true})
+		b = line + 3.0
 	var a := b - 480.0
 	print("line x ", line, " grid ", a, "..", b)
 	sim.apply({"type": "build_grid", "a": [a, z0], "b": [b, z0], "c": [a, z0 + 240.0], "block": 120.0, "join": true})
 	print("joined ", sim.county_joined.keys())
 	var args := OS.get_cmdline_user_args()
-	if args.size() >= 6 and args[5] == "street":
+	if args.size() >= 6 and (args[5] == "street" or args[5] == "over"):
 		# Zoned like Brawn's town, the county highway's frontage too.
 		for id in sim.network.segments.keys():
 			if sim.network.segments.has(id) and not sim.is_link_segment(id):
 				for side in [-1, 1]:
 					sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": ZoneMap.Zone.RESIDENTIAL})
-		sim.apply({"type": "build_road", "start": [b, z0 + 120.0], "ctrl": [(b + line) * 0.5, z0 + 120.0],
-			"end": [line, z0 + 120.0], "road": 0, "join": true})
+		if args[5] == "street":
+			sim.apply({"type": "build_road", "start": [b, z0 + 120.0], "ctrl": [(b + line) * 0.5, z0 + 120.0],
+				"end": [line, z0 + 120.0], "road": 0, "join": true})
+		for i in 300:
+			sim.tick()
 		print("joined after street ", sim.county_joined.keys())
 	var gravel := 0
 	for id in sim.network.segments:
@@ -415,7 +433,7 @@ func _demo_brawn_grid(sim: CitySim) -> void:
 			print("gravel ", sim.network.curve_of(id)[0], sim.network.curve_of(id)[2])
 	for c in _main.get_children():
 		if c is CityCamera:
-			c.look_at_point(Vector3(line - 150.0, 0, z0 + 50.0))
+			c.look_at_point(Vector3(line - 60.0, 0, z0 + 240.0))
 			c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
 
 
