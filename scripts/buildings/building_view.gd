@@ -7,17 +7,19 @@ extends Node3D
 ## building is drawn for its type and stage, and redrawn when it grows. New
 ## ones go up stage by stage (ConstructionSite).
 ##
-## Far off, each 128 m square of town is one simple mesh instead: every
-## building as its block, with wall and roof colours (HLOD, as Cities: Skylines 2
-## and every big city builder do). Each building's own meshes name that box
-## as their visibility parent, so Godot swaps them by distance; how near the
-## swap comes follows the graphics tier (GraphicsQuality.detail).
+## Far off, each 128 m square of town is one simple mesh instead (HLOD, as
+## Cities: Skylines 2 and every big city builder do): every building as its
+## own walls, roofs and windows, the big pieces of its close-up drawing in
+## their real colours, without trim, gutters, porches and the rest (as
+## Anno 1800's far models keep each building's outline, roof and colours),
+## about a hundred triangles a building. Each building's own meshes name
+## that square as their visibility parent, so Godot swaps them by distance;
+## how near the swap comes follows the graphics tier (GraphicsQuality.detail).
 
 var sim: CitySim
 var _nodes := {}  # lot key -> Node3D
 var _trees := TreeField.new()
 static var _footing_mat: Material
-static var _far_mat: Material
 
 const FAR_CHUNK := 128.0
 ## Full buildings out to this far from a square's centre (times the tier's
@@ -26,6 +28,15 @@ const FAR_CHUNK := 128.0
 ## drawing every one in full there swamped a Mac Studio); past it, the
 ## square's blocks.
 const FAR_FROM := 600.0
+## How far past the swap the camera must go back before it swaps again
+## (hysteresis): without it, a square right at the swap distance flickered
+## between its close-up and far versions while the camera eased or zoomed
+## (Brawn's apartment block, 2026-10-24).
+const FAR_MARGIN := 40.0
+## The parts of a close-up drawing its far version keeps: walls, roofs and
+## windows (and a factory's metal cladding). Everything else is small.
+const FAR_KEEP := ["siding", "brick", "roof", "membrane", "glass"]
+static var _far_kinds := {}  # Material -> its HouseMaterials name
 var _far := {}  # Vector2i -> MeshInstance3D
 var _far_dirty := {}  # Vector2i -> true
 var _by_chunk := {}  # Vector2i -> {lot key: true}, the buildings in each square
@@ -262,16 +273,20 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 	if built.is_empty():
 		return root
 	var masses: Array = HouseBuilder.last_masses
-	root.set_meta("box", _mass_box(built[0].get_aabb(), masses))
-	root.set_meta("wall", _wall_colour(int(b.zone), rng))
 	# On a hillside the house stands on the highest ground under its walls,
 	# with a walkout foundation down to the low side: never with the hill
 	# coming up through the floor (Brawn's homes built through a forest).
 	var seat := seat_on(masses, root.transform, Terrain.ground_y)
 	root.position.y += seat.x
+	# Its far version, for its square's far mesh (a building drawn with no
+	# masses noted stands as the box of its drawing).
+	var bulk := masses
+	if bulk.is_empty():
+		var box := built[0].get_aabb() as AABB
+		bulk = [Rect2(box.position.x, box.position.z, box.size.x, box.size.z)]
 	var pitched: bool = BuildingTypes.type_of(b) in ["house", "row_home"]
-	root.set_meta("pitched", pitched)
-	root.set_meta("roof", _roof_colour(pitched, rng))
+	root.set_meta("far_mesh", far_version(built[0], bulk, int(b.zone) == ZoneMap.Zone.INDUSTRIAL,
+		_wall_colour(int(b.zone), rng), _roof_colour(pitched, rng), built[1]))
 	# Drives, walks and beds lie on the ground, following it.
 	built[1] = Terrain.drape_local(built[1], root.transform)
 	# It goes up stage by stage; the trees and the sign's lettering go in
@@ -409,11 +424,11 @@ func _build_far(c: Vector2i) -> void:
 	var any := false
 	for key in _by_chunk.get(c, {}):
 		var root: Node3D = _nodes[key]
-		if not root.has_meta("box"):
+		var far: ArrayMesh = root.get_meta("far_mesh", null)
+		if far == null or far.get_surface_count() == 0:
 			continue
 		any = true
-		_box(st, Transform3D(root.basis, root.position - centre), root.get_meta("box"), root.get_meta("wall"),
-			root.get_meta("roof"), root.get_meta("pitched"))
+		st.append_from(far, 0, Transform3D(root.basis, root.position - centre))
 	if not any:
 		if _far.has(c):
 			_far[c].queue_free()
@@ -423,13 +438,10 @@ func _build_far(c: Vector2i) -> void:
 		var mi := MeshInstance3D.new()
 		mi.position = centre
 		mi.visibility_range_begin = _far_from()
-		if _far_mat == null:
-			var m := StandardMaterial3D.new()
-			m.vertex_color_use_as_albedo = true
-			m.roughness = 0.9
-			m.cull_mode = BaseMaterial3D.CULL_DISABLED
-			_far_mat = m
-		mi.material_override = _far_mat
+		mi.visibility_range_begin_margin = FAR_MARGIN
+		# One material for the whole town (towers' far walls use it too):
+		# each shader seen for the first time is a stall while it compiles.
+		mi.material_override = HouseMaterials.get_mat("far")
 		mi.mesh = ArrayMesh.new()
 		add_child(mi)
 		_far[c] = mi
@@ -441,54 +453,168 @@ func _build_far(c: Vector2i) -> void:
 	_link_baked(c)
 
 
-## One building as its block: walls in its colour; a houses' pitched
-## shingle roof (ridge along the long side) or a commercial flat roof.
-static func _box(st: SurfaceTool, xf: Transform3D, box: AABB, wall: Color, roof: Color, pitched: bool) -> void:
-	var lo := box.position
-	var hi := box.end
-	var mid: Vector3 = xf * box.get_center()
-	var p := func(x: float, y: float, z: float) -> Vector3: return xf * Vector3(x, y, z)
-	var eave := lo.y + (hi.y - lo.y) * 0.62 if pitched else hi.y
-	# Walls.
-	_quad(st, mid, wall, [p.call(lo.x, lo.y, lo.z), p.call(hi.x, lo.y, lo.z), p.call(hi.x, eave, lo.z), p.call(lo.x, eave, lo.z)])
-	_quad(st, mid, wall, [p.call(hi.x, lo.y, hi.z), p.call(lo.x, lo.y, hi.z), p.call(lo.x, eave, hi.z), p.call(hi.x, eave, hi.z)])
-	_quad(st, mid, wall, [p.call(lo.x, lo.y, hi.z), p.call(lo.x, lo.y, lo.z), p.call(lo.x, eave, lo.z), p.call(lo.x, eave, hi.z)])
-	_quad(st, mid, wall, [p.call(hi.x, lo.y, lo.z), p.call(hi.x, lo.y, hi.z), p.call(hi.x, eave, hi.z), p.call(hi.x, eave, lo.z)])
-	if not pitched:
-		_quad(st, mid, roof, [p.call(lo.x, hi.y, lo.z), p.call(hi.x, hi.y, lo.z), p.call(hi.x, hi.y, hi.z), p.call(lo.x, hi.y, hi.z)])
+## A building's far version, from its close-up drawing: the walls, roofs
+## and windows as drawn (FAR_KEEP, a hundred triangles or so), merged into
+## one surface for the "far" shader: colour in RGB, and UV picking what the
+## shader draws there (zero: the plain colour; panes sit in a window cell,
+## so they show as glass and light up after dark). Under them each mass is
+## a box a little inside its walls, up to its eaves, so walls drawn in other
+## parts (trim, painted fronts) never leave a hole; a mass with no roof
+## drawn over it gets a flat one in `flat`. `wall` colours the boxes when
+## the drawing has no siding or brick. From `ground` (the lot's flat work,
+## before it's laid on the land) come its drives, walks and parking: pale
+## concrete and dark asphalt strips are much of what a street of homes
+## looks like from afar.
+static func far_version(mesh: ArrayMesh, masses: Array, industrial: bool, wall: Color, flat: Color,
+		ground: ArrayMesh = null) -> ArrayMesh:
+	if _far_kinds.is_empty():
+		for k in FAR_KEEP + ["metal"]:
+			_far_kinds[HouseMaterials.get_mat(k)] = k
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var colours := PackedColorArray()
+	var uvs := PackedVector2Array()
+	var index := PackedInt32Array()
+	var roofs := PackedVector3Array()
+	var sides := PackedVector3Array()
+	var most := 0
+	for i in mesh.get_surface_count():
+		var kind: String = _far_kinds.get(mesh.surface_get_material(i), "")
+		if kind == "" or (kind == "metal" and not industrial):
+			continue
+		var a := mesh.surface_get_arrays(i)
+		var v: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+		if v.is_empty():
+			continue
+		var base := verts.size()
+		verts.append_array(v)
+		var n = a[Mesh.ARRAY_NORMAL]
+		if n == null or (n as PackedVector3Array).size() != v.size():
+			n = PackedVector3Array()
+			n.resize(v.size())
+			n.fill(Vector3.UP)
+		normals.append_array(n)
+		var at := colours.size()
+		var c = a[Mesh.ARRAY_COLOR]
+		if kind == "glass" or c == null or (c as PackedColorArray).size() != v.size():
+			c = PackedColorArray()
+			c.resize(v.size())
+			c.fill(Color(0.16, 0.18, 0.2, 0.5) if kind == "glass" else wall)
+		colours.append_array(c)
+		var uv := PackedVector2Array()
+		uv.resize(v.size())
+		uv.fill(Vector2(1.0, 1.85) if kind == "glass" else Vector2.ZERO)
+		uvs.append_array(uv)
+		var idx = a[Mesh.ARRAY_INDEX]
+		if idx == null:
+			for k in v.size():
+				index.append(base + k)
+		else:
+			for k: int in idx:
+				index.append(base + k)
+		if kind == "roof" or kind == "membrane":
+			roofs.append_array(v)
+		elif kind != "glass":
+			sides.append_array(v)
+			if v.size() > most and kind != "metal":
+				most = v.size()
+				wall = colours[at]
+	wall.a = 0.0
+	if ground != null and ground.get_surface_count() > 0:
+		_far_paving(ground, verts, normals, colours, uvs, index)
+	for m: Rect2 in masses:
+		var r := m.grow(-0.25)
+		if r.size.x <= 0.5 or r.size.y <= 0.5:
+			continue
+		# The eaves: the lowest roof edge over the mass; with no roof drawn
+		# over it, the tops of its walls, under a flat roof.
+		var eave := INF
+		var cover := m.grow(0.6)
+		for p in roofs:
+			if cover.has_point(Vector2(p.x, p.z)):
+				eave = minf(eave, p.y)
+		var capped := eave == INF
+		if capped:
+			eave = 0.0
+			for p in sides:
+				if cover.has_point(Vector2(p.x, p.z)):
+					eave = maxf(eave, p.y)
+			if eave <= 0.5:
+				continue
+		var mid := Vector3(r.get_center().x, 0.0, r.get_center().y)
+		var corners := [Vector3(r.position.x, 0.0, r.position.y), Vector3(r.end.x, 0.0, r.position.y),
+			Vector3(r.end.x, 0.0, r.end.y), Vector3(r.position.x, 0.0, r.end.y)]
+		var up := Vector3.UP * eave
+		for k in 4:
+			var p0: Vector3 = corners[k]
+			var p1: Vector3 = corners[(k + 1) % 4]
+			var out := (p1 - p0).cross(Vector3.UP).normalized()
+			if out.dot((p0 + p1) * 0.5 - mid) < 0.0:
+				out = -out
+			_far_quad(verts, normals, colours, uvs, index, [p0, p1, p1 + up, p0 + up], out, wall)
+		if capped:
+			var top := flat
+			top.a = 0.0
+			var lid := Vector3.UP * (eave + 0.05)
+			_far_quad(verts, normals, colours, uvs, index,
+				[corners[0] + lid, corners[1] + lid, corners[2] + lid, corners[3] + lid], Vector3.UP, top)
+	var out_mesh := ArrayMesh.new()
+	if verts.is_empty():
+		return out_mesh
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_COLOR] = colours
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = index
+	out_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return out_mesh
+
+
+## The drives, walks and lots of a lot's flat work (the yard shader's kinds
+## in vertex alpha: 0 concrete, 0.4 asphalt), a little above the lot so
+## they hold on the land however far off.
+static func _far_paving(ground: ArrayMesh, verts: PackedVector3Array, normals: PackedVector3Array,
+		colours: PackedColorArray, uvs: PackedVector2Array, index: PackedInt32Array) -> void:
+	var a := ground.surface_get_arrays(0)
+	var v: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+	var c = a[Mesh.ARRAY_COLOR]
+	if c == null or a[Mesh.ARRAY_INDEX] != null:
 		return
-	if box.size.x >= box.size.z:
-		var zc := (lo.z + hi.z) * 0.5
-		_quad(st, mid, roof, [p.call(lo.x, eave, lo.z), p.call(hi.x, eave, lo.z), p.call(hi.x, hi.y, zc), p.call(lo.x, hi.y, zc)])
-		_quad(st, mid, roof, [p.call(hi.x, eave, hi.z), p.call(lo.x, eave, hi.z), p.call(lo.x, hi.y, zc), p.call(hi.x, hi.y, zc)])
-		_quad(st, mid, wall, [p.call(lo.x, eave, hi.z), p.call(lo.x, eave, lo.z), p.call(lo.x, hi.y, zc), p.call(lo.x, hi.y, zc)])
-		_quad(st, mid, wall, [p.call(hi.x, eave, lo.z), p.call(hi.x, eave, hi.z), p.call(hi.x, hi.y, zc), p.call(hi.x, hi.y, zc)])
-	else:
-		var xc := (lo.x + hi.x) * 0.5
-		_quad(st, mid, roof, [p.call(lo.x, eave, hi.z), p.call(lo.x, eave, lo.z), p.call(xc, hi.y, lo.z), p.call(xc, hi.y, hi.z)])
-		_quad(st, mid, roof, [p.call(hi.x, eave, lo.z), p.call(hi.x, eave, hi.z), p.call(xc, hi.y, hi.z), p.call(xc, hi.y, lo.z)])
-		_quad(st, mid, wall, [p.call(lo.x, eave, lo.z), p.call(hi.x, eave, lo.z), p.call(xc, hi.y, lo.z), p.call(xc, hi.y, lo.z)])
-		_quad(st, mid, wall, [p.call(hi.x, eave, hi.z), p.call(lo.x, eave, hi.z), p.call(xc, hi.y, hi.z), p.call(xc, hi.y, hi.z)])
+	var lift := Vector3.UP * 0.12
+	for t in range(0, v.size() - 2, 3):
+		var kind: float = c[t].a
+		if kind > 0.5:
+			continue
+		var col := Color(0.78, 0.77, 0.73, 0.0) if kind < 0.2 else Color(0.24, 0.24, 0.25, 0.0)
+		var base := verts.size()
+		for k in 3:
+			verts.append(v[t + k] + lift)
+			normals.append(Vector3.UP)
+			colours.append(col)
+			uvs.append(Vector2.ZERO)
+			index.append(base + k)
 
 
-## A face as two triangles (one when two corners meet), lit facing away
-## from the building's middle.
-static func _quad(st: SurfaceTool, mid: Vector3, col: Color, q: Array) -> void:
-	var n: Vector3 = (q[1] - q[0]).cross(q[2] - q[0]).normalized()
-	if n.dot((q[0] + q[1] + q[2]) / 3.0 - mid) < 0.0:
-		n = -n
-	st.set_color(col)
-	st.set_normal(n)
-	var tris := [0, 2, 1] if q[2].is_equal_approx(q[3]) else [0, 2, 1, 0, 3, 2]
-	for i in tris:
-		st.add_vertex(q[i])
+## A flat face of a far version, both triangles.
+static func _far_quad(verts: PackedVector3Array, normals: PackedVector3Array, colours: PackedColorArray,
+		uvs: PackedVector2Array, index: PackedInt32Array, q: Array, n: Vector3, col: Color) -> void:
+	var base := verts.size()
+	for p: Vector3 in q:
+		verts.append(p)
+		normals.append(n)
+		colours.append(col)
+		uvs.append(Vector2.ZERO)
+	for k in [0, 1, 2, 0, 2, 3]:
+		index.append(base + k)
 
 
 ## Seen from far off, roofs are asphalt shingle on homes; flat commercial
-## and industrial roofs are pale membrane or gravel.
+## and industrial roofs are pale membrane (white or grey TPO) or gravel.
 static func _roof_colour(pitched: bool, rng: RandomNumberGenerator) -> Color:
 	var options := [Color("#4d4a47"), Color("#5b544c"), Color("#3f4144"), Color("#6a5f55")] if pitched \
-		else [Color("#9c9a95"), Color("#b5b3ad"), Color("#86847f")]
+		else [Color("#c4c2bb"), Color("#d2d0ca"), Color("#a9a7a1")]
 	return options[rng.randi() % options.size()]
 
 
@@ -520,17 +646,6 @@ static func _local_lot(lot: Dictionary, frame: Transform3D) -> Dictionary:
 			local.append(Vector2(q.x, q.z))
 		fit.outline = local
 	return fit
-
-
-## The building's own bulk: its masses' footprint, as tall as the mesh
-## (the mesh's bounds alone take in fences and sheds out to the lot lines).
-static func _mass_box(mesh_box: AABB, masses: Array) -> AABB:
-	if masses.is_empty():
-		return mesh_box
-	var r: Rect2 = masses[0]
-	for m: Rect2 in masses:
-		r = r.merge(m)
-	return AABB(Vector3(r.position.x, mesh_box.position.y, r.position.y), Vector3(r.size.x, mesh_box.size.y, r.size.y))
 
 
 ## How a building meets sloping ground: [how far to raise it so no ground
