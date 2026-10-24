@@ -1341,8 +1341,9 @@ const TRADE_EXPORT_SHARE := 0.6
 
 ## Regional projects: big shared assets no one town owns, each run by its
 ## board and built in stages that open when the one before is funded (no
-## clock). Seeded at real sites near Petersburg, in region metres from the
-## map's centre. Goals are in Trade goods ("money" in dollars). Shares
+## clock). Seeded at real Grant County sites, in region metres (x east, z
+## south) from Sweetser's crossroads, where the first town starts (the map's
+## middle is Terrain.CENTRE). Goals are in Trade goods ("money" in dollars). Shares
 ## count every pledge at TRADE_PRICE. Player interaction design owns what a
 ## finished stage does in each town; these goals are starting numbers for
 ## the balance thread (a game town starts with START_MONEY).
@@ -1352,8 +1353,9 @@ const REGION_PROJECTS := [
 	# connector into town, the way INDOT adds one: an Interchange
 	# Justification Study for FHWA and right of way first, then the
 	# interchange, then the connector, with the county paying a local share.
+	# Site: E 200 S crossing I-69, between exits 259 and 264.
 	{"id": "i69", "name": "New I-69 interchange", "kind": "interstate",
-		"board": "Grant County Economic Growth Council", "site": [3200.0, 0.0],
+		"board": "Grant County Economic Growth Council", "site": [18371.0, 4824.0],
 		"stages": [
 			{"name": "Interchange study and right of way", "goal": {"money": 4_000_000.0},
 				"does": "Land near the planned exit starts to gain value."},
@@ -1364,9 +1366,11 @@ const REGION_PROJECTS := [
 		]},
 	# Grant County's rural co-op is Heartland REMC, whose power comes from
 	# Wabash Valley Power Alliance (a generation and transmission co-op founded
-	# in Peru, Indiana): member co-ops share its plants and lines.
+	# in Peru, Indiana): member co-ops share its plants and lines. Site: open
+	# cropland beside US 35 southwest of Marion (the map has no transmission
+	# line data, so it was picked for open land and highway access).
 	{"id": "power", "name": "Co-op generating station", "kind": "power",
-		"board": "Wabash Valley Power Alliance", "site": [-2600.0, 600.0],
+		"board": "Wabash Valley Power Alliance", "site": [4000.0, 9200.0],
 		"stages": [
 			{"name": "Transmission tie to every town", "goal": {"money": 3_000_000.0},
 				"does": "Member towns buy power from the co-op at wholesale cost."},
@@ -1377,9 +1381,10 @@ const REGION_PROJECTS := [
 	# runway and airline service until 1970. Indiana lets counties form an
 	# airport authority (IC 8-22-3) to grow one into a regional airport;
 	# international flights need a U.S. Customs port of entry, as at Fort
-	# Wayne International.
+	# Wayne International. Site: MZZ itself, inside Marion (the backdrop), so
+	# the project grows the airport that is there.
 	{"id": "airport", "name": "Marion Regional Airport", "kind": "airport",
-		"board": "Grant County Airport Authority", "site": [0.0, -9000.0],
+		"board": "Grant County Airport Authority", "site": [7489.0, 8392.0],
 		"stages": [
 			{"name": "Runway extended to 7,000 ft", "goal": {"money": 8_000_000.0},
 				"does": "More demand for offices and shops in towns within reach."},
