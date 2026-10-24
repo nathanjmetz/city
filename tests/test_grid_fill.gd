@@ -370,6 +370,25 @@ func _init() -> void:
 			print("  stub at (%.1f, %.1f), line at %.1f" % [nq.x, nq.z, line_x])
 	_check(stubs == 0, "no stubs left short of it (%d)" % stubs)
 
+	# Brawn: a grid cornered on a county crossing, its two sides along the
+	# two roads. No street ends at the corner, but the roads up to it are
+	# still the town's, or the corner block is left with two sides missing.
+	var cross_roads := [{"pts": PackedVector2Array([Vector2(-500, 0), Vector2(500, 0)]), "type": 0},
+		{"pts": PackedVector2Array([Vector2(0, -500), Vector2(0, 500)]), "type": 0}]
+	var streets := []
+	for kk in 3:
+		var sx := -100.0 * (kk + 1)
+		streets.append([Vector3(sx, 0, 0), Vector3(sx, 0, 100), Vector3(sx, 0, 200)])
+		streets.append([Vector3(0, 0, 100.0 * (kk + 1) - 100.0 + 100.0), Vector3(-150, 0, 100.0 * kk + 100.0), Vector3(-300, 0, 100.0 * kk + 100.0)])
+	var corner := [Vector3(0, 0, 0), Vector3(-300, 0, 0), Vector3(-300, 0, 200), Vector3(0, 0, 200)]
+	var tk := GridFill.taken_over(streets, cross_roads, corner)
+	var reach_corner := 0
+	for tt in tk:
+		for cv in tt.curves:
+			if Vector2(cv[0].x, cv[0].z).length() < 0.5 or Vector2(cv[2].x, cv[2].z).length() < 0.5:
+				reach_corner += 1
+	_check(reach_corner == 2, "both roads are taken right up to the corner crossing (%d)" % reach_corner)
+
 	print("ALL TESTS PASSED" if not failed else "TESTS FAILED")
 	quit(1 if failed else 0)
 
