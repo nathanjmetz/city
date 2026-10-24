@@ -53,6 +53,13 @@ func _init() -> void:
 func seed_projects() -> void:
 	for p in Balance.REGION_PROJECTS:
 		if projects.has(p.id):
+			# A saved region keeps its pledges but takes the current names
+			# (the map moved to Grant County, 2026-10-24).
+			var have: Dictionary = projects[p.id]
+			have.name = p.name
+			have.board = p.board
+			for i in mini(p.stages.size(), have.stages.size()):
+				have.stages[i].name = p.stages[i].name
 			continue
 		var stages := []
 		for i in p.stages.size():

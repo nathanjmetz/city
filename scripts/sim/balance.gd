@@ -1324,32 +1324,45 @@ const TRADE_EXPORT_SHARE := 0.6
 ## finished stage does in each town; these goals are starting numbers for
 ## the balance thread (a game town starts with START_MONEY).
 const REGION_PROJECTS := [
-	{"id": "i69", "name": "I-69 extension", "kind": "interstate",
-		"board": "I-69 Corridor Authority", "site": [3200.0, 0.0],
+	# Grant County, Indiana already has I-69 (exits 255, 259 and 264), so the
+	# region's road project is a new interchange between them and a four-lane
+	# connector into town, the way INDOT adds one: an Interchange
+	# Justification Study for FHWA and right of way first, then the
+	# interchange, then the connector, with the county paying a local share.
+	{"id": "i69", "name": "New I-69 interchange", "kind": "interstate",
+		"board": "Grant County Economic Growth Council", "site": [3200.0, 0.0],
 		"stages": [
-			{"name": "Right of way and grading", "goal": {"money": 4_000_000.0},
-				"does": "Land near the new road starts to gain value."},
-			{"name": "Interchange at the county highway", "goal": {"money": 6_000_000.0},
-				"does": "Goods from outside the region cost less to bring in."},
-			{"name": "Four lanes to the next county", "goal": {"money": 12_000_000.0},
-				"does": "More demand for shops and industry: truck stops and warehouses."},
+			{"name": "Interchange study and right of way", "goal": {"money": 4_000_000.0},
+				"does": "Land near the planned exit starts to gain value."},
+			{"name": "Interchange at the county road", "goal": {"money": 6_000_000.0},
+				"does": "Trucks reach the interstate sooner, so goods from outside cost less."},
+			{"name": "Four-lane connector into town", "goal": {"money": 12_000_000.0},
+				"does": "More demand for shops and industry: truck stops and warehouses at the exit."},
 		]},
-	{"id": "power", "name": "Regional generating station", "kind": "power",
-		"board": "Pike County Power Cooperative", "site": [-2600.0, 600.0],
+	# Grant County's rural co-op is Heartland REMC, whose power comes from
+	# Wabash Valley Power Alliance (a generation and transmission co-op founded
+	# in Peru, Indiana): member co-ops share its plants and lines.
+	{"id": "power", "name": "Co-op generating station", "kind": "power",
+		"board": "Wabash Valley Power Alliance", "site": [-2600.0, 600.0],
 		"stages": [
 			{"name": "Transmission tie to every town", "goal": {"money": 3_000_000.0},
 				"does": "Member towns buy power from the co-op at wholesale cost."},
-			{"name": "Gas turbine unit", "goal": {"money": 9_000_000.0},
+			{"name": "Natural gas peaking unit", "goal": {"money": 9_000_000.0},
 				"does": "Cheaper power, and yearly capital credits paid to members by share."},
 		]},
-	{"id": "airport", "name": "International airport", "kind": "airport",
-		"board": "Southwest Indiana Airport Authority", "site": [0.0, -9000.0],
+	# Marion Municipal Airport (MZZ), 3 miles southwest of Marion: a 6,011 ft
+	# runway and airline service until 1970. Indiana lets counties form an
+	# airport authority (IC 8-22-3) to grow one into a regional airport;
+	# international flights need a U.S. Customs port of entry, as at Fort
+	# Wayne International.
+	{"id": "airport", "name": "Marion Regional Airport", "kind": "airport",
+		"board": "Grant County Airport Authority", "site": [0.0, -9000.0],
 		"stages": [
-			{"name": "Land and a 7,000 ft runway", "goal": {"money": 8_000_000.0},
+			{"name": "Runway extended to 7,000 ft", "goal": {"money": 8_000_000.0},
 				"does": "More demand for offices and shops in towns within reach."},
 			{"name": "Terminal and air cargo", "goal": {"money": 15_000_000.0},
-				"does": "Visitors fly in and spend money in town."},
-			{"name": "International service", "goal": {"money": 25_000_000.0},
+				"does": "Airline service returns: visitors fly in and spend money in town."},
+			{"name": "Customs and international service", "goal": {"money": 25_000_000.0},
 				"does": "Office and headquarters demand jumps, and land gains value."},
 		]},
 ]
@@ -1383,7 +1396,8 @@ const REGION_COOP_GAS_FEED := 0.65
 ## (real rural electric co-ops retire a few % of revenue a year).
 const REGION_COOP_CREDITS_YEAR := 600_000.0
 ## Air visitors a year to a town at full benefit once the terminal opens
-## (Evansville Regional sees ~200k boardings a year; a share comes to town).
+## (a regional airport like Evansville Regional sees ~200k boardings a year; a
+## share of the visitors come to town).
 const REGION_AIR_VISITORS_YEAR := 20_000.0
 
 # --- Grow the metro (the long game) ------------------------------------------

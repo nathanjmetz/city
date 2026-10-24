@@ -1,7 +1,7 @@
 class_name Regional
 extends RefCounted
-## What the region's big shared projects (the I-69 extension, the power
-## co-op's station, the international airport) do in this town once their
+## What the region's big shared projects (a new I-69 interchange, the power
+## co-op's station, the regional airport) do in this town once their
 ## stages are funded. The region's ledger (Ledger) holds the pledges; this
 ## town works out its own benefit from its share and its distance to each
 ## site (Balance.REGION_*), and keeps the result so a save, and the region
