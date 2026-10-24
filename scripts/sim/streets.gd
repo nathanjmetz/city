@@ -1,17 +1,17 @@
 class_name Streets
 extends RefCounted
 ## Street names (Brawn: believable names on everything). Every road gets the
-## name a real southern Indiana town would give it, and keeps it:
+## name a real Grant County, Indiana town would give it, and keeps it:
 ##   - the first town street is Main Street; streets across it are numbered
 ##     by how far along Main they cross (3rd Street), streets alongside it
 ##     take the old town names (Walnut, Spring, Pike, Sycamore, then the
-##     presidents), the way the original plats of Petersburg, Jasper and
-##     Washington were laid out
+##     presidents), the way the original plats of Marion, Fairmount and
+##     Jonesboro were laid out
 ##   - curving streets are subdivision streets (Meadow Lane, Fox Run)
-##   - county roads are numbered by distance from the middle of town, the
-##     Indiana county grid: County Road 300 N is three miles north
-##   - gravel roads take a family's name (Kluemper Road)
-##   - divided and state highways are State Roads (57, 61), freeways I-69
+##   - county roads are numbered on the county grid from the courthouse,
+##     signed the Grant County way: "E 500 N", "S 300 W"
+##   - gravel roads take a family's name (Overman Road)
+##   - divided and state highways are State Roads (9, 18, 37), freeways I-69
 ##   - alleys, ramps and roundabout rings have no name
 ## A street keeps its name through junctions where it runs on straight, when
 ## a new road cuts it in two, and when it's rebuilt or upgraded in place.
@@ -28,12 +28,13 @@ const SUBDIVISION := ["Meadow Lane", "Ridgeview Drive", "Fox Run", "Hillcrest Dr
 	"Briarwood Court", "Country Club Road", "Sunset Drive", "Oak Hill Road", "Willow Lane", "Park Drive",
 	"Deer Run", "Cardinal Drive", "Shady Lane", "Lakeview Drive", "Orchard Lane", "Hawthorne Drive",
 	"Timber Ridge", "Cedar Court", "Valley View Drive", "Dogwood Lane", "Redbud Lane", "Quail Run", "Prairie Lane"]
-## Real state roads and interstates around Pike County.
-const STATE_ROADS := [57, 61, 56, 257, 364, 356, 164]
-## Pike County towns a road out of town is named for (Winslow Road).
-const TOWNS := ["Winslow", "Otwell", "Spurgeon", "Stendal", "Velpen", "Algiers", "Oakland City", "Washington",
-	"Jasper", "Glezen", "Arthur", "Blackburn"]
-const INTERSTATES := [69, 64]
+## Real state roads and the interstate through Grant County, Indiana.
+const STATE_ROADS := [9, 18, 15, 37, 22, 26]
+## Grant County towns and its neighbours a road out of town is named for
+## (Jonesboro Road).
+const TOWNS := ["Marion", "Gas City", "Jonesboro", "Fairmount", "Upland", "Swayzee", "Sweetser", "Van Buren",
+	"Matthews", "Fowlerton", "Converse", "Hartford City", "Wabash", "Kokomo", "Alexandria", "Huntington"]
+const INTERSTATES := [69]
 ## A town block along Main, metres (about 330 ft, the old Indiana plat).
 const BLOCK := 100.0
 ## Within this angle of Main's line a street counts as alongside or across it.
@@ -143,34 +144,46 @@ func town_road(seed: int) -> String:
 
 
 ## A county road's name from where it runs (`a`, `b` in region
-## coordinates): an east-west road is numbered by its distance north or
-## south of `origin`, a north-south one east or west, in hundredths of a
-## mile rounded to 25 (the Indiana county grid: County Road 300 N is three
-## miles north of the courthouse).
+## coordinates), the way Grant County, Indiana signs them: the road's
+## distance from the county's base lines in hundredths of a mile, rounded
+## to 25, and which half of the county it's in first. "E 500 N" is the
+## east-west road five miles north of the courthouse, on its east side;
+## "S 300 W" the north-south road three miles west, south of it. The roads
+## on the base lines themselves are 00 ("N 00 EW").
 static func county_name(a: Vector2, b: Vector2, origin := Vector2.ZERO) -> String:
 	var mid := (a + b) * 0.5 - origin
 	var ew := absf(b.x - a.x) >= absf(b.y - a.y)
-	var off := mid.y if ew else mid.x
-	var n := maxi(25, roundi(absf(off) / CountyGrid.SECTION * 100.0 / 25.0) * 25)
-	var side := ("S" if off > 0.0 else "N") if ew else ("E" if off > 0.0 else "W")
-	return "County Road %d %s" % [n, side]
+	var n := roundi(absf(mid.y if ew else mid.x) / CountyGrid.SECTION * 100.0 / 25.0) * 25
+	return grid_label(ew, n, mid)
 
 
-## The name of a mile of section-line county road (CountyGrid key "ns:3"
-## or "ew:-2"): counted from the courthouse's own section lines once the
-## county seat has one, 100 to the mile; the lines through the courthouse
-## are Meridian Road and Base Line Road, as in counties that name them.
-## Before that, CountyGrid's numbering.
+## "E 500 N" from a road's direction (`ew`: runs east-west), its number
+## (hundredths of a mile from the base line) and where it lies relative to
+## the courthouse (`rel`, region metres; x east, z south).
+static func grid_label(ew: bool, n: int, rel: Vector2) -> String:
+	if ew:
+		var half := "E" if rel.x >= 0.0 else "W"
+		return "%s 00 NS" % half if n == 0 else "%s %d %s" % [half, n, "S" if rel.y > 0.0 else "N"]
+	var half := "S" if rel.y >= 0.0 else "N"
+	return "%s 00 EW" % half if n == 0 else "%s %d %s" % [half, n, "E" if rel.x > 0.0 else "W"]
+
+
+## The name of a mile of section-line county road (CountyGrid key
+## "ns:3:-2", "ew:0:5"), counted from the courthouse's own section lines,
+## 100 to the mile (from the region's line 0 until a county seat has one).
 func grid_name(key: String) -> String:
-	if courthouse == Vector2.INF:
+	if not CountyGrid.valid_key(key):
 		return CountyGrid.road_name(key)
 	var parts := key.split(":")
 	var ns := parts[0] == "ns"
-	var home := roundi((courthouse.x if ns else courthouse.y) / CountyGrid.SECTION)
-	var n := int(parts[1]) - home
-	if n == 0:
-		return "Meridian Road" if ns else "Base Line Road"
-	return "County Road %d %s" % [absi(n) * 100, ("E" if n > 0 else "W") if ns else ("S" if n > 0 else "N")]
+	var c := courthouse if courthouse != Vector2.INF else Vector2.ZERO
+	var hx := roundi(c.x / CountyGrid.SECTION)
+	var hz := roundi(c.y / CountyGrid.SECTION)
+	var line := int(parts[1])
+	var seg := int(parts[2])
+	# The mile's middle, in section lines from the courthouse's.
+	var rel := Vector2(line - hx, seg + 0.5 - hz) if ns else Vector2(seg + 0.5 - hx, line - hz)
+	return grid_label(not ns, absi(line - (hx if ns else hz)) * 100, rel)
 
 
 ## The county seat: when the town's courthouse goes up (or moves), every
@@ -192,7 +205,7 @@ func seat(sim) -> bool:
 		rename[grid_name(key)] = key
 	var county := {}
 	for id in names:
-		if int(sim.network.segments[id].type) == RoadStyle.Type.COUNTY and str(names[id]).begins_with("County Road"):
+		if int(sim.network.segments[id].type) == RoadStyle.Type.COUNTY and _is_grid(str(names[id])):
 			county[names[id]] = id
 	courthouse = at
 	var to := {}
@@ -210,6 +223,15 @@ func seat(sim) -> bool:
 	if any:
 		changed.emit()
 	return any
+
+
+## True for a county grid name ("E 500 N", "N 00 EW", or the older
+## "County Road 300 N").
+static func _is_grid(name: String) -> bool:
+	if name.begins_with("County Road"):
+		return true
+	var p := name.split(" ")
+	return p.size() == 3 and p[0] in ["N", "S", "E", "W"] and p[1].is_valid_int()
 
 
 func to_dict() -> Dictionary:
