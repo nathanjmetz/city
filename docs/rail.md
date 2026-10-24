@@ -48,7 +48,11 @@ CS2 trains, with track drawing replaced by the leader's own planning.
   0.3 m above the graded right of way (±9 m levelled), shoulders about 2:1 to a
   weedy toe, earth fill slopes only where the profile rides above the grade.
   At a road crossing the rails sit flush in a crossing panel and the bed eases
-  down over a 30 m approach each side.
+  down over a 30 m approach each side (at no more than 3% where it comes off
+  a fill). Fills have 2:1 grassed slopes down to the ground (AREMA).
+- **Underpasses**: a road built under track on a fill of 5.5 m or more goes
+  through a girder underpass on concrete abutments (`Rail.underpasses`), not
+  across at grade, so there are no gates there.
 - **Development tree** (`Rail.TREE`, on `Agency`): team track, then engine
   house, grain elevator spur, station, car shop, intercity stop, commuter
   trains, unit-train loop, intermodal yard, interchange and classification yard.

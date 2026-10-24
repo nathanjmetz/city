@@ -141,11 +141,20 @@ var region_nodes := {}
 ## Grade crossings: [{seg, pos (Vector3), piece, s, closed}]. Traffic reads
 ## `closed` (gates down: cars stop short of it).
 var crossings := []
+## Where a road passes under track on a high fill, through a concrete
+## underpass instead of across at grade: [{seg, pos, piece, s, fill}].
+var underpasses := []
 ## Pieces held by a train's track warrant: piece -> train id.
 var held := {}
 
 ## Goes up whenever track or yards change (trees, views).
 var version := 0
+
+## Track over water rides this high above it on a bridge (m).
+const BRIDGE_CLEAR := 5.5
+## A road under track on a fill at least this high (m) goes through an
+## underpass: 14.5 ft (4.4 m) clearance (AASHTO) plus the deck.
+const UNDERPASS_FILL := 5.5
 
 var _next := {"depot": 1, "line": 1, "node": 1, "piece": 1, "train": 1}
 var _cum := {}        # piece -> [cumulative metres at each point]
@@ -1791,13 +1800,42 @@ func _rebuild(sim: CitySim) -> void:
 	sim.mark_lots_dirty()
 
 
+## The track's base level along a line of points (`off` turns them into
+## terrain coordinates): never below the graded ground, lifted over water,
+## and easing on and off any fill no steeper than `grade`. The view draws
+## the same profile.
+static func profile(pts: Array, grade: float, off: Vector2) -> PackedFloat32Array:
+	var h := PackedFloat32Array()
+	h.resize(pts.size())
+	for i in pts.size():
+		var p: Vector3 = pts[i]
+		var y := Terrain.base(p.x + off.x, p.z + off.y)
+		if Terrain.is_water(p.x + off.x, p.z + off.y):
+			y = maxf(y, Terrain.water_level(p.x + off.x, p.z + off.y) + BRIDGE_CLEAR)
+		h[i] = y
+	for pass_dir in [1, -1]:
+		var r := range(1, pts.size()) if pass_dir == 1 else range(pts.size() - 2, -1, -1)
+		for i in r:
+			var j: int = i - pass_dir
+			var ds: float = (pts[i] as Vector3).distance_to(pts[j])
+			h[i] = maxf(h[i], h[j] - grade * ds)
+	return h
+
+
+static func grade_of(kind: String) -> float:
+	return RailPlanner.LIMITS.spur.grade if kind == "spur" else RailPlanner.LIMITS.main.grade
+
+
 ## Grade crossings: every place built track meets a road at ground level.
+## Where the track is high on a fill the road goes under it instead.
 func _find_crossings(sim: CitySim) -> void:
 	_roads_dirty = false
 	var old := {}
 	for c in crossings:
 		old[Vector2i(roundi(c.pos.x), roundi(c.pos.z))] = c.closed
 	crossings.clear()
+	underpasses.clear()
+	var seen := {}
 	var pids := pieces.keys()
 	pids.sort()
 	for pid in pids:
@@ -1811,6 +1849,7 @@ func _find_crossings(sim: CitySim) -> void:
 		for p in pts:
 			box = box.expand(Vector2(p.x, p.z))
 		box = box.grow(30.0)
+		var h := PackedFloat32Array()
 		for seg in sim.network.segments:
 			var c := sim.network.curve_of(seg)
 			var rb := Rect2(Vector2(c[0].x, c[0].z), Vector2.ZERO).expand(Vector2(c[1].x, c[1].z)).expand(Vector2(c[2].x, c[2].z))
@@ -1830,6 +1869,18 @@ func _find_crossings(sim: CitySim) -> void:
 					if hit != null:
 						var at := Vector3(hit.x, 0.0, hit.y)
 						var s: float = cum[i - 1] + a.distance_to(hit)
+						if h.is_empty():
+							h = profile(pts, grade_of(pc.kind), sim.terrain_offset)
+						var f := a.distance_to(hit) / maxf(a.distance_to(b), 0.001)
+						var fill := lerpf(h[i - 1], h[i], f) - Terrain.base(at.x + sim.terrain_offset.x, at.z + sim.terrain_offset.y)
+						# One per place: a road sample can end right on the track.
+						var key := Vector3i(seg, roundi(at.x), roundi(at.z))
+						if seen.has(key):
+							continue
+						seen[key] = true
+						if fill >= UNDERPASS_FILL:
+							underpasses.append({"seg": seg, "pos": at, "piece": pid, "s": s, "fill": fill})
+							continue
 						crossings.append({"seg": seg, "pos": at, "piece": pid, "s": s,
 							"closed": old.get(Vector2i(roundi(at.x), roundi(at.z)), false)})
 
