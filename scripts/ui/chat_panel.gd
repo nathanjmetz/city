@@ -242,7 +242,7 @@ func _update_players() -> void:
 			var off := Button.new()
 			off.text = "Remove" if pin != "" else "New PIN"
 			off.focus_mode = Control.FOCUS_NONE
-			off.tooltip_text = "Their PIN stops working" if pin != "" else "Let them in again"
+			off.tooltip_text = "Their PIN stops working and their town comes off the map" if pin != "" else "Let them in again, with a fresh town"
 			off.pressed.connect(func():
 				if pin != "":
 					client.remove_pin(name)

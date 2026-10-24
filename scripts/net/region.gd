@@ -19,6 +19,11 @@ const GROWTH_WEDGE := 30.0
 const SITE_RADIUS := 200.0
 ## Chat lines kept and sent to players who join.
 const CHAT_KEEP := 100
+## Which real map the region is built on. When a build changes it, the
+## server starts the shared region over on the new map by itself, and every
+## player keeps their account and PIN. Bump PROTOCOL in RegionServer too, so
+## a computer still on the old map is asked to update instead of joining.
+const MAP := "petersburg"
 ## The county highway runs this far out of a town toward open country.
 const COUNTY_REACH := 2000.0
 ## A new town is linked by county road to this many of its nearest towns.
@@ -73,6 +78,14 @@ func city_of(player_id: String) -> String:
 ## county highway straight through; each later one gets a road to each of
 ## its nearest towns (meeting theirs halfway, on the city line) and one on
 ## out to open country. The roads are free and can't be bulldozed.
+## Takes a town off the map: its label, land, copies and road links. Its
+## neighbors keep their halves of the county roads.
+func remove_city(id: String) -> void:
+	for d in [cities, land, _data, _stale, _full, away, handed]:
+		d.erase(id)
+	joins = joins.filter(func(j): return j.a != id and j.b != id)
+
+
 func add_city(player_id: String, player: String) -> String:
 	load_stale()
 	handed = {}
@@ -539,7 +552,7 @@ func to_dict(full_for := "*") -> Dictionary:
 		var data := city_data(id) if full_for == "*" or full_for == id else postcard_data(id)
 		cs[id] = {"owner": c.owner, "player": c.player, "name": c.name, "origin": [c.origin.x, c.origin.y],
 			"color": c.color, "city": data, "land": land_flat(id)}
-	return {"version": 2, "seed": region_seed, "cities": cs, "chat": chat, "joins": joins,
+	return {"version": 2, "map": MAP, "seed": region_seed, "cities": cs, "chat": chat, "joins": joins,
 		"ledger": ledger.to_dict()}
 
 

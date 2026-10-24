@@ -435,15 +435,25 @@ func add_player(name: String) -> String:
 	return accounts[key].pin
 
 
-## (Host) takes a player's PIN away, so it lets nobody in.
+## (Host) removes a player: their PIN lets nobody in and their town comes
+## off the map (old towns from earlier tries leave no ghost labels behind).
 func remove_pin(name: String) -> void:
 	var key := name.strip_edges().to_lower()
 	if accounts.has(key) and not accounts[key].host:
 		accounts[key].pin = ""
 		accounts[key].status = "declined"
 		accounts[key].tokens = []
+		var town := region.city_of(str(accounts[key].player))
+		if town != "":
+			for peer in _players.keys():
+				if _players[peer].city == town:
+					_players.erase(peer)
+					_reject(peer, "The host removed you from this region.")
+					get_tree().create_timer(2.0).timeout.connect(func(): if _peer: _peer.disconnect_peer(peer))
+					_send_players()
+			region.remove_city(town)
 		_dirty = true
-		_log("The host took %s's PIN away" % accounts[key].name)
+		_log("The host removed %s" % accounts[key].name)
 		_send_pins()
 
 
@@ -664,8 +674,17 @@ func _load() -> void:
 	if typeof(d) != TYPE_DICTIONARY:
 		_log("Couldn't read %s, starting a new region" % data_path)
 		return
-	region.from_dict(d)
-	region.away = d.get("away", {}) if d.get("away") is Dictionary else {}
+	# A new map: the towns can't move over, so the region starts fresh, but
+	# accounts, PINs and sign-ins stay so nobody has to be invited again.
+	var old_map := str(d.get("map", "petersburg"))
+	if old_map == Region.MAP:
+		region.from_dict(d)
+		region.away = d.get("away", {}) if d.get("away") is Dictionary else {}
+	else:
+		_log("The game moved from the %s map to %s: starting the region fresh, players keep their PINs" % [old_map, Region.MAP])
+		region.chat = d.get("chat", [])
+		region.add_chat("", "The region moved to a new map. Everyone starts a fresh town here.")
+		_dirty = true
 	accounts = {}
 	var saved: Dictionary = d.get("accounts", {})
 	for key in saved:
@@ -682,6 +701,18 @@ func _load() -> void:
 			accounts[key].pin = _new_pin()
 	if not any_host and not accounts.is_empty():
 		accounts[accounts.keys()[0]].host = true
+	# A town no account plays (left from an earlier try or a removed player)
+	# can never be played again: take it off the map, so it leaves no ghost.
+	if not accounts.is_empty():
+		var played := {}
+		for key in accounts:
+			if accounts[key].status != "declined":
+				played[str(accounts[key].player)] = true
+		for id in region.cities.keys():
+			if not played.has(str(region.cities[id].owner)):
+				_log("Took %s off the map: nobody plays it any more" % region.cities[id].name)
+				region.remove_city(id)
+				_dirty = true
 	if invite_code == "":
 		invite_code = str(d.get("code", ""))
 	_log("Loaded %d cities from %s" % [region.cities.size(), data_path])
