@@ -36,9 +36,10 @@ const LIMITS := {
 
 enum Cell { FREE, BLOCKED, ZONED, TRACK, JUNCTION }
 
-## The deepest cut or highest fill new track may take, metres, and what
-## each metre of it costs per metre of track (earthwork).
-const MAX_CUT := 8.0
+## The deepest cut or highest fill new track may take, metres (about 40 ft,
+## common on Midwestern lines leaving a river valley), and what each metre
+## of it costs per metre of track (earthwork).
+const MAX_CUT := 12.0
 const CUT_PER_M := 250.0
 ## Track over water goes on a bridge, this many times dearer.
 const BRIDGE_FACTOR := 4.0

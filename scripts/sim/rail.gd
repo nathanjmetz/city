@@ -419,7 +419,7 @@ func _next_project(sim: CitySim, id: int) -> bool:
 			return false
 		var plan: Dictionary = _plan(sim, id, "main", link)
 		if plan.is_empty():
-			d.why = "Can't find a buildable main line to the region: houses, farms or highways are in the way."
+			d.why = "Can't find a buildable main line to the region: houses, farms, highways or steep ground are in the way."
 			d.skip["region"] = sim.tick_count + TICKS_PER_DAY * 3
 			return true
 		if d.money < plan.cost:
@@ -597,11 +597,11 @@ func _plan(sim: CitySim, id: int, kind: String, target: Dictionary) -> Dictionar
 	if target.has("heading"):
 		goal.heading = target.heading
 		goal.tol = 45.0
-	var plan: Dictionary = pl.plan(starts, goal)
+	var plan := _plan_from(pl, starts, goal, kind == "main")
 	if plan.is_empty() and pl.crossing_penalty > 0.0:
 		# No way around the roads within the survey: cross them after all.
 		pl.crossing_penalty = 0.0
-		plan = pl.plan(starts, goal)
+		plan = _plan_from(pl, starts, goal, kind == "main")
 	if plan.is_empty():
 		return {}
 	plan.from = starts[plan.start]
@@ -609,6 +609,20 @@ func _plan(sim: CitySim, id: int, kind: String, target: Dictionary) -> Dictionar
 	if plan.from.has("piece"):
 		plan.cost += Balance.RAIL_TURNOUT_COST
 	return plan
+
+
+## A main line is surveyed from each end of the yard on its own, so a hemmed-in
+## end can't use up the search the open end needs; the cheaper line wins.
+func _plan_from(pl: RailPlanner, starts: Array, goal: Dictionary, each: bool) -> Dictionary:
+	if not each:
+		return pl.plan(starts, goal)
+	var best := {}
+	for i in starts.size():
+		var p: Dictionary = pl.plan([starts[i]], goal)
+		if not p.is_empty() and (best.is_empty() or p.cost < best.cost):
+			p.start = i
+			best = p
+	return best
 
 
 func _propose(sim: CitySim, id: int, kind: String, target: Dictionary, plan: Dictionary, why: String) -> bool:
