@@ -1,7 +1,7 @@
 class_name RegionPanel
 extends PanelContainer
 ## The region, from the globe in the top bar: the big projects every town
-## can chip in to (the I-69 extension, the power co-op's station, the
+## can chip in to (a new I-69 interchange, the power co-op's station, the
 ## international airport), and the services this town shares with its
 ## neighbors. Only shown in a region (every game is, outside of tests).
 ##
