@@ -283,9 +283,39 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 	if restored:
 		# A bronze plaque on the end pier by the stair door: the district's listing.
 		_box("metal", Vector3(0.45, 0.32, 0.04), Vector3(sx + signf(sx) * 0.62, 1.55, zf - 0.23), Color("#6b5428"))
+	_alley_side(w, zf + d, fronts, fw, storeys, shop_h, floor_h, wall)
 	if depth > zf + d + 3.0:
 		_flat_rect("asphalt", -width * 0.5, width * 0.5, zf + d, minf(depth, zf + d + 10.0), 0.06)
 	_downtown_walk(to_curb, width, zf)
+
+
+## The back of a Main Street block, on the alley: a steel service door and
+## a small barred window for each shop, and plain double-hungs upstairs under
+## brick segmental arches with stone sills, fewer than on the front (rear
+## elevations of 1880s-1910s blocks in Jasper, Washington or Madison,
+## Indiana; the back was never meant to be seen).
+func _alley_side(w: float, zb: float, fronts: int, fw: float, storeys: int, shop_h: float, floor_h: float,
+		wall: Color) -> void:
+	var arch := wall.darkened(0.12)
+	for k in fronts:
+		var fx := -w * 0.5 + (k + 0.5) * fw
+		var side := -1.0 if k % 2 == 0 else 1.0
+		var dx := fx + fw * 0.2 * side
+		_steel_door(Vector3(dx, 1.05, zb), 1.0)
+		var wx := dx - side * 2.0
+		_glass(Vector3(wx, 2.3, zb + 0.03), Vector3(1, 0, 0), 0.9, 0.9, 0.0)
+		for b in 3:
+			_box("metal", Vector3(0.025, 0.9, 0.025), Vector3(wx - 0.3 + b * 0.3, 2.3, zb + 0.08), Color("#2a2b2c"))
+		_box("paint", Vector3(1.0, 0.08, 0.14), Vector3(wx, 1.81, zb + 0.07), FOUNDATION)
+	var n := maxi(2, int(w / 3.6))
+	for f in range(1, storeys):
+		var y := shop_h + (f - 1) * floor_h + 1.6
+		for i in n:
+			var x := lerpf(-w * 0.5 + 1.8, w * 0.5 - 1.8, float(i) / (n - 1))
+			var wh := 1.7
+			_glass(Vector3(x, y, zb + 0.03), Vector3(1, 0, 0), 0.9, wh, rng.randf_range(0.0, 0.8))
+			_box("brick", Vector3(1.25, 0.3, 0.1), Vector3(x, y + wh * 0.5 + 0.15, zb + 0.05), arch)
+			_box("paint", Vector3(1.1, 0.08, 0.14), Vector3(x, y - wh * 0.5 - 0.04, zb + 0.07), FOUNDATION)
 
 
 ## A downtown sidewalk: concrete from the shopfronts all the way to the curb
