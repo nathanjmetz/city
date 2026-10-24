@@ -389,6 +389,13 @@ static func _fresh_sim() -> CitySim:
 	sim.demand[ZoneMap.Zone.RESIDENTIAL] = 1.0
 	sim.demand[ZoneMap.Zone.COMMERCIAL] = 1.0
 	sim.demand[ZoneMap.Zone.INDUSTRIAL] = 1.0
+	# The scenarios are about lot shapes, laid out round the origin with no
+	# county road in mind: bulldoze the section-line roads there, which lots
+	# keep off on purpose (#462), so their blocked frontage isn't counted.
+	for line in range(-2, 3):
+		for seg in range(-2, 2):
+			sim.county_removed["ns:%d:%d" % [line, seg]] = true
+			sim.county_removed["ew:%d:%d" % [line, seg]] = true
 	return sim
 
 
