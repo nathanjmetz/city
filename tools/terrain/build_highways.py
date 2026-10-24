@@ -37,20 +37,32 @@ ROUTES = [
         (38.700, -87.150)]},
     # North from Petersburg over the White River, then north-west through
     # Monroe City toward Vincennes.
-    {"name": "State Road 61", "short": "SR 61", "channel": 1, "pts": [
+    {"name": "State Road 61", "short": "SR 61", "from_main": True, "channel": 1, "pts": [
         ("px", 1052, 1104), ("px", 1010, 1072), ("px", 990, 1000), ("px", 988, 960), ("px", 985, 832),
         ("px", 965, 720), ("px", 940, 662), ("px", 850, 552), ("px", 760, 442), (38.6145, -87.3540),
         (38.640, -87.375), (38.690, -87.410)]},
     # South-east from Petersburg to Winslow and on toward Lynnville.
-    {"name": "State Road 61", "short": "SR 61", "channel": 1, "pts": [
+    {"name": "State Road 61", "short": "SR 61", "from_main": True, "channel": 1, "pts": [
         ("px", 1052, 1100), ("px", 1070, 1130), ("px", 1090, 1180), ("px", 1130, 1280), ("px", 1170, 1360),
         ("px", 1205, 1440), ("px", 1290, 1640), ("px", 1360, 1820), (38.340, -87.190),
         (38.300, -87.175)]},
     # East from Petersburg to Otwell and on toward Jasper.
-    {"name": "State Road 56", "short": "SR 56", "channel": 2, "pts": [
+    {"name": "State Road 56", "short": "SR 56", "from_main": True, "channel": 2, "pts": [
         ("px", 1050, 1098), ("px", 1080, 1105), ("px", 1160, 1118), ("px", 1260, 1132), ("px", 1400, 1150),
         ("px", 1560, 1190), ("px", 1700, 1250), ("px", 1850, 1300), (38.4545, -87.0925), (38.450, -87.040)]},
 ]
+
+
+def nearest(line, p):
+    """The point on a polyline nearest p."""
+    best, out = np.inf, line[0]
+    for a, b in zip(line[:-1], line[1:]):
+        d = b - a
+        t = np.clip((p - a) @ d / max(d @ d, 1e-9), 0, 1)
+        q = a + t * d
+        if np.linalg.norm(q - p) < best:
+            best, out = np.linalg.norm(q - p), q
+    return out
 
 
 def point(q):
@@ -85,8 +97,16 @@ def main():
     field = np.full((N, N, 3), RANGE, dtype=np.float64)
     best = np.full((N, N, 3), np.inf)
     routes = []
+    main_line = None
     for r in ROUTES:
-        line = smooth([point(q) for q in r["pts"]])
+        way = [point(q) for q in r["pts"]]
+        if main_line is not None and r.get("from_main"):
+            # It starts on SR 57 itself, as SR 61 and SR 56 leave it in
+            # Petersburg: one road, not a spur ending beside it.
+            way[0] = tuple(nearest(main_line, np.array(way[0])))
+        line = smooth(way)
+        if main_line is None:
+            main_line = line
         routes.append({"name": r["name"], "short": r["short"], "pts": [[round(x, 1), round(z, 1)] for x, z in line]})
         ch = r["channel"]
         for i in range(len(line) - 1):

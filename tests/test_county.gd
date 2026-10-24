@@ -51,6 +51,7 @@ func _init() -> void:
 	_test_grid_over_joined()
 	_test_kept_clear()
 	_test_stub()
+	_test_old_crossing()
 	print("ALL TESTS PASSED" if _failed == 0 else "SOME TESTS FAILED")
 	quit(1 if _failed > 0 else 0)
 
@@ -471,6 +472,45 @@ func _test_stub() -> void:
 	_check(after > before + 1000.0 and lo < z - 700.0 and hi > z + 700.0,
 		"out along the mile both ways (%d m, was %d m; %d..%d)" % [after, before, lo - z, hi - z])
 	_check(not sim._extend_county_ends(), "and once is enough")
+
+
+
+## A county road the town joined and then bulldozed stays gone: it isn't
+## taken on along its line again.
+func _test_old_crossing() -> void:
+	var S := CountyGrid.SECTION
+	var x := 0.0
+	var z := 0.0
+	var found := false
+	for line in range(-6, 6):
+		for seg in range(-6, 6):
+			if found or not CountyGrid.has_mile(line, seg):
+				continue
+			var cx := line * S
+			var cz := (seg + 0.5) * S
+			var dry := true
+			for k in range(-25, 26):
+				dry = dry and CountyGrid.clears(cx, cz + k * 30.0)
+			if dry:
+				x = cx
+				z = cz
+				found = true
+	if not found:
+		return
+	var sim := CitySim.new()
+	sim.apply({"type": "build_road", "start": [x - 200, z], "ctrl": [x - 100, z], "end": [x, z], "road": RoadStyle.Type.STREET,
+		"join": true})
+	var gone := -1
+	for id in sim.network.segments:
+		if sim.network.segments[id].type == RoadStyle.Type.GRAVEL:
+			var c := sim.network.curve_of(id)
+			if c[0].z > z + 1.0 or c[2].z > z + 1.0:
+				gone = id
+				break
+	_check(gone != -1 and sim.apply({"type": "remove_road", "seg": gone}), "a piece of joined county road bulldozed")
+	var after := _gravel(sim).size()
+	sim._extend_county_ends()
+	_check(_gravel(sim).size() == after, "isn't laid again (%d, was %d)" % [_gravel(sim).size(), after])
 
 
 ## Brawn (2026-10-24): a grid whose side lies on a county road the town

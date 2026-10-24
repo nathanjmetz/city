@@ -743,6 +743,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 		"remove_road":
 			ok = network.segments.has(int(cmd.seg)) and not is_link_segment(int(cmd.seg))
 			if ok:
+				_note_county_removed(int(cmd.seg))
 				network.remove_segment(int(cmd.seg))
 		"paint_zone":
 			zones.paint(_v(cmd.center), float(cmd.radius), int(cmd.zone))
@@ -3596,6 +3597,21 @@ func _join_county(p: Vector3, way := 0, key := "") -> bool:
 		streets.grid_name(mile.key))
 	streets.sync(self)
 	return true
+
+
+## A county road the town joined, bulldozed: that mile is the player's to
+## have gone, so it isn't joined again or taken on along its line.
+func _note_county_removed(seg: int) -> void:
+	var c := network.curve_of(seg)
+	var o := terrain_offset
+	var mid := RoadNetwork.bezier(c[0], c[1], c[2], 0.5)
+	for mile in CountyGrid.miles_at(mid.x + o.x, mid.z + o.y, 2.0):
+		var ns: bool = mile.key.begins_with("ns")
+		var line: float = mile.a.x if ns else mile.a.y
+		if absf((c[0].x + o.x if ns else c[0].z + o.y) - line) < 2.0 \
+				and absf((c[2].x + o.x if ns else c[2].z + o.y) - line) < 2.0 and not county_removed.has(mile.key):
+			county_removed[mile.key] = true
+			county_changed.emit()
 
 
 ## Joined county road that stopped short and left a dead end on its line

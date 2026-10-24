@@ -283,12 +283,13 @@ void fragment() {
 	// 200 E...): gravel with mowed ditches. They stop at the water and on
 	// steep bluffs (CountyGrid.clears). The gravel runs on through town
 	// (lots and fields keep off it), so a road met there meets it, not a gap
-	// in the paint (Brawn 2026-10-24); only the mowed ditches give way to
-	// the town's yards (UV: mowed, graded).
+	// in the paint (Brawn 2026-10-24), and stops at the verge of a town road
+	// it hasn't joined, as at a crossroads, rather than running under it
+	// (UV.x: mowed). Its mowed ditches give way to the town's yards (UV.y).
 	float px = fwidth(r.x) + fwidth(r.y);
 	float open_land = (1.0 - smoothstep(0.06, 0.12, cover.g)) * (1.0 - smoothstep(0.012, 0.02, steep));
 	float verge = county_road(r, 8.0, px) * open_land * (1.0 - smoothstep(0.2, 0.6, max(town.x, town.y)));
-	float county = county_road(r, 3.5, px) * open_land;
+	float county = county_road(r, 3.5, px) * open_land * (1.0 - smoothstep(0.3, 0.7, town.x));
 	vec3 ditch = mix(lush.rgb, dry.rgb, 0.3);
 	ditch = mix(ditch, dormant.rgb, brown);
 	col = mix(col, ditch * (0.92 + 0.16 * clump), verge * 0.65);
