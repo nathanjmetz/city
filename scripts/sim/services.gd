@@ -14,23 +14,23 @@ enum Kind { SUBSTATION, WATER_TOWER, FIRE, POLICE, CLINIC, SCHOOL, POWER_FEED, W
 const KINDS := {
 	# Ties the town to the regional grid (homes buy power from the utility).
 	# A 20 MVA distribution substation carries about 13,000 homes.
-	Kind.SUBSTATION: {"name": "Substation", "icon": "power", "size": Vector2(30, 30),
+	Kind.SUBSTATION: {"name": "Substation", "icon": "substation", "size": Vector2(30, 30),
 		"cost": Balance.SERVICES["substation"]["cost"], "upkeep": Balance.SERVICES["substation"]["upkeep"], "capacity": Balance.SERVICES["substation"]["capacity"], "utility": "power"},
 	# Well, pump house and a 500,000 gallon elevated tank: about 1 million
 	# gallons a day, at 300 gallons per household.
-	Kind.WATER_TOWER: {"name": "Water tower", "icon": "water", "size": Vector2(30, 30),
+	Kind.WATER_TOWER: {"name": "Water tower", "icon": "water_tower", "size": Vector2(30, 30),
 		"cost": Balance.SERVICES["water_tower"]["cost"], "upkeep": Balance.SERVICES["water_tower"]["upkeep"], "capacity": Balance.SERVICES["water_tower"]["capacity"], "utility": "water"},
 	# Starter utilities for a village: an overhead feed with pole transformers
 	# from the regional utility, and a 150 gpm well with a pressure tank
 	# (about 200,000 gallons a day).
-	Kind.POWER_FEED: {"name": "Power line feed", "icon": "power", "size": Vector2(12, 12),
+	Kind.POWER_FEED: {"name": "Power line feed", "icon": "power_line", "size": Vector2(12, 12),
 		"cost": Balance.SERVICES["power_feed"]["cost"], "upkeep": Balance.SERVICES["power_feed"]["upkeep"], "capacity": Balance.SERVICES["power_feed"]["capacity"], "utility": "power"},
-	Kind.WELL: {"name": "Well and pump house", "icon": "water", "size": Vector2(20, 20),
+	Kind.WELL: {"name": "Well and pump house", "icon": "well", "size": Vector2(20, 20),
 		"cost": Balance.SERVICES["well"]["cost"], "upkeep": Balance.SERVICES["well"]["upkeep"], "capacity": Balance.SERVICES["well"]["capacity"], "utility": "water"},
 	# The water and sewer utility (Brawn's hub with a manager): an office and
 	# its first well. It pays its own way from water bills plus the city's
 	# subsidy, so the city pays no upkeep for it (see WaterUtility).
-	Kind.WATER_UTILITY: {"name": "Water and sewer utility", "icon": "water", "size": Vector2(30, 30),
+	Kind.WATER_UTILITY: {"name": "Water and sewer utility", "icon": "water_utility", "size": Vector2(30, 30),
 		"cost": Balance.WATER_UTILITY["cost"], "upkeep": 0, "capacity": Balance.WATER_WORKS["well"]["capacity"], "utility": "water", "hub": true},
 	# Two-bay station. ISO rates homes within 1.5 road miles of a station.
 	Kind.FIRE: {"name": "Fire station", "icon": "fire", "size": Vector2(30, 36),

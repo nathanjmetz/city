@@ -654,7 +654,7 @@ static func _power(sim: CitySim, id: int) -> Dictionary:
 	if float(k.value) < 0.0:
 		problems.append("Its smoke and ash lower land value nearby (see the Pollution view).")
 	var title: String = "%s %s" % [s.leader.name.split(" ")[-1], k.name.to_lower()]
-	return {"title": title, "kind": "Power company: " + sim.power.status(id), "icon": "power",
+	return {"title": title, "kind": "Power company: " + sim.power.status(id), "icon": "power_co",
 		"ok": s.get("idle", "") == "", "status": s.reason, "rows": rows, "problems": problems}
 
 

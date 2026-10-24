@@ -53,5 +53,5 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 	if c.idle != "":
 		problems.append(c.idle)
 	# The grant is set by its Funding slider (Economy page).
-	return {"title": "Phone company", "kind": "Phone and internet", "icon": "tower", "ok": problems.is_empty(),
+	return {"title": "Phone company", "kind": "Phone and internet", "icon": "phone_co", "ok": problems.is_empty(),
 		"status": status, "rows": rows, "problems": problems}

@@ -30,9 +30,18 @@ const _FILES := {
 	"help": "help", "grid": "grid", "curve": "curve", "roundabout": "roundabout",
 	"bus": "bus", "transit": "bus", "taxi": "taxi",
 	"permits": "permits", "check": "check", "close": "close",
+	"power_line": "power_line", "substation": "substation", "power_co": "power_co",
+	"well": "well", "water_tower": "water_tower", "water_utility": "water_utility",
+	"landfill": "landfill", "recycling": "recycling", "phone_co": "phone_co", "tower": "phone_co",
 }
 ## These get a soft `accent` fill behind the line (zone tints and the like).
 const _DUOTONE := ["homes", "zones", "shops", "industry", "farms", "farmland"]
+## Detailed Neighbors icons (one per service, drawn from a real reference
+## and split by the House mark's gaps): a soft shade layer, a mint accent
+## piece like the mark's roof, then the line art. Files: name, name-shade,
+## name-accent.
+const _LAYERED := ["power_line", "substation", "power_co", "well", "water_tower",
+	"water_utility", "landfill", "recycling", "phone_co"]
 static var _textures := {}
 
 
@@ -54,6 +63,9 @@ func _draw() -> void:
 		var rect := Rect2(o, Vector2(s, s))
 		if kind in _DUOTONE:
 			draw_texture_rect(_texture(_FILES[kind] + "-fill"), rect, false, Color(accent, 0.45))
+		elif _FILES[kind] in _LAYERED:
+			draw_texture_rect(_texture(_FILES[kind] + "-shade"), rect, false, Color(color, 0.5))
+			draw_texture_rect(_texture(_FILES[kind] + "-accent"), rect, false, Brand.BRAND_MINT)
 		draw_texture_rect(_texture(_FILES[kind]), rect, false, color)
 		return
 	match kind:
@@ -246,17 +258,6 @@ func _draw() -> void:
 		"power":
 			_poly([P.call(0.58, 0.06), P.call(0.22, 0.56), P.call(0.48, 0.56), P.call(0.4, 0.94),
 				P.call(0.78, 0.4), P.call(0.52, 0.4)], Color(1.0, 0.82, 0.3))
-		"tower":
-			# A lattice cell tower sending out signal arcs.
-			line.call(P.call(0.5, 0.22), P.call(0.3, 0.94))
-			line.call(P.call(0.5, 0.22), P.call(0.7, 0.94))
-			line.call(P.call(0.36, 0.72), P.call(0.64, 0.72), w * 0.7)
-			line.call(P.call(0.42, 0.5), P.call(0.58, 0.5), w * 0.7)
-			draw_circle(P.call(0.5, 0.2), s * 0.06, accent)
-			for k in 2:
-				var r := s * (0.17 + k * 0.12)
-				draw_arc(P.call(0.5, 0.2), r, -PI * 0.85, -PI * 0.55, 8, color, w * 0.7, true)
-				draw_arc(P.call(0.5, 0.2), r, -PI * 0.45, -PI * 0.15, 8, color, w * 0.7, true)
 		"water":
 			# Water tower: a round tank on legs.
 			draw_circle(P.call(0.5, 0.32), s * 0.24, Color(0.55, 0.78, 0.95))
@@ -278,22 +279,6 @@ func _draw() -> void:
 			_poly([P.call(0.5, 0.14), P.call(0.94, 0.36), P.call(0.5, 0.58), P.call(0.06, 0.36)], color)
 			draw_arc(P.call(0.5, 0.5), s * 0.24, 0.15, PI - 0.15, 16, color, w, true)
 			line.call(P.call(0.86, 0.38), P.call(0.86, 0.72))
-		"landfill":
-			# A grassed mound with a truck tipping at the working face.
-			_poly([P.call(0.04, 0.84), P.call(0.3, 0.42), P.call(0.66, 0.36), P.call(0.96, 0.84)], Color(0.55, 0.68, 0.36))
-			_poly([P.call(0.3, 0.42), P.call(0.48, 0.39), P.call(0.4, 0.62), P.call(0.22, 0.56)], Color(0.6, 0.48, 0.34))
-			draw_rect(Rect2(P.call(0.62, 0.62), Vector2(0.26, 0.14) * s), color)
-			draw_circle(P.call(0.67, 0.8), s * 0.05, color)
-			draw_circle(P.call(0.83, 0.8), s * 0.05, color)
-		"recycling":
-			# Three chasing arrows.
-			for i in 3:
-				var a0 := -PI * 0.5 + i * TAU / 3.0
-				draw_arc(P.call(0.5, 0.52), s * 0.3, a0 + 0.25, a0 + TAU / 3.0 - 0.25, 10, Color(0.45, 0.8, 0.5), w * 1.2, true)
-				var tip: Vector2 = P.call(0.5, 0.52) + Vector2(cos(a0 + TAU / 3.0 - 0.25), sin(a0 + TAU / 3.0 - 0.25)) * s * 0.3
-				var fwd := Vector2(-sin(a0 + TAU / 3.0 - 0.25), cos(a0 + TAU / 3.0 - 0.25))
-				var side := Vector2(cos(a0 + TAU / 3.0 - 0.25), sin(a0 + TAU / 3.0 - 0.25))
-				_poly([tip + fwd * s * 0.12, tip + side * s * 0.09, tip - side * s * 0.09], Color(0.45, 0.8, 0.5))
 		"train", "rail":
 			# A diesel locomotive from the side, on its rail.
 			_poly([P.call(0.08, 0.7), P.call(0.08, 0.46), P.call(0.6, 0.46), P.call(0.6, 0.7)], color)

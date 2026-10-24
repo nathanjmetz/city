@@ -1516,12 +1516,12 @@ func _service_drawer(cat: String, sections: Array) -> PanelContainer:
 func _utilities_drawer() -> PanelContainer:
 	var cat := "utilities"
 	# Brawn's hub model: a company whose leader picks and grows the plant.
-	_power_card = _card("power", "Power co.", "")
+	_power_card = _card("power_co", "Power co.", "")
 	_power_card.tooltip_text = "Power company: $%s. Its leader picks solar, wind, gas, a dam or an old coal plant, and grows it" \
 		% CitySim.money_text(Balance.POWER_YARD_COST)
 	_power_card.pressed.connect(func(): industry_tool.set_kind("power"))
 	# The phone company: placed once, then it builds its own network.
-	_telecom_card = _card("tower", "Phone co.", "")
+	_telecom_card = _card("phone_co", "Phone co.", "")
 	_telecom_card.tooltip_text = "Phone company: $%s to build, $%s a month grant. Its manager strings fiber and puts up cell towers where they pay off. One per town." % [
 		CitySim.money_text(Balance.TELECOM_COST), CitySim.money_text(Balance.TELECOM_GRANT)]
 	_telecom_card.pressed.connect(func(): telecom_tool.set_kind("telecom"))
