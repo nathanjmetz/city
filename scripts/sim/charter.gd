@@ -32,6 +32,8 @@ extends RefCounted
 ## city and the month), and saved, so every copy of the town agrees.
 
 signal changed
+## A step reached in play (not on load): the HUD celebrates it.
+signal step_reached(id: String)
 
 const HUB := "charter"
 ## What the town's charter asks on the bell.
@@ -54,6 +56,27 @@ const STEPS := [
 	{"id": "metro", "name": "Metropolitan area", "track": "area"},
 	{"id": "medium", "name": "Medium metro", "track": "area"},
 ]
+
+## What each step opens. Only what the law keeps from a smaller place is
+## locked; everything private, county or township is open from the start.
+## A settlement is policed by the county sheriff (a town hires its marshal,
+## IC 36-5-7); sewage works are a municipal utility (IC 36-9-23); a city
+## sets up a public transportation corporation (IC 36-9-4) and parking
+## garages (IC 36-9-11); park and ride lots come with the metropolitan
+## planning organization (23 USC 134). Nothing already built is removed.
+const UNLOCKS := {
+	"town": {"kinds": [Services.Kind.POLICE], "works": ["lagoon"], "powers": [
+		["A town council and clerk-treasurer", "permits"], ["A town marshal and police station", "police_station"],
+		["Town sewers, starting with a sewage lagoon", "water_utility"]]},
+	"city": {"kinds": [Services.Kind.BUS_DEPOT, Services.Kind.PARKING_GARAGE], "powers": [
+		["A mayor and city council", "permits"], ["A city bus line", "bus_depot"], ["Public parking garages", "parking_garage"]]},
+	"urban": {"powers": [["The Census counts the town as an urban area", "homes"]]},
+	"micro": {"powers": [["The town anchors its own micropolitan area", "people"]]},
+	"city2": {"powers": [["A second-class city charter, with a city clerk and a larger council", "permits"]]},
+	"metro": {"kinds": [Services.Kind.PARK_AND_RIDE], "powers": [
+		["A metropolitan planning organization for the area's roads", "road"], ["Park and ride lots", "park_and_ride"]]},
+	"medium": {"powers": [["A medium metro, a quarter of a million strong", "people"]]},
+}
 
 ## The 11 services IC 36-5-1-8(a)(4) lists, as the town can show it gives
 ## them. A town needs Balance.CHARTER_SERVICES_NEEDED of them.
@@ -113,6 +136,72 @@ func title(town: String) -> String:
 ## Steps reached, of the eight.
 func steps_reached() -> int:
 	return STEPS.filter(func(s): return reached.has(s.id)).size()
+
+
+## The step that opens a Services kind, or "" when it's open from the start.
+static func step_for_kind(kind: int) -> String:
+	for id in UNLOCKS:
+		if kind in UNLOCKS[id].get("kinds", []):
+			return id
+	return ""
+
+
+## Why a Services kind can't be built yet, or "" when it can.
+func locked(kind: int) -> String:
+	var id := step_for_kind(kind)
+	if id == "" or reached.has(id):
+		return ""
+	return _lock_text(id) + (" Until then the county sheriff patrols." if kind == Services.Kind.POLICE else "")
+
+
+## Why a water utility work (Water.TREE key) can't be built yet, or "".
+func work_locked(key: String) -> String:
+	for id in UNLOCKS:
+		if key in UNLOCKS[id].get("works", []) and not reached.has(id):
+			return _lock_text(id)
+	return ""
+
+
+func _lock_text(id: String) -> String:
+	match id:
+		"town": return "Opens when the settlement incorporates as a town."
+		"city": return "Opens when the town becomes a city."
+		"metro": return "Opens when the area becomes a metropolitan area."
+	return "Opens at %s." % _step(id).name.to_lower()
+
+
+static func _step(id: String) -> Dictionary:
+	for s in STEPS:
+		if s.id == id:
+			return s
+	return {}
+
+
+## The step after the highest reached, with how far along the town is:
+## {"id", "name", "have", "need"} in people. Empty at the top.
+func next_progress(sim) -> Dictionary:
+	var people := int(sim.stats.get("population", 0))
+	var area := maxi(metro_people, people)
+	for row in [["town", people, Balance.CHARTER_TOWN_PEOPLE], ["city", people, Balance.CHARTER_CITY_PEOPLE],
+			["urban", people, Balance.CHARTER_URBAN_PEOPLE], ["micro", area, Balance.METRO_MICRO_MIN],
+			["city2", people, Balance.CHARTER_CITY2_PEOPLE], ["metro", area, Balance.METRO_METRO_MIN],
+			["medium", area, Balance.CHARTER_MEDIUM_PEOPLE]]:
+		if reached.has(row[0]) or (row[0] == "city2" and declined.has("city2")):
+			continue
+		return {"id": row[0], "name": _step(row[0]).name, "have": int(row[1]), "need": int(row[2])}
+	return {}
+
+
+## What a step reached means, for the celebration: {"title", "how", "powers",
+## "kinds"}, with the town's name filled in.
+func celebration(sim, id: String, town: String) -> Dictionary:
+	var m := _marker(sim, id)
+	var u: Dictionary = UNLOCKS.get(id, {})
+	var t := str(_step(id).get("title", "")).replace("{town}", town)
+	if t == "":
+		t = "%s · %s" % [town, _step(id).name]
+	return {"title": t, "name": _step(id).name, "how": str(m[1]).replace("{town}", town) if m.size() > 1 else "",
+		"powers": u.get("powers", []), "kinds": u.get("kinds", []), "step": STEPS.map(func(s): return s.id).find(id) + 1}
 
 
 ## The next step and what it takes, in a line, for the Town panel. "" at the top.
@@ -277,6 +366,7 @@ func _reach(sim, id: String) -> void:
 		return
 	reached[id] = sim.tick_count
 	sim.markers.charter(sim, id, _marker(sim, id))
+	step_reached.emit(id)
 
 
 ## A marker's title and text for a step.

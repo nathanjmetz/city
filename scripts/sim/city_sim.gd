@@ -468,7 +468,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			ok = true
 		"place_service":
 			var kind := int(cmd.kind)
-			if not Services.KINDS.has(kind):
+			if not Services.KINDS.has(kind) or charter.locked(kind) != "":
 				return false
 			var pos := _v(cmd.pos)
 			var dir := _v(cmd.dir).normalized()
