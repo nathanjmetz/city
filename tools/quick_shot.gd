@@ -30,23 +30,27 @@ func _process(_delta: float) -> bool:
 					c._controls()
 			return false
 		if _mode.begins_with("pie"):
-			# Roads' pie held on 1, the cursor flicked up and right to Grid.
-			var at := Vector2(800, 480)
-			_hud.pie.open("Roads", _hud.pie_items("roads"), at, KEY_1)
+			# Roads' pie held on 1, flicked up and right to Grid (or into Road types).
+			_hud.pie.open("Roads", _hud.pie_items("roads"), Vector2.ZERO, KEY_1)
 			_hud.pie._since -= 1000
+			var o: Vector2 = _hud.pie._origin
 			var m := InputEventMouseMotion.new()
-			m.position = at + (Vector2(-150, -150) if _mode == "pie_group" else Vector2(55, -55))
+			m.position = o + (Vector2(-160, -160) if _mode == "pie_group" else Vector2(55, -55))
 			_hud.pie._input(m)
 			if _mode == "pie_group":
-				m.position = _hud.pie._origin + Vector2(50, 0)
+				m.position = o + Vector2(50, 0)
 				_hud.pie._input(m)
-			Input.warp_mouse(m.position)
 			return false
 		for q in ["park", "school", "well"]:
 			_hud.press_card(_hud.search_cards(q)[0])
 		(_hud._quick.get_child(0) as Button).button_pressed = true
 		_hud._search.text = "sch"
 		_hud._find("sch")
+	if _frames == 56 and _mode.begins_with("pie"):
+		# Again, after the cursor's own move to the middle has come through.
+		var m := InputEventMouseMotion.new()
+		m.position = _hud.pie._origin + Vector2(50, 0 if _mode == "pie_group" else -50)
+		_hud.pie._input(m)
 	if _frames == 60:
 		root.get_viewport().get_texture().get_image().save_png(_out)
 		print("saved ", _out)
