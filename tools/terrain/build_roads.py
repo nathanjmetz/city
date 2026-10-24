@@ -19,6 +19,11 @@ then writes into terrain/grant_in/:
   rail.json     the rail lines, for the rail hub.
   backdrop.bin  what the backdrop towns look like (BackdropView): their real
                 building footprints as boxes and their streets, gzipped.
+  farmsteads.bin  the farmsteads and country homes (FarmsteadView), where
+                ESA WorldCover marks a small patch of built land out in the
+                county: "FST1", u32 count, then per place int16 x, z
+                (region metres), u8 kind (0 a country home, 1 a farm), u8
+                facing (toward its road, 256ths of a turn), u8 seed.
 
 Real reference: Grant County's roads follow the Public Land Survey's
 section lines, a road every mile, named by distance from the county's base
@@ -126,6 +131,63 @@ def download():
              & (pc.field("bbox", "ymin") < N) & (pc.field("bbox", "ymax") > S))
         pq.write_table(d.to_table(filter=f, columns=cols), path)
         print("downloaded", name)
+
+
+def write_farmsteads(backdrop, sites, highways):
+    """Farmsteads where the real land cover shows them. Grant County has a
+    farmstead or country home about every quarter to half mile (USDA
+    aerials): WorldCover's built class picks each one out as a patch of a
+    few 10 m pixels. A patch big enough for a barn lot and bins is a farm,
+    a smaller one a house and garage; long thin patches are roads, and big
+    ones villages, so both are left out. None in or right by the backdrop
+    towns or the start towns, which the players build."""
+    import struct
+    import shapely
+    from scipy import ndimage
+    c = np.load(f"{OUT}/cover.npz")
+    built, water = c["built"], c["water"]
+    n = built.shape[0]
+    cell = R.SIZE / n
+    m = built > 0.2
+    lab, k = ndimage.label(m)
+    objs = ndimage.find_objects(lab)
+    sizes = ndimage.sum(m, lab, range(1, k + 1))
+    centres = ndimage.center_of_mass(m, lab, range(1, k + 1))
+    rows = []
+    for i in range(k):
+        size, sl = sizes[i], objs[i]
+        if size < 2 or size > 45 or max(sl[0].stop - sl[0].start, sl[1].stop - sl[1].start) > 9:
+            continue
+        r, col = centres[i]
+        if water[int(r), int(col)] > 0.3:
+            continue
+        x = (col + 0.5) * cell + R.CENTRE[0] - HALF
+        z = (r + 0.5) * cell + R.CENTRE[1] - HALF
+        q = shapely.Point(x, z)
+        if backdrop.distance(q) < 300 or min(math.hypot(x - s["centre"][0], z - s["centre"][1]) for s in sites) < 900:
+            continue
+        # It faces the nearest road: a section-line county road or a state road.
+        lx = round(x / SECTION) * SECTION
+        lz = round(z / SECTION) * SECTION
+        best = min([(abs(x - lx), (lx - x, 0.0)), (abs(z - lz), (0.0, lz - z))])
+        for h in highways:
+            d = h.distance(q)
+            if d < best[0]:
+                o = h.interpolate(h.project(q))
+                best = (d, (o.x - x, o.y - z))
+        d, (fx, fz) = best
+        ang = math.atan2(fz, fx) if d > 0.1 else 0.0
+        # Set back from the road as farmhouses are, about 30 m to the porch.
+        if d < 30.0 and d > 0.1:
+            x -= fx / d * (30.0 - d)
+            z -= fz / d * (30.0 - d)
+        rows.append((int(round(x)), int(round(z)), 1 if size >= 6 else 0,
+                     int(round(ang / (2 * math.pi) * 256)) % 256, (i * 2654435761) % 256))
+    out = bytearray(b"FST1") + struct.pack("<I", len(rows))
+    for row in rows:
+        out += struct.pack("<hhBBB", *row)
+    open(f"{DST}/farmsteads.bin", "wb").write(bytes(out))
+    print("farmsteads: %d farms, %d country homes" % (sum(r[2] for r in rows), sum(1 - r[2] for r in rows)))
 
 
 def xz(coords):
@@ -384,6 +446,7 @@ def main():
     json.dump({"lines": rails}, open(f"{DST}/rail.json", "w"), separators=(",", ":"))
     print("routes:", sorted({r["short"] for r in routes}), "rail lines", len(rails))
     write_backdrop(backdrop, towns)
+    write_farmsteads(backdrop, sites, [LineString(r["line"]) for r in routes])
     print("sites:", [(s["name"], s["centre"]) for s in sites])
 
 

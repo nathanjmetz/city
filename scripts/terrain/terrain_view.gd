@@ -130,10 +130,15 @@ void vertex() {
 	float reach_v = distance(world_pos.xz, tree_fade.xy);
 	float painted_v = max(smoothstep(tree_fade.z * 0.55, tree_fade.z * 0.97, reach_v),
 		smoothstep(250.0, 1100.0, tree_fade.w));
-	lift = smoothstep(0.45, 0.8, COLOR.r) * painted_v * (1.0 - clamp(max(UV.x, UV.y) * 4.0, 0.0, 1.0));
-	// Uneven, as crowns of different ages and species are: 10-20 m.
+	// Only well off toward the horizon (Brawn 2026-10-24): nearer, the shell
+	// stood up as steep green mesas on flat Grant County, and its slopes
+	// lay over the county roads beside a fencerow; there the woods are
+	// painted flat and the drawn trees give them height.
+	float off = smoothstep(2500.0, 5000.0, distance(world_pos.xz, lod_eye.xz));
+	lift = smoothstep(0.45, 0.8, COLOR.r) * painted_v * off * (1.0 - clamp(max(UV.x, UV.y) * 4.0, 0.0, 1.0));
+	// Uneven, as crowns of different ages and species are: 10-18 m.
 	float rough = textureLod(noise_soft, world_pos.xz / 90.0, 0.0).r;
-	VERTEX.y += lift * mix(10.0, 20.0, rough) * (1.0 - season_look.y * 0.5);
+	VERTEX.y += lift * mix(10.0, 18.0, rough) * (1.0 - season_look.y * 0.5);
 	world_pos.y = (MODEL_MATRIX * vec4(VERTEX, 1.0)).y;
 	cover = COLOR;
 	steep = 1.0 - NORMAL.y;
@@ -388,10 +393,14 @@ void fragment() {
 	float a = texture(noise_soft, p / 37.0 + vec2(t, t * 0.6)).r;
 	float b = texture(noise_soft, p / 13.0 - vec2(t * 0.7, t * 1.3)).r;
 	float c = texture(noise_soft, p / 160.0 + vec2(t * 0.2, 0.0)).r;
-	vec3 n = normalize(vec3((a - 0.5) * 0.35 + (b - 0.5) * 0.2, 1.0, (b - 0.5) * 0.35 - (a - 0.5) * 0.2));
+	// Farm ponds and the Mississinewa are calm: a light ripple, smoothed
+	// away where it's smaller than a pixel so the sun doesn't glitter off it
+	// as white static from above.
+	float calm = 0.45 * (1.0 - smoothstep(0.15, 1.2, length(fwidth(p))));
+	vec3 n = normalize(vec3(((a - 0.5) * 0.35 + (b - 0.5) * 0.2) * calm, 1.0, ((b - 0.5) * 0.35 - (a - 0.5) * 0.2) * calm));
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
 	ALBEDO = mix(shallow.rgb, deep.rgb, 0.45 + 0.4 * c);
-	ROUGHNESS = 0.08;
+	ROUGHNESS = 0.16;
 	SPECULAR = 0.55;
 	METALLIC = 0.0;
 }

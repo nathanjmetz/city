@@ -180,6 +180,10 @@ func _demo_town() -> void:
 	if args0.size() >= 5 and args0[4] == "state":
 		_demo_state(sim)
 		return
+	if args0.size() >= 5 and args0[4] == "land":
+		# The bare map, as a new town finds it.
+		_aim_camera()
+		return
 	if args0.size() >= 5 and args0[4] == "county":
 		_demo_county(sim)
 		return
