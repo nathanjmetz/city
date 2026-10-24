@@ -41,9 +41,19 @@ func _ready() -> void:
 	mat.shader.code = """shader_type spatial;
 render_mode cull_disabled;
 varying vec3 tint;
+// The Compatibility renderer (the browser) hands INSTANCE_CUSTOM over as
+// if it were an sRGB colour, already turned linear; undo that so custom
+// data reads the same as on the desktop.
+vec4 custom_data(vec4 c) {
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	c = mix(c * 12.92, 1.055 * pow(max(c, vec4(0.0)), vec4(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+#endif
+	return c;
+}
 void vertex() {
-	tint = mix(INSTANCE_CUSTOM.rgb, COLOR.rgb, COLOR.a);
-	float ph = INSTANCE_CUSTOM.a * 6.2831853;
+	vec4 custom = custom_data(INSTANCE_CUSTOM);
+	tint = mix(custom.rgb, COLOR.rgb, COLOR.a);
+	float ph = custom.a * 6.2831853;
 	float a = UV.x * 0.42 * sin(ph);
 	float c = cos(a);
 	float s = sin(a);
