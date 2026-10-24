@@ -1270,7 +1270,7 @@ func _roads_drawer() -> PanelContainer:
 		var short := {Services.Kind.PARKING_SMALL: "Small lot", Services.Kind.PARKING_DOWNTOWN: "Downtown",
 			Services.Kind.PARKING_LARGE: "Large lot", Services.Kind.PARK_AND_RIDE: "Park & ride",
 			Services.Kind.PARKING_GARAGE: "Garage"}
-		var b := _card("parking", short[k], "%d stalls" % n)
+		var b := _card(ks.icon, short[k], "%d stalls" % n)
 		b.tooltip_text = "%s: %d stalls, $%s to build, $%s a month" % [ks.name, n, CitySim.money_text(ks.cost),
 			CitySim.money_text(ks.upkeep)]
 		b.pressed.connect(func():
@@ -1672,7 +1672,7 @@ func _health_drawer() -> PanelContainer:
 func _transport_drawer() -> PanelContainer:
 	var cat := "transport"
 	# The railroad: its leader plans the track and asks before building.
-	var rb := _card("train", "Rail depot", "")
+	var rb := _card("rail_depot", "Rail depot", "")
 	rb.tooltip_text = "Rail depot: $%s. Its leader lays track to the region and to industry, by your permit." % \
 		CitySim.money_text(Balance.RAIL_DEPOT_COST)
 	rb.pressed.connect(func(): service_tool.set_kind(Rail.TOOL_KIND))

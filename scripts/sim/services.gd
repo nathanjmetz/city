@@ -47,11 +47,11 @@ const KINDS := {
 	# A small-town bus garage: two maintenance bays, an office and a fenced
 	# yard of bus stalls. It runs itself (BusNet) and grows into the land
 	# next door; its monthly cost is the subsidy the player sets.
-	Kind.BUS_DEPOT: {"name": "Bus depot", "icon": "bus", "size": Vector2(36, 44),
+	Kind.BUS_DEPOT: {"name": "Bus depot", "icon": "bus_depot", "size": Vector2(36, 44),
 		"cost": Balance.SERVICES["bus_depot"]["cost"], "upkeep": Balance.SERVICES["bus_depot"]["upkeep"], "transit": true},
 	# A cab company: a storefront dispatch office with a lot of cab stalls
 	# behind it. Its owner runs it on fares (TaxiCo) and grows next door.
-	Kind.TAXI_COMPANY: {"name": "Taxi company", "icon": "taxi", "size": Vector2(30, 34),
+	Kind.TAXI_COMPANY: {"name": "Taxi company", "icon": "taxi_company", "size": Vector2(30, 34),
 		"cost": Balance.SERVICES["taxi_company"]["cost"], "upkeep": Balance.SERVICES["taxi_company"]["upkeep"], "transit": true},
 	# A 25-bed county hospital with an ER; its administrator grows it from
 	# there (see Healthcare). It counts as a clinic for the homes it reaches.
@@ -66,24 +66,24 @@ const KINDS := {
 	# Public parking from the Roads menu (ParkingLots lays out the stalls;
 	# 90 degree stall counts here). A small lot of 20 stalls beside a shop
 	# row, about 72 x 131 ft.
-	Kind.PARKING_SMALL: {"name": "Small parking lot", "icon": "parking", "size": Vector2(22, 40), "parking": true,
+	Kind.PARKING_SMALL: {"name": "Small parking lot", "icon": "parking_small", "size": Vector2(22, 40), "parking": true,
 		"cost": Balance.SERVICES["parking_small"]["cost"], "upkeep": Balance.SERVICES["parking_small"]["upkeep"]},
 	# The city's downtown lot behind Main Street: about 48 metered stalls on
 	# half an acre, with a pay station and shade trees.
-	Kind.PARKING_DOWNTOWN: {"name": "Downtown parking lot", "icon": "parking", "size": Vector2(40, 46),
+	Kind.PARKING_DOWNTOWN: {"name": "Downtown parking lot", "icon": "parking_downtown", "size": Vector2(40, 46),
 		"parking": true, "cost": Balance.SERVICES["parking_downtown"]["cost"],
 		"upkeep": Balance.SERVICES["parking_downtown"]["upkeep"]},
 	# A big surface lot of about 150 stalls (a ballpark, a fairground, a
 	# store's overflow), an acre and a quarter.
-	Kind.PARKING_LARGE: {"name": "Large parking lot", "icon": "parking", "size": Vector2(77, 64), "parking": true,
+	Kind.PARKING_LARGE: {"name": "Large parking lot", "icon": "parking_large", "size": Vector2(77, 64), "parking": true,
 		"cost": Balance.SERVICES["parking_large"]["cost"], "upkeep": Balance.SERVICES["parking_large"]["upkeep"]},
 	# A state park-and-ride by the highway for commuters who carpool or ride
 	# the bus on (INDOT's run 50 to 300 stalls), with a bus shelter.
-	Kind.PARK_AND_RIDE: {"name": "Park and ride", "icon": "parking", "size": Vector2(80, 80), "parking": true,
+	Kind.PARK_AND_RIDE: {"name": "Park and ride", "icon": "park_and_ride", "size": Vector2(80, 80), "parking": true,
 		"cost": Balance.SERVICES["park_and_ride"]["cost"], "upkeep": Balance.SERVICES["park_and_ride"]["upkeep"]},
 	# A precast concrete garage, two bays wide (about 130 x 180 ft), the
 	# ground floor and three decks: about 230 stalls.
-	Kind.PARKING_GARAGE: {"name": "Parking garage", "icon": "parking", "size": Vector2(40, 55), "parking": true,
+	Kind.PARKING_GARAGE: {"name": "Parking garage", "icon": "parking_garage", "size": Vector2(40, 55), "parking": true,
 		"cost": Balance.SERVICES["parking_garage"]["cost"], "upkeep": Balance.SERVICES["parking_garage"]["upkeep"]},
 }
 ## The parking kinds, smallest first (the Roads menu's Parking row).

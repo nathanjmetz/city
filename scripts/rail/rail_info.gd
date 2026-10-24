@@ -56,7 +56,7 @@ static func depot(sim: CitySim, id: int) -> Dictionary:
 		actions.append({"label": "Less subsidy: $%s / month" % CitySim.money_text(SUBSIDY_STEPS[step - 1]),
 			"cmd": {"type": "rail_subsidy", "id": id, "monthly": SUBSIDY_STEPS[step - 1]}, "enabled": true})
 	actions.append({"label": "Close the railroad", "cmd": {"type": "remove_rail_depot", "id": id}, "enabled": true})
-	return {"title": d.name, "kind": "Railroad depot", "icon": "train", "ok": problems.is_empty() and d.state == "open",
+	return {"title": d.name, "kind": "Railroad depot", "icon": "rail_depot", "ok": problems.is_empty() and d.state == "open",
 		"status": status, "rows": rows, "problems": problems, "actions": actions}
 
 
