@@ -143,8 +143,12 @@ func _retail(to_curb: float) -> void:
 		var pick := TreeField.pick(rng)
 		var tx := lot0 + 0.8 if rng.randf() < 0.5 else lot1 - 0.8
 		trees.append([Vector3(tx, 0, -to_curb + 1.2), pick[0], pick[1], rng.randf_range(0.7, 1.0)])
-	# A light pole near the street.
-	var lx := lot1 - 0.5 if rng.randf() < 0.5 else lot0 + 0.5
+	# A light pole near the street, always on the same side of the lot, so
+	# two shops side by side never stand their poles a metre apart on the
+	# line between them: lot lights run about one per 25-30 m, three to four
+	# mounting heights apart (IES RP-20 parking lot spacing).
+	rng.randf()  # once the pole's side; kept so the rest of the lot stays as it was
+	var lx := lot1 - 0.5
 	_box("paint", Vector3(0.6, 0.5, 0.6), Vector3(lx, 0.25, 0.8), FOUNDATION)
 	_box("paint", Vector3(0.16, 7.5, 0.16), Vector3(lx, 4.0, 0.8), Color("#3a3c3e"))
 	_box("paint", Vector3(0.5, 0.18, 0.9), Vector3(lx, 7.7, 0.8 + 0.3), Color("#3a3c3e"))
