@@ -71,14 +71,30 @@ func _corner(n: int) -> Dictionary:
 		return {}
 	var d1 := Streets._out_dir(sim.network, first, n)
 	var d2 := Streets._out_dir(sim.network, second, n)
-	var w1 := RoadStyle.half_width(int(sim.network.segments[first].type)) + 1.2
-	var w2 := RoadStyle.half_width(int(sim.network.segments[second].type)) + 1.2
-	# Out along street 1 past street 2's curb, over to street 2's side of
-	# street 1 past its curb: the corner between them.
+	var t1 := int(sim.network.segments[first].type)
+	var t2 := int(sim.network.segments[second].type)
+	var h1 := RoadStyle.half_width(t1)
+	var h2 := RoadStyle.half_width(t2)
+	# The corner between them: street 1's curb on street 2's side, and
+	# street 2's curb on street 1's side.
 	var side := Vector2(-d1.y, d1.x)
 	if side.dot(d2) < 0.0:
 		side = -side
-	var at := Vector2(p.x, p.z) + d1 * w2 + side * w1
+	var side2 := Vector2(-d2.y, d2.x)
+	if side2.dot(d1) < 0.0:
+		side2 = -side2
+	var corner = Geometry2D.line_intersects_line(side * h1, d1, side2 * h2, d2)
+	if corner == null:
+		return {}
+	# The curb rounds that corner (Junction's curb return), so the post goes
+	# in the grass strip behind the curved curb, on the corner's diagonal,
+	# where a city sets it, not out in the pavement the return gave the road.
+	var r: float = Junction.RETURN_RADIUS.get(maxi(t1, t2), 6.0)
+	var ctr = Geometry2D.line_intersects_line(side * (h1 + r), d1, side2 * (h2 + r), d2)
+	var at := Vector2(p.x, p.z) + (corner as Vector2) + (side + side2).normalized() * 1.2
+	if ctr != null and (ctr as Vector2).distance_to(corner) > 0.1:
+		var out: Vector2 = ((corner as Vector2) - ctr).normalized()
+		at = Vector2(p.x, p.z) + ctr + out * (r - RoadStyle.CURB_WIDTH - RoadStyle.PARKWAY_WIDTH * 0.5)
 	var a := sim.streets.name_of(first)
 	var b := sim.streets.name_of(second)
 	return {"at": at, "d1": d1, "d2": d2, "a": a, "b": b, "key": [a, b, at.snapped(Vector2(0.1, 0.1))]}

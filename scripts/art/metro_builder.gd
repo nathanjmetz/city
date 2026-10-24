@@ -100,7 +100,7 @@ func _mb_flats(to_curb: float, width: float, units: int, storeys: int) -> void:
 				var z := zf + 3.0 + k * (d - 5.0) / 2.0
 				for s in [-1.0, 1.0]:
 					_window(Vector3(cx + s * bw * 0.5, base + f * floor_h + 1.5, z), Vector3(0, 0, -s), 0.9, 1.5, false, false, trim)
-		_back(cx - bw * 0.5, cx + bw * 0.5, zf + d, [base + 1.5], base)
+		_rear_wall(cx - bw * 0.5, cx + bw * 0.5, zf + d, base, floor_h, n, trim)
 		_flat_rect("drive", dx - 0.6, dx + 0.6, -0.3, zf - 1.6 - 1.4, 0.06)
 		_flat_rect("drive", cx + bay_side * (bw * 0.5 + 0.1), cx + bay_side * (bw * 0.5 + 0.9), zf, zf + d, 0.06)  # the gangway walk
 		# A low iron fence along the front yard.
@@ -248,9 +248,12 @@ func _mb_walkup(to_curb: float, width: float, storeys: int) -> void:
 				continue
 			_window(Vector3(x, y, zf), Vector3(-1, 0, 0), 1.0, 1.6, false, false, trim)
 			_box("paint", Vector3(1.3, 0.22, 0.12), Vector3(x, y + 0.95, zf - 0.06), stone)  # stone lintel
+		# Side walls: a window in every bay down the depth (the flats run
+		# front to back, each room with its own window).
+		var nside := maxi(3, int((d - 2.0) / 3.4))
 		for s in [-1.0, 1.0]:
-			for k in 2:
-				_window(Vector3(s * w * 0.5, y, zf + 3.0 + k * (d - 6.0)), Vector3(0, 0, -s), 0.9, 1.5, false, false, trim)
+			for k in nside:
+				_window(Vector3(s * w * 0.5, y, zf + 1.0 + (k + 0.5) * (d - 2.0) / nside), Vector3(0, 0, -s), 0.9, 1.5, false, false, trim)
 	# The entry: a stone surround up a stoop.
 	_box("paint", Vector3(2.0, 3.0, 0.2), Vector3(0, base + 1.5, zf - 0.1), stone)
 	_front_door(0.0, zf - 0.2, base, Color(_pick(DOOR)))
@@ -267,7 +270,7 @@ func _mb_walkup(to_curb: float, width: float, storeys: int) -> void:
 			if f < storeys - 1:
 				var tilt := Basis(Vector3.FORWARD, 0.95)
 				_box("metal", Vector3(floor_h * 1.25, 0.05, 0.45), Vector3(r[0] + (0.3 if f % 2 == 0 else -0.3), y + floor_h * 0.5, zf - 0.85), MB_IRON, tilt if f % 2 == 0 else tilt.inverse())
-	_back(-w * 0.5, w * 0.5, zf + d, [base + 1.5], base)
+	_rear_wall(-w * 0.5, w * 0.5, zf + d, base, floor_h, storeys, trim)
 	_box("metal", Vector3(2.0, 1.0, 1.2), Vector3(rng.randf_range(-w * 0.3, w * 0.3), top + 0.5, cz + d * 0.2), Color("#b9bcbc"))
 
 
