@@ -112,7 +112,7 @@ func _initialize() -> void:
 	_check(Hud.hotkey_category(e) == Hud.hotkey_categories().back(), "Shift+0 opens the last menu")
 	e.shift_pressed = false
 	_check(Hud.hotkey_category(e) == "", "a plain number key still picks a tool")
-	_check(Hud.hotkey_text("bulldoze") == "B" and Hud.hotkey_text("roads") == "Shift+1", "tooltips name the keys")
+	_check(Hud.hotkey_text("bulldoze") == "B" and Hud.hotkey_text("roads").ends_with("Shift+1") and Hud.hotkey_text("roads").begins_with("hold 1"), "tooltips name the keys")
 
 	# With the pause menu up, the pad leaves the town alone.
 	MenuState.showing = true

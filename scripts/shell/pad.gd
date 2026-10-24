@@ -406,7 +406,7 @@ func _wheel_picked(key: String) -> void:
 	# A menu with tools opens a second ring with them.
 	var tools: Array = hud.pad_wheel_pick(key)
 	if not tools.is_empty():
-		_wheel.open(tools, style, "Use", hud.pad_tool_selected())
+		_wheel.open(tools, style, "Use", hud.pad_tool_selected(tools))
 		_pointer.visible = false
 
 

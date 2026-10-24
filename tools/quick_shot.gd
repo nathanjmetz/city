@@ -1,17 +1,19 @@
 extends SceneTree
 ## A picture of the bottom-left search box and recent tools.
-## Run: godot -s tools/quick_shot.gd -- out.png [controls]
+## Run: godot -s tools/quick_shot.gd -- out.png [controls | pie | pie_group]
 
 var _frames := 0
 var _out := "quick.png"
 var _hud: Hud
 var _controls := false
+var _mode := ""
 
 
 func _initialize() -> void:
 	var args := OS.get_cmdline_user_args()
 	_out = args[0] if args.size() > 0 else _out
 	_controls = args.size() > 1 and args[1] == "controls"
+	_mode = args[1] if args.size() > 1 else ""
 	var session := root.get_node("Session")
 	session.save_path = session.new_save_path("Quick Shot")
 	change_scene_to_file("res://scenes/main.tscn")
@@ -26,6 +28,19 @@ func _process(_delta: float) -> bool:
 				if c.has_method("_controls"):
 					c.open()
 					c._controls()
+			return false
+		if _mode.begins_with("pie"):
+			# Roads' pie held on 1, the cursor flicked up and right to Grid.
+			var at := Vector2(800, 480)
+			_hud.pie.open("Roads", _hud.pie_items("roads"), at, KEY_1)
+			_hud.pie._since -= 1000
+			var m := InputEventMouseMotion.new()
+			m.position = at + (Vector2(-150, -150) if _mode == "pie_group" else Vector2(55, -55))
+			_hud.pie._input(m)
+			if _mode == "pie_group":
+				m.position = _hud.pie._origin + Vector2(50, 0)
+				_hud.pie._input(m)
+			Input.warp_mouse(m.position)
 			return false
 		for q in ["park", "school", "well"]:
 			_hud.press_card(_hud.search_cards(q)[0])
