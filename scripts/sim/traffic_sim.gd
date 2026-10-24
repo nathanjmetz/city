@@ -2709,7 +2709,18 @@ func _in_path(car: Dictionary) -> Dictionary:
 	var w: Dictionary = ways[car.route[car.leg]]
 	# Start along the car's own heading, so the turn in begins smoothly.
 	var here := car_pose(car)
-	var ld := clampf(car.end_d - 1.0, car.d + 2.5, w.len)
+	var back := PackedVector3Array()
+	if car.end_d < car.d + 6.0:
+		# Too close to its way in to make the turn, or past it (it came onto
+		# the street right by it, or the place moved): back up along the lane
+		# to short of it, then turn in as usual, as a driver who overshot
+		# does, rather than swinging round on the spot.
+		var to_d := clampf(car.end_d - 8.0, 0.5, car.d)
+		back.append(here[0])
+		for q in _lane_run(w, car.lane, car.d, to_d).slice(1):
+			back.append(Vector3(q.x, 0.0, q.z))
+		here = [back[back.size() - 1], _way_dir(w, to_d)]
+	var ld := clampf(car.end_d - 1.0, _nearest_d(w, here[0]) + 2.5, w.len)
 	var wps := [here[0], here[0] + here[1] * 2.0, _lane_point(w, car.lane, ld)]
 	var s: Dictionary = pl.spots[car.to_spot]
 	var dir := _way_dir(w, ld)
@@ -2727,8 +2738,14 @@ func _in_path(car: Dictionary) -> Dictionary:
 		wps.append(s.pos + s.face * car.len * 0.5)
 	else:
 		wps.append_array(_approach_pts(pl, car.to_spot, car.len))
+	var pts := _smooth(wps)
+	var rev := 0.0
+	if back.size() >= 2:
+		rev = _polylen(back)
+		back.append_array(pts.slice(1))
+		pts = back
 	return _poly_path({"node": -1, "wi": w.id, "li": car.lane, "wo": -1, "lo": -1, "turn": Turn.RIGHT,
-		"vt": 4.0, "exit_d": 0.0}, _smooth(wps), 0.0)
+		"vt": 4.0, "exit_d": 0.0}, pts, rev)
 
 
 ## Path out of a spot into lane `lane` of way `w`, starting at road position
