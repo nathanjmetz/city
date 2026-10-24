@@ -37,6 +37,10 @@ const SKEW := 0.64
 const ALIGN := 18.0
 ## A street end that pokes this far or less past a road is cut back to it.
 const STUB := 20.0
+## Junctions closer than this would overlap (corners, sidewalks, crosswalks).
+const JAM := 15.0
+## Most a street may turn when its end merges onto a junction (about 0.6°).
+const TURN_MAX := 0.01
 ## Pieces shorter than this between two roads are dropped (no sliver blocks).
 const MIN_PIECE := 20.0
 ## Distance at which an end counts as touching a road.
@@ -85,8 +89,11 @@ const FIT_EXACT := 2
 ## The streets to build for a grid filling `shape` (corner points, in order).
 ## Grid streets run square to side number `side`. `across` is the spacing of
 ## streets parallel to that side, `block` the spacing of the cross streets.
+## `painted` are roads out in the country that aren't the town's yet (county
+## roads, state highways), {"pts", "type"}: the grid meets them like its own
+## roads and never doubles them.
 static func plan(network: RoadNetwork, shape: Array, block: float, type := 0, side := 0,
-		across := RoadShapes.GRID_ACROSS, fit := FIT_ROUND) -> Array:
+		across := RoadShapes.GRID_ACROSS, fit := FIT_ROUND, painted := []) -> Array:
 	var poly := _clean(shape)
 	if poly.size() < 3 or absf(_area(poly)) < 400.0:
 		return []
@@ -112,6 +119,10 @@ static func plan(network: RoadNetwork, shape: Array, block: float, type := 0, si
 		var box := _box(pts)
 		if box.intersects(region):
 			refs.append({"pts": pts, "type": network.segments[id].type, "box": box.grow(0.5), "old": true, "id": id})
+	for pr in painted:
+		var box := _box(pr.pts)
+		if box.intersects(region):
+			refs.append({"pts": pr.pts, "type": pr.type, "box": box.grow(0.5), "old": true, "id": -1})
 	var junctions := []  # Vector2
 	var junction_ids := []
 	for id in network.nodes:
@@ -163,7 +174,9 @@ static func plan(network: RoadNetwork, shape: Array, block: float, type := 0, si
 	targets.append_array(corners)
 	for i in pieces.size():
 		for k in 2:
-			if not _is_corner(pieces[i][k], corners):  # the player's corners stay put
+			# The player's corners stay put, unless the side beyond was dropped
+			# along an old road: then the street goes on to meet that road.
+			if not _is_corner(pieces[i][k], corners) or _ends_at(pieces, pieces[i][k]) == 1:
 				_settle_end(pieces, i, k, refs, targets)
 	var out_pieces := []
 	for i in pieces.size():
@@ -267,6 +280,57 @@ static func _sharpest(ar: PackedVector2Array) -> float:
 	return best
 
 
+## The stretches of painted roads (see plan) the grid's streets meet two or
+## more times: the town takes each over between its outermost streets, so
+## the blocks front it and the grid stays joined along it. [{"type",
+## "curves"}], the curves straight pieces along the road.
+static func taken_over(lines: Array, painted: Array) -> Array:
+	var out := []
+	for pr in painted:
+		var pts: PackedVector2Array = pr.pts
+		var cum := [0.0]
+		for i in range(1, pts.size()):
+			cum.append(cum[i - 1] + pts[i - 1].distance_to(pts[i]))
+		var lo := INF
+		var hi := -INF
+		for l in lines:
+			for e in [l[0], l[2]]:
+				var q := Vector2(e.x, e.z)
+				for i in pts.size() - 1:
+					var c := Geometry2D.get_closest_point_to_segment(q, pts[i], pts[i + 1])
+					if c.distance_to(q) < 1.0:
+						var s: float = cum[i] + pts[i].distance_to(c)
+						lo = minf(lo, s)
+						hi = maxf(hi, s)
+						break
+		if hi - lo < MIN_PIECE:
+			continue
+		# The road's line from lo to hi, its bends kept, in pieces of 200 m.
+		var line := PackedVector2Array([_along(pts, cum, lo)])
+		for i in pts.size():
+			if cum[i] > lo and cum[i] < hi:
+				line.append(pts[i])
+		line.append(_along(pts, cum, hi))
+		var curves := []
+		for i in line.size() - 1:
+			var n := maxi(1, ceili(line[i].distance_to(line[i + 1]) / 200.0))
+			for k in n:
+				var a := line[i].lerp(line[i + 1], float(k) / n)
+				var b := line[i].lerp(line[i + 1], float(k + 1) / n)
+				if a.distance_to(b) >= RoadNetwork.MIN_LENGTH:
+					curves.append([Vector3(a.x, 0, a.y), Vector3((a.x + b.x) * 0.5, 0, (a.y + b.y) * 0.5), Vector3(b.x, 0, b.y)])
+		out.append({"type": pr.type, "curves": curves})
+	return out
+
+
+static func _along(pts: PackedVector2Array, cum: Array, s: float) -> Vector2:
+	for i in pts.size() - 1:
+		if s <= cum[i + 1] or i == pts.size() - 2:
+			var span: float = cum[i + 1] - cum[i]
+			return pts[i].lerp(pts[i + 1], clampf((s - cum[i]) / span, 0.0, 1.0) if span > 0.0 else 0.0)
+	return pts[0]
+
+
 ## The shape's outline as curves, for drawing it while it is placed.
 static func outline(shape: Array, closed: bool) -> Array:
 	var out := []
@@ -300,7 +364,11 @@ static func _family(poly: PackedVector2Array, o: Vector2, w: Vector2, n: Vector2
 	var out := []
 	for i in range(1, count):
 		var d := lo + i * step
-		var best := 0.0 if fit == FIT_EXACT else minf(ALIGN, step * 0.3)
+		# Onto an old junction close by: the street carries the old one
+		# straight on (real plats continue the streets they meet). Exact keeps
+		# its even blocks and only shifts a street that would otherwise jog a
+		# few metres beside an old one (two junctions jammed together).
+		var best := minf(JAM, step * 0.2) if fit == FIT_EXACT else minf(ALIGN, step * 0.3)
 		for q in inside:
 			var dq: float = (q - o).dot(n)
 			if absf(dq - d) < best:
@@ -449,10 +517,14 @@ static func _drop_wedges(pieces: Array, old: Array, u: Vector2, across: float, b
 			# A junction on the player's side only slides along that side,
 			# so the outline stays straight and whole.
 			var on_side := _on_sides(at, sides)
+			# A street that went on to meet an old road isn't pulled back
+			# off it to the player's corner.
+			var on_old := _touching(at, old)
 			var best := merge
 			var to := at
 			for q in fixed:
-				if q.distance_to(at) < best and q.distance_to(e[1 - k]) > MIN_PIECE and (not on_side or _on_sides(q, sides)):
+				if q.distance_to(at) < best and q.distance_to(e[1 - k]) > MIN_PIECE and (not on_side or _on_sides(q, sides)) \
+						and (not on_old or _touching(q, old) or not _is_corner(q, corners)):
 					best = q.distance_to(at)
 					to = q
 			if to == at:
@@ -585,9 +657,10 @@ static func _settle_end(pieces: Array, i: int, k: int, refs: Array, targets: Arr
 	# Merge with a junction (old, or another piece's end) a few metres away.
 	var best := NODE_SNAP
 	var snap := p
+	var was: Vector2 = pieces[i][k]
 	for q in targets:
 		var d: float = q.distance_to(p)
-		if d < best and q.distance_to(other) > MIN_PIECE:
+		if d < best and q.distance_to(other) > MIN_PIECE and (q.distance_to(was) > 0.01 or p == was):
 			best = d
 			snap = q
 	for j in pieces.size():
@@ -598,7 +671,10 @@ static func _settle_end(pieces: Array, i: int, k: int, refs: Array, targets: Arr
 			if d < best and d > 0.001 and e.distance_to(other) > MIN_PIECE and _touching(e, others):
 				best = d
 				snap = e
-	if snap != p and _touching(p, others):
+	# Only a merge that keeps the street straight: sliding an end sideways
+	# turns the whole street off the grid.
+	var side := absf((snap - other).cross(w))
+	if snap != p and _touching(p, others) and side <= maxf(1.0, length * TURN_MAX):
 		p = snap
 	pieces[i][k] = p
 	# Keep this piece's own entry in refs in step.
@@ -661,6 +737,15 @@ static func _near_any(p: Vector2, pts: Array, dist: float) -> bool:
 		if q.distance_to(p) <= dist:
 			return true
 	return false
+
+
+## How many pieces end at `p`.
+static func _ends_at(pieces: Array, p: Vector2) -> int:
+	var n := 0
+	for pc in pieces:
+		if pc[0].distance_to(p) < 0.01 or pc[1].distance_to(p) < 0.01:
+			n += 1
+	return n
 
 
 static func _is_corner(p: Vector2, poly: PackedVector2Array) -> bool:
@@ -733,6 +818,9 @@ static func _on_network(network: RoadNetwork, q: Vector2, old: Array, junctions:
 		for j in pts.size() - 1:
 			if Geometry2D.get_closest_point_to_segment(q, pts[j], pts[j + 1]).distance_to(q) > 2.0:
 				continue
+			if r.id == -1:  # a painted road: its own line
+				var on := Geometry2D.get_closest_point_to_segment(q, pts[j], pts[j + 1])
+				return Vector3(on.x, 0.0, on.y)
 			# Closest point on the real curve, found finely along this road only.
 			var c := network.curve_of(r.id)
 			var best := INF
