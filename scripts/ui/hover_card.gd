@@ -21,6 +21,7 @@ var _problem := UiStyle.label("", 12, Color(0.95, 0.45, 0.4))
 var _rest := 0.0
 var _at := Vector2(-1000, -1000)
 var _shown := {}
+var _view := Transform3D()
 
 
 func setup(s: CitySim, camera: CityCamera, sel: SelectTool, tool_in_hand: Callable) -> void:
@@ -47,7 +48,14 @@ func _process(delta: float) -> void:
 		return
 	var pad := Gamepad.find()
 	var p := pad.pointer(get_viewport()) if pad != null else get_viewport().get_mouse_position()
-	if p.distance_to(_at) > STILL_PX or (busy.is_valid() and busy.call()) or get_viewport().gui_get_hovered_control() != null:
+	# A camera move (keys, wheel, stick, flying home) with the pointer still
+	# puts a different place under it: start over, as CS2 does.
+	var camera := get_viewport().get_camera_3d()
+	var view := camera.global_transform if camera != null else Transform3D()
+	# (Past the camera's own easing: a few centimetres or a hair of a turn.)
+	var moved := view.origin.distance_to(_view.origin) > 0.05 or view.basis.z.dot(_view.basis.z) < 0.99999
+	_view = view
+	if moved or p.distance_to(_at) > STILL_PX or (busy.is_valid() and busy.call()) or get_viewport().gui_get_hovered_control() != null:
 		_at = p
 		_rest = 0.0
 		_hide()
