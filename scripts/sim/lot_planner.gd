@@ -42,6 +42,8 @@ const REAR_LANE_DEPTH := 45.0
 ## ("reverse frontage" along arterials), shops front the busier one.
 const FACE_MIN := 27.0
 const FACE_MARGIN := 3.0
+## How far into a corner square (from both streets) a built lot is looked for.
+const CORNER_PROBE := 6.0
 ## How each road's land claim works: a paved street claims land halfway to
 ## the next; a gravel road gives way to a paved street; an alley claims
 ## only its own right of way.
@@ -972,11 +974,13 @@ static func _first_touch(f: Vector2, n: Vector2, a: Vector2, b: Vector2, k: floa
 ## the cross street's lots start behind that corner lot (a plain Midwestern
 ## grid; Sanborn maps of Petersburg, Jasper). Without this the land splits
 ## along the diagonal between the two streets: triangles at every corner.
-## The street that holds the corner: the zoned one; if both are, the longer
-## block face (lots front the long sides of a block), then the lower id.
+## The street that holds the corner: the one whose house already stands on
+## it (a built corner stays as it was platted, whichever street was zoned
+## first); else the zoned one; if both are, the longer block face (lots
+## front the long sides of a block), then the lower id.
 ## Returns rules, one per cross street, for _ray: {seg, win, depth, k,
 ## pieces}.
-func _corner_rules(s: Dictionary, rays: Array, zones: ZoneMap) -> Array:
+func _corner_rules(s: Dictionary, rays: Array, zones: ZoneMap, parcels: Array) -> Array:
 	var rules := []
 	var seen := {}
 	var shallow := {}
@@ -1012,6 +1016,9 @@ func _corner_rules(s: Dictionary, rays: Array, zones: ZoneMap) -> Array:
 		for q in _pieces[o]:
 			len_o += (q[0] as Vector2).distance_to(q[1])
 		var win: bool = zone_o == 0 or s.len > len_o + 1.0 or absf(s.len - len_o) <= 1.0 and s.seg < o
+		var built := _corner_parcel(s, o, r, piece, n_o, parcels)
+		if built != 0:
+			win = built > 0
 		if face:
 			var pref_s := _face_pref(s.type, zone_s)
 			var pref_o := _face_pref(piece[8], zone_o)
@@ -1025,6 +1032,27 @@ func _corner_rules(s: Dictionary, rays: Array, zones: ZoneMap) -> Array:
 		rules.append({"seg": o, "win": win, "depth": SIZES[holder].cap, "k": k,
 			"pieces": _pieces[o].map(func(q): return [q[0], q[1]])})
 	return rules
+
+
+## Whose built lot stands in the corner square between this side and cross
+## street o: 1 this side's, -1 the cross street's, 0 none.
+static func _corner_parcel(s: Dictionary, o: int, r: Array, piece: Array, n_o: Vector2, parcels: Array) -> int:
+	if parcels.is_empty():
+		return 0
+	var inside: Vector2 = r[1] + r[2] * CORNER_PROBE
+	var c := Geometry2D.get_closest_point_to_segment(inside, piece[0], piece[1])
+	var p: Vector2 = c + n_o * (piece[2] + CORNER_PROBE)
+	for q in parcels:
+		if not (q[0] as Rect2).has_point(p) or not Geometry2D.is_point_in_polygon(p, q[3]):
+			continue
+		var parts: PackedStringArray = str(q[4]).split(":")
+		if parts.size() < 2:
+			continue
+		if int(parts[0]) == s.seg and int(parts[1]) == s.side:
+			return 1
+		if int(parts[0]) == o:
+			return -1
+	return 0
 
 
 ## Whether this side holds the squared corner at cross street `seg`, or
@@ -1187,7 +1215,7 @@ func _plan_side(s: Dictionary, zones: ZoneMap, index: Dictionary) -> Array:
 	if s.rays.is_empty():
 		_work += s.fronts.size()
 	var rays := _survey(s)
-	var rules := _corner_rules(s, rays, zones)
+	var rules := _corner_rules(s, rays, zones, parcels)
 	var corners := rules.map(func(ru): return [ru.seg, ru.win, ru.depth])
 	s.sq = rules
 	if not rules.is_empty():
