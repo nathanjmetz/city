@@ -404,10 +404,16 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			network.begin_batch()
 			for l in lines:
 				ok = network.build_road(l[0], l[1], l[2], _road(cmd)) or ok
+			# Where the town already joined that road, its gravel is taken
+			# over in place (upgraded), not doubled (Brawn 2026-10-24: a
+			# street laid over the joined gravel left a turnaround bulb and
+			# a broken edge street). Free, as the county hands it over.
+			var money_before := economy.money
 			for t in taken:
 				var hwy: bool = t.type == RoadStyle.Type.STATE_HWY
 				for l in t.curves:
-					network.build_road(l[0], l[1], l[2], RoadStyle.Type.STATE_HWY if hwy else _road(cmd))
+					_build_over(l, RoadStyle.Type.STATE_HWY if hwy else _road(cmd))
+			economy.money = money_before
 			network.end_batch()
 			if ok:
 				economy.money -= shapes_cost(lines, _road(cmd))
