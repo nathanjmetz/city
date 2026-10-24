@@ -41,8 +41,9 @@ func _init() -> void:
 		same = same and copy.streets.name_of(id) == names[id]
 	_check(same, "a loaded city keeps its street names")
 
-	_check(Streets.county_name(Vector2(-500, -4900), Vector2(500, -4800)) == "County Road 300 N",
-		"county roads are numbered on the Indiana grid")
+	_check(Streets.county_name(Vector2(-500, -4900), Vector2(500, -4800)) == "E 300 N"
+		and Streets.county_name(Vector2(-3300, -500), Vector2(-3200, 900)) == "S 200 W",
+		"county roads are numbered on the county grid and signed the Grant County way (E 300 N)")
 	_check(StreetSignView.short("Walnut Street") == "Walnut St" and StreetSignView.short("3rd Avenue") == "3rd Ave",
 		"blades use the MUTCD abbreviations")
 	_check(Streets._ordinal(1) == "1st" and Streets._ordinal(12) == "12th" and Streets._ordinal(23) == "23rd", "ordinals")

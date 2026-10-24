@@ -125,11 +125,11 @@ func _test_join() -> void:
 	_check(sim.streets.courthouse == Vector2.INF and _named(sim, before), "before a courthouse: %s" % before)
 	sim.parks.sites[999] = {"kind": "courthouse", "pos": Vector3(x + 2.0 * CountyGrid.SECTION + 100.0, 0, z)}
 	_check(sim.streets.seat(sim), "the courthouse renames the county roads")
-	_check(_named(sim, "County Road 200 W"), "two miles west of the courthouse is County Road 200 W")
+	_check(_named_end(sim, " 200 W"), "two miles west of the courthouse is 200 W, signed the Grant County way (N 200 W)")
 	sim.parks.sites[999].pos = Vector3(x + 50.0, 0, z)
 	sim.streets.seat(sim)
 	sim.parks.sites.erase(999)  # a stand-in courthouse, not a full park site
-	_check(_named(sim, "Meridian Road"), "the road through the courthouse's own line is Meridian Road")
+	_check(_named_end(sim, " 00 EW"), "the road through the courthouse's own line is 00 EW")
 	var saved := CitySim.new()
 	saved.from_dict(sim.to_dict())
 	_check(saved.streets.courthouse.is_equal_approx(sim.streets.courthouse), "the county seat is saved")
@@ -482,6 +482,13 @@ func _gravel(sim: CitySim) -> Array:
 		if sim.network.segments[id].type == RoadStyle.Type.GRAVEL:
 			out.append(sim.network.curve_of(id))
 	return out
+
+
+func _named_end(sim: CitySim, tail: String) -> bool:
+	for id in sim.network.segments:
+		if sim.streets.name_of(id).ends_with(tail) and sim.streets.name_of(id).length() <= tail.length() + 2:
+			return true
+	return false
 
 
 func _check(ok: bool, what: String) -> void:

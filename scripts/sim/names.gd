@@ -1,31 +1,32 @@
 class_name Names
 extends RefCounted
-## Believable names for a southern Indiana town (Brawn): every family, farm,
-## shop, factory and company gets one, the way a real small town reads.
+## Believable names for a Grant County, Indiana town (Brawn): every family,
+## farm, shop, factory and company gets one, the way a real small town reads.
 ## Pure data and seeded picks; Families keeps who owns what.
 ##
 ## Real references:
-##   - Surnames: the common family names of Pike, Dubois, Daviess and Gibson
-##     counties (US Census 2010 surname counts, county histories). A mix of
-##     English and Scots-Irish families, the German Catholic families of
-##     Dubois County, and the Amish families around Montgomery in Daviess.
+##   - Surnames: the families of east-central Indiana (Grant, Madison,
+##     Delaware and Howard counties; US Census surname counts and county
+##     histories): the English and Scots-Irish majority, the North Carolina
+##     Quaker families who settled Fairmount and Jonesboro, and the German
+##     families of Marion's factory years.
 ##   - First names: the most common names in Indiana by birth decade (SSA),
 ##     1950s-60s for owners, 1985-95 for the next generation.
 ##   - Business names follow what's on real Indiana main streets and county
-##     roads: the owner's name ("Kluesner Hardware", "Hayes Feed & Seed"),
-##     the possessive for food and service ("Dot's Diner", "Schnell's
-##     Tavern"), or a local place ("White River Pizza", "Patoka Hardwoods").
-##     No real chains or trademarks.
+##     roads: the owner's name ("Overman Hardware", "Hayes Feed & Seed"),
+##     the possessive for food and service ("Dot's Diner", "Kendall's
+##     Tavern"), or a local place ("Mississinewa Pizza", "Gas Belt
+##     Hardwoods"). No real chains or trademarks.
 
 const SURNAMES := [
-	"Miller", "Hayes", "Schmitt", "Wagner", "Hoffman", "Kluesner", "Fleck", "Eckert", "Kunkel", "Schnell",
-	"Meyer", "Buechler", "Seger", "Traylor", "Survant", "Willis", "Harris", "Thompson", "Hurst", "McCandless",
-	"Ashby", "Chappell", "Dillon", "Fowler", "Hollon", "Kays", "Lamb", "Martin", "McConnell", "Nelson",
-	"Robling", "Sermersheim", "Stenftenagel", "Hasenour", "Lueken", "Mehling", "Gutgsell", "Weisheit", "Steckler", "Brosmer",
-	"Graber", "Wagler", "Knepp", "Stoll", "Yoder", "Raber", "Hochstetler", "Bell", "Cox", "Brewster",
-	"Crowe", "Lindsey", "Bottoms", "Cooper", "Gray", "Richardson", "Sims", "Tisdale", "Whitehead", "Young",
-	"Abell", "Boyd", "Carnahan", "Corn", "Dearing", "Emmons", "Gladish", "Hale", "Jenkins", "Kirkman",
-	"Loveless", "Mason", "Norrick", "Osborne", "Pancake", "Ridge", "Shoultz", "Tooley", "Underhill", "Vance",
+	"Miller", "Hayes", "Smith", "Johnson", "Davis", "Wilson", "Thomas", "Jones", "Brown", "Moore",
+	"Overman", "Elliott", "Hollingsworth", "Bogue", "Coggeshall", "Hiatt", "Hunt", "Rush", "Jay", "Ratliff",
+	"Harvey", "Pierce", "Lewis", "Wright", "Hill", "Hoover", "Stout", "Kelsay", "Kimes", "Leach",
+	"Payne", "Shields", "Wolfe", "Zimmerman", "Fischer", "Bauer", "Kendall", "Lindley", "Cecil", "Jackson",
+	"Seybold", "Bell", "Cox", "Crowe", "Cooper", "Gray", "Richardson", "Sims", "Young", "Boyd",
+	"Carter", "Davidson", "Fowler", "Garr", "Hale", "Jenkins", "Kirkpatrick", "Lamb", "Martin", "Mason",
+	"McCoy", "Nelson", "Osborne", "Parks", "Reece", "Sanders", "Swanson", "Tharp", "Underwood", "Vance",
+	"Wells", "Whitson", "Yeager", "Ashby", "Barley", "Coahran", "Ellis", "Gunyon", "Haisley", "Harmon",
 ]
 ## Owners: Indiana's common names for babies born 1950-1965 (SSA).
 const FIRST_OLD := [
@@ -41,8 +42,8 @@ const FIRST_NEW := [
 ]
 ## Local places a business can take its name from instead of a family's.
 const PLACES := [
-	"White River", "Patoka", "Pike County", "Hoosier", "Prairie", "Tri-County", "Riverside", "Four Corners",
-	"Courthouse", "Hilltop", "Southern Hills", "Wabash Valley", "Oak Hill", "Coal Country", "Heartland", "Country",
+	"Mississinewa", "Grant County", "Hoosier", "Prairie", "Gas Belt", "Riverside", "Four Corners", "Courthouse",
+	"Back Creek", "Deer Creek", "Big Four", "Wabash Valley", "Oak Hill", "Heartland", "Country", "Crossroads",
 ]
 
 ## Lettering styles real small-town signs use, by the font that draws them
@@ -164,7 +165,7 @@ static func fill(pattern: String, brand: String, first: String) -> String:
 		.replace("{F's}", possessive(first)).replace("{F}", first)
 
 
-## "Miller's", "Hayes'", and place names that don't take one ("White River").
+## "Miller's", "Hayes'", and place names that don't take one ("Mississinewa").
 static func possessive(word: String) -> String:
 	if word in PLACES:
 		return word
