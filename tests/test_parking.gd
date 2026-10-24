@@ -231,6 +231,41 @@ func _shops() -> void:
 	_check(differ.is_empty(), "the stalls cars use are the ones the shop art paints %s" % [differ.slice(0, 4)])
 	_check(bad.is_empty(), "no shop stall is off the lot or under the building %s" % [bad.slice(0, 4)])
 	_check(kinds.size() == 2, "some shops have their own stalls, some only the curb")
+	# Offices: the lot out back has a drive in, stalls clear of the walls,
+	# and they are the stalls cars use.
+	var odiff := []
+	var obad := []
+	var with_lot := 0
+	for seed in 80:
+		for size in [[40.0, 55.0], [34.0, 45.0], [50.0, 60.0]]:
+			var lot := {"width": size[0], "depth": size[1]}
+			var plan := DenseBuilder.office_plan(seed * 31 + 7, lot, 2 + seed % 4)
+			var built := DenseBuilder.build_office(seed * 31 + 7, 3.9, lot, 2 + seed % 4)
+			var b := DenseBuilder._start(seed * 31 + 7, lot)
+			b._office(3.9, b.half * 2.0, 2 + seed % 4)
+			if str(b.site) != str(plan):
+				odiff.append(seed)
+			if not plan.stalls.is_empty():
+				with_lot += 1
+				if absf(plan.cut_x) > size[0] * 0.5 - 1.5:
+					obad.append(["drive off the lot", seed, plan.cut_x])
+			for st in plan.stalls:
+				var c: Vector2 = st[0]
+				var box := Rect2(c - Vector2(1.3, 2.7), Vector2(2.6, 5.4))
+				if absf(c.x) > size[0] * 0.5 - 1.3 or c.y + 2.7 > size[1]:
+					obad.append(["off the lot", seed, c])
+				for m: Rect2 in HouseBuilder.last_masses:
+					if m.size.y > 1.0 and m.grow(1.0).intersects(box):
+						obad.append(["against the building", seed, c])
+						break
+				if absf(c.x - plan.cut_x) < 3.5 and c.y < plan.aisle_z:
+					obad.append(["in the drive", seed, c])
+			built.clear()
+	_check(odiff.is_empty(), "office stalls cars use are the ones the art paints %s" % [odiff.slice(0, 4)])
+	_check(obad.is_empty(), "office stalls sit on the lot, clear of the walls and the drive %s" % [obad.slice(0, 4)])
+	_check(with_lot > 100, "most offices have a lot out back (%d of 240)" % with_lot)
+	var flats := SiteLayout.for_building(ZoneMap.Zone.RESIDENTIAL, 5, {"width": 30.0, "depth": 40.0}, 3, "apartments")
+	_check(flats.spots.is_empty(), "apartments with no drive drawn send residents to the curb")
 
 
 ## A stall's painted rectangle, a hair inside its lines.

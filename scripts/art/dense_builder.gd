@@ -57,6 +57,14 @@ static func site_plan(seed: int, lot: Dictionary, strip := false) -> Dictionary:
 	return b.site
 
 
+## The same for an office (build_office), whose lot is out back.
+static func office_plan(seed: int, lot: Dictionary, storeys: int) -> Dictionary:
+	var b := DenseBuilder._start(seed, lot)
+	b._dry = true
+	b._office(3.9, b.half * 2.0, storeys)
+	return b.site
+
+
 # ---------------------------------------------------------------- row homes
 
 ## `lot` as for HouseBuilder.build (its width sets the size).
@@ -363,7 +371,8 @@ static func build_office(seed: int, to_curb: float, lot: Dictionary, storeys: in
 
 
 func _office(to_curb: float, width: float, storeys: int) -> void:
-	var w := minf(width - 6.0, rng.randf_range(22.0, 32.0))
+	# Room down one side for the drive to the lot out back.
+	var w := minf(width - 10.0, rng.randf_range(22.0, 32.0))
 	var d := rng.randf_range(16.0, 22.0)
 	var zf := rng.randf_range(8.0, 11.0)
 	var cz := zf + d * 0.5
@@ -400,10 +409,48 @@ func _office(to_curb: float, width: float, storeys: int) -> void:
 	for i in rng.randi_range(2, 4):
 		_box("metal", Vector3(2.2, 1.4, 1.6), Vector3(rng.randf_range(-w * 0.3, w * 0.3), deck + 0.7,
 			cz + rng.randf_range(-d * 0.2, d * 0.2)), Color("#b9bcbc"))
-	_parking(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 1.5, zf + d + 18.0, width)
+	_office_lot(to_curb, w, zf, zf + d, width)
 	for s in [-1.0, 1.0]:
 		var pick := TreeField.pick(rng)
-		trees.append([Vector3(s * (w * 0.5 + 1.5), 0, zf - 2.0), pick[0], pick[1], rng.randf_range(0.8, 1.0)])
+		# The one on the drive side stands in the front lawn, off the drive.
+		var at := Vector3(-w * 0.5 - 1.5, 0, zf - 2.0) if s < 0.0 else Vector3(w * 0.5 - 2.5, 0, zf - 4.5)
+		trees.append([at, pick[0], pick[1], rng.randf_range(0.8, 1.0)])
+
+
+## The office's lot out back, reached by a drive down the side from a curb
+## cut: a 5 ft walk along the back wall, then 9 x 18 ft stalls nosed in
+## toward it, a 24 ft two-way aisle and, with room, a second row along the
+## back line (ITE / ULI parking dimensions). Recorded in `site` for the
+## traffic sim.
+func _office_lot(to_curb: float, w: float, zf: float, zb: float, width: float) -> void:
+	var x0 := -width * 0.5 + 0.6
+	var x1 := width * 0.5 - 0.6
+	var z0 := zb + 1.5
+	var rows := 2 if depth - 0.5 - z0 >= 18.3 else (1 if depth - 0.5 - z0 >= 12.8 else 0)
+	if rows == 0:
+		return
+	var z1 := z0 + (18.3 if rows == 2 else 12.8)
+	var dhw := minf(2.2, (x1 - w * 0.5 - 0.5) * 0.5)
+	var dx := x1 - dhw
+	# The curb cut and apron, the drive down the side and the walk out back.
+	_flat_rect("drive", dx - dhw - 0.9, dx + dhw + 0.9, -to_curb, 0.0, 0.08)
+	_flat_rect("asphalt", dx - dhw, dx + dhw, 0.0, z0, 0.06)
+	_flat_rect("drive", -w * 0.5, w * 0.5, zb, z0, 0.07)
+	_flat_rect("asphalt", x0, x1, z0, z1, 0.06)
+	site.main_street = false
+	site.cut_x = dx
+	site.aisle_z = z0 + 5.5 + 3.65
+	site.door = Vector2(0.0, zf)
+	for r in rows:
+		var a := z0 if r == 0 else z1 - 5.5
+		var x := x0
+		while x + 2.75 <= x1 + 0.01:
+			# The front row leaves the drive clear where it comes in.
+			if r == 1 or x + 2.75 <= dx - dhw - 0.3:
+				_flat_rect("line", x - 0.06, x + 0.06, a, a + 5.5, 0.07, LINE)
+				_flat_rect("line", x + 2.69, x + 2.81, a, a + 5.5, 0.07, LINE)
+				site.stalls.append([Vector2(x + 1.375, a + 2.75), Vector2(0, -1) if r == 0 else Vector2(0, 1)])
+			x += 2.75
 
 
 # ---------------------------------------------------------------- parts

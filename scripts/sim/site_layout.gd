@@ -29,8 +29,14 @@ static func for_building(zone: int, bseed: int, lot := {}, storeys := 0, type :=
 	var fit := _fit(lot)
 	match zone:
 		ZoneMap.Zone.RESIDENTIAL:
+			if type in ["row_home", "apartments"]:
+				# MetroBuilder's flats, courtyards and walkups draw no drive:
+				# like a real city block of them, residents park on the street.
+				return main_street()
 			return house(art_seed, fit, storeys)
 		ZoneMap.Zone.COMMERCIAL:
+			if type == "office" and storeys < 8:
+				return office(art_seed, fit, storeys)
 			if type in ["mixed_use", "office"]:
 				return main_street()  # built to the sidewalk; its lot (if any) is out back
 			return shop(art_seed, fit, type == "shopping_center")
@@ -112,6 +118,21 @@ static func shop(art_seed: int, fit := {"half": LOT_HALF, "depth": 32.0}, strip 
 	var door: Vector2 = plan.door
 	return {"spots": spots, "door": door, "cut_x": plan.cut_x, "aisle_z": plan.aisle_z,
 		"walk_z": door.y - 1.1, "main_street": false}
+
+
+## DenseBuilder.build_office: the stalls behind it, the drive down its side.
+static func office(art_seed: int, fit: Dictionary, storeys: int) -> Dictionary:
+	var plan := DenseBuilder.office_plan(art_seed, fit.get("art", {"width": float(fit.half) * 2.0, "depth": fit.depth}),
+		storeys)
+	if plan.stalls.is_empty():
+		var out := main_street()
+		out.door = plan.door
+		return out
+	var spots := []
+	for st in plan.stalls:
+		spots.append({"pos": st[0], "face": st[1], "kind": "stall"})
+	return {"spots": spots, "door": plan.door, "cut_x": plan.cut_x, "aisle_z": plan.aisle_z,
+		"walk_z": plan.door.y - 1.1, "main_street": false}
 
 
 ## A building up to the sidewalk with no parking of its own: its people
