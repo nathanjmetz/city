@@ -4,11 +4,11 @@ extends Node3D
 ## deep-ink fade into a slowly turning view of your latest city.
 ##
 ## There is one shared map and one way to play: Play · Profile · Quit.
-## Play drops you into your town in the family region; the first time, it
-## asks only your name. The region's invite code comes with the game (or
-## from the region itself), so nobody types one; "Join with a code" is for
-## a different region. If the region's computer is off, you can play
-## offline instead.
+## Play drops you into your town in the family region. The first time on a
+## device it asks for your PIN, six digits the host made for you (it says
+## who you are, so there's no name to type either); after that, Play goes
+## straight in. If the region's computer is off, you can play offline
+## instead.
 
 var _panel := PanelContainer.new()
 var _pages := {}       # name -> Control
@@ -23,8 +23,8 @@ var _joining := false
 var _published_server := ""  # from Session.REGION_CONFIG
 var _fetching := false
 var _join_after_fetch := false
-var _who := LineEdit.new()  # your name, on the invite code page
-var _first := LineEdit.new()  # your name, the first time you press Play
+var _pin_after_fetch := ""
+var _pin := LineEdit.new()  # your PIN, the first time on this device
 var _published_code := ""  # the family region's invite code, from REGION_CONFIG
 var _offline: Button  # shown when the region can't be reached
 ## Other invite codes to try if the region turns this one away (an old code
@@ -75,7 +75,7 @@ func _ready() -> void:
 	tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(tag)
 	col.add_child(_gap(24))
-	for page in [_home_page(), _name_page(), _code_page(), _profile_page()]:
+	for page in [_home_page(), _pin_page(), _profile_page()]:
 		col.add_child(page)
 	_offline = _big_button("Play offline instead", "Your town on this computer, until the region is back", _play_offline)
 	_offline.visible = false
@@ -93,12 +93,12 @@ func _ready() -> void:
 		_code.text = Session.pending_invite.get("join", "")
 		_server.text = Session.pending_invite.get("server", "")
 		Session.pending_invite = {}
-		_show("code")
-		# One link and you're in: once this device knows your name, it plays.
-		if Session.profile.name != "" or Session.has_login("", _code.text):
+		# One link and you're in once this device has played there; the
+		# first time, your PIN.
+		if Session.has_login("", _code.text):
 			_join.call_deferred()
 		else:
-			_who.grab_focus.call_deferred()
+			_show("pin")
 	else:
 		_show("home")
 	_fetch_server()
@@ -124,85 +124,47 @@ func _home_page() -> Control:
 	ShellStyle.primary(play)
 	col.add_child(play)
 	col.add_child(_big_button("Profile", "How neighbors see you", func(): _show("profile")))
-	var other := _back()
-	other.text = "Join with a code"
-	other.pressed.connect(func(): _show("code"))
-	col.add_child(other)
 	if not OS.has_feature("web"):
 		col.add_child(_big_button("Quit", "", func(): get_tree().quit()))
 	return col
 
 
-func _code_page() -> Control:
-	var col := _page("code")
-	col.add_child(ShellStyle.title("Invite code"))
+## The first Play on a device: the PIN the host made for you, then in.
+func _pin_page() -> Control:
+	var col := _page("pin")
+	col.add_child(ShellStyle.title("Your PIN"))
 	col.add_child(_label("FROM THE HOST"))
+	_pin.placeholder_text = "000000"
+	_pin.max_length = 7
+	_pin.custom_minimum_size = Vector2(0, 46)
+	# Set in Overpass, like a street sign.
+	_pin.add_theme_font_override("font", Brand.sign(700))
+	_pin.add_theme_font_size_override("font_size", 24)
+	_pin.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER
+	_pin.text_submitted.connect(func(_t): _join_with_pin())
+	col.add_child(_pin)
 	_code.text = Session.profile.code
-	_code.placeholder_text = "ABC123"
-	_code.max_length = 12
-	_code.custom_minimum_size = Vector2(0, 46)
-	# Invite codes are set in Overpass, like a street sign.
-	_code.add_theme_font_override("font", Brand.sign(700))
-	_code.add_theme_font_size_override("font_size", 24)
-	_code.text_submitted.connect(func(_t): _join())
-	col.add_child(_code)
-	col.add_child(_gap(6))
-	col.add_child(_label("YOUR NAME"))
-	var who := _who
-	who.text = Session.profile.name
-	who.placeholder_text = "Who you are, over your town"
-	who.max_length = 24
-	who.custom_minimum_size = Vector2(0, 38)
-	who.text_changed.connect(func(t):
-		Session.profile.name = t.strip_edges()
-		_name.text = t
-		Session.save_profile())
-	who.text_submitted.connect(func(_t): _join())
-	col.add_child(who)
-	# The server comes from the invite link or the region's config; there's
-	# nothing to type.
 	_server.text = Session.profile.server
-	var play := _big_button("Play", "", _join)
+	var play := _big_button("Play", "", _join_with_pin)
 	ShellStyle.primary(play)
 	col.add_child(play)
 	if not OS.has_feature("web"):
 		col.add_child(_gap(8))
 		col.add_child(_label("OR HOST ONE ON THIS COMPUTER"))
-		col.add_child(_big_button("Host a region", "Family joins with your code", _host))
+		col.add_child(_big_button("Host a region", "Then add players and send them their PINs", _host))
 		_host_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		col.add_child(_host_info)
 	col.add_child(_back())
 	return col
 
 
-## The first Play: just your name, then straight in.
-func _name_page() -> Control:
-	var col := _page("name")
-	col.add_child(ShellStyle.title("Welcome"))
-	col.add_child(_label("YOUR NAME"))
-	_first.placeholder_text = "Who you are, over your town"
-	_first.max_length = 24
-	_first.custom_minimum_size = Vector2(0, 38)
-	_first.text_submitted.connect(func(_t): _name_and_play())
-	col.add_child(_first)
-	var play := _big_button("Play", "", _name_and_play)
-	ShellStyle.primary(play)
-	col.add_child(play)
-	col.add_child(_back())
-	return col
-
-
-func _name_and_play() -> void:
-	var n := _first.text.strip_edges()
-	if n == "":
-		_status.text = "Type your name: it goes over your town."
-		_first.grab_focus()
+func _join_with_pin() -> void:
+	var pin := RegionServer._clean_pin(_pin.text)
+	if pin.length() < 6:
+		_status.text = "Type the six-digit PIN the host sent you."
+		_pin.grab_focus()
 		return
-	Session.profile.name = n
-	_name.text = n
-	_who.text = n
-	Session.save_profile()
-	_play()
+	_join(pin)
 
 
 func _profile_page() -> Control:
@@ -226,22 +188,26 @@ func _show(page: String) -> void:
 		_pages[p].visible = p == page
 	_status.text = ""
 	_offline.visible = false
-	if page == "code":
-		_code.grab_focus.call_deferred()
-	elif page == "name":
-		_first.grab_focus.call_deferred()
+	if page == "pin":
+		_pin.grab_focus.call_deferred()
 
 
 # --- Actions -----------------------------------------------------------------
 
-## Play: straight into your town in the family region. The first time,
-## it asks your name; there is no code to type.
+## Play: straight into your town in the family region. The first time on
+## this device, it asks for your PIN.
 func _play() -> void:
-	if str(Session.profile.get("name", "")).strip_edges() == "":
-		_show("name")
-		return
 	_code.text = _family_code()
+	if not Session.has_login("", _code.text) and not _has_any_login():
+		_show("pin")
+		return
 	_join()
+
+
+## Whether this device has played in a region before (its sign-in works
+## whatever the code is now).
+func _has_any_login() -> bool:
+	return Session.profile.get("tokens") is Dictionary and not Session.profile.tokens.is_empty()
 
 
 ## The family region's invite code: the one the region publishes, else the
@@ -265,16 +231,15 @@ func _play_offline() -> void:
 		Session.play_solo(saves[0].path)
 
 
-func _join() -> void:
+func _join(pin := "") -> void:
 	if _joining:
 		return
 	if _code.text.strip_edges() == "":
-		_status.text = "Type the invite code the host sent you."
-		_code.grab_focus()
-		return
+		_code.text = _family_code()
 	if _fetching and _server.text == "":
 		_status.text = "Finding the region..."
 		_join_after_fetch = true
+		_pin_after_fetch = pin
 		return
 	_joining = true
 	_status.text = "Joining..."
@@ -284,7 +249,7 @@ func _join() -> void:
 			if code != "" and code != _clean(_code.text) and not code in _other_codes:
 				_other_codes.append(code)
 	_retrying = false
-	var c := Session.join_region(_server_address(), _code.text)
+	var c := Session.join_region(_server_address(), _code.text, "", false, pin)
 	c.joined.connect(func(): Session.enter_region())
 	c.waiting.connect(func(message): _status.text = message)
 	c.failed.connect(func(reason):
@@ -293,8 +258,10 @@ func _join() -> void:
 			# Try the region's own code before bothering anyone.
 			_code.text = _other_codes.pop_front()
 			_retrying = true
-			_join.call_deferred()
+			_join.call_deferred(pin)
 			return
+		if "PIN" in reason:
+			_show("pin")
 		_status.text = reason
 		# The region's computer is off, asleep or out of date: don't leave
 		# anyone stuck on the title screen.
@@ -338,7 +305,7 @@ func _fetched() -> void:
 	_fetching = false
 	if _join_after_fetch:
 		_join_after_fetch = false
-		_join()
+		_join(_pin_after_fetch)
 
 
 func _host() -> void:
@@ -349,7 +316,7 @@ func _host() -> void:
 	_code.text = code
 	_server.text = Session.LOCAL_SERVER
 	_published_server = ""
-	_host_info.text = "Region running. Invite code: %s\nFamily on your network join with this computer's address, port 9080." % code
+	_host_info.text = "Region running. In the game, open the region panel and press Players to add each person and copy their PIN.\nFamily on your network join with this computer's address, port 9080."
 	_join()
 
 

@@ -30,54 +30,80 @@ func _run() -> void:
 	_check(server.invite_code == "ABC123", "invite code is kept, in capitals")
 	var url := "ws://127.0.0.1:%d" % PORT
 
-	# A wrong code is turned away with a reason.
-	var stranger := _client()
-	var reason := []
-	stranger.failed.connect(func(r): reason.append(r))
-	stranger.join(url, "ZZZZZZ", "p-stranger", "Stranger")
-	await _until(func(): return not reason.is_empty())
-	_check(not reason.is_empty() and "code" in reason[0], "wrong invite code turned away (%s)" % str(reason))
-
-	# The first account is the host's: in at once.
+	# The first account is the host's: in at once, with just the code.
 	var ann := _client()
 	ann.join(url, "abc-123", "p-ann", "Ann")
 	await _until(func(): return ann.my_city != "")
 	_check(ann.my_city != "" and ann.is_host, "Ann makes the first account, hosts and gets a city")
 	_check(not JSON.stringify(server.region.to_dict()).contains(server.accounts.ann.hash), "passwords never go out with the region")
-	# Everyone else waits for the host to let them in.
-	var bob := _client()
-	var told := []
-	bob.waiting.connect(func(m): told.append(m))
-	bob.join(url, "ABC123", "p-bob", "Bob")
-	await _until(func(): return not told.is_empty() and ann.requests == ["Bob"])
-	_check(not told.is_empty() and bob.my_city == "", "Bob signs up and waits for the host")
-	_check(ann.requests == ["Bob"], "the host sees Bob waiting (%s)" % str(ann.requests))
+	await _until(func(): return not ann.pins.is_empty())
+	_check(ann.pins.size() == 1 and str(ann.pins[0].pin).length() == 6, "the host sees her own PIN (%s)" % str(ann.pins))
+	var ann_pin := str(ann.pins[0].pin)
+	_check(not JSON.stringify(server.region.to_dict()).contains(ann_pin), "PINs never go out with the region")
+
+	# After that, nobody gets in without a PIN: not a wrong code, not the
+	# right code with someone's name.
+	var stranger := _client()
+	var reason := []
+	stranger.failed.connect(func(r): reason.append(r))
+	stranger.join(url, "ZZZZZZ", "p-stranger", "Stranger")
+	await _until(func(): return not reason.is_empty())
+	_check(not reason.is_empty() and "PIN" in reason[0], "a stranger is asked for a PIN (%s)" % str(reason))
+	var faker := _client()
+	var faker_told := []
+	faker.failed.connect(func(r): faker_told.append(r))
+	faker.join(url, "ABC123", "p-fake", "Ann")
+	await _until(func(): return not faker_told.is_empty())
+	_check(faker.my_city == "" and not faker_told.is_empty() and "PIN" in faker_told[0], "the code and the host's name aren't enough")
+
+	# Ann's PIN on another computer is Ann, host and all; the old window stops.
 	var sneaky := _client()
-	var sneaky_told := []
-	sneaky.failed.connect(func(r): sneaky_told.append(r))
 	var ann_told := []
 	ann.failed.connect(func(r): ann_told.append(r))
-	sneaky.join(url, "ABC123", "p-sneak", "Ann")
-	await _until(func(): return not sneaky_told.is_empty())
+	sneaky.join(url, "", "p-sneak", "", "", false, "", ann_pin)
 	await _until(func(): return sneaky.my_city != "" and not ann_told.is_empty())
-	_check(sneaky.my_city == ann.my_city and sneaky.is_host, "the host's name on a new computer is the host, with her town")
+	_check(sneaky.my_city == ann.my_city and sneaky.is_host, "the host's PIN on a new computer is the host, with her town")
 	_check(not ann_told.is_empty() and "another computer" in ann_told[0] and not ann.reconnecting,
 		"the old window is told and stops, so the two don't fight over the town")
 	sneaky.leave()
-	ann.join(url, "ABC123", "p-ann", "Ann")
+	ann.join(url, "ABC123", "p-ann", "Ann", "", false, ann.token)
 	await _until(func(): return ann.my_city != "" and ann.is_joined)
 	_check(ann.is_joined and ann.is_host, "and playing on the first computer again brings it back")
+	# The host adds Bob and gets a PIN to send him.
+	ann.add_player("Bob")
+	await _until(func(): return ann.pins.size() == 2)
+	var bob_pin := ""
+	for pp in ann.pins:
+		if pp.name == "Bob":
+			bob_pin = str(pp.pin)
+	_check(bob_pin.length() == 6 and bob_pin != ann_pin, "the host adds Bob and gets his PIN")
+	var guess := _client()
+	var guess_told := []
+	guess.failed.connect(func(r): guess_told.append(r))
+	guess.join(url, "", "p-guess", "", "", false, "", "000000" if bob_pin != "000000" else "111111")
+	await _until(func(): return not guess_told.is_empty())
+	_check(not guess_told.is_empty() and "isn't right" in guess_told[0], "a wrong PIN is turned away")
+	# Bob types only his PIN: no code, no name.
+	var bob := _client()
+	bob.join(url, "", "p-bob", "", "", false, "", bob_pin.left(3) + " " + bob_pin.substr(3))
+	await _until(func(): return bob.my_city != "" and ann.region.cities.size() == 2)
+	_check(bob.my_city != "" and bob.my_city != ann.my_city and bob.player_name == "Bob", "Bob is in with just his PIN, as Bob")
+
+	# A PIN the host takes away lets nobody in.
+	ann.add_player("Eve")
+	await _until(func(): return ann.pins.size() == 3)
+	var eve_pin := ""
+	for pp in ann.pins:
+		if pp.name == "Eve":
+			eve_pin = str(pp.pin)
+	ann.remove_pin("Eve")
+	await _until(func(): return ann.pins.any(func(pp): return pp.name == "Eve" and pp.pin == ""))
 	var eve := _client()
 	var eve_told := []
 	eve.failed.connect(func(r): eve_told.append(r))
-	eve.join(url, "ABC123", "p-eve", "Eve")
-	await _until(func(): return ann.requests.size() == 2)
-	ann.approve("Eve", false)
+	eve.join(url, "", "p-eve", "", "", false, "", eve_pin)
 	await _until(func(): return not eve_told.is_empty())
-	_check(not eve_told.is_empty() and eve.my_city == "", "the host can say no")
-	ann.approve("Bob", true)
-	await _until(func(): return bob.my_city != "" and ann.region.cities.size() == 2)
-	_check(bob.my_city != "" and bob.my_city != ann.my_city, "Bob gets his own city")
+	_check(not eve_told.is_empty() and eve.my_city == "", "the host can take a PIN away")
 	var gap: float = ann.region.cities[ann.my_city].origin.distance_to(bob.region.cities[bob.my_city].origin)
 	_check(gap >= Region.ELBOW_ROOM, "Bob starts 3 miles from Ann's town, with room to grow (%d m)" % gap)
 
@@ -166,14 +192,20 @@ func _run() -> void:
 	_check(ann2.my_city == ann_city, "Ann logs back in with her saved token and gets her own city back")
 	_check(ann2.my_sim().buildings.size() == sim.buildings.size(), "with everything she built (sent as she left)")
 	var bob2 := _client()
-	bob2.join("ws://127.0.0.1:%d" % (PORT + 1), "ABC123", "p-bobs-laptop", "Bob")
+	bob2.join("ws://127.0.0.1:%d" % (PORT + 1), "", "p-bobs-laptop", "", "", false, "", bob_pin)
 	await _until(func(): return bob2.my_city != "")
-	_check(bob2.my_city != "" and bob2.my_city != ann_city, "Bob comes back on another computer with just his name and the code")
-	# By default the invite code is the only key: no name, no password, no wait.
+	_check(bob2.my_city != "" and bob2.my_city != ann_city, "Bob comes back on another computer with his PIN (kept over a restart)")
+	await _until(func(): return not ann2.pins.is_empty())
+	ann2.add_player("Kid")
+	await _until(func(): return ann2.pins.any(func(pp): return pp.name == "Kid"))
+	var kid_pin := ""
+	for pp in ann2.pins:
+		if pp.name == "Kid":
+			kid_pin = str(pp.pin)
 	var kid := _client()
-	kid.join("ws://127.0.0.1:%d" % (PORT + 1), "ABC123", "p-kid", "")
+	kid.join("ws://127.0.0.1:%d" % (PORT + 1), "", "p-kid", "", "", false, "", kid_pin)
 	await _until(func(): return kid.my_city != "")
-	_check(kid.my_city != "" and again.region.cities[kid.my_city].player.begins_with("Neighbor"), "a device with just the code plays at once, as a Neighbor")
+	_check(kid.my_city != "" and again.region.cities[kid.my_city].player == "Kid", "a player the host added plays with just the PIN")
 	var kid_city: String = kid.my_city
 	var kid_token: String = kid.token
 	kid.leave()
@@ -214,7 +246,7 @@ func _run() -> void:
 	var late := _client()
 	var late_told := []
 	late.failed.connect(func(r): late_told.append(r))
-	late.join("ws://127.0.0.1:%d" % (PORT + 2), "ABC123", "p-late", "Late")
+	late.join("ws://127.0.0.1:%d" % (PORT + 2), "ABC123", "p-kid", "Sammy", "", false, kid2.token)
 	await _frames(30)
 	var fourth := RegionServer.new()
 	root.add_child(fourth)

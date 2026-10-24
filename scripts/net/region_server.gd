@@ -236,6 +236,12 @@ func _handle(from: int, msg: Dictionary) -> void:
 		"approve":
 			if p.host:
 				approve(str(msg.get("name", "")), bool(msg.get("ok", false)))
+		"add_player":
+			if p.host:
+				add_player(str(msg.get("name", "")))
+		"remove_pin":
+			if p.host:
+				remove_pin(str(msg.get("name", "")))
 		"pledge":
 			# Money only for now; goods need each town to set them aside.
 			var good := str(msg.get("good", "money"))
@@ -269,30 +275,36 @@ func _hello(from: int, msg: Dictionary) -> void:
 		_send(from, {"t": "reject", "v": PROTOCOL, "reason": "This region runs a different version of the game."})
 		_log("Turned away peer %d: version %d, the region's is %d" % [from, v, PROTOCOL])
 		return
-	# A device that has played here before comes in by its sign-in, even
-	# with an old or mistyped code (the code may have changed since).
-	if str(msg.get("code", "")).to_upper().replace("-", "").strip_edges() != invite_code \
-			and _account_by_token(str(msg.get("token", ""))).is_empty():
-		_log("%s sent invite code \"%s\"" % [str(msg.get("name", "?")), str(msg.get("code", "")).left(16)])
-		_reject(from, "That invite code doesn't match this region.")
-		return
-	# The invite code is the only key: no name or password to type. A device
-	# comes back by its token; a new device with a name already in the
-	# region is that player on another computer (the host's own name too:
-	# family only, so getting in beats guarding names); otherwise a new
-	# account (named from its profile, or "Neighbor 2").
+	# Who it is: a device that has played here comes back by its sign-in
+	# (whatever code it sends, as the code may have changed); anyone else
+	# types the PIN the host made for them, which says who they are. Only
+	# the region's very first player (its host) comes in with just the code.
 	var name := str(msg.get("name", "")).strip_edges().left(24)
 	var token := str(msg.get("token", ""))
+	var pin := _clean_pin(str(msg.get("pin", "")))
 	var account := _account_by_token(token)
 	if not account.is_empty():
 		_rename(account, name)
-	elif name != "" and accounts.has(name.to_lower()):
-		account = accounts[name.to_lower()]
-		_log("%s is back on another computer" % account.name)
-	else:
+	elif pin != "":
+		if _pin_misses.size() >= PIN_MISSES and Time.get_ticks_msec() - int(_pin_misses[0]) < 60_000:
+			_reject(from, "Too many wrong PINs. Wait a minute, then try again.")
+			return
+		account = _account_by_pin(pin)
+		if account.is_empty():
+			_pin_misses.append(Time.get_ticks_msec())
+			while _pin_misses.size() > PIN_MISSES:
+				_pin_misses.pop_front()
+			_log("Wrong PIN from peer %d" % from)
+			_reject(from, "That PIN isn't right. Check it with the host.")
+			return
+		_log("%s came in with their PIN" % account.name)
+	elif accounts.is_empty() and str(msg.get("code", "")).to_upper().replace("-", "").strip_edges() == invite_code:
 		account = _new_account(name if name != "" else _free_name(), str(msg.get("password", "")),
 			str(msg.get("id", "")).left(64))
 		_log("New player %s (%s)" % [account.name, account.status])
+	else:
+		_reject(from, "Type your PIN. The host makes one for each player under Players in the region panel.")
+		return
 	if token == "" or not token.sha256_text() in account.tokens:
 		token = _issue_token(account)
 	match account.status:
@@ -346,7 +358,7 @@ func _new_account(name: String, password: String, device_id: String) -> Dictiona
 		pid = Crypto.new().generate_random_bytes(8).hex_encode()
 	var salt := Crypto.new().generate_random_bytes(16).hex_encode()
 	var a := {"name": name, "salt": salt, "hash": _hash(password, salt),
-		"status": "pending" if require_approval and not is_host else "approved", "player": pid, "host": is_host, "tokens": []}
+		"status": "pending" if require_approval and not is_host else "approved", "player": pid, "host": is_host, "tokens": [], "pin": _new_pin()}
 	accounts[name.to_lower()] = a
 	_dirty = true
 	return a
@@ -370,6 +382,85 @@ func _account_by_token(token: String) -> Dictionary:
 		if h in a.tokens:
 			return a
 	return {}
+
+
+## PINs: six digits the host gives each player. Wrong ones are counted,
+## and after PIN_MISSES in a minute the region stops listening for a bit.
+const PIN_MISSES := 10
+var _pin_misses := []  # ticks of the latest wrong PINs
+
+
+static func _clean_pin(pin: String) -> String:
+	var out := ""
+	for ch in pin:
+		if ch >= "0" and ch <= "9":
+			out += ch
+	return out
+
+
+func _account_by_pin(pin: String) -> Dictionary:
+	for a in accounts.values():
+		if str(a.get("pin", "")) == pin:
+			return a
+	return {}
+
+
+func _new_pin() -> String:
+	var crypto := Crypto.new()
+	while true:
+		var b := crypto.generate_random_bytes(4)
+		var pin := "%06d" % (b.decode_u32(0) % 1000000)
+		if _account_by_pin(pin).is_empty():
+			return pin
+	return ""
+
+
+## (Host) adds a player by name, with a PIN to send them; or makes an
+## existing player a new PIN.
+func add_player(name: String) -> String:
+	name = name.strip_edges().left(24)
+	if name == "":
+		return ""
+	var key := name.to_lower()
+	if accounts.has(key):
+		accounts[key].pin = _new_pin()
+		accounts[key].status = "approved"
+		_dirty = true
+		_log("New PIN for %s" % accounts[key].name)
+	else:
+		_new_account(name, "", "")
+		accounts[key].status = "approved"
+		_log("The host added %s" % name)
+	_send_pins()
+	return accounts[key].pin
+
+
+## (Host) takes a player's PIN away, so it lets nobody in.
+func remove_pin(name: String) -> void:
+	var key := name.strip_edges().to_lower()
+	if accounts.has(key) and not accounts[key].host:
+		accounts[key].pin = ""
+		accounts[key].status = "declined"
+		accounts[key].tokens = []
+		_dirty = true
+		_log("The host took %s's PIN away" % accounts[key].name)
+		_send_pins()
+
+
+## Every player and their PIN, for the host's Players list.
+func pins() -> Array:
+	var out := []
+	for key in accounts:
+		var a: Dictionary = accounts[key]
+		out.append({"name": a.name, "pin": str(a.get("pin", "")), "host": a.host})
+	out.sort_custom(func(x, y): return x.name.naturalnocasecmp_to(y.name) < 0)
+	return out
+
+
+func _send_pins() -> void:
+	for peer in _players:
+		if _players[peer].host:
+			_send(peer, {"t": "pins", "list": pins()})
 
 
 func _free_name() -> String:
@@ -455,6 +546,7 @@ func _admit(from: int, account: Dictionary, token: String) -> void:
 		"token": token, "host": account.host})
 	_send_players()
 	_send_requests()
+	_send_pins()
 	var line := region.add_chat("", "%s joined the region" % name)
 	_broadcast({"t": "chat", "line": line})
 
@@ -568,7 +660,17 @@ func _load() -> void:
 	for key in saved:
 		var a: Dictionary = saved[key]
 		accounts[key] = {"name": str(a.name), "salt": str(a.salt), "hash": str(a.hash), "status": str(a.status),
-			"player": str(a.player), "host": bool(a.host), "tokens": Array(a.get("tokens", []))}
+			"player": str(a.player), "host": bool(a.host), "tokens": Array(a.get("tokens", [])),
+			"pin": str(a.get("pin", ""))}
+	# Regions from before PINs: every player gets one, and the first player
+	# is the host if nobody is.
+	var any_host := false
+	for key in accounts:
+		any_host = any_host or accounts[key].host
+		if accounts[key].pin == "" and accounts[key].status != "declined":
+			accounts[key].pin = _new_pin()
+	if not any_host and not accounts.is_empty():
+		accounts[accounts.keys()[0]].host = true
 	if invite_code == "":
 		invite_code = str(d.get("code", ""))
 	_log("Loaded %d cities from %s" % [region.cities.size(), data_path])
