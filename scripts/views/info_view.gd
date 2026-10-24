@@ -27,9 +27,19 @@ const RES := 192
 const RECENTER := 1024.0
 const KIND := {Mode.FERTILITY: Resources.Kind.FERTILITY, Mode.OIL: Resources.Kind.OIL,
 	Mode.ORE: Resources.Kind.ORE, Mode.FOREST: Resources.Kind.FOREST}
+## Resource views step from poor to rich in flat bands, after CS2: a
+## smooth ramp reads as one colour, a step change does not.
+const BANDS := 5
+## Soil from just farmable (straw) to river-bottom loam (deep green).
+const FERTILITY_BANDS := [Color(0.98, 0.88, 0.4, 0.72), Color(0.74, 0.86, 0.3, 0.74),
+	Color(0.44, 0.76, 0.22, 0.76), Color(0.18, 0.6, 0.16, 0.8), Color(0.03, 0.4, 0.1, 0.85)]
+## Soil too poor for a farm to pay: muted, like the greyed-out map in CS2.
+const POOR_SOIL := Color(0.6, 0.52, 0.46, 0.5)
+## The line where ground starts to pay.
+const LINE_COLOR := Color(0.12, 0.08, 0.04, 0.95)
 ## Low and high colours for each view.
 const RAMPS := {
-	Mode.FERTILITY: [Color(0.75, 0.38, 0.16, 0.55), Color(0.12, 0.7, 0.1, 0.55)],
+	Mode.FERTILITY: [POOR_SOIL, FERTILITY_BANDS[BANDS - 1]],
 	# Resource views, after CS2: the map greys out and the deposit shows in a
 	# strong tint, with a clear step where the ground starts to pay.
 	Mode.OIL: [Color(0.82, 0.82, 0.8, 0.5), Color(0.62, 0.38, 0.95, 0.8), Color(0.14, 0.03, 0.3, 0.94)],
@@ -114,7 +124,9 @@ func set_mode(m: int) -> void:
 	_fiber.visible = false
 	_job = {}
 	_painted_version = -1
-	_wash.visible = false if POLLUTION.has(mode) else mode != Mode.NONE
+	# Resource washes show once painted, so a new view never flashes the
+	# last one's colours.
+	_wash.visible = mode == Mode.NETWORK
 	_draw_pins()
 	_draw_reserves()
 	mode_changed.emit(mode)
@@ -128,7 +140,14 @@ func _process(_delta: float) -> void:
 	if moved:
 		_center = Vector2(roundf(t.x / RECENTER) * RECENTER, roundf(t.z / RECENTER) * RECENTER)
 	if not POLLUTION.has(mode):
-		if moved:
+		if moved and mode == Mode.NETWORK:
+			_paint_network()
+		elif moved:
+			var vals := PackedFloat32Array()
+			vals.resize(RES * RES)
+			_job = {"mode": mode, "center": _center, "line": threshold(KIND[mode], sim),
+				"vals": vals, "row": 0, "img": null}
+		if not _job.is_empty():
 			_paint()
 		return
 	var pol := sim.pollution
@@ -140,30 +159,81 @@ func _process(_delta: float) -> void:
 		_paint_pollution()
 
 
-## Samples the resource across the area into a small texture.
+## Samples the resource a few rows a frame, then colours it in the same
+## way, so opening a view or panning never stalls a slow machine.
 func _paint() -> void:
-	if mode == Mode.NETWORK:
-		_paint_network()
-		return
-	var kind: int = KIND[mode]
-	var ramp: Array = RAMPS[mode]
-	var img := Image.create(RES, RES, false, Image.FORMAT_RGBA8)
+	var j := _job
+	var kind: int = KIND[j.mode]
+	var line: float = j.line
+	var vals: PackedFloat32Array = j.vals
 	var step := EXTENT / RES
-	var origin := _center - Vector2(EXTENT, EXTENT) * 0.5
-	for y in RES:
+	var origin: Vector2 = j.center - Vector2(EXTENT, EXTENT) * 0.5
+	var start := Time.get_ticks_usec()
+	while j.row < RES:
+		var y: int = j.row
 		for x in RES:
 			var p := Vector3(origin.x + (x + 0.5) * step, 0.0, origin.y + (y + 0.5) * step)
-			var v := Resources.at(kind, p, Terrain.view_origin)
-			if kind == Resources.Kind.FERTILITY:
-				v = (v - 0.5) / 0.4
-				img.set_pixel(x, y, (ramp[0] as Color).lerp(ramp[1], clampf(v, 0.0, 1.0)))
-			elif v < Industry.MIN_RICHNESS:
-				img.set_pixel(x, y, (ramp[0] as Color).lerp(ramp[1], 0.35 * v / Industry.MIN_RICHNESS))
-			else:
-				img.set_pixel(x, y, (ramp[1] as Color).lerp(ramp[2],
-					clampf((v - Industry.MIN_RICHNESS) / (1.0 - Industry.MIN_RICHNESS), 0.0, 1.0)))
+			vals[y * RES + x] = Resources.at(kind, p, Terrain.view_origin)
+		j.row += 1
+		if Time.get_ticks_usec() - start > PAINT_BUDGET_USEC:
+			j.vals = vals
+			return
+	j.vals = vals
+	if j.img == null:
+		j.img = Image.create(RES, RES, false, Image.FORMAT_RGBA8)
+	var img: Image = j.img
+	while j.row < RES * 2:
+		var y: int = j.row - RES
+		for x in RES:
+			var v := vals[y * RES + x]
+			# The line runs along the paying side wherever a neighbour is poor
+			# (rivers have no soil, so only dry poor ground counts).
+			var edge := v >= line and (_poor(vals, x - 1, y, line) or _poor(vals, x + 1, y, line)
+				or _poor(vals, x, y - 1, line) or _poor(vals, x, y + 1, line))
+			img.set_pixel(x, y, LINE_COLOR if edge else band_color(j.mode, v, line))
+		j.row += 1
+		if Time.get_ticks_usec() - start > PAINT_BUDGET_USEC:
+			return
 	_wash_mat.albedo_texture = ImageTexture.create_from_image(img)
-	_wash.mesh = _land_sheet(_center)
+	_wash.mesh = _land_sheet(j.center)
+	_wash.visible = true
+	_job = {}
+
+
+static func _poor(vals: PackedFloat32Array, x: int, y: int, line: float) -> bool:
+	if x < 0 or y < 0 or x >= RES or y >= RES:
+		return false
+	var w := vals[y * RES + x]
+	return w < line and w > 0.0
+
+
+## Where ground starts to pay: the soil a new farm breaks even on today
+## (Farms.break_even_fertility), or the richness a company needs.
+static func threshold(kind: int, s: CitySim) -> float:
+	if kind != Resources.Kind.FERTILITY:
+		return Industry.MIN_RICHNESS
+	return s.farms.break_even_fertility() if s else 0.5
+
+
+## Which step from poor to rich `v` is in, counted up from the line.
+static func band(v: float, line: float) -> int:
+	if v < line:
+		return -1
+	return clampi(floori((v - line) / maxf(1.0 - line, 0.01) * BANDS), 0, BANDS - 1)
+
+
+## The flat colour for a resource reading: greyed out below the line, then
+## one of BANDS steps, so 20 points of difference is a different colour.
+static func band_color(m: int, v: float, line: float) -> Color:
+	var b := band(v, line)
+	if m == Mode.FERTILITY:
+		if v <= 0.0:
+			return Color(0, 0, 0, 0)
+		return POOR_SOIL if b < 0 else FERTILITY_BANDS[b]
+	var ramp: Array = RAMPS[m]
+	if b < 0:
+		return ramp[0]
+	return (ramp[1] as Color).lerp(ramp[2], float(b) / (BANDS - 1))
 
 
 ## Cell signal across the area, and every fiber street as a bright line.

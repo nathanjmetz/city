@@ -36,6 +36,9 @@ func _ready() -> void:
 	if Session.online():
 		sim = Session.client.my_sim()
 	sim.require_utilities = true
+	# The land under your own town is the one every view and hub reads,
+	# even after neighbor copies load with their own offsets.
+	Resources.pin(sim.terrain_offset)
 	var sky := SkyLight.new()
 	add_child(sky)
 	var terrain := TerrainView.new()

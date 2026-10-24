@@ -12,15 +12,35 @@ extends RefCounted
 ## tools/terrain/build_region.py for how each is worked out).
 ##
 ## `offset` is where the city sits in the region (its sim's terrain_offset);
-## 0 in solo play.
+## 0 in solo play. Left out, it is `origin`, which the town's sim keeps set,
+## so the sim reads the same land the player sees under the town.
 
 enum Kind { FERTILITY, OIL, ORE, FOREST }
 
 const NAMES := ["Fertility", "Oil", "Ore", "Forest"]
+## Where this computer's town sits in the region (CitySim.terrain_offset).
+static var origin := Vector2.ZERO
+## Set once the game pins `origin` to the player's own town, so loading a
+## neighbor's copy doesn't move it.
+static var pinned := false
+
+
+## A sim's land moved: follow it unless the game pinned its own town's.
+static func follow(offset: Vector2) -> void:
+	if not pinned:
+		origin = offset
+
+
+## The player's own town: its land is the one read from now on.
+static func pin(offset: Vector2) -> void:
+	origin = offset
+	pinned = true
 
 
 ## How much of a resource is at a point, 0 to 1.
-static func at(kind: int, p: Vector3, offset := Vector2.ZERO) -> float:
+static func at(kind: int, p: Vector3, offset := Vector2.INF) -> float:
+	if offset == Vector2.INF:
+		offset = origin
 	if kind == Kind.FERTILITY:
 		return fertility(p, offset)
 	return Terrain.resource(kind, p.x + offset.x, p.z + offset.y)
@@ -28,7 +48,9 @@ static func at(kind: int, p: Vector3, offset := Vector2.ZERO) -> float:
 
 ## How good the soil is at a point: about 0.35 (wooded hills, strip mines)
 ## to 1 (river-bottom loam); 0 in the water.
-static func fertility(p: Vector3, offset := Vector2.ZERO) -> float:
+static func fertility(p: Vector3, offset := Vector2.INF) -> float:
+	if offset == Vector2.INF:
+		offset = origin
 	var x := p.x + offset.x
 	var z := p.z + offset.y
 	if Terrain.is_water(x, z):
