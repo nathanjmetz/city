@@ -128,8 +128,16 @@ func _drivers() -> void:
 	var walks := 0
 	var short := 0
 	var reach := Services.size_of(b).length() * 0.5
+	var circles := 0
 	for i in 3000:
 		sim.tick()
+		# Nobody backs out of the lot, rounds the block and parks in it again
+		# (Brawn watched a driver do it, bound for a shop beside the lot).
+		for car in t.cars:
+			if str(car.get("from_place", "")) == "svc:%d" % placed and str(car.get("to_place", "")) == "svc:%d" % placed \
+					and int(car.get("circled", -1)) != int(car.trip):
+				car.circled = car.trip
+				circles += 1
 		if i % 50 == 0:
 			for car in t.parked:
 				if str(car.get("at_place", "")) == "svc:%d" % placed:
@@ -144,7 +152,46 @@ func _drivers() -> void:
 				else:
 					short += 1
 	_check(seen > 0, "shoppers park in the town's lot (%d sightings)" % seen)
+	_check(circles == 0, "nobody drives out of the lot only to park in it again (%d)" % circles)
+	_check(Inspect.place_name(sim, "svc:%d" % placed).begins_with("Downtown"),
+		"a car's card names the lot, not its id (%s)" % Inspect.place_name(sim, "svc:%d" % placed))
 	_check(walks > 0 and short == 0, "drivers walk from the lot to their door (%d walks, %d cut short)" % [walks, short])
+	# A driver whose car is in the lot, off to a shop beside it, walks there
+	# and leaves the car parked; going home, they fetch it.
+	var lot_pl := t.place("svc:%d" % placed)
+	var shop_b := ""
+	var best := INF
+	for key in sim.lots:
+		if sim.buildings.has(key) and sim.buildings[key].zone == ZoneMap.Zone.COMMERCIAL \
+				and not t.place("lot:" + key).is_empty():
+			var d: float = t.place("lot:" + key).door.distance_to(lot_pl.door)
+			if d < best:
+				best = d
+				shop_b = "lot:" + key
+	var pid := -1
+	for id in sim.people.people:
+		var person: Dictionary = sim.people.people[id]
+		var c := t._vehicle_parked(int(person.car))
+		if not c.is_empty() and person.at != "travel" and not c.has("pending"):
+			pid = id
+			break
+	_check(pid != -1 and shop_b != "", "a driver with a parked car and a shop by the lot")
+	if pid != -1 and shop_b != "":
+		var person: Dictionary = sim.people.people[pid]
+		var vid := int(person.car)
+		var c := t._vehicle_parked(vid)
+		var i := t._reserve(lot_pl, vid, false)
+		t._release(c.at_place, c.spot, vid)
+		t._park(c, lot_pl, i)
+		if person.at == shop_b:
+			person.at = ""  # at home, then
+		var went := t.go(pid, shop_b, "shop", 50)
+		var on_foot := false
+		for w in t.walkers:
+			if int(w.person) == pid and w.then.get("enter", "") == shop_b:
+				on_foot = true
+		_check(went and on_foot and str(c.get("at_place", "")) == lot_pl.ref,
+			"a short hop past the lot is walked and the car stays parked (%s, %s)" % [went, on_foot])
 	# Homes on the block: an extra car goes on the street out front, never in
 	# the town's lot.
 	var homers := 0
