@@ -37,6 +37,14 @@ var darkness := 0.0
 var _day := {}  # the fixed late-morning look, to go back to
 ## How far from the camera shadows reach at most, in metres (Quality sets it).
 var shadow_reach := 2000.0
+## The browser's renderer (Compatibility) lights the same scene about twice
+## as bright as the desktop's, with a blue cast from the sky's share of the
+## ambient light, and takes the colour adjustments harder: fields, roads
+## and roofs came out pale and washed. Measured on grey and grass cards
+## against Forward+, these bring it back in line (the sky is left as is).
+var _gl := RenderingServer.get_current_rendering_method() == "gl_compatibility"
+var _light := 0.45 if _gl else 1.0
+var _sky_share := 0.0 if _gl else 0.6
 
 
 func _ready() -> void:
@@ -60,9 +68,9 @@ func _ready() -> void:
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	# Part sky, part neutral bounce light from lawns and pavement, so shade
 	# reads blue-grey like in photos rather than saturated blue.
-	env.ambient_light_sky_contribution = 0.6
+	env.ambient_light_sky_contribution = _sky_share
 	env.ambient_light_color = Color(0.66, 0.66, 0.64)
-	env.ambient_light_energy = 0.62
+	env.ambient_light_energy = 0.62 * _light
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	# AgX keeps bright roofs and concrete from clipping to flat white.
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
@@ -81,15 +89,15 @@ func _ready() -> void:
 	env.fog_sky_affect = 0.25
 	# AgX mutes colour, so bring saturation and contrast back up to photo levels.
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.08
-	env.adjustment_contrast = 1.1
+	env.adjustment_saturation = 1.0 if _gl else 1.08
+	env.adjustment_contrast = 1.0 if _gl else 1.1
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
 
 	sun.rotation_degrees = Vector3(-SUN_ELEVATION, SUN_AZIMUTH, 0)
 	sun.light_color = Color(1.0, 0.95, 0.86)
-	sun.light_energy = 1.7
+	sun.light_energy = 1.7 * _light
 	sun.shadow_enabled = true
 	sun.shadow_blur = 1.2
 	sun.shadow_bias = 0.04
@@ -178,7 +186,7 @@ func set_fixed() -> void:
 	env.fog_light_color = _day.horizon
 	env.ambient_light_energy = _day.ambient
 	env.ambient_light_color = _day.ambient_color
-	env.ambient_light_sky_contribution = 0.6
+	env.ambient_light_sky_contribution = _sky_share
 	env.glow_intensity = 0.0
 	sun.light_color = _day.sun_color
 	sun.light_energy = _day.sun_energy
@@ -221,7 +229,7 @@ func set_time(hour: float, months: float) -> void:
 	# under a dusk sky is lit by the blue of the open sky.
 	env.fog_light_color = NIGHT_HORIZON.lerp(_day.horizon, day).lerp(Color(0.62, 0.5, 0.5), dusk * 0.35)
 	env.ambient_light_color = Color(0.32, 0.42, 0.72).lerp(_day.ambient_color, day)
-	env.ambient_light_energy = lerpf(0.6, _day.ambient, day)
+	env.ambient_light_energy = lerpf(0.6 * _light, _day.ambient, day)
 	env.glow_intensity = 0.9 * darkness
 	if elev > -2.0:
 		# The sun, warming to orange as it gets low.
@@ -235,7 +243,7 @@ func set_time(hour: float, months: float) -> void:
 		var dir := _toward(moon)
 		sun.look_at_from_position(Vector3.ZERO, -dir, Vector3.UP)
 		sun.light_color = MOON_COLOR
-		sun.light_energy = 0.7 * smoothstep(-2.0, -10.0, elev)
+		sun.light_energy = 0.7 * _light * smoothstep(-2.0, -10.0, elev)
 
 
 ## A unit vector toward a point in the sky (height, bearing). North is -Z

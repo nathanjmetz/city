@@ -70,7 +70,7 @@ void vertex() {
 		// Each tree drops out at its own distance, so the edge of the drawn
 		// woods is ragged, not a circle round the camera.
 		float jitter = (fract(sin(dot(floor(origin.xz), vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * 0.3 * tree_fade.z;
-		fade = (1.0 - smoothstep(tree_fade.z * 0.55, tree_fade.z * 0.97, distance(origin.xz, tree_fade.xy) + jitter))
+		fade = (1.0 - smoothstep(tree_fade.z * 0.7, tree_fade.z * 0.97, distance(origin.xz, tree_fade.xy) + jitter))
 			* (1.0 - smoothstep(1200.0, 1700.0, tree_fade.w));
 	}
 	VERTEX *= mix(0.4, 1.0, fade) * step(0.001, fade);
@@ -160,7 +160,9 @@ void fragment() {
 	// own flat face (from screen derivatives), not the crown normal.
 	vec3 face = normalize(cross(dFdx(VERTEX), dFdy(VERTEX)));
 	alpha *= smoothstep(0.1, 0.35, abs(dot(face, normalize(-VERTEX))));
-	ALPHA = alpha * mix(0.3, 1.0, fade);
+	// Fading trees shrink rather than thin out: thinned leaves fall under
+	// the cut-off in scattered pixels and a tree row breaks into specks.
+	ALPHA = alpha * mix(0.85, 1.0, fade);
 	ALPHA_SCISSOR_THRESHOLD = 0.45;
 	// With MSAA, leaf edges become partial coverage instead of popping on
 	// and off as the camera moves.
