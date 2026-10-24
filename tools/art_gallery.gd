@@ -5,7 +5,8 @@ extends SceneTree
 ## Kinds: house, shop, factory, row, apartments, mixed, office, main (a
 ## Main Street of mixed blocks, storeys 2 to 4), types (one of each type),
 ## care (one house from derelict to showpiece, PropertyCare's tiers -2..2)
-## and careshop (the same for a shop).
+## and careshop (the same for a shop). "far:<kind>" draws the same
+## buildings as their far versions (BuildingView.far_version).
 
 var _frames := 0
 
@@ -13,6 +14,9 @@ var _frames := 0
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
 	var kind := args[1] if args.size() > 1 else "house"
+	var far := kind.begins_with("far:")
+	if far:
+		kind = kind.trim_prefix("far:")
 	# "house:bungalow" draws one house type.
 	if kind.begins_with("house:"):
 		HouseBuilder.force_kind = kind.get_slice(":", 1)
@@ -106,6 +110,10 @@ func _init() -> void:
 			"careshop": meshes = DenseBuilder.build_retail(seed * 100, 3.9, {"width": w, "depth": 40.0})
 			_: meshes = HouseBuilder.build(sd, 3.9)
 		HouseBuilder.owner_care = 0
+		if far:
+			var fm := BuildingView.far_version(meshes[0], HouseBuilder.last_masses, k == "factory", Color.WHITE, Color("#9c9a95"), meshes[1])
+			fm.surface_set_material(0, HouseMaterials.get_mat("far"))
+			meshes = [fm, ArrayMesh.new(), []]
 		var at := Vector3(x + w * 0.5, 0, 0)
 		x += w + (12.0 if k == "oddlots" else 0.0)
 		for m in meshes.slice(0, 2):

@@ -301,8 +301,9 @@ void fragment() {
 }
 """
 
-## Distant towers: the wall colour with a window grid drawn from UVs in
-## metres (x along the wall, y up it), the share of glass in vertex alpha.
+## Distant buildings (BuildingView's far versions): the wall colour with a
+## window grid drawn from UVs in metres (x along the wall, y up it), the
+## share of glass in vertex alpha; UV zero draws the plain colour.
 ## Lit rooms after dark, as on near windows.
 const FAR := """
 void fragment() {
@@ -317,8 +318,10 @@ void fragment() {
 	float win = step(ylo, fy) * step(fy, 0.86 + curtain * 0.1) * step(xlo, fx) * step(fx, 1.0 - xlo) * step(0.01, COLOR.a);
 	win = mix(COLOR.a * 0.55, win, aa);  // too small to draw: an even darkening
 	vec3 glass = vec3(0.025, 0.03, 0.035) + vec3(0.06, 0.08, 0.1) * (1.0 - night * 0.85);
-	ALBEDO = mix(lin(COLOR.rgb), glass, win);
-	ROUGHNESS = mix(0.85, 0.15, win);
+	// Winter: snow on roofs and flat tops, as on the close-up roofs.
+	float cover = snow_cover(0.35, 0.6) * (1.0 - win);
+	ALBEDO = mix(mix(lin(COLOR.rgb), glass, win), vec3(0.86, 0.88, 0.92), cover);
+	ROUGHNESS = mix(mix(0.85, 0.15, win), 0.7, cover);
 	SPECULAR = mix(0.3, 0.6, win);
 	vec2 cell = vec2(floor(UV.x / 2.0), floor(UV.y / 3.7));
 	float on = step(hash(cell + floor(world_pos.xz / 50.0)), windows_lit) * smoothstep(0.2, 0.6, night);
