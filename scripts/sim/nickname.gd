@@ -110,9 +110,9 @@ static func title_for(sim, sector: String) -> String:
 					top = k
 			return {
 				"mill": "Mill Town of " + COUNTY,
-				"sawmill": "Hardwood Capital of Southern Indiana",
+				"sawmill": "Hardwood Capital of East Central Indiana",
 				"refinery": "Oil Town of " + VALLEY,
-				"metal": "Steel Town of Southern Indiana",
+				"metal": "Steel Town of East Central Indiana",
 				"general": "Factory Town of " + COUNTY,
 			}[top]
 		"trade":
@@ -122,11 +122,11 @@ static func title_for(sim, sector: String) -> String:
 			for key in sim.buildings:
 				if BuildingTypes.type_of(sim.buildings[key]) == "office":
 					office += int(sim.buildings[key].cap)
-			return ("Banking Center" if sim.banks.jobs() * 2 >= office else "Business Center") + " of Southern Indiana"
+			return ("Banking Center" if sim.banks.jobs() * 2 >= office else "Business Center") + " of East Central Indiana"
 		"campus":
 			if sim.education.jobs() >= sim.healthcare.jobs(sim):
 				return "Athens of " + VALLEY
-			return "Medical Center of Southern Indiana"
+			return "Medical Center of East Central Indiana"
 		"transport":
 			if sim.rail.jobs() >= sim.power.jobs():
 				return "Railroad Town of " + COUNTY
