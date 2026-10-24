@@ -119,7 +119,27 @@ func _init() -> void:
 	var copy := CitySim.new()
 	copy.from_dict(sim.to_dict())
 	_check(_highway(copy).size() == _highway(sim).size(), "the joined highway is saved with the town")
+	_shared_street()
 	_finish()
+
+
+## Brawn (2026-10-24): state roads that leave another in town start on it,
+## as SR 61 and SR 56 leave SR 57 in Petersburg, not as spurs ending beside
+## it that the town joins as two roads kinking into each other.
+func _shared_street() -> void:
+	var loose := 0
+	for i in Highways.all().size():
+		for along in [0.0, Highways.length(i)]:
+			var p := Highways.point(i, along)
+			if absf(p.x) > 15000.0 or absf(p.y) > 15000.0:
+				continue  # off the map: a region link
+			var on := false
+			for k in Highways.all().size():
+				on = on or (k != i and not Highways.near(p.x, p.y, 2.0, k).is_empty())
+			if not on:
+				loose += 1
+				print("  loose end of ", Highways.all()[i].name, " at ", p)
+	_check(loose == 0, "every state road on the map starts and ends on another or off the map")
 
 
 ## A point along a highway, near the middle of the map, with dry land a

@@ -47,6 +47,11 @@ var _light := 0.45 if _gl else 1.0
 var _sky_share := 0.0 if _gl else 0.6
 
 
+## Depth fog at street level (see _ready) and how high the haze reaches.
+const HAZE_DENSITY := 0.00016
+const HAZE_LAYER := 600.0
+
+
 func _ready() -> void:
 	sky_mat.sky_top_color = Color(0.17, 0.36, 0.70)
 	sky_mat.sky_horizon_color = HAZE
@@ -84,7 +89,7 @@ func _ready() -> void:
 	# About 24 km visibility, a clear Midwestern day (extinction 3.9 / range):
 	# fields 2-3 km off keep their colour, and the land 20 km out, where it is
 	# last drawn, is all but haze.
-	env.fog_density = 0.00016
+	env.fog_density = HAZE_DENSITY
 	env.fog_sun_scatter = 0.15
 	env.fog_sky_affect = 0.25
 	# AgX mutes colour, so bring saturation and contrast back up to photo levels.
@@ -278,6 +283,7 @@ func _process(_delta: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
 		return
+	_fit_haze(cam)
 	var dir := -cam.global_basis.z
 	var reach := 600.0
 	if dir.y < -0.05:
@@ -288,3 +294,16 @@ func _process(_delta: float) -> void:
 	var cur := sun.directional_shadow_max_distance
 	if want > cur or want < cur * 0.55:
 		sun.directional_shadow_max_distance = minf(120.0 * pow(1.5, ceilf(log(want / 120.0) / log(1.5))), shadow_reach)
+
+
+## Haze is thickest near the ground: most of it lies in the lowest few
+## hundred metres of air, so looking down from a plane the land below is
+## clear while the horizon still fades. Depth fog only knows distance, so
+## the camera's height thins it by the share of the haze layer (scale
+## height HAZE_LAYER) its sight lines pass through: the same at street level,
+## about half from 1 km up, about a third from 1.5 km (Brawn: zoomed-out
+## views were washed out, 2026-10-24).
+func _fit_haze(cam: Camera3D) -> void:
+	var h := maxf(cam.global_position.y - Terrain.ground_y(cam.global_position.x, cam.global_position.z), 1.0)
+	var share := HAZE_LAYER / h * (1.0 - exp(-h / HAZE_LAYER))
+	env.fog_density = HAZE_DENSITY * share

@@ -29,6 +29,11 @@ static var force_shop := ""
 var sign_spec := {}
 ## Lettering for SignText: [{pos, normal, text, height, width, color, style}].
 var labels := []
+## Where cars park and people go in, as the art lays it out (SiteLayout
+## reads it from a dry run, so cars use the stalls that are painted):
+## {"stalls": [[Vector2 centre, Vector2 nose]], "door": Vector2,
+## "cut_x": float, "aisle_z": float, "main_street": bool}.
+var site := {"stalls": [], "door": Vector2(0.0, 0.4), "cut_x": 0.0, "aisle_z": 0.0, "main_street": true}
 
 
 static func build_shop(seed: int, to_curb: float, lot := {}, spec := {}) -> Array:
@@ -108,6 +113,7 @@ func _retail(to_curb: float) -> void:
 	var sw := w * rng.randf_range(0.6, 0.8)
 	var bays := int(sw / 1.6)
 	var door := rng.randi_range(0, bays - 1)
+	site.door = Vector2(-sw * 0.5 + (door + 0.5) * sw / bays, zf)
 	for i in bays:
 		var x := -sw * 0.5 + (i + 0.5) * sw / bays
 		var y := 1.55 if i == door else 1.8
@@ -139,6 +145,7 @@ func _retail(to_curb: float) -> void:
 	while x <= lot1 + 0.01:
 		_flat_rect("line", x - 0.06, x + 0.06, zf - 2.2 - 5.5, zf - 2.2, 0.07, LINE)
 		x += stall
+	_site_row(lot0, lot1, zf - 2.2, 0.0)
 	if rng.randf() < 0.6:
 		var pick := TreeField.pick(rng)
 		var tx := lot0 + 0.8 if rng.randf() < 0.5 else lot1 - 0.8
@@ -331,6 +338,7 @@ func _strip_center(to_curb: float) -> void:
 	_flat_roofed("paint", w, d, cz, h, h + 1.2, wall)
 	var n := clampi(int(w / 7.0), 3, 14)
 	var bay := w / n
+	site.door = Vector2(-w * 0.5 + bay * 0.5, zf)
 	for i in n:
 		var x := -w * 0.5 + (i + 0.5) * bay
 		var sw := bay - 1.4
@@ -399,6 +407,16 @@ func _shop_gas_station(to_curb: float) -> void:
 	for x in [-half * 0.55, half * 0.55]:
 		_flat_rect("asphalt", x - 3.6, x + 3.6, -to_curb, 0.0, 0.1)
 	_steel_door(Vector3(sw * 0.3, 1.35, zf + sd + 0.03), 1.0)
+	# Cars pull up beside the pumps, one each side of an island, and the
+	# driver walks in to pay.
+	site.main_street = false
+	site.door = Vector2(-sw * 0.3 + 2.4, zf)
+	site.cut_x = -half * 0.55
+	site.aisle_z = clampf(ccz - cd * 0.5 - 1.5, 1.0, ccz - 4.0)
+	for i in islands:
+		var x := (i - (islands - 1) * 0.5) * cw / islands
+		for s in [-1.0, 1.0]:
+			site.stalls.append([Vector2(x + s * 2.0, ccz), Vector2(0, 1)])
 
 
 ## A diner or family restaurant: one storey, a long band of windows with a
@@ -418,6 +436,7 @@ func _shop_diner(to_curb: float) -> void:
 	for i in n:
 		_glass(Vector3(-w * 0.5 + 2.6 + i * 1.5, 2.15, zf - 0.03), Vector3(-1, 0, 0), 1.4, 1.6, 0.05)
 	# Entry vestibule.
+	site.door = Vector2(-w * 0.5 + 1.0, zf - 2.0)
 	_box("paint", Vector3(2.6, 3.0, 2.0), Vector3(-w * 0.5 + 1.0, 1.8, zf - 1.0), band)
 	_glass(Vector3(-w * 0.5 + 1.0, 1.4, zf - 2.02), Vector3(-1, 0, 0), 1.6, 2.2, 0.0)
 	# Pole sign.
@@ -456,6 +475,7 @@ func _bank(to_curb: float) -> void:
 	_quad("roof", Vector3(-3.3, 6.8, zf - 3.1), Vector3(0, 8.0, zf - 3.1), Vector3(0, 8.0, zf), Vector3(-3.3, 6.8, zf), Color(ROOF[0]), [], Vector3(-1, 3, 0))
 	_quad("roof", Vector3(3.3, 6.8, zf - 3.1), Vector3(0, 8.0, zf - 3.1), Vector3(0, 8.0, zf), Vector3(3.3, 6.8, zf), Color(ROOF[0]), [], Vector3(1, 3, 0))
 	_box("paint", Vector3(1.8, 2.8, 0.08), Vector3(0, 2.0, zf - 0.04), Color("#3a3530"))
+	site.door = Vector2(0.0, zf - 3.0)
 	_sign(Vector3(0, 4.3, zf - 0.08), 4.0, 0.5)
 	# Drive-up lane and canopy beside the building.
 	var lx := w * 0.5 + 3.0
@@ -530,11 +550,30 @@ func _shop_parking(to_curb: float, w: float, zw: float, cut_x: float) -> void:
 	var lot1 := half - 0.6
 	_flat_rect("asphalt", lot0, lot1, 0.0, zw - 2.0, 0.06)
 	_flat_rect("asphalt", cut_x - 3.6, cut_x + 3.6, -to_curb, 0.0, 0.1)
+	site.cut_x = cut_x
+	site.main_street = false
 	if zw - 2.0 > 6.0:
 		var x := lot0
 		while x <= lot1 + 0.01:
 			_flat_rect("line", x - 0.06, x + 0.06, zw - 2.0 - 5.5, zw - 2.0, 0.07, LINE)
 			x += 2.75
+		_site_row(lot0, lot1, zw - 2.0, cut_x)
+	else:
+		site.aisle_z = (zw - 2.0) * 0.5
+
+
+## Notes the row of 90 degree stalls painted between lines every 9 ft from
+## `x0` to `x1`, noses in to `back`, reached along an aisle in front of them
+## from the curb cut at `cut_x`.
+func _site_row(x0: float, x1: float, back: float, cut_x: float) -> void:
+	site.main_street = false
+	site.cut_x = cut_x
+	site.aisle_z = (back - 5.5) * 0.5
+	var x := x0
+	while x + 2.75 <= x1 + 0.01:
+		site.stalls.append([Vector2(x + 1.375, back - 2.75), Vector2(0, 1)])
+		x += 2.75
+
 
 
 # ---------------------------------------------------------------- factories

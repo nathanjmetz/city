@@ -1,7 +1,7 @@
 extends SceneTree
 ## Renders one building of a kind at every stage of going up, side by side,
 ## for checking ConstructionSite against photos of real job sites.
-## Run: godot -s tools/construction_shot.gd -- out.png [house|shop|factory|civic|warehouse|barn|landfill|cemetery]
+## Run: godot -s tools/construction_shot.gd -- out.png [house|shop|factory|civic|warehouse|barn|paving|landfill|cemetery]
 ##      [seed] [t] [yaw pitch dist] [only stage]
 
 var _frames := 0
@@ -17,7 +17,7 @@ func _init() -> void:
 	root.add_child(world)
 	world.add_child(SkyLight.new())
 	world.add_child(Ground.new())
-	var gap := 20.0 if kind == "house" or kind == "shop" else 60.0
+	var gap := 20.0 if kind == "house" or kind == "shop" else (30.0 if kind == "paving" else 60.0)
 	var stages := range(Construction.STAGES.size()) if only < 0 else [only]
 	var road := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
@@ -38,6 +38,8 @@ func _init() -> void:
 			"warehouse": built = WarehouseBuilder.build_warehouse({"kind": Warehouses.KINDS.keys()[seed % Warehouses.KINDS.size()],
 				"level": 0, "bays": 0, "pos": Vector3.ZERO, "dir": Vector3.FORWARD}, seed, 3.9)
 			"barn": built = FarmBuilder.build_farmstead(seed, 1)
+			"paving": built = ParkingBuilder.build_lot({"kind": Services.Kind.PARKING_SMALL, "pos": Vector3.ZERO,
+				"dir": Vector3.FORWARD}, seed, 6.6)
 			"landfill", "cemetery", "recycling":
 				var hubs := CivicHubs.new()
 				var hid := hubs.add(kind, Vector3.ZERO, Vector3.FORWARD, 0)

@@ -47,10 +47,6 @@ const FRONT := {"city_bus": 2.4, "coach": 2.2, "motorhome": 2.0, "school_bus": 1
 const PITCH := 0.005
 const ROLL := 0.006
 const LEAN_MAX := 0.03
-## How fast a body may swing round when the path doubles back tighter than
-## its rear wheels can follow (a turn-around on the shoulder), in radians a
-## second: about what a truck's three-point turn looks like sped up.
-const SWING := 1.6
 
 var traffic: TrafficSim
 ## Returns how far through the current tick the clock is, 0 to 1.
@@ -100,16 +96,14 @@ class Motion:
 	var tr0 := Vector3.ZERO
 	var tr1 := Vector3.ZERO
 	var a := Vector3.ZERO
-	## Where the front axle has been lately (oldest first): the rear axle and
-	## a trailer's axles run in these tracks.
-	var trail := PackedVector3Array()
 	var rear := Vector3.ZERO
 	var trailer := Vector3.ZERO
+	## The kingpin at the last frame, which the trailer's axles follow.
+	var kp := Vector3.INF
 	var started := false
 	var heading := Vector3.FORWARD
 	var pitch := 0.0
 	var roll := 0.0
-	var swing := false  # swinging round where the path doubled back
 
 
 func setup(t: TrafficSim, fraction: Callable) -> void:
@@ -247,7 +241,7 @@ func _draw_cars(_delta: float) -> void:
 		var wb: float = info[11]
 		var h := _steer(m, a, wb, info[12], _delta)
 		var flat_front := a + h * fo
-		var front := Terrain.lift(flat_front)
+		var front := Terrain.stand(flat_front)
 		var d2 := front.distance_squared_to(eye)
 		if d2 > far2:
 			continue
@@ -276,7 +270,7 @@ func _draw_cars(_delta: float) -> void:
 			var hitch: Vector3 = xf * Vector3(0, 0, art.hitch)
 			var tl: float = float(art.axle) - float(art.pin)
 			var back := _trail(m, Vector3(hitch.x, a.y, hitch.z), tl)
-			var dir := hitch - (Terrain.lift(back) if lod != 1 else Vector3(back.x, hitch.y, back.z))
+			var dir := hitch - (Terrain.stand(back) if lod != 1 else Vector3(back.x, hitch.y, back.z))
 			if dir.length() < 1.0:
 				dir = -xf.basis.z
 			dir = dir.normalized()
@@ -495,15 +489,13 @@ func _axle_at(m: Motion) -> Vector3:
 
 
 ## Moves the rear axle on behind the front axle `a` and returns the body's
-## heading. Driving forward the rear axle runs in the front axle's own
-## tracks, a wheelbase back (the front wheels steer along the lane, the rear
-## ones follow them), so the body turns about its middle, not its bumper,
-## and lines up again once the rear wheels are round the corner. Backing up
-## the rear leads, so it comes from the path. `need` is how much track to
-## keep: a wheelbase, or back to a trailer's axles. Where the path doubles
-## back tighter than the rear wheels could follow, the body swings round
-## onto the new way at a steady rate rather than facing back along the old
-## one and then snapping.
+## heading. Driving forward, the front wheels steer along the lane and the
+## rear wheels can only roll the way the body points, so each step the
+## rear axle is pulled straight toward the front one (a tractrix, as real
+## tyres do: no sideways slide). Round a corner the rear cuts inside the
+## front's line, as cars and trucks do, and the body lines up again
+## gradually after it; on a U-turn it swings round behind the front just
+## as smoothly. Backing up the rear leads, so it comes from the path.
 func _steer(m: Motion, a: Vector3, wb: float, need: float, delta := 0.0) -> Vector3:
 	if m.rev1:
 		var span := m.t1 - m.t0
@@ -512,46 +504,16 @@ func _steer(m: Motion, a: Vector3, wb: float, need: float, delta := 0.0) -> Vect
 		m.rear = Vector3(r.x, a.y, r.z)
 		var t := m.tr0.lerp(m.tr1, u)
 		m.trailer = Vector3(t.x, a.y, t.z)
-		m.trail.clear()  # starts afresh, from the rear, once it drives off
+		m.kp = Vector3.INF
 	else:
 		var flat := Vector2(a.x - m.a.x, a.z - m.a.z).length()
 		if not m.started or flat > need * 2.0:
 			m.heading = m.h1
 			m.roll = 0.0
-			m.trail = PackedVector3Array([a - m.h1 * need, a])
-		elif m.trail.size() < 2:
-			# Just stopped backing: the track runs back through the rear axle,
-			# as the body stands.
-			var hh := Vector3(a.x - m.rear.x, 0.0, a.z - m.rear.z).normalized()
-			m.trail = PackedVector3Array([m.rear - hh * maxf(need - wb, 1.0), m.rear, a])
+			m.rear = a - Vector3(m.h1.x, 0.0, m.h1.z).normalized() * wb
+			m.kp = Vector3.INF
 		else:
-			var last := m.trail[m.trail.size() - 1]
-			if Vector2(a.x - last.x, a.z - last.z).length() > 0.3:
-				m.trail.append(a)
-				# Drop track that's further back than the body reaches.
-				while m.trail.size() > 3 and Vector2(a.x - m.trail[1].x, a.z - m.trail[1].z).length() > need:
-					m.trail.remove_at(0)
-		m.rear = _on_trail(m.trail, a, wb)
-		var path := Vector3(m.h1.x, 0.0, m.h1.z)
-		var body := Vector3(a.x - m.rear.x, 0.0, a.z - m.rear.z)
-		if path.length_squared() > 1e-6 and body.length_squared() > 1e-6:
-			path = path.normalized()
-			body = body.normalized()
-			if body.dot(path) < 0.0:
-				m.swing = true
-			if m.swing:
-				var off := body.signed_angle_to(path, Vector3.UP)
-				if absf(off) < 0.2:
-					m.swing = false
-				else:
-					var was := Vector3(m.heading.x, 0.0, m.heading.z).normalized()
-					if was.length_squared() < 0.5:
-						was = body
-					var step := clampf(was.signed_angle_to(path, Vector3.UP), -SWING * delta, SWING * delta)
-					var hb := was.rotated(Vector3.UP, step)
-					m.rear = Vector3(a.x, m.rear.y, a.z) - hb * wb
-					# Its tracks start again behind it, as it now stands.
-					m.trail = PackedVector3Array([m.rear - hb * maxf(need - wb, 1.0), m.rear, a])
+			m.rear = _pull(m.rear, m.a, a, wb)
 	m.started = true
 	m.a = a
 	var h := Vector3(a.x - m.rear.x, 0.0, a.z - m.rear.z)
@@ -560,36 +522,34 @@ func _steer(m: Motion, a: Vector3, wb: float, need: float, delta := 0.0) -> Vect
 	return h.normalized()
 
 
-## The point on a track `l` metres in a straight line from `from`, searching
-## back from the newest end (past it, straight on from the oldest piece).
-static func _on_trail(trail: PackedVector3Array, from: Vector3, l: float) -> Vector3:
-	var near := 0.0
-	var i := trail.size() - 1
-	var l2 := l * l
-	while i >= 0:
-		var p := trail[i]
-		var d2 := (p.x - from.x) * (p.x - from.x) + (p.z - from.z) * (p.z - from.z)
-		if d2 >= l2 and i < trail.size() - 1:
-			# Between this point and the newer one: where it's `l` away.
-			var q := trail[i + 1]
-			var far := sqrt(d2)
-			var t := clampf((l - near) / maxf(far - near, 1e-4), 0.0, 1.0)
-			return Vector3(lerpf(q.x, p.x, t), from.y, lerpf(q.z, p.z, t))
-		near = sqrt(d2)
-		i -= 1
-	var o := trail[0]
-	var back := Vector3(o.x - from.x, 0.0, o.z - from.z)
-	if back.length_squared() < 1e-6:
-		return from
-	return from + back.normalized() * l
+## A trailing axle `l` behind a point that moved from `from` to `to`: pulled
+## straight toward it in short steps, so it never slides sideways.
+static func _pull(rear: Vector3, from: Vector3, to: Vector3, l: float) -> Vector3:
+	var n := maxi(1, ceili(Vector2(to.x - from.x, to.z - from.z).length() / 0.1))
+	for i in n:
+		var p := from.lerp(to, float(i + 1) / n)
+		var d := Vector2(p.x - rear.x, p.z - rear.z)
+		if d.length_squared() > 1e-8:
+			d = d.normalized() * l
+			rear = Vector3(p.x - d.x, rear.y, p.z - d.y)
+	return rear
 
 
-## The trailer's axles, `l` metres behind the kingpin `k`, in the tracks
-## the tractor laid down.
+## The trailer's axles, `l` metres behind the kingpin `k`, pulled after it
+## the same way the tractor's rear axle follows its front one.
 func _trail(m: Motion, k: Vector3, l: float) -> Vector3:
 	if m.rev1:
 		return m.trailer
-	m.trailer = _on_trail(m.trail, k, l)
+	var gap := Vector2(k.x - m.trailer.x, k.z - m.trailer.z).length() if m.trailer.is_finite() else -1.0
+	if not m.kp.is_finite() and absf(gap - l) < l * 0.3:
+		m.trailer = _pull(m.trailer, k, k, l)  # just stopped backing: on from where it stands
+	elif not m.kp.is_finite() or Vector2(k.x - m.kp.x, k.z - m.kp.z).length() > l:
+		# Fresh: lined up behind the tractor as it stands.
+		var hb := Vector3(m.a.x - m.rear.x, 0.0, m.a.z - m.rear.z).normalized()
+		m.trailer = k - hb * l
+	else:
+		m.trailer = _pull(m.trailer, m.kp, k, l)
+	m.kp = k
 	return m.trailer
 
 
@@ -599,7 +559,7 @@ func _trail(m: Motion, k: Vector3, l: float) -> Vector3:
 func _body(m: Motion, car: Dictionary, h: Vector3, front: Vector3, lod: int, blend: float, delta: float) -> Basis:
 	var dir := h
 	if lod != 1:
-		var back := Terrain.lift(m.rear)
+		var back := Terrain.stand(m.rear)
 		dir = (front - back).normalized() if (front - back).length_squared() > 0.25 else h
 	var basis := Basis.looking_at(dir, Vector3.UP)
 	if lod != 1 and delta > 0.0:
@@ -639,8 +599,8 @@ func _rebuild_parked() -> void:
 			flat = Vector3.FORWARD
 		var kind := _kind(car)
 		# Front and back on the ground, so it sits level with the slope.
-		var front: Vector3 = Terrain.lift(pose[0])
-		var dir: Vector3 = (front - Terrain.lift(pose[0] - flat * float(VehicleModels.AXLE.get(kind, 3.5)))).normalized()
+		var front: Vector3 = Terrain.stand(pose[0])
+		var dir: Vector3 = (front - Terrain.stand(pose[0] - flat * float(VehicleModels.AXLE.get(kind, 3.5)))).normalized()
 		var paint := VehicleTypes.paint(kind, car.id)
 		var custom := Color(paint.r, paint.g, paint.b, 0.0)
 		if VehicleModels.ARTIC.has(kind):

@@ -10,6 +10,10 @@ extends RefCounted
 ##     way out to the street
 ##   - a two-way drive along the front from the one driveway, planted edges,
 ##     and (at 60 degrees) a drive along the back so the one-way aisles loop
+##   - a 5 ft concrete walk from the accessible stalls, over a marked
+##     crossing of the front drive, through the planted strip to the public
+##     sidewalk: the accessible route ADA 206.2.1 asks for, and the way
+##     every driver walks out to where they're going
 ## Traffic parks cars in exactly these stalls and the art paints them.
 ##
 ## Local space: centred on the site, -z faces the road; the site runs from
@@ -28,6 +32,10 @@ const SIN60 := 0.8660254
 const COS60 := 0.5
 ## Decks in the garage: the ground floor and three above.
 const LEVELS := 4
+## The walk out to the sidewalk: 5 ft wide (ADA 403.5.1 asks 36 in; 5 ft
+## lets two pass), clear of the 24 ft driveway.
+const WALK_W := 1.5
+const DRIVE_HALF := 3.65
 
 
 ## Accessible stalls a lot of `total` stalls must have (ADA 2010, 208.2).
@@ -97,7 +105,21 @@ static func layout(size: Vector2, angled: bool, garage := false) -> Dictionary:
 				up.van = false
 				spots.append(up)
 	return {"spots": spots, "aisles": aisles, "angled": angled, "front_z": zc, "back_z": zb, "row0": row0,
-		"row1": row1, "gate": Vector2(0.0, front), "aisle": aisle, "levels": LEVELS if garage else 1}
+		"row1": row1, "gate": Vector2(0.0, front), "aisle": aisle, "levels": LEVELS if garage else 1,
+		"walk_x": _walk_x(spots, size)}
+
+
+## Where the walk out to the sidewalk runs: in line with the first
+## accessible stall's access aisle, beside the driveway, inside the lot.
+static func _walk_x(spots: Array, size: Vector2) -> float:
+	var x := DRIVE_HALF + 1.6
+	for s in spots:
+		if s.ada:
+			x = s.pos.x + s.aisle_off.x
+			break
+	var lo := DRIVE_HALF + 0.6 + WALK_W * 0.5
+	var hi := size.x * 0.5 - EDGE - WALK_W * 0.5
+	return signf(x if x != 0.0 else 1.0) * clampf(absf(x), lo, maxf(hi, lo))
 
 
 ## True when an aisle at `a` is nearer the driveway (x = 0) than one at

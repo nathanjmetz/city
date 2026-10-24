@@ -150,7 +150,9 @@ func _spawn(id: int, b: Dictionary) -> Node3D:
 	else:
 		built = CivicBuilder.build_service(int(b.kind), seed, size, to_curb, _dev(id))
 	built[1] = Terrain.drape_local(built[1], Transform3D(root.basis, root.position))
-	var footing := _footing(built[0])
+	# A surface lot's light poles stand on their own concrete bases.
+	var surface: bool = int(b.kind) in Services.PARKING and int(b.kind) != Services.Kind.PARKING_GARAGE
+	var footing: MeshInstance3D = null if surface else _footing(built[0])
 	if footing != null:
 		root.add_child(footing)
 	root.set_meta("tree_key", str(b.pos))

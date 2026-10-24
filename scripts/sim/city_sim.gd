@@ -162,6 +162,8 @@ var nicknames := TownNickname.new()
 var heritage := Heritage.new()
 var markers := HistoricMarkers.new()
 var leaders := LeaderAsks.new()
+## The town's place on the real ladder: Indiana charters and federal place types.
+var charter := Charter.new()
 var timelapse := Timelapse.new()
 ## How well every owner keeps their property up, from what the town gives
 ## it (PropertyCare), and developers' asks to build denser (Redevelopment).
@@ -741,6 +743,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 		"remove_road":
 			ok = network.segments.has(int(cmd.seg)) and not is_link_segment(int(cmd.seg))
 			if ok:
+				_note_county_removed(int(cmd.seg))
 				network.remove_segment(int(cmd.seg))
 		"paint_zone":
 			zones.paint(_v(cmd.center), float(cmd.radius), int(cmd.zone))
@@ -972,6 +975,56 @@ func _guess_link() -> void:
 		out = end - mid
 	out = out.normalized() * 2000.0
 	_county_road(Vector2(end.x, end.z), Vector2(end.x + out.x, end.z + out.z), [1])
+
+
+## What a road not built yet would wipe out (Brawn 2026-10-24: a grid drawn
+## over a park that had grown for years took it with no warning): every
+## park, landmark, hub building and built lot its ground takes, as
+## _road_wins would clear them. Fields and pads it only trims are left
+## out. Each: {what, at, named} (named: `what` is the place's own name).
+func road_losses(curves: Array, type: int) -> Array:
+	var out := []
+	if curves.is_empty():
+		return out
+	var corr := RoadWins.corridors_of(curves, type, RoadWins.BUILDING_SLACK)
+	var box: Rect2 = corr[0].bounds
+	for c in corr:
+		box = box.merge(c.bounds)
+	var hit := func(poly: PackedVector2Array) -> bool:
+		return box.intersects(RoadWins._bounds(poly)) and RoadWins.hits(corr, poly)
+	for id in parks.sites:
+		var s: Dictionary = parks.sites[id]
+		if hit.call(parks.footprint(id)):
+			out.append({"what": str(s.get("name", Parks.KINDS[s.kind].name)), "at": s.pos, "named": true})
+	for id in services.buildings:
+		if hit.call(services.footprint(id)):
+			out.append({"what": Services.KINDS[services.buildings[id].kind].name, "at": services.buildings[id].pos})
+	for id in farms.farms:
+		if hit.call(farms._yard(farms.farms[id])):
+			out.append({"what": "Farmhouse", "at": farms.farms[id].pos})
+	for id in industry.sites:
+		if hit.call(industry._yard(industry.sites[id])):
+			out.append({"what": Industry.KINDS[industry.sites[id].kind].name, "at": industry.sites[id].pos})
+	for id in warehouses.buildings:
+		var w: Dictionary = warehouses.buildings[id]
+		if not Warehouses.is_store(w) and hit.call(warehouses.footprint(id)):
+			out.append({"what": Warehouses.KINDS[w.kind].name, "at": w.pos})
+	for id in power.sites:
+		if hit.call(power.yard(power.sites[id])):
+			out.append({"what": "Power plant", "at": power.sites[id].pos})
+	for id in big.sites:
+		if hit.call(BigFactories.corners(big.sites[id])):
+			out.append({"what": "Factory", "at": big.sites[id].pos})
+	for key in buildings:
+		if lots.has(key) and hit.call(lots[key].corners):
+			var b: Dictionary = buildings[key]
+			var what := "Home" if int(b.zone) == ZoneMap.Zone.RESIDENTIAL else "Building"
+			var mid := Vector2.ZERO
+			for q in lots[key].corners:
+				mid += q
+			mid /= maxf(1.0, lots[key].corners.size())
+			out.append({"what": what, "at": Vector3(mid.x, 0.0, mid.y)})
+	return out
 
 
 ## The road wins (Brawn): whatever a new road runs through makes way for it.
@@ -1256,12 +1309,14 @@ func tick() -> void:
 		nicknames.month(self)
 		leaders.month(self)
 	elif hour == 18 * TICKS_PER_HOUR:
+		charter.month(self)
 		timelapse.month(self)
 	if tick_count % TICKS_PER_HOUR == 0:
 		history.hour(self)
 	if tick_count % TICKS_PER_HOUR == 30:
 		heritage.carry_out(self)
 		leaders.carry_out(self)
+		charter.carry_out(self)
 		redevelopment.carry_out(self)
 		if subdivisions.carry_out(self):
 			farms_changed.emit()
@@ -1389,6 +1444,7 @@ func town_month() -> void:
 	markers.month(self)
 	nicknames.month(self)
 	leaders.month(self)
+	charter.month(self)
 	timelapse.month(self)
 
 
@@ -3623,6 +3679,21 @@ func _join_county(p: Vector3, way := 0, key := "") -> bool:
 	return true
 
 
+## A county road the town joined, bulldozed: that mile is the player's to
+## have gone, so it isn't joined again or taken on along its line.
+func _note_county_removed(seg: int) -> void:
+	var c := network.curve_of(seg)
+	var o := terrain_offset
+	var mid := RoadNetwork.bezier(c[0], c[1], c[2], 0.5)
+	for mile in CountyGrid.miles_at(mid.x + o.x, mid.z + o.y, 2.0):
+		var ns: bool = mile.key.begins_with("ns")
+		var line: float = mile.a.x if ns else mile.a.y
+		if absf((c[0].x + o.x if ns else c[0].z + o.y) - line) < 2.0 \
+				and absf((c[2].x + o.x if ns else c[2].z + o.y) - line) < 2.0 and not county_removed.has(mile.key):
+			county_removed[mile.key] = true
+			county_changed.emit()
+
+
 ## Joined county road that stopped short and left a dead end on its line
 ## (at a farm lane, say, before lanes no longer stopped it: Brawn
 ## 2026-10-24, roads ending in round pads where the paint carried on) is
@@ -4177,6 +4248,7 @@ func save_steps(postcard := false) -> Array:
 		["heritage", func(): return heritage.to_dict()],
 		["markers", func(): return markers.to_dict()],
 		["leaders", func(): return leaders.to_dict()],
+		["charter", func(): return charter.to_dict()],
 		["care", func(): return care.to_dict()],
 		["redevelopment", func(): return redevelopment.to_dict()],
 		["subdivisions", func(): return subdivisions.to_dict()],
@@ -4273,6 +4345,7 @@ func from_dict(d: Dictionary) -> void:
 	heritage.from_dict(d.get("heritage", {}))
 	markers.from_dict(d.get("markers", {}))
 	leaders.from_dict(d.get("leaders", {}))
+	charter.from_dict(d.get("charter", {}))
 	care.from_dict(d.get("care", {}))
 	redevelopment.from_dict(d.get("redevelopment", {}))
 	subdivisions.from_dict(d.get("subdivisions", {}))

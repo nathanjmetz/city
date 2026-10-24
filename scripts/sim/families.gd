@@ -351,9 +351,18 @@ func _maybe_expand(sim, fam: Dictionary, count: int, year: int) -> void:
 	var mine := []
 	for ref in hubs_of(int(fam.id)):
 		mine.append(name_of(ref))
+	var why := "The %s family's %s %s doing well, and they want to branch out." % [fam.surname,
+		" and ".join(mine), "is" if mine.size() == 1 else "are"]
+	if plan.kind == "buy":
+		# A sale between families: one ready to sell, a member of the other
+		# taking it on with the family's money behind them (how small-town
+		# family groups really grow).
+		why = "The %s family is ready to sell %s, and %s, of the family behind %s, wants to take it on." \
+			% [plan.seller, plan.from, str(fam.head), " and ".join(mine)]
+	# Buying a business or opening on an empty lot removes nothing of the
+	# player's: the lot's outline only touches its neighbours.
 	var rid: int = sim.permits.file(sim, {"hub": HUB, "hub_id": int(fam.id), "leader": str(fam.head),
-		"title": plan.title, "why": "The %s family's %s %s doing well, and they want to branch out." % [fam.surname,
-			" and ".join(mine), "is" if mine.size() == 1 else "are"],
+		"title": plan.title, "why": why, "keeps": true,
 		"area": area, "change": plan.change, "base": int(plan.cost), "per_m2": 0, "budget": int(fam.cash)})
 	if rid < 0:
 		return
@@ -454,7 +463,8 @@ func _buy_plan(sim, fam: Dictionary) -> Dictionary:
 				outline = sim.lots[parts[1]].corners
 		if outline.size() < 3 or float(fam.cash) < cost:
 			continue
-		return {"kind": "buy", "ref": ref, "what": b.what, "name": name, "from": b.name, "cost": cost, "outline": outline,
+		return {"kind": "buy", "ref": ref, "what": b.what, "name": name, "from": b.name, "seller": str(other.surname),
+			"cost": cost, "outline": outline,
 			"title": "The %s family wants to buy %s" % [fam.surname, b.name],
 			"change": "%s becomes %s" % [b.name, name]}
 	return {}

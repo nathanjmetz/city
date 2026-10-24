@@ -106,15 +106,15 @@ func _process(delta: float) -> void:
 func _rebuild() -> void:
 	if sim == null:
 		return
-	var key := "%s|%s|%d|%s|%d|%d" % [sim.nicknames.current, sim.nicknames.past.size(), sim.markers.version,
-		sim.heritage.listed(), Seasons.month(sim.tick_count), sim.timelapse.months]
+	var key := "%s|%s|%d|%s|%d|%d|%s" % [sim.nicknames.current, sim.nicknames.past.size(), sim.markers.version,
+		sim.heritage.listed(), Seasons.month(sim.tick_count), sim.timelapse.months, sim.charter.reached.keys()]
 	if key == _shown_key:
 		return
 	_shown_key = key
 	for c in _body.get_children():
 		c.queue_free()
 	var town := _town_name("Your town")
-	_body.add_child(UiStyle.label(town, 18, UiStyle.TEXT, 700))
+	_body.add_child(UiStyle.label(sim.charter.title(town), 18, UiStyle.TEXT, 700))
 	var nick: Dictionary = sim.nicknames.current
 	if nick.is_empty():
 		_body.add_child(_text("No nickname yet. A town earns one from what it becomes: its farms, its mills, its Main Street.",
@@ -124,6 +124,15 @@ func _rebuild() -> void:
 		_body.add_child(_text("Since %d" % int(nick.since), UiStyle.MUTED, 500, 11))
 	for p in sim.nicknames.past:
 		_body.add_child(_text("Once the %s (%d to %d)" % [p.text, int(p.from), int(p.to)], UiStyle.MUTED, 500, 12))
+
+	# The charter ladder: where the town stands, and the next step in a line.
+	_section("CHARTER")
+	var reached: Array = Charter.STEPS.filter(func(st): return sim.charter.reached.has(st.id))
+	_body.add_child(_text("%s · step %d of %d" % [reached[-1].name, reached.size(), Charter.STEPS.size()],
+		UiStyle.TEXT, 600, 13))
+	var next: String = sim.charter.next_line(sim)
+	if next != "":
+		_body.add_child(_text("Next: " + next, UiStyle.MUTED, 500, 12))
 
 	_section("KNOWN FOR")
 	var shares: Dictionary = sim.culture.shares

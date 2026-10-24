@@ -39,6 +39,9 @@ const _FILES := {
 	"bus_depot": "bus_depot", "taxi_company": "taxi_company", "rail_depot": "rail_depot",
 	"parking_small": "parking_small", "parking_downtown": "parking_downtown", "parking_large": "parking_large",
 	"park_and_ride": "park_and_ride", "parking_garage": "parking_garage",
+	"farm_corn": "farm_corn", "farm_soy": "farm_soy", "oil_co": "oil_co", "mine_co": "mine_co", "forestry_co": "forestry_co",
+	"warehouse_co": "warehouse_co", "ethanol": "ethanol", "meatpacker": "meatpacker", "furniture": "furniture", "rv_plant": "rv_plant",
+	"fire_station": "fire_station", "police_station": "police_station", "post_office": "post_office", "bank_co": "bank_co", "farm_credit": "farm_credit",
 }
 ## These get a soft `accent` fill behind the line (zone tints and the like).
 const _DUOTONE := ["homes", "zones", "shops", "industry", "farms", "farmland"]
@@ -50,7 +53,10 @@ const _LAYERED := ["power_line", "substation", "power_co", "well", "water_tower"
 	"water_utility", "landfill", "recycling", "phone_co", "elementary", "daycare", "high_school",
 	"college", "university", "clinic", "hospital", "nursing_home", "cemetery",
 	"bus_depot", "taxi_company", "rail_depot", "parking_small", "parking_downtown", "parking_large",
-	"park_and_ride", "parking_garage"]
+	"park_and_ride", "parking_garage",
+	"farm_corn", "farm_soy", "oil_co", "mine_co", "forestry_co", "warehouse_co",
+	"ethanol", "meatpacker", "furniture", "rv_plant", "fire_station", "police_station",
+	"post_office", "bank_co", "farm_credit"]
 static var _textures := {}
 
 

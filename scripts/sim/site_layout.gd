@@ -22,16 +22,24 @@ const WALK_Z := -1.05
 ## "aisle_z": float (z of the lane inside the lot cars drive along),
 ## "walk_z": float (front walk), "main_street": bool}. `lot` is the sim's
 ## lot, which the builders are fitted to (width, depth, outline).
-static func for_building(zone: int, bseed: int, lot := {}, storeys := 0) -> Dictionary:
+static func for_building(zone: int, bseed: int, lot := {}, storeys := 0, type := "") -> Dictionary:
 	var r := RandomNumberGenerator.new()
 	r.seed = bseed
 	var art_seed := r.randi()  # BuildingView passes this to the builder
 	var fit := _fit(lot)
 	match zone:
 		ZoneMap.Zone.RESIDENTIAL:
+			if type in ["row_home", "apartments"]:
+				# MetroBuilder's flats, courtyards and walkups draw no drive:
+				# like a real city block of them, residents park on the street.
+				return main_street()
 			return house(art_seed, fit, storeys)
 		ZoneMap.Zone.COMMERCIAL:
-			return shop(art_seed, fit)
+			if type == "office" and storeys < 8:
+				return office(art_seed, fit, storeys)
+			if type in ["mixed_use", "office"]:
+				return main_street()  # built to the sidewalk; its lot (if any) is out back
+			return shop(art_seed, fit, type == "shopping_center")
 		ZoneMap.Zone.INDUSTRIAL:
 			return factory(art_seed, fit)
 	return empty_lot()
@@ -93,36 +101,45 @@ static func house(art_seed: int, fit := {"half": LOT_HALF, "depth": 32.0}, store
 		"walk_z": h.walk_z, "main_street": false}
 
 
-## CommercialBuilder.build_shop: a retail lot with a row of stalls in front,
-## or a main-street block with no lot of its own.
-static func shop(art_seed: int, fit := {"half": LOT_HALF, "depth": 32.0}) -> Dictionary:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = art_seed
-	if rng.randf() < 0.4:
-		return {"spots": [], "door": Vector2(0.0, 0.4), "cut_x": 0.0, "aisle_z": 0.0, "walk_z": 0.0,
-			"main_street": true}
-	var half: float = fit.half
-	var w := rng.randf_range(minf(14.0, half * 2.0 - 3.0),
-		clampf(half * 2.0 - 2.5, 8.0, 17.5 + clampf(half * 2.0 - 22.0, 0.0, 8.0)))
-	rng.randf_range(12.0, minf(15.0, maxf(fit.depth - 15.0, 12.0)))  # depth
-	rng.randf_range(4.8, 5.6)    # height
-	var zf := rng.randf_range(12.0, 13.0)
-	rng.randf()  # brick or block
-	rng.randi()  # wall colour
-	rng.randi()  # mullions
-	var sw := w * rng.randf_range(0.6, 0.8)
-	var bays := maxi(int(sw / 1.6), 1)
-	var door := rng.randi_range(0, bays - 1)
-	var door_x := -sw * 0.5 + (door + 0.5) * sw / bays
+## The shop DenseBuilder.build_retail draws for the lot (a store, diner,
+## bank, gas station, strip center or church): its own painted stalls,
+## pumps, curb cut and door, read from a dry run of the very same builder
+## (DenseBuilder.site_plan), so cars never park where nothing is painted.
+static func shop(art_seed: int, fit := {"half": LOT_HALF, "depth": 32.0}, strip := false) -> Dictionary:
+	var plan := DenseBuilder.site_plan(art_seed, fit.get("art", {"width": float(fit.half) * 2.0, "depth": fit.depth}),
+		strip)
+	if plan.main_street and plan.stalls.is_empty():
+		var out := main_street()
+		out.door = plan.door
+		return out
 	var spots := []
-	var row_back := zf - 2.2
-	var x := -half + 0.6
-	while x + STALL <= half - 0.6 + 0.01:
-		spots.append({"pos": Vector2(x + STALL * 0.5, row_back - STALL_DEPTH * 0.5), "face": Vector2(0, 1),
-			"kind": "stall"})
-		x += STALL
-	return {"spots": spots, "door": Vector2(door_x, zf), "cut_x": 0.0,
-		"aisle_z": (row_back - STALL_DEPTH) * 0.5, "walk_z": zf - 1.1, "main_street": false}
+	for st in plan.stalls:
+		spots.append({"pos": st[0], "face": st[1], "kind": "stall"})
+	var door: Vector2 = plan.door
+	return {"spots": spots, "door": door, "cut_x": plan.cut_x, "aisle_z": plan.aisle_z,
+		"walk_z": door.y - 1.1, "main_street": false}
+
+
+## DenseBuilder.build_office: the stalls behind it, the drive down its side.
+static func office(art_seed: int, fit: Dictionary, storeys: int) -> Dictionary:
+	var plan := DenseBuilder.office_plan(art_seed, fit.get("art", {"width": float(fit.half) * 2.0, "depth": fit.depth}),
+		storeys)
+	if plan.stalls.is_empty():
+		var out := main_street()
+		out.door = plan.door
+		return out
+	var spots := []
+	for st in plan.stalls:
+		spots.append({"pos": st[0], "face": st[1], "kind": "stall"})
+	return {"spots": spots, "door": plan.door, "cut_x": plan.cut_x, "aisle_z": plan.aisle_z,
+		"walk_z": plan.door.y - 1.1, "main_street": false}
+
+
+## A building up to the sidewalk with no parking of its own: its people
+## park at the curb or in a town lot.
+static func main_street() -> Dictionary:
+	return {"spots": [], "door": Vector2(0.0, 0.4), "cut_x": 0.0, "aisle_z": 0.0, "walk_z": 0.0,
+		"main_street": true}
 
 
 ## CommercialBuilder.build_factory: staff stalls by the office, overhead

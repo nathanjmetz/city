@@ -111,8 +111,10 @@ func _season_color(crop: String, cover_prev := false, cover := false, when := 0.
 	if m == 5:
 		return Color(0.42, 0.42, 0.24) if when < 0.55 else Color(0.38, 0.29, 0.2)  # rows just up, or just planted
 	if m <= 8:
-		var green := Color(0.18, 0.34, 0.12) if crop == "corn" else Color(0.32, 0.46, 0.16)
-		return green.lerp(Color(0.24, 0.36, 0.14), (when - 0.5) * 0.4)  # varieties, planting dates
+		# From the air in July (NAIP over Pike County): corn a deep green,
+		# still well lighter than woods; soybeans a brighter yellow-green.
+		var green := Color(0.25, 0.4, 0.15) if crop == "corn" else Color(0.36, 0.5, 0.19)
+		return green.lerp(Color(0.3, 0.42, 0.17), (when - 0.5) * 0.8)  # varieties, planting dates
 	var ripe := Color(0.62, 0.58, 0.3) if crop == "corn" else Color(0.7, 0.62, 0.22)
 	var cut := Color(0.66, 0.56, 0.36)  # harvested stubble
 	if m == 9:
@@ -234,9 +236,14 @@ func _fencerows(st: SurfaceTool, id: Variant, f: Dictionary) -> void:
 	var owned := {}
 	for c in f.cells:
 		owned[c] = true
+	var trimmed: Dictionary = sim.farms.trim.get(id, {})
 	for c in f.cells:
 		var corners := Farms.cell_corners(f, c)
 		var mid := Farms.cell_center(f, c)
+		# Where a road cut the field back, its fencerows stop at the road too.
+		var kept := []
+		for piece in trimmed.get(c, []):
+			kept.append_array(Geometry2D.offset_polygon(piece, 1.5))
 		for s in sides:
 			var n: Vector2i = c + s[0]
 			var inner := owned.has(n)
@@ -248,10 +255,21 @@ func _fencerows(st: SurfaceTool, id: Variant, f: Dictionary) -> void:
 			# Between two of its own fields each side gives up 3 m of grass.
 			var strip := PackedVector2Array([a - out * 3.0, b - out * 3.0, b, a]) if inner \
 				else PackedVector2Array([a - out * 2.5, b - out * 2.5, b + out * 1.0, a + out * 1.0])
-			_add_poly(st, f, strip, 0.07, verge)
+			var strips := [strip]
+			if trimmed.has(c):
+				strips = []
+				for piece in kept:
+					strips.append_array(Geometry2D.intersect_polygons(strip, piece))
+			for part in strips:
+				_add_poly(st, f, part, 0.07, verge)
+			# Volunteer trees grow only in the fencerows round the farm's
+			# land, never out in the grass strip between two of its fields,
+			# which the farmer mows and works across.
 			var h := Farms._hash01(c * 4 + s[0], 7)
-			if h < (0.06 if inner else 0.45):
+			if not inner and h < 0.45:
 				var at := a.lerp(b, 0.15 + 0.7 * Farms._hash01(c * 4 + s[0], 11)) - out * 1.2
+				if trimmed.has(c) and not kept.any(func(piece): return Geometry2D.is_point_in_polygon(at, piece)):
+					continue
 				var sp: int = [TreeField.Species.OAK, TreeField.Species.MAPLE, TreeField.Species.LOCUST, TreeField.Species.CRABAPPLE][int(h * 8.9) % 4]
 				planted.append([Transform3D(Basis(Vector3.UP, h * 40.0).scaled(Vector3.ONE * (0.7 + h)), Vector3(at.x, Terrain.ground_y(at.x, at.y), at.y)),
 					sp, TreeField.LEAF[sp]])

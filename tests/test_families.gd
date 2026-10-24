@@ -54,6 +54,7 @@ func _init() -> void:
 		var req: Dictionary = sim.permits.requests[asked]
 		_check(req.hub == Families.HUB and str(req.title).begins_with("The %s family wants to" % owner.surname),
 			"the bell names the family and what it wants (%s)" % req.title)
+		_check(req.hits.get("buildings", []).is_empty(), "buying or opening a business removes none of yours")
 		var plan: Dictionary = owner.plan
 		var before := fam.hubs_of(int(owner.id)).size()
 		sim.apply({"type": "permit", "id": asked, "answer": "approve"})

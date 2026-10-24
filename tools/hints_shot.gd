@@ -4,6 +4,7 @@ extends SceneTree
 
 var _frames := 0
 var _mode := "industry"
+var _park := Vector3.ZERO
 var _out := "hints.png"
 
 
@@ -43,6 +44,16 @@ func _process(_delta: float) -> bool:
 			"farm":
 				cam.set_view(deg_to_rad(0.0), deg_to_rad(75.0), 3200.0)
 				hud.farm_tool.set_mode(FarmTool.Mode.CORN)
+			"roadwarn":
+				# A park beside a road, and a road drawn into it.
+				sim.apply({"type": "build_road", "start": [-900, 300], "ctrl": [-350, 300], "end": [200, 300]})
+				var site := Parks.site_near(sim.network, "park", Vector3(-300, 0, 340))
+				sim.apply({"type": "place_park", "kind": "park", "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})
+				for i in 5:
+					sim.tick()
+				_park = site[0]
+				cam.set_view(deg_to_rad(0.0), deg_to_rad(55.0), 500.0)
+				cam.look_at_point(_park)
 			"police":
 				# Two stations on a long road, so their coverage shows its edge.
 				sim.apply({"type": "build_road", "start": [-5600, 300], "ctrl": [-2650, 300], "end": [300, 300]})
@@ -59,6 +70,16 @@ func _process(_delta: float) -> bool:
 		# After the guided tour's own camera glide.
 		var cam: CityCamera = main.get_children().filter(func(n): return n is CityCamera)[0]
 		cam.glide_to(Vector3(-4000, 0, 300), 2900.0)
+	if _frames == 60 and _mode == "roadwarn":
+		var cam: CityCamera = main.get_children().filter(func(n): return n is CityCamera)[0]
+		cam.glide_to(_park, 500.0)
+	if _frames == 120 and _mode == "roadwarn":
+		var hud: Hud = main.get_children().filter(func(n): return n is Hud)[0]
+		hud.road_tool.set_mode(RoadTool.Mode.STRAIGHT)
+		hud.road_tool._points.append(_park + Vector3(-160, 0, 60))
+	if _frames == 170 and _mode == "roadwarn" and OS.get_cmdline_user_args().size() > 2:
+		var hud: Hud = main.get_children().filter(func(n): return n is Hud)[0]
+		hud.road_tool._click()
 	if _frames > 20 and _frames < 200:
 		Input.warp_mouse(root.get_viewport().get_visible_rect().size * 0.5)
 	if _frames == 200:

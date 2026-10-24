@@ -361,6 +361,7 @@ func _sync_deals() -> void:
 	_deals_hour = hour
 	sim.regional.sync(region, my_city)
 	sim.market.sync(region, my_city, sim)
+	sim.charter.sync(region, my_city, sim)
 	for act in sim.interlocal.sync(region, my_city, sim):
 		match act.op:
 			"offer":

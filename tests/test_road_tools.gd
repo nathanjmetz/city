@@ -22,6 +22,45 @@ func _init() -> void:
 	_check(q.distance_to(Vector3(150, 0, 60)) < 0.01 and at._align_lines.is_empty(), "far from every guide it stays free")
 	q = at._align(Vector3(150, 0, -6), Vector3(150, 0, -100), PI * 0.5)
 	_check(q.distance_to(Vector3(150, 0, 0)) < 0.01, "along a fixed direction it slides to where a guide crosses")
+	# Brawn: a guide only helps from the nearest junction or straight on down
+	# a road into open ground, never through another road.
+	var bl := CitySim.new()
+	bl.apply({"type": "build_road", "start": [0, 0], "ctrl": [50, 0], "end": [100, 0]})
+	bl.apply({"type": "build_road", "start": [150, -100], "ctrl": [150, 0], "end": [150, 100]})
+	var bt := RoadTool.new()
+	bt.sim = bl
+	bt.network = bl.network
+	bt.mode = RoadTool.Mode.STRAIGHT
+	bt._px = 1.0
+	q = bt._align(Vector3(120, 0, 3), none)
+	_check(q.distance_to(Vector3(120, 0, 0)) < 0.01, "straight on from a road end, before the next road")
+	q = bt._align(Vector3(220, 0, 3), none)
+	_check(q.distance_to(Vector3(220, 0, 3)) < 0.01 and bt._align_lines.is_empty(), "no guide through another road (got %s)" % q)
+	q = bt._align(Vector3(50, 0, 3), none)
+	_check(q.distance_to(Vector3(50, 0, 3)) < 0.01, "no guide back along the road itself (got %s)" % q)
+	q = bt._align(Vector3(153, 0, 160), none)
+	_check(q.distance_to(Vector3(150, 0, 160)) < 0.01, "down the centreline into the field (got %s)" % q)
+	bt.free()
+	# Brawn: a grid's third corner dragged onto a road squares onto it, so
+	# the far side runs along that road; in the open it lines up with a
+	# junction straight on from a road.
+	var gs := CitySim.new()
+	gs.apply({"type": "build_road", "start": [-100, 200], "ctrl": [150, 200], "end": [400, 200]})
+	gs.apply({"type": "build_road", "start": [300, -200], "ctrl": [300, -150], "end": [300, -100]})
+	var gt := RoadTool.new()
+	gt.sim = gs
+	gt.network = gs.network
+	gt.mode = RoadTool.Mode.GRID
+	gt._px = 1.0
+	gt.grid_exact = false
+	gt._points = [Vector3(0, 0, 0), Vector3(200, 0, 0)]
+	q = gt._grid_corner(gt._snapped(Vector3(214, 0, 201)))
+	_check(q.distance_to(Vector3(200, 0, 200)) < 0.01, "a grid corner on a road squares onto it (got %s)" % q)
+	gt._points = [Vector3(0, 0, -300), Vector3(200, 0, -300)]
+	q = gt._grid_corner(gt._snapped(Vector3(204, 0, -100)))
+	_check(absf(q.x - 200.0) < 0.01 and absf(q.z + 100.0) < 0.01, "square side lines up with a road end (got %s)" % q)
+	_check(not gt._align_lines.is_empty(), "with a dotted line to that junction")
+	gt.free()
 	var c30 := Vector3(50, 0, 0) + Vector3(cos(deg_to_rad(30.0)), 0, sin(deg_to_rad(30.0))) * 80.0
 	at._show_angles([Vector3(50, 0, 0), Vector3(50, 0, 0).lerp(c30, 0.5), c30])
 	_check(at._angle_labels[0].text == "30° sharp", "a 30° crossing reads sharp (got %s)" % at._angle_labels[0].text)

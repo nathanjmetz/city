@@ -131,6 +131,8 @@ static func near(x: float, z: float, reach: float, route := -1) -> Dictionary:
 	for bx in range(lo.x, hi.x + 1):
 		for bz in range(lo.y, hi.y + 1):
 			for e in _bins.get(Vector2i(bx, bz), []):
+				if route >= 0 and e[0] != route:
+					continue  # only the route asked for
 				var r: Dictionary = routes[e[0]]
 				var a: Vector2 = r.pts[e[1]]
 				var b: Vector2 = r.pts[e[1] + 1]

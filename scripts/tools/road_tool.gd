@@ -94,6 +94,17 @@ var _cursor := MeshInstance3D.new()
 ## screen than GHOST_PX however far out the camera is (as in CS2).
 var _ok_mat := RoadStyle.material(Color(0.3, 0.85, 1.0, 0.85), true)
 var _bad_mat := RoadStyle.material(Color(1.0, 0.3, 0.25, 0.75), true)
+## A road that would wipe something out (a park, homes, a hub) shows amber,
+## says what, and asks again before it's built.
+var _warn_mat := RoadStyle.material(Color(1.0, 0.68, 0.15, 0.85), true)
+const WARN_TEXT := Color(1.0, 0.78, 0.3)
+var _losses := []
+var _loss_key := ""
+var _loss_at := -1000
+## Set by the first click on a road that wipes something out: {p, go}. The
+## road holds still at `p`; the next click runs `go`, right click or Esc
+## goes back.
+var _armed := {}
 var _snap_mat := RoadStyle.material(Color(1.0, 0.85, 0.2, 0.95), true)  # on a road
 var _snap_kind := "free"  # what the last point snapped to: node, segment, highway, county or free
 var _square := false  # Shift squared the third grid point: a rectangle
@@ -126,6 +137,7 @@ var _guide_kind := ""
 const ALIGN_PX := 10.0  # how near the cursor comes to a guide line to snap onto it
 const ALIGN_REACH := 500.0  # junctions this near offer guide lines (more when zoomed out)
 const ALIGN_NODES := 16  # the nearest this many junctions only
+const ROAD_SQUARE_SNAP := deg_to_rad(12.0)  # a grid corner on a road squares onto it this near
 const DASH_PX := 9.0  # dash length on screen
 ## AASHTO Green Book: roads should cross near 90° and no sharper than about
 ## 60°, or drivers can't see along the other road.
@@ -221,6 +233,7 @@ func set_mode(m: int) -> void:
 	if m != Mode.NONE and m != Mode.BULLDOZE:
 		last_draw = m
 	_points.clear()
+	_armed = {}
 	_hover_seg = -1
 	mode_changed.emit(mode)
 	_update_hint()
@@ -337,6 +350,7 @@ func _process(_delta: float) -> void:
 	_guide.visible = false
 	_ghost.visible = false
 	_label.visible = false
+	_label.modulate = Color(1, 1, 1)
 	for l in _angle_labels:
 		l.visible = false
 	_dots.visible = false
@@ -350,7 +364,7 @@ func _process(_delta: float) -> void:
 	if mode == Mode.BULLDOZE or mode == Mode.UPGRADE:
 		_preview_pick(hit)
 		return
-	var p := _snapped(hit)
+	var p: Vector3 = _armed.p if not _armed.is_empty() else _snapped(hit)
 	_cursor.position = Terrain.lift(p) + Vector3.UP * 0.3
 	_show_snap(_snap_kind != "free")
 	var curves := []
@@ -386,10 +400,20 @@ func _process(_delta: float) -> void:
 		_label.visible = true
 	_preview.mesh = _preview_mesh(curves)
 	_preview.material_override = _ok_mat if ok else _bad_mat
+	if ok and not _check_losses(curves, _ring() if mode == Mode.ROUNDABOUT else road_type).is_empty():
+		_preview.material_override = _warn_mat
+		_warn_label()
 	_preview.visible = true
 
 
 func _click() -> void:
+	if not _armed.is_empty():
+		# The second click: build it anyway.
+		var go: Callable = _armed.go
+		_armed = {}
+		go.call()
+		_update_hint()
+		return
 	var hit = cam.mouse_ground_point()
 	if hit == null:
 		return
@@ -432,11 +456,17 @@ func _click() -> void:
 				_points.append(p)
 			else:
 				var curve := _pending_curve(p)
-				if _is_valid(curve) and _build(curve):
+				if _is_valid(curve):
+					var curves := [curve]
 					if parallel:
-						_build(RoadShapes.offset(curve, parallel_gap))
-					_points.clear()
-					_points.append(curve[2])
+						curves.append(RoadShapes.offset(curve, parallel_gap))
+					var go := func() -> void:
+						if _build(curve):
+							if parallel:
+								_build(RoadShapes.offset(curve, parallel_gap))
+							_points.clear()
+							_points.append(curve[2])
+					_ask_first(p, curves, road_type, go)
 		Mode.GRID:
 			var raw := _snapped(hit)
 			var p := _grid_corner(raw)
@@ -451,22 +481,68 @@ func _click() -> void:
 			elif _points.is_empty() or _flat_dist(p, _points[_points.size() - 1]) > RECT_MIN:
 				_points.append(p)
 		Mode.ROUNDABOUT:
-			sim.apply({"type": "build_roundabout", "center": _xz(_snapped(hit)),
-				"radius": _ring_radius(), "lanes": roundabout_lanes, "road": road_type})
+			var at := _snapped(hit)
+			var cmd := {"type": "build_roundabout", "center": _xz(at),
+				"radius": _ring_radius(), "lanes": roundabout_lanes, "road": road_type}
+			_ask_first(at, RoadShapes.roundabout(at, _ring_radius()), _ring(), func(): sim.apply(cmd))
 	_update_hint()
 
 
 ## Builds the grid inside the shape drawn so far.
 func _finish_grid(shape: Array = _points) -> void:
+	if not _armed.is_empty():
+		_click()  # Enter again: build it anyway
+		return
 	if shape.size() < 3:
 		return
 	var pts := []
 	for q in shape:
 		pts.append(_xz(q))
-	if sim.apply({"type": "build_grid_shape", "points": pts, "block": grid_block, "across": grid_across,
-			"side": grid_side, "road": road_type, "fit": _fit(), "join": true}):
-		_points.clear()
+	var cmd := {"type": "build_grid_shape", "points": pts, "block": grid_block, "across": grid_across,
+		"side": grid_side, "road": road_type, "fit": _fit(), "join": true}
+	var lines := GridFill.plan(network, shape, grid_block, road_type, grid_side, grid_across, _fit(),
+		sim.painted_near(shape))
+	var go := func() -> void:
+		if sim.apply(cmd):
+			_points.clear()
+	# Held at the first corner: the shape shows closed while it asks.
+	_ask_first(shape[0], lines, road_type, go)
 	_update_hint()
+
+
+## Runs `go` now, unless the road would wipe something out: then the first
+## click holds the road still and asks, and the next click runs it.
+func _ask_first(p: Vector3, curves: Array, type: int, go: Callable) -> void:
+	_loss_key = ""  # look again now, whatever was shown last
+	_loss_at = -1000
+	if _check_losses(curves, type).is_empty():
+		go.call()
+		return
+	_armed = {"p": p, "go": go}
+
+
+## What these roads would wipe out (CitySim.road_losses), looked up again at
+## most a few times a second while the preview moves.
+func _check_losses(curves: Array, type: int) -> Array:
+	var key := "%s|%d|%d|%d|%d|%d" % [str(curves), type, sim.network.revision, sim.buildings.size(),
+		sim.parks.sites.size(), sim.services.buildings.size()]
+	if key != _loss_key and (Time.get_ticks_msec() - _loss_at > 120 or _loss_key == ""):
+		_loss_key = key
+		_loss_at = Time.get_ticks_msec()
+		_losses = sim.road_losses(curves, type)
+	return _losses
+
+
+## The cursor label's warning, and the question once the road is held.
+func _warn_label() -> void:
+	var what := RoadWins.loss_text(_losses)
+	var lead := "Are you sure? It removes %s.\nClick again to build, right click to go back" % what \
+		if not _armed.is_empty() else "Removes %s" % what
+	_label.text = (_label.text + "\n" if _label.visible and _label.text != "" else "") + lead
+	if not _label.visible:
+		_label.position = _cursor.position + Vector3(0, 6, 0)
+	_label.modulate = WARN_TEXT
+	_label.visible = true
 
 
 ## Where the next corner of a grid shape goes. An old road or junction
@@ -483,6 +559,8 @@ func _grid_corner(p: Vector3) -> Vector3:
 	if _points.size() >= 3 and _flat_dist(p, _points[0]) < _snap_reach(SNAP_NODE):
 		return _points[0]
 	if _snap_kind != "free":
+		if _points.size() >= 2 and _snap_kind == "segment":
+			return _square_onto_road(p)
 		return p
 	if _points.size() == 1:
 		return _side_end(p)
@@ -491,7 +569,7 @@ func _grid_corner(p: Vector3) -> Vector3:
 		var q: Vector3 = _points[0] + _points[2] - _points[1]
 		if _flat_dist(p, q) < maxf(_snap_reach(SNAP_NODE, SNAP_PX * 3.0), _flat_dist(_points[1], _points[2]) * 0.12):
 			return q
-	if Input.is_key_pressed(KEY_SHIFT):
+	if _shift():
 		return _square_off(p)
 	# Brawn: odd shapes are fine, but the grid wants to be regular. A side
 	# near square to the last one (or straight on) lines up exactly, and in
@@ -510,8 +588,53 @@ func _grid_corner(p: Vector3) -> Vector3:
 			if grid_exact:
 				var along := absf(cos(angle_difference(g, first))) > 0.7
 				len = absf(_whole(len, grid_block if along else grid_across, 0 if along else 1))
-			return last + Vector3(cos(g), 0.0, sin(g)) * len
-	return p
+				return last + Vector3(cos(g), 0.0, sin(g)) * len
+			# Along the square side to where it lines up with a junction.
+			return _align(last + Vector3(cos(g), 0.0, sin(g)) * len, last, g)
+	return p if grid_exact else _align(p, last)
+
+
+## Brawn: a corner dragged onto a road lands where the square (or straight
+## on) side meets that road, so the shape closes square against it, the way
+## a new subdivision's streets meet the road it fronts.
+func _square_onto_road(p: Vector3) -> Vector3:
+	var s := network.find_segment_near(p, 0.5)
+	if s.is_empty():
+		return p
+	var c := network.curve_of(s.seg)
+	var tan := RoadNetwork.bezier_tangent(c[0], c[1], c[2], s.t)
+	var last: Vector3 = _points[_points.size() - 1]
+	var prev: Vector3 = _points[_points.size() - 2]
+	var ref := atan2(last.z - prev.z, last.x - prev.x)
+	var l2 := Vector2(last.x, last.z)
+	var p2 := Vector2(p.x, p.z)
+	var ang := atan2(p.z - last.z, p.x - last.x)
+	var best := INF
+	var out := p
+	for k in 4:
+		var shift := _shift()
+		if shift and k % 2 == 0:
+			continue  # Shift squares off the last side
+		var g: float = ref + k * PI * 0.5
+		if not shift and absf(angle_difference(ang, g)) > ROAD_SQUARE_SNAP:
+			continue
+		var dir := Vector2(cos(g), sin(g))
+		var x = Geometry2D.line_intersects_line(l2, dir, p2, Vector2(tan.x, tan.z))
+		if x == null or (x - l2).dot(dir) <= 1.0:
+			continue
+		var d := (x as Vector2).distance_to(p2)
+		if d < best and d < maxf(_snap_reach(SNAP_ROAD + 5.0, SNAP_PX) * 3.0, l2.distance_to(p2) * 0.15):
+			best = d
+			_guide_angle = g
+			_square = shift and _points.size() == 2
+			out = Vector3(x.x, 0.0, x.y)
+	return out
+
+
+## Shift, but not as part of Cmd+Shift (the Mac screenshot keys) or the
+## Windows key's shortcuts.
+func _shift() -> bool:
+	return Input.is_key_pressed(KEY_SHIFT) and not Input.is_key_pressed(KEY_META)
 
 
 ## Three clicks: the first corner, then the end of the first side, which
@@ -526,7 +649,7 @@ func _side_end(p: Vector3) -> Vector3:
 	_guide_kind = ""
 	_exact_past = [false, false]
 	var snapped := false
-	if Input.is_key_pressed(KEY_SHIFT):
+	if _shift():
 		ang = snappedf(ang, ANGLE_STEP)
 		snapped = true
 	else:
@@ -670,7 +793,16 @@ func _show_grid(p: Vector3) -> void:
 	_cursor.position = Terrain.lift(p) + Vector3.UP * 0.3
 	var shape := _pending_shape(p)
 	_show_snap(_snap_kind != "free" or (_points.size() >= 3 and p.distance_to(_points[0]) < 0.01))
-	_show_guide(_points[0])
+	if _points.size() >= 2:
+		# The square side as a dotted line on past the corner, and the
+		# junctions the corner lines up with.
+		var lines := _align_lines.duplicate()
+		if not is_nan(_guide_angle):
+			var last: Vector3 = _points[_points.size() - 1]
+			lines.append([last, p + Vector3(cos(_guide_angle), 0.0, sin(_guide_angle)) * maxf(150.0, 200.0 * _px)])
+		_dashes(lines)
+	else:
+		_show_guide(_points[0])
 	var plan := []
 	if shape.size() >= 3:
 		var key := "%s|%s|%s|%d|%d|%d|%d" % [str(shape), str(grid_block), str(grid_across), grid_side, road_type,
@@ -743,6 +875,9 @@ func _show_grid(p: Vector3) -> void:
 		_label.visible = true
 	_preview.mesh = Terrain.drape(st.commit())
 	_preview.material_override = _ok_mat if ok else _bad_mat
+	if ok and not plan.is_empty() and not _check_losses(plan, road_type).is_empty():
+		_preview.material_override = _warn_mat
+		_warn_label()
 	_preview.visible = true
 	if not ghost.is_empty():
 		_ghost.mesh = Terrain.drape(gst.commit(), true)
@@ -828,7 +963,7 @@ static func _xz(v: Vector3) -> Array:
 
 ## True while a road is half drawn.
 func is_drawing() -> bool:
-	return not _points.is_empty()
+	return not _points.is_empty() or not _armed.is_empty()
 
 
 ## Drops the road being drawn (Esc and right click).
@@ -837,6 +972,11 @@ func cancel() -> void:
 
 
 func _cancel() -> void:
+	if not _armed.is_empty():
+		# Back to drawing: the road stays as it was.
+		_armed = {}
+		_update_hint()
+		return
 	_points.clear()
 	_update_hint()
 
@@ -850,7 +990,7 @@ func _pending_curve(p: Vector3) -> Array:
 		return [a, bend, p]
 	var d := p - a
 	_guide_angle = NAN
-	if mode != Mode.CURVED and Input.is_key_pressed(KEY_SHIFT):
+	if mode != Mode.CURVED and _shift():
 		var ang := snappedf(atan2(d.z, d.x), ANGLE_STEP)
 		p = a + Vector3(cos(ang), 0.0, sin(ang)) * d.length()
 		if _snap_kind == "free":
@@ -900,8 +1040,10 @@ func _node_angles(n: int) -> Array:
 	return out
 
 
-## Guide lines through the nearest junctions and road ends: along each road
-## there and square to it. [origin, angle] pairs.
+## Guide rays from the nearest junctions and road ends, the way CS2 offers
+## them: straight on down a road's centreline past its end or junction, out
+## where no road goes yet, and square to the road at the one junction nearest
+## the cursor. [origin, angle] pairs; a ray only runs one way.
 func _align_guides(near: Vector3, skip: Vector3) -> Array:
 	var reach := maxf(ALIGN_REACH, 400.0 * _px)
 	var found := []
@@ -912,18 +1054,50 @@ func _align_guides(near: Vector3, skip: Vector3) -> Array:
 			found.append([d, id])
 	found.sort_custom(func(x, y): return x[0] < y[0])
 	var out := []
-	for f in found.slice(0, ALIGN_NODES):
-		var q: Vector3 = network.nodes[f[1]]
-		for ang in _node_angles(f[1]):
-			out.append([q, ang])
-			out.append([q, ang + PI * 0.5])
+	for i in mini(found.size(), ALIGN_NODES):
+		var n: int = found[i][1]
+		var q: Vector3 = network.nodes[n]
+		var roads := _node_angles(n)
+		var rays := []
+		for ang in roads:
+			rays.append(ang + PI)
+			if i == 0:
+				rays.append(ang + PI * 0.5)
+				rays.append(ang - PI * 0.5)
+		for r in rays:
+			var open := true
+			for ang in roads:
+				if absf(angle_difference(r, ang)) < deg_to_rad(20.0):
+					open = false  # a road already goes that way
+					break
+			if open:
+				out.append([q, r])
 	return out
 
 
+## True when the straight line from `a` to `b` crosses a road away from `a`:
+## such a guide runs through the town instead of out into open ground.
+func _guide_blocked(a: Vector3, b: Vector3) -> bool:
+	var a2 := Vector2(a.x, a.z)
+	var b2 := Vector2(b.x, b.z)
+	var box := Rect2(a2, Vector2.ZERO).expand(b2).grow(1.0)
+	for id in network.segments:
+		var c := network.curve_of(id)
+		var cb := Rect2(Vector2(c[0].x, c[0].z), Vector2.ZERO).expand(Vector2(c[1].x, c[1].z)).expand(Vector2(c[2].x, c[2].z))
+		if not box.intersects(cb, true):
+			continue
+		var pts := network.sample_segment(id, 12)
+		for j in pts.size() - 1:
+			var hit = Geometry2D.segment_intersects_segment(a2, b2, Vector2(pts[j].x, pts[j].z), Vector2(pts[j + 1].x, pts[j + 1].z))
+			if hit != null and (hit as Vector2).distance_to(a2) > 2.0 and (hit as Vector2).distance_to(b2) > 2.0:
+				return true
+	return false
+
+
 ## Lines a free point up with nearby junctions, the way CS2 does: onto a
-## guide line, or where two guide lines cross. With `ray` (an angle) the point
+## guide ray, or where two guide rays cross. With `ray` (an angle) the point
 ## stays on the line from `from` in that direction and slides to where it
-## meets a guide.
+## meets a guide. A guide that would run through another road is skipped.
 func _align(p: Vector3, from: Vector3, ray := NAN) -> Vector3:
 	_align_lines = []
 	var reach := ALIGN_PX * _px
@@ -932,6 +1106,8 @@ func _align(p: Vector3, from: Vector3, ray := NAN) -> Vector3:
 	for g in _align_guides(p, from):
 		var o := Vector2(g[0].x, g[0].z)
 		var u := Vector2(cos(g[1]), sin(g[1]))
+		if (p2 - o).dot(u) <= 0.0:
+			continue  # behind the ray
 		var off := absf((p2 - o).cross(u))
 		if off < reach * (3.0 if not is_nan(ray) else 1.0):
 			near.append([off, o, u, g[0]])
@@ -941,20 +1117,31 @@ func _align(p: Vector3, from: Vector3, ray := NAN) -> Vector3:
 		var w := Vector2(cos(ray), sin(ray))
 		for g in near:
 			var x = Geometry2D.line_intersects_line(r, w, g[1], g[2])
-			if x != null and (x as Vector2).distance_to(p2) < reach * 1.5 and (x - r).dot(w) > 0.0:
-				_align_lines = [[g[3], Vector3(x.x, p.y, x.y)]]
-				return Vector3(x.x, p.y, x.y)
+			if x == null or (x as Vector2).distance_to(p2) >= reach * 1.5 or (x - r).dot(w) <= 0.0 or (x - g[1]).dot(g[2]) <= 0.0:
+				continue
+			var at := Vector3(x.x, p.y, x.y)
+			if _guide_blocked(g[3], at):
+				continue
+			_align_lines = [[g[3], at]]
+			return at
 		return p
-	if near.is_empty():
+	var open := []
+	for g in near:
+		var q: Vector2 = g[1] + g[2] * (p2 - g[1]).dot(g[2])
+		if not _guide_blocked(g[3], Vector3(q.x, p.y, q.y)):
+			open.append(g)
+	if open.is_empty():
 		return p
-	var a = near[0]
+	var a = open[0]
 	var q: Vector2 = a[1] + a[2] * (p2 - a[1]).dot(a[2])
-	for b in near.slice(1):
+	for b in open.slice(1):
 		if absf((a[2] as Vector2).cross(b[2])) < 0.2 or (b[1] as Vector2).distance_to(a[1]) < 0.5:
 			continue  # parallel lines, or the same junction
 		var x = Geometry2D.line_intersects_line(a[1], a[2], b[1], b[2])
-		if x != null and (x as Vector2).distance_to(p2) < reach * 1.5:
+		if x != null and (x as Vector2).distance_to(p2) < reach * 1.5 and (x - b[1]).dot(b[2]) > 0.0 and (x - a[1]).dot(a[2]) > 0.0:
 			var at := Vector3(x.x, p.y, x.y)
+			if _guide_blocked(a[3], at) or _guide_blocked(b[3], at):
+				continue
 			_align_lines = [[a[3], at], [b[3], at]]
 			return at
 	_align_lines = [[a[3], Vector3(q.x, p.y, q.y)]]
@@ -1263,4 +1450,7 @@ func _update_hint() -> void:
 			text += "\nRoads and track it crosses: it climbs over them, piers and all."
 	if parallel and (mode == Mode.STRAIGHT or mode == Mode.CURVED):
 		text += "\nParallel on (P): second road %d ft away  [ ]" % roundi(parallel_gap * FT)
+	if not _armed.is_empty():
+		text = "This road removes %s. Click again to build it anyway, or right click to go back." \
+			% RoadWins.loss_text(_losses)
 	hint_changed.emit(text)

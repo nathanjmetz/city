@@ -7,6 +7,7 @@ extends SceneTree
 
 func _init() -> void:
 	_layouts()
+	_shops()
 	_drivers()
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
@@ -83,6 +84,13 @@ func _drivers() -> void:
 	if placed == -1:
 		return
 	var b: Dictionary = sim.services.buildings[placed]
+	# The placement hint: shops round the downtown lot are short of
+	# parking; a lot among nothing but houses would sit empty.
+	var down := sim.traffic.parking_need(b.pos + b.dir * Services.size_of(b).y * 0.5)
+	_check(int(down.stalls) > 0, "the shops round the downtown lot are short of parking %s" % [down])
+	var homes := sim.traffic.parking_need(Vector3(-1200, 0, -340))
+	_check(int(homes.stalls) == 0, "a lot out in the country has no one to serve %s" % [homes])
+	_check(ServiceTool.need_words(homes, 20).contains("mostly empty"), "the hint says it will sit mostly empty")
 	_check(b.get("angled", false), "it keeps the 60 degree choice")
 	# The town buys every parcel it paves over: no back yard (fence, yard
 	# trees) is left under the stalls (Game critic round 28).
@@ -117,13 +125,147 @@ func _drivers() -> void:
 		t._release(with_placard[0], with_placard[1], 16)
 	# Drivers bound for the shops round it park there.
 	var seen := 0
+	var walks := 0
+	var short := 0
+	var reach := Services.size_of(b).length() * 0.5
+	var circles := 0
 	for i in 3000:
 		sim.tick()
+		# Nobody backs out of the lot, rounds the block and parks in it again
+		# (Brawn watched a driver do it, bound for a shop beside the lot).
+		for car in t.cars:
+			if str(car.get("from_place", "")) == "svc:%d" % placed and str(car.get("to_place", "")) == "svc:%d" % placed \
+					and int(car.get("circled", -1)) != int(car.trip):
+				car.circled = car.trip
+				circles += 1
 		if i % 50 == 0:
 			for car in t.parked:
 				if str(car.get("at_place", "")) == "svc:%d" % placed:
 					seen += 1
+		# Everyone who gets out in the lot walks out by its walk to the
+		# sidewalk and on to the door: nobody vanishes beside their car.
+		for w in t.walkers:
+			if w.pts[0].distance_to(b.pos) < reach and int(w.get("seen", -1)) != w.id:
+				w.seen = w.id
+				if w.len > 15.0 and w.pts[w.pts.size() - 1].distance_to(b.pos) > reach:
+					walks += 1
+				else:
+					short += 1
 	_check(seen > 0, "shoppers park in the town's lot (%d sightings)" % seen)
+	_check(circles == 0, "nobody drives out of the lot only to park in it again (%d)" % circles)
+	_check(Inspect.place_name(sim, "svc:%d" % placed).begins_with("Downtown"),
+		"a car's card names the lot, not its id (%s)" % Inspect.place_name(sim, "svc:%d" % placed))
+	_check(walks > 0 and short == 0, "drivers walk from the lot to their door (%d walks, %d cut short)" % [walks, short])
+	# A driver whose car is in the lot, off to a shop beside it, walks there
+	# and leaves the car parked; going home, they fetch it.
+	var lot_pl := t.place("svc:%d" % placed)
+	var shop_b := ""
+	var best := INF
+	for key in sim.lots:
+		if sim.buildings.has(key) and sim.buildings[key].zone == ZoneMap.Zone.COMMERCIAL \
+				and not t.place("lot:" + key).is_empty():
+			var d: float = t.place("lot:" + key).door.distance_to(lot_pl.door)
+			if d < best:
+				best = d
+				shop_b = "lot:" + key
+	var pid := -1
+	for id in sim.people.people:
+		var person: Dictionary = sim.people.people[id]
+		var c := t._vehicle_parked(int(person.car))
+		if not c.is_empty() and person.at != "travel" and not c.has("pending"):
+			pid = id
+			break
+	_check(pid != -1 and shop_b != "", "a driver with a parked car and a shop by the lot")
+	if pid != -1 and shop_b != "":
+		var person: Dictionary = sim.people.people[pid]
+		var vid := int(person.car)
+		var c := t._vehicle_parked(vid)
+		var i := t._reserve(lot_pl, vid, false)
+		t._release(c.at_place, c.spot, vid)
+		t._park(c, lot_pl, i)
+		if person.at == shop_b:
+			person.at = ""  # at home, then
+		var went := t.go(pid, shop_b, "shop", 50)
+		var on_foot := false
+		for w in t.walkers:
+			if int(w.person) == pid and w.then.get("enter", "") == shop_b:
+				on_foot = true
+		_check(went and on_foot and str(c.get("at_place", "")) == lot_pl.ref,
+			"a short hop past the lot is walked and the car stays parked (%s, %s)" % [went, on_foot])
+	# Homes on the block: an extra car goes on the street out front, never in
+	# the town's lot.
+	var homers := 0
+	for car in t.parked:
+		if str(car.get("at_place", "")) == "svc:%d" % placed and str(car.get("purpose", "")) == "home":
+			homers += 1
+	_check(homers == 0, "nobody heading home parks in the town's lot (%d)" % homers)
+
+
+## Shops park cars only in the stalls their art paints (Brawn saw cars nosed
+## into the lawn and walk in front of a beauty shop): the dry run SiteLayout
+## reads matches the real drawing, and no stall is under the building or
+## off the lot.
+func _shops() -> void:
+	var differ := []
+	var bad := []
+	var kinds := {}
+	for seed in 160:
+		for w in [16.0, 22.0, 30.0]:
+			var lot := {"width": w, "depth": 40.0, "corner": seed % 4 == 0}
+			var plan := DenseBuilder.site_plan(seed * 7919 + 13, lot)
+			var b := DenseBuilder._start(seed * 7919 + 13, lot)
+			b._shop(3.9, lot, false)
+			b._commit_house()
+			if str(b.site) != str(plan):
+				differ.append([seed, w])
+			kinds[plan.stalls.size() > 0] = true
+			for st in plan.stalls:
+				var c: Vector2 = st[0]
+				var box := Rect2(c - Vector2(1.3, 2.7), Vector2(2.6, 5.4))
+				if absf(c.x) > w * 0.5 - 1.3 or c.y < 2.7:
+					bad.append(["off the lot", seed, w, c])
+				for m: Rect2 in HouseBuilder.last_masses:
+					if m.size.y > 1.0 and m.intersects(box.grow(-0.2)):
+						bad.append(["under the building", seed, w, c])
+						break
+	_check(differ.is_empty(), "the stalls cars use are the ones the shop art paints %s" % [differ.slice(0, 4)])
+	_check(bad.is_empty(), "no shop stall is off the lot or under the building %s" % [bad.slice(0, 4)])
+	_check(kinds.size() == 2, "some shops have their own stalls, some only the curb")
+	# Offices: the lot out back has a drive in, stalls clear of the walls,
+	# and they are the stalls cars use.
+	var odiff := []
+	var obad := []
+	var with_lot := 0
+	for seed in 80:
+		for size in [[40.0, 55.0], [34.0, 45.0], [50.0, 60.0]]:
+			var lot := {"width": size[0], "depth": size[1]}
+			var plan := DenseBuilder.office_plan(seed * 31 + 7, lot, 2 + seed % 4)
+			var built := DenseBuilder.build_office(seed * 31 + 7, 3.9, lot, 2 + seed % 4)
+			var b := DenseBuilder._start(seed * 31 + 7, lot)
+			b._office(3.9, b.half * 2.0, 2 + seed % 4)
+			if str(b.site) != str(plan):
+				odiff.append(seed)
+			if not plan.stalls.is_empty():
+				with_lot += 1
+				if absf(plan.cut_x) > size[0] * 0.5 - 1.5:
+					obad.append(["drive off the lot", seed, plan.cut_x])
+			for st in plan.stalls:
+				var c: Vector2 = st[0]
+				var box := Rect2(c - Vector2(1.3, 2.7), Vector2(2.6, 5.4))
+				if absf(c.x) > size[0] * 0.5 - 1.3 or c.y + 2.7 > size[1]:
+					obad.append(["off the lot", seed, c])
+				for m: Rect2 in HouseBuilder.last_masses:
+					if m.size.y > 1.0 and m.grow(1.0).intersects(box):
+						obad.append(["against the building", seed, c])
+						break
+				if absf(c.x - plan.cut_x) < 3.5 and c.y < plan.aisle_z:
+					obad.append(["in the drive", seed, c])
+			built.clear()
+	_check(odiff.is_empty(), "office stalls cars use are the ones the art paints %s" % [odiff.slice(0, 4)])
+	_check(obad.is_empty(), "office stalls sit on the lot, clear of the walls and the drive %s" % [obad.slice(0, 4)])
+	_check(with_lot > 100, "most offices have a lot out back (%d of 240)" % with_lot)
+	var flats := SiteLayout.for_building(ZoneMap.Zone.RESIDENTIAL, 5, {"width": 30.0, "depth": 40.0}, 3, "apartments")
+	_check(flats.spots.is_empty(), "apartments with no drive drawn send residents to the curb")
 
 
 ## A stall's painted rectangle, a hair inside its lines.

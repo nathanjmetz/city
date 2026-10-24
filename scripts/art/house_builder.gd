@@ -888,7 +888,7 @@ func _back_garage(dx: float, zb: float, siding: Color, roof: Color) -> Dictionar
 	var gz0 := zb + rng.randf_range(2.5, 4.0)
 	if gz0 + gd > depth - 1.0:
 		# No room out back: the drive just ends beside the house.
-		return {"garage_z": zb - 1.0, "keep_out": Rect2(dx - 1.6, zb - 1.0, 3.2, 1.0)}
+		return {"garage_z": zb - 1.0, "keep_out": Rect2(dx - 1.6, zb - 1.0, 3.2, 1.0), "garage_x": dx, "garage_w": 0.0}
 	var gx := clampf(dx, -half + gw * 0.5 + 0.6, half - gw * 0.5 - 0.6)
 	var gcz := gz0 + gd * 0.5
 	_box("concrete", Vector3(gw + 0.1, 0.15, gd + 0.1), Vector3(gx, 0.075, gcz), FOUNDATION)
@@ -896,7 +896,7 @@ func _back_garage(dx: float, zb: float, siding: Color, roof: Color) -> Dictionar
 	_corners(gx - gw * 0.5, gx + gw * 0.5, gz0, gz0 + gd, 0.15, 2.65)
 	_gable_roof(gx, gcz, 2.65, gw, rng.randf_range(1.3, 1.8), gd, false, roof, siding)
 	_garage(gx, gz0, gw, 2.0)
-	return {"garage_z": gz0, "keep_out": Rect2(gx - gw * 0.5, gz0, gw, gd)}
+	return {"garage_z": gz0, "keep_out": Rect2(gx - gw * 0.5, gz0, gw, gd), "garage_x": gx, "garage_w": gw}
 
 
 ## A gabled dormer standing on a roof whose eave wall top is `base`, its
@@ -965,7 +965,7 @@ func _foursquare(zf: float, gs: float, siding: Color, roof: Color, shutter: Colo
 	var g := _back_garage(at[1], zf + d, siding, roof)
 	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": door_x,
 		"walk_z": zf - pd - 0.9, "front_z": zf - pd, "x0": x0, "x1": x1, "gs": gs,
-		"bed": [x0 + 0.3, x1 - 0.3], "keep_out": g.keep_out}
+		"bed": [x0 + 0.3, x1 - 0.3], "keep_out": g.keep_out, "garage_x": g.garage_x, "garage_w": g.garage_w}
 
 
 ## Craftsman bungalow, 1910-1930: one and a half storeys with the gable to
@@ -1016,7 +1016,7 @@ func _bungalow(zf: float, gs: float, siding: Color, roof: Color, door: Color, br
 	var g := _back_garage(at[1], zf + d, siding, roof)
 	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": door_x,
 		"walk_z": zf - pd - 1.0, "front_z": zf - pd, "x0": x0, "x1": x1, "gs": gs,
-		"bed": [x0 + 0.3, x1 - 0.3], "keep_out": g.keep_out}
+		"bed": [x0 + 0.3, x1 - 0.3], "keep_out": g.keep_out, "garage_x": g.garage_x, "garage_w": g.garage_w}
 
 
 ## I-house, 1850-1910: two storeys, wide and only one room deep, side gables
@@ -1063,7 +1063,7 @@ func _i_house(zf: float, gs: float, roof: Color, shutter: Color, door: Color, br
 	var g := _back_garage(at[1], zf + d + ed, wall, roof)
 	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": cx,
 		"walk_z": zf - 2.6, "front_z": zf, "x0": x0, "x1": x1, "gs": gs,
-		"bed": [x0 + 0.3, x1 - 0.3], "keep_out": g.keep_out}
+		"bed": [x0 + 0.3, x1 - 0.3], "keep_out": g.keep_out, "garage_x": g.garage_x, "garage_w": g.garage_w}
 
 
 ## Gabled-ell (upright-and-wing) farmhouse, 1870-1920: a two-storey wing with
@@ -1111,7 +1111,7 @@ func _ell_farmhouse(zf: float, gs: float, roof: Color, door: Color) -> Dictionar
 	var x0 := cx - total * 0.5
 	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": door_x,
 		"walk_z": wz0 - 2.8, "front_z": zf, "x0": x0, "x1": x0 + total, "gs": gs,
-		"bed": [ux - uw * 0.5 + 0.3, ux + uw * 0.5 - 0.3], "keep_out": g.keep_out}
+		"bed": [ux - uw * 0.5 + 0.3, ux + uw * 0.5 - 0.3], "keep_out": g.keep_out, "garage_x": g.garage_x, "garage_w": g.garage_w}
 
 
 ## Cape Cod, 1935-1955: one and a half storeys, steep side gables, two gabled
@@ -1145,7 +1145,7 @@ func _cape(zf: float, gs: float, siding: Color, roof: Color, shutters: bool, shu
 	var g := _back_garage(at[1], zf + d, siding, roof)
 	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": cx,
 		"walk_z": zf - 1.9, "front_z": zf, "x0": x0, "x1": x1, "gs": gs,
-		"bed": [x0 + 0.3, x1 - 0.3], "keep_out": g.keep_out}
+		"bed": [x0 + 0.3, x1 - 0.3], "keep_out": g.keep_out, "garage_x": g.garage_x, "garage_w": g.garage_w}
 
 
 ## Mid-century modern ranch, 1950-1965: long and low under one shallow gable
@@ -1201,6 +1201,12 @@ func _yard(h: Dictionary, to_curb: float) -> void:
 		_flat_rect("drive", minf(sx - 1.5, dx - dw * 0.5), maxf(sx + 1.5, dx + dw * 0.5), 0.0, h.garage_z, 0.1)
 	else:
 		_flat_rect("drive", dx - dw * 0.5, dx + dw * 0.5, -to_curb, h.garage_z, 0.1)
+	if h.get("garage_w", 0.0) > 0.0:
+		# A detached garage kept off the side line sits beside the drive, not
+		# on it: the drive widens to an apron the width of its door(s).
+		var gx: float = h.garage_x
+		var ghw: float = h.garage_w * 0.5
+		_flat_rect("drive", minf(gx - ghw, dx - dw * 0.5), maxf(gx + ghw, dx + dw * 0.5), h.garage_z - 4.5, h.garage_z, 0.1)
 	var door_x: float = h.door_x
 	var walk_z: float = h.walk_z
 	if rng.randf() < 0.55 and pad <= 0.0:
@@ -1395,6 +1401,7 @@ func _lot_fence(a: Vector2, b: Vector2, kind: String) -> void:
 			_box("metal", Vector3(0.05, 1.22, 0.05), p + dir * (len * k / n) + Vector3(0, 0.61, 0), galv)
 		_box("metal", Vector3(0.04, 0.04, len), (p + q) * 0.5 + Vector3(0, 1.2, 0), galv, yaw)
 		_box("metal", Vector3(0.015, 0.015, len), (p + q) * 0.5 + Vector3(0, 0.08, 0), galv, yaw)
+		_box("chain", Vector3(0.006, 1.12, len), (p + q) * 0.5 + Vector3(0, 0.64, 0), galv, yaw)
 		return
 	# 6 ft privacy: boards between 4x4 posts every 8 ft.
 	var board := Color("#f0eee8") if kind == "vinyl" else Color("#8f7a60")

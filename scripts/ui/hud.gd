@@ -1632,7 +1632,7 @@ func _utilities_drawer() -> PanelContainer:
 func _civic_drawer() -> PanelContainer:
 	var cat := "civic"
 	# The post office: its postmaster plans the routes.
-	var pb := _card("mail", "Post office", "")
+	var pb := _card("post_office", "Post office", "")
 	pb.tooltip_text = "Post office: $%s to build, $%s a month. Its postmaster plans the routes." % [
 		CitySim.money_text(Balance.MAIL_COST), CitySim.money_text(Balance.MAIL_UPKEEP)]
 	pb.pressed.connect(func(): service_tool.set_kind(Mail.TOOL_KIND))
@@ -1641,7 +1641,7 @@ func _civic_drawer() -> PanelContainer:
 	# Banks lend to the farms, companies and builders (Brawn's hub model).
 	var banks := []
 	for k in ["community", "farm_credit"]:
-		var b := _card("bank", {"community": "Bank", "farm_credit": "Farm Credit"}[k], "")
+		var b := _card(Banks.KINDS[k].icon, {"community": "Bank", "farm_credit": "Farm Credit"}[k], "")
 		b.tooltip_text = "%s: $%s for the lot. Its %s lends to %s, and buys the land next door as it grows." % [
 			Banks.KINDS[k].name, CitySim.money_text(int(Banks.spec(k).cost)), Banks.KINDS[k].head.to_lower(),
 			{"community": "farms, companies and builders", "farm_credit": "farms and timber"}[k]]
@@ -1754,8 +1754,8 @@ func _industry_drawer() -> PanelContainer:
 	row.add_theme_constant_override("separation", 10)
 	stack.add_child(row)
 	var farms := _section(row, "Farmhouse  ·  near green soil")
-	for entry in [[FarmTool.Mode.CORN, "corn", "Corn", "Corn farm: more income on rich soil"],
-			[FarmTool.Mode.SOYBEANS, "soybeans", "Soybeans", "Soybean farm: steadier on poorer soil"]]:
+	for entry in [[FarmTool.Mode.CORN, "farm_corn", "Corn", "Corn farm: more income on rich soil"],
+			[FarmTool.Mode.SOYBEANS, "farm_soy", "Soybeans", "Soybean farm: steadier on poorer soil"]]:
 		var m: int = entry[0]
 		var b := _card(entry[1], entry[2], "")
 		b.tooltip_text = entry[3]
@@ -1769,7 +1769,7 @@ func _industry_drawer() -> PanelContainer:
 	var hq := _section(row, "Main building  ·  near the resource")
 	var area := _section(row, "Save land")
 	var stores := _section(row, "Storage")
-	_warehouse_card = _card("warehouse", "Warehouse", "")
+	_warehouse_card = _card("warehouse_co", "Warehouse", "")
 	_warehouse_card.tooltip_text = "Warehouses store raw loads and goods until a factory or shop needs them. Pick a size above."
 	_warehouse_card.pressed.connect(func(): warehouse_tool.set_kind(_warehouse_last))
 	stores.add_child(_warehouse_card)
@@ -1784,15 +1784,15 @@ func _industry_drawer() -> PanelContainer:
 		_big_cards[k] = b
 	for k in Warehouses.ORDER:
 		var spec: Dictionary = Balance.WAREHOUSE[k]
-		var b := _card("warehouse", ["Small", "Medium", "Large", "Distrib."][Warehouses.ORDER.find(k)], "")
+		var b := _card("warehouse_co", ["Small", "Medium", "Large", "Distrib."][Warehouses.ORDER.find(k)], "")
 		b.tooltip_text = "%s, %s ($%s): stores raw loads and goods until a factory or shop needs them" \
 			% [Warehouses.KINDS[k].name, Warehouses.KINDS[k].area, CitySim.money_text(int(spec.cost))]
 		b.pressed.connect(func(): warehouse_tool.set_kind(k))
 		sizes.add_child(b)
 		_warehouse_cards[k] = b
-	for entry in [["oil", "oil", "Oil", "Oil company: pumpjacks spread over the oil field"],
-			["ore", "ore", "Mining", "Mining company: pits open where the ore is"],
-			["forest", "forest", "Forestry", "Forestry company: logging stands in the woods"]]:
+	for entry in [["oil", "oil_co", "Oil", "Oil company: pumpjacks spread over the oil field"],
+			["ore", "mine_co", "Mining", "Mining company: pits open where the ore is"],
+			["forest", "forestry_co", "Forestry", "Forestry company: logging stands in the woods"]]:
 		var k: String = entry[0]
 		var b := _card(entry[1], entry[2], "")
 		b.tooltip_text = "%s ($%s)" % [entry[3], CitySim.money_text(int(Industry.KINDS[k].cost))]

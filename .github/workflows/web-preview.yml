@@ -140,12 +140,14 @@ jobs:
           run_test tests/test_telemetry.gd
           run_test tests/test_pollution.gd
           run_test tests/test_placement_hints.gd
+          run_test tests/test_road_warning.gd
           run_test tests/test_resource_bands.gd
           run_test tests/test_health.gd
           run_test tests/test_interlocal.gd
           run_test tests/test_regional.gd
           run_test tests/test_desktop.gd
           run_test tests/test_heritage.gd
+          run_test tests/test_charter.gd
           run_test tests/test_crops.gd
           run_test tests/test_stats.gd
           run_test tests/test_upgrade_art.gd

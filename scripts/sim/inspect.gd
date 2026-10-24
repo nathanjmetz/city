@@ -877,6 +877,11 @@ static func place_name(sim: CitySim, ref: String) -> String:
 		return "An empty lot"
 	if ref.begins_with("farm:"):
 		return "A farm"
+	if ref.begins_with("svc:") and sim.services.buildings.has(int(ref.substr(4))):
+		# "Small parking lot on Walnut Street"
+		var name: String = Services.KINDS[int(sim.services.buildings[int(ref.substr(4))].kind)].name
+		var street := sim.streets.name_of(int(sim.traffic.place(ref).get("stop", {}).get("seg", -1)))
+		return name + (" on " + street if street != "" else "")
 	if ref.begins_with("site:"):
 		return "A company yard"
 	return ref.get_slice("@", 0).replace(":", " ").capitalize()

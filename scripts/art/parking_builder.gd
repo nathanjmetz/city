@@ -17,6 +17,9 @@ extends CivicBuilder
 const BLUE := Color("#2f5fb3")
 const POLE_H := 9.0  # 30 ft light poles
 const DECK := 3.2    # floor to floor in a parking garage
+## Shredded hardwood mulch as it looks in daylight (the yard shader darkens
+## loose stuff a lot, so a darker brown reads black).
+const MULCH_BED := Color("#8a6a48")
 
 
 static func build_lot(b: Dictionary, seed: int, to_curb: float) -> Array:
@@ -39,16 +42,23 @@ func _surface(kind: int, size: Vector2, lay: Dictionary, to_curb: float) -> void
 	var back := size.y * 0.5
 	var e := ParkingLots.EDGE
 	_flat_rect("asphalt", -hw + e, hw - e, front + e, back - e, 0.06)
-	# The driveway: 24 ft, two-way, across the walk to the street.
-	_flat_rect("asphalt", -3.65, 3.65, front - to_curb, front + e, 0.1)
+	_driveway(front, to_curb, ParkingLots.DRIVE_HALF, front + e)
 	_stripes(lay, 0.08)
-	# Curbed, planted strip along the street either side of the driveway.
+	_walk_out(lay, front)
+	# A lawn strip along the street either side of the driveway, screened by
+	# low shrubs in mulched beds (the 3 ft parking screen most Indiana zoning
+	# codes ask for along a street), clear of the walk.
+	var wx: float = lay.walk_x
 	for s in [-1.0, 1.0]:
-		var x0 := 4.2 if s > 0 else -hw + 0.3
-		var x1 := hw - 0.3 if s > 0 else -4.2
-		_flat_rect("mulch", x0, x1, front + 0.2, front + e - 0.1, 0.05)
-		for i in int((x1 - x0) / 1.4):
-			_shrub(Vector3(x0 + 0.7 + i * 1.4, 0, front + 0.75), rng.randf_range(0.4, 0.55))
+		var x0 := 4.6 if s > 0 else -hw + 0.6
+		var x1 := hw - 0.6 if s > 0 else -4.6
+		var x := x0
+		while x + 2.4 <= x1:
+			if absf(x + 1.2 - wx) > ParkingLots.WALK_W + 1.6:
+				_flat_rect("mulch", x, x + 2.4, front + 0.35, front + e - 0.25, 0.05, MULCH_BED)
+				for k in 3:
+					_shrub(Vector3(x + 0.4 + k * 0.8, 0, front + 0.75), rng.randf_range(0.35, 0.45))
+			x += 3.6
 	# Shade trees round the edge: the downtown lot and the big lots.
 	if kind != Services.Kind.PARKING_SMALL:
 		var step := 11.0
@@ -73,6 +83,50 @@ func _surface(kind: int, size: Vector2, lay: Dictionary, to_curb: float) -> void
 			_post_sign(Vector3(-5.0, 0, front + 0.6), Color("#1d6b3a"), 1.4)
 		_:
 			_post_sign(Vector3(-5.0, 0, front + 0.6), BLUE, 0.7)
+
+
+## The driveway as a commercial entrance is built (INDOT and city standard
+## drawings): asphalt up to the property line, the public sidewalk carried
+## on across it in concrete at its own level, and a concrete apron over the
+## parkway down to the curb cut, flared 5 ft each side so cars swing in.
+func _driveway(front: float, to_curb: float, half: float, inner: float) -> void:
+	var walk0 := front - Services.SETBACK - RoadStyle.SIDEWALK_WIDTH
+	_flat_rect("asphalt", -half, half, front - Services.SETBACK, inner, 0.1)
+	_flat_rect("drive", -half, half, walk0, front - Services.SETBACK, 0.1)
+	_flat_rect("drive", -half, half, front - to_curb, walk0, 0.1)
+	var flare := 1.5
+	for s in [-1.0, 1.0]:
+		_flat_tri([Vector3(s * half, 0, walk0), Vector3(s * half, 0, front - to_curb),
+			Vector3(s * (half + flare), 0, front - to_curb)], 0.1)
+
+
+## The 5 ft concrete walk out to the public sidewalk, and the marked
+## crossing over the front drive from the accessible stalls to it.
+func _walk_out(lay: Dictionary, front: float) -> void:
+	var wx: float = lay.walk_x
+	var hw := ParkingLots.WALK_W * 0.5
+	var e := ParkingLots.EDGE
+	_flat_rect("drive", wx - hw, wx + hw, front - Services.SETBACK, front + e, 0.1)
+	# Continental bars across the drive, 2 ft wide on 4 ft centres (MUTCD
+	# 3B.18), as private lots stripe their accessible routes.
+	var z := front + e + 0.3
+	while z + 0.6 < float(lay.row0) - 0.2:
+		_bar(Vector3(wx - hw, 0, z + 0.3), Vector3(wx + hw, 0, z + 0.3), 0.6, LINE, 0.08)
+		z += 1.2
+
+
+## A flat triangle of driveway concrete.
+func _flat_tri(pts: Array, y: float) -> void:
+	var p := pts.map(func(q): return Vector3(q.x, y, q.z))
+	if (p[1] - p[0]).cross(p[2] - p[0]).y > 0.0:
+		p = [p[0], p[2], p[1]]
+	var col := MULCH
+	col.a = 0.0  # concrete (see HouseBuilder._flat_rect)
+	for q in p:
+		_flat.set_normal(Vector3.UP)
+		_flat.set_color(col)
+		_flat.set_uv(Vector2(q.x, q.z) * 0.25)
+		_flat.add_vertex(q)
 
 
 ## White stall lines, blue accessible stalls with hatched aisles, and
@@ -203,7 +257,7 @@ func _parking_garage(size: Vector2, lay: Dictionary, to_curb: float) -> void:
 	var front := -size.y * 0.5
 	var levels: int = lay.levels
 	var conc := Color("#c9c5bb")
-	_flat_rect("asphalt", -3.65, 3.65, front - to_curb, front + 0.5, 0.1)
+	_driveway(front, to_curb, ParkingLots.DRIVE_HALF, front + 0.5)
 	_slab(0.0, w, front + 0.5, d)
 	for lv in range(1, levels):
 		var y := lv * DECK
@@ -249,4 +303,4 @@ func _parking_garage(size: Vector2, lay: Dictionary, to_curb: float) -> void:
 			_box("paint", Vector3(0.7, 0.14, 0.5), Vector3(x, top + 6.0, z), Color("#55595d"))
 	for s in [-1.0, 1.0]:
 		_flat_rect("mulch", s * 4.2 if s > 0 else -size.x * 0.5 + 0.3, size.x * 0.5 - 0.3 if s > 0 else -4.2,
-			front + 0.1, front + 0.45, 0.05)
+			front + 0.1, front + 0.45, 0.05, MULCH_BED)

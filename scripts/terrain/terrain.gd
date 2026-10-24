@@ -283,6 +283,17 @@ static func lift(p: Vector3) -> Vector3:
 	return Vector3(p.x, p.y + base_y(p.x, p.z), p.z)
 
 
+## A point lifted onto what's drawn there for wheels and feet: the road
+## level on streets and bridges, and off them the ground as graded and
+## drawn, which lots, drives and yards are draped on (so a car in a lot up a
+## slope sits on its pavement, not inside it).
+static func stand(p: Vector3) -> Vector3:
+	var b := base_y(p.x, p.z)
+	var g := ground_y(p.x, p.z)
+	# A bridge deck stands well above the valley under it.
+	return Vector3(p.x, p.y + (b if b - g > 2.5 else g), p.z)
+
+
 ## Every point of a line lifted onto the base level.
 static func lift_all(pts: PackedVector3Array) -> PackedVector3Array:
 	var out := PackedVector3Array()

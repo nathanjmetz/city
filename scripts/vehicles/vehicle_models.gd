@@ -469,13 +469,25 @@ func _truck(L: float, cab_end: float, wb: Array, work: bool, W := 2.03, H := 1.9
 		for x in [-0.4, 0.35]:
 			_box(Vector3(x, belt + 0.03, 1.85), Vector3(0.55, 0.015, 0.02), seam)
 	if work:
-		# Diamond-plate toolbox across the front of the bed, and a ladder rack.
+		# Diamond-plate toolbox across the front of the bed, and a contractor
+		# ladder rack (Weather Guard style): two hoops joined by side rails
+		# along the top, carrying an aluminium extension ladder.
 		_box(Vector3(0, belt + 0.15, cab_end + 0.35), Vector3(W - 0.1, 0.3, 0.5), STEEL)
-		for z in [cab_end + 0.15, L - 0.2]:
+		var z0 := cab_end + 0.15
+		var z1 := L - 0.2
+		for z in [z0, z1]:
 			_box(Vector3(0, 2.1, z), Vector3(W - 0.1, 0.06, 0.06), TRIM)
 			for x in [-hw + 0.05, hw - 0.05]:
 				_box(Vector3(x, (2.1 + belt) * 0.5, z), Vector3(0.05, 2.1 - belt, 0.05), TRIM)
-		_box(Vector3(0, 2.14, (cab_end + L) * 0.5), Vector3(0.5, 0.06, L - cab_end - 0.4), CHROME)
+		for x in [-hw + 0.05, hw - 0.05]:
+			_box(Vector3(x, 2.1, (z0 + z1) * 0.5), Vector3(0.05, 0.06, z1 - z0), TRIM)
+		var lz := (cab_end + L) * 0.5 - 0.3
+		var ll := L - cab_end + 0.6
+		for x in [-0.22, 0.22]:
+			_box(Vector3(x, 2.17, lz), Vector3(0.05, 0.08, ll), CHROME)
+		if _hi:
+			for i in int(ll / 0.3):
+				_box(Vector3(0, 2.17, lz - ll * 0.5 + 0.15 + i * 0.3), Vector3(0.44, 0.03, 0.03), CHROME)
 
 
 func _pickup() -> void:  # Ford F-150 SuperCrew, 5.5 ft bed
