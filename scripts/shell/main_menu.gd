@@ -14,6 +14,10 @@ var _panel := PanelContainer.new()
 var _pages := {}       # name -> Control
 var _status := ShellStyle.text("", 14, 500, Brand.INK_MUTED)
 var _cam := Camera3D.new()
+const MENU_TOWN := "res://art/menu/town.city"
+## How far out the camera circles downtown, in metres.
+const ORBIT := 230.0
+
 var _angle := 0.4
 var _code := LineEdit.new()
 var _server := LineEdit.new()
@@ -107,8 +111,10 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	_angle += delta * 0.03
 	var ground := Terrain.ground_y(0.0, 0.0)
-	_cam.position = Vector3(cos(_angle) * 320.0, ground + 170.0, sin(_angle) * 320.0)
-	_cam.look_at(Vector3(0, ground, 0))
+	# Low over the rooftops, like a drone over Main Street, with the
+	# woods and fields running out to the haze behind.
+	_cam.position = Vector3(cos(_angle) * ORBIT, ground + 55.0, sin(_angle) * ORBIT)
+	_cam.look_at(Vector3(0, ground + 8.0, 0))
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -431,7 +437,7 @@ func _gap(h: int) -> Control:
 	return c
 
 
-## Your latest city slowly turning behind the menu (or a demo town).
+## A finished small town, flown over slowly behind the menu.
 func _build_backdrop() -> void:
 	add_child(SkyLight.new())
 	_cam.fov = 45.0
@@ -440,22 +446,10 @@ func _build_backdrop() -> void:
 	add_child(_cam)
 	var land := TerrainView.new()
 	add_child(land)
+	# A grown small town, made once by tools/menu_town.gd: a player's own
+	# early town is mostly bare lots and half-built shops.
 	var sim := CitySim.new()
-	var saves := Session.list_saves()
-	var data := Session._read(saves[0].path) if not saves.is_empty() else {}
-	if not data.is_empty():
-		sim.from_dict(data)
-	else:
-		sim.apply({"type": "build_grid", "a": [-150, -120], "b": [150, -120], "c": [150, 120], "block": 80})
-		# Every street side zoned: shops down the middle, homes either side.
-		for id in sim.network.segments.keys():
-			var c := sim.network.curve_of(id)
-			var mid_x: float = (c[0].x + c[2].x) * 0.5
-			for side in [-1, 1]:
-				sim.apply({"type": "zone_frontage", "seg": id, "side": side,
-					"zone": ZoneMap.Zone.RESIDENTIAL if absf(mid_x) > 40.0 else ZoneMap.Zone.COMMERCIAL})
-		for i in 300:
-			sim.tick()
+	sim.from_dict(Session._read(MENU_TOWN))
 	var roads := RoadView.new()
 	add_child(roads)
 	roads.setup(sim.network, sim)

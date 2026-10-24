@@ -112,7 +112,7 @@ const KIND_NAMES := {
 	"general": {"style": "condensed", "names": ["{S} Manufacturing", "{S} Industries", "{S} Products Co."]},
 	"farm": {"style": "slab", "names": ["{S} Farms", "{S} Family Farms", "{S} Bros. Farms", "{S} Acres"]},
 	"oil": {"style": "condensed", "names": ["{S} Oil Co.", "{S} Oil & Gas", "{S} Energy"]},
-	"ore": {"style": "condensed", "names": ["{S} Stone Co.", "{S} Aggregates", "{S} Quarry"]},
+	"ore": {"style": "condensed", "names": ["{S} Coal Co.", "{S} Mining Co.", "{S} Coal & Mining"]},
 	"forest": {"style": "slab", "names": ["{S} Timber", "{S} Logging", "{S} Forest Products"]},
 }
 

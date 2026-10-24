@@ -1113,7 +1113,7 @@ static func factory_name(key: String, bseed: int, chain := "general") -> String:
 
 static func company_name(kind: String, id: int) -> String:
 	var h := absi(hash(["company", kind, id]))
-	var tail := {"oil": "Oil Co.", "ore": "Stone Quarry", "forest": "Timber"}
+	var tail := {"oil": "Oil Co.", "ore": "Coal Co.", "forest": "Timber"}
 	return "%s %s" % [_SURNAMES[h % _SURNAMES.size()], tail.get(kind, "Co.")]
 
 

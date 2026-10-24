@@ -48,10 +48,20 @@ varying vec3 leaf_pos;
 varying float species;
 varying float tree_rand;
 varying float far_card;
+// The Compatibility renderer (the browser) hands INSTANCE_CUSTOM's rgb
+// over as if it were an sRGB colour, already turned linear (alpha comes
+// through as is); undo that so custom data reads as on the desktop.
+vec4 custom_data(vec4 c) {
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	c.rgb = mix(c.rgb * 12.92, 1.055 * pow(max(c.rgb, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c.rgb));
+#endif
+	return c;
+}
 vec3 lin(vec3 c) {
 	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
 }
 void vertex() {
+	vec4 custom = custom_data(INSTANCE_CUSTOM);
 	vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 	fade = 1.0;
 	if (fade_on) {
@@ -60,12 +70,12 @@ void vertex() {
 		// Each tree drops out at its own distance, so the edge of the drawn
 		// woods is ragged, not a circle round the camera.
 		float jitter = (fract(sin(dot(floor(origin.xz), vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * 0.3 * tree_fade.z;
-		fade = (1.0 - smoothstep(tree_fade.z * 0.55, tree_fade.z * 0.97, distance(origin.xz, tree_fade.xy) + jitter))
+		fade = (1.0 - smoothstep(tree_fade.z * 0.7, tree_fade.z * 0.97, distance(origin.xz, tree_fade.xy) + jitter))
 			* (1.0 - smoothstep(1200.0, 1700.0, tree_fade.w));
 	}
 	VERTEX *= mix(0.4, 1.0, fade) * step(0.001, fade);
 	leaf_pos = VERTEX;
-	species = floor(INSTANCE_CUSTOM.a * 8.0);
+	species = floor(custom.a * 8.0);
 	tree_rand = fract(sin(dot(origin.xz, vec2(12.9898, 78.233))) * 43758.5453);
 	far_card = step(COLOR.a, 0.75);  // a far tree's few big cards (see _card)
 	float phase = TIME * 1.1 + origin.x * 0.31 + origin.z * 0.17;
@@ -78,7 +88,7 @@ void vertex() {
 	// so the whole crown shades like one soft volume.
 	crown_normal = normalize((MODELVIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	// Each leaf cluster drifts a little toward yellow or blue-green.
-	tint = lin(INSTANCE_CUSTOM.rgb) * mix(vec3(0.9, 0.98, 1.08), vec3(1.1, 1.04, 0.86), COLOR.b);
+	tint = lin(custom.rgb) * mix(vec3(0.9, 0.98, 1.08), vec3(1.1, 1.04, 0.86), COLOR.b);
 }
 void fragment() {
 	if (UV.x < -0.5) {
@@ -150,7 +160,9 @@ void fragment() {
 	// own flat face (from screen derivatives), not the crown normal.
 	vec3 face = normalize(cross(dFdx(VERTEX), dFdy(VERTEX)));
 	alpha *= smoothstep(0.1, 0.35, abs(dot(face, normalize(-VERTEX))));
-	ALPHA = alpha * mix(0.3, 1.0, fade);
+	// Fading trees shrink rather than thin out: thinned leaves fall under
+	// the cut-off in scattered pixels and a tree row breaks into specks.
+	ALPHA = alpha * mix(0.85, 1.0, fade);
 	ALPHA_SCISSOR_THRESHOLD = 0.45;
 	// With MSAA, leaf edges become partial coverage instead of popping on
 	// and off as the camera moves.

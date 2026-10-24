@@ -16,8 +16,17 @@ varying vec4 v_custom;
 varying float v_side;
 varying float v_y;
 vec3 lin(vec3 c) { return pow(c, vec3(2.2)); }
+// The Compatibility renderer (the browser) hands INSTANCE_CUSTOM's rgb
+// over as if it were an sRGB colour, already turned linear (alpha comes
+// through as is); undo that so custom data reads as on the desktop.
+vec4 custom_data(vec4 c) {
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	c.rgb = mix(c.rgb * 12.92, 1.055 * pow(max(c.rgb, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c.rgb));
+#endif
+	return c;
+}
 void vertex() {
-	v_custom = INSTANCE_CUSTOM;
+	v_custom = custom_data(INSTANCE_CUSTOM);
 	v_side = VERTEX.x;
 	v_y = VERTEX.y;
 }
