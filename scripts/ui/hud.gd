@@ -83,6 +83,11 @@ var _zone_mode_cards := []  # ZoneTool.Mode -> Button
 var _brush_size: HBoxContainer   # the brush size meter (brush tool only)
 var _brush_slider: HSlider
 var _brush_label: Label
+var _smart_opts: VBoxContainer  # smart paint: zones to use and how much to plan
+var _smart_kind_chips := {}     # ZoneMap.Zone -> Button
+var _smart_scope_chips := []    # SmartZoning.Scope -> Button
+var _smart_panel := PanelContainer.new()  # a smart plan waiting for approval
+var _smart_text := UiStyle.label("", 14)
 var _power_card: Button
 var _service_cards := {} # Services.Kind -> Button
 var _service_cat := {}   # Services.Kind -> its bottom bar category
@@ -216,6 +221,7 @@ func _ready() -> void:
 	road_tool.options_changed.connect(_sync)
 	zone_tool.zone_changed.connect(func(_z): _sync())
 	zone_tool.mode_changed.connect(func(_m): _sync())
+	_build_smart_panel()
 	road_tool.hint_changed.connect(_show_hint)
 	zone_tool.hint_changed.connect(_show_hint)
 	service_tool.kind_changed.connect(func(_k): _sync())
@@ -1078,6 +1084,46 @@ func _build_hint() -> void:
 	_hint_panel.visible = false
 
 
+## A smart paint plan waiting: what it will do, Paint it or Cancel.
+func _build_smart_panel() -> void:
+	_smart_panel.add_theme_stylebox_override("panel", UiStyle.panel(12))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	_smart_panel.add_child(row)
+	_smart_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_smart_text.custom_minimum_size = Vector2(420, 0)
+	row.add_child(_smart_text)
+	var go := Button.new()
+	go.text = "Paint it  (Enter)"
+	go.focus_mode = Control.FOCUS_NONE
+	go.pressed.connect(func(): zone_tool.approve_smart())
+	row.add_child(go)
+	var no := Button.new()
+	no.text = "Cancel"
+	no.focus_mode = Control.FOCUS_NONE
+	no.pressed.connect(func(): zone_tool.cancel_smart())
+	row.add_child(no)
+	_root.add_child(_smart_panel)
+	_smart_panel.visible = false
+	zone_tool.smart_plan_changed.connect(func(text: String):
+		_smart_text.text = text
+		_smart_panel.visible = text != ""
+		_smart_panel.reset_size()
+		_pin(_smart_panel, Control.PRESET_CENTER_TOP, Vector2(0, 96)))
+
+
+## A small text toggle for a tool's options.
+func _chip(title: String, tip: String) -> Button:
+	var c := Button.new()
+	c.toggle_mode = true
+	c.focus_mode = Control.FOCUS_NONE
+	c.text = title
+	c.tooltip_text = tip
+	c.add_theme_font_size_override("font_size", 11)
+	c.custom_minimum_size = Vector2(0, 22)
+	return c
+
+
 func _show_hint(text: String) -> void:
 	_hint.text = text
 	_hint_panel.visible = text != ""
@@ -1413,7 +1459,7 @@ func _zones_drawer() -> PanelContainer:
 	for entry in [
 		[ZoneTool.Mode.STREET, "zone_street", "Street", "click a block face, or drag along a street for a stretch"],
 		[ZoneTool.Mode.BRUSH, "zone_brush", "Brush", "a round brush for odd spots, sized with the meter or [ ]"],
-		[ZoneTool.Mode.SMART, "zone_smart", "Smart", "zones each street side the way you usually zone that kind of street, matched to what's around it"],
+		[ZoneTool.Mode.SMART, "zone_smart", "Smart", "plans a street or a neighborhood the way a town planner would, with the zones you tick, and paints it when you approve"],
 	]:
 		var m: int = entry[0]
 		var b := _card(entry[1], entry[2], entry[3])
@@ -1442,6 +1488,32 @@ func _zones_drawer() -> PanelContainer:
 	size_col.add_child(_brush_label)
 	_brush_size.add_child(size_col)
 	how.add_child(_brush_size)
+	# Smart paint's options in the same spot: the zones it may use, then how
+	# much to plan (one street, a neighborhood, or a wider one).
+	_smart_opts = VBoxContainer.new()
+	_smart_opts.alignment = BoxContainer.ALIGNMENT_CENTER
+	_smart_opts.add_theme_constant_override("separation", 3)
+	var kinds_row := HBoxContainer.new()
+	kinds_row.add_theme_constant_override("separation", 2)
+	for entry in [[ZoneMap.Zone.RESIDENTIAL, "Homes"], [ZoneMap.Zone.COMMERCIAL, "Shops"], [ZoneMap.Zone.INDUSTRIAL, "Industry"]]:
+		var z: int = entry[0]
+		var c := _chip(entry[1], "Let smart paint use %s" % entry[1].to_lower())
+		c.pressed.connect(func(): zone_tool.toggle_smart_kind(z))
+		kinds_row.add_child(c)
+		_smart_kind_chips[z] = c
+	_smart_opts.add_child(kinds_row)
+	var scope_row := HBoxContainer.new()
+	scope_row.add_theme_constant_override("separation", 2)
+	var scope_tips := ["Plan one street, straight on through its crossings",
+		"Plan the neighborhood: streets about two blocks around, up to the busy roads",
+		"Plan the wider neighborhood: about a quarter mile around (a neighborhood unit), up to the busy roads"]
+	for i in SmartZoning.SCOPE_NAMES.size():
+		var c := _chip(SmartZoning.SCOPE_NAMES[i], scope_tips[i])
+		c.pressed.connect(func(): zone_tool.set_smart_scope(i))
+		scope_row.add_child(c)
+		_smart_scope_chips.append(c)
+	_smart_opts.add_child(scope_row)
+	how.add_child(_smart_opts)
 	# The future land use map: big soft areas, not zoning (LandPlan).
 	row.add_child(VSeparator.new())
 	var plan := _section(row, "Land use plan  ·  outline big areas")
@@ -1978,6 +2050,11 @@ func _sync() -> void:
 	for m in _zone_mode_cards.size():
 		_zone_mode_cards[m].set_pressed_no_signal(zone_tool.zone != ZoneTool.OFF and m == zone_tool.mode)
 	_brush_size.visible = zone_tool.brush
+	_smart_opts.visible = zone_tool.zone != ZoneTool.OFF and zone_tool.mode == ZoneTool.Mode.SMART
+	for z in _smart_kind_chips:
+		_smart_kind_chips[z].set_pressed_no_signal(zone_tool.smart_kinds.get(z, false))
+	for i in _smart_scope_chips.size():
+		_smart_scope_chips[i].set_pressed_no_signal(i == zone_tool.smart_scope)
 	_brush_slider.set_value_no_signal(zone_tool.radius)
 	_brush_label.text = "%d ft across" % roundi(zone_tool.radius * 2.0 * 3.28084)
 	for k in _plan_cards:

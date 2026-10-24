@@ -147,16 +147,37 @@ func _init() -> void:
 	var runs := zt._runs()
 	_check(runs[0][3] - runs[0][2] >= ZoneTool.MIN_RUN - 0.01 and runs[1][2] == 0.0,
 		"a short drag zones a lot's width, and one near the corner runs to it (%s)" % str(runs))
-	# Smart paint: how you zone that street type, then what's across the street.
-	var bit_type: int = bit.network.segments[bit_seg].type
-	_check(zt.guess(bit_seg, -1) == ZoneMap.Zone.COMMERCIAL,
-		"smart paint matches the shops across the street (got %d)" % zt.guess(bit_seg, -1))
-	zt._guesses.clear()
-	bit.apply({"type": "zone_frontage", "seg": bit_seg, "side": 1, "zone": ZoneMap.Zone.NONE})
-	_check(zt.guess(bit_seg, -1) == ZoneMap.Zone.RESIDENTIAL, "smart paint puts homes on a new local street")
-	zt._guesses.clear()
-	zt.habits = {bit_type: {ZoneMap.Zone.INDUSTRIAL: 3, ZoneMap.Zone.RESIDENTIAL: 1}}
-	_check(zt.guess(bit_seg, -1) == ZoneMap.Zone.INDUSTRIAL, "smart paint zones a street the way you usually zone its kind")
+	# Smart paint plans a neighborhood the way a planner would: shops on the
+	# avenue and the main crossing's corners, homes on the local streets, only
+	# the zones ticked, and never over zoning already there.
+	var hood := CitySim.new()
+	hood.simulate_traffic = false
+	hood.economy.money = 1.0e8
+	hood.apply({"type": "build_grid", "a": [0, 0], "b": [300, 0], "c": [300, 300], "block": 100.0})
+	hood.apply({"type": "build_road", "start": [-40, 310], "ctrl": [150, 310], "end": [340, 310], "road": RoadStyle.Type.AVENUE})
+	var mid_seg: int = hood.network.find_segment_near(Vector3(150, 0, 100), 20.0, 1.0).seg
+	hood.apply({"type": "zone_frontage", "seg": mid_seg, "side": 1, "zone": ZoneMap.Zone.INDUSTRIAL, "single": true})
+	var both := {ZoneMap.Zone.RESIDENTIAL: true, ZoneMap.Zone.COMMERCIAL: true}
+	var hp: Dictionary = SmartZoning.plan(hood, mid_seg, SmartZoning.Scope.EXTENDED, both)
+	var by := {}
+	for p in hp.parts:
+		by[p.zone] = by.get(p.zone, 0) + 1
+	_check(by.get(ZoneMap.Zone.RESIDENTIAL, 0) > by.get(ZoneMap.Zone.COMMERCIAL, 0) and by.get(ZoneMap.Zone.COMMERCIAL, 0) >= 2
+		and not by.has(ZoneMap.Zone.INDUSTRIAL), "smart paint: mostly homes, some shops, no unticked industry (%s)" % str(by))
+	_check(hp.parts.all(func(p): return not (p.seg == mid_seg and p.side == 1)), "smart paint never paints over zoning")
+	var on_avenue: Array = hp.parts.filter(func(p): return hood.network.segments[p.seg].type == RoadStyle.Type.AVENUE)
+	_check(not on_avenue.is_empty() and on_avenue.all(func(p): return p.zone == ZoneMap.Zone.COMMERCIAL),
+		"smart paint puts shops on the avenue (%d sides)" % on_avenue.size())
+	_check(hp.parts.any(func(p): return p.zone == ZoneMap.Zone.COMMERCIAL and hood.network.segments[p.seg].type != RoadStyle.Type.AVENUE),
+		"smart paint puts corner shops at the main crossing")
+	var homes_only: Dictionary = SmartZoning.plan(hood, mid_seg, SmartZoning.Scope.SMALL, {ZoneMap.Zone.RESIDENTIAL: true})
+	_check(not homes_only.parts.is_empty() and homes_only.parts.all(func(p): return p.zone == ZoneMap.Zone.RESIDENTIAL),
+		"smart paint uses only the zones ticked")
+	var one_street: Dictionary = SmartZoning.plan(hood, mid_seg, SmartZoning.Scope.STREET, both)
+	var street_segs := {}
+	for p in one_street.parts:
+		street_segs[p.seg] = true
+	_check(street_segs.size() == 3, "smart paint's Street runs straight on through the crossings (%d pieces)" % street_segs.size())
 	zt.free()
 	# Click order: zoning streets one by one with homes going up between
 	# clicks cuts the same plain lots as zoning them all at once (a built
