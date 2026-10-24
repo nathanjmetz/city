@@ -254,6 +254,27 @@ func _run() -> void:
 	await _until(func(): return late.my_city != "", 20.0)
 	_check(late.my_city != "" and late_told.is_empty(), "a join that didn't get through tries again by itself (%s)" % str(late_told))
 	fourth.stop()
+	# A build on a new map: the towns start fresh, everyone keeps their PIN.
+	var saved = JSON.parse_string(FileAccess.get_file_as_string(data))
+	saved["map"] = "some old map"
+	var f := FileAccess.open(data, FileAccess.WRITE)
+	f.store_string(JSON.stringify(saved))
+	f.close()
+	var fifth := RegionServer.new()
+	root.add_child(fifth)
+	_check(fifth.start(PORT + 2, "", data) == OK, "the region starts on a new map")
+	_check(fifth.region.cities.is_empty(), "a new map starts the region fresh")
+	var kid4 := _client()
+	kid4.join("ws://127.0.0.1:%d" % (PORT + 2), "", "p-kid", "", "", false, "", kid_pin)
+	await _until(func(): return kid4.my_city != "")
+	_check(kid4.my_city != "" and fifth.region.cities.size() == 1, "players get in with the same PIN and found a fresh town")
+	# Removing a player takes their town off the map, so no ghost label stays.
+	var kid4_told := []
+	kid4.failed.connect(func(r): kid4_told.append(r))
+	fifth.remove_pin(fifth.region.cities[kid4.my_city].player)
+	await _until(func(): return not kid4_told.is_empty())
+	_check(fifth.region.cities.is_empty() and not kid4_told.is_empty(), "removing a player takes their town off the map and lets them know")
+	fifth.stop()
 	DirAccess.remove_absolute(data)
 
 	print("SOME TESTS FAILED" if _failed else "ALL TESTS PASSED")
