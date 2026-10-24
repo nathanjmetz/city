@@ -159,6 +159,7 @@ func _init() -> void:
 	# Farms: outline farmland, place a farmhouse, watch it buy fields.
 	var fm := CitySim.new()
 	fm.economy.money = 10_000_000
+	_no_county_roads(fm, Vector3.ZERO)
 	fm.apply({"type": "build_road", "start": [-600, 0], "ctrl": [0, 0], "end": [600, 0]})
 	_check(fm.apply({"type": "paint_farmland", "points": [[-500, 20], [500, 20], [500, 600], [-500, 600]]}),
 		"farmland outlined with nodes")
@@ -202,6 +203,7 @@ func _init() -> void:
 	# A farm on a diagonal road lays its fields out square to that road.
 	var diag := CitySim.new()
 	diag.economy.money = 10_000_000
+	_no_county_roads(diag, Vector3.ZERO)
 	diag.apply({"type": "build_road", "start": [-400, -400], "ctrl": [0, 0], "end": [400, 400]})
 	diag.apply({"type": "paint_farmland", "points": [[-300, -200], [200, 300], [400, 100], [-100, -400]]})
 	var dir := Vector3(-1, 0, 1).normalized()
@@ -458,6 +460,7 @@ func _town_culture() -> void:
 			if v > best_v:
 				best_v = v
 				best = Vector3(x, 0, z)
+	_no_county_roads(sim, best)
 	sim.apply({"type": "build_road", "start": [best.x - 600, best.z - 260], "ctrl": [best.x, best.z - 260], "end": [best.x + 600, best.z - 260]})
 	sim.apply({"type": "place_industry", "kind": "ore", "pos": [best.x, best.z - 180], "dir": [0, -1]})
 	var id: int = sim.industry.sites.keys()[0]
@@ -591,6 +594,18 @@ func _real_layouts() -> void:
 			var back := Industry.new()
 			back.from_dict(JSON.parse_string(JSON.stringify(ind.to_dict())))
 			_check(back.sites[id].regrow.size() == ind.sites[id].regrow.size(), "resting units are saved")
+
+
+## No county roads cross this test's ground (as if the player bulldozed the
+## miles near p): fields and pads keep off painted county roads.
+func _no_county_roads(sim: CitySim, p: Vector3) -> void:
+	var sec := CountyGrid.SECTION
+	var cx := floori((p.x + sim.terrain_offset.x) / sec)
+	var cz := floori((p.z + sim.terrain_offset.y) / sec)
+	for k in range(-3, 5):
+		for seg in range(-3, 4):
+			sim.county_removed["ns:%d:%d" % [cx + k, cz + seg]] = true
+			sim.county_removed["ew:%d:%d" % [cz + k, cx + seg]] = true
 
 
 func _check(ok: bool, what: String) -> void:

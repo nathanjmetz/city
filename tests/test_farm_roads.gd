@@ -12,6 +12,7 @@ func _init() -> void:
 	_survey()
 	_road_to_next_block()
 	_asks_before_crossing()
+	_county_road_crossing()
 	_done()
 
 
@@ -160,6 +161,44 @@ func _asks_before_crossing() -> void:
 	sim.farms.price = 1.2
 	_check(sim._farm_road(id) and sim.network.segments.size() > segs and Vector2i(0, 1) in f.blocks,
 		"approved, it builds the road and opens the block behind")
+
+
+## A county road the town hasn't built runs through farm country: fields
+## stop at its right of way, never across it (Brawn, 2026-10-24).
+func _county_road_crossing() -> void:
+	var sim := CitySim.new()
+	sim.simulate_traffic = false
+	sim.economy.money = 20_000_000
+	var id := _farm(sim)
+	if id == -1:
+		_check(false, "a farm is placed")
+		return
+	var f: Dictionary = sim.farms.farms[id]
+	var c := Vector2i(3, 5)
+	var m := Farms.cell_center(f, c)
+	# Shift the map so a county road's mile runs right through cell c.
+	var sec := CountyGrid.SECTION
+	var key := ""
+	for k in range(-20, 20):
+		for seg in range(-20, 20):
+			if key == "" and CountyGrid.has_mile(k, seg):
+				sim.terrain_offset = Vector2(k * sec - m.x, (seg + 0.5) * sec - m.z)
+				key = "ns:%d:%d" % [k, seg]
+	for x in range(0, 7):
+		for y in range(2, 9):
+			if not Vector2i(x, y) in f.cells:
+				f.cells.append(Vector2i(x, y))
+	sim._usable_cache.clear()
+	_check(not sim.field_usable(m, Farms.cell_corners(f, c)), "a farmer can't plant across a county road")
+	_check(sim.field_usable(m + Vector3(300, 0, 0), PackedVector2Array()) or not sim._on_painted_road(m + Vector3(300, 0, 0), 40.0),
+		"but can a field's width away from it")
+	sim._road_wins()
+	_check(not c in f.cells or (sim.farms.trim.has(id) and sim.farms.trim[id].has(c)),
+		"a field already across it is cut back to the road's edge")
+	_check(not sim.farms.trim.get(id, {}).has(Vector2i(0, 5)) or absf(Farms.cell_center(f, Vector2i(0, 5)).x - m.x) < 70.0,
+		"fields away from the road are left whole")
+	sim.county_removed[key] = true
+	_check(not sim._on_painted_road(m, 30.0), "a bulldozed mile frees the ground again")
 
 
 func _check(ok: bool, what: String) -> void:

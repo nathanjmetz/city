@@ -161,6 +161,7 @@ func _init() -> void:
 	# lease farmland; once approved, the fields become panel rows and the
 	# farm earns rent instead of a crop.
 	var sol := CitySim.new()
+	_no_county_roads(sol, calm)
 	var sfid := sol.farms.add_farm(calm + Vector3(-1000, 0, 0), Vector3(0, 0, -1), "corn", [])
 	var sf: Dictionary = sol.farms.farms[sfid]
 	for fx in range(14, 37):
@@ -205,6 +206,18 @@ func _init() -> void:
 	_check(JSON.stringify(copy.power.to_dict()) == JSON.stringify(sim.power.to_dict()), "copies stay in sync")
 	print("power tests: %s" % ("PASS" if _fails == 0 else "%d FAILED" % _fails))
 	quit(1 if _fails > 0 else 0)
+
+
+## No county roads cross this test's ground (as if the player bulldozed the
+## miles near p): fields and pads keep off painted county roads.
+func _no_county_roads(sim: CitySim, p: Vector3) -> void:
+	var sec := CountyGrid.SECTION
+	var cx := floori((p.x + sim.terrain_offset.x) / sec)
+	var cz := floori((p.z + sim.terrain_offset.y) / sec)
+	for k in range(-3, 5):
+		for seg in range(-3, 4):
+			sim.county_removed["ns:%d:%d" % [cx + k, cz + seg]] = true
+			sim.county_removed["ew:%d:%d" % [cz + k, cx + seg]] = true
 
 
 func _check(ok: bool, what: String) -> void:
