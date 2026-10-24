@@ -12,13 +12,13 @@ extends Node
 
 signal log_line(text: String)
 
-const PROTOCOL := 4
+const PROTOCOL := 5
 ## The oldest version this server still lets in, and (sent in the hello)
 ## the oldest server a client can talk to. Desktop apps can trail the live
 ## build by one launch, so small gaps still play together: raise this only
 ## when an older game would really break. Unknown message types are ignored
 ## on both sides.
-const MIN_PROTOCOL := 4
+const MIN_PROTOCOL := 5
 ## How often the region is written to disk, in seconds (a server that's
 ## switched off loses at most this much).
 const SAVE_EVERY := 10.0

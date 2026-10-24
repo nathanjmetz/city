@@ -174,6 +174,11 @@ static func grid_label(ew: bool, n: int, rel: Vector2) -> String:
 func grid_name(key: String) -> String:
 	if not CountyGrid.valid_key(key):
 		return CountyGrid.road_name(key)
+	# A real Grant County road keeps its real name: the county numbers them
+	# from its own base lines, whichever town builds a courthouse.
+	var real := CountyGrid.real_name(key)
+	if real != "":
+		return real
 	var parts := key.split(":")
 	var ns := parts[0] == "ns"
 	var c := courthouse if courthouse != Vector2.INF else Vector2.ZERO

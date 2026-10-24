@@ -205,7 +205,7 @@ func refresh() -> void:
 
 
 ## Sector names for the town character breakdown.
-const SECTOR_NAMES := {"farm": "Farming", "mining": "Coal and oil", "timber": "Timber",
+const SECTOR_NAMES := {"farm": "Farming", "mining": "Gravel and gas", "timber": "Timber",
 	"manufacturing": "Manufacturing", "trade": "Shops and trade", "office": "Banks and offices",
 	"campus": "Colleges and hospitals", "transport": "Rail and power"}
 

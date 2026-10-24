@@ -2,34 +2,45 @@ extends SceneTree
 ## Headless tests for the real-world land: godot --headless -s tests/test_terrain.gd
 
 var _failed := 0
+## A line north from town across the water (the Mississinewa's lake arm).
+const RIVER_X := -1500.0
+const RIVER_FROM := -10000
+const RIVER_TO := -13000
 
 
 func _init() -> void:
 	var h := Terrain.height(0, 0)
-	_check(h > 100.0 and h < 250.0, "the town starts on real Indiana ground (%.1f m)" % h)
+	_check(h > 200.0 and h < 320.0, "the town starts on real Indiana ground (%.1f m)" % h)
 	_check(Terrain.buildable(0, 0, 20), "the town starts on dry, buildable land")
-	# The White River runs north of town.
+	# The town starts at Sweetser's crossroads, which is the region's 0, and
+	# Mississinewa Lake's upper arm lies about seven miles north of it.
 	var wet := false
-	for z in range(-400, -3000, -20):
-		wet = wet or Terrain.is_water(0, z)
-	_check(wet, "the White River is north of town")
-	# Relief: rolling, not flat and not mountains.
+	for z in range(RIVER_FROM, RIVER_TO, -20):
+		wet = wet or Terrain.is_water(RIVER_X, z)
+	_check(wet, "the Mississinewa is north of town")
+	var marion: Dictionary = Backdrop.cities()[0]
+	_check(marion.name == "Marion" and not Terrain.buildable(marion.centre.x, marion.centre.y),
+		"Marion, the backdrop city, can't be built on")
+	_check(Backdrop.sites()[0].name == "Sweetser" and Backdrop.sites()[0].centre.length() < 800.0,
+		"the first start site is Sweetser, at the region's 0")
+	# Relief: Grant County's till plain, gently rolling, not dead flat and
+	# not hills.
 	var lo := INF
 	var hi := -INF
 	for k in 400:
 		var y := Terrain.height(-5000.0 + (k % 20) * 500.0, -5000.0 + (k / 20) * 500.0)
 		lo = minf(lo, y)
 		hi = maxf(hi, y)
-	_check(hi - lo > 25.0 and hi - lo < 150.0, "rolling land: %d m from lowest to highest" % (hi - lo))
+	_check(hi - lo > 10.0 and hi - lo < 150.0, "rolling land: %d m from lowest to highest" % (hi - lo))
 	# The map never ends: past the edge it mirrors, with no jump.
-	var e := Terrain.SIZE * 0.5
+	var e := Terrain.CENTRE.x + Terrain.SIZE * 0.5
 	_check(absf(Terrain.height(e - 1.0, 300) - Terrain.height(e + 1.0, 300)) < 1.0, "no seam at the map's edge")
 	_check(Terrain.height(e + 5000.0, 0) > 0.0, "land goes on past the real area")
 	# Bridges: the base level stands clear above water.
 	var bridged := true
-	for z in range(-400, -3000, -20):
-		if Terrain.is_water(0, z) and Terrain.water(0, z) > 0.9:
-			bridged = bridged and Terrain.base(0, z) > Terrain.water_level(0, z) + 4.0
+	for z in range(RIVER_FROM, RIVER_TO, -20):
+		if Terrain.is_water(RIVER_X, z) and Terrain.water(RIVER_X, z) > 0.9:
+			bridged = bridged and Terrain.base(RIVER_X, z) > Terrain.water_level(RIVER_X, z) + 4.0
 	_check(bridged, "roads over the river stand on bridge decks")
 	# Resources come from the real land and stay 0 to 1.
 	var seen := [0.0, 0.0, 0.0, 0.0]
@@ -42,9 +53,9 @@ func _init() -> void:
 	for kind in 4:
 		_check(seen[kind] > 0.6, "%s turns up on the map" % Resources.NAMES[kind])
 	var river := Vector3.ZERO
-	for z in range(-400, -3000, -20):
-		if Terrain.is_water(0, z):
-			river = Vector3(0, 0, z)
+	for z in range(RIVER_FROM, RIVER_TO, -20):
+		if Terrain.is_water(RIVER_X, z):
+			river = Vector3(RIVER_X, 0, z)
 			break
 	_check(Resources.fertility(river) == 0.0, "no farming in the river")
 	# The sim keeps building off the water.
@@ -64,7 +75,7 @@ func _init() -> void:
 	# Chunks build with water where the river is.
 	var any_water := false
 	for z in range(-6, 0):
-		var meshes := TerrainView.build_chunk(Vector2(-256, z * 512.0), 512.0, 32.0)
+		var meshes := TerrainView.build_chunk(Vector2(RIVER_X - 256.0, RIVER_TO + 512.0 + z * 512.0 + 3072.0), 512.0, 32.0)
 		any_water = any_water or meshes[1] != null
 	_check(any_water, "the river gets a water surface")
 	# Each vertex knows where it sits on the next coarser level, so detail can

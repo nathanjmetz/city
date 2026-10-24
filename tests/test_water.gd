@@ -159,7 +159,7 @@ func _town() -> CitySim:
 		for z in [20, 180, 220, 380]:
 			sim.apply({"type": "paint_zone", "center": [x, z], "radius": 25, "zone": ZoneMap.Zone.RESIDENTIAL})
 		sim.apply({"type": "paint_zone", "center": [x, -20], "radius": 25, "zone": ZoneMap.Zone.INDUSTRIAL})
-	var feed := Services.site_near(sim.network, Services.Kind.SUBSTATION, Vector3(-200, 0, 205))
+	var feed := Services.site_near(sim.network, Services.Kind.SUBSTATION, Vector3(150, 0, 205))
 	sim.apply({"type": "place_service", "kind": Services.Kind.SUBSTATION, "pos": [feed[0].x, feed[0].z], "dir": [feed[1].x, feed[1].z]})
 	var site := Services.site_near(sim.network, Services.Kind.WATER_UTILITY, Vector3(300, 0, -40))
 	sim.apply({"type": "place_service", "kind": Services.Kind.WATER_UTILITY, "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})

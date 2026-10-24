@@ -7,7 +7,7 @@ extends RefCounted
 ## power from what the land offers:
 ##   solar farm on open ground, wind farm on windy ridges and bluffs, a gas
 ##   plant near oil (the field's own gas), a
-##   run-of-river dam on the White River, or an old coal plant bought cheap.
+##   run-of-river dam on the Mississinewa, or an old coal plant bought cheap.
 ## How far ahead the leader plans comes from their education, which comes
 ## from the town's schools: a well-educated leader builds the plant that is
 ## cheapest over 20+ years (clean), a poorly educated one the one cheapest to
@@ -70,7 +70,7 @@ var tax_rate := 1.5
 ## land is read there.
 var offset := Vector2.ZERO
 ## Override for the river's flow at a point (tests); by default the real
-## White River and its water from Terrain.
+## Mississinewa and its water from Terrain.
 var river := Callable()
 ## Last decide step's sales, per company id: {"town": homes, "export": homes,
 ## "profit": $ a year}. Shown in the panel; worked out again each step.
@@ -95,20 +95,26 @@ func on_hold(id: int) -> bool:
 
 # --- Where power comes from ---------------------------------------------------
 
-## How windy a spot is, 0 to 1: open ridges and bluffs above the land
-## around them (the real terrain), with a little smooth variation, the
-## same for every player. Valley floors are calm.
+## How windy a spot is, 0 to 1, from the real land: wind runs strongest
+## over wide open fields and on rises above the land around them, and is
+## slowed by woods and valleys. Real reference: NREL wind maps of Indiana,
+## where the wind farms stand on flat open cropland (Benton, Tipton
+## counties) because crops have a low surface roughness and woods a high
+## one. A little smooth variation, the same for every player.
 func wind_at(p: Vector3) -> float:
 	var x := p.x + offset.x
 	var z := p.z + offset.y
 	var h := Terrain.height(x, z)
 	var around := 0.0
+	var woods := Terrain.trees(x, z)
 	for k in 8:
 		var a := TAU * k / 8.0
 		around += Terrain.height(x + cos(a) * 500.0, z + sin(a) * 500.0)
-	var exposure := smoothstep(-2.0, 14.0, h - around / 8.0)
+		woods += Terrain.trees(x + cos(a) * 400.0, z + sin(a) * 400.0)
+	var exposure := smoothstep(-6.0, 10.0, h - around / 8.0)
+	var open := 1.0 - smoothstep(0.05, 0.4, woods / 9.0)
 	var n := Resources.value_noise(Vector2(x, z) / 900.0, 53)
-	return clampf(0.75 * exposure + 0.35 * n, 0.0, 1.0)
+	return clampf(0.45 * open + 0.4 * exposure + 0.35 * n - 0.15, 0.0, 1.0)
 
 
 ## The river at a point: 0 on dry land, 1 in the channel.

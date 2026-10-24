@@ -174,7 +174,7 @@ static func sources(sim: Object) -> Dictionary:
 	for key in sim.buildings:
 		if sim.lots.has(key):
 			var poly: PackedVector2Array = sim.lots[key].corners
-			out["b%s %s" % [key, poly[0].snapped(Vector2.ONE * 0.1)]] = _poly_cells.bind(poly)
+			out["b%s %s" % [key, poly[0].snapped(Vector2.ONE * 0.1)]] = _poly_cells.bind(poly, true)
 	for id in sim.services.buildings:
 		out["s%d" % id] = _poly_cells.bind(sim.services.footprint(id))
 	# The water utility's yard (wells, tower, plants) as it grows.
@@ -268,7 +268,9 @@ static func sources(sim: Object) -> Dictionary:
 	return out
 
 
-static func _poly_cells(poly: PackedVector2Array) -> Array:
+## Cells under a footprint: those whose middle it covers, or with `edge`,
+## every cell it reaches into (a built lot is cleared right to its lines).
+static func _poly_cells(poly: PackedVector2Array, edge := false) -> Array:
 	var out := []
 	if poly.size() < 3:
 		return out
@@ -279,9 +281,15 @@ static func _poly_cells(poly: PackedVector2Array) -> Array:
 		hi = hi.max(q)
 	for x in range(floori(lo.x / CELL), floori(hi.x / CELL) + 1):
 		for z in range(floori(lo.y / CELL), floori(hi.y / CELL) + 1):
-			if Geometry2D.is_point_in_polygon(Vector2(x + 0.5, z + 0.5) * CELL, poly):
-				out.append(Vector2i(x, z))
+			for k in (_CELL_PTS if edge else _CELL_MID):
+				if Geometry2D.is_point_in_polygon((Vector2(x, z) + k) * CELL, poly):
+					out.append(Vector2i(x, z))
+					break
 	return out
+
+
+const _CELL_MID := [Vector2(0.5, 0.5)]
+const _CELL_PTS := [Vector2(0.5, 0.5), Vector2(0.02, 0.02), Vector2(0.98, 0.02), Vector2(0.98, 0.98), Vector2(0.02, 0.98)]
 
 
 static func _line_cells(pts: PackedVector3Array, reach: float) -> Array:

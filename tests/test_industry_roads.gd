@@ -18,19 +18,31 @@ func _init() -> void:
 
 
 func _best(res: int) -> Vector3:
-	var best := Vector3.ZERO
-	var best_v := 0.0
-	for x in range(-3000, 3001, 150):
-		for z in range(-3000, 3001, 150):
-			var v := Resources.at(res, Vector3(x, 0, z))
-			if v > best_v:
-				best_v = v
-				best = Vector3(x, 0, z)
-	return best
+	return _spots(res, 3000)[0]
 
 
-func _company(sim: CitySim, kind: String) -> int:
-	var best := _best(Industry.KINDS[kind].resource)
+## The richest ground near town, best first, at least 2 km apart, clear of
+## Marion: Grant County's woods and pools are small and scattered, so a test
+## tries a few.
+func _spots(res: int, reach := 6000) -> Array:
+	var all := []
+	for x in range(-reach, reach + 1, 150):
+		for z in range(-reach, reach + 1, 150):
+			if not Backdrop.inside(Vector2(x, z), 1500.0):
+				all.append([Resources.at(res, Vector3(x, 0, z)), Vector3(x, 0, z)])
+	all.sort_custom(func(a, b): return a[0] > b[0])
+	var out := []
+	for e in all:
+		if out.size() >= 8:
+			break
+		if out.all(func(q): return q.distance_to(e[1]) > 2000.0):
+			out.append(e[1])
+	return out
+
+
+func _company(sim: CitySim, kind: String, best := Vector3.INF) -> int:
+	if best == Vector3.INF:
+		best = _best(Industry.KINDS[kind].resource)
 	sim.apply({"type": "build_road", "start": [best.x - 1800, best.z], "ctrl": [best.x, best.z],
 		"end": [best.x + 1800, best.z]})
 	for dx in [0, 200, -200, 400, -400]:
@@ -65,25 +77,44 @@ func _work_out(sim: CitySim, id: int) -> void:
 
 
 func _lease_road(kind: String) -> void:
-	var sim := CitySim.new()
-	sim.simulate_traffic = false
-	sim.economy.money = 50_000_000
-	var id := _company(sim, kind)
+	# The first rich spot whose company works its lease out and pays.
+	var sim: CitySim
+	var id := -1
+	var ind: Industry
+	var s: Dictionary
+	var fresh_ok := true
+	var wanted := false
+	var built := false
+	var segs := 0
+	var money := 0
+	for spot in _spots(Industry.KINDS[kind].resource):
+		sim = CitySim.new()
+		sim.simulate_traffic = false
+		sim.economy.money = 50_000_000
+		id = _company(sim, kind, spot)
+		if id == -1:
+			continue
+		ind = sim.industry
+		ind.price = 4.0
+		ind.day = 1.0
+		s = ind.sites[id]
+		s.pads.append(Vector2i(0, 2))
+		fresh_ok = fresh_ok and not ind.wants_road(id, sim.field_usable)
+		_work_out(sim, id)
+		wanted = ind.wants_road(id, sim.field_usable)
+		if not wanted:
+			continue
+		segs = sim.network.segments.size()
+		money = sim.economy.money
+		built = sim._industry_road(id)
+		if built:
+			break
 	_check(id != -1, "%s: a company is placed" % kind)
 	if id == -1:
 		return
-	var ind := sim.industry
-	ind.price = 4.0
-	ind.day = 1.0
-	var s: Dictionary = ind.sites[id]
-	s.pads.append(Vector2i(0, 2))
-	_check(not ind.wants_road(id, sim.field_usable), "%s: a new company doesn't want a road" % kind)
-	_work_out(sim, id)
-	_check(ind.wants_road(id, sim.field_usable),
+	_check(fresh_ok, "%s: a new company doesn't want a road" % kind)
+	_check(wanted,
 		"%s: worked out and paying, it wants new ground (%d pads, $%d a year)" % [kind, s.pads.size(), ind.yearly_profit(id)])
-	var segs := sim.network.segments.size()
-	var money := sim.economy.money
-	var built := sim._industry_road(id)
 	_check(built, "%s: it builds a lease road: %s" % [kind, s.get("why", "")])
 	if not built:
 		print("  next tract: %s, wait %s" % [str(ind.next_lease(id, sim.field_usable)), str(s.get("road_wait", 0))])
@@ -170,11 +201,14 @@ func _field_drilled_out() -> void:
 	var joined := true
 	for c in s.pads:
 		var near: bool = maxi(absi(c.x), absi(c.y)) <= Balance.OIL_OFFSET_CELLS
-		for o in s.pads:
+		# An offset to another well, or the first well on a new tract it
+		# leased with a road.
+		near = near or c in s.get("leases", [])
+		for o in s.pads + s.get("leases", []):
 			if o != c and maxi(absi(o.x - c.x), absi(o.y - c.y)) <= Balance.OIL_OFFSET_CELLS:
 				near = true
 		joined = joined and near
-	_check(joined, "every well is an offset to another, none a mile off (%s)" % str(s.pads))
+	_check(joined, "every well is an offset to another, none a mile off (%s, leases %s)" % [str(s.pads), str(s.get("leases", []))])
 	var reached := true
 	for c in s.pads:
 		reached = reached and not sim.network.find_segment_near(Industry.pad_center(s, c), Industry.PAD * 0.9, 2.0).is_empty()

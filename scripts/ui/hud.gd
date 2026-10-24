@@ -2168,7 +2168,7 @@ func _sync() -> void:
 
 func _update_stats() -> void:
 	var s := sim.stats
-	var unemployed: float = 0.0 if s.workers == 0 else 100.0 * (s.workers - s.employed) / s.workers
+	var unemployed: float = 0.0 if s.workers == 0 else 100.0 * (s.workers - s.employed - int(s.get("commuting", 0))) / s.workers
 	_pop.text = _thousands(s.population)
 	_jobs.text = "%s  ·  %d%% unemployed" % [_thousands(s.jobs), roundi(unemployed)]
 	for z in _demand_bars:

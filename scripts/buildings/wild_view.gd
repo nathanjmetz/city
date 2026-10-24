@@ -131,6 +131,7 @@ func _draw_chunk(c: Vector2i, detail: bool) -> void:
 	var mowed := Terrain.any_mowed(Rect2(Vector2(c) * size, Vector2(size, size)))
 	var trees := []
 	var o := Terrain.view_origin
+	var in_town := Backdrop.overlaps(Rect2(Vector2(c) * size + Vector2(o.x, o.y), Vector2(size, size)))
 	for p in plants:
 		if mowed and Terrain.mow_weight(p.pos.x, p.pos.z) > 0.5:
 			continue
@@ -141,6 +142,10 @@ func _draw_chunk(c: Vector2i, detail: bool) -> void:
 		# ...nor on the state highways, in town or out (no lots are platted
 		# on them).
 		if Highways.clears(p.pos.x + o.x, p.pos.z + o.y, Highways.TREE_CLEAR):
+			continue
+		# ...nor inside Marion and the other backdrop towns, whose streets
+		# and buildings BackdropView draws.
+		if in_town and Backdrop.inside(Vector2(p.pos.x + o.x, p.pos.z + o.y)):
 			continue
 		trees.append([placement(p), p.species, p.tint])
 	_chunks[c].set_trees("wild", trees)

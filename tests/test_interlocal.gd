@@ -26,16 +26,24 @@ func _init() -> void:
 	for sim in [ann, bob]:
 		sim.require_utilities = false
 		sim.economy.money = 50_000_000
-		# A street off the county road, homes on one side and work on the other.
-		_check(sim.apply_now({"type": "build_road", "start": [0, 0], "ctrl": [0, 400], "end": [0, 800]}), "a street")
-		for z in range(20, 800, 10):
-			sim.apply_now({"type": "paint_zone", "center": [-25, z], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
-			sim.apply_now({"type": "paint_zone", "center": [25, z], "radius": 12, "zone": ZoneMap.Zone.INDUSTRIAL})
+		# A street off the county road, homes on one side and work on the
+		# other. Ann's runs south; Bob's east, clear of SR 13, which runs
+		# north through Swayzee.
+		var way := Vector2(0, 1) if sim == ann else Vector2(1, 0)
+		var side := Vector2(-way.y, way.x) * 25.0
+		_check(sim.apply_now({"type": "build_road", "start": [0, 0], "ctrl": [way.x * 400, way.y * 400],
+			"end": [way.x * 800, way.y * 800]}), "a street")
+		for k in range(20, 800, 10):
+			var at := way * k
+			sim.apply_now({"type": "paint_zone", "center": [at.x + side.x, at.y + side.y], "radius": 12, "zone": ZoneMap.Zone.RESIDENTIAL})
+			sim.apply_now({"type": "paint_zone", "center": [at.x - side.x, at.y - side.y], "radius": 12, "zone": ZoneMap.Zone.INDUSTRIAL})
 	# Ann's town has a landfill and a fire station; Bob's has neither.
 	var site := CivicHubs.site_near(ann.network, Vector3(60, 0, 760))
 	_check(ann.apply_now({"type": "place_hub", "kind": "landfill", "pos": [site[0].x, site[0].z],
 		"dir": [site[1].x, site[1].z]}), "Ann builds a landfill")
-	var fs := Services.site_near(ann.network, Services.Kind.FIRE, Vector3(-60, 0, 60))
+	# Her station stands out on the county road toward Swayzee (8 km off),
+	# so its 5 road miles reach Bob's homes.
+	var fs := Services.site_near(ann.network, Services.Kind.FIRE, Vector3(-1900, 0, 30))
 	_check(ann.apply_now({"type": "place_service", "kind": Services.Kind.FIRE, "pos": [fs[0].x, fs[0].z],
 		"dir": [fs[1].x, fs[1].z]}), "Ann builds a fire station")
 

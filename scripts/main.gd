@@ -43,6 +43,8 @@ func _ready() -> void:
 	add_child(sky)
 	var terrain := TerrainView.new()
 	add_child(terrain)
+	# Marion and the other towns nobody plays, standing finished.
+	add_child(BackdropView.new())
 	# Graded under the roads before anything is laid on the land, so lots,
 	# drives and yards drawn as the town loads sit on the graded ground (the
 	# camera comes later).

@@ -27,7 +27,7 @@ signal changed
 ## it is called.
 const SECTORS := {
 	"farm": {"us": 0.015, "name": "Farm town"},
-	"mining": {"us": 0.004, "name": "Coal and oil town"},
+	"mining": {"us": 0.004, "name": "Gravel and gas town"},
 	"timber": {"us": 0.005, "name": "Timber town"},
 	"manufacturing": {"us": 0.083, "name": "Mill town"},
 	"trade": {"us": 0.21, "name": "Market town"},
@@ -390,7 +390,7 @@ static func _area(poly: PackedVector2Array) -> float:
 	return a * 0.5
 
 
-## What the town is called, e.g. "Coal and oil town" ("" while too small).
+## What the town is called, e.g. "Gravel and gas town" ("" while too small).
 func title() -> String:
 	return SECTORS[identity].name if identity != "" else ""
 

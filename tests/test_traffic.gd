@@ -263,6 +263,9 @@ func _init() -> void:
 			var pose := e.traffic.car_pose(car)
 			if last.has(car.id) and absf(last[car.id].signed_angle_to(pose[1], Vector3.UP)) > deg_to_rad(25.0):
 				jumps += 1
+				if jumps == 1:
+					print("  first jump: car %d at %s, %.0f degrees, junction %s" % [car.id, pose[0],
+						rad_to_deg(last[car.id].signed_angle_to(pose[1], Vector3.UP)), str(car.j.node) if car.j != null else "-"])
 			now[car.id] = pose[1]
 		last = now
 	_check(jumps == 0, "no car turns more than 25 degrees in a tenth of a second (%d)" % jumps)
@@ -380,12 +383,17 @@ func _init() -> void:
 
 	# Click a vehicle: the panel says what it is, where from and to, and why.
 	var info := {}
-	for car in t.cars:
-		var at: Vector3 = t.vehicle_centre(car, false)
-		var sel := Inspect.pick(sim, at)
-		if sel.get("type", "") == "vehicle":
-			info = Inspect.describe(sim, sel)
+	for wait in 600:
+		# (The street may be quiet just now: wait for the next car.)
+		for car in t.cars:
+			var at: Vector3 = t.vehicle_centre(car, false)
+			var sel := Inspect.pick(sim, at)
+			if sel.get("type", "") == "vehicle":
+				info = Inspect.describe(sim, sel)
+				break
+		if not info.is_empty():
 			break
+		sim.tick()
 	var labels := []
 	for row in info.get("rows", []):
 		labels.append(row[0])

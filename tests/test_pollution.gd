@@ -107,8 +107,10 @@ func _init() -> void:
 
 	# The advisor names the source bothering the most homes, and where to look.
 	var most := ""
-	for ref in pol.hurts:
-		if most == "" or pol.hurts[ref].homes > pol.hurts[most].homes:
+	var refs := pol.hurts.keys()
+	refs.sort()  # ties go to the first, as the advisor reads them
+	for ref in refs:
+		if pol.sources.has(ref) and (most == "" or pol.hurts[ref].homes > pol.hurts[most].homes):
 			most = ref
 	var tip: Array = Advisor.tips(sim).filter(func(t): return t.id == "pollution")
 	_check(pol.hurts[most].homes < 3 or (not tip.is_empty() and tip[0].text.contains(pol.sources[most].name)

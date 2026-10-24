@@ -204,9 +204,10 @@ func set_fixed() -> void:
 static func sun_position(hour: float, months: float) -> Vector2:
 	var m := fposmod(months, 12.0)
 	var decl := deg_to_rad(23.44) * sin(TAU * (m * 30.44 - 80.0) / 365.0)
-	# Pike County is on Eastern time but west of its meridian, so the sun is
-	# highest at about 12:50, or 1:50 in summer on daylight saving time.
-	var noon := 13.8 if m > 2.4 and m < 10.2 else 12.8
+	# Grant County (85.7 W) is on Eastern time but west of its meridian
+	# (75 W), so the sun is highest at about 12:43, or 1:43 in summer on
+	# daylight saving time.
+	var noon := 13.7 if m > 2.4 and m < 10.2 else 12.7
 	var h := deg_to_rad((hour - noon) * 15.0)
 	var lat := deg_to_rad(Seasons.LATITUDE)
 	var elev := asin(sin(lat) * sin(decl) + cos(lat) * cos(decl) * cos(h))

@@ -5,14 +5,31 @@ var _failed := 0
 
 
 func _init() -> void:
-	# About three miles of line in four have a road.
+	# Grant County's real roads: on the map, the miles where the county has
+	# one (about half of them squared onto the game's exact mile grid), with
+	# their real names; past it, where the land mirrors, nearly every mile.
 	var have := 0
-	for line in range(-20, 20):
-		for seg in range(-20, 20):
+	var named := 0
+	for line in range(-6, 16):
+		for seg in range(-8, 14):
 			if CountyGrid.has_mile(line, seg):
 				have += 1
-	var share := have / 1600.0
-	_check(share > 0.9 and share < 0.99, "nearly every mile of section line has a county road (%.2f)" % share)
+				named += 1 if CountyGrid.real_name("ns:%d:%d" % [line, seg]) != "" else 0
+	var share := have / 484.0
+	_check(share > 0.35 and share < 0.9, "the real county roads are on the map (%.2f of the miles)" % share)
+	_check(named > have * 0.8, "with their real names (%d of %d)" % [named, have])
+	var streets := CitySim.new().streets
+	var real_key := ""
+	for k in CountyGrid._names:
+		real_key = k
+		break
+	_check(real_key != "" and streets.grid_name(real_key) == CountyGrid.real_name(real_key),
+		"a real county road keeps its real name (%s), courthouse or not" % CountyGrid.real_name(real_key))
+	have = 0
+	for line in range(40, 50):
+		for seg in range(40, 50):
+			have += 1 if CountyGrid.has_mile(line, seg) else 0
+	_check(have > 85, "past the map, nearly every mile has one (%d of 100)" % have)
 	_check(CountyGrid.mix(3, -7) == CountyGrid.mix(3, -7) and CountyGrid.mix(3, -7) != CountyGrid.mix(-7, 3),
 		"the road layout is the same on every computer")
 	_check(CountyGrid.mix(-123456, 98765) >= 0 and CountyGrid.mix(-123456, 98765) <= 0xffffffff,
@@ -73,6 +90,10 @@ func _test_join() -> void:
 				var q := cz + k * 60.0
 				level = level and Terrain.water(cx + 120, q) < 0.05 and Terrain.slope(cx + 120, q) < 0.06 \
 					and CountyGrid.clears(cx, q)
+			# and the field a farm road crosses to it, further down
+			for k in 11:
+				var f := Vector2(cx + 20.0 * k, cz + 300.0)
+				level = level and Terrain.water(f.x, f.y) < 0.05 and Terrain.slope(f.x, f.y) < 0.06
 			if level:
 				x = cx
 				z = cz
@@ -80,6 +101,8 @@ func _test_join() -> void:
 	_check(found, "found a county road to join")
 	if not found:
 		return
+	var real_names: Dictionary = CountyGrid._names
+	CountyGrid._names = {}
 	var sim := CitySim.new()
 	var money := sim.economy.money
 	var ok := sim.apply({"type": "build_road", "start": [x + 120, z], "ctrl": [x + 60, z], "end": [x, z],
@@ -121,7 +144,8 @@ func _test_join() -> void:
 	_check(HubRoads.reach(lone, far, Vector3(-1, 0, 0), 400.0) == Vector3.INF,
 		"a county road that meets no town road isn't a way into town")
 
-	# Founding the county seat: county roads are renamed from its courthouse.
+	# Founding the county seat: county roads without a real name (past the
+	# map; real ones are tested in _init) are renamed from its courthouse.
 	var key: String = sim.county_joined.keys()[0]
 	var before := sim.streets.grid_name(key)
 	_check(sim.streets.courthouse == Vector2.INF and _named(sim, before), "before a courthouse: %s" % before)
@@ -132,6 +156,7 @@ func _test_join() -> void:
 	sim.streets.seat(sim)
 	sim.parks.sites.erase(999)  # a stand-in courthouse, not a full park site
 	_check(_named_end(sim, " 00 EW"), "the road through the courthouse's own line is 00 EW")
+	CountyGrid._names = real_names
 	var saved := CitySim.new()
 	saved.from_dict(sim.to_dict())
 	_check(saved.streets.courthouse.is_equal_approx(sim.streets.courthouse), "the county seat is saved")

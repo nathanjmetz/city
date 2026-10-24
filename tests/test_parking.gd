@@ -63,6 +63,10 @@ func _layouts() -> void:
 
 func _drivers() -> void:
 	var sim := CitySim.new()
+	# On dry, open farmland south of Sweetser: at the crossroads itself a
+	# real pond takes the south-west blocks, leaving every home a short
+	# walk from the shops.
+	sim.terrain_offset = Vector2(0, 1500)
 	PerfTown.build(sim, "small")
 	for i in 200:
 		sim.tick()
@@ -123,7 +127,28 @@ func _drivers() -> void:
 		"a driver with a placard takes the accessible stall nearest the street")
 	if not with_placard.is_empty():
 		t._release(with_placard[0], with_placard[1], 16)
-	# Drivers bound for the shops round it park there.
+	# Drivers bound for the shops round it park there. A busy Saturday:
+	# shoppers from across town drive to the shop beside the lot all at
+	# once, more than its own stalls hold.
+	var busy := ""
+	var near_d := INF
+	for key in sim.lots:
+		if sim.buildings.has(key) and sim.buildings[key].zone == ZoneMap.Zone.COMMERCIAL \
+				and not t.place("lot:" + key).is_empty():
+			var dd: float = t.place("lot:" + key).door.distance_to(gate)
+			if dd < near_d:
+				near_d = dd
+				busy = "lot:" + key
+	var sent := 0
+	for id in sim.people.people:
+		var person: Dictionary = sim.people.people[id]
+		var home := t.place("lot:" + str(person.home))
+		if sent >= 16 or busy == "" or person.at != "" or person.age < 18 or home.is_empty() \
+				or t._vehicle_parked(int(person.car)).is_empty() \
+				or home.door.distance_to(t.place(busy).door) < People.WALK_MAX:
+			continue
+		if t.go(id, busy, "shopping", 240):
+			sent += 1
 	var seen := 0
 	var walks := 0
 	var short := 0
@@ -196,7 +221,9 @@ func _drivers() -> void:
 	# the town's lot.
 	var homers := 0
 	for car in t.parked:
-		if str(car.get("at_place", "")) == "svc:%d" % placed and str(car.get("purpose", "")) == "home":
+		# (A shopper fetching their car to drive home from the lot is leaving it.)
+		if str(car.get("at_place", "")) == "svc:%d" % placed and str(car.get("purpose", "")) == "home" \
+				and not (car.get("pending", false) and str(car.get("from_ref", "")) == "svc:%d" % placed):
 			homers += 1
 	_check(homers == 0, "nobody heading home parks in the town's lot (%d)" % homers)
 

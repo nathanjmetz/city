@@ -160,8 +160,8 @@ static func today(sim: CitySim) -> float:
 
 ## A name like the real ones: a place or family name and the trade.
 static func company_name(kind: String, seed: int) -> String:
-	var places := ["White River", "Pike County", "Patoka", "Prairie", "Four Rivers", "Hoosier", "Wabash",
-		"Petersburg", "Southern Indiana", "Tri-County"]
+	var places := ["Mississinewa", "Grant County", "Gas Belt", "Prairie", "Hoosier", "Wabash",
+		"Marion", "East Central Indiana", "Tri-County", "Big Black Creek"]
 	var families := ["Kremer", "Hoffman", "Schnell", "Lehmkuhler", "Buechler", "Mehringer", "Seger", "Schuler"]
 	var r := absi(seed)
 	match kind:

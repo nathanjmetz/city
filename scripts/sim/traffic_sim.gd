@@ -2633,7 +2633,9 @@ func _pull_over(car: Dictionary, w: Dictionary) -> void:
 	var pl := place(car.to_place)
 	if pl.is_empty():
 		return
-	var at := clampf(car.d + 14.0, 0.0, w.len)
+	# Far enough on that the way in (Entrance, 9 m back of the space) is
+	# still ahead when the car gets to it, so it pulls straight in.
+	var at := clampf(car.d + PARK_LEAD + 16.0, 0.0, w.len)
 	var frac: float = at / w.len if w.fwd else 1.0 - at / w.len
 	var stop := {"seg": w.seg, "at_frac": frac, "side": 1 if w.fwd else -1}
 	var ci := _new_curb(pl, stop, car.id)
@@ -2727,10 +2729,13 @@ func _in_path(car: Dictionary) -> Dictionary:
 	if s.kind == "curb" and s.face.dot(dir) < 0.0:
 		# A curb space across the street: a U-turn over to it, as a driver
 		# swings round on a quiet street, rather than cutting straight back.
+		# It swings round no tighter than a car turns (about 3.5 m), from a
+		# few metres on up the lane.
+		wps[2] = _lane_point(w, car.lane, clampf(maxf(ld, car.d + 6.0), 0.0, w.len))
 		var lat: Vector3 = s.pos - wps[2]
 		lat -= dir * lat.dot(dir)
 		lat.y = 0.0
-		var r := maxf(lat.length(), 3.0) * 0.5
+		var r := maxf(lat.length(), 7.0) * 0.5
 		var side := lat.normalized() if lat.length() > 0.1 else Vector3(dir.z, 0.0, -dir.x)
 		for k in range(1, 13):
 			var ang := PI * k / 12.0
@@ -2908,6 +2913,13 @@ func _poly_pose(c: Dictionary, jd: float) -> Array:
 			lo = c.rev
 	var a := _poly_point(c.pts, c.cum, maxf(jd - 1.5, lo))
 	var b := _poly_point(c.pts, c.cum, minf(jd + 1.5, hi))
+	# The chord runs on back along the way the car came and on along the
+	# way it leaves, so it doesn't snap round as it starts or ends.
+	if jd - 1.5 < 0.0:
+		# d0 is the way the car faces at the start: backwards when it backs.
+		a += c.d0 * (1.5 - jd) if c.rev > 0.0 else -c.d0 * (1.5 - jd)
+	if jd >= c.rev and jd + 1.5 > c.len:
+		b += c.d1 * (jd + 1.5 - c.len)
 	var dir := _flat_dir(b - a)
 	if b.distance_to(a) < 0.05:
 		dir = c.d1 if jd >= c.rev else -c.d0
