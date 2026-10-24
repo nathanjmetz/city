@@ -50,6 +50,7 @@ func _init() -> void:
 	_test_through_zoning()
 	_test_grid_over_joined()
 	_test_kept_clear()
+	_test_stub()
 	print("ALL TESTS PASSED" if _failed == 0 else "SOME TESTS FAILED")
 	quit(1 if _failed > 0 else 0)
 
@@ -423,6 +424,53 @@ func _test_kept_clear() -> void:
 		if hi > x - CountyGrid.HALF_WIDTH and lo < x + CountyGrid.HALF_WIDTH:
 			over += 1
 	_check(sim.lots.size() > 10 and over == 0, "no lot is platted across it (%d lots, %d across)" % [sim.lots.size(), over])
+
+
+
+## Brawn (2026-10-24): joined county road that had stopped at a farm lane
+## ended in round pads, with the painted road carrying on past. A stub on
+## the line is taken on along it.
+func _test_stub() -> void:
+	var S := CountyGrid.SECTION
+	var x := 0.0
+	var z := 0.0
+	var found := false
+	for line in range(-6, 6):
+		for seg in range(-6, 6):
+			if found or not CountyGrid.has_mile(line, seg):
+				continue
+			var cx := line * S
+			var cz := (seg + 0.5) * S
+			var dry := true
+			for k in range(-25, 26):
+				dry = dry and CountyGrid.clears(cx, cz + k * 30.0)
+			if dry:
+				x = cx
+				z = cz
+				found = true
+	_check(found, "found a dry mile for a stub")
+	if not found:
+		return
+	var sim := CitySim.new()
+	sim.apply({"type": "build_road", "start": [x - 300, z], "ctrl": [x - 150, z], "end": [x, z], "road": RoadStyle.Type.STREET})
+	sim.network.build_road(Vector3(x, 0, z - 100), Vector3(x, 0, z - 50), Vector3(x, 0, z), RoadStyle.Type.GRAVEL)
+	sim.network.build_road(Vector3(x, 0, z), Vector3(x, 0, z + 50), Vector3(x, 0, z + 100), RoadStyle.Type.GRAVEL)
+	var before := 0.0
+	for c in _gravel(sim):
+		before += c[0].distance_to(c[2])
+	_check(sim._extend_county_ends(), "the stub on the line is taken on")
+	var after := 0.0
+	var lo := INF
+	var hi := -INF
+	for c in _gravel(sim):
+		after += c[0].distance_to(c[2])
+		for q in [c[0], c[2]]:
+			if absf(q.x - x) < 1.0:
+				lo = minf(lo, q.z)
+				hi = maxf(hi, q.z)
+	_check(after > before + 1000.0 and lo < z - 700.0 and hi > z + 700.0,
+		"out along the mile both ways (%d m, was %d m; %d..%d)" % [after, before, lo - z, hi - z])
+	_check(not sim._extend_county_ends(), "and once is enough")
 
 
 ## Brawn (2026-10-24): a grid whose side lies on a county road the town

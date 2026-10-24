@@ -404,6 +404,8 @@ func _rebuild_all(gen: int) -> void:
 	for id in network.nodes:
 		if network.nodes[id].y < -1.0 or ring_nodes.has(id) or junctions.has(id):
 			continue  # rings meet their roads without a pad over the island
+		if network.segments_at(id).size() == 1:
+			continue  # a dead end stops square, not in a round pad (Brawn 2026-10-24)
 		var r := RoadStyle.half_width(network.widest_at(id))
 		var surface := _junction_surface(id)
 		if surface != "asphalt":
