@@ -189,7 +189,13 @@ func _finish_budget(sim: CitySim, sums: Dictionary) -> void:
 	if _roads_rev != [sim.network.get_instance_id(), sim.network.revision]:
 		_roads_rev = [sim.network.get_instance_id(), sim.network.revision]
 		_roads_upkeep = 0.0
+		# The county highway department keeps up the highway through town
+		# (Indiana county roads are county-maintained), so it costs the town
+		# nothing; streets the town builds off it are the town's.
+		var county := sim._link_roads()
 		for id in sim.network.segments:
+			if _on_county_highway(sim, id, county):
+				continue
 			_roads_upkeep += road_upkeep(sim.network.curve_of(id), sim.network.segments[id].type)
 	var upkeep := _roads_upkeep
 	for z in income:
@@ -208,6 +214,19 @@ func _finish_budget(sim: CitySim, sums: Dictionary) -> void:
 		"deals": sim.interlocal.monthly_net(),
 		# The region's projects: air visitors' spending and co-op capital credits.
 		"region": sim.regional.monthly_income(sim)}
+
+
+## Whether segment `id` lies along one of the county highways `county`
+## ([[a, b, ends], ...] from CitySim._link_roads).
+static func _on_county_highway(sim: CitySim, id: int, county: Array) -> bool:
+	var sd: Dictionary = sim.network.segments[id]
+	var pa: Vector3 = sim.network.nodes[sd.a]
+	var pb: Vector3 = sim.network.nodes[sd.b]
+	for r in county:
+		if Geometry2D.get_closest_point_to_segment(Vector2(pa.x, pa.z), r[0], r[1]).distance_to(Vector2(pa.x, pa.z)) < 2.0 \
+				and Geometry2D.get_closest_point_to_segment(Vector2(pb.x, pb.z), r[0], r[1]).distance_to(Vector2(pb.x, pb.z)) < 2.0:
+			return true
+	return false
 
 
 func monthly_net() -> int:
