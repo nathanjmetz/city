@@ -33,10 +33,10 @@ const KINDS := {
 	Kind.WATER_UTILITY: {"name": "Water and sewer utility", "icon": "water_utility", "size": Vector2(30, 30),
 		"cost": Balance.WATER_UTILITY["cost"], "upkeep": 0, "capacity": Balance.WATER_WORKS["well"]["capacity"], "utility": "water", "hub": true},
 	# Two-bay station. ISO rates homes within 1.5 road miles of a station.
-	Kind.FIRE: {"name": "Fire station", "icon": "fire", "size": Vector2(30, 36),
+	Kind.FIRE: {"name": "Fire station", "icon": "fire_station", "size": Vector2(30, 36),
 		"cost": Balance.SERVICES["fire"]["cost"], "upkeep": Balance.SERVICES["fire"]["upkeep"], "reach": Balance.SERVICES["fire"]["reach"]},
 	# A small department's station, patrols covering about 2 road miles.
-	Kind.POLICE: {"name": "Police station", "icon": "police", "size": Vector2(30, 36),
+	Kind.POLICE: {"name": "Police station", "icon": "police_station", "size": Vector2(30, 36),
 		"cost": Balance.SERVICES["police"]["cost"], "upkeep": Balance.SERVICES["police"]["upkeep"], "reach": Balance.SERVICES["police"]["reach"]},
 	# Walk-in clinic; most Americans live within a few miles of one.
 	Kind.CLINIC: {"name": "Clinic", "icon": "clinic", "size": Vector2(30, 30),
