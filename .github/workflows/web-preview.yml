@@ -98,6 +98,7 @@ jobs:
           run_test tests/test_traffic.gd
           run_test tests/test_parking.gd
           run_test tests/test_net.gd
+          run_test tests/test_catch_up.gd
           run_test tests/test_postcard.gd
           run_test tests/test_vehicles.gd
           run_test tests/test_seasons.gd

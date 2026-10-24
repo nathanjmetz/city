@@ -47,6 +47,9 @@ var token := ""
 var is_host := false
 ## (Host only) names waiting to be let in.
 var requests := []
+## What the neighbors did while you were away (Region.away_report), from
+## the welcome; CatchUp plays it out and clears it. {} if nothing to tell.
+var away := {}
 
 var _peer: WebSocketMultiplayerPeer
 var _connected := false
@@ -516,6 +519,7 @@ func _handle(msg: Dictionary) -> void:
 			join_marks["unpack"] = (Time.get_ticks_msec() - unpack_from) / 1000.0
 			join_marks["tries"] = _join_tries + 1
 			my_city = region.city_of(player_id)
+			away = msg.away if msg.get("away") is Dictionary else {}
 			_land_sent = 0
 			_hook_land()
 			_unseen = region.stale_ids()

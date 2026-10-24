@@ -224,6 +224,91 @@ func share_care() -> void:
 		cities[id].sim.healthcare.region_care = offered
 
 
+# --- While you were away ----------------------------------------------------
+
+## Where every other town stood when a player left: city id -> {"at": unix
+## seconds, "towns": {other id: glance}, "stages": {project id: stages
+## funded}}. Their return compares it with now (away_report), so their town
+## can catch up on what the neighbors did meanwhile (CatchUp). The server
+## saves it with the region.
+var away := {}
+
+
+## A town at a glance, from its newest copy (no unpacking): its clock in
+## ticks, its people and how many homes, shops and workplaces it has.
+func glance(id: String) -> Dictionary:
+	var sim: CitySim = cities[id].sim
+	var d: Dictionary = _data.get(id, {})
+	var tick := int(d.get("tick", sim.tick_count))
+	var b: Dictionary = d.get("buildings", sim.buildings) if d.has("buildings") else sim.buildings
+	var counts := [0, 0, 0, 0]
+	for key in b:
+		var z := int(b[key].get("zone", 0))
+		if z >= 0 and z < counts.size():
+			counts[z] += 1
+	var pop := int(ledger.populations.get(id, sim.stats.get("population", 0)))
+	return {"tick": tick, "pop": pop, "homes": counts[ZoneMap.Zone.RESIDENTIAL],
+		"shops": counts[ZoneMap.Zone.COMMERCIAL], "works": counts[ZoneMap.Zone.INDUSTRIAL]}
+
+
+## Notes where everyone else stands as a player leaves.
+func mark_away(id: String, now := int(Time.get_unix_time_from_system())) -> void:
+	if not cities.has(id):
+		return
+	var towns := {}
+	for other in cities:
+		if other != id:
+			towns[other] = glance(other)
+	var stages := {}
+	for pid in ledger.projects:
+		stages[pid] = Ledger.stages_done(ledger.projects[pid])
+	away[id] = {"at": now, "towns": towns, "stages": stages}
+
+
+## What the neighbors did while a player was away, used once (their
+## next return asks again from a new mark): {"seconds", "ticks": the most
+## game time any neighbor played, "towns": [{"id", "name", "player",
+## "ticks", "pop", "homes", "shops", "works" (the changes), "new": a town
+## founded meanwhile}], "projects": [{"name", "stage"}] for regional
+## project stages funded meanwhile}. {} when there's no mark.
+func away_report(id: String, now := int(Time.get_unix_time_from_system())) -> Dictionary:
+	if not away.has(id):
+		return {}
+	var m: Dictionary = away[id]
+	away.erase(id)
+	var then_towns: Dictionary = m.get("towns", {})
+	var towns := []
+	var most := 0
+	var ids := cities.keys()
+	ids.sort()
+	for other in ids:
+		if other == id:
+			continue
+		var g := glance(other)
+		var t := {"id": other, "name": cities[other].name, "player": cities[other].player}
+		if then_towns.has(other):
+			var was: Dictionary = then_towns[other]
+			t.ticks = maxi(0, g.tick - int(was.get("tick", g.tick)))
+			for k in ["pop", "homes", "shops", "works"]:
+				t[k] = g[k] - int(was.get(k, g[k]))
+		else:
+			t.new = true
+			t.ticks = 0
+			t.pop = g.pop
+		most = maxi(most, int(t.ticks))
+		towns.append(t)
+	var projects := []
+	var then_stages: Dictionary = m.get("stages", {})
+	for pid in ledger.projects:
+		var p: Dictionary = ledger.projects[pid]
+		var done := Ledger.stages_done(p)
+		var was := int(then_stages.get(pid, done))
+		if done > was:
+			projects.append({"name": str(p.name), "stage": str(p.stages[done - 1].name)})
+	return {"seconds": maxi(0, now - int(m.get("at", now))), "ticks": most, "towns": towns,
+		"projects": projects}
+
+
 ## Works out the metro again (see Ledger.update_metro). Returns whether it
 ## changed.
 func update_metro() -> bool:
