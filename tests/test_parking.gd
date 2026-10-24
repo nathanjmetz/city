@@ -7,6 +7,7 @@ extends SceneTree
 
 func _init() -> void:
 	_layouts()
+	_shops()
 	_drivers()
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
@@ -151,6 +152,38 @@ func _drivers() -> void:
 		if str(car.get("at_place", "")) == "svc:%d" % placed and str(car.get("purpose", "")) == "home":
 			homers += 1
 	_check(homers == 0, "nobody heading home parks in the town's lot (%d)" % homers)
+
+
+## Shops park cars only in the stalls their art paints (Brawn saw cars nosed
+## into the lawn and walk in front of a beauty shop): the dry run SiteLayout
+## reads matches the real drawing, and no stall is under the building or
+## off the lot.
+func _shops() -> void:
+	var differ := []
+	var bad := []
+	var kinds := {}
+	for seed in 160:
+		for w in [16.0, 22.0, 30.0]:
+			var lot := {"width": w, "depth": 40.0, "corner": seed % 4 == 0}
+			var plan := DenseBuilder.site_plan(seed * 7919 + 13, lot)
+			var b := DenseBuilder._start(seed * 7919 + 13, lot)
+			b._shop(3.9, lot, false)
+			b._commit_house()
+			if str(b.site) != str(plan):
+				differ.append([seed, w])
+			kinds[plan.stalls.size() > 0] = true
+			for st in plan.stalls:
+				var c: Vector2 = st[0]
+				var box := Rect2(c - Vector2(1.3, 2.7), Vector2(2.6, 5.4))
+				if absf(c.x) > w * 0.5 - 1.3 or c.y < 2.7:
+					bad.append(["off the lot", seed, w, c])
+				for m: Rect2 in HouseBuilder.last_masses:
+					if m.size.y > 1.0 and m.intersects(box.grow(-0.2)):
+						bad.append(["under the building", seed, w, c])
+						break
+	_check(differ.is_empty(), "the stalls cars use are the ones the shop art paints %s" % [differ.slice(0, 4)])
+	_check(bad.is_empty(), "no shop stall is off the lot or under the building %s" % [bad.slice(0, 4)])
+	_check(kinds.size() == 2, "some shops have their own stalls, some only the curb")
 
 
 ## A stall's painted rectangle, a hair inside its lines.

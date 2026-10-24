@@ -44,6 +44,19 @@ static func build_retail(seed: int, to_curb: float, lot := {}, spec := {}) -> Ar
 	return b._done()
 
 
+## The parking and entrance of the shop DenseBuilder.build_retail draws for
+## this seed and lot (or the strip center a shopping center forces), from a
+## dry run that draws nothing: see `site`.
+static func site_plan(seed: int, lot: Dictionary, strip := false) -> Dictionary:
+	var b := DenseBuilder._start(seed, lot)
+	b._dry = true
+	if strip:
+		force_shop = "strip"
+	b._shop(3.9, lot, false)
+	force_shop = ""
+	return b.site
+
+
 # ---------------------------------------------------------------- row homes
 
 ## `lot` as for HouseBuilder.build (its width sets the size).
