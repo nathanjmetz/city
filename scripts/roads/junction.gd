@@ -34,7 +34,7 @@ static func plan(net: RoadNetwork, rural: Dictionary = {}) -> Dictionary:
 	var ids := net.nodes.keys()
 	ids.sort()
 	for node in ids:
-		var j := _plan_node(net, node, rural)
+		var j := plan_node(net, node, rural)
 		if not j.is_empty():
 			out[node] = j
 	return out
@@ -45,7 +45,11 @@ static func trim(plans: Dictionary, node: int, seg: int) -> float:
 	return plans.get(node, {}).get("trim", {}).get(seg, 0.0)
 
 
-static func _plan_node(net: RoadNetwork, node: int, rural: Dictionary) -> Dictionary:
+## One node's plan ({} when it isn't shaped). A street bending at a node
+## with no corner tight enough for a curb return gets a "bend" plan: the
+## road keeps its full length and only the outside of the bend is filled,
+## so the curb and sidewalk run on without a notch.
+static func plan_node(net: RoadNetwork, node: int, rural: Dictionary = {}) -> Dictionary:
 	var segs := net.segments_at(node)
 	var center: Vector3 = net.nodes[node]
 	if segs.size() < 2 or center.y < -1.0:
@@ -54,7 +58,11 @@ static func _plan_node(net: RoadNetwork, node: int, rural: Dictionary) -> Dictio
 	for id in segs:
 		var sg: Dictionary = net.segments[id]
 		var type: int = sg.type
-		if RoadStyle.TYPES[type].oneway or RoadStyle.is_ring(type) or rural.has(id) or sg.a == sg.b:
+		var spec: Dictionary = RoadStyle.TYPES[type]
+		# Curbed two-way streets only: country roads, gravel, alleys and
+		# one-ways meet in a plain join.
+		if spec.oneway or spec.get("rural", false) or not spec.get("walk", true) or RoadStyle.is_ring(type) \
+				or rural.has(id) or sg.a == sg.b:
 			return {}
 		var pts := net.sample_segment(id)
 		if pts[pts.size() / 2].y < -1.0:
@@ -82,7 +90,11 @@ static func _plan_node(net: RoadNetwork, node: int, rural: Dictionary) -> Dictio
 			arms[c.a].d = maxf(arms[c.a].d, c.ta)
 			arms[c.b].d = maxf(arms[c.b].d, c.tb)
 	if not corners.any(func(c): return c.fillet):
-		return {}  # a road bending at a node: the plain disc joins it
+		if arms.size() == 2 and corners.any(func(c): return c.theta > PI + 0.01):
+			# A road bending at a node: the plain disc fills the pavement,
+			# the outside of the bend gets its curb and sidewalk.
+			return {"center": center, "arms": arms, "corners": corners, "trim": {}, "bend": true}
+		return {}
 	var trims := {}
 	for arm in arms:
 		trims[arm.seg] = arm.d
@@ -119,7 +131,7 @@ static func _outline(j: Dictionary) -> PackedVector2Array:
 ## circle of radius R touching both curb lines, shrunk if the roads are too
 ## short to fit it.
 static func _fillet(c: Dictionary, a: Dictionary, b: Dictionary, theta: float) -> void:
-	var r: float = RETURN_RADIUS.get(maxi(a.type, b.type), 6.0)
+	var r: float = RETURN_RADIUS.get(maxi(RoadStyle.group(a.type), RoadStyle.group(b.type)), 6.0)
 	while true:
 		# The centre sits hw + r off both centre lines, inside the corner.
 		var p1: Vector2 = a.n * (a.hw + r)
@@ -166,8 +178,8 @@ static func _draw_node(j: Dictionary, asphalt: SurfaceTool, curb: SurfaceTool, w
 		domes: SurfaceTool) -> void:
 	var arms: Array = j.arms
 	var center: Vector3 = j.center
-	var poly: PackedVector2Array = j.poly
-	var tris: PackedInt32Array = j.tris
+	var poly: PackedVector2Array = j.get("poly", PackedVector2Array())
+	var tris: PackedInt32Array = j.get("tris", PackedInt32Array())
 	var cw := RoadStyle.CURB_WIDTH
 	var back := cw + RoadStyle.PARKWAY_WIDTH  # curb face to sidewalk
 	var walk_w := RoadStyle.SIDEWALK_WIDTH

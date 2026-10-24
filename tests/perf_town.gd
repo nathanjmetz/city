@@ -18,6 +18,7 @@ static func build(sim: CitySim, size := "big") -> void:
 	var x0 := -span / 2.0
 	var z0 := -span / 2.0
 	sim.economy.money = 900_000_000
+	sim.charter.reached.merge({"town": 0, "city": 0})
 	sim.apply({"type": "build_county_road", "a": [x0 - 2000.0, z0 - 60.0], "b": [x0 + span + 2000.0, z0 - 60.0], "links": [0, 1]})
 	sim.apply({"type": "build_grid", "a": [x0, z0], "b": [x0 + span, z0], "c": [x0, z0 + span], "block": BLOCK})
 	# Tie the grid to the county road every few blocks.

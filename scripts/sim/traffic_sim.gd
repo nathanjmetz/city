@@ -198,6 +198,7 @@ var _ep_rev := -1
 var _ep_ver := -1
 var _seg_lots := {}   # road piece -> lot ids along it (_aprons)
 var _walk_back := {}  # node -> metres from its centre to the middle of its crosswalks
+var _walk_arm := {}  # [node, seg] -> the same for one leg, where its corner sets it
 var _seg_lots_key := []
 var _lot_cells := {}  # 250 m cell -> lot ids whose fronts lie in it (_parking_near)
 var _lot_cells_key := []
@@ -771,11 +772,22 @@ func _rebuild() -> void:
 	node_ids.sort()
 	var setback := {}
 	_walk_back.clear()
+	_walk_arm.clear()
+	var arm_back := {}  # [node, seg] -> metres, where a shaped corner sets each leg's stop line
 	for n in node_ids:
 		var segs: Array = at_node[n]
 		var sb := 0.0
 		if segs.size() >= 3:
 			sb = _stop_back(segs)
+			if sb > _stop_back_plain(segs):
+				# Stop at the painted stop line, which follows each leg's own
+				# curb return (skewed and Y legs reach further out).
+				var plan := Junction.plan_node(network, n)
+				for id in segs:
+					var back := JunctionMarks.stop_back(plan, id)
+					if back > 0.0:
+						arm_back[[n, id]] = back
+						_walk_arm[[n, id]] = back - CROSSWALK_AHEAD
 		elif segs.size() == 2:
 			var s1: Dictionary = network.segments[segs[0]]
 			var s2: Dictionary = network.segments[segs[1]]
@@ -787,8 +799,8 @@ func _rebuild() -> void:
 			and sb > _stop_back_plain(segs) else sb
 	for wid in ways:
 		var w: Dictionary = ways[wid]
-		w.s0 = minf(setback[w.from], w.len * 0.4)
-		w.s1 = maxf(w.len - setback[w.to], w.len * 0.6)
+		w.s0 = minf(arm_back.get([w.from, w.seg], setback[w.from]), w.len * 0.4)
+		w.s1 = maxf(w.len - arm_back.get([w.to, w.seg], setback[w.to]), w.len * 0.6)
 	for n in overrides.keys():
 		if not at_node.has(n) or at_node[n].size() < 3:
 			overrides.erase(n)
@@ -3590,9 +3602,9 @@ func _walk_end(sid: int, end: int) -> float:
 	var n0: int = w.from if fwd else w.to
 	var n1: int = w.to if fwd else w.from
 	if _walk_back.has(n0):
-		s0 = minf(s0, minf(_walk_back[n0], w.len * 0.4))
+		s0 = minf(s0, minf(_walk_arm.get([n0, sid], _walk_back[n0]), w.len * 0.4))
 	if _walk_back.has(n1):
-		s1 = maxf(s1, maxf(w.len - _walk_back[n1], w.len * 0.6))
+		s1 = maxf(s1, maxf(w.len - _walk_arm.get([n1, sid], _walk_back[n1]), w.len * 0.6))
 	return clampf((s0 if end == 0 else s1) / maxf(w.len, 0.1), 0.0, 1.0)
 
 

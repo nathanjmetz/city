@@ -149,6 +149,7 @@ var _press_at := Vector2.ZERO  # where on screen it went down
 ## The last grid plan, kept while the shape and cursor stay put.
 var _grid_key := ""
 var _grid_plan := []
+var _grid_taken := []  # county road or highway the grid takes over (free)
 var _grid_planned_at := -1000
 
 
@@ -793,6 +794,7 @@ func _show_grid(p: Vector3) -> void:
 	_cursor.position = Terrain.lift(p) + Vector3.UP * 0.3
 	var shape := _pending_shape(p)
 	_show_snap(_snap_kind != "free" or (_points.size() >= 3 and p.distance_to(_points[0]) < 0.01))
+	_grid_angles(p)
 	if _points.size() >= 2:
 		# The square side as a dotted line on past the corner, and the
 		# junctions the corner lines up with.
@@ -810,15 +812,19 @@ func _show_grid(p: Vector3) -> void:
 		# Big towns take a moment to plan, so replan at most a few times a second.
 		if key != _grid_key and Time.get_ticks_msec() - _grid_planned_at > 120:
 			_grid_key = key
-			_grid_plan = GridFill.plan(network, shape, grid_block, road_type, grid_side, grid_across, _fit(),
-				sim.painted_near(shape))
+			var painted := sim.painted_near(shape)
+			_grid_plan = GridFill.plan(network, shape, grid_block, road_type, grid_side, grid_across, _fit(), painted)
+			# The county road or highway the grid takes over shows too.
+			_grid_taken = []
+			for t in GridFill.taken_over(_grid_plan, painted, shape):
+				_grid_taken += t.curves
 			_grid_planned_at = Time.get_ticks_msec()
 		plan = _grid_plan
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var hw := maxf(RoadStyle.half_width(road_type), GHOST_PX * 0.5 * _px)
 	var edge := maxf(0.4, LINE_PX * 0.5 * _px)
-	for c in plan:
+	for c in plan + (_grid_taken if shape.size() >= 3 else []):
 		RoadMesh.add_strip(st, Terrain.densify(RoadNetwork.sample_curve(c[0], c[1], c[2], 2), 6.0), -hw, hw, 0.2)
 	if shape.size() == 2:  # the first side is a street of its own
 		RoadMesh.add_strip(st, Terrain.densify(PackedVector3Array([shape[0], shape[1]]), 6.0), -hw, hw, 0.2)
@@ -939,6 +945,27 @@ func _county_at(p: Vector3, reach := 0.5) -> Dictionary:
 	if mile.is_empty() or sim.county_removed.has(mile.key) or not CountyGrid.clears(mile.on.x, mile.on.y):
 		return {}
 	return mile
+
+
+## Where two county roads cross (a section corner) within `reach` of `p`,
+## in town coordinates, or (INF, INF): it pulls like a junction does.
+func _county_crossing(p: Vector3, reach: float) -> Vector2:
+	if absf(p.y) > 0.5:
+		return Vector2(INF, INF)
+	var o := sim.terrain_offset
+	var ns := false
+	var ew := false
+	for m in CountyGrid.miles_at(p.x + o.x, p.z + o.y, reach):
+		if sim.county_removed.has(m.key):
+			continue
+		ns = ns or m.key.begins_with("ns")
+		ew = ew or m.key.begins_with("ew")
+	if not (ns and ew):
+		return Vector2(INF, INF)
+	var c := Vector2(roundf((p.x + o.x) / CountyGrid.SECTION), roundf((p.z + o.y) / CountyGrid.SECTION)) * CountyGrid.SECTION
+	if not CountyGrid.clears(c.x, c.y):
+		return Vector2(INF, INF)
+	return c - Vector2(o.x, o.y)
 
 
 ## The state highway (Highways.near) under `p`, in town or out, if any.
@@ -1209,6 +1236,39 @@ func _show_angles(curve: Array) -> void:
 		l.visible = true
 
 
+## Brawn: the angle at each corner of a grid as it's drawn: with the road
+## at the first corner, between the sides at the last one, and where the
+## shape closes back to the first.
+func _grid_angles(p: Vector3) -> void:
+	if _points.size() == 1:
+		_show_angles([_points[0], _points[0].lerp(p, 0.5), p])
+		return
+	var last: Vector3 = _points[_points.size() - 1]
+	_corner_angle(0, last, _points[_points.size() - 2], p)
+	if _points.size() >= 3 and p.distance_to(_points[0]) > 0.01:
+		_corner_angle(1, _points[0], _points[1], p)
+
+
+func _corner_angle(i: int, at: Vector3, a: Vector3, b: Vector3) -> void:
+	var u := Vector2(a.x - at.x, a.z - at.z)
+	var v := Vector2(b.x - at.x, b.z - at.z)
+	if u.length() < 1.0 or v.length() < 1.0:
+		return
+	var deg := rad_to_deg(absf(u.angle_to(v)))
+	var l := _angle_labels[i]
+	l.text = "%d°" % roundi(deg)
+	var sharp := deg < SHARP_DEG - 0.5
+	if sharp:
+		l.text += " sharp"
+	l.modulate = Color(1.0, 0.45, 0.35) if sharp else Color(1, 1, 1)
+	var mid := (u.normalized() + v.normalized())
+	if mid.length() < 0.01:
+		mid = Vector2(-u.y, u.x)
+	mid = mid.normalized() * 45.0 * _px
+	l.position = Terrain.lift(at + Vector3(mid.x, 0.0, mid.y)) + Vector3(0, 2, 0)
+	l.visible = true
+
+
 ## Shows the road's length by the cursor, and the guide line it snapped to.
 func _show_length(curve: Array) -> void:
 	var pts := RoadNetwork.sample_curve(curve[0], curve[1], curve[2])
@@ -1269,6 +1329,11 @@ func _snapped(hit: Vector3) -> Vector3:
 		if not hw.is_empty():
 			_snap_kind = "highway"
 			return Vector3(hw.on.x - sim.terrain_offset.x, 0.0, hw.on.y - sim.terrain_offset.y)
+		var cross := _county_crossing(Vector3(hit.x, 0.0 if mode == Mode.GRID else elevation, hit.z),
+			_snap_reach(SNAP_NODE + 3.0, SNAP_PX * 2.0))
+		if cross.x != INF:
+			_snap_kind = "county"
+			return Vector3(cross.x, 0.0 if mode == Mode.GRID else elevation, cross.y)
 		var mile := _county_at(Vector3(hit.x, 0.0 if mode == Mode.GRID else elevation, hit.z),
 			_snap_reach(SNAP_ROAD + 5.0, SNAP_PX))
 		if not mile.is_empty():

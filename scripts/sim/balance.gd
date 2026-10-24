@@ -82,18 +82,26 @@ const SERVICES := {
 	# Well, pump house and a 500,000 gallon elevated tank: about 1 million
 	# gallons a day, at 300 gallons per household.
 	"water_tower": {"cost": 2_000_000, "upkeep": 12_000, "capacity": 3_300},
-	# Starter power: an overhead feed with pole transformers from the utility.
-	"power_feed": {"cost": 120_000, "upkeep": 1_000, "capacity": 400},
+	# Starter power: a 12.47 kV overhead feeder with pole transformers from the
+	# utility. A real distribution feeder carries about 1,500-3,000 homes.
+	"power_feed": {"cost": 120_000, "upkeep": 1_000, "capacity": 1_500},
 	# Starter water: a 150 gpm well with a pressure tank (~200,000 gallons a day).
 	"well": {"cost": 300_000, "upkeep": 3_000, "capacity": 650},
 	# Two-bay station. ISO rates homes within 1.5 road miles of a station.
-	"fire": {"cost": 2_500_000, "upkeep": 45_000, "reach": 2400.0},
+	# Upkeep: a small town's mostly-volunteer department runs about $150-200k
+	# a year; it grows into paid crews through the service tiers.
+	"fire": {"cost": 2_500_000, "upkeep": 15_000, "reach": 2400.0},
 	# A small department's station, patrols covering about 2 road miles.
-	"police": {"cost": 1_800_000, "upkeep": 50_000, "reach": 3200.0},
-	# Walk-in clinic; most Americans live within a few miles of one.
-	"clinic": {"cost": 1_500_000, "upkeep": 35_000, "reach": 4800.0},
-	# Elementary school for about 400 pupils on a 2 acre site.
-	"school": {"cost": 9_000_000, "upkeep": 95_000, "reach": 3200.0},
+	# Upkeep: about 2.4 officers per 1,000 people (FBI UCR) at ~$100k each
+	# with benefits and cars, so about $25k a month for a 1,000-person town.
+	"police": {"cost": 1_200_000, "upkeep": 25_000, "reach": 3200.0},
+	# Walk-in clinic; most Americans live within a few miles of one. Patient
+	# billing pays most of it; the city covers the gap (~$12k a month).
+	"clinic": {"cost": 1_500_000, "upkeep": 12_000, "reach": 4800.0},
+	# Elementary school for about 400 pupils on a 2 acre site. Indiana's
+	# school funding formula pays most operating costs; the local levy is
+	# about a third (~$60k a month here).
+	"school": {"cost": 9_000_000, "upkeep": 60_000, "reach": 3200.0},
 	# A small-town bus garage with two starter 40 ft buses. FTA Section 5339
 	# pays 80% of transit capital, so this is the city's 20% share. It has no
 	# fixed upkeep: the player sets a monthly subsidy instead (BusNet).
@@ -920,7 +928,11 @@ const HUB_MAX_GROWTH := 6.0
 ## A cemetery is open green space and a place of meaning, so it lifts the
 ## area around it a little.
 const WASTE_SITES := {
-	"landfill": {"cost": 1_500_000, "upkeep": 20_000, "value": -0.15, "reach": 800.0},
+	# Upkeep: small towns pay haulers about $15-20 a household a month, so
+	# a few hundred homes cost about $8k; it grows with the land the site takes.
+	# `plan` is the monthly budget its leader plans projects against: a real
+	# landfill also earns tipping fees (~$55 a ton) from haulers.
+	"landfill": {"cost": 1_500_000, "upkeep": 8_000, "plan": 20_000, "value": -0.15, "reach": 800.0},
 	# Recycling replaces a landfill and can be upgraded twice: a drop-off
 	# yard, then a sorting plant, then an enclosed materials recovery plant.
 	# Sold materials offset part of the upkeep (`sales`, dollars a month).
@@ -1091,6 +1103,10 @@ const GARBAGE_TRUCK_LB := 20_000.0
 ## stops before it heads back.
 const GARBAGE_STOP_LB := 600.0
 const GARBAGE_STOPS_PER_RUN := 6
+## A truck on its route also picks up every street whose curb is within this
+## many metres of a stop, the way a real route works a whole neighbourhood
+## block by block instead of one street per trip.
+const GARBAGE_SWEEP_REACH := 200.0
 ## Trash left out past this much on a street lowers its land value by
 ## GARBAGE_PILE_VALUE (-0.05 = 5% lower) until a truck comes.
 const GARBAGE_PILE_LB := 2_500.0
@@ -2615,9 +2631,9 @@ const BANK_PREMISES_VALUE := 900_000
 ## fire station; a sheriff's deputy or a rural school bus covers more.
 const INTERLOCAL := {
 	"trash": {"upkeep": 20_000, "reach": INF},
-	"fire": {"upkeep": 45_000, "reach": 8047.0},
-	"police": {"upkeep": 50_000, "reach": 12875.0},
-	"school": {"upkeep": 95_000, "reach": 16093.0},
+	"fire": {"upkeep": 15_000, "reach": 8047.0},
+	"police": {"upkeep": 25_000, "reach": 12875.0},
+	"school": {"upkeep": 60_000, "reach": 16093.0},
 }
 ## The fee: the host's cost shared by households (each town's homes), plus
 ## an administrative share, as most Indiana interlocals split costs. It

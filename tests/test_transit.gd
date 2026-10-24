@@ -227,6 +227,7 @@ func _taxis() -> void:
 ## depot routes its buses that way, and still measures the real distance.
 func _bus_lanes() -> void:
 	var sim := CitySim.new()
+	sim.charter.reached.merge({"town": 0, "city": 0})
 	sim.economy.money = 50_000_000
 	sim.apply({"type": "build_road", "start": [0, 0], "ctrl": [200, 0], "end": [400, 0]})
 	sim.apply({"type": "build_road", "start": [400, 0], "ctrl": [400, 100], "end": [400, 200]})
@@ -322,6 +323,7 @@ func _schools() -> void:
 ## A grid town with homes, shops and jobs already built (as if grown).
 func _town(half := 1000) -> CitySim:
 	var sim := CitySim.new()
+	sim.charter.reached.merge({"town": 0, "city": 0})  # a city runs the buses (IC 36-9-4)
 	sim.simulate_traffic = true
 	for z in range(0, 801, 200):
 		sim.apply({"type": "build_road", "start": [-half, z], "ctrl": [0, z], "end": [half, z]})

@@ -107,6 +107,10 @@ func _demo_town() -> void:
 				sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": ZoneMap.Zone.RESIDENTIAL})
 		_aim_camera()
 		return
+	if args0.size() >= 5 and args0[4] == "markings":
+		_demo_markings(sim)
+		_aim_camera()
+		return
 	if args0.size() >= 5 and args0[4] == "hubs":
 		_demo_hubs(sim)
 		_aim_camera()
@@ -594,3 +598,45 @@ func _demo_hubs(sim: CitySim) -> void:
 	for c in _main.get_children():
 		if c is SelectTool:
 			c.select({"type": "hub", "id": ids[0]})
+
+
+## Brawn's junction paint report (2026-10-24): skewed, Y, T, offset and
+## five-leg junctions, a street crossing an avenue, two avenues under
+## lights and a street with a gentle bend, zoned so they get curbs.
+## North of the starting highway; look at about (0, -250).
+func _demo_markings(sim: CitySim) -> void:
+	var before := sim.network.segments.keys()
+	var roads := [
+		[[-350, -180], [350, -180], 0],  # main street
+		[[-200, -180], [20, -460], 0],  # Y off it
+		[[-200, -180], [-200, -20], 0],  # five legs with the two above
+		[[-200, -180], [-330, -380], 0],
+		[[-120, -20], [-25, -320], 0],  # skewed crossing
+		[[150, -180], [150, -20], 0],  # offset T's
+		[[195, -180], [195, -340], 0],
+		[[270, -20], [270, -480], 1],  # avenue crossing the street
+		[[50, -420], [370, -420], 1],  # avenue meeting it under lights
+	]
+	for r in roads:
+		var a: Array = r[0]
+		var b: Array = r[1]
+		var c := [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5]
+		if not sim.apply({"type": "build_road", "start": a, "ctrl": c, "end": b, "road": r[2]}):
+			print("refused ", r, " ", sim.road_problem([CitySim._v(a), CitySim._v(c), CitySim._v(b)], r[2]))
+	# A street with a slight bend at a node.
+	sim.apply({"type": "build_road", "start": [-350, -80], "ctrl": [-300, -80], "end": [-250, -80]})
+	sim.apply({"type": "build_road", "start": [-250, -80], "ctrl": [-202, -90], "end": [-154, -100]})
+	for id in sim.network.segments.keys():
+		if not before.has(id):
+			for side in [-1, 1]:
+				if not sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": ZoneMap.Zone.RESIDENTIAL}):
+					print("refused zoning ", id, " ", sim.network.curve_of(id)[0])
+	for i in 5:
+		sim.tick()
+	# Lots take a while to be platted out here; draw every new street as a
+	# town street at once.
+	for c in _main.find_children("*", "RoadView", true, false):
+		for id in sim.network.segments:
+			if not before.has(id):
+				c._town_ever[id] = true
+		c.rebuild()

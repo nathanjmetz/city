@@ -409,7 +409,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 				return false
 			# A county road or highway the grid meets along its side becomes
 			# the town's between the grid's streets, so its blocks front it.
-			var taken := GridFill.taken_over(lines, painted)
+			var taken := GridFill.taken_over(lines, painted, shape)
 			network.begin_batch()
 			for l in lines:
 				ok = network.build_road(l[0], l[1], l[2], _road(cmd)) or ok
@@ -468,7 +468,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			ok = true
 		"place_service":
 			var kind := int(cmd.kind)
-			if not Services.KINDS.has(kind):
+			if not Services.KINDS.has(kind) or charter.locked(kind) != "":
 				return false
 			var pos := _v(cmd.pos)
 			var dir := _v(cmd.dir).normalized()

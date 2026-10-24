@@ -103,7 +103,14 @@ func _decide() -> void:
 	if not (_has("power") and _has("water")):
 		return
 	var pop: int = sim.stats.population
-	if pop > 300 and not _wants_services.is_empty():
+	# The player says yes to the charter's petitions, and builds what the
+	# charter allows (police once it's a town).
+	for r in sim.permits.listed(Permits.State.OPEN):
+		if str(r.get("ask", "")) in Charter.ASK_KINDS:
+			sim.apply({"type": "permit", "id": r.id, "answer": "approve"})
+	if not _wants_services.is_empty() and sim.charter.locked(_wants_services[0]) != "" and _wants_services.size() > 1:
+		_wants_services.push_back(_wants_services.pop_front())
+	if pop > 300 and not _wants_services.is_empty() and sim.charter.locked(_wants_services[0]) == "":
 		var kind: int = _wants_services[0]
 		var need := 1500 if kind == Services.Kind.SCHOOL else 300
 		if pop > need and sim.economy.money > int(Services.KINDS[kind].cost) + RESERVE * 2:

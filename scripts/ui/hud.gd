@@ -139,6 +139,8 @@ var permits := PermitPanel.new()
 var region_panel := RegionPanel.new()
 ## The town's nickname, history, districts and markers, and its timelapse.
 var town := TownPanel.new()
+## The celebration when the town reaches a charter step.
+var level_up := LevelUpCard.new()
 var timelapse := TimelapseView.new()
 ## What's behind each top bar readout: a chart and its numbers.
 var stats_panel := StatsPanel.new()
@@ -217,6 +219,12 @@ func _ready() -> void:
 	_root.add_child(pie)
 	tour.setup(sim, self, info_view.cam, game)
 	_root.add_child(tour)
+	level_up.setup(sim, town._town_name("Your town"))
+	_root.add_child(level_up)
+	sim.charter.step_reached.connect(func(id: String):
+		level_up.town_name = town._town_name("Your town")
+		level_up.celebrate(id)
+		_sync())
 
 	road_tool.mode_changed.connect(func(_m): _sync())
 	road_tool.options_changed.connect(_sync)
@@ -1974,7 +1982,15 @@ func _open(cat: String) -> void:
 				else:
 					industry_tool.set_kind(_industry_kind)
 		"utilities", "civic", "education", "health", "transport":
-			_first_card[cat].pressed.emit()
+			# The first tool the charter allows (buses wait for a city).
+			var card: Button = _first_card[cat]
+			var k = _service_cards.find_key(card)
+			if k != null and sim.charter.locked(k) != "":
+				for o in _service_cards:
+					if _service_cat.get(o) == cat and sim.charter.locked(o) == "":
+						card = _service_cards[o]
+						break
+			card.pressed.emit()
 		"parks":
 			if park_tool.kind == "":
 				park_tool.set_kind("park")
@@ -2084,6 +2100,15 @@ func _sync() -> void:
 			or (farm_tool.mode == FarmTool.Mode.UNPLAN and k == ""))
 	for k in _service_cards:
 		_service_cards[k].set_pressed_no_signal(k == service_tool.kind)
+		# Charter locks: the card stays, greyed, and says when it opens.
+		var why := sim.charter.locked(k)
+		var card: Button = _service_cards[k]
+		if not card.has_meta("about"):
+			card.set_meta("about", card.tooltip_text)
+		card.disabled = why != ""
+		card.tooltip_text = str(card.get_meta("about")) + ("\n" + why if why != "" else "")
+		if why != "" and service_tool.kind == k:
+			service_tool.set_kind(ServiceTool.OFF)
 	_park_sizes.visible = park_tool.kind == "park"
 	for i in _park_size_cards.size():
 		_park_size_cards[i].set_pressed_no_signal(park_tool.kind == "park" and i == park_tool.size_class)

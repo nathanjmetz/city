@@ -148,6 +148,7 @@ func _init() -> void:
 ## a water utility at one corner.
 func _town() -> CitySim:
 	var sim := CitySim.new()
+	sim.charter.reached["town"] = 0  # sewers are a town's (IC 36-9-23)
 	sim.require_utilities = true
 	sim.economy.money = 50_000_000
 	for z in [0, 200, 400]:

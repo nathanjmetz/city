@@ -166,7 +166,7 @@ func _init() -> void:
 			_check(_open(ann).filter(func(q): return q.deal.kind == "trash").is_empty(), "and it isn't offered again right away")
 
 	# The fee: the host's cost shared by homes, plus the administrative share.
-	_check(Interlocal.fee("fire", 300, 100) == roundi(45_000 * 0.25 * 1.1 / 100.0) * 100, "fire fee is a share by homes")
+	_check(Interlocal.fee("fire", 300, 100) == roundi(Balance.INTERLOCAL["fire"]["upkeep"] * 0.25 * 1.1 / 100.0) * 100, "fire fee is a share by homes")
 	_check(Interlocal.fee("trash", 10_000, 1) == Balance.INTERLOCAL_MIN_FEE, "there's a minimum fee")
 
 	print("FAILED" if _failed else "ALL PASSED")

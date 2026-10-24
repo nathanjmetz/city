@@ -583,6 +583,9 @@ func agency_hub(id: int) -> Dictionary:
 ## Why this manager can't take a step yet ("" when they can).
 func _locked(sim: CitySim, id: int, key: String) -> String:
 	var u: Dictionary = utilities[id]
+	var charter := sim.charter.work_locked(key)
+	if charter != "":
+		return charter
 	match key:
 		"well":
 			return "the wellfield is full" if count_work(id, "well") >= Balance.WATER_MAX_WELLS else ""

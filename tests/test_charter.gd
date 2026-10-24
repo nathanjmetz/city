@@ -13,6 +13,18 @@ func _init() -> void:
 	_check(sim.charter.status() == "settlement", "a new town starts as a settlement")
 	_check(sim.charter.title("Lyons") == "Lyons", "a settlement goes by its plain name")
 
+	# --- Locks: a settlement has no police or sewers of its own.
+	_check(sim.charter.locked(Services.Kind.POLICE).find("incorporates") != -1, "police wait for the town charter")
+	_check(sim.charter.locked(Services.Kind.FIRE) == "", "a township fire station is open from the start")
+	_check(sim.charter.work_locked("lagoon") != "", "sewers wait for the town charter")
+	_check(sim.charter.locked(Services.Kind.BUS_DEPOT) != "" and sim.charter.locked(Services.Kind.PARK_AND_RIDE) != "",
+		"buses wait for a city, park and ride for a metro")
+	sim.economy.money = 10_000_000
+	_check(not sim.apply({"type": "place_service", "kind": Services.Kind.POLICE, "pos": [0, 30], "dir": [0, -1]}),
+		"a settlement can't build a police station")
+	var seen := []
+	sim.charter.step_reached.connect(func(id): seen.append(id))
+
 	# --- Incorporation: people, then six of the eleven services.
 	sim.stats.population = 60
 	_month(sim)

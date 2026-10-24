@@ -459,18 +459,25 @@ func _pile_up(sim: CitySim) -> void:
 ## With cars switched off (the balance harness), each waste site just takes
 ## in what its trucks could have carried.
 func _collect_offstage() -> void:
+	for id in _waste_ids():
+		_collect_unseen(id, float(trucks(id)) * Balance.GARBAGE_STOP_LB * 2.0)
+
+
+## Hub `id` takes in up to `room` lb from the fullest unclaimed streets
+## without a truck on the road: the harness's cars-off mode, and a round
+## whose truck found no route (so trash never piles up for a routing gap).
+func _collect_unseen(id: int, room: float) -> void:
 	var segs := trash.keys()
-	segs.sort()
-	var ids := _waste_ids()
-	for id in ids:
-		var room := float(trucks(id)) * Balance.GARBAGE_STOP_LB * 2.0
-		for seg in segs:
-			if room <= 0.0:
-				break
-			var take := minf(trash[seg], room)
-			trash[seg] -= take
-			room -= take
-			hubs[id].received += take
+	segs.sort_custom(func(a, b): return trash[a] > trash[b] or trash[a] == trash[b] and a < b)
+	for seg in segs:
+		if room <= 0.0:
+			break
+		if claimed.has(seg):
+			continue
+		var take := minf(trash[seg], room)
+		trash[seg] -= take
+		room -= take
+		hubs[id].received += take
 
 
 func _waste_ids() -> Array:
@@ -494,6 +501,12 @@ func _send_trucks(sim: CitySim) -> void:
 	var ids := _waste_ids()
 	if ids.is_empty():
 		return
+	# A street is only claimed while a truck is really on its way to it (a
+	# claim left by a lost trip would keep trucks off that street for good).
+	claimed.clear()
+	for t in trips.values():
+		if int(t.seg) != -1:
+			claimed[int(t.seg)] = true
 	var curb := _curbs(sim)
 	var best := {}  # hub id -> [lb, seg]
 	var segs := trash.keys()
@@ -513,7 +526,8 @@ func _send_trucks(sim: CitySim) -> void:
 			h.short += 1
 			continue
 		var seg: int = best[id][1]
-		_dispatch(sim, {"hub": id, "load": 0.0, "stops": 0, "seg": seg, "prev": -1, "at": _xz(h.pos)}, curb[seg])
+		if not _dispatch(sim, {"hub": id, "load": 0.0, "stops": 0, "seg": seg, "prev": -1, "at": _xz(h.pos)}, curb[seg]):
+			_collect_unseen(id, Balance.GARBAGE_TRUCK_LB * 0.5)
 
 
 ## Where trash waits on each street: the curb in front of its first building.
@@ -569,6 +583,20 @@ func _arrive(sim: CitySim, t: Dictionary) -> void:
 	t.stops += 1
 	t.prev = seg
 	t.at = _xz(_curbs(sim).get(seg, Vector3(t.at[0], 0.0, t.at[1])))
+	# A real route works the whole neighborhood: the truck also picks up the
+	# streets close around this stop on its way through.
+	var at := Vector3(t.at[0], 0.0, t.at[1])
+	var around := _curbs(sim)
+	var near := trash.keys()
+	near.sort()
+	for s in near:
+		if t.load >= Balance.GARBAGE_TRUCK_LB:
+			break
+		if s == seg or claimed.has(s) or not around.has(s) or around[s].distance_to(at) > Balance.GARBAGE_SWEEP_REACH:
+			continue
+		var more := minf(trash[s], Balance.GARBAGE_TRUCK_LB - t.load)
+		trash[s] -= more
+		t.load += more
 	# Room for more and stops left: the next street nearby with trash out.
 	if t.load < Balance.GARBAGE_TRUCK_LB * 0.9 and t.stops < Balance.GARBAGE_STOPS_PER_RUN:
 		var here := Vector3(t.at[0], 0.0, t.at[1])
@@ -666,7 +694,8 @@ func _open_tree(h: Dictionary) -> Array:
 
 ## The city funds a civic hub: its leader plans against a few years of upkeep.
 static func funding(h: Dictionary) -> float:
-	return float(Balance.WASTE_SITES[h.kind].upkeep) * 12.0 * Balance.HUB_PLAN_YEARS
+	var site: Dictionary = Balance.WASTE_SITES[h.kind]
+	return float(site.get("plan", site.upkeep)) * 12.0 * Balance.HUB_PLAN_YEARS
 
 
 ## Why this hub's leader can't build `id` yet, in a few plain words, or "".
