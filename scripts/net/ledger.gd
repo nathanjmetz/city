@@ -266,7 +266,7 @@ func update_metro(towns: Dictionary, joins: Array) -> bool:
 	return opened or JSON.stringify(was) != JSON.stringify(metro)
 
 
-## The metro in one line, for the regional panel: "Petersburg-Oakland City
+## The metro in one line, for the regional panel: "Gas City-Fairmount
 ## micropolitan area, 12,400 people. Next: Connersville, IN, 10,600 to go."
 func metro_line() -> String:
 	if metro.is_empty():

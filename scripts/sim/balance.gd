@@ -1433,8 +1433,8 @@ const METRO_MICRO_MIN := 10_000
 const METRO_METRO_MIN := 50_000
 ## Real US areas to pass, smallest first: [name, population]. These are 2020
 ## Census CBSA totals rounded to the thousand, from memory, so verify them
-## before showing them as exact. Southern Indiana and nearby first, since
-## the region sits near Petersburg, IN.
+## before showing them as exact. Indiana and nearby first, since the region
+## is Grant County, IN.
 const METRO_LADDER := [
 	["Connersville, IN", 23_000], ["Greensburg, IN", 26_000], ["North Vernon, IN", 28_000],
 	["Wabash, IN", 31_000], ["Madison, IN", 33_000], ["Washington, IN", 33_000],
@@ -2030,7 +2030,7 @@ const MAIL_MARGIN_PER_PIECE := 0.04
 ## Neighbouring towns' postage a regional hub keeps, dollars a person a month.
 const MAIL_REGIONAL_PER_PERSON := 0.15
 ## A neighbouring town whose size the region doesn't report counts as this
-## many people (small towns around Petersburg, Indiana).
+## many people (small towns around Marion, Indiana).
 const MAIL_OFFLINE_TOWN_POP := 1_800
 ## A city carrier route is about 500 delivery points; a carrier's day also
 ## tops out at this many streets. A parcel van makes this many business
@@ -2518,8 +2518,8 @@ const RAIL_MAX_SUBSIDY := 100_000
 # president lends slowly and safely; a bold one fuels fast growth and some
 # failures. The player never touches a loan.
 # Benchmarked against real small-town Indiana banking: a state-chartered
-# community bank on the courthouse square (like the First National Bank of
-# Petersburg, 1898, or German American Bank of Jasper) taking the town's
+# community bank on the courthouse square (like the old First National Bank
+# on the square in Marion, or Gas City and Fairmount's home banks) taking the town's
 # deposits and lending them back, and a Farm Credit Mid-America branch office
 # that lends only to farms and timber on the Farm Credit System's bonds.
 # FDIC figures: community banks lend about 80 cents of each deposit dollar,

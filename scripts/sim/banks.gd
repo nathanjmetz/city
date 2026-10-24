@@ -7,8 +7,8 @@ extends RefCounted
 ## never touches a loan: its president decides.
 ##
 ## Benchmarked against real small-town Indiana banking:
-##   - a community bank on the square (like the First National Bank of
-##     Petersburg, chartered 1898) takes the town's deposits and lends about
+##   - a community bank on the square (like the old First National Bank
+##     on the square in Marion) takes the town's deposits and lends about
 ##     80 cents of each dollar back out, keeping 9% equity against its loans
 ##     (the FDIC's community bank leverage ratio)
 ##   - a Farm Credit branch office lends only to farms and timber, a little

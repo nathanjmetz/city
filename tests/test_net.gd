@@ -554,7 +554,7 @@ func _test_land_and_neighborhoods() -> void:
 ## Grow the metro: towns joined by road count together, ranked on the real
 ## ladder, and the metro opens the regional projects as it grows.
 func _test_metro(l: Ledger) -> void:
-	var towns := {"c1": "Petersburg", "c2": "Oakland City", "c3": "Winslow", "c4": "Faraway"}
+	var towns := {"c1": "Marion", "c2": "Gas City", "c3": "Fairmount", "c4": "Faraway"}
 	var joins := [{"a": "c2", "b": "c1"}, {"a": "c3", "b": "c1"}]
 	l.set_population("c1", 30_000)
 	l.set_population("c2", 12_000)
@@ -563,7 +563,7 @@ func _test_metro(l: Ledger) -> void:
 	_check(l.update_metro(towns, joins), "the metro is worked out")
 	_check(l.metro.population == 45_000 and l.metro.towns.size() == 3,
 		"only towns joined by road count (%s)" % str(l.metro))
-	_check(l.metro.name == "Petersburg-Oakland City", "named for the largest town and its principal towns (%s)" % l.metro.name)
+	_check(l.metro.name == "Marion-Gas City", "named for the largest town and its principal towns (%s)" % l.metro.name)
 	_check(l.metro.kind == "micropolitan", "a micropolitan area")
 	var next: Array = l.metro.next
 	_check(not next.is_empty() and int(next[1]) > 45_000 and Balance.METRO_LADDER.all(
@@ -572,13 +572,13 @@ func _test_metro(l: Ledger) -> void:
 	_check(not l.update_metro(towns, joins), "nothing new, nothing to send")
 	l.set_population("c3", 31_000)
 	l.update_metro(towns, joins)
-	_check(l.metro.name == "Winslow-Petersburg-Oakland City" and l.metro.kind == "metropolitan",
+	_check(l.metro.name == "Fairmount-Marion-Gas City" and l.metro.kind == "metropolitan",
 		"towns overtaking each other rename the metro (%s)" % l.metro.name)
 	_check(l.is_unlocked("i69"), "metropolitan opens I-69")
 	l.set_population("c3", 0)
 	l.update_metro(towns, joins)
 	_check(l.is_unlocked("i69"), "an opened project stays open")
-	_check(l.metro_line().begins_with("Petersburg-Oakland City micropolitan area, 42,000 people. Next: "),
+	_check(l.metro_line().begins_with("Marion-Gas City micropolitan area, 42,000 people. Next: "),
 		"one line for the regional panel (%s)" % l.metro_line())
 	var copy := Ledger.new()
 	copy.from_dict(JSON.parse_string(JSON.stringify(l.to_dict())))
