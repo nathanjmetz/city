@@ -4,8 +4,9 @@ extends Node3D
 ## junction, drawn in a few batches. Lights change colour as they cycle.
 ## Signs follow MUTCD: a 30 in red octagon with a white border and STOP on a
 ## galvanised post, 7 ft to the bottom of the sign, green street-name blades
-## on top, and a white stop bar and a crosswalk across each controlled
-## approach.
+## on top. Shaped town junctions are painted by JunctionMarks' rules
+## (crosswalks on every leg, stop and yield lines); other junctions get a
+## stop bar and crosswalk across each controlled approach.
 
 const POLE_H := 5.8
 const RED := Color(1.0, 0.12, 0.08)
@@ -16,6 +17,9 @@ var traffic: TrafficSim
 ## The road view, for where shaped town junctions make each road stop short.
 var roads: RoadView
 var _version := -1
+var _plans_version := -1
+## node -> [what its paint was drawn from, mesh]
+var _paint_cache := {}
 var _poles: MultiMeshInstance3D
 var _arms: MultiMeshInstance3D
 var _heads: MultiMeshInstance3D
@@ -62,8 +66,10 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if traffic == null:
 		return
-	if traffic.version != _version:
+	var pv := roads.plans_version if roads != null else 0
+	if traffic.version != _version or pv != _plans_version:
 		_version = traffic.version
+		_plans_version = pv
 		_rebuild()
 	for i in _head_ways.size():
 		var hw: Array = _head_ways[i]
@@ -94,13 +100,44 @@ func _rebuild_all() -> void:
 	_head_ways.clear()
 	var nodes := traffic.junctions.keys()
 	nodes.sort()
-	var plans := {}
-	if roads != null:
-		plans = Junction.plan(roads.network, roads._rural)
+	var plans: Dictionary = roads.plans if roads != null else {}
+	# Shaped junctions: painted by the rule book, each kept until it changes.
+	var cache := {}
+	var pieces := []
+	var marked := plans.keys()
+	marked.sort()
+	for n in marked:
+		var plan: Dictionary = plans[n]
+		if not JunctionMarks.marked(plan):
+			continue
+		var rules := {}
+		var j: Dictionary = traffic.junctions.get(n, {})
+		for wid in traffic.ways_into(n):
+			var rule := ""
+			if j.is_empty() or j.control == TrafficSim.Rule.NONE:
+				pass
+			elif j.control == TrafficSim.Rule.PRIORITY and j.major.has(wid):
+				pass
+			elif j.control == TrafficSim.Rule.PRIORITY and j.sign == "yield":
+				rule = "yield"
+			else:
+				rule = "stop"
+			rules[traffic.ways[wid].seg] = rule
+		var key := [plan, rules, Terrain.shift]
+		var hit: Array = _paint_cache.get(n, [])
+		if hit.is_empty() or hit[0] != key:
+			var st := SurfaceTool.new()
+			st.begin(Mesh.PRIMITIVE_TRIANGLES)
+			JunctionMarks.paint(plan, rules, st, RoadStyle.Y_JUNCTION + 0.02)
+			hit = [key, Terrain.drape(st.commit(), false, 4.0)]
+		cache[n] = hit
+		pieces.append(hit[1])
+	_paint_cache = cache
 	for n in nodes:
 		var j: Dictionary = traffic.junctions[n]
 		if j.control == TrafficSim.Rule.NONE:
 			continue
+		var painted := JunctionMarks.marked(plans.get(n, {}))
 		var named := false
 		# How far back from the stop line the crosswalk is (behind it where
 		# the corner isn't shaped: in line with the cross street's
@@ -131,8 +168,12 @@ func _rebuild_all() -> void:
 			var face := Basis.looking_at(-dir, Vector3.UP)  # facing the drivers
 			var stops_here: bool = j.control == TrafficSim.Rule.SIGNAL or j.control == TrafficSim.Rule.ALL_STOP \
 				or (j.control == TrafficSim.Rule.PRIORITY and not j.major.has(wid) and j.sign != "yield")
-			if stops_here and not RoadStyle.TYPES[traffic.ways[wid].type].oneway:
-				_markings(paint, sl, half, walk)
+			if stops_here and not painted and not RoadStyle.TYPES[traffic.ways[wid].type].oneway:
+				# A crosswalk only where there are sidewalks to join.
+				var spec: Dictionary = RoadStyle.TYPES[traffic.ways[wid].type]
+				var walks: bool = spec.get("walk", true) and not spec.get("rural", false) \
+					and not (roads != null and roads._rural.has(traffic.ways[wid].seg))
+				_markings(paint, sl, half, walk, walks)
 				any_paint = true
 			if j.control == TrafficSim.Rule.SIGNAL:
 				poles.append(Transform3D(Basis().scaled(Vector3(1, POLE_H, 1)), base + Vector3(0, POLE_H * 0.5, 0)))
@@ -165,20 +206,22 @@ func _rebuild_all() -> void:
 	_fill(_stops, stops)
 	_fill(_yields, yields)
 	_fill(_blades, blades)
-	_paint.mesh = Terrain.drape(paint.commit(), false, 4.0) if any_paint else null
+	if any_paint:
+		pieces.append(Terrain.drape(paint.commit(), false, 4.0))
+	_paint.mesh = RoadView._merge(pieces) if not pieces.is_empty() else null
 
 
 ## A stop bar across the approach lanes and a pair of crosswalk lines across
 ## the whole street, just short of the junction.
 ## `walk` is the crosswalk's centre, metres back from the stop line (less
 ## than 0 for one ahead of it).
-func _markings(st: SurfaceTool, sl: Dictionary, half: float, walk: float) -> void:
+func _markings(st: SurfaceTool, sl: Dictionary, half: float, walk: float, crosswalk := true) -> void:
 	var y := RoadStyle.Y_JUNCTION + 0.02
 	var p: Vector3 = sl.pos
 	var dir: Vector3 = sl.dir
 	# Two 12 in lines about 7 ft apart (MUTCD 3B.18: at least 6 ft), then a
 	# 24 in stop bar 4 ft back.
-	for k in [-1.05, 1.05]:
+	for k in ([-1.05, 1.05] if crosswalk else []):
 		var c: float = walk + k
 		RoadMesh.add_strip(st, PackedVector3Array([p - dir * (c + 0.15), p - dir * (c - 0.15)]), -half, half, y)
 	var bar := walk + 1.2 + 1.2

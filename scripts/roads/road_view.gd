@@ -26,6 +26,10 @@ var _street_cache := {}  # segment id -> [what it was drawn from, its mesh]
 var _pole_cache := {}  # segment id -> [what they were drawn from, wood, wire]
 var _bridge_cache := {}  # segment id -> [what it was drawn from, piers or null]
 var _junction_cache := {}  # node -> [its plan, {part: mesh}]
+## The shaped junctions as last drawn (Junction.plan), for the junction
+## paint and signs; plans_version counts each change.
+var plans := {}
+var plans_version := 0
 var _later := {}  # segment id -> what to redraw it from, a few each frame
 var _seg_mi := {}  # segment id -> its street
 var _poles_later := {}  # segment id -> [key, pts, offset, drives near], drawn when a rebuild runs out of time
@@ -256,6 +260,9 @@ func _rebuild_all(gen: int) -> void:
 				gaps[seg][side] = g[seg][side]
 	# Town street junctions get real corners; their roads stop short of them.
 	var junctions := Junction.plan(network, _rural)
+	if junctions != plans:
+		plans = junctions
+		plans_version += 1
 	var street_cache := {}
 	var t0 := Perf.now()
 	_later.clear()
@@ -282,6 +289,7 @@ func _rebuild_all(gen: int) -> void:
 		var sg: Dictionary = network.segments[id]
 		var ja := Junction.trim(junctions, sg.a, id)
 		var jb := Junction.trim(junctions, sg.b, id)
+		var line_cuts := Vector2(JunctionMarks.line_cut(junctions, sg.a, id), JunctionMarks.line_cut(junctions, sg.b, id))
 		if ja > 0.0 or jb > 0.0:
 			pts = RoadMesh._between(pts, ja, RoadNetwork.polyline_length(pts) - jb)
 		var seg_gaps: Dictionary = gaps.get(id, {})
@@ -314,7 +322,7 @@ func _rebuild_all(gen: int) -> void:
 			var rural: bool = (_rural.has(id) or spec.get("rural", false)) and pts[pts.size() / 2].y < 1.0
 			# A road that hasn't changed keeps its mesh (one edit doesn't redo
 			# the whole town's streets).
-			var key := [pts, type, rural, seg_gaps, Terrain.shift]
+			var key := [pts, type, rural, seg_gaps, Terrain.shift, line_cuts]
 			var cached: Array = _street_cache.get(id, [])
 			if cached.is_empty() or cached[0] != key:
 				if (sliced or not cached.is_empty()) and (Perf.now() - t0) / 1000.0 > REMESH_MS:
@@ -323,9 +331,9 @@ func _rebuild_all(gen: int) -> void:
 					# them); a street keeps its old look a few frames while
 					# they're redrawn. A new street is drawn at once, except a
 					# neighbor's, which just appears a few frames late.
-					_later[id] = [key, pts, type, seg_gaps, rural]
+					_later[id] = [key, pts, type, seg_gaps, rural, line_cuts]
 				else:
-					cached = [key, Terrain.drape(RoadMesh.street(pts, type, _mats, seg_gaps, rural))]
+					cached = [key, Terrain.drape(RoadMesh.street(pts, type, _mats, seg_gaps, rural, line_cuts))]
 			if not cached.is_empty():
 				street_cache[id] = cached
 				mi.mesh = cached[1]
@@ -402,7 +410,7 @@ func _rebuild_all(gen: int) -> void:
 			ring_nodes[network.segments[id].a] = hw
 			ring_nodes[network.segments[id].b] = hw
 	for id in network.nodes:
-		if network.nodes[id].y < -1.0 or ring_nodes.has(id) or junctions.has(id):
+		if network.nodes[id].y < -1.0 or ring_nodes.has(id) or (junctions.has(id) and not junctions[id].has("bend")):
 			continue  # rings meet their roads without a pad over the island
 		if network.segments_at(id).size() == 1:
 			continue  # a dead end stops square, not in a round pad (Brawn 2026-10-24)
@@ -503,7 +511,7 @@ func _remesh_later() -> void:
 		var mi: MeshInstance3D = _seg_mi.get(id)
 		if mi == null or not is_instance_valid(mi):
 			continue
-		var mesh := Terrain.drape(RoadMesh.street(job[1], job[2], _mats, job[3], job[4]))
+		var mesh := Terrain.drape(RoadMesh.street(job[1], job[2], _mats, job[3], job[4], job[5]))
 		_street_cache[id] = [job[0], mesh]
 		mi.mesh = mesh
 		if (Perf.now() - t) / 1000.0 > REMESH_MS:
