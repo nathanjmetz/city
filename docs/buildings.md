@@ -17,6 +17,32 @@ made from what is around the lot:
 | Shops | Offices | The town's college graduates support office jobs no office holds yet |
 | Industry | Factory | Always |
 
+## The market decides what can appear
+
+Before any of that, a type and stage must be one the market supports
+(`Market`, Brawn 2026-10-24). The market is the town's own people plus the
+people of every neighbor town within commuting reach: full within 15 km,
+fading to nothing at 50 km (about a 45-minute drive), further with a funded
+I-69. Each type and stage needs at least `Balance.MARKET_MIN` people and is
+fully in favour at twice that:
+
+| Type | Stages (market needed) |
+|---|---|
+| Apartments | walk-up 10k, three-storey 25k, mid-rise 100k, high-rise 150k, tower 400k |
+| Row homes | 50k, three-storey 100k |
+| Shop with flats | two-storey any, three 5k, four 15k |
+| Offices | three storeys 10k, five 25k, eight 50k, 16 150k, 30 1M |
+| Shopping center | strip 5k, neighborhood center 10k |
+
+So a remote hamlet gets houses and a Main Street however dense its blocks
+are, and a new town beside a big one draws apartments and bigger home
+builders early. No new apartment building starts, and none grows, while 10%
+of the town's flats stand empty (`MARKET_VACANCY`). The developers' asks on
+the bell (`Redevelopment`) and the home builders (`Subdivisions`) follow the
+same market. Buildings already standing are never torn down for it. The
+real references (Census ACS housing mix by place size, ICSC trade areas,
+real Indiana skylines) are in `balance.gd`; the game never shows them.
+
 Wealthier areas (`CitySim.wealth_at`) lean to detached houses and away from
 row homes and apartments. Row homes take the whole lot as a row of narrow
 homes, one per 7.5 m of frontage; Main Street blocks are built wall to wall

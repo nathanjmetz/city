@@ -8,6 +8,10 @@ extends RefCounted
 ##     dense core and on avenues
 ##   - offices once the town has college graduates to hire (Education works
 ##     out how many office jobs they support; office buildings house them)
+## Above all, only what the market supports (Market, Brawn 2026-10-24): the
+## people within commuting reach, the town's and its neighbors'. A remote
+## hamlet gets houses and a Main Street however dense its blocks are;
+## apartments, row homes, offices and towers wait for the market to grow.
 ## Each type has its own growth path (stages), and some types turn into
 ## another at the top of theirs (a corner store gains flats upstairs once its
 ## street is a Main Street; a house in a pricey area makes way for row homes).
@@ -174,6 +178,8 @@ static func context(sim, key: String) -> Dictionary:
 		"wealth": sim.wealth_at(Vector2(p.x, p.z)),
 		"graduates_free": graduates_free(sim),
 		"town": int(sim.stats.population),
+		"market": sim.market.people(sim),
+		"flats_vacant": Market.flats_vacancy(sim),
 		"downtown": density >= Balance.DOWNTOWN_DENSITY,
 	}
 	var zone: int = sim.buildings[key].zone if sim.buildings.has(key) else sim.zones.zone_at(lot.zone_pt)
@@ -182,19 +188,19 @@ static func context(sim, key: String) -> Dictionary:
 
 
 ## The floor-area ratio zoning allows here (Balance.FAR_*): homes step up
-## as the area fills in and the town grows; shops on a Main Street; and a
+## as the area fills in and the market grows; shops on a Main Street; and a
 ## city's downtown, by the city's size.
 static func far_limit(c: Dictionary, zone: int) -> float:
 	match zone:
 		RES:
 			var f: Array = Balance.FAR_HOMES
-			if c.town >= Balance.ROW_HOME_CITY and c.downtown:
+			if Market.supports(c.market, "apartments", 4) and c.downtown:
 				return f[4]
-			if c.town >= Balance.ROW_HOME_TOWN and c.density >= Balance.DENSE_CORE * 3:
+			if Market.supports(c.market, "apartments", 3) and c.density >= Balance.DENSE_CORE * 3:
 				return f[3]
-			if c.density >= Balance.DENSE_CORE or c.avenue:
+			if (c.density >= Balance.DENSE_CORE or c.avenue) and Market.supports(c.market, "apartments"):
 				return f[2]
-			if c.density >= Balance.ROW_HOME_DENSITY and row_town(c) > 0.0:
+			if c.density >= Balance.ROW_HOME_DENSITY and Market.supports(c.market, "row_home"):
 				return f[1]
 			return f[0]
 		COM:
@@ -227,14 +233,13 @@ static func area_for(type: String, level: int, far: float) -> float:
 	return 0.0 if float(st.storeys) * float(TYPES[type].cover) <= far else INF
 
 
-## How far the town is along to row homes (0 below ROW_HOME_TOWN people, 1
-## by ROW_HOME_CITY) and to its full share of apartments.
-static func row_town(c: Dictionary) -> float:
-	return clampf(float(c.town - Balance.ROW_HOME_TOWN) / (Balance.ROW_HOME_CITY - Balance.ROW_HOME_TOWN), 0.0, 1.0)
-
-
-static func flats_town(c: Dictionary) -> float:
-	return lerpf(Balance.SMALL_TOWN_FLATS, 1.0, clampf(float(c.town) / Balance.FLATS_TOWN, 0.0, 1.0))
+## How far the market is along to a type's first stage (Market.ramp): 0
+## where nobody would build it, 1 where it's as common as anywhere. New
+## apartment buildings also wait while the town's flats stand empty.
+static func market_for(c: Dictionary, type: String, level := 0) -> float:
+	if type == "apartments" and c.flats_vacant >= Balance.MARKET_VACANCY:
+		return 0.0
+	return Market.ramp(c.market, type, level)
 
 
 ## Office jobs the town's college graduates support (scripts/sim/education.gd)
@@ -265,12 +270,12 @@ static func pick(sim, key: String, zone: int, rng: RandomNumberGenerator) -> Arr
 	match zone:
 		RES:
 			weights.append(["house", maxf(0.2, 1.0 - dens / 80.0) * (0.5 + rich), "Room for a house and yard"])
-			if c.density >= Balance.ROW_HOME_DENSITY and row_town(c) > 0.0:
+			if c.density >= Balance.ROW_HOME_DENSITY and market_for(c, "row_home") > 0.0:
 				weights.append(["row_home", clampf((dens - Balance.ROW_HOME_DENSITY) / 30.0 + 0.4, 0.0, 1.5)
-					* (1.3 - rich) * row_town(c), "A big town, and land is dear here, so homes share walls"])
-			if c.density >= Balance.DENSE_CORE or c.avenue:
+					* (1.3 - rich) * market_for(c, "row_home"), "A big market, and land is dear here, so homes share walls"])
+			if (c.density >= Balance.DENSE_CORE or c.avenue) and market_for(c, "apartments") > 0.0:
 				var w := (0.8 if c.avenue else 0.0) + clampf((dens - Balance.DENSE_CORE) / 40.0, 0.0, 1.0)
-				weights.append(["apartments", w * (1.3 - rich) * flats_town(c),
+				weights.append(["apartments", w * (1.3 - rich) * market_for(c, "apartments"),
 					"On an avenue" if c.avenue else "Close to the centre of town"])
 		COM:
 			if c.main_street:
@@ -279,10 +284,11 @@ static func pick(sim, key: String, zone: int, rng: RandomNumberGenerator) -> Arr
 			else:
 				weights.append(["shop", 1.0, "A shop for the neighborhood"])
 				weights.append(["mixed_use", 0.15, "Shop below, flats above"])
-			if c.graduates_free >= int(TYPES.office.stages[0].cap[1]):
-				weights.append(["office", 0.6 + dens / 50.0, "The town has college graduates to hire"])
+			if c.graduates_free >= int(TYPES.office.stages[0].cap[1]) and market_for(c, "office") > 0.0:
+				weights.append(["office", (0.6 + dens / 50.0) * market_for(c, "office"), "The town has college graduates to hire"])
 		_:
 			weights.append([default_type(zone), 1.0, ""])
+	weights = weights.filter(func(w): return w[1] > 0.0)
 	var total := 0.0
 	for w in weights:
 		total += w[1]
@@ -374,16 +380,20 @@ static func _buy_rank(sim, k: String, far: float) -> float:
 	return INF
 
 
-## Whether the area supports this stage.
+## Whether the area, and the market, support this stage.
 static func _stage_ok(sim, b: Dictionary, type: String, level: int, c: Dictionary) -> bool:
+	if not Market.supports(c.market, type, level):
+		return false
+	if type == "apartments" and c.flats_vacant >= Balance.MARKET_VACANCY:
+		return false
 	match [type, level]:
 		["house", 1]: return true
-		["row_home", 0]: return c.density >= Balance.ROW_HOME_DENSITY * 2 and c.wealth < 0.7 and row_town(c) > 0.0
+		["row_home", 0]: return c.density >= Balance.ROW_HOME_DENSITY * 2 and c.wealth < 0.7
 		["row_home", 1]: return c.density >= Balance.ROW_HOME_DENSITY + 15
 		["apartments", 1]: return c.density >= Balance.DENSE_CORE + 10
 		["apartments", 2]: return c.density >= Balance.DENSE_CORE * 3 or (c.avenue and c.density >= Balance.DENSE_CORE * 2)
-		["apartments", 3]: return c.town >= Balance.ROW_HOME_TOWN and c.density >= Balance.DENSE_CORE * 3
-		["apartments", 4]: return c.town >= Balance.ROW_HOME_CITY and c.downtown
+		["apartments", 3]: return c.density >= Balance.DENSE_CORE * 3
+		["apartments", 4]: return c.downtown
 		["shop", 1]: return true
 		["mixed_use", 0]: return c.main_street
 		["mixed_use", _]: return c.main_street and c.density >= Balance.DENSE_CORE * level

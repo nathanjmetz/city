@@ -45,11 +45,27 @@ func _init() -> void:
 	var sparse := _picks(sim, key, ZoneMap.Zone.RESIDENTIAL, rng)
 	_check(sparse.keys() == ["house"], "a quiet street gets houses (%s)" % str(sparse))
 	var crowd := _crowd(sim, key, 70)
-	# A small town's crowded core: mostly houses, a few walk-ups, no rows
-	# (real small Midwestern towns).
+	# A hamlet out on its own: however crowded its blocks, nobody builds
+	# apartments or row homes (Brawn's 677-person town).
+	sim.market.regional = 0
 	var small := _picks(sim, key, ZoneMap.Zone.RESIDENTIAL, rng)
-	_check(not small.has("row_home") and small.get("house", 0) > small.get("apartments", 0),
-		"a small town's core stays mostly houses, no row homes (%s)" % str(small))
+	_check(small.keys() == ["house"], "a remote hamlet's core stays houses (%s)" % str(small))
+	_check(not BuildingTypes.options(sim, key).any(func(o): return o[0] == "row_home"),
+		"and its houses don't turn into row homes")
+	# The same few blocks beside a thriving town: developers come early.
+	sim.market.regional = 30_000
+	var suburb := _picks(sim, key, ZoneMap.Zone.RESIDENTIAL, rng)
+	_check(suburb.has("apartments") and not suburb.has("row_home"),
+		"beside a thriving town, apartments come early (%s)" % str(suburb))
+	# ...but not while the flats already built stand empty.
+	var spare := BuildingTypes.make(sim, crowd[0], sim.buildings[crowd[0]], "apartments", 1)
+	spare.occ = 0
+	var was_crowd: Dictionary = sim.buildings[crowd[0]]
+	sim.buildings[crowd[0]] = spare
+	var glut := _picks(sim, key, ZoneMap.Zone.RESIDENTIAL, rng)
+	_check(not glut.has("apartments"), "empty flats in town, no new apartment buildings (%s)" % str(glut))
+	sim.buildings[crowd[0]] = was_crowd
+	sim.market.regional = 0
 	var people: int = sim.stats.population
 	sim.stats.population = 150_000
 	var dense := _picks(sim, key, ZoneMap.Zone.RESIDENTIAL, rng)
@@ -90,8 +106,12 @@ func _init() -> void:
 	var none := _picks(sim, face[3], ZoneMap.Zone.COMMERCIAL, rng)
 	_check(not none.has("office"), "no graduates, no offices (%s)" % str(none))
 	sim.education.locals.degree = 400.0
+	var remote := _picks(sim, face[3], ZoneMap.Zone.COMMERCIAL, rng)
+	_check(not remote.has("office"), "graduates in a remote hamlet still get no office building (%s)" % str(remote))
+	sim.market.regional = 20_000
 	var some := _picks(sim, face[3], ZoneMap.Zone.COMMERCIAL, rng)
-	_check(some.has("office"), "graduates bring offices (%s)" % str(some))
+	_check(some.has("office"), "graduates in a big enough market bring offices (%s)" % str(some))
+	sim.market.regional = 0
 
 	# Flats over a shop fill with residents and count as homes.
 	sim.education.locals.degree = 0.0
@@ -213,6 +233,8 @@ func _test_far() -> void:
 	var c := BuildingTypes.context(sim, key)
 	_check(c.far <= Balance.FAR_SHOPS[2], "a small town's busy blocks stay low (FAR %.1f)" % c.far)
 	sim.stats.population = 60_000
+	# A city of 60,000 in a metro of about 200,000.
+	sim.market.regional = 140_000
 	sim.education.locals.degree = 20_000.0
 	c = BuildingTypes.context(sim, key)
 	_check(c.downtown and is_equal_approx(c.far, Balance.FAR_DOWNTOWN[1]), "a city's core is zoned for towers (FAR %.1f, %d nearby, %d lots)" % [c.far, c.density, sim.lots.size()])
@@ -239,6 +261,7 @@ func _test_far() -> void:
 	_check(BuildingTypes.storeys(sim.buildings[key]) == 16, "and it goes up 16 storeys")
 	# A small town has no tower core: nobody assembles a site there.
 	sim.stats.population = 3_000
+	sim.market.regional = 0
 	_check(BuildingTypes.assemble(sim, key) == "", "no tower sites outside a city's core")
 	for k in crowd:
 		sim.buildings.erase(k)

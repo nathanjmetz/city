@@ -121,6 +121,7 @@ jobs:
           run_test tests/test_streets.gd
           run_test tests/test_lots.gd
           run_test tests/test_building_types.gd
+          run_test tests/test_market.gd
           run_test tests/test_hubs.gd
           run_test tests/test_warehouses.gd
           run_test tests/test_big_factories.gd
