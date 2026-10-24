@@ -86,6 +86,45 @@ func _init() -> void:
 	_check(leaks.is_empty(), "every lot is painted in its own scheme %s" % [leaks.slice(0, 3)])
 	_check(inside.is_empty(), "mirrored and unmirrored houses face out %s" % [inside.slice(0, 3)])
 
+	# A builder reads the lot before siting the house (Brawn saw homes
+	# built past the lines of small and angled lots): on a skewed, tapering
+	# or pie-shaped lot the house keeps its side yards inside the lot lines,
+	# square to the street, and the drive the cars use is still the painted one.
+	var odd := []
+	var odd_lots := []
+	for i in 60:
+		var w: float = [16.0, 18.0, 20.0, 24.0][i % 4]
+		var d: float = [30.0, 36.0, 42.0][i % 3]
+		var poly: PackedVector2Array
+		match i % 3:
+			0:  # a skewed crossing: side lines at 30 degrees (and as wide
+				# across as a plain lot)
+				w /= cos(deg_to_rad(30.0))
+				var k: float = d * tan(deg_to_rad(30.0)) * (1.0 if i % 2 == 0 else -1.0)
+				poly = PackedVector2Array([Vector2(-w / 2, 0), Vector2(w / 2, 0), Vector2(w / 2 + k, d), Vector2(-w / 2 + k, d)])
+			1:  # tapering to the back, the outside of a curve
+				w = maxf(w, 20.0)
+				poly = PackedVector2Array([Vector2(-w / 2, 0), Vector2(w / 2, 0), Vector2(w * 0.2, d), Vector2(-w * 0.2, d)])
+			2:  # a pie lot on the inside of a curve, narrow at the street
+				poly = PackedVector2Array([Vector2(-w * 0.3, 0), Vector2(w * 0.3, 0), Vector2(w * 0.75, d), Vector2(-w * 0.75, d)])
+		odd_lots.append({"width": w, "depth": d, "outline": poly, "at": Vector2(i * 410.0, 0.0)})
+	var was_unseated := HouseBuilder.unseated
+	for i in odd_lots.size():
+		var lot: Dictionary = odd_lots[i]
+		var seed := i * 7727 + 3
+		var built: Array = HouseBuilder.build(seed, 6.0, lot, 1 + i % 2)
+		for m: Rect2 in HouseBuilder.last_masses:
+			for c in [m.position, Vector2(m.end.x, m.position.y), m.end, Vector2(m.position.x, m.end.y)]:
+				if not Geometry2D.is_point_in_polygon(c, lot.outline):
+					odd.append("lot %d (%s) corner %s" % [i, ["skewed", "tapering", "pie"][i % 3], c])
+		var lay := SiteLayout.house(seed, {"half": lot.width * 0.5, "depth": lot.depth, "art": lot}, 1 + i % 2)
+		for s in lay.spots:
+			if s.kind == "drive" and not _on_drive(built[1], s.pos):
+				odd.append("lot %d: car off the drive at %s" % [i, s.pos])
+	if HouseBuilder.unseated != was_unseated:
+		odd.append("%d lots no plan fitted" % (HouseBuilder.unseated - was_unseated))
+	_check(odd.is_empty(), "houses on skewed, tapering and pie lots stay inside the lot lines %s" % [odd.slice(0, 3)])
+
 	# The car's garage and drive spots lie on the painted drive.
 	var off := []
 	for i in lots.size():
