@@ -115,10 +115,21 @@ var _shown_problem := ""
 var _guide := MeshInstance3D.new()
 var _ghost := MeshInstance3D.new()  # Exact: the next whole block, faint
 var _label := Label3D.new()
-var _guide_mat := RoadStyle.material(Color(1, 1, 1, 0.45), true)
+var _guide_mat := RoadStyle.material(Color(1, 1, 1, 0.85), true)
 ## Angle of the guide the current road snapped to, or NAN.
 var _guide_angle := NAN
 var _guide_kind := ""
+## CS2-style alignment: a point lines up with nearby junctions and road ends,
+## along their roads or square to them, shown as dotted lines.
+const ALIGN_PX := 10.0  # how near the cursor comes to a guide line to snap onto it
+const ALIGN_REACH := 500.0  # junctions this near offer guide lines (more when zoomed out)
+const ALIGN_NODES := 16  # the nearest this many junctions only
+const DASH_PX := 9.0  # dash length on screen
+## AASHTO Green Book: roads should cross near 90° and no sharper than about
+## 60°, or drivers can't see along the other road.
+const SHARP_DEG := 60.0
+var _align_lines := []  # [from, to]: the dotted lines the point lined up on
+var _angle_labels: Array[Label3D] = [Label3D.new(), Label3D.new()]  # at the start and end
 var _left_down := false  # the left button went down on the map, not on a panel
 var _press_at := Vector2.ZERO  # where on screen it went down
 ## The last grid plan, kept while the shape and cursor stay put.
@@ -167,6 +178,18 @@ func _ready() -> void:
 	_label.offset = Vector2(0, 90)  # just above the cursor ring
 	_label.no_depth_test = true
 	add_child(_label)
+	for l in _angle_labels:
+		l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		l.fixed_size = true
+		l.pixel_size = 0.0005
+		l.font_size = 34
+		l.outline_size = 10
+		l.font = Brand.font("ui", 700)
+		l.offset = Vector2(80, 0)  # beside the road, clear of it
+		l.outline_modulate = Color(0.05, 0.08, 0.1)
+		l.no_depth_test = true
+		l.visible = false
+		add_child(l)
 	set_mode(mode)
 
 
@@ -312,6 +335,8 @@ func _process(_delta: float) -> void:
 	_guide.visible = false
 	_ghost.visible = false
 	_label.visible = false
+	for l in _angle_labels:
+		l.visible = false
 	_dots.visible = false
 	_centre.visible = false
 	_cursor.visible = hit != null and mode != Mode.NONE
@@ -331,6 +356,7 @@ func _process(_delta: float) -> void:
 	if mode == Mode.ROUNDABOUT:
 		curves = RoadShapes.roundabout(p, _ring_radius())
 	elif _points.is_empty():
+		_draw_guides(Vector3.ZERO)  # where the first point lines up
 		return
 	elif mode == Mode.GRID:
 		_show_grid(p)
@@ -715,11 +741,7 @@ func _show_guide(at: Vector3) -> void:
 	if is_nan(_guide_angle):
 		return
 	var dir := Vector3(cos(_guide_angle), 0.0, sin(_guide_angle))
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	RoadMesh.add_strip(st, Terrain.densify(PackedVector3Array([at - dir * 400.0, at + dir * 400.0]), 6.0), -0.25, 0.25, 0.3)
-	_guide.mesh = Terrain.drape(st.commit(), true)
-	_guide.visible = true
+	_dashes([[at - dir * 400.0, at + dir * 400.0]])
 
 
 func _resize(f: float) -> void:
@@ -817,6 +839,8 @@ func _pending_curve(p: Vector3) -> Array:
 	if mode != Mode.CURVED and Input.is_key_pressed(KEY_SHIFT):
 		var ang := snappedf(atan2(d.z, d.x), ANGLE_STEP)
 		p = a + Vector3(cos(ang), 0.0, sin(ang)) * d.length()
+		if _snap_kind == "free":
+			p = _align(p, a, ang)
 	elif mode != Mode.CURVED and d.length() > 2.0:
 		# Snap to straight on or square with the road we start from.
 		var ang := atan2(d.z, d.x)
@@ -830,26 +854,158 @@ func _pending_curve(p: Vector3) -> Array:
 					break
 			if not is_nan(_guide_angle):
 				break
+		if not is_nan(_guide_angle) and _snap_kind == "free":
+			p = _align(p, a, _guide_angle)  # along the guide, to where it lines up
 	return [a, a.lerp(p, 0.5), p]
 
 
 ## Directions of the roads at a point, for guide lines.
 func _reference_angles(at: Vector3) -> Array:
-	var out := []
 	var n := network.find_node_near(at, 0.5)
 	if n != -1:
-		for id in network.segments_at(n):
-			var c := network.curve_of(id)
-			var t := 0.0 if network.segments[id].a == n else 1.0
-			var tan := RoadNetwork.bezier_tangent(c[0], c[1], c[2], t)
-			out.append(atan2(tan.z, tan.x))
-		return out
+		return _node_angles(n)
+	var out := []
 	var s := network.find_segment_near(at, 0.5)
 	if not s.is_empty():
 		var c := network.curve_of(s.seg)
 		var tan := RoadNetwork.bezier_tangent(c[0], c[1], c[2], s.t)
 		out.append(atan2(tan.z, tan.x))
 	return out
+
+
+## Directions the roads leave a junction in.
+func _node_angles(n: int) -> Array:
+	var out := []
+	for id in network.segments_at(n):
+		var c := network.curve_of(id)
+		var t := 0.0 if network.segments[id].a == n else 1.0
+		var tan := RoadNetwork.bezier_tangent(c[0], c[1], c[2], t)
+		if network.segments[id].a != n:
+			tan = -tan
+		out.append(atan2(tan.z, tan.x))
+	return out
+
+
+## Guide lines through the nearest junctions and road ends: along each road
+## there and square to it. [origin, angle] pairs.
+func _align_guides(near: Vector3, skip: Vector3) -> Array:
+	var reach := maxf(ALIGN_REACH, 400.0 * _px)
+	var found := []
+	for id in network.nodes:
+		var q: Vector3 = network.nodes[id]
+		var d := Vector2(q.x - near.x, q.z - near.z).length()
+		if d < reach and Vector2(q.x - skip.x, q.z - skip.z).length() > 0.5:
+			found.append([d, id])
+	found.sort_custom(func(x, y): return x[0] < y[0])
+	var out := []
+	for f in found.slice(0, ALIGN_NODES):
+		var q: Vector3 = network.nodes[f[1]]
+		for ang in _node_angles(f[1]):
+			out.append([q, ang])
+			out.append([q, ang + PI * 0.5])
+	return out
+
+
+## Lines a free point up with nearby junctions, the way CS2 does: onto a
+## guide line, or where two guide lines cross. With `ray` (an angle) the point
+## stays on the line from `from` in that direction and slides to where it
+## meets a guide.
+func _align(p: Vector3, from: Vector3, ray := NAN) -> Vector3:
+	_align_lines = []
+	var reach := ALIGN_PX * _px
+	var p2 := Vector2(p.x, p.z)
+	var near := []  # [offset, origin2, dir2, origin3]
+	for g in _align_guides(p, from):
+		var o := Vector2(g[0].x, g[0].z)
+		var u := Vector2(cos(g[1]), sin(g[1]))
+		var off := absf((p2 - o).cross(u))
+		if off < reach * (3.0 if not is_nan(ray) else 1.0):
+			near.append([off, o, u, g[0]])
+	near.sort_custom(func(x, y): return x[0] < y[0])
+	if not is_nan(ray):
+		var r := Vector2(from.x, from.z)
+		var w := Vector2(cos(ray), sin(ray))
+		for g in near:
+			var x = Geometry2D.line_intersects_line(r, w, g[1], g[2])
+			if x != null and (x as Vector2).distance_to(p2) < reach * 1.5 and (x - r).dot(w) > 0.0:
+				_align_lines = [[g[3], Vector3(x.x, p.y, x.y)]]
+				return Vector3(x.x, p.y, x.y)
+		return p
+	if near.is_empty():
+		return p
+	var a = near[0]
+	var q: Vector2 = a[1] + a[2] * (p2 - a[1]).dot(a[2])
+	for b in near.slice(1):
+		if absf((a[2] as Vector2).cross(b[2])) < 0.2 or (b[1] as Vector2).distance_to(a[1]) < 0.5:
+			continue  # parallel lines, or the same junction
+		var x = Geometry2D.line_intersects_line(a[1], a[2], b[1], b[2])
+		if x != null and (x as Vector2).distance_to(p2) < reach * 1.5:
+			var at := Vector3(x.x, p.y, x.y)
+			_align_lines = [[a[3], at], [b[3], at]]
+			return at
+	_align_lines = [[a[3], Vector3(q.x, p.y, q.y)]]
+	return Vector3(q.x, p.y, q.y)
+
+
+## Dotted guide lines: the start's straight-on or square guide, and the
+## lines to junctions the point lined up with.
+func _draw_guides(start: Vector3) -> void:
+	var lines := _align_lines.duplicate()
+	if not is_nan(_guide_angle) and mode != Mode.GRID:
+		var dir := Vector3(cos(_guide_angle), 0.0, sin(_guide_angle))
+		lines.append([start, start + dir * maxf(400.0, 600.0 * _px)])
+	_dashes(lines)
+
+
+## Draws [from, to] lines dotted, the same on screen at any zoom.
+func _dashes(lines: Array) -> void:
+	if lines.is_empty():
+		return
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var g := maxf(0.25, LINE_PX * 0.5 * _px)
+	var dash := maxf(2.0, DASH_PX * _px)
+	for l in lines:
+		var a: Vector3 = l[0]
+		var b: Vector3 = l[1]
+		var len := Vector2(b.x - a.x, b.z - a.z).length()
+		var k := 0.0
+		while k < len:
+			var e := minf(k + dash, len)
+			RoadMesh.add_strip(st, PackedVector3Array([a.lerp(b, k / len), a.lerp(b, e / len)]), -g, g, 0.3)
+			k += dash * 2.0
+	_guide.mesh = Terrain.drape(st.commit(), true, 8.0)
+	_guide.visible = true
+
+
+## The angle a new road makes with the roads where it starts and ends, the
+## smaller side, flagged when sharper than AASHTO's 60°.
+func _show_angles(curve: Array) -> void:
+	for i in 2:
+		var at: Vector3 = curve[0] if i == 0 else curve[2]
+		var refs := _reference_angles(Vector3(at.x, at.y, at.z))
+		if refs.is_empty():
+			continue
+		var n := network.find_node_near(at, 0.5)
+		var t: Vector3 = (curve[1] - curve[0]) if i == 0 else (curve[1] - curve[2])
+		if t.length() < 0.01:
+			t = (curve[2] - curve[0]) * (1.0 if i == 0 else -1.0)
+		var ang := atan2(t.z, t.x)
+		var best := 180.0
+		for r in refs:
+			var d := rad_to_deg(absf(angle_difference(ang, r)))
+			best = minf(best, d if n != -1 else minf(d, 180.0 - d))
+		if best < 1.0:
+			continue  # along the road itself, not across it
+		var l := _angle_labels[i]
+		l.text = "%d°" % roundi(best)
+		var sharp := best < SHARP_DEG - 0.5
+		if sharp:
+			l.text += " sharp"
+		l.modulate = Color(1.0, 0.45, 0.35) if sharp else Color(1, 1, 1)
+		# A little way along the new road, beside it, where the angle opens.
+		l.position = Terrain.lift(at + Vector3(t.x, 0.0, t.z).normalized() * 45.0 * _px) + Vector3(0, 2, 0)
+		l.visible = true
 
 
 ## Shows the road's length by the cursor, and the guide line it snapped to.
@@ -873,16 +1029,12 @@ func _show_length(curve: Array) -> void:
 			top = maxf(top, maxf(q[0].y, q[2].y))
 		_label.text += "\nOverpass: clears %d crossing%s, deck %d ft up" \
 			% [plan.crossed, "" if plan.crossed == 1 else "s", roundi(top * FT)]
-	if not is_nan(_guide_angle):
-		_label.text += "\n" + _guide_kind
-		var dir := Vector3(cos(_guide_angle), 0.0, sin(_guide_angle))
-		var st := SurfaceTool.new()
-		st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		var line := PackedVector3Array([curve[0] - dir * 400.0, curve[0] + dir * 400.0])
-		var g := maxf(0.25, LINE_PX * 0.5 * _px)
-		RoadMesh.add_strip(st, line, -g, g, 0.3)
-		_guide.mesh = Terrain.drape(st.commit(), true, 8.0)
-		_guide.visible = true
+	if not _align_lines.is_empty():
+		_label.text += "\nLined up with %s" % ("two junctions" if _align_lines.size() > 1 else "a junction")
+	if _snap_kind == "node":
+		_label.text += "\nJoins the junction"
+	_draw_guides(curve[0])
+	_show_angles(curve)
 	_label.position = Terrain.lift(curve[2]) + Vector3(0, 6, 0)
 	_label.visible = true
 
@@ -903,7 +1055,10 @@ func _snapped(hit: Vector3) -> Vector3:
 	_snap_kind = "free"
 	if mode == Mode.CURVED and _points.size() == 1:
 		return Vector3(hit.x, 0.0, hit.z)  # the bend point floats freely
-	var snap := network.snap(hit, _snap_reach(SNAP_NODE, SNAP_PX * 1.3), _snap_reach(SNAP_ROAD + 5.0, SNAP_PX))
+	_align_lines = []
+	# Junctions pull from further than the road between them, so a point
+	# near one lands on it, not just beside it on the road.
+	var snap := network.snap(hit, _snap_reach(SNAP_NODE + 3.0, SNAP_PX * 2.0), _snap_reach(SNAP_ROAD + 5.0, SNAP_PX))
 	_snap_kind = snap.kind
 	if snap.kind == "free":
 		# Onto a state highway or county road out in the country, which
@@ -919,7 +1074,10 @@ func _snapped(hit: Vector3) -> Vector3:
 			_snap_kind = "county"
 			var o := sim.terrain_offset
 			return Vector3(mile.on.x - o.x, 0.0, mile.on.y - o.y)
-		return Vector3(hit.x, 0.0 if mode == Mode.GRID else elevation, hit.z)
+		var free := Vector3(hit.x, 0.0 if mode == Mode.GRID else elevation, hit.z)
+		if mode == Mode.STRAIGHT or (mode == Mode.CURVED and _points.size() != 1):
+			free = _align(free, _points[0] if not _points.is_empty() else Vector3(INF, 0, INF))
+		return free
 	if mode == Mode.GRID:
 		return Vector3(snap.pos.x, 0.0, snap.pos.z)  # grids are built on the ground
 	return snap.pos
@@ -934,7 +1092,8 @@ func _snap_reach(m: float, px := SNAP_PX) -> float:
 ## The cursor turns gold on a road or junction it has snapped to.
 func _show_snap(on_road: bool) -> void:
 	_cursor.material_override = _snap_mat if on_road else _ok_mat
-	_cursor.scale = Vector3.ONE * maxf(1.0, CURSOR_PX * _px / 3.0) * (1.4 if on_road else 1.0)
+	_cursor.scale = Vector3.ONE * maxf(1.0, CURSOR_PX * _px / 3.0) \
+		* (1.8 if _snap_kind == "node" else 1.4 if on_road else 1.0)
 
 
 func _preview_mesh(curves: Array) -> ArrayMesh:
