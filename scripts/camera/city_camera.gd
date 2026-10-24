@@ -260,7 +260,7 @@ func _pad_input(delta: float) -> void:
 func _over_list() -> bool:
 	var c := get_viewport().gui_get_hovered_control()
 	while c != null:
-		if c is ScrollContainer:
+		if c is ScrollContainer or c is RichTextLabel or c is ItemList or c is TextEdit:
 			return true
 		c = c.get_parent() as Control
 	return false

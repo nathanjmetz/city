@@ -13,14 +13,14 @@
 # login. Settings (environment variables, all optional):
 #   NEIGHBORS_REPO  the game's code           (default ~/dev/city)
 #   NEIGHBORS_DATA  the region save file      (default ~/neighbors-region.json)
-#   NEIGHBORS_HOST  the host's player name    (default Brawn)
+#   NEIGHBORS_HOST  the host's player names   (default Brawn,Nathan Metz)
 #   NEIGHBORS_PORT  local port                (default 9080)
 # Needs: godot, cloudflared, git with push access to the repo (gh auth login).
 
 set -u
 REPO=${NEIGHBORS_REPO:-$HOME/dev/city}
 DATA=${NEIGHBORS_DATA:-$HOME/neighbors-region.json}
-HOST=${NEIGHBORS_HOST:-Brawn}
+HOST=${NEIGHBORS_HOST:-Brawn,Nathan Metz}
 PORT=${NEIGHBORS_PORT:-9080}
 STATE=$HOME/.neighbors
 mkdir -p "$STATE"
