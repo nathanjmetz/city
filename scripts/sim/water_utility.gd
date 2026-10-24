@@ -71,7 +71,7 @@ const TREE := [
 	{"id": "nutrient", "name": "Nutrient removal and UV", "cost": W.nutrient.cost, "requires": ["plant"],
 		"needs": {"leader_edu": W.nutrient.edu, "education": 0.4}, "note": "clean water back to the river, no smell"},
 	{"id": "intake", "name": "River intake and treatment plant", "cost": W.intake.cost, "requires": ["filtration"],
-		"needs": {"leader_edu": W.intake.edu, "population": 8_000}, "note": "draws from the White River"},
+		"needs": {"leader_edu": W.intake.edu, "population": 8_000}, "note": "draws from the Mississinewa River"},
 	{"id": "reuse", "name": "Reclaimed water for farms", "cost": W.reuse.cost, "requires": ["plant"],
 		"needs": {"leader_edu": W.reuse.edu, "local:farm": 1}, "note": "treated water sold for irrigation"},
 ]

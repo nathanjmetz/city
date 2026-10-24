@@ -293,7 +293,8 @@ func neighbors_of(sim: CitySim) -> Dictionary:
 	for d in sim.trade.last_deals:
 		for side in ["buyer", "seller"]:
 			var who := str(d.get(side, "outside"))
-			if who != "outside" and who != "" and who != str(sim.region.get("me", "")):
+			# A town on its own settles its trade as "me".
+			if who != "outside" and who != "" and who != "me" and who != str(sim.region.get("me", "")):
 				towns[who] = towns.get(who, -1)
 	var hub := false
 	for town in sim.region.get("neighbors", []):

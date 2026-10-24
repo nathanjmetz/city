@@ -64,6 +64,11 @@ func _init() -> void:
 	d.skip.clear()
 	var spur := -1
 	for i in 8:
+		# The farms' own asks (hog barns on the hog farms) go to the bell too;
+		# the town turns them down so the desk has room.
+		for r in sim.permits.requests.values():
+			if r.state == Permits.State.OPEN and r.hub != "rail":
+				sim.apply({"type": "permit", "id": r.id, "answer": "deny"})
 		_run(sim, Balance.RAIL_DECIDE_EVERY)
 		for lid in sim.rail.open_requests():
 			if str(sim.rail.lines[lid].target.ref) == "elev:%d" % eid:
@@ -71,7 +76,8 @@ func _init() -> void:
 		if spur != -1:
 			break
 		d.skip.clear()
-	_check(spur != -1, "the leader asks for a spur to the elevator (%s)" % d.why)
+	_check(spur != -1, "the leader asks for a spur to the elevator (%s; open: %s)" % [d.why,
+		str(sim.permits.requests.values().filter(func(r): return r.state == Permits.State.OPEN).map(func(r): return r.title))])
 	if spur == -1:
 		_done()
 		return

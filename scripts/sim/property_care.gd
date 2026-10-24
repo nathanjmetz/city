@@ -157,7 +157,7 @@ func needs(sim, key: String) -> Dictionary:
 	parts["Land value"] = [clampf(0.55 + (base_land(sim, key) - 1.0) * 2.5, 0.0, 1.0), 1.0]
 	var jobs := 1.0
 	if z == ZoneMap.Zone.RESIDENTIAL:
-		jobs = float(sim.stats.employed) / maxf(float(sim.stats.workers), 1.0) if int(sim.stats.workers) > 0 else 1.0
+		jobs = float(sim.stats.employed + sim.stats.get("commuting", 0)) / maxf(float(sim.stats.workers), 1.0) if int(sim.stats.workers) > 0 else 1.0
 		parts["Jobs in town"] = [clampf((jobs - 0.75) / 0.2, 0.0, 1.0), 1.0]
 		parts["Lived in"] = [1.0 if int(b.get("occ", 0)) > 0 or int(b.cap) == 0 else 0.0, 0.8]
 	elif z == ZoneMap.Zone.COMMERCIAL:

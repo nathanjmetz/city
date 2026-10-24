@@ -43,7 +43,7 @@ func _init() -> void:
 		"Bob's 40,000 people count toward Ann's market (%d at %.1f km)" % [ann.market.regional, d / 1000.0])
 	r.ledger.set_population("c2", 300)
 	ann.market.sync(r, "c1", ann)
-	_check(ann.market.regional == 300, "a neighbor hamlet adds little (%d)" % ann.market.regional)
+	_check(ann.market.regional == roundi(300 * Market.weight(d)), "a neighbor hamlet adds little (%d)" % ann.market.regional)
 
 	# Saved with the town, so a reloaded copy decides the same way.
 	ann.market.regional = 25_000

@@ -191,7 +191,7 @@ var tick_count := 0
 var city_seed := 1
 
 ## Latest totals, worked out from the buildings.
-var stats := {"population": 0, "workers": 0, "jobs": 0, "employed": 0, "homes_free": 0}
+var stats := {"population": 0, "workers": 0, "jobs": 0, "employed": 0, "commuting": 0, "homes_free": 0}
 ## How much each zone wants to grow, 0 to 1, like the CS demand bars.
 var demand := {ZoneMap.Zone.RESIDENTIAL: 0.6, ZoneMap.Zone.COMMERCIAL: 0.0, ZoneMap.Zone.INDUSTRIAL: 0.1}
 
@@ -1477,10 +1477,15 @@ func update_stats(budget := true, slice := -1) -> void:
 	var coming_workers := int(coming * WORKER_SHARE)
 	var free := home_cap - presold - pop
 	var open_jobs := maxi(jobs - unfinished_jobs, 0)
+	# Some of the town's people work in Marion or Gas City (Backdrop): jobs
+	# for homes, not shops or factories here.
+	var away := mini(roundi(coming_workers * Balance.BACKDROP_COMMUTE_SHARE * _commute_weight()),
+		roundi(_commute_pool()))
+	var employed := mini(workers, open_jobs)
 	stats = {"population": pop, "workers": workers, "jobs": open_jobs,
-		"employed": mini(workers, open_jobs), "homes_free": free}
+		"employed": employed, "commuting": clampi(away, 0, workers - employed), "homes_free": free}
 	demand[ZoneMap.Zone.RESIDENTIAL] = clampf(
-		0.6 + 0.6 * float(jobs - coming_workers) / maxf(coming_workers, 40.0)
+		0.6 + 0.6 * float(jobs + away - coming_workers) / maxf(coming_workers, 40.0)
 		- float(free) / maxf(home_cap, 30.0), 0.0, 1.0)
 	demand[ZoneMap.Zone.COMMERCIAL] = clampf(
 		0.05 + (coming * 0.12 - shop_jobs) / maxf(shop_jobs, 12.0), 0.0, 1.0)
@@ -1512,6 +1517,31 @@ func update_stats(budget := true, slice := -1) -> void:
 	if budget:
 		economy.update_budget(self)
 	stats_changed.emit()
+
+
+## Jobs within commuting reach in the backdrop towns, and how near the
+## nearest is (1 within Market's full reach): worked out once per place.
+var _commute_at := Vector2.INF
+var _commute := [0.0, 0.0]
+
+
+func _commute_pool() -> float:
+	_commute_check()
+	return _commute[0]
+
+
+func _commute_weight() -> float:
+	_commute_check()
+	return _commute[1]
+
+
+func _commute_check() -> void:
+	if _commute_at == terrain_offset:
+		return
+	_commute_at = terrain_offset
+	var near := Backdrop.nearest(terrain_offset)
+	var w := 0.0 if near.is_empty() else Market.weight(Backdrop.distance_to(terrain_offset))
+	_commute = [Backdrop.commute_jobs(terrain_offset), w]
 
 
 ## The town's homes, as their own functions would each work them out:

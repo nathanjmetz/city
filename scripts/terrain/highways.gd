@@ -1,14 +1,17 @@
 class_name Highways
-## The state highways across the region (SR 57, SR 61, SR 56 around
-## Petersburg), built by tools/terrain/build_highways.py from their real
+## The state highways across the region (SR 9, 15, 18, 22, 26, 37 and US 35
+## around Marion), built by tools/terrain/build_roads.py from their real
 ## routes. Two-lane INDOT roads with paved shoulders (RoadStyle STATE_HWY).
+## I-69 is here too, each carriageway its own route, but `limited`: an
+## interstate has no driveways or crossings, so towns can't join it.
+## Inside the backdrop towns (Backdrop) there are none: those towns draw
+## their own streets.
 ##
 ## Like the county roads (CountyGrid) they are scenery until a town joins
 ## one: the ground shader paints them from a signed distance field
 ## (highways.bin, one channel per group of routes) and wild trees keep off,
 ## so they cost the simulation nothing. Region coordinates throughout.
 
-const DIR := "res://terrain/white_river_in/"
 ## Half the paved road: two 12 ft lanes and 8 ft shoulders (INDOT).
 const HALF_WIDTH := 6.0
 ## Half the cleared strip: the road, its ditches and mowed right of way.
@@ -32,7 +35,7 @@ static func _load() -> void:
 	if _loaded:
 		return
 	_loaded = true
-	var json = JSON.parse_string(FileAccess.get_file_as_string(DIR + "highways.json"))
+	var json = JSON.parse_string(FileAccess.get_file_as_string(Terrain.DIR + "highways.json"))
 	if typeof(json) != TYPE_DICTIONARY:
 		push_error("Highways: can't read highways.json")
 		return
@@ -48,7 +51,10 @@ static func _load() -> void:
 			pts.append(p)
 			cum.append(total)
 		var id := routes.size()
-		routes.append({"name": str(r.name), "short": str(r.short), "pts": pts, "cum": cum})
+		routes.append({"name": str(r.name), "short": str(r.short), "pts": pts, "cum": cum,
+			"limited": bool(r.get("limited", false))})
+		if routes[id].limited:
+			continue  # painted, but nothing can join it or cross it at grade
 		for i in pts.size() - 1:
 			var lo := Vector2i((pts[i].min(pts[i + 1]) / BIN).floor())
 			var hi := Vector2i((pts[i].max(pts[i + 1]) / BIN).floor())
@@ -59,7 +65,7 @@ static func _load() -> void:
 						_bins[k] = []
 					_bins[k].append([id, i])
 	var img := Image.new()
-	if img.load_webp_from_buffer(FileAccess.get_file_as_bytes(DIR + "highways.bin")) == OK:
+	if img.load_webp_from_buffer(FileAccess.get_file_as_bytes(Terrain.DIR + "highways.bin")) == OK:
 		img.convert(Image.FORMAT_RGB8)
 		_n = img.get_width()
 		_field = img.get_data()
@@ -85,8 +91,8 @@ static func distance(x: float, z: float) -> float:
 	if _n == 0:
 		return INF
 	var cell := Terrain.SIZE / _n
-	var u := (x + Terrain.SIZE * 0.5) / cell - 0.5
-	var v := (z + Terrain.SIZE * 0.5) / cell - 0.5
+	var u := (x - Terrain.CENTRE.x + Terrain.SIZE * 0.5) / cell - 0.5
+	var v := (z - Terrain.CENTRE.y + Terrain.SIZE * 0.5) / cell - 0.5
 	var i0 := floori(u)
 	var j0 := floori(v)
 	var fu := u - i0

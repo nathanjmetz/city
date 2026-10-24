@@ -1,27 +1,40 @@
 extends SceneTree
-## The state highways around Petersburg (Highways): scenery until a town
-## joins one, then a STATE_HWY road of the town's own where it runs.
+## The state highways around Marion (Highways): scenery until a town joins
+## one, then a STATE_HWY road of the town's own where it runs. I-69 is
+## painted but can't be joined.
 
 var _failed := 0
+## Open farmland miles from any state road.
+const FAR := Vector2(-6000.0, -12000.0)
 
 
 func _init() -> void:
-	_check(Highways.all().size() >= 4, "SR 57, SR 61 and SR 56 are laid out (%d routes)" % Highways.all().size())
+	_check(Highways.all().size() >= 8, "Grant County's state roads, US 35 and I-69 are laid out (%d routes)" % Highways.all().size())
 	_check(Highways.texture() != null, "the ground has the highways' distance field to paint")
 	var names := {}
 	for r in Highways.all():
 		names[r.name] = true
-	_check(names.has("State Road 57") and names.has("State Road 61") and names.has("State Road 56"),
-		"named the Indiana way (%s)" % str(names.keys()))
+	_check(names.has("State Road 18") and names.has("State Road 9") and names.has("U.S. Route 35")
+		and names.has("Interstate 69"), "named the Indiana way (%s)" % str(names.keys()))
+	# I-69 has no crossings at grade: nothing finds it to join.
+	var interstate := -1
+	for i in Highways.all().size():
+		if Highways.all()[i].limited:
+			interstate = i
+	var mid := Highways.point(interstate, Highways.length(interstate) * 0.5) if interstate >= 0 else Vector2.ZERO
+	var found := Highways.near(mid.x, mid.y, 5.0)
+	_check(interstate >= 0 and Highways.distance(mid.x, mid.y) < 2.0
+		and (found.is_empty() or Highways.all()[found.route].limited == false),
+		"I-69 is painted, but towns can't join it")
 	# The field agrees with the routes it was made from.
 	var worst := 0.0
 	for i in Highways.all().size():
 		for k in range(1, 20):
 			var p := Highways.point(i, Highways.length(i) * k / 20.0)
-			if absf(p.x) < 16000.0 and absf(p.y) < 16000.0:
+			if absf(p.x - Terrain.CENTRE.x) < 18000.0 and absf(p.y - Terrain.CENTRE.y) < 18000.0:
 				worst = maxf(worst, Highways.distance(p.x, p.y))
 	_check(worst < 1.5, "the painted road runs down its route (off by %.2f m at worst)" % worst)
-	_check(Highways.distance(-15000.0, -15000.0) > 100.0, "and nowhere else")
+	_check(Highways.distance(FAR.x, FAR.y) > 100.0, "and nowhere else")
 	var spot := _dry_spot()
 	_check(not spot.is_empty(), "found a stretch of highway on dry land")
 	if spot.is_empty():
@@ -113,13 +126,16 @@ func _init() -> void:
 ## mile each way: {route, along}, or {}.
 func _dry_spot() -> Dictionary:
 	for i in Highways.all().size():
+		if Highways.all()[i].limited:
+			continue
 		var total := Highways.length(i)
 		var s := 2000.0
 		while s < total - 2000.0:
 			var dry := true
 			for k in range(-12, 13):
 				var p := Highways.point(i, s + k * 120.0)
-				dry = dry and absf(p.x) < 9000.0 and absf(p.y) < 9000.0 and Terrain.water(p.x, p.y) < 0.02
+				dry = dry and absf(p.x) < 9000.0 and absf(p.y) < 9000.0 and Terrain.water(p.x, p.y) < 0.02 \
+					and not Backdrop.inside(p, 300.0)
 			if dry:
 				return {"route": i, "along": s}
 			s += 500.0

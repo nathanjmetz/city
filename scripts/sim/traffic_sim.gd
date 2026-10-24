@@ -2556,7 +2556,9 @@ func _pull_over(car: Dictionary, w: Dictionary) -> void:
 	var pl := place(car.to_place)
 	if pl.is_empty():
 		return
-	var at := clampf(car.d + 14.0, 0.0, w.len)
+	# Far enough on that the way in (Entrance, 9 m back of the space) is
+	# still ahead when the car gets to it, so it pulls straight in.
+	var at := clampf(car.d + PARK_LEAD + 16.0, 0.0, w.len)
 	var frac: float = at / w.len if w.fwd else 1.0 - at / w.len
 	var stop := {"seg": w.seg, "at_frac": frac, "side": 1 if w.fwd else -1}
 	var ci := _new_curb(pl, stop, car.id)
@@ -2639,17 +2641,55 @@ func _in_path(car: Dictionary) -> Dictionary:
 	if s.kind == "curb" and s.face.dot(dir) < 0.0:
 		# A curb space across the street: a U-turn over to it, as a driver
 		# swings round on a quiet street, rather than cutting straight back.
+		# It swings round no tighter than a car turns (about 3.5 m), from a
+		# few metres on up the lane.
+		wps[2] = _lane_point(w, car.lane, clampf(maxf(ld, car.d + 6.0), 0.0, w.len))
 		var lat: Vector3 = s.pos - wps[2]
 		lat -= dir * lat.dot(dir)
 		lat.y = 0.0
-		var r := maxf(lat.length(), 3.0) * 0.5
+		var r := maxf(lat.length(), 7.0) * 0.5
 		var side := lat.normalized() if lat.length() > 0.1 else Vector3(dir.z, 0.0, -dir.x)
 		for k in range(1, 13):
 			var ang := PI * k / 12.0
 			wps.append(wps[2] + dir * (r * sin(ang)) + side * (r - r * cos(ang)))
 		wps.append(s.pos + s.face * car.len * 0.5)
 	else:
-		wps.append_array(_approach_pts(pl, car.to_spot, car.len))
+		var way_in := _approach_pts(pl, car.to_spot, car.len)
+		var front: Vector3 = s.pos + s.face * car.len * 0.5
+		var ahead: float = (front - here[0]).dot(here[1])
+		if s.kind == "curb" and (way_in[0] - here[0]).dot(here[1]) < 1.0:
+			if ahead > 3.0:
+				# Level with the space already: ease straight over into it
+				# rather than curling back to line up.
+				return _poly_path({"node": -1, "wi": w.id, "li": car.lane, "wo": -1, "lo": -1, "turn": Turn.RIGHT,
+					"vt": 4.0, "exit_d": 0.0}, _smooth([here[0], here[0] + here[1] * 1.0, front]), 0.0)
+			# Pulled up past it: back in along an S, as a driver parallel
+			# parks, then ease forward to square up in the space.
+			var back: Vector3 = front - s.face * maxf(4.0, ahead + 4.5)
+			var p0: Vector3 = here[0]
+			var run := maxf(absf((p0 - back).dot(here[1])), 1.0)
+			var c1: Vector3 = p0 - here[1] * run * 0.5
+			var c2: Vector3 = back + here[1] * run * 0.5
+			var pts := PackedVector3Array()
+			for k in 13:
+				var t := k / 12.0
+				var u := 1.0 - t
+				pts.append(p0 * u * u * u + c1 * 3.0 * u * u * t + c2 * 3.0 * u * t * t + back * t * t * t)
+			var rev := _polylen(pts)
+			var n := maxi(2, int(back.distance_to(front) / 0.8))
+			for k in range(1, n + 1):
+				pts.append(back.lerp(front, float(k) / n))
+			return _poly_path({"node": -1, "wi": w.id, "li": car.lane, "wo": -1, "lo": -1, "turn": Turn.RIGHT,
+				"vt": 2.0, "exit_d": 0.0}, pts, rev)
+		elif (way_in[0] - here[0]).dot(here[1]) < 0.0:
+			# Missed the turn in: swing round in the street, no tighter than
+			# a car turns, and come back to it.
+			wps[2] = _lane_point(w, car.lane, clampf(car.d + 6.0, 0.0, w.len))
+			var left := Vector3(dir.z, 0.0, -dir.x)
+			for k in range(1, 13):
+				var ang := PI * k / 12.0
+				wps.append(wps[2] + dir * (3.5 * sin(ang)) + left * (3.5 - 3.5 * cos(ang)))
+		wps.append_array(way_in)
 	return _poly_path({"node": -1, "wi": w.id, "li": car.lane, "wo": -1, "lo": -1, "turn": Turn.RIGHT,
 		"vt": 4.0, "exit_d": 0.0}, _smooth(wps), 0.0)
 
@@ -2814,6 +2854,13 @@ func _poly_pose(c: Dictionary, jd: float) -> Array:
 			lo = c.rev
 	var a := _poly_point(c.pts, c.cum, maxf(jd - 1.5, lo))
 	var b := _poly_point(c.pts, c.cum, minf(jd + 1.5, hi))
+	# The chord runs on back along the way the car came and on along the
+	# way it leaves, so it doesn't snap round as it starts or ends.
+	if jd - 1.5 < 0.0:
+		# d0 is the way the car faces at the start: backwards when it backs.
+		a += c.d0 * (1.5 - jd) if c.rev > 0.0 else -c.d0 * (1.5 - jd)
+	if jd >= c.rev and jd + 1.5 > c.len:
+		b += c.d1 * (jd + 1.5 - c.len)
 	var dir := _flat_dir(b - a)
 	if b.distance_to(a) < 0.05:
 		dir = c.d1 if jd >= c.rev else -c.d0

@@ -1,9 +1,13 @@
 {
- "region": "white_river_in",
- "name": "White River valley, near Petersburg, Indiana",
- "lon0": -87.2844,
- "lat0": 38.5038,
- "size_m": 32768.0,
+ "region": "grant_in",
+ "name": "Grant County, Indiana",
+ "lon0": -85.67319,
+ "lat0": 40.52273,
+ "size_m": 36864.0,
+ "centre": [
+  8040.0,
+  4824.0
+ ],
  "layers": {
   "ground": [
    2048,

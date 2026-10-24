@@ -1,9 +1,10 @@
 """Builds the game's real-world terrain from free public data.
 
-Run once (needs network): python3 tools/terrain/build_region.py
-Downloads to tools/terrain/out/ (git-ignored), then writes the game's layers
-to terrain/<region>/. `python3 tools/terrain/build_region.py derive` redoes
-only the second step from the cached downloads.
+Run once (needs network): python3 tools/terrain/build_region.py [region]
+Downloads to tools/terrain/out/<region>/ (git-ignored), then writes the
+game's layers to terrain/<region>/. Add `derive` to redo only the second step
+from the cached downloads. The region is "grant_in" (the game's map) unless
+named; "white_river_in" is the old Petersburg map, kept so it can be rebuilt.
 
 
 Sources (see terrain/LICENSES.md):
@@ -27,13 +28,27 @@ import rasterio
 from rasterio.windows import from_bounds
 from scipy import ndimage
 
-REGION = "white_river_in"
-NAME = "White River valley, near Petersburg, Indiana"
-LON0, LAT0 = -87.2844, 38.5038
+REGIONS = {
+    # Grant County, Indiana, around Marion: Converse to Upland, La Fontaine
+    # to Fairmount. The centre is moved onto a crossing of the county's
+    # section-line roads, so the game's mile grid (CountyGrid) lies over the
+    # real one; build_roads.py prints how well it fits.
+    # Region (0, 0), where the first town starts, is Sweetser's crossroads,
+    # five miles west and three north of the centre: `centre` is where the
+    # map's middle lies in region metres.
+    "grant_in": {"name": "Grant County, Indiana", "lon0": -85.67319, "lat0": 40.52273, "cell": 18.0,
+                 "centre": [8040.0, 4824.0]},
+    "white_river_in": {"name": "White River valley, near Petersburg, Indiana", "lon0": -87.2844, "lat0": 38.5038,
+                       "cell": 16.0, "centre": [0.0, 0.0]},
+}
+REGION = next((a for a in sys.argv[1:] if a in REGIONS), "grant_in")
+NAME = REGIONS[REGION]["name"]
+LON0, LAT0 = REGIONS[REGION]["lon0"], REGIONS[REGION]["lat0"]
 N = 2048          # samples across
-CELL = 16.0       # metres per sample
-SIZE = N * CELL   # 32 768 m
-OUT = os.path.join(os.path.dirname(__file__), "out")
+CELL = REGIONS[REGION]["cell"]  # metres per sample
+CENTRE = REGIONS[REGION]["centre"]
+SIZE = N * CELL   # 36 864 m (Grant County), 32 768 m (Petersburg)
+OUT = os.path.join(os.path.dirname(__file__), "out", REGION)
 
 M_PER_DEG_LAT = 111_132.954 - 559.822 * math.cos(2 * math.radians(LAT0))
 M_PER_DEG_LON = 111_412.84 * math.cos(math.radians(LAT0))
@@ -73,7 +88,7 @@ def main():
     a = a.astype(np.float32)
     height = ndimage.map_coordinates(a, [row, col], order=1, mode="nearest").astype(np.float32)
 
-    # Land cover, area-averaged to 16 m: each sample counts 4x4 sub-points.
+    # Land cover, area-averaged to one sample: each sample counts 4x4 sub-points.
     wc_lat = math.floor(lat.min() / 3) * 3
     wc_lon = math.floor(lon.min() / 3) * 3
     wc_url = (f"/vsicurl/https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/map/"
@@ -91,7 +106,7 @@ def main():
     wet = frac(90)            # herbaceous wetland
     crop = frac(40)
     built = frac(50)
-    bare = frac(60)           # bare ground: here, mostly coal strip mines
+    bare = frac(60)           # bare ground: strip mines (Pike County), gravel pits
     grass = frac(30)
 
     np.save(f"{OUT}/height.npy", height)
@@ -115,6 +130,61 @@ def value_noise(n, cell_px, seed):
     rng = np.random.default_rng(seed)
     g = rng.random((n // cell_px + 3, n // cell_px + 3)).astype(np.float32)
     return np.clip(ndimage.zoom(g, cell_px, order=3)[:n, :n], 0, 1)
+
+
+def _pike_underground(h, water, is_water, big, upland, floodplain, slope, c):
+    # Ore: coal. Pike County sits on the Illinois Basin's Pennsylvanian coal
+    # beds, mined from the surface across its uplands; the river valleys are
+    # filled with sand and silt over it. So coal lies under the uplands, and is
+    # surest where the land already shows strip mining: bare spoil and the
+    # many small pit lakes up in the hills.
+    pits = ndimage.gaussian_filter((is_water & ~big).astype(np.float32) * upland, 8)
+    mines = ndimage.gaussian_filter(c["bare"], 6)
+    ore = upland * (0.2 + 0.8 * value_noise(N, 60, 11)) * 0.85 + 14 * pits + 8 * mines
+    ore = smooth01(0.48, 0.8, ore) * (1 - smooth01(0.3, 0.6, water))
+
+    # Oil: the Illinois Basin deepens to the south-west across Pike County, and
+    # its oil pools sit in small, scattered structures. Pools here are placed
+    # in clusters that grow more common toward the south-west. (Approximate:
+    # replace with Indiana Geological and Water Survey well records when that
+    # host is reachable.)
+    yy, xx = np.mgrid[0:N, 0:N] / N
+    basin = 0.35 + 0.65 * smooth01(0.0, 1.0, (yy + (1 - xx)) * 0.7)
+    pools = value_noise(N, 45, 23) * 0.7 + value_noise(N, 15, 29) * 0.3
+    oil = smooth01(0.6, 0.75, pools * (0.45 + 0.5 * basin)) * (1 - smooth01(0.3, 0.6, water))
+    return ore, oil
+
+
+def _grant_underground(h, water, is_water, big, upland, floodplain, slope, c):
+    # Ore: sand, gravel and stone. Grant County has no coal; what is dug here
+    # is glacial outwash sand and gravel in the river valleys (the pits and
+    # pit ponds along the Mississinewa below Marion and Gas City) and the
+    # Silurian limestone under thin till on the valley sides. So ore lies
+    # along the valleys, richest where the land already shows pits: bare
+    # ground and small ponds in the bottoms.
+    near = ndimage.gaussian_filter(big.astype(np.float32), 40) * 8
+    pits = ndimage.gaussian_filter((is_water & ~big).astype(np.float32) * (1 - upland), 6)
+    dug = ndimage.gaussian_filter(c["bare"], 5)
+    # Smaller valley-train outwash lies along the creeks cut into the till
+    # plain (Walnut, Back, Pipe and Deer creeks), dug in pockets by small
+    # county pits.
+    creek = smooth01(1.0, 4.0, ndimage.gaussian_filter(h, 40) - h)
+    pockets = smooth01(0.45, 0.7, value_noise(N, 30, 13))
+    ore = np.clip(near, 0, 1) * (0.25 + 0.75 * value_noise(N, 50, 11)) * 0.8 + 12 * pits + 8 * dug \
+        + 0.9 * creek * pockets
+    ore = smooth01(0.5, 0.8, ore) * (1 - smooth01(0.3, 0.6, water))
+
+    # Oil: the Trenton field. Grant County sits on the Ordovician Trenton
+    # limestone, the gas and oil field of Indiana's 1887-1900s gas boom (Gas
+    # City is named for it); the gas lay under almost the whole county, with
+    # oil pools to the east toward Blackford and Wells counties. Pools here
+    # are spread county-wide, a little more common to the east. (Approximate:
+    # Indiana Geological and Water Survey well records would make it exact.)
+    yy, xx = np.mgrid[0:N, 0:N] / N
+    field = 0.55 + 0.45 * smooth01(0.0, 1.0, xx)
+    pools = value_noise(N, 45, 23) * 0.7 + value_noise(N, 15, 29) * 0.3
+    oil = smooth01(0.6, 0.75, pools * (0.45 + 0.5 * field)) * (1 - smooth01(0.3, 0.6, water))
+    return ore, oil
 
 
 def derive():
@@ -154,7 +224,15 @@ def derive():
     slope = np.hypot(gx, gz)
 
     # Height above the nearest big water (rivers): low = floodplain.
-    big = ndimage.binary_opening(is_water, iterations=2)
+    if REGION == "grant_in":
+        # The Mississinewa is only 2 or 3 samples wide, so an opening would
+        # erase it: keep every body of water bigger than a pond instead.
+        lab, n = ndimage.label(is_water)
+        sizes = ndimage.sum(np.ones_like(lab), lab, range(n + 1))
+        big = sizes[lab] >= 150
+        big[lab == 0] = False
+    else:
+        big = ndimage.binary_opening(is_water, iterations=2)
     bidx = ndimage.distance_transform_edt(~big, return_distances=False, return_indices=True)
     above_river = h - wlevel[bidx[0], bidx[1]]
     floodplain = 1.0 - smooth01(2.0, 9.0, above_river)
@@ -167,39 +245,32 @@ def derive():
     fert = 0.42 + 0.25 * ndimage.gaussian_filter(c["crop"], 3) + 0.3 * floodplain * (1 - water)
     fert -= 0.6 * smooth01(0.02, 0.12, ndimage.gaussian_filter(slope, 1.5))
     fert -= 0.4 * ndimage.gaussian_filter(c["bare"], 2) + 0.25 * ndimage.gaussian_filter(c["wet"], 2)
+    # Standing woods aren't farmland: on the flat till plain the woodlots
+    # that were never cleared are mostly the wet, poorly drained ground, and
+    # clearing one costs more than the land would earn for years.
+    fert -= 0.8 * smooth01(0.3, 0.8, ndimage.gaussian_filter(c["tree"], 1.5))
     fert += 0.08 * (value_noise(N, 24, 7) - 0.5)
     fert = np.clip(np.where(water > 0.5, 0, fert), 0, 1)
 
     # Forest: real tree cover.
     forest = np.clip(ndimage.gaussian_filter(c["tree"], 1.2) * 1.15, 0, 1)
 
-    # Ore: coal. Pike County sits on the Illinois Basin's Pennsylvanian coal
-    # beds, mined from the surface across its uplands; the river valleys are
-    # filled with sand and silt over it. So coal lies under the uplands, and is
-    # surest where the land already shows strip mining: bare spoil and the
-    # many small pit lakes up in the hills.
-    pits = ndimage.gaussian_filter((is_water & ~big).astype(np.float32) * upland, 8)
-    mines = ndimage.gaussian_filter(c["bare"], 6)
-    ore = upland * (0.2 + 0.8 * value_noise(N, 60, 11)) * 0.85 + 14 * pits + 8 * mines
-    ore = smooth01(0.48, 0.8, ore) * (1 - smooth01(0.3, 0.6, water))
-
-    # Oil: the Illinois Basin deepens to the south-west across Pike County, and
-    # its oil pools sit in small, scattered structures. Pools here are placed
-    # in clusters that grow more common toward the south-west. (Approximate:
-    # replace with Indiana Geological and Water Survey well records when that
-    # host is reachable.)
-    yy, xx = np.mgrid[0:N, 0:N] / N
-    basin = 0.35 + 0.65 * smooth01(0.0, 1.0, (yy + (1 - xx)) * 0.7)
-    pools = value_noise(N, 45, 23) * 0.7 + value_noise(N, 15, 29) * 0.3
-    oil = smooth01(0.6, 0.75, pools * (0.45 + 0.5 * basin)) * (1 - smooth01(0.3, 0.6, water))
+    ore, oil = (_grant_underground if REGION == "grant_in" else _pike_underground)(
+        h, water, is_water, big, upland, floodplain, slope, c)
 
     dst = os.path.join(os.path.dirname(__file__), "..", "..", "terrain", REGION)
     os.makedirs(dst, exist_ok=True)
 
     def png(name, arr, mode):
-        # PNG bytes under a .bin name, so Godot ships them as-is and doesn't
-        # import them as textures. The game reads them with Image.load_png_from_buffer.
-        Image.fromarray(arr, mode).save(f"{dst}/{name}.bin", "PNG", optimize=True)
+        # Lossless WebP bytes under a .bin name, so Godot ships them as-is and
+        # doesn't import them as textures (about 30% smaller than PNG). WebP
+        # has no grey-plus-alpha mode, so LA layers go in as RGBA with
+        # R = G = B; Terrain packs them back. `exact` keeps RGB under zero alpha.
+        img = Image.fromarray(arr, mode)
+        if mode == "LA":
+            l, a = img.split()
+            img = Image.merge("RGBA", (l, l, l, a))
+        img.save(f"{dst}/{name}.bin", "WEBP", lossless=True, method=6, exact=True)
 
     def heights(a):
         """Heights in decimetres above sea level, split high byte / low byte."""
@@ -213,8 +284,12 @@ def derive():
     png("wlevel", heights(wlevel[::2, ::2]), "LA")
     png("cover", np.stack([u8(c["tree"]), u8(water), u8(c["crop"]),
                            u8(np.clip(c["bare"] + c["built"] * 0.5, 0, 1))], -1), "RGBA")
-    png("resources", np.stack([u8(fert), u8(oil), u8(ore), u8(forest)], -1)[::4, ::4], "RGBA")
-    json.dump({"region": REGION, "name": NAME, "lon0": LON0, "lat0": LAT0, "size_m": SIZE,
+    def pool4(a):
+        # Land cover layers: each 72 m sample the mean of the 4x4 it covers,
+        # so a small woodlot is not missed or blown up.
+        return a.reshape(N // 4, 4, N // 4, 4).mean(axis=(1, 3))
+    png("resources", np.stack([u8(pool4(fert)), u8(oil[::4, ::4]), u8(ore[::4, ::4]), u8(pool4(forest))], -1), "RGBA")
+    json.dump({"region": REGION, "name": NAME, "lon0": LON0, "lat0": LAT0, "size_m": SIZE, "centre": CENTRE,
                "layers": {"ground": [N, "dm LA"], "base": [N // 2, "dm LA"], "wlevel": [N // 2, "dm LA"],
                           "cover": [N, "tree water crop bare"], "resources": [N // 4, "fertility oil ore forest"]}},
               open(f"{dst}/region.json", "w"), indent=1)

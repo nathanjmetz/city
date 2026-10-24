@@ -255,7 +255,7 @@ func _venues() -> void:
 		var missing := []
 		for node in Balance.VENUE_TREES[kind]:
 			var built := _with_requires(Balance.VENUE_TREES[kind], node.id)
-			var site := {"kind": kind, "tier": 2, "size": Balance.AMENITIES[kind].size, "name": "Pike County",
+			var site := {"kind": kind, "tier": 2, "size": Balance.AMENITIES[kind].size, "name": "Grant County",
 				"venue_built": built.filter(func(n): return n != node.id)}
 			var before := _all_verts(ParkBuilder.build_site(site, 7, 3.9, "Petersburg"))
 			site.venue_built = built

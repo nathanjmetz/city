@@ -77,8 +77,10 @@ func _init() -> void:
 	_check(hc.care(sim) > care_before, "care improves (%.2f -> %.2f)" % [care_before, hc.care(sim)])
 	_check(hc.demand_shift(sim) > 0.0, "good care lifts the want for homes")
 	_check(hc.unmet(sim, id, "maternity") == "", "with a daycare, the maternity ward opens up")
-	# Up a level: the community hospital tower.
+	# Up a level: the community hospital tower, for a bold administrator the
+	# town has told to grow.
 	h.leader.ambition = 1.0
+	sim.apply({"type": "guide", "hub": Healthcare.PERMIT_KIND, "hub_id": id, "stance": "grow", "grant": 0})
 	for i in 6:
 		hc.decide(sim)
 	_check(int(h.level) >= 1, "it grows into a community hospital (level %d, %s)" % [h.level, str(h.pieces.map(func(p): return p.key))])

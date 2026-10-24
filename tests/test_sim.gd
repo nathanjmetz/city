@@ -178,9 +178,19 @@ func _init() -> void:
 	_check(oil_seen > 0.5, "oil turns up somewhere on the map")
 	_check(fm.apply({"type": "place_farmhouse", "pos": [0, 60], "dir": [0, -1], "crop": "corn"}), "farmhouse placed")
 	_check(not fm.apply({"type": "place_farmhouse", "pos": [0, 560], "dir": [0, -1]}), "farmhouse needs a road near")
-	# The critic's woods (round 19): 35% fertile, no field would ever pay.
+	# The critic's woods (round 19): thick woods, no field would ever pay.
 	var woods := CitySim.new()
-	_check(woods.farms.start_profit(Vector3(300, 0, -120), Vector3(0, 0, 1)) <= 0.0
+	var thick := Vector3.ZERO
+	var thick_v := 0.0
+	for x in range(-4000, 4001, 100):
+		for z in range(-4000, 4001, 100):
+			var v := 0.0
+			for dd in [Vector2(0, 0), Vector2(100, 0), Vector2(-100, 0), Vector2(0, 100), Vector2(0, -100)]:
+				v += Terrain.trees(x + dd.x, z + dd.y)
+			if v > thick_v and not Terrain.is_water(x, z):
+				thick_v = v
+				thick = Vector3(x, 0, z)
+	_check(woods.farms.start_profit(thick, Vector3(0, 0, 1)) <= 0.0
 		and fm.farms.start_profit(Vector3(0, 0, 60), Vector3(0, 0, -1)) > 0.0,
 		"a farmstead only goes where a field would pay")
 	var farm: Dictionary = fm.farms.farms.values()[0]
@@ -333,6 +343,12 @@ func _init() -> void:
 	for i in 1440 * 3:
 		oil.tick()
 		twin.tick()
+	# The first loads take a while to fill and drive out (up to a day more).
+	for i in 1440:
+		if oil.logistics.delivered > 0 and oil.logistics.exported > 0:
+			break
+		oil.tick()
+		twin.tick()
 	var co: Dictionary = oil.industry.sites[1]
 	_check(co.pads.size() >= 3, "its pads spread over three days (%d)" % co.pads.size())
 	var rich := true
@@ -454,10 +470,10 @@ func _town_culture() -> void:
 	var res: int = Industry.KINDS["ore"].resource
 	var best := Vector3.ZERO
 	var best_v := 0.0
-	for x in range(-1500, 1501, 100):
-		for z in range(-1500, 1501, 100):
+	for x in range(-6000, 6001, 200):
+		for z in range(-6000, 6001, 200):
 			var v := Resources.at(res, Vector3(x, 0, z))
-			if v > best_v:
+			if v > best_v and not Backdrop.inside(Vector2(x, z), 1500.0):
 				best_v = v
 				best = Vector3(x, 0, z)
 	_no_county_roads(sim, best)
@@ -467,10 +483,10 @@ func _town_culture() -> void:
 	var plain := sim.industry.buy_margin(id)
 	for i in 1440 * 4:
 		sim.tick()
-	_check(sim.culture.identity == "mining" and sim.culture.title() == "Coal and oil town",
-		"a town of coal miners is a coal town (%s, LQ %.0f)" % [sim.culture.identity, sim.culture.lq("mining")])
+	_check(sim.culture.identity == "mining" and sim.culture.title() == "Gravel and gas town",
+		"a town of gravel diggers is a gravel town (%s, LQ %.0f)" % [sim.culture.identity, sim.culture.lq("mining")])
 	_check(sim.culture.pull("mining") > 0.5 and sim.culture.pull("office") < 0.0, "its own trade pulls, others drag")
-	_check(sim.industry.buy_margin(id) < plain, "a coal town's mine opens new cuts on thinner margins")
+	_check(sim.industry.buy_margin(id) < plain, "a gravel town's pit opens new cuts on thinner margins")
 	var back := CitySim.new()
 	back.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
 	_check(back.culture.identity == "mining" and is_equal_approx(back.culture.lq("mining"), sim.culture.lq("mining")),

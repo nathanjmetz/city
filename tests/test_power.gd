@@ -11,8 +11,10 @@ func _init() -> void:
 	var oily := Vector3.INF
 	var calm := Vector3.INF
 	var windy := Vector3.INF
-	for i in 4000:
-		var at := Vector3((i % 64) * 157.0, 0.0, (i / 64) * 157.0)
+	for i in 6400:
+		var at := Vector3((i % 80) * 200.0 - 8000.0, 0.0, (i / 80) * 200.0 - 8000.0)
+		if Backdrop.inside(Vector2(at.x, at.z), 1000.0):
+			continue
 		if oily == Vector3.INF and p.gas(at) > 0.7 and p.reach_quality("hydro", at) < 0.3:
 			oily = at
 		if calm == Vector3.INF and p.gas(at) == 0.0 and p.reach_quality("wind", at) < 0.3 \

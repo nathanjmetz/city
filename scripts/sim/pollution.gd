@@ -1092,9 +1092,9 @@ func command(sim: CitySim, cmd: Dictionary) -> bool:
 
 # --- Names -------------------------------------------------------------------------
 
-const _SURNAMES := ["Hoosier", "White River", "Patoka", "Wabash", "Pike County", "Kessler", "Brandt", "Dubois",
-	"Harmon", "Schulte", "Vogel", "Eckert", "Linton", "Ohler", "Meyer", "Boonville", "Krieg", "Lindsey",
-	"Coal Creek", "Stendal", "Arthur", "Otwell", "Winslow", "Hosmer"]
+const _SURNAMES := ["Hoosier", "Mississinewa", "Gas Belt", "Wabash", "Grant County", "Kessler", "Brandt", "Overman",
+	"Harmon", "Schulte", "Vogel", "Eckert", "Lugar", "Ohler", "Meyer", "Jonesboro", "Krieg", "Lindsey",
+	"Black Creek", "Hackleman", "Arthur", "Matthews", "Fowlerton", "Point Isabel"]
 const _PLANTS := ["Feed Mill", "Tool & Die", "Plastics", "Foundry", "Box Co.", "Machine Works", "Packing Plant",
 	"Cannery", "Brick Works", "Coatings", "Millwork", "Fabrication"]
 

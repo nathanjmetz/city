@@ -43,6 +43,8 @@ func _ready() -> void:
 	add_child(sky)
 	var terrain := TerrainView.new()
 	add_child(terrain)
+	# Marion and the other towns nobody plays, standing finished.
+	add_child(BackdropView.new())
 	# Bulldozed county miles stop being painted. (A joined one stays: the
 	# town's gravel road covers it as far as it runs.)
 	var hide_county := func() -> void:

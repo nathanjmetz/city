@@ -5,7 +5,8 @@ extends RefCounted
 ## terrain/LICENSES.md and tools/terrain/build_region.py). Baked into the game,
 ## so every player and the server see exactly the same land.
 ##
-## The real area is a 32.8 km square. Past its edges the land carries on as a
+## The real area is a 36.9 km square of Grant County, Indiana, around
+## Marion (terrain/grant_in/region.json). Past its edges the land carries on as a
 ## mirror image of itself, so the map never ends and never shows a seam.
 ##
 ## Two kinds of coordinates:
@@ -19,8 +20,14 @@ extends RefCounted
 ## bridge deck over water. So a road drawn at sim height 0 crosses a river on
 ## a bridge by itself.
 
-const DIR := "res://terrain/white_river_in/"
-const SIZE := 32768.0
+const DIR := "res://terrain/grant_in/"
+## Width of the real area, metres (region.json size_m; the ground shader
+## and Highways mirror at the same size).
+const SIZE := 36864.0
+## Where the middle of the real area lies, region metres (region.json
+## centre): region (0, 0), where the first town starts, is Sweetser's
+## crossroads, five miles west and three north of it.
+const CENTRE := Vector2(8040.0, 4824.0)
 ## Steeper than this (rise over run) is too steep to build on: 25%, where US
 ## steep-slope ordinances (and FHA site guidance) stop new building.
 const MAX_BUILD_SLOPE := 0.25
@@ -86,8 +93,8 @@ static func _sample(name: String, x: float, z: float, ch := 0) -> float:
 	var data: PackedByteArray = layer[1]
 	var bpp: int = layer[2]
 	var cell := SIZE / n
-	var u := (x + SIZE * 0.5) / cell - 0.5
-	var v := (z + SIZE * 0.5) / cell - 0.5
+	var u := (x - CENTRE.x + SIZE * 0.5) / cell - 0.5
+	var v := (z - CENTRE.y + SIZE * 0.5) / cell - 0.5
 	var i0 := floori(u)
 	var j0 := floori(v)
 	var fu := u - i0
@@ -135,8 +142,8 @@ static func cover(x: float, z: float) -> Color:
 	var n: int = layer[0]
 	var data: PackedByteArray = layer[1]
 	var cell := SIZE / n
-	var u := (x + SIZE * 0.5) / cell - 0.5
-	var v := (z + SIZE * 0.5) / cell - 0.5
+	var u := (x - CENTRE.x + SIZE * 0.5) / cell - 0.5
+	var v := (z - CENTRE.y + SIZE * 0.5) / cell - 0.5
 	var i0 := floori(u)
 	var j0 := floori(v)
 	var fu := u - i0
@@ -209,7 +216,7 @@ static func slope(x: float, z: float) -> float:
 ## True when a footprint of `radius` metres around a point is dry, gently
 ## sloped land.
 static func buildable(x: float, z: float, radius := 0.0) -> bool:
-	if water(x, z) > 0.2 or slope(x, z) > MAX_BUILD_SLOPE:
+	if water(x, z) > 0.2 or slope(x, z) > MAX_BUILD_SLOPE or Backdrop.inside(Vector2(x, z), radius):
 		return false
 	if radius > 0.0:
 		for k in 8:

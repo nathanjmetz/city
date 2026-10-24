@@ -156,7 +156,7 @@ func _init() -> void:
 	tc.now.mining = 0.08
 	tc.identity = "mining"
 	var who := EconomyPage.character(tc)
-	_check(who[0] == "Coal and oil town" and who[1].begins_with("Coal and oil: 12.5×") and who[1].contains("▲ rising"),
+	_check(who[0] == "Gravel and gas town" and who[1].begins_with("Gravel and gas: 12.5×") and who[1].contains("▲ rising"),
 		"the page names the town and its strongest trade (%s / %s)" % who)
 	var adv := CitySim.new()
 	adv.culture.identity = "mining"

@@ -23,7 +23,7 @@ const CHAT_KEEP := 100
 ## server starts the shared region over on the new map by itself, and every
 ## player keeps their account and PIN. Bump PROTOCOL in RegionServer too, so
 ## a computer still on the old map is asked to update instead of joining.
-const MAP := "petersburg"
+const MAP := "grantcounty"
 ## The county highway runs this far out of a town toward open country.
 const COUNTY_REACH := 2000.0
 ## A new town is linked by county road to this many of its nearest towns.
@@ -97,7 +97,12 @@ func add_city(player_id: String, player: String) -> String:
 	var origin := _free_spot()
 	sim.terrain_offset = origin
 	var near := _nearest_cities(origin, LINK_TOWNS)
-	cities[id] = {"owner": player_id, "player": player, "name": player + "ville", "origin": origin,
+	# A town founded at a real small town's crossroads takes its name.
+	var town_name := player + "ville"
+	for site in Backdrop.sites():
+		if site.centre.snapped(Vector2(CountyGrid.SECTION, CountyGrid.SECTION)) == origin:
+			town_name = site.name
+	cities[id] = {"owner": player_id, "player": player, "name": town_name, "origin": origin,
 		"color": cities.size() % Brand.PLAYERS.size(), "sim": sim}
 	if near.is_empty():
 		sim.build_county_road(Vector2(-COUNTY_REACH, 0), Vector2(COUNTY_REACH, 0), [0, 1])
@@ -462,6 +467,15 @@ func add_chat(from: String, text: String) -> Dictionary:
 ## The open spot nearest the middle of the region that keeps elbow room
 ## from every town and stays out of each town's way of growth.
 func _free_spot() -> Vector2:
+	# The real small towns first (Backdrop.sites), in order: a new town is
+	# founded at its original crossroads, the section corner nearest it.
+	var taken := PackedVector2Array()
+	for id in cities:
+		taken.append(cities[id].origin)
+	for site in Backdrop.sites():
+		var p: Vector2 = site.centre.snapped(Vector2(CountyGrid.SECTION, CountyGrid.SECTION))
+		if _clear_of(p, taken) and Terrain.buildable(p.x, p.y, SITE_RADIUS):
+			return p
 	if cities.is_empty():
 		return Vector2.ZERO
 	var ids := cities.keys()
@@ -496,7 +510,8 @@ func _free_spot() -> Vector2:
 			# section line like the county roads around it (CountyGrid).
 			var p := (centre + Vector2(cos(a), sin(a)) * ELBOW_ROOM * 0.5 * ring).snapped(
 				Vector2(CountyGrid.SECTION, CountyGrid.SECTION))
-			if _clear_of(p, pts) and not _in_growth_way(p, wedges) and Terrain.buildable(p.x, p.y, SITE_RADIUS):
+			if _clear_of(p, pts) and not _in_growth_way(p, wedges) and Terrain.buildable(p.x, p.y, SITE_RADIUS) \
+					and Backdrop.distance_to(p) > ELBOW_ROOM * 0.5:
 				return p
 		ring += 1
 	return centre + Vector2(ELBOW_ROOM * 100.0, 0)

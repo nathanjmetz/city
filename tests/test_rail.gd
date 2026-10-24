@@ -31,13 +31,16 @@ func _init() -> void:
 	var hq := Vector3.ZERO
 	var best := 0.0
 	for x in range(900, 2400, 50):
-		for z in range(300, 2400, 50):
+		for z in range(-2400, 2400, 50):
 			var r := Resources.at(Resources.Kind.ORE, Vector3(x, 0, z))
+			if absi(z) < 300:
+				continue
 			if r > best and sim.land_ok(Vector3(x, 0, z), 60.0):
 				best = r
 				hq = Vector3(x, 0, z)
 	var street_x := hq.x - 400.0
-	sim.apply({"type": "build_road", "start": [street_x, 0], "ctrl": [street_x, 1000], "end": [street_x, 2000]})
+	var side := signf(hq.z)
+	sim.apply({"type": "build_road", "start": [street_x, 0], "ctrl": [street_x, 1000 * side], "end": [street_x, 2000 * side]})
 	var dir := Vector3(-1, 0, 0)
 	var sid := sim.industry.add_site("ore", hq, dir, [hq, Vector3(street_x, 0, hq.z)])
 	# A busy mine: pads behind the main building.

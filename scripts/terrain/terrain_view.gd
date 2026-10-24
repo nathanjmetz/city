@@ -91,6 +91,9 @@ uniform vec2 region_origin;
 // County road miles not painted (CountyGrid.hidden_texture): bulldozed ones.
 // r north-south, g east-west.
 uniform sampler2D county_hidden : hint_default_black, filter_nearest, repeat_enable;
+uniform sampler2D county_miles : hint_default_black, filter_nearest, repeat_enable;
+// Middle of the real map in region metres (Terrain.CENTRE; 36864 = Terrain.SIZE).
+uniform vec2 map_centre;
 // The state highways (Highways.texture): signed metres from each group of
 // routes' middle line + 128, one group per channel, over the region map.
 uniform sampler2D highway_field : hint_default_white, filter_nearest;
@@ -123,20 +126,8 @@ void vertex() {
 }
 
 // County roads (CountyGrid; keep the two the same): a gravel road on a
-// mile of section line where the hash of its line and mile says so.
-uint county_mix(int a, int b) {
-	uint h = (uint(a) * 73856093u) ^ (uint(b) * 19349663u);
-	h ^= h >> 15u;
-	h *= 0x2c1b3c6du;
-	h ^= h >> 12u;
-	h *= 0x297a2d39u;
-	h ^= h >> 15u;
-	return h;
-}
-
-float county_has(int line, int seg) {
-	return float(county_mix(line, seg) & 0xffffu) / 65536.0 < 0.95 ? 1.0 : 0.0;
-}
+// mile of section line where the real county has one (county_miles: red
+// north-south, green east-west, at line and mile wrapped to 64).
 
 // Coverage, 0 to 1, of a strip `half_w` metres each side of the county
 // roads near region point r, spread over `px` metres (its pixel footprint),
@@ -146,7 +137,7 @@ float county_has(int line, int seg) {
 float highway_d(vec2 r) {
 	// Filtered here, not by the sampler: its weights are too coarse.
 	int n = textureSize(highway_field, 0).x;
-	vec2 g = (1.0 - abs(mod((r + 16384.0) / 32768.0, 2.0) - 1.0)) * float(n) - 0.5;
+	vec2 g = (1.0 - abs(mod((r - map_centre + 18432.0) / 36864.0, 2.0) - 1.0)) * float(n) - 0.5;
 	ivec2 i = ivec2(floor(g));
 	vec2 f = g - vec2(i);
 	ivec2 lo = clamp(i, ivec2(0), ivec2(n - 1));
@@ -164,10 +155,10 @@ float county_road(vec2 r, float half_w, float px) {
 	float ew_line = floor(r.y / 1608.0 + 0.5);
 	int ns_seg = int(floor(r.y / 1608.0));
 	int ew_seg = int(floor(r.x / 1608.0));
-	float ns = county_has(int(ns_line), ns_seg)
+	float ns = texelFetch(county_miles, ivec2(int(ns_line) & 63, ns_seg & 63), 0).r
 		* (1.0 - texelFetch(county_hidden, ivec2(int(ns_line) & 63, ns_seg & 63), 0).r)
 		* (1.0 - smoothstep(w - soft, w + soft, abs(r.x - ns_line * 1608.0)));
-	float ew = county_has(int(ew_line) + 1048576, ew_seg)
+	float ew = texelFetch(county_miles, ivec2(int(ew_line) & 63, ew_seg & 63), 0).g
 		* (1.0 - texelFetch(county_hidden, ivec2(int(ew_line) & 63, ew_seg & 63), 0).g)
 		* (1.0 - smoothstep(w - soft, w + soft, abs(r.y - ew_line * 1608.0)));
 	return max(ns, ew) * clamp(half_w / w, 0.0, 1.0);
@@ -419,6 +410,8 @@ static func ground_material() -> ShaderMaterial:
 		_ground_mat.set_shader_parameter("noise_soft", Ground.noise(512, 0.012, 4, 11))
 		_ground_mat.set_shader_parameter("noise_grain", Ground.noise(256, 0.09, 2, 23))
 		_ground_mat.set_shader_parameter("highway_field", Highways.texture())
+		_ground_mat.set_shader_parameter("county_miles", CountyGrid.texture())
+		_ground_mat.set_shader_parameter("map_centre", Terrain.CENTRE)
 	return _ground_mat
 
 

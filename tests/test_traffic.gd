@@ -263,6 +263,9 @@ func _init() -> void:
 			var pose := e.traffic.car_pose(car)
 			if last.has(car.id) and absf(last[car.id].signed_angle_to(pose[1], Vector3.UP)) > deg_to_rad(25.0):
 				jumps += 1
+				if jumps == 1:
+					print("  first jump: car %d at %s, %.0f degrees, junction %s" % [car.id, pose[0],
+						rad_to_deg(last[car.id].signed_angle_to(pose[1], Vector3.UP)), str(car.j.node) if car.j != null else "-"])
 			now[car.id] = pose[1]
 		last = now
 	_check(jumps == 0, "no car turns more than 25 degrees in a tenth of a second (%d)" % jumps)

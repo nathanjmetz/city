@@ -17,8 +17,9 @@ const TICKS_PER_DAY := 24 * 60 / CitySim.MINUTES_PER_TICK
 ## Month a new city starts in, counted from 0 (January).
 const START_MONTH := 4
 const NAMES := ["Winter", "Spring", "Summer", "Fall"]
-## Petersburg, Indiana: sets how high the sun climbs and how long days are.
-const LATITUDE := 38.5
+## Marion, Indiana (Grant County): sets how high the sun climbs and how long
+## days are.
+const LATITUDE := 40.5
 ## Snow cover on screen right now (0 to 1), set by DayNight each frame, for
 ## views that change with it (plows on the trucks).
 static var snow_now := 0.0

@@ -16,11 +16,11 @@ extends RefCounted
 
 signal changed
 
-## The county the real map sits in (Petersburg, Pike County, Indiana).
-const COUNTY := "Pike County"
-const VALLEY := "the White River Valley"
+## The county the real map sits in (Marion, Grant County, Indiana).
+const COUNTY := "Grant County"
+const VALLEY := "the Mississinewa Valley"
 ## Plain words for each of TownCulture's sectors, for the Town panel.
-const SECTOR_NAMES := {"farm": "Farming", "mining": "Coal and oil", "timber": "Timber",
+const SECTOR_NAMES := {"farm": "Farming", "mining": "Gravel and gas", "timber": "Timber",
 	"manufacturing": "Mills and factories", "trade": "Shops and Main Street", "office": "Offices and banking",
 	"campus": "College and hospital", "transport": "Railroad and power"}
 ## Sectors whose words can change while the identity holds (a mill town
@@ -92,10 +92,11 @@ static func title_for(sim, sector: String) -> String:
 					oil += s.pads.size()
 				elif str(s.kind) == "ore":
 					ore += s.pads.size()
-			# Pike County's mines are coal (Petersburg's power plant burns it).
-			return ("Oil Town of " + VALLEY) if oil > ore else ("Coal Town of " + COUNTY)
+			# Grant County's oil and gas is the Trenton field of the Indiana Gas
+			# Belt (the 1887 boom); what it digs is valley sand, gravel and stone.
+			return ("Gas Belt Town of " + COUNTY) if oil > ore else ("Gravel Town of " + VALLEY)
 		"timber":
-			return "Hardwood Capital of Southern Indiana"
+			return "Hardwood Capital of East Central Indiana"
 		"manufacturing":
 			var by := {"general": 0, "mill": 0, "sawmill": 0, "refinery": 0, "metal": 0}
 			for key in sim.buildings:

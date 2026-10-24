@@ -1,8 +1,10 @@
 class_name CountyGrid
 ## County roads on the section lines of the Public Land Survey: a gravel road
-## every mile, north-south and east-west, as across Pike County, Indiana
-## (CR 100 N, 200 E and so on). Not every mile of line has one, and they
-## stop at the water and on steep bluffs.
+## on the miles of line where Grant County, Indiana has one (East 100 N, South
+## 200 W and so on), from its real roads (tools/terrain/build_roads.py, table
+## county.bin). The game's lines are an exact mile apart; the real ones wander
+## a little (about 80 m on average), so each real road is squared onto the
+## nearest line. They stop at the water and on steep bluffs.
 ##
 ## Until a town joins one they are scenery: the ground shader paints them
 ## (TerrainView, county_road) and wild trees keep off them, so they cost the
@@ -18,7 +20,8 @@ const HALF_CLEAR := 8.0
 ## Trees stand back this far from the middle of the road, so their crowns
 ## don't close over it (the right of way is mowed, 33 ft each side).
 const TREE_CLEAR := 12.0
-## Share of the miles of section line that have a road.
+## Share of the miles of section line that have a road, past the real map
+## (where the land mirrors): build_roads.py fills those in by this rule.
 const SHARE := 0.95
 ## No road where the land is steeper than this (bluffs above the river).
 const MAX_SLOPE := 0.18
@@ -40,7 +43,48 @@ static func mix(a: int, b: int) -> int:
 ## road. North-south lines are numbered by x; east-west lines are offset by
 ## 1 << 20 so the two families differ.
 static func has_mile(line: int, seg: int) -> bool:
-	return float(mix(line, seg) & 0xffff) / 65536.0 < SHARE
+	_load()
+	var ew := line >= (1 << 19)
+	if ew:
+		line -= 1 << 20
+	return _miles[(posmod(seg, TABLE) * TABLE + posmod(line, TABLE)) * 3 + (1 if ew else 0)] > 127
+
+
+## The table of miles (county.bin): TABLE x TABLE, red for north-south,
+## green for east-west, at (line, mile) wrapped. The ground shader reads the
+## same table (texture()).
+const TABLE := 64
+static var _miles := PackedByteArray()
+static var _names := {}
+static var _tex: ImageTexture
+
+
+static func _load() -> void:
+	if not _miles.is_empty():
+		return
+	var img := Image.new()
+	if img.load_webp_from_buffer(FileAccess.get_file_as_bytes(Terrain.DIR + "county.bin")) != OK:
+		push_error("CountyGrid: can't read county.bin")
+		_miles.resize(TABLE * TABLE * 3)
+		return
+	img.convert(Image.FORMAT_RGB8)
+	_miles = img.get_data()
+	_tex = ImageTexture.create_from_image(img)
+	var json = JSON.parse_string(FileAccess.get_file_as_string(Terrain.DIR + "county.json"))
+	if typeof(json) == TYPE_DICTIONARY:
+		_names = json.get("names", {})
+
+
+## The real name of a mile ("E 100 N"), or "" where it has none.
+static func real_name(key: String) -> String:
+	_load()
+	return str(_names.get(key, ""))
+
+
+## The table of miles for the ground shader.
+static func texture() -> Texture2D:
+	_load()
+	return _tex
 
 
 ## The line and mile under a point along one axis: `across` is the
@@ -143,8 +187,12 @@ const STEP := 10.0
 
 ## A county road's name, as Indiana counties number them: 100 for each mile
 ## from the county's base lines (CR 300 N is three miles north), N/S or E/W
-## of them. Once a town has a courthouse, Streets.grid_name counts from it.
+## of them. Its real name when it has one ("East 100 N"). Once a town has a
+## courthouse, Streets.grid_name counts from it.
 static func road_name(key: String) -> String:
+	_load()
+	if _names.has(key):
+		return str(_names[key])
 	var parts := key.split(":")
 	var n := int(parts[1])
 	if parts[0] == "ns":

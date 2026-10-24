@@ -29,7 +29,7 @@ func _init() -> void:
 	ann.economy.money = 50_000_000
 	panel.open_panel()
 	_check(panel._list.get_child_count() == 2 + Balance.REGION_PROJECTS.size(), "the metro, then one card per project")
-	_check(_labels(panel._list).any(func(t): return "Next:" in t and "Annville" in t), "the panel shows the metro and the next to pass")
+	_check(_labels(panel._list).any(func(t): return "Next:" in t and r.cities.c1.name in t), "the panel shows the metro and the next to pass")
 	_check(_labels(panel._list).any(func(t): return "Opens when the metro reaches" in t), "the airport waits for a bigger metro")
 	_check(_buttons(panel._list).filter(func(b): return b.text.begins_with("Pledge")).size() == 4,
 		"Pledge buttons on the two open projects")

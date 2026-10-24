@@ -399,8 +399,11 @@ func _details_jobs() -> void:
 	_section("WORKERS")
 	var w := int(sim.stats.workers)
 	_line("Working age", _thousands(w))
-	_line("With a job", _thousands(sim.stats.employed))
-	_line("Looking for work", _thousands(maxi(w - int(sim.stats.employed), 0)))
+	var away := int(sim.stats.get("commuting", 0))
+	_line("With a job in town", _thousands(sim.stats.employed))
+	if away > 0:
+		_line("Driving to Marion", _thousands(away))
+	_line("Looking for work", _thousands(maxi(w - int(sim.stats.employed) - away, 0)))
 	_line("Jobs nobody fills", _thousands(maxi(int(sim.stats.jobs) - int(sim.stats.employed), 0)))
 	_note("About half of everyone works, as in the US labour force. Spare jobs draw new families; people out of work want industry.")
 

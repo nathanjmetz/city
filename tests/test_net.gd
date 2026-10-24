@@ -494,7 +494,7 @@ func _test_land_and_neighborhoods() -> void:
 	# A road into the middle of Bob's town is Bob's land; one at home is fine.
 	var into := [Vector3(bob_at.x - toward.x * 150.0, 0, bob_at.y - toward.y * 150.0),
 		Vector3(bob_at.x - toward.x * 100.0, 0, bob_at.y - toward.y * 100.0), Vector3(bob_at.x, 0, bob_at.y)]
-	_check(ann.land_problem([into]) == "That's Bobville's land.", "a road into a neighbor's town is refused (%s)" % ann.land_problem([into]))
+	_check(ann.land_problem([into]) == "That's %s's land." % r.cities.c2.name, "a road into a neighbor's town is refused (%s)" % ann.land_problem([into]))
 	var home := [Vector3(0, 0, 300), Vector3(50, 0, 300), Vector3(100, 0, 300)]
 	_check(ann.land_problem([home]) == "", "a road at home is fine")
 	# Roads claim nothing: Bob's county road ends halfway, yet the open land
@@ -517,7 +517,7 @@ func _test_land_and_neighborhoods() -> void:
 	ann.stats.population = 600
 	_check(Neighborhoods.slots_for(600) == 1 and Neighborhoods.slots_for(150_000) == Balance.NEIGHBORHOOD_MAX,
 		"one neighborhood per town stage, up to the cap")
-	_check(ann.neighborhood_problem(bob_at * 0.9) != "", "not right next to another town")
+	_check(ann.neighborhood_problem(bob_at - toward * 900.0) != "", "not right next to another town")
 	var spot := Vector2.ZERO
 	for i in 24:
 		var a := TAU * i / 24.0

@@ -27,16 +27,33 @@ func _init() -> void:
 	# sides (the company's own stands and yard aren't the town's to zone).
 	var count: int = view._trees._trees.get(key, []).size()
 	var mid := Vector3.ZERO
-	var far := -1.0
+	var side := Vector3(s.dir.z, 0.0, -s.dir.x).normalized()
+	# The street runs through the most of its woods it can while staying
+	# clear of the mill's yard (a road through that would buy it out).
+	var most := -1
+	var best_side := side
 	for c in s.pads + [Vector2i.ZERO]:
 		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 			var n: Vector2i = c + d
 			var at := Industry.pad_center(s, n)
-			if n in s.pads or n == Vector2i.ZERO or at.distance_to(s.pos) <= far:
+			if n in s.pads or n == Vector2i.ZERO:
 				continue
-			far = at.distance_to(s.pos)
-			mid = at
-	var side := Vector3(s.dir.z, 0.0, -s.dir.x).normalized()
+			for way in [side, Vector3(-side.z, 0.0, side.x)]:
+				var p0 := Vector2(at.x, at.z) - Vector2(way.x, way.z) * 150.0
+				var p1 := Vector2(at.x, at.z) + Vector2(way.x, way.z) * 150.0
+				var hq := Vector2(s.pos.x, s.pos.z)
+				if Geometry2D.get_closest_point_to_segment(hq, p0, p1).distance_to(hq) < Industry.HQ_SIZE.length() + 30.0:
+					continue
+				var k := 0
+				for t in view._trees._trees.get(key, []):
+					var o := Vector2(t[0].origin.x, t[0].origin.z)
+					if Geometry2D.get_closest_point_to_segment(o, p0, p1).distance_to(o) < 60.0:
+						k += 1
+				if k > most:
+					most = k
+					mid = at
+					best_side = way
+	side = best_side
 	var a := mid - side * 150.0
 	var b := mid + side * 150.0
 	var near := 0
@@ -87,7 +104,8 @@ func _init() -> void:
 		var o: Vector3 = t[0].origin
 		if Geometry2D.get_closest_point_to_segment(Vector2(o.x, o.z), Vector2(a.x, a.z), Vector2(b.x, b.z)).distance_to(Vector2(o.x, o.z)) > 70.0:
 			rest += 1
-	_check(rest > 50, "the rest of its woods stand (%d trees away from the street)" % rest)
+	# Most of the woods off the street still stand (Grant County woodlots are small).
+	_check(rest > 30 and rest >= (count - near) * 0.75, "the rest of its woods stand (%d trees away from the street, of %d)" % [rest, count - near])
 	view.free()
 	_done()
 
@@ -95,9 +113,13 @@ func _init() -> void:
 func _company(sim: CitySim) -> int:
 	var best := Vector3.ZERO
 	var best_v := 0.0
-	for x in range(-3000, 3001, 150):
-		for z in range(-3000, 3001, 150):
-			var v := Resources.at(Resources.Kind.FOREST, Vector3(x, 0, z))
+	# The biggest woods near town (Grant County's are mostly small woodlots).
+	for x in range(-4000, 4001, 150):
+		for z in range(-4000, 4001, 150):
+			var v := 0.0
+			for dx in [-300, 0, 300]:
+				for dz in [-300, 0, 300]:
+					v += Resources.at(Resources.Kind.FOREST, Vector3(x + dx, 0, z + dz))
 			if v > best_v:
 				best_v = v
 				best = Vector3(x, 0, z)

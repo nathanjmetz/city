@@ -186,6 +186,13 @@ const MARKET_MIN := {
 const MARKET_FULL := 15_000.0
 const MARKET_REACH := 50_000.0
 const MARKET_I69_REACH := 0.5
+## The backdrop towns (Marion, Gas City, Jonesboro) are jobs, not a market:
+## up to this share of a town's workers can hold a job in one of them, at
+## full commuting weight (Census OnTheMap: in Grant County's small towns
+## about a third of workers drive to Marion or Gas City). Their jobs, per
+## resident (a county seat holds more jobs than people who live there).
+const BACKDROP_COMMUTE_SHARE := 0.35
+const BACKDROP_JOBS_PER_PERSON := 0.7
 ## Lenders want a new apartment building's market at about 90-93%
 ## occupied: while this share of the town's flats stand empty, no new
 ## apartment building starts and none grows.
