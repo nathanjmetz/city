@@ -30,6 +30,8 @@ const POLE := 6.0
 const FLAG_MIN := 24.0
 ## How deep a flag lot's back yard can go.
 const REAR_CAP := 40.0
+## The deepest a home or shop lot goes (200 ft, the deep end of real plats).
+const MAX_DEPTH := 58.0
 ## Back lanes (US subdivision practice): homes and shops front a paved
 ## street, and an alley or a gravel lane behind them serves only the backs
 ## of the lots (garages, trash, utilities). So a paved street's lots run
@@ -42,8 +44,18 @@ const REAR_LANE_DEPTH := 45.0
 ## ("reverse frontage" along arterials), shops front the busier one.
 const FACE_MIN := 27.0
 const FACE_MARGIN := 3.0
+## The smallest lot worth keeping (1,500 sq ft).
+const MIN_AREA := 140.0
 ## How far into a corner square (from both streets) a built lot is looked for.
 const CORNER_PROBE := 6.0
+## Streets meeting closer to square than this (cos of the angle off square)
+## square their corners; sharper ones split the corner along the bisector.
+const SQUARE_ALONG := 0.85
+## How far past the cross street's painted strip a street's zoning must
+## reach to count as zoning the corner.
+const CORNER_REACH := 8.0
+## How deep zoning a street side paints (CitySim._paint_frontage).
+const PAINT_DEPTH := 18.0
 ## How each road's land claim works: a paved street claims land halfway to
 ## the next; a gravel road gives way to a paved street; an alley claims
 ## only its own right of way.
@@ -375,7 +387,7 @@ func cut_lots(network: RoadNetwork, frozen: Dictionary) -> Array:
 
 
 ## Lots never cross a saved parcel: trims them, or drops them if little is
-## left.
+## left (a remnant too small or pinched to build on stays open land).
 static func _clear_of_parcels(lots: Array, parcels: Array) -> Array:
 	var out := []
 	for lot in lots:
@@ -388,13 +400,19 @@ static func _clear_of_parcels(lots: Array, parcels: Array) -> Array:
 			var best := _largest(cut)
 			var before := absf(_area(lot.corners))
 			if absf(_area(best)) < before - 1.0:
-				if absf(_area(best)) < before * 0.7 or cut.size() > 1 and _holes(cut):
+				if absf(_area(best)) < before * 0.7 or cut.size() > 1 and _holes(cut) \
+						or _remnant(best):
 					keep = false
 					break
 				_set_shape(lot, best)
 		if keep:
 			out.append(lot)
 	return out
+
+
+## A trimmed piece no building fits: under 1,500 sq ft, or pinched in two.
+static func _remnant(poly: PackedVector2Array) -> bool:
+	return absf(_area(poly)) < MIN_AREA or Geometry2D.offset_polygon(poly, -2.5).size() > 1
 
 
 # --------------------------------------------------------------- survey cache
@@ -585,6 +603,31 @@ func warm(network: RoadNetwork, zones: ZoneMap, built: Callable, blocked: Callab
 			s.free_sig = 0
 			s.free_zrev = zones.revision
 		_plan_side(s, zones, _warm_parcels)
+
+
+## A street side's zone along its frontage within reach of point p (the
+## nearest zoned bit), or 0. The strip the cross street (its pieces, cross_off
+## from the middle to its frontage) paints is its zoning, not this side's.
+static func _side_zone(s: Dictionary, p: Vector2, cross: Array, cross_off: float, zones: ZoneMap) -> int:
+	var best := 0
+	var along := cross_off + PAINT_DEPTH + CORNER_REACH
+	var off: float = s.get("off", 0.0)
+	var best_d := along * along + off * off
+	var own: float = cross_off + PAINT_DEPTH
+	# A side too short to reach past the cross street's strip is read all along.
+	var short_ok: bool = s.get("len", 0.0) > along
+	for f in s.get("fronts", []):
+		var dd := (f[1] as Vector2).distance_squared_to(p)
+		if dd >= best_d:
+			continue
+		var at: Vector2 = (f[1] as Vector2) + (f[2] as Vector2) * ZONE_PROBE
+		if short_ok and not cross.is_empty() and _dist_to(at, cross) < own:
+			continue
+		var z := zones.zone_at(_v3(at))
+		if z != 0:
+			best = z
+			best_d = dd
+	return best
 
 
 ## Whether any of a side's frontage is zoned.
@@ -1002,27 +1045,46 @@ func _corner_rules(s: Dictionary, rays: Array, zones: ZoneMap, parcels: Array) -
 		# running across them faces this one over the block.
 		var along := absf(d.dot(r[2]))
 		var face := along < 0.3 and shallow.has(o)
-		if not face and along < 0.7:
-			continue
 		var k: float = piece[2]
 		var inside: Vector2 = r[1] + r[2] * 20.0
 		var c := Geometry2D.get_closest_point_to_segment(inside, piece[0], piece[1])
 		var n_o := Vector2(-d.y, d.x)
+		var side_o := 1
 		if n_o.dot(r[1] - c) < 0.0:
 			n_o = -n_o
-		var zone_o := zones.zone_at(_v3(c + n_o * (k + 0.3 + ZONE_PROBE)))
+			side_o = -1
+		var s_o: Dictionary = _sides.get("%d:%d" % [o, side_o], {})
+		var meet := _meeting(s, s_o, r[1])
+		# Streets that meet are judged by the angle between them where they
+		# meet, the same from both, so a corner is squared for both or neither.
+		if not face and not s_o.is_empty():
+			var t_s := _end_dir(s.curve, meet)
+			var t_o := _end_dir(s_o.curve, meet)
+			if t_s != Vector2.ZERO and t_o != Vector2.ZERO:
+				along = absf(t_s.cross(t_o))
+		if not face and along < SQUARE_ALONG:
+			continue
+		# Whether each street is zoned by this corner, read the same way from
+		# both (along each side's own frontage near where they meet), so the
+		# two always agree on who holds it; a probe in the corner square can
+		# land in either street's paint.
+		var zone_o := _side_zone(s_o, meet, _pieces.get(s.seg, []), s.off, zones)
 		var zone_s := zones.zone_at(_v3(r[1] + r[2] * ZONE_PROBE))
+		var near_s := _side_zone(s, meet, _pieces[o], s_o.get("off", 0.0), zones)
 		var len_o := 0.0
 		for q in _pieces[o]:
 			len_o += (q[0] as Vector2).distance_to(q[1])
-		var win: bool = zone_o == 0 or s.len > len_o + 1.0 or absf(s.len - len_o) <= 1.0 and s.seg < o
+		var win: bool = zone_o == 0 or near_s != 0 and (s.len > len_o + 1.0 or absf(s.len - len_o) <= 1.0 and s.seg < o)
 		var built := _corner_parcel(s, o, r, piece, n_o, parcels)
 		if built != 0:
 			win = built > 0
 		if face:
+			# Facing streets are read straight across the block (no corner).
+			var face_o := zones.zone_at(_v3(c + n_o * (k + 0.3 + ZONE_PROBE)))
 			var pref_s := _face_pref(s.type, zone_s)
-			var pref_o := _face_pref(piece[8], zone_o)
-			win = zone_o == 0 or zone_s != 0 and (pref_s > pref_o or pref_s == pref_o and win)
+			var pref_o := _face_pref(piece[8], face_o)
+			var longer: bool = (built > 0) if built != 0 else (s.len > len_o + 1.0 or absf(s.len - len_o) <= 1.0 and s.seg < o)
+			win = face_o == 0 or zone_s != 0 and (pref_s > pref_o or pref_s == pref_o and longer)
 			rules.append({"seg": o, "win": win, "depth": REACH, "k": k, "face": true,
 				"pieces": _pieces[o].map(func(q): return [q[0], q[1]])})
 			continue
@@ -1153,6 +1215,35 @@ static func _dist_to(p: Vector2, pieces: Array) -> float:
 	for q in pieces:
 		best = minf(best, Geometry2D.get_closest_point_to_segment(p, q[0], q[1]).distance_to(p))
 	return best
+
+
+## Where two street sides' streets meet: their shared end, else the nearest
+## pair of ends (both sides see the same point).
+static func _meeting(s: Dictionary, t: Dictionary, fallback: Vector2) -> Vector2:
+	if t.is_empty():
+		return fallback
+	var best := fallback
+	var best_d := INF
+	for a in [s.curve[0], s.curve[2]]:
+		for b in [t.curve[0], t.curve[2]]:
+			var dd := (a as Vector3).distance_squared_to(b)
+			if dd < best_d:
+				best_d = dd
+				best = Vector2((a.x + b.x) * 0.5, (a.z + b.z) * 0.5)
+	return best
+
+
+## A curve's heading at whichever end is at p (within 2 m), else zero.
+static func _end_dir(curve: Array, p: Vector2) -> Vector2:
+	for i in [0, 2]:
+		var e: Vector3 = curve[i]
+		if Vector2(e.x, e.z).distance_to(p) > 2.0:
+			continue
+		var q: Vector3 = curve[1]
+		if q.distance_to(e) < 0.5:
+			q = curve[2 - i]
+		return Vector2(q.x - e.x, q.z - e.z).normalized()
+	return Vector2.ZERO
 
 
 static func _nearest_piece(p: Vector2, pieces: Array) -> Array:
@@ -1411,7 +1502,7 @@ func _cut_run(s: Dictionary, zone: int, a0: float, a1: float, start_corner: bool
 		# the block (open land), they stop at the usual depth.
 		var capped: bool = flags.has(k) or flags.has(k - 1) or _median_depth(s, b0, b1) > size.cap + FLAG_MIN \
 			or not _bounded(s, b0, b1)
-		var lot := _front_lot(s, zone, b0, b1, size.cap if capped else size.cap + FLAG_MIN)
+		var lot := _front_lot(s, zone, b0, b1, size.cap if capped else _deepest(zone, size.cap))
 		if lot.is_empty():
 			continue
 		var by := []
@@ -1551,6 +1642,12 @@ func _flag_lot(s: Dictionary, zone: int, a0: float, b: float, a1: float, cap: fl
 
 static func _at(r: Array, d: float) -> Vector2:
 	return (r[1] as Vector2) + (r[2] as Vector2) * d
+
+
+## The deepest a lot running back to the middle of the block may go: real
+## home and shop plats run 30-50 m, 60 m (200 ft) at most; plants go deeper.
+static func _deepest(zone: int, cap: float) -> float:
+	return cap + FLAG_MIN if zone == ZoneMap.Zone.INDUSTRIAL else minf(cap + FLAG_MIN, MAX_DEPTH)
 
 
 ## The zone probe of the survey line nearest `a` (it read the run's zone).
