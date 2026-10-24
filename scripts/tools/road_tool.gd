@@ -900,8 +900,10 @@ func _node_angles(n: int) -> Array:
 	return out
 
 
-## Guide lines through the nearest junctions and road ends: along each road
-## there and square to it. [origin, angle] pairs.
+## Guide rays from the nearest junctions and road ends, the way CS2 offers
+## them: straight on down a road's centreline past its end or junction, out
+## where no road goes yet, and square to the road at the one junction nearest
+## the cursor. [origin, angle] pairs; a ray only runs one way.
 func _align_guides(near: Vector3, skip: Vector3) -> Array:
 	var reach := maxf(ALIGN_REACH, 400.0 * _px)
 	var found := []
@@ -912,18 +914,50 @@ func _align_guides(near: Vector3, skip: Vector3) -> Array:
 			found.append([d, id])
 	found.sort_custom(func(x, y): return x[0] < y[0])
 	var out := []
-	for f in found.slice(0, ALIGN_NODES):
-		var q: Vector3 = network.nodes[f[1]]
-		for ang in _node_angles(f[1]):
-			out.append([q, ang])
-			out.append([q, ang + PI * 0.5])
+	for i in mini(found.size(), ALIGN_NODES):
+		var n: int = found[i][1]
+		var q: Vector3 = network.nodes[n]
+		var roads := _node_angles(n)
+		var rays := []
+		for ang in roads:
+			rays.append(ang + PI)
+			if i == 0:
+				rays.append(ang + PI * 0.5)
+				rays.append(ang - PI * 0.5)
+		for r in rays:
+			var open := true
+			for ang in roads:
+				if absf(angle_difference(r, ang)) < deg_to_rad(20.0):
+					open = false  # a road already goes that way
+					break
+			if open:
+				out.append([q, r])
 	return out
 
 
+## True when the straight line from `a` to `b` crosses a road away from `a`:
+## such a guide runs through the town instead of out into open ground.
+func _guide_blocked(a: Vector3, b: Vector3) -> bool:
+	var a2 := Vector2(a.x, a.z)
+	var b2 := Vector2(b.x, b.z)
+	var box := Rect2(a2, Vector2.ZERO).expand(b2).grow(1.0)
+	for id in network.segments:
+		var c := network.curve_of(id)
+		var cb := Rect2(Vector2(c[0].x, c[0].z), Vector2.ZERO).expand(Vector2(c[1].x, c[1].z)).expand(Vector2(c[2].x, c[2].z))
+		if not box.intersects(cb, true):
+			continue
+		var pts := network.sample_segment(id, 12)
+		for j in pts.size() - 1:
+			var hit = Geometry2D.segment_intersects_segment(a2, b2, Vector2(pts[j].x, pts[j].z), Vector2(pts[j + 1].x, pts[j + 1].z))
+			if hit != null and (hit as Vector2).distance_to(a2) > 2.0 and (hit as Vector2).distance_to(b2) > 2.0:
+				return true
+	return false
+
+
 ## Lines a free point up with nearby junctions, the way CS2 does: onto a
-## guide line, or where two guide lines cross. With `ray` (an angle) the point
+## guide ray, or where two guide rays cross. With `ray` (an angle) the point
 ## stays on the line from `from` in that direction and slides to where it
-## meets a guide.
+## meets a guide. A guide that would run through another road is skipped.
 func _align(p: Vector3, from: Vector3, ray := NAN) -> Vector3:
 	_align_lines = []
 	var reach := ALIGN_PX * _px
@@ -932,6 +966,8 @@ func _align(p: Vector3, from: Vector3, ray := NAN) -> Vector3:
 	for g in _align_guides(p, from):
 		var o := Vector2(g[0].x, g[0].z)
 		var u := Vector2(cos(g[1]), sin(g[1]))
+		if (p2 - o).dot(u) <= 0.0:
+			continue  # behind the ray
 		var off := absf((p2 - o).cross(u))
 		if off < reach * (3.0 if not is_nan(ray) else 1.0):
 			near.append([off, o, u, g[0]])
@@ -941,20 +977,31 @@ func _align(p: Vector3, from: Vector3, ray := NAN) -> Vector3:
 		var w := Vector2(cos(ray), sin(ray))
 		for g in near:
 			var x = Geometry2D.line_intersects_line(r, w, g[1], g[2])
-			if x != null and (x as Vector2).distance_to(p2) < reach * 1.5 and (x - r).dot(w) > 0.0:
-				_align_lines = [[g[3], Vector3(x.x, p.y, x.y)]]
-				return Vector3(x.x, p.y, x.y)
+			if x == null or (x as Vector2).distance_to(p2) >= reach * 1.5 or (x - r).dot(w) <= 0.0 or (x - g[1]).dot(g[2]) <= 0.0:
+				continue
+			var at := Vector3(x.x, p.y, x.y)
+			if _guide_blocked(g[3], at):
+				continue
+			_align_lines = [[g[3], at]]
+			return at
 		return p
-	if near.is_empty():
+	var open := []
+	for g in near:
+		var q: Vector2 = g[1] + g[2] * (p2 - g[1]).dot(g[2])
+		if not _guide_blocked(g[3], Vector3(q.x, p.y, q.y)):
+			open.append(g)
+	if open.is_empty():
 		return p
-	var a = near[0]
+	var a = open[0]
 	var q: Vector2 = a[1] + a[2] * (p2 - a[1]).dot(a[2])
-	for b in near.slice(1):
+	for b in open.slice(1):
 		if absf((a[2] as Vector2).cross(b[2])) < 0.2 or (b[1] as Vector2).distance_to(a[1]) < 0.5:
 			continue  # parallel lines, or the same junction
 		var x = Geometry2D.line_intersects_line(a[1], a[2], b[1], b[2])
-		if x != null and (x as Vector2).distance_to(p2) < reach * 1.5:
+		if x != null and (x as Vector2).distance_to(p2) < reach * 1.5 and (x - b[1]).dot(b[2]) > 0.0 and (x - a[1]).dot(a[2]) > 0.0:
 			var at := Vector3(x.x, p.y, x.y)
+			if _guide_blocked(a[3], at) or _guide_blocked(b[3], at):
+				continue
 			_align_lines = [[a[3], at], [b[3], at]]
 			return at
 	_align_lines = [[a[3], Vector3(q.x, p.y, q.y)]]
