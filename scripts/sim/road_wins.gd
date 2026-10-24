@@ -55,6 +55,22 @@ static func corridors(net: RoadNetwork, extra: float) -> Array:
 	return out
 
 
+## The ground painted roads take (county roads and state highways the town
+## hasn't built, CitySim.painted_near lines), as corridors does for built
+## ones: a field stops at their right of way too (Brawn, 2026-10-24).
+static func painted(lines: Array, extra: float) -> Array:
+	var out := []
+	for l in lines:
+		var half := RoadStyle.right_of_way_half(l.type) + extra
+		var line: PackedVector2Array = l.pts
+		var box := Rect2(line[0], Vector2.ZERO)
+		for p in line:
+			box = box.expand(p)
+		out.append({"bounds": box.grow(half),
+			"polys": Geometry2D.offset_polyline(line, half, Geometry2D.JOIN_ROUND, Geometry2D.END_ROUND)})
+	return out
+
+
 static func _bounds(poly: PackedVector2Array) -> Rect2:
 	var box := Rect2(poly[0], Vector2.ZERO)
 	for p in poly:

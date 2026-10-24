@@ -997,11 +997,18 @@ func _road_wins() -> void:
 			economy.money += Farms.FARMHOUSE_COST
 			farms.farms.erase(id)
 			continue
+		# County roads and highways the town hasn't built cross farm country
+		# too: fields stop at their right of way like at any road's.
+		var shape := []
+		for c in f.cells:
+			for q in Farms.cell_corners(f, c):
+				shape.append(Vector3(q.x, 0.0, q.y))
+		var roads := field_corr + RoadWins.painted(painted_near(shape), RoadWins.VERGE) if not shape.is_empty() else field_corr
 		for c in f.cells.duplicate():
 			var cell := Farms.cell_corners(f, c)
-			if not RoadWins.hits(field_corr, cell):
+			if not RoadWins.hits(roads, cell):
 				continue
-			var left := RoadWins.clip(field_corr, cell)
+			var left := RoadWins.clip(roads, cell)
 			var kept := 0.0
 			for piece in left:
 				kept += RoadWins.area(piece)
@@ -2254,7 +2261,8 @@ func _ground_free(mid: Vector3, corners: PackedVector2Array, in_fields: bool) ->
 	var key := Vector3i(roundi(mid.x), roundi(mid.z), int(in_fields))
 	if _usable_cache.has(key):
 		return _usable_cache[key]
-	var ok := network.find_segment_near(mid, Farms.CELL * 0.6 + RoadStyle.right_of_way_half(RoadStyle.Type.AVENUE), 2.0).is_empty()
+	var ok := network.find_segment_near(mid, Farms.CELL * 0.6 + RoadStyle.right_of_way_half(RoadStyle.Type.AVENUE), 2.0).is_empty() \
+		and not _on_painted_road(mid, Farms.CELL * 0.6 + RoadStyle.right_of_way_half(RoadStyle.Type.COUNTY))
 	var pts := [mid]
 	for c in corners:
 		pts.append(mid.lerp(Vector3(c.x, 0.0, c.y), 0.8))
@@ -2275,6 +2283,22 @@ func _ground_free(mid: Vector3, corners: PackedVector2Array, in_fields: bool) ->
 				break
 	_usable_cache[key] = ok
 	return ok
+
+
+## True when a county road (a mile not bulldozed) or a state highway the
+## town hasn't built runs within `reach` metres of p: fields, yards and
+## pads keep off it as off any built road (Brawn, 2026-10-24).
+func _on_painted_road(p: Vector3, reach: float) -> bool:
+	var x := p.x + terrain_offset.x
+	var z := p.z + terrain_offset.y
+	if Highways.distance(x, z) < reach:
+		return true
+	if CountyGrid.distance(x, z) >= reach:
+		return false
+	for mile in CountyGrid.miles_at(x, z, reach):
+		if not county_removed.has(mile.key):
+			return true
+	return false
 
 
 ## Whose land a point is: "farm:<id>" for a farm's yard, lane or fields,
