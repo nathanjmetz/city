@@ -31,6 +31,15 @@ varying vec3 world_pos;
 vec3 lin(vec3 c) {
 	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
 }
+// The turf colour is sRGB; the browser's renderer (Compatibility) hands it
+// over already made linear.
+vec3 vcol(vec3 c) {
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	return c;
+#else
+	return lin(c);
+#endif
+}
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
@@ -42,7 +51,7 @@ void fragment() {
 	float mid = texture(noise_soft, p / 60.0 + 0.31).r;
 	float clump = texture(noise_soft, p / 7.0 + 0.62).r;
 	float grain = texture(noise_grain, p / 2.3).r;
-	vec3 col = mix(lin(COLOR.rgb), dry.rgb, smoothstep(0.4, 0.8, mid) * mix(0.8, 0.15, care));
+	vec3 col = mix(vcol(COLOR.rgb), dry.rgb, smoothstep(0.4, 0.8, mid) * mix(0.8, 0.15, care));
 	col *= 1.0 - smoothstep(0.4, 0.9, clump) * mix(0.08, 0.18, care);
 	// Bare, trodden spots where nobody keeps the grass up.
 	float bare = smoothstep(mix(0.68, 1.2, care), mix(0.82, 1.3, care), clump * 0.6 + mid * 0.5);

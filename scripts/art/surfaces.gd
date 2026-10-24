@@ -97,7 +97,8 @@ void fragment() {
 	// some places and not others. Sealant is dark and a little glossy, not
 	// ink black. Drawn in world space from a jittered cell pattern.
 	float footprint = length(fwidth(p));  // metres per pixel
-	float cracked = smoothstep(0.35, 0.55, texture(noise_soft, p / 90.0 + 0.2).r);
+	// Block cracking only where a street has aged worst.
+	float cracked = smoothstep(0.58, 0.72, texture(noise_soft, p / 90.0 + 0.2).r);
 	vec2 q = turn(p, 0.6) / 4.5;
 	vec2 qi = floor(q);
 	float f1 = 9.0;
@@ -117,6 +118,19 @@ void fragment() {
 	float run = smoothstep(0.46, 0.52, texture(noise_soft, p / 7.0 + 0.5).r);
 	float wide = 0.025;
 	float crack = (1.0 - smoothstep(wide, wide + footprint, edge)) * run * cracked;
+	// Transverse cracks, the commonest on a Midwest street: the pavement
+	// shrinks in winter and splits straight across a lane or the whole road
+	// every 8 to 20 m, wandering a little on the way.
+	float tcell = floor(along / 11.0);
+	float th = fract(sin(tcell * 41.37 + block.x * 7.13 + block.y * 3.71) * 43758.5453);
+	float th2 = fract(th * 57.3);
+	float wob = (texture(noise_soft, vec2(across * 0.7, tcell * 0.37)).r - 0.5) * 1.6
+		+ (texture(noise_grain, p / 1.3).r - 0.5) * 0.08;
+	float dt = abs(along - tcell * 11.0 - 2.0 - th * 7.0 - wob);
+	float from = th2 * 0.5;
+	float span = step(0.3, th) * smoothstep(from - 0.03, from, across) * smoothstep(from + 0.5 + th * 0.5, from + 0.47 + th * 0.5, across);
+	// Sealed with a 3 in band of sealant, so they show from the air.
+	crack = max(crack, (1.0 - smoothstep(0.04, 0.04 + footprint, dt)) * span);
 	crack *= close * clamp(wide * 2.0 / max(footprint, 1e-4), 0.0, 1.0);  // thins out with distance
 	col = mix(col, tar.rgb, crack * 0.75);
 	// Oil drips and tyre grime.
@@ -241,6 +255,18 @@ void fragment() {
 }
 """
 
+## Vertex colours are sRGB. The browser's renderer (Compatibility) hands
+## these meshes' colours over already made linear; vtx() undoes that, so
+## the colours and the numbers packed in them read the same everywhere.
+const VTX := """
+vec4 vtx(vec4 c) {
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	c.rgb = mix(c.rgb * 12.92, 1.055 * pow(max(c.rgb, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c.rgb));
+#endif
+	return c;
+}
+"""
+
 ## Crop fields, benchmarked against aerial photos of Iowa and Illinois
 ## farmland. UV is metres across and back from the farmhouse, / 16; the
 ## vertex colour is this month's crop colour (sRGB). Vertex alpha 0 marks
@@ -249,7 +275,7 @@ void fragment() {
 ##     small enough to shimmer
 ##   - big soft patches where the soil is wetter, drier or richer
 ##   - a faint sprayer tramline every 36 m
-const FIELD := """
+const FIELD := VTX + """
 vec3 lin(vec3 c) {
 	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
 }
@@ -265,7 +291,7 @@ void fragment() {
 	gap = mix(gap, 0.4, smoothstep(0.12, 0.45, fwidth(r)));
 	float t = abs(mod(m.x, 36.0) - 18.0);
 	float tram = (1.0 - smoothstep(0.25, 0.45, t)) * clamp(0.5 / max(fwidth(m.x), 0.001), 0.0, 1.0);
-	vec3 crop = lin(COLOR.rgb) * 1.45 * (0.8 + patch * 0.34 + (mid - 0.5) * 0.14);
+	vec3 crop = lin(vtx(COLOR).rgb) * 1.45 * (0.8 + patch * 0.34 + (mid - 0.5) * 0.14);
 	// Soil shows through the crop the way it does from the air over Pike
 	// County: thinner, yellower growth on eroded knobs (light Alford and
 	// Wellston silt loams) and darker, lusher crop down the wet swales.
@@ -293,11 +319,11 @@ void fragment() {
 ##   - benches greyer and dustier the deeper they are
 ##   - a floor of blasted rock with rain water standing in the low spots
 ##   - a grassed berm of stripped overburden round the rim
-const QUARRY := """
+const QUARRY := VTX + """
 void fragment() {
 	vec2 p = world_pos.xz;
 	float s = UV.x;
-	float floor_at = COLOR.r * 100.0;
+	float floor_at = vtx(COLOR).r * 100.0;
 	if (s < -9.0) {
 		discard;
 	}
@@ -343,7 +369,7 @@ void fragment() {
 		rock = mix(rock, vec3(0.14, 0.22, 0.20), wet);
 		col = mix(col, rock, smoothstep(floor_at, floor_at + 3.0, s));
 	}
-	float ramp = (1.0 - step(0.5, COLOR.g)) * step(s, floor_at + 4.0);
+	float ramp = (1.0 - step(0.5, vtx(COLOR).g)) * step(s, floor_at + 4.0);
 	col = mix(col, vec3(0.56, 0.53, 0.46) * (0.95 + patch * 0.1), ramp);
 	col *= 1.0 + (grain - 0.5) * 0.25 * close;
 	ALBEDO = col;

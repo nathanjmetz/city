@@ -1395,6 +1395,7 @@ func _lot_fence(a: Vector2, b: Vector2, kind: String) -> void:
 			_box("metal", Vector3(0.05, 1.22, 0.05), p + dir * (len * k / n) + Vector3(0, 0.61, 0), galv)
 		_box("metal", Vector3(0.04, 0.04, len), (p + q) * 0.5 + Vector3(0, 1.2, 0), galv, yaw)
 		_box("metal", Vector3(0.015, 0.015, len), (p + q) * 0.5 + Vector3(0, 0.08, 0), galv, yaw)
+		_box("chain", Vector3(0.006, 1.12, len), (p + q) * 0.5 + Vector3(0, 0.64, 0), galv, yaw)
 		return
 	# 6 ft privacy: boards between 4x4 posts every 8 ft.
 	var board := Color("#f0eee8") if kind == "vinyl" else Color("#8f7a60")
