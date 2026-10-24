@@ -127,6 +127,32 @@ func _init() -> void:
 	_check(music.stream.resource_path == GameMusic.THEME, "the pause menu brings the theme back")
 	GameMusic.play(self, GameMusic.Mode.TOWN)
 	_check(music.stream.resource_path == town_song, "closing it picks the town song up again")
+
+	# Sound picker: every option is a real file for a real sound.
+	var listing = JSON.parse_string(FileAccess.get_file_as_string("res://web/sfx/candidates.json"))
+	_check(typeof(listing) == TYPE_DICTIONARY and not listing.sounds.is_empty(), "the picker has options")
+	for id in listing.sounds:
+		_check(ids.has(id), "picker sound %s is a game sound" % id)
+		for o in listing.sounds[id]:
+			_check(FileAccess.file_exists("res://web/sfx/" + o.file) and o.name != "" and "CC0" in o.source,
+				"option %s exists, is named and free" % o.file)
+	# A pick swaps the recording in at once, is remembered, and can be undone.
+	var o: Dictionary = listing.sounds["ui/click"][0]
+	DirAccess.make_dir_recursive_absolute(SoundSettings.picked_path(o.file).get_base_dir())
+	DirAccess.copy_absolute(ProjectSettings.globalize_path("res://web/sfx/" + o.file),
+		ProjectSettings.globalize_path(SoundSettings.picked_path(o.file)))
+	var version := SoundSettings.picks_version
+	SoundSettings.pick("ui/click", o)
+	_check(SoundSettings.picks_version > version, "a pick tells the players to switch")
+	var picked_stream := SoundSettings.stream("ui/click")
+	_check(picked_stream is AudioStreamOggVorbis and picked_stream.resource_path == "", "the picked recording plays")
+	SoundSettings.picks = {}
+	SoundSettings._loaded = false
+	SoundSettings.ensure_loaded()
+	_check(str(SoundSettings.picks.get("ui/click", {}).get("file", "")) == o.file, "the pick is remembered")
+	_check((SoundSettings.stream("world/leaves") as AudioStreamOggVorbis).loop, "loops still loop")
+	SoundSettings.pick("ui/click", {})
+	_check(SoundSettings.stream("ui/click").resource_path == "res://assets/audio/ui/click.ogg", "Now goes back to the game's own")
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 

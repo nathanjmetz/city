@@ -21,3 +21,13 @@ menu (`scripts/audio/sound_credits.gd`). Only public domain, CC0 and CC BY
 sources are used: never share-alike or non-commercial.
 
 Music is made separately by the project owner: `music/theme.ogg` (title screen and menus) and `music/gameplay/*.ogg` (in town) are by metzguy, made with Suno and converted to Ogg Vorbis.
+
+## Sound picker options (`web/sfx/`)
+
+The options in the pause menu's Sound picker are cut from two CC0 (public
+domain) sources by `tools/audio/make_candidates.py`, and listed with their
+source in `web/sfx/candidates.json`. They are served next to the browser build
+and downloaded only when played. CC0 needs no credit; they are credited anyway.
+
+- [Kenney](https://kenney.nl) audio packs: Interface Sounds, UI Audio, Impact Sounds, Casino Audio, RPG Audio, Music Jingles (CC0).
+- [Versilian Community Sample Library](https://github.com/sgossner/VCSL) by Sam Gossner: glockenspiel, marimba, vibraphone, concert harp, hand chimes, tubular bells, wood block (CC0).

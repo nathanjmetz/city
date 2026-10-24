@@ -42,6 +42,7 @@ var _live := {}
 var _hum_cars := 0
 var _area_ear := Vector3.INF
 var _area_wait := 0.0
+var _picks := -1
 
 
 func setup(s: CitySim, cam: Camera3D, fraction: Callable) -> void:
@@ -52,9 +53,7 @@ func setup(s: CitySim, cam: Camera3D, fraction: Callable) -> void:
 
 func _ready() -> void:
 	setup_buses()
-	for f in SoundSources.GAIN.keys() + SoundSources.BEDS:
-		_streams[f] = load_loop("res://assets/audio/world/%s.ogg" % f)
-	_build_sound = load("res://assets/audio/ui/build.ogg")
+	_load_streams()
 	for i in CAR_SLOTS:
 		var p := _spatial(10.0, CAR_RANGE)
 		p.stream = _streams.car_engine
@@ -95,6 +94,33 @@ static func setup_buses() -> void:
 	SoundSettings.apply()
 
 
+## The recordings (SoundSettings.stream: a Sound picker pick, else the
+## game's own). After a new pick, the ones already playing switch over.
+func _load_streams() -> void:
+	_picks = SoundSettings.picks_version
+	for f in SoundSources.GAIN.keys() + SoundSources.BEDS:
+		_streams[f] = SoundSettings.stream("world/" + f)
+	_build_sound = SoundSettings.stream("ui/build")
+	if _wind == null:
+		return
+	for s in _cars:
+		_swap(s.player, _streams.car_engine)
+	for s in _areas:
+		if s.get("sound", "") != "":
+			_swap(s.player, _streams[s.sound])
+	_swap(_wind, _streams.wind_high)
+	_swap(_hum, _streams.traffic_far)
+
+
+static func _swap(p: Node, stream: AudioStream) -> void:
+	if p.stream == stream:
+		return
+	var on: bool = p.playing
+	p.stream = stream
+	if on:
+		p.play()
+
+
 static func load_loop(path: String) -> AudioStream:
 	var s = load(path)
 	if s is AudioStreamOggVorbis:
@@ -133,6 +159,8 @@ func _process(delta: float) -> void:
 func _update(delta: float) -> void:
 	if camera == null:
 		return
+	if _picks != SoundSettings.picks_version:
+		_load_streams()
 	var ear := camera.global_position
 	_ear = ear
 	_pick_wait -= delta

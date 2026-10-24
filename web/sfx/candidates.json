@@ -1,0 +1,315 @@
+{
+	"sounds": {
+		"ui/click": [
+			{
+				"file": "ui/click/soft-click.ogg",
+				"name": "Soft click",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/click/tick.ogg",
+				"name": "Tick",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/click/desk-switch.ogg",
+				"name": "Desk switch",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/click/light-switch.ogg",
+				"name": "Light switch",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/click/wood-block-soft.ogg",
+				"name": "Wood block, soft",
+				"source": "Versilian Community Sample Library (CC0)"
+			},
+			{
+				"file": "ui/click/pencil-tap.ogg",
+				"name": "Pencil tap",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/click/marimba-high-and-soft.ogg",
+				"name": "Marimba, high and soft",
+				"source": "Versilian Community Sample Library (CC0)"
+			},
+			{
+				"file": "ui/click/playing-card-down.ogg",
+				"name": "Playing card down",
+				"source": "Kenney (CC0)"
+			}
+		],
+		"ui/tool": [
+			{
+				"file": "ui/tool/select.ogg",
+				"name": "Select",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/tool/toggle.ogg",
+				"name": "Toggle",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/tool/switch.ogg",
+				"name": "Switch",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/tool/paper-slide.ogg",
+				"name": "Paper slide",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/tool/book-page.ogg",
+				"name": "Book page",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/tool/vibraphone-soft.ogg",
+				"name": "Vibraphone, soft",
+				"source": "Versilian Community Sample Library (CC0)"
+			},
+			{
+				"file": "ui/tool/wood-block.ogg",
+				"name": "Wood block",
+				"source": "Versilian Community Sample Library (CC0)"
+			}
+		],
+		"ui/road": [
+			{
+				"file": "ui/road/plank-set-down.ogg",
+				"name": "Plank set down",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/road/wood-knock.ogg",
+				"name": "Wood knock",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/road/soft-drop.ogg",
+				"name": "Soft drop",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/road/pencil-line.ogg",
+				"name": "Pencil line",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/road/card-laid-down.ogg",
+				"name": "Card laid down",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/road/marimba.ogg",
+				"name": "Marimba",
+				"source": "Versilian Community Sample Library (CC0)"
+			},
+			{
+				"file": "ui/road/thud.ogg",
+				"name": "Thud",
+				"source": "Kenney (CC0)"
+			}
+		],
+		"ui/build": [
+			{
+				"file": "ui/build/heavy-wood.ogg",
+				"name": "Heavy wood",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/build/plank.ogg",
+				"name": "Plank",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/build/drop.ogg",
+				"name": "Drop",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/build/confirm.ogg",
+				"name": "Confirm",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/build/book-set-down.ogg",
+				"name": "Book set down",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/build/low-marimba.ogg",
+				"name": "Low marimba",
+				"source": "Versilian Community Sample Library (CC0)"
+			},
+			{
+				"file": "ui/build/harp-roll.ogg",
+				"name": "Harp roll",
+				"source": "Versilian Community Sample Library (CC0)"
+			},
+			{
+				"file": "ui/build/soft-heavy-thud.ogg",
+				"name": "Soft heavy thud",
+				"source": "Kenney (CC0)"
+			}
+		],
+		"ui/bulldoze": [
+			{
+				"file": "ui/bulldoze/rubble.ogg",
+				"name": "Rubble",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/bulldoze/plank-knocked-over.ogg",
+				"name": "Plank knocked over",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/bulldoze/heavy-wood.ogg",
+				"name": "Heavy wood",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/bulldoze/metal.ogg",
+				"name": "Metal",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/bulldoze/close.ogg",
+				"name": "Close",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/bulldoze/back.ogg",
+				"name": "Back",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/bulldoze/thump.ogg",
+				"name": "Thump",
+				"source": "Kenney (CC0)"
+			}
+		],
+		"ui/money": [
+			{
+				"file": "ui/money/coins-in-hand.ogg",
+				"name": "Coins in hand",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/money/coins-more.ogg",
+				"name": "Coins, more",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/money/chips-stacked.ogg",
+				"name": "Chips stacked",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/money/chips-clink.ogg",
+				"name": "Chips clink",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/money/chip-laid-down.ogg",
+				"name": "Chip laid down",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/money/glockenspiel-ding.ogg",
+				"name": "Glockenspiel ding",
+				"source": "Versilian Community Sample Library (CC0)"
+			},
+			{
+				"file": "ui/money/confirm.ogg",
+				"name": "Confirm",
+				"source": "Kenney (CC0)"
+			}
+		],
+		"ui/milestone": [
+			{
+				"file": "ui/milestone/glockenspiel-c-g-c.ogg",
+				"name": "Glockenspiel C-G-C",
+				"source": "Versilian Community Sample Library (CC0)"
+			},
+			{
+				"file": "ui/milestone/harp-c-e-g.ogg",
+				"name": "Harp C-E-G",
+				"source": "Versilian Community Sample Library (CC0)"
+			},
+			{
+				"file": "ui/milestone/vibraphone-c-e-g.ogg",
+				"name": "Vibraphone C-E-G",
+				"source": "Versilian Community Sample Library (CC0)"
+			},
+			{
+				"file": "ui/milestone/marimba-c-g-c.ogg",
+				"name": "Marimba C-G-C",
+				"source": "Versilian Community Sample Library (CC0)"
+			},
+			{
+				"file": "ui/milestone/pizzicato-strings.ogg",
+				"name": "Pizzicato strings",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/milestone/pizzicato-strings-2.ogg",
+				"name": "Pizzicato strings 2",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/milestone/steel-drum.ogg",
+				"name": "Steel drum",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/milestone/confirm.ogg",
+				"name": "Confirm",
+				"source": "Kenney (CC0)"
+			}
+		],
+		"ui/doorbell": [
+			{
+				"file": "ui/doorbell/hand-chimes-e-c.ogg",
+				"name": "Hand chimes E-C",
+				"source": "Versilian Community Sample Library (CC0)"
+			},
+			{
+				"file": "ui/doorbell/tubular-bells-e-c.ogg",
+				"name": "Tubular bells E-C",
+				"source": "Versilian Community Sample Library (CC0)"
+			},
+			{
+				"file": "ui/doorbell/vibraphone-e-c.ogg",
+				"name": "Vibraphone E-C",
+				"source": "Versilian Community Sample Library (CC0)"
+			},
+			{
+				"file": "ui/doorbell/glockenspiel-g-c.ogg",
+				"name": "Glockenspiel G-C",
+				"source": "Versilian Community Sample Library (CC0)"
+			},
+			{
+				"file": "ui/doorbell/harp-e-c.ogg",
+				"name": "Harp E-C",
+				"source": "Versilian Community Sample Library (CC0)"
+			},
+			{
+				"file": "ui/doorbell/shop-door-bell.ogg",
+				"name": "Shop door bell",
+				"source": "Kenney (CC0)"
+			},
+			{
+				"file": "ui/doorbell/bong.ogg",
+				"name": "Bong",
+				"source": "Kenney (CC0)"
+			}
+		]
+	}
+}

@@ -40,6 +40,7 @@ var _honked := {}   # train id -> crossing index last blown for
 var _stopped := {}  # train id -> seconds it has stood still
 var _streams := {}
 var _wait := 0.0
+var _picks := -1
 
 
 func setup(s: CitySim, height: Callable) -> void:
@@ -49,14 +50,22 @@ func setup(s: CitySim, height: Callable) -> void:
 
 func _ready() -> void:
 	CityAudio.setup_buses()
-	for f in ["diesel", "horn", "crossing_bell"]:
-		_streams[f] = CityAudio.load_loop("res://assets/audio/world/rail/%s.ogg" % f)
+	_load_streams()
 	for i in ENGINE_SLOTS:
 		_engines.append({"player": _player("diesel", 16.0, ENGINE_RANGE), "tid": -1, "amp": 0.0})
 	for i in BELL_SLOTS:
 		_bells.append({"player": _player("crossing_bell", 10.0, BELL_RANGE), "index": -1, "amp": 0.0})
 	for i in HORN_SLOTS:
 		_horns.append({"player": _player("horn", 60.0, HORN_RANGE), "tid": -1, "amp": 0.0})
+
+
+## The recordings, again after a pick in the Sound picker.
+func _load_streams() -> void:
+	_picks = SoundSettings.picks_version
+	for f in ["diesel", "horn", "crossing_bell"]:
+		_streams[f] = SoundSettings.stream("world/rail/" + f)
+	for s in _engines + _bells + _horns:
+		CityAudio._swap(s.player, _streams[str(s.player.get_meta("sound")).get_file()])
 
 
 func _player(stream: String, unit: float, range_m: float) -> AudioStreamPlayer3D:
@@ -94,6 +103,8 @@ static func horn_due(dist: float, v: float) -> bool:
 func _process(delta: float) -> void:
 	if sim == null or _streams.is_empty():
 		return
+	if _picks != SoundSettings.picks_version:
+		_load_streams()
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
 		return
