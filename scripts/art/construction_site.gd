@@ -20,6 +20,11 @@ extends Node3D
 ## its height in bare lumber or steel, one draw call. Everything extra is
 ## freed once the building is finished.
 ##
+## A surface parking lot ("paving") is built the way a paving contractor
+## does it instead: cleared and graded dirt, a crushed-stone base rolled in
+## from the front back, curbs, light poles and signs set, fresh black
+## asphalt laid in lanes from the front back, then striped and planted.
+##
 ## Benchmark: Cities: Skylines 2 hides a new building in a scaffold box.
 
 signal finished
@@ -63,6 +68,10 @@ var _height := 6.0
 var _found_h := 0.45
 var _box := AABB()
 var _props_for := ""
+var _paving := false
+var _stone: MeshInstance3D
+var _mat: MeshInstance3D
+var _laid := {}  # paving layer -> how far back it was last drawn
 var _wait := 0.0
 var _done := false
 
@@ -90,6 +99,7 @@ static func add_to(root: Node3D, built: Array, profile: String, state: Callable,
 func setup(built: Array, profile: String, state: Callable) -> void:
 	_built = built
 	_profile = profile if SHELL.has(profile) else "house"
+	_paving = profile == "paving"
 	_state = state
 	_final.mesh = built[0]
 	add_child(_final)
@@ -137,6 +147,9 @@ func _show(st: Dictionary) -> void:
 		return
 	var stage: String = st.name
 	var t: float = st.t
+	if _paving:
+		_show_paving(stage, t)
+		return
 	var near := _near()
 	_final.visible = stage in ["exterior", "interior", "landscape"]
 	_ground.visible = stage == "landscape"
@@ -196,6 +209,54 @@ func _show(st: Dictionary) -> void:
 	_props_look(stage)
 
 
+## A parking lot going in: grade, stone base, curbs and poles, asphalt,
+## then the striped lot itself.
+func _show_paving(stage: String, t: float) -> void:
+	var i := Construction.STAGES.find(stage)
+	_final.visible = i >= 2  # curbs, light poles and signs go in before the paving
+	_ground.visible = i >= 4
+	_pad.visible = i <= 3
+	if _footing != null:
+		_footing.visible = i >= 2
+	# Crushed stone (#53 base, compacted), rolled in from the street back.
+	_stone = _layer(_stone, "stone", Color("#8e8a81"), 0.12, (t if i == 1 else 1.0) if i >= 1 and i <= 3 else 0.0)
+	# Hot-mix asphalt, laid in lanes from the street back: fresh and black.
+	_mat = _layer(_mat, "asphalt", Color("#26272a"), 0.14, t if i == 3 else 0.0)
+	_props_look(stage)
+
+
+## A paving layer over the site's front `frac` (0 hides it), redrawn only
+## when it has moved on.
+func _layer(mi: MeshInstance3D, key: String, col: Color, y: float, frac: float) -> MeshInstance3D:
+	frac = snappedf(clampf(frac, 0.0, 1.0), 0.05)
+	if mi != null:
+		mi.visible = frac > 0.0
+	if frac <= 0.0 or is_equal_approx(float(_laid.get(key, -1.0)), frac):
+		return mi
+	_laid[key] = frac
+	if mi == null:
+		mi = MeshInstance3D.new()
+		mi.material_override = _dirt_mat()
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mi)
+	var b := _box.grow(-0.8)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_normal(Vector3.UP)
+	var n := 6
+	for a in n:
+		for c in n:
+			for q in [[a, c], [a + 1, c], [a + 1, c + 1], [a, c], [a + 1, c + 1], [a, c + 1]]:
+				var h := fposmod(sin(q[0] * 12.9898 + q[1] * 78.233) * 43758.5453, 1.0)
+				st.set_color(col.lightened(h * 0.05))
+				st.add_vertex(Vector3(b.position.x + b.size.x * q[0] / n, y, b.position.z + b.size.z * frac * q[1] / n))
+	mi.mesh = st.commit()
+	var root := get_parent() as Node3D
+	if root != null and root.is_inside_tree():
+		mi.mesh = Terrain.drape_local(mi.mesh, root.transform)
+	return mi
+
+
 func _finish() -> void:
 	if _done:
 		return
@@ -205,7 +266,7 @@ func _finish() -> void:
 	_ground.visible = true
 	if _footing != null:
 		_footing.visible = true
-	for n in [_found, _shell, _pad, _props]:
+	for n in [_found, _shell, _pad, _props, _stone, _mat]:
 		if n != null:
 			n.queue_free()
 	for n in _frame:
@@ -215,6 +276,8 @@ func _finish() -> void:
 	_shell = null
 	_pad = null
 	_props = null
+	_stone = null
+	_mat = null
 	finished.emit()
 
 
@@ -365,10 +428,18 @@ func _props_look(stage: String) -> void:
 	var front := b.position.z + 0.6
 	var left := b.position.x + 0.8
 	var right := b.end.x - 0.8
-	# Builder's sign at the street, a porta-john by the front corner.
+	# Builder's sign at the street.
 	_prop(st, Vector3(0.08, 1.4, 0.08), Vector3(left + 2.2, 0.7, front), Color("#e9e6dc"))
 	_prop(st, Vector3(1.2, 0.8, 0.04), Vector3(left + 2.2, 1.6, front), Color("#f2f0ea"))
 	_prop(st, Vector3(1.1, 0.2, 0.05), Vector3(left + 2.2, 1.85, front - 0.01), Color("#2a4a7a"))
+	if _paving:
+		_paving_props(st, stage, b, front)
+		_props = MeshInstance3D.new()
+		_props.mesh = st.commit()
+		_props.material_override = FrameBuilder.material()
+		add_child(_props)
+		return
+	# A porta-john by the front corner.
 	_prop(st, Vector3(1.12, 2.3, 1.12), Vector3(left + 0.6, 1.15, front + 1.4), Color("#2f6db0"))
 	_prop(st, Vector3(1.16, 0.08, 1.16), Vector3(left + 0.6, 2.33, front + 1.4), Color("#e8e8e6"))
 	if stage in ["clear", "foundation", "frame"]:
@@ -395,6 +466,31 @@ func _props_look(stage: String) -> void:
 	_props.mesh = st.commit()
 	_props.material_override = FrameBuilder.material()
 	add_child(_props)
+
+
+## A paving job's site: orange barrels across the entrance while it's dug
+## up, a stone pile while the base goes in, and a tracked paver and a
+## steel-drum roller while the asphalt is laid. No porta-john or dumpster:
+## a lot is a few weeks' work for a paving crew that comes and goes.
+func _paving_props(st: SurfaceTool, stage: String, b: AABB, front: float) -> void:
+	var right := b.end.x - 0.8
+	if stage in ["clear", "foundation"]:
+		for k in 4:
+			_prop(st, Vector3(0.6, 0.95, 0.6), Vector3(-2.7 + k * 1.8, 0.48, front - 0.4), Color("#e8642a"))
+		var corners := [Vector3(b.position.x, 0, front + 2.0), Vector3(b.position.x, 0, b.end.z),
+			Vector3(b.end.x, 0, b.end.z), Vector3(b.end.x, 0, front + 2.0)]
+		for i in 3:
+			_fence(st, corners[i], corners[i + 1])
+	if stage == "foundation":
+		_prop(st, Vector3(4.0, 1.1, 3.2), Vector3(right - 3.0, 0.55, b.end.z - 3.0), Color("#8f8a80"))
+		_prop(st, Vector3(2.6, 0.7, 2.0), Vector3(right - 3.0, 1.4, b.end.z - 3.0), Color("#99948a"))
+	if stage == "dry_in":
+		# The paver mid-lot on the fresh mat, the roller working behind it.
+		var z := b.position.z + (b.size.z - 1.6) * 0.5
+		_prop(st, Vector3(3.0, 1.6, 4.5), Vector3(0.0, 1.0, z), Color("#e0b21c"))
+		_prop(st, Vector3(1.2, 1.2, 1.2), Vector3(0.0, 2.2, z + 0.8), Color("#2b2b2b"))
+		_prop(st, Vector3(1.8, 1.3, 3.2), Vector3(3.2, 0.9, z - 6.0), Color("#e0b21c"))
+		_prop(st, Vector3(1.9, 1.1, 1.1), Vector3(3.2, 0.55, z - 7.2), Color("#3d3f42"))
 
 
 func _fence(st: SurfaceTool, a: Vector3, b: Vector3) -> void:

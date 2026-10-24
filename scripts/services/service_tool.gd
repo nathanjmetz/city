@@ -22,6 +22,10 @@ var _ok_mat := StandardMaterial3D.new()
 var _bad_mat := StandardMaterial3D.new()
 var _site := []
 var _problem := ""
+## Parking lots: how short of parking the businesses round the site are
+## (TrafficSim.parking_need), counted again once the cursor moves on.
+var _need := {}
+var _need_at := Vector3.INF
 
 
 func setup(s: CitySim, camera: CityCamera, v: ServiceView) -> void:
@@ -101,6 +105,12 @@ func _process(_delta: float) -> void:
 		_ghost.position = Terrain.lift(_site[0]) + Vector3(0, 2.0, 0)
 		_ghost.basis = Basis.looking_at(_site[1], Vector3.UP)
 		_ghost.material_override = _ok_mat if problem == "" else _bad_mat
+		if kind in Services.PARKING and _site[0].distance_to(_need_at) > 8.0:
+			_need_at = _site[0]
+			var need := sim.traffic.parking_need(_site[0] + _site[1] * Services.KINDS[kind].size.y * 0.5)
+			if need != _need:
+				_need = need
+				_update_hint()
 	if problem != _problem:
 		_problem = problem
 		_update_hint()
@@ -191,11 +201,13 @@ func _update_hint() -> void:
 	var text := "%s: $%s to build, $%s a month." % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
 	if s.get("parking", false):
 		var lay: Dictionary = ParkingLots.layout(s.size, angled, kind == Services.Kind.PARKING_GARAGE)
-		text = "%s: %d stalls%s, $%s to build, $%s a month. Drivers who can't park at their own stop walk up to 800 ft from the nearest public stall." % [
+		text = "%s: %d stalls%s, $%s to build, $%s a month. Shoppers and workers park here when their own stop is full, then walk up to 800 ft." % [
 			s.name, lay.spots.size(), ", 60° angled" if lay.angled else "", CitySim.money_text(s.cost),
 			CitySim.money_text(s.upkeep)]
 		if angled and not lay.angled:
 			text += " Too narrow for one-way angled aisles, so its stalls are at 90°."
+		if not _site.is_empty() and not _need.is_empty():
+			text += "\n" + need_words(_need, lay.spots.size())
 	elif s.has("transit"):
 		text = "%s: $%s to build, with two buses. You set how much the city funds it (click it); it plans its own stops, routes, fleet and fare, and buys the land next door as it grows." % [s.name, CitySim.money_text(s.cost)]
 	elif s.get("hub", false):
@@ -207,3 +219,16 @@ func _update_hint() -> void:
 	if _problem != "":
 		text += "\n" + _problem
 	hint_changed.emit(text)
+
+
+## What the placement hint says about a lot's nearby demand.
+static func need_words(need: Dictionary, stalls: int) -> String:
+	var n: int = need.get("stalls", 0)
+	if n <= 0:
+		return "Nothing within a short walk needs more parking (homes use their driveways), so it will sit mostly empty."
+	var who := "1 business nearby runs" if int(need.places) == 1 else "%d businesses nearby run" % int(need.places)
+	if n < stalls / 3:
+		return "%s about %d stalls short at their busiest: it will be mostly empty." % [who, n]
+	if n < stalls:
+		return "%s about %d stalls short at their busiest: it will be part full then." % [who, n]
+	return "%s about %d stalls short at their busiest: it will fill up then." % [who, n]

@@ -85,7 +85,7 @@ func _draw_walkers() -> void:
 	var n := 0
 	for w in traffic.walkers:
 		var pose := traffic.walker_pose(w, frac)
-		var p: Vector3 = Terrain.lift(pose[0])
+		var p: Vector3 = Terrain.stand(pose[0])
 		if p.distance_to(eye) > FAR:
 			continue
 		if n >= _mm.instance_count:
