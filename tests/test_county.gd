@@ -47,6 +47,7 @@ func _init() -> void:
 	_test_adopt()
 	_test_meet()
 	_test_overlay()
+	_test_through_zoning()
 	print("ALL TESTS PASSED" if _failed == 0 else "SOME TESTS FAILED")
 	quit(1 if _failed > 0 else 0)
 
@@ -330,6 +331,49 @@ func _test_overlay() -> void:
 		length += c[0].distance_to(c[2])
 	_check(absf(length - 300.0) < 5.0, "a street drawn over a street and on past it isn't doubled (%d m)" % length)
 	_check(sim.network.segments.size() <= 3, "and is one run of road (%d pieces)" % sim.network.segments.size())
+
+
+## Brawn (2026-10-24): a county road joined out in the country stopped
+## short of the town's street where that street's frontage was zoned, so it
+## never met it. It goes through the zoned strip to the street.
+func _test_through_zoning() -> void:
+	var S := CountyGrid.SECTION
+	var x := 0.0
+	var z := 0.0
+	var found := false
+	for line in range(-6, 6):
+		for seg in range(-6, 6):
+			if found or not CountyGrid.has_mile(line, seg):
+				continue
+			var cx := line * S
+			var cz := (seg + 0.5) * S
+			var dry := true
+			for k in range(-12, 13):
+				dry = dry and CountyGrid.clears(cx, cz + k * 30.0) and Terrain.slope(cx + 150.0, cz + k * 30.0) < 0.06 \
+					and Terrain.water(cx + 150.0, cz + k * 30.0) < 0.05
+			if dry:
+				x = cx
+				z = cz
+				found = true
+	_check(found, "found a dry mile for a town street to cross")
+	if not found:
+		return
+	var sim := CitySim.new()
+	var z0 := z - 300.0
+	sim.apply({"type": "build_road", "start": [x - 300, z0], "ctrl": [x, z0], "end": [x + 300, z0],
+		"road": RoadStyle.Type.STREET})
+	for id in sim.network.segments:
+		for side in [-1, 1]:
+			sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": ZoneMap.Zone.RESIDENTIAL})
+	_check(sim.zones.zone_at(Vector3(x, 0, z0 + 15.0)) != ZoneMap.Zone.NONE, "the street's frontage is zoned over the line")
+	sim.apply({"type": "build_road", "start": [x + 200, z + 300], "ctrl": [x + 100, z + 300], "end": [x, z + 300],
+		"road": RoadStyle.Type.STREET, "join": true})
+	var meet := sim.network.find_node_near(Vector3(x, 0, z0), 1.0)
+	var gravel_there := false
+	if meet != -1:
+		for id in sim.network.segments_at(meet):
+			gravel_there = gravel_there or sim.network.segments[id].type == RoadStyle.Type.GRAVEL
+	_check(gravel_there, "the joined county road runs through the zoned frontage and meets the street")
 
 
 func _gravel(sim: CitySim) -> Array:
