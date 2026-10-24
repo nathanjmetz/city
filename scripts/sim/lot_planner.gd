@@ -400,7 +400,10 @@ static func _clear_of_parcels(lots: Array, parcels: Array) -> Array:
 			var best := _largest(cut)
 			var before := absf(_area(lot.corners))
 			if absf(_area(best)) < before - 1.0:
-				if absf(_area(best)) < before * 0.7 or cut.size() > 1 and _holes(cut) \
+				# A public site (no ":" in its key) just shortens the lots
+				# beside it; a built lot leaves its neighbours most of theirs.
+				var keep_share := 0.7 if ":" in str(p[4]) else 0.35
+				if absf(_area(best)) < before * keep_share or cut.size() > 1 and _holes(cut) \
 						or _remnant(best):
 					keep = false
 					break

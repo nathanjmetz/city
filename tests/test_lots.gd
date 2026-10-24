@@ -328,6 +328,27 @@ func _init() -> void:
 		_check(between >= 10 and fronting == 0, "no homes front the %s behind a street (%d of %d)" % [name, fronting, between])
 		_check(shallow == 0, "street lots run back to the %s (%d short)" % [name, shallow])
 		_check(_overlaps(town) == 0, "lots by the %s don't overlap" % name)
+	# A city parking lot in the middle of a block (Brawn: the block wouldn't
+	# zone): the lots backing onto it are just shorter, not lost.
+	var pk := CitySim.new()
+	pk.simulate_traffic = false
+	pk.economy.money = 1.0e9
+	pk.apply({"type": "build_grid", "a": [0, 0], "b": [300, 0], "c": [300, 240], "block": 100.0})
+	pk.tick()
+	var site := Services.site_near(pk.network, Services.Kind.PARKING_DOWNTOWN, Vector3(150, 0, 105))
+	pk.apply({"type": "place_service", "kind": Services.Kind.PARKING_DOWNTOWN, "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})
+	for id in pk.network.segments.keys():
+		pk.apply({"type": "zone_frontage", "seg": id, "side": 1, "both": true, "zone": ZoneMap.Zone.RESIDENTIAL})
+	pk.tick()
+	var in_block := 0
+	var on_it := 0
+	for k in pk.lots:
+		var p: Vector3 = pk.lots[k].pos
+		if p.x > 100.0 and p.x < 200.0 and p.z > 100.0 and p.z < 200.0:
+			in_block += 1
+		if pk.services.overlaps(pk.lots[k].corners):
+			on_it += 1
+	_check(in_block >= 9 and on_it == 0, "a block with a parking lot still gets its lots, round it (%d, %d on it)" % [in_block, on_it])
 	if failed:
 		print("SOME TESTS FAILED")
 	else:

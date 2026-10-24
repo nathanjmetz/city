@@ -2930,12 +2930,27 @@ func _lots_delta(was: Dictionary, full: bool) -> void:
 	lots_delta_full = full
 
 
-## The lots buildings stand on, by key.
+## The lots buildings stand on, by key (and the sites lots plat round).
 func _parcel_lots() -> Dictionary:
 	var out := {}
 	for key in buildings:
 		if lots.has(key):
 			out[key] = lots[key]
+	return _with_sites(out)
+
+
+## Built parcels plus the ground of public sites (services, parking lots and
+## parks) as fixed outlines: lots beside one stop at its edge, the way a lot
+## backing onto a city parking lot is just shorter, instead of being lost.
+## Keys have no ":" so they never pass for a lot.
+func _with_sites(frozen: Dictionary) -> Dictionary:
+	if services.buildings.is_empty() and parks.sites.is_empty():
+		return frozen
+	var out := frozen.duplicate()
+	for id in services.buildings:
+		out["svc-%d" % id] = {"corners": services.footprint(id)}
+	for id in parks.sites:
+		out["park-%d" % id] = {"corners": parks.footprint(id)}
 	return out
 
 
@@ -2986,7 +3001,7 @@ func _refresh() -> void:
 		if not lost.is_empty():
 			parcels_lost.emit(lost)
 		var blocked := {}
-		for lot in planner.plan(network, zones, frozen):
+		for lot in planner.plan(network, zones, _with_sites(frozen)):
 			# No lots under a service building.
 			var had: Array = _blocked_by.get(lot.key, [])
 			var no: bool = had[1] if not full and not had.is_empty() and is_same(had[0], lot) else _lot_blocked(lot)
