@@ -1324,15 +1324,20 @@ const TRADE_EXPORT_SHARE := 0.6
 ## finished stage does in each town; these goals are starting numbers for
 ## the balance thread (a game town starts with START_MONEY).
 const REGION_PROJECTS := [
-	{"id": "i69", "name": "I-69 extension", "kind": "interstate",
-		"board": "I-69 Corridor Authority", "site": [3200.0, 0.0],
+	# Grant County, Indiana already has I-69 (exits 255, 259 and 264), so the
+	# region's road project is a new interchange between them and a four-lane
+	# connector into town, the way INDOT adds one: an Interchange
+	# Justification Study for FHWA and right of way first, then the
+	# interchange, then the connector, with the county paying a local share.
+	{"id": "i69", "name": "New I-69 interchange", "kind": "interstate",
+		"board": "Grant County Economic Growth Council", "site": [3200.0, 0.0],
 		"stages": [
-			{"name": "Right of way and grading", "goal": {"money": 4_000_000.0},
-				"does": "Land near the new road starts to gain value."},
-			{"name": "Interchange at the county highway", "goal": {"money": 6_000_000.0},
-				"does": "Goods from outside the region cost less to bring in."},
-			{"name": "Four lanes to the next county", "goal": {"money": 12_000_000.0},
-				"does": "More demand for shops and industry: truck stops and warehouses."},
+			{"name": "Interchange study and right of way", "goal": {"money": 4_000_000.0},
+				"does": "Land near the planned exit starts to gain value."},
+			{"name": "Interchange at the county road", "goal": {"money": 6_000_000.0},
+				"does": "Trucks reach the interstate sooner, so goods from outside cost less."},
+			{"name": "Four-lane connector into town", "goal": {"money": 12_000_000.0},
+				"does": "More demand for shops and industry: truck stops and warehouses at the exit."},
 		]},
 	{"id": "power", "name": "Regional generating station", "kind": "power",
 		"board": "Pike County Power Cooperative", "site": [-2600.0, 600.0],
