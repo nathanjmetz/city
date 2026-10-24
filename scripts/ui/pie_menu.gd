@@ -11,8 +11,8 @@ extends Control
 ## The controller's wheel (Y) lays each menu out the same way.
 ##
 ## The look follows the House mark: wedges of a ring split by the cream
-## city-line gap, the one you point at lifting out in coral, and a hub whose
-## knob leans the way you flick.
+## city-line gap, the one you point at lifting out in coral, and a coral arc
+## on the hub's rim toward it.
 
 signal chosen(card: Button)
 
@@ -378,7 +378,7 @@ func _draw() -> void:
 		var w := font_ui.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		var tc := Brand.INK_MUTED.lerp(Brand.ON_CORAL, h) if _usable(it) else Brand.INK_FAINT
 		draw_string(font_ui, p + Vector2(-w * 0.5, 30.0 * sc), t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(tc, a * st))
-	# The hub: a cream-rimmed disc whose knob leans the way you flick.
+	# The hub: a cream-rimmed disc with a coral arc toward the pick.
 	var hub := INNER * sc
 	draw_circle(c, hub, Color(Brand.SURFACE, 0.96 * a))
 	draw_circle(c, hub - 5.0, Color(Brand.SURFACE_RAISED, 0.35 * a))
@@ -388,10 +388,6 @@ func _draw() -> void:
 		var mid := step * _sel
 		draw_arc(c, hub - 3.0, mid - step * 0.5 - PI * 0.5, mid + step * 0.5 - PI * 0.5, 24,
 			Color(Brand.BRAND_CORAL, a), 3.0, true)
-	# The knob rides the hub's rim toward the flick.
-	if _shown() and _pointer.length() >= DEAD * 0.5:
-		var dir := _pointer.normalized()
-		draw_circle(c + dir * (hub - 11.0), 4.5, Color(Brand.BRAND_CORAL if _sel >= 0 else Brand.INK_FAINT, a))
 	# The middle names the menu, or the tool pointed at.
 	var head := _title if _sel < 0 else String(_items[_sel].title)
 	var hs := 17 if head.length() <= 9 else 14
