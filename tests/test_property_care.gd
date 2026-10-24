@@ -95,6 +95,12 @@ func _init() -> void:
 		_check(dev.zones.zone_at(dev.lots[site].zone_pt) == ZoneMap.Zone.COMMERCIAL, "the row is commercial now")
 		_check(BuildingTypes.type_of(dev.buildings[site]) == "shopping_center", "a %s" % BuildingTypes.name_of(dev.buildings[site]))
 
+	# A town of 6,000 on its own is too small a market for apartments; with
+	# a bigger town nearby it isn't.
+	dev.market.regional = 0
+	_check(dev.redevelopment._plan_apartments(dev, Redevelopment._faces(dev)).is_empty(),
+		"a lone town of 6,000 gets no apartment asks")
+	dev.market.regional = 8000
 	plan = dev.redevelopment._plan_apartments(dev, Redevelopment._faces(dev))
 	_check(not plan.is_empty(), "a developer finds houses to buy for apartments")
 	if not plan.is_empty():

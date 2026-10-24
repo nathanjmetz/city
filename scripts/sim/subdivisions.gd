@@ -127,10 +127,12 @@ func _can_ask(sim) -> bool:
 
 
 ## The builder that comes at this size: {"min", "phases", "who"}, or {}.
+## Builders size up the market (Market), so a new town beside a city draws
+## a regional developer early.
 static func _tier(sim) -> Dictionary:
 	var best := {}
 	for t in Balance.SUBDIV_TIERS:
-		if int(sim.stats.population) >= int(t[0]):
+		if sim.market.people(sim) >= int(t[0]):
 			best = {"min": int(t[0]), "phases": int(t[1]), "who": str(t[2])}
 	return best
 

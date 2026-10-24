@@ -155,16 +155,41 @@ const CORE_RADIUS := 200.0
 ## too dear for a detached house on every lot), apartments from DENSE_CORE.
 const ROW_HOME_DENSITY := 30
 const DENSE_CORE := 20
-## Town size matters as much as the block (Census ACS: Petersburg, IN,
-## about 2,300 people, is ~85% detached houses, ~6% small walk-ups and
-## almost no row houses; townhouse rows are a metro type). Row homes start
-## once the town has ROW_HOME_TOWN people and are fully in favour by
-## ROW_HOME_CITY; apartments in a small town are rarer by SMALL_TOWN_FLATS,
-## reaching their full share by FLATS_TOWN people.
-const ROW_HOME_TOWN := 25_000
-const ROW_HOME_CITY := 100_000
-const SMALL_TOWN_FLATS := 0.15
-const FLATS_TOWN := 25_000
+## What gets built follows the market, not just the block (Brawn
+## 2026-10-24): the people within commuting reach of the town, its own and
+## its neighbors' (Market). Each type and stage needs a market of at least
+## MARKET_MIN people ([stage 0, stage 1, ...]; a type not listed, or 0,
+## needs none) and is fully in favour at twice that. Real references:
+##   - Census ACS: Indiana towns under 2,500 are ~85-90% detached houses
+##     with almost no 5+ unit buildings; Petersburg (~2,300, Pike County
+##     ~12,000) has a few small walk-ups. Garden apartments appear in
+##     micropolitan towns (OMB: 10,000-50,000); townhouse rows and
+##     mid-rise (4-6 storey podium) apartments are metro types.
+##   - Towers: Fort Wayne (metro ~420,000) tops out at 26 storeys and
+##     Evansville (metro ~315,000) has a handful of 12-18 storey buildings;
+##     30+ storey offices are big-metro (Indianapolis, ~2 million).
+##   - Retail (ICSC): a strip center serves a few thousand people; a
+##     neighborhood center with a grocery anchor needs about 10,000+.
+##   - Offices: a county seat has a 2-3 storey bank or professional
+##     building; 5-8 storeys is a regional center's downtown.
+const MARKET_MIN := {
+	"row_home": [50_000, 100_000],
+	"apartments": [10_000, 25_000, 100_000, 150_000, 400_000],
+	"mixed_use": [0, 5000, 15_000],
+	"office": [10_000, 25_000, 50_000, 150_000, 1_000_000],
+	"shopping_center": [5000, 10_000],
+}
+## Commuting reach (metres): a neighbor town within MARKET_FULL counts in
+## full, fading to nothing at MARKET_REACH (Census: the median US commute
+## is ~26 minutes; 45 minutes is the usual edge of a commuting shed, about
+## 50 km on rural highways). A funded I-69 adds up to this share.
+const MARKET_FULL := 15_000.0
+const MARKET_REACH := 50_000.0
+const MARKET_I69_REACH := 0.5
+## Lenders want a new apartment building's market at about 90-93%
+## occupied: while this share of the town's flats stand empty, no new
+## apartment building starts and none grows.
+const MARKET_VACANCY := 0.1
 ## A street side becomes a Main Street once this many shops line it, and
 ## new shops there get flats upstairs (the classic Midwestern main street).
 const MAIN_STREET_SHOPS := 2
@@ -214,13 +239,9 @@ const REDEV_COOLDOWN_MONTHS := 3
 const REDEV_DEMAND := 0.45
 ## Street sides a developer looks over a month (a window that moves on).
 const REDEV_FACES_PER_MONTH := 60
-## Towns this size see houses bought for a walk-up (small Indiana county
-## seats have a few), a 12-storey apartment tower (a city's core) and a
-## shopping center on a busy road (an ICSC strip center serves a few
-## thousand people).
-const REDEV_APT_TOWN := 2500
-const REDEV_HIGHRISE_TOWN := 25_000
-const REDEV_SHOP_TOWN := 5000
+## Which asks a town sees follows the market (MARKET_MIN): a walk-up
+## where apartments are wanted, a 12-storey tower where high-rise
+## apartments are, a shopping center where one has a trade area.
 ## A high-rise site is rezoned to Chicago RM-6 (FAR 4.4).
 const REDEV_HIGHRISE_FAR := 4.4
 ## Houses in a row (at least) a shopping center buys, and the site (m², about 3 acres)
@@ -372,7 +393,8 @@ const FAR_SHOPS := [2.2, 3.0, 5.0]
 const FAR_DOWNTOWN := [7.0, 12.0, 16.0]
 const FAR_INDUSTRY := 2.0
 ## A downtown: this many buildings within CORE_RADIUS, in a town of at least
-## DOWNTOWN_TOWNS[i] people for FAR_DOWNTOWN[i].
+## DOWNTOWN_TOWNS[i] people for FAR_DOWNTOWN[i] (its own downtown; what
+## gets built there still waits on the market, MARKET_MIN).
 const DOWNTOWN_DENSITY := 60
 const DOWNTOWN_TOWNS := [25_000, 50_000, 100_000]
 ## Where zoning allows at least this FAR, an owner may buy out a low

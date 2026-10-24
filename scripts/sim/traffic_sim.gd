@@ -1941,7 +1941,9 @@ func _place_seed(ref: String) -> int:
 	if _sim == null or not ref.begins_with("lot:"):
 		return 0
 	var b = _sim.buildings.get(ref.substr(4))
-	return 0 if b == null else int(b.seed) + 7 * int(b.zone)
+	# The layout depends on the storeys too (a house that grows a storey
+	# lays its drive out again), so a copy loaded after it grew agrees.
+	return 0 if b == null else hash([int(b.seed), int(b.zone), BuildingTypes.storeys(b)])
 
 
 func _lot_place(ref: String) -> Dictionary:

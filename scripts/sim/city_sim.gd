@@ -127,6 +127,9 @@ var mail := Mail.new()
 var interlocal := Interlocal.new()
 ## What the region's shared projects do in this town (Regional).
 var regional := Regional.new()
+## The people within commuting reach, which decides what developers build
+## (Market).
+var market := Market.new()
 ## The town's other neighborhoods, out on open land (Neighborhoods).
 var neighborhoods := Neighborhoods.new()
 ## In a region, set by RegionClient: whose land these points (town
@@ -4052,6 +4055,7 @@ func save_steps(postcard := false) -> Array:
 		["mail", func(): return mail.to_dict()],
 		["interlocal", func(): return interlocal.to_dict()],
 		["regional", func(): return regional.to_dict()],
+		["market", func(): return market.to_dict()],
 		["streets", func(): return streets.to_dict()],
 		["policies", func(): return policies.to_dict()],
 		["culture", func(): return culture.to_dict()],
@@ -4147,6 +4151,7 @@ func from_dict(d: Dictionary) -> void:
 	mail.from_dict(d.get("mail", {}))
 	interlocal.from_dict(d.get("interlocal", {}))
 	regional.from_dict(d.get("regional", {}))
+	market.from_dict(d.get("market", {}))
 	services.contracts = interlocal.coverage()
 	policies.from_dict(d.get("policies", {}))
 	culture.from_dict(d.get("culture", {}))

@@ -92,7 +92,9 @@ func _file(sim, plan: Dictionary) -> bool:
 ## Three or four houses in a row, close in or on an avenue, in a town that
 ## needs homes.
 func _plan_apartments(sim, faces: Dictionary) -> Dictionary:
-	if int(sim.stats.population) < Balance.REDEV_APT_TOWN or float(sim.demand.get(ZoneMap.Zone.RESIDENTIAL, 0.0)) < Balance.REDEV_DEMAND:
+	var market: int = sim.market.people(sim)
+	if not Market.supports(market, "apartments") or Market.flats_vacancy(sim) >= Balance.MARKET_VACANCY \
+			or float(sim.demand.get(ZoneMap.Zone.RESIDENTIAL, 0.0)) < Balance.REDEV_DEMAND:
 		return {}
 	var best := []
 	var best_score := -INF
@@ -112,16 +114,18 @@ func _plan_apartments(sim, faces: Dictionary) -> Dictionary:
 				best = run
 	if best.is_empty():
 		return {}
-	var lvl := 1
+	var lvl := 1 if Market.supports(market, "apartments", 1) else 0
 	return _plan(sim, "apartments", best, "apartments", lvl,
 		"Rezone %d houses for an apartment building" % best.size(),
-		"Homes are short in town, and this block is close in. %d houses would make way for a three-storey walk-up." % best.size(),
+		"Homes are short in town, and this block is close in. %d houses would make way for a %s." % [
+			best.size(), "three-storey walk-up" if lvl == 1 else "two-storey walk-up"],
 		"Single-family homes to apartments")
 
 
 ## A mid-rise apartment building that wants to go up, in a city core.
 func _plan_highrise(sim, faces: Dictionary) -> Dictionary:
-	if int(sim.stats.population) < Balance.REDEV_HIGHRISE_TOWN or float(sim.demand.get(ZoneMap.Zone.RESIDENTIAL, 0.0)) < Balance.REDEV_DEMAND:
+	if not Market.supports(sim.market.people(sim), "apartments", 3) or Market.flats_vacancy(sim) >= Balance.MARKET_VACANCY \
+			or float(sim.demand.get(ZoneMap.Zone.RESIDENTIAL, 0.0)) < Balance.REDEV_DEMAND:
 		return {}
 	var far: float = Balance.REDEV_HIGHRISE_FAR
 	var need := BuildingTypes.area_for("apartments", 3, far)
@@ -167,7 +171,8 @@ func _plan_highrise(sim, faces: Dictionary) -> Dictionary:
 
 ## A run of houses along a busy road in a town big enough to shop.
 func _plan_shopping(sim, faces: Dictionary) -> Dictionary:
-	if int(sim.stats.population) < Balance.REDEV_SHOP_TOWN or float(sim.demand.get(ZoneMap.Zone.COMMERCIAL, 0.0)) < Balance.REDEV_DEMAND:
+	var market: int = sim.market.people(sim)
+	if not Market.supports(market, "shopping_center") or float(sim.demand.get(ZoneMap.Zone.COMMERCIAL, 0.0)) < Balance.REDEV_DEMAND:
 		return {}
 	var best := []
 	var best_score := -INF
@@ -185,10 +190,10 @@ func _plan_shopping(sim, faces: Dictionary) -> Dictionary:
 	var area := 0.0
 	for k in best:
 		area += float(sim.lots[k].area)
-	var lvl := 1 if area >= Balance.REDEV_CENTER_AREA else 0
+	var lvl := 1 if area >= Balance.REDEV_CENTER_AREA and Market.supports(market, "shopping_center", 1) else 0
 	return _plan(sim, "shopping", best, "shopping_center", lvl,
 		"Rezone %d homes on %s for a shopping center" % [best.size(), _street(sim, best[0])],
-		"Town has grown past what its shops can serve, and this is a busy road. A developer would buy the whole row.",
+		"The area has grown past what its shops can serve, and this is a busy road. A developer would buy the whole row.",
 		"Homes to commercial (shopping center)")
 
 
