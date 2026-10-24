@@ -79,6 +79,10 @@ var _traffic_card: Button
 var _neighborhood_card: Button
 var _zone_cards := {}    # ZoneMap.Zone -> Button
 var _plan_cards := {}    # LandPlan kind ("" erases) -> Button
+var _zone_mode_cards := []  # ZoneTool.Mode -> Button
+var _brush_size: HBoxContainer   # the brush size meter (brush tool only)
+var _brush_slider: HSlider
+var _brush_label: Label
 var _power_card: Button
 var _service_cards := {} # Services.Kind -> Button
 var _service_cat := {}   # Services.Kind -> its bottom bar category
@@ -211,6 +215,7 @@ func _ready() -> void:
 	road_tool.mode_changed.connect(func(_m): _sync())
 	road_tool.options_changed.connect(_sync)
 	zone_tool.zone_changed.connect(func(_z): _sync())
+	zone_tool.mode_changed.connect(func(_m): _sync())
 	road_tool.hint_changed.connect(_show_hint)
 	zone_tool.hint_changed.connect(_show_hint)
 	service_tool.kind_changed.connect(func(_k): _sync())
@@ -1385,7 +1390,7 @@ func _zones_drawer() -> PanelContainer:
 	var drawer := PanelContainer.new()
 	var row := HBoxContainer.new()
 	drawer.add_child(row)
-	var zones := _section(row, "Zone street sides  ·  Shift both sides  ·  Tab brush")
+	var zones := _section(row, "Zone street sides  ·  Shift both sides")
 	for entry in [
 		[ZoneMap.Zone.RESIDENTIAL, "homes", "Homes", _key_hint("homes")],
 		[ZoneMap.Zone.COMMERCIAL, "shops", "Shops", _key_hint("shops")],
@@ -1396,9 +1401,47 @@ func _zones_drawer() -> PanelContainer:
 		var b := _card(entry[1], entry[2], entry[3])
 		if z != ZoneMap.Zone.NONE:
 			(b.get_meta("icon") as Icon).accent = ZoneMap.COLORS[z]
-		b.pressed.connect(func(): zone_tool.set_zone(z))
+		b.pressed.connect(func():
+			zone_tool.set_zone(z)
+			if zone_tool.mode == ZoneTool.Mode.SMART:
+				zone_tool.set_mode(ZoneTool.Mode.STREET))
 		zones.add_child(b)
 		_zone_cards[z] = b
+	# How it paints (CS2's tool types), and the brush's size, in the same row.
+	row.add_child(VSeparator.new())
+	var how := _section(row, "Tool  ·  Tab")
+	for entry in [
+		[ZoneTool.Mode.STREET, "zone_street", "Street", "click a block face, or drag along a street for a stretch"],
+		[ZoneTool.Mode.BRUSH, "zone_brush", "Brush", "a round brush for odd spots, sized with the meter or [ ]"],
+		[ZoneTool.Mode.SMART, "zone_smart", "Smart", "zones each street side the way you usually zone that kind of street, matched to what's around it"],
+	]:
+		var m: int = entry[0]
+		var b := _card(entry[1], entry[2], entry[3])
+		b.pressed.connect(func():
+			if zone_tool.zone == ZoneTool.OFF:
+				zone_tool.set_zone(ZoneMap.Zone.RESIDENTIAL)
+			zone_tool.set_mode(m))
+		how.add_child(b)
+		_zone_mode_cards.append(b)
+	_brush_size = HBoxContainer.new()
+	_brush_size.add_theme_constant_override("separation", 4)
+	var size_col := VBoxContainer.new()
+	size_col.alignment = BoxContainer.ALIGNMENT_CENTER
+	size_col.add_child(UiStyle.label("SIZE", 10, UiStyle.MUTED))
+	_brush_slider = HSlider.new()
+	_brush_slider.min_value = ZoneTool.MIN_RADIUS
+	_brush_slider.max_value = ZoneTool.MAX_RADIUS
+	_brush_slider.step = 1.0
+	_brush_slider.custom_minimum_size = Vector2(110, 20)
+	_brush_slider.focus_mode = Control.FOCUS_NONE
+	_brush_slider.tooltip_text = "Brush size  ([ ] also work)"
+	_brush_slider.value_changed.connect(func(v): zone_tool.set_radius(v))
+	size_col.add_child(_brush_slider)
+	_brush_label = UiStyle.label("", 11, UiStyle.MUTED)
+	_brush_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	size_col.add_child(_brush_label)
+	_brush_size.add_child(size_col)
+	how.add_child(_brush_size)
 	# The future land use map: big soft areas, not zoning (LandPlan).
 	row.add_child(VSeparator.new())
 	var plan := _section(row, "Land use plan  ·  outline big areas")
@@ -1931,7 +1974,12 @@ func _sync() -> void:
 	_traffic_card.set_pressed_no_signal(in_traffic)
 	_neighborhood_card.set_pressed_no_signal(neighborhood_tool.kind != "")
 	for z in _zone_cards:
-		_zone_cards[z].set_pressed_no_signal(z == zone_tool.zone)
+		_zone_cards[z].set_pressed_no_signal(z == zone_tool.zone and zone_tool.mode != ZoneTool.Mode.SMART)
+	for m in _zone_mode_cards.size():
+		_zone_mode_cards[m].set_pressed_no_signal(zone_tool.zone != ZoneTool.OFF and m == zone_tool.mode)
+	_brush_size.visible = zone_tool.brush
+	_brush_slider.set_value_no_signal(zone_tool.radius)
+	_brush_label.text = "%d ft across" % roundi(zone_tool.radius * 2.0 * 3.28084)
 	for k in _plan_cards:
 		_plan_cards[k].set_pressed_no_signal((farm_tool.mode == FarmTool.Mode.PLAN and k == farm_tool.plan_kind)
 			or (farm_tool.mode == FarmTool.Mode.UNPLAN and k == ""))
@@ -2188,7 +2236,7 @@ func _fill_help() -> void:
 		"%s upgrade   %s parallel   %s bulldoze   %s move it" % [k.call("upgrade"), k.call("parallel"), k.call("bulldoze"), k.call("move_it")],
 		"%s %s  size   %s / %s  bridge or tunnel" % [k.call("smaller"), k.call("bigger"), k.call("raise"), k.call("lower")],
 		"Grid: Enter builds the shape, Tab turns it",
-		"%s  zoning brush or fill" % k.call("brush"),
+		"%s  zoning tool: street, brush or smart" % k.call("brush"),
 		"%s  traffic view   Ctrl+Z  undo the last build" % k.call("traffic"),
 		"Right click  stop drawing", "Esc  stop drawing, then close everything",
 		"GAME",

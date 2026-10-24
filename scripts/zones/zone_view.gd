@@ -20,6 +20,8 @@ var preview: Array = []:
 		preview = v
 		_dirty = true
 var preview_zone := 0
+## Each preview part's own zone (smart paint), or [] for preview_zone.
+var preview_zones: Array = []
 
 ## Lot outlines go in square blocks, so a change redraws (and drapes on the
 ## ground) only the blocks it touched; the street-side band is its own mesh.
@@ -91,7 +93,11 @@ func _rebuild() -> void:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var any := false
 	var band: Color = ZoneMap.COLORS[preview_zone] if preview_zone != ZoneMap.Zone.NONE else Color(1, 0.35, 0.3)
-	for part in preview:
+	for pi in preview.size():
+		var part: Array = preview[pi]
+		if pi < preview_zones.size():
+			var pz: int = preview_zones[pi]
+			band = ZoneMap.COLORS[pz] if pz != ZoneMap.Zone.NONE else Color(1, 0.35, 0.3)
 		var s := sim.planner.side_survey(sim.network, part[0], part[1])
 		if s.is_empty():
 			continue

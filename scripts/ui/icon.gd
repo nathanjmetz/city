@@ -170,6 +170,29 @@ func _draw() -> void:
 			for x in [0.3, 0.5, 0.7]:
 				draw_rect(Rect2(P.call(x - 0.07, 0.58), Vector2(0.14, 0.3) * s), color, false, w * 0.7)
 			draw_rect(Rect2(P.call(0.12, 0.56), Vector2(0.08, 0.1) * s), color)
+		"zone_street":
+			# A street with its block face shaded along one side.
+			line.call(P.call(0.08, 0.3), P.call(0.92, 0.3))
+			line.call(P.call(0.08, 0.44), P.call(0.92, 0.44))
+			_poly([P.call(0.12, 0.52), P.call(0.88, 0.52), P.call(0.88, 0.88), P.call(0.12, 0.88)], Color(color, 0.35))
+			for x in [0.37, 0.62]:
+				line.call(P.call(x, 0.52), P.call(x, 0.88), w * 0.6)
+		"zone_brush":
+			# A round brush over a painted patch.
+			draw_circle(P.call(0.5, 0.5), s * 0.34, Color(color, 0.3))
+			draw_arc(P.call(0.5, 0.5), s * 0.34, 0.0, TAU, 32, color, w, true)
+			draw_circle(P.call(0.5, 0.5), s * 0.06, color)
+		"zone_smart":
+			# A shaded block face with a spark: it guesses for you.
+			_poly([P.call(0.1, 0.56), P.call(0.6, 0.56), P.call(0.6, 0.9), P.call(0.1, 0.9)], Color(color, 0.35))
+			line.call(P.call(0.06, 0.48), P.call(0.66, 0.48))
+			var c: Vector2 = P.call(0.74, 0.26)
+			for a in 4:
+				var d := Vector2.from_angle(a * PI * 0.5)
+				line.call(c + d * s * 0.05, c + d * s * 0.2, w * 0.9)
+			for a in 4:
+				var d := Vector2.from_angle(PI * 0.25 + a * PI * 0.5)
+				line.call(c + d * s * 0.05, c + d * s * 0.11, w * 0.7)
 		"dezone":
 			draw_rect(Rect2(P.call(0.12, 0.12), Vector2(0.76, 0.76) * s), Color(color, 0.5), false, w * 0.6)
 			line.call(P.call(0.25, 0.25), P.call(0.75, 0.75), w * 1.3, Color(1, 0.45, 0.4))

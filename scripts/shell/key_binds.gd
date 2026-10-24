@@ -27,7 +27,7 @@ const ACTIONS := [
 	["raise", "Raise (bridge)", KEY_PAGEUP], ["lower", "Lower (tunnel)", KEY_PAGEDOWN],
 	["smaller", "Smaller", KEY_BRACKETLEFT], ["bigger", "Bigger", KEY_BRACKETRIGHT],
 	["homes", "Zone homes", KEY_NONE], ["shops", "Zone shops", KEY_NONE], ["industry", "Zone industry", KEY_NONE],
-	["dezone", "Dezone", KEY_NONE], ["brush", "Brush or fill", KEY_TAB],
+	["dezone", "Dezone", KEY_NONE], ["brush", "Zoning tool: street, brush or smart", KEY_TAB],
 	["move_it", "Move It", KEY_M], ["turn_left", "Turn left (Move It)", KEY_COMMA],
 	["turn_right", "Turn right (Move It)", KEY_PERIOD],
 	["traffic", "Traffic view", KEY_J], ["views", "Views", KEY_V], ["search", "Find a tool", KEY_SLASH],

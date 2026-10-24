@@ -147,7 +147,41 @@ func _init() -> void:
 	var runs := zt._runs()
 	_check(runs[0][3] - runs[0][2] >= ZoneTool.MIN_RUN - 0.01 and runs[1][2] == 0.0,
 		"a short drag zones a lot's width, and one near the corner runs to it (%s)" % str(runs))
+	# Smart paint: how you zone that street type, then what's across the street.
+	var bit_type: int = bit.network.segments[bit_seg].type
+	_check(zt.guess(bit_seg, -1) == ZoneMap.Zone.COMMERCIAL,
+		"smart paint matches the shops across the street (got %d)" % zt.guess(bit_seg, -1))
+	zt._guesses.clear()
+	bit.apply({"type": "zone_frontage", "seg": bit_seg, "side": 1, "zone": ZoneMap.Zone.NONE})
+	_check(zt.guess(bit_seg, -1) == ZoneMap.Zone.RESIDENTIAL, "smart paint puts homes on a new local street")
+	zt._guesses.clear()
+	zt.habits = {bit_type: {ZoneMap.Zone.INDUSTRIAL: 3, ZoneMap.Zone.RESIDENTIAL: 1}}
+	_check(zt.guess(bit_seg, -1) == ZoneMap.Zone.INDUSTRIAL, "smart paint zones a street the way you usually zone its kind")
 	zt.free()
+	# Click order: zoning streets one by one with homes going up between
+	# clicks cuts the same plain lots as zoning them all at once (a built
+	# corner lot keeps its corner; the cross street's lots start behind it).
+	var order := CitySim.new()
+	order.simulate_traffic = false
+	order.economy.money = 1.0e8
+	var ou := Vector2(cos(-0.5), sin(-0.5)) * 500.0
+	var ov := Vector2(-sin(-0.5), cos(-0.5)) * 200.0
+	order.apply({"type": "build_grid", "a": [0, 0], "b": [ou.x, ou.y], "c": [ov.x, ov.y], "block": 100.0})
+	var oids := order.network.segments.keys()
+	oids.sort()
+	oids.reverse()
+	for i in oids.size():
+		for side in [1, -1]:
+			order.apply({"type": "zone_frontage", "seg": oids[i], "side": side, "zone": ZoneMap.Zone.RESIDENTIAL})
+		if i % 3 == 2:
+			for t in 300:
+				order.tick()
+	for t in 300:
+		order.tick()
+	var odd := order.lots.values().filter(func(l): return _squareness(l) < 0.85).size()
+	_check(order.buildings.size() > 10 and odd <= 4,
+		"zoning street by street with homes going up between keeps lots plain (%d odd of %d)" % [odd, order.lots.size()])
+	_check(_overlaps(order) == 0, "and they don't overlap")
 	# A zoning drag: the zones go in at once, the lots once, when it ends.
 	var drag := CitySim.new()
 	drag.apply({"type": "build_road", "start": [0, 0], "ctrl": [100, 0], "end": [200, 0]})
@@ -277,6 +311,19 @@ func _init() -> void:
 	else:
 		print("ALL TESTS PASSED")
 	quit(1 if failed else 0)
+
+
+## A lot's area over its bounding rectangle along its street (1 = a plain rectangle).
+func _squareness(lot: Dictionary) -> float:
+	var d := Vector2(lot.dir.x, lot.dir.z).normalized()
+	var n := Vector2(-d.y, d.x)
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	for p in lot.corners:
+		var q := Vector2(p.dot(d), p.dot(n))
+		lo = lo.min(q)
+		hi = hi.max(q)
+	return absf(LotPlanner._area(lot.corners)) / maxf((hi.x - lo.x) * (hi.y - lo.y), 0.01)
 
 
 func _overlaps(sim: CitySim) -> int:
