@@ -447,7 +447,10 @@ func _rebuild_all(gen: int) -> void:
 
 	_build_roundabouts(ring_nodes)
 	for child in old:
-		child.queue_free()
+		# A sliced rebuild spans frames, and a piece may have gone meanwhile
+		# (merged poles redone): freeing it again crashes the game.
+		if is_instance_valid(child):
+			child.queue_free()
 	_building = false
 	Perf.add(_perf_key(), slice)
 	Terrain.shift = Vector2.ZERO
