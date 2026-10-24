@@ -4269,7 +4269,9 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 
 ## A car that will reach its stop line within a few seconds.
 func _soon(ap: Dictionary) -> bool:
-	return ap.car.commit or ap.ds / maxf(ap.car.v, 1.0) < 5.0
+	# A car standing at its line (waiting on a gap itself) isn't about to
+	# come through: only moving ones within 5 s are (HCM ch. 20 critical gap).
+	return ap.car.commit or ap.car.v > 0.5 and ap.ds / ap.car.v < 5.0
 
 
 ## Whether `a` stopped at its line before `b` (first come, first served).
