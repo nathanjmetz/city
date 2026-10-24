@@ -84,6 +84,15 @@ func _drivers() -> void:
 		return
 	var b: Dictionary = sim.services.buildings[placed]
 	_check(b.get("angled", false), "it keeps the 60 degree choice")
+	# The town buys every parcel it paves over: no back yard (fence, yard
+	# trees) is left under the stalls (Game critic round 28).
+	sim.tick()
+	var under := []
+	for key in sim.lots:
+		for piece in Geometry2D.intersect_polygons(sim.lots[key].corners, sim.services.footprint(placed)):
+			if _area(piece) > 4.0:
+				under.append(key)
+	_check(under.is_empty(), "no lot is left under the paving %s" % [under])
 	var copy := CitySim.new()
 	copy.from_dict(sim.to_dict())
 	_check(copy.services.buildings[placed].get("angled", false), "the 60 degree choice is saved")

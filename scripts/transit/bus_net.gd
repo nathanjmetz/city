@@ -1018,7 +1018,7 @@ static func land_free(sim: CitySim, id: int, pos: Vector3, dir: Vector3, size: V
 	# Homes and businesses already built aren't the depot's to take; empty
 	# lots are.
 	for key in sim.buildings:
-		if sim.lots.has(key) and Geometry2D.is_point_in_polygon(Vector2(sim.lots[key].pos.x, sim.lots[key].pos.z), poly):
+		if sim.parcel_under(key, poly):
 			return "built"
 	return ""
 
@@ -1060,7 +1060,7 @@ func _take_strip(sim: CitySim, id: int, req: Dictionary) -> bool:
 	for p in req.route:
 		outline.append(Vector2(float(p[0]), float(p[1])))
 	for key in sim.buildings.keys():
-		if sim.lots.has(key) and Geometry2D.is_point_in_polygon(Vector2(sim.lots[key].pos.x, sim.lots[key].pos.z), outline):
+		if sim.parcel_under(key, outline):
 			sim.buildings.erase(key)
 	dep.strip = []
 	if land_free(sim, id, pos, b.dir, size) != "":

@@ -432,7 +432,7 @@ func _take_strip(sim: CitySim, id: int, req: Dictionary) -> bool:
 	for p in req.route:
 		outline.append(Vector2(float(p[0]), float(p[1])))
 	for key in sim.buildings.keys():
-		if sim.lots.has(key) and Geometry2D.is_point_in_polygon(Vector2(sim.lots[key].pos.x, sim.lots[key].pos.z), outline):
+		if sim.parcel_under(key, outline):
 			sim.buildings.erase(key)
 	co.strip = []
 	if BusNet.land_free(sim, id, pos, b.dir, size) != "":
