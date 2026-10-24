@@ -223,13 +223,20 @@ func _plan(storeys: int, info_only := false) -> Dictionary:
 	var paint := _paint(scheme)
 	# The room behind the front wall is what a plan is drawn for.
 	var room := _bucket(deep - zf, ROOMS)
+	var dx := 0.0
+	if outline.size() >= 3:
+		# A builder reads the lot first: on an odd lot the plan is the one
+		# that fits its buildable area, set where the lot has the room.
+		var seat := _seat([plan] + plans.filter(func(p): return p != plan), storeys, wide, gs, zf, deep)
+		wide = seat[0]
+		gs = seat[1]
+		zf = seat[2]
+		dx = seat[3]
+		room = seat[4]
+		plan = seat[5]
 	var key := [era, plan, wide, room, storeys, force_kind]
 	if info_only and not _plans.has(key):
-		if not _infos.has(key):
-			_dry = true
-			_infos[key] = _draw_plan(key, wide, room, storeys).info
-			_dry = false
-		return {"info": _placed_info(_infos[key], gs, zf)}
+		return {"info": _placed_info(_shape(key).info, gs, zf, dx)}
 	var body: Dictionary = _plans.get(key, {})
 	if not body.is_empty():
 		# Kept longest unused goes first: move this one to the back.
@@ -242,8 +249,127 @@ func _plan(storeys: int, info_only := false) -> Dictionary:
 			_plans.erase(_plans.keys()[0])
 		_plans[key] = body
 	if info_only:
-		return {"info": _placed_info(body.info, gs, zf)}
-	return _placed(body, gs, zf, paint)
+		return {"info": _placed_info(body.info, gs, zf, dx)}
+	return _placed(body, gs, zf, paint, dx)
+
+
+## A plan's info and masses without drawing it (a kept plan's, or laid out
+## dry), for seating it on a lot.
+func _shape(key: Array) -> Dictionary:
+	if _plans.has(key):
+		return _plans[key]
+	if not _infos.has(key):
+		_dry = true
+		var body := _draw_plan(key, key[2], key[3], key[4])
+		_dry = false
+		_infos[key] = {"info": body.info, "masses": body.masses}
+	return _infos[key]
+
+
+## Side yard every wall keeps from a side or rear lot line (m): 4 ft, the
+## least a single-family zoning code allows (on narrow 40 ft lots; 5 to 8 ft
+## is usual on wider ones, which plans drawn for the lot's width keep).
+const SIDE_YARD := 1.2
+## Lots no plan fitted (for tests and benches).
+static var unseated := 0
+
+
+## Where a plan goes on an odd lot (an angled, pie or tapering outline), as
+## a builder sites a house: the buildable area is what's left inside the lot
+## lines after the side and rear yards, and the house and its drive must sit
+## inside it. A street keeps its building line, so first the plan as picked,
+## slid across the lot, then with the garage on the other side, then the
+## narrower versions of it, then the builder's other models; only then is
+## it set back further, at most 20 ft, where a pie lot widens.
+## Returns [wide, gs, zf, dx, room, plan].
+func _seat(plans: Array, storeys: int, wide: float, gs: float, zf: float, deep: float) -> Array:
+	var plan: int = plans[0]
+	var widths := WIDTHS.filter(func(w): return w <= wide)
+	widths.reverse()
+	for back in [0.0, 2.0, 4.0, 6.0]:
+		var z: float = zf + back
+		var room := _bucket(deep - z, ROOMS)
+		for p in plans:
+			for w in widths:
+				for g in [gs, -gs]:
+					var shape := _shape([era, p, w, room, storeys, force_kind])
+					var x := 0.0
+					while x <= half:
+						for d in ([x] if x == 0.0 else [x, -x]):
+							if _fits(shape, g, z, d):
+								return [w, g, z, d, room, p]
+						x += 0.5
+	# Nothing fits (a remnant too small or odd to build on): the smallest
+	# plan where the least of it stands past the lot lines.
+	unseated += 1
+	var best := [widths[-1], gs, zf, 0.0, _bucket(deep - zf, ROOMS), plan]
+	var least := INF
+	for back in [0.0, 2.0, 4.0, 6.0]:
+		var z: float = zf + back
+		var room := _bucket(deep - z, ROOMS)
+		var shape := _shape([era, plan, widths[-1], room, storeys, force_kind])
+		for g in [gs, -gs]:
+			var x := -half
+			while x <= half:
+				var past := _past(shape, g, z, x)
+				if past < least - 0.01:
+					least = past
+					best = [widths[-1], g, z, x, room, plan]
+				x += 0.5
+	return best
+
+
+## True when a placed plan's masses keep their side yards inside the lot
+## and its drive runs on the lot from the street to the garage.
+func _fits(shape: Dictionary, gs: float, zf: float, dx: float) -> bool:
+	for m: Rect2 in _footprints(shape):
+		var r := Rect2((-m.end.x if gs < 0.0 else m.position.x) + dx, m.position.y + zf, m.size.x, m.size.y).grow(SIDE_YARD)
+		# The front wall keeps to the setback, not a side yard.
+		r.position.y += SIDE_YARD
+		r.size.y -= SIDE_YARD
+		if not _rect_in_lot(r):
+			return false
+	if pad > 0.0:
+		return true  # a flag lot's drive comes up the strip
+	var info: Dictionary = shape.info
+	if not info.has("drive_x"):
+		return true
+	var x: float = (-info.drive_x if gs < 0.0 else info.drive_x) + dx
+	var w: float = info.drive_w * 0.5 + 0.3
+	return _rect_in_lot(Rect2(x - w, 0.3, w * 2.0, maxf(info.garage_z + zf - 0.3, 0.1)))
+
+
+## A plan's building masses and its detached garage, if it has one.
+static func _footprints(shape: Dictionary) -> Array:
+	if not shape.info.has("keep_out"):
+		return shape.masses
+	return shape.masses + [shape.info.keep_out]
+
+
+## How far a placed plan's masses stand past the lot lines, summed over
+## their corners (m).
+func _past(shape: Dictionary, gs: float, zf: float, dx: float) -> float:
+	var past := 0.0
+	for m: Rect2 in _footprints(shape):
+		var r := Rect2((-m.end.x if gs < 0.0 else m.position.x) + dx, m.position.y + zf, m.size.x, m.size.y)
+		for c in [r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)]:
+			if Geometry2D.is_point_in_polygon(c, outline):
+				continue
+			var near := INF
+			for i in outline.size():
+				near = minf(near, c.distance_to(Geometry2D.get_closest_point_to_segment(c, outline[i], outline[(i + 1) % outline.size()])))
+			past += near
+	return past
+
+
+## True when a rectangle (lot x/z) lies inside the lot outline: its corners
+## and edge midpoints (lots are near convex; see LotPlanner).
+func _rect_in_lot(r: Rect2) -> bool:
+	for fx in [0.0, 0.5, 1.0]:
+		for fz in [0.0, 0.5, 1.0]:
+			if not Geometry2D.is_point_in_polygon(r.position + r.size * Vector2(fx, fz), outline):
+				return false
+	return true
 
 
 ## A scheme's paint: siding, roof, shutters, door and brick. (Whether a
@@ -268,8 +394,8 @@ func _paint(scheme: int) -> Dictionary:
 ## A kept plan as one lot builds it: mirrored for a garage on the left,
 ## moved back to the setback `zf`, painted in `paint` and weathered by the
 ## owner's care.
-func _placed(body: Dictionary, gs: float, zf: float, paint: Dictionary) -> Dictionary:
-	var xf := Transform3D(Basis.FLIP_X if gs < 0.0 else Basis.IDENTITY, Vector3(0.0, 0.0, zf))
+func _placed(body: Dictionary, gs: float, zf: float, paint: Dictionary, dx := 0.0) -> Dictionary:
+	var xf := Transform3D(Basis.FLIP_X if gs < 0.0 else Basis.IDENTITY, Vector3(dx, 0.0, zf))
 	var turn := Transform3D(xf.basis, Vector3.ZERO)
 	var arrays := {}
 	for mat in body.arrays:
@@ -283,8 +409,8 @@ func _placed(body: Dictionary, gs: float, zf: float, paint: Dictionary) -> Dicti
 		arrays[mat] = a
 	var masses := []
 	for m: Rect2 in body.masses:
-		masses.append(Rect2(-m.end.x if gs < 0.0 else m.position.x, m.position.y + zf, m.size.x, m.size.y))
-	return {"arrays": arrays, "info": _placed_info(body.info, gs, zf), "reach": body.reach + zf,
+		masses.append(Rect2((-m.end.x if gs < 0.0 else m.position.x) + dx, m.position.y + zf, m.size.x, m.size.y))
+	return {"arrays": arrays, "info": _placed_info(body.info, gs, zf, dx), "reach": body.reach + zf,
 		"back_z": body.back_z + zf, "mass_back_z": body.mass_back_z + zf, "masses": masses}
 
 
@@ -308,23 +434,24 @@ func _board_up(glass: Array) -> void:
 		_box("paint", Vector3(w + 0.12, h + 0.12, 0.05), mid + out * 0.07, PLYWOOD, Basis(Vector3.UP.cross(out), Vector3.UP, out))
 
 
-## A plan's info (see plan_info) for a lot: mirrored and moved back alike.
-static func _placed_info(info: Dictionary, gs: float, zf: float) -> Dictionary:
+## A plan's info (see plan_info) for a lot: mirrored, moved back and slid
+## across alike.
+static func _placed_info(info: Dictionary, gs: float, zf: float, dx := 0.0) -> Dictionary:
 	var out := {}
 	for k in info:
 		var v = info[k]
 		if k.ends_with("_z"):
 			v += zf
-		elif gs < 0.0 and k.ends_with("_x"):
-			v = -v
+		elif k.ends_with("_x"):
+			v = (-v if gs < 0.0 else v) + dx
 		match k:
 			"gs": v = gs
-			"x0": v = -info.x1 if gs < 0.0 else v
-			"x1": v = -info.x0 if gs < 0.0 else v
-			"bed": v = [-v[1], -v[0]] if gs < 0.0 else v
+			"x0": v = (-info.x1 if gs < 0.0 else v) + dx
+			"x1": v = (-info.x0 if gs < 0.0 else v) + dx
+			"bed": v = [-v[1] + dx, -v[0] + dx] if gs < 0.0 else [v[0] + dx, v[1] + dx]
 			"keep_out":
 				var r: Rect2 = v
-				v = Rect2(-r.end.x if gs < 0.0 else r.position.x, r.position.y + zf, r.size.x, r.size.y)
+				v = Rect2((-r.end.x if gs < 0.0 else r.position.x) + dx, r.position.y + zf, r.size.x, r.size.y)
 		out[k] = v
 	return out
 

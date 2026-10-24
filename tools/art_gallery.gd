@@ -55,7 +55,7 @@ func _init() -> void:
 			k = ["house", "row", "apartments", "mixed", "office"][i]
 		if kind in ["care", "careshop"]:
 			HouseBuilder.owner_care = i - 2
-		var w: float = {"care": 24.0, "careshop": 26.0, "row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "mainold": 16.0 + 4.0 * (i % 3), "mainrestored": 16.0 + 4.0 * (i % 3), "office": 40.0, "towers": 44.0, "hometowers": 54.0, "towerfar": 44.0, "flats": 24.0, "courtyard": 48.0, "walkup": 26.0, "garage": 44.0}.get(k, 20.0)
+		var w: float = {"care": 24.0, "careshop": 26.0, "row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "mainold": 16.0 + 4.0 * (i % 3), "mainrestored": 16.0 + 4.0 * (i % 3), "office": 40.0, "towers": 44.0, "hometowers": 54.0, "towerfar": 44.0, "flats": 24.0, "courtyard": 48.0, "walkup": 26.0, "garage": 44.0, "oddlots": [26.0, 22.0, 20.0, 26.0, 18.0][i]}.get(k, 20.0)
 		var sd := seed * 100 + i
 		match k:
 			"shop": meshes = CommercialBuilder.build_shop(sd, 3.9)
@@ -80,12 +80,34 @@ func _init() -> void:
 			"garage": meshes = MetroBuilder.build_garage(sd, 3.9, {"width": w, "depth": 60.0}, 4 + i % 3)
 			"tract", "tractold": meshes = HouseBuilder.build(sd, 3.9, {"width": w, "depth": 40.0, "at": Vector2(x, 0) + (Vector2(seed * 400.0, 0)),
 				"era": "postwar" if k == "tract" else "prewar"})
+			"oddlots":
+				# A skewed, a tapering and a pie lot, lot lines drawn in white.
+				var poly := _odd_lot(i, w)
+				meshes = HouseBuilder.build(sd, 3.9, {"width": w, "depth": 36.0, "outline": poly,
+					"at": Vector2(x, 0) + Vector2(seed * 400.0, 0)}, 1 + i % 2)
+				var line := ImmediateMesh.new()
+				line.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+				for e in poly.size():
+					var a := Vector3(poly[e].x, 0.12, poly[e].y)
+					var b := Vector3(poly[(e + 1) % poly.size()].x, 0.12, poly[(e + 1) % poly.size()].y)
+					var side := (b - a).cross(Vector3.UP).normalized() * 0.15
+					for q in [a - side, b - side, b + side, a - side, b + side, a + side]:
+						line.surface_add_vertex(q)
+				line.surface_end()
+				var lines := MeshInstance3D.new()
+				lines.mesh = line
+				var white := StandardMaterial3D.new()
+				white.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+				white.cull_mode = BaseMaterial3D.CULL_DISABLED
+				lines.material_override = white
+				lines.position = Vector3(x + w * 0.5, 0, 0)
+				world.add_child(lines)
 			"care": meshes = HouseBuilder.build(seed * 100, 3.9, {"width": w, "depth": 48.0}, 1)
 			"careshop": meshes = DenseBuilder.build_retail(seed * 100, 3.9, {"width": w, "depth": 40.0})
 			_: meshes = HouseBuilder.build(sd, 3.9)
 		HouseBuilder.owner_care = 0
 		var at := Vector3(x + w * 0.5, 0, 0)
-		x += w
+		x += w + (12.0 if k == "oddlots" else 0.0)
 		for m in meshes.slice(0, 2):
 			var mi := MeshInstance3D.new()
 			mi.mesh = m
@@ -108,6 +130,19 @@ func _init() -> void:
 	cam.position = target + Vector3(sin(yaw) * cos(pitch), sin(pitch), -cos(yaw) * cos(pitch)) * dist
 	cam.basis = Basis.looking_at(target - cam.position)
 	cam.current = true
+
+
+## Lot i of the "oddlots" row: skewed 30 degrees either way, tapering to the
+## back (the outside of a curve) or a pie lot (the inside of one).
+static func _odd_lot(i: int, w: float) -> PackedVector2Array:
+	var d := 36.0
+	match i % 3:
+		0:
+			var k := d * tan(deg_to_rad(30.0)) * (1.0 if i == 0 else -1.0) * 0.5
+			return PackedVector2Array([Vector2(-w / 2, 0), Vector2(w / 2, 0), Vector2(w / 2 + k, d), Vector2(-w / 2 + k, d)])
+		1:
+			return PackedVector2Array([Vector2(-w / 2, 0), Vector2(w / 2, 0), Vector2(w * 0.25, d), Vector2(-w * 0.25, d)])
+	return PackedVector2Array([Vector2(-w * 0.35, 0), Vector2(w * 0.35, 0), Vector2(w * 0.7, d), Vector2(-w * 0.7, d)])
 
 
 func _process(_delta: float) -> bool:
