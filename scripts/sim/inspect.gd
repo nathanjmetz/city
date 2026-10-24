@@ -884,6 +884,9 @@ static func place_name(sim: CitySim, ref: String) -> String:
 		return name + (" on " + street if street != "" else "")
 	if ref.begins_with("site:"):
 		return "A company yard"
+	if ref.begins_with("subdiv:"):
+		var a = sim.subdivisions.active.get(int(ref.get_slice(":", 1)))
+		return "A new subdivision going in" if a == null else "%s, phase %d site work" % [a.name, int(ref.get_slice(":", 2).get_slice("@", 0)) + 1]
 	return ref.get_slice("@", 0).replace(":", " ").capitalize()
 
 

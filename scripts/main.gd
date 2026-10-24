@@ -91,6 +91,9 @@ func _ready() -> void:
 	var park_view := ParkView.new()
 	add_child(park_view)
 	park_view.setup(sim)
+	var works_view := SubdivisionWorksView.new()
+	add_child(works_view)
+	works_view.setup(sim)
 
 	var farm_view := FarmView.new()
 	add_child(farm_view)
