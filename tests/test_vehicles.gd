@@ -84,7 +84,6 @@ func _check_motion() -> void:
 	m.h1 = Vector3.FORWARD
 	var worst_turn := 0.0
 	var worst_lag := 0.0
-	var off := 0.0
 	var last := Vector3.FORWARD
 	# Straight up to the corner, a quarter circle left about (-10, 0, -20),
 	# then straight on west.
@@ -94,21 +93,53 @@ func _check_motion() -> void:
 	for k in range(1, 63):
 		var t := k / 62.0 * PI * 0.5
 		pts.append([Vector3(-r + r * cos(t), 0, -20.0 - r * sin(t)), Vector3(-sin(t), 0, -cos(t))])
-	for k in range(1, 30):
+	for k in range(1, 70):
 		pts.append([Vector3(-r - k * 0.25, 0, -30.0), Vector3.LEFT])
+	var worst_slide := 0.0
+	var inside := 0.0
+	var outside := 0.0
 	for p in pts:
+		var was_rear := m.rear
+		var was_axis := (m.a - m.rear).normalized()
 		var h := view._steer(m, p[0], wb, wb + 1.0)
+		var moved := Vector3(m.rear.x - was_rear.x, 0.0, m.rear.z - was_rear.z)
+		# Against the body's mean heading over the step, as it turns.
+		var mean := was_axis + (m.a - m.rear).normalized()
+		if m.started and moved.length() > 0.01 and was_axis.length_squared() > 0.5:
+			worst_slide = maxf(worst_slide, absf(mean.signed_angle_to(moved, Vector3.UP)))
 		worst_turn = maxf(worst_turn, absf(last.signed_angle_to(h, Vector3.UP)))
 		worst_lag = maxf(worst_lag, absf(h.signed_angle_to(p[1], Vector3.UP)))
 		last = h
 		m.heading = h
 		if m.rear.z < -20.0 and m.rear.x > -r:
-			off = maxf(off, absf(Vector2(m.rear.x + r, m.rear.z + 20.0).length() - r))
+			var dist := Vector2(m.rear.x + r, m.rear.z + 20.0).length()
+			inside = maxf(inside, r - dist)
+			outside = maxf(outside, dist - r)
+	# Real rear wheels roll, they don't slide: the rear axle only ever moves
+	# the way the body points, and so cuts inside the front's line round a
+	# corner, by r - sqrt(r^2 - wb^2) = 0.40 m here (AASHTO off-tracking).
 	_check(absf(Vector2(pts[-1][0].x - m.rear.x, pts[-1][0].z - m.rear.z).length() - wb) < 0.01, "the rear axle stays a wheelbase back")
-	_check(off < 0.1, "the rear wheels stay in the lane round a corner (%.2f m off)" % off)
-	_check(worst_lag < deg_to_rad(10.0), "the body lags the lane by under 10 degrees on a corner (%.1f)" % rad_to_deg(worst_lag))
+	_check(worst_slide < deg_to_rad(1.0), "the rear wheels never slide sideways (%.2f deg at most)" % rad_to_deg(worst_slide))
+	_check(inside > 0.25 and inside < 0.45 and outside < 0.02, "the rear cuts inside the corner like a real car (%.2f m in, %.2f m out)" % [inside, outside])
+	_check(worst_lag < deg_to_rad(18.0), "the body angles across the lane by about the steering angle, asin(wb/r) = 16 degrees (%.1f)" % rad_to_deg(worst_lag))
 	_check(absf(last.signed_angle_to(Vector3.LEFT, Vector3.UP)) < 0.01, "the body is straight again after the corner")
 	# A 0.25 m step on a 10 m curve turns a body about 1.4 degrees; pivoting
 	# on the bumper would swing it far more at the start of the turn.
 	_check(worst_turn < deg_to_rad(2.0), "the body swings round smoothly (%.2f deg a step at most)" % rad_to_deg(worst_turn))
+	# A trailer follows its kingpin the same way.
+	var t := TrafficView.Motion.new()
+	t.h1 = Vector3.FORWARD
+	var tl := 12.0
+	var tslide := 0.0
+	for p in pts:
+		view._steer(t, p[0], 4.0, 4.0)
+		var was := t.trailer
+		var was_axis := (t.kp - t.trailer).normalized() if t.kp.is_finite() else Vector3.ZERO
+		var back := view._trail(t, p[0], tl)
+		var moved := Vector3(back.x - was.x, 0.0, back.z - was.z)
+		if was_axis.length_squared() > 0.5 and moved.length() > 0.01:
+			var mean := was_axis + (t.kp - t.trailer).normalized()
+			tslide = maxf(tslide, absf(mean.signed_angle_to(moved, Vector3.UP)))
+	_check(tslide < deg_to_rad(1.0) and absf(Vector2(pts[-1][0].x - t.trailer.x, pts[-1][0].z - t.trailer.z).length() - tl) < 0.01,
+		"a trailer's axles follow the kingpin without sliding (%.2f deg)" % rad_to_deg(tslide))
 	view.free()
