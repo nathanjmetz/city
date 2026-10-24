@@ -538,8 +538,10 @@ const CROP_ROTATION_YIELD := {
 ## Fertiliser saved, dollars an acre: the nitrogen credit to corn from last
 ## year's soybeans (about 40 lb N) or alfalfa (about 120 lb), at $0.60 a lb.
 const CROP_N_CREDIT := {"corn": {"soybeans": 25.0, "hay": 75.0}}
-## Southern Indiana (Pike County, 38.5 N) double-crops soybeans after the
-## wheat harvest in June: net dollars an acre from that second crop.
+## Soybeans planted after the June wheat harvest: net dollars an acre from
+## that second crop (southern Indiana, ~$90). Grant County (40.5 N) has a
+## shorter season and nets less, but lowering this makes the rotation
+## planner repeat soybeans (test_crops), so it waits on a planner fix.
 const CROP_DOUBLE_CROP := 90.0
 ## Yield swing from soil health 0..1: plus or minus 5% at the ends.
 const CROP_HEALTH_YIELD := 0.1
@@ -1660,8 +1662,10 @@ const VENUES := {
 			"ticket": 6.0}]},
 }
 ## People in the county around a town that has no neighbors yet (solo
-## play): Pike County, Indiana has about 12,000.
-const TOURISM_COUNTY_POP := 12_000
+## play): Grant County, Indiana has about 66,700 (2020 Census); about 20,000
+## live in the countryside and small towns, outside Marion, Gas City and
+## Jonesboro (the backdrop), which have their own events.
+const TOURISM_COUNTY_POP := 20_000
 ## What a visitor from out of town spends in town (food, gas, a room), and
 ## the share the town keeps as its food-and-beverage and innkeeper's taxes
 ## (Indiana counties levy 1% to 5% each).
@@ -1673,11 +1677,12 @@ const TOURISM_LOCAL_TAX := 0.04
 const TOURISM_VISITORS_PER_CAR := 120
 const TOURISM_MAX_CARS_HOUR := 6
 ## What opens by itself for out-of-town visitors, in order, once a year's
-## visitors from outside reach `visitors`: assessed value and jobs.
+## visitors from outside reach `visitors`: assessed value and jobs. A
+## once-a-year fair crowd alone rarely keeps a year-round business open.
 const TOURISM_BUSINESSES := [
-	{"kind": "gas_station", "visitors": 4_000, "value": 900_000, "jobs": 6},
-	{"kind": "diner", "visitors": 8_000, "value": 700_000, "jobs": 14},
-	{"kind": "motel", "visitors": 15_000, "value": 2_000_000, "jobs": 8},
+	{"kind": "gas_station", "visitors": 8_000, "value": 900_000, "jobs": 6},
+	{"kind": "diner", "visitors": 12_000, "value": 700_000, "jobs": 14},
+	{"kind": "motel", "visitors": 18_000, "value": 2_000_000, "jobs": 8},
 ]
 ## How far from a venue they open, metres.
 const TOURISM_BUSINESS_REACH := 900.0
