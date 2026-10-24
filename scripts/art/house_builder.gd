@@ -1693,17 +1693,44 @@ func _box(mat: String, size: Vector3, center: Vector3, col: Color, basis := Basi
 			var q := center + basis * Vector3((c & 1) * 2 - 1, (c >> 1 & 1) * 2 - 1, (c >> 2) * 2 - 1) * h
 			_reach = maxf(_reach, q.z)
 		return
-	var p := func(x: float, y: float, z: float) -> Vector3:
-		return center + basis * Vector3(x * h.x, y * h.y, z * h.z)
-	var faces := [
-		[p.call(-1, -1, 1), p.call(1, -1, 1), p.call(1, 1, 1), p.call(-1, 1, 1)],
-		[p.call(1, -1, -1), p.call(-1, -1, -1), p.call(-1, 1, -1), p.call(1, 1, -1)],
-		[p.call(1, -1, 1), p.call(1, -1, -1), p.call(1, 1, -1), p.call(1, 1, 1)],
-		[p.call(-1, -1, -1), p.call(-1, -1, 1), p.call(-1, 1, 1), p.call(-1, 1, -1)],
-		[p.call(-1, 1, 1), p.call(1, 1, 1), p.call(1, 1, -1), p.call(-1, 1, -1)],
-	]
-	for f in faces:
-		_quad(mat, f[0], f[1], f[2], f[3], col)
+	# The eight corners, (-x,-y,-z) .. (+x,+y,+z) by bit, then the five
+	# faces (no bottom) straight into the surface: boxes are most of a
+	# house's yard (fence boards and posts, sheds, decks), so no per-face
+	# _quad call.
+	var k: Array[Vector3] = []
+	k.resize(8)
+	for c in 8:
+		k[c] = center + basis * Vector3(((c & 1) * 2 - 1) * h.x, ((c >> 1 & 1) * 2 - 1) * h.y, ((c >> 2) * 2 - 1) * h.z)
+	var kind := _kind_of(mat, col)
+	if owner_care != 0:
+		col = _weathered(kind, col)
+	var st := _tool(mat)
+	_note(mat, kind, 30)
+	_face(st, k[4], k[5], k[7], k[6], col)
+	_face(st, k[1], k[0], k[2], k[3], col)
+	_face(st, k[5], k[1], k[3], k[7], col)
+	_face(st, k[0], k[4], k[6], k[2], col)
+	_face(st, k[6], k[7], k[3], k[2], col)
+
+
+## One of _box's faces, as _quad draws it.
+func _face(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3, col: Color) -> void:
+	var n := (b - a).cross(d - a).normalized()
+	_reach = maxf(_reach, maxf(maxf(a.z, b.z), maxf(c.z, d.z)))
+	st.set_normal(n)
+	st.set_color(col)
+	st.set_uv(_auto_uv(a, n))
+	st.add_vertex(a)
+	st.set_uv(_auto_uv(c, n))
+	st.add_vertex(c)
+	st.set_uv(_auto_uv(b, n))
+	st.add_vertex(b)
+	st.set_uv(_auto_uv(a, n))
+	st.add_vertex(a)
+	st.set_uv(_auto_uv(d, n))
+	st.add_vertex(d)
+	st.set_uv(_auto_uv(c, n))
+	st.add_vertex(c)
 
 
 ## Adds a quad a-b-c-d (counter-clockwise seen from the front). Without
@@ -1730,11 +1757,12 @@ func _quad(mat: String, a: Vector3, b: Vector3, c: Vector3, d: Vector3, col: Col
 		col = _weathered(kind, col)
 	var st := _tool(mat)
 	_note(mat, kind, 6)
+	var pts := [a, b, c, d]
+	st.set_normal(n)
+	st.set_color(col)
 	for i in [0, 2, 1, 0, 3, 2]:
-		st.set_normal(n)
-		st.set_color(col)
 		st.set_uv(uvs[i])
-		st.add_vertex([a, b, c, d][i])
+		st.add_vertex(pts[i])
 
 
 func _tri(mat: String, a: Vector3, b: Vector3, c: Vector3, col: Color, uvs := [],
@@ -1757,11 +1785,12 @@ func _tri(mat: String, a: Vector3, b: Vector3, c: Vector3, col: Color, uvs := []
 		col = _weathered(kind, col)
 	var st := _tool(mat)
 	_note(mat, kind, 3)
+	var pts := [a, b, c]
+	st.set_normal(n)
+	st.set_color(col)
 	for i in [0, 2, 1]:
-		st.set_normal(n)
-		st.set_color(col)
 		st.set_uv(uvs[i])
-		st.add_vertex([a, b, c][i])
+		st.add_vertex(pts[i])
 
 
 static func _auto_uv(p: Vector3, n: Vector3) -> Vector2:
