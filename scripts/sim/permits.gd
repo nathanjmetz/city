@@ -133,6 +133,9 @@ func file(sim, plan: Dictionary) -> int:
 		req.effects = plan.effects
 	if plan.has("who"):
 		req.who = str(plan.who)
+	if plan.get("keeps", false):
+		# A sale or a start on an empty lot: nothing of the player's goes.
+		req.keeps = true
 	if shape == "deal":
 		# A service deal with a neighbor town (Interlocal): {kind, fee, other}.
 		req.deal = plan.deal
@@ -422,6 +425,8 @@ func tick(sim) -> void:
 ## Re-prices a request for a route and records what it runs through.
 func _price(sim, req: Dictionary, route: Array) -> void:
 	var hits := check(sim, route, req.width, req.shape == "area")
+	if req.get("keeps", false):
+		hits.buildings = []
 	req.hits = hits
 	req.cost = cost_of(sim, req, route, hits)
 
@@ -488,6 +493,8 @@ func from_dict(d: Dictionary) -> void:
 			req.effects = Subdivisions.site_from({"effects": r.effects}).effects
 		if r.has("who"):
 			req.who = str(r.who)
+		if r.get("keeps", false):
+			req.keeps = true
 		if not r.get("deal", {}).is_empty():
 			var dl: Dictionary = r.deal
 			req.deal = {"kind": str(dl.get("kind", "")), "fee": int(dl.get("fee", 0)), "other": str(dl.get("other", ""))}
