@@ -49,6 +49,7 @@ func _init() -> void:
 	_test_overlay()
 	_test_through_zoning()
 	_test_grid_over_joined()
+	_test_kept_clear()
 	print("ALL TESTS PASSED" if _failed == 0 else "SOME TESTS FAILED")
 	quit(1 if _failed > 0 else 0)
 
@@ -375,6 +376,53 @@ func _test_through_zoning() -> void:
 		for id in sim.network.segments_at(meet):
 			gravel_there = gravel_there or sim.network.segments[id].type == RoadStyle.Type.GRAVEL
 	_check(gravel_there, "the joined county road runs through the zoned frontage and meets the street")
+
+
+
+## Brawn (2026-10-24): lots keep off a county road, joined or not, as
+## fields do (test_farm_roads).
+func _test_kept_clear() -> void:
+	var S := CountyGrid.SECTION
+	var x := 0.0
+	var z := 0.0
+	var found := false
+	for line in range(-6, 6):
+		for seg in range(-6, 6):
+			if found or not CountyGrid.has_mile(line, seg):
+				continue
+			var cx := line * S
+			var cz := (seg + 0.5) * S
+			var dry := true
+			for k in range(-12, 13):
+				for dx in [-150.0, 150.0]:
+					dry = dry and CountyGrid.clears(cx, cz + k * 30.0) and Terrain.slope(cx + dx, cz + k * 30.0) < 0.06 \
+						and Terrain.water(cx + dx, cz + k * 30.0) < 0.05
+			if dry:
+				x = cx
+				z = cz
+				found = true
+	_check(found, "found a dry mile to build beside")
+	if not found:
+		return
+	var sim := CitySim.new()
+	# A street crossing the line (not joined), zoned both sides: no lot
+	# lies across the county road's gravel.
+	sim.apply({"type": "build_road", "start": [x - 300, z], "ctrl": [x, z], "end": [x + 300, z],
+		"road": RoadStyle.Type.STREET})
+	for id in sim.network.segments:
+		for side in [-1, 1]:
+			sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": ZoneMap.Zone.RESIDENTIAL})
+	sim._refresh()
+	var over := 0
+	for key in sim.lots:
+		var lo := INF
+		var hi := -INF
+		for c in sim.lots[key].corners:
+			lo = minf(lo, c.x)
+			hi = maxf(hi, c.x)
+		if hi > x - CountyGrid.HALF_WIDTH and lo < x + CountyGrid.HALF_WIDTH:
+			over += 1
+	_check(sim.lots.size() > 10 and over == 0, "no lot is platted across it (%d lots, %d across)" % [sim.lots.size(), over])
 
 
 ## Brawn (2026-10-24): a grid whose side lies on a county road the town

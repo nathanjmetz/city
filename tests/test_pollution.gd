@@ -10,6 +10,7 @@ var _failed := false
 
 func _init() -> void:
 	var sim := CitySim.new()
+	_clear_county(sim, Vector2.ZERO, 700.0)
 	sim.economy.money = 50_000_000
 	sim.apply({"type": "build_road", "start": [-600, 0], "ctrl": [0, 0], "end": [600, 0]})
 	for x in range(-600, 601, 10):
@@ -323,3 +324,13 @@ func _check(ok: bool, what: String) -> void:
 	print(("  ok  " if ok else "  FAIL  ") + what)
 	if not ok:
 		_failed = true
+
+
+## Bulldozes the county roads around `at` (town coordinates), for a test
+## town laid out across the section lines with no county road in mind.
+static func _clear_county(sim: CitySim, at: Vector2, reach: float) -> void:
+	var o := sim.terrain_offset
+	for x in range(int(at.x - reach), int(at.x + reach) + 1, 100):
+		for z in range(int(at.y - reach), int(at.y + reach) + 1, 100):
+			for mile in CountyGrid.miles_at(x + o.x, z + o.y, 60.0):
+				sim.apply({"type": "remove_county", "key": mile.key})

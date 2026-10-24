@@ -793,10 +793,11 @@ func _plan(curve: Array) -> Dictionary:
 	return _plan_memo
 
 
-## The county road (CountyGrid.mile_at) a point is on, out in the country
-## and not joined yet, or {}. In town the lots and streets have its place.
+## The county road (CountyGrid.mile_at) a point is on, or {}: in town too,
+## where lots keep off it, so a street drawn to it there snaps on and joins
+## (Brawn 2026-10-24: roads drawn to meet county roads in town missed them).
 func _county_at(p: Vector3, reach := 0.5) -> Dictionary:
-	if absf(p.y) > 0.5 or Terrain.flat_weight(p.x, p.z) > 0.3 or Terrain.mow_weight(p.x, p.z) > 0.3:
+	if absf(p.y) > 0.5:
 		return {}
 	var o := sim.terrain_offset
 	var mile := CountyGrid.mile_at(p.x + o.x, p.z + o.y, reach)
@@ -805,9 +806,9 @@ func _county_at(p: Vector3, reach := 0.5) -> Dictionary:
 	return mile
 
 
-## The state highway (Highways.near) under `p` out in the country, if any.
+## The state highway (Highways.near) under `p`, in town or out, if any.
 func _highway_at(p: Vector3, reach := 0.5) -> Dictionary:
-	if absf(p.y) > 0.5 or Terrain.flat_weight(p.x, p.z) > 0.3 or Terrain.mow_weight(p.x, p.z) > 0.3:
+	if absf(p.y) > 0.5:
 		return {}
 	var o := sim.terrain_offset
 	var hw := Highways.near(p.x + o.x, p.z + o.y, reach)
