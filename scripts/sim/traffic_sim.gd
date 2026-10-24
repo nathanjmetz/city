@@ -3012,7 +3012,15 @@ func go(pid: int, to_ref: String, purpose: String, stay: int) -> bool:
 		return false
 	var car := _vehicle_parked(p.car)
 	var far: bool = from_pl.door.distance_to(to_pl.door) > People.WALK_MAX
-	if not car.is_empty() and (far or car.at_place != from_ref) and cars.size() < MAX_CARS:
+	# A car left in a lot down the street is fetched to drive somewhere far,
+	# or to bring it home; a short hop is walked and the car stays put (it
+	# would only circle the block and park in the same lot again).
+	var away: bool = not car.is_empty() and car.at_place != from_ref
+	var fetch: bool = away and to_ref == home_ref
+	if away and not fetch and not place(car.at_place).is_empty() \
+			and place(car.at_place).door.distance_to(to_pl.door) < PARK_WALK:
+		far = false  # the car is already parked by the destination: walk on past it
+	if not car.is_empty() and (far or fetch) and cars.size() < MAX_CARS:
 		var path := _walk_to_car(from_pl, car)
 		if path.is_empty():
 			return false
