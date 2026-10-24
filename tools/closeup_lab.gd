@@ -108,6 +108,9 @@ var _t := 0.0
 var _rows := {"cpu_ms": 0.0, "frame_ms": 0.0, "gpu_ms": 0.0, "draw_calls": 0.0, "primitives": 0.0, "n": 0}
 var _segs := []
 var _wait := 0
+var _dists := []
+var _views := {}
+var _fill := false
 
 
 func _initialize() -> void:
@@ -116,6 +119,8 @@ func _initialize() -> void:
 	_level = int(a[1]) if a.size() > 1 else 0
 	_size = a[2] if a.size() > 2 else "big"
 	_out = a[3] if a.size() > 3 else "closeup.png"
+	_dists = Array(a[4].split(",")) if a.size() > 4 else []
+	_fill = a.size() > 5 and a[5] == "fill"
 	_main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(_main)
 
@@ -156,9 +161,23 @@ func _process(delta: float) -> bool:
 	_update()
 	var cpu := (Time.get_ticks_usec() - t0) / 1000.0
 	var f := _frames - 60
-	if _mode == "shot" and f == 40:
-		root.get_texture().get_image().save_png(_out)
-		quit()
+	if _mode == "shot" and (f - 40) % 45 == 0 and f >= 40:
+		var k := (f - 40) / 45
+		if _dists.is_empty():
+			root.get_texture().get_image().save_png(_out)
+			quit()
+		else:
+			var tag: String = str(_dists[k]).replace(":", "m-p")
+			root.get_texture().get_image().save_png(_out.get_basename() + "-" + tag + ".png")
+			_views[tag] = {"triangles": Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME),
+				"draw_calls": Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+				"objects": Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME),
+				"cars_in_view": _in_view(_cars), "people_in_view": _in_view(_walkers)}
+			if k + 1 >= _dists.size():
+				FileAccess.open(_out.get_basename() + ".json", FileAccess.WRITE).store_string(JSON.stringify(_views, "  "))
+				quit()
+			else:
+				_view_at(_dists[k + 1])
 	if _mode == "bench":
 		if f > 40:
 			var vp := root.get_viewport_rid()
@@ -239,12 +258,36 @@ func _setup() -> void:
 		_walkers.append({"p": _aim + _dir * along + side * s * (walk + (rng.randf() - 0.5) * 0.7),
 			"dir": _dir * (1.0 if rng.randf() < 0.5 else -1.0), "idx": rng.randi() % 216, "shirt": SHIRTS[k % SHIRTS.size()],
 			"var": k % OUTFITS.size(), "ph": rng.randf(), "v": 1.35 if k % 5 != 3 else 0.0})
-	if _mode == "bench":
+	if _mode == "bench" or _fill:
 		_fill_worst_case(rng)
 	_build_batches()
 	_cam.look_at_point(Terrain.lift(_aim + side * 3.0))
 	var yaw := atan2(_dir.x, _dir.z) + deg_to_rad(65.0)
 	_cam.set_view(yaw, deg_to_rad(18.0), CityCamera.MIN_DIST)
+	if not _dists.is_empty():
+		_view_at(_dists[0])
+
+
+## Cars or people inside the camera's view.
+func _in_view(list: Array) -> int:
+	var n := 0
+	for o in list:
+		if _cam.camera.is_position_in_frustum(Terrain.stand(o.p)):
+			n += 1
+	return n
+
+
+## Zoom distances to picture, for choosing the closest zoom: the camera
+## keeps its angle and aims at the near curb, where cars and people meet.
+func _view_at(spec) -> void:
+	var parts := str(spec).split(":")
+	var dist := float(parts[0])
+	var side := Vector3(-_dir.z, 0, _dir.x)
+	var yaw := atan2(_dir.x, _dir.z) + deg_to_rad(65.0)
+	var near := Vector3(sin(yaw), 0, cos(yaw))
+	var s := signf(side.dot(near))
+	_cam.look_at_point(Terrain.lift(_aim + side * s * (_hw + 0.8) + _dir * 4.0))
+	_cam.set_view(yaw, deg_to_rad(float(parts[1]) if parts.size() > 1 else (18.0 if dist >= 20.0 else 14.0)), dist)
 
 
 func _park(p: Vector3, dir: Vector3, kind: String, i: int) -> void:
