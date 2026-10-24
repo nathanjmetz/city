@@ -167,17 +167,9 @@ func _process(_delta: float) -> bool:
 	hud.zone_tool._waiting = true
 	hud.zone_tool._plan = {"parts": []}
 	_check(hud.shape_open(), "a waiting smart plan counts as a shape (the pad's stick click paints it)")
-	# Brawn: a clicked plan stays on screen, pulsing, while the mouse goes
-	# off the street (to the Paint it button, say) until it's painted.
-	hud.zone_tool.zone_view.pulse = true
-	hud.zone_tool._hover = [1, 1]
-	hud.zone_tool.zone_view.preview = [[1, 1]]
-	hud.zone_tool._update_hover(null)
-	_check(hud.zone_tool.zone_view.preview.size() == 1, "a held smart plan stays shown when the mouse leaves the street")
 	root.push_input(_key(KEY_ENTER, true))
 	root.push_input(_key(KEY_ENTER, false))
 	_check(not hud.zone_tool.is_waiting() and chat.got == 0, "Enter paints a smart plan, not the chat")
-	_check(not hud.zone_tool.zone_view.pulse, "a painted plan stops pulsing")
 	hud.close_all()
 	root.push_input(_key(KEY_ENTER, true))
 	root.push_input(_key(KEY_ENTER, false))

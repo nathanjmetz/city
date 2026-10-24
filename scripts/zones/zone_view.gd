@@ -22,20 +22,12 @@ var preview: Array = []:
 var preview_zone := 0
 ## Each preview part's own zone (smart paint), or [] for preview_zone.
 var preview_zones: Array = []
-## A held plan (smart paint waiting for Paint it): the band glows and
-## pulses, ready but not done.
-var pulse := false:
-	set(v):
-		pulse = v
-		_preview_mat.albedo_color = Color.WHITE
 
 ## Lot outlines go in square blocks, so a change redraws (and drapes on the
 ## ground) only the blocks it touched; the street-side band is its own mesh.
 const BLOCK := 128.0
 
 var _mesh := MeshInstance3D.new()
-var _lot_mat := StandardMaterial3D.new()
-var _preview_mat := StandardMaterial3D.new()
 var _dirty := true
 var _blocks := {}  # Vector2i -> MeshInstance3D
 var _block_sig := {}  # Vector2i -> hash of what the block shows
@@ -48,21 +40,17 @@ func setup(s: CitySim) -> void:
 
 
 func _ready() -> void:
-	for mat in [_lot_mat, _preview_mat]:
-		mat.vertex_color_use_as_albedo = true
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_mesh.material_override = _preview_mat
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_mesh.material_override = mat
 	_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_mesh)
 
 
 func _process(_delta: float) -> void:
-	if pulse:
-		# About one breath a second, brighter and more solid at the peak.
-		var t := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.0055)
-		_preview_mat.albedo_color = Color(1.0 + 0.6 * t, 1.0 + 0.6 * t, 1.0 + 0.6 * t, 1.2 + 0.8 * t)
 	if _dirty:
 		_dirty = false
 		_rebuild()
@@ -96,7 +84,7 @@ func _rebuild() -> void:
 			_lot(bst, e[1].corners, Color(c, fill), Color(c, maxf(edge, fill + 0.2)))
 		if not _blocks.has(b):
 			var mi := MeshInstance3D.new()
-			mi.material_override = _lot_mat
+			mi.material_override = _mesh.material_override
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(mi)
 			_blocks[b] = mi
