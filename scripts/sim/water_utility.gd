@@ -967,5 +967,5 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 	var status := "Working: %s" % str(u.last).to_lower() if u.last != "" else "Working"
 	if u.boil:
 		status = "Boil-water notice in effect"
-	return {"title": "%s Water and Sewer" % str(u.name).get_slice(" ", 1), "kind": "Utility hub", "icon": "water",
+	return {"title": "%s Water and Sewer" % str(u.name).get_slice(" ", 1), "kind": "Utility hub", "icon": "water_utility",
 		"ok": problems.is_empty(), "status": status, "rows": rows, "problems": problems, "tree": tree}
