@@ -33,6 +33,12 @@ var _other_codes := []
 var _retrying := false
 
 
+# Let go of the cover lambda with the menu (a static Callable that outlives
+# its script crashes the engine at quit).
+func _exit_tree() -> void:
+	Vegetation.cover_source = Callable()
+
+
 func _ready() -> void:
 	GameMusic.play(get_tree(), GameMusic.Mode.MENU)
 	_build_backdrop()
@@ -467,9 +473,6 @@ func _build_backdrop() -> void:
 	add_child(_cam)
 	var land := TerrainView.new()
 	add_child(land)
-	var woods := TerrainForest.new()
-	woods.setup(_cam)
-	add_child(woods)
 	var sim := CitySim.new()
 	var saves := Session.list_saves()
 	var data := Session._read(saves[0].path) if not saves.is_empty() else {}
@@ -490,6 +493,19 @@ func _build_backdrop() -> void:
 	add_child(roads)
 	roads.setup(sim.network, sim)
 	land.setup(_cam, sim.network)
+	TerrainView.set_county_hidden(sim.county_removed.keys())
 	var buildings := BuildingView.new()
 	add_child(buildings)
 	buildings.setup(sim)
+	# The same wild woods, brush and county highways as the game.
+	var wild := WildView.new()
+	add_child(wild)
+	wild.setup(sim)
+	land.graded.connect(wild.regraded)
+	var exits := ExitRoads.new()
+	add_child(exits)
+	exits.setup(sim, land, "exits")
+	Vegetation.cover_source = func(p: Vector3) -> Array:
+		var x := p.x + sim.terrain_offset.x
+		var z := p.z + sim.terrain_offset.y
+		return Terrain.wild_cover(x, z) + [Terrain.crops(x, z)]
