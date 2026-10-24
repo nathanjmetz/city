@@ -81,6 +81,10 @@ func _ready() -> void:
 	var wild := WildView.new()
 	add_child(wild)
 	wild.setup(sim)
+	# Farmsteads and country homes out in the county, cleared where the town builds.
+	var farmsteads := FarmsteadView.new()
+	add_child(farmsteads)
+	farmsteads.setup(sim)
 
 	var lot_alerts := LotAlerts.new()
 	lot_alerts.setup(sim)

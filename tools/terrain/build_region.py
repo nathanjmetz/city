@@ -283,7 +283,7 @@ def derive():
     png("base", heights(base[::2, ::2]), "LA")
     png("wlevel", heights(wlevel[::2, ::2]), "LA")
     png("cover", np.stack([u8(c["tree"]), u8(water), u8(c["crop"]),
-                           u8(np.clip(c["bare"] + c["built"] * 0.5, 0, 1))], -1), "RGBA")
+                           u8(c["bare"])], -1), "RGBA")
     def pool4(a):
         # Land cover layers: each 72 m sample the mean of the 4x4 it covers,
         # so a small woodlot is not missed or blown up.
