@@ -2257,6 +2257,36 @@ func pad_usable(mid: Vector3, corners: PackedVector2Array) -> bool:
 	return _ground_free(mid, corners, true)
 
 
+## True if a county road (not bulldozed) runs under the outline `poly`
+## (town coordinates), out to `half` metres each side of its section line:
+## no lot is platted across one, joined or still only painted on the land,
+## which would cut it in two (Brawn 2026-10-24).
+func _county_under(poly: PackedVector2Array, half: float) -> bool:
+	if poly.is_empty():
+		return false
+	var o := terrain_offset
+	var lo := poly[0] + o
+	var hi := lo
+	for q in poly:
+		lo = lo.min(q + o)
+		hi = hi.max(q + o)
+	var mid := (lo + hi) * 0.5
+	var radius := (hi - lo).length() * 0.5
+	if CountyGrid.distance(mid.x, mid.y) > radius + half:
+		return false
+	for mile in CountyGrid.miles_at(mid.x, mid.y, radius + half):
+		if county_removed.has(mile.key):
+			continue
+		var a: Vector2 = mile.a
+		var b: Vector2 = mile.b
+		# Section lines run north-south or east-west: the outline's box
+		# meets the strip along the mile.
+		var hits := hi.x >= a.x - half and lo.x <= b.x + half and hi.y >= a.y - half and lo.y <= b.y + half
+		if hits and CountyGrid.clears(clampf(mid.x, a.x, b.x), clampf(mid.y, a.y, b.y)):
+			return true
+	return false
+
+
 func _ground_free(mid: Vector3, corners: PackedVector2Array, in_fields: bool) -> bool:
 	var key := Vector3i(roundi(mid.x), roundi(mid.z), int(in_fields))
 	if _usable_cache.has(key):
@@ -2862,7 +2892,9 @@ func _lot_blocked(lot: Dictionary) -> bool:
 			_land_ok.clear()
 		_land_ok[at] = land_ok(at, LotPlanner.FRONTAGE * 0.5) \
 			and Highways.distance(at.x + terrain_offset.x, at.z + terrain_offset.y) >= HIGHWAY_LOT_CLEAR
-	return not _land_ok[at]
+	# Nor across a county road's gravel (joined or still painted on the
+	# land), which would cut it in two.
+	return not _land_ok[at] or _county_under(lot.corners, CountyGrid.HALF_WIDTH)
 
 
 ## Notes which lots changed (for lots_changed listeners), when only these did.
@@ -3101,8 +3133,10 @@ static func shapes_cost(curves: Array, type: int) -> int:
 ## Builds a road, but where it runs along a road already there (a county
 ## road it follows, a street drawn over again) it takes that road's place
 ## instead of being laid on top: that stretch becomes the new type, as an
-## upgrade, and only the rest is new road. True if anything changed.
-func _build_over(c: Array, type: int) -> bool:
+## upgrade, and only the rest is new road. True if anything changed. With
+## `retype` false the old roads keep their type (a county road joined
+## along a street the player drew onto its line stays that street).
+func _build_over(c: Array, type: int, retype := true) -> bool:
 	var n := maxi(2, ceili(Vector2(c[2].x - c[0].x, c[2].z - c[0].z).length() / OVERLAY_STEP))
 	var along := []  # per sample: the segment it runs along, or -1
 	var any := false
@@ -3157,6 +3191,9 @@ func _build_over(c: Array, type: int) -> bool:
 		if network.build_road(sub[0], sub[1], sub[2], type):
 			economy.money -= Economy.road_cost(sub, type)
 			ok = true
+	if not retype:
+		network.end_batch()
+		return ok
 	# Where the new road starts or ends partway along an old one, the old
 	# one is cut there, so only the stretch it covers changes.
 	for k in [0, n]:
@@ -3535,8 +3572,10 @@ func _join_county(p: Vector3, way := 0, key := "") -> bool:
 	if here.distance_to(on) > 0.5:
 		var m := (here + on) * 0.5
 		network.build_road(p, Vector3(m.x, 0, m.y), Vector3(on.x, 0, on.y), RoadStyle.Type.GRAVEL)
+	# Never laid along a road already there (a street drawn in at a
+	# shallow angle onto the line), only up to it.
 	for c in pieces:
-		network.build_road(c[0], c[1], c[2], RoadStyle.Type.GRAVEL)
+		_build_over(c, RoadStyle.Type.GRAVEL, false)
 	network.end_batch()
 	economy.money = money  # the county hands it over
 	county_joined[mile.key] = true

@@ -266,6 +266,7 @@ func _init() -> void:
 		_check(lost.has(victim) and not sim.buildings.has(victim), "the home it ran through is gone and reported for a refund")
 	# Curves: lots fan out radially and never overlap.
 	var curve := CitySim.new()
+	_clear_county(curve, Vector2(150, 0), 300.0)
 	curve.apply({"type": "build_road", "start": [0, 0], "ctrl": [150, -90], "end": [300, 0]})
 	for side in [-1, 1]:
 		curve.apply({"type": "zone_frontage", "seg": curve.network.segments.keys()[0], "side": side, "zone": ZoneMap.Zone.RESIDENTIAL})
@@ -366,3 +367,13 @@ func _check(ok: bool, what: String) -> void:
 	if not ok:
 		failed = true
 		print("FAIL: " + what)
+
+
+## Bulldozes the county roads around `at` (town coordinates), for a test
+## town laid out across the section lines with no county road in mind.
+static func _clear_county(sim: CitySim, at: Vector2, reach: float) -> void:
+	var o := sim.terrain_offset
+	for x in range(int(at.x - reach), int(at.x + reach) + 1, 100):
+		for z in range(int(at.y - reach), int(at.y + reach) + 1, 100):
+			for mile in CountyGrid.miles_at(x + o.x, z + o.y, 60.0):
+				sim.apply({"type": "remove_county", "key": mile.key})
