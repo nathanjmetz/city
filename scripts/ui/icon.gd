@@ -75,6 +75,12 @@ func _draw() -> void:
 		draw_texture_rect(_texture(_FILES[kind]), rect, false, color)
 		return
 	match kind:
+		"music":
+			# Two beamed eighth notes.
+			for x in [0.3, 0.76]:
+				draw_circle(P.call(x - 0.1, 0.78), s * 0.12, color)
+				line.call(P.call(x, 0.78), P.call(x, 0.2))
+			_poly([P.call(0.3, 0.2), P.call(0.76, 0.1), P.call(0.76, 0.24), P.call(0.3, 0.34)], color)
 		"parking":
 			# The MUTCD parking sign: a P in a rounded square.
 			var r := Rect2(P.call(0.18, 0.14), Vector2(s * 0.64, s * 0.72))

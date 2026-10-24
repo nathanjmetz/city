@@ -3,10 +3,12 @@ extends SceneTree
 ## Run: godot -s tools/audio_shot.gd -- out.png [picker]
 ## "picker" shows the Sound picker instead, plays option 2 of the click and
 ## checks it (serve web/sfx/ and set NEIGHBORS_SFX_URL to its address).
+## "music" shows the music player in the top bar instead.
 
 var _frames := 0
 var _out := "audio.png"
 var _picker := false
+var _music := false
 var _menu: Node  # untyped: a -s script can't name classes that use autoloads
 
 
@@ -14,6 +16,7 @@ func _initialize() -> void:
 	var args := OS.get_cmdline_user_args()
 	_out = args[0] if args.size() > 0 else "audio.png"
 	_picker = args.size() > 1 and args[1] == "picker"
+	_music = args.size() > 1 and args[1] == "music"
 	var session := root.get_node("Session")
 	session.save_path = session.new_save_path("Audio Shot")
 	change_scene_to_file("res://scenes/main.tscn")
@@ -28,6 +31,9 @@ func _process(_delta: float) -> bool:
 		SoundSettings.heard("ui/road", 0.4)
 		SoundSettings.heard("world/birds_day", 0.2)
 		SoundSettings.heard("world/car_engine", 0.3)
+		if _music:
+			hud.music._button.button_pressed = true
+			return false
 		var key := InputEventKey.new()
 		key.keycode = KEY_N
 		key.pressed = true

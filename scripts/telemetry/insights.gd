@@ -95,6 +95,7 @@ static func analyze(batches: Array) -> Dictionary:
 	_speed_fixes(ev, fixes)
 	_finding_fixes(ev, fixes)
 	_sound_fixes(ev, fixes)
+	_music_fixes(ev, fixes)
 	_stuck_fixes(ev, fixes)
 	fixes.sort_custom(func(a, b): return a.score > b.score)
 	var hunts: Array = ev.get("hunt", []).filter(func(h): return h.end == "used")
@@ -400,6 +401,21 @@ static func _sound_fixes(ev: Dictionary, fixes: Array) -> void:
 		_fix(fixes, 55 + 10 * who, "Bad sound: \"%s\" (assets/audio/%s.ogg)" % [str(g[0].get("label", sound)), sound],
 			"Flagged by %d players%s. Muted for them; replace it with a better real recording or remove it." \
 			% [who, " (%d right after hearing it)" % just if just > 0 else ""], SOUND_OWNER, "sound", who)
+
+
+## Town songs players skip (the music player in the top bar). A skip in the
+## first half minute counts most: the song didn't land at all.
+static func _music_fixes(ev: Dictionary, fixes: Array) -> void:
+	var by_song := _group(ev.get("music_skip", []), "song")
+	for song in by_song:
+		var g: Array = by_song[song]
+		var who := _who(g)
+		var early := g.filter(func(e): return float(e.get("at", 0.0)) < 30.0).size()
+		if g.size() < 3 and who < 2:
+			continue
+		_fix(fixes, 20 + 5 * who + 2 * early, "Song skipped a lot: \"%s\" (assets/audio/music/gameplay/%s)" % [song, str(g[0].get("file", ""))],
+			"Skipped %d times by %d players (%d in its first 30 seconds). Ask Brawn whether to drop or replace it." \
+			% [g.size(), who, early], SOUND_OWNER, "music", who)
 
 
 static func _fix(fixes: Array, score: float, title: String, detail: String, owner: String, kind: String, players: int,
