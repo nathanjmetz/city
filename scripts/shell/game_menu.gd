@@ -352,6 +352,7 @@ func _sound_row(id: String, how: String) -> Control:
 	name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	row.add_child(name)
 	var play := _button("Play", func(): _play(id))
+	play.set_meta("silent", true)  # no click over the sound
 	_small(play)
 	row.add_child(play)
 	var flag := _button("Unflag" if bad else "Flag bad", func():

@@ -116,6 +116,7 @@ func _option(id: String, i: int, label: String, tip: String, on: bool) -> Contro
 	box.add_theme_constant_override("separation", 0)
 	box.tooltip_text = tip
 	var play := Button.new()
+	play.set_meta("silent", true)
 	play.text = label
 	play.icon = _play_icon
 	play.tooltip_text = tip
@@ -126,6 +127,7 @@ func _option(id: String, i: int, label: String, tip: String, on: bool) -> Contro
 	play.pressed.connect(func(): _play(id, i, play))
 	box.add_child(play)
 	var check := CheckBox.new()
+	check.set_meta("silent", true)
 	check.button_pressed = on
 	check.focus_mode = Control.FOCUS_NONE
 	check.tooltip_text = "Use this one in the game"
