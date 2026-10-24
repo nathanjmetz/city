@@ -89,8 +89,10 @@ func _hook_all(n: Node) -> void:
 		_hook_all(c)
 
 
+## Buttons with the "silent" meta make no click: the Sound picker's play
+## buttons and checkmarks, so the click never covers the sound being tried.
 func _hook(n: Node) -> void:
-	if n is BaseButton and not (n as BaseButton).pressed.is_connected(_on_button):
+	if n is BaseButton and not n.has_meta("silent") and not (n as BaseButton).pressed.is_connected(_on_button):
 		(n as BaseButton).pressed.connect(_on_button)
 
 
