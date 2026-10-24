@@ -144,6 +144,7 @@ var _towns_button: Button
 var _wheel_tools: Array[Button] = []
 ## Every card in every drawer: [Button, category], for search and recents.
 var _all_cards: Array = []
+var _wheel_groups: Array = []  # pad wheel groups, for "group:N" keys
 ## The last tools picked, newest first (Anno's and Frostpunk's quick row).
 var _recent: Array[Button] = []
 const RECENT_MAX := 5
@@ -153,6 +154,23 @@ var _search := LineEdit.new()
 var _results := VBoxContainer.new()
 ## A building's name (and problem) when the cursor rests on it.
 var hover := HoverCard.new()
+var pie := PieMenu.new()
+## Each menu's pie, slot by slot from straight up, clockwise (N NE E SE S SW W
+## NW). A name is that menu's card ("Homes#2" for the second "Homes"); [label,
+## name] relabels one; [label, icon, [names]] is a group with its own pie.
+## Menus not listed lay out their cards on their own (PieMenu.auto_slots).
+const PIES := {
+	"roads": ["Straight", "Grid", "Curve", "Roundabout", "Upgrade", "Parking", "Traffic",
+		["Road types", "street", ["Street", "Avenue", "Boulevard", "Highway", "Ramp"]]],
+	"zones": ["Homes", ["Plan homes", "Homes#2"], "Shops", ["Plan shops", "Shops#2"], "Industry",
+		["Plan farms", "Farms"], "Dezone", ["Plan jobs", "Jobs"]],
+	"industry": ["Corn", "Soybeans", "Oil", "Mining", "Forestry", "Warehouse", "Reserve",
+		["Factories", "factory", ["Ethanol", "Meatpacker", "Furniture", "RV plant"]]],
+	"utilities": ["Power co.", "Power line", "Substation", "Phone co.", "Water utility", "Water tower", "Well",
+		["Trash", "landfill", ["Landfill", "Recycling"]]],
+	"parks": ["Pocket", "Neighborhood", "Community", "Park", "Trails", "Fairgrounds", "Football",
+		["Landmarks", "courthouse", ["Courthouse", "Water tower", "Elevator"]]],
+}
 
 
 func setup(rt: RoadTool, zt: ZoneTool, s: CitySim, g: Node) -> void:
@@ -185,6 +203,8 @@ func _ready() -> void:
 	_build_quick()
 	hover.setup(sim, info_view.cam, select_tool, anything_open)
 	_root.add_child(hover)
+	pie.chosen.connect(press_card)
+	_root.add_child(pie)
 	tour.setup(sim, self, info_view.cam, game)
 	_root.add_child(tour)
 
@@ -254,6 +274,11 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		var cat := hotkey_category(k)
 		if cat != "":
 			_open(cat)
+			get_viewport().set_input_as_handled()
+			return
+		var p := KeyBinds.action(k, KeyBinds.PIES)
+		if p != "" and not k.shift_pressed:
+			open_pie(hotkey_categories()[KeyBinds.PIES.find(p)], k.keycode)
 			get_viewport().set_input_as_handled()
 			return
 		if KeyBinds.matches(k, "search") and not k.shift_pressed:
@@ -484,7 +509,64 @@ static func hotkey_text(cat: String) -> String:
 	if cat == "move":
 		return "M"
 	var i := hotkey_categories().find(cat)
-	return "" if i < 0 else "Shift+%d" % ((i + 1) % 10)
+	if i < 0:
+		return ""
+	var k := KeyBinds.text(KeyBinds.PIES[i])
+	return ("hold %s for its pie, Shift+%d" % [k, (i + 1) % 10]) if KeyBinds.key(KeyBinds.PIES[i]) != KEY_NONE else "Shift+%d" % ((i + 1) % 10)
+
+
+## Hold a number key: that menu's pie opens around the cursor. Economy has no
+## tools, so its key just opens the page.
+func open_pie(cat: String, key: Key) -> void:
+	var items := pie_items(cat)
+	if items.is_empty():
+		pie.close()
+		if cat != _category:
+			_open(cat)
+		return
+	pie.open(menu_title(cat), items, get_viewport().get_mouse_position(), key)
+
+
+## A menu's pie: its slots, each null or {title, icon, card} or {title, icon,
+## group: [...]}. The same layout fills the controller wheel's second ring.
+func pie_items(cat: String) -> Array:
+	var cards: Array = []
+	for e in _all_cards:
+		if e[1] == cat:
+			cards.append(e[0])
+	if cards.is_empty():
+		return []
+	if not PIES.has(cat):
+		return PieMenu.auto_slots(cards.map(_pie_item.bind("")))
+	var out := []
+	for spec in PIES[cat]:
+		if spec is Array and spec.size() == 3:
+			var group := []
+			for n in spec[2]:
+				var b := _named_card(cards, n)
+				if b != null:
+					group.append(_pie_item(b, ""))
+			out.append({"title": spec[0], "icon": spec[1], "group": group} if not group.is_empty() else null)
+		else:
+			var b := _named_card(cards, spec[1] if spec is Array else spec)
+			out.append(_pie_item(b, spec[0] if spec is Array else "") if b != null else null)
+	return out
+
+
+func _pie_item(b: Button, label: String) -> Dictionary:
+	return {"title": label if label != "" else card_title(b), "icon": (b.get_meta("icon") as Icon).kind, "card": b}
+
+
+## "Homes#2" is the second card named Homes.
+static func _named_card(cards: Array, n: String) -> Button:
+	var parts := n.split("#")
+	var want := int(parts[1]) if parts.size() > 1 else 1
+	for b in cards:
+		if card_title(b) == parts[0]:
+			want -= 1
+			if want == 0:
+				return b
+	return null
 
 
 ## Game controllers (Pad): the tool wheel holds the bottom bar's categories
@@ -508,6 +590,9 @@ func pad_category_index() -> int:
 ## the second ring (like the console editions' radial sub-menus); picking
 ## one of those presses its card. Empty means the wheel stays closed.
 func pad_wheel_pick(key: String) -> Array:
+	if key.begins_with("group:"):
+		var g: Dictionary = _wheel_groups[int(key.substr(6))]
+		return _pad_slots(PieMenu.auto_slots(g.group))
 	if key.begins_with("tool:"):
 		var i := int(key.substr(5))
 		if i < _wheel_tools.size() and is_instance_valid(_wheel_tools[i]) and not _wheel_tools[i].disabled:
@@ -525,30 +610,42 @@ func pad_wheel_pick(key: String) -> Array:
 
 ## The cards in a menu's drawer, for the wheel's second ring.
 func pad_tool_items(cat: String) -> Array:
-	_wheel_tools.clear()
-	var items := []
 	if not _drawers.has(cat) or _category != cat:
-		return items
-	_collect_cards(_drawers[cat], items)
+		_wheel_tools.clear()
+		return []
+	return _pad_slots(pie_items(cat))
+
+
+## Pie slots as wheel items, empty slots kept so every tool sits where the
+## keyboard's pie puts it.
+func _pad_slots(slots: Array) -> Array:
+	_wheel_tools.clear()
+	_wheel_groups.clear()
+	var items := []
+	for it in slots:
+		if it == null:
+			items.append(null)
+		elif it.has("group"):
+			_wheel_groups.append(it)
+			items.append([it.icon, it.title + " ›", "group:%d" % (_wheel_groups.size() - 1)])
+		else:
+			_wheel_tools.append(it.card)
+			items.append([it.icon, it.title, "tool:%d" % (_wheel_tools.size() - 1)])
 	return items
 
 
 ## Which second-ring slot starts lit: the tool already in hand.
-func pad_tool_selected() -> int:
-	for i in _wheel_tools.size():
-		if is_instance_valid(_wheel_tools[i]) and _wheel_tools[i].button_pressed:
+func pad_tool_selected(items: Array = []) -> int:
+	for i in items.size():
+		if items[i] == null or not (items[i][2] as String).begins_with("tool:"):
+			continue
+		var b: Button = _wheel_tools[int((items[i][2] as String).substr(5))]
+		if is_instance_valid(b) and b.button_pressed:
+			return i
+	for i in items.size():
+		if items[i] != null:
 			return i
 	return 0
-
-
-func _collect_cards(n: Node, items: Array) -> void:
-	for c in n.get_children():
-		if c is Button and c.has_meta("title") and (c as Button).is_visible_in_tree():
-			var b := c as Button
-			_wheel_tools.append(b)
-			items.append([(b.get_meta("icon") as Icon).kind, (b.get_meta("title") as Label).text, "tool:%d" % (_wheel_tools.size() - 1)])
-		elif c is Control:
-			_collect_cards(c, items)
 
 
 ## A grid shape or an outline is being drawn, so Enter finishes it (the
@@ -576,6 +673,7 @@ func anything_open() -> bool:
 ## Puts every tool away and closes every panel.
 func close_all() -> void:
 	_budget_open = false
+	pie.close()
 	_open_search(false)
 	(_quick.get_child(0) as Button).set_pressed_no_signal(false)
 	_show_view("")
@@ -1149,10 +1247,10 @@ func _roads_drawer() -> PanelContainer:
 
 	var tools := _section(row, "Draw")
 	for entry in [
-		[RoadTool.Mode.STRAIGHT, "road", "Straight", "1"],
-		[RoadTool.Mode.CURVED, "curve", "Curve", "2"],
-		[RoadTool.Mode.GRID, "grid", "Grid", "3"],
-		[RoadTool.Mode.ROUNDABOUT, "roundabout", "Roundabout", "4"],
+		[RoadTool.Mode.STRAIGHT, "road", "Straight", _key_hint("road")],
+		[RoadTool.Mode.CURVED, "curve", "Curve", _key_hint("curve")],
+		[RoadTool.Mode.GRID, "grid", "Grid", _key_hint("grid")],
+		[RoadTool.Mode.ROUNDABOUT, "roundabout", "Roundabout", _key_hint("roundabout")],
 		[RoadTool.Mode.UPGRADE, "upgrade", "Upgrade", "U"],
 	]:
 		var m: int = entry[0]
@@ -1289,10 +1387,10 @@ func _zones_drawer() -> PanelContainer:
 	drawer.add_child(row)
 	var zones := _section(row, "Zone street sides  ·  Shift both sides  ·  Tab brush")
 	for entry in [
-		[ZoneMap.Zone.RESIDENTIAL, "homes", "Homes", "5"],
-		[ZoneMap.Zone.COMMERCIAL, "shops", "Shops", "6"],
-		[ZoneMap.Zone.INDUSTRIAL, "industry", "Industry", "7"],
-		[ZoneMap.Zone.NONE, "dezone", "Dezone", "8"],
+		[ZoneMap.Zone.RESIDENTIAL, "homes", "Homes", _key_hint("homes")],
+		[ZoneMap.Zone.COMMERCIAL, "shops", "Shops", _key_hint("shops")],
+		[ZoneMap.Zone.INDUSTRIAL, "industry", "Industry", _key_hint("industry")],
+		[ZoneMap.Zone.NONE, "dezone", "Dezone", _key_hint("dezone")],
 	]:
 		var z: int = entry[0]
 		var b := _card(entry[1], entry[2], entry[3])
@@ -1599,6 +1697,11 @@ func _fill_traffic_row(row: HBoxContainer) -> void:
 		_traffic_cards[m] = b
 
 
+## A tool's own key for its tooltip, or "" when it has none (the pies reach it).
+static func _key_hint(action: String) -> String:
+	return KeyBinds.text(action) if KeyBinds.key(action) != KEY_NONE else ""
+
+
 ## A titled group of cards inside a drawer; returns the row to fill.
 func _section(parent: Container, title: String) -> HBoxContainer:
 	var col := VBoxContainer.new()
@@ -1617,7 +1720,7 @@ func _card(icon: String, title: String, detail: String, toggle := true) -> Butto
 	b.toggle_mode = toggle
 	b.focus_mode = Control.FOCUS_NONE
 	b.custom_minimum_size = Vector2(64, 50)
-	b.tooltip_text = "%s  (%s)" % [title, detail]
+	b.tooltip_text = "%s  (%s)" % [title, detail] if detail != "" else title
 	var col := VBoxContainer.new()
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
 	col.add_theme_constant_override("separation", 1)
@@ -2080,13 +2183,12 @@ func _fill_help() -> void:
 		"%s / %s or scroll  zoom" % [k.call("zoom_in"), k.call("zoom_out")],
 		"Right drag  move the map", "Middle drag or Option + drag  rotate", "%s  back to your town" % k.call("home"),
 		"TOOLS",
-		"Shift + 1 to 0  open a menu (shown on each button)   %s  views   %s  find" % [k.call("views"), k.call("search")],
-		"%s %s %s %s  road, curve, grid, roundabout" % [k.call("road"), k.call("curve"), k.call("grid"), k.call("roundabout")],
+		"Hold 1 to 0  a menu's pie: flick to a tool, let go (tap: click one)",
+		"Shift + 1 to 0  open a menu   %s  views   %s  find" % [k.call("views"), k.call("search")],
 		"%s upgrade   %s parallel   %s bulldoze   %s move it" % [k.call("upgrade"), k.call("parallel"), k.call("bulldoze"), k.call("move_it")],
 		"%s %s  size   %s / %s  bridge or tunnel" % [k.call("smaller"), k.call("bigger"), k.call("raise"), k.call("lower")],
 		"Grid: Enter builds the shape, Tab turns it",
-		"%s %s %s %s  homes, shops, industry, dezone   %s  brush" % [k.call("homes"), k.call("shops"), k.call("industry"),
-			k.call("dezone"), k.call("brush")],
+		"%s  zoning brush or fill" % k.call("brush"),
 		"%s  traffic view   Ctrl+Z  undo the last build" % k.call("traffic"),
 		"Right click  stop drawing", "Esc  stop drawing, then close everything",
 		"GAME",

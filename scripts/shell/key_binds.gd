@@ -6,6 +6,8 @@ class_name KeyBinds
 ## change reaches the pad as well. Saved in user://keys.json.
 
 const PATH := "user://keys.json"
+## The pie keys, in bottom bar order (Hud.hotkey_categories).
+const PIES := ["pie_1", "pie_2", "pie_3", "pie_4", "pie_5", "pie_6", "pie_7", "pie_8", "pie_9", "pie_0"]
 
 ## [action, label, default key], in the order the Controls page lists them.
 const ACTIONS := [
@@ -15,12 +17,17 @@ const ACTIONS := [
 	["tilt_up", "Tilt up", KEY_T], ["tilt_down", "Tilt down", KEY_G],
 	["zoom_in", "Zoom in", KEY_R], ["zoom_out", "Zoom out", KEY_F],
 	["home", "Back to your town", KEY_HOME],
-	["road", "Road", KEY_1], ["curve", "Curve", KEY_2], ["grid", "Grid", KEY_3], ["roundabout", "Roundabout", KEY_4],
+	# 1 to 0: hold for a menu's pie of tools, flick toward one, let go.
+	["pie_1", "Roads pie", KEY_1], ["pie_2", "Zoning pie", KEY_2], ["pie_3", "Industry pie", KEY_3],
+	["pie_4", "Utilities pie", KEY_4], ["pie_5", "Civic pie", KEY_5], ["pie_6", "Education pie", KEY_6],
+	["pie_7", "Health pie", KEY_7], ["pie_8", "Transport pie", KEY_8], ["pie_9", "Parks pie", KEY_9],
+	["pie_0", "Economy", KEY_0],
+	["road", "Road", KEY_NONE], ["curve", "Curve", KEY_NONE], ["grid", "Grid", KEY_NONE], ["roundabout", "Roundabout", KEY_NONE],
 	["upgrade", "Upgrade road", KEY_U], ["parallel", "Parallel road", KEY_P], ["bulldoze", "Bulldoze", KEY_B],
 	["raise", "Raise (bridge)", KEY_PAGEUP], ["lower", "Lower (tunnel)", KEY_PAGEDOWN],
 	["smaller", "Smaller", KEY_BRACKETLEFT], ["bigger", "Bigger", KEY_BRACKETRIGHT],
-	["homes", "Zone homes", KEY_5], ["shops", "Zone shops", KEY_6], ["industry", "Zone industry", KEY_7],
-	["dezone", "Dezone", KEY_8], ["brush", "Brush or fill", KEY_TAB],
+	["homes", "Zone homes", KEY_NONE], ["shops", "Zone shops", KEY_NONE], ["industry", "Zone industry", KEY_NONE],
+	["dezone", "Dezone", KEY_NONE], ["brush", "Brush or fill", KEY_TAB],
 	["move_it", "Move It", KEY_M], ["turn_left", "Turn left (Move It)", KEY_COMMA],
 	["turn_right", "Turn right (Move It)", KEY_PERIOD],
 	["traffic", "Traffic view", KEY_J], ["views", "Views", KEY_V], ["search", "Find a tool", KEY_SLASH],
