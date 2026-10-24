@@ -39,10 +39,10 @@ const KINDS := {
 	Kind.POLICE: {"name": "Police station", "icon": "police", "size": Vector2(30, 36),
 		"cost": Balance.SERVICES["police"]["cost"], "upkeep": Balance.SERVICES["police"]["upkeep"], "reach": Balance.SERVICES["police"]["reach"]},
 	# Walk-in clinic; most Americans live within a few miles of one.
-	Kind.CLINIC: {"name": "Clinic", "icon": "health", "size": Vector2(30, 30),
+	Kind.CLINIC: {"name": "Clinic", "icon": "clinic", "size": Vector2(30, 30),
 		"cost": Balance.SERVICES["clinic"]["cost"], "upkeep": Balance.SERVICES["clinic"]["upkeep"], "reach": Balance.SERVICES["clinic"]["reach"]},
 	# Elementary school for about 400 pupils on a 2 acre site.
-	Kind.SCHOOL: {"name": "Elementary school", "icon": "school", "size": Vector2(80, 100),
+	Kind.SCHOOL: {"name": "Elementary school", "icon": "elementary", "size": Vector2(80, 100),
 		"cost": Balance.SERVICES["school"]["cost"], "upkeep": Balance.SERVICES["school"]["upkeep"], "reach": Balance.SERVICES["school"]["reach"]},
 	# A small-town bus garage: two maintenance bays, an office and a fenced
 	# yard of bus stalls. It runs itself (BusNet) and grows into the land
@@ -55,13 +55,13 @@ const KINDS := {
 		"cost": Balance.SERVICES["taxi_company"]["cost"], "upkeep": Balance.SERVICES["taxi_company"]["upkeep"], "transit": true},
 	# A 25-bed county hospital with an ER; its administrator grows it from
 	# there (see Healthcare). It counts as a clinic for the homes it reaches.
-	Kind.HOSPITAL: {"name": "Hospital", "icon": "health", "size": Vector2(70, 60),
+	Kind.HOSPITAL: {"name": "Hospital", "icon": "hospital", "size": Vector2(70, 60),
 		"cost": Balance.SERVICES["hospital"]["cost"], "upkeep": Balance.SERVICES["hospital"]["upkeep"], "reach": Balance.SERVICES["hospital"]["reach"]},
 	# A 60-bed nursing home on about an acre.
-	Kind.NURSING_HOME: {"name": "Nursing home", "icon": "people", "size": Vector2(50, 46),
+	Kind.NURSING_HOME: {"name": "Nursing home", "icon": "nursing_home", "size": Vector2(50, 46),
 		"cost": Balance.SERVICES["nursing_home"]["cost"], "upkeep": Balance.SERVICES["nursing_home"]["upkeep"], "reach": Balance.SERVICES["nursing_home"]["reach"]},
 	# A daycare center with a fenced play yard.
-	Kind.DAYCARE: {"name": "Daycare", "icon": "homes", "size": Vector2(30, 32),
+	Kind.DAYCARE: {"name": "Daycare", "icon": "daycare", "size": Vector2(30, 32),
 		"cost": Balance.SERVICES["daycare"]["cost"], "upkeep": Balance.SERVICES["daycare"]["upkeep"], "reach": Balance.SERVICES["daycare"]["reach"]},
 	# Public parking from the Roads menu (ParkingLots lays out the stalls;
 	# 90 degree stall counts here). A small lot of 20 stalls beside a shop
