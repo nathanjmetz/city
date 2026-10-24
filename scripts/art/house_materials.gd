@@ -21,6 +21,15 @@ varying vec3 world_normal;
 vec3 lin(vec3 c) {
 	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
 }
+// Vertex colours are sRGB. The browser's renderer (Compatibility) hands
+// these meshes' colours over already made linear, so only Forward+ converts.
+vec3 vcol(vec3 c) {
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	return c;
+#else
+	return lin(c);
+#endif
+}
 float hash(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
@@ -53,7 +62,7 @@ void fragment() {
 	// Dirt splashed up near the ground, and faint weathering.
 	float grime = 1.0 - 0.12 * (1.0 - smoothstep(0.3, 1.5, UV.y));
 	float n = texture(noise_soft, world_pos.xz / 9.0 + world_pos.y / 13.0).r;
-	ALBEDO = lin(COLOR.rgb) * s * grime * (0.95 + n * 0.1);
+	ALBEDO = vcol(COLOR.rgb) * s * grime * (0.95 + n * 0.1);
 	ROUGHNESS = 0.6;
 	SPECULAR = 0.35;
 }
@@ -72,7 +81,7 @@ void fragment() {
 	float joint = max(1.0 - smoothstep(0.0, 0.14, fy), 1.0 - smoothstep(0.0, 0.05, min(fx, 1.0 - fx)));
 	joint = mix(joint, 0.16, aa);
 	float tint = mix(0.84 + hash(vec2(row, floor(x))) * 0.3, 1.0, aa);
-	vec3 col = mix(lin(COLOR.rgb) * tint, mortar.rgb, joint);
+	vec3 col = mix(vcol(COLOR.rgb) * tint, mortar.rgb, joint);
 	col *= 0.93 + texture(noise_grain, UV * 2.0).r * 0.14;
 	ALBEDO = col;
 	ROUGHNESS = 0.85;
@@ -97,7 +106,7 @@ void fragment() {
 	// Weathering: big soft patches and the odd dark algae streak.
 	float w = texture(noise_soft, world_pos.xz / 14.0).r;
 	float streak = smoothstep(0.62, 0.8, texture(noise_soft, vec2(world_pos.x / 2.0, world_pos.y / 30.0)).r);
-	vec3 col = lin(COLOR.rgb) * s * (0.9 + w * 0.2) * (1.0 - streak * 0.18);
+	vec3 col = vcol(COLOR.rgb) * s * (0.9 + w * 0.2) * (1.0 - streak * 0.18);
 	col *= 0.94 + texture(noise_grain, UV * 3.0).r * 0.12 * (1.0 - aa);
 	// Winter: snow on the roof, with the tab lines showing faintly through.
 	float cover = snow_cover(0.35, 0.6);
@@ -115,7 +124,7 @@ void fragment() {
 	vec3 room = vec3(0.018, 0.02, 0.022);
 	float blinds = step(1.0 - COLOR.a, UV.y);
 	float slat = 0.85 + 0.15 * smoothstep(0.3, 0.5, fract(UV.y * 28.0));
-	vec3 col = mix(room, lin(COLOR.rgb) * 0.3 * slat, blinds);
+	vec3 col = mix(room, vcol(COLOR.rgb) * 0.3 * slat, blinds);
 	// Curtains drawn back to the sides in about half the windows, in
 	// whites, creams and the odd colour, and a glimpse of the room's back
 	// wall lower down: a window in daylight reads as a dim room, not a hole.
@@ -164,9 +173,9 @@ void fragment() {
 	vec3 lot = asphalt.rgb * (0.85 + texture(noise_soft, p / 20.0).r * 0.3) * (1.0 - stain * 0.15)
 		* (1.0 + (texture(noise_grain, p / 0.3).r - 0.5) * 0.25 * close);
 	float wear = smoothstep(0.4, 0.7, texture(noise_grain, p / 1.1).r);
-	vec3 line = mix(lin(COLOR.rgb), asphalt.rgb, wear * 0.45);
+	vec3 line = mix(vcol(COLOR.rgb), asphalt.rgb, wear * 0.45);
 	float chips = texture(noise_grain, p / 0.12).r;
-	vec3 loose = lin(COLOR.rgb) * (0.6 + chips * 0.8);
+	vec3 loose = vcol(COLOR.rgb) * (0.6 + chips * 0.8);
 	vec3 col = drive;
 	col = mix(col, lot, step(0.2, COLOR.a));
 	col = mix(col, line, step(0.6, COLOR.a));
@@ -197,9 +206,32 @@ void fragment() {
 	float streak = texture(noise_soft, vec2(world_pos.x + world_pos.z, world_pos.y * 0.15) / 6.0).r;
 	float grime = 1.0 - 0.1 * (1.0 - smoothstep(0.2, 1.2, world_pos.y));
 	float cover = snow_cover(0.8, 0.95);
-	ALBEDO = mix(lin(COLOR.rgb) * s * grime * (0.93 + streak * 0.12), vec3(0.86, 0.88, 0.92), cover);
+	ALBEDO = mix(vcol(COLOR.rgb) * s * grime * (0.93 + streak * 0.12), vec3(0.86, 0.88, 0.92), cover);
 	ROUGHNESS = mix(0.45, 0.7, cover);
 	SPECULAR = 0.5;
+}
+"""
+
+## Chain-link fabric: 2 in diamonds of 9-gauge galvanised wire (about a
+## sixth of each diamond is wire), UV in metres along and up the fence. Up
+## close the wires show; once they are thinner than a pixel the fabric
+## becomes an even stipple of the same coverage, the faint grey veil chain
+## link makes in photos, never empty air between the posts.
+const CHAIN := """
+void fragment() {
+	vec2 d = vec2(UV.x + UV.y, UV.x - UV.y) / 0.072;
+	vec2 f = abs(fract(d) - 0.5) * 2.0;
+	vec2 px = max(fwidth(d) * 2.0, vec2(0.0001));
+	float wire = max(1.0 - smoothstep(0.0, 0.11 + px.x, f.x), 1.0 - smoothstep(0.0, 0.11 + px.y, f.y));
+	float far = smoothstep(0.08, 0.2, max(px.x, px.y));
+	float stipple = step(hash(floor(FRAGCOORD.xy)), 0.22);
+	ALPHA = mix(wire, stipple, far);
+	ALPHA_SCISSOR_THRESHOLD = 0.5;
+	// Round wire is half in its own shade: as a haze it reads darker than
+	// the flat posts and rails.
+	ALBEDO = vcol(COLOR.rgb) * mix(1.0, 0.5, far);
+	ROUGHNESS = 0.7;
+	SPECULAR = 0.4;
 }
 """
 
@@ -221,11 +253,11 @@ void fragment() {
 	float text = inside * on * gap * band * step(0.0001, COLOR.a);
 	float aa = smoothstep(0.08, 0.3, fwidth(UV.x / pitch));
 	text = mix(text, 0.3 * band * step(0.25, UV.y) * step(UV.y, 0.78) * step(0.0001, COLOR.a), aa);
-	ALBEDO = mix(lin(COLOR.rgb), vec3(0.86, 0.84, 0.79), text);
+	ALBEDO = mix(vcol(COLOR.rgb), vec3(0.86, 0.84, 0.79), text);
 	ROUGHNESS = 0.4;
 	SPECULAR = 0.5;
 	// Lit signs after dark: bright letters on a softly glowing panel.
-	EMISSION = mix(lin(COLOR.rgb) * 0.5, vec3(1.0, 0.95, 0.85) * 2.0, text) * smoothstep(0.3, 0.6, night);
+	EMISSION = mix(vcol(COLOR.rgb) * 0.5, vec3(1.0, 0.95, 0.85) * 2.0, text) * smoothstep(0.3, 0.6, night);
 }
 """
 
@@ -239,7 +271,7 @@ void fragment() {
 	// surface to save draw calls): matte, broken up into leaf clumps.
 	float leafy = step(COLOR.a, 0.5);
 	float clumps = texture(noise_grain, world_pos.xz / 0.35 + world_pos.y * 0.7).r;
-	vec3 base = lin(COLOR.rgb) * mix(1.0, 0.7 + clumps * 0.6, leafy);
+	vec3 base = vcol(COLOR.rgb) * mix(1.0, 0.7 + clumps * 0.6, leafy);
 	ALBEDO = mix(base, vec3(0.86, 0.88, 0.92), cover * mix(1.0, smoothstep(0.35, 0.7, clumps), leafy));
 	ROUGHNESS = mix(mix(rough, 1.0, leafy), 0.7, cover);
 	SPECULAR = mix(0.4, 0.1, leafy);
@@ -256,7 +288,7 @@ void fragment() {
 const MEMBRANE := """
 void fragment() {
 	vec2 p = world_pos.xz;
-	vec3 col = lin(COLOR.rgb);
+	vec3 col = vcol(COLOR.rgb);
 	float big = texture(noise_soft, p / 18.0).r;
 	float spot = texture(noise_soft, p / 4.0 + 0.37).r;
 	float grain = texture(noise_grain, p / 0.6).r;
@@ -290,7 +322,7 @@ void fragment() {
 	float big = texture(noise_soft, p / 40.0).r;
 	float clump = texture(noise_soft, p / 5.0).r;
 	float fade = clamp(1.0 - length(VERTEX) / 180.0, 0.0, 1.0);
-	vec3 col = lin(COLOR.rgb) * (0.85 + big * 0.3) * (1.0 + (texture(noise_grain, p / 0.8).r - 0.5) * 0.3 * fade);
+	vec3 col = vcol(COLOR.rgb) * (0.85 + big * 0.3) * (1.0 + (texture(noise_grain, p / 0.8).r - 0.5) * 0.3 * fade);
 	col = mix(col, col * vec3(0.92, 1.12, 0.78), season_look.z);
 	vec3 dormant = lin(vec3(0.55, 0.48, 0.33)) * (0.85 + big * 0.3);
 	col = mix(col, dormant, clamp(season_look.w * 1.1 - clump * 0.2, 0.0, 0.85));
@@ -320,7 +352,7 @@ void fragment() {
 	vec3 glass = vec3(0.025, 0.03, 0.035) + vec3(0.06, 0.08, 0.1) * (1.0 - night * 0.85);
 	// Winter: snow on roofs and flat tops, as on the close-up roofs.
 	float cover = snow_cover(0.35, 0.6) * (1.0 - win);
-	ALBEDO = mix(mix(lin(COLOR.rgb), glass, win), vec3(0.86, 0.88, 0.92), cover);
+	ALBEDO = mix(mix(vcol(COLOR.rgb), glass, win), vec3(0.86, 0.88, 0.92), cover);
 	ROUGHNESS = mix(mix(0.85, 0.15, win), 0.7, cover);
 	SPECULAR = mix(0.3, 0.6, win);
 	vec2 cell = vec2(floor(UV.x / 2.0), floor(UV.y / 3.7));
@@ -346,6 +378,7 @@ static func get_mat(key: String) -> Material:
 		"yard": mat = _shader(YARD)
 		"metal": mat = _shader(METAL)
 		"sign": mat = _shader(SIGN)
+		"chain": mat = _shader(CHAIN)
 		"pasture": mat = _shader(PASTURE)
 		"far": mat = _shader(FAR)
 		"membrane": mat = _shader(MEMBRANE)
