@@ -46,6 +46,7 @@ var _sim: Object
 var _hubs_version := -1
 var _mail_version := -1
 var _rail_version := -1
+var _subdiv_version := -1
 
 
 ## Follows the city: anything built or removed marks the land for a re-check.
@@ -93,6 +94,10 @@ func update(sim: Object) -> void:
 	# And the railroad, as its crews lay track.
 	if sim.rail.version != _rail_version:
 		_rail_version = sim.rail.version
+		_mark()
+	# And a subdivision's land, cleared a phase at a time.
+	if sim.subdivisions.version != _subdiv_version:
+		_subdiv_version = sim.subdivisions.version
 		_mark()
 	if not _dirty:
 		return
@@ -191,6 +196,10 @@ static func sources(sim: Object) -> Dictionary:
 	for id in sim.warehouses.buildings:
 		var poly: PackedVector2Array = sim.warehouses.footprint(id)
 		out["w%d %s" % [id, poly]] = _poly_cells.bind(poly)
+	for id in sim.subdivisions.active:
+		var poly: PackedVector2Array = sim.subdivisions.cleared_poly(id)
+		if not poly.is_empty():
+			out["sd%d %s" % [id, poly]] = _poly_cells.bind(poly)
 	for id in sim.parks.sites:
 		var poly: PackedVector2Array = sim.parks.footprint(id)
 		out["p%d %s" % [id, poly]] = _poly_cells.bind(poly)

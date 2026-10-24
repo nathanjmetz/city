@@ -505,7 +505,11 @@ func _projects() -> void:
 		card.add_child(col)
 		col.add_child(_text("%s: phase %d of %d" % [a.name, int(a.phase), int(a.site.phases)], UiStyle.TEXT, 600))
 		var n: Dictionary = a.get("needs", {})
-		if not n.is_empty() and n.hold:
+		var st := Construction.state_at(Subdivisions.WORKS, int(a.works.start), sim.tick_count) if a.has("works") else {}
+		if not st.is_empty():
+			col.add_child(_fact("homes", "Phase %d site work: %s (%d%%). Lots open once it's done" % [int(a.works.k) + 1,
+				str(st.words).to_lower(), roundi(float(st.total) * 100.0)], UiStyle.MUTED, false))
+		elif not n.is_empty() and n.hold:
 			col.add_child(_fact("seasons", "Waiting: " + str(n.hold_why), Brand.WARNING, true))
 		elif int(a.phase) > 0:
 			var fill: Vector2i = sim.subdivisions.sold(sim, id)

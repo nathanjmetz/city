@@ -30,6 +30,11 @@ signal changed
 
 const HUB := "subdivision"
 const TYPE := RoadStyle.Type.STREET
+## Construction's profile for a phase's site work, and the stages where the
+## streets go in (curbs and stone) and the lots are staked.
+const WORKS := "subdivision"
+const STREETS_STAGE := 4
+const STAKE_STAGE := 6
 
 ## Open proposals: permit id -> true (the sites live on the permit).
 var pending := {}
@@ -40,6 +45,9 @@ var pending := {}
 ## current phase is taking (0 on time, 1 twice as long)}.
 var active := {}
 var next_id := 1
+## Bumped whenever a phase's site work starts or ends (Vegetation clears
+## the land under it). Not saved.
+var version := 0
 ## The last search for land, for checking: what stopped each candidate.
 ## Not saved.
 var last_search := {}
@@ -581,15 +589,84 @@ func _buy_land(sim, site: Dictionary) -> void:
 		f.cells = keep
 
 
-## Builds the next phase's streets (at the builder's cost) and zones their
-## fronts for homes. False if the land is no longer clear for them.
+## Starts the next phase's site work (Construction's "subdivision" profile),
+## as a land developer does it before any house goes up: clear the phase
+## and strip the topsoil, rough grade it, lay the sewers and storm drains,
+## then the water main, set the curbs and stone base, pave, and finally
+## have the surveyor stake the lots while the bare ground is seeded. Only
+## then is it platted into lots for the home builders (Indiana: a secondary
+## plat is recorded once the streets and pipes are in or bonded). False if
+## the land is no longer clear for its streets.
 func _build_phase(sim, sid: int) -> bool:
 	var a: Dictionary = active[sid]
 	var site: Dictionary = a.site
 	var k := int(a.phase)
+	for l in streets(site, k):
+		if not _line_clear(sim, l[0], l[1]):
+			return false
+	var w := works_area(site, k)
+	a.works = {"k": k, "start": int(sim.tick_count), "segs": []}
+	version += 1
+	sim.construction.start(_ref(sid, k), WORKS, int(sim.tick_count), w.front, w.out, 0.0)
+	return true
+
+
+## Moves each phase's site work along (every game hour): the streets are
+## laid when the curbs go in, the lots are staked and zoned in the last
+## stage, and the phase is open for homes once it's done. True when roads
+## or zones changed.
+func works(sim) -> bool:
+	var did := false
+	var ids := active.keys()
+	ids.sort()
+	for sid in ids:
+		var a: Dictionary = active[sid]
+		if not a.has("works"):
+			continue
+		var w: Dictionary = a.works
+		var stage := works_stage(a, int(sim.tick_count))
+		if stage >= STREETS_STAGE and not w.has("paved"):
+			if not _lay_streets(sim, sid):
+				# Something of yours is in the way now: the work stops, and
+				# the monthly check starts the phase again when it's clear.
+				a.erase("works")
+				version += 1
+				changed.emit()
+				continue
+			w.paved = true
+			did = true
+		if stage >= STAKE_STAGE and not w.has("staked"):
+			sim.zone_new_streets(w.segs.filter(func(id): return sim.network.segments.has(int(id))), ZoneMap.Zone.RESIDENTIAL)
+			w.staked = true
+			did = true
+		if stage >= Construction.STAGES.size():
+			var k := int(w.k)
+			if k == int(a.site.phases) / 2 and int(a.site.homes) >= Balance.SUBDIV_PARK_HOMES and not a.has("park"):
+				_dedicate_park(sim, a, k)
+			a.erase("works")
+			version += 1
+			a.phase = k + 1
+			a.opened = int(sim.tick_count)
+			did = true
+			changed.emit()
+	return did
+
+
+## The stage of a subdivision's site work (Construction.STAGES index;
+## STAGES.size() once done, -1 with none going).
+static func works_stage(a: Dictionary, tick: int) -> int:
+	if not a.has("works"):
+		return -1
+	var st := Construction.state_at(WORKS, int(a.works.start), tick)
+	return Construction.STAGES.size() if st.is_empty() else int(st.stage)
+
+
+## The phase's streets, at the builder's cost (curbs, stone and asphalt).
+func _lay_streets(sim, sid: int) -> bool:
+	var a: Dictionary = active[sid]
+	var site: Dictionary = a.site
+	var k := int(a.works.k)
 	var lines := streets(site, k)
-	# Anything of yours in the way now? (Your roads, or zoning, which is
-	# where lots and buildings stand.) The ends meet the builder's own streets.
 	for l in lines:
 		if not _line_clear(sim, l[0], l[1]):
 			return false
@@ -604,13 +681,44 @@ func _build_phase(sim, sid: int) -> bool:
 		sim.network.build_road(l[0], (l[0] + l[1]) * 0.5, l[1], TYPE)
 	sim.network.end_batch()
 	sim.economy.money = money
-	var made: Array = sim.network.segments.keys().filter(func(id): return not id in before)
-	sim.zone_new_streets(made, ZoneMap.Zone.RESIDENTIAL)
-	if k == int(site.phases) / 2 and int(site.homes) >= Balance.SUBDIV_PARK_HOMES and not a.has("park"):
-		_dedicate_park(sim, a, k)
-	a.phase = k + 1
-	a.opened = int(sim.tick_count)
+	a.works.segs = sim.network.segments.keys().filter(func(id): return not id in before)
 	return true
+
+
+## The ground phase k's site work covers: {"rect": [u0, u1, v0, v1] in the
+## site's own frame, "front" (where its trucks stop, by the road it's
+## reached from) and "out" (toward that road)}.
+static func works_area(site: Dictionary, k: int) -> Dictionary:
+	var half := Balance.SUBDIV_WIDTH * 0.5
+	var spine := half - Balance.SUBDIV_SPINE_IN
+	var v0 := 0.0 if k == 0 else row_v(k - 1) + Balance.SUBDIV_ROW * 0.5
+	var v1 := row_v(k) + Balance.SUBDIV_ROW * 0.5
+	var t := Vector3(float(site.t[0]), 0.0, float(site.t[1]))
+	var n := Vector3(float(site.n[0]), 0.0, float(site.n[1]))
+	# The first phase is reached from the road; later ones from the last
+	# phase's spine street.
+	var front := local(site, -spine + 14.0, 2.0) if k == 0 else local(site, -spine + 10.0, v0 + 6.0)
+	var out := -n if k == 0 else -t
+	return {"rect": [-half, half, v0, v1], "front": front, "out": out}
+
+
+## The land a subdivision has cleared so far: every phase built or being
+## built, as one outline (empty before any work).
+func cleared_poly(sid: int) -> PackedVector2Array:
+	var a: Dictionary = active[sid]
+	var last := int(a.works.k) if a.has("works") else int(a.phase) - 1
+	if last < 0:
+		return PackedVector2Array()
+	var r: Array = works_area(a.site, last).rect
+	var out := PackedVector2Array()
+	for uv in [[r[0], 0.0], [r[1], 0.0], [r[1], r[3]], [r[0], r[3]]]:
+		var p := local(a.site, float(uv[0]), float(uv[1]))
+		out.append(Vector2(snappedf(p.x, 0.01), snappedf(p.z, 0.01)))
+	return out
+
+
+static func _ref(sid: int, k: int) -> String:
+	return "subdiv:%d:%d" % [sid, k]
 
 
 ## The builder's park: a pocket park on phase k's cross street, in the
@@ -660,7 +768,7 @@ func _phases(sim) -> bool:
 	ids.sort()
 	for sid in ids:
 		var a: Dictionary = active[sid]
-		if int(a.phase) >= int(a.site.phases):
+		if int(a.phase) >= int(a.site.phases) or a.has("works"):
 			continue
 		if int(a.phase) > 0:
 			# Shortages on the last phase make it take longer.
@@ -773,6 +881,7 @@ func to_dict() -> Dictionary:
 
 
 func from_dict(d: Dictionary) -> void:
+	version += 1
 	pending.clear()
 	active.clear()
 	next_id = int(d.get("next", 1))
@@ -797,6 +906,13 @@ func from_dict(d: Dictionary) -> void:
 			"needs": ProjectNeeds.from_dict(a.get("needs", {})), "extra": int(a.get("extra", 0)), "slow": float(a.get("slow", 0.0))}
 		if a.has("park"):
 			active[int(k)].park = int(a.park)
+		if a.has("works"):
+			var w: Dictionary = a.works
+			var lw := {"k": int(w.k), "start": int(w.start), "segs": Array(w.get("segs", [])).map(func(x): return int(x))}
+			for f in ["paved", "staked"]:
+				if w.has(f):
+					lw[f] = true
+			active[int(k)].works = lw
 	changed.emit()
 
 

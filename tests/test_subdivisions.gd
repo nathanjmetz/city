@@ -107,6 +107,31 @@ func _init() -> void:
 	_check(sim.permits.requests[id].route == Permits._route(opts[pick].outline), "the approved site is the one picked")
 	sim.subdivisions.carry_out(sim)
 	_check(sim.subdivisions.active.size() == 1, "the subdivision started")
+	var sid0: int = sim.subdivisions.active.keys()[0]
+	var a0: Dictionary = sim.subdivisions.active[sid0]
+	_check(a0.has("works") and sim.network.segments.size() == roads_before,
+		"site work comes first: the land is cleared before any street is laid")
+	_check(sim.construction.sites.has("subdiv:%d:0" % sid0), "the site work is a construction job (crews and trucks)")
+	var start := int(a0.works.start)
+	var week := Balance.BUILD_TICKS_PER_WEEK
+	var stage_at := func(i: int) -> int:
+		var w := 0
+		for j in i:
+			w += int(Construction.PROFILES[Subdivisions.WORKS].weeks[j])
+		return start + w * week + 1
+	sim.tick_count = stage_at.call(Subdivisions.STREETS_STAGE) - 2
+	sim.subdivisions.works(sim)
+	_check(sim.network.segments.size() == roads_before, "no streets while the sewers and water main go in")
+	sim.tick_count = stage_at.call(Subdivisions.STREETS_STAGE)
+	sim.subdivisions.works(sim)
+	_check(sim.network.segments.size() > roads_before and int(a0.phase) == 0 and not sim.subdivisions.sold(sim, sid0).y > 0,
+		"the curbs and paving lay the streets, but no lots yet")
+	sim.tick_count = stage_at.call(Subdivisions.STAKE_STAGE)
+	sim.subdivisions.works(sim)
+	_check(a0.works.has("staked"), "then the surveyor stakes the lots")
+	sim.tick_count = start + Construction.duration(Subdivisions.WORKS) + 1
+	sim.subdivisions.works(sim)
+	_check(not a0.has("works") and int(a0.phase) == 1, "the phase opens for home builders once its site work is done")
 	var made: int = sim.network.segments.size() - roads_before
 	_check(made >= 3, "the builder laid the first phase's streets (%d new pieces)" % made)
 	_check(sim.economy.money == money, "the builder paid for the streets, not the town")
@@ -120,6 +145,9 @@ func _init() -> void:
 	_check(entrances == 2, "two ways in from the start (fire code)")
 	for i in 30:
 		sim.tick()
+	# The site work moved the clock on, so these ticks can land on the
+	# town's own hourly upkeep; count the builder's costs from here.
+	money = sim.economy.money
 	var fill := sim.subdivisions.sold(sim, sid)
 	print("  phase 1 lots: ", fill)
 	_check(fill.y >= 10, "the new streets were platted into home lots (%d)" % fill.y)
@@ -140,6 +168,7 @@ func _init() -> void:
 			sim.buildings[key] = BuildingTypes.make(sim, key, {"zone": ZoneMap.Zone.RESIDENTIAL, "seed": hash(key), "built": sim.tick_count,
 				"changed": sim.tick_count, "occ": 2}, "house", 0)
 	sim.subdivisions.month(sim)
+	_finish_works(sim)
 	_check(int(sim.subdivisions.active[sid].phase) == 2, "once it has sold, the next phase opens")
 	print("  homes ", site.homes, ", phases ", site.phases)
 	var keep_tick: int = sim.tick_count
@@ -154,6 +183,7 @@ func _init() -> void:
 					"changed": sim.tick_count, "occ": 2}, "house", 0)
 		var ph := int(sim.subdivisions.active[sid].phase)
 		sim.subdivisions.month(sim)
+		_finish_works(sim)
 		if int(sim.subdivisions.active[sid].phase) == ph:
 			break
 	if int(site.homes) >= Balance.SUBDIV_PARK_HOMES:
@@ -198,6 +228,12 @@ func _line(n: Dictionary, icon: String) -> int:
 		if l[1] == icon:
 			return int(l[0])
 	return -1
+
+
+## Runs every subdivision's site work to the end.
+func _finish_works(sim: CitySim) -> void:
+	sim.tick_count += Construction.duration(Subdivisions.WORKS) + 1
+	sim.subdivisions.works(sim)
 
 
 ## A month's check, then a game day of scouting.

@@ -86,6 +86,20 @@ const PROFILES := {
 		"words": ["Clearing the site", "Footings and the ground slab", "Setting the precast tees",
 			"Topping the decks and ramps", "Spandrels, stairs and the elevator", "Lighting and striping", "Planting"],
 		"deliveries": {"frame": [["flatbed", "precast double tees"]]}},
+	# A phase of a subdivision, before any house (Subdivisions): the land is
+	# cleared and its topsoil stripped and stockpiled, rough graded, the
+	# sanitary sewer and storm drains laid deepest first, then the water
+	# main, curbs on a crushed-stone base, the asphalt base course, and the
+	# surveyor stakes the lots while the bare ground is seeded against
+	# erosion (Indiana Rule 5 / NPDES). Three to five months for a phase.
+	"subdivision": {"frame": "pole", "weeks": [2, 3, 5, 3, 2, 1, 1], "found": 0.0,
+		"words": ["Clearing the land and stripping the topsoil", "Rough grading the streets and lots",
+			"Laying the sewers and storm drains", "Laying the water main", "Setting the curbs and stone base",
+			"Paving the streets", "Staking the lots and seeding"],
+		"deliveries": {"clear": [["flatbed", "a bulldozer"]], "foundation": [["dump_truck", "fill dirt"]],
+			"frame": [["flatbed", "sewer pipe and manholes"]], "dry_in": [["flatbed", "ductile iron water main"]],
+			"exterior": [["dump_truck", "crushed stone"], ["concrete_mixer", "curb concrete"]],
+			"interior": [["dump_truck", "hot-mix asphalt"]]}},
 }
 ## What each stage sends: [vehicle kind, cargo] (the crew's pickup comes for
 ## the whole job). A kind the fleet doesn't have yet falls back to the next.
@@ -432,6 +446,9 @@ static func _exists(sim: CitySim, ref: String) -> bool:
 		"hub": return sim.hubs.hubs.has(int(id))
 		"park": return sim.parks.sites.has(int(id))
 		"ind": return sim.industry.sites.has(int(id))
+		"subdiv":
+			var a = sim.subdivisions.active.get(int(id.get_slice(":", 0)))
+			return a != null and a.has("works") and int(a.works.k) == int(id.get_slice(":", 1))
 	return false
 
 

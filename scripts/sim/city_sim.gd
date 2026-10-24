@@ -1320,6 +1320,7 @@ func tick() -> void:
 		redevelopment.carry_out(self)
 		if subdivisions.carry_out(self):
 			farms_changed.emit()
+		subdivisions.works(self)
 	Perf.add("sim.heritage", t)
 	t = Perf.now()
 	# Every owner looks after their property, a slice of town an hour;
