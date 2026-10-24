@@ -57,6 +57,42 @@ static func corridors(net: RoadNetwork, extra: float) -> Array:
 	return out
 
 
+
+## The ground roads not built yet would take (a preview), as corridors does
+## for built ones. `curves` are [start, ctrl, end] in the given road type.
+static func corridors_of(curves: Array, type: int, extra: float) -> Array:
+	var out := []
+	var half := RoadStyle.right_of_way_half(type) + extra
+	for c in curves:
+		var line := PackedVector2Array()
+		for p in RoadNetwork.sample_curve(c[0], c[1], c[2], 12):
+			line.append(Vector2(p.x, p.z))
+		out.append({"bounds": _bounds(line).grow(half),
+			"polys": Geometry2D.offset_polyline(line, half, Geometry2D.JOIN_ROUND, Geometry2D.END_ROUND)})
+	return out
+
+
+## "Lincoln Park, 3 homes and a farmhouse": what a road would wipe out, in
+## words, from CitySim.road_losses.
+static func loss_text(losses: Array) -> String:
+	var named := []
+	var counts := {}
+	var order := []
+	for l in losses:
+		if l.get("named", false):
+			named.append(l.what)
+			continue
+		if not counts.has(l.what):
+			counts[l.what] = 0
+			order.append(l.what)
+		counts[l.what] += 1
+	for w in order:
+		var n: int = counts[w]
+		named.append(("a %s" % w.to_lower()) if n == 1 else "%d %ss" % [n, w.to_lower()])
+	if named.size() <= 1:
+		return "".join(named)
+	return ", ".join(named.slice(0, named.size() - 1)) + " and " + named[-1]
+
 ## The ground painted roads take (county roads and state highways the town
 ## hasn't built, CitySim.painted_near lines), as corridors does for built
 ## ones: a field stops at their right of way too (Brawn, 2026-10-24).
