@@ -2711,7 +2711,18 @@ func _in_path(car: Dictionary) -> Dictionary:
 	var w: Dictionary = ways[car.route[car.leg]]
 	# Start along the car's own heading, so the turn in begins smoothly.
 	var here := car_pose(car)
-	var ld := clampf(car.end_d - 1.0, car.d + 2.5, w.len)
+	var back := PackedVector3Array()
+	if car.end_d < car.d + 6.0:
+		# Too close to its way in to make the turn, or past it (it came onto
+		# the street right by it, or the place moved): back up along the lane
+		# to short of it, then turn in as usual, as a driver who overshot
+		# does, rather than swinging round on the spot.
+		var to_d := clampf(car.end_d - 8.0, 0.5, car.d)
+		back.append(here[0])
+		for q in _lane_run(w, car.lane, car.d, to_d).slice(1):
+			back.append(Vector3(q.x, 0.0, q.z))
+		here = [back[back.size() - 1], _way_dir(w, to_d)]
+	var ld := clampf(car.end_d - 1.0, _nearest_d(w, here[0]) + 2.5, w.len)
 	var wps := [here[0], here[0] + here[1] * 2.0, _lane_point(w, car.lane, ld)]
 	var s: Dictionary = pl.spots[car.to_spot]
 	var dir := _way_dir(w, ld)
@@ -2731,44 +2742,15 @@ func _in_path(car: Dictionary) -> Dictionary:
 			wps.append(wps[2] + dir * (r * sin(ang)) + side * (r - r * cos(ang)))
 		wps.append(s.pos + s.face * car.len * 0.5)
 	else:
-		var way_in := _approach_pts(pl, car.to_spot, car.len)
-		var front: Vector3 = s.pos + s.face * car.len * 0.5
-		var ahead: float = (front - here[0]).dot(here[1])
-		if s.kind == "curb" and (way_in[0] - here[0]).dot(here[1]) < 1.0:
-			if ahead > 3.0:
-				# Level with the space already: ease straight over into it
-				# rather than curling back to line up.
-				return _poly_path({"node": -1, "wi": w.id, "li": car.lane, "wo": -1, "lo": -1, "turn": Turn.RIGHT,
-					"vt": 4.0, "exit_d": 0.0}, _smooth([here[0], here[0] + here[1] * 1.0, front]), 0.0)
-			# Pulled up past it: back in along an S, as a driver parallel
-			# parks, then ease forward to square up in the space.
-			var back: Vector3 = front - s.face * maxf(4.0, ahead + 4.5)
-			var p0: Vector3 = here[0]
-			var run := maxf(absf((p0 - back).dot(here[1])), 1.0)
-			var c1: Vector3 = p0 - here[1] * run * 0.5
-			var c2: Vector3 = back + here[1] * run * 0.5
-			var pts := PackedVector3Array()
-			for k in 13:
-				var t := k / 12.0
-				var u := 1.0 - t
-				pts.append(p0 * u * u * u + c1 * 3.0 * u * u * t + c2 * 3.0 * u * t * t + back * t * t * t)
-			var rev := _polylen(pts)
-			var n := maxi(2, int(back.distance_to(front) / 0.8))
-			for k in range(1, n + 1):
-				pts.append(back.lerp(front, float(k) / n))
-			return _poly_path({"node": -1, "wi": w.id, "li": car.lane, "wo": -1, "lo": -1, "turn": Turn.RIGHT,
-				"vt": 2.0, "exit_d": 0.0}, pts, rev)
-		elif (way_in[0] - here[0]).dot(here[1]) < 0.0:
-			# Missed the turn in: swing round in the street, no tighter than
-			# a car turns, and come back to it.
-			wps[2] = _lane_point(w, car.lane, clampf(car.d + 6.0, 0.0, w.len))
-			var left := Vector3(dir.z, 0.0, -dir.x)
-			for k in range(1, 13):
-				var ang := PI * k / 12.0
-				wps.append(wps[2] + dir * (3.5 * sin(ang)) + left * (3.5 - 3.5 * cos(ang)))
-		wps.append_array(way_in)
+		wps.append_array(_approach_pts(pl, car.to_spot, car.len))
+	var pts := _smooth(wps)
+	var rev := 0.0
+	if back.size() >= 2:
+		rev = _polylen(back)
+		back.append_array(pts.slice(1))
+		pts = back
 	return _poly_path({"node": -1, "wi": w.id, "li": car.lane, "wo": -1, "lo": -1, "turn": Turn.RIGHT,
-		"vt": 4.0, "exit_d": 0.0}, _smooth(wps), 0.0)
+		"vt": 4.0, "exit_d": 0.0}, pts, rev)
 
 
 ## Path out of a spot into lane `lane` of way `w`, starting at road position
