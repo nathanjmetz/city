@@ -222,6 +222,7 @@ func _release() -> void:
 		# A click holds the plan shown for approval (a drag only looks around).
 		if not _dragging and not _waiting and not (_plan.get("parts", []) as Array).is_empty():
 			_waiting = true
+			zone_view.pulse = true
 			smart_plan_changed.emit(smart_summary())
 		_dragging = false
 		return
@@ -251,8 +252,8 @@ func _update_hover(hit) -> void:
 	if h == _hover:
 		return
 	_hover = h
-	if _dragging:
-		return  # the dragged stretch is shown instead
+	if _dragging or _waiting:
+		return  # the dragged stretch, or the held plan, is shown instead
 	if h.is_empty():
 		zone_view.preview = []
 		return
@@ -332,6 +333,7 @@ func approve_smart() -> void:
 func cancel_smart() -> void:
 	var was := _waiting
 	_waiting = false
+	zone_view.pulse = false
 	_plan = {}
 	_plan_seg = -1
 	_hover = []
