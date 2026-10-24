@@ -51,6 +51,7 @@ const RECHECK_MS := 2
 const SPAWN_ALL := 300
 var _dirty := false
 var _pending: Array = []  # lot keys waiting to be built, nearest last
+var _regraded := {}  # lot keys drawn again once the ground under them was regraded
 var _recheck: Array = []  # lot keys still to look over since the last change
 var _recheck_again := false  # changed again while a look-over was under way
 var _first := true  # the town as it loads: nearest the camera first, for up to LOAD_MS
@@ -151,6 +152,11 @@ func _sync_all() -> void:
 		budget = LOAD_MS
 	while not _pending.is_empty():
 		var key: String = _pending.pop_back()
+		# Swapped in the same frame, so it never blinks out.
+		if _regraded.has(key):
+			_regraded.erase(key)
+			if _nodes.has(key):
+				_unspawn(key)
 		if _nodes.has(key) or not sim.buildings.has(key) or not sim.lots.has(key):
 			continue
 		var root := _spawn(key, sim.lots[key], sim.buildings[key])
@@ -179,6 +185,30 @@ func _sync_all() -> void:
 		_bake(c)
 		_bake_due.erase(c)
 	_unbaked.clear()
+
+
+## The ground was regraded inside `box` (view coordinates, a new road's
+## strip): buildings with lots reaching into it are drawn again, so their
+## walls, drives and parking sit on the graded pad instead of the land as it
+## was (Brawn 2026-10-24: lots and drives half under the grass).
+func regraded(box: Rect2) -> void:
+	var near := box.grow(LOT_REACH)
+	var any := false
+	for key in _nodes:
+		if _regraded.has(key) or not sim.lots.has(key):
+			continue
+		var p: Vector3 = sim.lots[key].pos
+		if near.has_point(Vector2(p.x, p.z)):
+			_regraded[key] = true
+			_pending.append(key)
+			any = true
+	if any:
+		_sort_pending()
+
+
+## How far a lot's paving reaches from its middle (the deepest lots are
+## about 60 m, 200 ft).
+const LOT_REACH := 45.0
 
 
 ## Whether a building's drawing is out of date.

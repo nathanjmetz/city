@@ -67,6 +67,22 @@ func _sync() -> void:
 ## (EDGE_SHARE of the reach, where response times run long), nothing past
 ## it. So a player sees where another station would fill a gap rather than
 ## double up.
+## The ground was regraded inside `box` (view coordinates): sites reaching
+## into it are drawn again on the new grade, their lots and drives with them.
+func regraded(box: Rect2) -> void:
+	var any := false
+	for id in _nodes.keys():
+		var at: Transform3D = _nodes[id].get_meta("at")
+		var size: Vector2 = _nodes[id].get_meta("size")
+		if box.grow(size.length() * 0.5 + 10.0).has_point(Vector2(at.origin.x, at.origin.z)):
+			_trees.remove(_nodes[id].get_meta("tree_key"))
+			_nodes[id].queue_free()
+			_nodes.erase(id)
+			any = true
+	if any:
+		_sync()
+
+
 func _draw_coverage() -> void:
 	_coverage.visible = show_kind != -1 and sim.services.reach_by_kind.has(show_kind)
 	if not _coverage.visible:

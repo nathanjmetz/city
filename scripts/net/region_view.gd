@@ -103,18 +103,25 @@ func _add_city(id: String) -> void:
 		roads.sliced = true
 		root.add_child(roads)
 		roads.setup(c.sim.network, c.sim)
+		var at := Vector2(root.position.x, root.position.z)
+		if terrain != null:
+			# Their roads sit on graded, mowed land, like yours: graded before
+			# their lots and drives are laid on it.
+			terrain.add_network("city " + id, c.sim.network, at)
 		var buildings := BuildingView.new()
 		# Their whole town lands at once: drawn a few buildings a frame.
 		buildings.sliced = true
 		root.add_child(buildings)
 		buildings.setup(c.sim)
+		if terrain != null:
+			terrain.graded.connect(func(box: Rect2) -> void:
+				if is_instance_valid(buildings):
+					buildings.regraded(Rect2(box.position - at, box.size)))
 		var cars := TrafficView.new()
 		# Their cars as their computer last sent them.
 		cars.setup(c.sim.traffic, func(): return 0.0)
 		root.add_child(cars)
 		if terrain != null:
-			# Their roads sit on graded, mowed land, like yours.
-			terrain.add_network("city " + id, c.sim.network, Vector2(root.position.x, root.position.z))
 			their_exits = ExitRoads.new()
 			root.add_child(their_exits)
 			their_exits.setup(c.sim, terrain, "exits " + id, _stop_for(id))
