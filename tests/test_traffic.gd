@@ -383,12 +383,17 @@ func _init() -> void:
 
 	# Click a vehicle: the panel says what it is, where from and to, and why.
 	var info := {}
-	for car in t.cars:
-		var at: Vector3 = t.vehicle_centre(car, false)
-		var sel := Inspect.pick(sim, at)
-		if sel.get("type", "") == "vehicle":
-			info = Inspect.describe(sim, sel)
+	for wait in 600:
+		# (The street may be quiet just now: wait for the next car.)
+		for car in t.cars:
+			var at: Vector3 = t.vehicle_centre(car, false)
+			var sel := Inspect.pick(sim, at)
+			if sel.get("type", "") == "vehicle":
+				info = Inspect.describe(sim, sel)
+				break
+		if not info.is_empty():
 			break
+		sim.tick()
 	var labels := []
 	for row in info.get("rows", []):
 		labels.append(row[0])

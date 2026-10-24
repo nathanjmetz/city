@@ -188,7 +188,10 @@ def main():
         back.append({"name": nm, "pop": pop, "centre": [round(v, 1) for v in g.centroid.coords[0]],
                      "outlines": [[[round(x, 1), round(z, 1)] for x, z in p.exterior.coords[:-1]]
                                   for p in parts if p.area > 20000]})
-    backdrop = unary_union([towns[nm] for nm in BACKDROP]).buffer(0)
+    # The backdrop as the game knows it (Backdrop reads these outlines), so
+    # the state roads are cut exactly where the backdrop's streets take over:
+    # a sliver of town limits too small to keep isn't cut out of the road.
+    backdrop = unary_union([Polygon(o) for b in back for o in b["outlines"]]).buffer(0)
     sites = []
     for nm, pop in SITES:
         c = towns[nm].centroid.coords[0]
@@ -307,6 +310,15 @@ def main():
                     name, short = f"State Road {ref}", f"SR {ref}"
                 pts = np.array(piece.coords)
                 routes.append({"name": name, "short": short, "limited": net == "US:I", "line": pts})
+    # A state road that leaves another starts on it, not a few metres beside
+    # it (one junction, not a spur the town has to join twice).
+    for r in routes:
+        for end in (0, -1):
+            q = shapely.Point(r["line"][end])
+            others = [LineString(o["line"]) for o in routes if o is not r]
+            best = min(others, key=lambda o: o.distance(q))
+            if 0.0 < best.distance(q) < 40.0:
+                r["line"][end] = np.array(best.interpolate(best.project(q)).coords[0])
     # Channels: routes in one channel must stay apart (signed fields would
     # cancel between them), so colour the routes that come near each other.
     RANGE = 127.0

@@ -58,7 +58,10 @@ func _init() -> void:
 	for i in 6000:
 		d.tick()
 	var stalled: int = d.stats.population
-	_check(d.demand[ZoneMap.Zone.RESIDENTIAL] < 0.2, "no jobs: demand for homes drops (%.2f)" % d.demand[ZoneMap.Zone.RESIDENTIAL])
+	# Some drive to jobs in Marion (Balance.BACKDROP_COMMUTE_SHARE), which
+	# holds demand up a little, but not far.
+	_check(int(d.stats.get("commuting", 0)) > 0, "some drive to Marion for work (%d)" % int(d.stats.get("commuting", 0)))
+	_check(d.demand[ZoneMap.Zone.RESIDENTIAL] < 0.25, "no jobs in town: demand for homes drops (%.2f)" % d.demand[ZoneMap.Zone.RESIDENTIAL])
 	_check(d.demand[ZoneMap.Zone.INDUSTRIAL] > 0.3, "jobless people want industry (%.2f)" % d.demand[ZoneMap.Zone.INDUSTRIAL])
 	for x in range(-300, 301, 10):
 		d.apply({"type": "paint_zone", "center": [x, 15], "radius": 10, "zone": ZoneMap.Zone.INDUSTRIAL})

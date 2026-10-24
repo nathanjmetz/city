@@ -124,15 +124,18 @@ func _init() -> void:
 
 
 ## Brawn (2026-10-24): state roads that leave another in town start on it,
-## as SR 61 and SR 56 leave SR 57 in Petersburg, not as spurs ending beside
+## as SR 61 and SR 56 left SR 57 in Petersburg, not as spurs ending beside
 ## it that the town joins as two roads kinking into each other.
 func _shared_street() -> void:
 	var loose := 0
 	for i in Highways.all().size():
 		for along in [0.0, Highways.length(i)]:
 			var p := Highways.point(i, along)
-			if absf(p.x) > 15000.0 or absf(p.y) > 15000.0:
+			var rel := p - Terrain.CENTRE
+			if absf(rel.x) > Terrain.SIZE * 0.5 - 50.0 or absf(rel.y) > Terrain.SIZE * 0.5 - 50.0:
 				continue  # off the map: a region link
+			if Backdrop.inside(p, 150.0):
+				continue  # into Marion, Gas City or Jonesboro: their streets carry it on
 			var on := false
 			for k in Highways.all().size():
 				on = on or (k != i and not Highways.near(p.x, p.y, 2.0, k).is_empty())
