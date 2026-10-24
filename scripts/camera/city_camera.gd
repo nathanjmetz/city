@@ -19,6 +19,18 @@ const MAX_PITCH := deg_to_rad(88.0)
 const FAST := 3.0
 ## A right click that moves less than this many pixels is a click, not a drag.
 const DRAG_THRESHOLD := 6.0
+## Zoom has momentum. Each wheel click pushes a zoom speed (in log distance
+## per second) that friction then bleeds off, so the view glides and settles.
+## A slow click moves a little (finer than the old fixed step); clicks that
+## come in fast build heat, so a hard spin of the wheel runs out quickly.
+const ZOOM_KICK := 0.4
+const ZOOM_FRICTION := 6.0
+const ZOOM_HEAT_ADD := 0.45
+const ZOOM_HEAT_DECAY := 4.0
+const ZOOM_HEAT_MAX := 4.0
+## Top zoom speed: the whole range (25 m to 3 km) in about a second and a
+## quarter, so the map never has to redraw faster than that.
+const ZOOM_MAX_RATE := 4.5
 
 var camera := Camera3D.new()
 ## True while the last right button press turned into a drag.
@@ -43,6 +55,12 @@ var _pad: Gamepad
 var following := false
 ## Seconds left of a slow, cinematic glide (glide_to); any move cuts it short.
 var _slow := 0.0
+## Zoom speed in log distance per second (+ out), and how hard the wheel has
+## been spun lately.
+var _zoom_vel := 0.0
+var _zoom_heat := 0.0
+## Seconds the zoom keys have been held, so a hold eases up to speed.
+var _zoom_hold := 0.0
 
 
 func _ready() -> void:
@@ -70,10 +88,10 @@ func _input(event: InputEvent) -> void:
 		match mb.button_index:
 			MOUSE_BUTTON_WHEEL_UP:
 				if mb.pressed:
-					_zoom(0.88)
+					wheel_click(-1.0, mb.factor)
 			MOUSE_BUTTON_WHEEL_DOWN:
 				if mb.pressed:
-					_zoom(1.0 / 0.88)
+					wheel_click(1.0, mb.factor)
 			MOUSE_BUTTON_MIDDLE:
 				_rotating = mb.pressed
 			MOUSE_BUTTON_LEFT:
@@ -103,7 +121,11 @@ func _input(event: InputEvent) -> void:
 		# The desktop app on a Mac: a Magic Mouse or a two-finger trackpad
 		# scroll arrives as a pan gesture, not wheel clicks (the browser turns
 		# them into wheel events). Scrolling down zooms out, like the wheel.
-		_zoom(exp(clampf((event as InputEventPanGesture).delta.y, -4.0, 4.0) * 0.25))
+		# The OS adds its own glide after the fingers lift, so this steps
+		# straight to the new distance; a hard swipe sends bigger deltas and
+		# goes further per unit, gentle strokes stay fine.
+		var d := clampf((event as InputEventPanGesture).delta.y, -4.0, 4.0)
+		_zoom(exp(d * 0.17 * (1.0 + absf(d) * 0.3) * _near_scale()))
 
 
 func _process(delta: float) -> void:
@@ -133,12 +155,17 @@ func _process(delta: float) -> void:
 			_goal_pitch = clampf(_goal_pitch + 1.0 * delta * boost, MIN_PITCH, MAX_PITCH)
 		if KeyBinds.held("tilt_down"):
 			_goal_pitch = clampf(_goal_pitch - 1.0 * delta * boost, MIN_PITCH, MAX_PITCH)
-		if KeyBinds.held("zoom_in"):
-			_zoom(1.0 - 1.5 * delta * boost)
-		if KeyBinds.held("zoom_out"):
-			_zoom(1.0 + 1.5 * delta * boost)
+		var keys := (1.0 if KeyBinds.held("zoom_out") else 0.0) - (1.0 if KeyBinds.held("zoom_in") else 0.0)
+		if keys != 0.0:
+			# A tap nudges; holding eases up to full speed over most of a second.
+			_zoom_hold += delta
+			var rate := lerpf(0.7, 2.2, clampf(_zoom_hold / 0.8, 0.0, 1.0)) * minf(boost, 1.5)
+			_zoom_rate(keys * rate, delta)
+		else:
+			_zoom_hold = 0.0
 	if _pad != null and not MenuState.showing:
 		_pad_input(delta)
+	_zoom_glide(delta)
 	# Ease toward the goal, like CS2's smoothed camera.
 	var rate := 12.0
 	if _slow > 0.0:
@@ -164,6 +191,7 @@ func glide_to(p: Vector3, dist: float) -> void:
 	following = false
 	_goal_target = Vector3(p.x, 0.0, p.z)
 	_goal_dist = dist
+	_zoom_vel = 0.0
 	_slow = 2.5
 
 
@@ -202,6 +230,7 @@ func set_view(yaw: float, pitch: float, dist: float) -> void:
 	_goal_pitch = pitch
 	_dist = dist
 	_goal_dist = dist
+	_zoom_vel = 0.0
 
 
 ## True while a mouse button is being used to move the camera, so tools
@@ -221,7 +250,10 @@ func _pad_input(delta: float) -> void:
 		_goal_yaw -= _pad.turn.x * 1.8 * delta
 		_goal_pitch = clampf(_goal_pitch + _pad.turn.y * 1.1 * delta, MIN_PITCH, MAX_PITCH)
 	if _pad.zoom != 0.0:
-		_zoom(1.0 - _pad.zoom * 1.6 * delta)
+		# A light squeeze creeps, a full pull races: speed grows with the
+		# cube of the trigger, so the slow end has plenty of travel.
+		var z := absf(_pad.zoom)
+		_zoom_rate(-signf(_pad.zoom) * (0.6 * z + 1.7 * z * z * z), delta)
 
 
 ## True when the mouse is over a scrolling list in a panel.
@@ -237,6 +269,45 @@ func _over_list() -> bool:
 func _zoom(f: float) -> void:
 	_slow = 0.0
 	_goal_dist = clampf(_goal_dist * f, MIN_DIST, MAX_DIST)
+
+
+## One wheel click: dir -1 zooms in, +1 out. factor is the size of the click
+## (1 for a mouse wheel, less for the browser's fine trackpad steps).
+func wheel_click(dir: float, factor := 1.0) -> void:
+	_slow = 0.0
+	if factor <= 0.0:
+		factor = 1.0
+	# Turning the wheel the other way stops the glide dead, so it is easy
+	# to catch the view where you want it.
+	if _zoom_vel * dir < 0.0:
+		_zoom_vel = 0.0
+		_zoom_heat = 0.0
+		return
+	_zoom_heat = minf(_zoom_heat + ZOOM_HEAT_ADD * minf(factor, 1.0), ZOOM_HEAT_MAX)
+	_zoom_vel += dir * ZOOM_KICK * minf(factor, 2.0) * (1.0 + _zoom_heat) * _near_scale()
+	_zoom_vel = clampf(_zoom_vel, -ZOOM_MAX_RATE, ZOOM_MAX_RATE)
+
+
+## Held zoom (keys, triggers): rate in log distance per second, + out.
+func _zoom_rate(rate: float, delta: float) -> void:
+	_zoom(exp(clampf(rate * _near_scale(), -ZOOM_MAX_RATE, ZOOM_MAX_RATE) * delta))
+
+
+## Runs the wheel's zoom glide each frame and lets it coast to a stop.
+func _zoom_glide(delta: float) -> void:
+	_zoom_heat = maxf(_zoom_heat - ZOOM_HEAT_DECAY * _zoom_heat * delta, 0.0)
+	if _zoom_vel == 0.0:
+		return
+	_goal_dist = clampf(_goal_dist * exp(_zoom_vel * delta), MIN_DIST, MAX_DIST)
+	_zoom_vel *= exp(-ZOOM_FRICTION * delta)
+	if absf(_zoom_vel) < 0.01 or (_zoom_vel < 0.0 and _goal_dist <= MIN_DIST) or (_zoom_vel > 0.0 and _goal_dist >= MAX_DIST):
+		_zoom_vel = 0.0
+
+
+## Up close each click moves less: about half speed at street level, full
+## speed from 400 m up, so the last few metres are easy to judge.
+func _near_scale() -> float:
+	return lerpf(0.5, 1.0, clampf(log(_goal_dist / MIN_DIST) / log(400.0 / MIN_DIST), 0.0, 1.0))
 
 
 func _forward() -> Vector3:
