@@ -61,6 +61,32 @@ func _init() -> void:
 	_check(absf(q.x - 200.0) < 0.01 and absf(q.z + 100.0) < 0.01, "square side lines up with a road end (got %s)" % q)
 	_check(not gt._align_lines.is_empty(), "with a dotted line to that junction")
 	gt.free()
+	# Brawn: the grid's first corner snaps onto a county road crossing.
+	var cs := CitySim.new()
+	var ct := RoadTool.new()
+	ct.sim = cs
+	ct.network = cs.network
+	ct.mode = RoadTool.Mode.GRID
+	ct._px = 1.0
+	var co := cs.terrain_offset
+	var found := Vector2(INF, INF)
+	for ix in range(-3, 4):
+		for iz in range(-3, 4):
+			var cc0 := (Vector2(roundf(co.x / CountyGrid.SECTION) + ix, roundf(co.y / CountyGrid.SECTION) + iz)) * CountyGrid.SECTION - co
+			if found.x == INF and ct._county_crossing(Vector3(cc0.x + 6, 0, cc0.y - 5), 15.0).x != INF:
+				found = cc0
+	_check(found.x != INF, "a county crossing near town")
+	q = ct._snapped(Vector3(found.x + 6, 0, found.y - 5))
+	_check(Vector2(q.x, q.z).distance_to(found) < 0.01 and ct._snap_kind == "county", "a click by a county crossing lands on it (got %s)" % q)
+	ct._points = [Vector3(0, 0, 0), Vector3(200, 0, 0)]
+	ct._grid_angles(Vector3(200, 0, 150))
+	_check(ct._angle_labels[0].visible and ct._angle_labels[0].text == "90°", "a grid corner shows its angle (got %s)" % ct._angle_labels[0].text)
+	ct._points.append(Vector3(200, 0, 150))
+	ct._grid_angles(Vector3(0, 0, 150))
+	_check(ct._angle_labels[1].visible and ct._angle_labels[1].text == "90°", "and where it closes to the first (got %s)" % ct._angle_labels[1].text)
+	for l in ct._angle_labels:
+		l.free()
+	ct.free()
 	var c30 := Vector3(50, 0, 0) + Vector3(cos(deg_to_rad(30.0)), 0, sin(deg_to_rad(30.0))) * 80.0
 	at._show_angles([Vector3(50, 0, 0), Vector3(50, 0, 0).lerp(c30, 0.5), c30])
 	_check(at._angle_labels[0].text == "30° sharp", "a 30° crossing reads sharp (got %s)" % at._angle_labels[0].text)

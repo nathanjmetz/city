@@ -284,7 +284,7 @@ static func _sharpest(ar: PackedVector2Array) -> float:
 ## more times: the town takes each over between its outermost streets, so
 ## the blocks front it and the grid stays joined along it. [{"type",
 ## "curves"}], the curves straight pieces along the road.
-static func taken_over(lines: Array, painted: Array) -> Array:
+static func taken_over(lines: Array, painted: Array, corners: Array = []) -> Array:
 	var out := []
 	for pr in painted:
 		var pts: PackedVector2Array = pr.pts
@@ -293,16 +293,21 @@ static func taken_over(lines: Array, painted: Array) -> Array:
 			cum.append(cum[i - 1] + pts[i - 1].distance_to(pts[i]))
 		var lo := INF
 		var hi := -INF
+		# The streets' ends on it, and the shape's corners: a corner on a
+		# crossing has no street of its own there (both sides are the roads).
+		var ends := corners.duplicate()
 		for l in lines:
-			for e in [l[0], l[2]]:
-				var q := Vector2(e.x, e.z)
-				for i in pts.size() - 1:
-					var c := Geometry2D.get_closest_point_to_segment(q, pts[i], pts[i + 1])
-					if c.distance_to(q) < 1.0:
-						var s: float = cum[i] + pts[i].distance_to(c)
-						lo = minf(lo, s)
-						hi = maxf(hi, s)
-						break
+			ends.append(l[0])
+			ends.append(l[2])
+		for e in ends:
+			var q := Vector2(e.x, e.z)
+			for i in pts.size() - 1:
+				var c := Geometry2D.get_closest_point_to_segment(q, pts[i], pts[i + 1])
+				if c.distance_to(q) < 1.0:
+					var s: float = cum[i] + pts[i].distance_to(c)
+					lo = minf(lo, s)
+					hi = maxf(hi, s)
+					break
 		if hi - lo < MIN_PIECE:
 			continue
 		# The road's line from lo to hi, its bends kept, in pieces of 200 m.
