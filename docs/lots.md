@@ -63,3 +63,27 @@ whole drive out to the street.
 `godot --headless -s tools/lot_map.gd -- grid out.png` draws a plat. The
 scenes are `grid`, `curves` and `mixed`; add `-old` to see the old fixed
 lots.
+
+## Stress test (`tools/zoning_stress.gd`)
+
+Zones 1000 made-up towns (grids, rotated grids, grids on odd land, skewed
+crossings, triangles, curves, rounded blocks, deep blocks, T-junctions,
+arterials, radial streets, cul-de-sacs, back lanes) in random orders of
+clicks, Shift-clicks, drags, brush strokes and erases, with homes going up
+between clicks in a third of them. Every lot is scored against Brawn's four
+rules: odd shapes possible where the land forces them, nonsensical shapes
+(overlaps, lots on roads, bowties, slivers, necks, tiny, landlocked, jagged)
+impossible, plain rectangles the easy default on square streets, and odd
+shapes where the street is straight and the corner square rare. It also
+checks zoned frontage that got no lots, unused land between lots, that the
+same zoning in reverse order gives the same lots, and that a save and reload
+keeps them.
+
+    godot --headless -s tools/zoning_stress.gd -- --count=1000 --out=out --pngs=2
+    godot --headless -s tools/zoning_stress.gd -- --only=123 --out=out   # one town, its commands and a plat
+
+`out/report.md` ranks the problems by how many towns show them, with an
+example town for each; `--pngs` draws plats with the problem lots in red.
+The Zoning stress workflow runs it on every change to the lot code and fails
+when a problem shows up in more towns than `tools/zoning_stress_budgets.json`
+allows. Lower a budget when a fix brings a problem down.
