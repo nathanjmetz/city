@@ -74,8 +74,12 @@ stop_server() {
 update_to() {
 	log "Updating the game to $1"
 	# Forced: a file the editor or an import left behind (a stray .import,
-	# say) must never block an update.
-	git -C "$REPO" fetch -q origin && git -C "$REPO" checkout -q -f --detach "$1" || return 1
+	# say) must never block an update. -f only covers tracked files: an
+	# untracked .uid the import made, that the new version tracks, stopped
+	# updates for 13 hours on 2026-10-23, so those go first.
+	git -C "$REPO" fetch -q origin || return 1
+	git -C "$REPO" clean -fq -- '*.uid' '*.import'
+	git -C "$REPO" checkout -q -f --detach "$1" || return 1
 	(cd "$REPO" && "$GODOT" --headless --import >/dev/null 2>&1)
 	return 0
 }

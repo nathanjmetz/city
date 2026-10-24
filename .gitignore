@@ -5,3 +5,8 @@ scripts/build_info.gd
 __pycache__/
 tools/terrain/out/
 tools/audio/.cache/
+
+# Their .uid files were made on the region host before being committed;
+# tracking them again blocks its self-update (git refuses to overwrite).
+tests/test_county.gd.uid
+tools/audio_shot.gd.uid
