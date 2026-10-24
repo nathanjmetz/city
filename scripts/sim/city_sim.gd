@@ -2989,6 +2989,47 @@ func _lot_blocked(lot: Dictionary) -> bool:
 	return not _land_ok[at] or _county_under(lot.corners, CountyGrid.HALF_WIDTH)
 
 
+## Why a street side's zoning gets no lots where it doesn't, in a few words
+## for the zone tool ("" when nothing stops them): the first thing in the
+## way of its lots that were planned but dropped.
+func lots_blocked_why(seg: int, side: int) -> String:
+	for key in _blocked_by:
+		var e: Array = _blocked_by[key]
+		var lot: Dictionary = e[0]
+		if not e[1] or int(lot.seg) != seg or int(lot.side) != side:
+			continue
+		var why := _block_reason(lot)
+		if why != "":
+			return why
+	return ""
+
+
+func _block_reason(lot: Dictionary) -> String:
+	if services.overlaps(lot.corners):
+		return "a public building or parking lot stands here"
+	for p in [lot.pos, lot.front, lot.zone_pt]:
+		var owner := Capital.owner_of(self, p)
+		if owner.begins_with("farm:"):
+			return "a farm owns this land"
+		if owner != "":
+			return "a company's site owns this land"
+		if reserves.kind_at(p) != "":
+			return "it's inside a land use outline (%s)" % reserves.kind_at(p)
+		if parks.covers(p):
+			return "a park or trail is here"
+		if services.covers(p) or hubs.covers(p) or warehouses.covers(p) or education.covers(p) or mail.covers(p) \
+				or power.covers(p) or banks.covers(p) or rail.covers(p) or telecom.covers(p) or big.covers(p):
+			return "a public building or site stands here"
+	var at: Vector3 = lot.pos
+	if not land_ok(at, LotPlanner.FRONTAGE * 0.5):
+		return "the ground is too wet or steep to build on"
+	if Highways.distance(at.x + terrain_offset.x, at.z + terrain_offset.y) < HIGHWAY_LOT_CLEAR:
+		return "it's the state highway's right of way"
+	if _county_under(lot.corners, CountyGrid.HALF_WIDTH):
+		return "a county road runs through here (build a street on it, or bulldoze it)"
+	return ""
+
+
 ## Notes which lots changed (for lots_changed listeners), when only these did.
 func note_lots(keys: Array) -> void:
 	lots_delta = keys
@@ -3017,6 +3058,21 @@ func _parcel_lots() -> Dictionary:
 	for key in buildings:
 		if lots.has(key):
 			out[key] = lots[key]
+	return out
+
+
+## Built parcels plus the ground of public sites (services, parking lots and
+## parks) as fixed outlines: lots beside one stop at its edge, the way a lot
+## backing onto a city parking lot is just shorter, instead of being lost.
+## Keys have no ":" so they never pass for a lot.
+func _with_sites(frozen: Dictionary) -> Dictionary:
+	if services.buildings.is_empty() and parks.sites.is_empty():
+		return frozen
+	var out := frozen.duplicate()
+	for id in services.buildings:
+		out["svc-%d" % id] = {"corners": services.footprint(id)}
+	for id in parks.sites:
+		out["park-%d" % id] = {"corners": parks.footprint(id)}
 	return out
 
 
@@ -3067,7 +3123,7 @@ func _refresh() -> void:
 		if not lost.is_empty():
 			parcels_lost.emit(lost)
 		var blocked := {}
-		for lot in planner.plan(network, zones, frozen):
+		for lot in planner.plan(network, zones, _with_sites(frozen)):
 			# No lots under a service building.
 			var had: Array = _blocked_by.get(lot.key, [])
 			var no: bool = had[1] if not full and not had.is_empty() and is_same(had[0], lot) else _lot_blocked(lot)
