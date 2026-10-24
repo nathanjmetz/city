@@ -46,6 +46,35 @@ func _init() -> void:
 		"county roads are numbered on the county grid and signed the Grant County way (E 300 N)")
 	_check(StreetSignView.short("Walnut Street") == "Walnut St" and StreetSignView.short("3rd Avenue") == "3rd Ave",
 		"blades use the MUTCD abbreviations")
+	# Each name sign stands behind the curb on its corner, never out on the
+	# pavement where the curb return rounds the corner (Brawn saw a post in
+	# the intersection).
+	var signs := StreetSignView.new()
+	signs.sim = sim
+	var pavement := Junction.plan(sim.network)
+	var in_road := []
+	var posts := 0
+	for n in sim.network.nodes:
+		var spec := signs._corner(n)
+		if spec.is_empty():
+			continue
+		posts += 1
+		var at: Vector2 = spec.at
+		for id in sim.network.segments:
+			var pts := sim.network.sample_segment(id)
+			var hw := RoadStyle.half_width(int(sim.network.segments[id].type))
+			for k in pts.size() - 1:
+				var q := Geometry2D.get_closest_point_to_segment(at, Vector2(pts[k].x, pts[k].z), Vector2(pts[k + 1].x, pts[k + 1].z))
+				if at.distance_to(q) < hw + RoadStyle.CURB_WIDTH:
+					in_road.append("node %d at %s" % [n, at])
+					break
+		var near := Vector2(sim.network.nodes[n].x, sim.network.nodes[n].z)
+		if pavement.has(n) and Geometry2D.is_point_in_polygon(at - near, pavement[n].poly):
+			in_road.append("node %d at %s, on the corner's pavement" % [n, at])
+		if at.distance_to(near) > 20.0:
+			in_road.append("node %d: post %.0f m off" % [n, at.distance_to(near)])
+	signs.free()
+	_check(posts > 2 and in_road.is_empty(), "street name posts stand behind the curb at the corner (%d posts) %s" % [posts, in_road.slice(0, 3)])
 	_check(Streets._ordinal(1) == "1st" and Streets._ordinal(12) == "12th" and Streets._ordinal(23) == "23rd", "ordinals")
 
 	var fresh := CitySim.new()

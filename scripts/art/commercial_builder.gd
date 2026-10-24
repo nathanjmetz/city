@@ -127,6 +127,17 @@ func _retail(to_curb: float) -> void:
 	_sign(Vector3(0, 3.35, zf - 0.08), sw * rng.randf_range(0.55, 0.85), 0.9)
 	if rng.randf() < 0.5:
 		_awning(0.0, sw + 0.4, zf, 3.0, Color(_pick(AWNING)))
+	# Display windows down each side near the front, as a freestanding
+	# store has where a side faces a street or its own lot (a blank side
+	# reads as a warehouse).
+	for side in [-1.0, 1.0]:
+		for k in 2:
+			var z := zf + 1.4 + k * 2.2
+			if z > zf + d - 1.5:
+				break
+			_glass(Vector3(side * (w * 0.5 + 0.03), 1.8, z), Vector3(0, 0, -side), 1.7, 2.1, 0.1)
+			_box("paint", Vector3(0.12, 0.1, 1.86), Vector3(side * (w * 0.5 + 0.06), 2.9, z), mull)
+			_box("paint", Vector3(0.12, 0.5, 1.86), Vector3(side * (w * 0.5 + 0.06), 0.5, z), mull)
 	# Rooftop units.
 	for i in rng.randi_range(1, 3):
 		var p := Vector3(rng.randf_range(-w * 0.3, w * 0.3), h, cz + rng.randf_range(-d * 0.2, d * 0.3))

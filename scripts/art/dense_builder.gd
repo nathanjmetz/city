@@ -111,7 +111,7 @@ func _row(to_curb: float, width: float, units: int, storeys: int) -> void:
 			for s in [-1.0, 1.0]:
 				_window(Vector3(cx + s * uw * 0.22, base + f * floor_h + 1.45, zf), Vector3(-1, 0, 0),
 					0.95, 1.65, false, false, trim)
-		_back(cx - uw * 0.5, cx + uw * 0.5, zf + d, [base + 1.5], base)
+		_rear_wall(cx - uw * 0.5, cx + uw * 0.5, zf + d, base, floor_h, storeys, trim)
 		# Walk to the stoop, a strip of lawn edge and a shrub or two.
 		_flat_rect("drive", door_x - 0.6, door_x + 0.6, -0.3, zf - 1.8, 0.06)
 		if rng.randf() < 0.6:
@@ -177,7 +177,7 @@ func _apartments(to_curb: float, width: float, storeys: int) -> void:
 			# Stair-hall window over the door.
 			_glass(Vector3(0, y, zf - 0.02), Vector3(-1, 0, 0), 1.0, 1.6, 0.0)
 			_box("paint", Vector3(w, 0.18, 0.12), Vector3(0, 0.5 + f * floor_h - 0.1, zf - 0.06), trim)
-	_back(-w * 0.5, w * 0.5, zf + d, [2.0], 0.5)
+	_rear_wall(-w * 0.5, w * 0.5, zf + d, 0.5, floor_h, storeys, trim)
 	# Rooftop units, parking behind.
 	for i in rng.randi_range(1, 3):
 		_box("metal", Vector3(1.6, 1.0, 1.1), Vector3(rng.randf_range(-w * 0.35, w * 0.35), deck + 0.5, cz),
@@ -454,6 +454,33 @@ func _office_lot(to_curb: float, w: float, zf: float, zb: float, width: float) -
 
 
 # ---------------------------------------------------------------- parts
+
+## The back of a flat or apartment block (zb, facing +z): windows in even
+## bays on every floor, as real walk-ups and two-flats have (bedrooms and
+## kitchens look out back), and the stair hall's back door at the middle,
+## down concrete steps to the yard. The steps stand on a footing that runs
+## below grade, so on a lot that falls away behind they still reach the
+## ground instead of hanging in the air.
+func _rear_wall(x0: float, x1: float, zb: float, base: float, floor_h: float, storeys: int, trim: Color) -> void:
+	var n := maxi(2, int((x1 - x0) / 3.2))
+	var door_x := (x0 + x1) * 0.5
+	for f in storeys:
+		var y := base + f * floor_h + 1.5
+		for i in n:
+			var x := lerpf(x0, x1, (i + 0.5) / n)
+			if f == 0 and absf(x - door_x) < 1.4:
+				continue
+			_window(Vector3(x, y, zb), Vector3(1, 0, 0), 1.0, 1.5, false, false, trim)
+	_box("paint", Vector3(0.95, 2.1, 0.06), Vector3(door_x, base + 1.05, zb + 0.03), Color("#4d5254"))
+	_box("paint", Vector3(1.25, 0.14, 0.1), Vector3(door_x, base + 2.17, zb + 0.05), trim)
+	var footing := 1.6  # below grade: hidden on level ground, showing where the yard falls away
+	_box("concrete", Vector3(1.6, base + footing, 1.2), Vector3(door_x, (base - footing) * 0.5, zb + 0.6), FOUNDATION)
+	var steps := ceili(base / 0.19)
+	for k in range(1, steps):
+		var top := base - k * base / steps
+		_box("concrete", Vector3(1.2, top + footing, 0.28), Vector3(door_x, (top - footing) * 0.5, zb + 1.2 + (k - 0.5) * 0.28),
+			FOUNDATION.lightened(0.04))
+
 
 ## A flat-roofed block centred on x = cx (CommercialBuilder's is centred on 0).
 func _block(mat: String, cx: float, w: float, d: float, cz: float, deck: float, top: float, wall: Color) -> void:
