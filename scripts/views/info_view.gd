@@ -75,6 +75,42 @@ var show_plan := false:
 
 var _wash := MeshInstance3D.new()
 var _wash_mat := StandardMaterial3D.new()
+## Resource views: flat bands and the "pays from here" line drawn per pixel
+## from the filtered reading, like CS2's smooth resource maps.
+const BAND_SHADER := """
+shader_type spatial;
+render_mode unshaded, depth_draw_never, cull_disabled, fog_disabled;
+uniform sampler2D values : filter_linear, repeat_disable;
+uniform float line = 0.5;
+uniform vec4 poor : source_color;
+uniform vec4 b0 : source_color;
+uniform vec4 b1 : source_color;
+uniform vec4 b2 : source_color;
+uniform vec4 b3 : source_color;
+uniform vec4 b4 : source_color;
+uniform vec4 line_color : source_color;
+vec4 band(int i) {
+	return i <= 0 ? b0 : i == 1 ? b1 : i == 2 ? b2 : i == 3 ? b3 : b4;
+}
+void fragment() {
+	vec2 r = texture(values, UV).rg;
+	float t = (r.x - line) / max(1.0 - line, 0.01) * 5.0;
+	// Each step's edge blends over about a pixel around the nearest step,
+	// so it reads crisp but not jagged.
+	float k = clamp(round(t), 1.0, 4.0);
+	float aa = max(fwidth(t), 1e-4);
+	vec4 col = mix(band(int(k) - 1), band(int(k)), clamp((t - k) / aa + 0.5, 0.0, 1.0));
+	float d = r.x - line;
+	float w = max(fwidth(d), 1e-5);
+	col = mix(poor, col, clamp(d / w + 0.5, 0.0, 1.0));
+	// The line: about two pixels wide on the paying side of the threshold.
+	col = mix(col, line_color, 1.0 - smoothstep(1.0, 2.5, abs(d / w - 1.0)));
+	col.a *= 1.0 - smoothstep(0.4, 0.6, r.y);
+	ALBEDO = col.rgb;
+	ALPHA = col.a;
+}
+"""
+var _band_mat := ShaderMaterial.new()
 var _reserves := MeshInstance3D.new()
 var _plan := MeshInstance3D.new()
 var _center := Vector2(INF, INF)
@@ -98,6 +134,10 @@ func setup(s: CitySim, camera: CityCamera) -> void:
 	_wash_mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
 	_wash_mat.disable_fog = true
 	_wash.material_override = _wash_mat
+	var band_shader := Shader.new()
+	band_shader.code = BAND_SHADER
+	_band_mat.shader = band_shader
+	_band_mat.set_shader_parameter("line_color", LINE_COLOR)
 	var res_mat := StandardMaterial3D.new()
 	res_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	res_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -127,6 +167,7 @@ func set_mode(m: int) -> void:
 	# Resource washes show once painted, so a new view never flashes the
 	# last one's colours.
 	_wash.visible = mode == Mode.NETWORK
+	_wash.material_override = _wash_mat
 	_draw_pins()
 	_draw_reserves()
 	mode_changed.emit(mode)
@@ -180,31 +221,43 @@ func _paint() -> void:
 			return
 	j.vals = vals
 	if j.img == null:
-		j.img = Image.create(RES, RES, false, Image.FORMAT_RGBA8)
+		j.img = Image.create(RES, RES, false, Image.FORMAT_RGH)
 	var img: Image = j.img
 	while j.row < RES * 2:
 		var y: int = j.row - RES
 		for x in RES:
+			# The raw reading (half floats: 8 bits made the steps stair-step)
+			# goes to the GPU, which draws the bands and the
+			# line between texels (BAND_SHADER), so edges come out smooth
+			# instead of 21 m stair steps. Rivers (no soil) take their banks'
+			# reading and are cleared there, so no line runs along the water.
 			var v := vals[y * RES + x]
-			# The line runs along the paying side wherever a neighbour is poor
-			# (rivers have no soil, so only dry poor ground counts).
-			var edge := v >= line and (_poor(vals, x - 1, y, line) or _poor(vals, x + 1, y, line)
-				or _poor(vals, x, y - 1, line) or _poor(vals, x, y + 1, line))
-			img.set_pixel(x, y, LINE_COLOR if edge else band_color(j.mode, v, line))
+			var water := kind == Resources.Kind.FERTILITY and v <= 0.0
+			if water:
+				v = maxf(maxf(_at(vals, x - 1, y), _at(vals, x + 1, y)), maxf(_at(vals, x, y - 1), _at(vals, x, y + 1)))
+			img.set_pixel(x, y, Color(v, 1.0 if water else 0.0, 0.0))
 		j.row += 1
 		if Time.get_ticks_usec() - start > PAINT_BUDGET_USEC:
 			return
-	_wash_mat.albedo_texture = ImageTexture.create_from_image(img)
+	_band_mat.set_shader_parameter("values", ImageTexture.create_from_image(img))
+	_band_mat.set_shader_parameter("line", line)
+	var cols: Array = FERTILITY_BANDS if j.mode == Mode.FERTILITY else []
+	if cols.is_empty():
+		for b in BANDS:
+			cols.append(band_color(j.mode, line + (b + 0.5) / BANDS * (1.0 - line), line))
+	for b in BANDS:
+		_band_mat.set_shader_parameter("b%d" % b, cols[b])
+	_band_mat.set_shader_parameter("poor", band_color(j.mode, line - 0.01, line))
+	_wash.material_override = _band_mat
 	_wash.mesh = _land_sheet(j.center)
 	_wash.visible = true
 	_job = {}
 
 
-static func _poor(vals: PackedFloat32Array, x: int, y: int, line: float) -> bool:
+static func _at(vals: PackedFloat32Array, x: int, y: int) -> float:
 	if x < 0 or y < 0 or x >= RES or y >= RES:
-		return false
-	var w := vals[y * RES + x]
-	return w < line and w > 0.0
+		return 0.0
+	return vals[y * RES + x]
 
 
 ## Where ground starts to pay: the soil a new farm breaks even on today
