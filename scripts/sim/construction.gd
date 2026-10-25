@@ -34,9 +34,14 @@ const STAGES := ["clear", "foundation", "frame", "dry_in", "exterior", "interior
 ## "weeks" is each stage's real length, "trucks" what each stage brings.
 const PROFILES := {
 	# Platform-framed house: 2x4 studs at 16 in, trusses at 24 in, house wrap.
+	# The contractor's pickup (ladder rack on top) stays out front until the
+	# house is done and one concrete truck comes for the foundation; no semi
+	# (Brawn, 2026-10-24: "Bring one concrete truck and a contractor's truck
+	# with the ladder on the top").
 	"house": {"frame": "wood", "weeks": [1, 3, 4, 3, 4, 11, 2], "found": 0.45,
 		"words": ["Clearing the lot", "Pouring the foundation", "Framing", "Sheathing and roofing",
-			"Siding and trim", "Finishing inside", "Landscaping"]},
+			"Siding and trim", "Finishing inside", "Landscaping"],
+		"deliveries": {}, "brings": [["concrete_mixer", "ready-mix concrete", 1]]},
 	# Small-town retail: slab on grade, steel columns and bar joists, block walls.
 	"shop": {"frame": "steel", "weeks": [1, 3, 4, 3, 4, 8, 2], "found": 0.3,
 		"words": ["Clearing the site", "Pouring the slab", "Raising the steel", "Laying block and decking the roof",
@@ -102,7 +107,8 @@ const PROFILES := {
 			"interior": [["dump_truck", "hot-mix asphalt"]]}},
 }
 ## What each stage sends: [vehicle kind, cargo] (the crew's pickup comes for
-## the whole job). A kind the fleet doesn't have yet falls back to the next.
+## the whole job). A profile's "brings" instead come with the crew at the
+## start and stay through a later stage: [kind, cargo, stage index]. A kind the fleet doesn't have yet falls back to the next.
 ## The big loads only, so a street of new homes doesn't jam the town: the
 ## crew's pickup brings the rest.
 const DELIVERIES := {
@@ -282,33 +288,42 @@ func _tick(sim: CitySim) -> void:
 			if int(s.stage) < 0:
 				_fresh -= 1
 			s.stage = stage
-			_leave(sim, ref, "delivery")  # the last stage's trucks head off
+			_leave(sim, ref, "delivery", stage - 1)  # the last stage's trucks head off
 			if stage >= STAGES.size():
 				_leave_all(sim, ref)
 			elif sim.simulate_traffic:
 				if not _has_crew(ref):
 					_send(sim, ref, "work_pickup", "crew", "building crew", _crew_base(sim, s),
 						int(s.start) + duration(s.profile))
+				if stage == 0:
+					for b in PROFILES[s.profile].get("brings", []):
+						var at: int = b[2]
+						var half := (stage_start(s.profile, int(s.start), at) + stage_start(s.profile, int(s.start), at + 1)) / 2
+						_send(sim, ref, b[0], "delivery", b[1], sim.logistics._edge(sim, _pos(s)), half, at, true)
 				var mid := (stage_start(s.profile, int(s.start), stage) + stage_start(s.profile, int(s.start), stage + 1)) / 2
 				for d in PROFILES[s.profile].get("deliveries", DELIVERIES).get(STAGES[stage], []):
 					var cargo: String = d[1]
 					if STAGES[stage] == "frame" and d[0] == "flatbed":
 						cargo = FRAME_CARGO[PROFILES[s.profile].frame]
-					_send(sim, ref, d[0], "delivery", cargo, sim.logistics._edge(sim, _pos(s)), mid)
+					_send(sim, ref, d[0], "delivery", cargo, sim.logistics._edge(sim, _pos(s)), mid, stage)
 		elif s.parked.size() > 0 and st.get("t", 0.0) > 0.5:
-			_leave(sim, ref, "delivery")  # dropped off: back out halfway through
+			_leave(sim, ref, "delivery", stage, true)  # dropped off: back out halfway through
 		if stage >= STAGES.size():
 			_leave_all(sim, ref)
 			if s.parked.is_empty() and not _coming.has(ref):
 				sites.erase(ref)
 
 
-## How many trips a site sends on reaching `stage`: its parked trucks
-## leaving, a crew if it has none, and the stage's deliveries.
+## How much of a round's budget a site uses on reaching `stage`: its parked
+## trucks leaving, then two for each new trip (the route worked out for its
+## ETA, then the trip): a crew if it has none, the stage's deliveries, and
+## what it brings at the start.
 func _sends_for(s: Dictionary, stage: int) -> int:
 	var n: int = s.parked.size()
 	if stage < STAGES.size():
-		n += PROFILES[s.profile].get("deliveries", DELIVERIES).get(STAGES[stage], []).size() + 1
+		n += 2 * (PROFILES[s.profile].get("deliveries", DELIVERIES).get(STAGES[stage], []).size() + 1)
+	if stage == 0:
+		n += 2 * PROFILES[s.profile].get("brings", []).size()
 	return mini(n, MAX_SENDS)
 
 
@@ -334,8 +349,10 @@ func parked_poses() -> Array:
 
 
 ## Sends a crew or delivery from `base` if it can be there by tick `by` and
-## the town's streets aren't already busy with site trips.
-func _send(sim: CitySim, ref: String, kind: String, job: String, cargo: String, base: Dictionary, by: int) -> void:
+## the town's streets aren't already busy with site trips. A delivery stays
+## parked through stage `until`.
+func _send(sim: CitySim, ref: String, kind: String, job: String, cargo: String, base: Dictionary, by: int,
+		until := -1, brought := false) -> void:
 	if base.is_empty() or _heading_in >= MAX_ON_ROAD:
 		return
 	kind = _kind(kind)
@@ -359,7 +376,8 @@ func _send(sim: CitySim, ref: String, kind: String, job: String, cargo: String, 
 	_heading_in += 1
 	var id: int = sim.traffic.dispatch(base, to, "construction", {"good": cargo, "amount": 1}, kind)
 	if id != -1:
-		trips[id] = {"ref": ref, "kind": kind, "job": job, "cargo": cargo, "inbound": true}
+		trips[id] = {"ref": ref, "kind": kind, "job": job, "cargo": cargo, "inbound": true, "until": until,
+			"brought": brought}
 		_coming[ref] = true
 		if job == "crew":
 			_crew_coming[ref] = true
@@ -370,15 +388,19 @@ func _arrive(t: Dictionary) -> void:
 		return
 	var s: Dictionary = sites[t.ref]
 	if s.parked.size() < MAX_PARKED:
-		s.parked.append({"kind": t.kind, "job": t.job, "cargo": t.cargo})
+		s.parked.append({"kind": t.kind, "job": t.job, "cargo": t.cargo, "until": int(t.get("until", -1)),
+			"brought": bool(t.get("brought", false))})
 
 
-## Parked vehicles doing `job` drive away (to the highway, or the crew home).
-func _leave(sim: CitySim, ref: String, job: String) -> void:
+## Parked vehicles doing `job` drive away (to the highway, or the crew home),
+## all but those staying on past stage `upto`. `drop_offs` (halfway through a
+## stage): only the stage's own deliveries go, not what the crew brought,
+## which stays the whole stage (the concrete truck through the pour).
+func _leave(sim: CitySim, ref: String, job: String, upto := 1 << 30, drop_offs := false) -> void:
 	var s: Dictionary = sites[ref]
 	var keep := []
 	for p in s.parked:
-		if p.job != job:
+		if p.job != job or int(p.get("until", -1)) > upto or drop_offs and p.get("brought", false):
 			keep.append(p)
 			continue
 		if _budget <= 0 and sim.simulate_traffic:
