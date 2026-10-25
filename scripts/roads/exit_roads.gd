@@ -34,11 +34,11 @@ var _name := ""
 var _ends := []
 var _drawn := {}  # an end, as _open_ends gives it -> the node drawing it
 var _mats := {
-	"asphalt": Surfaces.asphalt(),
-	"shoulder": Surfaces.shoulder(),
-	"yellow": Surfaces.paint(RoadStyle.MARKING_YELLOW),
-	"white": Surfaces.paint(RoadStyle.MARKING_WHITE),
-	"concrete": Surfaces.concrete(Color(0.66, 0.65, 0.62)),
+	"asphalt": Surfaces.far_road("asphalt"),
+	"shoulder": Surfaces.far_road("shoulder"),
+	"yellow": Surfaces.far_road("paint", RoadStyle.MARKING_YELLOW),
+	"white": Surfaces.far_road("paint", RoadStyle.MARKING_WHITE),
+	"concrete": Surfaces.far_road("concrete", Color(0.66, 0.65, 0.62)),
 	"pole": RoadStyle.material(Color(0.33, 0.27, 0.21)),
 	"wire": RoadStyle.material(Color(0.12, 0.12, 0.12)),
 }
