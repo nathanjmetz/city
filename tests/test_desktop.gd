@@ -92,9 +92,40 @@ func _budgets() -> void:
 		_check(ok, "%s's detail budget is at least %s's" % [GraphicsQuality.NAMES[t + 1], GraphicsQuality.NAMES[t]])
 	var web := GraphicsQuality.budget_for(GraphicsQuality.HIGH, true)
 	_check(web.grow_ms <= GraphicsQuality.BROWSER_GROW_MS and not web.crops,
-		"the browser grows detail in 2 ms and has no field plants")
-	_check(GraphicsQuality.knob("far_from") == 1.0 and not GraphicsQuality.knob("crops"),
-		"headless views keep the untiered look")
+		"the browser grows detail in at most %.0f ms and has no field plants" % GraphicsQuality.BROWSER_GROW_MS)
+	_check(GraphicsQuality.knob("far_from") == 1.0 and not GraphicsQuality.knob("crops")
+		and GraphicsQuality.knob("cars_m") == TrafficView.FAR and GraphicsQuality.knob("people_m") == WalkerView.FAR
+		and GraphicsQuality.knob("cars") == GraphicsQuality.NO_CAP and GraphicsQuality.knob("grow_ms") == WildView.BUDGET_MS,
+		"headless views keep the untiered look, with no count caps")
+	# Never cap a full-strength desktop: High and up draw at least what the
+	# game drew before budgets.
+	for t in range(GraphicsQuality.HIGH, GraphicsQuality.CINEMATIC + 1):
+		var b := GraphicsQuality.budget_for(t)
+		_check(b.cars_m >= TrafficView.FAR and b.car_near_m >= TrafficView.NEAR and b.people_m >= WalkerView.FAR
+			and b.woods >= 1.0 and b.grow_ms >= WildView.BUDGET_MS and b.crops,
+			"%s draws cars, people and woods at least as far as before budgets" % GraphicsQuality.NAMES[t])
+	var low := GraphicsQuality.budget_for(GraphicsQuality.LOW)
+	_check(low.cars_m < TrafficView.FAR and low.people_m < WalkerView.FAR and low.woods < 1.0 and low.people < 1000,
+		"Low draws fewer cars, people and trees")
+	# The most-at-once: walkers spread over the ground, 2,000 inside 320 m.
+	var crowd := func(r: float) -> int: return roundi(2000.0 * r * r / (320.0 * 320.0))
+	var reach := 320.0
+	var drawn := 0
+	var most := 0
+	for i in 300:
+		drawn = crowd.call(reach)
+		if i > 10:
+			most = maxi(most, drawn)
+		reach = GraphicsQuality.fit_reach(reach, drawn, 400, 320.0)
+	_check(most <= 400 and drawn >= 250, "a crowded street draws the nearest 400 people, no more (%d, %.0f m)" % [drawn, reach])
+	reach = 320.0
+	for i in 50:
+		reach = GraphicsQuality.fit_reach(reach, crowd.call(reach), GraphicsQuality.NO_CAP, 320.0)
+	_check(reach == 320.0, "with no cap the reach stays full")
+	reach = 100.0
+	for i in 200:
+		reach = GraphicsQuality.fit_reach(reach, 50, 400, 320.0)
+	_check(reach == 320.0, "a quiet street grows the reach back to full")
 
 
 ## The governor, fed made-up 3-second windows: the town's thinking never
@@ -155,9 +186,144 @@ func _governor() -> void:
 	_check(b.scale < 1.0 and b.tier < GraphicsQuality.HIGH, "a slow browser takes fewer pixels, then a lower tier")
 	q.free()
 	b.free()
+	_first_pick()
+	_machines()
+	_no_flapping()
 	GraphicsQuality.budget = GraphicsQuality.INACTIVE.duplicate()
 	GraphicsQuality.detail = 1.0
 	GraphicsQuality.tree_shadows = true
+
+
+## A governor in Auto for a made-up computer, as _ready would set it up.
+func _auto(chip: String, memory_gb: float, on_browser := false) -> GraphicsQuality:
+	var q := GraphicsQuality.new()
+	q.active = true
+	q._lab = true
+	q.browser = on_browser
+	q.adapter = chip
+	q._memory_gb = memory_gb
+	q._guess = GraphicsQuality.browser_first(chip, false) if on_browser \
+		else GraphicsQuality.guess_tier(chip, RenderingDevice.DEVICE_TYPE_INTEGRATED_GPU if chip.begins_with("Apple") \
+			else RenderingDevice.DEVICE_TYPE_DISCRETE_GPU, 8, memory_gb)
+	q.mode = GraphicsQuality.AUTO
+	q._first_guess()
+	q.apply()
+	return q
+
+
+## Plays `minutes` of 3-second windows, each made by `look` from the
+## governor's tier and scale; returns every change as [minute, tier, scale].
+func _play(q: GraphicsQuality, minutes: float, look: Callable) -> Array:
+	var changes := []
+	var was := [q.tier, q.scale]
+	for i in int(minutes * 20.0):
+		q._judge(look.call(q.tier, q.scale), 3.0)
+		if [q.tier, q.scale] != was:
+			was = [q.tier, q.scale]
+			changes.append([snappedf(i * 3.0 / 60.0, 0.1), q.tier, snappedf(q.scale, 0.01)])
+	return changes
+
+
+## The first tier from the hardware: the browser by the chip its WebGL
+## names, the desktop by chip and memory (see the cases above).
+func _first_pick() -> void:
+	var cases := [
+		["ANGLE (Apple, ANGLE Metal Renderer: Apple M2 Max, Unspecified Version)", false, GraphicsQuality.MEDIUM,
+			"a Mac Studio's browser"],
+		["ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)", false, GraphicsQuality.LOW,
+			"an 8 GB Mac mini's browser"],
+		["ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 (0x00002786) Direct3D11 vs_5_0 ps_5_0, D3D11)", false,
+			GraphicsQuality.MEDIUM, "a gaming PC's browser"],
+		["ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)", false,
+			GraphicsQuality.LOW, "an office laptop's browser"],
+		["WebKit WebGL", false, GraphicsQuality.LOW, "a browser that hides the chip"],
+		["ANGLE (NVIDIA, NVIDIA GeForce RTX 4070)", true, GraphicsQuality.LOW, "a tablet"],
+	]
+	for c in cases:
+		var got := GraphicsQuality.browser_first(c[0], c[1])
+		_check(got == c[2], "%s starts on %s (got %s)" % [c[3], GraphicsQuality.NAMES[c[2]], GraphicsQuality.NAMES[got]])
+
+
+## Each kind of machine and its budget.
+func _machines() -> void:
+	var mini := _auto("Apple M2", 8.0)
+	var studio := _auto("Apple M2 Max", 64.0)
+	var pro := _auto("Apple M4 Pro", 24.0)
+	var pc := _auto("NVIDIA GeForce RTX 4070", 32.0)
+	var web := _auto("ANGLE (Apple, ANGLE Metal Renderer: Apple M2 Max)", 0.0, true)
+	_check(mini.machine() == "small" and mini.tier == GraphicsQuality.LOW and mini.auto_top() == GraphicsQuality.MEDIUM,
+		"the 8 GB Mac mini: small, starts on Low, climbs no higher than Medium")
+	_check(studio.machine() == "full" and studio.tier == GraphicsQuality.CINEMATIC
+		and studio.auto_top() == GraphicsQuality.CINEMATIC, "the Mac Studio: full strength, Cinematic")
+	_check(pro.machine() == "shared" and pro.auto_top() == GraphicsQuality.ULTRA, "a 24 GB Pro chip: shared, up to Ultra")
+	_check(pc.machine() == "full" and pc.auto_top() == GraphicsQuality.CINEMATIC, "a Windows gaming PC: full strength")
+	_check(web.machine() == "browser" and web.auto_top() == GraphicsQuality.HIGH and web.tier == GraphicsQuality.MEDIUM,
+		"a browser: up to High, a strong chip starting on Medium")
+	# Graphics memory: the mini holds where it is near its budget, and
+	# climbs once there's room; a full-strength desktop has no memory cap.
+	var roomy := func(_t: int, _s: float, mb: int) -> Dictionary:
+		return {"frame_ms": 9.0, "sim_ms": 1.0, "draw_ms": 8.0, "gpu_ms": 0.0, "cpu_ms": 4.0, "video_mb": mb}
+	_play(mini, 3.0, func(t, s): return roomy.call(t, s, 2400))
+	_check(mini.tier == GraphicsQuality.LOW, "the mini doesn't climb with its graphics memory near full")
+	_play(mini, 3.0, func(t, s): return roomy.call(t, s, 900))
+	_check(mini.tier == GraphicsQuality.MEDIUM, "with memory to spare it climbs to Medium, and stops there")
+	studio.tier = GraphicsQuality.HIGH
+	studio._settle = 0
+	_play(studio, 3.0, func(t, s): return roomy.call(t, s, 9000))
+	_check(studio.tier == GraphicsQuality.CINEMATIC, "the Mac Studio climbs to Cinematic whatever memory it uses")
+	for q in [mini, studio, pro, pc, web]:
+		q.free()
+
+
+## No flapping: a machine at the edge of a tier doesn't switch back and
+## forth. Before (2026-10-25) the wait for a tier that proved too slow was
+## forgiven while it was being waited out, so it came back every 10
+## minutes all session; and the sharpness could step down and back up
+## every half minute.
+func _no_flapping() -> void:
+	# A Mac Studio whose town is too heavy for Cinematic, light on Ultra.
+	var studio := _auto("Apple M2 Max", 64.0)
+	var heavy_top := func(t: int, _s: float) -> Dictionary:
+		if t == GraphicsQuality.CINEMATIC:
+			return {"frame_ms": 30.0, "sim_ms": 3.0, "draw_ms": 27.0, "gpu_ms": 0.0, "cpu_ms": 9.0}
+		return {"frame_ms": 9.0, "sim_ms": 1.0, "draw_ms": 8.0, "gpu_ms": 0.0, "cpu_ms": 4.0}
+	var changes := _play(studio, 60.0, heavy_top)
+	var tries := changes.filter(func(c): return c[1] == GraphicsQuality.CINEMATIC).map(func(c): return c[0])
+	var gaps_grow := true
+	for i in range(2, tries.size()):
+		gaps_grow = gaps_grow and tries[i] - tries[i - 1] > tries[i - 1] - tries[i - 2]
+	_check(tries.size() <= 3 and gaps_grow and studio.tier == GraphicsQuality.ULTRA,
+		"a tier that's too slow is tried again less and less often (an hour: Cinematic again at minutes %s)" % [tries])
+	# A browser right at the edge of full sharpness on Low.
+	var web := _auto("ANGLE (Intel, Intel(R) UHD Graphics 620)", 0.0, true)
+	var edge := func(t: int, s: float) -> Dictionary:
+		if t == GraphicsQuality.LOW and s < 0.99:
+			return {"frame_ms": 18.0, "sim_ms": 4.0, "draw_ms": 14.0, "gpu_ms": 0.0, "cpu_ms": 0.0}
+		return {"frame_ms": 40.0, "sim_ms": 4.0, "draw_ms": 36.0, "gpu_ms": 0.0, "cpu_ms": 0.0}
+	changes = _play(web, 10.0, edge)
+	_check(changes.size() <= 4 and web.tier == GraphicsQuality.LOW,
+		"a browser at the edge of full sharpness doesn't flip back and forth (10 minutes: %s)" % [changes])
+	# A computer whose frames wobble around Ultra's cost: 30 minutes of
+	# noisy windows (the same made-up noise every run).
+	var pc := _auto("NVIDIA GeForce RTX 4060", 16.0)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var wobble := func(t: int, _s: float) -> Dictionary:
+		var draw := (12.0 if t <= GraphicsQuality.ULTRA else 23.0) + rng.randf_range(-5.0, 5.0)
+		var sim := rng.randf_range(0.0, 8.0)
+		return {"frame_ms": draw + sim, "sim_ms": sim, "draw_ms": draw, "gpu_ms": 0.0, "cpu_ms": draw * 0.4}
+	changes = _play(pc, 30.0, wobble)
+	tries = changes.filter(func(c): return c[1] == GraphicsQuality.CINEMATIC).map(func(c): return c[0])
+	var gaps := []
+	for i in range(1, tries.size()):
+		gaps.append(tries[i] - tries[i - 1])
+	var spaced := gaps.all(func(g): return g >= GraphicsQuality.PATIENCE_MIN)
+	for i in range(1, gaps.size()):
+		spaced = spaced and gaps[i] > gaps[i - 1]
+	_check(changes.size() <= 6 and spaced,
+		"frames that wobble around a tier's cost: tries of the tier above at least 5 minutes apart, then further (30 minutes: %s)" % [changes])
+	for q in [studio, web, pc]:
+		q.free()
 
 
 ## Whether a hello with these version fields is let in (welcomed or asked to

@@ -14,10 +14,11 @@ extends Node
 ## guess only happens once per machine. The pause menu's Graphics page
 ## offers Auto (the default) and fixed tiers up to one above the guess.
 ##
-## Each tier is also a detail budget (BUDGETS): how far full detail reaches,
-## how many close-up buildings, grown trees, crop plants and full-detail
-## people near the camera, how far shadows go. Every view reads its share
-## with GraphicsQuality.knob("name"); see docs/graphics-tiers.md.
+## Each tier is also a detail budget (BUDGETS): how far the woods, cars and
+## walkers are drawn and how many at most, crop plants and their shadows,
+## close-up cars, how far shadows go. Every view reads its share
+## with GraphicsQuality.knob("name"); each kind of machine (MACHINES) has
+## its own frame and memory budget.
 ##
 ## Steady steps (2026-10-25). The governor judges only what a tier can
 ## change: the town's thinking (its sim steps) is taken out of the frame
@@ -94,50 +95,65 @@ const TIERS := [
 
 ## The detail budget of each tier, read by every view with knob(). One
 ## place for "how much may be drawn near the camera", so the views agree.
-## Distances are metres from the camera; counts are the most at once.
-##   near_m: full close-up detail (buildings grown brick by brick, porches,
-##     signs) shows inside this; near_buildings: at most this many of them.
-##   middle_m: the lighter middle version (real-size brick and siding in the
-##     shader, window and door pieces) reaches this far; plain boxes past it.
-##   grow_ms: ms of each frame spent growing close-up detail (trees,
-##     buildings) as the camera moves; the browser takes at most 2.
-##   grown_trees: individually grown trees near the camera.
-##   woods: share of the wild woods' full reach that is drawn.
+## Distances are metres from the camera; counts are the most drawn at once.
+##   grow_ms: ms of each frame WildView may spend laying out tree chunks.
+##   woods: share of the wild woods' full reach (and of their brush) drawn.
 ##   far_from: share of BuildingView's far-box swap distance.
 ##   crops / crop_m / crop_shadows: field plants on or off, how far round
 ##     the look spot, and whether corn casts shadows.
-##   car_detail: cars and trucks with full close-up detail.
-##   crowd_near / crowd_m: people drawn as full figures (faces, clothes,
-##     poses) and how far; past it the light crowd.
-##   video_mb: the graphics memory the tier should stay under.
+##   cars_m: how far cars and trucks are drawn; car_near_m: inside it the
+##     full model, past it the light one; car_detail: the close-up model
+##     inside TrafficView.ULTRA_NEAR.
+##   cars / people: the most cars or walkers drawn at once. Past that the
+##     view pulls its reach in until the count fits (fit_reach()), so the
+##     nearest stay drawn. people_m: how far walkers are drawn.
 ## Values a tier already sets in TIERS (detail, shadow_reach, tree_shadows)
 ## aren't repeated here: knob() reads them as detail, shadow_m and
-## tree_shadows.
+## tree_shadows. High is the look the game had before budgets, so a
+## full-strength desktop (High and up) is never drawn with less than that.
 const BUDGETS := [
-	{"near_m": 60.0, "near_buildings": 20, "middle_m": 200.0, "grow_ms": 1.5, "grown_trees": 150,
-		"woods": 0.6, "far_from": 0.6, "crops": false, "crop_m": 51.0, "crop_shadows": false,
-		"car_detail": false, "crowd_near": 300, "crowd_m": 60.0, "video_mb": 1000},
-	{"near_m": 75.0, "near_buildings": 35, "middle_m": 250.0, "grow_ms": 2.0, "grown_trees": 300,
-		"woods": 0.7, "far_from": 0.7, "crops": false, "crop_m": 51.0, "crop_shadows": false,
-		"car_detail": false, "crowd_near": 800, "crowd_m": 80.0, "video_mb": 1500},
-	{"near_m": 90.0, "near_buildings": 60, "middle_m": 300.0, "grow_ms": 3.0, "grown_trees": 600,
-		"woods": 1.0, "far_from": 1.2, "crops": true, "crop_m": 60.0, "crop_shadows": false,
-		"car_detail": false, "crowd_near": 2000, "crowd_m": 100.0, "video_mb": 2500},
-	{"near_m": 110.0, "near_buildings": 90, "middle_m": 400.0, "grow_ms": 3.0, "grown_trees": 1000,
-		"woods": 1.0, "far_from": 1.2, "crops": true, "crop_m": 77.0, "crop_shadows": false,
-		"car_detail": true, "crowd_near": 4000, "crowd_m": 130.0, "video_mb": 4000},
-	{"near_m": 130.0, "near_buildings": 140, "middle_m": 500.0, "grow_ms": 4.0, "grown_trees": 1600,
-		"woods": 1.0, "far_from": 1.2, "crops": true, "crop_m": 81.0, "crop_shadows": true,
-		"car_detail": true, "crowd_near": 8000, "crowd_m": 160.0, "video_mb": 6000},
+	{"grow_ms": 3.0, "woods": 0.6, "far_from": 0.6, "crops": false, "crop_m": 51.0, "crop_shadows": false,
+		"cars_m": 1400.0, "car_near_m": 160.0, "car_detail": false, "cars": 600,
+		"people_m": 180.0, "people": 400},
+	{"grow_ms": 3.0, "woods": 0.7, "far_from": 0.7, "crops": false, "crop_m": 51.0, "crop_shadows": false,
+		"cars_m": 1900.0, "car_near_m": 200.0, "car_detail": false, "cars": 1200,
+		"people_m": 250.0, "people": 1000},
+	{"grow_ms": 4.0, "woods": 1.0, "far_from": 1.2, "crops": true, "crop_m": 60.0, "crop_shadows": false,
+		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": false, "cars": 4000,
+		"people_m": 320.0, "people": 4000},
+	{"grow_ms": 4.0, "woods": 1.0, "far_from": 1.2, "crops": true, "crop_m": 77.0, "crop_shadows": false,
+		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "cars": 8000,
+		"people_m": 320.0, "people": 8000},
+	{"grow_ms": 4.0, "woods": 1.0, "far_from": 1.2, "crops": true, "crop_m": 81.0, "crop_shadows": true,
+		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "cars": 16000,
+		"people_m": 320.0, "people": 16000},
 ]
 ## Headless runs and tests (no Quality autoload, or not active): the views
 ## keep the look they had before tiers (detail 1.0), with no field plants,
-## close-up cars or corn shadows unless a test turns them on itself.
-const INACTIVE := {"detail": 1.0, "shadow_m": 2000.0, "tree_shadows": true, "woods": 1.0, "far_from": 1.0,
-	"crops": false, "crop_m": 51.0, "crop_shadows": false, "car_detail": false}
+## close-up cars or corn shadows unless a test turns them on itself, and
+## no count caps.
+const NO_CAP := 1 << 30
+const INACTIVE := {"detail": 1.0, "shadow_m": 2000.0, "tree_shadows": true, "grow_ms": 4.0, "woods": 1.0,
+	"far_from": 1.0, "crops": false, "crop_m": 51.0, "crop_shadows": false, "cars_m": 2600.0,
+	"car_near_m": 240.0, "car_detail": false, "cars": NO_CAP, "people_m": 320.0, "people": NO_CAP}
 ## The browser caps how long a frame may spend growing detail (its one
 ## thread also runs the town).
-const BROWSER_GROW_MS := 2.0
+const BROWSER_GROW_MS := 3.0
+
+## Each kind of machine's budget: the frame it aims for (slow_ms: drawing
+## slower than this counts against the tier; room_ms: the whole frame under
+## this is room to climb) and the graphics memory Auto won't climb past
+## (video_mb; 0 is no limit). The tiers it may use come from auto_top().
+## Brawn's machines: the browser; the 8 GB Mac mini ("small": an Apple chip
+## or built-in graphics with under 15 GB); a 16 to 30 GB Apple chip or
+## laptop ("shared"); the Mac Studio and Windows PCs with a graphics card
+## ("full": never held back).
+const MACHINES := {
+	"browser": {"slow_ms": 34.0, "room_ms": 20.0, "video_mb": 1500},
+	"small": {"slow_ms": 22.0, "room_ms": 18.0, "video_mb": 2500},
+	"shared": {"slow_ms": 22.0, "room_ms": 18.0, "video_mb": 6000},
+	"full": {"slow_ms": 22.0, "room_ms": 18.0, "video_mb": 0},
+}
 
 ## Frame times are judged over windows of this many seconds.
 const WINDOW := 3.0
@@ -145,26 +161,25 @@ const WINDOW := 3.0
 ## before judging: shaders compile and detail is rebuilt for the new tier,
 ## and those slow frames are the change settling, not the tier's cost.
 const SETTLE_WINDOWS := 2
-## Drawing slower than this on average (about 45 fps with the town's
-## thinking taken out) counts against the tier; twice it steps down at once.
-const SLOW_MS := 22.0
-## Room to spare: the whole frame keeps up with a 60 Hz screen and the
-## graphics chip and the drawing's own CPU work each take under half a
-## frame. A tier step costs well under the gap up to SLOW_MS, so a climb
-## doesn't land straight on "too slow".
-const ROOM_FRAME_MS := 18.0
+## The machine's slow_ms (MACHINES: about 45 fps on the desktop with the
+## town's thinking taken out, 30 fps in the browser) counts against the
+## tier; twice it steps down at once. Room to spare: the whole frame under
+## room_ms (it keeps up with a 60 Hz screen) and, on the desktop, the
+## graphics chip and the drawing's own CPU work each under ROOM_PART_MS.
+## A tier step costs well under the gap up to slow_ms, so a climb doesn't
+## land straight on "too slow".
 const ROOM_PART_MS := 8.0
 ## Windows in a row needed to step down (slow) or up (room).
 const SLOW_WINDOWS := 2
 const ROOM_WINDOWS := 4
 const MIN_SCALE := 0.7
+## Each step of sharpness (render scale) down or up.
+const SCALE_STEP := 0.15
 ## The browser (Compatibility renderer) climbs as far as High: its longer
 ## detail, trees and shadows draw there; SSAO and the rest are desktop only.
 ## It judges against 30 fps (its budget, PerfBudget.RENDER) and can't time
 ## the graphics chip, so whole-frame times decide there.
 const BROWSER_TOP := HIGH
-const BROWSER_SLOW_MS := 34.0
-const ROOM_BROWSER_MS := 20.0
 ## A single frame longer than this is a stall (a town loading, a shader
 ## compiling), not drawing load: it's left out rather than lowering the look.
 const STALL_MS := 250.0
@@ -220,9 +235,23 @@ var _room := 0
 var _ceiling := CINEMATIC
 var _waited := 0.0
 ## How many times a tier proved too slow here (sets patience()); one is
-## forgiven for every HOLD_MIN minutes the look holds without a step down.
+## forgiven for every HOLD_MIN minutes the look holds with nothing held
+## back (no ceiling below auto_top()) and no step down. Waiting out a
+## ceiling doesn't count: before (2026-10-25) it did, so the wait never
+## grew past 10 minutes and a tier that was too slow came back every 10
+## minutes all session, a stutter each time.
 var _fails := 0
 var _held := 0.0
+## The sharpest render scale Auto may use for now, the same way: a scale
+## that proved too slow is the cap until patience() has gone by (else the
+## scale could step down and back up for ever on a machine right at the
+## edge). A lower tier draws less, so a tier step down lifts the cap.
+var _scale_top := 1.0
+var _scale_waited := 0.0
+var _scale_fails := 0
+## The graphics memory in use (MB), read each window: Auto doesn't climb
+## past the machine's video_mb.
+var _video_mb := 0.0
 ## The hardware guess (guess_tier) for this computer.
 var _guess := HIGH
 var _memory_gb := 0.0
@@ -254,7 +283,8 @@ func _ready() -> void:
 		adapter = stand_in[0]
 		cores = int(stand_in[1])
 		_memory_gb = float(stand_in[2])
-	_guess = MEDIUM if browser else guess_tier(adapter, RenderingServer.get_video_adapter_type(), cores, _memory_gb)
+	_guess = browser_first(adapter, is_handheld()) if browser \
+		else guess_tier(adapter, RenderingServer.get_video_adapter_type(), cores, _memory_gb)
 	_ceiling = auto_top()
 	var saved := {} if _lab else _read()
 	mode = clampi(int(saved.get("mode", AUTO)), AUTO, auto_top())
@@ -326,15 +356,30 @@ func _first_guess() -> void:
 	_ceiling = auto_top()
 	_fails = 0
 	_waited = 0.0
-	if browser:
-		# Every browser starts on Low (a fresh town's woods alone are
-		# millions of triangles on Medium's old look) and climbs when there's
-		# room; phones also start with fewer pixels.
-		tier = LOW
-		scale = 0.75 if is_handheld() else 1.0
-	else:
-		tier = _guess
-		scale = 1.0
+	_scale_top = 1.0
+	_scale_waited = 0.0
+	tier = _guess
+	# Phones and tablets also start with fewer pixels.
+	scale = 0.75 if browser and is_handheld() else 1.0
+
+
+## The browser's first tier, from the graphics chip its WebGL names (for
+## example "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 ...)" or "ANGLE (Apple,
+## ANGLE Metal Renderer: Apple M2 Max ...)"). Most start on Low (a fresh
+## town's woods alone were millions of triangles on Medium's old look) and
+## climb when there's room; a strong desktop chip starts on Medium. A phone
+## or tablet, or a chip the browser hides, starts on Low. The browser can't
+## tell the computer's memory, so the chip alone decides.
+static func browser_first(name: String, handheld: bool) -> int:
+	if handheld:
+		return LOW
+	var n := name.to_lower()
+	var at := n.find("apple m")
+	if at >= 0:
+		n = n.substr(at)
+		# A Max or Ultra chip, or a Pro: the Mac Studio, the big MacBook Pro.
+		return MEDIUM if "max" in n or "ultra" in n or "pro" in n else LOW
+	return MEDIUM if pc_gpu_tier(n) >= ULTRA else LOW
 
 
 ## A first guess from the hardware alone; in Auto the governor corrects it
@@ -448,6 +493,32 @@ func settings() -> Dictionary:
 ## view. Headless runs and tests get INACTIVE's values.
 static func knob(key: String, fallback: Variant = null) -> Variant:
 	return budget.get(key, fallback)
+
+
+## A count budget (cars, people) kept without sorting by distance: a view
+## draws what's inside `reach`, then calls this with how many it drew.
+## Over the cap, the reach shrinks to about where the cap's worth would
+## have been (things spread over the ground, so the count goes with the
+## square of the reach); under it, the reach grows back slowly towards
+## `full`. The nearest stay drawn and the count settles under the cap.
+static func fit_reach(reach: float, drawn: int, cap: int, full: float) -> float:
+	if drawn > cap and drawn > 0:
+		return maxf(reach * sqrt(float(cap) / drawn) * 0.95, full * 0.1)
+	if drawn < cap * 0.8:
+		return minf(full, reach * 1.02 + 1.0)
+	return minf(full, reach)
+
+
+## This kind of machine (a key of MACHINES).
+func machine() -> String:
+	if browser:
+		return "browser"
+	if _shares_memory():
+		if _memory_gb < 15.0:
+			return "small"
+		if _memory_gb < SHARED_GB[CINEMATIC]:
+			return "shared"
+	return "full"
 
 
 ## The whole detail budget of tier t, as knob() reads it, on this kind of
@@ -587,6 +658,7 @@ func _process(delta: float) -> void:
 	var w := {"frame_ms": snappedf(_time * 1000.0 / _frames, 0.1), "sim_ms": snappedf(_sim / _frames, 0.1),
 		"gpu_ms": snappedf(_gpu / _frames, 0.1), "cpu_ms": snappedf(_cpu / _frames, 0.1)}
 	w["draw_ms"] = snappedf(maxf(w.frame_ms - w.sim_ms, 0.0), 0.1)
+	w["video_mb"] = roundi(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0)
 	var played := _time
 	_reset()
 	_judge(w, played)
@@ -594,20 +666,31 @@ func _process(delta: float) -> void:
 
 
 ## One window's verdict. draw_ms is the frame with the town's thinking
-## taken out: what a tier can change.
+## taken out: what a tier can change. Judged against this kind of
+## machine's budget (MACHINES).
 func _judge(w: Dictionary, played: float) -> void:
 	if _ceiling < auto_top():
 		_waited += played
-	_held += played
+	else:
+		_held += played
+	if _scale_top < 0.99:
+		_scale_waited += played
 	if _fails > 0 and _held >= HOLD_MIN * 60.0:
 		_fails -= 1
 		_held = 0.0
 	if _settle > 0:
 		_settle -= 1
 		return
-	var slow_ms := BROWSER_SLOW_MS if browser else SLOW_MS
-	var room: bool = w.frame_ms < ROOM_BROWSER_MS if browser \
-		else (w.frame_ms < ROOM_FRAME_MS and w.gpu_ms < ROOM_PART_MS and w.cpu_ms < ROOM_PART_MS)
+	var m: Dictionary = MACHINES[machine()]
+	var slow_ms: float = m.slow_ms
+	var room: bool = w.frame_ms < m.room_ms \
+		and (browser or (w.gpu_ms < ROOM_PART_MS and w.cpu_ms < ROOM_PART_MS))
+	# Graphics memory near the machine's budget: hold rather than climb.
+	# It doesn't step down for memory: today most of it is the town's
+	# buildings, which no tier changes, so a step down wouldn't free it.
+	_video_mb = float(w.get("video_mb", 0.0))
+	if m.video_mb > 0 and _video_mb > m.video_mb * 0.85:
+		room = false
 	if w.draw_ms > slow_ms:
 		_room = 0
 		_slow += 1
@@ -649,18 +732,30 @@ func patience() -> float:
 	return minf(PATIENCE_MIN * pow(2.0, maxi(_fails - 1, 0)), PATIENCE_MAX)
 
 
+## Minutes before a sharpness that proved too slow is tried again: the
+## same doubling, counted on its own (a scale step isn't a tier failing).
+func scale_patience() -> float:
+	return minf(PATIENCE_MIN * pow(2.0, maxi(_scale_fails - 1, 0)), PATIENCE_MAX)
+
+
 ## The graphics chip is the bottleneck: fewer pixels first. Otherwise (or
 ## once pixels are as low as they go) a lower tier draws less, and the tier
 ## it left is out of reach until patience() has gone by.
 func _step_down(gpu_bound: bool, w: Dictionary) -> void:
 	if (gpu_bound or browser) and scale > min_scale() + 0.01:
-		scale = maxf(min_scale(), scale - 0.15)
+		scale = maxf(min_scale(), scale - SCALE_STEP)
+		_scale_top = scale
+		_scale_waited = 0.0
+		_scale_fails += 1
 	elif tier > LOW:
 		_fails += 1
 		_waited = 0.0
 		_held = 0.0
 		_ceiling = tier - 1
 		tier -= 1
+		# The lower tier draws less: its sharpness may climb back to full.
+		_scale_top = 1.0
+		_scale_waited = 0.0
 	else:
 		return
 	last_window = w
@@ -668,8 +763,15 @@ func _step_down(gpu_bound: bool, w: Dictionary) -> void:
 
 
 func _step_up(w: Dictionary) -> void:
-	if scale < 0.99:
-		scale = minf(1.0, scale + 0.15)
+	if scale < _scale_top - 0.01:
+		scale = minf(_scale_top, scale + SCALE_STEP)
+	elif scale < 0.99 and _scale_waited >= scale_patience() * 60.0:
+		# Long enough just below: try the sharpness that was too slow again.
+		scale = minf(1.0, scale + SCALE_STEP)
+		_scale_top = scale
+		_scale_waited = 0.0
+	elif scale < 0.99:
+		return  # sharper first, once the wait is over; the tier waits too
 	elif tier < _ceiling:
 		tier += 1
 	elif _ceiling < auto_top() and _waited >= patience() * 60.0:

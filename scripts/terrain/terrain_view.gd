@@ -64,7 +64,7 @@ const PRELOAD_BIG_GB := 30.0
 ## A guard on how many chunks are kept (the county is 72 x 72 chunks).
 const CACHE_MAX := 16384
 ## Milliseconds of a settled frame spent preloading: small, so the quality
-## governor never mistakes it for a slow machine (SLOW_MS).
+## governor never mistakes it for a slow machine (MACHINES slow_ms).
 const PRELOAD_MS := 3
 ## How far the camera moves (metres, height counted) before the chunks'
 ## detail levels are worked out again; far smaller than any level's reach.

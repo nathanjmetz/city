@@ -115,7 +115,7 @@ static func enabled() -> bool:
 	if OS.has_feature("web"):
 		return false
 	var q := GraphicsQuality.current
-	return q != null and q.active and GraphicsQuality.knob("crops", false)
+	return q != null and q.active and bool(GraphicsQuality.knob("crops", false))
 
 
 func _process(_delta: float) -> void:
@@ -141,14 +141,14 @@ func _process(_delta: float) -> void:
 		if not _tiles.is_empty() and height > OFF_ABOVE * 1.5:
 			_clear()
 		return
-	_radius = GraphicsQuality.knob("crop_m", RADIUS)
+	_radius = float(GraphicsQuality.knob("crop_m", RADIUS))
 	var focus := _look_spot(cam, height)
 	var mat := material()
 	var gone := smoothstep(FADE_FROM, OFF_ABOVE, height)
 	mat.set_shader_parameter("fade", Vector4(focus.x, focus.y, _radius, gone))
 	_tell_ground(Vector4(focus.x, focus.y, _radius, 1.0 - gone))
 	var q := GraphicsQuality.current
-	var shadows := q != null and GraphicsQuality.knob("crop_shadows", false)
+	var shadows: bool = q != null and bool(GraphicsQuality.knob("crop_shadows", false))
 	# A field planted, harvested or tilled since the tiles were built.
 	if CropCalendar.version != _version:
 		_version = CropCalendar.version
