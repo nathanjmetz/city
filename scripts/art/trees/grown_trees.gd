@@ -80,6 +80,8 @@ var _threads := false
 var _max_tasks := 1
 var _grow_tasks := {}  # grower key -> task id
 var _mesh_tasks := {}  # mesh key -> {id, parts when done}
+var _specks := []
+var _speck_frames := 0
 
 
 func _ready() -> void:
@@ -97,8 +99,8 @@ func _ready() -> void:
 
 ## The bark and leaf shaders are made ready now, behind the loading screen,
 ## rather than the first time a grown tree comes into view (a stall of a
-## few hundred milliseconds on the desktop): a speck of each, drawn the way
-## the grown trees are, kept for a few frames.
+## few hundred milliseconds): a speck of each, drawn the way the grown
+## trees are, just in front of the camera for the first few frames.
 func _warm_shaders() -> void:
 	if DisplayServer.get_name() == "headless":
 		return
@@ -122,8 +124,24 @@ func _warm_shaders() -> void:
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-		add_child(mmi)
-		get_tree().create_timer(1.0).timeout.connect(mmi.queue_free)
+		# Not under this node, which hides while no grown trees are drawn.
+		get_tree().root.add_child.call_deferred(mmi)
+		_specks.append(mmi)
+
+
+## Keeps the specks in front of the camera (too small to see) until they
+## have been drawn for a second or so, then lets them go.
+func _place_specks(cam: Camera3D) -> void:
+	_speck_frames += 1
+	for s in _specks:
+		if _speck_frames > 60:
+			s.queue_free()
+		elif cam and s.is_inside_tree():
+			# Just past the near plane, and a tenth of a pixel across.
+			var d := cam.near * 1.5 + 0.1
+			s.global_transform = Transform3D(cam.global_basis.scaled(Vector3.ONE * d * 0.02), cam.global_position - cam.global_basis.z * d)
+	if _speck_frames > 60:
+		_specks.clear()
 
 
 func _exit_tree() -> void:
@@ -140,6 +158,8 @@ func _process(_delta: float) -> void:
 	var t := Perf.now()
 	_frame += 1
 	var cam := get_viewport().get_camera_3d()
+	if not _specks.is_empty():
+		_place_specks(cam)
 	var r := TreeLook.radii()
 	# Nothing to see without a screen (servers, tests).
 	if DisplayServer.get_name() == "headless":
@@ -154,10 +174,8 @@ func _process(_delta: float) -> void:
 	var cp := cam.global_position
 	if not _scanning and (cp.distance_to(_centre) > RESCAN or TreeField.version != _version or r != _scan_r):
 		_start_scan(cp, r)
-	var t_a := Perf.now()
 	if _scanning:
 		_scan_some(SCAN_MS)
-	var t_b := Perf.now()
 	# While the looked-up trees lag behind the camera the bands shrink, so
 	# the cards keep drawing anything not looked up yet.
 	var lag := cp.distance_to(_centre)
@@ -166,12 +184,7 @@ func _process(_delta: float) -> void:
 	else:
 		var near_r := clampf(_scan_r.x, maxf(_scan_r.x - MARGIN + lag, 0.0), _scan_r.x + MARGIN - lag) if _scan_r.x > 0.0 else 0.0
 		TreeLook.set_zone(cp, near_r, minf(_scan_r.y, _scan_r.y + MARGIN - lag), true)
-	var t_c := Perf.now()
-	var jb := _job
 	_build_some(BUILD_MS)
-	var t_d := Perf.now()
-	if t_d - t > 2500:
-		print("DBG grown %.2f: pre %.2f scan %.2f zone %.2f build %.2f job %d cut %s mesher %s part %s" % [(t_d - t) / 1000.0, (t_a - t) / 1000.0, (t_b - t_a) / 1000.0, (t_c - t_b) / 1000.0, (t_d - t_c) / 1000.0, jb, _cut != null, _mesher != null, _part_mesh != null])
 	Perf.add("frame.trees.grown", t)
 	Perf.counts["trees.grown"] = _shown
 	last_ms = (Perf.now() - t) / 1000.0
@@ -221,10 +234,7 @@ func _scan_some(ms: float) -> void:
 			_scan_chunk = job[1]
 			_scan_world = _scan_field.global_transform
 			_scan_plain = _scan_world.is_equal_approx(Transform3D.IDENTITY)
-			var tq := Perf.now()
 			_scan_n = _scan_field.chunk_trees(_scan_chunk).size()
-			if Perf.now() - tq > 500:
-				print("DBG chunk_trees %d us for %d" % [Perf.now() - tq, _scan_n])
 			_scan_i = 0
 		else:
 			var end := mini(_scan_i + SCAN_BATCH, _scan_n)
@@ -252,10 +262,7 @@ func _scan_some(ms: float) -> void:
 			_group(group)
 			if Perf.now() - start > budget:
 				return
-	var tf := Perf.now()
 	_finish_scan()
-	if Perf.now() - tf > 500:
-		print("DBG finish %d us, %d groups" % [Perf.now() - tf, _groups.size()])
 
 
 ## Files one tree into its group: its grown mesh if made, else (asking for
