@@ -3606,22 +3606,26 @@ func _sidewalks(la: Dictionary, lb: Dictionary) -> PackedVector3Array:
 	var goal_f := _frac(lb)
 	var dist := {}
 	var prev := {}
-	var open := []
+	var starts := []
 	for end in [0, 1]:
 		var st := Vector3i(_seg_node(la.seg, end), la.seg, la.side)
 		var f := _walk_end(la.seg, end)
 		dist[st] = absf(f - start_f) * _seg_len(la.seg)
 		prev[st] = null
-		open.append(st)
+		starts.append(st)
+	# The nearest open corner next, ties to the lowest (x, y, z): a heap of
+	# [distance when filed, corner]. A corner filed again nearer comes out
+	# first; its older, farther filings come out later and are passed over.
+	var hd := PackedFloat64Array()
+	var hn := []
+	for st in starts:
+		_wpush(hd, hn, dist[st], st)
 	var seen := {}
 	var best := People.WALK_MAX * 2.0
 	var best_end = null
-	while not open.is_empty():
-		var u: Vector3i = open[0]
-		for m in open:
-			if dist[m] < dist[u] or (dist[m] == dist[u] and (m.x < u.x or m.x == u.x and (m.y < u.y or m.y == u.y and m.z < u.z))):
-				u = m
-		open.erase(u)
+	while not hd.is_empty():
+		var u: Vector3i = hn[0]
+		_wpop(hd, hn)
 		if seen.has(u):
 			continue
 		seen[u] = true
@@ -3640,7 +3644,7 @@ func _sidewalks(la: Dictionary, lb: Dictionary) -> PackedVector3Array:
 			if nd < dist.get(v, INF):
 				dist[v] = nd
 				prev[v] = [u, step[2]]
-				open.append(v)
+				_wpush(hd, hn, nd, v)
 	if best_end == null:
 		return out
 	var chain := []
@@ -3670,6 +3674,51 @@ func _sidewalks(la: Dictionary, lb: Dictionary) -> PackedVector3Array:
 	var last: Vector3i = best_end
 	_append_span(out, _walk_line(lb.seg, lb.side), _walk_end(last.y, 0 if last.x == _seg_node(last.y, 0) else 1), goal_f)
 	return out
+
+
+## (_sidewalks' heap) True when [d, a] comes out before [e, b].
+static func _wless(d: float, a: Vector3i, e: float, b: Vector3i) -> bool:
+	return d < e or (d == e and (a.x < b.x or a.x == b.x and (a.y < b.y or a.y == b.y and a.z < b.z)))
+
+
+static func _wpush(hd: PackedFloat64Array, hn: Array, d: float, n: Vector3i) -> void:
+	hd.append(d)
+	hn.append(n)
+	var i := hd.size() - 1
+	while i > 0:
+		var p := (i - 1) >> 1
+		if not _wless(d, n, hd[p], hn[p]):
+			break
+		hd[i] = hd[p]
+		hn[i] = hn[p]
+		i = p
+	hd[i] = d
+	hn[i] = n
+
+
+static func _wpop(hd: PackedFloat64Array, hn: Array) -> void:
+	var last := hd.size() - 1
+	var d: float = hd[last]
+	var n: Vector3i = hn[last]
+	hd.resize(last)
+	hn.resize(last)
+	if last == 0:
+		return
+	var i := 0
+	while true:
+		var l := i * 2 + 1
+		if l >= last:
+			break
+		var m := l
+		if l + 1 < last and _wless(hd[l + 1], hn[l + 1], hd[l], hn[l]):
+			m = l + 1
+		if not _wless(hd[m], hn[m], d, n):
+			break
+		hd[i] = hd[m]
+		hn[i] = hn[m]
+		i = m
+	hd[i] = d
+	hn[i] = n
 
 
 ## A segment's node at one end (0: a, 1: b).
