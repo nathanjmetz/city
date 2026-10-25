@@ -18,6 +18,7 @@ func _run() -> void:
 	_test_trade()
 	_test_elbow_room()
 	_test_city_lines()
+	_test_handed_roads()
 	_test_ledger()
 	_test_land_and_neighborhoods()
 
@@ -153,6 +154,21 @@ func _run() -> void:
 	_check(bob.my_sim().trade.got("power") == 30.0 and bob.my_sim().economy.money < bob_money, "Bob buys Ann's power and pays on his computer")
 	await _until(func(): return sim.trade.sold("power") > 0.0)
 	_check(sim.trade.sold("power") == 50.0, "Ann is paid on hers")
+
+	# A message far bigger than the connection's buffer (a region of big
+	# towns) goes in parts and arrives whole.
+	var big_text := "x".repeat(RegionServer.BUFFER_BYTES + 3_000_000)
+	var big_heard := []
+	bob.chat_received.connect(func(l): if str(l.text).length() > 1000: big_heard.append(l))
+	var bob_peer := -1
+	for peer in server._players:
+		if server._players[peer].city == bob.my_city:
+			bob_peer = peer
+	server._send(bob_peer, {"t": "chat", "line": {"from": "", "text": big_text, "at": 0}})
+	_check(server._link.waiting_bytes(bob_peer) > 0, "a message bigger than the buffer waits its turn instead of failing")
+	await _until(func(): return not big_heard.is_empty(), 30.0)
+	_check(not big_heard.is_empty() and str(big_heard[0].text) == big_text,
+		"and arrives whole, %d MB in parts" % (big_text.length() / 1_000_000))
 
 	# Chat reaches everyone, with the sender's name.
 	var heard := []
@@ -441,6 +457,88 @@ func _test_city_lines() -> void:
 	for p in cut[0]:
 		max_y = maxf(max_y, p.y)
 	_check(max_y < 400.0, "the line stops where a third town is nearer (reaches y=%d)" % max_y)
+	# A town right in the way: no start where the two come nearest, so it's
+	# found from where the third town's own lines stopped.
+	# Two towns with a third just off the line between them: nearer the
+	# middle than either, so it blocks there, but further up the two are
+	# neighbors again.
+	var left := PackedVector2Array()
+	var right := PackedVector2Array()
+	var mid := PackedVector2Array()
+	for x in range(-60, 61, 20):
+		for y in range(-60, 61, 20):
+			left.append(Vector2(x - 1000, y))
+			right.append(Vector2(x + 1000, y))
+			mid.append(Vector2(x, y - 600))
+	var sl := CityLines.PointSet.new(left)
+	var sr := CityLines.PointSet.new(right)
+	var sm := CityLines.PointSet.new(mid)
+	var t := CityLines.Tracer.new(sl, sr, [sm])
+	while not t.step():
+		pass
+	_check(t.blocked and t.lines.is_empty(), "a town in the way blocks the start where two towns come nearest")
+	var stops := []
+	for pair in [[sl, sm, sr], [sr, sm, sl]]:
+		var u := CityLines.Tracer.new(pair[0], pair[1], [pair[2]])
+		while not u.step():
+			pass
+		for st in u.stops:
+			if st[0] == pair[2]:
+				stops.append(st[1])
+	var seeded := CityLines.Tracer.new(sl, sr, [sm], stops)
+	while not seeded.step():
+		pass
+	_check(not stops.is_empty() and seeded.lines.size() == 1, "and the line round it starts where three towns meet (%d spots)" % stops.size())
+	# Towns joined by county road: the road out of town doesn't count, so
+	# the line runs between the towns, not where their roads meet.
+	var r := Region.new()
+	r.add_city("p1", "Ann")
+	r.add_city("p2", "Bob")
+	for id in ["c1", "c2"]:
+		for cmd in _starter_town(r.cities[id].sim):
+			r.cities[id].sim.apply_now(cmd)
+		for i in 1500:
+			r.cities[id].sim.tick()
+	var joined := CityLines.trace(CityLines.PointSet.new(CityLines.city_points(r.cities.c1)),
+		CityLines.PointSet.new(CityLines.city_points(r.cities.c2)), [])
+	var gap: float = r.cities.c1.origin.distance_to(r.cities.c2.origin)
+	var mid_ok := false
+	if joined.size() == 1:
+		var centre: Vector2 = joined[0][joined[0].size() / 2]
+		mid_ok = absf(centre.distance_to(r.cities.c1.origin) - centre.distance_to(r.cities.c2.origin)) < gap * 0.25
+	_check(r.cities.c1.sim.buildings.size() > 0 and joined.size() == 1 and mid_ok,
+		"towns joined by county road get a city line between them (%d)" % joined.size())
+
+
+## A new town's road into a neighbor's town is handed over, not built on the
+## server, and everyone who unpacks that neighbor builds it.
+func _test_handed_roads() -> void:
+	var r := Region.new()
+	r.add_city("p1", "Ann")
+	var ann: CitySim = r.cities.c1.sim
+	for cmd in _starter_town(ann):
+		ann.apply_now(cmd)
+	for i in 500:
+		ann.tick()
+	# Ann's newest copy waits as data, as on the server.
+	r.update_city("c1", JSON.parse_string(JSON.stringify(ann.to_dict(), "", false, true)))
+	var segs := ann.network.segments.size()
+	r.add_city("p2", "Bob", true)
+	_check(r.stale_ids().has("c1") and r.pending.has("c1") and r.cities.c1.sim.network.segments.size() == segs,
+		"a new neighbor's road into a waiting town is handed over, the town not unpacked")
+	_check(r.handed.has("c1") and r.joins.size() == 1, "and it's still sent to her computer and joined")
+	var copy := Region.new()
+	copy.from_dict(RegionServer.unpack(RegionServer.pack(r.to_dict())))
+	copy.load_stale()
+	var at: Array = copy.joins[0].b_at if copy.joins[0].b == "c1" else copy.joins[0].a_at
+	_check(copy._node_at("c1", at) != -1 and copy.cities.c1.sim.network.segments.size() > segs,
+		"whoever unpacks her town builds the road (%d roads, was %d)" % [copy.cities.c1.sim.network.segments.size(), segs])
+	# Her own computer builds it; once her copy has it, it isn't handed again.
+	for cmd in r.handed.c1:
+		ann.apply_now(cmd)
+	r.update_city("c1", JSON.parse_string(JSON.stringify(ann.to_dict(), "", false, true)))
+	_check(not r.pending.has("c1"), "her copy with the road ends the hand-over")
+	_check(r.money_of("c1") == ann.economy.money, "a waiting town's money comes from its copy")
 
 
 ## Power, water and zones along a city's starter road (its county road out
