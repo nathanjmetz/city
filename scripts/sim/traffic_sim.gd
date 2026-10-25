@@ -85,6 +85,8 @@ const CROSS_PEN := 6.0
 ## MUTCD design walking speed is 3.5 ft/s for crossings, people stroll faster).
 const MAX_WALKERS := 800
 const WALK_V := 1.4
+## Share (percent) of short trips walked by people with a car at home.
+const SHORT_WALK_PCT := 25
 ## Big towns (Brawn, 2026-10-23): past this many residents, people's own
 ## cars drive as traffic flows, not one by one: each trip is timed over its
 ## route with the FHWA's BPR curve, t = t0 (1 + 0.15 (v/c)^4), and loads
@@ -3215,6 +3217,11 @@ func go(pid: int, to_ref: String, purpose: String, stay: int) -> bool:
 	if away and not fetch and not place(car.at_place).is_empty() \
 			and place(car.at_place).door.distance_to(to_pl.door) < PARK_WALK:
 		far = false  # the car is already parked by the destination: walk on past it
+	# Most Americans with a car at home drive even short hops: about a
+	# quarter of trips under a mile are walked (NHTS), fewer in small towns.
+	if not far and not away and not car.is_empty() \
+			and hash([pid, _sim.tick_count]) % 100 >= SHORT_WALK_PCT:
+		far = true
 	if not car.is_empty() and (far or fetch) and cars.size() < MAX_CARS:
 		var path := _walk_to_car(from_pl, car)
 		if path.is_empty():
