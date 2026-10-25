@@ -63,7 +63,7 @@ const WINTER := {"work_pickup": "work_pickup_plow", "dump_truck": "dump_truck_pl
 const EMPTY := {"trailer_flat": "trailer_flat_empty", "trailer_lumber": "trailer_flat_empty"}
 ## Body styles within one kind, all close to its length (see VehicleTypes).
 const VARIANTS := {
-	"sedan": ["sedan", "sedan_compact", "sedan_fullsize"],
+	"sedan": ["sedan_camry", "sedan_compact", "sedan_fullsize"],
 	"pickup": ["pickup", "pickup_ext", "pickup_mid", "pickup_old"],
 	"suv": ["suv", "suv_mid", "suv_jeep"],
 	"minivan": ["minivan", "minivan_pacifica"],
@@ -82,7 +82,7 @@ const AXLE := {
 	"garbage_truck": 7.3, "fire_engine": 7.4, "police": 3.9, "taxi": 3.9, "taxi_old": 4.0, "ambulance": 5.1, "tractor": 4.2,
 	"combine": 7.0, "tractor_sleeper": 6.4, "mail_truck": 4.3, "concrete_mixer": 7.0, "sedan_compact": 3.6, "sedan_fullsize": 4.0,
 	"pickup_ext": 4.6, "pickup_mid": 4.4, "suv_mid": 3.9, "wagon": 3.7, "ev_crossover": 3.8, "hatch_box": 3.4, "van_low": 4.4,
-	"rural_mail": 3.9, "tractor_day": 4.8,
+	"rural_mail": 3.9, "tractor_day": 4.8, "sedan_camry": 3.8,
 }
 
 var _st := SurfaceTool.new()
