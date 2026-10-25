@@ -54,6 +54,10 @@ const REMESH_MS := 8.0  # redraw changed streets for this long, then finish them
 ## A neighbor's whole town lands at once: its streets are drawn a few each
 ## frame instead of in one long freeze (RegionView).
 var sliced := false
+## Roads that age and get repaired (RoadSurface): this view's own pavement,
+## paint, chip seal and gravel materials and the wear map they read.
+var _surface := RoadSurface.new()
+var _dust: GravelDust
 
 var _mats := {
 	"asphalt": Surfaces.asphalt(),
@@ -80,10 +84,19 @@ var _mats := {
 }
 
 
+func _init() -> void:
+	_surface.install(_mats)
+
+
 func setup(net: RoadNetwork, s: CitySim = null) -> void:
 	network = net
 	sim = s
 	network.changed.connect(rebuild)
+	if sim != null and not sliced:
+		# Dust behind cars on gravel roads (your own town's cars).
+		_dust = GravelDust.new()
+		_dust.setup(sim)
+		add_child(_dust)
 	if sim != null:
 		for sig in [sim.lots_changed, sim.zones_changed, sim.buildings_changed]:
 			sig.connect(func(): if _recheck < 0.0: _recheck = 1.0)
@@ -97,6 +110,9 @@ func setup(net: RoadNetwork, s: CitySim = null) -> void:
 ## Rebuilds when a road has turned from country road to town street or back
 ## (checked at most once a second while the town grows).
 func _process(delta: float) -> void:
+	var q := GraphicsQuality.current
+	_surface.detail = 0.0 if q != null and q.active and (q.browser or q.tier <= GraphicsQuality.LOW) else 1.0
+	_surface.tick(self, sim, delta)
 	if not _building and not (_later.is_empty() and _poles_later.is_empty() and _corners_later.is_empty()):
 		_remesh_later()
 	if _recheck < 0.0:
@@ -342,7 +358,7 @@ func _rebuild_all(gen: int) -> void:
 	_building = true
 	var old := []
 	for child in get_children():
-		if child != _trees:
+		if child != _trees and child != _dust:
 			old.append(child)
 	if _trees.get_parent() == null:
 		add_child(_trees)
@@ -555,7 +571,7 @@ func _rebuild_all(gen: int) -> void:
 	for surface in plain:
 		var mi := MeshInstance3D.new()
 		mi.mesh = Terrain.drape(plain[surface].commit())
-		mi.material_override = _mats[surface]
+		mi.material_override = _mats["gravel road" if surface == "gravel" else surface]
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mi)
 	if not network.nodes.is_empty():

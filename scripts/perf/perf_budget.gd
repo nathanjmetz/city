@@ -60,6 +60,7 @@ const FRAME := {
 	"frame.buildings": {"avg": 0.5, "max": 20.0, "what": "Adding new buildings to the scene"},
 	"frame.trees":     {"avg": 0.3, "max": 10.0, "what": "Tree batches"},
 	"frame.roads":     {"avg": 0.3, "max": 30.0, "what": "Road meshes (rebuilt after an edit)"},
+	"frame.road_wear": {"avg": 0.05, "max": 5.0, "what": "Roads that age: the wear map (monthly) and gravel dust"},
 	"frame.terrain":   {"avg": 1.0, "max": 8.0, "what": "Ground chunks: detail levels and grading under new roads"},
 	"frame.audio":     {"avg": 0.5, "max": 2.0, "what": "Placing sounds on real objects"},
 	"frame.ui":        {"avg": 0.5, "max": 3.0, "what": "HUD and panels"},
