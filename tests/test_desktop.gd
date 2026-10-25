@@ -145,21 +145,20 @@ func _governor() -> void:
 	for i in 40:
 		q._judge(busy_town, 3.0)
 	_check(q.tier == GraphicsQuality.CINEMATIC, "a busy town's thinking alone never lowers the look")
-	var heavy := {"frame_ms": 30.0, "sim_ms": 3.0, "draw_ms": 27.0, "gpu_ms": 0.0, "cpu_ms": 9.0}
+	# Cinematic is too heavy for this town; Ultra draws it easily.
+	var cost := func(t: int, _s: float) -> Dictionary:
+		if t == GraphicsQuality.CINEMATIC:
+			return {"frame_ms": 30.0, "sim_ms": 3.0, "draw_ms": 27.0, "gpu_ms": 0.0, "cpu_ms": 9.0}
+		return {"frame_ms": 9.0, "sim_ms": 1.0, "draw_ms": 8.0, "gpu_ms": 0.0, "cpu_ms": 4.0}
 	var steps := []
 	for i in 4:
-		q._judge(heavy, 3.0)
+		q._judge(cost.call(q.tier, q.scale), 3.0)
 		steps.append(q.tier)
 	_check(steps == [4, 3, 3, 3], "slow drawing steps down one tier, then waits for the new look to settle (%s)" % [steps])
-	var quiet := {"frame_ms": 9.0, "sim_ms": 1.0, "draw_ms": 8.0, "gpu_ms": 0.0, "cpu_ms": 4.0}
-	for i in 60:  # 3 minutes of room
-		q._judge(quiet, 3.0)
+	_play(q, 3.0, cost)
 	_check(q.tier == GraphicsQuality.ULTRA, "a tier that proved too slow stays out of reach for minutes")
-	for i in 60:  # past 5 minutes
-		q._judge(quiet, 3.0)
-	_check(q.tier == GraphicsQuality.CINEMATIC, "after the wait it tries that tier again")
-	for i in 4:
-		q._judge(heavy, 3.0)
+	var again := _play(q, 3.0, cost)
+	_check(again.any(func(c): return c[1] == GraphicsQuality.CINEMATIC), "after the wait it tries that tier again")
 	_check(q.tier == GraphicsQuality.ULTRA and q.patience() > GraphicsQuality.PATIENCE_MIN,
 		"failing again waits longer (%.0f minutes)" % q.patience())
 	var middling := {"frame_ms": 19.0, "sim_ms": 2.0, "draw_ms": 17.0, "gpu_ms": 0.0, "cpu_ms": 9.0}
@@ -172,7 +171,7 @@ func _governor() -> void:
 	b.active = true
 	b._lab = true
 	b.browser = true
-	b._guess = GraphicsQuality.MEDIUM
+	b._guess = GraphicsQuality.LOW
 	b.mode = GraphicsQuality.AUTO
 	b._first_guess()
 	b.apply()
@@ -180,9 +179,11 @@ func _governor() -> void:
 	for i in 100:
 		b._judge(smooth, 3.0)
 	_check(b.tier == GraphicsQuality.HIGH, "a browser with room climbs to High and no further")
-	var laptop := {"frame_ms": 40.0, "sim_ms": 4.0, "draw_ms": 36.0, "gpu_ms": 0.0, "cpu_ms": 0.0}
-	for i in 30:
-		b._judge(laptop, 3.0)
+	# A laptop whose chip is the limit: fewer pixels help, then a tier.
+	var laptop := func(t: int, s: float) -> Dictionary:
+		var draw: float = [40.0, 55.0, 70.0][t] * (0.4 + 0.6 * s * s)
+		return {"frame_ms": draw + 4.0, "sim_ms": 4.0, "draw_ms": draw, "gpu_ms": 0.0, "cpu_ms": 0.0}
+	_play(b, 3.0, laptop)
 	_check(b.scale < 1.0 and b.tier < GraphicsQuality.HIGH, "a slow browser takes fewer pixels, then a lower tier")
 	q.free()
 	b.free()
@@ -228,12 +229,16 @@ func _play(q: GraphicsQuality, minutes: float, look: Callable) -> Array:
 ## names, the desktop by chip and memory (see the cases above).
 func _first_pick() -> void:
 	var cases := [
-		["ANGLE (Apple, ANGLE Metal Renderer: Apple M2 Max, Unspecified Version)", false, GraphicsQuality.MEDIUM,
+		["ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Max, Unspecified Version)", false, GraphicsQuality.HIGH,
+			"Chrome on the M5 Max"],
+		["ANGLE (Apple, ANGLE Metal Renderer: Apple M2 Ultra, Unspecified Version)", false, GraphicsQuality.HIGH,
 			"a Mac Studio's browser"],
 		["ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)", false, GraphicsQuality.LOW,
 			"an 8 GB Mac mini's browser"],
 		["ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 (0x00002786) Direct3D11 vs_5_0 ps_5_0, D3D11)", false,
-			GraphicsQuality.MEDIUM, "a gaming PC's browser"],
+			GraphicsQuality.HIGH, "a gaming PC's browser"],
+		["ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 SUPER Direct3D11 vs_5_0 ps_5_0, D3D11)", false,
+			GraphicsQuality.MEDIUM, "an older gaming PC's browser"],
 		["ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)", false,
 			GraphicsQuality.LOW, "an office laptop's browser"],
 		["WebKit WebGL", false, GraphicsQuality.LOW, "a browser that hides the chip"],
@@ -257,8 +262,8 @@ func _machines() -> void:
 		and studio.auto_top() == GraphicsQuality.CINEMATIC, "the Mac Studio: full strength, Cinematic")
 	_check(pro.machine() == "shared" and pro.auto_top() == GraphicsQuality.ULTRA, "a 24 GB Pro chip: shared, up to Ultra")
 	_check(pc.machine() == "full" and pc.auto_top() == GraphicsQuality.CINEMATIC, "a Windows gaming PC: full strength")
-	_check(web.machine() == "browser" and web.auto_top() == GraphicsQuality.HIGH and web.tier == GraphicsQuality.MEDIUM,
-		"a browser: up to High, a strong chip starting on Medium")
+	_check(web.machine() == "browser" and web.auto_top() == GraphicsQuality.HIGH and web.tier == GraphicsQuality.HIGH,
+		"a browser: up to High, a strong chip starting there")
 	# Graphics memory: the mini holds where it is near its budget, and
 	# climbs once there's room; a full-strength desktop has no memory cap.
 	var roomy := func(_t: int, _s: float, mb: int) -> Dictionary:
@@ -324,6 +329,39 @@ func _no_flapping() -> void:
 		"frames that wobble around a tier's cost: tries of the tier above at least 5 minutes apart, then further (30 minutes: %s)" % [changes])
 	for q in [studio, web, pc]:
 		q.free()
+	_steps_must_help()
+
+
+## A step down has to make the drawing faster, or it's taken back from the
+## record (GraphicsQuality.HELPED).
+func _steps_must_help() -> void:
+	# The window lab on the M5 Max (2026-10-25): a new town still building
+	# its detail is slow at every tier for a minute; then Cinematic draws
+	# it in 15 ms. Before, this walked Cinematic to Low in 43 s and held
+	# it there for 40 minutes.
+	var studio := _auto("Apple M5 Max", 48.0)
+	var windows := [0]
+	var building := func(t: int, _s: float) -> Dictionary:
+		var draw := 60.0 if windows[0] < 20 else (15.0 if t == GraphicsQuality.CINEMATIC else 10.0)
+		windows[0] += 1
+		return {"frame_ms": draw + 3.0, "sim_ms": 3.0, "draw_ms": draw, "gpu_ms": 0.0, "cpu_ms": 4.0}
+	var changes := _play(studio, 3.0, building)
+	var lowest := GraphicsQuality.CINEMATIC
+	for c in changes:
+		lowest = mini(lowest, c[1])
+	_check(lowest >= GraphicsQuality.ULTRA and studio.tier == GraphicsQuality.CINEMATIC and studio._fails == 0,
+		"a town still building doesn't walk the look down: one step, back to Cinematic once built (%s)" % [changes])
+	# A browser whose slowness isn't pixels (the town's drawing work on the
+	# CPU): a sharpness step that didn't help is given back, then a tier.
+	var web := _auto("ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Max)", 0.0, true)
+	var cpu_bound := func(t: int, _s: float) -> Dictionary:
+		var draw := 45.0 if t == GraphicsQuality.HIGH else 25.0
+		return {"frame_ms": draw + 4.0, "sim_ms": 4.0, "draw_ms": draw, "gpu_ms": 0.0, "cpu_ms": 0.0}
+	changes = _play(web, 5.0, cpu_bound)
+	_check(web.tier == GraphicsQuality.MEDIUM and web.scale == 1.0 and changes.size() <= 3,
+		"fewer pixels that don't help are given back, and a tier steps instead (%s)" % [changes])
+	studio.free()
+	web.free()
 
 
 ## Whether a hello with these version fields is let in (welcomed or asked to

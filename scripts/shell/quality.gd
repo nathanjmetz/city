@@ -77,7 +77,7 @@ const GUESS_VERSION := 3
 ## shafts and haze in the air (volumetric fog).
 const TIERS := [
 	{"msaa": 0, "fxaa": true, "ssao": false, "ssil": false, "ssr": false, "sdfgi": false, "fog": false,
-		"shadow_size": 2048, "soft": 2, "splits": 2, "detail": 0.4, "lod": 2.0, "shadow_reach": 300.0,
+		"shadow_size": 4096, "soft": 2, "splits": 2, "detail": 0.4, "lod": 2.0, "shadow_reach": 300.0,
 		"tree_shadows": false},
 	{"msaa": 1, "fxaa": false, "ssao": false, "ssil": false, "ssr": false, "sdfgi": false, "fog": false,
 		"shadow_size": 4096, "soft": 3, "splits": 2, "detail": 0.7, "lod": 1.0, "shadow_reach": 700.0,
@@ -188,6 +188,21 @@ const STALL_MS := 250.0
 const PATIENCE_MIN := 5.0
 const PATIENCE_MAX := 80.0
 const HOLD_MIN := 10.0
+## A step down has to make the drawing at least this much faster (the
+## first window judged after it, against the window that set it off), or
+## the slowness wasn't the tier's or the pixels': a town still building
+## its detail, a view's own work. Measured 2026-10-25 on the M5 Max: a new
+## 12-block town walked the desktop from Cinematic to Low in 43 s while it
+## was still being built (55, 68, 72 ms at Ultra, High, Medium: steps that
+## didn't help), and the four failures then held it at Low for 40 minutes.
+## Now a step that didn't help is taken back from the record (no failure,
+## the ceiling restored, so it climbs back once there's room) and no
+## further step down is tried for DOWN_HOLD windows, doubling each time
+## in a row. A sharpness step that didn't help only rules out pixels: the
+## next step down is a tier.
+const HELPED := 0.88
+const DOWN_HOLD := 20
+const DOWN_HOLD_MAX := 320
 ## Shared memory (Apple chips, integrated graphics): the least memory (GB)
 ## each tier needs, so Auto never climbs an 8 GB Mac mini into a tier that
 ## runs it out of memory. Discrete graphics have their own memory.
@@ -226,6 +241,7 @@ var _last_us := 0
 var _frames := 0
 var _gpu := 0.0
 var _cpu := 0.0
+var _process_ms := 0.0
 var _sim := 0.0
 var _settle := SETTLE_WINDOWS
 var _slow := 0
@@ -252,6 +268,18 @@ var _scale_fails := 0
 ## The graphics memory in use (MB), read each window: Auto doesn't climb
 ## past the machine's video_mb.
 var _video_mb := 0.0
+## The last step down, waiting to be checked against the first window
+## after it: {"tier": the tier left, "scale": the scale left, "draw": the
+## draw_ms that set it off, "pixels": true for a sharpness step}. Empty
+## when nothing waits.
+var _check := {}
+## Windows left before another step down may be tried, after one that
+## didn't help; and how many in a row didn't (doubles the hold).
+var _down_hold := 0
+var _no_help := 0
+## Fewer pixels didn't make the drawing faster here: step tiers instead,
+## until there's room again.
+var _pixels_no_help := false
 ## The hardware guess (guess_tier) for this computer.
 var _guess := HIGH
 var _memory_gb := 0.0
@@ -283,6 +311,9 @@ func _ready() -> void:
 		adapter = stand_in[0]
 		cores = int(stand_in[1])
 		_memory_gb = float(stand_in[2])
+	var real := web_gpu_name()
+	if real != "":
+		adapter = real
 	_guess = browser_first(adapter, is_handheld()) if browser \
 		else guess_tier(adapter, RenderingServer.get_video_adapter_type(), cores, _memory_gb)
 	_ceiling = auto_top()
@@ -349,7 +380,9 @@ static func is_handheld() -> bool:
 
 
 func min_scale() -> float:
-	return 0.5 if browser else MIN_SCALE
+	# 1.0, 0.85, 0.7, 0.55: whole steps, so the last one is as big as the
+	# rest (a smaller last step looked like a step that didn't help).
+	return 0.55 if browser else MIN_SCALE
 
 
 func _first_guess() -> void:
@@ -363,13 +396,15 @@ func _first_guess() -> void:
 	scale = 0.75 if browser and is_handheld() else 1.0
 
 
-## The browser's first tier, from the graphics chip its WebGL names (for
+## The browser's first tier, from the graphics chip WebGL names (for
 ## example "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 ...)" or "ANGLE (Apple,
-## ANGLE Metal Renderer: Apple M2 Max ...)"). Most start on Low (a fresh
-## town's woods alone were millions of triangles on Medium's old look) and
-## climb when there's room; a strong desktop chip starts on Medium. A phone
-## or tablet, or a chip the browser hides, starts on Low. The browser can't
-## tell the computer's memory, so the chip alone decides.
+## ANGLE Metal Renderer: Apple M5 Max ...)"; see web_gpu_name()). A strong
+## chip starts on the browser's top tier and steps down only when frames
+## are measured slow (playtest 2026-10-25: Chrome on the M5 Max started
+## on Low, with jagged shadows, and Nathan said it "feels more like I'm
+## playing the old game"). A mid chip starts on Medium. A phone or tablet,
+## a small chip, or a chip the browser hides starts on Low and climbs. The
+## browser can't tell the computer's memory, so the chip alone decides.
 static func browser_first(name: String, handheld: bool) -> int:
 	if handheld:
 		return LOW
@@ -378,9 +413,27 @@ static func browser_first(name: String, handheld: bool) -> int:
 	if at >= 0:
 		n = n.substr(at)
 		# A Max or Ultra chip, or a Pro: the Mac Studio, the big MacBook Pro.
-		return MEDIUM if "max" in n or "ultra" in n or "pro" in n else LOW
-	return MEDIUM if pc_gpu_tier(n) >= ULTRA else LOW
+		# A base chip may be the 8 GB Mac mini.
+		return BROWSER_TOP if "max" in n or "ultra" in n or "pro" in n else LOW
+	var pc := pc_gpu_tier(n)
+	if pc >= ULTRA:
+		return BROWSER_TOP
+	return MEDIUM if pc == HIGH else LOW
 
+
+## The graphics chip's real name in the browser. Chrome's WebGL reports
+## only "WebKit WebGL" as its renderer; the real name comes from the
+## WEBGL_debug_renderer_info extension. "" outside the browser or when the
+## browser hides it.
+static func web_gpu_name() -> String:
+	if not OS.has_feature("web"):
+		return ""
+	var got = JavaScriptBridge.eval("""(() => { try {
+		const gl = document.createElement('canvas').getContext('webgl2') || document.createElement('canvas').getContext('webgl');
+		const ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
+		return ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
+	} catch (e) { return ''; } })()""", true)
+	return str(got) if got != null else ""
 
 ## A first guess from the hardware alone; in Auto the governor corrects it
 ## in play. Apple chips share memory with the GPU, so memory says a lot.
@@ -618,7 +671,13 @@ func apply() -> void:
 	vp.mesh_lod_threshold = t.lod
 	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if scale < 0.99 and _fsr_ok() else Viewport.SCALING_3D_MODE_BILINEAR
 	vp.scaling_3d_scale = scale
-	RenderingServer.directional_shadow_atlas_set_size(t.shadow_size, true)
+	# Low draws its shadows on a 4096 map too: on 2048 a house's shadow was a
+	# staircase (playtest, Chrome on the M5 Max, 2026-10-25). A phone or
+	# tablet keeps 2048 (a quarter of the memory).
+	RenderingServer.directional_shadow_atlas_set_size(mini(t.shadow_size, 2048) if is_handheld() else t.shadow_size, true)
+	# A faint dither before the colours are rounded to 8 bits: without it
+	# the sky and the snow showed bands (same playtest). Costs next to nothing.
+	vp.use_debanding = true
 	RenderingServer.directional_soft_shadow_filter_set_quality(t.soft)
 	RenderingServer.positional_soft_shadow_filter_set_quality(t.soft)
 	changed.emit()
@@ -650,15 +709,23 @@ func _process(delta: float) -> void:
 	_frames += 1
 	_sim += sim
 	_gpu += RenderingServer.viewport_get_measured_render_time_gpu(_rid)
-	_cpu += RenderingServer.viewport_get_measured_render_time_cpu(_rid) \
-		+ maxf(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0 - sim, 0.0)
+	# The drawing's CPU side is the renderer's own time. The engine's
+	# TIME_PROCESS is logged (process_ms) but not judged: in a real window on
+	# the M5 Max (2026-10-25) it read about 100 ms in 27 ms frames, so
+	# counted in, the desktop never saw room and never climbed back.
+	var process := maxf(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0 - sim, 0.0)
+	_cpu += RenderingServer.viewport_get_measured_render_time_cpu(_rid)
+	_process_ms += process
 	if _time < WINDOW:
 		Perf.add("frame.quality", t0)
 		return
 	var w := {"frame_ms": snappedf(_time * 1000.0 / _frames, 0.1), "sim_ms": snappedf(_sim / _frames, 0.1),
-		"gpu_ms": snappedf(_gpu / _frames, 0.1), "cpu_ms": snappedf(_cpu / _frames, 0.1)}
+		"gpu_ms": snappedf(_gpu / _frames, 0.1), "cpu_ms": snappedf(_cpu / _frames, 0.1),
+		"process_ms": snappedf(_process_ms / _frames, 0.1)}
 	w["draw_ms"] = snappedf(maxf(w.frame_ms - w.sim_ms, 0.0), 0.1)
 	w["video_mb"] = roundi(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0)
+	if _lab:
+		print("Graphics window: ", NAMES[tier], " ", JSON.stringify(w))
 	var played := _time
 	_reset()
 	_judge(w, played)
@@ -681,6 +748,10 @@ func _judge(w: Dictionary, played: float) -> void:
 	if _settle > 0:
 		_settle -= 1
 		return
+	if not _check.is_empty() and _verify(w):
+		return
+	if _down_hold > 0:
+		_down_hold -= 1
 	var m: Dictionary = MACHINES[machine()]
 	var slow_ms: float = m.slow_ms
 	var room: bool = w.frame_ms < m.room_ms \
@@ -695,7 +766,7 @@ func _judge(w: Dictionary, played: float) -> void:
 		_room = 0
 		_slow += 1
 		# Far too slow steps down at once; just slow waits for another window.
-		if _slow >= SLOW_WINDOWS or w.draw_ms > slow_ms * 2.0:
+		if _down_hold == 0 and (_slow >= SLOW_WINDOWS or w.draw_ms > slow_ms * 2.0):
 			_slow = 0
 			_step_down(w.gpu_ms > w.cpu_ms, w)
 	elif room:
@@ -724,6 +795,7 @@ func _reset() -> void:
 	_frames = 0
 	_gpu = 0.0
 	_cpu = 0.0
+	_process_ms = 0.0
 	_sim = 0.0
 
 
@@ -742,11 +814,13 @@ func scale_patience() -> float:
 ## once pixels are as low as they go) a lower tier draws less, and the tier
 ## it left is out of reach until patience() has gone by.
 func _step_down(gpu_bound: bool, w: Dictionary) -> void:
-	if (gpu_bound or browser) and scale > min_scale() + 0.01:
+	var left := {"tier": tier, "scale": scale, "draw": w.draw_ms, "pixels": false}
+	if (gpu_bound or browser) and not _pixels_no_help and scale > min_scale() + 0.01:
 		scale = maxf(min_scale(), scale - SCALE_STEP)
 		_scale_top = scale
 		_scale_waited = 0.0
 		_scale_fails += 1
+		left.pixels = true
 	elif tier > LOW:
 		_fails += 1
 		_waited = 0.0
@@ -758,11 +832,42 @@ func _step_down(gpu_bound: bool, w: Dictionary) -> void:
 		_scale_waited = 0.0
 	else:
 		return
+	_check = left
 	last_window = w
 	_change("drawing too slow (%.1f ms a frame without the town's thinking)" % w.draw_ms)
 
 
+## The first window after a step down: did it make the drawing faster? If
+## not, the step is taken back from the record (see HELPED). Fewer pixels
+## that didn't help are given back at once; a lower tier stays until
+## there's room to climb back. True when the look changed.
+func _verify(w: Dictionary) -> bool:
+	var c := _check
+	_check = {}
+	if w.draw_ms < float(c.draw) * HELPED:
+		_no_help = 0
+		return false
+	var why := "didn't help (%.1f ms a frame, %.1f before)" % [w.draw_ms, c.draw]
+	if c.pixels:
+		_scale_fails = maxi(_scale_fails - 1, 0)
+		_scale_top = maxf(_scale_top, float(c.scale))
+		_pixels_no_help = true
+		scale = float(c.scale)
+		last_window = w
+		_change("fewer pixels " + why)
+		return true
+	_fails = maxi(_fails - 1, 0)
+	_ceiling = maxi(_ceiling, int(c.tier))
+	_no_help += 1
+	_down_hold = mini(DOWN_HOLD * (1 << (_no_help - 1)), DOWN_HOLD_MAX)
+	last_reason = "a lower tier " + why
+	print("Graphics: ", describe(), " (", last_reason, ")")
+	_save()
+	return false
+
+
 func _step_up(w: Dictionary) -> void:
+	_pixels_no_help = false
 	if scale < _scale_top - 0.01:
 		scale = minf(_scale_top, scale + SCALE_STEP)
 	elif scale < 0.99 and _scale_waited >= scale_patience() * 60.0:
