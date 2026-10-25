@@ -12,18 +12,22 @@ extends Node
 
 signal log_line(text: String)
 
-const PROTOCOL := 5
+## 6: big messages go in parts (NetLink), and a welcome carries each town
+## packed on its own ("towns"), so the server never packs a region at once.
+const PROTOCOL := 6
 ## The oldest version this server still lets in, and (sent in the hello)
 ## the oldest server a client can talk to. Desktop apps can trail the live
 ## build by one launch, so small gaps still play together: raise this only
 ## when an older game would really break. Unknown message types are ignored
-## on both sides.
-const MIN_PROTOCOL := 5
+## on both sides. (6: a game from before parts can't read a welcome that
+## comes in parts, so it is asked to update instead of waiting forever.)
+const MIN_PROTOCOL := 6
 ## How often the region is written to disk, in seconds (a server that's
 ## switched off loses at most this much).
 const SAVE_EVERY := 10.0
-## WebSocket buffer size: a whole region goes out in one message when a
-## player joins or resyncs (Godot's 64 KB default is far too small).
+## WebSocket buffer size. Big messages go in parts of NetLink.PART_BYTES,
+## so this only needs to hold a few parts (Godot's 64 KB default is too
+## small for even one).
 const BUFFER_BYTES := 16 * 1024 * 1024
 ## Biggest telemetry batch kept, unpacked (anything bigger is dropped).
 const TELEMETRY_MAX := 512 * 1024
@@ -55,6 +59,9 @@ var host_names := []
 var require_approval := false
 
 var _peer := WebSocketMultiplayerPeer.new()
+## Sends and receives over _peer: big messages in parts, and only as fast as
+## each player's connection takes them (see NetLink).
+var _link := NetLink.new(_peer)
 var _players := {}   # peer id -> {"id": player id, "name", "city", "host"}
 var _waiting := {}   # peer id -> account key, signed up but not approved yet
 var _trade_time := 0.0
@@ -82,7 +89,9 @@ func start(port: int, code: String, path: String, host := "") -> int:
 	var err := _peer.create_server(port)
 	if err != OK:
 		return err
-	_peer.peer_connected.connect(func(id): _log("Peer %d connected" % id))
+	_peer.peer_connected.connect(func(id):
+		_open[id] = true
+		_log("Peer %d connected" % id))
 	_peer.peer_disconnected.connect(_on_left)
 	_log("Region running on port %d. Invite code: %s" % [port, invite_code])
 	if _dirty:
@@ -97,6 +106,8 @@ func stop() -> void:
 	_peer.close()
 	_players.clear()
 	_waiting.clear()
+	_open.clear()
+	_link = NetLink.new(_peer)
 	set_process(false)
 
 
@@ -112,34 +123,89 @@ static func new_code() -> String:
 
 
 var _left := []  # peers that disconnected this poll (see _gone)
+var _open := {}  # peers connected now (anything sent to another is dropped)
+
+
+## The longest step the server's own loop took lately, and which (see _timed).
+var slowest := {"ms": 0.0, "what": ""}
+## Main-loop steps over this long are written to the log, so a stall shows.
+const SLOW_MS := 100.0
 
 
 func _process(delta: float) -> void:
-	_peer.poll()
-	while _peer.get_available_packet_count() > 0:
-		var from := _peer.get_packet_peer()
-		var msg = JSON.parse_string(_peer.get_packet().get_string_from_utf8())
+	_timed("poll", func(): _peer.poll())
+	for got in _link.receive():
+		var msg = JSON.parse_string(got[1])
+		if typeof(msg) == TYPE_DICTIONARY and msg.get("t") == "city": print("DBG got city from ", got[0], " players=", _players.has(got[0]), " leaving=", msg.get("leaving", false))
 		if typeof(msg) == TYPE_DICTIONARY:
-			_handle(from, msg)
+			_timed("msg." + str(msg.get("t", "")), func(): _handle(got[0], msg))
 	# Players who left go only now: the town a player sends as they leave
 	# often comes in with the goodbye, and is theirs to keep.
 	for peer in _left:
 		_gone(peer)
 	_left.clear()
+	_timed("jobs", _finish_jobs)
+	_timed("send", _link.flush)
 	_trade_time += delta
 	if _trade_time >= Region.TRADE_SECONDS:
 		_trade_time = 0.0
-		settle_trade()
+		_after_jobs(func(): _timed("trade", settle_trade))
+	_timed("save", _finish_save)
 	_save_time += delta
 	if _save_time >= SAVE_EVERY:
 		_save_time = 0.0
 		if _dirty:
-			save()
+			_after_jobs(func(): _timed("save", _start_save))
 	_report_time += delta
 	if _report_time >= REPORT_EVERY:
 		_report_time = 0.0
 		if _new_telemetry:
-			write_report()
+			_timed("report", write_report)
+
+
+## Runs a step of the loop, and logs it when it took more than SLOW_MS.
+func _timed(what: String, step: Callable) -> void:
+	var t := Time.get_ticks_usec()
+	step.call()
+	var ms := (Time.get_ticks_usec() - t) / 1000.0
+	if ms > slowest.ms:
+		slowest = {"ms": ms, "what": what}
+	if ms > SLOW_MS:
+		_log("Slow step: %s took %d ms" % [what, roundi(ms)])
+
+
+# --- Work on other cores ----------------------------------------------------
+
+## Unpacking a town's copy, and packing what goes out, take a tenth of a
+## second or more for a grown town: that runs on other cores, and what it
+## changes here is done in the order the work came in: [{"task", "then"}].
+var _jobs := []
+
+
+## Runs `work` on another core, then `then` here, after the jobs before it.
+func _job(work: Callable, then: Callable) -> void:
+	_jobs.append({"task": RegionClient._on_another_core(work), "then": then})
+
+
+## Runs `then` here once the jobs under way are done (at once if none).
+func _after_jobs(then: Callable) -> void:
+	if _jobs.is_empty():
+		then.call()
+	else:
+		_jobs.append({"task": -1, "then": then})
+
+
+## Hands over finished jobs, oldest first; with `wait`, all of them.
+func _finish_jobs(wait := false) -> void:
+	while not _jobs.is_empty():
+		var job: Dictionary = _jobs[0]
+		if wait and job.task >= 0:
+			WorkerThreadPool.wait_for_task_completion(job.task)
+			job.task = -1
+		if not RegionClient._done(job.task):
+			return
+		_jobs.pop_front()
+		job.then.call()
 
 
 ## A month of trade between the towns that are running now; each player's
@@ -210,22 +276,10 @@ func _handle(from: int, msg: Dictionary) -> void:
 		"city":
 			# A copy of the player's own town (never anyone else's): a
 			# postcard, or now and then a full copy. Neighbors get postcards.
-			var d = unpack(str(msg.get("z", "")))
-			if p.city != "" and typeof(d) == TYPE_DICTIONARY:
-				region.update_city(p.city, d)
-				_dirty = true
-				var postcard: String = msg.z if d.get("postcard", false) else pack(Region.postcard_of(d))
-				var relay := {"t": "city", "id": p.city, "z": postcard}
-				# Its land, when it changed (see Region.land).
-				if msg.get("land") is Array:
-					region.take_land(p.city, msg.land)
-					relay.land = msg.land
-				_broadcast(relay, from)
-				if msg.get("leaving", false):
-					_send(from, {"t": "bye"})  # it can close now (RegionClient._linger)
-				# Its population, for the metro (older games don't send it).
-				if msg.has("pop") and region.ledger.set_population(p.city, int(msg.pop)) and region.update_metro():
-					_ledger_changed()
+			# It's unpacked (and a full copy cut down to a postcard and packed
+			# again) on another core; then it's kept and passed on, here.
+			if p.city != "":
+				_take_city(from, p.city, msg)
 		"chat":
 			var text := str(msg.get("text", "")).strip_edges()
 			if text != "":
@@ -237,7 +291,7 @@ func _handle(from: int, msg: Dictionary) -> void:
 			if typeof(batch) == TYPE_DICTIONARY and store_telemetry(p, batch):
 				_send(from, {"t": "telemetry_ok", "id": str(batch.get("id", ""))})
 		"cursor":
-			_broadcast({"t": "cursor", "id": p.id, "p": msg.get("p")}, from)
+			_broadcast({"t": "cursor", "id": p.id, "p": msg.get("p")}, from, "cursor:" + str(p.id))
 		"approve":
 			if p.host:
 				approve(str(msg.get("name", "")), bool(msg.get("ok", false)))
@@ -253,8 +307,7 @@ func _handle(from: int, msg: Dictionary) -> void:
 			var amount := float(msg.get("amount", 0.0))
 			if p.city == "" or good != "money" or not is_finite(amount) or amount <= 0.0:
 				return
-			region.load_stale(p.city)
-			amount = minf(amount, maxf(0.0, region.cities[p.city].sim.economy.money))
+			amount = minf(amount, maxf(0.0, region.money_of(p.city)))
 			var took := region.ledger.pledge(p.city, str(msg.get("project", "")), good, amount)
 			if took > 0.0:
 				_log("%s pledged $%d to %s" % [p.name, roundi(took), str(msg.project)])
@@ -271,6 +324,41 @@ func _handle(from: int, msg: Dictionary) -> void:
 		"end":
 			if region.ledger.end(str(msg.get("id", "")), p.city):
 				_ledger_changed()
+
+
+## Takes a copy of a player's own town: unpacked on another core (with a
+## full copy cut down to a postcard there too), then kept and passed on to
+## the neighbors here, in the order copies came in.
+func _take_city(from: int, city: String, msg: Dictionary) -> void:
+	var z := str(msg.get("z", ""))
+	print("DBG take ", city, " leaving=", msg.get("leaving", false), " len=", z.length())
+	var job := {}
+	var work := func():
+		var d = unpack(z)
+		if typeof(d) != TYPE_DICTIONARY:
+			return
+		job.d = d
+		if d.get("postcard", false):
+			job.card = z
+		else:
+			job.full = z
+			job.card = pack(Region.postcard_of(d))
+	_job(work, func():
+		print("DBG done ", city, " has_d=", job.has("d"), " ", job.get("d", {}).get("buildings", {}).size())
+		if job.has("d") and region.cities.has(city) and region.update_city(city, job.d, job.get("full", ""), job.card):
+			_dirty = true
+			# Its land, when it changed (see Region.land).
+			if msg.get("land") is Array:
+				region.take_land(city, msg.land)
+			# The land goes every time, so a newer copy can stand in for an
+			# older one still waiting to go to a slow player (NetLink).
+			_broadcast({"t": "city", "id": city, "z": job.card, "land": region.land_flat(city)}, from, "city:" + city)
+			# Its population, for the metro (older games don't send it).
+			if msg.has("pop") and region.ledger.set_population(city, int(msg.pop)) and region.update_metro():
+				_ledger_changed()
+		if msg.get("leaving", false):
+			_send(from, {"t": "bye"})  # it can close now (RegionClient._linger)
+	)
 
 
 func _hello(from: int, msg: Dictionary) -> void:
@@ -534,42 +622,70 @@ func _admit(from: int, account: Dictionary, token: String) -> void:
 			_players.erase(peer)
 			_send(peer, {"t": "elsewhere"})
 			get_tree().create_timer(2.0).timeout.connect(func(): if _peer: _peer.disconnect_peer(peer))
+	_players[from] = {"id": pid, "name": name, "city": "", "host": account.host}
+	# Copies still being unpacked (their own, sent as they left, say) are
+	# kept first, so the welcome has the newest of everything.
+	_after_jobs(func(): _welcome(from, account, token))
+
+
+## A player is in: their town (made now if they're new) and everything
+## else as it is now.
+func _welcome(from: int, account: Dictionary, token: String) -> void:
+	if not _players.has(from):
+		return  # gone again meanwhile
+	var pid: String = account.player
+	var name: String = account.name
 	var city := region.city_of(pid)
 	if city == "":
-		# A new town, on its county roads; the neighbors' halves of those
-		# roads go to their computers too, if they're running.
-		city = region.add_city(pid, name)
+		# A new town, on its county roads. The neighbors' halves of those
+		# roads are built by their own computers (now, if they're running;
+		# else when they come back) and by everyone who unpacks their towns
+		# meanwhile (Region.pending), so no neighbor is unpacked here.
+		city = region.add_city(pid, name, true)
 		region.update_metro()
 		_dirty = true
 		for other in region.handed:
 			for peer in _players:
 				if _players[peer].city == other:
 					_send(peer, {"t": "apply", "cmds": region.handed[other]})
-		# Everyone else gets the new town and the neighbors it joined; the
-		# rest they already have.
-		var fresh: Array = [city] + region.handed.keys()
+		# Everyone else gets the new town (and the roads handed to the
+		# neighbors); the rest they already have.
 		for peer in _players:
-			var d := region.to_dict_with(fresh.filter(func(id): return id != _players[peer].city))
-			_send(peer, {"t": "region", "z": pack(d)})
+			if peer != from:
+				_send(peer, _region_msg("region", [city]))
 	elif region.cities[city].player != name:
 		region.cities[city].player = name
-	_players[from] = {"id": pid, "name": name, "city": city, "host": account.host}
+	_players[from].city = city
 	_log("%s joined" % name)
 	# Everything as it is now, their own town included: the server's copy is
 	# what they play from. Back from a while away: what the neighbors did
 	# meanwhile, for their town to catch up on (CatchUp).
-	var welcome := {"t": "welcome", "you": pid, "name": name, "code": invite_code, "z": pack(region.to_dict(city)),
-		"token": token, "host": account.host}
+	var welcome := _region_msg("welcome", region.cities.keys(), city)
+	welcome.merge({"you": pid, "name": name, "code": invite_code, "token": token, "host": account.host})
 	var away := region.away_report(city)
 	if not away.is_empty():
 		welcome.away = away
 		_dirty = true
+	# (Roads the region handed their town while they were away come in the
+	# welcome's pending list, and their game builds them as it loads.)
 	_send(from, welcome)
 	_send_players()
 	_send_requests()
 	_send_pins()
 	var line := region.add_chat("", "%s joined the region" % name)
 	_broadcast({"t": "chat", "line": line})
+
+
+## A region message (a welcome, or a new town for the others): the region
+## packed small without its towns, and each listed town packed on its own,
+## as it was kept when it came in (so nothing big is packed here): their
+## own town in full for `full_for`, postcards of the rest.
+func _region_msg(t: String, ids: Array, full_for := "") -> Dictionary:
+	var towns := {}
+	for id in ids:
+		if region.cities.has(id):
+			towns[id] = region.packed_full(id) if id == full_for else region.packed_card(id)
+	return {"t": t, "z": pack(region.to_dict("", false)), "towns": towns}
 
 
 ## Tells the host who is waiting to join.
@@ -582,6 +698,8 @@ func _send_requests() -> void:
 
 func _on_left(peer: int) -> void:
 	_left.append(peer)
+	_open.erase(peer)
+	_link.drop(peer)
 
 
 func _gone(peer: int) -> void:
@@ -611,16 +729,17 @@ func _reject(peer: int, reason: String) -> void:
 
 
 func _send(peer: int, msg: Dictionary) -> void:
-	_peer.set_target_peer(peer)
-	_peer.put_packet(JSON.stringify(msg, "", false, true).to_utf8_buffer())
+	if _open.has(peer):
+		_link.send(peer, JSON.stringify(msg, "", false, true).to_utf8_buffer())
 
 
-func _broadcast(msg: Dictionary, except := 0) -> void:
+## To every player but `except`. A tagged message replaces an older one with
+## the same tag that a slow player hasn't been sent yet (NetLink.send).
+func _broadcast(msg: Dictionary, except := 0, tag := "") -> void:
 	var bytes := JSON.stringify(msg, "", false, true).to_utf8_buffer()
 	for peer in _players:
-		if peer != except:
-			_peer.set_target_peer(peer)
-			_peer.put_packet(bytes)
+		if peer != except and _open.has(peer):
+			_link.send(peer, bytes, tag)
 
 
 ## Keeps a batch of a player's play telemetry: one line in today's file.
@@ -655,21 +774,123 @@ func write_report() -> void:
 		f.store_string(Insights.to_markdown(Insights.analyze(batches)))
 
 
+## Saves the region now, all at once (when starting and stopping).
 func save() -> void:
 	if data_path == "":
 		return
-	var d := region.to_dict()
+	_finish_jobs(true)
+	if not _saving.is_empty():
+		WorkerThreadPool.wait_for_task_completion(_saving.task)
+		_saving.task = -1
+		_finish_save()
+	var job := _save_job()
+	_write_save(job)
+	_saved(job)
+
+
+# --- Saving, a little at a time -----------------------------------------------
+#
+# The save is the same text file as ever (old saves load, and an older
+# server can still read a new one), but it is no longer written all at once
+# on the loop that answers players: that took about a second every 10 s for
+# four grown towns. Each town's part (its full copy as JSON, most of the
+# file) is made on another core from the copy as it came in, and kept,
+# squeezed, until a newer copy comes; the rest of the region is small and
+# is written out here. Another core then writes the file and it replaces
+# the old one only once it is all there, as before.
+
+## A save under way on another core: {"task", ...} (see _save_job).
+var _saving := {}
+## city id -> [copy number (Region.copy_number), its JSON squeezed, its size]
+var _town_text := {}
+
+
+## Starts saving on another core (unless a save is still under way).
+func _start_save() -> void:
+	if data_path == "" or not _saving.is_empty():
+		return
+	_dirty = false
+	_saving = _save_job()
+	_saving.task = RegionClient._on_another_core(_write_save.bind(_saving))
+
+
+## Finishes a save once the other core is done: the new file takes the
+## old one's place.
+func _finish_save() -> void:
+	if _saving.is_empty() or not RegionClient._done(_saving.task):
+		return
+	var job := _saving
+	_saving = {}
+	_saved(job)
+
+
+## What the other core needs to write the save, taken now: the region
+## without its towns as text, and each town's text (kept from last time)
+## or its packed copy to make the text from.
+func _save_job() -> Dictionary:
+	var d := region.to_dict("*", false)
 	d["code"] = invite_code
 	d["accounts"] = accounts
 	d["away"] = region.away
-	var f := FileAccess.open(data_path + ".tmp", FileAccess.WRITE)
+	var mark := "@@town-%d-" % (randi() % 1000000)
+	var ids := []
+	for id in d.cities:
+		d.cities[id]["city"] = mark + id
+		ids.append(id)
+	var towns := {}
+	for id in ids:
+		var n := region.copy_number(id)
+		if _town_text.has(id) and _town_text[id][0] == n:
+			towns[id] = {"n": n, "text": _town_text[id][1], "size": _town_text[id][2]}
+		else:
+			towns[id] = {"n": n, "z": region.packed_full(id)}
+	return {"task": -1, "path": data_path, "mark": mark, "top": JSON.stringify(d, "", false, true),
+		"ids": ids, "towns": towns, "ok": false}
+
+
+## Writes the save file (on another core: it only reads the job).
+static func _write_save(job: Dictionary) -> void:
+	var f := FileAccess.open(job.path + ".tmp", FileAccess.WRITE)
 	if f == null:
-		_log("Couldn't save to %s" % data_path)
 		return
-	f.store_string(JSON.stringify(d, "", false, true))
+	var top: String = job.top
+	var at := 0
+	for id in job.ids:
+		var town: Dictionary = job.towns[id]
+		var mark := "\"%s%s\"" % [job.mark, id]
+		var i := top.find(mark, at)
+		if i < 0:
+			f.close()
+			return
+		f.store_string(top.substr(at, i - at))
+		at = i + mark.length()
+		var bytes: PackedByteArray
+		if town.has("text"):
+			bytes = (town.text as PackedByteArray).decompress(int(town.size), FileAccess.COMPRESSION_ZSTD)
+		else:
+			var d = unpack(str(town.z))
+			bytes = JSON.stringify(d if d is Dictionary else {}, "", false, true).to_utf8_buffer()
+			town.size = bytes.size()
+			town.text = bytes.compress(FileAccess.COMPRESSION_ZSTD)
+		f.store_buffer(bytes)
+	f.store_string(top.substr(at))
+	job.ok = f.get_error() == OK
 	f.close()
-	DirAccess.rename_absolute(data_path + ".tmp", data_path)
-	_dirty = false
+
+
+func _saved(job: Dictionary) -> void:
+	for id in job.towns:
+		var town: Dictionary = job.towns[id]
+		if town.has("text") and region.cities.has(id):
+			_town_text[id] = [town.n, town.text, town.size]
+	for id in _town_text.keys():
+		if not region.cities.has(id):
+			_town_text.erase(id)
+	if job.ok:
+		DirAccess.rename_absolute(job.path + ".tmp", job.path)
+	else:
+		_dirty = true
+		_log("Couldn't save to %s" % job.path)
 
 
 func _load() -> void:
@@ -724,6 +945,9 @@ func _load() -> void:
 				_dirty = true
 	if invite_code == "":
 		invite_code = str(d.get("code", ""))
+	# Every town packed now, while nobody is waiting: welcomes and saves then
+	# send and write the packed copies as they are.
+	region.pack_all()
 	_log("Loaded %d cities from %s" % [region.cities.size(), data_path])
 
 

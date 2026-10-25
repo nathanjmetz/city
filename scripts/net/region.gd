@@ -63,6 +63,19 @@ var _stale := {}  # city ids whose simulation is older than _data
 ## send a full copy every few minutes and postcards in between (see
 ## CitySim.to_dict).
 var _full := {}
+## The same copies packed for the wire (RegionServer.pack), as they came in
+## or packed once: city id -> text. A welcome sends them as they are.
+var _full_z := {}
+var _card_z := {}
+## city id -> a number that goes up with each new full copy (for the
+## server's save, which keeps each town's text until it changes).
+var _copy_n := {}
+## Roads the region handed a town (its half of a new neighbor's county
+## road) that its copies may not have yet: city id -> [commands]. Its own
+## computer builds them for good; meanwhile whoever unpacks one of its
+## copies adds the ones it's missing (see _add_pending), so everyone sees
+## the road at once and nobody's town is unpacked when a neighbor joins.
+var pending := {}
 
 
 ## The city a player owns, or "" if they have none yet.
@@ -81,13 +94,19 @@ func city_of(player_id: String) -> String:
 ## Takes a town off the map: its label, land, copies and road links. Its
 ## neighbors keep their halves of the county roads.
 func remove_city(id: String) -> void:
-	for d in [cities, land, _data, _stale, _full, away, handed]:
+	for d in [cities, land, _data, _stale, _full, _full_z, _card_z, _copy_n, away, handed, pending]:
 		d.erase(id)
 	joins = joins.filter(func(j): return j.a != id and j.b != id)
 
 
-func add_city(player_id: String, player: String) -> String:
-	load_stale()
+##
+## With `quick` (the server, where players are waiting), no town is
+## unpacked: the new one is placed from what is already unpacked and each
+## town's land, and the neighbors' halves of the county roads are handed
+## over as `pending` instead of built here (their computers build them).
+func add_city(player_id: String, player: String, quick := false) -> String:
+	if not quick:
+		load_stale()
 	handed = {}
 	var id := "c%d" % (cities.size() + 1)
 	while cities.has(id):
@@ -114,13 +133,21 @@ func add_city(player_id: String, player: String) -> String:
 			away -= (meet - origin).normalized()
 			sim.build_county_road(Vector2.ZERO, meet - origin, [1])
 			# Their half starts from their nearest road, so it joins their town.
-			# Their newest full copy, so the road goes into a whole town.
-			_load_full(other)
-			var their: CitySim = o.sim
 			var to: Vector2 = meet - o.origin
-			var from := _nearest_road_point(their, to)
-			var cmd := {"type": "build_county_road", "a": [from.x, from.y], "b": [to.x, to.y], "links": [1]}
-			their.apply_now(cmd)
+			var cmd := {}
+			if quick:
+				var from := _nearest_road_of(other, to)
+				cmd = {"type": "build_county_road", "a": [from.x, from.y], "b": [to.x, to.y], "links": [1]}
+				if not pending.has(other):
+					pending[other] = []
+				pending[other].append(cmd)
+			else:
+				# Their newest full copy, so the road goes into a whole town.
+				_load_full(other)
+				var their: CitySim = o.sim
+				var from := _nearest_road_point(their, to)
+				cmd = {"type": "build_county_road", "a": [from.x, from.y], "b": [to.x, to.y], "links": [1]}
+				their.apply_now(cmd)
 			if not handed.has(other):
 				handed[other] = []
 			handed[other].append(cmd)
@@ -132,8 +159,9 @@ func add_city(player_id: String, player: String) -> String:
 	sim.economy.money = Economy.START_MONEY
 	take_land(id, land_of_sim(id))
 	touched(id)
-	for other in handed:
-		touched(other)
+	if not quick:
+		for other in handed:
+			touched(other)
 	return id
 
 
@@ -147,16 +175,140 @@ static func new_sim() -> CitySim:
 
 ## Takes the latest copy of a town from its player's computer: a postcard
 ## or a full copy.
-func update_city(id: String, d: Dictionary) -> void:
+## `full_z` and `card_z` are the copy packed (the server has them as they
+## came in), kept for sending on. Returns whether it was taken.
+func update_city(id: String, d: Dictionary, full_z := "", card_z := "") -> bool:
 	# A full copy without roads is broken (a cut-short save): never let it
 	# replace a town.
 	if not d.get("postcard", false) and not d.has("roads"):
+		return false
+	if not cities.has(id):
+		return false
+	_data[id] = d
+	_stale[id] = true
+	_card_z.erase(id)
+	if card_z != "":
+		_card_z[id] = card_z
+	if not d.get("postcard", false):
+		_full[id] = d
+		_full_z.erase(id)
+		if full_z != "":
+			_full_z[id] = full_z
+		_count_copy(id)
+	_drop_built(id, d)
+	return true
+
+
+var _copies := 0
+
+
+func _count_copy(id: String) -> void:
+	_copies += 1
+	_copy_n[id] = _copies
+
+
+## A number that changes whenever the town's full copy does.
+func copy_number(id: String) -> int:
+	return int(_copy_n.get(id, 0))
+
+
+## The town's newest full copy, packed (packed here only if it wasn't).
+func packed_full(id: String) -> String:
+	if not _full_z.has(id):
+		_full_z[id] = RegionServer.pack(city_data(id))
+	return _full_z[id]
+
+
+## The town's newest postcard, packed (packed here only if it wasn't).
+func packed_card(id: String) -> String:
+	if not _card_z.has(id):
+		_card_z[id] = RegionServer.pack(postcard_data(id))
+	return _card_z[id]
+
+
+## Packs every town (the server, while starting up).
+func pack_all() -> void:
+	for id in cities:
+		packed_full(id)
+		packed_card(id)
+
+
+## A town's money, from its newest copy (without unpacking it).
+func money_of(id: String) -> float:
+	if _stale.has(id):
+		return float(_data[id].get("economy", {}).get("money", 0.0))
+	return cities[id].sim.economy.money if cities.has(id) else 0.0
+
+
+## A town's road node nearest a spot (its coordinates), from its newest copy.
+func _nearest_road_of(id: String, to: Vector2) -> Vector2:
+	if _stale.has(id) and _data[id].get("roads") is Dictionary:
+		return _nearest_road_point_in(_data[id].roads, to)
+	return _nearest_road_point(cities[id].sim, to)
+
+
+## The road node nearest a spot, from roads as saved data (city
+## coordinates), or the centre: the same as _nearest_road_point.
+static func _nearest_road_point_in(roads: Dictionary, to: Vector2) -> Vector2:
+	var best := Vector2.ZERO
+	var best_d := INF
+	var nodes: Dictionary = roads.get("nodes", {})
+	var ids := []
+	for k in nodes:
+		ids.append(int(k))
+	ids.sort()
+	for n in ids:
+		var p: Array = nodes[str(n)]
+		var d := Vector2(float(p[0]), float(p[1])).distance_squared_to(to)
+		if d < best_d:
+			best_d = d
+			best = Vector2(float(p[0]), float(p[1]))
+	return best
+
+
+## The node of roads (as saved data) within `within` metres of a spot, -1
+## if none: the same as RoadNetwork.find_node_near.
+static func _node_in(roads: Dictionary, at: Vector2, within: float) -> int:
+	var best := -1
+	var best_d := within
+	var nodes: Dictionary = roads.get("nodes", {})
+	for k in nodes:
+		var p: Array = nodes[k]
+		var d := Vector2(float(p[0]), float(p[1])).distance_to(at)
+		if d <= best_d:
+			best_d = d
+			best = int(k)
+	return best
+
+
+## A copy that has a handed road already: it needn't be handed again.
+func _drop_built(id: String, d: Dictionary) -> void:
+	if not pending.has(id) or not d.get("roads") is Dictionary:
 		return
-	if cities.has(id):
-		_data[id] = d
-		_stale[id] = true
-		if not d.get("postcard", false):
-			_full[id] = d
+	pending[id] = pending[id].filter(func(cmd): return _node_in(d.roads, _cmd_end(cmd), 3.0) < 0)
+	if pending[id].is_empty():
+		pending.erase(id)
+
+
+static func _cmd_end(cmd: Dictionary) -> Vector2:
+	var b: Array = cmd.get("b", [0, 0])
+	return Vector2(float(b[0]), float(b[1]))
+
+
+## Builds the handed roads a town's simulation doesn't have yet.
+func _add_pending(id: String) -> void:
+	if pending.has(id) and cities.has(id):
+		build_missing(cities[id].sim, pending[id])
+
+
+## Builds the county roads handed to a town that it doesn't have yet (each
+## ends at a node on the city line, so one there means it's built).
+static func build_missing(sim: CitySim, cmds: Array) -> void:
+	for cmd in cmds:
+		if cmd is Dictionary:
+			var end := _cmd_end(cmd)
+			if sim.network.find_node_near(Vector3(end.x, 0, end.y), 3.0) < 0:
+				sim.apply_now(cmd)
 
 
 ## Loads a town's simulation from its newest full copy, for changing it
@@ -169,6 +321,7 @@ func _load_full(id: String) -> void:
 	cities[id].sim.terrain_offset = cities[id].origin
 	cities[id].sim.from_dict(d)
 	_stale.erase(id)
+	_add_pending(id)
 
 
 ## Unpacks the waiting copies into their simulations: all of them, or just
@@ -182,6 +335,8 @@ func load_stale(only := "") -> Array:
 			sim.terrain_offset = cities[id].origin
 			sim.from_dict(_data[id])
 			done.append(id)
+			_stale.erase(id)
+			_add_pending(id)
 		_stale.erase(id)
 	if not done.is_empty():
 		share_care()
@@ -199,6 +354,9 @@ func city_data(id: String) -> Dictionary:
 	if not _full.has(id):
 		_full[id] = cities[id].sim.to_dict()
 		_data[id] = _full[id]
+		_full_z.erase(id)
+		_card_z.erase(id)
+		_count_copy(id)
 	return _full[id]
 
 
@@ -223,9 +381,9 @@ static func postcard_of(d: Dictionary) -> Dictionary:
 ## Call after changing a town's simulation directly, so its saved data is
 ## made afresh.
 func touched(id: String) -> void:
-	_data.erase(id)
-	_full.erase(id)
-	_stale.erase(id)
+	for d in [_data, _full, _stale, _full_z, _card_z]:
+		d.erase(id)
+	_count_copy(id)
 
 
 ## Neighbors' hospitals draw patients from every town in the region, and
@@ -424,9 +582,27 @@ func settle_trade(ids: Array) -> void:
 	var sims := {}
 	for id in ids:
 		if cities.has(id):
-			load_stale(id)
+			_trade_from_copy(id)
 			sims[id] = cities[id].sim
 	Trade.settle(sims, trade_links())
+
+
+## Trade needs only a town's offers, wants, links and regional projects:
+## a town whose newest copy waits as data takes just those from it, so
+## trade never unpacks a whole town (a second for a grown one, on the
+## server's loop). The rest of its simulation stays as it was, still
+## waiting to be unpacked when something needs it.
+func _trade_from_copy(id: String) -> void:
+	if not _stale.has(id):
+		return
+	var d: Dictionary = _data[id]
+	var sim: CitySim = cities[id].sim
+	sim.trade.from_dict(d.get("trade", {}))
+	sim.regional.from_dict(d.get("regional", {}))
+	if d.get("links") is Array:
+		sim.region_links.clear()
+		for n in d.links:
+			sim.region_links.append(int(n))
 
 
 ## Who trades with whom, and where: city id -> {neighbor id: link node}.
@@ -445,6 +621,8 @@ func trade_links() -> Dictionary:
 func _node_at(id: String, at: Array) -> int:
 	if not cities.has(id):
 		return -1
+	if _stale.has(id) and _data[id].get("roads") is Dictionary:
+		return _node_in(_data[id].roads, Vector2(float(at[0]), float(at[1])), 3.0)
 	return cities[id].sim.network.find_node_near(Vector3(float(at[0]), 0, float(at[1])), 3.0)
 
 
@@ -560,15 +738,22 @@ static func _nearest_road_point(sim: CitySim, to: Vector2) -> Vector2:
 ## Everything, to save. With `full_for` set to a town's id, only that town
 ## is a full copy and the others are postcards (for its player); "" sends
 ## postcards only.
-func to_dict(full_for := "*") -> Dictionary:
+##
+## Without `with_data`, the towns are only named and placed (the server
+## sends and saves each town's data on its own).
+func to_dict(full_for := "*", with_data := true) -> Dictionary:
 	var cs := {}
 	for id in cities:
 		var c: Dictionary = cities[id]
-		var data := city_data(id) if full_for == "*" or full_for == id else postcard_data(id)
 		cs[id] = {"owner": c.owner, "player": c.player, "name": c.name, "origin": [c.origin.x, c.origin.y],
-			"color": c.color, "city": data, "land": land_flat(id)}
-	return {"version": 2, "map": MAP, "seed": region_seed, "cities": cs, "chat": chat, "joins": joins,
+			"color": c.color, "land": land_flat(id)}
+		if with_data:
+			cs[id].city = city_data(id) if full_for == "*" or full_for == id else postcard_data(id)
+	var d := {"version": 2, "map": MAP, "seed": region_seed, "cities": cs, "chat": chat, "joins": joins,
 		"ledger": ledger.to_dict()}
+	if not pending.is_empty():
+		d.pending = pending
+	return d
 
 
 ## With `first` set, only that town is unpacked now (a player's own, so
@@ -588,6 +773,10 @@ func from_dict(d: Dictionary, first := "") -> void:
 	_data = {}
 	_full = {}
 	_stale = {}
+	_full_z = {}
+	_card_z = {}
+	_copy_n = {}
+	pending = pending_from(d)
 	var cs: Dictionary = d.get("cities", {})
 	for id in cs:
 		var c: Dictionary = cs[id]
@@ -604,10 +793,25 @@ func from_dict(d: Dictionary, first := "") -> void:
 				_full[id] = c.city
 		cities[id] = {"owner": str(c.owner), "player": str(c.get("player", "")), "name": str(c.name),
 			"origin": Vector2(float(c.origin[0]), float(c.origin[1])), "color": int(c.color), "sim": sim}
+		if _full.has(id):
+			_count_copy(id)
+		if not _stale.has(id):
+			_add_pending(id)
 		if c.get("land") is Array and not c.land.is_empty():
 			take_land(id, c.land)
 		elif not _stale.has(id):
 			take_land(id, land_of_sim(id))
+
+
+## The handed roads in a saved or sent region (see pending).
+static func pending_from(d: Dictionary) -> Dictionary:
+	var out := {}
+	var p = d.get("pending", {})
+	if p is Dictionary:
+		for id in p:
+			if p[id] is Array and not p[id].is_empty():
+				out[str(id)] = p[id].filter(func(cmd): return cmd is Dictionary)
+	return out
 
 
 ## The region with every town in it but the one listed, whose own computer
