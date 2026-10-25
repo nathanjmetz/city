@@ -320,11 +320,12 @@ static func sales(h: Dictionary) -> float:
 
 ## How much a place's land value is changed by the hubs around it: 1.0 is
 ## no change, 0.85 is 15% lower.
-func value_factor(p: Vector3) -> float:
+## `key` (a lot's) files the measurements for that spot, as _near_cell says.
+func value_factor(p: Vector3, key := "") -> float:
 	var total := 0.0
 	for id in hubs:
 		var h: Dictionary = hubs[id]
-		var d: float = _near_cell(id, h, p) * h.cell  # distance(h, p)
+		var d: float = _near_cell(id, h, p, key) * h.cell if key != "" else distance(h, p)
 		total += _effect(h.kind, d)
 		# Its tree's built nodes that lift land, in tree order: [value, reach].
 		for vr in _value_nodes(id, h):
@@ -341,12 +342,13 @@ static func _effect(kind: String, d: float) -> float:
 	return float(s.value) * (1.0 - d / float(s.reach))
 
 
-## distance(h, p) before the last * h.cell, kept for each point a hub's
-## land value is asked about: worked out again only when the hub moves or
-## gives up land, and when it takes more, only the new pieces are measured
-## (the nearest of all the pieces is the nearer of the old nearest and the
-## new). The same numbers as distance().
-func _near_cell(id: int, h: Dictionary, p: Vector3) -> float:
+## distance(h, p) before the last * h.cell, kept for each lot (by key, with
+## its spot: a lot that moves is measured again) a hub's land value is asked
+## about: worked out again only when the hub moves or gives up land, and
+## when it takes more, only the new pieces are measured (the nearest of all
+## the pieces is the nearer of the old nearest and the new). The same
+## numbers as distance(). Lots that are gone are dropped (_prune_near).
+func _near_cell(id: int, h: Dictionary, p: Vector3, key: String) -> float:
 	var e: Array = _near_cells.get(id, [])
 	# (Checked again only after some hub was touched: version.)
 	if e.is_empty() or e[5] != version:
@@ -363,10 +365,10 @@ func _near_cell(id: int, h: Dictionary, p: Vector3) -> float:
 			e[3] = now.duplicate()
 		e[5] = version
 	var cells: Array = e[3]
-	var got = e[4].get(p)
-	if got == null:
-		got = [_cells_near(h, p, cells), cells.size()]
-		e[4][p] = got
+	var got = e[4].get(key)
+	if got == null or got[2] != p:
+		got = [_cells_near(h, p, cells), cells.size(), p]
+		e[4][key] = got
 	elif int(got[1]) < cells.size():
 		got[0] = minf(float(got[0]), _cells_near(h, p, cells.slice(int(got[1]))))
 		got[1] = cells.size()
@@ -405,7 +407,28 @@ static func _cells_near(h: Dictionary, p: Vector3, cells: Array) -> float:
 	return best
 
 
-var _near_cells := {}  # hub id -> [pos, dir, cell, cells, {point: [nearest, pieces looked at]}, version]
+var _near_cells := {}  # hub id -> [pos, dir, cell, cells, {lot key: [nearest, pieces looked at, spot]}, version]
+
+
+## Drops what's kept for lots that are gone and hubs that are gone, once
+## the keeping has grown well past the lots there are: memory stays in step
+## with the town, not with every lot it ever had. (Dropped lots would be
+## measured afresh, to the same numbers.)
+func _prune_near(sim: CitySim) -> void:
+	var most := sim.lots.size() * 2 + 256
+	if _vf_cache.size() > most:
+		for k in _vf_cache.keys():
+			if not sim.lots.has(k):
+				_vf_cache.erase(k)
+	for id in _near_cells.keys():
+		if not hubs.has(id):
+			_near_cells.erase(id)
+			continue
+		var pts: Dictionary = _near_cells[id][4]
+		if pts.size() > most:
+			for k in pts.keys():
+				if not sim.lots.has(k):
+					pts.erase(k)
 
 
 ## Metres from a point to the nearest edge of a hub's land (0 inside).
@@ -436,9 +459,10 @@ func lot_factor(sim: CitySim, key: String) -> float:
 		if sig != _vf_sig:
 			_vf_sig = sig
 			_vf_cache.clear()
+		_prune_near(sim)
 	var row: Array = _vf_cache.get(key, [])
 	if row.is_empty() or row[0] != lot.pos:
-		row = [lot.pos, value_factor(lot.pos)]
+		row = [lot.pos, value_factor(lot.pos, key)]
 		_vf_cache[key] = row
 	var f: float = row[1]
 	if trash.get(lot.seg, 0.0) >= Balance.GARBAGE_PILE_LB:

@@ -5,14 +5,13 @@ extends RefCounted
 ## ground (does a road run through this outline? which road is nearest?)
 ## looks only at the roads near it instead of every road in town. Made
 ## again whenever the roads change (RoadNetwork.revision goes up on every
-## edit), so it never answers for roads as they were; each road's sampled
-## line is worked out the first time it's asked for.
+## edit), so it never answers for roads as they were. Kept on the network
+## itself (RoadNetwork._road_index), so it goes when the network goes.
 
 const CELL := 100.0
 ## Points along each road, as RoadNetwork.sample_segment(id, SAMPLES).
 const SAMPLES := 24
 
-var network: RoadNetwork
 var hulls := {}  # seg id -> Rect2 around its control points (x, z)
 ## seg id -> its hull grown by its right of way (RoadStyle.right_of_way_half):
 ## all the ground the road can reach.
@@ -21,22 +20,16 @@ var order := {}  # seg id -> its place in network.segments
 var _samples := {}  # seg id -> PackedVector3Array, when first asked for
 var _cells := {}  # Vector2i -> [seg ids whose reach box meets it]
 
-static var _of := {}  # network instance id -> [revision, segment count, RoadIndex]
-
 
 ## The index for the roads as they are now, or null mid-batch (the roads
 ## half edited, and the revision not yet moved on).
 static func of(net: RoadNetwork) -> RoadIndex:
 	if net._batch > 0 or net._batch_dirty:
 		return null
-	var key := net.get_instance_id()
-	var e: Array = _of.get(key, [])
+	var e: Array = net._road_index
 	if not e.is_empty() and e[0] == net.revision and e[1] == net.segments.size():
 		return e[2]
-	if _of.size() > 16:
-		_of.clear()  # networks from tests come and go
 	var ix := RoadIndex.new()
-	ix.network = net
 	var i := 0
 	for id in net.segments:
 		var c := net.curve_of(id)
@@ -53,14 +46,15 @@ static func of(net: RoadNetwork) -> RoadIndex:
 				if not ix._cells.has(cell):
 					ix._cells[cell] = []
 				ix._cells[cell].append(id)
-	_of[key] = [net.revision, net.segments.size(), ix]
+	net._road_index = [net.revision, net.segments.size(), ix]
 	return ix
 
 
-## A road's sampled line, RoadNetwork.sample_segment(id, SAMPLES).
-func samples(id: int) -> PackedVector3Array:
+## A road's sampled line, net.sample_segment(id, SAMPLES), worked out the
+## first time it's asked for (`net` is the network this index is of).
+func samples(net: RoadNetwork, id: int) -> PackedVector3Array:
 	if not _samples.has(id):
-		_samples[id] = network.sample_segment(id, SAMPLES)
+		_samples[id] = net.sample_segment(id, SAMPLES)
 	return _samples[id]
 
 

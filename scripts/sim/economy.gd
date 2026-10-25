@@ -129,17 +129,11 @@ func _slice_sums(sim: CitySim, slice: int) -> Dictionary:
 	var care_of := {}
 	var land_of := {}
 	var odors := sim.services.water.odor_sources(sim.services.buildings)
-	# Read once, not per building (the same numbers as the functions named
-	# beside each give; the arithmetic below is theirs, in the same order).
+	# Read once, not per building (the same dictionaries the sim reads).
 	var buildings: Dictionary = sim.buildings
 	var served: Dictionary = sim.services.served
 	var lots: Dictionary = sim.lots
 	var park_value: Dictionary = sim.parks.lot_value
-	var tel_served: Dictionary = sim.telecom.served
-	var smoke: Dictionary = sim.pollution.lots
-	var wear: Dictionary = sim.pollution.wear
-	var heritage_lift: Dictionary = sim.heritage.lift
-	var care_tier: Dictionary = sim.care.tier
 	var no_mail: bool = sim.mail.offices.is_empty()
 	for key in (sim.ledger().slices[slice] if slice >= 0 else sim.buildings.keys()):
 		var b: Dictionary = buildings[key]
@@ -160,24 +154,11 @@ func _slice_sums(sim: CitySim, slice: int) -> Dictionary:
 		# and parks and landmarks lift it. Good mail service lifts it a little
 		# too, and so do well-kept streets (Funding) and fiber and cell service;
 		# a smelly sewer plant and pollution lower it.
-		# building_tax(b, staffed, lift), with lift = parks + telecom.lot_lift:
-		var ts: Dictionary = tel_served.get(key, {})
-		var tel := 0.0 if ts.is_empty() else (Balance.TELECOM_FIBER_LIFT if ts.fiber else 0.0) + Balance.TELECOM_CELL_LIFT * float(ts.q)
-		var lift: float = park_value.get(key, 0.0) + tel
-		var value: float = VALUE_PER_PLACE[zone] * b.cap * (1.0 + lift)
-		var used := staffed
-		if zone == ZoneMap.Zone.RESIDENTIAL:
-			used = float(b.occ) / maxf(b.cap, 1.0)
-		var flats := float(b.get("flats", 0))
-		var homes: float = VALUE_PER_PLACE[ZoneMap.Zone.RESIDENTIAL] * flats * (0.5 + 0.5 * float(b.get("focc", 0)) / maxf(flats, 1.0))
-		var bt: float = (value * (0.5 + 0.5 * used) + homes) * tax[zone] / 100.0
-		# sim.land_factor(key): hubs * pollution * heritage * care.
-		var pol := 1.0
-		if not (smoke.get(key, {}) as Dictionary).is_empty() or float(wear.get(key, 0.0)) > 0.0:
-			pol = sim.pollution.lot_factor(sim, key)
-		var land: float = sim.hubs.lot_factor(sim, key) * pol * float(heritage_lift.get(key, 1.0)) \
-			* float(Balance.CARE_LAND[int(care_tier.get(key, 0)) + 2])
-		var mail := 1.0 if no_mail else sim.mail.lot_factor(sim, key)
+		# One shared sum for each (building_tax, CitySim.land_factor), so the
+		# budget and the inspector never disagree.
+		var bt := building_tax(b, staffed, park_value.get(key, 0.0) + sim.telecom.lot_lift(key))
+		var land := sim.land_factor(key)
+		var mail := 1.0 if no_mail else sim.mail.lot_factor(sim, key)  # lot_factor's own first answer
 		var tax_due := bt * land * mail * float(land_of[area]) / 12.0
 		if lots.has(key) and not odors.is_empty():
 			tax_due *= WaterUtility.value_from(odors, lots[key].pos)

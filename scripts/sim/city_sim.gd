@@ -3084,6 +3084,8 @@ func touched_lots(keys: Array) -> void:
 	for key in keys:
 		_lots_touched[key] = true
 		_lot_ix_stale[key] = true
+	if not keys.is_empty():
+		_lot_rev += 1  # lots_near files them again, wherever they are now
 
 
 ## Works out lots_delta: lots added, gone or changed since `was`. Unchanged
@@ -3218,16 +3220,20 @@ var _lots_touched := {}  # lot key -> true (see touched_lots)
 ## Tools set this to check that lots away from what changed really are
 ## unchanged (_verify_ground), printing GROUND MISMATCH where not.
 static var verify_ground := false
+## How many GROUND MISMATCH lines were printed (for tests to fail on).
+static var ground_mismatches := 0
 
 
 func _verify_ground(near: Array) -> void:
 	for key in lots:
 		if not _lot_near(lots[key], near) and _lot_blocked(lots[key]):
 			print("GROUND MISMATCH lot %s now blocked, away from what changed" % key)
+			ground_mismatches += 1
 	for key in _blocked_by:
 		var e: Array = _blocked_by[key]
 		if not _lot_near(e[0], near) and _lot_blocked(e[0]) != bool(e[1]):
 			print("GROUND MISMATCH planned lot %s changed, away from what changed" % key)
+			ground_mismatches += 1
 var _lot_cells_of := {}
 var _lot_cells_key := []
 var _lot_cells := {}  # Vector2i -> [lot keys]

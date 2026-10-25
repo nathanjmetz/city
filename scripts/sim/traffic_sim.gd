@@ -1150,14 +1150,27 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 				best_route = [s[0]]
 	# Costs so far, the way each came from and the estimates, by way id in
 	# packed arrays (INF, -1 and -1 when not reached yet): the same numbers
-	# the search kept in dictionaries, read faster.
+	# the search kept in dictionaries, read faster. The arrays are kept
+	# between searches (packed arrays are shared, not copied, so these
+	# names write into them), and only the entries the last search reached
+	# are set back, not every way in town.
 	var n := _way_count()
-	var dist := PackedFloat64Array()
-	dist.resize(n)
-	dist.fill(INF)
-	var prev := PackedInt32Array()
-	prev.resize(n)
-	prev.fill(-1)
+	if _pl_dist.size() != n:
+		_pl_dist.resize(n)
+		_pl_dist.fill(INF)
+		_pl_prev.resize(n)
+		_pl_prev.fill(-1)
+		_pl_h.resize(n)
+		_pl_h.fill(-1.0)
+		_pl_seen.clear()
+	else:
+		for i in _pl_seen:
+			_pl_dist[i] = INF
+			_pl_prev[i] = -1
+			_pl_h[i] = -1.0
+		_pl_seen.clear()
+	var dist := _pl_dist
+	var prev := _pl_prev
 	# A*: the estimate is the straight line from the end of a way to the
 	# nearest target at the fastest limit in town, which no real route
 	# beats, so the route found is still the fastest.
@@ -1167,9 +1180,7 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 			var p0: Vector3 = ways[t].pts[0]
 			goals.append(Vector2(p0.x, p0.z))
 	var inv_v := 1.0 / _vtop
-	var hcache := PackedFloat64Array()
-	hcache.resize(n)
-	hcache.fill(-1.0)
+	var hcache := _pl_h
 	# A binary heap of (cost + estimate, way) in two packed arrays, kept
 	# inline: ties go to the lower way id, so every copy picks the same route.
 	var hg := PackedFloat64Array()
@@ -1178,6 +1189,8 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 		var w: Dictionary = ways[s[0]]
 		var g: float = maxf(w.len - s[1], 0.0) / w.vmax + (s[2] if s.size() > 2 else 0.0)
 		if g < dist[s[0]]:
+			if dist[s[0]] == INF:
+				_pl_seen.append(s[0])
 			dist[s[0]] = g
 			_hpush(hg, hu, g + _h_at(s[0], goals, inv_v, hcache), s[0])
 	var end := -1
@@ -1211,6 +1224,8 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 					best_route = []
 			var ng: float = e + _wcost.get(nx, INF)
 			if ng < dist[nx]:
+				if dist[nx] == INF:
+					_pl_seen.append(nx)
 				dist[nx] = ng
 				prev[nx] = u
 				_hpush(hg, hu, ng + _h_at(nx, goals, inv_v, hcache), nx)
@@ -1245,6 +1260,11 @@ func _way_count() -> int:
 
 var _way_n := 0
 var _way_n_key := []
+## _plan's search arrays, by way id (see there), and the ids it reached.
+var _pl_dist := PackedFloat64Array()
+var _pl_prev := PackedInt32Array()
+var _pl_h := PackedFloat64Array()
+var _pl_seen := PackedInt32Array()
 
 
 ## _h_est with its answers kept by way id in a packed array (-1: not yet).

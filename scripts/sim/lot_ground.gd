@@ -117,7 +117,13 @@ static func items(sim: CitySim) -> Dictionary:
 		out["big:%d" % id] = [hash(poly), [_box(poly)]]
 	# The railroad's yards and track, county roads bulldozed or not, and
 	# where the town sits on the county: too spread out to box.
-	out["rail"] = [hash([sim.rail.depots, sim.rail._cover.size()]), null]
+	# Rail.covers reads the depot yards (yard_poly) and the track's cells:
+	# both by content, so swapping track for the same number of cells counts.
+	var yards := []
+	for id in sim.rail.depots:
+		var d: Dictionary = sim.rail.depots[id]
+		yards.append([id, d.pos, d.dir, d.axis])
+	out["rail"] = [hash([yards, sim.rail.cover_hash]), null]
 	out["county"] = [hash(sim.county_removed), null]
 	out["terrain"] = [hash(sim.terrain_offset), null]
 	return out

@@ -315,7 +315,7 @@ static func road_clash(network: RoadNetwork, poly: PackedVector2Array) -> bool:
 		for q in poly:
 			box = box.expand(q)
 		for id in ix.near(box):
-			if _clashes(poly, ix.samples(id), RoadStyle.right_of_way_half(network.segments[id].type)):
+			if _clashes(poly, ix.samples(network, id), RoadStyle.right_of_way_half(network.segments[id].type)):
 				return true
 		return false
 	for id in network.segments:
@@ -606,6 +606,8 @@ var _rows_maps := {}
 ## Tools set this to check each row brought up to date against one worked
 ## out afresh, printing ROWS MISMATCH where they differ.
 static var verify_rows := false
+## How many ROWS MISMATCH lines were printed (for tests to fail on).
+static var rows_mismatches := 0
 
 
 ## Brings every kept row up to date for the kinds whose distances changed
@@ -656,6 +658,7 @@ func _rows_update(network: RoadNetwork, lots: Dictionary) -> void:
 				row[1] = _lot_reach(network, lot, _rows_maps.get("owners", {}))
 		if verify_rows and row[1] != _lot_reach(network, lot, _rows_maps.get("owners", {})):
 			print("ROWS MISMATCH ", key)
+			rows_mismatches += 1
 
 
 ## A lot's fresh row in `served`, and its place in the utilities' lists.
