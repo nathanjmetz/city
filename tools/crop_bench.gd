@@ -11,6 +11,12 @@ extends SceneTree
 ## close-up plants off and the ground shader in FILE (the old one), and
 ## report the median frame of each. Other programs on the machine slow both
 ## halves alike, so the difference is the cost.
+## --freeze: instead of the views, change the farms (a new farm, a road cut
+## through the fields, a year turning, a farm growing, a plain
+## farms_changed) in a town with --farms N farms (default 6) and report the
+## worst frame in the two seconds after each, and how long until the fields
+## show the change (FarmView.settled(), when it has one). --without-view
+## disconnects FarmView, to see what the rest of the game spends on the change.
 
 var _main: Node
 var _cam: CityCamera
@@ -33,6 +39,17 @@ var _old_shader: Shader
 var _new_shader: Shader
 var _half := {"new": PackedFloat32Array(), "old": PackedFloat32Array()}
 var _mem := {"new": [], "old": []}
+var _freeze := false
+var _fz_scn := -1
+var _fz_frames := 0
+var _fz_t0 := 0
+var _fz_times := PackedFloat32Array()
+var _fz_shown := -1.0
+var _fz_view: FarmView
+var _fz_rows := []
+var _fz_plants := PackedFloat32Array()
+var _fz_worst := [0.0, []]
+var _fz_work := PackedFloat32Array()  # FarmView's drawing time in each frame watched
 
 
 func _initialize() -> void:
@@ -60,6 +77,10 @@ func _process(_delta: float) -> bool:
 		return false
 	_step_frames += 1
 	var now := Time.get_ticks_usec()
+	if _freeze:
+		_freeze_frame(now)
+		_last_us = now
+		return false
 	if _ab != "":
 		_ab_frame(now)
 		_last_us = now
@@ -94,6 +115,12 @@ func _setup() -> void:
 	sim.apply({"type": "paint_farmland", "points": [[-1150, 30], [1150, 30], [1150, 1100], [-1150, 1100]]})
 	print("farmhouse: ", sim.apply({"type": "place_farmhouse", "pos": [-500, 60], "dir": [0, -1], "crop": "corn"}))
 	print("farmhouse: ", sim.apply({"type": "place_farmhouse", "pos": [450, 60], "dir": [0, -1], "crop": "soybeans"}))
+	_freeze = _arg("--freeze", "x") != "x" or OS.get_cmdline_user_args().has("--freeze")
+	if _freeze:
+		var n := int(_arg("--farms", "6"))
+		for i in n - 2:
+			var x := -1000.0 + 2000.0 * float(i + 1) / float(n - 1) + 140.0
+			print("farmhouse: ", sim.apply({"type": "place_farmhouse", "pos": [x, 60], "dir": [0, -1], "crop": "corn" if i % 2 == 0 else "soybeans"}))
 	sim.farms.price = 1.1
 	for i in 400:
 		sim.farms.decide(sim.field_usable)
@@ -113,6 +140,20 @@ func _setup() -> void:
 		_spot = _find_field("corn")
 		_spot2 = _find_field("soybeans")
 	print("county corn spot (view m): ", _spot, "  soybean spot: ", _spot2)
+	if _freeze:
+		for c in _main.get_children():
+			if c is FarmView:
+				_fz_view = c
+		_warm = int(_arg("--warm", "600"))
+		if OS.get_cmdline_user_args().has("--without-view"):
+			# What the rest of the game spends on a farm change, FarmView aside.
+			sim.farms_changed.disconnect(_fz_view._rebuild)
+		sim.tick_count = int((24.0 + fposmod(8.5 - Seasons.START_MONTH, 12.0)) * Seasons.TICKS_PER_DAY)
+		_cam.look_at_point(_farm)
+		_cam.set_view(deg_to_rad(20.0), deg_to_rad(40.0), 900.0)
+		_step = 0
+		_step_frames = 0
+		return
 	var months := _arg("--months", "4.5,6.1,8.5,9.8,0.5").split(",")
 	_sample = int(_arg("--frames", "240"))
 	# Let the desktop's land preload finish first (TerrainView.PRELOAD_MS).
@@ -155,6 +196,125 @@ func _find_field(crop: String) -> Vector3:
 				best_score = score
 				best = Vector3(p.x, 0, p.y)
 	return best
+
+
+const FZ_SCENARIOS := ["plain farms_changed", "new farm", "road through fields", "year turns (new crops)", "farm grows"]
+const FZ_ROAD_X := -250.0
+const FZ_WAIT := 90
+const FZ_WATCH := 420
+
+
+## One frame of the freeze test: wait, change the farms, watch FZ_WATCH frames.
+func _freeze_frame(now: int) -> void:
+	var sim: CitySim = _main.sim
+	if _step_frames < _warm + (0 if _fz_scn >= 0 else 1):
+		return
+	if _fz_scn < 0 or _fz_frames >= FZ_WAIT + FZ_WATCH:
+		if _fz_scn >= 0:
+			_freeze_report()
+		_fz_scn += 1
+		_fz_frames = 0
+		_fz_times.clear()
+		_fz_work.clear()
+		_fz_plants.clear()
+		_fz_worst = [0.0, []]
+		_fz_shown = -1.0
+		if _fz_scn >= FZ_SCENARIOS.size():
+			var out := _arg("--out", "")
+			if out != "":
+				FileAccess.open(out, FileAccess.WRITE).store_string(JSON.stringify(_fz_rows, "  "))
+			quit()
+			return
+	_fz_frames += 1
+	if _fz_frames == FZ_WAIT - 30 and _fz_scn == 2:
+		# Take the farm reserve off a strip first, so a road can be laid there.
+		print("  reserve cleared: ", sim.apply({"type": "paint_reserve", "kind": "", "points": [
+			[FZ_ROAD_X - 25, 5], [FZ_ROAD_X + 25, 5], [FZ_ROAD_X + 25, 310], [FZ_ROAD_X - 25, 310]]}))
+	if _fz_frames == FZ_WAIT - 30 and _fz_scn == 3:
+		sim.farms.year += 1
+		sim.farms.decide(sim.field_usable)
+	if _fz_frames == FZ_WAIT - 30 and _fz_scn == 4:
+		sim.farms.price = 1.4
+		for i in 30:
+			sim.farms.decide(sim.field_usable)
+	if _fz_frames <= FZ_WAIT:
+		return
+	if _fz_frames == FZ_WAIT + 1:
+		Perf.reset_window()
+		FarmSteadJob.worst.clear()
+		_freeze_change(sim)
+		_fz_t0 = Time.get_ticks_usec() - int(_fz_emit_ms * 1000.0)
+	_fz_times.append((now - _last_us) / 1000.0)
+	_fz_work.append(_fz_view.work_ms if "work_ms" in _fz_view else 0.0)
+	_fz_plants.append(_fz_view._plants.built_ms)
+	if "work_parts" in _fz_view and _fz_view.work_ms > _fz_worst[0]:
+		_fz_worst = [_fz_view.work_ms, _fz_view.work_parts.duplicate()]
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	if _fz_shown < 0.0 and _fz_view.has_method("settled") and _fz_view.settled():
+		_fz_shown = (now - _fz_t0) / 1000.0
+	elif _fz_shown < 0.0 and not _fz_view.has_method("settled") and _fz_frames > FZ_WAIT + 1:
+		_fz_shown = (now - _fz_t0) / 1000.0
+
+
+func _freeze_change(sim: CitySim) -> void:
+	var t0 := Time.get_ticks_usec()
+	match _fz_scn:
+		0:
+			sim.farms_changed.emit()
+		1:
+			print("  new farm: ", sim.apply({"type": "place_farmhouse", "pos": [-770, 60], "dir": [0, -1], "crop": "corn"}))
+		2:
+			print("  road: ", sim.apply({"type": "build_road", "start": [FZ_ROAD_X, 0], "ctrl": [FZ_ROAD_X, 150], "end": [FZ_ROAD_X, 300]}))
+		3:
+			t0 = Time.get_ticks_usec()
+			sim.farms_changed.emit()
+		4:
+			t0 = Time.get_ticks_usec()
+			sim.farms_changed.emit()
+	_fz_emit_ms = (Time.get_ticks_usec() - t0) / 1000.0
+
+
+var _fz_emit_ms := 0.0
+
+
+func _freeze_report() -> void:
+	var sorted := _fz_times.duplicate()
+	sorted.sort()
+	var over := 0
+	for v in _fz_times:
+		if v > 16.7:
+			over += 1
+	var row := {"change": FZ_SCENARIOS[_fz_scn], "emit_ms": _fz_emit_ms, "worst_frame_ms": sorted[-1],
+		"second_worst_ms": sorted[-2], "median_ms": sorted[sorted.size() / 2], "frames_over_16ms": over,
+		"shown_after_ms": _fz_shown}
+	_fz_rows.append(row)
+	print("FREEZE %-24s emit call %6.1f ms  worst frame %6.1f ms (next %5.1f, median %4.1f)  frames over 16.7 ms: %d  shown after %6.0f ms" % [
+		row.change, row.emit_ms, row.worst_frame_ms, row.second_worst_ms, row.median_ms, over, row.shown_after_ms])
+	# The farm drawing's own share: its worst frame, and how many frames it
+	# was over 3.5 ms (its budget is 3 ms; one farmstead step can run over).
+	var worst_work := 0.0
+	var long_work := 0
+	var slow_frames_with_work := 0
+	for i in _fz_work.size():
+		worst_work = maxf(worst_work, _fz_work[i])
+		long_work += 1 if _fz_work[i] > 3.5 else 0
+		if _fz_times[i] > 14.0 and _fz_work[i] > 1.0:
+			slow_frames_with_work += 1
+	row["worst_farm_work_ms"] = worst_work
+	if not FarmSteadJob.worst.is_empty():
+		print("   slowest farmstead/barn steps (ms): ", FarmSteadJob.worst)
+	print("   first frames after the change (ms): ", ", ".join(Array(_fz_times.slice(0, 6)).map(func(x): return "%.1f" % x)))
+	var order := range(_fz_times.size())
+	order.sort_custom(func(a, b): return _fz_times[a] > _fz_times[b])
+	print("   slowest frames (frame number after the change: ms, of which farm drawing and plants): ", ", ".join(order.slice(0, 4).map(
+		func(i): return "#%d: %.1f (farm %.1f, plants %.1f)" % [i, _fz_times[i], _fz_work[i], _fz_plants[i]])))
+	print("   farm drawing: worst %.1f ms in a frame (farmsteads %s ms, fields, herds); %d frames over 3.5 ms; frames over 14 ms with farm work in them: %d" % [
+		worst_work, ", ".join(Array(_fz_worst[1]).map(func(x): return "%.1f" % x)), long_work, slow_frames_with_work])
+	var parts := []
+	for k in ["farms.homes", "farms.barns", "farms.cows", "farms.signs", "frame.farm_fields", "frame.crops", "frame.crop_plants", "farm_job.scan", "farm_job.cells", "farm_job.fence", "farm_job.lane", "farm_job.install", "farm_job.plants_check", "farm_stead.build", "farm_stead.drape", "farm_stead.place", "frame.farm_work"]:
+		if Perf.stats.has(k):
+			parts.append("%s %.1f/%.2f x%d" % [k, Perf.stats[k].max, Perf.stats[k].sum / maxf(Perf.stats[k].n, 1), Perf.stats[k].n])
+	print("   worst/mean ms x calls: ", ", ".join(parts))
 
 
 func _next() -> void:

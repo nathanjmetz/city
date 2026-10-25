@@ -7,27 +7,32 @@ Updated 2026-10-25 by the coordinating session ("Desktop photoreal handoff"). Th
 - "i want you to begin the work and continue without asking me anything. i wont be here to approve so i dont want you to stop."
 - Merge to main when each step is verified, meaning every web-preview test passes and a second reviewer has checked the diff. Then confirm the web and desktop builds finish before calling anything live.
 - What the game is and how it runs never change. What it does and how it looks are sliders on one performance budget (see `docs/desktop-photoreal-handoff.md`). Every feature and every detail is priced in measured ms and memory, next to what it adds. Costly, low-value things go to Nathan, not cut silently.
+- **Neighbor towns are a living picture (Nathan chose A, 2026-10-25).** In a shared region, your game no longer keeps every neighbor's whole town (about 1 GB each). It shows their buildings, roads, night lights and some traffic, updated about once a minute, and fills in full detail only when you fly over to look. This is the price list's item #1: it's what lets browser players and 8+ players share a region.
 - Still waits for Nathan: anything touching sign-in, paid services, data loss, big downloads (the real county map data and its OpenStreetMap credit line), or deleting things.
 
 ## Waiting on Nathan
 
 When a helper hits a wall it writes its question here and stops. That task waits, and the next task in the queue starts. Answer any time; the task picks up from the answer.
 
-- (none yet)
+- **Day and night off (from the daylight work, PR #541):** when the day-and-night cycle is turned off, should the game show a real summer moment (for example June 21 at 1:40 pm), or keep today's tuned sun from the southwest, which a real summer day never has? Until you answer, it keeps today's look.
 
-## Working now (background helpers, each in its own worktree and branch)
+## Working now (end of 2026-10-25; tokens nearly used for the week)
 
-| Helper | Branch | Goal |
+Unfinished work is always saved on a branch. A new session restarts a helper from its branch (read its diff first).
+
+| Work | Branch | State |
 | --- | --- | --- |
-| Town speed | `claude/town-speed` | 69k-person town: under 15 ms a step, no step over 100 ms, builds in under a minute |
-| New drawing style | `claude/new-drawing-test` | 16k town drawn the new way, measured against today's 58 ms, 6.7 GB and 470/369 stutters |
-| Trees that grow | `claude/trees-grow` | Queue 12 |
-| Light through the day | `claude/daylight` | Ranked detail #8 |
-| Region under load | `claude/region-load-fixes` | Big regions join; no city-line or server freezes |
+| New building drawing in the game (the biggest visible change) | `claude/building-drawing` (WIP also on `wip/building-drawing`) | Running. Houses first, then shops, civic, factories |
+| Nathan's road list + power lines, then roads age | `claude/road-look-fixes`, then `claude/roads-age` (`wip/roads-age`) | Running. Playtest items 1-6, 10, 11 |
+| Automatic quality (browser picked Low on a fast Mac) | `claude/auto-quality` (`wip/auto-quality`) | Running |
+| Town life: jammed white trucks, alert-icon smear, walkers on lawns, a walking-code error | `claude/town-life-fixes` | Running |
+| Region under load (city-line freezes, welcome too big, server stalls) | `claude/region-load-fixes` | Running. Welcome uses a light neighbor form for choice A |
+| Farmsteads | PR #546 | Live once the build finishes |
+| The price list (cost of each feature) | `wip/price-list` | Paused to save tokens |
+| Browser measured | `wip/browser-measure` | Paused to save tokens |
+| Playtest look check | PR #547 (`docs/look-check.md`) | Done; findings handed out |
 
-Merged: the crop calendar (PR #537, ranked detail #1).
-
-Done and live: #535 (the region play-through joins again), #538 (shared-region stress test; findings in the scale-test doc), #536 (details ranked by impact).
+Live on 2026-10-25: #527 land preload, #528-#530 construction trucks and the builder's yard, #535 region play-through, #537 crop calendar, #541 daylight, #545 farm field freeze, #542 trees that grow, #544 town speed (about 2x), #548 ground lines, #546 farmsteads, #547 playtest list, #550 town life (ambulance cap, alert icons, walkers).
 
 ## The queue, in order
 
@@ -43,6 +48,8 @@ A few helpers run at a time, never two on the same files.
 7. A browser measurement: the web build timed in a real browser.
 8. Long-haul test: hours at top speed, memory creep, autosave and big-edit freezes.
 9. Shared-region stress test: several players with big towns.
+9a. Neighbor towns as a living picture (Nathan chose A): starts when the region fixes land; then re-run the region stress test with a browser player.
+9b. The price list: every feature's measured cost in ms and memory next to what it adds, so the costly, low-value ones go to Nathan one at a time.
 
 *How it looks*
 10. Houses grown in code (brick, siding, roofs, windows, trim), checked against real photos.
@@ -60,6 +67,11 @@ A few helpers run at a time, never two on the same files.
 
 *Life you discover:* `docs/real-life-details.md`, now ranked by impact (Nathan, 2026-10-25: "organize that list by what we have the most dramatic impact on the game and work on those things first"). Work it from the Top 50 down, a few ideas a helper, numbers checked before they become rules.
 
+*Next up (Nathan, 2026-10-25)*
+- Fix the new building drawing's review findings (posted on PR #551), then merge #549 and #551.
+- Home screen weather: "instead of just time and day and season you include the weather." The game draws no weather yet, so build overcast skies, rain, snow and fog (these serve the game too), then feed in Marion's live conditions from the National Weather Service (api.weather.gov: free, no key, official; falls back to clear when offline). Only Marion's fixed location is sent, never the player's. Must have a simple on/off switch in settings, like day and night (Nathan, 2026-10-25: "will it be easy to turn off with a simple toggle switch still?"); off means always clear.
+- Traffic: a 2,700-person town growing along the highway drops to about 45% flow; queues back up at the all-way stops where highway streets enter the grid.
+
 *Waits for Nathan*
 30. The real Grant County map from public data (big downloads; OpenStreetMap credit line).
 31. Measuring on the Mac mini and Mac Studio themselves.
@@ -67,4 +79,4 @@ A few helpers run at a time, never two on the same files.
 ## Results so far
 
 - `docs/scale-test-2026-10-25.md`: the measurements and the plan.
-- Live today: #527 (desktop land preload), #528 (no construction-truck jam), #529 (house trucks), #530 (free builder's yard).
+- `docs/look-check.md` (PR #547): the playtester's ranked list of what looks wrong. Re-run the playtester after each visible merge.

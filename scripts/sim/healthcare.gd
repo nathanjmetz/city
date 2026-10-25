@@ -60,6 +60,15 @@ var trips := {}
 var on_scene := []
 ## Calls the county's ambulance answered (no hospital, or all ours busy).
 var county_calls := 0
+## Calls answered from the next county over while every county rig was out
+## (Balance.EMS_COUNTY_RIGS): no vehicle drives in town for those.
+var mutual_aid := 0
+## Next-county help on its way: {"t": tick it arrives, "call", "patient"}.
+## It answers EMS_MUTUAL_DELAY ticks after the call, so being out of rigs
+## costs time, not just a counter.
+var mutual_pending := []
+## Ticks at which next-county help arrived, the last month's worth.
+var mutual_log := []
 ## Set by the region every tick: people in the neighboring towns, and how
 ## much their hospitals' helipads and specialty centers lift care here.
 var region_pop := 0
@@ -80,7 +89,7 @@ func tick(sim: CitySim) -> void:
 		sim.permits.locators[PERMIT_KIND] = func(s: CitySim, id: int) -> Vector2:
 			var b: Dictionary = s.services.buildings.get(id, {"pos": Vector3.ZERO})
 			return Vector2(b.pos.x, b.pos.z)
-	if sim.tick_count % DECIDE_EVERY == 0:
+	if sim.tick_count % DECIDE_EVERY == Balance.ROUND_AT.hospitals:
 		decide(sim)
 	if not sim.simulate_traffic:
 		return
@@ -90,11 +99,55 @@ func tick(sim: CitySim) -> void:
 	for f in sim.traffic.failed:
 		if trips.has(f.id):
 			trips.erase(f.id)  # no way through: the crew is back at base
+	_sweep(sim)
+	_mutual_tick(sim)
 	for crew in on_scene.duplicate():
 		if sim.tick_count >= int(crew.until):
 			_head_back(sim, crew)
-	if sim.tick_count % CALL_EVERY == 0:
+	if sim.tick_count % CALL_EVERY == Balance.ROUND_AT.ems_calls:
 		_roll_call(sim)
+
+
+## Lets go of any rig the traffic has lost track of, or that has been out
+## far longer than a call can take (no road to the hospital, a car stuck):
+## the county cap counts rigs out, so a rig that never comes back would
+## shut the county's help off for good.
+func _sweep(sim: CitySim) -> void:
+	if sim.tick_count % CALL_EVERY != Balance.ROUND_AT.ems_calls:
+		return
+	var live := {}
+	for id in sim.traffic.trip_ids():
+		live[id] = true
+	var limit: int = Balance.EMS_TRIP_MAX_TICKS
+	for t in trips.keys():
+		if not live.has(t) or sim.tick_count - int(trips[t].t0) > limit:
+			trips.erase(t)
+	for crew in on_scene.duplicate():
+		if sim.tick_count - int(crew.t0) > limit:
+			on_scene.erase(crew)
+
+
+## Next-county help arrives: counted once its delay has passed, and only the
+## last month is kept.
+func _mutual_tick(sim: CitySim) -> void:
+	while not mutual_pending.is_empty() and sim.tick_count >= int(mutual_pending[0].t):
+		mutual_log.append(int(mutual_pending[0].t))
+		mutual_pending.remove_at(0)
+	while not mutual_log.is_empty() and sim.tick_count - int(mutual_log[0]) > TICKS_PER_MONTH:
+		mutual_log.remove_at(0)
+
+
+## Calls the next county answered in the last month (shown to the player).
+func mutual_this_month() -> int:
+	return mutual_log.size()
+
+
+## One line for the health views, or "" when the county has kept up.
+func mutual_note() -> String:
+	var n := mutual_log.size() + mutual_pending.size()
+	if n == 0:
+		return ""
+	return "%d call%s answered by the next county this month, and later than ours. Build a hospital." % [n, "" if n == 1 else "s"]
 
 
 ## Every administrator takes a step: retire, save, then build the next
@@ -716,6 +769,11 @@ func _roll_call(sim: CitySim) -> void:
 	var from := {}
 	if best != -1:
 		from = {"ref": "hospital:%d" % best, "pos": _xz(_door(sim, best))}
+	elif busy(-1) >= Balance.EMS_COUNTY_RIGS:
+		# Every county rig is out: the next county's answers, off the map.
+		mutual_aid += 1
+		mutual_pending.append({"t": sim.tick_count + Balance.EMS_MUTUAL_DELAY, "call": call, "patient": patient})
+		return
 	else:
 		from = _county(sim, at)
 	if from.is_empty():
@@ -734,8 +792,10 @@ func _roll_call(sim: CitySim) -> void:
 ## Where the call comes from: a home, or now and then the nursing home.
 func _scene(sim: CitySim, rng: RandomNumberGenerator) -> Dictionary:
 	var homes := []
+	var buildings: Dictionary = sim.buildings
+	var lots: Dictionary = sim.lots
 	for key in sim.ledger().by_zone.get(ZoneMap.Zone.RESIDENTIAL, []):  # sorted
-		if int(sim.buildings[key].occ) > 0 and sim.lots.has(key):
+		if int(buildings[key].occ) > 0 and lots.has(key):
 			homes.append(key)
 	var care_homes := []
 	for id in sim.services.buildings:
@@ -748,16 +808,23 @@ func _scene(sim: CitySim, rng: RandomNumberGenerator) -> Dictionary:
 		return {"ref": "service:%d" % id, "pos": _xz(b.pos + b.dir * Services.size_of(b).y * 0.5)}
 	if homes.is_empty():
 		return {}
-	# Homes in heavy smoke call more often (Pollution.call_weight).
+	# Homes in heavy smoke call more often (Pollution.call_weight). Each
+	# home's weight is read once, and added and taken off in the same order.
 	var total := 0.0
-	for k in homes:
-		total += sim.pollution.call_weight(k)
+	var weights := PackedFloat64Array()
+	weights.resize(homes.size())
+	var smoke: Dictionary = sim.pollution.lots
+	for i in homes.size():
+		var k: String = homes[i]
+		var w: float = 1.0 if not smoke.has(k) else sim.pollution.call_weight(k)
+		weights[i] = w
+		total += w
 	var pick := rng.randf() * total
 	var key: String = homes[-1]
-	for k in homes:
-		pick -= sim.pollution.call_weight(k)
+	for i in homes.size():
+		pick -= weights[i]
 		if pick < 0.0:
-			key = k
+			key = homes[i]
 			break
 	return {"ref": "lot:" + key, "pos": _xz(sim.lots[key].front)}
 
@@ -833,7 +900,8 @@ func to_dict() -> Dictionary:
 	var ts := {}
 	for id in trips:
 		ts[str(id)] = trips[id]
-	return {"hubs": hs, "trips": ts, "on_scene": on_scene, "county_calls": county_calls}
+	return {"hubs": hs, "trips": ts, "on_scene": on_scene, "county_calls": county_calls, "mutual_aid": mutual_aid,
+		"mutual_pending": mutual_pending, "mutual_log": mutual_log}
 
 
 func from_dict(d: Dictionary) -> void:
@@ -856,3 +924,10 @@ func from_dict(d: Dictionary) -> void:
 		for v in ["hub", "t0", "until"]:
 			crew[v] = int(crew[v])
 	county_calls = int(d.get("county_calls", 0))
+	mutual_aid = int(d.get("mutual_aid", 0))
+	mutual_pending = d.get("mutual_pending", []).duplicate(true)
+	for m in mutual_pending:
+		m.t = int(m.t)
+	mutual_log = []
+	for t in d.get("mutual_log", []):
+		mutual_log.append(int(t))

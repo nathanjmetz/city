@@ -1,241 +1,117 @@
 class_name TreeField
 extends Node3D
-## All the trees in town, drawn as one MultiMesh per species so a whole
-## city of trees costs a handful of draw calls. Benchmark: photos of mature
-## Midwestern streets, where big yard and street trees frame every block.
-##   Species: sugar maple (round, dense), bur oak (broad, open), honey
-##   locust (light, airy), Colorado spruce (dark cone) and crabapple (small,
-##   front-yard ornamental).
-## Canopies are clusters of leaf cards with a generated leaf texture. Normals
+## All the trees in town, drawn as one MultiMesh per kind so a whole city
+## of trees costs a handful of draw calls. Benchmark: photos of mature
+## Midwestern streets, where big yard and street trees frame every block,
+## and Grant County woodlots and fencerows.
+##
+## A tree here is three facts: its kind (Species, the real Grant County
+## trees in TreeKinds and docs/trees.md), a seed (where it stands) and its
+## age, from the day it was planted. Yard trees grow from nursery saplings
+## over the game's years; wild trees come with the age the woods give them.
+##
+## These are the cheap trees: clusters of leaf cards with a generated leaf
+## texture, in the shape of each kind's crown at its real size. Normals
 ## point out from the canopy centre, so a crown shades like a soft volume,
 ## and the inside of the crown is darker. Leaves sway a little in the wind.
-## Trees are grouped in square chunks. Each chunk has a full tree up close
-## and a light version (a few big cards) far away, so a big city stays cheap
-## for the web build.
+## Near the camera GrownTrees takes over with trees grown branch by branch
+## (TreeGrower); these cards hand over to them with a dither (TreeLook).
+## Trees are grouped in square chunks. Each chunk has a full card tree up
+## close and a light version (a few big cards) far away, so a big city
+## stays cheap for the web build.
 
-enum Species { MAPLE, OAK, LOCUST, SPRUCE, CRABAPPLE }
+enum Species { MAPLE, OAK, LOCUST, SPRUCE, CRABAPPLE, RED_OAK, SILVER_MAPLE, SYCAMORE, WALNUT, HACKBERRY,
+	COTTONWOOD, RED_CEDAR }
 ## How far each species' crown reaches out from the trunk at full size (m),
-## from the crown shapes below, so planters can keep crowns off walls.
+## so planters can keep crowns off walls.
 const SPREAD := {Species.MAPLE: 6.0, Species.OAK: 7.5, Species.LOCUST: 6.0, Species.SPRUCE: 4.0,
-	Species.CRABAPPLE: 3.0}
+	Species.CRABAPPLE: 3.0, Species.RED_OAK: 7.0, Species.SILVER_MAPLE: 6.5, Species.SYCAMORE: 8.5,
+	Species.WALNUT: 6.5, Species.HACKBERRY: 6.5, Species.COTTONWOOD: 8.5, Species.RED_CEDAR: 1.8}
 
-## Summer leaf colours (sRGB) and how much each tree can vary from them.
-const LEAF := [Color("#46661f"), Color("#3f5c1e"), Color("#627424"), Color("#2c4433"), Color("#4a6326")]
+## Summer leaf colours (sRGB, as TreeKinds green) and how much each tree can vary from them.
+const LEAF := [Color("#46661f"), Color("#3f5c1e"), Color("#627424"), Color("#2c4433"), Color("#4a6326"),
+	Color("#3d5a1d"), Color("#56702c"), Color("#5b7330"), Color("#5e7426"), Color("#4f6a28"), Color("#4c6b22"),
+	Color("#2f472a")]
 
 ## Chunk size, and the distance where the full tree gives way to the light one.
 const CHUNK := 256.0
 const NEAR := 380.0
 const OVERLAP := 20.0
-
-const LEAF_SHADER := """
-shader_type spatial;
-render_mode cull_disabled;
-uniform sampler2D leaf_tex : filter_linear_mipmap;
-uniform sampler2D twig_tex : filter_linear_mipmap;
-// Set by DayNight: snow cover, and the season as (autumn, bare, spring, dry).
-global uniform float snow;
-global uniform vec4 season_look;
-// Wild trees thin out and shrink toward the edge of where they're drawn
-// (set by WildView as centre x, z and reach), so they never pop in or out.
-global uniform vec4 tree_fade;
-uniform bool fade_on = false;
-varying float fade;
-varying float inner;
-varying float top;
-varying vec3 tint;
-varying vec3 crown_normal;
-varying vec3 leaf_pos;
-varying float species;
-varying float tree_rand;
-varying float far_card;
-// The Compatibility renderer (the browser) hands INSTANCE_CUSTOM's rgb
-// over as if it were an sRGB colour, already turned linear (alpha comes
-// through as is); undo that so custom data reads as on the desktop.
-vec4 custom_data(vec4 c) {
-#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
-	c.rgb = mix(c.rgb * 12.92, 1.055 * pow(max(c.rgb, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c.rgb));
-#endif
-	return c;
-}
-vec3 lin(vec3 c) {
-	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
-}
-void vertex() {
-	vec4 custom = custom_data(INSTANCE_CUSTOM);
-	vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-	fade = 1.0;
-	if (fade_on) {
-		// Toward the edge of the woods drawn, and from high up, where each
-		// tree is a speck and the ground's painted canopy reads better.
-		// Each tree drops out at its own distance, so the edge of the drawn
-		// woods is ragged, not a circle round the camera.
-		float jitter = (fract(sin(dot(floor(origin.xz), vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * 0.3 * tree_fade.z;
-		fade = (1.0 - smoothstep(tree_fade.z * 0.7, tree_fade.z * 0.97, distance(origin.xz, tree_fade.xy) + jitter))
-			* (1.0 - smoothstep(1200.0, 1700.0, tree_fade.w));
-	}
-	VERTEX *= mix(0.4, 1.0, fade) * step(0.001, fade);
-	leaf_pos = VERTEX;
-	species = floor(custom.a * 8.0);
-	tree_rand = fract(sin(dot(origin.xz, vec2(12.9898, 78.233))) * 43758.5453);
-	far_card = step(COLOR.a, 0.75);  // a far tree's few big cards (see _card)
-	float phase = TIME * 1.1 + origin.x * 0.31 + origin.z * 0.17;
-	float sway = sin(phase + VERTEX.y * 0.25) * 0.025 * VERTEX.y;
-	VERTEX.x += sway;
-	VERTEX.z += sway * 0.6;
-	inner = COLOR.r;
-	top = COLOR.g;
-	// Keep the crown normal on both sides of each card (no back-face flip),
-	// so the whole crown shades like one soft volume.
-	crown_normal = normalize((MODELVIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
-	// Each leaf cluster drifts a little toward yellow or blue-green.
-	tint = lin(custom.rgb) * mix(vec3(0.9, 0.98, 1.08), vec3(1.1, 1.04, 0.86), COLOR.b);
-}
-void fragment() {
-	if (UV.x < -0.5) {
-		// A far tree's trunk (see tree_mesh): plain bark grey-brown.
-		ALBEDO = vec3(0.075, 0.062, 0.05) * (0.85 + tree_rand * 0.3);
-		NORMAL = crown_normal;
-		ROUGHNESS = 0.9;
-	} else {
-	vec4 t = texture(leaf_tex, UV);
-	// Mipmaps average the leaf alpha toward the gaps, so distant cards
-	// would fall under the cut-off and vanish. Boost alpha with the mip level.
-	vec2 texel = UV * 256.0;
-	float lod = log2(max(max(length(dFdx(texel)), length(dFdy(texel))), 1.0));
-	t.a *= 1.0 + lod * 0.3;
-	NORMAL = crown_normal;
-	// Inner leaves sit in the shade of outer ones; the top of the crown
-	// catches the open sky.
-	vec3 leaf = tint;
-	float alpha = t.a;
-	// Seasons (spruce, species 3, stays green). Each tree turns, drops and
-	// leafs out a little earlier or later than its neighbours.
-	if (abs(species - 3.0) > 0.5) {
-		float turn = clamp(season_look.x * 1.5 - tree_rand * 0.5, 0.0, 1.0);
-		float bare = clamp(season_look.y * 1.4 - tree_rand * 0.4, 0.0, 1.0);
-		// Fall colour: sugar maples red to orange, bur oaks russet, honey
-		// locusts gold, crabapples orange-red.
-		vec3 fall = mix(vec3(0.5, 0.06, 0.01), vec3(0.78, 0.3, 0.02), tree_rand);
-		if (tree_rand > 0.75) fall = vec3(0.7, 0.46, 0.03);
-		if (species > 0.5) fall = vec3(0.24, 0.09, 0.02) * (0.8 + tree_rand * 0.4);
-		if (species > 1.5) fall = vec3(0.6, 0.4, 0.03);
-		if (species > 3.5) fall = vec3(0.55, 0.13, 0.015);
-		// Green goes to yellow first, then to the tree's own colour.
-		leaf = mix(leaf, vec3(0.32, 0.3, 0.03), smoothstep(0.0, 0.5, turn) * (1.0 - smoothstep(0.5, 1.0, turn)));
-		leaf = mix(leaf, fall, smoothstep(0.35, 1.0, turn));
-		// New leaves are a pale yellow-green; crabapples bloom pink first.
-		vec3 fresh = leaf * vec3(1.25, 1.3, 0.7);
-		if (species > 3.5) fresh = vec3(0.75, 0.32, 0.4);
-		leaf = mix(leaf, fresh, season_look.z);
-		// Leaves fall and the crown becomes a lace of fine grey-brown twigs:
-		// each card switches to a branching twig texture. Up close it reads
-		// as twigs; far off its mipmaps blur it to a soft haze, never black
-		// speckle. Benchmark: aerial and oblique photos of Indiana woods in
-		// November to March.
-		float b = smoothstep(0.3, 0.9, bare);
-		vec4 tw = texture(twig_tex, UV);
-		// Bare crowns from above are a see-through haze (aerial photos show
-		// the snow or leaf litter through them), so the twigs get much less
-		// of the far-off alpha boost than leaves do.
-		tw.a *= 1.0 + lod * 0.12;
-		// A far tree has a few big cards instead of many small ones, so the
-		// same thin twigs would leave its crown empty and its trunk standing
-		// alone (black poles in winter woods). Seen across the woods, a
-		// line of sight passes through many crowns and they close into a
-		// grey-brown haze, so its twigs get the boost a whole near crown's
-		// overlapping cards add up to; from straight above they stay thin.
-		float across = 1.0 - smoothstep(0.55, 0.9, abs(dot(normalize(-VERTEX), (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz)));
-		tw.a *= 1.0 + far_card * lod * 0.35 * across;
-		float h = fract(sin(dot(floor(leaf_pos * 0.55), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
-		alpha = mix(alpha, tw.a * step(bare * 0.3, h), b);
-		t.rgb = mix(t.rgb, tw.rgb, b);
-		vec3 twig = vec3(0.2, 0.17, 0.15) * (0.85 + tree_rand * 0.3);
-		leaf = mix(leaf, twig, b);
-	}
-	// Snow resting on the tops of the crowns.
-	leaf = mix(leaf, vec3(0.4, 0.42, 0.45), snow * smoothstep(0.35, 0.95, top) * 0.75);
-	ALBEDO = leaf * t.rgb * mix(0.6, 1.15, inner) * mix(0.85, 1.2, top) * 2.0;
-	// A card seen edge-on smears its leaves into long streaks; real crowns
-	// never show them. Fade each card out as it turns edge-on, judged by its
-	// own flat face (from screen derivatives), not the crown normal.
-	vec3 face = normalize(cross(dFdx(VERTEX), dFdy(VERTEX)));
-	alpha *= smoothstep(0.1, 0.35, abs(dot(face, normalize(-VERTEX))));
-	// Fading trees shrink rather than thin out: thinned leaves fall under
-	// the cut-off in scattered pixels and a tree row breaks into specks.
-	ALPHA = alpha * mix(0.85, 1.0, fade);
-	ALPHA_SCISSOR_THRESHOLD = 0.45;
-	// With MSAA, leaf edges become partial coverage instead of popping on
-	// and off as the camera moves.
-	ALPHA_ANTIALIASING_EDGE = 0.25;
-	ALPHA_TEXTURE_COORDINATE = UV * 128.0;
-	ROUGHNESS = 0.75;
-	SPECULAR = 0.3;
-	}
-}
-"""
-
-const BARK_SHADER := """
-shader_type spatial;
-render_mode cull_disabled;
-global uniform vec4 tree_fade;
-uniform bool fade_on = false;
-void vertex() {
-	float fade = 1.0;
-	if (fade_on) {
-		vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-		// Each tree drops out at its own distance, so the edge of the drawn
-		// woods is ragged, not a circle round the camera.
-		float jitter = (fract(sin(dot(floor(origin.xz), vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * 0.3 * tree_fade.z;
-		fade = (1.0 - smoothstep(tree_fade.z * 0.55, tree_fade.z * 0.97, distance(origin.xz, tree_fade.xy) + jitter))
-			* (1.0 - smoothstep(1200.0, 1700.0, tree_fade.w));
-	}
-	VERTEX *= fade;
-}
-void fragment() {
-	float ridges = 0.85 + 0.15 * sin(UV.x * 40.0 + sin(UV.y * 6.0) * 2.0);
-	ALBEDO = vec3(0.085, 0.07, 0.058) * ridges;
-	ROUGHNESS = 0.95;
-}
-"""
+## Trees with a planting date are re-sized this often (a game day, which
+## is a month of growth): slow things update once a day.
+const REGROW_TICKS := Seasons.TICKS_PER_DAY
+## Milliseconds a frame may spend re-sizing grown-on trees.
+const REGROW_MS := 1.5
 
 static var _meshes := {}
-static var _leaf_mat: ShaderMaterial
-static var _bark_mat: ShaderMaterial
+static var _leaf_tex: ImageTexture
+static var _twig_tex: ImageTexture
+## The game's clock (the sim's tick count), set each frame by WildView;
+## trees with a planting date grow by it.
+static var now_tick := 0
+## Labs only: pretend every planted tree went in this many years earlier.
+static var extra_years := 0.0
+## Bumped whenever any field's trees change, so GrownTrees knows to look again.
+static var version := 0
+## Every field in the scene, for GrownTrees.
+static var fields: Array = []
 
 ## True for wild trees: they fade out toward the edge of WildView's reach.
 var fades := false
 
-var _trees := {}  # owner key -> Array of [Transform3D, species, tint]
+var _trees := {}  # owner key -> Array of [Transform3D, species, tint, facts]
 var _multis := {}  # "cx,cz,species,far" -> MultiMeshInstance3D
 ## Which owners have trees in each chunk, and the chunks whose batches are
 ## out of date: one lot's trees changing redraws only the chunks they
 ## stand in, not every tree in town.
 var _owners := {}  # Vector2i chunk -> {owner key: true}
 var _dirty := {}  # Vector2i chunk -> true
+var _growing := {}  # Vector2i chunk -> true: holds trees with a planting date
+var _regrow := []  # chunks to re-size, a few a frame
+var _last_regrow := -1
+var _records := {}  # Vector2i chunk -> [trees, resolved trees (null until asked)], for GrownTrees
+var _records_at := []  # [field transform, view origin] the records were worked out for
 
 
 ## Replaces the trees that belong to `key` (a lot). Each tree is
-## [Transform3D (world), species, tint Color].
+## [Transform3D (world), species, tint Color] and, optionally, its facts:
+##   {"planted": tick}: planted then as nursery stock, it grows on with the
+##     game's clock toward the size in its transform (the size it reaches
+##     at TreeKinds.REF_AGE, and it keeps growing after);
+##   {"age": years}: this old, drawn at the size in its transform;
+##   {"shrub": true}: brush, never grown up close.
+## Without facts the age comes from the size.
 func set_trees(key: String, trees: Array) -> void:
 	_unfile(key)
 	_trees[key] = trees
+	var planted := false
+	for t in trees:
+		if t.size() > 3 and t[3] is Dictionary and t[3].has("planted"):
+			planted = true
+			break
 	for c in _chunks_of(trees):
 		if not _owners.has(c):
 			_owners[c] = {}
 		_owners[c][key] = true
 		_dirty[c] = true
+		_records.erase(c)
+		if planted:
+			_growing[c] = true
+	version += 1
 
 
 func remove(key: String) -> void:
 	if _trees.has(key):
 		_unfile(key)
 		_trees.erase(key)
+		version += 1
 
 
 func _unfile(key: String) -> void:
 	for c in _chunks_of(_trees.get(key, [])):
 		_owners[c].erase(key)
 		_dirty[c] = true
+		_records.erase(c)
 
 
 static func _chunks_of(trees: Array) -> Dictionary:
@@ -246,51 +122,180 @@ static func _chunks_of(trees: Array) -> Dictionary:
 	return out
 
 
+func _enter_tree() -> void:
+	fields.append(self)
+	version += 1
+
+
+func _exit_tree() -> void:
+	fields.erase(self)
+	version += 1
+
+
 func _process(_delta: float) -> void:
 	if not _dirty.is_empty():
 		_rebuild()
+	# Once a game day the planted trees grow on, a few chunks a frame.
+	var day := now_tick / REGROW_TICKS
+	if day != _last_regrow and not _growing.is_empty():
+		_last_regrow = day
+		_regrow = _growing.keys()
+	if not _regrow.is_empty():
+		var t := Perf.now()
+		while not _regrow.is_empty() and (Perf.now() - t) < REGROW_MS * 1000.0:
+			_rebuild_chunk(_regrow.pop_back())
+		version += 1
+		Perf.add("frame.trees", t)
 
 
 func _rebuild() -> void:
 	var t := Perf.now()
-	_rebuild_now()
+	for c in _dirty:
+		_rebuild_chunk(c)
+	_dirty.clear()
 	Perf.add("frame.trees", t)
 
 
-func _rebuild_now() -> void:
-	for c in _dirty:
-		var groups := {}  # species -> Array of trees in this chunk
-		for key in _owners.get(c, {}):
-			for t in _trees[key]:
-				var o: Vector3 = t[0].origin
-				if Vector2i(floori(o.x / CHUNK), floori(o.z / CHUNK)) != c:
-					continue
-				if not groups.has(t[1]):
-					groups[t[1]] = []
-				groups[t[1]].append(t)
-		if _owners.has(c) and _owners[c].is_empty():
-			_owners.erase(c)
-		var centre := Vector3((c.x + 0.5) * CHUNK, 0, (c.y + 0.5) * CHUNK)
-		for sp in 8:  # every species the custom alpha can carry
-			var g := "%d,%d,%d" % [c.x, c.y, sp]
-			var list: Array = groups.get(sp, [])
-			for far in [false, true]:
-				if list.is_empty():
-					var key: String = g + ("f" if far else "n")
-					if _multis.has(key):
-						_multis[key].multimesh.instance_count = 0
-					continue
-				var multi := _chunk(g, sp, far, centre).multimesh
-				multi.instance_count = list.size()
-				for i in list.size():
-					var xf: Transform3D = list[i][0]
-					multi.set_instance_transform(i, Transform3D(xf.basis, xf.origin - centre))
-					multi.set_instance_color(i, Color.WHITE)
-					# Alpha carries the species, for the season colours.
-					var custom: Color = list[i][2]
-					custom.a = (float(sp) + 0.5) / 8.0
-					multi.set_instance_custom_data(i, custom)
-	_dirty.clear()
+## How a tree stands now: [transform scaled to its size today, species,
+## tint, age in years, seed, grows up close]. The same for every player:
+## from the tree's facts, where it stands in the region and the game's
+## clock only. `world` is the field's own transform (a neighbor's city is
+## drawn moved over to its place), for the seed.
+static func resolve(t: Array, world := Transform3D.IDENTITY) -> Array:
+	var xf: Transform3D = t[0]
+	var sp: int = t[1]
+	var facts: Dictionary = t[3] if t.size() > 3 and t[3] is Dictionary else {}
+	var size := xf.basis.get_scale().y
+	var age: float
+	if facts.has("planted"):
+		age = maxf(TreeKinds.NURSERY_AGE + extra_years + float(now_tick - int(facts.planted)) / float(REGROW_TICKS * 12),
+			TreeKinds.NURSERY_AGE)
+		var now := size * TreeKinds.size_at(sp, age)
+		xf = Transform3D(xf.basis.scaled(Vector3.ONE * (now / maxf(size, 0.001))), xf.origin)
+	elif facts.has("age"):
+		age = float(facts.age)
+	else:
+		age = TreeKinds.age_for_size(sp, size)
+	return [xf, sp, t[2], age, seed_of(world * xf.origin), not facts.has("shrub")]
+
+
+## A tree's seed: from where it stands in the region (a view position plus
+## Terrain.view_origin), so the same spot always grows the same tree for
+## every player, wherever their own town sits. Rounded to the metre: two
+## players' positions for one tree can differ in their last digits.
+static func seed_of(view_pos: Vector3) -> int:
+	return seed_at(region_of(view_pos))
+
+
+static func seed_at(region: Vector2) -> int:
+	return hash(Vector2i(roundi(region.x), roundi(region.y)))
+
+
+## A view position (what's drawn, relative to your own town) in region
+## coordinates (Terrain).
+static func region_of(view_pos: Vector3) -> Vector2:
+	return Vector2(float(view_pos.x) + float(Terrain.view_origin.x), float(view_pos.z) + float(Terrain.view_origin.y))
+
+
+func _rebuild_chunk(c: Vector2i) -> void:
+	_records.erase(c)
+	var groups := {}  # species -> Array of resolved trees in this chunk
+	for key in _owners.get(c, {}):
+		for t in _trees[key]:
+			var o: Vector3 = t[0].origin
+			if Vector2i(floori(o.x / CHUNK), floori(o.z / CHUNK)) != c:
+				continue
+			var r := resolve(t)
+			if not groups.has(r[1]):
+				groups[r[1]] = []
+			groups[r[1]].append(r)
+	if _owners.has(c) and _owners[c].is_empty():
+		_owners.erase(c)
+		_growing.erase(c)
+	var centre := Vector3((c.x + 0.5) * CHUNK, 0, (c.y + 0.5) * CHUNK)
+	for sp in Species.size():
+		var g := "%d,%d,%d" % [c.x, c.y, sp]
+		var list: Array = groups.get(sp, [])
+		for far in [false, true]:
+			if list.is_empty():
+				var key: String = g + ("f" if far else "n")
+				if _multis.has(key):
+					_multis[key].multimesh.instance_count = 0
+				continue
+			var multi := _chunk(g, sp, far, centre).multimesh
+			multi.instance_count = list.size()
+			for i in list.size():
+				var xf: Transform3D = list[i][0]
+				multi.set_instance_transform(i, Transform3D(xf.basis, xf.origin - centre))
+				multi.set_instance_color(i, Color.WHITE)
+				# Alpha carries the species (for the season colours) and
+				# whether a grown tree takes over up close.
+				multi.set_instance_custom_data(i, custom_of(list[i][2], sp, list[i][5]))
+
+
+## Instance custom data: rgb the leaf tint, alpha the species and whether
+## the tree grows up close (see TreeLook's shaders).
+static func custom_of(tint: Color, sp: int, grows: bool) -> Color:
+	var c := tint
+	c.a = (float(sp + (0 if grows else 16)) + 0.5) / 32.0
+	return c
+
+
+## The chunks holding trees within `r` (across the ground) of a point in
+## world space.
+func chunks_near(p: Vector3, r: float) -> Array:
+	var out := []
+	if _owners.is_empty():
+		return out
+	var lp := global_transform.affine_inverse() * p
+	var lo := Vector2i(floori((lp.x - r) / CHUNK), floori((lp.z - r) / CHUNK))
+	var hi := Vector2i(floori((lp.x + r) / CHUNK), floori((lp.z + r) / CHUNK))
+	for x in range(lo.x, hi.x + 1):
+		for z in range(lo.y, hi.y + 1):
+			if _owners.has(Vector2i(x, z)):
+				out.append(Vector2i(x, z))
+	return out
+
+
+## Every tree standing in a chunk, as set, in this field's space. Worked
+## out when first asked and kept until the chunk changes.
+func chunk_trees(c: Vector2i) -> Array:
+	_check_records()
+	if _records.has(c):
+		return _records[c][0]
+	var out := []
+	for key in _owners.get(c, {}):
+		for t in _trees[key]:
+			var o: Vector3 = t[0].origin
+			if Vector2i(floori(o.x / CHUNK), floori(o.z / CHUNK)) == c:
+				out.append(t)
+	var resolved := []
+	resolved.resize(out.size())
+	_records[c] = [out, resolved]
+	return out
+
+
+## One of those trees resolved (see resolve), kept likewise. GrownTrees
+## reads them one at a time, so a big chunk never stalls a frame.
+func chunk_record(c: Vector2i, i: int) -> Array:
+	_check_records()
+	if not _records.has(c):
+		chunk_trees(c)
+	var r: Array = _records[c][1]
+	if i >= r.size():
+		return []  # the chunk changed under the reader; it looks again
+	if r[i] == null:
+		r[i] = resolve(_records[c][0][i], global_transform)
+	return r[i]
+
+
+## The kept records carry seeds from where the field stands in the region:
+## if it moves (or the view's origin does), they are worked out again.
+func _check_records() -> void:
+	var at := [global_transform, Terrain.view_origin]
+	if at != _records_at:
+		_records_at = at
+		_records.clear()
 
 
 ## The MultiMesh for one species in one chunk, near or far. The node sits at
@@ -337,16 +342,23 @@ func _fit(key: String, mmi: MultiMeshInstance3D) -> void:
 				else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
-## Picks a species and colour for a yard tree.
+## Picks a species and colour for a yard tree: mostly maples (sugar and
+## the fast silver maple of 1950s to 70s yards), white and red oaks, honey
+## locust, spruce, and crabapples by the house. One random draw for the
+## kind, so planters' random sequences stay the same.
 static func pick(rng: RandomNumberGenerator, front := false) -> Array:
 	var r := rng.randf()
 	var sp: int
 	if front and r < 0.2:
 		sp = Species.CRABAPPLE
-	elif r < 0.55:
+	elif r < 0.42:
 		sp = Species.MAPLE
-	elif r < 0.72:
+	elif r < 0.55:
+		sp = Species.SILVER_MAPLE
+	elif r < 0.63:
 		sp = Species.OAK
+	elif r < 0.72:
+		sp = Species.RED_OAK
 	elif r < 0.86:
 		sp = Species.LOCUST
 	else:
@@ -359,8 +371,10 @@ static func pick(rng: RandomNumberGenerator, front := false) -> Array:
 # ---------------------------------------------------------------- meshes
 
 ## The mesh for a species; `far` is the light version for distant chunks.
-static func tree_mesh(sp: int, far := false, fades := false) -> ArrayMesh:
-	var key := sp * 2 + (1 if far else 0) + (100 if fades else 0)
+## `mode` is the distance band (TreeLook): 0 the usual cheap tree, 4 or 5
+## one standing in near the camera for a grown tree that isn't built yet.
+static func tree_mesh(sp: int, far := false, fades := false, mode := 0) -> ArrayMesh:
+	var key := "%d,%s,%s,%d" % [sp, far, fades, mode]
 	if _meshes.has(key):
 		return _meshes[key]
 	var rng := RandomNumberGenerator.new()
@@ -369,9 +383,10 @@ static func tree_mesh(sp: int, far := false, fades := false) -> ArrayMesh:
 	leaves.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var wood := SurfaceTool.new()
 	wood.begin(Mesh.PRIMITIVE_TRIANGLES)
-	match sp:
-		Species.SPRUCE: _spruce(rng, leaves, wood, far)
-		_: _broadleaf(sp, rng, leaves, wood, far)
+	if TreeKinds.kind(sp).evergreen:
+		_conifer(sp, rng, leaves, wood, far)
+	else:
+		_broadleaf(sp, rng, leaves, wood, far)
 	var mesh := ArrayMesh.new()
 	if far:
 		# Far off a trunk is a few pixels of grey-brown: it rides in the
@@ -386,64 +401,73 @@ static func tree_mesh(sp: int, far := false, fades := false) -> ArrayMesh:
 			leaves.set_normal(n[i] if i < n.size() else Vector3.UP)
 			leaves.add_vertex(v[i])
 	leaves.commit(mesh)
-	mesh.surface_set_material(0, _leaf_material(fades))
+	mesh.surface_set_material(0, _leaf_material(fades, mode))
 	if not far:
 		wood.commit(mesh)
-		mesh.surface_set_material(1, _bark_material(fades))
+		mesh.surface_set_material(1, _bark_material(fades, mode))
 	_meshes[key] = mesh
 	return mesh
 
 
-## Crown shape per species: crown centre height, radii, cluster count,
-## card size and trunk radius. Sizes are mature trees, in metres. Real yard
-## maples and oaks fork low, around 3 m, into a few big limbs.
+## A broadleaf crown: clusters of cards filling the kind's crown shape
+## (TreeGrower.crown_profile) at its real size at TreeKinds.REF_AGE, on a
+## trunk forking into a few big limbs where the crown begins.
 static func _broadleaf(sp: int, rng: RandomNumberGenerator, leaves: SurfaceTool, wood: SurfaceTool, far := false) -> void:
-	var shape: Array = {
-		Species.MAPLE: [8.5, Vector3(6.0, 5.2, 6.0), 16, 3.2, 0.3],
-		Species.OAK: [8.0, Vector3(7.5, 4.6, 7.0), 15, 3.4, 0.4],
-		Species.LOCUST: [9.0, Vector3(6.0, 4.3, 5.5), 13, 2.6, 0.24],
-		Species.CRABAPPLE: [3.4, Vector3(3.0, 2.2, 3.0), 9, 2.0, 0.12],
-	}[sp]
-	var hc: float = shape[0]
-	var rad: Vector3 = shape[1]
-	var clusters: int = shape[2]
-	var card: float = shape[3]
-	var trunk: float = shape[4]
-	var center := Vector3(0, hc, 0)
-	var fork := minf(hc - rad.y * 0.75, 3.2)
+	var age := TreeKinds.REF_AGE
+	var h := TreeKinds.height(sp, age)
+	var base := TreeKinds.crown_base(sp, age)
+	var r := h * TreeKinds.wide_at(sp, age) * 0.5
+	var center := Vector3(0, (base + h) * 0.5, 0)
+	var rad := Vector3(r, (h - base) * 0.5, r)
+	var clusters := clampi(int(r * (h - base) / 4.5), 8, 18)
+	var card := clampf(r * 0.5, 1.8, 3.4)
+	var trunk := TreeKinds.dbh(sp, age) * 0.006
+	var fork := minf(base + (h - base) * 0.15, base + 2.0)
 	_limb(wood, Vector3.ZERO, Vector3(0, fork, 0), trunk, trunk * 0.8)
-	var cards_per := 6 if sp == Species.LOCUST else 7
+	var cards_per := 6 if TreeKinds.kind(sp).leaf == TreeKinds.Leaf.COMPOUND else 7
 	if far:
 		# A few big cards keep the crown's outline and colour at a distance.
 		clusters = maxi(clusters / 2, 5)
 		cards_per = 3
 		card *= 1.9
-	for c in clusters:
-		var dir := Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.55, 1), rng.randf_range(-1, 1)).normalized()
-		var cc := center + dir * rad * rng.randf_range(0.4, 0.75)
-		if not far and c % 3 == 0:
+	var made := 0
+	var guard := 0
+	while made < clusters and guard < 400:
+		guard += 1
+		var p := Vector3(rng.randf_range(-1, 1) * r, rng.randf_range(base, h), rng.randf_range(-1, 1) * r)
+		var t := (p.y - base) / maxf(h - base, 0.1)
+		if Vector2(p.x, p.z).length() > r * TreeGrower.crown_profile(sp, t) * 0.8:
+			continue
+		var cc := p.lerp(center, 0.15)
+		if not far and made % 3 == 0:
 			_limb(wood, Vector3(0, fork, 0), cc.lerp(center, 0.3), trunk * 0.6, trunk * 0.2)
+		made += 1
 		var hue := rng.randf()
 		for i in cards_per:
-			var p := cc + Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.7, 0.7), rng.randf_range(-1, 1)) * card * 0.6
-			_card(leaves, rng, p, center, rad, card * rng.randf_range(0.8, 1.2), hue, far)
+			var q := cc + Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.7, 0.7), rng.randf_range(-1, 1)) * card * 0.6
+			_card(leaves, rng, q, center, rad, card * rng.randf_range(0.8, 1.2), hue, far)
 
 
-static func _spruce(rng: RandomNumberGenerator, leaves: SurfaceTool, wood: SurfaceTool, far := false) -> void:
-	var h := 13.0
-	var base_r := 3.6
-	_limb(wood, Vector3.ZERO, Vector3(0, h, 0), 0.25, 0.04)
+## A conifer: tiers of cards round a straight stem, wide at the bottom
+## (spruce cone, red cedar's narrow spire).
+static func _conifer(sp: int, rng: RandomNumberGenerator, leaves: SurfaceTool, wood: SurfaceTool, far := false) -> void:
+	var age := TreeKinds.REF_AGE
+	var h := TreeKinds.height(sp, age)
+	var base_r := h * TreeKinds.wide_at(sp, age) * 0.5
+	var low := TreeKinds.crown_base(sp, age)
+	_limb(wood, Vector3.ZERO, Vector3(0, h, 0), TreeKinds.dbh(sp, age) * 0.006, 0.04)
 	var tiers := 6 if far else 11
 	for t in tiers:
 		var f := float(t) / tiers
-		var y := 1.2 + f * (h - 1.6)
-		var r := base_r * (1.0 - f) + 0.35
+		var y := low + 0.6 + f * (h - low - 1.0)
+		var r := base_r * TreeGrower.crown_profile(sp, f) + 0.3
 		var n := int(3 + r * (1.0 if far else 2.0))
 		var hue := rng.randf() * 0.4
 		for i in n:
 			var a := TAU * (i + rng.randf()) / n
 			var p := Vector3(cos(a) * r * rng.randf_range(0.45, 0.8), y, sin(a) * r * rng.randf_range(0.45, 0.8))
-			_card(leaves, rng, p, Vector3(0, y + 0.8, 0), Vector3(r + 0.5, 1.5, r + 0.5), (1.8 + r * 0.45) * (1.5 if far else 1.0), hue)
+			var size := (1.6 + r * 0.45) * (1.5 if far else 1.0)
+			_card(leaves, rng, p, Vector3(0, y + 0.8, 0), Vector3(r + 0.5, 1.5, r + 0.5), size, hue, far)
 
 
 ## One leaf card, randomly turned, with normals out from the crown centre.
@@ -484,36 +508,28 @@ static func _limb(st: SurfaceTool, a: Vector3, b: Vector3, r0: float, r1: float)
 			st.add_vertex(quad[k][0])
 
 
-static var _wild_leaf_mat: ShaderMaterial
-static var _wild_bark_mat: ShaderMaterial
+static var _leaf_mats := {}
+static var _bark_mats := {}
 
 
-static func _leaf_material(fades := false) -> ShaderMaterial:
-	if _leaf_mat == null:
-		var shader := Shader.new()
-		shader.code = LEAF_SHADER
-		_leaf_mat = ShaderMaterial.new()
-		_leaf_mat.shader = shader
-		_leaf_mat.set_shader_parameter("leaf_tex", _leaf_texture())
-		_leaf_mat.set_shader_parameter("twig_tex", _twig_texture())
-		_wild_leaf_mat = _leaf_mat.duplicate()
-		_wild_leaf_mat.set_shader_parameter("fade_on", true)
-	return _wild_leaf_mat if fades else _leaf_mat
+static func _leaf_material(fades := false, mode := 0) -> ShaderMaterial:
+	var key := "%s,%d" % [fades, mode]
+	if not _leaf_mats.has(key):
+		_leaf_mats[key] = TreeLook.card_material(TreeLook.LEAF_SHADER, mode, fades, leaf_texture(), twig_texture())
+	return _leaf_mats[key]
 
 
-static func _bark_material(fades := false) -> ShaderMaterial:
-	if _bark_mat == null:
-		var shader := Shader.new()
-		shader.code = BARK_SHADER
-		_bark_mat = ShaderMaterial.new()
-		_bark_mat.shader = shader
-		_wild_bark_mat = _bark_mat.duplicate()
-		_wild_bark_mat.set_shader_parameter("fade_on", true)
-	return _wild_bark_mat if fades else _bark_mat
+static func _bark_material(fades := false, mode := 0) -> ShaderMaterial:
+	var key := "%s,%d" % [fades, mode]
+	if not _bark_mats.has(key):
+		_bark_mats[key] = TreeLook.card_material(TreeLook.CARD_BARK_SHADER, mode, fades, null, null)
+	return _bark_mats[key]
 
 
 ## A square of overlapping leaves on transparency, drawn once at start-up.
-static func _leaf_texture() -> ImageTexture:
+static func leaf_texture() -> ImageTexture:
+	if _leaf_tex:
+		return _leaf_tex
 	var size := 256
 	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
@@ -541,12 +557,15 @@ static func _leaf_texture() -> ImageTexture:
 					var l := shade * (0.88 + 0.12 * along) * (0.9 if absf(across) < 0.08 else 1.0)
 					img.set_pixel(x, y, Color(l, l, l, 1.0))
 	img.generate_mipmaps()
-	return ImageTexture.create_from_image(img)
+	_leaf_tex = ImageTexture.create_from_image(img)
+	return _leaf_tex
 
 
 ## Bare winter twigs on transparency: a few limbs branch outward from near
 ## the middle, forking and thinning to fine twigs at the edge.
-static func _twig_texture() -> ImageTexture:
+static func twig_texture() -> ImageTexture:
+	if _twig_tex:
+		return _twig_tex
 	var size := 256
 	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
@@ -579,4 +598,5 @@ static func _twig_texture() -> ImageTexture:
 			for f in 2 + (1 if rng.randf() < 0.4 else 0):
 				stack.append([e, ang + rng.randf_range(-0.75, 0.75), len * rng.randf_range(0.6, 0.78), maxf(w * 0.7, 1.0)])
 	img.generate_mipmaps()
-	return ImageTexture.create_from_image(img)
+	_twig_tex = ImageTexture.create_from_image(img)
+	return _twig_tex

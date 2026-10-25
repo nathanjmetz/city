@@ -304,7 +304,14 @@ void fragment() {
 	// lawn (TerrainView.YARD_THIN), not the woods' brown leaf litter, which
 	// read as patches of bare dirt across every lot.
 	float yard = clamp(town.y - town.x, 0.0, 1.0);
-	vec3 yard_floor = mix(litter.rgb * (0.8 + 0.4 * clump), col * vec3(0.82, 0.86, 0.76), yard);
+	// Under a woodlot's edge the floor is the shaded grass it grew out of
+	// with leaf litter on it, not bare brown earth: a dark brown ring round
+	// every wood read as a ditch or a burn scar from the air. Deep in the
+	// wood (cover.r near 1) it is mostly litter, as photos of Indiana
+	// hardwoods show.
+	vec3 shade_grass = col * vec3(0.62, 0.7, 0.55);
+	vec3 litter_floor = mix(shade_grass, litter.rgb * (0.8 + 0.4 * clump), 0.25 + 0.5 * smoothstep(0.55, 0.95, cover.r));
+	vec3 yard_floor = mix(litter_floor, col * vec3(0.82, 0.86, 0.76), yard);
 	vec3 woods = mix(yard_floor, tops, painted);
 	// A ragged edge, as real woods have, not the straight line between samples.
 	float in_woods = smoothstep(0.3, 0.65, cover.r + (clump - 0.5) * 0.45 + (mid - 0.5) * 0.25);
@@ -742,7 +749,15 @@ func _build(key: Vector2i, lod: int, data := {}) -> void:
 	var g := MeshInstance3D.new()
 	g.mesh = meshes[0]
 	g.material_override = ground_material()
-	g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if lod > 1 else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	# The land never casts: every pixel of it is also a receiver, and a
+	# surface lit by a shadow map of itself shows the map's texels as faint
+	# parallel diagonal stripes over every lawn and road ("shadow acne": no
+	# bias value clears it at every sun height and quality tier, and the
+	# roads, lots and trees standing on it get shaded all the same). Half
+	# the county's chunks have under 4 m of relief and three in four under
+	# 8, so what is lost is a hillside shading the valley below it, at a
+	# low sun. It also drops the ground's triangles from every shadow pass.
+	g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(g)
 	entry.ground = g
 	if meshes[1] != null:

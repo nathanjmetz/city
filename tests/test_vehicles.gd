@@ -7,6 +7,32 @@ func _init() -> void:
 		var near := VehicleModels.build(key, 0).get_faces().size() / 3
 		var far := VehicleModels.build(key, 1).get_faces().size() / 3
 		_check(near > 20 and far > 0 and far < near, "%s builds (%d / %d triangles)" % [key, near, far])
+	# Each work truck reads as itself, even far off and from above (a line of
+	# ambulances read as box trucks, look check 2026-10-25): the ambulance
+	# wears its red band and Star of Life at both levels of detail, the box
+	# truck's box takes its fleet's colour, and they come in more than white.
+	for lod in [0, 1]:
+		var amb := _colors(VehicleModels.build("ambulance", lod))
+		_check(_has(amb, VehicleModels.EMS_RED) and _has(amb, VehicleModels.EMS_BLUE) and _has(amb, VehicleModels.BEACON_RED),
+			"the ambulance has its red band, Star of Life and lights (detail %d)" % lod)
+		var star_up := false
+		var m := VehicleModels.build("ambulance", lod)
+		var arr := m.surface_get_arrays(0)
+		for i in arr[Mesh.ARRAY_COLOR].size():
+			if _near(arr[Mesh.ARRAY_COLOR][i], VehicleModels.EMS_BLUE) and arr[Mesh.ARRAY_NORMAL][i].y > 0.9:
+				star_up = true
+		_check(star_up, "and a Star of Life on the roof, seen from the air (detail %d)" % lod)
+		_check(not _has(_colors(VehicleModels.build("box_truck", lod)), VehicleModels.EMS_RED), "a box truck carries no ambulance red")
+	var box_paint := 0
+	var box := VehicleModels.build("box_truck", 0).surface_get_arrays(0)
+	for c in box[Mesh.ARRAY_COLOR]:
+		box_paint += 1 if c.a == 0.0 else 0
+	_check(box_paint > 40, "the box truck's box takes its fleet colour (%d painted vertices)" % box_paint)
+	var hues := {}
+	for id in 200:
+		hues[VehicleTypes.paint("box_truck", id).to_html()] = true
+		hues["g" + VehicleTypes.paint("garbage_truck", id).to_html()] = true
+	_check(hues.size() >= 8, "box and garbage trucks come in several liveries (%d)" % hues.size())
 	# Sizes are real: a semi is 72 ft, a pickup longer than a sedan.
 	_check(absf(VehicleTypes.spec("semi").len - 21.9) < 0.1, "semi is 72 ft")
 	_check(VehicleTypes.spec("pickup").len > VehicleTypes.spec("sedan").len, "pickup longer than sedan")
@@ -65,6 +91,24 @@ func _init() -> void:
 	quit(1 if _failed else 0)
 
 var _failed := false
+
+
+static func _near(a: Color, b: Color) -> bool:
+	return absf(a.r - b.r) + absf(a.g - b.g) + absf(a.b - b.b) + absf(a.a - b.a) < 0.02
+
+
+static func _has(colors: Dictionary, c: Color) -> bool:
+	for k in colors:
+		if _near(k, c):
+			return true
+	return false
+
+
+static func _colors(m: ArrayMesh) -> Dictionary:
+	var out := {}
+	for c in m.surface_get_arrays(0)[Mesh.ARRAY_COLOR]:
+		out[c] = true
+	return out
 
 func _check(ok: bool, what: String) -> void:
 	print(("PASS " if ok else "FAIL ") + what)

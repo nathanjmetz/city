@@ -78,7 +78,7 @@ static func pick(sim: CitySim, p: Vector3) -> Dictionary:
 			continue
 		if sim.buildings.has(key) or sim.zones.zone_at(lot.zone_pt) != ZoneMap.Zone.NONE:
 			return {"type": "lot", "id": key}
-	var near := sim.network.find_segment_near(p, 14.0, 4.0)
+	var near := RoadIndex.segment_near(sim.network, p, 14.0, 4.0)
 	if not near.is_empty():
 		var hw := RoadStyle.half_width(sim.network.segments[near.seg].type)
 		if near.dist <= hw + 1.5:
@@ -231,7 +231,7 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 	var k: Dictionary = Services.KINDS[b.kind]
 	var rows := []
 	var problems := []
-	var linked := not sim.network.find_segment_near(b.pos + b.dir * k.size.y * 0.5, 80.0, 1.0).is_empty()
+	var linked := not RoadIndex.segment_near(sim.network, b.pos + b.dir * k.size.y * 0.5, 80.0, 1.0).is_empty()
 	var ok := linked
 	var status := ""
 	if k.get("parking", false):
@@ -280,6 +280,8 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 					covered += 1
 		rows.append(["Reach by road", "%.1f miles" % (float(k.reach) * sim.services.funding(id, Balance.POLICY_EFFECT) / 1609.0)])
 		rows.append(["Homes covered", "%d of %d" % [covered, homes]])
+		if b.kind == Services.Kind.CLINIC and sim.healthcare.mutual_note() != "":
+			rows.append(["Ambulances", sim.healthcare.mutual_note()])
 		if not linked:
 			problems.append("Not beside a road, so it can't respond.")
 		status = "Working: covering %d homes" % covered if ok else "Not working"
@@ -318,6 +320,7 @@ static func _hospital(sim: CitySim, id: int) -> Dictionary:
 			CitySim.money_text(hc.regional_pop(sim))]],
 		["Ambulances", "%d (%d out on calls)" % [hc.ambulances(id), hc.busy(id)]],
 		["Calls answered", "%d, %d patients brought in" % [h.calls, h.treated]],
+		["Next county", hc.mutual_note() if hc.mutual_note() != "" else "Not needed this month"],
 		["Savings", "%s$%s (%s$%s / month)" % ["" if h.savings >= 0.0 else "-", CitySim.money_text(absi(roundi(h.savings))),
 			"+" if net >= 0.0 else "-", CitySim.money_text(absi(roundi(net)))]],
 		["Built", ", ".join(built) if not built.is_empty() else "Just the county hospital"],

@@ -103,7 +103,7 @@ func found(sim: CitySim, id: int) -> void:
 		"cash": float(Balance.WATER_UTILITY.start_cash), "cond": 1.0, "works": [["well", Vector2i.ZERO]],
 		"mains": [], "sewers": [], "boil": false, "odor": 0.0, "last": "Opened with its first well", "returned": 0,
 		"taps": 0, "sewer_taps": 0, "rate": 1.0}
-	var near := network.find_segment_near(b.pos + b.dir * Services.KINDS[b.kind].size.y * 0.5, 80.0, 1.0)
+	var near := RoadIndex.segment_near(network, b.pos + b.dir * Services.KINDS[b.kind].size.y * 0.5, 80.0, 1.0)
 	if not near.is_empty():
 		_lay(id, "mains", network, near.seg)
 

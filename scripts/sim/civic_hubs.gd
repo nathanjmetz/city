@@ -91,7 +91,7 @@ static func cell_poly(h: Dictionary, c: Vector2i, shrink := 0.0) -> PackedVector
 ## Where a new hub goes when placed beside the road nearest `hit`: [gate,
 ## dir toward the road], or [] if no street is near.
 static func site_near(network: RoadNetwork, hit: Vector3) -> Array:
-	var near := network.find_segment_near(hit, 120.0, 1.0)
+	var near := RoadIndex.segment_near(network, hit, 120.0, 1.0)
 	if near.is_empty() or not RoadStyle.TYPES[network.segments[near.seg].type].lots:
 		return []
 	var c := network.curve_of(near.seg)
@@ -163,7 +163,10 @@ func _cell_problem(sim: CitySim, h: Dictionary, c: Vector2i, id: int, auto: bool
 		if sim.banks.covers(p):
 			return "That ground is a bank."
 	if auto:
-		for key in sim.lots:
+		var box := Rect2(poly[0], Vector2.ZERO)
+		for q in poly:
+			box = box.expand(q)
+		for key in sim.lots_near(box):
 			var lot: Dictionary = sim.lots[key]
 			if not sim.buildings.has(key) and sim.zones.zone_at(lot.zone_pt) == ZoneMap.Zone.NONE:
 				continue
@@ -317,17 +320,16 @@ static func sales(h: Dictionary) -> float:
 
 ## How much a place's land value is changed by the hubs around it: 1.0 is
 ## no change, 0.85 is 15% lower.
-func value_factor(p: Vector3) -> float:
+## `key` (a lot's) files the measurements for that spot, as _near_cell says.
+func value_factor(p: Vector3, key := "") -> float:
 	var total := 0.0
 	for id in hubs:
 		var h: Dictionary = hubs[id]
-		var d := distance(h, p)
+		var d: float = _near_cell(id, h, p, key) * h.cell if key != "" else distance(h, p)
 		total += _effect(h.kind, d)
-		for node in tree(h):
-			var fx: Dictionary = node.get("effects", {})
-			if node.id in h.built and fx.has("value"):
-				var reach := float(Balance.WASTE_SITES[h.kind].reach) + float(fx.reach)
-				total += float(fx.value) * maxf(0.0, 1.0 - d / reach)
+		# Its tree's built nodes that lift land, in tree order: [value, reach].
+		for vr in _value_nodes(id, h):
+			total += float(vr[0]) * maxf(0.0, 1.0 - d / float(vr[1]))
 		if h.scar > 0.0:
 			total += _effect("landfill", d) * h.scar / Balance.LANDFILL_RECOVERY_DAYS
 	return clampf(1.0 + total, 0.5, 1.5)
@@ -338,6 +340,95 @@ static func _effect(kind: String, d: float) -> float:
 	if float(s.reach) <= 0.0 or d >= float(s.reach):
 		return 0.0
 	return float(s.value) * (1.0 - d / float(s.reach))
+
+
+## distance(h, p) before the last * h.cell, kept for each lot (by key, with
+## its spot: a lot that moves is measured again) a hub's land value is asked
+## about: worked out again only when the hub moves or gives up land, and
+## when it takes more, only the new pieces are measured (the nearest of all
+## the pieces is the nearer of the old nearest and the new). The same
+## numbers as distance(). Lots that are gone are dropped (_prune_near).
+func _near_cell(id: int, h: Dictionary, p: Vector3, key: String) -> float:
+	var e: Array = _near_cells.get(id, [])
+	# (Checked again only after some hub was touched: version.)
+	if e.is_empty() or e[5] != version:
+		if e.is_empty() or e[0] != h.pos or e[1] != h.dir or e[2] != h.cell:
+			e = [h.pos, h.dir, h.cell, (h.cells as Array).duplicate(), {}, version]
+			_near_cells[id] = e
+		elif e[3] != h.cells:
+			var old: Array = e[3]
+			var now: Array = h.cells
+			# Pieces only added (at the end): each point folds them in when
+			# it's next asked for. Otherwise every point is measured afresh.
+			if not (now.size() > old.size() and now.slice(0, old.size()) == old):
+				e[4] = {}
+			e[3] = now.duplicate()
+		e[5] = version
+	var cells: Array = e[3]
+	var got = e[4].get(key)
+	if got == null or got[2] != p:
+		got = [_cells_near(h, p, cells), cells.size(), p]
+		e[4][key] = got
+	elif int(got[1]) < cells.size():
+		got[0] = minf(float(got[0]), _cells_near(h, p, cells.slice(int(got[1]))))
+		got[1] = cells.size()
+	return float(got[0])
+
+
+## The built nodes of a hub's tree that lift land values, in tree order:
+## [value, reach], kept until it builds something or its kind changes.
+func _value_nodes(id: int, h: Dictionary) -> Array:
+	var e: Array = _value_of.get(id, [])
+	var built: Array = h.get("built", [])
+	if not e.is_empty() and e[0] == h.kind and e[1] == h.get("capped", false) and e[2] == built:
+		return e[3]
+	var out := []
+	for node in tree(h):
+		var fx: Dictionary = node.get("effects", {})
+		if node.id in h.built and fx.has("value"):
+			out.append([float(fx.value), float(Balance.WASTE_SITES[h.kind].reach) + float(fx.reach)])
+	_value_of[id] = [h.kind, h.get("capped", false), built.duplicate(), out]
+	return out
+
+
+var _value_of := {}  # hub id -> [kind, capped, built, _value_nodes]
+
+
+## The cells part of distance(): the nearest of these cells, in cells.
+static func _cells_near(h: Dictionary, p: Vector3, cells: Array) -> float:
+	var d: Vector3 = p - h.pos
+	var x: float = d.dot(right(h)) / h.cell
+	var y: float = -d.dot(h.dir) / h.cell - 0.5
+	var best := INF
+	for c in cells:
+		var ex := maxf(absf(x - c.x) - 0.5, 0.0)
+		var ey := maxf(absf(y - c.y) - 0.5, 0.0)
+		best = minf(best, Vector2(ex, ey).length())
+	return best
+
+
+var _near_cells := {}  # hub id -> [pos, dir, cell, cells, {lot key: [nearest, pieces looked at, spot]}, version]
+
+
+## Drops what's kept for lots that are gone and hubs that are gone, once
+## the keeping has grown well past the lots there are: memory stays in step
+## with the town, not with every lot it ever had. (Dropped lots would be
+## measured afresh, to the same numbers.)
+func _prune_near(sim: CitySim) -> void:
+	var most := sim.lots.size() * 2 + 256
+	if _vf_cache.size() > most:
+		for k in _vf_cache.keys():
+			if not sim.lots.has(k):
+				_vf_cache.erase(k)
+	for id in _near_cells.keys():
+		if not hubs.has(id):
+			_near_cells.erase(id)
+			continue
+		var pts: Dictionary = _near_cells[id][4]
+		if pts.size() > most:
+			for k in pts.keys():
+				if not sim.lots.has(k):
+					pts.erase(k)
 
 
 ## Metres from a point to the nearest edge of a hub's land (0 inside).
@@ -368,9 +459,10 @@ func lot_factor(sim: CitySim, key: String) -> float:
 		if sig != _vf_sig:
 			_vf_sig = sig
 			_vf_cache.clear()
+		_prune_near(sim)
 	var row: Array = _vf_cache.get(key, [])
 	if row.is_empty() or row[0] != lot.pos:
-		row = [lot.pos, value_factor(lot.pos)]
+		row = [lot.pos, value_factor(lot.pos, key)]
 		_vf_cache[key] = row
 	var f: float = row[1]
 	if trash.get(lot.seg, 0.0) >= Balance.GARBAGE_PILE_LB:
@@ -413,13 +505,13 @@ func tick(sim: CitySim) -> void:
 				var t: Dictionary = trips[f.id]
 				trips.erase(f.id)
 				_stuck(sim, t)
-	if sim.tick_count % EVERY == 0:
+	if sim.tick_count % EVERY == Balance.ROUND_AT.hub_round:
 		_pile_up(sim)
 		if sim.simulate_traffic:
 			_send_trucks(sim)
 		else:
 			_collect_offstage()
-	if sim.tick_count % Balance.HUB_DECIDE_EVERY == 0 and not hubs.is_empty():
+	if sim.tick_count % Balance.HUB_DECIDE_EVERY == Balance.ROUND_AT.hubs and not hubs.is_empty():
 		_decide(sim)
 	if sim.tick_count % TICKS_PER_DAY == 0:
 		_trade(sim)
@@ -435,18 +527,26 @@ func _pile_up(sim: CitySim) -> void:
 	var share := float(EVERY) / TICKS_PER_DAY
 	# Each street's day of trash is added up first, then put out at once.
 	var put := {}
+	var lots: Dictionary = sim.lots
+	var buildings: Dictionary = sim.buildings
+	# (sim.utilities_ok, read straight from the services' rows.)
+	var all_ok: bool = not sim.require_utilities
+	var served: Dictionary = sim.services.served
 	for key in sim.ledger().sorted:
-		if not sim.lots.has(key):
+		var lot = lots.get(key)
+		if lot == null:
 			continue
-		var b: Dictionary = sim.buildings[key]
+		var b: Dictionary = buildings[key]
 		var lb := 0.0
 		if int(b.zone) == ZoneMap.Zone.RESIDENTIAL:
 			lb = b.occ * Balance.GARBAGE_LB_PER_RESIDENT
-		elif sim.utilities_ok(key):
-			lb = b.cap * Balance.GARBAGE_LB_PER_JOB
+		else:
+			var s = served.get(key)
+			if all_ok or (s != null and s.power and s.water):
+				lb = b.cap * Balance.GARBAGE_LB_PER_JOB
 		if lb <= 0.0:
 			continue
-		var seg: int = sim.lots[key].seg
+		var seg: int = lot.seg
 		put[seg] = put.get(seg, 0.0) + lb
 	for seg in put:
 		trash[seg] = _snap(minf(trash.get(seg, 0.0) + put[seg] * share, Balance.GARBAGE_PILE_LB * 4.0))
@@ -531,14 +631,27 @@ func _send_trucks(sim: CitySim) -> void:
 
 
 ## Where trash waits on each street: the curb in front of its first building.
+## Kept until a building comes or goes or the lots change (the ledger's
+## sorted keys are the buildings' keys sorted).
 func _curbs(sim: CitySim) -> Dictionary:
+	var ledger := sim.ledger()
+	var key := [ledger.sig, sim.lots.size(), sim._lot_rev]
+	if key == _curbs_key and is_same(sim.lots, _curbs_lots):
+		return _curbs_out
 	var out := {}
-	var keys := sim.buildings.keys()
-	keys.sort()
-	for key in keys:
-		if sim.lots.has(key) and not out.has(sim.lots[key].seg):
-			out[sim.lots[key].seg] = sim.lots[key].front
+	var lots: Dictionary = sim.lots
+	for k in ledger.sorted:
+		if lots.has(k) and not out.has(lots[k].seg):
+			out[lots[k].seg] = lots[k].front
+	_curbs_key = key
+	_curbs_lots = lots
+	_curbs_out = out
 	return out
+
+
+var _curbs_key := []
+var _curbs_lots := {}
+var _curbs_out := {}
 
 
 func _nearest_hub(ids: Array, p: Vector3) -> int:

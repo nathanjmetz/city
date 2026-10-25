@@ -101,12 +101,11 @@ func _start(phase: String) -> void:
 		var t2 := Time.get_ticks_usec()
 		_fv._plants.fields_changed()
 		var t3 := Time.get_ticks_usec()
-		_fv._draw_fields()
-		var t4 := Time.get_ticks_usec()
 		_fv._rebuild()
+		_fv.finish_now()  # all at once, as a town that loads does (a change in play is spread over frames)
 		var t5 := Time.get_ticks_usec()
-		print("load parts: table %.1f ms, farm rows %.1f ms, plants' farm check %.1f ms, field mesh %.1f ms, all of the farms' redraw %.1f ms" % [
-			(t1 - t) / 1000.0, (t2 - t1) / 1000.0, (t3 - t2) / 1000.0, (t4 - t3) / 1000.0, (t5 - t4) / 1000.0])
+		print("load parts: table %.1f ms, farm rows %.1f ms, plants' farm check %.1f ms, all of the farms' redraw (fields and farmsteads) %.1f ms" % [
+			(t1 - t) / 1000.0, (t2 - t1) / 1000.0, (t3 - t2) / 1000.0, (t5 - t3) / 1000.0])
 		_work = (t2 - t) / 1000.0
 		return
 	else:
