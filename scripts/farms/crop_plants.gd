@@ -61,42 +61,68 @@ func setup(s: CitySim) -> void:
 	sim = s
 
 
-## The town's farms changed (FarmView redrew its fields): only the tiles
-## under a farm whose fields, slots or place changed are redrawn, where it
-## was and where it is now.
+## Every farm's fields at once, from the live farms (tools, a cold start).
+## FarmView tells farms one at a time as each finishes (farm_drawn).
 func fields_changed() -> void:
-	_farm_boxes.clear()
 	if sim == null:
 		return
-	var now := {}
 	for id in sim.farms.farms:
 		var f: Dictionary = sim.farms.farms[id]
-		var box := Rect2(Vector2(f.pos.x, f.pos.z), Vector2.ZERO)
+		var cells: Array = f.cells
 		var slots := []
-		var rows := {}
-		for c in f.cells:
-			for p in Farms.cell_corners(f, c):
-				box = box.expand(p)
-			var slot := FarmView.slot_of(id, f, c)
-			slots.append([c, slot])
-			rows[slot.x] = true
-		_farm_boxes.append([box.grow(4.0), id])
-		# The facts behind each row too: rows are handed out again when the
-		# table's farm rows are cleared, so a row number can change meaning.
-		var specs := []
-		for row in rows:
-			specs.append([row, CropCalendar.spec(row, int(CropCalendar.today().y))])
-		var sig := [f.pos, f.dir, slots, specs, sim.farms.trim.get(id, {})].hash()
-		now[id] = [box, sig]
-	for id in now:
-		if not _farm_sigs.has(id) or _farm_sigs[id][1] != now[id][1]:
-			_stale_under(now[id][0])
-			if _farm_sigs.has(id):
-				_stale_under(_farm_sigs[id][0])
-	for id in _farm_sigs:
-		if not now.has(id):
+		var frame := {"pos": f.pos, "dir": f.dir}
+		var cell_box := Rect2(Vector2(f.pos.x, f.pos.z), Vector2.ZERO)
+		for c in cells:
+			slots.append(FarmView.slot_of(id, f, c))
+			cell_box = FarmFieldJob.expand_box(cell_box, frame, c)
+		farm_drawn(id, cell_box, frame, cells, slots, sim.farms.trim.get(id, {}))
+	for id in _farm_sigs.keys():
+		if not sim.farms.farms.has(id):
+			farm_removed(id)
+
+
+## What a farm's tiles are built from: its place, its cells' slots, and the
+## facts behind each row too (a row number can stand for another crop once
+## the table's farm rows are freed, and a row borrowed from the county
+## follows the year).
+static func sig_of(frame: Dictionary, cells: Array, slots: Array, trim: Dictionary) -> int:
+	var rows := {}
+	for slot: Vector2i in slots:
+		rows[slot.x] = true
+	var specs := []
+	var year := int(CropCalendar.today().y)
+	for row in rows:
+		specs.append([row, CropCalendar.spec(row, year)])
+	return [frame.pos, frame.dir, cells, slots, specs, trim].hash()
+
+
+## One farm's fields were just drawn (FarmView; `slots` go with `cells`,
+## `cell_box` holds the cells in view coordinates): only the tiles under it
+## are redrawn, and only if its fields, slots or place changed since the
+## last time, where it was and where it is now.
+func farm_drawn(id: Variant, cell_box: Rect2, frame: Dictionary, cells: Array, slots: Array, trim: Dictionary) -> void:
+	var sig := sig_of(frame, cells, slots, trim)
+	if not _farm_sigs.has(id) or _farm_sigs[id][1] != sig:
+		_stale_under(cell_box)
+		if _farm_sigs.has(id):
 			_stale_under(_farm_sigs[id][0])
-	_farm_sigs = now
+	_farm_sigs[id] = [cell_box, sig]
+	_farm_boxes = _boxes()
+
+
+## A farm is gone: the tiles under it are redrawn.
+func farm_removed(id: Variant) -> void:
+	if _farm_sigs.has(id):
+		_stale_under(_farm_sigs[id][0])
+		_farm_sigs.erase(id)
+		_farm_boxes = _boxes()
+
+
+func _boxes() -> Array:
+	var out := []
+	for id in _farm_sigs:
+		out.append([(_farm_sigs[id][0] as Rect2).grow(4.0), id])
+	return out
 
 
 ## Marks the built tiles over a farm's box (and its 30 m farmyard) stale.

@@ -805,7 +805,7 @@ static func farm_row(crop: String, prev: String, practice: int, cover: bool, cov
 	var key := "%s|%s|%d|%d|%d" % [crop, prev, practice, int(cover), int(cover_prev)]
 	if _farm_rows.has(key):
 		return _farm_rows[key]
-	var row := COUNTY_ROWS + _farm_rows.size()
+	var row := _free_farm_row()
 	if row >= ROWS:
 		return county_row_like(crop, prev, practice, cover, cover_prev)
 	_farm_rows[key] = row
@@ -839,7 +839,35 @@ static func farm_rows_used() -> int:
 	return _farm_rows.size()
 
 
-## Forget the farm rows (FarmView reassigns them when it redraws).
+## The lowest farm row nobody has (ROWS when they are all taken).
+static func _free_farm_row() -> int:
+	for row in range(COUNTY_ROWS, ROWS):
+		if not _farm_specs.has(row):
+			return row
+	return ROWS
+
+
+## Frees the farm rows that are not in `keep` (row -> true) and leaves every
+## other row where it is, so a field drawn with a kept row still reads the
+## right crop. How many were freed. (Clearing all of them while farms are
+## drawn with their numbers would show those farms the wrong crops.)
+static func free_farm_rows_except(keep: Dictionary) -> int:
+	var freed := 0
+	for key in _farm_rows.keys():
+		var row: int = _farm_rows[key]
+		if keep.has(row):
+			continue
+		_farm_rows.erase(key)
+		_farm_specs.erase(row)
+		if row < _stamp.size():
+			_stamp[row] = Vector2(-1.0, -999.0)
+		states.erase(row)
+		freed += 1
+	return freed
+
+
+## Forget all the farm rows (only when no field is drawn with one: a cold
+## start, tools).
 static func clear_farm_rows() -> void:
 	_farm_rows.clear()
 	_farm_specs.clear()
