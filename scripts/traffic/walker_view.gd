@@ -12,7 +12,9 @@ const FAR := 320.0
 const STRIDE := 1.4
 const SHIRTS := [Color(0.62, 0.16, 0.14), Color(0.16, 0.3, 0.55), Color(0.85, 0.82, 0.74),
 	Color(0.24, 0.42, 0.26), Color(0.9, 0.62, 0.2), Color(0.35, 0.35, 0.38), Color(0.55, 0.38, 0.6),
-	Color(0.12, 0.12, 0.14), Color(0.7, 0.75, 0.82), Color(0.78, 0.45, 0.42)]
+	Color(0.12, 0.12, 0.14), Color(0.7, 0.75, 0.82), Color(0.78, 0.45, 0.42),
+	Color(0.95, 0.95, 0.93), Color(0.2, 0.55, 0.62), Color(0.82, 0.74, 0.3), Color(0.45, 0.28, 0.18),
+	Color(0.9, 0.5, 0.62), Color(0.3, 0.2, 0.42), Color(0.5, 0.6, 0.35), Color(0.75, 0.2, 0.3)]
 
 var traffic: TrafficSim
 var tick_fraction: Callable
@@ -93,14 +95,27 @@ func _draw_walkers() -> void:
 		var dir: Vector3 = pose[1]
 		if dir.length() < 0.5:
 			dir = Vector3.FORWARD
-		_mm.set_instance_transform(n, Transform3D(Basis.looking_at(Vector3(dir.x, 0.0, dir.z).normalized(), Vector3.UP), p))
+		_mm.set_instance_transform(n, Transform3D(Basis.looking_at(Vector3(dir.x, 0.0, dir.z).normalized(), Vector3.UP).scaled(build(int(w.person))), p))
 		_mm.set_instance_color(n, Color.WHITE)
 		# Standing at the kerb, the phase stays put: feet together if it's 0.
-		var shirt: Color = SHIRTS[int(w.person) % SHIRTS.size()]
+		var shirt: Color = SHIRTS[(hash(int(w.person)) >> 4) % SHIRTS.size()]
 		shirt.a = fposmod(float(pose[2]), STRIDE) / STRIDE
 		_mm.set_instance_custom_data(n, shirt)
 		n += 1
 	_mm.visible_instance_count = n
+
+
+## Each person's own height and build, the same every time they're seen:
+## adults from short to tall and slight to heavy, and about one in eight a
+## child (US adults run roughly 1.5 to 1.9 m; the mesh is 1.7 m).
+static func build(person: int) -> Vector3:
+	var h := hash(person)
+	var tall := 0.9 + float(h & 255) / 255.0 * 0.2
+	var wide := 0.85 + float((h >> 8) & 255) / 255.0 * 0.45
+	if (h >> 16) % 8 == 0:
+		tall = 0.6 + float((h >> 20) & 15) / 15.0 * 0.15
+		wide = 0.75 + float((h >> 24) & 15) / 15.0 * 0.15
+	return Vector3(wide, tall, lerpf(wide, 1.0, 0.4))
 
 
 ## A person about 1.7 m tall: legs, arms, body and head, coloured by the
