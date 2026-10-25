@@ -41,6 +41,12 @@ func setup(s: CitySim, light: SkyLight, fraction := Callable()) -> void:
 	tick_fraction = fraction
 
 
+## Streets drawn as country roads go unlit (RoadView.country_changed).
+func set_country(segs: Dictionary) -> void:
+	if _lamps != null:
+		_lamps.set_country(segs)
+
+
 func _ready() -> void:
 	load_settings()
 	_lamps = StreetLights.new()
