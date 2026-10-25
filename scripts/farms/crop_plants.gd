@@ -409,7 +409,7 @@ func _county_crop(c: Vector2) -> bool:
 		return false
 	if CountyGrid.distance(r.x, r.y) < 9.5 or Highways.distance(r.x, r.y) < 17.0:
 		return false
-	if Backdrop.inside(r, 40.0) or _near_farmstead(r, 55.0):
+	if Backdrop.inside(r, 40.0) or _near_farmstead(r, 55.0) or FarmsteadPlan.covers(r):
 		return false
 	return true
 
