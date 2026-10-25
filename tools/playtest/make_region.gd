@@ -3,6 +3,15 @@ extends SceneTree
 ## join a region like the family one (tools/playtest/).
 ## Run: godot --headless -s tools/playtest/make_region.gd -- out.json [towns] [size]
 
+## Players that can join the test region, each with a PIN of their own
+## (the play-through passes it as --playtest-pin).
+const BOTS := ["Playtest", "Alice", "Bob", "Cara", "Dana"]
+
+
+static func bot_pin(name: String) -> String:
+	return "%06d" % (500001 + BOTS.find(name))
+
+
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
 	var out: String = args[0] if args.size() > 0 else "region.json"
@@ -23,6 +32,11 @@ func _init() -> void:
 		accounts[name.to_lower()] = {"name": name, "salt": "", "hash": "", "status": "approved",
 			"player": "seed%d" % i, "host": i == 0, "tokens": []}
 		print("%s: %d people" % [name, sim.stats.population])
+	# The players the play-through and the soak test bring: a region only lets
+	# in people it has a PIN for (their towns are made when they first join).
+	for i in BOTS.size():
+		accounts[BOTS[i].to_lower()] = {"name": BOTS[i], "salt": "", "hash": "", "status": "approved",
+			"player": "bot%d" % i, "host": false, "tokens": [], "pin": bot_pin(BOTS[i])}
 	var d := region.to_dict()
 	d["code"] = "PLAYT1"
 	d["accounts"] = accounts

@@ -1,0 +1,999 @@
+{
+ "roster": [
+  {
+   "buildings": 7711,
+   "city": "c1",
+   "name": "Bot1",
+   "people": 16328,
+   "pin": "600001"
+  },
+  {
+   "buildings": 7596,
+   "city": "c2",
+   "name": "Bot2",
+   "people": 16704,
+   "pin": "600002"
+  },
+  {
+   "buildings": 7833,
+   "city": "c3",
+   "name": "Bot3",
+   "people": 16402,
+   "pin": "600003"
+  },
+  {
+   "buildings": 7757,
+   "city": "c4",
+   "name": "Bot4",
+   "people": 17005,
+   "pin": "600004"
+  },
+  {
+   "buildings": 8222,
+   "city": "c5",
+   "name": "Bot5",
+   "people": 18211,
+   "pin": "600005"
+  },
+  {
+   "buildings": 9115,
+   "city": "c6",
+   "name": "Bot6",
+   "people": 18575,
+   "pin": "600006"
+  },
+  {
+   "buildings": 7582,
+   "city": "c7",
+   "name": "Bot7",
+   "people": 16909,
+   "pin": "600007"
+  },
+  {
+   "buildings": 8166,
+   "city": "c8",
+   "name": "Bot8",
+   "people": 17636,
+   "pin": "600008"
+  },
+  {
+   "buildings": 0,
+   "city": "",
+   "name": "Late1",
+   "people": 0,
+   "pin": "600009"
+  },
+  {
+   "buildings": 0,
+   "city": "",
+   "name": "Late2",
+   "people": 0,
+   "pin": "600010"
+  }
+ ],
+ "duration_s": 709.0,
+ "steady_window_s": [
+  30,
+  301.7
+ ],
+ "server": {
+  "cpu_percent_of_one_core": {
+   "whole_run": {
+    "n": 340,
+    "mean": 7.7,
+    "p50": 1.0,
+    "p95": 59.4,
+    "p99": 95.5,
+    "max": 99.5
+   },
+   "steady": {
+    "n": 135,
+    "mean": 7.6,
+    "p50": 1.0,
+    "p95": 59.4,
+    "p99": 95.5,
+    "max": 99.5
+   }
+  },
+  "cpu_busy_seconds_over_90pct": 10,
+  "memory_mb": {
+   "start": 5562.3,
+   "end": 4629.7,
+   "peak": 7269.9
+  },
+  "memory_series": [
+   [
+    0,
+    5562.3
+   ],
+   [
+    30,
+    5933.1
+   ],
+   [
+    60,
+    5855.1
+   ],
+   [
+    91,
+    7250.1
+   ],
+   [
+    121,
+    6059.5
+   ],
+   [
+    151,
+    5968.3
+   ],
+   [
+    181,
+    4244.6
+   ],
+   [
+    211,
+    4244.6
+   ],
+   [
+    242,
+    4244.6
+   ],
+   [
+    272,
+    4244.6
+   ],
+   [
+    302,
+    4244.6
+   ],
+   [
+    332,
+    6812.1
+   ],
+   [
+    362,
+    5670.9
+   ],
+   [
+    392,
+    4178.2
+   ],
+   [
+    423,
+    4178.2
+   ],
+   [
+    453,
+    4674.2
+   ],
+   [
+    483,
+    4127.5
+   ],
+   [
+    513,
+    7210.3
+   ],
+   [
+    543,
+    4629.7
+   ],
+   [
+    574,
+    4629.7
+   ],
+   [
+    604,
+    4629.7
+   ],
+   [
+    640,
+    4629.7
+   ],
+   [
+    671,
+    4629.7
+   ]
+  ],
+  "cpu_series": [
+   [
+    2,
+    0
+   ],
+   [
+    32,
+    79
+   ],
+   [
+    62,
+    1
+   ],
+   [
+    93,
+    2
+   ],
+   [
+    123,
+    1
+   ],
+   [
+    153,
+    0
+   ],
+   [
+    183,
+    1
+   ],
+   [
+    213,
+    0
+   ],
+   [
+    244,
+    0
+   ],
+   [
+    274,
+    1
+   ],
+   [
+    304,
+    1
+   ],
+   [
+    334,
+    1
+   ],
+   [
+    364,
+    0
+   ],
+   [
+    395,
+    0
+   ],
+   [
+    425,
+    1
+   ],
+   [
+    455,
+    58
+   ],
+   [
+    485,
+    1
+   ],
+   [
+    515,
+    1
+   ],
+   [
+    545,
+    1
+   ],
+   [
+    576,
+    1
+   ],
+   [
+    606,
+    0
+   ],
+   [
+    642,
+    0
+   ],
+   [
+    673,
+    0
+   ]
+  ]
+ },
+ "bytes": {
+  "per_player": {
+   "Bot1": {
+    "sent_to_server_mb": 0.0,
+    "received_from_server_mb": 0.01,
+    "steady_up_kb_per_s": 0.0,
+    "steady_down_kb_per_s": 0.0,
+    "peak_up_kb_per_s": 0.3,
+    "peak_down_kb_per_s": 0.8,
+    "connections": 1
+   },
+   "Bot2": {
+    "sent_to_server_mb": 0.0,
+    "received_from_server_mb": 0.0,
+    "steady_up_kb_per_s": 0.0,
+    "steady_down_kb_per_s": 0.0,
+    "peak_up_kb_per_s": 0.3,
+    "peak_down_kb_per_s": 0.3,
+    "connections": 1
+   },
+   "Bot3": {
+    "sent_to_server_mb": 0.0,
+    "received_from_server_mb": 0.0,
+    "steady_up_kb_per_s": 0.0,
+    "steady_down_kb_per_s": 0.0,
+    "peak_up_kb_per_s": 0.1,
+    "peak_down_kb_per_s": 0.3,
+    "connections": 1
+   },
+   "Bot4": {
+    "sent_to_server_mb": 0.0,
+    "received_from_server_mb": 0.0,
+    "steady_up_kb_per_s": 0.0,
+    "steady_down_kb_per_s": 0.0,
+    "peak_up_kb_per_s": 0.3,
+    "peak_down_kb_per_s": 0.3,
+    "connections": 1
+   },
+   "Bot5": {
+    "sent_to_server_mb": 0.0,
+    "received_from_server_mb": 0.0,
+    "steady_up_kb_per_s": 0.0,
+    "steady_down_kb_per_s": 0.0,
+    "peak_up_kb_per_s": 0.3,
+    "peak_down_kb_per_s": 0.3,
+    "connections": 1
+   },
+   "Bot6": {
+    "sent_to_server_mb": 0.0,
+    "received_from_server_mb": 0.0,
+    "steady_up_kb_per_s": 0.0,
+    "steady_down_kb_per_s": 0.0,
+    "peak_up_kb_per_s": 0.3,
+    "peak_down_kb_per_s": 0.3,
+    "connections": 1
+   },
+   "Bot7": {
+    "sent_to_server_mb": 0.0,
+    "received_from_server_mb": 0.0,
+    "steady_up_kb_per_s": 0.0,
+    "steady_down_kb_per_s": 0.0,
+    "peak_up_kb_per_s": 0.3,
+    "peak_down_kb_per_s": 0.3,
+    "connections": 1
+   },
+   "Bot8": {
+    "sent_to_server_mb": 0.0,
+    "received_from_server_mb": 0.0,
+    "steady_up_kb_per_s": 0.0,
+    "steady_down_kb_per_s": 0.0,
+    "peak_up_kb_per_s": 0.3,
+    "peak_down_kb_per_s": 0.3,
+    "connections": 1
+   },
+   "Late1": {
+    "sent_to_server_mb": 0.01,
+    "received_from_server_mb": 13.69,
+    "steady_up_kb_per_s": 0.0,
+    "steady_down_kb_per_s": 0.0,
+    "peak_up_kb_per_s": 6.3,
+    "peak_down_kb_per_s": 13369.5,
+    "connections": 1
+   },
+   "Late2": {
+    "sent_to_server_mb": 0.0,
+    "received_from_server_mb": 0.0,
+    "steady_up_kb_per_s": 0.0,
+    "steady_down_kb_per_s": 0.0,
+    "peak_up_kb_per_s": 0.0,
+    "peak_down_kb_per_s": 0.0,
+    "connections": 0
+   }
+  },
+  "total_into_server": {
+   "total_mb": 0.0,
+   "steady_kb_per_s": 0.0,
+   "peak_kb_per_s": 6.3
+  },
+  "total_out_of_server": {
+   "total_mb": 13.7,
+   "steady_kb_per_s": 0.0,
+   "peak_kb_per_s": 13369.5
+  },
+  "by_message": {
+   "down:welcome": {
+    "n": 1,
+    "mb": 13.69,
+    "biggest_mb": 13.69
+   },
+   "down:players": {
+    "n": 65,
+    "mb": 0.01,
+    "biggest_mb": 0.0
+   },
+   "up:city": {
+    "n": 1,
+    "mb": 0.01,
+    "biggest_mb": 0.01
+   },
+   "down:chat": {
+    "n": 65,
+    "mb": 0.01,
+    "biggest_mb": 0.0
+   },
+   "down:pins": {
+    "n": 8,
+    "mb": 0.0,
+    "biggest_mb": 0.0
+   },
+   "up:cursor": {
+    "n": 30,
+    "mb": 0.0,
+    "biggest_mb": 0.0
+   },
+   "up:hello": {
+    "n": 9,
+    "mb": 0.0,
+    "biggest_mb": 0.0
+   },
+   "down:trade": {
+    "n": 17,
+    "mb": 0.0,
+    "biggest_mb": 0.0
+   },
+   "down:requests": {
+    "n": 8,
+    "mb": 0.0,
+    "biggest_mb": 0.0
+   },
+   "down:?": {
+    "n": 9,
+    "mb": 0.0,
+    "biggest_mb": 0.0
+   }
+  }
+ },
+ "joins": [
+  {
+   "player": "Late1",
+   "connection": 1,
+   "late": true,
+   "welcome_mb": 13.69,
+   "hello_to_welcome_s": 4.44,
+   "welcome_arrival_s": 0.03,
+   "at_s": 497.1
+  }
+ ],
+ "sync_lag_wire_s": {
+  "all": {
+   "n": 0
+  },
+  "worst_pairs": []
+ },
+ "on_screen_at_end": {
+  "pairs": 0,
+  "behind": {
+   "n": 0
+  },
+  "worst": []
+ },
+ "server_answer_ms": {
+  "stats": {
+   "n": 328,
+   "mean": 108.0,
+   "p50": 13.0,
+   "p95": 402.0,
+   "p99": 2003.0,
+   "max": 2765.0
+  },
+  "failed": 0,
+  "over_1s": 13,
+  "over_5s": 0,
+  "samples": 328,
+  "worst": [
+   {
+    "at_s": 494.26,
+    "ms": 2765
+   },
+   {
+    "at_s": 8.05,
+    "ms": 2293
+   },
+   {
+    "at_s": 407.88,
+    "ms": 2058
+   },
+   {
+    "at_s": 395.82,
+    "ms": 2003
+   },
+   {
+    "at_s": 510.33,
+    "ms": 1994
+   },
+   {
+    "at_s": 133.12,
+    "ms": 1952
+   },
+   {
+    "at_s": 351.74,
+    "ms": 1902
+   },
+   {
+    "at_s": 373.79,
+    "ms": 1888
+   }
+  ]
+ },
+ "bots": {
+  "Bot1": {
+   "ok": false,
+   "error": "the town never finished loading",
+   "people": null,
+   "buildings": null,
+   "frame_p50_ms": null,
+   "frame_p95_ms": null,
+   "frame_p99_ms": null,
+   "frame_max_ms": 1645.0,
+   "hitches_over_100ms": 3,
+   "freezes_over_1s": 2,
+   "frames": 42952,
+   "dropped": 0,
+   "reconnected": 0,
+   "failed": [],
+   "memory_peak_mb": 642.5,
+   "rss_peak_mb": 1328.5,
+   "cpu_percent_of_one_core": 6,
+   "city_lines_hitch_s": 0,
+   "run_s": null,
+   "hitch_causes_ms": {
+    "frame.buildings": 1645,
+    "frame.terrain": 1084,
+    "untimed": 110
+   },
+   "worst_freezes": [
+    {
+     "at_s": 1.6,
+     "ms": 1645.0,
+     "stages": {
+      "frame.buildings": 1310.3,
+      "frame.roads": 231.3
+     },
+     "step": "load"
+    },
+    {
+     "at_s": 2.7,
+     "ms": 1084.2,
+     "stages": {
+      "frame.buildings": 12.1,
+      "frame.roads": 8.8,
+      "frame.terrain": 965.3,
+      "frame.trees": 42.5
+     },
+     "step": "load"
+    },
+    {
+     "at_s": 216.5,
+     "ms": 109.6,
+     "stages": {},
+     "step": "load"
+    }
+   ],
+   "grown": null,
+   "load_s": 298.37,
+   "actions": {}
+  },
+  "Bot2": {
+   "ok": false,
+   "error": "the town never finished loading",
+   "people": null,
+   "buildings": null,
+   "frame_p50_ms": null,
+   "frame_p95_ms": null,
+   "frame_p99_ms": null,
+   "frame_max_ms": 1695.5,
+   "hitches_over_100ms": 5,
+   "freezes_over_1s": 2,
+   "frames": 42934,
+   "dropped": 0,
+   "reconnected": 0,
+   "failed": [],
+   "memory_peak_mb": 642.5,
+   "rss_peak_mb": 1328.9,
+   "cpu_percent_of_one_core": 6,
+   "city_lines_hitch_s": 0,
+   "run_s": null,
+   "hitch_causes_ms": {
+    "frame.buildings": 1695,
+    "frame.terrain": 1220,
+    "untimed": 230
+   },
+   "worst_freezes": [
+    {
+     "at_s": 1.7,
+     "ms": 1695.5,
+     "stages": {
+      "frame.buildings": 1351.2,
+      "frame.roads": 246.8
+     },
+     "step": "load"
+    },
+    {
+     "at_s": 2.8,
+     "ms": 1102.0,
+     "stages": {
+      "frame.buildings": 11.1,
+      "frame.roads": 9.3,
+      "frame.terrain": 985.8,
+      "frame.trees": 41.9,
+      "net.client": 0.1
+     },
+     "step": "load"
+    },
+    {
+     "at_s": 158.6,
+     "ms": 122.8,
+     "stages": {},
+     "step": "load"
+    }
+   ],
+   "grown": null,
+   "load_s": 298.32,
+   "actions": {}
+  },
+  "Bot3": {
+   "ok": false,
+   "error": "the town never finished loading",
+   "people": null,
+   "buildings": null,
+   "frame_p50_ms": null,
+   "frame_p95_ms": null,
+   "frame_p99_ms": null,
+   "frame_max_ms": 1642.8,
+   "hitches_over_100ms": 4,
+   "freezes_over_1s": 2,
+   "frames": 42940,
+   "dropped": 0,
+   "reconnected": 0,
+   "failed": [],
+   "memory_peak_mb": 642.5,
+   "rss_peak_mb": 1325.4,
+   "cpu_percent_of_one_core": 6,
+   "city_lines_hitch_s": 0,
+   "run_s": null,
+   "hitch_causes_ms": {
+    "frame.buildings": 1643,
+    "frame.terrain": 1221,
+    "untimed": 156
+   },
+   "worst_freezes": [
+    {
+     "at_s": 1.6,
+     "ms": 1642.8,
+     "stages": {
+      "frame.buildings": 1319.4,
+      "frame.roads": 227.8
+     },
+     "step": "load"
+    },
+    {
+     "at_s": 2.7,
+     "ms": 1093.7,
+     "stages": {
+      "frame.buildings": 11.5,
+      "frame.roads": 8.1,
+      "frame.terrain": 976.5,
+      "frame.trees": 43.7,
+      "net.client": 0.1
+     },
+     "step": "load"
+    },
+    {
+     "at_s": 138.7,
+     "ms": 155.6,
+     "stages": {},
+     "step": "load"
+    }
+   ],
+   "grown": null,
+   "load_s": 298.37,
+   "actions": {}
+  },
+  "Bot4": {
+   "ok": false,
+   "error": "the town never finished loading",
+   "people": null,
+   "buildings": null,
+   "frame_p50_ms": null,
+   "frame_p95_ms": null,
+   "frame_p99_ms": null,
+   "frame_max_ms": 1553.1,
+   "hitches_over_100ms": 3,
+   "freezes_over_1s": 2,
+   "frames": 42964,
+   "dropped": 0,
+   "reconnected": 0,
+   "failed": [],
+   "memory_peak_mb": 642.4,
+   "rss_peak_mb": 1327.3,
+   "cpu_percent_of_one_core": 6,
+   "city_lines_hitch_s": 0,
+   "run_s": null,
+   "hitch_causes_ms": {
+    "frame.buildings": 1553,
+    "frame.terrain": 1060,
+    "untimed": 122
+   },
+   "worst_freezes": [
+    {
+     "at_s": 1.6,
+     "ms": 1553.1,
+     "stages": {
+      "frame.buildings": 1243.2,
+      "frame.roads": 218.4
+     },
+     "step": "load"
+    },
+    {
+     "at_s": 2.6,
+     "ms": 1060.2,
+     "stages": {
+      "frame.buildings": 11.4,
+      "frame.roads": 8.3,
+      "frame.terrain": 946.6,
+      "frame.trees": 42.7,
+      "net.client": 0.1
+     },
+     "step": "load"
+    },
+    {
+     "at_s": 118.8,
+     "ms": 121.8,
+     "stages": {
+      "net.client": 0.9
+     },
+     "step": "load"
+    }
+   ],
+   "grown": null,
+   "load_s": 298.46,
+   "actions": {}
+  },
+  "Bot5": {
+   "ok": false,
+   "error": "the town never finished loading",
+   "people": null,
+   "buildings": null,
+   "frame_p50_ms": null,
+   "frame_p95_ms": null,
+   "frame_p99_ms": null,
+   "frame_max_ms": 1502.1,
+   "hitches_over_100ms": 5,
+   "freezes_over_1s": 2,
+   "frames": 42981,
+   "dropped": 0,
+   "reconnected": 0,
+   "failed": [],
+   "memory_peak_mb": 642.5,
+   "rss_peak_mb": 1324.6,
+   "cpu_percent_of_one_core": 6,
+   "city_lines_hitch_s": 0,
+   "run_s": null,
+   "hitch_causes_ms": {
+    "frame.buildings": 1502,
+    "frame.terrain": 1131,
+    "untimed": 281
+   },
+   "worst_freezes": [
+    {
+     "at_s": 1.5,
+     "ms": 1502.1,
+     "stages": {
+      "frame.buildings": 1197.8,
+      "frame.roads": 215.1
+     },
+     "step": "load"
+    },
+    {
+     "at_s": 2.5,
+     "ms": 1014.0,
+     "stages": {
+      "frame.buildings": 9.3,
+      "frame.roads": 8.9,
+      "frame.terrain": 904.8,
+      "frame.trees": 40.3
+     },
+     "step": "load"
+    },
+    {
+     "at_s": 98.8,
+     "ms": 143.8,
+     "stages": {},
+     "step": "load"
+    }
+   ],
+   "grown": null,
+   "load_s": 298.51,
+   "actions": {}
+  },
+  "Bot6": {
+   "ok": false,
+   "error": "the town never finished loading",
+   "people": null,
+   "buildings": null,
+   "frame_p50_ms": null,
+   "frame_p95_ms": null,
+   "frame_p99_ms": null,
+   "frame_max_ms": 1514.8,
+   "hitches_over_100ms": 4,
+   "freezes_over_1s": 2,
+   "frames": 42993,
+   "dropped": 0,
+   "reconnected": 0,
+   "failed": [],
+   "memory_peak_mb": 642.4,
+   "rss_peak_mb": 1324.0,
+   "cpu_percent_of_one_core": 6,
+   "city_lines_hitch_s": 0,
+   "run_s": null,
+   "hitch_causes_ms": {
+    "frame.buildings": 1515,
+    "frame.terrain": 1026,
+    "untimed": 210
+   },
+   "worst_freezes": [
+    {
+     "at_s": 1.5,
+     "ms": 1514.8,
+     "stages": {
+      "frame.buildings": 1197.1,
+      "frame.roads": 218.7
+     },
+     "step": "load"
+    },
+    {
+     "at_s": 2.5,
+     "ms": 1026.4,
+     "stages": {
+      "frame.buildings": 10.2,
+      "frame.roads": 8.1,
+      "frame.terrain": 915.4,
+      "frame.trees": 40.1,
+      "net.client": 0.1
+     },
+     "step": "load"
+    },
+    {
+     "at_s": 78.8,
+     "ms": 108.2,
+     "stages": {},
+     "step": "load"
+    }
+   ],
+   "grown": null,
+   "load_s": 298.5,
+   "actions": {}
+  },
+  "Bot7": {
+   "ok": false,
+   "error": "the town never finished loading",
+   "people": null,
+   "buildings": null,
+   "frame_p50_ms": null,
+   "frame_p95_ms": null,
+   "frame_p99_ms": null,
+   "frame_max_ms": 1489.9,
+   "hitches_over_100ms": 5,
+   "freezes_over_1s": 2,
+   "frames": 42983,
+   "dropped": 0,
+   "reconnected": 0,
+   "failed": [],
+   "memory_peak_mb": 642.4,
+   "rss_peak_mb": 1325.3,
+   "cpu_percent_of_one_core": 6,
+   "city_lines_hitch_s": 0,
+   "run_s": null,
+   "hitch_causes_ms": {
+    "frame.buildings": 1490,
+    "frame.terrain": 1017,
+    "untimed": 337
+   },
+   "worst_freezes": [
+    {
+     "at_s": 1.5,
+     "ms": 1489.9,
+     "stages": {
+      "frame.buildings": 1187.7,
+      "frame.roads": 213.1
+     },
+     "step": "load"
+    },
+    {
+     "at_s": 2.5,
+     "ms": 1017.2,
+     "stages": {
+      "frame.buildings": 9.6,
+      "frame.roads": 8.3,
+      "frame.terrain": 909.1,
+      "frame.trees": 39.8,
+      "net.client": 0.1
+     },
+     "step": "load"
+    },
+    {
+     "at_s": 58.9,
+     "ms": 123.1,
+     "stages": {},
+     "step": "load"
+    }
+   ],
+   "grown": null,
+   "load_s": 298.52,
+   "actions": {}
+  },
+  "Bot8": {
+   "ok": false,
+   "error": "the town never finished loading",
+   "people": null,
+   "buildings": null,
+   "frame_p50_ms": null,
+   "frame_p95_ms": null,
+   "frame_p99_ms": null,
+   "frame_max_ms": 1515.3,
+   "hitches_over_100ms": 4,
+   "freezes_over_1s": 2,
+   "frames": 42981,
+   "dropped": 0,
+   "reconnected": 0,
+   "failed": [],
+   "memory_peak_mb": 642.4,
+   "rss_peak_mb": 1321.6,
+   "cpu_percent_of_one_core": 6,
+   "city_lines_hitch_s": 0,
+   "run_s": null,
+   "hitch_causes_ms": {
+    "frame.buildings": 1515,
+    "frame.terrain": 1015,
+    "untimed": 192,
+    "net.client": 117
+   },
+   "worst_freezes": [
+    {
+     "at_s": 1.5,
+     "ms": 1515.3,
+     "stages": {
+      "frame.buildings": 1209.8,
+      "frame.roads": 213.8
+     },
+     "step": "load"
+    },
+    {
+     "at_s": 2.5,
+     "ms": 1014.7,
+     "stages": {
+      "frame.buildings": 9.3,
+      "frame.roads": 8.5,
+      "frame.terrain": 906.2,
+      "frame.trees": 39.9,
+      "net.client": 0.1
+     },
+     "step": "load"
+    },
+    {
+     "at_s": 38.8,
+     "ms": 191.6,
+     "stages": {},
+     "step": "load"
+    }
+   ],
+   "grown": null,
+   "load_s": 298.5,
+   "actions": {}
+  }
+ },
+ "reconnects": {},
+ "server_log_problems": [
+  "ERROR: Condition \"outbound_buffer_size > 0 && (wslay_event_get_queued_msg_length(wsl_ctx) + p_buffer_size > (uint32_t)outbound_buffer_size)\" is true. Returning: ERR_OUT_OF_MEMORY",
+  "ERROR: Condition \"outbound_buffer_size > 0 && (wslay_event_get_queued_msg_length(wsl_ctx) + p_buffer_size > (uint32_t)outbound_buffer_size)\" is true. Returning: ERR_OUT_OF_MEMORY",
+  "ERROR: Condition \"outbound_buffer_size > 0 && (wslay_event_get_queued_msg_length(wsl_ctx) + p_buffer_size > (uint32_t)outbound_buffer_size)\" is true. Returning: ERR_OUT_OF_MEMORY",
+  "ERROR: Condition \"outbound_buffer_size > 0 && (wslay_event_get_queued_msg_length(wsl_ctx) + p_buffer_size > (uint32_t)outbound_buffer_size)\" is true. Returning: ERR_OUT_OF_MEMORY",
+  "ERROR: Condition \"outbound_buffer_size > 0 && (wslay_event_get_queued_msg_length(wsl_ctx) + p_buffer_size > (uint32_t)outbound_buffer_size)\" is true. Returning: ERR_OUT_OF_MEMORY",
+  "ERROR: Condition \"outbound_buffer_size > 0 && (wslay_event_get_queued_msg_length(wsl_ctx) + p_buffer_size > (uint32_t)outbound_buffer_size)\" is true. Returning: ERR_OUT_OF_MEMORY",
+  "ERROR: Condition \"outbound_buffer_size > 0 && (wslay_event_get_queued_msg_length(wsl_ctx) + p_buffer_size > (uint32_t)outbound_buffer_size)\" is true. Returning: ERR_OUT_OF_MEMORY",
+  "ERROR: Condition \"outbound_buffer_size > 0 && (wslay_event_get_queued_msg_length(wsl_ctx) + p_buffer_size > (uint32_t)outbound_buffer_size)\" is true. Returning: ERR_OUT_OF_MEMORY"
+ ]
+}

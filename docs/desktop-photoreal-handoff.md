@@ -11,6 +11,8 @@ Brawn wants two games built from one codebase:
 
 ## Brawn's rules
 
+- **Two things never change; two are sliders (Nathan, 2026-10-25).** What the game is never changes, and how it runs never changes: we set what it runs on, and each player's machine or browser picks what it can do automatically. What the game does (features) and how it looks (detail) are sliders that share one performance budget. In his words: "If there is a feature in the game or something that it does that is having a vast negative impact on performance and a minimal positive impact on experience, then we should discuss it. But if we are able to cut something in order to zoom all the way in on someone's button on their shirt, I'm not sure what value that has." So every feature and every detail is priced in frame time and memory, measured, next to what it adds to playing. Costly, low-value things go to Nathan before they are cut. Detail goes where a player notices it, not to extreme zoom.
+
 - **Everything, auto-scaled (Nathan, 2026-10-24):** "It should still have varying detail levels that adjust automatically based on what the computer can do for both Mac and Windows… it's actually everything. It's detail on every item in the game, including humans and cars and everything." Photoreal is not a few materials: every item gets real detail, through the quality tiers and governor in `quality.gd`, on Mac and Windows.
 
 - **Real world first.** Everything is designed against a real reference, such as real photos, real dimensions, US road standards (AASHTO/MUTCD) and real Grant County, Indiana data.
