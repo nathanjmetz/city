@@ -183,6 +183,13 @@ const BROWSER_TOP := HIGH
 ## A single frame longer than this is a stall (a town loading, a shader
 ## compiling), not drawing load: it's left out rather than lowering the look.
 const STALL_MS := 250.0
+## Frames over STALL_MS are left out of the windows, so a tab under 4 fps
+## would never be judged. This many in a row are evidence instead: the tab
+## can't draw the tier, and the look steps down at once (review, 2026-10-25).
+const STALL_RUN := 6
+## A first window this slow (draw_ms) steps down without the usual settling:
+## nothing compiling takes 100 ms a frame for 3 seconds.
+const BAD_FIRST_MS := 100.0
 ## Once a tier proved too slow, Auto waits this many minutes of play before
 ## trying it again, doubling each time it fails (up to PATIENCE_MAX).
 const PATIENCE_MIN := 5.0
@@ -201,8 +208,27 @@ const HOLD_MIN := 10.0
 ## in a row. A sharpness step that didn't help only rules out pixels: the
 ## next step down is a tier.
 const HELPED := 0.88
-const DOWN_HOLD := 20
-const DOWN_HOLD_MAX := 320
+## (Review, 2026-10-25: the hold doubled up to 16 minutes, long enough to
+## strand a weak tab; now at most 3 minutes, and drawing three times too
+## slow ignores it.)
+const DOWN_HOLD := 16
+const DOWN_HOLD_MAX := 64
+## Minutes of play for one failure to be forgiven, whatever the ceiling.
+const FAIL_DECAY_MIN := 60.0
+## Seconds of play between saves of the timers (the tier is saved when it
+## changes), so a short session still moves the wait along.
+const SAVE_EVERY := 30.0
+## The browser's marker (see _heartbeat): a session that ended without a
+## clean page exit counts as a crash only if it ran under this many seconds.
+## A long session cut off by the system (a phone killing a background tab)
+## is not the look's fault. A marker beaten within the last few seconds
+## belongs to another tab still open.
+const WEB_CRASH_MAX_S := 180.0
+const WEB_MARKER_KEY := "city_quality_running"
+## What `navigator.deviceMemory` allows the browser's first pick: 8 GB (the
+## most Chrome reports) and up is no cap; under 8 or not reported (Safari,
+## Firefox) is Medium at most; under 4 is Low.
+const WEB_FULL_GB := 8.0
 ## Shared memory (Apple chips, integrated graphics): the least memory (GB)
 ## each tier needs, so Auto never climbs an 8 GB Mac mini into a tier that
 ## runs it out of memory. Discrete graphics have their own memory.
@@ -289,6 +315,18 @@ var _lab := false
 ## Pinned on the command line (screenshots, tests): no crash marker either.
 var _pinned := false
 var _beat := 0.0
+## Very slow frames (over STALL_MS) in a row, and whether the next window is
+## the first since watching began.
+var _stalls := 0
+var _first_window := true
+## Play seconds since the timers were last saved; and towards FAIL_DECAY_MIN.
+var _since_save := 0.0
+var _decay := 0.0
+var _mem_over := 0
+var _start_unix := 0.0
+## Where the settings are saved (tests use their own file).
+var save_path := SAVE_PATH
+static var _handheld_cache := -1
 
 
 func _ready() -> void:
@@ -314,8 +352,8 @@ func _ready() -> void:
 	var real := web_gpu_name()
 	if real != "":
 		adapter = real
-	_guess = browser_first(adapter, is_handheld()) if browser \
-		else guess_tier(adapter, RenderingServer.get_video_adapter_type(), cores, _memory_gb)
+	_guess = first_pick(adapter, browser, is_handheld(), web_memory_gb() if browser else 0.0,
+		RenderingServer.get_video_adapter_type(), cores, _memory_gb, 0.0 if browser or _lab else desktop_vram_mb())
 	_ceiling = auto_top()
 	var saved := {} if _lab else _read()
 	mode = clampi(int(saved.get("mode", AUTO)), AUTO, auto_top())
@@ -326,20 +364,16 @@ func _ready() -> void:
 	if mode != AUTO:
 		tier = mode
 		scale = clampf(float(saved.get("scale", 1.0)), min_scale(), 1.0)
-	elif str(saved.get("adapter", "")) == adapter and saved.has("tier") \
-			and int(saved.get("guess", 1)) == GUESS_VERSION:
-		_ceiling = clampi(int(saved.get("ceiling", auto_top())), LOW, auto_top())
-		_fails = maxi(int(saved.get("fails", 0)), 0)
-		_waited = maxf(float(saved.get("waited", 0.0)), 0.0)
-		tier = clampi(int(saved.tier), LOW, _ceiling)
-		scale = clampf(float(saved.get("scale", 1.0)), min_scale(), 1.0)
+	elif restorable(saved):
+		restore(saved)
 	else:
 		_first_guess()
 		_save()
 	if not _lab and not _pinned:
-		if FileAccess.file_exists(RUNNING_PATH) and not _other_copy_running():
+		if _last_run_crashed():
 			_after_crash(int(saved.get("tier", tier)))
 		_heartbeat()
+		_marker_hooks()
 	if _pinned:
 		mode = mini(want, BROWSER_TOP if browser else CINEMATIC)
 		tier = mode
@@ -374,9 +408,26 @@ static func _arg(name: String) -> String:
 
 ## A phone or tablet: a small, touch-first screen in the browser.
 static func is_handheld() -> bool:
-	return OS.has_feature("web_android") or OS.has_feature("web_ios") \
-		or (OS.has_feature("web") and DisplayServer.is_touchscreen_available() and not OS.has_feature("web_macos") \
-			and not OS.has_feature("web_windows") and not OS.has_feature("web_linuxbsd"))
+	if _handheld_cache < 0:
+		var touch_points := 0
+		if OS.has_feature("web"):
+			var got = JavaScriptBridge.eval("(navigator.maxTouchPoints || 0)", true)
+			touch_points = int(got) if got != null else 0
+		_handheld_cache = 1 if handheld_from(OS.has_feature("web_android"), OS.has_feature("web_ios"),
+			OS.has_feature("web_macos"), OS.has_feature("web_windows") or OS.has_feature("web_linuxbsd"),
+			OS.has_feature("web") and DisplayServer.is_touchscreen_available(), touch_points) else 0
+	return _handheld_cache == 1
+
+
+## The rule behind is_handheld(). An iPad's Safari says it is a Mac, but a
+## Mac has no touch screen: a "Mac" with touch points is a tablet.
+static func handheld_from(android: bool, ios: bool, mac: bool, windows_or_linux: bool, touch: bool,
+		touch_points: int) -> bool:
+	if android or ios:
+		return true
+	if mac:
+		return touch_points > 1
+	return touch and not windows_or_linux
 
 
 func min_scale() -> float:
@@ -394,6 +445,81 @@ func _first_guess() -> void:
 	tier = _guess
 	# Phones and tablets also start with fewer pixels.
 	scale = 0.75 if browser and is_handheld() else 1.0
+
+
+## The saved setting is for this computer's graphics chip and this version
+## of the guess.
+func restorable(saved: Dictionary) -> bool:
+	return str(saved.get("adapter", "")) == adapter and saved.has("tier") \
+		and int(saved.get("guess", 1)) == GUESS_VERSION
+
+
+## Takes up a saved Auto state: the tier and sharpness, the ceiling, and
+## every timer that decides when a tier proved too slow is tried again.
+func restore(saved: Dictionary) -> void:
+	_ceiling = clampi(int(saved.get("ceiling", auto_top())), LOW, auto_top())
+	_fails = maxi(int(saved.get("fails", 0)), 0)
+	_waited = maxf(float(saved.get("waited", 0.0)), 0.0)
+	_held = maxf(float(saved.get("held", 0.0)), 0.0)
+	_decay = maxf(float(saved.get("decay", 0.0)), 0.0)
+	_scale_top = clampf(float(saved.get("scale_top", 1.0)), min_scale(), 1.0)
+	_scale_waited = maxf(float(saved.get("scale_waited", 0.0)), 0.0)
+	_scale_fails = maxi(int(saved.get("scale_fails", 0)), 0)
+	tier = clampi(int(saved.tier), LOW, _ceiling)
+	scale = clampf(float(saved.get("scale", 1.0)), min_scale(), 1.0)
+
+
+## The first tier from everything the machine tells us (what _ready does,
+## on its own so tests can feed it made-up machines). The browser: the chip
+## WebGL names, capped by the memory the browser reports (web_gb; 0 is
+## unknown). The desktop: chip, type, cores and memory, capped by the
+## graphics card's own memory when it can be read (vram_mb; 0 is unknown).
+static func first_pick(chip: String, on_browser: bool, handheld: bool, web_gb: float, type: int, cores: int,
+		memory_gb: float, vram_mb := 0.0) -> int:
+	if on_browser:
+		return mini(browser_first(chip, handheld), web_memory_cap(web_gb))
+	return mini(guess_tier(chip, type, cores, memory_gb), vram_cap(vram_mb))
+
+
+## The highest first tier `navigator.deviceMemory` (GB, 0 if unknown) allows.
+static func web_memory_cap(gb: float) -> int:
+	if gb <= 0.0:
+		return MEDIUM
+	if gb >= WEB_FULL_GB:
+		return BROWSER_TOP
+	return LOW if gb < 4.0 else MEDIUM
+
+
+## The highest first tier a desktop graphics card's own memory allows (MB; 0
+## is unknown: no cap).
+static func vram_cap(mb: float) -> int:
+	if mb <= 0.0:
+		return CINEMATIC
+	if mb < 2500.0:
+		return MEDIUM
+	if mb < 4000.0:
+		return HIGH
+	if mb < 6000.0:
+		return ULTRA
+	return CINEMATIC
+
+
+## The graphics card's own memory in MB, or 0 when it can't be read (a
+## shared-memory chip, the Compatibility renderer).
+func desktop_vram_mb() -> float:
+	if _shares_memory():
+		return 0.0
+	var rd := RenderingServer.get_rendering_device()
+	return float(rd.get_device_total_memory()) / 1048576.0 if rd != null else 0.0
+
+
+## The browser's reported memory in GB (navigator.deviceMemory, at most 8),
+## 0 when it isn't reported.
+static func web_memory_gb() -> float:
+	if not OS.has_feature("web"):
+		return 0.0
+	var got = JavaScriptBridge.eval("(typeof navigator.deviceMemory === 'number') ? navigator.deviceMemory : 0", true)
+	return float(got) if got != null else 0.0
 
 
 ## The browser's first tier, from the graphics chip WebGL names (for
@@ -638,6 +764,7 @@ func _shares_memory() -> bool:
 func choose(m: int) -> void:
 	m = clampi(m, AUTO, top())
 	mode = m
+	_clear_step_memory()
 	if mode == AUTO:
 		_first_guess()
 	else:
@@ -649,7 +776,17 @@ func choose(m: int) -> void:
 ## (Auto sets its own).
 func set_scale(s: float) -> void:
 	scale = clampf(s, min_scale(), 1.0)
+	_clear_step_memory()
 	_change("sharpness picked in the Graphics menu")
+
+
+## A picked tier or sharpness is not the governor's own step: forget the
+## step waiting to be checked (it would judge the wrong change) and any hold.
+func _clear_step_memory() -> void:
+	_check = {}
+	_down_hold = 0
+	_no_help = 0
+	_stalls = 0
 
 
 ## Pushes the tier and scale to the screen. Views listen to `changed` for
@@ -677,14 +814,20 @@ func apply() -> void:
 	RenderingServer.directional_shadow_atlas_set_size(mini(t.shadow_size, 2048) if is_handheld() else t.shadow_size, true)
 	# A faint dither before the colours are rounded to 8 bits: without it
 	# the sky and the snow showed bands (same playtest). Costs next to nothing.
-	vp.use_debanding = true
+	vp.use_debanding = _debanding_ok()
 	RenderingServer.directional_soft_shadow_filter_set_quality(t.soft)
 	RenderingServer.positional_soft_shadow_filter_set_quality(t.soft)
 	changed.emit()
 
 
+## Debanding is drawn by the Forward+ and Mobile renderers only; the
+## Compatibility renderer ignores it.
+func _debanding_ok() -> bool:
+	return not browser and RenderingServer.get_current_rendering_method() != "gl_compatibility"
+
+
 func _process(delta: float) -> void:
-	if active and not _lab and not _pinned and not OS.has_feature("web"):
+	if active and not _lab and not _pinned:
 		_beat += delta
 		if _beat >= HEARTBEAT:
 			_beat = 0.0
@@ -693,6 +836,8 @@ func _process(delta: float) -> void:
 		_reset()
 		_settle = SETTLE_WINDOWS
 		_last_us = 0
+		_stalls = 0
+		_first_window = true
 		return
 	var t0 := Perf.now()
 	# Real time between frames: the engine's delta is capped, so a long
@@ -700,9 +845,16 @@ func _process(delta: float) -> void:
 	var now := Time.get_ticks_usec()
 	var dt := (now - _last_us) / 1e6 if _last_us > 0 else -1.0
 	_last_us = now
-	if dt < 0.0 or dt * 1000.0 > STALL_MS:
+	if dt >= 0.0 and dt * 1000.0 > STALL_MS:
+		# One long frame is a stall (skipped); a run of them is a tab that can't
+		# keep up, which no window will ever show.
+		_count_stall(dt * 1000.0)
 		Perf.add("frame.quality", t0)
 		return
+	if dt < 0.0:
+		Perf.add("frame.quality", t0)
+		return
+	_stalls = 0
 	# The town's thinking this frame (Main's sim steps): no tier changes it.
 	var sim := minf(float(Perf.last.get("frame.sim", 0.0)), dt * 1000.0)
 	_time += dt
@@ -745,6 +897,21 @@ func _judge(w: Dictionary, played: float) -> void:
 	if _fails > 0 and _held >= HOLD_MIN * 60.0:
 		_fails -= 1
 		_held = 0.0
+	# Failures fade with play time even while a ceiling is held below.
+	if _fails > 0:
+		_decay += played
+		if _decay >= FAIL_DECAY_MIN * 60.0:
+			_fails -= 1
+			_decay = 0.0
+	else:
+		_decay = 0.0
+	_since_save += played
+	if _since_save >= SAVE_EVERY:
+		_save()
+	var first := _first_window
+	_first_window = false
+	if first and _settle > 0 and float(w.get("draw_ms", 0.0)) > BAD_FIRST_MS:
+		_settle = 0  # far too slow from the first seconds: no waiting to settle
 	if _settle > 0:
 		_settle -= 1
 		return
@@ -762,11 +929,24 @@ func _judge(w: Dictionary, played: float) -> void:
 	_video_mb = float(w.get("video_mb", 0.0))
 	if m.video_mb > 0 and _video_mb > m.video_mb * 0.85:
 		room = false
+	# The browser's memory cap is a hard one (the tab is killed past it): over
+	# it for two windows steps down, even when the frames look fine.
+	if browser and m.video_mb > 0 and _video_mb > m.video_mb:
+		_mem_over += 1
+		if _mem_over >= SLOW_WINDOWS:
+			_mem_over = 0
+			_step_down(false, w, true)
+			return
+	else:
+		_mem_over = 0
 	if w.draw_ms > slow_ms:
 		_room = 0
 		_slow += 1
 		# Far too slow steps down at once; just slow waits for another window.
-		if _down_hold == 0 and (_slow >= SLOW_WINDOWS or w.draw_ms > slow_ms * 2.0):
+		# A hold after a step that didn't help is ignored for drawing three
+		# times too slow.
+		var held: bool = _down_hold > 0 and w.draw_ms <= slow_ms * 3.0
+		if not held and (_slow >= SLOW_WINDOWS or w.draw_ms > slow_ms * 2.0):
 			_slow = 0
 			_step_down(w.gpu_ms > w.cpu_ms, w)
 	elif room:
@@ -813,9 +993,11 @@ func scale_patience() -> float:
 ## The graphics chip is the bottleneck: fewer pixels first. Otherwise (or
 ## once pixels are as low as they go) a lower tier draws less, and the tier
 ## it left is out of reach until patience() has gone by.
-func _step_down(gpu_bound: bool, w: Dictionary) -> void:
+func _step_down(gpu_bound: bool, w: Dictionary, memory := false) -> void:
 	var left := {"tier": tier, "scale": scale, "draw": w.draw_ms, "pixels": false}
-	if (gpu_bound or browser) and not _pixels_no_help and scale > min_scale() + 0.01:
+	if memory and tier <= LOW:
+		return
+	if not memory and (gpu_bound or browser) and not _pixels_no_help and scale > min_scale() + 0.01:
 		scale = maxf(min_scale(), scale - SCALE_STEP)
 		_scale_top = scale
 		_scale_waited = 0.0
@@ -832,9 +1014,34 @@ func _step_down(gpu_bound: bool, w: Dictionary) -> void:
 		_scale_waited = 0.0
 	else:
 		return
-	_check = left
+	# Memory isn't judged by speed: nothing to verify afterwards.
+	_check = {} if memory else left
 	last_window = w
-	_change("drawing too slow (%.1f ms a frame without the town's thinking)" % w.draw_ms)
+	if memory:
+		_change("graphics memory over the browser's limit (%d MB)" % roundi(_video_mb))
+	else:
+		_change("drawing too slow (%.1f ms a frame without the town's thinking)" % w.draw_ms)
+
+
+## One frame over STALL_MS. STALL_RUN of them in a row step down.
+func _count_stall(frame_ms: float) -> void:
+	_stalls += 1
+	if _stalls >= STALL_RUN:
+		_stalls = 0
+		_reset()
+		_stall_down(frame_ms)
+
+
+## A run of STALL_RUN frames over STALL_MS: the tab is far too slow for
+## this look. Steps down at once (pixels first in the browser, as always),
+## whatever hold or settling is running.
+func _stall_down(frame_ms: float) -> void:
+	if mode != AUTO:
+		return
+	_down_hold = 0
+	_settle = 0
+	_step_down(false, {"draw_ms": frame_ms, "frame_ms": frame_ms, "gpu_ms": 0.0, "cpu_ms": 0.0,
+		"sim_ms": 0.0, "video_mb": roundi(_video_mb)})
 
 
 ## The first window after a step down: did it make the drawing faster? If
@@ -940,16 +1147,56 @@ func _after_crash(died_on: int) -> void:
 	).call_deferred()
 
 
+## The last run ended without a clean exit. On the desktop that is a marker
+## file left behind (and no other copy running). In the browser the marker
+## lives in localStorage and a page hide or unload clears it (see
+## _marker_hooks), so a normal reload or closed tab leaves none; one that is
+## left counts only if that session was short (web_crashed).
+func _last_run_crashed() -> bool:
+	if OS.has_feature("web"):
+		return web_crashed(_web_marker(), Time.get_unix_time_from_system())
+	return FileAccess.file_exists(RUNNING_PATH) and not _other_copy_running()
+
+
+## A leftover browser marker ({start, beat} in unix seconds; empty when the
+## page left cleanly) is a crash only when that session was short and its
+## last beat is not fresh (a fresh one is another tab still open).
+static func web_crashed(marker: Dictionary, now: float) -> bool:
+	if marker.is_empty():
+		return false
+	var beat := float(marker.get("beat", 0.0))
+	if now - beat < HEARTBEAT * 3.0:
+		return false
+	return beat - float(marker.get("start", 0.0)) < WEB_CRASH_MAX_S
+
+
+func _web_marker() -> Dictionary:
+	var got = JavaScriptBridge.eval("(() => { try { return localStorage.getItem('%s') || ''; } catch (e) { return ''; } })()" % WEB_MARKER_KEY, true)
+	var d = JSON.parse_string(str(got)) if got != null and str(got) != "" else null
+	return d if typeof(d) == TYPE_DICTIONARY else {}
+
+
+## In the browser, clears the marker when the page is hidden or unloaded
+## (pagehide, or the tab going to the background where a phone may kill it):
+## the heartbeat writes it again when the page is back.
+func _marker_hooks() -> void:
+	if not OS.has_feature("web"):
+		return
+	JavaScriptBridge.eval("""(() => { if (window.__cityQuality) return; window.__cityQuality = true;
+		const clear = () => { try { localStorage.removeItem('KEY'); } catch (e) {} };
+		window.addEventListener('pagehide', clear);
+		window.addEventListener('beforeunload', clear);
+		document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') clear(); });
+	})()""".replace("KEY", WEB_MARKER_KEY), true)
+
+
 ## Another copy of the game is running right now (its heartbeat is fresh
-## and, on the desktop, its process is alive): its marker is not a crash.
+## and its process is alive): its marker is not a crash.
 ## Before this, a second copy (a test window beside the game) read as a
 ## crash and started the game a tier lower, held there all session.
 func _other_copy_running() -> bool:
 	var d = JSON.parse_string(FileAccess.get_file_as_string(RUNNING_PATH))
 	if typeof(d) != TYPE_DICTIONARY:
-		return false
-	# The browser has one tab: a reload after a crash must still count.
-	if OS.has_feature("web"):
 		return false
 	var age := Time.get_unix_time_from_system() - float(d.get("beat", 0.0))
 	if age > HEARTBEAT * 3.0:
@@ -965,28 +1212,42 @@ func _other_copy_running() -> bool:
 
 
 func _heartbeat() -> void:
+	var now := Time.get_unix_time_from_system()
+	if _start_unix <= 0.0:
+		_start_unix = now
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("try { localStorage.setItem('%s', '%s'); } catch (e) {}" % [WEB_MARKER_KEY,
+			JSON.stringify({"start": _start_unix, "beat": now})], true)
+		return
 	var f := FileAccess.open(RUNNING_PATH, FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify({"pid": OS.get_process_id(), "beat": Time.get_unix_time_from_system()}))
+		f.store_string(JSON.stringify({"pid": OS.get_process_id(), "beat": now}))
 		f.close()
 
 
 func _exit_tree() -> void:
 	if active and not _lab and not _pinned:
-		DirAccess.remove_absolute(RUNNING_PATH)
+		if OS.has_feature("web"):
+			JavaScriptBridge.eval("try { localStorage.removeItem('%s'); } catch (e) {}" % WEB_MARKER_KEY, true)
+		else:
+			DirAccess.remove_absolute(RUNNING_PATH)
 
 
 func _save() -> void:
 	if _lab:
 		return
-	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	_since_save = 0.0
+	var f := FileAccess.open(save_path, FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify({"mode": mode, "tier": tier, "scale": scale, "adapter": adapter,
-			"guess": GUESS_VERSION, "ceiling": _ceiling, "fails": _fails, "waited": snappedf(_waited, 1.0)}))
+			"guess": GUESS_VERSION, "ceiling": _ceiling, "fails": _fails, "waited": snappedf(_waited, 1.0),
+			"held": snappedf(_held, 1.0), "decay": snappedf(_decay, 1.0), "scale_top": _scale_top,
+			"scale_waited": snappedf(_scale_waited, 1.0), "scale_fails": _scale_fails}))
+		f.close()
 
 
-static func _read() -> Dictionary:
-	if not FileAccess.file_exists(SAVE_PATH):
+static func _read(path := SAVE_PATH) -> Dictionary:
+	if not FileAccess.file_exists(path):
 		return {}
-	var d = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
+	var d = JSON.parse_string(FileAccess.get_file_as_string(path))
 	return d if typeof(d) == TYPE_DICTIONARY else {}

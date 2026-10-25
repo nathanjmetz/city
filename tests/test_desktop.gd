@@ -190,6 +190,7 @@ func _governor() -> void:
 	_first_pick()
 	_machines()
 	_no_flapping()
+	_review_fixes()
 	GraphicsQuality.budget = GraphicsQuality.INACTIVE.duplicate()
 	GraphicsQuality.detail = 1.0
 	GraphicsQuality.tree_shadows = true
@@ -362,6 +363,136 @@ func _steps_must_help() -> void:
 		"fewer pixels that don't help are given back, and a tier steps instead (%s)" % [changes])
 	studio.free()
 	web.free()
+
+
+## Review fixes (PR 555, 2026-10-25): first picks capped by memory, a reload
+## that isn't a crash, saved timers, very slow tabs, quick first steps.
+## Every governor here runs in lab mode or on its own test file: the
+## player's own saved setting is never touched.
+func _review_fixes() -> void:
+	var m5 := "ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Max, Unspecified Version)"
+	var m3pro := "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Pro)"
+	var igpu := RenderingDevice.DEVICE_TYPE_INTEGRATED_GPU
+	var dgpu := RenderingDevice.DEVICE_TYPE_DISCRETE_GPU
+	var cases := [
+		[m5, false, 8.0, GraphicsQuality.HIGH, "Chrome on a big Mac with 8 GB reported"],
+		[m5, false, 0.0, GraphicsQuality.MEDIUM, "a browser that doesn't report memory: Medium at most"],
+		[m5, false, 4.0, GraphicsQuality.MEDIUM, "4 GB reported: Medium at most"],
+		[m5, false, 2.0, GraphicsQuality.LOW, "2 GB reported: Low"],
+		[m3pro, false, 8.0, GraphicsQuality.HIGH, "the Pro chip"],
+		[m3pro, false, 0.0, GraphicsQuality.MEDIUM, "the Pro chip, memory unknown"],
+		["", false, 8.0, GraphicsQuality.LOW, "an empty chip name"],
+		[m5, true, 8.0, GraphicsQuality.LOW, "a tablet"],
+	]
+	for c in cases:
+		var got := GraphicsQuality.first_pick(c[0], true, c[1], c[2], igpu, 8, 0.0)
+		_check(got == c[3], "first pick: %s starts on %s (got %s)" % [c[4], GraphicsQuality.NAMES[c[3]], GraphicsQuality.NAMES[got]])
+	var rtx := "NVIDIA GeForce RTX 4090"
+	_check(GraphicsQuality.first_pick(rtx, false, false, 0.0, dgpu, 24, 64.0, 2000.0) == GraphicsQuality.MEDIUM
+		and GraphicsQuality.first_pick(rtx, false, false, 0.0, dgpu, 24, 64.0, 0.0) == GraphicsQuality.CINEMATIC
+		and GraphicsQuality.first_pick(rtx, false, false, 0.0, dgpu, 24, 64.0, 24000.0) == GraphicsQuality.CINEMATIC,
+		"a desktop's first pick is capped by readable video memory, and not when unreadable")
+	_check(GraphicsQuality.first_pick("", false, false, 0.0, igpu, 4, 8.0) == GraphicsQuality.LOW,
+		"a desktop with no chip name starts on Low")
+	_check(GraphicsQuality.handheld_from(false, false, true, false, true, 5)
+		and not GraphicsQuality.handheld_from(false, false, true, false, false, 0)
+		and not GraphicsQuality.handheld_from(false, false, false, true, true, 10)
+		and GraphicsQuality.handheld_from(true, false, false, false, false, 0),
+		"an iPad that says it's a Mac is a tablet; a real Mac and a touch PC are not")
+	# A reload is not a crash.
+	var now := 10000.0
+	_check(not GraphicsQuality.web_crashed({}, now), "a normal reload leaves no marker: not a crash")
+	_check(not GraphicsQuality.web_crashed({"start": now - 4000.0, "beat": now - 600.0}, now),
+		"a long session cut off later is not blamed on the look")
+	_check(not GraphicsQuality.web_crashed({"start": now - 60.0, "beat": now - 5.0}, now),
+		"a marker still being beaten is another open tab")
+	_check(GraphicsQuality.web_crashed({"start": now - 200.0, "beat": now - 120.0}, now),
+		"a short session that left its marker and stopped is a crash")
+	# Saved timers: a short session still moves the wait along.
+	var path := "user://test_quality_review.json"
+	var q := _auto("NVIDIA GeForce RTX 4070", 32.0)
+	q._lab = false
+	q.save_path = path
+	q._ceiling = GraphicsQuality.ULTRA
+	q.tier = GraphicsQuality.ULTRA
+	q._fails = 2
+	q._waited = 100.0
+	q._decay = 50.0
+	q._scale_top = 0.85
+	q._scale_waited = 30.0
+	q._scale_fails = 1
+	q._save()
+	var r := _auto("NVIDIA GeForce RTX 4070", 32.0)
+	var saved := GraphicsQuality._read(path)
+	_check(r.restorable(saved), "a saved setting for this chip is taken up")
+	r.restore(saved)
+	_check(r.tier == GraphicsQuality.ULTRA and r._ceiling == GraphicsQuality.ULTRA and r._fails == 2
+		and r._waited == 100.0 and r._decay == 50.0 and r._scale_waited == 30.0 and r._scale_fails == 1
+		and absf(r._scale_top - 0.85) < 0.001, "the wait timers survive a save and a load")
+	var middling := {"frame_ms": 19.0, "sim_ms": 2.0, "draw_ms": 17.0, "gpu_ms": 0.0, "cpu_ms": 9.0}
+	q._settle = 0
+	q._first_window = false
+	for i in 12:  # 36 seconds, no tier change
+		q._judge(middling, 3.0)
+	var later := GraphicsQuality._read(path)
+	_check(float(later.waited) >= 100.0 + 30.0, "a short session with no tier change still saves how long it waited (%s)" % later.get("waited"))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	# Failures fade with play time even while the ceiling is held below.
+	var f := _auto("NVIDIA GeForce RTX 4070", 32.0)
+	f._ceiling = GraphicsQuality.HIGH
+	f.tier = GraphicsQuality.HIGH
+	f._fails = 3
+	f._settle = 0
+	f._first_window = false
+	for i in int(3.2 * 3600.0 / 3.0):
+		f._judge(middling, 3.0)
+	_check(f._fails == 0, "failures fade over hours even with a ceiling lowered (left %d)" % f._fails)
+	# A very slow tab: runs of long frames step down at once.
+	var w := _auto("ANGLE (NVIDIA, NVIDIA GeForce RTX 4070)", 0.0, true)
+	w._settle = 0
+	for i in GraphicsQuality.STALL_RUN - 1:
+		w._count_stall(400.0)
+	_check(w.tier == GraphicsQuality.HIGH and w.scale == 1.0, "a few long frames alone change nothing")
+	w._count_stall(400.0)
+	_check(w.scale < 1.0, "a run of very long frames takes fewer pixels at once (scale %.2f)" % w.scale)
+	for k in 12:
+		for i in GraphicsQuality.STALL_RUN:
+			w._count_stall(400.0)
+	_check(w.tier == GraphicsQuality.LOW and w.scale <= 0.56, "and keeps stepping down to the floor (%s, %.2f)" % [GraphicsQuality.NAMES[w.tier], w.scale])
+	# Time to step down: frames far too slow in the very first window.
+	var d := _auto("NVIDIA GeForce RTX 4070", 32.0)
+	var awful := {"frame_ms": 130.0, "sim_ms": 2.0, "draw_ms": 128.0, "gpu_ms": 100.0, "cpu_ms": 10.0}
+	d._judge(awful, 3.0)
+	_check(d.tier < GraphicsQuality.CINEMATIC or d.scale < 1.0, "frames over 100 ms in the first window step down within 3 seconds")
+	var d2 := _auto("NVIDIA GeForce RTX 4070", 32.0)
+	var bad := {"frame_ms": 60.0, "sim_ms": 2.0, "draw_ms": 58.0, "gpu_ms": 0.0, "cpu_ms": 10.0}
+	d2._judge(bad, 3.0)
+	_check(d2.tier == GraphicsQuality.CINEMATIC and d2.scale == 1.0, "just slow in the first window still settles first")
+	# A weak tab isn't held after a step that didn't help.
+	var h := _auto("ANGLE (NVIDIA, NVIDIA GeForce RTX 4070)", 0.0, true)
+	h._settle = 0
+	h._first_window = false
+	h._down_hold = 40
+	h._pixels_no_help = true
+	h._judge({"frame_ms": 130.0, "sim_ms": 2.0, "draw_ms": 128.0, "gpu_ms": 0.0, "cpu_ms": 0.0}, 3.0)
+	_check(h.tier == GraphicsQuality.MEDIUM, "drawing three times too slow ignores a hold")
+	# The browser's memory cap: over it for two windows steps down, however fast the frames.
+	var mem := _auto("ANGLE (NVIDIA, NVIDIA GeForce RTX 4070)", 0.0, true)
+	mem._settle = 0
+	mem._first_window = false
+	var fat := {"frame_ms": 16.0, "sim_ms": 2.0, "draw_ms": 14.0, "gpu_ms": 0.0, "cpu_ms": 0.0, "video_mb": 1700}
+	mem._judge(fat, 3.0)
+	_check(mem.tier == GraphicsQuality.HIGH, "one window over the browser's memory cap waits")
+	mem._judge(fat, 3.0)
+	_check(mem.tier == GraphicsQuality.MEDIUM, "two windows over the browser's memory cap step down")
+	# Picking a tier in the menu forgets a step waiting to be checked.
+	var c := _auto("NVIDIA GeForce RTX 4070", 32.0)
+	c._check = {"tier": 4, "scale": 1.0, "draw": 30.0, "pixels": false}
+	c._down_hold = 9
+	c.choose(GraphicsQuality.HIGH)
+	_check(c._check.is_empty() and c._down_hold == 0, "a pick in the Graphics menu clears the stale step check")
+	for g in [q, r, f, w, d, d2, h, mem, c]:
+		g.free()
 
 
 ## Whether a hello with these version fields is let in (welcomed or asked to
