@@ -453,7 +453,10 @@ func _build_backdrop() -> void:
 	add_child(SkyLight.new())
 	_cam.fov = 45.0
 	_cam.h_offset = -70.0  # keeps the town clear of the menu
-	_cam.far = 4000.0
+	# As in play (CityCamera): out past the far land, so the county runs on
+	# into the haze instead of stopping at a line 4 km out.
+	_cam.near = 1.0
+	_cam.far = 24000.0
 	add_child(_cam)
 	var land := TerrainView.new()
 	add_child(land)
@@ -474,6 +477,10 @@ func _build_backdrop() -> void:
 	add_child(wild)
 	wild.setup(sim)
 	land.graded.connect(wild.regraded)
+	# Farmsteads and country homes out in the county.
+	var farmsteads := FarmsteadView.new()
+	add_child(farmsteads)
+	farmsteads.setup(sim)
 	var exits := ExitRoads.new()
 	add_child(exits)
 	exits.setup(sim, land, "exits")
