@@ -3,8 +3,9 @@ extends Node3D
 ## The two look switches Brawn asked for, kept apart like in Cities:
 ## Skylines 2's settings:
 ##   - Day and night: off by default, so the town stays in late-morning sun.
-##     On, the sun follows the clock, then dusk, moonlight and stars, with
-##     streetlights, lit windows and headlights coming on.
+##     On, the sun follows the clock and the date over real Grant County
+##     (SkyLight.set_time, docs/daylight.md), then dusk, moonlight and
+##     stars, with streetlights, lit windows and headlights coming on.
 ##   - Seasons: spring, summer, fall colour and harvest, and winter with snow
 ##     on the ground (never falling: there is no weather). Off, it's always
 ##     summer.
@@ -25,6 +26,10 @@ var sim: CitySim
 var sky: SkyLight
 ## Returns how far through the current tick the clock is, 0 to 1.
 var tick_fraction := Callable()
+## Pins the light's date (a Seasons.months value, 0 = January 1) for
+## pictures of a real day: a game day runs through a whole month, so the
+## clock alone can't show June 21 at 1:40 pm. Below 0, the clock decides.
+var date_override := -1.0
 var _lamps: StreetLights
 var _beams: Headlights
 var _was_cycle := false
@@ -47,8 +52,11 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
+	var t := Perf.now()
 	var frac: float = tick_fraction.call() if tick_fraction.is_valid() else 0.0
 	var months: float = Seasons.months(sim.tick_count) + frac / Seasons.TICKS_PER_DAY
+	if date_override >= 0.0:
+		months = date_override
 	var look := Seasons.look(months) if seasons_on else Seasons.summer()
 	RenderingServer.global_shader_parameter_set("snow", look.snow)
 	Seasons.snow_now = look.snow
@@ -56,6 +64,7 @@ func _process(_delta: float) -> void:
 		Vector4(look.autumn, look.bare, look.spring, look.dry))
 	var night := 0.0
 	var lit := 0.0
+	sky.set_season(months if seasons_on else 6.5)
 	if cycle_on:
 		var clock := sim.clock()
 		var hour: float = clock.hour + (clock.minute + frac) / 60.0
@@ -69,6 +78,7 @@ func _process(_delta: float) -> void:
 	RenderingServer.global_shader_parameter_set("windows_lit", lit)
 	_lamps.visible_amount = smoothstep(0.25, 0.6, night)
 	_beams.amount = smoothstep(0.3, 0.7, night)
+	Perf.add("frame.light", t)
 
 
 ## Share of windows with a light on at this hour: most in the evening,
