@@ -82,10 +82,6 @@ uniform vec4 lush : source_color = vec4(0.29, 0.38, 0.17, 1.0);
 uniform vec4 dry : source_color = vec4(0.45, 0.47, 0.25, 1.0);
 uniform vec4 dark : source_color = vec4(0.20, 0.28, 0.12, 1.0);
 uniform vec4 soil : source_color = vec4(0.46, 0.40, 0.29, 1.0);
-uniform vec4 crop_green : source_color = vec4(0.36, 0.45, 0.17, 1.0);
-uniform vec4 crop_corn : source_color = vec4(0.25, 0.37, 0.13, 1.0);
-uniform vec4 crop_tan : source_color = vec4(0.55, 0.47, 0.30, 1.0);
-uniform vec4 tilled : source_color = vec4(0.40, 0.33, 0.24, 1.0);
 uniform vec4 litter : source_color = vec4(0.22, 0.20, 0.12, 1.0);
 uniform vec4 canopy : source_color = vec4(0.13, 0.22, 0.09, 1.0);
 uniform vec4 gravel : source_color = vec4(0.58, 0.55, 0.49, 1.0);
@@ -99,7 +95,6 @@ global uniform vec4 tree_fade;
 global uniform float snow;
 global uniform vec4 season_look;
 uniform vec4 dormant : source_color = vec4(0.55, 0.49, 0.34, 1.0);
-uniform vec4 stubble : source_color = vec4(0.56, 0.48, 0.32, 1.0);
 uniform vec4 twigs : source_color = vec4(0.30, 0.27, 0.24, 1.0);
 uniform vec4 fall_leaves : source_color = vec4(0.42, 0.27, 0.11, 1.0);
 // The camera's x, height above the ground, z: level of detail is measured
@@ -128,6 +123,7 @@ uniform sampler2D chunk_built : hint_default_white, filter_nearest, repeat_enabl
 // reach of this chunk's level (0 for the coarsest): vertices slide to the
 // coarser level between MORPH_START and MORPH_END of that reach.
 
+""" + CropCalendar.GLSL + """
 varying vec3 world_pos;
 varying vec4 cover;
 varying float steep;
@@ -240,27 +236,25 @@ void fragment() {
 	float brown = clamp(season_look.w * 1.1 - (1.0 - dryness) * 0.3, 0.0, 0.85);
 	col = mix(col, dormant.rgb * (0.85 + big * 0.3) * mix(1.0, 0.92 + 0.16 * clump, mowed), brown);
 
-	// Crop fields: whole fields of one crop, a quarter mile across, in green
-	// beans, tan corn stubble or tilled soil, with rows running north-south
-	// (the township grid) that fade with distance.
+	// Crop fields (CropCalendar): the county's 40, 80 and 160 acre fields,
+	// each with this year's crop in its rows, at today's stage: bare worked
+	// soil, rows just up, the canopy closing, tassels, browning, stubble,
+	// fall tillage or a green cover crop, read from the shared crop table.
 	vec2 r = p + region_origin;
-	vec2 field = floor(r / 402.0);
-	float pick = fract(sin(dot(field, vec2(12.9898, 78.233))) * 43758.5453);
-	vec3 crop = pick < 0.45 ? crop_green.rgb : (pick < 0.8 ? crop_corn.rgb : (pick < 0.92 ? crop_tan.rgb : tilled.rgb));
-	// The crop year: corn and beans ripen gold in the fall; after harvest
-	// (November to April) fields lie in stubble, about a third fall-tilled;
-	// spring planting turns the rest to bare soil before it greens again.
-	vec3 ripe = pick < 0.45 ? vec3(0.58, 0.50, 0.27) : vec3(0.62, 0.53, 0.33);
-	crop = mix(crop, ripe, season_look.x * step(pick, 0.8));
-	float worked = fract(pick * 7.31);
-	vec3 after = worked < 0.33 ? tilled.rgb : stubble.rgb * (pick < 0.45 ? vec3(0.9, 0.92, 0.95) : vec3(1.0));
-	// About one field in ten is winter wheat or a cover crop, green all winter.
-	after = fract(pick * 13.1) < 0.1 ? vec3(0.33, 0.40, 0.20) : after;
-	crop = mix(crop, after, season_look.y);
-	crop = mix(crop, tilled.rgb, season_look.z * (1.0 - season_look.y) * 0.6);
-	crop *= 0.9 + 0.2 * mid;
-	float rows = sin(p.x * 8.27) * 0.5 + 0.5;
-	crop *= 1.0 - rows * 0.12 * clamp(1.0 - dist / 300.0, 0.0, 1.0);
+	ivec3 fld = crop_field(r);
+	ivec2 slot = crop_slot(fld.xy);
+	float pick = crop_h01(fld.xy, 7u);
+	float across = fld.z == 1 ? r.x : r.y;
+	// The stripe width from the smooth position, not from `across`: where
+	// two fields' rows turn a corner, `across` jumps from r.x to r.y inside
+	// one 2x2 pixel block, and its fwidth would blur a line along the border.
+	vec2 rw = fwidth(r);
+	float aw = fld.z == 1 ? rw.x : rw.y;
+	vec3 to_eye = (INV_VIEW_MATRIX * vec4(VIEW, 0.0)).xyz;
+	float tilt = length(to_eye.xz) / max(abs(to_eye.y), 0.05);
+	vec3 crop = crop_look(slot, p, across, aw, tilt, mid);
+	// Each field a shade different (soil, variety, how it was sprayed).
+	crop *= (0.93 + 0.14 * pick) * (0.92 + 0.16 * mid);
 	col = mix(col, crop, smoothstep(0.3, 0.7, cover.b) * 0.92);
 
 	// Woods: leaf litter under the trees up close; from far off, where the
@@ -383,8 +377,9 @@ void fragment() {
 	// Fields read through the snow from the air: corn stubble and tilled
 	// clods poke through, and each field drifts a little differently.
 	float in_field = smoothstep(0.3, 0.7, cover.b);
-	vec3 poking = worked < 0.33 ? tilled.rgb : stubble.rgb;
-	float through = (worked < 0.33 ? 0.22 : (pick < 0.8 && pick >= 0.45 ? 0.3 : 0.12)) * (0.6 + 0.8 * clump);
+	vec4 under_snow = crop_texel(slot, 1);
+	vec3 poking = crop_lin(under_snow.rgb);
+	float through = (0.12 + 0.25 * under_snow.a) * (0.6 + 0.8 * clump);
 	snowy = mix(snowy * (0.95 + 0.06 * fract(pick * 3.7)), poking, through * in_field);
 	// Far canopy shows dark trunks through the snow.
 	// From the air bare woods read grey-brown against snowy fields, with the
@@ -487,6 +482,7 @@ static func ground_material() -> ShaderMaterial:
 		_ground_mat.set_shader_parameter("highway_field", Highways.texture())
 		_ground_mat.set_shader_parameter("county_miles", CountyGrid.texture())
 		_ground_mat.set_shader_parameter("map_centre", Terrain.CENTRE)
+		_ground_mat.set_shader_parameter("crop_table", CropCalendar.texture())
 	return _ground_mat
 
 
