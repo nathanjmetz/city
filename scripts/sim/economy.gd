@@ -129,29 +129,59 @@ func _slice_sums(sim: CitySim, slice: int) -> Dictionary:
 	var care_of := {}
 	var land_of := {}
 	var odors := sim.services.water.odor_sources(sim.services.buildings)
+	# Read once, not per building (the same numbers as the functions named
+	# beside each give; the arithmetic below is theirs, in the same order).
+	var buildings: Dictionary = sim.buildings
+	var served: Dictionary = sim.services.served
+	var lots: Dictionary = sim.lots
+	var park_value: Dictionary = sim.parks.lot_value
+	var tel_served: Dictionary = sim.telecom.served
+	var smoke: Dictionary = sim.pollution.lots
+	var wear: Dictionary = sim.pollution.wear
+	var heritage_lift: Dictionary = sim.heritage.lift
+	var care_tier: Dictionary = sim.care.tier
+	var no_mail: bool = sim.mail.offices.is_empty()
 	for key in (sim.ledger().slices[slice] if slice >= 0 else sim.buildings.keys()):
-		var b: Dictionary = sim.buildings[key]
+		var b: Dictionary = buildings[key]
+		var zone := int(b.zone)
 		# Water and sewer bills from every building on the water system;
 		# water utilities collect their own bills (see WaterUtility).
-		var s: Dictionary = sim.services.served.get(key, {})
+		var s: Dictionary = served.get(key, {})
 		if s.get("water", false) and s.get("water_by", -1) == -1:
-			fees += int(Services.WATER_FEE[int(b.zone)])
-		var area: String = ZONE_AREA.get(int(b.zone), "homes")
+			fees += int(Services.WATER_FEE[zone])
+		var area: String = ZONE_AREA.get(zone, "homes")
 		if not care_of.has(area):
 			care_of[area] = sim.policies.pick(Balance.POLICY_CARE_PER_BUILDING, "funding", area)
 			land_of[area] = sim.policies.pick(Balance.POLICY_LAND_VALUE, "funding", area)
 		care += float(care_of[area])
-		if int(b.zone) != ZoneMap.Zone.RESIDENTIAL and not sim.utilities_ok(key):
+		if zone != ZoneMap.Zone.RESIDENTIAL and not sim.utilities_ok(key):
 			continue  # a business with no power or water is closed
 		# Land near a landfill is worth less, near a cemetery a little more,
 		# and parks and landmarks lift it. Good mail service lifts it a little
 		# too, and so do well-kept streets (Funding) and fiber and cell service;
 		# a smelly sewer plant and pollution lower it.
-		var tax_due := building_tax(b, staffed, sim.parks.lot_value.get(key, 0.0) + sim.telecom.lot_lift(key)) * sim.land_factor(key) \
-			* sim.mail.lot_factor(sim, key) * float(land_of[area]) / 12.0
-		if sim.lots.has(key) and not odors.is_empty():
-			tax_due *= WaterUtility.value_from(odors, sim.lots[key].pos)
-		income[int(b.zone)] += tax_due
+		# building_tax(b, staffed, lift), with lift = parks + telecom.lot_lift:
+		var ts: Dictionary = tel_served.get(key, {})
+		var tel := 0.0 if ts.is_empty() else (Balance.TELECOM_FIBER_LIFT if ts.fiber else 0.0) + Balance.TELECOM_CELL_LIFT * float(ts.q)
+		var lift: float = park_value.get(key, 0.0) + tel
+		var value: float = VALUE_PER_PLACE[zone] * b.cap * (1.0 + lift)
+		var used := staffed
+		if zone == ZoneMap.Zone.RESIDENTIAL:
+			used = float(b.occ) / maxf(b.cap, 1.0)
+		var flats := float(b.get("flats", 0))
+		var homes: float = VALUE_PER_PLACE[ZoneMap.Zone.RESIDENTIAL] * flats * (0.5 + 0.5 * float(b.get("focc", 0)) / maxf(flats, 1.0))
+		var bt: float = (value * (0.5 + 0.5 * used) + homes) * tax[zone] / 100.0
+		# sim.land_factor(key): hubs * pollution * heritage * care.
+		var pol := 1.0
+		if not (smoke.get(key, {}) as Dictionary).is_empty() or float(wear.get(key, 0.0)) > 0.0:
+			pol = sim.pollution.lot_factor(sim, key)
+		var land: float = sim.hubs.lot_factor(sim, key) * pol * float(heritage_lift.get(key, 1.0)) \
+			* float(Balance.CARE_LAND[int(care_tier.get(key, 0)) + 2])
+		var mail := 1.0 if no_mail else sim.mail.lot_factor(sim, key)
+		var tax_due := bt * land * mail * float(land_of[area]) / 12.0
+		if lots.has(key) and not odors.is_empty():
+			tax_due *= WaterUtility.value_from(odors, lots[key].pos)
+		income[zone] += tax_due
 	out.care = care
 	out.fees = fees
 	return out
