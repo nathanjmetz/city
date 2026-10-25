@@ -242,7 +242,7 @@ func _join(pin := "") -> void:
 		return
 	if _code.text.strip_edges() == "":
 		_code.text = _family_code()
-	if _fetching and _server.text == "":
+	if _fetching and (_server.text == "" or _server.text == Session.profile.server):
 		_status.text = "Finding the region..."
 		_join_after_fetch = true
 		_pin_after_fetch = pin
@@ -281,14 +281,19 @@ static func _clean(code: String) -> String:
 ## Where the region is: the invite link's address, else the one the region
 ## publishes (its quick tunnel changes on every restart), else the last used.
 func _server_address() -> String:
-	if _server.text != "" and _server.text != Session.profile.server:
-		return _server.text
+	var typed := _server.text
+	# A browser can't reach a region on "this computer": an address like
+	# that left in the profile would only ever say the region is offline.
+	if OS.has_feature("web") and ("localhost" in typed or "127.0.0.1" in typed):
+		typed = ""
+	if typed != "" and typed != Session.profile.server:
+		return typed
 	if _published_server != "":
 		return _published_server
-	return _server.text
+	return typed
 
 
-func _fetch_server() -> void:
+func _fetch_server(url := Session.REGION_CONFIG) -> void:
 	var http := HTTPRequest.new()
 	http.timeout = 8.0
 	add_child(http)
@@ -301,8 +306,14 @@ func _fetch_server() -> void:
 			if d is Dictionary and str(d.get("code", "")) != "":
 				_published_code = str(d.code).strip_edges().to_upper()
 		http.queue_free()
+		# The API can be refused (rate limits, filters): the plain file is
+		# a few minutes behind at worst, so try it before giving up.
+		if _published_server == "" and url != Session.REGION_CONFIG_RAW:
+			_fetch_server(Session.REGION_CONFIG_RAW)
+			return
 		_fetched())
-	if http.request(Session.REGION_CONFIG, ["Accept: application/vnd.github.raw+json"]) != OK:
+	var headers := ["Accept: application/vnd.github.raw+json"] if url == Session.REGION_CONFIG else []
+	if http.request(url, headers) != OK:
 		http.queue_free()
 		_fetched.call_deferred()
 

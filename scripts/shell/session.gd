@@ -23,6 +23,8 @@ const LOCAL_SERVER := "ws://localhost:9080"
 ## region's published config (REGION_CONFIG) overrides it if it changes.
 const FAMILY_CODE := "4WWMST"
 const REGION_CONFIG := "https://api.github.com/repos/nathanjmetz/city/contents/server.json?ref=region"
+## The same file served plainly (cached a few minutes): the fallback.
+const REGION_CONFIG_RAW := "https://raw.githubusercontent.com/nathanjmetz/city/region/server.json"
 
 enum Mode { SOLO, ONLINE }
 
