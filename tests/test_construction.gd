@@ -18,14 +18,35 @@ func _init() -> void:
 	_check(Construction.duration("barn") < Construction.duration("house")
 		and Construction.duration("house") < Construction.duration("civic"), "a pole barn is quicker than a house, a fire station slower")
 
-	# A town on the county highway: homes go up, people move in when they're done.
+	# Vehicles drive in real time and a house goes up in under a minute and a
+	# half: a crew that can't get there before it's done isn't sent, so a
+	# street of new homes never jams the town (Brawn, 2026-10-24).
+	var far := CitySim.new()
+	far.apply({"type": "build_county_road", "a": [-200, 0], "b": [-200, -900], "links": [1]})
+	far.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
+	for x in range(-190, 191, 10):
+		far.apply({"type": "paint_zone", "center": [x, 15], "radius": 10, "zone": ZoneMap.Zone.RESIDENTIAL})
+	var most := 0
+	for i in 400:
+		far.tick()
+		most = maxi(most, far.construction.trips.size())
+	_check(far.construction.sites.size() > 5 and most == 0,
+		"no crew is sent to a house it would reach after it's built (%d sites, %d trips)" % [far.construction.sites.size(), most])
+	# A town on the county highway, near the edge of the map: homes go up,
+	# crews come, people move in when they're done.
 	var sim := CitySim.new()
-	sim.apply({"type": "build_county_road", "a": [-200, 0], "b": [-200, -900], "links": [1]})
+	sim.apply({"type": "build_county_road", "a": [-200, 0], "b": [-200, -300], "links": [1]})
 	sim.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
 	for x in range(-190, 191, 10):
 		sim.apply({"type": "paint_zone", "center": [x, 15], "radius": 10, "zone": ZoneMap.Zone.RESIDENTIAL})
+	most = 0
 	for i in 200:
 		sim.tick()
+		var coming := 0
+		for t in sim.construction.trips.values():
+			coming += 1 if t.inbound else 0
+		most = maxi(most, coming)
+	_check(most <= Construction.MAX_ON_ROAD, "never more than %d site trips heading in (%d)" % [Construction.MAX_ON_ROAD, most])
 	_check(sim.buildings.size() > 0 and sim.construction.sites.size() == sim.buildings.size(),
 		"every new home is a building site (%d of %d)" % [sim.construction.sites.size(), sim.buildings.size()])
 	var occupied := 0

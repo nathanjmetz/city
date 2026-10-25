@@ -34,7 +34,9 @@ func _init() -> void:
 	var corn_in := 0
 	var ethanol_out := 0
 	var seen := {}
-	for i in 1440 * 3:
+	# Five days: the first batch waits on its third load of corn (it once
+	# landed on day 3 only by luck of the traffic).
+	for i in 1440 * 5:
 		sim.tick()
 		twin.tick()
 		for id in sim.logistics.trips:

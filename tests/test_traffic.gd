@@ -457,6 +457,11 @@ func _init() -> void:
 			xseg = sid
 	var xing := {"seg": xseg, "pos": Vector3(-200, 0, 0), "piece": -1, "s": 0.0, "closed": true}
 	rx.rail.crossings.append(xing)
+	# Drivers headed across the track, west to east: the test doesn't count
+	# on whoever happens to be out (it used to be building crews).
+	for n in 6:
+		rx.traffic.dispatch({"ref": "west%d" % n, "pos": [-390 + n * 12, 8]},
+			{"ref": "east%d" % n, "pos": [-120 + n * 10, 8]}, "commute", {}, "sedan")
 	var crossed := 0
 	var waiting := 0
 	var last_d := {}
