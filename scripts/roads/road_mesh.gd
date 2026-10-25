@@ -44,12 +44,14 @@ static func add_disc(st: SurfaceTool, center: Vector3, radius: float, y: float, 
 ## `cuts`: how far from each end (start, end) a town street's painted lines
 ## stop, at a junction's crosswalk (JunctionMarks.line_cut).
 static func street(pts: PackedVector3Array, type: int, mats: Dictionary, gaps := {}, rural := false,
-		cuts := Vector2.ZERO) -> ArrayMesh:
+		cuts := Vector2.ZERO, breaks := [], urban := false) -> ArrayMesh:
 	var spec: Dictionary = RoadStyle.TYPES[type]
 	if RoadStyle.is_freeway(type):
-		return _oneway(pts, spec, mats, gaps)
+		return _oneway(pts, spec, mats, gaps, type)
+	if urban:
+		return _town(pts, type, mats, cuts, true)
 	if spec.get("rural", false) or (rural and spec.median == 0.0):
-		return _rural(pts, type, mats)
+		return _rural(pts, type, mats, breaks)
 	return _town(pts, type, mats, cuts)
 
 
@@ -58,7 +60,7 @@ static func street(pts: PackedVector3Array, type: int, mats: Dictionary, gaps :=
 ## yellow pair each side of a two-way left-turn lane, white dashes between
 ## lanes going the same way, a solid white bike lane line, and white stall
 ## marks where parking is metered downtown.
-static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := Vector2.ZERO) -> ArrayMesh:
+static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := Vector2.ZERO, urban := false) -> ArrayMesh:
 	var spec: Dictionary = RoadStyle.TYPES[type]
 	var hw := RoadStyle.half_width(type)
 	var cw := RoadStyle.CURB_WIDTH
@@ -68,7 +70,7 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 	var lane := 3.6
 	var y_mark := RoadStyle.Y_ASPHALT + 0.01
 	var layers := [
-		[spec.get("surface", "asphalt"), [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
+		[_pave(mats, type), [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
 		["curb", [[-hw - cw, -hw], [hw, hw + cw]], RoadStyle.Y_CURB, ""],
 	]
 	# Combined concrete curb and gutter (INDOT standard E 605-CCCG): a 2 ft
@@ -78,7 +80,7 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 		var g := RoadStyle.GUTTER_WIDTH
 		layers.append(["curb", [[-hw, -hw + g], [hw - g, hw]], RoadStyle.Y_ASPHALT + 0.004, ""])
 		layers.append(["curb_face", [[-hw - 0.07, -hw], [hw, hw + 0.07]], RoadStyle.Y_CURB + 0.003, ""])
-	if spec.get("walk", true):
+	if spec.get("walk", true) or urban:
 		layers.append(["walk", [[-w1, -w0], [w0, w1]], RoadStyle.Y_SIDEWALK, ""])
 	var dashes := []
 	var inner := 0.0  # centre line to the first lane
@@ -98,7 +100,7 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 			inner = hm
 			layers.append(["yellow", [[-hm + 0.01, -hm + 0.13], [hm - 0.13, hm - 0.01]], y_mark, ""])
 			layers.append(["yellow", [[-hm + 0.25, -hm + 0.37], [hm - 0.37, hm - 0.25]], y_mark, "dashed"])
-		elif spec.lanes > 2 or spec.get("bike", false) or spec.get("angle", false):
+		elif spec.lanes > 2 or spec.get("bike", false) or spec.get("angle", false) or urban:
 			# Double yellow centre line.
 			layers.append(["yellow", [[-0.25, -0.12], [0.12, 0.25]], y_mark, ""])
 		lane_edge = inner + lane * (spec.lanes / 2)
@@ -210,20 +212,25 @@ static func _flat_side(at: Array) -> Vector3:
 ## lanes) and gravel shoulders running off into the grass. A divided
 ## highway gets a grass median with a yellow left edge line each side.
 ## Gravel roads and alleys have no lines at all.
-static func _rural(pts: PackedVector3Array, type: int, mats: Dictionary) -> ArrayMesh:
+## `urban`: a country highway the town has grown along, drawn as a town
+## street: curb and gutter, sidewalks, parking where its shoulders were,
+## and a double yellow centre line (no passing in town).
+## `breaks`: [[side, metres, at start]]: where a side road meets this one
+## (Junction's country corners), its edge line and shoulder on that side
+## stop that far from the start (or the end) so they don't cross the side
+## road (MUTCD 3B.06).
+static func _rural(pts: PackedVector3Array, type: int, mats: Dictionary, breaks := []) -> ArrayMesh:
 	var spec: Dictionary = RoadStyle.TYPES[type]
 	var hw: float = spec.width * 0.5
 	var y_mark := RoadStyle.Y_ASPHALT + 0.01
 	var surface: String = spec.get("surface", "asphalt")
 	if surface != "asphalt":
-		return _build_layers(pts, [[surface, [[-hw, hw]], RoadStyle.Y_ASPHALT, ""]], pts, mats)
+		return _build_layers(pts, [[_pave(mats, type), [[-hw, hw]], RoadStyle.Y_ASPHALT, ""]], pts, mats)
 	var hm: float = spec.median * 0.5
 	var per_side: int = spec.lanes / 2
 	var edge: float = hm + 3.6 * per_side
 	var layers := [
-		["asphalt", [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
-		["gravel", [[-hw - 1.8, -hw], [hw, hw + 1.8]], RoadStyle.Y_SIDEWALK, ""],
-		["white", [[-edge - 0.2, -edge - 0.05], [edge + 0.05, edge + 0.2]], y_mark, ""],
+		[_pave(mats, type), [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
 	]
 	if hm > 0.0:
 		var grass := hm - 1.2
@@ -239,59 +246,55 @@ static func _rural(pts: PackedVector3Array, type: int, mats: Dictionary) -> Arra
 		dashes.append([-hm - 3.6 * k - 0.06, -hm - 3.6 * k + 0.06])
 	if not dashes.is_empty():
 		layers.append(["white", dashes, y_mark, "dashed"])
-	return _build_layers(pts, layers, trimmed(pts, hw + 2.0), mats)
-
-
-## Wooden utility poles down one side of a country road, every 45 m, with a
-## crossarm, three insulators and the wires between them. `blocked(p)` is
-## true where a pole would stand on another road; such a pole steps back
-## from the junction, or is left out (a span runs on over the corner).
-static func add_poles(wood: SurfaceTool, wire: SurfaceTool, pts: PackedVector3Array, off: float, avoid := [],
-		blocked := Callable()) -> void:
+	var mesh := _build_layers(pts, layers, trimmed(pts, hw + 2.0), mats)
+	# Gravel shoulders (from the pavement out, so the shader can fray their
+	# outer edge into the grass) and edge lines, each side broken where a
+	# side road comes in.
 	var length := RoadNetwork.polyline_length(pts)
-	if length < 30.0:
-		return
-	var n := maxi(1, int((length - 20.0) / 45.0))
-	var tops := []
-	for k in n + 1:
-		var at := LotPlanner.point_at(pts, lerpf(10.0, length - 10.0, float(k) / n))
-		var p: Vector3 = at[0]
-		var dir: Vector3 = at[1] if at.size() > 1 else Vector3.FORWARD
-		dir.y = 0.0
-		dir = dir.normalized()
-		var side := Vector3(-dir.z, 0.0, dir.x)
-		var base := Vector3(p.x, maxf(p.y, 0.0), p.z) + side * off
-		for q in avoid:
-			if Vector2(q.x - base.x, q.z - base.z).length() < 7.0:
-				# Step along the road, clear of the driveway.
-				base += dir * 9.0
-				break
-		if blocked.is_valid():
-			# Step away from the nearer end, where the crossing road is.
-			var away := dir if k * 2 < n else -dir
-			var tries := 0
-			while tries < 3 and blocked.call(base):
-				base += away * 6.0
-				tries += 1
-			if blocked.call(base):
+	var gravel := SurfaceTool.new()
+	var white := SurfaceTool.new()
+	gravel.begin(Mesh.PRIMITIVE_TRIANGLES)
+	white.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for side in [-1.0, 1.0]:
+		var from := 0.0
+		var to := length
+		for b in breaks:
+			if b[0] != side:
 				continue
-		_post(wood, base + Vector3(0, 5.5, 0), Vector3(0.28, 11.0, 0.28), Basis.IDENTITY)
-		_post(wood, base + Vector3(0, 10.4, 0), Vector3(2.4, 0.14, 0.14), Basis(Vector3.UP, atan2(side.x, side.z) + PI * 0.5))
-		var row := []
-		for s in [-1.0, 0.0, 1.0]:
-			var q: Vector3 = base + side * (s * 1.0) + Vector3(0, 10.6, 0)
-			_post(wire, q - Vector3(0, 0.1, 0), Vector3(0.12, 0.25, 0.12), Basis.IDENTITY)
-			row.append(q)
-		if not tops.is_empty():
-			for i in 3:
-				var a: Vector3 = tops[i]
-				var b: Vector3 = row[i]
-				var mid := (a + b) * 0.5 - Vector3(0, 0.6, 0)
-				for seg in [[a, mid], [mid, b]]:
-					var d: Vector3 = seg[1] - seg[0]
-					var basis := Basis.looking_at(d.normalized(), Vector3.UP) if d.length() > 0.01 else Basis.IDENTITY
-					_post(wire, (seg[0] + seg[1]) * 0.5, Vector3(0.03, 0.03, d.length()), basis)
-		tops = row
+			if b[2]:
+				from = maxf(from, b[1])
+			else:
+				to = minf(to, length - b[1])
+		if to - from < 0.5:
+			continue
+		var run := pts if from <= 0.0 and to >= length else _between(pts, from, to)
+		add_strip(gravel, run, side * hw, side * (hw + Junction.SHOULDER), RoadStyle.Y_SIDEWALK)
+		add_strip(white, run, side * (edge + 0.05), side * (edge + 0.2), y_mark)
+	for part in [[gravel, "shoulder"], [white, "white"]]:
+		part[0].commit(mesh)
+		mesh.surface_set_material(mesh.get_surface_count() - 1, mats.get(part[1], mats.get("gravel")))
+	return mesh
+
+
+## Where a road's white edge line ends, out from its centre line (its
+## outer edge), or its half width when it has none.
+static func edge_line(type: int, country: bool) -> float:
+	var spec: Dictionary = RoadStyle.TYPES[type]
+	if not country or spec.oneway or spec.get("surface", "asphalt") != "asphalt":
+		return RoadStyle.half_width(type)
+	return spec.median * 0.5 + 3.6 * (spec.lanes / 2) + 0.2
+
+
+## A road's solid centre line as spans out from its centre line ([] when
+## it has none, or a median): the double yellow, or a single yellow on a
+## two-lane country road.
+static func centre_line(type: int, country: bool) -> Array:
+	var spec: Dictionary = RoadStyle.TYPES[type]
+	if spec.oneway or spec.median > 0.0 or spec.get("surface", "asphalt") != "asphalt":
+		return []
+	if spec.lanes > 2 or (not country and (spec.get("bike", false) or spec.get("angle", false))):
+		return [[-0.25, -0.12], [0.12, 0.25]]
+	return [[-0.06, 0.06]] if country else []
 
 
 static func _post(st: SurfaceTool, c: Vector3, size: Vector3, basis: Basis) -> void:
@@ -315,7 +318,7 @@ static func _post(st: SurfaceTool, c: Vector3, size: Vector3, basis: Basis) -> v
 
 ## Highways and ramps: shoulders, a yellow line on the left edge, a white
 ## line on the right, dashed lanes, and a concrete barrier each side.
-static func _oneway(pts: PackedVector3Array, spec: Dictionary, mats: Dictionary, gaps := {}) -> ArrayMesh:
+static func _oneway(pts: PackedVector3Array, spec: Dictionary, mats: Dictionary, gaps := {}, type := -1) -> ArrayMesh:
 	var hw: float = spec.width * 0.5
 	var left := -hw + 1.2
 	var right: float = left + 3.6 * spec.lanes
@@ -325,7 +328,7 @@ static func _oneway(pts: PackedVector3Array, spec: Dictionary, mats: Dictionary,
 		var off := left + 3.6 * k
 		dashes.append([off - 0.075, off + 0.075])
 	var layers := [
-		["asphalt", [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
+		[_pave(mats, type) if type >= 0 else "asphalt", [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
 		["yellow", [[left - 0.15, left]], y_mark, ""],
 		["white", [[right, right + 0.15]], y_mark, ""],
 	]
@@ -347,6 +350,21 @@ static func _oneway(pts: PackedVector3Array, spec: Dictionary, mats: Dictionary,
 	st.commit(mesh)
 	mesh.surface_set_material(mesh.get_surface_count() - 1, mats.curb)
 	return mesh
+
+
+## The material name for a road type's own pavement: the ageing one made for
+## it by the view's RoadSurface (mats["_pave"]) when there is one, else the
+## plain surface (asphalt, gravel, concrete, dirt, chip seal or brick).
+static func _pave(mats: Dictionary, type: int) -> String:
+	var key := "pave %d" % type
+	if mats.has(key):
+		return key
+	if mats.has("_pave"):
+		var m = mats["_pave"].call(type)
+		if m != null:
+			mats[key] = m
+			return key
+	return RoadStyle.TYPES[type].get("surface", "asphalt")
 
 
 ## The part of a polyline from `from` to `to` metres along it.

@@ -149,6 +149,9 @@ func _ready() -> void:
 	var look := DayNight.new()
 	look.setup(sim, sky, _tick_fraction)
 	add_child(look)
+	# Streets drawn as country roads go unlit; their pole line is the only one.
+	look.set_country(roads._rural)
+	roads.country_changed.connect(look.set_country)
 
 	var signals := JunctionView.new()
 	signals.setup(sim.traffic)

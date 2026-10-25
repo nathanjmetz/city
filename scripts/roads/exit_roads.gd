@@ -24,9 +24,6 @@ const SHORT := 300.0
 ## Points along the road this far apart, so it follows the rise and fall
 ## of the land (the terrain data is 10 m a sample).
 const STEP := 10.0
-## Utility poles are laid in runs this long (RoadMesh.add_poles spaces
-## them about 45 m apart, as on the county highway in town).
-const POLE_RUN := 920.0
 
 var sim: CitySim
 var terrain: TerrainView
@@ -36,10 +33,9 @@ var stop := Callable()
 var _name := ""
 var _ends := []
 var _drawn := {}  # an end, as _open_ends gives it -> the node drawing it
-var _pole_side := {}  # link node -> the side its poles were first drawn on
 var _mats := {
 	"asphalt": Surfaces.asphalt(),
-	"gravel": Surfaces.gravel(),
+	"shoulder": Surfaces.shoulder(),
 	"yellow": Surfaces.paint(RoadStyle.MARKING_YELLOW),
 	"white": Surfaces.paint(RoadStyle.MARKING_WHITE),
 	"concrete": Surfaces.concrete(Color(0.66, 0.65, 0.62)),
@@ -137,8 +133,8 @@ func _draw(parts: Dictionary, at: Vector3, dir: Vector3, length: float, type: in
 		pts.append(Terrain.lift(at + dir * (length * k / n)))
 	RoadMesh.add_strip(parts.asphalt, pts, -hw, hw, RoadStyle.Y_ASPHALT)
 	for side in [-1.0, 1.0]:
-		RoadMesh.add_strip(parts.gravel, pts, minf(side * hw, side * (hw + 1.8)), maxf(side * hw, side * (hw + 1.8)),
-			RoadStyle.Y_SIDEWALK)
+		# From the pavement out, so the shader frays its outer edge.
+		RoadMesh.add_strip(parts.shoulder, pts, side * hw, side * (hw + Junction.SHOULDER), RoadStyle.Y_SIDEWALK)
 		RoadMesh.add_strip(parts.white, pts, minf(side * (edge + 0.05), side * (edge + 0.2)),
 			maxf(side * (edge + 0.05), side * (edge + 0.2)), y_mark)
 	# A dashed centre line: 3 m dashes, 9 m gaps (MUTCD), started clear of the
@@ -147,14 +143,15 @@ func _draw(parts: Dictionary, at: Vector3, dir: Vector3, length: float, type: in
 	while d + 3.0 < length:
 		RoadMesh.add_strip(parts.yellow, PackedVector3Array([_on(pts, d), _on(pts, d + 3.0)]), -0.06, 0.06, y_mark)
 		d += 12.0
-	# Poles down one side, on the same side as the pole line in town, in runs
-	# that share their end poles so the wires carry on unbroken.
+	# The pole line carries on down the same side as in town (PoleLine
+	# keeps every line to one side of the road).
 	var off: float = (hw + spec.get("verge", 4.0)) * pole_side
-	var run := int(POLE_RUN / STEP)
-	var i := 0
-	while i < pts.size() - 6:
-		RoadMesh.add_poles(parts.pole, parts.wire, pts.slice(i, mini(i + run + 1, pts.size())), off)
-		i += run - 2
+	# It starts at the town line's last pole, 6 m short of the link, so the
+	# wires run on unbroken.
+	var line := PackedVector3Array([Terrain.lift(at - dir * 6.0)])
+	line.append_array(pts)
+	PoleLine.draw(parts.pole, parts.wire, PoleLine.place(line, off, Vector2(0.0, 6.0)),
+		PoleLine.three_phase(type), PoleLine.top_for(dir))
 	RoadMesh.bridge(pts, RoadStyle.right_of_way_half(type), parts.concrete, Terrain.ground_y)
 
 
@@ -181,21 +178,16 @@ func _open_ends() -> Array:
 		if seg == -1:
 			continue
 		var pts := net.sample_segment(seg)
-		# RoadView puts a country road's poles on this side, looking from a to b.
-		var poles := 1.0 if hash(seg) % 2 == 0 else -1.0
 		if net.segments[seg].b != node:
 			pts.reverse()
-			poles = -poles
-		# A road built onto the highway in town splits it into new
-		# segments; the poles out to the horizon stay where they were.
-		poles = _pole_side.get(node, poles)
-		_pole_side[node] = poles
 		var at: Vector3 = net.nodes[node]
 		var dir := pts[pts.size() - 1] - pts[pts.size() - 2]
 		dir.y = 0.0
 		if dir.length() < 0.01:
 			continue
 		dir = dir.normalized()
+		# The same side of the road as the pole line in town (PoleLine).
+		var poles := PoleLine.side_for(dir)
 		var length := REACH
 		if stop.is_valid():
 			var d := 0.0

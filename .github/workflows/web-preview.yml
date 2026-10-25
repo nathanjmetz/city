@@ -83,6 +83,7 @@ jobs:
           ~/godot-cache/godot --headless --import
           run_test tests/test_roads.gd
           run_test tests/test_junction_marks.gd
+          run_test tests/test_country_roads.gd
           run_test tests/test_sim.gd
           run_test tests/test_water.gd
           run_test tests/test_advisor.gd
@@ -114,6 +115,7 @@ jobs:
           run_test tests/test_subdivisions.gd
           run_test tests/test_land_plan.gd
           run_test tests/test_street_age.gd
+          run_test tests/test_road_wear.gd
           run_test tests/test_engineer.gd
           run_test tests/test_rail.gd
           run_test tests/test_rail_grain.gd

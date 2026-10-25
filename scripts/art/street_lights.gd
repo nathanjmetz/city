@@ -60,6 +60,14 @@ var network: RoadNetwork
 var visible_amount := 0.0
 var _multis := {}  # mesh key or "pool" -> MultiMeshInstance3D
 var _dirty := true
+## Streets and avenues drawn as country roads (RoadView): unlit, like the
+## county roads, with no second row of poles beside the pole line.
+var country := {}
+
+
+func set_country(segs: Dictionary) -> void:
+	country = segs
+	_dirty = true
 
 
 func setup(net: RoadNetwork) -> void:
@@ -102,7 +110,7 @@ func _multi(mesh: Mesh, shadows: bool) -> MultiMeshInstance3D:
 
 ## Where every lamp goes: [mesh key, base position, direction to the road,
 ## arm reach].
-static func place(net: RoadNetwork) -> Array:
+static func place(net: RoadNetwork, skip := {}) -> Array:
 	var out := []
 	var taken := {}  # coarse cell -> positions, to keep lamps apart
 	var pieces := _pieces(net)
@@ -111,7 +119,7 @@ static func place(net: RoadNetwork) -> Array:
 		var type: int = seg.type
 		# Variants light like their menu's road; country roads and alleys go unlit.
 		var kind := RoadStyle.group(type) if not RoadStyle.is_ring(type) else type
-		if not KINDS.has(kind) or RoadStyle.TYPES[type].get("rural", false):
+		if not KINDS.has(kind) or RoadStyle.TYPES[type].get("rural", false) or skip.has(id):
 			continue
 		var spec: Array = KINDS[kind]
 		var pts := net.sample_segment(id)
@@ -210,7 +218,7 @@ func _rebuild() -> void:
 	var lists := {}
 	for k in _multis:
 		lists[k] = []
-	for l in place(network):
+	for l in place(network, country):
 		var dir: Vector3 = l[2]
 		var basis := Basis(Vector3.UP, atan2(dir.x, dir.z))
 		lists[l[0]].append(Transform3D(basis, Terrain.lift(l[1])))

@@ -68,11 +68,13 @@ func _init() -> void:
 	_check(bj.has("bend"), "a bend gets a plan for its outside curb")
 	_check(not JunctionMarks.marked(bj), "a bend has no crosswalks")
 
-	# A gravel road meeting a street keeps a plain join (no curbs on gravel).
+	# A gravel road meeting a street: a country junction (no curbs on gravel,
+	# no round pad: Nathan 2026-10-25, "a circle node shape").
 	var g := CitySim.new()
 	g.apply({"type": "build_road", "start": [-150, 0], "ctrl": [0, 0], "end": [150, 0]})
 	g.apply({"type": "build_road", "start": [0, 0], "ctrl": [0, 75], "end": [0, 150], "road": RoadStyle.Type.GRAVEL})
-	_check(Junction.plan_node(g.network, _node_at(g.network, Vector3.ZERO)).is_empty(), "gravel meets a street in a plain join")
+	var gj := Junction.plan_node(g.network, _node_at(g.network, Vector3.ZERO))
+	_check(gj.get("country", false) and not JunctionMarks.marked(gj), "gravel meets a street in a country junction, unmarked")
 
 	quit(1 if failed else 0)
 
