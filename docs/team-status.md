@@ -25,7 +25,7 @@ When a helper hits a wall it writes its question here and stops. That task waits
 | Light through the day | `claude/daylight` | Ranked detail #8 |
 | Region under load | `claude/region-load-fixes` | Big regions join; no city-line or server freezes |
 
-In review: the crop calendar (PR #537, ranked detail #1).
+Merged: the crop calendar (PR #537, ranked detail #1).
 
 Done and live: #535 (the region play-through joins again), #538 (shared-region stress test; findings in the scale-test doc), #536 (details ranked by impact).
 
@@ -36,6 +36,7 @@ A few helpers run at a time, never two on the same files.
 *Running now:* 1 town speed, 2 shared region, 3 new drawing style measured.
 
 *Make it smooth everywhere*
+- Freeze: the farm field mesh rebuilds all at once when farms change (about 150 ms); spread it over frames (found 2026-10-25).
 4. Drawing speed: building drawing cost and graphics memory (6.7 GB to under 2 GB).
 5. Automatic quality levels for the browser, Mac mini and Mac Studio, each with a detail budget.
 6. The detail-by-distance system (near, middle, far; fades in; built a little each frame).
