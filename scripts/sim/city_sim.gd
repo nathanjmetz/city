@@ -1225,7 +1225,9 @@ func tick() -> void:
 			_lots_dirty = true  # lots under new fields go away
 		elif farmed:
 			# Fields planted or given up: only lots by those farms can change.
+			# The lots are planned again all the same, as after any change.
 			lots_changed_near(_farm_boxes(ground, farms.ground_boxes()))
+			_lots_light = true
 		if farmed:
 			farms_changed.emit()
 	Perf.add("sim.farms", t)
@@ -3106,20 +3108,6 @@ static func _farm_boxes(before: Dictionary, after: Dictionary) -> Array:
 	return out
 
 
-## Whether any lot, built or planned (kept off the ground or not), reaches
-## into these boxes.
-func _near_any_lot(boxes: Array) -> bool:
-	for b in boxes:
-		for key in lots_near(b):
-			if _lot_near(lots[key], [b]):
-				return true
-	var near := _near_of(boxes)
-	for key in _blocked_by:
-		if _lot_near(_blocked_by[key][0], near):
-			return true
-	return false
-
-
 ## Boxes ready for _lot_near: [the box around them all, then the boxes].
 static func _near_of(boxes: Array) -> Array:
 	if boxes.is_empty():
@@ -3244,13 +3232,6 @@ func _refresh() -> void:
 		_replan_at = 0
 	if _roads_moved:
 		_road_wins()
-	if not _lots_dirty and not _lots_light and not _lots_near.is_empty() and not _near_any_lot(_lots_near):
-		# Whatever changed is away from every lot, built, planned or kept
-		# off the ground: none can come or go. The ground's other users and
-		# the services' reach are brought up to date as a full check would.
-		_lots_near = []
-		_usable_cache.clear()
-		_update_services()
 	if _lots_dirty or _lots_light or not _lots_near.is_empty():
 		var tr := Perf.now()
 		var full := _lots_dirty
