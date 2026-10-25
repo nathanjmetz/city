@@ -16,8 +16,8 @@ extends Node3D
 ## Making a mesh (growing the branches, cutting them to an age, building the
 ## bark and leaves) runs on worker threads on the desktop, or in slices on
 ## the main thread (the browser), each slice a few hundred microseconds,
-## BUILD_MS a frame in all. Which trees are near is looked up a tree at a
-## time (SCAN_MS a frame) as the camera moves; the bands shrink while the
+## BUILD_MS a frame in all (less in the browser). Which trees are near is
+## looked up a tree at a time (SCAN_MS a frame) as the camera moves; the bands shrink while the
 ## lookup lags behind the camera, so nothing is ever left undrawn.
 
 ## Ages (years) a mesh is grown at.
@@ -26,8 +26,13 @@ const BUCKETS := [2.0, 4.0, 6.0, 9.0, 13.0, 18.0, 25.0, 33.0, 43.0, 56.0, 72.0, 
 ## the slack each looked-up set carries.
 const MARGIN := 30.0
 const RESCAN := 10.0
+## The main thread's time a frame for making meshes and for the lookup
+## (milliseconds): the desktop's, then the browser's, which is tighter (the
+## browser has one thread, and its frames are the ones that can't spare it).
 const BUILD_MS := 1.5
 const SCAN_MS := 0.75
+const BUILD_MS_BROWSER := 1.0
+const SCAN_MS_BROWSER := 0.5
 ## Records looked at between clock checks.
 const SCAN_BATCH := 16
 const MAX_MESHES := 260
@@ -104,17 +109,8 @@ func _ready() -> void:
 func _warm_shaders() -> void:
 	if DisplayServer.get_name() == "headless":
 		return
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3.ZERO, Vector3(0.01, 0, 0), Vector3(0, 0.01, 0)])
-	arrays[Mesh.ARRAY_NORMAL] = PackedVector3Array([Vector3.UP, Vector3.UP, Vector3.UP])
-	arrays[Mesh.ARRAY_TEX_UV] = PackedVector2Array([Vector2.ZERO, Vector2.RIGHT, Vector2.DOWN])
-	arrays[Mesh.ARRAY_COLOR] = PackedColorArray([Color.WHITE, Color.WHITE, Color.WHITE])
-	arrays[Mesh.ARRAY_INDEX] = PackedInt32Array([0, 1, 2])
 	for lod in 2:
-		var m := ArrayMesh.new()
-		TreeMesher.add_part(m, 0, lod, [arrays, arrays], 0)
-		TreeMesher.add_part(m, 0, lod, [arrays, arrays], 1)
+		var m := speck_mesh(0, lod)
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_colors = true
@@ -127,6 +123,23 @@ func _warm_shaders() -> void:
 		# Not under this node, which hides while no grown trees are drawn.
 		get_tree().root.add_child.call_deferred(mmi)
 		_specks.append(mmi)
+
+
+## A speck of a mesh (one tiny triangle of bark, one of leaf) with the
+## materials of a grown tree of this kind and level: making it gets the
+## shaders and materials ready.
+static func speck_mesh(sp: int, lod: int) -> ArrayMesh:
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3.ZERO, Vector3(0.01, 0, 0), Vector3(0, 0.01, 0)])
+	arrays[Mesh.ARRAY_NORMAL] = PackedVector3Array([Vector3.UP, Vector3.UP, Vector3.UP])
+	arrays[Mesh.ARRAY_TEX_UV] = PackedVector2Array([Vector2.ZERO, Vector2.RIGHT, Vector2.DOWN])
+	arrays[Mesh.ARRAY_COLOR] = PackedColorArray([Color.WHITE, Color.WHITE, Color.WHITE])
+	arrays[Mesh.ARRAY_INDEX] = PackedInt32Array([0, 1, 2])
+	var m := ArrayMesh.new()
+	TreeMesher.add_part(m, sp, lod, [arrays, arrays], 0)
+	TreeMesher.add_part(m, sp, lod, [arrays, arrays], 1)
+	return m
 
 
 ## Keeps the specks in front of the camera (too small to see) until they
@@ -178,8 +191,9 @@ func _process(_delta: float) -> void:
 	var cp := cam.global_position
 	if not _scanning and (cp.distance_to(_centre) > RESCAN or TreeField.version != _version or r != _scan_r):
 		_start_scan(cp, r)
+	var budgets := budgets_for(TreeLook.browser())
 	if _scanning:
-		_scan_some(SCAN_MS)
+		_scan_some(budgets.y)
 	# While the looked-up trees lag behind the camera the bands shrink, so
 	# the cards keep drawing anything not looked up yet.
 	var lag := cp.distance_to(_centre)
@@ -188,10 +202,16 @@ func _process(_delta: float) -> void:
 	else:
 		var near_r := clampf(_scan_r.x, maxf(_scan_r.x - MARGIN + lag, 0.0), _scan_r.x + MARGIN - lag) if _scan_r.x > 0.0 else 0.0
 		TreeLook.set_zone(cp, near_r, minf(_scan_r.y, _scan_r.y + MARGIN - lag), true)
-	_build_some(BUILD_MS)
+	_build_some(budgets.x)
 	Perf.add("frame.trees.grown", t)
 	Perf.counts["trees.grown"] = _shown
 	last_ms = (Perf.now() - t) / 1000.0
+
+
+## [build, lookup] milliseconds a frame the grown trees may use on the main
+## thread: tighter in the browser.
+static func budgets_for(browser: bool) -> Vector2:
+	return Vector2(BUILD_MS_BROWSER, SCAN_MS_BROWSER) if browser else Vector2(BUILD_MS, SCAN_MS)
 
 
 # ------------------------------------------------------------------ lookup

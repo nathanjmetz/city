@@ -278,6 +278,7 @@ func chunk_trees(c: Vector2i) -> Array:
 ## One of those trees resolved (see resolve), kept likewise. GrownTrees
 ## reads them one at a time, so a big chunk never stalls a frame.
 func chunk_record(c: Vector2i, i: int) -> Array:
+	_check_records()
 	if not _records.has(c):
 		chunk_trees(c)
 	var r: Array = _records[c][1]
