@@ -62,6 +62,40 @@ func _init() -> void:
 		if car.purpose == "construction":
 			kinds[car.kind] = true
 	_check(kinds.has("work_pickup"), "the crew comes in a work pickup (%s)" % str(kinds.keys()))
+	# A house gets the contractor's pickup and one concrete truck, no semi;
+	# the concrete truck goes once the pour is done, the pickup stays to the end.
+	var hp: Dictionary = Construction.PROFILES.house
+	var semis := 0
+	for stage in Construction.STAGES:
+		for d in hp.get("deliveries", Construction.DELIVERIES).get(stage, []):
+			semis += 1 if d[0] == "flatbed" else 0
+	_check(semis == 0 and hp.brings == [["concrete_mixer", "ready-mix concrete", 1]],
+		"a house brings one concrete truck and no semi")
+	# The concrete truck stays the whole foundation stage, then goes; the
+	# contractor's truck stays to the end.
+	var sref := ""
+	for r in sim.construction.sites:
+		if not sim.construction.is_done(r, sim.tick_count):
+			sref = r
+			break
+	var sp: Dictionary = sim.construction.sites[sref]
+	var kept: Array = sp.parked
+	var before: Array = sim.construction.trips.keys()
+	sp.parked = [{"kind": "work_pickup", "job": "crew", "cargo": "building crew", "until": -1},
+		{"kind": "concrete_mixer", "job": "delivery", "cargo": "ready-mix concrete", "until": 1, "brought": true}]
+	sim.construction._budget = 4
+	sim.construction._leave(sim, sref, "delivery", 1, true)  # halfway through the pour
+	var stays: bool = sp.parked.size() == 2
+	sim.construction._leave(sim, sref, "delivery", 1)  # the foundation is done
+	var gone: bool = sp.parked.size() == 1 and sp.parked[0].job == "crew" or sp.parked.size() == 2
+	var left := 0
+	for id in sim.construction.trips.keys():
+		if not id in before:
+			left += 1
+			sim.construction.trips.erase(id)
+	_check(stays and gone and (sp.parked.size() == 1) == (left == 1),
+		"the concrete truck stays through the pour, then goes; the contractor's truck stays")
+	sp.parked = kept
 	# Copies stay in step, and a save keeps every site where it was.
 	# As the region server does: it and every player reload the same snapshot.
 	var snapshot = JSON.parse_string(JSON.stringify(sim.to_dict(), "", false, true))
