@@ -10,7 +10,8 @@
 # Run: tools/playtest/soak.sh GODOT OUT_DIR [seconds] [web export dir]
 set -u
 GODOT=$1
-OUT=$(realpath -m "$2")
+mkdir -p "$2"
+OUT=$(cd "$2" && pwd)  # (realpath -m is not on macOS)
 SECONDS_RUN=${3:-1500}
 WEB=${4:-}
 PORT=9098
@@ -36,7 +37,8 @@ for name in Alice Bob Cara; do
 	[ $i = 2 ] && extra="--playtest-inline"
 	# Each player has a computer of its own: its own profile and saves.
 	mkdir -p "$OUT/home-$name"
-	XDG_DATA_HOME="$OUT/home-$name" "$GODOT" --headless -- --playtest="$SECONDS_RUN" $extra --playtest-region="$URL" \
+	# HOME is what macOS uses for the profile; XDG_DATA_HOME is for Linux.
+	HOME="$OUT/home-$name" XDG_DATA_HOME="$OUT/home-$name" "$GODOT" --headless -- --playtest="$SECONDS_RUN" $extra --playtest-region="$URL" \
 		--playtest-name=$name --playtest-pin=$((500002 + i)) --playtest-out="$OUT/$name.json" </dev/null >"$OUT/$name.log" 2>&1 &
 	BOTS+=($!)
 	i=$((i + 1))

@@ -1,0 +1,26 @@
+[
+  {
+    "lines": 0,
+    "pairs": 1,
+    "points": 36251,
+    "points_ms": 22.0,
+    "towns": 2,
+    "trace_ms": 91.0
+  },
+  {
+    "lines": 0,
+    "pairs": 3,
+    "points": 54458,
+    "points_ms": 30.0,
+    "towns": 3,
+    "trace_ms": 340.0
+  },
+  {
+    "lines": 0,
+    "pairs": 6,
+    "points": 72967,
+    "points_ms": 44.0,
+    "towns": 4,
+    "trace_ms": 14072.0
+  }
+]
