@@ -6,6 +6,7 @@ Run: python3 tools/scale/region_stress_report.py OUT_DIR
 """
 import glob
 import json
+import re
 import os
 import sys
 
@@ -257,6 +258,27 @@ if os.path.exists(path):
     with open(path, errors="replace") as f:
         server_log = [l.strip() for l in f if ("ERROR" in l or "Turned away" in l or "Couldn't" in l or "Wrong PIN" in l) and "version 1," not in l]
 result["server_log_problems"] = server_log[:20]
+# The server's own loop: any step over 100 ms is logged as "Slow step: X took N ms".
+slow = []
+if os.path.exists(path):
+    with open(path, errors="replace") as f:
+        for l in f:
+            m = re.search(r"Slow step: (\S+) took (\d+) ms", l)
+            if m:
+                slow.append((m.group(1), int(m.group(2))))
+by_step = {}
+for step, ms in slow:
+    by_step.setdefault(step, []).append(ms)
+result["server_slow_steps"] = {"count": len(slow), "max_ms": max([ms for _, ms in slow] or [0]),
+                               "by_step": {k: {"n": len(v), "max_ms": max(v)} for k, v in by_step.items()}}
+# The most the city lines added to any frame that went over 100 ms, per bot
+# (a frame under 100 ms isn't a hitch, so isn't kept).
+for name, r in bot_rows.items():
+    raw = load(name + ".json", {}) or {}
+    worst = 0.0
+    for fr in raw.get("freezes", []):
+        worst = max(worst, float(fr.get("stages", {}).get("frame.city_lines", 0.0)))
+    r["city_lines_worst_in_a_hitch_ms"] = round(worst, 1)
 
 with open(os.path.join(out, "region_stress.json"), "w") as f:
     json.dump(result, f, indent=1)
@@ -280,6 +302,10 @@ S.append("Server answer time (probe): %s ms; failed %d; over 1 s: %d; over 5 s: 
             result["server_answer_ms"]["over_5s"], result["server_answer_ms"]["samples"]))
 S.append("Sync lag on the wire (owner's copy in, neighbor's copy out): %s s." % result["sync_lag_wire_s"]["all"])
 S.append("Neighbors' towns on screen at the end: behind by %s buildings." % result["on_screen_at_end"]["behind"])
+ss = result["server_slow_steps"]
+S.append("Server loop steps over 100 ms: %d (worst %d ms) %s." % (ss["count"], ss["max_ms"], ss["by_step"]))
+S.append("City lines in frames over 100 ms (most in any one, per bot): %s ms."
+         % {n: r["city_lines_worst_in_a_hitch_ms"] for n, r in bot_rows.items()})
 S.append("")
 S.append("| player | people | p50 ms | p95 ms | worst ms | freezes >1 s | hitches >100 ms | dropped/back | KB/s up | KB/s down | CPU % | peak RSS MB |")
 S.append("|---|---|---|---|---|---|---|---|---|---|---|---|")

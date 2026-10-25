@@ -1,0 +1,17 @@
+{
+  "buffer_bytes": 16777216,
+  "client_picture_load_ms": 253.585,
+  "client_picture_unpack_ms": 97.195,
+  "client_reads_it": true,
+  "client_welcome_ms": 168.343,
+  "full_bytes_avg": 5444775,
+  "neighbors_bytes": 6481294,
+  "old_welcome_bytes": 17267671,
+  "picture_bytes_avg": 907650,
+  "picture_make_ms_avg": 180.170375,
+  "postcard_bytes_avg": 1717762,
+  "towns": 8,
+  "welcome_bytes": 5112310,
+  "welcome_ms": 23.596,
+  "welcome_parts": 5
+}
