@@ -24,10 +24,30 @@ const WIDTHS := [5.0, 9.0, 13.0]
 const HOUSE_AREA := 260.0
 const HOUSE_HEIGHT := 9.0
 
-const WALLS := [Color(0.62, 0.33, 0.27), Color(0.86, 0.85, 0.80), Color(0.78, 0.74, 0.64),
-	Color(0.55, 0.57, 0.58), Color(0.70, 0.60, 0.48), Color(0.90, 0.89, 0.86), Color(0.50, 0.29, 0.24)]
-const ROOFS := [Color(0.24, 0.24, 0.25), Color(0.32, 0.27, 0.24), Color(0.40, 0.40, 0.41), Color(0.20, 0.21, 0.23)]
-const FLAT_ROOF := Color(0.45, 0.45, 0.44)
+## Colours from aerial and street photos of Marion: frame houses in vinyl
+## and painted siding (white, cream, grey, pale blue, sage, yellow) with
+## some red and brown brick; shingle roofs in greys and browns.
+const HOUSE_WALLS := [Color(0.88, 0.87, 0.83), Color(0.80, 0.75, 0.64), Color(0.66, 0.68, 0.68),
+	Color(0.62, 0.68, 0.72), Color(0.62, 0.66, 0.56), Color(0.85, 0.78, 0.55), Color(0.72, 0.62, 0.48),
+	Color(0.55, 0.30, 0.24), Color(0.48, 0.32, 0.25), Color(0.86, 0.85, 0.80)]
+const ROOFS := [Color(0.24, 0.24, 0.25), Color(0.32, 0.27, 0.24), Color(0.40, 0.40, 0.41), Color(0.20, 0.21, 0.23),
+	Color(0.36, 0.30, 0.25), Color(0.45, 0.43, 0.40)]
+## Stores, plants and warehouses: tan and grey block, tilt-up and metal
+## panels, some brick.
+const SHOP_WALLS := [Color(0.74, 0.68, 0.56), Color(0.62, 0.62, 0.60), Color(0.78, 0.76, 0.70),
+	Color(0.58, 0.33, 0.26), Color(0.68, 0.64, 0.58), Color(0.42, 0.30, 0.24)]
+## Downtown round the courthouse: two- to four-storey red and brown brick.
+const BRICK := [Color(0.56, 0.30, 0.24), Color(0.50, 0.33, 0.26), Color(0.62, 0.40, 0.30), Color(0.45, 0.27, 0.22)]
+## Flat roofs: white membrane on newer stores, grey ballast, black rubber, tar.
+const FLAT_ROOFS := [Color(0.80, 0.81, 0.80), Color(0.52, 0.51, 0.49), Color(0.22, 0.22, 0.23), Color(0.34, 0.33, 0.32)]
+## Share of wall that is glass (the far shader's window grid): houses,
+## stores and plants, downtown blocks.
+const GLASS := [0.14, 0.12, 0.3]
+## A store or plant this big (m²) has a parking lot round it, about 1.3 m²
+## of lot to each m² of floor (US suburban codes: 4 spaces per 1,000 ft²).
+const LOT_AREA := 1500.0
+const LOT_SHARE := 1.3
+const LOT_ASPHALT := Color(0.33, 0.33, 0.33)
 const ASPHALT := Color(0.27, 0.27, 0.28)
 
 ## Region square -> [buildings [Array of 6 numbers]], [streets [class, PackedVector2Array]]
@@ -35,15 +55,14 @@ var _todo := {}
 var _origin := Vector2.INF
 ## Squares still to build, a block's together.
 var _queue: Array = []
-## Block -> [squares left, vertices, normals, colours]
+## Block -> [squares left, vertices, normals, colours, uvs]
 var _blocks := {}
-var _material: StandardMaterial3D
+## The player town's far-building look (sRGB colours, windows, snow).
+var _material: Material
 
 
 func _ready() -> void:
-	_material = StandardMaterial3D.new()
-	_material.vertex_color_use_as_albedo = true
-	_material.roughness = 0.95
+	_material = HouseMaterials.get_mat("far")
 	_load()
 
 
@@ -100,7 +119,7 @@ func _process(_delta: float) -> void:
 		for c in _queue:
 			var k := _block(c)
 			if not _blocks.has(k):
-				_blocks[k] = [0, PackedVector3Array(), PackedVector3Array(), PackedColorArray()]
+				_blocks[k] = [0, PackedVector3Array(), PackedVector3Array(), PackedColorArray(), PackedVector2Array()]
 			_blocks[k][0] += 1
 	if _queue.is_empty():
 		return
@@ -120,19 +139,22 @@ func _build(c: Vector2i) -> void:
 	var v: PackedVector3Array = blk[1]
 	var nrm: PackedVector3Array = blk[2]
 	var col: PackedColorArray = blk[3]
+	var uv: PackedVector2Array = blk[4]
 	var o := _origin
 	for s in sq[1]:
 		_street(v, nrm, col, s[1], WIDTHS[s[0]], o)
 	for b in sq[0]:
-		_building(v, nrm, col, b, o)
+		_building(v, nrm, col, uv, b, o)
 	blk[0] -= 1
 	if blk[0] > 0 or v.is_empty():
 		return
+	uv.resize(v.size())
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = v
 	arrays[Mesh.ARRAY_NORMAL] = nrm
 	arrays[Mesh.ARRAY_COLOR] = col
+	arrays[Mesh.ARRAY_TEX_UV] = uv
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	mesh.surface_set_material(0, _material)
@@ -161,7 +183,8 @@ func _street(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArr
 		_quad(v, nrm, col, w[0], w[1], w[2], w[3], ASPHALT)
 
 
-func _building(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray, b: Array, o: Vector2) -> void:
+func _building(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray, uv: PackedVector2Array,
+		b: Array, o: Vector2) -> void:
 	var centre := Vector2(b[0], b[1])
 	var ang := deg_to_rad(b[5])
 	var u: Vector2 = Vector2(cos(ang), sin(ang)) * b[2] * 0.5
@@ -174,21 +197,36 @@ func _building(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorA
 	var h: float = b[4]
 	var y1 := lo + h
 	var pick := absi(hash(Vector2i(b[0], b[1])))
-	var wall: Color = WALLS[pick % WALLS.size()]
+	var area: float = b[2] * b[3]
+	var house: bool = area < HOUSE_AREA and h < HOUSE_HEIGHT
+	# Older two-storey-plus blocks of modest footprint read as downtown brick.
+	var downtown: bool = not house and h >= 7.0 and area < LOT_AREA
+	var walls: Array = HOUSE_WALLS if house else (BRICK if downtown else SHOP_WALLS)
+	var wall: Color = walls[pick % walls.size()]
+	wall.a = GLASS[0 if house else (2 if downtown else 1)]
 	var pts := []
 	for p in corners:
 		pts.append(Vector2(p.x - o.x, p.y - o.y))
 	var mid: Vector2 = (pts[0] + pts[2]) * 0.5
+	if not house and not downtown and area >= LOT_AREA:
+		_lot(v, nrm, col, centre, u, w, area, o)
 	for k in 4:
 		var a: Vector2 = pts[k]
 		var c: Vector2 = pts[(k + 1) % 4]
 		var away := (a + c) * 0.5 - mid
+		uv.resize(v.size())
+		var first := v.size()
 		_quad(v, nrm, col, Vector3(a.x, y0, a.y), Vector3(c.x, y0, c.y), Vector3(c.x, y1, c.y), Vector3(a.x, y1, a.y),
 			wall, Vector3(away.x, 0.0, away.y))
-	var house: bool = b[2] * b[3] < HOUSE_AREA and h < HOUSE_HEIGHT
+		# Windows: UVs in metres along and up the wall.
+		var along := (c - a).normalized()
+		for i in range(first, v.size()):
+			uv.append(Vector2((Vector2(v[i].x, v[i].z) - a).dot(along) + 0.01, v[i].y - lo + 0.01))
+	wall.a = 1.0
 	if not house:
+		var flat: Color = FLAT_ROOFS[(pick / 7) % FLAT_ROOFS.size()]
 		_quad(v, nrm, col, Vector3(pts[0].x, y1, pts[0].y), Vector3(pts[3].x, y1, pts[3].y),
-			Vector3(pts[2].x, y1, pts[2].y), Vector3(pts[1].x, y1, pts[1].y), FLAT_ROOF)
+			Vector3(pts[2].x, y1, pts[2].y), Vector3(pts[1].x, y1, pts[1].y), flat)
 		return
 	# A gable roof along the longer side, pitched about 6 in 12.
 	var roof: Color = ROOFS[(pick / 7) % ROOFS.size()]
@@ -216,6 +254,24 @@ func _building(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorA
 	var e1 := r1 - mid
 	_tri(v, nrm, col, Vector3(p3.x, y1, p3.y), Vector3(p0.x, y1, p0.y), R0, wall, Vector3(e0.x, 0.0, e0.y))
 	_tri(v, nrm, col, Vector3(p1.x, y1, p1.y), Vector3(p2.x, y1, p2.y), R1, wall, Vector3(e1.x, 0.0, e1.y))
+
+
+## The parking lot round a store or plant: its footprint grown on every side
+## until the asphalt is LOT_SHARE times the floor.
+func _lot(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray,
+		centre: Vector2, u: Vector2, w: Vector2, area: float, o: Vector2) -> void:
+	var lu := u.length()
+	var lw := w.length()
+	# (2lu + 2m)(2lw + 2m) = (1 + share) area, solved for the margin m.
+	var s := lu + lw
+	var m := (-s + sqrt(s * s + LOT_SHARE * area)) * 0.5
+	var gu := u.normalized() * (lu + m)
+	var gw := w.normalized() * (lw + m)
+	var q := [centre - gu - gw, centre + gu - gw, centre + gu + gw, centre - gu + gw]
+	var p := []
+	for c in q:
+		p.append(Vector3(c.x - o.x, Terrain.height(c.x, c.y) + 0.15, c.y - o.y))
+	_quad(v, nrm, col, p[0], p[1], p[2], p[3], LOT_ASPHALT)
 
 
 ## Two triangles, a b c d round the face's edge; the face looks toward `out`.

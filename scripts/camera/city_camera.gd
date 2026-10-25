@@ -18,6 +18,12 @@ const MIN_DIST := 40.0
 ## Far enough out to lay a whole one-mile section grid (1,609 m) with
 ## room around it, as CS2 lets you see a whole tile.
 const MAX_DIST := 3000.0
+## The closest zoom over Marion, Gas City and Jonesboro, which are a
+## backdrop drawn as plain block meshes, not a town you build in: about
+## the height of a light plane's pattern over a city. It eases in over
+## BACKDROP_EASE metres outside their limits so it never feels like a wall.
+const BACKDROP_MIN_DIST := 450.0
+const BACKDROP_EASE := 300.0
 const MIN_PITCH := deg_to_rad(10.0)
 const MAX_PITCH := deg_to_rad(88.0)
 const FAST := 3.0
@@ -65,6 +71,10 @@ var _zoom_vel := 0.0
 var _zoom_heat := 0.0
 ## Seconds the zoom keys have been held, so a hold eases up to speed.
 var _zoom_hold := 0.0
+## The closest zoom where the camera looks now (raised over the backdrop
+## towns), and the spot it was worked out for.
+var _min_dist := MIN_DIST
+var _min_at := Vector2.INF
 
 
 func _ready() -> void:
@@ -170,6 +180,10 @@ func _process(delta: float) -> void:
 	if _pad != null and not MenuState.showing:
 		_pad_input(delta)
 	_zoom_glide(delta)
+	_fit_min_dist()
+	if _goal_dist < _min_dist:
+		# Panned in over the backdrop: rise smoothly rather than snap.
+		_goal_dist = lerpf(_goal_dist, _min_dist, 1.0 - exp(-4.0 * delta))
 	# Ease toward the goal, like CS2's smoothed camera.
 	var rate := 12.0
 	if _slow > 0.0:
@@ -272,7 +286,7 @@ func _over_list() -> bool:
 
 func _zoom(f: float) -> void:
 	_slow = 0.0
-	_goal_dist = clampf(_goal_dist * f, MIN_DIST, MAX_DIST)
+	_goal_dist = clampf(_goal_dist * f, minf(_min_dist, _goal_dist), MAX_DIST)
 
 
 ## One wheel click: dir -1 zooms in, +1 out. factor is the size of the click
@@ -302,10 +316,21 @@ func _zoom_glide(delta: float) -> void:
 	_zoom_heat = maxf(_zoom_heat - ZOOM_HEAT_DECAY * _zoom_heat * delta, 0.0)
 	if _zoom_vel == 0.0:
 		return
-	_goal_dist = clampf(_goal_dist * exp(_zoom_vel * delta), MIN_DIST, MAX_DIST)
+	_goal_dist = clampf(_goal_dist * exp(_zoom_vel * delta), minf(_min_dist, _goal_dist), MAX_DIST)
 	_zoom_vel *= exp(-ZOOM_FRICTION * delta)
-	if absf(_zoom_vel) < 0.01 or (_zoom_vel < 0.0 and _goal_dist <= MIN_DIST) or (_zoom_vel > 0.0 and _goal_dist >= MAX_DIST):
+	if absf(_zoom_vel) < 0.01 or (_zoom_vel < 0.0 and _goal_dist <= _min_dist) or (_zoom_vel > 0.0 and _goal_dist >= MAX_DIST):
 		_zoom_vel = 0.0
+
+
+## Raises the closest zoom over the backdrop towns, checked again only when
+## the camera has moved a little (their limits are long outlines).
+func _fit_min_dist() -> void:
+	var at := Vector2(_goal_target.x + Terrain.view_origin.x, _goal_target.z + Terrain.view_origin.y)
+	if at.distance_squared_to(_min_at) < 400.0:
+		return
+	_min_at = at
+	var d := Backdrop.distance_to(at) if Backdrop.overlaps(Rect2(at, Vector2.ZERO).grow(BACKDROP_EASE)) else INF
+	_min_dist = lerpf(BACKDROP_MIN_DIST, MIN_DIST, smoothstep(0.0, BACKDROP_EASE, d))
 
 
 ## Up close each click moves less: about half speed at street level, full
