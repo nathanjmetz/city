@@ -151,6 +151,10 @@ func _exit_tree() -> void:
 		WorkerThreadPool.wait_for_task_completion(_mesh_tasks[key].id)
 	_grow_tasks.clear()
 	_mesh_tasks.clear()
+	for s in _specks:
+		if is_instance_valid(s):
+			s.queue_free()
+	_specks.clear()
 	TreeLook.set_zone(Vector3.ZERO, 0.0, 0.0, false)
 
 

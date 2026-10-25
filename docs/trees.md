@@ -7,7 +7,7 @@ Written 2026-10-25 (task 12). Nathan's question: "Can trees actually grow in the
 - **A tree is three facts:** its kind, a seed (where it stands) and its age. Nothing new is saved. A yard tree's planting date is its building's build date, which saves already have. A wild tree's age comes from its size, which the woods already work out from when the land was last cleared. So old saves load as before, and two copies of a town always agree.
 - **Grown, not drawn.** Near the camera each tree is grown branch by branch by *space colonization* (Runions, Lane and Prusinkiewicz, 2007). Points of open air fill the crown shape the kind grows into. Each twig grows a step toward the points nearest it, and uses a point up once it reaches it. The crown grows year by year with the tree's real height, so the 10-year-old tree is the 60-year-old's younger self. As the crown lifts, the lowest limbs die off.
 - **Limb thickness follows the pipe model.** A limb carries every twig beyond it, so its cross-section is the sum of theirs. The trunk is then scaled to the kind's real trunk thickness at chest height for that age.
-- **The same seed always grows the same tree.** Each kind has three variants (two for the middle-distance version), picked by the seed. Each one is also turned and sized a little differently.
+- **The same seed always grows the same tree.** The seed comes from where the tree stands in the region (not on your screen), so every player sees the same tree in the same spot, whatever town they play from. Each kind has three variants, picked by the seed; the full and light versions of a tree use the same one, so the handover between them doesn't jump. Each tree is also turned and sized a little differently.
 - **Seasons:** each kind keeps its own calendar on top of the game's seasons. Walnuts drop their leaves weeks before the oaks, maples turn scarlet to orange, oaks turn russet and hold their leaves, and sycamores turn brown early. Crabapples bloom pink, and red cedar bronzes in winter.
 - **Wild woods get real Grant County kinds** by where they stand. Sycamore, silver maple, cottonwood and hackberry grow by creeks and rivers. White and red oak, sugar maple, black walnut, hackberry and honey locust grow on the uplands. Red cedar grows in old fields and fencerows.
 - **Yard trees** are sugar and silver maple, white and red oak, honey locust, blue spruce, and crabapple by the house. They go in as nursery stock: a 2-inch, 10 to 12 ft tree, about 7 years old on these growth curves. After that they grow on the game's clock (a game year is 12 game days, about 29 minutes at normal speed).
@@ -21,7 +21,7 @@ Written 2026-10-25 (task 12). Nathan's question: "Can trees actually grow in the
 | Past that | The cheap card trees (TreeField), in each kind's real crown shape and size | about 300 |
 | From high up | The ground's painted canopy | 0 |
 
-The radii scale with the quality tier. The browser draws no full trees, and the light ones only from Medium up and nearer. A tree hands over from one level to the next with a dither, so nothing pops. A grown mesh is built on worker threads on the desktop, or a slice per frame in the browser. Meshes are kept by kind, variant and age bucket. Until a tree's mesh is ready, its card tree stands in.
+The radii scale with the quality tier. The browser draws no full trees, and the light ones only from Medium up and nearer. A tree hands over from one level to the next with a dither, so nothing pops. A grown mesh is built on worker threads on the desktop, or in small slices on the main thread in the browser (each slice under about half a millisecond on this Mac, 1.5 ms of them a frame). Meshes are kept by kind, variant and age bucket, up to 260; the ones drawn longest ago go first, and the ones in view stay (up to 520). Until a tree's mesh is ready, its card tree stands in. The bark and leaf shaders are got ready behind the loading screen, so the first grown tree on screen doesn't stall the game on the desktop (see below for the browser).
 
 ## What it costs (measured 2026-10-25, M5 Max MacBook Pro, 1600x900, Auto quality = Ultra)
 
@@ -30,14 +30,28 @@ The radii scale with the quality tier. The browser draws no full trees, and the 
 | 16,000-person town, `tools/scale/combined_lab.gd` (PerfTown "20", camera 900 m out), normal speed | 62.7 ms a frame | 63.2 ms | Within run-to-run noise. Grown trees don't reach that far. |
 | Same, fast speed | 115.6 ms | 115.6 ms | |
 | Same, memory / graphics memory | 1,701 MB / 6,008 MB | 1,712 MB / 6,022 MB | |
+| Same town after the review fixes, normal / fast speed (re-measured 2026-10-25 with other work on the machine, so all slower) | 84.0 / 130.5 ms (first version of grown trees) | 68.1 / 129.3 ms | No cost; the machine was noisier than the first measurement. |
 | Same town, trees aged 30 years, camera at street level (`tools/trees/tree_lab.gd`), grown trees off and on in turns | 62.9 ms | 64.6 ms (+1.7 ms) | 58 grown trees, 155,000 triangles |
 | Dense woods at the start, camera 60 m out (`tools/trees/grown_shot.gd`), off and on | 7.4 ms | 11.8 ms (+4.4 ms) | The worst case seen: 1,494 grown trees, 3.2 million triangles |
 | Open country at the start, 60 m out | 6.9 ms | 5.8 ms | 34 grown trees: no measurable cost (noise) |
 
 - The town's frames swing by about plus or minus 5 ms from run to run (most of the 60 ms is the town's own drawing). So trees were measured off and on in turns, in the same place.
 - **Memory:** a grown mesh is 50 to 250 KB on the graphics card (16-bit compressed). The cache holds up to 260 of them, 2 to 3 MB in a typical view and under about 60 MB at most. The grown branches use about 3 MB of main memory. Graphics memory read by the engine swings by about 2 GB between runs of the same town, so it can't show a change this small.
-- **Building them** happens on worker threads on the desktop: about 0.2 s for a kind's whole-life branches and 2 to 10 ms for a mesh, with nothing on the main thread except handing over the mesh. In the browser it's a slice per frame (2.5 ms), with card trees standing in until it's done.
+- **Building them** happens on worker threads on the desktop: about 0.25 s for a kind's whole-life branches and 2 to 10 ms for a mesh, with nothing on the main thread except handing over the mesh (under half a millisecond each, within the frame's 1.5 ms). In the browser every step is cut into slices, each under about half a millisecond here: growing (scattering the points, each year's growth, straightening the limbs), cutting the tree to an age, building the bark and leaves, and handing the two halves of the mesh to the graphics card in different frames. Looking up which trees are near goes a few trees at a time (0.75 ms a frame).
 - **Slider:** the dense-woods case (+4.4 ms on the strongest Mac) is the one to watch on the Mac mini. The full-tree radius (TreeLook.NEAR) and the light-tree radius (MID) are the two dials, and both already scale with the quality tier.
+
+### The worst frame: a camera jump into dense woods (`tools/trees/jump_lab.gd`)
+
+The camera jumps 60 m over six far-apart woodlots it has never seen, grown trees on for half of them. Desktop at Ultra, browser renderer at High (its top). "Grown trees' own time" is the most the grown trees spent on the main thread in one frame.
+
+| Setup | Worst frame before the review fixes | After | Grown trees' own time, before / after |
+| --- | --- | --- | --- |
+| Desktop renderer, worker threads | 937 ms (first grown trees on screen), then 125 to 134 ms on every jump | 95 ms, most jumps 31 to 45 ms | 194 ms / 3.3 ms |
+| Desktop renderer, no threads (as the browser builds) | 163 ms, frames over 100 ms every half second while building | 36 ms | 129 ms / 2.6 ms |
+| Browser renderer (`--rendering-method gl_compatibility`), no threads | 350 ms, then frames of 110 to 240 ms while building | 112 to 200 ms, once, when the first grown trees appear; otherwise 35 to 45 ms | 128 ms / 2.8 ms |
+
+- What was fixed: the leaf and bark shaders were one copy per kind (each compiled when first seen); every wild tree's age took 30 steps to work out (a chunk of woods took 120 ms on a jump, grown trees or not); growing a kind's branches was one 110 to 130 ms block; and a new kind's first card mesh was made inside the lookup. The lookup also hit a script error when a chunk of woods was dropped while it ran (seen in these jumps); it now skips it.
+- What is left: on the browser renderer the first grown trees on screen still cost one frame of about 110 to 200 ms (the graphics driver getting their drawing ready; the warm-up behind the loading screen didn't remove it there). And the browser now builds grown meshes more slowly (a handful in seven seconds after a jump, where it built 16 to 50 with the long frames), so card trees stand in longer.
 
 ## The reference each kind is checked against
 
@@ -85,11 +99,21 @@ A small front-yard ornamental. Rounded to spreading crown, as wide as tall or wi
 
 - Every growth curve passes through its reference heights and always rises.
 - Every kind, grown, against its reference: height at 10, 30 and 60 years (within about 20% under to 12% over), trunk thickness (5%), crown width against height at 60 (within 0.65 to 1.3 times), and the side-limb angle (within 8 degrees of the reference range). Also: cedar and spruce are narrow, white oak spreads widest, and cottonwood grows fastest.
-- The same seed grows the same tree. Growing in slices gives the same tree as growing all at once. The 30-year-old keeps the 10-year-old's limbs. Limb thickness follows the pipe model. The light version is under a third of the full one.
+- The same seed grows the same tree. Growing in the smallest slices gives the same tree as growing all at once: every node's place, parent, year, heading and children, the tree cut to an age (limb thickness, which limbs are kept, the trunk), and the mesh. Fewer than 1 in 100 slices of growing take over 1 ms. The 30-year-old keeps the 10-year-old's limbs. Limb thickness follows the pipe model. The light version is under a third of the full one.
+- The stand-ins for exp, log, sin and cos match the maths library's to within about a millionth.
+- A tree's seed is the same in a field moved and turned another way, and for a player whose own town sits elsewhere. A spot is the same kind (bottomland or upland too) and seed from three different towns' views.
+- Exploring past 260 meshes, every newly made mesh is kept (the cache used to drop its newest first, so no new grown trees appeared once it was full).
 - Each kind's own calendar: walnuts turn and drop first, oaks hold their leaves longest, evergreens stay green, crabapples bloom.
 - Planted trees go in as saplings and grow with the clock. Wild trees are as old as their size. Brush is never grown.
-- After a save and load, two copies of a town agree on every yard tree's planting date and every wild tree's kind, place and age.
+- After a save and load, two copies of a town agree on every yard tree's planting date, and (the copy seen from another town's place in the region) on every wild tree's kind, seed, turn and age.
 - This document describes every kind.
+
+## What is the same on every computer
+
+- **Exactly the same everywhere:** each tree's kind, seed and age, and so which variant and age bucket it is grown at. They come from whole-number hashes of where it stands in the region (rounded to the metre) and from sums and products of the growth curves (no maths-library functions), and the size-to-age table is built the same way. These are what players' games must agree on.
+- **The same on the same kind of computer:** the branches themselves. The growth uses only the seeded random numbers, sums, products and square roots; plain stand-ins (TreeGrower.plain_exp_neg, plain_ln, plain_sin_cos) replace exp, log, sin and cos, whose last digits differ between maths libraries. But the engine's vector maths runs in 32-bit floats compiled for each processor, and an Apple chip, an Intel or AMD one and the browser may round the last bit differently (fused multiply-adds). A tiny difference can grow a slightly different twig layout. This changes only how a tree looks, never the game or a save.
+- **Not exact:** limb thickness (a power law, `pow`), bark rings, leaf cards and leaf textures (sin, cos, atan2) can differ in their last digits between computers. Again, looks only.
+- **Rounding at the metre:** two players' positions for one tree can differ in their last digits (each works in coordinates around their own town). A tree standing within about a millimetre of a whole-metre line could, rarely (about 1 in 1,000), be rounded differently for one of them and get another kind or variant there.
 
 ## Known limits
 
