@@ -7,7 +7,8 @@ extends RefCounted
 ## Sizes, prices and reach follow real US practice for a small town.
 
 enum Kind { SUBSTATION, WATER_TOWER, FIRE, POLICE, CLINIC, SCHOOL, POWER_FEED, WELL, BUS_DEPOT, WATER_UTILITY, TAXI_COMPANY,
-	HOSPITAL, NURSING_HOME, DAYCARE, PARKING_SMALL, PARKING_DOWNTOWN, PARKING_LARGE, PARK_AND_RIDE, PARKING_GARAGE }
+	HOSPITAL, NURSING_HOME, DAYCARE, PARKING_SMALL, PARKING_DOWNTOWN, PARKING_LARGE, PARK_AND_RIDE, PARKING_GARAGE,
+	BUILDER_YARD }
 
 ## Each kind: name, icon, footprint (width along the road x depth, metres),
 ## and its build cost, monthly upkeep and `reach` or `capacity` from Balance.
@@ -53,6 +54,12 @@ const KINDS := {
 	# behind it. Its owner runs it on fares (TaxiCo) and grows next door.
 	Kind.TAXI_COMPANY: {"name": "Taxi company", "icon": "taxi_company", "size": Vector2(30, 34),
 		"cost": Balance.SERVICES["taxi_company"]["cost"], "upkeep": Balance.SERVICES["taxi_company"]["upkeep"], "transit": true},
+	# The town's home builder (Builders): an office and a gravel lot of
+	# truck stalls. Every town's first one is free, it's the only one, and its
+	# crews and concrete trucks build the houses (Brawn, 2026-10-24).
+	Kind.BUILDER_YARD: {"name": "Builder's yard", "icon": "builder_yard", "size": Vector2(36, 48),
+		"cost": Balance.SERVICES["builder_yard"]["cost"], "upkeep": 0, "reach": Balance.SERVICES["builder_yard"]["reach"],
+		"hub": true},
 	# A 25-bed county hospital with an ER; its administrator grows it from
 	# there (see Healthcare). It counts as a clinic for the homes it reaches.
 	Kind.HOSPITAL: {"name": "Hospital", "icon": "hospital", "size": Vector2(70, 60),
@@ -157,6 +164,33 @@ var _alloc_caps := {}
 var _alloc_use := {"power": [0, 0], "water": [0, 0]}
 
 
+## Road distance from `front` to every road node (node -> metres), for a
+## service not built yet (the builder's yard shows its reach while placed).
+func reach_from(network: RoadNetwork, front: Vector3) -> Dictionary:
+	if _lengths.size() != network.segments.size():
+		_lengths = {}
+		for id in network.segments:
+			_lengths[id] = RoadNetwork.polyline_length(network.sample_segment(id, 16))
+	var dist := {}
+	_spread_from(network, _lengths, front, dist)
+	return dist
+
+
+## The builder's yard's id, or -1 before the town has one.
+func yard() -> int:
+	for id in buildings:
+		if buildings[id].kind == Kind.BUILDER_YARD:
+			return id
+	return -1
+
+
+## What placing `kind` costs now: a town's first builder's yard is free.
+func cost_of(kind: int) -> int:
+	if kind == Kind.BUILDER_YARD and yard() == -1:
+		return 0
+	return int(KINDS[kind].cost)
+
+
 ## How a kind is built (a Construction profile).
 static func profile_of(kind: int) -> String:
 	return PROFILE.get(kind, "civic")
@@ -191,6 +225,8 @@ func key_of(id: int) -> String:
 			return "taxi:%d" % id
 		Kind.HOSPITAL:
 			return "hospital:%d" % id
+		Kind.BUILDER_YARD:
+			return "builders:%d" % id
 	return "service:%d" % id
 
 
@@ -243,6 +279,8 @@ static func site_near(network: RoadNetwork, kind: int, hit: Vector3) -> Array:
 
 ## Why a service can't go here, or "" if it can.
 func site_problem(network: RoadNetwork, kind: int, pos: Vector3, dir: Vector3) -> String:
+	if kind == Kind.BUILDER_YARD and yard() != -1:
+		return "The town already has its builder's yard."
 	var pts := corners(kind, pos, dir)
 	var size: Vector2 = KINDS[kind].size
 	if not Terrain.buildable(pos.x + terrain_offset.x, pos.z + terrain_offset.y, size.length() * 0.5):

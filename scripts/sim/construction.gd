@@ -35,13 +35,15 @@ const STAGES := ["clear", "foundation", "frame", "dry_in", "exterior", "interior
 const PROFILES := {
 	# Platform-framed house: 2x4 studs at 16 in, trusses at 24 in, house wrap.
 	# The contractor's pickup (ladder rack on top) stays out front until the
-	# house is done and one concrete truck comes for the foundation; no semi
+	# house is done and one concrete truck comes for the foundation, or if it
+	# can't get there by then for the driveway and walks (poured last, once
+	# the heavy equipment is gone); no semi
 	# (Brawn, 2026-10-24: "Bring one concrete truck and a contractor's truck
 	# with the ladder on the top").
 	"house": {"frame": "wood", "weeks": [1, 3, 4, 3, 4, 11, 2], "found": 0.45,
 		"words": ["Clearing the lot", "Pouring the foundation", "Framing", "Sheathing and roofing",
 			"Siding and trim", "Finishing inside", "Landscaping"],
-		"deliveries": {}, "brings": [["concrete_mixer", "ready-mix concrete", 1]]},
+		"deliveries": {}, "brings": [["concrete_mixer", "ready-mix concrete", 1, 6]]},
 	# Small-town retail: slab on grade, steel columns and bar joists, block walls.
 	"shop": {"frame": "steel", "weeks": [1, 3, 4, 3, 4, 8, 2], "found": 0.3,
 		"words": ["Clearing the site", "Pouring the slab", "Raising the steel", "Laying block and decking the roof",
@@ -143,9 +145,18 @@ const MAX_NEW := 1
 ## and a delivery only if it gets there by the middle of its stage; the
 ## site keeps to its schedule either way. And no more than this many site
 ## trips are heading in at once, town wide.
-const MAX_ON_ROAD := 10
-## The ETA leaves out turns and traffic: a trip counts as this much slower.
-const ETA_MARGIN := 1.25
+const MAX_ON_ROAD := 16
+## The ETA leaves out turns, traffic and pulling out: a trip counts as this
+## much slower (a truck longer than a pickup, slow off the line, more), plus
+## this many ticks to get going. Measured against real trips: crews took
+## 1.1 to 1.6 times it, loaded concrete trucks up to twice.
+const ETA_MARGIN := 1.3
+const TRUCK_ETA_MARGIN := 1.8
+const ETA_START := 30
+## For the yard's owner judging which houses its trucks could reach: roads
+## run about this much longer than the straight line, at about 25 mph (m/s).
+const REACH_DETOUR := 1.4
+const STREET_SPEED := 11.0
 
 ## ref -> {profile, start (tick), front [x, z], out [x, z] (toward the street),
 ## to_curb, stage (last stage it sent trucks for), parked: [{kind, job, cargo}]}
@@ -155,6 +166,7 @@ var trips := {}
 ## [site ref, where the trip starts, road revision] -> Traffic.drive_ticks
 ## (not saved: worked out again the same way after a load).
 var _eta := {}
+var _eta_roads := []
 
 
 ## A new building starts going up. `front` is the middle of its street edge,
@@ -163,7 +175,8 @@ func start(ref: String, profile: String, tick: int, front: Vector3, out: Vector3
 	if not PROFILES.has(profile):
 		profile = "house"
 	sites[ref] = {"profile": profile, "start": tick, "front": [snappedf(front.x, 0.01), snappedf(front.z, 0.01)],
-		"out": [snappedf(out.x, 0.001), snappedf(out.z, 0.001)], "to_curb": to_curb, "stage": -1, "parked": []}
+		"out": [snappedf(out.x, 0.001), snappedf(out.z, 0.001)], "to_curb": to_curb, "stage": -1, "parked": [],
+		"yard": -1, "got": []}
 
 
 ## Ticks from a build's start to the start of `stage` (the end of the build
@@ -240,6 +253,9 @@ var _yard = null
 var _coming := {}
 var _crew_coming := {}
 var _heading_in := 0
+var _booked := {}  # site ref -> {cargo: true} for trips heading there
+var _away := {}    # yard -> {kind: trucks at houses or on the road}
+var _waits := {}   # cargo -> houses building without one of the yard's trucks
 
 
 func tick(sim: CitySim) -> void:
@@ -251,7 +267,7 @@ func tick(sim: CitySim) -> void:
 func _tick(sim: CitySim) -> void:
 	for a in sim.traffic.arrivals:
 		if trips.has(a.id):
-			_arrive(trips[a.id])
+			_arrive(sim, trips[a.id], int(a.get("vid", -1)))
 			trips.erase(a.id)
 	for f in sim.traffic.failed:
 		trips.erase(f.id)  # it never got there: nothing to park
@@ -259,10 +275,14 @@ func _tick(sim: CitySim) -> void:
 		return
 	_budget = MAX_SENDS
 	_fresh = MAX_NEW
+	if _eta_roads != [sim.network.revision, sim.traffic.version]:
+		_eta_roads = [sim.network.revision, sim.traffic.version]
+		_eta.clear()  # the roads changed: every way there is worked out again
 	_yard = null
 	_coming.clear()
 	_crew_coming.clear()
 	_heading_in = 0
+	_count(sim)
 	for id in trips:
 		var t: Dictionary = trips[id]
 		if t.inbound:
@@ -290,16 +310,21 @@ func _tick(sim: CitySim) -> void:
 			s.stage = stage
 			_leave(sim, ref, "delivery", stage - 1)  # the last stage's trucks head off
 			if stage >= STAGES.size():
+				if int(s.get("yard", -1)) != -1:
+					sim.builders.paid(int(s.yard))
+					s.yard = -1
 				_leave_all(sim, ref)
 			elif sim.simulate_traffic:
-				if not _has_crew(ref):
-					_send(sim, ref, "work_pickup", "crew", "building crew", _crew_base(sim, s),
-						int(s.start) + duration(s.profile))
-				if stage == 0:
-					for b in PROFILES[s.profile].get("brings", []):
-						var at: int = b[2]
-						var half := (stage_start(s.profile, int(s.start), at) + stage_start(s.profile, int(s.start), at + 1)) / 2
-						_send(sim, ref, b[0], "delivery", b[1], sim.logistics._edge(sim, _pos(s)), half, at, true)
+				if _yard_house(sim, s):
+					pass  # its builder's trucks are sent below, each round
+				else:
+					if not _has_crew(ref):
+						_send(sim, ref, "work_pickup", "crew", "building crew", _crew_base(sim, s),
+							int(s.start) + duration(s.profile))
+					if stage == 0:
+						for b in PROFILES[s.profile].get("brings", []):
+							_send(sim, ref, b[0], "delivery", b[1], sim.logistics._edge(sim, _pos(s)),
+								_deadline(s, [b[0], b[1], "delivery", int(b[2])]), int(b[2]), true)
 				var mid := (stage_start(s.profile, int(s.start), stage) + stage_start(s.profile, int(s.start), stage + 1)) / 2
 				for d in PROFILES[s.profile].get("deliveries", DELIVERIES).get(STAGES[stage], []):
 					var cargo: String = d[1]
@@ -307,11 +332,167 @@ func _tick(sim: CitySim) -> void:
 						cargo = FRAME_CARGO[PROFILES[s.profile].frame]
 					_send(sim, ref, d[0], "delivery", cargo, sim.logistics._edge(sim, _pos(s)), mid, stage)
 		elif s.parked.size() > 0 and st.get("t", 0.0) > 0.5:
-			_leave(sim, ref, "delivery", stage, true)  # dropped off: back out halfway through
+			_leave(sim, ref, "delivery", stage)  # dropped off: back out halfway through
+		if stage < STAGES.size() and int(s.stage) >= 0 and sim.simulate_traffic and _yard_house(sim, s):
+			_from_yard(sim, ref, s)
 		if stage >= STAGES.size():
 			_leave_all(sim, ref)
 			if s.parked.is_empty() and not _coming.has(ref):
 				sites.erase(ref)
+
+
+## A house with a builder's yard in town: its trucks come from there.
+static func _yard_house(sim: CitySim, s: Dictionary) -> bool:
+	return PROFILES[s.profile].has("brings") and sim.services.yard() != -1
+
+
+## Sends a house the builder's trucks it's still missing, if the yard has one
+## free: the crew as soon as it can, the concrete truck timed to get there as
+## its pour starts (the foundation, else the driveway).
+func _from_yard(sim: CitySim, ref: String, s: Dictionary) -> void:
+	var y: Array = sim.builders.yard(sim)
+	if int(y[1]) == -1:
+		return
+	var crew := ["work_pickup", "building crew", "crew", -1]
+	if not _has(ref, s, crew[1]) and _free(sim, int(y[1]), crew[0]):
+		_send(sim, ref, crew[0], crew[2], crew[1], y[0], _deadline(s, crew), -1, false, int(y[1]))
+	for b in PROFILES[s.profile].get("brings", []):
+		if _has(ref, s, b[1]) or not _free(sim, int(y[1]), b[0]):
+			continue
+		for at in b.slice(2):
+			var n := [b[0], b[1], "delivery", int(at)]
+			if sim.tick_count >= _deadline(s, n):
+				continue
+			var sent := _send(sim, ref, n[0], n[2], n[1], y[0], _deadline(s, n), n[3], true, int(y[1]), false,
+				stage_start(s.profile, int(s.start), int(at)))
+			if sent >= 0:
+				break  # on its way, or it leaves in time for this pour
+
+
+## Where the builder's trucks are and which houses wait for one, worked out
+## again each round from the sites and trips (so nothing drifts).
+func _count(sim: CitySim) -> void:
+	_booked.clear()
+	_away.clear()
+	_waits.clear()
+	for id in trips:
+		var t: Dictionary = trips[id]
+		if t.inbound:
+			if not _booked.has(t.ref):
+				_booked[t.ref] = {}
+			_booked[t.ref][t.cargo] = true
+		_tally(int(t.get("yard", -1)), t.kind)
+	for ref in sites:
+		var s: Dictionary = sites[ref]
+		for p in s.parked:
+			_tally(int(p.get("yard", -1)), p.kind)
+		# A house going up without one of the yard's trucks it could still
+		# use: what the owner buys more of.
+		if PROFILES[s.profile].has("brings") and int(s.stage) >= 0 and int(s.stage) < STAGES.size() \
+				and not is_done(ref, sim.tick_count):
+			for n in _needs_full(s, sim.tick_count):
+				if not _has(ref, s, n[1]) and _reachable(sim, ref, s, n):
+					_waits[n[1]] = int(_waits.get(n[1], 0)) + 1
+
+
+func _tally(yard: int, kind: String) -> void:
+	if yard == -1:
+		return
+	if not _away.has(yard):
+		_away[yard] = {}
+	_away[yard][kind] = int(_away[yard].get(kind, 0)) + 1
+
+
+## The trucks a house's builder sends: [kind, cargo, job, stage it stays
+## through (-1: to the end)]. What it brings ("brings": [kind, cargo, the
+## stages it's wanted for]) is for the first of those stages still to come
+## by `tick` (the foundation, else the driveway), or left out once all are.
+static func _needs_full(s: Dictionary, tick := -1) -> Array:
+	var out := [["work_pickup", "building crew", "crew", -1]]
+	for b in PROFILES[s.profile].get("brings", []):
+		if b[1] in s.get("got", []):
+			continue  # it came already (one concrete truck a house)
+		for at in b.slice(2):
+			var n := [b[0], b[1], "delivery", int(at)]
+			if tick < 0 or tick < _deadline(s, n):
+				out.append(n)
+				break
+	return out
+
+
+## A builder with `cargo` is parked at site `ref` or on its way there.
+func _has(ref: String, s: Dictionary, cargo: String) -> bool:
+	for p in s.parked:
+		if p.cargo == cargo:
+			return true
+	return _booked.get(ref, {}).has(cargo)
+
+
+## Trucks of each kind the builder's yard `yard` has out (Builders).
+func away_from(yard: int) -> Dictionary:
+	if _away.is_empty() and not trips.is_empty():
+		_count_away()
+	return _away.get(yard, {})
+
+
+func _count_away() -> void:
+	for id in trips:
+		_tally(int(trips[id].get("yard", -1)), trips[id].kind)
+	for s in sites.values():
+		for p in s.parked:
+			_tally(int(p.get("yard", -1)), p.kind)
+
+
+## Houses waiting for each kind of builder (cargo -> count), for the yard's
+## owner deciding what to buy.
+func waiting_for(_yard_id: int) -> Dictionary:
+	return _waits
+
+
+## A truck from the builder's yard could still get to `ref` in time for `n`,
+## going by the straight line there at street speed (saved state only, so
+## every copy of the town buys the same trucks).
+func _reachable(sim: CitySim, _ref: String, s: Dictionary, n: Array) -> bool:
+	var y: Array = sim.builders.yard(sim)
+	if int(y[1]) == -1:
+		return false
+	var at := Vector3(float(y[0].pos[0]), 0.0, float(y[0].pos[1]))
+	var truck: bool = float(VehicleTypes.spec(n[0]).len) > 6.5
+	var ticks := _pos(s).distance_to(at) * REACH_DETOUR / (STREET_SPEED * TrafficSim.DT) \
+		* (TRUCK_ETA_MARGIN if truck else ETA_MARGIN) + ETA_START
+	return sim.tick_count + ticks <= _deadline(s, n)
+
+
+## The yard has a truck of `kind` that isn't out at a house or on the road.
+func _free(sim: CitySim, yard: int, kind: String) -> bool:
+	return sim.builders.owned(yard, kind) - int(_away.get(yard, {}).get(kind, 0)) > 0
+
+
+## The last tick a builder's truck is any use at site `s`: a crew before the
+## house is done, the concrete truck by the middle of the pour.
+static func _deadline(s: Dictionary, n: Array) -> int:
+	if int(n[3]) < 0:
+		return int(s.start) + duration(s.profile)
+	var at := int(n[3])
+	return (stage_start(s.profile, int(s.start), at) + stage_start(s.profile, int(s.start), at + 1)) / 2
+
+
+## The nearest houses going up that could still use a builder's truck with
+## `cargo`, nearest first (at most a few, each tried with its ETA).
+func _next_jobs(sim: CitySim, from: Vector3, cargo: String) -> Array:
+	var out := []
+	var refs := sites.keys()
+	refs.sort()
+	for r in refs:
+		var t: Dictionary = sites[r]
+		if not PROFILES[t.profile].has("brings") or int(t.stage) < 0 or int(t.stage) >= STAGES.size() \
+				or not _exists(sim, r) or _has(r, t, cargo):
+			continue
+		for n in _needs_full(t, sim.tick_count):
+			if n[1] == cargo:
+				out.append([_pos(t).distance_squared_to(from), r, n])
+	out.sort_custom(func(a, b): return a[0] < b[0] or a[0] == b[0] and a[1] < b[1])
+	return out.slice(0, 3)
 
 
 ## How much of a round's budget a site uses on reaching `stage`: its parked
@@ -343,69 +524,122 @@ func parked_poses() -> Array:
 			var p: Dictionary = s.parked[i]
 			var kind: String = p.kind
 			var len: float = float(VehicleTypes.spec(kind).len)
-			out.append([kind, Transform3D(Basis.looking_at(fwd, Vector3.UP), curb + fwd * along), hash([ref, i])])
+			# Stood on the road, not at sea level (the land is real ground, 250 m up).
+			out.append([kind, Transform3D(Basis.looking_at(fwd, Vector3.UP), Terrain.stand(curb + fwd * along)),
+				hash([ref, i])])
 			along -= len + 1.5
 	return out
 
 
 ## Sends a crew or delivery from `base` if it can be there by tick `by` and
 ## the town's streets aren't already busy with site trips. A delivery stays
-## parked through stage `until`.
+## parked through stage `until`; `yard` is the builder's yard the truck is
+## from (`counted`: it's already counted out, leaving another house); it
+## doesn't set out so early it would get there before tick `not_before`.
+## 1 if it went, 0 if not this round (busy streets, the round's budget, too
+## early), -1 if it can't make it in time.
 func _send(sim: CitySim, ref: String, kind: String, job: String, cargo: String, base: Dictionary, by: int,
-		until := -1, brought := false) -> void:
-	if base.is_empty() or _heading_in >= MAX_ON_ROAD:
-		return
+		until := -1, brought := false, yard := -1, counted := false, not_before := -1) -> int:
+	if base.is_empty():
+		return -1
+	if _heading_in >= MAX_ON_ROAD:
+		return 0
 	kind = _kind(kind)
 	var s: Dictionary = sites[ref]
 	var to := _curb(ref, s)
 	var truck: bool = float(VehicleTypes.spec(kind).len) > 6.5
 	var key := [ref, base.get("ref", ""), base.get("pos"), truck, sim.network.revision, sim.traffic.version]
-	var eta: float = _eta.get(key, -1.0)
-	if eta < 0.0:
-		if _budget <= 0:
-			return  # working out the way there is a route plan too
-		_budget -= 1
-		eta = sim.traffic.drive_ticks(base, to, truck)
-		if _eta.size() > 4 * sites.size() + 64:
-			_eta.clear()
-		if eta < INF:
-			_eta[key] = eta
-	if sim.tick_count + eta * ETA_MARGIN > by or _budget <= 0:
-		return  # it would get there after the work is done
+	# Worked out once per trip and kept while the roads stay the same, so a
+	# copy of the town loaded from a save (with none kept yet) decides the same.
+	if not _eta.has(key):
+		_eta[key] = sim.traffic.drive_ticks(base, to, truck)
+	var eta: float = _eta[key]
+	var trip := eta * (TRUCK_ETA_MARGIN if truck else ETA_MARGIN) + ETA_START
+	if sim.tick_count + trip > by:
+		return -1  # it would get there after the work is done
+	if sim.tick_count + trip < not_before or _budget <= 0:
+		return 0  # it sets out later
 	_budget -= 1
-	_heading_in += 1
 	var id: int = sim.traffic.dispatch(base, to, "construction", {"good": cargo, "amount": 1}, kind)
-	if id != -1:
-		trips[id] = {"ref": ref, "kind": kind, "job": job, "cargo": cargo, "inbound": true, "until": until,
-			"brought": brought}
-		_coming[ref] = true
-		if job == "crew":
-			_crew_coming[ref] = true
+	if id == -1:
+		return -1
+	_heading_in += 1
+	trips[id] = {"ref": ref, "kind": kind, "job": job, "cargo": cargo, "inbound": true, "until": until,
+		"brought": brought, "yard": yard}
+	_coming[ref] = true
+	if job == "crew":
+		_crew_coming[ref] = true
+	if not _booked.has(ref):
+		_booked[ref] = {}
+	_booked[ref][cargo] = true
+	if not counted:
+		_tally(yard, kind)
+	return 1
 
 
-func _arrive(t: Dictionary) -> void:
+## A truck got to its site (`vid`: Traffic's vehicle): it stands at the curb
+## out front, drawn from here (parked_poses), so Traffic's own copy of it
+## parked on the lot goes.
+func _arrive(sim: CitySim, t: Dictionary, vid := -1) -> void:
 	if not t.inbound or not sites.has(t.ref):
 		return
 	var s: Dictionary = sites[t.ref]
 	if s.parked.size() < MAX_PARKED:
+		if vid != -1:
+			sim.traffic.retire_vehicle(vid)
+		if t.get("brought", false) and not t.cargo in s.got:
+			s.got.append(t.cargo)
 		s.parked.append({"kind": t.kind, "job": t.job, "cargo": t.cargo, "until": int(t.get("until", -1)),
-			"brought": bool(t.get("brought", false))})
+			"brought": bool(t.get("brought", false)), "yard": int(t.get("yard", -1))})
+		if t.job == "crew" and int(t.get("yard", -1)) != -1 and int(s.get("yard", -1)) == -1:
+			# The builder's first draw now, the rest when the house is done.
+			s.yard = int(t.yard)
+			sim.builders.started(int(t.yard))
 
 
 ## Parked vehicles doing `job` drive away (to the highway, or the crew home),
-## all but those staying on past stage `upto`. `drop_offs` (halfway through a
-## stage): only the stage's own deliveries go, not what the crew brought,
-## which stays the whole stage (the concrete truck through the pour).
-func _leave(sim: CitySim, ref: String, job: String, upto := 1 << 30, drop_offs := false) -> void:
+## all but those staying on past stage `upto` (the concrete truck stays
+## until halfway through the foundation, the pour).
+func _leave(sim: CitySim, ref: String, job: String, upto := 1 << 30) -> void:
 	var s: Dictionary = sites[ref]
 	var keep := []
 	for p in s.parked:
-		if p.job != job or int(p.get("until", -1)) > upto or drop_offs and p.get("brought", false):
+		if p.job != job or int(p.get("until", -1)) > upto:
 			keep.append(p)
 			continue
 		if _budget <= 0 and sim.simulate_traffic:
 			keep.append(p)  # it pulls out next round
 			continue
+		var yard := int(p.get("yard", -1))
+		if yard != -1 and sim.simulate_traffic:
+			# The builder's own truck: straight on to the nearest house that
+			# can still use it, or back to the yard.
+			var went := false
+			for j in _next_jobs(sim, _pos(s), p.cargo):
+				var n: Array = j[2]
+				# From the curb, where it's parked, straight onto the street.
+				var curb := {"ref": "edge", "pos": s.front}
+				if _send(sim, j[1], p.kind, job, p.cargo, curb, _deadline(sites[j[1]], n), n[3], n[3] >= 0,
+						yard, true) == 1:
+					went = true
+					break
+			if not went:
+				var home: Dictionary = sim.builders.yard(sim)[0]
+				var hid := -1
+				if not home.is_empty() and _budget > 0:
+					_budget -= 1
+					hid = sim.traffic.dispatch({"ref": "edge", "pos": s.front}, home, "construction",
+						{"good": "back to the yard", "amount": 0}, p.kind)
+				if home.is_empty():
+					p.yard = -1  # the yard's gone: it leaves town like anyone's truck
+				elif hid == -1:
+					keep.append(p)  # no way out yet: it waits at the curb
+					continue
+				else:
+					trips[hid] = {"ref": ref, "kind": p.kind, "job": job, "cargo": "", "inbound": false, "yard": yard}
+					continue
+			else:
+				continue
 		var dest := _crew_base(sim, s) if job == "crew" else _edge_ahead(sim, s)
 		var id := -1
 		if not dest.is_empty() and sim.simulate_traffic:
@@ -535,7 +769,12 @@ func from_dict(d: Dictionary) -> void:
 		sites[ref] = {"profile": str(s.profile) if PROFILES.has(str(s.profile)) else "house",
 			"start": int(s.start), "front": [float(s.front[0]), float(s.front[1])],
 			"out": [float(s.out[0]), float(s.out[1])], "to_curb": float(s.to_curb),
-			"stage": int(s.stage), "parked": (s.parked as Array).duplicate(true)}
+			"stage": int(s.stage), "parked": (s.parked as Array).duplicate(true), "yard": int(s.get("yard", -1)),
+			"got": (s.get("got", []) as Array).duplicate()}
 	var tt: Dictionary = d.get("trips", {})
 	for id in tt:
-		trips[int(id)] = tt[id]
+		var t: Dictionary = tt[id]
+		for f in ["until", "yard"]:
+			if t.has(f):
+				t[f] = int(t[f])  # whole numbers again after a JSON copy
+		trips[int(id)] = t

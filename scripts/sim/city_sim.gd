@@ -93,6 +93,7 @@ var land_plan := LandPlan.new()
 var buses := BusNet.new()
 ## Cab companies, which run themselves too.
 var taxis := TaxiCo.new()
+var builders := Builders.new()
 ## Where this city sits in the shared region (its own coordinates start at
 ## 0): the land under it is read there. 0 in solo play.
 var terrain_offset := Vector2.ZERO:
@@ -472,15 +473,18 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 				return false
 			var pos := _v(cmd.pos)
 			var dir := _v(cmd.dir).normalized()
-			var cost: int = Services.KINDS[kind].cost
+			var cost: int = services.cost_of(kind)
 			if cost > economy.money or services.site_problem(network, kind, pos, dir) != "" \
 					or _on_warehouse(Services.corners(kind, pos, dir)) \
 					or parks.overlaps(Services.corners(kind, pos, dir).map(func(q): return Vector2(q.x, q.z))) \
 					or education.covers(pos) or banks.covers(pos) or telecom.covers(pos):
 				return false
 			var sid := services.add(kind, pos, dir, bool(cmd.get("angled", false)) and kind in Services.PARKING)
-			construction.start("svc:%d" % sid, Services.profile_of(kind), tick_count, pos, dir, Services.SETBACK
-				+ RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH)
+			if kind == Services.Kind.BUILDER_YARD:
+				builders.on_placed(self, sid)  # the builder's own yard is ready at once
+			else:
+				construction.start("svc:%d" % sid, Services.profile_of(kind), tick_count, pos, dir, Services.SETBACK
+					+ RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH)
 			economy.money -= cost
 			if kind == Services.Kind.BUS_DEPOT:
 				buses.on_placed(self, sid)
@@ -875,6 +879,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			land_plan = LandPlan.new()
 			buses = BusNet.new()
 			taxis = TaxiCo.new()
+			builders = Builders.new()
 			education = Education.new()
 			telecom = Telecom.new()
 			banks = Banks.new()
@@ -1411,7 +1416,7 @@ func tick() -> void:
 		return
 	t = Perf.now()
 	# Before logistics, which clears Traffic's arrival list.
-	for id in buses.tick(self) + taxis.tick(self):
+	for id in buses.tick(self) + taxis.tick(self) + builders.tick(self):
 		_clear_zones_under(services.footprint(id))
 		_lots_dirty = true
 	Perf.add("sim.buses", t)
@@ -2229,6 +2234,8 @@ func hub_area(key: String) -> String:
 			return "big" if big.sites.has(id) else ""
 		"taxi":
 			return "taxis" if taxis.companies.has(id) and services.buildings.has(id) else ""
+		"builders":
+			return "public" if builders.companies.has(id) and services.buildings.has(id) else ""
 		"telecom":
 			return "telecom" if telecom.companies.has(id) else ""
 		"hub":
@@ -2287,7 +2294,7 @@ func _leader_keys() -> Array:
 		var ids: Array = {"farm": farms.farms, "industry": industry.sites, "service": services.buildings,
 			"hub": hubs.hubs, "park": parks.sites, "campus": education.campuses, "bank": banks.banks,
 			"bus_depot": buses.depots, "water": services.water.utilities, "post_office": mail.offices,
-			"warehouse": warehouses.buildings, "taxi": taxis.companies, "telecom": telecom.companies,
+			"warehouse": warehouses.buildings, "taxi": taxis.companies, "telecom": telecom.companies, "builders": builders.companies,
 			"hospital": healthcare.hubs, "big": big.sites}[kind].keys()
 		for id in ids:
 			out.append("%s:%d" % [kind, id])
@@ -4324,6 +4331,7 @@ func save_steps(postcard := false) -> Array:
 			["traffic", func(): return traffic.to_dict()],
 			["buses", func(): return buses.to_dict()],
 			["taxis", func(): return taxis.to_dict()],
+			["builders", func(): return builders.to_dict()],
 			["people", func(): return people.to_dict()],
 		])
 	return steps
@@ -4510,6 +4518,8 @@ func from_dict(d: Dictionary) -> void:
 	buses.from_dict(self, d.get("buses", {}))
 	taxis = TaxiCo.new()
 	taxis.from_dict(self, d.get("taxis", {}))
+	builders = Builders.new()
+	builders.from_dict(self, d.get("builders", {}))
 	# Levers keep the exact amounts they were saved with (old saves had their
 	# own buttons); each slider shows the nearest step.
 	_lever_steps.clear()

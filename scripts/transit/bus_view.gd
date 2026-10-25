@@ -87,7 +87,7 @@ func _draw_buses() -> void:
 	var lists := {}
 	var labels := []
 	var ultra := TrafficView._ultra_wanted()
-	for entry in sim.buses.standing(sim) + sim.taxis.standing(sim):
+	for entry in sim.buses.standing(sim) + sim.taxis.standing(sim) + sim.builders.standing(sim):
 		var kind: String = entry[0]
 		var front: Vector3 = entry[1]
 		var dist := front.distance_to(eye)

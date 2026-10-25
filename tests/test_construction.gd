@@ -32,11 +32,14 @@ func _init() -> void:
 		most = maxi(most, far.construction.trips.size())
 	_check(far.construction.sites.size() > 5 and most == 0,
 		"no crew is sent to a house it would reach after it's built (%d sites, %d trips)" % [far.construction.sites.size(), most])
-	# A town on the county highway, near the edge of the map: homes go up,
-	# crews come, people move in when they're done.
+	# A town on the county highway with its builder's yard: homes go up,
+	# crews come from the yard, people move in when they're done.
 	var sim := CitySim.new()
 	sim.apply({"type": "build_county_road", "a": [-200, 0], "b": [-200, -300], "links": [1]})
 	sim.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
+	var ysite := Services.site_near(sim.network, Services.Kind.BUILDER_YARD, Vector3(0, 0, -40))
+	sim.apply({"type": "place_service", "kind": Services.Kind.BUILDER_YARD, "pos": [ysite[0].x, ysite[0].z],
+		"dir": [ysite[1].x, ysite[1].z]})
 	for x in range(-190, 191, 10):
 		sim.apply({"type": "paint_zone", "center": [x, 15], "radius": 10, "zone": ZoneMap.Zone.RESIDENTIAL})
 	most = 0
@@ -69,8 +72,8 @@ func _init() -> void:
 	for stage in Construction.STAGES:
 		for d in hp.get("deliveries", Construction.DELIVERIES).get(stage, []):
 			semis += 1 if d[0] == "flatbed" else 0
-	_check(semis == 0 and hp.brings == [["concrete_mixer", "ready-mix concrete", 1]],
-		"a house brings one concrete truck and no semi")
+	_check(semis == 0 and hp.brings == [["concrete_mixer", "ready-mix concrete", 1, 6]],
+		"a house brings one concrete truck (for the foundation, or else the driveway) and no semi")
 	# The concrete truck stays the whole foundation stage, then goes; the
 	# contractor's truck stays to the end.
 	var sref := ""
@@ -84,7 +87,7 @@ func _init() -> void:
 	sp.parked = [{"kind": "work_pickup", "job": "crew", "cargo": "building crew", "until": -1},
 		{"kind": "concrete_mixer", "job": "delivery", "cargo": "ready-mix concrete", "until": 1, "brought": true}]
 	sim.construction._budget = 4
-	sim.construction._leave(sim, sref, "delivery", 1, true)  # halfway through the pour
+	sim.construction._leave(sim, sref, "delivery", 0)  # clearing the lot
 	var stays: bool = sp.parked.size() == 2
 	sim.construction._leave(sim, sref, "delivery", 1)  # the foundation is done
 	var gone: bool = sp.parked.size() == 1 and sp.parked[0].job == "crew" or sp.parked.size() == 2
