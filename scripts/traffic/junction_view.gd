@@ -148,35 +148,63 @@ func _rebuild_all() -> void:
 		for w2 in traffic.ways_into(n):
 			cross = maxf(cross, RoadStyle.TYPES[traffic.ways[w2].type].width * 0.5)
 		var plain := cross + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH * 0.5
+		var country_plan := {}
 		for wid in traffic.ways_into(n):
-			var walk := plain
-			# A shaped corner: the crosswalk runs from 0.3 to 2.7 m past where
-			# the road stops, in line with the curb ramps.
-			var trim := Junction.trim(plans, n, traffic.ways[wid].seg)
-			if trim > 0.0:
-				# Traffic stops behind the bar (TrafficSim.STOP_PAST_RETURN):
-				# the crosswalk is 3 m on, at the curb ramps.
-				walk = -TrafficSim.CROSSWALK_AHEAD
+			var seg: int = traffic.ways[wid].seg
 			var sl := traffic.stop_line(wid)
 			var dir: Vector3 = sl.dir
 			var right: Vector3 = sl.right
 			var half: float = RoadStyle.TYPES[traffic.ways[wid].type].width * 0.5
-			var back := walk + 3.3  # behind the crosswalk and the stop bar
-			var base: Vector3 = sl.pos + right * sl.curb - dir * 1.0
-			if not RoadStyle.TYPES[traffic.ways[wid].type].oneway:
-				# On the near-side corner, in the grass strip beside the curb.
-				base = sl.pos + right * (half + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5) - dir * back
-			base = Terrain.lift(base)
-			var face := Basis.looking_at(-dir, Vector3.UP)  # facing the drivers
 			var stops_here: bool = j.control == TrafficSim.Rule.SIGNAL or j.control == TrafficSim.Rule.ALL_STOP \
 				or (j.control == TrafficSim.Rule.PRIORITY and not j.major.has(wid) and j.sign != "yield")
-			if stops_here and not painted and not RoadStyle.TYPES[traffic.ways[wid].type].oneway:
-				# A crosswalk only where there are sidewalks to join.
-				var spec: Dictionary = RoadStyle.TYPES[traffic.ways[wid].type]
-				var walks: bool = spec.get("walk", true) and not spec.get("rural", false) \
-					and not (roads != null and roads._rural.has(traffic.ways[wid].seg))
-				_markings(paint, sl, half, walk, walks)
-				any_paint = true
+			var base := Vector3.ZERO
+			var arm := {}
+			if _is_country(plans, n, seg):
+				if country_plan.is_empty():
+					country_plan = _country_plan(plans, n)
+				arm = _arm(country_plan, seg)
+			if not arm.is_empty():
+				# A country junction (no crosswalk): the stop line 4 ft before
+				# the edge line of the road it meets, square to the lanes, and
+				# the sign beside it, past the shoulder where the corner flares.
+				var s := JunctionMarks.country_near(country_plan, arm) + JunctionMarks.BAR + 0.6
+				var at: Array = LotPlanner.point_at(arm.pts, s)
+				var t: Vector3 = at[1] if at.size() > 1 else Vector3.FORWARD
+				t.y = 0.0
+				t = t.normalized()
+				dir = -t
+				right = Vector3(-dir.z, 0.0, dir.x)
+				# Past the shoulder, or in the grass strip behind a curb.
+				var back: float = Junction.SHOULDER + 0.6 if arm.get("country", true) \
+					else RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5
+				var off := JunctionMarks.country_edge(country_plan, arm, s) + back
+				base = Terrain.lift(at[0] + right * off)
+				if stops_here and not RoadStyle.unpaved(arm.type):  # no paint on gravel
+					JunctionMarks.country_bar(country_plan, arm, paint, RoadStyle.Y_JUNCTION + 0.02)
+					any_paint = true
+			else:
+				var walk := plain
+				# A shaped corner: the crosswalk runs from 0.3 to 2.7 m past where
+				# the road stops, in line with the curb ramps.
+				var trim := Junction.trim(plans, n, seg)
+				if trim > 0.0:
+					# Traffic stops behind the bar (TrafficSim.STOP_PAST_RETURN):
+					# the crosswalk is 3 m on, at the curb ramps.
+					walk = -TrafficSim.CROSSWALK_AHEAD
+				var back := walk + 3.3  # behind the crosswalk and the stop bar
+				base = sl.pos + right * sl.curb - dir * 1.0
+				if not RoadStyle.TYPES[traffic.ways[wid].type].oneway:
+					# On the near-side corner, in the grass strip beside the curb.
+					base = sl.pos + right * (half + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5) - dir * back
+				base = Terrain.lift(base)
+				if stops_here and not painted and not RoadStyle.TYPES[traffic.ways[wid].type].oneway:
+					# A crosswalk only where there are sidewalks to join.
+					var spec: Dictionary = RoadStyle.TYPES[traffic.ways[wid].type]
+					var walks: bool = spec.get("walk", true) and not spec.get("rural", false) \
+						and not (roads != null and roads._rural.has(seg))
+					_markings(paint, sl, half, walk, walks)
+					any_paint = true
+			var face := Basis.looking_at(-dir, Vector3.UP)  # facing the drivers
 			if j.control == TrafficSim.Rule.SIGNAL:
 				poles.append(Transform3D(Basis().scaled(Vector3(1, POLE_H, 1)), base + Vector3(0, POLE_H * 0.5, 0)))
 				# Mast arm out over the lanes, head above the middle lane.
@@ -211,6 +239,42 @@ func _rebuild_all() -> void:
 	if any_paint:
 		pieces.append(Terrain.drape(paint.commit(), false, 4.0))
 	_paint.mesh = RoadView._merge(pieces) if not pieces.is_empty() else null
+
+
+## True when the road `seg` meets node `n` as a country road (no curbs or
+## sidewalks to join), in a country junction or a plain join.
+func _is_country(plans: Dictionary, n: int, seg: int) -> bool:
+	if _country_like(plans.get(n, {})):
+		return true
+	if plans.has(n) or not traffic.network.segments.has(seg):
+		return false
+	var spec: Dictionary = RoadStyle.TYPES[traffic.network.segments[seg].type]
+	if spec.oneway:
+		return false
+	return spec.get("rural", false) or not spec.get("walk", true) or (roads != null and roads._rural.has(seg))
+
+
+## The country junction's plan at a node, or its plain roads as arms.
+func _country_plan(plans: Dictionary, n: int) -> Dictionary:
+	if _country_like(plans.get(n, {})):
+		return plans[n]
+	var net: RoadNetwork = traffic.network
+	return {"center": net.nodes[n], "arms": Junction.arms_at(net, n, roads._rural if roads != null else {},
+		roads._urban if roads != null else {}),
+		"corners": []}
+
+
+## A country junction, or a town street meeting the highway through town:
+## no crosswalks, stop lines at the edge of the road met.
+static func _country_like(plan: Dictionary) -> bool:
+	return plan.get("country", false) or plan.get("unmarked", false)
+
+
+static func _arm(plan: Dictionary, seg: int) -> Dictionary:
+	for arm in plan.get("arms", []):
+		if arm.seg == seg:
+			return arm
+	return {}
 
 
 ## A stop bar across the approach lanes and a pair of crosswalk lines across
