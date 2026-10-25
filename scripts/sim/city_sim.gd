@@ -3069,6 +3069,7 @@ func note_lots(keys: Array) -> void:
 func touched_lots(keys: Array) -> void:
 	for key in keys:
 		_lots_touched[key] = true
+		_lot_ix_stale[key] = true
 
 
 ## Works out lots_delta: lots added, gone or changed since `was`. Unchanged
@@ -3145,22 +3146,7 @@ func lots_near(area: Rect2) -> Array:
 	if not is_same(lots, _lot_cells_of) or key != _lot_cells_key:
 		_lot_cells_of = lots
 		_lot_cells_key = key
-		_lot_cells = {}
-		_lot_boxes = {}
-		for k in lots:
-			var lot: Dictionary = lots[k]
-			var box := Rect2(Vector2(lot.pos.x, lot.pos.z), Vector2.ZERO)
-			for q in lot.corners:
-				box = box.expand(q)
-			for p in [lot.front, lot.zone_pt]:
-				box = box.expand(Vector2(p.x, p.z))
-			_lot_boxes[k] = box
-			for x in range(floori(box.position.x / LOT_CELL), floori(box.end.x / LOT_CELL) + 1):
-				for y in range(floori(box.position.y / LOT_CELL), floori(box.end.y / LOT_CELL) + 1):
-					var c := Vector2i(x, y)
-					if not _lot_cells.has(c):
-						_lot_cells[c] = []
-					_lot_cells[c].append(k)
+		_index_lots()
 	var seen := {}
 	for x in range(floori(area.position.x / LOT_CELL), floori(area.end.x / LOT_CELL) + 1):
 		for y in range(floori(area.position.y / LOT_CELL), floori(area.end.y / LOT_CELL) + 1):
@@ -3170,7 +3156,45 @@ func lots_near(area: Rect2) -> Array:
 	return seen.keys()
 
 
+## Brings lots_near's index up to date: lots gone, replaced or reshaped in
+## place (note_lots, touched_lots) come out, and new ones go in, rather
+## than every lot in town being filed again after each check.
+func _index_lots() -> void:
+	var gone := []
+	for k in _lot_ix:
+		if not lots.has(k) or not is_same(lots[k], _lot_ix[k]) or _lot_ix_stale.has(k):
+			gone.append(k)
+	_lot_ix_stale.clear()
+	for k in gone:
+		var box: Rect2 = _lot_boxes[k]
+		for x in range(floori(box.position.x / LOT_CELL), floori(box.end.x / LOT_CELL) + 1):
+			for y in range(floori(box.position.y / LOT_CELL), floori(box.end.y / LOT_CELL) + 1):
+				var list: Array = _lot_cells.get(Vector2i(x, y), [])
+				list.erase(k)
+		_lot_boxes.erase(k)
+		_lot_ix.erase(k)
+	for k in lots:
+		if _lot_ix.has(k):
+			continue
+		var lot: Dictionary = lots[k]
+		var box := Rect2(Vector2(lot.pos.x, lot.pos.z), Vector2.ZERO)
+		for q in lot.corners:
+			box = box.expand(q)
+		for p in [lot.front, lot.zone_pt]:
+			box = box.expand(Vector2(p.x, p.z))
+		_lot_boxes[k] = box
+		_lot_ix[k] = lot
+		for x in range(floori(box.position.x / LOT_CELL), floori(box.end.x / LOT_CELL) + 1):
+			for y in range(floori(box.position.y / LOT_CELL), floori(box.end.y / LOT_CELL) + 1):
+				var c := Vector2i(x, y)
+				if not _lot_cells.has(c):
+					_lot_cells[c] = []
+				_lot_cells[c].append(k)
+
+
 const LOT_CELL := 64.0
+var _lot_ix := {}  # lot key -> the lot it was filed as (lots_near)
+var _lot_ix_stale := {}  # lot keys reshaped in place since (note_lots, touched_lots)
 var _lot_rev := 0  # goes up with every lots_changed
 ## What kept lots off the ground at the last full check (LotGround.items).
 ## Not saved: a loaded copy's first full check looks at every lot, which
@@ -3258,12 +3282,36 @@ func _refresh() -> void:
 		_lots_light = false
 		_lots_near = []
 		planner.update(network)
+		if not full and _plan_same() and not _near_any_lot(near):
+			# Nothing planning reads has changed since the lots were last
+			# planned (roads, zoning, the parcels built on, public sites), and
+			# whatever changed is away from every lot: planning again would
+			# hand back these very lots. What else a check does is done.
+			planner.revalidated()
+			_usable_cache.clear()
+			lots_delta = []
+			lots_delta_full = false
+			Perf.add("sim.lots.revalidate", tr)
+			tr = Perf.now()
+			_update_services()
+			Perf.add("sim.lots.services", tr)
+			_zone_check_lots = {}  # the buildings are checked against their zones, as after any check
+		else:
+			_plan_lots(was, full, near)
+	# Buildings go away when their lot disappears or its zone changes, so
+	# this only needs a look after zoning, lots or buildings change.
+	_check_zones()
+
+
+## The part of _refresh that plans the lots again (see there).
+func _plan_lots(was: Dictionary, full: bool, near: Array) -> void:
+		var tr := Perf.now()
+		var plan_keys: int = ledger().sig
 		# Lots with buildings are parcels: they stay as they are unless a road
 		# now runs through them.
 		var frozen := {}
 		var lost := []
-		var keys := buildings.keys()
-		keys.sort()
+		var keys: Array = ledger().sorted  # the buildings' keys, sorted
 		if not full and planner.changed_boxes.is_empty():
 			# No road changed: every parcel stands as it is (unless whatever
 			# changed near it is in its way now).
@@ -3306,8 +3354,56 @@ func _refresh() -> void:
 		_update_services()
 		Perf.add("sim.lots.services", tr)
 		lots_changed.emit()
-	# Buildings go away when their lot disappears or its zone changes, so
-	# this only needs a look after zoning, lots or buildings change.
+		_planned = [plan_keys, _sites_sig(), _lot_rev]
+		_planned_lots = lots
+
+
+## What the lots were last planned from: [the buildings' key set
+## (ledger().sig), the public sites (_sites_sig), _lot_rev], and the lots
+## that came out.
+var _planned := []
+var _planned_lots := {}
+
+
+## True when planning the lots now would read exactly what it read last
+## time: no road, zoning or survey change waiting, the same buildings on the
+## same lots, the same public sites. (LotPlanner.plan hands back the same
+## lots for the same inputs.)
+func _plan_same() -> bool:
+	if _planned.is_empty() or not is_same(lots, _planned_lots) or _lot_rev != int(_planned[2]):
+		return false
+	if not planner.changed_boxes.is_empty() or not planner._pending.is_empty() or not zones.dirty.is_empty() \
+			or not planner._dirty.is_empty() or planner._fresh or not planner._warm_list.is_empty():
+		return false
+	return int(_planned[0]) == ledger().sig and int(_planned[1]) == _sites_sig()
+
+
+## The public sites planning treats as parcels (_with_sites), as one hash.
+func _sites_sig() -> int:
+	var sites := []
+	for id in services.buildings:
+		sites.append([id, services.footprint(id)])
+	for id in parks.sites:
+		sites.append([id, parks.footprint(id)])
+	return hash(sites)
+
+
+## Whether any lot, built or planned (kept off the ground or not), reaches
+## into these boxes (from _near_of).
+func _near_any_lot(near: Array) -> bool:
+	if near.is_empty():
+		return false
+	for i in range(1, near.size()):
+		for key in lots_near(near[i]):
+			if _lot_near(lots[key], [near[i]]):
+				return true
+	for key in _blocked_by:
+		if _lot_near(_blocked_by[key][0], near):
+			return true
+	return false
+
+
+func _check_zones() -> void:
 	var check := [zones.revision, lots.size(), buildings.size()]
 	if check == _zone_check and is_same(lots, _zone_check_lots):
 		return
