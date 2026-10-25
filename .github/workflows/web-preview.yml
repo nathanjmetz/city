@@ -104,6 +104,7 @@ jobs:
           run_test tests/test_postcard.gd
           run_test tests/test_vehicles.gd
           run_test tests/test_seasons.gd
+          run_test tests/test_sun_path.gd
           run_test tests/test_balance.gd
           run_test tests/test_audio.gd
           run_test tests/test_transit.gd
