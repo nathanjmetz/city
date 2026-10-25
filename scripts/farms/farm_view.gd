@@ -211,11 +211,23 @@ static func slot_of(id: Variant, f: Dictionary, c: Vector2i) -> Vector2i:
 
 
 ## slot_of with the farm's tillage habit and the field's plan already worked out.
-static func slot_from(id: Variant, farm_practice: int, fl: Dictionary, c: Vector2i) -> Vector2i:
+## `memo` (a dictionary the caller keeps for one farm's pass over its fields)
+## remembers the row for each set of facts, so the table is asked, and its
+## key text made, once per kind of field and not once per cell.
+static func slot_from(id: Variant, farm_practice: int, fl: Dictionary, c: Vector2i, memo = null) -> Vector2i:
 	var practice := farm_practice
 	if fl.cover or fl.cover_prev:
 		practice = CropCalendar.RYE
-	var row := CropCalendar.farm_row(str(fl.crop), str(fl.prev), practice, bool(fl.cover), bool(fl.cover_prev))
+	var row := -1
+	var by_prev: Dictionary
+	var bits := practice | (int(bool(fl.cover)) << 4) | (int(bool(fl.cover_prev)) << 5)
+	if memo != null:
+		by_prev = (memo as Dictionary).get_or_add(fl.crop, {}).get_or_add(fl.prev, {})
+		row = by_prev.get(bits, -1)
+	if row < 0:
+		row = CropCalendar.farm_row(str(fl.crop), str(fl.prev), practice, bool(fl.cover), bool(fl.cover_prev))
+		if memo != null:
+			by_prev[bits] = row
 	var col := int(Farms._hash01(Farms.forty_of(c) + Vector2i(int(id) * 7, 3), 23) * CropCalendar.COLS)
 	return Vector2i(row, clampi(col, 0, CropCalendar.COLS - 1))
 

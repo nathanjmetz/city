@@ -61,6 +61,8 @@ var last_signature: Array = []
 var _sim: CitySim
 var _farm: Dictionary  # the live farm, read only while scanning
 var _i := 0
+## The table row for each kind of field seen so far (see FarmView.slot_from).
+var _row_memo := {}
 # The piece being built, and everything draped so far.
 var _v := PackedVector3Array()
 var _n := PackedVector3Array()
@@ -142,7 +144,7 @@ func _scan_one() -> void:
 	if _i < cells.size():
 		var c: Vector2i = cells[_i]
 		var fl := CropPlan.field(_farm, c)
-		var slot := FarmView.slot_from(id, practice, fl, c)
+		var slot := FarmView.slot_from(id, practice, fl, c, _row_memo)
 		slots.append(slot)
 		pasture.append(1 if fl.crop == "pasture" else 0)
 		borrows = borrows or slot.x < CropCalendar.COUNTY_ROWS
