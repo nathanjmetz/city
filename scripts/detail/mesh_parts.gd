@@ -44,6 +44,23 @@ static func vertex_count(parts: Array) -> int:
 	return n
 
 
+## The box round every part.
+static func aabb(parts: Array) -> AABB:
+	var box := AABB()
+	var first := true
+	for p in parts:
+		var a: Array = p[1]
+		if a.is_empty() or a[Mesh.ARRAY_VERTEX] == null:
+			continue
+		for v: Vector3 in a[Mesh.ARRAY_VERTEX]:
+			if first:
+				box = AABB(v, Vector3.ZERO)
+				first = false
+			else:
+				box = box.expand(v)
+	return box
+
+
 ## A real mesh of the parts (a building going up needs one of its own).
 static func to_mesh(parts: Array) -> ArrayMesh:
 	var mesh := ArrayMesh.new()

@@ -3,19 +3,33 @@ extends Node3D
 ## The full drawing of one 128 m square of town, near enough to the camera
 ## to need it (BuildingView's middle ring): every finished building in the
 ## square merged into one mesh per material, so a square of homes is a
-## couple of dozen draw calls, not a dozen per house. Kept as plain arrays
-## per building while the square is held, so a building that changes is
-## swapped in by merging again, without drawing its neighbours again.
+## couple of dozen draw calls, not a dozen per house. Each building comes in
+## as plain arrays (`parts`); once merged they're let go (drop_parts), but
+## for the walls and roofs the close-up detail is laid on, so memory holds
+## one copy of the square, on the graphics chip. A building that changes
+## means fetching its neighbours' arrays again and merging anew.
 ##
-## It comes in as a short dissolve over the far blocks (FadeMats), and goes
-## out the same way when the camera leaves.
+## It can come in as a short dissolve over the far blocks (FadeMats), and go
+## out the same way when the camera leaves; `instant` swaps it at once
+## instead, as BuildingView does: the swap is hundreds of metres off, where
+## the far blocks are the same walls, roofs and windows, and the dissolve's
+## shaders each stall a frame the first time they're needed (most in the
+## browser).
 
 const FADE_S := 0.5
+var instant := false
 
 var sq := Vector2i.ZERO
-## key -> {group: arrays}, each building's surfaces in the square's frame.
+## key -> {group: arrays}, each building's surfaces in the square's frame,
+## while they wait to be merged.
 var parts := {}
-## group -> [Material, casts shadow, lies on the ground]
+## key -> [[kind, arrays], ...]: the walls and roofs the close-up detail is
+## laid on (NEAR_KINDS), kept after a merge.
+var near := {}
+## The buildings in the drawing shown now.
+var merged := {}
+const NEAR_KINDS := ["siding", "brick", "roof"]
+## group -> [Material, casts shadow, lies on the ground, HouseMaterials name]
 var _groups := {}
 var _labels := {}  # key -> Node3D
 var _solid := MeshInstance3D.new()  # walls and roofs: casts shadows
@@ -52,13 +66,18 @@ func set_building(key: String, xf: Transform3D, solid: Array, flat: Array, footi
 			var mat := MeshParts.material(p)
 			var g := "%d|%d|%d%d" % [mat.get_instance_id() if mat else 0, MeshParts.format_of(a), int(grp[1]), int(grp[2])]
 			if not _groups.has(g):
-				_groups[g] = [mat, grp[1], grp[2]]
+				_groups[g] = [mat, grp[1], grp[2], MeshParts.kind(p)]
 			var moved := MeshParts.moved(a, to_sq)
 			if mine.has(g):
 				MeshParts.append(mine[g], moved)
 			else:
 				mine[g] = MeshParts.copy(moved)
 	parts[key] = mine
+	var keep := []
+	for g in mine:
+		if _groups[g][3] in NEAR_KINDS:
+			keep.append([_groups[g][3], mine[g]])
+	near[key] = keep
 	if _labels.has(key):
 		_labels[key].queue_free()
 		_labels.erase(key)
@@ -70,8 +89,19 @@ func set_building(key: String, xf: Transform3D, solid: Array, flat: Array, footi
 		_labels[key] = n
 
 
+## A building's surfaces of the given kinds (HouseMaterials names), in the
+## square's frame: [[kind, arrays], ...] (for the close-up detail).
+func kind_parts(key: String, kinds: Array) -> Array:
+	var out := []
+	for kp in near.get(key, []):
+		if kp[0] in kinds:
+			out.append(kp)
+	return out
+
+
 func remove_building(key: String) -> void:
 	parts.erase(key)
+	near.erase(key)
 	if _labels.has(key):
 		_labels[key].queue_free()
 		_labels.erase(key)
@@ -87,43 +117,68 @@ func group_list() -> Array:
 
 
 var _next := {"solid": null, "flat": null}
+var _todo: Array = []  # groups left to merge
+var _g := ""  # the group being merged
+var _keys: Array = []  # buildings left to add to it
+var _acc := []  # what's merged of it so far
 
 
-## Starts a new merge: groups are merged one a call (merge_group), and
-## the result shown together (finish), so the square never shows half merged.
+## Starts a new merge: merge_step adds a building's group at a time, and
+## the result shows together (finish), so the square never shows half merged.
 func begin() -> void:
 	_next.solid = ArrayMesh.new()
 	_next.flat = ArrayMesh.new()
+	_todo = group_list()
+	_g = ""
 
 
-func merge_group(g: String) -> void:
-	var merged := []
-	for key in parts:
-		var a = parts[key].get(g)
-		if a == null:
+## Merges until `deadline` (Time.get_ticks_usec()); true when it's all merged.
+func merge_step(deadline: int) -> bool:
+	while Time.get_ticks_usec() < deadline:
+		if _g == "":
+			if _todo.is_empty():
+				return true
+			_g = _todo.pop_back()
+			_keys = parts.keys()
+			_acc = []
 			continue
-		if merged.is_empty():
-			merged = MeshParts.copy(a)
-		else:
-			MeshParts.append(merged, a)
-	if merged.is_empty():
-		return
-	var spec: Array = _groups[g]
-	var mesh: ArrayMesh = _next.solid if spec[1] else _next.flat
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, merged)
-	mesh.surface_set_material(mesh.get_surface_count() - 1, spec[0])
+		if not _keys.is_empty():
+			var a = parts[_keys.pop_back()].get(_g)
+			if a != null:
+				if _acc.is_empty():
+					_acc = MeshParts.copy(a)
+				else:
+					MeshParts.append(_acc, a)
+			continue
+		if not _acc.is_empty():
+			var spec: Array = _groups[_g]
+			var mesh: ArrayMesh = _next.solid if spec[1] else _next.flat
+			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, _acc)
+			mesh.surface_set_material(mesh.get_surface_count() - 1, spec[0])
+		_acc = []
+		_g = ""
+	return _g == "" and _todo.is_empty()
+
+
+## Lets the merged buildings' arrays go (the walls and roofs for the
+## close-up detail stay).
+func drop_parts() -> void:
+	parts.clear()
 
 
 ## Shows what was merged since begin(); a square seen for the first time
 ## starts dissolving in.
 func finish() -> void:
+	merged.clear()
+	for key in parts:
+		merged[key] = true
 	_end_fade_mats()
 	_solid.mesh = _next.solid
 	_flat.mesh = _next.flat
 	_next = {"solid": null, "flat": null}
 	if not shown:
 		shown = true
-		fade = 0.0
+		fade = 1.0 if instant else 0.0
 		target = 1.0
 	if fade < 1.0:
 		_start_fade_mats()
@@ -132,6 +187,9 @@ func finish() -> void:
 ## Fades towards `target` by `delta` seconds; true when it has arrived.
 func step_fade(delta: float) -> bool:
 	if fade == target:
+		return true
+	if instant:
+		fade = target
 		return true
 	if _fading_mats.is_empty():
 		_start_fade_mats()

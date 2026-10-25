@@ -155,6 +155,7 @@ jobs:
           run_test tests/test_crop_calendar.gd
           run_test tests/test_stats.gd
           run_test tests/test_upgrade_art.gd
+          run_test tests/test_house_drawing.gd
 
       - name: Stamp the build
         run: |

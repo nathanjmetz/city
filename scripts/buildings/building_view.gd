@@ -15,6 +15,21 @@ extends Node3D
 ## about a hundred triangles a building. Each building's own meshes name
 ## that square as their visibility parent, so Godot swaps them by distance;
 ## how near the swap comes follows the graphics tier (GraphicsQuality.detail).
+##
+## Houses are drawn the new way (docs/scale-test-2026-10-25.md, "The new
+## drawing style, measured"), grown from their facts (lot, kind, age, seed)
+## by the same builder, in three rings:
+##   far     every house's far version, merged for each 256 m square
+##           (FarSquares): one record of about a hundred triangles a house,
+##           and nothing else kept
+##   middle  within FULL_FROM, each 128 m square's houses in full, merged
+##           into one mesh per material (BatchSquare), swapped for the far
+##           versions once it's all merged; past it the full drawings are let
+##           go, so memory follows the camera, not the size of the town
+##   near    within about 100 m, brick by brick, lap by lap and course by
+##           course over the house's own walls and roofs (NearDetail), grown
+##           a few small jobs a frame
+## Shops, civic buildings and factories follow in later steps (NEW_TYPES).
 
 var sim: CitySim
 var _nodes := {}  # lot key -> Node3D
@@ -75,12 +90,48 @@ var _unbaked := {}  # Vector2i -> true: lost a merged building this frame
 const BAKE_WAIT_MS := 3000
 const BAKE_BUDGET_MS := 6.0
 
+## The types drawn the new way (see the top of this file).
+const NEW_TYPES := ["house"]
+## Houses in full out to this far from a square's middle (times the tier's
+## detail, 0.6 to 1: 360 m on Low, 420 m on Medium, 600 m on High and up);
+## past it, their far versions. Leaving takes FULL_MARGIN more.
+const FULL_FROM := 600.0
+const FULL_MARGIN := 60.0
+## Per frame (ms): merging squares of houses, and growing the close-up
+## detail (the browser gets less of both).
+const MERGE_MS := 3.0
+const NEAR_MS := 2.5
+## A merged square that changes waits this long to merge again, so a block
+## filling in is merged a few times, not once a house.
+const REMERGE_MS := 1500
+var _homes := {}  # lot key -> {sq, xf, centre, front, look, sign, chain, site}
+var _home_sq := {}  # Vector2i -> {lot key: true}, the houses in each 128 m square
+var _far_sq := FarSquares.new()
+var _near := NearDetail.new()
+var _batches := {}  # Vector2i -> BatchSquare: squares drawn in full
+var _fill: Array = []  # houses a square drawn in full still waits for, nearest last
+var _merge_due := {}  # Vector2i -> msec when it's merged
+var _merging := {}  # Vector2i -> true: being merged
+var _merge_again := {}  # Vector2i -> true: changed while merging
+var _retire := {}  # Vector2i -> [Node3D]: houses just built, drawn on their own until the next merge
+var _hidden := {}  # Vector2i -> how far its far versions are hidden (0 to 1)
+var _asked := {}  # Vector2i -> true: its houses' arrays are asked for again
+var _eye := Vector3.ZERO
+var _has_eye := false
+
 
 func setup(s: CitySim) -> void:
 	sim = s
 	add_child(_trees)
+	add_child(_far_sq)
+	add_child(_near)
+	_near.parts_of = _near_parts
+	_near.set_reach(GraphicsQuality.detail, _msaa())
+	if RenderingServer.get_current_rendering_method() == "gl_compatibility":
+		_near.budget_ms = NEAR_MS * 0.6
 	if GraphicsQuality.current:
 		GraphicsQuality.current.changed.connect(func():
+			_near.set_reach(GraphicsQuality.detail, _msaa())
 			for c in _far:
 				_far[c].visibility_range_begin = _far_from())
 	sim.buildings_changed.connect(_mark)
@@ -95,14 +146,25 @@ func _mark() -> void:
 	_dirty = true
 
 
-func _process(_delta: float) -> void:
-	if _dirty or not _pending.is_empty() or not _recheck.is_empty():
+func _process(delta: float) -> void:
+	_look_from()
+	if _dirty or not _pending.is_empty() or not _recheck.is_empty() or not _fill.is_empty():
 		_sync()
 	if not _bake_due.is_empty():
 		_bake_some()
+	_rings(delta)
+
+
+## Where the camera is, in this view's frame.
+func _look_from() -> void:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	_has_eye = cam != null
+	if _has_eye:
+		_eye = to_local(cam.global_position)
 
 
 func _sync() -> void:
+	_look_from()
 	# Neighbors' cities are drawn moved over to their place on the land.
 	Terrain.shift = Terrain.shift_for(self)
 	var t := Perf.now()
@@ -115,12 +177,12 @@ func _sync_all() -> void:
 	var start := Time.get_ticks_usec()
 	if _dirty:
 		_dirty = false
-		for key in _nodes.keys():
+		for key in _nodes.keys() + _homes.keys():
 			if not sim.buildings.has(key) or not sim.lots.has(key):
 				_unspawn(key)
 		var fresh := []
 		for key in sim.buildings:
-			if not _nodes.has(key) and sim.lots.has(key):
+			if not _nodes.has(key) and not _homes.has(key) and sim.lots.has(key):
 				fresh.append(key)
 		var have := {}
 		for key in _pending:
@@ -130,19 +192,19 @@ func _sync_all() -> void:
 				_pending.append(key)
 		_sort_pending()
 		if _recheck.is_empty():
-			_recheck = _nodes.keys()
+			_recheck = _nodes.keys() + _homes.keys()
 		else:
 			_recheck_again = true
 	# Look the rest over for a moved lot (a road widened), a new look or a
 	# new sign, a slice at a time.
 	while not _recheck.is_empty() and Time.get_ticks_usec() - start < RECHECK_MS * 1000:
 		var key: String = _recheck.pop_back()
-		if _nodes.has(key) and _stale(key):
+		if (_nodes.has(key) or _homes.has(key)) and _stale(key):
 			_unspawn(key)
 			_pending.append(key)
 	if _recheck.is_empty() and _recheck_again:
 		_recheck_again = false
-		_recheck = _nodes.keys()
+		_recheck = _nodes.keys() + _homes.keys()
 	# Build nearest first until the frame's share is used. A town opening (or any big batch) gets LOAD_MS now, nearest the camera
 	# first, and the rest FILL_MS a frame after.
 	var budget := FILL_MS if _filling else SPAWN_MS
@@ -155,9 +217,14 @@ func _sync_all() -> void:
 		# Swapped in the same frame, so it never blinks out.
 		if _regraded.has(key):
 			_regraded.erase(key)
-			if _nodes.has(key):
+			if _nodes.has(key) or _homes.has(key):
 				_unspawn(key)
-		if _nodes.has(key) or not sim.buildings.has(key) or not sim.lots.has(key):
+		if _nodes.has(key) or _homes.has(key) or not sim.buildings.has(key) or not sim.lots.has(key):
+			continue
+		if BuildingTypes.type_of(sim.buildings[key]) in NEW_TYPES:
+			_spawn_home(key)
+			if Time.get_ticks_usec() - start > budget * 1000:
+				break
 			continue
 		var root := _spawn(key, sim.lots[key], sim.buildings[key])
 		_nodes[key] = root
@@ -168,8 +235,18 @@ func _sync_all() -> void:
 		_far_dirty[c] = true
 		if Time.get_ticks_usec() - start > budget * 1000:
 			break
+	# Squares that came near enough to draw in full get their houses' full
+	# drawings back, nearest first, in what's left of the frame's share.
+	while not _fill.is_empty() and Time.get_ticks_usec() - start < budget * 1000:
+		var key: String = _fill.pop_back()
+		var rec: Dictionary = _homes.get(key, {})
+		if rec.is_empty() or rec.site != null or not _batches.has(rec.sq) or _batches[rec.sq].parts.has(key):
+			continue
+		_spawn_home(key, true)
 	if (sliced or _filling) and not _pending.is_empty():
 		return
+	if _filling:
+		_far_sq.rebuild_some(0, true)
 	_filling = false
 	for c in _far_dirty:
 		var had := _far.has(c)
@@ -194,7 +271,7 @@ func _sync_all() -> void:
 func regraded(box: Rect2) -> void:
 	var near := box.grow(LOT_REACH)
 	var any := false
-	for key in _nodes:
+	for key in _nodes.keys() + _homes.keys():
 		if _regraded.has(key) or not sim.lots.has(key):
 			continue
 		var p: Vector3 = sim.lots[key].pos
@@ -213,8 +290,12 @@ const LOT_REACH := 45.0
 
 ## Whether a building's drawing is out of date.
 func _stale(key: String) -> bool:
-	var n: Node3D = _nodes[key]
 	var b: Dictionary = sim.buildings[key]
+	if _homes.has(key):
+		var rec: Dictionary = _homes[key]
+		return not rec.front.is_equal_approx(sim.lots[key].front) or rec.look != _look(b, key) \
+				or rec.sign != sim.families.sign_key(sim, "lot:" + key) or rec.chain != b.get("chain", "")
+	var n: Node3D = _nodes[key]
 	return not n.get_meta("front").is_equal_approx(sim.lots[key].front) \
 			or n.get_meta("look") != _look(b, key) \
 			or n.get_meta("sign") != sim.families.sign_key(sim, "lot:" + key) \
@@ -222,6 +303,9 @@ func _stale(key: String) -> bool:
 
 
 func _unspawn(key: String) -> void:
+	if _homes.has(key):
+		_drop_home(key)
+		return
 	var c := _far_chunk(_nodes[key])
 	_far_dirty[c] = true
 	if _nodes[key].get_meta("bake", false):
@@ -327,6 +411,338 @@ func _spawn(key: String, lot: Dictionary, b: Dictionary) -> Node3D:
 		func(): return sim.construction.state(ref, sim.tick_count), _plant.bind(key, root, built[2], labels),
 		_footing(masses, seat.y))
 	return root
+
+
+# ------------------------------------------------------------------ houses
+# The new drawing (see the top of this file): far versions everywhere,
+# squares near the camera in full, and the close-up ring.
+
+## Draws house `key` (or, `refill`, only fetches its full drawing again for
+## a square that came near): builds it with its builder as plain arrays,
+## seats it on the land, and files its far version, its trees, and, when
+## its square is drawn in full, its full drawing. One still going up is
+## drawn on its own, stage by stage, until it's done.
+func _spawn_home(key: String, refill := false) -> void:
+	var lot: Dictionary = sim.lots[key]
+	var b: Dictionary = sim.buildings[key]
+	# Placed as _spawn places a building: on the land, graded level with the
+	# road at its middle, local -Z facing the street.
+	var xf := Transform3D(Basis.looking_at(-lot.normal, Vector3.UP),
+		Vector3(lot.front.x, Terrain.base_y(lot.pos.x, lot.pos.z), lot.front.z))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = b.seed
+	var fit := _local_lot(lot, xf)
+	var s := rng.randi()
+	HouseBuilder.owner_care = sim.care.tier_of(key)
+	HouseBuilder.restored = sim.heritage.protected(key)
+	HouseBuilder.keep_arrays = true
+	var built := HouseBuilder.build(s, lot.to_curb, fit, BuildingTypes.storeys(b))
+	HouseBuilder.keep_arrays = false
+	HouseBuilder.owner_care = 0
+	HouseBuilder.restored = false
+	var masses: Array = HouseBuilder.last_masses
+	var seat := seat_on(masses, xf, Terrain.ground_y)
+	xf.origin.y += seat.x
+	var solid: Array = built[0].get_meta("parts", [])
+	var flat: Array = built[1].get_meta("parts", [])
+	var footing := _footing_parts(masses, seat.y)
+	var draped := MeshParts.drape(flat, xf)
+	if refill:
+		var had: Dictionary = _homes[key]
+		if _batches.has(had.sq):
+			_batches[had.sq].set_building(key, had.xf, solid, draped, footing, [])
+			_merge_soon(had.sq)
+		return
+	var sq := Vector2i(floori(xf.origin.x / FAR_CHUNK), floori(xf.origin.z / FAR_CHUNK))
+	# The middle of the house itself, for how near the camera is to it.
+	var mid := Vector3.ZERO
+	for m: Rect2 in masses:
+		mid += Vector3(m.get_center().x, 0.0, m.get_center().y)
+	if not masses.is_empty():
+		mid /= masses.size()
+	var rec := {"sq": sq, "xf": xf, "centre": xf * mid, "front": lot.front, "look": _look(b, key),
+		"sign": sim.families.sign_key(sim, "lot:" + key), "chain": b.get("chain", ""), "site": null}
+	_homes[key] = rec
+	if not _home_sq.has(sq):
+		_home_sq[sq] = {}
+	_home_sq[sq][key] = true
+	# Near enough to draw in full: its square is opened now, so the town
+	# opening isn't built twice.
+	if not _batches.has(sq) and _has_eye and _square_dist(sq) < _full_from():
+		_open_square(sq)
+	# Its far version, from the drawing (a house drawn with no masses noted
+	# stands as the box of its drawing).
+	var bulk := masses
+	if bulk.is_empty():
+		var box := MeshParts.aabb(solid)
+		bulk = [Rect2(box.position.x, box.position.z, box.size.x, box.size.z)]
+	var far := far_arrays(_far_surfaces(solid), bulk, false, _wall_colour(int(b.zone), rng),
+		_roof_colour(true, rng), flat[0][1] if not flat.is_empty() else [])
+	_plant_home(key, xf, built[2])
+	var ref := "lot:" + key
+	var st: Dictionary = sim.construction.state(ref, sim.tick_count)
+	if st.is_empty():
+		_home_place(key, solid, draped, footing, far)
+		return
+	# Going up: drawn on its own, stage by stage, then filed like the rest.
+	var root := Node3D.new()
+	root.transform = xf
+	add_child(root)
+	rec.site = root
+	var foot: MeshInstance3D = null
+	if not footing.is_empty():
+		foot = MeshInstance3D.new()
+		foot.mesh = MeshParts.to_mesh(footing)
+		foot.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	ConstructionSite.add_to(root, [MeshParts.to_mesh(solid), MeshParts.to_mesh(draped), []],
+		CitySim.PROFILE_OF_ZONE.get(int(b.zone), "house"), func(): return sim.construction.state(ref, sim.tick_count),
+		_home_done.bind(key, root, [solid, draped, footing, far]), foot)
+
+
+## A house going up is finished: its own drawing goes, and it's filed with
+## the rest of its square.
+func _home_done(key: String, root: Node3D, drawn: Array) -> void:
+	var rec: Dictionary = _homes.get(key, {})
+	if rec.is_empty() or rec.site != root:
+		return
+	rec.site = null
+	_home_place(key, drawn[0], drawn[1], drawn[2], drawn[3])
+	# Its own drawing stays until its square's next merge shows it.
+	if _batches.has(rec.sq):
+		if not _retire.has(rec.sq):
+			_retire[rec.sq] = []
+		_retire[rec.sq].append(root)
+	else:
+		root.queue_free()
+
+
+func _home_place(key: String, solid: Array, draped: Array, footing: Array, far: Array) -> void:
+	var rec: Dictionary = _homes[key]
+	_far_sq.put(key, rec.sq, rec.xf, far)
+	if _batches.has(rec.sq):
+		_batches[rec.sq].set_building(key, rec.xf, solid, draped, footing, [])
+		_merge_soon(rec.sq)
+	_near.index(key, rec.centre)
+
+
+func _drop_home(key: String) -> void:
+	var rec: Dictionary = _homes[key]
+	_homes.erase(key)
+	if _home_sq.has(rec.sq):
+		_home_sq[rec.sq].erase(key)
+		if _home_sq[rec.sq].is_empty():
+			_home_sq.erase(rec.sq)
+	if rec.site != null:
+		rec.site.queue_free()
+	_far_sq.drop(key)
+	if _batches.has(rec.sq):
+		_batches[rec.sq].remove_building(key)
+		# Torn down: it leaves at once. Drawn again (a new look, a regraded
+		# lot): the old one shows until the new one is merged in its place.
+		_merge_soon(rec.sq, not sim.buildings.has(key) or not sim.lots.has(key))
+	_near.unindex(key)
+	_trees.remove(key)
+
+
+## A house's yard and street trees, to the shared tree field (as _plant).
+func _plant_home(key: String, frame: Transform3D, planted: Array) -> void:
+	var trees := []
+	for t in planted:
+		var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
+		var at := frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])
+		at.origin.y = Terrain.ground_y(at.origin.x, at.origin.z) + t[0].y
+		trees.append([at, t[1], t[2]])
+	_trees.set_trees(key, trees)
+
+
+## Merges a square of houses soon: at once the first time, or when a house
+## left it (so it doesn't linger); otherwise after REMERGE_MS.
+func _merge_soon(sq: Vector2i, now := false) -> void:
+	if _merging.has(sq):
+		_merge_again[sq] = true
+		return
+	var at := Time.get_ticks_msec() + (0 if now or not _batches[sq].shown else REMERGE_MS)
+	_merge_due[sq] = mini(int(_merge_due.get(sq, at)), at)
+
+
+## The screen's antialiasing (GraphicsQuality.msaa; 4x when there's no
+## autoload, in tests).
+static func _msaa() -> int:
+	return GraphicsQuality.current.msaa() if GraphicsQuality.current and GraphicsQuality.current.active else 2
+
+
+static func _full_from() -> float:
+	return FULL_FROM * clampf(GraphicsQuality.detail, 0.6, 1.0)
+
+
+func _square_dist(sq: Vector2i) -> float:
+	var mid := Vector3((sq.x + 0.5) * FAR_CHUNK, 0.0, (sq.y + 0.5) * FAR_CHUNK)
+	mid.y = minf(_eye.y, Terrain.base_y(mid.x, mid.z))
+	return _eye.distance_to(mid)
+
+
+## The rings, every frame: which squares are drawn in full, their merges
+## and dissolves, the far squares, and the close-up detail.
+func _rings(delta: float) -> void:
+	var t := Perf.now()
+	if _has_eye and not _filling:
+		var reach := _full_from()
+		for sq in _home_sq:
+			var d := _square_dist(sq)
+			var batch: BatchSquare = _batches.get(sq)
+			if d < reach:
+				if batch == null:
+					_open_square(sq)
+				elif batch.target < 1.0:
+					batch.target = 1.0
+			elif batch != null and d > reach + FULL_MARGIN and batch.target > 0.0:
+				_close_square(sq)
+	var tm := Perf.now()
+	_merge_some()
+	Perf.add("frame.buildings_merge", tm)
+	for sq in _batches.keys():
+		var batch: BatchSquare = _batches[sq]
+		if not batch.shown:
+			continue
+		batch.step_fade(delta)
+		if _hidden.get(sq, -1.0) != batch.fade:
+			_hidden[sq] = batch.fade
+			_far_sq.set_hidden(sq, batch.fade)
+		if batch.target <= 0.0 and batch.fade <= 0.0:
+			_forget_square(sq)
+	if _far_sq.has_dirty():
+		_far_sq.rebuild_some(int(MERGE_MS * 300.0))
+	if _has_eye:
+		var tn := Perf.now()
+		_near.update(_eye)
+		Perf.add("frame.buildings_near", tn)
+	Perf.add("frame.buildings", t)
+
+
+## A square came near: its houses' full drawings are fetched again, nearest
+## the camera first, and merged once they're all in.
+func _open_square(sq: Vector2i) -> void:
+	var batch := BatchSquare.new(sq, FAR_CHUNK)
+	batch.instant = true
+	add_child(batch)
+	_batches[sq] = batch
+	for key in _home_sq.get(sq, {}):
+		if _homes[key].site == null:
+			_fill.append(key)
+	_asked[sq] = true
+	_merge_due[sq] = Time.get_ticks_msec()
+	_sort_fill()
+
+
+## A square went far: it dissolves back into its far versions and its full
+## drawings are let go.
+func _close_square(sq: Vector2i) -> void:
+	var batch: BatchSquare = _batches[sq]
+	batch.target = 0.0
+	for key in _home_sq.get(sq, {}):
+		_near.release(key)
+	if not batch.shown:
+		_forget_square(sq)
+
+
+func _forget_square(sq: Vector2i) -> void:
+	_batches[sq].queue_free()
+	_batches.erase(sq)
+	_merge_due.erase(sq)
+	_merging.erase(sq)
+	_merge_again.erase(sq)
+	_hidden.erase(sq)
+	_asked.erase(sq)
+	_far_sq.set_hidden(sq, 0.0)
+	for root in _retire.get(sq, []):
+		root.queue_free()
+	_retire.erase(sq)
+
+
+## Nearest the camera last, so pop_back takes it first.
+func _sort_fill() -> void:
+	if not _has_eye:
+		return
+	_fill.sort_custom(func(a, b):
+		var pa: Vector3 = _homes[a].centre if _homes.has(a) else Vector3.INF
+		var pb: Vector3 = _homes[b].centre if _homes.has(b) else Vector3.INF
+		return _eye.distance_squared_to(pa) > _eye.distance_squared_to(pb))
+
+
+## Whether a square drawn in full still waits for a house's full drawing
+## (its arrays were let go after the last merge, or it's new): any it lacks
+## are asked for again.
+func _waiting(sq: Vector2i) -> bool:
+	var batch: BatchSquare = _batches[sq]
+	var missing := []
+	for key in _home_sq.get(sq, {}):
+		if _homes[key].site == null and not batch.parts.has(key):
+			missing.append(key)
+	if missing.is_empty():
+		_asked.erase(sq)
+		return false
+	if not _asked.has(sq):
+		_asked[sq] = true
+		_fill.append_array(missing)
+		_sort_fill()
+	return true
+
+
+## Merges squares of houses that are due, one material group a step, within
+## MERGE_MS; a square shows what was merged only once it's all merged.
+func _merge_some() -> void:
+	var start := Time.get_ticks_usec()
+	var limit := int(MERGE_MS * 1000.0 * (0.6 if _near.budget_ms < NEAR_MS else 1.0))
+	var now := Time.get_ticks_msec()
+	for sq in _merge_due.keys():
+		if Time.get_ticks_usec() - start > limit:
+			return
+		if not _batches.has(sq):
+			_merge_due.erase(sq)
+			continue
+		var batch: BatchSquare = _batches[sq]
+		if not _merging.has(sq):
+			if _merge_due[sq] > now or _waiting(sq):
+				continue
+			batch.begin()
+			_merging[sq] = true
+		if not batch.merge_step(start + limit):
+			return
+		batch.finish()
+		batch.drop_parts()
+		_merging.erase(sq)
+		_merge_due.erase(sq)
+		for root in _retire.get(sq, []):
+			root.queue_free()
+		_retire.erase(sq)
+		if _merge_again.has(sq):
+			_merge_again.erase(sq)
+			_merge_due[sq] = now + REMERGE_MS
+
+
+## The close-up ring's question: a house's walls and roofs, in its square's
+## frame, once its square shows it in full.
+func _near_parts(key: String) -> Array:
+	var rec: Dictionary = _homes.get(key, {})
+	if rec.is_empty() or rec.site != null or not _batches.has(rec.sq):
+		return []
+	var batch: BatchSquare = _batches[rec.sq]
+	if batch.fade < 1.0 or not batch.merged.has(key) or not batch.near.has(key):
+		return []
+	return [rec.sq, batch.kind_parts(key, ["siding", "brick", "roof"])]
+
+
+## True when nothing is waiting to be drawn, merged or grown (for tools and
+## tests that take pictures).
+func idle() -> bool:
+	if not _pending.is_empty() or not _bake_due.is_empty() or _filling or not _fill.is_empty():
+		return false
+	if not _merge_due.is_empty() or not _merging.is_empty() or _far_sq.has_dirty():
+		return false
+	for sq in _batches:
+		if _batches[sq].fade != _batches[sq].target:
+			return false
+	return _near.caught_up()
 
 
 ## Trees go to the shared tree field, placed in world space on the ground,
@@ -500,6 +916,36 @@ static func far_version(mesh: ArrayMesh, masses: Array, industrial: bool, wall: 
 	if _far_kinds.is_empty():
 		for k in FAR_KEEP + ["metal"]:
 			_far_kinds[HouseMaterials.get_mat(k)] = k
+	var surfaces := []
+	for i in mesh.get_surface_count():
+		var kind: String = _far_kinds.get(mesh.surface_get_material(i), "")
+		if kind != "":
+			surfaces.append([kind, mesh.surface_get_arrays(i)])
+	var g := []
+	if ground != null and ground.get_surface_count() > 0:
+		g = ground.surface_get_arrays(0)
+	var out_mesh := ArrayMesh.new()
+	var arrays := far_arrays(surfaces, masses, industrial, wall, flat, g)
+	if not arrays.is_empty():
+		out_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return out_mesh
+
+
+## The parts of a drawing its far version keeps (MeshParts: [kind, arrays]).
+static func _far_surfaces(parts: Array) -> Array:
+	var out := []
+	for p in parts:
+		var kind := MeshParts.kind(p)
+		if kind in FAR_KEEP or kind == "metal":
+			out.append([kind, p[1]])
+	return out
+
+
+## far_version as surface arrays (empty when there's nothing to draw), from
+## `surfaces` ([kind, arrays] of FAR_KEEP and metal) and `ground` (the flat
+## work's arrays, or []).
+static func far_arrays(surfaces: Array, masses: Array, industrial: bool, wall: Color, flat: Color,
+		ground: Array) -> Array:
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colours := PackedColorArray()
@@ -508,11 +954,13 @@ static func far_version(mesh: ArrayMesh, masses: Array, industrial: bool, wall: 
 	var roofs := PackedVector3Array()
 	var sides := PackedVector3Array()
 	var most := 0
-	for i in mesh.get_surface_count():
-		var kind: String = _far_kinds.get(mesh.surface_get_material(i), "")
-		if kind == "" or (kind == "metal" and not industrial):
+	for sf in surfaces:
+		var kind: String = sf[0]
+		if kind == "metal" and not industrial:
 			continue
-		var a := mesh.surface_get_arrays(i)
+		var a: Array = sf[1]
+		if a.is_empty() or a[Mesh.ARRAY_VERTEX] == null:
+			continue
 		var v: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
 		if v.is_empty():
 			continue
@@ -550,7 +998,7 @@ static func far_version(mesh: ArrayMesh, masses: Array, industrial: bool, wall: 
 				most = v.size()
 				wall = colours[at]
 	wall.a = 0.0
-	if ground != null and ground.get_surface_count() > 0:
+	if not ground.is_empty():
 		_far_paving(ground, verts, normals, colours, uvs, index)
 	for m: Rect2 in masses:
 		var r := m.grow(-0.25)
@@ -588,9 +1036,8 @@ static func far_version(mesh: ArrayMesh, masses: Array, industrial: bool, wall: 
 			var lid := Vector3.UP * (eave + 0.05)
 			_far_quad(verts, normals, colours, uvs, index,
 				[corners[0] + lid, corners[1] + lid, corners[2] + lid, corners[3] + lid], Vector3.UP, top)
-	var out_mesh := ArrayMesh.new()
 	if verts.is_empty():
-		return out_mesh
+		return []
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
@@ -598,16 +1045,16 @@ static func far_version(mesh: ArrayMesh, masses: Array, industrial: bool, wall: 
 	arrays[Mesh.ARRAY_COLOR] = colours
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
 	arrays[Mesh.ARRAY_INDEX] = index
-	out_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return out_mesh
+	return arrays
 
 
 ## The drives, walks and lots of a lot's flat work (the yard shader's kinds
 ## in vertex alpha: 0 concrete, 0.4 asphalt), a little above the lot so
 ## they hold on the land however far off.
-static func _far_paving(ground: ArrayMesh, verts: PackedVector3Array, normals: PackedVector3Array,
+static func _far_paving(a: Array, verts: PackedVector3Array, normals: PackedVector3Array,
 		colours: PackedColorArray, uvs: PackedVector2Array, index: PackedInt32Array) -> void:
-	var a := ground.surface_get_arrays(0)
+	if a[Mesh.ARRAY_VERTEX] == null:
+		return
 	var v: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
 	var c = a[Mesh.ARRAY_COLOR]
 	if c == null or a[Mesh.ARRAY_INDEX] != null:
@@ -706,12 +1153,37 @@ static func seat_on(masses: Array, xform: Transform3D, ground: Callable) -> Vect
 const FOOTING_DEPTH := 2.95
 
 
+## _footing as MeshParts ([[material, arrays]], or [] with no masses).
+func _footing_parts(masses: Array, depth := FOOTING_DEPTH) -> Array:
+	var st := _footing_tool(masses, depth)
+	var a := st.commit_to_arrays()
+	if a.is_empty() or a[Mesh.ARRAY_VERTEX] == null or (a[Mesh.ARRAY_VERTEX] as PackedVector3Array).is_empty():
+		return []
+	return [[_footing_material(), a]]
+
+
+static func _footing_material() -> Material:
+	if _footing_mat == null:
+		_footing_mat = Surfaces.concrete(Color(0.55, 0.54, 0.51))
+	return _footing_mat
+
+
 ## A foundation down into the ground under each building mass, for lots on
 ## a slope (or null): just under the walls, as a real one is, never a slab
 ## across the yard; `depth` reaches the lowest ground under them.
 func _footing(masses: Array, depth := FOOTING_DEPTH) -> MeshInstance3D:
 	if masses.is_empty():
 		return null
+	var footing := MeshInstance3D.new()
+	footing.mesh = _footing_tool(masses, depth).commit()
+	if footing.mesh.get_surface_count() == 0:
+		return null
+	footing.material_override = _footing_material()
+	footing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return footing
+
+
+func _footing_tool(masses: Array, depth: float) -> SurfaceTool:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for m: Rect2 in masses:
@@ -727,12 +1199,4 @@ func _footing(masses: Array, depth := FOOTING_DEPTH) -> MeshInstance3D:
 			for i in [0, 1, 2, 0, 2, 3]:
 				st.set_normal(f[4])
 				st.add_vertex(c[f[i]])
-	var footing := MeshInstance3D.new()
-	footing.mesh = st.commit()
-	if footing.mesh.get_surface_count() == 0:
-		return null
-	if _footing_mat == null:
-		_footing_mat = Surfaces.concrete(Color(0.55, 0.54, 0.51))
-	footing.material_override = _footing_mat
-	footing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	return footing
+	return st
