@@ -10,6 +10,8 @@ extends SceneTree
 ##   godot --rendering-driver vulkan -s tools/farmsteads/farmstead_bench.gd -- --tier high --shots DIR [--views county,low,farm1,farm2,farm3,night]
 ## with --disable-vsync --max-fps 0 so frame times are the machine's. Vulkan
 ## reports the graphics card's time; Metal (the default) reports none here.
+## --web draws them as the browser build does; --rendering-driver opengl3 is
+## the Compatibility renderer the browser uses.
 ## --spots x,z,x,z,x,z: the farmsteads to visit (view metres); without it
 ## the tool picks a grain farm with a dryer, an old farm with a barn and
 ## silo or windmill, and a hog farm or home near the start.
@@ -42,6 +44,9 @@ const HALF_SETTLE := 40
 
 
 func _initialize() -> void:
+	# --web: the farmsteads as the browser build draws them (lighter, fewer close-ups).
+	if "--web" in OS.get_cmdline_user_args() and ResourceLoader.exists("res://scripts/art/farmsteads/farmstead_far.gd"):
+		(load("res://scripts/art/farmsteads/farmstead_far.gd") as GDScript).set("force_web", true)
 	_main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(_main)
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)

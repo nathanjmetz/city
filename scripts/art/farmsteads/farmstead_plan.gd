@@ -55,28 +55,63 @@ const STAVE := Color("#bdb7aa")
 ## The yard light: an old mercury-vapour lamp (blue-white), a sodium one
 ## (orange) or an LED (white).
 const LAMPS := [Color(0.80, 0.90, 1.0), Color(1.0, 0.62, 0.28), Color(1.0, 0.95, 0.88)]
+## The windbreak's conifers, by TreeField kind name, a fixed list (see _windbreak).
+const WINDBREAK_TREES := ["SPRUCE", "RED_CEDAR"]
+## How far over the ground the lawn and the gravel lie, far and near alike.
+const LAWN_LIFT := 0.15
+const GRAVEL_LIFT := 0.25
 
+## Plans kept for reuse, oldest first (a Dictionary keeps its insertion order).
 static var _cache := {}
+const CACHE_MAX := 512
+## Plans the close-ups are using right now (key -> true): never evicted.
+static var pinned := {}
+## Farmsteads not drawn (the town has built over them, or they stand in
+## water): key -> true. Crops and wild trees ignore them (covers, solids_in).
+static var hidden := {}
+## The farthest any part of a farmstead's grounds (the lawn out to the
+## windbreak) or its buildings lies from its anchor, metres; a test checks
+## every plan stays inside it, so the searches below can skip far places.
+const REACH := 260.0
+
+
+## The key a plan is kept under, and pinned and hidden by.
+static func key_of(p: Dictionary) -> Vector3i:
+	return Vector3i(int(p.at.x), int(p.at.y), p.seed)
 
 
 ## The plan for a farmstead (region metres `at`, facing angle toward its
 ## road, `farm` true where the land cover shows a farm), kept for reuse.
+## Past CACHE_MAX the oldest unused plans go, never one a close-up is using.
 static func of(at: Vector2, farm: bool, facing: float, seed: int) -> Dictionary:
 	var key := Vector3i(int(at.x), int(at.y), seed)
 	if _cache.has(key):
-		return _cache[key]
+		var hit: Dictionary = _cache[key]
+		# Most recently used goes last.
+		_cache.erase(key)
+		_cache[key] = hit
+		return hit
 	var p := grow(at, farm, facing, seed)
-	if _cache.size() > 512:
-		_cache.clear()
 	_cache[key] = p
+	if _cache.size() > CACHE_MAX:
+		var drop := []
+		for k in _cache:
+			if _cache.size() - drop.size() <= CACHE_MAX * 3 / 4:
+				break
+			if not pinned.has(k):
+				drop.append(k)
+		for k in drop:
+			_cache.erase(k)
 	return p
 
 
 static func grow(at: Vector2, farm: bool, facing: float, seed: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
-	rng.seed = hash(Vector3i(int(at.x), int(at.y), seed * 7919 + 13))
+	# The same on every computer and engine version (hash() is the engine's
+	# own and may change), and the hash the crops use.
+	rng.seed = CropCalendar.hash32(int(at.x), int(at.y), seed * 7919 + 13)
 	var p := {"at": at, "facing": facing, "seed": seed, "side": 1.0 if seed & 1 else -1.0,
-		"parts": [], "trees": [], "gravel": [], "light": {}, "acres": 0}
+		"parts": [], "trees": [], "gravel": [], "light": {}, "acres": 0, "windbreak": ""}
 	p.kind = _kind(rng) if farm else "home"
 	p.founded = rng.randi_range(1835, 1880)
 	p.lane = _lane(at, facing)
@@ -444,10 +479,12 @@ static func _windbreak(p: Dictionary, rng: RandomNumberGenerator) -> void:
 	var planted := rng.randi_range(1940, 1985) if p.kind != "home" else rng.randi_range(maxi(1950, p.house.year), 2015)
 	var years := clampf(2026.0 - planted, 8.0, 90.0)
 	var size := clampf(0.4 + years / 60.0, 0.45, 1.35)
-	var conifers: Array = [TreeField.Species.SPRUCE]
-	if species("RED_CEDAR", -1) >= 0:
-		conifers.append(species("RED_CEDAR", -1))
-	var sp: int = conifers[rng.randi() % conifers.size()]
+	# One roll from a fixed list, so the pick (and the rest of this farmstead's
+	# rolls) never depend on which kinds the trees code has drawn yet. Until
+	# the trees code has a red cedar, it is drawn as a spruce.
+	var wb_name: String = WINDBREAK_TREES[rng.randi() % WINDBREAK_TREES.size()]
+	p.windbreak = wb_name
+	var sp: int = species(wb_name, TreeField.Species.SPRUCE)
 	var e: Rect2 = p.extent
 	var f := Vector2(cos(p.facing), sin(p.facing))  # toward the road (local -z)
 	# Local axes in region terms: +z is away from the road, +x along it.
@@ -500,39 +537,71 @@ static func _windbreak(p: Dictionary, rng: RandomNumberGenerator) -> void:
 
 ## Places from farmsteads.bin by 256 m square: [at, farm, facing, seed].
 static var _bins := {}
-## 256 m square -> the farmstead yards reaching into it: [at, facing, Rect2 local].
+## 256 m square -> the places whose grounds can reach into it (no plans grown).
+static var _near_sq := {}
+## Place key -> its grounds for crops: [at, facing, Rect2 local], or null where
+## it stands in water. Grown one place at a time, the first time a crop asks
+## about ground within reach of it.
 static var _yards := {}
-## Place -> its solid ground (see _solid), kept: about a kilobyte each.
+## Place key -> its solid ground (see _solid), kept: about a kilobyte each.
 static var _solids := {}
 
 
-## True where a county farmstead's yard and buildings stand (region metres),
-## so crops (CropPlants) keep off it. Plans are grown only for the squares
-## asked about, and kept.
-static func covers(r: Vector2) -> bool:
-	if _bins.is_empty():
-		_bins[Vector2i(1 << 20, 0)] = []  # loaded, even if the file is missing
-		var data := FileAccess.get_file_as_bytes(Terrain.DIR + "farmsteads.bin")
-		if data.size() >= 8 and data.slice(0, 4).get_string_from_ascii() == "FST1":
-			for i in data.decode_u32(4):
-				var at := 8 + i * 7
-				var q := Vector2(data.decode_s16(at), data.decode_s16(at + 2))
-				var b := Vector2i(floori(q.x / 256.0), floori(q.y / 256.0))
-				if not _bins.has(b):
-					_bins[b] = []
-				_bins[b].append([q, data.decode_u8(at + 4) == 1, data.decode_u8(at + 5) / 256.0 * TAU, data.decode_u8(at + 6)])
-	var sq := Vector2i(floori(r.x / 256.0), floori(r.y / 256.0))
-	if not _yards.has(sq):
-		if _yards.size() > 4096:
-			_yards.clear()
+## Loads the places from farmsteads.bin, once (no plans grown).
+static func load_places() -> void:
+	if not _bins.is_empty():
+		return
+	_bins[Vector2i(1 << 20, 0)] = []  # loaded, even if the file is missing
+	var data := FileAccess.get_file_as_bytes(Terrain.DIR + "farmsteads.bin")
+	if data.size() >= 8 and data.slice(0, 4).get_string_from_ascii() == "FST1":
+		for i in data.decode_u32(4):
+			var at := 8 + i * 7
+			var q := Vector2(data.decode_s16(at), data.decode_s16(at + 2))
+			var b := Vector2i(floori(q.x / 256.0), floori(q.y / 256.0))
+			if not _bins.has(b):
+				_bins[b] = []
+			_bins[b].append([q, data.decode_u8(at + 4) == 1, data.decode_u8(at + 5) / 256.0 * TAU, data.decode_u8(at + 6)])
+
+
+## The places whose grounds can reach into a 256 m square.
+static func _places_near(sq: Vector2i) -> Array:
+	if not _near_sq.has(sq):
+		if _near_sq.size() > 4096:
+			_near_sq.clear()
+		var box := Rect2(Vector2(sq) * 256.0, Vector2(256.0, 256.0)).grow(REACH)
 		var list := []
-		for dx in [-1, 0, 1]:
-			for dz in [-1, 0, 1]:
+		var n := ceili(REACH / 256.0)
+		for dx in range(-n, n + 1):
+			for dz in range(-n, n + 1):
 				for pl in _bins.get(sq + Vector2i(dx, dz), []):
-					var p := of(pl[0], pl[1], pl[2], pl[3])
-					list.append([p.at, p.facing, (p.grounds as Rect2).grow(4.0)])
-		_yards[sq] = list
-	for y in _yards[sq]:
+					if box.has_point(pl[0]):
+						list.append(pl)
+		_near_sq[sq] = list
+	return _near_sq[sq]
+
+
+## True where a county farmstead's yard and lawn lie (region metres), so
+## crops (CropPlants) keep off it. Only farmsteads that are drawn count: not
+## one in water, nor one the town has built over. A plan is grown the first
+## time a crop asks about ground within reach of its farmstead, one at a
+## time, never the squares' worth at once.
+static func covers(r: Vector2) -> bool:
+	load_places()
+	for pl in _places_near(Vector2i(floori(r.x / 256.0), floori(r.y / 256.0))):
+		var at: Vector2 = pl[0]
+		if absf(r.x - at.x) > REACH or absf(r.y - at.y) > REACH:
+			continue
+		var key := Vector3i(int(at.x), int(at.y), pl[3])
+		if hidden.has(key):
+			continue
+		if not _yards.has(key):
+			if _yards.size() > 4096:
+				_yards.clear()
+			var p := of(at, pl[1], pl[2], pl[3])
+			_yards[key] = null if wet(p) else [p.at, p.facing, (p.grounds as Rect2).grow(4.0)]
+		var y: Variant = _yards[key]
+		if y == null:
+			continue
 		var f := Vector2(cos(y[1]), sin(y[1]))
 		var d: Vector2 = r - y[0]
 		if (y[2] as Rect2).has_point(Vector2(d.dot(Vector2(-f.y, f.x)), -d.dot(f))):
@@ -540,29 +609,39 @@ static func covers(r: Vector2) -> bool:
 	return false
 
 
-## The farmsteads whose buildings, gravel or house stand in a region
+## The farmsteads whose buildings, gravel, house or lawn stand in a region
 ## rectangle (WildView asks once per chunk, then on_solid for each tree):
-## [anchor, facing, Array of local Rect2].
+## [anchor, facing, Array of local Rect2, reach]. Loads the places, but
+## grows plans only for farmsteads within reach of the rectangle.
 static func solids_in(box: Rect2) -> Array:
-	covers(box.get_center())  # loads the places
+	load_places()
 	var out := []
-	var b0 := Vector2i(floori(box.position.x / 256.0) - 1, floori(box.position.y / 256.0) - 1)
-	var b1 := Vector2i(floori(box.end.x / 256.0) + 1, floori(box.end.y / 256.0) + 1)
+	var reach := box.size.length() * 0.5 + REACH
+	var b0 := Vector2i(floori((box.position.x - REACH) / 256.0), floori((box.position.y - REACH) / 256.0))
+	var b1 := Vector2i(floori((box.end.x + REACH) / 256.0), floori((box.end.y + REACH) / 256.0))
 	for bx in range(b0.x, b1.x + 1):
 		for bz in range(b0.y, b1.y + 1):
 			for pl in _bins.get(Vector2i(bx, bz), []):
-				if (pl[0] as Vector2).distance_to(box.get_center()) > box.size.length() * 0.5 + 300.0:
+				if (pl[0] as Vector2).distance_to(box.get_center()) > reach:
 					continue
 				var key := Vector3i(int(pl[0].x), int(pl[0].y), pl[3])
+				if hidden.has(key):
+					continue
 				if not _solids.has(key):
-					_solids[key] = _solid(of(pl[0], pl[1], pl[2], pl[3]))
-				out.append(_solids[key])
+					if _solids.size() > 2048:
+						_solids.clear()
+					var p := of(pl[0], pl[1], pl[2], pl[3])
+					_solids[key] = [] if wet(p) else _solid(p)
+				if not _solids[key].is_empty():
+					out.append(_solids[key])
 	return out
 
 
-## A farmstead's solid ground for on_solid: [anchor, facing, local rects, reach].
+## A farmstead's solid ground for on_solid: [anchor, facing, local rects, reach]:
+## the house, every building, the gravel (the lane only near the yard) and the
+## mown lawn out to the windbreak.
 static func _solid(p: Dictionary) -> Array:
-	var rects := [Rect2(p.house.x - p.house.w * 0.5, -4.0, p.house.w, p.house.d + 8.0).grow(4.0)]
+	var rects := [Rect2(p.house.x - p.house.w * 0.5, -4.0, p.house.w, p.house.d + 8.0).grow(4.0), (p.grounds as Rect2).grow(1.0)]
 	for part in p.parts:
 		rects.append(_extent(part).grow(4.0))
 	for g: Rect2 in p.gravel:
@@ -575,7 +654,7 @@ static func _solid(p: Dictionary) -> Array:
 	return [p.at, p.facing, rects, reach]
 
 
-## True where a tree would stand on a farmstead's buildings or gravel
+## True where a tree would stand on a farmstead's buildings, gravel or lawn
 ## (region metres; `solids` from solids_in).
 static func on_solid(solids: Array, r: Vector2) -> bool:
 	for s in solids:
@@ -588,6 +667,16 @@ static func on_solid(solids: Array, r: Vector2) -> bool:
 			if rect.has_point(q):
 				return true
 	return false
+
+
+## How a tree stands at a local point: the turn and the tint, the same for
+## the far stand-in and the close-up tree so they match at the handover.
+static func tree_turn(at: Vector2) -> float:
+	return fposmod(at.x * 1.7 + at.y * 0.9, TAU)
+
+
+static func tree_tint(leaf: Color, at: Vector2, amount := 0.08) -> Color:
+	return leaf.lightened(fposmod(at.x * 0.37 + at.y * 0.13, 1.0) * amount - amount * 0.375)
 
 
 ## True where the yard would reach into a lake or river: the land cover

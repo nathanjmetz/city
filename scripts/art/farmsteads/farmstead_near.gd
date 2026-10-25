@@ -12,6 +12,11 @@ extends Node3D
 ## A close-up is built a step a frame within BUDGET_MS, then the far
 ## version dithers out over FADE_S while the close-up stands in its place
 ## (same frame, same sizes), so nothing pops and no frame freezes.
+##
+## The far drawing's shader has FarmsteadFar.SPOTS slots for handed-over
+## farmsteads. A close-up always holds a slot (so its far version is hidden);
+## when they are all taken, a nearer farmstead takes the farthest one's, and
+## that close-up goes the same frame its far version comes back.
 
 const BUILD_R := 220.0
 const TREE_R := 650.0
@@ -53,6 +58,13 @@ func _ready() -> void:
 	FarmsteadFar.glow_material()
 
 
+## The shared far material outlives this node (it is a static): leave it
+## with no farmstead handed over.
+func _exit_tree() -> void:
+	FarmsteadFar.clear_spots()
+	FarmsteadPlan.pinned = {}
+
+
 ## The pool of light a yard lamp throws (StreetLights' pool, in the lamp's
 ## colour), one shader for all of them.
 func _pool(lamp: Color) -> ShaderMaterial:
@@ -70,7 +82,7 @@ func _pool(lamp: Color) -> ShaderMaterial:
 
 static func reach_scale() -> float:
 	var s := clampf(GraphicsQuality.detail, 0.5, 2.0)
-	return s * (0.6 if OS.has_feature("web") else 1.0)
+	return s * (0.6 if FarmsteadFar.web() else 1.0)
 
 
 ## Each frame: `places` are [plan, anchor (view Vector3)] near the camera.
@@ -81,7 +93,7 @@ func update(cam: Vector3, places: Array, origin: Vector2, delta: float) -> void:
 	var scale := reach_scale()
 	var build_r := BUILD_R * scale
 	var tree_r := TREE_R * scale
-	var max_built := MAX_BUILT_WEB if OS.has_feature("web") else MAX_BUILT
+	var max_built := MAX_BUILT_WEB if FarmsteadFar.web() else MAX_BUILT
 	var near := []
 	for pl in places:
 		var d := cam.distance_to(pl[1])
@@ -99,20 +111,24 @@ func update(cam: Vector3, places: Array, origin: Vector2, delta: float) -> void:
 		var key := Vector2i(int(p.at.x), int(p.at.y))
 		var d: float = e[0]
 		var have_t := _trees.has(key)
-		if n_trees < MAX_TREES and (d < tree_r or (have_t and d < tree_r * SLACK)):
+		var have_b := _built.has(key)
+		var want_t := n_trees < MAX_TREES and (d < tree_r or (have_t and d < tree_r * SLACK))
+		var want_b := not off and n_built < max_built and (d < build_r or (have_b and d < build_r * SLACK))
+		if not (want_t or want_b):
+			continue
+		if not (have_t or have_b) and not _make_room(cam, Vector2(cam.x, cam.z).distance_to(p.at - _origin)):
+			continue
+		if want_t:
 			n_trees += 1
 			if not have_t:
 				_add_trees(key, p)
 			_trees[key].want = true
-		var have_b := _built.has(key)
-		if not off and n_built < max_built and (d < build_r or (have_b and d < build_r * SLACK)):
+		if want_b:
 			n_built += 1
 			if have_b:
 				_built[key].want = true
 			elif _job.is_empty():
 				_job = {"key": key, "plan": p, "b": FarmBuilder.county(p), "i": 0}
-			elif _job.key == key:
-				pass
 	# A job for a farmstead no longer wanted is dropped.
 	if not _job.is_empty():
 		var still := false
@@ -135,7 +151,69 @@ func update(cam: Vector3, places: Array, origin: Vector2, delta: float) -> void:
 		if not b.want and b.fade <= 0.0:
 			b.node.queue_free()
 			_built.erase(k)
-	_spots()
+	# A close-up finished this frame may have gone past the slots there are.
+	while _slots() > FarmsteadFar.SPOTS:
+		_drop(_farthest(cam))
+	_publish()
+
+
+## The farmsteads with a close-up of any kind (each holds one of the far
+## shader's slots).
+func _keys() -> Dictionary:
+	var keys := {}
+	for k in _built:
+		keys[k] = true
+	for k in _trees:
+		keys[k] = true
+	return keys
+
+
+func _slots() -> int:
+	return _keys().size()
+
+
+func _plan_of(k: Vector2i) -> Dictionary:
+	return (_built[k] if _built.has(k) else _trees[k]).plan
+
+
+## Metres on the ground from the camera to a farmstead with a close-up.
+func _dist(cam: Vector3, k: Vector2i) -> float:
+	return Vector2(cam.x, cam.z).distance_to(_plan_of(k).at - _origin)
+
+
+func _farthest(cam: Vector3) -> Vector2i:
+	var far_k := Vector2i.ZERO
+	var far_d := -1.0
+	for k in _keys():
+		var d := _dist(cam, k)
+		if d > far_d:
+			far_d = d
+			far_k = k
+	return far_k
+
+
+## Frees a slot for a farmstead `d` metres from the camera, if some close-up
+## is farther; returns whether one is free.
+func _make_room(cam: Vector3, d: float) -> bool:
+	if _slots() < FarmsteadFar.SPOTS:
+		return true
+	var k := _farthest(cam)
+	if _dist(cam, k) <= d:
+		return false
+	_drop(k)
+	return true
+
+
+## Removes a farmstead's close-up at once (its far version is back this frame).
+func _drop(k: Vector2i) -> void:
+	if _trees.has(k):
+		_field.remove(str(k))
+		_trees.erase(k)
+	if _built.has(k):
+		_built[k].node.queue_free()
+		_built.erase(k)
+	if not _job.is_empty() and _job.key == k:
+		_job = {}
 
 
 ## Builds the current close-up a step at a time, within the frame's budget.
@@ -233,28 +311,32 @@ func _add_trees(key: Vector2i, p: Dictionary) -> void:
 		var shape := Vector3.ONE * s
 		if sp == FarmsteadPlan.species("RED_CEDAR", -1):
 			shape = Vector3(0.55, 0.8, 0.55) * s
-		var yaw := fposmod(pos.x * 7.3 + pos.z * 3.1, TAU)
+		# Turned and tinted from the tree's place in the farmstead (its local
+		# point), as the far stand-in is, so the two match at the handover and
+		# the same tree looks the same whichever way the view's origin shifts.
+		var yaw := FarmsteadPlan.tree_turn(t[0])
 		var tint: Color = TreeField.LEAF[sp] if sp < TreeField.LEAF.size() else TreeField.LEAF[0]
-		tint = tint.lightened(fposmod(pos.x * 0.37 + pos.z * 0.13, 1.0) * 0.1 - 0.04)
+		tint = FarmsteadPlan.tree_tint(tint, t[0])
 		list.append([Transform3D(Basis(Vector3.UP, yaw).scaled(shape), pos), sp, tint, {"age": t[3]}])
 	_field.set_trees(str(key), list)
 	_trees[key] = {"plan": p, "fade": 0.0, "want": true}
 
 
-## Tells the far drawing which farmsteads have handed over, and how far.
-func _spots() -> void:
+## Tells the far drawing which farmsteads have handed over, and how far,
+## and the plan cache which plans are in use.
+func _publish() -> void:
 	var spots := []
-	var keys := {}
-	for k in _built:
-		keys[k] = true
-	for k in _trees:
-		keys[k] = true
-	for k in keys:
-		var p: Dictionary = (_built[k] if _built.has(k) else _trees[k]).plan
+	var pins := {}
+	for k in _keys():
+		var p := _plan_of(k)
 		var a: Vector2 = p.at - _origin
 		var fb: float = _built[k].fade if _built.has(k) else 0.0
 		var ft: float = _trees[k].fade if _trees.has(k) else 0.0
 		spots.append(Vector4(a.x, a.y, fb, ft))
+		pins[FarmsteadPlan.key_of(p)] = true
+	if not _job.is_empty():
+		pins[FarmsteadPlan.key_of(_job.plan)] = true
+	FarmsteadPlan.pinned = pins
 	FarmsteadFar.set_spots(spots)
 
 
@@ -267,3 +349,4 @@ func _drop_all() -> void:
 	_trees.clear()
 	_job = {}
 	FarmsteadFar.clear_spots()
+	FarmsteadPlan.pinned = {}

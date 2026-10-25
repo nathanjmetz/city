@@ -10,29 +10,41 @@ extends Node3D
 ## farm's kind, size and age, its house, barn, bins, sheds, windbreak, lane,
 ## yard light and mailbox, by rules from real east-central Indiana
 ## farmsteads; docs/farmsteads.md). Detail by distance:
-##   - far (the whole county): FarmsteadFar, a few hundred triangles a
-##     farmstead, one mesh per 2 km block, built a few blocks a frame and
-##     rebuilt only where the town's land changes
+##   - far (the county out to DRAW_TO of the camera): FarmsteadFar, a few
+##     hundred triangles a farmstead, one mesh per 2 km block. The blocks
+##     nearest the camera are built first, a part of a farmstead at a time
+##     within a time budget (so a slow browser never stalls on one farm),
+##     more as the camera moves, and rebuilt only where the town's land changes
 ##   - near the camera: FarmsteadNear, the windbreak as real trees and the
 ##     buildings in full, grown from the same plan
 
 ## Side of a block, metres: one mesh each.
 const BLOCK := 2048.0
-## Time to spend building blocks each frame, ms.
+## Time to spend building blocks each frame, ms (desktop, browser).
 const BUDGET_MS := 3.0
-## Past this the haze has them anyway, metres.
+const BUDGET_MS_WEB := 1.5
+## Past this the haze has them anyway, metres (desktop, browser).
 const DRAW_TO := 9000.0
+const DRAW_TO_WEB := 7000.0
+## The camera moves this far before the blocks to build are chosen again.
+const RESCAN_M := 512.0
 
 var sim: CitySim
 ## Block -> Array of [x, z, farm, facing radians, seed] (region metres).
 var _places := {}
 var _origin := Vector2.INF
+## Blocks still to build, the nearest last (pop_back).
 var _queue: Array = []
 var _meshes := {}  # block -> MeshInstance3D
 ## Block -> the places drawn in it, with each anchor (view metres), for the close-ups.
+## A block is built when it has an entry here, even an empty one.
 var _shown := {}
+## Blocks whose land the town changed: built again.
+var _dirty := {}
+var _scan_at := Vector2.INF
 var _near: FarmsteadNear
-## The block being built: {b, i (next place), far (FarmsteadFar), shown, t (ms so far)}.
+## The block being built: {b, i (next place), s (next step of that place, -1 before
+## it begins), n (its steps), far (FarmsteadFar), shown, t (ms so far)}.
 var _job := {}
 ## Blocks built so far, and the most time one took in all (ms, over its frames), for the bench.
 var blocks_built := 0
@@ -51,7 +63,7 @@ func setup(s: CitySim) -> void:
 	_load()
 	# Crops and wild trees ask where the yards are; load the places now,
 	# while the game loads.
-	FarmsteadPlan.covers(Vector2.ZERO)
+	FarmsteadPlan.load_places()
 	# The town's land changed: redraw the blocks it touched.
 	if sim != null:
 		sim.vegetation.changed.connect(func(chunks: Array) -> void:
@@ -59,8 +71,9 @@ func setup(s: CitySim) -> void:
 			for c in chunks:
 				var p: Vector2 = (Vector2(c) + Vector2(0.5, 0.5)) * Vegetation.CHUNK + o
 				var b := _block(p)
-				if _places.has(b) and not b in _queue:
-					_queue.append(b)
+				if _places.has(b):
+					_dirty[b] = true
+					_scan_at = Vector2.INF
 				if not _job.is_empty() and _job.b == b:
 					_job = {})
 
@@ -84,27 +97,34 @@ static func _block(p: Vector2) -> Vector2i:
 	return Vector2i(floori(p.x / BLOCK), floori(p.y / BLOCK))
 
 
+static func draw_to() -> float:
+	return DRAW_TO_WEB if FarmsteadFar.web() else DRAW_TO
+
+
 func _process(delta: float) -> void:
+	var cam := get_viewport().get_camera_3d()
 	if Terrain.view_origin != _origin:
 		_origin = Terrain.view_origin
 		for b in _meshes:
 			_meshes[b].queue_free()
 		_meshes.clear()
 		_shown.clear()
+		_dirty.clear()
 		_job = {}
-		_queue = _places.keys()
-		# Nearest blocks first, so the land round the camera fills in first.
-		var cam := get_viewport().get_camera_3d()
-		if cam != null:
-			var c := Vector2(cam.global_position.x, cam.global_position.z) + _origin
-			_queue.sort_custom(func(a, b): return _dist(a, c) > _dist(b, c))
+		_scan_at = Vector2.INF
+	var c := _origin
+	if cam != null:
+		c = Vector2(cam.global_position.x, cam.global_position.z) + _origin
+	if _scan_at == Vector2.INF or c.distance_to(_scan_at) > RESCAN_M:
+		_rescan(c)
 	var start := Time.get_ticks_usec()
-	while (Time.get_ticks_usec() - start) / 1000.0 < BUDGET_MS:
+	var budget := BUDGET_MS_WEB if FarmsteadFar.web() else BUDGET_MS
+	while (Time.get_ticks_usec() - start) / 1000.0 < budget:
 		if _job.is_empty():
 			if _queue.is_empty():
 				break
-			_job = {"b": _queue.pop_back(), "i": 0, "t": 0.0}
-			_job.far = FarmsteadFar.new(OS.has_feature("web"))
+			_job = {"b": _queue.pop_back(), "i": 0, "s": -1, "n": 0, "t": 0.0}
+			_job.far = FarmsteadFar.new(FarmsteadFar.web())
 			_job.shown = []
 		var t := Time.get_ticks_usec()
 		_step_block()
@@ -115,6 +135,31 @@ func _process(delta: float) -> void:
 	worst_frame_ms = maxf(worst_frame_ms, spent)
 	time_ms += spent
 	frames += 1
+
+
+## Chooses the blocks to build: those within reach of the camera that aren't
+## built (or that the town changed), the nearest first. Blocks well past
+## reach are let go, so a long flight over the county doesn't keep it all.
+func _rescan(c: Vector2) -> void:
+	_scan_at = c
+	var reach := draw_to() + BLOCK * 0.75
+	var out := reach + BLOCK * 2.0
+	var want := []
+	for b in _places:
+		var d := sqrt(_dist(b, c))
+		if d <= reach:
+			if (not _shown.has(b) or _dirty.has(b)) and (_job.is_empty() or _job.b != b):
+				want.append(b)
+		elif d > out:
+			if _meshes.has(b):
+				_meshes[b].queue_free()
+				_meshes.erase(b)
+			_shown.erase(b)
+			_dirty.erase(b)
+	if not _job.is_empty() and sqrt(_dist(_job.b, c)) > out:
+		_job = {}
+	want.sort_custom(func(a, b): return _dist(a, c) > _dist(b, c))
+	_queue = want
 
 
 static func _dist(b: Vector2i, c: Vector2) -> float:
@@ -151,8 +196,10 @@ func _taken(at: Vector2) -> bool:
 	return false
 
 
-## Adds the next farmstead of the block being built; draws the block once
-## all are in (a block is about 15 farmsteads, a fraction of a ms each).
+## Does the next bit of the block being built: begins a farmstead, draws one
+## step of it (a building, the ground, the trees), or draws the block once all
+## are in. A block is about 15 farmsteads, a fraction of a ms to a few ms each,
+## so a frame's budget can stop between any two steps.
 func _step_block() -> void:
 	var b: Vector2i = _job.b
 	var list: Array = _places[b]
@@ -161,14 +208,28 @@ func _step_block() -> void:
 	var centre := Vector3(centre2.x, 0.0, centre2.y)
 	if _job.i < list.size():
 		var f: Array = list[_job.i]
-		_job.i += 1
 		var at := Vector2(f[0], f[1])
-		if _taken(at - o):
+		if _job.s >= 0:
+			_job.far.step(_job.s)
+			_job.s += 1
+			if _job.s >= _job.n:
+				_job.i += 1
+				_job.s = -1
 			return
+		var key := Vector3i(int(at.x), int(at.y), f[4])
+		# A place the town has built over isn't drawn, and crops and wild trees
+		# use its ground as they would any other (FarmsteadPlan.hidden).
+		if _taken(at - o):
+			FarmsteadPlan.hidden[key] = true
+			_job.i += 1
+			return
+		FarmsteadPlan.hidden.erase(key)
 		var plan := FarmsteadPlan.of(at, f[2], f[3], f[4])
 		if FarmsteadPlan.wet(plan):
+			_job.i += 1
 			return
-		_job.far.add(plan, o, centre)
+		_job.n = _job.far.begin(plan, o, centre)
+		_job.s = 0
 		var a: Vector2 = at - o
 		_job.shown.append([f, Vector3(a.x, Terrain.height(at.x, at.y), a.y)])
 		return
@@ -176,6 +237,7 @@ func _step_block() -> void:
 		_meshes[b].queue_free()
 		_meshes.erase(b)
 	_shown[b] = _job.shown
+	_dirty.erase(b)
 	blocks_built += 1
 	worst_block_ms = maxf(worst_block_ms, _job.t)
 	var mesh: ArrayMesh = _job.far.commit()
@@ -185,6 +247,6 @@ func _step_block() -> void:
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	mi.position = centre
-	mi.visibility_range_end = DRAW_TO
+	mi.visibility_range_end = draw_to()
 	add_child(mi)
 	_meshes[b] = mi

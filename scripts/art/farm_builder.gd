@@ -384,7 +384,7 @@ func _tri(mat: String, a: Vector3, b: Vector3, c: Vector3, col: Color, uvs := []
 static func county(p: Dictionary) -> FarmBuilder:
 	var b := FarmBuilder.new()
 	b.rng = RandomNumberGenerator.new()
-	b.rng.seed = hash(Vector3i(int(p.at.x), int(p.at.y), p.seed))
+	b.rng.seed = CropCalendar.hash32(int(p.at.x), int(p.at.y), p.seed + 977)
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 	b._county = p
 	b._county_base = Terrain.height(p.at.x, p.at.y)
@@ -468,7 +468,7 @@ func _county_house(h: Dictionary) -> void:
 	era = h.era
 	half = 15.0
 	depth = 30.0
-	_cell_seed = hash(Vector2i(int(_county.at.x), int(_county.at.y)))
+	_cell_seed = CropCalendar.hash32(int(_county.at.x), int(_county.at.y), 31)
 	owner_care = -2 if h.vacant else 0
 	var body := _plan(0)
 	HouseBuilder.force_kind = was_kind
@@ -499,9 +499,9 @@ func _county_ground(p: Dictionary) -> void:
 	# The grounds' mown grass (no crop grows inside the windbreak), then
 	# the gravel over it.
 	_lawn.begin(Mesh.PRIMITIVE_TRIANGLES)
-	_drape(p.grounds, Color("#4f6a2e") if not p.house.vacant else Color("#727a40"), _lawn, 0.1, 12.0)
+	_drape(p.grounds, Color("#4f6a2e") if not p.house.vacant else Color("#727a40"), _lawn, FarmsteadPlan.LAWN_LIFT, 12.0)
 	for r: Rect2 in p.gravel:
-		_drape(r, YARD_GRAVEL, _flat, 0.2)
+		_drape(r, YARD_GRAVEL, _flat, FarmsteadPlan.GRAVEL_LIFT)
 	# The mailbox: a 4 x 4 post, a standard rural box (about 19 x 6.5 x 9 in)
 	# 42 in up, its door to the road, the red flag down.
 	var mb: Vector2 = p.mailbox

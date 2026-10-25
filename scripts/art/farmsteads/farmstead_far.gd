@@ -13,11 +13,12 @@ extends RefCounted
 ##
 ## Vertex colours are sRGB. Alpha tells the shader what a face is: about
 ## 0.2 a lived-in house wall (windows, lit at night), 0.08 an empty house's
-## wall (dark windows), 0.6 the grounds' grass, 0.9 a tree, 0 anything else. UV is metres along and
-## up a house wall, for its window grid.
+## wall (dark windows), 0.6 the grounds' grass, 0.75 the gravel, 0.9 a tree,
+## 0 anything else. UV is metres along and up a house wall, for its window grid.
 
 const TREE_ALPHA := 0.9
 const LAWN_ALPHA := 0.6
+const GRAVEL_ALPHA := 0.75
 ## Up to this many farmsteads can be handed over at once (see near_spots).
 const SPOTS := 16
 
@@ -45,10 +46,14 @@ void vertex() {
 	world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	hide = 0.0;
 	float tree = step(0.85, COLOR.a);
+	// The lawn and the gravel go the moment their close-up stands (it
+	// draws the same ground, a little finer): never both, so they can't
+	// fight over the same depth.
+	float ground = step(0.55, COLOR.a) * step(COLOR.a, 0.8);
 	for (int i = 0; i < 16; i++) {
 		vec4 s = near_spots[i];
 		if (distance(UV2, s.xy) < 0.5) {
-			hide = mix(s.z, s.w, tree);
+			hide = mix(mix(s.z, s.w, tree), step(0.001, s.z), ground);
 		}
 	}
 	if (hide > 0.999) {
@@ -127,6 +132,15 @@ void fragment() {
 
 static var _mat: ShaderMaterial
 static var _glow: ShaderMaterial
+## The spots last handed to the shaders (they are set only when they change).
+static var _spots: Array = []
+## Tests: act as the browser build does.
+static var force_web := false
+
+
+## Whether this is the browser build (lighter farmsteads, fewer close-ups).
+static func web() -> bool:
+	return force_web or OS.has_feature("web")
 
 
 static func material() -> ShaderMaterial:
@@ -135,6 +149,7 @@ static func material() -> ShaderMaterial:
 		sh.code = SHADER
 		_mat = ShaderMaterial.new()
 		_mat.shader = sh
+		_spots = [Vector4.ONE]  # not the empty list: set it for the first time
 		clear_spots()
 	return _mat
 
@@ -145,24 +160,45 @@ static func glow_material() -> ShaderMaterial:
 		sh.code = GLOW
 		_glow = ShaderMaterial.new()
 		_glow.shader = sh
+		_glow.set_shader_parameter("near_spots", _padded())
 	return _glow
 
 
 static func clear_spots() -> void:
-	var a := []
-	for i in SPOTS:
-		a.append(Vector4(1e9, 1e9, 0.0, 0.0))
-	set_spots(a)
+	set_spots([])
 
 
-## Which farmsteads are handing over to their close-ups (see SHADER).
+## The spots the shaders have now: Vector4 (anchor x, anchor z, how far the
+## buildings have handed over, how far the trees have).
+static func spots() -> Array:
+	return _spots
+
+
+## Which farmsteads are handing over to their close-ups (see SHADER). At
+## most SPOTS: the caller keeps within it (FarmsteadNear drops the farthest
+## close-up, so no tree is drawn both far and near). The shaders are told
+## only when something changed.
 static func set_spots(spots: Array) -> void:
-	var a := spots.duplicate()
-	while a.size() < SPOTS:
-		a.append(Vector4(1e9, 1e9, 0.0, 0.0))
-	a.resize(SPOTS)
-	material().set_shader_parameter("near_spots", a)
-	glow_material().set_shader_parameter("near_spots", a)
+	var a := spots.slice(0, SPOTS)
+	if a.size() == _spots.size():
+		var same := true
+		for i in a.size():
+			if a[i] != _spots[i]:
+				same = false
+				break
+		if same and _mat != null:
+			return
+	_spots = a
+	material().set_shader_parameter("near_spots", _padded())
+	glow_material().set_shader_parameter("near_spots", _padded())
+
+
+## The spots as the shaders want them: SPOTS of them, the unused far away.
+static func _padded() -> Array:
+	var padded := _spots.duplicate()
+	while padded.size() < SPOTS:
+		padded.append(Vector4(1e9, 1e9, 0.0, 0.0))
+	return padded
 
 
 # ---------------------------------------------------------------- the mesh
@@ -195,15 +231,34 @@ func _init(lighter := false) -> void:
 
 ## Adds one farmstead, its plan `p`, with the view's origin `origin`; the
 ## mesh is drawn about `centre` (view metres), where its node will stand.
+## All at once; FarmsteadView uses begin and step to spread it over frames.
 func add(p: Dictionary, origin: Vector2, centre := Vector3.ZERO) -> void:
+	var n := begin(p, origin, centre)
+	for i in n:
+		step(i)
+
+
+## Starts a farmstead; returns how many steps (step(0) to step(n - 1)) draw it.
+## The browser is slow enough that one farmstead is split into its parts.
+func begin(p: Dictionary, origin: Vector2, centre := Vector3.ZERO) -> int:
 	_p = p
 	_origin = origin
 	_base = Terrain.height(p.at.x, p.at.y)
 	_xf = Transform3D(Basis.IDENTITY, -centre) * FarmsteadPlan.frame(p, origin, _base)
 	_anchor = p.at - origin
-	_ground_work(p)
-	_house(p.house)
-	for part in p.parts:
+	return 3 + (p.parts as Array).size()
+
+
+## Draws one step of the farmstead begun: the ground, the house, each
+## building in turn, then the trees and the yard light.
+func step(i: int) -> void:
+	var parts: Array = _p.parts
+	if i == 0:
+		_ground_work(_p)
+	elif i == 1:
+		_house(_p.house)
+	elif i < 2 + parts.size():
+		var part: Dictionary = parts[i - 2]
 		match part.kind:
 			"barn": _barn(part)
 			"shed": _shed(part)
@@ -215,9 +270,10 @@ func add(p: Dictionary, origin: Vector2, centre := Vector3.ZERO) -> void:
 			"hog_barn": _hog_barn(part)
 			"feed_bin": _feed_bin(part)
 			"milk_house": _box_roof(part.pos, Vector2(part.w, part.l), 3.4, 1.0, true, Color("#e9e9e4"), Color("#9a9fa2"))
-	_trees(p)
-	if not p.light.is_empty():
-		_yard_light(p.light)
+	else:
+		_trees(_p)
+		if not _p.light.is_empty():
+			_yard_light(_p.light)
 
 
 ## The ground (region metres) under a local point, less the farm's base.
@@ -583,6 +639,7 @@ func _line(a: Vector3, b: Vector3, r: float, colour: Color) -> void:
 ## draped over the land in pieces a little above it.
 func _ground_work(p: Dictionary) -> void:
 	var stone := Color("#b5ad9c")
+	stone.a = GRAVEL_ALPHA
 	for r: Rect2 in p.gravel:
 		var nx := clampi(ceili(r.size.x / 40.0), 1, 6)
 		var nz := clampi(ceili(r.size.y / 40.0), 1, 12)
@@ -594,7 +651,7 @@ func _ground_work(p: Dictionary) -> void:
 					r.position + r.size * Vector2(float(i) / nx, float(j + 1) / nz)]
 				var pts := []
 				for k in q:
-					pts.append(_p3(k, _lift(k) + 0.25))
+					pts.append(_p3(k, _lift(k) + FarmsteadPlan.GRAVEL_LIFT))
 				quad(pts[0], pts[1], pts[2], pts[3], stone, Vector3.UP)
 	# The mown grass of the farmstead's grounds, out to the windbreak: no
 	# crop grows there. An empty house's lawn has gone to tall grass.
@@ -611,7 +668,7 @@ func _ground_work(p: Dictionary) -> void:
 				g.position + g.size * Vector2(float(i) / nx, float(j + 1) / nz)]
 			var pts := []
 			for k in q:
-				pts.append(_p3(k, _lift(k) + 0.15))
+				pts.append(_p3(k, _lift(k) + FarmsteadPlan.LAWN_LIFT))
 			quad(pts[0], pts[1], pts[2], pts[3], lawn, Vector3.UP)
 
 
@@ -631,12 +688,12 @@ func _trees(p: Dictionary) -> void:
 		var s: float = t[2]
 		var wide := (1.6 if light else 1.35) if windbreak else 1.0
 		var leaf: Color = TreeField.LEAF[sp] if sp < TreeField.LEAF.size() else TreeField.LEAF[0]
-		leaf = leaf.lightened(fposmod(at.x * 0.37 + at.y * 0.13, 1.0) * 0.08 - 0.03)
+		leaf = FarmsteadPlan.tree_tint(leaf, at)
 		leaf.a = TREE_ALPHA
 		var y0 := _lift(at) - 0.2
 		var conifer: bool = sp == TreeField.Species.SPRUCE or sp == FarmsteadPlan.species("RED_CEDAR", -1)
 		var n := 3 if light else 4
-		var turn := fposmod(at.x * 1.7 + at.y * 0.9, TAU)
+		var turn := FarmsteadPlan.tree_turn(at)
 		if conifer:
 			# A cone: a ring of n at the foot of the crown, one apex.
 			var h := 15.0 * s
