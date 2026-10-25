@@ -16,6 +16,8 @@ extends RefCounted
 ## between fields, as they look from the air in Pike County.
 
 enum Phase { SCAN, CELLS, FENCE, LANE, DONE }
+## The name each phase's time is filed under (Perf), made once.
+const PERF_NAMES := ["farm_job.scan", "farm_job.cells", "farm_job.fence", "farm_job.lane"]
 
 ## How wide the turn rows (headlands) are at each end of a field: two passes
 ## of a 12-row, 30-inch planter, about 18 m.
@@ -40,10 +42,18 @@ var signature: Array = []
 var borrows := false
 ## False when the signature matched the last drawn one: nothing to rebuild.
 var changed := true
-## The finished meshes, set when the job is DONE and changed.
-var fields_mesh: ArrayMesh
-var lane_mesh: ArrayMesh
+## The finished mesh, set when the job is DONE and changed: the fields are
+## its surface `fields_surface` and the gravel lane its surface
+## `lane_surface` (-1 when there is none). One mesh, so a farm costs the
+## renderer one object, not two.
+var mesh: ArrayMesh
+var fields_surface := -1
+var lane_surface := -1
 var trees: Array = []  # volunteer trees in the fencerows
+## Which table rows the farm's fields use, and the box of its cells in view
+## coordinates (what CropPlants wants to know of a finished farm).
+var rows := {}
+var cell_box := Rect2()
 ## The view the ground was draped in; a job whose view moved starts over.
 var view := Vector4.ZERO
 var last_signature: Array = []
@@ -75,7 +85,25 @@ func _init(sim: CitySim, farm_id: Variant, previous: Array) -> void:
 	for c in cells:
 		owned[c] = true
 	practice = CropCalendar.farm_practice(int(farm_id), f)
+	cell_box = Rect2(Vector2(f.pos.x, f.pos.z), Vector2.ZERO)
 	_farm = f
+
+
+## `box` grown to hold cell `c` of the farm drawn in `frame`.
+static func expand_box(box: Rect2, frame: Dictionary, c: Vector2i) -> Rect2:
+	for p in Farms.cell_corners(frame, c):
+		box = box.expand(p)
+	return box
+
+
+## Everything a farm draws, in view coordinates: its cells and its lane.
+static func box_of(f: Dictionary) -> Rect2:
+	var box := Rect2(Vector2(f.pos.x, f.pos.z), Vector2.ZERO)
+	for c in f.cells:
+		box = expand_box(box, f, c)
+	for p in f.drive:
+		box = box.expand(Vector2(p.x, p.z))
+	return box.grow(Farms.DRIVE_WIDTH)
 
 
 static func _view_now() -> Vector4:
@@ -102,7 +130,7 @@ func step(deadline: int) -> bool:
 				_fence_one()
 			Phase.LANE:
 				_lane()
-		Perf.add("farm_job.%s" % Phase.keys()[was].to_lower(), t0)
+		Perf.add(PERF_NAMES[was], t0)
 		if Time.get_ticks_usec() >= deadline:
 			break
 	return phase == Phase.DONE
@@ -118,6 +146,8 @@ func _scan_one() -> void:
 		slots.append(slot)
 		pasture.append(1 if fl.crop == "pasture" else 0)
 		borrows = borrows or slot.x < CropCalendar.COUNTY_ROWS
+		rows[slot.x] = true
+		cell_box = expand_box(cell_box, frame, c)
 		_i += 1
 		return
 	signature = [frame.pos, frame.dir, cells, slots, pasture, drive, trimmed]
@@ -291,6 +321,7 @@ func _fence_one() -> void:
 # --- the lane and the finished meshes -------------------------------------
 
 func _lane() -> void:
+	mesh = ArrayMesh.new()
 	# The fields' mesh, whole.
 	if not _av.is_empty():
 		var arrays := []
@@ -299,8 +330,8 @@ func _lane() -> void:
 		arrays[Mesh.ARRAY_NORMAL] = _an
 		arrays[Mesh.ARRAY_COLOR] = _ac
 		arrays[Mesh.ARRAY_TEX_UV] = _au
-		fields_mesh = ArrayMesh.new()
-		fields_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		fields_surface = mesh.get_surface_count()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	if drive.size() >= 2:
 		var st := SurfaceTool.new()
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -309,8 +340,8 @@ func _lane() -> void:
 			pts.append(p)
 		RoadMesh.add_strip(st, Terrain.densify(pts, 6.0), -Farms.DRIVE_WIDTH * 0.5, Farms.DRIVE_WIDTH * 0.5, 0.05)
 		var strip := _lifted(Terrain._split(st.commit_to_arrays(), LANE_EDGE))
-		lane_mesh = ArrayMesh.new()
-		lane_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, strip)
+		lane_surface = mesh.get_surface_count()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, strip)
 	_av = PackedVector3Array()
 	_an = PackedVector3Array()
 	_ac = PackedColorArray()

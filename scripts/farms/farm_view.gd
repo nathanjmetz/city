@@ -23,8 +23,9 @@ var _herd_dirty := false
 var _trees := TreeField.new()
 var _mats := {}
 var _year := -1
-## Each farm's drawn fields: id -> {fields: MeshInstance3D, lane: MeshInstance3D,
-## sig: what they were drawn from (FarmFieldJob), borrows: whether a field
+## Each farm's drawn fields and lane (one mesh): id -> {node: MeshInstance3D,
+## sig: what they were drawn from (FarmFieldJob), rows: the crop table rows
+## they use, box: where they lie (view coordinates), borrows: whether a field
 ## borrows a county row (CropCalendar.farm_row ran out): those rows' crops
 ## follow the year, so those fields are redrawn when it turns}.
 var _drawn := {}
@@ -34,8 +35,17 @@ var _drawn := {}
 var _queue := []
 var _job: FarmFieldJob
 var _dirty := false
-var _force := false
-var _pass_changed := false
+## Farms to draw again even if nothing about them changed (the ground under
+## them was regraded): id -> true.
+var _redo := {}
+## Where each farm lies, for regrading (id -> Rect2); forgotten when the
+## farms change.
+var _boxes := {}
+## A pass ran since the table's unused farm rows were last freed.
+var _rows_due := false
+## Table rows something besides the drawn farms holds on to (tools, tests):
+## row -> true. They are not given back.
+var extra_rows := {}
 var _lane_mat: Material
 ## Most milliseconds of field drawing in a frame.
 const FIELD_BUDGET_MS := 3.0
@@ -80,6 +90,9 @@ func _process(_delta: float) -> void:
 		_year = year
 		for id in _drawn:
 			_dirty = _dirty or _drawn[id].borrows
+		# A pass under way began in the old year: the farms it has done, or
+		# is doing, took borrowed rows for that year.
+		_dirty = _dirty or _job != null or not _queue.is_empty()
 	Perf.add("frame.crops", t0)
 	t0 = Perf.now()
 	if _settle > 0:
@@ -106,13 +119,8 @@ func _rebuild() -> void:
 		_settle = SETTLE_FRAMES
 	_dirty = true  # the fields: a pass over the farms starts a few frames on
 	_herd_dirty = true
-	# A farm that is gone takes its farmstead and trees with it at once.
-	for id in _homes.keys():
-		if not sim.farms.farms.has(id):
-			_homes[id].queue_free()
-			_homes.erase(id)
-			_trees.remove(str(id))
-			_trees.remove("rows %s" % str(id))
+	_boxes.clear()
+	_forget_gone()
 	# A farm with no farmstead yet, or whose farmstead has grown, gets a new
 	# one, which replaces the old when it is whole.
 	for id in sim.farms.farms:
@@ -122,6 +130,59 @@ func _rebuild() -> void:
 			_want_stead("home", id)
 	_sync_barns()
 	_sync_signs()
+
+
+## A farm that is gone takes everything with it at once: its farmstead, its
+## fields and lane, its trees, and any redraw under way (whether or not it
+## ever got a farmstead).
+func _forget_gone() -> void:
+	for id in _homes.keys():
+		if not sim.farms.farms.has(id):
+			_homes[id].queue_free()
+			_homes.erase(id)
+			_trees.remove(str(id))
+	for id in _drawn.keys():
+		if not sim.farms.farms.has(id):
+			_drawn[id].node.queue_free()
+			_drawn.erase(id)
+			_trees.remove("rows %s" % str(id))
+			_plants.farm_removed(id)
+	for id in _redo.keys():
+		if not sim.farms.farms.has(id):
+			_redo.erase(id)
+	if _job != null and not sim.farms.farms.has(_job.id):
+		_job = null
+	_queue = _queue.filter(func(id): return sim.farms.farms.has(id))
+
+
+## The ground was regraded inside `box` (view coordinates; a road went in or
+## out): the fields and lanes of the farms beside it were draped on the land
+## as it was, so they are drawn again, even though nothing about the farms
+## themselves changed. A redraw begun before the grading is begun again.
+func regraded(box: Rect2) -> void:
+	if sim == null:
+		return
+	var idle := settled()
+	var any := false
+	for id in sim.farms.farms:
+		if not _box_of(id).grow(2.0).intersects(box):
+			continue
+		any = true
+		_redo[id] = true
+		if _job != null and _job.id == id:
+			_queue.push_front(id)  # its ground is stale; it starts over
+			_job = null
+		elif not _queue.has(id):
+			_queue.append(id)
+	if any and idle:
+		_settle = SETTLE_FRAMES
+
+
+## Where a farm's fields and lane lie, in view coordinates.
+func _box_of(id: Variant) -> Rect2:
+	if not _boxes.has(id):
+		_boxes[id] = FarmFieldJob.box_of(sim.farms.farms[id])
+	return _boxes[id]
 
 
 ## A farm sign at the end of each lane with the farm's name, the way Indiana
@@ -186,21 +247,21 @@ func _draw_some(budget_ms: float) -> void:
 	while true:
 		if _job == null:
 			if _queue.is_empty():
-				if _pass_changed:
-					_pass_changed = false
-					var t0 := Perf.now()
-					if _plants != null:
-						_plants.fields_changed()
-					Perf.add("farm_job.plants_check", t0)
-				if not _dirty:
-					return
-				_dirty = false
-				_begin_pass()
-				continue
+				if _dirty:
+					_dirty = false
+					_begin_pass()
+					continue
+				_end_pass()
+				return
 			var id: Variant = _queue.pop_front()
 			if not sim.farms.farms.has(id):
 				continue
-			_job = FarmFieldJob.new(sim, id, [] if _force or not _drawn.has(id) else _drawn[id].sig)
+			var before: Array = [] if _redo.has(id) or not _drawn.has(id) else _drawn[id].sig
+			_redo.erase(id)
+			_job = FarmFieldJob.new(sim, id, before)
+		elif not sim.farms.farms.has(_job.id):
+			_job = null  # the farm went; nothing to show
+			continue
 		elif _job.view_moved():
 			# The land moved under the job: its ground heights are stale.
 			_queue.push_front(_job.id)
@@ -215,48 +276,65 @@ func _draw_some(budget_ms: float) -> void:
 			return
 
 
-## A pass starts with every farm to check (and farms that went to remove).
+## A pass starts with every farm to check.
 func _begin_pass() -> void:
-	# A row per kind of field stays put while the farms change, so most
-	# redraws find their rows ready; when they run short, start over (and
-	# every farm's fields take new rows).
-	_force = false
-	if CropCalendar.farm_rows_used() > (CropCalendar.ROWS - CropCalendar.COUNTY_ROWS) * 3 / 4:
-		CropCalendar.clear_farm_rows()
-		_force = true
+	_rows_due = true
 	_year = Seasons.year(sim.tick_count)
-	for id in _drawn.keys():
-		if not sim.farms.farms.has(id):
-			_drawn[id].fields.queue_free()
-			_drawn[id].lane.queue_free()
-			_drawn.erase(id)
-			_pass_changed = true
+	_forget_gone()
 	_queue = sim.farms.farms.keys()
 
 
-## A finished job's meshes replace the farm's old ones.
+## When a pass is done: the table's farm rows that no farm uses any more
+## (last year's crops) are given back, so there is room for the next
+## year's. The rows in use keep their numbers: clearing them all would show
+## the farms not yet redrawn the wrong crops.
+func _end_pass() -> void:
+	if not _rows_due:
+		return
+	_rows_due = false
+	if CropCalendar.farm_rows_used() <= (CropCalendar.ROWS - CropCalendar.COUNTY_ROWS) * 3 / 4:
+		return
+	var keep := extra_rows.duplicate()
+	var borrowing := false
+	for id in _drawn:
+		keep.merge(_drawn[id].rows)
+		borrowing = borrowing or _drawn[id].borrows
+	# Fields that took a county row because the table was full can have a
+	# row of their own now.
+	if CropCalendar.free_farm_rows_except(keep) > 0 and borrowing:
+		_dirty = true
+
+
+## A finished job's mesh replaces the farm's old one, and CropPlants hears of
+## it (a field on a borrowed county row can change with the year alone).
 func _install(job: FarmFieldJob) -> void:
 	var id: Variant = job.id
+	if not sim.farms.farms.has(id):
+		return  # the farm went while its fields were being drawn
 	if not _drawn.has(id):
-		var fields := MeshInstance3D.new()
-		var lane := MeshInstance3D.new()
-		fields.material_override = CropFields.material()
-		lane.material_override = _lane_mat
-		for mi in [fields, lane]:
-			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			add_child(mi)
-		_drawn[id] = {"fields": fields, "lane": lane, "sig": [], "borrows": false}
+		var node := MeshInstance3D.new()
+		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(node)
+		_drawn[id] = {"node": node, "sig": [], "rows": {}, "box": Rect2(), "borrows": false}
 	var d: Dictionary = _drawn[id]
 	d.borrows = job.borrows
-	if not job.changed:
-		return
-	d.sig = job.signature
-	d.fields.mesh = job.fields_mesh
-	d.fields.visible = job.fields_mesh != null
-	d.lane.mesh = job.lane_mesh
-	d.lane.visible = job.lane_mesh != null
-	_trees.set_trees("rows %s" % str(id), job.trees)
-	_pass_changed = true
+	d.rows = job.rows
+	if job.changed:
+		d.sig = job.signature
+		d.box = job.cell_box
+		var node: MeshInstance3D = d.node
+		var mesh := job.mesh
+		if job.fields_surface >= 0:
+			mesh.surface_set_material(job.fields_surface, CropFields.material())
+		if job.lane_surface >= 0:
+			mesh.surface_set_material(job.lane_surface, _lane_mat)
+		node.mesh = mesh
+		node.visible = mesh.get_surface_count() > 0
+		_trees.set_trees("rows %s" % str(id), job.trees)
+	if job.changed or job.borrows:
+		var t0 := Perf.now()
+		_plants.farm_drawn(id, job.cell_box, job.frame, job.cells, job.slots, job.trimmed)
+		Perf.add("farm_job.plants_check", t0)
 
 
 ## How wide the turn rows (headlands) are at each end of a field.
