@@ -20,8 +20,14 @@ When a helper hits a wall it writes its question here and stops. That task waits
 | Helper | Branch | Goal |
 | --- | --- | --- |
 | Town speed | `claude/town-speed` | 69k-person town: under 15 ms a step, no step over 100 ms, builds in under a minute |
-| Shared region | `claude/region-playthrough` | The region play-through finishes loading |
 | New drawing style | `claude/new-drawing-test` | 16k town drawn the new way, measured against today's 58 ms, 6.7 GB and 470/369 stutters |
+| Trees that grow | `claude/trees-grow` | Queue 12 |
+| Light through the day | `claude/daylight` | Ranked detail #8 |
+| Region under load | `claude/region-load-fixes` | Big regions join; no city-line or server freezes |
+
+In review: the crop calendar (PR #537, ranked detail #1).
+
+Done and live: #535 (the region play-through joins again), #538 (shared-region stress test; findings in the scale-test doc), #536 (details ranked by impact).
 
 ## The queue, in order
 
