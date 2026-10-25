@@ -210,8 +210,11 @@ static func _rural(pts: PackedVector3Array, type: int, mats: Dictionary) -> Arra
 
 
 ## Wooden utility poles down one side of a country road, every 45 m, with a
-## crossarm, three insulators and the wires between them.
-static func add_poles(wood: SurfaceTool, wire: SurfaceTool, pts: PackedVector3Array, off: float, avoid := []) -> void:
+## crossarm, three insulators and the wires between them. `blocked(p)` is
+## true where a pole would stand on another road; such a pole steps back
+## from the junction, or is left out (a span runs on over the corner).
+static func add_poles(wood: SurfaceTool, wire: SurfaceTool, pts: PackedVector3Array, off: float, avoid := [],
+		blocked := Callable()) -> void:
 	var length := RoadNetwork.polyline_length(pts)
 	if length < 30.0:
 		return
@@ -230,6 +233,15 @@ static func add_poles(wood: SurfaceTool, wire: SurfaceTool, pts: PackedVector3Ar
 				# Step along the road, clear of the driveway.
 				base += dir * 9.0
 				break
+		if blocked.is_valid():
+			# Step away from the nearer end, where the crossing road is.
+			var away := dir if k * 2 < n else -dir
+			var tries := 0
+			while tries < 3 and blocked.call(base):
+				base += away * 6.0
+				tries += 1
+			if blocked.call(base):
+				continue
 		_post(wood, base + Vector3(0, 5.5, 0), Vector3(0.28, 11.0, 0.28), Basis.IDENTITY)
 		_post(wood, base + Vector3(0, 10.4, 0), Vector3(2.4, 0.14, 0.14), Basis(Vector3.UP, atan2(side.x, side.z) + PI * 0.5))
 		var row := []

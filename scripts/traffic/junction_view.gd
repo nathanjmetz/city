@@ -51,7 +51,9 @@ func _ready() -> void:
 	var stop_face := StandardMaterial3D.new()
 	stop_face.albedo_texture = _stop_texture()
 	stop_face.roughness = 0.5
-	stop_face.cull_mode = BaseMaterial3D.CULL_BACK
+	# Both faces drawn: the grey back plate sits just behind, so drivers see
+	# the red face and people behind the sign see the back.
+	stop_face.cull_mode = BaseMaterial3D.CULL_DISABLED
 	var back := RoadStyle.material(Color(0.6, 0.61, 0.6))
 	# Octagon, 30 in across (MUTCD R1-1); triangle, 36 in (R1-2).
 	_stops = _batch(_sign_mesh(0.38, stop_face, back), null)

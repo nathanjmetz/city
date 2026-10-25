@@ -640,6 +640,8 @@ func _demo_markings(sim: CitySim) -> void:
 	# Lots take a while to be platted out here; draw every new street as a
 	# town street at once.
 	for c in _main.find_children("*", "RoadView", true, false):
+		if OS.get_environment("MARKINGS_RURAL") == "1":
+			break  # leave them country roads
 		for id in sim.network.segments:
 			if not before.has(id):
 				c._town_ever[id] = true

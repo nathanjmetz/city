@@ -195,13 +195,13 @@ static func _pieces(net: RoadNetwork) -> Dictionary:
 
 
 ## True when a pole would stand on another road's pavement or curb.
-static func _on_other_road(grid: Dictionary, p: Vector3, own: int) -> bool:
+static func _on_other_road(grid: Dictionary, p: Vector3, own: int, margin := 1.0) -> bool:
 	var q := Vector2(p.x, p.z)
 	for piece in grid.get(Vector2i(floori(q.x / PIECE_CELL), floori(q.y / PIECE_CELL)), []):
 		if piece[2] == own:
 			continue
 		var c := Geometry2D.get_closest_point_to_segment(q, piece[0], piece[1])
-		if c.distance_to(q) < piece[3] + 1.0:
+		if c.distance_to(q) < piece[3] + margin:
 			return true
 	return false
 
