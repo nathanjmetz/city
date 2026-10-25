@@ -48,16 +48,18 @@ Crops (CropPlants) and wild trees (WildView) now keep off the farmsteads' ground
 
 Measured with `tools/farmsteads/farmstead_bench.gd` on the Vulkan driver (it reports the graphics card's time; Metal does not here), switching the farmsteads off and on 8 times in each view, the same views on main ("before") and on this branch. Other helpers' games and tests ran on the same machine all day, so frame times swing by several ms between runs; graphics-time differences under about 0.5 ms are noise.
 
-| View | Before: triangles the farmsteads add | After | Graphics time, farmsteads off vs on (after) |
+| View | Triangles the farmsteads add, before | After | Graphics time, farmsteads off vs on (after) |
 | --- | --- | --- | --- |
-| County, 2.6 km up | 8,600 | 27,000 | 2.25 vs 2.48 ms |
-| Low over the county toward the horizon | 15,600 | 91,000 | 4.67 vs 4.78 ms |
-| Close to a grain farm (110 m) | 17,800 | 130,000 | within noise (5.4 vs 4.6 ms) |
-| Close to an old farm | 17,400 | 78,000 | within noise |
-| Close to a hog farm | 10,500 | 75,000 | 5.08 vs 5.40 ms |
-| Night, county | 15,400 | 48,000 | within noise |
+| County, 2.6 km up | 8,600 | 27,000 | 3.20 vs 3.02 ms |
+| Low over the county toward the horizon | 15,600 | 98,000 | 4.54 vs 4.48 ms |
+| Close to a grain farm (110 m) | 17,800 | 129,000 | 4.85 vs 4.70 ms |
+| Close to an old farm | 17,400 | 78,000 | 4.48 vs 4.63 ms |
+| Close to a hog farm | 10,500 | 73,000 | 3.90 vs 4.14 ms |
+| Night, county | 15,400 | 48,000 | 3.47 vs 3.80 ms |
 
-- **The game's own time:** 0.04 ms a frame on average high up, about 0.1 ms near farmsteads. The county's far farmsteads fill in over the first 5-6 s (3 ms a frame, one farmstead at a time; about 12 ms per 2 km block in all). The slowest single frame of this view was about 7 ms; the slowest close-up step 2.2 ms (a house). No freeze.
+So the farmsteads cost at most about 0.3 ms of graphics time in any view, within the noise (three runs agreed to within about 0.5 ms).
+
+- **The game's own time:** 0.04 ms a frame on average high up, about 0.1 ms near farmsteads. The county's far farmsteads fill in over the first 5-6 s (3 ms a frame, one farmstead at a time; about 12 ms per 2 km block in all). The slowest single frame of this view was about 8 ms; the slowest close-up step 2-4 ms (a house from the plan book). No freeze. (The window's own worst frames, 30-65 ms, came with the farmsteads off as often as on: other programs on the machine, load average 12.)
 - **Graphics memory:** +40 MB of vertex buffers (144 to 184 MB) for the whole county's far farmsteads, after making the mesh indexed and the windbreak stand-ins lighter (the first version used about 120 MB).
 - **Main memory:** 1.7 MB for the places; up to 14 MB of kept plans and yards if every corner of the county is visited (a few MB in a normal session).
 - **Sliders:** `FarmsteadNear.BUILD_R` and `TREE_R` (how far close-ups and real trees reach, scaled by the quality tier), `MAX_BUILT`, `FarmsteadNear.off` (no close-ups), `FarmsteadView.DRAW_TO` (9 km), and in `FarmsteadFar` the sides and windbreak thinning (`light`).
