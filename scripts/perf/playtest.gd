@@ -15,8 +15,11 @@ extends Node
 ## To play in a region instead of alone (neighbors, syncing), add
 ## `--playtest-region=ws://host:port/CODE` (`&region=` in the browser).
 ## Several bots in one region each need their own `--playtest-name=`
-## (`&name=`); a region bot also keeps building while it runs, so its
-## neighbors have something new to sync (tools/playtest/soak.sh).
+## (`&name=`) and the PIN the region made for them (`--playtest-pin=`,
+## `&pin=`): a region only lets in players it has a PIN for, and
+## tools/playtest/make_region.gd makes those. A region bot also keeps
+## building while it runs, so its neighbors have something new to sync
+## (tools/playtest/soak.sh).
 
 const RESULT_TAG := "PLAYTEST_RESULT "
 ## A frame over this long is a hitch; over FREEZE_MS a freeze.
@@ -31,6 +34,8 @@ var out_path := ""
 ## "ws://host:port/CODE" to join a region, or "" to play alone.
 var region := ""
 var bot_name := "Playtest"
+## The PIN the region made for this bot (a region lets in nobody else).
+var pin := ""
 var _tries := 0
 var _net := {"disconnected": 0, "reconnected": 0, "failed": []}
 var _main: Node
@@ -97,6 +102,8 @@ func _ready() -> void:
 			region = a.get_slice("=", 1)
 		elif a.begins_with("--playtest-name="):
 			bot_name = a.get_slice("=", 1)
+		elif a.begins_with("--playtest-pin="):
+			pin = a.get_slice("=", 1)
 		elif a == "--playtest-inline":
 			RegionClient.inline_jobs = true  # one core, like the browser
 	if OS.has_feature("web"):
@@ -105,11 +112,12 @@ func _ready() -> void:
 		var nm = JavaScriptBridge.eval("new URLSearchParams(window.location.search).get('name') || ''", true)
 		if typeof(nm) == TYPE_STRING and nm != "":
 			bot_name = nm
+		var pn = JavaScriptBridge.eval("new URLSearchParams(window.location.search).get('pin') || ''", true)
+		if typeof(pn) == TYPE_STRING:
+			pin = pn
 	if region != "":
-		# Joins like an invite link, under a name of its own.
-		var cut := region.rfind("/")
+		# Joins as a player of its own (_join_region).
 		Session.profile.name = bot_name
-		Session.pending_invite = {"server": region.left(cut), "join": region.substr(cut + 1)}
 	_t0 = Time.get_ticks_usec()
 	_last = _t0
 	_mem_start = memory_mb()
@@ -211,11 +219,21 @@ func _act(name: String, cmd: Dictionary) -> bool:
 	return ok
 
 
+## Joins the region the way the title screen does after a player types
+## their PIN (scripts/shell/main_menu.gd), without the typing.
+func _join_region() -> void:
+	var cut := region.rfind("/")
+	var c := Session.join_region(region.left(cut), region.substr(cut + 1), "", false, pin)
+	c.joined.connect(func(): Session.enter_region())
+	c.failed.connect(func(reason): _finish("couldn't join the region: " + str(reason)))
+
+
 func _play() -> void:
 	_begin("load")
-	# In a region the title screen joins from the invite set up in _ready.
 	if region == "":
 		Session.new_city("Playtest")
+	else:
+		_join_region()
 	# Wait for the game scene to finish drawing the town.
 	while true:
 		await get_tree().process_frame
