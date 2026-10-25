@@ -201,15 +201,32 @@ func _shop_for(sim: CitySim, p: Dictionary, rng: RandomNumberGenerator) -> Strin
 	var home: Dictionary = sim.lots.get(p.home, {})
 	if home.is_empty():
 		return ""
-	var best := ""
+	# The shops' middles, kept until the shops or the lots change.
+	var shops: Array = sim.zone_keys(ZoneMap.Zone.COMMERCIAL)
+	if not is_same(shops, _shops_of) or not is_same(sim.lots, _shops_lots) or _shops_rev != sim._lot_rev \
+			or _shops_pos.size() != shops.size():
+		_shops_of = shops
+		_shops_lots = sim.lots
+		_shops_rev = sim._lot_rev
+		_shops_pos = PackedVector3Array()
+		for key in shops:
+			_shops_pos.append(sim.lots[key].pos)
+	var at: Vector3 = home.pos
+	var best := -1
 	var best_score := INF
-	for key in sim.zone_keys(ZoneMap.Zone.COMMERCIAL):
-		var d: float = home.pos.distance_to(sim.lots[key].pos)
+	for i in _shops_pos.size():
+		var d: float = at.distance_to(_shops_pos[i])
 		var score := d * (0.5 + rng.randf())
 		if score < best_score:
 			best_score = score
-			best = key
-	return "" if best == "" else "lot:" + best
+			best = i
+	return "" if best == -1 else "lot:" + shops[best]
+
+
+var _shops_of := []
+var _shops_lots := {}
+var _shops_rev := -1
+var _shops_pos := PackedVector3Array()
 
 
 func person_name(id: int) -> String:
