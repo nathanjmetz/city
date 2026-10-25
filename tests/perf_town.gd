@@ -27,6 +27,8 @@ static func build(sim: CitySim, size := "big") -> void:
 		var x := x0 + i * BLOCK
 		sim.apply({"type": "build_road", "start": [x, z0 - 60.0], "ctrl": [x, z0 - 30.0], "end": [x, z0]})
 	# Zones: shops along the middle avenue rows, factories along the east edge.
+	# One drag, as the zone tool sends it ("hold"): the lots are cut once, at
+	# the end ("zone_done"), not after every street.
 	for id in sim.network.segments.keys():
 		for side in [-1, 1]:
 			var c := sim.network.curve_of(id)
@@ -40,7 +42,8 @@ static func build(sim: CitySim, size := "big") -> void:
 				zone = ZoneMap.Zone.INDUSTRIAL
 			elif absf(p.z) < BLOCK * 0.6 or absf(p.x) < BLOCK * 0.6:
 				zone = ZoneMap.Zone.COMMERCIAL
-			sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": zone})
+			sim.apply({"type": "zone_frontage", "seg": id, "side": side, "zone": zone, "hold": true})
+	sim.apply({"type": "zone_done"})
 	# Services spread across town, one of each per few blocks.
 	var kinds := [Services.Kind.SUBSTATION, Services.Kind.WATER_TOWER, Services.Kind.FIRE,
 		Services.Kind.POLICE, Services.Kind.CLINIC, Services.Kind.SCHOOL]

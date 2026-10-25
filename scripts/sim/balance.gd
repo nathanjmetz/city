@@ -149,6 +149,15 @@ const UTILITY_LOAD := {ZoneMap.Zone.RESIDENTIAL: 1, ZoneMap.Zone.COMMERCIAL: 4, 
 
 ## A new building can start every this many ticks (10 ticks = 1 real second).
 const GROW_EVERY := 4
+## The minute within its round each of the town's background jobs runs
+## on, so that no one tick carries them all (a 69,000-person town's moving
+## in, stats and budget run on every tenth minute, the 0th; the half-hour
+## garbage and freight rounds and the ambulance calls come between, and
+## the six-hourly leaders each take a minute of their own, all on a 7;
+## the farms keep the hour, as their year starts on it).
+## Only when things happen within the round, never how often or what.
+const ROUND_AT := {"hub_round": 14, "freight_round": 22, "ems_calls": 3, "industry": 47, "power": 87,
+	"warehouses": 127, "parks": 167, "hubs": 207, "water": 247, "hospitals": 287, "mail": 327}
 ## People move in and stats update every this many ticks.
 const MOVE_EVERY := 10
 ## Game ticks per real week of construction (see Construction). A real week

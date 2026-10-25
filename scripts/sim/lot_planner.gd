@@ -91,6 +91,7 @@ var wealth := Callable()
 
 # Survey cache: the survey lines only change when roads do.
 var _sig := {}     # seg id -> String (its shape and type)
+var _update_key := []  # the roads update() last saw (see update)
 var _seg_box := {}  # seg id -> Rect2 (its centre line)
 var _pieces := {}  # seg id -> Array of [Vector2 a, Vector2 b, float half ROW, Rect2]
 var _sides := {}   # "seg:side" -> side Dictionary (see _side)
@@ -166,6 +167,10 @@ func plan(network: RoadNetwork, zones: ZoneMap, frozen: Dictionary) -> Array:
 		index = _index(parcels)
 	var all := []
 	var corners := []
+	# The changed ground bucketed, as a new town or a long drag leaves
+	# thousands of boxes for every street side to look through.
+	var dirty_ix := _rects_index(_dirty)
+	var zone_ix := _rects_index(_zone_dirty)
 	var ids := network.segments.keys()
 	ids.sort()
 	for id in ids:
@@ -177,10 +182,10 @@ func plan(network: RoadNetwork, zones: ZoneMap, frozen: Dictionary) -> Array:
 				continue
 			_settle(s)
 			var lots_here: Array = s.cut
-			if _fresh or s.cut_sig == 0 or _near_dirty(s):
+			if _fresh or s.cut_sig == 0 or _near_in(s, dirty_ix):
 				# Zoning changed nearby: a run's exact end can move between
 				# survey lines, so the plat as if unbuilt is cut again too.
-				if _near(s, _zone_dirty) and s.get("free_zrev", -1) != zones.revision:
+				if _near_in(s, zone_ix) and s.get("free_zrev", -1) != zones.revision:
 					s.free_sig = 0
 				lots_here = _plan_side(s, zones, index)
 			for cached in lots_here:
@@ -445,6 +450,13 @@ func side_survey(network: RoadNetwork, id: int, side: int) -> Dictionary:
 
 ## Brings the survey up to date with the roads. Call before plan().
 func update(network: RoadNetwork) -> void:
+	# The roads as they were last time (RoadNetwork.revision moves on with
+	# every edit, though not until a batch of edits ends): nothing to do.
+	var roads := [network.get_instance_id(), network.revision, network.segments.size()]
+	var settled: bool = network._batch == 0 and not network._batch_dirty
+	if settled and roads == _update_key:
+		return
+	_update_key = roads if settled else []
 	var boxes := []
 	var seen := {}
 	for id in network.segments:
@@ -722,11 +734,10 @@ func _claims(s: Dictionary) -> void:
 	s.claim_stale = false
 	var near := (s.box as Rect2).grow(REACH * 2.0 + 30.0)
 	var claim := []
-	var others := _pieces.keys()
-	others.sort()
 	var mid := (s.box as Rect2).get_center()
-	for o in others:
-		if o != s.seg and near.intersects(_seg_box[o]):
+	# (The sort below puts them in one order whatever order they come in.)
+	for o in _segs_near(near):
+		if o != s.seg and _pieces.has(o) and near.intersects(_seg_box[o]):
 			var i := 0
 			for p in _pieces[o]:
 				claim.append([_rect_dist(p[3], mid), o, i, p])
@@ -737,6 +748,34 @@ func _claims(s: Dictionary) -> void:
 	s.claim = claim.map(func(c): return c[3])
 	s.claim_d = claim.map(func(c): return c[0])
 	s.mid = mid
+
+
+## The roads whose centre-line box could meet `area`, each once, in no
+## particular order: _seg_box bucketed by SEG_CELL squares, made again when
+## the roads change (update moves _net_rev on).
+func _segs_near(area: Rect2) -> Array:
+	if _seg_cells_key != [_net_rev, _seg_box.size()]:
+		_seg_cells_key = [_net_rev, _seg_box.size()]
+		_seg_cells = {}
+		for id in _seg_box:
+			var b: Rect2 = _seg_box[id]
+			for x in range(floori(b.position.x / SEG_CELL), floori(b.end.x / SEG_CELL) + 1):
+				for y in range(floori(b.position.y / SEG_CELL), floori(b.end.y / SEG_CELL) + 1):
+					var c := Vector2i(x, y)
+					if not _seg_cells.has(c):
+						_seg_cells[c] = []
+					_seg_cells[c].append(id)
+	var seen := {}
+	for x in range(floori(area.position.x / SEG_CELL), floori(area.end.x / SEG_CELL) + 1):
+		for y in range(floori(area.position.y / SEG_CELL), floori(area.end.y / SEG_CELL) + 1):
+			for id in _seg_cells.get(Vector2i(x, y), []):
+				seen[id] = true
+	return seen.keys()
+
+
+const SEG_CELL := 200.0
+var _seg_cells := {}  # Vector2i -> [seg ids] (see _segs_near)
+var _seg_cells_key := []
 
 
 ## The widest road's half right-of-way: no road claims land farther off.
@@ -1284,6 +1323,52 @@ static func _near(s: Dictionary, rects: Array) -> bool:
 	for r in rects:
 		if area.intersects(r):
 			return true
+	return false
+
+
+const NEAR_CELL := 256.0
+
+
+## Rects ready for _near_in: bucketed by NEAR_CELL squares when there are
+## many (a huge one is kept aside and looked at directly).
+static func _rects_index(rects: Array) -> Dictionary:
+	if rects.size() <= 16:
+		return {"list": rects}
+	var cells := {}
+	var wide := []
+	for i in rects.size():
+		var r: Rect2 = rects[i]
+		var x0 := floori(r.position.x / NEAR_CELL)
+		var x1 := floori(r.end.x / NEAR_CELL)
+		var y0 := floori(r.position.y / NEAR_CELL)
+		var y1 := floori(r.end.y / NEAR_CELL)
+		if (x1 - x0 + 1) * (y1 - y0 + 1) > 64:
+			wide.append(r)
+			continue
+		for x in range(x0, x1 + 1):
+			for y in range(y0, y1 + 1):
+				var c := Vector2i(x, y)
+				if not cells.has(c):
+					cells[c] = []
+				cells[c].append(i)
+	return {"list": rects, "cells": cells, "wide": wide}
+
+
+## The same answer as _near(s, rects), from _rects_index(rects).
+static func _near_in(s: Dictionary, ix: Dictionary) -> bool:
+	if not ix.has("cells"):
+		return _near(s, ix.list)
+	var area := (s.box as Rect2).grow(REACH + 10.0)
+	for r in ix.wide:
+		if area.intersects(r):
+			return true
+	var list: Array = ix.list
+	var cells: Dictionary = ix.cells
+	for x in range(floori(area.position.x / NEAR_CELL), floori(area.end.x / NEAR_CELL) + 1):
+		for y in range(floori(area.position.y / NEAR_CELL), floori(area.end.y / NEAR_CELL) + 1):
+			for i in cells.get(Vector2i(x, y), []):
+				if area.intersects(list[i]):
+					return true
 	return false
 
 
@@ -1926,7 +2011,7 @@ func _revalidate(network: RoadNetwork, lot: Dictionary, moved: bool) -> Dictiona
 		var kept := lot.duplicate()
 		_set_shape(kept, cut)
 		return kept
-	var near := network.find_segment_near(lot.road, 4.0, 1.0)
+	var near := RoadIndex.segment_near(network, lot.road, 4.0, 1.0)
 	if near.is_empty() or not _lot_road(network, near.seg):
 		return {}
 	var id: int = near.seg

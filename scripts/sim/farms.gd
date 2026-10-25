@@ -328,6 +328,27 @@ func covers(p: Vector3) -> bool:
 	return farm_at(p) != -1
 
 
+## Each farm's ground, as farm_at and field_at see it (yard, lane, fields
+## and barns): id -> [a hash of its shape, a box around all of it]. When a
+## farm's hash changes, only lots inside its old and new boxes can have
+## gained or lost a farm under them (CitySim.lots_changed_near).
+func ground_boxes() -> Dictionary:
+	var out := {}
+	for id in farms:
+		var f: Dictionary = farms[id]
+		var barns := Livestock.site_cells(f)
+		var box := Rect2(Vector2(f.pos.x, f.pos.z), Vector2.ZERO)
+		for q in _yard(f):
+			box = box.expand(q)
+		for p in f.drive:
+			box = box.expand(Vector2(p.x, p.z))
+		for c in f.cells + barns:
+			for q in cell_corners(f, c):
+				box = box.expand(q)
+		out[id] = [hash([f.pos, f.dir, f.drive, f.cells, barns]), box.grow(DRIVE_WIDTH + 4.0)]
+	return out
+
+
 ## The farm whose field holds this point, or -1.
 func field_at(p: Vector3) -> int:
 	var q := Vector2(p.x, p.z)
