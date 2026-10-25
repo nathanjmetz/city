@@ -361,7 +361,7 @@ func lift_at(p: Vector3, effect: String, skip := -1) -> float:
 
 
 ## Works out the lift each building's lot gets (after stats update).
-var _lift_of := []  # [sites.hash(), coefs] the rows were worked out for
+var _lift_of := []  # [the parks' places, coefs] the rows were worked out for
 var _lift_rows := {}  # lot key -> [lot, its pos, value, happy]
 
 
@@ -384,9 +384,13 @@ func update_effects(sim: CitySim) -> void:
 	# A lot's lift only depends on where it is, the parks (their lifts) and
 	# the trails: with no trails or plazas (trails.lift reads nothing then),
 	# a lot that hasn't moved since keeps the lift it was given.
-	var keep := trails.paths.is_empty() and trails.plazas.is_empty() and _lift_of == [sites.hash(), coefs]
+	# (A lot's lift reads each park's lift numbers, coefs, and where it is.)
+	var shape := []
+	for id in sites:
+		shape.append([id, sites[id].pos, sites[id].dir, sites[id].size])
+	var keep := trails.paths.is_empty() and trails.plazas.is_empty() and _lift_of == [shape, coefs]
 	var was := _lift_rows if keep else {}
-	_lift_of = [sites.hash(), coefs]
+	_lift_of = [shape, coefs]
 	_lift_rows = {}
 	lot_value.clear()
 	lot_happy.clear()

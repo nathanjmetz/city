@@ -324,7 +324,7 @@ func value_factor(p: Vector3) -> float:
 	var total := 0.0
 	for id in hubs:
 		var h: Dictionary = hubs[id]
-		var d := distance(h, p)
+		var d: float = _near_cell(id, h, p) * h.cell  # distance(h, p)
 		total += _effect(h.kind, d)
 		for node in tree(h):
 			var fx: Dictionary = node.get("effects", {})
@@ -341,6 +341,50 @@ static func _effect(kind: String, d: float) -> float:
 	if float(s.reach) <= 0.0 or d >= float(s.reach):
 		return 0.0
 	return float(s.value) * (1.0 - d / float(s.reach))
+
+
+## distance(h, p) before the last * h.cell, kept for each point a hub's
+## land value is asked about: worked out again only when the hub moves or
+## gives up land, and when it takes more, only the new pieces are measured
+## (the nearest of all the pieces is the nearer of the old nearest and the
+## new). The same numbers as distance().
+func _near_cell(id: int, h: Dictionary, p: Vector3) -> float:
+	var e: Array = _near_cells.get(id, [])
+	if e.is_empty() or e[0] != h.pos or e[1] != h.dir or e[2] != h.cell:
+		e = [h.pos, h.dir, h.cell, (h.cells as Array).duplicate(), {}]
+		_near_cells[id] = e
+	elif e[3] != h.cells:
+		var old: Array = e[3]
+		var now: Array = h.cells
+		var kept: Dictionary = e[4]
+		if now.size() > old.size() and now.slice(0, old.size()) == old:
+			var added := now.slice(old.size())
+			for q in kept:
+				kept[q] = minf(kept[q], _cells_near(h, q, added))
+		else:
+			e[4] = {}
+		e[3] = now.duplicate()
+	var got = e[4].get(p)
+	if got == null:
+		got = _cells_near(h, p, h.cells)
+		e[4][p] = got
+	return got
+
+
+## The cells part of distance(): the nearest of these cells, in cells.
+static func _cells_near(h: Dictionary, p: Vector3, cells: Array) -> float:
+	var d: Vector3 = p - h.pos
+	var x: float = d.dot(right(h)) / h.cell
+	var y: float = -d.dot(h.dir) / h.cell - 0.5
+	var best := INF
+	for c in cells:
+		var ex := maxf(absf(x - c.x) - 0.5, 0.0)
+		var ey := maxf(absf(y - c.y) - 0.5, 0.0)
+		best = minf(best, Vector2(ex, ey).length())
+	return best
+
+
+var _near_cells := {}  # hub id -> [pos, dir, cell, cells, {point: nearest}]
 
 
 ## Metres from a point to the nearest edge of a hub's land (0 inside).
