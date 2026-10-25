@@ -1834,6 +1834,16 @@ func _launch(car: Dictionary, lanes := {}) -> bool:
 		exit_d = out.exit_d
 	elif exit_d <= car.d + 1.0 and last:
 		return false  # next door: walk
+	# Nor while another car is backing out of or turning into the same lot:
+	# drivers wait for the one already moving in the aisle.
+	if from_ref != "":
+		for other in cars:
+			if other.j == null or int(other.j.get("node", 0)) != -1 or other.id == car.id:
+				continue
+			var leaving: bool = int(other.j.wi) == -1 and other.get("from_place", "") == from_ref
+			var arriving: bool = int(other.j.wo) == -1 and other.get("to_place", "") == from_ref
+			if leaving or arriving:
+				return false
 	# Pull out only when there's a gap in the traffic.
 	if lanes.is_empty():
 		for other in cars:
@@ -3294,9 +3304,25 @@ func _walk_to_car(from_pl: Dictionary, car: Dictionary) -> PackedVector3Array:
 			out.remove_at(out.size() - 1)  # not to the door: to the car
 	else:
 		out = _door_out(from_pl)
+		var gap := _stall_gap(car, car_pl, from_pl.door)
+		if gap != Vector3.INF:
+			out.append(gap)
 	var side := _car_side(car)
 	out.append(side)
 	return out
+
+
+## Out of a stall in a shop's own lot, a driver walks up the gap beside the
+## car to its nose (or tail, whichever is toward `toward`) before heading
+## across, as people do, never through the cars parked alongside.
+## Vector3.INF when the car isn't in a stall.
+func _stall_gap(car: Dictionary, pl: Dictionary, toward: Vector3) -> Vector3:
+	if car.spot < 0 or car.spot >= pl.spots.size() or pl.spots[car.spot].kind != "stall":
+		return Vector3.INF
+	var side := Vector3(car.face.z, 0.0, -car.face.x) * 1.4
+	if (toward - car.pos).dot(car.face) > 0.0:
+		return car.pos + car.face * 0.9 + side
+	return car.pos - car.face * (car.len + 0.9) + side
 
 
 ## From a parked car to the door of the place its people are going to.
@@ -3322,6 +3348,9 @@ func _walk_from_car(car: Dictionary, dest: String) -> PackedVector3Array:
 	if dest_pl.ref == car_pl.ref:
 		var inward := _door_out(car_pl)
 		inward.reverse()
+		var gap := _stall_gap(car, car_pl, car_pl.door)
+		if gap != Vector3.INF:
+			out.append(gap)
 		out.append_array(inward)
 		return out
 	var path := _walk_between(car_pl, dest_pl)
