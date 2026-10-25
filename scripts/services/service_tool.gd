@@ -53,6 +53,8 @@ func set_angled(on: bool) -> void:
 
 func set_kind(k: int) -> void:
 	kind = k
+	view.preview = {}
+	_need_at = Vector3.INF
 	view.show_kind = k
 	_ghost.visible = false
 	kind_changed.emit(kind)
@@ -95,7 +97,7 @@ func _process(_delta: float) -> void:
 	var problem := "Move next to a street or avenue." if _site.is_empty() else ""
 	if not _site.is_empty():
 		problem = sim.services.site_problem(sim.network, kind, _site[0], _site[1])
-		var cost: int = Services.KINDS[kind].cost
+		var cost: int = sim.services.cost_of(kind)
 		if problem == "" and cost > sim.economy.money:
 			problem = "Not enough money: costs $%s." % CitySim.money_text(cost)
 		var size: Vector2 = Services.KINDS[kind].size
@@ -105,6 +107,11 @@ func _process(_delta: float) -> void:
 		_ghost.position = Terrain.lift(_site[0]) + Vector3(0, 2.0, 0)
 		_ghost.basis = Basis.looking_at(_site[1], Vector3.UP)
 		_ghost.material_override = _ok_mat if problem == "" else _bad_mat
+		if kind == Services.Kind.BUILDER_YARD and _site[0].distance_to(_need_at) > 12.0:
+			# Its reach from here: where its crews get to a new house in time.
+			_need_at = _site[0]
+			view.preview = sim.services.reach_from(sim.network,
+				_site[0] + _site[1] * (Services.KINDS[kind].size.y * 0.5 + Services.SETBACK))
 		if kind in Services.PARKING and _site[0].distance_to(_need_at) > 8.0:
 			_need_at = _site[0]
 			var need := sim.traffic.parking_need(_site[0] + _site[1] * Services.KINDS[kind].size.y * 0.5)
@@ -199,6 +206,14 @@ func _update_hint() -> void:
 		return
 	var s: Dictionary = Services.KINDS[kind]
 	var text := "%s: $%s to build, $%s a month." % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
+	if kind == Services.Kind.BUILDER_YARD:
+		var cost := sim.services.cost_of(kind)
+		text = "%s: %s. Its crews (pickups with a ladder on top) and concrete trucks build the town's houses, coming from here; its owner buys more trucks as the town grows. Green roads are close enough for a crew to get to a new house while it's still going up." % [
+			s.name, "free, your town's first" if cost == 0 else "$%s" % CitySim.money_text(cost)]
+		if _problem != "":
+			text += "\n" + _problem
+		hint_changed.emit(text)
+		return
 	if s.get("parking", false):
 		var lay: Dictionary = ParkingLots.layout(s.size, angled, kind == Services.Kind.PARKING_GARAGE)
 		text = "%s: %d stalls%s, $%s to build, $%s a month. Shoppers and workers park here when their own stop is full, then walk up to 800 ft." % [

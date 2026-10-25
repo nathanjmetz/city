@@ -261,6 +261,18 @@ func _fill() -> void:
 			if not _spot.is_empty():
 				_ground.append(["grid", _spot[0], _spot[1]])
 			_glide("streets", _grid_middle(), 620.0)
+		"yard":
+			var yk := Services.Kind.BUILDER_YARD
+			if st.kind == ServiceTool.OFF:
+				_say("Every town needs a builder. Your first builder's yard is free: open Utilities.", "cat:utilities")
+			elif st.kind != yk:
+				_say("Pick Builder.", "svc:%d" % yk)
+			else:
+				_say("Click beside a street. Its crews and concrete trucks build your houses from here: green roads are close enough.", "")
+			var yat := FirstTown.yard_spot(sim, _grid_middle())
+			if yat != Vector3.INF:
+				_ground.append(["ring", yat])
+				_glide("yard", yat, 300.0)
 		"power", "water":
 			var kind: int = Services.Kind.POWER_FEED if _step == "power" else Services.Kind.WELL
 			if st.kind == ServiceTool.OFF:

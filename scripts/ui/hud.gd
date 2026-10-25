@@ -1569,11 +1569,14 @@ func _service_card(k: int, cat: String) -> Button:
 	var s: Dictionary = Services.KINDS[k]
 	var short := {Services.Kind.WATER_TOWER: "Water tower", Services.Kind.POWER_FEED: "Power line",
 		Services.Kind.WELL: "Well", Services.Kind.SCHOOL: "Elementary", Services.Kind.WATER_UTILITY: "Water utility",
-		Services.Kind.TAXI_COMPANY: "Taxis", Services.Kind.NURSING_HOME: "Nursing home", Services.Kind.BUS_DEPOT: "Bus depot"}
+		Services.Kind.TAXI_COMPANY: "Taxis", Services.Kind.NURSING_HOME: "Nursing home", Services.Kind.BUS_DEPOT: "Bus depot",
+		Services.Kind.BUILDER_YARD: "Builder"}
 	var b := _card(s.icon, short.get(k, s.name.split(" ")[0]), "")
 	b.tooltip_text = "%s: $%s to build, $%s a month" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
 	if k == Services.Kind.BUS_DEPOT:
 		b.tooltip_text = "%s: $%s to build, with two buses. It plans its own stops, routes and fare; you set its funding." % [s.name, CitySim.money_text(s.cost)]
+	elif k == Services.Kind.BUILDER_YARD:
+		b.tooltip_text = "%s: free. Its crews and concrete trucks build the houses; its owner buys more trucks as the town grows. One per town." % s.name
 	elif k == Services.Kind.TAXI_COMPANY:
 		b.tooltip_text = "%s: $%s to bring one to town, with two cabs. Its owner runs it on fares: the fleet, the meter and the lot." % [s.name, CitySim.money_text(s.cost)]
 	b.pressed.connect(func(): service_tool.set_kind(k))
@@ -1628,6 +1631,7 @@ func _utilities_drawer() -> PanelContainer:
 		CitySim.money_text(Balance.TELECOM_COST), CitySim.money_text(Balance.TELECOM_GRANT)]
 	_telecom_card.pressed.connect(func(): telecom_tool.set_kind("telecom"))
 	return _service_drawer(cat, [
+		["Builder", [_service_card(Services.Kind.BUILDER_YARD, cat)]],
 		["Power", [_service_card(Services.Kind.POWER_FEED, cat), _service_card(Services.Kind.SUBSTATION, cat), _power_card]],
 		["Water and sewer", [_service_card(Services.Kind.WELL, cat), _service_card(Services.Kind.WATER_TOWER, cat),
 			_service_card(Services.Kind.WATER_UTILITY, cat)]],

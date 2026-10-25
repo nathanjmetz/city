@@ -22,6 +22,7 @@ extends RefCounted
 const STEPS := [
 	{"id": "plan", "title": "Let's build your first neighborhood"},
 	{"id": "streets", "title": "Lay out a few streets", "goal": "Lay out a few streets"},
+	{"id": "yard", "title": "Pick your builder's yard", "goal": "Pick your builder's yard"},
 	{"id": "power", "title": "Bring in power", "goal": "Bring in power"},
 	{"id": "power_wait", "title": "The line crew's at work", "wait": true},
 	{"id": "water", "title": "Bring in water", "goal": "Drill a well for water"},
@@ -55,6 +56,8 @@ static func plan() -> Array:
 static func current(sim: CitySim) -> String:
 	if not has_streets(sim):
 		return "streets"
+	if sim.services.yard() == -1:
+		return "yard"
 	if utility_placed(sim, "power").is_empty():
 		return "power"
 	if not utility_on(sim, "power"):
@@ -181,6 +184,21 @@ static func _clear(sim: CitySim, a: Vector3, b: Vector3) -> bool:
 			if i > 0 and j > 0 and not sim.network.find_segment_near(p, 25.0, 1.0).is_empty():
 				return false
 	return true
+
+
+## A good spot for the builder's yard: beside a street near where the
+## streets come in from the highway, so its trucks reach the new blocks.
+## Vector3.INF when there's none.
+static func yard_spot(sim: CitySim, aim := Vector3.INF) -> Vector3:
+	if aim == Vector3.INF:
+		aim = Vector3(sim.streets.main_at.x, 0.0, sim.streets.main_at.y)
+	for r in [0.0, 40.0, 80.0, 140.0, 220.0]:
+		for a in 8:
+			var p: Vector3 = aim + Vector3(cos(a * TAU / 8.0), 0.0, sin(a * TAU / 8.0)) * r
+			var site := Services.site_near(sim.network, Services.Kind.BUILDER_YARD, p)
+			if not site.is_empty() and sim.services.site_problem(sim.network, Services.Kind.BUILDER_YARD, site[0], site[1]) == "":
+				return site[0]
+	return Vector3.INF
 
 
 ## A good spot beside one of the new streets for a utility (where the

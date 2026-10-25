@@ -10,6 +10,13 @@ var show_kind := -1:
 		show_kind = v
 		_draw_coverage()
 
+## Road distances from where a service is about to go (Services.reach_from),
+## shown instead of the built ones' while it's being placed; {} for none.
+var preview := {}:
+	set(v):
+		preview = v
+		_draw_coverage()
+
 var _nodes := {}  # service id -> Node3D
 var _coverage := MeshInstance3D.new()
 var _cover_mat := StandardMaterial3D.new()
@@ -84,10 +91,10 @@ func regraded(box: Rect2) -> void:
 
 
 func _draw_coverage() -> void:
-	_coverage.visible = show_kind != -1 and sim.services.reach_by_kind.has(show_kind)
+	_coverage.visible = show_kind != -1 and (sim.services.reach_by_kind.has(show_kind) or not preview.is_empty())
 	if not _coverage.visible:
 		return
-	var dist: Dictionary = sim.services.reach_by_kind[show_kind]
+	var dist: Dictionary = preview if not preview.is_empty() else sim.services.reach_by_kind[show_kind]
 	var reach: float = Services.KINDS[show_kind].get("reach", INF)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)

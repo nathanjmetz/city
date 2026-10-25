@@ -52,6 +52,8 @@ static func build_service(kind: int, seed: int, size: Vector2, to_curb: float, b
 		Services.Kind.TAXI_COMPANY:
 			b._taxi_company(size, front, to_curb)
 			b._taxi_upgrades(size, front, built)
+		Services.Kind.BUILDER_YARD:
+			b._builder_yard(size, front, to_curb)
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 
@@ -761,6 +763,56 @@ func _taxi_company(size: Vector2, front: float, to_curb: float) -> void:
 	_sign(Vector3(ox, 4.3, oz - 0.04), ow * 0.5, 0.7)
 	_fence(Vector2(-w * 0.5 + 0.2, lot_z), Vector2(-w * 0.5 + 0.4, back - 0.3), 1.2)
 	_fence(Vector2(-w * 0.5 + 0.2, back - 0.5), Vector2(w * 0.5 - 0.2, back - 0.3), 1.2)
+
+
+## The home builder's yard (Builders): a steel shop at the street with the
+## office windows and an overhead door, and behind it a fenced gravel lot of
+## truck stalls (railroad-tie bumpers), a lumber rack and a pile of crushed
+## stone. Benchmark: a small-town builder's yard, a Morton-style steel shop
+## and gravel lot at the edge of town.
+func _builder_yard(size: Vector2, front: float, to_curb: float) -> void:
+	var w := size.x
+	var back := size.y * 0.5
+	var steel := Color(_pick(["#c9c4b8", "#8f9a8c", "#b8a98e", "#9aa3a8"]))
+	var trim := Color(_pick(["#4a3f35", "#2f3a34", "#5b2c22"]))
+	var drive_x := w * 0.5 - 4.5
+	var lot_z := front + Builders.OFFICE_D
+	var gravel := Color("#a49c8d")
+	_flat_rect("asphalt", drive_x - 3.6, drive_x + 3.6, front - to_curb, lot_z, 0.1)
+	_flat_rect("gravel", -w * 0.5 + 0.5, w * 0.5 - 0.5, lot_z, back - 0.5, 0.06, gravel)
+	for slot in Builders.stall_slots(size):
+		var p: Vector3 = slot[0]
+		# A railroad tie at the head of each stall.
+		_box("paint", Vector3(Builders.STALL_W - 1.0, 0.18, 0.22), Vector3(p.x, 0.09, p.z + Builders.STALL_D - 0.6),
+			Color("#4a3b2e"))
+	# The shop: steel siding, a dark trim band, office windows, a door and a
+	# 12 ft overhead door at the drive.
+	var ow := minf(w - 11.0, 22.0)
+	var ox := drive_x - 4.4 - ow * 0.5
+	var od := Builders.OFFICE_D - 3.0
+	var oz := front + 1.0
+	_slab(ox, ow, oz, od)
+	_flat_roofed_at("metal", ox, ow, od, oz + od * 0.5, 4.6, 5.0, steel)
+	_box("paint", Vector3(ow + 0.05, 0.35, od + 0.05), Vector3(ox, 4.75, oz + od * 0.5), trim)
+	_glass(Vector3(ox - ow * 0.28, 1.6, oz - 0.03), Vector3(-1, 0, 0), ow * 0.3, 1.4, 0.0)
+	_entry(ox - ow * 0.05, oz, trim)
+	_overhead_door(ox + ow * 0.3, oz, 3.7, 3.7, steel)
+	_sign(Vector3(ox - ow * 0.2, 4.0, oz - 0.04), ow * 0.45, 0.6)
+	# A lumber rack along the far fence: steel uprights and stacked boards.
+	var rz := lot_z + 1.5
+	var rx := -w * 0.5 + 1.4
+	for k in 4:
+		_box("paint", Vector3(0.12, 2.4, 0.12), Vector3(rx, 1.2, rz + k * 2.4), GALV)
+	for lvl in 3:
+		_box("paint", Vector3(1.0, 0.3, 7.6), Vector3(rx + 0.2, 0.5 + lvl * 0.75, rz + 3.6), Color("#c9a66b").darkened(lvl * 0.06))
+	# Crushed stone in a low heap at the back corner.
+	var heap := Vector3(drive_x - 2.0, 0.0, back - 4.5)
+	for lvl in 3:
+		var r := 3.2 - lvl * 1.0
+		_box("paint", Vector3(r * 2.0, 0.45, r * 1.6), heap + Vector3(0, 0.22 + lvl * 0.45, 0), Color("#8d877d").lightened(lvl * 0.04))
+	_fence(Vector2(-w * 0.5 + 0.2, lot_z), Vector2(-w * 0.5 + 0.4, back - 0.3), 1.8)
+	_fence(Vector2(-w * 0.5 + 0.2, back - 0.5), Vector2(w * 0.5 - 0.2, back - 0.3), 1.8)
+	_fence(Vector2(w * 0.5 - 0.4, lot_z), Vector2(w * 0.5 - 0.2, back - 0.3), 1.8)
 
 
 # ---------------------------------------------------------------- shared parts

@@ -77,6 +77,9 @@ static func _problems(sim: CitySim, out: Array) -> void:
 			_add(out, "spending", Kind.HEADS_UP, "We're spending a bit more than we take in, about $%s a month. Nothing to fret over yet, but worth a look at the Economy page sometime." % CitySim.money_text(-net))
 
 	var zoned := not sim.zones.cells.is_empty()
+	if sim.services.yard() == -1 and FirstTown.has_streets(sim):
+		# Towns from before the builder's yard: one's free to place.
+		_add(out, "builder_yard", Kind.HEADS_UP, "We've got no builder in town, so crews come all the way from the next town over. Your first builder's yard is free: Utilities, Builder.")
 	var use: Dictionary = sim.services.utility_use
 	var missing := []
 	for u in ["power", "water"]:

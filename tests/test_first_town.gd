@@ -9,7 +9,7 @@ func _init() -> void:
 	sim.apply({"type": "build_county_road", "a": [-2000, 0], "b": [2000, 0], "links": [0, 1]})
 	sim.apply({"type": "build_road", "start": [-100, 0], "ctrl": [-20, 0], "end": [40, 60]})
 	_check(FirstTown.current(sim) == "streets", "a new town starts on streets (%s)" % FirstTown.current(sim))
-	_check(FirstTown.plan().size() == 5, "the plan has five goals")
+	_check(FirstTown.plan().size() == 6, "the plan has six goals")
 
 	# The suggested grid is two town blocks each way, off the road's end.
 	var spot := FirstTown.grid_spot(sim)
@@ -22,6 +22,15 @@ func _init() -> void:
 		"block": p.block, "across": p.across, "side": 0, "road": RoadStyle.Type.STREET})
 	_check(ok, "the suggested grid builds")
 	_check(FirstTown.junctions(sim) >= FirstTown.JUNCTIONS, "the grid makes crossings (%d)" % FirstTown.junctions(sim))
+	_check(FirstTown.current(sim) == "yard", "then the builder's yard (%s)" % FirstTown.current(sim))
+
+	# The builder's yard: free, beside a street, ready at once.
+	var money := sim.economy.money
+	var yat := FirstTown.yard_spot(sim)
+	_check(yat != Vector3.INF, "there's a spot for the builder's yard")
+	var ysite := Services.site_near(sim.network, Services.Kind.BUILDER_YARD, yat)
+	_check(sim.apply({"type": "place_service", "kind": Services.Kind.BUILDER_YARD, "pos": [ysite[0].x, ysite[0].z],
+		"dir": [ysite[1].x, ysite[1].z]}) and sim.economy.money == money, "the town's first builder's yard is free")
 	_check(FirstTown.current(sim) == "power", "then power (%s)" % FirstTown.current(sim))
 
 	# Power: the suggested spot is one the tool takes, and the line takes a

@@ -113,6 +113,11 @@ const SERVICES := {
 	# The town's share of bringing a cab company in (office, lot and its
 	# first two cabs); after that it runs on its own fares.
 	"taxi_company": {"cost": 150_000, "upkeep": 0},
+	# A home builder's yard: an office, a gravel lot and its trucks. Every
+	# town gets its first one free; it runs on what it's paid for each house
+	# (Builders). Its green roads reach about 2 road miles, where a crew gets
+	# there in about a minute of play.
+	"builder_yard": {"cost": 180_000, "upkeep": 0, "reach": 3200.0},
 	# A 25-bed critical access hospital with an ER, the kind most rural US
 	# counties have. Its ambulances answer calls within about 6 road miles.
 	# The city's upkeep is its county hospital levy; the hospital earns the
@@ -1063,6 +1068,28 @@ const TAXI_CAB_PRICE := 22_000
 const TAXI_CAB_RESALE := 4_000
 ## The owner's own money at the start.
 const TAXI_START_CASH := 40_000
+
+## The town's home builder (Builders), paid for each house it puts up: a
+## small-town builder's margin after its crews are paid, about 9% of a $180k
+## new home.
+const BUILDER_FEE_HOUSE := 16_000
+## Builders are paid in draws, as a construction loan pays out: this share
+## when work starts, the rest when the house is done.
+const BUILDER_FIRST_DRAW := 0.3
+## What a used pickup or mixer sells for when the owner has too many.
+const BUILDER_RESALE := 0.6
+## A used F-250 with a ladder rack and tools, and a used 10-yard ready-mix
+## truck (a small builder buys used: new ones run about $62k and $185k).
+const BUILDER_PICKUP_PRICE := 38_000
+const BUILDER_MIXER_PRICE := 75_000
+## Crews are subcontractors paid by the job, out of the fee: the company
+## pays each truck's insurance, fuel and repairs a month, and the office.
+const BUILDER_CREW_MONTHLY := 1_200
+const BUILDER_MIXER_MONTHLY := 2_500
+const BUILDER_OFFICE_MONTHLY := 5_000
+## The owner's money and trucks at the start.
+const BUILDER_START_CASH := 300_000
+const BUILDER_START_FLEET := {"work_pickup": 4, "concrete_mixer": 2}
 ## Share of the day's rides in each hour, midnight first: a morning bump, a
 ## steady day, and the late-night run home (Indiana bars close at 3 am).
 const TAXI_HOURLY := [5.0, 5.0, 6.0, 3.0, 1.0, 1.5, 3.0, 5.0, 5.0, 4.0, 4.0, 4.0,

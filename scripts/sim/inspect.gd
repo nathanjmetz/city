@@ -224,6 +224,8 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 		return sim.buses.describe(sim, id)
 	if b.kind == Services.Kind.TAXI_COMPANY:
 		return sim.taxis.describe(sim, id)
+	if b.kind == Services.Kind.BUILDER_YARD:
+		return sim.builders.describe(sim, id)
 	if b.kind == Services.Kind.HOSPITAL and sim.healthcare.hubs.has(id):
 		return _hospital(sim, id)
 	var k: Dictionary = Services.KINDS[b.kind]
