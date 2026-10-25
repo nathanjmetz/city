@@ -91,6 +91,7 @@ var wealth := Callable()
 
 # Survey cache: the survey lines only change when roads do.
 var _sig := {}     # seg id -> String (its shape and type)
+var _update_key := []  # the roads update() last saw (see update)
 var _seg_box := {}  # seg id -> Rect2 (its centre line)
 var _pieces := {}  # seg id -> Array of [Vector2 a, Vector2 b, float half ROW, Rect2]
 var _sides := {}   # "seg:side" -> side Dictionary (see _side)
@@ -445,6 +446,13 @@ func side_survey(network: RoadNetwork, id: int, side: int) -> Dictionary:
 
 ## Brings the survey up to date with the roads. Call before plan().
 func update(network: RoadNetwork) -> void:
+	# The roads as they were last time (RoadNetwork.revision moves on with
+	# every edit, though not until a batch of edits ends): nothing to do.
+	var roads := [network.get_instance_id(), network.revision, network.segments.size()]
+	var settled: bool = network._batch == 0 and not network._batch_dirty
+	if settled and roads == _update_key:
+		return
+	_update_key = roads if settled else []
 	var boxes := []
 	var seen := {}
 	for id in network.segments:

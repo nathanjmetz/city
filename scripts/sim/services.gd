@@ -305,15 +305,30 @@ func site_problem(network: RoadNetwork, kind: int, pos: Vector3, dir: Vector3) -
 
 ## True when a footprint (four corners) runs onto any road.
 static func road_clash(network: RoadNetwork, poly: PackedVector2Array) -> bool:
-	for id in network.segments:
-		var hw := RoadStyle.right_of_way_half(network.segments[id].type)
-		for p in network.sample_segment(id, 24):
-			var q := Vector2(p.x, p.z)
-			if Geometry2D.is_point_in_polygon(q, poly):
+	# Only the roads that could reach the outline (RoadIndex), not every one.
+	var ix := RoadIndex.of(network)
+	if ix != null and not poly.is_empty():
+		var box := Rect2(poly[0], Vector2.ZERO)
+		for q in poly:
+			box = box.expand(q)
+		for id in ix.near(box):
+			if _clashes(poly, ix.samples[id], RoadStyle.right_of_way_half(network.segments[id].type)):
 				return true
-			for i in poly.size():
-				if Geometry2D.get_closest_point_to_segment(q, poly[i], poly[(i + 1) % poly.size()]).distance_to(q) < hw - 0.5:
-					return true
+		return false
+	for id in network.segments:
+		if _clashes(poly, network.sample_segment(id, RoadIndex.SAMPLES), RoadStyle.right_of_way_half(network.segments[id].type)):
+			return true
+	return false
+
+
+static func _clashes(poly: PackedVector2Array, pts: PackedVector3Array, hw: float) -> bool:
+	for p in pts:
+		var q := Vector2(p.x, p.z)
+		if Geometry2D.is_point_in_polygon(q, poly):
+			return true
+		for i in poly.size():
+			if Geometry2D.get_closest_point_to_segment(q, poly[i], poly[(i + 1) % poly.size()]).distance_to(q) < hw - 0.5:
+				return true
 	return false
 
 
