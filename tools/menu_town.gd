@@ -1,7 +1,8 @@
 extends SceneTree
 ## Grows the small town the title screen flies over and saves it to
 ## res://art/menu/town.city: a county highway as Main Street with brick
-## shops, a grid of homes either side, and the usual services.
+## shops, a grid of homes either side, the usual services and a few farms
+## out along the highway.
 ## Run: godot --headless -s tools/menu_town.gd -- [ticks]
 
 
@@ -33,6 +34,13 @@ func _initialize() -> void:
 		if not site.is_empty():
 			sim.apply({"type": "place_service", "kind": entry[0], "pos": [site[0].x, site[0].z],
 				"dir": [site[1].x, site[1].z]})
+	# Two farms out along the highway, so the county around the town has
+	# working fields (crops on the calendar, farmsteads, barns).
+	for entry in [[Vector3(380, 0, 90), Vector3(0, 0, -1)], [Vector3(-380, 0, -90), Vector3(0, 0, 1)],
+			[Vector3(80, 0, -420), Vector3(0, 0, 1)]]:
+		var ok := sim.apply({"type": "place_farmhouse", "pos": [entry[0].x, entry[0].z],
+			"dir": [entry[1].x, entry[1].z], "crop": "corn"})
+		print("farmhouse at ", entry[0], ": ", ok)
 	for i in ticks:
 		sim.tick()
 	# Summer, whatever month it grew to.

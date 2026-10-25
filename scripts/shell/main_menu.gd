@@ -17,6 +17,8 @@ var _cam := Camera3D.new()
 const MENU_TOWN := "res://art/menu/town.city"
 ## How far out the camera circles downtown, in metres.
 const ORBIT := 230.0
+## The hour of the backdrop's light: late afternoon.
+const LOOK_HOUR := 18.0
 
 var _angle := 0.4
 var _code := LineEdit.new()
@@ -450,7 +452,8 @@ func _gap(h: int) -> Control:
 
 ## A finished small town, flown over slowly behind the menu.
 func _build_backdrop() -> void:
-	add_child(SkyLight.new())
+	var sky := SkyLight.new()
+	add_child(sky)
 	_cam.fov = 45.0
 	_cam.h_offset = -70.0  # keeps the town clear of the menu
 	# As in play (CityCamera): out past the far land, so the county runs on
@@ -483,10 +486,39 @@ func _build_backdrop() -> void:
 	var farmsteads := FarmsteadView.new()
 	add_child(farmsteads)
 	farmsteads.setup(sim)
+	# The farms' own fields, and the crop calendar for the county's: the
+	# date is the town's (high summer), so the corn stands tall and green.
+	DayNight.load_settings()
+	var farms := FarmView.new()
+	add_child(farms)
+	farms.setup(sim)
 	var exits := ExitRoads.new()
 	add_child(exits)
 	exits.setup(sim, land, "exits")
+	_set_look(sky, sim)
 	Vegetation.cover_source = func(p: Vector3) -> Array:
 		var x := p.x + sim.terrain_offset.x
 		var z := p.z + sim.terrain_offset.y
 		return Terrain.wild_cover(x, z) + [Terrain.crops(x, z)]
+
+
+## Summer, late afternoon over Grant County: the game's own sun, sky and
+## haze (SkyLight.set_time) for the town's date, and the season values the
+## shaders read (the game leaves them where it last set them, which could be
+## snow if the last town was in winter).
+func _set_look(sky: SkyLight, sim: CitySim) -> void:
+	var look := Seasons.summer()
+	RenderingServer.global_shader_parameter_set("snow", 0.0)
+	Seasons.snow_now = 0.0
+	RenderingServer.global_shader_parameter_set("season_look",
+		Vector4(look.autumn, look.bare, look.spring, look.dry))
+	RenderingServer.global_shader_parameter_set("night", 0.0)
+	RenderingServer.global_shader_parameter_set("windows_lit", 0.0)
+	var months := Seasons.months(sim.tick_count) if DayNight.seasons_on else 6.5
+	sky.set_season(months)
+	sky.set_time(LOOK_HOUR, months)
+	if RenderingServer.get_current_rendering_method() == "gl_compatibility":
+		# The browser's renderer has no sky bounce light, and a low sun
+		# alone leaves the town flat and grey there: lift sun and shade.
+		sky.sun.light_energy *= 2.0
+		sky.env.ambient_light_energy *= 2.2
