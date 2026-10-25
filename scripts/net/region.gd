@@ -191,6 +191,7 @@ func update_city(id: String, d: Dictionary, full_z := "", card_z := "") -> bool:
 		return false
 	if not cities.has(id):
 		return false
+	var old := [_data.get(id), _full.get(id)]
 	_data[id] = d
 	_stale[id] = true
 	awaiting.erase(id)
@@ -204,7 +205,45 @@ func update_city(id: String, d: Dictionary, full_z := "", card_z := "") -> bool:
 			_full_z[id] = full_z
 		_count_copy(id)
 	_drop_built(id, d)
+	_let_go(id, old)
 	return true
+
+
+## Lets go of a town's old copies, on another core: a grown town's copy is
+## a few hundred thousand small parts, and freeing them took the server's
+## loop 20 to 50 ms each time a copy came in. Only copies the region no
+## longer holds are let go (a postcard coming in keeps the full copy).
+func _let_go(id: String, old: Array) -> void:
+	var gone := []
+	for o in old:
+		if o is Dictionary and not o.is_empty() and not is_same(o, _data.get(id)) and not is_same(o, _full.get(id)) \
+				and not gone.any(func(g): return is_same(g, o)):
+			gone.append(o)
+	if gone.is_empty():
+		return
+	settle_letting_go()
+	var task := RegionClient._on_another_core(func():
+		for o in gone:
+			o.clear()
+		gone.clear())
+	if task >= 0:
+		_letting_go.append(task)
+
+
+## Tasks letting go of old copies (see _let_go), each waited for once done.
+static var _letting_go := []
+
+
+## Collects the finished let-go tasks (all of them, waiting, with `wait`:
+## a task never waited for crashes the game as it closes).
+static func settle_letting_go(wait := false) -> void:
+	var left := []
+	for task in _letting_go:
+		if wait:
+			WorkerThreadPool.wait_for_task_completion(task)
+		elif not RegionClient._done(task):
+			left.append(task)
+	_letting_go = left
 
 
 var _copies := 0

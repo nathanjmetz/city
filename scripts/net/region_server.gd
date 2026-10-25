@@ -169,7 +169,12 @@ var slowest := {"ms": 0.0, "what": ""}
 const SLOW_MS := 100.0
 
 
+func _exit_tree() -> void:
+	Region.settle_letting_go(true)
+
+
 func _process(delta: float) -> void:
+	Region.settle_letting_go()
 	_timed("poll", func(): _peer.poll())
 	var t := Time.get_ticks_usec()
 	var all := _link.receive()

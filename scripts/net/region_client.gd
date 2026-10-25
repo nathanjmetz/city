@@ -464,7 +464,12 @@ func _process(delta: float) -> void:
 	var t_all := Perf.now()
 	_step_snapshot()
 	_poll(delta)
+	Region.settle_letting_go()
 	Perf.add("net.client", t_all)
+
+
+func _exit_tree() -> void:
+	Region.settle_letting_go(true)
 
 
 func _poll(delta: float) -> void:
