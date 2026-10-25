@@ -91,7 +91,7 @@ A few helpers run at a time, never two on the same files.
      - Suspects: the "subdivision" profile (construction.gd:102-109 sends flatbeds with a bulldozer, sewer pipe and water main), and sites saved before #529 that still hold old trips or parked flatbeds.
      - The flatbed model always draws steel coils (vehicle_models.gd `_trailer_flat`), whatever the cargo.
      - Reproduce in Nathan's real save, or a town grown with the zone tool (PerfTown showed no construction trucks), before changing anything.
-  3. "at some distances, the ground looks correct. at closer distances, there is a very clear lined pattern on it." The near-ground grass texture or detail tiling. #548 fixed the shadow stripes, so this is a different cause. Compare TerrainView's near LOD shader and grass detail at 40–100 m.
+  3. "at some distances, the ground looks correct. at closer distances, there is a very clear lined pattern on it." Later: "The lines only happened in grass. Or Fields." In fields this may be the crop rows (crop_calendar.gd crop_look: 30 in rows, shown when a row spans over about 3 px); check whether they are too sharp. Grass should have no rows (rowed=0), so grass lines are a separate bug. A 60 m desktop shot of town lawns looked clean; ask for a screenshot and check the browser renderer. The near-ground grass texture or detail tiling. #548 fixed the shadow stripes, so this is a different cause. Compare TerrainView's near LOD shader and grass detail at 40–100 m.
 
 *Waits for Nathan*
 30. The real Grant County map from public data (big downloads; OpenStreetMap credit line).
