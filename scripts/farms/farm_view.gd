@@ -1,8 +1,10 @@
 class_name FarmView
 extends Node3D
-## Draws farms: the fields each farm owns (crop rows that change with the
-## seasons), farmsteads and their gravel lanes. (The Fertility view shows
-## the soil; see InfoView.)
+## Draws farms: the fields each farm owns (crop rows that grow, ripen and
+## are cut on the crop calendar, CropCalendar), farmsteads and their gravel
+## lanes, and the corn and soybean plants close to the camera (CropPlants).
+## It also keeps the crop table on today's date for every field drawer.
+## (The Fertility view shows the soil; see InfoView.)
 
 var sim: CitySim
 var _fields := MeshInstance3D.new()
@@ -12,7 +14,8 @@ var _barns := {}  # "id:x:y:kind" -> Node3D, one per livestock barn group
 var _cows := MultiMeshInstance3D.new()  # beef herds on pasture
 var _trees := TreeField.new()
 var _mats := {}
-var _month := -1
+var _year := -1
+var _plants: CropPlants
 var _signs := {}  # "farm:<id>" -> the farm's sign by the road
 
 
@@ -20,7 +23,7 @@ func setup(s: CitySim) -> void:
 	sim = s
 	sim.farms_changed.connect(_rebuild)
 	sim.families.changed.connect(_sync_signs)
-	_fields.material_override = Surfaces.field()
+	_fields.material_override = CropFields.material()
 	_lanes.material_override = RoadStyle.material(Color(0.58, 0.47, 0.33))  # tan crushed limestone and dirt
 	for mi in [_fields, _lanes]:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -28,14 +31,32 @@ func setup(s: CitySim) -> void:
 	add_child(_trees)
 	_cows.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_cows)
+	_plants = CropPlants.new()
+	_plants.setup(sim)
+	add_child(_plants)
+	_sync_date()
+	CropCalendar.refresh(true)
 	_rebuild()
 
 
 func _process(_delta: float) -> void:
-	var month: int = DayNight.visible_month(sim)
-	if month != _month:
-		_month = month
+	var t0 := Perf.now()
+	_sync_date()
+	CropCalendar.refresh(false, 1.0)
+	# The crops in the fields change each January, when the farms plan.
+	var year := Seasons.year(sim.tick_count)
+	if year != _year:
+		_year = year
 		_draw_fields()
+	Perf.add("frame.crops", t0)
+
+
+## The crop table shows today (mid July while seasons are off).
+func _sync_date() -> void:
+	if DayNight.seasons_on:
+		CropCalendar.set_date(Seasons.months(sim.tick_count), Seasons.year(sim.tick_count))
+	else:
+		CropCalendar.set_date(6.5, Seasons.year(sim.tick_count))
 
 
 func _rebuild() -> void:
@@ -72,58 +93,18 @@ static func _look(f: Dictionary) -> int:
 	return 1 + (1 if f.cells.size() >= 30 else 0) + (1 if f.cells.size() >= 100 else 0)
 
 
-## What a field looks like this month in southern Indiana, by its crop
-## (CropPlan): from the air corn is a dark blue-green and soybeans a
-## brighter yellow-green; winter wheat greens up in March, turns gold and
-## is cut in June, then double-crop soybeans follow; hay stays green all
-## season. A rye cover crop greens the stubble in November (`cover`) and
-## again in March and April before planting (`cover_prev`). `when` (0 to 1)
-## is how early this field's planting and harvest run: farmers work one
-## field at a time, so in spring and fall neighbouring forties differ
-## (Purdue crop progress reports: planting runs late April to early June,
-## harvest mid-September to early November).
-func _season_color(crop: String, cover_prev := false, cover := false, when := 0.5) -> Color:
-	var m := maxi(_month, 1)
-	if m <= 2 or m == 12:
-		return Color(0.84, 0.85, 0.88)  # snow over the stubble
-	match crop:
-		"wheat":
-			return [Color(0.34, 0.47, 0.2), Color(0.3, 0.5, 0.18), Color(0.4, 0.5, 0.22), Color(0.78, 0.66, 0.32),
-				Color(0.44, 0.43, 0.25), Color(0.3, 0.44, 0.2), Color(0.32, 0.45, 0.19), Color(0.68, 0.6, 0.25),
-				Color(0.66, 0.56, 0.36)][m - 3]
-		"pasture":
-			# Cool-season grass: greens in March, lush May and June, brown
-			# in a dry August, green again in fall.
-			return [Color(0.46, 0.48, 0.3), Color(0.34, 0.5, 0.22), Color(0.3, 0.5, 0.2), Color(0.32, 0.49, 0.2),
-				Color(0.4, 0.48, 0.24), Color(0.5, 0.48, 0.28), Color(0.4, 0.49, 0.25), Color(0.38, 0.47, 0.24),
-				Color(0.48, 0.46, 0.3)][m - 3]
-		"hay":
-			return [Color(0.5, 0.5, 0.3), Color(0.36, 0.5, 0.22), Color(0.45, 0.52, 0.25), Color(0.36, 0.5, 0.22),
-				Color(0.42, 0.5, 0.24), Color(0.38, 0.5, 0.23), Color(0.45, 0.48, 0.25), Color(0.5, 0.5, 0.3),
-				Color(0.52, 0.5, 0.32)][m - 3]
-	if m == 3:
-		return Color(0.4, 0.48, 0.24) if cover_prev else Color(0.6, 0.52, 0.38)  # rye, or winter stubble
-	if m == 4:
-		if cover_prev:
-			return Color(0.38, 0.47, 0.24)  # rye
-		# Tilled black soil, or last fall's stubble not yet worked.
-		return Color(0.36, 0.27, 0.19) if when < 0.6 else Color(0.55, 0.48, 0.34)
-	if m == 5:
-		return Color(0.42, 0.42, 0.24) if when < 0.55 else Color(0.38, 0.29, 0.2)  # rows just up, or just planted
-	if m <= 8:
-		# From the air in July (NAIP over Pike County): corn a deep green,
-		# still well lighter than woods; soybeans a brighter yellow-green.
-		var green := Color(0.25, 0.4, 0.15) if crop == "corn" else Color(0.36, 0.5, 0.19)
-		return green.lerp(Color(0.3, 0.42, 0.17), (when - 0.5) * 0.8)  # varieties, planting dates
-	var ripe := Color(0.62, 0.58, 0.3) if crop == "corn" else Color(0.7, 0.62, 0.22)
-	var cut := Color(0.66, 0.56, 0.36)  # harvested stubble
-	if m == 9:
-		return cut if when < 0.15 else ripe
-	if m == 10:
-		return cut if when < 0.75 else ripe
-	if m == 11 and cover:
-		return Color(0.42, 0.48, 0.26)  # rye coming up in the stubble
-	return cut
+## A field's slot in the crop table (CropCalendar): its row from its facts
+## (this year's crop, last year's, the farm's tillage habit, rye before and
+## after) and its timing column: farmers work one field at a time, so in
+## spring and fall neighbouring forties differ.
+static func slot_of(id: Variant, f: Dictionary, c: Vector2i) -> Vector2i:
+	var fl := CropPlan.field(f, c)
+	var practice := CropCalendar.farm_practice(int(id), f)
+	if fl.cover or fl.cover_prev:
+		practice = CropCalendar.RYE
+	var row := CropCalendar.farm_row(str(fl.crop), str(fl.prev), practice, bool(fl.cover), bool(fl.cover_prev))
+	var col := int(Farms._hash01(Farms.forty_of(c) + Vector2i(int(id) * 7, 3), 23) * CropCalendar.COLS)
+	return Vector2i(maxi(row, 0), clampi(col, 0, CropCalendar.COLS - 1))
 
 
 ## Each farm's fields: 40-acre forties square to its farmhouse, crop rows
@@ -139,6 +120,10 @@ func _draw_fields() -> void:
 	lanes.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var any := false
 	var any_lane := false
+	# A row per kind of field stays put while the farms change, so most
+	# redraws find their rows ready; when they run short, start over.
+	if CropCalendar.farm_rows_used() > (CropCalendar.ROWS - CropCalendar.COUNTY_ROWS) * 3 / 4:
+		CropCalendar.clear_farm_rows()
 	for id in sim.farms.farms:
 		var f: Dictionary = sim.farms.farms[id]
 		var trimmed: Dictionary = sim.farms.trim.get(id, {})
@@ -147,8 +132,8 @@ func _draw_fields() -> void:
 			owned[c] = true
 		for c in f.cells:
 			var fl := CropPlan.field(f, c)
-			var col := _season_color(fl.crop, fl.cover_prev, fl.cover,
-				Farms._hash01(Farms.forty_of(c) + Vector2i(int(id) * 7, 3), 23))
+			var slot := slot_of(id, f, c)
+			var col := CropFields.color(slot.x, slot.y)
 			if trimmed.has(c):
 				# A field a road ran through stops at the road's edge.
 				for poly in trimmed[c]:
@@ -168,6 +153,8 @@ func _draw_fields() -> void:
 	_fields.visible = any
 	if any:
 		_fields.mesh = Terrain.drape(st.commit(), true, 10.0)
+	if _plants != null:
+		_plants.fields_changed()
 	_lanes.visible = any_lane
 	if any_lane:
 		_lanes.mesh = Terrain.drape(lanes.commit(), true, 8.0)
@@ -193,10 +180,11 @@ func _add_cell(st: SurfaceTool, f: Dictionary, c: Vector2i, owned: Dictionary, c
 	var mid := PackedVector2Array([corners[0].lerp(corners[3], t0), corners[1].lerp(corners[2], t0),
 		corners[1].lerp(corners[2], t1), corners[0].lerp(corners[3], t1)])
 	_add_poly(st, f, mid, 0.06, col)
+	var turn := Color(col.r, col.g, 0.96, col.a)  # the headlands a shade darker
 	if front:
-		_add_poly(st, f, PackedVector2Array([corners[0], corners[1], mid[1], mid[0]]), 0.06, col.darkened(0.04), true)
+		_add_poly(st, f, PackedVector2Array([corners[0], corners[1], mid[1], mid[0]]), 0.06, turn, true)
 	if back:
-		_add_poly(st, f, PackedVector2Array([mid[3], mid[2], corners[2], corners[3]]), 0.06, col.darkened(0.04), true)
+		_add_poly(st, f, PackedVector2Array([mid[3], mid[2], corners[2], corners[3]]), 0.06, turn, true)
 
 
 func _add_poly(st: SurfaceTool, f: Dictionary, poly: PackedVector2Array, y: float, col: Color, across := false,
@@ -229,7 +217,7 @@ func _add_poly(st: SurfaceTool, f: Dictionary, poly: PackedVector2Array, y: floa
 ## narrower grass border (a field edge or grassed waterway, NRCS practice
 ## 386 and 412) between the farm's own forties.
 func _fencerows(st: SurfaceTool, id: Variant, f: Dictionary) -> void:
-	var verge := Color(0.5, 0.5, 0.3, 0.0)
+	var verge := CropFields.color(0, 0, true)
 	var planted := []
 	# Neighbour offsets and the cell_corners() edge each one shares.
 	var sides := [[Vector2i(-1, 0), 0, 3], [Vector2i(1, 0), 1, 2], [Vector2i(0, -1), 0, 1], [Vector2i(0, 1), 3, 2]]
