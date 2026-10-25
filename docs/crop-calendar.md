@@ -60,11 +60,28 @@ Measured by switching the new look on and off 8 times in each view and comparing
 
 CPU: the crop table is one 128 x 128 texture (16 rows for the county's kinds of field, 112 for the town's farms; when those run out a field borrows the county row with its crop). A full pass takes about 2-6 ms, spread at 1 ms a frame, about every 5 seconds at normal speed; a date that moves on part way through a pass sends it round again for the rows it had passed. Each field's plan for the year (about 2 KB, measured) is kept until the year turns: one per table cell at most, so 8 MB at the very most and 1-2.5 MB for a town with a few farms.
 
-Cold fills, measured in a real window (`tools/crop_cold_fill.gd`, two farms): when a town loads, the table's first fill takes 6.4 ms and the farm fields' rows 1.8 ms, in one frame during loading. At a year turn every plan is new, and the table catches up at 1.2-1.5 ms a frame over about ten frames; no frame of the table's goes over 16 ms. The frame the farms plan their new crops is slow (about 150 ms here), but that is the farm field mesh being rebuilt, as it always was when farms change (it used to happen every game month as well); the year turning no longer redraws the fields a second time unless a field is on a borrowed county row. Plants: about 0.3-0.5 ms a frame while tiles stream in; one 16 m tile takes 0.3 ms on average and 0.64 ms at worst, so no freeze. At Ultra, shadows from every plant tripled the triangles (6.6 to 14.9 M in the farm view), so plant shadows are corn only and Cinematic only.
+Cold fills, measured in a real window (`tools/crop_cold_fill.gd`, two farms): when a town loads, the table's first fill takes 6.4 ms and the farm fields' rows 1.8 ms, in one frame during loading. At a year turn every plan is new, and the table catches up at 1.2-1.5 ms a frame over about ten frames; no frame of the table's goes over 16 ms. The frame the farms plan their new crops used to be slow (about 240 ms here) because the farm field mesh was rebuilt all at once; it is now drawn a few milliseconds a frame (see "Drawing the farms' fields" below), and the year turning only redraws a field a second time if it is on a borrowed county row. Plants: about 0.3-0.5 ms a frame while tiles stream in; one 16 m tile takes 0.3 ms on average and 0.64 ms at worst, so no freeze. At Ultra, shadows from every plant tripled the triangles (6.6 to 14.9 M in the farm view), so plant shadows are corn only and Cinematic only.
+
+## Drawing the farms' fields (2026-10-25)
+
+When farms change (a field planted, a farm grows, a road cut) the town's field mesh used to be rebuilt all at once: about 225-345 ms in one frame for five farms and 385 field cells (M5 Max, real window, `tools/crop_bench.gd --freeze`). Now `FarmFieldJob` (`scripts/farms/farm_field_job.gd`) draws one farm at a time, a field cell a step, at most 3 ms a frame, and `FarmView` swaps each farm's new mesh in when it is whole, so the old fields stay on screen until then (no holes, no flicker). A farm whose fields would look the same (its cells, slots, lane and road trims are compared exactly) is only checked, not redrawn. The farmstead and barn builds (`FarmSteadJob`: build, lay on the land, put in the scene; one step a frame) and the herds (`FarmHerdJob`: 150 cows a step) are spread the same way. After a change FarmView waits 4 frames so the rest of the game's reaction to it lands first. The picture is the same: `tests/test_farm_view.gd` checks that fields drawn in many steps equal fields drawn at once, and a one-off check against the old all-at-once code found the same 49,303 field triangles, lane triangles and fencerow trees (with roads cutting fields and pasture in).
+
+Measured the same way before and after (worst frame in the 7 seconds after the change; "shows after" is how long until every field is drawn):
+
+| Change | Before: worst frame | After: farm drawing in a frame | After: shows after |
+| --- | --- | --- | --- |
+| Farms change, nothing different | 232-258 ms | 1.3 ms (a check) | 8-43 ms |
+| A new farm | 246-282 ms | 3 ms fields; 2.5-6 ms a farmstead step (13 ms once, loaded machine) | 50-90 ms |
+| A road cuts fields | 322 ms | 3.5 ms | 330-420 ms |
+| Year turns (every farm's crops change) | 247-358 ms | 3.5 ms; farmstead steps up to 5-10 ms | 700-850 ms |
+| A farm grows | 279 ms | 3.7 ms | 410-530 ms |
+
+The total work to redraw everything is the same (about 230 ms of it); it is spread. The most one frame of it costs is the farmstead's third step, `ConstructionSite.add_to`, 4-6 ms (9-13 ms with the machine busy), which is not split. The frames still slow after a change (20-30 ms; a road 90-100 ms) are other parts of the game answering the same change: the same slow frames show with FarmView disconnected (`--without-view`). Corners: a farm's lane and fields share one signature, so a lane-only change redraws the fields too; when the table of farm rows runs short and is cleared, every farm redraws and a farm shows its old look for the few frames until its turn.
 
 ## Sliders
 
 - `CropPlants.RADIUS`, `NEAR` and `SHADOW_TIER`: how far plants reach, where the light plant starts, and from which tier they cast shadows.
+- `FarmView.FIELD_BUDGET_MS` (3), `FarmView.SETTLE_FRAMES` (4): the most a frame spends drawing farms, and the frames waited after a change.
 - `CropPlants.off`: no close-up plants (the ground still shows every stage).
 - The browser draws no plants; it has the full calendar on the ground.
 

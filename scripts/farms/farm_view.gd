@@ -7,17 +7,45 @@ extends Node3D
 ## (The Fertility view shows the soil; see InfoView.)
 
 var sim: CitySim
-var _fields := MeshInstance3D.new()
-var _lanes := MeshInstance3D.new()
 var _homes := {}  # farm id -> Node3D
 var _barns := {}  # "id:x:y:kind" -> Node3D, one per livestock barn group
 var _cows := MultiMeshInstance3D.new()  # beef herds on pasture
+## Farmsteads and barns are built one at a time, a step or two a frame
+## (FarmSteadJob): what is waiting ["home" or "barn", key] and the barn
+## groups the farms want now (key -> [farm id, site, kind]).
+var _steads := []
+var _stead_job: FarmSteadJob
+var _barn_want := {}
+## The herds are placed a few hundred cows a time (FarmHerdJob).
+var _herd_job: FarmHerdJob
+var _herd_sig: Array = []
+var _herd_dirty := false
 var _trees := TreeField.new()
 var _mats := {}
 var _year := -1
-## Whether a field borrows a county row (CropCalendar.farm_row ran out):
-## those rows' crops follow the year, so the fields are redrawn when it turns.
-var _borrowing := false
+## Each farm's drawn fields: id -> {fields: MeshInstance3D, lane: MeshInstance3D,
+## sig: what they were drawn from (FarmFieldJob), borrows: whether a field
+## borrows a county row (CropCalendar.farm_row ran out): those rows' crops
+## follow the year, so those fields are redrawn when it turns}.
+var _drawn := {}
+## The fields are redrawn a few milliseconds a frame (see FarmFieldJob), a
+## farm at a time, and only the farms that changed: the farms still to check
+## in this pass, the one being drawn, and whether another pass is wanted.
+var _queue := []
+var _job: FarmFieldJob
+var _dirty := false
+var _force := false
+var _pass_changed := false
+var _lane_mat: Material
+## Most milliseconds of field drawing in a frame.
+const FIELD_BUDGET_MS := 3.0
+## Frames to wait after a farms change before drawing, and what is left.
+const SETTLE_FRAMES := 4
+var _settle := 0
+## What the last frame's farm drawing took (ms), for tools.
+var work_ms := 0.0
+## ... and its parts: farmsteads and barns, fields, herds (ms).
+var work_parts := [0.0, 0.0, 0.0]
 var _plants: CropPlants
 var _signs := {}  # "farm:<id>" -> the farm's sign by the road
 
@@ -26,11 +54,7 @@ func setup(s: CitySim) -> void:
 	sim = s
 	sim.farms_changed.connect(_rebuild)
 	sim.families.changed.connect(_sync_signs)
-	_fields.material_override = CropFields.material()
-	_lanes.material_override = RoadStyle.material(Color(0.58, 0.47, 0.33))  # tan crushed limestone and dirt
-	for mi in [_fields, _lanes]:
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(mi)
+	_lane_mat = RoadStyle.material(Color(0.58, 0.47, 0.33))  # tan crushed limestone and dirt
 	add_child(_trees)
 	_cows.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_cows)
@@ -40,6 +64,7 @@ func setup(s: CitySim) -> void:
 	_sync_date()
 	CropCalendar.refresh(true)
 	_rebuild()
+	finish_now()  # a town that loads has its fields at once, under the loading screen
 
 
 func _process(_delta: float) -> void:
@@ -53,9 +78,16 @@ func _process(_delta: float) -> void:
 	var year := Seasons.year(sim.tick_count)
 	if year != _year:
 		_year = year
-		if _borrowing:
-			_draw_fields()
+		for id in _drawn:
+			_dirty = _dirty or _drawn[id].borrows
 	Perf.add("frame.crops", t0)
+	t0 = Perf.now()
+	if _settle > 0:
+		_settle -= 1
+	else:
+		_work(FIELD_BUDGET_MS)
+	work_ms = (Perf.now() - t0) / 1000.0
+	Perf.add("frame.farm_work", t0)
 
 
 ## The crop table shows today (mid July while seasons are off).
@@ -67,19 +99,28 @@ func _sync_date() -> void:
 
 
 func _rebuild() -> void:
-	_draw_fields()
+	# Whatever else the game does about a farm change comes first, so the
+	# farm drawing never lands on the same frames (not while drawing is
+	# already going on, or a change every frame would hold it up for good).
+	if settled():
+		_settle = SETTLE_FRAMES
+	_dirty = true  # the fields: a pass over the farms starts a few frames on
+	_herd_dirty = true
+	# A farm that is gone takes its farmstead and trees with it at once.
 	for id in _homes.keys():
-		if not sim.farms.farms.has(id) or _homes[id].get_meta("look") != _look(sim.farms.farms[id]) \
-				or _homes[id].get_meta("built") != sim.farms.farms[id].get("built", []).size():
+		if not sim.farms.farms.has(id):
 			_homes[id].queue_free()
 			_homes.erase(id)
 			_trees.remove(str(id))
 			_trees.remove("rows %s" % str(id))
+	# A farm with no farmstead yet, or whose farmstead has grown, gets a new
+	# one, which replaces the old when it is whole.
 	for id in sim.farms.farms:
-		if not _homes.has(id):
-			_homes[id] = _farmstead(id, sim.farms.farms[id])
+		var f: Dictionary = sim.farms.farms[id]
+		if not _homes.has(id) or _homes[id].get_meta("look") != _look(f) \
+				or _homes[id].get_meta("built") != f.get("built", []).size():
+			_want_stead("home", id)
 	_sync_barns()
-	_draw_cows()
 	_sync_signs()
 
 
@@ -105,8 +146,12 @@ static func _look(f: Dictionary) -> int:
 ## after) and its timing column: farmers work one field at a time, so in
 ## spring and fall neighbouring forties differ.
 static func slot_of(id: Variant, f: Dictionary, c: Vector2i) -> Vector2i:
-	var fl := CropPlan.field(f, c)
-	var practice := CropCalendar.farm_practice(int(id), f)
+	return slot_from(id, CropCalendar.farm_practice(int(id), f), CropPlan.field(f, c), c)
+
+
+## slot_of with the farm's tillage habit and the field's plan already worked out.
+static func slot_from(id: Variant, farm_practice: int, fl: Dictionary, c: Vector2i) -> Vector2i:
+	var practice := farm_practice
 	if fl.cover or fl.cover_prev:
 		practice = CropCalendar.RYE
 	var row := CropCalendar.farm_row(str(fl.crop), str(fl.prev), practice, bool(fl.cover), bool(fl.cover_prev))
@@ -114,215 +159,119 @@ static func slot_of(id: Variant, f: Dictionary, c: Vector2i) -> Vector2i:
 	return Vector2i(row, clampi(col, 0, CropCalendar.COLS - 1))
 
 
-## Each farm's fields: 40-acre forties square to its farmhouse, crop rows
-## running back from the road, turn rows across the ends of each field and
-## a grass border between fields, the way they look from the air in Pike
-## County.
-func _draw_fields() -> void:
+## True while some farm's fields are still being drawn or checked.
+func fields_settled() -> bool:
+	return _job == null and _queue.is_empty() and not _dirty
+
+
+## True when nothing at all is waiting: fields, farmsteads, barns, herds.
+func settled() -> bool:
+	return fields_settled() and _steads.is_empty() and _stead_job == null and not _herd_dirty and _herd_job == null
+
+
+## Draws every field that is waiting, now (a town that loads; tools).
+func finish_now() -> void:
+	while not settled():
+		_work(1.0e9)
+
+
+## Each farm's fields: the farms that changed are drawn again, a few
+## milliseconds a frame, each into a new mesh that replaces the old one
+## when whole, so there are never holes or flicker. A farm whose fields look
+## just as they did is only checked.
+func _draw_some(budget_ms: float) -> void:
 	if sim == null:
 		return
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var lanes := SurfaceTool.new()
-	lanes.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var any := false
-	var any_lane := false
+	var deadline := Time.get_ticks_usec() + int(budget_ms * 1000.0)
+	while true:
+		if _job == null:
+			if _queue.is_empty():
+				if _pass_changed:
+					_pass_changed = false
+					var t0 := Perf.now()
+					if _plants != null:
+						_plants.fields_changed()
+					Perf.add("farm_job.plants_check", t0)
+				if not _dirty:
+					return
+				_dirty = false
+				_begin_pass()
+				continue
+			var id: Variant = _queue.pop_front()
+			if not sim.farms.farms.has(id):
+				continue
+			_job = FarmFieldJob.new(sim, id, [] if _force or not _drawn.has(id) else _drawn[id].sig)
+		elif _job.view_moved():
+			# The land moved under the job: its ground heights are stale.
+			_queue.push_front(_job.id)
+			_job = null
+			continue
+		if _job.step(deadline):
+			var t0 := Perf.now()
+			_install(_job)
+			Perf.add("farm_job.install", t0)
+			_job = null
+		if Time.get_ticks_usec() >= deadline:
+			return
+
+
+## A pass starts with every farm to check (and farms that went to remove).
+func _begin_pass() -> void:
 	# A row per kind of field stays put while the farms change, so most
-	# redraws find their rows ready; when they run short, start over.
+	# redraws find their rows ready; when they run short, start over (and
+	# every farm's fields take new rows).
+	_force = false
 	if CropCalendar.farm_rows_used() > (CropCalendar.ROWS - CropCalendar.COUNTY_ROWS) * 3 / 4:
 		CropCalendar.clear_farm_rows()
+		_force = true
 	_year = Seasons.year(sim.tick_count)
-	_borrowing = false
-	for id in sim.farms.farms:
-		var f: Dictionary = sim.farms.farms[id]
-		var trimmed: Dictionary = sim.farms.trim.get(id, {})
-		var owned := {}
-		for c in f.cells:
-			owned[c] = true
-		for c in f.cells:
-			var fl := CropPlan.field(f, c)
-			var slot := slot_of(id, f, c)
-			_borrowing = _borrowing or slot.x < CropCalendar.COUNTY_ROWS
-			var col := CropFields.color(slot.x, slot.y)
-			if trimmed.has(c):
-				# A field a road ran through stops at the road's edge.
-				for poly in trimmed[c]:
-					_add_poly(st, f, poly, 0.06, col, false, fl.crop != "pasture")
-			elif fl.crop == "pasture":
-				_add_poly(st, f, Farms.cell_corners(f, c), 0.06, col, false, false)  # grass, no rows
-			else:
-				_add_cell(st, f, c, owned, col)
-			any = true
-		_fencerows(st, id, f)
-		if f.drive.size() >= 2:
-			var pts := PackedVector3Array()
-			for p in f.drive:
-				pts.append(p)
-			RoadMesh.add_strip(lanes, Terrain.densify(pts, 6.0), -Farms.DRIVE_WIDTH * 0.5, Farms.DRIVE_WIDTH * 0.5, 0.05)
-			any_lane = true
-	_fields.visible = any
-	if any:
-		_fields.mesh = Terrain.drape(st.commit(), true, 10.0)
-	if _plants != null:
-		_plants.fields_changed()
-	_lanes.visible = any_lane
-	if any_lane:
-		_lanes.mesh = Terrain.drape(lanes.commit(), true, 8.0)
+	for id in _drawn.keys():
+		if not sim.farms.farms.has(id):
+			_drawn[id].fields.queue_free()
+			_drawn[id].lane.queue_free()
+			_drawn.erase(id)
+			_pass_changed = true
+	_queue = sim.farms.farms.keys()
 
 
-## How wide the turn rows (headlands) are at each end of a field: two passes
-## of a 12-row, 30-inch planter, about 18 m.
-const HEADLAND := 18.0
+## A finished job's meshes replace the farm's old ones.
+func _install(job: FarmFieldJob) -> void:
+	var id: Variant = job.id
+	if not _drawn.has(id):
+		var fields := MeshInstance3D.new()
+		var lane := MeshInstance3D.new()
+		fields.material_override = CropFields.material()
+		lane.material_override = _lane_mat
+		for mi in [fields, lane]:
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(mi)
+		_drawn[id] = {"fields": fields, "lane": lane, "sig": [], "borrows": false}
+	var d: Dictionary = _drawn[id]
+	d.borrows = job.borrows
+	if not job.changed:
+		return
+	d.sig = job.signature
+	d.fields.mesh = job.fields_mesh
+	d.fields.visible = job.fields_mesh != null
+	d.lane.mesh = job.lane_mesh
+	d.lane.visible = job.lane_mesh != null
+	_trees.set_trees("rows %s" % str(id), job.trees)
+	_pass_changed = true
 
 
-## One field cell. At the front or back end of its forty the planter turned
-## round, so a band of rows there runs across the field.
-func _add_cell(st: SurfaceTool, f: Dictionary, c: Vector2i, owned: Dictionary, col: Color) -> void:
-	var corners := Farms.cell_corners(f, c)
-	var forty := Farms.forty_of(c)
-	# corners: 0 front-left, 1 front-right, 2 back-right, 3 back-left
-	# (front is toward the road, -y in the farm's frame).
-	var front := not owned.has(c - Vector2i(0, 1)) or Farms.forty_of(c - Vector2i(0, 1)) != forty
-	var back := not owned.has(c + Vector2i(0, 1)) or Farms.forty_of(c + Vector2i(0, 1)) != forty
-	var h := HEADLAND / Farms.CELL
-	var t0 := h if front else 0.0
-	var t1 := 1.0 - h if back else 1.0
-	var mid := PackedVector2Array([corners[0].lerp(corners[3], t0), corners[1].lerp(corners[2], t0),
-		corners[1].lerp(corners[2], t1), corners[0].lerp(corners[3], t1)])
-	_add_poly(st, f, mid, 0.06, col)
-	var turn := Color(col.r, col.g, 0.96, col.a)  # the headlands a shade darker
-	if front:
-		_add_poly(st, f, PackedVector2Array([corners[0], corners[1], mid[1], mid[0]]), 0.06, turn, true)
-	if back:
-		_add_poly(st, f, PackedVector2Array([mid[3], mid[2], corners[2], corners[3]]), 0.06, turn, true)
+## How wide the turn rows (headlands) are at each end of a field.
+const HEADLAND := FarmFieldJob.HEADLAND
 
 
-func _add_poly(st: SurfaceTool, f: Dictionary, poly: PackedVector2Array, y: float, col: Color, across := false,
-		rows := true) -> void:
-	var tris := Geometry2D.triangulate_polygon(poly)
-	var right := Vector2(-f.dir.z, f.dir.x)
-	var back := Vector2(-f.dir.x, -f.dir.z)
-	var origin := Vector2(f.pos.x, f.pos.z)
-	for k in range(0, tris.size(), 3):
-		var a := poly[tris[k]]
-		var b := poly[tris[k + 1]]
-		var c := poly[tris[k + 2]]
-		var order := [a, b, c] if (b - a).cross(c - a) > 0.0 else [a, c, b]
-		for p in order:
-			st.set_color(col)
-			st.set_normal(Vector3.UP)
-			# Rows run back from the road: about one stripe per 2 m. Turn rows
-			# at a field's ends run across it.
-			var d: Vector2 = p - origin
-			if not rows:
-				st.set_uv(Vector2(0.38 / 16.0, 0.0))  # mid-row everywhere: one shade, no crop rows
-				st.add_vertex(Vector3(p.x, y, p.y))
-				continue
-			st.set_uv((Vector2(d.dot(back), d.dot(right)) if across else Vector2(d.dot(right), d.dot(back))) / 16.0)
-			st.add_vertex(Vector3(p.x, y, p.y))
-
-
-## A grassy, brushy fencerow along each outside edge of a farm's land, with
-## the odd volunteer tree in it, as on real section-line field edges, and a
-## narrower grass border (a field edge or grassed waterway, NRCS practice
-## 386 and 412) between the farm's own forties.
-func _fencerows(st: SurfaceTool, id: Variant, f: Dictionary) -> void:
-	var verge := CropFields.color(0, 0, true)
-	var planted := []
-	# Neighbour offsets and the cell_corners() edge each one shares.
-	var sides := [[Vector2i(-1, 0), 0, 3], [Vector2i(1, 0), 1, 2], [Vector2i(0, -1), 0, 1], [Vector2i(0, 1), 3, 2]]
-	var owned := {}
-	for c in f.cells:
-		owned[c] = true
-	var trimmed: Dictionary = sim.farms.trim.get(id, {})
-	for c in f.cells:
-		var corners := Farms.cell_corners(f, c)
-		var mid := Farms.cell_center(f, c)
-		# Where a road cut the field back, its fencerows stop at the road too.
-		var kept := []
-		for piece in trimmed.get(c, []):
-			kept.append_array(Geometry2D.offset_polygon(piece, 1.5))
-		for s in sides:
-			var n: Vector2i = c + s[0]
-			var inner := owned.has(n)
-			if inner and Farms.forty_of(n) == Farms.forty_of(c):
-				continue
-			var a: Vector2 = corners[s[1]]
-			var b: Vector2 = corners[s[2]]
-			var out := ((a + b) * 0.5 - Vector2(mid.x, mid.z)).normalized()
-			# Between two of its own fields each side gives up 3 m of grass.
-			var strip := PackedVector2Array([a - out * 3.0, b - out * 3.0, b, a]) if inner \
-				else PackedVector2Array([a - out * 2.5, b - out * 2.5, b + out * 1.0, a + out * 1.0])
-			var strips := [strip]
-			if trimmed.has(c):
-				strips = []
-				for piece in kept:
-					strips.append_array(Geometry2D.intersect_polygons(strip, piece))
-			for part in strips:
-				_add_poly(st, f, part, 0.07, verge)
-			# Volunteer trees grow only in the fencerows round the farm's
-			# land, never out in the grass strip between two of its fields,
-			# which the farmer mows and works across.
-			var h := Farms._hash01(c * 4 + s[0], 7)
-			if not inner and h < 0.45:
-				var at := a.lerp(b, 0.15 + 0.7 * Farms._hash01(c * 4 + s[0], 11)) - out * 1.2
-				if trimmed.has(c) and not kept.any(func(piece): return Geometry2D.is_point_in_polygon(at, piece)):
-					continue
-				var sp: int = [TreeField.Species.OAK, TreeField.Species.MAPLE, TreeField.Species.LOCUST, TreeField.Species.CRABAPPLE][int(h * 8.9) % 4]
-				planted.append([Transform3D(Basis(Vector3.UP, h * 40.0).scaled(Vector3.ONE * (0.7 + h)), Vector3(at.x, Terrain.ground_y(at.x, at.y), at.y)),
-					sp, TreeField.LEAF[sp]])
-	_trees.set_trees("rows %s" % str(id), planted)
-
-
-## A Midwestern farmstead: white farmhouse first, then a red barn, grain
-## bins and a concrete silo as the farm grows (see FarmBuilder). Its gravel
-## lane is lined with a few shade trees.
-func _farmstead(id: Variant, f: Dictionary) -> Node3D:
-	var look := _look(f)
-	var root := Node3D.new()
-	root.set_meta("look", look)
-	root.set_meta("built", f.get("built", []).size())
-	add_child(root)
-	root.position = Vector3(f.pos.x, Terrain.ground_y(f.pos.x, f.pos.z), f.pos.z)
-	root.basis = Basis.looking_at(f.dir, Vector3.UP)
-	var built := FarmBuilder.build_farmstead(hash(str(id)), look, f.get("built", []))
-	# A footing under the yard, for farmsteads on a slope.
-	var footing := MeshInstance3D.new()
-	var cube := BoxMesh.new()
-	cube.size = Vector3(34, 3.0, 38)
-	footing.mesh = cube
-	footing.position = Vector3(0, -1.55, 0)
-	footing.material_override = _footing_mat()
-	footing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(footing)
-	# The yard's gravel and grass lie on the ground, following it.
-	built[1] = Terrain.drape_local(built[1], root.transform)
-	# The farmhouse goes up stage by stage (ConstructionSite).
-	var ref := "farm:%s" % str(id)
-	ConstructionSite.add_to(root, built, "house", func(): return sim.construction.state(ref, sim.tick_count),
-		func(): pass)
-	var xf := Transform3D(root.basis, root.position)
-	var planted := []
-	for t in built[2]:
-		var at := xf * Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * t[3]), t[0])
-		at.origin.y = Terrain.ground_y(at.origin.x, at.origin.z) + t[0].y
-		planted.append([at, t[1], t[2]])
-	# Shade trees along the lane, alternating sides, the same every time.
-	var drive: Array = f.drive
-	var k := 0
-	for i in range(2, drive.size() - 2, maxi(2, drive.size() / 4)):
-		var a: Vector3 = drive[i]
-		var b: Vector3 = drive[i + 1]
-		var side := Vector3(-(b - a).z, 0.0, (b - a).x).normalized() * (5.5 if k % 2 == 0 else -5.5)
-		var h := Farms._hash01(Vector2i(roundi(a.x), roundi(a.z)), 3)
-		var sp: int = TreeField.Species.OAK if h < 0.5 else TreeField.Species.MAPLE
-		var size := 0.9 + 0.35 * h
-		var spot := a + side
-		spot.y = Terrain.ground_y(spot.x, spot.z)
-		planted.append([Transform3D(Basis(Vector3.UP, h * TAU).scaled(Vector3.ONE * size), spot), sp, TreeField.LEAF[sp]])
-		k += 1
-	_trees.set_trees(str(id), planted)
-	return root
+## Queues a farmstead or barn group to be built (FarmSteadJob), unless it
+## is already waiting.
+func _want_stead(kind: String, key: Variant) -> void:
+	for w in _steads:
+		if w[0] == kind and w[1] == key:
+			return
+	# (One being built right now was begun from the farm as it was a moment
+	# ago, so this one waits its turn and builds it again.)
+	_steads.append([kind, key])
 
 
 static var _footing: Material
@@ -336,84 +285,110 @@ static func _footing_mat() -> Material:
 
 ## Livestock barns on their pads beside the farmyards (Livestock, FarmBuilder).
 func _sync_barns() -> void:
-	var want := {}
+	_barn_want.clear()
 	for id in sim.farms.farms:
 		var f: Dictionary = sim.farms.farms[id]
 		var kind := Livestock.kind(f)
 		for site in Livestock.sites(f):
-			want["%d:%d:%d:%s" % [id, site.x, site.y, kind]] = [f, site, kind]
+			_barn_want["%d:%d:%d:%s" % [id, site.x, site.y, kind]] = [id, site, kind]
+	for key in _barn_want:
+		if not _barns.has(key):
+			_want_stead("barn", key)
+
+
+## Barn groups the farms no longer want go once the new ones are up.
+func _free_stale_barns() -> void:
+	for w in _steads:
+		if w[0] == "barn":
+			return
+	if _stead_job != null and _stead_job.kind == "barn":
+		return
 	for key in _barns.keys():
-		if not want.has(key):
+		if not _barn_want.has(key):
 			_barns[key].queue_free()
 			_barns.erase(key)
-	for key in want:
-		if _barns.has(key):
-			continue
-		var f: Dictionary = want[key][0]
-		var mid := Livestock.site_center(f, want[key][1])
-		var root := Node3D.new()
-		add_child(root)
-		root.position = Vector3(mid.x, Terrain.ground_y(mid.x, mid.z), mid.z)
-		root.basis = Basis.looking_at(f.dir, Vector3.UP)
-		var built := FarmBuilder.build_barns(want[key][2], hash(key))
-		var footing := MeshInstance3D.new()
-		var cube := BoxMesh.new()
-		cube.size = Vector3(78, 3.0, 38)
-		footing.mesh = cube
-		footing.position = Vector3(0, -1.55, 0)
-		footing.material_override = _footing_mat()
-		footing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		root.add_child(footing)
-		var barns := MeshInstance3D.new()
-		barns.mesh = built[0]
-		root.add_child(barns)
-		var ground := MeshInstance3D.new()
-		ground.mesh = Terrain.drape_local(built[1], root.transform)
-		ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		root.add_child(ground)
-		_barns[key] = root
+
+
+## Runs the waiting work: a farmstead step first (each is a few ms at
+## most), then the fields and the herds with what is left of `budget_ms`.
+func _work(budget_ms: float) -> void:
+	if sim == null:
+		return
+	var deadline := Time.get_ticks_usec() + int(budget_ms * 1000.0)
+	var t0 := Perf.now()
+	_stead_step()
+	var t1 := Perf.now()
+	var left := (deadline - Time.get_ticks_usec()) / 1000.0
+	if left > 0.0:
+		_draw_some(left)
+	var t2 := Perf.now()
+	if Time.get_ticks_usec() < deadline:
+		_herd_step(deadline)
+	_free_stale_barns()
+	work_parts = [(t1 - t0) / 1000.0, (t2 - t1) / 1000.0, (Perf.now() - t2) / 1000.0]
+
+
+## One farmstead or barn step, at most one a frame: the biggest unit of work
+## here, so it goes first and the fields get what is left of the budget.
+func _stead_step() -> void:
+	while true:
+		if _stead_job == null:
+			if _steads.is_empty():
+				return
+			var w: Array = _steads.pop_front()
+			var arg := []
+			if w[0] == "barn":
+				if not _barn_want.has(w[1]) or _barns.has(w[1]):
+					continue
+				arg = _barn_want[w[1]]
+			else:
+				if not sim.farms.farms.has(w[1]):
+					continue
+				var f: Dictionary = sim.farms.farms[w[1]]
+				if _homes.has(w[1]) and _homes[w[1]].get_meta("look") == _look(f) \
+						and _homes[w[1]].get_meta("built") == f.get("built", []).size():
+					continue  # an earlier job already built it as it is now
+			_stead_job = FarmSteadJob.new(self, _trees, sim, w[0], w[1], arg)
+			if _stead_job.cancelled():
+				_stead_job = null
+				continue
+		if not _stead_job.step():
+			return
+		var job := _stead_job
+		_stead_job = null
+		if job.root == null:
+			return
+		if job.kind == "home":
+			if _homes.has(job.key):
+				_homes[job.key].queue_free()
+			_homes[job.key] = job.root
+		else:
+			if _barns.has(job.key):
+				_barns[job.key].queue_free()
+			_barns[job.key] = job.root
+		return  # one step a frame
 
 
 ## Most cows drawn at once, across every herd.
-const MAX_COWS := 3000
-## Angus black, Hereford red and the odd black baldy: the beef breeds on
-## southern Indiana pasture.
-const COW_COLORS := [Color("#1c1a19"), Color("#1c1a19"), Color("#6e3420"), Color("#2a2522")]
+const MAX_COWS := FarmHerdJob.MAX_COWS
 
 
-## Every beef herd grazing its pasture, one cow per 2 acres (Livestock).
-func _draw_cows() -> void:
-	var spots := []
-	for id in sim.farms.farms:
-		var f: Dictionary = sim.farms.farms[id]
-		if Livestock.kind(f) != "cattle":
-			continue
-		var grass := []
-		for c in f.cells:
-			if CropPlan.crop_at(f, c) == "pasture":
-				grass.append(c)
-		var n := mini(Livestock.head(f), MAX_COWS - spots.size())
-		for i in n:
-			var c: Vector2i = grass[int(Farms._hash01(Vector2i(int(id), i), 31) * grass.size()) % grass.size()]
-			var corners := Farms.cell_corners(f, c)
-			var u := Farms._hash01(c + Vector2i(i, 0), 37)
-			var v := Farms._hash01(c + Vector2i(0, i), 41)
-			var p := corners[0].lerp(corners[1], 0.1 + 0.8 * u).lerp(corners[3].lerp(corners[2], 0.1 + 0.8 * u), 0.1 + 0.8 * v)
-			spots.append([Vector3(p.x, Terrain.ground_y(p.x, p.y), p.y), Farms._hash01(c + Vector2i(i, i), 43)])
-	if spots.is_empty():
-		_cows.visible = false
+## Every beef herd grazing its pasture (FarmHerdJob), when the herds changed.
+func _herd_step(deadline: int) -> void:
+	if _herd_job == null:
+		if not _herd_dirty:
+			return
+		_herd_dirty = false
+		_herd_job = FarmHerdJob.new(sim, _herd_sig)
+	if not _herd_job.step(deadline):
 		return
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_colors = true
-	mm.mesh = _cow_mesh()
-	mm.instance_count = spots.size()
-	for i in spots.size():
-		var h: float = spots[i][1]
-		mm.set_instance_transform(i, Transform3D(Basis(Vector3.UP, h * TAU), spots[i][0]))
-		mm.set_instance_color(i, COW_COLORS[int(h * 97.0) % COW_COLORS.size()])
-	_cows.multimesh = mm
-	_cows.visible = true
+	var job := _herd_job
+	_herd_job = null
+	if not job.changed:
+		return
+	_herd_sig = job.signature
+	_cows.multimesh = job.multimesh
+	_cows.visible = job.multimesh != null
 
 
 static var _cow: Mesh
