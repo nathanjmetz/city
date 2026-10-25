@@ -367,8 +367,14 @@ static func parking_layout(b: Dictionary) -> Dictionary:
 func at(p: Vector3) -> int:
 	for id in buildings:
 		var b: Dictionary = buildings[id]
+		# Its corners are all within half its diagonal of its middle
+		# (corners()): a point farther away can't be on it.
+		var size := size_of(b)
+		var reach: float = 0.5 * size.length() * Vector2(b.dir.x, b.dir.z).length() + 0.01
+		if Vector2(p.x - b.pos.x, p.z - b.pos.z).length_squared() > reach * reach:
+			continue
 		var poly := PackedVector2Array()
-		for c in corners(b.kind, b.pos, b.dir, size_of(b)):
+		for c in corners(b.kind, b.pos, b.dir, size):
 			poly.append(Vector2(c.x, c.z))
 		if Geometry2D.is_point_in_polygon(Vector2(p.x, p.z), poly):
 			return id
