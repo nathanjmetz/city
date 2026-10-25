@@ -1497,6 +1497,14 @@ func _cut_run(s: Dictionary, zone: int, a0: float, a1: float, start_corner: bool
 				k += 2
 			else:
 				k += 1
+	# The run's ground, for squaring its lots (_squared): lots measured on
+	# it share their side lines, so they tile. Joined corner halves keep
+	# their shape and stay out of it.
+	var half0: bool = start_corner and _joined_half(s, lines[0])
+	var half1: bool = end_corner and _joined_half(s, lines[n])
+	var g0: float = lines[1] if half0 else a0
+	var g1: float = lines[n - 1] if half1 else a1
+	var ground := _run_ground(s, g0, g1, _deepest(zone, size.cap)) if g1 - g0 > 1.0 else PackedVector2Array()
 	var out := []
 	for k in n:
 		var b0: float = lines[k] + (POLE * 0.5 if flags.has(k - 1) else 0.0)
@@ -1505,14 +1513,16 @@ func _cut_run(s: Dictionary, zone: int, a0: float, a1: float, start_corner: bool
 		# the block (open land), they stop at the usual depth.
 		var capped: bool = flags.has(k) or flags.has(k - 1) or _median_depth(s, b0, b1) > size.cap + FLAG_MIN \
 			or not _bounded(s, b0, b1)
-		var lot := _front_lot(s, zone, b0, b1, size.cap if capped else _deepest(zone, size.cap))
-		if lot.is_empty():
-			continue
 		var by := []
 		if k == 0 and start_corner:
 			by.append(_ray(s, b0)[5])
 		if k == n - 1 and end_corner:
 			by.append(_ray(s, b1)[5])
+		var square := not (k == 0 and half0) and not (k == n - 1 and half1) and not flags.has(k) and not flags.has(k - 1)
+		var lot := _front_lot(s, zone, b0, b1, size.cap if capped else _deepest(zone, size.cap),
+			ground if square else PackedVector2Array())
+		if lot.is_empty():
+			continue
 		# Holding a squared corner, it is the corner lot whole; otherwise the
 		# two halves of the corner are joined (_join_corners).
 		if by.any(func(x): return _holds_corner(s, x)):
@@ -1584,7 +1594,29 @@ static func _edge_ray(s: Dictionary, a: float, all: Array) -> Array:
 
 
 ## A lot from the street back to the middle of the block (at most `cap`).
-func _front_lot(s: Dictionary, zone: int, a0: float, a1: float, cap: float) -> Dictionary:
+func _joined_half(s: Dictionary, a: float) -> bool:
+	var x: int = _ray(s, a)[5]
+	return x >= 0 and not _holds_corner(s, x)
+
+
+## The ground in front of a run of lots, out to `cap`, as the survey sees it
+## (nothing where the street curves: lots square to a curve don't tile).
+func _run_ground(s: Dictionary, a0: float, a1: float, cap: float) -> PackedVector2Array:
+	var rays := _rays_between(s, a0, a1)
+	var poly := PackedVector2Array()
+	var f0: Vector2 = rays[0][1]
+	var u: Vector2 = ((rays[rays.size() - 1][1] as Vector2) - f0).normalized()
+	for r in rays:
+		if absf(((r[1] as Vector2) - f0).cross(u)) > 0.3:
+			return PackedVector2Array()
+		poly.append(r[1])
+	for k in range(rays.size() - 1, -1, -1):
+		poly.append(_at(rays[k], clampf(rays[k][3], 0.0, cap)))
+	return _clean(poly)
+
+
+func _front_lot(s: Dictionary, zone: int, a0: float, a1: float, cap: float,
+		ground := PackedVector2Array()) -> Dictionary:
 	var rays := _rays_between(s, a0, a1)
 	var poly := PackedVector2Array()
 	for r in rays:
@@ -1599,10 +1631,92 @@ func _front_lot(s: Dictionary, zone: int, a0: float, a1: float, cap: float) -> D
 	if poly.size() < 3:
 		return {}
 	depths.sort()
+	var depth: float = depths[depths.size() / 2]
+	var width := a1 - a0
+	var sq := _squared(rays, poly, ground, cap) if ground.size() >= 3 else poly
+	if sq.is_empty():
+		return {}
+	if sq.size() == 5:
+		width = sq[4].x
+		depth = sq[4].y
+		sq.resize(4)
+		poly = sq
 	var mid := _ray(s, (a0 + a1) * 0.5)
 	var probe := _zone_probe(s, rays, (a0 + a1) * 0.5)
 	return _lot(s, "%d:%d:%d" % [s.seg, s.side, roundi(a0 * 10.0)], poly, mid, probe,
-		a1 - a0, depths[depths.size() / 2], 0.0, zone)
+		width, depth, 0.0, zone)
+
+
+## Real plats run lot lines square to the street. Where the survey lines fan
+## out on a straight street (a skewed cross street, a back line on the
+## slant), the lot is the biggest rectangle square to its front that keeps
+## most of its frontage, and the wedge left over stays open land (Brawn
+## 2026-10-25: angled zones by the county road). Returns the lot as it was
+## when it's already square or the street curves, the rectangle (its four
+## corners, then [width, depth]), or nothing when no fair rectangle fits.
+## Its depth is measured on the run's `ground`, so neighbors tile.
+static func _squared(rays: Array, poly: PackedVector2Array, ground: PackedVector2Array, cap: float) -> PackedVector2Array:
+	var f0: Vector2 = rays[0][1]
+	var u: Vector2 = (rays[rays.size() - 1][1] as Vector2) - f0
+	var span := u.length()
+	if span < 4.0:
+		return poly
+	u /= span
+	for r in rays:
+		if absf(((r[1] as Vector2) - f0).cross(u)) > 0.3:
+			return poly
+	var n := Vector2(-u.y, u.x)
+	if n.dot(rays[rays.size() / 2][2]) < 0.0:
+		n = -n
+	# How far in the lot runs square to the street from each survey point.
+	var xs := []
+	var hs := []
+	for k in rays.size():
+		var x: float = clampf(((rays[k][1] as Vector2) - f0).dot(u), 0.05, span - 0.05)
+		var p := f0 + u * x + n * 0.05
+		var pieces := Geometry2D.intersect_polyline_with_polygon(PackedVector2Array([p, p + n * (cap + 1.0)]), ground)
+		var h := 0.0
+		for pc in pieces:
+			if (pc[0] as Vector2).distance_to(p) < 0.1:
+				h = minf((pc[pc.size() - 1] as Vector2).distance_to(p), cap)
+		xs.append(x)
+		hs.append(h)
+	var best := 0.0
+	var bi := -1
+	var bj := -1
+	var bh := 0.0
+	for i in xs.size():
+		var h := INF
+		for j in range(i + 1, xs.size()):
+			h = minf(h, minf(hs[j - 1], hs[j]))
+			var w: float = xs[j] - xs[i]
+			# A full-width lot is worth a quarter more: a shallower back
+			# yard beats a lost side yard.
+			var worth := w * minf(h, w * 5.0) * (1.25 if i == 0 and j == xs.size() - 1 else 1.0)
+			if w >= span * 0.6 and worth > best:
+				best = worth
+				bi = i
+				bj = j
+				bh = minf(h, w * 5.0)
+	if bi < 0 or (xs[bj] - xs[bi]) * bh < MIN_AREA:
+		return PackedVector2Array()
+	var a: Vector2 = f0 + u * (xs[bi] - 0.05)
+	var b: Vector2 = f0 + u * (xs[bj] + 0.05)
+	if bi == 0:
+		a = f0
+	if bj == xs.size() - 1:
+		b = f0 + u * span
+	var w := (b - a).length()
+	var out := PackedVector2Array([a, b, b + n * bh, a + n * bh])
+	if _area(out) * _area(poly) < 0.0:
+		out.reverse()
+	# Already square: the lot as it was, to the same micron.
+	var whole := absf(_area(poly))
+	var same := Geometry2D.intersect_polygons(out, poly)
+	if same.size() == 1 and absf(_area(same[0])) >= maxf(whole, absf(_area(out))) * 0.97:
+		return poly
+	out.append(Vector2(w, bh))
+	return out
 
 
 ## A flag lot behind two front lots, reached by a drive strip between them.
