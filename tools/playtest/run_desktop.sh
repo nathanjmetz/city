@@ -20,7 +20,7 @@ grep -a '^Playtest' "$OUT/alone.log"
 "$GODOT" --headless -s scripts/net/server_main.gd -- --port $PORT --data "$OUT/test-region.json" </dev/null >"$OUT/server.log" 2>&1 &
 SERVER=$!
 sleep 5
-"$GODOT" --headless -- --playtest="$SECONDS_RUN" --playtest-inline --playtest-region="ws://localhost:$PORT/PLAYT1" \
+"$GODOT" --headless -- --playtest="$SECONDS_RUN" --playtest-inline --playtest-region="ws://localhost:$PORT/PLAYT1" --playtest-pin=500001 \
 	--playtest-out="$OUT/region.json" </dev/null >"$OUT/region.log" 2>&1
 grep -a '^Playtest' "$OUT/region.log"
 kill $SERVER 2>/dev/null
