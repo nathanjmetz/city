@@ -84,6 +84,15 @@ A few helpers run at a time, never two on the same files.
   - Partly fixed in #560 (car owners drive most short trips: 51 -> 36 walking at once in a 145-person town). Still left: children never ride with family, so their trips are all walks; add family rides. Nathan's words: "there are SO many people walking. I had a town of a couple hundred and the streets were flooded with pedestrians." Find what sends so many walkers (people.gd strolls, STROLL_SHARE 0.2; balance.gd WALK_SHARE 0.12 and WALK_NEAR; traffic_sim MAX_WALKERS 800) and match real small-town walking rates.
   - "could their walking styles be different?" Vary stride, arm swing and pace per person in walker_view.gd's shader (it needs a spare per-instance channel; mind the browser's instance-colour quirk noted there).
 
+- Nathan's list (2026-10-25, evening), in his words:
+  1. "when i first open the game, i see a nice road that i assume i am supposed to use and a weird gray line that may or may not be a road running like a dashed line perpendicular to it". Check the starting map: county road vs the dashed grey line (a far painted road? a rail line? the region city line?).
+  2. "when homes are being constructed, a full semitruck load of what looks like rolled metal shows up at every house… semitrucks [shouldn't] be driving on residential streets… homes dont need semi loads of anything. one concrete truck should come. and then a contractor truck should sit on the curb until its done." Findings so far:
+     - The "house" profile already sends no flatbed (construction.gd:43-46).
+     - Suspects: the "subdivision" profile (construction.gd:102-109 sends flatbeds with a bulldozer, sewer pipe and water main), and sites saved before #529 that still hold old trips or parked flatbeds.
+     - The flatbed model always draws steel coils (vehicle_models.gd `_trailer_flat`), whatever the cargo.
+     - Reproduce in Nathan's real save, or a town grown with the zone tool (PerfTown showed no construction trucks), before changing anything.
+  3. "at some distances, the ground looks correct. at closer distances, there is a very clear lined pattern on it." The near-ground grass texture or detail tiling. #548 fixed the shadow stripes, so this is a different cause. Compare TerrainView's near LOD shader and grass detail at 40–100 m.
+
 *Waits for Nathan*
 30. The real Grant County map from public data (big downloads; OpenStreetMap credit line).
 31. Measuring on the Mac mini and Mac Studio themselves.
