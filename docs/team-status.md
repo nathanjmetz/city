@@ -16,23 +16,24 @@ When a helper hits a wall it writes its question here and stops. That task waits
 
 - **Day and night off (from the daylight work, PR #541):** when the day-and-night cycle is turned off, should the game show a real summer moment (for example June 21 at 1:40 pm), or keep today's tuned sun from the southwest, which a real summer day never has? Until you answer, it keeps today's look.
 
-## Working now (end of 2026-10-25; tokens nearly used for the week)
+## Where everything stands (end of 2026-10-25)
 
-Unfinished work is always saved on a branch. A new session restarts a helper from its branch (read its diff first).
+Nothing is running. Every unfinished piece is saved on a branch. To restart one, read its diff against main first; the PR or branch says what's left.
 
-| Work | Branch | State |
-| --- | --- | --- |
-| New building drawing in the game (the biggest visible change) | `claude/building-drawing` (WIP also on `wip/building-drawing`) | Running. Houses first, then shops, civic, factories |
-| Nathan's road list + power lines, then roads age | `claude/road-look-fixes`, then `claude/roads-age` (`wip/roads-age`) | Running. Playtest items 1-6, 10, 11 |
-| Automatic quality (browser picked Low on a fast Mac) | `claude/auto-quality` (`wip/auto-quality`) | Running |
-| Town life: jammed white trucks, alert-icon smear, walkers on lawns, a walking-code error | `claude/town-life-fixes` | Running |
-| Region under load (city-line freezes, welcome too big, server stalls) | `claude/region-load-fixes` | Running. Welcome uses a light neighbor form for choice A |
-| Farmsteads | PR #546 | Live once the build finishes |
-| The price list (cost of each feature) | `wip/price-list` | Paused to save tokens |
-| Browser measured | `wip/browser-measure` | Paused to save tokens |
-| Playtest look check | PR #547 (`docs/look-check.md`) | Done; findings handed out |
+**Live:** #527 land preload, #528-#530 construction trucks and the builder's yard, #535, #537 crop calendar, #541 daylight, #542 trees, #544 town speed, #545 farm freeze, #546 farmsteads, #547 playtest list, #548 ground lines, #550 town life, #553 shared region (the host backs up the region before every update), #554 country road look.
 
-Live on 2026-10-25: #527 land preload, #528-#530 construction trucks and the builder's yard, #535 region play-through, #537 crop calendar, #541 daylight, #545 farm field freeze, #542 trees that grow, #544 town speed (about 2x), #548 ground lines, #546 farmsteads, #547 playtest list, #550 town life (ambulance cap, alert icons, walkers).
+**Ready but waiting:**
+- #549 + #551 new building drawing: fix the 8 review findings posted on #551 first.
+- #556 roads age: profile in real Chrome first (browser 300 m frame 9.1-9.4 ms vs 6.5-9.0 ms).
+- #555 automatic quality: the review fixes are partly done on `wip/auto-quality-fixes`. Finish those, then merge. It's the fix for the browser always starting on Low.
+- #552 home screen: Nathan chose the new one, live. The rest is on `wip/home-screen-live`: Marion's real time and season, traffic and people by the hour, night lights, a slow 360° orbit and a fuller downtown. Weather comes later, with a hook left for it.
+
+**Started, saved on branches:**
+- `wip/green-light-flow`: drivers hesitate at green lights, so only 3 cars get through a green. The target is 1 car every 2 s per lane. Comes before the traffic control spec.
+- `wip/detail-floor`: a closest zoom per quality tier, set by screenshot judging and enforced with a test. Nathan: "impossible to see poorly drawn things up close".
+- `wip/load-until-drawn`: the loading screen holds until the starting view is drawn (cap 20 s desktop, 30 s browser).
+- `wip/admin-audio`: Nathan's admin sound mixer. Desktop only, behind a hidden key combo. One row per sound, voice caps, and "Save for everyone" to data/audio_mix.json.
+- `wip/price-list` and `wip/browser-measure`: paused.
 
 ## The queue, in order
 
@@ -71,6 +72,8 @@ A few helpers run at a time, never two on the same files.
 - Fix the new building drawing's review findings (posted on PR #551), then merge #549 and #551.
 - Home screen weather: "instead of just time and day and season you include the weather." The game draws no weather yet, so build overcast skies, rain, snow and fog (these serve the game too), then feed in Marion's live conditions from the National Weather Service (api.weather.gov: free, no key, official; falls back to clear when offline). Only Marion's fixed location is sent, never the player's. Must have a simple on/off switch in settings, like day and night (Nathan, 2026-10-25: "will it be easy to turn off with a simple toggle switch still?"); off means always clear.
 - Traffic: a 2,700-person town growing along the highway drops to about 45% flow; queues back up at the all-way stops where highway streets enter the grid.
+
+- Traffic control that grows with the town: `docs/spec-traffic-control.md` (Nathan, 2026-10-25). Starts after the green-light fix: own light timing, then green waves, sensors, and a Traffic Management Center or a university engineering wing. Design rule for the whole game: "Early on the traffic issues are mine to deal with because they are simple. Later in the game, they become more complicated and so we provide more sophisticated solutions, just like in real life."
 
 *Waits for Nathan*
 30. The real Grant County map from public data (big downloads; OpenStreetMap credit line).
