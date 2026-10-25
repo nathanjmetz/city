@@ -154,6 +154,7 @@ func _drivers() -> void:
 	var short := 0
 	var reach := Services.size_of(b).length() * 0.5
 	var circles := 0
+	var both_out := 0
 	for i in 3000:
 		sim.tick()
 		# Nobody backs out of the lot, rounds the block and parks in it again
@@ -163,6 +164,14 @@ func _drivers() -> void:
 					and int(car.get("circled", -1)) != int(car.trip):
 				car.circled = car.trip
 				circles += 1
+		# Two cars never back out of the same lot at once (Brawn saw two
+		# pickups through each other at a shop's entrance).
+		var leaving := {}
+		for car in t.cars:
+			if car.j != null and int(car.j.get("node", 0)) == -1 and int(car.j.wi) == -1 and car.get("from_place", "") != "":
+				if leaving.has(car.from_place):
+					both_out += 1
+				leaving[car.from_place] = true
 		if i % 50 == 0:
 			_trucks_fit(t)
 			for car in t.parked:
@@ -183,6 +192,10 @@ func _drivers() -> void:
 	_check(held == -1, "a truck gets no car stall in a lot of stalls (%d)" % held)
 	if held != -1:
 		t._release(probe_lot.ref, held, 999_999)
+	_check(both_out == 0, "drivers wait for a car already backing out of the same lot (%d ticks of two at once)" % both_out)
+	var stall_car := {"pos": Vector3(0, 0, 10), "face": Vector3(0, 0, 1), "len": 4.8, "spot": 0}
+	var gap := t._stall_gap(stall_car, {"spots": [{"kind": "stall"}]}, Vector3(0, 0, 20))
+	_check(gap.z > 10.5 and absf(gap.x) > 1.2, "a driver walks up the gap beside the car to its nose, not through the next car (%s)" % gap)
 	_check(_truck_bad.is_empty(), "trucks never take car stalls or overlap at the kerb %s" % [_truck_bad.slice(0, 4)])
 	_check(circles == 0, "nobody drives out of the lot only to park in it again (%d)" % circles)
 	_check(Inspect.place_name(sim, "svc:%d" % placed).begins_with("Downtown"),
