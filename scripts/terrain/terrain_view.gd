@@ -938,9 +938,20 @@ static func _sample_heights(d: Dictionary, a0: int, a1: int, b0: int, b1: int) -
 	var step: float = d.step
 	var m: int = d.m
 	var hs: PackedFloat32Array = d.hs
+	var half := step * 0.5
 	for j in range(b0, b1 + 1):
 		for i in range(a0, a1 + 1):
-			hs[j * m + i] = Terrain.ground_y(o.x + (i - 2) * step, o.y + (j - 2) * step)
+			var x := o.x + (i - 2) * step
+			var z := o.y + (j - 2) * step
+			var h := Terrain.ground_y(x, z)
+			# By a road, the grid takes the lowest graded ground within half a
+			# step: a corner up on the bank beside the cut would otherwise
+			# lay its triangles over the road, and the road would seem to go
+			# underground (Brawn 2026-10-24).
+			if Terrain.flat_weight(x, z) > 0.0:
+				h = minf(h, minf(minf(Terrain.ground_y(x - half, z), Terrain.ground_y(x + half, z)),
+					minf(Terrain.ground_y(x, z - half), Terrain.ground_y(x, z + half))))
+			hs[j * m + i] = h
 	d.hs = hs
 
 

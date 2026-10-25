@@ -38,6 +38,7 @@ var _poles_later := {}  # segment id -> [key, pts, offset, drives near], drawn w
 var _corners_later := {}  # node -> [key, its plan], drawn when a rebuild runs out of time
 var _merged := []  # the merged pole and corner meshes, redone once the later ones are drawn
 var _gen := 0  # which rebuild is current; a sliced one left behind stops
+var _regrade_gen := -1  # the rebuild a regrade is waiting on, or -1
 var _building := false  # a sliced rebuild is part way through
 const REMESH_MS := 8.0  # redraw changed streets for this long, then finish them later
 ## A neighbor's whole town lands at once: its streets are drawn a few each
@@ -230,6 +231,59 @@ func rebuild() -> void:
 	_rebuild_all(_gen)
 
 
+## The land under `box` was graded again (TerrainView.graded): roads there
+## are draped anew, so none is left under the new grade (Brawn 2026-10-24:
+## roads going underground where a later road, rail or highway regraded
+## the land beside them).
+func regraded(box: Rect2) -> void:
+	var near := box.grow(RoadStyle.right_of_way_half(RoadStyle.Type.HIGHWAY))
+	var any := false
+	for cache in [_street_cache, _pole_cache, _bridge_cache]:
+		for id in cache.keys():
+			if _crosses(cache[id][0][0], near):
+				cache.erase(id)
+				any = true
+	for node in _junction_cache.keys():
+		var p: Vector3 = network.nodes.get(node, Vector3.INF)
+		if p == Vector3.INF or near.has_point(Vector2(p.x, p.z)):
+			_junction_cache.erase(node)
+			any = true
+	if any and _regrade_gen < 0:
+		_regrade_gen = _gen
+		_after_regrade.call_deferred()
+
+
+## Redraws after a regrade, unless a rebuild since (as when the roads
+## themselves changed) already did.
+func _after_regrade() -> void:
+	if _regrade_gen == _gen:
+		rebuild()
+	_regrade_gen = -1
+
+
+## True where just two pieces of the same kind of road meet nearly in line,
+## so the road runs on through the node with nothing to fill.
+func _straight_on(node: int) -> bool:
+	var segs := network.segments_at(node)
+	if segs.size() != 2 or network.segments[segs[0]].type != network.segments[segs[1]].type:
+		return false
+	var c: Vector3 = network.nodes[node]
+	var dirs := []
+	for id in segs:
+		var sg: Dictionary = network.segments[id]
+		var ctrl: Vector3 = sg.ctrl
+		var to: Vector3 = ctrl if ctrl.distance_to(c) > 0.5 else network.nodes[sg.b if sg.a == node else sg.a]
+		dirs.append(Vector2(to.x - c.x, to.z - c.z).normalized())
+	return dirs[0].dot(dirs[1]) < -0.995
+
+
+static func _crosses(pts: PackedVector3Array, box: Rect2) -> bool:
+	for p in pts:
+		if box.has_point(Vector2(p.x, p.z)):
+			return true
+	return false
+
+
 ## Draws every road. A sliced view spreads it over frames, its old drawing
 ## staying up until the new one is done.
 func _rebuild_all(gen: int) -> void:
@@ -419,6 +473,8 @@ func _rebuild_all(gen: int) -> void:
 			continue  # rings meet their roads without a pad over the island
 		if network.segments_at(id).size() == 1:
 			continue  # a dead end stops square, not in a round pad (Brawn 2026-10-24)
+		if _straight_on(id):
+			continue  # one road running straight on: no pad at the joint (Brawn 2026-10-24)
 		var r := RoadStyle.half_width(network.widest_at(id))
 		var surface := _junction_surface(id)
 		if surface != "asphalt":
