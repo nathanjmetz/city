@@ -89,6 +89,7 @@ func start(port: int, code: String, path: String, host := "") -> int:
 	var err := _peer.create_server(port)
 	if err != OK:
 		return err
+	running.append(self)
 	_peer.peer_connected.connect(func(id):
 		_open[id] = true
 		_log("Peer %d connected" % id))
@@ -100,6 +101,7 @@ func start(port: int, code: String, path: String, host := "") -> int:
 
 
 func stop() -> void:
+	running.erase(self)
 	save()
 	if _new_telemetry:
 		write_report()
@@ -126,6 +128,17 @@ var _left := []  # peers that disconnected this poll (see _gone)
 var _open := {}  # peers connected now (anything sent to another is dropped)
 
 
+## Servers running in this program (a region hosted from a game window, or
+## the tests'): a game leaving waits for its server's bye, and keeps these
+## going meanwhile (RegionClient._linger).
+static var running := []
+
+
+## One turn of the loop, outside the usual frame.
+func pump() -> void:
+	_process(0.0)
+
+
 ## The longest step the server's own loop took lately, and which (see _timed).
 var slowest := {"ms": 0.0, "what": ""}
 ## Main-loop steps over this long are written to the log, so a stall shows.
@@ -136,7 +149,6 @@ func _process(delta: float) -> void:
 	_timed("poll", func(): _peer.poll())
 	for got in _link.receive():
 		var msg = JSON.parse_string(got[1])
-		if typeof(msg) == TYPE_DICTIONARY and msg.get("t") == "city": print("DBG got city from ", got[0], " players=", _players.has(got[0]), " leaving=", msg.get("leaving", false))
 		if typeof(msg) == TYPE_DICTIONARY:
 			_timed("msg." + str(msg.get("t", "")), func(): _handle(got[0], msg))
 	# Players who left go only now: the town a player sends as they leave
@@ -331,7 +343,6 @@ func _handle(from: int, msg: Dictionary) -> void:
 ## the neighbors here, in the order copies came in.
 func _take_city(from: int, city: String, msg: Dictionary) -> void:
 	var z := str(msg.get("z", ""))
-	print("DBG take ", city, " leaving=", msg.get("leaving", false), " len=", z.length())
 	var job := {}
 	var work := func():
 		var d = unpack(z)
@@ -344,7 +355,6 @@ func _take_city(from: int, city: String, msg: Dictionary) -> void:
 			job.full = z
 			job.card = pack(Region.postcard_of(d))
 	_job(work, func():
-		print("DBG done ", city, " has_d=", job.has("d"), " ", job.get("d", {}).get("buildings", {}).size())
 		if job.has("d") and region.cities.has(city) and region.update_city(city, job.d, job.get("full", ""), job.card):
 			_dirty = true
 			# Its land, when it changed (see Region.land).

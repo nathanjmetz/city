@@ -232,8 +232,12 @@ func _linger(link: NetLink, said_hello: bool) -> void:
 	while Time.get_ticks_msec() < mini(until, at_most) and not _Closer.got_bye(link):
 		if link.waiting_bytes(1) > 0:
 			until = maxi(until, Time.get_ticks_msec() + int(BYE_WAIT * 1000.0))
+		# A region hosted in this same window can't answer while this waits:
+		# let it read the town and say bye.
+		for s in RegionServer.running:
+			if is_instance_valid(s):
+				s.pump()
 		OS.delay_msec(5)
-	print("DBG linger waiting=", link.waiting_bytes(1), " status=", link.peer.get_connection_status())
 	link.peer.close()
 
 
@@ -308,7 +312,6 @@ func _send_town(sim: CitySim, now: bool, leaving: bool) -> void:
 		_snapshot = {}
 		msg.z = RegionServer.pack_bytes(whole.bytes())
 		msg.leaving = true  # the server says bye once it has it
-		print("DBG leaving size ", msg.z.length(), " link=", _link != null, " conn=", _connected)
 		_send(msg)
 		return
 	if _snapshot:

@@ -190,7 +190,6 @@ func _run() -> void:
 	ann2.join("ws://127.0.0.1:%d" % (PORT + 1), "ABC123", "p-other-device", "Ann", "", false, ann.token)
 	await _until(func(): return ann2.my_city != "")
 	_check(ann2.my_city == ann_city, "Ann logs back in with her saved token and gets her own city back")
-	print("DBG ", ann2.my_sim().buildings.size(), " ", sim.buildings.size(), " ", again.region.city_data(ann_city).get("buildings", {}).size())
 	_check(ann2.my_sim().buildings.size() == sim.buildings.size(), "with everything she built (sent as she left)")
 	var bob2 := _client()
 	bob2.join("ws://127.0.0.1:%d" % (PORT + 1), "", "p-bobs-laptop", "", "", false, "", bob_pin)

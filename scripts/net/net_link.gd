@@ -78,7 +78,6 @@ func flush_peer(to: int) -> void:
 				return
 			peer.set_target_peer(to)
 			var err := peer.put_packet(pkt)
-			if pkt.size() > 100000: print("DBG put ", to, " ", pkt.size(), " err=", err, " buffered=", buffered)
 			if err != OK:
 				# The buffer is full after all: try again next frame.
 				return
