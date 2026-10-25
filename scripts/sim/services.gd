@@ -139,6 +139,9 @@ var policies: Policies
 var _next_id := 1
 ## Kept road distances and reach (see update) and what they were worked out for.
 var _dist_key := []
+var _lengths_key := []
+var _kind_sig := {}  # kind -> its buildings as _reach[kind] was worked out for
+var _plant_sig = null
 var _lengths := {}
 var _reach := {}
 var _plant_dist := {}
@@ -438,21 +441,43 @@ func update(network: RoadNetwork, lots: Dictionary, city_buildings: Dictionary) 
 		contracts]
 	if dist_key != _dist_key:
 		_dist_key = dist_key
-		_lengths = {}
-		for id in network.segments:
-			_lengths[id] = RoadNetwork.polyline_length(network.sample_segment(id, 16))
-		_reach = {}
+		# The road lengths only change with the roads; each kind's distances
+		# only with the roads and that kind's buildings (where, how big, how
+		# funded); the plants' only with the roads and the plants. What
+		# hasn't changed is kept, the same Dictionary.
+		var net_key := [network.get_instance_id(), network.revision]
+		if net_key != _lengths_key:
+			_lengths_key = net_key
+			_lengths = {}
+			for id in network.segments:
+				_lengths[id] = RoadNetwork.polyline_length(network.sample_segment(id, 16))
+			_kind_sig = {}
+			_plant_sig = null
+		var reach := {}
 		for kind in KINDS:
 			if kind in PARKING:
 				continue  # a lot covers nothing
+			var sig := []
+			for id in buildings:
+				if buildings[id].kind == kind:
+					var b: Dictionary = buildings[id]
+					sig.append([id, b.pos, b.dir, b.get("size"), effects[id]])
+			if _reach.has(kind) and _kind_sig.has(kind) and _kind_sig[kind] == sig:
+				reach[kind] = _reach[kind]
+				continue
 			var dist := {}
 			for id in buildings:
 				if buildings[id].kind == kind:
 					_spread(network, _lengths, buildings[id], dist, effects[id])
-			_reach[kind] = dist
-		_plant_dist = {}
-		for pl in plants:
-			_spread_from(network, _lengths, pl.front, _plant_dist)
+			reach[kind] = dist
+			_kind_sig[kind] = sig
+		_reach = reach
+		var psig := plants.map(func(pl): return pl.front)
+		if _plant_sig == null or _plant_sig != psig:
+			_plant_sig = psig
+			_plant_dist = {}
+			for pl in plants:
+				_spread_from(network, _lengths, pl.front, _plant_dist)
 		# A neighbor's station under contract reaches in over the county road.
 		_by_contract = {}
 		for kind in contracts:
@@ -540,7 +565,13 @@ func _update_reach(network: RoadNetwork, lots: Dictionary, owners: Dictionary) -
 	var rows_key := [_dist_key, owners]
 	if rows_key != _rows_key:
 		_rows_key = rows_key
-		_lot_rows.clear()
+		# Only some services moved, came or went (the roads and mains as
+		# they were): the rows are brought up to date for just those kinds.
+		if is_same(_rows_maps.get("lengths"), _lengths) and _rows_maps.get("owners") == owners and not _lot_rows.is_empty():
+			_rows_update(network, lots)
+		else:
+			_lot_rows.clear()
+		_rows_maps = {"lengths": _lengths, "owners": owners.duplicate(), "plant": _plant_dist, "reach": _reach.duplicate()}
 		_inc = false
 	elif _lot_rows.size() > lots.size():
 		for key in _lot_rows.keys():
@@ -568,6 +599,63 @@ func _update_reach(network: RoadNetwork, lots: Dictionary, owners: Dictionary) -
 		_serve_lot(network, key, lot, row[1])
 	for u in _by_dist:
 		_by_dist[u].sort()
+
+
+## What the rows were last worked out with (see _update_reach).
+var _rows_maps := {}
+## Tools set this to check each row brought up to date against one worked
+## out afresh, printing ROWS MISMATCH where they differ.
+static var verify_rows := false
+
+
+## Brings every kept row up to date for the kinds whose distances changed
+## since (_rows_maps): the same values _lot_reach gives, worked out only
+## for what changed.
+func _rows_update(network: RoadNetwork, lots: Dictionary) -> void:
+	var was: Dictionary = _rows_maps.get("reach", {})
+	var kinds := []
+	for kind in COVERAGE + CARE:
+		if not is_same(was.get(kind), _reach.get(kind)):
+			kinds.append(kind)
+	var clinic: bool = kinds.has(Kind.CLINIC) or kinds.has(Kind.HOSPITAL)
+	var util := not is_same(_rows_maps.get("plant"), _plant_dist)
+	for u in UTILITIES:
+		for kind in UTILITIES[u]:
+			util = util or not is_same(was.get(kind), _reach.get(kind))
+	if kinds.is_empty() and not util:
+		return
+	for key in _lot_rows.keys():
+		var row: Array = _lot_rows[key]
+		var lot: Dictionary = lots.get(key, {})
+		if lot.is_empty() or row[0] != [lot.seg, lot.at_frac, lot.pos]:
+			_lot_rows.erase(key)  # worked out afresh when it's next needed
+			continue
+		var out: Dictionary = row[1]
+		var sv: Dictionary = out.s
+		for kind in kinds:
+			sv[kind] = _lot_distance(network, _lengths, _reach[kind], lot) <= KINDS[kind].reach
+		if clinic:
+			sv[Kind.CLINIC] = _lot_distance(network, _lengths, _reach[Kind.CLINIC], lot) <= KINDS[Kind.CLINIC].reach \
+				or sv[Kind.HOSPITAL]
+		if util:
+			var fresh := false
+			for u in ["power", "water"]:
+				if u == "water" and int(out.owner) != -1:
+					continue
+				var d := INF
+				for kind in UTILITIES[u]:
+					d = minf(d, _lot_distance(network, _lengths, _reach[kind], lot))
+				if u == "power":
+					d = minf(d, _lot_distance(network, _lengths, _plant_dist, lot))
+				sv[u + "_linked"] = d < INF
+				if (d < INF) != out.has(u):
+					fresh = true  # a utility came into reach or went: the row as new
+				elif d < INF:
+					out[u] = d
+			if fresh:
+				row[1] = _lot_reach(network, lot, _rows_maps.get("owners", {}))
+		if verify_rows and row[1] != _lot_reach(network, lot, _rows_maps.get("owners", {})):
+			print("ROWS MISMATCH ", key)
 
 
 ## A lot's fresh row in `served`, and its place in the utilities' lists.
