@@ -1466,7 +1466,7 @@ func _reroute_all() -> void:
 			continue
 		var at := _reserve(pl, car.id, car.len > 6.5)
 		if at < 0:
-			at = _new_curb(pl, pl.stop, car.id)
+			at = _new_curb(pl, pl.stop, car.id, car.len)
 		if at >= 0:
 			var s: Dictionary = pl.spots[at]
 			car.spot = at
@@ -2138,7 +2138,7 @@ func _curb_at(line: Array, d: float) -> Dictionary:
 ## The space is only somewhere to stop: no new vehicle is based in it, as it
 ## may face away from where that vehicle's trips go (a truck there would
 ## have to drive on to find room to turn round).
-func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1) -> int:
+func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1, vlen := 4.8) -> int:
 	var line := _curb_line(stop)
 	if line.is_empty():
 		return -1
@@ -2151,7 +2151,7 @@ func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1) -> int:
 		var first: int = other.get("spots", []).size() - list.size()
 		for k in list.size():
 			if list[k].get("kind", "") == "curb" and (first < 0 or other.taken[first + k] != -1):
-				taken.append(list[k].pos)
+				taken.append([list[k].pos, float(list[k].get("len", 4.8))])
 	var w: Dictionary = line[0]
 	var tries := mini(int((w.s1 - w.s0 - 24.0) / (CURB_STALL * 0.5)) * 2 + 1, CURB_TRIES)
 	var aprons := _aprons(stop)
@@ -2160,7 +2160,10 @@ func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1) -> int:
 		var c := _curb_at(line, float(line[1]) + off)
 		var ok := true
 		for q in taken:
-			if c.pos.distance_squared_to(q) < (CURB_STALL - 0.5) * (CURB_STALL - 0.5):
+			# A truck takes as much kerb as it is long (a box truck two
+			# spaces, a semi three or four), as a loading zone is marked.
+			var gap := maxf(CURB_STALL - 0.5, (vlen + float(q[1])) * 0.5 + 1.0)
+			if c.pos.distance_squared_to(q[0]) < gap * gap:
 				ok = false
 				break
 		for q in aprons if ok else []:
@@ -2169,9 +2172,11 @@ func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1) -> int:
 				break
 		if ok:
 			c.stop_only = true
+			c.len = vlen
 			return _add_spot(pl, c, vid)
 	var last := _curb_at(line, float(line[1]))
 	last.stop_only = true
+	last.len = vlen
 	return _add_spot(pl, last, vid)
 
 
@@ -2236,7 +2241,10 @@ func _claim_spots(pl: Dictionary) -> void:
 ## A free spot for a vehicle: trucks take docks and bays first, cars their
 ## garage or driveway, then a stall. -1 if the place is full.
 func _reserve(pl: Dictionary, vid: int, truck: bool) -> int:
-	var order := ["dock", "bay", "stall", "drive", "curb"] if truck else ["garage", "drive", "stall", "curb"]
+	# A truck never squeezes into a car's 9 x 18 ft stall or a driveway: it
+	# backs into a dock or bay, or stands at the kerb out front as delivery
+	# trucks do.
+	var order := ["dock", "bay"] if truck else ["garage", "drive", "stall", "curb"]
 	for kind in order:
 		for i in pl.spots.size():
 			if pl.taken[i] == -1 and pl.spots[i].kind == kind and not pl.spots[i].get("stop_only", false):
@@ -2525,7 +2533,7 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 		if spot < 0:
 			# Nowhere to park: double-park at the curb out front, as delivery
 			# trucks do, or (for a car) take a curb space anyway.
-			spot = _new_curb(to_pl, to_pl.stop, car.id)
+			spot = _new_curb(to_pl, to_pl.stop, car.id, car.len)
 			if spot < 0:
 				return false
 	car.merge(trip, true)
@@ -2576,7 +2584,7 @@ func _dest(car: Dictionary) -> Dictionary:
 	if i < 0 or i >= pl.spots.size() or (pl.taken[i] != car.id and pl.taken[i] != -1):
 		i = _reserve(pl, car.id, car.len > 6.5)
 		if i < 0:
-			i = _new_curb(pl, pl.stop, car.id)
+			i = _new_curb(pl, pl.stop, car.id, car.len)
 			if i < 0:
 				return {}
 		car.to_spot = i
@@ -2602,7 +2610,7 @@ func _fix_end(car: Dictionary, may_replan := true) -> void:
 		# curb (a WB-67 needs a 45 ft radius): it stops at the curb on its
 		# own side, across from the place, as delivery drivers do.
 		var frac: float = d / w.len if w.fwd else 1.0 - d / w.len
-		var ci := _new_curb(pl, {"seg": w.seg, "at_frac": frac, "side": 1 if w.fwd else -1}, car.id)
+		var ci := _new_curb(pl, {"seg": w.seg, "at_frac": frac, "side": 1 if w.fwd else -1}, car.id, car.len)
 		if ci >= 0:
 			_release(pl.ref, car.to_spot, car.id)
 			car.to_spot = ci
@@ -2638,7 +2646,7 @@ func _pull_over(car: Dictionary, w: Dictionary) -> void:
 	var at := clampf(car.d + PARK_LEAD + 16.0, 0.0, w.len)
 	var frac: float = at / w.len if w.fwd else 1.0 - at / w.len
 	var stop := {"seg": w.seg, "at_frac": frac, "side": 1 if w.fwd else -1}
-	var ci := _new_curb(pl, stop, car.id)
+	var ci := _new_curb(pl, stop, car.id, car.len)
 	if ci < 0:
 		return
 	_release(pl.ref, car.get("to_spot", -1), car.id)
