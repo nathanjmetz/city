@@ -13,7 +13,7 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 	var s: Dictionary = Balance.WASTE_SITES[h.kind]
 	var rows := []
 	var problems := []
-	var linked := not sim.network.find_segment_near(h.pos, 80.0, 1.0).is_empty()
+	var linked := not RoadIndex.segment_near(sim.network, h.pos, 80.0, 1.0).is_empty()
 	var acres: float = h.cells.size() * h.cell * h.cell / 4046.86
 	var most := CivicHubs.max_pieces(h)
 	var status := ""

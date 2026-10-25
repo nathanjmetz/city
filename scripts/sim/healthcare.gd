@@ -80,7 +80,7 @@ func tick(sim: CitySim) -> void:
 		sim.permits.locators[PERMIT_KIND] = func(s: CitySim, id: int) -> Vector2:
 			var b: Dictionary = s.services.buildings.get(id, {"pos": Vector3.ZERO})
 			return Vector2(b.pos.x, b.pos.z)
-	if sim.tick_count % DECIDE_EVERY == 0:
+	if sim.tick_count % DECIDE_EVERY == Balance.ROUND_AT.hospitals:
 		decide(sim)
 	if not sim.simulate_traffic:
 		return
@@ -93,7 +93,7 @@ func tick(sim: CitySim) -> void:
 	for crew in on_scene.duplicate():
 		if sim.tick_count >= int(crew.until):
 			_head_back(sim, crew)
-	if sim.tick_count % CALL_EVERY == 0:
+	if sim.tick_count % CALL_EVERY == Balance.ROUND_AT.ems_calls:
 		_roll_call(sim)
 
 
@@ -734,8 +734,10 @@ func _roll_call(sim: CitySim) -> void:
 ## Where the call comes from: a home, or now and then the nursing home.
 func _scene(sim: CitySim, rng: RandomNumberGenerator) -> Dictionary:
 	var homes := []
+	var buildings: Dictionary = sim.buildings
+	var lots: Dictionary = sim.lots
 	for key in sim.ledger().by_zone.get(ZoneMap.Zone.RESIDENTIAL, []):  # sorted
-		if int(sim.buildings[key].occ) > 0 and sim.lots.has(key):
+		if int(buildings[key].occ) > 0 and lots.has(key):
 			homes.append(key)
 	var care_homes := []
 	for id in sim.services.buildings:
@@ -748,16 +750,23 @@ func _scene(sim: CitySim, rng: RandomNumberGenerator) -> Dictionary:
 		return {"ref": "service:%d" % id, "pos": _xz(b.pos + b.dir * Services.size_of(b).y * 0.5)}
 	if homes.is_empty():
 		return {}
-	# Homes in heavy smoke call more often (Pollution.call_weight).
+	# Homes in heavy smoke call more often (Pollution.call_weight). Each
+	# home's weight is read once, and added and taken off in the same order.
 	var total := 0.0
-	for k in homes:
-		total += sim.pollution.call_weight(k)
+	var weights := PackedFloat64Array()
+	weights.resize(homes.size())
+	var smoke: Dictionary = sim.pollution.lots
+	for i in homes.size():
+		var k: String = homes[i]
+		var w: float = 1.0 if not smoke.has(k) else sim.pollution.call_weight(k)
+		weights[i] = w
+		total += w
 	var pick := rng.randf() * total
 	var key: String = homes[-1]
-	for k in homes:
-		pick -= sim.pollution.call_weight(k)
+	for i in homes.size():
+		pick -= weights[i]
 		if pick < 0.0:
-			key = k
+			key = homes[i]
 			break
 	return {"ref": "lot:" + key, "pos": _xz(sim.lots[key].front)}
 

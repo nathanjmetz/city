@@ -12,6 +12,9 @@ var revision := 0
 ## Segments meeting at each node, kept until the roads change (segments_at).
 var _at := {}
 var _at_key := []
+## [revision, segment count, RoadIndex] for the roads as they were last
+## indexed (RoadIndex.of). The index holds no link back, so no cycle.
+var _road_index := []
 
 const SAMPLES := 24
 const MIN_LENGTH := 4.0

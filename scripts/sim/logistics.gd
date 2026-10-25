@@ -53,8 +53,18 @@ func tick(sim: CitySim) -> void:
 			_return(sim, trips[f.id])
 			trips.erase(f.id)
 	sim.traffic.failed.clear()
-	if sim.tick_count % EVERY != 0:
+	if sim.tick_count % EVERY != Balance.ROUND_AT.freight_round:
 		return
+	# No building comes or goes during a round: its buyers share one ledger.
+	_round_ledger = sim.ledger()
+	_round(sim)
+	_round_ledger = {}
+
+
+var _round_ledger := {}
+
+
+func _round(sim: CitySim) -> void:
 	_produce(sim)
 	sim.traffic.background_freight = sim.farms.farms.is_empty() and sim.industry.sites.is_empty() \
 		and sim.count_buildings(ZoneMap.Zone.INDUSTRIAL) == 0
@@ -188,7 +198,8 @@ func _buyer(sim: CitySim, from: Vector3, what: String, good := "") -> Dictionary
 	var best_d := INF
 	# The zone's buildings, sorted, from the town's ledger: a round of trucks
 	# asks this many times, and the whole town needn't be sorted each time.
-	for key in sim.ledger().by_zone.get(zone, []):
+	var ledger: Dictionary = _round_ledger if not _round_ledger.is_empty() else sim.ledger()
+	for key in ledger.by_zone.get(zone, []):
 		if not sim.lots.has(key) or not sim.utilities_ok(key):
 			continue
 		if zone == ZoneMap.Zone.INDUSTRIAL and (need.get(key, 0.0) < 0.5 or input_of(sim, key) != cargo_class(good)):

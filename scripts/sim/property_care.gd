@@ -87,16 +87,30 @@ func forget(key: String) -> void:
 	lacking.erase(key)
 
 
+var _parts := []  # SLICES lists of building keys, sorted (see slice)
+var _parts_sig := 0
+
+
 ## Runs one slice of the month (CitySim calls it every half game hour).
 ## Returns true when some building's look changed.
 func slice(sim, i: int) -> bool:
 	changed_keys = []
 	_fund = {}
+	# The buildings in this slice, sorted: from the ledger's sorted keys,
+	# split into SLICES parts once per set of buildings (not every key
+	# hashed every half hour).
+	var ledger: Dictionary = sim.ledger()
+	if _parts_sig != int(ledger.sig) or _parts.size() != SLICES:
+		_parts_sig = int(ledger.sig)
+		_parts = []
+		for k in SLICES:
+			_parts.append([])
+		for key in ledger.sorted:
+			_parts[key.hash() % SLICES].append(key)
 	var keys := []
-	for key in sim.buildings:
-		if key.hash() % SLICES == i and sim.lots.has(key):
+	for key in _parts[i]:
+		if sim.lots.has(key):
 			keys.append(key)
-	keys.sort()
 	var demolish := []
 	for key in keys:
 		if not sim.construction.is_done("lot:" + key, sim.tick_count):

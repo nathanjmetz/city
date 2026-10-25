@@ -247,6 +247,9 @@ var lots_delta_full := true
 ## road moved (the rest can't have changed), which keeps edits in a big
 ## town quick.
 var _lots_light := false
+## Boxes where something that keeps lots off the ground changed (see
+## lots_changed_near), for the next refresh to check.
+var _lots_near := []
 ## Roads changed since the world last made way for them (see RoadWins).
 var _roads_moved := false
 var _usable_cache := {}  # field cell -> bool, cleared when roads or lots change
@@ -262,6 +265,7 @@ var _zone_check_lots := {}
 
 func _init() -> void:
 	Resources.follow(terrain_offset)
+	lots_changed.connect(func(): _lot_rev += 1)
 	# The water utility's manager takes the player's word (Permits guidance).
 	permits.locators["water"] = func(c: CitySim, id: int) -> Vector2:
 		var b: Dictionary = c.services.buildings.get(id, {})
@@ -861,6 +865,8 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			county_changed.emit()
 			zones.cells.clear()
 			planner = LotPlanner.new()
+			_ground_was = {}
+			_lots_touched.clear()
 			planner.wealth = wealth_at
 			var diff := economy.difficulty
 			economy = Economy.new()
@@ -1201,22 +1207,32 @@ func tick() -> void:
 				farms.slope_of = func(p: Vector3) -> float:
 					return Terrain.slope(p.x + terrain_offset.x, p.z + terrain_offset.y)
 			farms.year = crop_year
+		var ground := farms.ground_boxes()
 		var farmed := farms.decide(field_usable)
+		var others := false
 		# Where the town has made the land worth far more to developers,
 		# a farm family may ask to sell out.
 		if _farm_sell_outs():
 			farmed = true
+			others = true
 			_usable_cache.clear()
 		# Hog, dairy and turkey barns and beef herds, picked by farm leaders.
 		if Livestock.step(self):
 			farmed = true
+			others = true
 			_usable_cache.clear()
-		if farmed:
+		if others:
 			_lots_dirty = true  # lots under new fields go away
+		elif farmed:
+			# Fields planted or given up: only lots by those farms can change.
+			# The lots are planned again all the same, as after any change.
+			lots_changed_near(_farm_boxes(ground, farms.ground_boxes()))
+			_lots_light = true
+		if farmed:
 			farms_changed.emit()
 	Perf.add("sim.farms", t)
 	t = Perf.now()
-	if tick_count % Industry.DECIDE_EVERY == 0 and not industry.sites.is_empty():
+	if tick_count % Industry.DECIDE_EVERY == Balance.ROUND_AT.industry and not industry.sites.is_empty():
 		industry.tax_rate = economy.tax[ZoneMap.Zone.INDUSTRIAL]
 		industry.day = tick_count / (24.0 * TICKS_PER_HOUR)
 		industry.road_between = road_between
@@ -1244,7 +1260,7 @@ func tick() -> void:
 		_bank_changes(banks.decide(self))
 	Perf.add("sim.banks", t)
 	t = Perf.now()
-	if tick_count % Balance.WAREHOUSE_DECIDE_EVERY == 0 and not warehouses.buildings.is_empty():
+	if tick_count % Balance.WAREHOUSE_DECIDE_EVERY == Balance.ROUND_AT.warehouses and not warehouses.buildings.is_empty():
 		if warehouses.decide(self):
 			_lots_dirty = true
 			warehouses_changed.emit()
@@ -1258,7 +1274,7 @@ func tick() -> void:
 		parks.tourism.tick(self)
 	Perf.add("sim.tourism", t)
 	t = Perf.now()
-	if tick_count % Balance.PARK_DECIDE_EVERY == 0 and not parks.sites.is_empty():
+	if tick_count % Balance.PARK_DECIDE_EVERY == Balance.ROUND_AT.parks and not parks.sites.is_empty():
 		var sizes := parks.sites.values().map(func(s): return s.size)
 		if parks.decide(self):
 			if parks.sites.values().map(func(s): return s.size) != sizes:
@@ -1270,7 +1286,7 @@ func tick() -> void:
 			parks_changed.emit()
 	Perf.add("sim.parks", t)
 	t = Perf.now()
-	if tick_count % Power.DECIDE_EVERY == 0 and not power.sites.is_empty():
+	if tick_count % Power.DECIDE_EVERY == Balance.ROUND_AT.power and not power.sites.is_empty():
 		if _decide_power():
 			power_changed.emit()
 	Perf.add("sim.power", t)
@@ -1369,7 +1385,7 @@ func tick() -> void:
 	if tick_count % TICKS_PER_HOUR == 35 and not engineer.pending.is_empty() and engineer.carry_out(self):
 		_lots_dirty = true
 	t = Perf.now()
-	if tick_count % WaterUtility.DECIDE_EVERY == 0 and not services.water.utilities.is_empty():
+	if tick_count % WaterUtility.DECIDE_EVERY == Balance.ROUND_AT.water and not services.water.utilities.is_empty():
 		var res := services.water.decide(self, yard_usable)
 		economy.money += int(res[1])
 		if res[0]:
@@ -1480,6 +1496,8 @@ func update_stats(budget := true, slice := -1) -> void:
 	var unfinished_jobs := 0
 	var presold := 0  # buyers waiting on homes going up (see _move_in)
 	var office_cap := 0  # BuildingTypes.office_jobs, in the same pass
+	var all_ok := not require_utilities
+	var served: Dictionary = services.served
 	for key in buildings:
 		var b: Dictionary = buildings[key]
 		var zone := int(b.zone)
@@ -1490,8 +1508,9 @@ func update_stats(budget := true, slice := -1) -> void:
 		# (BuildingTypes.type_of: no zone defaults to an office.)
 		if b.get("type", "") == "office":
 			office_cap += int(b.cap)
-		# Closed without power or water.
-		var ok := _utilities_ok(key)
+		# Closed without power or water (_utilities_ok, read straight).
+		var sv = served.get(key)
+		var ok: bool = all_ok or (sv != null and sv.power and sv.water)
 		match zone:
 			ZoneMap.Zone.COMMERCIAL:
 				# Flats above a shop count as homes.
@@ -1644,15 +1663,21 @@ func _home_part(slice: int) -> Dictionary:
 	var care := 0.0
 	var cover := 0.0
 	var happy := 0.0
+	# (The served rows, water utilities and park lifts read once.)
+	var served: Dictionary = services.served
+	var utilities: Dictionary = services.water.utilities
+	var lot_happy: Dictionary = parks.lot_happy
 	for key in ledger().home_slices[slice]:
 		n += 1
-		var s: Dictionary = services.served.get(key, {})
-		if services.water.boils(s):
+		var s: Dictionary = served.get(key, {})
+		# water.boils(s):
+		var by: int = s.get("water_by", -1)
+		if by != -1 and utilities.has(by) and utilities[by].boil:
 			boil += 1
 		care += Healthcare.care_of(s)
 		if not s.is_empty():
 			cover += Services.coverage_of(s)
-		happy += float(parks.lot_happy.get(key, 0.0))
+		happy += float(lot_happy.get(key, 0.0))
 	return {"n": n, "boil": boil, "care": care, "cover": cover, "happy": happy}
 
 
@@ -1660,6 +1685,7 @@ func _home_part(slice: int) -> Dictionary:
 ## sort or filter out of the whole town on every pass. Worked out again only
 ## when a building is added or removed (homes and shops keep their zone).
 ##   sorted: every building's key, sorted
+##   refs: "lot:" + each of those keys, in the same order
 ##   slices: every building's key in each Economy slice, in building order
 ##   home_slices: the homes' keys in each Economy slice, in building order
 ##   by_zone: zone -> its buildings' keys, sorted
@@ -1687,12 +1713,14 @@ func ledger() -> Dictionary:
 	var sorted := keys.duplicate()
 	sorted.sort()
 	var by_zone := {}
+	var refs := []
 	for key in sorted:
 		var z := int(buildings[key].zone)
 		if not by_zone.has(z):
 			by_zone[z] = []
 		by_zone[z].append(key)
-	_ledger = {"sorted": sorted, "slices": slices, "home_slices": homes, "by_zone": by_zone, "sig": sig}
+		refs.append("lot:" + key)
+	_ledger = {"sorted": sorted, "refs": refs, "slices": slices, "home_slices": homes, "by_zone": by_zone, "sig": sig}
 	return _ledger
 
 
@@ -1707,9 +1735,9 @@ func _move_in() -> void:
 			elif int(home.get("focc", 0)) > 0 and not _utilities_ok(key):
 				home.focc -= 1
 	# A new home is built for a buyer: they move in when it's finished.
-	var keys0 := buildings.keys()
-	keys0.sort()
-	for key in keys0:
+	# (The ledger's sorted keys: the same as sorting them here.)
+	var sorted: Array = ledger().sorted
+	for key in sorted:
 		var nb: Dictionary = buildings[key]
 		if nb.zone == ZoneMap.Zone.RESIDENTIAL and nb.occ == 0 and _utilities_ok(key) and care.livable(key):
 			var since: int = tick_count - int(nb.built) - Construction.duration("house")
@@ -1718,10 +1746,12 @@ func _move_in() -> void:
 	var arrivals := 1 + int(demand[ZoneMap.Zone.RESIDENTIAL] * 4.0)
 	if demand[ZoneMap.Zone.RESIDENTIAL] <= 0.05:
 		return
-	var keys := buildings.keys()
-	keys.sort()
-	for key in keys:
+	for key in sorted:
 		var b: Dictionary = buildings[key]
+		# A full home or shop takes nobody (the rest below only matters
+		# where there's room).
+		if not (b.zone == ZoneMap.Zone.RESIDENTIAL and b.occ < b.cap) and int(b.get("focc", 0)) >= int(b.get("flats", 0)):
+			continue
 		if not care.livable(key):
 			continue
 		if b.zone == ZoneMap.Zone.RESIDENTIAL and b.occ < b.cap and _utilities_ok(key) \
@@ -2065,7 +2095,7 @@ func industry_reach(kind: String, pos: Vector3) -> float:
 
 ## The access road from a main building to the nearest public road, or [].
 func industry_drive(pos: Vector3, dir: Vector3) -> Array:
-	var near := network.find_segment_near(pos, Industry.MAX_DRIVE, 1.0)
+	var near := RoadIndex.segment_near(network, pos, Industry.MAX_DRIVE, 1.0)
 	if near.is_empty():
 		return []
 	return Farms.make_drive(pos, dir, near.point)
@@ -2322,7 +2352,7 @@ func _clear_reserved_zones(near := Vector3.INF, reach := 0.0) -> void:
 ## The gravel lane from a farmhouse to the nearest road, or [] if no road is
 ## near enough.
 func farm_drive(pos: Vector3, dir: Vector3) -> Array:
-	var near := network.find_segment_near(pos, Farms.MAX_DRIVE, 1.0)
+	var near := RoadIndex.segment_near(network, pos, Farms.MAX_DRIVE, 1.0)
 	if near.is_empty():
 		return []
 	return Farms.make_drive(pos, dir, near.point)
@@ -2335,7 +2365,7 @@ func road_between(a: Vector3, b: Vector3) -> bool:
 	var n := maxi(2, ceili(a2.distance_to(b2) / 6.0))
 	for i in range(1, n):
 		var p := a2.lerp(b2, float(i) / n)
-		if not network.find_segment_near(p, 4.0).is_empty():
+		if not RoadIndex.segment_near(network, p, 4.0).is_empty():
 			return true
 	return false
 
@@ -2390,7 +2420,7 @@ func _ground_free(mid: Vector3, corners: PackedVector2Array, in_fields: bool) ->
 	var key := Vector3i(roundi(mid.x), roundi(mid.z), int(in_fields))
 	if _usable_cache.has(key):
 		return _usable_cache[key]
-	var ok := network.find_segment_near(mid, Farms.CELL * 0.6 + RoadStyle.right_of_way_half(RoadStyle.Type.AVENUE), 2.0).is_empty() \
+	var ok := RoadIndex.segment_near(network, mid, Farms.CELL * 0.6 + RoadStyle.right_of_way_half(RoadStyle.Type.AVENUE), 2.0).is_empty() \
 		and not _on_painted_road(mid, Farms.CELL * 0.6 + RoadStyle.right_of_way_half(RoadStyle.Type.COUNTY))
 	var pts := [mid]
 	for c in corners:
@@ -2403,11 +2433,12 @@ func _ground_free(mid: Vector3, corners: PackedVector2Array, in_fields: bool) ->
 					or not land_ok(p):
 				ok = false
 	if ok:
-		for key2 in lots:
+		var reach := Farms.CELL * 0.71 + 16.0
+		for key2 in lots_near(Rect2(mid.x - reach, mid.z - reach, reach * 2.0, reach * 2.0)):
 			# Fields can take empty roadside lots, but not zoned or built ones.
 			if not buildings.has(key2) and zones.zone_at(lots[key2].zone_pt) == ZoneMap.Zone.NONE:
 				continue
-			if lots[key2].pos.distance_to(mid) < Farms.CELL * 0.71 + 16.0:
+			if lots[key2].pos.distance_to(mid) < reach:
 				ok = false
 				break
 	_usable_cache[key] = ok
@@ -2602,7 +2633,7 @@ func _pad_road(id: int, cell: Vector2i, spare: float) -> bool:
 	if s.kind == "ore":
 		return true
 	var mid := Industry.pad_center(s, cell)
-	if not network.find_segment_near(mid, Industry.PAD * 0.9, 2.0).is_empty():
+	if not RoadIndex.segment_near(network, mid, Industry.PAD * 0.9, 2.0).is_empty():
 		return true  # already beside a road
 	var home := Vector3(s.pos.x, 0.0, s.pos.z) - mid
 	var right := Vector3(-s.dir.z, 0.0, s.dir.x)
@@ -2873,8 +2904,10 @@ func utilities_going_up() -> Array:
 ## Buildings on zoned lots that lack power or water.
 func unserved_count() -> int:
 	var n := 0
+	var served: Dictionary = services.served  # (services.has_utilities, read straight)
 	for key in buildings:
-		if not services.has_utilities(key):
+		var s = served.get(key)
+		if s == null or not (s.power and s.water):
 			n += 1
 	return n
 
@@ -3041,6 +3074,18 @@ func _block_reason(lot: Dictionary) -> String:
 func note_lots(keys: Array) -> void:
 	lots_delta = keys
 	lots_delta_full = false
+	touched_lots(keys)
+
+
+## Lots reshaped or moved in place (merged, split, carried along with their
+## street): the next full lot check looks at them again wherever they are,
+## as it would if it looked at every lot.
+func touched_lots(keys: Array) -> void:
+	for key in keys:
+		_lots_touched[key] = true
+		_lot_ix_stale[key] = true
+	if not keys.is_empty():
+		_lot_rev += 1  # lots_near files them again, wherever they are now
 
 
 ## Works out lots_delta: lots added, gone or changed since `was`. Unchanged
@@ -3057,6 +3102,142 @@ func _lots_delta(was: Dictionary, full: bool) -> void:
 	keys.sort()
 	lots_delta = keys
 	lots_delta_full = full
+
+
+## Something that keeps lots off the ground (a farm's fields, say) changed,
+## but only inside these boxes (Rect2s): the next refresh checks the lots
+## there again, built or not, and leaves the rest as they stand, rather
+## than checking every lot in town (seconds in a big one). Saved, so a copy
+## loaded before the refresh checks the same lots.
+func lots_changed_near(boxes: Array) -> void:
+	_lots_near.append_array(boxes)
+
+
+## The boxes of farms whose ground changed between two Farms.ground_boxes.
+static func _farm_boxes(before: Dictionary, after: Dictionary) -> Array:
+	var out := []
+	for id in before:
+		if not after.has(id) or after[id][0] != before[id][0]:
+			out.append(before[id][1])
+	for id in after:
+		if not before.has(id) or after[id][0] != before[id][0]:
+			out.append(after[id][1])
+	return out
+
+
+## Boxes ready for _lot_near: [the box around them all, then the boxes].
+static func _near_of(boxes: Array) -> Array:
+	if boxes.is_empty():
+		return []
+	var all: Rect2 = boxes[0]
+	for b in boxes:
+		all = all.merge(b)
+	return [all] + boxes
+
+
+## Whether a lot reaches into any of these boxes (its outline and the
+## points _lot_blocked looks at). `near` from _near_of (or plain boxes).
+static func _lot_near(lot: Dictionary, near: Array) -> bool:
+	if near.is_empty():
+		return false
+	var box := Rect2(Vector2(lot.pos.x, lot.pos.z), Vector2.ZERO)
+	for q in lot.corners:
+		box = box.expand(q)
+	for p in [lot.front, lot.zone_pt]:
+		box = box.expand(Vector2(p.x, p.z))
+	if not (near[0] as Rect2).intersects(box, true):
+		return false
+	for i in range(1, near.size()):
+		if (near[i] as Rect2).intersects(box, true):
+			return true
+	return near.size() == 1
+
+
+## The keys of lots whose outline, middle, front or zone point could fall
+## in `area` (the box around them all meets it), in no particular order: a search
+## of one patch of town looks at the lots there, not every lot. Kept until
+## the lots change (lots_changed).
+func lots_near(area: Rect2) -> Array:
+	var key := [lots.size(), _lot_rev]
+	if not is_same(lots, _lot_cells_of) or key != _lot_cells_key:
+		_lot_cells_of = lots
+		_lot_cells_key = key
+		_index_lots()
+	var seen := {}
+	for x in range(floori(area.position.x / LOT_CELL), floori(area.end.x / LOT_CELL) + 1):
+		for y in range(floori(area.position.y / LOT_CELL), floori(area.end.y / LOT_CELL) + 1):
+			for k in _lot_cells.get(Vector2i(x, y), []):
+				if not seen.has(k) and (_lot_boxes[k] as Rect2).intersects(area, true):
+					seen[k] = true
+	return seen.keys()
+
+
+## Brings lots_near's index up to date: lots gone, replaced or reshaped in
+## place (note_lots, touched_lots) come out, and new ones go in, rather
+## than every lot in town being filed again after each check.
+func _index_lots() -> void:
+	var gone := []
+	for k in _lot_ix:
+		if not lots.has(k) or not is_same(lots[k], _lot_ix[k]) or _lot_ix_stale.has(k):
+			gone.append(k)
+	_lot_ix_stale.clear()
+	for k in gone:
+		var box: Rect2 = _lot_boxes[k]
+		for x in range(floori(box.position.x / LOT_CELL), floori(box.end.x / LOT_CELL) + 1):
+			for y in range(floori(box.position.y / LOT_CELL), floori(box.end.y / LOT_CELL) + 1):
+				var list: Array = _lot_cells.get(Vector2i(x, y), [])
+				list.erase(k)
+		_lot_boxes.erase(k)
+		_lot_ix.erase(k)
+	for k in lots:
+		if _lot_ix.has(k):
+			continue
+		var lot: Dictionary = lots[k]
+		var box := Rect2(Vector2(lot.pos.x, lot.pos.z), Vector2.ZERO)
+		for q in lot.corners:
+			box = box.expand(q)
+		for p in [lot.front, lot.zone_pt]:
+			box = box.expand(Vector2(p.x, p.z))
+		_lot_boxes[k] = box
+		_lot_ix[k] = lot
+		for x in range(floori(box.position.x / LOT_CELL), floori(box.end.x / LOT_CELL) + 1):
+			for y in range(floori(box.position.y / LOT_CELL), floori(box.end.y / LOT_CELL) + 1):
+				var c := Vector2i(x, y)
+				if not _lot_cells.has(c):
+					_lot_cells[c] = []
+				_lot_cells[c].append(k)
+
+
+const LOT_CELL := 64.0
+var _lot_ix := {}  # lot key -> the lot it was filed as (lots_near)
+var _lot_ix_stale := {}  # lot keys reshaped in place since (note_lots, touched_lots)
+var _lot_rev := 0  # goes up with every lots_changed
+## What kept lots off the ground at the last full check (LotGround.items).
+## Not saved: a loaded copy's first full check looks at every lot, which
+## comes out the same.
+var _ground_was := {}
+var _lots_touched := {}  # lot key -> true (see touched_lots)
+## Tools set this to check that lots away from what changed really are
+## unchanged (_verify_ground), printing GROUND MISMATCH where not.
+static var verify_ground := false
+## How many GROUND MISMATCH lines were printed (for tests to fail on).
+static var ground_mismatches := 0
+
+
+func _verify_ground(near: Array) -> void:
+	for key in lots:
+		if not _lot_near(lots[key], near) and _lot_blocked(lots[key]):
+			print("GROUND MISMATCH lot %s now blocked, away from what changed" % key)
+			ground_mismatches += 1
+	for key in _blocked_by:
+		var e: Array = _blocked_by[key]
+		if not _lot_near(e[0], near) and _lot_blocked(e[0]) != bool(e[1]):
+			print("GROUND MISMATCH planned lot %s changed, away from what changed" % key)
+			ground_mismatches += 1
+var _lot_cells_of := {}
+var _lot_cells_key := []
+var _lot_cells := {}  # Vector2i -> [lot keys]
+var _lot_boxes := {}  # lot key -> Rect2
 
 
 ## The lots buildings stand on, by key.
@@ -3095,29 +3276,76 @@ func _refresh() -> void:
 		_replan_at = 0
 	if _roads_moved:
 		_road_wins()
-	if _lots_dirty or _lots_light:
+	if _lots_dirty or _lots_light or not _lots_near.is_empty():
 		var tr := Perf.now()
 		var full := _lots_dirty
+		# Where lots must be checked again though no road came near them.
+		var near: Array = [] if full else _lots_near
+		if full:
+			# Only lots by what came, went or changed shape since the last
+			# full check can have gained or lost something under them.
+			var ground := LotGround.items(self)
+			var changed = LotGround.diff(_ground_was, ground)
+			_ground_was = ground
+			if changed != null:
+				full = false
+				near = changed + _lots_near
+				for key in _lots_touched:
+					if lots.has(key):
+						near.append(LotGround.lot_box(lots[key]))
+				if verify_ground:
+					_verify_ground(_near_of(near))
+			_lots_touched.clear()
+		near = _near_of(near)
 		var was := lots
 		_lots_dirty = false
 		_lots_light = false
+		_lots_near = []
 		planner.update(network)
+		if not full and _plan_same() and not _near_any_lot(near):
+			# Nothing planning reads has changed since the lots were last
+			# planned (roads, zoning, the parcels built on, public sites), and
+			# whatever changed is away from every lot: planning again would
+			# hand back these very lots. What else a check does is done.
+			planner.revalidated()
+			_usable_cache.clear()
+			lots_delta = []
+			lots_delta_full = false
+			Perf.add("sim.lots.revalidate", tr)
+			tr = Perf.now()
+			_update_services()
+			Perf.add("sim.lots.services", tr)
+			_zone_check_lots = {}  # the buildings are checked against their zones, as after any check
+		else:
+			_plan_lots(was, full, near)
+	# Buildings go away when their lot disappears or its zone changes, so
+	# this only needs a look after zoning, lots or buildings change.
+	_check_zones()
+
+
+## The part of _refresh that plans the lots again (see there).
+func _plan_lots(was: Dictionary, full: bool, near: Array) -> void:
+		var tr := Perf.now()
+		var plan_keys: int = ledger().sig
 		# Lots with buildings are parcels: they stay as they are unless a road
 		# now runs through them.
 		var frozen := {}
 		var lost := []
-		var keys := buildings.keys()
-		keys.sort()
+		var keys: Array = ledger().sorted  # the buildings' keys, sorted
 		if not full and planner.changed_boxes.is_empty():
-			# No road changed: every parcel stands as it is.
+			# No road changed: every parcel stands as it is (unless whatever
+			# changed near it is in its way now).
 			for key in keys:
 				if lots.has(key):
-					frozen[key] = lots[key]
+					if _lot_near(lots[key], near) and _lot_blocked(lots[key]):
+						lost.append(key)
+					else:
+						frozen[key] = lots[key]
 			keys = []
 		for key in keys:
 			if lots.has(key):
 				var lot := planner.revalidate(network, lots[key])
-				if not full and is_same(lot, lots[key]):
+				if not full and is_same(lot, lots[key]) and not _lot_near(lot, near):
 					frozen[key] = lot  # no road came near it
 				elif not lot.is_empty() and not _lot_blocked(lot):
 					frozen[key] = lot
@@ -3133,7 +3361,8 @@ func _refresh() -> void:
 		for lot in planner.plan(network, zones, _with_sites(frozen)):
 			# No lots under a service building.
 			var had: Array = _blocked_by.get(lot.key, [])
-			var no: bool = had[1] if not full and not had.is_empty() and is_same(had[0], lot) else _lot_blocked(lot)
+			var no: bool = had[1] if not full and not had.is_empty() and is_same(had[0], lot) \
+				and not _lot_near(lot, near) else _lot_blocked(lot)
 			blocked[lot.key] = [lot, no]
 			if not no:
 				lots[lot.key] = lot
@@ -3145,8 +3374,56 @@ func _refresh() -> void:
 		_update_services()
 		Perf.add("sim.lots.services", tr)
 		lots_changed.emit()
-	# Buildings go away when their lot disappears or its zone changes, so
-	# this only needs a look after zoning, lots or buildings change.
+		_planned = [plan_keys, _sites_sig(), _lot_rev]
+		_planned_lots = lots
+
+
+## What the lots were last planned from: [the buildings' key set
+## (ledger().sig), the public sites (_sites_sig), _lot_rev], and the lots
+## that came out.
+var _planned := []
+var _planned_lots := {}
+
+
+## True when planning the lots now would read exactly what it read last
+## time: no road, zoning or survey change waiting, the same buildings on the
+## same lots, the same public sites. (LotPlanner.plan hands back the same
+## lots for the same inputs.)
+func _plan_same() -> bool:
+	if _planned.is_empty() or not is_same(lots, _planned_lots) or _lot_rev != int(_planned[2]):
+		return false
+	if not planner.changed_boxes.is_empty() or not planner._pending.is_empty() or not zones.dirty.is_empty() \
+			or not planner._dirty.is_empty() or planner._fresh or not planner._warm_list.is_empty():
+		return false
+	return int(_planned[0]) == ledger().sig and int(_planned[1]) == _sites_sig()
+
+
+## The public sites planning treats as parcels (_with_sites), as one hash.
+func _sites_sig() -> int:
+	var sites := []
+	for id in services.buildings:
+		sites.append([id, services.footprint(id)])
+	for id in parks.sites:
+		sites.append([id, parks.footprint(id)])
+	return hash(sites)
+
+
+## Whether any lot, built or planned (kept off the ground or not), reaches
+## into these boxes (from _near_of).
+func _near_any_lot(near: Array) -> bool:
+	if near.is_empty():
+		return false
+	for i in range(1, near.size()):
+		for key in lots_near(near[i]):
+			if _lot_near(lots[key], [near[i]]):
+				return true
+	for key in _blocked_by:
+		if _lot_near(_blocked_by[key][0], near):
+			return true
+	return false
+
+
+func _check_zones() -> void:
 	var check := [zones.revision, lots.size(), buildings.size()]
 	if check == _zone_check and is_same(lots, _zone_check_lots):
 		return
@@ -3298,7 +3575,7 @@ func _build_over(c: Array, type: int, retype := true) -> bool:
 	for i in n + 1:
 		var t := float(i) / n
 		var p := RoadNetwork.bezier(c[0], c[1], c[2], t)
-		var hit := network.find_segment_near(p, OVERLAY_NEAR, RoadNetwork.SAME_LEVEL)
+		var hit := RoadIndex.segment_near(network, p, OVERLAY_NEAR, RoadNetwork.SAME_LEVEL)
 		var seg := -1
 		if not hit.is_empty():
 			var sc := network.curve_of(hit.seg)
@@ -3336,7 +3613,7 @@ func _build_over(c: Array, type: int, retype := true) -> bool:
 		for k in [0, 1]:
 			var idx: int = r[k]
 			if along[idx] != -1 and network.segments.has(along[idx]):
-				var on := network.find_segment_near(a if k == 0 else b, OVERLAY_NEAR * 2.0, RoadNetwork.SAME_LEVEL)
+				var on := RoadIndex.segment_near(network, a if k == 0 else b, OVERLAY_NEAR * 2.0, RoadNetwork.SAME_LEVEL)
 				if not on.is_empty():
 					if k == 0:
 						a = on.point
@@ -3353,7 +3630,7 @@ func _build_over(c: Array, type: int, retype := true) -> bool:
 	# one is cut there, so only the stretch it covers changes.
 	for k in [0, n]:
 		if along[k] != -1:
-			var end := network.find_segment_near(c[0] if k == 0 else c[2], OVERLAY_NEAR, RoadNetwork.SAME_LEVEL)
+			var end := RoadIndex.segment_near(network, c[0] if k == 0 else c[2], OVERLAY_NEAR, RoadNetwork.SAME_LEVEL)
 			if not end.is_empty() and end.t > 0.02 and end.t < 0.98:
 				network.split_segment(end.seg, end.t)
 	network.end_batch()
@@ -3361,7 +3638,7 @@ func _build_over(c: Array, type: int, retype := true) -> bool:
 	var seen := {}
 	var line := RoadNetwork.sample_curve(c[0], c[1], c[2], n)
 	for p in line:
-		var hit := network.find_segment_near(p, OVERLAY_NEAR, RoadNetwork.SAME_LEVEL)
+		var hit := RoadIndex.segment_near(network, p, OVERLAY_NEAR, RoadNetwork.SAME_LEVEL)
 		if hit.is_empty() or seen.has(hit.seg) or int(network.segments[hit.seg].type) == type:
 			continue
 		var sc := network.curve_of(hit.seg)
@@ -3511,7 +3788,7 @@ func found_business(key: String, zone: int, chain := "") -> bool:
 ## unzoned, clear of roads, and nobody else's (Capital.land_free).
 func _addon_free(p: Vector3, who: String) -> bool:
 	return land_ok(p) and zones.zone_at(p) == ZoneMap.Zone.NONE \
-		and network.find_segment_near(p, 12.0).is_empty() and not big.covers(p) \
+		and RoadIndex.segment_near(network, p, 12.0).is_empty() and not big.covers(p) \
 		and Capital.land_free(self, [p], who)
 
 
@@ -3814,7 +4091,7 @@ func _pieces_along(at: Callable, length: float, dry := false) -> Array:
 		while s <= next:
 			var q: Vector2 = at.call(s)
 			var here := Vector3(q.x, 0, q.y)
-			if not network.find_segment_near(here, COUNTY_STEP * 0.6).is_empty():
+			if not RoadIndex.segment_near(network, here, COUNTY_STEP * 0.6).is_empty():
 				next = s
 				met = true
 				break
@@ -3849,7 +4126,7 @@ func _pieces_along(at: Callable, length: float, dry := false) -> Array:
 			break
 		if met:
 			# Right onto the road it meets, so the two join there.
-			var hit := network.find_segment_near(c[2], COUNTY_STEP)
+			var hit := RoadIndex.segment_near(network, c[2], COUNTY_STEP)
 			if not hit.is_empty():
 				c[2] = Vector3(hit.point.x, 0, hit.point.z)
 				c[1] = (c[0] + c[2]) * 0.5
@@ -3867,7 +4144,7 @@ func _street_ahead(at: Callable, from: float, to: float, dry: bool) -> float:
 	while s <= to:
 		var q: Vector2 = at.call(s)
 		var here := Vector3(q.x, 0, q.y)
-		if not network.find_segment_near(here, COUNTY_STEP * 0.6).is_empty():
+		if not RoadIndex.segment_near(network, here, COUNTY_STEP * 0.6).is_empty():
 			return s
 		if farms.yard_at(here) or (dry and Terrain.water(q.x + o.x, q.y + o.y) >= 0.1):
 			return -1.0
@@ -4141,7 +4418,7 @@ func _link_roads() -> Array:
 ## A fresh start gets a crossroads on its county highway, nearest the
 ## town's middle: a street across it, 300 m each way, to grow from.
 func _start_crossroads() -> void:
-	var near := network.find_segment_near(Vector3.ZERO, 5000.0)
+	var near := RoadIndex.segment_near(network, Vector3.ZERO, 5000.0)
 	if near.is_empty():
 		return
 	var at: Vector3 = near.point
@@ -4210,6 +4487,8 @@ func _plan_to_save() -> Dictionary:
 				empty.append(LotPlanner.lot_to_save(lots[key]))
 		out.empty = empty
 	out.flags = [_lots_dirty, _lots_light, _roads_moved]
+	if not _lots_near.is_empty():
+		out.near = _lots_near.map(func(b: Rect2): return [b.position.x, b.position.y, b.size.x, b.size.y])
 	out.replan_at = _replan_at
 	out.hold_until = _hold_until
 	return out
@@ -4338,6 +4617,8 @@ func save_steps(postcard := false) -> Array:
 
 
 func from_dict(d: Dictionary) -> void:
+	_ground_was = {}  # the next full lot check looks at every lot
+	_lots_touched.clear()
 	vegetation.from_dict(d.get("vegetation", {}))
 	# Streets get their saved names below: don't name every road afresh as
 	# the network comes in (a quarter of a second in a big town).
@@ -4484,6 +4765,7 @@ func from_dict(d: Dictionary) -> void:
 			_road_wins()
 		_lots_dirty = bool(flags[0])
 		_lots_light = bool(flags[1])
+		_lots_near = d.plan.get("near", []).map(func(b): return Rect2(float(b[0]), float(b[1]), float(b[2]), float(b[3])))
 		_roads_moved = bool(flags[2])
 		_replan_at = int(d.plan.get("replan_at", 0))
 		_hold_until = int(d.plan.get("hold_until", 0))
