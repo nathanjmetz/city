@@ -572,7 +572,8 @@ func _road_type(P: Callable, w: float, type: int) -> void:
 	var k: float = half / (spec.width * 0.5)  # icon units per metre
 	var l: float = 0.5 - half
 	var r: float = 0.5 + half
-	var surface: Dictionary = {"gravel": Color(0.62, 0.56, 0.45), "concrete": Color(0.58, 0.58, 0.56)}
+	var surface: Dictionary = {"gravel": Color(0.62, 0.56, 0.45), "concrete": Color(0.58, 0.58, 0.56),
+		"dirt": Color(0.52, 0.40, 0.28), "chip seal": Color(0.45, 0.43, 0.40), "brick": Color(0.58, 0.30, 0.22)}
 	var rural: bool = spec.get("rural", false)
 	if rural:
 		_poly([P.call(0.0, 0.05), P.call(1.0, 0.05), P.call(1.0, 0.95), P.call(0.0, 0.95)], Color(0.35, 0.55, 0.3, 0.5))

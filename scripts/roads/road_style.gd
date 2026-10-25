@@ -8,7 +8,8 @@ enum Type { STREET, AVENUE, BOULEVARD, HIGHWAY, RAMP, RING, RING2,
 	AVENUE_TURN, AVENUE_BIKE, AVENUE_DIVIDED, AVENUE_ONEWAY,
 	STRIP, PARKWAY,
 	FREEWAY2, FREEWAY4, DIVIDED_HWY, STATE_HWY,
-	RAMP2, AVENUE_BUS }
+	RAMP2, AVENUE_BUS,
+	DIRT, CHIP_SEAL, STREET_ONEWAY1, BRICK, STREET_DIVIDED }
 
 ## The five road menus. Each variant names its menu with "group"; a type
 ## without one is the menu's own first road.
@@ -123,6 +124,30 @@ const TYPES := [
 	# may cross into it to turn right at the next corner or reach a driveway.
 	{"name": "Avenue with bus lanes", "short": "Bus lanes", "group": Type.AVENUE, "lanes": 4, "width": 15.0,
 		"median": 0.0, "oneway": false, "lots": true, "grade": 0.10, "mph": 35, "bus": true},
+
+	# Unimproved dirt road: a 16 ft graded earth two-track, the field lanes
+	# and township roads never graveled (AASHTO Guidelines for Very Low-Volume
+	# Local Roads, ADT under 400). Cars slow and squeeze by each other.
+	{"name": "Dirt road", "short": "Dirt", "group": Type.STREET, "lanes": 2, "width": 4.8, "median": 0.0,
+		"oneway": false, "lots": true, "grade": 0.10, "mph": 30, "surface": "dirt", "walk": false, "rural": true},
+	# Chip-seal county road: liquid asphalt with stone chips rolled into it
+	# over the old gravel bed, the usual Indiana county highway department
+	# upgrade. About 20 ft wide and seldom striped.
+	{"name": "Chip-seal road", "short": "Chip seal", "group": Type.STREET, "lanes": 2, "width": 6.0, "median": 0.0,
+		"oneway": false, "lots": true, "grade": 0.10, "mph": 45, "surface": "chip seal", "walk": false, "rural": true},
+	# Older-neighborhood one-way: one 12 ft lane between parking both sides,
+	# about 30 ft curb to curb (MUTCD R6-1 ONE WAY signs at each corner).
+	{"name": "One-way street, 1 lane", "short": "One-way 1", "group": Type.STREET, "lanes": 1, "width": 9.0,
+		"median": 0.0, "oneway": true, "lots": true, "grade": 0.12, "mph": 25, "parking": 2},
+	# Historic brick street: vitrified paving brick laid across the street
+	# in running bond, the way Indiana towns paved from about 1890 to 1930
+	# and still keep near courthouses. Same size as a local street.
+	{"name": "Brick street", "short": "Brick", "group": Type.STREET, "lanes": 2, "width": 9.0, "median": 0.0,
+		"oneway": false, "lots": true, "grade": 0.12, "mph": 20, "surface": "brick"},
+	# Subdivision entrance boulevard: a lane each way either side of a 16 ft
+	# planted median with trees.
+	{"name": "Divided street", "short": "Divided", "group": Type.STREET, "lanes": 2, "width": 13.2, "median": 4.8,
+		"oneway": false, "lots": true, "grade": 0.12, "mph": 25, "trees": true},
 ]
 ## Raised concrete ring inside a roundabout that long trucks can ride over
 ## with their back wheels (FHWA: typically 10-15 ft).
@@ -160,6 +185,11 @@ const MEDIAN_COLOR := Color(0.26, 0.36, 0.17)
 ## streets and ramps, two for bigger roads.
 static func ring_type(type: int) -> int:
 	return Type.RING if type == Type.STREET or type == Type.RAMP else Type.RING2
+
+
+## Gravel and dirt: no pavement, so no zoning frontage or resurfacing.
+static func unpaved(type: int) -> bool:
+	return TYPES[type].get("surface", "") in ["gravel", "dirt"]
 
 
 static func is_ring(type: int) -> bool:

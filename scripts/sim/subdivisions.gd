@@ -339,7 +339,7 @@ func _scout_road(sim, seg: int, depth: float, roads: Dictionary) -> void:
 ## or a gravel farm road.
 static func _frontage(type: int) -> bool:
 	return not type in [RoadStyle.Type.HIGHWAY, RoadStyle.Type.RAMP, RoadStyle.Type.RAMP2, RoadStyle.Type.FREEWAY2,
-		RoadStyle.Type.FREEWAY4, RoadStyle.Type.ALLEY, RoadStyle.Type.GRAVEL]
+		RoadStyle.Type.FREEWAY4, RoadStyle.Type.ALLEY, RoadStyle.Type.GRAVEL, RoadStyle.Type.DIRT]
 
 
 ## True when some of a road is at the edge of town (built land within
