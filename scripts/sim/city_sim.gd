@@ -865,6 +865,8 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			county_changed.emit()
 			zones.cells.clear()
 			planner = LotPlanner.new()
+			_ground_was = {}
+			_lots_touched.clear()
 			planner.wealth = wealth_at
 			var diff := economy.difficulty
 			economy = Economy.new()
@@ -1719,9 +1721,9 @@ func _move_in() -> void:
 			elif int(home.get("focc", 0)) > 0 and not _utilities_ok(key):
 				home.focc -= 1
 	# A new home is built for a buyer: they move in when it's finished.
-	var keys0 := buildings.keys()
-	keys0.sort()
-	for key in keys0:
+	# (The ledger's sorted keys: the same as sorting them here.)
+	var sorted: Array = ledger().sorted
+	for key in sorted:
 		var nb: Dictionary = buildings[key]
 		if nb.zone == ZoneMap.Zone.RESIDENTIAL and nb.occ == 0 and _utilities_ok(key) and care.livable(key):
 			var since: int = tick_count - int(nb.built) - Construction.duration("house")
@@ -1730,10 +1732,12 @@ func _move_in() -> void:
 	var arrivals := 1 + int(demand[ZoneMap.Zone.RESIDENTIAL] * 4.0)
 	if demand[ZoneMap.Zone.RESIDENTIAL] <= 0.05:
 		return
-	var keys := buildings.keys()
-	keys.sort()
-	for key in keys:
+	for key in sorted:
 		var b: Dictionary = buildings[key]
+		# A full home or shop takes nobody (the rest below only matters
+		# where there's room).
+		if not (b.zone == ZoneMap.Zone.RESIDENTIAL and b.occ < b.cap) and int(b.get("focc", 0)) >= int(b.get("flats", 0)):
+			continue
 		if not care.livable(key):
 			continue
 		if b.zone == ZoneMap.Zone.RESIDENTIAL and b.occ < b.cap and _utilities_ok(key) \
@@ -3054,6 +3058,15 @@ func _block_reason(lot: Dictionary) -> String:
 func note_lots(keys: Array) -> void:
 	lots_delta = keys
 	lots_delta_full = false
+	touched_lots(keys)
+
+
+## Lots reshaped or moved in place (merged, split, carried along with their
+## street): the next full lot check looks at them again wherever they are,
+## as it would if it looked at every lot.
+func touched_lots(keys: Array) -> void:
+	for key in keys:
+		_lots_touched[key] = true
 
 
 ## Works out lots_delta: lots added, gone or changed since `was`. Unchanged
@@ -3100,26 +3113,39 @@ func _near_any_lot(boxes: Array) -> bool:
 		for key in lots_near(b):
 			if _lot_near(lots[key], [b]):
 				return true
+	var near := _near_of(boxes)
 	for key in _blocked_by:
-		if _lot_near(_blocked_by[key][0], boxes):
+		if _lot_near(_blocked_by[key][0], near):
 			return true
 	return false
 
 
-## Whether a lot reaches into any of these boxes (its outline and the
-## points _lot_blocked looks at).
-static func _lot_near(lot: Dictionary, boxes: Array) -> bool:
+## Boxes ready for _lot_near: [the box around them all, then the boxes].
+static func _near_of(boxes: Array) -> Array:
 	if boxes.is_empty():
+		return []
+	var all: Rect2 = boxes[0]
+	for b in boxes:
+		all = all.merge(b)
+	return [all] + boxes
+
+
+## Whether a lot reaches into any of these boxes (its outline and the
+## points _lot_blocked looks at). `near` from _near_of (or plain boxes).
+static func _lot_near(lot: Dictionary, near: Array) -> bool:
+	if near.is_empty():
 		return false
 	var box := Rect2(Vector2(lot.pos.x, lot.pos.z), Vector2.ZERO)
 	for q in lot.corners:
 		box = box.expand(q)
 	for p in [lot.front, lot.zone_pt]:
 		box = box.expand(Vector2(p.x, p.z))
-	for b in boxes:
-		if (b as Rect2).intersects(box, true):
+	if not (near[0] as Rect2).intersects(box, true):
+		return false
+	for i in range(1, near.size()):
+		if (near[i] as Rect2).intersects(box, true):
 			return true
-	return false
+	return near.size() == 1
 
 
 ## The keys of lots whose outline, middle, front or zone point could fall
@@ -3158,6 +3184,24 @@ func lots_near(area: Rect2) -> Array:
 
 const LOT_CELL := 64.0
 var _lot_rev := 0  # goes up with every lots_changed
+## What kept lots off the ground at the last full check (LotGround.items).
+## Not saved: a loaded copy's first full check looks at every lot, which
+## comes out the same.
+var _ground_was := {}
+var _lots_touched := {}  # lot key -> true (see touched_lots)
+## Tools set this to check that lots away from what changed really are
+## unchanged (_verify_ground), printing GROUND MISMATCH where not.
+static var verify_ground := false
+
+
+func _verify_ground(near: Array) -> void:
+	for key in lots:
+		if not _lot_near(lots[key], near) and _lot_blocked(lots[key]):
+			print("GROUND MISMATCH lot %s now blocked, away from what changed" % key)
+	for key in _blocked_by:
+		var e: Array = _blocked_by[key]
+		if not _lot_near(e[0], near) and _lot_blocked(e[0]) != bool(e[1]):
+			print("GROUND MISMATCH planned lot %s changed, away from what changed" % key)
 var _lot_cells_of := {}
 var _lot_cells_key := []
 var _lot_cells := {}  # Vector2i -> [lot keys]
@@ -3212,6 +3256,22 @@ func _refresh() -> void:
 		var full := _lots_dirty
 		# Where lots must be checked again though no road came near them.
 		var near: Array = [] if full else _lots_near
+		if full:
+			# Only lots by what came, went or changed shape since the last
+			# full check can have gained or lost something under them.
+			var ground := LotGround.items(self)
+			var changed = LotGround.diff(_ground_was, ground)
+			_ground_was = ground
+			if changed != null:
+				full = false
+				near = changed + _lots_near
+				for key in _lots_touched:
+					if lots.has(key):
+						near.append(LotGround.lot_box(lots[key]))
+				if verify_ground:
+					_verify_ground(_near_of(near))
+			_lots_touched.clear()
+		near = _near_of(near)
 		var was := lots
 		_lots_dirty = false
 		_lots_light = false
@@ -4460,6 +4520,8 @@ func save_steps(postcard := false) -> Array:
 
 
 func from_dict(d: Dictionary) -> void:
+	_ground_was = {}  # the next full lot check looks at every lot
+	_lots_touched.clear()
 	vegetation.from_dict(d.get("vegetation", {}))
 	# Streets get their saved names below: don't name every road afresh as
 	# the network comes in (a quarter of a second in a big town).

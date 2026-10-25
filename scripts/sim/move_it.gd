@@ -285,6 +285,7 @@ static func apply(sim: CitySim, cmd: Dictionary) -> bool:
 	for key in p.parcels:
 		if sim.lots.has(key):
 			_carry_lot(sim.lots[key], p.xf, p.turn)
+	sim.touched_lots(p.parcels)
 	for id in p.services:
 		var b: Dictionary = sim.services.buildings[id]
 		b.pos = p.services[id][0]
