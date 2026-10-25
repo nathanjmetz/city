@@ -491,6 +491,19 @@ static func shoulder() -> ShaderMaterial:
 	return _make("shoulder", SHOULDER, {})
 
 
+## The county highways drawn on past the town to the horizon (ExitRoads)
+## run for miles over land drawn coarser and coarser, and with the roads'
+## own light pull the hills showed through them, so from afar a road read
+## as a grey dashed line (Nathan, 2026-10-25). These draw with the fields'
+## stronger pull, so the road always wins against the land it lies on.
+static func far_road(kind: String, color := Color.WHITE) -> ShaderMaterial:
+	match kind:
+		"asphalt": return _make("far asphalt", ASPHALT, {}, FIELD_COMMON)
+		"shoulder": return _make("far shoulder", SHOULDER, {}, FIELD_COMMON)
+		"concrete": return _make("far concrete %s" % color, CONCRETE, {"base": color, "joints": 0.0}, FIELD_COMMON)
+	return _make("far paint %s" % color, PAINT, {"paint": color}, FIELD_COMMON)
+
+
 ## Chip seal: the asphalt shader in the grey-tan of the stone chips.
 static func chip_seal() -> ShaderMaterial:
 	return _make("chip seal", ASPHALT, {"fresh": Color(0.30, 0.29, 0.27), "faded": Color(0.42, 0.40, 0.37),
