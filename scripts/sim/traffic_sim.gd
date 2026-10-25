@@ -168,6 +168,12 @@ var _committed := {} # node -> cars about to cross it
 var _approach := {}  # node -> [{car, conn, ds}] for the first car in each lane
 var _xings := {}     # way -> [[s along the way, rail crossing]] (_find_xings)
 var _by_vid := {}    # vehicle id -> its record in `parked`
+## The parked vehicles at each place (by at_place), in `parked` order, and
+## the parked ones holding a spot somewhere else (a to_place), so a place
+## laid out afresh finds who holds its spots without looking through every
+## parked car in town (_claim_spots). Kept by _park and _unpark.
+var _parked_at := {}  # place ref -> [vehicles]
+var _parked_to := {}  # vehicle id -> parked vehicle with a to_place
 var _due := {}       # tick -> parked vehicles due to head off then (_due_at)
 var _outs := {}      # vehicle id -> [key, path out of its spot] while it waits to pull out
 var _due_done := -1  # the last tick _rest took its due vehicles for (-1: look through all)
@@ -609,6 +615,8 @@ func from_dict(d: Dictionary) -> void:
 	_waiting.clear()
 	parked.clear()
 	_by_vid.clear()
+	_parked_at.clear()
+	_parked_to.clear()
 	_due.clear()
 	_due_done = -1
 	_pend.clear()
@@ -1512,6 +1520,7 @@ func _cancel(car: Dictionary) -> void:
 	for k in ["route", "leg", "d", "end_d", "goal", "dest", "park", "home", "to_place", "to_spot", "lane",
 			"to_stop", "after"]:
 		car.erase(k)
+	_parked_to.erase(car.id)
 	var pid: int = car.get("driver", -1)
 	car.driver = -1
 	if pid != -1 and _sim != null and _sim.people.people.has(pid):
@@ -2264,13 +2273,31 @@ func _add_spot(pl: Dictionary, s: Dictionary, vid := -1) -> int:
 	return pl.spots.size() - 1
 
 
+## Files a vehicle just parked (or found parked on a load) for _claim_spots.
+func _file_parked(car: Dictionary) -> void:
+	var at: String = car.at_place
+	if not _parked_at.has(at):
+		_parked_at[at] = []
+	_parked_at[at].append(car)
+	if car.has("to_place"):
+		_parked_to[car.id] = car
+
+
 func _claim_spots(pl: Dictionary) -> void:
-	for car in parked:
+	for car in _parked_at.get(pl.ref, []):
 		if car.at_place == pl.ref and car.spot >= 0 and car.spot < pl.taken.size():
 			pl.taken[car.spot] = car.id
 	# Where vehicles are headed, whether driving already or parked waiting
-	# for a gap to pull out with a spot held at the other end.
-	for list in [parked, cars, _waiting, flowing]:
+	# for a gap to pull out with a spot held at the other end (the parked
+	# ones in `parked` order, as if looking through them all).
+	var holding := []
+	for vid in _parked_to:
+		var car: Dictionary = _parked_to[vid]
+		if car.get("to_place", "") == pl.ref:
+			holding.append(car)
+	if holding.size() > 1:
+		holding.sort_custom(func(a, b): return _pseq[a.id] < _pseq[b.id])
+	for list in [holding, cars, _waiting, flowing]:
 		for car in list:
 			if car.get("to_place", "") == pl.ref and car.get("to_spot", -1) >= 0 and car.to_spot < pl.taken.size():
 				pl.taken[car.to_spot] = car.id
@@ -2427,11 +2454,12 @@ func new_vehicle(kind: String, at_ref: String, owner: int, owner_place := "") ->
 
 ## Takes a vehicle out of the town for good: it was sold, or its owner left.
 func retire_vehicle(vid: int) -> void:
-	for car in parked:
-		if car.id == vid:
-			_release(car.at_place, car.spot, vid)
-			_unpark(car)
-			return
+	# (_by_vid is every parked vehicle, by id.)
+	if _by_vid.has(vid):
+		var car: Dictionary = _by_vid[vid]
+		_release(car.at_place, car.spot, vid)
+		_unpark(car)
+		return
 	for car in cars + _waiting + flowing:
 		if car.id == vid:
 			car.owner = -1
@@ -2467,6 +2495,8 @@ func _due_at(car: Dictionary, tick: int) -> void:
 ## Rebuilds the due list from the parked vehicles (after a load).
 func _index_parked() -> void:
 	_by_vid.clear()
+	_parked_at.clear()
+	_parked_to.clear()
 	_due.clear()
 	_due_done = -1
 	_pend.clear()
@@ -2474,6 +2504,7 @@ func _index_parked() -> void:
 	_next_pseq = 0
 	for car in parked:
 		_by_vid[car.id] = car
+		_file_parked(car)
 		_pseq[car.id] = _next_pseq
 		_next_pseq += 1
 		if car.has("pending"):
@@ -2485,6 +2516,14 @@ func _index_parked() -> void:
 func _unpark(car: Dictionary) -> void:
 	parked.erase(car)
 	_by_vid.erase(car.id)
+	var here: Array = _parked_at.get(car.get("at_place", ""), [])
+	for i in here.size():
+		if is_same(here[i], car):
+			here.remove_at(i)
+			break
+	if here.is_empty():
+		_parked_at.erase(car.get("at_place", ""))
+	_parked_to.erase(car.id)
 	_pend.erase(car.id)
 	_pseq.erase(car.id)
 	parked_version += 1
@@ -2510,6 +2549,7 @@ func _park(car: Dictionary, pl: Dictionary, spot: int) -> void:
 		car.until = -1
 	parked.append(car)
 	_by_vid[car.id] = car
+	_file_parked(car)
 	_pseq[car.id] = _next_pseq
 	_next_pseq += 1
 	parked_version += 1
@@ -2584,6 +2624,8 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 		"stuck": 0.0, "lc_from": 0.0, "lc_t": 1.0, "lc_cool": 2.0, "a": 0.0, "held": false,
 		"from_place": car.get("at_place", ""), "from_spot": car.get("spot", -1), "until": -1}, true)
 	_next_trip += 1
+	if car.has("at_place") and is_same(_by_vid.get(car.id), car):
+		_parked_to[car.id] = car
 	if car.has("at_place") and after.get("driver", -1) != -1 and _flows_on():
 		_flow_start(car)
 		return true
