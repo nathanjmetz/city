@@ -61,7 +61,7 @@ var require_approval := false
 var _peer := WebSocketMultiplayerPeer.new()
 ## Sends and receives over _peer: big messages in parts, and only as fast as
 ## each player's connection takes them (see NetLink).
-var _link := NetLink.new(_peer)
+var _link := _new_link()
 var _players := {}   # peer id -> {"id": player id, "name", "city", "host"}
 var _waiting := {}   # peer id -> account key, signed up but not approved yet
 var _trade_time := 0.0
@@ -109,8 +109,19 @@ func stop() -> void:
 	_players.clear()
 	_waiting.clear()
 	_open.clear()
-	_link = NetLink.new(_peer)
+	_link = _new_link()
 	set_process(false)
+
+
+## A connection that hasn't signed in may only send small messages (a
+## hello): nobody can fill the server's memory with parts before then.
+const BEFORE_SIGN_IN := 64 * 1024
+
+
+func _new_link() -> NetLink:
+	var link := NetLink.new(_peer)
+	link.max_for = func(from: int) -> int: return NetLink.MAX_MESSAGE if _players.has(from) else BEFORE_SIGN_IN
+	return link
 
 
 ## Six letters and digits, leaving out ones that look alike (0/O, 1/I/L).
@@ -147,8 +158,13 @@ const SLOW_MS := 100.0
 
 func _process(delta: float) -> void:
 	_timed("poll", func(): _peer.poll())
-	for got in _link.receive():
+	var t := Time.get_ticks_usec()
+	var all := _link.receive()
+	_note("receive", t)
+	for got in all:
+		t = Time.get_ticks_usec()
 		var msg = JSON.parse_string(got[1])
+		_note("parse", t)
 		if typeof(msg) == TYPE_DICTIONARY:
 			_timed("msg." + str(msg.get("t", "")), func(): _handle(got[0], msg))
 	# Players who left go only now: the town a player sends as they leave
@@ -179,6 +195,10 @@ func _process(delta: float) -> void:
 func _timed(what: String, step: Callable) -> void:
 	var t := Time.get_ticks_usec()
 	step.call()
+	_note(what, t)
+
+
+func _note(what: String, t: int) -> void:
 	var ms := (Time.get_ticks_usec() - t) / 1000.0
 	if ms > slowest.ms:
 		slowest = {"ms": ms, "what": what}
@@ -192,6 +212,7 @@ func _timed(what: String, step: Callable) -> void:
 ## second or more for a grown town: that runs on other cores, and what it
 ## changes here is done in the order the work came in: [{"task", "then"}].
 var _jobs := []
+const JOBS_MS := 30.0
 
 
 ## Runs `work` on another core, then `then` here, after the jobs before it.
@@ -207,9 +228,14 @@ func _after_jobs(then: Callable) -> void:
 		_jobs.append({"task": -1, "then": then})
 
 
-## Hands over finished jobs, oldest first; with `wait`, all of them.
+## Hands over finished jobs, oldest first, for at most JOBS_MS a frame
+## (each can take tens of ms: letting go of the copy it replaces, passing
+## the new one on); with `wait`, all of them.
 func _finish_jobs(wait := false) -> void:
+	var end := Time.get_ticks_usec() + int(JOBS_MS * 1000.0)
 	while not _jobs.is_empty():
+		if not wait and Time.get_ticks_usec() > end:
+			return
 		var job: Dictionary = _jobs[0]
 		if wait and job.task >= 0:
 			WorkerThreadPool.wait_for_task_completion(job.task)
@@ -661,7 +687,7 @@ func _welcome(from: int, account: Dictionary, token: String) -> void:
 		# Everyone else gets the new town (and the roads handed to the
 		# neighbors); the rest they already have.
 		for peer in _players:
-			if peer != from:
+			if peer != from and _players[peer].city != "":
 				_send(peer, _region_msg("region", [city]))
 	elif region.cities[city].player != name:
 		region.cities[city].player = name
@@ -790,9 +816,11 @@ func save() -> void:
 		return
 	_finish_jobs(true)
 	if not _saving.is_empty():
-		WorkerThreadPool.wait_for_task_completion(_saving.task)
-		_saving.task = -1
+		if _save_task >= 0:
+			WorkerThreadPool.wait_for_task_completion(_save_task)
+		_save_task = -1
 		_finish_save()
+	_dirty = false
 	var job := _save_job()
 	_write_save(job)
 	_saved(job)
@@ -811,6 +839,7 @@ func save() -> void:
 
 ## A save under way on another core: {"task", ...} (see _save_job).
 var _saving := {}
+var _save_task := -1  # (not in the job: the other core reads that)
 ## city id -> [copy number (Region.copy_number), its JSON squeezed, its size]
 var _town_text := {}
 
@@ -821,14 +850,15 @@ func _start_save() -> void:
 		return
 	_dirty = false
 	_saving = _save_job()
-	_saving.task = RegionClient._on_another_core(_write_save.bind(_saving))
+	_save_task = RegionClient._on_another_core(_write_save.bind(_saving))
 
 
 ## Finishes a save once the other core is done: the new file takes the
 ## old one's place.
 func _finish_save() -> void:
-	if _saving.is_empty() or not RegionClient._done(_saving.task):
+	if _saving.is_empty() or not RegionClient._done(_save_task):
 		return
+	_save_task = -1
 	var job := _saving
 	_saving = {}
 	_saved(job)
@@ -854,7 +884,7 @@ func _save_job() -> Dictionary:
 			towns[id] = {"n": n, "text": _town_text[id][1], "size": _town_text[id][2]}
 		else:
 			towns[id] = {"n": n, "z": region.packed_full(id)}
-	return {"task": -1, "path": data_path, "mark": mark, "top": JSON.stringify(d, "", false, true),
+	return {"path": data_path, "mark": mark, "top": JSON.stringify(d, "", false, true),
 		"ids": ids, "towns": towns, "ok": false}
 
 

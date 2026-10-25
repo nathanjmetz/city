@@ -180,8 +180,8 @@ class Rebuild:
 					_pair = _queue.pop_front()
 					var others := []
 					for k in owner._sets:
-						if k != _pair[0] and k != _pair[1] and _near(owner._sets[k], owner._sets[_pair[0]]) \
-								and _near(owner._sets[k], owner._sets[_pair[1]]):
+						if k != _pair[0] and k != _pair[1] and _near(owner._sets[k], owner._sets[_pair[0]], 2.0) \
+								and _near(owner._sets[k], owner._sets[_pair[1]], 2.0):
 							others.append(owner._sets[k])
 					_tracer = Tracer.new(owner._sets[_pair[0]], owner._sets[_pair[1]], others,
 						_pair[2] if _pair.size() > 2 else [])
@@ -257,9 +257,9 @@ class Rebuild:
 	static func _key(a: String, b: String) -> String:
 		return a + "|" + b
 
-	## Whether two towns' outlines come within MAX_GAP of each other.
-	static func _near(a: PointSet, b: PointSet) -> bool:
-		return a.box.grow(MAX_GAP).intersects(b.box)
+	## Whether two towns' outlines come within `times` MAX_GAP of each other.
+	static func _near(a: PointSet, b: PointSet, times := 1.0) -> bool:
+		return a.box.grow(MAX_GAP * times).intersects(b.box)
 
 
 ## A town's outline (city_points), gathered a few hundred points at a time.

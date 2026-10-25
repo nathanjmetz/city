@@ -170,6 +170,28 @@ func _run() -> void:
 	_check(not big_heard.is_empty() and str(big_heard[0].text) == big_text,
 		"and arrives whole, %d MB in parts" % (big_text.length() / 1_000_000))
 
+	# Before signing in, nobody can send the server big messages.
+	var raw := WebSocketMultiplayerPeer.new()
+	raw.create_client(url)
+	await _until(func():
+		raw.poll()
+		return raw.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED)
+	for pkt in NetLink.split("y".repeat(3 * NetLink.PART_BYTES).to_utf8_buffer()).slice(0, 2):
+		raw.put_packet(pkt)
+	for i in 20:
+		raw.poll()
+		await process_frame
+	_check(server._link._in.is_empty(), "parts from a connection that hasn't signed in are dropped")
+	raw.close()
+
+	# The save goes on another core, and writes just what saving at once does.
+	server._start_save()
+	await _until(func(): return server._saving.is_empty(), 30.0)
+	_check(_same_as_old_save(server), "a save made on another core is the same file as before")
+	server._start_save()
+	await _until(func(): return server._saving.is_empty(), 30.0)
+	_check(_same_as_old_save(server) and not server._town_text.is_empty(), "and again from the towns' kept text")
+
 	# Chat reaches everyone, with the sender's name.
 	var heard := []
 	bob.chat_received.connect(func(line): heard.append(line))
@@ -532,7 +554,11 @@ func _test_handed_roads() -> void:
 	copy.load_stale()
 	var at: Array = copy.joins[0].b_at if copy.joins[0].b == "c1" else copy.joins[0].a_at
 	_check(copy._node_at("c1", at) != -1 and copy.cities.c1.sim.network.segments.size() > segs,
-		"whoever unpacks her town builds the road (%d roads, was %d)" % [copy.cities.c1.sim.network.segments.size(), segs])
+		"her full copy, unpacked (she's back), gets the road (%d roads, was %d)" % [copy.cities.c1.sim.network.segments.size(), segs])
+	var seen := Region.new()
+	seen.from_dict(RegionServer.unpack(RegionServer.pack(r.to_dict(""))))
+	_check(seen.cities.c1.sim.network.segments.size() == segs and seen.pending.has("c1"),
+		"a neighbor's postcard of her town is never planned afresh for it")
 	# Her own computer builds it; once her copy has it, it isn't handed again.
 	for cmd in r.handed.c1:
 		ann.apply_now(cmd)
@@ -688,6 +714,25 @@ func _test_metro(l: Ledger) -> void:
 	copy.from_dict(JSON.parse_string(JSON.stringify(l.to_dict())))
 	_check(copy.metro_line() == l.metro_line() and copy.is_unlocked("i69") and not copy.is_unlocked("airport"),
 		"the metro saves and loads")
+
+
+## The server's save file, read back, against the region saved the old way
+## (all at once as JSON), keys sorted.
+func _same_as_old_save(server: RegionServer) -> bool:
+	var old := server.region.to_dict()
+	old["code"] = server.invite_code
+	old["accounts"] = server.accounts
+	old["away"] = server.region.away
+	var a = JSON.parse_string(JSON.stringify(old, "", false, true))
+	var b = JSON.parse_string(FileAccess.get_file_as_string(server.data_path))
+	var sa := JSON.stringify(a, "", true, true)
+	var sb := JSON.stringify(b, "", true, true) if b is Dictionary else ""
+	if sa != sb:
+		var i := 0
+		while i < mini(sa.length(), sb.length()) and sa[i] == sb[i]:
+			i += 1
+		print("DBG diff at ", i, " of ", sa.length(), "/", sb.length(), ": ", sa.substr(maxi(0, i - 150), 300), " VS ", sb.substr(maxi(0, i - 150), 300))
+	return b is Dictionary and sa == sb
 
 
 func _client() -> RegionClient:

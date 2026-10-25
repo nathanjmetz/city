@@ -89,6 +89,8 @@ var _land_sent := 0  # hash of the land last sent
 const NEIGHBOR_EVERY := 60.0
 const NEIGHBOR_MIN := 5.0
 const NEIGHBOR_COST := 200.0
+## A load this long (seconds) is a hitch: it waits the full NEIGHBOR_EVERY.
+const NEIGHBOR_HITCH := 0.05
 const NEIGHBOR_FIRST := 2.0
 var _neighbor_wait := NEIGHBOR_FIRST
 var _unseen := []  # neighbors not unpacked since joining
@@ -241,8 +243,9 @@ func _linger(link: NetLink, said_hello: bool) -> void:
 	link.peer.close()
 
 
-## The longest a game waits for its town to go out as it leaves.
-const BYE_MOST := 20.0
+## The longest a game waits for its town to go out as it leaves (a big town
+## on a slow link takes a few seconds; the desktop game holds still meanwhile).
+const BYE_MOST := 10.0
 
 
 class _Closer extends Node:
@@ -295,12 +298,13 @@ func _send_town(sim: CitySim, now: bool, leaving: bool) -> void:
 	_sent_at = t
 	_sent_sig = sig
 	var msg := {"t": "city", "pop": int(sim.stats.population)}
-	# Where the town has built, only when that changed (it can be long).
+	# Where the town has built. Every copy carries it, so a newer copy can
+	# stand in for an older one still waiting to go (a slow upload).
 	var land := region.land_of_sim(my_city)
 	if land.hash() != _land_sent:
 		_land_sent = land.hash()
 		region.take_land(my_city, land)
-		msg.land = land
+	msg.land = land
 	# Neighbors only need a postcard; the whole town (its people, cars and
 	# plans, which take most of the time) goes now and then and on leaving,
 	# for the region to keep. The copy is taken now, as bytes (the town keeps
@@ -312,7 +316,7 @@ func _send_town(sim: CitySim, now: bool, leaving: bool) -> void:
 		_snapshot = {}
 		msg.z = RegionServer.pack_bytes(whole.bytes())
 		msg.leaving = true  # the server says bye once it has it
-		_send(msg)
+		_send(msg, "full")
 		return
 	if _snapshot:
 		return  # the whole town is on its way; it carries all this too
@@ -325,8 +329,8 @@ func _send_town(sim: CitySim, now: bool, leaving: bool) -> void:
 
 
 ## Packs a copy on another core, then sends it (see _finish_packing).
-func _pack_and_send(msg: Dictionary, raw: PackedByteArray) -> void:
-	var job := {"msg": msg}
+func _pack_and_send(msg: Dictionary, raw: PackedByteArray, tag := "card") -> void:
+	var job := {"msg": msg, "tag": tag}
 	job.task = _on_another_core(func():
 		msg.z = RegionServer.pack_bytes(raw)
 		job.bytes = JSON.stringify(msg, "", false, true).to_utf8_buffer())
@@ -343,7 +347,7 @@ func _step_snapshot() -> void:
 	var msg: Dictionary = _snapshot.msg
 	_snapshot = {}
 	if is_joined:
-		_pack_and_send(msg, snap.bytes())
+		_pack_and_send(msg, snap.bytes(), "full")
 
 
 ## Sends a batch of play telemetry (see Telemetry); telemetry_acked says when it's kept.
@@ -490,9 +494,11 @@ func _poll(delta: float) -> void:
 			# The next one waits in proportion to what this one cost, so
 			# small towns stay fresh and big ones never take more than a
 			# sliver of the game's time.
+			# A load long enough to be felt (a hitch) never comes more often
+			# than before.
 			var cost := (Time.get_ticks_usec() - t0) / 1e6
 			_neighbor_wait = NEIGHBOR_FIRST if not _unseen.is_empty() \
-				else clampf(cost * NEIGHBOR_COST, NEIGHBOR_MIN, NEIGHBOR_EVERY)
+				else (NEIGHBOR_EVERY if cost >= NEIGHBOR_HITCH else clampf(cost * NEIGHBOR_COST, NEIGHBOR_MIN, NEIGHBOR_EVERY))
 			var got: Array = _unpacked.get(next, [0, 0.0])
 			_unpacked.erase(next)
 			town_loaded.emit(next, got[0], got[1], (Time.get_ticks_usec() - t0) / 1000.0)
@@ -700,7 +706,7 @@ func _finish_packing() -> void:
 	while not _outgoing.is_empty() and _done(_outgoing[0].task):
 		var job: Dictionary = _outgoing.pop_front()
 		if _link != null and _connected:
-			_link.send(1, job.bytes)
+			_link.send(1, job.bytes, job.tag)
 	while not _incoming.is_empty() and _done(_incoming[0].task):
 		var job: Dictionary = _incoming.pop_front()
 		var id: String = job.id
@@ -795,11 +801,10 @@ func _replace_region(d: Dictionary) -> void:
 			region.cities[id] = {"owner": str(c.owner), "player": str(c.get("player", "")),
 				"name": str(c.name), "origin": Vector2(float(c.origin[0]), float(c.origin[1])),
 				"color": int(c.color), "sim": sim}
-	# Roads handed to towns: built now in the ones unpacked here (yours too,
-	# if they were handed while you were away), the rest as they're unpacked.
-	for id in region.pending:
-		if region.cities.has(id) and not region.stale_ids().has(id):
-			Region.build_missing(region.cities[id].sim, region.pending[id])
+	# Roads handed to your town while you were away (back after a dropped
+	# connection): built now. (Neighbors build their own: Region.pending.)
+	if region.pending.has(my_city) and my_sim():
+		Region.build_missing(my_sim(), region.pending[my_city])
 
 
 ## Your town keeps to its own land and open land, and starts neighborhoods

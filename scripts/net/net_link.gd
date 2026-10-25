@@ -30,6 +30,9 @@ var peer: WebSocketMultiplayerPeer
 ## Called with (from peer id, received bytes, total bytes) while a big
 ## message comes in, for a progress bar.
 var on_progress := Callable()
+## The most a peer may send in one message: (peer id) -> bytes. The server
+## lets a connection that hasn't signed in send only small ones.
+var max_for := Callable()
 
 var _out := {}   # peer id -> [{"tag", "packets": Array[PackedByteArray], "next": int}]
 var _in := {}    # peer id -> PackedByteArray of a message coming in parts
@@ -85,12 +88,15 @@ func flush_peer(to: int) -> void:
 		q.pop_front()
 
 
-## Bytes still waiting to go to a peer.
+## Bytes still waiting to go to a peer: queued here, and in the socket.
 func waiting_bytes(to: int) -> int:
 	var n := 0
 	for entry in _out.get(to, []):
 		for i in range(entry.next, entry.packets.size()):
 			n += entry.packets[i].size()
+	var ws := _ws(to)
+	if ws != null:
+		n += ws.get_current_outbound_buffered_amount()
 	return n
 
 
@@ -109,20 +115,20 @@ func receive() -> Array:
 		if pkt.size() >= PART_HEAD and pkt[0] == PART:
 			var more := pkt[1] == 1
 			var total := pkt.decode_u32(2)
-			if total > MAX_MESSAGE:
-				_in.erase(from)
-				continue
+			var most := int(max_for.call(from)) if max_for.is_valid() else MAX_MESSAGE
+			# (Taken out while it grows, so it isn't copied each time.)
 			var buf: PackedByteArray = _in.get(from, PackedByteArray())
-			buf.append_array(pkt.slice(PART_HEAD))
-			if buf.size() > total:
-				_in.erase(from)  # parts that don't add up: drop them
+			_in.erase(from)
+			if total > mini(most, MAX_MESSAGE):
 				continue
+			buf.append_array(pkt.slice(PART_HEAD))
+			if buf.size() > total or (not more and buf.size() != total):
+				continue  # parts that don't add up: dropped
 			if more:
 				_in[from] = buf
 				if on_progress.is_valid():
 					on_progress.call(from, buf.size(), total)
 				continue
-			_in.erase(from)
 			got.append([from, buf.get_string_from_utf8()])
 		else:
 			got.append([from, pkt.get_string_from_utf8()])

@@ -72,9 +72,12 @@ var _card_z := {}
 var _copy_n := {}
 ## Roads the region handed a town (its half of a new neighbor's county
 ## road) that its copies may not have yet: city id -> [commands]. Its own
-## computer builds them for good; meanwhile whoever unpacks one of its
-## copies adds the ones it's missing (see _add_pending), so everyone sees
-## the road at once and nobody's town is unpacked when a neighbor joins.
+## computer builds them (at once if it's running, else when it comes back
+## and unpacks its full copy, see _add_pending), so no neighbor's town is
+## unpacked on the server when a new one joins. Never built into a
+## neighbor's postcard: that would plan its lots afresh (seconds, and the
+## postcard has no plans to keep). So while its player is away, others see
+## that half of the road only once they're back.
 var pending := {}
 
 
@@ -295,7 +298,8 @@ static func _cmd_end(cmd: Dictionary) -> Vector2:
 	return Vector2(float(b[0]), float(b[1]))
 
 
-## Builds the handed roads a town's simulation doesn't have yet.
+## Builds the handed roads a town's simulation doesn't have yet (only for
+## a full copy: see pending).
 func _add_pending(id: String) -> void:
 	if pending.has(id) and cities.has(id):
 		build_missing(cities[id].sim, pending[id])
@@ -336,7 +340,8 @@ func load_stale(only := "") -> Array:
 			sim.from_dict(_data[id])
 			done.append(id)
 			_stale.erase(id)
-			_add_pending(id)
+			if not _data[id].get("postcard", false):
+				_add_pending(id)
 		_stale.erase(id)
 	if not done.is_empty():
 		share_care()
@@ -667,12 +672,10 @@ func _free_spot() -> Vector2:
 		pts.append(c.origin)
 		var built := Vector2.ZERO
 		var n := 0
-		for key in c.sim.buildings:
-			if c.sim.lots.has(key):
-				var p: Vector3 = c.sim.lots[key].pos
-				pts.append(c.origin + Vector2(p.x, p.z))
-				built += Vector2(p.x, p.z)
-				n += 1
+		for p: Vector3 in _built_at(id):
+			pts.append(c.origin + Vector2(p.x, p.z))
+			built += Vector2(p.x, p.z)
+			n += 1
 		if n > 0 and (built / n).length() > 150.0:
 			wedges.append([c.origin, (built / n).normalized()])
 		# Its land too: neighborhood sites, and towns not unpacked here.
@@ -694,6 +697,27 @@ func _free_spot() -> Vector2:
 				return p
 		ring += 1
 	return centre + Vector2(ELBOW_ROOM * 100.0, 0)
+
+
+## Where a town's buildings stand (its coordinates), from its newest copy:
+## a town waiting as data is read from it, not unpacked.
+func _built_at(id: String) -> Array:
+	var out := []
+	if _stale.has(id):
+		var d: Dictionary = _data[id]
+		var parcels: Dictionary = d.get("parcels", {})
+		for key in d.get("buildings", {}):
+			var pos = parcels.get(key, {}).get("pos") if parcels.get(key) is Dictionary else null
+			if pos is Vector3:
+				out.append(pos)
+			elif pos is Array and pos.size() == 3:
+				out.append(Vector3(float(pos[0]), float(pos[1]), float(pos[2])))
+		return out
+	var sim: CitySim = cities[id].sim
+	for key in sim.buildings:
+		if sim.lots.has(key):
+			out.append(sim.lots[key].pos)
+	return out
 
 
 static func _clear_of(p: Vector2, pts: PackedVector2Array) -> bool:
@@ -819,7 +843,7 @@ func from_dict(d: Dictionary, first := "") -> void:
 			"origin": Vector2(float(c.origin[0]), float(c.origin[1])), "color": int(c.color), "sim": sim}
 		if _full.has(id):
 			_count_copy(id)
-		if not _stale.has(id):
+		if not _stale.has(id) and not c.city.get("postcard", false):
 			_add_pending(id)
 		if c.get("land") is Array and not c.land.is_empty():
 			take_land(id, c.land)
