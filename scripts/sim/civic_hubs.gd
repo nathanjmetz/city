@@ -326,11 +326,9 @@ func value_factor(p: Vector3) -> float:
 		var h: Dictionary = hubs[id]
 		var d: float = _near_cell(id, h, p) * h.cell  # distance(h, p)
 		total += _effect(h.kind, d)
-		for node in tree(h):
-			var fx: Dictionary = node.get("effects", {})
-			if node.id in h.built and fx.has("value"):
-				var reach := float(Balance.WASTE_SITES[h.kind].reach) + float(fx.reach)
-				total += float(fx.value) * maxf(0.0, 1.0 - d / reach)
+		# Its tree's built nodes that lift land, in tree order: [value, reach].
+		for vr in _value_nodes(id, h):
+			total += float(vr[0]) * maxf(0.0, 1.0 - d / float(vr[1]))
 		if h.scar > 0.0:
 			total += _effect("landfill", d) * h.scar / Balance.LANDFILL_RECOVERY_DAYS
 	return clampf(1.0 + total, 0.5, 1.5)
@@ -350,25 +348,48 @@ static func _effect(kind: String, d: float) -> float:
 ## new). The same numbers as distance().
 func _near_cell(id: int, h: Dictionary, p: Vector3) -> float:
 	var e: Array = _near_cells.get(id, [])
-	if e.is_empty() or e[0] != h.pos or e[1] != h.dir or e[2] != h.cell:
-		e = [h.pos, h.dir, h.cell, (h.cells as Array).duplicate(), {}]
-		_near_cells[id] = e
-	elif e[3] != h.cells:
-		var old: Array = e[3]
-		var now: Array = h.cells
-		var kept: Dictionary = e[4]
-		if now.size() > old.size() and now.slice(0, old.size()) == old:
-			var added := now.slice(old.size())
-			for q in kept:
-				kept[q] = minf(kept[q], _cells_near(h, q, added))
-		else:
-			e[4] = {}
-		e[3] = now.duplicate()
+	# (Checked again only after some hub was touched: version.)
+	if e.is_empty() or e[5] != version:
+		if e.is_empty() or e[0] != h.pos or e[1] != h.dir or e[2] != h.cell:
+			e = [h.pos, h.dir, h.cell, (h.cells as Array).duplicate(), {}, version]
+			_near_cells[id] = e
+		elif e[3] != h.cells:
+			var old: Array = e[3]
+			var now: Array = h.cells
+			# Pieces only added (at the end): each point folds them in when
+			# it's next asked for. Otherwise every point is measured afresh.
+			if not (now.size() > old.size() and now.slice(0, old.size()) == old):
+				e[4] = {}
+			e[3] = now.duplicate()
+		e[5] = version
+	var cells: Array = e[3]
 	var got = e[4].get(p)
 	if got == null:
-		got = _cells_near(h, p, h.cells)
+		got = [_cells_near(h, p, cells), cells.size()]
 		e[4][p] = got
-	return got
+	elif int(got[1]) < cells.size():
+		got[0] = minf(float(got[0]), _cells_near(h, p, cells.slice(int(got[1]))))
+		got[1] = cells.size()
+	return float(got[0])
+
+
+## The built nodes of a hub's tree that lift land values, in tree order:
+## [value, reach], kept until it builds something or its kind changes.
+func _value_nodes(id: int, h: Dictionary) -> Array:
+	var e: Array = _value_of.get(id, [])
+	var built: Array = h.get("built", [])
+	if not e.is_empty() and e[0] == h.kind and e[1] == h.get("capped", false) and e[2] == built:
+		return e[3]
+	var out := []
+	for node in tree(h):
+		var fx: Dictionary = node.get("effects", {})
+		if node.id in h.built and fx.has("value"):
+			out.append([float(fx.value), float(Balance.WASTE_SITES[h.kind].reach) + float(fx.reach)])
+	_value_of[id] = [h.kind, h.get("capped", false), built.duplicate(), out]
+	return out
+
+
+var _value_of := {}  # hub id -> [kind, capped, built, _value_nodes]
 
 
 ## The cells part of distance(): the nearest of these cells, in cells.
@@ -384,7 +405,7 @@ static func _cells_near(h: Dictionary, p: Vector3, cells: Array) -> float:
 	return best
 
 
-var _near_cells := {}  # hub id -> [pos, dir, cell, cells, {point: nearest}]
+var _near_cells := {}  # hub id -> [pos, dir, cell, cells, {point: [nearest, pieces looked at]}, version]
 
 
 ## Metres from a point to the nearest edge of a hub's land (0 inside).
