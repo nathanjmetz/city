@@ -102,7 +102,8 @@ func _process(delta: float) -> void:
 			if game != null and game.get("loading"):
 				return
 			_wait += delta
-			var unpacked := client == null or client.region.stale_ids().is_empty()
+			# (Neighbors still on their way after the welcome count as not in.)
+			var unpacked := client == null or (client.region.stale_ids().is_empty() and client.region.awaiting.is_empty())
 			if _wait >= WAIT_MAX or (_wait >= WAIT_MIN and unpacked):
 				_phase = "run"
 				_sub.text = "WHILE YOU WERE AWAY"

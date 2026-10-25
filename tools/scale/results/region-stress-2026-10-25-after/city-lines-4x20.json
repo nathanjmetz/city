@@ -1,0 +1,41 @@
+[
+  {
+    "all_frames": 52,
+    "all_ms": 129.0,
+    "all_worst_frame_ms": 3.9,
+    "dashes": 902,
+    "dashes_ms": 65.7,
+    "lines": 1,
+    "one_changed_frames": 49,
+    "one_changed_ms": 119.0,
+    "one_changed_worst_frame_ms": 4.1,
+    "pairs": 1,
+    "towns": 2
+  },
+  {
+    "all_frames": 72,
+    "all_ms": 172.0,
+    "all_worst_frame_ms": 3.8,
+    "dashes": 1828,
+    "dashes_ms": 3.7,
+    "lines": 3,
+    "one_changed_frames": 64,
+    "one_changed_ms": 151.0,
+    "one_changed_worst_frame_ms": 4.0,
+    "pairs": 3,
+    "towns": 3
+  },
+  {
+    "all_frames": 82,
+    "all_ms": 197.0,
+    "all_worst_frame_ms": 4.0,
+    "dashes": 1828,
+    "dashes_ms": 3.6,
+    "lines": 3,
+    "one_changed_frames": 65,
+    "one_changed_ms": 155.0,
+    "one_changed_worst_frame_ms": 3.9,
+    "pairs": 4,
+    "towns": 4
+  }
+]

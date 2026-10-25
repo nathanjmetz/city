@@ -219,8 +219,8 @@ func _let_go(id: String, old: Array) -> void:
 		if o is Dictionary and not o.is_empty() and not is_same(o, _data.get(id)) and not is_same(o, _full.get(id)) \
 				and not gone.any(func(g): return is_same(g, o)):
 			gone.append(o)
-	if gone.is_empty():
-		return
+	if gone.is_empty() or keepers <= 0:
+		return  # (let go of here, as the last reference goes)
 	settle_letting_go()
 	var task := RegionClient._on_another_core(func():
 		for o in gone:
@@ -232,6 +232,10 @@ func _let_go(id: String, old: Array) -> void:
 
 ## Tasks letting go of old copies (see _let_go), each waited for once done.
 static var _letting_go := []
+## Servers and games running that wait for those tasks as they close
+## (RegionServer, RegionClient): without one, nothing would wait for them
+## (a tool, a test), and copies are let go of here instead.
+static var keepers := 0
 
 
 ## Collects the finished let-go tasks (all of them, waiting, with `wait`:

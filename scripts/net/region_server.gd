@@ -131,7 +131,11 @@ func _new_link() -> NetLink:
 func _send_failed(peer: int, tag: String, err: int) -> void:
 	var who: String = _players[peer].name if _players.has(peer) else "peer %d" % peer
 	_log("Couldn't send %s to %s (error %d)" % [tag if tag != "" else "a message", who, err])
-	if tag == "welcome":
+	if tag == "queue":
+		# Their game stopped reading: let it go; it comes back to a welcome.
+		if _peer and _open.has(peer):
+			_peer.disconnect_peer(peer)
+	elif tag == "welcome":
 		_reject(peer, "The region couldn't send you your town. Try again in a minute; if it happens again, tell the host.")
 		if is_inside_tree():
 			get_tree().create_timer(2.0).timeout.connect(func(): if _peer and _open.has(peer): _peer.disconnect_peer(peer))
@@ -169,8 +173,17 @@ var slowest := {"ms": 0.0, "what": ""}
 const SLOW_MS := 100.0
 
 
+func _enter_tree() -> void:
+	Region.keepers += 1
+
+
 func _exit_tree() -> void:
+	_finish_jobs(true)
+	if _save_task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_save_task)
+		_save_task = -1
 	Region.settle_letting_go(true)
+	Region.keepers -= 1
 
 
 func _process(delta: float) -> void:
@@ -851,9 +864,9 @@ func write_report() -> void:
 
 ## Saves the region now, all at once (when starting and stopping).
 func save() -> void:
+	_finish_jobs(true)
 	if data_path == "":
 		return
-	_finish_jobs(true)
 	if not _saving.is_empty():
 		if _save_task >= 0:
 			WorkerThreadPool.wait_for_task_completion(_save_task)

@@ -250,7 +250,7 @@ func _linger(link: NetLink, said_hello: bool) -> void:
 
 ## The longest a game waits for its town to go out as it leaves (a big town
 ## on a slow link takes a few seconds; the desktop game holds still meanwhile).
-const BYE_MOST := 10.0
+const BYE_MOST := 30.0
 
 
 class _Closer extends Node:
@@ -468,8 +468,13 @@ func _process(delta: float) -> void:
 	Perf.add("net.client", t_all)
 
 
+func _enter_tree() -> void:
+	Region.keepers += 1
+
+
 func _exit_tree() -> void:
 	Region.settle_letting_go(true)
+	Region.keepers -= 1
 
 
 func _poll(delta: float) -> void:

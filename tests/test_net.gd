@@ -170,6 +170,18 @@ func _run() -> void:
 	_check(not big_heard.is_empty() and str(big_heard[0].text) == big_text,
 		"and arrives whole, %d MB in parts" % (big_text.length() / 1_000_000))
 
+	# A newer copy replaces an older one still waiting, and goes behind what
+	# was queued after it (never ahead of an older full copy).
+	var link := NetLink.new(WebSocketMultiplayerPeer.new())
+	link.send(5, "card1".to_utf8_buffer(), "card")
+	link.send(5, "full1".to_utf8_buffer(), "full")
+	link.send(5, "card2".to_utf8_buffer(), "card")
+	var order: Array = link._out[5].map(func(e): return e.packets[0].get_string_from_utf8())
+	_check(order == ["full1", "card2"], "a newer copy takes the older one's place at the back of the queue (%s)" % [order])
+	var parts := NetLink.split("z".repeat(NetLink.PART_BYTES * 2 + 5).to_utf8_buffer())
+	_check(parts.size() == 3 and parts[0][1] == NetLink.MORE | NetLink.FIRST and parts[1][1] == NetLink.MORE and parts[2][1] == 0,
+		"a big message's first part says it's first, so one cut short is never added onto")
+
 	# Before signing in, nobody can send the server big messages.
 	var raw := WebSocketMultiplayerPeer.new()
 	RegionServer.use_big_buffers(raw)

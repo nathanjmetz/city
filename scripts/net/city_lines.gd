@@ -153,6 +153,12 @@ class Rebuild:
 		owner = o
 		_todo = changed.filter(func(id): return owner.client.region.cities.has(id))
 		_todo.sort()
+		# Towns gone from the region: their outlines go (and _plan drops
+		# their lines).
+		for id in owner._sets.keys():
+			if not owner.client.region.cities.has(id):
+				owner._sets.erase(id)
+				owner._sig.erase(id)
 
 	## Works until `budget_ms` is used up; true once it's all done.
 	func step(budget_ms: float) -> bool:

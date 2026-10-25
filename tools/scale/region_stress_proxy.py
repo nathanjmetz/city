@@ -113,7 +113,7 @@ class Frames:
         if self.fin:
             pre = self.msg_prefix
             # A big message comes as parts (scripts/net/net_link.gd): PART (1),
-            # 1 if more follow, its whole size (u32), then the bytes. The
+            # flags (1: more follow, 2: first), its whole size (u32), the bytes. The
             # parts of one message come one after another; they count as one
             # message, from the first part's start to the last part's end.
             if len(pre) >= 6 and pre[0] == 1:
@@ -123,7 +123,7 @@ class Frames:
                     self.part = {"t": t.group(1).decode() if t else "?", "id": i.group(1).decode() if i else "",
                                  "first": self.msg_first, "size": 0}
                 self.part["size"] += self.msg_size
-                if pre[1] == 0:
+                if pre[1] & 1 == 0:
                     p = self.part
                     self.part = None
                     self.on_message(p["t"], p["id"], p["size"], p["first"], now)

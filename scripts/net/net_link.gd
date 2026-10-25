@@ -11,8 +11,8 @@ extends RefCounted
 ## with the same tag that hasn't started going out yet, so a slow or busy
 ## player gets the newest copy sooner instead of a backlog.
 ##
-## A part is a binary packet: PART, then 1 if more parts follow (0 on the
-## last), the whole message's size (u32), then the bytes. Whole messages
+## A part is a binary packet: PART, then flags (1: more parts follow, 2:
+## this is the first part), the whole message's size (u32), then the bytes. Whole messages
 ## are JSON text as before; a game too old for parts can't parse a part and
 ## ignores it (RegionServer.MIN_PROTOCOL keeps such games out anyway).
 
@@ -25,6 +25,11 @@ const PART_BYTES := 1024 * 1024
 const MAX_MESSAGE := 256 * 1024 * 1024
 ## A connection's send buffer is filled to at most this much.
 const ROOM := RegionServer.BUFFER_BYTES / 2
+## A peer with more than this waiting to go to it has stopped reading: its
+## queue is dropped and on_failed says so (tag "queue").
+const MAX_QUEUED := 128 * 1024 * 1024
+const MORE := 1
+const FIRST := 2
 
 var peer: WebSocketMultiplayerPeer
 ## Called with (from peer id, received bytes, total bytes) while a big
@@ -54,12 +59,20 @@ func send(to: int, bytes: PackedByteArray, tag := "") -> void:
 	var q: Array = _out[to]
 	var entry := {"tag": tag, "packets": split(bytes), "next": 0}
 	if tag != "":
+		# The older one, not started yet, is dropped. The newer goes to the
+		# back, so it never overtakes what was queued after the older one (a
+		# postcard ahead of an older full copy would be undone by it).
 		for i in q.size():
 			if q[i].tag == tag and q[i].next == 0:
-				q[i] = entry
-				flush_peer(to)
-				return
+				q.remove_at(i)
+				break
 	q.append(entry)
+	if waiting_bytes(to) > MAX_QUEUED:
+		_out.erase(to)
+		failures += 1
+		if on_failed.is_valid():
+			on_failed.call(to, "queue", ERR_OUT_OF_MEMORY)
+		return
 	flush_peer(to)
 
 
@@ -126,11 +139,12 @@ func receive() -> Array:
 		var from := peer.get_packet_peer()
 		var pkt := peer.get_packet()
 		if pkt.size() >= PART_HEAD and pkt[0] == PART:
-			var more := pkt[1] == 1
+			var more := (pkt[1] & MORE) != 0
 			var total := pkt.decode_u32(2)
 			var most := int(max_for.call(from)) if max_for.is_valid() else MAX_MESSAGE
 			# (Taken out while it grows, so it isn't copied each time.)
-			var buf: PackedByteArray = _in.get(from, PackedByteArray())
+			# A first part starts afresh (what came before it was cut short).
+			var buf: PackedByteArray = PackedByteArray() if (pkt[1] & FIRST) != 0 else _in.get(from, PackedByteArray())
 			_in.erase(from)
 			if total > mini(most, MAX_MESSAGE):
 				continue
@@ -159,7 +173,7 @@ static func split(bytes: PackedByteArray) -> Array:
 		var pkt := PackedByteArray()
 		pkt.resize(PART_HEAD)
 		pkt[0] = PART
-		pkt[1] = 1 if end < bytes.size() else 0
+		pkt[1] = (MORE if end < bytes.size() else 0) | (FIRST if at == 0 else 0)
 		pkt.encode_u32(2, bytes.size())
 		pkt.append_array(bytes.slice(at, end))
 		out.append(pkt)
