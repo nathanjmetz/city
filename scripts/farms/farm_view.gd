@@ -64,7 +64,9 @@ func setup(s: CitySim) -> void:
 	sim = s
 	sim.farms_changed.connect(_rebuild)
 	sim.families.changed.connect(_sync_signs)
-	_lane_mat = RoadStyle.material(Color(0.58, 0.47, 0.33))  # tan crushed limestone and dirt
+	# The same dirt track as a dirt road: two worn wheel paths with grass
+	# between (Nathan, 2026-10-25: "make farms use them").
+	_lane_mat = Surfaces.lane(Color(0.50, 0.41, 0.30))
 	add_child(_trees)
 	_cows.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_cows)
