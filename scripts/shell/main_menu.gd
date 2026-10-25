@@ -490,3 +490,5 @@ func _build_backdrop() -> void:
 		var x := p.x + sim.terrain_offset.x
 		var z := p.z + sim.terrain_offset.y
 		return Terrain.wild_cover(x, z) + [Terrain.crops(x, z)]
+	# Hidden behind a fade until the backdrop is drawn (BackdropReveal).
+	BackdropReveal.cover(self, [land.is_drawn, roads.is_drawn, buildings.is_drawn, wild.is_drawn, farmsteads.is_drawn])

@@ -37,6 +37,7 @@ var _shade := []  # fields drawn last frame, whose far trees drop their shadows
 var _last_regrow := -1
 var _season_at := -1.0
 var grown: GrownTrees
+var _left := -1  # chunks still to draw after the last frame (-1 before the first)
 
 
 func setup(s: CitySim) -> void:
@@ -47,6 +48,12 @@ func setup(s: CitySim) -> void:
 	# The grown trees near the camera, for every TreeField in the scene.
 	grown = GrownTrees.new()
 	add_child(grown)
+
+
+## True once the woods round the camera are laid out and the near trees
+## grown (the loading screen waits for this; LoadGate).
+func is_drawn() -> bool:
+	return sim != null and _left == 0 and (grown == null or grown.is_drawn())
 
 
 ## Redraws the chunks in a box (view coordinates): the land there was
@@ -126,10 +133,13 @@ func _process(_delta: float) -> void:
 					mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_shade.clear()
 	var start := Time.get_ticks_msec()
+	var drawn := 0
 	for c in todo:
 		_draw_chunk(c, _centre(c).distance_to(focus) < DETAIL_RADIUS)
-		if Time.get_ticks_msec() - start > BUDGET_MS:
+		drawn += 1
+		if Time.get_ticks_msec() - start > LoadGate.ms(BUDGET_MS):
 			break
+	_left = todo.size() - drawn
 
 
 ## Lays out one chunk now.

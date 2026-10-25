@@ -41,6 +41,11 @@ var _gen := 0  # which rebuild is current; a sliced one left behind stops
 var _regrade_gen := -1  # the rebuild a regrade is waiting on, or -1
 var _building := false  # a sliced rebuild is part way through
 const REMESH_MS := 8.0  # redraw changed streets for this long, then finish them later
+
+
+static func _remesh_ms() -> float:
+	return LoadGate.ms(REMESH_MS, 120.0)
+
 ## A neighbor's whole town lands at once: its streets are drawn a few each
 ## frame instead of in one long freeze (RegionView).
 var sliced := false
@@ -81,9 +86,19 @@ func setup(net: RoadNetwork, s: CitySim = null) -> void:
 	rebuild()
 
 
+## True once every street, pole and corner is drawn and no restyle waits
+## (the loading screen waits for this; LoadGate).
+func is_drawn() -> bool:
+	return not _building and _recheck < 0.0 and _later.is_empty() and _poles_later.is_empty() \
+		and _corners_later.is_empty()
+
+
 ## Rebuilds when a road has turned from country road to town street or back
 ## (checked at most once a second while the town grows).
 func _process(delta: float) -> void:
+	# Behind the loading screen a pending look-over runs now, not in a second.
+	if LoadGate.loading and _recheck > 0.0:
+		_recheck = 0.0
 	if not _building and not (_later.is_empty() and _poles_later.is_empty() and _corners_later.is_empty()):
 		_remesh_later()
 	if _recheck < 0.0:
@@ -332,7 +347,7 @@ func _rebuild_all(gen: int) -> void:
 	var pole_cache := {}
 	var bridge_cache := {}
 	for id in network.segments.keys():
-		if sliced and (Perf.now() - t0) / 1000.0 > REMESH_MS and is_inside_tree():
+		if sliced and (Perf.now() - t0) / 1000.0 > _remesh_ms() and is_inside_tree():
 			Perf.add(_perf_key(), slice)
 			Terrain.shift = Vector2.ZERO
 			await get_tree().process_frame
@@ -384,7 +399,7 @@ func _rebuild_all(gen: int) -> void:
 			var key := [pts, type, rural, seg_gaps, Terrain.shift, line_cuts]
 			var cached: Array = _street_cache.get(id, [])
 			if cached.is_empty() or cached[0] != key:
-				if (sliced or not cached.is_empty()) and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+				if (sliced or not cached.is_empty()) and (Perf.now() - t0) / 1000.0 > _remesh_ms():
 					# When the town edge moves, many streets turn from country
 					# road to town street at once (and their corners trim
 					# them); a street keeps its old look a few frames while
@@ -405,7 +420,7 @@ func _rebuild_all(gen: int) -> void:
 				var near := _drives_near(drives, pts)
 				var pkey := [pts, off, near, Terrain.shift]
 				var poles: Array = _pole_cache.get(id, [])
-				if (poles.is_empty() or poles[0] != pkey) and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+				if (poles.is_empty() or poles[0] != pkey) and (Perf.now() - t0) / 1000.0 > _remesh_ms():
 					# Out of time: drawn a few frames later, the old ones up meanwhile.
 					_poles_later[id] = [pkey, pts, off, near]
 				elif poles.is_empty() or poles[0] != pkey:
@@ -503,7 +518,7 @@ func _rebuild_all(gen: int) -> void:
 	for node in junctions:
 		var jkey := [junctions[node], Terrain.shift]
 		var drawn: Array = _junction_cache.get(node, [])
-		if (drawn.is_empty() or drawn[0] != jkey) and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+		if (drawn.is_empty() or drawn[0] != jkey) and (Perf.now() - t0) / 1000.0 > _remesh_ms():
 			# Out of time: drawn a few frames later, the old corner up meanwhile.
 			_corners_later[node] = [jkey, junctions[node]]
 			if drawn.is_empty():
@@ -586,10 +601,10 @@ func _remesh_later() -> void:
 		var mesh := Terrain.drape(RoadMesh.street(job[1], job[2], _mats, job[3], job[4], job[5]))
 		_street_cache[id] = [job[0], mesh]
 		mi.mesh = mesh
-		if (Perf.now() - t) / 1000.0 > REMESH_MS:
+		if (Perf.now() - t) / 1000.0 > _remesh_ms():
 			break
 	for id in _poles_later.keys():
-		if (Perf.now() - t) / 1000.0 > REMESH_MS:
+		if (Perf.now() - t) / 1000.0 > _remesh_ms():
 			break
 		var job: Array = _poles_later[id]
 		_poles_later.erase(id)
@@ -602,7 +617,7 @@ func _remesh_later() -> void:
 		if _poles_later.is_empty() and _corners_later.is_empty():
 			_remerge()
 	for node in _corners_later.keys():
-		if (Perf.now() - t) / 1000.0 > REMESH_MS:
+		if (Perf.now() - t) / 1000.0 > _remesh_ms():
 			break
 		var job: Array = _corners_later[node]
 		_corners_later.erase(node)
