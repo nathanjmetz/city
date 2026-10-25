@@ -26,6 +26,9 @@ var people := {}
 ## Place ref ("lot:key", "farm:3"...) -> its name. Unique across the town.
 var names := {}
 var _taken := {}   # name -> true
+## The refs in `names` that aren't lots ("farm:3", "service:12"), so sync
+## looks through just those for ones gone, not every place's name.
+var _other_names := {}
 var _homes := {}   # lot key -> [person ids], oldest first
 var _staff := {}   # job ref -> number of people working there
 var _next := 1
@@ -56,6 +59,12 @@ func sync(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void
 	var keys: Array = ledger.sorted
 	for key in keys:
 		var b: Dictionary = sim.buildings[key]
+		if b.zone == ZoneMap.Zone.RESIDENTIAL:
+			# A home whose people are all here and that has its name: nothing
+			# to do (most homes, most of the time).
+			var here = _homes.get(key)
+			if here != null and (here as Array).size() == b.occ and (b.occ == 0 or names.has("lot:" + key)):
+				continue
 		var ref: String = "lot:" + key
 		if b.zone == ZoneMap.Zone.RESIDENTIAL:
 			var list: Array = _homes.get(key, [])
@@ -83,8 +92,9 @@ func sync(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void
 			var n := PersonNames.other(others[ref], rng, _taken)
 			names[ref] = n
 			_taken[n] = true
-	for ref in names.keys():
-		if not ref.begins_with("lot:") and not others.has(ref):
+			_other_names[ref] = true
+	for ref in _other_names.keys():
+		if not others.has(ref):
 			_forget(0, ref)
 	if ledger.sig != _gone_sig:
 		_gone_sig = ledger.sig
@@ -282,9 +292,12 @@ func _name(ref: String, zone: int, rng: RandomNumberGenerator, family := "") -> 
 	var n := PersonNames.place(zone, rng, _taken, family)
 	names[ref] = n
 	_taken[n] = true
+	if not ref.begins_with("lot:"):
+		_other_names[ref] = true
 
 
 func _forget(_zone: int, ref: String) -> void:
+	_other_names.erase(ref)
 	if names.has(ref):
 		_taken.erase(names[ref])
 		names.erase(ref)
@@ -338,6 +351,7 @@ func to_dict() -> Dictionary:
 func from_dict(d: Dictionary) -> void:
 	people.clear()
 	names.clear()
+	_other_names.clear()
 	_taken.clear()
 	_homes.clear()
 	_staff.clear()
@@ -361,3 +375,5 @@ func from_dict(d: Dictionary) -> void:
 			set_until(people[id], people[id].until)
 	for ref in names:
 		_taken[names[ref]] = true
+		if not ref.begins_with("lot:"):
+			_other_names[ref] = true
