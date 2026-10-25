@@ -81,7 +81,7 @@ A few helpers run at a time, never two on the same files.
 - Traffic control that grows with the town: `docs/spec-traffic-control.md` (Nathan, 2026-10-25). Starts after the green-light fix: own light timing, then green waves, sensors, and a Traffic Management Center or a university engineering wing. Design rule for the whole game: "Early on the traffic issues are mine to deal with because they are simple. Later in the game, they become more complicated and so we provide more sophisticated solutions, just like in real life."
 
 - People (Nathan, 2026-10-25):
-  - "there are SO many people walking. I had a town of a couple hundred and the streets were flooded with pedestrians." Find what sends so many walkers (people.gd strolls, STROLL_SHARE 0.2; balance.gd WALK_SHARE 0.12 and WALK_NEAR; traffic_sim MAX_WALKERS 800) and match real small-town walking rates.
+  - Partly fixed in #560 (car owners drive most short trips: 51 -> 36 walking at once in a 145-person town). Still left: children never ride with family, so their trips are all walks; add family rides. Nathan's words: "there are SO many people walking. I had a town of a couple hundred and the streets were flooded with pedestrians." Find what sends so many walkers (people.gd strolls, STROLL_SHARE 0.2; balance.gd WALK_SHARE 0.12 and WALK_NEAR; traffic_sim MAX_WALKERS 800) and match real small-town walking rates.
   - "could their walking styles be different?" Vary stride, arm swing and pace per person in walker_view.gd's shader (it needs a spare per-instance channel; mind the browser's instance-colour quirk noted there).
 
 *Waits for Nathan*
