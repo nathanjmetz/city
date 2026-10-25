@@ -29,7 +29,12 @@ Nothing is running. Every unfinished piece is saved on a branch. To restart one,
 - #552 home screen: Nathan chose the new one, live. The rest is on `wip/home-screen-live`: Marion's real time and season, traffic and people by the hour, night lights, a slow 360° orbit and a fuller downtown. Weather comes later, with a hook left for it.
 
 **Started, saved on branches:**
-- `wip/green-light-flow`: drivers hesitate at green lights, so only 3 cars get through a green. The target is 1 car every 2 s per lane. Comes before the traffic control spec.
+- `wip/green-light-flow` **(Nathan: "the traffic is so slow it makes the game unplayable"; do this first)**. tests/test_green_light.gd on that branch measures it. On main today:
+  - green: 3.9 s between cars crossing the line, 8 per 30 s (target 2 s, 12+), the first car starts at once, nobody stops at the line
+  - all-way stop: 6.9 s a car (target 4-5)
+  - cars stop 7.9 m behind the line where a street meets the highway
+
+  Ruled out: HEADWAY 1.4 to 1.0 barely helps (3.6 s), and the "room on the far side" rule in `_may_enter` makes no difference. The likely cause is queue discharge in the car-following model (`_idm`, traffic_sim.gd about :4292, acc about 2 m/s^2 from vehicle_types.gd): cars pull away one by one. Look at start-up anticipation, so cars begin moving as the car ahead does, or an IIDM/ACC-style model, plus the per-turn speed cap at :4337.
 - `wip/detail-floor`: a closest zoom per quality tier, set by screenshot judging and enforced with a test. Nathan: "impossible to see poorly drawn things up close".
 - `wip/load-until-drawn`: the loading screen holds until the starting view is drawn (cap 20 s desktop, 30 s browser).
 - `wip/admin-audio`: Nathan's admin sound mixer. Desktop only, behind a hidden key combo. One row per sound, voice caps, and "Save for everyone" to data/audio_mix.json.
@@ -74,6 +79,10 @@ A few helpers run at a time, never two on the same files.
 - Traffic: a 2,700-person town growing along the highway drops to about 45% flow; queues back up at the all-way stops where highway streets enter the grid.
 
 - Traffic control that grows with the town: `docs/spec-traffic-control.md` (Nathan, 2026-10-25). Starts after the green-light fix: own light timing, then green waves, sensors, and a Traffic Management Center or a university engineering wing. Design rule for the whole game: "Early on the traffic issues are mine to deal with because they are simple. Later in the game, they become more complicated and so we provide more sophisticated solutions, just like in real life."
+
+- People (Nathan, 2026-10-25):
+  - "there are SO many people walking. I had a town of a couple hundred and the streets were flooded with pedestrians." Find what sends so many walkers (people.gd strolls, STROLL_SHARE 0.2; balance.gd WALK_SHARE 0.12 and WALK_NEAR; traffic_sim MAX_WALKERS 800) and match real small-town walking rates.
+  - "could their walking styles be different?" Vary stride, arm swing and pace per person in walker_view.gd's shader (it needs a spare per-instance channel; mind the browser's instance-colour quirk noted there).
 
 *Waits for Nathan*
 30. The real Grant County map from public data (big downloads; OpenStreetMap credit line).
