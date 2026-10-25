@@ -120,9 +120,42 @@ const BEFORE_SIGN_IN := 64 * 1024
 
 func _new_link() -> NetLink:
 	var link := NetLink.new(_peer)
-	link.max_for = func(from: int) -> int: return NetLink.MAX_MESSAGE if _players.has(from) else BEFORE_SIGN_IN
+	# A signed-in player may send a town's copy and little else (NetLink
+	# checks a big message begins as one); a connection that hasn't signed
+	# in, a hello. Whoever breaks a limit is cut off (_violation).
+	link.max_for = func(from: int) -> int: return NetLink.MAX_CITY if _players.has(from) else BEFORE_SIGN_IN
+	link.big_start = CITY_START.to_utf8_buffer()
+	link.max_held = NetLink.MAX_HELD
+	link.on_violation = _violation
 	link.on_failed = _send_failed
 	return link
+
+
+## How a town's copy begins (the client writes "t" first).
+const CITY_START := '{"t":"city"'
+## Town copies from one player that may wait to be unpacked, and their size
+## (the packed text), and the same for everyone together.
+const MAX_JOBS_PER_PEER := 4
+const MAX_PENDING_PEER := 96 * 1024 * 1024
+const MAX_PENDING_TOTAL := 256 * 1024 * 1024
+var _pending := {}   # peer id -> {"n", "bytes"} of copies being unpacked
+var _pending_total := 0
+var _cut := {}   # peers cut off, until they are gone
+## Peers cut off for breaking a limit.
+var violations := 0
+
+
+## A peer broke a limit (an oversize message, too many copies at once): it
+## is cut off, and the log says why.
+func _violation(peer: int, why: String) -> void:
+	if _cut.has(peer):
+		return  # (already cut off; the rest of what it sent is ignored)
+	_cut[peer] = true
+	var who: String = _players[peer].name if _players.has(peer) else "peer %d" % peer
+	_log("Cut off %s: %s" % [who, why])
+	violations += 1
+	if _peer and _open.has(peer):
+		_peer.disconnect_peer(peer)
 
 
 ## A message that couldn't go at all. A player still joining is told why
@@ -246,34 +279,55 @@ var _jobs := []
 const JOBS_MS := 30.0
 
 
-## Runs `work` on another core, then `then` here, after the jobs before it.
-func _job(work: Callable, then: Callable) -> void:
-	_jobs.append({"task": RegionClient._on_another_core(work), "then": then})
+## Runs `work` on another core, then `then` here, after the earlier jobs
+## with the same `key` (a town's id): copies of one town are kept in the
+## order they came, while another town's job doesn't wait for this one.
+func _job(key: String, work: Callable, then: Callable) -> void:
+	_jobs.append({"task": RegionClient._on_another_core(work), "then": then, "key": key})
 
 
-## Runs `then` here once the jobs under way are done (at once if none).
-func _after_jobs(then: Callable) -> void:
-	if _jobs.is_empty():
-		then.call()
-	else:
-		_jobs.append({"task": -1, "then": then})
+## Runs `then` here once the jobs under way are done (at once if none), or
+## with a `key`, just the jobs of that town (a welcome needn't wait on
+## other players' copies).
+func _after_jobs(then: Callable, key := "") -> void:
+	for job in _jobs:
+		if key == "" or job.key == key:
+			_jobs.append({"task": -1, "then": then, "key": key, "barrier": true})
+			return
+	then.call()
 
 
-## Hands over finished jobs, oldest first, for at most JOBS_MS a frame
-## (each can take tens of ms: letting go of the copy it replaces, passing
-## the new one on); with `wait`, all of them.
+## Hands over finished jobs, for at most JOBS_MS a frame (each can take
+## tens of ms: letting go of the copy it replaces, passing the new one on);
+## with `wait`, all of them. Jobs of one town go in the order they came. A
+## step waiting for "the jobs under way" (key "") goes when it is first.
 func _finish_jobs(wait := false) -> void:
 	var end := Time.get_ticks_usec() + int(JOBS_MS * 1000.0)
-	while not _jobs.is_empty():
+	var blocked := {}
+	var i := 0
+	while i < _jobs.size():
 		if not wait and Time.get_ticks_usec() > end:
 			return
-		var job: Dictionary = _jobs[0]
+		var job: Dictionary = _jobs[i]
+		var key: String = job.key
+		if job.has("barrier"):
+			if (i == 0) if key == "" else not blocked.has(key):
+				_jobs.remove_at(i)
+				job.then.call()
+			else:
+				i += 1
+			continue
+		if blocked.has(key):
+			i += 1
+			continue
 		if wait and job.task >= 0:
 			WorkerThreadPool.wait_for_task_completion(job.task)
 			job.task = -1
 		if not RegionClient._done(job.task):
-			return
-		_jobs.pop_front()
+			blocked[key] = true
+			i += 1
+			continue
+		_jobs.remove_at(i)
 		job.then.call()
 
 
@@ -349,6 +403,16 @@ func _handle(from: int, msg: Dictionary) -> void:
 			# again) on another core; then it's kept and passed on, here.
 			if p.city != "":
 				_take_city(from, p.city, msg)
+		"picture":
+			# A neighbor's picture again (the first didn't unpack): at most
+			# once in a while for each town.
+			var want := str(msg.get("id", ""))
+			var last: Dictionary = p.get("asked", {})
+			var now := Time.get_ticks_msec()
+			if region.cities.has(want) and want != p.city and now - int(last.get(want, -1000000)) >= 2000:
+				last[want] = now
+				p.asked = last
+				_send(from, {"t": "city", "id": want, "z": region.packed_card(want), "land": region.land_flat(want)}, "city:" + want)
 		"chat":
 			var text := str(msg.get("text", "")).strip_edges()
 			if text != "":
@@ -400,17 +464,41 @@ func _handle(from: int, msg: Dictionary) -> void:
 ## and passed on to the neighbors here, in the order copies came in.
 func _take_city(from: int, city: String, msg: Dictionary) -> void:
 	var z := str(msg.get("z", ""))
+	# Only so many copies from one player wait to be unpacked, and only so
+	# much of them in all: a player sending more is cut off.
+	var size := z.length()
+	var q: Dictionary = _pending.get(from, {"n": 0, "bytes": 0})
+	if q.n >= MAX_JOBS_PER_PEER or q.bytes + size > MAX_PENDING_PEER:
+		_violation(from, "too many town copies at once (%d waiting, %d bytes)" % [q.n, q.bytes])
+		return
+	if _pending_total + size > MAX_PENDING_TOTAL:
+		_log("Too many copies waiting: one from %s was dropped" % _players[from].name)
+		return
+	q.n += 1
+	q.bytes += size
+	_pending[from] = q
+	_pending_total += size
 	var job := {}
 	var work := func():
 		var d = unpack(z)
 		if typeof(d) != TYPE_DICTIONARY:
 			return
+		# A picture is made here, never sent in: what a player sends is
+		# their town as it is (or a postcard), so these keys are junk.
+		d.erase("picture")
+		d.erase("lots")
 		job.d = d
 		if not d.get("postcard", false):
 			job.full = z
 		# What the neighbors are sent: the town as a picture.
 		job.card = pack(Region.picture_of(d))
-	_job(work, func():
+	_job(city, work, func():
+		_pending_total -= size
+		if _pending.has(from):
+			_pending[from].n -= 1
+			_pending[from].bytes -= size
+			if _pending[from].n <= 0:
+				_pending.erase(from)
 		if job.has("d") and region.cities.has(city) and region.update_city(city, job.d, job.get("full", ""), job.card):
 			_dirty = true
 			# Its land, when it changed (see Region.land).
@@ -688,10 +776,13 @@ func _admit(from: int, account: Dictionary, token: String) -> void:
 			_players.erase(peer)
 			_send(peer, {"t": "elsewhere"})
 			get_tree().create_timer(2.0).timeout.connect(func(): if _peer: _peer.disconnect_peer(peer))
-	_players[from] = {"id": pid, "name": name, "city": "", "host": account.host}
-	# Copies still being unpacked (their own, sent as they left, say) are
-	# kept first, so the welcome has the newest of everything.
-	_after_jobs(func(): _welcome(from, account, token))
+	# (Not "ready" until the welcome is sent: nothing else goes to it first.)
+	_players[from] = {"id": pid, "name": name, "city": "", "host": account.host, "ready": false}
+	# Their own copies still being unpacked (sent as they left, say) are kept
+	# first, so the welcome has the newest; other players' copies don't hold
+	# it up.
+	var key := region.city_of(pid)
+	_after_jobs(func(): _welcome(from, account, token), key if key != "" else "-")
 
 
 ## A player is in: their town (made now if they're new) and everything
@@ -737,6 +828,7 @@ func _welcome(from: int, account: Dictionary, token: String) -> void:
 	# (Roads the region handed their town while they were away come in the
 	# welcome's pending list, and their game builds them as it loads.)
 	_send(from, welcome, "welcome")
+	_players[from].ready = true
 	_send_neighbors(from, city)
 	_send_players()
 	_send_requests()
@@ -778,13 +870,14 @@ func _send_neighbors(peer: int, city: String) -> void:
 func _send_requests() -> void:
 	var list := requests()
 	for peer in _players:
-		if _players[peer].host:
+		if _players[peer].host and _players[peer].ready:
 			_send(peer, {"t": "requests", "list": list})
 
 
 func _on_left(peer: int) -> void:
 	_left.append(peer)
 	_open.erase(peer)
+	_cut.erase(peer)
 	_link.drop(peer)
 
 
@@ -826,7 +919,7 @@ func _send(peer: int, msg: Dictionary, tag := "") -> void:
 func _broadcast(msg: Dictionary, except := 0, tag := "") -> void:
 	var bytes := JSON.stringify(msg, "", false, true).to_utf8_buffer()
 	for peer in _players:
-		if peer != except and _open.has(peer):
+		if peer != except and _open.has(peer) and _players[peer].ready:
 			_link.send(peer, bytes, tag)
 
 

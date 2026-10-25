@@ -58,6 +58,9 @@ var handed := {}
 var land := {}
 var _data := {}   # city id -> its newest copy: a postcard or a full copy (sim.to_dict())
 var _stale := {}  # city ids whose simulation is older than _data
+## Towns whose trade was read from their newest copy already (_trade_from_copy):
+## what trade changes here after that is kept, as before, until a newer copy comes.
+var _trade_read := {}
 ## city id -> its newest full copy (people, cars and plans too): what its
 ## player gets back on another computer, and what the region saves. Players
 ## send a full copy every few minutes and postcards in between (see
@@ -101,7 +104,7 @@ func city_of(player_id: String) -> String:
 ## Takes a town off the map: its label, land, copies and road links. Its
 ## neighbors keep their halves of the county roads.
 func remove_city(id: String) -> void:
-	for d in [cities, land, _data, _stale, _full, _full_z, _card_z, _copy_n, away, handed, pending, awaiting]:
+	for d in [cities, land, _data, _stale, _trade_read, _full, _full_z, _card_z, _copy_n, away, handed, pending, awaiting]:
 		d.erase(id)
 	joins = joins.filter(func(j): return j.a != id and j.b != id)
 
@@ -194,6 +197,7 @@ func update_city(id: String, d: Dictionary, full_z := "", card_z := "") -> bool:
 	var old := [_data.get(id), _full.get(id)]
 	_data[id] = d
 	_stale[id] = true
+	_trade_read.erase(id)
 	awaiting.erase(id)
 	_card_z.erase(id)
 	if card_z != "":
@@ -470,7 +474,7 @@ static func picture_of(d: Dictionary) -> Dictionary:
 	var lots := {}
 	var from: Dictionary = p.get("parcels", {})
 	for key in from:
-		if from[key] is Dictionary:
+		if from[key] is Dictionary and _sane_lot(from[key]):
 			lots[key] = _tight_lot(from[key])
 	p.erase("parcels")
 	p.lots = lots
@@ -486,9 +490,12 @@ static func from_picture(d: Variant) -> Variant:
 		return d
 	var p: Dictionary = d.duplicate()
 	var parcels := {}
-	var lots: Dictionary = p.get("lots", {})
-	for key in lots:
-		parcels[key] = _loose_lot(lots[key], key)
+	var lots = p.get("lots", {})
+	if lots is Dictionary:
+		for key in lots:
+			# Anything that isn't a lot's shape is left out, not trusted.
+			if lots[key] is Dictionary:
+				parcels[key] = _loose_lot(lots[key], str(key))
 	p.erase("lots")
 	p.erase("picture")
 	p.parcels = parcels
@@ -518,9 +525,33 @@ static func _tight_lot(lot: Dictionary) -> Dictionary:
 	return out
 
 
+## Whether a lot is the shape _tight_lot needs (a client sent it): its spot
+## and any outline are numbers.
+static func _sane_lot(lot: Dictionary) -> bool:
+	for k in lot:
+		var v = lot[k]
+		if k == "corners":
+			if v is PackedVector2Array or v is PackedFloat32Array or v is PackedFloat64Array:
+				continue
+			if not v is Array:
+				return false
+			for n in v:
+				if not (n is int or n is float):
+					return false
+		elif v is Array and v.size() == 3 and k != "corner_by":
+			for n in v:
+				if not (n is int or n is float):
+					return false
+		elif k == "pos" and not (v is Vector3):
+			return false
+	return true
+
+
 static func _loose_lot(lot: Dictionary, key: String) -> Dictionary:
 	var out := {}
-	var at: PackedInt32Array = lot.get("pos", PackedInt32Array([0, 0, 0]))
+	var at = lot.get("pos", PackedInt32Array([0, 0, 0]))
+	if not (at is PackedInt32Array and at.size() == 3):
+		at = PackedInt32Array([0, 0, 0])
 	for k in lot:
 		var v = lot[k]
 		if k == "corners" and v is PackedInt32Array:
@@ -583,7 +614,7 @@ static func _tight_outline(v: Variant, at: PackedInt32Array) -> PackedInt32Array
 ## Call after changing a town's simulation directly, so its saved data is
 ## made afresh.
 func touched(id: String) -> void:
-	for d in [_data, _full, _stale, _full_z, _card_z]:
+	for d in [_data, _full, _stale, _trade_read, _full_z, _card_z]:
 		d.erase(id)
 	_count_copy(id)
 
@@ -795,8 +826,9 @@ func settle_trade(ids: Array) -> void:
 ## server's loop). The rest of its simulation stays as it was, still
 ## waiting to be unpacked when something needs it.
 func _trade_from_copy(id: String) -> void:
-	if not _stale.has(id):
+	if not _stale.has(id) or _trade_read.has(id):
 		return
+	_trade_read[id] = true
 	var d: Dictionary = _data[id]
 	var sim: CitySim = cities[id].sim
 	sim.trade.from_dict(d.get("trade", {}))
@@ -1020,6 +1052,7 @@ func from_dict(d: Dictionary, first := "") -> void:
 	_data = {}
 	_full = {}
 	_stale = {}
+	_trade_read = {}
 	_full_z = {}
 	_card_z = {}
 	_copy_n = {}

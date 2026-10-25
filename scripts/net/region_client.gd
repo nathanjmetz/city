@@ -93,6 +93,9 @@ const NEIGHBOR_COST := 200.0
 const NEIGHBOR_HITCH := 0.05
 const NEIGHBOR_FIRST := 2.0
 var _neighbor_wait := NEIGHBOR_FIRST
+## Times a neighbor's picture was asked for again after it failed.
+var _picture_tries := {}
+const PICTURE_TRIES := 3
 var _unseen := []  # neighbors not unpacked since joining
 ## Copies being packed or unpacked on another core (a grown town takes the
 ## better part of a second, which froze the game every time a neighbor
@@ -130,6 +133,7 @@ var _waiting_host := false  # asked the host to let us in (see "waiting")
 func join(server_url: String, code: String, id: String, name: String, password := "",
 		new_account := false, saved_token := "", pin := "") -> void:
 	_pin = pin
+	_picture_tries.clear()
 	url = server_url
 	invite_code = code
 	player_id = id
@@ -727,8 +731,16 @@ func _finish_packing() -> void:
 	while not _incoming.is_empty() and _done(_incoming[0].task):
 		var job: Dictionary = _incoming.pop_front()
 		var id: String = job.id
-		if not job.has("d") or not region.cities.has(id):
+		if not region.cities.has(id):
 			continue
+		if not job.has("d"):
+			# A picture that wouldn't unpack: asked for again (a few times),
+			# never left as "awaiting" for good.
+			if region.awaiting.has(id) and int(_picture_tries.get(id, 0)) < PICTURE_TRIES:
+				_picture_tries[id] = int(_picture_tries.get(id, 0)) + 1
+				_send({"t": "picture", "id": id})
+			continue
+		_picture_tries.erase(id)
 		if job.msg.get("land") is Array:
 			region.take_land(id, job.msg.land)
 		var now := Time.get_ticks_msec() / 1000.0
