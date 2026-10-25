@@ -136,7 +136,7 @@ static func block_corners(b: Dictionary, cell: Vector2i) -> PackedVector2Array:
 ## Where a bank goes when placed beside the street nearest `hit`: [centre,
 ## dir toward the street], or [] if no street is near.
 static func site_near(network: RoadNetwork, hit: Vector3) -> Array:
-	var near := network.find_segment_near(hit, 60.0, 1.0)
+	var near := RoadIndex.segment_near(network, hit, 60.0, 1.0)
 	if near.is_empty() or not RoadStyle.TYPES[network.segments[near.seg].type].lots:
 		return []
 	var c := network.curve_of(near.seg)

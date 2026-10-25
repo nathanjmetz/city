@@ -78,7 +78,7 @@ static func pick(sim: CitySim, p: Vector3) -> Dictionary:
 			continue
 		if sim.buildings.has(key) or sim.zones.zone_at(lot.zone_pt) != ZoneMap.Zone.NONE:
 			return {"type": "lot", "id": key}
-	var near := sim.network.find_segment_near(p, 14.0, 4.0)
+	var near := RoadIndex.segment_near(sim.network, p, 14.0, 4.0)
 	if not near.is_empty():
 		var hw := RoadStyle.half_width(sim.network.segments[near.seg].type)
 		if near.dist <= hw + 1.5:
@@ -231,7 +231,7 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 	var k: Dictionary = Services.KINDS[b.kind]
 	var rows := []
 	var problems := []
-	var linked := not sim.network.find_segment_near(b.pos + b.dir * k.size.y * 0.5, 80.0, 1.0).is_empty()
+	var linked := not RoadIndex.segment_near(sim.network, b.pos + b.dir * k.size.y * 0.5, 80.0, 1.0).is_empty()
 	var ok := linked
 	var status := ""
 	if k.get("parking", false):

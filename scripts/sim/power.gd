@@ -661,7 +661,7 @@ func tie_route(net: RoadNetwork, links: Array, s: Dictionary) -> PackedVector3Ar
 	if Agency.effect(s, TREE, "tie+") <= 0.0 or links.is_empty() or s.drive.is_empty() or net.segments.is_empty():
 		return out
 	var gate: Vector3 = s.drive[-1]
-	var hit := net.find_segment_near(gate, 60.0)
+	var hit := RoadIndex.segment_near(net, gate, 60.0)
 	if hit.is_empty():
 		return out
 	# Shortest way along the roads to any road out of town, starting both

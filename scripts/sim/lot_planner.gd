@@ -2011,7 +2011,7 @@ func _revalidate(network: RoadNetwork, lot: Dictionary, moved: bool) -> Dictiona
 		var kept := lot.duplicate()
 		_set_shape(kept, cut)
 		return kept
-	var near := network.find_segment_near(lot.road, 4.0, 1.0)
+	var near := RoadIndex.segment_near(network, lot.road, 4.0, 1.0)
 	if near.is_empty() or not _lot_road(network, near.seg):
 		return {}
 	var id: int = near.seg

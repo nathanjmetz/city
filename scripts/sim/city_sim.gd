@@ -2081,7 +2081,7 @@ func industry_reach(kind: String, pos: Vector3) -> float:
 
 ## The access road from a main building to the nearest public road, or [].
 func industry_drive(pos: Vector3, dir: Vector3) -> Array:
-	var near := network.find_segment_near(pos, Industry.MAX_DRIVE, 1.0)
+	var near := RoadIndex.segment_near(network, pos, Industry.MAX_DRIVE, 1.0)
 	if near.is_empty():
 		return []
 	return Farms.make_drive(pos, dir, near.point)
@@ -2338,7 +2338,7 @@ func _clear_reserved_zones(near := Vector3.INF, reach := 0.0) -> void:
 ## The gravel lane from a farmhouse to the nearest road, or [] if no road is
 ## near enough.
 func farm_drive(pos: Vector3, dir: Vector3) -> Array:
-	var near := network.find_segment_near(pos, Farms.MAX_DRIVE, 1.0)
+	var near := RoadIndex.segment_near(network, pos, Farms.MAX_DRIVE, 1.0)
 	if near.is_empty():
 		return []
 	return Farms.make_drive(pos, dir, near.point)
@@ -2351,7 +2351,7 @@ func road_between(a: Vector3, b: Vector3) -> bool:
 	var n := maxi(2, ceili(a2.distance_to(b2) / 6.0))
 	for i in range(1, n):
 		var p := a2.lerp(b2, float(i) / n)
-		if not network.find_segment_near(p, 4.0).is_empty():
+		if not RoadIndex.segment_near(network, p, 4.0).is_empty():
 			return true
 	return false
 
@@ -2406,7 +2406,7 @@ func _ground_free(mid: Vector3, corners: PackedVector2Array, in_fields: bool) ->
 	var key := Vector3i(roundi(mid.x), roundi(mid.z), int(in_fields))
 	if _usable_cache.has(key):
 		return _usable_cache[key]
-	var ok := network.find_segment_near(mid, Farms.CELL * 0.6 + RoadStyle.right_of_way_half(RoadStyle.Type.AVENUE), 2.0).is_empty() \
+	var ok := RoadIndex.segment_near(network, mid, Farms.CELL * 0.6 + RoadStyle.right_of_way_half(RoadStyle.Type.AVENUE), 2.0).is_empty() \
 		and not _on_painted_road(mid, Farms.CELL * 0.6 + RoadStyle.right_of_way_half(RoadStyle.Type.COUNTY))
 	var pts := [mid]
 	for c in corners:
@@ -2619,7 +2619,7 @@ func _pad_road(id: int, cell: Vector2i, spare: float) -> bool:
 	if s.kind == "ore":
 		return true
 	var mid := Industry.pad_center(s, cell)
-	if not network.find_segment_near(mid, Industry.PAD * 0.9, 2.0).is_empty():
+	if not RoadIndex.segment_near(network, mid, Industry.PAD * 0.9, 2.0).is_empty():
 		return true  # already beside a road
 	var home := Vector3(s.pos.x, 0.0, s.pos.z) - mid
 	var right := Vector3(-s.dir.z, 0.0, s.dir.x)
@@ -3478,7 +3478,7 @@ func _build_over(c: Array, type: int, retype := true) -> bool:
 	for i in n + 1:
 		var t := float(i) / n
 		var p := RoadNetwork.bezier(c[0], c[1], c[2], t)
-		var hit := network.find_segment_near(p, OVERLAY_NEAR, RoadNetwork.SAME_LEVEL)
+		var hit := RoadIndex.segment_near(network, p, OVERLAY_NEAR, RoadNetwork.SAME_LEVEL)
 		var seg := -1
 		if not hit.is_empty():
 			var sc := network.curve_of(hit.seg)
@@ -3516,7 +3516,7 @@ func _build_over(c: Array, type: int, retype := true) -> bool:
 		for k in [0, 1]:
 			var idx: int = r[k]
 			if along[idx] != -1 and network.segments.has(along[idx]):
-				var on := network.find_segment_near(a if k == 0 else b, OVERLAY_NEAR * 2.0, RoadNetwork.SAME_LEVEL)
+				var on := RoadIndex.segment_near(network, a if k == 0 else b, OVERLAY_NEAR * 2.0, RoadNetwork.SAME_LEVEL)
 				if not on.is_empty():
 					if k == 0:
 						a = on.point
@@ -3533,7 +3533,7 @@ func _build_over(c: Array, type: int, retype := true) -> bool:
 	# one is cut there, so only the stretch it covers changes.
 	for k in [0, n]:
 		if along[k] != -1:
-			var end := network.find_segment_near(c[0] if k == 0 else c[2], OVERLAY_NEAR, RoadNetwork.SAME_LEVEL)
+			var end := RoadIndex.segment_near(network, c[0] if k == 0 else c[2], OVERLAY_NEAR, RoadNetwork.SAME_LEVEL)
 			if not end.is_empty() and end.t > 0.02 and end.t < 0.98:
 				network.split_segment(end.seg, end.t)
 	network.end_batch()
@@ -3541,7 +3541,7 @@ func _build_over(c: Array, type: int, retype := true) -> bool:
 	var seen := {}
 	var line := RoadNetwork.sample_curve(c[0], c[1], c[2], n)
 	for p in line:
-		var hit := network.find_segment_near(p, OVERLAY_NEAR, RoadNetwork.SAME_LEVEL)
+		var hit := RoadIndex.segment_near(network, p, OVERLAY_NEAR, RoadNetwork.SAME_LEVEL)
 		if hit.is_empty() or seen.has(hit.seg) or int(network.segments[hit.seg].type) == type:
 			continue
 		var sc := network.curve_of(hit.seg)
@@ -3691,7 +3691,7 @@ func found_business(key: String, zone: int, chain := "") -> bool:
 ## unzoned, clear of roads, and nobody else's (Capital.land_free).
 func _addon_free(p: Vector3, who: String) -> bool:
 	return land_ok(p) and zones.zone_at(p) == ZoneMap.Zone.NONE \
-		and network.find_segment_near(p, 12.0).is_empty() and not big.covers(p) \
+		and RoadIndex.segment_near(network, p, 12.0).is_empty() and not big.covers(p) \
 		and Capital.land_free(self, [p], who)
 
 
@@ -3994,7 +3994,7 @@ func _pieces_along(at: Callable, length: float, dry := false) -> Array:
 		while s <= next:
 			var q: Vector2 = at.call(s)
 			var here := Vector3(q.x, 0, q.y)
-			if not network.find_segment_near(here, COUNTY_STEP * 0.6).is_empty():
+			if not RoadIndex.segment_near(network, here, COUNTY_STEP * 0.6).is_empty():
 				next = s
 				met = true
 				break
@@ -4029,7 +4029,7 @@ func _pieces_along(at: Callable, length: float, dry := false) -> Array:
 			break
 		if met:
 			# Right onto the road it meets, so the two join there.
-			var hit := network.find_segment_near(c[2], COUNTY_STEP)
+			var hit := RoadIndex.segment_near(network, c[2], COUNTY_STEP)
 			if not hit.is_empty():
 				c[2] = Vector3(hit.point.x, 0, hit.point.z)
 				c[1] = (c[0] + c[2]) * 0.5
@@ -4047,7 +4047,7 @@ func _street_ahead(at: Callable, from: float, to: float, dry: bool) -> float:
 	while s <= to:
 		var q: Vector2 = at.call(s)
 		var here := Vector3(q.x, 0, q.y)
-		if not network.find_segment_near(here, COUNTY_STEP * 0.6).is_empty():
+		if not RoadIndex.segment_near(network, here, COUNTY_STEP * 0.6).is_empty():
 			return s
 		if farms.yard_at(here) or (dry and Terrain.water(q.x + o.x, q.y + o.y) >= 0.1):
 			return -1.0
@@ -4321,7 +4321,7 @@ func _link_roads() -> Array:
 ## A fresh start gets a crossroads on its county highway, nearest the
 ## town's middle: a street across it, 300 m each way, to grow from.
 func _start_crossroads() -> void:
-	var near := network.find_segment_near(Vector3.ZERO, 5000.0)
+	var near := RoadIndex.segment_near(network, Vector3.ZERO, 5000.0)
 	if near.is_empty():
 		return
 	var at: Vector3 = near.point

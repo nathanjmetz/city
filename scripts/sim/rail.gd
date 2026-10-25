@@ -170,7 +170,7 @@ var _filing_kind := "spur"
 ## Where a depot goes when placed beside the road nearest `hit`: [centre,
 ## dir toward the road, axis along the road], or [] if no road is near.
 static func site_near(network: RoadNetwork, hit: Vector3) -> Array:
-	var near := network.find_segment_near(hit, 120.0, 1.0)
+	var near := RoadIndex.segment_near(network, hit, 120.0, 1.0)
 	if near.is_empty() or not RoadStyle.TYPES[network.segments[near.seg].type].lots:
 		return []
 	var c := network.curve_of(near.seg)

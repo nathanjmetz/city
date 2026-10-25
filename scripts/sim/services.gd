@@ -261,7 +261,7 @@ static func corners(kind: int, pos: Vector3, dir: Vector3, size := Vector2.ZERO)
 ## Where a service of this kind goes when placed beside the road nearest
 ## `hit`: [centre, dir toward the road, seg], or [] if no road is near.
 static func site_near(network: RoadNetwork, kind: int, hit: Vector3) -> Array:
-	var near := network.find_segment_near(hit, 80.0, 1.0)
+	var near := RoadIndex.segment_near(network, hit, 80.0, 1.0)
 	if near.is_empty() or not RoadStyle.TYPES[network.segments[near.seg].type].lots:
 		return []
 	var c := network.curve_of(near.seg)
@@ -312,7 +312,7 @@ static func road_clash(network: RoadNetwork, poly: PackedVector2Array) -> bool:
 		for q in poly:
 			box = box.expand(q)
 		for id in ix.near(box):
-			if _clashes(poly, ix.samples[id], RoadStyle.right_of_way_half(network.segments[id].type)):
+			if _clashes(poly, ix.samples(id), RoadStyle.right_of_way_half(network.segments[id].type)):
 				return true
 		return false
 	for id in network.segments:
@@ -737,7 +737,7 @@ func _spread(network: RoadNetwork, lengths: Dictionary, b: Dictionary, dist: Dic
 
 
 func _spread_from(network: RoadNetwork, lengths: Dictionary, front: Vector3, dist: Dictionary, effect := 1.0) -> void:
-	var near := network.find_segment_near(front, 80.0, 1.0)
+	var near := RoadIndex.segment_near(network, front, 80.0, 1.0)
 	if near.is_empty():
 		return
 	var s: Dictionary = network.segments[near.seg]

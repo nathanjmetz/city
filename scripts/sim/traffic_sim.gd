@@ -1360,7 +1360,7 @@ func _replan(car: Dictionary, lane := -1) -> bool:
 func _locate(at, facing: Vector3) -> Array:
 	if at == null:
 		return []
-	var near := network.find_segment_near(at, 25.0, 3.0)
+	var near := RoadIndex.segment_near(network, at, 25.0, 3.0)
 	if near.is_empty():
 		return []
 	var best := []
@@ -1443,7 +1443,7 @@ func _reroute_all() -> void:
 		car.lc_t = 1.0
 		car.d = clampf(car.d, 0.0, w.len)
 		if not network.segments.has(car.goal.seg):
-			var near := network.find_segment_near(car.dest, 60.0)
+			var near := RoadIndex.segment_near(network, car.dest, 60.0)
 			if near.is_empty():
 				continue
 			var fw: int = near.seg * 2 + 1
@@ -1819,7 +1819,7 @@ func _endpoint(e: Dictionary) -> Dictionary:
 func _endpoint_x(at: Vector2) -> Dictionary:
 	var e := {"ref": ""}
 	var pos := Vector3(at.x, 0.0, at.y)
-	var near := network.find_segment_near(pos, 80.0)
+	var near := RoadIndex.segment_near(network, pos, 80.0)
 	if near.is_empty():
 		return {}
 	var wid: int = near.seg * 2 + 1
@@ -3445,7 +3445,7 @@ func _kerb_stop(pos: Vector3) -> Dictionary:
 ## if no street with sidewalks runs by. With `kerb`, only for a spot out on
 ## the street itself (a car parked at the kerb).
 func _walk_stop(pos: Vector3, kerb := false) -> Dictionary:
-	var near := network.find_segment_near(pos, 20.0 if kerb else 40.0)
+	var near := RoadIndex.segment_near(network, pos, 20.0 if kerb else 40.0)
 	if near.is_empty():
 		return {}
 	var seg: int = near.seg

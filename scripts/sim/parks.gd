@@ -122,7 +122,7 @@ static func corners(pos: Vector3, dir: Vector3, size: Vector2) -> PackedVector2A
 ## Where a park or landmark goes when placed beside the road nearest `hit`:
 ## [centre, dir toward the road], or [] if no road is near.
 static func site_near(network: RoadNetwork, kind: String, hit: Vector3, size_class := 0) -> Array:
-	var near := network.find_segment_near(hit, 90.0, 1.0)
+	var near := RoadIndex.segment_near(network, hit, 90.0, 1.0)
 	if near.is_empty() or not RoadStyle.TYPES[network.segments[near.seg].type].lots:
 		return []
 	var c := network.curve_of(near.seg)
