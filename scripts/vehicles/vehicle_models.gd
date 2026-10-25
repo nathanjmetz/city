@@ -217,6 +217,187 @@ func _sedan() -> void:  # Toyota Camry
 		"b": 2.1, "c": 3.25, "e": 3.95, "tail": 1.0, "wr": 0.34, "axles": [0.98, 3.8]})
 
 
+## A Toyota Camry (XV70, 2018-24) lofted from its blueprints instead of a
+## few boxes: 4885 mm long, 1840 wide, 1445 high, 2825 wheelbase. The
+## side, top and plan outlines are smooth curves through measured points;
+## each cross-section rounds from rocker to a bulged side, a shoulder at
+## the belt line and a greenhouse that tucks in toward the roof. Wheel
+## arches are cut into the sides, the windshield, side glass and rear
+## window follow the body, and the lamps wrap round its corners.
+## (Test model: not in traffic yet.)
+const CAMRY_TOP := [[0.0, 0.55], [0.06, 0.68], [0.2, 0.76], [0.6, 0.83], [1.1, 0.89], [1.55, 0.93],
+	[1.7, 0.98], [2.1, 1.22], [2.45, 1.4], [2.9, 1.445], [3.3, 1.42], [3.6, 1.33], [3.95, 1.13],
+	[4.15, 1.05], [4.55, 1.03], [4.8, 1.0], [4.885, 0.82]]
+const CAMRY_BELT := [[0.0, 0.55], [0.06, 0.66], [0.2, 0.72], [1.0, 0.86], [1.6, 0.93], [2.5, 0.98],
+	[3.6, 1.02], [4.3, 1.02], [4.75, 0.99], [4.885, 0.82]]
+const CAMRY_ROCKER := [[0.0, 0.3], [0.25, 0.22], [0.6, 0.18], [4.4, 0.19], [4.885, 0.34]]
+const CAMRY_WIDTH := [[0.0, 0.7], [0.08, 0.8], [0.3, 0.88], [0.8, 0.915], [2.4, 0.92], [4.2, 0.915],
+	[4.7, 0.87], [4.885, 0.76]]
+const CAMRY_ROOF_W := [[1.55, 0.84], [2.4, 0.67], [3.0, 0.645], [3.6, 0.67], [4.2, 0.82]]
+
+
+func _sedan_camry() -> void:
+	var axles := [0.975, 3.8]
+	var step := 0.3 if _lo else (0.05 if _hi else 0.08)
+	var zs := []
+	var z := 0.0
+	while z < 4.885:
+		zs.append(z)
+		z += step
+	zs.append(4.885)
+	var rings := []
+	for zz in zs:
+		rings.append(_camry_ring(zz, axles))
+	var m: int = rings[0].size()
+	var codes := []
+	for i in zs.size() - 1:
+		codes.append(_camry_codes(0.5 * (zs[i] + zs[i + 1]), m))
+	_skin(rings, codes)
+	_cap(rings[0], PAINT, Vector3(0, 0, 1))
+	_cap(rings[rings.size() - 1], PAINT, Vector3(0, 0, -1))
+	# The wide dark lower grille and the slim upper one between the lamps.
+	_box(Vector3(0, 0.33, 0.03), Vector3(1.15, 0.2, 0.08), TRIM)
+	_box(Vector3(0, 0.6, 0.07), Vector3(0.62, 0.05, 0.06), TRIM)
+	# Door mirrors on the door skin, below the A-pillar.
+	_box(Vector3(0.99, 1.0, 1.86), Vector3(0.14, 0.11, 0.22), PAINT, true)
+	for az in axles:
+		for sx in [-1.0, 1.0]:
+			_wheel(Vector3(sx * 0.79, 0.0, az), 0.335, 0.225, RIM)
+
+
+## One cross-section: right side from the floor's middle up to the roof's
+## middle, then the left side back down (x mirrored).
+static func _camry_ring(z: float, axles: Array) -> Array:
+	var top := _curve(CAMRY_TOP, z)
+	var belt := minf(_curve(CAMRY_BELT, z), top)
+	var w := _curve(CAMRY_WIDTH, z)
+	var yb := _curve(CAMRY_ROCKER, z)
+	for az in axles:
+		var dz: float = z - az
+		if absf(dz) < 0.4:
+			yb = maxf(yb, 0.335 + sqrt(0.16 - dz * dz))  # arch round the tyre
+	yb = minf(yb, belt - 0.12)
+	var floor_y := minf(0.16, yb)
+	# Greenhouse, blended in as the roof rises off the hood and trunk.
+	var g := clampf((top - belt - 0.03) / 0.15, 0.0, 1.0)
+	var wr := minf(_curve(CAMRY_ROOF_W, clampf(z, 1.55, 4.2)), w - 0.06)
+	var hood := [Vector2(w - 0.08, belt + 0.01), Vector2(w * 0.72, lerpf(belt, top, 0.65)),
+		Vector2(w * 0.38, top - 0.004)]
+	var glass := [Vector2(w - 0.07, belt + 0.02), Vector2(wr + 0.05, top - 0.07), Vector2(wr - 0.1, top - 0.006)]
+	var right := [Vector2(0.0, floor_y), Vector2(w - 0.25, floor_y), Vector2(w - 0.03, yb),
+		Vector2(w, yb + 0.45 * (belt - yb)), Vector2(w - 0.025, belt)]
+	for k in 3:
+		right.append((hood[k] as Vector2).lerp(glass[k], g))
+	right.append(Vector2(0.0, top))
+	var out := []
+	for p in right:
+		out.append(Vector3(p.x, p.y, z))
+	for k in range(right.size() - 2, 0, -1):
+		out.append(Vector3(-right[k].x, right[k].y, z))
+	return out
+
+
+## The finish of each strip of a section: floor and arch liners dark, the
+## windshield, side glass and rear window, lamps wrapping the corners.
+static func _camry_codes(z: float, m: int) -> Array:
+	var side := [TRIM, TRIM, PAINT, PAINT, PAINT, PAINT, PAINT, PAINT]
+	if z < 0.42:
+		side[3] = HEAD
+	elif z > 4.6:
+		side[3] = TAIL
+	if z > 1.95 and z < 3.95 and not (z > 2.86 and z < 2.98):
+		side[5] = GLASS
+	if z > 1.62 and z < 2.42 or z > 3.38 and z < 4.1:
+		side[7] = GLASS
+	var out := []
+	for e in m:
+		out.append(side[e] if e < 8 else side[m - 1 - e])
+	return out
+
+
+## A smooth skin over rings of matching points, shaded smooth across bends
+## under 45 degrees and creased past that.
+func _skin(rings: Array, codes: Array) -> void:
+	var m: int = rings[0].size()
+	var fn := []
+	for i in rings.size() - 1:
+		var a: Array = rings[i]
+		var b: Array = rings[i + 1]
+		var mid := Vector3.ZERO  # the section's middle, so normals point out
+		for p in a + b:
+			mid += p
+		mid /= a.size() * 2
+		var row := []
+		for e in m:
+			var e2 := (e + 1) % m
+			var n: Vector3 = (b[e2] - a[e]).cross(a[e2] - b[e])
+			if n.length_squared() < 1e-12:
+				row.append(Vector3.ZERO)
+				continue
+			n = n.normalized()
+			if n.dot((a[e] + b[e2]) * 0.5 - mid) < 0.0:
+				n = -n
+			row.append(n)
+		fn.append(row)
+	for i in rings.size() - 1:
+		for e in m:
+			var n: Vector3 = fn[i][e]
+			if n == Vector3.ZERO:
+				continue
+			var e2 := (e + 1) % m
+			var c: Color = codes[i][e]
+			var pts := [rings[i][e], rings[i][e2], rings[i + 1][e2], rings[i + 1][e]]
+			var ids := [[i, e], [i, e2], [i + 1, e2], [i + 1, e]]
+			var nrm := []
+			for v in ids:
+				var sum := Vector3.ZERO
+				for fi in [v[0] - 1, v[0]]:
+					if fi < 0 or fi >= fn.size():
+						continue
+					for fe in [(v[1] + m - 1) % m, v[1]]:
+						var f: Vector3 = fn[fi][fe]
+						if f != Vector3.ZERO and f.dot(n) > 0.7 and codes[fi][fe] == c:
+							sum += f
+				nrm.append(sum.normalized() if sum != Vector3.ZERO else n)
+			_tri_n(pts[0], pts[1], pts[2], nrm[0], nrm[1], nrm[2], c)
+			_tri_n(pts[0], pts[2], pts[3], nrm[0], nrm[2], nrm[3], c)
+
+
+## A smooth curve through [[z, value], ...] (monotone, so it never
+## overshoots the measured points), flat past either end.
+static func _curve(pts: Array, z: float) -> float:
+	var n := pts.size()
+	if z <= pts[0][0]:
+		return pts[0][1]
+	if z >= pts[n - 1][0]:
+		return pts[n - 1][1]
+	var i := 0
+	while pts[i + 1][0] < z:
+		i += 1
+	var z0: float = pts[i][0]
+	var z1: float = pts[i + 1][0]
+	var h := z1 - z0
+	var t := (z - z0) / h
+	var y0: float = pts[i][1]
+	var y1: float = pts[i + 1][1]
+	var s := (y1 - y0) / h
+	var m0 := _knot_slope(pts, i, s)
+	var m1 := _knot_slope(pts, i + 1, s)
+	var t2 := t * t
+	var t3 := t2 * t
+	return (2 * t3 - 3 * t2 + 1) * y0 + (t3 - 2 * t2 + t) * h * m0 + (-2 * t3 + 3 * t2) * y1 + (t3 - t2) * h * m1
+
+
+static func _knot_slope(pts: Array, i: int, fallback: float) -> float:
+	if i == 0 or i == pts.size() - 1:
+		return 0.0 if i == 0 or i == pts.size() - 1 else fallback
+	var s0: float = (pts[i][1] - pts[i - 1][1]) / (pts[i][0] - pts[i - 1][0])
+	var s1: float = (pts[i + 1][1] - pts[i][1]) / (pts[i + 1][0] - pts[i][0])
+	if s0 * s1 <= 0.0:
+		return 0.0
+	return 2.0 * s0 * s1 / (s0 + s1)
+
+
 func _hatchback() -> void:  # Honda Civic hatch
 	_car({"L": 4.3, "W": 1.8, "H": 1.46, "clear": 0.15, "hood": 0.82, "belt": 0.98, "a": 1.05,
 		"b": 1.85, "c": 3.3, "e": 4.12, "tail": 1.02, "wr": 0.33, "axles": [0.9, 3.6]})

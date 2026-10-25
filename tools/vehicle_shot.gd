@@ -36,9 +36,8 @@ func _lineup() -> void:
 	var x := 0.0
 	var row := 0
 	var i := 0
-	for key in VehicleModels.mesh_keys():
-		if filter != "" and not filter.split(",").has(key):
-			continue
+	# A filter lists models in its own order, test ones included.
+	for key in (Array(filter.split(",")) if filter != "" else VehicleModels.mesh_keys()):
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_custom_data = true
