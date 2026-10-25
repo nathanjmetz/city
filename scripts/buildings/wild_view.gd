@@ -152,9 +152,13 @@ func _draw_chunk(c: Vector2i, detail: bool) -> void:
 	var trees := []
 	var o := Terrain.view_origin
 	var in_town := Backdrop.overlaps(Rect2(Vector2(c) * size + Vector2(o.x, o.y), Vector2(size, size)))
+	var yards := FarmsteadPlan.solids_in(Rect2(Vector2(c) * size + Vector2(o.x, o.y), Vector2(size, size)))
 	var wet := wet_lattice(c)
 	for p in plants:
 		if mowed and Terrain.mow_weight(p.pos.x, p.pos.z) > 0.5:
+			continue
+		# Nor on a county farmstead's buildings and gravel (FarmsteadPlan).
+		if not yards.is_empty() and FarmsteadPlan.on_solid(yards, Vector2(p.pos.x + o.x, p.pos.z + o.y)):
 			continue
 		# Nor on the county roads out in the country (in town, lots win)...
 		if CountyGrid.clears(p.pos.x + o.x, p.pos.z + o.y, CountyGrid.TREE_CLEAR) \
