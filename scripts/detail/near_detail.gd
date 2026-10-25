@@ -49,10 +49,12 @@ func _init() -> void:
 
 ## Scales how far the detail reaches with the graphics tier's detail
 ## (GraphicsQuality.detail: 0.4 Low to 2.5 Cinematic) and the screen's
-## antialiasing (GraphicsQuality.msaa: 0 none, 1 2x, 2 4x): with less than
-## 4x it stays where it's a few pixels big (NearMats).
+## antialiasing (GraphicsQuality.msaa: 0 none, 1 2x, 2 4x): it stays where
+## it's a few pixels big, nearer with less antialiasing (NearMats).
 func set_reach(detail: float, msaa := 2) -> void:
-	var px := Vector2(100.0, 200.0)
+	# Even with 4x, a big brick wall seen far off or edge on shimmers in
+	# rings: past about 9 cm a pixel, the painted pattern takes over.
+	var px := Vector2(0.09, 0.14)
 	if msaa == 1:
 		px = Vector2(0.022, 0.028)
 	elif msaa <= 0:

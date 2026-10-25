@@ -9,11 +9,11 @@ extends RefCounted
 ## `near_b` (a dither on the screen, in both renderers and in shadows too),
 ## over the building's own drawing, which is whole underneath: the walls'
 ## and roofs' painted-on pattern shows through where the detail has gone.
-## The distances follow the graphics tier (set_reach). With less than 4x
-## antialiasing the detail also dissolves where a pixel covers more than
-## `px_full` metres of wall (gone by `px_none`): laps and courses finer than
-## a couple of pixels would only shimmer, and the drawing underneath has
-## them painted on, fading as they should.
+## The distances follow the graphics tier (set_reach). The detail also
+## dissolves where a pixel covers more than `px_full` metres of wall (gone
+## by `px_none`; less with less antialiasing): bricks, laps and courses
+## finer than a couple of pixels would only shimmer, and the drawing
+## underneath has them painted on, fading as they should.
 ## From the lab: tools/scale/new_drawing/mats.gd.
 
 const COMMON := """
