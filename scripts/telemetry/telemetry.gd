@@ -395,7 +395,7 @@ func _hook_quality() -> void:
 	# Send a tier change at once: if the new tier stalls the machine, the
 	# report still shows what it was switched to.
 	q.changed.connect(func():
-		event("quality", _quality_now())
+		event("quality", _quality_now().merged({"why": q.last_reason}))
 		flush())
 	event("quality", _quality_now())
 

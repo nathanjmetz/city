@@ -157,7 +157,7 @@ func _add_ultra_batch(key: String) -> void:
 
 static func _ultra_wanted() -> bool:
 	var q := GraphicsQuality.current
-	return q != null and q.active and q.tier >= GraphicsQuality.ULTRA
+	return q != null and q.active and GraphicsQuality.knob("car_detail", false)
 
 
 func _process(_delta: float) -> void:
