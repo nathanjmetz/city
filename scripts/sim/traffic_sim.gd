@@ -55,6 +55,8 @@ const HEADWAY := 1.4
 const ACCEL := 2.0
 const BRAKE := 3.0
 const MAX_BRAKE := 8.0
+## How far back (m) a driver on a green commits to going through.
+const GREEN_REACH := 25.0
 ## Where cars stop for a railroad crossing, metres before the track's centre:
 ## 15 ft from the nearest rail plus half the gauge.
 const XING_STOP := 5.4
@@ -4360,7 +4362,13 @@ func _accel_on_way(car: Dictionary, list: Array, i: int) -> float:
 	if not car.commit:
 		if ds < 4.0 and car.v < 0.5 and car.arrive < 0.0:
 			car.arrive = time
-		if _may_enter(car, c, ds) and ds <= car.v * car.v / (2.0 * BRAKE) + 4.0:
+		# On a green, drivers carry on through rather than creeping up to
+		# the line as if it were red: they decide from well back (HCM
+		# saturation flow, about 2 s a car).
+		var reach: float = car.v * car.v / (2.0 * BRAKE) + 4.0
+		if junctions[c.node].control == Rule.SIGNAL and light(c.node, c.wi) == Light.GREEN:
+			reach = maxf(reach, GREEN_REACH)
+		if ds <= reach and _may_enter(car, c, ds):
 			car.commit = true
 			car.conn = c
 			if not _committed.has(c.node):
