@@ -118,6 +118,16 @@ func _init() -> void:
 		"the land goes on to the haze, past the detailed chunks")
 	_check(TerrainView.REACH[-1] * TerrainView.FAR_CUT < TerrainView.REACH[-1] and TerrainView.FAR_REACH < 24000.0,
 		"the far land starts inside the chunks and ends inside the camera's view")
+	# The far sheet is only cut away over chunks already built, so land still
+	# being built while the camera scrolls never shows a hole.
+	var tv := TerrainView.new()
+	tv._mark(Vector2i(-3, 5), true)
+	tv._mark(Vector2i(4, 4), true)
+	tv._mark(Vector2i(4, 4), false)
+	_check(tv._mask.get_pixel(61, 5).r > 0.5 and tv._mask.get_pixel(4, 4).r < 0.5
+		and TerrainView.MASK * TerrainView.CHUNK > 2.0 * TerrainView.REACH[-1] + TerrainView.CHUNK,
+		"the far land fills in wherever the chunks aren't built yet")
+	tv.free()
 	print("ALL TESTS PASSED" if _failed == 0 else "SOME TESTS FAILED")
 	quit(1 if _failed > 0 else 0)
 

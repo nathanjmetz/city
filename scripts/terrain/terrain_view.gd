@@ -44,8 +44,14 @@ const REGRADE_CELL := 256.0  # metres: the grid _regrade finds touched strips wi
 const MOW_VERGE := 3.0
 ## How much of the woods floor a yard thins to lawn (see build_chunk).
 const YARD_THIN := 0.6
-## Milliseconds per frame spent building chunks after the first frame.
+## Milliseconds per frame spent building chunks after the first frame: the
+## browser keeps it light, the desktop app spends more so the land keeps up
+## with a fast scroll.
 const BUDGET_MS := 6
+const DESKTOP_BUDGET_MS := 12
+## Chunks across the built-chunks mask the far sheet reads (wraps; must be
+## wider than the chunks' reach both ways).
+const MASK := 64
 ## How far the camera moves (metres, height counted) before the chunks'
 ## detail levels are worked out again; far smaller than any level's reach.
 const SETTLE_MOVE := 8.0
@@ -100,6 +106,10 @@ uniform sampler2D highway_field : hint_default_white, filter_nearest;
 // The far land (TerrainView's far sheet) is cut away nearer than this, where
 // the chunks draw the ground; 0 for the chunks themselves.
 uniform float far_cut = 0.0;
+// Which chunks are built (TerrainView._mask, chunk index wrapped by 64): the
+// far sheet is only cut away over a built chunk, so land still being built
+// shows the far sheet instead of a hole.
+uniform sampler2D chunk_built : hint_default_white, filter_nearest, repeat_enable;
 // CUSTOM0: (height, normal x, normal z) on the next coarser level, and w the
 // reach of this chunk's level (0 for the coarsest): vertices slide to the
 // coarser level between MORPH_START and MORPH_END of that reach.
@@ -188,7 +198,8 @@ void fragment() {
 	vec2 p = world_pos.xz;
 	if (far_cut > 0.0) {
 		vec2 e = p - lod_eye.xz;
-		if (dot(e, e) + lod_eye.y * lod_eye.y < far_cut * far_cut) {
+		if (dot(e, e) + lod_eye.y * lod_eye.y < far_cut * far_cut
+				&& texelFetch(chunk_built, ivec2(mod(floor(p / 512.0), 64.0)), 0).r > 0.5) {
 			discard;
 		}
 	}
@@ -437,6 +448,10 @@ var _settled_eye := Vector3(INF, INF, INF)
 var _job := {}
 ## The far land being built (see far_job), or empty.
 var _far_job := {}
+var _mask := Image.create(MASK, MASK, false, Image.FORMAT_L8)
+var _mask_tex: ImageTexture
+var _mask_dirty := true
+var _budget_ms := BUDGET_MS if OS.has_feature("web") else DESKTOP_BUDGET_MS
 
 
 static func ground_material() -> ShaderMaterial:
@@ -551,7 +566,7 @@ func _process(_delta: float) -> void:
 				_job = {"key": key, "lod": lod, "data": chunk_job(Vector2(key) * CHUNK, CHUNK, STEPS[lod],
 					REACH[lod] if lod < STEPS.size() - 1 else 0.0)}
 			var finished := false
-			while not finished and Time.get_ticks_usec() - start * 1000 < BUDGET_MS * 1000:
+			while not finished and Time.get_ticks_usec() - start * 1000 < _budget_ms * 1000:
 				finished = chunk_step(_job.data, JOB_ROWS)
 			if not finished:
 				done = false
@@ -561,11 +576,12 @@ func _process(_delta: float) -> void:
 		_dirty.erase(key)
 		# Build everything at once the first time, so the land is there
 		# when the game opens; then a little each frame.
-		if not _first and Time.get_ticks_msec() - start > BUDGET_MS:
+		if not _first and Time.get_ticks_msec() - start > _budget_ms:
 			done = false
 			break
 	_settled_eye = eye if done else Vector3(INF, INF, INF)
 	_update_far(flat_eye, _first)
+	_update_mask()
 	_first = false
 	Perf.add("frame.terrain", t0)
 
@@ -690,6 +706,7 @@ func _drop(key: Vector2i) -> void:
 			c[k].queue_free()
 	_chunks.erase(key)
 	_dirty.erase(key)
+	_mark(key, false)
 
 
 func _build(key: Vector2i, lod: int, data := {}) -> void:
@@ -713,6 +730,24 @@ func _build(key: Vector2i, lod: int, data := {}) -> void:
 		add_child(w)
 		entry.water = w
 	_chunks[key] = entry
+	_mark(key, true)
+
+
+func _mark(key: Vector2i, built: bool) -> void:
+	_mask.set_pixel(key.x & (MASK - 1), key.y & (MASK - 1), Color.WHITE if built else Color.BLACK)
+	_mask_dirty = true
+
+
+## Sends which chunks are built to the far sheet's shader.
+func _update_mask() -> void:
+	if not _mask_dirty or _far == null:
+		return
+	_mask_dirty = false
+	if _mask_tex == null:
+		_mask_tex = ImageTexture.create_from_image(_mask)
+		far_material().set_shader_parameter("chunk_built", _mask_tex)
+	else:
+		_mask_tex.update(_mask)
 
 
 ## Where grid point (i, j) of a chunk sits on the next coarser level (twice
