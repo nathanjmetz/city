@@ -459,6 +459,8 @@ func _build_backdrop() -> void:
 	_cam.far = 24000.0
 	add_child(_cam)
 	var land := TerrainView.new()
+	# The menu's camera stands still: no preloading the county behind it.
+	land.keep_land = false
 	add_child(land)
 	# A grown small town, made once by tools/menu_town.gd: a player's own
 	# early town is mostly bare lots and half-built shops.

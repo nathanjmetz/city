@@ -11,6 +11,8 @@ Brawn wants two games built from one codebase:
 
 ## Brawn's rules
 
+- **Everything, auto-scaled (Nathan, 2026-10-24):** "It should still have varying detail levels that adjust automatically based on what the computer can do for both Mac and Windows… it's actually everything. It's detail on every item in the game, including humans and cars and everything." Photoreal is not a few materials: every item gets real detail, through the quality tiers and governor in `quality.gd`, on Mac and Windows.
+
 - **Real world first.** Everything is designed against a real reference, such as real photos, real dimensions, US road standards (AASHTO/MUTCD) and real Grant County, Indiana data.
 - **Textures are CC0 only.** Use sources like ambientCG or Poly Haven, and credit each one in `terrain/LICENSES.md` or a new `art/LICENSES.md`.
 - **Desktop-only tiers.** Photoreal assets and settings load only in the desktop app (`not OS.has_feature("web")`) and only at the top quality tiers. The browser download must not grow.
@@ -30,7 +32,7 @@ Brawn wants two games built from one codebase:
 ## Plan and status
 
 1. **Done (PR #522):** no grey holes while scrolling. The far sheet reads a mask of built chunks (`chunk_built`), and the desktop builds land at 12 ms a frame (the browser stays at 6 ms). It has a test in `tests/test_terrain.gd`, and the shader compiles under Compatibility.
-2. **Parked:** preload the whole county on desktop. The draft is in `docs/desktop-photoreal-preload.patch`. It keeps built chunks in a cache (`CACHE_MAX` 8000), builds LOD 4 and LOD 3 for the whole county in spare frame time, and forgets a chunk when it is graded. It is not verified: its test built 0 chunks in the first step because the one-time sort of about 10k keys uses up the frame budget. Sort once outside the budget, or measure time from after the sort.
+2. **Done (2026-10-24, branch `claude/desktop-preload`):** the desktop app preloads the whole county. In 3 ms of each settled frame (`PRELOAD_MS`) it builds LOD 4 and LOD 3 for every chunk, nearest first in ring order (`ring_order`, no sort), and keeps them; machines with 30 GB or more also keep LOD 2 (`preload_lods`). Only those coarse levels are cached, never LOD 0/1 (a LOD 0 chunk is about 0.7 MB, so the draft's keep-everything cache could reach gigabytes). A graded chunk is forgotten. Measured on the M5 Max (48 GB) in a real window: after a 10 km camera jump the land is ready in 0.6–0.95 s, against 1.2 s without the cache. Idle frames are unchanged (60 fps), and the cost is about +128 MB of RAM and +67 MB of graphics memory. Headless, the two coarse levels for the whole county are 2.8 s of work and about 144 MB. Not yet measured on the 8 GB Mac mini (step 5).
 3. **Not started:** a photoreal tier on desktop. Use CC0 PBR textures (brick, siding, shingles, asphalt, concrete, bark, grass, soil) with normal and roughness maps, triplanar on terrain. Add real-model or impostor trees, and do vehicles and people next. Check whether to use the existing Ultra/Cinematic tiers or add a new top tier.
 4. **Not started:** a closer zoom on desktop only, with the browser keeping 40 m. This needs the close-up detail from step 3 first.
 5. **Not started:** check performance on the Mac Studio and the 8 GB Mac mini.

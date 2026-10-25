@@ -127,6 +127,52 @@ func _init() -> void:
 	_check(tv._mask.get_pixel(61, 5).r > 0.5 and tv._mask.get_pixel(4, 4).r < 0.5
 		and TerrainView.MASK * TerrainView.CHUNK > 2.0 * TerrainView.REACH[-1] + TerrainView.CHUNK,
 		"the far land fills in wherever the chunks aren't built yet")
+	# The desktop app keeps the land it built and builds the county ahead,
+	# nearest first, every chunk once.
+	var ring := TerrainView.ring_order(Vector2i(2, 3), Vector2i(-5, -5), Vector2i(7, 6))
+	var once := {}
+	for key in ring:
+		once[key] = true
+	var outward := true
+	for k in ring.size() - 1:
+		var a: Vector2i = ring[k] - Vector2i(2, 3)
+		var b: Vector2i = ring[k + 1] - Vector2i(2, 3)
+		outward = outward and maxi(absi(a.x), absi(a.y)) <= maxi(absi(b.x), absi(b.y))
+	var past := TerrainView.ring_order(Vector2i(10, 10), Vector2i(0, 0), Vector2i(3, 2))
+	_check(ring[0] == Vector2i(2, 3) and ring.size() == 12 * 11 and once.size() == ring.size() and outward
+		and past.size() == 6 and past[0] == Vector2i(1, 1),
+		"the county is preloaded ring by ring out from the camera, every chunk once")
+	_check(TerrainView.preload_lods(8.0) == [4, 3] and TerrainView.preload_lods(64.0) == [4, 3, 2],
+		"an 8 GB Mac mini preloads the two coarsest levels, a Mac Studio one more")
+	tv.keep_land = true
+	tv._cache_lods = TerrainView.PRELOAD_LODS
+	var t := Time.get_ticks_usec()
+	tv._preload_step(Vector2(100.0, 100.0))
+	var ms := (Time.get_ticks_usec() - t) / 1000.0
+	var first: int = tv._cached
+	var near_first: bool = tv._cache.has(Vector2i(0, 0))
+	print("  preloaded %d chunks in the first frame (%.1f ms with laying out the order), %d to go"
+		% [first, ms, tv._preload.size() - tv._preload_at])
+	_check(first > 0 and near_first and tv._preload.size() == 2 * 72 * 72,
+		"the desktop app builds the whole county's far land ahead, from the camera out")
+	# Graded under a new road: the kept land there and next to it (edge
+	# normals read past the chunk) is forgotten, to be built again.
+	var queued: int = tv._preload.size()
+	tv._mark_dirty([PackedVector3Array([Vector3(100, 0, 100), Vector3(200, 0, 100)]), 6.0, 10.0])
+	var gone := true
+	for key in [Vector2i(0, 0), Vector2i(-1, 0), Vector2i(0, -1), Vector2i(-1, -1)]:
+		gone = gone and not tv._cache.has(key)
+	var counted := 0
+	for key in tv._cache:
+		counted += tv._cache[key].size()
+	_check(gone and counted == tv._cached and tv._cached < first and tv._preload.size() - queued == first - tv._cached,
+		"graded chunks are forgotten and queued to build again")
+	# The finest land is never kept (0.7 MB a chunk), nor any by the menu.
+	tv._keep(Vector2i(9, 9), 0, {"ground": null})
+	tv.keep_land = false
+	tv._keep(Vector2i(9, 10), 3, {"ground": null})
+	_check(not tv._cache.has(Vector2i(9, 9)) and not tv._cache.has(Vector2i(9, 10)),
+		"fine detail isn't kept, and the menu keeps none")
 	tv.free()
 	print("ALL TESTS PASSED" if _failed == 0 else "SOME TESTS FAILED")
 	quit(1 if _failed > 0 else 0)

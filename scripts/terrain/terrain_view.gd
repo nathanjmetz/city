@@ -52,6 +52,20 @@ const DESKTOP_BUDGET_MS := 12
 ## Chunks across the built-chunks mask the far sheet reads (wraps; must be
 ## wider than the chunks' reach both ways).
 const MASK := 64
+## The desktop app keeps the coarse levels of every chunk it has built, and
+## in spare time builds them for the whole county ahead of the camera, so
+## scrolling back or far only puts ready land on screen. Only coarse levels:
+## a finest chunk is about 0.7 MB, a level 3 one about 10 KB, so the whole
+## county's levels 3 and 4 fit an 8 GB Mac mini. Machines with this much
+## memory or more (GB) keep level 2 too (about 250 MB for the county).
+const PRELOAD_LODS := [4, 3]
+const PRELOAD_BIG_LODS := [4, 3, 2]
+const PRELOAD_BIG_GB := 30.0
+## A guard on how many chunks are kept (the county is 72 x 72 chunks).
+const CACHE_MAX := 16384
+## Milliseconds of a settled frame spent preloading: small, so the quality
+## governor never mistakes it for a slow machine (SLOW_MS).
+const PRELOAD_MS := 3
 ## How far the camera moves (metres, height counted) before the chunks'
 ## detail levels are worked out again; far smaller than any level's reach.
 const SETTLE_MOVE := 8.0
@@ -452,6 +466,14 @@ var _mask := Image.create(MASK, MASK, false, Image.FORMAT_L8)
 var _mask_tex: ImageTexture
 var _mask_dirty := true
 var _budget_ms := BUDGET_MS if OS.has_feature("web") else DESKTOP_BUDGET_MS
+## Keep and preload the coarse land (desktop only; see PRELOAD_LODS).
+var keep_land := not OS.has_feature("web")
+var _cache_lods := preload_lods(float(OS.get_memory_info().get("physical", 0)) / 1e9)
+var _cache := {}  # Vector2i chunk -> {lod: chunk data}
+var _cached := 0
+var _preload: Array = []  # [key, lod] to build, coarsest level first, nearest first
+var _preload_at := 0
+var _preload_ready := false
 
 
 static func ground_material() -> ShaderMaterial:
@@ -513,6 +535,7 @@ func _process(_delta: float) -> void:
 		_far_mat.set_shader_parameter("region_origin", Terrain.view_origin)
 	var flat_eye := Vector2(eye.x, eye.y)
 	if _dirty.is_empty() and eye.distance_to(_settled_eye) < SETTLE_MOVE:
+		_preload_step(flat_eye)
 		_update_far(flat_eye)
 		Perf.add("frame.terrain", t0)
 		return
@@ -557,7 +580,7 @@ func _process(_delta: float) -> void:
 			# Graded under a new road: redo just that strip of the chunk.
 			patch_chunk(have.data, _dirty[key])
 			have.ground.mesh = have.data.ground
-		elif _first:
+		elif _first or _cache.get(key, {}).has(want[key]):
 			_build(key, want[key])
 		else:
 			# A few rows at a time; the old chunk shows until it's done.
@@ -704,6 +727,8 @@ func _drop(key: Vector2i) -> void:
 	for k in ["ground", "water"]:
 		if c[k] != null:
 			c[k].queue_free()
+	if not _dirty.has(key):
+		_keep(key, c.lod, c.data)
 	_chunks.erase(key)
 	_dirty.erase(key)
 	_mark(key, false)
@@ -712,6 +737,8 @@ func _drop(key: Vector2i) -> void:
 func _build(key: Vector2i, lod: int, data := {}) -> void:
 	if _chunks.has(key):
 		_drop(key)
+	if data.is_empty():
+		data = _cache.get(key, {}).get(lod, {})
 	if data.is_empty():
 		data = chunk_data(Vector2(key) * CHUNK, CHUNK, STEPS[lod], REACH[lod] if lod < STEPS.size() - 1 else 0.0)
 	var meshes := [data.ground, data.water]
@@ -731,6 +758,80 @@ func _build(key: Vector2i, lod: int, data := {}) -> void:
 		entry.water = w
 	_chunks[key] = entry
 	_mark(key, true)
+
+
+## Which levels the desktop app keeps and preloads, for this much memory (GB).
+static func preload_lods(memory_gb: float) -> Array:
+	return PRELOAD_BIG_LODS if memory_gb >= PRELOAD_BIG_GB else PRELOAD_LODS
+
+
+## Every chunk from `lo` to `hi` (not included), ring by ring out from `c`.
+static func ring_order(c: Vector2i, lo: Vector2i, hi: Vector2i) -> Array:
+	var out := []
+	var far := maxi(maxi(c.x - lo.x, hi.x - 1 - c.x), maxi(c.y - lo.y, hi.y - 1 - c.y))
+	for r in far + 1:
+		for cz in range(c.y - r, c.y + r + 1):
+			if cz < lo.y or cz >= hi.y:
+				continue
+			# Top and bottom rows whole; between them only the two ends.
+			var across := 1 if r == 0 or cz == c.y - r or cz == c.y + r else 2 * r
+			for cx in range(c.x - r, c.x + r + 1, across):
+				if cx >= lo.x and cx < hi.x:
+					out.append(Vector2i(cx, cz))
+	return out
+
+
+func _keep(key: Vector2i, lod: int, data: Dictionary) -> void:
+	if not keep_land or data.is_empty() or not lod in _cache_lods:
+		return
+	if not _cache.has(key):
+		if _cached >= CACHE_MAX:
+			return
+		_cache[key] = {}
+	if not _cache[key].has(lod):
+		_cached += 1
+	_cache[key][lod] = data
+
+
+## Forgets a chunk's kept land (it was graded under a new road).
+func _forget(key: Vector2i) -> void:
+	if _cache.has(key):
+		_cached -= _cache[key].size()
+		# Built again in spare time, graded as it is now.
+		for lod in _cache[key]:
+			_preload.append([key, lod])
+		_cache.erase(key)
+
+
+## In spare frame time, builds the coarse levels of the whole county ahead
+## of the camera, coarsest first, nearest first (desktop only). The order is
+## laid out once, in ring order rather than sorted (a sort of the county's
+## chunks took a whole frame), and the budget starts after it.
+func _preload_step(flat_eye: Vector2) -> void:
+	if not keep_land or _cached >= CACHE_MAX:
+		return
+	if not _preload_ready:
+		_preload_ready = true
+		var mid := Terrain.CENTRE - Terrain.view_origin
+		var half := ceili(Terrain.SIZE * 0.5 / CHUNK)
+		var c0 := Vector2i(floori(mid.x / CHUNK), floori(mid.y / CHUNK))
+		var ring := ring_order(Vector2i(floori(flat_eye.x / CHUNK), floori(flat_eye.y / CHUNK)),
+			c0 - Vector2i(half, half), c0 + Vector2i(half, half))
+		for lod in _cache_lods:
+			for key in ring:
+				_preload.append([key, lod])
+	var start := Time.get_ticks_usec()
+	while _preload_at < _preload.size() and Time.get_ticks_usec() - start < PRELOAD_MS * 1000:
+		var item: Array = _preload[_preload_at]
+		_preload_at += 1
+		var key: Vector2i = item[0]
+		var lod: int = item[1]
+		if _cache.get(key, {}).has(lod) or (_chunks.has(key) and _chunks[key].lod == lod):
+			continue
+		_keep(key, lod, chunk_data(Vector2(key) * CHUNK, CHUNK, STEPS[lod], REACH[lod] if lod < STEPS.size() - 1 else 0.0))
+	if _preload_at >= _preload.size():
+		_preload = []
+		_preload_at = 0
 
 
 func _mark(key: Vector2i, built: bool) -> void:
@@ -1261,6 +1362,13 @@ func _mark_dirty(g: Array) -> void:
 			var p := a.lerp(b, float(c) / cuts)
 			var q := a.lerp(b, float(c + 1) / cuts)
 			pieces.append(Rect2(p, Vector2.ZERO).expand(q).grow(grow))
+	# Kept land is forgotten a little wider: a chunk's edge normals read
+	# samples up to two of its steps outside it.
+	for box: Rect2 in pieces:
+		var wide := box.grow(2.0 * STEPS[STEPS.size() - 1])
+		for cz in range(floori(wide.position.y / CHUNK), floori(wide.end.y / CHUNK) + 1):
+			for cx in range(floori(wide.position.x / CHUNK), floori(wide.end.x / CHUNK) + 1):
+				_forget(Vector2i(cx, cz))
 	for box: Rect2 in pieces:
 		var c0 := Vector2i(floori(box.position.x / CHUNK), floori(box.position.y / CHUNK))
 		var c1 := Vector2i(floori(box.end.x / CHUNK), floori(box.end.y / CHUNK))
