@@ -1030,18 +1030,29 @@ vec3 crop_look(ivec2 slot, vec2 at, float across, float aw, float tilt, float no
 	float rc = across / spacing;
 	float w = aw / spacing;
 	float d = abs(fract(rc) - 0.5) * 2.0;
+	// No two rows grow quite alike (seed spacing, a wheel track, a wet
+	// spot): each row's own share of plant and its own tone, so a field
+	// reads as planted, not as a printed carpet of identical stripes.
+	float row = fract(sin(floor(rc) * 12.9898 + 78.233) * 43758.5453);
 	// Rows only for row crops; drilled wheat, rye, hay and grass are even.
 	float rowed = step(0.25, t2.b);
-	float stripe = 1.0 - smoothstep(seen - w - 0.05, seen + w + 0.05, d);
-	float share = mix(seen, mix(stripe, seen, smoothstep(0.25, 0.7, w)), rowed);
-	vec3 plant = crop_lin(t0.rgb) * (0.9 + 0.2 * noise);
+	// Softer-edged than the pixel grid alone gives, and gone to the even tone
+	// by about 3 pixels a row: at 4 the stripes beat against the screen's
+	// pixels into a fine shimmering pinstripe (seen from the air over a
+	// whole pasture-green field on the desktop app).
+	float soft = 0.12 + 0.12 * row;
+	float stripe = 1.0 - smoothstep(seen * (0.88 + 0.24 * row) - w - soft, seen * (0.88 + 0.24 * row) + w + soft, d);
+	stripe *= clamp(seen * 20.0, 0.0, 1.0);  // bare soil has no plant to stripe
+	float fade = smoothstep(0.1, 0.35, w);
+	float share = mix(seen, mix(stripe, seen, fade), rowed);
+	vec3 plant = crop_lin(t0.rgb) * (0.9 + 0.2 * noise) * mix(1.0, 0.9 + 0.2 * row, rowed * (1.0 - fade));
 	// Under a closing canopy the ground between the rows is in shade.
 	vec3 ground = crop_lin(t1.rgb) * (1.0 - 0.55 * cover);
 	float under = plants_near.w * (1.0 - smoothstep(plants_near.z * 0.6, plants_near.z, distance(at, plants_near.xy)));
 	plant *= 1.0 - 0.12 * under * step(0.25, t2.b);
 	// Standing stalk rows in the stubble, a little lighter than the soil.
-	float stalks = (1.0 - smoothstep(0.25 - w, 0.25 + w, d)) * (1.0 - smoothstep(0.25, 0.7, w));
-	ground *= 1.0 + t1.a * mix(0.05, stalks * 0.25, 1.0 - smoothstep(0.25, 0.7, w)) * step(0.25, t2.b);
+	float stalks = (1.0 - smoothstep(0.25 - w, 0.25 + w, d)) * (1.0 - fade);
+	ground *= 1.0 + t1.a * mix(0.05, stalks * 0.25, 1.0 - fade) * step(0.25, t2.b);
 	return mix(ground, plant, share);
 }
 """
