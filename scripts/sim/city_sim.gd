@@ -1663,15 +1663,21 @@ func _home_part(slice: int) -> Dictionary:
 	var care := 0.0
 	var cover := 0.0
 	var happy := 0.0
+	# (The served rows, water utilities and park lifts read once.)
+	var served: Dictionary = services.served
+	var utilities: Dictionary = services.water.utilities
+	var lot_happy: Dictionary = parks.lot_happy
 	for key in ledger().home_slices[slice]:
 		n += 1
-		var s: Dictionary = services.served.get(key, {})
-		if services.water.boils(s):
+		var s: Dictionary = served.get(key, {})
+		# water.boils(s):
+		var by: int = s.get("water_by", -1)
+		if by != -1 and utilities.has(by) and utilities[by].boil:
 			boil += 1
 		care += Healthcare.care_of(s)
 		if not s.is_empty():
 			cover += Services.coverage_of(s)
-		happy += float(parks.lot_happy.get(key, 0.0))
+		happy += float(lot_happy.get(key, 0.0))
 	return {"n": n, "boil": boil, "care": care, "cover": cover, "happy": happy}
 
 
