@@ -222,3 +222,24 @@ Desktop is the High tier; the browser's renderer (Compatibility) is Low. On the 
 **Pictures:** `docs/house-drawing/` (before and after, both renderers, 40, 100 and 300 m, and a brick split-level close up).
 
 **Not done yet:** the near detail has no soldier courses over windows or rowlock sills (the builder's windows sit on top of the walls), and odd-shaped brick faces keep their painted brick. Checked against standard dimensions (modular brick, 4 in laps, 5 in shingle exposure), not side by side with photos. Not run on the Mac mini, a Mac Studio or a real browser.
+
+
+## In the game, step 2: every building BuildingView draws (2026-10-25)
+
+Shops, strip centres, Main Street blocks, offices and towers, row homes, apartments and factories now go the same way as houses. BuildingView's old path is gone: it no longer keeps every building's own meshes, its far boxes and merged copies. Signs ride with their square's drawing. Brick commercial blocks and the mills get real brick up close. Big brick walls far off or seen edge on used to shimmer, so the close-up detail now dissolves where a pixel covers more than about 9 cm of wall, even with 4x antialiasing. Civic buildings (fire, police, schools, clinics, parks, warehouses, big plants) are drawn by their own views and haven't moved over yet.
+
+Measured as in step 1 (12-block PerfTown, 2,860 buildings, sim paused, main and branch back to back, the desktop held to 60 frames a second by the driver):
+
+| | Desktop, main | Desktop, branch | Browser renderer, main | Browser renderer, branch |
+| --- | --- | --- | --- | --- |
+| Graphics memory | 2,422 MB | **844 MB** | 1,250 MB | **438 MB** |
+| Other memory | 1,073 MB | **937 MB** | 909 MB | **833 MB** |
+| Houses 40 / 100 / 300 m | 16.8 / 16.7 / 17.3 ms | 16.8 / 16.7 / 16.7 ms | 20.8 / 11.9 / 14.6 ms | 20.5 / 11.3 / 13.7 ms |
+| Shops at 40 m | 16.3 ms | 16.7 ms | 16.4 ms | 16.4 ms |
+| Mills at 90 m | 16.7 ms | 16.8 ms | 10.8 ms | 13.3 ms |
+| Dive: avg, frames over 50 ms | 20.7 ms, 5 | 19.2 ms, 2 | 19.5 ms, 6 | 19.3 ms, 2 |
+| Sweep: avg, frames over 50 ms | 16.9 ms, 3 | 17.2 ms, 2 | 21.2 ms, 1 | 19.7 ms, 0 |
+
+The mills at 90 m were 2.5 ms slower in the browser renderer, in one run, with more triangles drawn (1.17 M vs 1.08 M). That wasn't looked into yet.
+
+**Pictures:** `docs/building-drawing/`.

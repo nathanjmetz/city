@@ -50,7 +50,7 @@ func _process(_delta: float) -> bool:
 		return false
 	if _view < 0:
 		for c in _main.get_children():
-			if c is BuildingView and (not c._pending.is_empty() or not c._bake_due.is_empty() or c._filling):
+			if c is BuildingView and not c.idle():
 				return false
 	if _view < 0:
 		_next_view()

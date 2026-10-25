@@ -90,6 +90,8 @@ func _process(d: float) -> bool:
 				return false
 		_phase = "views"
 		_find_brick()
+		_find_type("shop40", ["mixed_use", "shop"], Vector3(-430.0, 0.0, 60.0))
+		_find_type("factory90", ["factory", "industry", "general"], Vector3(650.0, 0.0, -330.0))
 		_next_view()
 		return false
 	var now := Time.get_ticks_usec()
@@ -156,6 +158,33 @@ func _next_view() -> void:
 
 
 var _views := VIEWS.duplicate()
+
+
+## One more picture: the building of one of `types` nearest `near` (any
+## type not a home, shop or office when `types` names an industry), seen
+## from its street.
+func _find_type(name: String, types: Array, near: Vector3) -> void:
+	var sim: CitySim = _main.sim
+	var best := INF
+	var pick := ""
+	for key in sim.buildings:
+		if not sim.lots.has(key):
+			continue
+		var t := BuildingTypes.type_of(sim.buildings[key])
+		var ok := t in types or (types.has("factory") and int(sim.buildings[key].zone) == ZoneMap.Zone.INDUSTRIAL)
+		if not ok:
+			continue
+		var p: Vector3 = sim.lots[key].pos
+		var d := Vector2(p.x - near.x, p.z - near.z).length()
+		if d < best:
+			best = d
+			pick = key
+	if pick == "":
+		return
+	var lot: Dictionary = sim.lots[pick]
+	var to_street: Vector3 = lot.front - lot.pos
+	var far := name.ends_with("90")
+	_views.append([name, 90.0 if far else 40.0, 30.0 if far else 18.0, lot.pos, atan2(to_street.x, to_street.z) + deg_to_rad(20.0)])
 
 
 ## A brick house near the aim, for one more close picture (the same lot on

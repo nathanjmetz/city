@@ -161,9 +161,14 @@ func merge_step(deadline: int) -> bool:
 
 
 ## Lets the merged buildings' arrays go (the walls and roofs for the
-## close-up detail stay).
+## close-up detail stay). Tests that look at what was merged keep them
+## (`keep_parts`): a headless run's renderer keeps no mesh to read back.
 func drop_parts() -> void:
-	parts.clear()
+	if not keep_parts:
+		parts.clear()
+
+
+static var keep_parts := false
 
 
 ## Shows what was merged since begin(); a square seen for the first time

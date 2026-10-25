@@ -60,7 +60,7 @@ func _process(_d: float) -> bool:
 		return false
 	match _phase:
 		0:
-			var homes := view._homes.size()
+			var homes := view._recs.size()
 			_check(homes == sim.buildings.size(), "every house is drawn (%d of %d)" % [homes, sim.buildings.size()])
 			_check(view._far_sq.square_count() > 0, "with far versions (%d squares)" % view._far_sq.square_count())
 			var reach := BuildingView._full_from()
@@ -68,7 +68,7 @@ func _process(_d: float) -> bool:
 			for sq in view._batches:
 				near_ok = near_ok and view._square_dist(sq) < reach + BuildingView.FULL_MARGIN
 			_check(not view._batches.is_empty() and near_ok,
-				"only squares near the camera are drawn in full (%d of %d)" % [view._batches.size(), view._home_sq.size()])
+				"only squares near the camera are drawn in full (%d of %d)" % [view._batches.size(), view._by_sq.size()])
 			var counts := view._near.instance_counts()
 			_check(counts.get("board", 0) + counts.get("brick_inner", 0) > 0 and counts.get("shingle", 0) > 0,
 				"houses near the camera are grown lap by lap and course by course %s" % counts)
@@ -81,7 +81,7 @@ func _process(_d: float) -> bool:
 				return false
 			_check(view._batches.is_empty(), "far from town, no square is kept in full (%d)" % view._batches.size())
 			_check(view._near.grown_count() == 0, "and no close-up detail (%d)" % view._near.grown_count())
-			_check(view._homes.size() == sim.buildings.size() and view._far_sq.square_count() > 0,
+			_check(view._recs.size() == sim.buildings.size() and view._far_sq.square_count() > 0,
 				"while every house keeps its far version")
 			# Back again: drawn in full once more.
 			_look(_home, 40.0)
@@ -95,8 +95,8 @@ func _process(_d: float) -> bool:
 			_check(JSON.stringify(sim.to_dict()) == _before, "drawing never changes the town")
 			# A house torn down and one drawn anew, in a square kept in full.
 			var near_keys := []
-			for key in view._homes:
-				if view._batches.has(view._homes[key].sq):
+			for key in view._recs:
+				if view._batches.has(view._recs[key].sq):
 					near_keys.append(key)
 			_gone = near_keys[0]
 			_redone = near_keys[1]
@@ -108,12 +108,12 @@ func _process(_d: float) -> bool:
 		3:
 			if _frames - _wait < 10:
 				return false
-			var sq: Vector2i = view._homes[_redone].sq
+			var sq: Vector2i = view._recs[_redone].sq
 			var batch: BatchSquare = view._batches[sq]
-			_check(not view._homes.has(_gone) and view._homes[_redone].look[1] == sim.buildings[_redone].level and batch.merged.has(_redone) and batch.parts.is_empty(),
+			_check(not view._recs.has(_gone) and view._recs[_redone].look[1] == sim.buildings[_redone].level and batch.merged.has(_redone) and batch.parts.is_empty(),
 				"a house torn down leaves, one drawn anew is merged back, and the arrays are let go after")
 			var all_in := true
-			for key in view._home_sq.get(sq, {}):
+			for key in view._by_sq.get(sq, {}):
 				all_in = all_in and batch.merged.has(key)
 			_check(all_in, "its neighbours are all still in the square's drawing")
 			# A new house goes up on the empty lot, stage by stage.
@@ -126,7 +126,7 @@ func _process(_d: float) -> bool:
 		4:
 			if _frames - _wait < 10:
 				return false
-			var rec: Dictionary = view._homes.get(_gone, {})
+			var rec: Dictionary = view._recs.get(_gone, {})
 			_check(not rec.is_empty() and rec.site != null and not view._batches[rec.sq].merged.has(_gone),
 				"a house going up is drawn on its own, stage by stage")
 			sim.tick_count += Construction.duration("house") + 10
@@ -136,7 +136,7 @@ func _process(_d: float) -> bool:
 			# Its site looks at the clock four times a second.
 			if _frames - _wait < 40:
 				return false
-			var rec: Dictionary = view._homes[_gone]
+			var rec: Dictionary = view._recs[_gone]
 			_check(rec.site == null and view._batches[rec.sq].merged.has(_gone),
 				"once it's done it joins its square's drawing")
 			_end()
