@@ -14,6 +14,9 @@ func _initialize() -> void:
 
 
 func _process(_delta: float) -> bool:
+	# The map loads over many frames in software rendering; wait for it.
+	if _frames == 0 and _main.loading:
+		return false
 	_frames += 1
 	if _frames == 2:
 		_lineup()
