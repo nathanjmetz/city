@@ -30,6 +30,8 @@ var _junction_cache := {}  # node -> [its plan, {part: mesh}]
 ## paint and signs; plans_version counts each change.
 var plans := {}
 var plans_version := 0
+var _road_grid := {}  # StreetLights._pieces, for keeping poles off other roads
+var _road_grid_version := -1
 var _later := {}  # segment id -> what to redraw it from, a few each frame
 var _seg_mi := {}  # segment id -> its street
 var _poles_later := {}  # segment id -> [key, pts, offset, drives near], drawn when a rebuild runs out of time
@@ -354,7 +356,7 @@ func _rebuild_all(gen: int) -> void:
 					var r := SurfaceTool.new()
 					w.begin(Mesh.PRIMITIVE_TRIANGLES)
 					r.begin(Mesh.PRIMITIVE_TRIANGLES)
-					RoadMesh.add_poles(w, r, pts, off, near)
+					RoadMesh.add_poles(w, r, pts, off, near, _pole_blocked(id))
 					poles = [pkey, Terrain.drape(w.commit(), true), Terrain.drape(r.commit(), true)]
 				if not poles.is_empty():
 					pole_cache[id] = poles
@@ -479,6 +481,16 @@ func _corner_meshes(node: int, plan) -> Dictionary:
 	return meshes
 
 
+## For a road's utility poles: true where one would stand on another road
+## (its pavement and the curb or shoulder beside it).
+func _pole_blocked(own: int) -> Callable:
+	if _road_grid.is_empty() or _road_grid_version != _gen:
+		_road_grid = StreetLights._pieces(network)
+		_road_grid_version = _gen
+	var grid := _road_grid
+	return func(p: Vector3) -> bool: return StreetLights._on_other_road(grid, p, own, 2.5)
+
+
 func _add_poles(wood: Array, wire: Array) -> void:
 	if wood.is_empty():
 		return
@@ -525,7 +537,7 @@ func _remesh_later() -> void:
 		var r := SurfaceTool.new()
 		w.begin(Mesh.PRIMITIVE_TRIANGLES)
 		r.begin(Mesh.PRIMITIVE_TRIANGLES)
-		RoadMesh.add_poles(w, r, job[1], job[2], job[3])
+		RoadMesh.add_poles(w, r, job[1], job[2], job[3], _pole_blocked(id))
 		_pole_cache[id] = [job[0], Terrain.drape(w.commit(), true), Terrain.drape(r.commit(), true)]
 		if _poles_later.is_empty() and _corners_later.is_empty():
 			_remerge()
