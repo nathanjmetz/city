@@ -51,7 +51,7 @@ Ties go to what shows in a summer daytime town, at ordinary play heights (100 to
 
 The 50 ideas with the biggest effect on the game. Build these first.
 
-1. **GROUP: The crop calendar: what every field looks like through the year**: Corn and soybean fields change color, height, and bare-versus-green on the calendar, and swap each year. One crop-stage fact per field drives all of it. Impact 43 (S5 A5 P4 C5), the score of its best part. 17 parts:
+1. **GROUP: The crop calendar: what every field looks like through the year**: Corn and soybean fields change color, height, and bare-versus-green on the calendar, and swap each year. One crop-stage fact per field drives all of it. Impact 43 (S5 A5 P4 C5), the score of its best part. 17 parts. **Built 2026-10-25** (with #24's far fields as flat colour): see `docs/crop-calendar.md`, which lists the parts still to come.
     - **Corn and soybeans swap every year**: A field that was corn last year is beans this year, so the countryside pattern changes. *Rule:* most Indiana farms rotate corn and soybeans, roughly half and half. *Facts:* field, crop by year. *Where:* both. *Cost:* low. **Impact 43 (S5 A5 P4 C5)** (section 12)
     - **Corn height timeline**: Ankle high in late May, knee high around July 4 (old saying, now earlier), 8 to 10 feet by tassel in mid July. *Rule:* corn growth stages. *Facts:* plant date, heat units. *Where:* both. *Cost:* medium. **Impact 40 (S5 A5 P3 C4)** (section 12)
     - **Soybean height timeline**: Low and green in June, thick and about 3 feet by August, yellow in mid to late September. *Rule:* bean stages. *Facts:* plant date. *Where:* both. *Cost:* medium. **Impact 40 (S5 A5 P3 C4)** (section 12)
