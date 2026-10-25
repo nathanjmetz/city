@@ -75,6 +75,9 @@ var _zoom_hold := 0.0
 ## towns), and the spot it was worked out for.
 var _min_dist := MIN_DIST
 var _min_at := Vector2.INF
+## Screenshot tools only: lets the camera go closer than the detail floor, to
+## measure what each look holds up to (tools/detail_floor_shots.gd).
+var ignore_floor := false
 
 
 func _ready() -> void:
@@ -181,9 +184,7 @@ func _process(delta: float) -> void:
 		_pad_input(delta)
 	_zoom_glide(delta)
 	_fit_min_dist()
-	if _goal_dist < _min_dist:
-		# Panned in over the backdrop: rise smoothly rather than snap.
-		_goal_dist = lerpf(_goal_dist, _min_dist, 1.0 - exp(-4.0 * delta))
+	_hold_floor(delta)
 	# Ease toward the goal, like CS2's smoothed camera.
 	var rate := 12.0
 	if _slow > 0.0:
@@ -208,7 +209,7 @@ func fly_to(p: Vector3) -> void:
 func glide_to(p: Vector3, dist: float) -> void:
 	following = false
 	_goal_target = Vector3(p.x, 0.0, p.z)
-	_goal_dist = maxf(dist, MIN_DIST)
+	_goal_dist = maxf(dist, _hard_min())
 	_zoom_vel = 0.0
 	_slow = 2.5
 
@@ -229,7 +230,7 @@ func mouse_ground_point():
 ## Keeps the view centred on a moving point (call each frame while following).
 func follow_point(p: Vector3) -> void:
 	_goal_target = Vector3(p.x, 0.0, p.z)
-	_goal_dist = minf(_goal_dist, 140.0)
+	_goal_dist = minf(_goal_dist, maxf(140.0, _hard_min()))
 
 
 func focus() -> Vector3:
@@ -246,8 +247,8 @@ func set_view(yaw: float, pitch: float, dist: float) -> void:
 	_goal_yaw = yaw
 	_pitch = pitch
 	_goal_pitch = pitch
-	_dist = dist
-	_goal_dist = dist
+	_dist = maxf(dist, floor_dist())
+	_goal_dist = _dist
 	_zoom_vel = 0.0
 
 
@@ -286,7 +287,7 @@ func _over_list() -> bool:
 
 func _zoom(f: float) -> void:
 	_slow = 0.0
-	_goal_dist = clampf(_goal_dist * f, minf(_min_dist, _goal_dist), MAX_DIST)
+	_goal_dist = clampf(_goal_dist * f, minf(_limit(), _goal_dist), MAX_DIST)
 
 
 ## One wheel click: dir -1 zooms in, +1 out. factor is the size of the click
@@ -316,10 +317,44 @@ func _zoom_glide(delta: float) -> void:
 	_zoom_heat = maxf(_zoom_heat - ZOOM_HEAT_DECAY * _zoom_heat * delta, 0.0)
 	if _zoom_vel == 0.0:
 		return
-	_goal_dist = clampf(_goal_dist * exp(_zoom_vel * delta), minf(_min_dist, _goal_dist), MAX_DIST)
+	_goal_dist = clampf(_goal_dist * exp(_zoom_vel * delta), minf(_limit(), _goal_dist), MAX_DIST)
 	_zoom_vel *= exp(-ZOOM_FRICTION * delta)
-	if absf(_zoom_vel) < 0.01 or (_zoom_vel < 0.0 and _goal_dist <= _min_dist) or (_zoom_vel > 0.0 and _goal_dist >= MAX_DIST):
+	if absf(_zoom_vel) < 0.01 or (_zoom_vel < 0.0 and _goal_dist <= _limit()) or (_zoom_vel > 0.0 and _goal_dist >= MAX_DIST):
 		_zoom_vel = 0.0
+
+
+## Keeps the camera outside the closest zoom (_limit): panned in over the
+## backdrop, or the look dropped to a lower tier whose drawing can not take
+## this close, the goal rises smoothly rather than snaps.
+func _hold_floor(delta: float) -> void:
+	var limit := _limit()
+	if _goal_dist < limit:
+		_goal_dist = lerpf(_goal_dist, limit, 1.0 - exp(-4.0 * delta))
+		if limit - _goal_dist < 0.05:
+			_goal_dist = limit
+
+
+## The closest this look can be viewed from, in metres: how near everything
+## it draws still holds up (GraphicsQuality.DETAIL_FLOOR, docs/detail-floor.md).
+## Follows the tier the game is drawing at now, so it eases out when the tier
+## drops.
+func floor_dist() -> float:
+	if ignore_floor:
+		return 0.0
+	var q := GraphicsQuality.current
+	return GraphicsQuality.detail_floor(q.tier if q != null else GraphicsQuality.HIGH)
+
+
+## The closest zoom where the camera looks now: the backdrop towns' limit or the look's detail floor, whichever is farther out.
+func _limit() -> float:
+	if ignore_floor:
+		return 0.0
+	return maxf(_min_dist, floor_dist())
+
+
+## The closest a glide or follow may end: MIN_DIST or the detail floor.
+func _hard_min() -> float:
+	return 0.0 if ignore_floor else maxf(MIN_DIST, floor_dist())
 
 
 ## Raises the closest zoom over the backdrop towns, checked again only when

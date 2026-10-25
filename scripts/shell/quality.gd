@@ -72,6 +72,20 @@ const TIERS := [
 		"tree_shadows": true},
 ]
 
+## The detail floor (Brawn, 2026-10-25): "There should be a direct
+## relationship between how well something is drawn and how close you can get
+## to it." For each tier, the closest the camera may be, in metres, because
+## up close something drawn at that tier looks crude. Measured with
+## tools/detail_floor_shots.gd; docs/detail-floor.md says how to re-measure
+## and when a floor may move closer. CityCamera never goes nearer.
+const DETAIL_FLOOR := [
+	{"dist": 40.0, "date": "2026-10-25", "why": "placeholder"},
+	{"dist": 40.0, "date": "2026-10-25", "why": "placeholder"},
+	{"dist": 40.0, "date": "2026-10-25", "why": "placeholder"},
+	{"dist": 40.0, "date": "2026-10-25", "why": "placeholder"},
+	{"dist": 40.0, "date": "2026-10-25", "why": "placeholder"},
+]
+
 ## Frame times are judged over windows of this many seconds.
 const WINDOW := 3.0
 ## Slower than this on average (about 45 fps) counts against the tier.
@@ -248,6 +262,11 @@ func label() -> String:
 ## memory). The browser climbs as far as High (see BROWSER_TOP).
 func top() -> int:
 	return BROWSER_TOP if browser else mini(_guess + 1, CINEMATIC)
+
+
+## The closest camera distance, in metres, this tier's drawing holds up to.
+static func detail_floor(t: int) -> float:
+	return float(DETAIL_FLOOR[clampi(t, LOW, CINEMATIC)].dist)
 
 
 ## What the Graphics menu picked: AUTO, or a fixed tier up to top().
