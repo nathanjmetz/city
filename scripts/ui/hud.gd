@@ -181,7 +181,7 @@ const PIES := {
 	"utilities": ["Power co.", "Power line", "Substation", "Phone co.", "Water utility", "Water tower", "Well",
 		["Trash", "landfill", ["Landfill", "Recycling"]]],
 	"parks": ["Pocket", "Neighborhood", "Community", "Park", "Trails", "Fairgrounds", "Football",
-		["Landmarks", "courthouse", ["Courthouse", "Water tower", "Elevator"]]],
+		["Landmarks", "water_tower", ["Water tower", "Elevator"]]],
 }
 
 
@@ -1656,8 +1656,10 @@ func _civic_drawer() -> PanelContainer:
 		b.pressed.connect(func(): bank_tool.set_kind(k))
 		_bank_cards[k] = b
 		banks.append(b)
+	# The county courthouse and its square (Brawn: a courthouse is civic).
 	return _service_drawer(cat, [
 		["Safety", [_service_card(Services.Kind.FIRE, cat), _service_card(Services.Kind.POLICE, cat)]],
+		["Government", [_park_card("courthouse")]],
 		["Mail", [pb]],
 		["Banks", banks]])
 
@@ -1728,21 +1730,26 @@ func _parks_drawer() -> PanelContainer:
 	var parks := _section(row, "Park  ·  fills in by itself")
 	var marks := _section(row, "Landmarks  ·  one per town")
 	for k in Parks.KINDS:
-		var spec: Dictionary = Parks.KINDS[k]
-		if spec.get("auto", false):
+		if Parks.KINDS[k].get("auto", false) or k == "courthouse":
 			continue
-		var a: Dictionary = Balance.AMENITIES[k]
-		var short := {"park": "Park", "courthouse": "Courthouse", "water_tower": "Water tower",
-			"grain_elevator": "Elevator", "football": "Football", "fairgrounds": "Fairgrounds", "trailhead": "Trails"}
-		var tip := "%s: $%s" % [spec.name, CitySim.money_text(int(a.cost))]
-		if spec.landmark:
-			tip += ", $%s a month" % CitySim.money_text(int(a.upkeep))
-		var b := _card(spec.icon, short[k], tip)
-		b.tooltip_text = tip + ". Raises land value and happiness nearby."
-		b.pressed.connect(func(): park_tool.set_kind(k))
-		(marks if spec.landmark else parks).add_child(b)
-		_park_cards[k] = b
+		(marks if Parks.KINDS[k].landmark else parks).add_child(_park_card(k))
 	return drawer
+
+
+## A card that places a Parks site (the courthouse's sits under Civic).
+func _park_card(k: String) -> Button:
+	var spec: Dictionary = Parks.KINDS[k]
+	var a: Dictionary = Balance.AMENITIES[k]
+	var short := {"park": "Park", "courthouse": "Courthouse", "water_tower": "Water tower",
+		"grain_elevator": "Elevator", "football": "Football", "fairgrounds": "Fairgrounds", "trailhead": "Trails"}
+	var tip := "%s: $%s" % [spec.name, CitySim.money_text(int(a.cost))]
+	if spec.landmark:
+		tip += ", $%s a month" % CitySim.money_text(int(a.upkeep))
+	var b := _card(spec.icon, short[k], tip)
+	b.tooltip_text = tip + ". Raises land value and happiness nearby."
+	b.pressed.connect(func(): park_tool.set_kind(k))
+	_park_cards[k] = b
+	return b
 
 
 ## Resource industry (Brawn's model): place a company's main building near
@@ -2043,7 +2050,7 @@ func _sync() -> void:
 	elif bank_tool.kind != "":
 		_category = "civic"
 	elif park_tool.kind != "":
-		_category = "parks"
+		_category = "civic" if park_tool.kind == "courthouse" else "parks"
 	elif industry_tool.kind != "" or warehouse_tool.kind != "" or big_tool.kind != "" or farm_tool.mode != FarmTool.Mode.NONE:
 		_category = "industry"
 	elif traffic_tool.mode != TrafficTool.Mode.NONE or neighborhood_tool.kind != "":

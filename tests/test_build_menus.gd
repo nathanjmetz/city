@@ -54,6 +54,9 @@ func _process(_delta: float) -> bool:
 	hud._bank_cards["community"].pressed.emit()
 	_check(hud._category == "civic", "a bank is under Civic")
 	hud.close_all()
+	hud._park_cards["courthouse"].pressed.emit()
+	_check(hud._category == "civic", "the courthouse is under Civic (%s)" % hud._category)
+	hud.close_all()
 	print("FAILED" if _failed else "ALL PASSED")
 	quit(1 if _failed else 0)
 	return true
