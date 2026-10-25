@@ -51,8 +51,7 @@ A few helpers run at a time, never two on the same files.
 20. Closer zoom step 1: 40 m to 20 m on the desktop.
 21. Closer zoom step 2: to 10 m, then standing on the sidewalk (no shirt buttons).
 
-*Life you discover (from `docs/real-life-details.md`; check numbers first)*
-22. Weather and seasons. 23. Streets and roads aging and repaired. 24. Houses and yards (upkeep, holiday decorations by date). 25. Farms (planting and harvest calendar, grain trucks). 26. The river (floods, ice, low water). 27. Wildlife. 28. Kids and school, church letting out, Friday-night football traffic. 29. The rest of the list, a group at a time.
+*Life you discover:* `docs/real-life-details.md`, now ranked by impact (Nathan, 2026-10-25: "organize that list by what we have the most dramatic impact on the game and work on those things first"). Work it from the Top 50 down, a few ideas a helper, numbers checked before they become rules.
 
 *Waits for Nathan*
 30. The real Grant County map from public data (big downloads; OpenStreetMap credit line).
