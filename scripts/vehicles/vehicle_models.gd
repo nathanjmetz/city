@@ -982,7 +982,7 @@ func _concrete_mixer() -> void:
 		_cyl(Vector3(0, 2.0, 3.1), Vector3(0, 2.9, 3.1), 0.35, STEEL, 10)
 		_beam(Vector3(0, 2.4, 9.7), Vector3(0, 1.6, 10.3), 0.35, TRIM)
 		_box(Vector3(0, 1.4, 9.9), Vector3(0.9, 0.5, 0.5), STEEL)
-		_box(Vector3(0, 1.15, 10.38), Vector3(0.5, 0.06, 0.6), BEACON_AMBER)
+		_box(Vector3(0, 1.15, 10.38), Vector3(0.5, 0.06, 0.6), STEEL)  # the fold-down discharge chute
 	_wheels([1.2, 7.0, 8.4], 0.52, 1.25, 0.3)
 	_box(Vector3(1.1, 1.0, L - 0.05), Vector3(0.12, 0.2, 0.06), TAIL, true)
 
