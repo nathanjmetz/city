@@ -60,6 +60,9 @@ var trips := {}
 var on_scene := []
 ## Calls the county's ambulance answered (no hospital, or all ours busy).
 var county_calls := 0
+## Calls answered from the next county over while every county rig was out
+## (Balance.EMS_COUNTY_RIGS): no vehicle drives in town for those.
+var mutual_aid := 0
 ## Set by the region every tick: people in the neighboring towns, and how
 ## much their hospitals' helipads and specialty centers lift care here.
 var region_pop := 0
@@ -716,6 +719,10 @@ func _roll_call(sim: CitySim) -> void:
 	var from := {}
 	if best != -1:
 		from = {"ref": "hospital:%d" % best, "pos": _xz(_door(sim, best))}
+	elif busy(-1) >= Balance.EMS_COUNTY_RIGS:
+		# Every county rig is out: the next county's answers, off the map.
+		mutual_aid += 1
+		return
 	else:
 		from = _county(sim, at)
 	if from.is_empty():
@@ -842,7 +849,7 @@ func to_dict() -> Dictionary:
 	var ts := {}
 	for id in trips:
 		ts[str(id)] = trips[id]
-	return {"hubs": hs, "trips": ts, "on_scene": on_scene, "county_calls": county_calls}
+	return {"hubs": hs, "trips": ts, "on_scene": on_scene, "county_calls": county_calls, "mutual_aid": mutual_aid}
 
 
 func from_dict(d: Dictionary) -> void:
@@ -865,3 +872,4 @@ func from_dict(d: Dictionary) -> void:
 		for v in ["hub", "t0", "until"]:
 			crew[v] = int(crew[v])
 	county_calls = int(d.get("county_calls", 0))
+	mutual_aid = int(d.get("mutual_aid", 0))
