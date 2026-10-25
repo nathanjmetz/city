@@ -57,15 +57,17 @@ func sync(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void
 		return
 	var ledger := sim.ledger()
 	var keys: Array = ledger.sorted
-	for key in keys:
+	var lot_refs: Array = ledger.refs  # "lot:" + each key
+	for i in keys.size():
+		var key: String = keys[i]
 		var b: Dictionary = sim.buildings[key]
 		if b.zone == ZoneMap.Zone.RESIDENTIAL:
 			# A home whose people are all here and that has its name: nothing
 			# to do (most homes, most of the time).
 			var here = _homes.get(key)
-			if here != null and (here as Array).size() == b.occ and (b.occ == 0 or names.has("lot:" + key)):
+			if here != null and (here as Array).size() == b.occ and (b.occ == 0 or names.has(lot_refs[i])):
 				continue
-		var ref: String = "lot:" + key
+		var ref: String = lot_refs[i]
 		if b.zone == ZoneMap.Zone.RESIDENTIAL:
 			var list: Array = _homes.get(key, [])
 			while list.size() < b.occ:
@@ -100,7 +102,7 @@ func sync(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void
 		_gone_sig = ledger.sig
 		_gone(sim, traffic)
 	if sim.tick_count % (SYNC_EVERY * 3) == SYNC_AT:
-		_hire(sim, keys, rng)
+		_hire(sim, keys, rng, lot_refs)
 
 
 ## Homes, names and jobs at buildings that are gone.
@@ -330,12 +332,14 @@ func _job_open(sim: CitySim, ref: String) -> bool:
 
 
 ## Working-age people without a job take one where there are openings.
-func _hire(sim: CitySim, keys: Array, rng: RandomNumberGenerator) -> void:
+func _hire(sim: CitySim, keys: Array, rng: RandomNumberGenerator, refs := []) -> void:
 	var open := []
-	for key in keys:
-		var b: Dictionary = sim.buildings[key]
-		if b.zone != ZoneMap.Zone.RESIDENTIAL and staff("lot:" + key) < b.cap:
-			open.append("lot:" + key)
+	for i in keys.size():
+		var b: Dictionary = sim.buildings[keys[i]]
+		if b.zone != ZoneMap.Zone.RESIDENTIAL:
+			var ref: String = refs[i] if not refs.is_empty() else "lot:" + keys[i]
+			if staff(ref) < b.cap:
+				open.append(ref)
 	if open.is_empty():
 		return
 	if not _seekers_ok:

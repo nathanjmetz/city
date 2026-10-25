@@ -1676,6 +1676,7 @@ func _home_part(slice: int) -> Dictionary:
 ## sort or filter out of the whole town on every pass. Worked out again only
 ## when a building is added or removed (homes and shops keep their zone).
 ##   sorted: every building's key, sorted
+##   refs: "lot:" + each of those keys, in the same order
 ##   slices: every building's key in each Economy slice, in building order
 ##   home_slices: the homes' keys in each Economy slice, in building order
 ##   by_zone: zone -> its buildings' keys, sorted
@@ -1703,12 +1704,14 @@ func ledger() -> Dictionary:
 	var sorted := keys.duplicate()
 	sorted.sort()
 	var by_zone := {}
+	var refs := []
 	for key in sorted:
 		var z := int(buildings[key].zone)
 		if not by_zone.has(z):
 			by_zone[z] = []
 		by_zone[z].append(key)
-	_ledger = {"sorted": sorted, "slices": slices, "home_slices": homes, "by_zone": by_zone, "sig": sig}
+		refs.append("lot:" + key)
+	_ledger = {"sorted": sorted, "refs": refs, "slices": slices, "home_slices": homes, "by_zone": by_zone, "sig": sig}
 	return _ledger
 
 
