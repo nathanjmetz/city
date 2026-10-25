@@ -114,7 +114,12 @@ const LIVERY := {
 	"police": [[Color(0.05, 0.05, 0.06), 1.0], [Color(0.93, 0.93, 0.92), 1.0]],
 	"taxi": [[Color(0.97, 0.76, 0.05), 3.0], [Color(0.91, 0.91, 0.90), 1.0]],  # cab yellow, or a white fleet
 	"taxi_old": [[Color(0.97, 0.76, 0.05), 3.0], [Color(0.91, 0.91, 0.90), 1.0]],
-	"garbage_truck": [[Color(0.93, 0.93, 0.92), 3.0], [Color(0.16, 0.36, 0.20), 1.0]],
+	# Haulers' colours: green, white, orange, blue.
+	"garbage_truck": [[Color(0.16, 0.36, 0.20), 3.0], [Color(0.93, 0.93, 0.92), 2.0], [Color(0.88, 0.45, 0.08), 1.0],
+		[Color(0.10, 0.24, 0.52), 1.0]],
+	# Box trucks: fleet white, rental yellow and orange, company red, blue and green.
+	"box_truck": [[Color(0.93, 0.93, 0.92), 5.0], [Color(0.96, 0.78, 0.10), 2.0], [Color(0.90, 0.45, 0.08), 1.0],
+		[Color(0.70, 0.08, 0.07), 1.0], [Color(0.10, 0.22, 0.50), 1.0], [Color(0.15, 0.35, 0.18), 0.5]],
 	"delivery_van": [[Color(0.93, 0.93, 0.92), 3.0], [Color(0.33, 0.22, 0.13), 1.0]],
 	# Ready-mix fleets: white drums with a coloured cab, or all one colour.
 	"concrete_mixer": [[Color(0.93, 0.93, 0.92), 3.0], [Color(0.92, 0.52, 0.05), 1.0], [Color(0.10, 0.22, 0.50), 1.0], [Color(0.70, 0.07, 0.07), 1.0]],

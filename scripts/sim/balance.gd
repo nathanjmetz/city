@@ -2253,6 +2253,19 @@ const HOSPITAL_TENURE_DAYS := 120
 ## ambulance crew spends with the patient before heading back.
 const EMS_CALLS_PER_PERSON_YEAR := 0.12
 const EMS_ON_SCENE_MINUTES := 15
+## Ambulances the county's EMS station has for a town without a hospital
+## (or when all of ours are out): a small Indiana county runs two or three
+## rigs. A call while they're all out goes to mutual aid from the next
+## county, off the map, so the highway never fills with ambulances (a
+## 1,600-person playtest town had 40 to 80 of them queued nose to tail,
+## look check, 2026-10-25).
+const EMS_COUNTY_RIGS := 2
+## A rig still out after this many ticks (each 0.1 s of driving: 25 minutes
+## at the wheel, several times a county run) has been lost: it's let go.
+const EMS_TRIP_MAX_TICKS := 15000
+## Next-county help takes this many ticks to arrive (a county rig from the
+## highway takes about 1,400; the next county is farther).
+const EMS_MUTUAL_DELAY := 900
 ## How much better care lifts the want to live here, at most (people stay,
 ## and families move in), and what the maternity ward adds to that.
 const CARE_DEMAND := 0.15

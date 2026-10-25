@@ -1776,7 +1776,7 @@ func drive_ticks(from: Dictionary, to: Dictionary, truck := false) -> float:
 ## arrived or given up (handled by its caller next tick).
 func trip_ids() -> Array:
 	var out := []
-	for c in cars + _waiting:
+	for c in cars + _waiting + flowing:
 		out.append(c.get("trip", c.id))
 	for p in parked:
 		if p.get("pending", false):
@@ -3192,6 +3192,8 @@ func _rest() -> void:
 func go(pid: int, to_ref: String, purpose: String, stay: int) -> bool:
 	if _sim == null or not _sim.people.people.has(pid):
 		return false
+	if _dirty:
+		_rebuild()  # a road built this tick: walks must not follow the old sidewalks
 	var p: Dictionary = _sim.people.people[pid]
 	var home_ref: String = "lot:" + p.home
 	var from_ref: String = home_ref if p.at == "" else p.at
@@ -3512,7 +3514,9 @@ func _walk_stop(pos: Vector3, kerb := false) -> Dictionary:
 		return {}
 	var seg: int = near.seg
 	var type: int = network.segments[seg].type
-	if RoadStyle.is_freeway(type) or not RoadStyle.TYPES[type].get("walk", true) \
+	# A road with lots but no sidewalks (a county road, the state highway) is
+	# walked along its shoulder (_walk_line); one with no lots at all is not.
+	if RoadStyle.is_freeway(type) or not RoadStyle.TYPES[type].lots \
 			or kerb and float(near.dist) > RoadStyle.half_width(type) + RoadStyle.CURB_WIDTH:
 		return {}  # in a lot or driveway, or a road with no sidewalks
 	var c := network.curve_of(seg)
@@ -3552,6 +3556,8 @@ func stroll(pid: int) -> bool:
 	var p: Dictionary = _sim.people.people[pid]
 	if p.at != "":
 		return false
+	if _dirty:
+		_rebuild()
 	var trails: Array = _sim.parks.trails.paths
 	if trails.is_empty():
 		return false
@@ -3875,13 +3881,14 @@ func _seg_len(sid: int) -> float:
 
 
 ## The middle of the sidewalk along a road, on one side (seen from a to b).
+## A country road has none: people walk its shoulder (FHWA: on the
+## shoulder, where there's no sidewalk), never out in the lawns beside it.
 func _walk_line(sid: int, side: int) -> PackedVector3Array:
 	var key := sid * 2 + (1 if side > 0 else 0)
 	if _walk_lines.has(key):
 		return _walk_lines[key]
 	var pts := network.sample_segment(sid, 16)
-	var off := RoadStyle.half_width(network.segments[sid].type) + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH \
-		+ RoadStyle.SIDEWALK_WIDTH * 0.5
+	var off := walk_offset(network.segments[sid].type)
 	var out := PackedVector3Array()
 	for i in pts.size():
 		var a := pts[maxi(i - 1, 0)]
@@ -3890,6 +3897,23 @@ func _walk_line(sid: int, side: int) -> PackedVector3Array:
 		out.append(Vector3(pts[i].x, 0.0, pts[i].z) + Vector3(-dir.z, 0.0, dir.x) * off * side)
 	_walk_lines[key] = out
 	return out
+
+
+## How far from a road's centre line people walk beside it: the middle of
+## the sidewalk; on a road without sidewalks the middle of a paved shoulder
+## (the state highway's 8 ft), the gravel shoulder of a paved county road,
+## or the edge of a gravel or dirt road itself.
+static func walk_offset(type: int) -> float:
+	var spec: Dictionary = RoadStyle.TYPES[type]
+	var hw := RoadStyle.half_width(type)
+	if spec.get("walk", true):
+		return hw + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH * 0.5
+	var shoulder: float = spec.get("shoulder", 0.0)
+	if shoulder > 0.0:
+		return hw - shoulder * 0.5
+	if spec.get("surface", "asphalt") == "asphalt":
+		return hw + 0.9  # the gravel strip RoadMesh lays along a country road
+	return maxf(hw - 0.6, 1.2)
 
 
 ## The part of a line between two shares of its length, in that order.

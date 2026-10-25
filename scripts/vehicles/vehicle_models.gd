@@ -40,6 +40,9 @@ const ORE := Color(0.45, 0.28, 0.20, 0.4)
 const COIL := Color(0.62, 0.63, 0.65, 0.4)
 const WOOD_DARK := Color(0.42, 0.33, 0.22, 0.4)
 const STRAP := Color(0.85, 0.62, 0.08, 0.4)
+## Ambulance red (the band) and Star of Life blue.
+const EMS_RED := Color(0.80, 0.07, 0.07, 0.4)
+const EMS_BLUE := Color(0.04, 0.24, 0.72, 0.4)
 
 ## Articulated vehicles: the tractor unit is drawn as `cab`, the trailer as
 ## `trailer`, hitched at `hitch` metres behind the front bumper. The trailer's
@@ -865,16 +868,63 @@ func _rural_mail() -> void:
 		_cyl(Vector3(0, 1.28, 4.9), Vector3(0, 1.28, 5.05), 0.38, TIRE, 10)  # spare on the tailgate
 
 
-func _ambulance() -> void:  # Type III module on a Ford E-450 cutaway
+## Type III module on a Ford E-450 cutaway, as Indiana EMS run them (KKK-A
+## 1822 / NFPA 1917 markings): a white module with a broad red band, the
+## blue Star of Life on the sides, back and roof (big enough to read from
+## the air), red and white warning lights at the module's corners and a
+## light bar on the cab. A line of plain white boxes read as box trucks and
+## a box truck read as an ambulance (look check, 2026-10-25).
+func _ambulance() -> void:
 	_van_body(7.0, 2.4, 2.4, 2.4, 3.0, PAINT)
 	_wheels([1.1, 5.1], 0.4, 1.2, 0.3)
 	for s in [-1.0, 1.0]:
-		_box(Vector3(s * 1.202, 1.25, 4.7), Vector3(0.004, 0.22, 4.6), Color(0.85, 0.2, 0.05, 0.4))
-		_box(Vector3(s * 1.202, 2.6, 4.7), Vector3(0.004, 0.12, 4.6), Color(0.85, 0.2, 0.05, 0.4))
-	_box(Vector3(0, 2.38, 2.25), Vector3(1.6, 0.1, 0.22), BEACON_RED)
-	for x in [-1.12, 1.12]:
-		_box(Vector3(x, 2.92, 2.45), Vector3(0.12, 0.12, 0.08), BEACON_RED)
-		_box(Vector3(x, 2.92, 6.98), Vector3(0.12, 0.12, 0.06), BEACON_RED)
+		# The red band down the module and the cab doors, a pinstripe above.
+		_box(Vector3(s * 1.203, 1.12, 4.7), Vector3(0.004, 0.42, 4.6), EMS_RED)
+		_box(Vector3(s * 1.203, 2.74, 4.7), Vector3(0.004, 0.12, 4.6), EMS_RED)
+		_box(Vector3(s * 1.203, 0.98, 1.55), Vector3(0.004, 0.26, 1.5), EMS_RED)
+		_star(Vector3(s * 1.205, 2.0, 5.75), Vector3(s, 0, 0), 0.62)
+		if not _lo:
+			# Side entry door and its window, ahead of the star.
+			_box(Vector3(s * 1.204, 1.75, 3.2), Vector3(0.004, 1.9, 0.04), DARK)
+			_box(Vector3(s * 1.205, 2.25, 3.65), Vector3(0.004, 0.45, 0.6), GLASS)
+	_star(Vector3(0, 3.004, 4.9), Vector3.UP, 1.5)  # on the roof
+	_star(Vector3(0, 2.15, 7.004), Vector3.BACK, 0.5)  # on the back doors
+	# A red band across the back, and the word over the cab in red.
+	_box(Vector3(0, 1.12, 7.003), Vector3(2.3, 0.42, 0.004), EMS_RED)
+	_box(Vector3(0, 2.72, 2.396), Vector3(1.6, 0.22, 0.004), EMS_RED)
+	# Cab light bar: red, clear, red.
+	_box(Vector3(0, 2.42, 1.95), Vector3(1.7, 0.12, 0.26), TRIM)
+	_box(Vector3(-0.5, 2.5, 1.95), Vector3(0.6, 0.1, 0.24), BEACON_RED)
+	_box(Vector3(0.5, 2.5, 1.95), Vector3(0.6, 0.1, 0.24), BEACON_RED)
+	_box(Vector3(0, 2.5, 1.95), Vector3(0.38, 0.1, 0.24), HEAD)
+	# Module corner lights, front and back, standing proud of the roof edge.
+	for x in [-1.08, 1.08]:
+		_box(Vector3(x, 2.88, 2.37), Vector3(0.22, 0.16, 0.06), BEACON_RED)
+		_box(Vector3(x, 2.88, 7.03), Vector3(0.22, 0.16, 0.06), BEACON_RED)
+		_box(Vector3(x * 1.11, 2.88, 2.6), Vector3(0.04, 0.16, 0.24), BEACON_RED)
+		_box(Vector3(x * 1.11, 2.88, 6.85), Vector3(0.04, 0.16, 0.24), BEACON_RED)
+	_box(Vector3(0, 2.88, 2.37), Vector3(0.3, 0.12, 0.06), HEAD)
+
+
+## The Star of Life: three crossed bars in EMS blue, flat on a face with
+## normal `n`, `size` metres tip to tip, with a white rim like the decal's.
+func _star(c: Vector3, n: Vector3, size: float) -> void:
+	var u := Vector3.UP if absf(n.y) < 0.5 else Vector3.BACK
+	u = (u - n * u.dot(n)).normalized()
+	var v := n.cross(u)
+	for k in 3:
+		var ang := PI / 3.0 * k
+		var a := u * cos(ang) + v * sin(ang)
+		_flat(c + n * 0.001, a, n, size, size * 0.3, PAINT)
+		_flat(c + n * 0.002, a, n, size * 0.86, size * 0.2, EMS_BLUE)
+
+
+## A flat strip on a face: centre, direction along it, the face's normal,
+## length and width.
+func _flat(c: Vector3, along: Vector3, n: Vector3, length: float, width: float, col: Color) -> void:
+	var a := along * length * 0.5
+	var b := n.cross(along).normalized() * width * 0.5
+	_quad(c - a - b, c + a - b, c + a + b, c - a + b, col, c - n)
 
 
 func _delivery_van() -> void:  # step van (Freightliner MT45 / Ford P1000)
@@ -922,6 +972,9 @@ func _md_cab(W: float, paint := PAINT) -> float:
 	return 3.0
 
 
+## A 26 ft box truck on a Freightliner M2: the box takes the fleet's colour
+## (white, rental yellow or orange, a company red or blue), with a dark rub
+## rail along the bottom, corner posts and a roll-up door at the back.
 func _box_truck() -> void:  # 26 ft box truck
 	var L := 10.4
 	_md_cab(2.45)
@@ -929,13 +982,19 @@ func _box_truck() -> void:  # 26 ft box truck
 	_loft([
 		[3.15, 1.0, 3.8, 3.9, 1.3, 1.3, 1.28],
 		[L, 1.0, 3.8, 3.9, 1.3, 1.3, 1.28],
-	], [_edges(WHITE, STEEL)], WHITE, Color(0.8, 0.8, 0.8, 0.4))
+	], [_edges(PAINT, STEEL)], PAINT, Color(0.8, 0.8, 0.8, 0.4))
 	_wheels([1.2, 7.9], 0.5, 1.2, 0.3)
 	_box(Vector3(1.1, 1.0, L + 0.01), Vector3(0.12, 0.2, 0.04), TAIL, true)
 	_box(Vector3(-1.1, 1.0, L + 0.01), Vector3(0.12, 0.2, 0.04), TAIL, true)
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * 1.302, 1.1, (3.15 + L) * 0.5), Vector3(0.01, 0.16, L - 3.15), DARK)  # rub rail
+		_box(Vector3(s * 1.29, 2.45, L - 0.04), Vector3(0.06, 2.9, 0.1), STEEL)  # corner posts
+		_box(Vector3(s * 1.29, 2.45, 3.19), Vector3(0.06, 2.9, 0.1), STEEL)
+	_box(Vector3(0, 2.4, L + 0.006), Vector3(2.3, 2.6, 0.01), STEEL)  # the roll-up door
 	if not _lo:
 		for y in [1.6, 2.2, 2.8, 3.4]:
-			_box(Vector3(0, y, L + 0.012), Vector3(2.4, 0.03, 0.01), STEEL)
+			_box(Vector3(0, y, L + 0.012), Vector3(2.3, 0.03, 0.01), DARK)
+		_box(Vector3(0, 0.95, L + 0.15), Vector3(2.2, 0.12, 0.3), DARK)  # step bumper
 
 
 func _dump_truck() -> void:  # tandem dump on a conventional chassis
