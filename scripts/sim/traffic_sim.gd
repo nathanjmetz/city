@@ -1836,7 +1836,9 @@ func _launch(car: Dictionary, lanes := {}) -> bool:
 		return false  # next door: walk
 	# Nor while another car is backing out of or turning into the same lot:
 	# drivers wait for the one already moving in the aisle.
-	if from_ref != "":
+	# (Stalls only: buses and trucks leave their bays and depots in turn.)
+	if from_ref != "" and not from_pl.is_empty() and car.get("from_spot", -1) >= 0 \
+			and car.from_spot < from_pl.spots.size() and from_pl.spots[car.from_spot].kind == "stall":
 		for other in cars:
 			if other.j == null or int(other.j.get("node", 0)) != -1 or other.id == car.id:
 				continue
@@ -2254,7 +2256,7 @@ func _reserve(pl: Dictionary, vid: int, truck: bool) -> int:
 	# A truck never squeezes into a car's 9 x 18 ft stall or a driveway: it
 	# backs into a dock or bay, or stands at the kerb out front as delivery
 	# trucks do.
-	var order := ["dock", "bay"] if truck else ["garage", "drive", "stall", "curb"]
+	var order := ["dock", "bay", "curb"] if truck else ["garage", "drive", "stall", "curb"]
 	for kind in order:
 		for i in pl.spots.size():
 			if pl.taken[i] == -1 and pl.spots[i].kind == kind and not pl.spots[i].get("stop_only", false):
