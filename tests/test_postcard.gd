@@ -31,6 +31,51 @@ func _init() -> void:
 		"and the town's size (%d, %d)" % [copy.stats.population, sim.stats.population])
 	_check(copy.streets.names.size() == sim.streets.names.size(), "and its street names")
 
+	# A picture (what neighbors are sent) is a postcard packed tighter: the
+	# neighbor's copy of the town comes out the same to the centimetre, from
+	# a town as it runs or as read from a save.
+	for source in ["running", "saved"]:
+		var c: Dictionary = card if source == "running" else JSON.parse_string(JSON.stringify(card, "", false, true))
+		var pic := Region.picture_of(c)
+		var from_card := Region.new_sim()
+		from_card.from_dict(RegionServer.unpack(RegionServer.pack(c)))
+		var from_pic := Region.new_sim()
+		from_pic.from_dict(Region.from_picture(RegionServer.unpack(RegionServer.pack(pic))))
+		var same := from_pic.lots.size() == from_card.lots.size() and from_pic.buildings.size() == from_card.buildings.size()
+		var worst := 0.0
+		for key in from_card.lots:
+			if not same:
+				break
+			var a: Dictionary = from_card.lots[key]
+			var b: Dictionary = from_pic.lots.get(key, {})
+			same = b.keys().size() == a.keys().size() and var_to_str(from_pic.buildings.get(key)) == var_to_str(from_card.buildings.get(key))
+			for k in a:
+				if not same:
+					break
+				if a[k] is Vector3:
+					worst = maxf(worst, (a[k] as Vector3).distance_to(b[k]))
+				elif k == "corners":
+					# The same outline: every point of it within 2 cm of the
+					# picture's, which keeps only the bends.
+					for q in a[k]:
+						var near := INF
+						var poly: PackedVector2Array = b[k]
+						for i in poly.size():
+							var cl := Geometry2D.get_closest_point_to_segment(q, poly[i], poly[(i + 1) % poly.size()])
+							near = minf(near, cl.distance_to(q))
+						worst = maxf(worst, near)
+				elif a[k] is float:
+					same = absf(a[k] - float(b[k])) < 0.011
+				else:
+					same = var_to_str(a[k]) == var_to_str(b[k])
+		_check(same and worst < 0.025 and from_pic.network.segments.size() == from_card.network.segments.size()
+			and int(from_pic.stats.population) == int(from_card.stats.population),
+			"a picture of a %s town gives the neighbor the same lots (within %.1f cm), buildings and roads as its postcard" % [source, worst * 100.0])
+		var card_n := RegionServer.pack(c).length()
+		var pic_n := RegionServer.pack(pic).length()
+		_check(pic_n * 3 < card_n * 2, "and is a third smaller or more (%d KB, postcard %d KB)" % [pic_n / 1000, card_n / 1000])
+	_check(not card.has("picture"), "making a picture leaves the postcard alone")
+
 	# The region keeps the full copy for the player while postcards come in.
 	var r := Region.new()
 	r.add_city("p1", "Ann")

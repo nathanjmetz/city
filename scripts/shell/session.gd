@@ -160,6 +160,12 @@ func join_region(server: String, code: String, password := "", new_account := fa
 	add_child(client)
 	LoadingScreen.open("Connecting to the region")
 	client.failed.connect(func(_reason): LoadingScreen.close())
+	# A big region comes in parts: the bar fills as they arrive (to a quarter;
+	# unpacking and drawing the towns fill the rest).
+	var joining := client
+	client.receiving.connect(func(f: float):
+		if not joining.is_joined:
+			LoadingScreen.progress(0.25 * f, "Getting the region (%d%%)" % roundi(f * 100.0)))
 	client.waiting.connect(func(_message):
 		_keep_token(server, code, client.token)
 		LoadingScreen.close())
