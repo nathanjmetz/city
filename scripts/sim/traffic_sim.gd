@@ -1776,7 +1776,7 @@ func drive_ticks(from: Dictionary, to: Dictionary, truck := false) -> float:
 ## arrived or given up (handled by its caller next tick).
 func trip_ids() -> Array:
 	var out := []
-	for c in cars + _waiting:
+	for c in cars + _waiting + flowing:
 		out.append(c.get("trip", c.id))
 	for p in parked:
 		if p.get("pending", false):
@@ -3514,7 +3514,9 @@ func _walk_stop(pos: Vector3, kerb := false) -> Dictionary:
 		return {}
 	var seg: int = near.seg
 	var type: int = network.segments[seg].type
-	if RoadStyle.is_freeway(type) or not RoadStyle.TYPES[type].get("walk", true) \
+	# A road with lots but no sidewalks (a county road, the state highway) is
+	# walked along its shoulder (_walk_line); one with no lots at all is not.
+	if RoadStyle.is_freeway(type) or not RoadStyle.TYPES[type].lots \
 			or kerb and float(near.dist) > RoadStyle.half_width(type) + RoadStyle.CURB_WIDTH:
 		return {}  # in a lot or driveway, or a road with no sidewalks
 	var c := network.curve_of(seg)

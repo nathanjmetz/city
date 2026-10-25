@@ -28,6 +28,7 @@ func _process(_delta: float) -> bool:
 	if _frames < 2:
 		return false
 	_check_alerts(_sim)
+	_check_shoulder(_sim)
 	_check_copies(_sim)
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
@@ -234,11 +235,85 @@ func _check_alerts(_s: CitySim) -> void:
 				overlap += 1
 	_check(overlap <= 2 and low.size() <= LotAlerts.MAX_BADGES, "low over a street the badges don't pile into a smear (%d, %d overlapping)" % [low.size(), overlap])
 	cam.queue_free()
+	# Stable: the same badges, in the same order, every time; power first.
+	_check(JSON.stringify(LotAlerts.group(alerts, null, Vector2(1600, 900))) == JSON.stringify(LotAlerts.group(alerts.duplicate(), null, Vector2(1600, 900))),
+		"the same alerts give the same badges")
+	var dry := []
+	for i in 80:
+		dry.append([Vector3(float(i) * 90.0, LotAlerts.HEIGHT, 0.0), "power" if i >= 77 else "water", "%04d" % i])
+	var shown := LotAlerts.group(dry, null, Vector2(1600, 900))
+	var power := 0
+	for g in shown:
+		power += 1 if g[1] == "power" else 0
+	_check(shown.size() == LotAlerts.MAX_BADGES and power == 3, "past the cap, power badges are kept before water (%d of 3)" % power)
+	var cam2 := Camera3D.new()
+	root.add_child(cam2)
+	cam2.global_position = Vector3(100, 300, 100)
+	cam2.look_at(Vector3(100, 0, 0))
+	var k1 := LotAlerts.view_key(cam2)
+	cam2.global_position += Vector3(0.5, 0.5, 0.0)
+	_check(LotAlerts.view_key(cam2) == k1, "a small drift of the camera doesn't regroup the badges")
+	cam2.global_position = Vector3(100, 1200, 100)
+	cam2.look_at(Vector3(100, 0, 0))
+	_check(LotAlerts.view_key(cam2) != k1, "a new distance band does")
+	cam2.queue_free()
+
+
+## A road with lots but no sidewalks: a real walker planned along it walks
+## its shoulder (walk_offset), not the lawn and not the lane.
+func _check_shoulder(sim: CitySim) -> void:
+	var rt := -1
+	for type in RoadStyle.TYPES.size():
+		var spec: Dictionary = RoadStyle.TYPES[type]
+		if spec.get("lots", false) and not spec.get("walk", true) and not RoadStyle.is_freeway(type) and rt < 0:
+			rt = type
+	_check(rt >= 0, "the game has a road with lots but no sidewalks")
+	var ok: bool = sim.apply({"type": "build_road", "start": [1200, 300], "ctrl": [1200, 450], "end": [1200, 600], "road": rt})
+	_check(ok, "a shoulder road was built for the walker")
+	if rt < 0 or not ok:
+		return
+	sim.traffic._rebuild()
+	var hw := RoadStyle.half_width(rt)
+	var a: Dictionary = sim.traffic._walk_stop(Vector3(1200.0 + hw + 3.0, 0.0, 360.0))
+	var b: Dictionary = sim.traffic._walk_stop(Vector3(1200.0 + hw + 3.0, 0.0, 540.0))
+	_check(not a.is_empty() and not b.is_empty(), "a home beside a road with no sidewalks has a place to start walking from")
+	if a.is_empty() or b.is_empty():
+		return
+	var pts: PackedVector3Array = sim.traffic._sidewalks(a, b)
+	var pid: int = sim.people.people.keys()[0]
+	var before: int = sim.traffic.walkers.size()
+	sim.traffic._walk(pid, pts, {})
+	_check(sim.traffic.walkers.size() == before + 1, "the walker is out on the road")
+	var worst := 0.0
+	for p in sim.traffic.walkers[sim.traffic.walkers.size() - 1].pts:
+		worst = maxf(worst, absf(absf(p.x - 1200.0) - TrafficSim.walk_offset(rt)))
+	_check(worst < 0.3 and pts.size() >= 2,
+		"the walker keeps to the shoulder, %.1f m from the centre line (off by at most %.2f m)" % [TrafficSim.walk_offset(rt), worst])
+	for i in 50:
+		sim.tick()
 
 
 ## Two copies of the town, saved and loaded, agree tick for tick, walkers,
-## ambulances and all.
+## ambulances and all. The live town keeps running beside the loaded copy
+## and they must still agree, with a rig out on a call at the snapshot.
 func _check_copies(sim: CitySim) -> void:
+	for i in 6000:
+		if not sim.healthcare.trips.is_empty():
+			break
+		sim.tick()
+	_check(not sim.healthcare.trips.is_empty(), "a rig is out on a call when the town is saved")
+	var in_flight := 0
+	var ids: Array = sim.traffic.trip_ids()
+	for t in sim.healthcare.trips:
+		if ids.has(t):
+			in_flight += 1
+	_check(in_flight == sim.healthcare.trips.size(), "every rig the sim counts is on the road (%d of %d)" % [in_flight, sim.healthcare.trips.size()])
+	var cars_out := 0
+	for car in sim.traffic.cars + sim.traffic._waiting + sim.traffic.flowing:
+		if car.purpose == "medical" and car.kind == "ambulance":
+			cars_out += 1
+	_check(cars_out == sim.healthcare.busy(-1) - sim.healthcare.on_scene.size(),
+		"busy(-1) = %d matches the ambulances on the road (%d) plus crews at a scene (%d)" % [sim.healthcare.busy(-1), cars_out, sim.healthcare.on_scene.size()])
 	var snapshot = JSON.parse_string(JSON.stringify(sim.to_dict(), "", false, true))
 	var a := CitySim.new()
 	a.from_dict(snapshot)
@@ -247,15 +322,94 @@ func _check_copies(sim: CitySim) -> void:
 	for i in 600:
 		a.tick()
 		b.tick()
+		sim.tick()
 		if i == 200:
-			# A road built in both, mid-run, with people setting off.
-			for c in [a, b]:
+			# A road built in all, mid-run, with people setting off.
+			for c in [a, b, sim]:
 				c.apply({"type": "build_road", "start": [400.0, 300.0], "ctrl": [430.0, 330.0], "end": [460.0, 360.0], "join": true})
 	var ta := JSON.stringify(a.traffic.to_dict())
 	var tb := JSON.stringify(b.traffic.to_dict())
 	_check(ta == tb, "the copies' traffic and walkers agree after a save and load")
 	_check(JSON.stringify(a.healthcare.to_dict()) == JSON.stringify(b.healthcare.to_dict()), "and their ambulance calls")
 	_check(JSON.stringify(a.to_dict()) == JSON.stringify(b.to_dict()), "and the whole town")
+	_check(JSON.stringify(a.healthcare.to_dict()) == JSON.stringify(sim.healthcare.to_dict()),
+		"and the loaded copy's ambulance calls match the live town's as it carries on")
+	var da: Dictionary = Marshalls.base64_to_variant(a.traffic.to_dict().bin)
+	var dl: Dictionary = Marshalls.base64_to_variant(sim.traffic.to_dict().bin)
+	var diff := []
+	for k in dl:
+		if _canon(da.get(k)) != _canon(dl[k]):
+			diff.append(k)
+	_check(diff.is_empty(), "and its traffic matches the live town's (differs in: %s)" % str(diff))
+	_check_lost_rig(b)
+
+
+## Cut the road under a rig mid-trip: it is let go (never counted as out
+## for ever), the county's cap clears, and the next call gets a rig.
+func _check_lost_rig(sim: CitySim) -> void:
+	for i in 6000:
+		if not sim.healthcare.trips.is_empty():
+			break
+		sim.tick()
+	_check(not sim.healthcare.trips.is_empty(), "a rig is out before the road is cut")
+	if sim.healthcare.trips.is_empty():
+		return
+	var lost: int = sim.healthcare.trips.keys()[0]
+	var cut := {}
+	for car in sim.traffic.cars:
+		if car.get("trip", car.id) == lost:
+			cut[int(car.route[car.leg]) / 2] = true
+	for seg in cut:
+		sim.apply({"type": "remove_road", "seg": seg})
+	var calls: int = sim.healthcare.county_calls
+	for i in 2 * Balance.EMS_TRIP_MAX_TICKS:
+		sim.tick()
+	_check(not sim.healthcare.trips.has(lost), "the rig on the cut road is let go (%d roads cut)" % cut.size())
+	var stale := 0
+	for crew in sim.healthcare.on_scene:
+		if sim.tick_count - int(crew.t0) > Balance.EMS_TRIP_MAX_TICKS + Healthcare.CALL_EVERY:
+			stale += 1
+	for t in sim.healthcare.trips:
+		if sim.tick_count - int(sim.healthcare.trips[t].t0) > Balance.EMS_TRIP_MAX_TICKS + Healthcare.CALL_EVERY:
+			stale += 1
+	_check(stale == 0, "no rig or crew is older than the limit (%d)" % stale)
+	_check(sim.healthcare.county_calls > calls, "new calls still get a rig after the cut (%d before, %d after)" % [calls, sim.healthcare.county_calls])
+	# A rig the traffic simply loses track of is let go within a few calls.
+	for i in 6000:
+		if not sim.healthcare.trips.is_empty():
+			break
+		sim.tick()
+	if sim.healthcare.trips.is_empty():
+		_check(false, "another rig went out to lose")
+		return
+	var gone: int = sim.healthcare.trips.keys()[0]
+	for car in sim.traffic.cars.duplicate():
+		if car.get("trip", car.id) == gone:
+			sim.traffic.cars.erase(car)
+	for car in sim.traffic.flowing.duplicate():
+		if car.get("trip", car.id) == gone:
+			sim.traffic.flowing.erase(car)
+	for i in 3 * Healthcare.CALL_EVERY:
+		sim.tick()
+	_check(not sim.healthcare.trips.has(gone), "a rig the traffic lost is let go, not held out for ever")
+
+
+## A value as text with every dictionary's keys in order (a loaded town
+## fills them in a different order than a live one).
+func _canon(v) -> String:
+	if v is Dictionary:
+		var ks: Array = v.keys()
+		ks.sort_custom(func(x, y): return str(x) < str(y))
+		var out: String = "{"
+		for k in ks:
+			out += str(k) + ":" + _canon(v[k]) + ","
+		return out + "}"
+	if v is Array:
+		var out: String = "["
+		for e in v:
+			out += _canon(e) + ","
+		return out + "]"
+	return var_to_str(v)
 
 
 var _failed := false

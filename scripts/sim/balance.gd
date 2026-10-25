@@ -2260,6 +2260,12 @@ const EMS_ON_SCENE_MINUTES := 15
 ## 1,600-person playtest town had 40 to 80 of them queued nose to tail,
 ## look check, 2026-10-25).
 const EMS_COUNTY_RIGS := 2
+## A rig still out after this many ticks (each 0.1 s of driving: 25 minutes
+## at the wheel, several times a county run) has been lost: it's let go.
+const EMS_TRIP_MAX_TICKS := 15000
+## Next-county help takes this many ticks to arrive (a county rig from the
+## highway takes about 1,400; the next county is farther).
+const EMS_MUTUAL_DELAY := 900
 ## How much better care lifts the want to live here, at most (people stay,
 ## and families move in), and what the maternity ward adds to that.
 const CARE_DEMAND := 0.15

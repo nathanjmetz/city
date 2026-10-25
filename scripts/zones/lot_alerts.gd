@@ -35,7 +35,7 @@ var _tex := {}
 var _pool := []
 var _dirty := true
 var _alerts := []  # [world point, "power" | "water"]
-var _seen := Transform3D()  # the camera when the groups were last made
+var _seen := []  # the camera's band and cell when the groups were last made
 var _seen_size := Vector2.ZERO
 var _since := 0.0
 var _regroup := true
@@ -60,20 +60,30 @@ func _process(delta: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	var size := get_viewport().get_visible_rect().size
 	_since += delta
-	if cam != null and (cam.global_transform != _seen or size != _seen_size) and _since >= REGROUP_S:
+	if cam != null and _since >= REGROUP_S and (size != _seen_size or view_key(cam) != _seen):
 		_regroup = true
 	if not _regroup:
 		return
 	_regroup = false
 	_since = 0.0
 	if cam != null:
-		_seen = cam.global_transform
+		_seen = view_key(cam)
 		_seen_size = size
 	_show(group(_alerts, cam, size))
 
 
-## Every badge the town needs: [world point, "power" | "water"], one per
-## lot (power first, as nothing runs without it), in lot order.
+## The camera's distance band, its cell on the ground and the way it faces,
+## all rounded: the groups are only redone when this changes, so a slow drift
+## or a wobble costs nothing and badges don't shuffle every frame.
+static func view_key(cam: Camera3D) -> Array:
+	var p := cam.global_position
+	var band := floori(log(maxf(p.y, 1.0)) * 3.0)  # a new band every ~40% of height
+	var cell := maxf(p.y * 0.1, 5.0)
+	return [band, Vector2i(floori(p.x / cell), floori(p.z / cell)), (-cam.global_basis.z).snapped(Vector3.ONE * 0.1)]
+
+
+## Every badge the town needs: [world point, "power" | "water", lot key],
+## one per lot (power first, as nothing runs without it), in lot order.
 static func wanted(s: CitySim, empty_too: bool) -> Array:
 	var out := []
 	if not s.require_utilities:
@@ -87,28 +97,33 @@ static func wanted(s: CitySim, empty_too: bool) -> Array:
 		var served: Dictionary = s.services.served.get(key, {})
 		for u in ["power", "water"]:
 			if not served.get(u, false):
-				out.append([Terrain.lift(s.lots[key].pos + Vector3(0, HEIGHT, 0)), u])
+				out.append([Terrain.lift(s.lots[key].pos + Vector3(0, HEIGHT, 0)), u, key])
 				break
 	return out
 
 
 ## Badges merged where they'd overlap on screen: [[world point, kind,
-## count], ...], biggest groups first, at most MAX_BADGES. A group sits at
-## the middle of its lots and shows power if any of them lacks it. Off
+## count], ...], at most MAX_BADGES: groups with a power problem first, then
+## the biggest, ties broken by lot key so the same ones show every time. A
+## group sits over its lowest-keyed lot (so it doesn't drift as lots join
+## or leave) and shows power if any of them lacks it. Off
 ## screen and behind the camera are left out. Without a camera (headless)
 ## nothing merges, but the cap still holds.
 static func group(alerts: Array, cam: Camera3D, size: Vector2) -> Array:
 	var groups := []
 	if cam == null:
-		for a in alerts.slice(0, MAX_BADGES):
-			groups.append([a[0], a[1], 1])
+		var order := _order(alerts)
+		for i in mini(order.size(), MAX_BADGES):
+			groups.append([alerts[order[i]][0], alerts[order[i]][1], 1])
 		return groups
 	var px := maxf(size.y, 1.0) / 900.0
 	var cell_px := MERGE_PX * FAR_MERGE * px  # the widest a group reaches
 	var eye := cam.global_position
 	var cells := {}  # screen cell -> indexes into `at`
-	var at := []  # [screen point of the group's first badge, world sum, count, power?]
-	for a in alerts:
+	var at := []  # [screen point of the group's first badge, anchor point, count, power?, anchor key]
+	for ai in alerts.size():
+		var a: Array = alerts[ai]
+		var key := str(a[2]) if a.size() > 2 else "%08d" % ai
 		var p: Vector3 = a[0]
 		if cam.is_position_behind(p):
 			continue
@@ -127,18 +142,36 @@ static func group(alerts: Array, cam: Camera3D, size: Vector2) -> Array:
 						hit = gi
 		if hit == -1:
 			hit = at.size()
-			at.append([q, Vector3.ZERO, 0, false])
+			at.append([q, p, 0, false, key])
 			if not cells.has(cell):
 				cells[cell] = []
 			cells[cell].append(hit)
-		at[hit][1] += p
+		if key < at[hit][4]:
+			at[hit][1] = p
+			at[hit][4] = key
 		at[hit][2] += 1
 		at[hit][3] = at[hit][3] or a[1] == "power"
-	for g in at:
-		groups.append([g[1] / float(g[2]), "power" if g[3] else "water", g[2]])
-	groups.sort_custom(func(x, y): return x[2] > y[2])
-	return groups.slice(0, MAX_BADGES)
+	at.sort_custom(func(x, y):
+		if x[3] != y[3]:
+			return x[3]
+		if x[2] != y[2]:
+			return x[2] > y[2]
+		return x[4] < y[4])
+	for g in at.slice(0, MAX_BADGES):
+		groups.append([g[1], "power" if g[3] else "water", g[2]])
+	return groups
 
+
+## Alert indexes, power before water, then in lot-key order.
+static func _order(alerts: Array) -> Array:
+	var idx := range(alerts.size())
+	idx.sort_custom(func(x, y):
+		var px: bool = alerts[x][1] == "power"
+		var py: bool = alerts[y][1] == "power"
+		if px != py:
+			return px
+		return x < y)
+	return idx
 
 func _show(groups: Array) -> void:
 	while _pool.size() < groups.size():
