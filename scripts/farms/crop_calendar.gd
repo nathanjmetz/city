@@ -17,10 +17,10 @@ extends RefCounted
 ## Sources and the numbers used: docs/crop-calendar.md.
 ##
 ## The look of every kind of field for today goes in one small table
-## (texture(), 128 x 64 texels) that the ground shader, the farm field
-## shader and the close-up plants all read, so the date moving on costs one
-## small upload, not a rebuilt mesh. Rows 0-15 are the county's fields
-## (county_row), rows 16-63 the town's farms' fields (farm_row). Each row
+## (texture(), 128 x 128 texels, 64 KB) that the ground shader, the farm
+## field shader and the close-up plants all read, so the date moving on
+## costs one small upload, not a rebuilt mesh. Rows 0-15 are the county's
+## fields (county_row), rows 16-127 the town's farms' fields (farm_row). Each row
 ## has COLS timing columns of TEXELS texels:
 ##   0: plant colour (sRGB) and how much of the ground the plants cover
 ##   1: ground colour (sRGB: soil, residue, stubble) and how strongly standing
@@ -32,7 +32,7 @@ extends RefCounted
 const COLS := 32
 const TEXELS := 4
 const COUNTY_ROWS := 16
-const ROWS := 64
+const ROWS := 128
 const DAYS := 365.0
 const ROW_M := 0.762  # 30 inch rows
 const NARROW_M := 0.381  # 15 inch rows
@@ -714,6 +714,11 @@ static func county_row(row: int, year: int) -> Dictionary:
 	if row == 13:
 		return {"crop": "hay", "prev": "hay", "next": "hay", "practice": NO_TILL, "cover": false,
 			"cover_prev": false, "narrow": false}
+	if row == 15:
+		# No county field uses it: bare ground, for a farm crop the county
+		# never grows (county_row_like).
+		return {"crop": "", "prev": "", "next": "", "practice": NO_TILL, "cover": false, "cover_prev": false,
+			"narrow": false}
 	return {"crop": "pasture", "prev": "pasture", "next": "pasture", "practice": NO_TILL, "cover": false,
 		"cover_prev": false, "narrow": false}
 
@@ -742,7 +747,16 @@ static var _year := -999
 static var _want_day := 196.0  # mid July until a town sets the date
 static var _want_year := 1
 static var _cursor := ROWS
-static var _plans := {}  # (row facts hash, col, year) -> plan
+## The date each row was last filled for (day, year): a date that moves on
+## part way through a pass leaves the rows already passed on the old date,
+## and the pass goes round again for them.
+static var _stamp := PackedVector2Array()
+## (row facts hash, col) -> plan, for _plans_year. Cleared when the year
+## turns, and capped at one plan per table cell (PLANS_CAP); sizes in
+## docs/crop-calendar.md (Cost).
+static var _plans := {}
+static var _plans_year := -999
+const PLANS_CAP := ROWS * COLS
 ## Farm field rows in use: spec key -> row, and row -> spec.
 static var _farm_rows := {}
 static var _farm_specs := {}
@@ -757,6 +771,8 @@ static func texture() -> ImageTexture:
 	if _tex == null:
 		_img = Image.create(COLS * TEXELS, ROWS, false, Image.FORMAT_RGBA8)
 		_tex = ImageTexture.create_from_image(_img)
+		_stamp.resize(ROWS)
+		_stamp.fill(Vector2(-1.0, -999.0))
 		refresh(true)
 	return _tex
 
@@ -777,15 +793,21 @@ static func today() -> Vector2:
 	return Vector2(_want_day, _want_year)
 
 
-## A row for a farm field with these facts (allocates one if new). Returns
-## -1 when every farm row is taken (the field then borrows a county row).
+## Whether the table is still catching up with the date.
+static func busy() -> bool:
+	return _cursor < ROWS
+
+
+## A row for a farm field with these facts (allocates one if new). When
+## every farm row is taken the field borrows the county row nearest its
+## facts: the same crop this year, never another crop.
 static func farm_row(crop: String, prev: String, practice: int, cover: bool, cover_prev: bool) -> int:
 	var key := "%s|%s|%d|%d|%d" % [crop, prev, practice, int(cover), int(cover_prev)]
 	if _farm_rows.has(key):
 		return _farm_rows[key]
 	var row := COUNTY_ROWS + _farm_rows.size()
 	if row >= ROWS:
-		return -1
+		return county_row_like(crop, prev, practice, cover, cover_prev)
 	_farm_rows[key] = row
 	_farm_specs[row] = {"crop": crop, "prev": prev, "next": "", "practice": practice, "cover": cover,
 		"cover_prev": cover_prev, "narrow": practice != CHISEL}
@@ -793,6 +815,23 @@ static func farm_row(crop: String, prev: String, practice: int, cover: bool, cov
 	_fill_row(row)
 	_tex.update(_img)
 	return row
+
+
+## The county row (this year) growing `crop`, with as many of the other
+## facts as one has; row 15 (bare ground) for a crop the county never grows.
+static func county_row_like(crop: String, prev: String, practice: int, cover: bool, cover_prev: bool) -> int:
+	var best := COUNTY_ROWS - 1
+	var score := -1
+	for row in COUNTY_ROWS - 1:
+		var s := county_row(row, _want_year)
+		if s.crop != crop:
+			continue
+		var k := (4 if s.prev == prev else 0) + (2 if s.practice == practice else 0) \
+			+ (1 if s.cover == cover and s.cover_prev == cover_prev else 0)
+		if k > score:
+			score = k
+			best = row
+	return best
 
 
 ## How many farm rows are in use.
@@ -804,6 +843,9 @@ static func farm_rows_used() -> int:
 static func clear_farm_rows() -> void:
 	_farm_rows.clear()
 	_farm_specs.clear()
+	for row in range(COUNTY_ROWS, mini(ROWS, _stamp.size())):
+		_stamp[row] = Vector2(-1.0, -999.0)
+		states.erase(row)
 
 
 static func spec(row: int, year: int) -> Dictionary:
@@ -818,38 +860,52 @@ static func refresh(all := false, budget_ms := 1.0) -> bool:
 	if _tex == null:
 		texture()
 		return true
-	if _cursor >= ROWS and not all:
-		return false
 	if all:
 		_cursor = 0
+	if _cursor >= ROWS:
+		return false
 	var start := Time.get_ticks_usec()
+	var want := Vector2(_want_day, _want_year)
+	var changed := false
 	while _cursor < ROWS:
-		_fill_row(_cursor)
+		if _stamp[_cursor] != want:
+			_fill_row(_cursor)
+			changed = true
 		_cursor += 1
+		if _cursor >= ROWS:
+			# Rows passed before the date moved on: go round again for them.
+			for r in ROWS:
+				if _stamp[r] != want:
+					_cursor = r
+					break
 		if not all and Time.get_ticks_usec() - start > budget_ms * 1000.0:
 			break
 	if _cursor >= ROWS:
 		_day = _want_day
 		_year = _want_year
 		version += 1
-	_tex.update(_img)
-	return true
+	if changed:
+		_tex.update(_img)
+	return changed
 
 
 static func _fill_row(row: int) -> void:
+	_stamp[row] = Vector2(_want_day, _want_year)
 	var sp := spec(row, _want_year)
 	var out := []
 	if sp.is_empty():
 		states[row] = out
 		return
+	if _plans_year != _want_year or _plans.size() >= PLANS_CAP:
+		_plans.clear()
+		_plans_year = _want_year
+	var h := sp.hash()
 	for col in COLS:
 		var u := (col + 0.5) / COLS
-		var key := Vector3i(sp.hash(), col, _want_year)
+		var key := Vector2i(h, col)
 		var p: Dictionary = _plans.get(key, {})
 		if p.is_empty():
 			p = plan(sp.crop, sp.prev, sp.next, sp.practice, sp.cover, sp.cover_prev, u, _want_year, sp.narrow)
-			if _plans.size() > 8192:
-				_plans.clear()
 			_plans[key] = p
 		var s := state(p, _want_day)
 		out.append(s)
@@ -879,23 +935,31 @@ static func state_at(row: int, col: int) -> Dictionary:
 ## (keep in step with hash32, county_field and county_slot above).
 const GLSL := """
 uniform sampler2D crop_table : filter_nearest;
-uint crop_hash(ivec2 c, uint salt) {
-	uint h = uint(c.x + 65536) * 2376512323u + uint(c.y + 65536) * 3625334849u + salt * 3407524639u;
+// The hash needs all 32 bits: highp throughout, so a phone's WebGL2 (where
+// a fragment shader's int and uint default to mediump, 16 bits) picks the
+// same crop as the desktop. Returned through an out highp, not a return
+// value, so no default precision can narrow it on the way.
+void crop_hash(highp ivec2 c, highp uint salt, out highp uint h) {
+	highp uint x = uint(c.x + 65536);
+	highp uint y = uint(c.y + 65536);
+	h = x * 2376512323u + y * 3625334849u + salt * 3407524639u;
 	h = h ^ (h >> 13u);
 	h = h * 1540483477u;
 	h = h ^ (h >> 15u);
-	return h;
 }
-float crop_h01(ivec2 c, uint salt) {
-	return float(crop_hash(c, salt) & 16777215u) / 16777216.0;
+highp float crop_h01(highp ivec2 c, highp uint salt) {
+	highp uint h;
+	crop_hash(c, salt, h);
+	highp float v = float(h & 16777215u) / 16777216.0;
+	return v;
 }
 // x, z: the field; w: 1 when its rows run north-south.
-ivec3 crop_field(vec2 r) {
-	vec2 qf = floor(r / 804.0);
-	ivec2 q = ivec2(qf);
-	ivec2 sub = ivec2(floor((r / 804.0 - qf) * 2.0));
-	float t = crop_h01(q, 1u);
-	ivec2 id = q * 2;
+ivec3 crop_field(highp vec2 r) {
+	highp vec2 qf = floor(r / 804.0);
+	highp ivec2 q = ivec2(qf);
+	highp ivec2 sub = ivec2(floor((r / 804.0 - qf) * 2.0));
+	highp float t = crop_h01(q, 1u);
+	highp ivec2 id = q * 2;
 	if (t < 0.35) {
 		id += sub;
 	} else if (t < 0.6) {
@@ -903,7 +967,7 @@ ivec3 crop_field(vec2 r) {
 	} else if (t < 0.85) {
 		id.y += sub.y;
 	}
-	float dd = crop_h01(id, 2u);
+	highp float dd = crop_h01(id, 2u);
 	bool ns = dd < 0.5;
 	if (t >= 0.35 && t < 0.6) {
 		ns = dd < 0.8;
@@ -913,9 +977,9 @@ ivec3 crop_field(vec2 r) {
 	return ivec3(id, ns ? 1 : 0);
 }
 // Row and column of a county field in the table.
-ivec2 crop_slot(ivec2 id) {
-	float s = crop_h01(id, 3u);
-	float h2 = crop_h01(id, 4u);
+ivec2 crop_slot(highp ivec2 id) {
+	highp float s = crop_h01(id, 3u);
+	highp float h2 = crop_h01(id, 4u);
 	int col = int(crop_h01(id, 5u) * 32.0);
 	int row = 0;
 	if (s < 0.03) {

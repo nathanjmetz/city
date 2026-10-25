@@ -15,6 +15,9 @@ var _cows := MultiMeshInstance3D.new()  # beef herds on pasture
 var _trees := TreeField.new()
 var _mats := {}
 var _year := -1
+## Whether a field borrows a county row (CropCalendar.farm_row ran out):
+## those rows' crops follow the year, so the fields are redrawn when it turns.
+var _borrowing := false
 var _plants: CropPlants
 var _signs := {}  # "farm:<id>" -> the farm's sign by the road
 
@@ -43,11 +46,15 @@ func _process(_delta: float) -> void:
 	var t0 := Perf.now()
 	_sync_date()
 	CropCalendar.refresh(false, 1.0)
-	# The crops in the fields change each January, when the farms plan.
+	Perf.add("frame.crop_table", t0)
+	# The crops in the fields change each January when the farms plan, and
+	# that redraws them (farms_changed); the table itself follows the date.
+	# Only a field on a borrowed county row needs redrawing as the year turns.
 	var year := Seasons.year(sim.tick_count)
 	if year != _year:
 		_year = year
-		_draw_fields()
+		if _borrowing:
+			_draw_fields()
 	Perf.add("frame.crops", t0)
 
 
@@ -104,7 +111,7 @@ static func slot_of(id: Variant, f: Dictionary, c: Vector2i) -> Vector2i:
 		practice = CropCalendar.RYE
 	var row := CropCalendar.farm_row(str(fl.crop), str(fl.prev), practice, bool(fl.cover), bool(fl.cover_prev))
 	var col := int(Farms._hash01(Farms.forty_of(c) + Vector2i(int(id) * 7, 3), 23) * CropCalendar.COLS)
-	return Vector2i(maxi(row, 0), clampi(col, 0, CropCalendar.COLS - 1))
+	return Vector2i(row, clampi(col, 0, CropCalendar.COLS - 1))
 
 
 ## Each farm's fields: 40-acre forties square to its farmhouse, crop rows
@@ -124,6 +131,8 @@ func _draw_fields() -> void:
 	# redraws find their rows ready; when they run short, start over.
 	if CropCalendar.farm_rows_used() > (CropCalendar.ROWS - CropCalendar.COUNTY_ROWS) * 3 / 4:
 		CropCalendar.clear_farm_rows()
+	_year = Seasons.year(sim.tick_count)
+	_borrowing = false
 	for id in sim.farms.farms:
 		var f: Dictionary = sim.farms.farms[id]
 		var trimmed: Dictionary = sim.farms.trim.get(id, {})
@@ -133,6 +142,7 @@ func _draw_fields() -> void:
 		for c in f.cells:
 			var fl := CropPlan.field(f, c)
 			var slot := slot_of(id, f, c)
+			_borrowing = _borrowing or slot.x < CropCalendar.COUNTY_ROWS
 			var col := CropFields.color(slot.x, slot.y)
 			if trimmed.has(c):
 				# A field a road ran through stops at the road's edge.

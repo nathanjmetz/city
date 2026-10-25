@@ -11,7 +11,7 @@ Nothing new is saved. Each field's look is worked out from:
 - **A timing seed.** How early in the county's planting and harvest this farmer gets to the field.
 - **The year.** One spring in four is wet and planting runs late; some summers run warm or cool.
 
-From those and the date, every field is a little different, and every player in a region sees the same field on the same day.
+From those and the date, every field is a little different, and every player in a region sees the same field on the same day. The graphics card works out each county field with the same 32-bit hash as the game (declared high precision, so a phone's browser gets the same crop as a desktop), and the close-up plants are placed and thinned in region metres, not each player's own view. `tools/crop_hash_check.gd` checks it: 65,536 county points out to 120 km, every farm field slot and the whole table, on the desktop and browser renderers; none may differ (2026-10-25: none did).
 
 ## The rules and the numbers
 
@@ -56,9 +56,11 @@ Measured by switching the new look on and off 8 times in each view and comparing
 | Close over beans, 40 m (High) | 3.4 ms, 0.65 M | 3.4 ms, 1.30 M | real bean plants |
 | Close over a farm and the fields round it, 60 m (High) | 3.4-3.6 ms, 2.0 M | 5.1-5.8 ms, 3.4 M | the worst case: plants on two farms and county fields at once |
 | Corn stalks in winter (High) | 3.7 ms, 0.59 M | 3.9 ms, 0.78 M | stalks standing in the snow |
-| Memory | | +32 KB texture, about +1-4 MB graphics and +3 MB RAM for the plants | |
+| Memory | | +64 KB texture, about +1-4 MB graphics and +3 MB RAM for the plants, 1-2.5 MB for the year's field plans (8 MB at most) | |
 
-CPU: the crop table is one 128 x 64 texture; a full pass takes about 2-4 ms, spread at 1 ms a frame, about every 5 seconds at normal speed (the farm field mesh used to be rebuilt every game month; now only when farms change or the year turns). Plants: about 0.3-0.5 ms a frame while tiles stream in; one 16 m tile takes 0.3 ms on average and 0.64 ms at worst, so no freeze. At Ultra, shadows from every plant tripled the triangles (6.6 to 14.9 M in the farm view), so plant shadows are corn only and Cinematic only.
+CPU: the crop table is one 128 x 128 texture (16 rows for the county's kinds of field, 112 for the town's farms; when those run out a field borrows the county row with its crop). A full pass takes about 2-6 ms, spread at 1 ms a frame, about every 5 seconds at normal speed; a date that moves on part way through a pass sends it round again for the rows it had passed. Each field's plan for the year (about 2 KB, measured) is kept until the year turns: one per table cell at most, so 8 MB at the very most and 1-2.5 MB for a town with a few farms.
+
+Cold fills, measured in a real window (`tools/crop_cold_fill.gd`, two farms): when a town loads, the table's first fill takes 6.4 ms and the farm fields' rows 1.8 ms, in one frame during loading. At a year turn every plan is new, and the table catches up at 1.2-1.5 ms a frame over about ten frames; no frame of the table's goes over 16 ms. The frame the farms plan their new crops is slow (about 150 ms here), but that is the farm field mesh being rebuilt, as it always was when farms change (it used to happen every game month as well); the year turning no longer redraws the fields a second time unless a field is on a borrowed county row. Plants: about 0.3-0.5 ms a frame while tiles stream in; one 16 m tile takes 0.3 ms on average and 0.64 ms at worst, so no freeze. At Ultra, shadows from every plant tripled the triangles (6.6 to 14.9 M in the farm view), so plant shadows are corn only and Cinematic only.
 
 ## Sliders
 

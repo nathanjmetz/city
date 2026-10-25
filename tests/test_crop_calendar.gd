@@ -179,22 +179,65 @@ func _init() -> void:
 	var t0 := Time.get_ticks_usec()
 	CropCalendar.set_date(6.6, 4)
 	var steps := 0
-	while not CropCalendar.refresh(false, 1.0) or CropCalendar.today() != Vector2(snappedf(CropCalendar.day_of_year(6.6), 0.5), 4) or steps == 0:
+	while CropCalendar.busy() and steps < 1000:
+		CropCalendar.refresh(false, 1.0)
 		steps += 1
-		if steps > 200:
-			break
 	print("table pass: %d frames, %.1f ms in all" % [steps, (Time.get_ticks_usec() - t0) / 1000.0])
+	_check(not CropCalendar.busy() and _table_on(6.6, 4), "the table catches up a frame at a time")
+
+	# A date that moves on part way through a pass: the rows already passed
+	# are filled again, so none is left on the old date.
+	CropCalendar.set_date(9.0, 4)
+	CropCalendar.refresh(false, 0.0)  # one row, then the frame's time is up
+	_check(CropCalendar.busy(), "a pass part way")
+	CropCalendar.set_date(4.2, 4)
+	steps = 0
+	while CropCalendar.busy() and steps < 1000:
+		CropCalendar.refresh(false, 0.0)
+		steps += 1
+	_check(_table_on(4.2, 4), "a date jump mid-pass leaves no row on the old date")
+
+	# The plans are kept for one year only, and never more than one a cell.
+	CropCalendar.set_date(1.0, 5)
+	CropCalendar.refresh(true)
+	_check(CropCalendar._plans_year == 5 and CropCalendar._plans.size() <= CropCalendar.PLANS_CAP
+		and CropCalendar._plans.size() <= (CropCalendar.COUNTY_ROWS + CropCalendar.farm_rows_used()) * CropCalendar.COLS,
+		"the plan cache holds this year's plans only (%d)" % CropCalendar._plans.size())
+
+	# Every farm row taken: a new field borrows a county row with its crop,
+	# never another crop (row 0 is corn or beans depending on the year).
+	CropCalendar.clear_farm_rows()
+	var n := 0
+	while CropCalendar.farm_rows_used() < CropCalendar.ROWS - CropCalendar.COUNTY_ROWS:
+		CropCalendar.farm_row("hay", "x%d" % n, CropCalendar.NO_TILL, false, false)
+		n += 1
+	for yr in [5, 6]:
+		CropCalendar.set_date(1.0, yr)
+		for crop in ["corn", "soybeans", "wheat", "hay", "pasture"]:
+			var r := CropCalendar.farm_row(crop, "corn", CropCalendar.CHISEL, false, false)
+			_check(r >= 0 and r < CropCalendar.COUNTY_ROWS and CropCalendar.spec(r, yr).crop == crop,
+				"with the farm rows full, %s in year %d borrows a %s row (%d)" % [crop, yr, crop, r])
+	var odd := CropCalendar.farm_row("orchard", "", CropCalendar.NO_TILL, false, false)
+	_check(odd == CropCalendar.COUNTY_ROWS - 1 and CropCalendar.spec(odd, 6).crop == "", "and a crop the county never grows gets bare ground")
+	CropCalendar.clear_farm_rows()
+	CropCalendar.set_date(6.6, 4)
+	CropCalendar.refresh(true)
 
 	# A town's farm fields look the same in two copies of the town and after
 	# a save and load: the look comes from saved facts and the date only.
 	var a_sim := _town()
 	var b_sim := _town()
+	# One field each with a rye cover crop, so the RYE override is checked.
+	for sim in [a_sim, b_sim]:
+		_add_cover(sim)
 	var a_look := _looks(a_sim)
 	_check(not a_look.is_empty(), "the farm has fields")
-	_check(a_look == _looks(b_sim), "two copies of the town show the same fields")
+	_check(a_look.any(func(l): return l[2].practice == CropCalendar.RYE), "a field with a rye cover crop is on a RYE row")
+	_check(a_look == _looks(b_sim), "two copies of the town show the same fields (slots, rows and looks)")
 	var back := CitySim.new()
 	back.from_dict(JSON.parse_string(JSON.stringify(a_sim.to_dict())))
 	_check(_looks(back) == a_look, "and the same after a save and load")
+	CropCalendar.clear_farm_rows()
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
@@ -213,8 +256,13 @@ func _town() -> CitySim:
 	return fm
 
 
-## Every farm cell's table slot and its look on a few days of the year.
+## Every farm cell as the game draws it, with this town's own table rows
+## (the farm rows are handed out afresh, farms and cells in order): the slot
+## FarmView.slot_of gives (row and column), the facts behind that row, the
+## table's state today and the look on a few days of the year.
 func _looks(sim: CitySim) -> Array:
+	CropCalendar.clear_farm_rows()
+	var year := int(CropCalendar.today().y)
 	var out := []
 	var ids := sim.farms.farms.keys()
 	ids.sort()
@@ -224,15 +272,55 @@ func _looks(sim: CitySim) -> Array:
 		cells.sort()
 		for c in cells:
 			var slot := FarmView.slot_of(id, f, c)
+			var sp := CropCalendar.spec(slot.x, year)
 			var fl := CropPlan.field(f, c)
-			var p := CropCalendar.plan(fl.crop, fl.prev, "", CropCalendar.farm_practice(int(id), f), fl.cover,
-				fl.cover_prev, (slot.y + 0.5) / CropCalendar.COLS, 4)
+			var rye := bool(fl.cover) or bool(fl.cover_prev)
+			_check_quiet(slot.x >= CropCalendar.COUNTY_ROWS and sp.crop == fl.crop and sp.prev == fl.prev
+				and (sp.practice == CropCalendar.RYE) == rye
+				and (rye or sp.practice == CropCalendar.farm_practice(int(id), f)),
+				"a farm cell's row holds its own facts (%s)" % str(c))
+			var p := CropCalendar.plan(sp.crop, sp.prev, sp.next, sp.practice, sp.cover, sp.cover_prev,
+				(slot.y + 0.5) / CropCalendar.COLS, year, sp.narrow)
 			var days := []
 			for d in [20.0, 140.0, 200.0, 260.0, 300.0]:
 				var s := CropCalendar.state(p, d)
 				days.append([s.stage, snappedf(s.height, 0.001), Color(s.plant).to_html()])
-			out.append([c, fl.crop, slot.y, days])
+			var now := CropCalendar.state_at(slot.x, slot.y)
+			out.append([c, slot, sp, days, [now.stage, snappedf(now.height, 0.001)]])
 	return out
+
+
+## Gives the town's first farm field a rye cover crop going in after harvest.
+func _add_cover(sim: CitySim) -> void:
+	var ids := sim.farms.farms.keys()
+	ids.sort()
+	var f: Dictionary = sim.farms.farms[ids[0]]
+	var cells: Array = f.cells.duplicate()
+	cells.sort()
+	var k := CropPlan.field_of(cells[0])
+	if not f.has("fields"):
+		f.fields = {}
+	var fl: Dictionary = CropPlan.field(f, cells[0]).duplicate()
+	fl.cover = true
+	f.fields[k] = fl
+
+
+## Whether every row of the table shows this date.
+func _table_on(months: float, year: int) -> bool:
+	var day := snappedf(CropCalendar.day_of_year(months), 0.5)
+	for row in CropCalendar.ROWS:
+		var sp := CropCalendar.spec(row, year)
+		if sp.is_empty():
+			continue
+		for col in [0, 13, 31]:
+			var p := CropCalendar.plan(sp.crop, sp.prev, sp.next, sp.practice, sp.cover, sp.cover_prev,
+				(col + 0.5) / CropCalendar.COLS, year, sp.narrow)
+			var want := CropCalendar.state(p, day)
+			var got := CropCalendar.state_at(row, col)
+			if got.is_empty() or got.stage != want.stage or absf(float(got.height) - float(want.height)) > 0.0001:
+				print("  row %d col %d: table %s, %s wanted" % [row, col, got.get("stage", "-"), want.stage])
+				return false
+	return true
 
 
 static func _median(a: Array) -> float:

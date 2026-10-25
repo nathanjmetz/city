@@ -245,9 +245,14 @@ void fragment() {
 	ivec2 slot = crop_slot(fld.xy);
 	float pick = crop_h01(fld.xy, 7u);
 	float across = fld.z == 1 ? r.x : r.y;
+	// The stripe width from the smooth position, not from `across`: where
+	// two fields' rows turn a corner, `across` jumps from r.x to r.y inside
+	// one 2x2 pixel block, and its fwidth would blur a line along the border.
+	vec2 rw = fwidth(r);
+	float aw = fld.z == 1 ? rw.x : rw.y;
 	vec3 to_eye = (INV_VIEW_MATRIX * vec4(VIEW, 0.0)).xyz;
 	float tilt = length(to_eye.xz) / max(abs(to_eye.y), 0.05);
-	vec3 crop = crop_look(slot, p, across, fwidth(across), tilt, mid);
+	vec3 crop = crop_look(slot, p, across, aw, tilt, mid);
 	// Each field a shade different (soil, variety, how it was sprayed).
 	crop *= (0.93 + 0.14 * pick) * (0.92 + 0.16 * mid);
 	col = mix(col, crop, smoothstep(0.3, 0.7, cover.b) * 0.92);

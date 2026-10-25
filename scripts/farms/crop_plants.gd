@@ -46,6 +46,8 @@ var _focus := Vector2.INF
 var _radius := RADIUS
 var _shadows := false
 var _farm_boxes := []  # [Rect2, farm id] (view coordinates)
+## What each farm's tiles were built from: farm id -> [Rect2, signature].
+var _farm_sigs := {}
 ## Last measured cost: tiles built and ms spent this frame (for the benches).
 var built_ms := 0.0
 var instances := 0
@@ -59,20 +61,50 @@ func setup(s: CitySim) -> void:
 	sim = s
 
 
-## The town's farms changed: their tiles are redrawn.
+## The town's farms changed (FarmView redrew its fields): only the tiles
+## under a farm whose fields, slots or place changed are redrawn, where it
+## was and where it is now.
 func fields_changed() -> void:
 	_farm_boxes.clear()
 	if sim == null:
 		return
+	var now := {}
 	for id in sim.farms.farms:
 		var f: Dictionary = sim.farms.farms[id]
 		var box := Rect2(Vector2(f.pos.x, f.pos.z), Vector2.ZERO)
+		var slots := []
+		var rows := {}
 		for c in f.cells:
 			for p in Farms.cell_corners(f, c):
 				box = box.expand(p)
+			var slot := FarmView.slot_of(id, f, c)
+			slots.append([c, slot])
+			rows[slot.x] = true
 		_farm_boxes.append([box.grow(4.0), id])
+		# The facts behind each row too: rows are handed out again when the
+		# table's farm rows are cleared, so a row number can change meaning.
+		var specs := []
+		for row in rows:
+			specs.append([row, CropCalendar.spec(row, int(CropCalendar.today().y))])
+		var sig := [f.pos, f.dir, slots, specs, sim.farms.trim.get(id, {})].hash()
+		now[id] = [box, sig]
+	for id in now:
+		if not _farm_sigs.has(id) or _farm_sigs[id][1] != now[id][1]:
+			_stale_under(now[id][0])
+			if _farm_sigs.has(id):
+				_stale_under(_farm_sigs[id][0])
+	for id in _farm_sigs:
+		if not now.has(id):
+			_stale_under(_farm_sigs[id][0])
+	_farm_sigs = now
+
+
+## Marks the built tiles over a farm's box (and its 30 m farmyard) stale.
+func _stale_under(box: Rect2) -> void:
+	var b := box.grow(32.0)
 	for t in _tiles:
-		_stale[t] = true
+		if Rect2(Vector2(t) * TILE, Vector2(TILE, TILE)).intersects(b):
+			_stale[t] = true
 
 
 static func enabled() -> bool:
@@ -331,7 +363,9 @@ func _emit(buf: PackedFloat32Array, p: Vector2, across: Vector2, along: Vector2,
 	var z := Vector3(along.x, 0.0, along.y)
 	z = (z - up * z.dot(up)).normalized()
 	var x := up.cross(z)
-	var seed := float(CropCalendar.hash32(k, roundi(p.dot(along) * 4.0), slot.y) & 255)
+	# The plant's seed from where it stands in the region, so every player
+	# sees the same plants in a field (p is in this player's view metres).
+	var seed := float(CropCalendar.hash32(k, roundi((p + Terrain.view_origin).dot(along) * 4.0), slot.y) & 255)
 	buf.append_array([x.x, up.x, z.x, p.x, x.y, up.y, z.y, y, x.z, up.z, z.z, p.y,
 		float(slot.x), float(slot.y), seed, 0.0])
 
@@ -342,7 +376,8 @@ func _emit(buf: PackedFloat32Array, p: Vector2, across: Vector2, along: Vector2,
 func _county_crop(c: Vector2) -> bool:
 	var r := c + Terrain.view_origin
 	var cov := Terrain.cover(r.x, r.y)
-	if cov.b < 0.45 + 0.15 * CropCalendar.h01(floori(c.x), floori(c.y), 9) or cov.r > 0.35 or cov.g > 0.03:
+	# The ragged edge is dithered in region metres, the same for every player.
+	if cov.b < 0.45 + 0.15 * CropCalendar.h01(floori(r.x), floori(r.y), 9) or cov.r > 0.35 or cov.g > 0.03:
 		return false
 	if Terrain.mow_weight(c.x, c.y) > 0.05 or Terrain.flat_weight(c.x, c.y) > 0.05:
 		return false
