@@ -47,7 +47,7 @@ static func street(pts: PackedVector3Array, type: int, mats: Dictionary, gaps :=
 		cuts := Vector2.ZERO) -> ArrayMesh:
 	var spec: Dictionary = RoadStyle.TYPES[type]
 	if RoadStyle.is_freeway(type):
-		return _oneway(pts, spec, mats, gaps)
+		return _oneway(pts, spec, mats, gaps, type)
 	if spec.get("rural", false) or (rural and spec.median == 0.0):
 		return _rural(pts, type, mats)
 	return _town(pts, type, mats, cuts)
@@ -68,7 +68,7 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 	var lane := 3.6
 	var y_mark := RoadStyle.Y_ASPHALT + 0.01
 	var layers := [
-		[spec.get("surface", "asphalt"), [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
+		[_pave(mats, type), [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
 		["curb", [[-hw - cw, -hw], [hw, hw + cw]], RoadStyle.Y_CURB, ""],
 	]
 	# Combined concrete curb and gutter (INDOT standard E 605-CCCG): a 2 ft
@@ -216,12 +216,12 @@ static func _rural(pts: PackedVector3Array, type: int, mats: Dictionary) -> Arra
 	var y_mark := RoadStyle.Y_ASPHALT + 0.01
 	var surface: String = spec.get("surface", "asphalt")
 	if surface != "asphalt":
-		return _build_layers(pts, [[surface, [[-hw, hw]], RoadStyle.Y_ASPHALT, ""]], pts, mats)
+		return _build_layers(pts, [[_pave(mats, type), [[-hw, hw]], RoadStyle.Y_ASPHALT, ""]], pts, mats)
 	var hm: float = spec.median * 0.5
 	var per_side: int = spec.lanes / 2
 	var edge: float = hm + 3.6 * per_side
 	var layers := [
-		["asphalt", [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
+		[_pave(mats, type), [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
 		["gravel", [[-hw - 1.8, -hw], [hw, hw + 1.8]], RoadStyle.Y_SIDEWALK, ""],
 		["white", [[-edge - 0.2, -edge - 0.05], [edge + 0.05, edge + 0.2]], y_mark, ""],
 	]
@@ -315,7 +315,7 @@ static func _post(st: SurfaceTool, c: Vector3, size: Vector3, basis: Basis) -> v
 
 ## Highways and ramps: shoulders, a yellow line on the left edge, a white
 ## line on the right, dashed lanes, and a concrete barrier each side.
-static func _oneway(pts: PackedVector3Array, spec: Dictionary, mats: Dictionary, gaps := {}) -> ArrayMesh:
+static func _oneway(pts: PackedVector3Array, spec: Dictionary, mats: Dictionary, gaps := {}, type := -1) -> ArrayMesh:
 	var hw: float = spec.width * 0.5
 	var left := -hw + 1.2
 	var right: float = left + 3.6 * spec.lanes
@@ -325,7 +325,7 @@ static func _oneway(pts: PackedVector3Array, spec: Dictionary, mats: Dictionary,
 		var off := left + 3.6 * k
 		dashes.append([off - 0.075, off + 0.075])
 	var layers := [
-		["asphalt", [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
+		[_pave(mats, type) if type >= 0 else "asphalt", [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
 		["yellow", [[left - 0.15, left]], y_mark, ""],
 		["white", [[right, right + 0.15]], y_mark, ""],
 	]
@@ -347,6 +347,21 @@ static func _oneway(pts: PackedVector3Array, spec: Dictionary, mats: Dictionary,
 	st.commit(mesh)
 	mesh.surface_set_material(mesh.get_surface_count() - 1, mats.curb)
 	return mesh
+
+
+## The material name for a road type's own pavement: the ageing one made for
+## it by the view's RoadSurface (mats["_pave"]) when there is one, else the
+## plain surface (asphalt, gravel, concrete, dirt, chip seal or brick).
+static func _pave(mats: Dictionary, type: int) -> String:
+	var key := "pave %d" % type
+	if mats.has(key):
+		return key
+	if mats.has("_pave"):
+		var m = mats["_pave"].call(type)
+		if m != null:
+			mats[key] = m
+			return key
+	return RoadStyle.TYPES[type].get("surface", "asphalt")
 
 
 ## The part of a polyline from `from` to `to` metres along it.
