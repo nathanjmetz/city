@@ -95,11 +95,16 @@ func _draw_walkers() -> void:
 		var dir: Vector3 = pose[1]
 		if dir.length() < 0.5:
 			dir = Vector3.FORWARD
-		_mm.set_instance_transform(n, Transform3D(Basis.looking_at(Vector3(dir.x, 0.0, dir.z).normalized(), Vector3.UP).scaled(build(int(w.person))), p))
+		var body := build(int(w.person))
+		_mm.set_instance_transform(n, Transform3D(Basis.looking_at(Vector3(dir.x, 0.0, dir.z).normalized(), Vector3.UP).scaled(body), p))
 		_mm.set_instance_color(n, Color.WHITE)
 		# Standing at the kerb, the phase stays put: feet together if it's 0.
 		var shirt: Color = SHIRTS[(hash(int(w.person)) >> 4) % SHIRTS.size()]
-		shirt.a = fposmod(float(pose[2]), STRIDE) / STRIDE
+		# Stride grows with height (about 0.41 of it in a walk), and each
+		# person's own gait a little longer or shorter, so a crowd doesn't
+		# step in time.
+		var stride: float = STRIDE * body.y * (0.92 + float((hash(int(w.person)) >> 12) & 15) / 15.0 * 0.16)
+		shirt.a = fposmod(float(pose[2]), stride) / stride
 		_mm.set_instance_custom_data(n, shirt)
 		n += 1
 	_mm.visible_instance_count = n
