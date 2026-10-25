@@ -164,6 +164,7 @@ func _drivers() -> void:
 				car.circled = car.trip
 				circles += 1
 		if i % 50 == 0:
+			_trucks_fit(t)
 			for car in t.parked:
 				if str(car.get("at_place", "")) == "svc:%d" % placed:
 					seen += 1
@@ -177,6 +178,12 @@ func _drivers() -> void:
 				else:
 					short += 1
 	_check(seen > 0, "shoppers park in the town's lot (%d sightings)" % seen)
+	var probe_lot := t.place("svc:%d" % placed)
+	var held := t._reserve(probe_lot, 999_999, true)
+	_check(held == -1, "a truck gets no car stall in a lot of stalls (%d)" % held)
+	if held != -1:
+		t._release(probe_lot.ref, held, 999_999)
+	_check(_truck_bad.is_empty(), "trucks never take car stalls or overlap at the kerb %s" % [_truck_bad.slice(0, 4)])
 	_check(circles == 0, "nobody drives out of the lot only to park in it again (%d)" % circles)
 	_check(Inspect.place_name(sim, "svc:%d" % placed).begins_with("Downtown"),
 		"a car's card names the lot, not its id (%s)" % Inspect.place_name(sim, "svc:%d" % placed))
@@ -293,6 +300,34 @@ func _shops() -> void:
 	_check(with_lot > 100, "most offices have a lot out back (%d of 240)" % with_lot)
 	var flats := SiteLayout.for_building(ZoneMap.Zone.RESIDENTIAL, 5, {"width": 30.0, "depth": 40.0}, 3, "apartments")
 	_check(flats.spots.is_empty(), "apartments with no drive drawn send residents to the curb")
+
+
+var _truck_bad := []
+
+
+## Trucks stand at a dock, a bay or the kerb, never in a car's stall or a
+## driveway; at the kerb no two vehicles overlap (Brawn saw a flatbed semi
+## and a cement mixer jammed into a shop's little lot, through each other).
+func _trucks_fit(t: TrafficSim) -> void:
+	var curb := []
+	for car in t.parked:
+		var pl := t.place(car.at_place)
+		if pl.is_empty() or car.spot >= pl.spots.size():
+			continue
+		var kind: String = pl.spots[car.spot].kind
+		if car.len > 6.5 and kind in ["stall", "drive", "garage"]:
+			_truck_bad.append([car.kind, kind, car.at_place])
+		if kind == "curb" and not car.get("hidden", false):
+			curb.append(car)
+	for a in curb.size():
+		for b in range(a + 1, curb.size()):
+			var ca: Dictionary = curb[a]
+			var cb: Dictionary = curb[b]
+			var ma: Vector3 = ca.pos - ca.face * ca.len * 0.5
+			var mb: Vector3 = cb.pos - cb.face * cb.len * 0.5
+			if ma.distance_to(mb) < (ca.len + cb.len) * 0.5 - 0.5 and absf(ca.face.dot(cb.face)) > 0.9 \
+					and absf((mb - ma).dot(Vector3(-ca.face.z, 0, ca.face.x))) < 1.5:
+				_truck_bad.append(["overlap at the kerb", ca.kind, cb.kind])
 
 
 ## A stall's painted rectangle, a hair inside its lines.
