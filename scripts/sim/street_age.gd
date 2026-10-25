@@ -120,9 +120,9 @@ static func cell_of(sim, id: int) -> Vector2i:
 
 
 ## What resurfacing `lane_m` lane-metres of this kind of road costs (gravel
-## is regraded from upkeep, not resurfaced).
+## and dirt are regraded from upkeep, not resurfaced).
 static func repave_cost(lane_m: float, type: int) -> int:
-	if type == RoadStyle.Type.GRAVEL:
+	if RoadStyle.unpaved(type):
 		return 0
 	return roundi(lane_m * Balance.STREET_REPAVE_PER_LANE_M)
 

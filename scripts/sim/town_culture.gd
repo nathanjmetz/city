@@ -251,7 +251,7 @@ static func _farm_frontage(sim) -> Dictionary:
 		var type := int(sim.network.segments[seg].get("type", 0))
 		# Nothing fronts a freeway or its ramps, an alley or a gravel farm road.
 		if type in [RoadStyle.Type.HIGHWAY, RoadStyle.Type.RAMP, RoadStyle.Type.RAMP2, RoadStyle.Type.FREEWAY2,
-				RoadStyle.Type.FREEWAY4, RoadStyle.Type.ALLEY, RoadStyle.Type.GRAVEL]:
+				RoadStyle.Type.FREEWAY4, RoadStyle.Type.ALLEY, RoadStyle.Type.GRAVEL, RoadStyle.Type.DIRT]:
 			continue
 		var rough: PackedVector3Array = sim.network.sample_segment(seg, 8)
 		var near_town := false
@@ -288,7 +288,8 @@ static func _farm_frontage(sim) -> Dictionary:
 						var mid: Vector3 = run[run.size() / 2][0]
 						# The nearest the middle of town, on the busiest road.
 						var through := 0.0 if type in [RoadStyle.Type.STREET, RoadStyle.Type.STREET_NARROW,
-							RoadStyle.Type.STREET_BIKE, RoadStyle.Type.STREET_ONEWAY] else 150.0
+							RoadStyle.Type.STREET_BIKE, RoadStyle.Type.STREET_ONEWAY, RoadStyle.Type.STREET_ONEWAY1,
+							RoadStyle.Type.BRICK, RoadStyle.Type.STREET_DIVIDED] else 150.0
 						var score := span * 0.25 + through - mid.distance_to(centre)
 						if score > best_score:
 							best_score = score

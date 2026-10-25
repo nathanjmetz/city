@@ -12,7 +12,8 @@ func _init() -> void:
 		_check(v[0] == g and v.size() >= 2, "%s menu starts with itself and has variants %s" % [RoadStyle.TYPES[g].name, v])
 
 	var mats := {}
-	for key in ["asphalt", "curb", "walk", "median", "yellow", "white", "gravel", "concrete", "bus"]:
+	for key in ["asphalt", "curb", "walk", "median", "yellow", "white", "gravel", "concrete", "bus", "dirt",
+			"chip seal", "brick"]:
 		mats[key] = StandardMaterial3D.new()
 	var line := PackedVector3Array([Vector3(0, 0, 0), Vector3(0, 0, -60), Vector3(0, 0, -120)])
 	for t in RoadStyle.TYPES.size():
@@ -71,6 +72,19 @@ func _init() -> void:
 	_check(TrafficSim.lane_offsets(RoadStyle.Type.STREET_ONEWAY, true) == PackedFloat32Array([-1.8, 1.8]),
 		"one-way street lanes are centred between the parking lanes")
 	_check(RoadStyle.TYPES[RoadStyle.Type.STREET_ONEWAY].lots, "homes and shops can face a one-way street")
+	_check(TrafficSim.lane_offsets(RoadStyle.Type.STREET_ONEWAY1, false) == PackedFloat32Array([0.0]),
+		"one-lane one-way runs down the middle between the parking lanes")
+	var o1 := CitySim.new()
+	o1.apply({"type": "build_road", "start": [0, 0], "ctrl": [100, 0], "end": [200, 0], "road": RoadStyle.Type.STREET_ONEWAY1})
+	o1.tick()
+	var a1 := {"seg": o1.network.segments.keys()[0], "at_frac": 0.8}
+	var b1 := {"seg": a1.seg, "at_frac": 0.2}
+	_check(o1.traffic._route(b1, a1).size() > 0 and o1.traffic._route(a1, b1).is_empty(), "one-lane one-way drives one way")
+	_check(RoadStyle.unpaved(RoadStyle.Type.DIRT) and RoadStyle.unpaved(RoadStyle.Type.GRAVEL)
+		and not RoadStyle.unpaved(RoadStyle.Type.CHIP_SEAL) and not RoadStyle.unpaved(RoadStyle.Type.BRICK),
+		"dirt and gravel are unpaved; chip seal and brick are paved")
+	var brick := RoadMesh.street(line, RoadStyle.Type.BRICK, mats)
+	_check(brick.surface_get_material(0) == mats.brick, "brick street is paved in brick")
 
 	# A center turn lane is painted, so the through lanes sit right beside it.
 	_check(TrafficSim.lane_offsets(RoadStyle.Type.AVENUE_TURN, false) == PackedFloat32Array([3.6]),

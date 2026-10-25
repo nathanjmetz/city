@@ -119,7 +119,7 @@ static func busy(type: int) -> bool:
 
 static func _zonable(type: int) -> bool:
 	var spec: Dictionary = RoadStyle.TYPES[type]
-	return spec.lots and spec.get("surface", "asphalt") != "gravel"
+	return spec.lots and not RoadStyle.unpaved(type)
 
 
 static func _near_industry(sim: CitySim, p: Vector2) -> bool:

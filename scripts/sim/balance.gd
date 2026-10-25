@@ -50,6 +50,10 @@ const ROAD_BUILD_PER_M := {
 	RoadStyle.Type.AVENUE_ONEWAY: 420, RoadStyle.Type.STRIP: 600, RoadStyle.Type.PARKWAY: 750,
 	RoadStyle.Type.FREEWAY2: 900, RoadStyle.Type.FREEWAY4: 1500, RoadStyle.Type.DIVIDED_HWY: 1100,
 	RoadStyle.Type.STATE_HWY: 300, RoadStyle.Type.RAMP2: 950, RoadStyle.Type.AVENUE_BUS: 480,
+	# Dirt is graded earth; chip seal is a cheap county surface; brick costs
+	# about twice asphalt to lay.
+	RoadStyle.Type.DIRT: 15, RoadStyle.Type.CHIP_SEAL: 70, RoadStyle.Type.STREET_ONEWAY1: 200,
+	RoadStyle.Type.BRICK: 450, RoadStyle.Type.STREET_DIVIDED: 330,
 }
 ## Road upkeep, dollars per lane-metre per month (about $10,000 a lane-mile
 ## a year, typical of US city budgets).
@@ -1750,7 +1754,7 @@ const TRAIL_TREE := [
 ## curb-to-curb pavers about $600 a metre of block plus planters and seating.
 const PLAZA_SHOPS := 6
 const PLAZA_TYPES := [RoadStyle.Type.STREET, RoadStyle.Type.STREET_NARROW, RoadStyle.Type.STREET_BIKE,
-	RoadStyle.Type.MAIN_STREET, RoadStyle.Type.STREET_ONEWAY]
+	RoadStyle.Type.MAIN_STREET, RoadStyle.Type.STREET_ONEWAY, RoadStyle.Type.STREET_ONEWAY1, RoadStyle.Type.BRICK]
 const PLAZA_PER_M := 600
 const PLAZA_BASE := 150_000
 const PLAZA_BUDGET := 400_000

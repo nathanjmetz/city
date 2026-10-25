@@ -275,7 +275,8 @@ func services_given(sim) -> Array:
 	for seg in sim.network.segments.values():
 		var t := int(seg.type)
 		have.streets = true
-		if not t in [RoadStyle.Type.GRAVEL, RoadStyle.Type.COUNTY, RoadStyle.Type.STATE_HWY]:
+		if not t in [RoadStyle.Type.GRAVEL, RoadStyle.Type.DIRT, RoadStyle.Type.CHIP_SEAL, RoadStyle.Type.COUNTY,
+				RoadStyle.Type.STATE_HWY]:
 			have.storm = true
 			break
 	if not sim.buildings.is_empty():

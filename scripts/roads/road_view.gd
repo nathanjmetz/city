@@ -55,6 +55,9 @@ var _mats := {
 	"pole": RoadStyle.material(Color(0.33, 0.27, 0.21)),
 	"wire": RoadStyle.material(Color(0.12, 0.12, 0.12)),
 	"concrete": Surfaces.concrete(Color(0.66, 0.65, 0.62)),
+	"dirt": Surfaces.lane(Color(0.50, 0.41, 0.30)),
+	"chip seal": Surfaces.chip_seal(),
+	"brick": Surfaces.brick(),
 	"apron": RoadStyle.material(Color(0.5, 0.44, 0.38)),  # tinted, textured-look concrete
 	"tunnel": RoadStyle.material(Color(0.1, 0.1, 0.12, 0.45), true),
 	"domes": Surfaces.concrete(Junction.DOMES_COLOR),
@@ -420,7 +423,8 @@ func _rebuild_all(gen: int) -> void:
 			if not plain.has(surface):
 				plain[surface] = SurfaceTool.new()
 				plain[surface].begin(Mesh.PRIMITIVE_TRIANGLES)
-			RoadMesh.add_disc(plain[surface], network.nodes[id], r, RoadStyle.Y_JUNCTION)
+			RoadMesh.add_disc(plain[surface], network.nodes[id], r, RoadStyle.Y_JUNCTION, 24,
+					Vector2(0.72, 0.0) if surface == "dirt" else Vector2.ZERO)
 			continue
 		RoadMesh.add_disc(st, network.nodes[id], r, RoadStyle.Y_JUNCTION)
 	for surface in plain:
@@ -592,13 +596,17 @@ static func _merge(meshes: Array, normals := false) -> ArrayMesh:
 	return st.commit()
 
 
-## The surface of a junction: gravel or concrete only if every road there is.
+## The surface of a junction: gravel, dirt, brick or concrete only if every
+## road there is. Dirt meeting gravel is gravel.
 func _junction_surface(node: int) -> String:
 	var surface := ""
 	for seg in network.segments_at(node):
 		var here: String = RoadStyle.TYPES[network.segments[seg].type].get("surface", "asphalt")
 		if surface != "" and here != surface:
-			return "asphalt"
+			if surface in ["gravel", "dirt"] and here in ["gravel", "dirt"]:
+				here = "gravel"
+			else:
+				return "asphalt"
 		surface = here
 	return surface if surface != "" else "asphalt"
 

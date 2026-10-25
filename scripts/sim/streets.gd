@@ -327,7 +327,7 @@ func _new_name(sim, id: int) -> String:
 		RoadStyle.Type.COUNTY:
 			var o: Vector2 = sim.terrain_offset
 			return county_name(a + o, b + o, courthouse if courthouse != Vector2.INF else o)
-		RoadStyle.Type.GRAVEL:
+		RoadStyle.Type.GRAVEL, RoadStyle.Type.DIRT, RoadStyle.Type.CHIP_SEAL:
 			return _first_free([], seed, "Road")
 	var suffix := _suffix(type)
 	var dir := (b - a).normalized()

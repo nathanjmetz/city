@@ -23,19 +23,22 @@ static func add_strip(st: SurfaceTool, pts: PackedVector3Array, from: float, to:
 
 
 ## A flat disc, used to fill road junctions.
-static func add_disc(st: SurfaceTool, center: Vector3, radius: float, y: float, steps := 24) -> void:
+## `uv`: the texture spot the whole disc shows (one spot across a dirt
+## road's wheel paths, so a dirt crossing reads as packed earth).
+static func add_disc(st: SurfaceTool, center: Vector3, radius: float, y: float, steps := 24, uv := Vector2.ZERO) -> void:
 	var c := Vector3(center.x, center.y + y, center.z)
 	for i in steps:
 		var a0 := TAU * i / steps
 		var a1 := TAU * (i + 1) / steps
-		_tri(st, [c, Vector2.ZERO],
-			[c + Vector3(cos(a0), 0.0, sin(a0)) * radius, Vector2.ZERO],
-			[c + Vector3(cos(a1), 0.0, sin(a1)) * radius, Vector2.ZERO])
+		_tri(st, [c, uv],
+			[c + Vector3(cos(a0), 0.0, sin(a0)) * radius, uv],
+			[c + Vector3(cos(a1), 0.0, sin(a1)) * radius, uv])
 
 
 ## A complete road of the given type (asphalt, median, markings, curbs and
 ## sidewalks) as one mesh. `mats` maps a name to a material: asphalt, curb,
-## walk, median, yellow, white, gravel, concrete.
+## walk, median, yellow, white, and each surface (gravel, concrete, dirt,
+## chip seal, brick).
 ## `gaps` leaves a one-way road's barrier out where a ramp opens off it:
 ## {side (+1/-1): [from, to] metres along pts}.
 ## `cuts`: how far from each end (start, end) a town street's painted lines
@@ -65,7 +68,7 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 	var lane := 3.6
 	var y_mark := RoadStyle.Y_ASPHALT + 0.01
 	var layers := [
-		["asphalt", [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
+		[spec.get("surface", "asphalt"), [[-hw, hw]], RoadStyle.Y_ASPHALT, ""],
 		["curb", [[-hw - cw, -hw], [hw, hw + cw]], RoadStyle.Y_CURB, ""],
 	]
 	# Combined concrete curb and gutter (INDOT standard E 605-CCCG): a 2 ft
@@ -144,10 +147,40 @@ static func _town(pts: PackedVector3Array, type: int, mats: Dictionary, cuts := 
 				any = true
 		add_strip(stalls, trimmed(pts, hw + 3.0), -lane_edge - 0.1, -lane_edge, y_mark)
 		add_strip(stalls, trimmed(pts, hw + 3.0), lane_edge, lane_edge + 0.1, y_mark)
+	if spec.oneway:
+		# Straight arrows down each lane, pointing the way traffic runs
+		# (MUTCD 3B.20), a car length in from each corner and every 60 m.
+		var at := hw + 12.0
+		while at < length - hw - 12.0:
+			for k in spec.lanes:
+				_arrow(stalls, pts, at, -lane_edge + lane * (k + 0.5), y_mark)
+			at += 60.0
+			any = true
 	if any:
 		stalls.commit(mesh)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, mats.white)
 	return mesh
+
+
+## A white straight-ahead arrow 8 ft long centred on offset `off`, its
+## tail `at` metres along the road and its head pointing along pts.
+static func _arrow(st: SurfaceTool, pts: PackedVector3Array, at: float, off: float, y: float) -> void:
+	var p0: Array = LotPlanner.point_at(pts, at)
+	var p1: Array = LotPlanner.point_at(pts, at + 2.4)
+	if p0.size() < 2 or p1.size() < 2:
+		return
+	var dir: Vector3 = p1[0] - p0[0]
+	dir.y = 0.0
+	if dir.length() < 0.5:
+		return
+	dir = dir.normalized()
+	var side := Vector3(-dir.z, 0.0, dir.x)
+	var base: Vector3 = p0[0] + side * off + Vector3(0, y, 0)
+	var neck := base + dir * 1.5
+	var tip := base + dir * 2.4
+	var w := 0.08
+	_quad(st, base - side * w, base + side * w, neck - side * w, neck + side * w, 0.0, 0.0)
+	_tri(st, [neck - side * 0.3, Vector2.ZERO], [neck + side * 0.3, Vector2.ZERO], [tip, Vector2.ZERO])
 
 
 ## A painted line 0.1 m wide from offset o0 at s0 metres along the road to

@@ -221,6 +221,40 @@ void fragment() {
 }
 """
 
+## Historic brick street, benchmarked against photos of Indiana brick
+## streets: 4 x 8 in red-brown paving brick laid across the street in
+## running bond, sand-filled joints, each brick a little different, darker
+## worn paths. Bricks under a couple of pixels blend to their average so
+## they don't shimmer. UV.y * 4 is metres along; UV.x * 4 is the fraction
+## across, and brick streets are 9 m (RoadStyle Brick street).
+const BRICK := """
+uniform vec4 base : source_color = vec4(0.42, 0.24, 0.18, 1.0);
+global uniform float snow;
+void fragment() {
+	vec2 p = world_pos.xz;
+	float close = clamp(1.0 - length(VERTEX) / 200.0, 0.0, 1.0);
+	float along = UV.y * 4.0 / 0.1;
+	float course = floor(along);
+	float across = UV.x * 4.0 * 9.0 / 0.2 + mod(course, 2.0) * 0.5;
+	vec2 cell = vec2(floor(across), course);
+	float h = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);
+	vec2 f = vec2(fract(across), fract(along));
+	vec2 fw = fwidth(vec2(across, along));
+	vec2 inside = smoothstep(vec2(0.0), fw + vec2(0.04, 0.08), min(f, 1.0 - f));
+	float joint = 1.0 - inside.x * inside.y;
+	float fine = clamp(2.0 - max(fw.x, fw.y) * 2.0, 0.0, 1.0);
+	vec3 brick = base.rgb * (0.8 + h * 0.32);
+	vec3 col = mix(base.rgb * 0.96, mix(brick, vec3(0.40, 0.36, 0.31), joint * 0.75), fine);
+	col *= 0.88 + texture(noise_soft, p / 14.0).r * 0.18;
+	col *= 1.0 + (texture(noise_grain, p / 0.5).r - 0.5) * 0.12 * close;
+	float cover = smoothstep(0.2, 0.6, snow + texture(noise_soft, p / 6.0).r * 0.3 - 0.15);
+	col = mix(col, vec3(0.80, 0.83, 0.88), cover * 0.9);
+	ALBEDO = col;
+	ROUGHNESS = 0.85;
+	SPECULAR = 0.3;
+}
+"""
+
 ## Dirt and crushed-limestone lanes (logging roads, lease roads), benchmarked
 ## against photos of Indiana farm lanes and skid roads: two darker packed
 ## wheel paths 1.8 m apart, a looser crown between them with weeds coming
@@ -395,6 +429,16 @@ static func concrete(color: Color, slabs := false) -> ShaderMaterial:
 
 static func gravel() -> ShaderMaterial:
 	return _make("gravel", GRAVEL, {})
+
+
+## Chip seal: the asphalt shader in the grey-tan of the stone chips.
+static func chip_seal() -> ShaderMaterial:
+	return _make("chip seal", ASPHALT, {"fresh": Color(0.30, 0.29, 0.27), "faded": Color(0.42, 0.40, 0.37),
+		"tar": Color(0.2, 0.19, 0.18)})
+
+
+static func brick() -> ShaderMaterial:
+	return _make("brick", BRICK, {})
 
 
 static func quarry() -> ShaderMaterial:

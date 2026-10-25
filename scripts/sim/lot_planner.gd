@@ -1263,7 +1263,7 @@ static func _nearest_piece(p: Vector2, pieces: Array) -> Array:
 static func _rank(type: int) -> int:
 	if type == RoadStyle.Type.ALLEY:
 		return Rank.LANE
-	return Rank.GRAVEL if RoadStyle.TYPES[type].get("surface", "") == "gravel" else Rank.PAVED
+	return Rank.GRAVEL if RoadStyle.unpaved(type) else Rank.PAVED
 
 
 static func _rect_dist(r: Rect2, p: Vector2) -> float:
