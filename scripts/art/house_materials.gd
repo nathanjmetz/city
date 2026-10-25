@@ -388,6 +388,14 @@ static func get_mat(key: String) -> Material:
 	return mat
 
 
+## The name a shared material was made under, or "" for one of its own.
+static func name_of(mat: Material) -> String:
+	for k in _cache:
+		if _cache[k] == mat:
+			return k
+	return ""
+
+
 static func _shader(body: String) -> ShaderMaterial:
 	if _soft == null:
 		_soft = Ground.noise(512, 0.012, 4, 71)
