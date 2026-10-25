@@ -6,14 +6,15 @@ extends RefCounted
 ## an oil company, so every system has real work to do.
 ##
 ## Sizes: "small" (about 1,000 people), "big" (about 10,000, the budget
-## target), "huge" (about 25,000, to see where things break).
+## target), "huge" (about 25,000, to see where things break), or a number
+## of blocks a side ("40": about 69,000; see tools/scale/scale_run.gd).
 
 const BLOCKS := {"small": 4, "big": 12, "huge": 20}
 const BLOCK := 140.0
 
 
 static func build(sim: CitySim, size := "big") -> void:
-	var n: int = BLOCKS.get(size, 12)
+	var n: int = int(size) if size.is_valid_int() else BLOCKS.get(size, 12)
 	var span := n * BLOCK
 	var x0 := -span / 2.0
 	var z0 := -span / 2.0
