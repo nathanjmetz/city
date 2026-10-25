@@ -344,11 +344,17 @@ func _plant(key: String, root: Node3D, planted: Array, labels := []) -> void:
 	Terrain.shift = Terrain.shift_for(self)
 	var frame := Transform3D(root.basis, root.position)
 	var trees := []
+	# Yard trees go in as saplings when the building is finished and grow
+	# with the game's years (TreeField, TreeKinds): the planting date is the
+	# building's own build date, so nothing new is saved.
+	var b: Dictionary = sim.buildings.get(key, {})
+	var when := {"planted": int(b.get("built", sim.tick_count)) + Construction.duration(
+		CitySim.PROFILE_OF_ZONE.get(int(b.get("zone", 0)), "house"))}
 	for t in planted:
 		var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
 		var at := frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])
 		at.origin.y = Terrain.ground_y(at.origin.x, at.origin.z) + t[0].y
-		trees.append([at, t[1], t[2]])
+		trees.append([at, t[1], t[2], when])
 	Terrain.shift = was
 	_trees.set_trees(key, trees)
 
