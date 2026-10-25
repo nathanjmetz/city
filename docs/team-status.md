@@ -20,6 +20,8 @@ When a helper hits a wall it writes its question here and stops. That task waits
 
 Nothing is running. Every unfinished piece is saved on a branch. To restart one, read its diff against main first; the PR or branch says what's left.
 
+**Also merged tonight:** #557 green lights (8 to 12 cars a green), #558 real signal heads, #559 people of different sizes and colours, #560 fewer walkers, #561 county roads to the horizon draw solid (Nathan's grey dashed line), #562 walkers step to their own stride.
+
 **Live:** #527 land preload, #528-#530 construction trucks and the builder's yard, #535, #537 crop calendar, #541 daylight, #542 trees, #544 town speed, #545 farm freeze, #546 farmsteads, #547 playtest list, #548 ground lines, #550 town life, #553 shared region (the host backs up the region before every update), #554 country road look.
 
 **Ready but waiting:**
@@ -91,6 +93,7 @@ A few helpers run at a time, never two on the same files.
      - Suspects: the "subdivision" profile (construction.gd:102-109 sends flatbeds with a bulldozer, sewer pipe and water main), and sites saved before #529 that still hold old trips or parked flatbeds.
      - The flatbed model always draws steel coils (vehicle_models.gd `_trailer_flat`), whatever the cargo.
      - Reproduce in Nathan's real save, or a town grown with the zone tool (PerfTown showed no construction trucks), before changing anything.
+     - Checked on 2026-10-25 in the playtester's saved town on today's code: the only construction trips were crew pickups, with no flatbeds. Likely an old-version region or a shop's steel flatbed. Ask Nathan for a screenshot if he sees it again.
   3. "at some distances, the ground looks correct. at closer distances, there is a very clear lined pattern on it." Later: "The lines only happened in grass. Or Fields." In fields this may be the crop rows (crop_calendar.gd crop_look: 30 in rows, shown when a row spans over about 3 px); check whether they are too sharp. Grass should have no rows (rowed=0), so grass lines are a separate bug. A 60 m desktop shot of town lawns looked clean; ask for a screenshot and check the browser renderer. The near-ground grass texture or detail tiling. #548 fixed the shadow stripes, so this is a different cause. Compare TerrainView's near LOD shader and grass detail at 40–100 m.
 
 *Waits for Nathan*
