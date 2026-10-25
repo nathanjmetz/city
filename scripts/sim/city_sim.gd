@@ -1167,15 +1167,21 @@ func tick() -> void:
 	Perf.add("sim.vegetation", t)
 	t = Perf.now()
 	if tick_count % MOVE_EVERY == 0:
+		var _q1 := Perf.now()
 		_move_in()
+		Perf.add("sim.people.move_in", _q1)
 	Perf.add("sim.people", t)
 	t = Perf.now()
 	if tick_count % MOVE_EVERY == 0:
 		# The homes' scan and the budget's buildings go a slice at a time; the
 		# budget only pays out on the hour (slice 0).
 		var slice := (tick_count / MOVE_EVERY) % Economy.SLICES
+		var _q2 := Perf.now()
 		update_stats(false, slice)
+		Perf.add("sim.stats.update_stats", _q2)
+		var _q3 := Perf.now()
 		economy.budget_step(self, slice)
+		Perf.add("sim.stats.budget", _q3)
 	Perf.add("sim.stats", t)
 	t = Perf.now()
 	if tick_count % GROW_EVERY == 0 and _replan_at == 0:
@@ -1317,7 +1323,9 @@ func tick() -> void:
 		charter.month(self)
 		timelapse.month(self)
 	if tick_count % TICKS_PER_HOUR == 0:
+		var _hh := Perf.now()
 		history.hour(self)
+		Perf.add("sim.stats.history", _hh)
 	if tick_count % TICKS_PER_HOUR == 30:
 		heritage.carry_out(self)
 		leaders.carry_out(self)
@@ -1426,8 +1434,12 @@ func tick() -> void:
 	t = Perf.now()
 	var prng := RandomNumberGenerator.new()
 	prng.seed = hash([city_seed, tick_count, "people"])
+	var _q4 := Perf.now()
 	people.sync(self, traffic, prng)
+	Perf.add("sim.people.sync", _q4)
+	var _q5 := Perf.now()
 	people.plan(self, traffic, prng)
+	Perf.add("sim.people.plan", _q5)
 	Perf.add("sim.people", t)
 	t = Perf.now()
 	education.trips(self)

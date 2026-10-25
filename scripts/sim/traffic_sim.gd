@@ -229,16 +229,25 @@ func _init(net: RoadNetwork) -> void:
 
 func step(sim: CitySim, rng: RandomNumberGenerator) -> void:
 	if _dirty:
+		var _rt := Perf.now()
 		_rebuild()
+		Perf.add("sim.traffic.rebuild", _rt)
 	_tick = sim.tick_count
 	_sim = sim
 	time += DT
+	var _pt := Perf.now()
 	_find_xings()
+	Perf.add("sim.traffic.xings", _pt); _pt = Perf.now()
 	_rest()
+	Perf.add("sim.traffic.parked_rest", _pt); _pt = Perf.now()
 	_step_flows()
+	Perf.add("sim.traffic.flows", _pt); _pt = Perf.now()
 	_spawn(sim, rng)
+	Perf.add("sim.traffic.spawn", _pt); _pt = Perf.now()
 	_drive(rng)
+	Perf.add("sim.traffic.drive", _pt); _pt = Perf.now()
 	_step_walkers()
+	Perf.add("sim.traffic.walkers", _pt)
 
 
 ## Whether household trips drive as flows now (a big town).
@@ -1129,6 +1138,13 @@ func _refresh_wcost() -> void:
 
 
 func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
+	var _wt := Perf.now()
+	var _wr = _plan_raw(starts, targets, lane, pen)
+	Perf.add("x.route_cars", _wt)
+	return _wr
+
+
+func _plan_raw(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 	if _wcost.size() != ways.size():
 		_refresh_wcost()
 	var best := INF
@@ -2354,6 +2370,13 @@ func parking_need(at: Vector3) -> Dictionary:
 ## Where a car parks when its own destination is full: the nearest lot with
 ## a free stall within a short walk, like CS2 drivers looking for parking.
 func _parking_near(pl: Dictionary, vid: int) -> Array:
+	var _wt := Perf.now()
+	var _wr = _parking_near_raw(pl, vid)
+	Perf.add("x.parking_search", _wt)
+	return _wr
+
+
+func _parking_near_raw(pl: Dictionary, vid: int) -> Array:
 	if _sim == null:
 		return []
 	_index_lots()
@@ -3086,6 +3109,13 @@ func _rest() -> void:
 ## Sends a person somewhere: on foot if it's close or their car isn't here,
 ## otherwise a walk to the car and a drive. False if they can't go now.
 func go(pid: int, to_ref: String, purpose: String, stay: int) -> bool:
+	var _wt := Perf.now()
+	var _wr = go_raw(pid, to_ref, purpose, stay)
+	Perf.add("x.trip_start", _wt)
+	return _wr
+
+
+func go_raw(pid: int, to_ref: String, purpose: String, stay: int) -> bool:
 	if _sim == null or not _sim.people.people.has(pid):
 		return false
 	var p: Dictionary = _sim.people.people[pid]
@@ -3549,6 +3579,13 @@ func _front_walk(pl: Dictionary) -> Dictionary:
 
 ## Sidewalk points between two lots' fronts (not including either end).
 func _sidewalks(la: Dictionary, lb: Dictionary) -> PackedVector3Array:
+	var _wt := Perf.now()
+	var _wr = _sidewalks_raw(la, lb)
+	Perf.add("x.route_walk", _wt)
+	return _wr
+
+
+func _sidewalks_raw(la: Dictionary, lb: Dictionary) -> PackedVector3Array:
 	_marks.clear()
 	var out := PackedVector3Array()
 	if la.seg == lb.seg and la.side == lb.side:
