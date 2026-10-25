@@ -427,7 +427,7 @@ func tick(sim: CitySim) -> void:
 		_shares(sim)
 	if minute == Balance.MAIL_FREIGHT_OUT_HOUR * 60 and weekday != 0:
 		_freight(sim, false)
-	if sim.tick_count % Balance.HUB_DECIDE_EVERY == 0 and not offices.is_empty():
+	if sim.tick_count % Balance.HUB_DECIDE_EVERY == Balance.ROUND_AT.mail and not offices.is_empty():
 		_decide(sim)
 
 

@@ -181,7 +181,7 @@ static func next_bay(w: Dictionary, depth := Balance.WAREHOUSE_BAY) -> PackedVec
 ## Where a warehouse goes when placed beside the road nearest `hit`: [front
 ## middle, dir toward the road, seg], or [] if no road with lots is near.
 static func site_near(network: RoadNetwork, hit: Vector3) -> Array:
-	var near := network.find_segment_near(hit, 120.0, 1.0)
+	var near := RoadIndex.segment_near(network, hit, 120.0, 1.0)
 	if near.is_empty() or not RoadStyle.TYPES[network.segments[near.seg].type].lots:
 		return []
 	var c := network.curve_of(near.seg)

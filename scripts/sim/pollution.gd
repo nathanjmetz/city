@@ -962,8 +962,7 @@ static func penalty(e: Dictionary) -> float:
 ## ground are, and owners put money toward cleaner equipment.
 func _daily(sim: CitySim) -> void:
 	var k := 1.0 - pow(0.5, 1.0 / Balance.WEAR_HALF_LIFE_DAYS)
-	var keys := sim.buildings.keys()
-	keys.sort()
+	var keys: Array = sim.ledger().sorted  # every building's key, sorted
 	for key in keys:
 		if int(sim.buildings[key].zone) != ZoneMap.Zone.RESIDENTIAL:
 			continue
