@@ -133,6 +133,7 @@ jobs:
           run_test tests/test_trails.gd
           run_test tests/test_power.gd
           run_test tests/test_vegetation.gd
+          run_test tests/test_tree_growth.gd
           run_test tests/test_education.gd
           run_test tests/test_telecom.gd
           run_test tests/test_banks.gd
@@ -154,6 +155,7 @@ jobs:
           run_test tests/test_crops.gd
           run_test tests/test_crop_calendar.gd
           run_test tests/test_farmsteads.gd
+          run_test tests/test_farm_view.gd
           run_test tests/test_stats.gd
           run_test tests/test_upgrade_art.gd
 
