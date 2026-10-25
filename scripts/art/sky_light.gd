@@ -109,8 +109,9 @@ func _ready() -> void:
 	# The browser's renderer (Compatibility) self-shadows flat ground at a
 	# low sun: fine diagonal stripes over every lawn, roof and road ("shadow
 	# acne"), which read as a grid of lines. A bigger normal offset clears
-	# them; Forward+ doesn't need it.
-	sun.shadow_normal_bias = 2.5 if RenderingServer.get_current_rendering_method() == "gl_compatibility" else 1.2
+	# them. Forward+ shows the same stripes at the default 1.2 on the
+	# desktop app, so it gets a big offset too.
+	sun.shadow_normal_bias = 2.5 if RenderingServer.get_current_rendering_method() == "gl_compatibility" else 3.0
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 	sun.directional_shadow_blend_splits = true
 	sun.directional_shadow_max_distance = 600.0
@@ -146,6 +147,8 @@ func _apply_quality() -> void:
 		else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 	if q.browser:
 		return  # the effects below need Forward+
+	# Low's coarse 2-split map stripes lawns even at 3.0; it needs more.
+	sun.shadow_normal_bias = 4.5 if t.splits == 2 else 3.0
 	env.ssao_enabled = t.ssao
 	env.ssao_radius = 1.5
 	env.ssao_intensity = 1.6
