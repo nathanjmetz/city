@@ -12,6 +12,12 @@ const POLE_H := 5.8
 const RED := Color(1.0, 0.12, 0.08)
 const YELLOW := Color(1.0, 0.72, 0.05)
 const GREEN := Color(0.15, 1.0, 0.45)
+const LENS_COLORS := [RED, YELLOW, GREEN]
+## How bright an unlit lens is: dark, but still reads as coloured glass.
+const LENS_DARK := 0.12
+const HEAD_W := 0.36
+const HEAD_H := 1.05
+const HEAD_D := 0.3
 
 var traffic: TrafficSim
 ## The road view, for where shaped town junctions make each road stop short.
@@ -23,6 +29,11 @@ var _paint_cache := {}
 var _poles: MultiMeshInstance3D
 var _arms: MultiMeshInstance3D
 var _heads: MultiMeshInstance3D
+## Three round lenses per head (red, yellow, green, top to bottom), the
+## lit one bright and the others dark, and hoods and a backplate around them.
+var _lenses: MultiMeshInstance3D
+var _hoods: MultiMeshInstance3D
+var _plates: MultiMeshInstance3D
 var _stops: MultiMeshInstance3D
 var _yields: MultiMeshInstance3D
 var _blades: MultiMeshInstance3D
@@ -40,10 +51,17 @@ func _ready() -> void:
 	metal.cull_mode = BaseMaterial3D.CULL_BACK
 	_poles = _batch(_cylinder(0.12, 1.0, 8), metal)
 	_arms = _batch(_box(Vector3(1.0, 0.18, 0.18)), metal)
+	# A 12-inch, three-section head (MUTCD 4D): dark housing, black
+	# backplate, a hood over each lens.
+	var housing := RoadStyle.material(Color(0.07, 0.07, 0.065))
+	_heads = _batch(_box(Vector3(HEAD_W, HEAD_H, HEAD_D)), housing)
+	_hoods = _batch(_box(Vector3(HEAD_W - 0.04, 0.025, 0.2)), housing)
+	_plates = _batch(_box(Vector3(HEAD_W + 0.24, HEAD_H + 0.24, 0.02)), housing)
 	var lamp := StandardMaterial3D.new()
 	lamp.vertex_color_use_as_albedo = true
 	lamp.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_heads = _batch(_box(Vector3(0.45, 1.2, 0.45)), lamp, true)
+	var lens := _cylinder(0.14, 0.03, 16)
+	_lenses = _batch(lens, lamp, true)
 	var red_sign := StandardMaterial3D.new()
 	red_sign.albedo_color = Color(0.75, 0.05, 0.05)
 	red_sign.emission_enabled = true
@@ -75,11 +93,13 @@ func _process(_delta: float) -> void:
 		_rebuild()
 	for i in _head_ways.size():
 		var hw: Array = _head_ways[i]
-		var c := GREEN
+		var on := 2
 		match traffic.light(hw[0], hw[1]):
-			TrafficSim.Light.RED: c = RED
-			TrafficSim.Light.YELLOW: c = YELLOW
-		_heads.multimesh.set_instance_color(i, c)
+			TrafficSim.Light.RED: on = 0
+			TrafficSim.Light.YELLOW: on = 1
+		for k in 3:
+			var c: Color = LENS_COLORS[k]
+			_lenses.multimesh.set_instance_color(i * 3 + k, c if k == on else c * LENS_DARK)
 
 
 func _rebuild() -> void:
@@ -93,6 +113,9 @@ func _rebuild_all() -> void:
 	var poles := []
 	var arms := []
 	var heads := []
+	var lenses := []
+	var hoods := []
+	var plates := []
 	var stops := []
 	var yields := []
 	var blades := []
@@ -213,7 +236,14 @@ func _rebuild_all() -> void:
 				var span: float = out - sl.mid
 				arms.append(Transform3D(Basis(right, Vector3.UP, right.cross(Vector3.UP)).scaled(Vector3(span, 1, 1)),
 					base + right * (-span * 0.5) + Vector3(0, POLE_H - 0.1, 0)))
-				heads.append(Transform3D(face, head))
+				var ht := Transform3D(face, head)
+				heads.append(ht)
+				plates.append(ht * Transform3D(Basis(), Vector3(0, 0, HEAD_D * 0.5 + 0.01)))
+				for k in 3:
+					# The face is -Z, towards the drivers; red on top.
+					var y: float = (1 - k) * HEAD_H / 3.0
+					lenses.append(ht * Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(0, y, -HEAD_D * 0.5 - 0.015)))
+					hoods.append(ht * Transform3D(Basis(), Vector3(0, y + 0.15, -HEAD_D * 0.5 - 0.1)))
 				_head_ways.append([n, wid])
 			elif j.control == TrafficSim.Rule.ALL_STOP or (j.control == TrafficSim.Rule.PRIORITY and not j.major.has(wid)):
 				var top := 2.13 + 0.38  # 7 ft to the bottom of the sign
@@ -233,6 +263,9 @@ func _rebuild_all() -> void:
 	_fill(_poles, poles)
 	_fill(_arms, arms)
 	_fill(_heads, heads)
+	_fill(_lenses, lenses)
+	_fill(_hoods, hoods)
+	_fill(_plates, plates)
 	_fill(_stops, stops)
 	_fill(_yields, yields)
 	_fill(_blades, blades)
