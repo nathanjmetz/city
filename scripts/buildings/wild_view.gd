@@ -152,7 +152,7 @@ func _draw_chunk(c: Vector2i, detail: bool) -> void:
 	var trees := []
 	var o := Terrain.view_origin
 	var in_town := Backdrop.overlaps(Rect2(Vector2(c) * size + Vector2(o.x, o.y), Vector2(size, size)))
-	var wet := _wet_lattice(c)
+	var wet := wet_lattice(c)
 	for p in plants:
 		if mowed and Terrain.mow_weight(p.pos.x, p.pos.z) > 0.5:
 			continue
@@ -168,19 +168,20 @@ func _draw_chunk(c: Vector2i, detail: bool) -> void:
 		# and buildings BackdropView draws.
 		if in_town and Backdrop.inside(Vector2(p.pos.x + o.x, p.pos.z + o.y)):
 			continue
-		trees.append(facts(p, _bottomland(wet, p.pos)))
+		trees.append(facts(p, bottomland(wet, p.pos)))
 	_chunks[c].set_trees("wild", trees)
 	_shade.append(_chunks[c])
 
 
 ## A wild plant as TreeField draws it: [placement, kind, tint, facts]. The
-## sim's broad kind becomes a real Grant County kind by where it stands
-## (the same spot always the same kind), and its age comes from its size.
-static func facts(p: Dictionary, bottomland: bool) -> Array:
+## sim's broad kind becomes a real Grant County kind by where it stands in
+## the region (the same spot always the same kind, for every player), and
+## its age comes from its size.
+static func facts(p: Dictionary, on_bottomland: bool) -> Array:
 	var xf := placement(p)
 	if p.kind == Vegetation.Kind.SHRUB:
 		return [xf, p.species, p.tint, {"shrub": true}]
-	var sp := grant_county_kind(p.species, p.pos, bottomland)
+	var sp := grant_county_kind(p.species, TreeField.region_of(p.pos), on_bottomland)
 	# Keep the plant's own lighter or darker shade on its kind's green.
 	var was: Color = TreeField.LEAF[p.species]
 	var green: Color = TreeField.LEAF[sp]
@@ -189,16 +190,18 @@ static func facts(p: Dictionary, bottomland: bool) -> Array:
 	return [xf, sp, tint, {"age": snappedf(TreeKinds.age_for_size(sp, p.size), 0.01)}]
 
 
-## Which real kind a wild tree is. Bottomlands (by creeks and rivers):
-## sycamore, silver maple, cottonwood, hackberry. Uplands: oaks split white
-## and red; maples are mostly sugar maple with hackberry and black walnut;
-## the sim's locusts are honey locust, black walnut and hackberry; cedars
-## are eastern red cedar.
-static func grant_county_kind(broad: int, pos: Vector3, bottomland: bool) -> int:
-	var h := Resources.hash01(Vector2i(roundi(pos.x * 4.0), roundi(pos.z * 4.0)), 977)
+## Which real kind a wild tree is, from where it stands in the region.
+## Bottomlands (by creeks and rivers): sycamore, silver maple, cottonwood,
+## hackberry. Uplands: oaks split white and red; maples are mostly sugar
+## maple with hackberry and black walnut; the sim's locusts are honey
+## locust, black walnut and hackberry; cedars are eastern red cedar.
+static func grant_county_kind(broad: int, region: Vector2, on_bottomland: bool) -> int:
+	# Rounded to the metre: two players' positions for one tree can differ
+	# in their last digits.
+	var h := Resources.hash01(Vector2i(roundi(region.x), roundi(region.y)), 977)
 	if broad == TreeField.Species.SPRUCE:
 		return TreeField.Species.RED_CEDAR
-	if bottomland:
+	if on_bottomland:
 		if h < 0.3:
 			return TreeField.Species.SYCAMORE
 		if h < 0.6:
@@ -221,26 +224,28 @@ static func grant_county_kind(broad: int, pos: Vector3, bottomland: bool) -> int
 const WET_STEP := 32.0
 
 
-## Where water is, on a 32 m lattice over a chunk (and a cell beyond), so
+## Where water is, on a 32 m lattice laid on the region (the same lattice
+## for every player) over a chunk of the view and a few cells beyond, so
 ## each tree can ask whether it stands on a bottomland cheaply.
-func _wet_lattice(c: Vector2i) -> Dictionary:
+static func wet_lattice(c: Vector2i) -> Dictionary:
 	var out := {}
 	var o := Terrain.view_origin
-	var n := int(Vegetation.CHUNK / WET_STEP)
-	var base := Vector2i(c.x * n, c.y * n)
-	for i in range(-2, n + 3):
-		for j in range(-2, n + 3):
-			var q := Vector2(base.x + i, base.y + j) * WET_STEP
-			if Terrain.water(q.x + o.x, q.y + o.y) > 0.05:
-				out[base + Vector2i(i, j)] = true
+	var size := Vegetation.CHUNK
+	var lo := Vector2i(floori((c.x * size + o.x) / WET_STEP) - 2, floori((c.y * size + o.y) / WET_STEP) - 2)
+	var hi := Vector2i(floori(((c.x + 1) * size + o.x) / WET_STEP) + 3, floori(((c.y + 1) * size + o.y) / WET_STEP) + 3)
+	for i in range(lo.x, hi.x + 1):
+		for j in range(lo.y, hi.y + 1):
+			if Terrain.water(i * WET_STEP, j * WET_STEP) > 0.05:
+				out[Vector2i(i, j)] = true
 	return out
 
 
-## On a bottomland: water within about 50 m.
-static func _bottomland(wet: Dictionary, p: Vector3) -> bool:
+## On a bottomland: water within about 50 m of a view position.
+static func bottomland(wet: Dictionary, view_pos: Vector3) -> bool:
 	if wet.is_empty():
 		return false
-	var cell := Vector2i(floori(p.x / WET_STEP), floori(p.z / WET_STEP))
+	var r := TreeField.region_of(view_pos)
+	var cell := Vector2i(floori(r.x / WET_STEP), floori(r.y / WET_STEP))
 	for dx in range(-1, 3):
 		for dz in range(-1, 3):
 			if wet.has(cell + Vector2i(dx, dz)):
@@ -261,7 +266,10 @@ static func placement(p: Dictionary) -> Transform3D:
 	var shape := Vector3.ONE * s
 	if p.kind == Vegetation.Kind.SHRUB:
 		shape = Vector3(0.6, 0.45, 0.6) * s
-	var yaw := fposmod(pos.x * 7.3 + pos.z * 3.1, TAU)
+	# Turned by where it stands in the region, so every player sees it the
+	# same way round.
+	var r := TreeField.region_of(pos)
+	var yaw := fposmod(roundf(r.x) * 7.3 + roundf(r.y) * 3.1, TAU)
 	return Transform3D(Basis(Vector3.UP, yaw).scaled(shape), pos)
 
 

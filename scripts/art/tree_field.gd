@@ -69,7 +69,8 @@ var _dirty := {}  # Vector2i chunk -> true
 var _growing := {}  # Vector2i chunk -> true: holds trees with a planting date
 var _regrow := []  # chunks to re-size, a few a frame
 var _last_regrow := -1
-var _records := {}  # Vector2i chunk -> resolved trees, for GrownTrees
+var _records := {}  # Vector2i chunk -> [trees, resolved trees (null until asked)], for GrownTrees
+var _records_at := []  # [field transform, view origin] the records were worked out for
 
 
 ## Replaces the trees that belong to `key` (a lot). Each tree is
@@ -157,8 +158,10 @@ func _rebuild() -> void:
 
 ## How a tree stands now: [transform scaled to its size today, species,
 ## tint, age in years, seed, grows up close]. The same for every player:
-## from the tree's facts and the game's clock only.
-static func resolve(t: Array) -> Array:
+## from the tree's facts, where it stands in the region and the game's
+## clock only. `world` is the field's own transform (a neighbor's city is
+## drawn moved over to its place), for the seed.
+static func resolve(t: Array, world := Transform3D.IDENTITY) -> Array:
 	var xf: Transform3D = t[0]
 	var sp: int = t[1]
 	var facts: Dictionary = t[3] if t.size() > 3 and t[3] is Dictionary else {}
@@ -173,13 +176,25 @@ static func resolve(t: Array) -> Array:
 		age = float(facts.age)
 	else:
 		age = TreeKinds.age_for_size(sp, size)
-	return [xf, sp, t[2], age, seed_of(xf.origin), not facts.has("shrub")]
+	return [xf, sp, t[2], age, seed_of(world * xf.origin), not facts.has("shrub")]
 
 
-## A tree's seed: from where it stands, so the same spot always grows the
-## same tree.
-static func seed_of(p: Vector3) -> int:
-	return hash(Vector2i(roundi(p.x * 4.0), roundi(p.z * 4.0)))
+## A tree's seed: from where it stands in the region (a view position plus
+## Terrain.view_origin), so the same spot always grows the same tree for
+## every player, wherever their own town sits. Rounded to the metre: two
+## players' positions for one tree can differ in their last digits.
+static func seed_of(view_pos: Vector3) -> int:
+	return seed_at(region_of(view_pos))
+
+
+static func seed_at(region: Vector2) -> int:
+	return hash(Vector2i(roundi(region.x), roundi(region.y)))
+
+
+## A view position (what's drawn, relative to your own town) in region
+## coordinates (Terrain).
+static func region_of(view_pos: Vector3) -> Vector2:
+	return Vector2(float(view_pos.x) + float(Terrain.view_origin.x), float(view_pos.z) + float(Terrain.view_origin.y))
 
 
 func _rebuild_chunk(c: Vector2i) -> void:
@@ -242,19 +257,44 @@ func chunks_near(p: Vector3, r: float) -> Array:
 	return out
 
 
-## Every tree standing in a chunk, resolved (see resolve), in this field's
-## space. Worked out when first asked and kept until the chunk changes.
-func chunk_records(c: Vector2i) -> Array:
+## Every tree standing in a chunk, as set, in this field's space. Worked
+## out when first asked and kept until the chunk changes.
+func chunk_trees(c: Vector2i) -> Array:
+	_check_records()
 	if _records.has(c):
-		return _records[c]
+		return _records[c][0]
 	var out := []
 	for key in _owners.get(c, {}):
 		for t in _trees[key]:
 			var o: Vector3 = t[0].origin
 			if Vector2i(floori(o.x / CHUNK), floori(o.z / CHUNK)) == c:
-				out.append(resolve(t))
-	_records[c] = out
+				out.append(t)
+	var resolved := []
+	resolved.resize(out.size())
+	_records[c] = [out, resolved]
 	return out
+
+
+## One of those trees resolved (see resolve), kept likewise. GrownTrees
+## reads them one at a time, so a big chunk never stalls a frame.
+func chunk_record(c: Vector2i, i: int) -> Array:
+	if not _records.has(c):
+		chunk_trees(c)
+	var r: Array = _records[c][1]
+	if i >= r.size():
+		return []  # the chunk changed under the reader; it looks again
+	if r[i] == null:
+		r[i] = resolve(_records[c][0][i], global_transform)
+	return r[i]
+
+
+## The kept records carry seeds from where the field stands in the region:
+## if it moves (or the view's origin does), they are worked out again.
+func _check_records() -> void:
+	var at := [global_transform, Terrain.view_origin]
+	if at != _records_at:
+		_records_at = at
+		_records.clear()
 
 
 ## The MultiMesh for one species in one chunk, near or far. The node sits at

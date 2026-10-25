@@ -15,6 +15,8 @@ func _init() -> void:
 	_seasons()
 	_facts()
 	_save_and_load()
+	_region()
+	_cache()
 	_reference_doc()
 	print("FAILED" if _failed else "ALL PASSED")
 	quit(1 if _failed else 0)
@@ -140,14 +142,65 @@ func _rules() -> void:
 	_check(tl * 3 < tf, "the light tree is under a third of the full one (%d against %d triangles)" % [tl, tf])
 	_check(JSON.stringify(full[0][Mesh.ARRAY_VERTEX]) == JSON.stringify(TreeMesher.build(TreeField.Species.MAPLE, old,
 		TreeMesher.Lod.FULL, 7)[0][Mesh.ARRAY_VERTEX]), "the same tree always gives the same mesh")
-	# Built a slice at a time, it comes out the same as all at once.
+	# Grown a slice at a time (the smallest slices there are), it comes out
+	# the same as all at once: every node, its parent, the year it grew, its
+	# heading and children; then the same tree at an age, thickness and all,
+	# and the same mesh.
 	var sliced := TreeGrower.new(TreeField.Species.MAPLE, 7)
 	var slices := 0
-	while not sliced.step(2000):
+	while not sliced.step(0):
 		slices += 1
-	_check(slices > 3 and sliced.pos == a.pos, "growing in slices gives the same tree (%d slices)" % slices)
-	_check(GrownTrees.bucket(5.0) == 2 and GrownTrees.bucket(40.0) == 8 and GrownTrees.bucket(500.0) == 12,
+	_check(slices > 1000 and sliced.pos == a.pos and sliced.parent == a.parent and sliced.born == a.born
+		and sliced.dir == a.dir and sliced.nchild == a.nchild and sliced.leader == a.leader,
+		"growing in slices gives the same tree: every node, parent and year (%d slices)" % slices)
+	var cut := TreeGrower.AgeCut.new(sliced, 30.0)
+	var cuts := 0
+	while not cut.step(0):
+		cuts += 1
+	var whole := a.at_age(30.0)
+	_check(cuts > 10 and cut.tree.radius == whole.radius and cut.tree.keep == whole.keep and cut.tree.main == whole.main
+		and cut.tree.tips == whole.tips and cut.tree.trunk == whole.trunk and cut.tree.height == whole.height,
+		"and the same tree at 30 years, limb thickness and all (%d slices)" % cuts)
+	var m := TreeMesher.new(TreeField.Species.MAPLE, cut.tree, TreeMesher.Lod.FULL, 7)
+	var steps := 0
+	while not m.step(0):
+		steps += 1
+	var once := TreeMesher.build(TreeField.Species.MAPLE, whole, TreeMesher.Lod.FULL, 7)
+	var same_mesh := steps > 10
+	for s in 2:
+		for arr in [Mesh.ARRAY_VERTEX, Mesh.ARRAY_NORMAL, Mesh.ARRAY_INDEX]:
+			same_mesh = same_mesh and m.parts[s][arr] == once[s][arr]
+	_check(same_mesh, "and the same mesh, built in %d slices" % steps)
+	# The slices are small: none of the work runs long in one go (the
+	# browser does it all on the main thread).
+	# (Counted, not the single longest: a busy test machine can pause any one.)
+	var longest := 0
+	var long := 0
+	var n := 0
+	var g := TreeGrower.new(TreeField.Species.OAK, 1)
+	while true:
+		var t := Time.get_ticks_usec()
+		var fin := g.step(0)
+		var d := Time.get_ticks_usec() - t
+		longest = maxi(longest, d)
+		n += 1
+		if d > 1000:
+			long += 1
+		if fin:
+			break
+	_check(long * 100 < n, "growing goes in small slices: %d of %d over 1 ms (longest %.2f ms)" % [long, n, longest / 1000.0])
+	_check(GrownTrees.bucket(5.0) == 2 and GrownTrees.bucket(40.0) == 8 and GrownTrees.bucket(500.0) == 12
+		and GrownTrees.bucket(0.0) == 0 and GrownTrees.bucket(2.8) == 0 and GrownTrees.bucket(2.9) == 1,
 		"ages round to the nearest grown age")
+	# The stand-ins for exp, log, sin and cos are close to the real ones.
+	var off := 0.0
+	for i in 200:
+		var x := float(i) * 0.05
+		off = maxf(off, absf(TreeGrower.plain_exp_neg(x) - exp(-x)))
+		off = maxf(off, absf(TreeGrower.plain_ln(x + 0.5) - log(x + 0.5)))
+		var sc := TreeGrower.plain_sin_cos(x * 3.0 - 10.0)
+		off = maxf(off, maxf(absf(sc.x - sin(x * 3.0 - 10.0)), absf(sc.y - cos(x * 3.0 - 10.0))))
+	_check(off < 1e-5, "plain exp, log, sin and cos match the library's (worst %.8f off)" % off)
 
 
 func _tris(parts: Array) -> int:
@@ -196,7 +249,26 @@ func _facts() -> void:
 		"a yard tree goes in as a nursery sapling (%.1f m)" % h0)
 	_check(absf(float(r10[3]) - TreeKinds.NURSERY_AGE - 10.0) < 0.01 and h10 > h0 * 2.0 and h35 > h10 * 1.4,
 		"and grows with the game's years (%.1f m after 10, %.1f m after 35)" % [h10, h35])
-	_check(r0[4] == TreeField.resolve([xf, sp, Color.RED])[4], "its seed is where it stands")
+	# The seed is where the tree stands in the region: the same tree in a
+	# field moved and turned some other way (a neighbor's city, drawn moved
+	# over to its place), or seen by a player whose own town sits elsewhere,
+	# gets the same seed.
+	var spot := Transform3D(Basis(Vector3.UP, 0.7).scaled(Vector3.ONE * 0.9), Vector3(612.3, 4.0, -287.6))
+	var seeds := []
+	for setup in [[Transform3D.IDENTITY, Vector2.ZERO], [Transform3D(Basis(Vector3.UP, 1.1), Vector3(400, 0, -900)), Vector2.ZERO],
+			[Transform3D(Basis(Vector3.UP, -2.3), Vector3(-1520, 0, 75)), Vector2(1234.5, -877.25)],
+			[Transform3D.IDENTITY, Vector2(-3072.0, 2048.75)]]:
+		var world: Transform3D = setup[0]
+		var origin: Vector2 = setup[1]
+		Terrain.view_origin = origin
+		# Where the spot is in this viewer's view, then in the field's own space.
+		var view := Transform3D(spot.basis, spot.origin - Vector3(origin.x, 0, origin.y))
+		var local := world.affine_inverse() * view
+		seeds.append(TreeField.resolve([local, sp, Color.GREEN, {"planted": 1000}], world)[4])
+	Terrain.view_origin = Vector2.ZERO
+	_check(seeds.count(seeds[0]) == seeds.size(), "its seed is where it stands in the region, whatever field or view (%s)" % [seeds])
+	_check(TreeField.resolve([xf, sp, Color.GREEN])[4] != TreeField.resolve([xf.translated(Vector3(3, 0, 0)), sp, Color.GREEN])[4],
+		"and a tree elsewhere has another seed")
 	var wild := TreeField.resolve([xf, sp, Color.GREEN])
 	_check(absf(float(wild[3]) - TreeKinds.age_for_size(sp, 0.9)) < 0.01, "a tree without a date is as old as its size")
 	_check(not TreeField.resolve([xf, sp, Color.GREEN, {"shrub": true}])[5], "brush never grows up close")
@@ -204,7 +276,9 @@ func _facts() -> void:
 
 
 ## Two copies of a town agree on every tree after a save and load: yard
-## trees by their building's build date, wild trees by the land.
+## trees by their building's build date, wild trees by the land. The copy
+## is looked at by a player whose own town sits elsewhere in the region,
+## so its view positions are all different.
 func _save_and_load() -> void:
 	var sim := CitySim.new()
 	sim.apply({"type": "clear"})
@@ -221,18 +295,83 @@ func _save_and_load() -> void:
 		same = same and copy.buildings.has(key) and int(copy.buildings[key].built) == int(sim.buildings[key].built)
 	_check(same, "the copy plants every yard tree on the same date (%d buildings)" % sim.buildings.size())
 	var area := Rect2(-600, -600, 1200, 1200)
-	var a := _wild_facts(sim, area)
-	var b := _wild_facts(copy, area)
+	var a := _wild_facts(sim, area, Vector2.ZERO)
+	var b := _wild_facts(copy, area, Vector2(1234.5, -877.25))
 	_check(a.size() > 500 and JSON.stringify(a) == JSON.stringify(b),
-		"the copy grows the same wild trees: kind, place and age (%d trees)" % a.size())
+		"the copy, seen from another town, grows the same wild trees: kind, seed, turn and age (%d trees)" % a.size())
 
 
-func _wild_facts(sim: CitySim, area: Rect2) -> Array:
+## The wild trees in an area as a player whose town sits at `origin` sees
+## them: the same spots, at that player's own view positions.
+func _wild_facts(sim: CitySim, area: Rect2, origin: Vector2) -> Array:
+	Terrain.view_origin = origin
 	var out := []
+	var lattices := {}
 	for p in sim.vegetation.plants_in(area, sim.tick_count):
-		var f := WildView.facts(p, false)
-		out.append([f[1], TreeField.seed_of((f[0] as Transform3D).origin), f[3]])
+		var q: Dictionary = p.duplicate()
+		q.pos = p.pos - Vector3(origin.x, 0, origin.y)
+		var c := Vector2i(floori(q.pos.x / Vegetation.CHUNK), floori(q.pos.z / Vegetation.CHUNK))
+		if not lattices.has(c):
+			lattices[c] = WildView.wet_lattice(c)
+		var f := WildView.facts(q, WildView.bottomland(lattices[c], q.pos))
+		var xf: Transform3D = f[0]
+		out.append([f[1], TreeField.seed_of(xf.origin), snappedf(atan2(xf.basis.x.z, xf.basis.x.x), 0.001), f[3]])
+	Terrain.view_origin = Vector2.ZERO
 	return out
+
+
+## The same spot is the same tree for every player, wherever their own
+## town sits: the same kind (bottomland or upland too) and the same seed.
+func _region() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	# Around Marion, where the Mississinewa makes bottomlands.
+	var spots := []
+	for i in 900:
+		spots.append(Terrain.CENTRE + Vector2(rng.randf_range(-2000, 2000), rng.randf_range(-2000, 2000)))
+	var seen := []
+	var wet := 0
+	for origin in [Terrain.CENTRE - Vector2(500, 0), Terrain.CENTRE + Vector2(2304.5, -1536.25), Vector2(6000.0, 7000.0)]:
+		Terrain.view_origin = origin
+		var out := []
+		var lattices := {}
+		wet = 0
+		for i in spots.size():
+			var r: Vector2 = spots[i]
+			var v := Vector3(r.x - origin.x, 0, r.y - origin.y)
+			var c := Vector2i(floori(v.x / Vegetation.CHUNK), floori(v.z / Vegetation.CHUNK))
+			if not lattices.has(c):
+				lattices[c] = WildView.wet_lattice(c)
+			var bottom := WildView.bottomland(lattices[c], v)
+			if bottom:
+				wet += 1
+			var broad: int = [TreeField.Species.OAK, TreeField.Species.MAPLE, TreeField.Species.LOCUST][i % 3]
+			var p := {"pos": v, "kind": Vegetation.Kind.TREE, "species": broad, "size": 1.1, "tint": TreeField.LEAF[broad]}
+			var f := WildView.facts(p, bottom)
+			out.append([bottom, f[1], TreeField.seed_of((f[0] as Transform3D).origin)])
+		seen.append(JSON.stringify(out))
+	Terrain.view_origin = Vector2.ZERO
+	_check(seen.count(seen[0]) == seen.size() and wet > 10 and wet < spots.size() - 10,
+		"a spot is the same kind and seed from three different towns (%d of %d spots by water)" % [wet, spots.size()])
+
+
+## The kept meshes: a new one is never the first dropped, so exploring
+## past the cache's size still shows new grown trees.
+func _cache() -> void:
+	var g := GrownTrees.new()
+	var ok := true
+	var most := 0
+	for i in 400:
+		var key := GrownTrees.mesh_key(i % 12, (i / 12) % 3, (i / 36) % 13, (i / 468) % 2)
+		g._frame += 1
+		g._store(key, ArrayMesh.new(), [[], []])
+		# A lookup draws only the newest few, as when the camera moves on.
+		g._drawn_frame = g._frame
+		g._trim()
+		ok = ok and g._meshes.has(key)
+		most = maxi(most, g._meshes.size())
+	g.free()
+	_check(ok and most <= GrownTrees.MAX_MESHES, "exploring past %d meshes, every new one is kept (at most %d)" % [GrownTrees.MAX_MESHES, most])
 
 
 ## The written reference covers every kind.

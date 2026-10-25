@@ -395,6 +395,7 @@ void fragment() {
 }
 """
 
+static var _shaders := {}  # code -> Shader
 static var _leaf_mats := {}  # "sp,lod" -> ShaderMaterial
 static var _bark_mats := {}  # lod -> ShaderMaterial
 static var _textures := {}  # sp -> ImageTexture
@@ -450,11 +451,20 @@ static func _all_mats() -> Array:
 
 ## A card material (TreeField's): the shared leaf shader with the kinds'
 ## colours filled in, and kept up to date with the zone and season.
+## One shader for each piece of code, shared by every material using it:
+## each shader is compiled once, not once per kind and level (a stall the
+## first time each is drawn).
+static func shader(code: String) -> Shader:
+	if not _shaders.has(code):
+		var sh := Shader.new()
+		sh.code = code
+		_shaders[code] = sh
+	return _shaders[code]
+
+
 static func card_material(code: String, mode: int, fades: bool, leaf_tex: Texture2D, twig_tex: Texture2D) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
-	var sh := Shader.new()
-	sh.code = code
-	m.shader = sh
+	m.shader = shader(code)
 	if leaf_tex:
 		m.set_shader_parameter("leaf_tex", leaf_tex)
 		m.set_shader_parameter("twig_tex", twig_tex)
@@ -495,9 +505,7 @@ static func leaf_material(sp: int, lod: int) -> ShaderMaterial:
 	if _leaf_mats.has(key):
 		return _leaf_mats[key]
 	var m := ShaderMaterial.new()
-	var sh := Shader.new()
-	sh.code = LEAF_SHADER
-	m.shader = sh
+	m.shader = shader(LEAF_SHADER)
 	m.set_shader_parameter("leaf_tex", leaf_texture(sp))
 	m.set_shader_parameter("twig_tex", TreeField.twig_texture())
 	m.set_shader_parameter("zone_mode", 1 if lod == TreeMesher.Lod.FULL else 2)
@@ -511,9 +519,7 @@ static func bark_material(lod: int) -> ShaderMaterial:
 	if _bark_mats.has(lod):
 		return _bark_mats[lod]
 	var m := ShaderMaterial.new()
-	var sh := Shader.new()
-	sh.code = BARK_SHADER
-	m.shader = sh
+	m.shader = shader(BARK_SHADER)
 	m.set_shader_parameter("zone_mode", 1 if lod == TreeMesher.Lod.FULL else 2)
 	var base := PackedVector3Array()
 	var dark := PackedVector3Array()

@@ -6,16 +6,19 @@ extends Node3D
 ## cards past that. Every TreeField in the scene is read, so yard, street,
 ## park and wild trees all grow the same way.
 ##
-## A grown tree's mesh comes from its kind, a variant (from its seed) and
-## its age rounded to a bucket (BUCKETS); each mesh is made once, a slice
-## per frame (BUILD_MS), and kept (up to MAX_MESHES, least recently used
-## dropped first). Until a tree's mesh is ready its card tree stands in.
-## The exact size between buckets comes from scaling, so a tree keeps
-## growing smoothly with the game's clock.
+## A grown tree's mesh comes from its kind, a variant (from its seed, the
+## same for both levels so the handover between them doesn't jump) and its
+## age rounded to a bucket (BUCKETS); each mesh is made once and kept (up
+## to MAX_MESHES, least recently drawn dropped first). Until a tree's mesh
+## is ready its card tree stands in. The exact size between buckets comes
+## from scaling, so a tree keeps growing smoothly with the game's clock.
 ##
-## Which trees are near is looked up a little at a time (SCAN_MS) as the
-## camera moves; the bands shrink while the lookup lags behind the camera,
-## so nothing is ever left undrawn.
+## Making a mesh (growing the branches, cutting them to an age, building the
+## bark and leaves) runs on worker threads on the desktop, or in slices on
+## the main thread (the browser), each slice a few hundred microseconds,
+## BUILD_MS a frame in all. Which trees are near is looked up a tree at a
+## time (SCAN_MS a frame) as the camera moves; the bands shrink while the
+## lookup lags behind the camera, so nothing is ever left undrawn.
 
 ## Ages (years) a mesh is grown at.
 const BUCKETS := [2.0, 4.0, 6.0, 9.0, 13.0, 18.0, 25.0, 33.0, 43.0, 56.0, 72.0, 92.0, 120.0]
@@ -23,32 +26,50 @@ const BUCKETS := [2.0, 4.0, 6.0, 9.0, 13.0, 18.0, 25.0, 33.0, 43.0, 56.0, 72.0, 
 ## the slack each looked-up set carries.
 const MARGIN := 30.0
 const RESCAN := 10.0
-const BUILD_MS := 2.5
-const SCAN_MS := 1.5
+const BUILD_MS := 1.5
+const SCAN_MS := 0.75
+## Records looked at between clock checks.
+const SCAN_BATCH := 16
 const MAX_MESHES := 260
-## The light trees use fewer variants: at that distance two look as varied
-## as three.
-const LIGHT_VARIANTS := 2
+## Meshes drawn in the last lookup (or made since) are kept past
+## MAX_MESHES, so a view needing more than that doesn't drop and rebuild
+## its own meshes over and over; never past this many.
+const HARD_MAX := 520
 
 ## Labs and tests can switch the grown trees off (the cheap cards then
 ## draw everywhere, as before).
 static var enabled := true
+## Labs can build on the main thread, a slice a frame, as the browser does.
+static var threads_ok := true
 
-var _growers := {}  # "sp,variant" -> TreeGrower (finished or growing)
+var _growers := {}  # grower key (sp * 4 + variant) -> TreeGrower (finished or growing)
 var _painters := {}  # sp -> TreeLook.LeafPainter
 var _meshes := {}  # mesh key -> ArrayMesh
-var _used := {}  # mesh key -> frame last drawn
+var _used := {}  # mesh key -> frame last drawn (or made)
+var _tris := {}  # mesh key -> triangles
+var _bytes := {}  # mesh key -> graphics memory, roughly
 var _want := {}  # mesh key -> nearest distance it is wanted at
-var _job := ""  # mesh key being built
-var _mesher: TreeMesher
-var _groups := {}  # mesh key -> MultiMeshInstance3D
-var _fallback := {}  # species -> MultiMeshInstance3D (cards inside the zone)
+var _groups := {}  # mesh key (>= 0) or card group (< 0) -> MultiMeshInstance3D
 var _centre := Vector3(INF, INF, INF)
 var _version := -1
 var _frame := 0
+var _drawn_frame := 0  # the frame the last lookup finished
 var _shown := 0
+## The main thread's time in the last frame (ms), for the labs.
+var last_ms := 0.0
+# The main-thread build in hand (the browser).
+var _job := -1
+var _cut: TreeGrower.AgeCut
+var _mesher: TreeMesher
+var _part_mesh: ArrayMesh
 # The lookup in progress.
 var _scan := []  # [field, chunk] pairs still to look at
+var _scan_field: TreeField
+var _scan_chunk := Vector2i.ZERO
+var _scan_n := 0  # trees in the chunk in hand
+var _scan_i := 0
+var _scan_world := Transform3D.IDENTITY
+var _scan_plain := true
 var _scan_pos := Vector3.ZERO
 var _scan_r := Vector2.ZERO
 var _scan_version := -1
@@ -57,22 +78,61 @@ var _bufs := {}  # group key -> PackedFloat32Array
 var _counts := {}  # group key -> instances
 var _threads := false
 var _max_tasks := 1
-var _tasks := {}  # mesh key (or "g" + grower key) -> {id, parts when done}
+var _grow_tasks := {}  # grower key -> task id
+var _mesh_tasks := {}  # mesh key -> {id, parts when done}
 
 
 func _ready() -> void:
 	top_level = true
-	_threads = not OS.has_feature("web") and OS.get_processor_count() > 2
+	_threads = threads_ok and not OS.has_feature("web") and OS.get_processor_count() > 2
 	_max_tasks = clampi(OS.get_processor_count() / 3, 1, 4)
-	# The growth curves are worked out once here, before any thread reads them.
+	# The growth curves and tables are worked out once here, before any
+	# thread reads them.
 	for sp in TreeKinds.count():
 		TreeKinds.height(sp, 1.0)
+		TreeKinds.age_for_size(sp, 1.0)
+	bucket(1.0)
+	_warm_shaders()
+
+
+## The bark and leaf shaders are made ready now, behind the loading screen,
+## rather than the first time a grown tree comes into view (a stall of a
+## few hundred milliseconds on the desktop): a speck of each, drawn the way
+## the grown trees are, kept for a few frames.
+func _warm_shaders() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3.ZERO, Vector3(0.01, 0, 0), Vector3(0, 0.01, 0)])
+	arrays[Mesh.ARRAY_NORMAL] = PackedVector3Array([Vector3.UP, Vector3.UP, Vector3.UP])
+	arrays[Mesh.ARRAY_TEX_UV] = PackedVector2Array([Vector2.ZERO, Vector2.RIGHT, Vector2.DOWN])
+	arrays[Mesh.ARRAY_COLOR] = PackedColorArray([Color.WHITE, Color.WHITE, Color.WHITE])
+	arrays[Mesh.ARRAY_INDEX] = PackedInt32Array([0, 1, 2])
+	for lod in 2:
+		var m := ArrayMesh.new()
+		TreeMesher.add_part(m, 0, lod, [arrays, arrays], 0)
+		TreeMesher.add_part(m, 0, lod, [arrays, arrays], 1)
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = true
+		mm.use_custom_data = true
+		mm.mesh = m
+		mm.instance_count = 1
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		add_child(mmi)
+		get_tree().create_timer(1.0).timeout.connect(mmi.queue_free)
 
 
 func _exit_tree() -> void:
-	for key in _tasks:
-		WorkerThreadPool.wait_for_task_completion(_tasks[key].id)
-	_tasks.clear()
+	for gk in _grow_tasks:
+		WorkerThreadPool.wait_for_task_completion(_grow_tasks[gk])
+	for key in _mesh_tasks:
+		WorkerThreadPool.wait_for_task_completion(_mesh_tasks[key].id)
+	_grow_tasks.clear()
+	_mesh_tasks.clear()
 	TreeLook.set_zone(Vector3.ZERO, 0.0, 0.0, false)
 
 
@@ -88,13 +148,16 @@ func _process(_delta: float) -> void:
 		if visible:
 			visible = false
 			TreeLook.set_zone(Vector3.ZERO, 0.0, 0.0, false)
+		last_ms = 0.0
 		return
 	visible = true
 	var cp := cam.global_position
 	if not _scanning and (cp.distance_to(_centre) > RESCAN or TreeField.version != _version or r != _scan_r):
 		_start_scan(cp, r)
+	var t_a := Perf.now()
 	if _scanning:
 		_scan_some(SCAN_MS)
+	var t_b := Perf.now()
 	# While the looked-up trees lag behind the camera the bands shrink, so
 	# the cards keep drawing anything not looked up yet.
 	var lag := cp.distance_to(_centre)
@@ -103,9 +166,15 @@ func _process(_delta: float) -> void:
 	else:
 		var near_r := clampf(_scan_r.x, maxf(_scan_r.x - MARGIN + lag, 0.0), _scan_r.x + MARGIN - lag) if _scan_r.x > 0.0 else 0.0
 		TreeLook.set_zone(cp, near_r, minf(_scan_r.y, _scan_r.y + MARGIN - lag), true)
+	var t_c := Perf.now()
+	var jb := _job
 	_build_some(BUILD_MS)
+	var t_d := Perf.now()
+	if t_d - t > 2500:
+		print("DBG grown %.2f: pre %.2f scan %.2f zone %.2f build %.2f job %d cut %s mesher %s part %s" % [(t_d - t) / 1000.0, (t_a - t) / 1000.0, (t_b - t_a) / 1000.0, (t_c - t_b) / 1000.0, (t_d - t_c) / 1000.0, jb, _cut != null, _mesher != null, _part_mesh != null])
 	Perf.add("frame.trees.grown", t)
 	Perf.counts["trees.grown"] = _shown
+	last_ms = (Perf.now() - t) / 1000.0
 
 
 # ------------------------------------------------------------------ lookup
@@ -116,6 +185,9 @@ func _start_scan(cp: Vector3, r: Vector2) -> void:
 	_scan_r = r
 	_scan_version = TreeField.version
 	_scan = []
+	_scan_field = null
+	_scan_n = 0
+	_scan_i = 0
 	_bufs = {}
 	_counts = {}
 	_want = {}
@@ -128,55 +200,81 @@ func _start_scan(cp: Vector3, r: Vector2) -> void:
 			_scan.append([field, c])
 
 
+## Looks at the trees near the camera, a batch of trees at a time, for up
+## to `ms` milliseconds; picks up where it left off next frame.
 func _scan_some(ms: float) -> void:
 	var start := Perf.now()
+	var budget := int(ms * 1000.0)
 	var near_hi := _scan_r.x + MARGIN
 	var near_lo := _scan_r.x - MARGIN - TreeLook.BAND
 	var reach := _scan_r.y + MARGIN
-	while not _scan.is_empty():
-		var job: Array = _scan.pop_back()
-		var field: TreeField = job[0]
-		if not is_instance_valid(field):
-			continue
-		var world := field.global_transform
-		var plain := world.is_equal_approx(Transform3D.IDENTITY)
-		for rec in field.chunk_records(job[1]):
-			if not rec[5]:
-				continue  # brush stays a card
-			var xf: Transform3D = rec[0]
-			if not plain:
-				xf = world * xf
-			var d := xf.origin.distance_to(_scan_pos)
-			if d > reach:
+	while true:
+		if _scan_field == null or not is_instance_valid(_scan_field) or _scan_i >= _scan_n:
+			_scan_field = null
+			if _scan.is_empty():
+				break
+			var job: Array = _scan.pop_back()
+			# Its chunk of woods may have been dropped since the lookup began.
+			if not is_instance_valid(job[0]):
 				continue
-			if d < near_hi and _scan_r.x > 0.0:
-				_file(rec, xf, d, TreeMesher.Lod.FULL)
-			if d > near_lo:
-				_file(rec, xf, d, TreeMesher.Lod.LIGHT)
-		if (Perf.now() - start) > ms * 1000.0:
+			_scan_field = job[0]
+			_scan_chunk = job[1]
+			_scan_world = _scan_field.global_transform
+			_scan_plain = _scan_world.is_equal_approx(Transform3D.IDENTITY)
+			var tq := Perf.now()
+			_scan_n = _scan_field.chunk_trees(_scan_chunk).size()
+			if Perf.now() - tq > 500:
+				print("DBG chunk_trees %d us for %d" % [Perf.now() - tq, _scan_n])
+			_scan_i = 0
+		else:
+			var end := mini(_scan_i + SCAN_BATCH, _scan_n)
+			while _scan_i < end:
+				var rec := _scan_field.chunk_record(_scan_chunk, _scan_i)
+				_scan_i += 1
+				if rec.is_empty() or not rec[5]:
+					continue  # brush stays a card
+				var xf: Transform3D = rec[0]
+				if not _scan_plain:
+					xf = _scan_world * xf
+				var d := xf.origin.distance_to(_scan_pos)
+				if d > reach:
+					continue
+				if d < near_hi and _scan_r.x > 0.0:
+					_file(rec, xf, d, TreeMesher.Lod.FULL)
+				if d > near_lo:
+					_file(rec, xf, d, TreeMesher.Lod.LIGHT)
+		if Perf.now() - start > budget:
 			return
+	# New groups are made first, one at a time (a kind's first card mesh
+	# takes a moment to build); then every group changes in the same frame.
+	for group in _bufs:
+		if not _groups.has(group) and (group < 0 or _meshes.has(group)):
+			_group(group)
+			if Perf.now() - start > budget:
+				return
+	var tf := Perf.now()
 	_finish_scan()
+	if Perf.now() - tf > 500:
+		print("DBG finish %d us, %d groups" % [Perf.now() - tf, _groups.size()])
 
 
 ## Files one tree into its group: its grown mesh if made, else (asking for
 ## it to be made) its card standing in.
 func _file(rec: Array, xf: Transform3D, d: float, lod: int) -> void:
 	var sp: int = rec[1]
-	var age: float = rec[3]
-	var b := bucket(age)
-	var variant: int = posmod(int(rec[4]), TreeGrower.VARIANTS if lod == TreeMesher.Lod.FULL else LIGHT_VARIANTS)
-	var key := mesh_key(sp, variant, b, lod)
+	var b := bucket(rec[3])
+	var key := mesh_key(sp, posmod(int(rec[4]), TreeGrower.VARIANTS), b, lod)
 	var size := xf.basis.get_scale().y
 	var yaw := atan2(xf.basis.x.z, xf.basis.x.x)
 	var group := key
 	var basis: Basis
 	if _meshes.has(key):
-		var s := size / TreeKinds.size_at(sp, BUCKETS[b])
+		var s := size / bucket_size(sp, b)
 		basis = Basis(Vector3.UP, -yaw).scaled(Vector3.ONE * s)
 	else:
 		# Its card stands in, in this band only, until the mesh is made.
 		_want[key] = minf(_want.get(key, INF), d)
-		group = "f%d,%d" % [sp, 4 if lod == TreeMesher.Lod.FULL else 5]
+		group = card_group(sp, lod)
 		basis = xf.basis
 	var buf: PackedFloat32Array = _bufs.get(group, PackedFloat32Array())
 	var custom := TreeField.custom_of(rec[2], sp, true)
@@ -189,47 +287,42 @@ func _file(rec: Array, xf: Transform3D, d: float, lod: int) -> void:
 
 func _finish_scan() -> void:
 	_scanning = false
+	_scan_field = null
 	_centre = _scan_pos
 	_version = _scan_version
+	_drawn_frame = _frame
 	var shown := 0
 	for key in _groups:
 		if not _bufs.has(key):
 			_groups[key].multimesh.instance_count = 0
-	for key in _fallback:
-		if not _bufs.has(key):
-			_fallback[key].multimesh.instance_count = 0
 	for group in _bufs:
-		if not group.begins_with("f") and not _meshes.has(group):
+		if group >= 0 and not _meshes.has(group):
 			continue  # dropped from the cache while this lookup ran
 		var mmi := _group(group)
 		var n: int = _counts[group]
 		mmi.multimesh.instance_count = n
 		mmi.multimesh.buffer = _bufs[group]
-		if not group.begins_with("f"):
+		if group >= 0:
 			_used[group] = _frame
 			shown += n
 	_shown = shown
 	_bufs = {}
 
 
-func _group(group: String) -> MultiMeshInstance3D:
-	var fallback := group.begins_with("f")
-	if fallback and _fallback.has(group):
-		return _fallback[group]
-	if not fallback and _groups.has(group):
+func _group(group: int) -> MultiMeshInstance3D:
+	if _groups.has(group):
 		return _groups[group]
 	var mmi := MultiMeshInstance3D.new()
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = true
 	mm.use_custom_data = true
-	if fallback:
-		var p := group.substr(1).split(",")
-		mm.mesh = TreeField.tree_mesh(int(p[0]), false, false, int(p[1]))
-		_fallback[group] = mmi
+	if group < 0:
+		var g := -1 - group
+		mm.mesh = TreeField.tree_mesh(g >> 1, false, false, 4 if (g & 1) == TreeMesher.Lod.FULL else 5)
 	else:
 		mm.mesh = _meshes[group]
-		_groups[group] = mmi
+	_groups[group] = mmi
 	mmi.multimesh = mm
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if GraphicsQuality.tree_shadows \
 		else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -237,16 +330,54 @@ func _group(group: String) -> MultiMeshInstance3D:
 	return mmi
 
 
+static var _bounds := PackedFloat64Array()
+static var _bucket_sizes := PackedFloat64Array()
+
+
+## The bucket an age rounds to: the nearest grown age, judged by ratio
+## (5 years is nearer 6 than 4). Looked up against the middles between
+## buckets, worked out once.
 static func bucket(age: float) -> int:
-	var best := 0
-	for i in BUCKETS.size():
-		if absf(log(maxf(age, 0.5) / BUCKETS[i])) < absf(log(maxf(age, 0.5) / BUCKETS[best])):
-			best = i
-	return best
+	if _bounds.is_empty():
+		for i in BUCKETS.size() - 1:
+			_bounds.append(sqrt(float(BUCKETS[i]) * float(BUCKETS[i + 1])))
+	return _bounds.bsearch(maxf(age, 0.5))
 
 
-static func mesh_key(sp: int, variant: int, b: int, lod: int) -> String:
-	return "%d,%d,%d,%d" % [sp, variant, b, lod]
+## A kind's size (TreeKinds.size_at) at a bucket's age, worked out once.
+static func bucket_size(sp: int, b: int) -> float:
+	if _bucket_sizes.is_empty():
+		for k in TreeKinds.count():
+			for i in BUCKETS.size():
+				_bucket_sizes.append(TreeKinds.size_at(k, BUCKETS[i]))
+	return _bucket_sizes[sp * BUCKETS.size() + b]
+
+
+## A mesh's key: kind, variant, age bucket and level packed in one number.
+static func mesh_key(sp: int, variant: int, b: int, lod: int) -> int:
+	return (sp << 7) | (variant << 5) | (b << 1) | lod
+
+
+## The group of card trees standing in for one kind at one level (below 0,
+## so it never meets a mesh key).
+static func card_group(sp: int, lod: int) -> int:
+	return -1 - (sp * 2 + lod)
+
+
+static func _key_sp(key: int) -> int:
+	return key >> 7
+
+
+static func _key_variant(key: int) -> int:
+	return (key >> 5) & 3
+
+
+static func _key_bucket(key: int) -> int:
+	return (key >> 1) & 15
+
+
+static func _key_lod(key: int) -> int:
+	return key & 1
 
 
 # ---------------------------------------------------------------- building
@@ -262,98 +393,112 @@ func _build_some(ms: float) -> void:
 	var budget := int(ms * 1000.0)
 	var made := false
 	while (Perf.now() - start) < budget:
-		if _job == "":
-			if _want.is_empty():
-				break
-			var best := ""
-			for key in _want:
-				if not _meshes.has(key) and (best == "" or _want[key] < _want[best]):
-					best = key
-			if best == "":
-				_want.clear()
+		if _job < 0:
+			var best := _nearest_wanted()
+			if best < 0:
 				break
 			_job = best
+			_cut = null
 			_mesher = null
+			_part_mesh = null
 		var left := budget - (Perf.now() - start)
 		if _step_job(_job, left):
 			_want.erase(_job)
-			_job = ""
+			_job = -1
 			made = true
 	if made:
 		_trim()
 		_version = -1  # look again, to draw the new meshes
+
+
+func _nearest_wanted() -> int:
+	var best := -1
+	for key in _want.keys():
+		if _meshes.has(key):
+			_want.erase(key)
+		elif best < 0 or _want[key] < _want[best]:
+			best = key
+	return best
 
 
 ## Worker threads grow the branches and build the meshes; the main thread
 ## only paints leaf textures (a slice at a time) and hands finished meshes
-## to the graphics card.
+## to the graphics card, within the frame's budget.
 func _build_threaded(ms: float) -> void:
 	var start := Perf.now()
+	var budget := int(ms * 1000.0)
 	var made := false
-	for key in _tasks.keys():
-		var t: Dictionary = _tasks[key]
+	for gk in _grow_tasks.keys():
+		if WorkerThreadPool.is_task_completed(_grow_tasks[gk]):
+			WorkerThreadPool.wait_for_task_completion(_grow_tasks[gk])
+			_grow_tasks.erase(gk)
+	for key in _mesh_tasks.keys():
+		if Perf.now() - start > budget:
+			break
+		var t: Dictionary = _mesh_tasks[key]
 		if not WorkerThreadPool.is_task_completed(t.id):
 			continue
 		WorkerThreadPool.wait_for_task_completion(t.id)
-		_tasks.erase(key)
+		_mesh_tasks.erase(key)
 		if t.has("parts"):
-			var p: PackedStringArray = key.split(",")
-			_meshes[key] = TreeMesher.to_mesh(int(p[0]), int(p[3]), t.parts)
+			_store(key, TreeMesher.to_mesh(_key_sp(key), _key_lod(key), t.parts), t.parts)
 			_want.erase(key)
 			made = true
-	if _tasks.size() < _max_tasks and not _want.is_empty():
+	if _tasks() < _max_tasks and not _want.is_empty():
 		var keys := _want.keys()
 		keys.sort_custom(func(a, b): return _want[a] < _want[b])
 		for key in keys:
-			if _tasks.size() >= _max_tasks or (Perf.now() - start) > ms * 1000.0:
+			if _tasks() >= _max_tasks or (Perf.now() - start) > budget:
 				break
-			if _meshes.has(key) or _tasks.has(key):
+			if _meshes.has(key) or _mesh_tasks.has(key):
 				continue
-			var p: PackedStringArray = key.split(",")
-			var sp := int(p[0])
+			var sp := _key_sp(key)
 			if not TreeLook.has_texture(sp):
 				if not _painters.has(sp):
 					_painters[sp] = TreeLook.LeafPainter.new(sp)
-				if _painters[sp].step(int(ms * 1000.0) - (Perf.now() - start)):
+				if _painters[sp].step(budget - (Perf.now() - start)):
 					_painters.erase(sp)
 				break
-			var gk := "%d,%d" % [sp, int(p[1])]
+			var variant := _key_variant(key)
+			var gk := sp * 4 + variant
 			if not _growers.has(gk):
-				var g := TreeGrower.new(sp, int(p[1]))
+				var g := TreeGrower.new(sp, variant)
 				_growers[gk] = g
-				_tasks["g" + gk] = {"id": WorkerThreadPool.add_task(func(): g.step(1_000_000_000), false, "grow tree")}
+				_grow_tasks[gk] = WorkerThreadPool.add_task(func(): g.step(1_000_000_000), false, "grow tree")
 				continue
 			var grower: TreeGrower = _growers[gk]
-			if not grower.done or _tasks.has("g" + gk):
+			if not grower.done or _grow_tasks.has(gk):
 				continue
 			var job := {}
-			var age: float = BUCKETS[int(p[2])]
-			var lod := int(p[3])
-			var variant := int(p[1])
+			var age: float = BUCKETS[_key_bucket(key)]
+			var lod := _key_lod(key)
 			job.id = WorkerThreadPool.add_task(func():
 				job.parts = TreeMesher.build(sp, grower.at_age(age), lod, variant), false, "tree mesh")
-			_tasks[key] = job
+			_mesh_tasks[key] = job
 	if made:
 		_trim()
 		_version = -1  # look again, to draw the new meshes
 
 
-## One slice of the job. True when its mesh is made.
-func _step_job(key: String, budget_us: int) -> bool:
-	var p := key.split(",")
-	var sp := int(p[0])
-	var variant := int(p[1])
-	var b := int(p[2])
-	var lod := int(p[3])
-	# The kind's leaves first, then its branches over its whole life...
+func _tasks() -> int:
+	return _grow_tasks.size() + _mesh_tasks.size()
+
+
+## One slice of the job. True when its mesh is made. Each step here is
+## small: the leaf texture, the branches over the kind's whole life, the
+## tree at this age, its bark and leaves, then the two halves of the mesh
+## handed to the graphics card one at a time.
+func _step_job(key: int, budget_us: int) -> bool:
+	var sp := _key_sp(key)
+	var variant := _key_variant(key)
+	var lod := _key_lod(key)
 	if not TreeLook.has_texture(sp):
 		if not _painters.has(sp):
 			_painters[sp] = TreeLook.LeafPainter.new(sp)
-		if not _painters[sp].step(budget_us):
-			return false
-		_painters.erase(sp)
+		if _painters[sp].step(budget_us):
+			_painters.erase(sp)
 		return false
-	var gk := "%d,%d" % [sp, variant]
+	var gk := sp * 4 + variant
 	if not _growers.has(gk):
 		_growers[gk] = TreeGrower.new(sp, variant)
 		return false
@@ -361,51 +506,85 @@ func _step_job(key: String, budget_us: int) -> bool:
 	if not g.done:
 		g.step(budget_us)
 		return false
-	# ...then the tree at this age, and its mesh.
+	if _cut == null:
+		_cut = TreeGrower.AgeCut.new(g, BUCKETS[_key_bucket(key)])
+		return false
 	if _mesher == null:
-		_mesher = TreeMesher.new(sp, g.at_age(BUCKETS[b]), lod, variant)
+		if _cut.step(budget_us):
+			_mesher = TreeMesher.new(sp, _cut.tree, lod, variant)
 		return false
-	if not _mesher.step(budget_us):
+	if not _mesher.done:
+		_mesher.step(budget_us)
 		return false
-	_meshes[key] = TreeMesher.to_mesh(sp, lod, _mesher.parts)
+	if _part_mesh == null:
+		_part_mesh = ArrayMesh.new()
+		TreeMesher.add_part(_part_mesh, sp, lod, _mesher.parts, 0)
+		return false
+	TreeMesher.add_part(_part_mesh, sp, lod, _mesher.parts, 1)
+	_store(key, _part_mesh, _mesher.parts)
+	_cut = null
 	_mesher = null
+	_part_mesh = null
 	return true
 
 
+## Keeps a made mesh, as just used (so the cache doesn't drop it before it
+## is ever drawn), with its size for the labs.
+func _store(key: int, mesh: ArrayMesh, parts: Array) -> void:
+	_meshes[key] = mesh
+	_used[key] = _frame
+	var tris := 0
+	var bytes := 0
+	for s in parts:
+		if s.is_empty():
+			continue
+		var verts := (s[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+		var idx := (s[Mesh.ARRAY_INDEX] as PackedInt32Array).size()
+		tris += idx / 3
+		# Compressed vertices (16-bit position, normal and UV, 8-bit
+		# colour: about 20 bytes) and 4-byte indices.
+		bytes += verts * 20 + idx * 4
+	_tris[key] = tris
+	_bytes[key] = bytes
+
+
 ## Keeps the cache to MAX_MESHES: the meshes drawn longest ago go first.
+## Ones the last lookup drew, or made since, stay (up to HARD_MAX).
 func _trim() -> void:
 	if _meshes.size() <= MAX_MESHES:
 		return
 	var keys := _meshes.keys()
 	keys.sort_custom(func(a, b): return int(_used.get(a, 0)) < int(_used.get(b, 0)))
-	for key in keys.slice(0, _meshes.size() - MAX_MESHES):
+	var drop := _meshes.size() - MAX_MESHES
+	var must := _meshes.size() - HARD_MAX
+	for key in keys:
+		if drop <= 0:
+			break
+		if int(_used.get(key, 0)) >= _drawn_frame and must <= 0:
+			break  # in view: keep it
 		if _groups.has(key):
 			_groups[key].queue_free()
 			_groups.erase(key)
 		_meshes.erase(key)
 		_used.erase(key)
+		_tris.erase(key)
+		_bytes.erase(key)
+		drop -= 1
+		must -= 1
 
 
-## For the labs: how many meshes are kept, how many trees are drawn grown.
+## For the labs: how many meshes are kept, how many trees are drawn grown,
+## from numbers kept as the meshes were made (nothing read back from the
+## graphics card).
 func stats() -> Dictionary:
 	var tris := 0
 	for key in _groups:
-		var mmi: MultiMeshInstance3D = _groups[key]
-		if mmi.multimesh.instance_count == 0:
+		if key < 0:
 			continue
-		var m: Mesh = mmi.multimesh.mesh
-		var t := 0
-		for s in m.get_surface_count():
-			t += (m.surface_get_arrays(s)[Mesh.ARRAY_INDEX] as PackedInt32Array).size() / 3
-		tris += t * mmi.multimesh.instance_count
-	# What the kept meshes take on the graphics card: compressed vertices
-	# (16-bit position, normal and UV, 8-bit colour: about 20 bytes) and
-	# 4-byte indices.
+		tris += int(_tris.get(key, 0)) * (_groups[key] as MultiMeshInstance3D).multimesh.instance_count
 	var bytes := 0
-	for key in _meshes:
-		var m: ArrayMesh = _meshes[key]
-		for s in m.get_surface_count():
-			bytes += m.surface_get_array_len(s) * 20 + m.surface_get_array_index_len(s) * 4
+	for key in _bytes:
+		bytes += int(_bytes[key])
 	var nodes := 0
 	for gk in _growers:
 		nodes += (_growers[gk] as TreeGrower).pos.size()

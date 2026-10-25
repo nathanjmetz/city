@@ -2,7 +2,8 @@ class_name TreeMesher
 extends RefCounted
 ## Turns a grown tree (TreeGrower.at_age) into a mesh: bark tubes round
 ## every limb thick enough to see, and leaf cards where the twigs are.
-## Built a slice at a time (step()), so it can be spread over frames.
+## Built a slice at a time (step()), each slice a few hundred microseconds
+## at most, so it can be spread over frames.
 ##
 ## Two levels of detail from the same branches:
 ##   FULL: limbs down to about 2.5 cm across (thinner is under a pixel
@@ -37,7 +38,13 @@ var _rng := RandomNumberGenerator.new()
 var _cut := 0.0
 var _height := 1.0
 var _i := 1
-var _phase := 0
+enum Phase { BARK, MIDDLES, SPOTS, CARDS }
+var _phase := Phase.BARK
+var _mid := PackedVector3Array()
+var _spots := PackedInt32Array()
+var _centre := Vector3.ZERO
+var _radii := Vector3.ONE
+var _size := 1.0
 var _verts := PackedVector3Array()
 var _norms := PackedVector3Array()
 var _uvs := PackedVector2Array()
@@ -78,43 +85,68 @@ static func mesh(kind: int, tree: Dictionary, level: int, seed_value: int) -> Ar
 
 static func to_mesh(kind: int, level: int, built: Array) -> ArrayMesh:
 	var m := ArrayMesh.new()
-	# 16-bit positions, normals and UVs: about half the graphics memory,
-	# well under a millimetre off on a 30 m tree.
-	var flags := Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES
-	if not built[0].is_empty():
-		m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, built[0], [], {}, flags)
-		m.surface_set_material(m.get_surface_count() - 1, TreeLook.bark_material(level))
-	if not built[1].is_empty():
-		m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, built[1], [], {}, flags)
-		m.surface_set_material(m.get_surface_count() - 1, TreeLook.leaf_material(kind, level))
+	add_part(m, kind, level, built, 0)
+	add_part(m, kind, level, built, 1)
 	return m
 
 
-## Works for up to `budget_us` microseconds. True when finished.
+## Hands one part of a built tree (0 bark, 1 leaves) to the graphics card
+## as a surface of `m`, so the two can go in different frames.
+static func add_part(m: ArrayMesh, kind: int, level: int, built: Array, part: int) -> void:
+	if built[part].is_empty():
+		return
+	# 16-bit positions, normals and UVs: about half the graphics memory,
+	# well under a millimetre off on a 30 m tree.
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, built[part], [], {}, Mesh.ARRAY_FLAG_COMPRESS_ATTRIBUTES)
+	m.surface_set_material(m.get_surface_count() - 1,
+		TreeLook.bark_material(level) if part == 0 else TreeLook.leaf_material(kind, level))
+
+
+## Works for up to `budget_us` microseconds (always at least one small
+## batch). True when finished. Slices of any size give the same mesh.
 func step(budget_us: int) -> bool:
 	var start := Time.get_ticks_usec()
 	var n: int = (_tree.pos as PackedVector3Array).size()
-	if _phase == 0:
-		while _i < n:
-			_bark_node(_i)
-			_i += 1
-			if (_i & 63) == 0 and Time.get_ticks_usec() - start > budget_us:
-				return false
-		var bark := []
-		if not _idx.is_empty():
-			bark.resize(Mesh.ARRAY_MAX)
-			bark[Mesh.ARRAY_VERTEX] = _verts
-			bark[Mesh.ARRAY_NORMAL] = _norms
-			bark[Mesh.ARRAY_TEX_UV] = _uvs
-			bark[Mesh.ARRAY_COLOR] = _cols
-			bark[Mesh.ARRAY_INDEX] = _idx
-		parts = [bark]
-		_phase = 1
-		if Time.get_ticks_usec() - start > budget_us:
-			return false
-	parts.append(_leaves())
-	done = true
-	return true
+	while not done:
+		var unit := Time.get_ticks_usec()
+		match _phase:
+			Phase.BARK:
+				var end := mini(_i + 8, n)
+				while _i < end:
+					_bark_node(_i)
+					_i += 1
+				if _i >= n:
+					var bark := []
+					if not _idx.is_empty():
+						bark.resize(Mesh.ARRAY_MAX)
+						bark[Mesh.ARRAY_VERTEX] = _verts
+						bark[Mesh.ARRAY_NORMAL] = _norms
+						bark[Mesh.ARRAY_TEX_UV] = _uvs
+						bark[Mesh.ARRAY_COLOR] = _cols
+						bark[Mesh.ARRAY_INDEX] = _idx
+					parts = [bark]
+					_verts = PackedVector3Array()
+					_norms = PackedVector3Array()
+					_uvs = PackedVector2Array()
+					_cols = PackedColorArray()
+					_idx = PackedInt32Array()
+					_ring_at.clear()
+					_run.clear()
+					_mid.resize(n)
+					_mid.fill(Vector3.ZERO)
+					_i = n - 1
+					_phase = Phase.MIDDLES
+			Phase.MIDDLES:
+				_middles_slice()
+			Phase.SPOTS:
+				_spots_slice(n)
+			Phase.CARDS:
+				_cards_slice()
+		# Stop when another batch like this one would run past the budget.
+		var now := Time.get_ticks_usec()
+		if now - start + (now - unit) > budget_us:
+			break
+	return done
 
 
 func _bark_node(i: int) -> void:
@@ -196,73 +228,98 @@ func _ring(at: Vector3, axis: Vector3, side: Vector3, r: float, sides: int, alon
 
 
 ## Leaf cards: full detail at the twigs; the light version one big card per
-## cluster of about CLUSTER twig tips, at the middle of its tips.
-func _leaves() -> Array:
-	var k := TreeKinds.kind(sp)
+## cluster of about CLUSTER twig tips, at the middle of its tips. In three
+## passes, a batch at a time: the middle of each node's twig tips...
+func _middles_slice() -> void:
 	var p: PackedVector3Array = _tree.pos
 	var par: PackedInt32Array = _tree.parent
 	var rad: PackedFloat32Array = _tree.radius
 	var tips: PackedInt32Array = _tree.tips
-	var n := p.size()
-	var lo: Vector3 = _tree.lo
-	var hi: Vector3 = _tree.hi
-	var conifer: bool = k.evergreen
-	# The middle of each node's twig tips.
-	var mid := PackedVector3Array()
-	mid.resize(n)
-	mid.fill(Vector3.ZERO)
-	for i in range(n - 1, 0, -1):
+	var end := maxi(_i - 512, 0)
+	while _i > end:
+		var i := _i
+		_i -= 1
 		if rad[i] <= 0.0:
 			continue
 		if tips[i] == 1:
-			mid[i] = p[i]
-		mid[par[i]] += mid[i]
-	var spots := PackedInt32Array()
-	for i in range(1, n):
+			_mid[i] = p[i]
+		_mid[par[i]] += _mid[i]
+	if _i <= 0:
+		_i = 1
+		_phase = Phase.SPOTS
+
+
+## ...where the leaves go...
+func _spots_slice(n: int) -> void:
+	var conifer: bool = TreeKinds.kind(sp).evergreen
+	var par: PackedInt32Array = _tree.parent
+	var rad: PackedFloat32Array = _tree.radius
+	var tips: PackedInt32Array = _tree.tips
+	var end := mini(_i + 512, n)
+	while _i < end:
+		var i := _i
+		_i += 1
 		if rad[i] <= 0.0:
 			continue
 		if lod == Lod.FULL:
 			# Leaves crowd the twig tips and clothe the thin shoots behind
 			# them (a crown is a shell of foliage a metre or two deep).
 			if tips[i] == 1 or (tips[i] <= (4 if conifer else 2) and _rng.randf() < (0.7 if conifer else 0.45)):
-				spots.append(i)
+				_spots.append(i)
 		elif tips[i] <= CLUSTER and tips[par[i]] > CLUSTER:
-			spots.append(i)
+			_spots.append(i)
+	if _i < n:
+		return
 	# The crown's middle and size, for leaf shading.
+	var lo: Vector3 = _tree.lo
+	var hi: Vector3 = _tree.hi
 	var base := TreeKinds.crown_base(sp, 60.0) * _height / maxf(TreeKinds.height(sp, 60.0), 0.1)
-	var centre := Vector3((lo.x + hi.x) * 0.5, (maxf(base, lo.y) + hi.y) * 0.5, (lo.z + hi.z) * 0.5)
-	var radii := Vector3(maxf((hi.x - lo.x) * 0.5, 0.3), maxf((hi.y - maxf(base, lo.y)) * 0.5, 0.3), maxf((hi.z - lo.z) * 0.5, 0.3))
+	_centre = Vector3((lo.x + hi.x) * 0.5, (maxf(base, lo.y) + hi.y) * 0.5, (lo.z + hi.z) * 0.5)
+	_radii = Vector3(maxf((hi.x - lo.x) * 0.5, 0.3), maxf((hi.y - maxf(base, lo.y)) * 0.5, 0.3), maxf((hi.z - lo.z) * 0.5, 0.3))
 	var grown_share := clampf(sqrt(_height / 16.0), 0.3, 1.0)
-	var size: float = CARD[lod] * grown_share * (0.8 if conifer else 1.0)
-	var verts := PackedVector3Array()
-	var norms := PackedVector3Array()
-	var uvs := PackedVector2Array()
-	var cols := PackedColorArray()
-	var idx := PackedInt32Array()
+	_size = CARD[lod] * grown_share * (0.8 if conifer else 1.0)
+	_i = 0
+	_phase = Phase.CARDS
+
+
+## ...and the cards themselves.
+func _cards_slice() -> void:
+	var k := TreeKinds.kind(sp)
+	var conifer: bool = k.evergreen
+	var p: PackedVector3Array = _tree.pos
+	var tips: PackedInt32Array = _tree.tips
 	var far := 0.5 if lod == Lod.LIGHT else 1.0
-	for i in spots:
+	var end := mini(_i + 24, _spots.size())
+	while _i < end:
+		var i := _spots[_i]
+		_i += 1
 		var at := p[i]
-		var card := size
+		var card := _size
 		var cards := 1
 		if lod == Lod.LIGHT:
-			at = mid[i] / float(tips[i])
-			card = size * clampf(sqrt(float(tips[i]) / CLUSTER), 0.7, 1.4)
+			at = _mid[i] / float(tips[i])
+			card = _size * clampf(sqrt(float(tips[i]) / CLUSTER), 0.7, 1.4)
 			cards = 3
 		elif not conifer and k.leaf != TreeKinds.Leaf.COMPOUND:
 			cards = 2 if _rng.randf() < 0.5 else 1
 		var hue := _rng.randf()
 		for c in cards:
 			var q := at + Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-0.6, 0.6), _rng.randf_range(-1, 1)) * card * 0.3
-			_card(verts, norms, uvs, cols, idx, q, centre, radii, card * _rng.randf_range(0.8, 1.2), hue, far)
+			_card(_verts, _norms, _uvs, _cols, _idx, q, _centre, _radii, card * _rng.randf_range(0.8, 1.2), hue, far)
+	if _i < _spots.size():
+		return
 	var leaves := []
-	if not idx.is_empty():
+	if not _idx.is_empty():
 		leaves.resize(Mesh.ARRAY_MAX)
-		leaves[Mesh.ARRAY_VERTEX] = verts
-		leaves[Mesh.ARRAY_NORMAL] = norms
-		leaves[Mesh.ARRAY_TEX_UV] = uvs
-		leaves[Mesh.ARRAY_COLOR] = cols
-		leaves[Mesh.ARRAY_INDEX] = idx
-	return leaves
+		leaves[Mesh.ARRAY_VERTEX] = _verts
+		leaves[Mesh.ARRAY_NORMAL] = _norms
+		leaves[Mesh.ARRAY_TEX_UV] = _uvs
+		leaves[Mesh.ARRAY_COLOR] = _cols
+		leaves[Mesh.ARRAY_INDEX] = _idx
+	parts.append(leaves)
+	_mid = PackedVector3Array()
+	_spots = PackedInt32Array()
+	done = true
 
 
 func _card(verts: PackedVector3Array, norms: PackedVector3Array, uvs: PackedVector2Array, cols: PackedColorArray,

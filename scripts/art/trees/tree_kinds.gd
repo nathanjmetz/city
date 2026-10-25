@@ -209,19 +209,41 @@ static func size_at(sp: int, age: float) -> float:
 
 ## The age at which a kind reaches a size (the inverse of size_at): how
 ## old a wild tree of that size is. Sizes past the oldest are MAX_AGE.
+## Looked up in a table of the curve every AGE_STEP years (worked out once
+## per kind), then read between its two nearest entries: the curve is
+## smooth, so this is within about a thousandth of a year of solving it.
 static func age_for_size(sp: int, size: float) -> float:
+	var hs := _size_table(sp)
 	var target := size * height(sp, REF_AGE)
-	if target >= height(sp, MAX_AGE):
+	if target >= hs[-1]:
 		return MAX_AGE
-	var lo := 0.0
-	var hi := MAX_AGE
-	for i in 30:
-		var mid := (lo + hi) * 0.5
-		if height(sp, mid) < target:
-			lo = mid
-		else:
-			hi = mid
-	return (lo + hi) * 0.5
+	if target <= hs[0]:
+		return 0.0
+	# The first entry at or above the target, and the one below it.
+	var j := hs.bsearch(target)
+	var a := hs[j - 1]
+	var b := hs[j]
+	return AGE_STEP * (float(j - 1) + (target - a) / maxf(b - a, 1e-12))
+
+
+## Years between the entries of the size table.
+const AGE_STEP := 0.25
+static var _size_cache := {}
+
+
+## The kind's height every AGE_STEP years from 0 to MAX_AGE. Only plain
+## sums and products (the curve's own maths), so every computer gets the
+## same table. Worked out on the main thread first (GrownTrees warms it).
+static func _size_table(sp: int) -> PackedFloat64Array:
+	if _size_cache.has(sp):
+		return _size_cache[sp]
+	var hs := PackedFloat64Array()
+	var n := int(MAX_AGE / AGE_STEP)
+	hs.resize(n + 1)
+	for i in n + 1:
+		hs[i] = height(sp, AGE_STEP * float(i))
+	_size_cache[sp] = hs
+	return hs
 
 
 ## Trunk thickness at chest height (1.37 m), cm, at an age: through the
