@@ -165,6 +165,7 @@ func _ready() -> void:
 	terrain.graded.connect(wild.regraded)
 	terrain.graded.connect(buildings.regraded)
 	terrain.graded.connect(service_view.regraded)
+	terrain.graded.connect(roads.regraded)
 	# The county highways run on past the town's links to the horizon.
 	var exits := ExitRoads.new()
 	add_child(exits)
