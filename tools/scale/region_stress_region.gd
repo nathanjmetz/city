@@ -34,6 +34,12 @@ func _init() -> void:
 		var pid := "stress%d" % i
 		var id := region.add_city(pid, name)
 		var sim: CitySim = region.cities[id].sim
+		# Grown with utilities not required, as the scale test's town is. In
+		# the region they are, and this town's power and water are still
+		# being built when it loads (and then reach about 40% of its homes),
+		# so it empties at once and refills only partly: why the bots' towns
+		# lost most of their people in the 2026-10-25 runs. Kept as it is so
+		# runs stay comparable.
 		sim.require_utilities = false
 		PerfTown.build(sim, blocks)
 		for t in 300:

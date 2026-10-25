@@ -958,6 +958,10 @@ func _load() -> void:
 	# Every town packed now, while nobody is waiting: welcomes and saves then
 	# send and write the packed copies as they are.
 	region.pack_all()
+	# (Placing a town once loads the map lookups it uses, so the first new
+	# player's join doesn't.)
+	if not region.cities.is_empty():
+		region._free_spot()
 	_log("Loaded %d cities from %s" % [region.cities.size(), data_path])
 
 

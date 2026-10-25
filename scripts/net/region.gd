@@ -679,6 +679,7 @@ func _free_spot() -> Vector2:
 		for cell in land.get(id, {}):
 			pts.append((Vector2(cell) + Vector2(0.5, 0.5)) * Balance.LAND_CELL)
 	centre /= ids.size()
+	var grid := _grid_of(pts)
 	var ring := 1
 	while ring < 200:
 		var steps := 12 * ring
@@ -688,7 +689,7 @@ func _free_spot() -> Vector2:
 			# section line like the county roads around it (CountyGrid).
 			var p := (centre + Vector2(cos(a), sin(a)) * ELBOW_ROOM * 0.5 * ring).snapped(
 				Vector2(CountyGrid.SECTION, CountyGrid.SECTION))
-			if _clear_of(p, pts) and not _in_growth_way(p, wedges) and Terrain.buildable(p.x, p.y, SITE_RADIUS) \
+			if _clear_of_grid(p, grid) and not _in_growth_way(p, wedges) and Terrain.buildable(p.x, p.y, SITE_RADIUS) \
 					and Backdrop.distance_to(p) > ELBOW_ROOM * 0.5:
 				return p
 		ring += 1
@@ -700,6 +701,29 @@ static func _clear_of(p: Vector2, pts: PackedVector2Array) -> bool:
 	for q in pts:
 		if p.distance_squared_to(q) < room:
 			return false
+	return true
+
+
+## Points bucketed by ELBOW_ROOM squares, so _clear_of_grid looks at the
+## few near a spot, not every building in the region.
+static func _grid_of(pts: PackedVector2Array) -> Dictionary:
+	var grid := {}
+	for q in pts:
+		var c := Vector2i((q / ELBOW_ROOM).floor())
+		if not grid.has(c):
+			grid[c] = PackedVector2Array()
+		grid[c].append(q)
+	return grid
+
+
+## The same as _clear_of, on points bucketed by _grid_of.
+static func _clear_of_grid(p: Vector2, grid: Dictionary) -> bool:
+	var c := Vector2i((p / ELBOW_ROOM).floor())
+	for dx in range(-1, 2):
+		for dy in range(-1, 2):
+			var cell = grid.get(c + Vector2i(dx, dy))
+			if cell != null and not _clear_of(p, cell):
+				return false
 	return true
 
 

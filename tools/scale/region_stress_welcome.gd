@@ -1,10 +1,11 @@
 extends SceneTree
 ## Measures what a region server sends a player who joins (the "welcome":
 ## their own town in full and every neighbor as a postcard), for the towns of
-## a stress region: how big it is packed, how long packing takes on the
-## server's main thread, and whether it fits the WebSocket buffer
-## (RegionServer.BUFFER_BYTES). It then says how many players like these
-## would fit.
+## a stress region: how big it is packed, how long making it takes on the
+## server's main thread, how many parts it goes in (NetLink; since
+## 2026-10-25 there's no size limit, where before it had to fit the
+## WebSocket buffer, RegionServer.BUFFER_BYTES, and eight big towns didn't),
+## and how long the game takes to read it back.
 ##
 ## Run: godot --headless -s tools/scale/region_stress_welcome.gd -- region.json
 ## Prints the numbers and writes region.json.welcome.json.
@@ -28,20 +29,31 @@ func _init() -> void:
 		full_sizes.append(full)
 		card_sizes.append(card)
 		print("%s: full copy %.2f MB packed in %.0f ms, postcard %.2f MB in %.0f ms" % [id, full / 1e6, (t1 - t0) / 1000.0, card / 1e6, (t2 - t1) / 1000.0])
+	# The welcome as the server sends it now: the region packed small and
+	# each town as it was kept, packed (RegionServer._region_msg), made into
+	# text and cut into parts (NetLink). This is the server's main-thread time.
+	var server := RegionServer.new()
+	server.region = region
+	region.pack_all()
 	var t0 := Time.get_ticks_usec()
-	var welcome := RegionServer.pack(region.to_dict(ids[0]))
+	var msg := server._region_msg("welcome", ids, ids[0])
+	var bytes := JSON.stringify(msg, "", false, true).to_utf8_buffer()
+	var parts := NetLink.split(bytes)
 	var ms := (Time.get_ticks_usec() - t0) / 1000.0
-	print("welcome for a player of %d towns: %.2f MB, to_dict and pack %.0f ms (the limit is %.1f MB)" % [ids.size(), welcome.length() / 1e6, ms, RegionServer.BUFFER_BYTES / 1e6])
-	out["welcome_bytes"] = welcome.length()
+	print("welcome for a player of %d towns: %.2f MB in %d parts, made in %.0f ms (no size limit now; a part is %.1f MB)"
+		% [ids.size(), bytes.size() / 1e6, parts.size(), ms, NetLink.PART_BYTES / 1e6])
+	out["welcome_bytes"] = bytes.size()
 	out["welcome_ms"] = ms
+	out["welcome_parts"] = parts.size()
 	out["full_bytes_avg"] = full_sizes.reduce(func(a, b): return a + b, 0) / full_sizes.size()
 	out["postcard_bytes_avg"] = card_sizes.reduce(func(a, b): return a + b, 0) / card_sizes.size()
-	# One player's own town in full, and a postcard for each neighbor.
-	var fits := 1
-	while out.full_bytes_avg + fits * out.postcard_bytes_avg < RegionServer.BUFFER_BYTES:
-		fits += 1
-	out["players_that_fit"] = fits
-	print("so a welcome fits up to %d players with towns like these" % fits)
+	# The client's side: unpacking it all (on the loading screen).
+	t0 = Time.get_ticks_usec()
+	var back = RegionClient._region_of(JSON.parse_string(bytes.get_string_from_utf8()))
+	out["client_unpack_ms"] = (Time.get_ticks_usec() - t0) / 1000.0
+	out["client_reads_it"] = back is Dictionary and back.cities.size() == ids.size()
+	print("the game reads it back in %.0f ms: %s" % [out.client_unpack_ms, out.client_reads_it])
+	server.free()
 	var f := FileAccess.open(path + ".welcome.json", FileAccess.WRITE)
 	f.store_string(JSON.stringify(out, "  "))
 	f.close()

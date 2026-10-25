@@ -46,6 +46,7 @@ class Frames:
         self.msg_size = 0
         self.msg_prefix = b""
         self.frame_first = None
+        self.part = None        # a message coming in parts, so far
 
     def feed(self, data, now):
         if not self.http_done:
@@ -111,6 +112,22 @@ class Frames:
         self.msg_size += self.frame_len
         if self.fin:
             pre = self.msg_prefix
+            # A big message comes as parts (scripts/net/net_link.gd): PART (1),
+            # 1 if more follow, its whole size (u32), then the bytes. The
+            # parts of one message come one after another; they count as one
+            # message, from the first part's start to the last part's end.
+            if len(pre) >= 6 and pre[0] == 1:
+                if self.part is None:
+                    t = T_RE.search(pre[6:])
+                    i = ID_RE.search(pre[6:])
+                    self.part = {"t": t.group(1).decode() if t else "?", "id": i.group(1).decode() if i else "",
+                                 "first": self.msg_first, "size": 0}
+                self.part["size"] += self.msg_size
+                if pre[1] == 0:
+                    p = self.part
+                    self.part = None
+                    self.on_message(p["t"], p["id"], p["size"], p["first"], now)
+                return
             t = T_RE.search(pre)
             i = ID_RE.search(pre)
             self.on_message(t.group(1).decode() if t else "?", i.group(1).decode() if i else "",
