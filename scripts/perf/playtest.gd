@@ -62,6 +62,7 @@ var _done := false
 var _causes := {}  # biggest stage -> ms of hitches it led
 var _step_hitches := 0
 var _steps_quality := {}
+var _track := []
 
 
 ## Whether this run asked for a play-through, and for how long.
@@ -260,6 +261,11 @@ func _play() -> void:
 		if _done:
 			return
 		var scene := get_tree().current_scene
+		if town != "" and scene != null and scene.has_method("set_speed") and scene.get("sim") != null:
+			# The made-up towns have no power plant or water tower, and the
+			# game makes people leave a home without them: that would empty
+			# the town in its first tick. Measure the size it was made at.
+			scene.sim.require_utilities = false
 		if scene != null and scene.has_method("set_speed") and not scene.loading:
 			_main = scene
 			break
@@ -273,6 +279,7 @@ func _play() -> void:
 		_result["load_s"] = snappedf((Time.get_ticks_usec() - opened_us) / 1e6, 0.1)
 		_result["start_population"] = sim.stats.population
 		_result["start_buildings"] = sim.buildings.size()
+		_result["start_tick"] = sim.tick_count
 		await _frames_wait(30)
 		await _watch_town(sim, cam)
 		return
@@ -401,6 +408,10 @@ func _open_town() -> bool:
 		f.store_buffer(body)
 		f.close()
 		req.queue_free()
+	else:
+		# (The game saves the town it is playing: play a copy, never the file.)
+		path = "user://measure-run.city"
+		DirAccess.copy_absolute(town, path)
 	Session.play_solo(path)
 	return true
 
@@ -422,12 +433,15 @@ func _watch_town(sim: CitySim, cam: CityCamera) -> void:
 			var spot := mid_town + Vector3(cos(ang), 0, sin(ang)) * BLOCK * (1.0 + stop % 3)
 			cam.glide_to(spot, [180.0, 450.0, 1100.0][stop % 3])
 			stop += 1
-			await _seconds_wait(8.0)
+			for _i in 4:
+				_track.append([pass_name, sim.tick_count, sim.stats.population])
+				await _seconds_wait(2.0)
 		_steps_quality[pass_name] = GraphicsQuality.current.describe() if GraphicsQuality.current != null else ""
 	_end_step()
 	_step = ""
 	_town_numbers(sim)
 	_result["quality_after"] = _steps_quality
+	_result["population_track"] = _track  # [pass, game ticks, people], every 2 s
 	_finish("")
 
 

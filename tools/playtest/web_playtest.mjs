@@ -137,7 +137,8 @@ report.console_tail = log.slice(-40);
 await writeFile(out, JSON.stringify(report, null, 2));
 console.log(JSON.stringify({ ok: report.ok, browser: report.browser, engine_start_s: report.engine_start_s, error: report.error, total: report.total,
   memory_peak_mb: report.memory_peak_mb, browser_memory_peak_mb: report.browser_memory_peak_mb }));
-await context.close();
+// (A headed Chrome sometimes never answers the close: give it 10 s, then leave.)
+await Promise.race([context.close(), new Promise((ok) => setTimeout(ok, 10000))]);
 server.close();
 try { rmSync(profile, { recursive: true, force: true }); } catch {}
 process.exit(report.ok ? 0 : 1);
