@@ -1675,6 +1675,32 @@ func dispatch(from: Dictionary, to: Dictionary, purpose: String, cargo := {}, ki
 	return id if _send(car, rt, purpose, cargo, after, edge_to) else -1
 
 
+## About how many ticks a trip between two dispatch endpoints takes on empty
+## roads at the limit (INF with no route), for callers deciding whether a
+## trip is worth sending. Live speeds are left out, so every copy of the
+## town gets the same answer.
+func drive_ticks(from: Dictionary, to: Dictionary, truck := false) -> float:
+	if _dirty:
+		_rebuild()
+	var rf := _register(from)
+	var rt := _register(to)
+	if rf == "" or rt == "":
+		return INF
+	var a: Dictionary = _endpoint(from) if rf == "edge" else place(rf).get("stop", {})
+	var b: Dictionary = _endpoint(to) if rt == "edge" else place(rt).get("stop", {})
+	if a.is_empty() or b.is_empty():
+		return INF
+	_truck_plan = truck
+	var r := _route(a, b)
+	_truck_plan = false
+	if r.is_empty():
+		return INF
+	var secs := 0.0
+	for wid in r.route:
+		secs += ways[wid].len / ways[wid].vmax
+	return secs / DT
+
+
 ## Every trip that's under way: driving, waiting to pull out, or just
 ## arrived or given up (handled by its caller next tick).
 func trip_ids() -> Array:

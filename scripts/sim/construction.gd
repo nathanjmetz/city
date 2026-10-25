@@ -129,12 +129,26 @@ const MAX_SENDS := 4
 ## New sites that get their first trucks in one round. The first trip to a
 ## lot makes Traffic lay out its driveway and parking (a few ms each).
 const MAX_NEW := 1
+## Vehicles drive in real time but a house goes up in about 84 seconds of
+## play, so a crew from the map's edge used to arrive minutes after the
+## house was done, while every new lot sent more: "building anything at all
+## causes a traffic jam of construction vehicles" (Brawn, 2026-10-24). Now
+## a crew is sent only if it gets there before the building is finished,
+## and a delivery only if it gets there by the middle of its stage; the
+## site keeps to its schedule either way. And no more than this many site
+## trips are heading in at once, town wide.
+const MAX_ON_ROAD := 10
+## The ETA leaves out turns and traffic: a trip counts as this much slower.
+const ETA_MARGIN := 1.25
 
 ## ref -> {profile, start (tick), front [x, z], out [x, z] (toward the street),
 ## to_curb, stage (last stage it sent trucks for), parked: [{kind, job, cargo}]}
 var sites := {}
 ## Traffic trip id -> {ref, kind, job, cargo, inbound}
 var trips := {}
+## [site ref, where the trip starts, road revision] -> Traffic.drive_ticks
+## (not saved: worked out again the same way after a load).
+var _eta := {}
 
 
 ## A new building starts going up. `front` is the middle of its street edge,
@@ -144,6 +158,15 @@ func start(ref: String, profile: String, tick: int, front: Vector3, out: Vector3
 		profile = "house"
 	sites[ref] = {"profile": profile, "start": tick, "front": [snappedf(front.x, 0.01), snappedf(front.z, 0.01)],
 		"out": [snappedf(out.x, 0.001), snappedf(out.z, 0.001)], "to_curb": to_curb, "stage": -1, "parked": []}
+
+
+## Ticks from a build's start to the start of `stage` (the end of the build
+## for STAGES.size()), as an absolute tick.
+static func stage_start(profile: String, start_tick: int, stage: int) -> int:
+	var weeks := 0
+	for i in mini(stage, STAGES.size()):
+		weeks += int(PROFILES[profile].weeks[i])
+	return start_tick + weeks * Balance.BUILD_TICKS_PER_WEEK
 
 
 ## Total real-build length of a profile, in ticks.
@@ -210,6 +233,7 @@ var _fresh := 0
 var _yard = null
 var _coming := {}
 var _crew_coming := {}
+var _heading_in := 0
 
 
 func tick(sim: CitySim) -> void:
@@ -232,9 +256,11 @@ func _tick(sim: CitySim) -> void:
 	_yard = null
 	_coming.clear()
 	_crew_coming.clear()
+	_heading_in = 0
 	for id in trips:
 		var t: Dictionary = trips[id]
 		if t.inbound:
+			_heading_in += 1
 			_coming[t.ref] = true
 			if t.job == "crew":
 				_crew_coming[t.ref] = true
@@ -261,12 +287,14 @@ func _tick(sim: CitySim) -> void:
 				_leave_all(sim, ref)
 			elif sim.simulate_traffic:
 				if not _has_crew(ref):
-					_send(sim, ref, "work_pickup", "crew", "building crew", _crew_base(sim, s))
+					_send(sim, ref, "work_pickup", "crew", "building crew", _crew_base(sim, s),
+						int(s.start) + duration(s.profile))
+				var mid := (stage_start(s.profile, int(s.start), stage) + stage_start(s.profile, int(s.start), stage + 1)) / 2
 				for d in PROFILES[s.profile].get("deliveries", DELIVERIES).get(STAGES[stage], []):
 					var cargo: String = d[1]
 					if STAGES[stage] == "frame" and d[0] == "flatbed":
 						cargo = FRAME_CARGO[PROFILES[s.profile].frame]
-					_send(sim, ref, d[0], "delivery", cargo, sim.logistics._edge(sim, _pos(s)))
+					_send(sim, ref, d[0], "delivery", cargo, sim.logistics._edge(sim, _pos(s)), mid)
 		elif s.parked.size() > 0 and st.get("t", 0.0) > 0.5:
 			_leave(sim, ref, "delivery")  # dropped off: back out halfway through
 		if stage >= STAGES.size():
@@ -305,13 +333,30 @@ func parked_poses() -> Array:
 	return out
 
 
-func _send(sim: CitySim, ref: String, kind: String, job: String, cargo: String, base: Dictionary) -> void:
-	if base.is_empty():
+## Sends a crew or delivery from `base` if it can be there by tick `by` and
+## the town's streets aren't already busy with site trips.
+func _send(sim: CitySim, ref: String, kind: String, job: String, cargo: String, base: Dictionary, by: int) -> void:
+	if base.is_empty() or _heading_in >= MAX_ON_ROAD:
 		return
 	kind = _kind(kind)
 	var s: Dictionary = sites[ref]
 	var to := _curb(ref, s)
+	var truck: bool = float(VehicleTypes.spec(kind).len) > 6.5
+	var key := [ref, base.get("ref", ""), base.get("pos"), truck, sim.network.revision, sim.traffic.version]
+	var eta: float = _eta.get(key, -1.0)
+	if eta < 0.0:
+		if _budget <= 0:
+			return  # working out the way there is a route plan too
+		_budget -= 1
+		eta = sim.traffic.drive_ticks(base, to, truck)
+		if _eta.size() > 4 * sites.size() + 64:
+			_eta.clear()
+		if eta < INF:
+			_eta[key] = eta
+	if sim.tick_count + eta * ETA_MARGIN > by or _budget <= 0:
+		return  # it would get there after the work is done
 	_budget -= 1
+	_heading_in += 1
 	var id: int = sim.traffic.dispatch(base, to, "construction", {"good": cargo, "amount": 1}, kind)
 	if id != -1:
 		trips[id] = {"ref": ref, "kind": kind, "job": job, "cargo": cargo, "inbound": true}
