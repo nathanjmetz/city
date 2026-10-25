@@ -33,14 +33,14 @@ var _places := {}
 var _origin := Vector2.INF
 var _queue: Array = []
 var _meshes := {}  # block -> MeshInstance3D
-var _material: StandardMaterial3D
+var _material: Material
 
 
 func setup(s: CitySim) -> void:
 	sim = s
-	_material = StandardMaterial3D.new()
-	_material.vertex_color_use_as_albedo = true
-	_material.roughness = 0.9
+	# The far-building look: reads the colours as sRGB, as they're written
+	# (a plain material took them as linear and washed them out to white).
+	_material = HouseMaterials.get_mat("far")
 	_load()
 	# The town's land changed: redraw the blocks it touched.
 	sim.vegetation.changed.connect(func(chunks: Array) -> void:
