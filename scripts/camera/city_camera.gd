@@ -10,7 +10,11 @@ extends Node3D
 ## Game controllers (Pad): right stick rotates and tilts, LT / RT zoom, and
 ## the pad cursor moves the map at the screen edge.
 
-const MIN_DIST := 25.0
+## The closest zoom: 40 m (Brawn, 2026-10-24). Nearer than that the cars'
+## and people's simple shapes show; from here a car is about 140 pixels
+## long on a 1080p screen and a person about 50 tall, so details like
+## door handles and hubcap spokes are too small to need drawing.
+const MIN_DIST := 40.0
 ## Far enough out to lay a whole one-mile section grid (1,609 m) with
 ## room around it, as CS2 lets you see a whole tile.
 const MAX_DIST := 3000.0
@@ -28,7 +32,7 @@ const ZOOM_FRICTION := 6.0
 const ZOOM_HEAT_ADD := 0.45
 const ZOOM_HEAT_DECAY := 4.0
 const ZOOM_HEAT_MAX := 4.0
-## Top zoom speed: the whole range (25 m to 3 km) in about a second and a
+## Top zoom speed: the whole range (40 m to 3 km) in about a second and a
 ## quarter, so the map never has to redraw faster than that.
 const ZOOM_MAX_RATE := 4.5
 
@@ -190,7 +194,7 @@ func fly_to(p: Vector3) -> void:
 func glide_to(p: Vector3, dist: float) -> void:
 	following = false
 	_goal_target = Vector3(p.x, 0.0, p.z)
-	_goal_dist = dist
+	_goal_dist = maxf(dist, MIN_DIST)
 	_zoom_vel = 0.0
 	_slow = 2.5
 
