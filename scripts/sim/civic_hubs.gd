@@ -534,14 +534,27 @@ func _send_trucks(sim: CitySim) -> void:
 
 
 ## Where trash waits on each street: the curb in front of its first building.
+## Kept until a building comes or goes or the lots change (the ledger's
+## sorted keys are the buildings' keys sorted).
 func _curbs(sim: CitySim) -> Dictionary:
+	var ledger := sim.ledger()
+	var key := [ledger.sig, sim.lots.size(), sim._lot_rev]
+	if key == _curbs_key and is_same(sim.lots, _curbs_lots):
+		return _curbs_out
 	var out := {}
-	var keys := sim.buildings.keys()
-	keys.sort()
-	for key in keys:
-		if sim.lots.has(key) and not out.has(sim.lots[key].seg):
-			out[sim.lots[key].seg] = sim.lots[key].front
+	var lots: Dictionary = sim.lots
+	for k in ledger.sorted:
+		if lots.has(k) and not out.has(lots[k].seg):
+			out[lots[k].seg] = lots[k].front
+	_curbs_key = key
+	_curbs_lots = lots
+	_curbs_out = out
 	return out
+
+
+var _curbs_key := []
+var _curbs_lots := {}
+var _curbs_out := {}
 
 
 func _nearest_hub(ids: Array, p: Vector3) -> int:
