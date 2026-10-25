@@ -69,12 +69,15 @@ func _process(delta: float) -> void:
 		_brush_wait = BRUSH_GAP
 	if SoundSettings.is_flagged("ui/" + _file(name)):
 		return
-	SoundSettings.heard("ui/" + _file(name), db_to_linear(VOLUME.get(name, -6.0)))
+	# The mix (SoundMix) sets this sound's volume and may mute it.
+	var db := SoundSettings.level("ui/" + _file(name), VOLUME.get(name, -6.0))
+	if db <= SoundMix.SILENT:
+		return
 	var p: AudioStreamPlayer = _players[_next]
 	_next = (_next + 1) % _players.size()
 	p.stream = _streams[name]
-	p.volume_db = VOLUME.get(name, -6.0)
-	p.pitch_scale = randf_range(0.97, 1.03) if name in ["click", "brush", "road", "bulldoze"] else 1.0
+	p.volume_db = db
+	p.pitch_scale = SoundMix.pitch_for("ui/" + _file(name))
 	p.play()
 
 

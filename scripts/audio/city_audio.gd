@@ -43,6 +43,8 @@ var _hum_cars := 0
 var _area_ear := Vector3.INF
 var _area_wait := 0.0
 var _picks := -1
+## SoundMix.version last applied: the mix (admin Sound mixer) was changed.
+var _mix_version := -1
 
 
 func setup(s: CitySim, cam: Camera3D, fraction: Callable) -> void:
@@ -57,9 +59,10 @@ func _ready() -> void:
 	for i in CAR_SLOTS:
 		var p := _spatial(10.0, CAR_RANGE)
 		p.stream = _streams.car_engine
-		_cars.append({"player": p, "car": null, "amp": 0.0, "want": 0.0})
+		_cars.append({"player": p, "car": null, "amp": 0.0, "want": 0.0, "vary": 1.0})
 	for i in AREA_SLOTS:
 		_areas.append({"player": _spatial(14.0, AREA_RANGE), "key": "", "amp": 0.0, "want": 0.0, "next": null})
+	_apply_mix()
 	_wind = _flat(_streams.wind_high, "Ambience")
 	_hum = _flat(_streams.traffic_far, "Distant")
 	for sig in [sim.buildings_changed, sim.lots_changed, sim.farms_changed, sim.zones_changed]:
@@ -112,6 +115,17 @@ func _load_streams() -> void:
 	_swap(_hum, _streams.traffic_far)
 
 
+## The hearing distances from the mix, on the players that exist.
+func _apply_mix() -> void:
+	_mix_version = SoundMix.version
+	for s in _cars:
+		s.player.max_distance = CAR_RANGE * SoundMix.range_scale("world/car_engine")
+	for s in _areas:
+		var sound: String = s.get("sound", "")
+		if sound != "":
+			s.player.max_distance = AREA_RANGE * SoundMix.range_scale("world/" + sound)
+
+
 static func _swap(p: Node, stream: AudioStream) -> void:
 	if p.stream == stream:
 		return
@@ -159,8 +173,9 @@ func _process(delta: float) -> void:
 func _update(delta: float) -> void:
 	if camera == null:
 		return
-	if _picks != SoundSettings.picks_version:
+	if _picks != SoundSettings.picks_version or _mix_version != SoundMix.version:
 		_load_streams()
+		_apply_mix()
 	var ear := camera.global_position
 	_ear = ear
 	_pick_wait -= delta
@@ -189,7 +204,8 @@ func _update(delta: float) -> void:
 
 func _pick_cars(ear: Vector3) -> void:
 	var near := []
-	var max2 := CAR_RANGE * CAR_RANGE
+	var reach := CAR_RANGE * SoundMix.range_scale("world/car_engine")
+	var max2 := reach * reach
 	# The far-off hum is the traffic actually in view: cars around the spot
 	# the camera looks at, within a radius that grows with height.
 	var h := maxf(ear.y, 1.0)
@@ -210,7 +226,7 @@ func _pick_cars(ear: Vector3) -> void:
 			_hum_cars += 1
 	near.sort_custom(func(a, b): return a[0] < b[0])
 	var chosen := []
-	for e in near.slice(0, CAR_SLOTS):
+	for e in near.slice(0, SoundMix.cap("world/car_engine", CAR_SLOTS)):
 		chosen.append(e[1])
 	# Keep slots that still follow a chosen car; free the rest.
 	var free := []
@@ -232,6 +248,7 @@ func _pick_cars(ear: Vector3) -> void:
 		var s: Dictionary = free.pop_front()
 		s.car = c
 		s.want = 1.0
+		s.vary = SoundMix.pitch_for("world/car_engine")
 		var p: AudioStreamPlayer3D = s.player
 		if not p.playing:
 			p.play(randf() * 3.5)
@@ -249,7 +266,7 @@ func _move_cars() -> void:
 		var p: AudioStreamPlayer3D = s.player
 		p.position = Terrain.lift(sim.traffic.car_pose(car, car.v * TrafficSim.DT * frac)[0]) + Vector3.UP * 0.6
 		# Engine note rises with speed: idling at a light up to 65 mph.
-		p.pitch_scale = clampf(0.65 + car.v / 28.0, 0.6, 1.7)
+		p.pitch_scale = clampf(0.65 + car.v / 28.0, 0.6, 1.7) * float(s.vary)
 		s.speed_db = lerpf(-10.0, 0.0, clampf(car.v / 25.0, 0.0, 1.0))
 
 
@@ -303,12 +320,25 @@ func _fade_area(s: Dictionary, step: float) -> void:
 		# Birds, katydids, leaves and fields are ambience; the rest effects.
 		p.bus = "Ambience" if SoundSettings.info("world/" + c.sound)[2] == "ambience" else "World"
 		p.position = Terrain.lift(c.pos)
-		p.play(randf() * 4.0)
+		p.max_distance = AREA_RANGE * SoundMix.range_scale("world/" + c.sound)
+		p.pitch_scale = SoundMix.pitch_for("world/" + c.sound)
+		s.rest = 0.0
+		p.play(randf() * 4.0 if SoundMix.gap("world/" + c.sound) <= 0.0 else 0.0)
 	s.amp = move_toward(s.amp, s.want, step)
 	var sound: String = s.get("sound", "")
 	p.volume_db = linear_to_db(maxf(s.amp, 0.0001)) + SoundSources.GAIN.get(sound, 0.0)
 	if sound != "" and p.playing:
 		p.volume_db = SoundSettings.level3d("world/" + sound, p, p.volume_db, _ear)
+	# A sound set to rest between repeats plays once, waits, and plays again.
+	var rest := SoundMix.gap("world/" + sound) if sound != "" else 0.0
+	if rest > 0.0 and not p.playing and s.want > 0.0 and s.amp > 0.0 and s.next == null:
+		if float(s.get("rest", 0.0)) <= 0.0:
+			s.rest = rest * randf_range(0.6, 1.4)
+		s.rest -= step / FADE_PER_SEC
+		if s.rest <= 0.0:
+			s.rest = 0.0
+			p.pitch_scale = SoundMix.pitch_for("world/" + sound)
+			p.play()
 	if s.amp <= 0.0 and s.want <= 0.0 and s.next == null and p.playing:
 		p.stop()
 		s.key = ""
@@ -349,7 +379,10 @@ func _on_buildings() -> void:
 			var p := _spatial(12.0, 350.0)
 			p.stream = _build_sound
 			p.position = Terrain.lift(pos)
-			p.volume_db = -10.0
+			p.volume_db = SoundSettings.level3d("ui/build", p, -10.0, ear)
+			p.pitch_scale = SoundMix.pitch_for("ui/build")
+			if p.volume_db <= SoundMix.SILENT:
+				p.queue_free()
+				continue
 			p.finished.connect(p.queue_free)
 			p.play()
-			SoundSettings.level3d("ui/build", p, p.volume_db, ear)

@@ -17,6 +17,7 @@ Quality="*res://scripts/shell/quality.gd"
 Session="*res://scripts/shell/session.gd"
 Telemetry="*res://scripts/telemetry/telemetry.gd"
 Pad="*res://scripts/shell/pad.gd"
+AdminAudio="*res://scripts/audio/admin_audio.gd"
 
 [display]
 
