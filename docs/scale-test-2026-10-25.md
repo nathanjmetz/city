@@ -75,3 +75,64 @@ Each piece runs in its own session, on its own branch, owning its own files, so 
 **Later waves:** people and crowds (varied clothes, real fan behavior, players, lights, cheerleaders, camera crews); closer zoom in steps (40 m to 20 m to 10 m to eye level), after the detail exists; the real Grant County map from public data (needs Nathan's OK on the downloads and the OpenStreetMap credit line); and the 713 ideas in `docs/real-life-details.md`, built a few at a time for Nathan to discover.
 
 **Budget:** each helper uses tokens quickly. Start with six, add more as they finish, and stop starting new work when about 5% of the week's budget is left.
+
+## Shared region under load
+
+Measured 2026-10-25 on the same M5 Max MacBook Pro (48 GB), with other helpers' programs running at the same time (the machine's load average was 6 to 20 throughout, on 18 cores). The bots, the region server and the measuring tools all ran on this one machine, so the network between them cost no time. The bots ran without a window (no drawing), so every freeze below is the game's own thinking and networking; a real window would only add to it. Tools: `tools/scale/region_stress.sh` (with `region_stress_region.gd`, `_proxy.py`, `_probe.py`, `_monitor.py`, `_report.py`) plus `region_stress_welcome.gd` and `region_stress_lines.gd` for two separate measurements. The numbers are kept in `tools/scale/results/region-stress-2026-10-25/`.
+
+**The test:** each bot is a player (the `tools/playtest` bot, at top speed, adding a street a minute) who joins a region with a PIN and already owns a big town built by `PerfTown`. A counting go-between sat between every bot and the server and wrote down bytes and message times. A separate probe asked the server a harmless question every 2 seconds. Three runs: 4 players with 20-block towns (about 16,000 people each when made), 20 minutes, plus two late joiners; 8 players with 16-block towns (about 10,000 each), 15 minutes of play, plus two late joiners; and 8 players with 20-block towns, which could not start.
+
+### What broke first, in order
+
+1. **Eight 16,000-person towns can't join at all.** The "welcome" the server sends a player (their own town in full, every neighbor as a small copy) was 17.3 MB for eight towns; the server's message buffer is 16.8 MB. The send fails (server log: `ERR_OUT_OF_MEMORY` from `_send` in `region_server.gd`), nothing tells the player, and their game sits on the loading screen. All eight bots gave up after 300 seconds. With towns this size about seven players fit; each extra player adds about 1.7 MB, and each town grows with its people. With four players the welcome was 10.1 MB, which is fine.
+2. **Every player's game freezes in the city-line drawing.** That's the cream dashed line between neighbors (`scripts/net/city_lines.gd`). It redraws on the main thread whenever any neighbor changes (at most every 15 seconds) and checks every pair of towns against every other town. Timed on its own on the 4-player region: two towns 0.09 s, three towns 0.34 s, four towns 14 s (and it found no line to draw). In the live runs, frames that froze in it added up to 43% of the 4-player run time (547 s of 1,278 s, single freezes up to 107 s) and 96% of the 8-player run (985 s of 1,028 s, single freezes of 4 minutes). With 8 players the median frame was 280 ms and every bot had 28 to 35 freezes over a second. Even a new player with a tiny town froze for 62 to 260 seconds because of their big neighbors. This is the first thing to fix. It is game code, so I did not touch it.
+3. **The server stalls for about a second every 10 seconds, and for 5 to 8 seconds when a brand-new player first joins.** The save writes the whole region as text every 10 seconds, on the same thread that answers players (the saved file was 90 to 108 MB). The probe's median answer time was 13 ms, but the slowest 5% took 0.7 s (4 players) to 1.1 s (8 players), and the worst were 7.6 s and 5.3 s. The worst ones line up with a new player joining. From reading the code, the likely cause is that making a town first makes the server unpack every neighbor's town (`Region.add_city` calls `load_stale`). The new player waited 5 to 8 seconds for their welcome; an existing player coming back waited 0.3 to 1.3 s. Nobody was disconnected, so the stalls were short enough to survive, but each is a pause in everyone's sync.
+4. **Neighbors' towns reach screens late.** On the wire, the median delay from a player's update going in to a neighbor's copy coming out was 0.15 s with 4 players (95% under 5.9 s). With 8 players it was 48 s, because the receiving games were frozen in the city-line drawing and not reading their connections (worst: 4 minutes). On top of that, a game turns a neighbor's new copy into a drawn town for only one neighbor per 60 seconds (`NEIGHBOR_EVERY`), so with 7 neighbors a town can be shown up to 7 minutes behind, by design. At the end of the runs the neighbors' towns on screen were behind their owners by 23 buildings on average (4 players) and 258 (8 players).
+
+Not seen: no player was dropped or had to reconnect in any run, and the server's CPU never stayed busy (below).
+
+### The numbers
+
+| | 4 players, 20-block towns | 8 players, 16-block towns |
+| --- | --- | --- |
+| Server CPU, one core = 100 | mean 9, over 90 for 14 s in all | mean 9, over 90 for 14 s in all |
+| Server memory | 2.9 GB loaded, 3.9 GB peak, 2.6 GB at end | 3.9 GB loaded, 6.7 GB peak, 2.7 GB at end |
+| Server answer time (median / 95% / worst) | 13 ms / 0.7 s / 7.6 s | 13 ms / 1.1 s / 5.3 s |
+| Into the server, per second (steady / peak) | 198 KB / 5.4 MB | 88 KB / 3.8 MB |
+| Out of the server, per second (steady / peak) | 505 KB / 26.9 MB | 480 KB / 16.1 MB |
+| Per player, up / down (steady) | 50 KB / 111 KB | 10 KB / 52 KB |
+| Whole run, in / out | 281 MB / 728 MB | 158 MB / 869 MB |
+| Welcome a joiner is sent | 10 MB | 12 MB |
+| Late joiner with a new town: welcome wait / game's load time | 6 to 8 s / 14 to 16 s | 5 s / 13 s |
+| Player coming back with a big town: welcome wait / load time | 0.3 to 1.3 s / 24 to 31 s | 0.4 to 0.5 s / 24 to 31 s |
+| Each bot's frame time: median / worst | 220 to 250 ms / 107 to 131 s | 280 to 340 ms / 244 to 256 s |
+| Each bot's freezes over 1 s | 85 to 92 | 28 to 35 |
+| Each bot's memory (resident) | 4.5 to 5.0 GB | 3.5 to 4.3 GB |
+| Reconnects or failures | none | none |
+
+Bytes in the 8-player run look lighter than they should, because the frozen games hardly sent anything; the 4-player run is the better picture of the traffic. A player sends a small copy of their town every 20 to 120 seconds, one copy of a 16,000-person town is 1.6 MB packed, and the server sends it to every other player. If it goes every 20 seconds, that is 80 KB a second per neighbor. This is an estimate from the code, not a measurement: 10 such players would be about 7 MB a second out of the server, and 20 players about 30 MB a second (240 megabits), far past a home internet upload. The measured rates are lower because towns did not always change in a way that made the game send.
+
+The bots' towns lost most of their people during the runs (from about 16,000 to between 4,500 and 6,200 in the 4-player run, from about 10,000 to about 900 in the 8-player run), while buildings stayed or grew (about 8,300 and 5,300). I did not look into why; it may be the seeded towns, the long freezes, or the town's thinking. Frame times with a window will be worse than these.
+
+### The biggest risks, in plain words
+
+1. **A region of four or more players with grown towns would be unplayable on the first day**, because of the city-line drawing alone. Two towns are fine; four already freeze for seconds to minutes. Fix this before anything else in the region, for example by tracing one pair of towns at a time over many frames and only when a town's edge really moved.
+2. **A busy region can lock new players out without telling them.** The welcome has a fixed size limit, and when it is passed the player waits on the loading screen forever. It needs a smaller welcome (own town in full, neighbors in a lighter form or one at a time) and a clear message when sending fails.
+3. **The server does the save, the unpacking and the sending on one thread.** A 5-second stall for a new player is survivable now, but it grows with every town. The save should be written in pieces or off the main thread, and the first-join unpacking spread out.
+4. **Memory is too big for a browser and for a small host.** Each player's game held 3.5 to 5 GB with three to seven big neighbors (about 1 GB a neighbor, close to the 0.6 GB a 16,000-person town took alone plus its copies). The server held 3 to 7 GB for four to eight towns. A browser tab (roughly 4 GB at most) and a small cloud server (1 to 2 GB) can't carry this. Neighbors need to be held as light pictures, not running towns, unless the player is looking at them.
+5. **Traffic grows with the square of the number of players.** Everyone's update goes to everyone. That is fine for 4 to 8 players on a home connection and not for 20.
+6. **Neighbors' towns show on screen minutes behind, by design** (one neighbor refreshed a minute). Not a break, but a player will see a neighbor's new street long after it was built.
+
+### What this test did not cover
+
+- No window, so no drawing cost or graphics memory. Real players will freeze more, not less.
+- The towns were made by the test builder, not played; the bots then added a street a minute. Real players edit more, in bigger bursts.
+- The server and all the players shared one machine that other programs were also using. The server's CPU numbers are low because it mostly waited. Its stalls come from one thread doing too much, so a weaker machine makes them longer.
+- Sync lag "on the wire" is when the go-between saw the bytes, which includes time the receiving game was frozen and not reading. The "on screen" figure is only a comparison at the end of each run, not a continuous measurement; the one-neighbor-a-minute rule comes from reading the code, not from a measurement.
+- The city-line cost is measured (stage timers in the live runs and a separate timing of that code), but why it jumps from 0.34 s to 14 s at four towns is not explained.
+- Why the people in the bots' towns fell so far was not investigated.
+- No browser player was in these runs. The tools support one (`tools/playtest/soak.sh` with a web export), but the browser's cost for unpacking a 10 to 12 MB welcome on its one thread was not measured here.
+
+### Questions for Nathan
+
+None. Nothing here touches sign-in, paid services or data; everything ran on this machine.
