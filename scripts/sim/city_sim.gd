@@ -1496,6 +1496,8 @@ func update_stats(budget := true, slice := -1) -> void:
 	var unfinished_jobs := 0
 	var presold := 0  # buyers waiting on homes going up (see _move_in)
 	var office_cap := 0  # BuildingTypes.office_jobs, in the same pass
+	var all_ok := not require_utilities
+	var served: Dictionary = services.served
 	for key in buildings:
 		var b: Dictionary = buildings[key]
 		var zone := int(b.zone)
@@ -1506,8 +1508,9 @@ func update_stats(budget := true, slice := -1) -> void:
 		# (BuildingTypes.type_of: no zone defaults to an office.)
 		if b.get("type", "") == "office":
 			office_cap += int(b.cap)
-		# Closed without power or water.
-		var ok := _utilities_ok(key)
+		# Closed without power or water (_utilities_ok, read straight).
+		var sv = served.get(key)
+		var ok: bool = all_ok or (sv != null and sv.power and sv.water)
 		match zone:
 			ZoneMap.Zone.COMMERCIAL:
 				# Flats above a shop count as homes.
@@ -2895,8 +2898,10 @@ func utilities_going_up() -> Array:
 ## Buildings on zoned lots that lack power or water.
 func unserved_count() -> int:
 	var n := 0
+	var served: Dictionary = services.served  # (services.has_utilities, read straight)
 	for key in buildings:
-		if not services.has_utilities(key):
+		var s = served.get(key)
+		if s == null or not (s.power and s.water):
 			n += 1
 	return n
 

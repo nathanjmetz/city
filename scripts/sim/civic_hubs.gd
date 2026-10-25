@@ -503,18 +503,26 @@ func _pile_up(sim: CitySim) -> void:
 	var share := float(EVERY) / TICKS_PER_DAY
 	# Each street's day of trash is added up first, then put out at once.
 	var put := {}
+	var lots: Dictionary = sim.lots
+	var buildings: Dictionary = sim.buildings
+	# (sim.utilities_ok, read straight from the services' rows.)
+	var all_ok: bool = not sim.require_utilities
+	var served: Dictionary = sim.services.served
 	for key in sim.ledger().sorted:
-		if not sim.lots.has(key):
+		var lot = lots.get(key)
+		if lot == null:
 			continue
-		var b: Dictionary = sim.buildings[key]
+		var b: Dictionary = buildings[key]
 		var lb := 0.0
 		if int(b.zone) == ZoneMap.Zone.RESIDENTIAL:
 			lb = b.occ * Balance.GARBAGE_LB_PER_RESIDENT
-		elif sim.utilities_ok(key):
-			lb = b.cap * Balance.GARBAGE_LB_PER_JOB
+		else:
+			var s = served.get(key)
+			if all_ok or (s != null and s.power and s.water):
+				lb = b.cap * Balance.GARBAGE_LB_PER_JOB
 		if lb <= 0.0:
 			continue
-		var seg: int = sim.lots[key].seg
+		var seg: int = lot.seg
 		put[seg] = put.get(seg, 0.0) + lb
 	for seg in put:
 		trash[seg] = _snap(minf(trash.get(seg, 0.0) + put[seg] * share, Balance.GARBAGE_PILE_LB * 4.0))
