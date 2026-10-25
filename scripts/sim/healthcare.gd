@@ -80,7 +80,7 @@ func tick(sim: CitySim) -> void:
 		sim.permits.locators[PERMIT_KIND] = func(s: CitySim, id: int) -> Vector2:
 			var b: Dictionary = s.services.buildings.get(id, {"pos": Vector3.ZERO})
 			return Vector2(b.pos.x, b.pos.z)
-	if sim.tick_count % DECIDE_EVERY == 0:
+	if sim.tick_count % DECIDE_EVERY == Balance.ROUND_AT.hospitals:
 		decide(sim)
 	if not sim.simulate_traffic:
 		return
@@ -93,7 +93,7 @@ func tick(sim: CitySim) -> void:
 	for crew in on_scene.duplicate():
 		if sim.tick_count >= int(crew.until):
 			_head_back(sim, crew)
-	if sim.tick_count % CALL_EVERY == 0:
+	if sim.tick_count % CALL_EVERY == Balance.ROUND_AT.ems_calls:
 		_roll_call(sim)
 
 

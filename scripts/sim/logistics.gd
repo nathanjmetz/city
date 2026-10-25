@@ -53,7 +53,7 @@ func tick(sim: CitySim) -> void:
 			_return(sim, trips[f.id])
 			trips.erase(f.id)
 	sim.traffic.failed.clear()
-	if sim.tick_count % EVERY != 0:
+	if sim.tick_count % EVERY != Balance.ROUND_AT.freight_round:
 		return
 	# No building comes or goes during a round: its buyers share one ledger.
 	_round_ledger = sim.ledger()

@@ -1232,7 +1232,7 @@ func tick() -> void:
 			farms_changed.emit()
 	Perf.add("sim.farms", t)
 	t = Perf.now()
-	if tick_count % Industry.DECIDE_EVERY == 0 and not industry.sites.is_empty():
+	if tick_count % Industry.DECIDE_EVERY == Balance.ROUND_AT.industry and not industry.sites.is_empty():
 		industry.tax_rate = economy.tax[ZoneMap.Zone.INDUSTRIAL]
 		industry.day = tick_count / (24.0 * TICKS_PER_HOUR)
 		industry.road_between = road_between
@@ -1260,7 +1260,7 @@ func tick() -> void:
 		_bank_changes(banks.decide(self))
 	Perf.add("sim.banks", t)
 	t = Perf.now()
-	if tick_count % Balance.WAREHOUSE_DECIDE_EVERY == 0 and not warehouses.buildings.is_empty():
+	if tick_count % Balance.WAREHOUSE_DECIDE_EVERY == Balance.ROUND_AT.warehouses and not warehouses.buildings.is_empty():
 		if warehouses.decide(self):
 			_lots_dirty = true
 			warehouses_changed.emit()
@@ -1274,7 +1274,7 @@ func tick() -> void:
 		parks.tourism.tick(self)
 	Perf.add("sim.tourism", t)
 	t = Perf.now()
-	if tick_count % Balance.PARK_DECIDE_EVERY == 0 and not parks.sites.is_empty():
+	if tick_count % Balance.PARK_DECIDE_EVERY == Balance.ROUND_AT.parks and not parks.sites.is_empty():
 		var sizes := parks.sites.values().map(func(s): return s.size)
 		if parks.decide(self):
 			if parks.sites.values().map(func(s): return s.size) != sizes:
@@ -1286,7 +1286,7 @@ func tick() -> void:
 			parks_changed.emit()
 	Perf.add("sim.parks", t)
 	t = Perf.now()
-	if tick_count % Power.DECIDE_EVERY == 0 and not power.sites.is_empty():
+	if tick_count % Power.DECIDE_EVERY == Balance.ROUND_AT.power and not power.sites.is_empty():
 		if _decide_power():
 			power_changed.emit()
 	Perf.add("sim.power", t)
@@ -1385,7 +1385,7 @@ func tick() -> void:
 	if tick_count % TICKS_PER_HOUR == 35 and not engineer.pending.is_empty() and engineer.carry_out(self):
 		_lots_dirty = true
 	t = Perf.now()
-	if tick_count % WaterUtility.DECIDE_EVERY == 0 and not services.water.utilities.is_empty():
+	if tick_count % WaterUtility.DECIDE_EVERY == Balance.ROUND_AT.water and not services.water.utilities.is_empty():
 		var res := services.water.decide(self, yard_usable)
 		economy.money += int(res[1])
 		if res[0]:

@@ -481,13 +481,13 @@ func tick(sim: CitySim) -> void:
 				var t: Dictionary = trips[f.id]
 				trips.erase(f.id)
 				_stuck(sim, t)
-	if sim.tick_count % EVERY == 0:
+	if sim.tick_count % EVERY == Balance.ROUND_AT.hub_round:
 		_pile_up(sim)
 		if sim.simulate_traffic:
 			_send_trucks(sim)
 		else:
 			_collect_offstage()
-	if sim.tick_count % Balance.HUB_DECIDE_EVERY == 0 and not hubs.is_empty():
+	if sim.tick_count % Balance.HUB_DECIDE_EVERY == Balance.ROUND_AT.hubs and not hubs.is_empty():
 		_decide(sim)
 	if sim.tick_count % TICKS_PER_DAY == 0:
 		_trade(sim)
