@@ -32,7 +32,7 @@ Unfinished work is always saved on a branch. A new session restarts a helper fro
 | Browser measured | `wip/browser-measure` | Paused to save tokens |
 | Playtest look check | PR #547 (`docs/look-check.md`) | Done; findings handed out |
 
-Live on 2026-10-25: #527 land preload, #528-#530 construction trucks and the builder's yard, #535 region play-through, #537 crop calendar, #541 daylight, #545 farm field freeze, #542 trees that grow, #544 town speed (about 2x), #548 ground lines, #546 farmsteads, #547 playtest list.
+Live on 2026-10-25: #527 land preload, #528-#530 construction trucks and the builder's yard, #535 region play-through, #537 crop calendar, #541 daylight, #545 farm field freeze, #542 trees that grow, #544 town speed (about 2x), #548 ground lines, #546 farmsteads, #547 playtest list, #550 town life (ambulance cap, alert icons, walkers).
 
 ## The queue, in order
 
@@ -66,6 +66,11 @@ A few helpers run at a time, never two on the same files.
 21. Closer zoom step 2: to 10 m, then standing on the sidewalk (no shirt buttons).
 
 *Life you discover:* `docs/real-life-details.md`, now ranked by impact (Nathan, 2026-10-25: "organize that list by what we have the most dramatic impact on the game and work on those things first"). Work it from the Top 50 down, a few ideas a helper, numbers checked before they become rules.
+
+*Next up (Nathan, 2026-10-25)*
+- Fix the new building drawing's review findings (posted on PR #551), then merge #549 and #551.
+- Home screen weather: "instead of just time and day and season you include the weather." The game draws no weather yet, so build overcast skies, rain, snow and fog (these serve the game too), then feed in Marion's live conditions from the National Weather Service (api.weather.gov: free, no key, official; falls back to clear when offline). Only Marion's fixed location is sent, never the player's. Must have a simple on/off switch in settings, like day and night (Nathan, 2026-10-25: "will it be easy to turn off with a simple toggle switch still?"); off means always clear.
+- Traffic: a 2,700-person town growing along the highway drops to about 45% flow; queues back up at the all-way stops where highway streets enter the grid.
 
 *Waits for Nathan*
 30. The real Grant County map from public data (big downloads; OpenStreetMap credit line).
