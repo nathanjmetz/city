@@ -64,7 +64,8 @@ var _stale := {}  # city ids whose simulation is older than _data
 ## CitySim.to_dict).
 var _full := {}
 ## The same copies packed for the wire (RegionServer.pack), as they came in
-## or packed once: city id -> text. A welcome sends them as they are.
+## or packed once: city id -> text. A welcome sends them as they are. The
+## postcard is kept packed as a picture (picture_of), as neighbors get it.
 var _full_z := {}
 var _card_z := {}
 ## city id -> a number that goes up with each new full copy (for the
@@ -79,6 +80,9 @@ var _copy_n := {}
 ## postcard has no plans to keep). So while its player is away, others see
 ## that half of the road only once they're back.
 var pending := {}
+## Towns placed but not yet sent (a player's game, right after the welcome:
+## each neighbor's picture comes on its own just after).
+var awaiting := {}
 
 
 ## The city a player owns, or "" if they have none yet.
@@ -97,7 +101,7 @@ func city_of(player_id: String) -> String:
 ## Takes a town off the map: its label, land, copies and road links. Its
 ## neighbors keep their halves of the county roads.
 func remove_city(id: String) -> void:
-	for d in [cities, land, _data, _stale, _full, _full_z, _card_z, _copy_n, away, handed, pending]:
+	for d in [cities, land, _data, _stale, _full, _full_z, _card_z, _copy_n, away, handed, pending, awaiting]:
 		d.erase(id)
 	joins = joins.filter(func(j): return j.a != id and j.b != id)
 
@@ -178,8 +182,8 @@ static func new_sim() -> CitySim:
 
 ## Takes the latest copy of a town from its player's computer: a postcard
 ## or a full copy.
-## `full_z` and `card_z` are the copy packed (the server has them as they
-## came in), kept for sending on. Returns whether it was taken.
+## `full_z` is the full copy packed as it came in and `card_z` its picture
+## packed (picture_of), kept for sending on. Returns whether it was taken.
 func update_city(id: String, d: Dictionary, full_z := "", card_z := "") -> bool:
 	# A full copy without roads is broken (a cut-short save): never let it
 	# replace a town.
@@ -189,6 +193,7 @@ func update_city(id: String, d: Dictionary, full_z := "", card_z := "") -> bool:
 		return false
 	_data[id] = d
 	_stale[id] = true
+	awaiting.erase(id)
 	_card_z.erase(id)
 	if card_z != "":
 		_card_z[id] = card_z
@@ -222,10 +227,11 @@ func packed_full(id: String) -> String:
 	return _full_z[id]
 
 
-## The town's newest postcard, packed (packed here only if it wasn't).
+## The town's newest postcard as a picture (picture_of), packed: what its
+## neighbors are sent (packed here only if it wasn't).
 func packed_card(id: String) -> String:
 	if not _card_z.has(id):
-		_card_z[id] = RegionServer.pack(postcard_data(id))
+		_card_z[id] = RegionServer.pack(picture_of(postcard_data(id)))
 	return _card_z[id]
 
 
@@ -354,12 +360,16 @@ func stale_ids() -> Array:
 
 
 ## A town's full saved data, made from its simulation only when there's no
-## copy (a town made or changed here).
+## copy (a town made or changed here). It's made as the packed copy is and
+## read back from that, so it shares nothing with the running town: a copy
+## that shared the town's own lists changed when the town did (after it
+## was packed and sent), and the save and the wire disagreed.
 func city_data(id: String) -> Dictionary:
 	if not _full.has(id):
-		_full[id] = cities[id].sim.to_dict()
+		var z := RegionServer.pack(cities[id].sim.to_dict())
+		_full[id] = RegionServer.unpack(z)
 		_data[id] = _full[id]
-		_full_z.erase(id)
+		_full_z[id] = z
 		_card_z.erase(id)
 		_count_copy(id)
 	return _full[id]
@@ -381,6 +391,150 @@ static func postcard_of(d: Dictionary) -> Dictionary:
 		p.erase(key)
 	p.postcard = true
 	return p
+
+
+## A town as a picture: what a neighbor's computer needs to show it (its
+## roads, its buildings and the lots they stand on, how they look) and to
+## trade with it. It's a postcard (CitySim.to_dict) with its lots, which are
+## most of a postcard's size, packed tight: every position to the
+## centimetre, as whole numbers, and each outline without the points that
+## lie on a straight edge (a lot along a curve has one every few metres).
+## About half a postcard, packed. Neighbors are sent pictures, each
+## on its own after the welcome; a game turns one back into a postcard
+## (from_picture) as it unpacks it. Drawn only, never run: a centimetre
+## doesn't show, and no neighbor's lots are ever planned or simulated here.
+##
+## Kept small and plain on purpose, for the living picture of a neighbor
+## (later, Nathan 2026-10-25: "Neighbors show as a living picture, with
+## full detail only when I fly there"): that can draw straight from it, add
+## the town's night lights and a sample of its traffic, and send it about
+## once a minute.
+const PICTURE := 1
+## Lot spots ([x, y, z]) and lengths are kept in whole centimetres...
+const PICTURE_CM := 100.0
+const PICTURE_LENGTHS := ["area", "width", "depth", "to_curb", "pad"]
+## ...and directions and the spot along the street in ten-thousandths.
+const PICTURE_FINE := 10000.0
+const PICTURE_DIRECTIONS := ["dir", "normal"]
+const PICTURE_WHOLE := ["seg", "side", "plat_zone"]
+
+
+static func picture_of(d: Dictionary) -> Dictionary:
+	var p := postcard_of(d)
+	if p.has("picture"):
+		return p
+	p = p.duplicate()
+	var lots := {}
+	var from: Dictionary = p.get("parcels", {})
+	for key in from:
+		if from[key] is Dictionary:
+			lots[key] = _tight_lot(from[key])
+	p.erase("parcels")
+	p.lots = lots
+	p.picture = PICTURE
+	return p
+
+
+## A picture back as the postcard it was made from (to the centimetre), so
+## the game loads it like any other (CitySim.from_dict). Anything else is
+## handed back as it is.
+static func from_picture(d: Variant) -> Variant:
+	if not d is Dictionary or not d.has("picture"):
+		return d
+	var p: Dictionary = d.duplicate()
+	var parcels := {}
+	var lots: Dictionary = p.get("lots", {})
+	for key in lots:
+		parcels[key] = _loose_lot(lots[key], key)
+	p.erase("lots")
+	p.erase("picture")
+	p.parcels = parcels
+	return p
+
+
+## A saved lot (LotPlanner.lot_to_save) packed tight (see picture_of).
+static func _tight_lot(lot: Dictionary) -> Dictionary:
+	var out := {}
+	var at := _cm3(lot.get("pos", [0, 0, 0]))
+	for k in lot:
+		var v = lot[k]
+		if k == "key":
+			continue  # it's the lot's key in the list
+		if k == "corners":
+			out[k] = _tight_outline(v, at)
+		elif (v is Vector3 or (v is Array and v.size() == 3)) and k != "corner_by":
+			out[k] = _cm3(v, PICTURE_FINE if k in PICTURE_DIRECTIONS else PICTURE_CM)
+		elif (v is float or v is int) and k in PICTURE_LENGTHS:
+			out[k] = roundi(float(v) * PICTURE_CM)
+		elif (v is float or v is int) and k == "at_frac":
+			out[k] = roundi(float(v) * PICTURE_FINE)
+		elif v is float and k in PICTURE_WHOLE:
+			out[k] = roundi(v)
+		else:
+			out[k] = v
+	return out
+
+
+static func _loose_lot(lot: Dictionary, key: String) -> Dictionary:
+	var out := {}
+	var at: PackedInt32Array = lot.get("pos", PackedInt32Array([0, 0, 0]))
+	for k in lot:
+		var v = lot[k]
+		if k == "corners" and v is PackedInt32Array:
+			var flat := []
+			for i in range(0, v.size() - 1, 2):
+				flat.append_array([(at[0] + v[i]) / PICTURE_CM, (at[2] + v[i + 1]) / PICTURE_CM])
+			out[k] = flat
+		elif v is PackedInt32Array and v.size() == 3:
+			var unit := PICTURE_FINE if k in PICTURE_DIRECTIONS else PICTURE_CM
+			out[k] = [v[0] / unit, v[1] / unit, v[2] / unit]
+		elif v is int and k in PICTURE_LENGTHS:
+			out[k] = v / PICTURE_CM
+		elif v is int and k == "at_frac":
+			out[k] = v / PICTURE_FINE
+		else:
+			out[k] = v
+	out.key = key
+	return out
+
+
+## [x, y, z] (a Vector3 or a saved list) in whole centimetres (or `unit`ths).
+static func _cm3(v: Variant, unit := PICTURE_CM) -> PackedInt32Array:
+	var x: float = v.x if v is Vector3 else float(v[0])
+	var y: float = v.y if v is Vector3 else float(v[1])
+	var z: float = v.z if v is Vector3 else float(v[2])
+	return PackedInt32Array([roundi(x * unit), roundi(y * unit), roundi(z * unit)])
+
+
+## An outline (saved as [x, z, x, z, ...], or points) as centimetres from
+## the lot's spot, leaving out points on a straight edge (within 2 cm).
+static func _tight_outline(v: Variant, at: PackedInt32Array) -> PackedInt32Array:
+	var pts: Array[Vector2i] = []
+	if v is PackedVector2Array:
+		for q in v:
+			pts.append(Vector2i(roundi(q.x * PICTURE_CM) - at[0], roundi(q.y * PICTURE_CM) - at[2]))
+	elif v is Array or v is PackedFloat32Array or v is PackedFloat64Array:
+		for i in range(0, v.size() - 1, 2):
+			pts.append(Vector2i(roundi(float(v[i]) * PICTURE_CM) - at[0], roundi(float(v[i + 1]) * PICTURE_CM) - at[2]))
+	var keep: Array[Vector2i] = []
+	var n := pts.size()
+	for i in n:
+		if n <= 3 or i == 0:
+			keep.append(pts[i])
+			continue
+		var a := Vector2(pts[i - 1] if keep.is_empty() else keep[keep.size() - 1])
+		var b := Vector2(pts[(i + 1) % n])
+		var q := Vector2(pts[i])
+		var ab := b - a
+		var off := absf(ab.cross(q - a)) / maxf(ab.length(), 1.0)
+		if off > 2.0 or ab.dot(q - a) <= 0.0 or ab.dot(q - b) >= 0.0:
+			keep.append(pts[i])
+	if keep.size() < 3:
+		keep = pts
+	var out := PackedInt32Array()
+	for q in keep:
+		out.append_array([q.x, q.y])
+	return out
 
 
 ## Call after changing a town's simulation directly, so its saved data is
@@ -806,6 +960,8 @@ func to_dict(full_for := "*", with_data := true) -> Dictionary:
 
 ## With `first` set, only that town is unpacked now (a player's own, so
 ## they can start playing at once); the others wait as data (load_stale).
+## A town sent with no data (a welcome: the neighbors' pictures follow it)
+## starts empty, and is listed in `awaiting` until its picture comes.
 func from_dict(d: Dictionary, first := "") -> void:
 	region_seed = int(d.get("seed", 1))
 	chat = d.get("chat", [])
@@ -824,12 +980,20 @@ func from_dict(d: Dictionary, first := "") -> void:
 	_full_z = {}
 	_card_z = {}
 	_copy_n = {}
+	awaiting = {}
 	pending = pending_from(d)
 	var cs: Dictionary = d.get("cities", {})
 	for id in cs:
 		var c: Dictionary = cs[id]
 		var sim := new_sim()
 		sim.terrain_offset = Vector2(float(c.origin[0]), float(c.origin[1]))
+		if not c.get("city") is Dictionary:
+			cities[id] = {"owner": str(c.owner), "player": str(c.get("player", "")), "name": str(c.name),
+				"origin": Vector2(float(c.origin[0]), float(c.origin[1])), "color": int(c.color), "sim": sim}
+			awaiting[id] = true
+			if c.get("land") is Array:
+				take_land(id, c.land)
+			continue
 		if first == "" or id == first:
 			sim.from_dict(c.city)
 			if not c.city.get("postcard", false):

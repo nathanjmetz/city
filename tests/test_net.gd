@@ -172,6 +172,7 @@ func _run() -> void:
 
 	# Before signing in, nobody can send the server big messages.
 	var raw := WebSocketMultiplayerPeer.new()
+	RegionServer.use_big_buffers(raw)
 	raw.create_client(url)
 	await _until(func():
 		raw.poll()
@@ -185,12 +186,17 @@ func _run() -> void:
 	raw.close()
 
 	# The save goes on another core, and writes just what saving at once does.
+	# (Compared with the region as it was when the save started: the players'
+	# games keep sending copies meanwhile.)
+	await _until(func(): return server._saving.is_empty(), 30.0)
+	var expected := _old_save(server)
 	server._start_save()
 	await _until(func(): return server._saving.is_empty(), 30.0)
-	_check(_same_as_old_save(server), "a save made on another core is the same file as before")
+	_check(_same_save(expected, server.data_path), "a save made on another core is the same file as before")
+	expected = _old_save(server)
 	server._start_save()
 	await _until(func(): return server._saving.is_empty(), 30.0)
-	_check(_same_as_old_save(server) and not server._town_text.is_empty(), "and again from the towns' kept text")
+	_check(_same_save(expected, server.data_path) and not server._town_text.is_empty(), "and again from the towns' kept text")
 
 	# Chat reaches everyone, with the sender's name.
 	var heard := []
@@ -511,6 +517,21 @@ func _test_city_lines() -> void:
 	while not seeded.step():
 		pass
 	_check(not stops.is_empty() and seeded.lines.size() == 1, "and the line round it starts where three towns meet (%d spots)" % stops.size())
+	# Lines are traced again only when a town's edge moves: building inside
+	# a town leaves its edge's number as it was.
+	var grid := PackedVector2Array()
+	for x in range(0, 641, 20):
+		for y in range(0, 641, 20):
+			grid.append(Vector2(x, y))
+	var edge := CityLines.PointSet.new(grid).edge_sig()
+	var inside := grid.duplicate()
+	inside.append(Vector2(321, 317))
+	var outside := grid.duplicate()
+	outside.append(Vector2(700, 300))
+	var shuffled := grid.duplicate()
+	shuffled.reverse()
+	_check(CityLines.PointSet.new(inside).edge_sig() == edge and CityLines.PointSet.new(shuffled).edge_sig() == edge
+		and CityLines.PointSet.new(outside).edge_sig() != edge, "a town's edge counts as moved only when it grows out, not in")
 	# Towns joined by county road: the road out of town doesn't count, so
 	# the line runs between the towns, not where their roads meet.
 	var r := Region.new()
@@ -716,23 +737,20 @@ func _test_metro(l: Ledger) -> void:
 		"the metro saves and loads")
 
 
-## The server's save file, read back, against the region saved the old way
-## (all at once as JSON), keys sorted.
-func _same_as_old_save(server: RegionServer) -> bool:
+## The region as the server used to save it (all at once, as JSON), as text
+## with its keys sorted.
+func _old_save(server: RegionServer) -> String:
 	var old := server.region.to_dict()
 	old["code"] = server.invite_code
 	old["accounts"] = server.accounts
 	old["away"] = server.region.away
-	var a = JSON.parse_string(JSON.stringify(old, "", false, true))
-	var b = JSON.parse_string(FileAccess.get_file_as_string(server.data_path))
-	var sa := JSON.stringify(a, "", true, true)
-	var sb := JSON.stringify(b, "", true, true) if b is Dictionary else ""
-	if sa != sb:
-		var i := 0
-		while i < mini(sa.length(), sb.length()) and sa[i] == sb[i]:
-			i += 1
-		print("DBG diff at ", i, " of ", sa.length(), "/", sb.length(), ": ", sa.substr(maxi(0, i - 150), 300), " VS ", sb.substr(maxi(0, i - 150), 300))
-	return b is Dictionary and sa == sb
+	return JSON.stringify(JSON.parse_string(JSON.stringify(old, "", false, true)), "", true, true)
+
+
+## Whether the save file at `path` is that region.
+func _same_save(expected: String, path: String) -> bool:
+	var b = JSON.parse_string(FileAccess.get_file_as_string(path))
+	return b is Dictionary and JSON.stringify(b, "", true, true) == expected
 
 
 func _client() -> RegionClient:

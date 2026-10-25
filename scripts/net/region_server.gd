@@ -121,7 +121,20 @@ const BEFORE_SIGN_IN := 64 * 1024
 func _new_link() -> NetLink:
 	var link := NetLink.new(_peer)
 	link.max_for = func(from: int) -> int: return NetLink.MAX_MESSAGE if _players.has(from) else BEFORE_SIGN_IN
+	link.on_failed = _send_failed
 	return link
+
+
+## A message that couldn't go at all. A player still joining is told why
+## (they'd otherwise wait on the loading screen for ever); anything else is
+## written in the log, and the next copy of that town goes as usual.
+func _send_failed(peer: int, tag: String, err: int) -> void:
+	var who: String = _players[peer].name if _players.has(peer) else "peer %d" % peer
+	_log("Couldn't send %s to %s (error %d)" % [tag if tag != "" else "a message", who, err])
+	if tag == "welcome":
+		_reject(peer, "The region couldn't send you your town. Try again in a minute; if it happens again, tell the host.")
+		if is_inside_tree():
+			get_tree().create_timer(2.0).timeout.connect(func(): if _peer and _open.has(peer): _peer.disconnect_peer(peer))
 
 
 ## Six letters and digits, leaving out ones that look alike (0/O, 1/I/L).
@@ -313,8 +326,8 @@ func _handle(from: int, msg: Dictionary) -> void:
 	match msg.get("t", ""):
 		"city":
 			# A copy of the player's own town (never anyone else's): a
-			# postcard, or now and then a full copy. Neighbors get postcards.
-			# It's unpacked (and a full copy cut down to a postcard and packed
+			# postcard, or now and then a full copy. Neighbors get pictures of it.
+			# It's unpacked (and made into a picture for the neighbors and packed
 			# again) on another core; then it's kept and passed on, here.
 			if p.city != "":
 				_take_city(from, p.city, msg)
@@ -364,9 +377,9 @@ func _handle(from: int, msg: Dictionary) -> void:
 				_ledger_changed()
 
 
-## Takes a copy of a player's own town: unpacked on another core (with a
-## full copy cut down to a postcard there too), then kept and passed on to
-## the neighbors here, in the order copies came in.
+## Takes a copy of a player's own town: unpacked on another core (and made
+## into a picture for the neighbors there too, Region.picture_of), then kept
+## and passed on to the neighbors here, in the order copies came in.
 func _take_city(from: int, city: String, msg: Dictionary) -> void:
 	var z := str(msg.get("z", ""))
 	var job := {}
@@ -375,11 +388,10 @@ func _take_city(from: int, city: String, msg: Dictionary) -> void:
 		if typeof(d) != TYPE_DICTIONARY:
 			return
 		job.d = d
-		if d.get("postcard", false):
-			job.card = z
-		else:
+		if not d.get("postcard", false):
 			job.full = z
-			job.card = pack(Region.postcard_of(d))
+		# What the neighbors are sent: the town as a picture.
+		job.card = pack(Region.picture_of(d))
 	_job(work, func():
 		if job.has("d") and region.cities.has(city) and region.update_city(city, job.d, job.get("full", ""), job.card):
 			_dirty = true
@@ -686,17 +698,19 @@ func _welcome(from: int, account: Dictionary, token: String) -> void:
 					_send(peer, {"t": "apply", "cmds": region.handed[other]})
 		# Everyone else gets the new town (and the roads handed to the
 		# neighbors); the rest they already have.
+		var news := _region_msg("region", [city])
 		for peer in _players:
 			if peer != from and _players[peer].city != "":
-				_send(peer, _region_msg("region", [city]))
+				_send(peer, news)
 	elif region.cities[city].player != name:
 		region.cities[city].player = name
 	_players[from].city = city
 	_log("%s joined" % name)
-	# Everything as it is now, their own town included: the server's copy is
-	# what they play from. Back from a while away: what the neighbors did
+	# The region as it is now and their own town in full (the server's copy
+	# is what they play from); each neighbor follows on its own, as a picture
+	# (_send_neighbors). Back from a while away: what the neighbors did
 	# meanwhile, for their town to catch up on (CatchUp).
-	var welcome := _region_msg("welcome", region.cities.keys(), city)
+	var welcome := _region_msg("welcome", [city], city)
 	welcome.merge({"you": pid, "name": name, "code": invite_code, "token": token, "host": account.host})
 	var away := region.away_report(city)
 	if not away.is_empty():
@@ -704,7 +718,8 @@ func _welcome(from: int, account: Dictionary, token: String) -> void:
 		_dirty = true
 	# (Roads the region handed their town while they were away come in the
 	# welcome's pending list, and their game builds them as it loads.)
-	_send(from, welcome)
+	_send(from, welcome, "welcome")
+	_send_neighbors(from, city)
 	_send_players()
 	_send_requests()
 	_send_pins()
@@ -715,13 +730,30 @@ func _welcome(from: int, account: Dictionary, token: String) -> void:
 ## A region message (a welcome, or a new town for the others): the region
 ## packed small without its towns, and each listed town packed on its own,
 ## as it was kept when it came in (so nothing big is packed here): their
-## own town in full for `full_for`, postcards of the rest.
+## own town in full for `full_for`, pictures of the rest.
 func _region_msg(t: String, ids: Array, full_for := "") -> Dictionary:
 	var towns := {}
 	for id in ids:
 		if region.cities.has(id):
 			towns[id] = region.packed_full(id) if id == full_for else region.packed_card(id)
 	return {"t": t, "z": pack(region.to_dict("", false)), "towns": towns}
+
+
+## Each neighbor's picture, right after a welcome, nearest first: one
+## message each (a newer copy of a town still waiting to go replaces it).
+## The welcome stays small however many towns there are (it was every town
+## in one message, and eight grown towns outgrew the connection's buffer).
+func _send_neighbors(peer: int, city: String) -> void:
+	var at: Vector2 = region.cities[city].origin
+	var ids := []
+	for id in region.cities:
+		if id != city:
+			ids.append([at.distance_squared_to(region.cities[id].origin), id])
+	ids.sort()
+	for e in ids:
+		var id: String = e[1]
+		var msg := {"t": "city", "id": id, "z": region.packed_card(id), "land": region.land_flat(id)}
+		_send(peer, msg, "city:" + id)
 
 
 ## Tells the host who is waiting to join.
@@ -764,9 +796,11 @@ func _reject(peer: int, reason: String) -> void:
 	_log("Turned away peer %d: %s" % [peer, reason])
 
 
-func _send(peer: int, msg: Dictionary) -> void:
+## A tagged message replaces an older one with the same tag that hasn't
+## started going out yet (NetLink.send).
+func _send(peer: int, msg: Dictionary, tag := "") -> void:
 	if _open.has(peer):
-		_link.send(peer, JSON.stringify(msg, "", false, true).to_utf8_buffer())
+		_link.send(peer, JSON.stringify(msg, "", false, true).to_utf8_buffer(), tag)
 
 
 ## To every player but `except`. A tagged message replaces an older one with

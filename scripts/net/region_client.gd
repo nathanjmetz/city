@@ -157,6 +157,11 @@ func _connect() -> int:
 	_link.on_progress = func(_from: int, got: int, total: int):
 		_quiet = 0.0
 		receiving.emit(float(got) / maxf(1.0, float(total)))
+	# A copy of your town that couldn't go at all: the next one goes as usual
+	# (it carries everything this one did).
+	_link.on_failed = func(_to: int, tag: String, err: int):
+		push_warning("Couldn't send %s to the region (error %d)" % [tag if tag != "" else "a message", err])
+		_sent_sig = []
 	var err := _peer.create_client(url)
 	if err != OK:
 		_peer = null
@@ -610,6 +615,8 @@ func _handle(msg: Dictionary) -> void:
 			away = msg.away if msg.get("away") is Dictionary else {}
 			_land_sent = 0
 			_hook_land()
+			# The neighbors come one by one right after (each a picture), and
+			# are unpacked as they come (see _finish_packing).
 			_unseen = region.stale_ids()
 			is_joined = true
 			joined.emit()
@@ -677,7 +684,7 @@ func _handle(msg: Dictionary) -> void:
 				var z := str(msg.get("z", ""))
 				job.task = _on_another_core(func():
 					var t0 := Time.get_ticks_usec()
-					var d = RegionServer.unpack(z)
+					var d = Region.from_picture(RegionServer.unpack(z))
 					job.unpack_ms = (Time.get_ticks_usec() - t0) / 1000.0
 					if typeof(d) == TYPE_DICTIONARY:
 						job.d = d
@@ -722,7 +729,12 @@ func _finish_packing() -> void:
 			region.cities[id].sim.stats.population = int(job.msg.get("pop", region.cities[id].sim.stats.population))
 			town_loaded.emit(id, str(job.msg.get("z", "")).length(), job.unpack_ms, 0.0)
 			continue
+		var first := region.awaiting.has(id)
 		region.update_city(id, job.d)
+		if first:
+			# A neighbor just after joining: drawn soon, as the first ones are.
+			_unseen.append(id)
+			_neighbor_wait = minf(_neighbor_wait, NEIGHBOR_FIRST)
 		_look_waiting[id] = job.look
 		_unpacked[id] = [str(job.msg.get("z", "")).length(), job.unpack_ms]
 
@@ -770,7 +782,7 @@ static func _region_of(msg: Dictionary) -> Variant:
 	var towns = msg.get("towns", {})
 	if towns is Dictionary:
 		for id in towns:
-			var c = RegionServer.unpack(str(towns[id]))
+			var c = Region.from_picture(RegionServer.unpack(str(towns[id])))
 			if not c is Dictionary or not d.cities.has(id):
 				return null
 			d.cities[id]["city"] = c
@@ -790,14 +802,19 @@ func _replace_region(d: Dictionary) -> void:
 		var c: Dictionary = d.cities[id]
 		if id != my_city and c.get("land") is Array and not c.land.is_empty():
 			region.take_land(id, c.land)
-		if id == my_city or not c.has("city"):
+		if id == my_city:
 			continue
+		var has_data: bool = c.get("city") is Dictionary
 		if region.cities.has(id):
-			region.update_city(id, c.city)
+			if has_data:
+				region.update_city(id, c.city)
 		else:
 			var sim := Region.new_sim()
 			sim.terrain_offset = Vector2(float(c.origin[0]), float(c.origin[1]))
-			sim.from_dict(c.city)
+			if has_data:
+				sim.from_dict(c.city)
+			else:
+				region.awaiting[id] = true  # its picture follows (a welcome)
 			region.cities[id] = {"owner": str(c.owner), "player": str(c.get("player", "")),
 				"name": str(c.name), "origin": Vector2(float(c.origin[0]), float(c.origin[1])),
 				"color": int(c.color), "sim": sim}

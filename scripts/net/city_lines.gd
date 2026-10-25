@@ -48,7 +48,7 @@ var _lines := []        # traced lines, region coordinates
 var _width := WIDTH
 var _changed := {}      # town ids whose buildings or roads changed
 var _sets := {}         # town id -> PointSet of its newest outline
-var _sig := {}          # town id -> hash of those points
+var _sig := {}          # town id -> PointSet.edge_sig of that outline
 var _pairs := {}        # "a|b" -> lines between those two towns
 var _stops := {}        # "a|b" -> [[town id, spot]] where their line stopped at a third town
 var _job: Rebuild
@@ -217,7 +217,8 @@ class Rebuild:
 
 	func _took(g: Gather) -> void:
 		var id: String = g.city_id
-		var sig := hash(g.points)
+		# Only its edge counts: a town that built inside itself keeps its lines.
+		var sig := g.edge_sig
 		if g.points.is_empty():
 			owner._sets.erase(id)
 			owner._sig.erase(id)
@@ -274,6 +275,9 @@ class Gather:
 	var _out := {}   # segment ids of the country roads out of town
 	var _i := 0
 	var _stage := 0
+	var _cells := []
+	## PointSet.edge_sig of the outline, once it's all in.
+	var edge_sig := 0
 
 	func _init(city: Dictionary, id := "") -> void:
 		_sim = city.sim
@@ -317,6 +321,16 @@ class Gather:
 				set_of.add(points, _i, stop)
 				_i = stop
 				if _i >= points.size():
+					_stage = 3
+					_i = 0
+					_cells = set_of.cells.keys()
+			3:
+				# Its edge's number (PointSet.edge_sig), a few cells at a time.
+				var stop := mini(_i + CHUNK, _cells.size())
+				for n in range(_i, stop):
+					edge_sig = set_of.add_edge_sig(edge_sig, _cells[n])
+				_i = stop
+				if _i >= _cells.size():
 					return true
 		return false
 
@@ -644,6 +658,25 @@ class PointSet:
 					coarse[k] = []
 				coarse[k].append(c)
 			cells[c].append(p)
+
+	## A number for the points along the edge (in cells with an empty cell
+	## beside them): it changes when the edge moves, not when the town builds
+	## inside itself. The same whatever order the points came in.
+	func edge_sig() -> int:
+		var sig := 0
+		for c: Vector2i in cells:
+			sig = add_edge_sig(sig, c)
+		return sig
+
+	## edge_sig with cell `c` added in.
+	func add_edge_sig(sig: int, c: Vector2i) -> int:
+		for dx in range(-1, 2):
+			for dy in range(-1, 2):
+				if not cells.has(c + Vector2i(dx, dy)):
+					for q in cells[c]:
+						sig = (sig + hash(q)) & 0x7fffffffffff
+					return sig
+		return sig
 
 	func nearest(p: Vector2) -> Vector2:
 		return _find(p, INF, false)

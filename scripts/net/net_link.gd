@@ -33,6 +33,11 @@ var on_progress := Callable()
 ## The most a peer may send in one message: (peer id) -> bytes. The server
 ## lets a connection that hasn't signed in send only small ones.
 var max_for := Callable()
+## Called with (peer id, the message's tag, error) when a message can't be
+## sent at all, so whoever sent it can say so.
+var on_failed := Callable()
+## Messages that couldn't be sent.
+var failures := 0
 
 var _out := {}   # peer id -> [{"tag", "packets": Array[PackedByteArray], "next": int}]
 var _in := {}    # peer id -> PackedByteArray of a message coming in parts
@@ -82,10 +87,18 @@ func flush_peer(to: int) -> void:
 			peer.set_target_peer(to)
 			var err := peer.put_packet(pkt)
 			if err != OK:
-				# The buffer is full after all: try again next frame.
-				return
+				if buffered > 0:
+					return  # the buffer is full after all: try again next frame
+				# It doesn't go even with nothing else waiting: it never will.
+				# Dropped, and said so (the player is told, never left waiting).
+				q.pop_front()
+				failures += 1
+				if on_failed.is_valid():
+					on_failed.call(to, str(entry.tag), err)
+				break
 			entry.next += 1
-		q.pop_front()
+		if entry.next >= packets.size():
+			q.pop_front()
 
 
 ## Bytes still waiting to go to a peer: queued here, and in the socket.
