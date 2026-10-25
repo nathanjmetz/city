@@ -11,22 +11,22 @@ extends Node3D
 ##
 ## That late-morning look is the default. When the player turns on the
 ## day/night cycle, DayNight calls set_time() each frame and the sun follows
-## its real path over southern Indiana for the season: low in winter, high
-## and late in summer, golden at dusk, then moonlight and stars (Cities:
-## Skylines 2 lighting is the benchmark for how it plays, reality for how
-## it looks).
+## its real path over Grant County for the date and clock time (SunPath:
+## NOAA's formulas, daylight saving included): 73 degrees up at 1:45 pm in
+## late June, 26 at 12:41 pm in late December, setting near 9:17 pm and
+## 5:19 pm. Its colour, strength, the sky and the haze follow its height
+## (Daylight): golden low down, white at midday, blue hour, then moonlight
+## and stars. The haze follows the year either way: humid and white in
+## summer, crisp and blue in winter. See docs/daylight.md.
 
 ## Sun height above the horizon and compass direction, in degrees.
 const SUN_ELEVATION := 40.0
 const SUN_AZIMUTH := -38.0
 const HAZE := Color(0.74, 0.79, 0.84)
+## The tuned strengths at that sun (Daylight scales them for other heights).
+const SUN_ENERGY := 1.7
+const SHADE_ENERGY := 0.62
 
-## Night sky colours: deep navy overhead, a little city glow low down.
-const NIGHT_TOP := Color(0.012, 0.02, 0.05)
-const NIGHT_HORIZON := Color(0.05, 0.06, 0.1)
-## Sky low toward the sun at sunset and sunrise.
-const DUSK_HORIZON := Color(0.98, 0.56, 0.32)
-const DUSK_TOP := Color(0.16, 0.22, 0.45)
 const MOON_COLOR := Color(0.62, 0.72, 0.95)
 
 var sun := DirectionalLight3D.new()
@@ -35,6 +35,11 @@ var sky_mat := ProceduralSkyMaterial.new()
 ## 0 in full daylight, 1 at full night. DayNight reads it.
 var darkness := 0.0
 var _day := {}  # the fixed late-morning look, to go back to
+## How thick the haze is for the time of year (Daylight.at().haze).
+var haze_scale := 1.0
+var _humid := -1.0  # the humidity the fixed look's haze was last set for
+var _fixed := true  # showing the fixed look (day/night off)
+var _season_months := 6.5  # the time of year set_season last saw
 ## How far from the camera shadows reach at most, in metres (Quality sets it).
 var shadow_reach := 2000.0
 ## The browser's renderer (Compatibility) lights the same scene about twice
@@ -75,7 +80,7 @@ func _ready() -> void:
 	# reads blue-grey like in photos rather than saturated blue.
 	env.ambient_light_sky_contribution = _sky_share
 	env.ambient_light_color = Color(0.66, 0.66, 0.64)
-	env.ambient_light_energy = 0.62 * _light
+	env.ambient_light_energy = SHADE_ENERGY * _light
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	# AgX keeps bright roofs and concrete from clipping to flat white.
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
@@ -102,7 +107,7 @@ func _ready() -> void:
 
 	sun.rotation_degrees = Vector3(-SUN_ELEVATION, SUN_AZIMUTH, 0)
 	sun.light_color = Color(1.0, 0.95, 0.86)
-	sun.light_energy = 1.7 * _light
+	sun.light_energy = SUN_ENERGY * _light
 	sun.shadow_enabled = true
 	sun.shadow_blur = 1.2
 	sun.shadow_bias = 0.04
@@ -185,82 +190,87 @@ func _apply_quality() -> void:
 ## Back to the fixed late-morning look (day/night cycle off).
 func set_fixed() -> void:
 	darkness = 0.0
-	sky_mat.sky_top_color = _day.top
-	sky_mat.sky_horizon_color = _day.horizon
-	sky_mat.ground_horizon_color = _day.horizon
-	sky_mat.ground_bottom_color = _day.horizon
-	sky_mat.sky_cover_modulate = Color(1, 1, 1, 0)
-	sky_mat.sky_energy_multiplier = 1.0
+	_sky_colors(_day.top, _day.horizon, 0.0)
 	env.fog_light_color = _day.horizon
 	env.ambient_light_energy = _day.ambient
 	env.ambient_light_color = _day.ambient_color
 	env.ambient_light_sky_contribution = _sky_share
 	env.glow_intensity = 0.0
+	env.tonemap_exposure = 1.0
 	sun.light_color = _day.sun_color
 	sun.light_energy = _day.sun_energy
 	sun.rotation_degrees = _day.rot
+	_fixed = true
+	_humid = -1.0
+	set_season(_season_months)
+
+
+## The haze for the time of year (months from January), day/night on or
+## off: thicker and whiter in a humid summer, thinner and bluer in winter.
+## With day/night off this also tints the fixed look's horizon; set_time
+## does its own.
+func set_season(months: float) -> void:
+	_season_months = months
+	var humid := Daylight.humidity(months)
+	haze_scale = lerpf(Daylight.HAZE_THIN, Daylight.HAZE_THICK, humid)
+	if _fixed and absf(humid - _humid) > 0.01:
+		_humid = humid
+		var horizon: Color = Daylight.at(SUN_ELEVATION, humid).horizon
+		_sky_colors(_day.top, horizon, 0.0)
+		env.fog_light_color = horizon
 
 
 ## Where the sun is, in degrees: x its height above the horizon, y its
 ## compass bearing (0 north, 90 east). `hour` is local clock time and `months`
-## comes from Seasons.months().
+## comes from Seasons.months() (see SunPath.position_game).
 static func sun_position(hour: float, months: float) -> Vector2:
-	var m := fposmod(months, 12.0)
-	var decl := deg_to_rad(23.44) * sin(TAU * (m * 30.44 - 80.0) / 365.0)
-	# Grant County (85.7 W) is on Eastern time but west of its meridian
-	# (75 W), so the sun is highest at about 12:43, or 1:43 in summer on
-	# daylight saving time.
-	var noon := 13.7 if m > 2.4 and m < 10.2 else 12.7
-	var h := deg_to_rad((hour - noon) * 15.0)
-	var lat := deg_to_rad(Seasons.LATITUDE)
-	var elev := asin(sin(lat) * sin(decl) + cos(lat) * cos(decl) * cos(h))
-	var az := atan2(sin(h), cos(h) * sin(lat) - tan(decl) * cos(lat)) + PI
-	return Vector2(rad_to_deg(elev), rad_to_deg(az))
+	return SunPath.position_game(months, hour)
 
 
 ## Light the town for a time of day (hours, 0 to 24) and time of year.
 func set_time(hour: float, months: float) -> void:
 	var pos := sun_position(hour, months)
 	var elev := pos.x
-	# Daylight fades out through civil twilight (sun 6 degrees below).
-	var day := smoothstep(-8.0, 5.0, elev)
-	var low := 1.0 - smoothstep(0.0, 22.0, absf(elev))  # sun near the horizon
-	darkness = 1.0 - smoothstep(-7.0, 3.0, elev)
-	var dusk := low * (1.0 - smoothstep(-1.0, 6.0, -elev))
-	var top: Color = NIGHT_TOP.lerp(_day.top, day).lerp(DUSK_TOP, dusk * 0.5)
-	var horizon: Color = NIGHT_HORIZON.lerp(_day.horizon, day).lerp(DUSK_HORIZON, dusk * 0.75)
-	sky_mat.sky_top_color = top
-	sky_mat.sky_horizon_color = horizon
-	sky_mat.ground_horizon_color = horizon
-	sky_mat.ground_bottom_color = horizon
-	sky_mat.sky_cover_modulate = Color(1, 1, 1, smoothstep(0.5, 1.0, darkness) * 0.9)
-	# The air itself only takes a little of the sunset colour; the land
-	# under a dusk sky is lit by the blue of the open sky.
-	env.fog_light_color = NIGHT_HORIZON.lerp(_day.horizon, day).lerp(Color(0.62, 0.5, 0.5), dusk * 0.35)
-	env.ambient_light_color = Color(0.32, 0.42, 0.72).lerp(_day.ambient_color, day)
-	env.ambient_light_energy = lerpf(0.6 * _light, _day.ambient, day)
+	var l := Daylight.at(elev, Daylight.humidity(months))
+	_fixed = false
+	darkness = l.darkness
+	_sky_colors(l.zenith, l.horizon, l.stars)
+	env.fog_light_color = l.fog_color
+	haze_scale = l.haze
+	env.ambient_light_color = l.shade_color
+	env.ambient_light_energy = SHADE_ENERGY * _light * l.shade_energy
 	env.glow_intensity = 0.9 * darkness
+	env.tonemap_exposure = l.exposure
 	if elev > -2.0:
-		# The sun, warming to orange as it gets low.
-		var dir := _toward(pos)
+		# The sun: warm and dim low down, white at midday (Daylight).
+		var dir := SunPath.toward(pos)
 		sun.look_at_from_position(Vector3.ZERO, -dir, Vector3.UP if absf(dir.y) < 0.99 else Vector3.FORWARD)
-		sun.light_color = Color(1.0, 0.52, 0.28).lerp(_day.sun_color, smoothstep(2.0, 28.0, elev))
-		sun.light_energy = _day.sun_energy * smoothstep(-2.0, 5.0, elev)
+		sun.light_color = l.sun_color
+		sun.light_energy = SUN_ENERGY * _light * l.sun_energy
 	else:
 		# Moonlight: a full moon riding opposite the sun, at least 25 degrees up.
 		var moon := Vector2(maxf(-elev, 25.0), fposmod(pos.y + 180.0, 360.0))
-		var dir := _toward(moon)
+		var dir := SunPath.toward(moon)
 		sun.look_at_from_position(Vector3.ZERO, -dir, Vector3.UP)
 		sun.light_color = MOON_COLOR
 		sun.light_energy = 0.7 * _light * smoothstep(-2.0, -10.0, elev)
 
 
-## A unit vector toward a point in the sky (height, bearing). North is -Z
-## and east is +X.
-static func _toward(p: Vector2) -> Vector3:
-	var e := deg_to_rad(p.x)
-	var a := deg_to_rad(p.y)
-	return Vector3(sin(a) * cos(e), sin(e), -cos(a) * cos(e))
+## Sky colours and stars, sent on only when they change enough to see: each
+## change re-renders the sky's lighting, and at midday the sky barely moves.
+func _sky_colors(top: Color, horizon: Color, stars: float) -> void:
+	if _near(top, sky_mat.sky_top_color) and _near(horizon, sky_mat.sky_horizon_color) \
+			and absf(stars - sky_mat.sky_cover_modulate.a) < 0.004:
+		return
+	sky_mat.sky_top_color = top
+	sky_mat.sky_horizon_color = horizon
+	sky_mat.ground_horizon_color = horizon
+	sky_mat.ground_bottom_color = horizon
+	sky_mat.sky_cover_modulate = Color(1, 1, 1, stars)
+
+
+static func _near(a: Color, b: Color) -> bool:
+	return absf(a.r - b.r) < 0.002 and absf(a.g - b.g) < 0.002 and absf(a.b - b.b) < 0.002
 
 
 ## A star field for the sky dome (equirectangular), brighter stars rarer.
@@ -309,4 +319,4 @@ func _process(_delta: float) -> void:
 func _fit_haze(cam: Camera3D) -> void:
 	var h := maxf(cam.global_position.y - Terrain.ground_y(cam.global_position.x, cam.global_position.z), 1.0)
 	var share := HAZE_LAYER / h * (1.0 - exp(-h / HAZE_LAYER))
-	env.fog_density = HAZE_DENSITY * share
+	env.fog_density = HAZE_DENSITY * share * haze_scale
