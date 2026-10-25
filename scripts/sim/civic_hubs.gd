@@ -163,7 +163,10 @@ func _cell_problem(sim: CitySim, h: Dictionary, c: Vector2i, id: int, auto: bool
 		if sim.banks.covers(p):
 			return "That ground is a bank."
 	if auto:
-		for key in sim.lots:
+		var box := Rect2(poly[0], Vector2.ZERO)
+		for q in poly:
+			box = box.expand(q)
+		for key in sim.lots_near(box):
 			var lot: Dictionary = sim.lots[key]
 			if not sim.buildings.has(key) and sim.zones.zone_at(lot.zone_pt) == ZoneMap.Zone.NONE:
 				continue

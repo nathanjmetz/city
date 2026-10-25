@@ -265,6 +265,7 @@ var _zone_check_lots := {}
 
 func _init() -> void:
 	Resources.follow(terrain_offset)
+	lots_changed.connect(func(): _lot_rev += 1)
 	# The water utility's manager takes the player's word (Permits guidance).
 	permits.locators["water"] = func(c: CitySim, id: int) -> Vector2:
 		var b: Dictionary = c.services.buildings.get(id, {})
@@ -3105,6 +3106,46 @@ static func _lot_near(lot: Dictionary, boxes: Array) -> bool:
 		if (b as Rect2).intersects(box, true):
 			return true
 	return false
+
+
+## The keys of lots whose middle, front or zone point could fall in `area`
+## (the box around those three meets it), in no particular order: a search
+## of one patch of town looks at the lots there, not every lot. Kept until
+## the lots change (lots_changed).
+func lots_near(area: Rect2) -> Array:
+	var key := [lots.size(), _lot_rev]
+	if not is_same(lots, _lot_cells_of) or key != _lot_cells_key:
+		_lot_cells_of = lots
+		_lot_cells_key = key
+		_lot_cells = {}
+		_lot_boxes = {}
+		for k in lots:
+			var lot: Dictionary = lots[k]
+			var box := Rect2(Vector2(lot.pos.x, lot.pos.z), Vector2.ZERO)
+			for p in [lot.front, lot.zone_pt]:
+				box = box.expand(Vector2(p.x, p.z))
+			_lot_boxes[k] = box
+			for x in range(floori(box.position.x / LOT_CELL), floori(box.end.x / LOT_CELL) + 1):
+				for y in range(floori(box.position.y / LOT_CELL), floori(box.end.y / LOT_CELL) + 1):
+					var c := Vector2i(x, y)
+					if not _lot_cells.has(c):
+						_lot_cells[c] = []
+					_lot_cells[c].append(k)
+	var seen := {}
+	for x in range(floori(area.position.x / LOT_CELL), floori(area.end.x / LOT_CELL) + 1):
+		for y in range(floori(area.position.y / LOT_CELL), floori(area.end.y / LOT_CELL) + 1):
+			for k in _lot_cells.get(Vector2i(x, y), []):
+				if not seen.has(k) and (_lot_boxes[k] as Rect2).intersects(area, true):
+					seen[k] = true
+	return seen.keys()
+
+
+const LOT_CELL := 64.0
+var _lot_rev := 0  # goes up with every lots_changed
+var _lot_cells_of := {}
+var _lot_cells_key := []
+var _lot_cells := {}  # Vector2i -> [lot keys]
+var _lot_boxes := {}  # lot key -> Rect2
 
 
 ## The lots buildings stand on, by key.
