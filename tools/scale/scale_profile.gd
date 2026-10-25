@@ -63,14 +63,14 @@ func _run(sim: CitySim, ticks: int) -> void:
 	worst.sort_custom(func(x, y): return x[0] > y[0])
 	print("pop ", sim.stats.population, " buildings ", sim.buildings.size(), " mean_ms ", snappedf(sum / ticks, 0.01),
 		" mem_mb ", OS.get_static_memory_usage() / 1048576)
-	print("mean ", _top(_sums(), 16, ticks))
+	print("mean ", _top(_sums(), 30, ticks))
 	var maxes := {}
 	for k in Perf.stats:
 		maxes[k] = snappedf(Perf.stats[k].max, 0.1)
-	print("max ", _top(maxes, 16))
+	print("max ", _top(maxes, 30))
 	for w in worst.slice(0, 12):
 		var tc: int = w[1]
-		print("worst ", snappedf(w[0], 0.1), " tick ", tc, " minute_of_day ", tc % 1440, " ", _top(w[2], 6))
+		print("worst ", snappedf(w[0], 0.1), " tick ", tc, " minute_of_day ", tc % 1440, " ", _top(w[2], 10))
 	quit()
 
 
