@@ -12,6 +12,10 @@ extends Node
 ## Start it with `--playtest[=seconds]` after `--` on the desktop, or
 ## `?playtest=seconds` in the browser's address. Results go to the console
 ## as one line starting with RESULT_TAG, and to `--playtest-out=path`.
+## To open a saved big town instead of building one, add `--playtest-town=path`
+## (`&town=file.city` in the browser, fetched from the page's own address;
+## tools/scale/make_town_save.gd makes the files): the town then just runs, at
+## normal speed and then top speed, with the camera touring it.
 ## To play in a region instead of alone (neighbors, syncing), add
 ## `--playtest-region=ws://host:port/CODE` (`&region=` in the browser).
 ## Several bots in one region each need their own `--playtest-name=`
@@ -36,6 +40,8 @@ var region := ""
 var bot_name := "Playtest"
 ## The PIN the region made for this bot (a region lets in nobody else).
 var pin := ""
+## A saved town to open and watch instead of building one ("" for a new town).
+var town := ""
 var _tries := 0
 var _net := {"disconnected": 0, "reconnected": 0, "failed": []}
 var _main: Node
@@ -55,6 +61,7 @@ var _actions := {}
 var _done := false
 var _causes := {}  # biggest stage -> ms of hitches it led
 var _step_hitches := 0
+var _steps_quality := {}
 
 
 ## Whether this run asked for a play-through, and for how long.
@@ -104,6 +111,8 @@ func _ready() -> void:
 			bot_name = a.get_slice("=", 1)
 		elif a.begins_with("--playtest-pin="):
 			pin = a.get_slice("=", 1)
+		elif a.begins_with("--playtest-town="):
+			town = a.get_slice("=", 1)
 		elif a == "--playtest-inline":
 			RegionClient.inline_jobs = true  # one core, like the browser
 	if OS.has_feature("web"):
@@ -115,6 +124,9 @@ func _ready() -> void:
 		var pn = JavaScriptBridge.eval("new URLSearchParams(window.location.search).get('pin') || ''", true)
 		if typeof(pn) == TYPE_STRING:
 			pin = pn
+		var tn = JavaScriptBridge.eval("new URLSearchParams(window.location.search).get('town') || ''", true)
+		if typeof(tn) == TYPE_STRING:
+			town = tn
 	if region != "":
 		# Joins as a player of its own (_join_region).
 		Session.profile.name = bot_name
@@ -191,14 +203,17 @@ static func _summary(frames: PackedFloat32Array) -> Dictionary:
 		return {"frames": 0}
 	var hitches := 0
 	var freezes := 0
+	var over_250 := 0
 	for ms in frames:
+		if ms >= 250.0:
+			over_250 += 1
 		if ms >= HITCH_MS:
 			hitches += 1
 		if ms >= FREEZE_MS:
 			freezes += 1
 	return {"frames": n, "p50_ms": snappedf(sorted[n / 2], 0.1), "p95_ms": snappedf(sorted[mini(n - 1, n * 95 / 100)], 0.1),
 		"p99_ms": snappedf(sorted[mini(n - 1, n * 99 / 100)], 0.1), "max_ms": snappedf(sorted[n - 1], 0.1),
-		"hitches": hitches, "freezes": freezes}
+		"hitches": hitches, "over_250": over_250, "freezes": freezes}
 
 
 func _frames_wait(n: int) -> void:
@@ -230,7 +245,12 @@ func _join_region() -> void:
 
 func _play() -> void:
 	_begin("load")
-	if region == "":
+	var opened_us := Time.get_ticks_usec()
+	if town != "":
+		if not await _open_town():
+			return
+		opened_us = Time.get_ticks_usec()
+	elif region == "":
 		Session.new_city("Playtest")
 	else:
 		_join_region()
@@ -243,12 +263,20 @@ func _play() -> void:
 		if scene != null and scene.has_method("set_speed") and not scene.loading:
 			_main = scene
 			break
-		if Time.get_ticks_usec() - _t0 > 300_000_000:
+		# (A saved big town takes minutes to open in the browser.)
+		if Time.get_ticks_usec() - _t0 > (1_200_000_000 if town != "" else 300_000_000):
 			_finish("the town never finished loading")
 			return
 	var sim: CitySim = _main.sim
-	sim.economy.money = 50_000_000
 	var cam: CityCamera = _main.find_children("*", "CityCamera", true, false)[0]
+	if town != "":
+		_result["load_s"] = snappedf((Time.get_ticks_usec() - opened_us) / 1e6, 0.1)
+		_result["start_population"] = sim.stats.population
+		_result["start_buildings"] = sim.buildings.size()
+		await _frames_wait(30)
+		await _watch_town(sim, cam)
+		return
+	sim.economy.money = 50_000_000
 	await _frames_wait(30)
 
 	# A county road mile near town, and the grid laid out beside it.
@@ -333,13 +361,73 @@ func _play() -> void:
 		await _seconds_wait(8.0)
 	_end_step()
 	_step = ""
+	_town_numbers(sim)
+	if region != "":
+		_result["grown"] = grown
+		_result["region"] = _region_view()
+	_finish("")
+
+
+func _town_numbers(sim: CitySim) -> void:
 	_result["population"] = sim.stats.population
 	_result["buildings"] = sim.buildings.size()
 	_result["segments"] = sim.network.segments.size()
 	_result["vehicles"] = sim.traffic.cars.size()
-	if region != "":
-		_result["grown"] = grown
-		_result["region"] = _region_view()
+
+
+## Opens the saved town (`town`): in the browser it is fetched from the
+## page's own address and put where the game keeps saves; on the desktop it
+## is played from where it is. Whether it arrived.
+func _open_town() -> bool:
+	var path := town
+	if OS.has_feature("web"):
+		var origin := str(JavaScriptBridge.eval("window.location.origin", true))
+		var req := HTTPRequest.new()
+		add_child(req)
+		var t := Time.get_ticks_usec()
+		if req.request(origin + "/" + town) != OK:
+			_finish("couldn't ask for the town " + town)
+			return false
+		var got: Array = await req.request_completed
+		if got[1] != 200:
+			_finish("the town %s came back with code %d" % [town, got[1]])
+			return false
+		var body: PackedByteArray = got[3]
+		_result["download_s"] = snappedf((Time.get_ticks_usec() - t) / 1e6, 0.1)
+		_result["save_mb"] = snappedf(body.size() / 1048576.0, 0.1)
+		DirAccess.make_dir_recursive_absolute(Session.SAVE_DIR)
+		path = Session.SAVE_DIR.path_join("measure.city")
+		var f := FileAccess.open(path, FileAccess.WRITE)
+		f.store_buffer(body)
+		f.close()
+		req.queue_free()
+	Session.play_solo(path)
+	return true
+
+
+## A saved town just running: the camera tours it at normal speed, then at
+## top speed (the run's seconds split between the two).
+func _watch_town(sim: CitySim, cam: CityCamera) -> void:
+	for n in _main.find_children("*", "FirstTownTour", true, false):
+		n.stop()
+	var half := run_seconds / 2.0
+	var mid_town := Vector3.ZERO
+	var stop := 0
+	for pass_name in ["run_1x", "run_4x"]:
+		_begin(pass_name)
+		_main.set_speed(1 if pass_name == "run_1x" else _main.SPEEDS.size() - 1)
+		var end := Time.get_ticks_usec() + int(half * 1e6)
+		while Time.get_ticks_usec() < end:
+			var ang := stop * 1.3
+			var spot := mid_town + Vector3(cos(ang), 0, sin(ang)) * BLOCK * (1.0 + stop % 3)
+			cam.glide_to(spot, [180.0, 450.0, 1100.0][stop % 3])
+			stop += 1
+			await _seconds_wait(8.0)
+		_steps_quality[pass_name] = GraphicsQuality.current.describe() if GraphicsQuality.current != null else ""
+	_end_step()
+	_step = ""
+	_town_numbers(sim)
+	_result["quality_after"] = _steps_quality
 	_finish("")
 
 
