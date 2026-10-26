@@ -46,11 +46,32 @@ func _init() -> void:
 		mi.multimesh = mm
 		root.add_child(mi)
 		_mis.append(mi)
+	# Ready-made people (glTF files), if given: GLB=path1,path2 in the env.
+	var glbs := OS.get_environment("GLB")
+	var gi := 0
+	for path in (glbs.split(",") if glbs != "" else []):
+		var doc := GLTFDocument.new()
+		var state := GLTFState.new()
+		if doc.append_from_file(path, state) != OK:
+			continue
+		var node := doc.generate_scene(state) as Node3D
+		node.position = Vector3(3.0 + gi * 1.0, 0, 0)
+		node.rotation.y = 0.3
+		root.add_child(node)
+		for m in node.find_children("*", "MeshInstance3D", true, false):
+			var mi3 := m as MeshInstance3D
+			if mi3.get_active_material(0) == null or OS.get_environment("SKIN") != "":
+				var sm := StandardMaterial3D.new()
+				sm.albedo_color = Color(0.78, 0.6, 0.5)
+				sm.roughness = 0.7
+				mi3.material_override = sm
+		gi += 1
 	var cam := Camera3D.new()
 	var dir := Vector3(0, 0.5, 1).normalized()
 	cam.fov = 45
 	root.add_child(cam)
-	cam.look_at_from_position(Vector3(0, 0.9, 0) + dir * dist, Vector3(0, 0.9, 0), Vector3.UP)
+	var aim := Vector3(1.4 if glbs != "" else 0.0, 0.9, 0)
+	cam.look_at_from_position(aim + dir * dist, aim, Vector3.UP)
 
 func _process(_d: float) -> bool:
 	_frames += 1

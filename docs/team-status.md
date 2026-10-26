@@ -102,6 +102,8 @@ A few helpers run at a time, never two on the same files.
   - Next: needs actually drive level up and down in the sim, with hysteresis.
   - Then small visual signs between milestones in house_builder (owner_care exists): yard extras by level (flowers, fence, swing set, deck, a pool around 60), paint freshness, porch lights, and decline signs.
 
+- **Ready-made people on the desktop (Nathan chose yes, 2026-10-25):** docs/spec-ready-made-people.md. Next: fix the generator (arm pose, outfits by gender, proxy body, smaller textures), then walking baked into a vertex animation texture, then the desktop art pack.
+
 *Waits for Nathan*
 30. The real Grant County map from public data (big downloads; OpenStreetMap credit line).
 31. Measuring on the Mac mini and Mac Studio themselves.
