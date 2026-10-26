@@ -57,11 +57,14 @@ func tick(sim: CitySim) -> void:
 	var t := sim.tick_count
 	var minute := (t * CitySim.MINUTES_PER_TICK) % (24 * 60)
 	if minute % 60 == 0:
-		var m := Seasons.month(t)
-		if m != _month:
+		# The books once a sim day ("a month", Balance); crowds by the
+		# calendar's season, which is what the land shows.
+		var pm := Seasons.pace_month(t)
+		if pm != _month:
 			if _month != -1:
-				_monthly(sim, m)
-			_month = m
+				_monthly(sim, pm)
+			_month = pm
+		var m := Seasons.month(sim.calendar_tick())
 		sync(sim)
 		var ids := venues.keys()
 		ids.sort()

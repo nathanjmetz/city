@@ -94,7 +94,7 @@ static func kind_of(sim, ref: String) -> String:
 ## has one hardware store, not three, so a crowded trade is passed over.
 func _found(sim, ref: String, trades: Dictionary) -> void:
 	var what := kind_of(sim, ref)
-	var year := Seasons.year(sim.tick_count)
+	var year := Seasons.pace_year(sim.tick_count)
 	var shops := owned.size()
 	for attempt in 12:
 		var seed := hash([sim.city_seed, ref, attempt])
@@ -189,10 +189,17 @@ func sign_of(sim, ref: String) -> Dictionary:
 		return {}
 	var b: Dictionary = owned[ref]
 	var fam := family_of(ref)
-	var year := Seasons.year(sim.tick_count)
+	var year := Seasons.pace_year(sim.tick_count)
 	var pair: Array = Names.COLORS[int(fam.get("colors", 0)) % Names.COLORS.size()]
 	return {"text": str(b.name), "style": str(fam.get("style", "gothic")), "panel": Color(pair[0]),
-		"letter": Color(pair[1]), "since": calendar(int(b.since)) if year - int(b.since) >= Balance.FAMILY_SINCE_SHOWN else -1}
+		"letter": Color(pair[1]), "since": since_year(sim, int(b.since)) if year - int(b.since) >= Balance.FAMILY_SINCE_SHOWN else -1}
+
+
+## The calendar year (2027 on) a family's pace year began in: ages count
+## pace years (Seasons.pace_year, about 29 real minutes each) so a business
+## gets its history in a session, but a sign reads the calendar's year.
+static func since_year(sim, pace_y: int) -> int:
+	return calendar(Seasons.year(Seasons.pace_tick(pace_y) + int(sim.calendar_offset)))
 
 
 ## The calendar year a game year falls in: Year 1 is 2027, when the game's
@@ -214,7 +221,7 @@ func rows(sim, ref: String) -> Array:
 	var b: Dictionary = owned[ref]
 	var fam := family_of(ref)
 	var out := [["Owned by", "The %s family" % fam.surname], ["Run by", _head_text(fam)],
-		["In business since", str(calendar(int(b.since)))]]
+		["In business since", str(since_year(sim, int(b.since)))]]
 	if not b.formerly.is_empty():
 		out.append(["Formerly", ", ".join(b.formerly)])
 	var also := []
@@ -224,7 +231,7 @@ func rows(sim, ref: String) -> Array:
 	if not also.is_empty():
 		out.append(["The family also owns", ", ".join(also)])
 	if int(fam.redone) > 0:
-		out.append(["New look", "Redid its signs in %d" % calendar(int(fam.redone))])
+		out.append(["New look", "Redid its signs in %d" % since_year(sim, int(fam.redone))])
 	var plan: Dictionary = fam.get("plan", {})
 	if not plan.is_empty():
 		out.append(["The family's plans", str(plan.title)])
@@ -249,7 +256,7 @@ static func home_name(b: Dictionary) -> String:
 ## Once a game month: owners take their draw, generations pass, old brands
 ## get a new look, and families ready to branch out ask the player.
 func month(sim) -> void:
-	var year := Seasons.year(sim.tick_count)
+	var year := Seasons.pace_year(sim.tick_count)
 	var any := false
 	var ids := families.keys()
 	ids.sort()
@@ -257,7 +264,7 @@ func month(sim) -> void:
 	for ref in owned:
 		counts[int(owned[ref].family)] = int(counts.get(int(owned[ref].family), 0)) + 1
 		# Old enough now for "SINCE 2031" on the sign.
-		if year - int(owned[ref].since) == Balance.FAMILY_SINCE_SHOWN and Seasons.month(sim.tick_count) == 1:
+		if year - int(owned[ref].since) == Balance.FAMILY_SINCE_SHOWN and Seasons.pace_month(sim.tick_count) == 1:
 			any = true
 	_asking = false
 	for fam in families.values():
@@ -483,7 +490,7 @@ func _carry_out(sim, fam: Dictionary) -> bool:
 	if state != Permits.State.APPROVED:
 		return false
 	sim.permits.done(int(plan.req))
-	var year := Seasons.year(sim.tick_count)
+	var year := Seasons.pace_year(sim.tick_count)
 	var ref: String = plan.ref
 	var key := ref.substr(4)
 	var cost := int(sim.permits.requests.get(int(plan.req), {}).get("cost", plan.cost))

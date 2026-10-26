@@ -5,14 +5,49 @@ var _failed := false
 
 
 func _init() -> void:
+	# A month is a day and a day is an hour (docs/spec-month-is-a-day.md):
+	# a calendar day is 2 real minutes, months have their real lengths.
 	var day := Seasons.TICKS_PER_DAY
-	_check(Seasons.month(0) == 5, "a new city starts in May")
-	_check(Seasons.month(day * 12) == 5 and Seasons.year(day * 12) == 2, "a year is 12 game days")
-	_check(Seasons.month(day * 8) == 1, "January comes 8 days in")
+	_check(day == 2 * 60 * CitySim.TICKS_PER_SECOND, "a calendar day is 2 real minutes")
+	_check(Seasons.month(0) == 5 and Seasons.day(0) == 1, "a new city starts on May 1")
+	_check(Seasons.weekday(0) == 6, "May 1, 2027 is a Saturday")
+	_check(Seasons.month(day * 30) == 5 and Seasons.month(day * 31) == 6 and Seasons.day(day * 31) == 1,
+		"May has 31 days, then June 1")
+	_check(Seasons.month(day * 365) == 5 and Seasons.year(day * 365) == 2, "a year is 365 days")
+	_check(Seasons.month(day * (31 + 30 + 31 + 31 + 30 + 31 + 30 + 31)) == 1, "January comes 245 days in")
+	var june := Seasons.tick_at(5.0)
+	_check(Seasons.month(june) == 6 and Seasons.day(june) == 1 and absf(Seasons.months(june) - 5.0) < 0.001,
+		"tick_at finds June 1")
+	_check(absf(30.0 * day / CitySim.TICKS_PER_SECOND / 60.0 - 60.0) < 0.01, "a 30-day month takes an hour")
+	# A town from the old calendar (a month a sim day) keeps its date.
+	var old_tick := 50 * Seasons.OLD_TICKS_PER_MONTH + 720  # mid-July of year 5 on the old calendar
+	var off := Seasons.offset_from_old(old_tick)
+	_check(absf(Seasons.months(old_tick + off) - (Seasons.START_MONTH + 50.5)) < 0.01, "an old town's date carries over")
+	_check(Seasons.pace_year(old_tick) == 5 and Seasons.pace_month(old_tick) == 7, "pace years keep the old calendar's count")
 	var sim := CitySim.new()
-	sim.tick_count = day * 3 + 60 * 4
+	sim.tick_count = day * 40 + 30
 	var t := sim.clock()
-	_check(t.month == 8 and t.year == 1 and t.hour == 10, "the clock shows the season's month (%s)" % str(t))
+	_check(t.month == 6 and t.day == 10 and t.year == 1 and t.weekday == 4, "the clock shows the calendar date (%s)" % str(t))
+	# The sky: sunrise on the 1st, sunset 50 minutes into a 60-minute month.
+	var rise := SunPath.crossings(SunPath.day_of_year(5.0), true)
+	_check(absf(SkyClock.hour(5.0) - rise.x) < 0.01, "the sun rises on the 1st")
+	var at_sunset := 5.0 + SkyClock.DAY_SHARE
+	_check(absf(SkyClock.hour(at_sunset) - SunPath.crossings(SunPath.day_of_year(at_sunset), true).y) < 0.01,
+		"and sets five-sixths of the way through the month")
+	_check(SkyLight.sun_position(SkyClock.hour(5.4), 5.4).x > 30.0, "the sun is high mid-month")
+	_check(SkyLight.sun_position(SkyClock.hour(5.92), 5.92).x < -12.0, "dark in the month's last days")
+	var last := 0.0
+	var steady := true
+	for i in 600:
+		var m := 5.0 + i / 600.0
+		var h := fposmod(SkyClock.hour(m) - SkyClock.hour(5.0), 24.0)
+		if h + 0.0001 < last:
+			steady = false
+		last = h
+	_check(steady, "the sky's hour only moves forward through the month")
+	_check(absf(SkyClock.ticks_per_hour(5.4) * (SunPath.crossings(SunPath.day_of_year(5.4), true).y
+		- SunPath.crossings(SunPath.day_of_year(5.4), true).x) - SkyClock.DAY_SHARE * 30 * day) < 1.0,
+		"a sky hour's ticks fill the daylight")
 	# What the land looks like through the year.
 	var winter := Seasons.look(Seasons.START_MONTH + 8.5)  # mid January
 	_check(winter.snow == 1.0 and winter.bare == 1.0, "snow and bare trees in January")

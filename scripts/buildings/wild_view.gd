@@ -104,7 +104,7 @@ func _process(_delta: float) -> void:
 	sim.vegetation.update(sim)
 	# The trees' clock (planted trees grow by it) and each kind's season.
 	TreeField.now_tick = sim.tick_count
-	var months := Seasons.months(sim.tick_count)
+	var months := Seasons.months(sim.calendar_tick())
 	if absf(months - _season_at) > 0.01:
 		_season_at = months
 		TreeLook.set_season(months, DayNight.seasons_on)

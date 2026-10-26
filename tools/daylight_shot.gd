@@ -23,6 +23,7 @@ var _wait := 0
 var _last_us := 0
 var _turn := {"on": [], "off": []}
 var _cycle_was := false
+var _hour := 7.0
 
 
 func _initialize() -> void:
@@ -103,17 +104,16 @@ func _shots(dir: String) -> bool:
 	return false
 
 
-## The game's clock at that hour on that month's game day, with the light's
-## date pinned to the real day (a game day runs through a whole month).
+## The town's calendar on that day, with the light pinned to that day and
+## hour (the sky's hour comes from how far through the month it is).
 func _set_moment(month: int, day: int, hour: float) -> void:
 	var sim: CitySim = _main.sim
-	var game_day := 12 + int(fposmod(month - 1 - Seasons.START_MONTH, 12))
-	sim.tick_count = game_day * Seasons.TICKS_PER_DAY + roundi((hour - 6.0) * 60.0)
-	# The game's months value (0 = January 1) for that day of the year.
-	var before := [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
-	var date := float(before[month - 1] + day - 1) / (365.0 / 12.0)
+	var date := float(month - 1) + float(day - 1) / Seasons.DAYS_IN[month - 1]
+	sim.tick_count = Seasons.tick_at(12.0 + date) - sim.calendar_offset
+	_hour = hour
 	for n in _main.find_children("*", "DayNight", true, false):
 		n.set("date_override", date)
+		n.set("hour_override", hour)
 
 
 func _time(out: String) -> bool:
@@ -125,9 +125,11 @@ func _time(out: String) -> bool:
 		RenderingServer.viewport_set_measure_render_time(vp, true)
 	# One game minute a frame through a June day, 7 am to 7 pm, round and
 	# round: the sun and sky change every frame, the night lights stay off.
-	sim.tick_count += 1
-	if sim.clock().hour >= 19:
-		sim.tick_count -= 12 * 60
+	_hour += 1.0 / 60.0
+	if _hour >= 19.0:
+		_hour -= 12.0
+	for n in _main.find_children("*", "DayNight", true, false):
+		n.set("hour_override", _hour)
 	_wait += 1
 	var k := "on" if DayNight.cycle_on else "off"
 	if _wait > 30 and _last_us > 0:  # skip the first frames of each turn

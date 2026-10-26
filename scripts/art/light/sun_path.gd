@@ -21,29 +21,31 @@ const STANDARD_ZONE := -5.0
 const HORIZON := -0.833
 ## Civil twilight ends with the sun 6 degrees down: blue hour, then dark.
 const CIVIL := -6.0
-const DAYS_PER_MONTH := 365.0 / 12.0
 ## Daylight saving on the game's calendar, in months from January (see
-## Seasons.months). US clocks change at 2 am on the second Sunday of March
-## and the first Sunday of November. A game day runs through a whole month,
-## so the game changes its clocks at the 2 am nearest those dates: the end of
-## the February day (about February 26) and of the October day (about
-## October 27). Real dates would move the sun an hour in mid-afternoon.
-const DST_ON := 1.0 + 20.0 / 24.0
-const DST_OFF := 9.0 + 20.0 / 24.0
-## On a real calendar: March 10 and November 3, the middle of the weeks the
-## clocks can change in (day of the year, 1 = January 1).
+## Seasons.months): US clocks change on the second Sunday of March and the
+## first Sunday of November; the game's calendar keeps the middle of the
+## weeks they can fall in, March 10 and November 3.
+const DST_ON := 2.0 + 9.0 / 31.0
+const DST_OFF := 10.0 + 2.0 / 30.0
+## The same dates as days of the year (1 = January 1).
 const DST_ON_DAY := 69
 const DST_OFF_DAY := 307
 
 
 ## Day of the year (1 = January 1; fractional) for the game's months value.
 static func day_of_year(months: float) -> float:
-	return fposmod(months, 12.0) * DAYS_PER_MONTH + 1.0
+	var m := fposmod(months, 12.0)
+	var i := mini(int(m), 11)
+	return Seasons.DAYS_BEFORE[i] + (m - i) * Seasons.DAYS_IN[i] + 1.0
 
 
 ## The game's months value (0 = January 1) for a day of the year.
 static func months_of(day: float) -> float:
-	return (day - 1.0) / DAYS_PER_MONTH
+	var d := clampf(day - 1.0, 0.0, Seasons.YEAR_DAYS - 0.0001)
+	var i := 11
+	while i > 0 and d < Seasons.DAYS_BEFORE[i]:
+		i -= 1
+	return i + (d - Seasons.DAYS_BEFORE[i]) / Seasons.DAYS_IN[i]
 
 
 ## Whether the game's clocks are on daylight saving time.

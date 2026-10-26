@@ -8,10 +8,12 @@ extends RefCounted
 ## real town tracks (Census population estimates, BLS local unemployment,
 ## INDOT traffic counts, the clerk-treasurer's cash balance).
 ##
-## Two series, so short and long views both read well: one sample every game
-## hour for the last game year (12 game days), and one every game month
-## (a game day) for the town's whole life. Nothing here changes the sim's
-## outcome, so neighbors never check it.
+## Two series, so short and long views both read well: one sample every sim
+## hour (6 real seconds) for the last 12 sim days, and one every sim day
+## (2.4 real minutes) for the town's whole life. The charts label them on the
+## calendar (Seasons: a day is 2 real minutes): spans of a day, two weeks
+## and five months. Nothing here changes the sim's outcome, so neighbors
+## never check it.
 
 ## What each sample holds, in order.
 const FIELDS := ["pop", "jobs", "workers", "employed", "cars", "flow", "dem_h", "dem_s", "dem_i", "money", "net", "unserved"]
@@ -50,11 +52,14 @@ func hour(sim) -> void:
 
 ## The samples of a span, oldest first, ending with the town as it is now:
 ## [[tick, value per FIELDS...], ...] (col() finds a field).
-## `span` is "month" (the last game month, hourly), "year" (hourly),
-## "decade" (monthly, last 120) or "all" (monthly).
+## `span` is "month" (the last calendar day, hourly), "year" (the last
+## two calendar weeks, hourly), "decade" (about five calendar months, a
+## sample a sim day) or "all" (a sample a sim day).
 func rows(sim, span: String) -> Array:
 	var src: Array = hourly if span in ["month", "year"] else monthly
-	var n: int = {"month": 24, "year": HOURS_KEPT, "decade": 120}.get(span, src.size())
+	var per_day := float(Seasons.TICKS_PER_DAY) / CitySim.TICKS_PER_HOUR
+	var n: int = {"month": roundi(per_day), "year": roundi(14 * per_day),
+		"decade": roundi(150.0 * Seasons.TICKS_PER_DAY / (24 * CitySim.TICKS_PER_HOUR))}.get(span, src.size())
 	var out := src.slice(maxi(src.size() - n, 0))
 	var now := sample_of(sim)
 	if not out.is_empty() and int(out[-1][0]) == int(now[0]):

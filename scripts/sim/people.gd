@@ -165,7 +165,9 @@ func plan(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void
 			if p.at != "" and p.at != "travel" and p.until >= 0 and p.until <= now:
 				if not traffic.go(id, "lot:" + p.home, "home", -1):
 					set_until(p, now + 30)  # try again in a while
-	var hour: int = sim.clock().hour
+	# The sky's hour (CitySim.sky_hour): a rush as the sun comes up and
+	# goes down, quiet through the short night.
+	var hour: int = int(sim.sky_hour())
 	var rate := 0.15
 	if hour >= 6 and hour < 9 or hour >= 16 and hour < 19:
 		rate = 0.6
@@ -185,7 +187,7 @@ func plan(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void
 		var work: bool = p.job != "" and hour >= 6 and hour < 10
 		if work:
 			var end_hour := rng.randi_range(15, 18)
-			var stay: int = ((end_hour - hour) * 60 + rng.randi_range(-20, 20)) * CitySim.MINUTES_PER_TICK
+			var stay: int = roundi((end_hour - hour + rng.randf_range(-0.33, 0.33)) * sim.sky_ticks_per_hour())
 			traffic.go(p.id, p.job, "commute", maxi(stay, 60))
 			return
 		if hour < 7 or hour >= 21:

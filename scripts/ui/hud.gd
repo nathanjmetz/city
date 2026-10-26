@@ -807,12 +807,12 @@ func _process(_delta: float) -> void:
 	elif _compact and _stats_clip.size.x >= _full_need:
 		_set_compact(false)
 	var t := sim.clock()
-	var hour: int = t.hour % 12
-	# A game day is a month (see Seasons), so the date is month and year.
+	# The weekday, month and year, no time of day (Nathan 2026-10-26): the
+	# sky shows the time, one day and night a month (Seasons, SkyClock).
 	# Calendar years, matching the "since" on business signs.
-	_clock.text = "%s %d  %d:%02d %s" % [
+	_clock.text = "%s · %s %d" % [["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][int(t.weekday)],
 		["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][t.month - 1],
-		Families.calendar(t.year), 12 if hour == 0 else hour, t.minute, "AM" if t.hour < 12 else "PM"]
+		Families.calendar(t.year)]
 	_money.text = "$" + _thousands(sim.economy.money)
 	_money.add_theme_color_override("font_color", UiStyle.TEXT if sim.economy.money >= 0 else BAD)
 	_cars.text = str(sim.traffic.cars.size()) if _compact else \
@@ -1015,9 +1015,9 @@ func _build_top_bar() -> void:
 
 	_clock.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(_clickable(_clock, "The date: click for the town's years", "date"))
-	for i in 4:
-		var b := _icon_button(["pause", "play", "fast", "faster"][i], 24,
-			["Pause (Space)", "Normal speed", "2x speed", "4x speed"][i])
+	# Pause and play: one play speed, so the sky's hour can't be skipped.
+	for i in 2:
+		var b := _icon_button(["pause", "play"][i], 24, ["Pause (Space)", "Play"][i])
 		b.pressed.connect(func(): game.set_speed(i))
 		row.add_child(b)
 		_speed_buttons.append(b)

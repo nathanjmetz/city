@@ -114,7 +114,7 @@ static func _utility(sim, u: String, homes: int, out: Dictionary) -> void:
 
 ## Winter: no new streets or foundations until spring.
 static func _season(sim, out: Dictionary) -> void:
-	if Seasons.month(int(sim.tick_count)) in Balance.NEEDS_WINTER_MONTHS:
+	if Seasons.month(sim.calendar_tick()) in Balance.NEEDS_WINTER_MONTHS:
 		out.hold = true
 		if out.hold_why == "":
 			out.hold_why = "Winter: paving and foundations wait for spring"

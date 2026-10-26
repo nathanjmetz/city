@@ -292,7 +292,7 @@ static func _leader_near(sim, at: Vector3) -> String:
 
 ## Fall festival on Main Street.
 func _plan_festival(sim) -> Dictionary:
-	if not Seasons.month(sim.tick_count) in Balance.ASK_FESTIVAL_MONTHS:
+	if not Seasons.month(sim.calendar_tick()) in Balance.ASK_FESTIVAL_MONTHS:
 		return {}
 	var best := -1
 	var shops := 0
@@ -322,7 +322,7 @@ func _plan_festival(sim) -> Dictionary:
 			break
 	if who == "":
 		who = "The %s merchants" % street
-	return {"kind": "festival", "hub_id": 300000 + Seasons.year(sim.tick_count),
+	return {"kind": "festival", "hub_id": 300000 + Seasons.year(sim.calendar_tick()),
 		"leader": who, "title": "Close %s for the fall festival" % street,
 		"why": "A weekend of booths, a parade and music brings the whole county downtown.",
 		"area": _corridor(sim.network.sample_segment(best), 14.0), "change": "Street closed for a weekend",

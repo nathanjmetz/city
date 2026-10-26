@@ -6,14 +6,19 @@ extends Node3D
 
 signal speed_changed(speed: int)
 
-## 0 = paused; 1, 2 and 3 run the clock at 1x, 2x and 4x.
-const SPEEDS := [0.0, 1.0, 2.0, 4.0]
+## 0 = paused, 1 = playing. There is one play speed (Nathan 2026-10-26:
+## "remove the 2x and 4x speed and have only 1 play speed"), so the sky's
+## hour-long day and night (docs/spec-month-is-a-day.md) can't be skipped.
+const SPEEDS := [0.0, 1.0]
 
 var sim := CitySim.new()
 var _save_pending := false
 var _tick_time := 0.0
 var speed := 1
 var _resume_speed := 1
+## For test and timing tools only (never shown to players): runs the clock
+## this many times faster while playing.
+var fast_forward := 1.0
 var _save_wait := 0.0
 var _snapshot: TownSnapshot  # an autosave under way
 ## Online, a copy of your town goes to the region this often, in seconds.
@@ -510,7 +515,7 @@ func _settle() -> void:
 func _process(delta: float) -> void:
 	if loading:
 		return
-	_tick_time += delta * SPEEDS[speed]
+	_tick_time += delta * SPEEDS[speed] * fast_forward
 	var step := 1.0 / CitySim.TICKS_PER_SECOND
 	var guard := 0
 	var t := Perf.now()

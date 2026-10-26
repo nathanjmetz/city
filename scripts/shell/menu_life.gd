@@ -139,7 +139,7 @@ func _update_clock() -> void:
 ## (Seasons.months), years on so every building is grown. The town's own
 ## counter (_tick) runs separately, one step per traffic step.
 func _pinned() -> int:
-	return int((MarionTime.months_of(wall) + 24.0 - Seasons.START_MONTH) * Seasons.TICKS_PER_DAY)
+	return Seasons.tick_at(MarionTime.months_of(wall) + 24.0) - sim.calendar_offset
 
 
 ## One tenth of a second of the town: people decide, cars drive.

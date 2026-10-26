@@ -143,10 +143,7 @@ static func _box(size: Vector3) -> BoxMesh:
 
 ## The hour of day (0-24) and month (1-12) the town is at.
 func _when() -> Array:
-	var t := sim.tick_count
-	var hour := fmod(6.0 + t / 60.0, 24.0)
-	var month := Seasons.month(t)
-	return [hour, month]
+	return [sim.sky_hour(), Seasons.month(sim.calendar_tick())]
 
 
 func _process(delta: float) -> void:
@@ -241,7 +238,7 @@ func _pick() -> void:
 			_scenes.append({"kind": "crew", "front": fr, "out": out, "seed": hash([ref, "crew"])})
 			people += 3
 	# Schools: recess in the yard on school days (late August to May).
-	var term := month >= 9 or month <= 5 or (month == 8 and Seasons.months(sim.tick_count) - floorf(Seasons.months(sim.tick_count)) > 0.6)
+	var term := month >= 9 or month <= 5 or (month == 8 and fposmod(Seasons.months(sim.calendar_tick()), 1.0) > 0.6)
 	if weekday and term and (hour >= 10.0 and hour < 10.5 or hour >= 12.0 and hour < 12.75 or hour >= 14.0 and hour < 14.3):
 		for id in sim.services.buildings:
 			var sb: Dictionary = sim.services.buildings[id]

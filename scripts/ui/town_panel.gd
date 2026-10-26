@@ -107,7 +107,7 @@ func _rebuild() -> void:
 	if sim == null:
 		return
 	var key := "%s|%s|%d|%s|%d|%d|%s" % [sim.nicknames.current, sim.nicknames.past.size(), sim.markers.version,
-		sim.heritage.listed(), Seasons.month(sim.tick_count), sim.timelapse.months, sim.charter.reached.keys()]
+		sim.heritage.listed(), Seasons.month(sim.calendar_tick()), sim.timelapse.months, sim.charter.reached.keys()]
 	if key == _shown_key:
 		return
 	_shown_key = key
@@ -156,7 +156,7 @@ func _rebuild() -> void:
 		row.add_theme_constant_override("separation", 2)
 		_body.add_child(row)
 		row.add_child(_text(str(d.name), UiStyle.TEXT, 600, 13))
-		var st := "Protected since %d" % Families.calendar(Seasons.year(int(d.since))) if d.state == "protected" \
+		var st := "Protected since %d" % Families.calendar(Seasons.year(int(d.since) + sim.calendar_offset)) if d.state == "protected" \
 			else "Eligible, not protected"
 		row.add_child(_text("%s · %d buildings" % [st, int(d.buildings)], UiStyle.MUTED, 500, 12))
 		var b := Button.new()

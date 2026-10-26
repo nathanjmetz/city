@@ -181,7 +181,7 @@ func _update(delta: float) -> void:
 	_pick_wait -= delta
 	if _pick_wait <= 0.0:
 		_pick_wait = PICK_EVERY
-		var day := SoundSources.is_day(int(sim.clock().hour))
+		var day := SoundSources.is_day(int(sim.sky_hour()))
 		if day != _day:
 			_day = day
 			_sources_dirty = true
@@ -286,7 +286,7 @@ func _fade(s: Dictionary, step: float) -> void:
 func _pick_areas(ear: Vector3) -> void:
 	if _sources_dirty:
 		_sources_dirty = false
-		_sources = SoundSources.gather(sim, int(sim.clock().hour))
+		_sources = SoundSources.gather(sim, int(sim.sky_hour()))
 	var chosen := SoundSources.pick(_sources, ear, AREA_SLOTS, AREA_RANGE)
 	var by_key := {}
 	for c in chosen:
