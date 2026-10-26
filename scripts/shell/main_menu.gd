@@ -711,7 +711,9 @@ func _bd_lights() -> void:
 
 ## The picture fades into the town once it's drawn (BackdropReveal).
 func _bd_done() -> void:
-	_reveal.watch(_drawn_checks() + [func(): return _people_in])
+	# The picture may have given up and gone on a very slow machine.
+	if is_instance_valid(_reveal):
+		_reveal.watch(_drawn_checks() + [func(): return _people_in])
 
 
 func _drawn_checks() -> Array:
