@@ -118,6 +118,10 @@ const SERVICES := {
 	# (Builders). Its green roads reach about 2 road miles, where a crew gets
 	# there in about a minute of play.
 	"builder_yard": {"cost": 180_000, "upkeep": 0, "reach": 3200.0},
+	# A small city's traffic management center: a converted office, a video
+	# wall and the radio link to the signal cabinets (small-city TMCs run
+	# $1-5 million), and a few signal engineers and technicians on staff.
+	"traffic_center": {"cost": 2_400_000, "upkeep": 38_000},
 	# A 25-bed critical access hospital with an ER, the kind most rural US
 	# counties have. Its ambulances answer calls within about 6 road miles.
 	# The city's upkeep is its county hospital levy; the hospital earns the

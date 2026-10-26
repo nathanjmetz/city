@@ -574,10 +574,185 @@ func link_wave(from: int, to: int, v: float) -> bool:
 	greens[to] = {}
 	for i in g.size():
 		greens[to][i] = float(g[i])
+		# A wave is the player's own timing at both ends, so the traffic
+		# engineers don't retime one end out of step with the other.
+		if not greens.has(from):
+			greens[from] = {}
+		greens[from][i] = float(g[i])
 	var travel: float = Vector2(a.pos.x - b.pos.x, a.pos.z - b.pos.z).length() / maxf(v, 1.0)
 	offsets[to] = snappedf(fposmod(a.offset - travel, maxf(a.cycle, 1.0)), 0.1)
 	_rebuild()
 	return true
+
+
+## The traffic engineers (stage 4 of docs/spec-traffic-control.md, a
+## Traffic Management Center; Nathan, 2026-10-25: "they would fine-tune all
+## of that for me"). While the town has one, every car that enters a
+## signalled junction is counted by the way it came (detector counts), and
+## every RETUNE_EVERY the engineers share each light's green out by demand:
+## Webster's rule, green in proportion to each phase's busiest lane, eased
+## half way there each time as SCATS-style systems step their splits. The
+## counts fade by half at each retiming, so they follow the last few
+## periods (a game hour is only six seconds of traffic, under one cycle). A
+## quiet light (night) goes back to its standard timing. Lights the player
+## timed by hand are left alone; with no center, these timings go and the
+## player's own (or the standard ones) come back.
+var engineers := false
+## node -> {way id: cars counted, fading}. Saved.
+var demand := {}
+## The engineers' green times: node -> {phase index: seconds}. Saved.
+var tuned := {}
+## When the engineers last changed a light: node -> game tick. Saved.
+var retimed := {}
+## Game ticks between retimings (CitySim): three game hours, 18 s of traffic.
+const RETUNE_EVERY := 180
+## Fewer cars than this counted at a light and it runs standard timing.
+const TUNE_MIN_CARS := 6
+
+
+## One retiming (CitySim, every RETUNE_EVERY). `tick` is the game tick,
+## for the light's panel.
+func retune(tick: int) -> void:
+	var nodes := demand.keys()
+	for n in tuned:
+		if not n in nodes:
+			nodes.append(n)
+	nodes.sort()
+	for n in nodes:
+		# The player's own lights (timed, started at a set time, or in a
+		# green wave) and smart lights (sensors set their own greens) are
+		# left alone.
+		if not junctions.has(n) or junctions[n].control != Rule.SIGNAL or greens.has(n) \
+				or offsets.has(n) or actuated.has(n):
+			if tuned.erase(n):
+				_retime(n)
+			continue
+		var j: Dictionary = junctions[n]
+		if tuned.has(n) and tuned[n].size() != j.phases.size():
+			tuned.erase(n)  # its roads changed: start again from the counts
+		# Cars still waiting count too, so a way kept short of green shows
+		# its queue, not only the few it let through.
+		var seen: Dictionary = demand.get(n, {}).duplicate()
+		for ph in j.phases:
+			for wi in ph.ways:
+				for lane in int(ways[wi].lanes):
+					for car in _lanes.get(int(wi) * 8 + lane, []):
+						if not car.get("commit", false):
+							seen[wi] = int(seen.get(wi, 0)) + 1
+		var total := 0
+		var y := []
+		for ph in j.phases:
+			var crit := 0.0
+			for wi in ph.ways:
+				total += int(seen.get(wi, 0))
+				crit = maxf(crit, float(seen.get(wi, 0)) / maxi(int(ways[wi].lanes), 1))
+			y.append(crit)
+		var had := tuned.has(n)
+		if total < TUNE_MIN_CARS:
+			tuned.erase(n)
+		else:
+			var sum_y := 0.0
+			var sum_g := 0.0
+			for i in j.phases.size():
+				sum_y += y[i]
+				sum_g += float(j.phases[i].g0)
+			var now := greens_at(n)
+			var out := {}
+			for i in j.phases.size():
+				var want := sum_g * float(y[i]) / maxf(sum_y, 0.001)
+				var g := clampf(roundf(0.5 * float(now[i]) + 0.5 * want), GREEN_MIN, GREEN_MAX)
+				out[i] = g
+			tuned[n] = out
+		if had or tuned.has(n):
+			if _retime(n):
+				retimed[n] = tick
+	for n in retimed.keys():
+		if not tuned.has(n):
+			retimed.erase(n)
+	for n in demand.keys():
+		var seen: Dictionary = demand[n]
+		for wi in seen.keys():
+			seen[wi] = int(seen[wi]) / 2
+			if seen[wi] == 0:
+				seen.erase(wi)
+		if seen.is_empty():
+			demand.erase(n)
+
+
+## The engineers leave: every light they timed goes back.
+func engineers_gone() -> void:
+	engineers = false
+	var nodes := tuned.keys()
+	tuned.clear()
+	demand.clear()
+	retimed.clear()
+	for n in nodes:
+		_retime(n)
+
+
+## Puts a light's green times (the player's, else the engineers', else the
+## standard ones) into its phases in place, without rebuilding the roads.
+## True if anything changed.
+func _retime(n: int) -> bool:
+	if not junctions.has(n) or junctions[n].control != Rule.SIGNAL:
+		return false
+	var j: Dictionary = junctions[n]
+	var set_at: Dictionary = greens.get(n, tuned.get(n, {}))
+	# The same sums as _build_control, so a light retimed here and one
+	# rebuilt in a loaded copy agree to the last bit.
+	var t := 0.0
+	var changed := false
+	for i in j.phases.size():
+		var ph: Dictionary = j.phases[i]
+		var start := 0.0 if i == 0 else float(j.phases[i - 1].end)
+		var yellow: float = ph.yl
+		var green: float = float(set_at.get(i, ph.g0))
+		if absf(green - (ph.g_end - start)) > 0.01:
+			changed = true
+		ph.g_end = t + green
+		ph.y_end = t + green + yellow
+		ph.end = t + green + yellow + 1.5
+		t += green + yellow + 1.5
+	j.cycle = maxf(t, 1.0)
+	j.offset = fposmod(float(offsets[n]) if offsets.has(n) else n * 37.0, j.cycle)
+	return changed
+
+
+func engineers_to_dict() -> Dictionary:
+	var out := {"on": engineers, "demand": {}, "tuned": {}, "retimed": {}}
+	for n in demand:
+		var d := {}
+		for wi in demand[n]:
+			d[str(wi)] = demand[n][wi]
+		out.demand[str(n)] = d
+	for n in tuned:
+		var d := {}
+		for ph in tuned[n]:
+			d[str(ph)] = tuned[n][ph]
+		out.tuned[str(n)] = d
+	for n in retimed:
+		out.retimed[str(n)] = retimed[n]
+	return out
+
+
+func engineers_from_dict(d: Dictionary) -> void:
+	demand.clear()
+	tuned.clear()
+	retimed.clear()
+	engineers = bool(d.get("on", false))
+	for k in d.get("demand", {}):
+		var m := {}
+		for wi in d.demand[k]:
+			m[int(wi)] = int(d.demand[k][wi])
+		demand[int(k)] = m
+	for k in d.get("tuned", {}):
+		var m := {}
+		for ph in d.tuned[k]:
+			m[int(ph)] = float(d.tuned[k][ph])
+		tuned[int(k)] = m
+	for k in d.get("retimed", {}):
+		retimed[int(k)] = int(d.retimed[k])
+	_dirty = true
 
 
 ## Smart lights (actuated signals, stage 3 of docs/spec-traffic-control.md):
@@ -1184,11 +1359,11 @@ func _build_control(n: int, segs: Array) -> void:
 			# Yellow by the ITE formula: 1 s to react, then brake at 10 ft/s^2.
 			var yellow := clampf(1.0 + v / (2.0 * 3.05), 3.0, 6.0)
 			var green: float = 16.0 + 6.0 * g[0]
-			var set_at: Dictionary = greens.get(n, {})
+			var set_at: Dictionary = greens.get(n, tuned.get(n, {}))
 			if set_at.has(j.phases.size()):
 				green = float(set_at[j.phases.size()])
 			j.phases.append({"ways": ph_ways, "g_end": t + green, "y_end": t + green + yellow,
-				"end": t + green + yellow + 1.5})
+				"end": t + green + yellow + 1.5, "g0": 16.0 + 6.0 * g[0], "yl": yellow})
 			t += green + yellow + 1.5
 		j.cycle = maxf(t, 1.0)
 		j.offset = fposmod(float(offsets[n]) if offsets.has(n) else n * 37.0, j.cycle)
@@ -4615,6 +4790,10 @@ func _accel_on_way(car: Dictionary, list: Array, i: int) -> float:
 			if not _committed.has(c.node):
 				_committed[c.node] = []
 			_committed[c.node].append(car)
+			if engineers and junctions[c.node].control == Rule.SIGNAL:
+				var seen: Dictionary = demand.get(c.node, {})
+				seen[c.wi] = int(seen.get(c.wi, 0)) + 1
+				demand[c.node] = seen
 	if car.commit:
 		var lead := _through_leader(c, ds, car)
 		acc = minf(acc, _idm(car.v, v0, lead[0], lead[1]))
