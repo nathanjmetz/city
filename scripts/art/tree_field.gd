@@ -7,8 +7,9 @@ extends Node3D
 ##
 ## A tree here is three facts: its kind (Species, the real Grant County
 ## trees in TreeKinds and docs/trees.md), a seed (where it stands) and its
-## age, from the day it was planted. Yard trees grow from nursery saplings
-## over the game's years; wild trees come with the age the woods give them.
+## age, from the day it was planted. Yard and street trees go in as
+## balled-and-burlapped nursery stock (TreeKinds.NURSERY_HEIGHT, 12 to 14 ft
+## for a shade tree) and grow on over the game's years; wild trees come with the age the woods give them.
 ##
 ## These are the cheap trees: clusters of leaf cards with a generated leaf
 ## texture, in the shape of each kind's crown at its real size. Normals
@@ -181,8 +182,8 @@ static func resolve(t: Array, world := Transform3D.IDENTITY) -> Array:
 	var size := xf.basis.get_scale().y
 	var age: float
 	if facts.has("planted"):
-		age = maxf(TreeKinds.NURSERY_AGE + extra_years + float(now_tick - int(facts.planted)) / float(REGROW_TICKS * 12),
-			TreeKinds.NURSERY_AGE)
+		var start := TreeKinds.nursery_age(sp)
+		age = maxf(start + extra_years + float(now_tick - int(facts.planted)) / float(REGROW_TICKS * 12), start)
 		var now := size * TreeKinds.size_at(sp, age)
 		xf = Transform3D(xf.basis.scaled(Vector3.ONE * (now / maxf(size, 0.001))), xf.origin)
 	elif facts.has("age"):
@@ -429,6 +430,31 @@ static func pick(rng: RandomNumberGenerator, front := false) -> Array:
 		sp = Species.LOCUST
 	else:
 		sp = Species.SPRUCE
+	var tint: Color = LEAF[sp]
+	tint = tint.lightened(rng.randf_range(-0.08, 0.1)) if rng.randf() < 0.5 else tint.darkened(rng.randf_range(0.0, 0.12))
+	return [sp, tint]
+
+
+## Picks a species and colour for a street tree in the parkway: the shade
+## trees Indiana towns plant along their streets (Purdue's and the Indiana
+## DNR's street tree lists): sugar maple, honey locust, red and white oak,
+## and a few of the old fast silver maples. No spruce or crabapple, which
+## block drivers' view or stay too small. Only kinds the yards already
+## grow, so a block's trees still cost the same few draw calls. The same
+## number of draws as pick().
+static func pick_street(rng: RandomNumberGenerator) -> Array:
+	var r := rng.randf()
+	var sp: int
+	if r < 0.32:
+		sp = Species.MAPLE
+	elif r < 0.43:
+		sp = Species.SILVER_MAPLE
+	elif r < 0.69:
+		sp = Species.LOCUST
+	elif r < 0.88:
+		sp = Species.RED_OAK
+	else:
+		sp = Species.OAK
 	var tint: Color = LEAF[sp]
 	tint = tint.lightened(rng.randf_range(-0.08, 0.1)) if rng.randf() < 0.5 else tint.darkened(rng.randf_range(0.0, 0.12))
 	return [sp, tint]

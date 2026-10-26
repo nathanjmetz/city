@@ -15,10 +15,13 @@ extends RefCounted
 
 ## Age in years whose height is "size 1".
 const REF_AGE := 40.0
-## Street and yard trees go in as nursery stock about this old: a 2 in
-## caliper, 10 to 12 ft (3 to 3.5 m) shade tree, which on the open-grown
-## curves here is about 7 years from seed.
-const NURSERY_AGE := 7.0
+## Street and yard trees go in as balled-and-burlapped nursery stock, the
+## size a builder or a town forester plants (ANSI Z60.1, the American
+## Standard for Nursery Stock): a 2 to 3 in caliper shade tree is 12 to 14
+## ft (about 3.7 m) tall; an ornamental like a crabapple 1.5 in and 8 to 10
+## ft; an evergreen 6 to 7 ft. Height in metres a tree of each kind has on
+## the day it goes in (at size 1; planters scale it a little either way).
+const NURSERY_HEIGHT := [3.8, 3.6, 4.0, 2.0, 2.8, 3.8, 4.0, 4.0, 3.8, 3.7, 4.0, 1.8]
 ## The oldest age the grower models; older trees keep that shape.
 const MAX_AGE := 120.0
 
@@ -130,6 +133,9 @@ const KINDS := [
 ]
 
 static var _anchor_cache := {}
+## Each kind's age (years from seed) at its NURSERY_HEIGHT, worked out once
+## when the class loads (on the main thread, before any tree is resolved).
+static var _nursery := _nursery_ages()
 
 
 static func count() -> int:
@@ -200,6 +206,29 @@ static func _anchors(sp: int) -> Array:
 		pts.append(Vector3(xs[i], ys[i], m[i]))
 	_anchor_cache[sp] = pts
 	return pts
+
+
+## How old a kind's nursery stock is the day it goes in: the age at which
+## it stands its NURSERY_HEIGHT on the growth curve (about 7 to 9 years from
+## seed for a shade tree). A planted tree starts here and grows on.
+static func nursery_age(sp: int) -> float:
+	return _nursery[clampi(sp, 0, _nursery.size() - 1)]
+
+
+static func _nursery_ages() -> PackedFloat64Array:
+	var out := PackedFloat64Array()
+	for sp in KINDS.size():
+		# The curve always rises, so halve the bracket until it's found.
+		var lo := 0.0
+		var hi := 30.0
+		for i in 30:
+			var mid := (lo + hi) * 0.5
+			if height(sp, mid) < float(NURSERY_HEIGHT[sp]):
+				lo = mid
+			else:
+				hi = mid
+		out.append((lo + hi) * 0.5)
+	return out
 
 
 ## Size (1 = the height at REF_AGE) at an age.

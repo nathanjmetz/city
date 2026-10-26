@@ -24,7 +24,27 @@ const SIDING := ["#c9c3b3", "#d8d2c2", "#9aa3a8", "#6f7f8c", "#e9e6dc", "#b8a98c
 	"#7d8a74", "#8c8f8a", "#cdc3ab", "#a39783", "#e4e1d6", "#8a9aa6"]
 const SHUTTER := ["#1c1d1f", "#22324a", "#2f4632", "#5a2626", "", ""]
 const DOOR := ["#1f2d3d", "#7a1f1f", "#1c1d1f", "#2f4632", "#6b4a2e", "#f3f1ea", "#3c5a6e"]
-const ROOF := ["#7a7874", "#86857f", "#8f8d88", "#6e6d6a", "#5c5c5e", "#76665a", "#6f6b66"]
+## Asphalt shingle colours in the mix a Grant County street shows (benchmark:
+## Marion and Gas City streets from the air, and the colours Owens Corning,
+## GAF and CertainTeed sell most in the Midwest): weathered wood and
+## driftwood brown-greys most of all, then charcoal and black, the old
+## pewter and estate greys, browns (hickory, barkwood, desert tan), and a
+## few slate, hunter green and red-brown roofs. Listed more than once to
+## weight the pick; the plan book's paint schemes draw from it.
+## (Warm colours read stronger in the game's sunlight than on a swatch, so
+## the browns here are a little greyer than the makers' chips.)
+const ROOF := [
+	"#6b6660", "#67625b", "#726c64", "#78736b", "#7e786f",  # weathered wood, driftwood
+	"#45464a", "#3d3e41", "#4f5053", "#36373a", "#58595c",  # charcoal, onyx black
+	"#6e6d6a", "#7a7874", "#86857f", "#5e5f61",  # pewter, estate and colonial grey
+	"#5b4d42", "#655547", "#7d7468",  # hickory, shakewood, desert tan
+	"#59626b",  # slate
+	"#4a5646",  # hunter green
+	"#6a4a3e",  # red-brown (burnt sienna)
+]
+## Ribbed steel roof panels on garden sheds and outbuildings: barn red,
+## forest green, galvanised and Galvalume, charcoal.
+const SHED_METAL := ["#8a2f27", "#7c2a24", "#35523a", "#2f4a35", "#a7aaa8", "#b9bcb8", "#4a4c4f"]
 ## How much brick a front shows: none, a wainscot or all of it.
 const BRICK_STYLES := ["none", "none", "wainscot", "wainscot", "full"]
 const BRICK := ["#8a4a38", "#9b5a42", "#7a4234", "#a8775c", "#b59a7c"]
@@ -124,6 +144,8 @@ var _reach := 0.0
 var _improved := Rect2()
 ## Trees this lot plants: [local position, TreeField species, tint, scale].
 var trees := []
+## Where the home's curbside mailbox stands across the lot (local x), or INF.
+var mail_x := INF
 var rng: RandomNumberGenerator
 
 
@@ -141,6 +163,7 @@ static func build(seed: int, to_curb: float, lot := {}, storeys := 0) -> Array:
 func _fit(lot: Dictionary) -> void:
 	half = float(lot.get("width", LOT_HALF * 2.0)) * 0.5
 	pad = float(lot.get("pad", 0.0))
+	mail_x = float(lot.get("mail_x", INF))
 	outline = lot.get("outline", PackedVector2Array())
 	depth = float(lot.get("depth", 32.0)) - pad
 	# The era comes from where the lot is, in blocks of about a quarter mile.
@@ -197,6 +220,7 @@ func _house(to_curb: float, storeys := 0) -> Array:
 	if owner_care >= 1:
 		_improve()
 	_yard_trees(info, to_curb)
+	_street_trees(info, to_curb)
 	_back_yard(info)
 	return [_commit_house(), _commit_flat(), trees]
 
@@ -667,7 +691,12 @@ func _improve() -> void:
 	var shed_col := Color(_pick(SIDING))
 	_box("concrete", Vector3(3.2, 0.12, 2.6), Vector3(sx, 0.06, sz), FOUNDATION)
 	_box("siding", Vector3(3.0, 2.1, 2.4), Vector3(sx, 1.17, sz), shed_col)
-	_gable_roof(sx, sz, 2.22, 2.4, 0.75, 3.0, true, Color(_pick(ROOF)), shed_col, false)
+	var shed_roof := Color(_pick(ROOF))
+	# Some sheds have a steel roof, off the farm-supply rack (its own draw).
+	var metal := hash([rng.seed, "shed roof"]) % 100 < 35
+	if metal:
+		shed_roof = Color(SHED_METAL[hash([rng.seed, "shed metal"]) % SHED_METAL.size()])
+	_gable_roof(sx, sz, 2.22, 2.4, 0.75, 3.0, true, shed_roof, shed_col, false, "metal" if metal else "roof")
 	_box("paint", Vector3(1.2, 1.85, 0.05), Vector3(sx, 1.05, sz - 1.22), TRIM)
 	_improved = Rect2(sx - 1.8, sz - 1.5, 3.6, 3.0)
 	if owner_care < 2:
@@ -1268,18 +1297,17 @@ func _back(x0: float, x1: float, zb: float, floors: Array, sill: float) -> void:
 				_window(Vector3(x, floors[f], zb), Vector3(1, 0, 0), 0.9, 1.35, true, false, TRIM)
 
 
-## A front-yard tree, a street tree in the parkway, and one or two out back,
-## kept clear of the driveway and the house.
-func _yard_trees(h: Dictionary, to_curb: float) -> void:
+## A front-yard tree and one or two out back, kept clear of the driveway
+## and the house (the street trees are _street_trees').
+func _yard_trees(h: Dictionary, _to_curb: float) -> void:
 	var dx: float = h.drive_x
 	var clear: float = h.drive_w * 0.5 + 3.0
 	var spots := []
 	var span := half - 2.0
 	var back: float = h.front_z + 13.0
-	if rng.randf() < 0.7:
+	if rng.randf() < 0.8:
 		spots.append([Vector3(rng.randf_range(-span, span), 0, rng.randf_range(1.5, h.front_z - 3.5)), true])
-	if rng.randf() < 0.55 and pad <= 0.0:
-		spots.append([Vector3(rng.randf_range(-span, span), 0, -to_curb + 1.2), false])
+	rng.randf()  # was the street tree's roll, kept so the back yard stays as it was
 	if depth - 2.0 > back:
 		for i in rng.randi_range(1, 2):
 			spots.append([Vector3(rng.randf_range(-span, span), 0, rng.randf_range(back, depth - 2.0)), false])
@@ -1287,8 +1315,8 @@ func _yard_trees(h: Dictionary, to_curb: float) -> void:
 		var p: Vector3 = s[0]
 		if p.z < h.front_z and absf(p.x - dx) < clear:
 			continue
-		# Street trees stand in the parkway, outside the lot itself.
-		if p.z > 0.0 and not _in_lot(p):
+		# On the lot, never out on the sidewalk (a shallow front yard).
+		if p.z < 1.0 or not _in_lot(p):
 			continue
 		if h.has("keep_out") and (h.keep_out as Rect2).grow(2.0).has_point(Vector2(p.x, p.z)):
 			continue
@@ -1309,6 +1337,74 @@ func _yard_trees(h: Dictionary, to_curb: float) -> void:
 			if _wall_gap(p) < TreeField.SPREAD[pick[0]] * size * 0.9:
 				continue
 		trees.append([p, pick[0], pick[1], size])
+
+
+## Street trees: shade trees down the middle of the parkway (the grass strip
+## between curb and sidewalk) along the lot's frontage, as a town or a
+## subdivision's builder plants them in Indiana: one about every 40 ft
+## (12 m, the spacing Marion's and most Indiana towns' tree ordinances
+## give), at least 2 m (6-7 ft) from the edge of a driveway, and not on
+## flag lots, whose front is a drive. Most lots have theirs; a few don't (a
+## tree lost to a storm or the emerald ash borer, never replaced). Corners'
+## sight lines, streetlights, mailboxes and bus stops are kept clear where
+## the town knows them (BuildingView). Its own random numbers, so the rest
+## of the lot stays as it was.
+const STREET_TREE_GAP := 12.5
+const STREET_TREE_ODDS := 0.88
+## How far in from the lot's side lines a street tree stands, so two
+## neighbours' trees are never closer than twice this.
+const STREET_TREE_SIDE := 2.8
+
+
+func _street_trees(h: Dictionary, to_curb: float) -> void:
+	if pad > 0.0 or to_curb < RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH:
+		return  # a flag lot, or a country road with no parkway
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "street trees"])
+	var z := -(to_curb - RoadStyle.CURB_WIDTH - RoadStyle.PARKWAY_WIDTH * 0.5)
+	# The frontage: where the lot meets the sidewalk (a pie lot's is narrower
+	# than its width).
+	var lo := -half
+	var hi := half
+	if outline.size() >= 3:
+		lo = INF
+		hi = -INF
+		var x := -half - 3.0
+		while x <= half + 3.0:
+			if Geometry2D.is_point_in_polygon(Vector2(x, 0.4), outline):
+				lo = minf(lo, x)
+				hi = maxf(hi, x)
+			x += 0.5
+		if lo > hi:
+			return
+	var n := maxi(1, roundi((hi - lo) / STREET_TREE_GAP))
+	var x0 := lo + STREET_TREE_SIDE
+	var x1 := hi - STREET_TREE_SIDE
+	# Kept clear along the frontage: the drive, and the mailbox at the curb.
+	var keep_off := [Vector2(float(h.drive_x) - h.drive_w * 0.5 - 2.0, float(h.drive_x) + h.drive_w * 0.5 + 2.0)]
+	if mail_x != INF:
+		keep_off.append(Vector2(mail_x - 1.6, mail_x + 1.6))
+	var placed := []
+	for i in n:
+		# Every draw made whether or not the tree is planted.
+		var want := lerpf(lo, hi, (i + 0.5) / n) + r.randf_range(-0.8, 0.8)
+		var planted := r.randf() < STREET_TREE_ODDS
+		var pick := TreeField.pick_street(r)
+		var size := r.randf_range(0.8, 1.1)
+		# The nearest free spot to where it was meant to go.
+		var best := INF
+		for x in [want] + keep_off.map(func(k): return k.x) + keep_off.map(func(k): return k.y):
+			var free: bool = x >= x0 and x <= x1
+			for k: Vector2 in keep_off:
+				free = free and (x <= k.x + 0.01 or x >= k.y - 0.01)
+			for q in placed:
+				free = free and absf(float(q) - x) >= STREET_TREE_GAP * 0.6
+			if free and absf(x - want) < absf(best - want):
+				best = x
+		if not planted or best == INF or absf(best - want) > 7.0:
+			continue
+		placed.append(best)
+		trees.append([Vector3(best, 0, z), pick[0], pick[1], size])
 
 
 ## How far a spot on the lot is from the nearest building mass (m).
@@ -1662,7 +1758,7 @@ func _window(c: Vector3, right: Vector3, w: float, h: float, grid: bool, shutter
 ## Gable roof. `ridge_x` true: the ridge runs along x and `span` is measured
 ## along z; false: the ridge runs along z (a gable facing the street).
 func _gable_roof(cx: float, cz: float, base: float, span: float, rise: float, length: float,
-		ridge_x: bool, roof: Color, gable: Color, gutters := true) -> void:
+		ridge_x: bool, roof: Color, gable: Color, gutters := true, roofing := "roof") -> void:
 	var over := 0.45
 	var rake := 0.3
 	var hs := span * 0.5 + over
@@ -1678,7 +1774,7 @@ func _gable_roof(cx: float, cz: float, base: float, span: float, rise: float, le
 		var ridge_l: Vector3 = to_world.call(-hl, 0.0, base + rise)
 		var ridge_r: Vector3 = to_world.call(hl, 0.0, base + rise)
 		var outward: Vector3 = to_world.call(0.0, side, 0.0) - to_world.call(0.0, 0.0, 0.0)
-		_quad("roof", eave_l + up, eave_r + up, ridge_r + up, ridge_l + up, roof,
+		_quad(roofing, eave_l + up, eave_r + up, ridge_r + up, ridge_l + up, roof,
 			[Vector2(-hl, 0), Vector2(hl, 0), Vector2(hl, slope_len), Vector2(-hl, slope_len)], Vector3.UP)
 		# Underside (soffit) and the fascia board along the eave.
 		_quad("paint", eave_l, eave_r, ridge_r, ridge_l, SOFFIT, [], Vector3.DOWN)
