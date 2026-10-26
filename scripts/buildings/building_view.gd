@@ -99,6 +99,8 @@ var _has_eye := false
 ## test or tool with no camera at all draws everything in full). Review,
 ## 2026-10-25: the view came up before the camera and opened every square.
 var wait_for_eye := false
+## Share of the full-drawing reach inside which squares keep their arrays.
+const KEEP_PARTS := 0.5
 
 
 func setup(s: CitySim) -> void:
@@ -619,7 +621,11 @@ func _merge_some() -> void:
 		if not batch.merge_step(start + limit):
 			return
 		batch.finish()
-		batch.drop_parts()
+		# Squares close to the camera keep their buildings' arrays, so a
+		# house built or changed there merges again without every neighbour
+		# being drawn over (review, 2026-10-25); farther ones let them go.
+		if not _has_eye or _square_dist(sq) > _full_from() * KEEP_PARTS:
+			batch.drop_parts()
 		_merging.erase(sq)
 		_merge_due.erase(sq)
 		for root in _retire.get(sq, []):

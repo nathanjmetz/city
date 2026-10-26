@@ -110,8 +110,12 @@ func _process(_d: float) -> bool:
 				return false
 			var sq: Vector2i = view._recs[_redone].sq
 			var batch: BatchSquare = view._batches[sq]
-			_check(not view._recs.has(_gone) and view._recs[_redone].look[1] == sim.buildings[_redone].level and batch.merged.has(_redone) and batch.parts.is_empty(),
-				"a house torn down leaves, one drawn anew is merged back, and the arrays are let go after")
+			# Squares near the camera keep their arrays (BuildingView.KEEP_PARTS)
+			# so a change there doesn't redraw every neighbour; far ones let go.
+			var near_sq: bool = view._square_dist(sq) <= view._full_from() * BuildingView.KEEP_PARTS
+			_check(not view._recs.has(_gone) and view._recs[_redone].look[1] == sim.buildings[_redone].level and batch.merged.has(_redone)
+				and (batch.parts.has(_redone) if near_sq else batch.parts.is_empty()),
+				"a house torn down leaves, one drawn anew is merged back, and its square keeps its arrays only if near the camera")
 			var all_in := true
 			for key in view._by_sq.get(sq, {}):
 				all_in = all_in and batch.merged.has(key)
