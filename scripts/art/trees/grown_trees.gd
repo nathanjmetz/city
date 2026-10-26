@@ -84,6 +84,7 @@ var _scan_plain := true
 var _scan_pos := Vector3.ZERO
 var _scan_r := Vector2.ZERO
 var _scan_version := -1
+var _scan_shadows := false  # the lookup in hand files the full trees' shadows
 var _scanning := false
 var _scan_began := 0  # when the lookup in hand began (Time msec)
 var _scan_secs := 0.0  # how long the last lookup took
@@ -268,6 +269,7 @@ func _start_scan(cp: Vector3, r: Vector2) -> void:
 	_scan_pos = cp
 	_scan_r = r
 	_scan_version = TreeField.version
+	_scan_shadows = GraphicsQuality.tree_shadows
 	_scan = []
 	_scan_field = null
 	_scan_n = 0
@@ -322,6 +324,11 @@ func _scan_some(ms: float) -> void:
 					continue
 				if d < near_hi and _scan_r.x > 0.0:
 					_file(rec, xf, d, TreeMesher.Lod.FULL)
+					# Its shadow: by itself right by the camera (the
+					# sun through its leaves), past that by its light tree
+					# (SHADOW_BIT).
+					if _scan_shadows:
+						_file(rec, xf, d, TreeMesher.Lod.FULL if d < FULL_SHADOW else TreeMesher.Lod.LIGHT, true)
 				if d > near_lo:
 					_file(rec, xf, d, TreeMesher.Lod.LIGHT)
 		if Perf.now() - start > budget:
@@ -329,7 +336,7 @@ func _scan_some(ms: float) -> void:
 	# New groups are made first, one at a time (a kind's first card mesh
 	# takes a moment to build); then every group changes in the same frame.
 	for group in _bufs:
-		if not _groups.has(group) and (group < 0 or _meshes.has(group)):
+		if not _groups.has(group) and (group < 0 or _meshes.has(group_mesh(group))):
 			_group(group)
 			if Perf.now() - start > budget:
 				return
@@ -337,8 +344,9 @@ func _scan_some(ms: float) -> void:
 
 
 ## Files one tree into its group: its grown mesh if made, else (asking for
-## it to be made) its card standing in.
-func _file(rec: Array, xf: Transform3D, d: float, lod: int) -> void:
+## it to be made) its card standing in. `shadow`: into the group that only
+## casts the sun's shadow (SHADOW_BIT).
+func _file(rec: Array, xf: Transform3D, d: float, lod: int, shadow := false) -> void:
 	var sp: int = rec[1]
 	var b := bucket(rec[3])
 	var key := mesh_key(sp, posmod(int(rec[4]), TreeGrower.VARIANTS), b, lod)
@@ -354,6 +362,8 @@ func _file(rec: Array, xf: Transform3D, d: float, lod: int) -> void:
 		_want[key] = minf(_want.get(key, INF), d)
 		group = card_group(sp, lod)
 		basis = xf.basis
+	if shadow:
+		group = shadow_group(group)
 	var buf: PackedFloat32Array = _bufs.get(group, PackedFloat32Array())
 	var custom := TreeField.custom_of(rec[2], sp, true)
 	var o := xf.origin
@@ -375,15 +385,16 @@ func _finish_scan() -> void:
 		if not _bufs.has(key):
 			_groups[key].multimesh.instance_count = 0
 	for group in _bufs:
-		if group >= 0 and not _meshes.has(group):
+		if group >= 0 and not _meshes.has(group_mesh(group)):
 			continue  # dropped from the cache while this lookup ran
 		var mmi := _group(group)
 		var n: int = _counts[group]
 		mmi.multimesh.instance_count = n
 		mmi.multimesh.buffer = _bufs[group]
 		if group >= 0:
-			_used[group] = _frame
-			shown += n
+			_used[group_mesh(group)] = _frame
+			if not is_shadow_group(group):
+				shown += n
 	_shown = shown
 	_bufs = {}
 
@@ -397,16 +408,51 @@ func _group(group: int) -> MultiMeshInstance3D:
 	mm.use_colors = true
 	mm.use_custom_data = true
 	if group < 0:
-		var g := -1 - group
+		var g := (-1 - group) % SHADOW_CARDS
 		mm.mesh = TreeField.tree_mesh(g >> 1, false, false, 4 if (g & 1) == TreeMesher.Lod.FULL else 5)
 	else:
-		mm.mesh = _meshes[group]
+		mm.mesh = _meshes[group_mesh(group)]
 	_groups[group] = mmi
 	mmi.multimesh = mm
-	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if GraphicsQuality.tree_shadows \
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY if is_shadow_group(group) \
 		else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mmi)
 	return mmi
+
+
+## The sun's shadows of the grown trees. The groups that draw them cast
+## none: the grown trees were most of the triangles a town drew, nearly all
+## of it in the shadow map (each group spans the whole zone round the
+## camera, so it is drawn into every one of the shadow map's splits).
+## Measured with tools/render_budget.gd on Cinematic in a town of grown
+## trees: of 26 million triangles from the street, 17 million were the
+## grown trees' shadows. Instead:
+## - a full grown tree's shadow is cast by its light grown tree (a fifth of
+##   the triangles, the same limbs and crown), in a group of its own that
+##   draws only into the shadow map (the shadow groups); within FULL_SHADOW
+##   of the camera, by the full tree itself, so the sun still comes through
+##   its leaves in flecks on the ground nearby;
+## - past the full trees' reach the full card at a tree's spot casts it,
+##   which is drawn into the shadow map anyway (TreeLook's band_keep).
+## Past FULL_SHADOW the leaves' shadow is a little coarser.
+## Shadow groups: mesh keys with SHADOW_BIT; card groups SHADOW_CARDS
+## further below 0.
+const FULL_SHADOW := 60.0
+const SHADOW_BIT := 1 << 12
+const SHADOW_CARDS := 64
+
+
+static func shadow_group(group: int) -> int:
+	return group | SHADOW_BIT if group >= 0 else group - SHADOW_CARDS
+
+
+static func is_shadow_group(group: int) -> bool:
+	return (group & SHADOW_BIT) != 0 if group >= 0 else (-1 - group) >= SHADOW_CARDS
+
+
+## The mesh key a group draws (groups of grown meshes only).
+static func group_mesh(group: int) -> int:
+	return group & ~SHADOW_BIT
 
 
 static var _bounds := PackedFloat64Array()
@@ -646,9 +692,10 @@ func _trim() -> void:
 			break
 		if int(_used.get(key, 0)) >= _drawn_frame and must <= 0:
 			break  # in view: keep it
-		if _groups.has(key):
-			_groups[key].queue_free()
-			_groups.erase(key)
+		for gk in [key, shadow_group(key)]:
+			if _groups.has(gk):
+				_groups[gk].queue_free()
+				_groups.erase(gk)
 		_meshes.erase(key)
 		_used.erase(key)
 		_tris.erase(key)
@@ -663,7 +710,7 @@ func _trim() -> void:
 func stats() -> Dictionary:
 	var tris := 0
 	for key in _groups:
-		if key < 0:
+		if key < 0 or is_shadow_group(key):
 			continue
 		tris += int(_tris.get(key, 0)) * (_groups[key] as MultiMeshInstance3D).multimesh.instance_count
 	var bytes := 0

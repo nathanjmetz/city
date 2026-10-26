@@ -22,6 +22,7 @@ func _init() -> void:
 	# (The lookup needs the nodes in the tree, which they are from the next frame.)
 	await process_frame
 	_budget()
+	_shadows()
 	_reference_doc()
 	print("FAILED" if _failed else "ALL PASSED")
 	quit(1 if _failed else 0)
@@ -597,6 +598,61 @@ func _budget() -> void:
 	field.free()
 	_check(finished and scans > 3 and scan_over * 20 <= scans and drawn > 1000,
 		"the lookup of 3,000 trees goes in %d frames of %.2f ms, %d over by more than 1 ms, %d trees filed" % [scans, web.y, scan_over, drawn])
+
+
+## The grown trees' sun shadows are cheap (2026-10-26, the render budget:
+## they were 17 of 26 million triangles from the street on Cinematic). No
+## group that draws a grown tree casts a shadow; shadow-only groups do: a
+## full tree's own mesh right by the camera, its light tree's past that,
+## and none in the light band (the cards cast those).
+func _shadows() -> void:
+	var was: bool = GraphicsQuality.tree_shadows
+	var sp := TreeField.Species.MAPLE
+	for on in [true, false]:
+		GraphicsQuality.tree_shadows = on
+		var field := TreeField.new()
+		root.add_child(field)
+		var trees := []
+		for d in [20.0, 100.0, 300.0]:
+			trees.append([Transform3D(Basis(), Vector3(d, 0, 0)), sp, Color.GREEN, {"age": 20.0}])
+		field.set_trees("shadows", trees)
+		var g := GrownTrees.new()
+		root.add_child(g)
+		g._threads = false
+		g._start_scan(Vector3.ZERO, Vector2(150.0, 400.0))
+		var steps := 0
+		while g._scanning and steps < 1000:
+			g._scan_some(5.0)
+			steps += 1
+		var c: Dictionary = g._counts
+		var full := GrownTrees.card_group(sp, TreeMesher.Lod.FULL)
+		var light := GrownTrees.card_group(sp, TreeMesher.Lod.LIGHT)
+		var casts := 0
+		var only := 0
+		for key in g._groups:
+			var s: int = (g._groups[key] as MultiMeshInstance3D).cast_shadow
+			if s == GeometryInstance3D.SHADOW_CASTING_SETTING_ON:
+				casts += 1
+			elif s == GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY:
+				only += 1
+				casts += 0 if GrownTrees.is_shadow_group(key) else 1
+		if on:
+			_check(not g._scanning and c.get(full, 0) == 2 and c.get(light, 0) == 1, "near trees drawn full, the far one light (%s)" % [c])
+			_check(c.get(GrownTrees.shadow_group(full), 0) == 1 and c.get(GrownTrees.shadow_group(light), 0) == 1 and c.size() == 4,
+				"the nearest tree's shadow is its own, the next one's its light tree's, the far one's none of theirs (%s)" % [c])
+			_check(casts == 0 and only == 2, "only the shadow groups cast shadows, and draw nothing else (%d, %d)" % [casts, only])
+		else:
+			_check(c.size() == 2 and casts == 0 and only == 0, "without tree shadows there are no shadow groups (%s)" % [c])
+		root.remove_child(g)
+		g.free()
+		root.remove_child(field)
+		field.free()
+	GraphicsQuality.tree_shadows = was
+	_check(not GrownTrees.is_shadow_group(GrownTrees.mesh_key(sp, 2, 12, 1)) and GrownTrees.is_shadow_group(GrownTrees.shadow_group(GrownTrees.mesh_key(sp, 2, 12, 1)))
+		and GrownTrees.group_mesh(GrownTrees.shadow_group(GrownTrees.mesh_key(sp, 2, 12, 1))) == GrownTrees.mesh_key(sp, 2, 12, 1)
+		and GrownTrees.is_shadow_group(GrownTrees.shadow_group(GrownTrees.card_group(TreeField.Species.RED_CEDAR, 1)))
+		and not GrownTrees.is_shadow_group(GrownTrees.card_group(TreeField.Species.RED_CEDAR, 1)),
+		"shadow groups never meet a drawn group's key")
 
 
 ## The written reference covers every kind.
