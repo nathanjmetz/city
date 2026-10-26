@@ -108,8 +108,10 @@ func _process(delta: float) -> void:
 	_accum += delta
 	if _preroll > 0:
 		# Catching the morning up: as many steps as fit, a few frames' worth
-		# of time, not a stall.
-		while _preroll > 0 and float(Time.get_ticks_usec() - t0) < budget * 2.0:
+		# of time, not a stall (half that while the town is still being drawn
+		# behind its picture, which needs the frame more: BackdropReveal).
+		var share := budget * (1.0 if LoadGate.loading else 2.0)
+		while _preroll > 0 and float(Time.get_ticks_usec() - t0) < share:
 			_step()
 			_preroll -= 1
 	else:

@@ -114,6 +114,7 @@ jobs:
           run_test tests/test_seasons.gd
           run_test tests/test_sun_path.gd
           run_test tests/test_menu_life.gd
+          run_test tests/test_home_screen.gd
           run_test tests/test_balance.gd
           run_test tests/test_audio.gd
           run_test tests/test_sound_mix.gd
