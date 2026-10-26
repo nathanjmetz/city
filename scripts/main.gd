@@ -145,6 +145,10 @@ func _ready() -> void:
 	var walkers := WalkerView.new()
 	walkers.setup(sim.traffic, _tick_fraction)
 	add_child(walkers)
+	# Life round the homes, parks and shops near the camera (drawn only).
+	var ambient := AmbientLife.new()
+	ambient.setup(sim, (walkers.get_child(0) as MultiMeshInstance3D).material_override)
+	add_child(ambient)
 
 	var look := DayNight.new()
 	look.setup(sim, sky, _tick_fraction)
