@@ -259,8 +259,19 @@ static func bar_run() -> Dictionary:
 	var rest := -1.0
 	for i in 600:
 		sim.tick()
-		if mine[0].j == null and mine[0].v < 0.05 and t.ways[wi].s1 - mine[0].d < 10.0:
+		# Stopped as the stop sign counts it (TrafficSim: under 1 m/s within
+		# 4 m of the line), at the slowest point.
+		if mine[0].j == null and mine[0].v < 1.0 and t.ways[wi].s1 - mine[0].d < 10.0:
+			var low: float = mine[0].v
 			rest = t.ways[wi].len - mine[0].d  # nose to the junction's centre
+			for k in 300:
+				if mine[0].j != null:
+					break
+				sim.tick()
+				if mine[0].v > low:
+					break
+				low = mine[0].v
+				rest = t.ways[wi].len - mine[0].d  # nose to the junction's centre
 			break
 	return {"bar": snappedf(bar, 0.1), "nose": snappedf(rest, 0.1), "behind": snappedf(rest - bar, 0.1),
 		"country": j.get("country", false), "unmarked": j.get("unmarked", false)}
