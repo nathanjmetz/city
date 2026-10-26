@@ -7,6 +7,8 @@ extends PanelContainer
 ## something new worth a look; that's all.
 
 signal opened
+## A tip's "Show me": the tool to pick up (see Advisor._add).
+signal go(target: String)
 
 const SETTINGS_PATH := "user://advisor.json"
 const WIDTH := 320
@@ -280,7 +282,26 @@ func _row(t: Dictionary) -> Control:
 		row.add_child(warn)
 	var l := _text(t.text)
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(l)
+	if not t.has("go"):
+		row.add_child(l)
+		return row
+	# "Show me": opens the menu and picks up the tool the tip means.
+	var words := VBoxContainer.new()
+	words.add_theme_constant_override("separation", 0)
+	words.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	words.add_child(l)
+	var show := Button.new()
+	show.text = "Show me  →"
+	show.flat = true
+	show.focus_mode = Control.FOCUS_NONE
+	show.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	show.add_theme_font_size_override("font_size", 12)
+	show.add_theme_color_override("font_color", MINT)
+	show.add_theme_color_override("font_hover_color", MINT.lightened(0.3))
+	var target: String = t.go
+	show.pressed.connect(func(): go.emit(target))
+	words.add_child(show)
+	row.add_child(words)
 	return row
 
 

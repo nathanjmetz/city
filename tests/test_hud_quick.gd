@@ -183,6 +183,41 @@ func _process(_delta: float) -> bool:
 	root.push_input(_key(KEY_ENTER, false))
 	_check(chat.got == 1, "with nothing drawn, Enter still opens the chat")
 
+	# The interface fits every screen (the critic, 2026-10-26; Nathan,
+	# 2026-10-09: "We can't just build things for one monitor size"): it
+	# draws larger on big screens and never smaller than 100%.
+	_check(is_equal_approx(UiScale.factor_for(Vector2i(1280, 720), UiScale.AUTO), 1.0), "1280 x 720 draws at 100%")
+	_check(is_equal_approx(UiScale.factor_for(Vector2i(1920, 1080), UiScale.AUTO), 1.2), "1920 x 1080 draws at 120%")
+	_check(is_equal_approx(UiScale.factor_for(Vector2i(2560, 1440), UiScale.AUTO), 1.6), "2560 x 1440 draws at 160%")
+	_check(is_equal_approx(UiScale.factor_for(Vector2i(3440, 1440), UiScale.AUTO), 1.6), "a 3440 ultrawide draws at 160%")
+	_check(is_equal_approx(UiScale.factor_for(Vector2i(2560, 1440), 1.25), 1.25), "a size picked in Display wins over Auto")
+	# The top bar's must-have buttons fit a 1280 window; the stats give way.
+	var bar_need: float = hud._top_bar.get_combined_minimum_size().x
+	_check(bar_need <= 1280.0, "the top bar fits 1280 px (%d px)" % roundi(bar_need))
+	hud._set_compact(true)
+	_check(not hud._jobs.text.contains("unemployed") and not hud._net_chip.visible, "short stats drop their second halves")
+	hud._set_compact(false)
+	_check(hud._jobs.text.contains("unemployed"), "and get them back with room")
+	# Display holds the look switches, the music and the size.
+	hud._display_button.button_pressed = true
+	_check(hud._display_panel.visible and hud._display_switches.size() == 3 and hud._size_chips.size() == UiScale.SIZES.size(),
+		"Display opens with day and night, seasons, weather and the interface sizes")
+	hud.close_all()
+	_check(not hud._display_panel.visible, "Esc's close-all closes Display")
+	# The advisor's "Show me" opens the menu with the tool in hand.
+	hud.advisor.go.emit("svc:%d" % Services.Kind.POWER_FEED)
+	_check(hud._category == "utilities" and hud.service_tool.kind == Services.Kind.POWER_FEED,
+		"the advisor's Show me picks up the power line under Utilities (%s)" % hud._category)
+	hud.close_all()
+	# Only the tool in hand wears the coral ring; a chosen tab is a pill.
+	_check(hud._tool_cards[RoadTool.Mode.GRID].theme_type_variation == &"ToolCard"
+		and hud._category_buttons["roads"].theme_type_variation == &"", "coral is for tool cards only")
+	# A long hint keeps to a narrow card; the rest is in its tooltip.
+	hud._show_hint("Builder's yard: free, your town's first. Its crews and concrete trucks build the town's houses, coming from here, and its owner buys more trucks as the town grows.\nMove next to a street or avenue.")
+	_check(hud._hint_action.text == "Move next to a street or avenue." and hud._hint.text.length() <= Hud.HINT_CHARS
+		and hud._hint_panel.tooltip_text.contains("concrete trucks"), "a long hint says what to do first and keeps the story in its tooltip")
+	hud._show_hint("")
+
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 	return true
