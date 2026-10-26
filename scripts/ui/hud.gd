@@ -1,7 +1,9 @@
 class_name Hud
 extends CanvasLayer
 ## The game's interface: two slim bars docked to the screen edges.
-## - top bar: city stats, demand, money; date, game speed and help on the right
+## - top bar: city stats, demand, money; date, game speed, Display (look,
+##   music, interface size) and the panels on the right. It always fits:
+##   the stats shorten, then clip, before a right-hand button goes missing
 ## - bottom bar: tool categories; the open category's tools sit just above it
 ## - a small hint for the tool in hand under the top bar
 ## Esc cancels what's being drawn, then puts every tool away.
@@ -106,18 +108,39 @@ var _parking_row: Control  # the lot kinds, over the tools while placing one
 var _parking_card: Button
 var _angled_card: Button
 var _parking_last: int = Services.Kind.PARKING_SMALL
-var _elevation := UiStyle.label("Ground", 12)
+## Road height: Bridge, Ground (or the height) and Tunnel, top to bottom.
+var _elevation_segs: Array[Button] = []
 var _speed_buttons := []
 var _clock := UiStyle.label("", 14)
-var _hint := UiStyle.label("", 14)
+var _hint := UiStyle.label("", 13)
+var _hint_action := UiStyle.label("", 14, UiStyle.TEXT, 700)
 var _hint_panel := PanelContainer.new()
+var _hint_text := ""
+## The placement hint's widest, and the most it says before the tooltip.
+const HINT_WIDTH := 640.0
+const HINT_CHARS := 100
 var _pop := UiStyle.label("0", 14)
 var _jobs := UiStyle.label("", 13, UiStyle.MUTED)
 var _cars := UiStyle.label("", 13, UiStyle.MUTED)
 var _demand_bars := {}
 var _money := UiStyle.label("", 14)
-var _net := UiStyle.label("", 13)
+var _net := UiStyle.label("", 12, GOOD, 600)
+var _net_chip := PanelContainer.new()
 var _warning_box: PanelContainer
+## The top bar's stats, in a box that clips rather than push the right-hand
+## buttons off the screen; _compact drops their second halves for room.
+var _stats_clip: Container
+var _stats_row: HBoxContainer
+var _compact := false
+var _full_need := 0.0
+## Each top bar readout's box, by its panel's key, so a stat's panel opens
+## under the stat clicked (Duolingo's counters do the same).
+var _stat_boxes := {}
+## Display: day and night, seasons, weather, music and the interface size.
+var _display_button: Button
+var _display_panel := PanelContainer.new()
+var _display_switches: Array[CheckButton] = []
+var _size_chips: Array[Button] = []
 ## The Economy page (the bottom bar's Economy button) is open.
 var _budget_open := false
 var economy_page := EconomyPage.new()
@@ -204,6 +227,7 @@ func _ready() -> void:
 	_build_bottom_bar()
 	_build_help()
 	_build_views()
+	_build_display()
 	_build_advisor()
 	_build_permits()
 	_build_region_panel()
@@ -494,10 +518,10 @@ func undo_last() -> void:
 		_show_hint("Nothing to undo.")
 		return
 	sim.apply({"type": "undo"})
-	var was := _hint.text
+	var was := _hint_text
 	var note := "Undone. $%s back." % _thousands(int(e.refund))
 	_show_hint(note)
-	get_tree().create_timer(3.0).timeout.connect(func(): if _hint.text == note: _show_hint(was))
+	get_tree().create_timer(3.0).timeout.connect(func(): if _hint_text == note: _show_hint(was))
 
 
 ## The bottom bar menus Shift + 1 to 0 open, in bar order (Bulldoze and
@@ -694,7 +718,7 @@ func pad_bottom_height() -> float:
 
 ## True while a tool is in hand, a panel or view is open, or something is selected.
 func anything_open() -> bool:
-	return _budget_open or _view != "" or _views_panel.visible or _help.visible or _search_panel.visible or advisor.visible or permits.visible or region_panel.visible \
+	return _budget_open or _view != "" or _views_panel.visible or _display_panel.visible or _help.visible or _search_panel.visible or advisor.visible or permits.visible or region_panel.visible \
 		or town.visible or timelapse.visible or stats_panel.visible or _towns_panel.visible or music.visible \
 		or not select_tool.selection.is_empty() or road_tool.mode != RoadTool.Mode.NONE \
 		or zone_tool.zone != ZoneTool.OFF or service_tool.kind != ServiceTool.OFF \
@@ -712,6 +736,7 @@ func close_all() -> void:
 	_show_view("")
 	_views_panel.visible = false
 	_views_button.set_pressed_no_signal(false)
+	_show_display(false)
 	select_tool.select({})
 	_help.visible = false
 	_help_button.set_pressed_no_signal(false)
@@ -745,21 +770,42 @@ func _process(_delta: float) -> void:
 	# The Economy page fills the left edge between the bars.
 	economy_page.position = Vector2(0, _top_bar.size.y)
 	economy_page.size = Vector2(EconomyPage.WIDTH, _root.size.y - _top_bar.size.y - _bottom.size.y)
-	# The info panel sits beside the Views column or Economy page when open.
+	var top := _top_bar.size.y
+	# The info panel sits beside the Views column or Economy page when open,
+	# and never taller than the room between the bars.
 	var left := _views_panel.size.x if _views_panel.visible else 0.0
-	# A stat's panel sits beside the Views column, the info panel beside it.
-	stats_panel.position = Vector2(left, _top_bar.size.y)
-	if stats_panel.visible:
-		left += stats_panel.size.x
 	if economy_page.visible:
 		left = economy_page.size.x
-	_info_panel.position = Vector2(left, _top_bar.size.y)
-	# Search and recent tools sit on the left edge just above the bottom dock.
+	_info_panel.position = Vector2(left, top)
+	_info_panel.max_height = _root.size.y - top - _bottom.size.y - 16.0
+	var edge := left + (_info_panel.size.x if _info_panel.visible else 0.0)
+	# A stat's panel opens under the stat clicked, kept on the screen and
+	# clear of the panels docked on the left.
+	if stats_panel.visible:
+		var box: Control = _stat_boxes.get(stats_panel.key)
+		var x: float = box.global_position.x if box != null and box.is_visible_in_tree() else edge
+		stats_panel.position = Vector2(clampf(x, edge, maxf(edge, _root.size.x - stats_panel.size.x)), top)
+		edge = maxf(edge, stats_panel.position.x + stats_panel.size.x) if stats_panel.position.x <= edge + 1.0 else edge
+	if _display_panel.visible:
+		_display_panel.reset_size()
+		_display_panel.position = Vector2(clampf(_display_button.global_position.x + _display_button.size.x - _display_panel.size.x,
+			0.0, _root.size.x - _display_panel.size.x), top)
+	# Search and recent tools sit just above the bottom dock, right of any
+	# panel docked on the left (they sat on top of the Economy page and the
+	# info panel: the critic, 2026-10-26).
 	_quick.reset_size()
-	_quick.position = Vector2(6, _root.size.y - _bottom.size.y - _quick.size.y - 6)
+	_quick.position = Vector2(edge + 6, _root.size.y - _bottom.size.y - _quick.size.y - 6)
 	if _search_panel.visible:
 		_search_panel.reset_size()
-		_search_panel.position = Vector2(_quick.size.x + 12, _root.size.y - _bottom.size.y - _search_panel.size.y - 6)
+		_search_panel.position = Vector2(_quick.position.x + _quick.size.x + 6, _root.size.y - _bottom.size.y - _search_panel.size.y - 6)
+	# Room for the stats: drop their second halves when they'd clip, and
+	# bring them back once the bar is wide enough again.
+	var need := _stats_row.get_combined_minimum_size().x
+	if not _compact and _stats_clip.size.x > 0.0 and need > _stats_clip.size.x + 0.5:
+		_full_need = need
+		_set_compact(true)
+	elif _compact and _stats_clip.size.x >= _full_need:
+		_set_compact(false)
 	var t := sim.clock()
 	var hour: int = t.hour % 12
 	# A game day is a month (see Seasons), so the date is month and year.
@@ -769,7 +815,15 @@ func _process(_delta: float) -> void:
 		Families.calendar(t.year), 12 if hour == 0 else hour, t.minute, "AM" if t.hour < 12 else "PM"]
 	_money.text = "$" + _thousands(sim.economy.money)
 	_money.add_theme_color_override("font_color", UiStyle.TEXT if sim.economy.money >= 0 else BAD)
-	_cars.text = "%d  ·  %d%% flow" % [sim.traffic.cars.size(), roundi(sim.traffic.flow * 100.0)]
+	_cars.text = str(sim.traffic.cars.size()) if _compact else \
+		"%d  ·  %d%% flow" % [sim.traffic.cars.size(), roundi(sim.traffic.flow * 100.0)]
+
+
+## Short stats for a narrow bar (or full ones again): jobs without the
+## unemployment, cars without the flow, no monthly net, the problem count only.
+func _set_compact(on: bool) -> void:
+	_compact = on
+	_update_stats()
 
 
 # --- Views (Cities: Skylines 2's info views) ---------------------------------
@@ -870,6 +924,11 @@ func _build_top_bar() -> void:
 	row.add_theme_constant_override("separation", 8)
 	bar.add_child(row)
 
+	# The bar never runs off the screen (the critic, 2026-10-26: at 1280 px
+	# everything right of the music button was gone). The stats sit in a box
+	# that may shrink and clip; the date, speed and panel buttons on the
+	# right always show. When the stats run short of room they drop their
+	# second halves (Hud._compact), which stay in their tooltips and panels.
 	_views_button = _icon_button("views", 24, "Views: see the map by fertility, oil, ore, forest, services, traffic and pollution  (V)")
 	_views_button.toggled.connect(func(on): _views_panel.visible = on)
 	row.add_child(_views_button)
@@ -890,50 +949,70 @@ func _build_top_bar() -> void:
 	_towns_button.toggled.connect(_show_towns)
 	row.add_child(_towns_button)
 	row.add_child(VSeparator.new())
-	_stat(row, "people", _pop, "Population: click for its chart and where people live", "population")
-	_stat(row, "jobs", _jobs, "Jobs and unemployment: click for the chart and where people work", "jobs")
-	_stat(row, "car", _cars, "Cars on the road and how freely traffic flows: click for the chart and the slowest roads", "traffic")
-	row.add_child(VSeparator.new())
+	_stats_clip = _ClipRow.new()
+	_stats_clip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(_stats_clip)
+	var stats := HBoxContainer.new()
+	stats.add_theme_constant_override("separation", 8)
+	stats.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stats_clip.add_child(stats)
+	_stats_row = stats
+	_stat(stats, "people", _pop, "Population: click for its chart and where people live", "population")
+	_stat(stats, "jobs", _jobs, "Jobs and unemployment: click for the chart and where people work", "jobs")
+	_stat(stats, "car", _cars, "Cars on the road and how freely traffic flows: click for the chart and the slowest roads", "traffic")
+	stats.add_child(VSeparator.new())
+	# Demand: a small upright meter per zone with its own glyph (the critic:
+	# H, S and I bars 7 px tall read as "off" when empty). A faint track
+	# keeps an empty meter reading as "low", not missing.
 	var demand_row := HBoxContainer.new()
-	demand_row.add_theme_constant_override("separation", 8)
+	demand_row.add_theme_constant_override("separation", 6)
 	demand_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(_clickable(demand_row, "Demand for homes, shops and industry: click for the chart and why", "demand"))
-	for entry in [[ZoneMap.Zone.RESIDENTIAL, "H"], [ZoneMap.Zone.COMMERCIAL, "S"], [ZoneMap.Zone.INDUSTRIAL, "I"]]:
+	stats.add_child(_clickable(demand_row, "Demand for homes, shops and industry: click for the chart and why", "demand"))
+	for entry in [[ZoneMap.Zone.RESIDENTIAL, "homes"], [ZoneMap.Zone.COMMERCIAL, "shops"], [ZoneMap.Zone.INDUSTRIAL, "industry"]]:
 		var z: int = entry[0]
-		var l := UiStyle.label(entry[1], 11, ZoneMap.COLORS[z])
-		l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		demand_row.add_child(l)
+		var pair := HBoxContainer.new()
+		pair.add_theme_constant_override("separation", 2)
+		pair.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		demand_row.add_child(pair)
+		var glyph := Icon.new(entry[1], 14)
+		glyph.color = ZoneMap.COLORS[z]
+		glyph.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		pair.add_child(glyph)
 		var bar_z := ProgressBar.new()
 		bar_z.show_percentage = false
-		bar_z.custom_minimum_size = Vector2(34, 7)
+		bar_z.fill_mode = ProgressBar.FILL_BOTTOM_TO_TOP
+		bar_z.custom_minimum_size = Vector2(10, 22)
 		bar_z.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		bar_z.max_value = 1.0
+		var track := StyleBoxFlat.new()
+		track.bg_color = Color(ZoneMap.COLORS[z], 0.08)
+		track.border_color = Color(ZoneMap.COLORS[z], 0.45)
+		track.set_border_width_all(1)
+		track.set_corner_radius_all(3)
+		bar_z.add_theme_stylebox_override("background", track)
 		var fill := StyleBoxFlat.new()
 		fill.bg_color = ZoneMap.COLORS[z]
 		fill.set_corner_radius_all(3)
 		bar_z.add_theme_stylebox_override("fill", fill)
 		bar_z.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		demand_row.add_child(bar_z)
+		pair.add_child(bar_z)
 		_demand_bars[z] = bar_z
-	row.add_child(VSeparator.new())
-	var money_row := _stat(row, "money", _money, "City funds: click for the chart and this month's money in and out", "money")
-	_net.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	stats.add_child(VSeparator.new())
+	var money_row := _stat(stats, "money", _money, "City funds: click for the chart and this month's money in and out", "money")
+	# The month's net as a small green or red chip beside the money (Whop's
+	# stat cards), in thousands: "+$366K/mo".
+	_net_chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_net_chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_net.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	money_row.add_child(_net)
+	_net_chip.add_child(_net)
+	money_row.add_child(_net_chip)
+	# Problems: a count ("⚠ 3") and, with room, what they are; nothing at all
+	# when there are none. The whole story is in its tooltip and panel.
 	_warning.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_warning.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# Never push the clock and speed buttons off the bar.
-	_warning.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_warning.clip_text = true
-	_warning.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_warning_box = _clickable(_warning, "", "problems")
-	_warning_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(_warning_box)
+	stats.add_child(_warning_box)
 
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(spacer)
 	_clock.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(_clickable(_clock, "The date: click for the town's years", "date"))
 	for i in 4:
@@ -943,28 +1022,12 @@ func _build_top_bar() -> void:
 		row.add_child(b)
 		_speed_buttons.append(b)
 	row.add_child(VSeparator.new())
-	# The music player: the song playing, and a drop-down to skip or pick one.
-	var tune := music.make_button()
-	tune.toggled.connect(func(on):
-		if on:
-			music.position = Vector2(minf(tune.global_position.x, _root.size.x - music.size.x - 8.0), _top_bar.size.y))
-	row.add_child(tune)
-	# How the town looks (Cities: Skylines 2 keeps these in its settings):
-	# the day/night cycle (off: always late morning) and seasons (off:
-	# always summer). Each player picks for themselves.
-	DayNight.load_settings()
-	var cycle := _icon_button("daynight", 24, "Day and night: let the sun set and the streetlights come on")
-	cycle.set_pressed_no_signal(DayNight.cycle_on)
-	cycle.toggled.connect(DayNight.set_cycle)
-	row.add_child(cycle)
-	var seasons := _icon_button("seasons", 24, "Seasons: spring, summer, fall colour and winter snow (no weather)")
-	seasons.set_pressed_no_signal(DayNight.seasons_on)
-	seasons.toggled.connect(DayNight.set_seasons)
-	row.add_child(seasons)
-	var weather := _icon_button("weather", 24, "Weather: overcast days and rain, by Indiana's odds for the month (off: always fair)")
-	weather.set_pressed_no_signal(Weather.on)
-	weather.toggled.connect(DayNight.set_weather)
-	row.add_child(weather)
+	# Display: how the town looks and sounds, in one menu of labeled switches
+	# (komoot's "Map content"; Cities: Skylines 2 keeps these in settings).
+	# It was four buttons here, and they pushed Help off a 1600 px screen.
+	_display_button = _icon_button("daynight", 24, "Display: day and night, seasons, weather, music and interface size")
+	_display_button.toggled.connect(_show_display)
+	row.add_child(_display_button)
 	row.add_child(VSeparator.new())
 	# (The Session autoload by path: tools and tests load the HUD before it exists.)
 	var session := get_node_or_null("/root/Session")
@@ -1039,6 +1102,7 @@ func _clickable(content: Control, tip: String, key: String) -> PanelContainer:
 			open_stat(key)
 			box.accept_event())
 	box.add_child(content)
+	_stat_boxes[key] = box
 	return box
 
 
@@ -1103,6 +1167,94 @@ func _show_towns(on: bool) -> void:
 	_towns_panel.position = Vector2(_towns_button.global_position.x - 40.0, _top_bar.size.y)
 
 
+## A labeled on/off switch, the one the Advice panel uses.
+static func _switch(title: String, tip: String) -> CheckButton:
+	var cb := CheckButton.new()
+	cb.text = title
+	cb.tooltip_text = tip
+	cb.focus_mode = Control.FOCUS_NONE
+	cb.add_theme_font_size_override("font_size", 13)
+	for state in ["normal", "hover", "pressed", "hover_pressed"]:
+		cb.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+	return cb
+
+
+## The Display menu, dropped under its top bar button: how the town looks
+## (each player picks for themselves), the music, and the interface size.
+func _build_display() -> void:
+	var box := UiStyle.dock(true)
+	box.border_width_left = 1
+	box.border_width_right = 1
+	box.content_margin_left = 12
+	box.content_margin_right = 12
+	box.content_margin_top = 8
+	box.content_margin_bottom = 10
+	_display_panel.add_theme_stylebox_override("panel", box)
+	_display_panel.visible = false
+	_root.add_child(_display_panel)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 4)
+	_display_panel.add_child(col)
+	col.add_child(UiStyle.label("DISPLAY", 11, UiStyle.MUTED))
+	# The day/night cycle (off: always late morning), seasons (off: always
+	# summer) and weather (off: always fair).
+	DayNight.load_settings()
+	for entry in [["Day and night", "Let the sun set and the streetlights come on (off: always late morning)", DayNight.set_cycle],
+			["Seasons", "Spring, summer, fall colour and winter snow (off: always summer)", DayNight.set_seasons],
+			["Weather", "Overcast days and rain, by Indiana's odds for the month (off: always fair)", DayNight.set_weather]]:
+		var sw := _switch(entry[0], entry[1])
+		sw.toggled.connect(entry[2])
+		col.add_child(sw)
+		_display_switches.append(sw)
+	# The music player: the song playing, and a list to skip or pick one.
+	var tunes := HBoxContainer.new()
+	var words := UiStyle.label("Music", 13)
+	words.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	words.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tunes.add_child(words)
+	var tune := music.make_button()
+	tune.toggled.connect(func(on):
+		if on:
+			var x := _display_button.global_position.x + _display_button.size.x - music.size.x
+			_show_display(false)
+			music.position = Vector2(clampf(x, 0.0, _root.size.x - music.size.x), _top_bar.size.y))
+	tunes.add_child(tune)
+	col.add_child(tunes)
+	col.add_child(HSeparator.new())
+	col.add_child(UiStyle.label("INTERFACE SIZE", 11, UiStyle.MUTED))
+	var sizes := HBoxContainer.new()
+	sizes.add_theme_constant_override("separation", 2)
+	col.add_child(sizes)
+	for f in UiScale.SIZES:
+		var c := _chip(UiScale.text(f), "Auto: larger on big or sharp screens, never smaller than 100%" if f == UiScale.AUTO
+			else "Draw the interface at %s" % UiScale.text(f))
+		c.custom_minimum_size.x = 44
+		var pick: float = f
+		c.pressed.connect(func():
+			UiScale.set_choice(pick)
+			_sync_display())
+		sizes.add_child(c)
+		_size_chips.append(c)
+
+
+## Opens or closes the Display menu.
+func _show_display(on: bool) -> void:
+	_display_panel.visible = on
+	if _display_button:
+		_display_button.set_pressed_no_signal(on)
+	if on:
+		_sync_display()
+
+
+func _sync_display() -> void:
+	var now := [DayNight.cycle_on, DayNight.seasons_on, Weather.on]
+	for i in _display_switches.size():
+		_display_switches[i].set_pressed_no_signal(now[i])
+	for i in _size_chips.size():
+		_size_chips[i].set_pressed_no_signal(UiScale.SIZES[i] == UiScale.choice)
+	_size_chips[0].text = "Auto" if UiScale.choice != UiScale.AUTO else "Auto · %d%%" % roundi(UiScale.current() * 100.0)
+
+
 func _sync_speed() -> void:
 	for i in _speed_buttons.size():
 		_speed_buttons[i].set_pressed_no_signal(i == game.speed)
@@ -1112,8 +1264,15 @@ func _sync_speed() -> void:
 
 func _build_hint() -> void:
 	_hint_panel.add_theme_stylebox_override("panel", UiStyle.panel(12))
-	_hint_panel.add_child(_hint)
-	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_hint_panel.mouse_filter = Control.MOUSE_FILTER_PASS  # for its tooltip
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 1)
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hint_panel.add_child(col)
+	for l in [_hint_action, _hint]:
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		col.add_child(l)
 	_root.add_child(_hint_panel)
 	_hint_panel.visible = false
 
@@ -1158,11 +1317,52 @@ func _chip(title: String, tip: String) -> Button:
 	return c
 
 
+## The hint for the tool in hand: what to do now first, in bold (a tool's
+## last line, like "Move next to a street or avenue."), then the hint's first
+## sentence; the whole story is in its tooltip. A narrow card that wraps, at
+## most HINT_WIDTH wide (the critic, 2026-10-26: the builder's yard hint was
+## one line running off both sides of the screen; Deel's and Navattic's tips
+## are narrow cards of a few short lines).
 func _show_hint(text: String) -> void:
-	_hint.text = text
+	_hint_text = text
+	var lines := text.split("\n", false)
+	var action := lines[-1] if lines.size() > 1 else ""
+	var story := "\n".join(lines.slice(0, -1)) if lines.size() > 1 else text
+	var short := story if story.length() <= HINT_CHARS else _first_sentence(story, HINT_CHARS)
+	_hint_action.text = action
+	_hint_action.visible = action != ""
+	_hint.text = short
+	_hint.visible = short != ""
+	_hint_panel.tooltip_text = text if short != story else ""
 	_hint_panel.visible = text != ""
+	# Wrap at the card's width, but let a short hint stay snug.
+	var room := minf(HINT_WIDTH, _root.size.x - 80.0)
+	for l in [_hint_action, _hint]:
+		var w := 0.0
+		for line in (l as Label).text.split("\n"):
+			w = maxf(w, l.get_theme_font("font").get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1,
+				l.get_theme_font_size("font_size")).x)
+		l.custom_minimum_size.x = minf(ceilf(w) + 2.0, room)
+	_place_hint()
+	# Again once the labels have their new width: a wrapping label's height
+	# follows its width, and the card only grows on its own, never shrinks.
+	_place_hint.call_deferred()
+
+
+func _place_hint() -> void:
+	_hint_panel.size = Vector2.ZERO
 	_hint_panel.reset_size()
 	_pin(_hint_panel, Control.PRESET_CENTER_TOP, Vector2(0, 44))
+
+
+## The first sentence of `text`, cut at a word under `most` characters.
+static func _first_sentence(text: String, most: int) -> String:
+	var end := text.find(". ")
+	var s := text.substr(0, end + 1) if end > 0 else text
+	if s.length() <= most:
+		return s
+	var cut := s.substr(0, most).rfind(" ")
+	return s.substr(0, cut if cut > 0 else most).rstrip(",;:") + "…"
 
 
 # --- Bottom bar: categories, with the open one's tools above ---------------
@@ -1225,7 +1425,7 @@ func _fit_bottom() -> void:
 
 
 func _category_button(icon: String, title: String) -> Button:
-	var b := Button.new()
+	var b := _Pill.new()
 	b.toggle_mode = true
 	b.focus_mode = Control.FOCUS_NONE
 	b.custom_minimum_size = Vector2(104, 36)
@@ -1242,7 +1442,8 @@ func _category_button(icon: String, title: String) -> Button:
 	t.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(t)
 	# Snug to its title, so twelve categories still sit in a compact row.
-	b.custom_minimum_size.x = maxf(64.0, ceilf(t.get_minimum_size().x) + 20 + 5 + 16)
+	# (Measured from the font: a label outside the tree measures at the default size.)
+	b.custom_minimum_size.x = maxf(64.0, ceilf(Brand.ui(500).get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x) + 20 + 5 + 22)
 	return b
 
 
@@ -1327,7 +1528,7 @@ func _roads_drawer() -> PanelContainer:
 	stack.add_child(HSeparator.new())
 
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
+	row.add_theme_constant_override("separation", 6)
 	stack.add_child(row)
 
 	var tools := _section(row, "Draw")
@@ -1346,8 +1547,7 @@ func _roads_drawer() -> PanelContainer:
 		tools.add_child(b)
 		_tool_cards[m] = b
 
-	row.add_child(VSeparator.new())
-	var types := _section(row, "Road type  ·  click for its kinds")
+	var types := _section(row, "Road type  ·  click one for its kinds")
 	for g in RoadStyle.GROUPS:
 		var spec: Dictionary = RoadStyle.TYPES[g]
 		var b := _card(spec.name.to_lower(), spec.name, "%d kinds" % RoadStyle.variants(g).size())
@@ -1358,50 +1558,46 @@ func _roads_drawer() -> PanelContainer:
 		types.add_child(b)
 		_type_cards[g] = b
 
-	row.add_child(VSeparator.new())
 	var opts := _section(row, "Options")
 	_parallel_card = _card("parallel", "Parallel", "P")
 	_parallel_card.pressed.connect(func(): road_tool.set_parallel(not road_tool.parallel))
 	opts.add_child(_parallel_card)
-	# Raise over the height over Lower, in one card's space.
+	# Height: a three-way pill, Bridge over Ground over Tunnel, in one card's
+	# space (it was a word between two arrows, which looked broken). Bridge
+	# and Tunnel step up or down; the middle shows the height and resets it.
 	var elev := VBoxContainer.new()
-	elev.add_theme_constant_override("separation", 0)
-	elev.custom_minimum_size = Vector2(56, 50)
+	elev.add_theme_constant_override("separation", 1)
+	elev.custom_minimum_size = Vector2(60, 50)
 	opts.add_child(elev)
-	var raise := _step_button("raise", "Raise: bridge  (Page Up)")
-	raise.pressed.connect(func(): road_tool.change_elevation(1))
-	elev.add_child(raise)
-	_elevation.add_theme_font_size_override("font_size", 11)
-	_elevation.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_elevation.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_elevation.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	elev.add_child(_elevation)
-	var lower := _step_button("lower", "Lower: tunnel  (Page Down)")
-	lower.pressed.connect(func(): road_tool.change_elevation(-1))
-	elev.add_child(lower)
+	for entry in [["Bridge", 1, "Raise it: a bridge, a step higher each click  (Page Up)"],
+			["Ground", 0, "Back down to the ground"],
+			["Tunnel", -1, "Lower it: a tunnel, a step deeper each click  (Page Down)"]]:
+		var seg := _segment(60)
+		seg.text = entry[0]
+		seg.tooltip_text = entry[2]
+		var dir: int = entry[1]
+		seg.pressed.connect(func():
+			road_tool.change_elevation(dir if dir != 0 else -roundi(road_tool.elevation / RoadTool.ELEVATION_STEP)))
+		elev.add_child(seg)
+		_elevation_segs.append(seg)
 
-	row.add_child(VSeparator.new())
-	var traffic := _section(row, "Traffic and town")
-	# Traffic over Parking, in one card's space (the menu stays under 1000 px).
-	var pair := VBoxContainer.new()
-	pair.add_theme_constant_override("separation", 2)
-	traffic.add_child(pair)
-	_traffic_card = _half_card("traffic", "Traffic")
+	var traffic := _section(row, "Town tools  ·  traffic, parking and new neighborhoods")
+	_traffic_card = _card("traffic", "Traffic", "")
 	_traffic_card.tooltip_text = "Traffic flow, lights and stop signs  (J)"
 	_traffic_card.pressed.connect(func():
 		if traffic_tool.mode == TrafficTool.Mode.NONE:
 			traffic_tool.set_mode(TrafficTool.Mode.VIEW)
 		else:
 			road_tool.set_mode(road_tool.last_draw))
-	pair.add_child(_traffic_card)
-	_parking_card = _half_card("parking", "Parking")
+	traffic.add_child(_traffic_card)
+	_parking_card = _card("parking", "Parking", "")
 	_parking_card.tooltip_text = "Parking lots and a garage for the town: drivers who can't park at their own stop walk from the nearest one"
 	_parking_card.pressed.connect(func():
 		if service_tool.kind in Services.PARKING:
 			road_tool.set_mode(road_tool.last_draw)
 		else:
 			service_tool.set_kind(_parking_last))
-	pair.add_child(_parking_card)
+	traffic.add_child(_parking_card)
 
 	# A town hemmed in by its neighbors starts a new neighborhood on open land.
 	var town := traffic
@@ -1470,7 +1666,7 @@ func _zones_drawer() -> PanelContainer:
 	var drawer := PanelContainer.new()
 	var row := HBoxContainer.new()
 	drawer.add_child(row)
-	var zones := _section(row, "Zone street sides  ·  Shift both sides")
+	var zones := _section(row, "Zones  ·  street sides; Shift zones both sides")
 	for entry in [
 		[ZoneMap.Zone.RESIDENTIAL, "homes", "Homes", _key_hint("homes")],
 		[ZoneMap.Zone.COMMERCIAL, "shops", "Shops", _key_hint("shops")],
@@ -1550,7 +1746,7 @@ func _zones_drawer() -> PanelContainer:
 	how.add_child(_smart_opts)
 	# The future land use map: big soft areas, not zoning (LandPlan).
 	row.add_child(VSeparator.new())
-	var plan := _section(row, "Land use plan  ·  outline big areas")
+	var plan := _section(row, "Land plan  ·  outline big areas for homes, shops, jobs or farms")
 	for entry in [["homes", "homes", "Homes"], ["shops", "shops", "Shops"], ["jobs", "industry", "Jobs"],
 			["farms", "farms", "Farms"], ["", "dezone", "Erase"]]:
 		var k: String = entry[0]
@@ -1640,10 +1836,10 @@ func _utilities_drawer() -> PanelContainer:
 	return _service_drawer(cat, [
 		["Builder", [_service_card(Services.Kind.BUILDER_YARD, cat)]],
 		["Power", [_service_card(Services.Kind.POWER_FEED, cat), _service_card(Services.Kind.SUBSTATION, cat), _power_card]],
-		["Water and sewer", [_service_card(Services.Kind.WELL, cat), _service_card(Services.Kind.WATER_TOWER, cat),
+		["Water  ·  water and sewer", [_service_card(Services.Kind.WELL, cat), _service_card(Services.Kind.WATER_TOWER, cat),
 			_service_card(Services.Kind.WATER_UTILITY, cat)]],
 		["Trash", [_hub_card(100, cat), _hub_card(101, cat)]],
-		["Phone and internet", [_telecom_card]]])
+		["Phone  ·  phone and internet", [_telecom_card]]])
 
 
 ## Civic: fire and police (CS2's Fire & Rescue, Police & Administration),
@@ -1691,14 +1887,14 @@ func _education_drawer() -> PanelContainer:
 		campus.append(b)
 	return _service_drawer(cat, [
 		["Schools", [_service_card(Services.Kind.SCHOOL, cat), _service_card(Services.Kind.DAYCARE, cat)]],
-		["High school and college", campus]])
+		["Colleges  ·  high school and college", campus]])
 
 
 ## Health and care, with the cemetery (CS2's Healthcare & Deathcare).
 func _health_drawer() -> PanelContainer:
 	var cat := "health"
 	return _service_drawer(cat, [
-		["Health and care", [_service_card(Services.Kind.CLINIC, cat), _service_card(Services.Kind.HOSPITAL, cat),
+		["Health  ·  health and care", [_service_card(Services.Kind.CLINIC, cat), _service_card(Services.Kind.HOSPITAL, cat),
 			_service_card(Services.Kind.NURSING_HOME, cat)]],
 		["Cemetery", [_hub_card(102, cat)]]])
 
@@ -1720,32 +1916,70 @@ func _transport_drawer() -> PanelContainer:
 
 func _parks_drawer() -> PanelContainer:
 	var drawer := PanelContainer.new()
-	var stack := VBoxContainer.new()
-	stack.add_theme_constant_override("separation", 6)
-	drawer.add_child(stack)
-	# The park size, in the one row above the tools while a park is in hand.
-	_park_sizes = HBoxContainer.new()
-	_park_sizes.alignment = BoxContainer.ALIGNMENT_CENTER
-	stack.add_child(_park_sizes)
-	var sizes := _section(_park_sizes, "Park size  ·  NRPA park classes  ·  grows by itself")
-	for i in Balance.PARK_SIZES.size():
-		var ps: Dictionary = Balance.PARK_SIZES[i]
-		var b := _card("park", ps.name, "%s acres, $%s" % [_acres_text(ps.size.x * ps.size.y / 4046.86), CitySim.money_text(int(ps.cost))])
-		b.tooltip_text = ps.about
-		b.custom_minimum_size.x = 96
-		b.pressed.connect(func(): park_tool.set_size(i))
-		sizes.add_child(b)
-		_park_size_cards.append(b)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
-	stack.add_child(row)
-	var parks := _section(row, "Park  ·  fills in by itself")
+	drawer.add_child(row)
+	var parks := _section(row, "Park  ·  fills in and grows by itself")
+	parks.add_child(_park_card("park"))
+	# The park's size beside its card: a three-way pill, one to three trees
+	# for Pocket, Neighborhood and Community (NRPA's park classes). It was a
+	# second drawer stacked on the first, with the same tree for every size.
+	_park_sizes = VBoxContainer.new()
+	_park_sizes.add_theme_constant_override("separation", 1)
+	parks.add_child(_park_sizes)
+	for i in Balance.PARK_SIZES.size():
+		var ps: Dictionary = Balance.PARK_SIZES[i]
+		var b := _segment(128)
+		b.tooltip_text = "%s park: %s acres, $%s. %s" % [ps.name, _acres_text(ps.size.x * ps.size.y / 4046.86),
+			CitySim.money_text(int(ps.cost)), ps.about]
+		var inner := HBoxContainer.new()
+		inner.add_theme_constant_override("separation", 0)
+		inner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		inner.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		inner.offset_left = 6
+		b.add_child(inner)
+		for t in i + 1:
+			var tree := Icon.new("park", 12)
+			tree.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			inner.add_child(tree)
+			if t == 0:
+				b.set_meta("icon", tree)  # the pie, search and recent tools show it
+		var gap := Control.new()
+		gap.custom_minimum_size.x = 4 + (2 - i) * 12
+		inner.add_child(gap)
+		var t := UiStyle.label(ps.name, 11)
+		t.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		inner.add_child(t)
+		b.set_meta("title", t)
+		b.pressed.connect(func():
+			park_tool.set_kind("park")
+			park_tool.set_size(i))
+		_park_sizes.add_child(b)
+		_park_size_cards.append(b)
 	var marks := _section(row, "Landmarks  ·  one per town")
 	for k in Parks.KINDS:
-		if Parks.KINDS[k].get("auto", false) or k == "courthouse":
+		if Parks.KINDS[k].get("auto", false) or k == "courthouse" or k == "park":
 			continue
 		(marks if Parks.KINDS[k].landmark else parks).add_child(_park_card(k))
 	return drawer
+
+
+## One part of a stacked segmented pill (park size, road height): a slim
+## button a third of a card tall, `w` wide; selected shows as a filled pill.
+static func _segment(w: float) -> Button:
+	var seg := _Pill.new()
+	seg.toggle_mode = true
+	seg.focus_mode = Control.FOCUS_NONE
+	seg.add_theme_font_size_override("font_size", 11)
+	seg.custom_minimum_size = Vector2(w, 16)
+	seg.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	for state in [["normal", Color(Brand.SURFACE_RAISED, 0.55)], ["hover", Brand.SURFACE_RAISED],
+			["pressed", Brand.SURFACE_RAISED.lightened(0.12)], ["hover_pressed", Brand.SURFACE_RAISED.lightened(0.18)]]:
+		var sb := UiStyle._box(state[1], 4)
+		sb.content_margin_top = 0
+		sb.content_margin_bottom = 0
+		seg.add_theme_stylebox_override(state[0], sb)
+	return seg
 
 
 ## A card that places a Parks site (the courthouse's sits under Civic).
@@ -1780,7 +2014,7 @@ func _industry_drawer() -> PanelContainer:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	stack.add_child(row)
-	var farms := _section(row, "Farmhouse  ·  near green soil")
+	var farms := _section(row, "Farms  ·  a farmhouse, near green soil")
 	for entry in [[FarmTool.Mode.CORN, "farm_corn", "Corn", "Corn farm: more income on rich soil"],
 			[FarmTool.Mode.SOYBEANS, "farm_soy", "Soybeans", "Soybean farm: steadier on poorer soil"]]:
 		var m: int = entry[0]
@@ -1793,7 +2027,7 @@ func _industry_drawer() -> PanelContainer:
 			_show_view("fertility"))
 		farms.add_child(b)
 		_farm_cards[m] = b
-	var hq := _section(row, "Main building  ·  near the resource")
+	var hq := _section(row, "Resources  ·  a company's main building, near the resource")
 	var area := _section(row, "Save land")
 	var stores := _section(row, "Storage")
 	_warehouse_card = _card("warehouse_co", "Warehouse", "")
@@ -1868,12 +2102,24 @@ static func _key_hint(action: String) -> String:
 	return KeyBinds.text(action) if KeyBinds.key(action) != KEY_NONE else ""
 
 
-## A titled group of cards inside a drawer; returns the row to fill.
+## A titled group of cards inside a drawer; returns the row to fill. Every
+## drawer uses it, so they all look alike (the critic, 2026-10-26: Industry
+## had no dividers and its headers floated over the wrong cards): a short
+## mint heading, the cards, and a hairline between groups in a row. A title
+## like "Grid size  ·  largest to smallest" shows its first part (two words
+## at most, in a player's words) and keeps the rest for the tooltip.
 func _section(parent: Container, title: String) -> HBoxContainer:
+	if parent.get_child_count() > 0 and not parent.get_child(-1) is VSeparator:
+		parent.add_child(VSeparator.new())
 	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 2)
+	col.add_theme_constant_override("separation", 3)
 	parent.add_child(col)
-	col.add_child(UiStyle.label(title.to_upper(), 10, UiStyle.MUTED))
+	var parts := title.split("  ·  ")
+	var head := UiStyle.label(parts[0].to_upper(), 11, Brand.BRAND_MINT)
+	if parts.size() > 1:
+		head.tooltip_text = parts[0] + ": " + "; ".join(parts.slice(1))
+		head.mouse_filter = Control.MOUSE_FILTER_PASS
+	col.add_child(head)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 3)
 	col.add_child(row)
@@ -1883,6 +2129,7 @@ func _section(parent: Container, title: String) -> HBoxContainer:
 ## A compact tool card: icon over a name. The key or detail is in the tooltip.
 func _card(icon: String, title: String, detail: String, toggle := true) -> Button:
 	var b := Button.new()
+	b.theme_type_variation = &"ToolCard"
 	b.toggle_mode = toggle
 	b.focus_mode = Control.FOCUS_NONE
 	b.custom_minimum_size = Vector2(64, 50)
@@ -1897,65 +2144,78 @@ func _card(icon: String, title: String, detail: String, toggle := true) -> Butto
 	ic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	col.add_child(ic)
 	var t := UiStyle.label(title, 11)
+	# A card's name stays at 11 px, under the 12 px floor, so the Roads
+	# menu keeps to its 1000 px (tests/test_build_menus.gd); the interface
+	# scale draws it larger on big screens.
+	t.add_theme_font_size_override("font_size", 11)
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(t)
+	# Wide enough for its name ("Water utility" ran into its neighbour).
+	# (Measured from the font: a label outside the tree doesn't know its size yet.)
+	var w := Brand.ui(500).get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
+	b.custom_minimum_size.x = maxf(58.0, ceilf(w) + 8.0)
 	b.set_meta("icon", ic)
 	b.set_meta("title", t)
 	return b
 
 
-## A slim arrow button, a third of a card tall (road height up and down).
-## A half-height card, icon beside its name, for two to share one card's space.
-func _half_card(icon: String, title: String) -> Button:
-	var b := Button.new()
-	b.toggle_mode = true
-	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = Vector2(64, 24)
-	b.tooltip_text = title
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 4)
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.set_anchors_preset(Control.PRESET_FULL_RECT)
-	b.add_child(row)
-	var ic := Icon.new(icon, 16)
-	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(ic)
-	var t := UiStyle.label(title, 11)
-	t.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	row.add_child(t)
-	b.set_meta("icon", ic)
-	b.set_meta("title", t)
-	return b
-
-
-func _step_button(icon: String, tip: String) -> Button:
-	var b := Button.new()
-	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = Vector2(56, 16)
-	b.tooltip_text = tip
-	var ic := Icon.new(icon, 14)
-	ic.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	ic.position -= Vector2(7, 7)
-	b.add_child(ic)
-	return b
-
-
+## A top bar button: an icon at three quarters of `px` (18 px for 24) in a
+## 34 x 30 button (the critic: 14 px icons in 30 x 24 buttons were hard to read).
 func _icon_button(icon: String, px: int, tip: String) -> Button:
-	var b := Button.new()
+	var b := _Pill.new()
 	b.toggle_mode = true
 	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = Vector2(px + 6, px)
+	b.custom_minimum_size = Vector2(px + 10, px + 6)
 	b.tooltip_text = tip
-	var ic := Icon.new(icon, px * 0.6)
+	var ic := Icon.new(icon, px * 0.75)
 	ic.custom_minimum_size = Vector2.ZERO
-	ic.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	ic.offset_left = 6
-	ic.offset_top = 5
-	ic.offset_right = -6
-	ic.offset_bottom = -5
+	ic.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	ic.offset_left = -px * 0.375
+	ic.offset_top = -px * 0.375
+	ic.offset_right = px * 0.375
+	ic.offset_bottom = px * 0.375
 	b.add_child(ic)
 	return b
+
+
+## A row that may be narrower than what's in it: it clips instead of
+## pushing the rest of the top bar off the screen.
+class _ClipRow extends Container:
+	func _init() -> void:
+		clip_contents = true
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _get_minimum_size() -> Vector2:
+		var h := 0.0
+		for c in get_children():
+			if c is Control and c.visible:
+				h = maxf(h, c.get_combined_minimum_size().y)
+		return Vector2(0, h)
+
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_SORT_CHILDREN:
+			for c in get_children():
+				if c is Control:
+					fit_child_in_rect(c, Rect2(0, 0, maxf(c.get_combined_minimum_size().x, size.x), size.y))
+
+
+## A button that's selected or switched on shows it with a soft filled
+## pill and mint words and icon (UiStyle: coral is only the tool in hand).
+class _Pill extends Button:
+	func _draw() -> void:
+		var c: Color = Brand.BRAND_MINT if button_pressed else Brand.INK
+		for n in get_children(true):
+			_tint(n, c)
+
+	func _tint(n: Node, c: Color) -> void:
+		if n is Icon:
+			if (n as Icon).color != c:
+				(n as Icon).color = c
+		elif n is Label:
+			if (n as Label).get_theme_color("font_color") != c:
+				n.add_theme_color_override("font_color", c)
+		for k in n.get_children():
+			_tint(k, c)
 
 
 ## A button the guided first town points at, or null: "cat:roads",
@@ -2130,7 +2390,6 @@ func _sync() -> void:
 		card.tooltip_text = str(card.get_meta("about")) + ("\n" + why if why != "" else "")
 		if why != "" and service_tool.kind == k:
 			service_tool.set_kind(ServiceTool.OFF)
-	_park_sizes.visible = park_tool.kind == "park"
 	for i in _park_size_cards.size():
 		_park_size_cards[i].set_pressed_no_signal(park_tool.kind == "park" and i == park_tool.size_class)
 	for k in _park_cards:
@@ -2182,7 +2441,10 @@ func _sync() -> void:
 		_variant_row.get_parent().visible = false
 	for i in _ring_size_cards.size():
 		_ring_size_cards[i].set_pressed_no_signal(i == road_tool.roundabout_preset)
-	_elevation.text = "Ground" if road_tool.elevation == 0.0 else "%+d ft" % roundi(road_tool.elevation * RoadTool.FT)
+	var h := road_tool.elevation
+	for i in _elevation_segs.size():
+		_elevation_segs[i].set_pressed_no_signal([h > 0.0, h == 0.0, h < 0.0][i])
+	_elevation_segs[1].text = "Ground" if h == 0.0 else "%+d ft" % roundi(h * RoadTool.FT)
 	if _category == "" or _category == "budget":
 		_show_hint("")
 
@@ -2191,25 +2453,50 @@ func _update_stats() -> void:
 	var s := sim.stats
 	var unemployed: float = 0.0 if s.workers == 0 else 100.0 * (s.workers - s.employed - int(s.get("commuting", 0))) / s.workers
 	_pop.text = _thousands(s.population)
-	_jobs.text = "%s  ·  %d%% unemployed" % [_thousands(s.jobs), roundi(unemployed)]
+	_jobs.text = _thousands(s.jobs) if _compact else "%s  ·  %d%% unemployed" % [_thousands(s.jobs), roundi(unemployed)]
 	for z in _demand_bars:
 		_demand_bars[z].value = sim.demand[z]
 	var e := sim.economy
 	var net := e.monthly_net()
-	_net.text = "%s$%s/mo" % ["+" if net >= 0 else "–", _thousands(absi(net))]
-	_net.add_theme_color_override("font_color", GOOD if net >= 0 else BAD)
+	_net.text = "%s$%s/mo" % ["+" if net >= 0 else "–", short_money(absi(net))]
+	var tone: Color = GOOD if net >= 0 else BAD
+	_net.add_theme_color_override("font_color", tone)
+	var chip := UiStyle._box(Color(tone, 0.16), 9)
+	chip.content_margin_left = 7
+	chip.content_margin_right = 7
+	chip.content_margin_top = 1
+	chip.content_margin_bottom = 1
+	_net_chip.add_theme_stylebox_override("panel", chip)
+	_net_chip.visible = not _compact
+	_net_chip.tooltip_text = "This month: $%s in, less what the town spends" % _thousands(net)
 	var unserved := sim.unserved_count()
-	# A short chip, like CS2's problem counter; the full story is in its tooltip.
+	# A problem counter, like CS2's; the full story is in its tooltip.
 	var short := sim.utility_summary()
 	var full := sim.utility_problem()
 	if unserved > 0:
 		short = ("%s · %d leaving" % [short, unserved]) if short != "" else "%d buildings losing people" % unserved
 		full = ("%s. People are leaving %d buildings" % [full, unserved]) if full != "" else \
 			"%d buildings without power or water: people are leaving" % unserved
-	_warning.text = ("⚠ " + short) if short != "" else ""
-	# Only clickable while there's a problem to show.
-	_warning_box.mouse_filter = Control.MOUSE_FILTER_STOP if short != "" else Control.MOUSE_FILTER_IGNORE
+	var count := short.split(" · ").size() if short != "" else 0
+	_warning.text = "" if count == 0 else ("⚠ %d" % count if _compact else "⚠ %d  %s" % [count, short])
+	_warning_box.visible = count > 0
 	_warning_box.tooltip_text = full + ". Click for the list, or click a lot or building to see what it lacks." if full != "" else ""
+
+
+## Money in thousands or millions for a chip: 950 -> "950", 1,428 -> "1.4K",
+## 366,363 -> "366K", 2,450,000 -> "2.45M".
+static func short_money(n: int) -> String:
+	var a := absi(n)
+	var s := ""
+	if a >= 1_000_000:
+		s = ("%.2fM" if a < 10_000_000 else "%.1fM") % (a / 1_000_000.0)
+	elif a >= 100_000:
+		s = "%dK" % roundi(a / 1000.0)
+	elif a >= 1000:
+		s = "%.1fK" % (a / 1000.0)
+	else:
+		s = str(a)
+	return ("-" if n < 0 else "") + s
 
 
 # --- Economy page (the bottom bar's Economy button) ------------------------
@@ -2243,6 +2530,11 @@ func _build_advisor() -> void:
 		advisor.offset_top = _top_bar.size.y
 	_top_bar.resized.connect(place)
 	place.call_deferred()
+	advisor.go.connect(func(key: String):
+		var card := tour_target(key) as Button
+		if card != null and not card.disabled:
+			advisor.close_panel()
+			press_card(card))
 	advisor.opened.connect(func():
 		permits.close_panel()
 		region_panel.close_panel()

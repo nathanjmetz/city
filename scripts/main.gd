@@ -522,6 +522,7 @@ func _process(delta: float) -> void:
 		if _save_wait <= 0.0:
 			_save_wait = TOWN_SEND_EVERY
 			Session.client.send_town()
+			Session.note_town(str(Session.client.region.cities[Session.client.my_city].name), sim.stats.population)
 	elif _snapshot:
 		# A save a few parts per frame, so a big town never freezes.
 		if _snapshot.step():

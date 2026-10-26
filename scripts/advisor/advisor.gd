@@ -49,7 +49,7 @@ static func first_ideas(sim: CitySim) -> Array:
 	if sim.zones.cells.is_empty():
 		ideas.append("Paint some homes along your streets, and folks will start showing up.")
 	if sim.services.buildings.is_empty():
-		ideas.append("Nobody builds without power and water, so a power line and a well (Services) go a long way.")
+		ideas.append("Nobody builds without power and water, so a power line and a well (under Utilities) go a long way.")
 	if ideas.size() < 2:
 		ideas.append("Out past town, good dirt grows the best corn. The Fertility view shows where.")
 	return ideas
@@ -80,6 +80,7 @@ static func _problems(sim: CitySim, out: Array) -> void:
 	if sim.services.yard() == -1 and FirstTown.has_streets(sim):
 		# Towns from before the builder's yard: one's free to place.
 		_add(out, "builder_yard", Kind.HEADS_UP, "We've got no builder in town, so crews come all the way from the next town over. Your first builder's yard is free: Utilities, Builder.")
+		out[-1].go = "svc:%d" % Services.Kind.BUILDER_YARD
 	var use: Dictionary = sim.services.utility_use
 	var missing := []
 	for u in ["power", "water"]:
@@ -94,10 +95,13 @@ static func _problems(sim: CitySim, out: Array) -> void:
 		for u in missing:
 			short += int(Services.KINDS[Services.Kind.POWER_FEED if u == "power" else Services.Kind.WELL].cost)
 		short -= e.money
-		var text := "Folks won't build where there's no %s. You'll find that under Services." % " or ".join(missing)
+		var text := "Folks won't build where there's no %s. You'll find them under Utilities." % " or ".join(missing)
 		if short > 0:
 			text = "Folks won't build where there's no %s, and we're about $%s short for it. The Economy page is worth a look." % [" or ".join(missing), CitySim.money_text(short)]
 		_add(out, "no_utilities", Kind.PROBLEM, text)
+		if short <= 0:
+			# "Show me" opens Utilities with the first missing hookup in hand.
+			out[-1].go = "svc:%d" % (Services.Kind.POWER_FEED if "power" in missing else Services.Kind.WELL)
 	elif missing.is_empty() and not sim.utilities_going_up().is_empty():
 		var g: Dictionary = sim.utilities_going_up()[0]
 		_add(out, "going_in", Kind.HEADS_UP, "The %s's still going in, about %d%% done. Homes hook up once the crew's finished." % [
@@ -300,6 +304,9 @@ static func _pollution_kind(sim: CitySim, ref: String) -> String:
 	return best
 
 
+## A tip may also carry "go": the tool its "Show me" picks up (a key for
+## Hud.tour_target, like "svc:6"; the critic, 2026-10-26: name the exact
+## menu and take the player there, as Deel's tips do).
 static func _add(out: Array, id: String, kind: int, text: String) -> void:
 	out.append({"id": id, "kind": kind, "text": text})
 

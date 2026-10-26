@@ -154,7 +154,14 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _home_page() -> Control:
 	var col := _page("home")
-	var play := _big_button("Play", "Your town, next to the neighbors", _play)
+	# Say what Play does: "Continue: Maple Grove, 711 people" once this
+	# device has a town (the critic, 2026-10-26: the old line was vague).
+	var last = Session.profile.get("last_town")
+	var sub := "Your town, next to the neighbors"
+	if last is Dictionary and str(last.get("name", "")) != "" and _has_any_login():
+		sub = "Continue: %s, %s %s" % [last.name, CitySim.money_text(int(last.get("people", 0))),
+			"person" if int(last.get("people", 0)) == 1 else "people"]
+	var play := _big_button("Play", sub, _play)
 	ShellStyle.primary(play)
 	col.add_child(play)
 	col.add_child(_big_button("Profile", "How neighbors see you", func(): _show("profile")))

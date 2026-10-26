@@ -1,7 +1,7 @@
 class_name FirstTownTour
 extends Control
-## The guided first town (FirstTown has the steps): a card docked flush under
-## the top bar on the right says the plan, then one short goal at a time.
+## The guided first town (FirstTown has the steps): a small card just above
+## the button to press says the plan, then one short goal at a time.
 ## The button to press pulses with an arrow bobbing over it, the camera
 ## glides to where the work is, the suggested grid and sites glow on the
 ## ground, and while a crew works the card says what they're doing with a
@@ -64,8 +64,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	visible = false
 
-	var b := UiStyle.dock(true)
-	b.border_width_left = 1
+	var b := UiStyle.panel()
 	b.content_margin_left = 14
 	b.content_margin_right = 14
 	b.content_margin_top = 10
@@ -191,10 +190,39 @@ func _process(delta: float) -> void:
 	if _poll <= 0.0:
 		_poll = 0.2
 		_refresh()
-	# Docked flush under the top bar on the right, where the advisor goes.
-	var top: float = hud._top_bar.size.y if "_top_bar" in hud and hud._top_bar != null else 40.0
-	_card.position = Vector2(size.x - _card.size.x, top)
+	_place_card()
 	queue_redraw()
+
+
+## The card sits just above the button it talks about, clear of the arrow
+## (the critic, 2026-10-26: docked in the Advice corner, it covered the
+## Advice and bell panels; Deel keeps a tour's card next to its target).
+## With nothing to press, it waits bottom right, above the tool bar.
+func _place_card() -> void:
+	var top: float = hud._top_bar.size.y if "_top_bar" in hud and hud._top_bar != null else 40.0
+	var target := _pointed()
+	if target != null:
+		var r := target.get_global_rect()
+		var x := clampf(r.get_center().x - _card.size.x * 0.5, 8.0, size.x - _card.size.x - 8.0)
+		var y := r.position.y - _card.size.y - 48.0
+		_card.position = Vector2(x, maxf(y, top + 8.0))
+		return
+	var bottom: float = hud.pad_bottom_height() if hud.has_method("pad_bottom_height") else 60.0
+	_card.position = Vector2(size.x - _card.size.x - 8.0, maxf(size.y - bottom - _card.size.y - 12.0, top + 8.0))
+
+
+## The button the arrow points at now, or null: none while the player has
+## another menu open (the arrow sat on Utilities while they were in Parks).
+func _pointed() -> Control:
+	if _target == "" or not hud.has_method("tour_target"):
+		return null
+	var target: Control = hud.tour_target(_target)
+	if target == null or not target.is_visible_in_tree():
+		return null
+	if _target.begins_with("cat:") and "_category" in hud and hud._category != "" \
+			and hud._category != _target.substr(4):
+		return null
+	return target
 
 
 func _refresh() -> void:
@@ -350,8 +378,8 @@ func _glide(key: String, at: Vector3, dist: float) -> void:
 
 func _draw() -> void:
 	var pulse := 0.5 + 0.5 * sin(_t * 4.0)
-	var target: Control = hud.tour_target(_target) if _target != "" and hud.has_method("tour_target") else null
-	if target != null and target.is_visible_in_tree():
+	var target := _pointed()
+	if target != null:
 		var r := target.get_global_rect().grow(3.0 + 3.0 * pulse)
 		draw_rect(r, Color(GLOW, 0.18 + 0.12 * pulse), true)
 		draw_rect(r, Color(GLOW, 0.95), false, 2.0, true)

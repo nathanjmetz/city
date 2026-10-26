@@ -2943,7 +2943,7 @@ func _utility_report() -> Array:
 		if not has_source:
 			var starter: int = Services.Kind.POWER_FEED if u == "power" else Services.Kind.WELL
 			var cost: int = Services.KINDS[starter].cost
-			var full := "No %s: build a %s in Services ($%s)" % [u, Services.KINDS[starter].name, money_text(cost)]
+			var full := "No %s: build a %s, under Utilities ($%s)" % [u, Services.KINDS[starter].name, money_text(cost)]
 			var short := "No %s" % u
 			if cost > economy.money:
 				full += ". You need $%s more" % money_text(cost - economy.money)
