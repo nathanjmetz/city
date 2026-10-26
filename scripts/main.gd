@@ -161,6 +161,9 @@ func _ready() -> void:
 	var look := DayNight.new()
 	look.setup(sim, sky, _tick_fraction)
 	add_child(look)
+	var weather := Weather.new()
+	weather.setup(sim, sky)
+	add_child(weather)
 	# Streets drawn as country roads go unlit; their pole line is the only one.
 	look.set_country(roads._rural)
 	roads.country_changed.connect(look.set_country)

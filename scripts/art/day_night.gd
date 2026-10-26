@@ -113,6 +113,11 @@ static func set_cycle(on: bool) -> void:
 	save_settings()
 
 
+static func set_weather(on: bool) -> void:
+	Weather.on = on
+	save_settings()
+
+
 static func set_seasons(on: bool) -> void:
 	seasons_on = on
 	save_settings()
@@ -129,9 +134,10 @@ static func load_settings() -> void:
 	if data is Dictionary:
 		cycle_on = bool(data.get("day_night", false))
 		seasons_on = bool(data.get("seasons", true))
+		Weather.on = bool(data.get("weather", true))
 
 
 static func save_settings() -> void:
 	var f := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify({"day_night": cycle_on, "seasons": seasons_on}))
+		f.store_string(JSON.stringify({"day_night": cycle_on, "seasons": seasons_on, "weather": Weather.on}))

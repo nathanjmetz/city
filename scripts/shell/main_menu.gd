@@ -518,6 +518,10 @@ func _build_backdrop() -> void:
 			_shot_at = float(a.trim_prefix("--menu-shot-after="))
 	_life.setup(sim, look, forced)
 	add_child(_life)
+	# Rain and cloud by the same odds as in play (off if switched off there).
+	var weather := Weather.new()
+	weather.setup(sim, sky)
+	add_child(weather)
 	var roads := RoadView.new()
 	add_child(roads)
 	roads.setup(sim.network, sim)

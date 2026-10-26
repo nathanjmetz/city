@@ -518,6 +518,15 @@ func _draw() -> void:
 				line.call(P.call(0.42, 0.55) + d * s * 0.28, P.call(0.42, 0.55) + d * s * 0.36, w * 0.8)
 			draw_circle(P.call(0.72, 0.3), s * 0.2, accent)
 			draw_arc(P.call(0.72, 0.3), s * 0.2, PI * 0.35, PI * 1.6, 16, color, w, true)
+		"weather":
+			# A cloud with rain falling from it.
+			draw_arc(P.call(0.38, 0.42), s * 0.17, PI * 0.55, PI * 1.6, 16, color, w, true)
+			draw_arc(P.call(0.58, 0.36), s * 0.21, PI * 1.05, PI * 2.05, 16, color, w, true)
+			draw_arc(P.call(0.74, 0.47), s * 0.13, PI * 1.45, PI * 2.45, 12, color, w, true)
+			line.call(P.call(0.24, 0.57), P.call(0.8, 0.57), w)
+			for k in 3:
+				var x := 0.34 + 0.16 * k
+				line.call(P.call(x, 0.68), P.call(x - 0.06, 0.86), w * 0.9)
 		"seasons":
 			# A maple leaf outline, with a stem.
 			var leaf := PackedVector2Array([P.call(0.5, 0.1), P.call(0.6, 0.32), P.call(0.86, 0.26),
