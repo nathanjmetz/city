@@ -908,16 +908,7 @@ func _edge_shape(sim: CitySim, id: int, c: Vector2i, from := PackedVector2Array(
 	if local.size() > 1 and local[0].distance_to(local[-1]) <= 0.05:
 		local.remove_at(local.size() - 1)
 	# Corners in a straight line (where a cut ran along the strip) go.
-	var i := 0
-	while local.size() > 3 and i < local.size():
-		var a := local[(i + local.size() - 1) % local.size()]
-		var b := local[(i + 1) % local.size()]
-		var u := local[i] - a
-		var v := b - local[i]
-		if absf(u.cross(v)) < 0.001 * u.length() * v.length() and u.dot(v) > 0.0:
-			local.remove_at(i)
-		else:
-			i += 1
+	local = CivicHubs.drop_collinear(local)
 	if local.size() < 3:
 		return PackedVector2Array()
 	if from.is_empty() and check:
@@ -930,7 +921,7 @@ func _edge_shape(sim: CitySim, id: int, c: Vector2i, from := PackedVector2Array(
 
 
 ## `parts` (outlines, x, z) less every zoned or built lot running onto them
-## (and half a metre round it), or [] when a lot sits wholly inside one (it
+## (and half a metre round it), less any part a lot sits wholly inside (it
 ## would leave a hole).
 static func _cut_by_lots(sim: CitySim, parts: Array) -> Array:
 	if parts.is_empty():
@@ -954,15 +945,15 @@ static func _cut_by_lots(sim: CitySim, parts: Array) -> Array:
 						inside = false
 						break
 				if inside:
-					return []
+					continue  # that part goes (it would have a hole); the rest stay
 				next.append_array(Geometry2D.clip_polygons(part, grown))
 			parts = next
 	return parts
 
 
 ## `parts` (outlines, x, z) less every zoned cell on them, painted but not
-## yet a lot (ZoneMap.CELL squares, a row's run of them at a time), or []
-## when one sits wholly inside a part (it would leave a hole).
+## yet a lot (ZoneMap.CELL squares, a row's run of them at a time), less
+## any part one sits wholly inside (it would leave a hole).
 static func _cut_by_zones(sim: CitySim, parts: Array) -> Array:
 	if parts.is_empty() or sim.zones.cells.is_empty():
 		return parts
@@ -992,7 +983,7 @@ static func _cut_by_zones(sim: CitySim, parts: Array) -> Array:
 						inside = false
 						break
 				if inside:
-					return []
+					continue  # that part goes (it would have a hole); the rest stay
 				next.append_array(Geometry2D.clip_polygons(part, run))
 			parts = next
 	return parts
@@ -1030,23 +1021,8 @@ func _edge_problem(sim: CitySim, id: int, world: PackedVector2Array) -> String:
 	for other in sites:
 		if other != id and _poly_hits(world, land_polys(other)):
 			return "Overlaps %s." % sites[other].name
-	var box := Rect2(world[0], Vector2.ZERO)
-	for q in world:
-		box = box.expand(q)
-	for key in sim.lots_near(box):
-		var lot: Dictionary = sim.lots[key]
-		if not sim.buildings.has(key) and sim.zones.zone_at(lot.zone_pt) == ZoneMap.Zone.NONE:
-			continue
-		for q in Geometry2D.intersect_polygons(world, lot.corners):
-			if CivicHubs.area(q) > 1.0:
-				return "Zoned or built on."
-	# Zoning painted but not yet a lot.
-	for x in range(floori(box.position.x / ZoneMap.CELL), floori(box.end.x / ZoneMap.CELL) + 1):
-		for y in range(floori(box.position.y / ZoneMap.CELL), floori(box.end.y / ZoneMap.CELL) + 1):
-			if sim.zones.cells.has(Vector2i(x, y)) and Geometry2D.is_point_in_polygon(
-					Vector2((x + 0.5) * ZoneMap.CELL, (y + 0.5) * ZoneMap.CELL), world):
-				return "Zoned."
-	return ""
+	# No zoned or built lot running onto it, nor zoning not yet a lot.
+	return BlockEdges.zoned_problem(sim, world)
 
 
 ## Roads win over edge pieces too: each is cut back to the roads as they

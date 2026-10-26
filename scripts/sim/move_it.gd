@@ -229,12 +229,24 @@ static func plan(sim: CitySim, cmd: Dictionary) -> Dictionary:
 				elif t == "hub":
 					for c in b.get("edge", {}):
 						still.append([t, id, CivicHubs.edge_poly(b, c)])
+	# Banks, campuses and the phone company don't move: their blocks and edge
+	# pieces up to the sidewalk (BlockEdges) stay where they are.
+	var fixed := []  # [type, id, poly]
+	for id in sim.banks.banks:
+		for poly in Banks.land_polys(sim.banks.banks[id]):
+			fixed.append(["bank", id, poly])
+	for id in sim.education.campuses:
+		for poly in Education.land_polys(sim.education.campuses[id]):
+			fixed.append(["campus", id, poly])
+	for id in sim.telecom.companies:
+		for poly in Telecom.land_polys(sim.telecom.companies[id]):
+			fixed.append(["telecom", id, poly])
 	var placed := []  # [type, id, poly] of moved ones, as they land
 	for t in BUILDINGS:
 		for id in out[_group(t)]:
 			var at: Array = out[_group(t)][id]
 			var poly := footprint(t, _kind(sim, t, id), at[0], at[1])
-			var problem := _building_problem(sim, t, id, at[0], at[1], poly, curves, still + placed)
+			var problem := _building_problem(sim, t, id, at[0], at[1], poly, curves, still + placed + fixed)
 			if problem != "":
 				out.problem = problem
 				return out
@@ -251,7 +263,7 @@ static func plan(sim: CitySim, cmd: Dictionary) -> Dictionary:
 			for j in still.size():
 				if j != i:
 					others.append(still[j])
-			var spot := _shift_clear(sim, entry[0], entry[1], b, curves, others + placed, moved_curves)
+			var spot := _shift_clear(sim, entry[0], entry[1], b, curves, others + placed + fixed, moved_curves)
 			if spot.is_empty():
 				continue  # no room: it makes way as for any new road (RoadWins)
 			out[_group(entry[0])][entry[1]] = spot
@@ -762,6 +774,9 @@ static func _name(sim: CitySim, type: String, id: int) -> String:
 		"park": return sim.parks.sites[id].name
 		"warehouse": return Warehouses.KINDS[sim.warehouses.buildings[id].kind].name.to_lower()
 		"farm": return "farmhouse"
+		"bank": return str(sim.banks.banks[id].name)
+		"campus": return Education.KINDS[sim.education.campuses[id].kind].name.to_lower()
+		"telecom": return "phone company"
 	return Industry.KINDS[sim.industry.sites[id].kind].name.to_lower()
 
 

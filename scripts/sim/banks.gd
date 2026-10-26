@@ -22,8 +22,12 @@ extends RefCounted
 ## FDIC sells it to a healthier bank, which brings in a new president.
 ##
 ## It grows like every hub: only onto free land next to it, never a second
-## branch, picking each new block from its development tree. Numbers live in
-## Balance (BANK*).
+## branch, picking each new block from its development tree. Boxed in by
+## roads, it fills the rest of its block up to the sidewalk with lawn and
+## customer parking, never another building (Nathan, 2026-10-26: "when a hub
+## with leader is "trapped" inside a road area, it should nicely fill in
+## that area up to the edge (sidewalk) so that it looks like its using its
+## space well."): edge pieces, BlockEdges. Numbers live in Balance (BANK*).
 
 ## One block of bank premises: a 36 m square, about a third of an acre (a
 ## brick bank on the square with its drive-up lanes behind fills one).
@@ -95,7 +99,8 @@ const TREE := {
 ## (tree ids, for Agency), founded, status
 ## ("" sound, "order", or "sold" the month the FDIC sold it), year (this
 ## year's {lent, profit, foreclosed, losses}), made (loans so far),
-## foreclosed (so far), idle (why it isn't growing, not saved), cleared}
+## foreclosed (so far), idle (why it isn't growing, not saved), cleared,
+## edge (its edge pieces up to the sidewalk: block -> outline, BlockEdges)}
 var banks := {}
 var _next_id := 1
 
@@ -206,7 +211,7 @@ func add(sim: CitySim, kind: String, pos: Vector3, dir: Vector3, seed: int, tick
 	banks[id] = {"kind": kind, "name": _pick_name(kind, hash([seed, id])), "pos": pos, "dir": dir, "blocks": [],
 		"capital": float(spec(kind).capital), "deposits": 0.0, "loans": {},
 		"reputation": Balance.BANK_START_REPUTATION, "leader": leader, "built": [], "founded": tick, "status": "",
-		"year": _new_year(), "made": 0, "foreclosed": 0, "idle": "", "cleared": []}
+		"year": _new_year(), "made": 0, "foreclosed": 0, "idle": "", "cleared": [], "edge": {}}
 	return id
 
 
@@ -611,6 +616,10 @@ func decide(sim: CitySim) -> Dictionary:
 		if idle == "changed":
 			out.banks = true
 			idle = ""
+		# Boxed in by roads: lawn and parking up to the sidewalk.
+		if BlockEdges.due(sim.tick_count, Balance.BANK_DECIDE_EVERY, id) \
+				and sim.permits.guidance("bank", id).stance != "hold" and take_edges(sim, id):
+			out.banks = true
 		if b.idle != idle:
 			b.idle = idle
 			out.banks = true
@@ -793,6 +802,8 @@ func _grow(sim: CitySim, id: int, b: Dictionary, facts: Dictionary) -> String:
 	if cell == Vector2i.MAX:
 		return "Boxed in: no free land next to it for its %s." % dev(b.kind, use).name.to_lower()
 	b.blocks.append({"c": cell, "use": use})
+	# An edge piece a road has since let go of becomes a whole block.
+	b.get("edge", {}).erase(cell)
 	b.built.append(use)
 	b.why = "%s built %s." % [str(b.leader.name), dev(b.kind, use).name.to_lower()]
 	b.capital -= float(s.block_cost)
@@ -866,7 +877,7 @@ static func _neighbors(b: Dictionary, cell: Vector2i) -> int:
 	return n
 
 
-## The bank with a block on this point, or -1.
+## The bank with a block or an edge piece on this point, or -1.
 func at(p: Vector3) -> int:
 	var q := Vector2(p.x, p.z)
 	for id in banks:
@@ -878,6 +889,9 @@ func at(p: Vector3) -> int:
 			for blk in b.blocks:
 				found = found or blk.c == cell
 			if not found:
+				# An edge piece (looked up by its block first: a quick no).
+				if b.edge.has(cell) and BlockEdges.on_edge(b, CELL, p):
+					return id
 				continue
 		if Geometry2D.is_point_in_polygon(q, block_corners(b, cell)):
 			return id
@@ -888,13 +902,42 @@ func covers(p: Vector3) -> bool:
 	return not banks.is_empty() and at(p) != -1
 
 
-## The player clears one block; clearing the first building closes the bank
-## (its loans are sold to an out-of-town bank and stay with the borrowers).
+## All the ground a bank holds, as outlines (x, z): its first building's
+## block, each block it bought, then each edge piece.
+static func land_polys(b: Dictionary) -> Array:
+	var out := [block_corners(b, Vector2i.ZERO)]
+	for blk in b.blocks:
+		out.append(block_corners(b, blk.c))
+	return out + BlockEdges.edge_polys(b, CELL)
+
+
+## Takes the edge pieces that fit round bank `id`, up to the sidewalk.
+func take_edges(sim: CitySim, id: int) -> bool:
+	return BlockEdges.take(sim, banks[id], CELL, func(world: PackedVector2Array) -> String:
+		return BlockEdges.ground_problem(sim, world, CELL * 0.2))
+
+
+## Edge pieces cut back to the roads as they are now, and any no longer
+## joined to a bank's blocks gone (after a road, or a block cleared or sold).
+func prune_edges(sim: CitySim) -> bool:
+	var changed := false
+	var ids := banks.keys()
+	ids.sort()
+	for id in ids:
+		changed = BlockEdges.prune(sim, banks[id], CELL) or changed
+	return changed
+
+
+## The player clears one block (or an edge piece); clearing the first
+## building closes the bank (its loans are sold to an out-of-town bank and
+## stay with the borrowers).
 func remove_at(p: Vector3) -> bool:
 	var id := at(p)
 	if id == -1:
 		return false
 	var b: Dictionary = banks[id]
+	if BlockEdges.clear_at(b, CELL, p):
+		return true
 	var d: Vector3 = p - b.pos
 	var cell := Vector2i(roundi(d.dot(_right(b)) / CELL), roundi(-d.dot(b.dir) / CELL))
 	if cell == Vector2i.ZERO:
@@ -980,6 +1023,8 @@ func to_dict() -> Dictionary:
 			"reputation": b.reputation, "leader": b.leader, "founded": b.founded, "status": b.status,
 			"year": b.year, "last_year": b.get("last_year", {}), "made": b.made, "foreclosed": b.foreclosed,
 			"failures": b.get("failures", 0), "cleared": b.cleared.map(func(v): return [v.x, v.y])}
+		if not b.get("edge", {}).is_empty():
+			out[str(id)].edge = CivicHubs.edge_to_save(b.edge)
 	return {"banks": out, "next_id": _next_id}
 
 
@@ -1011,7 +1056,12 @@ func from_dict(d: Dictionary) -> void:
 			"failures": int(s.get("failures", 0)), "idle": "",
 			"cleared": s.get("cleared", []).map(func(v): return Vector2i(int(v[0]), int(v[1])))}
 		var bk: Dictionary = banks[int(k)]
+		bk.edge = BlockEdges.from_save(s.get("edge", []), blocks)
 		bk.built = bk.blocks.map(func(blk): return blk.use)
-		if not s.get("last_year", {}).is_empty():
-			bk.last_year = s.last_year
+		var ly: Dictionary = s.get("last_year", {})
+		if not ly.is_empty():
+			# As `year`: counts back as whole numbers, so a loaded copy saves
+			# byte for byte the same.
+			bk.last_year = {"lent": float(ly.get("lent", 0.0)), "profit": float(ly.get("profit", 0.0)),
+				"foreclosed": int(ly.get("foreclosed", 0)), "losses": float(ly.get("losses", 0.0))}
 	_next_id = int(d.get("next_id", 1))

@@ -28,6 +28,9 @@ func _sync() -> void:
 		want[_key(id, c, null)] = [c, null]
 		for blk in c.blocks:
 			want[_key(id, c, blk)] = [c, blk]
+		# Its edge pieces up to the sidewalk (BlockEdges), drawn together.
+		if not c.get("edge", {}).is_empty():
+			want["%d:edge:%d:%.1f:%.1f" % [id, hash(c.edge), c.pos.x, c.pos.z]] = [c, "edge"]
 	for key in _nodes.keys():
 		if not want.has(key):
 			_trees.remove(key)
@@ -35,7 +38,12 @@ func _sync() -> void:
 			_nodes.erase(key)
 	for key in want:
 		if not _nodes.has(key):
-			_nodes[key] = _spawn(key, want[key][0], want[key][1])
+			var w: Array = want[key]
+			if w[1] is String:
+				var c: Dictionary = w[0]
+				_nodes[key] = EdgeGrounds.place(self, _trees, key, c, Banks.CELL, BankBuilder.build_edge(c.edge, absi(hash(key))))
+			else:
+				_nodes[key] = _spawn(key, w[0], w[1])
 
 
 func _spawn(key: String, c: Dictionary, blk) -> Node3D:

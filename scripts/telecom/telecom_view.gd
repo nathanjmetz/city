@@ -44,6 +44,9 @@ func _sync() -> void:
 			want["%d:%d,%d:%s:%d:%.1f:%.1f" % [id, blk.c.x, blk.c.y, blk.use, blk.levels, c.pos.x, c.pos.z]] = [c, blk, null]
 		for t in c.towers:
 			want["%d:tower:%s:%.1f:%.1f:%s" % [id, t.kind, t.pos[0], t.pos[1], ",".join(c.built)]] = [c, null, t]
+		# Its edge pieces up to the sidewalk (BlockEdges), drawn together.
+		if not c.get("edge", {}).is_empty():
+			want["%d:edge:%d:%.1f:%.1f" % [id, hash([c.edge, c.blocks]), c.pos.x, c.pos.z]] = [c, "edge", null]
 		if "small_cells" in c.built:
 			for q in small_cells(c):
 				want["%d:cell:%.1f:%.1f" % [id, q[0].x, q[0].z]] = [c, null, q]
@@ -55,7 +58,14 @@ func _sync() -> void:
 	for key in want:
 		if not _nodes.has(key):
 			var w: Array = want[key]
-			if w[2] is Array:
+			if w[1] is String:
+				var c: Dictionary = w[0]
+				var cells := [Vector2i.ZERO]
+				for blk in c.blocks:
+					cells.append(blk.c)
+				_nodes[key] = EdgeGrounds.place(self, _trees, key, c, Telecom.CELL,
+					TelecomBuilder.build_edge(c.edge, cells, absi(hash(key))))
+			elif w[2] is Array:
 				_nodes[key] = _spawn_cell(key, w[2])
 			else:
 				_nodes[key] = _spawn_tower(key, w[0], w[2]) if w[2] != null else _spawn(key, w[0], w[1])

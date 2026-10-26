@@ -706,6 +706,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			banks_changed.emit()
 		"remove_bank_block":
 			ok = banks.remove_at(_v(cmd.pos))
+			banks.prune_edges(self)
 			_lots_dirty = true
 			banks_changed.emit()
 		"remove_campus":
@@ -714,6 +715,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			education_changed.emit()
 		"remove_campus_block":
 			ok = education.remove_at(_v(cmd.pos))
+			education.prune_edges(self)
 			_lots_dirty = true
 			education_changed.emit()
 		"set_campus_funding":
@@ -742,6 +744,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			telecom_changed.emit()
 		"remove_telecom_at":
 			ok = telecom.remove_at(_v(cmd.pos))
+			telecom.prune_edges(self)
 			_lots_dirty = true
 			telecom_changed.emit()
 		"set_telecom_funding":
@@ -1209,20 +1212,24 @@ func _road_wins() -> void:
 			if not lane.is_empty():
 				s.drive = lane
 	# Lots are planned again only if a road took some of a hub's ground.
+	# Edge pieces are cut back to the roads (or go with a block a road took).
 	if not education.campuses.is_empty():
 		var was := hash(education.campuses)
 		economy.money += education.make_way(corr)
+		education.prune_edges(self)
 		if hash(education.campuses) != was:
 			_lots_dirty = true
 	if not telecom.companies.is_empty():
 		var was := hash(telecom.companies)
 		economy.money += telecom.make_way(corr)
+		telecom.prune_edges(self)
 		if hash(telecom.companies) != was:
 			_lots_dirty = true
 		telecom_changed.emit()
 	if not banks.banks.is_empty():
 		var was := hash(banks.banks)
 		economy.money += banks.make_way(corr)
+		banks.prune_edges(self)
 		if hash(banks.banks) != was:
 			_lots_dirty = true
 	farms_changed.emit()

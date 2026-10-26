@@ -259,11 +259,15 @@ static func sources(sim: Object) -> Dictionary:
 			out["t%d %s %s" % [id, cell, tc.pos]] = _poly_cells.bind(Telecom.block_corners(tc, cell))
 		for t in tc.towers:
 			out["tt%d %s" % [id, t.pos]] = _poly_cells.bind(Telecom.compound(Vector2(t.pos[0], t.pos[1])))
+		for ep in BlockEdges.edge_polys(tc, Telecom.CELL):
+			out["te%d %s" % [id, ep]] = _poly_cells.bind(ep)
 	for id in sim.banks.banks:
 		var b: Dictionary = sim.banks.banks[id]
 		out["k%d %s" % [id, b.pos]] = _poly_cells.bind(Banks.block_corners(b, Vector2i.ZERO))
 		for blk in b.blocks:
 			out["k%d %s %s" % [id, blk.c, b.pos]] = _poly_cells.bind(Banks.block_corners(b, blk.c))
+		for ep in BlockEdges.edge_polys(b, Banks.CELL):
+			out["ke%d %s" % [id, ep]] = _poly_cells.bind(ep)
 	# Power companies: the yard, its lane, every unit and the lanes between
 	# them, and the cleared corridor under a line to the neighbors.
 	for id in sim.power.sites:
