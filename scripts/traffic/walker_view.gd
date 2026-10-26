@@ -97,7 +97,7 @@ func _draw_walkers() -> void:
 			dir = Vector3.FORWARD
 		var body := build(int(w.person))
 		_mm.set_instance_transform(n, Transform3D(Basis.looking_at(Vector3(dir.x, 0.0, dir.z).normalized(), Vector3.UP).scaled(body), p))
-		_mm.set_instance_color(n, Color.WHITE)
+		_mm.set_instance_color(n, skin_tone(int(w.person)))
 		# Standing at the kerb, the phase stays put: feet together if it's 0.
 		var shirt: Color = SHIRTS[(hash(int(w.person)) >> 4) % SHIRTS.size()]
 		# Stride grows with height (about 0.41 of it in a walk), and each
@@ -108,6 +108,22 @@ func _draw_walkers() -> void:
 		_mm.set_instance_custom_data(n, shirt)
 		n += 1
 	_mm.visible_instance_count = n
+
+
+## Skin tones as a tint on the figure (it darkens or lightens the skin; the
+## clothes a touch with it), weighted roughly like Grant County, Indiana
+## (Census 2020: about 85% white, 8% Black, 5% Hispanic, 2% other).
+const SKIN_TONES := [[Color(1.22, 1.18, 1.15), 30], [Color(1.12, 1.06, 1.02), 30], [Color(1.0, 1.0, 1.0), 25],
+	[Color(0.86, 0.82, 0.8), 6], [Color(0.66, 0.6, 0.58), 5], [Color(0.48, 0.43, 0.42), 4]]
+
+
+static func skin_tone(person: int) -> Color:
+	var roll := (hash([person, "skin"]) & 0xffff) % 100
+	for t in SKIN_TONES:
+		roll -= int(t[1])
+		if roll < 0:
+			return t[0]
+	return Color.WHITE
 
 
 ## Each person's own height and build, the same every time they're seen:
