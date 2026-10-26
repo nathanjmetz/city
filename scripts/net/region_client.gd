@@ -28,6 +28,8 @@ signal telemetry_acked(id: String)
 signal town_loaded(id: String, bytes: int, unpack_ms: float, load_ms: float)
 ## Regional projects or service agreements changed (region.ledger).
 signal ledger_changed
+## A big message (the region, when joining) is coming in: how much is here.
+signal receiving(fraction: float)
 
 var region := Region.new()
 ## When a join's steps happened, in seconds from join(): the link open, the
@@ -56,6 +58,8 @@ var pins := []
 var away := {}
 
 var _peer: WebSocketMultiplayerPeer
+## Sends and receives over _peer (big messages in parts, see NetLink).
+var _link: NetLink
 var _connected := false
 var _password := ""
 var _pin := ""
@@ -77,11 +81,21 @@ var _snapshot := {}  # a whole-town copy under way: {"msg", "snap": TownSnapshot
 var _sent_at := -1000.0
 var _sent_sig := []
 var _land_sent := 0  # hash of the land last sent
-## A neighbor's newest copy is unpacked into its simulation (a second or so
-## for a grown town) one town at a time, this many seconds apart.
+## A neighbor's newest copy is unpacked into its simulation one town at a
+## time, on the main thread (about 0.2 s for a 16,000-person town's
+## postcard, CitySim.from_dict): the next waits NEIGHBOR_COST times as long
+## as the last took (so neighbors take at most half a percent of the game's
+## time), at least NEIGHBOR_MIN seconds and at most NEIGHBOR_EVERY.
 const NEIGHBOR_EVERY := 60.0
+const NEIGHBOR_MIN := 5.0
+const NEIGHBOR_COST := 200.0
+## A load this long (seconds) is a hitch: it waits the full NEIGHBOR_EVERY.
+const NEIGHBOR_HITCH := 0.05
 const NEIGHBOR_FIRST := 2.0
 var _neighbor_wait := NEIGHBOR_FIRST
+## Times a neighbor's picture was asked for again after it failed.
+var _picture_tries := {}
+const PICTURE_TRIES := 3
 var _unseen := []  # neighbors not unpacked since joining
 ## Copies being packed or unpacked on another core (a grown town takes the
 ## better part of a second, which froze the game every time a neighbor
@@ -107,6 +121,11 @@ var _lost_for := 0.0
 const JOIN_TRIES := 3
 var _join_tries := 0
 var _join_retry := -1.0
+## A join gives up (and says why) when the region sends nothing at all for
+## this long after the hello; parts of a big welcome coming in count.
+const JOIN_QUIET := 90.0
+var _quiet := 0.0
+var _waiting_host := false  # asked the host to let us in (see "waiting")
 
 
 ## Connects and logs in (or, with new_account, signs up). Watch the joined,
@@ -114,6 +133,7 @@ var _join_retry := -1.0
 func join(server_url: String, code: String, id: String, name: String, password := "",
 		new_account := false, saved_token := "", pin := "") -> void:
 	_pin = pin
+	_picture_tries.clear()
 	url = server_url
 	invite_code = code
 	player_id = id
@@ -137,17 +157,28 @@ func _mark(what: String) -> void:
 func _connect() -> int:
 	_peer = WebSocketMultiplayerPeer.new()
 	RegionServer.use_big_buffers(_peer)
+	_link = NetLink.new(_peer)
+	_link.on_progress = func(_from: int, got: int, total: int):
+		_quiet = 0.0
+		receiving.emit(float(got) / maxf(1.0, float(total)))
+	# A copy of your town that couldn't go at all: the next one goes as usual
+	# (it carries everything this one did).
+	_link.on_failed = func(_to: int, tag: String, err: int):
+		push_warning("Couldn't send %s to the region (error %d)" % [tag if tag != "" else "a message", err])
+		_sent_sig = []
 	var err := _peer.create_client(url)
 	if err != OK:
 		_peer = null
+		_link = null
 	return err
 
 
 func leave() -> void:
 	if _peer:
 		send_town(true, true)
-		_linger(_peer, _connected)
+		_linger(_link, _connected)
 	_peer = null
+	_link = null
 	_connected = false
 	is_joined = false
 	_join_retry = -1.0
@@ -176,6 +207,7 @@ func _version_mismatch(theirs: int) -> void:
 	if reconnecting:
 		_peer.close()
 		_peer = null
+		_link = null
 		_connected = false
 		return
 	leave()
@@ -195,38 +227,59 @@ func _version_mismatch(theirs: int) -> void:
 const BYE_WAIT := 2.5
 
 
-func _linger(peer: WebSocketMultiplayerPeer, said_hello: bool) -> void:
+func _linger(link: NetLink, said_hello: bool) -> void:
 	if not said_hello:
-		peer.close()
+		link.peer.close()
 		return
 	if OS.has_feature("web") or not is_inside_tree():
 		var closer := _Closer.new()
-		closer.peer = peer
+		closer.link = link
 		(get_tree().root if is_inside_tree() else Engine.get_main_loop().root).add_child.call_deferred(closer)
 		return
+	# A big town takes longer to go out than a small one: the wait counts
+	# from when it's all sent.
 	var until := Time.get_ticks_msec() + int(BYE_WAIT * 1000.0)
-	while Time.get_ticks_msec() < until and not _Closer.got_bye(peer):
+	var at_most := Time.get_ticks_msec() + int(BYE_MOST * 1000.0)
+	while Time.get_ticks_msec() < mini(until, at_most) and not _Closer.got_bye(link):
+		if link.waiting_bytes(1) > 0:
+			until = maxi(until, Time.get_ticks_msec() + int(BYE_WAIT * 1000.0))
+		# A region hosted in this same window can't answer while this waits:
+		# let it read the town and say bye.
+		for s in RegionServer.running:
+			if is_instance_valid(s):
+				s.pump()
 		OS.delay_msec(5)
-	peer.close()
+	link.peer.close()
+
+
+## The longest a game waits for its town to go out as it leaves (a big town
+## on a slow link takes a few seconds; the desktop game holds still meanwhile).
+const BYE_MOST := 30.0
 
 
 class _Closer extends Node:
-	var peer: WebSocketMultiplayerPeer
+	var link: NetLink
 	var _left := BYE_WAIT
+	var _most := BYE_MOST
 
 	func _process(delta: float) -> void:
 		_left -= delta
-		if _left <= 0.0 or got_bye(peer):
-			peer.close()
+		_most -= delta
+		if link.waiting_bytes(1) > 0:
+			_left = maxf(_left, BYE_WAIT)
+		if _left <= 0.0 or _most <= 0.0 or got_bye(link):
+			link.peer.close()
 			queue_free()
 
-	## Polls the connection; true once the server said bye (or it closed).
-	static func got_bye(p: WebSocketMultiplayerPeer) -> bool:
-		p.poll()
-		if p.get_connection_status() == MultiplayerPeer.CONNECTION_DISCONNECTED:
+	## Polls the connection and sends what's waiting; true once the server
+	## said bye (or it closed).
+	static func got_bye(l: NetLink) -> bool:
+		l.peer.poll()
+		if l.peer.get_connection_status() == MultiplayerPeer.CONNECTION_DISCONNECTED:
 			return true
-		while p.get_available_packet_count() > 0:
-			var msg = JSON.parse_string(p.get_packet().get_string_from_utf8())
+		l.flush()
+		for got in l.receive():
+			var msg = JSON.parse_string(got[1])
 			if typeof(msg) == TYPE_DICTIONARY and msg.get("t", "") == "bye":
 				return true
 		return false
@@ -254,12 +307,13 @@ func _send_town(sim: CitySim, now: bool, leaving: bool) -> void:
 	_sent_at = t
 	_sent_sig = sig
 	var msg := {"t": "city", "pop": int(sim.stats.population)}
-	# Where the town has built, only when that changed (it can be long).
+	# Where the town has built. Every copy carries it, so a newer copy can
+	# stand in for an older one still waiting to go (a slow upload).
 	var land := region.land_of_sim(my_city)
 	if land.hash() != _land_sent:
 		_land_sent = land.hash()
 		region.take_land(my_city, land)
-		msg.land = land
+	msg.land = land
 	# Neighbors only need a postcard; the whole town (its people, cars and
 	# plans, which take most of the time) goes now and then and on leaving,
 	# for the region to keep. The copy is taken now, as bytes (the town keeps
@@ -271,7 +325,7 @@ func _send_town(sim: CitySim, now: bool, leaving: bool) -> void:
 		_snapshot = {}
 		msg.z = RegionServer.pack_bytes(whole.bytes())
 		msg.leaving = true  # the server says bye once it has it
-		_send(msg)
+		_send(msg, "full")
 		return
 	if _snapshot:
 		return  # the whole town is on its way; it carries all this too
@@ -284,8 +338,8 @@ func _send_town(sim: CitySim, now: bool, leaving: bool) -> void:
 
 
 ## Packs a copy on another core, then sends it (see _finish_packing).
-func _pack_and_send(msg: Dictionary, raw: PackedByteArray) -> void:
-	var job := {"msg": msg}
+func _pack_and_send(msg: Dictionary, raw: PackedByteArray, tag := "card") -> void:
+	var job := {"msg": msg, "tag": tag}
 	job.task = _on_another_core(func():
 		msg.z = RegionServer.pack_bytes(raw)
 		job.bytes = JSON.stringify(msg, "", false, true).to_utf8_buffer())
@@ -302,7 +356,7 @@ func _step_snapshot() -> void:
 	var msg: Dictionary = _snapshot.msg
 	_snapshot = {}
 	if is_joined:
-		_pack_and_send(msg, snap.bytes())
+		_pack_and_send(msg, snap.bytes(), "full")
 
 
 ## Sends a batch of play telemetry (see Telemetry); telemetry_acked says when it's kept.
@@ -393,7 +447,7 @@ func send_chat(text: String) -> void:
 
 ## Where you are pointing, in region coordinates, so others can see it.
 func send_cursor(p: Vector2) -> void:
-	_send({"t": "cursor", "p": [snappedf(p.x, 0.1), snappedf(p.y, 0.1)]})
+	_send({"t": "cursor", "p": [snappedf(p.x, 0.1), snappedf(p.y, 0.1)]}, "cursor")
 
 
 func my_sim() -> CitySim:
@@ -414,7 +468,17 @@ func _process(delta: float) -> void:
 	var t_all := Perf.now()
 	_step_snapshot()
 	_poll(delta)
+	Region.settle_letting_go()
 	Perf.add("net.client", t_all)
+
+
+func _enter_tree() -> void:
+	Region.keepers += 1
+
+
+func _exit_tree() -> void:
+	Region.settle_letting_go(true)
+	Region.keepers -= 1
 
 
 func _poll(delta: float) -> void:
@@ -443,10 +507,17 @@ func _poll(delta: float) -> void:
 		if _neighbor_wait <= 0.0 and not region.stale_ids().is_empty():
 			# Towns never drawn yet come first, and quicker.
 			var next: String = _unseen.pop_front() if not _unseen.is_empty() else region.stale_ids()[0]
-			_neighbor_wait = NEIGHBOR_FIRST if not _unseen.is_empty() else NEIGHBOR_EVERY
 			var t0 := Time.get_ticks_usec()
 			region.load_stale(next)
 			Perf.add("net.neighbor_load", t0)
+			# The next one waits in proportion to what this one cost, so
+			# small towns stay fresh and big ones never take more than a
+			# sliver of the game's time.
+			# A load long enough to be felt (a hitch) never comes more often
+			# than before.
+			var cost := (Time.get_ticks_usec() - t0) / 1e6
+			_neighbor_wait = NEIGHBOR_FIRST if not _unseen.is_empty() \
+				else (NEIGHBOR_EVERY if cost >= NEIGHBOR_HITCH else clampf(cost * NEIGHBOR_COST, NEIGHBOR_MIN, NEIGHBOR_EVERY))
 			var got: Array = _unpacked.get(next, [0, 0.0])
 			_unpacked.erase(next)
 			town_loaded.emit(next, got[0], got[1], (Time.get_ticks_usec() - t0) / 1000.0)
@@ -463,6 +534,8 @@ func _poll(delta: float) -> void:
 	var state := _peer.get_connection_status()
 	if state == MultiplayerPeer.CONNECTION_CONNECTED and not _connected:
 		_connected = true
+		_quiet = 0.0
+		_waiting_host = false
 		_mark("connected")
 		_send({"t": "hello", "v": RegionServer.PROTOCOL, "min": RegionServer.MIN_PROTOCOL, "code": invite_code,
 			"id": player_id, "name": player_name, "password": _password, "new": _new_account, "token": token, "pin": _pin})
@@ -471,6 +544,7 @@ func _poll(delta: float) -> void:
 		var was_joined := is_joined
 		var said_hello := _connected
 		_peer = null
+		_link = null
 		_connected = false
 		is_joined = false
 		if was_joined or reconnecting:
@@ -486,14 +560,29 @@ func _poll(delta: float) -> void:
 		else:
 			failed.emit("The region isn't answering. The host's computer may be off, asleep or restarting: try again in a minute.")
 		return
-	while _peer and _peer.get_available_packet_count() > 0:
+	t = Perf.now()
+	var got := _link.receive()
+	Perf.add("net.parse", t)
+	for g in got:
+		if _peer == null:
+			break  # left or turned away by an earlier message
+		_quiet = 0.0
 		t = Perf.now()
-		var msg = JSON.parse_string(_peer.get_packet().get_string_from_utf8())
+		var msg = JSON.parse_string(g[1])
 		Perf.add("net.parse", t)
 		if typeof(msg) == TYPE_DICTIONARY:
 			t = Perf.now()
 			_handle(msg)
 			Perf.add("net.msg." + str(msg.get("t", "")), t)
+	if _link != null:
+		_link.flush()
+	# Said hello but the region has sent nothing for a long while: say so,
+	# rather than leave the player on the loading screen.
+	if _connected and not is_joined and not reconnecting and not _waiting_host:
+		_quiet += delta
+		if _quiet > JOIN_QUIET:
+			leave()
+			failed.emit("The region didn't send your town. The host's computer may be busy or its connection slow: try again in a minute.")
 
 
 func _handle(msg: Dictionary) -> void:
@@ -507,7 +596,7 @@ func _handle(msg: Dictionary) -> void:
 			is_host = bool(msg.get("host", false))
 			if str(msg.get("token", "")) != "":
 				token = str(msg.token)
-			var d = RegionServer.unpack(str(msg.get("z", "")))
+			var d = _region_of(msg)
 			if typeof(d) != TYPE_DICTIONARY:
 				leave()
 				failed.emit("The region sent something this game can't read. Refresh to update.")
@@ -540,6 +629,8 @@ func _handle(msg: Dictionary) -> void:
 			away = msg.away if msg.get("away") is Dictionary else {}
 			_land_sent = 0
 			_hook_land()
+			# The neighbors come one by one right after (each a picture), and
+			# are unpacked as they come (see _finish_packing).
 			_unseen = region.stale_ids()
 			is_joined = true
 			joined.emit()
@@ -548,6 +639,7 @@ func _handle(msg: Dictionary) -> void:
 			pins_changed.emit()
 		"waiting":
 			token = str(msg.get("token", token))
+			_waiting_host = true
 			waiting.emit(str(msg.get("reason", "")))
 		"telemetry_ok":
 			telemetry_acked.emit(str(msg.get("id", "")))
@@ -579,13 +671,14 @@ func _handle(msg: Dictionary) -> void:
 				# Say the server still holds the old connection: try again soon.
 				_peer.close()
 				_peer = null
+				_link = null
 				_connected = false
 				return
 			leave()
 			failed.emit(reason)
 		"region":
 			var t0 := Time.get_ticks_usec()
-			var d = RegionServer.unpack(str(msg.get("z", "")))
+			var d = _region_of(msg)
 			var t1 := Time.get_ticks_usec()
 			if typeof(d) == TYPE_DICTIONARY:
 				var old_ids := region.cities.keys()
@@ -593,7 +686,10 @@ func _handle(msg: Dictionary) -> void:
 				for id in region.cities:
 					if not id in old_ids:
 						city_added.emit(id)
-				town_loaded.emit("", str(msg.get("z", "")).length(), (t1 - t0) / 1000.0, (Time.get_ticks_usec() - t1) / 1000.0)
+				var size := str(msg.get("z", "")).length()
+				for id in msg.get("towns", {}):
+					size += str(msg.towns[id]).length()
+				town_loaded.emit("", size, (t1 - t0) / 1000.0, (Time.get_ticks_usec() - t1) / 1000.0)
 		"city":
 			# A neighbor's town, fresh from their computer.
 			var id := str(msg.get("id", ""))
@@ -602,16 +698,17 @@ func _handle(msg: Dictionary) -> void:
 				var z := str(msg.get("z", ""))
 				job.task = _on_another_core(func():
 					var t0 := Time.get_ticks_usec()
-					var d = RegionServer.unpack(z)
+					var d = Region.from_picture(RegionServer.unpack(z))
 					job.unpack_ms = (Time.get_ticks_usec() - t0) / 1000.0
 					if typeof(d) == TYPE_DICTIONARY:
 						job.d = d
 						job.look = look_of(d))
 				_incoming.append(job)
 		"apply":
-			# Roads the region built in your town (a new neighbor's county road).
-			for cmd in msg.get("cmds", []):
-				my_sim().apply_now(cmd)
+			# Roads the region handed your town (a new neighbor's county road).
+			if my_sim():
+				for cmd in msg.get("cmds", []):
+					my_sim().apply_now(cmd)
 		"trade":
 			my_sim().trade.receive(my_sim(), msg.get("deals", []))
 		"chat":
@@ -629,13 +726,21 @@ func _handle(msg: Dictionary) -> void:
 func _finish_packing() -> void:
 	while not _outgoing.is_empty() and _done(_outgoing[0].task):
 		var job: Dictionary = _outgoing.pop_front()
-		if _peer != null and _connected:
-			_peer.put_packet(job.bytes)
+		if _link != null and _connected:
+			_link.send(1, job.bytes, job.tag)
 	while not _incoming.is_empty() and _done(_incoming[0].task):
 		var job: Dictionary = _incoming.pop_front()
 		var id: String = job.id
-		if not job.has("d") or not region.cities.has(id):
+		if not region.cities.has(id):
 			continue
+		if not job.has("d"):
+			# A picture that wouldn't unpack: asked for again (a few times),
+			# never left as "awaiting" for good.
+			if region.awaiting.has(id) and int(_picture_tries.get(id, 0)) < PICTURE_TRIES:
+				_picture_tries[id] = int(_picture_tries.get(id, 0)) + 1
+				_send({"t": "picture", "id": id})
+			continue
+		_picture_tries.erase(id)
 		if job.msg.get("land") is Array:
 			region.take_land(id, job.msg.land)
 		var now := Time.get_ticks_msec() / 1000.0
@@ -646,7 +751,12 @@ func _finish_packing() -> void:
 			region.cities[id].sim.stats.population = int(job.msg.get("pop", region.cities[id].sim.stats.population))
 			town_loaded.emit(id, str(job.msg.get("z", "")).length(), job.unpack_ms, 0.0)
 			continue
+		var first := region.awaiting.has(id)
 		region.update_city(id, job.d)
+		if first:
+			# A neighbor just after joining: drawn soon, as the first ones are.
+			_unseen.append(id)
+			_neighbor_wait = minf(_neighbor_wait, NEIGHBOR_FIRST)
 		_look_waiting[id] = job.look
 		_unpacked[id] = [str(job.msg.get("z", "")).length(), job.unpack_ms]
 
@@ -685,6 +795,22 @@ static func look_of(d: Dictionary) -> int:
 	return [d.get("roads", {}), d.get("parcels", {}), looks].hash()
 
 
+## A welcome's or region message's region: the region packed without its
+## towns ("z"), each town packed on its own ("towns"). null if unreadable.
+static func _region_of(msg: Dictionary) -> Variant:
+	var d = RegionServer.unpack(str(msg.get("z", "")))
+	if typeof(d) != TYPE_DICTIONARY or not d.get("cities") is Dictionary:
+		return null
+	var towns = msg.get("towns", {})
+	if towns is Dictionary:
+		for id in towns:
+			var c = Region.from_picture(RegionServer.unpack(str(towns[id])))
+			if not c is Dictionary or not d.cities.has(id):
+				return null
+			d.cities[id]["city"] = c
+	return d
+
+
 ## Loads a fresh copy into the existing city sims, so the views drawing them
 ## keep working. Your own town runs here, so it is never replaced.
 func _replace_region(d: Dictionary) -> void:
@@ -693,21 +819,31 @@ func _replace_region(d: Dictionary) -> void:
 	r.from_dict({"joins": d.get("joins", [])})
 	region.joins = r.joins
 	region.ledger.from_dict(d.get("ledger", {}))
+	region.pending = Region.pending_from(d)
 	for id in d.cities:
 		var c: Dictionary = d.cities[id]
 		if id != my_city and c.get("land") is Array and not c.land.is_empty():
 			region.take_land(id, c.land)
-		if id == my_city or not c.has("city"):
+		if id == my_city:
 			continue
+		var has_data: bool = c.get("city") is Dictionary
 		if region.cities.has(id):
-			region.update_city(id, c.city)
+			if has_data:
+				region.update_city(id, c.city)
 		else:
 			var sim := Region.new_sim()
 			sim.terrain_offset = Vector2(float(c.origin[0]), float(c.origin[1]))
-			sim.from_dict(c.city)
+			if has_data:
+				sim.from_dict(c.city)
+			else:
+				region.awaiting[id] = true  # its picture follows (a welcome)
 			region.cities[id] = {"owner": str(c.owner), "player": str(c.get("player", "")),
 				"name": str(c.name), "origin": Vector2(float(c.origin[0]), float(c.origin[1])),
 				"color": int(c.color), "sim": sim}
+	# Roads handed to your town while you were away (back after a dropped
+	# connection): built now. (Neighbors build their own: Region.pending.)
+	if region.pending.has(my_city) and my_sim():
+		Region.build_missing(my_sim(), region.pending[my_city])
 
 
 ## Your town keeps to its own land and open land, and starts neighborhoods
@@ -721,7 +857,9 @@ func _hook_land() -> void:
 	sim.site_check = func(spot: Vector2) -> String: return region.site_problem(me, spot)
 
 
-func _send(msg: Dictionary) -> void:
-	if _peer == null or not _connected:
+## A tagged message replaces an older one with the same tag that hasn't
+## gone out yet (NetLink.send).
+func _send(msg: Dictionary, tag := "") -> void:
+	if _link == null or not _connected:
 		return
-	_peer.put_packet(JSON.stringify(msg, "", false, true).to_utf8_buffer())
+	_link.send(1, JSON.stringify(msg, "", false, true).to_utf8_buffer(), tag)

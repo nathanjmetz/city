@@ -55,6 +55,17 @@ func _ready() -> void:
 	client.players_changed.connect(_drop_gone_cursors)
 
 
+## True once the neighbors' streets and buildings are drawn (the loading
+## screen waits for this; LoadGate).
+func is_drawn() -> bool:
+	for id in _cities:
+		for k in ["roads", "buildings"]:
+			var v = _cities[id].get(k)
+			if v != null and is_instance_valid(v) and not v.is_drawn():
+				return false
+	return true
+
+
 func _process(delta: float) -> void:
 	for id in _cities:
 		var c: Dictionary = client.region.cities[id]
@@ -97,8 +108,11 @@ func _add_city(id: String) -> void:
 	root.position = _to_world(c.origin)
 	add_child(root)
 	var their_exits: ExitRoads = null
+	var their_roads: RoadView = null
+	var their_buildings: BuildingView = null
 	if id != client.my_city:
 		var roads := RoadView.new()
+		their_roads = roads
 		# Their whole town lands at once: its streets drawn a few a frame.
 		roads.sliced = true
 		root.add_child(roads)
@@ -109,6 +123,7 @@ func _add_city(id: String) -> void:
 			# their lots and drives are laid on it.
 			terrain.add_network("city " + id, c.sim.network, at)
 		var buildings := BuildingView.new()
+		their_buildings = buildings
 		# Their whole town lands at once: drawn a few buildings a frame.
 		buildings.sliced = true
 		root.add_child(buildings)
@@ -130,7 +145,8 @@ func _add_city(id: String) -> void:
 	tag.position = Vector3(0, 70, 0)
 	tag.visible = id != client.my_city
 	root.add_child(tag)
-	_cities[id] = {"root": root, "tag": tag, "exits": their_exits}
+	_cities[id] = {"root": root, "tag": tag, "exits": their_exits,
+		"roads": their_roads, "buildings": their_buildings}
 
 
 ## Where a town's county highways must stop on their way to the horizon:

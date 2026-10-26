@@ -166,9 +166,18 @@ static func track_to(s: Dictionary, c: Vector2i) -> Vector2i:
 ## forestry road guides) follow the contour and swing around wet ground
 ## and big trees, so each one leaves its stand straight past the landing
 ## and bows to one side on its way to the next.
-static func track(s: Dictionary, c: Vector2i) -> PackedVector3Array:
+static func track(s: Dictionary, c: Vector2i, network: RoadNetwork = null) -> PackedVector3Array:
 	var a := pad_center(s, c)
 	var b := pad_center(s, track_to(s, c))
+	# A public road nearer than the next pad: the lease road or skid trail
+	# runs out to it, as real ones do, not across the fields beside it
+	# (Nathan, 2026-10-25: "they tend to totally ignore the current road
+	# systems").
+	if network != null:
+		var near := network.find_segment_near(a, a.distance_to(b) - 1.0)
+		if not near.is_empty():
+			var q: Vector3 = near.point
+			b = Vector3(q.x, 0.0, q.z)
 	if s.kind != "forest":
 		return PackedVector3Array([a, b])
 	var rng := RandomNumberGenerator.new()

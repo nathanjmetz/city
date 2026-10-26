@@ -50,7 +50,18 @@ live_sha() {
 		| grep -m1 '"head_sha"' | sed 's/.*"head_sha": *"\([0-9a-f]*\)".*/\1/'
 }
 
+## A dated copy of the region before each start (so before every update),
+## keeping the newest 20: a bad version can never cost the family their towns.
+## Restore by stopping the server and copying one back over $DATA.
+backup_region() {
+	[ -f "$DATA" ] || return 0
+	mkdir -p "$STATE/backups"
+	cp -p "$DATA" "$STATE/backups/region-$(date +%Y%m%d-%H%M%S)-$(git -C "$REPO" rev-parse --short HEAD).json"
+	ls -1t "$STATE/backups"/region-*.json 2>/dev/null | tail -n +21 | while read -r old; do rm -f "$old"; done
+}
+
 start_server() {
+	backup_region
 	log "Starting the region server on $(git -C "$REPO" rev-parse --short HEAD)"
 	(cd "$REPO" && exec "$GODOT" --headless -s scripts/net/server_main.gd -- \
 		--port "$PORT" --host "$HOST" --data "$DATA") >>"$STATE/server.log" 2>&1 &

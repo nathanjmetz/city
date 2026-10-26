@@ -24,7 +24,7 @@ Brawn wants two games built from one codebase:
 
 ## Where the code lives
 
-- **Quality tiers:** `scripts/shell/quality.gd` (class `GraphicsQuality`, autoload `Quality`). It has the tiers Low, Medium, High, Ultra and Cinematic (`TIERS`), the governor, and `BROWSER_TOP`. Views read the static `GraphicsQuality.current` and `.detail`; class scripts must not name autoloads.
+- **Quality tiers:** `scripts/shell/quality.gd` (class `GraphicsQuality`, autoload `Quality`). It has the tiers Low, Medium, High, Ultra and Cinematic (`TIERS`), each tier's detail budget (`BUDGETS`: how far and how many cars, walkers and trees), each machine's frame and memory budget (`MACHINES`: browser, small, shared, full), the governor, and `BROWSER_TOP`. Views read their share with `GraphicsQuality.knob("name")`, and count caps with `fit_reach()`; class scripts must not name autoloads. `tools/scale/quality_lab.gd` measures the governor in a real window (`--quality auto` leaves the player's saved setting alone and logs every 3-second window).
 - **Self-update and packs:** `scripts/shell/updater.gd`, `tools/stamp_build.py`, and `.github/workflows/desktop.yml`.
 - **Terrain:** `scripts/terrain/terrain.gd` holds the real data (`terrain/grant_in/`). `scripts/terrain/terrain_view.gd` streams chunks by level of detail (`STEPS`/`REACH`) and draws the far sheet (`FAR_REACH`) and the ground shader.
 - **Backdrop towns and farmsteads:** `scripts/terrain/backdrop_view.gd` and `farmstead_view.gd`.

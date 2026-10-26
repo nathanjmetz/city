@@ -104,7 +104,7 @@ func _settle_month() -> void:
 	var sims := {my_city: sim}
 	var links := region.trade_links()
 	for other in links.get(my_city, {}):
-		if region.cities.has(other) and not region.stale_ids().has(other):
+		if region.cities.has(other) and not region.stale_ids().has(other) and not region.awaiting.has(other):
 			sims[other] = region.cities[other].sim
 	Trade.settle(sims, links)
 	for d in sim.trade.last_deals:

@@ -15,6 +15,11 @@ var sim: CitySim
 ## running on past the town to the horizon).
 var all_rural := false
 var _rural := {}  # segment id -> true
+## Country highways drawn as curbed town streets where the town lines them
+## (segment id -> true), and the same as last worked out.
+var _urban := {}
+var _urban_next := {}
+const URBAN_TYPES := [RoadStyle.Type.STATE_HWY, RoadStyle.Type.COUNTY]
 ## Streets that have been town streets, so they keep their curbs while lots
 ## are replanned around them (segment id -> true).
 var _town_ever := {}
@@ -32,15 +37,25 @@ var plans := {}
 var plans_version := 0
 var _road_grid := {}  # StreetLights._pieces, for keeping poles off other roads
 var _road_grid_version := -1
+var _junction_grid := {}  # coarse cell -> junction centres, for keeping poles back from them
 var _later := {}  # segment id -> what to redraw it from, a few each frame
 var _seg_mi := {}  # segment id -> its street
-var _poles_later := {}  # segment id -> [key, pts, offset, drives near], drawn when a rebuild runs out of time
+var _poles_later := {}  # pole run id -> [key, run], drawn when a rebuild runs out of time
+var _drops: MeshInstance3D
+## Streets and avenues drawn as country roads changed (StreetLights leaves
+## them unlit, as the county leaves its roads).
+signal country_changed(segs: Dictionary)
 var _corners_later := {}  # node -> [key, its plan], drawn when a rebuild runs out of time
 var _merged := []  # the merged pole and corner meshes, redone once the later ones are drawn
 var _gen := 0  # which rebuild is current; a sliced one left behind stops
 var _regrade_gen := -1  # the rebuild a regrade is waiting on, or -1
 var _building := false  # a sliced rebuild is part way through
 const REMESH_MS := 8.0  # redraw changed streets for this long, then finish them later
+
+
+static func _remesh_ms() -> float:
+	return LoadGate.ms(REMESH_MS, 120.0)
+
 ## A neighbor's whole town lands at once: its streets are drawn a few each
 ## frame instead of in one long freeze (RegionView).
 var sliced := false
@@ -54,6 +69,8 @@ var _mats := {
 	"yellow": Surfaces.paint(RoadStyle.MARKING_YELLOW),
 	"white": Surfaces.paint(RoadStyle.MARKING_WHITE),
 	"gravel": Surfaces.gravel(),
+	"gravel road": Surfaces.gravel(),  # a junction where only gravel and dirt roads meet
+	"shoulder": Surfaces.shoulder(),
 	"bus": Surfaces.paint(Color(0.56, 0.17, 0.14)),  # red transit lane
 	"pole": RoadStyle.material(Color(0.33, 0.27, 0.21)),
 	"wire": RoadStyle.material(Color(0.12, 0.12, 0.12)),
@@ -64,6 +81,7 @@ var _mats := {
 	"apron": RoadStyle.material(Color(0.5, 0.44, 0.38)),  # tinted, textured-look concrete
 	"tunnel": RoadStyle.material(Color(0.1, 0.1, 0.12, 0.45), true),
 	"domes": Surfaces.concrete(Junction.DOMES_COLOR),
+	"barricade": _vertex_colour(),
 }
 
 
@@ -81,9 +99,19 @@ func setup(net: RoadNetwork, s: CitySim = null) -> void:
 	rebuild()
 
 
+## True once every street, pole and corner is drawn and no restyle waits
+## (the loading screen waits for this; LoadGate).
+func is_drawn() -> bool:
+	return not _building and _recheck < 0.0 and _later.is_empty() and _poles_later.is_empty() \
+		and _corners_later.is_empty()
+
+
 ## Rebuilds when a road has turned from country road to town street or back
 ## (checked at most once a second while the town grows).
 func _process(delta: float) -> void:
+	# Behind the loading screen a pending look-over runs now, not in a second.
+	if LoadGate.loading and _recheck > 0.0:
+		_recheck = 0.0
 	if not _building and not (_later.is_empty() and _poles_later.is_empty() and _corners_later.is_empty()):
 		_remesh_later()
 	if _recheck < 0.0:
@@ -93,14 +121,29 @@ func _process(delta: float) -> void:
 		return
 	_recheck = -1.0
 	# A farm or company that changed only matters if its drive moved.
-	if (_redraw and _drives() != _drawn_drives) or _rural_segments() != _rural:
+	if (_redraw and _drives() != _drawn_drives) or _rural_segments() != _rural or _urban_next != _urban:
 		rebuild()
+	else:
+		_rebuild_drops()  # houses built or gone along a pole line
 	_redraw = false
 
 
+## True when a point is within a town cell or next to one.
+static func _near_town(town: Dictionary, p: Vector3, cell: float) -> bool:
+	var c := Vector2i(floori(p.x / cell), floori(p.z / cell))
+	for dx in [-1, 0, 1]:
+		for dz in [-1, 0, 1]:
+			if town.has(c + Vector2i(dx, dz)):
+				return true
+	return false
+
+
 ## Streets and avenues with no zoned lot, building or service near them.
+## Also works out which country highways the town has grown along
+## (_urban_next).
 func _rural_segments() -> Dictionary:
 	var out := {}
+	_urban_next = {}
 	if all_rural:
 		for id in network.segments:
 			out[id] = true
@@ -119,18 +162,27 @@ func _rural_segments() -> Dictionary:
 		mark.call(sim.services.buildings[id].pos)
 	var in_town := {}
 	var eligible := []
+	var urban := {}
 	for id in network.segments:
 		var type: int = network.segments[id].type
+		if type in URBAN_TYPES:
+			# The state highway or a county road where the town has grown along
+			# most of it becomes a curbed town street there (SR 18 through
+			# Marion): curb and gutter, sidewalks, parking where its shoulders were.
+			var pts := network.sample_segment(id)
+			var hits := 0
+			for p in pts:
+				if _near_town(town, p, cell):
+					hits += 1
+			if hits * 2 >= pts.size() and pts[pts.size() / 2].y < 1.0:
+				urban[id] = true
+			continue
 		if type != RoadStyle.Type.STREET and type != RoadStyle.Type.AVENUE:
 			continue
 		var near := false
 		for p in network.sample_segment(id):
-			var c := Vector2i(floori(p.x / cell), floori(p.z / cell))
-			for dx in [-1, 0, 1]:
-				for dz in [-1, 0, 1]:
-					if town.has(c + Vector2i(dx, dz)):
-						near = true
-			if near:
+			if _near_town(town, p, cell):
+				near = true
 				break
 		if near:
 			in_town[id] = true
@@ -153,6 +205,7 @@ func _rural_segments() -> Dictionary:
 		for i in range(first + 1, last):
 			in_town[run[i]] = true
 	_town_ever = in_town
+	_urban_next = urban
 	for id in eligible:
 		if not in_town.has(id):
 			out[id] = true
@@ -261,6 +314,17 @@ func _after_regrade() -> void:
 	_regrade_gen = -1
 
 
+## True where two roads of any kinds meet end to end, nearly in line (a
+## street running on as a gravel road): each simply ends at the node, with
+## no round pad sticking out past the narrower one.
+func _end_to_end(node: int) -> bool:
+	var segs := network.segments_at(node)
+	if segs.size() != 2:
+		return false
+	var arms := Junction.arms_at(network, node)
+	return (arms[0].u as Vector2).dot(arms[1].u) < -0.9
+
+
 ## True where just two pieces of the same kind of road meet nearly in line,
 ## so the road runs on through the node with nothing to fill.
 func _straight_on(node: int) -> bool:
@@ -299,7 +363,11 @@ func _rebuild_all(gen: int) -> void:
 		add_child(_trees)
 	var median_trees := []
 	var piers := []
+	var was_rural := _rural
 	_rural = _rural_segments()
+	_urban = _urban_next
+	if _rural != was_rural:
+		country_changed.emit(_rural)
 	_redraw = false
 	var wood := []
 	var wire := []
@@ -318,7 +386,7 @@ func _rebuild_all(gen: int) -> void:
 			for side in g[seg]:
 				gaps[seg][side] = g[seg][side]
 	# Town street junctions get real corners; their roads stop short of them.
-	var junctions := Junction.plan(network, _rural)
+	var junctions := Junction.plan(network, _rural, _urban)
 	if junctions != plans:
 		plans = junctions
 		plans_version += 1
@@ -331,8 +399,9 @@ func _rebuild_all(gen: int) -> void:
 	_merged.clear()
 	var pole_cache := {}
 	var bridge_cache := {}
+	var pole_segs := {}  # country roads at grade, for their pole lines
 	for id in network.segments.keys():
-		if sliced and (Perf.now() - t0) / 1000.0 > REMESH_MS and is_inside_tree():
+		if sliced and (Perf.now() - t0) / 1000.0 > _remesh_ms() and is_inside_tree():
 			Perf.add(_perf_key(), slice)
 			Terrain.shift = Vector2.ZERO
 			await get_tree().process_frame
@@ -349,6 +418,13 @@ func _rebuild_all(gen: int) -> void:
 		var ja := Junction.trim(junctions, sg.a, id)
 		var jb := Junction.trim(junctions, sg.b, id)
 		var line_cuts := Vector2(JunctionMarks.line_cut(junctions, sg.a, id), JunctionMarks.line_cut(junctions, sg.b, id))
+		# Where side roads come in at a country junction, this road's edge
+		# line and shoulder stop: [side, metres, at the start].
+		var breaks := []
+		for end in [[sg.a, true], [sg.b, false]]:
+			for b in junctions.get(end[0], {}).get("breaks", {}).get(id, []):
+				# The junction's sides look out from the node; this road's run a to b.
+				breaks.append([b[0] if end[1] else -b[0], b[1], end[1]])
 		if ja > 0.0 or jb > 0.0:
 			pts = RoadMesh._between(pts, ja, RoadNetwork.polyline_length(pts) - jb)
 		var seg_gaps: Dictionary = gaps.get(id, {})
@@ -381,44 +457,30 @@ func _rebuild_all(gen: int) -> void:
 			var rural: bool = (_rural.has(id) or spec.get("rural", false)) and pts[pts.size() / 2].y < 1.0
 			# A road that hasn't changed keeps its mesh (one edit doesn't redo
 			# the whole town's streets).
-			var key := [pts, type, rural, seg_gaps, Terrain.shift, line_cuts]
+			var urban := _urban.has(id)
+			if urban:
+				rural = false
+			var key := [pts, type, rural, seg_gaps, Terrain.shift, line_cuts, breaks, urban]
 			var cached: Array = _street_cache.get(id, [])
 			if cached.is_empty() or cached[0] != key:
-				if (sliced or not cached.is_empty()) and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+				if (sliced or not cached.is_empty()) and (Perf.now() - t0) / 1000.0 > _remesh_ms():
 					# When the town edge moves, many streets turn from country
 					# road to town street at once (and their corners trim
 					# them); a street keeps its old look a few frames while
 					# they're redrawn. A new street is drawn at once, except a
 					# neighbor's, which just appears a few frames late.
-					_later[id] = [key, pts, type, seg_gaps, rural, line_cuts]
+					_later[id] = [key, pts, type, seg_gaps, rural, line_cuts, breaks, urban]
 				else:
-					cached = [key, Terrain.drape(RoadMesh.street(pts, type, _mats, seg_gaps, rural, line_cuts))]
+					cached = [key, Terrain.drape(RoadMesh.street(pts, type, _mats, seg_gaps, rural, line_cuts, breaks,
+						urban))]
 			if not cached.is_empty():
 				street_cache[id] = cached
 				mi.mesh = cached[1]
 			_seg_mi[id] = mi
-			if rural:
-				# Poles run down one side of a country road, and down the
-				# alley behind the homes in town.
-				var side := 1.0 if hash(id) % 2 == 0 else -1.0
-				var off: float = side * (RoadStyle.half_width(type) + spec.get("verge", 4.0))
-				var near := _drives_near(drives, pts)
-				var pkey := [pts, off, near, Terrain.shift]
-				var poles: Array = _pole_cache.get(id, [])
-				if (poles.is_empty() or poles[0] != pkey) and (Perf.now() - t0) / 1000.0 > REMESH_MS:
-					# Out of time: drawn a few frames later, the old ones up meanwhile.
-					_poles_later[id] = [pkey, pts, off, near]
-				elif poles.is_empty() or poles[0] != pkey:
-					var w := SurfaceTool.new()
-					var r := SurfaceTool.new()
-					w.begin(Mesh.PRIMITIVE_TRIANGLES)
-					r.begin(Mesh.PRIMITIVE_TRIANGLES)
-					RoadMesh.add_poles(w, r, pts, off, near, _pole_blocked(id))
-					poles = [pkey, Terrain.drape(w.commit(), true), Terrain.drape(r.commit(), true)]
-				if not poles.is_empty():
-					pole_cache[id] = poles
-					wood.append(poles[1])
-					wire.append(poles[2])
+			if rural or urban:
+				# A pole line runs down one side of a country road (on into
+				# town along the highway), and down the alley behind the homes.
+				pole_segs[id] = true
 			if spec.get("trees", false):
 				median_trees.append_array(_median_trees(id, pts, type))
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -447,6 +509,19 @@ func _rebuild_all(gen: int) -> void:
 			mi.material_override = {"white": _mats.white, "barrier": _mats.curb}.get(key, _mats.asphalt)
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(mi)
+	# Pole lines, one down each country road's whole run.
+	for run in _pole_runs(pole_segs):
+		var pkey := _pole_key(run, drives)
+		var poles: Array = _pole_cache.get(run.id, [])
+		if (poles.is_empty() or poles[0] != pkey) and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+			# Out of time: drawn a few frames later, the old ones up meanwhile.
+			_poles_later[run.id] = [pkey, run]
+		elif poles.is_empty() or poles[0] != pkey:
+			poles = _draw_pole_run(pkey, run)
+		if not poles.is_empty():
+			pole_cache[run.id] = poles
+			wood.append(poles[1])
+			wire.append(poles[2])
 	_add_poles(wood, wire)
 	if not piers.is_empty():
 		var mi := MeshInstance3D.new()
@@ -461,6 +536,8 @@ func _rebuild_all(gen: int) -> void:
 	# gravel roads or alleys meet, the junction is gravel or concrete too.
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var low := SurfaceTool.new()  # under country roads' own pavement, so their lines show
+	low.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var plain := {}  # surface -> SurfaceTool
 	var ring_nodes := {}
 	for id in network.segments:
@@ -473,7 +550,7 @@ func _rebuild_all(gen: int) -> void:
 			continue  # rings meet their roads without a pad over the island
 		if network.segments_at(id).size() == 1:
 			continue  # a dead end stops square, not in a round pad (Brawn 2026-10-24)
-		if _straight_on(id):
+		if _straight_on(id) or _end_to_end(id):
 			continue  # one road running straight on: no pad at the joint (Brawn 2026-10-24)
 		var r := RoadStyle.half_width(network.widest_at(id))
 		var surface := _junction_surface(id)
@@ -484,6 +561,11 @@ func _rebuild_all(gen: int) -> void:
 			RoadMesh.add_disc(plain[surface], network.nodes[id], r, RoadStyle.Y_JUNCTION, 24,
 					Vector2(0.72, 0.0) if surface == "dirt" else Vector2.ZERO)
 			continue
+		if network.segments_at(id).size() == 2 and _country_node(id):
+			# Two country roads meeting nearly in line: the disc only fills the
+			# wedge between their ends, under their lines (no round pad).
+			RoadMesh.add_disc(low, network.nodes[id], r, Junction.Y_COUNTRY, 24)
+			continue
 		RoadMesh.add_disc(st, network.nodes[id], r, RoadStyle.Y_JUNCTION)
 	for surface in plain:
 		var mi := MeshInstance3D.new()
@@ -492,18 +574,19 @@ func _rebuild_all(gen: int) -> void:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mi)
 	if not network.nodes.is_empty():
-		var mi := MeshInstance3D.new()
-		mi.mesh = Terrain.drape(st.commit())
-		mi.material_override = _mats.asphalt
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(mi)
+		for disc in [st, low]:
+			var mi := MeshInstance3D.new()
+			mi.mesh = Terrain.drape(disc.commit())
+			mi.material_override = _mats.asphalt
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(mi)
 	# Each corner keeps its mesh until its own plan changes.
 	var junction_cache := {}
-	var corners := {"asphalt": [], "curb": [], "walk": [], "domes": []}
+	var corners := _corner_lists()
 	for node in junctions:
 		var jkey := [junctions[node], Terrain.shift]
 		var drawn: Array = _junction_cache.get(node, [])
-		if (drawn.is_empty() or drawn[0] != jkey) and (Perf.now() - t0) / 1000.0 > REMESH_MS:
+		if (drawn.is_empty() or drawn[0] != jkey) and (Perf.now() - t0) / 1000.0 > _remesh_ms():
 			# Out of time: drawn a few frames later, the old corner up meanwhile.
 			_corners_later[node] = [jkey, junctions[node]]
 			if drawn.is_empty():
@@ -518,6 +601,8 @@ func _rebuild_all(gen: int) -> void:
 		_add_corners(corners)
 
 	_build_roundabouts(ring_nodes)
+	_build_dead_ends()
+	_rebuild_drops()
 	for child in old:
 		# A sliced rebuild spans frames, and a piece may have gone meanwhile
 		# (merged poles redone): freeing it again crashes the game.
@@ -528,27 +613,267 @@ func _rebuild_all(gen: int) -> void:
 	Terrain.shift = Vector2.ZERO
 
 
+## The parts a junction's corner is drawn in (country corners add gravel
+## and paint), each an empty list of meshes.
+static func _corner_lists() -> Dictionary:
+	return {"asphalt": [], "curb": [], "walk": [], "domes": [], "shoulder": [], "white": [], "yellow": [],
+		"gravel road": []}
+
+
 ## One junction's corner pieces: {part: mesh}.
 func _corner_meshes(node: int, plan) -> Dictionary:
-	var parts := {"asphalt": SurfaceTool.new(), "curb": SurfaceTool.new(), "walk": SurfaceTool.new(),
-		"domes": SurfaceTool.new()}
-	for p in parts.values():
-		p.begin(Mesh.PRIMITIVE_TRIANGLES)
-	Junction.draw({node: plan}, parts.asphalt, parts.curb, parts.walk, parts.domes)
+	var parts := {}
+	for key in _corner_lists():
+		parts[key] = SurfaceTool.new()
+		parts[key].begin(Mesh.PRIMITIVE_TRIANGLES)
+	Junction.draw({node: plan}, parts.asphalt, parts.curb, parts.walk, parts.domes,
+		{"shoulder": parts.shoulder, "white": parts.white, "yellow": parts.yellow, "gravel road": parts["gravel road"]})
 	var meshes := {}
 	for key in parts:
 		meshes[key] = Terrain.drape(parts[key].commit(), false, 6.0)
 	return meshes
 
 
-## For a road's utility poles: true where one would stand on another road
-## (its pavement and the curb or shoulder beside it).
-func _pole_blocked(own: int) -> Callable:
+## True when every road at a node is drawn as a country road.
+func _country_node(node: int) -> bool:
+	for id in network.segments_at(node):
+		var spec: Dictionary = RoadStyle.TYPES[network.segments[id].type]
+		if spec.oneway or not (spec.get("rural", false) or not spec.get("walk", true) or _rural.has(id)):
+			return false
+	return true
+
+
+## For a pole line: true where a pole would stand on another road (its
+## pavement and shoulder) or near a junction, where the corners flare out.
+func _pole_blocked(own: Array) -> Callable:
 	if _road_grid.is_empty() or _road_grid_version != _gen:
 		_road_grid = StreetLights._pieces(network)
 		_road_grid_version = _gen
+		_junction_grid.clear()
+		for n in network.nodes:
+			var segs := network.segments_at(n)
+			if segs.size() >= 3 or (segs.size() == 2 and not _straight_on(n)):
+				var p: Vector3 = network.nodes[n]
+				var c := Vector2i(floori(p.x / StreetLights.PIECE_CELL), floori(p.z / StreetLights.PIECE_CELL))
+				_junction_grid[c] = _junction_grid.get(c, []) + [Vector2(p.x, p.z)]
 	var grid := _road_grid
-	return func(p: Vector3) -> bool: return StreetLights._on_other_road(grid, p, own, 2.5)
+	var nodes := _junction_grid
+	var mine := {}
+	for s in own:
+		mine[s] = true
+	return func(p: Vector3) -> bool:
+		var q := Vector2(p.x, p.z)
+		var c := Vector2i(floori(q.x / StreetLights.PIECE_CELL), floori(q.y / StreetLights.PIECE_CELL))
+		for dx in [-1, 0, 1]:
+			for dz in [-1, 0, 1]:
+				for at in nodes.get(c + Vector2i(dx, dz), []):
+					if q.distance_to(at) < PoleLine.CLEAR:
+						return true
+		for piece in grid.get(c, []):
+			if mine.has(piece[2]):
+				continue
+			if Geometry2D.get_closest_point_to_segment(q, piece[0], piece[1]).distance_to(q) < piece[3] + 3.0:
+				return true
+		return false
+
+
+## Country roads at grade as runs for their pole lines: segments joined
+## where one carries nearly straight on into another, each in order along
+## the run. Each: {"id" (its first segment), "ids", "pts" (the whole line,
+## points close enough to follow the land), "ends" (Vector2: how far in
+## from each end the poles start)}.
+func _pole_runs(segs: Dictionary) -> Array:
+	var samples := {}
+	for id in segs:
+		samples[id] = network.sample_segment(id)
+	var next := {}  # segment -> [segments it carries straight on into]
+	var nodes := {}
+	for id in segs:
+		nodes[network.segments[id].a] = true
+		nodes[network.segments[id].b] = true
+	var node_ids := nodes.keys()
+	node_ids.sort()
+	for n in node_ids:
+		var here := []
+		for id in network.segments_at(n):
+			if segs.has(id):
+				here.append([id, _leaving(samples[id], network.segments[id].a == n)])
+		var pairs := []
+		for i in here.size():
+			for k in range(i + 1, here.size()):
+				var d: float = (here[i][1] as Vector2).dot(here[k][1])
+				if d < -0.9:
+					pairs.append([d, here[i][0], here[k][0]])
+		pairs.sort()
+		var used := {}
+		for p in pairs:
+			if used.has(p[1]) or used.has(p[2]) or p[1] == p[2]:
+				continue
+			used[p[1]] = true
+			used[p[2]] = true
+			next[p[1]] = next.get(p[1], []) + [p[2]]
+			next[p[2]] = next.get(p[2], []) + [p[1]]
+	var ids := segs.keys()
+	ids.sort()
+	var runs := []
+	var seen := {}
+	# Open runs from an end first, then any loop that's left.
+	for pass_open in [true, false]:
+		for id in ids:
+			if seen.has(id) or (pass_open and next.get(id, []).size() > 1):
+				continue
+			var run := []
+			var cur: int = id
+			var prev := -1
+			while cur != -1 and not seen.has(cur):
+				seen[cur] = true
+				run.append(cur)
+				var go := -1
+				for o in next.get(cur, []):
+					if o != prev and not seen.has(o):
+						go = o
+				prev = cur
+				cur = go
+			runs.append(_run_line(run, samples))
+	return runs
+
+
+## The direction a sampled segment leaves its node at (`from_a`: its a end).
+static func _leaving(pts: PackedVector3Array, from_a: bool) -> Vector2:
+	var p0 := pts[0] if from_a else pts[pts.size() - 1]
+	var p1 := pts[mini(2, pts.size() - 1)] if from_a else pts[maxi(pts.size() - 3, 0)]
+	return Vector2(p1.x - p0.x, p1.z - p0.z).normalized()
+
+
+## One run's whole line, its segments joined end to end.
+func _run_line(run: Array, samples: Dictionary) -> Dictionary:
+	var pts := PackedVector3Array()
+	var start := -1
+	var end := -1
+	for i in run.size():
+		var sg: Dictionary = network.segments[run[i]]
+		var p: PackedVector3Array = samples[run[i]].duplicate()
+		var forward := true
+		if i == 0:
+			if run.size() > 1:
+				var nx: Dictionary = network.segments[run[1]]
+				forward = sg.b == nx.a or sg.b == nx.b
+		else:
+			forward = sg.a == end
+		if not forward:
+			p.reverse()
+		if i == 0:
+			start = sg.a if forward else sg.b
+		end = sg.b if forward else sg.a
+		if not pts.is_empty():
+			p = p.slice(1)
+		pts.append_array(p)
+	var ends := Vector2(_end_margin(start), _end_margin(end))
+	return {"id": run[0], "ids": run, "pts": Terrain.densify(pts, 6.0), "ends": ends}
+
+
+## How far in from a run's end node its poles start: a little way at a dead
+## end; at a junction, the poles keep clear of it anyway (_pole_blocked).
+func _end_margin(node: int) -> float:
+	return 6.0 if network.segments_at(node).size() <= 1 else 0.0
+
+
+## What a run's poles are drawn from (they are redrawn when it changes).
+func _pole_key(run: Dictionary, drives: Array) -> Array:
+	var pts: PackedVector3Array = run.pts
+	var chord := pts[pts.size() - 1] - pts[0]
+	chord.y = 0.0
+	if chord.length() < 5.0:
+		chord = pts[mini(1, pts.size() - 1)] - pts[0]
+		chord.y = 0.0
+	var dir := chord.normalized() if chord.length() > 0.01 else Vector3.RIGHT
+	var off := 0.0
+	var three := false
+	for s in run.ids:
+		var type: int = network.segments[s].type
+		# In the grass strip between curb and sidewalk where the road is a
+		# town street, past the shoulder in the country.
+		var back: float = RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5 if _urban.has(s) \
+			else RoadStyle.TYPES[type].get("verge", 4.0)
+		off = maxf(off, RoadStyle.half_width(type) + back)
+		three = three or PoleLine.three_phase(type)
+	return [pts, run.ids, PoleLine.side_for(dir) * off, run.ends, _drives_near(drives, pts), Terrain.shift, three,
+		PoleLine.top_for(dir)]
+
+
+## Draws one run's poles and wires: [key, wood, wire, the poles].
+func _draw_pole_run(pkey: Array, run: Dictionary) -> Array:
+	var w := SurfaceTool.new()
+	var r := SurfaceTool.new()
+	w.begin(Mesh.PRIMITIVE_TRIANGLES)
+	r.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var poles: Array = PoleLine.place(run.pts, pkey[2], pkey[3], pkey[4], _pole_blocked(run.ids))
+	PoleLine.draw(w, r, poles, pkey[6], pkey[7])
+	return [pkey, Terrain.drape(w.commit(), true), Terrain.drape(r.commit(), true), poles]
+
+
+## Service drops: each home or business on a road with a pole line gets a
+## wire from the nearest pole on it to its front wall, under a transformer
+## can. Redone when buildings come and go.
+func _rebuild_drops() -> void:
+	if _drops != null and is_instance_valid(_drops):
+		_drops.queue_free()
+	_drops = null
+	if sim == null or _pole_cache.is_empty():
+		return
+	Terrain.shift = Terrain.shift_for(self)
+	# Every pole, in coarse cells: [pole, its line's key].
+	var cell := 40.0
+	var grid := {}
+	for id in _pole_cache:
+		var line: Array = _pole_cache[id]
+		if line.size() < 4:
+			continue
+		for pole in line[3]:
+			var b: Vector3 = pole[0]
+			var c := Vector2i(floori(b.x / cell), floori(b.z / cell))
+			grid[c] = grid.get(c, []) + [[pole, line[0]]]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var any := false
+	var cans := {}
+	var keys := sim.buildings.keys()
+	keys.sort()
+	for key in keys:
+		var lot: Dictionary = sim.lots.get(key, {})
+		if lot.is_empty():
+			continue
+		# The nearest pole (a drop runs at most about 100 ft).
+		var house: Vector3 = lot.front + lot.normal * PoleLine.HOUSE_SETBACK
+		var best := []
+		var best_d := PoleLine.DROP_REACH
+		var c0 := Vector2i(floori(house.x / cell), floori(house.z / cell))
+		for dx in [-1, 0, 1]:
+			for dz in [-1, 0, 1]:
+				for entry in grid.get(c0 + Vector2i(dx, dz), []):
+					var b: Vector3 = entry[0][0]
+					var d := Vector2(b.x - house.x, b.z - house.z).length()
+					if d < best_d:
+						best_d = d
+						best = entry
+		if best.is_empty():
+			continue
+		var pole: Array = best[0]
+		var pkey: Array = best[1]
+		var neutral: Vector3 = PoleLine.attach(pole, pkey[6], pkey[7]).back()
+		var from := Vector3(neutral.x, neutral.y + Terrain.ground_y(neutral.x, neutral.z), neutral.z)
+		var to := Vector3(house.x, Terrain.ground_y(house.x, house.z) + PoleLine.HOUSE_ATTACH, house.z)
+		var at := Vector2i(roundi(pole[0].x), roundi(pole[0].z))
+		PoleLine.drop(st, from, to, not cans.has(at))
+		cans[at] = true
+		any = true
+	Terrain.shift = Vector2.ZERO
+	if not any:
+		return
+	_drops = MeshInstance3D.new()
+	_drops.mesh = st.commit()
+	_drops.material_override = _mats.wire
+	add_child(_drops)
 
 
 func _add_poles(wood: Array, wire: Array) -> void:
@@ -583,26 +908,21 @@ func _remesh_later() -> void:
 		var mi: MeshInstance3D = _seg_mi.get(id)
 		if mi == null or not is_instance_valid(mi):
 			continue
-		var mesh := Terrain.drape(RoadMesh.street(job[1], job[2], _mats, job[3], job[4], job[5]))
+		var mesh := Terrain.drape(RoadMesh.street(job[1], job[2], _mats, job[3], job[4], job[5], job[6], job[7]))
 		_street_cache[id] = [job[0], mesh]
 		mi.mesh = mesh
-		if (Perf.now() - t) / 1000.0 > REMESH_MS:
+		if (Perf.now() - t) / 1000.0 > _remesh_ms():
 			break
 	for id in _poles_later.keys():
-		if (Perf.now() - t) / 1000.0 > REMESH_MS:
+		if (Perf.now() - t) / 1000.0 > _remesh_ms():
 			break
 		var job: Array = _poles_later[id]
 		_poles_later.erase(id)
-		var w := SurfaceTool.new()
-		var r := SurfaceTool.new()
-		w.begin(Mesh.PRIMITIVE_TRIANGLES)
-		r.begin(Mesh.PRIMITIVE_TRIANGLES)
-		RoadMesh.add_poles(w, r, job[1], job[2], job[3], _pole_blocked(id))
-		_pole_cache[id] = [job[0], Terrain.drape(w.commit(), true), Terrain.drape(r.commit(), true)]
+		_pole_cache[id] = _draw_pole_run(job[0], job[1])
 		if _poles_later.is_empty() and _corners_later.is_empty():
 			_remerge()
 	for node in _corners_later.keys():
-		if (Perf.now() - t) / 1000.0 > REMESH_MS:
+		if (Perf.now() - t) / 1000.0 > _remesh_ms():
 			break
 		var job: Array = _corners_later[node]
 		_corners_later.erase(node)
@@ -620,6 +940,7 @@ func _perf_key() -> String:
 
 ## Poles and corners all drawn: merge them again with the late ones in.
 func _remerge() -> void:
+	_rebuild_drops()
 	for mi in _merged:
 		if is_instance_valid(mi):
 			mi.queue_free()
@@ -631,7 +952,7 @@ func _remerge() -> void:
 		wire.append(_pole_cache[id][2])
 	_add_poles(wood, wire)
 	if not _junction_cache.is_empty():
-		var corners := {"asphalt": [], "curb": [], "walk": [], "domes": []}
+		var corners := _corner_lists()
 		for node in _junction_cache:
 			for key in corners:
 				corners[key].append(_junction_cache[node][1][key])
@@ -701,6 +1022,77 @@ func _median_trees(id: int, pts: PackedVector3Array, type: int) -> Array:
 		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * size)
 		out.append([Transform3D(basis, Terrain.lift(Vector3(p.x, 0.0, p.z))), sp, tint])
 	return out
+
+
+## Post, white rail and orange rail of a Type III barricade.
+const BARRICADE := [Color(0.52, 0.53, 0.52), Color(0.9, 0.9, 0.88), Color(0.93, 0.42, 0.08)]
+
+
+static func _vertex_colour() -> StandardMaterial3D:
+	var m := RoadStyle.material(Color.WHITE)
+	m.vertex_color_use_as_albedo = true
+	m.vertex_color_is_srgb = true
+	return m
+
+
+## A Type III barricade across every road that ends in the open (MUTCD
+## 6F.68 and 2C.66: a road isn't left to stop square in the grass): a
+## module of three rails, striped orange and white, across each lane, just
+## past where the pavement ends. Not where a road leads off the map (it runs
+## on to the horizon), on a bridge, or on a roundabout.
+func _build_dead_ends() -> void:
+	var links: Array = sim.region_links if sim != null else []
+	# One mesh, coloured by vertex: a single draw for every barricade.
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var any := false
+	var ids := network.nodes.keys()
+	ids.sort()
+	for n in ids:
+		var segs := network.segments_at(n)
+		if segs.size() != 1 or n in links:
+			continue
+		var p: Vector3 = network.nodes[n]
+		var sg: Dictionary = network.segments[segs[0]]
+		var type: int = sg.type
+		if absf(p.y) > 1.0 or RoadStyle.is_ring(type) or RoadStyle.is_freeway(type) or sg.a == sg.b:
+			continue
+		var pts := network.sample_segment(segs[0])
+		if sg.a == n:
+			pts.reverse()
+		var out := pts[pts.size() - 1] - pts[pts.size() - 2]
+		out.y = 0.0
+		if out.length() < 0.01:
+			continue
+		out = out.normalized()
+		var across := Vector3(-out.z, 0.0, out.x)
+		var hw := RoadStyle.half_width(type)
+		var lanes := maxi(1, mini(4, roundi(hw * 2.0 / 3.6)))
+		var yaw := atan2(across.x, across.z) - PI * 0.5
+		# Stood on the ground at the road's end (one lookup, not one a vertex).
+		var at := p + out * 0.8
+		var lift := Vector3(0, Terrain.ground_y(at.x, at.z), 0)
+		for k in lanes:
+			var off := (k + 0.5 - lanes * 0.5) * (hw * 2.0 / lanes)
+			var c := p + out * 0.8 + across * off + lift
+			for side in [-1.0, 1.0]:
+				st.set_color(BARRICADE[0])
+				RoadMesh.add_box(st, c + across * side * 1.15 + Vector3(0, 0.8, 0), Vector3(0.08, 1.6, 0.08), yaw)
+			for h in [0.75, 1.1, 1.45]:
+				# Striped orange, white, orange along each 2.4 m rail.
+				for i in 3:
+					var mid := c + across * ((i - 1) * 0.8) + Vector3(0, h, 0)
+					st.set_color(BARRICADE[2] if i != 1 else BARRICADE[1])
+					RoadMesh.add_box(st, mid,
+						Vector3(0.8, 0.2, 0.04), yaw)
+		any = true
+	if not any:
+		return
+	st.generate_normals()
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = _mats.barricade
+	add_child(mi)
 
 
 ## Each roundabout's planted centre island and concrete truck apron, and a

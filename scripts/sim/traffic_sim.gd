@@ -55,6 +55,11 @@ const HEADWAY := 1.4
 const ACCEL := 2.0
 const BRAKE := 3.0
 const MAX_BRAKE := 8.0
+## How far back (m) a driver on a green commits to going through.
+const GREEN_REACH := 25.0
+## Seconds at the line that count as a full stop (stop signs, all-way
+## stops, right on red): drivers stop for about half a second to a second.
+const FULL_STOP_S := 0.5
 ## Where cars stop for a railroad crossing, metres before the track's centre:
 ## 15 ft from the nearest rail plus half the gauge.
 const XING_STOP := 5.4
@@ -83,6 +88,12 @@ const CROSS_PEN := 6.0
 ## MUTCD design walking speed is 3.5 ft/s for crossings, people stroll faster).
 const MAX_WALKERS := 800
 const WALK_V := 1.4
+## The limits a view can lower (the title screen's town on a weak computer):
+## no new trips start past them. The simulation never changes them itself.
+var max_cars := MAX_CARS
+var max_walkers := MAX_WALKERS
+## Share (percent) of short trips walked by people with a car at home.
+const SHORT_WALK_PCT := 25
 ## Big towns (Brawn, 2026-10-23): past this many residents, people's own
 ## cars drive as traffic flows, not one by one: each trip is timed over its
 ## route with the FHWA's BPR curve, t = t0 (1 + 0.15 (v/c)^4), and loads
@@ -1596,7 +1607,7 @@ func _cancel(car: Dictionary) -> void:
 ## Trips follow the time of day: to work in the morning, home in the evening,
 ## to the shops in between. Factories send box trucks to the shops by day.
 func _spawn(sim: CitySim, rng: RandomNumberGenerator) -> void:
-	if cars.size() >= MAX_CARS or sim.stats.population == 0:
+	if cars.size() >= max_cars or sim.stats.population == 0:
 		return
 	var hour: int = sim.clock().hour
 	var rate := 0.15
@@ -1640,7 +1651,7 @@ func _spawn(sim: CitySim, rng: RandomNumberGenerator) -> void:
 ## again. Returns false if there's no route.
 func add_trip(a: Dictionary, b: Dictionary, rng: RandomNumberGenerator, kind := "",
 		purpose := "", cargo := {}) -> bool:
-	if cars.size() >= MAX_CARS:
+	if cars.size() >= max_cars:
 		return false
 	if purpose == "":
 		purpose = "commute"
@@ -1776,7 +1787,7 @@ func drive_ticks(from: Dictionary, to: Dictionary, truck := false) -> float:
 ## arrived or given up (handled by its caller next tick).
 func trip_ids() -> Array:
 	var out := []
-	for c in cars + _waiting:
+	for c in cars + _waiting + flowing:
 		out.append(c.get("trip", c.id))
 	for p in parked:
 		if p.get("pending", false):
@@ -2703,7 +2714,7 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 
 ## A parked vehicle with a trip pulls out if there's a gap in traffic.
 func _try_launch(car: Dictionary, lanes := {}) -> bool:
-	if cars.size() >= MAX_CARS or not _launch(car, lanes):
+	if cars.size() >= max_cars or not _launch(car, lanes):
 		return false
 	if not lanes.is_empty():
 		_lane_add(lanes, car)
@@ -3177,7 +3188,7 @@ func _rest() -> void:
 		car.erase("next_stop")
 		if back == "":
 			continue
-		if cars.size() >= MAX_CARS or not _send(car, back, "return", {}, {"report": false}, stop):
+		if cars.size() >= max_cars or not _send(car, back, "return", {}, {"report": false}, stop):
 			_due_at(car, _tick + 20)  # try again shortly
 			car.next = back
 			car.next_stop = stop
@@ -3192,6 +3203,8 @@ func _rest() -> void:
 func go(pid: int, to_ref: String, purpose: String, stay: int) -> bool:
 	if _sim == null or not _sim.people.people.has(pid):
 		return false
+	if _dirty:
+		_rebuild()  # a road built this tick: walks must not follow the old sidewalks
 	var p: Dictionary = _sim.people.people[pid]
 	var home_ref: String = "lot:" + p.home
 	var from_ref: String = home_ref if p.at == "" else p.at
@@ -3211,15 +3224,20 @@ func go(pid: int, to_ref: String, purpose: String, stay: int) -> bool:
 	if away and not fetch and not place(car.at_place).is_empty() \
 			and place(car.at_place).door.distance_to(to_pl.door) < PARK_WALK:
 		far = false  # the car is already parked by the destination: walk on past it
-	if not car.is_empty() and (far or fetch) and cars.size() < MAX_CARS:
+	# Most Americans with a car at home drive even short hops: about a
+	# quarter of trips under a mile are walked (NHTS), fewer in small towns.
+	if not far and not away and not car.is_empty() \
+			and hash([pid, _sim.tick_count]) % 100 >= SHORT_WALK_PCT:
+		far = true
+	if not car.is_empty() and (far or fetch) and cars.size() < max_cars:
 		var path := _walk_to_car(from_pl, car)
-		if path.is_empty():
+		if path.is_empty() or walkers.size() >= max_walkers:
 			return false
 		car.driver = pid
 		_walk(pid, path, {"drive": car.id, "to": to_ref, "purpose": purpose, "stay": stay})
 	else:
 		var path := _walk_between(from_pl, to_pl)
-		if path.is_empty() or walkers.size() >= MAX_WALKERS:
+		if path.is_empty() or walkers.size() >= max_walkers:
 			return false
 		_walk(pid, path, {"enter": to_ref, "stay": stay})
 	p.at = "travel"
@@ -3512,7 +3530,9 @@ func _walk_stop(pos: Vector3, kerb := false) -> Dictionary:
 		return {}
 	var seg: int = near.seg
 	var type: int = network.segments[seg].type
-	if RoadStyle.is_freeway(type) or not RoadStyle.TYPES[type].get("walk", true) \
+	# A road with lots but no sidewalks (a county road, the state highway) is
+	# walked along its shoulder (_walk_line); one with no lots at all is not.
+	if RoadStyle.is_freeway(type) or not RoadStyle.TYPES[type].lots \
 			or kerb and float(near.dist) > RoadStyle.half_width(type) + RoadStyle.CURB_WIDTH:
 		return {}  # in a lot or driveway, or a road with no sidewalks
 	var c := network.curve_of(seg)
@@ -3547,11 +3567,13 @@ func _door_out(pl: Dictionary) -> PackedVector3Array:
 ## the sidewalk to where the trail meets the street, along the trail for a
 ## stretch and back the same way. False if the trail doesn't come by.
 func stroll(pid: int) -> bool:
-	if _sim == null or not _sim.people.people.has(pid) or walkers.size() >= MAX_WALKERS:
+	if _sim == null or not _sim.people.people.has(pid) or walkers.size() >= max_walkers:
 		return false
 	var p: Dictionary = _sim.people.people[pid]
 	if p.at != "":
 		return false
+	if _dirty:
+		_rebuild()
 	var trails: Array = _sim.parks.trails.paths
 	if trails.is_empty():
 		return false
@@ -3875,13 +3897,14 @@ func _seg_len(sid: int) -> float:
 
 
 ## The middle of the sidewalk along a road, on one side (seen from a to b).
+## A country road has none: people walk its shoulder (FHWA: on the
+## shoulder, where there's no sidewalk), never out in the lawns beside it.
 func _walk_line(sid: int, side: int) -> PackedVector3Array:
 	var key := sid * 2 + (1 if side > 0 else 0)
 	if _walk_lines.has(key):
 		return _walk_lines[key]
 	var pts := network.sample_segment(sid, 16)
-	var off := RoadStyle.half_width(network.segments[sid].type) + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH \
-		+ RoadStyle.SIDEWALK_WIDTH * 0.5
+	var off := walk_offset(network.segments[sid].type)
 	var out := PackedVector3Array()
 	for i in pts.size():
 		var a := pts[maxi(i - 1, 0)]
@@ -3890,6 +3913,23 @@ func _walk_line(sid: int, side: int) -> PackedVector3Array:
 		out.append(Vector3(pts[i].x, 0.0, pts[i].z) + Vector3(-dir.z, 0.0, dir.x) * off * side)
 	_walk_lines[key] = out
 	return out
+
+
+## How far from a road's centre line people walk beside it: the middle of
+## the sidewalk; on a road without sidewalks the middle of a paved shoulder
+## (the state highway's 8 ft), the gravel shoulder of a paved county road,
+## or the edge of a gravel or dirt road itself.
+static func walk_offset(type: int) -> float:
+	var spec: Dictionary = RoadStyle.TYPES[type]
+	var hw := RoadStyle.half_width(type)
+	if spec.get("walk", true):
+		return hw + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH * 0.5
+	var shoulder: float = spec.get("shoulder", 0.0)
+	if shoulder > 0.0:
+		return hw - shoulder * 0.5
+	if spec.get("surface", "asphalt") == "asphalt":
+		return hw + 0.9  # the gravel strip RoadMesh lays along a country road
+	return maxf(hw - 0.6, 1.2)
 
 
 ## The part of a line between two shares of its length, in that order.
@@ -4028,7 +4068,7 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 			# Its road went, or was rebuilt and there's no way through now.
 			_waiting.erase(car)
 			_report(car, failed)
-		elif cars.size() < MAX_CARS:
+		elif cars.size() < max_cars:
 			if lanes.is_empty():
 				for other in cars:
 					_lane_add(lanes, other)
@@ -4334,9 +4374,21 @@ func _accel_on_way(car: Dictionary, list: Array, i: int) -> float:
 		return acc
 	var c := _conn_for(car)
 	if not car.commit:
-		if ds < 4.0 and car.v < 0.5 and car.arrive < 0.0:
+		if ds < 4.0 and car.v < 1.0 and car.arrive < 0.0:
 			car.arrive = time
-		if _may_enter(car, c, ds) and ds <= car.v * car.v / (2.0 * BRAKE) + 4.0:
+		# On a green, drivers carry on through rather than creeping up to
+		# the line as if it were red: they decide from well back (HCM
+		# saturation flow, about 2 s a car).
+		# Decide before the line starts to brake them: the car-following
+		# model feels a closed line from its safe gap ahead (jam gap, time
+		# gap and braking room), so deciding only at the braking distance
+		# meant slowing for every clear junction and never reaching the
+		# limit between them (55 mph roads driven at about 20).
+		var reach: float = maxf(car.v * car.v / (2.0 * BRAKE) + 4.0,
+			JAM_GAP + car.v * HEADWAY + car.v * car.v / (2.0 * sqrt(car.acc * BRAKE)) + 4.0)
+		if junctions[c.node].control == Rule.SIGNAL and light(c.node, c.wi) == Light.GREEN:
+			reach = maxf(reach, GREEN_REACH)
+		if ds <= reach and _may_enter(car, c, ds):
 			car.commit = true
 			car.conn = c
 			if not _committed.has(c.node):
@@ -4437,7 +4489,7 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 		var bc: Dictionary = b.j if b.j != null else b.conn
 		if _conflicts(c, bc):
 			return false
-	var stopped: bool = car.arrive >= 0.0 and time - car.arrive >= 1.0
+	var stopped: bool = car.arrive >= 0.0 and time - car.arrive >= FULL_STOP_S
 	var mine_minor_turn: bool = c.turn == Turn.LEFT or c.turn == Turn.UTURN
 	match j.control:
 		Rule.SIGNAL:
