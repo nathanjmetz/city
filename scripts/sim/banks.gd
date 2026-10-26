@@ -548,11 +548,15 @@ func _book(id: int, who: String, what: String, amount: float, cell: Vector2i) ->
 	if not b.loans.has(who):
 		b.loans[who] = {"kind": what, "balance": 0.0, "pay": 0.0, "cells": []}
 	var l: Dictionary = b.loans[who]
-	l.balance += amount
-	l.pay += amount / (_years(what) * 12.0)
+	# Money in whole dollars: a dollar is nothing to a bank, and a whole
+	# number comes back from a save exactly, so a loaded copy of the town
+	# keeps the same books to the cent (fractions drifted in the last
+	# digits after a reload; review, 2026-10-26).
+	l.balance = roundf(float(l.balance) + amount)
+	l.pay = roundf(float(l.pay) + amount / (_years(what) * 12.0))
 	if cell != Vector2i.MAX:
 		l.cells.append([cell.x, cell.y])
-	b.year.lent += amount
+	b.year.lent = roundf(float(b.year.lent) + amount)
 	b.made += 1
 
 
@@ -585,7 +589,7 @@ func decide(sim: CitySim) -> Dictionary:
 				b.loans.erase(who)
 				continue
 			income += float(l.balance) * r / 12.0
-			l.balance -= float(l.pay)
+			l.balance = roundf(float(l.balance) - float(l.pay))
 			if l.balance <= 1.0:
 				b.loans.erase(who)
 				continue
@@ -605,11 +609,12 @@ func decide(sim: CitySim) -> Dictionary:
 			else float(b.deposits) * Balance.BANK_DEPOSIT_RATE
 		var costs: float = funding / 12.0 + staff(b) * Balance.BANK_SALARY / 12.0 \
 			+ (1 + b.blocks.size()) * Balance.BANK_PREMISES_COST / 12.0 * (1.0 - effect(b, "overhead"))
-		var profit: float = income - costs - losses
-		b.year.profit += profit
-		b.year.losses += losses
+		losses = roundf(losses)
+		var profit: float = roundf(income - costs - losses)
+		b.year.profit = float(b.year.profit) + profit
+		b.year.losses = float(b.year.losses) + losses
 		# Shareholders take a share of a good month; a bad one comes out of equity.
-		b.capital += profit * (1.0 - Balance.BANK_DIVIDEND) if profit > 0.0 else profit
+		b.capital = float(b.capital) + (roundf(profit * (1.0 - Balance.BANK_DIVIDEND)) if profit > 0.0 else profit)
 		_regulate(sim, id, b)
 		var target: float = 0.25 + 0.25 * float(b.leader.edu) + 0.2 * (1.0 if health(b) == "well" else 0.0) \
 			+ 0.05 * b.blocks.size() + effect(b, "rep") - 0.1 * minf(1.0, b.year.foreclosed / 5.0)
@@ -699,7 +704,7 @@ func _regulate(sim: CitySim, id: int, b: Dictionary) -> void:
 	if b.status == "sold":
 		b.status = ""
 	if r < Balance.BANK_FAILED or b.capital < 0.0:
-		b.capital = loans_total(b) * Balance.BANK_WELL_CAPITALIZED
+		b.capital = roundf(loans_total(b) * Balance.BANK_WELL_CAPITALIZED)
 		var l := hire(sim, hash([sim.city_seed, id, sim.tick_count, "fdic"]))
 		l.caution = maxf(float(l.caution), 0.65)
 		b.leader = l
