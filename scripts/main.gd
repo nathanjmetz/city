@@ -145,10 +145,26 @@ func _ready() -> void:
 	var walkers := WalkerView.new()
 	walkers.setup(sim.traffic, _tick_fraction)
 	add_child(walkers)
+	# Ready-made people for the walkers nearest the camera (desktop only).
+	if NearPeople.available():
+		var near_people := NearPeople.new()
+		near_people.setup(sim.traffic, _tick_fraction)
+		add_child(near_people)
+	# Life round the homes, parks and shops near the camera (drawn only).
+	var ambient := AmbientLife.new()
+	ambient.setup(sim, (walkers.get_child(0) as MultiMeshInstance3D).material_override)
+	add_child(ambient)
 
 	var look := DayNight.new()
 	look.setup(sim, sky, _tick_fraction)
 	add_child(look)
+	# Streets drawn as country roads go unlit; their pole line is the only one.
+	look.set_country(roads._rural)
+	roads.country_changed.connect(look.set_country)
+
+	var arrows := LevelArrows.new()
+	arrows.setup(sim)
+	add_child(arrows)
 
 	var signals := JunctionView.new()
 	signals.setup(sim.traffic)

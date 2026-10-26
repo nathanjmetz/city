@@ -205,6 +205,65 @@ func _init() -> void:
 	var c0: Array = big.network.curve_of(big.network.segments.keys()[0])
 	_check(big.network.segments.values()[0].type == RoadStyle.Type.RING2 and absf(c0[0].length() - RoadShapes.radius_for_icd(150.0 / 3.28084, RoadStyle.Type.RING2)) < 0.5,
 		"avenue roundabout is two lanes, at least 150 ft across (FHWA)")
+	# A whole roundabout rebuilds with two lanes round (the upgrade tool),
+	# on the same spot and still joined to both roads.
+	var resized := CitySim.new()
+	resized.apply({"type": "build_road", "start": [-100, 0], "ctrl": [0, 0], "end": [100, 0]})
+	resized.apply({"type": "build_roundabout", "center": [0, 0], "radius": 20})
+	var r_seg := -1
+	for id in resized.network.segments:
+		if resized.network.segments[id].type == RoadStyle.Type.RING:
+			r_seg = id
+	_check(resized.apply({"type": "resize_roundabout", "seg": r_seg, "lanes": 2}), "a roundabout can be rebuilt with two lanes")
+	var r_twos := 0
+	var r_ones := 0
+	var rb_joins := 0
+	for id in resized.network.segments:
+		var sg: Dictionary = resized.network.segments[id]
+		match sg.type:
+			RoadStyle.Type.RING2: r_twos += 1
+			RoadStyle.Type.RING: r_ones += 1
+			_:
+				for n in [sg.a, sg.b]:
+					if resized.network.segments_at(n).any(func(o): return RoadStyle.is_ring(resized.network.segments[o].type)):
+						rb_joins += 1
+	_check(r_twos >= 8 and r_ones == 0, "two lanes all the way round (%d two-lane, %d one-lane arcs)" % [r_twos, r_ones])
+	_check(rb_joins >= 2, "both roads still join the roundabout (%d ends)" % rb_joins)
+	# The roundabout tool clicked on a roundabout rebuilds it bigger, on
+	# the same centre, still joined to both roads.
+	var r_big := -1
+	for id in resized.network.segments:
+		if RoadStyle.is_ring(resized.network.segments[id].type):
+			r_big = id
+	_check(resized.apply({"type": "resize_roundabout", "seg": r_big, "lanes": 2, "radius": 32}), "a roundabout can be rebuilt bigger")
+	var big_joins := 0
+	var big_far := 0.0
+	for id in resized.network.segments:
+		var sg: Dictionary = resized.network.segments[id]
+		if RoadStyle.is_ring(sg.type):
+			big_far = maxf(big_far, Vector2(resized.network.nodes[sg.a].x, resized.network.nodes[sg.a].z).length())
+		else:
+			for n in [sg.a, sg.b]:
+				if resized.network.segments_at(n).any(func(o): return RoadStyle.is_ring(resized.network.segments[o].type)):
+					big_joins += 1
+	_check(big_joins >= 2 and big_far > 25.0, "the bigger one is bigger and both roads still join it (%d ends, %.0f m out)" % [big_joins, big_far])
+	# Bulldozing a roundabout takes the whole ring, and the road through it
+	# is one plain intersection-free road again (no rings, joined in the middle).
+	var r_any := -1
+	for id in resized.network.segments:
+		if RoadStyle.is_ring(resized.network.segments[id].type):
+			r_any = id
+	_check(resized.apply({"type": "remove_roundabout", "seg": r_any}), "a roundabout can be bulldozed whole")
+	var left_rings := 0
+	var at_mid := 0
+	for id in resized.network.segments:
+		var sg: Dictionary = resized.network.segments[id]
+		if RoadStyle.is_ring(sg.type):
+			left_rings += 1
+		for n in [sg.a, sg.b]:
+			if Vector2(resized.network.nodes[n].x, resized.network.nodes[n].z).length() < 1.0:
+				at_mid += 1
+	_check(left_rings == 0 and at_mid >= 2, "no ring left, and the streets meet in the middle (%d rings, %d ends at the centre)" % [left_rings, at_mid])
 	# The size row: each real FHWA size builds at its own diameter and lanes.
 	for size in RoadShapes.ROUNDABOUT_SIZES:
 		var ring := RoadShapes.ring_for_lanes(int(size.lanes))

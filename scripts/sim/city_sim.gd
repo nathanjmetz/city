@@ -446,6 +446,67 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			ok = _build_roundabout(_v(cmd.center), radius, ring)
 			if ok:
 				economy.money -= shapes_cost(arcs, ring)
+		"remove_roundabout":
+			# The whole ring goes, and the streets that met it run on to its
+			# centre and meet there in a plain intersection.
+			if not network.segments.has(int(cmd.seg)) or not RoadStyle.is_ring(network.segments[int(cmd.seg)].type):
+				return false
+			var rs := ring_of(int(cmd.seg))
+			var ring_nodes := []
+			var mid := Vector3.ZERO
+			for id in rs:
+				for n in [network.segments[id].a, network.segments[id].b]:
+					if not n in ring_nodes:
+						ring_nodes.append(n)
+						mid += network.nodes[n]
+			mid /= maxf(ring_nodes.size(), 1.0)
+			var legs := []  # [where the street met the ring, its type]
+			for n in ring_nodes:
+				for other in network.segments_at(n):
+					if not other in rs:
+						legs.append([network.nodes[n], int(network.segments[other].type)])
+			network.begin_batch()
+			for id in rs:
+				network.remove_segment(id)
+			for leg in legs:
+				var a: Vector3 = leg[0]
+				network.build_road(a, (a + mid) * 0.5, mid, int(leg[1]), true)
+			network.end_batch()
+			ok = true
+		"resize_roundabout":
+			# A roundabout rebuilt with one or two lanes round, on the same
+			# centre and size, joined to the same streets (the upgrade tool).
+			if not network.segments.has(int(cmd.seg)) or not RoadStyle.is_ring(network.segments[int(cmd.seg)].type):
+				return false
+			var rs := ring_of(int(cmd.seg))
+			var ring := RoadShapes.ring_for_lanes(int(cmd.lanes))
+			var nodes := []
+			var mid := Vector3.ZERO
+			for id in rs:
+				for n in [network.segments[id].a, network.segments[id].b]:
+					if not n in nodes:
+						nodes.append(n)
+						mid += network.nodes[n]
+			mid /= maxf(nodes.size(), 1.0)
+			var r := 0.0
+			for n in nodes:
+				r += Vector2(network.nodes[n].x - mid.x, network.nodes[n].z - mid.z).length()
+			r /= maxf(nodes.size(), 1.0)
+			var same_size := not cmd.has("radius")
+			if not same_size:
+				var want := RoadShapes.roundabout_radius(float(cmd.radius), ring)
+				same_size = absf(want - r) < 0.5
+				r = want
+			var arcs := RoadShapes.roundabout(mid, r)
+			if network.segments[int(cmd.seg)].type == ring and same_size or not _can_afford(arcs, ring):
+				return false
+			network.begin_batch()
+			for id in rs:
+				network.remove_segment(id)
+			network.end_batch()
+			ok = _build_roundabout(mid, r, ring)
+			if ok:
+				economy.money -= shapes_cost(arcs, ring)
 		"upgrade_road":
 			var cost := upgrade_cost(int(cmd.seg), _road(cmd))
 			if network.segments.has(int(cmd.seg)) and (RoadStyle.is_ring(network.segments[int(cmd.seg)].type)
@@ -3697,6 +3758,20 @@ static func money_text(n: int) -> String:
 
 ## Builds the ring, joining every road it crosses, then clears the roads
 ## left inside it.
+## The ring pieces of the roundabout `seg` belongs to.
+func ring_of(seg: int) -> Array:
+	var out := [seg]
+	var todo := [seg]
+	while not todo.is_empty():
+		var sg: Dictionary = network.segments[todo.pop_back()]
+		for n in [sg.a, sg.b]:
+			for other in network.segments_at(n):
+				if not other in out and RoadStyle.is_ring(network.segments[other].type):
+					out.append(other)
+					todo.append(other)
+	return out
+
+
 func _build_roundabout(center: Vector3, radius: float, type: int) -> bool:
 	network.begin_batch()
 	var ok := false

@@ -366,6 +366,10 @@ func _process(_delta: float) -> void:
 		_preview_pick(hit)
 		return
 	var p: Vector3 = _armed.p if not _armed.is_empty() else _snapped(hit)
+	if mode == Mode.ROUNDABOUT and _ring_under(hit) != -1:
+		# Over a roundabout: snap to its centre, to rebuild it at this size
+		# and lane count, not to one of its joints (Nathan, 2026-10-25).
+		p = _ring_center(_ring_under(hit))
 	_cursor.position = Terrain.lift(p) + Vector3.UP * 0.3
 	_show_snap(_snap_kind != "free")
 	var curves := []
@@ -433,7 +437,12 @@ func _click() -> void:
 				sim.apply({"type": "remove_park", "id": _hover_park})
 				_hover_park = -1
 			elif _hover_seg != -1:
-				sim.apply({"type": "remove_road", "seg": _hover_seg})
+				if RoadStyle.is_ring(network.segments[_hover_seg].type):
+					# The whole roundabout goes, and its streets meet again in
+					# a plain intersection (Nathan, 2026-10-25).
+					sim.apply({"type": "remove_roundabout", "seg": _hover_seg})
+				else:
+					sim.apply({"type": "remove_road", "seg": _hover_seg})
 				_hover_seg = -1
 			elif not _hover_county.is_empty():
 				sim.apply({"type": "remove_county", "key": _hover_county.key})
@@ -448,7 +457,14 @@ func _click() -> void:
 				# One tower or block at a time (its office closes the company).
 				sim.apply({"type": "remove_telecom_at", "pos": [hit.x, hit.z]})
 		Mode.UPGRADE:
-			if _hover_seg != -1:
+			if _hover_seg != -1 and RoadStyle.is_ring(network.segments[_hover_seg].type):
+				# A whole roundabout at once: two lanes round for a multi-lane
+				# road type, one for a one-lane type.
+				var spec: Dictionary = RoadStyle.TYPES[road_type]
+				var per_way: int = int(spec.lanes) if spec.oneway else int(spec.lanes) / 2
+				var to := RoadStyle.Type.RING2 if per_way >= 2 else RoadStyle.Type.RING
+				sim.apply({"type": "resize_roundabout", "seg": _hover_seg, "lanes": 2 if to == RoadStyle.Type.RING2 else 1})
+			elif _hover_seg != -1:
 				sim.apply({"type": "upgrade_road", "seg": _hover_seg, "road": road_type})
 		Mode.STRAIGHT, Mode.CURVED:
 			var p := _snapped(hit)
@@ -482,6 +498,11 @@ func _click() -> void:
 			elif _points.is_empty() or _flat_dist(p, _points[_points.size() - 1]) > RECT_MIN:
 				_points.append(p)
 		Mode.ROUNDABOUT:
+			var over := _ring_under(hit)
+			if over != -1:
+				sim.apply({"type": "resize_roundabout", "seg": over, "lanes": roundabout_lanes, "radius": _ring_radius()})
+				_update_hint()
+				return
 			var at := _snapped(hit)
 			var cmd := {"type": "build_roundabout", "center": _xz(at),
 				"radius": _ring_radius(), "lanes": roundabout_lanes, "road": road_type}
@@ -1407,11 +1428,67 @@ func _show_dots() -> void:
 
 
 ## Highlights the road under the mouse: red to bulldoze, blue to upgrade.
+## The ring pieces of the roundabout that `seg` is part of.
+func _ring_segs(seg: int) -> Array:
+	var out := [seg]
+	var todo := [seg]
+	while not todo.is_empty():
+		var s: Dictionary = network.segments[todo.pop_back()]
+		for n in [s.a, s.b]:
+			for other in network.segments_at(n):
+				if not other in out and RoadStyle.is_ring(network.segments[other].type):
+					out.append(other)
+					todo.append(other)
+	return out
+
+
+## The middle of the roundabout `seg` is part of.
+func _ring_center(seg: int) -> Vector3:
+	var mid := Vector3.ZERO
+	var ends := []
+	for id in _ring_segs(seg):
+		for n in [network.segments[id].a, network.segments[id].b]:
+			if not n in ends:
+				ends.append(n)
+				mid += network.nodes[n]
+	return mid / maxf(ends.size(), 1.0)
+
+
+## A ring piece of the roundabout whose circle `hit` is on or inside, or -1.
+func _ring_under(hit: Vector3) -> int:
+	var seen := {}
+	for id in network.segments:
+		if seen.has(id) or not RoadStyle.is_ring(network.segments[id].type):
+			continue
+		var ring := _ring_segs(id)
+		var mid := Vector3.ZERO
+		var ends := []
+		for seg in ring:
+			seen[seg] = true
+			for n in [network.segments[seg].a, network.segments[seg].b]:
+				if not n in ends:
+					ends.append(n)
+					mid += network.nodes[n]
+		mid /= maxf(ends.size(), 1.0)
+		var r := 0.0
+		for n in ends:
+			r = maxf(r, Vector2(network.nodes[n].x - mid.x, network.nodes[n].z - mid.z).length())
+		if Vector2(hit.x - mid.x, hit.z - mid.z).length() <= r + RoadStyle.half_width(network.segments[id].type) + 2.0:
+			return id
+	return -1
+
+
 func _preview_pick(hit: Vector3) -> void:
 	var near := network.find_segment_near(hit, RoadStyle.half_width(RoadStyle.Type.BOULEVARD))
 	_hover_seg = -1
 	if not near.is_empty() and near.dist <= RoadStyle.half_width(network.segments[near.seg].type) + 2.0:
 		_hover_seg = near.seg
+	if mode == Mode.UPGRADE and (_hover_seg == -1 or not RoadStyle.is_ring(network.segments[_hover_seg].type)):
+		# Anywhere on or inside a roundabout picks the roundabout itself, not
+		# the streets joining it (Nathan, 2026-10-25).
+		var ring := _ring_under(hit)
+		if ring != -1:
+			_hover_seg = ring
 	var mat := _bad_mat if mode == Mode.BULLDOZE else _ok_mat
 	_cursor.position = Terrain.lift(hit) + Vector3.UP * 0.3
 	_cursor.material_override = mat

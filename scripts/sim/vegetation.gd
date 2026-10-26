@@ -278,7 +278,10 @@ static func sources(sim: Object) -> Dictionary:
 			# The lease road or skid trail to it, cut through the woods with
 			# a few metres cleared each side (the strip mine's is its own).
 			if s.kind != "ore":
-				out["it%d %s %s" % [id, pad, s.pos]] = _line_cells.bind(Industry.track(s, pad), 4.0)
+				# Keyed by where the track ends, so a road built beside it
+				# clears the new line on every copy alike.
+				var trk := Industry.track(s, pad, sim.network)
+				out["it%d %s %s %s" % [id, pad, s.pos, trk[trk.size() - 1].round()]] = _line_cells.bind(trk, 4.0)
 	# Rail yards and the track laid so far, with its cleared right of way.
 	for id in sim.rail.depots:
 		var poly: PackedVector2Array = sim.rail.yard_poly(id)
