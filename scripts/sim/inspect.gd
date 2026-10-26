@@ -736,10 +736,22 @@ static func needs(sim: CitySim, key: String) -> Dictionary:
 		total += int(n[1])
 		if int(n[1]) < int(worst[1]):
 			worst = n
-	var top: int = BuildingTypes.TYPES[BuildingTypes.type_of(b)].stages.size()
-	var level := int(b.get("level", 0)) + 1
-	return {"level": level, "top": top, "met": roundi(float(total) / list.size()), "list": list,
-		"next": "" if level >= top else (str(worst[2]) if int(worst[1]) < 100 else "Time: it grows as its owner saves up.")}
+	# Levels 1 to 100 (Nathan, 2026-10-25: "give every building 100
+	# levels. divide its major building moments up to milestone levels"):
+	# each stage the building can grow through is a milestone, the stages
+	# spread evenly over 1-100, and how well its needs are met places it
+	# between its milestone and the next.
+	var stages: int = BuildingTypes.TYPES[BuildingTypes.type_of(b)].stages.size()
+	var stage := int(b.get("level", 0))
+	var met := roundi(float(total) / list.size())
+	var span := 100.0 / stages
+	var level := clampi(1 + floori(stage * span + met / 100.0 * (span - 1.0)), 1, 100)
+	var milestone := clampi(1 + floori((stage + 1) * span), 1, 100)
+	var at_top := stage + 1 >= stages
+	return {"level": level, "top": 100, "met": met, "list": list, "milestone": milestone,
+		"next": (str(worst[2]) if int(worst[1]) < 100 else "") if at_top else
+			("Next milestone at level %d. " % milestone) + (str(worst[2]) if int(worst[1]) < 100
+				else "It grows as its owner saves up.")}
 
 
 static func _lot(sim: CitySim, key: String) -> Dictionary:
@@ -785,7 +797,7 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 	var z := int(b.zone)
 	var status := ""
 	var lv := needs(sim, key)
-	rows.push_front(["Level", "%d of %d   ·   needs met %d%%" % [lv.level, lv.top, lv.met]])
+	rows.push_front(["Level", "%d of 100   ·   needs met %d%%" % [lv.level, lv.met]])
 	if lv.next != "":
 		rows.insert(1, ["To level up", lv.next])
 	var tree_needs := []
