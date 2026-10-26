@@ -54,15 +54,18 @@ static func step(hub: Dictionary, kind: String, profit: float, day: float) -> vo
 		return
 	# A game day settles a month.
 	var years := (day - last) / 12.0
-	hub.cash = float(hub.cash) + kept(hub, kind, profit) * years
+	# Whole dollars: they come back from a save exactly, so a loaded copy of
+	# the town keeps the same books (fractions drifted in the last digits
+	# after a reload; review, 2026-10-26).
+	hub.cash = roundf(float(hub.cash) + kept(hub, kind, profit) * years)
 	# Lenders look at a few years' profit, not one good year's.
 	var avg := float(hub.get("avg_profit", profit))
-	hub.avg_profit = avg + (profit - avg) * minf(1.0, years / float(Balance.CAPITAL_AVG_YEARS))
+	hub.avg_profit = roundf(avg + (profit - avg) * minf(1.0, years / float(Balance.CAPITAL_AVG_YEARS)))
 	var debt := float(hub.get("debt", 0.0))
 	if debt > 0.0:
 		var pay := minf(debt * payment_rate() * years, debt * (1.0 + Balance.CAPITAL_RATE * years))
-		hub.cash = float(hub.cash) - pay
-		hub.debt = maxf(0.0, debt * (1.0 + Balance.CAPITAL_RATE * years) - pay)
+		hub.cash = roundf(float(hub.cash) - pay)
+		hub.debt = roundf(maxf(0.0, debt * (1.0 + Balance.CAPITAL_RATE * years) - pay))
 
 
 ## A year's payment on a dollar owed: a level payment over the loan's term.
@@ -180,8 +183,8 @@ static func can_buy(hub: Dictionary, price: float, income: float) -> bool:
 ## Buys land at `price`: what it must put down from cash, the rest owed.
 static func buy(hub: Dictionary, price: float, income: float) -> void:
 	var put := cash_needed(hub, price, income)
-	hub.cash = float(hub.get("cash", 0.0)) - put
-	hub.debt = float(hub.get("debt", 0.0)) + price - put
+	hub.cash = roundf(float(hub.get("cash", 0.0)) - put)
+	hub.debt = roundf(float(hub.get("debt", 0.0)) + price - put)
 
 
 ## The profit a lender would count on: the hub's average over the last
