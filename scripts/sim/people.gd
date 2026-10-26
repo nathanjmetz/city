@@ -53,6 +53,8 @@ var _gone_sig := 0
 ## Keeps a person for every resident, fills open jobs, names new places.
 func sync(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void:
 	_families = sim.families
+	if traffic != null and sim.tick_count % CAR_RETRY_EVERY == CAR_RETRY_AT:
+		_retry_cars(traffic)
 	if sim.tick_count % SYNC_EVERY != SYNC_AT:
 		return
 	var ledger := sim.ledger()
@@ -291,6 +293,37 @@ func _move_in(key: String, household: Array, traffic: TrafficSim, rng: RandomNum
 		var kind := VehicleTypes.household(hash([key, id]))
 		p.car = traffic.new_vehicle(kind, "lot:" + key, id)
 	return id
+
+
+## People who moved in before their home had room for a car (it was still
+## going up, or its drive was full) get one once it has, up to MAX_CARS a
+## home. They used to stay without one for good and walk everywhere
+## (Nathan, 2026-10-25: "the streets were flooded with pedestrians").
+const CAR_RETRY_EVERY := 120
+const CAR_RETRY_AT := 65
+
+
+func _retry_cars(traffic: TrafficSim) -> void:
+	var keys := _homes.keys()
+	keys.sort()
+	for key in keys:
+		var list: Array = _homes[key]
+		var cars := 0
+		var want := []
+		for id in list:
+			var p: Dictionary = people[id]
+			if int(p.car) != -1:
+				cars += 1
+			elif int(p.age) >= 16:
+				want.append(p)
+		for p in want:
+			if cars >= MAX_CARS:
+				break
+			var vid := traffic.new_vehicle(VehicleTypes.household(hash([key, p.id])), "lot:" + key, p.id)
+			if vid == -1:
+				break  # no room on the drive yet
+			p.car = vid
+			cars += 1
 
 
 func _move_out(id: int, traffic: TrafficSim) -> void:
