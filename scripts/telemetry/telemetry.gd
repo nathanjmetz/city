@@ -375,7 +375,8 @@ func _quality_now() -> Dictionary:
 	var q := get_node_or_null("/root/Quality")
 	if q == null or not q.active:
 		return {}
-	var out := {"tier": GraphicsQuality.NAMES[q.tier], "auto": q.mode == GraphicsQuality.AUTO, "scale": snappedf(q.scale, 0.01)}
+	var out := {"tier": GraphicsQuality.NAMES[q.tier], "auto": q.mode == GraphicsQuality.AUTO, "scale": snappedf(q.scale, 0.01),
+		"machine": q.machine()}
 	var vp := get_viewport().get_viewport_rid()
 	var gpu := RenderingServer.viewport_get_measured_render_time_gpu(vp)
 	if gpu > 0.0:
@@ -395,7 +396,7 @@ func _hook_quality() -> void:
 	# Send a tier change at once: if the new tier stalls the machine, the
 	# report still shows what it was switched to.
 	q.changed.connect(func():
-		event("quality", _quality_now())
+		event("quality", _quality_now().merged({"why": q.last_reason}))
 		flush())
 	event("quality", _quality_now())
 
