@@ -1,9 +1,13 @@
 class_name Icon
 extends Control
-## Small game icons by name. Common ones come from the brand's icon set
-## (Phosphor Bold, white SVGs in assets/brand/icons/, tinted with `color`);
-## road shapes, resources and other game-specific ones are drawn in code.
-## Set `kind` to a name in _FILES or one handled in _draw().
+## Small game icons by name. Most come from the brand's icon set: white SVGs
+## in assets/brand/icons/, tinted with `color`. They share one line style
+## (a 24 px grid, 2 px round strokes, like Phosphor Bold): the top bar's are
+## Phosphor's, and the building, money, town, seasons, park and locate
+## icons are drawn to match by tools/make_icons.py, each with one telling
+## feature so it reads at 20 px. Road shapes, resources and other
+## game-specific ones are drawn in code. Set `kind` to a name in _FILES or
+## one handled in _draw().
 
 @export var kind := "road":
 	set(v):
@@ -24,10 +28,13 @@ var accent := Brand.BRAND_TEAL:
 const _FILES := {
 	"road": "road", "roads": "road", "bulldoze": "bulldoze", "homes": "homes", "zones": "zones",
 	"shops": "shops", "industry": "industry", "dezone": "dezone", "pause": "pause", "people": "people",
-	"jobs": "jobs", "car": "car", "money": "money", "budget": "money", "power": "power", "water": "water",
+	"jobs": "jobs", "car": "car", "money": "money", "budget": "economy", "power": "power", "water": "water",
 	"fire": "fire", "police": "police", "health": "health", "school": "school", "services": "services",
 	"farms": "farms", "farmland": "farms", "traffic": "traffic", "signal": "signal", "views": "views",
 	"help": "help", "grid": "grid", "curve": "curve", "roundabout": "roundabout",
+	"locate": "locate", "town": "town", "seasons": "seasons", "park": "park", "parks": "park",
+	"courthouse": "courthouse", "football": "football", "fairgrounds": "fairgrounds", "elevator": "elevator",
+	"water_landmark": "water_landmark", "trailhead": "trailhead",
 	"bus": "bus", "transit": "bus", "taxi": "taxi",
 	"permits": "permits", "check": "check", "close": "close",
 	"power_line": "power_line", "substation": "substation", "power_co": "power_co",
@@ -45,18 +52,6 @@ const _FILES := {
 }
 ## These get a soft `accent` fill behind the line (zone tints and the like).
 const _DUOTONE := ["homes", "zones", "shops", "industry", "farms", "farmland"]
-## Detailed Neighbors icons (one per service, drawn from a real reference
-## and split by the House mark's gaps): a soft shade layer, a mint accent
-## piece like the mark's roof, then the line art. Files: name, name-shade,
-## name-accent.
-const _LAYERED := ["power_line", "substation", "power_co", "well", "water_tower",
-	"water_utility", "landfill", "recycling", "phone_co", "elementary", "daycare", "high_school",
-	"college", "university", "clinic", "hospital", "nursing_home", "cemetery",
-	"bus_depot", "taxi_company", "rail_depot", "builder_yard", "parking_small", "parking_downtown", "parking_large",
-	"park_and_ride", "parking_garage",
-	"farm_corn", "farm_soy", "oil_co", "mine_co", "forestry_co", "warehouse_co",
-	"ethanol", "meatpacker", "furniture", "rv_plant", "fire_station", "police_station",
-	"post_office", "bank_co", "farm_credit"]
 static var _textures := {}
 
 
@@ -78,11 +73,6 @@ func _draw() -> void:
 		var rect := Rect2(o, Vector2(s, s))
 		if kind in _DUOTONE:
 			draw_texture_rect(_texture(_FILES[kind] + "-fill"), rect, false, Color(accent, 0.45))
-		elif _FILES[kind] in _LAYERED:
-			# Bold single-front icons have no shade layer.
-			if ResourceLoader.exists("res://assets/brand/icons/%s-shade.svg" % _FILES[kind]):
-				draw_texture_rect(_texture(_FILES[kind] + "-shade"), rect, false, Color(color, 0.5))
-			draw_texture_rect(_texture(_FILES[kind] + "-accent"), rect, false, Brand.BRAND_MINT)
 		draw_texture_rect(_texture(_FILES[kind]), rect, false, color)
 		return
 	match kind:
@@ -170,17 +160,6 @@ func _draw() -> void:
 				line.call(P.call(0.5 + d.x * 0.1, 0.5 + d.y * 0.1), P.call(tip.x, tip.y))
 				draw_polyline(PackedVector2Array([P.call(tip.x - d.x * 0.13 + side.x, tip.y - d.y * 0.13 + side.y),
 					P.call(tip.x, tip.y), P.call(tip.x - d.x * 0.13 - side.x, tip.y - d.y * 0.13 - side.y)]), color, w, true)
-		"homes", "zones":
-			var tint := accent if kind == "homes" else Color(0.35, 0.85, 0.35)
-			_poly([P.call(0.15, 0.48), P.call(0.5, 0.15), P.call(0.85, 0.48), P.call(0.78, 0.48),
-				P.call(0.78, 0.88), P.call(0.22, 0.88), P.call(0.22, 0.48)], Color(tint, 0.35))
-			draw_polyline(PackedVector2Array([P.call(0.1, 0.52), P.call(0.5, 0.15), P.call(0.9, 0.52)]), color, w, true)
-			draw_polyline(PackedVector2Array([P.call(0.22, 0.45), P.call(0.22, 0.88), P.call(0.78, 0.88),
-				P.call(0.78, 0.45)]), color, w, true)
-			draw_rect(Rect2(P.call(0.43, 0.62), Vector2(0.14, 0.26) * s), color)
-			if kind == "zones":
-				draw_rect(Rect2(P.call(0.62, 0.62), Vector2(0.3, 0.3) * s), Color(0.30, 0.60, 1.0))
-				draw_rect(Rect2(P.call(0.62, 0.62), Vector2(0.3, 0.3) * s), color, false, w * 0.6)
 		"shops":
 			_poly([P.call(0.12, 0.45), P.call(0.88, 0.45), P.call(0.88, 0.88), P.call(0.12, 0.88)], Color(accent, 0.3))
 			draw_rect(Rect2(P.call(0.12, 0.45), Vector2(0.76, 0.43) * s), color, false, w)
@@ -268,16 +247,6 @@ func _draw() -> void:
 				P.call(0.68, 0.3), P.call(0.82, 0.48), P.call(0.92, 0.52), P.call(0.92, 0.68)], color)
 			draw_circle(P.call(0.27, 0.7), s * 0.09, Color(0.12, 0.13, 0.15))
 			draw_circle(P.call(0.73, 0.7), s * 0.09, Color(0.12, 0.13, 0.15))
-		"money", "budget":
-			# A stack of coins with a dollar sign on the top one.
-			for i in 3:
-				var y := 0.78 - i * 0.14
-				draw_rect(Rect2(P.call(0.2, y - 0.07), Vector2(0.6, 0.14) * s), Color(color, 0.35 + i * 0.15))
-				draw_rect(Rect2(P.call(0.2, y - 0.07), Vector2(0.6, 0.14) * s), color, false, w * 0.6)
-			draw_circle(P.call(0.5, 0.28), s * 0.2, accent if kind == "budget" else Color(0.45, 0.8, 0.45))
-			line.call(P.call(0.5, 0.15), P.call(0.5, 0.41), w * 0.7, Color(0.08, 0.1, 0.12))
-			draw_arc(P.call(0.5, 0.23), s * 0.06, PI * 0.5, PI * 1.9, 10, Color(0.08, 0.1, 0.12), w * 0.6, true)
-			draw_arc(P.call(0.5, 0.33), s * 0.06, -PI * 0.5, PI * 0.9, 10, Color(0.08, 0.1, 0.12), w * 0.6, true)
 		"power":
 			_poly([P.call(0.58, 0.06), P.call(0.22, 0.56), P.call(0.48, 0.56), P.call(0.4, 0.94),
 				P.call(0.78, 0.4), P.call(0.52, 0.4)], Color(1.0, 0.82, 0.3))
@@ -420,48 +389,6 @@ func _draw() -> void:
 				for k in 3:
 					line.call(a2.lerp(b2, k / 3.0 + 0.05), a2.lerp(b2, k / 3.0 + 0.25), w * 0.8)
 				draw_circle(a2, s * 0.07, accent)
-		"park", "parks":
-			# A round shade tree over a bench.
-			draw_circle(P.call(0.5, 0.36), s * 0.27, Color(0.35, 0.68, 0.35))
-			line.call(P.call(0.5, 0.6), P.call(0.5, 0.9), w * 1.2, Color(0.55, 0.4, 0.28))
-			line.call(P.call(0.14, 0.82), P.call(0.4, 0.82), w)
-			line.call(P.call(0.6, 0.82), P.call(0.86, 0.82), w)
-		"courthouse":
-			# Columns under a pediment, a clock tower above.
-			_poly([P.call(0.12, 0.42), P.call(0.5, 0.26), P.call(0.88, 0.42)], Color(color, 0.7))
-			draw_rect(Rect2(P.call(0.4, 0.06), Vector2(0.2, 0.22) * s), color, false, w * 0.7)
-			draw_circle(P.call(0.5, 0.16), s * 0.05, color)
-			for x in [0.2, 0.4, 0.6, 0.8]:
-				line.call(P.call(x, 0.46), P.call(x, 0.84), w)
-			line.call(P.call(0.1, 0.9), P.call(0.9, 0.9), w * 1.2)
-		"water_landmark":
-			draw_circle(P.call(0.5, 0.3), s * 0.26, Color(0.55, 0.78, 0.95))
-			draw_rect(Rect2(P.call(0.3, 0.26), Vector2(0.4, 0.08) * s), Color(0.12, 0.23, 0.43))
-			line.call(P.call(0.32, 0.52), P.call(0.22, 0.94))
-			line.call(P.call(0.68, 0.52), P.call(0.78, 0.94))
-			line.call(P.call(0.27, 0.74), P.call(0.73, 0.74), w * 0.7)
-		"elevator":
-			# Concrete silos and a tall headhouse.
-			for x in [0.14, 0.34, 0.54]:
-				draw_rect(Rect2(P.call(x, 0.34), Vector2(0.18, 0.58) * s), Color(0.82, 0.8, 0.74))
-			draw_rect(Rect2(P.call(0.72, 0.08), Vector2(0.18, 0.84) * s), color)
-		"football":
-			# A goalpost over field lines.
-			for i in 3:
-				line.call(P.call(0.12, 0.66 + i * 0.12), P.call(0.88, 0.66 + i * 0.12), w * 0.6, Color(0.55, 0.8, 0.45))
-			line.call(P.call(0.5, 0.92), P.call(0.5, 0.5), w, Color(1.0, 0.82, 0.3))
-			line.call(P.call(0.26, 0.5), P.call(0.74, 0.5), w, Color(1.0, 0.82, 0.3))
-			line.call(P.call(0.26, 0.5), P.call(0.26, 0.1), w, Color(1.0, 0.82, 0.3))
-			line.call(P.call(0.74, 0.5), P.call(0.74, 0.1), w, Color(1.0, 0.82, 0.3))
-		"fairgrounds":
-			# A Ferris wheel on its legs.
-			draw_arc(P.call(0.5, 0.42), s * 0.3, 0, TAU, 24, color, w, true)
-			for k in 4:
-				var a := PI * k / 4.0
-				var d := Vector2(cos(a), sin(a)) * s * 0.3
-				line.call(P.call(0.5, 0.42) - d, P.call(0.5, 0.42) + d, w * 0.6)
-			line.call(P.call(0.5, 0.42), P.call(0.3, 0.92), w)
-			line.call(P.call(0.5, 0.42), P.call(0.7, 0.92), w)
 		"smoke", "pollution":
 			# A stack with a drifting plume.
 			_poly([P.call(0.18, 0.92), P.call(0.18, 0.5), P.call(0.32, 0.5), P.call(0.32, 0.92)], color)
@@ -480,22 +407,6 @@ func _draw() -> void:
 			draw_circle(P.call(0.5, 0.42), s * 0.12, color)
 			for x in [0.3, 0.55, 0.75]:
 				draw_circle(P.call(x, 0.8), s * 0.04, Color(0.25, 0.2, 0.1))
-		"trailhead":
-			# A bicycle: two wheels, a frame and handlebars.
-			draw_arc(P.call(0.26, 0.66), s * 0.17, 0, TAU, 18, color, w, true)
-			draw_arc(P.call(0.74, 0.66), s * 0.17, 0, TAU, 18, color, w, true)
-			draw_polyline(PackedVector2Array([P.call(0.26, 0.66), P.call(0.46, 0.66), P.call(0.66, 0.4),
-				P.call(0.38, 0.4), P.call(0.26, 0.66)]), color, w * 0.8, true)
-			line.call(P.call(0.66, 0.4), P.call(0.74, 0.66), w * 0.8)
-			line.call(P.call(0.62, 0.3), P.call(0.72, 0.3), w * 0.8)
-			line.call(P.call(0.38, 0.4), P.call(0.35, 0.32), w * 0.8)
-		"town":
-			# A state historical marker: a sign with a crest on top, on a post.
-			line.call(P.call(0.5, 0.62), P.call(0.5, 0.94), w * 1.2)
-			_poly([P.call(0.16, 0.24), P.call(0.36, 0.24), P.call(0.5, 0.08), P.call(0.64, 0.24),
-				P.call(0.84, 0.24), P.call(0.84, 0.64), P.call(0.16, 0.64)], color)
-			for y in [0.36, 0.46, 0.54]:
-				line.call(P.call(0.26, y), P.call(0.74, y), w * 0.5, Color(accent, 0.9))
 		"advice":
 			# A speech bubble with three dots.
 			var bubble := PackedVector2Array([P.call(0.12, 0.18), P.call(0.88, 0.18), P.call(0.88, 0.68),
@@ -527,14 +438,6 @@ func _draw() -> void:
 			for k in 3:
 				var x := 0.34 + 0.16 * k
 				line.call(P.call(x, 0.68), P.call(x - 0.06, 0.86), w * 0.9)
-		"seasons":
-			# A maple leaf outline, with a stem.
-			var leaf := PackedVector2Array([P.call(0.5, 0.1), P.call(0.6, 0.32), P.call(0.86, 0.26),
-				P.call(0.74, 0.5), P.call(0.9, 0.62), P.call(0.6, 0.64), P.call(0.5, 0.8),
-				P.call(0.4, 0.64), P.call(0.1, 0.62), P.call(0.26, 0.5), P.call(0.14, 0.26),
-				P.call(0.4, 0.32), P.call(0.5, 0.1)])
-			draw_polyline(leaf, color, w, true)
-			line.call(P.call(0.5, 0.4), P.call(0.5, 0.94))
 		"help":
 			draw_arc(P.call(0.5, 0.5), s * 0.4, 0, TAU, 32, color, w, true)
 			draw_arc(P.call(0.5, 0.4), s * 0.13, PI * 1.1, PI * 2.4, 16, color, w, true)
