@@ -143,7 +143,12 @@ func merge_step(deadline: int) -> bool:
 			_acc = []
 			continue
 		if not _keys.is_empty():
-			var a = parts[_keys.pop_back()].get(_g)
+			# A building taken down since the merge began is just skipped
+			# (review, 2026-10-25: a stale key crashed the merge).
+			var part = parts.get(_keys.pop_back())
+			if part == null:
+				continue
+			var a = part.get(_g)
 			if a != null:
 				if _acc.is_empty():
 					_acc = MeshParts.copy(a)

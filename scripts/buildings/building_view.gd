@@ -83,6 +83,10 @@ var _far_sq := FarSquares.new()
 var _near := NearDetail.new()
 var _batches := {}  # Vector2i -> BatchSquare: squares drawn in full
 var _fill: Array = []  # buildings a square drawn in full still waits for, nearest last
+## The queue wants sorting before the next fill (sorted once a frame, not
+## once per square opened: review, 2026-10-25, a jump opening many squares
+## sorted it again and again).
+var _fill_unsorted := false
 var _merge_due := {}  # Vector2i -> msec when it's merged
 var _merging := {}  # Vector2i -> true: being merged
 var _merge_again := {}  # Vector2i -> true: changed while merging
@@ -195,6 +199,8 @@ func _sync_all() -> void:
 			break
 	# Squares that came near enough to draw in full get their buildings' full
 	# drawings back, nearest first, in what's left of the frame's share.
+	if _fill_unsorted:
+		_sort_fill_now()
 	while not _fill.is_empty() and Time.get_ticks_usec() - start < budget * 1000:
 		var key: String = _fill.pop_back()
 		var rec: Dictionary = _recs.get(key, {})
@@ -425,9 +431,12 @@ func _unspawn(key: String) -> void:
 	_far_sq.drop(key)
 	if _batches.has(rec.sq):
 		_batches[rec.sq].remove_building(key)
-		# Torn down: it leaves at once. Drawn again (a new look, a regraded
-		# lot): the old one shows until the new one is merged in its place.
-		_merge_soon(rec.sq, not sim.buildings.has(key) or not sim.lots.has(key))
+		# Torn down, or going up again behind scaffolding: it leaves at once
+		# (review, 2026-10-25: the old house showed through the scaffold).
+		# Drawn again otherwise (a new look, a regraded lot): the old one
+		# shows until the new one is merged in its place.
+		_merge_soon(rec.sq, not sim.buildings.has(key) or not sim.lots.has(key)
+			or sim.construction.sites.has("lot:" + key))
 	_near.unindex(key)
 	_trees.remove(key)
 
@@ -553,6 +562,11 @@ func _forget_square(sq: Vector2i) -> void:
 
 ## Nearest the camera last, so pop_back takes it first.
 func _sort_fill() -> void:
+	_fill_unsorted = true
+
+
+func _sort_fill_now() -> void:
+	_fill_unsorted = false
 	if not _has_eye:
 		return
 	_fill.sort_custom(func(a, b):
