@@ -17,7 +17,7 @@
    - Export each as a GLB.
    - A preview of three people was done on 2026-10-25. The arms came out bent wrongly (rotated about the wrong axis) and the man got a women's outfit (a substring match); fix both.
 2. **Walking.** Status 2026-10-25:
-   - `ANIM=1 make_people.py` keyframes a walk on the skeleton and exports it. Godot plays it (tools/people_anim_shot.gd): the legs stride correctly, but the arms are held out forward in Godot, probably the upperarm rotation axis or bone roll in the glTF export. Fix next.
+   - `ANIM=1 make_people.py` keyframes a walk on the skeleton and exports it. Godot plays it (tools/people_anim_shot.gd): legs stride and arms hang and swing. The forward arms came from the modelling pose's bent elbows, fixed by straightening lowerarm01 by -40 deg in the rest pose.
    - The texture route (`WALK=1`, bake_walk) bakes, but the lookup in Godot doesn't match the vertices yet: one vertex differs by about 0.6 m after the UV-flip fix. Check the glTF vertex order and UV set index before using it for crowds.
    The original plan for this step:
    - Give each person the MPFB default rig and a free motion-capture walk cycle (for example the CMU motion capture library, free to use).

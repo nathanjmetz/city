@@ -173,6 +173,20 @@ def keyframe_walk(rig):
     """The walk as a looping action on the skeleton (frames 1-17), for engines
     that play skeletons (Godot's AnimationPlayer)."""
     import math as m
+    # Arms down becomes the resting pose itself (the meshes keep the posed
+    # shape, the skeleton takes it as rest), so the walk only swings them.
+    for o in [o for o in bpy.data.objects if o.type == "MESH" and o.visible_get()]:
+        mods = [md for md in o.modifiers if md.type == "ARMATURE"]
+        if mods:
+            bpy.context.view_layer.objects.active = o
+            bpy.ops.object.modifier_apply(modifier=mods[0].name)
+            md = o.modifiers.new("Armature", "ARMATURE")
+            md.object = rig
+    bpy.context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode="POSE")
+    bpy.ops.pose.select_all(action="SELECT")
+    bpy.ops.pose.armature_apply(selected=False)
+    bpy.ops.object.mode_set(mode="OBJECT")
     rig.animation_data_create()
     act = bpy.data.actions.new("walk")
     rig.animation_data.action = act
@@ -184,7 +198,7 @@ def keyframe_walk(rig):
             s = sgn * m.sin(ph)
             for bone, rot in (("upperleg01.%s" % side, (m.radians(24) * s, 0, 0)),
                               ("lowerleg01.%s" % side, (m.radians(-38) * max(0.0, m.sin(ph * sgn + m.pi * 0.35)), 0, 0)),
-                              ("upperarm01.%s" % side, (m.radians(-16) * s, 0, sgn * m.radians(-37)))):
+                              ("upperarm01.%s" % side, (m.radians(-16) * s, 0, 0))):
                 pb = rig.pose.bones.get(bone)
                 if pb:
                     pb.rotation_mode = "XYZ"
@@ -250,6 +264,11 @@ for p in PEOPLE:
             if pb:
                 pb.rotation_mode = "XYZ"
                 pb.rotation_euler = (0.0, 0.0, sign * math.radians(-37))  # A-pose is about 40 deg off the side
+            # The modelling pose bends the elbows forward: let the forearms hang.
+            fa = rig.pose.bones.get("lowerarm01.%s" % side)
+            if fa:
+                fa.rotation_mode = "XYZ"
+                fa.rotation_euler = (math.radians(float(os.environ.get("ELBOW", "-40"))), 0.0, 0.0)
         bpy.ops.object.mode_set(mode="OBJECT")
     if body is not None:
         b.hide_set(True)
