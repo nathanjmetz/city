@@ -278,3 +278,42 @@ Measured as in step 1 (12-block PerfTown, 2,860 buildings, sim paused, main and 
 The mills at 90 m were 2.5 ms slower in the browser renderer, in one run, with more triangles drawn (1.17 M vs 1.08 M). That wasn't looked into yet.
 
 **Pictures:** `docs/building-drawing/`.
+
+
+## Where the triangles go, and the grown trees' shadows (2026-10-26)
+
+The critic's item 9: a 1,500-person town drew 5,214 draw calls and 6.2 million triangles (the desktop budget in `PerfBudget.RENDER` is 4 million), the demo town 13.3 million, and 14 to 20 million from 100 m up once the street trees came in.
+
+**How it was measured.** `tools/render_budget.gd` opens the real game in a window (1600x900) with a built-out test town (PerfTown, 5 blocks: 784 people, 753 buildings), mid-July, the sim paused, the tier pinned. It times the street, 100 m and 300 m views, then hides one part at a time (grown trees, card trees, buildings, the land, roads, each view, sun shadows, each screen effect) and reads what each one adds. Run with `--years=25` for a town whose planted trees are 25 years old. On this Mac the frame rate is held to 60 even with vsync off, so frames under 16.7 ms read as 16.7, and the graphics chip's own time reads 0: the frame times only show a difference once a view is over budget.
+
+**What was costing most:** the grown trees' sun shadows. On Cinematic, from the street, 17 of 26 million triangles (grown town; 13 of 21 million as planted) were grown trees drawn into the shadow map. Each group of grown trees spans the whole circle round the camera (up to 475 m on Cinematic), so the engine can't cull it: every tree goes into every one of the four shadow splits, and trees behind the camera too. The light grown trees (175 to 475 m on Cinematic, 98 to 266 m on High) were the largest share, then the full ones.
+
+**The change** (`GrownTrees`, `TreeLook`): the groups that draw grown trees cast no shadow. Shadow-only groups cast it instead:
+- within 60 m of the camera, a full tree's own mesh (the sun still comes through its leaves in flecks);
+- out to the full trees' reach, its light tree (a fifth of the triangles, the same limbs and crown);
+- past that, the full card at the tree's spot, which was drawn into the shadow map anyway.
+
+Back to back, main then the branch (draw calls / triangles / frame median, p95):
+
+| Renderer, tier, trees | View | Main | Branch |
+| --- | --- | --- | --- |
+| Desktop Cinematic, grown 25 years | street | 5,780 / 26.2 M / 16.7, 17.0 ms | 5,019 / 11.0 M / 16.7, 16.9 ms |
+| | 100 m | 4,082 / 23.0 M / **22.6 to 22.9, 25.2 to 25.5 ms** | 3,496 / 9.2 M / **19.3 to 20.2, 22.7 to 22.8 ms** |
+| | 300 m | 5,535 / 8.9 M / 16.7, 17.0 ms | 4,962 / 6.0 M / 16.7, 16.9 ms |
+| Desktop Cinematic, as planted | street | 5,932 / 20.9 M / 16.6, 16.9 ms | 5,094 / 9.1 M / 16.7, 17.0 ms |
+| | 100 m | 4,209 / 16.9 M / 17.7, 20.5 ms | 3,567 / 7.2 M / 16.7, 18.3 ms |
+| | 300 m | 5,671 / 6.8 M / 16.7, 16.9 ms | 5,050 / 5.5 M / 16.7, 16.9 ms |
+| Desktop High, grown 25 years | street | 5,138 / 13.1 M | 4,685 / 7.3 M |
+| | 100 m | 3,384 / 7.4 M | 2,928 / 4.5 M |
+| | 300 m | 4,490 / 3.8 M | 4,129 / 3.8 M |
+| Desktop High, as planted | street | 5,241 / 10.1 M | 4,703 / 6.2 M |
+| | 100 m | 3,388 / 5.4 M | 2,930 / 4.1 M |
+| Browser renderer High, grown 25 years | street | 3,793 / 6.2 M | 3,814 / 6.2 M (unchanged: see below) |
+| | 100 m | 2,031 / 4.8 M | 2,032 / 4.8 M |
+| Browser renderer Low | all | no change (no grown trees, no tree shadows) | |
+
+The browser has no full grown trees (no near band), so its light trees keep casting their own shadows, as on main: a first version handed their shadows to the cards there too, which turned the shadows under light trees into clumps of leaf cards (a reviewer's catch). High's frames were 16.7 ms (held to 60) before and after. Graphics memory is the same (1,569 MB on Cinematic, 875 MB on High, 495 MB browser High, 438 MB browser Low, at the end of a run).
+
+**Pictures:** `docs/render-budget/` (before on the left, after on the right). Measured against two runs of the same code (the trees sway, so no two pictures match): from the street 1 to 3% of pixels changed by more than a shade (under 1% run to run), in the flecks of sun under trees past 60 m; from 100 m in a grown town 9 to 10% (about 2.5% run to run), in the shapes of tree shadows on the ground 100 to 475 m off, where a lighter tree's or a card's shadow now stands in. Looked at side by side, they read the same; nothing is missing or added. As planted the change is about run-to-run size; from 300 m, 0.1 to 2.4% of pixels.
+
+**Still over budget, for next time** (measured by hiding each part on Cinematic, grown town, 100 m, about 1 ms of noise): the wild woods' cards (2.6 M triangles, about 5 ms; most of the triangles are their shadows), the light grown trees themselves (3.4 M, about 3.5 ms), SDFGI (about 3.7 ms), all sun shadows (about 4 to 6 ms). Draw calls are still about twice the 2,500 budget from the street on the desktop (5,000), and the triangles 1.5 to 2.7 times the 4 million budget on Cinematic. The land's background preloading (`frame.terrain`, 3.3 ms of every frame on the main thread while it fills its cache) was also over its 1 ms budget in every run.

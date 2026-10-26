@@ -54,7 +54,12 @@ float tree_hash(vec3 origin, float salt) {
 // [b3, b2), light cards [b4, b3), FarWoods [0, b4); each b rises from 0 to
 // 1 across its hand-over. A wild tree past the far woods' reach, or seen
 // from high up, drops out whole, each at its own distance.
-vec2 band_keep(vec3 origin, bool grows) {
+// The sun's shadow map (`shadow`) is cheaper (GrownTrees.SHADOW_BIT): a
+// full grown tree casts no shadow, the light grown tree at its spot casts
+// it ([b1, 1), drawn into the shadow map only); past NEAR the full card at
+// a tree's spot casts it, not the light grown tree ([b3, b1)). Without a
+// near band (the browser) each version casts its own, as it draws.
+vec2 band_keep(vec3 origin, bool grows, bool shadow) {
 	float b1 = 1.0;
 	float b2 = 1.0;
 	if (grows && grown_cam.w > 0.5) {
@@ -97,6 +102,16 @@ vec2 band_keep(vec3 origin, bool grows) {
 	// there (with a short reach, straight from the full ones); neither
 	// takes over a grown tree.
 	b4 = min(b4, b2);
+	// With no full grown trees (grown_zone.x 0: the browser) every version
+	// casts its own shadow, as it draws.
+	if (shadow && grown_zone.x > 0.0) {
+		if (zone_mode == 0 && !light_card) {
+			return vec2(max(min(b3, b1), b4), b1);
+		}
+		if (zone_mode == 2 || zone_mode == 5) {
+			return vec2(b1, 1.0);
+		}
+	}
 	b3 = max(min(b3, b2), b4);
 	if (zone_mode == 1 || zone_mode == 4) {
 		return vec2(b1, 1.0);
@@ -185,7 +200,7 @@ void vertex() {
 	vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 	float code = floor(custom.a * 32.0);
 	species = mod(code, 16.0);
-	keep = band_keep(origin, code < 15.5);
+	keep = band_keep(origin, code < 15.5, PROJECTION_MATRIX[3][3] > 0.5);
 #ifdef FAR_WOODS
 	// One quad facing the camera, the size of the crown (UV2 is its corner,
 	// -1 to 1), turned back into the tree's own space.
@@ -372,7 +387,7 @@ varying vec2 keep;
 """ + KEEP_GLSL + """
 void vertex() {
 	vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-	keep = band_keep(origin, INSTANCE_CUSTOM.a * 32.0 < 15.5);
+	keep = band_keep(origin, INSTANCE_CUSTOM.a * 32.0 < 15.5, PROJECTION_MATRIX[3][3] > 0.5);
 	VERTEX *= step(0.0001, keep.y - keep.x);
 }
 void fragment() {
@@ -428,6 +443,10 @@ void vertex() {
 		float t_mid = smoothstep(grown_zone.x - grown_zone.z, grown_zone.x, d);
 		float t_far = smoothstep(grown_zone.y - grown_zone.z, grown_zone.y, d);
 		keep = zone_mode == 1 ? vec2(t_mid, 1.0) : vec2(t_far, t_mid);
+		// The light tree casts the full one's shadow (band_keep).
+		if (PROJECTION_MATRIX[3][3] > 0.5 && zone_mode == 2 && grown_zone.x > 0.0) {
+			keep = vec2(t_mid, 1.0);
+		}
 	}
 	VERTEX *= step(0.0001, keep.y - keep.x);
 	float phase = TIME * 1.1 + origin.x * 0.31 + origin.z * 0.17;
