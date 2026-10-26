@@ -934,7 +934,7 @@ func _build_top_bar() -> void:
 	row.add_child(_views_button)
 	# Home: back to your town centre (Home key); the arrow lists every town.
 	jump = TownJump.new(sim, info_view.cam)
-	var home := _icon_button("homes", 24, "Back to your town centre  (Home)")
+	var home := _icon_button("locate", 24, "Back to your town centre  (Home)")
 	home.toggle_mode = false
 	home.pressed.connect(func():
 		_show_towns(false)
@@ -2127,12 +2127,14 @@ func _section(parent: Container, title: String) -> HBoxContainer:
 
 
 ## A compact tool card: icon over a name. The key or detail is in the tooltip.
+## The icon is 28 px (the critic: building icons at 20 to 24 px were mush);
+## that makes the card taller, never wider, so the Roads menu keeps its width.
 func _card(icon: String, title: String, detail: String, toggle := true) -> Button:
 	var b := Button.new()
 	b.theme_type_variation = &"ToolCard"
 	b.toggle_mode = toggle
 	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = Vector2(64, 50)
+	b.custom_minimum_size = Vector2(64, 56)
 	b.tooltip_text = "%s  (%s)" % [title, detail] if detail != "" else title
 	var col := VBoxContainer.new()
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -2140,7 +2142,7 @@ func _card(icon: String, title: String, detail: String, toggle := true) -> Butto
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.set_anchors_preset(Control.PRESET_FULL_RECT)
 	b.add_child(col)
-	var ic := Icon.new(icon, 24)
+	var ic := Icon.new(icon, 28)
 	ic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	col.add_child(ic)
 	var t := UiStyle.label(title, 11)
