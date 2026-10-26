@@ -92,8 +92,11 @@ const WALK_V := 1.4
 ## no new trips start past them. The simulation never changes them itself.
 var max_cars := MAX_CARS
 var max_walkers := MAX_WALKERS
-## Share (percent) of short trips walked by people with a car at home.
-const SHORT_WALK_PCT := 25
+## Share (percent) of short trips walked by people with a car at home:
+## about one in eight in a small Midwestern town, half the national quarter
+## (NHTS: under-a-mile trips walked, lower outside cities). Nathan,
+## 2026-10-25: "the streets were flooded with pedestrians".
+const SHORT_WALK_PCT := 12
 ## Big towns (Brawn, 2026-10-23): past this many residents, people's own
 ## cars drive as traffic flows, not one by one: each trip is timed over its
 ## route with the FHWA's BPR curve, t = t0 (1 + 0.15 (v/c)^4), and loads
