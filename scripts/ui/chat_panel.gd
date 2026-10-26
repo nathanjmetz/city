@@ -395,6 +395,10 @@ static func _dot(color: Color, filled: bool) -> ImageTexture:
 func _ring() -> void:
 	if SoundSettings.is_flagged("ui/doorbell"):
 		return
-	SoundSettings.heard("ui/doorbell", db_to_linear(_bell.volume_db))
+	var db := SoundSettings.level("ui/doorbell", -6.0)
+	if db <= SoundMix.SILENT:
+		return
+	_bell.volume_db = db
+	_bell.pitch_scale = SoundMix.pitch_for("ui/doorbell")
 	_bell.stream = SoundSettings.stream("ui/doorbell")
 	_bell.play()

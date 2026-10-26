@@ -89,12 +89,16 @@ func _corner(n: int) -> Dictionary:
 	# The curb rounds that corner (Junction's curb return), so the post goes
 	# in the grass strip behind the curved curb, on the corner's diagonal,
 	# where a city sets it, not out in the pavement the return gave the road.
-	var r: float = Junction.RETURN_RADIUS.get(maxi(t1, t2), 6.0)
+	var country := false
+	for t in [t1, t2]:
+		country = country or RoadStyle.TYPES[t].get("rural", false) or not RoadStyle.TYPES[t].get("walk", true)
+	var r := Junction.corner_radius(t1, t2, country)
 	var ctr = Geometry2D.line_intersects_line(side * (h1 + r), d1, side2 * (h2 + r), d2)
 	var at := Vector2(p.x, p.z) + (corner as Vector2) + (side + side2).normalized() * 1.2
 	if ctr != null and (ctr as Vector2).distance_to(corner) > 0.1:
 		var out: Vector2 = ((corner as Vector2) - ctr).normalized()
-		at = Vector2(p.x, p.z) + ctr + out * (r - RoadStyle.CURB_WIDTH - RoadStyle.PARKWAY_WIDTH * 0.5)
+		var back := Junction.SHOULDER + 0.6 if country else RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5
+		at = Vector2(p.x, p.z) + ctr + out * (r - back)
 	var a := sim.streets.name_of(first)
 	var b := sim.streets.name_of(second)
 	return {"at": at, "d1": d1, "d2": d2, "a": a, "b": b, "key": [a, b, at.snapped(Vector2(0.1, 0.1))]}

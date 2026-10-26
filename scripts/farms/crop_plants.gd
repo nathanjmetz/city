@@ -31,7 +31,7 @@ const BUDGET_MS := 2.0
 ## shadow only near the camera showed as a darker square); beans never (too
 ## short to matter for what a shadow pass costs). Measured at Ultra: shadows
 ## on every plant tripled the triangles drawn (6.6 to 14.9 million).
-const SHADOW_TIER := GraphicsQuality.CINEMATIC
+## (The tier's crop_shadows: see GraphicsQuality.BUDGETS.)
 
 ## Tests and tools can turn the plants on without a graphics tier, or off.
 static var force := false
@@ -141,7 +141,7 @@ static func enabled() -> bool:
 	if OS.has_feature("web"):
 		return false
 	var q := GraphicsQuality.current
-	return q != null and q.active and not q.browser and q.tier >= GraphicsQuality.HIGH
+	return q != null and q.active and bool(GraphicsQuality.knob("crops", false))
 
 
 func _process(_delta: float) -> void:
@@ -167,14 +167,14 @@ func _process(_delta: float) -> void:
 		if not _tiles.is_empty() and height > OFF_ABOVE * 1.5:
 			_clear()
 		return
-	_radius = RADIUS * clampf(GraphicsQuality.detail / 1.4, 0.85, 1.35)
+	_radius = float(GraphicsQuality.knob("crop_m", RADIUS))
 	var focus := _look_spot(cam, height)
 	var mat := material()
 	var gone := smoothstep(FADE_FROM, OFF_ABOVE, height)
 	mat.set_shader_parameter("fade", Vector4(focus.x, focus.y, _radius, gone))
 	_tell_ground(Vector4(focus.x, focus.y, _radius, 1.0 - gone))
 	var q := GraphicsQuality.current
-	var shadows := q != null and q.tier >= SHADOW_TIER
+	var shadows: bool = q != null and bool(GraphicsQuality.knob("crop_shadows", false))
 	# A field planted, harvested or tilled since the tiles were built.
 	if CropCalendar.version != _version:
 		_version = CropCalendar.version

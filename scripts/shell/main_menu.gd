@@ -14,11 +14,26 @@ var _panel := PanelContainer.new()
 var _pages := {}       # name -> Control
 var _status := ShellStyle.text("", 14, 500, Brand.INK_MUTED)
 var _cam := Camera3D.new()
-const MENU_TOWN := "res://art/menu/town.city"
-## How far out the camera circles downtown, in metres.
-const ORBIT := 230.0
+const MENU_TOWN := MenuLife.MENU_TOWN
+## How far out the camera circles downtown, in metres, and how high.
+const ORBIT := 300.0
+const ORBIT_HEIGHT := 70.0
+## Seconds for one full turn: slow, so the town never feels hurried.
+const TURN_SECONDS := 150.0
 
 var _angle := 0.4
+var _life: MenuLife
+var _boost := Callable()
+## The look switches as the game had them, put back when the menu closes
+## (the menu turns day and night and the seasons on for itself, unsaved).
+var _was_cycle := false
+var _was_seasons := true
+## Debug (after `--`): `--menu-time=2026-12-15T23:00` shows that Marion
+## time, `--menu-angle=1.5` sets where the camera starts, and
+## `--menu-shot=path.png` saves the screen after a while and quits.
+var _shot_path := ""
+var _shot_at := 14.0
+var _shot_time := 0.0
 var _code := LineEdit.new()
 var _server := LineEdit.new()
 var _name := LineEdit.new()
@@ -41,6 +56,10 @@ var _retrying := false
 # its script crashes the engine at quit).
 func _exit_tree() -> void:
 	Vegetation.cover_source = Callable()
+	DayNight.cycle_on = _was_cycle
+	DayNight.seasons_on = _was_seasons
+	if _boost.is_valid() and RenderingServer.frame_pre_draw.is_connected(_boost):
+		RenderingServer.frame_pre_draw.disconnect(_boost)
 
 
 func _ready() -> void:
@@ -109,12 +128,21 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	_angle += delta * 0.03
+	_angle = fposmod(_angle + delta * TAU / TURN_SECONDS, TAU)
 	var ground := Terrain.ground_y(0.0, 0.0)
-	# Low over the rooftops, like a drone over Main Street, with the
+	# Low over the rooftops, like a drone circling the square, with the
 	# woods and fields running out to the haze behind.
-	_cam.position = Vector3(cos(_angle) * ORBIT, ground + 55.0, sin(_angle) * ORBIT)
+	_cam.position = Vector3(cos(_angle) * ORBIT, ground + ORBIT_HEIGHT, sin(_angle) * ORBIT)
 	_cam.look_at(Vector3(0, ground + 8.0, 0))
+	if _shot_path != "":
+		_shot_time += delta
+		if _shot_time >= _shot_at:
+			var image := get_viewport().get_texture().get_image()
+			image.save_png(_shot_path)
+			print("menu shot: ", _shot_path, "  Marion time ", _life.wall.get("hour", -1), ":",
+				_life.wall.get("minute", -1), " cars ", _life.sim.traffic.cars.size(), " walkers ",
+				_life.sim.traffic.walkers.size())
+			get_tree().quit()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -448,9 +476,10 @@ func _gap(h: int) -> Control:
 	return c
 
 
-## A finished small town, flown over slowly behind the menu.
+## The town as it is in Marion right now, circled slowly behind the menu.
 func _build_backdrop() -> void:
-	add_child(SkyLight.new())
+	var sky := SkyLight.new()
+	add_child(sky)
 	_cam.fov = 45.0
 	_cam.h_offset = -70.0  # keeps the town clear of the menu
 	# As in play (CityCamera): out past the far land, so the county runs on
@@ -459,13 +488,36 @@ func _build_backdrop() -> void:
 	_cam.far = 24000.0
 	add_child(_cam)
 	var land := TerrainView.new()
-	# The menu's camera stands still: no preloading the county behind it.
+	# The menu's camera stays near the town: no preloading the county.
 	land.keep_land = false
 	add_child(land)
-	# A grown small town, made once by tools/menu_town.gd: a player's own
-	# early town is mostly bare lots and half-built shops.
-	var sim := CitySim.new()
+	# A grown town, made once by tools/menu_town.gd: a player's own early
+	# town is mostly bare lots and half-built shops. Its clock is Marion's.
+	var sim := MenuSim.new()
 	sim.from_dict(Session._read(MENU_TOWN))
+	# The day and the season are the real ones (and the sun, the haze, the
+	# leaves, the snow and the crop calendar follow them: DayNight, as in
+	# the game with day and night and seasons on). Not saved: the choice in
+	# the game's own settings is put back on the way out.
+	DayNight.load_settings()
+	_was_cycle = DayNight.cycle_on
+	_was_seasons = DayNight.seasons_on
+	DayNight.cycle_on = true
+	DayNight.seasons_on = true
+	var look := DayNight.new()
+	_life = MenuLife.new()
+	var forced := ""
+	for a in OS.get_cmdline_user_args() + OS.get_cmdline_args():
+		if a.begins_with("--menu-time="):
+			forced = a.trim_prefix("--menu-time=")
+		elif a.begins_with("--menu-angle="):
+			_angle = float(a.trim_prefix("--menu-angle="))
+		elif a.begins_with("--menu-shot="):
+			_shot_path = a.trim_prefix("--menu-shot=")
+		elif a.begins_with("--menu-shot-after="):
+			_shot_at = float(a.trim_prefix("--menu-shot-after="))
+	_life.setup(sim, look, forced)
+	add_child(_life)
 	var roads := RoadView.new()
 	add_child(roads)
 	roads.setup(sim.network, sim)
@@ -483,10 +535,37 @@ func _build_backdrop() -> void:
 	var farmsteads := FarmsteadView.new()
 	add_child(farmsteads)
 	farmsteads.setup(sim)
+	# The farms' own fields, and the crop calendar for the county's.
+	var farms := FarmView.new()
+	add_child(farms)
+	farms.setup(sim)
 	var exits := ExitRoads.new()
 	add_child(exits)
 	exits.setup(sim, land, "exits")
+	# The town's people and cars, as in the game.
+	var cars := TrafficView.new()
+	cars.setup(sim.traffic, _life.tick_fraction)
+	add_child(cars)
+	var walkers := WalkerView.new()
+	walkers.setup(sim.traffic, _life.tick_fraction)
+	add_child(walkers)
+	look.setup(sim, sky, _life.tick_fraction)
+	add_child(look)  # street lights, headlights, windows at night
+	var signals := JunctionView.new()
+	signals.setup(sim.traffic)
+	signals.roads = roads
+	add_child(signals)
+	if RenderingServer.get_current_rendering_method() == "gl_compatibility":
+		# The browser's renderer has no sky bounce light, and a low sun
+		# alone leaves the town flat and grey there: lift sun and shade,
+		# after DayNight has set them for the frame.
+		_boost = func():
+			sky.sun.light_energy *= 2.0
+			sky.env.ambient_light_energy *= 2.2
+		RenderingServer.frame_pre_draw.connect(_boost)
 	Vegetation.cover_source = func(p: Vector3) -> Array:
 		var x := p.x + sim.terrain_offset.x
 		var z := p.z + sim.terrain_offset.y
 		return Terrain.wild_cover(x, z) + [Terrain.crops(x, z)]
+	# Hidden behind a fade until the backdrop is drawn (BackdropReveal).
+	BackdropReveal.cover(self, [land.is_drawn, roads.is_drawn, buildings.is_drawn, wild.is_drawn, farmsteads.is_drawn])

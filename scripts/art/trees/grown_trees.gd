@@ -208,9 +208,19 @@ func _process(_delta: float) -> void:
 	last_ms = (Perf.now() - t) / 1000.0
 
 
+## True when the trees round the camera are looked up and every grown mesh
+## they need is made (nothing to wait for without a screen).
+func is_drawn() -> bool:
+	if not enabled or DisplayServer.get_name() == "headless" or TreeLook.radii().y <= 0.0:
+		return true
+	return _frame > 1 and not _scanning and _want.is_empty() and _version == TreeField.version and _centre.x < INF
+
+
 ## [build, lookup] milliseconds a frame the grown trees may use on the main
 ## thread: tighter in the browser.
 static func budgets_for(browser: bool) -> Vector2:
+	if LoadGate.loading:
+		return Vector2(LoadGate.ms(0.0), LoadGate.ms(0.0))
 	return Vector2(BUILD_MS_BROWSER, SCAN_MS_BROWSER) if browser else Vector2(BUILD_MS, SCAN_MS)
 
 
@@ -475,11 +485,11 @@ func _build_threaded(ms: float) -> void:
 			_store(key, TreeMesher.to_mesh(_key_sp(key), _key_lod(key), t.parts), t.parts)
 			_want.erase(key)
 			made = true
-	if _tasks() < _max_tasks and not _want.is_empty():
+	if _tasks() < _task_cap() and not _want.is_empty():
 		var keys := _want.keys()
 		keys.sort_custom(func(a, b): return _want[a] < _want[b])
 		for key in keys:
-			if _tasks() >= _max_tasks or (Perf.now() - start) > budget:
+			if _tasks() >= _task_cap() or (Perf.now() - start) > budget:
 				break
 			if _meshes.has(key) or _mesh_tasks.has(key):
 				continue
@@ -509,6 +519,11 @@ func _build_threaded(ms: float) -> void:
 	if made:
 		_trim()
 		_version = -1  # look again, to draw the new meshes
+
+
+## Worker tasks at once: nearly every core while the loading screen is up.
+func _task_cap() -> int:
+	return clampi(OS.get_processor_count() - 1, _max_tasks, 8) if LoadGate.loading else _max_tasks
 
 
 func _tasks() -> int:

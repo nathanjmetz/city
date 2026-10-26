@@ -18,6 +18,9 @@ extends RefCounted
 static var stats := {}
 ## Counters set by systems each frame or tick: cars, trees, buildings...
 static var counts := {}
+## Per key: the latest sample in ms (the automatic quality reads this
+## frame's "frame.sim", the town's thinking, to leave it out of drawing).
+static var last := {}
 
 
 static func now() -> int:
@@ -41,6 +44,7 @@ static func record(key: String, ms: float) -> void:
 	s.n += 1
 	s.sum += ms
 	s.max = maxf(s.max, ms)
+	last[key] = ms
 
 
 static func count(key: String, value: int) -> void:

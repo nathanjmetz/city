@@ -37,6 +37,7 @@ var _shade := []  # fields drawn last frame, whose far trees drop their shadows
 var _last_regrow := -1
 var _season_at := -1.0
 var grown: GrownTrees
+var _left := -1  # chunks still to draw after the last frame (-1 before the first)
 
 
 func setup(s: CitySim) -> void:
@@ -47,6 +48,12 @@ func setup(s: CitySim) -> void:
 	# The grown trees near the camera, for every TreeField in the scene.
 	grown = GrownTrees.new()
 	add_child(grown)
+
+
+## True once the woods round the camera are laid out and the near trees
+## grown (the loading screen waits for this; LoadGate).
+func is_drawn() -> bool:
+	return sim != null and _left == 0 and (grown == null or grown.is_drawn())
 
 
 ## Redraws the chunks in a box (view coordinates): the land there was
@@ -74,9 +81,12 @@ func _process(_delta: float) -> void:
 	if cam == null:
 		return
 	var height := maxf(cam.global_position.y - Terrain.ground_y(cam.global_position.x, cam.global_position.z), 1.0)
-	# Lower graphics tiers draw the woods less far; the ground's painted
+	# Lower graphics tiers draw the woods and their brush less far (the
+	# tier's woods share: GraphicsQuality.BUDGETS); the ground's painted
 	# canopy carries on past them.
-	var radius := reach(height) * clampf(GraphicsQuality.detail, 0.6, 1.0)
+	var woods := float(GraphicsQuality.knob("woods", 1.0))
+	var radius := reach(height) * woods
+	var brush := DETAIL_RADIUS * woods
 	var focus := _ground_focus(cam, radius)
 	# Trees thin out and shrink toward the edge (TreeField's shader), where
 	# the ground's painted canopy takes over.
@@ -88,7 +98,7 @@ func _process(_delta: float) -> void:
 	# lands, so zooming back in fast finds them ready instead of popping in.
 	visible = height <= TREES_OFF
 	if not visible:
-		radius = reach(TREES_OFF) * clampf(GraphicsQuality.detail, 0.6, 1.0)
+		radius = reach(TREES_OFF) * woods
 		focus = _look_spot(cam, height)
 	var size := Vegetation.CHUNK
 	var day := sim.tick_count / REGROW_REDRAW
@@ -113,8 +123,8 @@ func _process(_delta: float) -> void:
 			var d := _centre(c).distance_to(focus)
 			if d > radius + size * 0.7:
 				continue
-			var near := d < DETAIL_RADIUS
-			if not _chunks.has(c) or _stale.has(c) or (near and not _detail.has(c)) or (d > DETAIL_RADIUS + size and _detail.has(c)):
+			var near := d < brush
+			if not _chunks.has(c) or _stale.has(c) or (near and not _detail.has(c)) or (d > brush + size and _detail.has(c)):
 				todo.append(c)
 	todo.sort_custom(func(a, b): return _centre(a).distance_squared_to(focus) < _centre(b).distance_squared_to(focus))
 	# Distant trees are a few big cards: their shadows would cost more than
@@ -125,11 +135,16 @@ func _process(_delta: float) -> void:
 				if mmi is GeometryInstance3D and mmi.visibility_range_begin > 0.0:
 					mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_shade.clear()
+	# The tier's share of each frame for laying out chunks.
+	var grow_ms := float(GraphicsQuality.knob("grow_ms", BUDGET_MS))
 	var start := Time.get_ticks_msec()
+	var drawn := 0
 	for c in todo:
-		_draw_chunk(c, _centre(c).distance_to(focus) < DETAIL_RADIUS)
-		if Time.get_ticks_msec() - start > BUDGET_MS:
+		_draw_chunk(c, _centre(c).distance_to(focus) < brush)
+		drawn += 1
+		if Time.get_ticks_msec() - start > LoadGate.ms(grow_ms):
 			break
+	_left = todo.size() - drawn
 
 
 ## Lays out one chunk now.

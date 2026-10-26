@@ -57,13 +57,15 @@ static var picks_version := 0
 static var _picked_streams := {}
 static var _heard := {}   # id -> {"t": seconds, "peak": loudness}
 static var _loaded := false
+## Where the settings are kept (tests point this somewhere else).
+static var save_path := SAVE_PATH
 
 
 static func ensure_loaded() -> void:
 	if _loaded:
 		return
 	_loaded = true
-	var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	var f := FileAccess.open(save_path, FileAccess.READ)
 	if f == null:
 		return
 	var d = JSON.parse_string(f.get_as_text())
@@ -81,7 +83,7 @@ static func ensure_loaded() -> void:
 
 
 static func save() -> void:
-	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	var f := FileAccess.open(save_path, FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify({"volume": volume, "muted": muted, "flagged": flagged.keys(), "picks": picks}, "\t"))
 
@@ -94,8 +96,18 @@ static func apply() -> void:
 		if i == -1:
 			continue
 		var v: float = volume[c[0]]
-		AudioServer.set_bus_volume_db(i, linear_to_db(maxf(v, 0.0001)))
-		AudioServer.set_bus_mute(i, v <= 0.0 or (c[0] == "master" and muted))
+		var db := linear_to_db(maxf(v, 0.0001))
+		var off := false
+		# The mix (SoundMix) moves the master and the music; every other
+		# sound is moved where it plays (level).
+		if c[0] == "master":
+			db += SoundMix.master_db()
+		elif c[0] == "music":
+			db += SoundMix.sample_db("music/theme")
+			off = SoundMix.is_silenced("music/theme")
+		AudioServer.set_bus_volume_db(i, db)
+		AudioServer.set_bus_mute(i, off or v <= 0.0 or (c[0] == "master" and muted))
+	SoundMix.apply_limiter()
 
 
 static func set_volume(channel: String, v: float) -> void:
@@ -189,7 +201,8 @@ static func stream(id: String) -> AudioStream:
 	if s == null:
 		s = load("res://assets/audio/%s.ogg" % id)
 	if s is AudioStreamOggVorbis:
-		(s as AudioStreamOggVorbis).loop = bool(info(id)[3])
+		# A sound set to rest between repeats plays once, then is started again.
+		(s as AudioStreamOggVorbis).loop = bool(info(id)[3]) and SoundMix.gap(id) <= 0.0
 	return s
 
 
@@ -219,7 +232,14 @@ static func pick(id: String, option: Dictionary) -> void:
 static func level(id: String, db: float, gain := 1.0) -> float:
 	if is_flagged(id):
 		return -80.0
+	# The mix: this kind of sound's own volume, mute and solo.
+	var mixed := SoundMix.gain_db(id)
+	if mixed <= SoundMix.SILENT:
+		SoundMix.report(id, 0.0)
+		return -80.0
+	db += mixed
 	var loud := db_to_linear(db) * gain
+	SoundMix.report(id, loud)
 	if loud >= AUDIBLE:
 		heard(id, loud)
 	return db
@@ -228,7 +248,12 @@ static func level(id: String, db: float, gain := 1.0) -> float:
 ## level() for a sound placed in the world, heard from `ear`.
 static func level3d(id: String, p: AudioStreamPlayer3D, db: float, ear: Vector3) -> float:
 	var d := p.global_position.distance_to(ear) if p.is_inside_tree() else p.position.distance_to(ear)
-	return level(id, db, clampf(p.unit_size / maxf(d, 0.001), 0.0, 1.0))
+	var gain := clampf(p.unit_size / maxf(d, 0.001), 0.0, 1.0)
+	# A hearing distance changed in the mix fades out smoothly at its edge.
+	if not is_equal_approx(SoundMix.range_scale(id), 1.0) and p.max_distance > 0.0:
+		var fade := clampf((p.max_distance - d) / (p.max_distance * 0.3), 0.0, 1.0)
+		db += linear_to_db(maxf(fade, 0.0001))
+	return level(id, db, gain)
 
 
 static func heard(id: String, loud := 1.0) -> void:

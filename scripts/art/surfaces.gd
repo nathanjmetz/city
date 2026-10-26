@@ -211,15 +211,70 @@ void fragment() {
 	float grain = texture(noise_grain, p / 0.35).r;
 	// The same crushed limestone as the county roads painted on the land
 	// (TerrainView gravel), so a joined stretch runs on into the paint.
-	vec3 col = mix(vec3(0.50, 0.47, 0.41), vec3(0.62, 0.59, 0.52), patch);
+	// Mid grey-tan, a little lighter than old asphalt (it read as a pale
+	// sidewalk at 0.5-0.6: Nathan 2026-10-25, "doesn't look like gravel").
+	vec3 col = mix(vec3(0.39, 0.37, 0.33), vec3(0.48, 0.46, 0.41), patch);
 	col *= 1.0 + (grain - 0.5) * 0.35 * close;
-	float weeds = smoothstep(0.62, 0.78, texture(noise_soft, turn(p, 1.7) / 4.0).r);
-	col = mix(col, vec3(0.16, 0.22, 0.08) * (0.8 + grain * 0.4), weeds * 0.85);
+	col *= 0.94 + texture(noise_grain, p / 1.6).r * 0.12;
+	// The odd tuft of grass, small and soft-edged.
+	float weeds = smoothstep(0.72, 0.86, texture(noise_soft, turn(p, 1.7) / 1.8).r);
+	col = mix(col, vec3(0.18, 0.23, 0.10) * (0.8 + grain * 0.4), weeds * 0.5);
 	ALBEDO = col;
 	ROUGHNESS = 0.95;
 	SPECULAR = 0.2;
 }
 """
+
+## Gravel shoulders on country roads, benchmarked against photos of
+## Indiana county and state roads (SR 18, SR 26, CR 600 N in Grant County):
+## #53 crushed limestone, a mix of pale and mid grey stones with brown
+## fines between them, darker and packed where wheels drop off the
+## pavement, loose and paler further out, then thinning into the grass in
+## a ragged line with tufts coming through. Stones are a few cm: drawn as
+## a speckle at two sizes that blends into an even grain before it is
+## small enough to shimmer, so from 300 m the shoulder still reads as
+## stone, not a pale stripe. UV.x * 4 runs 0 at the pavement to 1 at the
+## shoulder's outer edge; past the ragged line the ground shows through.
+const SHOULDER := """
+global uniform float snow;
+void fragment() {
+	vec2 p = world_pos.xz;
+	float w = UV.x * 4.0;
+	float fp = length(fwidth(p));  // metres per pixel
+	// The ragged edge into the grass: wanders a metre or so along the
+	// road, with single tufts and gaps finer than that.
+	float wander = texture(noise_soft, p / 6.0).r;
+	float tufts = texture(noise_grain, p / 2.4).r;
+	float edge = 0.5 + wander * 0.45 + (tufts - 0.5) * 0.3;
+	if (w > edge) {
+		discard;
+	}
+	// Stones: two sizes of speckle, fading to their average once a stone
+	// is under about two pixels.
+	float s1 = texture(noise_grain, p / 0.09).r;
+	float s2 = texture(noise_grain, turn(p, 0.8) / 0.23).r;
+	float fine = clamp(0.06 / max(fp, 1e-4) - 0.5, 0.0, 1.0);
+	float mid = clamp(0.18 / max(fp, 1e-4) - 0.5, 0.0, 1.0);
+	float stones = (s1 - 0.5) * 0.55 * fine + (s2 - 0.5) * 0.45 * mid;
+	// Limestone grey, warmer and darker where the fines and dirt show.
+	float dirt = texture(noise_soft, p / 2.3).r;
+	vec3 stone = mix(vec3(0.36, 0.355, 0.335), vec3(0.47, 0.46, 0.43), texture(noise_soft, p / 17.0).r);
+	vec3 col = mix(stone, vec3(0.33, 0.30, 0.25), smoothstep(0.45, 0.8, dirt) * 0.6);
+	col *= 1.0 + stones;
+	// Packed and darker along the pavement where wheels run off it.
+	col *= 1.0 - 0.14 * (1.0 - smoothstep(0.0, 0.35, w));
+	// Grass coming through toward the outer edge, and the odd tuft.
+	float grass = smoothstep(edge - 0.3, edge, w) * smoothstep(0.35, 0.65, tufts);
+	col = mix(col, vec3(0.20, 0.25, 0.11) * (0.85 + s2 * 0.3), grass * 0.75);
+	// Even from far off, the stone reads a little mottled, never flat.
+	col *= 0.94 + texture(noise_grain, p / 1.6).r * 0.12;
+	col = mix(col, vec3(0.86, 0.88, 0.9), snow * 0.85);
+	ALBEDO = col;
+	ROUGHNESS = 0.97;
+	SPECULAR = 0.15;
+}
+"""
+
 
 ## Historic brick street, benchmarked against photos of Indiana brick
 ## streets: 4 x 8 in red-brown paving brick laid across the street in
@@ -429,6 +484,24 @@ static func concrete(color: Color, slabs := false) -> ShaderMaterial:
 
 static func gravel() -> ShaderMaterial:
 	return _make("gravel", GRAVEL, {})
+
+
+## A country road's gravel shoulder (drawn out from the pavement's edge).
+static func shoulder() -> ShaderMaterial:
+	return _make("shoulder", SHOULDER, {})
+
+
+## The county highways drawn on past the town to the horizon (ExitRoads)
+## run for miles over land drawn coarser and coarser, and with the roads'
+## own light pull the hills showed through them, so from afar a road read
+## as a grey dashed line (Nathan, 2026-10-25). These draw with the fields'
+## stronger pull, so the road always wins against the land it lies on.
+static func far_road(kind: String, color := Color.WHITE) -> ShaderMaterial:
+	match kind:
+		"asphalt": return _make("far asphalt", ASPHALT, {}, FIELD_COMMON)
+		"shoulder": return _make("far shoulder", SHOULDER, {}, FIELD_COMMON)
+		"concrete": return _make("far concrete %s" % color, CONCRETE, {"base": color, "joints": 0.0}, FIELD_COMMON)
+	return _make("far paint %s" % color, PAINT, {"paint": color}, FIELD_COMMON)
 
 
 ## Chip seal: the asphalt shader in the grey-tan of the stone chips.
