@@ -1199,7 +1199,7 @@ func _build_display() -> void:
 	# The day/night cycle (off: always late morning), seasons (off: always
 	# summer) and weather (off: always fair).
 	DayNight.load_settings()
-	for entry in [["Day and night", "Let the sun set and the streetlights come on (off: always late morning)", DayNight.set_cycle],
+	for entry in [["Day and night", "One day and night each month, about an hour: a 50-minute day, then a 10-minute night (off: always late morning)", DayNight.set_cycle],
 			["Seasons", "Spring, summer, fall colour and winter snow (off: always summer)", DayNight.set_seasons],
 			["Weather", "Overcast days and rain, by Indiana's odds for the month (off: always fair)", DayNight.set_weather]]:
 		var sw := _switch(entry[0], entry[1])

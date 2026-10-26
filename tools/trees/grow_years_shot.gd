@@ -93,7 +93,7 @@ func _process(_delta: float) -> bool:
 					if _stop >= _years.size():
 						quit()
 						return true
-					_target = _start_tick + int(_years[_stop]) * Seasons.TICKS_PER_DAY * 12
+					_target = _start_tick + int(_years[_stop]) * Seasons.OLD_TICKS_PER_MONTH * 12  # trees grow on pace years
 					_state = "tick"
 	return false
 

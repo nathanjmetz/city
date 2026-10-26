@@ -89,7 +89,12 @@ func _init() -> void:
 	fm.apply({"type": "place_farmhouse", "pos": [0, 60], "dir": [0, -1], "crop": "corn"})
 	var farm: Dictionary = fm.farms.farms.values()[0]
 	var first_year := Seasons.year(fm.tick_count)
-	while Seasons.year(fm.tick_count) < first_year + 2:
+	for i in 3000:
+		fm.tick()
+	# On to just before the second January (a year is 12 real hours now),
+	# then until the farm's next look after it.
+	fm.tick_count = Seasons.tick_at((first_year + 1) * 12.0) - 10
+	for i in Farms.DECIDE_EVERY + 20:
 		fm.tick()
 	_check(not farm.fields.is_empty() and int(farm.plan_year) == first_year + 2, "the farm planned its crops in January")
 	var c: Vector2i = farm.cells[0]

@@ -48,6 +48,27 @@ func _init() -> void:
 	_check(absf(SkyClock.ticks_per_hour(5.4) * (SunPath.crossings(SunPath.day_of_year(5.4), true).y
 		- SunPath.crossings(SunPath.day_of_year(5.4), true).x) - SkyClock.DAY_SHARE * 30 * day) < 1.0,
 		"a sky hour's ticks fill the daylight")
+	# Saves: the offset keeps; a town saved before it carries its old date.
+	var town := CitySim.new()
+	town.tick_count = old_tick
+	var saved := town.to_dict()
+	saved.erase("calendar")
+	var loaded := CitySim.new()
+	loaded.from_dict(JSON.parse_string(JSON.stringify(saved)))
+	_check(loaded.calendar_offset == off and Seasons.month(loaded.calendar_tick()) == 7,
+		"an old save keeps its month (%d)" % Seasons.month(loaded.calendar_tick()))
+	var again := CitySim.new()
+	again.from_dict(JSON.parse_string(JSON.stringify(loaded.to_dict())))
+	_check(again.calendar_offset == off, "and the offset is saved from then on")
+	# A family business ages on pace years; its sign reads the calendar.
+	var pace_sim := CitySim.new()
+	_check(Families.since_year(pace_sim, 1) == 2027 and Families.since_year(pace_sim, 3) == 2027,
+		"a business begun in pace year 3 says Since 2027 on the calendar (%d)" % Families.since_year(pace_sim, 3))
+	# One play speed: pause and play.
+	var main_src := FileAccess.get_file_as_string("res://scripts/main.gd")
+	_check(main_src.contains("const SPEEDS := [0.0, 1.0]"), "one play speed, and pause")
+	var hud_src := FileAccess.get_file_as_string("res://scripts/ui/hud.gd")
+	_check(not hud_src.contains("4x speed") and not hud_src.contains("2x speed"), "no 2x or 4x buttons")
 	# What the land looks like through the year.
 	var winter := Seasons.look(Seasons.START_MONTH + 8.5)  # mid January
 	_check(winter.snow == 1.0 and winter.bare == 1.0, "snow and bare trees in January")

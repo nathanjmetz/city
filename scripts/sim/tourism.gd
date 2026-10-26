@@ -57,14 +57,16 @@ func tick(sim: CitySim) -> void:
 	var t := sim.tick_count
 	var minute := (t * CitySim.MINUTES_PER_TICK) % (24 * 60)
 	if minute % 60 == 0:
-		# The books once a sim day ("a month", Balance); crowds by the
-		# calendar's season, which is what the land shows.
-		var pm := Seasons.pace_month(t)
-		if pm != _month:
+		# Venues keep the pace calendar (Seasons.pace_month: a "month" a sim
+		# day, a year about 29 real minutes), events and books alike, so a
+		# fair still comes round about every half hour and its money and
+		# the businesses it brings keep their balance. Its "July" isn't the
+		# calendar's July (a month an hour) there.
+		var m := Seasons.pace_month(t)
+		if m != _month:
 			if _month != -1:
-				_monthly(sim, pm)
-			_month = pm
-		var m := Seasons.month(sim.calendar_tick())
+				_monthly(sim, m)
+			_month = m
 		sync(sim)
 		var ids := venues.keys()
 		ids.sort()

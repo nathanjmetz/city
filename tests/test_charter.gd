@@ -84,9 +84,10 @@ func _init() -> void:
 		var passed: bool = sim.charter.vote.passed
 		print("  city vote: %d%% yes (formula %d%%)" % [roundi(float(sim.charter.vote.yes) * 100), roundi(share * 100)])
 		if passed:
-			_check(sim.charter.status() == "town", "a yes waits for January 1")
+			_check(sim.charter.status() == "town", "a yes waits for the 1st of next month")
 			var jan: int = sim.charter.coming.city
-			_check(Seasons.month(jan) == 1, "the date is a January (month %d)" % Seasons.month(jan))
+			_check(Seasons.day(jan + sim.calendar_offset) == 1 and jan > sim.tick_count,
+				"the date is the 1st of a month (day %d)" % Seasons.day(jan + sim.calendar_offset))
 			while sim.tick_count < jan:
 				_month(sim)
 			_month(sim)
@@ -94,12 +95,12 @@ func _init() -> void:
 		else:
 			_check(sim.charter.status() == "town", "a no keeps it a town")
 			# A yes another time takes effect the same way.
-			sim.charter.coming["city"] = Charter.next_january(sim.tick_count)
+			sim.charter.coming["city"] = Charter.next_month(sim)
 			while sim.charter.coming.has("city"):
 				_month(sim)
-			_check(sim.charter.status() == "city" and Seasons.month(int(sim.charter.reached.city)) == 1,
-				"a passed vote makes it the City of Lyons in January")
-	_check(Seasons.month(Charter.next_january(0)) == 1 and Charter.next_january(0) > 0, "next January is a January")
+			_check(sim.charter.status() == "city", "a passed vote makes it the City of Lyons next month")
+	var fresh := CitySim.new()
+	_check(Charter.next_month(fresh) == Seasons.TICKS_PER_DAY * 31, "a town begun May 1 is next on June 1")
 
 	# --- Vote mood: a boil notice sinks it.
 	_check(sim.charter.vote_share(sim) >= 0.0 and sim.charter.vote_share(sim) <= 1.0, "a vote share is a share")
@@ -126,7 +127,9 @@ func _init() -> void:
 	_check(sim3.charter.reached.has("metro"), "and 60,000 a metropolitan area")
 	# Second class: only at a decennial census, and only if adopted.
 	sim3.stats.population = 36_000
-	while not (Seasons.month(sim3.tick_count) == 4 and Families.calendar(Seasons.year(sim3.tick_count)) % 10 == 0):
+	# The next census year's April (a sim day is about 1.2 calendar days).
+	while not (Seasons.month(sim3.tick_count) == 4 and Families.calendar(Seasons.year(sim3.tick_count)) % 10 == 0
+			and Families.calendar(Seasons.year(sim3.tick_count)) != int(sim3.charter.census.get("year", 0))):
 		sim3.tick_count += MONTH
 	sim3.permits.wait_until.clear()
 	sim3.charter.month(sim3)

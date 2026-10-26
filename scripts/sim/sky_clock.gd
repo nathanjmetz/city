@@ -46,3 +46,21 @@ static func ticks_per_hour(months: float) -> float:
 	var c := SunPath.crossings(day, SunPath.dst_day(day))
 	var m := mini(int(fposmod(months, 12.0)), 11)
 	return DAY_SHARE * Seasons.DAYS_IN[m] * Seasons.TICKS_PER_DAY / (c.y - c.x)
+
+
+## The months value in `month` (1 to 12) of game year `year` (never before
+## the town begins) whose sky shows `hour`: for pictures and tests that want
+## a town at a date and time.
+static func at(month: int, hour_wanted: float, year := 2) -> float:
+	var base := (year - 1) * 12.0 + month - 1
+	if base < Seasons.START_MONTH:
+		base += 12.0
+	var best := base
+	var err := 99.0
+	for i in 1440:
+		var m := base + i / 1440.0
+		var e := absf(fposmod(hour(m) - hour_wanted + 12.0, 24.0) - 12.0)
+		if e < err:
+			err = e
+			best = m
+	return best

@@ -71,7 +71,7 @@ func _setup() -> void:
 
 ## The tick when Seasons.months reaches `months`.
 static func _tick_at(months: float) -> int:
-	return ceili((months - Seasons.START_MONTH) * Seasons.TICKS_PER_DAY)
+	return Seasons.tick_at(months)
 
 
 ## Forget everything the table has worked out, as at a fresh start.

@@ -43,7 +43,7 @@ func _init() -> void:
 	# Run to the fair in July: it opens at 9, people come and go by car.
 	var trips0: int = sim.traffic._next_id
 	var saw_crowd := false
-	while Seasons.month(sim.tick_count) != 8:
+	while Seasons.pace_month(sim.tick_count) != 8:  # venues keep the pace calendar
 		sim.tick()
 		if not v.crowd.is_empty():
 			saw_crowd = true

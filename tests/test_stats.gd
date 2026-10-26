@@ -24,7 +24,7 @@ func _init() -> void:
 	_check(h.hourly.size() == 29, "a sample every game hour (%d)" % h.hourly.size())
 	_check(h.monthly.size() == 2, "and one a game month (%d)" % h.monthly.size())
 	var month := h.rows(sim, "month")
-	_check(month.size() in [24, 25], "the month span is the last 24 hours and now (%d)" % month.size())
+	_check(month.size() in [20, 21], "the day span is a calendar day's samples and now (%d)" % month.size())
 	_check(int(month[-1][0]) == sim.tick_count, "ending with the town as it is now")
 	var c := StatHistory.col("pop")
 	_check(int(month[-1][c]) == int(sim.stats.population), "with today's population (%d)" % int(month[-1][c]))

@@ -48,8 +48,8 @@ func _process(_delta: float) -> bool:
 		sim.apply({"type": "clear"})
 		Weather.on = false
 		DayNight.cycle_on = false
-		# Mid-July of the first year (a game day is a month of the seasons).
-		sim.tick_count = int(fposmod(6.5 - Seasons.START_MONTH, 12.0) * Seasons.TICKS_PER_DAY)
+		# Mid-July of the first year.
+		sim.tick_count = Seasons.tick_at(6.5) - sim.calendar_offset
 		TreeField.extra_years = float(_arg("years", "0"))
 		PerfTown.build(sim, _arg("blocks", "5"))
 		# Built as the clock reads, so the yard trees are just planted.

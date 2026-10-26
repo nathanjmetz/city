@@ -240,7 +240,7 @@ func _seasons() -> void:
 func _facts() -> void:
 	var sp := TreeField.Species.MAPLE
 	var xf := Transform3D(Basis().scaled(Vector3.ONE * 0.9), Vector3(10, 0, 20))
-	var year := Seasons.TICKS_PER_DAY * 12
+	var year := Seasons.OLD_TICKS_PER_MONTH * 12  # trees grow on pace years
 	TreeField.now_tick = 1000
 	var r0 := TreeField.resolve([xf, sp, Color.GREEN, {"planted": 1000}])
 	TreeField.now_tick = 1000 + year * 10
