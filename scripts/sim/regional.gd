@@ -123,12 +123,12 @@ func effects(id: String) -> Array:
 				var rate := Balance.REGION_COOP_GAS_FEED if _stages(id) >= 2 else Balance.REGION_COOP_FEED
 				out.append("Power on your line feeds %d%% cheaper" % roundi((1.0 - rate) * 100.0))
 			if _stages(id) >= 2:
-				out.append("Capital credits $%s a year" % CitySim.money_text(roundi(Balance.REGION_COOP_CREDITS_YEAR * float(projects[id].share))))
+				out.append("Capital credits $%s every 12 days" % CitySim.money_text(roundi(Balance.REGION_COOP_CREDITS_YEAR * float(projects[id].share))))
 		"airport":
 			if _stages(id) >= 1:
 				out.append("Shop and office demand +%d%%" % roundi(demand_shift(ZoneMap.Zone.COMMERCIAL) * 100.0))
 			if _stages(id) >= 2:
-				out.append("%s air visitors a year" % CitySim.money_text(roundi(air_visitors_year())))
+				out.append("%s air visitors every 12 days" % CitySim.money_text(roundi(air_visitors_year())))
 	return out
 
 

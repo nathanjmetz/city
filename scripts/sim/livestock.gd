@@ -187,7 +187,7 @@ static func options(f: Dictionary, ctx: Dictionary) -> Array:
 		var net := n * (float(spec.net) + float(spec.swing) * swing(k, float(ctx.day)))
 		var dung := manure(k, n, acres)
 		var factors := {
-			"money": [net, "earns about $%s a year from %s %s" % [CitySim.money_text(roundi(net)), _count(n), spec.head_name]],
+			"money": [net, "earns about $%s every 12 days from %s %s" % [CitySim.money_text(roundi(net)), _count(n), spec.head_name]],
 			"future": [dung, "its manure saves fertiliser on the farm's own fields"],
 			"risk": [-float(spec.cost) * Balance.LIVESTOCK_RISK_SHARE, "costs less to build"],
 			"growth": [net * 0.25, "grows the farm"],

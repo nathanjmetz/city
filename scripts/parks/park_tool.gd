@@ -106,7 +106,7 @@ func _update_hint() -> void:
 		text = "%s park, %s acres: $%s. Starts as a lawn, fills in and grows to %d acres by itself." % [ps.name,
 			("%.1f" % acres) if acres < 1.0 else str(roundi(acres)), CitySim.money_text(int(ps.cost)), roundi(float(ps.max_acres))]
 	else:
-		text = "%s: $%s to build, $%s a month. One per town." % [Parks.KINDS[kind].name,
+		text = "%s: $%s to build, $%s a day. One per town." % [Parks.KINDS[kind].name,
 			CitySim.money_text(Parks.cost_of(kind)), CitySim.money_text(int(a.upkeep))]
 		text += " Raises land value up to %d%% and happiness nearby." % roundi(float(a.value) * 100.0)
 	if _problem != "":

@@ -998,7 +998,7 @@ func _build_top_bar() -> void:
 		pair.add_child(bar_z)
 		_demand_bars[z] = bar_z
 	stats.add_child(VSeparator.new())
-	var money_row := _stat(stats, "money", _money, "City funds: click for the chart and this month's money in and out", "money")
+	var money_row := _stat(stats, "money", _money, "City funds: click for the chart and today's money in and out", "money")
 	# The month's net as a small green or red chip beside the money (Whop's
 	# stat cards), in thousands: "+$366K/mo".
 	_net_chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1497,7 +1497,7 @@ func _roads_drawer() -> PanelContainer:
 			Services.Kind.PARKING_LARGE: "Large lot", Services.Kind.PARK_AND_RIDE: "Park & ride",
 			Services.Kind.PARKING_GARAGE: "Garage"}
 		var b := _card(ks.icon, short[k], "%d stalls" % n)
-		b.tooltip_text = "%s: %d stalls, $%s to build, $%s a month" % [ks.name, n, CitySim.money_text(ks.cost),
+		b.tooltip_text = "%s: %d stalls, $%s to build, $%s a day" % [ks.name, n, CitySim.money_text(ks.cost),
 			CitySim.money_text(ks.upkeep)]
 		b.pressed.connect(func():
 			_parking_last = k
@@ -1772,13 +1772,13 @@ func _service_card(k: int, cat: String) -> Button:
 		Services.Kind.TAXI_COMPANY: "Taxis", Services.Kind.NURSING_HOME: "Nursing home", Services.Kind.BUS_DEPOT: "Bus depot",
 		Services.Kind.BUILDER_YARD: "Builder", Services.Kind.TRAFFIC_CENTER: "Traffic center"}
 	var b := _card(s.icon, short.get(k, s.name.split(" ")[0]), "")
-	b.tooltip_text = "%s: $%s to build, $%s a month" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
+	b.tooltip_text = "%s: $%s to build, $%s a day" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
 	if k == Services.Kind.BUS_DEPOT:
 		b.tooltip_text = "%s: $%s to build, with two buses. It plans its own stops, routes and fare; you set its funding." % [s.name, CitySim.money_text(s.cost)]
 	elif k == Services.Kind.BUILDER_YARD:
 		b.tooltip_text = "%s: free. Its crews and concrete trucks build the houses; its owner buys more trucks as the town grows. One per town." % s.name
 	elif k == Services.Kind.TRAFFIC_CENTER:
-		b.tooltip_text = "%s: $%s to build, $%s a month. Its engineers count the cars at every light and retime them through the day by the traffic. Lights you time by hand stay yours. One per town." % [
+		b.tooltip_text = "%s: $%s to build, $%s a day. Its engineers count the cars at every light and retime them through the day by the traffic. Lights you time by hand stay yours. One per town." % [
 			s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
 	elif k == Services.Kind.TAXI_COMPANY:
 		b.tooltip_text = "%s: $%s to bring one to town, with two cabs. Its owner runs it on fares: the fleet, the meter and the lot." % [s.name, CitySim.money_text(s.cost)]
@@ -1794,7 +1794,7 @@ func _hub_card(k: int, cat: String) -> Button:
 	var w: Dictionary = Balance.WASTE_SITES[hk]
 	var title: String = CivicHubs.KINDS[hk].name
 	var b := _card(CivicHubs.KINDS[hk].icon, {"recycling_1": "Recycling"}.get(hk, title), "")
-	b.tooltip_text = "%s: $%s to build, $%s a month. Never fills up." % [title, CitySim.money_text(int(w.cost)),
+	b.tooltip_text = "%s: $%s to build, $%s a day. Never fills up." % [title, CitySim.money_text(int(w.cost)),
 		CitySim.money_text(int(w.upkeep))]
 	b.pressed.connect(func(): service_tool.set_kind(k))
 	_service_cards[k] = b
@@ -1830,7 +1830,7 @@ func _utilities_drawer() -> PanelContainer:
 	_power_card.pressed.connect(func(): industry_tool.set_kind("power"))
 	# The phone company: placed once, then it builds its own network.
 	_telecom_card = _card("phone_co", "Phone co.", "")
-	_telecom_card.tooltip_text = "Phone company: $%s to build, $%s a month grant. Its manager strings fiber and puts up cell towers where they pay off. One per town." % [
+	_telecom_card.tooltip_text = "Phone company: $%s to build, $%s a day grant. Its manager strings fiber and puts up cell towers where they pay off. One per town." % [
 		CitySim.money_text(Balance.TELECOM_COST), CitySim.money_text(Balance.TELECOM_GRANT)]
 	_telecom_card.pressed.connect(func(): telecom_tool.set_kind("telecom"))
 	return _service_drawer(cat, [
@@ -1848,7 +1848,7 @@ func _civic_drawer() -> PanelContainer:
 	var cat := "civic"
 	# The post office: its postmaster plans the routes.
 	var pb := _card("post_office", "Post office", "")
-	pb.tooltip_text = "Post office: $%s to build, $%s a month. Its postmaster plans the routes." % [
+	pb.tooltip_text = "Post office: $%s to build, $%s a day. Its postmaster plans the routes." % [
 		CitySim.money_text(Balance.MAIL_COST), CitySim.money_text(Balance.MAIL_UPKEEP)]
 	pb.pressed.connect(func(): service_tool.set_kind(Mail.TOOL_KIND))
 	_service_cards[Mail.TOOL_KIND] = pb
@@ -1880,7 +1880,7 @@ func _education_drawer() -> PanelContainer:
 	for k in ["high_school", "college", "university"]:
 		var e: Dictionary = Education.spec(k)
 		var b := _card(k, {"high_school": "High school", "college": "College", "university": "University"}[k], "")
-		b.tooltip_text = "%s: $%s to build, $%s a month. Its %s buys the free land next to it as it fills." % [
+		b.tooltip_text = "%s: $%s to build, $%s a day. Its %s buys the free land next to it as it fills." % [
 			Education.KINDS[k].name, CitySim.money_text(e.cost), CitySim.money_text(e.funding), Education.KINDS[k].head.to_lower()]
 		b.pressed.connect(func(): campus_tool.set_kind(k))
 		_campus_cards[k] = b
@@ -1990,7 +1990,7 @@ func _park_card(k: String) -> Button:
 		"grain_elevator": "Elevator", "football": "Football", "fairgrounds": "Fairgrounds", "trailhead": "Trails"}
 	var tip := "%s: $%s" % [spec.name, CitySim.money_text(int(a.cost))]
 	if spec.landmark:
-		tip += ", $%s a month" % CitySim.money_text(int(a.upkeep))
+		tip += ", $%s a day" % CitySim.money_text(int(a.upkeep))
 	var b := _card(spec.icon, short[k], tip)
 	b.tooltip_text = tip + ". Raises land value and happiness nearby."
 	b.pressed.connect(func(): park_tool.set_kind(k))
@@ -2460,7 +2460,7 @@ func _update_stats() -> void:
 		_demand_bars[z].value = sim.demand[z]
 	var e := sim.economy
 	var net := e.monthly_net()
-	_net.text = "%s$%s/mo" % ["+" if net >= 0 else "–", short_money(absi(net))]
+	_net.text = "%s$%s/day" % ["+" if net >= 0 else "–", short_money(absi(net))]
 	var tone: Color = GOOD if net >= 0 else BAD
 	_net.add_theme_color_override("font_color", tone)
 	var chip := UiStyle._box(Color(tone, 0.16), 9)
@@ -2470,7 +2470,7 @@ func _update_stats() -> void:
 	chip.content_margin_bottom = 1
 	_net_chip.add_theme_stylebox_override("panel", chip)
 	_net_chip.visible = not _compact
-	_net_chip.tooltip_text = "This month: $%s in, less what the town spends" % _thousands(net)
+	_net_chip.tooltip_text = "Today: $%s in, less what the town spends" % _thousands(net)
 	var unserved := sim.unserved_count()
 	# A problem counter, like CS2's; the full story is in its tooltip.
 	var short := sim.utility_summary()

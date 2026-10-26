@@ -45,9 +45,9 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 	else:
 		rows.append(["Land value next door", "no change"])
 	var size := 1.0 + Balance.HUB_PIECE_UPKEEP * CivicHubs.extra_pieces(h)
-	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(roundi(float(s.upkeep) * hubs.policy_funding(id, Balance.POLICY_UPKEEP) * size))])
+	rows.append(["Upkeep", "$%s / day" % CitySim.money_text(roundi(float(s.upkeep) * hubs.policy_funding(id, Balance.POLICY_UPKEEP) * size))])
 	if s.has("sales"):
-		rows.append(["Materials sold", "$%s / month" % CitySim.money_text(roundi(CivicHubs.sales(h) * size))])
+		rows.append(["Materials sold", "$%s / day" % CitySim.money_text(roundi(CivicHubs.sales(h) * size))])
 	if h.get("boxed", false):
 		problems.append("No free land next to it to grow into.")
 	# Its leader and development tree: built, last move, next, and what's locked.
@@ -83,7 +83,7 @@ static func _dev_note(sim: CitySim, dv: Dictionary) -> String:
 	if dv.has("sales*"):
 		return "+%d%% materials sold" % roundi(float(dv["sales*"]) * 100.0)
 	if dv.has("power"):
-		return "%s MWh sold last month" % CitySim.money_text(roundi(sim.trade.sold("power")))
+		return "%s MWh sold yesterday" % CitySim.money_text(roundi(sim.trade.sold("power")))
 	if dv.has("compost"):
 		return "%s tons of compost sold" % CitySim.money_text(roundi(sim.trade.sold("compost")))
 	if dv.has("scrap"):

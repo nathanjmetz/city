@@ -236,7 +236,7 @@ func _agreements() -> void:
 		var title := ("We give %s %s" % [d.other_name, what]) if host else ("%s gives us %s" % [d.other_name, what])
 		col.add_child(_text(title, UiStyle.TEXT, 600))
 		var serving := int(d.offset) >= 0
-		col.add_child(_fact("money", "%s$%s a month%s" % ["+" if host else "–", CitySim.money_text(int(d.fee)),
+		col.add_child(_fact("money", "%s$%s a day%s" % ["+" if host else "–", CitySim.money_text(int(d.fee)),
 			"" if serving else " (on hold: nothing to serve from)"], UiStyle.MUTED, not serving))
 		if int(d.left) >= 0:
 			col.add_child(_text("Notice given: ends in about %s" % _months(maxi(int(d.left), 1) * 24 * CitySim.TICKS_PER_HOUR),
@@ -303,7 +303,7 @@ func _card(req: Dictionary) -> Control:
 	var deal: Dictionary = req.get("deal", {})
 	if not deal.is_empty():
 		# A service deal: what it costs or brings in each month, and nothing built.
-		col.add_child(_fact("money", ("Costs us $%s a month" if deal.get("pays", false) else "Brings in $%s a month")
+		col.add_child(_fact("money", ("Costs us $%s a day" if deal.get("pays", false) else "Brings in $%s a day")
 			% CitySim.money_text(int(deal.fee)), UiStyle.MUTED, false))
 		col.add_child(_fact("check", "Builds nothing. Either town can end it with %s' notice" % _months(Balance.INTERLOCAL_NOTICE * 24 * CitySim.TICKS_PER_HOUR),
 			Brand.POSITIVE, false))
@@ -460,13 +460,13 @@ func effects(col: VBoxContainer, e: Dictionary) -> void:
 				col.add_child(_fact(u, "%s use goes to %d%% of what the town has%s" % [u.capitalize(), pct, " (more than you have)" if over else ""],
 					Brand.WARNING if over else UiStyle.TEXT, over))
 	if e.has("upkeep"):
-		col.add_child(_fact("road", "The town takes over the streets: $%s a year to keep up" % CitySim.money_text(int(e.upkeep)),
+		col.add_child(_fact("road", "The town takes over the streets: $%s every 12 days to keep up" % CitySim.money_text(int(e.upkeep)),
 			UiStyle.TEXT, false))
 	if e.has("repave"):
 		col.add_child(_fact("road", "In about %d years they wear out: $%s to resurface them, on the town" % [Balance.STREET_LIFE_YEARS,
 			CitySim.money_text(int(e.repave))], UiStyle.TEXT, false))
 	if e.has("taxes"):
-		col.add_child(_fact("money", "About $%s a year in property tax once it's built out" % CitySim.money_text(int(e.taxes)),
+		col.add_child(_fact("money", "About $%s every 12 days in property tax once it's built out" % CitySim.money_text(int(e.taxes)),
 			Brand.POSITIVE, false))
 
 
@@ -548,10 +548,10 @@ static func _acres(a: float) -> String:
 	return "%.1f" % a if a < 10.0 else str(roundi(a))
 
 
-## Game months (a game day settles a month), for terms like notice.
+## Sim days (the budget settles once a day), for terms like notice.
 static func _months(ticks: int) -> String:
 	var m := roundi(float(ticks) / (24 * CitySim.TICKS_PER_HOUR))
-	return "%d month%s" % [m, "" if m == 1 else "s"]
+	return "%d day%s" % [m, "" if m == 1 else "s"]
 
 
 static func _days(ticks: int) -> String:

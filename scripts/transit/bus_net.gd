@@ -134,7 +134,7 @@ func apply(sim: CitySim, cmd: Dictionary) -> bool:
 				return false
 			var amount := clampi(int(cmd.get("amount", 0)), 0, Balance.BUS_SUBSIDY_MAX)
 			sim.services.buildings[id].subsidy = amount
-			_note(id, "The city now pays $%s a month." % CitySim.money_text(amount))
+			_note(id, "The city now pays $%s a day." % CitySim.money_text(amount))
 			return true
 	return false
 
@@ -1616,12 +1616,12 @@ func describe(sim: CitySim, id: int) -> Dictionary:
 	rows.append(["Riders", "%s a day" % CitySim.money_text(int(dep.riders))])
 	rows.append(["Fare", "$%.2f (set by the depot)" % dep.fare])
 	# Set by the depot's Funding slider (Economy page).
-	rows.append(["City funding", "$%s / month" % CitySim.money_text(int(b.get("subsidy", 0)))])
+	rows.append(["City funding", "$%s / day" % CitySim.money_text(int(b.get("subsidy", 0)))])
 	var m: Dictionary = dep.month
 	if not m.is_empty():
-		rows.append(["Fares", "$%s / month" % CitySim.money_text(int(m.fares))])
-		rows.append(["Federal grant", "$%s / month" % CitySim.money_text(int(m.grant))])
-		rows.append(["Running costs", "$%s / month" % CitySim.money_text(int(m.cost))])
+		rows.append(["Fares", "$%s / day" % CitySim.money_text(int(m.fares))])
+		rows.append(["Federal grant", "$%s / day" % CitySim.money_text(int(m.grant))])
+		rows.append(["Running costs", "$%s / day" % CitySim.money_text(int(m.cost))])
 	rows.append(["Depot's cash", ("-$%s" if dep.cash < 0 else "$%s") % CitySim.money_text(absi(int(dep.cash)))])
 	rows.append(["Director", "%s, riders %s" % [_education_words(dep.education), _wealth_words(dep.wealth)]])
 	if _has_coach(id):

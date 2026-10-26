@@ -685,8 +685,8 @@ func describe(sim: CitySim, id: int) -> Dictionary:
 	rows.append(["Meter", "$%.2f plus $%.2f a mile (set by the owner)" % [Balance.TAXI_FLAG, co.rate]])
 	var m: Dictionary = co.month
 	if not m.is_empty():
-		rows.append(["Fares", "$%s / month" % CitySim.money_text(int(m.fares))])
-		rows.append(["Running costs", "$%s / month" % CitySim.money_text(int(m.cost))])
+		rows.append(["Fares", "$%s / day" % CitySim.money_text(int(m.fares))])
+		rows.append(["Running costs", "$%s / day" % CitySim.money_text(int(m.cost))])
 	rows.append(["Company's cash", ("-$%s" if co.cash < 0 else "$%s") % CitySim.money_text(absi(int(co.cash)))])
 	rows.append_array(Inspect._development(sim, co, _open_tree(sim, id), _gate(b), float(m.get("net", 0)) * 12.0))
 	var problems := []

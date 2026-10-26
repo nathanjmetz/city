@@ -923,17 +923,17 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 			if w.sewer_capacity(id) > 0 else "Septic tanks (no plant yet)"],
 		["Pipe laid", "%.1f km main, %.1f km sewer" % [_length(u.mains) / 1000.0, _length(u.sewers) / 1000.0]],
 		["Condition", "%d%%" % roundi(u.cond * 100.0)],
-		["Water bill", "$%s a month a home (%d%% of usual)" % [CitySim.money_text(roundi(Services.WATER_FEE[ZoneMap.Zone.RESIDENTIAL] * float(u.rate))), roundi(float(u.rate) * 100.0)]],
-		["Bills collected", "$%s / month" % CitySim.money_text(int(l.get("fees", 0)))],
-		["Running costs", "$%s / month" % CitySim.money_text(roundi(cost))],
+		["Water bill", "$%s a day a home (%d%% of usual)" % [CitySim.money_text(roundi(Services.WATER_FEE[ZoneMap.Zone.RESIDENTIAL] * float(u.rate))), roundi(float(u.rate) * 100.0)]],
+		["Bills collected", "$%s / day" % CitySim.money_text(int(l.get("fees", 0)))],
+		["Running costs", "$%s / day" % CitySim.money_text(roundi(cost))],
 		["Cash", "%s$%s" % ["" if u.cash >= 0.0 else "-", CitySim.money_text(absi(roundi(u.cash)))]],
 	]
 	var sold := sim.trade.sold("water")
 	var got := sim.trade.got("water")
 	if sold > 0.0:
-		rows.append(["Sold to the region", "%s homes' worth a month" % CitySim.money_text(roundi(sold / Balance.WATER_KGAL_PER_HOME))])
+		rows.append(["Sold to the region", "%s homes' worth a day" % CitySim.money_text(roundi(sold / Balance.WATER_KGAL_PER_HOME))])
 	elif got > 0.0:
-		rows.append(["Bought from the region", "%s homes' worth a month" % CitySim.money_text(roundi(got / Balance.WATER_KGAL_PER_HOME))])
+		rows.append(["Bought from the region", "%s homes' worth a day" % CitySim.money_text(roundi(got / Balance.WATER_KGAL_PER_HOME))])
 	if int(u.returned) > 0:
 		rows.append(["Paid back to the town", "$%s" % CitySim.money_text(int(u.returned))])
 	var problems := []
@@ -966,7 +966,7 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 	if not locked.is_empty():
 		tree.append(["Locked", "; ".join(locked)])
 	# Set by the utility's Funding slider (Economy page).
-	rows.append(["City subsidy", "$%s / month" % CitySim.money_text(int(u.subsidy))])
+	rows.append(["City subsidy", "$%s / day" % CitySim.money_text(int(u.subsidy))])
 	var status := "Working: %s" % str(u.last).to_lower() if u.last != "" else "Working"
 	if u.boil:
 		status = "Boil-water notice in effect"

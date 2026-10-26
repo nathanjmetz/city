@@ -328,7 +328,7 @@ func describe(sim: CitySim, id: int) -> Dictionary:
 		rows.append(["Waiting for a crew", "%d houses" % waits])
 	var m: Dictionary = co.month
 	if not m.is_empty():
-		rows.append(["Last month", "%d houses: $%s paid, $%s in wages and fuel" % [int(m.jobs),
+		rows.append(["Yesterday", "%d houses: $%s paid, $%s in wages and fuel" % [int(m.jobs),
 			CitySim.money_text(int(m.income)), CitySim.money_text(int(m.cost))]])
 	rows.append(["Company's cash", ("-$%s" if co.cash < 0 else "$%s") % CitySim.money_text(absi(int(co.cash)))])
 	var problems := []

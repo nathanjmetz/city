@@ -151,7 +151,7 @@ func _plan_abatement(sim) -> Dictionary:
 				company.capitalize(), str(want.name).to_lower(), (" (%s)" % want.note) if want.has("note") else "",
 				Balance.ASK_ABATE_YEARS],
 			"area": _square(s.pos, 60.0),
-			"yes": "They build it now%s. The town forgoes about $%s a month for %d years." % [
+			"yes": "They build it now%s. The town forgoes about $%s a day for %d years." % [
 				(" and hire %d" % jobs) if jobs > 0 else "", CitySim.money_text(monthly), Balance.ASK_ABATE_YEARS],
 			"no": "They wait until they can pay for it themselves.",
 			"do": {"site": id, "node": str(want.id), "monthly": monthly}}
@@ -326,7 +326,7 @@ func _plan_festival(sim) -> Dictionary:
 		"leader": who, "title": "Close %s for the fall festival" % street,
 		"why": "A weekend of booths, a parade and music brings the whole county downtown.",
 		"area": _corridor(sim.network.sample_segment(best), 14.0), "change": "Street closed for a weekend",
-		"yes": "The town pays $%s for police, barricades and cleanup. Shops do a month's extra business." % CitySim.money_text(Balance.ASK_FESTIVAL_COST),
+		"yes": "The town pays $%s for police, barricades and cleanup. Shops do a day's extra business." % CitySim.money_text(Balance.ASK_FESTIVAL_COST),
 		"no": "No festival this year.",
 		"do": {"cost": Balance.ASK_FESTIVAL_COST}}
 

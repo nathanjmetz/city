@@ -233,7 +233,7 @@ func _shortcut(sim, by: String, cars: int) -> Dictionary:
 	var road := ("%s's gravel %s" % [whose, what]) if whose != "" else "the gravel %s" % what
 	var pave := _option(sim, "A", "Pave it as a town street", segs, "upgrade", RoadStyle.Type.STREET)
 	pave.lines = ["The town takes it over: a paved street anyone may use, built for the traffic it already carries.",
-		"$%s a year more to keep up" % CitySim.money_text(pave.upkeep)]
+		"$%s more every 12 days to keep up" % CitySim.money_text(pave.upkeep)]
 	var local := _option(sim, "B", "Local traffic only", segs, "local", -1)
 	local.cost = Balance.ENGINEER_SIGN_COST
 	local.lines = ["Signs and a gate arm: %s's trucks only. Through drivers go back to the town's roads." % (whose if whose != "" else owner),
@@ -249,10 +249,10 @@ func _widen(sim, seg: int) -> Dictionary:
 	var name: String = sim.streets.name_of(seg)
 	var road := name if name != "" else "this road"
 	var four := _option(sim, "A", "Widen to four lanes", run, "upgrade", RoadStyle.Type.AVENUE)
-	four.lines = ["Carries about 30,000 cars a day instead of 15,000.", "$%s a year more to keep up, and more to resurface later" % CitySim.money_text(four.upkeep)]
+	four.lines = ["Carries about 30,000 cars a day instead of 15,000.", "$%s more every 12 days to keep up, and more to resurface later" % CitySim.money_text(four.upkeep)]
 	var turn := _option(sim, "B", "Add a centre turn lane", run, "upgrade", RoadStyle.Type.AVENUE_TURN)
 	turn.lines = ["Left turns wait in the middle: about 20,000 cars a day. Cheaper, less room taken.",
-		"$%s a year more to keep up" % CitySim.money_text(turn.upkeep)]
+		"$%s more every 12 days to keep up" % CitySim.money_text(turn.upkeep)]
 	return {"title": "Widen %s" % road,
 		"why": "At rush hour %s crawls at under %d%% of its speed limit (level of service E or F). A two-lane road carries about 15,000 cars a day. Here are two ways to give it room." % [
 			road, roundi(Balance.ENGINEER_SLOW_SHARE * 100)],
@@ -263,7 +263,7 @@ func _alley(sim, seg: int) -> Dictionary:
 	var run := _run(sim, seg, func(s): return int(sim.network.segments[s].type) == RoadStyle.Type.ALLEY and counts.has(s))
 	var street := _option(sim, "A", "Pave it into a street", run, "upgrade", RoadStyle.Type.STREET_NARROW)
 	street.lines = ["A narrow street, with room for the traffic and curbs for the yards.",
-		"$%s a year more to keep up" % CitySim.money_text(street.upkeep)]
+		"$%s more every 12 days to keep up" % CitySim.money_text(street.upkeep)]
 	return {"title": "Turn a busy alley into a street",
 		"why": "Drivers are using this alley as a street at rush hour. Alleys are built for garbage trucks and garages, not through traffic.",
 		"change": "Alley to street", "options": [street]}
@@ -385,7 +385,7 @@ func _one_way(sim) -> Dictionary:
 		o.outline = []
 		for q in [box.position, Vector2(box.end.x, box.position.y), box.end, Vector2(box.position.x, box.end.y)]:
 			o.outline.append([snappedf(q.x, 0.01), snappedf(q.y, 0.01)])
-		o.lines = ["$%s a year more to keep up" % CitySim.money_text(o.upkeep)]
+		o.lines = ["$%s more every 12 days to keep up" % CitySim.money_text(o.upkeep)]
 		var name: String = sim.streets.name_of(seg)
 		return {"title": "A second way into %s" % ("the neighborhood off " + name if name != "" else "a neighborhood"),
 			"why": "%d homes have only one road in. If it's blocked, fire trucks and ambulances can't get through." % best_h,

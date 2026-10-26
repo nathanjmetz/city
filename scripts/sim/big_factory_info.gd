@@ -15,7 +15,7 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 	var ref := "big:%d" % id
 	var rows := [
 		["Owner", "%s%s" % [BigFactories.leader_name(f), ", college-educated" if float(lead.edu) >= 0.5 else ""]],
-		["Makes", "%s (%.0f loads a month at most)" % [k.makes, big.capacity(f)]],
+		["Makes", "%s (%.0f loads a day at most)" % [k.makes, big.capacity(f)]],
 	]
 	var inputs := []
 	for input in s["in"]:
@@ -35,15 +35,15 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 	rows.append(["Trucks on the road", str(sim.logistics.trucks_for(ref))])
 	var last: Dictionary = f.get("last", {})
 	if not last.is_empty():
-		rows.append(["Last month", "%d made, %d%% busy" % [roundi(float(last.made)), roundi(float(last.util) * 100.0)]])
+		rows.append(["Yesterday", "%d made, %d%% busy" % [roundi(float(last.made)), roundi(float(last.util) * 100.0)]])
 	var profit := big.yearly_profit(f)
-	rows.append(["Profit", "%s$%s / year" % ["" if profit >= 0.0 else "-", CitySim.money_text(absi(roundi(profit)))]])
+	rows.append(["Profit", "%s$%s every 12 days" % ["" if profit >= 0.0 else "-", CitySim.money_text(absi(roundi(profit)))]])
 	rows.append(["Owner's money", "$%s" % CitySim.money_text(roundi(float(f.cash)))])
 	if float(f.get("debt", 0.0)) > 0.0:
 		rows.append(["Owes on land", "$%s" % CitySim.money_text(roundi(float(f.debt)))])
 	rows.append(["Land here", "$%s an acre" % CitySim.money_text(roundi(Capital.land_price(sim, BigFactories.center(f))))])
 	rows.append(["Jobs", str(big.jobs_at(f))])
-	rows.append(["Property tax to town", "$%s / month" % CitySim.money_text(roundi(BigFactories.value(f)
+	rows.append(["Property tax to town", "$%s / day" % CitySim.money_text(roundi(BigFactories.value(f)
 		* sim.economy.tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0))])
 	rows.append(["Size", "%d × %d m, %d line%s" % [roundi(BigFactories.site_width(f)), roundi(BigFactories.site_depth(f)),
 		int(f.level) + 1, "" if int(f.level) == 0 else "s"]])
@@ -91,7 +91,7 @@ static func _missing(sim: CitySim, f: Dictionary, node: Dictionary) -> String:
 			"population": return "needs %s people in town" % CitySim.money_text(int(v))
 			"leader_edu": return "needs a more educated owner"
 			"education": return "needs more schooling in town"
-			"profit": return "needs $%s a year profit" % CitySim.money_text(int(v))
+			"profit": return "needs $%s profit every 12 days" % CitySim.money_text(int(v))
 			"link": return "needs a road out to the region"
 			"local:farm": return "needs %d farm%s nearby" % [int(v), "" if int(v) == 1 else "s"]
 			"local:forest": return "needs a forestry company nearby"
