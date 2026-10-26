@@ -7,18 +7,115 @@ extends RefCounted
 ##
 ## Detail by distance (each tree drawn at exactly one level, handed over
 ## with a dither so nothing pops): within NEAR the full grown tree, out to
-## MID the light grown tree, past that TreeField's cards. The radii scale
-## with the quality tier; the browser (Compatibility) gets the light tree
-## only. zone_mode on a material says which band it draws:
-##   0 TreeField's cards: outside MID (everywhere when no grown trees run)
+## MID the light grown tree, then TreeField's full cards, out from its NEAR
+## its light cards, and for the wild woods, past the edge of WildView's
+## reach, FarWoods' one-quad stand-ins out toward the horizon. Every
+## version of a tree stands at the same spot at the same size, and each
+## hand-over is a dither by the tree's own distance from the camera, so a
+## tree is replaced where it stands: it never grows out of the ground or
+## blinks. The radii scale with the quality tier; the browser
+## (Compatibility) gets the light grown tree only. zone_mode on a material
+## says which version it draws:
+##   0 TreeField's cards (full, or light: light_card)
 ##   1 full grown, inside NEAR; 2 light grown, NEAR to MID;
 ##   4 and 5 a card standing in for a full (4) or light (5) grown tree
-##   whose mesh isn't built yet.
+##   whose mesh isn't built yet; 6 FarWoods' stand-ins.
+## Each version keeps the pixels whose dither falls in its share (KEEP_GLSL):
+## going out from the camera, each hand-over gives the next version the
+## lower part of [0, 1), so the shares never overlap and never leave a gap.
 
 ## Desktop radii (m) at quality detail 1.0, and the width of the handover.
 const NEAR := 70.0
 const MID := 190.0
 const BAND := 14.0
+
+## Which share of the pixels each version of a tree draws, by its distance
+## from the camera (shared by every card shader; see the header). The
+## hand-over from TreeField's full cards to its light ones is 40 m wide.
+const KEEP_GLSL := """
+// The trees' camera (TreeLook.set_eye): xyz, w 1 once set.
+uniform vec4 lod_eye = vec4(0.0);
+// x: where TreeField's full cards hand over to its light ones; y: how far
+// brush is drawn; z: how far FarWoods draws the wild woods (0: none).
+uniform vec4 lod_dist = vec4(0.0);
+// This material draws TreeField's light cards.
+uniform bool light_card = false;
+// A steady hash of where a tree stands: the same for every version of the
+// tree (their positions differ in the last bits; a sine of a big number
+// would not be).
+float tree_hash(vec3 origin, float salt) {
+	vec2 p = mod(floor(origin.xz * 2.0), 4096.0) + salt;
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
+// The share of pixels [from, to) this version of a tree draws. Going out
+// from the camera: full grown [b1, 1), light grown [b2, b1), full cards
+// [b3, b2), light cards [b4, b3), FarWoods [0, b4); each b rises from 0 to
+// 1 across its hand-over. A wild tree past the far woods' reach, or seen
+// from high up, drops out whole, each at its own distance.
+vec2 band_keep(vec3 origin, bool grows) {
+	float b1 = 1.0;
+	float b2 = 1.0;
+	if (grows && grown_cam.w > 0.5) {
+		float d = distance(origin, grown_cam.xyz);
+		b1 = smoothstep(grown_zone.x - grown_zone.z, grown_zone.x, d);
+		b2 = min(smoothstep(grown_zone.y - grown_zone.z, grown_zone.y, d), b1);
+	}
+	float de = distance(origin, lod_eye.xyz);
+	float b4 = 0.0;
+	if (fade_on) {
+		float rnd = tree_hash(origin, 0.0);
+		// Toward the edge of WildView's reach the far woods take over, each
+		// tree at its own distance, so the edge is ragged, not a circle.
+		float jitter = (tree_hash(origin, 17.0) - 0.5) * 0.3 * tree_fade.z;
+		b4 = smoothstep(tree_fade.z * 0.7, tree_fade.z * 0.97, distance(origin.xz, tree_fade.xy) + jitter);
+		// From high up each tree is a speck and the ground's painted canopy
+		// reads better: they drop out one by one.
+		float gone = smoothstep(1200.0, 1700.0, tree_fade.w);
+		if (grows) {
+			if (lod_dist.z > 0.0) {
+				gone = max(gone, smoothstep(lod_dist.z * 0.85, lod_dist.z, de));
+			}
+		} else {
+			// Brush has no far version: each plant drops out whole.
+			if (lod_dist.y > 0.0) {
+				b4 = max(b4, smoothstep(lod_dist.y * 0.8, lod_dist.y, de));
+			}
+			b4 = step(rnd, b4);
+		}
+		if (rnd < gone) {
+			return vec2(0.0);
+		}
+	}
+	// No camera yet: each chunk draws one version whole.
+	float b3 = light_card ? b2 : b4;
+	if (lod_eye.w > 0.5) {
+		b3 = smoothstep(lod_dist.x - 40.0, lod_dist.x, de);
+	}
+	// The far woods take over from whichever cards a tree is drawn with
+	// there (with a short reach, straight from the full ones); neither
+	// takes over a grown tree.
+	b4 = min(b4, b2);
+	b3 = max(min(b3, b2), b4);
+	if (zone_mode == 1 || zone_mode == 4) {
+		return vec2(b1, 1.0);
+	}
+	if (zone_mode == 2 || zone_mode == 5) {
+		return vec2(b2, b1);
+	}
+	if (zone_mode == 6) {
+		return vec2(0.0, b4);
+	}
+	return light_card ? vec2(b4, b3) : vec2(b3, b2);
+}
+float dither(vec2 p) {
+	return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+}
+"""
+## The width of the hand-over from TreeField's full cards to its light ones
+## (in KEEP_GLSL too).
+const LIGHT_BAND := 40.0
 
 ## Leaf textures are this many pixels across, and a full-size card is
 ## TreeMesher.CARD[0] metres across, which sets how big a leaf is drawn.
@@ -32,8 +129,8 @@ uniform sampler2D twig_tex : filter_linear_mipmap;
 // Set by DayNight: snow cover, and the season as (autumn, bare, spring, dry).
 global uniform float snow;
 global uniform vec4 season_look;
-// Wild trees thin out and shrink toward the edge of where they're drawn
-// (set by WildView as centre x, z and reach), so they never pop in or out.
+// Where WildView draws the wild trees as cards (set by it as the camera's
+// x, z, the reach and the camera's height); past it FarWoods draws them.
 global uniform vec4 tree_fade;
 uniform bool fade_on = false;
 // Which band of distance this material draws (see TreeLook).
@@ -49,7 +146,18 @@ uniform vec3 kind_look[16];
 uniform vec4 kind_bloom[16];
 uniform vec4 kind_winter[16];
 uniform bool kind_seasons = false;
-varying float fade;
+// FarWoods: each kind's crown at full size (centre height, half width,
+// half height, trunk radius over half width), which its one quad is drawn
+// at; and how much darker than lit leaves the quad is drawn (a crown of
+// cards shades itself: its inner leaves and the side away from the sun).
+uniform vec4 crown_box[16];
+uniform float far_shade = 0.75;
+#ifdef FAR_WOODS
+// Where on the quad the crown begins (below it, the trunk) and how wide
+// the trunk is, as a share of the quad's half width.
+varying float crown_v;
+varying float trunk_w;
+#endif
 varying float inner;
 varying float top;
 varying vec3 tint;
@@ -71,43 +179,41 @@ vec4 custom_data(vec4 c) {
 vec3 lin(vec3 c) {
 	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
 }
-// The share of pixels (from, to) this tree draws at this distance; the
-// bands next to it draw the rest, so the handover never shows a gap.
-vec2 band_keep(vec3 origin, bool grows) {
-	if (!grows) {
-		return zone_mode == 0 ? vec2(0.0, 1.0) : vec2(0.0, 0.0);
-	}
-	// No grown trees running (or a tool showing one): draw it all.
-	if (grown_cam.w < 0.5) return vec2(0.0, 1.0);
-	float d = distance(origin, grown_cam.xyz);
-	float t_mid = smoothstep(grown_zone.x - grown_zone.z, grown_zone.x, d);
-	float t_far = smoothstep(grown_zone.y - grown_zone.z, grown_zone.y, d);
-	if (zone_mode == 0) return vec2(0.0, t_far);
-	if (zone_mode == 1 || zone_mode == 4) return vec2(t_mid, 1.0);
-	return vec2(t_far, t_mid);
-}
-float dither(vec2 p) {
-	return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
-}
+""" + KEEP_GLSL + """
 void vertex() {
 	vec4 custom = custom_data(INSTANCE_CUSTOM);
 	vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 	float code = floor(custom.a * 32.0);
 	species = mod(code, 16.0);
 	keep = band_keep(origin, code < 15.5);
-	fade = 1.0;
-	if (fade_on) {
-		// Toward the edge of the woods drawn, and from high up, where each
-		// tree is a speck and the ground's painted canopy reads better.
-		// Each tree drops out at its own distance, so the edge of the drawn
-		// woods is ragged, not a circle round the camera.
-		float jitter = (fract(sin(dot(floor(origin.xz), vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * 0.3 * tree_fade.z;
-		fade = (1.0 - smoothstep(tree_fade.z * 0.7, tree_fade.z * 0.97, distance(origin.xz, tree_fade.xy) + jitter))
-			* (1.0 - smoothstep(1200.0, 1700.0, tree_fade.w));
-	}
-	VERTEX *= mix(0.4, 1.0, fade) * step(0.001, fade) * step(0.0001, keep.y - keep.x);
+#ifdef FAR_WOODS
+	// One quad facing the camera, the size of the crown (UV2 is its corner,
+	// -1 to 1), turned back into the tree's own space.
+	vec4 box = crown_box[int(species + 0.5)];
+	float size = length(MODEL_MATRIX[1].xyz);
+	vec3 cam_right = INV_VIEW_MATRIX[0].xyz;
+	vec3 cam_up = INV_VIEW_MATRIX[1].xyz;
+	vec3 cam_back = INV_VIEW_MATRIX[2].xyz;
+	// From above a crown is as wide as it is across, not as tall, and the
+	// trunk is hidden under it.
+	float above = abs(cam_back.y);
+	float half_h = mix(box.z, box.y, above);
+	float crown_lo = box.x - half_h;
+	float lo = crown_lo * above;
+	float hi = box.x + half_h;
+	float y = mix(lo, hi, UV2.y * 0.5 + 0.5);
+	crown_v = (crown_lo - lo) / (hi - lo);
+	trunk_w = box.w;
+	mat3 to_tree = transpose(mat3(MODEL_MATRIX)) / (size * size);
+	VERTEX = vec3(0.0, box.x, 0.0) + to_tree * ((cam_right * UV2.x * box.y + cam_up * (y - box.x)) * size);
+	// Shaded like a soft ball of leaves: out from its middle, a little up.
+	float cy = clamp((y - box.x) / half_h, -1.0, 1.0);
+	NORMAL = to_tree * normalize(cam_right * UV2.x * 0.6 + cam_up * (cy * 0.6 + 0.35) + cam_back * 0.7) * size;
+#endif
+	// Nothing to draw here: no triangles.
+	VERTEX *= step(0.0001, keep.y - keep.x);
 	leaf_pos = VERTEX;
-	tree_rand = fract(sin(dot(origin.xz, vec2(12.9898, 78.233))) * 43758.5453);
+	tree_rand = tree_hash(origin, 31.0);
 	far_card = step(COLOR.a, 0.75);  // a far tree's few big cards (see _card)
 	float phase = TIME * 1.1 + origin.x * 0.31 + origin.z * 0.17;
 	float s = sin(phase + VERTEX.y * 0.25) * sway * VERTEX.y;
@@ -128,16 +234,44 @@ void fragment() {
 	float dth = PROJECTION_MATRIX[3][3] > 0.5 ? 0.5 : dither(FRAGCOORD.xy);
 	if (dth < keep.x || dth >= keep.y) discard;
 	int sp = int(species + 0.5);
-	if (UV.x < -0.5) {
+	vec2 uv = UV;
+	bool trunk_px = false;
+	float inn = inner;
+	float tp = top;
+#ifdef FAR_WOODS
+	// The quad: the crown's leaves above crown_v, a thin trunk below. The
+	// leaf texture runs on smoothly below the crown, so its mip level
+	// doesn't jump at the join.
+	float v = UV2.y * 0.5 + 0.5;
+	uv = vec2(UV2.x * 0.5 + 0.5, 1.0 - (v - crown_v) / max(1.0 - crown_v, 0.01));
+	trunk_px = v < crown_v;
+	if (trunk_px && abs(UV2.x) > trunk_w) discard;
+#endif
+	if (uv.x < -0.5 || trunk_px) {
 		// A far tree's trunk (see tree_mesh): plain bark grey-brown.
 		ALBEDO = vec3(0.075, 0.062, 0.05) * (0.85 + tree_rand * 0.3);
 		NORMAL = crown_normal;
 		ROUGHNESS = 0.9;
 	} else {
-	vec4 t = texture(leaf_tex, UV);
+	vec4 t = texture(leaf_tex, uv);
+#ifdef FAR_WOODS
+	// One texture across a whole crown makes leaves the size of branches:
+	// its colour is taken finer, as a crown of cards shows it.
+	// (The texture is clear black between leaves, so its blurred levels are
+	// darkened by the gaps: divided back out.)
+	vec4 fine = texture(leaf_tex, uv * 3.0 + 0.37);
+	t.rgb = mix(vec3(0.8), min(fine.rgb / max(fine.a, 0.02), vec3(1.0)), smoothstep(0.02, 0.25, fine.a));
+	// Far off the leaf texture's blurred levels fill the whole square: kept
+	// to a soft round crown, so its edges never show the quad.
+	float r = length(vec2(UV2.x, uv.y * 2.0 - 1.0));
+	t.a *= 1.0 - smoothstep(0.75, 1.0, r);
+	// Shaded as a crown of cards is: inner leaves darker, the top lighter.
+	inn = r;
+	tp = 1.0 - uv.y;
+#endif
 	// Mipmaps average the leaf alpha toward the gaps, so distant cards
 	// would fall under the cut-off and vanish. Boost alpha with the mip level.
-	vec2 texel = UV * 256.0;
+	vec2 texel = uv * 256.0;
 	float lod = log2(max(max(length(dFdx(texel)), length(dFdy(texel))), 1.0));
 	t.a *= 1.0 + lod * 0.3;
 	NORMAL = crown_normal;
@@ -175,7 +309,7 @@ void fragment() {
 		// speckle. Benchmark: aerial and oblique photos of Indiana woods in
 		// November to March.
 		float b = smoothstep(0.3, 0.9, bare);
-		vec4 tw = texture(twig_tex, UV);
+		vec4 tw = texture(twig_tex, uv);
 		// Bare crowns from above are a see-through haze (aerial photos show
 		// the snow or leaf litter through them), so the twigs get much less
 		// of the far-off alpha boost than leaves do.
@@ -198,26 +332,32 @@ void fragment() {
 		leaf = mix(leaf, twig, b);
 	}
 	// Snow resting on the tops of the crowns.
-	leaf = mix(leaf, vec3(0.4, 0.42, 0.45), snow * smoothstep(0.35, 0.95, top) * 0.75);
-	ALBEDO = leaf * t.rgb * mix(0.6, 1.15, inner) * mix(0.85, 1.2, top) * 2.0;
+	leaf = mix(leaf, vec3(0.4, 0.42, 0.45), snow * smoothstep(0.35, 0.95, tp) * 0.75);
+	ALBEDO = leaf * t.rgb * mix(0.6, 1.15, inn) * mix(0.85, 1.2, tp) * 2.0;
+#ifdef FAR_WOODS
+	ALBEDO *= far_shade;
+#endif
 	// A card seen edge-on smears its leaves into long streaks; real crowns
 	// never show them. Fade each card out as it turns edge-on, judged by its
 	// own flat face (from screen derivatives), not the crown normal.
 	vec3 face = normalize(cross(dFdx(VERTEX), dFdy(VERTEX)));
 	alpha *= smoothstep(0.1, 0.35, abs(dot(face, normalize(-VERTEX))));
-	// Fading trees shrink rather than thin out: thinned leaves fall under
-	// the cut-off in scattered pixels and a tree row breaks into specks.
-	ALPHA = alpha * mix(0.85, 1.0, fade);
+	ALPHA = alpha;
 	ALPHA_SCISSOR_THRESHOLD = 0.45;
 	// With MSAA, leaf edges become partial coverage instead of popping on
 	// and off as the camera moves.
 	ALPHA_ANTIALIASING_EDGE = 0.25;
-	ALPHA_TEXTURE_COORDINATE = UV * 128.0;
+	ALPHA_TEXTURE_COORDINATE = uv * 128.0;
 	ROUGHNESS = 0.75;
 	SPECULAR = 0.3;
 	}
 }
 """
+
+## FarWoods' stand-ins: the leaf shader, one quad a tree (FAR_WOODS).
+static func far_shader_code() -> String:
+	return LEAF_SHADER.replace("render_mode cull_disabled;", "render_mode cull_disabled;\n#define FAR_WOODS")
+
 
 ## The cheap trees' trunks (TreeField), with the same handover.
 const CARD_BARK_SHADER := """
@@ -229,30 +369,11 @@ uniform int zone_mode = 0;
 uniform vec4 grown_cam = vec4(0.0);
 uniform vec4 grown_zone = vec4(0.0, 0.0, 1.0, 0.0);
 varying vec2 keep;
-float dither(vec2 p) {
-	return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
-}
+""" + KEEP_GLSL + """
 void vertex() {
-	float fade = 1.0;
 	vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-	if (fade_on) {
-		// Each tree drops out at its own distance, so the edge of the drawn
-		// woods is ragged, not a circle round the camera.
-		float jitter = (fract(sin(dot(floor(origin.xz), vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * 0.3 * tree_fade.z;
-		fade = (1.0 - smoothstep(tree_fade.z * 0.55, tree_fade.z * 0.97, distance(origin.xz, tree_fade.xy) + jitter))
-			* (1.0 - smoothstep(1200.0, 1700.0, tree_fade.w));
-	}
-	keep = vec2(0.0, 1.0);
-	bool grows = INSTANCE_CUSTOM.a * 32.0 < 15.5;
-	if (grown_cam.w > 0.5 && grows) {
-		float d = distance(origin, grown_cam.xyz);
-		float t_mid = smoothstep(grown_zone.x - grown_zone.z, grown_zone.x, d);
-		float t_far = smoothstep(grown_zone.y - grown_zone.z, grown_zone.y, d);
-		keep = zone_mode == 0 ? vec2(0.0, t_far) : (zone_mode == 4 ? vec2(t_mid, 1.0) : vec2(t_far, t_mid));
-	} else if (zone_mode != 0 && !grows) {
-		keep = vec2(0.0);
-	}
-	VERTEX *= fade * step(0.0001, keep.y - keep.x);
+	keep = band_keep(origin, INSTANCE_CUSTOM.a * 32.0 < 15.5);
+	VERTEX *= step(0.0001, keep.y - keep.x);
 }
 void fragment() {
 	// The sun's shadow map is drawn square-on (orthographic): there each
@@ -402,6 +523,16 @@ static var _textures := {}  # sp -> ImageTexture
 static var _card_mats: Array[ShaderMaterial] = []  # every card material, for the zone and season values
 static var _zone := Vector4.ZERO
 static var _cam := Vector4.ZERO
+static var _eye := Vector4.ZERO
+static var _dist := Vector4.ZERO
+static var _eye_frame := -1
+## How far brush and the far woods are drawn (set by WildView; 0 when
+## there are none), for the hand-overs.
+static var brush_reach := 0.0
+static var far_reach := 0.0
+## WildView's tree_fade (the camera's x, z, the cards' reach, the camera's
+## height), kept here for TreeField.
+static var wild_fade := Vector4.ZERO
 static var _look := PackedVector3Array()
 static var _seasons := false
 
@@ -442,6 +573,65 @@ static func set_season(months: float, on := true) -> void:
 		m.set_shader_parameter("kind_seasons", true)
 
 
+## Once a frame (the first TreeField to draw calls it): where the camera is
+## and how far each version of the cheap trees reaches, for the hand-overs.
+## The full cards give way to the light ones at TreeField.NEAR (scaled
+## with the quality tier).
+static func set_eye(eye: Vector3, again := false) -> void:
+	var frame := Engine.get_process_frames()
+	if frame == _eye_frame and not again:
+		return
+	_eye_frame = frame
+	_eye = Vector4(eye.x, eye.y, eye.z, 1.0)
+	_dist = Vector4(card_near(), brush_reach, far_reach, 0.0)
+	for m in _card_mats:
+		m.set_shader_parameter("lod_eye", _eye)
+		m.set_shader_parameter("lod_dist", _dist)
+
+
+## Where TreeField's full cards hand over to its light ones.
+static func card_near() -> float:
+	return TreeField.NEAR * GraphicsQuality.detail
+
+
+## The camera and reaches the shaders were last given (lod_eye, lod_dist).
+static func eye() -> Vector4:
+	return _eye
+
+
+static func reaches() -> Vector4:
+	return _dist
+
+
+## The share of pixels [from, to) one version of a tree draws: KEEP_GLSL's
+## band_keep worked out here too, for the tests (the grown bands left out:
+## `light` TreeField's light cards, else its full ones; `far` FarWoods).
+static func keep_share(origin: Vector3, light: bool, far: bool, fades := true) -> Vector2:
+	var de := origin.distance_to(Vector3(_eye.x, _eye.y, _eye.z))
+	var b4 := 0.0
+	if fades:
+		var fade := wild_fade
+		var jitter := (hash01(origin, 17.0) - 0.5) * 0.3 * fade.z
+		b4 = smoothstep(fade.z * 0.7, fade.z * 0.97, Vector2(origin.x, origin.z).distance_to(Vector2(fade.x, fade.y)) + jitter)
+		var gone := smoothstep(1200.0, 1700.0, fade.w)
+		if _dist.z > 0.0:
+			gone = maxf(gone, smoothstep(_dist.z * 0.85, _dist.z, de))
+		if hash01(origin, 0.0) < gone:
+			return Vector2.ZERO
+	var b3 := maxf(smoothstep(_dist.x - LIGHT_BAND, _dist.x, de), b4)
+	if far:
+		return Vector2(0.0, b4)
+	return Vector2(b4, b3) if light else Vector2(b3, 1.0)
+
+
+## KEEP_GLSL's tree_hash.
+static func hash01(origin: Vector3, salt: float) -> float:
+	var p := Vector2(fposmod(floorf(origin.x * 2.0), 4096.0), fposmod(floorf(origin.z * 2.0), 4096.0)) + Vector2(salt, salt)
+	var p3 := Vector3(fposmod(p.x * 0.1031, 1.0), fposmod(p.y * 0.1031, 1.0), fposmod(p.x * 0.1031, 1.0))
+	p3 += Vector3.ONE * p3.dot(Vector3(p3.y, p3.z, p3.x) + Vector3.ONE * 33.33)
+	return fposmod((p3.x + p3.y) * p3.z, 1.0)
+
+
 static func _all_mats() -> Array:
 	var out: Array = _card_mats.duplicate()
 	out.append_array(_leaf_mats.values())
@@ -462,7 +652,8 @@ static func shader(code: String) -> Shader:
 	return _shaders[code]
 
 
-static func card_material(code: String, mode: int, fades: bool, leaf_tex: Texture2D, twig_tex: Texture2D) -> ShaderMaterial:
+static func card_material(code: String, mode: int, fades: bool, leaf_tex: Texture2D, twig_tex: Texture2D,
+		light := false) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = shader(code)
 	if leaf_tex:
@@ -470,6 +661,7 @@ static func card_material(code: String, mode: int, fades: bool, leaf_tex: Textur
 		m.set_shader_parameter("twig_tex", twig_tex)
 	m.set_shader_parameter("fade_on", fades)
 	m.set_shader_parameter("zone_mode", mode)
+	m.set_shader_parameter("light_card", light)
 	_fill_kinds(m)
 	_card_mats.append(m)
 	return m
@@ -493,6 +685,8 @@ static func _fill_kinds(m: ShaderMaterial) -> void:
 	m.set_shader_parameter("kind_winter", winter)
 	m.set_shader_parameter("grown_cam", _cam)
 	m.set_shader_parameter("grown_zone", _zone)
+	m.set_shader_parameter("lod_eye", _eye)
+	m.set_shader_parameter("lod_dist", _dist)
 	if _seasons:
 		m.set_shader_parameter("kind_look", _look)
 		m.set_shader_parameter("kind_seasons", true)

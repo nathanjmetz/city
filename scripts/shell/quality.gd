@@ -112,6 +112,9 @@ const DETAIL_FLOOR := [
 ## Distances are metres from the camera; counts are the most drawn at once.
 ##   grow_ms: ms of each frame WildView may spend laying out tree chunks.
 ##   woods: share of the wild woods' full reach (and of their brush) drawn.
+##   far_woods: how far the wild trees are drawn as one-quad stand-ins past
+##     that (FarWoods), so the distance is never bare (the browser at most
+##     BROWSER_FAR_WOODS).
 ##   far_from: share of BuildingView's far-box swap distance.
 ##   crops / crop_m / crop_shadows: field plants on or off, how far round
 ##     the look spot, and whether corn casts shadows.
@@ -126,19 +129,19 @@ const DETAIL_FLOOR := [
 ## tree_shadows. High is the look the game had before budgets, so a
 ## full-strength desktop (High and up) is never drawn with less than that.
 const BUDGETS := [
-	{"grow_ms": 3.0, "woods": 0.6, "far_from": 0.6, "crops": false, "crop_m": 51.0, "crop_shadows": false,
+	{"grow_ms": 3.0, "woods": 0.6, "far_woods": 2000.0, "far_from": 0.6, "crops": false, "crop_m": 51.0, "crop_shadows": false,
 		"cars_m": 1400.0, "car_near_m": 160.0, "car_detail": false, "cars": 600,
 		"people_m": 180.0, "people": 400},
-	{"grow_ms": 3.0, "woods": 0.7, "far_from": 0.7, "crops": false, "crop_m": 51.0, "crop_shadows": false,
+	{"grow_ms": 3.0, "woods": 0.7, "far_woods": 2600.0, "far_from": 0.7, "crops": false, "crop_m": 51.0, "crop_shadows": false,
 		"cars_m": 1900.0, "car_near_m": 200.0, "car_detail": false, "cars": 1200,
 		"people_m": 250.0, "people": 1000},
-	{"grow_ms": 4.0, "woods": 1.0, "far_from": 1.2, "crops": true, "crop_m": 60.0, "crop_shadows": false,
+	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 3500.0, "far_from": 1.2, "crops": true, "crop_m": 60.0, "crop_shadows": false,
 		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": false, "cars": 4000,
 		"people_m": 320.0, "people": 4000},
-	{"grow_ms": 4.0, "woods": 1.0, "far_from": 1.2, "crops": true, "crop_m": 77.0, "crop_shadows": false,
+	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4000.0, "far_from": 1.2, "crops": true, "crop_m": 77.0, "crop_shadows": false,
 		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "cars": 8000,
 		"people_m": 320.0, "people": 8000},
-	{"grow_ms": 4.0, "woods": 1.0, "far_from": 1.2, "crops": true, "crop_m": 81.0, "crop_shadows": true,
+	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4500.0, "far_from": 1.2, "crops": true, "crop_m": 81.0, "crop_shadows": true,
 		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "cars": 16000,
 		"people_m": 320.0, "people": 16000},
 ]
@@ -147,12 +150,14 @@ const BUDGETS := [
 ## close-up cars or corn shadows unless a test turns them on itself, and
 ## no count caps.
 const NO_CAP := 1 << 30
-const INACTIVE := {"detail": 1.0, "shadow_m": 2000.0, "tree_shadows": true, "grow_ms": 4.0, "woods": 1.0,
+const INACTIVE := {"detail": 1.0, "shadow_m": 2000.0, "tree_shadows": true, "grow_ms": 4.0, "woods": 1.0, "far_woods": 3500.0,
 	"far_from": 1.0, "crops": false, "crop_m": 51.0, "crop_shadows": false, "cars_m": 2600.0,
 	"car_near_m": 240.0, "car_detail": false, "cars": NO_CAP, "people_m": 320.0, "people": NO_CAP}
 ## The browser caps how long a frame may spend growing detail (its one
 ## thread also runs the town).
 const BROWSER_GROW_MS := 3.0
+## The browser lays out its far woods on its one thread too: not as far.
+const BROWSER_FAR_WOODS := 2600.0
 
 ## Each kind of machine's budget: the frame it aims for (slow_ms: drawing
 ## slower than this counts against the tier; room_ms: the whole frame under
@@ -725,6 +730,7 @@ static func budget_for(t: int, on_browser := false) -> Dictionary:
 	b["tree_shadows"] = r.tree_shadows
 	if on_browser:
 		b["grow_ms"] = minf(b.grow_ms, BROWSER_GROW_MS)
+		b["far_woods"] = minf(b.far_woods, BROWSER_FAR_WOODS)
 		b["crops"] = false
 		b["crop_shadows"] = false
 		b["car_detail"] = false

@@ -17,8 +17,9 @@ extends Node3D
 ## bark and leaves) runs on worker threads on the desktop, or in slices on
 ## the main thread (the browser), each slice a few hundred microseconds,
 ## BUILD_MS a frame in all (less in the browser). Which trees are near is
-## looked up a tree at a time (SCAN_MS a frame) as the camera moves; the bands shrink while the
-## lookup lags behind the camera, so nothing is ever left undrawn.
+## looked up a tree at a time (SCAN_MS a frame) as the camera moves; while the
+## lookup lags behind the camera the bands trail it a little (zone_point),
+## so nothing is ever left undrawn and no tree flips back and forth.
 
 ## Ages (years) a mesh is grown at.
 const BUCKETS := [2.0, 4.0, 6.0, 9.0, 13.0, 18.0, 25.0, 33.0, 43.0, 56.0, 72.0, 92.0, 120.0]
@@ -26,6 +27,11 @@ const BUCKETS := [2.0, 4.0, 6.0, 9.0, 13.0, 18.0, 25.0, 33.0, 43.0, 56.0, 72.0, 
 ## the slack each looked-up set carries.
 const MARGIN := 30.0
 const RESCAN := 10.0
+## How far the bands' centre may trail the camera behind a lagging lookup.
+const ZONE_SLACK := MARGIN - 2.0
+## How far ahead of a moving camera a lookup may be aimed (m): where the
+## camera will be when it lands.
+const LEAD_MAX := 80.0
 ## The main thread's time a frame for making meshes and for the lookup
 ## (milliseconds): the desktop's, then the browser's, which is tighter (the
 ## browser has one thread, and its frames are the ones that can't spare it).
@@ -79,6 +85,10 @@ var _scan_pos := Vector3.ZERO
 var _scan_r := Vector2.ZERO
 var _scan_version := -1
 var _scanning := false
+var _scan_began := 0  # when the lookup in hand began (Time msec)
+var _scan_secs := 0.0  # how long the last lookup took
+var _last_cp := Vector3(INF, INF, INF)
+var _vel := Vector3.ZERO  # the camera's speed, smoothed
 var _bufs := {}  # group key -> PackedFloat32Array
 var _counts := {}  # group key -> instances
 var _threads := false
@@ -171,7 +181,7 @@ func _exit_tree() -> void:
 	TreeLook.set_zone(Vector3.ZERO, 0.0, 0.0, false)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	var t := Perf.now()
 	_frame += 1
 	var cam := get_viewport().get_camera_3d()
@@ -189,23 +199,49 @@ func _process(_delta: float) -> void:
 		return
 	visible = true
 	var cp := cam.global_position
+	# The camera's speed, for aiming lookups (a jump across the map is not
+	# a speed).
+	if _last_cp.x < INF and delta > 0.0 and cp.distance_to(_last_cp) < 300.0:
+		_vel = _vel.lerp((cp - _last_cp) / delta, 0.25)
+	else:
+		_vel = Vector3.ZERO
+	_last_cp = cp
 	if not _scanning and (cp.distance_to(_centre) > RESCAN or TreeField.version != _version or r != _scan_r):
-		_start_scan(cp, r)
+		_start_scan(scan_point(cp, _vel, _scan_secs), r)
 	var budgets := budgets_for(TreeLook.browser())
 	if _scanning:
 		_scan_some(budgets.y)
-	# While the looked-up trees lag behind the camera the bands shrink, so
-	# the cards keep drawing anything not looked up yet.
-	var lag := cp.distance_to(_centre)
-	if lag >= MARGIN or _centre.x == INF:
+	# The bands are measured from a point that follows the camera but stays
+	# within reach of where the trees were last looked up (each lookup files
+	# MARGIN of slack round its bands), so every tree in a band is filed
+	# there however far the lookup lags behind a fast camera: the hand-over
+	# rings trail the camera a little instead of every grown tree turning
+	# back into a card until the lookup catches up (they flickered between
+	# the two while the camera moved).
+	if _centre.x == INF:
 		TreeLook.set_zone(cp, 0.0, 0.0, false)
 	else:
-		var near_r := clampf(_scan_r.x, maxf(_scan_r.x - MARGIN + lag, 0.0), _scan_r.x + MARGIN - lag) if _scan_r.x > 0.0 else 0.0
-		TreeLook.set_zone(cp, near_r, minf(_scan_r.y, _scan_r.y + MARGIN - lag), true)
+		TreeLook.set_zone(zone_point(cp, _centre), _scan_r.x, _scan_r.y, true)
 	_build_some(budgets.x)
 	Perf.add("frame.trees.grown", t)
 	Perf.counts["trees.grown"] = _shown
 	last_ms = (Perf.now() - t) / 1000.0
+
+
+## Where a lookup is centred: where the moving camera will be when it lands
+## (it takes about as long as the last one), so the bands can stay on the
+## camera instead of trailing it and catching up in jumps.
+static func scan_point(cam: Vector3, vel: Vector3, secs: float) -> Vector3:
+	return cam + (vel * secs).limit_length(LEAD_MAX)
+
+
+## Where the bands are measured from: the camera, or as near it as stays
+## within ZONE_SLACK of the last lookup's centre (every tree in a band
+## measured from there is filed: a lookup files MARGIN round its bands).
+static func zone_point(cam: Vector3, centre: Vector3) -> Vector3:
+	if cam.distance_to(centre) <= ZONE_SLACK:
+		return cam
+	return centre + (cam - centre).normalized() * ZONE_SLACK
 
 
 ## True when the trees round the camera are looked up and every grown mesh
@@ -228,6 +264,7 @@ static func budgets_for(browser: bool) -> Vector2:
 
 func _start_scan(cp: Vector3, r: Vector2) -> void:
 	_scanning = true
+	_scan_began = Time.get_ticks_msec()
 	_scan_pos = cp
 	_scan_r = r
 	_scan_version = TreeField.version
@@ -328,6 +365,7 @@ func _file(rec: Array, xf: Transform3D, d: float, lod: int) -> void:
 
 func _finish_scan() -> void:
 	_scanning = false
+	_scan_secs = (Time.get_ticks_msec() - _scan_began) / 1000.0
 	_scan_field = null
 	_centre = _scan_pos
 	_version = _scan_version
