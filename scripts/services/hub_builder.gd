@@ -113,21 +113,7 @@ func _fence_edges(edges: Array, h: float, col: Color, gap := 4.0, gate := 0.0) -
 				runs.append([Vector2(gate, a.y), Vector2(hi, a.y)])
 		else:
 			runs.append(e)
-	for e in runs:
-		var a: Vector2 = e[0]
-		var b: Vector2 = e[1]
-		var len := a.distance_to(b)
-		if len < 0.5:
-			continue
-		var dir := (b - a) / len
-		var yaw := Basis(Vector3.UP, atan2(dir.x, dir.y))
-		var n := maxi(1, int(len / gap))
-		for k in n + 1:
-			var p := a + dir * (len * k / n)
-			_box("paint", Vector3(0.08, h, 0.08), Vector3(p.x, h * 0.5, p.y), col)
-		var mid := (a + b) * 0.5
-		for y in [h, 0.15]:
-			_box("paint", Vector3(0.05, 0.05, len), Vector3(mid.x, y, mid.y), col, yaw)
+	EdgeGrounds.fence(self, runs, h, col, gap)
 
 
 ## The outside edges of `set`'s pieces and the edge pieces `with` (local
@@ -151,23 +137,7 @@ func _outline(set: Array, with: Dictionary) -> Array:
 ## along one of `set`'s pieces or another edge piece of `all` (by default
 ## `with` itself), as [a, b] pairs.
 func _edge_sides(set: Array, with: Dictionary, all := {}) -> Array:
-	var others: Dictionary = with if all.is_empty() else all
-	var squares := []
-	var hc := cell * 0.5
-	for c in set:
-		squares.append(PackedVector2Array([Vector2(c.x * cell - hc, c.y * cell), Vector2(c.x * cell + hc, c.y * cell),
-			Vector2(c.x * cell + hc, c.y * cell + cell), Vector2(c.x * cell - hc, c.y * cell + cell)]))
-	var keys := others.keys()
-	var polys := []
-	for c in keys:
-		polys.append(others[c])
-	var out := []
-	for c in with:
-		var poly: PackedVector2Array = with[c]
-		var skip := squares.size() + keys.find(c)
-		for k in poly.size():
-			out.append_array(_uncovered([poly[k], poly[(k + 1) % poly.size()]], squares + polys, skip))
-	return out
+	return EdgeGrounds.sides(set, cell, with, all)
 
 
 ## The parts of edge `e` ([a, b]) not running along any of `polys` (bar

@@ -6,7 +6,12 @@ extends RefCounted
 ## solvent. It fills its seats from the town (and, for a college or
 ## university, the region), saves, and buys the free land next to it for new
 ## buildings over the years. It never opens a second site: boxed in, it
-## builds up instead. Graduates who stay make the town better educated,
+## builds up instead, and fills the rest of its block up to the sidewalk
+## with lawn, shade trees and parking, never another building (Nathan,
+## 2026-10-26: "when a hub with leader is "trapped" inside a road area, it
+## should nicely fill in that area up to the edge (sidewalk) so that it
+## looks like its using its space well."): edge pieces, BlockEdges.
+## Graduates who stay make the town better educated,
 ## office and tech jobs open only for the graduates the town has, and the
 ## town's education shapes the leaders it hires (see leader_education()).
 ##
@@ -131,7 +136,8 @@ const LAST := ["Harmon", "Schroeder", "Whitfield", "Baker", "Lindqvist", "Hayes"
 ## applicants, enrolled, reputation, leader (Agency.leader plus a name:
 ## {name, edu, caution, ambition}), built and why (Agency), asking (its
 ## open land request to the player: {req, cell, use}), grads (everyone it
-## has graduated), idle (why it isn't growing, not saved)}
+## has graduated), idle (why it isn't growing, not saved), cleared, edge
+## (its edge pieces up to the sidewalk: block -> outline, BlockEdges)}
 var campuses := {}
 ## Graduates of the town's own schools who live and work here (people).
 var locals := {"high_school": 0.0, "associate": 0.0, "degree": 0.0}
@@ -235,7 +241,7 @@ func add(sim: CitySim, kind: String, pos: Vector3, dir: Vector3, seed: int, tick
 	campuses[id] = {"kind": kind, "pos": pos, "dir": dir, "blocks": [], "built": [], "why": "", "funding": 2,
 		"savings": 0.0, "applicants": 0, "enrolled": 0, "reputation": Balance.EDUCATION_START_REPUTATION,
 		"leader": hire(sim, kind, hash([seed, id, kind])), "grads": 0.0, "founded": tick, "idle": "",
-		"cleared": [], "asking": {}}
+		"cleared": [], "asking": {}, "edge": {}}
 	return id
 
 
@@ -482,6 +488,8 @@ func decide(sim: CitySim) -> bool:
 			c.blocks.pop_back()
 			_sync_built(c)
 			c.savings += float(b.block_cost) * 0.5
+			# Edge pieces only that block held up go with it.
+			BlockEdges.prune(sim, c, CELL)
 			changed = true
 		elif crowded and c.blocks.size() >= int(b.max_blocks):
 			idle = "Full, and it already has all the campus it will ever need."
@@ -494,6 +502,8 @@ func decide(sim: CitySim) -> bool:
 			var use := pick_next(sim, c, facts, true)
 			if cell != Vector2i.MAX and use != "":
 				c.blocks.append({"c": cell, "use": use, "levels": 1})
+				# An edge piece a road has since let go of becomes a whole block.
+				c.get("edge", {}).erase(cell)
 				_record(c, use)
 				c.savings -= float(b.block_cost)
 				changed = true
@@ -518,6 +528,10 @@ func decide(sim: CitySim) -> bool:
 				else:
 					idle = "Full and boxed in: no free land next to it, and nothing left to build up."
 		changed = _carry_out(sim, id, c, corr) or changed
+		# Boxed in by roads: lawn, trees and parking up to the sidewalk.
+		if BlockEdges.due(sim.tick_count, Balance.EDUCATION_DECIDE_EVERY, id) and stance != "hold" \
+				and campuses.has(id) and take_edges(sim, id):
+			changed = true
 		if c.idle != idle:
 			c.idle = idle
 			changed = true
@@ -678,6 +692,7 @@ func _carry_out(sim: CitySim, id: int, c: Dictionary, corr: Array) -> bool:
 	var b: Dictionary = spec(c.kind)
 	if Geometry2D.is_point_in_polygon(Vector2(mid.x, mid.z), area) and usable(sim, id, c, cell, corr, true):
 		c.blocks.append({"c": cell, "use": c.asking.use, "levels": 1})
+		c.get("edge", {}).erase(cell)
 		_record(c, c.asking.use)
 		c.savings -= float(b.block_cost) + float(req.cost)
 		# The homes and shops on it are bought out: their lots give way to
@@ -718,7 +733,7 @@ static func _neighbors(c: Dictionary, cell: Vector2i) -> int:
 	return n
 
 
-## The campus with a block on this point, or -1.
+## The campus with a block or an edge piece on this point, or -1.
 func at(p: Vector3) -> int:
 	var q := Vector2(p.x, p.z)
 	for id in campuses:
@@ -730,6 +745,9 @@ func at(p: Vector3) -> int:
 			for blk in c.blocks:
 				found = found or blk.c == cell
 			if not found:
+				# An edge piece (looked up by its block first: a quick no).
+				if c.edge.has(cell) and BlockEdges.on_edge(c, CELL, p):
+					return id
 				continue
 		if Geometry2D.is_point_in_polygon(q, block_corners(c, cell)):
 			return id
@@ -751,6 +769,9 @@ func remove_at(p: Vector3) -> bool:
 	if id == -1:
 		return false
 	var c: Dictionary = campuses[id]
+	# An edge piece: it goes, and its head won't take it straight back.
+	if BlockEdges.clear_at(c, CELL, p):
+		return true
 	var d: Vector3 = p - c.pos
 	var cell := Vector2i(roundi(d.dot(_right(c)) / CELL), roundi(-d.dot(c.dir) / CELL))
 	if cell == Vector2i.ZERO:
@@ -768,6 +789,33 @@ func remove_at(p: Vector3) -> bool:
 
 func covers(p: Vector3) -> bool:
 	return not campuses.is_empty() and at(p) != -1
+
+
+## All the ground a campus holds, as outlines (x, z): its first building's
+## block, each block it bought, then each edge piece.
+static func land_polys(c: Dictionary) -> Array:
+	var out := [block_corners(c, Vector2i.ZERO)]
+	for blk in c.blocks:
+		out.append(block_corners(c, blk.c))
+	return out + BlockEdges.edge_polys(c, CELL)
+
+
+## Takes the edge pieces that fit round campus `id`, up to the sidewalk
+## (its ground looked at every 10 m: a campus block is 120 m across).
+func take_edges(sim: CitySim, id: int) -> bool:
+	return BlockEdges.take(sim, campuses[id], CELL, func(world: PackedVector2Array) -> String:
+		return BlockEdges.ground_problem(sim, world, 10.0))
+
+
+## Edge pieces cut back to the roads as they are now, and any no longer
+## joined to a campus's blocks gone (after a road, or a block cleared).
+func prune_edges(sim: CitySim) -> bool:
+	var changed := false
+	var ids := campuses.keys()
+	ids.sort()
+	for id in ids:
+		changed = BlockEdges.prune(sim, campuses[id], CELL) or changed
+	return changed
 
 
 ## Where its students and buses pull in: the middle of its road frontage.
@@ -890,6 +938,8 @@ func to_dict() -> Dictionary:
 			"reputation": c.reputation, "leader": c.leader, "grads": c.grads, "founded": c.founded, "why": c.why,
 			"asking": [] if c.asking.is_empty() else [c.asking.req, c.asking.cell.x, c.asking.cell.y, c.asking.use],
 			"cleared": c.get("cleared", []).map(func(v): return [v.x, v.y])}
+		if not c.get("edge", {}).is_empty():
+			out[str(id)].edge = CivicHubs.edge_to_save(c.edge)
 	return {"campuses": out, "locals": locals, "next_id": _next_id}
 
 
@@ -902,7 +952,7 @@ func from_dict(d: Dictionary) -> void:
 			blocks.append({"c": Vector2i(int(b[0]), int(b[1])), "use": str(b[2]), "levels": int(b[3])})
 		var l: Dictionary = s.get("leader", {})
 		campuses[int(k)] = {"kind": str(s.kind), "pos": Vector3(s.pos[0], 0.0, s.pos[1]),
-			"dir": Vector3(s.dir[0], 0.0, s.dir[1]).normalized(), "blocks": blocks,
+			"dir": BlockEdges.unit(Vector3(s.dir[0], 0.0, s.dir[1])), "blocks": blocks,
 			"funding": int(s.get("funding", 2)), "savings": float(s.get("savings", 0.0)),
 			"applicants": int(s.get("applicants", 0)), "enrolled": int(s.get("enrolled", 0)),
 			"reputation": float(s.get("reputation", Balance.EDUCATION_START_REPUTATION)),
@@ -914,6 +964,7 @@ func from_dict(d: Dictionary) -> void:
 		var ask: Array = s.get("asking", [])
 		if ask.size() == 4:
 			campuses[int(k)].asking = {"req": int(ask[0]), "cell": Vector2i(int(ask[1]), int(ask[2])), "use": str(ask[3])}
+		campuses[int(k)].edge = BlockEdges.from_save(s.get("edge", []), blocks)
 		_sync_built(campuses[int(k)])
 	locals = {"high_school": 0.0, "associate": 0.0, "degree": 0.0}
 	var l2: Dictionary = d.get("locals", {})

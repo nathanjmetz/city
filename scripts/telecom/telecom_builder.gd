@@ -18,6 +18,9 @@ extends CivicBuilder
 ##   - the blocks it buys: a line crew garage with bucket trucks, a cable
 ##     and reel yard, a phone store, a two-storey operations center and a
 ##     windowless data center with chillers and generators
+##   - boxed in by roads (edge pieces, Telecom/BlockEdges), the office runs
+##     up to the sidewalk: lawn and a few trees along its street, a fenced
+##     gravel yard with cable reels behind, never another building
 ## Local space: centred on 0, -z toward the road. `to_curb` is how far the
 ## curb lies in front of the office block; `drive` how long a tower's drive
 ## runs out from the front of its compound.
@@ -86,6 +89,48 @@ static func build_small_cell(seed: int) -> Array:
 	b._box("paint", Vector3(0.35, 0.16, 0.7), Vector3(0, 7.6, -2.4), Color("#565b5e"))
 	b._box("metal", Vector3(0.55, 1.3, 0.35), Vector3(0, 0.85, 0.3), Color("#3b3f42"))
 	return [b._commit_house(), b._commit_flat(), b.trees]
+
+
+## [things, ground mesh, trees] for the office's edge pieces (`edge`: block
+## -> outline in CivicHubs' frame, z = 0 at its own block's front edge, -z
+## toward the street; `cells` its blocks).
+static func build_edge(edge: Dictionary, cells: Array, seed: int) -> Array:
+	var b := _start(seed)
+	var yard := {}
+	for c in edge:
+		var poly: PackedVector2Array = edge[c]
+		if c.y == 0:
+			EdgeGrounds.ground(b, "mulch", poly, 0.04, EdgeGrounds.LAWN)
+			EdgeGrounds.trees(b, poly, 10.0, 3.0)
+			continue
+		yard[c] = poly
+		EdgeGrounds.ground(b, "gravel", poly, 0.05, STONE)
+		b._reels_in(HubBuilder._inset(poly, 2.5))
+	# The yard's chain-link, barbed wire on top, where it meets the sidewalk
+	# or a neighbour (open to the office's own land).
+	EdgeGrounds.fence(b, EdgeGrounds.sides(cells, Telecom.CELL, yard, edge), 2.4, GALV, 3.0, true)
+	return [b._commit_house(), b._commit_flat(), b.trees]
+
+
+## Spare reels stored flat on the yard's gravel, 5 m apart, wherever one fits.
+func _reels_in(poly: PackedVector2Array) -> void:
+	if poly.size() < 3:
+		return
+	var box := HubBuilder._bounds(poly)
+	var z := box.position.y + 1.5
+	var n := 0
+	while z <= box.end.y - 1.5 and n < 12:
+		var x := box.position.x + 1.5
+		while x <= box.end.x - 1.5 and n < 12:
+			if Geometry2D.is_point_in_polygon(Vector2(x, z), poly):
+				var c := Vector3(x, 0, z)
+				var r := rng.randf_range(1.0, 1.3)
+				_cylinder("paint", c, r, 0.08, Color("#9c7a50"), 12)
+				_cylinder("paint", c + Vector3(0, 0.08, 0), r * 0.85, 0.95, Color(_pick(["#3a3c3e", "#e1a032", "#2f4a8a"])), 12)
+				_cylinder("paint", c + Vector3(0, 1.03, 0), r, 0.08, Color("#9c7a50"), 12)
+				n += 1
+			x += 5.0
+		z += 5.0
 
 
 static func _start(seed: int) -> TelecomBuilder:

@@ -13,7 +13,12 @@ extends RefCounted
 ##     real county board of zoning appeals, and the player can say no.
 ##   - The office grows only into the land right next to it, never a second
 ##     site, picking from a development tree its manager's schooling and the
-##     town around it unlock.
+##     town around it unlock. Boxed in by roads, it fills the rest of its
+##     block up to the sidewalk with lawn and a fenced gravel yard, never
+##     another building (Nathan, 2026-10-26: "when a hub with leader is
+##     "trapped" inside a road area, it should nicely fill in that area up
+##     to the edge (sidewalk) so that it looks like its using its space
+##     well."): edge pieces, BlockEdges.
 ## Coverage draws people, remote workers and offices, and fiber lifts home
 ## values. Rural edges stay spotty unless the grant pays to reach them.
 ## Numbers live in Balance (TELECOM_*). Benchmark: CS2's telecom (network
@@ -84,7 +89,8 @@ const LAST := ["Harmon", "Schroeder", "Whitfield", "Baker", "Lindqvist", "Hayes"
 ## plus a name), why (its last move), facts (for the tree, not saved), subs
 ## {fiber, business, fixed, wireless}, pending {req, pos, kind} (a tower
 ## waiting on the bell), refused (sites the player turned down), jobs
-## (truck trips waiting for the morning), founded, cleared, idle (not saved)}
+## (truck trips waiting for the morning), founded, cleared, idle (not saved),
+## edge (its edge pieces up to the sidewalk: block -> outline, BlockEdges)}
 var companies := {}
 var _next_id := 1
 ## Per building key: {fiber: bool, q: cell signal 0..1}. Rebuilt by
@@ -179,8 +185,10 @@ static func ground_problem(sim: CitySim, p: Vector3) -> String:
 		return "That land is reserved for %s." % Reserves.KINDS[sim.reserves.kind_at(p)]
 	if sim.education.covers(p):
 		return "That ground is a campus."
-	if sim.hubs.covers(p) or sim.warehouses.covers(p) or sim.parks.covers(p):
-		return "Overlaps a landfill, cemetery, warehouse or park."
+	if sim.hubs.covers(p) or sim.warehouses.covers(p) or sim.parks.covers(p) or sim.mail.covers(p):
+		return "Overlaps a landfill, cemetery, warehouse, park or post office."
+	if sim.banks.covers(p):
+		return "That ground is a bank."
 	return ""
 
 
@@ -206,7 +214,7 @@ func add(sim: CitySim, pos: Vector3, dir: Vector3, seed: int, tick: int) -> int:
 	var c := {"pos": pos, "dir": dir, "blocks": [], "built": [], "why": "", "towers": [], "fiber": [], "funding": 2,
 		"savings": 0.0, "leader": lead,
 		"subs": {"fiber": 0.0, "business": 0.0, "fixed": 0.0, "wireless": 0.0}, "pending": {}, "refused": [],
-		"jobs": [], "founded": tick, "cleared": [], "idle": ""}
+		"jobs": [], "founded": tick, "cleared": [], "idle": "", "edge": {}}
 	var yt := yard_tower(c)
 	c.towers.append({"pos": [yt.x, yt.y], "kind": "monopole", "built": tick})
 	companies[id] = c
@@ -502,9 +510,11 @@ func decide(sim: CitySim) -> bool:
 		var stance: String = sim.permits.guidance("telecom", id).stance
 		var idle := ""
 		if c.savings < -Balance.TELECOM_MAX_DEBT * 1.5 and not c.blocks.is_empty():
-			# Deep in debt: it sells its newest block of land.
+			# Deep in debt: it sells its newest block of land (and edge
+			# pieces only that block held up).
 			c.blocks.pop_back()
 			c.savings += Balance.TELECOM_BLOCK_COST * 0.5
+			BlockEdges.prune(sim, c, CELL)
 			changed = true
 		elif stance == "hold":
 			idle = "Holding off, as you asked. It keeps what it has running."
@@ -535,6 +545,9 @@ func decide(sim: CitySim) -> bool:
 						_dirty = true
 			if built == 0 and not tw and idle == "" and c.pending.is_empty():
 				idle = "No street or tower pays back yet in its %d-year plan." % roundi(h)
+			# Boxed in by roads: lawn and a fenced yard up to the sidewalk.
+			if BlockEdges.due(sim.tick_count, Balance.TELECOM_DECIDE_EVERY, id) and take_edges(sim, id):
+				changed = true
 		# Morning jobs: fiber and tower crews are queued by the builds;
 		# install vans go to new subscribers.
 		for i in mini(new_installs, 4):
@@ -929,6 +942,8 @@ func _buy_block(sim: CitySim, id: int, c: Dictionary, use: String, corr: Array) 
 	if best == Vector2i.MAX:
 		return _build_up(c, use)
 	c.blocks.append({"c": best, "use": use, "levels": 1})
+	# An edge piece a road has since let go of becomes a whole block.
+	c.get("edge", {}).erase(best)
 	return true
 
 
@@ -1001,7 +1016,8 @@ static func _cell_of(c: Dictionary, p: Vector3) -> Vector2i:
 	return Vector2i(roundi(d.dot(_right(c)) / CELL), roundi(-d.dot(c.dir) / CELL))
 
 
-## The company with its office, a block or a tower on this point, or -1.
+## The company with its office, a block, an edge piece or a tower on this
+## point, or -1.
 func at(p: Vector3) -> int:
 	var q := Vector2(p.x, p.z)
 	for id in companies:
@@ -1011,6 +1027,8 @@ func at(p: Vector3) -> int:
 		for blk in c.blocks:
 			found = found or blk.c == cell
 		if found and Geometry2D.is_point_in_polygon(q, block_corners(c, cell)):
+			return id
+		if not found and c.edge.has(cell) and BlockEdges.on_edge(c, CELL, p):
 			return id
 		if tower_at(id, q) != -1:
 			return id
@@ -1031,6 +1049,44 @@ func covers(p: Vector3) -> bool:
 	return not companies.is_empty() and at(p) != -1
 
 
+## All the ground the office holds, as outlines (x, z): its own block, each
+## block it bought, then each edge piece (not its towers).
+static func land_polys(c: Dictionary) -> Array:
+	var out := [block_corners(c, Vector2i.ZERO)]
+	for blk in c.blocks:
+		out.append(block_corners(c, blk.c))
+	return out + BlockEdges.edge_polys(c, CELL)
+
+
+## Takes the edge pieces that fit round company `id`'s office, up to the
+## sidewalk.
+func take_edges(sim: CitySim, id: int) -> bool:
+	var c: Dictionary = companies[id]
+	# Its own towers' fenced yards (the office's pokes a metre past its
+	# block) stay as they are: the pieces are cut round them.
+	var towers := func(parts: Array) -> Array:
+		for t in c.towers:
+			parts = BlockEdges.cut_out(parts, compound(Vector2(t.pos[0], t.pos[1])))
+		return parts
+	return BlockEdges.take(sim, c, CELL, func(world: PackedVector2Array) -> String:
+		for t in c.towers:
+			for q in Geometry2D.intersect_polygons(world, compound(Vector2(t.pos[0], t.pos[1]))):
+				if CivicHubs.area(q) > 0.5:
+					return "A tower stands there."
+		return BlockEdges.ground_problem(sim, world, CELL * 0.2), towers)
+
+
+## Edge pieces cut back to the roads as they are now, and any no longer
+## joined to the office's blocks gone (after a road, or a block cleared).
+func prune_edges(sim: CitySim) -> bool:
+	var changed := false
+	var ids := companies.keys()
+	ids.sort()
+	for id in ids:
+		changed = BlockEdges.prune(sim, companies[id], CELL) or changed
+	return changed
+
+
 ## The player clears what stands here: a tower, a block, or (the office
 ## itself) the whole company. Returns true if anything went.
 func remove_at(p: Vector3) -> bool:
@@ -1045,6 +1101,9 @@ func remove_at(p: Vector3) -> bool:
 		# Its manager won't put one straight back.
 		c.refused.append(t.pos)
 		_dirty = true
+		return true
+	# An edge piece: it goes, and its manager won't take it straight back.
+	if BlockEdges.clear_at(c, CELL, p):
 		return true
 	var cell := _cell_of(c, p)
 	if cell == Vector2i.ZERO:
@@ -1138,6 +1197,8 @@ func to_dict() -> Dictionary:
 			"savings": c.savings, "leader": c.leader, "subs": c.subs, "pending": c.pending,
 			"refused": c.refused, "jobs": c.jobs, "founded": c.founded,
 			"cleared": c.cleared.map(func(v): return [v.x, v.y])}
+		if not c.get("edge", {}).is_empty():
+			out[str(id)].edge = CivicHubs.edge_to_save(c.edge)
 	return {"companies": out, "next_id": _next_id}
 
 
@@ -1159,7 +1220,7 @@ func from_dict(d: Dictionary) -> void:
 		var subs: Dictionary = s.get("subs", {})
 		var pend: Dictionary = s.get("pending", {})
 		companies[int(k)] = {"pos": Vector3(s.pos[0], 0.0, s.pos[1]),
-			"dir": Vector3(s.dir[0], 0.0, s.dir[1]).normalized(), "blocks": blocks,
+			"dir": BlockEdges.unit(Vector3(s.dir[0], 0.0, s.dir[1])), "blocks": blocks,
 			"built": s.get("built", []).map(func(u): return str(u)), "why": str(s.get("why", "")), "towers": towers,
 			"fiber": fiber,
 			"funding": int(s.get("funding", 2)), "savings": float(s.get("savings", 0.0)),
@@ -1172,6 +1233,7 @@ func from_dict(d: Dictionary) -> void:
 			"refused": s.get("refused", []).map(func(p): return [float(p[0]), float(p[1])]),
 			"jobs": s.get("jobs", []).map(func(j): return {"to": [float(j.to[0]), float(j.to[1])], "what": str(j.what)}),
 			"founded": int(s.get("founded", 0)), "idle": "",
-			"cleared": s.get("cleared", []).map(func(v): return Vector2i(int(v[0]), int(v[1])))}
+			"cleared": s.get("cleared", []).map(func(v): return Vector2i(int(v[0]), int(v[1]))),
+			"edge": BlockEdges.from_save(s.get("edge", []), blocks)}
 	_next_id = int(d.get("next_id", 1))
 	_dirty = true

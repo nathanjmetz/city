@@ -12,6 +12,10 @@ extends CivicBuilder
 ##     wings, a community room, a flat-roofed operations center, a four-storey
 ##     holding company headquarters (Farm Credit Leasing works from an office
 ##     wing: leased machines go straight from the dealer to the farm)
+##   - boxed in by roads (edge pieces, Banks/BlockEdges), it runs up to the
+##     sidewalk: a mown lawn with flowering trees and a shrub bed along the
+##     front street, customer parking edged with lawn behind, never a
+##     building
 ## Local space: one Banks.CELL block centred on 0, -z toward the street.
 ## `to_curb` is how far the curb lies in front of the first building.
 
@@ -40,6 +44,34 @@ static func build_block(art: String, seed: int) -> Array:
 		"operations": b._operations()
 		"headquarters": b._headquarters()
 		_: b._office_wing()
+	return [b._commit_house(), b._commit_flat(), b.trees]
+
+
+## [things, ground mesh, trees] for a bank's edge pieces (`edge`: block ->
+## outline in CivicHubs' frame, z = 0 at its first block's front edge, -z
+## toward the street).
+static func build_edge(edge: Dictionary, seed: int) -> Array:
+	var b := _start(seed)
+	for c in edge:
+		var poly: PackedVector2Array = edge[c]
+		EdgeGrounds.ground(b, "mulch", poly, 0.04, EdgeGrounds.LAWN)
+		var lot := HubBuilder._inset(poly, 2.0)
+		if c.y > 0 and lot.size() >= 3 and HubBuilder._bounds(lot).size.y >= 12.0 \
+				and HubBuilder._bounds(lot).size.x >= 12.0:
+			# Customer parking, a lawn strip round it, a tree at its corners.
+			EdgeGrounds.parking(b, lot)
+			EdgeGrounds.back_drive(b, lot, poly, c, Banks.CELL)
+			var all := HubBuilder._bounds(poly).grow(-1.0)
+			for q in [all.position, Vector2(all.end.x, all.position.y), all.end, Vector2(all.position.x, all.end.y)]:
+				if Geometry2D.is_point_in_polygon(q, poly) and not Geometry2D.is_point_in_polygon(q, lot):
+					var pick := TreeField.pick(b.rng, true)
+					b.trees.append([Vector3(q.x, 0, q.y), pick[0], pick[1], b.rng.randf_range(0.7, 0.9)])
+			continue
+		# Along the street: lawn, flowering trees and a bed of shrubs.
+		EdgeGrounds.trees(b, poly, 10.0, 3.0, true)
+		var box := HubBuilder._bounds(HubBuilder._inset(poly, 1.5)) if lot.size() >= 3 else Rect2()
+		if box.size.x >= 6.0 and box.size.y >= 6.0:
+			b._bed(box.get_center().x, box.position.y + 1.0, minf(box.size.x - 2.0, 8.0))
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 

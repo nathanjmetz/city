@@ -9,6 +9,9 @@ extends CivicBuilder
 ##   - the regional university: a three-storey "Old Main" with a clock
 ##     tower, brick halls around green quads, a columned library, dorms
 ##     and a stadium
+## Boxed in by roads (edge pieces, Education/BlockEdges), a campus runs up
+## to the sidewalk: front lawn with rows of shade trees along its street,
+## student parking edged with trees behind, never another building.
 ## Local space: one 120 m block centred on 0, -z toward the street side of
 ## the campus. `to_curb` is how far the curb lies in front of a first
 ## building (0 for blocks further back).
@@ -41,6 +44,26 @@ static func build_block(use: String, levels: int, seed: int) -> Array:
 		"library": b._library(levels)
 		"dorm": b._dorm(levels)
 		_: b._hall_block(levels, use in ["lab", "tech"])
+	return [b._commit_house(), b._commit_flat(), b.trees]
+
+
+## [things, ground mesh, trees] for a campus's edge pieces (`edge`: block
+## -> outline in CivicHubs' frame, z = 0 at its first block's front edge,
+## -z toward the street).
+static func build_edge(edge: Dictionary, seed: int) -> Array:
+	var b := _start(seed)
+	for c in edge:
+		var poly: PackedVector2Array = edge[c]
+		EdgeGrounds.ground(b, "mulch", poly, 0.04, TURF)
+		var lot := HubBuilder._inset(poly, 5.0)
+		if c.y > 0 and lot.size() >= 3 and CivicHubs.area(lot) >= 700.0 and HubBuilder._bounds(lot).size.y >= 18.0:
+			# Student parking, shade trees in the lawn round it.
+			EdgeGrounds.parking(b, lot)
+			EdgeGrounds.back_drive(b, lot, poly, c, Education.CELL)
+			EdgeGrounds.trees(b, poly, 12.0, 2.0, false, [HubBuilder._inset(poly, 3.5)])
+			continue
+		# Front lawn (or a strip too thin for a lot): shade trees in rows.
+		EdgeGrounds.trees(b, poly, 14.0, 4.0)
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 

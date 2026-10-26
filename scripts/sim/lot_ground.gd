@@ -80,24 +80,17 @@ static func items(sim: CitySim) -> Dictionary:
 		var polys := sim.parks.land_polys(id)
 		out["park:%d" % id] = [hash(polys), _boxes(polys)]
 	out["trails"] = [hash(sim.parks.trails.paths), null]
-	# Campuses, banks and the phone company: their blocks (block 0 always).
+	# Campuses, banks and the phone company: their blocks (block 0 always)
+	# and edge pieces (BlockEdges).
 	for id in sim.education.campuses:
-		var c: Dictionary = sim.education.campuses[id]
-		var polys := [Education.block_corners(c, Vector2i.ZERO)]
-		for blk in c.blocks:
-			polys.append(Education.block_corners(c, blk.c))
+		var polys := Education.land_polys(sim.education.campuses[id])
 		out["edu:%d" % id] = [hash(polys), _boxes(polys)]
 	for id in sim.banks.banks:
-		var bk: Dictionary = sim.banks.banks[id]
-		var polys := [Banks.block_corners(bk, Vector2i.ZERO)]
-		for blk in bk.blocks:
-			polys.append(Banks.block_corners(bk, blk.c))
+		var polys := Banks.land_polys(sim.banks.banks[id])
 		out["bank:%d" % id] = [hash(polys), _boxes(polys)]
 	for id in sim.telecom.companies:
 		var c: Dictionary = sim.telecom.companies[id]
-		var polys := [Telecom.block_corners(c, Vector2i.ZERO)]
-		for blk in c.blocks:
-			polys.append(Telecom.block_corners(c, blk.c))
+		var polys := Telecom.land_polys(c)
 		var half := float(Balance.TELECOM_COMPOUND) * 0.5
 		var towers := []
 		for t in c.towers:

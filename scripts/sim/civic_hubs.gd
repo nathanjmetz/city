@@ -1116,11 +1116,19 @@ static func take_edge(sim: CitySim, h: Dictionary, problem: Callable) -> bool:
 ## `edges`) and is free (`problem`, as take_edge); else empty. `from` is an
 ## edge piece's outline (x, z) to cut back again: land it already holds, so
 ## only its size and touch are checked.
+## The hubs that buy land a block at a time (BlockEdges) set four more keys
+## in `h`: `edge_cut` (a Callable taking the road-cut parts and returning
+## what's left of them), `edge_min` (the share of a piece kept, in place of
+## EDGE_MIN), `edge_tidy` (drop corners that lie in a straight line) and
+## `edge_extra` (metres more kept clear of the roads).
 static func edge_shape(sim: CitySim, h: Dictionary, c: Vector2i, edges: Dictionary, problem: Callable,
 		from := PackedVector2Array()) -> PackedVector2Array:
 	# Cut a few centimetres wider than the roads need, so the outline kept in
 	# EDGE_SNAP steps never pokes back over them.
-	var parts := _cut_by_roads(sim.network, cell_poly(h, c) if from.is_empty() else from, EDGE_SNAP * 3.0)
+	var parts := _cut_by_roads(sim.network, cell_poly(h, c) if from.is_empty() else from,
+		EDGE_SNAP * 3.0 + float(h.get("edge_extra", 0.0)))
+	if from.is_empty() and h.has("edge_cut"):
+		parts = h.edge_cut.call(parts)
 	if parts.is_empty():
 		return PackedVector2Array()
 	var best := PackedVector2Array()
@@ -1132,7 +1140,7 @@ static func edge_shape(sim: CitySim, h: Dictionary, c: Vector2i, edges: Dictiona
 			best_a = a
 	var full: float = h.cell * h.cell
 	# Not cut at all: the piece was turned down for something other than a road.
-	if best.is_empty() or best_a < full * EDGE_MIN or (from.is_empty() and best_a > full * 0.98):
+	if best.is_empty() or best_a < full * float(h.get("edge_min", EDGE_MIN)) or (from.is_empty() and best_a > full * 0.98):
 		return PackedVector2Array()
 	var local := PackedVector2Array()
 	for q in best:
@@ -1142,6 +1150,8 @@ static func edge_shape(sim: CitySim, h: Dictionary, c: Vector2i, edges: Dictiona
 			local.append(l)
 	if local.size() > 1 and local[0].distance_to(local[-1]) <= 0.05:
 		local.remove_at(local.size() - 1)
+	if h.get("edge_tidy", false):
+		local = drop_collinear(local)
 	if local.size() < 3:
 		return PackedVector2Array()
 	var world := PackedVector2Array()
@@ -1152,9 +1162,26 @@ static func edge_shape(sim: CitySim, h: Dictionary, c: Vector2i, edges: Dictiona
 	return local
 
 
+## An outline less the corners that lie in a straight line between their
+## neighbours (where a cut ran along a piece): Godot's point-in-polygon can
+## say "inside" well outside an outline that has them (Parks, BlockEdges).
+static func drop_collinear(local: PackedVector2Array) -> PackedVector2Array:
+	var i := 0
+	while local.size() > 3 and i < local.size():
+		var a := local[(i + local.size() - 1) % local.size()]
+		var b := local[(i + 1) % local.size()]
+		var u := local[i] - a
+		var v := b - local[i]
+		if absf(u.cross(v)) < 0.001 * u.length() * v.length() and u.dot(v) > 0.0:
+			local.remove_at(i)
+		else:
+			i += 1
+	return local
+
+
 ## `poly` (x, z) less every road's right of way and the SETBACK gap (and
-## `extra` metres): the pieces left, or [] when a road's whole band sits
-## inside it (it would leave a hole).
+## `extra` metres): the pieces left, less any a road's whole band sits
+## inside (it would leave a hole).
 static func _cut_by_roads(network: RoadNetwork, poly: PackedVector2Array, extra := 0.0) -> Array:
 	var box := Rect2(poly[0], Vector2.ZERO)
 	for q in poly:
@@ -1169,7 +1196,7 @@ static func _cut_by_roads(network: RoadNetwork, poly: PackedVector2Array, extra 
 					inside = false
 					break
 			if inside:
-				return []
+				continue  # that part goes (it would have a hole); the rest stay
 			next.append_array(Geometry2D.clip_polygons(p, band))
 		parts = next
 	return parts
@@ -1255,7 +1282,7 @@ static func prune_edges(sim: CitySim, h: Dictionary) -> bool:
 		var left := 0.0
 		for part in parts:
 			left = maxf(left, area(part))
-		if left >= area(now) - 0.5:
+		if left >= area(now) - 0.05:  # (cut with a margin: a road on it at all cuts it back)
 			continue
 		changed = true
 		var shape := edge_shape(sim, h, c, h.edge, Callable(), now) if left > 0.0 else PackedVector2Array()
@@ -1264,6 +1291,18 @@ static func prune_edges(sim: CitySim, h: Dictionary) -> bool:
 		else:
 			h.edge[c] = shape
 	# Only edge pieces still joined to the whole pieces stay.
+	var joined := joined_edges(h)
+	for c in h.edge.keys():
+		if not joined.has(c):
+			h.edge.erase(c)
+			changed = true
+	return changed
+
+
+## The edge pieces of `h` joined to its whole pieces, straight or through
+## other joined edge pieces (_touches_land): piece -> outline. Prune and the
+## block hubs' take (BlockEdges) both go by this.
+static func joined_edges(h: Dictionary) -> Dictionary:
 	var joined := {}
 	var grew := true
 	while grew:
@@ -1272,11 +1311,7 @@ static func prune_edges(sim: CitySim, h: Dictionary) -> bool:
 			if not joined.has(c) and _touches_land(h, c, edge_poly(h, c), joined):
 				joined[c] = h.edge[c]
 				grew = true
-	for c in h.edge.keys():
-		if not joined.has(c):
-			h.edge.erase(c)
-			changed = true
-	return changed
+	return joined
 
 
 ## Gives back the newest piece that leaves the rest in one piece.
