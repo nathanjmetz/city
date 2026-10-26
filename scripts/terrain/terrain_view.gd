@@ -517,6 +517,13 @@ func setup(cam: Camera3D, net: RoadNetwork = null) -> void:
 		_regrade()
 
 
+## True once the land round the camera stands at its final level of detail
+## (the loading screen waits for this; LoadGate).
+func is_drawn() -> bool:
+	return not _first and _dirty.is_empty() and _job.is_empty() and _settled_eye.x < INF \
+		and _far_job.is_empty() and _far != null
+
+
 ## Where the chunks centre: the ground the camera looks at.
 func focus() -> Vector2:
 	if camera == null or not camera.is_inside_tree():
@@ -598,7 +605,8 @@ func _process(_delta: float) -> void:
 				_job = {"key": key, "lod": lod, "data": chunk_job(Vector2(key) * CHUNK, CHUNK, STEPS[lod],
 					REACH[lod] if lod < STEPS.size() - 1 else 0.0)}
 			var finished := false
-			while not finished and Time.get_ticks_usec() - start * 1000 < _budget_ms * 1000:
+			var budget := LoadGate.ms(_budget_ms)
+			while not finished and Time.get_ticks_usec() - start * 1000 < budget * 1000:
 				finished = chunk_step(_job.data, JOB_ROWS)
 			if not finished:
 				done = false
@@ -608,7 +616,7 @@ func _process(_delta: float) -> void:
 		_dirty.erase(key)
 		# Build everything at once the first time, so the land is there
 		# when the game opens; then a little each frame.
-		if not _first and Time.get_ticks_msec() - start > _budget_ms:
+		if not _first and Time.get_ticks_msec() - start > LoadGate.ms(_budget_ms):
 			done = false
 			break
 	_settled_eye = eye if done else Vector3(INF, INF, INF)
@@ -630,7 +638,7 @@ func _update_far(flat_eye: Vector2, all_now := false) -> void:
 		var c := (flat_eye / CHUNK).round()
 		_far_job = far_job(c * CHUNK, ceili((FAR_REACH + FAR_MOVE) / CHUNK))
 	while not far_step(_far_job):
-		if not all_now and Time.get_ticks_msec() - start > FAR_BUDGET_MS:
+		if not all_now and Time.get_ticks_msec() - start > LoadGate.ms(FAR_BUDGET_MS):
 			return
 	if _far == null:
 		_far = MeshInstance3D.new()

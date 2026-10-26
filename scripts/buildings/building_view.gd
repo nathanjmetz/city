@@ -59,6 +59,11 @@ var _first := true  # the town as it loads: nearest the camera first, for up to 
 ## then the rest FILL_MS a frame while you play (far boxes once it's all in).
 const LOAD_MS := 1500
 const FILL_MS := 8
+## Behind the loading screen (LoadGate): milliseconds a frame, so the bar still moves.
+const LOAD_BOOST_MS := 150.0
+## The loading screen waits for buildings this near the camera (metres): the
+## ground out to where far boxes take over (FAR_FROM).
+const LOAD_RANGE := 900.0
 var _filling := false
 ## A neighbor's whole town lands at once, while you play: drawn a few
 ## buildings a frame even then, its far boxes once it's all in (RegionView).
@@ -93,6 +98,25 @@ func setup(s: CitySim) -> void:
 
 func _mark() -> void:
 	_dirty = true
+
+
+## True once every building within LOAD_RANGE of the camera is standing, and
+## the look-over is done (the loading screen waits for this; LoadGate). The
+## far ones keep filling in while you play. A neighbor's town (sliced) must
+## be whole. A view that draws buildings another way can offer the same method.
+func is_drawn() -> bool:
+	if _dirty or not _recheck.is_empty():
+		return false
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if sliced or cam == null:
+		return _pending.is_empty() and _far_dirty.is_empty()
+	var eye := cam.global_position
+	for key in _pending:
+		if sim.lots.has(key) and sim.buildings.has(key):
+			var p: Vector3 = sim.lots[key].pos
+			if Vector2(p.x - eye.x, p.z - eye.z).length() < LOAD_RANGE:
+				return false
+	return not _pending.is_empty() or _far_dirty.is_empty()
 
 
 func _process(_delta: float) -> void:
@@ -135,7 +159,7 @@ func _sync_all() -> void:
 			_recheck_again = true
 	# Look the rest over for a moved lot (a road widened), a new look or a
 	# new sign, a slice at a time.
-	while not _recheck.is_empty() and Time.get_ticks_usec() - start < RECHECK_MS * 1000:
+	while not _recheck.is_empty() and Time.get_ticks_usec() - start < LoadGate.ms(RECHECK_MS) * 1000:
 		var key: String = _recheck.pop_back()
 		if _nodes.has(key) and _stale(key):
 			_unspawn(key)
@@ -150,6 +174,9 @@ func _sync_all() -> void:
 		_first = false
 		_filling = true
 		budget = LOAD_MS
+	# Behind the loading screen: a bigger share each frame, so the bar moves.
+	if LoadGate.loading:
+		budget = int(LoadGate.ms(0.0, LOAD_BOOST_MS))
 	while not _pending.is_empty():
 		var key: String = _pending.pop_back()
 		# Swapped in the same frame, so it never blinks out.

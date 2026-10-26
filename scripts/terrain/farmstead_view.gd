@@ -26,6 +26,8 @@ const BUDGET_MS_WEB := 1.5
 ## Past this the haze has them anyway, metres (desktop, browser).
 const DRAW_TO := 9000.0
 const DRAW_TO_WEB := 7000.0
+## The loading screen waits for farmsteads this near the camera (metres).
+const LOAD_RANGE := 3500.0
 ## The camera moves this far before the blocks to build are chosen again.
 const RESCAN_M := 512.0
 
@@ -118,7 +120,7 @@ func _process(delta: float) -> void:
 	if _scan_at == Vector2.INF or c.distance_to(_scan_at) > RESCAN_M:
 		_rescan(c)
 	var start := Time.get_ticks_usec()
-	var budget := BUDGET_MS_WEB if FarmsteadFar.web() else BUDGET_MS
+	var budget := LoadGate.ms(BUDGET_MS_WEB if FarmsteadFar.web() else BUDGET_MS)
 	while (Time.get_ticks_usec() - start) / 1000.0 < budget:
 		if _job.is_empty():
 			if _queue.is_empty():
@@ -135,6 +137,20 @@ func _process(delta: float) -> void:
 	worst_frame_ms = maxf(worst_frame_ms, spent)
 	time_ms += spent
 	frames += 1
+
+
+## True once the farmsteads within LOAD_RANGE of the camera are drawn (the
+## loading screen waits for this; LoadGate). Blocks out toward the haze may
+## keep streaming.
+func is_drawn() -> bool:
+	if _scan_at == Vector2.INF:
+		return false
+	if not _job.is_empty() and sqrt(_dist(_job.b, _scan_at)) < LOAD_RANGE:
+		return false
+	for b in _queue:
+		if sqrt(_dist(b, _scan_at)) < LOAD_RANGE:
+			return false
+	return true
 
 
 ## Chooses the blocks to build: those within reach of the camera that aren't
