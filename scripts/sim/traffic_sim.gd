@@ -502,6 +502,66 @@ func set_rule(node: int, rule: int) -> bool:
 	return true
 
 
+## Green times the player set at a light (Nathan, 2026-10-25: "set one
+## direction to be longer than the other one"): node -> {phase index:
+## seconds}. Phases follow the junction's road groups, busiest first.
+var greens := {}
+const GREEN_MIN := 7.0   # MUTCD 4D.26 / ITE: a minimum green of 7 s or so
+const GREEN_MAX := 90.0
+
+
+## Sets how long one phase of a light stays green (0 or less: back to the
+## automatic time). Returns false for a junction without lights.
+func set_green(node: int, phase: int, seconds: float) -> bool:
+	if not junctions.has(node) or junctions[node].control != Rule.SIGNAL:
+		return false
+	if phase < 0 or phase >= junctions[node].phases.size():
+		return false
+	if seconds <= 0.0:
+		if greens.has(node):
+			greens[node].erase(phase)
+			if greens[node].is_empty():
+				greens.erase(node)
+	else:
+		if not greens.has(node):
+			greens[node] = {}
+		greens[node][phase] = clampf(roundf(seconds), GREEN_MIN, GREEN_MAX)
+	_rebuild()
+	return true
+
+
+## The green time each phase of a light has now, in seconds.
+func greens_at(node: int) -> Array:
+	var out := []
+	if not junctions.has(node):
+		return out
+	var start := 0.0
+	for ph in junctions[node].phases:
+		out.append(ph.g_end - start)
+		start = ph.end
+	return out
+
+
+func greens_to_dict() -> Dictionary:
+	var out := {}
+	for n in greens:
+		var d := {}
+		for ph in greens[n]:
+			d[str(ph)] = greens[n][ph]
+		out[str(n)] = d
+	return out
+
+
+func greens_from_dict(d: Dictionary) -> void:
+	greens.clear()
+	for k in d:
+		var g := {}
+		for ph in d[k]:
+			g[int(ph)] = float(d[k][ph])
+		greens[int(k)] = g
+	_dirty = true
+
+
 func rules_to_dict() -> Dictionary:
 	var out := {}
 	for n in overrides:
@@ -981,6 +1041,9 @@ func _build_control(n: int, segs: Array) -> void:
 			# Yellow by the ITE formula: 1 s to react, then brake at 10 ft/s^2.
 			var yellow := clampf(1.0 + v / (2.0 * 3.05), 3.0, 6.0)
 			var green: float = 16.0 + 6.0 * g[0]
+			var set_at: Dictionary = greens.get(n, {})
+			if set_at.has(j.phases.size()):
+				green = float(set_at[j.phases.size()])
 			j.phases.append({"ways": ph_ways, "g_end": t + green, "y_end": t + green + yellow,
 				"end": t + green + yellow + 1.5})
 			t += green + yellow + 1.5

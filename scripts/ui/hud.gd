@@ -1844,7 +1844,8 @@ func _fill_traffic_row(row: HBoxContainer) -> void:
 			[TrafficTool.Mode.SIGNAL, "signal", "Lights", "Traffic lights (signals)", junctions],
 			[TrafficTool.Mode.ALL_STOP, "allstop", "All-way", "All-way stop: first to stop goes first", junctions],
 			[TrafficTool.Mode.STOP, "stop", "Stop signs", "Stop signs on the smaller road only", junctions],
-			[TrafficTool.Mode.NO_CONTROL, "nocontrol", "None", "No signs or lights", junctions]]:
+			[TrafficTool.Mode.NO_CONTROL, "nocontrol", "None", "No signs or lights", junctions],
+			[TrafficTool.Mode.TIMING, "signal", "Timing", "How long each direction's green lasts at a light: click near a direction for 5 s more, Shift-click for 5 s less", junctions]]:
 		var m: int = entry[0]
 		var b := _card(entry[1], entry[2], "")
 		b.tooltip_text = entry[3]

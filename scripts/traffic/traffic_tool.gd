@@ -7,7 +7,7 @@ extends Node3D
 signal mode_changed(mode: int)
 signal hint_changed(text: String)
 
-enum Mode { NONE, VIEW, AUTO, SIGNAL, ALL_STOP, STOP, NO_CONTROL }
+enum Mode { NONE, VIEW, AUTO, SIGNAL, ALL_STOP, STOP, NO_CONTROL, TIMING }
 
 const RULE_FOR := {
 	Mode.AUTO: -1, Mode.SIGNAL: TrafficSim.Rule.SIGNAL, Mode.ALL_STOP: TrafficSim.Rule.ALL_STOP,
@@ -67,6 +67,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	if mb.button_index == MOUSE_BUTTON_RIGHT and not mb.pressed and not cam.right_dragged:
 		set_mode(Mode.NONE)
 	elif mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not mb.alt_pressed \
+			and _hover != -1 and mode == Mode.TIMING:
+		# Click near a direction: 5 s more green for it; Shift-click: 5 s less.
+		var hit = cam.mouse_ground_point()
+		var ph := _phase_near(_hover, hit) if hit != null else -1
+		if ph != -1:
+			var now: Array = sim.traffic.greens_at(_hover)
+			sim.apply({"type": "set_green", "node": _hover, "phase": ph,
+				"seconds": float(now[ph]) + (-5.0 if mb.shift_pressed else 5.0)})
+			_hint = ""
+			_update_hint()
+	elif mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not mb.alt_pressed \
 			and _hover != -1 and RULE_FOR.has(mode):
 		sim.apply({"type": "set_junction", "node": _hover, "rule": RULE_FOR[mode]})
 		_hint = ""
@@ -92,6 +103,10 @@ func _process(delta: float) -> void:
 	var node := -1
 	if hit != null and RULE_FOR.has(mode):
 		node = _junction_near(hit)
+	elif hit != null and mode == Mode.TIMING:
+		node = _junction_near(hit)
+		if node != -1 and sim.traffic.junctions[node].control != TrafficSim.Rule.SIGNAL:
+			node = -1
 	if node != _hover:
 		_hover = node
 		_update_hint()
@@ -100,6 +115,30 @@ func _process(delta: float) -> void:
 		var r := RoadStyle.half_width(sim.network.widest_at(node)) + 3.0
 		_ring.position = Terrain.lift(sim.network.nodes[node]) + Vector3(0, 0.4, 0)
 		_ring.scale = Vector3(r, 1.0, r)
+
+
+## The light's phase whose approach is nearest the point, or -1.
+func _phase_near(node: int, p: Vector3) -> int:
+	var j: Dictionary = sim.traffic.junctions[node]
+	var best := -1
+	var best_d := INF
+	for i in j.phases.size():
+		for wi in j.phases[i].ways:
+			var q: Vector3 = sim.traffic.stop_line(wi).pos
+			var d := Vector2(q.x - p.x, q.z - p.z).length()
+			if d < best_d:
+				best_d = d
+				best = i
+	return best
+
+
+## "north-south" or "east-west" for a phase, by its first approach.
+func _phase_name(node: int, i: int) -> String:
+	var ways: Dictionary = sim.traffic.junctions[node].phases[i].ways
+	if ways.is_empty():
+		return "phase %d" % (i + 1)
+	var d: Vector3 = sim.traffic.stop_line(ways.keys()[0]).dir
+	return "north-south" if absf(d.z) > absf(d.x) else "east-west"
 
 
 ## The closest junction (three or more roads) to a point, or -1.
@@ -122,7 +161,16 @@ func _update_hint() -> void:
 		return
 	var text := "Traffic flow: green moves at the limit, red is jammed. %d%% overall, %d cars." \
 		% [roundi(sim.traffic.flow * 100.0), sim.traffic.cars.size()]
-	if RULE_FOR.has(mode):
+	if mode == Mode.TIMING:
+		text = "Click near a direction at a traffic light for 5 s more green; Shift-click for 5 s less."
+		if _hover != -1 and sim.traffic.junctions.has(_hover):
+			var parts := []
+			var g: Array = sim.traffic.greens_at(_hover)
+			for i in g.size():
+				var mine: bool = sim.traffic.greens.get(_hover, {}).has(i)
+				parts.append("%s %d s%s" % [_phase_name(_hover, i).capitalize(), roundi(float(g[i])), " (yours)" if mine else ""])
+			text += "\nGreen: " + ", ".join(parts) + "."
+	elif RULE_FOR.has(mode):
 		text = ["", "", "Click a junction to let the game choose its control.",
 			"Click a junction to add traffic lights.", "Click a junction to make it an all-way stop.",
 			"Click a junction to put stop signs on the smaller road.",

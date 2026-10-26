@@ -902,6 +902,9 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 		"set_junction":
 			# Traffic lights, stop signs or none at a junction (-1 = automatic).
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
+		"set_green":
+			# How long one direction's green lasts at a light (0 = automatic).
+			ok = traffic.set_green(int(cmd.node), int(cmd.phase), float(cmd.seconds))
 		"place_post_office", "remove_post_office", "post_office_funding":
 			ok = mail.command(self, cmd)
 			if ok and cmd.type != "post_office_funding":
@@ -4673,6 +4676,7 @@ func save_steps(postcard := false) -> Array:
 		["street_age", func(): return street_age.to_dict()],
 		["engineer", func(): return engineer.to_dict()],
 		["junctions", func(): return traffic.rules_to_dict()],
+		["greens", func(): return traffic.greens_to_dict()],
 		["vegetation", func(): return vegetation.to_dict()],
 	]
 	if not postcard:
@@ -4779,6 +4783,7 @@ func from_dict(d: Dictionary) -> void:
 		if f.drive.is_empty():
 			f.drive = farm_drive(f.pos, f.dir)
 	traffic.rules_from_dict(d.get("junctions", {}))
+	traffic.greens_from_dict(d.get("greens", {}))
 	traffic.from_dict(d.get("traffic", {}))
 	people.from_dict(d.get("people", {}))
 	tick_count = int(d.get("tick", 0))
