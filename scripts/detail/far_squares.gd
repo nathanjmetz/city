@@ -67,6 +67,12 @@ func has_dirty() -> bool:
 	return not _dirty.is_empty()
 
 
+## True while the far square holding view square `sq128` waits to be
+## merged again.
+func is_dirty(sq128: Vector2i) -> bool:
+	return _dirty.has(square_of(sq128))
+
+
 ## Merges dirty squares until `budget_us` is spent. `all` merges every one
 ## now, waiting or not (a town opening).
 func rebuild_some(budget_us: int, all := false) -> void:

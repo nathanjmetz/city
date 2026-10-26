@@ -8,6 +8,7 @@ extends SceneTree
 
 var sim := CitySim.new()
 var view: BuildingView
+var _far_seen := false
 var cam := Camera3D.new()
 var _frames := 0
 var _failed := false
@@ -56,6 +57,18 @@ func _process(_d: float) -> bool:
 		_check(false, "the view settles (phase %d)" % _phase)
 		_end()
 		return true
+	if _phase == 7:
+		# Every frame, not only when settled: the moment a far house is
+		# finished, its own drawing stays until its far square has it.
+		var far_rec: Dictionary = view._recs.get(_gone, {})
+		if not far_rec.is_empty() and far_rec.site == null and not _far_seen:
+			_far_seen = true
+			_check(not view._retire_far.is_empty() or not view._far_sq.is_dirty(far_rec.sq),
+				"a house finished far off stays drawn until its far square has it (no blink)")
+		if _far_seen and view.idle():
+			_check(view._retire_far.is_empty(), "and its own drawing goes once the far square has it")
+			_end()
+		return false
 	if not view.idle():
 		return false
 	match _phase:
@@ -143,7 +156,22 @@ func _process(_d: float) -> bool:
 			var rec: Dictionary = view._recs[_gone]
 			_check(rec.site == null and view._batches[rec.sq].merged.has(_gone),
 				"once it's done it joins its square's drawing")
-			_end()
+			# The same far off: built again with the camera 4 km away, where
+			# its square is drawn only in its far version.
+			_look(_home + Vector3(4000.0, 0.0, 0.0), 300.0)
+			_phase = 6
+			_wait = _frames
+		6:
+			if _frames - _wait < 10:
+				return false
+			var lot: Dictionary = sim.lots[_gone]
+			sim.buildings.erase(_gone)
+			sim.buildings_changed.emit()
+			sim.construction.start("lot:" + _gone, "house", sim.tick_count, lot.front, -lot.normal, lot.to_curb)
+			sim.buildings[_gone] = {"zone": ZoneMap.Zone.RESIDENTIAL, "seed": 77, "built": sim.tick_count, "cap": 3, "occ": 0}
+			sim.buildings_changed.emit()
+			sim.tick_count += Construction.duration("house") + 10
+			_phase = 7
 	return false
 
 
