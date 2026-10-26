@@ -1632,6 +1632,14 @@ func _roads_drawer() -> PanelContainer:
 		else:
 			road_tool.set_mode(road_tool.last_draw))
 	traffic.add_child(_traffic_card)
+	# Car-free streets (CS2's pedestrian streets): click a town street.
+	var car_free := _card("people", "Car-free", "")
+	car_free.tooltip_text = "Close a town street to cars: a walking plaza where trucks still deliver at night. Click it again to open it."
+	car_free.pressed.connect(func():
+		_kinds_open = false
+		road_tool.set_mode(RoadTool.Mode.CAR_FREE))
+	traffic.add_child(car_free)
+	_tool_cards[RoadTool.Mode.CAR_FREE] = car_free
 	_parking_card = _card("parking", "Parking", "")
 	_parking_card.tooltip_text = "Parking lots and a garage for the town: drivers who can't park at their own stop walk from the nearest one"
 	_parking_card.pressed.connect(func():

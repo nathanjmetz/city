@@ -966,6 +966,27 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 		"heritage":
 			# Protect a historic district, or lift its protection.
 			ok = heritage.set_protected(self, int(cmd.get("district", -1)), bool(cmd.get("protect", true)))
+		"car_free":
+			# A street closed to cars as a walking plaza, or opened to cars
+			# again (CS2's pedestrian streets; Nathan 2026-10-26).
+			var seg := int(cmd.seg)
+			var on := bool(cmd.get("on", true))
+			if on:
+				var cost := car_free_cost(seg)
+				if car_free_problem(seg) != "" or cost > economy.money:
+					return false
+				economy.money -= cost
+				traffic.close_segment(seg, true, "night")
+				if not seg in parks.trails.plazas:
+					parks.trails.plazas.append(seg)
+			else:
+				if not seg in parks.trails.plazas:
+					return false
+				traffic.close_segment(seg, false)
+				parks.trails.plazas.erase(seg)
+			parks.trails._rev = ""
+			parks_changed.emit()
+			ok = true
 		"set_junction":
 			# Traffic lights, stop signs or none at a junction (-1 = automatic).
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
@@ -4030,6 +4051,25 @@ static func _off_line(line: PackedVector3Array, p: Vector3) -> float:
 const OVERLAY_NEAR := 2.5
 const OVERLAY_PARALLEL := 0.97
 const OVERLAY_STEP := 4.0
+
+
+## Why a street can't be made car-free, or "" if it can: a town street
+## (not an avenue, a highway or a country road) that isn't car-free yet.
+func car_free_problem(seg: int) -> String:
+	if not network.segments.has(seg):
+		return "Click a street."
+	if seg in parks.trails.plazas:
+		return "Already car-free."
+	if not network.segments[seg].type in Balance.PLAZA_TYPES:
+		return "Only town streets can be car-free, not %ss." % RoadStyle.TYPES[network.segments[seg].type].name.to_lower()
+	return ""
+
+
+## Pavers, benches and planters, curb to curb, for a car-free street.
+func car_free_cost(seg: int) -> int:
+	if not network.segments.has(seg):
+		return -1
+	return int(RoadNetwork.polyline_length(network.sample_segment(seg)) * Balance.PLAZA_PER_M)
 
 
 func upgrade_cost(seg: int, type: int) -> int:
