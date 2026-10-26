@@ -61,6 +61,14 @@ func _init() -> void:
 	await process_frame
 	_check(admin.is_open(), "a join request opens Admin")
 	_check(_labels(admin).has("Lee") and _buttons(admin).has("Let in"), "the request shows with Let in")
+	admin.set_open(false)
+	client.requests_changed.emit()
+	await process_frame
+	_check(not admin.is_open(), "closing Admin while Lee waits sticks when the list comes again")
+	client.requests = ["Lee", "Kim"]
+	client.requests_changed.emit()
+	await process_frame
+	_check(admin.is_open(), "someone new asking opens it again")
 	client.requests = []
 	client.requests_changed.emit()
 	await process_frame
@@ -93,7 +101,11 @@ func _init() -> void:
 	client.is_host = false
 	client.pins_changed.emit()
 	await process_frame
-	_check(not button.visible and not admin.is_open(), "no longer host: the button goes and the panel shuts")
+	_check(not button.visible and not admin.is_open() and not button.button_pressed, "no longer host: the button goes and the panel shuts")
+	client.is_host = true
+	client.joined.emit()
+	await process_frame
+	_check(button.visible, "host again after a reconnect: the button comes back")
 
 	# The chat keeps chatting, without the players list.
 	var chat_src := FileAccess.get_file_as_string("res://scripts/ui/chat_panel.gd")

@@ -22,6 +22,7 @@ var _players := VBoxContainer.new()
 var _new_name := LineEdit.new()
 var _note := Label.new()
 var _just_added := ""  # copied to the clipboard once its PIN comes back
+var _asked := []  # join requests already shown, so closing Admin sticks
 var _button: Button  # in the top bar
 var client: RegionClient
 
@@ -105,11 +106,17 @@ func _ready() -> void:
 		if _panel.visible:
 			_place.call_deferred())
 	client.pins_changed.connect(_update)
-	# Someone wants to join: Admin opens on its own with a yes and a no.
+	# Someone new wants to join: Admin opens on its own with a yes and a no
+	# (once per person, so closing it to wait sticks).
 	client.requests_changed.connect(func():
 		_update()
-		if not client.requests.is_empty():
+		var fresh := client.requests.filter(func(n): return not n in _asked)
+		_asked = client.requests.duplicate()
+		if not fresh.is_empty():
 			set_open(true))
+	# Host or not comes with the welcome, again after a reconnect.
+	client.joined.connect(_update)
+	client.reconnected.connect(_update)
 	_update()
 
 
@@ -177,7 +184,7 @@ func _update() -> void:
 	if _button:
 		_button.visible = client.is_host
 	if not client.is_host:
-		_panel.visible = false
+		set_open(false)
 		return
 	_update_requests()
 	_update_players()
