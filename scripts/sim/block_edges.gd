@@ -27,6 +27,10 @@ const EVERY := 4
 ## A piece is kept only if it's at least this wide on average (m) along a
 ## whole side of its block: thinner, it's just the grass verge.
 const MIN_WIDTH := 3.0
+## Metres more than the gap a piece keeps from the roads: a road's outline
+## is drawn round its curve in short straight runs and rounded ends that
+## can fall up to a fifth of a metre short of the true curve.
+const ROAD_SLACK := 0.25
 
 
 ## Hub `b` (pos: the middle of its first block) as CivicHubs sees one: the
@@ -39,7 +43,7 @@ static func view(b: Dictionary, cell: float) -> Dictionary:
 	for blk in b.blocks:
 		cells.append(blk.c)
 	return {"pos": b.pos + b.dir * (cell * 0.5), "dir": b.dir, "cell": cell, "cells": cells, "edge": b.edge,
-		"edge_min": MIN_WIDTH / cell, "edge_tidy": true}
+		"edge_min": MIN_WIDTH / cell, "edge_tidy": true, "edge_extra": ROAD_SLACK}
 
 
 ## The outline of each of `b`'s edge pieces on the ground (x, z).
@@ -102,23 +106,27 @@ static func take(sim: CitySim, b: Dictionary, cell: float, problem: Callable, cu
 	var changed := false
 	var none := func(_world: PackedVector2Array) -> String: return ""
 	# A piece cut back by a road since gone fits out to the roads again: the
-	# cut alone first (cheap), the ground check only if it would grow.
+	# cut alone first (cheap), the ground check only if it would grow. It
+	# must still hold all it held (the same side of every street), joined to
+	# the hub's blocks without itself, as prune sees it (joined_edges).
 	for c in b.edge.keys():
 		var keep: Dictionary = b.edge
 		var others: Dictionary = keep.duplicate()
 		others.erase(c)
 		var v := h.duplicate()
 		v.edge = others
-		var now := CivicHubs.area(keep[c])
-		var fresh := CivicHubs.edge_shape(sim, v, c, others, none)
-		if fresh.is_empty() or CivicHubs.area(fresh) <= now + 1.0:
+		var joined := CivicHubs.joined_edges(v)
+		var old: PackedVector2Array = keep[c]
+		var fresh := CivicHubs.edge_shape(sim, v, c, joined, none)
+		if not _grows(fresh, old):
 			continue
 		b.edge = others  # its own old piece isn't someone else's land
-		fresh = CivicHubs.edge_shape(sim, v, c, others, problem)
+		fresh = CivicHubs.edge_shape(sim, v, c, joined, problem)
 		b.edge = keep
-		if not fresh.is_empty() and CivicHubs.area(fresh) > now + 1.0:
+		if _grows(fresh, old):
 			keep[c] = fresh
 			changed = true
+	changed = _keep_joined(h) or changed
 	# New pieces next to its land, the nearest its middle first.
 	var mid := Vector2.ZERO
 	for c in h.cells:
@@ -146,6 +154,30 @@ static func take(sim: CitySim, b: Dictionary, cell: float, problem: Callable, cu
 				b.edge[t[1]] = shape
 				changed = true
 				grew = true
+	return _keep_joined(h) or changed
+
+
+## True when `fresh` (an outline in the hub's frame) is bigger than `old` and
+## holds all of it.
+static func _grows(fresh: PackedVector2Array, old: PackedVector2Array) -> bool:
+	var now := CivicHubs.area(old)
+	if fresh.is_empty() or CivicHubs.area(fresh) <= now + 1.0:
+		return false
+	var held := 0.0
+	for q in Geometry2D.intersect_polygons(fresh, old):
+		held += CivicHubs.area(q)
+	return held >= now - 1.0
+
+
+## Drops any of `h`'s edge pieces not joined to its blocks (as prune does),
+## so take and prune always agree. True when any went.
+static func _keep_joined(h: Dictionary) -> bool:
+	var joined := CivicHubs.joined_edges(h)
+	var changed := false
+	for c in h.edge.keys():
+		if not joined.has(c):
+			h.edge.erase(c)
+			changed = true
 	return changed
 
 
@@ -175,7 +207,50 @@ static func ground_problem(sim: CitySim, world: PackedVector2Array, step: float)
 	for q in pts:
 		if sim.power.covers(q) or sim.rail.covers(q) or sim.big.covers(q):
 			return "That ground belongs to a company."
+	# Points can miss a corner of someone's land: their outlines too.
+	var box := _box(world)
+	for poly in others_land(sim):
+		if _box(poly).intersects(box):
+			for q in Geometry2D.intersect_polygons(world, poly):
+				if CivicHubs.area(q) > 1.0:
+					return "Overlaps someone else's land."
 	return zoned_problem(sim, world)
+
+
+## The outlines (x, z) of the land every hub with land holds: banks,
+## campuses and the phone company (blocks, edge pieces, tower yards),
+## landfills, recycling and cemeteries, the post office, parks, warehouses
+## and the big factories. (A block hub's own land touches a new piece of
+## its own along a side only, never over it.)
+static func others_land(sim: CitySim) -> Array:
+	var out := []
+	for id in sim.banks.banks:
+		out.append_array(Banks.land_polys(sim.banks.banks[id]))
+	for id in sim.education.campuses:
+		out.append_array(Education.land_polys(sim.education.campuses[id]))
+	for id in sim.telecom.companies:
+		var c: Dictionary = sim.telecom.companies[id]
+		out.append_array(Telecom.land_polys(c))
+		for t in c.towers:
+			out.append(Telecom.compound(Vector2(t.pos[0], t.pos[1])))
+	for id in sim.hubs.hubs:
+		out.append_array(CivicHubs.land_polys(sim.hubs.hubs[id]))
+	for id in sim.mail.offices:
+		out.append_array(CivicHubs.land_polys(sim.mail.offices[id]))
+	for id in sim.parks.sites:
+		out.append_array(sim.parks.land_polys(id))
+	for id in sim.warehouses.buildings:
+		out.append(sim.warehouses.footprint(id))
+	for id in sim.big.sites:
+		out.append(BigFactories.corners(sim.big.sites[id]))
+	return out
+
+
+static func _box(poly: PackedVector2Array) -> Rect2:
+	var box := Rect2(poly[0], Vector2.ZERO)
+	for q in poly:
+		box = box.expand(q)
+	return box
 
 
 ## "Zoned or built on." when a zoned or built lot runs onto ground `world`
@@ -233,6 +308,13 @@ static func clear_at(b: Dictionary, cell: float, p: Vector3) -> bool:
 	if not c in b.cleared:
 		b.cleared.append(c)
 	return true
+
+
+## A saved direction as it was: normalising a unit vector again moves its
+## last bits, and then a loaded town wouldn't save byte for byte the same
+## (its edge pieces sit in its frame).
+static func unit(v: Vector3) -> Vector3:
+	return v if absf(v.length_squared() - 1.0) < 1e-5 else v.normalized()
 
 
 ## Edge pieces from a save (older saves have none), less any on a block.

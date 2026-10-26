@@ -189,6 +189,8 @@ static func ground_problem(sim: CitySim, p: Vector3) -> String:
 		return "That ground is a campus."
 	if sim.hubs.covers(p) or sim.warehouses.covers(p) or sim.parks.covers(p) or sim.mail.covers(p):
 		return "Overlaps a landfill, cemetery, warehouse, park or post office."
+	if sim.telecom.covers(p):
+		return "That ground belongs to the phone company."
 	return ""
 
 
@@ -1044,7 +1046,7 @@ func from_dict(d: Dictionary) -> void:
 		var l2: Dictionary = s.get("leader", {})
 		var y: Dictionary = s.get("year", {})
 		banks[int(k)] = {"kind": str(s.kind), "name": str(s.get("name", "First State Bank")),
-			"pos": Vector3(s.pos[0], 0.0, s.pos[1]), "dir": Vector3(s.dir[0], 0.0, s.dir[1]).normalized(),
+			"pos": Vector3(s.pos[0], 0.0, s.pos[1]), "dir": BlockEdges.unit(Vector3(s.dir[0], 0.0, s.dir[1])),
 			"blocks": blocks, "capital": float(s.get("capital", 0.0)), "deposits": float(s.get("deposits", 0.0)),
 			"loans": loans, "reputation": float(s.get("reputation", Balance.BANK_START_REPUTATION)),
 			"leader": {"name": str(l2.get("name", "Pat Lee")), "edu": float(l2.get("edu", 0.5)),

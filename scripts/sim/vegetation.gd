@@ -261,6 +261,11 @@ static func sources(sim: Object) -> Dictionary:
 			out["tt%d %s" % [id, t.pos]] = _poly_cells.bind(Telecom.compound(Vector2(t.pos[0], t.pos[1])))
 		for ep in BlockEdges.edge_polys(tc, Telecom.CELL):
 			out["te%d %s" % [id, ep]] = _poly_cells.bind(ep)
+	# Campuses: their blocks and edge pieces.
+	for id in sim.education.campuses:
+		var ec: Dictionary = sim.education.campuses[id]
+		for poly in Education.land_polys(ec):
+			out["cp%d %s" % [id, poly]] = _poly_cells.bind(poly)
 	for id in sim.banks.banks:
 		var b: Dictionary = sim.banks.banks[id]
 		out["k%d %s" % [id, b.pos]] = _poly_cells.bind(Banks.block_corners(b, Vector2i.ZERO))

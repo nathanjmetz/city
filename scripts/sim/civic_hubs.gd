@@ -1116,15 +1116,17 @@ static func take_edge(sim: CitySim, h: Dictionary, problem: Callable) -> bool:
 ## `edges`) and is free (`problem`, as take_edge); else empty. `from` is an
 ## edge piece's outline (x, z) to cut back again: land it already holds, so
 ## only its size and touch are checked.
-## The hubs that buy land a block at a time (BlockEdges) set three more keys
+## The hubs that buy land a block at a time (BlockEdges) set four more keys
 ## in `h`: `edge_cut` (a Callable taking the road-cut parts and returning
 ## what's left of them), `edge_min` (the share of a piece kept, in place of
-## EDGE_MIN) and `edge_tidy` (drop corners that lie in a straight line).
+## EDGE_MIN), `edge_tidy` (drop corners that lie in a straight line) and
+## `edge_extra` (metres more kept clear of the roads).
 static func edge_shape(sim: CitySim, h: Dictionary, c: Vector2i, edges: Dictionary, problem: Callable,
 		from := PackedVector2Array()) -> PackedVector2Array:
 	# Cut a few centimetres wider than the roads need, so the outline kept in
 	# EDGE_SNAP steps never pokes back over them.
-	var parts := _cut_by_roads(sim.network, cell_poly(h, c) if from.is_empty() else from, EDGE_SNAP * 3.0)
+	var parts := _cut_by_roads(sim.network, cell_poly(h, c) if from.is_empty() else from,
+		EDGE_SNAP * 3.0 + float(h.get("edge_extra", 0.0)))
 	if from.is_empty() and h.has("edge_cut"):
 		parts = h.edge_cut.call(parts)
 	if parts.is_empty():
@@ -1280,7 +1282,7 @@ static func prune_edges(sim: CitySim, h: Dictionary) -> bool:
 		var left := 0.0
 		for part in parts:
 			left = maxf(left, area(part))
-		if left >= area(now) - 0.5:
+		if left >= area(now) - 0.05:  # (cut with a margin: a road on it at all cuts it back)
 			continue
 		changed = true
 		var shape := edge_shape(sim, h, c, h.edge, Callable(), now) if left > 0.0 else PackedVector2Array()
@@ -1289,6 +1291,18 @@ static func prune_edges(sim: CitySim, h: Dictionary) -> bool:
 		else:
 			h.edge[c] = shape
 	# Only edge pieces still joined to the whole pieces stay.
+	var joined := joined_edges(h)
+	for c in h.edge.keys():
+		if not joined.has(c):
+			h.edge.erase(c)
+			changed = true
+	return changed
+
+
+## The edge pieces of `h` joined to its whole pieces, straight or through
+## other joined edge pieces (_touches_land): piece -> outline. Prune and the
+## block hubs' take (BlockEdges) both go by this.
+static func joined_edges(h: Dictionary) -> Dictionary:
 	var joined := {}
 	var grew := true
 	while grew:
@@ -1297,11 +1311,7 @@ static func prune_edges(sim: CitySim, h: Dictionary) -> bool:
 			if not joined.has(c) and _touches_land(h, c, edge_poly(h, c), joined):
 				joined[c] = h.edge[c]
 				grew = true
-	for c in h.edge.keys():
-		if not joined.has(c):
-			h.edge.erase(c)
-			changed = true
-	return changed
+	return joined
 
 
 ## Gives back the newest piece that leaves the rest in one piece.

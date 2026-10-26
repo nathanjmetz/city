@@ -185,8 +185,10 @@ static func ground_problem(sim: CitySim, p: Vector3) -> String:
 		return "That land is reserved for %s." % Reserves.KINDS[sim.reserves.kind_at(p)]
 	if sim.education.covers(p):
 		return "That ground is a campus."
-	if sim.hubs.covers(p) or sim.warehouses.covers(p) or sim.parks.covers(p):
-		return "Overlaps a landfill, cemetery, warehouse or park."
+	if sim.hubs.covers(p) or sim.warehouses.covers(p) or sim.parks.covers(p) or sim.mail.covers(p):
+		return "Overlaps a landfill, cemetery, warehouse, park or post office."
+	if sim.banks.covers(p):
+		return "That ground is a bank."
 	return ""
 
 
@@ -1218,7 +1220,7 @@ func from_dict(d: Dictionary) -> void:
 		var subs: Dictionary = s.get("subs", {})
 		var pend: Dictionary = s.get("pending", {})
 		companies[int(k)] = {"pos": Vector3(s.pos[0], 0.0, s.pos[1]),
-			"dir": Vector3(s.dir[0], 0.0, s.dir[1]).normalized(), "blocks": blocks,
+			"dir": BlockEdges.unit(Vector3(s.dir[0], 0.0, s.dir[1])), "blocks": blocks,
 			"built": s.get("built", []).map(func(u): return str(u)), "why": str(s.get("why", "")), "towers": towers,
 			"fiber": fiber,
 			"funding": int(s.get("funding", 2)), "savings": float(s.get("savings", 0.0)),

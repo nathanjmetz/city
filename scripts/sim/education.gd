@@ -952,7 +952,7 @@ func from_dict(d: Dictionary) -> void:
 			blocks.append({"c": Vector2i(int(b[0]), int(b[1])), "use": str(b[2]), "levels": int(b[3])})
 		var l: Dictionary = s.get("leader", {})
 		campuses[int(k)] = {"kind": str(s.kind), "pos": Vector3(s.pos[0], 0.0, s.pos[1]),
-			"dir": Vector3(s.dir[0], 0.0, s.dir[1]).normalized(), "blocks": blocks,
+			"dir": BlockEdges.unit(Vector3(s.dir[0], 0.0, s.dir[1])), "blocks": blocks,
 			"funding": int(s.get("funding", 2)), "savings": float(s.get("savings", 0.0)),
 			"applicants": int(s.get("applicants", 0)), "enrolled": int(s.get("enrolled", 0)),
 			"reputation": float(s.get("reputation", Balance.EDUCATION_START_REPUTATION)),

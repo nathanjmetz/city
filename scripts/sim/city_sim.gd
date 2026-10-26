@@ -3127,7 +3127,7 @@ func land_factor(key: String) -> float:
 
 
 func _lot_blocked(lot: Dictionary) -> bool:
-	if services.overlaps(lot.corners):
+	if services.overlaps(lot.corners) or _on_block_land(lot):
 		return true
 	for p in [lot.pos, lot.front, lot.zone_pt]:
 		if services.covers(p) or Capital.owner_of(self, p) != "" \
@@ -3145,6 +3145,33 @@ func _lot_blocked(lot: Dictionary) -> bool:
 	# Nor across a county road's gravel (joined or still painted on the
 	# land), which would cut it in two.
 	return not _land_ok[at] or _county_under(lot.corners, CountyGrid.HALF_WIDTH)
+
+
+## True when a lot runs onto a bank's, campus's or the phone company's land
+## (blocks or edge pieces up to the sidewalk) by more than a square metre:
+## its three points alone can miss a piece's edge. Only hubs within reach
+## of the lot are looked at, and a lot already built on stays (an older
+## town's houses that run onto a block aren't torn down).
+func _on_block_land(lot: Dictionary) -> bool:
+	if buildings.has(str(lot.get("key", ""))):
+		return false
+	var p: Vector3 = lot.pos
+	for set in [[banks.banks, Banks.CELL, Banks], [education.campuses, Education.CELL, Education],
+			[telecom.companies, Telecom.CELL, Telecom]]:
+		var cell: float = set[1]
+		for id in set[0]:
+			var b: Dictionary = set[0][id]
+			var far := 1
+			for blk in b.blocks:
+				far = maxi(far, maxi(absi(blk.c.x), blk.c.y) + 1)
+			var reach := cell * (far + 1.0) + 60.0
+			if absf(p.x - b.pos.x) > reach or absf(p.z - b.pos.z) > reach:
+				continue
+			for poly in set[2].land_polys(b):
+				for q in Geometry2D.intersect_polygons(lot.corners, poly):
+					if CivicHubs.area(q) > 1.0:
+						return true
+	return false
 
 
 ## Why a street side's zoning gets no lots where it doesn't, in a few words
@@ -3165,6 +3192,8 @@ func lots_blocked_why(seg: int, side: int) -> String:
 func _block_reason(lot: Dictionary) -> String:
 	if services.overlaps(lot.corners):
 		return "a public building or parking lot stands here"
+	if _on_block_land(lot):
+		return "a public building or site stands here"
 	for p in [lot.pos, lot.front, lot.zone_pt]:
 		var owner := Capital.owner_of(self, p)
 		if owner.begins_with("farm:"):
