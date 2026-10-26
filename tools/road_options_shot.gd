@@ -3,7 +3,8 @@ extends SceneTree
 ## one scene per step, in the real game.
 ## Run: godot -s tools/road_options_shot.gd -- <step> <out_prefix>
 ## Steps: oneway (the one-way boulevard and the Boulevard menu), scurve (an
-## S-curve built, and the Draw tools), snap (the snap switches, Roads off).
+## S-curve built, and the Draw tools), snap (the snap switches, Roads off),
+## carfree (a street made car-free, close up and with the tool).
 
 var _main: Node
 var _hud: Hud
@@ -38,6 +39,7 @@ func _process(_delta: float) -> bool:
 			"oneway": _oneway(sim)
 			"scurve": _scurve(sim)
 			"snap": _snap(sim)
+			"carfree": _car_free(sim)
 		if not _shots.is_empty():
 			_shots[0][1].call()
 	# Each shot gets 90 frames to settle, then is saved and the next set up.
@@ -104,6 +106,26 @@ func _snap(sim: CitySim) -> void:
 			_hud._open("roads")
 			tool.set_mode(RoadTool.Mode.STRAIGHT)
 			tool.set_snap("roads", false)],
+	]
+
+
+func _car_free(sim: CitySim) -> void:
+	# A block of town streets with the middle one made car-free.
+	sim.apply({"type": "build_road", "start": [-150, 0], "ctrl": [0, 0], "end": [150, 0], "road": RoadStyle.Type.AVENUE})
+	sim.apply({"type": "build_road", "start": [-150, -120], "ctrl": [0, -120], "end": [150, -120]})
+	for x in [-100, 0, 100]:
+		sim.apply({"type": "build_road", "start": [x, 0], "ctrl": [x, -60], "end": [x, -120]})
+	var seg: int = sim.network.find_segment_near(Vector3(0, 0, -60), 1.0).seg
+	sim.apply({"type": "car_free", "seg": seg, "on": true})
+	var tool: RoadTool = _main.find_children("*", "RoadTool", false, false)[0]
+	_shots = [
+		["menu", func():
+			_aim(Vector3(0, 0, -60), 0.0, 55.0, 230.0)
+			_hud._open("roads")
+			tool.set_mode(RoadTool.Mode.CAR_FREE)],
+		["close", func():
+			_hud.close_all()
+			_aim(Vector3(0, 0, -60), 30.0, 28.0, 45.0)],
 	]
 
 

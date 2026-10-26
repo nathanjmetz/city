@@ -15,6 +15,8 @@ extends Node3D
 ## Roundabout: pick a real size from the row above the tools, then click to
 ## place. [ and ] fine-tune the size.
 ## Upgrade: click a road to change it to the chosen road type.
+## Car-free: click a town street to close it to cars as a walking plaza
+## (CS2's pedestrian streets), or click a car-free one to open it again.
 ## Bulldoze: click a road to remove it.
 ## Page Up / Page Down (or the buttons): raise or lower new roads, for
 ## bridges, overpasses and tunnels.
@@ -31,7 +33,7 @@ signal hint_changed(text: String)
 ## Road type or parallel mode changed.
 signal options_changed
 
-enum Mode { NONE, STRAIGHT, CURVED, BULLDOZE, GRID, ROUNDABOUT, UPGRADE, SCURVE }
+enum Mode { NONE, STRAIGHT, CURVED, BULLDOZE, GRID, ROUNDABOUT, UPGRADE, SCURVE, CAR_FREE }
 
 const SNAP_NODE := 9.0
 ## A rectangle lines up with a road this close to its first corner.
@@ -243,14 +245,14 @@ func set_parallel(on: bool) -> void:
 func set_road_type(t: int) -> void:
 	road_type = t
 	options_changed.emit()
-	if mode == Mode.NONE or mode == Mode.BULLDOZE:
+	if mode == Mode.NONE or mode == Mode.BULLDOZE or mode == Mode.CAR_FREE:
 		set_mode(last_draw)
 	_update_hint()
 
 
 func set_mode(m: int) -> void:
 	mode = m
-	if m != Mode.NONE and m != Mode.BULLDOZE:
+	if m != Mode.NONE and m != Mode.BULLDOZE and m != Mode.CAR_FREE:
 		last_draw = m
 	_points.clear()
 	_armed = {}
@@ -382,7 +384,7 @@ func _process(_delta: float) -> void:
 	_px = _metres_per_px(Terrain.lift(hit))
 	_cursor.scale = Vector3.ONE * maxf(1.0, CURSOR_PX * _px / 3.0)
 	_show_dots()
-	if mode == Mode.BULLDOZE or mode == Mode.UPGRADE:
+	if _picking():
 		_preview_pick(hit)
 		return
 	var p: Vector3 = _armed.p if not _armed.is_empty() else _snapped(hit)
@@ -491,6 +493,10 @@ func _click() -> void:
 				sim.apply({"type": "resize_roundabout", "seg": _hover_seg, "lanes": 2 if to == RoadStyle.Type.RING2 else 1})
 			elif _hover_seg != -1:
 				sim.apply({"type": "upgrade_road", "seg": _hover_seg, "road": road_type})
+		Mode.CAR_FREE:
+			if _hover_seg != -1:
+				var on := not _hover_seg in sim.parks.trails.plazas
+				sim.apply({"type": "car_free", "seg": _hover_seg, "on": on})
 		Mode.STRAIGHT, Mode.CURVED, Mode.SCURVE:
 			var p := _snapped(hit)
 			var needed: int = {Mode.STRAIGHT: 2, Mode.CURVED: 3, Mode.SCURVE: 4}[mode]
@@ -1573,6 +1579,8 @@ func _preview_pick(hit: Vector3) -> void:
 		if ring != -1:
 			_hover_seg = ring
 	var mat := _bad_mat if mode == Mode.BULLDOZE else _ok_mat
+	if mode == Mode.CAR_FREE:
+		mat = _car_free_pick(hit)
 	_cursor.position = Terrain.lift(hit) + Vector3.UP * 0.3
 	_cursor.material_override = mat
 	# Service buildings can be bulldozed too.
@@ -1629,6 +1637,33 @@ func _preview_pick(hit: Vector3) -> void:
 	_preview.visible = true
 
 
+## Bulldoze, Upgrade and Car-free pick a road (or building) by clicking it.
+func _picking() -> bool:
+	return mode == Mode.BULLDOZE or mode == Mode.UPGRADE or mode == Mode.CAR_FREE
+
+
+## Car-free: says by the cursor what a click on this street does, and
+## whether it can.
+func _car_free_pick(hit: Vector3) -> StandardMaterial3D:
+	if _hover_seg == -1:
+		return _ok_mat
+	var text := ""
+	var ok := true
+	if _hover_seg in sim.parks.trails.plazas:
+		text = "Open to cars again"
+	else:
+		var problem := sim.car_free_problem(_hover_seg)
+		var cost := sim.car_free_cost(_hover_seg)
+		ok = problem == "" and cost <= sim.economy.money
+		text = problem if problem != "" else "Car-free  ·  $%s" % CitySim.money_text(cost)
+		if problem == "" and not ok:
+			text += "\nNot enough money"
+	_label.text = text
+	_label.position = Terrain.lift(hit) + Vector3(0, 6, 0)
+	_label.visible = true
+	return _ok_mat if ok else _bad_mat
+
+
 func _update_hint() -> void:
 	if mode == Mode.NONE:
 		return
@@ -1676,14 +1711,16 @@ func _update_hint() -> void:
 			text = "Click a road, service building or farmhouse to remove it."
 		Mode.UPGRADE:
 			text = "Click a road to make it a %s." % RoadStyle.TYPES[road_type].name
-	if elevation != 0.0 and mode != Mode.BULLDOZE and mode != Mode.UPGRADE:
+		Mode.CAR_FREE:
+			text = "Click a town street to make it car-free: people walk, and trucks deliver at night. Click again to open it."
+	if elevation != 0.0 and not _picking():
 		text += "\n%s: new roads at %+d ft  (Page Up / Page Down)" \
 			% ["Bridge" if elevation > 0.0 else "Tunnel", roundi(elevation * FT)]
 		if elevation > 0.0:
 			text += "\nRoads and track it crosses: it climbs over them, piers and all."
 	if parallel and mode in [Mode.STRAIGHT, Mode.CURVED, Mode.SCURVE]:
 		text += "\nParallel on (P): second road %d ft away  [ ]" % roundi(parallel_gap * FT)
-	if (not snap_roads or not snap_guides) and mode != Mode.BULLDOZE and mode != Mode.UPGRADE:
+	if (not snap_roads or not snap_guides) and not _picking():
 		var off := []
 		if not snap_roads:
 			off.append("onto roads")
