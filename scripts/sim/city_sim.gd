@@ -905,6 +905,9 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 		"link_wave":
 			# A green wave: light `to` timed behind light `from` at the limit.
 			ok = traffic.link_wave(int(cmd.from), int(cmd.to), float(cmd.get("v", 15.6)))
+		"set_actuated":
+			# A smart light: sensors decide when each way gets its green.
+			ok = traffic.set_actuated(int(cmd.node), bool(cmd.on))
 		"set_offset":
 			ok = traffic.set_offset(int(cmd.node), float(cmd.seconds))
 		"set_green":
@@ -4683,6 +4686,7 @@ func save_steps(postcard := false) -> Array:
 		["junctions", func(): return traffic.rules_to_dict()],
 		["greens", func(): return traffic.greens_to_dict()],
 		["offsets", func(): return traffic.offsets_to_dict()],
+		["actuated", func(): return traffic.actuated_to_dict()],
 		["vegetation", func(): return vegetation.to_dict()],
 	]
 	if not postcard:
@@ -4791,6 +4795,7 @@ func from_dict(d: Dictionary) -> void:
 	traffic.rules_from_dict(d.get("junctions", {}))
 	traffic.greens_from_dict(d.get("greens", {}))
 	traffic.offsets_from_dict(d.get("offsets", {}))
+	traffic.actuated_from_dict(d.get("actuated", {}))
 	traffic.from_dict(d.get("traffic", {}))
 	people.from_dict(d.get("people", {}))
 	tick_count = int(d.get("tick", 0))
