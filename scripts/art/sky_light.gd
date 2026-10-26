@@ -37,6 +37,8 @@ var darkness := 0.0
 var _day := {}  # the fixed late-morning look, to go back to
 ## How thick the haze is for the time of year (Daylight.at().haze).
 var haze_scale := 1.0
+## Fog from the weather on top of the day's haze (Weather): 1 is none.
+var weather_haze := 1.0
 var _humid := -1.0  # the humidity the fixed look's haze was last set for
 var _fixed := true  # showing the fixed look (day/night off)
 var _season_months := 6.5  # the time of year set_season last saw
@@ -319,4 +321,4 @@ func _process(_delta: float) -> void:
 func _fit_haze(cam: Camera3D) -> void:
 	var h := maxf(cam.global_position.y - Terrain.ground_y(cam.global_position.x, cam.global_position.z), 1.0)
 	var share := HAZE_LAYER / h * (1.0 - exp(-h / HAZE_LAYER))
-	env.fog_density = HAZE_DENSITY * share * haze_scale
+	env.fog_density = HAZE_DENSITY * share * haze_scale * weather_haze

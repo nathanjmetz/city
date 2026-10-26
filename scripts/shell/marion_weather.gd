@@ -53,8 +53,9 @@ func _on_report(result: int, code: int, _headers: PackedStringArray, body: Packe
 		weather.live = live
 
 
-## [cover 0-1, rain 0-1] from a report's properties, or [] when it's too old
-## or unreadable. Rain counts drizzle and showers; thunderstorms pour.
+## [cover 0-1, rain or snow 0-1, fog 0-1, 1 if snow] from a report's
+## properties, or [] when it's too old or unreadable. Rain counts drizzle
+## and showers; thunderstorms pour; mist is a light fog.
 static func read(p: Dictionary, now: float) -> Array:
 	var at := Time.get_unix_time_from_datetime_string(str(p.get("timestamp", "")).left(19))
 	if at <= 0 or now - at > STALE:
@@ -63,24 +64,38 @@ static func read(p: Dictionary, now: float) -> Array:
 	for layer in p.get("cloudLayers", []):
 		if layer is Dictionary:
 			cover = maxf(cover, float(COVER.get(str(layer.get("amount", "")), 0.0)))
-	var rain := 0.0
+	var fall := 0.0
+	var snowy := 0.0
+	var fog := 0.0
 	for w in p.get("presentWeather", []):
 		if not w is Dictionary:
 			continue
 		var kind := str(w.get("weather", ""))
 		var k := 0.0
+		var flakes := false
 		if kind in ["rain", "showers", "rain_showers", "freezing_rain"]:
 			k = 0.6
 		elif kind in ["drizzle", "freezing_drizzle"]:
 			k = 0.3
 		elif kind in ["thunderstorms", "thunderstorm"]:
 			k = 0.9
+		elif kind in ["snow", "snow_showers", "snow_grains", "ice_pellets", "blowing_snow"]:
+			k = 0.5
+			flakes = true
+		elif kind in ["fog", "freezing_fog"]:
+			fog = maxf(fog, 1.0)
+		elif kind == "fog_mist":
+			fog = maxf(fog, 0.35)
+		elif kind in ["haze", "smoke"]:
+			fog = maxf(fog, 0.15)
 		var intensity := str(w.get("intensity", ""))
 		if k > 0.0 and intensity == "light":
 			k *= 0.6
 		elif k > 0.0 and intensity == "heavy":
 			k = minf(k * 1.5, 1.0)
-		rain = maxf(rain, k)
-	if rain > 0.0:
+		if k > fall:
+			fall = k
+			snowy = 1.0 if flakes else 0.0
+	if fall > 0.0:
 		cover = maxf(cover, 0.9)
-	return [cover, rain]
+	return [cover, fall, fog, snowy]
