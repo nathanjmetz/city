@@ -41,6 +41,7 @@ var _stopped := {}  # train id -> seconds it has stood still
 var _streams := {}
 var _wait := 0.0
 var _picks := -1
+var _mix_version := -1
 
 
 func setup(s: CitySim, height: Callable) -> void:
@@ -52,11 +53,23 @@ func _ready() -> void:
 	CityAudio.setup_buses()
 	_load_streams()
 	for i in ENGINE_SLOTS:
-		_engines.append({"player": _player("diesel", 16.0, ENGINE_RANGE), "tid": -1, "amp": 0.0})
+		_engines.append({"player": _player("diesel", 16.0, ENGINE_RANGE), "tid": -1, "amp": 0.0, "vary": 1.0})
 	for i in BELL_SLOTS:
 		_bells.append({"player": _player("crossing_bell", 10.0, BELL_RANGE), "index": -1, "amp": 0.0})
 	for i in HORN_SLOTS:
 		_horns.append({"player": _player("horn", 60.0, HORN_RANGE), "tid": -1, "amp": 0.0})
+	_apply_mix()
+
+
+## The hearing distances from the mix (SoundMix), on the players that exist.
+func _apply_mix() -> void:
+	_mix_version = SoundMix.version
+	for s in _engines:
+		s.player.max_distance = ENGINE_RANGE * SoundMix.range_scale("world/rail/diesel")
+	for s in _bells:
+		s.player.max_distance = BELL_RANGE * SoundMix.range_scale("world/rail/crossing_bell")
+	for s in _horns:
+		s.player.max_distance = HORN_RANGE * SoundMix.range_scale("world/rail/horn")
 
 
 ## The recordings, again after a pick in the Sound picker.
@@ -105,6 +118,8 @@ func _process(delta: float) -> void:
 		return
 	if _picks != SoundSettings.picks_version:
 		_load_streams()
+	if _mix_version != SoundMix.version:
+		_apply_mix()
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
 		return
@@ -167,19 +182,21 @@ func _update_horns(ear: Vector3, delta: float) -> void:
 			_blow.erase(tid)
 			continue
 		var head := _head(tid)
-		if head.x == INF or head.distance_to(ear) > HORN_RANGE:
+		if head.x == INF or head.distance_to(ear) > HORN_RANGE * SoundMix.range_scale("world/rail/horn"):
 			continue
 		want[tid] = [horn_on(b.pattern, float(b.t), float(b.reached)), head]
+	# The mix can allow fewer horns at once than there are players.
+	var usable := _horns.slice(0, SoundMix.cap("world/rail/horn", HORN_SLOTS))
 	for s in _horns:
-		if int(s.tid) != -1 and not want.has(s.tid):
+		if int(s.tid) != -1 and (not want.has(s.tid) or not s in usable):
 			s.tid = -1
 	for tid in want:
 		var slot: Dictionary = {}
-		for s in _horns:
+		for s in usable:
 			if int(s.tid) == int(tid):
 				slot = s
 		if slot.is_empty():
-			for s in _horns:
+			for s in usable:
 				if int(s.tid) == -1 and float(s.amp) <= 0.0:
 					slot = s
 					slot.tid = tid
@@ -201,10 +218,10 @@ func _pick_engines(ear: Vector3) -> void:
 		if head.x == INF:
 			continue
 		var d := head.distance_to(ear)
-		if d < ENGINE_RANGE:
+		if d < ENGINE_RANGE * SoundMix.range_scale("world/rail/diesel"):
 			near.append([d, tid, head])
 	near.sort_custom(func(a, b): return a[0] < b[0])
-	near = near.slice(0, ENGINE_SLOTS)
+	near = near.slice(0, SoundMix.cap("world/rail/diesel", ENGINE_SLOTS))
 	var ids := near.map(func(e): return e[1])
 	for s in _engines:
 		if not int(s.tid) in ids:
@@ -221,6 +238,7 @@ func _pick_engines(ear: Vector3) -> void:
 				if int(s.tid) == -1:
 					slot = s
 					slot.tid = e[1]
+					slot.vary = SoundMix.pitch_for("world/rail/diesel")
 					break
 		if slot.is_empty():
 			continue
@@ -229,7 +247,7 @@ func _pick_engines(ear: Vector3) -> void:
 		slot.player.global_position = e[2] + Vector3.UP * 3.5
 		# Notch 8 runs the prime mover near 900 rpm against about 300 at idle;
 		# the recording is sped up a little with the throttle.
-		slot.player.pitch_scale = lerpf(0.85, 1.2, throttle)
+		slot.player.pitch_scale = lerpf(0.85, 1.2, throttle) * float(slot.vary)
 		slot.want = lerpf(0.55, 1.0, throttle)
 
 
@@ -242,10 +260,10 @@ func _pick_bells(ear: Vector3) -> void:
 			continue
 		var p: Vector3 = c.pos
 		var d := p.distance_to(Vector3(ear.x, p.y, ear.z))
-		if d < BELL_RANGE * 1.5:
+		if d < BELL_RANGE * 1.5 * SoundMix.range_scale("world/rail/crossing_bell"):
 			near.append([d, k])
 	near.sort_custom(func(a, b): return a[0] < b[0])
-	near = near.slice(0, BELL_SLOTS)
+	near = near.slice(0, SoundMix.cap("world/rail/crossing_bell", BELL_SLOTS))
 	var ids := near.map(func(e): return e[1])
 	for s in _bells:
 		if not int(s.index) in ids:

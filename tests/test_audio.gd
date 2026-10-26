@@ -2,6 +2,13 @@ extends SceneTree
 ## Run: godot --headless -s tests/test_audio.gd
 
 func _init() -> void:
+	# Never touch this computer's real settings or mix.
+	# (A class sets its static variables the first time it is used, so use both first.)
+	SoundMix.blank()
+	SoundSettings.info("ui/click")
+	SoundSettings.save_path = "user://test_audio.json"
+	SoundMix.persist = false
+	SoundMix.use_local = false
 	# The buses come from default_bus_layout.tres at startup, never added
 	# while running (the browser build can't route buses added later).
 	for bus in ["UI", "World", "Ambience", "Music", "Distant"]:
@@ -167,6 +174,7 @@ func _init() -> void:
 	_check((SoundSettings.stream("world/leaves") as AudioStreamOggVorbis).loop, "loops still loop")
 	SoundSettings.pick("ui/click", {})
 	_check(SoundSettings.stream("ui/click").resource_path == "res://assets/audio/ui/click.ogg", "Now goes back to the game's own")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://test_audio.json"))
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
