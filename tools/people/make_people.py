@@ -70,6 +70,131 @@ def person(i):
             "proxy": "%s_generic" % g}
 
 
+# --- Walking (WALK=1): one walk cycle baked into a vertex animation texture ---
+# The standard way games draw crowds: every frame of the cycle stores each
+# vertex's position in a float texture (EXR), and the game's shader plays it
+# back, so hundreds of people walk with no skeleton each.
+FRAMES = 16
+
+
+def bake_walk(name, rig, out_dir):
+    import numpy as np
+    meshes = [o for o in bpy.data.objects if o.type == "MESH" and o.visible_get()]
+    for o in meshes:
+        for m in list(o.modifiers):
+            if m.type != "ARMATURE":
+                bpy.context.view_layer.objects.active = o
+                try:
+                    bpy.ops.object.modifier_apply(modifier=m.name)
+                except Exception:
+                    o.modifiers.remove(m)
+    # One texture-coordinate set for all parts (same name, so the join merges
+    # them), so the walk lookup added after is the second set (UV2 in Godot).
+    for o in meshes:
+        uvs = o.data.uv_layers
+        keep = uvs.active
+        for layer in [l for l in uvs if l != keep]:
+            uvs.remove(layer)
+        if keep is not None:
+            keep.name = "UVMap"
+    bpy.ops.object.select_all(action="DESELECT")
+    for o in meshes:
+        o.select_set(True)
+    main = max(meshes, key=lambda o: len(o.data.vertices))
+    bpy.context.view_layer.objects.active = main
+    bpy.ops.object.join()
+    if not any(m.type == "ARMATURE" for m in main.modifiers):
+        mod = main.modifiers.new("Armature", "ARMATURE")
+        mod.object = rig
+    n = len(main.data.vertices)
+    width = 2048
+    rows = (n + width - 1) // width
+    # The walk: thighs swing 24 deg, knees bend on the swing, arms swing
+    # opposite the legs; 16 frames a stride.
+    import math as m
+    bpy.context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode="POSE")
+    frames = []
+    for f in range(FRAMES):
+        ph = 2 * m.pi * f / FRAMES
+        for side, sgn in (("L", 1), ("R", -1)):
+            s = sgn * m.sin(ph)
+            th = rig.pose.bones.get("upperleg01.%s" % side)
+            kn = rig.pose.bones.get("lowerleg01.%s" % side)
+            ar = rig.pose.bones.get("upperarm01.%s" % side)
+            if th:
+                th.rotation_mode = "XYZ"
+                th.rotation_euler = (m.radians(24) * s, 0, 0)
+            if kn:
+                kn.rotation_mode = "XYZ"
+                kn.rotation_euler = (m.radians(-38) * max(0.0, m.sin(ph * sgn + m.pi * 0.35)), 0, 0)
+            if ar:
+                ar.rotation_mode = "XYZ"
+                ar.rotation_euler = (m.radians(-16) * s, 0, sgn * m.radians(-37))
+        bpy.context.view_layer.update()
+        dg = bpy.context.evaluated_depsgraph_get()
+        ev = main.evaluated_get(dg)
+        me = ev.to_mesh()
+        co = np.empty(len(me.vertices) * 3, dtype=np.float32)
+        me.vertices.foreach_get("co", co)
+        ev.to_mesh_clear()
+        # In scene space, as the exported file places it.
+        mw = np.array(main.matrix_world, dtype=np.float32)
+        co = co.reshape(-1, 3) @ mw[:3, :3].T + mw[:3, 3]
+        frames.append(co)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    # Texture: FRAMES blocks of `rows` rows, `width` vertices a row; RGB is
+    # the vertex position (Blender: x right, y back, z up; the game swaps).
+    img = np.zeros((FRAMES * rows, width, 4), dtype=np.float32)
+    img[..., 3] = 1.0
+    for f, co in enumerate(frames):
+        block = np.zeros((rows * width, 3), dtype=np.float32)
+        block[:n] = co
+        img[f * rows:(f + 1) * rows, :, :3] = block.reshape(rows, width, 3)
+    tex = bpy.data.images.new(name + "_walk", width, FRAMES * rows, alpha=True, float_buffer=True)
+    tex.pixels.foreach_set(img[::-1].ravel())  # Blender images run bottom-up
+    tex.filepath_raw = os.path.join(out_dir, name + "_walk.exr")
+    tex.file_format = "OPEN_EXR"
+    tex.save()
+    # Each vertex's place in the texture, as a second UV set.
+    uv = main.data.uv_layers.new(name="vat")
+    loops_v = np.empty(len(main.data.loops), dtype=np.int32)
+    main.data.loops.foreach_get("vertex_index", loops_v)
+    uvs = np.zeros((len(loops_v), 2), dtype=np.float32)
+    uvs[:, 0] = (loops_v % width + 0.5) / width
+    uvs[:, 1] = (loops_v // width + 0.5) / (FRAMES * rows)
+    uv.data.foreach_set("uv", uvs.ravel())
+    print("BAKED", name, n, "vertices", width, "x", FRAMES * rows, "uv sets", [l.name for l in main.data.uv_layers])
+    return main
+
+
+
+def keyframe_walk(rig):
+    """The walk as a looping action on the skeleton (frames 1-17), for engines
+    that play skeletons (Godot's AnimationPlayer)."""
+    import math as m
+    rig.animation_data_create()
+    act = bpy.data.actions.new("walk")
+    rig.animation_data.action = act
+    bpy.context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode="POSE")
+    for f in range(FRAMES + 1):
+        ph = 2 * m.pi * f / FRAMES
+        for side, sgn in (("L", 1), ("R", -1)):
+            s = sgn * m.sin(ph)
+            for bone, rot in (("upperleg01.%s" % side, (m.radians(24) * s, 0, 0)),
+                              ("lowerleg01.%s" % side, (m.radians(-38) * max(0.0, m.sin(ph * sgn + m.pi * 0.35)), 0, 0)),
+                              ("upperarm01.%s" % side, (m.radians(-16) * s, 0, sgn * m.radians(-37)))):
+                pb = rig.pose.bones.get(bone)
+                if pb:
+                    pb.rotation_mode = "XYZ"
+                    pb.rotation_euler = rot
+                    pb.keyframe_insert("rotation_euler", frame=f + 1)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.context.scene.frame_start = 1
+    bpy.context.scene.frame_end = FRAMES + 1
+
+
 PEOPLE = [person(i) for i in range(COUNT)]
 
 for p in PEOPLE:
@@ -131,9 +256,14 @@ for p in PEOPLE:
     for img in bpy.data.images:
         if img.size[0] > TEX:
             img.scale(TEX, TEX * img.size[1] // max(img.size[0], 1))
+    animated = os.environ.get("ANIM") == "1" and rig is not None
+    if animated:
+        keyframe_walk(rig)
+    elif os.environ.get("WALK") == "1" and rig is not None:
+        bake_walk(p["name"], rig, out_dir)
     print("PERSON", p["name"], p["skin"][0], p["hair"][0], [c[0] for c in p["clothes"]])
     out = os.path.join(out_dir, p["name"] + ".glb")
-    bpy.ops.export_scene.gltf(filepath=out, export_format="GLB", export_apply=True, export_animations=False,
-                              export_skins=False, export_morph=False, use_visible=True,
-                              export_image_format="JPEG")
+    bpy.ops.export_scene.gltf(filepath=out, export_format="GLB", export_apply=not animated,
+                              export_animations=animated, export_skins=animated, export_morph=False,
+                              use_visible=True, export_image_format="JPEG")
     print("EXPORTED", out)

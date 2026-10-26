@@ -16,7 +16,10 @@
    - Use MPFB's lower-poly proxy body, and keep textures at 512–1024 px.
    - Export each as a GLB.
    - A preview of three people was done on 2026-10-25. The arms came out bent wrongly (rotated about the wrong axis) and the man got a women's outfit (a substring match); fix both.
-2. **Walking:**
+2. **Walking.** Status 2026-10-25:
+   - `ANIM=1 make_people.py` keyframes a walk on the skeleton and exports it. Godot plays it (tools/people_anim_shot.gd): the legs stride correctly, but the arms are held out forward in Godot, probably the upperarm rotation axis or bone roll in the glTF export. Fix next.
+   - The texture route (`WALK=1`, bake_walk) bakes, but the lookup in Godot doesn't match the vertices yet: one vertex differs by about 0.6 m after the UV-flip fix. Check the glTF vertex order and UV set index before using it for crowds.
+   The original plan for this step:
    - Give each person the MPFB default rig and a free motion-capture walk cycle (for example the CMU motion capture library, free to use).
    - Bake the cycle into a vertex animation texture (VAT): N frames of vertex positions stored in a texture.
    - This is the standard way games draw big crowds. A MultiMesh plays the walk in its shader with no skeleton per person, so hundreds stay cheap.
