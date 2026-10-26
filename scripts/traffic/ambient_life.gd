@@ -181,6 +181,34 @@ func _pick() -> void:
 			var kinds := ["bench", "stroll", "stroll", "picnic", "frisbee"] if warm else ["bench", "stroll", "stroll"]
 			_scenes.append({"kind": kinds[h % kinds.size()], "park": pk, "seed": h})
 			people += 2
+	var wd := Mail.weekday_of(sim.tick_count)
+	var weekday := wd >= 1 and wd <= 5  # 0 is Sunday
+	# Building sites: a crew of two or three at work through the working day.
+	if weekday and hour >= 7.0 and hour < 16.0:
+		for ref in sim.construction.sites:
+			if people >= cap:
+				break
+			var site: Dictionary = sim.construction.sites[ref]
+			if int(site.get("stage", -1)) < 0:
+				continue
+			var fr := Vector3(float(site.front[0]), 0.0, float(site.front[1]))
+			if Vector2(fr.x - eye.x, fr.z - eye.z).length() > RADIUS:
+				continue
+			var out := Vector3(float(site.out[0]), 0.0, float(site.out[1]))
+			_scenes.append({"kind": "crew", "front": fr, "out": out, "seed": hash([ref, "crew"])})
+			people += 3
+	# Schools: recess in the yard on school days (late August to May).
+	var term := month >= 9 or month <= 5 or (month == 8 and Seasons.months(sim.tick_count) - floorf(Seasons.months(sim.tick_count)) > 0.6)
+	if weekday and term and (hour >= 10.0 and hour < 10.5 or hour >= 12.0 and hour < 12.75 or hour >= 14.0 and hour < 14.3):
+		for id in sim.services.buildings:
+			var sb: Dictionary = sim.services.buildings[id]
+			if int(sb.kind) != Services.Kind.SCHOOL or people >= cap:
+				continue
+			var sp: Vector3 = sb.pos
+			if Vector2(sp.x - eye.x, sp.z - eye.z).length() > RADIUS:
+				continue
+			_scenes.append({"kind": "recess", "school": sb, "seed": hash([id, "recess"])})
+			people += 14
 	# Shops: window shoppers out front in the day, a worker on a break.
 	for key in sim.buildings:
 		if people >= cap:
@@ -218,6 +246,12 @@ func _draw() -> void:
 	for s in _scenes:
 		if s.has("park"):
 			_park_scene(people, props, s)
+			continue
+		if s.kind == "crew":
+			_crew_scene(people, s)
+			continue
+		if s.kind == "recess":
+			_recess_scene(people, s)
 			continue
 		var lot: Dictionary = s.lot
 		var seed: int = s.seed
@@ -355,3 +389,37 @@ func _park_scene(people: Array, props: Dictionary, s: Dictionary) -> void:
 			var k := fposmod(t * 0.6, 2.0)
 			var u := k if k < 1.0 else 2.0 - k
 			props.disc.append(Transform3D(Basis(), Terrain.stand(a2.lerp(b2, u)) + Vector3(0, 1.4 + sin(u * PI) * 1.2, 0)))
+
+
+## Builders at a house going up: one walks to and from the truck, two work
+## along the walls, stopping and starting.
+func _crew_scene(people: Array, s: Dictionary) -> void:
+	var seed: int = s.seed
+	var fr: Vector3 = s.front
+	var into: Vector3 = -(s.out as Vector3)
+	var along := Vector3(-into.z, 0.0, into.x)
+	var t := _clock + float(seed % 97)
+	var u := fposmod(t * 0.5, 16.0)
+	var x := u if u < 8.0 else 16.0 - u
+	_person(people, fr + into * (1.0 + x), into if u < 8.0 else -into, seed, t * 0.5)
+	for k in 2:
+		var side := -1.0 if k == 0 else 1.0
+		var p := fr + into * (10.0 + 3.0 * k) + along * side * (4.0 + 1.5 * sin(t * 0.3 + k))
+		_person(people, p, -along * side, seed >> (k + 2), -1.0 if fmod(t + k * 3.0, 6.0) < 4.0 else t * 0.4)
+
+
+## Recess: children running about the school yard, a teacher watching.
+func _recess_scene(people: Array, s: Dictionary) -> void:
+	var sb: Dictionary = s.school
+	var seed: int = s.seed
+	var c: Vector3 = sb.pos
+	var dir: Vector3 = sb.dir if sb.dir is Vector3 else Vector3.FORWARD
+	var side := Vector3(-dir.z, 0.0, dir.x)
+	var yard := c + dir * 30.0
+	var t := _clock
+	for i in 13:
+		var a := t * (0.8 + float((seed >> i) % 7) * 0.1) + i * 0.7
+		var r := 4.0 + float((seed >> (i + 3)) % 12)
+		var p := yard + side * cos(a) * r + dir * sin(a) * r * 0.6
+		_person(people, p, -side * sin(a) + dir * cos(a) * 0.6, seed >> i, a * r * 0.3, 0.62)
+	_person(people, yard - dir * 6.0, dir, seed >> 20, -1.0)
