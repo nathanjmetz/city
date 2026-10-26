@@ -185,7 +185,7 @@ func _update_hint() -> void:
 				parts.append("%s %d s%s" % [_phase_name(_hover, i).capitalize(), roundi(float(g[i])), " (yours)" if mine else ""])
 			text += "\nGreen: " + ", ".join(parts) + "."
 		if _wave_from != -1:
-			text += "\nGreen wave: Ctrl-click the next light down the street (it will turn green as cars from the last one arrive).""
+			text += "\nGreen wave: Ctrl-click the next light down the street (it will turn green as cars from the last one arrive)."
 	elif RULE_FOR.has(mode):
 		text = ["", "", "Click a junction to let the game choose its control.",
 			"Click a junction to add traffic lights.", "Click a junction to make it an all-way stop.",
