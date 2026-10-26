@@ -456,7 +456,7 @@ func _link_baked(c: Vector2i) -> void:
 
 
 static func _far_from() -> float:
-	return FAR_FROM * clampf(GraphicsQuality.detail, 0.6, 1.2)
+	return FAR_FROM * float(GraphicsQuality.knob("far_from", 1.0))
 
 
 func _far_chunk(root: Node3D) -> Vector2i:

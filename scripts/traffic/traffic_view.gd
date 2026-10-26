@@ -22,7 +22,8 @@ extends Node3D
 ## inside a garage or bay are out of sight.
 
 ## Metres from the camera where models switch to the simple version, and
-## where they stop being drawn.
+## where they stop being drawn, on a full desktop (High and up); lower
+## graphics tiers set their own (cars_m, car_near_m in GraphicsQuality).
 const NEAR := 240.0
 const FAR := 2600.0
 ## Cars and pickups shrink to a few pixels sooner than trucks do.
@@ -65,6 +66,12 @@ var _sampled := -1.0  # the clock time the vehicles were last sampled at
 const _NONE := []
 var _parked := []   # [front, mesh key, transform, custom, far mesh key], for parked vehicles in sight
 var _parked_version := -1
+## How far vehicles are drawn now, and inside it the full model: the
+## graphics tier's cars_m and car_near_m, pulled in on a crowded road to
+## stay under its most-at-once (cars; GraphicsQuality.fit_reach).
+var _reach_far := FAR
+var _reach_near := NEAR
+var _drawn := 0
 ## The simulation's clock when it was last sampled, the one before, and the
 ## time the view is drawing (a step behind, so it always has two samples to
 ## glide between). _rate is simulated seconds per real second.
@@ -157,7 +164,7 @@ func _add_ultra_batch(key: String) -> void:
 
 static func _ultra_wanted() -> bool:
 	var q := GraphicsQuality.current
-	return q != null and q.active and q.tier >= GraphicsQuality.ULTRA
+	return q != null and q.active and bool(GraphicsQuality.knob("car_detail", false))
 
 
 func _process(_delta: float) -> void:
@@ -197,6 +204,10 @@ func _draw_cars(_delta: float) -> void:
 	if _ultra_wanted() != _ultra:
 		_set_ultra(not _ultra)
 	var ultra2 := ULTRA_NEAR * ULTRA_NEAR if _ultra else -1.0
+	var full := float(GraphicsQuality.knob("cars_m", FAR))
+	_reach_far = minf(_reach_far, full)
+	_reach_near = minf(float(GraphicsQuality.knob("car_near_m", NEAR)), _reach_far)
+	_drawn = 0
 	# Snow cover (from DayNight). Plows go on and come off with it.
 	if (Seasons.snow_now > 0.4) != (_snow > 0.4):
 		_info.clear()
@@ -207,14 +218,16 @@ func _draw_cars(_delta: float) -> void:
 		_rebuild_parked()
 	for item in _parked:
 		var dist: float = item[0].distance_to(eye)
-		if dist <= FAR:
-			if dist < NEAR:
+		if dist <= _reach_far:
+			_drawn += 1
+			if dist < _reach_near:
 				_add(item[1], 2 if dist * dist < ultra2 else 0, item[2], item[3])
 			else:
 				_add(item[4], 1, item[2], item[3])
-	var far2 := FAR * FAR
-	var near2 := NEAR * NEAR
-	var small2 := FAR_SMALL * FAR_SMALL
+	var far2 := _reach_far * _reach_far
+	var near2 := _reach_near * _reach_near
+	var small := FAR_SMALL * _reach_far / FAR
+	var small2 := small * small
 	if _info.size() > traffic.cars.size() * 2 + 256:
 		_info.clear()  # vehicles long gone
 	_clock(_delta)
@@ -250,6 +263,7 @@ func _draw_cars(_delta: float) -> void:
 		var lod := 0 if d2 < near2 else 1
 		if d2 < ultra2:
 			lod = 2
+		_drawn += 1
 		var kind: String = info[1]
 		var flags: float = info[4]
 		if car.a < -1.2:
@@ -282,6 +296,7 @@ func _draw_cars(_delta: float) -> void:
 	if parked.is_valid():
 		for p in parked.call():
 			_add_parked(p[0], p[1], p[2], eye, ultra2)
+	_reach_far = GraphicsQuality.fit_reach(_reach_far, _drawn, int(GraphicsQuality.knob("cars", GraphicsQuality.NO_CAP)), full)
 	for key in _batches:
 		for lod in 3:
 			var k: String = key + str(lod)
@@ -356,9 +371,10 @@ static func _far(kind: String, model: String) -> String:
 
 func _add_parked(kind: String, xf: Transform3D, id: int, eye: Vector3, ultra2: float) -> void:
 	var dist := xf.origin.distance_to(eye)
-	if dist > FAR or not VehicleTypes.SPECS.has(kind):
+	if dist > _reach_far or not VehicleTypes.SPECS.has(kind):
 		return
-	var lod := 0 if dist < NEAR else 1
+	_drawn += 1
+	var lod := 0 if dist < _reach_near else 1
 	if dist * dist < ultra2:
 		lod = 2
 	var paint := VehicleTypes.paint(kind, id)
