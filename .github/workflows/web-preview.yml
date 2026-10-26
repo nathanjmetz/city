@@ -101,6 +101,7 @@ jobs:
           run_test tests/test_road_variants.gd
           run_test tests/test_traffic.gd
           run_test tests/test_signal_timing.gd
+          run_test tests/test_green_light.gd
           run_test tests/test_traffic_center.gd
           run_test tests/test_level_needs.gd
           run_test tests/test_weather.gd

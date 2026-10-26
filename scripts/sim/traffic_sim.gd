@@ -57,6 +57,10 @@ const BRAKE := 3.0
 const MAX_BRAKE := 8.0
 ## How far back (m) a driver on a green commits to going through.
 const GREEN_REACH := 25.0
+## Seconds of a car's pull-away counted as room ahead on the far side.
+const ROOM_AHEAD_S := 2.0
+## Seconds ahead a driver reads a faster car in front pulling away (_idm).
+const ANTICIPATE_S := 1.0
 ## Seconds at the line that count as a full stop (stop signs, all-way
 ## stops, right on red): drivers stop for about half a second to a second.
 const FULL_STOP_S := 0.5
@@ -4713,6 +4717,14 @@ func _idm(v: float, v0: float, gap: float, vl: float, acc := -1.0) -> float:
 	if gap == INF:
 		return clampf(acc * free, -MAX_BRAKE, acc)
 	var s_star := JAM_GAP + maxf(0.0, v * HEADWAY + v * (v - vl) / (2.0 * sqrt(acc * BRAKE)))
+	# Drivers see a car ahead pulling away and go with it: the gap it opens
+	# in the next ANTICIPATE_S counts already. Only while it's faster, so
+	# steady following keeps its distance. Without it a queue at a green
+	# set off one timid car at a time (HCM: about 2 s a car, not 3).
+	# (Once it's clearly moving: a driver reacts a moment after the car
+	# ahead sets off, so a queue starts in a ripple.)
+	if vl > 1.5:
+		gap += maxf(0.0, vl - v) * ANTICIPATE_S
 	var a := acc * (free - pow(s_star / maxf(gap, 0.1), 2.0))
 	return clampf(a, -MAX_BRAKE, acc)
 
@@ -4881,7 +4893,15 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 			queued += 1
 	var list: Array = _lanes.get(c.wo * 8 + c.lo, [])
 	if not list.is_empty():
-		var room: float = list[list.size() - 1].d - ways[c.wo].s0
+		# A car pulling away is making room: count where it will be in the
+		# couple of seconds this one takes to get there, as drivers do, or
+		# each car in a queue waits for a full length to open before moving.
+		var last: Dictionary = list[list.size() - 1]
+		var room: float = last.d - ways[c.wo].s0
+		# ...only while it's really getting away: not braking for a queue
+		# ahead of it, or the box fills behind it (review, 2026-10-26).
+		if float(last.v) > 1.0 and float(last.get("a", 0.0)) > -0.5:
+			room += float(last.v) * ROOM_AHEAD_S
 		if room < (queued + 1) * (car.len + JAM_GAP):
 			return false
 	# Someone on the crosswalk over the road we're turning onto.

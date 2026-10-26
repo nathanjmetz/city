@@ -90,8 +90,16 @@ static func green_run(ew: int, ns: int) -> Dictionary:
 	t.set_rule(node, TrafficSim.Rule.SIGNAL)
 	sim.tick()
 	var wi := _way_in(t, node, Vector3.RIGHT)
+	# Queue them on a red, so they're standing at the line when it turns
+	# (set on a green, they drove off and the test timed loose arrivals).
+	for i in 2000:
+		sim.tick()
+		if t.light(node, wi) == TrafficSim.Light.RED:
+			break
 	var mine := _queue(sim, wi, Vector2(-590, 0), Vector2(590, 0), 20)
-	var limit: float = t.way_speed(wi)
+	for car in mine:
+		car.d0 = car.d  # where it stood in the queue, front first
+	var limit: float = t.limit(t.ways[wi].type)
 	# Wait for red, then for the green after it.
 	var was := t.light(node, wi)
 	var greens := []
@@ -159,6 +167,14 @@ static func green_run(ew: int, ns: int) -> Dictionary:
 			first = minf(first, moved[car.id] - g0)
 	# The ripple: when each of the first six in the first lane moved.
 	var lane0: Array = mine.filter(func(c): return c.lane == mine[0].lane)
+	lane0.sort_custom(func(a, b): return float(a.get("d0", 0.0)) > float(b.get("d0", 0.0)))
+	# One car a place (the queue helper can stack a car already on the road
+	# onto the front spot).
+	var spaced := []
+	for c in lane0:
+		if spaced.is_empty() or float(spaced[-1].d0) - float(c.d0) > 1.0:
+			spaced.append(c)
+	lane0 = spaced
 	for k in mini(6, lane0.size()):
 		starts.append(snappedf(moved.get(lane0[k].id, INF) - g0, 0.1))
 	var ripple_ok := starts.size() == 6
