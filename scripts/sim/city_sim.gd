@@ -1271,6 +1271,8 @@ func tick() -> void:
 	t = Perf.now()
 	if tick_count % Balance.DEVELOP_EVERY == 0 and _replan_at == 0:
 		_develop_one()
+	if tick_count % TICKS_PER_HOUR == 50:
+		_decline()
 	if tick_count % Farms.DECIDE_EVERY == 0 and not farms.farms.is_empty():
 		farms.tax_rate = economy.tax[ZoneMap.Zone.INDUSTRIAL]
 		farms.price = Farms.price_on(tick_count / (24.0 * TICKS_PER_HOUR))
@@ -3994,12 +3996,51 @@ func _develop_one() -> void:
 				return
 			continue
 		var o: Array = opts[rng.randi() % opts.size()]
+		# Up a level only with its needs mostly met (Nathan, 2026-10-25:
+		# "the level goes up or down based on whether it has what it needs").
+		# (Towns that don't track utilities, as in some tests, skip this:
+		# their needs read as unpowered.)
+		if require_utilities and o[0] == BuildingTypes.type_of(buildings[key]) \
+				and int(o[1]) > int(buildings[key].get("level", 0)) \
+				and int(Inspect.needs(self, key).met) < Balance.LEVEL_UP_MET:
+			continue
 		# Protected old buildings stay as they are; a charming one asks the
 		# town before it comes down (Heritage).
 		if not heritage.allow(self, key, o[0], o[1]):
 			continue
 		redevelop(key, o[0], o[1])
 		return
+
+
+## A grown building cut off from power or water for LEVEL_DOWN_AFTER drops
+## a level (Nathan, 2026-10-25: "the level goes up or down based on whether
+## it has what it needs"): the owner closes off the top floor, a shop shrinks
+## back. `short` is when it was cut off; the clock starts again after each
+## step down, and stops once it has power and water again.
+func _decline() -> void:
+	if not require_utilities:
+		return
+	var keys := buildings.keys()
+	keys.sort()
+	var changed := false
+	for key in keys:
+		var b: Dictionary = buildings[key]
+		if int(b.get("level", 0)) <= 0 or not lots.has(key):
+			b.erase("short")
+			continue
+		if services.has_utilities(key):
+			b.erase("short")
+		elif not b.has("short"):
+			b.short = tick_count
+		elif tick_count - int(b.short) >= Balance.LEVEL_DOWN_AFTER:
+			var nb := BuildingTypes.make(self, key, b, BuildingTypes.type_of(b), int(b.level) - 1)
+			nb.changed = tick_count
+			nb.short = tick_count
+			nb.why = "Lost a level: no power or water for two days."
+			buildings[key] = nb
+			changed = true
+	if changed:
+		buildings_changed.emit()
 
 
 ## Rebuilds a building as another type or stage (the owner's call). Residents
@@ -4838,6 +4879,8 @@ func from_dict(d: Dictionary) -> void:
 			"changed": int(b.get("changed", b.built)), "why": str(b.get("why", ""))}
 		if b.has("fabric"):
 			buildings[key].fabric = int(b.fabric)
+		if b.has("short"):
+			buildings[key].short = int(b.short)
 		if z == ZoneMap.Zone.INDUSTRIAL and b.has("chain"):
 			buildings[key].chain = str(b.chain)
 	if postcard:
