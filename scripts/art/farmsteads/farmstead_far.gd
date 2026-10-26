@@ -74,9 +74,10 @@ void fragment() {
 #else
 	vec3 base = lin(COLOR.rgb);
 #endif
-	// The farmstead's mown grass goes dormant and tan in a dry or cold spell.
+	// The farmstead's mown grass goes a muted olive in a dry or cold spell,
+	// like a town lawn (lin(0.45, 0.47, 0.30)), not the pasture's tan.
 	float lawn = step(0.55, COLOR.a) * step(COLOR.a, 0.65);
-	base = mix(base, vec3(0.28, 0.22, 0.12), lawn * clamp(season_look.w * 1.1, 0.0, 0.85));
+	base = mix(base, vec3(0.17, 0.19, 0.075), lawn * clamp(season_look.w * 0.45, 0.0, 0.4));
 	float house = step(0.04, COLOR.a) * step(COLOR.a, 0.5);
 	float lived = step(0.12, COLOR.a) * house;
 	// A house's windows: 2 m bays, 3.7 m storeys, too small to draw far off

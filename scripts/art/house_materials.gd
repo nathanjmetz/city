@@ -324,7 +324,7 @@ void fragment() {
 	float fade = clamp(1.0 - length(VERTEX) / 180.0, 0.0, 1.0);
 	vec3 col = vcol(COLOR.rgb) * (0.85 + big * 0.3) * (1.0 + (texture(noise_grain, p / 0.8).r - 0.5) * 0.3 * fade);
 	col = mix(col, col * vec3(0.92, 1.12, 0.78), season_look.z);
-	vec3 dormant = lin(vec3(0.55, 0.48, 0.33)) * (0.85 + big * 0.3);
+	vec3 dormant = lin(vec3(0.52, 0.48, 0.33)) * (0.85 + big * 0.3);
 	col = mix(col, dormant, clamp(season_look.w * 1.1 - clump * 0.2, 0.0, 0.85));
 	float cover = smoothstep(0.05, 0.45, snow * 1.15 - clump * 0.35 + 0.1) * smoothstep(0.6, 0.9, world_normal.y);
 	ALBEDO = mix(col, vec3(0.80, 0.83, 0.88), cover);

@@ -18,7 +18,7 @@ uniform vec4 lush : source_color = vec4(0.29, 0.38, 0.17, 1.0);
 uniform vec4 dry : source_color = vec4(0.45, 0.47, 0.25, 1.0);
 uniform vec4 dark : source_color = vec4(0.20, 0.28, 0.12, 1.0);
 uniform vec4 soil : source_color = vec4(0.46, 0.40, 0.29, 1.0);
-uniform vec4 dormant : source_color = vec4(0.55, 0.49, 0.34, 1.0);
+uniform vec4 dormant : source_color = vec4(0.52, 0.48, 0.33, 1.0);
 // Set by DayNight: snow cover, and the season as (autumn, bare, spring, dry).
 global uniform float snow;
 global uniform vec4 season_look;

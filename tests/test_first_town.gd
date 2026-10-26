@@ -81,6 +81,31 @@ func _init() -> void:
 			break
 	_check(saw_house, "a house going up shows its progress")
 	_check(FirstTown.current(sim) == "done", "and the first family moves in (%s, %d people)" % [FirstTown.current(sim), sim.stats.population])
+
+	# A player who goes on without a builder's yard (straight to power, or
+	# zoning homes) isn't kept on the yard step for good: builders from out
+	# of town build without one (the critic, 2026-10-26).
+	for first in ["power", "homes"]:
+		var s2 := CitySim.new()
+		s2.require_utilities = true
+		s2.simulate_traffic = false
+		s2.apply({"type": "build_county_road", "a": [-2000, 0], "b": [2000, 0], "links": [0, 1]})
+		s2.apply({"type": "build_road", "start": [-100, 0], "ctrl": [-20, 0], "end": [40, 60]})
+		var sp := FirstTown.grid_spot(s2)
+		s2.apply({"type": "build_grid_shape", "points": [[sp[0].x, sp[0].z], [sp[1].x, sp[0].z],
+			[sp[1].x, sp[1].z], [sp[0].x, sp[1].z]],
+			"block": p.block, "across": p.across, "side": 0, "road": RoadStyle.Type.STREET})
+		_check(FirstTown.current(s2) == "yard" and not FirstTown.past_yard(s2), "a new grid asks for the yard (%s)" % FirstTown.current(s2))
+		if first == "power":
+			var ps := Services.site_near(s2.network, Services.Kind.POWER_FEED, FirstTown.site_spot(s2, "power"))
+			s2.apply({"type": "place_service", "kind": Services.Kind.POWER_FEED, "pos": [ps[0].x, ps[0].z], "dir": [ps[1].x, ps[1].z]})
+			s2.update_stats()
+			_check(FirstTown.current(s2) == "power_wait", "power placed first: the tour moves on to the line crew (%s)" % FirstTown.current(s2))
+		else:
+			var centre: Vector3 = (sp[0] + sp[1]) * 0.5
+			s2.apply({"type": "paint_zone", "center": [centre.x, centre.z + 10], "radius": 14, "zone": ZoneMap.Zone.RESIDENTIAL})
+			_check(FirstTown.has_homes_zoned(s2), "homes zoned before the yard")
+			_check(FirstTown.current(s2) == "power", "homes zoned first: the tour moves on to power (%s)" % FirstTown.current(s2))
 	print("first town: all checks passed" if _failed == 0 else "first town: %d FAILED" % _failed)
 	quit(1 if _failed > 0 else 0)
 

@@ -14,7 +14,20 @@ extends Node3D
 ## in the depth of winter), and the share of those that fall as snow.
 const WET_DAYS := [0.22, 0.2, 0.3, 0.4, 0.42, 0.38, 0.33, 0.3, 0.27, 0.28, 0.3, 0.22]
 const SNOW_SHARE := [1.0, 1.0, 0.35, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.9]
-const OVERCAST_DAYS := 0.3
+## Of the wet days, the share that are grey all day with steady rain or
+## snow; the rest are showery: broken cloud that closes in for a few hours.
+const STEADY_WET := 0.55
+## Of the dry days, the share that are mostly cloudy, and then of the rest
+## the share that are partly cloudy (bright, with full shadows) rather than
+## clear. Altogether about 40-45% of days are mostly cloudy, about
+## Indianapolis's share; the critic (2026-10-26) measured 53% of daytime
+## hours overcast before, which buried the town's colour.
+const OVERCAST_DAYS := 0.28
+const PARTLY_DAYS := 0.45
+## A brand-new town's first game day is fair, so a new player's first look
+## at their land isn't fog under a grey sky (every new town starts on the
+## same date, which rolled fog and overcast).
+const FIRST_DAY_COVER := 0.12
 ## Share of days that start in fog: radiation fog after a clear, still
 ## night, burning off by mid-morning; most in autumn.
 const FOG_DAYS := [0.06, 0.06, 0.05, 0.04, 0.05, 0.05, 0.06, 0.08, 0.1, 0.1, 0.08, 0.07]
@@ -142,17 +155,41 @@ static func conditions(clock: Dictionary) -> Array:
 		if hour >= 3.0 and hour < lift:
 			fog = clampf((lift - hour) / 2.0, 0.0, 1.0) * clampf(hour - 3.0, 0.0, 1.0)
 	var wet_share: float = WET_DAYS[month - 1]
+	var kind := float(hash([int(clock.year), month, int(clock.day), "sky"]) % 1000) / 1000.0
 	if roll < wet_share:
-		# A wet day: overcast, with three to seven hours of rain or snow.
+		# A wet day: three to seven hours of rain or snow.
 		var snowy := 1.0 if float((h >> 22) % 100) / 100.0 < float(SNOW_SHARE[month - 1]) else 0.0
 		var start := 4.0 + float((h >> 10) % 14)
 		var length := 3.0 + float((h >> 14) % 5)
 		var falling := hour >= start and hour < start + length
 		var edge := clampf(minf(hour - start, start + length - hour), 0.0, 1.0)
-		return [0.95, (0.45 + float((h >> 18) % 50) / 100.0) * edge if falling else 0.0, fog, snowy]
-	if roll < wet_share + OVERCAST_DAYS * (1.0 - wet_share):
+		var amount := (0.45 + float((h >> 18) % 50) / 100.0) * edge if falling else 0.0
+		if kind < STEADY_WET:
+			return [0.95, amount, fog, snowy]
+		# Showers: broken cloud, closing in over the hour before the spell
+		# and clearing over the hour after.
+		var near := clampf(minf(hour - start + 1.0, start + length + 1.0 - hour), 0.0, 1.0)
+		return [lerpf(0.45, 0.9, near), amount, fog, snowy]
+	var dry_roll := (roll - wet_share) / (1.0 - wet_share)
+	if dry_roll < OVERCAST_DAYS:
 		return [0.7, 0.0, fog, 0.0]
+	if kind < PARTLY_DAYS:
+		return [0.3 + float((h >> 6) % 20) / 100.0, 0.0, fog, 0.0]
 	return [float((h >> 6) % 30) / 100.0, 0.0, fog, 0.0]
+
+
+## The sky over a town in play: the date's odds (conditions), except that a
+## new town's first game day (tick under a game day) is always fair, and
+## there's no fog while Day and night is off (`cycle` false): the light is
+## held at late morning then, and dawn fog under it read as a fault (the
+## critic, 2026-10-26).
+static func for_town(clock: Dictionary, tick: int, cycle: bool) -> Array:
+	if tick < Seasons.TICKS_PER_DAY:
+		return [FIRST_DAY_COVER, 0.0, 0.0, 0.0]
+	var c := conditions(clock)
+	if not cycle:
+		c[2] = 0.0
+	return c
 
 
 func _process(_delta: float) -> void:
@@ -160,24 +197,34 @@ func _process(_delta: float) -> void:
 		return
 	var c := [0.0, 0.0, 0.0, 0.0]
 	if on:
-		c = live if live.size() >= 4 else conditions(sim.clock())
+		if live.size() >= 4:
+			c = live
+		elif sim is MenuSim:
+			# The home screen's real date (its tick is pinned to the season).
+			c = conditions(sim.clock())
+		else:
+			c = for_town(sim.clock(), sim.tick_count, DayNight.cycle_on)
 	var snowing := float(c[3]) > 0.5
 	cover = lerpf(cover, float(c[0]), 0.02)
 	rain = lerpf(rain, 0.0 if snowing else float(c[1]), 0.03)
 	snow = lerpf(snow, float(c[1]) if snowing else 0.0, 0.02)
 	fog = lerpf(fog, float(c[2]), 0.01)
 	sky.weather_haze = 1.0 + (FOG_HAZE - 1.0) * fog
-	# Overcast: a flatter, greyer, dimmer picture.
+	# Overcast: a flatter, greyer, dimmer picture, but only past broken
+	# cloud: a partly cloudy day keeps the full sun and shadows. Lighter than
+	# it was (an overcast 0.7 lost 15% brightness, 25% colour and half its
+	# shadows; now about 9%, 15% and a third).
 	# On top of the sky's own colour settings, never in place of them.
+	var grey := smoothstep(0.4, 0.95, cover)
 	var env := sky.env
 	if _base.is_empty():
 		_base = [env.adjustment_enabled, env.adjustment_brightness, env.adjustment_saturation, env.adjustment_contrast]
-	env.adjustment_enabled = bool(_base[0]) or cover > 0.02
-	env.adjustment_brightness = float(_base[1]) * (1.0 - 0.22 * cover)
-	env.adjustment_saturation = float(_base[2]) * (1.0 - 0.35 * cover)
-	env.adjustment_contrast = float(_base[3]) * (1.0 - 0.12 * cover)
+	env.adjustment_enabled = bool(_base[0]) or grey > 0.01
+	env.adjustment_brightness = float(_base[1]) * (1.0 - 0.15 * grey)
+	env.adjustment_saturation = float(_base[2]) * (1.0 - 0.26 * grey)
+	env.adjustment_contrast = float(_base[3]) * (1.0 - 0.1 * grey)
 	# Cloud spreads the sun: shadows go soft and faint.
-	sky.sun.shadow_opacity = 1.0 - 0.7 * cover
+	sky.sun.shadow_opacity = 1.0 - 0.6 * grey
 	_rain.visible = rain > 0.05 or snow > 0.05
 	if _rain.visible:
 		_rain_mat.set_shader_parameter("amount", clampf(rain, 0.0, 1.0) * 0.55 if rain > 0.05 else 0.0)

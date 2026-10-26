@@ -94,7 +94,10 @@ global uniform vec4 tree_fade;
 // spring, dry) for leaves, harvest, green-up and dormant grass.
 global uniform float snow;
 global uniform vec4 season_look;
-uniform vec4 dormant : source_color = vec4(0.55, 0.49, 0.34, 1.0);
+// Dormant grass: tan-olive in the pasture and ditches (fescue gone off,
+// not straw), a muted olive in a town's mowed lawns.
+uniform vec4 dormant : source_color = vec4(0.52, 0.48, 0.33, 1.0);
+uniform vec4 lawn_dormant : source_color = vec4(0.45, 0.47, 0.30, 1.0);
 uniform vec4 twigs : source_color = vec4(0.30, 0.27, 0.24, 1.0);
 uniform vec4 fall_leaves : source_color = vec4(0.42, 0.27, 0.11, 1.0);
 // The camera's x, height above the ground, z: level of detail is measured
@@ -236,10 +239,15 @@ void fragment() {
 	// patch goes straw-light, and dark clumps in tan read as bare dirt.
 	col = mix(col, dark.rgb, smoothstep(0.35, 0.95, clump) * mix(0.3, 0.14 * (1.0 - dryness), mowed));
 	// Spring green-up, then cool-season grass going tan and dormant in the
-	// late-summer dry spell and over winter (Indiana pasture).
+	// late-summer dry spell and over winter (Indiana pasture). A town's
+	// mowed lawns (bluegrass and fescue) only go a muted olive, never sand:
+	// the whole town read as desert from November to April (the critic,
+	// 2026-10-26).
 	col = mix(col, col * vec3(0.92, 1.12, 0.78), season_look.z);
 	float brown = clamp(season_look.w * 1.1 - (1.0 - dryness) * 0.3, 0.0, 0.85);
-	col = mix(col, dormant.rgb * (0.85 + big * 0.3) * mix(1.0, 0.92 + 0.16 * clump, mowed), brown);
+	float lawn_brown = clamp(season_look.w * 0.45 - (1.0 - dryness) * 0.1, 0.0, 0.4);
+	vec3 gone_off = mix(dormant.rgb, lawn_dormant.rgb, mowed);
+	col = mix(col, gone_off * (0.85 + big * 0.3) * mix(1.0, 0.92 + 0.16 * clump, mowed), mix(brown, lawn_brown, mowed));
 
 	// Crop fields (CropCalendar): the county's 40, 80 and 160 acre fields,
 	// each with this year's crop in its rows, at today's stage: bare worked
@@ -1119,7 +1127,12 @@ static func _fill_vertices(d: Dictionary, i0: int, i1: int, j0: int, j1: int) ->
 			# not the bare leaf litter of the woods.
 			var graded := Terrain.flat_weight(x, z)
 			var yard := clampf(graded - mowed, 0.0, 1.0)
-			colors[k] = Color(cov.r * keep * (1.0 - YARD_THIN * yard), cov.g, cov.b * keep, cov.a * keep)
+			# No crops anywhere on graded town land: a yard is lawn, not the
+			# farm field the town was built on (the critic, 2026-10-26: yards
+			# showed tilled soil in May and a hard-edged rectangle of winter
+			# wheat in November, lined up with the field outside town).
+			var crops := cov.b * clampf(1.0 - 1.25 * maxf(mowed, graded), 0.0, 1.0)
+			colors[k] = Color(cov.r * keep * (1.0 - YARD_THIN * yard), cov.g, crops, cov.a * keep)
 			# Towns' roads and lots, where the county roads give way.
 			town[k] = Vector2(mowed, graded)
 			wet[k] = cov.g

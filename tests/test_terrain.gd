@@ -174,8 +174,49 @@ func _init() -> void:
 	_check(not tv._cache.has(Vector2i(9, 9)) and not tv._cache.has(Vector2i(9, 10)),
 		"fine detail isn't kept, and the menu keeps none")
 	tv.free()
+	_yards_are_lawn()
 	print("ALL TESTS PASSED" if _failed == 0 else "SOME TESTS FAILED")
 	quit(1 if _failed > 0 else 0)
+
+
+## A town graded over a crop field paints no crops on its lots: yards are
+## lawn, not the field under them (the critic, 2026-10-26: tilled soil in
+## May, a rectangle of winter wheat in November).
+func _yards_are_lawn() -> void:
+	var at := Vector2.INF
+	for k in 2500:
+		var p := Vector2(-6000 + (k % 50) * 240, -6000 + (k / 50) * 240)
+		var all_crop := true
+		for o in [Vector2(-80, -60), Vector2(80, -60), Vector2(-80, 60), Vector2(80, 60), Vector2.ZERO]:
+			var c := Terrain.cover(p.x + o.x, p.y + o.y)
+			all_crop = all_crop and c.b > 0.8 and c.r < 0.1 and c.g < 0.02
+		if all_crop:
+			at = p
+			break
+	_check(at != Vector2.INF, "found a crop field to build a street on")
+	if at == Vector2.INF:
+		return
+	# A street with lots along it: graded 30 m each side, mowed 8 m.
+	var pts := PackedVector3Array([Vector3(at.x - 70, 0, at.y), Vector3(at.x + 70, 0, at.y)])
+	var box := Rect2(at - Vector2(200, 200), Vector2(400, 400))
+	Terrain.stamp_flat(pts, 30.0, 40.0, box, 8.0)
+	var origin := Vector2(floorf(at.x / 512.0) * 512.0, floorf(at.y / 512.0) * 512.0)
+	var d := TerrainView.chunk_data(origin, 512.0, 8.0)
+	var lot_samples := 0
+	var lot_crops := 0
+	var field_crops := 0
+	for k in d.town.size():
+		var t: Vector2 = d.town[k]
+		var b: float = d.colors[k].b
+		if t.y > 0.99:
+			lot_samples += 1
+			if b > 0.0:
+				lot_crops += 1
+		elif t.y == 0.0 and t.x == 0.0 and b > 0.5:
+			field_crops += 1
+	_check(lot_samples > 20 and lot_crops == 0, "no crops painted on graded lots (%d of %d)" % [lot_crops, lot_samples])
+	_check(field_crops > 20, "the field beyond still has its crops (%d)" % field_crops)
+	Terrain.clear_flat(box)
 
 
 func _check(ok: bool, what: String) -> void:
