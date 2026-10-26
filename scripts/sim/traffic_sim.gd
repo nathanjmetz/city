@@ -4372,7 +4372,13 @@ func _accel_on_way(car: Dictionary, list: Array, i: int) -> float:
 		# On a green, drivers carry on through rather than creeping up to
 		# the line as if it were red: they decide from well back (HCM
 		# saturation flow, about 2 s a car).
-		var reach: float = car.v * car.v / (2.0 * BRAKE) + 4.0
+		# Decide before the line starts to brake them: the car-following
+		# model feels a closed line from its safe gap ahead (jam gap, time
+		# gap and braking room), so deciding only at the braking distance
+		# meant slowing for every clear junction and never reaching the
+		# limit between them (55 mph roads driven at about 20).
+		var reach: float = maxf(car.v * car.v / (2.0 * BRAKE) + 4.0,
+			JAM_GAP + car.v * HEADWAY + car.v * car.v / (2.0 * sqrt(car.acc * BRAKE)) + 4.0)
 		if junctions[c.node].control == Rule.SIGNAL and light(c.node, c.wi) == Light.GREEN:
 			reach = maxf(reach, GREEN_REACH)
 		if ds <= reach and _may_enter(car, c, ds):
