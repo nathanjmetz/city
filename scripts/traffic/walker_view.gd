@@ -10,10 +10,10 @@ const FAR := 320.0
 ## Metres a person covers in one full walk cycle (two steps). A typical adult
 ## step is about 0.7 m at 1.3-1.4 m/s (Fruin, Pedestrian Planning and Design).
 const STRIDE := 1.4
-## Metres (times GraphicsQuality.detail) out to which people are drawn close
-## up, with faces, and at middle detail; past that, simple figures.
-const NEAR := 30.0
-const MID := 140.0
+## Metres (times GraphicsQuality.detail) out to which people are drawn at
+## each detail, closest first: faces and smooth bodies within the first two,
+## then simpler and simpler; past the last, the simplest.
+const REACH := [15.0, 40.0, 90.0, 180.0]
 const SHIRTS := [Color(0.62, 0.16, 0.14), Color(0.16, 0.3, 0.55), Color(0.85, 0.82, 0.74),
 	Color(0.24, 0.42, 0.26), Color(0.9, 0.62, 0.2), Color(0.35, 0.35, 0.38), Color(0.55, 0.38, 0.6),
 	Color(0.12, 0.12, 0.14), Color(0.7, 0.75, 0.82), Color(0.78, 0.45, 0.42),
@@ -25,8 +25,8 @@ var tick_fraction: Callable
 var _mm: MultiMesh
 ## The second figure: narrower shoulders, wider hips, longer hair.
 var _mm2: MultiMesh
-## Every figure at every detail: index figure * 3 + detail (0 far, 1
-## middle, 2 close up).
+## Every figure at every detail: index figure * 5 + detail (0 farthest to
+## 4 closest).
 var _mms := []
 
 
@@ -91,8 +91,8 @@ void fragment() { ALBEDO = tint; ROUGHNESS = 0.9; }
 	mi2.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi2)
 	for kind in 2:
-		for lod in 3:
-			if lod == 1:
+		for lod in 5:
+			if lod == 2:
 				_mms.append(_mm if kind == 0 else _mm2)
 				continue
 			var m := MultiMesh.new()
@@ -119,20 +119,28 @@ func _draw_walkers() -> void:
 	var cam := get_viewport().get_camera_3d()
 	var eye := cam.global_position if cam else Vector3.ZERO
 	var frac: float = tick_fraction.call()
-	var counts := [0, 0, 0, 0, 0, 0]
+	var counts := []
+	counts.resize(mms_count())
+	counts.fill(0)
 	var mms := _mms
 	# How far each detail reaches grows with what the machine can draw
 	# (GraphicsQuality.detail): faces and smooth bodies close up, simple
 	# figures far off, sooner in the browser.
-	var near := NEAR * GraphicsQuality.detail
-	var mid := MID * GraphicsQuality.detail
+	var reach: Array = []
+	for r in REACH:
+		reach.append(float(r) * GraphicsQuality.detail)
 	for w in traffic.walkers:
 		var pose := traffic.walker_pose(w, frac)
 		var p: Vector3 = Terrain.stand(pose[0])
 		if p.distance_to(eye) > FAR:
 			continue
 		var d := p.distance_to(eye)
-		var kind := figure(int(w.person)) * 3 + (2 if d < near else 1 if d < mid else 0)
+		var lod := 0
+		for r in reach.size():
+			if d < float(reach[r]):
+				lod = 4 - r
+				break
+		var kind := figure(int(w.person)) * 5 + lod
 		var mm: MultiMesh = mms[kind]
 		var n: int = counts[kind]
 		if n >= mm.instance_count:
@@ -172,6 +180,10 @@ static func skin_tone(person: int) -> Color:
 	return Color.WHITE
 
 
+func mms_count() -> int:
+	return _mms.size()
+
+
 ## Which figure a person is drawn with: about half the town each.
 static func figure(person: int) -> int:
 	return (hash([person, "figure"]) >> 3) & 1
@@ -192,11 +204,11 @@ static func build(person: int) -> Vector3:
 
 ## A person about 1.7 m tall: legs, arms, body and head, coloured by the
 ## shirt. Each arm swings with the opposite leg, as people walk.
-## The detail the shape helpers build at: 0 far, 1 middle, 2 close up.
-static var _lod := 1
+## The detail the shape helpers build at: 0 farthest to 4 closest.
+static var _lod := 2
 
 
-static func _person_mesh(kind := 0, lod := 1) -> Mesh:
+static func _person_mesh(kind := 0, lod := 2) -> Mesh:
 	# A person about 1.7 m tall in real proportions (step one away from
 	# toy blocks, Nathan 2026-10-25: "they currently look like Legos or
 	# Roblox"): tapered round limbs, a pelvis and a chest broader at the
@@ -236,7 +248,7 @@ static func _person_mesh(kind := 0, lod := 1) -> Mesh:
 	if kind == 1:
 		# Longer hair, down past the collar at the back.
 		_blob(st, Vector3(0.0, 1.55, 0.05), Vector3(0.085, 0.12, 0.06), hair, Vector2.ZERO, 8, 6)
-	if lod == 2:
+	if lod >= 3:
 		# Close up, a face: nose, ears, eyes, brows and mouth.
 		var dark := Color(0.08, 0.06, 0.05)
 		_blob(st, Vector3(0.0, 1.612, -0.101), Vector3(0.013, 0.022, 0.018), skin, Vector2.ZERO, 6, 4)
@@ -245,7 +257,7 @@ static func _person_mesh(kind := 0, lod := 1) -> Mesh:
 			_blob(st, Vector3(side * 0.031, 1.643, -0.09), Vector3(0.011, 0.007, 0.006), dark, Vector2.ZERO, 6, 4)
 			_blob(st, Vector3(side * 0.032, 1.665, -0.09), Vector3(0.017, 0.004, 0.007), hair, Vector2.ZERO, 6, 2)
 		_blob(st, Vector3(0.0, 1.578, -0.094), Vector3(0.02, 0.005, 0.006), Color(0.45, 0.22, 0.2), Vector2.ZERO, 6, 2)
-	if lod == 2:
+	if lod >= 3:
 		st.index()  # shared corners: smooth shading close up
 	st.generate_normals()
 	return st.commit()
@@ -255,7 +267,7 @@ static func _person_mesh(kind := 0, lod := 1) -> Mesh:
 ## `ra` and `rb` (x across, z front to back), capped at both ends.
 static func _limb(st: SurfaceTool, a: Vector3, b: Vector3, ra: Vector2, rb: Vector2, col: Color,
 		swing := Vector2.ZERO, sides := 6) -> void:
-	sides = [4, sides, sides * 2][_lod]
+	sides = [4, maxi(4, sides - 2), sides, sides * 3 / 2, sides * 2][_lod]
 	var ring_a := []
 	var ring_b := []
 	for i in sides:
@@ -273,8 +285,8 @@ static func _limb(st: SurfaceTool, a: Vector3, b: Vector3, ra: Vector2, rb: Vect
 ## A rounded blob (an ellipsoid) for heads, hair, hands and shoulders.
 static func _blob(st: SurfaceTool, c: Vector3, r: Vector3, col: Color, swing := Vector2.ZERO,
 		around := 8, up := 6) -> void:
-	around = [4, around, around * 2][_lod]
-	up = [2, up, up * 2][_lod]
+	around = [4, maxi(4, around - 2), around, around * 3 / 2, around * 2][_lod]
+	up = [2, maxi(2, up - 2), up, up * 3 / 2, up * 2][_lod]
 	for i in up:
 		var v0 := PI * i / up - PI * 0.5
 		var v1 := PI * (i + 1) / up - PI * 0.5
