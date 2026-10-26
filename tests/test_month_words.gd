@@ -18,6 +18,7 @@ const ALLOWED := [
 	"Month by month",  # date chart title: bars are calendar months
 	"years, %d months",  # town age is counted on the calendar
 	"A month passes in",  # date card: a calendar month takes about an hour
+	"One day and night each month",  # Display switch: the sky runs a day and night per calendar month
 	"Each bar is the end of a month",  # date chart note: calendar months
 	"1st of next month",  # charter: takes effect on the calendar's 1st
 	"1st of the next month",  # charter: same, other wording
