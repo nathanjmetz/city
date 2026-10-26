@@ -20,7 +20,7 @@ When a helper hits a wall it writes its question here and stops. That task waits
 
 Nothing is running. Every unfinished piece is saved on a branch. To restart one, read its diff against main first; the PR or branch says what's left.
 
-**Also merged tonight:** #557 green lights (8 to 12 cars a green), #558 real signal heads, #559 people of different sizes and colours, #560 fewer walkers, #561 county roads to the horizon draw solid (Nathan's grey dashed line), #562 walkers step to their own stride.
+**Also merged tonight:** #563 dirt farm lanes, #564 farms grow half as fast, #565 levels, needs panel, level arrows, lanes dirt to stone to paved, #566 levels 1-100. Earlier: #557 green lights (8 to 12 cars a green), #558 real signal heads, #559 people of different sizes and colours, #560 fewer walkers, #561 county roads to the horizon draw solid (Nathan's grey dashed line), #562 walkers step to their own stride.
 
 **Live:** #527 land preload, #528-#530 construction trucks and the builder's yard, #535, #537 crop calendar, #541 daylight, #542 trees, #544 town speed, #545 farm freeze, #546 farmsteads, #547 playtest list, #548 ground lines, #550 town life, #553 shared region (the host backs up the region before every update), #554 country road look.
 
@@ -95,6 +95,12 @@ A few helpers run at a time, never two on the same files.
      - Reproduce in Nathan's real save, or a town grown with the zone tool (PerfTown showed no construction trucks), before changing anything.
      - Checked on 2026-10-25 in the playtester's saved town on today's code: the only construction trips were crew pickups, with no flatbeds. Likely an old-version region or a shop's steel flatbed. Ask Nathan for a screenshot if he sees it again.
   3. "at some distances, the ground looks correct. at closer distances, there is a very clear lined pattern on it." Later: "The lines only happened in grass. Or Fields." In fields this may be the crop rows (crop_calendar.gd crop_look: 30 in rows, shown when a row spans over about 3 px); check whether they are too sharp. Grass should have no rows (rowed=0), so grass lines are a separate bug. A 60 m desktop shot of town lawns looked clean; ask for a screenshot and check the browser renderer. The near-ground grass texture or detail tiling. #548 fixed the shadow stripes, so this is a different cause. Compare TerrainView's near LOD shader and grass detail at 40–100 m.
+
+- Hubs boxed in by roads (Nathan, 2026-10-25): "when a hub with leader is 'trapped' inside a road area, it should nicely fill in that area up to the edge (sidewalk) so that it looks like its using its space well." Each hub kind keeps its own land: healthcare.gd (a rect in the hub's street frame: x0, x1, depth; `boxed`), plus mail, telecom, warehouses and civic_hubs (grid cells; `boxed` when `_best_piece` finds none). When boxed by roads, not by homes, extend the grounds (lawn, parking, landscaping) to the surrounding road edges. Never take land a lot stands on. Test with a hospital in a block enclosed by four streets.
+- Levels, next steps (spec: docs/spec-building-levels.md):
+  - Live: the panel shows Level 1-100 (stage milestones plus needs met), and arrows on stage changes.
+  - Next: needs actually drive level up and down in the sim, with hysteresis.
+  - Then small visual signs between milestones in house_builder (owner_care exists): yard extras by level (flowers, fence, swing set, deck, a pool around 60), paint freshness, porch lights, and decline signs.
 
 *Waits for Nathan*
 30. The real Grant County map from public data (big downloads; OpenStreetMap credit line).
