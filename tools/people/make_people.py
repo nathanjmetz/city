@@ -41,7 +41,7 @@ def find(kind, *names):
 import random
 
 COUNT = int(argv[2]) if len(argv) > 2 else 3
-TEX = 1024
+TEX = int(os.environ.get("TEX", "1024"))
 
 
 def person(i):
