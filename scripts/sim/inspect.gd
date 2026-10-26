@@ -798,9 +798,10 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 	var status := ""
 	var lv := needs(sim, key)
 	rows.push_front(["Level", "%d of 100   ·   needs met %d%%" % [lv.level, lv.met]])
-	if b.has("short") and int(b.get("level", 0)) > 0:
+	if b.has("short") and int(b.get("level", 0)) > 0 and not sim.services.has_utilities(key):
 		var left := maxi(0, Balance.LEVEL_DOWN_AFTER - (sim.tick_count - int(b.short)))
-		rows.insert(1, ["Losing a level", "No power or water: down a level in %d hours unless it comes back" % ceili(left / 60.0)])
+		var lacks := "power" if not sim.services.served.get(key, {}).get("power", false) else "water"
+		rows.insert(1, ["Losing a level", "No %s: down a level in %d hours unless it comes back" % [lacks, ceili(left / 60.0)]])
 	elif str(b.get("why", "")).begins_with("Lost a level"):
 		rows.insert(1, ["Latest", str(b.why)])
 	if lv.next != "":

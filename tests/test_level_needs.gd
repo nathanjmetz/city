@@ -49,7 +49,7 @@ func _init() -> void:
 	sim.tick_count += 60
 	sim._decline()
 	_check(int(sim.buildings[key].level) == 0, "two days without power and water: down a level")
-	_check(str(sim.buildings[key].why).begins_with("Lost a level"), "and the panel can say why")
+	_check(str(sim.buildings[key].why).begins_with("Lost a level: no power"), "and the panel can say why (%s)" % sim.buildings[key].why)
 	# Moving up needs most needs met.
 	var lv := Inspect.needs(sim, key)
 	_check(int(lv.met) < Balance.LEVEL_UP_MET, "with no power or water its needs are mostly unmet (%d%%)" % lv.met)

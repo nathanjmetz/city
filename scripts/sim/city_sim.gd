@@ -4025,7 +4025,9 @@ func _decline() -> void:
 	var changed := false
 	for key in keys:
 		var b: Dictionary = buildings[key]
-		if int(b.get("level", 0)) <= 0 or not lots.has(key):
+		# A protected old building is kept as it is (Heritage): its owner
+		# can't rebuild it, so it can't lose a level it couldn't win back.
+		if int(b.get("level", 0)) <= 0 or not lots.has(key) or heritage.protected(key):
 			b.erase("short")
 			continue
 		if services.has_utilities(key):
@@ -4036,7 +4038,7 @@ func _decline() -> void:
 			var nb := BuildingTypes.make(self, key, b, BuildingTypes.type_of(b), int(b.level) - 1)
 			nb.changed = tick_count
 			nb.short = tick_count
-			nb.why = "Lost a level: no power or water for two days."
+			nb.why = "Lost a level: no %s for two days." % ("power" if not services.served.get(key, {}).get("power", false) else "water")
 			buildings[key] = nb
 			changed = true
 	if changed:
