@@ -57,6 +57,9 @@ const BRAKE := 3.0
 const MAX_BRAKE := 8.0
 ## How far back (m) a driver on a green commits to going through.
 const GREEN_REACH := 25.0
+## Seconds at the line that count as a full stop (stop signs, all-way
+## stops, right on red): drivers stop for about half a second to a second.
+const FULL_STOP_S := 0.5
 ## Where cars stop for a railroad crossing, metres before the track's centre:
 ## 15 ft from the nearest rail plus half the gauge.
 const XING_STOP := 5.4
@@ -4367,7 +4370,7 @@ func _accel_on_way(car: Dictionary, list: Array, i: int) -> float:
 		return acc
 	var c := _conn_for(car)
 	if not car.commit:
-		if ds < 4.0 and car.v < 0.5 and car.arrive < 0.0:
+		if ds < 4.0 and car.v < 1.0 and car.arrive < 0.0:
 			car.arrive = time
 		# On a green, drivers carry on through rather than creeping up to
 		# the line as if it were red: they decide from well back (HCM
@@ -4482,7 +4485,7 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 		var bc: Dictionary = b.j if b.j != null else b.conn
 		if _conflicts(c, bc):
 			return false
-	var stopped: bool = car.arrive >= 0.0 and time - car.arrive >= 1.0
+	var stopped: bool = car.arrive >= 0.0 and time - car.arrive >= FULL_STOP_S
 	var mine_minor_turn: bool = c.turn == Turn.LEFT or c.turn == Turn.UTURN
 	match j.control:
 		Rule.SIGNAL:
