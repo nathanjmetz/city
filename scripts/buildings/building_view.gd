@@ -96,6 +96,7 @@ var _merge_due := {}  # Vector2i -> msec when it's merged
 var _merging := {}  # Vector2i -> true: being merged
 var _merge_again := {}  # Vector2i -> true: changed while merging
 var _retire := {}  # Vector2i -> [Node3D]: just built, drawn on their own until the next merge
+var _retire_far := {}  # Node3D -> Vector2i: just built in a far square, drawn on their own until it merges
 var _hidden := {}  # Vector2i -> how far its far versions are hidden (0 to 1)
 var _asked := {}  # Vector2i -> true: its buildings' arrays are asked for again
 var _eye := Vector3.ZERO
@@ -424,7 +425,9 @@ func _site_done(key: String, root: Node3D, parts: Array) -> void:
 			_retire[rec.sq] = []
 		_retire[rec.sq].append(root)
 	else:
-		root.queue_free()
+		# Far away: its own drawing stays until the far square it joined is
+		# merged again (a few seconds at most), so it never blinks out.
+		_retire_far[root] = rec.sq
 
 
 ## Files a finished building: its far version, its trees, and its full
@@ -540,6 +543,11 @@ func _rings(delta: float) -> void:
 			_forget_square(sq)
 	if _far_sq.has_dirty():
 		_far_sq.rebuild_some(int(MERGE_MS * 300.0))
+	for root in _retire_far.keys():
+		if not is_instance_valid(root) or not _far_sq.is_dirty(_retire_far[root]):
+			if is_instance_valid(root):
+				root.queue_free()
+			_retire_far.erase(root)
 	if _has_eye:
 		var tn := Perf.now()
 		_near.update(_eye)
