@@ -20,11 +20,13 @@
 - Change how long things take in game time (a house is still the same number of game days).
 - Change saves: the date saved is the same kind of date.
 
-## Things to settle while building (not Nathan's call)
-- How to go 20% faster without making cars look 20% faster: a sim tick is 0.1 s of traffic today, so raising ticks per second also speeds traffic up. Measure both ways.
-- Rush hour, school and shop hours still follow the clock's hours, which now pass about every 2 real minutes and no longer match the sky. Make sure nothing on screen ties a busy street to a dark sky in a way that looks wrong.
-- Tests that assume a speed of 2x or 4x, or the clock's hour shown in the top bar.
-- The Display menu's "Day and night" switch: off means always daylight.
+## Three kinds of time (Nathan 2026-10-26, settled while building)
+- **Real time**: minutes on your watch.
+- **Perceived time**: what you see. Anything that moves (people, cars, trains) runs in real time. Everything about the look of time follows one slow sky (SkyClock): sun, streetlights, lit windows, rush hour, the quiet night, weather.
+- **Progress time**: what the game counts. The calendar (Seasons): a day is 2 real minutes, a month (28-31 days) about an hour, a year about 12 hours. Money and timers count in days.
+- Named exceptions: building is shown sped up on purpose (a house in about 84 seconds). The town's own sim clock is unchanged (a sim day every 2.4 real minutes settles the budget), so the town builds and earns at the pace it always did. Lifecycles that should be seen in a session (family businesses and their signs, markers, tree growth, bank years, county fairs and other venues) count "pace years" (Seasons.pace_year: the old 29-minute year). A county fair's "July" is therefore not the calendar's July.
+- Seasons, crops, school terms, winter work holds and the charter's census follow the calendar. A city charter takes effect on the 1st of the next month (the law says January 1, which could be 12 hours away).
+- Towns saved before this change keep their date (CitySim.calendar_offset).
 
 ## Done when (Nathan can click through this himself)
 1. Start a town on the 1st: the sun rises. Play about 50 minutes: the sun sets near the end of the month.
