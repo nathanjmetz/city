@@ -4581,7 +4581,7 @@ func _accel_on_way(car: Dictionary, list: Array, i: int) -> float:
 			v0 = minf(v0, 5.0 + ds * 0.15)
 		var acc := _idm(car.v, v0, gap, vl)
 		if i == 0:
-			acc = minf(acc, _idm(car.v, v0, ds - 0.5, 0.0))
+			acc = minf(acc, _idm(car.v, v0, ds + JAM_GAP - 0.5, 0.0))
 			if ds < 4.0 and car.v < 1.0:
 				if not _replan(car, car.lane):
 					car.end_d = car.d + 1.0  # nowhere to go: pull over here
@@ -4623,7 +4623,9 @@ func _accel_on_way(car: Dictionary, list: Array, i: int) -> float:
 		if vt < car.v:
 			acc = minf(acc, _idm(car.v, v0, ds + JAM_GAP + vt * HEADWAY, vt))
 	else:
-		acc = minf(acc, _idm(car.v, v0, ds - 0.5, 0.0))
+		# Stop with the nose at the line: the line is not a car ahead, so
+		# no jam gap behind it (it left cars about 2.5 m short).
+		acc = minf(acc, _idm(car.v, v0, ds + JAM_GAP - 0.5, 0.0))
 	return acc
 
 
