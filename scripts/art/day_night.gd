@@ -138,6 +138,13 @@ static func load_settings() -> void:
 
 
 static func save_settings() -> void:
+	# The file also keeps the interface size (UiScale): keep what's there.
+	var data := {}
+	if FileAccess.file_exists(SETTINGS_PATH):
+		var old = JSON.parse_string(FileAccess.get_file_as_string(SETTINGS_PATH))
+		if old is Dictionary:
+			data = old
+	data.merge({"day_night": cycle_on, "seasons": seasons_on, "weather": Weather.on}, true)
 	var f := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify({"day_night": cycle_on, "seasons": seasons_on, "weather": Weather.on}))
+		f.store_string(JSON.stringify(data))

@@ -56,8 +56,10 @@ func show_step(step: int, own: bool, follows := "") -> void:
 	_slider.value = step
 	_quiet = false
 	_value.text = Policies.STEP_NAMES[slider_kind][step]
-	_value.add_theme_color_override("font_color", UiStyle.ACCENT if own and step != Policies.STANDARD else
-		(UiStyle.TEXT if own else UiStyle.MUTED))
+	# Plain ink, bolder when set away from Standard: coral read as a warning
+	# on "Well funded" (the critic, 2026-10-26). Faint when it follows another.
+	_value.add_theme_color_override("font_color", UiStyle.TEXT if own else UiStyle.MUTED)
+	_value.add_theme_font_override("font", Brand.ui(700 if own and step != Policies.STANDARD else 500))
 	_value.tooltip_text = Policies.STEP_TIPS[slider_kind][step] + ("" if own or follows == "" else
 		" (same as %s)" % follows)
 	_value.mouse_filter = Control.MOUSE_FILTER_PASS

@@ -9,6 +9,9 @@ extends Control
 var series := []
 ## Formats a value for the grid and the readout.
 var fmt: Callable = func(v: float) -> String: return str(roundi(v))
+## Optional: formats a grid value to show `step` (v, step), used when `fmt`
+## would print two grid lines the same.
+var fine: Callable
 ## Draws bars (one per point) instead of lines.
 var bars := false
 ## Dates under the chart show the hour too (hourly spans).
@@ -19,7 +22,7 @@ var from_zero := true
 var _hover := -1.0  # mouse x, or -1
 var _font: Font = Brand.ui(500)
 
-const PAD_L := 46.0
+const PAD_L := 54.0
 const PAD_B := 16.0
 const PAD_T := 6.0
 
@@ -87,16 +90,28 @@ func _draw() -> void:
 	# crosses it.
 	var step := _nice((hi - lo) / 3.0)
 	var g := ceilf(lo / step) * step
+	var grid := []
 	while g <= hi:
-		var y: float = Y.call(g)
-		draw_line(Vector2(plot.position.x, y), Vector2(plot.end.x, y), Color(Brand.LINE, 0.6), 1.0)
-		_text(Vector2(PAD_L - 6.0, y + 4.0), fmt.call(g), Brand.INK_FAINT, 10, false, true)
+		grid.append(g)
 		g += step
+	# Labels that never repeat (the critic, 2026-10-26: both grid lines of a
+	# money chart said "$1.49M", which read as a flat line): more decimals
+	# when two would print the same, and any repeat left unlabeled.
+	var labels := grid.map(func(v): return fmt.call(v))
+	if _repeats(labels) and fine.is_valid():
+		labels = grid.map(func(v): return fine.call(v, step))
+	var last := ""
+	for i in grid.size():
+		var y: float = Y.call(grid[i])
+		draw_line(Vector2(plot.position.x, y), Vector2(plot.end.x, y), Color(Brand.LINE, 0.6), 1.0)
+		if labels[i] != last:
+			_text(Vector2(PAD_L - 6.0, y + 4.0), labels[i], Brand.INK_MUTED, 11, false, true)
+		last = labels[i]
 	if lo < 0.0 and hi > 0.0:
 		var yz: float = Y.call(0.0)
 		draw_line(Vector2(plot.position.x, yz), Vector2(plot.end.x, yz), Brand.LINE_STRONG, 1.0)
-	_text(Vector2(plot.position.x, size.y - 3.0), when(int(t0), hourly), Brand.INK_FAINT, 10)
-	_text(Vector2(plot.end.x, size.y - 3.0), "Now", Brand.INK_FAINT, 10, false, true)
+	_text(Vector2(plot.position.x, size.y - 3.0), when(int(t0), hourly), Brand.INK_MUTED, 11)
+	_text(Vector2(plot.end.x, size.y - 3.0), "Now", Brand.INK_MUTED, 11, false, true)
 	# The lines (or bars).
 	for si in shown.size():
 		var s: Dictionary = shown[si]
@@ -111,9 +126,12 @@ func _draw() -> void:
 				var y1: float = Y.call(float(p[1]))
 				draw_rect(Rect2(x - w * 0.5, minf(y0, y1), w, absf(y1 - y0)), Color(col, 0.85))
 			continue
+		# Lines that sit on the same values draw a pixel or two apart, so
+		# one never hides another (Shops and Industry both at 0% hid Shops).
+		var nudge := (si - (shown.size() - 1) * 0.5) * 2.0
 		var line := PackedVector2Array()
 		for p in s.pts:
-			line.append(Vector2(X.call(float(p[0])), Y.call(float(p[1]))))
+			line.append(Vector2(X.call(float(p[0])), Y.call(float(p[1])) + nudge))
 		if si == 0 and shown.size() == 1:
 			# One line gets a soft fill under it.
 			var fill := line.duplicate()
@@ -155,6 +173,13 @@ func _draw() -> void:
 		draw_circle(Vector2(bx + 9.0, y - 4.0), 3.0, lines[i][2])
 		_text(Vector2(bx + 16.0, y), lines[i][0], Brand.INK, 11)
 		_text(Vector2(bx + box_w - 6.0, y), lines[i][1], Brand.INK, 11, false, true)
+
+
+static func _repeats(labels: Array) -> bool:
+	for i in range(1, labels.size()):
+		if labels[i] == labels[i - 1]:
+			return true
+	return false
 
 
 ## A round step near `x`: 1, 2 or 5 times a power of ten.

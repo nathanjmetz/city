@@ -48,6 +48,10 @@ var pending_invite := {}
 
 
 func _ready() -> void:
+	# The interface grows on big and sharp screens (UiScale), and long
+	# tooltips wrap, on the title screen and in town alike.
+	UiScale.watch(get_tree().root)
+	UiStyle.wrap_tooltips(get_tree())
 	_load_profile()
 	_migrate_old_save()
 	_read_page_invite()
@@ -234,7 +238,15 @@ func _notification(what: int) -> void:
 		leave_region()
 
 
+## Remembers your town's name and size for the title screen's "Continue"
+## line; written to the profile when you leave.
+func note_town(town: String, people: int) -> void:
+	profile.last_town = {"name": town, "people": people}
+
+
 func leave_region(stop_host := true) -> void:
+	if profile.has("last_town"):
+		save_profile()
 	if client:
 		client.leave()
 		client.queue_free()

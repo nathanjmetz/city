@@ -194,6 +194,16 @@ func _refresh(full: bool) -> void:
 				pts.append([int(r[0]), float(s.f.call(r))])
 		series.append({"name": s.name, "color": s.color, "pts": pts, "on": not _off.has(s.name)})
 	_chart.fmt = m.fmt
+	# Finer grid labels when the plain ones would repeat ($1.485M, $1.490M).
+	var plain := str(m.fmt.call(1.0))
+	var unit := "pct" if plain.ends_with("%") else ("money" if plain.contains("$") else "count")
+	_chart.fine = func(v: float, st: float) -> String:
+		match unit:
+			"pct":
+				return "%.1f%%" % v
+			"money":
+				return ("–$" if v < 0 else "$") + _short(absf(v), st)
+		return _short(v, st)
 	_chart.bars = m.get("bars", false)
 	_chart.hourly = span in ["month", "year"] and not _chart.bars
 	_chart.from_zero = m.get("from_zero", true)
@@ -202,18 +212,29 @@ func _refresh(full: bool) -> void:
 		for c in _legend.get_children():
 			c.queue_free()
 		_legend.visible = series.size() > 1
+		# A filled dot while the line shows, a hollow one when it's hidden
+		# (not the chosen-pill look: these are switches), and each line's
+		# latest value, so lines drawn on top of each other still read.
 		for s in series:
 			var b := _chip(s.name, "Click to hide or show this line")
-			b.icon = _dot(s.color)
+			b.flat = true
 			b.button_pressed = s.on
 			var nm: String = s.name
+			var col: Color = s.color
+			b.icon = _dot(col) if s.on else _ring(col)
 			b.toggled.connect(func(on):
+				b.icon = _dot(col) if on else _ring(col)
 				if on:
 					_off.erase(nm)
 				else:
 					_off[nm] = true
 				_refresh(false))
+			b.set_meta("series", nm)
 			_legend.add_child(b)
+	for b in _legend.get_children():
+		for s in series:
+			if b.get_meta("series", "") == s.name:
+				b.text = "%s  %s" % [s.name, m.fmt.call(float(s.pts[-1][1]))] if not s.pts.is_empty() else s.name
 	# The details, only when they change (so a click on one isn't lost).
 	var sig := _details_key()
 	if full or sig != _shown:
@@ -627,18 +648,31 @@ static func _dot(col: Color) -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
+## A hollow circle: a chart line that's hidden.
+static func _ring(col: Color) -> ImageTexture:
+	var img := Image.create(8, 8, false, Image.FORMAT_RGBA8)
+	for y in 8:
+		for x in 8:
+			var d := Vector2(x + 0.5 - 4.0, y + 0.5 - 4.0).length()
+			img.set_pixel(x, y, Color(col, clampf(4.0 - d, 0.0, 1.0) * clampf(d - 2.0, 0.0, 1.0)))
+	return ImageTexture.create_from_image(img)
+
+
 static func _thousands(n: int) -> String:
 	return CitySim.money_text(n)
 
 
-## 1,234 -> "1,234"; 52,300 -> "52.3k"; 1,250,000 -> "1.25M".
-static func _short(v: float) -> String:
+## 1,234 -> "1,234"; 52,300 -> "52.3k"; 1,250,000 -> "1.25M". With a
+## chart's grid `step`, enough decimals that a step shows (1.485M, 1.490M).
+static func _short(v: float, step := 0.0) -> String:
 	var a := absf(v)
 	var s := ""
 	if a >= 1000000.0:
-		s = "%.2fM" % (a / 1000000.0)
+		var d := 2 if step <= 0.0 else clampi(ceili(-log(step / 1000000.0) / log(10.0)), 2, 4)
+		s = ("%." + str(d) + "fM") % (a / 1000000.0)
 	elif a >= 10000.0:
-		s = "%.1fk" % (a / 1000.0)
+		var d := 1 if step <= 0.0 else clampi(ceili(-log(step / 1000.0) / log(10.0)), 1, 3)
+		s = ("%." + str(d) + "fk") % (a / 1000.0)
 	else:
 		s = CitySim.money_text(roundi(a))
 	return ("-" if v < 0 else "") + s
