@@ -507,7 +507,10 @@ static func _full_from() -> float:
 
 func _square_dist(sq: Vector2i) -> float:
 	var mid := Vector3((sq.x + 0.5) * FAR_CHUNK, 0.0, (sq.y + 0.5) * FAR_CHUNK)
-	mid.y = minf(_eye.y, Terrain.base_y(mid.x, mid.z))
+	# The ground is read where the square really lies: a neighbour's town is
+	# drawn moved over to its place on the land.
+	var shift := Terrain.shift_for(self)
+	mid.y = minf(_eye.y, Terrain.base_y(mid.x + shift.x, mid.z + shift.y))
 	return _eye.distance_to(mid)
 
 
