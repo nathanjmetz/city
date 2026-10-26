@@ -95,6 +95,7 @@ jobs:
           run_test tests/test_hud_quick.gd
           run_test tests/test_connections.gd
           run_test tests/test_road_tools.gd
+          run_test tests/test_detail_floor.gd
           run_test tests/test_grid_fill.gd
           run_test tests/test_move_it.gd
           run_test tests/test_road_variants.gd

@@ -100,11 +100,11 @@ const TIERS := [
 ## tools/detail_floor_shots.gd; docs/detail-floor.md says how to re-measure
 ## and when a floor may move closer. CityCamera never goes nearer.
 const DETAIL_FLOOR := [
-	{"dist": 40.0, "date": "2026-10-25", "why": "placeholder"},
-	{"dist": 40.0, "date": "2026-10-25", "why": "placeholder"},
-	{"dist": 40.0, "date": "2026-10-25", "why": "placeholder"},
-	{"dist": 40.0, "date": "2026-10-25", "why": "placeholder"},
-	{"dist": 40.0, "date": "2026-10-25", "why": "placeholder"},
+	{"dist": 40.0, "date": "2026-10-25", "why": "today's closest zoom (CityCamera.MIN_DIST); not yet measured per tier with tools/detail_floor_shots.gd"},
+	{"dist": 40.0, "date": "2026-10-25", "why": "today's closest zoom (CityCamera.MIN_DIST); not yet measured per tier with tools/detail_floor_shots.gd"},
+	{"dist": 40.0, "date": "2026-10-25", "why": "today's closest zoom (CityCamera.MIN_DIST); not yet measured per tier with tools/detail_floor_shots.gd"},
+	{"dist": 40.0, "date": "2026-10-25", "why": "today's closest zoom (CityCamera.MIN_DIST); not yet measured per tier with tools/detail_floor_shots.gd"},
+	{"dist": 40.0, "date": "2026-10-25", "why": "today's closest zoom (CityCamera.MIN_DIST); not yet measured per tier with tools/detail_floor_shots.gd"},
 ]
 
 ## The detail budget of each tier, read by every view with knob(). One

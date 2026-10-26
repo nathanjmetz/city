@@ -21,7 +21,7 @@ func _initialize() -> void:
 		_check(float(e.get("dist", 0.0)) <= last, "%s: no further out than the tier below it" % name)
 		last = float(e.get("dist", 0.0))
 		_check(str(e.get("date", "")).length() == 10 and str(e.get("date", "")).count("-") == 2, "%s: has a date (%s)" % [name, e.get("date", "")])
-		_check(str(e.get("why", "")).strip_edges().length() > 12, "%s: names the weakest thing" % name)
+		_check(str(e.get("why", "")).strip_edges().length() > 12, "%s: says why (the weakest thing, or that it isn't measured yet)" % name)
 
 	var q := GraphicsQuality.new()
 	GraphicsQuality.current = q
