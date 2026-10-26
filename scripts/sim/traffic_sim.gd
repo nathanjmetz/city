@@ -250,6 +250,7 @@ func step(sim: CitySim, rng: RandomNumberGenerator) -> void:
 	_tick = sim.tick_count
 	_sim = sim
 	time += DT
+	_step_actuated()
 	_find_xings()
 	_rest()
 	_step_flows()
@@ -579,6 +580,92 @@ func link_wave(from: int, to: int, v: float) -> bool:
 	return true
 
 
+## Smart lights (actuated signals, stage 3 of docs/spec-traffic-control.md):
+## sensors in the road. A light holds a green while cars keep coming (up to
+## ACT_MAX_G), changes once another way has someone waiting (after
+## ACT_MIN_G), and skips ways with no one there. node -> {ph, stage, t};
+## stage is 0 green, 1 yellow, 2 all-red. Saved, so copies stay in step.
+var actuated := {}
+const ACT_MIN_G := 7.0
+const ACT_MAX_G := 50.0
+const ACT_GAP_M := 45.0   # a car this close to the line still wants the green
+const ACT_CALL_M := 60.0  # a car this close on another way calls for it
+
+
+func set_actuated(node: int, on: bool) -> bool:
+	if not junctions.has(node) or junctions[node].control != Rule.SIGNAL:
+		return false
+	if on:
+		if not actuated.has(node):
+			actuated[node] = {"ph": 0, "stage": 0, "t": 0.0}
+	else:
+		actuated.erase(node)
+	return true
+
+
+func _waiting_on(node: int, ph: int, reach: float) -> bool:
+	var ways: Dictionary = junctions[node].phases[ph].ways
+	for ap in _approach.get(node, []):
+		if ways.has(int(ap.conn.wi)) and float(ap.ds) < reach:
+			return true
+	return false
+
+
+## One step of every smart light.
+func _step_actuated() -> void:
+	for n in actuated.keys():
+		if not junctions.has(n) or junctions[n].control != Rule.SIGNAL or junctions[n].phases.is_empty():
+			actuated.erase(n)
+			continue
+		var j: Dictionary = junctions[n]
+		var a: Dictionary = actuated[n]
+		var count: int = j.phases.size()
+		a.ph = int(a.ph) % count
+		a.t = float(a.t) + DT
+		var ph: Dictionary = j.phases[a.ph]
+		var start := 0.0 if a.ph == 0 else float(j.phases[a.ph - 1].end)
+		var yellow: float = ph.y_end - ph.g_end
+		match int(a.stage):
+			0:
+				var others := false
+				for k in range(1, count):
+					if _waiting_on(n, (a.ph + k) % count, ACT_CALL_M):
+						others = true
+						break
+				var mine := _waiting_on(n, a.ph, ACT_GAP_M)
+				if others and a.t >= ACT_MIN_G and (not mine or a.t >= ACT_MAX_G):
+					a.stage = 1
+					a.t = 0.0
+			1:
+				if a.t >= yellow:
+					a.stage = 2
+					a.t = 0.0
+			_:
+				if a.t >= 1.5:
+					# On to the next way with someone waiting (or the next one).
+					var nxt: int = (a.ph + 1) % count
+					for k in range(1, count + 1):
+						if _waiting_on(n, (a.ph + k) % count, ACT_CALL_M):
+							nxt = (a.ph + k) % count
+							break
+					a.ph = nxt
+					a.stage = 0
+					a.t = 0.0
+
+
+func actuated_to_dict() -> Dictionary:
+	var out := {}
+	for n in actuated:
+		out[str(n)] = {"ph": int(actuated[n].ph), "stage": int(actuated[n].stage), "t": snappedf(float(actuated[n].t), 0.01)}
+	return out
+
+
+func actuated_from_dict(d: Dictionary) -> void:
+	actuated.clear()
+	for k in d:
+		actuated[int(k)] = {"ph": int(d[k].ph), "stage": int(d[k].stage), "t": float(d[k].t)}
+
+
 func offsets_to_dict() -> Dictionary:
 	var out := {}
 	for n in offsets:
@@ -632,6 +719,11 @@ func light(node: int, way: int) -> int:
 	var j: Dictionary = junctions[node]
 	if j.control != Rule.SIGNAL:
 		return Light.GREEN
+	if actuated.has(node) and not j.phases.is_empty():
+		var a: Dictionary = actuated[node]
+		if not j.phases[int(a.ph) % j.phases.size()].ways.has(way):
+			return Light.RED
+		return [Light.GREEN, Light.YELLOW, Light.RED][clampi(int(a.stage), 0, 2)]
 	var t := fposmod(time + j.offset, j.cycle)
 	var start := 0.0
 	for ph in j.phases:

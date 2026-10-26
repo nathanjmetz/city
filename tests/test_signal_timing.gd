@@ -57,5 +57,38 @@ func _init() -> void:
 	wc.from_dict(JSON.parse_string(JSON.stringify(w.to_dict())))
 	wc.tick()
 	_check(is_equal_approx(wc.traffic.junctions[b].offset, jb.offset), "the wave survives a save and load")
+	# Smart lights: a lone car on the side street gets a green soon, not after
+	# a fixed cycle, and the state survives a save.
+	var sm := CitySim.new()
+	sm.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0], "road": RoadStyle.Type.AVENUE})
+	sm.apply({"type": "build_road", "start": [0, -300], "ctrl": [0, 0], "end": [0, 300], "road": RoadStyle.Type.AVENUE})
+	sm.tick()
+	var sn := sm.network.find_node_near(Vector3.ZERO, 1.0)
+	_check(sm.apply({"type": "set_actuated", "node": sn, "on": true}), "a light can be made smart")
+	var sj: Dictionary = sm.traffic.junctions[sn]
+	var srest: int = int(sm.traffic.actuated[sn].ph)
+	for i in 100:
+		sm.tick()
+	_check(int(sm.traffic.actuated[sn].ph) == srest and int(sm.traffic.actuated[sn].stage) == 0,
+		"with no one waiting it rests in green")
+	# Rest it on the north-south phase, then send a car east-west: the light
+	# must turn for it soon.
+	var ew: int = sj.phases[0].ways.keys()[0]
+	sm.traffic.actuated[sn] = {"ph": 1, "stage": 0, "t": 0.0}
+	_check(sm.traffic.light(sn, ew) == TrafficSim.Light.RED, "east-west starts on red")
+	var sid := sm.traffic.dispatch({"ref": "edge", "pos": Vector3(-290, 0, 0)}, {"ref": "edge", "pos": Vector3(290, 0, 0)}, "commute")
+	_check(sid != -1, "a car sets off east toward the light")
+	var swi := ew
+	var sgreen := -1.0
+	for i in 900:
+		sm.tick()
+		if sm.traffic.light(sn, swi) == TrafficSim.Light.GREEN:
+			sgreen = i * TrafficSim.DT
+			break
+	_check(sgreen >= 0.0 and sgreen < 40.0, "the waiting way gets its green soon (%.1f s)" % sgreen)
+	var smc := CitySim.new()
+	smc.from_dict(JSON.parse_string(JSON.stringify(sm.to_dict())))
+	_check(smc.traffic.actuated.has(sn) and int(smc.traffic.actuated[sn].ph) == int(sm.traffic.actuated[sn].ph),
+		"a smart light's state survives a save and load")
 	print("signal timing: %s" % ("all passed" if _fails == 0 else "%d failed" % _fails))
 	quit(1 if _fails > 0 else 0)
