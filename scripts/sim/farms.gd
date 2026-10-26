@@ -581,7 +581,10 @@ func decide(usable: Callable) -> bool:
 				# Rented ground it no longer works goes back to its owner.
 				if f.has("rent") and worst[0] in f.rent and not f.cells.any(func(c): return field_of(c) == worst[0]):
 					f.rent.erase(worst[0])
-		elif best != Vector2i.MAX and (f.cells.is_empty() or profit >= 0.0):
+		elif best != Vector2i.MAX and (f.cells.is_empty() or profit >= 0.0 and int(day) % 2 == 0):
+			# A going farm buys more ground only every other day, half the
+			# pace it once did (Nathan, 2026-10-25: "the hub leader growth
+			# should be slower by 50%"); a farm with no fields still starts.
 			# Ground it doesn't own yet is bought first, out of savings.
 			if _buy(f, field_of(best), profit):
 				f.cells.append(best)

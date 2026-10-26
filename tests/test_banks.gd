@@ -31,14 +31,16 @@ func _init() -> void:
 	# Farms buy and sell whole rows, so sizes step; compare them over the run.
 	var f0 := 0
 	var f1 := 0
-	for i in Farms.DECIDE_EVERY * 60:
+	# Farms buy ground every other day (half the old pace), so the run is
+	# twice as long as it was.
+	for i in Farms.DECIDE_EVERY * 120:
 		plain.tick()
 		lent.tick()
 		if i % Farms.DECIDE_EVERY == 0:
 			f0 += plain.farms.farms.values()[0].cells.size()
 			f1 += lent.farms.farms.values()[0].cells.size()
-	f0 /= 60
-	f1 /= 60
+	f0 /= 120
+	f1 /= 120
 	_check(f1 > f0, "the farm with a lender grows faster (%d fields against %d on average)" % [f1, f0])
 	_check(not b.loans.is_empty() and Banks.loans_total(b) > 0.0, "the farm borrowed ($%d)" % roundi(Banks.loans_total(b)))
 	_check(b.made > 0 and b.year.lent + float(b.get("last_year", {}).get("lent", 0.0)) > 0.0, "loans are on the books")
