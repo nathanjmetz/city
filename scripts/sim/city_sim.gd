@@ -555,6 +555,8 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 				buses.on_placed(self, sid)
 			if kind == Services.Kind.TAXI_COMPANY:
 				taxis.on_placed(self, sid)
+			if kind == Services.Kind.TRAFFIC_CENTER:
+				traffic.engineers = true  # counting from today; retiming once it opens
 			if kind == Services.Kind.WATER_UTILITY:
 				services.water.found(self, sid)
 				water_changed.emit()
@@ -789,6 +791,8 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 		"remove_service":
 			ok = services.buildings.has(int(cmd.id))
 			services.buildings.erase(int(cmd.id))
+			if ok and traffic.engineers and services.traffic_center() == -1:
+				traffic.engineers_gone()  # the engineers leave with their center
 			_lots_dirty = true
 		"place_hub", "upgrade_hub", "remove_hub":
 			ok = _hub_command(cmd)
@@ -1456,14 +1460,10 @@ func tick() -> void:
 		Perf.add("sim.engineer", t)
 	if tick_count % TICKS_PER_HOUR == 35 and not engineer.pending.is_empty() and engineer.carry_out(self):
 		_lots_dirty = true
-	if tick_count % TrafficSim.RETUNE_EVERY == 45:
+	if tick_count % TrafficSim.RETUNE_EVERY == 45 and traffic.engineers \
+			and construction.is_done("svc:%d" % services.traffic_center(), tick_count):
 		# The traffic management center's engineers retime the lights.
-		var on := services.traffic_center() != -1
-		if on:
-			traffic.retune(tick_count)
-		elif traffic.engineers:
-			traffic.engineers_gone()
-		traffic.engineers = on
+		traffic.retune(tick_count)
 	t = Perf.now()
 	if tick_count % WaterUtility.DECIDE_EVERY == Balance.ROUND_AT.water and not services.water.utilities.is_empty():
 		var res := services.water.decide(self, yard_usable)
@@ -4806,7 +4806,6 @@ func from_dict(d: Dictionary) -> void:
 	traffic.offsets_from_dict(d.get("offsets", {}))
 	traffic.actuated_from_dict(d.get("actuated", {}))
 	traffic.engineers_from_dict(d.get("signal_engineers", {}))
-	traffic.engineers = services.traffic_center() != -1
 	traffic.from_dict(d.get("traffic", {}))
 	people.from_dict(d.get("people", {}))
 	tick_count = int(d.get("tick", 0))

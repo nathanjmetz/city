@@ -45,6 +45,7 @@ func _drive(sim: CitySim, ticks: int) -> void:
 func _init() -> void:
 	var sim := CitySim.new()
 	sim.economy.money = 50_000_000
+	sim.charter.reached["city"] = 0  # a city: the center is open to build
 	sim.apply({"type": "build_road", "start": [-400, 0], "ctrl": [150, 0], "end": [700, 0], "road": RoadStyle.Type.AVENUE})
 	sim.apply({"type": "build_road", "start": [0, -300], "ctrl": [0, 0], "end": [0, 300], "road": RoadStyle.Type.AVENUE})
 	sim.apply({"type": "build_road", "start": [300, -300], "ctrl": [300, 0], "end": [300, 300], "road": RoadStyle.Type.AVENUE})
@@ -64,9 +65,13 @@ func _init() -> void:
 	sim.apply({"type": "set_green", "node": b, "phase": 0, "seconds": 40.0})
 	var mine: Array = sim.traffic.greens_at(b)
 	var site := Services.site_near(sim.network, Services.Kind.TRAFFIC_CENTER, Vector3(-200, 0, 40))
+	var town := CitySim.new()
+	_check(town.charter.locked(Services.Kind.TRAFFIC_CENTER) != "", "a small town can't build one yet (it comes with a city charter)")
 	_check(sim.apply({"type": "place_service", "kind": Services.Kind.TRAFFIC_CENTER, "pos": [site[0].x, site[0].z],
 		"dir": [site[1].x, site[1].z]}), "a traffic management center is built")
 	var tmc := sim.services.traffic_center()
+	_check(sim.traffic.engineers, "its engineers start counting at once")
+	sim.construction.sites.erase("svc:%d" % tmc)  # built and open (a test needn't wait the weeks)
 	var other := Services.site_near(sim.network, Services.Kind.TRAFFIC_CENTER, Vector3(500, 0, -40))
 	_check(sim.services.site_problem(sim.network, Services.Kind.TRAFFIC_CENTER, other[0], other[1]) != "", "one per town")
 	_drive(sim, 1500)
@@ -88,11 +93,36 @@ func _init() -> void:
 		copy.tick()
 	_check(JSON.stringify(copy.traffic.engineers_to_dict()) == JSON.stringify(sim.traffic.engineers_to_dict())
 		and copy.traffic.greens_at(a) == sim.traffic.greens_at(a), "and both copies retime alike")
-	# The center goes: the lights go back.
+	# The center goes: the lights go back at once, and a copy saved right
+	# after agrees.
 	_check(sim.apply({"type": "remove_service", "id": tmc}), "the center can be demolished")
+	var after := CitySim.new()
+	after.from_dict(JSON.parse_string(JSON.stringify(sim.to_dict())))
 	for i in TrafficSim.RETUNE_EVERY + 10:
 		sim.tick()
+		after.tick()
+	_check(not after.traffic.engineers and after.traffic.tuned.is_empty() and after.traffic.greens_at(a) == standard,
+		"a copy saved just after the demolition has standard timing too")
 	_check(sim.traffic.tuned.is_empty() and sim.traffic.greens_at(a) == standard, "without it, standard timing comes back (%s)" % [sim.traffic.greens_at(a)])
 	_check(sim.traffic.greens_at(b) == mine, "and the player's own timing stays")
+	# A green wave the player links stays theirs at both ends.
+	var w := CitySim.new()
+	w.economy.money = 50_000_000
+	w.charter.reached["city"] = 0
+	w.apply({"type": "build_road", "start": [-400, 0], "ctrl": [150, 0], "end": [700, 0], "road": RoadStyle.Type.AVENUE})
+	w.apply({"type": "build_road", "start": [0, -300], "ctrl": [0, 0], "end": [0, 300], "road": RoadStyle.Type.AVENUE})
+	w.apply({"type": "build_road", "start": [300, -300], "ctrl": [300, 0], "end": [300, 300], "road": RoadStyle.Type.AVENUE})
+	w.tick()
+	var wa := w.network.find_node_near(Vector3.ZERO, 1.0)
+	var wb := w.network.find_node_near(Vector3(300, 0, 0), 1.0)
+	w.apply({"type": "link_wave", "from": wa, "to": wb, "v": 15.6})
+	var ws := Services.site_near(w.network, Services.Kind.TRAFFIC_CENTER, Vector3(-200, 0, 40))
+	w.apply({"type": "place_service", "kind": Services.Kind.TRAFFIC_CENTER, "pos": [ws[0].x, ws[0].z], "dir": [ws[1].x, ws[1].z]})
+	w.construction.sites.erase("svc:%d" % w.services.traffic_center())
+	var cyc: float = w.traffic.junctions[wa].cycle
+	_drive(w, 1500)
+	_check(not w.traffic.tuned.has(wa) and not w.traffic.tuned.has(wb)
+		and is_equal_approx(w.traffic.junctions[wa].cycle, cyc) and is_equal_approx(w.traffic.junctions[wb].cycle, cyc),
+		"a green wave keeps its timing at both lights (%.1f s, %.1f s)" % [w.traffic.junctions[wa].cycle, w.traffic.junctions[wb].cycle])
 	print("traffic center: %s" % ("all passed" if _fails == 0 else "%d failed" % _fails))
 	quit(1 if _fails > 0 else 0)

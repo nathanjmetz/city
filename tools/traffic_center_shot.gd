@@ -8,6 +8,7 @@ func _demo_town() -> void:
 	var sim: CitySim = _main.sim
 	sim.apply({"type": "clear"})
 	sim.economy.money = 20_000_000
+	sim.charter.reached["city"] = 0  # a city: the center is open to build
 	sim.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0], "road": RoadStyle.Type.AVENUE})
 	sim.apply({"type": "build_road", "start": [60, -200], "ctrl": [60, 0], "end": [60, 200], "road": RoadStyle.Type.AVENUE})
 	var site := Services.site_near(sim.network, Services.Kind.TRAFFIC_CENTER, Vector3(0, 0, 40))

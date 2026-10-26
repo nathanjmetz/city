@@ -574,6 +574,11 @@ func link_wave(from: int, to: int, v: float) -> bool:
 	greens[to] = {}
 	for i in g.size():
 		greens[to][i] = float(g[i])
+		# A wave is the player's own timing at both ends, so the traffic
+		# engineers don't retime one end out of step with the other.
+		if not greens.has(from):
+			greens[from] = {}
+		greens[from][i] = float(g[i])
 	var travel: float = Vector2(a.pos.x - b.pos.x, a.pos.z - b.pos.z).length() / maxf(v, 1.0)
 	offsets[to] = snappedf(fposmod(a.offset - travel, maxf(a.cycle, 1.0)), 0.1)
 	_rebuild()
@@ -614,11 +619,26 @@ func retune(tick: int) -> void:
 			nodes.append(n)
 	nodes.sort()
 	for n in nodes:
-		if not junctions.has(n) or junctions[n].control != Rule.SIGNAL or greens.has(n):
-			tuned.erase(n)
+		# The player's own lights (timed, started at a set time, or in a
+		# green wave) and smart lights (sensors set their own greens) are
+		# left alone.
+		if not junctions.has(n) or junctions[n].control != Rule.SIGNAL or greens.has(n) \
+				or offsets.has(n) or actuated.has(n):
+			if tuned.erase(n):
+				_retime(n)
 			continue
 		var j: Dictionary = junctions[n]
-		var seen: Dictionary = demand.get(n, {})
+		if tuned.has(n) and tuned[n].size() != j.phases.size():
+			tuned.erase(n)  # its roads changed: start again from the counts
+		# Cars still waiting count too, so a way kept short of green shows
+		# its queue, not only the few it let through.
+		var seen: Dictionary = demand.get(n, {}).duplicate()
+		for ph in j.phases:
+			for wi in ph.ways:
+				for lane in int(ways[wi].lanes):
+					for car in _lanes.get(int(wi) * 8 + lane, []):
+						if not car.get("commit", false):
+							seen[wi] = int(seen.get(wi, 0)) + 1
 		var total := 0
 		var y := []
 		for ph in j.phases:
@@ -646,6 +666,9 @@ func retune(tick: int) -> void:
 		if had or tuned.has(n):
 			if _retime(n):
 				retimed[n] = tick
+	for n in retimed.keys():
+		if not tuned.has(n):
+			retimed.erase(n)
 	for n in demand.keys():
 		var seen: Dictionary = demand[n]
 		for wi in seen.keys():
@@ -658,6 +681,7 @@ func retune(tick: int) -> void:
 
 ## The engineers leave: every light they timed goes back.
 func engineers_gone() -> void:
+	engineers = false
 	var nodes := tuned.keys()
 	tuned.clear()
 	demand.clear()
@@ -674,27 +698,28 @@ func _retime(n: int) -> bool:
 		return false
 	var j: Dictionary = junctions[n]
 	var set_at: Dictionary = greens.get(n, tuned.get(n, {}))
+	# The same sums as _build_control, so a light retimed here and one
+	# rebuilt in a loaded copy agree to the last bit.
 	var t := 0.0
 	var changed := false
 	for i in j.phases.size():
 		var ph: Dictionary = j.phases[i]
 		var start := 0.0 if i == 0 else float(j.phases[i - 1].end)
-		var yellow: float = ph.y_end - ph.g_end
-		var clear: float = ph.end - ph.y_end
+		var yellow: float = ph.yl
 		var green: float = float(set_at.get(i, ph.g0))
 		if absf(green - (ph.g_end - start)) > 0.01:
 			changed = true
 		ph.g_end = t + green
 		ph.y_end = t + green + yellow
-		ph.end = t + green + yellow + clear
-		t = ph.end
+		ph.end = t + green + yellow + 1.5
+		t += green + yellow + 1.5
 	j.cycle = maxf(t, 1.0)
 	j.offset = fposmod(float(offsets[n]) if offsets.has(n) else n * 37.0, j.cycle)
 	return changed
 
 
 func engineers_to_dict() -> Dictionary:
-	var out := {"demand": {}, "tuned": {}, "retimed": {}}
+	var out := {"on": engineers, "demand": {}, "tuned": {}, "retimed": {}}
 	for n in demand:
 		var d := {}
 		for wi in demand[n]:
@@ -714,6 +739,7 @@ func engineers_from_dict(d: Dictionary) -> void:
 	demand.clear()
 	tuned.clear()
 	retimed.clear()
+	engineers = bool(d.get("on", false))
 	for k in d.get("demand", {}):
 		var m := {}
 		for wi in d.demand[k]:
@@ -1337,7 +1363,7 @@ func _build_control(n: int, segs: Array) -> void:
 			if set_at.has(j.phases.size()):
 				green = float(set_at[j.phases.size()])
 			j.phases.append({"ways": ph_ways, "g_end": t + green, "y_end": t + green + yellow,
-				"end": t + green + yellow + 1.5, "g0": 16.0 + 6.0 * g[0]})
+				"end": t + green + yellow + 1.5, "g0": 16.0 + 6.0 * g[0], "yl": yellow})
 			t += green + yellow + 1.5
 		j.cycle = maxf(t, 1.0)
 		j.offset = fposmod(float(offsets[n]) if offsets.has(n) else n * 37.0, j.cycle)

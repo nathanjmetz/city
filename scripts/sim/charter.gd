@@ -68,8 +68,9 @@ const UNLOCKS := {
 	"town": {"kinds": [Services.Kind.POLICE], "works": ["lagoon"], "powers": [
 		["A town council and clerk-treasurer", "permits"], ["A town marshal and police station", "police_station"],
 		["Town sewers, starting with a sewage lagoon", "water_utility"]]},
-	"city": {"kinds": [Services.Kind.BUS_DEPOT, Services.Kind.PARKING_GARAGE], "powers": [
-		["A mayor and city council", "permits"], ["A city bus line", "bus_depot"], ["Public parking garages", "parking_garage"]]},
+	"city": {"kinds": [Services.Kind.BUS_DEPOT, Services.Kind.PARKING_GARAGE, Services.Kind.TRAFFIC_CENTER], "powers": [
+		["A mayor and city council", "permits"], ["A city bus line", "bus_depot"], ["Public parking garages", "parking_garage"],
+		["A traffic management center to time the lights", "signal"]]},
 	"urban": {"powers": [["The Census counts the town as an urban area", "homes"]]},
 	"micro": {"powers": [["The town anchors its own micropolitan area", "people"]]},
 	"city2": {"powers": [["A second-class city charter, with a city clerk and a larger council", "permits"]]},
