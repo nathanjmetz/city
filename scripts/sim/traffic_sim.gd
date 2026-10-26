@@ -85,6 +85,10 @@ const CROSS_PEN := 6.0
 ## MUTCD design walking speed is 3.5 ft/s for crossings, people stroll faster).
 const MAX_WALKERS := 800
 const WALK_V := 1.4
+## The limits a view can lower (the title screen's town on a weak computer):
+## no new trips start past them. The simulation never changes them itself.
+var max_cars := MAX_CARS
+var max_walkers := MAX_WALKERS
 ## Share (percent) of short trips walked by people with a car at home.
 const SHORT_WALK_PCT := 25
 ## Big towns (Brawn, 2026-10-23): past this many residents, people's own
@@ -1600,7 +1604,7 @@ func _cancel(car: Dictionary) -> void:
 ## Trips follow the time of day: to work in the morning, home in the evening,
 ## to the shops in between. Factories send box trucks to the shops by day.
 func _spawn(sim: CitySim, rng: RandomNumberGenerator) -> void:
-	if cars.size() >= MAX_CARS or sim.stats.population == 0:
+	if cars.size() >= max_cars or sim.stats.population == 0:
 		return
 	var hour: int = sim.clock().hour
 	var rate := 0.15
@@ -1644,7 +1648,7 @@ func _spawn(sim: CitySim, rng: RandomNumberGenerator) -> void:
 ## again. Returns false if there's no route.
 func add_trip(a: Dictionary, b: Dictionary, rng: RandomNumberGenerator, kind := "",
 		purpose := "", cargo := {}) -> bool:
-	if cars.size() >= MAX_CARS:
+	if cars.size() >= max_cars:
 		return false
 	if purpose == "":
 		purpose = "commute"
@@ -2707,7 +2711,7 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 
 ## A parked vehicle with a trip pulls out if there's a gap in traffic.
 func _try_launch(car: Dictionary, lanes := {}) -> bool:
-	if cars.size() >= MAX_CARS or not _launch(car, lanes):
+	if cars.size() >= max_cars or not _launch(car, lanes):
 		return false
 	if not lanes.is_empty():
 		_lane_add(lanes, car)
@@ -3181,7 +3185,7 @@ func _rest() -> void:
 		car.erase("next_stop")
 		if back == "":
 			continue
-		if cars.size() >= MAX_CARS or not _send(car, back, "return", {}, {"report": false}, stop):
+		if cars.size() >= max_cars or not _send(car, back, "return", {}, {"report": false}, stop):
 			_due_at(car, _tick + 20)  # try again shortly
 			car.next = back
 			car.next_stop = stop
@@ -3222,15 +3226,15 @@ func go(pid: int, to_ref: String, purpose: String, stay: int) -> bool:
 	if not far and not away and not car.is_empty() \
 			and hash([pid, _sim.tick_count]) % 100 >= SHORT_WALK_PCT:
 		far = true
-	if not car.is_empty() and (far or fetch) and cars.size() < MAX_CARS:
+	if not car.is_empty() and (far or fetch) and cars.size() < max_cars:
 		var path := _walk_to_car(from_pl, car)
-		if path.is_empty():
+		if path.is_empty() or walkers.size() >= max_walkers:
 			return false
 		car.driver = pid
 		_walk(pid, path, {"drive": car.id, "to": to_ref, "purpose": purpose, "stay": stay})
 	else:
 		var path := _walk_between(from_pl, to_pl)
-		if path.is_empty() or walkers.size() >= MAX_WALKERS:
+		if path.is_empty() or walkers.size() >= max_walkers:
 			return false
 		_walk(pid, path, {"enter": to_ref, "stay": stay})
 	p.at = "travel"
@@ -3560,7 +3564,7 @@ func _door_out(pl: Dictionary) -> PackedVector3Array:
 ## the sidewalk to where the trail meets the street, along the trail for a
 ## stretch and back the same way. False if the trail doesn't come by.
 func stroll(pid: int) -> bool:
-	if _sim == null or not _sim.people.people.has(pid) or walkers.size() >= MAX_WALKERS:
+	if _sim == null or not _sim.people.people.has(pid) or walkers.size() >= max_walkers:
 		return false
 	var p: Dictionary = _sim.people.people[pid]
 	if p.at != "":
@@ -4061,7 +4065,7 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 			# Its road went, or was rebuilt and there's no way through now.
 			_waiting.erase(car)
 			_report(car, failed)
-		elif cars.size() < MAX_CARS:
+		elif cars.size() < max_cars:
 			if lanes.is_empty():
 				for other in cars:
 					_lane_add(lanes, other)
