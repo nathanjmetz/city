@@ -18,8 +18,23 @@ Written 2026-10-25 (task 12). Nathan's question: "Can trees actually grow in the
 | --- | --- | --- |
 | Under about 100 m | The full grown tree: limbs down to 2.5 cm, a leaf card at each twig | 5,000 to 12,000 |
 | About 100 to 270 m | The light grown tree: big limbs only, one big card per cluster of twigs | 800 to 2,600 |
-| Past that | The cheap card trees (TreeField), in each kind's real crown shape and size | about 300 |
+| About 270 to 530 m | The cheap card trees (TreeField), in each kind's real crown shape and size | about 300 |
+| 530 m to the woods' reach (700 m low down, up to 1,600 m from higher up) | The light card trees: a few big cards, fitted to the same crown | about 60 |
+| Wild trees past that, out to 3.5 km (2 km on Low, 2.6 km at most in the browser, 4.5 km on Cinematic) | The far woods (FarWoods): one quad facing the camera, the crown's size and colour, with a thin trunk | 2 |
 | From high up | The ground's painted canopy | 0 |
+
+**Trees to the horizon (2026-10-26).** Nathan: "it's pretty common to see a blank space a short distance ahead ... trees swell up out of the ground ... as I move around the trees, skip and flutter because they're changing drawing types." The wild woods used to stop at the cards' reach (700 m, 420 m on Low), shrinking toward that edge, so moving forward grew them up out of bare land; the edge was measured from a point ahead of the camera, so turning the camera grew and shrank them too; and each 256 m chunk switched from its full cards to its wider light cards all at once. Now every version of a tree stands at the same spot at the same size (the light cards are fitted to the full crown; the far quad is the crown's box), every hand-over is a dither by the tree's own distance from the camera (never from where it looks), the far woods carry every wild tree on out toward the haze, and a far tree drops out whole, each at its own distance, only where it is a few pixels across. The grown trees' lookup is aimed where a moving camera will be when it lands, so a fast camera no longer turns every grown tree back into a card. `tests/test_tree_lod.gd` checks the versions match and that a camera hovering at a hand-over never flips a tree; `tools/tree_lod_shot.gd` flies over the woods for pictures (`docs/tree-distance/`).
+
+What it costs (2026-10-26, M5 Max, 1280x720, `tools/tree_lod_shot.gd`: 24 s low flight at about 140 m/s from the woods into the demo town, then parked; before and after run back to back). The desktop renderer is held to 60 frames a second on this Mac, so its frame times only show dropped frames.
+
+| Setup | Frame ms while flying, average / 95th percentile | Draw calls (flying, median) | Triangles (flying) | Parked: frame ms, draw calls | Far trees |
+| --- | --- | --- | --- | --- | --- |
+| Desktop, High | 16.9 / 22.1 before, 17.2 / 22.7 after | 2,309 / 2,497 | 3.48 M / 3.75 M | 16.7, 2,711 / 16.7, 2,860 | 27,000 to 31,000 |
+| Desktop, Low | 16.0 / 17.0, 16.0 / 17.3 | 972 / 1,032 | 0.54 M / 0.56 M | 16.7, 1,496 / 16.7, 1,542 | 9,000 |
+| Browser renderer, Low (where the browser starts) | 12.1 / 19.6, 12.0 / 19.9 | 793 / 808 | 0.51 M / 0.53 M | 11.6, 799 / 10.8 to 12.9, 802 | 9,000 |
+| Browser renderer, High (its top) | 15.2 / 24.0, 17.2 / 26.4 | 1,614 / 1,705 | 1.52 M / 1.74 M | 12.5, 1,403 / 12.3 to 14.0, 1,454 | 18,000 |
+
+The far woods lay out a quarter chunk at a time, at most 1 ms a frame once the game is up (they may trail a fast camera at the horizon rather than slow it), and the loading screen waits for them only out to 1.5 km (about half a second more at the start). The extra triangles are mostly chunks drawing both their full and light cards across the hand-over. The browser at High costs about 2 ms more a frame while flying fast; at Low, where it starts, the cost is within run-to-run noise.
 
 The radii scale with the quality tier. The browser draws no full trees, and the light ones only from Medium up and nearer. A tree hands over from one level to the next with a dither, so nothing pops. A grown mesh is built on worker threads on the desktop, or in small slices on the main thread in the browser (each slice under about half a millisecond on this Mac; the grown trees get 1.5 ms of main-thread time a frame on the desktop and a tighter 1.0 ms in the browser). Meshes are kept by kind, variant and age bucket, up to 260; the ones drawn longest ago go first, and the ones in view stay (up to 520). Until a tree's mesh is ready, its card tree stands in. The bark and leaf shaders are got ready behind the loading screen, so the first grown tree on screen doesn't stall the game on the desktop (see below for the browser).
 

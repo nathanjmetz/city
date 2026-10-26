@@ -147,6 +147,7 @@ jobs:
           run_test tests/test_power.gd
           run_test tests/test_vegetation.gd
           run_test tests/test_tree_growth.gd
+          run_test tests/test_tree_lod.gd
           run_test tests/test_education.gd
           run_test tests/test_telecom.gd
           run_test tests/test_banks.gd
