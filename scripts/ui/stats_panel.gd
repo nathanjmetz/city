@@ -292,8 +292,8 @@ func _metrics() -> Array:
 			return [
 				{"name": "Cash", "fmt": dollars, "from_zero": false, "series": [
 					{"name": "Cash", "color": Brand.POSITIVE, "f": func(r): return r[c.call("money")]}]},
-				{"name": "Each month", "fmt": dollars, "from_zero": false, "tip": "What the town takes in less what it spends, a month", "series": [
-					{"name": "Up or down a month", "color": Brand.BRAND_MINT, "f": func(r): return r[c.call("net")]}]}]
+				{"name": "Each day", "fmt": dollars, "from_zero": false, "tip": "What the town takes in less what it spends, a day", "series": [
+					{"name": "Up or down a day", "color": Brand.BRAND_MINT, "f": func(r): return r[c.call("net")]}]}]
 		"date":
 			return [{"name": "Month by month" if _age_months() < 36 else "Year by year", "fmt": count, "bars": true, "series": [
 				{"name": "People", "color": Brand.ZONE_RES_LOW, "f": func(r): return r[c.call("pop")]},
@@ -325,7 +325,7 @@ func _headline() -> Array:
 		"money":
 			var net := sim.economy.monthly_net()
 			return [("–$" if sim.economy.money < 0 else "$") + _thousands(absi(sim.economy.money)),
-				"%s$%s a month" % ["+" if net >= 0 else "–", _thousands(absi(net))]]
+				"%s$%s a day" % ["+" if net >= 0 else "–", _thousands(absi(net))]]
 		"date":
 			var t := sim.clock()
 			return ["%s %d" % [["January", "February", "March", "April", "May", "June", "July", "August", "September",
@@ -405,7 +405,7 @@ func _details_population() -> void:
 		_note("Nobody yet. Zone homes along a road with power and water.")
 	_section("ROOM")
 	_line("Empty homes", _thousands(maxi(int(sim.stats.homes_free), 0)))
-	_line("Grown in the last month", _since("pop", sim.stats.population, 24 * HOUR, "").strip_edges())
+	_line("Grown in the last day", _since("pop", sim.stats.population, 24 * HOUR, "").strip_edges())
 	_link("Zone more homes", "Pick up the homes brush", func(): pick_zone.emit(ZoneMap.Zone.RESIDENTIAL))
 
 
@@ -496,14 +496,14 @@ func _details_demand() -> void:
 func _details_money() -> void:
 	_link("Open the Economy page", "Funding and growth for the town, its areas and hubs", func(): open_economy.emit())
 	var b: Dictionary = sim.economy.budget
-	_section("THIS MONTH IN")
+	_section("TODAY IN")
 	var inc: Dictionary = b.get("income", {})
 	for z in [ZoneMap.Zone.RESIDENTIAL, ZoneMap.Zone.COMMERCIAL, ZoneMap.Zone.INDUSTRIAL]:
 		_line(ZONE_WORD[z] + " taxes", "$" + _thousands(int(inc.get(z, 0))), Brand.POSITIVE)
 	for k in [["fees", "Fees and fares"], ["deals", "Deals with neighbors"], ["region", "Region projects"]]:
 		if int(b.get(k[0], 0)) > 0:
 			_line(k[1], "$" + _thousands(int(b[k[0]])), Brand.POSITIVE)
-	_section("THIS MONTH OUT")
+	_section("TODAY OUT")
 	for k in [["upkeep", "Roads"], ["services", "Services"], ["education", "Schools and colleges"],
 			["care", "Street care"], ["support", "Farm and company aid"], ["telecom", "Phone and internet"]]:
 		var v := int(b.get(k[0], 0))
@@ -512,7 +512,7 @@ func _details_money() -> void:
 	if int(b.get("deals", 0)) < 0:
 		_line("Deals with neighbors", "–$" + _thousands(absi(int(b.deals))), Brand.CRITICAL)
 	var net := sim.economy.monthly_net()
-	_line("Up or down a month", "%s$%s" % ["+" if net >= 0 else "–", _thousands(absi(net))], Brand.POSITIVE if net >= 0 else Brand.CRITICAL)
+	_line("Up or down a day", "%s$%s" % ["+" if net >= 0 else "–", _thousands(absi(net))], Brand.POSITIVE if net >= 0 else Brand.CRITICAL)
 
 
 func _details_date() -> void:

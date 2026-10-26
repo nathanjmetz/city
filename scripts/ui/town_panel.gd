@@ -164,7 +164,7 @@ func _rebuild() -> void:
 		b.add_theme_font_size_override("font_size", 12)
 		b.text = "Lift protection" if d.state == "protected" else "Protect it"
 		b.tooltip_text = ("Owners may rebuild again." if d.state == "protected" else
-			"Nothing there is torn down or built up. Land is worth more, visitors come, and the commission costs $%s a month." %
+			"Nothing there is torn down or built up. Land is worth more, visitors come, and the commission costs $%s a day." %
 			CitySim.money_text(Balance.HERITAGE_COMMISSION_MONTHLY))
 		var id := int(d.id)
 		var on: bool = d.state != "protected"

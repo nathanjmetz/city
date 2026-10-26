@@ -290,7 +290,7 @@ func _services() -> void:
 			var card := _plain_card()
 			card.get_child(0).add_child(_text("%s for %s" % [Interlocal.KINDS[a.service].name.capitalize(), _town(a.client)],
 				UiStyle.TEXT, 600))
-			card.get_child(0).add_child(_fact("money", "+$%s a month if they accept" % CitySim.money_text(roundi(a.price_per_month)),
+			card.get_child(0).add_child(_fact("money", "+$%s a day if they accept" % CitySim.money_text(roundi(a.price_per_month)),
 				UiStyle.MUTED))
 			_list.add_child(card)
 	if not sim.interlocal.deals.is_empty():
@@ -311,7 +311,7 @@ func _request(q: Dictionary, yes: String, no: String) -> Control:
 	col.add_child(UiStyle.label(q.leader, 11, UiStyle.MUTED))
 	col.add_child(_text(q.title, UiStyle.TEXT, 600))
 	var pays: bool = q.deal.get("pays", false)
-	col.add_child(_fact("money", ("Costs us $%s a month" if pays else "Brings in $%s a month") % CitySim.money_text(int(q.deal.fee)),
+	col.add_child(_fact("money", ("Costs us $%s a day" if pays else "Brings in $%s a day") % CitySim.money_text(int(q.deal.fee)),
 		UiStyle.MUTED))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
@@ -328,13 +328,13 @@ func _deal(d: Dictionary) -> Control:
 	var host: bool = d.role == "host"
 	col.add_child(_text(("We give %s %s" % [d.other_name, what]) if host else ("%s gives us %s" % [d.other_name, what]),
 		UiStyle.TEXT, 600))
-	col.add_child(_fact("money", "%s$%s a month" % ["+" if host else "–", CitySim.money_text(int(d.fee))], UiStyle.MUTED))
+	col.add_child(_fact("money", "%s$%s a day" % ["+" if host else "–", CitySim.money_text(int(d.fee))], UiStyle.MUTED))
 	if int(d.left) >= 0:
-		col.add_child(_text("Notice given: ends in about %d month%s" % [maxi(int(d.left), 1), "" if int(d.left) <= 1 else "s"],
+		col.add_child(_text("Notice given: ends in about %d day%s" % [maxi(int(d.left), 1), "" if int(d.left) <= 1 else "s"],
 			Brand.INK_FAINT, 500, 11))
 	else:
 		var b := _action("Give notice", false, func(): sim.apply({"type": "end_deal", "id": d.id}))
-		b.tooltip_text = "Ends the deal after %d months' notice, as the agreement says." % Balance.INTERLOCAL_NOTICE
+		b.tooltip_text = "Ends the deal after %d days' notice, as the agreement says." % Balance.INTERLOCAL_NOTICE
 		col.add_child(b)
 	return card
 

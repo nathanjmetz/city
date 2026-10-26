@@ -403,7 +403,7 @@ func _ask_districts(sim) -> void:
 			"title": "Protect the %s" % d.name,
 			"why": "%d of its buildings date from the town's early years and still stand together." % old,
 			"area": hull, "change": "Local historic district", "ask": "district",
-			"yes": "Nothing there is torn down or built up. Land there is worth up to %d%% more, visitors come to walk it, and the commission costs $%s a month." % [
+			"yes": "Nothing there is torn down or built up. Land there is worth up to %d%% more, visitors come to walk it, and the commission costs $%s a day." % [
 				roundi(Balance.HERITAGE_DISTRICT_LIFT * 100.0), CitySim.money_text(Balance.HERITAGE_COMMISSION_MONTHLY)],
 			"no": "Owners may rebuild as the town grows. The society may ask again in %d years." % Balance.HERITAGE_REASK_YEARS})
 		if req > 0:

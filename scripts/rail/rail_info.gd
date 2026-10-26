@@ -20,10 +20,10 @@ static func depot(sim: CitySim, id: int) -> Dictionary:
 		MailInfo._trait(float(lead.ambition) - float(lead.caution), ["careful with money", "steady", "bold"], -0.2, 0.2)]])
 	rows.append(["Money", "$%s" % CitySim.money_text(roundi(float(d.money)))])
 	var profit := rail.yearly_profit(id)
-	rows.append(["Last month", "$%s in, $%s out" % [CitySim.money_text(roundi(float(d.last.income))),
+	rows.append(["Yesterday", "$%s in, $%s out" % [CitySim.money_text(roundi(float(d.last.income))),
 		CitySim.money_text(roundi(float(d.last.costs)))]])
-	rows.append(["Profit", "%s$%s / year" % ["" if profit >= 0.0 else "-", CitySim.money_text(absi(roundi(profit)))]])
-	rows.append(["City subsidy", "$%s / month" % CitySim.money_text(int(d.subsidy))])
+	rows.append(["Profit", "%s$%s every 12 days" % ["" if profit >= 0.0 else "-", CitySim.money_text(absi(roundi(profit)))]])
+	rows.append(["City subsidy", "$%s / day" % CitySim.money_text(int(d.subsidy))])
 	rows.append(["Jobs", str(Balance.RAIL_DEPOT_JOBS + int(rail.fx(id, "jobs+")))])
 	for lid in rail._lines_of(id):
 		var l: Dictionary = rail.lines[lid]
@@ -36,7 +36,7 @@ static func depot(sim: CitySim, id: int) -> Dictionary:
 			extra = ", %d carloads shipped" % int(l.get("cars_total", l.cars))
 		rows.append([what, "%.1f km, %s%s" % [float(l.length) / 1000.0, state, extra]])
 	if d.pax:
-		rows.append(["Passenger trains", "every %d hours, about %s riders a month" % [
+		rows.append(["Passenger trains", "every %d hours, about %s riders a day" % [
 			roundi(Balance.RAIL_PAX_EVERY_HOURS * rail.fx(id, "pax_every*")), CitySim.money_text(roundi(float(d.riders)))]])
 	rows.append(["Loads delivered", str(int(d.get("delivered", 0)))])
 	rows.append_array(Inspect._development(sim, d, Rail.TREE, d.pos, maxf(profit, 0.0)))
@@ -50,10 +50,10 @@ static func depot(sim: CitySim, id: int) -> Dictionary:
 	if step == -1:
 		step = 0
 	if step < SUBSIDY_STEPS.size() - 1:
-		actions.append({"label": "More subsidy: $%s / month" % CitySim.money_text(SUBSIDY_STEPS[step + 1]),
+		actions.append({"label": "More subsidy: $%s / day" % CitySim.money_text(SUBSIDY_STEPS[step + 1]),
 			"cmd": {"type": "rail_subsidy", "id": id, "monthly": SUBSIDY_STEPS[step + 1]}, "enabled": true})
 	if step > 0:
-		actions.append({"label": "Less subsidy: $%s / month" % CitySim.money_text(SUBSIDY_STEPS[step - 1]),
+		actions.append({"label": "Less subsidy: $%s / day" % CitySim.money_text(SUBSIDY_STEPS[step - 1]),
 			"cmd": {"type": "rail_subsidy", "id": id, "monthly": SUBSIDY_STEPS[step - 1]}, "enabled": true})
 	actions.append({"label": "Close the railroad", "cmd": {"type": "remove_rail_depot", "id": id}, "enabled": true})
 	return {"title": d.name, "kind": "Railroad depot", "icon": "rail_depot", "ok": problems.is_empty() and d.state == "open",

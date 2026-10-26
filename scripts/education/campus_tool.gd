@@ -86,7 +86,7 @@ func _update_hint() -> void:
 		return
 	var k: Dictionary = Education.KINDS[kind]
 	var e: Dictionary = Education.spec(kind)
-	var text := "%s ($%s, $%s a month): place it beside a street with open land behind it. Its %s buys that land for new buildings as it fills." \
+	var text := "%s ($%s, $%s a day): place it beside a street with open land behind it. Its %s buys that land for new buildings as it fills." \
 		% [k.name, CitySim.money_text(int(e.cost)), CitySim.money_text(int(e.funding)), k.head.to_lower()]
 	if _problem != "":
 		text += "\n" + _problem

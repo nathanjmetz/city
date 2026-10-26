@@ -291,7 +291,7 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 			problems.append("Not beside a road, so it can't respond.")
 		status = "Working: covering %d homes" % covered if ok else "Not working"
 		rows.append_array(sim.buses.school_rows(id))
-	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(sim.services.upkeep_of(id))])
+	rows.append(["Upkeep", "$%s / day" % CitySim.money_text(sim.services.upkeep_of(id))])
 	rows.append(["Built for", "$%s" % CitySim.money_text(int(k.cost))])
 	var going_up := sim.construction.describe("svc:%d" % id, sim.tick_count)
 	if going_up != "":
@@ -325,11 +325,11 @@ static func _hospital(sim: CitySim, id: int) -> Dictionary:
 			CitySim.money_text(hc.regional_pop(sim))]],
 		["Ambulances", "%d (%d out on calls)" % [hc.ambulances(id), hc.busy(id)]],
 		["Calls answered", "%d, %d patients brought in" % [h.calls, h.treated]],
-		["Next county", hc.mutual_note() if hc.mutual_note() != "" else "Not needed this month"],
-		["Savings", "%s$%s (%s$%s / month)" % ["" if h.savings >= 0.0 else "-", CitySim.money_text(absi(roundi(h.savings))),
+		["Next county", hc.mutual_note() if hc.mutual_note() != "" else "Not needed today"],
+		["Savings", "%s$%s (%s$%s / day)" % ["" if h.savings >= 0.0 else "-", CitySim.money_text(absi(roundi(h.savings))),
 			"+" if net >= 0.0 else "-", CitySim.money_text(absi(roundi(net)))]],
 		["Built", ", ".join(built) if not built.is_empty() else "Just the county hospital"],
-		["City's hospital levy", "$%s / month" % CitySim.money_text(int(k.upkeep))],
+		["City's hospital levy", "$%s / day" % CitySim.money_text(int(k.upkeep))],
 	]
 	var status := "%s is looking for the next project" % a.name
 	var plan: String = h.plan
@@ -370,8 +370,8 @@ static func _farm(sim: CitySim, id: int, at := []) -> Dictionary:
 		["Crops this year", _crops(f)],
 		["Fields", "%d (%.0f acres)" % [f.cells.size(), acres]],
 		["Jobs", str(2 + f.cells.size() / Farms.CELLS_PER_WORKER + Livestock.jobs(f))],
-		["Profit", "%s$%s / year" % ["" if profit >= 0.0 else "-", CitySim.money_text(absi(roundi(profit)))]],
-		["Property tax to town", "$%s / month" % CitySim.money_text(roundi(acres * Farms.LAND_PER_ACRE
+		["Profit", "%s$%s every 12 days" % ["" if profit >= 0.0 else "-", CitySim.money_text(absi(roundi(profit)))]],
+		["Property tax to town", "$%s / day" % CitySim.money_text(roundi(acres * Farms.LAND_PER_ACRE
 			* Farms.AG_ASSESSMENT * sim.economy.tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0))],
 	]
 	# Its own money (Capital): what it has saved, owes, and rents.
@@ -389,9 +389,9 @@ static func _farm(sim: CitySim, id: int, at := []) -> Dictionary:
 		lease += sim.power.lease_in(Farms.cell_corners(f, c))
 	var rent := sim.power.farm_rent(id)
 	if rent > 0.0:
-		rows.insert(4, ["Solar rent", "$%s / year for fields leased to panels" % CitySim.money_text(roundi(rent))])
+		rows.insert(4, ["Solar rent", "$%s every 12 days for fields leased to panels" % CitySim.money_text(roundi(rent))])
 	if lease > 0.0:
-		rows.insert(4, ["Wind leases", "$%s / year (%d turbines in its fields)" % [CitySim.money_text(roundi(lease)),
+		rows.insert(4, ["Wind leases", "$%s every 12 days (%d turbines in its fields)" % [CitySim.money_text(roundi(lease)),
 			roundi(lease / Balance.POWER_WIND_LEASE)]])
 	# Livestock: what the farm keeps and why its leader chose it (Livestock).
 	var stock := Livestock.kind(f)
@@ -400,7 +400,7 @@ static func _farm(sim: CitySim, id: int, at := []) -> Dictionary:
 		var what := "%s %s" % [CitySim.money_text(n), Livestock.head_name(stock)] if n > 0 else "Planning a %s" % (
 			"beef herd" if stock == "cattle" else str(Balance.LIVESTOCK[stock].name).to_lower())
 		if Balance.LIVESTOCK.has(stock) and n > 0:
-			what += " (%s, $%s / year with manure)" % [str(Balance.LIVESTOCK[stock].name).to_lower(),
+			what += " (%s, $%s every 12 days with manure)" % [str(Balance.LIVESTOCK[stock].name).to_lower(),
 				CitySim.money_text(roundi(Livestock.yearly(f, sim.farms.day)))]
 		elif stock == "cattle" and n > 0:
 			what += " on %d acres of pasture" % roundi(Livestock.pasture_acres(f))
@@ -459,12 +459,12 @@ static func _industry(sim: CitySim, id: int) -> Dictionary:
 	var ref := "site:%d" % id
 	var rows := [
 		["%s%ss" % [k.pad.substr(0, 1).to_upper(), k.pad.substr(1)], str(s.pads.size())],
-		["Output", "%.1f truckloads of %s / month" % [rate, k.cargo]],
+		["Output", "%.1f truckloads of %s / day" % [rate, k.cargo]],
 		["Waiting in the yard", "%d loads" % floori(s.stock)],
 		["Trucks on the road", str(sim.logistics.trucks_for(ref))],
 		["Jobs", str(b.jobs_hq + b.jobs_pad * s.pads.size() + int(Agency.effect(s, Agency.TREES[s.kind], "jobs+")))],
-		["Profit", "%s$%s / year" % ["" if profit >= 0.0 else "-", CitySim.money_text(absi(roundi(profit)))]],
-		["Property tax to town", "$%s / month" % CitySim.money_text(roundi((float(k.cost) + Industry.PAD_VALUE * s.pads.size())
+		["Profit", "%s$%s every 12 days" % ["" if profit >= 0.0 else "-", CitySim.money_text(absi(roundi(profit)))]],
+		["Property tax to town", "$%s / day" % CitySim.money_text(roundi((float(k.cost) + Industry.PAD_VALUE * s.pads.size())
 			* sim.economy.tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0))],
 	]
 	var problems := []
@@ -504,8 +504,8 @@ static func _warehouse(sim: CitySim, id: int) -> Dictionary:
 		["Trucks on the road", str(sim.logistics.trucks_for(ref))],
 		["Dock doors", str(int(Warehouses.spec(w).docks))],
 		["Jobs", str(Warehouses.job_count(w))],
-		["Profit", "$%s / year" % CitySim.money_text(roundi(Warehouses.yearly_profit(w)))],
-		["Property tax to town", "$%s / month" % CitySim.money_text(roundi(Warehouses.value(w)
+		["Profit", "$%s every 12 days" % CitySim.money_text(roundi(Warehouses.yearly_profit(w)))],
+		["Property tax to town", "$%s / day" % CitySim.money_text(roundi(Warehouses.value(w)
 			* sim.economy.tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0))],
 	]
 	rows.append_array(_development(sim, w, Warehouses.TREE, w.pos, Warehouses.yearly_profit(w)))
@@ -562,7 +562,7 @@ static func _park(sim: CitySim, id: int) -> Dictionary:
 			"status": sim.construction.describe("park:%d" % id, sim.tick_count) if sim.construction.sites.has("park:%d" % id)
 				else "Opened for the visitors to town's events", "rows": [["Jobs", str(biz.jobs)],
 				["Assessed value", "$%s" % CitySim.money_text(int(biz.value))],
-				["Visitors from out of town", "%s a year" % CitySim.money_text(roundi(sim.parks.tourism.outside_year()))]],
+				["Visitors from out of town", "%s every 12 days" % CitySim.money_text(roundi(sim.parks.tourism.outside_year()))]],
 			"problems": []}
 	if sim.parks.tourism.venues.has(id):
 		status = _venue(sim, id, rows)
@@ -573,7 +573,7 @@ static func _park(sim: CitySim, id: int) -> Dictionary:
 		status = going_up
 	rows.append(["Land value nearby", "up to +%d%%" % roundi((float(a.value) * q + sim.parks.tree_lift(id, "value")) * 100.0)])
 	rows.append(["Happiness nearby", "up to +%d%%" % roundi((float(a.happy) * q + sim.parks.tree_lift(id, "happy")) * 100.0)])
-	rows.append(["Upkeep", "$%s / month" % CitySim.money_text(roundi(sim.parks.site_upkeep(id)))])
+	rows.append(["Upkeep", "$%s / day" % CitySim.money_text(roundi(sim.parks.site_upkeep(id)))])
 	return {"title": s.name, "kind": "Park" if s.kind == "park" else "Landmark  ·  " + k.name, "icon": k.icon,
 		"ok": true, "status": status, "rows": rows, "problems": []}
 
@@ -622,7 +622,7 @@ static func _trails(sim: CitySim, id: int, rows: Array) -> String:
 	if not t.plazas.is_empty() or "plaza" in t.hub.built:
 		rows.append(["Plazas", "%d downtown blocks%s" % [t.plazas.size(), ", one waiting on you" if not t.asked_plaza.is_empty() else ""]])
 	if t.walked_last > 0 or t.walked > 0:
-		rows.append(["Trips on foot or by bike", "%s last month" % CitySim.money_text(maxi(t.walked_last, t.walked))])
+		rows.append(["Trips on foot or by bike", "%s yesterday" % CitySim.money_text(maxi(t.walked_last, t.walked))])
 	if str(t.hub.why) != "":
 		rows.append(["Last move", t.hub.why])
 	rows.append_array(t.status(sim))
@@ -646,15 +646,15 @@ static func _power(sim: CitySim, id: int) -> Dictionary:
 		["Sold in town", "%s homes" % CitySim.money_text(int(sold.get("town", 0)))],
 		["Sold to the region", "%s homes" % CitySim.money_text(int(sold.get("export", 0)) + int(sold.get("neighbor", 0)))],
 		["Jobs", str(roundi(Balance.POWER_YARD_JOBS + float(k.jobs) * s.cells.size()))],
-		["Profit", "%s$%s / year" % ["" if profit >= 0.0 else "-", CitySim.money_text(absi(roundi(profit)))]],
+		["Profit", "%s$%s every 12 days" % ["" if profit >= 0.0 else "-", CitySim.money_text(absi(roundi(profit)))]],
 	]
 	var acres := Power._acres_leased(s)
 	if acres > 0.0:
-		rows.append(["Farmland leased", "%.0f acres ($%s / year)" % [acres,
+		rows.append(["Farmland leased", "%.0f acres ($%s every 12 days)" % [acres,
 			CitySim.money_text(roundi(acres * Balance.POWER_SOLAR_LEASE_PER_ACRE))]])
 	var leased := sim.power.leased(s)
 	if leased > 0:
-		rows.append(["Farm leases", "%d turbines in farmers' fields ($%s / year)" % [leased,
+		rows.append(["Farm leases", "%d turbines in farmers' fields ($%s every 12 days)" % [leased,
 			CitySim.money_text(roundi(leased * Balance.POWER_WIND_LEASE))]])
 	var ctx := sim.power_context()
 	rows += _development(sim, s, sim.power.tree_for(id, ctx), s.pos, profit)
@@ -870,7 +870,7 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 		rows.append(["From parks and landmarks", "+%d%%" % roundi(lift * 100.0)])
 	if not sim.mail.offices.is_empty():
 		rows.append(["Mail", "Delivered" if sim.mail.served(sim, sim.lots[key].seg) else "Not lately"])
-	rows.append(["Property tax", "$%s / month" % CitySim.money_text(roundi(sim.economy.building_tax(b, staffed, lift)
+	rows.append(["Property tax", "$%s / day" % CitySim.money_text(roundi(sim.economy.building_tax(b, staffed, lift)
 		* sim.land_factor(key) * sim.mail.lot_factor(sim, key) / 12.0))])
 	var mail := sim.mail.lot_problem(sim, key)
 	if mail != "":
@@ -972,7 +972,7 @@ static func _road(sim: CitySim, seg: int) -> Dictionary:
 		["Speed limit", "%d mph" % spec.mph],
 		["Cars on it now", str(cars)],
 		["Traffic flow", "%d%%" % roundi(flow * 100.0)],
-		["Upkeep", "$%s / month" % CitySim.money_text(roundi(Economy.road_upkeep(c, s.type)))],
+		["Upkeep", "$%s / day" % CitySim.money_text(roundi(Economy.road_upkeep(c, s.type)))],
 	]
 	var problems := []
 	if flow < 0.5:

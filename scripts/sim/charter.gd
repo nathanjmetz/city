@@ -426,7 +426,7 @@ func _plan(sim, kind: String) -> Dictionary:
 			return {"leader": "Landowners' petition", "title": "Incorporate as a town",
 				"why": "%s landowners signed a petition to make this settlement a town. It already gives %d of the 11 town services: %s." % [
 					_n(maxi(people / 10, 5)), given.size(), ", ".join(given)],
-				"yes": "The county commissioners review it. In a month it's a town, with a council, a marshal and a plan commission.",
+				"yes": "The county commissioners review it. In a day it's a town, with a council, a marshal and a plan commission.",
 				"no": "It stays a county settlement. Residents can ask again in a few years."}
 		"city_vote":
 			return {"leader": "Voters' petition", "title": "Hold a vote to become a city",

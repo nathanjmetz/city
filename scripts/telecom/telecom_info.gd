@@ -34,8 +34,8 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 		["Town signal", "%d%% (households with good service)" % roundi(sim.telecom.town_signal * 100.0)],
 		["Remote workers", CitySim.money_text(sim.telecom.remote_workers)],
 		["Plans ahead", "%d years" % roundi(Telecom.horizon(sim, id, c))],
-		["City grant", "$%s / month (%d%%)" % [CitySim.money_text(Telecom.monthly_grant(c)), roundi(levels[level] * 100.0)]],
-		["Surplus", "%s$%s / year" % ["" if net >= 0.0 else "-", CitySim.money_text(absi(roundi(net)))]],
+		["City grant", "$%s / day (%d%%)" % [CitySim.money_text(Telecom.monthly_grant(c)), roundi(levels[level] * 100.0)]],
+		["Surplus", "%s$%s every 12 days" % ["" if net >= 0.0 else "-", CitySim.money_text(absi(roundi(net)))]],
 		["Savings", "%s$%s" % ["" if c.savings >= 0.0 else "-", CitySim.money_text(absi(roundi(c.savings)))]],
 	]
 	if int(s.fixed) > 0:

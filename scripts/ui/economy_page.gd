@@ -99,7 +99,7 @@ func _ready() -> void:
 		v.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		grid.add_child(v)
 		_lines[entry[0]] = v
-	var note := UiStyle.label("Taxes run at normal rates on their own. One day settles a month.", 11, UiStyle.MUTED)
+	var note := UiStyle.label("Taxes run at normal rates on their own. The budget settles once a day.", 11, UiStyle.MUTED)
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.add_child(note)
 	body.add_child(_grant)
@@ -170,7 +170,7 @@ func refresh() -> void:
 	_cash.text = "$" + CitySim.money_text(e.money)
 	_cash.add_theme_color_override("font_color", UiStyle.TEXT if e.money >= 0 else BAD)
 	var net := e.monthly_net()
-	_net.text = "%s $%s this month" % ["▲ Up" if net >= 0 else "▼ Down", CitySim.money_text(absi(net))]
+	_net.text = "%s $%s today" % ["▲ Up" if net >= 0 else "▼ Down", CitySim.money_text(absi(net))]
 	_net.add_theme_color_override("font_color", GOOD if net >= 0 else BAD)
 	_short.text = "" if e.money >= 0 else \
 		"Money is short. The town can't afford new hubs, and its own hubs won't take more land, until it's back in the black."
@@ -191,7 +191,7 @@ func refresh() -> void:
 		"Next grant: $%s at %s people" % [CitySim.money_text(Economy.MILESTONES[e.milestone][1]),
 		CitySim.money_text(Economy.MILESTONES[e.milestone][0])]
 	var sa := sim.street_age
-	_repaved.text = "Resurfacing worn-out streets: $%s this past year. Streets last about %d years, so a fast-growing town meets them all at once." % [
+	_repaved.text = "Resurfacing worn-out streets: $%s in the last 12 days. Streets last about %d years, so a fast-growing town meets them all at once." % [
 		CitySim.money_text(sa.paid_this_year()), Balance.STREET_LIFE_YEARS]
 	_due.set_years(sa.forecast)
 	var who := character(sim.culture)
@@ -399,16 +399,16 @@ func hub_name(key: String) -> String:
 			var s: Dictionary = sim.industry.sites[id]
 			return "%s %d  ·  %d %ss" % [Industry.KINDS[s.kind].name, id, s.pads.size(), Industry.KINDS[s.kind].pad]
 		"service":
-			return "%s %d  ·  $%s a month" % [Services.KINDS[sim.services.buildings[id].kind].name, id,
+			return "%s %d  ·  $%s a day" % [Services.KINDS[sim.services.buildings[id].kind].name, id,
 				CitySim.money_text(sim.services.upkeep_of(id))]
 		"bus_depot":
-			return "Bus depot %d  ·  $%s a month" % [id, CitySim.money_text(int(sim.services.buildings[id].get("subsidy", 0)))]
+			return "Bus depot %d  ·  $%s a day" % [id, CitySim.money_text(int(sim.services.buildings[id].get("subsidy", 0)))]
 		"water":
 			var u: Dictionary = sim.services.water.utilities[id]
-			return "%s Water and Sewer  ·  $%s a month" % [str(u.name).get_slice(" ", 1), CitySim.money_text(int(u.subsidy))]
+			return "%s Water and Sewer  ·  $%s a day" % [str(u.name).get_slice(" ", 1), CitySim.money_text(int(u.subsidy))]
 		"post_office":
 			var h: Dictionary = sim.mail.offices[id]
-			return "Post office %d  ·  $%s a month" % [id, CitySim.money_text(int(Balance.MAIL_FUNDING[h.funding].monthly))]
+			return "Post office %d  ·  $%s a day" % [id, CitySim.money_text(int(Balance.MAIL_FUNDING[h.funding].monthly))]
 		"power":
 			var p: Dictionary = sim.power.sites[id]
 			var k: Dictionary = Power.PLANTS[p.plant]
@@ -421,19 +421,19 @@ func hub_name(key: String) -> String:
 		"taxi":
 			return "Taxi company %d" % id
 		"telecom":
-			return "Phone company %d  ·  $%s a month" % [id, CitySim.money_text(Telecom.monthly_grant(sim.telecom.companies[id]))]
+			return "Phone company %d  ·  $%s a day" % [id, CitySim.money_text(Telecom.monthly_grant(sim.telecom.companies[id]))]
 		"hub":
-			return "%s %d  ·  $%s a month" % [CivicHubs.KINDS[sim.hubs.hubs[id].kind].name, id,
+			return "%s %d  ·  $%s a day" % [CivicHubs.KINDS[sim.hubs.hubs[id].kind].name, id,
 				CitySim.money_text(sim.hubs.cost_of(id))]
 		"park":
-			return "%s  ·  $%s a month" % [sim.parks.sites[id].name, CitySim.money_text(roundi(sim.parks.site_upkeep(id)))]
+			return "%s  ·  $%s a day" % [sim.parks.sites[id].name, CitySim.money_text(roundi(sim.parks.site_upkeep(id)))]
 		"campus":
 			var c: Dictionary = sim.education.campuses[id]
-			return "%s %d  ·  $%s a month" % [Education.KINDS[c.kind].name, id,
+			return "%s %d  ·  $%s a day" % [Education.KINDS[c.kind].name, id,
 				CitySim.money_text(Education.monthly_funding(c))]
 		"hospital":
 			var h: Dictionary = sim.healthcare.hubs.get(id, {})
-			return "%s  ·  $%s a month" % [h.get("name", "Hospital %d" % id), CitySim.money_text(sim.services.upkeep_of(id))]
+			return "%s  ·  $%s a day" % [h.get("name", "Hospital %d" % id), CitySim.money_text(sim.services.upkeep_of(id))]
 		"bank":
 			var b: Dictionary = sim.banks.banks[id]
 			return "%s %d  ·  %s" % [Banks.KINDS[b.kind].name, id, {"well": "well run", "adequate": "doing all right",

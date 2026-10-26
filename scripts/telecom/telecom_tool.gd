@@ -85,7 +85,7 @@ func _process(_delta: float) -> void:
 func _update_hint() -> void:
 	if kind == "":
 		return
-	var text := "Phone company ($%s, $%s a month grant): place its central office beside a street. Its manager strings fiber and puts up cell towers where they pay off, densest streets first." \
+	var text := "Phone company ($%s, $%s a day grant): place its central office beside a street. Its manager strings fiber and puts up cell towers where they pay off, densest streets first." \
 		% [CitySim.money_text(Balance.TELECOM_COST), CitySim.money_text(Balance.TELECOM_GRANT)]
 	if _problem != "":
 		text += "\n" + _problem

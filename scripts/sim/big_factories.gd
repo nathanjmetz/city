@@ -525,7 +525,7 @@ func _decide(sim: CitySim, id: int, util: float, profit: float) -> void:
 				f.busy = 0
 				f.boxed = false
 				f.grown = today(sim)
-				f.why = "Busy for months, so it saved up and built %s." % ["a second line", "a third line"][int(f.level) - 1]
+				f.why = "Busy for days, so it saved up and built %s." % ["a second line", "a third line"][int(f.level) - 1]
 				f.changed = true
 			else:
 				f.why = "Busy, and saving up for another line."
@@ -548,7 +548,7 @@ func _decide(sim: CitySim, id: int, util: float, profit: float) -> void:
 				f.busy = 0
 				f.boxed = false
 				f.grown = today(sim)
-				f.why = "Busy for months, so it bought the land right behind it (part on a loan)."
+				f.why = "Busy for days, so it bought the land right behind it (part on a loan)."
 				f.changed = true
 			else:
 				_ask_permit(sim, id, poly, price)

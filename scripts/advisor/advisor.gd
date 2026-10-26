@@ -72,9 +72,9 @@ static func _problems(sim: CitySim, out: Array) -> void:
 	elif net < 0:
 		var months := e.money / float(-net)
 		if months < 6.0:
-			_add(out, "running_low", Kind.PROBLEM, "Money's going out faster than it comes in. At this rate it's gone in about %d months (a day is a month). The Economy page is the place to peek." % maxi(1, int(months)))
+			_add(out, "running_low", Kind.PROBLEM, "Money's going out faster than it comes in. At this rate it's gone in about %d days. The Economy page is the place to peek." % maxi(1, int(months)))
 		elif months < 24.0 and s.population > 0:
-			_add(out, "spending", Kind.HEADS_UP, "We're spending a bit more than we take in, about $%s a month. Nothing to fret over yet, but worth a look at the Economy page sometime." % CitySim.money_text(-net))
+			_add(out, "spending", Kind.HEADS_UP, "We're spending a bit more than we take in, about $%s a day. Nothing to fret over yet, but worth a look at the Economy page sometime." % CitySim.money_text(-net))
 
 	var zoned := not sim.zones.cells.is_empty()
 	if sim.services.yard() == -1 and FirstTown.has_streets(sim):

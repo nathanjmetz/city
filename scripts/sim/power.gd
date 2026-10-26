@@ -876,7 +876,7 @@ func farmland(sim: CitySim, id: int) -> bool:
 	var owner: String = sim.families.name_of("farm:%d" % farm_id) if farm_id != -1 else ""
 	sim.permits.file(sim, {"hub": "power", "hub_id": id, "leader": s.leader.name,
 		"title": "Solar panels on %d acres of farmland" % roundi(acres),
-		"why": "%s has run out of open ground next to the panels. %s would lease the field for $%s an acre a year instead of growing %s." % [
+		"why": "%s has run out of open ground next to the panels. %s would lease the field for $%s an acre every 12 days instead of growing %s." % [
 			s.leader.name, owner if owner != "" else "The farmer", CitySim.money_text(roundi(Balance.POWER_SOLAR_LEASE_PER_ACRE)),
 			str(sim.farms.farms[farm_id].crop) if farm_id != -1 else "crops"],
 		"change": "Farmland to solar panels", "area": outline, "per_m2": 0,
