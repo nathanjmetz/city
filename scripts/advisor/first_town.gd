@@ -56,7 +56,7 @@ static func plan() -> Array:
 static func current(sim: CitySim) -> String:
 	if not has_streets(sim):
 		return "streets"
-	if sim.services.yard() == -1:
+	if sim.services.yard() == -1 and not past_yard(sim):
 		return "yard"
 	if utility_placed(sim, "power").is_empty():
 		return "power"
@@ -71,6 +71,16 @@ static func current(sim: CitySim) -> String:
 	if int(sim.stats.population) <= 0:
 		return "builders"
 	return "done"
+
+
+## True once the player has gone on without a builder's yard: power or
+## water placed, homes zoned or anything built. Builders from out of town
+## build without one, so the step is skipped rather than kept on screen for
+## good (the critic, 2026-10-26: "Pick your builder's yard" stayed up two
+## game years while 459 buildings went up).
+static func past_yard(sim: CitySim) -> bool:
+	return not utility_placed(sim, "power").is_empty() or not utility_placed(sim, "water").is_empty() \
+		or has_homes_zoned(sim) or not sim.buildings.is_empty()
 
 
 ## Street crossings in town (nodes where three or more roads meet).

@@ -299,7 +299,10 @@ func _fill() -> void:
 				_say("Click beside a street. Its crews and concrete trucks build your houses from here: green roads are close enough.", "")
 			var yat := FirstTown.yard_spot(sim, _grid_middle())
 			if yat != Vector3.INF:
-				_ground.append(["ring", yat])
+				# The spot glows only once there's something to place: before
+				# that the arrow is on the button, not on bare ground.
+				if st.kind == yk:
+					_ground.append(["ring", yat])
 				_glide("yard", yat, 300.0)
 		"power", "water":
 			var kind: int = Services.Kind.POWER_FEED if _step == "power" else Services.Kind.WELL
@@ -314,7 +317,8 @@ func _fill() -> void:
 				_say("Click beside a street. A well and pump house covers about 650 homes.", "")
 			var at := FirstTown.site_spot(sim, _step, _grid_middle())
 			if at != Vector3.INF:
-				_ground.append(["ring", at])
+				if st.kind == kind:
+					_ground.append(["ring", at])
 				_glide(_step, at, 300.0)
 		"power_wait", "water_wait", "builders":
 			var c := FirstTown.crew(sim, _step)
@@ -360,7 +364,18 @@ func _goal_number() -> int:
 	return clampi(n, 1, FirstTown.plan().size())
 
 
+## The middle of the player's streets: their crossings once there are some
+## (a grid laid somewhere other than the suggested one put the yard's ring
+## by the highway, the critic 2026-10-26), else the suggested grid's.
 func _grid_middle() -> Vector3:
+	var sum := Vector3.ZERO
+	var n := 0
+	for id in sim.network.nodes:
+		if sim.network.segments_at(id).size() >= 3:
+			sum += sim.network.nodes[id]
+			n += 1
+	if n >= FirstTown.JUNCTIONS:
+		return Vector3(sum.x / n, 0.0, sum.z / n)
 	if _spot.is_empty():
 		return Vector3(sim.streets.main_at.x, 0.0, sim.streets.main_at.y)
 	return (_spot[0] + _spot[1]) * 0.5

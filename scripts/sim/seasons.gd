@@ -61,8 +61,13 @@ static func look(m: float) -> Dictionary:
 	var autumn := _ramp(y, 8.8, 9.6) * (1.0 - _ramp(y, 10.6, 11.0))
 	var bare := _ramp(y, 10.2, 10.8) if y > 6.0 else 1.0 - _ramp(y, 3.2, 3.9)
 	var spring := _ramp(y, 3.2, 3.8) * (1.0 - _ramp(y, 5.0, 5.8))
-	# Lawns brown off after the first hard frosts and green up in April.
-	var dry := _ramp(y, 9.6, 10.4) if y > 6.0 else 1.0 - _ramp(y, 2.8, 3.6)
+	# Cool-season grass (fescue, bluegrass) stays green into December in
+	# Indiana: early November's frosts only touch it, it goes dormant in the
+	# first half of December and greens up in April (the critic, 2026-10-26:
+	# browning from mid-October made the town read as desert for 4.5
+	# months). Shaders turn this into each kind of grass's own look: town
+	# lawns only go a muted olive.
+	var dry := maxf(0.35 * _ramp(y, 10.0, 10.6), _ramp(y, 11.0, 11.5)) if y > 6.0 else 1.0 - _ramp(y, 2.8, 3.6)
 	dry = maxf(dry, 0.3 * _ramp(y, 6.8, 7.4) * (1.0 - _ramp(y, 8.4, 9.0)))  # late-summer heat
 	return {"snow": snow, "autumn": autumn, "bare": bare, "spring": spring, "dry": dry}
 

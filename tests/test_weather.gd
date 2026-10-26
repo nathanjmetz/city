@@ -23,6 +23,11 @@ func _init() -> void:
 	var days := {}
 	var max_rain := 0.0
 	var fair := 0
+	var grey_days := 0
+	var partly_days := 0
+	var day_hours := 0
+	var grey_hours := 0
+	var a_fog := {}
 	for y in 10:
 		for m in range(1, 13):
 			for d in range(1, 29):
@@ -30,8 +35,14 @@ func _init() -> void:
 				var wet := false
 				var flakes := false
 				var mist := false
+				var day_cover := 0.0
 				for h in 24:
 					var c := Weather.conditions({"year": y, "month": m, "day": d, "hour": h, "minute": 30.0})
+					if h >= 8 and h <= 18:
+						day_cover += float(c[0])
+						day_hours += 1
+						if float(c[0]) >= 0.7:
+							grey_hours += 1
 					max_rain = maxf(max_rain, float(c[1]))
 					if float(c[1]) > 0.0:
 						if float(c[3]) > 0.5:
@@ -41,8 +52,14 @@ func _init() -> void:
 					if float(c[2]) > 0.0:
 						mist = true
 						_fog_hours[h] = true
+						if a_fog.is_empty() and y > 0:
+							a_fog = {"year": y, "month": m, "day": d, "hour": h, "minute": 30.0}
 					if h == 12 and float(c[0]) < 0.5:
 						fair += 1
+				if day_cover / 11.0 >= 0.65:
+					grey_days += 1
+				elif day_cover / 11.0 >= 0.3:
+					partly_days += 1
 				if wet:
 					rainy[m] = int(rainy.get(m, 0)) + 1
 				if flakes:
@@ -64,6 +81,30 @@ func _init() -> void:
 	var all := 10 * 12 * 28
 	# Indianapolis: about half its days clear or partly cloudy.
 	_check(fair > all * 0.4 and fair < all * 0.65, "about half the days are fair at noon (%d of %d)" % [fair, all])
+	# Indiana: about 40-45% of days mostly cloudy, with brighter partly
+	# cloudy days between (the critic, 2026-10-26: 53% of daytime hours were
+	# overcast, which buried the town's colour).
+	var grey_share := float(grey_days) / all
+	_check(grey_share > 0.37 and grey_share < 0.47, "about 40-45%% of days are mostly cloudy (%.2f)" % grey_share)
+	_check(float(partly_days) / all > 0.18, "partly cloudy days come between (%.2f)" % (float(partly_days) / all))
+	var grey_hour_share := float(grey_hours) / day_hours
+	_check(grey_hour_share < 0.47, "under half the daytime hours are overcast (%.2f)" % grey_hour_share)
+	# A brand-new town's first game day is fair all day: every new town
+	# starts on the same date, and it rolled fog and overcast (critic).
+	var calm := true
+	var start_sim := CitySim.new()
+	for t in range(0, Seasons.TICKS_PER_DAY, 30):
+		start_sim.tick_count = t
+		var w := Weather.for_town(start_sim.clock(), t, true)
+		calm = calm and float(w[0]) < 0.3 and float(w[1]) == 0.0 and float(w[2]) == 0.0
+	_check(calm, "a new town's first day is fair, with no fog or rain")
+	start_sim.tick_count = Seasons.TICKS_PER_DAY + 600
+	var later := start_sim.clock()
+	_check(Weather.for_town(later, start_sim.tick_count, true) == Weather.conditions(later), "after the first day, the date's own sky")
+	# Fog only with Day and night on: with it off the light stays at late
+	# morning, and dawn fog under it read as a fault.
+	_check(not a_fog.is_empty() and float(Weather.for_town(a_fog, 99999, true)[2]) > 0.0, "a foggy morning has fog with Day and night on")
+	_check(not a_fog.is_empty() and float(Weather.for_town(a_fog, 99999, false)[2]) == 0.0, "and none with it off")
 	# The game's clock and the home screen's both carry a date to key on.
 	var sim := CitySim.new()
 	var c0: Dictionary = sim.clock()
