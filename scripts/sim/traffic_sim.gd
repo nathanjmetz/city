@@ -4897,7 +4897,11 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 		# couple of seconds this one takes to get there, as drivers do, or
 		# each car in a queue waits for a full length to open before moving.
 		var last: Dictionary = list[list.size() - 1]
-		var room: float = last.d - ways[c.wo].s0 + float(last.v) * ROOM_AHEAD_S
+		var room: float = last.d - ways[c.wo].s0
+		# ...only while it's really getting away: not braking for a queue
+		# ahead of it, or the box fills behind it (review, 2026-10-26).
+		if float(last.v) > 1.0 and float(last.get("a", 0.0)) > -0.5:
+			room += float(last.v) * ROOM_AHEAD_S
 		if room < (queued + 1) * (car.len + JAM_GAP):
 			return false
 	# Someone on the crosswalk over the road we're turning onto.
