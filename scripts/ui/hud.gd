@@ -1551,6 +1551,7 @@ func _roads_drawer() -> PanelContainer:
 	for entry in [
 		[RoadTool.Mode.STRAIGHT, "road", "Straight", _key_hint("road")],
 		[RoadTool.Mode.CURVED, "curve", "Curve", _key_hint("curve")],
+		[RoadTool.Mode.SCURVE, "scurve", "S-curve", _key_hint("scurve")],
 		[RoadTool.Mode.GRID, "grid", "Grid", _key_hint("grid")],
 		[RoadTool.Mode.ROUNDABOUT, "roundabout", "Roundabout", _key_hint("roundabout")],
 		[RoadTool.Mode.UPGRADE, "upgrade", "Upgrade", "U"],

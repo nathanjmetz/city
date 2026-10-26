@@ -4,6 +4,8 @@ extends Node3D
 ##
 ## Straight: click start, click end (keeps going from the end).
 ## Curved: click start, click the bend, click end.
+## S-curve: click start, the first bend, the second bend, then the end (CS2's
+## complex curve). It is built as two curved roads that meet with no kink.
 ## Grid: a rectangle by default, like CS2: click a corner, click the end of
 ## the first side (it snaps parallel or square to the nearest road), then
 ## move out and click to set the depth. Tab switches to Any shape: click the
@@ -26,7 +28,7 @@ signal hint_changed(text: String)
 ## Road type or parallel mode changed.
 signal options_changed
 
-enum Mode { NONE, STRAIGHT, CURVED, BULLDOZE, GRID, ROUNDABOUT, UPGRADE }
+enum Mode { NONE, STRAIGHT, CURVED, BULLDOZE, GRID, ROUNDABOUT, UPGRADE, SCURVE }
 
 const SNAP_NODE := 9.0
 ## A rectangle lines up with a road this close to its first corner.
@@ -322,10 +324,11 @@ func set_grid_exact(on: bool) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	# Shift + a number opens a bottom bar menu instead (Hud.hotkey_category).
 	if event is InputEventKey and event.pressed and not event.echo and not (event as InputEventKey).shift_pressed:
-		match KeyBinds.action(event as InputEventKey, ["road", "curve", "grid", "roundabout", "bulldoze", "upgrade", "parallel",
+		match KeyBinds.action(event as InputEventKey, ["road", "curve", "scurve", "grid", "roundabout", "bulldoze", "upgrade", "parallel",
 				"raise", "lower", "smaller", "bigger"]):
 			"road": set_mode(Mode.STRAIGHT)
 			"curve": set_mode(Mode.CURVED)
+			"scurve": set_mode(Mode.SCURVE)
 			"grid": set_mode(Mode.GRID)
 			"roundabout": set_mode(Mode.ROUNDABOUT)
 			"bulldoze": set_mode(Mode.BULLDOZE)
@@ -395,14 +398,16 @@ func _process(_delta: float) -> void:
 		_show_grid(p)
 		return
 	else:
-		var curve := _pending_curve(p)
-		curves = _plan(curve).pieces.duplicate()
-		if curves.is_empty():
-			curves = [curve]
-		_show_length(curve)
-		if parallel:
-			curves.append(RoadShapes.offset(curve, parallel_gap))
-		var problem := _problem(curve)
+		var drawn := _pending_curves(p)
+		var problem := ""
+		for curve in drawn:
+			var pieces: Array = _plan(curve).pieces
+			curves.append_array(pieces if not pieces.is_empty() else [curve])
+			if parallel:
+				curves.append(RoadShapes.offset(curve, parallel_gap))
+			if problem == "":
+				problem = _problem(curve)
+		_show_length(drawn)
 		ok = problem == ""
 		if problem != _shown_problem:
 			_shown_problem = problem
@@ -478,23 +483,26 @@ func _click() -> void:
 				sim.apply({"type": "resize_roundabout", "seg": _hover_seg, "lanes": 2 if to == RoadStyle.Type.RING2 else 1})
 			elif _hover_seg != -1:
 				sim.apply({"type": "upgrade_road", "seg": _hover_seg, "road": road_type})
-		Mode.STRAIGHT, Mode.CURVED:
+		Mode.STRAIGHT, Mode.CURVED, Mode.SCURVE:
 			var p := _snapped(hit)
-			var needed := 2 if mode == Mode.STRAIGHT else 3
+			var needed: int = {Mode.STRAIGHT: 2, Mode.CURVED: 3, Mode.SCURVE: 4}[mode]
 			if _points.size() + 1 < needed:
 				_points.append(p)
 			else:
-				var curve := _pending_curve(p)
-				if _is_valid(curve):
-					var curves := [curve]
+				var drawn := _pending_curves(p)
+				if drawn.all(_is_valid):
+					var curves := drawn.duplicate()
 					if parallel:
-						curves.append(RoadShapes.offset(curve, parallel_gap))
+						for curve in drawn:
+							curves.append(RoadShapes.offset(curve, parallel_gap))
 					var go := func() -> void:
-						if _build(curve):
+						for curve in drawn:
+							if not _build(curve):
+								return
 							if parallel:
 								_build(RoadShapes.offset(curve, parallel_gap))
-							_points.clear()
-							_points.append(curve[2])
+						_points.clear()
+						_points.append(drawn[drawn.size() - 1][2])
 					_ask_first(p, curves, road_type, go)
 		Mode.GRID:
 			var raw := _snapped(hit)
@@ -941,7 +949,7 @@ func _resize(f: float) -> void:
 		roundabout_radius = RoadShapes.roundabout_radius(_ring_radius() * f, _ring())
 		roundabout_preset = -1
 		options_changed.emit()
-	elif parallel and (mode == Mode.STRAIGHT or mode == Mode.CURVED):
+	elif parallel and mode in [Mode.STRAIGHT, Mode.CURVED, Mode.SCURVE]:
 		parallel_gap = clampf(parallel_gap * f, _min_gap(), PARALLEL_MAX)
 	else:
 		return
@@ -1041,21 +1049,29 @@ func _cancel() -> void:
 	_update_hint()
 
 
+## The roads being drawn, ending at p: one curve, or the two halves of an
+## S-curve once both its bends are placed.
+func _pending_curves(p: Vector3) -> Array:
+	if mode == Mode.SCURVE and _points.size() >= 3:
+		return RoadShapes.s_curve(_points[0], _points[1], _points[2], p)
+	return [_pending_curve(p)]
+
+
 ## Start, control point and end of the road being drawn, ending at p.
 func _pending_curve(p: Vector3) -> Array:
 	var a: Vector3 = _points[0]
-	if mode == Mode.CURVED and _points.size() >= 2:
+	if _curvy() and _points.size() >= 2:
 		var bend: Vector3 = _points[1]
 		bend.y = lerpf(a.y, p.y, 0.5)
 		return [a, bend, p]
 	var d := p - a
 	_guide_angle = NAN
-	if mode != Mode.CURVED and _shift():
+	if not _curvy() and _shift():
 		var ang := snappedf(atan2(d.z, d.x), ANGLE_STEP)
 		p = a + Vector3(cos(ang), 0.0, sin(ang)) * d.length()
 		if _snap_kind == "free":
 			p = _align(p, a, ang)
-	elif mode != Mode.CURVED and d.length() > 2.0:
+	elif not _curvy() and d.length() > 2.0:
 		# Snap to straight on or square with the road we start from.
 		var ang := atan2(d.z, d.x)
 		for ref in _reference_angles(a):
@@ -1071,6 +1087,16 @@ func _pending_curve(p: Vector3) -> Array:
 		if not is_nan(_guide_angle) and _snap_kind == "free":
 			p = _align(p, a, _guide_angle)  # along the guide, to where it lines up
 	return [a, a.lerp(p, 0.5), p]
+
+
+## Curve or S-curve: their bends float free, with no angle snapping.
+func _curvy() -> bool:
+	return mode == Mode.CURVED or mode == Mode.SCURVE
+
+
+## The point being placed is a bend, not an end.
+func _placing_bend() -> bool:
+	return (mode == Mode.CURVED and _points.size() == 1) or (mode == Mode.SCURVE and _points.size() in [1, 2])
 
 
 ## Directions of the roads at a point, for guide lines.
@@ -1289,8 +1315,10 @@ static func steepest_grade(pieces: Array, height: Callable) -> Dictionary:
 
 ## The angle a new road makes with the roads where it starts and ends, the
 ## smaller side, flagged when sharper than AASHTO's 60°.
-func _show_angles(curve: Array) -> void:
+func _show_angles(curve: Array, last: Array = []) -> void:
 	for i in 2:
+		if i == 1 and not last.is_empty():
+			curve = last  # an S-curve's far end is on its second half
 		var at: Vector3 = curve[0] if i == 0 else curve[2]
 		var refs := _reference_angles(Vector3(at.x, at.y, at.z))
 		if refs.is_empty():
@@ -1351,32 +1379,44 @@ func _corner_angle(i: int, at: Vector3, a: Vector3, b: Vector3) -> void:
 
 
 ## Shows the road's length by the cursor, and the guide line it snapped to.
-func _show_length(curve: Array) -> void:
-	var pts := RoadNetwork.sample_curve(curve[0], curve[1], curve[2])
-	var m := RoadNetwork.polyline_length(pts)
+## `curves` is the road being drawn: one curve, or an S-curve's two halves.
+func _show_length(curves: Array) -> void:
+	var first: Array = curves[0]
+	var last: Array = curves[curves.size() - 1]
+	var m := 0.0
+	var cost := 0
+	var r := INF
+	for curve in curves:
+		m += RoadNetwork.polyline_length(RoadNetwork.sample_curve(curve[0], curve[1], curve[2]))
+		cost += CitySim.shapes_cost(_plan(curve).pieces if _plan(curve).ok else [curve], road_type)
+		r = minf(r, RoadNetwork.min_radius(curve[0], curve[1], curve[2]))
 	_label.text = "%s ft  ·  $%s" % [CitySim.money_text(roundi(m * FT)),
-		CitySim.money_text(CitySim.shapes_cost(_plan(curve).pieces if _plan(curve).ok else [curve], road_type)
-			* (2 if parallel else 1))]
-	var r := RoadNetwork.min_radius(curve[0], curve[1], curve[2])
+		CitySim.money_text(cost * (2 if parallel else 1))]
 	if r < 2000.0:
 		_label.text += "\nCurve safe at %d mph" % RoadStyle.safe_speed_mph(r)
-	if absf(curve[2].y) > 0.1 or absf(curve[0].y) > 0.1:
-		_label.text += "\nHeight %+d ft" % roundi(curve[2].y * FT)
-	var plan := _plan(curve)
-	_show_grade(plan.pieces if plan.ok else [curve])
-	if plan.ok and plan.crossed > 0:
-		var top := 0.0
-		for q in plan.pieces:
-			top = maxf(top, maxf(q[0].y, q[2].y))
+	if absf(last[2].y) > 0.1 or absf(first[0].y) > 0.1:
+		_label.text += "\nHeight %+d ft" % roundi(last[2].y * FT)
+	var crossed := 0
+	var top := 0.0
+	var graded: Array = []  # every built piece, both halves of an S-curve, for the grade readout
+	for curve in curves:
+		var plan := _plan(curve)
+		graded.append_array(plan.pieces if plan.ok else [curve])
+		if plan.ok and plan.crossed > 0:
+			crossed += plan.crossed
+			for q in plan.pieces:
+				top = maxf(top, maxf(q[0].y, q[2].y))
+	_show_grade(graded)
+	if crossed > 0:
 		_label.text += "\nOverpass: clears %d crossing%s, deck %d ft up" \
-			% [plan.crossed, "" if plan.crossed == 1 else "s", roundi(top * FT)]
+			% [crossed, "" if crossed == 1 else "s", roundi(top * FT)]
 	if not _align_lines.is_empty():
 		_label.text += "\nLined up with %s" % ("two junctions" if _align_lines.size() > 1 else "a junction")
 	if _snap_kind == "node":
 		_label.text += "\nJoins the junction"
-	_draw_guides(curve[0])
-	_show_angles(curve)
-	_label.position = Terrain.lift(curve[2]) + Vector3(0, 6, 0)
+	_draw_guides(first[0])
+	_show_angles(first, last)
+	_label.position = Terrain.lift(last[2]) + Vector3(0, 6, 0)
 	_label.visible = true
 
 
@@ -1394,8 +1434,8 @@ func _problem(curve: Array) -> String:
 
 func _snapped(hit: Vector3) -> Vector3:
 	_snap_kind = "free"
-	if mode == Mode.CURVED and _points.size() == 1:
-		return Vector3(hit.x, 0.0, hit.z)  # the bend point floats freely
+	if _placing_bend():
+		return Vector3(hit.x, 0.0, hit.z)  # the bend points float freely
 	_align_lines = []
 	# Junctions pull from further than the road between them, so a point
 	# near one lands on it, not just beside it on the road.
@@ -1421,7 +1461,7 @@ func _snapped(hit: Vector3) -> Vector3:
 			var o := sim.terrain_offset
 			return Vector3(mile.on.x - o.x, 0.0, mile.on.y - o.y)
 		var free := Vector3(hit.x, 0.0 if mode == Mode.GRID else elevation, hit.z)
-		if mode == Mode.STRAIGHT or (mode == Mode.CURVED and _points.size() != 1):
+		if mode == Mode.STRAIGHT or (_curvy() and not _placing_bend()):
 			free = _align(free, _points[0] if not _points.is_empty() else Vector3(INF, 0, INF))
 		return free
 	if mode == Mode.GRID:
@@ -1624,6 +1664,14 @@ func _update_hint() -> void:
 				text = "Click to finish. Right click to stop."
 			if _points.size() == 2 and _shown_problem != "":
 				text = _shown_problem
+		Mode.SCURVE:
+			match _points.size():
+				0: text = "Click to start an S-curve."
+				1: text = "Click where the road should first bend."
+				2: text = "Click where it should bend back the other way."
+				_: text = "Click to finish. Right click to stop."
+			if _points.size() == 3 and _shown_problem != "":
+				text = _shown_problem
 		Mode.GRID:
 			var size := "Blocks %s × %s  [ ]" % [_distance_text(grid_block), _distance_text(grid_across)]
 			if grid_preset >= 0:
@@ -1649,7 +1697,7 @@ func _update_hint() -> void:
 			% ["Bridge" if elevation > 0.0 else "Tunnel", roundi(elevation * FT)]
 		if elevation > 0.0:
 			text += "\nRoads and track it crosses: it climbs over them, piers and all."
-	if parallel and (mode == Mode.STRAIGHT or mode == Mode.CURVED):
+	if parallel and mode in [Mode.STRAIGHT, Mode.CURVED, Mode.SCURVE]:
 		text += "\nParallel on (P): second road %d ft away  [ ]" % roundi(parallel_gap * FT)
 	if not _armed.is_empty():
 		text = "This road removes %s. Click again to build it anyway, or right click to go back." \

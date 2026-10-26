@@ -2,7 +2,8 @@ extends SceneTree
 ## Pictures of the road options added to match CS2's (docs/road-options.md),
 ## one scene per step, in the real game.
 ## Run: godot -s tools/road_options_shot.gd -- <step> <out_prefix>
-## Steps: oneway (the one-way boulevard and the Boulevard menu).
+## Steps: oneway (the one-way boulevard and the Boulevard menu), scurve (an
+## S-curve drawn halfway and built, and the Draw tools).
 
 var _main: Node
 var _hud: Hud
@@ -35,6 +36,7 @@ func _process(_delta: float) -> bool:
 			n.stop()
 		match step:
 			"oneway": _oneway(sim)
+			"scurve": _scurve(sim)
 		if not _shots.is_empty():
 			_shots[0][1].call()
 	# Each shot gets 90 frames to settle, then is saved and the next set up.
@@ -65,6 +67,29 @@ func _oneway(sim: CitySim) -> void:
 		["close", func():
 			_hud.close_all()
 			_aim(Vector3(0, 0, -135), 25.0, 30.0, 45.0)],
+	]
+
+
+func _scurve(sim: CitySim) -> void:
+	# A street drawn as an S-curve between two avenues, the way it's drawn:
+	# start, a bend, a bend back, end.
+	sim.apply({"type": "build_road", "start": [-60, 0], "ctrl": [100, 0], "end": [260, 0], "road": RoadStyle.Type.AVENUE})
+	sim.apply({"type": "build_road", "start": [-60, -260], "ctrl": [100, -260], "end": [260, -260], "road": RoadStyle.Type.AVENUE})
+	var tool: RoadTool = _main.find_children("*", "RoadTool", false, false)[0]
+	tool.road_type = RoadStyle.Type.STREET
+	tool.mode = RoadTool.Mode.SCURVE
+	tool._points = [Vector3(0, 0, 0), Vector3(0, 0, -130), Vector3(200, 0, -130)]
+	for curve in tool._pending_curves(Vector3(200, 0, -260)):
+		tool._build(curve)
+	tool._points.clear()
+	_shots = [
+		["menu", func():
+			_aim(Vector3(100, 0, -130), 0.0, 55.0, 330.0)
+			_hud._open("roads")
+			tool.set_mode(RoadTool.Mode.SCURVE)],
+		["close", func():
+			_hud.close_all()
+			_aim(Vector3(100, 0, -130), 20.0, 32.0, 120.0)],
 	]
 
 
