@@ -2711,7 +2711,7 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 
 ## A parked vehicle with a trip pulls out if there's a gap in traffic.
 func _try_launch(car: Dictionary, lanes := {}) -> bool:
-	if cars.size() >= MAX_CARS or not _launch(car, lanes):
+	if cars.size() >= max_cars or not _launch(car, lanes):
 		return false
 	if not lanes.is_empty():
 		_lane_add(lanes, car)
@@ -3185,7 +3185,7 @@ func _rest() -> void:
 		car.erase("next_stop")
 		if back == "":
 			continue
-		if cars.size() >= MAX_CARS or not _send(car, back, "return", {}, {"report": false}, stop):
+		if cars.size() >= max_cars or not _send(car, back, "return", {}, {"report": false}, stop):
 			_due_at(car, _tick + 20)  # try again shortly
 			car.next = back
 			car.next_stop = stop
@@ -3228,7 +3228,7 @@ func go(pid: int, to_ref: String, purpose: String, stay: int) -> bool:
 		far = true
 	if not car.is_empty() and (far or fetch) and cars.size() < max_cars:
 		var path := _walk_to_car(from_pl, car)
-		if path.is_empty():
+		if path.is_empty() or walkers.size() >= max_walkers:
 			return false
 		car.driver = pid
 		_walk(pid, path, {"drive": car.id, "to": to_ref, "purpose": purpose, "stay": stay})
@@ -4065,7 +4065,7 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 			# Its road went, or was rebuilt and there's no way through now.
 			_waiting.erase(car)
 			_report(car, failed)
-		elif cars.size() < MAX_CARS:
+		elif cars.size() < max_cars:
 			if lanes.is_empty():
 				for other in cars:
 					_lane_add(lanes, other)
