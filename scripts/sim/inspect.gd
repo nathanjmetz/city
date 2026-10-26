@@ -535,7 +535,7 @@ static func _park(sim: CitySim, id: int) -> Dictionary:
 			if not sim.parks.has_feature(id, f.type):
 				next = names.get(f.type, f.type)
 				break
-		rows.append(["Size", "%.1f acres" % sim.parks.acres(id)])
+		rows.append(["Size", "%.1f acres" % sim.parks.land_acres(id)])
 		rows.append(["Has", ", ".join(has) if not has.is_empty() else "Just lawn and trees so far"])
 		status = ("Filling in: %s next" % next) if next != "" else "Filled in"
 		status += {"struggling": ", worn and patchy", "working": ", plain and tidy", "comfortable": ", well kept",
