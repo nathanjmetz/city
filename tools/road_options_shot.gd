@@ -3,7 +3,7 @@ extends SceneTree
 ## one scene per step, in the real game.
 ## Run: godot -s tools/road_options_shot.gd -- <step> <out_prefix>
 ## Steps: oneway (the one-way boulevard and the Boulevard menu), scurve (an
-## S-curve drawn halfway and built, and the Draw tools).
+## S-curve built, and the Draw tools), snap (the snap switches, Roads off).
 
 var _main: Node
 var _hud: Hud
@@ -37,6 +37,7 @@ func _process(_delta: float) -> bool:
 		match step:
 			"oneway": _oneway(sim)
 			"scurve": _scurve(sim)
+			"snap": _snap(sim)
 		if not _shots.is_empty():
 			_shots[0][1].call()
 	# Each shot gets 90 frames to settle, then is saved and the next set up.
@@ -90,6 +91,19 @@ func _scurve(sim: CitySim) -> void:
 		["close", func():
 			_hud.close_all()
 			_aim(Vector3(100, 0, -130), 20.0, 32.0, 120.0)],
+	]
+
+
+func _snap(sim: CitySim) -> void:
+	sim.apply({"type": "build_road", "start": [-100, 0], "ctrl": [0, 0], "end": [100, 0], "road": RoadStyle.Type.AVENUE})
+	sim.apply({"type": "build_road", "start": [0, 0], "ctrl": [0, -100], "end": [0, -200]})
+	var tool: RoadTool = _main.find_children("*", "RoadTool", false, false)[0]
+	_shots = [
+		["menu", func():
+			_aim(Vector3(0, 0, -80), 0.0, 55.0, 260.0)
+			_hud._open("roads")
+			tool.set_mode(RoadTool.Mode.STRAIGHT)
+			tool.set_snap("roads", false)],
 	]
 
 

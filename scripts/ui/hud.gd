@@ -110,6 +110,7 @@ var _angled_card: Button
 var _parking_last: int = Services.Kind.PARKING_SMALL
 ## Road height: Bridge, Ground (or the height) and Tunnel, top to bottom.
 var _elevation_segs: Array[Button] = []
+var _snap_segs := {}  # "roads" or "guides" -> its switch
 var _speed_buttons := []
 var _clock := UiStyle.label("", 14)
 var _hint := UiStyle.label("", 13)
@@ -1603,6 +1604,21 @@ func _roads_drawer() -> PanelContainer:
 		elev.add_child(seg)
 		_elevation_segs.append(seg)
 
+	# Snap switches, two pills like the height one (CS2's snapping options).
+	var snap := VBoxContainer.new()
+	snap.add_theme_constant_override("separation", 1)
+	snap.custom_minimum_size = Vector2(60, 50)
+	opts.add_child(snap)
+	for entry in [["roads", "Snap roads", "Snap onto roads and junctions. Off: points go just where you click"],
+			["guides", "Guides", "Guide lines, right angles and straight on. Off: draw at any angle"]]:
+		var seg := _segment(60)
+		seg.text = entry[1]
+		seg.tooltip_text = entry[2]
+		var kind: String = entry[0]
+		seg.toggled.connect(func(on: bool): road_tool.set_snap(kind, on))
+		snap.add_child(seg)
+		_snap_segs[kind] = seg
+
 	var traffic := _section(row, "Town tools  ·  traffic, parking and new neighborhoods")
 	_traffic_card = _card("traffic", "Traffic", "")
 	_traffic_card.tooltip_text = "Traffic flow, lights and stop signs  (J)"
@@ -2485,6 +2501,8 @@ func _sync() -> void:
 	for i in _elevation_segs.size():
 		_elevation_segs[i].set_pressed_no_signal([h > 0.0, h == 0.0, h < 0.0][i])
 	_elevation_segs[1].text = "Ground" if h == 0.0 else "%+d ft" % roundi(h * RoadTool.FT)
+	_snap_segs.roads.set_pressed_no_signal(road_tool.snap_roads)
+	_snap_segs.guides.set_pressed_no_signal(road_tool.snap_guides)
 	if _category == "" or _category == "budget":
 		_show_hint("")
 
