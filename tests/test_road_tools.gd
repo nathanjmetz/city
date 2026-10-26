@@ -330,10 +330,68 @@ func _init() -> void:
 			high += 1
 	_check(high == 2, "heights saved (got %d)" % high)
 	_check(RoadStyle.safe_speed_mph(46.0) >= 20 and RoadStyle.safe_speed_mph(46.0) <= 30, "a 150 ft loop ramp is a ~25 mph curve")
+	_s_curve()
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
 var _failed := false
+
+## The S-curve (CS2's complex curve; Nathan 2026-10-26: "i want all the
+## same street and road options as CS2"): start, two bends, end, built as
+## two curved roads that meet with no kink.
+func _s_curve() -> void:
+	var a := Vector3(0, 0, 0)
+	var b1 := Vector3(150, 0, 0)
+	var b2 := Vector3(50, 0, 200)
+	var e := Vector3(200, 0, 200)
+	var halves := RoadShapes.s_curve(a, b1, b2, e)
+	_check(halves.size() == 2 and halves[0][0] == a and halves[1][2] == e and halves[0][2] == halves[1][0],
+		"an S-curve is two roads from start to end that meet")
+	var t_in := RoadNetwork.bezier_tangent(halves[0][0], halves[0][1], halves[0][2], 1.0).normalized()
+	var t_out := RoadNetwork.bezier_tangent(halves[1][0], halves[1][1], halves[1][2], 0.0).normalized()
+	_check(t_in.dot(t_out) > 0.999, "the two halves meet with no kink (dot %.4f)" % t_in.dot(t_out))
+	var t0 := RoadNetwork.bezier_tangent(halves[0][0], halves[0][1], halves[0][2], 0.0).normalized()
+	var t3 := RoadNetwork.bezier_tangent(halves[1][0], halves[1][1], halves[1][2], 1.0).normalized()
+	_check(t0.dot((b1 - a).normalized()) > 0.999 and t3.dot((e - b2).normalized()) > 0.999,
+		"it leaves toward the first bend and arrives from the second")
+	# It bends one way, then back the other.
+	var c0: float = (halves[0][1] - halves[0][0]).cross(halves[0][2] - halves[0][1]).y
+	var c1: float = (halves[1][1] - halves[1][0]).cross(halves[1][2] - halves[1][1]).y
+	_check(signf(c0) != signf(c1), "an S-curve bends one way and then back")
+	var straight := RoadShapes.s_curve(a, Vector3(50, 0, 0), Vector3(150, 0, 0), Vector3(200, 0, 0))
+	_check(absf(straight[0][1].z) < 0.01 and absf(straight[1][1].z) < 0.01, "bends in a line give a straight road")
+
+	# Drawn with the tool: four points, then both halves built and joined.
+	var sim := CitySim.new()
+	sim.economy.money = 10_000_000
+	var t := RoadTool.new()
+	t.sim = sim
+	t.network = sim.network
+	t._px = 1.0
+	t.mode = RoadTool.Mode.SCURVE
+	t._points = [a]
+	_check(t._placing_bend(), "the first point after the start is a bend")
+	t._points = [a, b1]
+	_check(t._placing_bend() and t._pending_curves(e).size() == 1, "after one bend the preview is one curve")
+	t._points = [a, b1, b2]
+	_check(not t._placing_bend(), "the fourth point is the end, not a bend")
+	var drawn := t._pending_curves(e)
+	_check(drawn.size() == 2, "with both bends placed the preview is the S-curve")
+	var before := sim.network.segments.size()
+	for curve in drawn:
+		_check(t._is_valid(curve), "each half can be built")
+		t._build(curve)
+	_check(sim.network.segments.size() > before, "the S-curve is built")
+	_check(sim.network.find_node_near(drawn[0][2], 0.5) != -1, "the halves share a junction in the middle")
+	sim.tick()
+	var start: Dictionary = sim.network.find_segment_near(a.lerp(drawn[0][1], 0.1), 1.0)
+	var finish: Dictionary = sim.network.find_segment_near(e.lerp(drawn[1][1], 0.1), 1.0)
+	_check(not start.is_empty() and not finish.is_empty(), "road at both ends")
+	var from := {"seg": start.seg, "at_frac": 0.5}
+	var to := {"seg": finish.seg, "at_frac": 0.5}
+	_check(sim.traffic._route(from, to).size() > 0, "cars can drive the whole S-curve")
+	t.free()
+
 
 func _check(ok: bool, what: String) -> void:
 	print(("PASS " if ok else "FAIL ") + what)
