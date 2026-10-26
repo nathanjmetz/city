@@ -19,6 +19,8 @@ const SHIRTS := [Color(0.62, 0.16, 0.14), Color(0.16, 0.3, 0.55), Color(0.85, 0.
 var traffic: TrafficSim
 var tick_fraction: Callable
 var _mm: MultiMesh
+## The second figure: narrower shoulders, wider hips, longer hair.
+var _mm2: MultiMesh
 
 
 func setup(t: TrafficSim, fraction: Callable) -> void:
@@ -71,6 +73,16 @@ void fragment() { ALBEDO = tint; ROUGHNESS = 0.9; }
 	mi.material_override = mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
+	_mm2 = MultiMesh.new()
+	_mm2.transform_format = MultiMesh.TRANSFORM_3D
+	_mm2.use_colors = true
+	_mm2.use_custom_data = true
+	_mm2.mesh = _person_mesh(1)
+	var mi2 := MultiMeshInstance3D.new()
+	mi2.multimesh = _mm2
+	mi2.material_override = mat
+	mi2.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi2)
 
 
 func _process(_delta: float) -> void:
@@ -84,20 +96,24 @@ func _draw_walkers() -> void:
 	var cam := get_viewport().get_camera_3d()
 	var eye := cam.global_position if cam else Vector3.ZERO
 	var frac: float = tick_fraction.call()
-	var n := 0
+	var counts := [0, 0]
+	var mms := [_mm, _mm2]
 	for w in traffic.walkers:
 		var pose := traffic.walker_pose(w, frac)
 		var p: Vector3 = Terrain.stand(pose[0])
 		if p.distance_to(eye) > FAR:
 			continue
-		if n >= _mm.instance_count:
-			_mm.instance_count = maxi(n * 2, 64)
+		var kind := figure(int(w.person))
+		var mm: MultiMesh = mms[kind]
+		var n: int = counts[kind]
+		if n >= mm.instance_count:
+			mm.instance_count = maxi(n * 2, 64)
 		var dir: Vector3 = pose[1]
 		if dir.length() < 0.5:
 			dir = Vector3.FORWARD
 		var body := build(int(w.person))
-		_mm.set_instance_transform(n, Transform3D(Basis.looking_at(Vector3(dir.x, 0.0, dir.z).normalized(), Vector3.UP).scaled(body), p))
-		_mm.set_instance_color(n, skin_tone(int(w.person)))
+		mm.set_instance_transform(n, Transform3D(Basis.looking_at(Vector3(dir.x, 0.0, dir.z).normalized(), Vector3.UP).scaled(body), p))
+		mm.set_instance_color(n, skin_tone(int(w.person)))
 		# Standing at the kerb, the phase stays put: feet together if it's 0.
 		var shirt: Color = SHIRTS[(hash(int(w.person)) >> 4) % SHIRTS.size()]
 		# Stride grows with height (about 0.41 of it in a walk), and each
@@ -105,9 +121,10 @@ func _draw_walkers() -> void:
 		# step in time.
 		var stride: float = STRIDE * body.y * (0.92 + float((hash(int(w.person)) >> 12) & 15) / 15.0 * 0.16)
 		shirt.a = fposmod(float(pose[2]), stride) / stride
-		_mm.set_instance_custom_data(n, shirt)
-		n += 1
-	_mm.visible_instance_count = n
+		mm.set_instance_custom_data(n, shirt)
+		counts[kind] = n + 1
+	_mm.visible_instance_count = counts[0]
+	_mm2.visible_instance_count = counts[1]
 
 
 ## Skin tones as a tint on the figure (it darkens or lightens the skin; the
@@ -126,6 +143,11 @@ static func skin_tone(person: int) -> Color:
 	return Color.WHITE
 
 
+## Which figure a person is drawn with: about half the town each.
+static func figure(person: int) -> int:
+	return (hash([person, "figure"]) >> 3) & 1
+
+
 ## Each person's own height and build, the same every time they're seen:
 ## adults from short to tall and slight to heavy, and about one in eight a
 ## child (US adults run roughly 1.5 to 1.9 m; the mesh is 1.7 m).
@@ -141,7 +163,7 @@ static func build(person: int) -> Vector3:
 
 ## A person about 1.7 m tall: legs, arms, body and head, coloured by the
 ## shirt. Each arm swings with the opposite leg, as people walk.
-static func _person_mesh() -> Mesh:
+static func _person_mesh(kind := 0) -> Mesh:
 	# A person about 1.7 m tall in real proportions (step one away from
 	# toy blocks, Nathan 2026-10-25: "they currently look like Legos or
 	# Roblox"): tapered round limbs, a pelvis and a chest broader at the
@@ -161,20 +183,25 @@ static func _person_mesh() -> Mesh:
 		_limb(st, Vector3(x, HIP, 0.0), Vector3(x, 0.47, 0.0), Vector2(0.078, 0.082), Vector2(0.055, 0.058), trousers, leg)
 		_limb(st, Vector3(x, 0.47, 0.0), Vector3(x, 0.08, 0.0), Vector2(0.052, 0.056), Vector2(0.038, 0.042), trousers, leg)
 		_box(st, Vector3(x, 0.04, -0.035), Vector3(0.048, 0.04, 0.12), shoe, leg)
-		var ax: float = side * 0.215
+		var ax: float = side * (0.195 if kind == 1 else 0.215)
 		var arm := Vector2(side, SHOULDER)
 		_limb(st, Vector3(ax, SHOULDER, 0.0), Vector3(side * 0.235, 1.12, 0.0), Vector2(0.05, 0.052), Vector2(0.043, 0.045), shirt, arm)
 		_limb(st, Vector3(side * 0.235, 1.12, 0.0), Vector3(side * 0.245, 0.86, -0.01), Vector2(0.04, 0.042), Vector2(0.032, 0.034), skin, arm)
 		_blob(st, Vector3(side * 0.247, 0.81, -0.012), Vector3(0.032, 0.05, 0.042), skin, arm, 6, 4)
 	# Hips and pelvis in the trousers, then the shirt up to the shoulders.
-	_limb(st, Vector3(0.0, 0.84, 0.0), Vector3(0.0, 1.0, 0.0), Vector2(0.175, 0.112), Vector2(0.158, 0.104), trousers)
-	_limb(st, Vector3(0.0, 1.0, 0.0), Vector3(0.0, 1.27, 0.0), Vector2(0.158, 0.104), Vector2(0.19, 0.115), shirt)
-	_limb(st, Vector3(0.0, 1.27, 0.0), Vector3(0.0, 1.41, 0.0), Vector2(0.19, 0.115), Vector2(0.215, 0.105), shirt, Vector2.ZERO, 8)
-	_limb(st, Vector3(0.0, 1.41, 0.0), Vector3(0.0, 1.46, 0.0), Vector2(0.215, 0.105), Vector2(0.09, 0.07), shirt, Vector2.ZERO, 8)  # shoulders slope in to the neck
+	var hips := 1.08 if kind == 1 else 1.0
+	var chest := 0.9 if kind == 1 else 1.0
+	_limb(st, Vector3(0.0, 0.84, 0.0), Vector3(0.0, 1.0, 0.0), Vector2(0.175 * hips, 0.112), Vector2(0.158 * hips, 0.104), trousers)
+	_limb(st, Vector3(0.0, 1.0, 0.0), Vector3(0.0, 1.27, 0.0), Vector2(0.158 * hips * 0.95, 0.104), Vector2(0.19 * chest, 0.115), shirt)
+	_limb(st, Vector3(0.0, 1.27, 0.0), Vector3(0.0, 1.41, 0.0), Vector2(0.19 * chest, 0.115), Vector2(0.215 * chest, 0.105), shirt, Vector2.ZERO, 8)
+	_limb(st, Vector3(0.0, 1.41, 0.0), Vector3(0.0, 1.46, 0.0), Vector2(0.215 * chest, 0.105), Vector2(0.09, 0.07), shirt, Vector2.ZERO, 8)  # shoulders slope in to the neck
 	_limb(st, Vector3(0.0, 1.45, 0.0), Vector3(0.0, 1.54, 0.0), Vector2(0.05, 0.052), Vector2(0.046, 0.048), skin)
 	_blob(st, Vector3(0.0, 1.625, -0.005), Vector3(0.082, 0.108, 0.098), skin, Vector2.ZERO, 8, 6)
 	# Hair over the crown and back of the head; the face stays bare.
 	_blob(st, Vector3(0.0, 1.665, 0.022), Vector3(0.091, 0.092, 0.1), hair, Vector2.ZERO, 8, 6)
+	if kind == 1:
+		# Longer hair, down past the collar at the back.
+		_blob(st, Vector3(0.0, 1.55, 0.05), Vector3(0.085, 0.12, 0.06), hair, Vector2.ZERO, 8, 6)
 	st.generate_normals()
 	return st.commit()
 
