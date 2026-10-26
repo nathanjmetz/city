@@ -1,6 +1,6 @@
 # Team status (start here)
 
-Updated 2026-10-26 by the coordinating session ("Desktop photoreal handoff"). This file is the state, not a diary: rewrite it at each stop.
+Updated 2026-10-26 (evening) by the coordinating session ("Desktop photoreal handoff"). This file is the state, not a diary: rewrite it at each stop.
 
 ## Standing orders from Nathan (2026-10-25)
 
@@ -16,9 +16,23 @@ When a helper hits a wall it writes its question here and stops. That task waits
 
 - **Day and night off (from the daylight work, PR #541):** when the day-and-night cycle is turned off, should the game show a real summer moment (for example June 21 at 1:40 pm), or keep today's tuned sun from the southwest, which a real summer day never has? Until you answer, it keeps today's look.
 
-## Where everything stands (2026-10-26, mid-morning)
+## Where everything stands (2026-10-26, evening)
 
-**Merged 2026-10-26:**
+**Admin (Nathan, 2026-10-26):** a crown button in the top bar, seen only by the host, opens Admin: people waiting to join, every player and their PIN, and the Sound mixer (desktop app; Cmd/Ctrl+Shift+F12 still opens it). New admin tools go in as sections of `scripts/ui/admin_panel.gd`. No sign-in: the region server decides who is host and refuses host actions from anyone else (#615).
+
+**Merged 2026-10-26, afternoon and evening:**
+- #615 Admin button for the host (players and PINs, Sound mixer)
+- #613 fuller towns: parkway street trees, nursery-size yard trees, a real roof mix
+- #612 home screen opens at once (a still of the town, then the live town a piece a frame)
+- #609 trees drawn out to the horizon, handed over where they stand (Nathan: no blank spaces, no trees swelling up, no flutter)
+- #605 green lights: queues pull away about 2 s a car (test_green_light.gd is now in CI)
+- #606, #607 UI critique fixes and building icons in one bold line style
+- #602, #603 far buildings no longer blink out; neighbor building squares sit on their ground
+- #604, #608 boxed-in park, bank, campus and phone company fill their blocks
+- #610 money keeps to the dollar across a save; #611 critic's small fixes (fair first day, fewer grey days, green Novembers)
+- #600 ambient life: snowmen, sledding, lemonade, bikes, hoops, yard sales, costumes
+
+**Merged 2026-10-26, morning:**
 - #583-#585, #592, #599 traffic control, all four stages: your own light timing, green waves, smart lights, and engineers who retime the lights. The engineers come with a Traffic Management Center (unlocked with the city charter) or a university's Transportation research center.
 - #587, #595, #598 weather: overcast, rain, winter snow and morning fog by Indiana's odds, with an on/off switch. The home screen shows Marion's real weather from the National Weather Service (KMZZ).
 - #588 houses vary their distance from the curb; a car's stop saves the same before and after loading
@@ -30,15 +44,14 @@ When a helper hits a wall it writes its question here and stops. That task waits
 
 **For Nathan to decide:** the streets still look busy with walkers. The real reason is time: a game hour is about 6 seconds of traffic, so a 150 m walk lasts about 19 game hours on screen. Options: make walkers stride faster than real (a time-lapse look), make fewer short trips, or accept it.
 
-**Known gaps:** tests/test_green_light.gd is not in CI (2.6 s between cars on green against a 2.3 s target; the start-up ripple). Family rides for children were tried and dropped (bugs found in review; little effect).
+**Known gaps:** family rides for children were tried and dropped (bugs found in review; little effect). At phone width the top bar clips its right end, so Help and the Admin crown can be cut off.
 
 **Earlier (2026-10-25/26):** #567 cars drive the limit, #568 roundabouts as a whole, #569-#578 people (skins, figures, five detail levels, ready-made desktop people), #579 faster four-way stops, #580 load until drawn, #581 admin sound mixer, #582 detail floor, #552 live home screen, #555 automatic quality, #551 new building drawing (minor items listed on #551), #557-#566 green lights, signal heads, people sizes, fewer walkers, solid county roads, strides, dirt farm lanes, slower farms, levels 1-100.
 
 **Ready but waiting:**
+- #614 tree shadows cost a third (26M to 11M triangles from the street on Cinematic). Not merged: the second review found browser tree shadows would turn into card shapes. Fix that (notes on the PR), re-measure, merge.
 - #556 roads age: profile in real Chrome first.
 - `wip/price-list` and `wip/browser-measure`: paused.
-
-**Known test gaps:** tests/test_green_light.gd is not in CI. Its stop-line and all-way-stop checks pass, but 2.6 s between cars on green (target 2.3 s) and the start-up ripple still fail.
 
 ## The queue, in order
 
