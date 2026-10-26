@@ -153,6 +153,10 @@ func _ready() -> void:
 	look.set_country(roads._rural)
 	roads.country_changed.connect(look.set_country)
 
+	var arrows := LevelArrows.new()
+	arrows.setup(sim)
+	add_child(arrows)
+
 	var signals := JunctionView.new()
 	signals.setup(sim.traffic)
 	signals.roads = roads
