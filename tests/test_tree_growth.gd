@@ -250,9 +250,19 @@ func _facts() -> void:
 	var h0 := (r0[0] as Transform3D).basis.get_scale().y * TreeKinds.height(sp, TreeKinds.REF_AGE)
 	var h10 := (r10[0] as Transform3D).basis.get_scale().y * TreeKinds.height(sp, TreeKinds.REF_AGE)
 	var h35 := (r35[0] as Transform3D).basis.get_scale().y * TreeKinds.height(sp, TreeKinds.REF_AGE)
-	_check(absf(float(r0[3]) - TreeKinds.NURSERY_AGE) < 0.01 and h0 > 1.5 and h0 < 4.0,
-		"a yard tree goes in as a nursery sapling (%.1f m)" % h0)
-	_check(absf(float(r10[3]) - TreeKinds.NURSERY_AGE - 10.0) < 0.01 and h10 > h0 * 2.0 and h35 > h10 * 1.4,
+	# Balled-and-burlapped stock, 2-3 in caliper: 12-14 ft for a shade tree
+	# at size 1 (here 0.9 of it).
+	_check(absf(float(r0[3]) - TreeKinds.nursery_age(sp)) < 0.01 and h0 > 3.0 and h0 < 4.0,
+		"a yard tree goes in as nursery stock, a tree from the first day (%.1f m)" % h0)
+	var low := []
+	for k in TreeKinds.count():
+		var h := TreeKinds.height(k, TreeKinds.nursery_age(k))
+		var want: float = TreeKinds.NURSERY_HEIGHT[k]
+		if absf(h - want) > 0.05 or (k not in [TreeField.Species.SPRUCE, TreeField.Species.CRABAPPLE,
+				TreeField.Species.RED_CEDAR] and h < 3.5):
+			low.append("%s %.1f m" % [TreeKinds.kind(k).name, h])
+	_check(low.is_empty(), "every shade tree goes in 3.5 m tall or more, evergreens and crabapples smaller %s" % [low])
+	_check(absf(float(r10[3]) - TreeKinds.nursery_age(sp) - 10.0) < 0.01 and h10 > h0 * 1.8 and h35 > h10 * 1.4,
 		"and grows with the game's years (%.1f m after 10, %.1f m after 35)" % [h10, h35])
 	# The seed is where the tree stands in the region: the same tree in a
 	# field moved and turned some other way (a neighbor's city, drawn moved

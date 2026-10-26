@@ -179,6 +179,7 @@ jobs:
           run_test tests/test_upgrade_art.gd
           run_test tests/test_house_drawing.gd
           run_test tests/test_house_lots.gd
+          run_test tests/test_street_trees.gd
           run_test tests/test_lot_grade.gd
 
       - name: Stamp the build

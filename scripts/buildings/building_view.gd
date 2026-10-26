@@ -141,6 +141,9 @@ func is_drawn() -> bool:
 
 func _process(delta: float) -> void:
 	_look_from()
+	_check_parkways()
+	if not _refilter.is_empty():
+		_refilter_some()
 	if _dirty or not _pending.is_empty() or not _recheck.is_empty() or not _fill.is_empty():
 		_sync()
 	_rings(delta)
@@ -463,26 +466,301 @@ func _unspawn(key: String) -> void:
 			or sim.construction.sites.has("lot:" + key))
 	_near.unindex(key)
 	_trees.remove(key)
+	_planted.erase(key)
+	_kept.erase(key)
+	street_trees -= int(_street_of.get(key, 0))
+	_street_of.erase(key)
 
 
 ## Trees go to the shared tree field, placed in world space on the ground.
 func _plant(key: String, frame: Transform3D, planted: Array) -> void:
+	_check_parkways()
+	_planted[key] = [frame, planted]
+	_set_trees(key)
+
+
+## Files a lot's trees in the tree field: those its builder planted, less
+## street trees that stand where the town keeps the parkway clear. Only
+## when they changed, unless `always`.
+func _set_trees(key: String, always := true) -> int:
+	var frame: Transform3D = _planted[key][0]
+	var planted: Array = _planted[key][1]
 	var was := Terrain.shift
 	Terrain.shift = Terrain.shift_for(self)
 	var trees := []
-	# Yard trees go in as saplings when the building is finished and grow
-	# with the game's years (TreeField, TreeKinds): the planting date is the
-	# building's own build date, so nothing new is saved.
+	var street := 0
+	# Yard trees go in as nursery stock when the building is finished and
+	# grow with the game's years (TreeField, TreeKinds): the planting date is
+	# the building's own build date, so nothing new is saved.
 	var b: Dictionary = sim.buildings.get(key, {})
 	var when := {"planted": int(b.get("built", sim.tick_count)) + Construction.duration(
 		CitySim.PROFILE_OF_ZONE.get(int(b.get("zone", 0)), "house"))}
-	for t in planted:
+	var mailbox := _mailbox_at(key)
+	# Which trees stand (by number), to tell whether anything changed.
+	var kept := PackedInt32Array()
+	for i in planted.size():
+		var t: Array = planted[i]
 		var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
 		var at := frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])
+		if t[0].z < -0.5:
+			# Out past the lot line: a tree in the parkway.
+			var q := Vector2(at.origin.x, at.origin.z)
+			if not _parkway_free(q) or q.distance_to(mailbox) < MAILBOX_CLEAR:
+				continue
+			street += 1
+		kept.append(i)
 		at.origin.y = Terrain.ground_y(at.origin.x, at.origin.z) + t[0].y
 		trees.append([at, t[1], t[2], when])
+	var side := _side_trees(key)
+	for i in side.size():
+		var q: Vector2 = side[i][0]
+		if not _parkway_free(q):
+			continue
+		kept.append(1000 + i)
+		var yaw := Basis(Vector3.UP, fposmod(q.x * 7.3 + q.y * 3.1, TAU))
+		trees.append([Transform3D(yaw.scaled(Vector3.ONE * float(side[i][3])), Vector3(q.x, Terrain.ground_y(q.x, q.y), q.y)),
+			side[i][1], side[i][2], when])
+		street += 1
 	Terrain.shift = was
+	if not always and _kept.get(key) == kept:
+		return trees.size()
+	_kept[key] = kept
+	street_trees += street - int(_street_of.get(key, 0))
+	_street_of[key] = street
 	_trees.set_trees(key, trees)
+	return trees.size()
+
+
+# ------------------------------------------------------- parkway keep-clear
+
+## Street trees kept back from a junction's centre by this much more than
+## the widest road there's half width: about 30 ft back from where the curb
+## lines meet, the sight triangle Indiana towns keep clear of trees so a
+## driver at the stop sign sees down the cross street (INDOT and the usual
+## municipal code).
+const SIGHT_CLEAR := 10.5
+## And this far from a streetlight's pole (so the lamp isn't buried in the
+## crown), a bus stop's sign and shelter, and the mailbox at the curb.
+const LAMP_CLEAR := 5.0
+const STOP_CLEAR := 6.0
+const MAILBOX_CLEAR := 1.6
+const CLEAR_CELL := 32.0
+
+## Street trees standing in the parkways now (for the tools and tests).
+var street_trees := 0
+var _street_of := {}  # lot key -> street trees it has now
+var _planted := {}  # lot key -> [frame, trees as its builder planted them]
+var _clear_stamp := []
+var _clear := {}  # Vector2i cell -> [[Vector2 centre, radius], ...]
+var _pieces := {}  # the roads in short straight pieces (StreetLights._pieces), for side streets
+var _kept := {}  # lot key -> which of its trees stand (see _set_trees)
+var _refilter: Array = []  # lots still to look over since the keep-clear spots changed
+## Milliseconds a frame may spend looking lots' street trees over again.
+const REFILTER_MS := 1.0
+
+
+## What the parkway's keep-clear spots are worked out from: the roads and
+## the bus stops.
+func _parkway_stamp() -> Array:
+	var stops = sim.get("buses")
+	return [sim.network.revision, sim.network.segments.size(), stops.stops.size() if stops != null else 0]
+
+
+## Works the keep-clear spots out again when the roads or the bus stops
+## changed, and takes back (or plants again) the street trees they touch.
+func _check_parkways() -> void:
+	var stamp := _parkway_stamp()
+	if stamp == _clear_stamp:
+		return
+	_clear_stamp = stamp
+	_clear.clear()
+	var net: RoadNetwork = sim.network
+	_pieces = StreetLights._pieces(net)
+	for n in net.nodes:
+		var segs := net.segments_at(n)
+		if segs.size() < 2 or (segs.size() == 2 and _straight_through(net, n, segs)):
+			continue
+		var hw := 0.0
+		for id in segs:
+			hw = maxf(hw, RoadStyle.half_width(net.segments[id].type))
+		var p: Vector3 = net.nodes[n]
+		_keep_clear(Vector2(p.x, p.z), hw + SIGHT_CLEAR)
+	for l in StreetLights.place(net):
+		_keep_clear(Vector2(l[1].x, l[1].z), LAMP_CLEAR)
+	var stops = sim.get("buses")
+	if stops != null:
+		for sid in stops.stops:
+			var st: Dictionary = stops.stops[sid]
+			if st.has("pos"):
+				var along: Vector3 = st.dir
+				var out: Vector3 = Vector3(-along.z, 0.0, along.x) * float(st.side)
+				var base: Vector3 = st.pos + out * (RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5)
+				_keep_clear(Vector2(base.x, base.z), STOP_CLEAR)
+	# Each lot's street trees looked over again, a slice a frame.
+	_refilter = _planted.keys()
+
+
+## Looks a slice of the lots' street trees over again (see _check_parkways).
+func _refilter_some() -> void:
+	var start := Time.get_ticks_usec()
+	while not _refilter.is_empty() and Time.get_ticks_usec() - start < REFILTER_MS * 1000.0:
+		var key: String = _refilter.pop_back()
+		if _planted.has(key):
+			_set_trees(key, false)
+
+
+## A corner lot's street trees down its side street: along the lot line it
+## shares with the second street it fronts, in that street's parkway, about
+## every STREET_TREE_GAP, as the town plants both frontages of a corner
+## (HouseBuilder._street_trees plants the front). Its own random numbers.
+## Each: [Vector2 where (this view's frame), species, tint, size].
+func _side_trees(key: String) -> Array:
+	var lot: Dictionary = sim.lots.get(key, {})
+	var b: Dictionary = sim.buildings.get(key, {})
+	if not lot.get("corner", false) or lot.get("flag", false) or int(b.get("zone", -1)) != ZoneMap.Zone.RESIDENTIAL:
+		return []
+	var poly: PackedVector2Array = lot.get("corners", PackedVector2Array())
+	var out := []
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([key, "side street trees"])
+	for side in _straight_sides(poly):
+		var a: Vector2 = side[0]
+		var e: Vector2 = side[1] - a
+		var length := e.length()
+		if length < 8.0:
+			continue
+		var street := _street_beside(a + e * 0.5, e / length, int(lot.get("seg", -1)))
+		if street.is_empty():
+			continue
+		var n := maxi(1, roundi(length / HouseBuilder.STREET_TREE_GAP))
+		for k in n:
+			# Every draw made whether or not the tree is planted.
+			var p := a + e * ((k + 0.5) / n) + e / length * rng.randf_range(-0.8, 0.8)
+			var planted := rng.randf() < HouseBuilder.STREET_TREE_ODDS
+			var pick := TreeField.pick_street(rng)
+			var size := rng.randf_range(0.8, 1.1)
+			var c := _nearest_on(p, int(street[0]))
+			if not planted or not c.is_finite() or c.distance_to(p) < 1.0:
+				continue
+			out.append([c + (p - c).normalized() * (float(street[1]) + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5),
+				pick[0], pick[1], size])
+	return out
+
+
+## A lot outline's straight sides, [from, to] each: its edges run together
+## where they carry straight on (outlines come in short pieces).
+static func _straight_sides(poly: PackedVector2Array) -> Array:
+	var n := poly.size()
+	if n < 3:
+		return []
+	# Start at a corner, so no side is split where the outline starts.
+	var start := 0
+	for i in n:
+		var d0 := (poly[i] - poly[(i - 1 + n) % n]).normalized()
+		var d1 := (poly[(i + 1) % n] - poly[i]).normalized()
+		if d0.dot(d1) < 0.995:
+			start = i
+			break
+	var sides := []
+	var a := poly[start]
+	var dir := Vector2.ZERO
+	for k in range(1, n + 1):
+		var p := poly[(start + k) % n]
+		var prev := poly[(start + k - 1) % n]
+		var d := (p - prev).normalized()
+		if dir != Vector2.ZERO and d.dot(dir) < 0.995:
+			sides.append([a, prev])
+			a = prev
+		dir = (p - a).normalized()
+	sides.append([a, poly[start]])
+	return sides
+
+
+## The street with a parkway whose lot line runs along a lot's edge at
+## `mid` (heading `along`), other than the lot's own street: [its segment,
+## half width], or [].
+func _street_beside(mid: Vector2, along: Vector2, own: int) -> Array:
+	var c := Vector2i(floori(mid.x / StreetLights.PIECE_CELL), floori(mid.y / StreetLights.PIECE_CELL))
+	var best := []
+	var best_off := 1.5
+	for dx in [-1, 0, 1]:
+		for dz in [-1, 0, 1]:
+			for piece in _pieces.get(c + Vector2i(dx, dz), []):
+				if piece[2] == own or not sim.network.segments.has(piece[2]):
+					continue
+				var type: int = sim.network.segments[piece[2]].type
+				var to_curb := RoadStyle.right_of_way_half(type) - RoadStyle.half_width(type)
+				if to_curb < RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH - 0.05:
+					continue  # no parkway: a country road, a freeway
+				var pa: Vector2 = piece[0]
+				var pb: Vector2 = piece[1]
+				if pa.distance_to(pb) < 0.5 or absf((pb - pa).normalized().dot(along)) < 0.97:
+					continue
+				var q := Geometry2D.get_closest_point_to_segment(mid, pa, pb)
+				# The lot line is 0.3 m behind the back of the sidewalk (LotPlanner).
+				var off := absf(q.distance_to(mid) - RoadStyle.right_of_way_half(type) - 0.3)
+				if off < best_off:
+					best_off = off
+					best = [int(piece[2]), float(piece[3])]
+	return best
+
+
+## The nearest point to `p` on segment `id`'s centre line (near by).
+func _nearest_on(p: Vector2, id: int) -> Vector2:
+	var c := Vector2i(floori(p.x / StreetLights.PIECE_CELL), floori(p.y / StreetLights.PIECE_CELL))
+	var best := Vector2.INF
+	for dx in [-1, 0, 1]:
+		for dz in [-1, 0, 1]:
+			for piece in _pieces.get(c + Vector2i(dx, dz), []):
+				if piece[2] == id:
+					var q := Geometry2D.get_closest_point_to_segment(p, piece[0], piece[1])
+					if q.distance_to(p) < best.distance_to(p):
+						best = q
+	return best
+
+
+## True when two roads meet at a node running straight on (one street
+## drawn in two pieces), not turning a corner.
+static func _straight_through(net: RoadNetwork, n: int, segs: Array) -> bool:
+	var c: Vector3 = net.nodes[n]
+	var dirs := []
+	for id in segs:
+		var sg: Dictionary = net.segments[id]
+		var ctrl: Vector3 = sg.ctrl
+		var to: Vector3 = ctrl if ctrl.distance_to(c) > 0.5 else net.nodes[sg.b if sg.a == n else sg.a]
+		dirs.append(Vector2(to.x - c.x, to.z - c.z).normalized())
+	return dirs[0].dot(dirs[1]) < -0.97
+
+
+func _keep_clear(p: Vector2, r: float) -> void:
+	var lo := Vector2i(floori((p.x - r) / CLEAR_CELL), floori((p.y - r) / CLEAR_CELL))
+	var hi := Vector2i(floori((p.x + r) / CLEAR_CELL), floori((p.y + r) / CLEAR_CELL))
+	for x in range(lo.x, hi.x + 1):
+		for z in range(lo.y, hi.y + 1):
+			var c := Vector2i(x, z)
+			if not _clear.has(c):
+				_clear[c] = []
+			_clear[c].append([p, r])
+
+
+## True when a street tree may stand at `q` (this view's frame).
+func _parkway_free(q: Vector2) -> bool:
+	for e in _clear.get(Vector2i(floori(q.x / CLEAR_CELL), floori(q.y / CLEAR_CELL)), []):
+		if q.distance_to(e[0]) < e[1]:
+			return false
+	return true
+
+
+## Where a home's curbside mailbox stands (MailView._mailboxes), or far off.
+func _mailbox_at(key: String) -> Vector2:
+	var lot: Dictionary = sim.lots.get(key, {})
+	var b: Dictionary = sim.buildings.get(key, {})
+	if lot.is_empty() or int(b.get("zone", -1)) != ZoneMap.Zone.RESIDENTIAL:
+		return Vector2.INF
+	var n: Vector3 = lot.normal
+	var p: Vector3 = lot.front - n * maxf(float(lot.get("to_curb", 4.0)) - 0.5, 0.3) \
+		+ (lot.dir as Vector3) * float(lot.get("width", 15.0)) * 0.3
+	return Vector2(p.x, p.z)
 
 
 ## Merges a square soon: at once the first time, or when a building
@@ -683,7 +961,7 @@ func _near_parts(key: String) -> Array:
 ## True when nothing is waiting to be drawn, merged or grown (for tools and
 ## tests that take pictures).
 func idle() -> bool:
-	if not _pending.is_empty() or _filling or not _fill.is_empty():
+	if not _pending.is_empty() or _filling or not _fill.is_empty() or not _refilter.is_empty():
 		return false
 	if not _merge_due.is_empty() or not _merging.is_empty() or _far_sq.has_dirty():
 		return false
@@ -916,6 +1194,11 @@ static func _local_lot(lot: Dictionary, frame: Transform3D) -> Dictionary:
 			var q := inv * Vector3(c.x, 0.0, c.y)
 			local.append(Vector2(q.x, q.z))
 		fit.outline = local
+	# The curbside mailbox (MailView), so street trees keep off it.
+	var n: Vector3 = lot.get("normal", Vector3.BACK)
+	var mail: Vector3 = lot.get("front", frame.origin) - n * maxf(float(lot.get("to_curb", 4.0)) - 0.5, 0.3) \
+		+ (lot.get("dir", Vector3.RIGHT) as Vector3) * float(lot.get("width", 15.0)) * 0.3
+	fit.mail_x = (frame.affine_inverse() * Vector3(mail.x, frame.origin.y, mail.z)).x
 	return fit
 
 
