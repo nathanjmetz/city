@@ -21,11 +21,6 @@ var _who := HFlowContainer.new()
 var _log := RichTextLabel.new()
 var _line := LineEdit.new()
 var _body := VBoxContainer.new()
-var _requests := VBoxContainer.new()
-var _players := VBoxContainer.new()  # (host) everyone and their PIN
-var _players_button := Button.new()
-var _new_name := LineEdit.new()
-var _just_added := ""  # copied to the clipboard once its PIN comes back
 var _toggle := Button.new()
 var _unread := 0
 var _bell := AudioStreamPlayer.new()
@@ -69,23 +64,9 @@ func _ready() -> void:
 	_toggle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_toggle.pressed.connect(func(): _set_open(false))
 	head.add_child(_toggle)
-	# The host adds players here and sends each their PIN.
-	_players_button.text = "Players"
-	_players_button.toggle_mode = true
-	_players_button.focus_mode = Control.FOCUS_NONE
-	_players_button.tooltip_text = "Add a player and get the PIN to send them"
-	_players_button.add_theme_font_override("font", Brand.ui(700))
-	_players_button.toggled.connect(func(on): _players.visible = on)
-	head.add_child(_players_button)
 
 	col.add_child(_body)
 	_body.add_theme_constant_override("separation", 6)
-	# The host lets new players in from here.
-	_requests.add_theme_constant_override("separation", 4)
-	_body.add_child(_requests)
-	_players.add_theme_constant_override("separation", 4)
-	_players.visible = false
-	_body.add_child(_players)
 	_who.add_theme_constant_override("h_separation", 4)
 	_who.add_theme_constant_override("v_separation", 4)
 	_body.add_child(_who)
@@ -123,16 +104,11 @@ func _ready() -> void:
 			_unread += 1
 			_update_title())
 	client.players_changed.connect(_update_who)
+	# Someone wants to join: the doorbell (Admin opens with a yes and a no).
 	client.requests_changed.connect(func():
-		_update_requests()
-		if not client.requests.is_empty():
-			_set_open(true)
 		if not client.requests.is_empty() and _bell_wait <= 0.0:
 			_bell_wait = DOORBELL_GAP
 			_ring())
-	_update_requests()
-	client.pins_changed.connect(_update_players)
-	_update_players()
 	client.city_added.connect(func(_id): _update_who())
 	_update_who()
 	_set_open(false)
@@ -167,112 +143,6 @@ func make_button() -> Button:
 
 func _process(delta: float) -> void:
 	_bell_wait -= delta
-
-
-## (Host) everyone waiting to be let in, with a yes and a no.
-func _update_requests() -> void:
-	for c in _requests.get_children():
-		c.queue_free()
-	for name in Session.client.requests:
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 4)
-		var l := ShellStyle.text("%s wants to join" % name, 14, 600)
-		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		l.clip_text = true
-		row.add_child(l)
-		var yes := Button.new()
-		yes.text = "Let in"
-		yes.focus_mode = Control.FOCUS_NONE
-		ShellStyle.primary(yes)
-		yes.pressed.connect(func(): Session.client.approve(name, true))
-		row.add_child(yes)
-		var no := Button.new()
-		no.text = "No"
-		no.focus_mode = Control.FOCUS_NONE
-		no.pressed.connect(func(): Session.client.approve(name, false))
-		row.add_child(no)
-		_requests.add_child(row)
-
-
-## (Host) every player with their PIN, and a line to add someone. A PIN
-## says who a player is, so it's all they type to get in.
-func _update_players() -> void:
-	var client := Session.client
-	_players_button.visible = client.is_host
-	if not client.is_host:
-		_players.visible = false
-		return
-	for c in _players.get_children():
-		if c != _new_name.get_parent():
-			c.queue_free()
-	_players.add_child(ShellStyle.text("PLAYERS AND THEIR PINS", 11, 700, Brand.INK_MUTED))
-	for p in client.pins:
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 4)
-		var name := str(p.get("name", ""))
-		var pin := str(p.get("pin", ""))
-		if pin != "" and name.to_lower() == _just_added.to_lower():
-			_just_added = ""
-			DisplayServer.clipboard_set(pin_message(name, pin))
-			_add_line({"from": "", "text": "%s's PIN is %s. A message with it and the link is copied: paste it to them." % [name, pin]})
-		var l := ShellStyle.text(name, 14, 600)
-		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		l.clip_text = true
-		row.add_child(l)
-		var code := ShellStyle.text(pin.left(3) + " " + pin.substr(3) if pin != "" else "no PIN", 15, 700)
-		code.add_theme_font_override("font", Brand.sign(700))
-		row.add_child(code)
-		if pin != "":
-			var copy := Button.new()
-			copy.text = "Copy"
-			copy.focus_mode = Control.FOCUS_NONE
-			copy.tooltip_text = "Copy a message with the link and %s's PIN" % name
-			copy.pressed.connect(func():
-				DisplayServer.clipboard_set(pin_message(name, pin))
-				_add_line({"from": "", "text": "Copied %s's PIN message." % name}))
-			row.add_child(copy)
-		if not p.get("host", false):
-			var off := Button.new()
-			off.text = "Remove" if pin != "" else "New PIN"
-			off.focus_mode = Control.FOCUS_NONE
-			off.tooltip_text = "Their PIN stops working and their town comes off the map" if pin != "" else "Let them in again, with a fresh town"
-			off.pressed.connect(func():
-				if pin != "":
-					client.remove_pin(name)
-				else:
-					_just_added = name
-					client.add_player(name))
-			row.add_child(off)
-		_players.add_child(row)
-	if _new_name.get_parent() == null:
-		var add := HBoxContainer.new()
-		add.add_theme_constant_override("separation", 4)
-		_new_name.placeholder_text = "Their name"
-		_new_name.max_length = 24
-		_new_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		_new_name.text_submitted.connect(func(_t): _add_player())
-		add.add_child(_new_name)
-		var make := Button.new()
-		make.text = "Add player"
-		make.focus_mode = Control.FOCUS_NONE
-		ShellStyle.primary(make)
-		make.pressed.connect(_add_player)
-		add.add_child(make)
-		_players.add_child(add)
-	_players.move_child(_new_name.get_parent(), -1)
-
-
-func _add_player() -> void:
-	var n := _new_name.text.strip_edges()
-	if n != "":
-		_just_added = n
-		Session.client.add_player(n)
-		_new_name.text = ""
-
-
-## What the host sends a player: where to play, and their PIN.
-static func pin_message(name: String, pin: String) -> String:
-	return "%s, come build next to me in Neighbors: https://nathanjmetz.github.io/city/ (or the free Mac/Windows app from there). Your PIN is %s." % [name, pin]
 
 
 ## Rings when someone else writes or a neighbor joins (never for your own lines).

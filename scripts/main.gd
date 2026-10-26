@@ -408,6 +408,11 @@ func _ready() -> void:
 		chat.setup(cam, region)
 		add_child(chat)
 		hud.add_top_button(chat.make_button())
+		# The host's tools (players and PINs, Sound mixer); hidden for everyone else.
+		var admin := AdminPanel.new()
+		admin.setup(Session.client)
+		add_child(admin)
+		hud.add_top_button(admin.make_button())
 		# Back after a while: the town lives the time the neighbors played.
 		var client := Session.client
 		if CatchUp.ticks_for(client.away) > 0:
