@@ -36,7 +36,7 @@ const _FILES := {
 	"courthouse": "courthouse", "football": "football", "fairgrounds": "fairgrounds", "elevator": "elevator",
 	"water_landmark": "water_landmark", "trailhead": "trailhead",
 	"bus": "bus", "transit": "bus", "taxi": "taxi",
-	"permits": "permits", "check": "check", "close": "close",
+	"permits": "permits", "check": "check", "close": "close", "admin": "admin",
 	"power_line": "power_line", "substation": "substation", "power_co": "power_co",
 	"well": "well", "water_tower": "water_tower", "water_utility": "water_utility",
 	"landfill": "landfill", "recycling": "recycling", "phone_co": "phone_co", "tower": "phone_co",

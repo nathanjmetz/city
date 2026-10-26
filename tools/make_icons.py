@@ -121,6 +121,8 @@ def waves(cx, cy, radii):
 
 
 ICONS = {
+    # --- The host's Admin button: a crown ---
+    "admin": [P("M3.5 7.5 L7.8 12.5 L12 5 L16.2 12.5 L20.5 7.5 L18.6 17.5 H5.4 Z"), P("M5.4 21 H18.6")],
     # --- Utilities ---
     "power_line": [P("M12 3 V21"), P("M4.5 7 H19.5"), P("M7 11.5 H17"), P("M8.5 21 H15.5"),
                    P("M8 7 L12 10.5 L16 7"), CF(4.5, 4.6, 1.4), CF(19.5, 4.6, 1.4)],
