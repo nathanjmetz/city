@@ -55,7 +55,8 @@ func _init() -> void:
 		if doc.append_from_file(path, state) != OK:
 			continue
 		var node := doc.generate_scene(state) as Node3D
-		node.position = Vector3(3.0 + gi * 1.0, 0, 0)
+		var only := OS.get_environment("ONLY_GLB") != ""
+		node.position = Vector3((gi - 2.5) * 1.0 if only else 3.0 + gi * 1.0, 0, 0)
 		node.rotation.y = 0.3
 		root.add_child(node)
 		for m in node.find_children("*", "MeshInstance3D", true, false):
@@ -70,7 +71,10 @@ func _init() -> void:
 	var dir := Vector3(0, 0.5, 1).normalized()
 	cam.fov = 45
 	root.add_child(cam)
-	var aim := Vector3(1.4 if glbs != "" else 0.0, 0.9, 0)
+	var aim := Vector3(0.0 if OS.get_environment("ONLY_GLB") != "" else 1.4 if glbs != "" else 0.0, 0.9, 0)
+	if OS.get_environment("ONLY_GLB") != "":
+		for mi in _mis:
+			mi.visible = false
 	cam.look_at_from_position(aim + dir * dist, aim, Vector3.UP)
 
 func _process(_d: float) -> bool:
