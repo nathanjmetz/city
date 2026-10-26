@@ -57,6 +57,9 @@ var sky: SkyLight
 ## Now: how much of the sky is cloud (0-1), and how hard it rains (0-1).
 var cover := 0.0
 var rain := 0.0
+## Real conditions to show instead of the odds, [cover, rain] (the home
+## screen's Marion report, MarionWeather), or [] for the odds.
+var live := []
 var _rain: ColorRect
 ## The sky's colour settings before any cloud.
 var _base := []
@@ -111,7 +114,7 @@ func _process(_delta: float) -> void:
 		return
 	var c := [0.0, 0.0]
 	if on:
-		c = conditions(sim.clock())
+		c = live if not live.is_empty() else conditions(sim.clock())
 	cover = lerpf(cover, float(c[0]), 0.02)
 	rain = lerpf(rain, float(c[1]), 0.03)
 	# Overcast: a flatter, greyer, dimmer picture.

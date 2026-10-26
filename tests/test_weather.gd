@@ -45,5 +45,20 @@ func _init() -> void:
 	var sim := CitySim.new()
 	var c0: Dictionary = sim.clock()
 	_check(c0.has("year") and c0.has("month") and c0.has("day") and c0.has("hour"), "the game's clock gives a date and hour")
+	# Marion's real report on the home screen (MarionWeather.read).
+	var now := Time.get_unix_time_from_datetime_string("2026-10-26T12:00:00")
+	var fresh := "2026-10-26T11:35:00+00:00"
+	_check(MarionWeather.read({"timestamp": "2026-10-26T07:00:00+00:00", "cloudLayers": [{"amount": "OVC"}]}, now).is_empty(),
+		"a report five hours old is ignored (the odds stand in)")
+	_check(MarionWeather.read({"timestamp": fresh, "cloudLayers": [{"amount": "CLR"}], "presentWeather": []}, now) == [0.0, 0.0],
+		"clear skies read as fair")
+	_check(MarionWeather.read({"timestamp": fresh, "cloudLayers": [{"amount": "SCT"}, {"amount": "OVC"}]}, now) == [1.0, 0.0],
+		"overcast reads as full cloud, by the thickest layer")
+	var wet := MarionWeather.read({"timestamp": fresh, "cloudLayers": [{"amount": "BKN"}],
+		"presentWeather": [{"weather": "rain", "intensity": "light"}]}, now)
+	_check(wet.size() == 2 and float(wet[0]) >= 0.9 and float(wet[1]) > 0.2 and float(wet[1]) < 0.5, "light rain: overcast and a light shower (%s)" % [wet])
+	var storm := MarionWeather.read({"timestamp": fresh, "presentWeather": [{"weather": "thunderstorms", "intensity": "heavy"}]}, now)
+	_check(float(storm[1]) >= 0.9, "a heavy thunderstorm pours (%s)" % [storm])
+	_check(float(MarionWeather.read({"timestamp": fresh, "presentWeather": [{"weather": "fog_mist"}]}, now)[1]) == 0.0, "mist isn't rain")
 	print("weather: %d failures" % _fails)
 	quit(1 if _fails > 0 else 0)
