@@ -149,7 +149,7 @@ func _process(delta: float) -> bool:
 		return false
 	if _frames == 60:
 		for c in _main.get_children():
-			if c is BuildingView and (not c._pending.is_empty() or not c._bake_due.is_empty() or c._filling) and _wait < 150:
+			if c is BuildingView and not c.idle() and _wait < 150:
 				_wait += 1
 				_frames = 59
 				return false

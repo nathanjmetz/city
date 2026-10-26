@@ -164,6 +164,9 @@ jobs:
           run_test tests/test_farm_view.gd
           run_test tests/test_stats.gd
           run_test tests/test_upgrade_art.gd
+          run_test tests/test_house_drawing.gd
+          run_test tests/test_house_lots.gd
+          run_test tests/test_lot_grade.gd
 
       - name: Stamp the build
         run: |

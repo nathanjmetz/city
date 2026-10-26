@@ -85,6 +85,7 @@ func _process(d: float) -> bool:
 			"frame_worst_ms": snappedf(_ms[-1], 0.1), "stutters_over_50ms": hitch}
 		_ms.clear()
 	if _frames == 4200:
+		_res["video_mb"] = Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576
 		print("ZOOM %s %s" % [a[4], JSON.stringify(_res)])
 		quit()
 		return true

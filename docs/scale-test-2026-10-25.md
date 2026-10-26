@@ -230,3 +230,51 @@ It is a measuring prototype: houses, row homes, apartments, shops, offices and f
 ### Pictures
 
 Far, middle, a street of homes at eye height, a roofline and a brick wall close up, in both renderers, were saved by `new_drawing_lab.gd ... shots` (not kept in the repo; rerun it to make them).
+
+
+## In the game, step 1: houses (2026-10-25)
+
+The lab's style, brought into BuildingView for houses (shops, civic buildings and factories follow). Houses keep their builder's plans (I-house, foursquare, bungalow, cape, ranch, colonial, split-level), porches, garages, chimneys, yards and wear: what changed is how they are kept and drawn, in three rings.
+
+- **Far:** every house's far version (its walls, roofs, windows and drives as drawn, about a hundred triangles), merged for each 256 m square (`scripts/detail/far_squares.gd`). That's all that's kept for a house far away.
+- **Middle:** within 600 m (360 m on Low, 420 m on Medium), each 128 m square's houses in full, merged into one mesh per material (`batch_square.gd`). The builder hands its drawing over as plain arrays (`HouseBuilder.keep_arrays`), so nothing is read back off the graphics chip; once merged, the arrays are let go. Past the ring the square goes back to its far versions and its full drawing is freed, so memory follows the camera, not the size of the town.
+- **Near:** within 90 m on High (more on Ultra and Cinematic), laid over each house's own walls and roofs a few jobs a frame (`near_detail.gd`): "double 4" vinyl siding panels, modular brick in running bond with the mortar set back, three-tab shingles in 5 in courses with staggered slots. Merged by kind across each 64 m of street (one brick batch, not one per house). With less than 4x antialiasing (the browser) it only shows where it's a few pixels big, because finer relief would shimmer.
+
+**Measured** with `tools/house_shots.gd` (the real game, the 12-block PerfTown, 2,860 buildings, sim paused, 1600x900, a real window), main and the branch back to back. The Mac was shared with other helpers' runs (load 10 to 17), so expect about 10% wobble.
+
+| | Desktop, main | Desktop, branch | Browser renderer, main | Browser renderer, branch |
+| --- | --- | --- | --- | --- |
+| Graphics memory | 2,402 MB | **1,258 MB** | 1,240 MB | **606 MB** |
+| Other memory | 1,059 MB | **997 MB** | 893 MB | **879 MB** |
+| 40 m, frame avg | 16.7 ms | 16.7 ms | 18.6 ms | 17.8 ms |
+| 100 m | 16.7 ms | 16.7 ms | 13.1 ms | 11.5 ms |
+| 300 m | 16.8 ms | 16.7 ms | 14.1 ms | 12.7 ms |
+| Dive 2 km to 40 m: avg, frames over 50 ms | 19.2 ms, 6 | 18.1 ms, 1 | 18.1 ms, 2 | 17.8 ms, 2 |
+| Sweep at 40 m: avg, frames over 50 ms | 16.8 ms, 1 | 16.7 ms, 0 | 19.8 ms, 0 | 17.9 ms, 0 |
+
+Desktop is the High tier; the browser's renderer (Compatibility) is Low. On the desktop the graphics driver held both runs to 60 frames a second, so those frame times say both keep up, not by how much. An earlier uncapped pair, before the last fixes, had the branch 1 to 3 ms slower while diving and sweeping (squares coming near are drawn again), the same at the three distances.
+
+**Pictures:** `docs/house-drawing/` (before and after, both renderers, 40, 100 and 300 m, and a brick split-level close up).
+
+**Not done yet:** the near detail has no soldier courses over windows or rowlock sills (the builder's windows sit on top of the walls), and odd-shaped brick faces keep their painted brick. Checked against standard dimensions (modular brick, 4 in laps, 5 in shingle exposure), not side by side with photos. Not run on the Mac mini, a Mac Studio or a real browser.
+
+
+## In the game, step 2: every building BuildingView draws (2026-10-25)
+
+Shops, strip centres, Main Street blocks, offices and towers, row homes, apartments and factories now go the same way as houses. BuildingView's old path is gone: it no longer keeps every building's own meshes, its far boxes and merged copies. Signs ride with their square's drawing. Brick commercial blocks and the mills get real brick up close. Big brick walls far off or seen edge on used to shimmer, so the close-up detail now dissolves where a pixel covers more than about 9 cm of wall, even with 4x antialiasing. Civic buildings (fire, police, schools, clinics, parks, warehouses, big plants) are drawn by their own views and haven't moved over yet.
+
+Measured as in step 1 (12-block PerfTown, 2,860 buildings, sim paused, main and branch back to back, the desktop held to 60 frames a second by the driver):
+
+| | Desktop, main | Desktop, branch | Browser renderer, main | Browser renderer, branch |
+| --- | --- | --- | --- | --- |
+| Graphics memory | 2,422 MB | **844 MB** | 1,250 MB | **438 MB** |
+| Other memory | 1,073 MB | **937 MB** | 909 MB | **833 MB** |
+| Houses 40 / 100 / 300 m | 16.8 / 16.7 / 17.3 ms | 16.8 / 16.7 / 16.7 ms | 20.8 / 11.9 / 14.6 ms | 20.5 / 11.3 / 13.7 ms |
+| Shops at 40 m | 16.3 ms | 16.7 ms | 16.4 ms | 16.4 ms |
+| Mills at 90 m | 16.7 ms | 16.8 ms | 10.8 ms | 13.3 ms |
+| Dive: avg, frames over 50 ms | 20.7 ms, 5 | 19.2 ms, 2 | 19.5 ms, 6 | 19.3 ms, 2 |
+| Sweep: avg, frames over 50 ms | 16.9 ms, 3 | 17.2 ms, 2 | 21.2 ms, 1 | 19.7 ms, 0 |
+
+The mills at 90 m were 2.5 ms slower in the browser renderer, in one run, with more triangles drawn (1.17 M vs 1.08 M). That wasn't looked into yet.
+
+**Pictures:** `docs/building-drawing/`.

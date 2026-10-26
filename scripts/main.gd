@@ -77,6 +77,7 @@ func _ready() -> void:
 	add_child(zone_view)
 
 	var buildings := BuildingView.new()
+	buildings.wait_for_eye = true  # the camera comes later in _ready
 	add_child(buildings)
 	buildings.setup(sim)
 

@@ -104,6 +104,12 @@ static var owner_care := 0
 ## True for a building in a protected historic district (or under an
 ## easement): its front is restored, as the rehab tax credit's standards ask.
 static var restored := false
+## Set by BuildingView around a build: the drawing comes back as its
+## surfaces' arrays (MeshParts, the mesh's "parts" meta: [[material name,
+## arrays], ...]) on an empty mesh, never sent to the graphics chip. The view
+## merges them into its batches itself, and reading a mesh back off the
+## chip (surface_get_arrays) stalls the frame.
+static var keep_arrays := false
 const PLYWOOD := Color("#b59a6c")
 ## Unmown lawn: tall grass gone to seed, dandelion and plantain, dead patches.
 const WEEDS := [Color("#8e9a55"), Color("#9ba05f"), Color("#7f8f4b"), Color("#a29f6a")]
@@ -2029,12 +2035,18 @@ func _commit_house() -> ArrayMesh:
 	for mat in _st:
 		if not mat in mats:
 			mats.append(mat)
+	var parts := []
 	for mat in mats:
 		var arrays: Array = _st[mat].commit_to_arrays() if _st.has(mat) else []
 		if _body.has(mat):
 			arrays = _merged(_body[mat], arrays)
+		if keep_arrays:
+			parts.append([mat, arrays])
+			continue
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, HouseMaterials.get_mat(mat))
+	if keep_arrays:
+		mesh.set_meta("parts", parts)
 	return mesh
 
 
@@ -2062,6 +2074,12 @@ static func _merged(plan: Array, own: Array) -> Array:
 
 
 func _commit_flat() -> ArrayMesh:
+	if keep_arrays:
+		var flat := ArrayMesh.new()
+		var arrays := _flat.commit_to_arrays()
+		var v = arrays[Mesh.ARRAY_VERTEX] if not arrays.is_empty() else null
+		flat.set_meta("parts", [["yard", arrays]] if v != null and not (v as PackedVector3Array).is_empty() else [])
+		return flat
 	var mesh := _flat.commit()
 	if mesh.get_surface_count() > 0:
 		mesh.surface_set_material(0, HouseMaterials.get_mat("yard"))
