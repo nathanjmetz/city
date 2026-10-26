@@ -648,6 +648,17 @@ func _shadows() -> void:
 		root.remove_child(field)
 		field.free()
 	GraphicsQuality.tree_shadows = was
+	# The browser has no full trees (no near band): its light trees cast
+	# their own shadows, as before (review of #614).
+	var b := GrownTrees.new()
+	b._scan_shadows = true
+	b._scan_r = Vector2(0.0, 150.0)
+	var browser_light := b._cast_for(GrownTrees.card_group(sp, TreeMesher.Lod.LIGHT))
+	b._scan_r = Vector2(150.0, 400.0)
+	var desk_light := b._cast_for(GrownTrees.card_group(sp, TreeMesher.Lod.LIGHT))
+	b.free()
+	_check(browser_light == GeometryInstance3D.SHADOW_CASTING_SETTING_ON and desk_light == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF,
+		"with no near band the light trees cast their own shadows; with one, they don't")
 	_check(not GrownTrees.is_shadow_group(GrownTrees.mesh_key(sp, 2, 12, 1)) and GrownTrees.is_shadow_group(GrownTrees.shadow_group(GrownTrees.mesh_key(sp, 2, 12, 1)))
 		and GrownTrees.group_mesh(GrownTrees.shadow_group(GrownTrees.mesh_key(sp, 2, 12, 1))) == GrownTrees.mesh_key(sp, 2, 12, 1)
 		and GrownTrees.is_shadow_group(GrownTrees.shadow_group(GrownTrees.card_group(TreeField.Species.RED_CEDAR, 1)))

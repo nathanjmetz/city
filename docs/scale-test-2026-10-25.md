@@ -308,11 +308,11 @@ Back to back, main then the branch (draw calls / triangles / frame median, p95):
 | | 300 m | 4,490 / 3.8 M | 4,129 / 3.8 M |
 | Desktop High, as planted | street | 5,241 / 10.1 M | 4,703 / 6.2 M |
 | | 100 m | 3,388 / 5.4 M | 2,930 / 4.1 M |
-| Browser renderer High, as planted | street | 3,806 / 5.4 M / 19.7 to 21.1, 24.7 to 26.7 ms | 3,590 / 4.8 M / 20.1 to 20.3, 24.9 ms |
-| | 100 m | 1,996 / 4.3 M / 14.6 to 16.3, 21.5 to 23.4 ms | 1,867 / 3.8 M / 12.8 to 14.3, 19.8 to 21.2 ms |
+| Browser renderer High, grown 25 years | street | 3,793 / 6.2 M | 3,814 / 6.2 M (unchanged: see below) |
+| | 100 m | 2,031 / 4.8 M | 2,032 / 4.8 M |
 | Browser renderer Low | all | no change (no grown trees, no tree shadows) | |
 
-High's frames were 16.7 ms (held to 60) before and after. Graphics memory is the same (1,569 MB on Cinematic, 875 MB on High, 495 MB browser High, 438 MB browser Low, at the end of a run).
+The browser has no full grown trees (no near band), so its light trees keep casting their own shadows, as on main: a first version handed their shadows to the cards there too, which turned the shadows under light trees into clumps of leaf cards (a reviewer's catch). High's frames were 16.7 ms (held to 60) before and after. Graphics memory is the same (1,569 MB on Cinematic, 875 MB on High, 495 MB browser High, 438 MB browser Low, at the end of a run).
 
 **Pictures:** `docs/render-budget/` (before on the left, after on the right). Measured against two runs of the same code (the trees sway, so no two pictures match): from the street 1 to 3% of pixels changed by more than a shade (under 1% run to run), in the flecks of sun under trees past 60 m; from 100 m in a grown town 9 to 10% (about 2.5% run to run), in the shapes of tree shadows on the ground 100 to 475 m off, where a lighter tree's or a card's shadow now stands in. Looked at side by side, they read the same; nothing is missing or added. As planted the change is about run-to-run size; from 300 m, 0.1 to 2.4% of pixels.
 

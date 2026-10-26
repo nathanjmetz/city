@@ -207,7 +207,8 @@ func _process(delta: float) -> void:
 	else:
 		_vel = Vector3.ZERO
 	_last_cp = cp
-	if not _scanning and (cp.distance_to(_centre) > RESCAN or TreeField.version != _version or r != _scan_r):
+	if not _scanning and (cp.distance_to(_centre) > RESCAN or TreeField.version != _version or r != _scan_r
+			or GraphicsQuality.tree_shadows != _scan_shadows):
 		_start_scan(scan_point(cp, _vel, _scan_secs), r)
 	var budgets := budgets_for(TreeLook.browser())
 	if _scanning:
@@ -391,6 +392,7 @@ func _finish_scan() -> void:
 		var n: int = _counts[group]
 		mmi.multimesh.instance_count = n
 		mmi.multimesh.buffer = _bufs[group]
+		mmi.cast_shadow = _cast_for(group)
 		if group >= 0:
 			_used[group_mesh(group)] = _frame
 			if not is_shadow_group(group):
@@ -414,10 +416,21 @@ func _group(group: int) -> MultiMeshInstance3D:
 		mm.mesh = _meshes[group_mesh(group)]
 	_groups[group] = mmi
 	mmi.multimesh = mm
-	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY if is_shadow_group(group) \
-		else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mmi.cast_shadow = _cast_for(group)
 	add_child(mmi)
 	return mmi
+
+
+## How a group casts the sun's shadow (see SHADOW_BIT). With no full trees
+## (the browser: no near band, so no shadow groups) the light trees cast
+## their own, as they did before, and the cards keep out of their band
+## (TreeLook's band_keep).
+func _cast_for(group: int) -> GeometryInstance3D.ShadowCastingSetting:
+	if is_shadow_group(group):
+		return GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	if _scan_shadows and _scan_r.x <= 0.0 and group_lod(group) == TreeMesher.Lod.LIGHT:
+		return GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	return GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 ## The sun's shadows of the grown trees. The groups that draw them cast
@@ -448,6 +461,11 @@ static func shadow_group(group: int) -> int:
 
 static func is_shadow_group(group: int) -> bool:
 	return (group & SHADOW_BIT) != 0 if group >= 0 else (-1 - group) >= SHADOW_CARDS
+
+
+## A group's level (TreeMesher.Lod).
+static func group_lod(group: int) -> int:
+	return (group & 1) if group >= 0 else (((-1 - group) % SHADOW_CARDS) & 1)
 
 
 ## The mesh key a group draws (groups of grown meshes only).

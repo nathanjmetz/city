@@ -57,7 +57,8 @@ float tree_hash(vec3 origin, float salt) {
 // The sun's shadow map (`shadow`) is cheaper (GrownTrees.SHADOW_BIT): a
 // full grown tree casts no shadow, the light grown tree at its spot casts
 // it ([b1, 1), drawn into the shadow map only); past NEAR the full card at
-// a tree's spot casts it, not the light grown tree ([b3, b1)).
+// a tree's spot casts it, not the light grown tree ([b3, b1)). Without a
+// near band (the browser) each version casts its own, as it draws.
 vec2 band_keep(vec3 origin, bool grows, bool shadow) {
 	float b1 = 1.0;
 	float b2 = 1.0;
@@ -101,7 +102,9 @@ vec2 band_keep(vec3 origin, bool grows, bool shadow) {
 	// there (with a short reach, straight from the full ones); neither
 	// takes over a grown tree.
 	b4 = min(b4, b2);
-	if (shadow) {
+	// With no full grown trees (grown_zone.x 0: the browser) every version
+	// casts its own shadow, as it draws.
+	if (shadow && grown_zone.x > 0.0) {
 		if (zone_mode == 0 && !light_card) {
 			return vec2(max(min(b3, b1), b4), b1);
 		}
@@ -441,7 +444,7 @@ void vertex() {
 		float t_far = smoothstep(grown_zone.y - grown_zone.z, grown_zone.y, d);
 		keep = zone_mode == 1 ? vec2(t_mid, 1.0) : vec2(t_far, t_mid);
 		// The light tree casts the full one's shadow (band_keep).
-		if (PROJECTION_MATRIX[3][3] > 0.5 && zone_mode == 2) {
+		if (PROJECTION_MATRIX[3][3] > 0.5 && zone_mode == 2 && grown_zone.x > 0.0) {
 			keep = vec2(t_mid, 1.0);
 		}
 	}
