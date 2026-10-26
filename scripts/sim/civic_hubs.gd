@@ -9,6 +9,10 @@ extends RefCounted
 ##     next to what it has when it's busy (waste) or the town grows
 ##     (cemetery). It never opens a second site, and roads always win: a
 ##     road built through it cuts its land back to the piece by the gate.
+##   - Boxed in by roads, it fills its block up to the sidewalk (Nathan,
+##     2026-10-26: "when a hub with leader is "trapped" inside a road area,
+##     it should nicely fill in that area up to the edge (sidewalk) so that
+##     it looks like its using its space well."): edge pieces, see below.
 ## Every load of trash rides a real garbage truck (Traffic's dispatch): the
 ## truck leaves its hub, stops on streets where trash is out at the curb, and
 ## drives back to unload. Idle trucks wait inside the hub.
@@ -35,11 +39,21 @@ const TICKS_PER_DAY := 24 * CitySim.TICKS_PER_HOUR
 const TOOL_KINDS := {100: "landfill", 101: "recycling_1", 102: "cemetery"}
 ## A truck looks this far from its last stop for the next street.
 const NEXT_STOP_REACH := 800.0
+## An edge piece (a piece cut back to the road) is kept only if at least
+## this share of a whole piece is left.
+const EDGE_MIN := 0.25
+## Edge outlines are kept in 1/64 m steps: exact in a JSON save, so a loaded
+## copy of the city has exactly the same land.
+const EDGE_SNAP := 1.0 / 64.0
 
 ## id -> {kind, pos (gate: middle of the front edge), dir (unit, toward the
 ## road), cell (metres), cells: [Vector2i], built (tick), scar (game days the
 ## old landfill still weighs on the area), received (lb brought in), want,
-## short, quiet (growth counters), boxed (no room to grow), ver}
+## short, quiet (growth counters), boxed (no room to grow), ver, edge}
+## `edge` holds the hub's edge pieces: piece -> its outline cut back to the
+## road, in the hub's own frame (x along the road, z back from it, metres;
+## see edge_poly). They aren't in `cells`: they count as the hub's land
+## (at, covers) but not as pieces for upkeep, trucks or the growth limit.
 var hubs := {}
 ## Trash out at the curb on each street: road segment id -> lb.
 var trash := {}
@@ -88,6 +102,54 @@ static func cell_poly(h: Dictionary, c: Vector2i, shrink := 0.0) -> PackedVector
 	return out
 
 
+## A point of the hub's own frame (x along the road, z back from it) on the
+## ground (x, z), and back.
+static func to_world(h: Dictionary, q: Vector2) -> Vector2:
+	var p: Vector3 = h.pos + right(h) * q.x - h.dir * q.y
+	return Vector2(p.x, p.z)
+
+
+static func to_local(h: Dictionary, p: Vector2) -> Vector2:
+	var d: Vector3 = Vector3(p.x, 0.0, p.y) - Vector3(h.pos.x, 0.0, h.pos.z)
+	return Vector2(d.dot(right(h)), -d.dot(h.dir))
+
+
+## Edge piece `c`'s outline on the ground (x, z).
+static func edge_poly(h: Dictionary, c: Vector2i) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for q in h.get("edge", {}).get(c, PackedVector2Array()):
+		out.append(to_world(h, q))
+	return out
+
+
+## All the ground a hub holds, as outlines (x, z): each whole piece, then
+## each edge piece.
+static func land_polys(h: Dictionary) -> Array:
+	var out := []
+	for c in h.cells:
+		out.append(cell_poly(h, c))
+	for c in h.get("edge", {}):
+		out.append(edge_poly(h, c))
+	return out
+
+
+## Square metres of land a hub holds, edge pieces included.
+static func land_area(h: Dictionary) -> float:
+	var a: float = h.cells.size() * h.cell * h.cell
+	for c in h.get("edge", {}):
+		a += area(h.edge[c])
+	return a
+
+
+static func area(poly: PackedVector2Array) -> float:
+	var a := 0.0
+	for i in poly.size():
+		var p := poly[i]
+		var q := poly[(i + 1) % poly.size()]
+		a += p.x * q.y - q.x * p.y
+	return absf(a) * 0.5
+
+
 ## Where a new hub goes when placed beside the road nearest `hit`: [gate,
 ## dir toward the road], or [] if no street is near.
 static func site_near(network: RoadNetwork, hit: Vector3) -> Array:
@@ -130,13 +192,21 @@ func _cell_problem(sim: CitySim, h: Dictionary, c: Vector2i, id: int, auto: bool
 	var pts := [mid]
 	for q in poly:
 		pts.append(mid.lerp(Vector3(q.x, 0.0, q.y), 0.9))
+	return _ground_problem(sim, poly, pts, id, auto)
+
+
+## Why ground `poly` (x, z), looked at through the points `pts`, can't join
+## hub `id`, or "". `road` false skips the road check (an edge piece is
+## already cut back clear of the roads).
+func _ground_problem(sim: CitySim, poly: PackedVector2Array, pts: Array, id: int, auto: bool,
+		road := true) -> String:
 	for p in pts:
 		if not sim.land_ok(p):
 			return "Can't build in the water or on a slope that steep."
 	for p in pts:
 		if sim.reserves.kind_at(p) != "":
 			return "That land is reserved for %s." % Reserves.KINDS[sim.reserves.kind_at(p)]
-	if Services.road_clash(sim.network, poly):
+	if road and Services.road_clash(sim.network, poly):
 		return "Too close to a road."
 	for sid in sim.services.buildings:
 		if not Geometry2D.intersect_polygons(poly, sim.services.footprint(sid)).is_empty():
@@ -181,7 +251,7 @@ func add(kind: String, pos: Vector3, dir: Vector3, tick: int) -> int:
 	_next_id += 1
 	var h := draft(kind, pos, dir)
 	h.merge({"since": tick, "scar": 0.0, "received": 0.0, "want": 0, "short": 0, "quiet": 0, "built": [],
-		"boxed": false, "ver": 0})
+		"boxed": false, "ver": 0, "edge": {}})
 	hubs[id] = h
 	version += 1
 	return id
@@ -225,6 +295,9 @@ func at(p: Vector3) -> int:
 		var c := Vector2i(roundi(d.dot(right(h)) / h.cell), floori(-d.dot(h.dir) / h.cell))
 		if c in h.cells:
 			return id
+		var e: Dictionary = h.get("edge", {})
+		if e.has(c) and Geometry2D.is_point_in_polygon(Vector2(d.dot(right(h)), -d.dot(h.dir)), e[c]):
+			return id
 	return -1
 
 
@@ -242,6 +315,9 @@ func extent(id: int) -> Array:
 	var r := 0.0
 	for c in h.cells:
 		r = maxf(r, cell_center(h, c).distance_to(mid) + h.cell * 0.71)
+	for c in h.get("edge", {}):
+		for q in edge_poly(h, c):
+			r = maxf(r, Vector2(mid.x, mid.z).distance_to(q))
 	return [mid, r]
 
 
@@ -949,7 +1025,12 @@ func _decide(sim: CitySim) -> void:
 			var c := _best_piece(sim, id)
 			h.boxed = c == Vector2i.MAX
 			if not h.boxed:
+				# An edge piece the road has since let go of becomes whole.
+				h.edge.erase(c)
 				h.cells.append(c)
+				_touch(h)
+				sim.zones_changed.emit()
+			elif _take_edge(sim, id):
 				_touch(h)
 				sim.zones_changed.emit()
 		elif not grow:
@@ -986,8 +1067,215 @@ static func _less(a: Vector2i, b: Vector2i) -> bool:
 	return a.y < b.y or (a.y == b.y and a.x < b.x)
 
 
+# --- Edge pieces ------------------------------------------------------------------
+# A hub boxed in by roads (no whole piece fits) fills the rest of its block
+# up to the sidewalk: it takes a piece next to its land cut back to each
+# road's right of way plus SETBACK, the same gap its front keeps from the
+# street. Kept only when at least EDGE_MIN of a piece is left and nothing
+# else (another owner, a zoned or built lot, water, a reserve) is on it.
+# Roads still win: a road built later through an edge piece cuts it back
+# again, or takes it (_prune).
+
+## Takes the edge piece next to hub `id` that keeps it most compact, if one
+## fits. True when it took one.
+func _take_edge(sim: CitySim, id: int) -> bool:
+	var h: Dictionary = hubs[id]
+	var mid := Vector2.ZERO
+	for c in h.cells:
+		mid += Vector2(c)
+	mid /= h.cells.size()
+	var tries := []
+	var seen := {}
+	for c in h.cells + h.edge.keys():
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var n: Vector2i = c + d
+			if n.y < 0 or n in h.cells or h.edge.has(n) or seen.has(n):
+				continue
+			seen[n] = true
+			tries.append([Vector2(n).distance_to(mid), n])
+	tries.sort_custom(func(a, b): return a[0] < b[0] - 0.001 or (absf(a[0] - b[0]) <= 0.001 and _less(a[1], b[1])))
+	for t in tries:
+		var shape := _edge_shape(sim, h, t[1], id, h.edge)
+		if not shape.is_empty():
+			h.edge[t[1]] = shape
+			return true
+	return false
+
+
+## Piece `c` of hub `id` cut back to the roads, in the hub's frame, if what's
+## left is big enough, touches the hub's land (its whole pieces and the edge
+## pieces in `edges`) and is free; else empty. `from` is an edge piece's
+## outline (x, z) to cut back again: land the hub already holds, so only
+## its size and touch are checked.
+func _edge_shape(sim: CitySim, h: Dictionary, c: Vector2i, id: int, edges: Dictionary,
+		from := PackedVector2Array()) -> PackedVector2Array:
+	# Cut a few centimetres wider than the roads need, so the outline kept in
+	# EDGE_SNAP steps never pokes back over them.
+	var parts := _cut_by_roads(sim.network, cell_poly(h, c) if from.is_empty() else from, EDGE_SNAP * 3.0)
+	if parts.is_empty():
+		return PackedVector2Array()
+	var best := PackedVector2Array()
+	var best_a := 0.0
+	for part in parts:
+		var a := area(part)
+		if a > best_a + 0.01 and _touches_land(h, c, part, edges):
+			best = part
+			best_a = a
+	var full: float = h.cell * h.cell
+	# Not cut at all: the piece was turned down for something other than a road.
+	if best.is_empty() or best_a < full * EDGE_MIN or (from.is_empty() and best_a > full * 0.98):
+		return PackedVector2Array()
+	var local := PackedVector2Array()
+	for q in best:
+		var l := to_local(h, q)
+		l = Vector2(snappedf(l.x, EDGE_SNAP), snappedf(l.y, EDGE_SNAP))
+		if local.is_empty() or l.distance_to(local[-1]) > 0.05:
+			local.append(l)
+	if local.size() > 1 and local[0].distance_to(local[-1]) <= 0.05:
+		local.remove_at(local.size() - 1)
+	if local.size() < 3:
+		return PackedVector2Array()
+	var world := PackedVector2Array()
+	for l in local:
+		world.append(to_world(h, l))
+	if from.is_empty() and _ground_problem(sim, world, _inner_pts(world, h.cell * 0.2), id, true, false) != "":
+		return PackedVector2Array()
+	return local
+
+
+## `poly` (x, z) less every road's right of way and the SETBACK gap (and
+## `extra` metres): the pieces left, or [] when a road's whole band sits
+## inside it (it would leave a hole).
+static func _cut_by_roads(network: RoadNetwork, poly: PackedVector2Array, extra := 0.0) -> Array:
+	var box := Rect2(poly[0], Vector2.ZERO)
+	for q in poly:
+		box = box.expand(q)
+	var parts := [poly]
+	for band in _road_bands(network, box, extra):
+		var next := []
+		for p in parts:
+			var inside := true
+			for q in band:
+				if not Geometry2D.is_point_in_polygon(q, p):
+					inside = false
+					break
+			if inside:
+				return []
+			next.append_array(Geometry2D.clip_polygons(p, band))
+		parts = next
+	return parts
+
+
+## Each road near `box` widened to its right of way plus SETBACK (and
+## `extra`), as outlines (x, z), in road id order.
+static func _road_bands(network: RoadNetwork, box: Rect2, extra := 0.0) -> Array:
+	var out := []
+	var ix := RoadIndex.of(network)
+	var ids: Array = ix.near(box.grow(SETBACK + 1.0)) if ix != null else network.segments.keys()
+	ids.sort()
+	for id in ids:
+		var w := RoadStyle.right_of_way_half(network.segments[id].type) + SETBACK + extra
+		var c := network.curve_of(id)
+		var reach := Rect2(Vector2(c[0].x, c[0].z), Vector2.ZERO).expand(Vector2(c[1].x, c[1].z)) \
+			.expand(Vector2(c[2].x, c[2].z)).grow(w + 1.0)
+		if not reach.intersects(box):
+			continue
+		var length: float = c[0].distance_to(c[1]) + c[1].distance_to(c[2])
+		var line := PackedVector2Array()
+		for p in network.sample_segment(id, clampi(int(length / 4.0), 8, 128)):
+			line.append(Vector2(p.x, p.z))
+		out.append_array(Geometry2D.offset_polyline(line, w, Geometry2D.JOIN_ROUND, Geometry2D.END_ROUND))
+	return out
+
+
+## True when `part` (x, z) runs along a side of the land next to piece `c`
+## (hub `h`'s whole pieces, or the edge pieces in `edges`) for a good
+## stretch: a fifth of a piece.
+static func _touches_land(h: Dictionary, c: Vector2i, part: PackedVector2Array, edges: Dictionary) -> bool:
+	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		var n: Vector2i = c + d
+		var other := PackedVector2Array()
+		if n in h.cells:
+			other = cell_poly(h, n)
+		elif edges.has(n):
+			for q in edges[n]:
+				other.append(to_world(h, q))
+		else:
+			continue
+		var touch := 0.0
+		for grown in Geometry2D.offset_polygon(other, 0.5):
+			for q in Geometry2D.intersect_polygons(part, grown):
+				touch += area(q)
+		if touch >= 0.5 * h.cell * 0.2:
+			return true
+	return false
+
+
+## Points to look at ground `poly` (x, z) through: a grid `step` apart
+## inside it, and its corners pulled a metre and a half in.
+static func _inner_pts(poly: PackedVector2Array, step: float) -> Array:
+	var box := Rect2(poly[0], Vector2.ZERO)
+	var mid := Vector2.ZERO
+	for q in poly:
+		box = box.expand(q)
+		mid += q
+	mid /= poly.size()
+	var out := []
+	var nx := maxi(1, ceili(box.size.x / step))
+	var ny := maxi(1, ceili(box.size.y / step))
+	for i in nx:
+		for j in ny:
+			var q := box.position + Vector2((i + 0.5) * box.size.x / nx, (j + 0.5) * box.size.y / ny)
+			if Geometry2D.is_point_in_polygon(q, poly):
+				out.append(Vector3(q.x, 0.0, q.y))
+	for q in poly:
+		var p: Vector2 = q + (mid - q).limit_length(1.5)
+		if Geometry2D.is_point_in_polygon(p, poly):
+			out.append(Vector3(p.x, 0.0, p.y))
+	return out
+
+
+## Roads win over edge pieces too: each is cut back to the roads as they
+## are now (or goes, if too little is left), and any no longer joined to
+## the hub's whole pieces goes. True when anything changed.
+func _prune_edges(sim: CitySim, h: Dictionary) -> bool:
+	var changed := false
+	for c in h.edge.keys():
+		var now := edge_poly(h, c)
+		var parts := _cut_by_roads(sim.network, now)
+		var left := 0.0
+		for part in parts:
+			left = maxf(left, area(part))
+		if left >= area(now) - 0.5:
+			continue
+		changed = true
+		var shape := _edge_shape(sim, h, c, -1, h.edge, now) if left > 0.0 else PackedVector2Array()
+		if shape.is_empty():
+			h.edge.erase(c)
+		else:
+			h.edge[c] = shape
+	# Only edge pieces still joined to the whole pieces stay.
+	var joined := {}
+	var grew := true
+	while grew:
+		grew = false
+		for c in h.edge:
+			if not joined.has(c) and _touches_land(h, c, edge_poly(h, c), joined):
+				joined[c] = h.edge[c]
+				grew = true
+	for c in h.edge.keys():
+		if not joined.has(c):
+			h.edge.erase(c)
+			changed = true
+	return changed
+
+
 ## Gives back the newest piece that leaves the rest in one piece.
 func _shrink(h: Dictionary) -> void:
+	if not h.edge.is_empty():
+		h.edge.erase(h.edge.keys()[-1])
+		_touch(h)
+		return
 	for i in range(h.cells.size() - 1, BASE.size() - 1, -1):
 		var rest: Array = h.cells.duplicate()
 		rest.remove_at(i)
@@ -999,6 +1287,7 @@ func _shrink(h: Dictionary) -> void:
 
 ## Roads win: pieces a road now runs through go, and if that splits the
 ## hub, only the part with the most land (by the gate on a tie) stays.
+## Edge pieces are cut back to the new roads (_prune_edges).
 func _prune(sim: CitySim) -> void:
 	var ids := hubs.keys()
 	ids.sort()
@@ -1009,6 +1298,8 @@ func _prune(sim: CitySim) -> void:
 			if not Services.road_clash(sim.network, cell_poly(h, c, 1.0)):
 				keep.append(c)
 		if keep.size() == h.cells.size():
+			if not h.edge.is_empty() and _prune_edges(sim, h):
+				_touch(h)
 			continue
 		var parts := []
 		var left := keep.duplicate()
@@ -1021,6 +1312,7 @@ func _prune(sim: CitySim) -> void:
 			if part.size() > best.size() or (part.size() == best.size() and _gate_side(part) < _gate_side(best)):
 				best = part
 		h.cells = h.cells.filter(func(c): return c in best)
+		_prune_edges(sim, h)
 		_touch(h)
 		if h.cells.is_empty():
 			remove(id)
@@ -1086,6 +1378,14 @@ func to_dict() -> Dictionary:
 			"since": h.since, "scar": h.scar, "received": h.received, "want": h.want, "short": h.short,
 			"quiet": h.quiet, "capped": h.get("capped", false), "built": h.built,
 			"leader": h.get("leader", {}), "why": h.get("why", "")}
+		if not h.edge.is_empty():
+			var edge := []
+			for c in h.edge:
+				var pts := []
+				for q in h.edge[c]:
+					pts.append_array([q.x, q.y])
+				edge.append([c.x, c.y, pts])
+			out[str(id)].edge = edge
 	var t := {}
 	for seg in trash:
 		t[str(seg)] = trash[seg]
@@ -1110,8 +1410,15 @@ func from_dict(d: Dictionary) -> void:
 			"cells": cells, "since": int(s.get("since", 0)), "scar": float(s.get("scar", 0.0)),
 			"received": float(s.get("received", 0.0)), "want": int(s.get("want", 0)),
 			"short": int(s.get("short", 0)), "quiet": int(s.get("quiet", 0)), "boxed": false,
-			"capped": bool(s.get("capped", false)), "ver": 0, "why": str(s.get("why", ""))}
+			"capped": bool(s.get("capped", false)), "ver": 0, "why": str(s.get("why", "")), "edge": {}}
 		var h: Dictionary = hubs[int(k)]
+		# Edge pieces: [x, y, [outline x, z, x, z, ...]] (older saves have none).
+		for e in s.get("edge", []):
+			var poly := PackedVector2Array()
+			for i in range(0, e[2].size() - 1, 2):
+				poly.append(Vector2(float(e[2][i]), float(e[2][i + 1])))
+			if poly.size() >= 3:
+				h.edge[Vector2i(int(e[0]), int(e[1]))] = poly
 		if s.get("leader", {}) is Dictionary and not s.get("leader", {}).is_empty():
 			h.leader = s.leader
 		# Older saves kept the build tick in "built" and the tree in "dev".

@@ -295,6 +295,9 @@ static func apply(sim: CitySim, cmd: Dictionary) -> bool:
 		var h: Dictionary = sim.hubs.hubs[id]
 		h.pos = p.hubs[id][0]
 		h.dir = p.hubs[id][1]
+		# Edge pieces were cut to the old block's roads: they go, and come
+		# back fitted to the new block if it's boxed in there too.
+		h.edge = {}
 		sim.hubs._touch(h)
 		for c in h.cells:
 			sim._clear_zones_under(CivicHubs.cell_poly(h, c))

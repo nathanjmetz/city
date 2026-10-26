@@ -240,6 +240,9 @@ static func sources(sim: Object) -> Dictionary:
 		var h: Dictionary = sim.hubs.hubs[id]
 		for cell in h.cells:
 			out["h%d %s %s" % [id, cell, h.pos]] = _poly_cells.bind(CivicHubs.cell_poly(h, cell))
+		for cell in h.get("edge", {}):
+			var ep := CivicHubs.edge_poly(h, cell)
+			out["he%d %s %s" % [id, cell, ep]] = _poly_cells.bind(ep)
 	for id in sim.mail.offices:
 		var o: Dictionary = sim.mail.offices[id]
 		for cell in o.cells:
