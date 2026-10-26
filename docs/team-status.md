@@ -16,18 +16,21 @@ When a helper hits a wall it writes its question here and stops. That task waits
 
 - **Day and night off (from the daylight work, PR #541):** when the day-and-night cycle is turned off, should the game show a real summer moment (for example June 21 at 1:40 pm), or keep today's tuned sun from the southwest, which a real summer day never has? Until you answer, it keeps today's look.
 
-## Where everything stands (2026-10-26, early morning)
+## Where everything stands (2026-10-26, mid-morning)
 
 **Merged 2026-10-26:**
-- #583-#585 traffic control stages 1-3: your own light timing, green waves (Ctrl-click), smart lights with sensors
-- #586 ambient life: builders at work on house sites, recess at schools
-- #587 weather: overcast days and rain by Indiana's odds, with an on/off switch beside seasons; on the home screen too (made-up odds for now, not Marion's real weather)
-- #588 houses vary their distance from the curb; a car's stop now saves the same before and after loading (copies had drifted)
-- #590 cars stop at the stop line, not 2.5 m short of it. The old "7.9 m short at the highway" figure was a measuring fault; it's 1.7 m now.
+- #583-#585, #592, #599 traffic control, all four stages: your own light timing, green waves, smart lights, and engineers who retime the lights. The engineers come with a Traffic Management Center (unlocked with the city charter) or a university's Transportation research center.
+- #587, #595, #598 weather: overcast, rain, winter snow and morning fog by Indiana's odds, with an on/off switch. The home screen shows Marion's real weather from the National Weather Service (KMZZ).
+- #588 houses vary their distance from the curb; a car's stop saves the same before and after loading
+- #590 cars stop at the stop line, not 2.5 m short of it
+- #589, #594 boxed-in landfills, recycling, cemeteries and post offices fill their block to the sidewalk
+- #593 levels follow needs: a building moves up only with half its needs met, and drops a level after two days without power or water
+- #596 people get the car they should have (those who moved in before their drive was built never got one); #597 fewer short walks (1 in 8 in a small town)
+- #586 builders and recess; (next) snowmen, sledding, lemonade, bikes, hoops, yard sales and costumes
 
-**Waiting on a second reviewer, then merge:**
-- #589 boxed-in landfills, recycling and cemeteries fill their block up to the sidewalk. Other hub kinds (post office first, it's the easiest) come after; the helper's notes on each are in #589.
-- `traffic-center` branch: stage 4, the Traffic Management Center (Civic > Traffic). Its engineers count cars at each light and retime the greens every three game hours; lights you time stay yours.
+**For Nathan to decide:** the streets still look busy with walkers. The real reason is time: a game hour is about 6 seconds of traffic, so a 150 m walk lasts about 19 game hours on screen. Options: make walkers stride faster than real (a time-lapse look), make fewer short trips, or accept it.
+
+**Known gaps:** tests/test_green_light.gd is not in CI (2.6 s between cars on green against a 2.3 s target; the start-up ripple). Family rides for children were tried and dropped (bugs found in review; little effect).
 
 **Earlier (2026-10-25/26):** #567 cars drive the limit, #568 roundabouts as a whole, #569-#578 people (skins, figures, five detail levels, ready-made desktop people), #579 faster four-way stops, #580 load until drawn, #581 admin sound mixer, #582 detail floor, #552 live home screen, #555 automatic quality, #551 new building drawing (minor items listed on #551), #557-#566 green lights, signal heads, people sizes, fewer walkers, solid county roads, strides, dirt farm lanes, slower farms, levels 1-100.
 
