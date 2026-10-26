@@ -134,6 +134,8 @@ func _draw_walkers() -> void:
 		var p: Vector3 = Terrain.stand(pose[0])
 		if p.distance_to(eye) > FAR:
 			continue
+		if NearPeople.drawn.has(int(w.id)):
+			continue  # a ready-made person stands in for this one up close
 		var d := p.distance_to(eye)
 		var lod := 0
 		for r in reach.size():
