@@ -124,5 +124,19 @@ func _init() -> void:
 	_check(not w.traffic.tuned.has(wa) and not w.traffic.tuned.has(wb)
 		and is_equal_approx(w.traffic.junctions[wa].cycle, cyc) and is_equal_approx(w.traffic.junctions[wb].cycle, cyc),
 		"a green wave keeps its timing at both lights (%.1f s, %.1f s)" % [w.traffic.junctions[wa].cycle, w.traffic.junctions[wb].cycle])
+	# A university's transportation research center brings engineers too.
+	var u := CitySim.new()
+	u.apply({"type": "build_road", "start": [-400, 0], "ctrl": [150, 0], "end": [700, 0], "road": RoadStyle.Type.AVENUE})
+	u.apply({"type": "build_road", "start": [0, -300], "ctrl": [0, 0], "end": [0, 300], "road": RoadStyle.Type.AVENUE})
+	u.tick()
+	var cid := u.education.add(u, "university", Vector3(-200, 0, 120), Vector3(0, 0, -1), 7, u.tick_count)
+	u.education.campuses[cid].built = ["hall", "engineering", "traffic_lab"]
+	_drive(u, 1500)
+	_check(u.traffic.engineers and u.traffic.tuned.has(u.network.find_node_near(Vector3.ZERO, 1.0)),
+		"a university's transportation research center retimes the lights too")
+	u.education.campuses[cid].built = ["hall", "engineering"]
+	for i in TrafficSim.RETUNE_EVERY + 10:
+		u.tick()
+	_check(not u.traffic.engineers and u.traffic.tuned.is_empty(), "without it, its timings go")
 	print("traffic center: %s" % ("all passed" if _fails == 0 else "%d failed" % _fails))
 	quit(1 if _fails > 0 else 0)
