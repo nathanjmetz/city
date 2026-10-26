@@ -86,7 +86,7 @@ func _process(d: float) -> bool:
 			if c.has_method("idle"):
 				if not c.idle():
 					return false
-			elif not c._pending.is_empty() or not c._bake_due.is_empty() or c._filling:
+			elif not c._pending.is_empty() or c._filling:
 				return false
 		_phase = "views"
 		_find_brick()
