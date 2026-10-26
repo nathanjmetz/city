@@ -143,16 +143,30 @@ func _outline(set: Array, with: Dictionary) -> Array:
 	# The pieces' own outside edges, less what runs along an edge piece.
 	for e in _edges(set):
 		out.append_array(_uncovered(e, polys, -1))
-	# Each edge piece's sides, less what runs along a piece or another one.
+	out.append_array(_edge_sides(set, with))
+	return out
+
+
+## Each side of the edge pieces `with` (local outlines), less what runs
+## along one of `set`'s pieces or another edge piece of `all` (by default
+## `with` itself), as [a, b] pairs.
+func _edge_sides(set: Array, with: Dictionary, all := {}) -> Array:
+	var others: Dictionary = with if all.is_empty() else all
 	var squares := []
 	var hc := cell * 0.5
 	for c in set:
 		squares.append(PackedVector2Array([Vector2(c.x * cell - hc, c.y * cell), Vector2(c.x * cell + hc, c.y * cell),
 			Vector2(c.x * cell + hc, c.y * cell + cell), Vector2(c.x * cell - hc, c.y * cell + cell)]))
-	for i in polys.size():
-		var poly: PackedVector2Array = polys[i]
+	var keys := others.keys()
+	var polys := []
+	for c in keys:
+		polys.append(others[c])
+	var out := []
+	for c in with:
+		var poly: PackedVector2Array = with[c]
+		var skip := squares.size() + keys.find(c)
 		for k in poly.size():
-			out.append_array(_uncovered([poly[k], poly[(k + 1) % poly.size()]], squares + polys, squares.size() + i))
+			out.append_array(_uncovered([poly[k], poly[(k + 1) % poly.size()]], squares + polys, skip))
 	return out
 
 

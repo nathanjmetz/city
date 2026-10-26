@@ -135,6 +135,7 @@ jobs:
           run_test tests/test_market.gd
           run_test tests/test_hubs.gd
           run_test tests/test_boxed_hubs.gd
+          run_test tests/test_boxed_mail.gd
           run_test tests/test_warehouses.gd
           run_test tests/test_big_factories.gd
           run_test tests/test_parks.gd

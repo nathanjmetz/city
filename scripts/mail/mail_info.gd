@@ -31,7 +31,7 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 		CitySim.money_text(roundi(mail.monthly_income(id)))]])
 	rows.append(["City funding", "%s, $%s / month" % [Balance.MAIL_FUNDING[h.funding].name,
 		CitySim.money_text(int(Balance.MAIL_FUNDING[h.funding].monthly))]])
-	var acres: float = h.cells.size() * h.cell * h.cell / 4046.86
+	var acres: float = CivicHubs.land_area(h) / 4046.86
 	rows.append(["Land", "%.1f acres (%d pieces)" % [acres, h.cells.size()]])
 	rows.append(["ZIP code", str(h.zip)])
 	# The tree, a line per branch: what's built, what's coming and why.

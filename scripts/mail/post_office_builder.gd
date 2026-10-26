@@ -10,6 +10,9 @@ extends HubBuilder
 ##   - what the postmaster adds: a brick sorting room, a precast sorting
 ##     center with a row of truck docks, a steel parcel depot, a big
 ##     cross-dock ground hub, and more lot for the carriers
+##   - boxed in by roads (edge pieces, Mail), it runs up to the sidewalk:
+##     lawn and shade trees along the front street, more fenced carrier lot
+##     elsewhere, never a building
 ## Local space as HubBuilder: -z faces the road, z = 0 is the front edge of
 ## the land, piece (x, y) spans x*cell +- cell/2 across and y*cell..(y+1)*cell.
 
@@ -33,11 +36,13 @@ static func build_office(h: Dictionary, seed: int, to_curb: float) -> Array:
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 	b.cells = h.cells
 	b.cell = h.cell
+	b.edge_land = h.get("edge", {})
 	b._office(h, to_curb)
 	for node in h.lands:
 		if not h.lands[node].is_empty():
 			b._annex(node, h.lands[node], Mail.done(h, node))
 	b._fleet_lots(Mail.fleet_cells(h))
+	b._edge_lots()
 	b._counter_and_fleet(h)
 	return [b._commit_house(), b._commit_flat(), b.trees, b.stalls]
 
@@ -177,6 +182,58 @@ func _fleet_lots(set: Array) -> void:
 		_flat_rect("asphalt", x0, x0 + cell - 3.0, z0, z0 + cell - 3.0, 0.06)
 		_stall_row(x0 + 0.5, x0 + cell - 3.0, z0 + 6.0, PI)
 		_stall_row(x0 + 0.5, x0 + cell - 3.0, z0 + cell - 3.5, 0.0)
+
+
+## Edge pieces, cut back to the sidewalk: along the front street, lawn with
+## a few shade trees; elsewhere, carrier lot with stalls wherever a whole
+## one fits, fenced where it meets the sidewalk or a neighbour.
+func _edge_lots() -> void:
+	var lots := {}
+	for c in edge_land:
+		var poly: PackedVector2Array = edge_land[c]
+		if c.y == 0:
+			continue
+		lots[c] = poly
+		var pad := _inset(poly, 1.0)
+		if pad.size() >= 3:
+			_flat_poly_any("asphalt", pad, 0.06, MULCH)
+			_stalls_in(pad)
+	_fence_edges(_edge_sides(cells, lots, edge_land), 1.8, GALV, 3.0)
+	# The lawn's shade trees, about 11 m apart, kept back from its edges.
+	for c in edge_land:
+		if c.y != 0:
+			continue
+		var plot := _inset(edge_land[c], 3.0)
+		if plot.size() < 3:
+			continue
+		var box := _bounds(plot)
+		var z := box.position.y + fmod(box.size.y, 11.0) * 0.5
+		while z <= box.end.y:
+			var x := box.position.x + fmod(box.size.x, 11.0) * 0.5
+			while x <= box.end.x:
+				if Geometry2D.is_point_in_polygon(Vector2(x, z), plot):
+					var sp := TreeField.Species.MAPLE if rng.randf() < 0.5 else TreeField.Species.OAK
+					trees.append([Vector3(x, 0, z), sp, TreeField.LEAF[sp], rng.randf_range(0.8, 1.0)])
+				x += 11.0
+			z += 11.0
+
+
+## Carrier stalls (as _stall_row) in rows across an outline, each wherever
+## a whole stall fits inside it.
+func _stalls_in(poly: PackedVector2Array) -> void:
+	var box := _bounds(poly)
+	var zb := box.position.y + 5.8
+	while zb <= box.end.y:
+		var x := box.position.x + 0.3
+		while x + 2.7 <= box.end.x:
+			var fits := true
+			for q in [Vector2(x, zb - 5.5), Vector2(x + 2.7, zb - 5.5), Vector2(x, zb), Vector2(x + 2.7, zb)]:
+				fits = fits and Geometry2D.is_point_in_polygon(q, poly)
+			if fits:
+				_flat_rect("line", x - 0.06, x + 0.06, zb - 5.5, zb, 0.07, LINE)
+				stalls.append([Vector3(x + 1.3, 0.0, zb - 0.6), PI])
+			x += 2.7
+		zb += 12.0
 
 
 ## The building a tree node put on its land, filling its pieces wall to wall.

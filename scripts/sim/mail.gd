@@ -12,6 +12,11 @@ extends RefCounted
 ##   - A busy town's post office grows a sorting room, then a sorting center,
 ##     only into free land directly next door (never a second site), and
 ##     roads always win.
+##   - Boxed in by roads, it fills its block up to the sidewalk with lawn
+##     and fenced carrier lot, never a building (Nathan, 2026-10-26: "when a
+##     hub with leader is "trapped" inside a road area, it should nicely
+##     fill in that area up to the edge (sidewalk) so that it looks like its
+##     using its space well."): edge pieces, as CivicHubs keeps them.
 ##   - Good mail service makes a town a little happier and better for
 ##     business.
 ## Like every hub, it has a leader and a thick development tree (Brawn's
@@ -90,7 +95,11 @@ const LAST := ["Hadley", "Schroeder", "Kessler", "Pruitt", "Lindqvist", "Overton
 ## Balance.MAIL_FUNDING), lands {node: [pieces]}, project {node, done
 ## (tick)} or {} (a node still going up), plan (what's next, plain words),
 ## want, short (fleet counters), boxed, pieces_today, parcels_waiting,
-## delivered (pieces so far), ver}
+## delivered (pieces so far), ver, edge}
+## `edge` holds the office's edge pieces, piece -> outline cut back to the
+## road in its own frame, exactly as CivicHubs' `edge`: they count as its
+## land (at, covers) but not as pieces for upkeep, carriers, the tree's
+## buildings or the growth limit.
 var offices := {}
 ## Street (road segment) -> the tick its mail last came.
 var letters := {}
@@ -158,7 +167,7 @@ func add(sim: CitySim, pos: Vector3, dir: Vector3) -> int:
 	h.merge({"opened": sim.tick_count, "zip": 47500 + rng.randi_range(1, 99),
 		"leader": lead, "built": [], "why": "", "fund": 0.0, "funding": 1, "lands": {}, "project": {},
 		"plan": "", "want": 0, "short": 0, "boxed": false, "pieces_today": 0, "parcels_waiting": 0,
-		"delivered": 0, "ver": 0})
+		"delivered": 0, "ver": 0, "edge": {}})
 	offices[id] = h
 	version += 1
 	return id
@@ -182,6 +191,9 @@ func at(p: Vector3) -> int:
 		var c := Vector2i(roundi(d.dot(CivicHubs.right(h)) / h.cell), floori(-d.dot(h.dir) / h.cell))
 		if c in h.cells:
 			return id
+		var e: Dictionary = h.get("edge", {})
+		if e.has(c) and Geometry2D.is_point_in_polygon(Vector2(d.dot(CivicHubs.right(h)), -d.dot(h.dir)), e[c]):
+			return id
 	return -1
 
 
@@ -198,6 +210,9 @@ func extent(id: int) -> Array:
 	var r := 0.0
 	for c in h.cells:
 		r = maxf(r, CivicHubs.cell_center(h, c).distance_to(mid) + h.cell * 0.71)
+	for c in h.get("edge", {}):
+		for q in CivicHubs.edge_poly(h, c):
+			r = maxf(r, Vector2(mid.x, mid.z).distance_to(q))
 	return [mid, r]
 
 
@@ -801,7 +816,13 @@ func _decide(sim: CitySim) -> void:
 			var c := _best_piece(sim, id)
 			h.boxed = c == Vector2i.MAX
 			if not h.boxed:
+				# An edge piece the road has since let go of becomes whole.
+				h.edge.erase(c)
 				h.cells.append(c)
+				_touch(h)
+				sim.zones_changed.emit()
+			elif CivicHubs.take_edge(sim, h, _edge_problem.bind(sim, id)):
+				# Boxed in: lot and lawn up to the sidewalk instead.
 				_touch(h)
 				sim.zones_changed.emit()
 		if h.project.is_empty():
@@ -932,6 +953,8 @@ func _choose(sim: CitySim, id: int, stance := "steady") -> void:
 		return
 	var b: Dictionary = Balance.MAIL_TREE[pick.id]
 	var pieces: Array = lands[pick.id]
+	for c in pieces:
+		h.edge.erase(c)
 	h.cells.append_array(pieces)
 	h.lands[pick.id] = pieces
 	h.fund -= float(b.cost)
@@ -990,8 +1013,25 @@ func _best_piece_from(sim: CitySim, id: int, h: Dictionary, cells: Array, from: 
 	return best
 
 
+## Why ground `world` (an edge piece's outline, x, z) can't be office
+## `id`'s, or "": the hubs' checks (water, reserves, other owners, zoned or
+## built lots), less the road one (it's already cut back), and no other post
+## office on it.
+func _edge_problem(world: PackedVector2Array, sim: CitySim, id: int) -> String:
+	var pts := CivicHubs._inner_pts(world, offices[id].cell * 0.2)
+	var p := sim.hubs._ground_problem(sim, world, pts, -2, true, false)
+	if p != "":
+		return p
+	for pt in pts:
+		var other := at(pt)
+		if other != -1 and other != id:
+			return "Overlaps the post office."
+	return ""
+
+
 ## Roads win: pieces a road now runs through go; if that splits the office,
-## the part by the gate (or the biggest) stays.
+## the part by the gate (or the biggest) stays. Edge pieces are cut back to
+## the new roads (CivicHubs.prune_edges).
 func _prune(sim: CitySim) -> void:
 	var ids := offices.keys()
 	ids.sort()
@@ -1002,6 +1042,8 @@ func _prune(sim: CitySim) -> void:
 			if not Services.road_clash(sim.network, CivicHubs.cell_poly(h, c, 1.0)):
 				keep.append(c)
 		if keep.size() == h.cells.size():
+			if not h.edge.is_empty() and CivicHubs.prune_edges(sim, h):
+				_touch(h)
 			continue
 		var best := []
 		var left := keep.duplicate()
@@ -1013,6 +1055,7 @@ func _prune(sim: CitySim) -> void:
 		h.cells = h.cells.filter(func(c): return c in best)
 		for n in h.lands:
 			h.lands[n] = h.lands[n].filter(func(c): return c in best)
+		CivicHubs.prune_edges(sim, h)
 		_touch(h)
 		if h.cells.is_empty():
 			remove(id)
@@ -1066,7 +1109,7 @@ func to_dict() -> Dictionary:
 			cells.append([c.x, c.y])
 		var o := {}
 		for k in h:
-			if not k in ["pos", "dir", "cells", "cell", "ver", "boxed", "lands"]:
+			if not k in ["pos", "dir", "cells", "cell", "ver", "boxed", "lands", "edge"]:
 				o[k] = h[k]
 		o.pos = [h.pos.x, h.pos.z]
 		o.dir = [h.dir.x, h.dir.z]
@@ -1075,6 +1118,8 @@ func to_dict() -> Dictionary:
 		for n in h.lands:
 			lands[n] = h.lands[n].map(func(c): return [c.x, c.y])
 		o.lands = lands
+		if not h.edge.is_empty():
+			o.edge = CivicHubs.edge_to_save(h.edge)
 		out_offices[str(id)] = o
 	var tr := {}
 	for id in trips:
@@ -1122,6 +1167,7 @@ func from_dict(d: Dictionary) -> void:
 			if TREE.has(n):
 				lands[str(n)] = s.lands[n].map(func(c): return Vector2i(int(c[0]), int(c[1])))
 		h.lands = lands
+		h.edge = CivicHubs.edge_from_save(s.get("edge", []))
 		var pr: Dictionary = s.get("project", {})
 		h.project = {} if pr.is_empty() or not TREE.has(str(pr.get("node", ""))) else \
 			{"node": str(pr.node), "done": int(pr.done)}
