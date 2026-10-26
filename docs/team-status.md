@@ -20,6 +20,20 @@ When a helper hits a wall it writes its question here and stops. That task waits
 
 Nothing is running. Every unfinished piece is saved on a branch. To restart one, read its diff against main first; the PR or branch says what's left.
 
+**Merged 2026-10-25/26 (late):**
+- #567 cars drive the limit
+- #568 roundabouts change and go as a whole
+- #569 people step 1, ambient life, industry tracks to roads
+- #570–#573 skin tones, two figures, five detail levels
+- #574–#578 ready-made MakeHuman people walking near the camera, desktop only
+- #579 faster four-way stops
+- #580 the loading screen waits until the town is drawn
+- #581 the admin sound mixer (Cmd+Shift+F12)
+- #582 the detail floor (enforced; values not yet measured)
+- #552 the live home screen (Marion time, season, life)
+- #555 automatic quality
+- #551 the new building drawing: review fixes 1–6 done; the minor items left are listed on #551
+
 **Also merged tonight:** #563 dirt farm lanes, #564 farms grow half as fast, #565 levels, needs panel, level arrows, lanes dirt to stone to paved, #566 levels 1-100. Earlier: #557 green lights (8 to 12 cars a green), #558 real signal heads, #559 people of different sizes and colours, #560 fewer walkers, #561 county roads to the horizon draw solid (Nathan's grey dashed line), #562 walkers step to their own stride.
 
 **Live:** #527 land preload, #528-#530 construction trucks and the builder's yard, #535, #537 crop calendar, #541 daylight, #542 trees, #544 town speed, #545 farm freeze, #546 farmsteads, #547 playtest list, #548 ground lines, #550 town life, #553 shared region (the host backs up the region before every update), #554 country road look.
