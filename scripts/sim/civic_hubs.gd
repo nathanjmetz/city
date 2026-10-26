@@ -1080,6 +1080,15 @@ static func _less(a: Vector2i, b: Vector2i) -> bool:
 ## fits. True when it took one.
 func _take_edge(sim: CitySim, id: int) -> bool:
 	var h: Dictionary = hubs[id]
+	return take_edge(sim, h, func(world: PackedVector2Array) -> String:
+		return _ground_problem(sim, world, _inner_pts(world, h.cell * 0.2), id, true, false))
+
+
+## Takes the edge piece next to `h`'s land that keeps it most compact, if
+## one fits: shared by the hubs and the post office (Mail), which use the
+## same pieces and frame. `problem` says why ground (an outline, x, z) can't
+## be the owner's, or "". True when it took one.
+static func take_edge(sim: CitySim, h: Dictionary, problem: Callable) -> bool:
 	var mid := Vector2.ZERO
 	for c in h.cells:
 		mid += Vector2(c)
@@ -1095,19 +1104,19 @@ func _take_edge(sim: CitySim, id: int) -> bool:
 			tries.append([Vector2(n).distance_to(mid), n])
 	tries.sort_custom(func(a, b): return a[0] < b[0] - 0.001 or (absf(a[0] - b[0]) <= 0.001 and _less(a[1], b[1])))
 	for t in tries:
-		var shape := _edge_shape(sim, h, t[1], id, h.edge)
+		var shape := edge_shape(sim, h, t[1], h.edge, problem)
 		if not shape.is_empty():
 			h.edge[t[1]] = shape
 			return true
 	return false
 
 
-## Piece `c` of hub `id` cut back to the roads, in the hub's frame, if what's
-## left is big enough, touches the hub's land (its whole pieces and the edge
-## pieces in `edges`) and is free; else empty. `from` is an edge piece's
-## outline (x, z) to cut back again: land the hub already holds, so only
-## its size and touch are checked.
-func _edge_shape(sim: CitySim, h: Dictionary, c: Vector2i, id: int, edges: Dictionary,
+## Piece `c` of `h` cut back to the roads, in its frame, if what's left is
+## big enough, touches its land (its whole pieces and the edge pieces in
+## `edges`) and is free (`problem`, as take_edge); else empty. `from` is an
+## edge piece's outline (x, z) to cut back again: land it already holds, so
+## only its size and touch are checked.
+static func edge_shape(sim: CitySim, h: Dictionary, c: Vector2i, edges: Dictionary, problem: Callable,
 		from := PackedVector2Array()) -> PackedVector2Array:
 	# Cut a few centimetres wider than the roads need, so the outline kept in
 	# EDGE_SNAP steps never pokes back over them.
@@ -1138,7 +1147,7 @@ func _edge_shape(sim: CitySim, h: Dictionary, c: Vector2i, id: int, edges: Dicti
 	var world := PackedVector2Array()
 	for l in local:
 		world.append(to_world(h, l))
-	if from.is_empty() and _ground_problem(sim, world, _inner_pts(world, h.cell * 0.2), id, true, false) != "":
+	if from.is_empty() and problem.call(world) != "":
 		return PackedVector2Array()
 	return local
 
@@ -1238,7 +1247,7 @@ static func _inner_pts(poly: PackedVector2Array, step: float) -> Array:
 ## Roads win over edge pieces too: each is cut back to the roads as they
 ## are now (or goes, if too little is left), and any no longer joined to
 ## the hub's whole pieces goes. True when anything changed.
-func _prune_edges(sim: CitySim, h: Dictionary) -> bool:
+static func prune_edges(sim: CitySim, h: Dictionary) -> bool:
 	var changed := false
 	for c in h.edge.keys():
 		var now := edge_poly(h, c)
@@ -1249,7 +1258,7 @@ func _prune_edges(sim: CitySim, h: Dictionary) -> bool:
 		if left >= area(now) - 0.5:
 			continue
 		changed = true
-		var shape := _edge_shape(sim, h, c, -1, h.edge, now) if left > 0.0 else PackedVector2Array()
+		var shape := edge_shape(sim, h, c, h.edge, Callable(), now) if left > 0.0 else PackedVector2Array()
 		if shape.is_empty():
 			h.edge.erase(c)
 		else:
@@ -1287,7 +1296,7 @@ func _shrink(h: Dictionary) -> void:
 
 ## Roads win: pieces a road now runs through go, and if that splits the
 ## hub, only the part with the most land (by the gate on a tie) stays.
-## Edge pieces are cut back to the new roads (_prune_edges).
+## Edge pieces are cut back to the new roads (prune_edges).
 func _prune(sim: CitySim) -> void:
 	var ids := hubs.keys()
 	ids.sort()
@@ -1298,7 +1307,7 @@ func _prune(sim: CitySim) -> void:
 			if not Services.road_clash(sim.network, cell_poly(h, c, 1.0)):
 				keep.append(c)
 		if keep.size() == h.cells.size():
-			if not h.edge.is_empty() and _prune_edges(sim, h):
+			if not h.edge.is_empty() and prune_edges(sim, h):
 				_touch(h)
 			continue
 		var parts := []
@@ -1312,7 +1321,7 @@ func _prune(sim: CitySim) -> void:
 			if part.size() > best.size() or (part.size() == best.size() and _gate_side(part) < _gate_side(best)):
 				best = part
 		h.cells = h.cells.filter(func(c): return c in best)
-		_prune_edges(sim, h)
+		prune_edges(sim, h)
 		_touch(h)
 		if h.cells.is_empty():
 			remove(id)
@@ -1379,13 +1388,7 @@ func to_dict() -> Dictionary:
 			"quiet": h.quiet, "capped": h.get("capped", false), "built": h.built,
 			"leader": h.get("leader", {}), "why": h.get("why", "")}
 		if not h.edge.is_empty():
-			var edge := []
-			for c in h.edge:
-				var pts := []
-				for q in h.edge[c]:
-					pts.append_array([q.x, q.y])
-				edge.append([c.x, c.y, pts])
-			out[str(id)].edge = edge
+			out[str(id)].edge = edge_to_save(h.edge)
 	var t := {}
 	for seg in trash:
 		t[str(seg)] = trash[seg]
@@ -1394,6 +1397,34 @@ func to_dict() -> Dictionary:
 		tr[str(id)] = trips[id]
 	return {"hubs": out, "next_id": _next_id, "trash": t, "trips": tr, "parked": parked,
 		"claimed": claimed.keys()}
+
+
+## Edge pieces as a save keeps them: [[x, y, [outline x, z, x, z, ...]]],
+## in the order they were taken (the hubs and the post office alike).
+static func edge_to_save(edge: Dictionary) -> Array:
+	var out := []
+	for c in edge:
+		var pts := []
+		for q in edge[c]:
+			pts.append_array([q.x, q.y])
+		out.append([c.x, c.y, pts])
+	return out
+
+
+## And back (older saves have none).
+static func edge_from_save(saved) -> Dictionary:
+	var out := {}
+	if not saved is Array:
+		return out
+	for e in saved:
+		if not e is Array or e.size() < 3 or not e[2] is Array:
+			continue
+		var poly := PackedVector2Array()
+		for i in range(0, e[2].size() - 1, 2):
+			poly.append(Vector2(float(e[2][i]), float(e[2][i + 1])))
+		if poly.size() >= 3:
+			out[Vector2i(int(e[0]), int(e[1]))] = poly
+	return out
 
 
 func from_dict(d: Dictionary) -> void:
@@ -1412,13 +1443,7 @@ func from_dict(d: Dictionary) -> void:
 			"short": int(s.get("short", 0)), "quiet": int(s.get("quiet", 0)), "boxed": false,
 			"capped": bool(s.get("capped", false)), "ver": 0, "why": str(s.get("why", "")), "edge": {}}
 		var h: Dictionary = hubs[int(k)]
-		# Edge pieces: [x, y, [outline x, z, x, z, ...]] (older saves have none).
-		for e in s.get("edge", []):
-			var poly := PackedVector2Array()
-			for i in range(0, e[2].size() - 1, 2):
-				poly.append(Vector2(float(e[2][i]), float(e[2][i + 1])))
-			if poly.size() >= 3:
-				h.edge[Vector2i(int(e[0]), int(e[1]))] = poly
+		h.edge = edge_from_save(s.get("edge", []))
 		if s.get("leader", {}) is Dictionary and not s.get("leader", {}).is_empty():
 			h.leader = s.leader
 		# Older saves kept the build tick in "built" and the tree in "dev".

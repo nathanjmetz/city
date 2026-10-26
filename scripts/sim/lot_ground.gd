@@ -63,16 +63,14 @@ static func items(sim: CitySim) -> Dictionary:
 	for o in sim.reserves.outlines:
 		res.append(o.points)
 	out["reserves"] = [hash(sim.reserves.outlines), _boxes(res)]
-	# Landfills, recycling centers and cemeteries; the post office (cells).
+	# Landfills, recycling centers and cemeteries; the post office (cells and
+	# edge pieces).
 	for id in sim.hubs.hubs:
 		var h: Dictionary = sim.hubs.hubs[id]
-		var hub_boxes := []
-		for poly in CivicHubs.land_polys(h):
-			hub_boxes.append(_box(poly))
-		out["hub:%d" % id] = [hash([h.pos, h.dir, h.cell, h.cells, h.get("edge", {})]), hub_boxes]
+		out["hub:%d" % id] = [hash([h.pos, h.dir, h.cell, h.cells, h.get("edge", {})]), _land_boxes(h)]
 	for id in sim.mail.offices:
 		var h: Dictionary = sim.mail.offices[id]
-		out["mail:%d" % id] = [hash([h.pos, h.dir, h.cell, h.cells]), _cell_boxes(h)]
+		out["mail:%d" % id] = [hash([h.pos, h.dir, h.cell, h.cells, h.get("edge", {})]), _land_boxes(h)]
 	for id in sim.warehouses.buildings:
 		var w: Dictionary = sim.warehouses.buildings[id]
 		var poly := Warehouses.corners(w)
@@ -186,10 +184,10 @@ static func _drive_boxes(drive: Array, reach: float) -> Array:
 	return out
 
 
-## A hub's or the post office's cells (CivicHubs.at reads them by rounding,
-## which is each cell's own square, cell_poly).
-static func _cell_boxes(h: Dictionary) -> Array:
+## A hub's or the post office's land: its cells (CivicHubs.at reads them by
+## rounding, which is each cell's own square, cell_poly) and edge pieces.
+static func _land_boxes(h: Dictionary) -> Array:
 	var out := []
-	for c in h.cells:
-		out.append(_box(CivicHubs.cell_poly(h, c)))
+	for poly in CivicHubs.land_polys(h):
+		out.append(_box(poly))
 	return out
