@@ -1353,12 +1353,14 @@ func tick() -> void:
 	Perf.add("sim.tourism", t)
 	t = Perf.now()
 	if tick_count % Balance.PARK_DECIDE_EVERY == Balance.ROUND_AT.parks and not parks.sites.is_empty():
-		var sizes := parks.sites.values().map(func(s): return s.size)
+		var sizes := parks.sites.values().map(func(s): return [s.size, s.get("edge", {}).size()])
 		if parks.decide(self):
-			if parks.sites.values().map(func(s): return s.size) != sizes:
-				# A park bought land: lots and zoning under it go away.
+			if parks.sites.values().map(func(s): return [s.size, s.get("edge", {}).size()]) != sizes:
+				# A park bought land or took its edge pieces: lots and zoning
+				# under it go away.
 				for id in parks.sites:
-					_clear_zones_under(parks.footprint(id))
+					for poly in parks.land_polys(id):
+						_clear_zones_under(poly)
 				_lots_dirty = true
 				zones_changed.emit()
 			parks_changed.emit()

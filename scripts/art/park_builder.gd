@@ -15,6 +15,9 @@ extends CivicBuilder
 ##     headhouse, steel bins and a truck scale
 ##   - the high school football field: striped turf with yard lines, end
 ##     zones, goalposts, aluminium bleachers, a press box and light towers
+##   - a park boxed in by roads (edge pieces, Parks) runs up to the sidewalk:
+##     more of its lawn, a walk back along each side and across the back
+##     with benches, and shade trees, never a playground or a field
 ## Local space as in CivicBuilder: centred on the site, -z faces the road.
 
 const LAWN_SHADER := """
@@ -219,6 +222,153 @@ func _park(site: Dictionary, size: Vector2, to_curb: float) -> void:
 			for i in 4:
 				_lamp(entrance + Vector3(1.8 * (1 if i % 2 == 0 else -1), 0, 4.0 + i * 8.0))
 	_park_trees(size, spots)
+	_edge_lawns(site.get("edge", {}), size, to_curb, green, has_paths)
+
+
+## Edge pieces, cut back to the sidewalk (Parks' edge, in the park's frame):
+## more of the same lawn; where a piece is deep enough, a walk from the
+## front sidewalk back along each side and one across the back, with
+## benches; and shade trees, kept off the walks and back from the edges.
+func _edge_lawns(edge: Dictionary, size: Vector2, to_curb: float, green: Color, has_paths: bool) -> void:
+	if edge.is_empty():
+		return
+	var hz := size.y * 0.5
+	for c in edge:
+		_lawn_poly(edge[c], green, care)
+	var kind := "drive" if tier >= 2 else ("asphalt" if tier == 1 else "gravel")
+	var col := Color("#8f7a5c") if tier == 0 else MULCH
+	var w := 2.0 if tier >= 1 else 1.4
+	var walks := []  # [from, to], local (x, z)
+	if has_paths:
+		# Where the walk across the back runs, if the back piece is deep enough.
+		var back_z := INF
+		if edge.has(Vector2i(0, 1)) and HubBuilder._bounds(edge[Vector2i(0, 1)]).size.y >= 8.0:
+			back_z = HubBuilder._bounds(edge[Vector2i(0, 1)]).get_center().y
+		# Back along each side from the front sidewalk, on through the corner
+		# behind it to the back walk.
+		var side_x := {}
+		for sx in [-1, 1]:
+			var c := Vector2i(sx, 0)
+			if not edge.has(c) or HubBuilder._bounds(edge[c]).size.x < 8.0:
+				continue
+			var x := HubBuilder._bounds(edge[c]).get_center().x
+			var end := back_z if back_z != INF else 5000.0
+			var inner := HubBuilder._inset(_edge_row(edge, [c, Vector2i(sx, 1)]), 1.6)
+			if inner.size() < 3:
+				continue
+			for seg in Geometry2D.intersect_polyline_with_polygon(PackedVector2Array([Vector2(x, -hz - 1.0),
+					Vector2(x, end)]), inner):
+				var a: Vector2 = seg[0]
+				var b: Vector2 = seg[seg.size() - 1]
+				if a.y > b.y:
+					var t := a
+					a = b
+					b = t
+				if a.y <= -hz + 2.0:
+					a.y = -hz - to_curb  # out to the sidewalk, like the gate's walk
+				if b.y >= end - 2.0 and back_z != INF:
+					b.y = back_z + w * 0.5
+					side_x[sx] = x
+				walks.append([a, b])
+		# Across the back, through the back corners as far as the side walks.
+		var back := HubBuilder._inset(_edge_row(edge, [Vector2i(0, 1), Vector2i(-1, 1), Vector2i(1, 1)]), 1.6)
+		if back_z != INF and back.size() >= 3:
+			for seg in Geometry2D.intersect_polyline_with_polygon(
+					PackedVector2Array([Vector2(-5000, back_z), Vector2(5000, back_z)]), back):
+				var a: Vector2 = seg[0]
+				var b: Vector2 = seg[seg.size() - 1]
+				if a.x > b.x:
+					var t := a
+					a = b
+					b = t
+				if side_x.has(-1):
+					a.x = maxf(a.x, side_x[-1] - w * 0.5)
+				if side_x.has(1):
+					b.x = minf(b.x, side_x[1] + w * 0.5)
+				if b.x > a.x:
+					walks.append([a, b])
+	var kept := []
+	for wk in walks:
+		var a: Vector2 = wk[0]
+		var b: Vector2 = wk[1]
+		if a.distance_to(b) < 6.0:
+			continue
+		kept.append(wk)
+		_strip(Vector3(a.x, 0, a.y), Vector3(b.x, 0, b.y), w, kind, col)
+		# Benches beside it every 24 m or so, on alternate sides.
+		var d := (b - a).normalized()
+		var n := Vector2(-d.y, d.x)
+		var t := 10.0
+		var k := 0
+		while t < a.distance_to(b) - 6.0 and tier >= 1:
+			var off := n * (w * 0.5 + 1.0) * (1.0 if k % 2 == 0 else -1.0)
+			var p := a + d * t + off
+			_bench(Vector3(p.x, 0, p.y), atan2(off.x, off.y))
+			t += 24.0
+			k += 1
+	# Shade trees lining each walk, then on a loose grid over the rest, fewer
+	# and patchier in a neglected park.
+	var gap: float = [17.0, 14.0, 12.0, 11.0][tier]
+	var skip: float = [0.35, 0.15, 0.05, 0.0][tier]
+	var plots := []
+	for c in edge:
+		plots.append(HubBuilder._inset(edge[c], 2.5))
+	for wk in kept:
+		var a: Vector2 = wk[0]
+		var b: Vector2 = wk[1]
+		var d := (b - a).normalized()
+		var n := Vector2(-d.y, d.x) * (w * 0.5 + 3.5)
+		var t := gap * 0.5
+		while t < a.distance_to(b):
+			for q in [a + d * t + n, a + d * t - n]:
+				var on := false
+				for plot in plots:
+					on = on or (plot.size() >= 3 and Geometry2D.is_point_in_polygon(q, plot))
+				if on and rng.randf() >= skip:
+					var pick := TreeField.pick(rng)
+					trees.append([Vector3(q.x, 0, q.y), pick[0], pick[1], rng.randf_range(0.85, 1.2)])
+			t += gap
+	for c in edge:
+		var plot := HubBuilder._inset(edge[c], 3.0)
+		if plot.size() < 3:
+			continue
+		var box := HubBuilder._bounds(plot)
+		var z := box.position.y + fmod(box.size.y, gap) * 0.5
+		while z <= box.end.y:
+			var x := box.position.x + fmod(box.size.x, gap) * 0.5
+			while x <= box.end.x:
+				var q := Vector2(x + rng.randf_range(-1.5, 1.5), z + rng.randf_range(-1.5, 1.5))
+				if rng.randf() >= skip and Geometry2D.is_point_in_polygon(q, plot) and not _near_walk(q, kept, w * 0.5 + 5.5):
+					var pick := TreeField.pick(rng)
+					trees.append([Vector3(q.x, 0, q.y), pick[0], pick[1], rng.randf_range(0.85, 1.2)])
+				x += gap
+			z += gap
+
+
+## The edge pieces `keys` (those there) as one outline, the biggest part
+## where they meet.
+static func _edge_row(edge: Dictionary, keys: Array) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for c in keys:
+		if not edge.has(c):
+			continue
+		if out.is_empty():
+			out = edge[c]
+			continue
+		# (A hole, if any, is always smaller than the outline round it.)
+		var best := out
+		for q in Geometry2D.merge_polygons(out, edge[c]):
+			if CivicHubs.area(q) > CivicHubs.area(best):
+				best = q
+		out = best
+	return out
+
+
+static func _near_walk(q: Vector2, walks: Array, reach: float) -> bool:
+	for wk in walks:
+		if Geometry2D.get_closest_point_to_segment(q, wk[0], wk[1]).distance_to(q) < reach:
+			return true
+	return false
 
 
 ## Shade trees along the edges and in clumps on open lawn, fewer and patchier
@@ -455,6 +605,17 @@ func _strip(a: Vector3, b: Vector3, w: float, kind: String, col: Color, y := 0.0
 		_flat.set_color(col)
 		_flat.set_uv(uvs[i])
 		_flat.add_vertex(pts[i])
+
+
+## Lawn over any outline (x, z), in the park lawn shader.
+func _lawn_poly(poly: PackedVector2Array, col: Color, kept: float, y := 0.03) -> void:
+	col.a = kept
+	var idx := Geometry2D.triangulate_polygon(poly)
+	for i in idx:
+		_lawn.set_normal(Vector3.UP)
+		_lawn.set_color(col)
+		_lawn.set_uv(poly[i])
+		_lawn.add_vertex(Vector3(poly[i].x, y, poly[i].y))
 
 
 ## Lawn over a rectangle, in the park lawn shader.

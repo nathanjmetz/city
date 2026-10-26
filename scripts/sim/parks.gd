@@ -7,9 +7,13 @@ extends RefCounted
 ## game years with paths, a playground, a pavilion, a court and a ball
 ## diamond. When it runs out of room it buys the free strip of land right
 ## next to it (never a second site), up to Balance.HUB_MAX_GROWTH times its
-## first size. What it gets and how well kept it looks follow its
-## neighborhood's tier: curated flowerbeds and a fountain where the area is
-## thriving, a worn lawn where it is struggling.
+## first size. Boxed in by roads, it fills the rest of its block up to the
+## sidewalk with lawn, walks and shade trees (Nathan, 2026-10-26: "when a hub
+## with leader is "trapped" inside a road area, it should nicely fill in
+## that area up to the edge (sidewalk) so that it looks like its using its
+## space well."): edge pieces, below. What it gets and how well kept it
+## looks follow its neighborhood's tier: curated flowerbeds and a fountain
+## where the area is thriving, a worn lawn where it is struggling.
 ##
 ## Past the basics, each park has a development tree (Balance.PARK_TREE, in
 ## the shared Agency format): a park board, with a chair of its own, adds a splash pad, field lights, a
@@ -55,13 +59,25 @@ const SETBACK := 2.0
 ## Room kept between things inside a park, metres.
 const FEATURE_GAP := 3.0
 const DAYS_PER_DECIDE := Balance.PARK_DECIDE_EVERY / (24.0 * 60.0)
+## The edge pieces round a park, as (across, back): its left and right sides,
+## its back, then the two back corners (each filled once a side next to it
+## is). Each is a growth strip's worth of land (Balance.PARK_GROW_STEP).
+const EDGE_PIECES := [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 1), Vector2i(1, 1)]
+## An edge piece is kept only when it's at least this wide on average (m) and
+## this big (m2): thinner, it's just the grass verge.
+const EDGE_MIN_WIDTH := 1.0
+const EDGE_MIN_AREA := 12.0
 
 ## id -> {kind, name, pos (centre), dir (unit, toward its road), size
 ## (width along the road x depth), start_area, founded (tick), features:
 ## [{type, pos, size}], score (neighborhood, 0 to 1), tier, next_feature
 ## (tick), grew (strips bought), leader (the park board's chair: Agency.leader
-## plus a name), why (what the board did last)}. Tree items sit in
+## plus a name), why (what the board did last), edge}. Tree items sit in
 ## `features` like the basics; `built` (for Agency) is their types.
+## `edge` holds a park's edge pieces: piece -> outline cut back to the road,
+## in the park's own frame (x along the road, z back from it, from its
+## centre; CivicHubs.to_world), as CivicHubs keeps a hub's. They count as its
+## land (at, covers, overlaps) but not for upkeep, lift or features.
 var sites := {}
 ## Lift in land value and in happiness each building's lot gets.
 var lot_value := {}
@@ -149,7 +165,7 @@ func ground_problem(sim: CitySim, poly: PackedVector2Array, skip := -1) -> Strin
 		if not Geometry2D.intersect_polygons(poly, sim.services.footprint(id)).is_empty():
 			return "Overlaps the %s." % Services.KINDS[sim.services.buildings[id].kind].name.to_lower()
 	for id in sites:
-		if id != skip and not Geometry2D.intersect_polygons(poly, footprint(id)).is_empty():
+		if id != skip and _poly_hits(poly, land_polys(id)):
 			return "Overlaps %s." % sites[id].name
 	for key in sim.buildings:
 		if sim.lots.has(key) and not Geometry2D.intersect_polygons(poly, sim.lots[key].corners).is_empty():
@@ -204,7 +220,7 @@ func add(sim: CitySim, kind: String, pos: Vector3, dir: Vector3, size_class := 0
 		"class": clampi(size_class, 0, Balance.PARK_SIZES.size() - 1) if kind == "park" else 0,
 		"start_area": size.x * size.y, "founded": sim.tick_count, "features": [], "score": 0.5, "tier": -1,
 		"next_feature": sim.tick_count + Balance.PARK_DECIDE_EVERY, "grew": 0,
-		"leader": _hire(sim, hash([sim.city_seed, id, kind])), "why": ""}
+		"leader": _hire(sim, hash([sim.city_seed, id, kind])), "why": "", "edge": {}}
 	sites[id] = s
 	_sign_up(sim)
 	var t := Neighborhood.target(sim, pos, lift_at(pos, "value", id))
@@ -241,11 +257,35 @@ func footprint(id: int) -> PackedVector2Array:
 	return corners(s.pos, s.dir, s.size)
 
 
+## All the ground a site holds, as outlines (x, z): its footprint, then
+## each edge piece.
+func land_polys(id: int) -> Array:
+	var out := [footprint(id)]
+	for c in sites[id].get("edge", {}):
+		out.append(edge_poly(id, c))
+	return out
+
+
+## Edge piece `c`'s outline on the ground (x, z).
+func edge_poly(id: int, c: Vector2i) -> PackedVector2Array:
+	var s: Dictionary = sites[id]
+	var out := PackedVector2Array()
+	for q in s.get("edge", {}).get(c, PackedVector2Array()):
+		out.append(CivicHubs.to_world(s, q))
+	return out
+
+
 ## The park or landmark whose ground holds this point, or -1.
 func at(p: Vector3) -> int:
 	for id in sites:
 		if Geometry2D.is_point_in_polygon(Vector2(p.x, p.z), footprint(id)):
 			return id
+		var edge: Dictionary = sites[id].get("edge", {})
+		if not edge.is_empty():
+			var l := CivicHubs.to_local(sites[id], Vector2(p.x, p.z))
+			for c in edge:
+				if Geometry2D.is_point_in_polygon(l, edge[c]):
+					return id
 	return -1
 
 
@@ -256,6 +296,15 @@ func covers(p: Vector3) -> bool:
 func acres(id: int) -> float:
 	var s: Dictionary = sites[id]
 	return s.size.x * s.size.y / 4046.86
+
+
+## Acres of all a site's land, its edge pieces too (the info panel; upkeep
+## goes by acres).
+func land_acres(id: int) -> float:
+	var a := acres(id) * 4046.86
+	for c in sites[id].get("edge", {}):
+		a += CivicHubs.area(sites[id].edge[c])
+	return a / 4046.86
 
 
 func monthly_upkeep() -> int:
@@ -453,6 +502,9 @@ func decide(sim: CitySim) -> bool:
 		if s.kind == "park" and sim.tick_count >= int(s.next_feature):
 			if _fill_in(sim, id, int(t.residents)):
 				s.next_feature = sim.tick_count + roundi(Balance.PARK_FEATURE_DAYS * 24.0 * 60.0)
+				changed = true
+			# Boxed in by roads: lawn up to the sidewalk (unless told to hold).
+			if sim.permits.guidance("park", id).stance != "hold" and _take_edges(sim, id):
 				changed = true
 	return changed
 
@@ -700,6 +752,11 @@ func _grow(sim: CitySim, id: int, need := Vector2.ZERO, extra := 0.0) -> bool:
 				s.pos -= s.dir * step * 0.5
 				s.size.y += step
 		s.grew += 1
+		# Edge pieces were cut to the old outline: they go, and come back
+		# fitted to the new one wherever a road still boxes it in.
+		if not s.get("edge", {}).is_empty():
+			s.edge = {}
+			_take_edges(sim, id)
 		return true
 	return false
 
@@ -714,9 +771,208 @@ static func _quantize(x: float) -> float:
 func overlaps(pts: Array) -> bool:
 	var poly := PackedVector2Array(pts)
 	for id in sites:
-		if not Geometry2D.intersect_polygons(poly, footprint(id)).is_empty():
+		if _poly_hits(poly, land_polys(id)):
 			return true
 	return false
+
+
+static func _poly_hits(poly: PackedVector2Array, polys: Array) -> bool:
+	for q in polys:
+		if not Geometry2D.intersect_polygons(poly, q).is_empty():
+			return true
+	return false
+
+
+# --- Edge pieces ------------------------------------------------------------------
+# A park boxed in by roads fills the rest of its block up to the sidewalk:
+# where a growth strip beside it or behind it runs into a road, it takes
+# the strip cut back to the road's right of way plus the SETBACK its front
+# keeps (CivicHubs' cut, the same as a hub's): lawn with walks and trees,
+# never a playground or a field. Only free ground: never a zoned or built
+# lot, another owner's land, water or a reserve. It's the town's verge up to
+# the road already, so it costs nothing and adds no upkeep. Roads still
+# win: a road built later cuts the pieces back, or takes them (road_wins).
+
+## Takes every edge piece that fits round park `id`. True when it took any.
+func _take_edges(sim: CitySim, id: int) -> bool:
+	var s: Dictionary = sites[id]
+	if s.kind != "park":
+		return false
+	if not s.has("edge"):
+		s.edge = {}
+	var took := false
+	for c in EDGE_PIECES:
+		if s.edge.has(c):
+			continue
+		var shape := _edge_shape(sim, id, c)
+		if not shape.is_empty():
+			s.edge[c] = shape
+			took = true
+	return took
+
+
+## Edge piece `c` of park `id` as a whole strip, in its frame (x across, z
+## back, from its centre).
+func _edge_rect(id: int, c: Vector2i) -> PackedVector2Array:
+	var s: Dictionary = sites[id]
+	var step := Balance.PARK_GROW_STEP
+	var hx: float = s.size.x * 0.5
+	var hz: float = s.size.y * 0.5
+	var x0: float = [-hx - step, -hx, hx][c.x + 1]
+	var x1: float = [-hx, hx, hx + step][c.x + 1]
+	var z0: float = -hz if c.y == 0 else hz
+	var z1: float = hz if c.y == 0 else hz + step
+	return PackedVector2Array([Vector2(x0, z0), Vector2(x1, z0), Vector2(x1, z1), Vector2(x0, z1)])
+
+
+## Piece `c` of park `id` cut back to the roads, in its frame, if what's left
+## is big enough, runs along its land (the park, or for a corner a piece
+## next to it) and is free; else empty. `from` is an edge piece's outline
+## (x, z) to cut back again: land it already holds, so only its size and
+## touch are checked.
+func _edge_shape(sim: CitySim, id: int, c: Vector2i, from := PackedVector2Array()) -> PackedVector2Array:
+	var s: Dictionary = sites[id]
+	var rect := _edge_rect(id, c)
+	var whole := PackedVector2Array()
+	for q in rect:
+		whole.append(CivicHubs.to_world(s, q))
+	# Cut a few centimetres wider than the roads need, so the outline kept in
+	# EDGE_SNAP steps never pokes back over them.
+	var parts := CivicHubs._cut_by_roads(sim.network, whole if from.is_empty() else from, CivicHubs.EDGE_SNAP * 3.0)
+	if from.is_empty():
+		parts = _cut_by_lots(sim, parts)
+	var best := PackedVector2Array()
+	var best_a := 0.0
+	for part in parts:
+		var a := CivicHubs.area(part)
+		if a > best_a + 0.01 and _edge_touches(id, c, part):
+			best = part
+			best_a = a
+	var full := CivicHubs.area(rect)
+	var long: float = s.size.y if c.y == 0 else (s.size.x if c.x == 0 else Balance.PARK_GROW_STEP)
+	# Not cut at all: no road boxes it in there (growing takes whole strips).
+	if best.is_empty() or best_a < maxf(EDGE_MIN_AREA, long * EDGE_MIN_WIDTH) \
+			or (from.is_empty() and best_a > full - 1.0):
+		return PackedVector2Array()
+	var local := PackedVector2Array()
+	for q in best:
+		var l := CivicHubs.to_local(s, q)
+		l = Vector2(snappedf(l.x, CivicHubs.EDGE_SNAP), snappedf(l.y, CivicHubs.EDGE_SNAP))
+		if local.is_empty() or l.distance_to(local[-1]) > 0.05:
+			local.append(l)
+	if local.size() > 1 and local[0].distance_to(local[-1]) <= 0.05:
+		local.remove_at(local.size() - 1)
+	if local.size() < 3:
+		return PackedVector2Array()
+	if from.is_empty():
+		var world := PackedVector2Array()
+		for l in local:
+			world.append(CivicHubs.to_world(s, l))
+		if _edge_problem(sim, id, world) != "":
+			return PackedVector2Array()
+	return local
+
+
+## `parts` (outlines, x, z) less every zoned or built lot running onto them
+## (and half a metre round it), or [] when a lot sits wholly inside one (it
+## would leave a hole).
+static func _cut_by_lots(sim: CitySim, parts: Array) -> Array:
+	if parts.is_empty():
+		return parts
+	var box := Rect2(parts[0][0], Vector2.ZERO)
+	for part in parts:
+		for q in part:
+			box = box.expand(q)
+	var keys := sim.lots_near(box.grow(1.0))
+	keys.sort()
+	for key in keys:
+		var lot: Dictionary = sim.lots[key]
+		if not sim.buildings.has(key) and sim.zones.zone_at(lot.zone_pt) == ZoneMap.Zone.NONE:
+			continue
+		for grown in Geometry2D.offset_polygon(lot.corners, 0.5):
+			var next := []
+			for part in parts:
+				var inside := true
+				for q in grown:
+					if not Geometry2D.is_point_in_polygon(q, part):
+						inside = false
+						break
+				if inside:
+					return []
+				next.append_array(Geometry2D.clip_polygons(part, grown))
+			parts = next
+	return parts
+
+
+## True when `part` (x, z) runs along the land next to piece `c` for a good
+## stretch (4 m): the park itself for a side or the back, the side or back
+## piece next to it for a corner.
+func _edge_touches(id: int, c: Vector2i, part: PackedVector2Array) -> bool:
+	var next := []
+	if c.x == 0 or c.y == 0:
+		next.append(footprint(id))
+	else:
+		for n in [Vector2i(c.x, 0), Vector2i(0, 1)]:
+			if sites[id].edge.has(n):
+				next.append(edge_poly(id, n))
+	for other in next:
+		var touch := 0.0
+		for grown in Geometry2D.offset_polygon(other, 0.5):
+			for q in Geometry2D.intersect_polygons(part, grown):
+				touch += CivicHubs.area(q)
+		if touch >= 2.0:
+			return true
+	return false
+
+
+## Why ground `world` (an edge piece's outline, x, z) can't be park `id`'s,
+## or "": the hubs' checks (water, reserves, other owners, zoned or built
+## lots), less the road one (it's already cut back), and no other park's
+## land or zoned lot running onto it at all.
+func _edge_problem(sim: CitySim, id: int, world: PackedVector2Array) -> String:
+	var p := sim.hubs._ground_problem(sim, world, CivicHubs._inner_pts(world, 4.0), -1, true, false)
+	if p != "":
+		return p
+	for other in sites:
+		if other != id and _poly_hits(world, land_polys(other)):
+			return "Overlaps %s." % sites[other].name
+	var box := Rect2(world[0], Vector2.ZERO)
+	for q in world:
+		box = box.expand(q)
+	for key in sim.lots_near(box):
+		var lot: Dictionary = sim.lots[key]
+		if not sim.buildings.has(key) and sim.zones.zone_at(lot.zone_pt) == ZoneMap.Zone.NONE:
+			continue
+		for q in Geometry2D.intersect_polygons(world, lot.corners):
+			if CivicHubs.area(q) > 1.0:
+				return "Zoned or built on."
+	return ""
+
+
+## Roads win over edge pieces too: each is cut back to the roads as they
+## are now (or goes, if too little is left), and a corner left with no
+## piece next to it goes. True when anything changed.
+func _prune_edges(sim: CitySim, id: int) -> bool:
+	var s: Dictionary = sites[id]
+	var changed := false
+	# Sides and the back first, so a corner is checked against what's left.
+	for c in EDGE_PIECES:
+		if not s.edge.has(c):
+			continue
+		var now := edge_poly(id, c)
+		var parts := CivicHubs._cut_by_roads(sim.network, now)
+		var left := 0.0
+		for part in parts:
+			left = maxf(left, CivicHubs.area(part))
+		if left >= CivicHubs.area(now) - 0.5 and _edge_touches(id, c, now):
+			continue
+		changed = true
+		var shape := _edge_shape(sim, id, c, now) if left > 0.0 else PackedVector2Array()
+		if shape.is_empty():
+			s.edge.erase(c)
+		else:
+			s.edge[c] = shape
+	return changed
 
 
 ## The road wins (Brawn): a road built through a landmark bulldozes it and
@@ -763,6 +1019,14 @@ func road_wins(sim: CitySim, corr: Array) -> bool:
 			if f.size == Vector2.ZERO or (_inside(id, f.pos, f.size) and not RoadWins.hits(corr, corners(f.pos, s.dir, f.size))):
 				keep.append(f)
 		s.features = keep
+		# Its edge pieces were cut to the old outline: they come back fitted
+		# to the new one if it's still boxed in.
+		s.edge = {}
+	# A road by a park's edge pieces cuts them back (the corridors here
+	# leave the sidewalk gap out, so this goes by the roads themselves).
+	for id in ids:
+		if sites.has(id) and not sites[id].get("edge", {}).is_empty() and _prune_edges(sim, id):
+			changed = true
 	return changed
 
 
@@ -800,6 +1064,8 @@ func to_dict() -> Dictionary:
 			"size": [s.size.x, s.size.y], "class": s.get("class", 0), "start_area": s.start_area, "founded": s.founded, "features": fs,
 			"score": s.score, "tier": s.tier, "next_feature": s.next_feature, "grew": s.grew,
 			"leader": s.leader, "why": s.why}
+		if not s.get("edge", {}).is_empty():
+			out[str(id)].edge = CivicHubs.edge_to_save(s.edge)
 	return {"next_id": _next_id, "sites": out, "tourism": tourism.to_dict(), "trails": trails.to_dict()}
 
 
@@ -817,7 +1083,8 @@ func from_dict(d: Dictionary) -> void:
 			"class": int(e.get("class", 0)),
 			"start_area": float(e.start_area), "founded": int(e.get("founded", e.get("built", 0))), "features": fs, "score": float(e.score),
 			"tier": int(e.tier), "next_feature": int(e.next_feature), "grew": int(e.grew),
-			"leader": _leader(e.get("leader", {})), "why": str(e.get("why", ""))}
+			"leader": _leader(e.get("leader", {})), "why": str(e.get("why", "")),
+			"edge": CivicHubs.edge_from_save(e.get("edge", []))}
 	_next_id = int(d.get("next_id", 1))
 	tourism.from_dict(d.get("tourism", {}))
 	trails.from_dict(d.get("trails", {}))

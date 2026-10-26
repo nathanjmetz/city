@@ -94,8 +94,8 @@ func _draw_plazas(t: Trails) -> void:
 func _stamp(id: int) -> String:
 	var s: Dictionary = sim.parks.sites[id]
 	var v: Dictionary = sim.parks.tourism.venues.get(id, {})
-	return "%s|%s|%d|%d|%s|%s|%s" % [s.pos, s.size, s.tier, s.features.size(), s.get("name", ""),
-		v.get("built", []), not v.get("crowd", {}).is_empty()]
+	return "%s|%s|%d|%d|%s|%s|%s|%d" % [s.pos, s.size, s.tier, s.features.size(), s.get("name", ""),
+		v.get("built", []), not v.get("crowd", {}).is_empty(), hash(s.get("edge", {}))]
 
 
 func _spawn(id: int, fresh: bool) -> Node3D:

@@ -141,6 +141,7 @@ jobs:
           run_test tests/test_warehouses.gd
           run_test tests/test_big_factories.gd
           run_test tests/test_parks.gd
+          run_test tests/test_boxed_parks.gd
           run_test tests/test_tourism.gd
           run_test tests/test_trails.gd
           run_test tests/test_power.gd

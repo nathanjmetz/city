@@ -228,6 +228,9 @@ static func sources(sim: Object) -> Dictionary:
 	for id in sim.parks.sites:
 		var poly: PackedVector2Array = sim.parks.footprint(id)
 		out["p%d %s" % [id, poly]] = _poly_cells.bind(poly)
+		for cell in sim.parks.sites[id].get("edge", {}):
+			var ep: PackedVector2Array = sim.parks.edge_poly(id, cell)
+			out["pe%d %s %s" % [id, cell, ep]] = _poly_cells.bind(ep)
 	# A trail's cleared strip through the woods.
 	for i in sim.parks.trails.paths.size():
 		var pts: Array = sim.parks.trails.paths[i].pts

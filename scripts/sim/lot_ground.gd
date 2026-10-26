@@ -76,8 +76,9 @@ static func items(sim: CitySim) -> Dictionary:
 		var poly := Warehouses.corners(w)
 		out["wh:%d" % id] = [hash([poly, Warehouses.is_store(w)]), [_box(poly)]]
 	for id in sim.parks.sites:
-		var fp := sim.parks.footprint(id)
-		out["park:%d" % id] = [hash(fp), [_box(fp)]]
+		# Its footprint and edge pieces.
+		var polys := sim.parks.land_polys(id)
+		out["park:%d" % id] = [hash(polys), _boxes(polys)]
 	out["trails"] = [hash(sim.parks.trails.paths), null]
 	# Campuses, banks and the phone company: their blocks (block 0 always).
 	for id in sim.education.campuses:

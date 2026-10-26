@@ -308,6 +308,9 @@ static func apply(sim: CitySim, cmd: Dictionary) -> bool:
 		# Its paths, playgrounds and fields come along.
 		for f in park.features:
 			f.pos = p.xf.call(MoveIt._flat(f.pos))
+		# Edge pieces were cut to the old block's roads: they go, and come
+		# back fitted to the new block if it's boxed in there too.
+		park.edge = {}
 		sim._clear_zones_under(sim.parks.footprint(id))
 	if not p.parks.is_empty():
 		sim.parks_changed.emit()
