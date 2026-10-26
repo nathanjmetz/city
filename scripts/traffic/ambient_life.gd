@@ -207,7 +207,7 @@ func _person(list: Array, at: Vector3, face: Vector3, seed: int, walked: float, 
 		f = Vector3.FORWARD
 	var tall := (0.92 + float(seed % 17) / 100.0) * size
 	list.append([Transform3D(Basis.looking_at(f.normalized(), Vector3.UP).scaled(Vector3(tall, tall, tall)),
-		Terrain.stand(at)), shirt])
+		Terrain.stand(at)), shirt, WalkerView.skin_tone(seed)])
 
 
 func _draw() -> void:
@@ -306,7 +306,7 @@ func _draw() -> void:
 		mm.instance_count = maxi(people.size() * 2, 32)
 	for i in people.size():
 		mm.set_instance_transform(i, people[i][0])
-		mm.set_instance_color(i, Color.WHITE)
+		mm.set_instance_color(i, people[i][2])
 		mm.set_instance_custom_data(i, people[i][1])
 	mm.visible_instance_count = people.size()
 	for k in props:
