@@ -126,23 +126,81 @@ static func build(person: int) -> Vector3:
 ## A person about 1.7 m tall: legs, arms, body and head, coloured by the
 ## shirt. Each arm swings with the opposite leg, as people walk.
 static func _person_mesh() -> Mesh:
+	# A person about 1.7 m tall in real proportions (step one away from
+	# toy blocks, Nathan 2026-10-25: "they currently look like Legos or
+	# Roblox"): tapered round limbs, a pelvis and a chest broader at the
+	# shoulders, a neck, an oval head with hair, hands and shoes.
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var trousers := Color(0.2, 0.22, 0.3)
-	var skin := Color(0.85, 0.68, 0.55)
+	var skin := Color(0.66, 0.47, 0.36)
+	var hair := Color(0.16, 0.11, 0.07)
+	var shoe := Color(0.12, 0.11, 0.1)
 	var shirt := Color(1, 1, 1, 0)
-	const HIP := 0.84
-	const SHOULDER := 1.38
-	_box(st, Vector3(-0.11, 0.42, 0.0), Vector3(0.08, 0.42, 0.09), trousers, Vector2(1.0, HIP))
-	_box(st, Vector3(0.11, 0.42, 0.0), Vector3(0.08, 0.42, 0.09), trousers, Vector2(-1.0, HIP))
-	_box(st, Vector3(0.0, 1.13, 0.0), Vector3(0.21, 0.3, 0.12), shirt)
-	_box(st, Vector3(0.0, 1.57, 0.0), Vector3(0.1, 0.12, 0.11), skin)
+	const HIP := 0.88
+	const SHOULDER := 1.4
 	for side in [-1.0, 1.0]:
-		var x: float = side * 0.265
-		_box(st, Vector3(x, 1.22, 0.0), Vector3(0.05, 0.16, 0.055), shirt, Vector2(side, SHOULDER))  # sleeve
-		_box(st, Vector3(x, 0.93, 0.0), Vector3(0.045, 0.13, 0.05), skin, Vector2(side, SHOULDER))
+		var x: float = side * 0.095
+		var leg := Vector2(-side, HIP)  # each leg swings opposite its arm
+		_limb(st, Vector3(x, HIP, 0.0), Vector3(x, 0.47, 0.0), Vector2(0.078, 0.082), Vector2(0.055, 0.058), trousers, leg)
+		_limb(st, Vector3(x, 0.47, 0.0), Vector3(x, 0.08, 0.0), Vector2(0.052, 0.056), Vector2(0.038, 0.042), trousers, leg)
+		_box(st, Vector3(x, 0.04, -0.035), Vector3(0.048, 0.04, 0.12), shoe, leg)
+		var ax: float = side * 0.215
+		var arm := Vector2(side, SHOULDER)
+		_limb(st, Vector3(ax, SHOULDER, 0.0), Vector3(side * 0.235, 1.12, 0.0), Vector2(0.05, 0.052), Vector2(0.043, 0.045), shirt, arm)
+		_limb(st, Vector3(side * 0.235, 1.12, 0.0), Vector3(side * 0.245, 0.86, -0.01), Vector2(0.04, 0.042), Vector2(0.032, 0.034), skin, arm)
+		_blob(st, Vector3(side * 0.247, 0.81, -0.012), Vector3(0.032, 0.05, 0.042), skin, arm, 6, 4)
+	# Hips and pelvis in the trousers, then the shirt up to the shoulders.
+	_limb(st, Vector3(0.0, 0.84, 0.0), Vector3(0.0, 1.0, 0.0), Vector2(0.175, 0.112), Vector2(0.158, 0.104), trousers)
+	_limb(st, Vector3(0.0, 1.0, 0.0), Vector3(0.0, 1.27, 0.0), Vector2(0.158, 0.104), Vector2(0.19, 0.115), shirt)
+	_limb(st, Vector3(0.0, 1.27, 0.0), Vector3(0.0, 1.41, 0.0), Vector2(0.19, 0.115), Vector2(0.215, 0.105), shirt, Vector2.ZERO, 8)
+	_limb(st, Vector3(0.0, 1.41, 0.0), Vector3(0.0, 1.46, 0.0), Vector2(0.215, 0.105), Vector2(0.09, 0.07), shirt, Vector2.ZERO, 8)  # shoulders slope in to the neck
+	_limb(st, Vector3(0.0, 1.45, 0.0), Vector3(0.0, 1.54, 0.0), Vector2(0.05, 0.052), Vector2(0.046, 0.048), skin)
+	_blob(st, Vector3(0.0, 1.625, -0.005), Vector3(0.082, 0.108, 0.098), skin, Vector2.ZERO, 8, 6)
+	# Hair over the crown and back of the head; the face stays bare.
+	_blob(st, Vector3(0.0, 1.665, 0.022), Vector3(0.091, 0.092, 0.1), hair, Vector2.ZERO, 8, 6)
 	st.generate_normals()
 	return st.commit()
+
+
+## A tapered round limb (an elliptical frustum) from `a` to `b`, with radii
+## `ra` and `rb` (x across, z front to back), capped at both ends.
+static func _limb(st: SurfaceTool, a: Vector3, b: Vector3, ra: Vector2, rb: Vector2, col: Color,
+		swing := Vector2.ZERO, sides := 6) -> void:
+	var ring_a := []
+	var ring_b := []
+	for i in sides:
+		var t := TAU * i / sides
+		ring_a.append(a + Vector3(cos(t) * ra.x, 0.0, sin(t) * ra.y))
+		ring_b.append(b + Vector3(cos(t) * rb.x, 0.0, sin(t) * rb.y))
+	for i in sides:
+		var j := (i + 1) % sides
+		_tri(st, [ring_a[i], ring_b[i], ring_b[j]], col, swing)
+		_tri(st, [ring_a[i], ring_b[j], ring_a[j]], col, swing)
+		_tri(st, [a, ring_a[i], ring_a[j]], col, swing)
+		_tri(st, [b, ring_b[j], ring_b[i]], col, swing)
+
+
+## A rounded blob (an ellipsoid) for heads, hair, hands and shoulders.
+static func _blob(st: SurfaceTool, c: Vector3, r: Vector3, col: Color, swing := Vector2.ZERO,
+		around := 8, up := 6) -> void:
+	for i in up:
+		var v0 := PI * i / up - PI * 0.5
+		var v1 := PI * (i + 1) / up - PI * 0.5
+		for k in around:
+			var u0 := TAU * k / around
+			var u1 := TAU * (k + 1) / around
+			var p := func(u: float, v: float) -> Vector3:
+				return c + Vector3(cos(v) * cos(u) * r.x, sin(v) * r.y, cos(v) * sin(u) * r.z)
+			_tri(st, [p.call(u0, v0), p.call(u0, v1), p.call(u1, v1)], col, swing)
+			_tri(st, [p.call(u0, v0), p.call(u1, v1), p.call(u1, v0)], col, swing)
+
+
+static func _tri(st: SurfaceTool, pts: Array, col: Color, swing: Vector2) -> void:
+	for q in pts:
+		st.set_color(col)
+		st.set_uv(swing)
+		st.add_vertex(q)
 
 
 ## A box; `swing` is the limb's swing direction (0 for none) and pivot height.

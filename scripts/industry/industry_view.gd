@@ -130,7 +130,7 @@ func _site(id: int, s: Dictionary) -> Node3D:
 	for c in s.pads:
 		if s.kind == "ore":
 			break  # the strip mine's haul road is its track
-		RoadMesh.add_strip(st, Industry.track(s, c), -2.0, 2.0, 0.1)
+		RoadMesh.add_strip(st, Industry.track(s, c, sim.network), -2.0, 2.0, 0.1)
 	var flat := MeshInstance3D.new()
 	flat.mesh = Terrain.drape(st.commit(), true, 8.0)
 	flat.material_override = Surfaces.lane(LANE)
@@ -213,7 +213,7 @@ func _forest(id: int, s: Dictionary, root: Node3D, trees: Array) -> void:
 				woods.append(n)
 	var tracks := []
 	for c in s.pads:
-		tracks.append(Industry.track(s, c))
+		tracks.append(Industry.track(s, c, sim.network))
 	var built := _built_besides(id)
 	for c in wooded:
 		if not wooded[c]:
