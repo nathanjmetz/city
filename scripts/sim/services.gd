@@ -8,7 +8,7 @@ extends RefCounted
 
 enum Kind { SUBSTATION, WATER_TOWER, FIRE, POLICE, CLINIC, SCHOOL, POWER_FEED, WELL, BUS_DEPOT, WATER_UTILITY, TAXI_COMPANY,
 	HOSPITAL, NURSING_HOME, DAYCARE, PARKING_SMALL, PARKING_DOWNTOWN, PARKING_LARGE, PARK_AND_RIDE, PARKING_GARAGE,
-	BUILDER_YARD }
+	BUILDER_YARD, TRAFFIC_CENTER }
 
 ## Each kind: name, icon, footprint (width along the road x depth, metres),
 ## and its build cost, monthly upkeep and `reach` or `capacity` from Balance.
@@ -60,6 +60,12 @@ const KINDS := {
 	Kind.BUILDER_YARD: {"name": "Builder's yard", "icon": "builder_yard", "size": Vector2(36, 48),
 		"cost": Balance.SERVICES["builder_yard"]["cost"], "upkeep": 0, "reach": Balance.SERVICES["builder_yard"]["reach"],
 		"hub": true},
+	# A small city's traffic management center: an office of signal
+	# engineers with a video wall of camera feeds and a radio mast to the
+	# signal cabinets. They retime every light by the counts (TrafficSim:
+	# the engineers). One per town.
+	Kind.TRAFFIC_CENTER: {"name": "Traffic management center", "icon": "signal", "size": Vector2(30, 36),
+		"cost": Balance.SERVICES["traffic_center"]["cost"], "upkeep": Balance.SERVICES["traffic_center"]["upkeep"]},
 	# A 25-bed county hospital with an ER; its administrator grows it from
 	# there (see Healthcare). It counts as a clinic for the homes it reaches.
 	Kind.HOSPITAL: {"name": "Hospital", "icon": "hospital", "size": Vector2(70, 60),
@@ -187,6 +193,14 @@ func yard() -> int:
 	return -1
 
 
+## The traffic management center's id, or -1 without one.
+func traffic_center() -> int:
+	for id in buildings:
+		if buildings[id].kind == Kind.TRAFFIC_CENTER:
+			return id
+	return -1
+
+
 ## What placing `kind` costs now: a town's first builder's yard is free.
 func cost_of(kind: int) -> int:
 	if kind == Kind.BUILDER_YARD and yard() == -1:
@@ -284,6 +298,8 @@ static func site_near(network: RoadNetwork, kind: int, hit: Vector3) -> Array:
 func site_problem(network: RoadNetwork, kind: int, pos: Vector3, dir: Vector3) -> String:
 	if kind == Kind.BUILDER_YARD and yard() != -1:
 		return "The town already has its builder's yard."
+	if kind == Kind.TRAFFIC_CENTER and traffic_center() != -1:
+		return "The town already has its traffic management center."
 	var pts := corners(kind, pos, dir)
 	var size: Vector2 = KINDS[kind].size
 	if not Terrain.buildable(pos.x + terrain_offset.x, pos.z + terrain_offset.y, size.length() * 0.5):

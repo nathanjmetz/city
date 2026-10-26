@@ -1574,13 +1574,16 @@ func _service_card(k: int, cat: String) -> Button:
 	var short := {Services.Kind.WATER_TOWER: "Water tower", Services.Kind.POWER_FEED: "Power line",
 		Services.Kind.WELL: "Well", Services.Kind.SCHOOL: "Elementary", Services.Kind.WATER_UTILITY: "Water utility",
 		Services.Kind.TAXI_COMPANY: "Taxis", Services.Kind.NURSING_HOME: "Nursing home", Services.Kind.BUS_DEPOT: "Bus depot",
-		Services.Kind.BUILDER_YARD: "Builder"}
+		Services.Kind.BUILDER_YARD: "Builder", Services.Kind.TRAFFIC_CENTER: "Traffic center"}
 	var b := _card(s.icon, short.get(k, s.name.split(" ")[0]), "")
 	b.tooltip_text = "%s: $%s to build, $%s a month" % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
 	if k == Services.Kind.BUS_DEPOT:
 		b.tooltip_text = "%s: $%s to build, with two buses. It plans its own stops, routes and fare; you set its funding." % [s.name, CitySim.money_text(s.cost)]
 	elif k == Services.Kind.BUILDER_YARD:
 		b.tooltip_text = "%s: free. Its crews and concrete trucks build the houses; its owner buys more trucks as the town grows. One per town." % s.name
+	elif k == Services.Kind.TRAFFIC_CENTER:
+		b.tooltip_text = "%s: $%s to build, $%s a month. Its engineers count the cars at every light and retime them through the day by the traffic. Lights you time by hand stay yours. One per town." % [
+			s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
 	elif k == Services.Kind.TAXI_COMPANY:
 		b.tooltip_text = "%s: $%s to bring one to town, with two cabs. Its owner runs it on fares: the fleet, the meter and the lot." % [s.name, CitySim.money_text(s.cost)]
 	b.pressed.connect(func(): service_tool.set_kind(k))
@@ -1667,6 +1670,7 @@ func _civic_drawer() -> PanelContainer:
 	# The county courthouse and its square (Brawn: a courthouse is civic).
 	return _service_drawer(cat, [
 		["Safety", [_service_card(Services.Kind.FIRE, cat), _service_card(Services.Kind.POLICE, cat)]],
+		["Traffic", [_service_card(Services.Kind.TRAFFIC_CENTER, cat)]],
 		["Government", [_park_card("courthouse")]],
 		["Mail", [pb]],
 		["Banks", banks]])

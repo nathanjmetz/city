@@ -1456,6 +1456,14 @@ func tick() -> void:
 		Perf.add("sim.engineer", t)
 	if tick_count % TICKS_PER_HOUR == 35 and not engineer.pending.is_empty() and engineer.carry_out(self):
 		_lots_dirty = true
+	if tick_count % TrafficSim.RETUNE_EVERY == 45:
+		# The traffic management center's engineers retime the lights.
+		var on := services.traffic_center() != -1
+		if on:
+			traffic.retune(tick_count)
+		elif traffic.engineers:
+			traffic.engineers_gone()
+		traffic.engineers = on
 	t = Perf.now()
 	if tick_count % WaterUtility.DECIDE_EVERY == Balance.ROUND_AT.water and not services.water.utilities.is_empty():
 		var res := services.water.decide(self, yard_usable)
@@ -4687,6 +4695,7 @@ func save_steps(postcard := false) -> Array:
 		["greens", func(): return traffic.greens_to_dict()],
 		["offsets", func(): return traffic.offsets_to_dict()],
 		["actuated", func(): return traffic.actuated_to_dict()],
+		["signal_engineers", func(): return traffic.engineers_to_dict()],
 		["vegetation", func(): return vegetation.to_dict()],
 	]
 	if not postcard:
@@ -4796,6 +4805,8 @@ func from_dict(d: Dictionary) -> void:
 	traffic.greens_from_dict(d.get("greens", {}))
 	traffic.offsets_from_dict(d.get("offsets", {}))
 	traffic.actuated_from_dict(d.get("actuated", {}))
+	traffic.engineers_from_dict(d.get("signal_engineers", {}))
+	traffic.engineers = services.traffic_center() != -1
 	traffic.from_dict(d.get("traffic", {}))
 	people.from_dict(d.get("people", {}))
 	tick_count = int(d.get("tick", 0))

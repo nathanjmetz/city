@@ -192,8 +192,14 @@ func _update_hint() -> void:
 			var g: Array = sim.traffic.greens_at(_hover)
 			for i in g.size():
 				var mine: bool = sim.traffic.greens.get(_hover, {}).has(i)
-				parts.append("%s %d s%s" % [_phase_name(_hover, i).capitalize(), roundi(float(g[i])), " (yours)" if mine else ""])
+				var theirs: bool = not mine and sim.traffic.tuned.get(_hover, {}).has(i)
+				parts.append("%s %d s%s" % [_phase_name(_hover, i).capitalize(), roundi(float(g[i])),
+					" (yours)" if mine else (" (engineers')" if theirs else "")])
 			text += "\nGreen: " + ", ".join(parts) + "."
+			if sim.traffic.retimed.has(_hover) and not sim.traffic.greens.has(_hover):
+				var ago := (sim.tick_count - int(sim.traffic.retimed[_hover])) / CitySim.TICKS_PER_HOUR
+				text += " The traffic engineers retimed it %s by the counts." % (
+					"this hour" if ago < 1 else ("an hour ago" if ago == 1 else "%d hours ago" % ago))
 		if _wave_from != -1:
 			text += "\nGreen wave: Ctrl-click the next light down the street (it will turn green as cars from the last one arrive)."
 	elif RULE_FOR.has(mode):

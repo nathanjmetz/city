@@ -54,6 +54,7 @@ static func build_service(kind: int, seed: int, size: Vector2, to_curb: float, b
 			b._taxi_upgrades(size, front, built)
 		Services.Kind.BUILDER_YARD:
 			b._builder_yard(size, front, to_curb)
+		Services.Kind.TRAFFIC_CENTER: b._traffic_center(front, to_curb)
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 
@@ -127,6 +128,60 @@ func _police(front: float, to_curb: float) -> void:
 	_fence(Vector2(-14.5, zf + d + 1.0), Vector2(14.5, 17.8), 2.0)
 	_parking(-14.5, 14.5, front + 0.3, zf - 3.0, to_curb, -9.0)
 	_flat_rect("drive", -w * 0.5, w * 0.5, zf - 3.0, zf, 0.08)
+	_flagpole(Vector3(ex - 4.5, 0, zf - 4.0))
+	_bed(ex + 3.2, zf - 2.0, 3.0)
+
+
+# ---------------------------------------------------------------- traffic center
+
+## A small city's traffic management center: a two-storey office in brick
+## and glass, the engineers' video wall behind a long upper window band,
+## and a lattice radio mast out back that talks to the signal cabinets.
+func _traffic_center(front: float, to_curb: float) -> void:
+	var brick := Color(_pick(["#9b5a42", "#b59a7c", "#8a6a54", "#c9c1ae"]))
+	var trim := Color(_pick(["#3a3530", "#d9d3c3", "#5a5f66"]))
+	var w := rng.randf_range(20.0, 22.0)
+	var d := rng.randf_range(13.0, 15.0)
+	var zf := front + 14.0
+	var h := 7.6
+	_slab(0.0, w, zf, d)
+	_flat_roofed_at("brick", 0.0, w, d, zf + d * 0.5, h, h + 0.7, brick)
+	_box("paint", Vector3(w + 0.1, 0.3, 0.16), Vector3(0, h - 0.3, zf - 0.08), trim)
+	_box("paint", Vector3(w + 0.1, 0.2, 0.14), Vector3(0, 3.7, zf - 0.07), trim)
+	var ex := rng.randf_range(-w * 0.2, w * 0.2)
+	_vestibule(ex, zf, 4.2, 2.6, 3.4)
+	_sign(Vector3(ex, 3.45, zf - 2.75), 3.6, 0.5)
+	# Ground floor: offices either side of the door; upstairs, the control
+	# room's long window band.
+	_window_row(ex - 2.1 - (w * 0.5 + ex - 2.1) * 0.5, zf, w * 0.5 + ex - 3.5, 1.6, 1.2, 3, trim)
+	_window_row(ex + 2.1 + (w * 0.5 - ex - 2.1) * 0.5, zf, w * 0.5 - ex - 3.5, 1.6, 1.2, 3, trim)
+	_window_row(0.0, zf, w - 2.0, 5.5, 1.4, 6, trim)
+	for side in [-1.0, 1.0]:
+		_window_row(side * w * 0.5, zf + d * 0.5, d * 0.6, 1.6, 1.2, 3, trim, Vector3(side, 0, 0))
+		_window_row(side * w * 0.5, zf + d * 0.5, d * 0.6, 5.5, 1.2, 3, trim, Vector3(side, 0, 0))
+	# Rooftop units.
+	for i in 2:
+		_box("paint", Vector3(2.2, 1.1, 1.6), Vector3(-w * 0.25 + i * w * 0.4, h + 1.2, zf + d * 0.6), Color("#b8b8b2"))
+	# The radio mast: a tapering three-legged lattice, about 30 m.
+	var mx := w * 0.5 - 2.5
+	var mz := zf + d + 2.4
+	var steel := Color("#9a9d9f")
+	_box("paint", Vector3(2.6, 0.4, 2.6), Vector3(mx, 0.2, mz), Color("#a8a49a"))
+	var tall := 30.0
+	var parts := 10
+	for k in parts:
+		var y0 := tall * k / parts
+		var y1 := tall * (k + 1) / parts
+		var half := lerpf(0.9, 0.25, (y0 + y1) * 0.5 / tall)
+		for c in [Vector2(-1, -1), Vector2(1, -1), Vector2(0, 1)]:
+			_box("paint", Vector3(0.09, y1 - y0, 0.09), Vector3(mx + c.x * half, (y0 + y1) * 0.5, mz + c.y * half), steel)
+		_box("paint", Vector3(half * 2.0, 0.06, 0.06), Vector3(mx, y1, mz - half), steel)
+	for a in [8.0, 18.0, 26.0]:
+		_box("paint", Vector3(0.7, 0.7, 0.2), Vector3(mx, a, mz - 0.5), Color("#e8e8e2"))
+	_box("paint", Vector3(0.2, 0.4, 0.2), Vector3(mx, tall + 0.2, mz), Color("#c43b2f"))
+	_parking(-14.5, 14.5, front + 0.3, zf - 3.0, to_curb, -9.0)
+	_flat_rect("drive", -w * 0.5, w * 0.5, zf - 3.0, zf, 0.08)
+	_flat_rect("asphalt", -14.5, 14.5, zf + d, 17.8, 0.06)
 	_flagpole(Vector3(ex - 4.5, 0, zf - 4.0))
 	_bed(ex + 3.2, zf - 2.0, 3.0)
 
