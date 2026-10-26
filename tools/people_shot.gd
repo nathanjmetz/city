@@ -31,7 +31,7 @@ func _init() -> void:
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = true
 	mm.use_custom_data = true
-	mm.mesh = WalkerView._person_mesh(int(OS.get_environment("FIGURE")) if OS.get_environment("FIGURE") != "" else 0)
+	mm.mesh = WalkerView._person_mesh(int(OS.get_environment("FIGURE")) if OS.get_environment("FIGURE") != "" else 0, int(OS.get_environment("DETAIL")) if OS.get_environment("DETAIL") != "" else 1)
 	mm.instance_count = 5
 	for i in 5:
 		var b := WalkerView.build(i * 7 + 3)
