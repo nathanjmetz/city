@@ -66,7 +66,10 @@ static func items(sim: CitySim) -> Dictionary:
 	# Landfills, recycling centers and cemeteries; the post office (cells).
 	for id in sim.hubs.hubs:
 		var h: Dictionary = sim.hubs.hubs[id]
-		out["hub:%d" % id] = [hash([h.pos, h.dir, h.cell, h.cells]), _cell_boxes(h)]
+		var hub_boxes := []
+		for poly in CivicHubs.land_polys(h):
+			hub_boxes.append(_box(poly))
+		out["hub:%d" % id] = [hash([h.pos, h.dir, h.cell, h.cells, h.get("edge", {})]), hub_boxes]
 	for id in sim.mail.offices:
 		var h: Dictionary = sim.mail.offices[id]
 		out["mail:%d" % id] = [hash([h.pos, h.dir, h.cell, h.cells]), _cell_boxes(h)]

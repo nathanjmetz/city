@@ -14,6 +14,9 @@ extends CivicBuilder
 ##     brick gate posts, evergreens and shade trees along the edge
 ## Local space: -z faces the road, z = 0 is the front edge of the land, and
 ## piece (x, y) spans x*cell +- cell/2 across and y*cell .. (y+1)*cell back.
+## Edge pieces (a hub boxed in by roads filling its block up to the
+## sidewalk, CivicHubs) are outlines in the same space: they get the same
+## ground, fence and site look as the whole pieces next to them.
 
 const GRASS_CAP := [Color("#4a5d29"), Color("#5d6d33")]
 const WORKING := Color("#6b5a47")
@@ -25,6 +28,8 @@ const IRON := Color("#1d1e20")
 
 var cells := []
 var cell := 50.0
+## Edge pieces: piece -> outline (local x, z), CivicHubs' `edge`.
+var edge_land := {}
 ## Buildings from the hub's development tree (Balance.HUB_TREES ids).
 var dev := []
 ## Ground kept clear of headstones (chapel, memorials): [Rect2 in x, z].
@@ -42,6 +47,7 @@ static func build_hub(h: Dictionary, seed: int, to_curb: float) -> Array:
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 	b.cells = h.cells
 	b.cell = h.cell
+	b.edge_land = h.get("edge", {})
 	b.dev = h.get("built", [])
 	match h.kind:
 		"landfill":
@@ -124,6 +130,139 @@ func _fence_edges(edges: Array, h: float, col: Color, gap := 4.0, gate := 0.0) -
 			_box("paint", Vector3(0.05, 0.05, len), Vector3(mid.x, y, mid.y), col, yaw)
 
 
+## The outside edges of `set`'s pieces and the edge pieces `with` (local
+## outlines), as [a, b] pairs: sides shared with other land drop out. With
+## no edge pieces, just _edges(set).
+func _outline(set: Array, with: Dictionary) -> Array:
+	if with.is_empty():
+		return _edges(set)
+	var polys := []
+	for c in with:
+		polys.append(with[c])
+	var out := []
+	# The pieces' own outside edges, less what runs along an edge piece.
+	for e in _edges(set):
+		out.append_array(_uncovered(e, polys, -1))
+	# Each edge piece's sides, less what runs along a piece or another one.
+	var squares := []
+	var hc := cell * 0.5
+	for c in set:
+		squares.append(PackedVector2Array([Vector2(c.x * cell - hc, c.y * cell), Vector2(c.x * cell + hc, c.y * cell),
+			Vector2(c.x * cell + hc, c.y * cell + cell), Vector2(c.x * cell - hc, c.y * cell + cell)]))
+	for i in polys.size():
+		var poly: PackedVector2Array = polys[i]
+		for k in poly.size():
+			out.append_array(_uncovered([poly[k], poly[(k + 1) % poly.size()]], squares + polys, squares.size() + i))
+	return out
+
+
+## The parts of edge `e` ([a, b]) not running along any of `polys` (bar
+## the one numbered `skip`), as [a, b] pairs.
+static func _uncovered(e: Array, polys: Array, skip: int) -> Array:
+	var runs := [PackedVector2Array([e[0], e[1]])]
+	var box := Rect2(e[0], Vector2.ZERO).expand(e[1]).grow(0.5)
+	for i in polys.size():
+		if i == skip or not _bounds(polys[i]).grow(0.5).intersects(box):
+			continue
+		for grown in Geometry2D.offset_polygon(polys[i], 0.1):
+			var next := []
+			for r in runs:
+				next.append_array(Geometry2D.clip_polyline_with_polygon(r, grown))
+			runs = next
+	var out := []
+	for r in runs:
+		for k in r.size() - 1:
+			if r[k].distance_to(r[k + 1]) > 0.3:
+				out.append([r[k], r[k + 1]])
+	return out
+
+
+static func _bounds(poly: PackedVector2Array) -> Rect2:
+	var box := Rect2(poly[0], Vector2.ZERO)
+	for q in poly:
+		box = box.expand(q)
+	return box
+
+
+## A local point on the hub's land: a piece or an edge piece.
+func _in_land(x: float, z: float) -> bool:
+	if _inside(cells, x, z):
+		return true
+	for c in edge_land:
+		if Geometry2D.is_point_in_polygon(Vector2(x, z), edge_land[c]):
+			return true
+	return false
+
+
+## `poly` pulled in `by` metres all round (its largest part), or empty.
+static func _inset(poly: PackedVector2Array, by: float) -> PackedVector2Array:
+	var best := PackedVector2Array()
+	for q in Geometry2D.offset_polygon(poly, -by):
+		if CivicHubs.area(q) > CivicHubs.area(best):
+			best = q
+	return best
+
+
+## Flat ground over any outline (not only convex ones), as _flat_rect.
+func _flat_poly_any(kind: String, poly: PackedVector2Array, y: float, col: Color) -> void:
+	var alpha := {"drive": 0.0, "asphalt": 0.4, "line": 0.72, "mulch": 1.0, "gravel": 1.0}
+	col.a = alpha[kind]
+	for tri in _tris(poly):
+		for q in tri:
+			_flat.set_normal(Vector3.UP)
+			_flat.set_color(col)
+			_flat.set_uv(q * 0.25)
+			_flat.add_vertex(Vector3(q.x, y, q.y))
+
+
+## The landfill's grassed cap, flat, over an outline.
+func _grass_poly(poly: PackedVector2Array) -> void:
+	var st := _tool("paint")
+	for tri in _tris(poly):
+		for q in tri:
+			var patch := 0.5 + 0.25 * sin(q.x * 0.045 + 1.3) * sin(q.y * 0.06) + 0.25 * sin((q.x + q.y) * 0.021)
+			st.set_normal(Vector3.UP)
+			st.set_color(GRASS_CAP[0].lerp(GRASS_CAP[1], patch))
+			st.set_uv(q)
+			st.add_vertex(Vector3(q.x, 0.05, q.y))
+
+
+## An outline as triangles, each wound the way the ground faces up.
+static func _tris(poly: PackedVector2Array) -> Array:
+	var out := []
+	var idx := Geometry2D.triangulate_polygon(poly)
+	for i in range(0, idx.size() - 2, 3):
+		var a := poly[idx[i]]
+		var b := poly[idx[i + 1]]
+		var c := poly[idx[i + 2]]
+		if (b - a).cross(c - a) < 0.0:
+			out.append([a, c, b])
+		else:
+			out.append([a, b, c])
+	return out
+
+
+## Rows of bales across an outline, wherever a whole row fits.
+func _bales_in(poly: PackedVector2Array, level: int) -> void:
+	var box := _bounds(poly)
+	var n := 6 + level * 3
+	var z := box.position.y + 4.0
+	while z < box.end.y - 2.0:
+		var x := box.position.x + 1.0
+		while x + n * 1.3 < box.end.x:
+			var ok := true
+			for k in 3:
+				for dz in [-0.8, 0.8]:
+					if not Geometry2D.is_point_in_polygon(Vector2(x + n * 1.3 * k / 2.0, z + dz), poly):
+						ok = false
+			if ok:
+				_bale_row(x, z, level)
+				x += n * 1.3 + 3.0
+			else:
+				x += 2.0
+		z += cell * 0.3
+
+
 # ---------------------------------------------------------------- landfill
 
 func _landfill(h: Dictionary, to_curb: float) -> void:
@@ -138,7 +277,10 @@ func _landfill(h: Dictionary, to_curb: float) -> void:
 		_glass(Vector3(12.0, 1.9, 6.95), Vector3(-1, 0, 0), 2.4, 1.0, 0.3))
 	_box("paint", Vector3(3.6, 0.25, 21.0), Vector3(5.5, 0.12, 14.0), CONCRETE)
 	_flat_rect("gravel", -5.0, 3.5, 2.0, 32.0, 0.06, Color("#8d877c"))
-	_fence_edges(_edges(cells), 2.2, GALV, 4.0, 5.0)
+	# Edge pieces: the grassed buffer between the mound and the fence.
+	for c in edge_land:
+		_grass_poly(edge_land[c])
+	_fence_edges(_outline(cells, edge_land), 2.2, GALV, 4.0, 5.0)
 	_landfill_devs(0.0)
 
 
@@ -335,7 +477,19 @@ func _recycling(h: Dictionary, to_curb: float) -> void:
 			c.y * cell + cell - 2.0, 0.06, Color("#8d877c"))
 		for r in 3:
 			_bale_row(c.x * cell - cell * 0.4, c.y * cell + 6.0 + r * cell * 0.3, level)
-	_fence_edges(_edges(front if capped else cells), 2.2, GALV, 4.0, 5.0)
+	# Edge pieces: gravel pads stacked with bales, or the old landfill's
+	# grassed cap behind a recycling yard on a capped landfill.
+	var yard_edges := {}
+	for c in edge_land:
+		if capped and c.y >= 1:
+			_grass_poly(edge_land[c])
+			continue
+		yard_edges[c] = edge_land[c]
+		var pad := _inset(edge_land[c], 2.0)
+		if pad.size() >= 3:
+			_flat_poly_any("gravel", pad, 0.06, Color("#8d877c"))
+			_bales_in(pad, level)
+	_fence_edges(_outline(front if capped else cells, yard_edges), 2.2, GALV, 4.0, 5.0)
 	if capped:
 		_landfill_devs(cell)
 	if "scrap_yard" in dev:
@@ -426,9 +580,23 @@ func _cemetery(to_curb: float) -> void:
 			trees.append([Vector3(x0 + rng.randf_range(6.0, cell - 6.0), 0, z0 + rng.randf_range(8.0, cell - 6.0)),
 				TreeField.Species.OAK if rng.randf() < 0.5 else TreeField.Species.MAPLE,
 				TreeField.LEAF[TreeField.Species.OAK], rng.randf_range(0.9, 1.2)])
-	var edges := _edges(cells)
+	# Edge pieces: newer sections still filling in, up to the fence.
+	for c in edge_land:
+		var plot := _inset(edge_land[c], 2.5)
+		if plot.size() < 3:
+			continue
+		var box := _bounds(plot)
+		var z: float = c.y * cell + 6.0
+		while z < box.end.y:
+			var x: float = c.x * cell - cell * 0.5 + 2.5
+			while x < box.end.x:
+				if Geometry2D.is_point_in_polygon(Vector2(x, z), plot) and rng.randf() < 0.45 and not _kept_clear(x, z):
+					_stone(Vector3(x + rng.randf_range(-0.1, 0.1), 0, z), false)
+				x += 1.9
+			z += 3.4
+	var outline := _outline(cells, edge_land)
 	# Evergreens and shade trees along the edge.
-	for e in edges:
+	for e in outline:
 		var a: Vector2 = e[0]
 		var b: Vector2 = e[1]
 		var len := a.distance_to(b)
@@ -440,7 +608,7 @@ func _cemetery(to_curb: float) -> void:
 			var inward := _inward(a, b)
 			var sp := TreeField.Species.SPRUCE if k % 2 == 0 else TreeField.Species.MAPLE
 			trees.append([Vector3(p.x, 0, p.y) + inward * 3.0, sp, TreeField.LEAF[sp], rng.randf_range(0.8, 1.1)])
-	_fence_edges(edges, 1.5, IRON, 2.4, 3.0)
+	_fence_edges(outline, 1.5, IRON, 2.4, 3.0)
 	for x in [-3.2, 3.2]:
 		_box("brick", Vector3(0.7, 2.2, 0.7), Vector3(x, 1.1, 0.0), Color("#8a4a38"))
 		_box("paint", Vector3(0.85, 0.15, 0.85), Vector3(x, 2.27, 0.0), CONCRETE)
@@ -480,7 +648,7 @@ func _cemetery(to_curb: float) -> void:
 func _inward(a: Vector2, b: Vector2) -> Vector3:
 	var mid := (a + b) * 0.5
 	var n := Vector2(-(b - a).y, (b - a).x).normalized()
-	if _inside(cells, mid.x + n.x * 2.0, mid.y + n.y * 2.0):
+	if _in_land(mid.x + n.x * 2.0, mid.y + n.y * 2.0):
 		return Vector3(n.x, 0, n.y)
 	return Vector3(-n.x, 0, -n.y)
 
