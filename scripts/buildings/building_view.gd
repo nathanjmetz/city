@@ -95,6 +95,10 @@ var _hidden := {}  # Vector2i -> how far its far versions are hidden (0 to 1)
 var _asked := {}  # Vector2i -> true: its buildings' arrays are asked for again
 var _eye := Vector3.ZERO
 var _has_eye := false
+## The game sets this: until its camera exists nothing is drawn in full (a
+## test or tool with no camera at all draws everything in full). Review,
+## 2026-10-25: the view came up before the camera and opened every square.
+var wait_for_eye := false
 
 
 func setup(s: CitySim) -> void:
@@ -358,7 +362,7 @@ func _spawn(key: String, refill := false) -> void:
 	_by_sq[sq][key] = true
 	# Near enough to draw in full: its square is opened now, so the town
 	# opening isn't built twice.
-	if not _batches.has(sq) and (not _has_eye or _square_dist(sq) < _full_from()):
+	if not _batches.has(sq) and (not _has_eye and not wait_for_eye or _has_eye and _square_dist(sq) < _full_from()):
 		_open_square(sq)
 	# Its far version, from the drawing (a building drawn with no masses
 	# noted stands as the box of its drawing).
@@ -485,7 +489,7 @@ func _square_dist(sq: Vector2i) -> float:
 ## and dissolves, the far squares, and the close-up detail.
 func _rings(delta: float) -> void:
 	var t := Perf.now()
-	if not _filling:
+	if not _filling and (_has_eye or not wait_for_eye):
 		# With no camera (a test, a tool), everything is drawn in full.
 		var reach := _full_from() if _has_eye else INF
 		for sq in _by_sq:
