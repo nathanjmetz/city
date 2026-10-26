@@ -95,6 +95,14 @@ const TREE := {
 			"needs": {"local:farm": 3}, "effects": {"seats": 0.6, "stay": 0.1, "jobs": 15, "draw": 0.05}},
 		{"id": "engineering", "name": "College of Engineering", "art": "lab", "needs": {"industry": 3, "leader_edu": 0.75},
 			"effects": {"seats": 0.8, "rep": 0.04, "stay": 0.1, "jobs": 10}},
+		# Its civil engineers time the town's traffic lights, as a Traffic
+		# Management Center's do (Nathan, 2026-10-25: "add a civic
+		# engineering wing to a university and they would fine-tune all of
+		# that for me"; Purdue's and IU's transportation centers work
+		# with Indiana towns this way).
+		{"id": "traffic_lab", "name": "Transportation research center", "art": "lab", "requires": ["engineering"],
+			"needs": {"population": 3000}, "effects": {"rep": 0.02, "jobs": 8},
+			"note": "its civil engineers time the town's traffic lights"},
 		{"id": "business", "name": "School of Business", "art": "hall", "needs": {"shops": 20},
 			"effects": {"seats": 0.8, "stay": 0.1, "jobs": 15}},
 		{"id": "lab", "name": "Science research lab", "art": "lab", "needs": {"leader_edu": 0.8, "rep": 0.45},
@@ -730,6 +738,14 @@ func at(p: Vector3) -> int:
 
 ## The player clears one block (to make room for something else). Clearing
 ## the first building closes the campus. Returns true if anything went.
+## True if any campus here has built `use` (a TREE id).
+func has_built(use: String) -> bool:
+	for id in campuses:
+		if use in campuses[id].get("built", []):
+			return true
+	return false
+
+
 func remove_at(p: Vector3) -> bool:
 	var id := at(p)
 	if id == -1:
