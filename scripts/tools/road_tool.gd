@@ -21,6 +21,9 @@ extends Node3D
 ## P: parallel mode, which draws a second road alongside ([ ] set the gap).
 ## Straight roads snap to right angles and straight-on with the road they
 ## start from, and show a guide line and their length while drawing.
+## Snap switches (Options, like CS2's snapping options): Roads turns off
+## snapping onto roads and junctions, Guides turns off the guide lines and
+## the right-angle and straight-on pull. Shift's 15 degree steps stay.
 ## Right click or Esc stops the current road.
 
 signal mode_changed(mode: int)
@@ -86,6 +89,9 @@ var parallel := false
 var parallel_gap := RoadShapes.GRID_ACROSS
 ## Height new road points are placed at, in metres above the ground.
 var elevation := 0.0
+## Snap switches: onto roads and junctions, and to guide lines and angles.
+var snap_roads := true
+var snap_guides := true
 ## Bridge plans by [curve, type, revisions], kept a few at a time so an
 ## S-curve's two halves don't push each other out every frame.
 var _plan_memo := {}
@@ -213,6 +219,16 @@ func _ready() -> void:
 
 func change_elevation(steps: int) -> void:
 	elevation = clampf(elevation + steps * ELEVATION_STEP, ELEVATION_MIN, ELEVATION_MAX)
+	options_changed.emit()
+	_update_hint()
+
+
+## Turns one kind of snapping on or off: "roads" or "guides".
+func set_snap(kind: String, on: bool) -> void:
+	if kind == "roads":
+		snap_roads = on
+	elif kind == "guides":
+		snap_guides = on
 	options_changed.emit()
 	_update_hint()
 
@@ -1064,7 +1080,7 @@ func _pending_curve(p: Vector3) -> Array:
 		p = a + Vector3(cos(ang), 0.0, sin(ang)) * d.length()
 		if _snap_kind == "free":
 			p = _align(p, a, ang)
-	elif not _curvy() and d.length() > 2.0:
+	elif not _curvy() and snap_guides and d.length() > 2.0:
 		# Snap to straight on or square with the road we start from.
 		var ang := atan2(d.z, d.x)
 		for ref in _reference_angles(a):
@@ -1179,6 +1195,8 @@ func _guide_blocked(a: Vector3, b: Vector3) -> bool:
 ## meets a guide. A guide that would run through another road is skipped.
 func _align(p: Vector3, from: Vector3, ray := NAN) -> Vector3:
 	_align_lines = []
+	if not snap_guides:
+		return p
 	var reach := ALIGN_PX * _px
 	var p2 := Vector2(p.x, p.z)
 	var near := []  # [offset, origin2, dir2, origin3]
@@ -1397,6 +1415,12 @@ func _snapped(hit: Vector3) -> Vector3:
 	if _placing_bend():
 		return Vector3(hit.x, 0.0, hit.z)  # the bend points float freely
 	_align_lines = []
+	if not snap_roads:
+		# Roads snapping off: the point goes where the mouse is.
+		var loose := Vector3(hit.x, 0.0 if mode == Mode.GRID else elevation, hit.z)
+		if mode == Mode.STRAIGHT or (_curvy() and not _placing_bend()):
+			loose = _align(loose, _points[0] if not _points.is_empty() else Vector3(INF, 0, INF))
+		return loose
 	# Junctions pull from further than the road between them, so a point
 	# near one lands on it, not just beside it on the road.
 	var snap := network.snap(hit, _snap_reach(SNAP_NODE + 3.0, SNAP_PX * 2.0), _snap_reach(SNAP_ROAD + 5.0, SNAP_PX))
@@ -1659,6 +1683,13 @@ func _update_hint() -> void:
 			text += "\nRoads and track it crosses: it climbs over them, piers and all."
 	if parallel and mode in [Mode.STRAIGHT, Mode.CURVED, Mode.SCURVE]:
 		text += "\nParallel on (P): second road %d ft away  [ ]" % roundi(parallel_gap * FT)
+	if (not snap_roads or not snap_guides) and mode != Mode.BULLDOZE and mode != Mode.UPGRADE:
+		var off := []
+		if not snap_roads:
+			off.append("onto roads")
+		if not snap_guides:
+			off.append("to guides and angles")
+		text += "\nSnapping %s is off." % " or ".join(off)
 	if not _armed.is_empty():
 		text = "This road removes %s. Click again to build it anyway, or right click to go back." \
 			% RoadWins.loss_text(_losses)

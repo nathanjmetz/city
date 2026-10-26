@@ -331,6 +331,7 @@ func _init() -> void:
 	_check(high == 2, "heights saved (got %d)" % high)
 	_check(RoadStyle.safe_speed_mph(46.0) >= 20 and RoadStyle.safe_speed_mph(46.0) <= 30, "a 150 ft loop ramp is a ~25 mph curve")
 	_s_curve()
+	_snap_switches()
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
@@ -397,6 +398,40 @@ func _s_curve() -> void:
 	var from := {"seg": start.seg, "at_frac": 0.5}
 	var to := {"seg": finish.seg, "at_frac": 0.5}
 	_check(sim.traffic._route(from, to).size() > 0, "cars can drive the whole S-curve")
+	t.free()
+
+
+## Snap switches (CS2's snapping options): Roads off and a click by a road
+## stays where it was clicked; Guides off and nothing lines it up.
+func _snap_switches() -> void:
+	var sim := CitySim.new()
+	sim.apply({"type": "build_road", "start": [0, 0], "ctrl": [50, 0], "end": [100, 0]})
+	var t := RoadTool.new()
+	t.sim = sim
+	t.network = sim.network
+	t._px = 1.0
+	t.mode = RoadTool.Mode.STRAIGHT
+	var near_road := Vector3(50, 0, 4)
+	_check(absf(t._snapped(near_road).z) < 0.01 and t._snap_kind != "free", "snapping on: a click by a road lands on it")
+	t.set_snap("roads", false)
+	var q := t._snapped(near_road)
+	_check(q.distance_to(near_road) < 0.01 and t._snap_kind == "free", "Roads off: the click stays where it was (got %s)" % q)
+	var none := Vector3(INF, 0, INF)
+	_check(t._align(Vector3(150, 0, 4), none).distance_to(Vector3(150, 0, 0)) < 0.01,
+		"Roads off, guides on: it still lines up straight on from a road end")
+	t.set_snap("guides", false)
+	q = t._align(Vector3(150, 0, 4), none)
+	_check(q.distance_to(Vector3(150, 0, 4)) < 0.01 and t._align_lines.is_empty(), "Guides off: nothing lines it up")
+	t._points = [Vector3(100, 0, 0)]
+	var c := t._pending_curve(Vector3(200, 0, 3))
+	_check(absf(c[2].z - 3.0) < 0.01 and is_nan(t._guide_angle), "Guides off: no pull straight on from the road (got %s)" % c[2])
+	t.set_snap("guides", true)
+	c = t._pending_curve(Vector3(200, 0, 3))
+	_check(absf(c[2].z) < 0.01, "Guides on: it pulls straight on from the road")
+	t.set_snap("roads", true)
+	_check(t.snap_roads and t.snap_guides, "both switches back on")
+	for l in t._angle_labels:
+		l.free()
 	t.free()
 
 
