@@ -236,6 +236,13 @@ const MAIN_STREET_SHOPS := 2
 const DEVELOP_EVERY := 40
 const DEVELOP_AGE := 4320
 const DEVELOP_CHANCE := 0.35
+## A building moves up its growth path only with at least half its needs
+## met (Inspect.needs: power, water, services in reach, land value, mail;
+## a home with power and water and nothing else nearby scores 50),
+## and a grown one cut off from power or water this long (ticks: two game
+## days) drops a level. The gap between the two keeps it from flickering.
+const LEVEL_UP_MET := 50
+const LEVEL_DOWN_AFTER := 2880
 ## Share of owners keen to build on: DEVELOP_KEEN plus DEVELOP_KEEN_WEALTH
 ## times the neighborhood's wealth (0 to 1), so about half at 0.5.
 const DEVELOP_KEEN := 0.25
