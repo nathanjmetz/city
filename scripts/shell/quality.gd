@@ -93,6 +93,20 @@ const TIERS := [
 		"tree_shadows": true},
 ]
 
+## The detail floor (Brawn, 2026-10-25): "There should be a direct
+## relationship between how well something is drawn and how close you can get
+## to it." For each tier, the closest the camera may be, in metres, because
+## up close something drawn at that tier looks crude. Measured with
+## tools/detail_floor_shots.gd; docs/detail-floor.md says how to re-measure
+## and when a floor may move closer. CityCamera never goes nearer.
+const DETAIL_FLOOR := [
+	{"dist": 40.0, "date": "2026-10-25", "why": "today's closest zoom (CityCamera.MIN_DIST); not yet measured per tier with tools/detail_floor_shots.gd"},
+	{"dist": 40.0, "date": "2026-10-25", "why": "today's closest zoom (CityCamera.MIN_DIST); not yet measured per tier with tools/detail_floor_shots.gd"},
+	{"dist": 40.0, "date": "2026-10-25", "why": "today's closest zoom (CityCamera.MIN_DIST); not yet measured per tier with tools/detail_floor_shots.gd"},
+	{"dist": 40.0, "date": "2026-10-25", "why": "today's closest zoom (CityCamera.MIN_DIST); not yet measured per tier with tools/detail_floor_shots.gd"},
+	{"dist": 40.0, "date": "2026-10-25", "why": "today's closest zoom (CityCamera.MIN_DIST); not yet measured per tier with tools/detail_floor_shots.gd"},
+]
+
 ## The detail budget of each tier, read by every view with knob(). One
 ## place for "how much may be drawn near the camera", so the views agree.
 ## Distances are metres from the camera; counts are the most drawn at once.
@@ -740,6 +754,10 @@ func label() -> String:
 func top() -> int:
 	return BROWSER_TOP if browser else mini(_guess + 1, CINEMATIC)
 
+
+## The closest camera distance, in metres, this tier's drawing holds up to.
+static func detail_floor(t: int) -> float:
+	return float(DETAIL_FLOOR[clampi(t, LOW, CINEMATIC)].dist)
 
 ## The highest tier Auto ever climbs to here: High in the browser; on the
 ## desktop, Cinematic, unless the graphics share too little memory with
