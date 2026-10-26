@@ -67,6 +67,9 @@ const EDGE_PIECES := [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(
 ## this big (m2): thinner, it's just the grass verge.
 const EDGE_MIN_WIDTH := 1.0
 const EDGE_MIN_AREA := 12.0
+## How often (park rounds) a park looks at its edge pieces: one round in four,
+## so a big town's parks take turns.
+const EDGE_EVERY := 4
 
 ## id -> {kind, name, pos (centre), dir (unit, toward its road), size
 ## (width along the road x depth), start_area, founded (tick), features:
@@ -275,16 +278,40 @@ func edge_poly(id: int, c: Vector2i) -> PackedVector2Array:
 	return out
 
 
+static func _in_box(q: Vector2, poly: PackedVector2Array) -> bool:
+	var lo := poly[0]
+	var hi := poly[0]
+	for v in poly:
+		lo = lo.min(v)
+		hi = hi.max(v)
+	return q.x >= lo.x and q.y >= lo.y and q.x <= hi.x and q.y <= hi.y
+
+
+## What a site's land is laid out from (to tell when it changed).
+func land_sig(id: int) -> int:
+	var s: Dictionary = sites[id]
+	return hash([s.pos, s.dir, s.size, s.get("edge", {})])
+
+
 ## The park or landmark whose ground holds this point, or -1.
 func at(p: Vector3) -> int:
 	for id in sites:
+		# Quick out: past its corners and a growth strip (its edge pieces' reach).
+		var s: Dictionary = sites[id]
+		var dx: float = p.x - s.pos.x
+		var dz: float = p.z - s.pos.z
+		var r: float = (s.size.length() * 0.5 + Balance.PARK_GROW_STEP * 1.5)
+		if dx * dx + dz * dz > r * r:
+			continue
 		if Geometry2D.is_point_in_polygon(Vector2(p.x, p.z), footprint(id)):
 			return id
 		var edge: Dictionary = sites[id].get("edge", {})
 		if not edge.is_empty():
 			var l := CivicHubs.to_local(sites[id], Vector2(p.x, p.z))
 			for c in edge:
-				if Geometry2D.is_point_in_polygon(l, edge[c]):
+				# Its box first: Godot's point-in-polygon can say yes for a
+				# point well outside an outline with corners in a line.
+				if _in_box(l, edge[c]) and Geometry2D.is_point_in_polygon(l, edge[c]):
 					return id
 	return -1
 
@@ -503,9 +530,11 @@ func decide(sim: CitySim) -> bool:
 			if _fill_in(sim, id, int(t.residents)):
 				s.next_feature = sim.tick_count + roundi(Balance.PARK_FEATURE_DAYS * 24.0 * 60.0)
 				changed = true
-			# Boxed in by roads: lawn up to the sidewalk (unless told to hold).
-			if sim.permits.guidance("park", id).stance != "hold" and _take_edges(sim, id):
-				changed = true
+		# Boxed in by roads: lawn up to the sidewalk (unless told to hold),
+		# looked at every EDGE_EVERY rounds, a few parks a round (by id).
+		if s.kind == "park" and (sim.tick_count / Balance.PARK_DECIDE_EVERY + id) % EDGE_EVERY == 0 \
+				and sim.permits.guidance("park", id).stance != "hold" and _take_edges(sim, id):
+			changed = true
 	return changed
 
 
@@ -793,7 +822,9 @@ static func _poly_hits(poly: PackedVector2Array, polys: Array) -> bool:
 # the road already, so it costs nothing and adds no upkeep. Roads still
 # win: a road built later cuts the pieces back, or takes them (road_wins).
 
-## Takes every edge piece that fits round park `id`. True when it took any.
+## Takes every edge piece that fits round park `id`, and fits one a road
+## had cut back out to the roads again once that road is gone. True when
+## any changed.
 func _take_edges(sim: CitySim, id: int) -> bool:
 	var s: Dictionary = sites[id]
 	if s.kind != "park":
@@ -803,6 +834,20 @@ func _take_edges(sim: CitySim, id: int) -> bool:
 	var took := false
 	for c in EDGE_PIECES:
 		if s.edge.has(c):
+			# Cut back by a road since gone: it fits out to the roads again.
+			# The cut alone first (cheap), the ground check only if it'd grow.
+			var keep: Dictionary = s.edge
+			s.edge = keep.duplicate()
+			s.edge.erase(c)
+			var fresh := _edge_shape(sim, id, c, PackedVector2Array(), false)
+			if not fresh.is_empty() and CivicHubs.area(fresh) > CivicHubs.area(keep[c]) + 1.0:
+				fresh = _edge_shape(sim, id, c)
+			else:
+				fresh = PackedVector2Array()
+			s.edge = keep
+			if not fresh.is_empty() and CivicHubs.area(fresh) > CivicHubs.area(keep[c]) + 1.0:
+				keep[c] = fresh
+				took = true
 			continue
 		var shape := _edge_shape(sim, id, c)
 		if not shape.is_empty():
@@ -829,8 +874,8 @@ func _edge_rect(id: int, c: Vector2i) -> PackedVector2Array:
 ## is big enough, runs along its land (the park, or for a corner a piece
 ## next to it) and is free; else empty. `from` is an edge piece's outline
 ## (x, z) to cut back again: land it already holds, so only its size and
-## touch are checked.
-func _edge_shape(sim: CitySim, id: int, c: Vector2i, from := PackedVector2Array()) -> PackedVector2Array:
+## touch are checked. `check` false skips the ground check (a quick look).
+func _edge_shape(sim: CitySim, id: int, c: Vector2i, from := PackedVector2Array(), check := true) -> PackedVector2Array:
 	var s: Dictionary = sites[id]
 	var rect := _edge_rect(id, c)
 	var whole := PackedVector2Array()
@@ -840,7 +885,7 @@ func _edge_shape(sim: CitySim, id: int, c: Vector2i, from := PackedVector2Array(
 	# EDGE_SNAP steps never pokes back over them.
 	var parts := CivicHubs._cut_by_roads(sim.network, whole if from.is_empty() else from, CivicHubs.EDGE_SNAP * 3.0)
 	if from.is_empty():
-		parts = _cut_by_lots(sim, parts)
+		parts = _cut_by_zones(sim, _cut_by_lots(sim, parts))
 	var best := PackedVector2Array()
 	var best_a := 0.0
 	for part in parts:
@@ -862,9 +907,20 @@ func _edge_shape(sim: CitySim, id: int, c: Vector2i, from := PackedVector2Array(
 			local.append(l)
 	if local.size() > 1 and local[0].distance_to(local[-1]) <= 0.05:
 		local.remove_at(local.size() - 1)
+	# Corners in a straight line (where a cut ran along the strip) go.
+	var i := 0
+	while local.size() > 3 and i < local.size():
+		var a := local[(i + local.size() - 1) % local.size()]
+		var b := local[(i + 1) % local.size()]
+		var u := local[i] - a
+		var v := b - local[i]
+		if absf(u.cross(v)) < 0.001 * u.length() * v.length() and u.dot(v) > 0.0:
+			local.remove_at(i)
+		else:
+			i += 1
 	if local.size() < 3:
 		return PackedVector2Array()
-	if from.is_empty():
+	if from.is_empty() and check:
 		var world := PackedVector2Array()
 		for l in local:
 			world.append(CivicHubs.to_world(s, l))
@@ -900,6 +956,44 @@ static func _cut_by_lots(sim: CitySim, parts: Array) -> Array:
 				if inside:
 					return []
 				next.append_array(Geometry2D.clip_polygons(part, grown))
+			parts = next
+	return parts
+
+
+## `parts` (outlines, x, z) less every zoned cell on them, painted but not
+## yet a lot (ZoneMap.CELL squares, a row's run of them at a time), or []
+## when one sits wholly inside a part (it would leave a hole).
+static func _cut_by_zones(sim: CitySim, parts: Array) -> Array:
+	if parts.is_empty() or sim.zones.cells.is_empty():
+		return parts
+	var box := Rect2(parts[0][0], Vector2.ZERO)
+	for part in parts:
+		for q in part:
+			box = box.expand(q)
+	var k := ZoneMap.CELL
+	var lo := Vector2i(floori(box.position.x / k), floori(box.position.y / k))
+	var hi := Vector2i(floori(box.end.x / k), floori(box.end.y / k))
+	for y in range(lo.y, hi.y + 1):
+		var x := lo.x
+		while x <= hi.x:
+			if not sim.zones.cells.has(Vector2i(x, y)):
+				x += 1
+				continue
+			var x0 := x
+			while x <= hi.x and sim.zones.cells.has(Vector2i(x, y)):
+				x += 1
+			var run := PackedVector2Array([Vector2(x0 * k, y * k), Vector2(x * k, y * k),
+				Vector2(x * k, (y + 1) * k), Vector2(x0 * k, (y + 1) * k)])
+			var next := []
+			for part in parts:
+				var inside := true
+				for q in run:
+					if not Geometry2D.is_point_in_polygon(q, part):
+						inside = false
+						break
+				if inside:
+					return []
+				next.append_array(Geometry2D.clip_polygons(part, run))
 			parts = next
 	return parts
 
@@ -946,6 +1040,12 @@ func _edge_problem(sim: CitySim, id: int, world: PackedVector2Array) -> String:
 		for q in Geometry2D.intersect_polygons(world, lot.corners):
 			if CivicHubs.area(q) > 1.0:
 				return "Zoned or built on."
+	# Zoning painted but not yet a lot.
+	for x in range(floori(box.position.x / ZoneMap.CELL), floori(box.end.x / ZoneMap.CELL) + 1):
+		for y in range(floori(box.position.y / ZoneMap.CELL), floori(box.end.y / ZoneMap.CELL) + 1):
+			if sim.zones.cells.has(Vector2i(x, y)) and Geometry2D.is_point_in_polygon(
+					Vector2((x + 0.5) * ZoneMap.CELL, (y + 0.5) * ZoneMap.CELL), world):
+				return "Zoned."
 	return ""
 
 

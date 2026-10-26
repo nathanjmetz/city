@@ -221,6 +221,14 @@ static func plan(sim: CitySim, cmd: Dictionary) -> Dictionary:
 			if not moving.has("%s:%d" % [t, id]):
 				var b := _building(sim, t, id)
 				still.append([t, id, footprint(t, _kind(sim, t, id), b.pos, b.dir)])
+				# A park's or hub's edge pieces, up to the sidewalk, are its
+				# land too (Parks, CivicHubs).
+				if t == "park":
+					for poly in sim.parks.land_polys(id).slice(1):
+						still.append([t, id, poly])
+				elif t == "hub":
+					for c in b.get("edge", {}):
+						still.append([t, id, CivicHubs.edge_poly(b, c)])
 	var placed := []  # [type, id, poly] of moved ones, as they land
 	for t in BUILDINGS:
 		for id in out[_group(t)]:

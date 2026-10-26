@@ -1353,14 +1353,19 @@ func tick() -> void:
 	Perf.add("sim.tourism", t)
 	t = Perf.now()
 	if tick_count % Balance.PARK_DECIDE_EVERY == Balance.ROUND_AT.parks and not parks.sites.is_empty():
-		var sizes := parks.sites.values().map(func(s): return [s.size, s.get("edge", {}).size()])
+		var was := {}
+		for id in parks.sites:
+			was[id] = parks.land_sig(id)
 		if parks.decide(self):
-			if parks.sites.values().map(func(s): return [s.size, s.get("edge", {}).size()]) != sizes:
-				# A park bought land or took its edge pieces: lots and zoning
-				# under it go away.
-				for id in parks.sites:
+			# A park that bought land or took edge pieces: lots and zoning
+			# under its land go away (only under the parks that changed).
+			var grew := false
+			for id in parks.sites:
+				if was.get(id, 0) != parks.land_sig(id):
+					grew = true
 					for poly in parks.land_polys(id):
 						_clear_zones_under(poly)
+			if grew:
 				_lots_dirty = true
 				zones_changed.emit()
 			parks_changed.emit()
@@ -2423,6 +2428,22 @@ func _leader_keys() -> Array:
 
 ## Zoning under a new building goes away, as in Cities: Skylines 2.
 func _clear_zones_under(poly: PackedVector2Array) -> void:
+	if poly.size() < 3:
+		return
+	var box := Rect2(poly[0], Vector2.ZERO)
+	for q in poly:
+		box = box.expand(q)
+	var lo := Vector2i(floori(box.position.x / ZoneMap.CELL), floori(box.position.y / ZoneMap.CELL))
+	var hi := Vector2i(floori(box.end.x / ZoneMap.CELL), floori(box.end.y / ZoneMap.CELL))
+	# Only the cells under its box: a big town has a hundred thousand zoned.
+	if (hi.x - lo.x + 1) * (hi.y - lo.y + 1) < zones.cells.size():
+		for x in range(lo.x, hi.x + 1):
+			for y in range(lo.y, hi.y + 1):
+				var c := Vector2i(x, y)
+				if zones.cells.has(c) and Geometry2D.is_point_in_polygon(Vector2((x + 0.5) * ZoneMap.CELL,
+						(y + 0.5) * ZoneMap.CELL), poly):
+					zones.erase_cell(c)
+		return
 	for c in zones.cells.keys():
 		if Geometry2D.is_point_in_polygon(Vector2((c.x + 0.5) * ZoneMap.CELL, (c.y + 0.5) * ZoneMap.CELL), poly):
 			zones.erase_cell(c)
@@ -3350,7 +3371,11 @@ func _with_sites(frozen: Dictionary) -> Dictionary:
 	for id in services.buildings:
 		out["svc-%d" % id] = {"corners": services.footprint(id)}
 	for id in parks.sites:
-		out["park-%d" % id] = {"corners": parks.footprint(id)}
+		var polys := parks.land_polys(id)
+		out["park-%d" % id] = {"corners": polys[0]}
+		# Its edge pieces, up to the sidewalk.
+		for i in range(1, polys.size()):
+			out["park-%d-%d" % [id, i]] = {"corners": polys[i]}
 	return out
 
 
@@ -3494,7 +3519,7 @@ func _sites_sig() -> int:
 	for id in services.buildings:
 		sites.append([id, services.footprint(id)])
 	for id in parks.sites:
-		sites.append([id, parks.footprint(id)])
+		sites.append([id, parks.land_polys(id)])
 	return hash(sites)
 
 

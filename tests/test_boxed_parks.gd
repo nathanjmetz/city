@@ -141,6 +141,20 @@ func _init() -> void:
 	_check(sim.hubs._ground_problem(sim, sim.parks.edge_poly(pid, w_piece), inside, -1, true, false) != "",
 		"a landfill or post office can't take it")
 	_check(sim.parks.overlaps(Array(sim.parks.edge_poly(pid, w_piece))), "nor a service building")
+	# Nor can Move It set a building down on it.
+	var feed := Services.site_near(sim.network, Services.Kind.POWER_FEED, Vector3(20, 0, 30))
+	_check(sim.apply({"type": "place_service", "kind": Services.Kind.POWER_FEED, "pos": [feed[0].x, feed[0].z],
+		"dir": [feed[1].x, feed[1].z]}), "a power line feed goes in across the front street")
+	var fid: int = sim.services.buildings.keys()[-1]
+	var mid := Vector3.ZERO
+	for q in sim.parks.edge_poly(pid, w_piece):
+		mid += Vector3(q.x, 0, q.y)
+	mid /= sim.parks.edge_poly(pid, w_piece).size()
+	var fpos: Vector3 = sim.services.buildings[fid].pos
+	var mv := MoveIt.plan(sim, MoveIt.command([{"type": "service", "id": fid}], fpos, Vector3(mid.x, 0, mid.z - 8.0) - fpos))
+	_check(str(mv.problem).contains(s.name), "Move It can't set a building down on the edge land (%s)" % mv.problem)
+	var away := MoveIt.plan(sim, MoveIt.command([{"type": "service", "id": fid}], fpos, Vector3(-25, 0, 0)))
+	_check(away.problem == "", "but can move it along its own street (%s)" % away.problem)
 
 	# Save, load: byte for byte the same, and the copies stay in step.
 	var copy := CitySim.new()
@@ -185,6 +199,21 @@ func _init() -> void:
 	copy2.tick()
 	_check(copy2.parks.sites[pid].edge == s.edge, "the cut-back edge pieces survive a save")
 
+	# The lane goes again: the piece it cut fits back out to the street.
+	var lane := -1
+	for seg in sim.network.segments:
+		var cv := sim.network.curve_of(seg)
+		for e in [cv[0], cv[2]]:
+			if Vector2(e.x, e.z).distance_to(Vector2(end, -25)) < 1.0:
+				lane = seg
+	_check(lane != -1 and sim.apply({"type": "remove_road", "seg": lane}), "the lane is taken up")
+	var cut_area := CivicHubs.area(s.edge[w_piece])
+	for i in Balance.PARK_DECIDE_EVERY * Parks.EDGE_EVERY + 1:
+		sim.tick()
+	_check(CivicHubs.area(s.edge[w_piece]) > cut_area + 50.0, "the west piece fits back out to the street (%.0f -> %.0f m2)" %
+		[cut_area, CivicHubs.area(s.edge[w_piece])])
+	_check(_no_edge_over_roads(sim, pid), "still clear of every street")
+
 	# Its drawing fills the edge pieces: more lawn, more trees.
 	var bare := s.duplicate()
 	bare.edge = {}
@@ -207,5 +236,32 @@ func _init() -> void:
 			var q := CivicHubs.to_world(s, Vector2(v.x, v.z))
 			far = maxf(far, -_clear_of_roads(sim, q))
 	_check(far < 6.5, "no walk runs further out than the sidewalk (%.1f m past the gap)" % far)
+	_zoned_cells()
 	print("boxed parks: %s" % ("all passed" if _fails == 0 else "%d failed" % _fails))
 	quit(1 if _fails > 0 else 0)
+
+
+## Zoning painted in the gap by the street, not yet a lot, is never taken
+## (or wiped) by the park's edge pieces.
+func _zoned_cells() -> void:
+	var sim := CitySim.new()
+	sim.economy.money = 50_000_000
+	sim.simulate_traffic = false
+	_ring(sim, 110, 80)
+	var site := Parks.site_near(sim.network, "park", Vector3(0, 0, -30))
+	sim.apply({"type": "place_park", "kind": "park", "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})
+	var pid: int = sim.parks.sites.keys()[0]
+	# A patch of zoning in the west gap, between the park and the street.
+	sim.zones.paint(Vector3(-37, 0, -35), 4.0, ZoneMap.Zone.RESIDENTIAL)
+	var painted := sim.zones.cells.keys()
+	_check(not painted.is_empty(), "zoning painted in the gap (%d cells)" % painted.size())
+	for i in 1500:
+		sim.tick()
+	_check(not sim.parks.sites[pid].edge.is_empty(), "the park took edge pieces (%s)" % str(sim.parks.sites[pid].edge.keys()))
+	var kept := true
+	var covered := false
+	for c in painted:
+		kept = kept and sim.zones.cells.has(c)
+		covered = covered or sim.parks.covers(Vector3((c.x + 0.5) * ZoneMap.CELL, 0, (c.y + 0.5) * ZoneMap.CELL))
+	_check(kept, "the zoning is all still there")
+	_check(not covered, "and none of it is the park's")
