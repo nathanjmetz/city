@@ -184,6 +184,11 @@ static func exists(sim: CitySim, sel: Dictionary) -> bool:
 ## [[label, value]], problems: [text]}, and optionally notes: [text] and
 ## actions (see HubInfo), and "follow": true for something the camera can
 ## follow. Pollution is added to everything (PollutionInfo).
+## For the info panel's summary: a row may name a section as a third item
+## ([label, value, "Neighborhood"]) to fold under that heading ("Summary":
+## shown by the chips instead); "chips": [[label, value, ok?]], "help": the
+## one thing that would help most, "pollution": one line a kind with its
+## sources, "pollution_section" and "tree_section": headings for those.
 static func describe(sim: CitySim, sel: Dictionary) -> Dictionary:
 	if not exists(sim, sel):
 		return {}
@@ -431,8 +436,13 @@ static func _farm(sim: CitySim, id: int, at := []) -> Dictionary:
 			rows.insert(2, ["Why", str(fl.why) if str(fl.why) != "" else "The crop the farm started with; the farmer plans each field in January."])
 			rows.insert(3, ["Soil health", "%d%% (fertility %d%%)" % [roundi(float(fl.health) * 100.0),
 				roundi(Farms.fertility_at(Farms.cell_center(f, c)) * 100.0)]])
-	rows.append_array(_development(sim, f, Agency.TREES.farm, f.pos, profit))
-	rows.append_array(sim.families.rows(sim, "farm:%d" % id))
+	# The farm's money and herd fold under headings, as a home's do (the
+	# critic, 2026-10-26: the farm panel was the same wall of rows).
+	for r in rows:
+		if r.size() == 2 and _FARM_SECTIONS.has(r[0]):
+			r.append(_FARM_SECTIONS[r[0]])
+	rows.append_array(_tagged(_development(sim, f, Agency.TREES.farm, f.pos, profit), "Growth"))
+	rows.append_array(_tagged(sim.families.rows(sim, "farm:%d" % id), "Owner"))
 	return {"title": _named(sim, "farm:%d" % id, "Farm"), "kind": "Farming", "icon": "farms", "ok": problems.is_empty() and profit >= 0.0,
 		"status": status, "rows": rows, "problems": problems}
 
@@ -824,9 +834,12 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 		if z == ZoneMap.Zone.INDUSTRIAL:
 			var chain: Dictionary = Balance.FACTORY_CHAINS[b.get("chain", "general")]
 			rows.push_front(["Makes", "%s from %s" % [chain.makes.capitalize(), chain.input]])
-			rows.append(["%s in the yard" % chain.input.capitalize(), "%d loads" % floori(sim.logistics.stock.get(key, 0.0))])
-		rows.append(["Trucks on the road", str(sim.logistics.trucks_for("lot:" + key))])
+			rows.append(["%s in the yard" % chain.input.capitalize(), "%d loads" % floori(sim.logistics.stock.get(key, 0.0)), "Business"])
+		rows.append(["Trucks on the road", str(sim.logistics.trucks_for("lot:" + key)), "Business"])
 		status = "Open for business" if problems.is_empty() else "Closed: no power or water"
+	# The status's colour says what its words say: problems found below
+	# (mail, trash, pollution) show in amber without turning it red.
+	var status_ok := problems.is_empty()
 	if int(b.get("flats", 0)) > 0:
 		rows.insert(1, ["Flats upstairs", "%d of %d residents" % [int(b.focc), int(b.flats)]])
 	if BuildingTypes.storeys(b) > 0:
@@ -843,8 +856,8 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 		rows.append(["Can grow into", "Nothing: it's kept as it is"])
 	else:
 		rows.append(["Can grow into", ", ".join(next) if not next.is_empty() else "Nothing yet"])
-	rows.append_array(sim.heritage.rows(sim, key))
-	rows.append_array(sim.care.rows(sim, key))
+	rows.append_array(_tagged(sim.heritage.rows(sim, key), "Details"))
+	rows.append_array(_tagged(sim.care.rows(sim, key), "Details"))
 	var going_up := sim.construction.describe("lot:" + key, sim.tick_count)
 	if going_up != "":
 		status = going_up
@@ -875,7 +888,7 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 		rows.insert(0, ["Building", title])
 		kind = Names.trade_word(sim.families.owned[ref].what).capitalize() if z == ZoneMap.Zone.COMMERCIAL else title
 		title = sim.families.name_of(ref)
-		rows.append_array(sim.families.rows(sim, ref))
+		rows.append_array(_tagged(sim.families.rows(sim, ref), "Owner"))
 	elif z == ZoneMap.Zone.RESIDENTIAL:
 		rows.insert(0, ["Building", title])
 		title = Families.home_name(b)
@@ -886,9 +899,49 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 		for id in sim.people.residents(key).slice(0, 4):
 			who.append(sim.people.person_name(id))
 		rows.insert(1, ["Who lives here", ", ".join(who) + ("…" if sim.people.residents(key).size() > 4 else "")])
-	return {"title": title, "kind": kind, "icon": icons[z], "ok": problems.is_empty(),
+	# A summary first (the critic, 2026-10-26: thirty rows of equal weight):
+	# chips for the level, people or jobs, power and water, one line for
+	# what would help most, and the rest folded under headings.
+	for r in rows:
+		if r.size() == 2 and _LOT_SECTIONS.has(r[0]):
+			r.append(_LOT_SECTIONS[r[0]])
+	var chips := [["Level", "%d/100" % lv.level]]
+	if z == ZoneMap.Zone.RESIDENTIAL:
+		chips.append(["Residents", "%d/%d" % [b.occ, b.cap]])
+	else:
+		chips.append(["Jobs", str(b.cap)])
+	chips.append(["Power", "✓" if power else "✗", power])
+	chips.append(["Water", "✓" if water else "✗", water])
+	return {"title": title, "kind": kind, "icon": icons[z], "ok": status_ok,
 		"status": status, "rows": rows, "problems": problems, "actions": sim.heritage.actions(sim, key),
-		"tree": tree_needs}
+		"tree": tree_needs, "tree_section": "Needs", "chips": chips, "help": lv.next}
+
+
+## Where a built lot's rows go in its panel (InfoPanel): "Summary" ones are
+## said by the chips and the help line; the rest fold under their heading.
+## Rows not listed stay at the top.
+const _LOT_SECTIONS := {
+	"Level": "Summary", "To level up": "Summary", "Residents": "Summary", "Power": "Summary", "Water": "Summary",
+	"Jobs": "Summary",
+	"Who lives here": "Who lives here", "Flats upstairs": "Who lives here",
+	"Services nearby": "Neighborhood", "Sewer": "Neighborhood", "Land value nearby": "Neighborhood",
+	"From parks and landmarks": "Neighborhood", "Mail": "Neighborhood",
+	"Property tax": "Money",
+	"Storeys": "Details", "Why this": "Details", "Can grow into": "Details",
+}
+
+
+## Where a farm's rows go in its panel; the rest stay at the top.
+const _FARM_SECTIONS := {
+	"Profit": "Money", "Savings": "Money", "Rented ground": "Money", "Property tax to town": "Money",
+	"Solar rent": "Money", "Wind leases": "Money", "Land here": "Money",
+	"Livestock": "Livestock", "Livestock plan": "Livestock",
+}
+
+
+## Rows with a section for the info panel: [label, value, section].
+static func _tagged(rows: Array, section: String) -> Array:
+	return rows.map(func(r): return [r[0], r[1], section] if r.size() == 2 else r)
 
 
 ## A business's own name if it has one ("Miller Farms"), else `plain`.

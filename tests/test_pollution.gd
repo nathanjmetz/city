@@ -73,11 +73,13 @@ func _init() -> void:
 		total += e[1]
 	_check(not s.by.smoke.is_empty() and absf(total - 1.0) < 0.001, "smoke shares add to 100%")
 	var d := Inspect.describe(sim, {"type": "spot", "id": [spot.x, spot.z]})
-	_check(d.title == "Pollution here" and d.rows.size() >= 2, "clicking a spot shows its pollution")
+	_check(d.title == "Pollution here" and d.pollution.size() >= 1, "clicking a spot shows its pollution")
+	# Each source is named on its kind's line, as a link that goes there.
 	var go := false
-	for a in d.actions:
-		go = go or (a.has("go") and a.go.type == "lot")
-	_check(go, "a polluted spot has a Go to button for its source")
+	for line in d.pollution:
+		for src in line.from:
+			go = go or (not src.go.is_empty() and src.go.type == "lot")
+	_check(go, "a polluted spot links to its source")
 
 	# Homes near the factories are worth less, and say who's to blame.
 	pol.rebuild(sim)
@@ -97,7 +99,7 @@ func _init() -> void:
 			far_key = key
 	_check(far_key == "" or pol.lot_factor(sim, far_key) > 0.99, "a home far upwind is not")
 	var home := Inspect.describe(sim, {"type": "lot", "id": worst_key})
-	_check(home.rows.any(func(r): return r[0] in ["Smoke", "Noise", "Dirty ground"]), "a home lists its pollution")
+	_check(home.pollution.any(func(l): return l.kind in ["Smoke", "Noise", "Dirty ground"]), "a home lists its pollution")
 	var named := false
 	for p in home.problems:
 		for ref in pol.sources:
@@ -238,7 +240,8 @@ func _init() -> void:
 	var by_horn: float = pol.sample(Vector3(5500, 0, -4985)).noise
 	_check(by_horn > by_track + 5.0, "the crossing is louder than open track (%.1f vs %.1f dB)" % [by_horn, by_track])
 	var rd := Inspect.describe(sim, {"type": "spot", "id": [5500.0, -4985.0]})
-	_check(rd.rows.any(func(r): return r[1] == str(sim.rail.depots[did].name)), "a spot by the crossing names the railroad")
+	_check(rd.pollution.any(func(l): return l.from.any(func(who): return who.name == str(sim.rail.depots[did].name))),
+		"a spot by the crossing names the railroad")
 	var qcost := pol.quiet_cost(sim, rref)
 	money = sim.economy.money
 	_check(qcost == Balance.QUIET_ZONE_PER_CROSSING and sim.apply({"type": "quiet_zone", "ref": rref}), "the town can make a quiet zone")

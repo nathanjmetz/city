@@ -63,7 +63,7 @@ static func spot(sim: CitySim, p: Vector3) -> Dictionary:
 	if s.smoke >= Pollution.SMOKE_FLOOR:
 		var w := Pollution.wind_words()
 		d.notes.append("The wind blows from the %s, so smoke drifts %s." % [w[0], w[1]])
-	if d.rows.is_empty():
+	if d.pollution.is_empty():
 		d.rows.append(["Smoke", "None"])
 		d.rows.append(["Noise", "Quiet"])
 		d.rows.append(["Dirty ground", "None"])
@@ -124,28 +124,34 @@ const TOWN_TOP := 6
 static func _lot_part(sim: CitySim, key: String, d: Dictionary) -> void:
 	var lot: Dictionary = sim.lots[key]
 	var s := sim.pollution.sample(lot.pos)
-	var worst := _readings(sim, s, d)
+	_readings(sim, s, d)
 	var b: Dictionary = sim.buildings.get(key, {})
 	var home := not b.is_empty() and int(b.zone) == ZoneMap.Zone.RESIDENTIAL
 	var worn: float = sim.pollution.wear.get(key, 0.0)
 	if home and worn >= 0.1:
-		d.rows.append(["Upkeep", "Worn" if worn < 0.5 else "Run down"])
+		d.rows.append(["Upkeep", "Worn" if worn < 0.5 else "Run down", "Neighborhood"])
 		d.notes.push_front("Pollution is wearing this home down: stained siding, peeling paint. It sells for less.")
-	if worst != "" and home:
-		d.ok = false
+	# The readings fold under the home's Neighborhood section; a reading over
+	# the line is still a problem, shown in amber, but the status keeps its
+	# own colour ("Lived in" stays green: the critic, 2026-10-26, found it red).
+	d.pollution_section = "Neighborhood"
 
 
-## Rows for each kind of pollution at a reading, with the sources behind it,
-## problems for what's over the line, and Go to buttons. Returns the worst
-## problem in a few words, or "".
+## One line for each kind of pollution at a reading, with the sources behind
+## it (d.pollution: [{kind, reading, from: [{name, share, go, at}]}]; each
+## name is a link that flies there), and problems for what's over the line.
+## Returns the worst problem in a few words, or "". (It was a row a kind, a
+## row a source and a Go to button a source: nine rows and four buttons
+## naming the same factories, the critic, 2026-10-26.)
 static func _readings(sim: CitySim, s: Dictionary, d: Dictionary) -> String:
 	var p := sim.pollution
 	if not d.has("notes"):
 		d.notes = []
 	if not d.has("actions"):
 		d.actions = []
+	if not d.has("pollution"):
+		d.pollution = []
 	var worst := ""
-	var go := {}
 	for kind in ["noise", "smoke", "ground"]:
 		var v: float = s[kind]
 		var by: Array = s.by[kind]
@@ -153,13 +159,14 @@ static func _readings(sim: CitySim, s: Dictionary, d: Dictionary) -> String:
 			or (kind == "smoke" and v >= Pollution.SMOKE_FLOOR) or (kind == "ground" and v >= Pollution.GROUND_FLOOR)
 		if not shows:
 			continue
-		d.rows.append([label(kind), amount(kind, v) + "  ·  " + words(kind, v)])
+		var from := []
 		for i in mini(by.size(), TOP):
 			var ref: String = by[i][0]
 			if not p.sources.has(ref):
 				continue
-			d.rows.append(["   %d%%" % roundi(by[i][1] * 100.0), p.sources[ref].name])
-			go[ref] = true
+			var src: Dictionary = p.sources[ref]
+			from.append({"name": src.name, "share": float(by[i][1]), "go": src.select, "at": src.center})
+		d.pollution.append({"kind": label(kind), "reading": amount(kind, v) + "  ·  " + words(kind, v), "from": from})
 		if hurts(kind, v) and not by.is_empty() and p.sources.has(by[0][0]):
 			var src: Dictionary = p.sources[by[0][0]]
 			var line := "%s %s, mostly from %s (%d%%)." % [label(kind), amount(kind, v), src.name, roundi(by[0][1] * 100.0)]
@@ -169,13 +176,6 @@ static func _readings(sim: CitySim, s: Dictionary, d: Dictionary) -> String:
 			d.problems.append(line)
 			if worst == "":
 				worst = "%s: %s" % [words(kind, v), amount(kind, v)]
-	var refs := go.keys()
-	refs.sort_custom(func(a, b): return p.sources[a].name < p.sources[b].name)
-	for ref in refs:
-		var src: Dictionary = p.sources[ref]
-		if src.select.is_empty():
-			continue
-		d.actions.append({"label": "Go to " + src.name, "go": src.select, "at": src.center})
 	return worst
 
 
