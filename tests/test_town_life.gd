@@ -344,17 +344,32 @@ func _check_copies(sim: CitySim) -> void:
 	_check_lost_rig(b)
 
 
+## The trip id of a rig driving a town street (not the county highway), or -1.
+func _rig_in_town(sim: CitySim) -> int:
+	for car in sim.traffic.cars:
+		var t: int = car.get("trip", car.id)
+		if not sim.healthcare.trips.has(t) or not car.has("route"):
+			continue
+		var c: Array = sim.network.curve_of(int(car.route[car.leg]) / 2)
+		if absf(c[0].z) > 1.0 or absf(c[2].z) > 1.0:
+			return t
+	return -1
+
+
 ## Cut the road under a rig mid-trip: it is let go (never counted as out
 ## for ever), the county's cap clears, and the next call gets a rig.
 func _check_lost_rig(sim: CitySim) -> void:
+	# A rig on a town street: cutting the county highway (the line at z = 0)
+	# would cut the county's rigs off from the town for good.
+	var lost := -1
 	for i in 6000:
-		if not sim.healthcare.trips.is_empty():
+		lost = _rig_in_town(sim)
+		if lost != -1:
 			break
 		sim.tick()
-	_check(not sim.healthcare.trips.is_empty(), "a rig is out before the road is cut")
-	if sim.healthcare.trips.is_empty():
+	_check(lost != -1, "a rig is out on a town street before the road is cut")
+	if lost == -1:
 		return
-	var lost: int = sim.healthcare.trips.keys()[0]
 	var cut := {}
 	for car in sim.traffic.cars:
 		if car.get("trip", car.id) == lost:

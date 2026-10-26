@@ -223,7 +223,17 @@ func _plan(storeys: int, info_only := false) -> Dictionary:
 	var gs := -1.0 if rng.randf() < 0.5 else 1.0  # which side the garage is on
 	var wide := _bucket(half * 2.0, WIDTHS)
 	var deep := _bucket(depth, DEPTHS)
-	var zf := setback
+	# Not every owner set the house on the builder's line (Nathan, 2026-10-25:
+	# "every home is sitting the same distance away from the curb"): a nudge
+	# each, larger on old streets where lots were built one at a time, and now
+	# and then a house set well back on a deep lot. Its own dice, so the rest
+	# of the lot is drawn as before.
+	var own := RandomNumberGenerator.new()
+	own.seed = hash([rng.seed, "setback"])
+	var nudge: float = {"prewar": 1.5, "postwar": 0.5, "recent": 1.0}.get(era, 1.0)
+	var zf := snappedf(setback + own.randf_range(-nudge, nudge), 0.5)
+	if deep >= 40.0 and own.randf() < 0.08:
+		zf += snappedf(own.randf_range(3.0, 6.0), 0.5)
 	if deep < 30.0:
 		zf = snappedf(clampf(deep * 0.22, 4.5, zf), 0.5)
 	var paint := _paint(scheme)

@@ -2272,6 +2272,21 @@ func place(ref: String) -> Dictionary:
 	return pl
 
 
+## A copy of `d` with its keys as plain strings in sorted order: a lot in
+## the running town has some keys as StringNames, in the order they were
+## added, and one loaded from a save has them sorted, so a car that carries
+## its stop must carry the same bytes either way (copies stay in step).
+static func _canon(d: Dictionary) -> Dictionary:
+	var keys := []
+	for k in d:
+		keys.append(str(k))
+	keys.sort()
+	var out := {}
+	for k in keys:
+		out[k] = d[k]
+	return out
+
+
 func _place_seed(ref: String) -> int:
 	if _sim != null and ref.begins_with("svc:"):
 		# A parking lot moved, re-striped or gone is laid out afresh.
@@ -2296,8 +2311,8 @@ func _lot_place(ref: String) -> Dictionary:
 	for s in lay.spots:
 		spots.append({"pos": SiteLayout.world(lot, s.pos), "face": SiteLayout.world_dir(lot, s.face),
 			"kind": s.kind, "hidden": s.kind == "garage" or s.kind == "bay", "local": s.pos})
-	var stop := lot.duplicate()
-	stop.ref = ref
+	var stop := _canon(lot)
+	stop["ref"] = ref
 	return {"ref": ref, "stop": stop, "lot": lot, "lay": lay, "spots": spots, "taken": _fill(spots.size()),
 		"door": SiteLayout.world(lot, lay.door), "seed": _place_seed(ref), "drive": PackedVector3Array(),
 		"zone": -1 if b == null else int(b.zone)}
