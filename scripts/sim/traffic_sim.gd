@@ -4841,7 +4841,7 @@ func _lane_changes() -> void:
 				continue
 			_acc = car.acc
 			var v0: float = minf(w.vmax * car.pref, car.top)
-			var line := INF if last else ds - 0.5
+			var line := INF if last else ds + JAM_GAP - 0.5  # as the car brakes for the line
 			var a_new := _idm(car.v, v0, minf(gl, line), 0.0 if lead == null or gl > line else lead.v)
 			var a_follow := 0.0
 			if foll != null:

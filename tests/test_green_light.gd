@@ -264,7 +264,9 @@ static func bar_run() -> Dictionary:
 		if mine[0].j == null and mine[0].v < 1.0 and t.ways[wi].s1 - mine[0].d < 10.0:
 			var low: float = mine[0].v
 			rest = t.ways[wi].len - mine[0].d  # nose to the junction's centre
-			while mine[0].j == null:
+			for k in 300:
+				if mine[0].j != null:
+					break
 				sim.tick()
 				if mine[0].v > low:
 					break
