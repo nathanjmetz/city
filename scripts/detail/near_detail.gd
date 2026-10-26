@@ -70,6 +70,7 @@ func set_reach(detail: float, msaa := 2) -> void:
 
 
 func index(key: String, centre: Vector3) -> void:
+	_last_eye = Vector3.INF  # look again: a building came or moved
 	unindex(key)
 	_centre[key] = centre
 	var c := _cell(centre)
@@ -79,6 +80,7 @@ func index(key: String, centre: Vector3) -> void:
 
 
 func unindex(key: String) -> void:
+	_last_eye = Vector3.INF
 	release(key)
 	if not _centre.has(key):
 		return
@@ -112,7 +114,23 @@ static func _cell(p: Vector3) -> Vector2i:
 
 
 ## `eye` in the view's frame.
+## Where the eye was at the last full look, and the most brick cells one
+## wall may hold (review, 2026-10-25: a tower's walls had no cap; a wall past
+## it keeps its plain far look).
+var _last_eye := Vector3.INF
+const MAX_WALL_CELLS := 2400
+const STILL_EVERY := 30
+var _still := 0
+
+
 func update(eye: Vector3) -> void:
+	# A still camera with nothing waiting looks again only every
+	# STILL_EVERY frames (a building's arrays can come back without a move).
+	_still += 1
+	if eye.distance_to(_last_eye) < 0.5 and _queue.is_empty() and _jobs.is_empty() and _still < STILL_EVERY:
+		return
+	_still = 0
+	_last_eye = eye
 	var want := {}
 	var r := int(ceil(release_r / GRID))
 	var c0 := _cell(eye)
@@ -332,6 +350,8 @@ func _bricks(st: Dictionary, g: Dictionary) -> void:
 	var P := NearMeshes.CELL
 	var cols := maxi(1, roundi(w / P))
 	var rows := maxi(1, roundi(h / P))
+	if cols * rows > MAX_WALL_CELLS:
+		return
 	var sx := w / (cols * P)
 	var sy := h / (rows * P)
 	var bx := Basis(g.x * sx, g.y * sy, g.n)
