@@ -542,6 +542,57 @@ func greens_at(node: int) -> Array:
 	return out
 
 
+## Where in its cycle a light starts, set by the player to make a green wave
+## along a street (node -> seconds). Without one a light starts at a
+## spread-out time of its own.
+var offsets := {}
+
+
+func set_offset(node: int, seconds: float) -> bool:
+	if not junctions.has(node) or junctions[node].control != Rule.SIGNAL:
+		return false
+	if seconds < 0.0:
+		offsets.erase(node)
+	else:
+		offsets[node] = snappedf(seconds, 0.1)
+	_rebuild()
+	return true
+
+
+## Links light `to` behind light `from` in a green wave: it takes `from`'s
+## green times (so both run one cycle) and starts its green just as cars
+## leaving `from` on a green arrive at the speed limit `v` (m/s).
+func link_wave(from: int, to: int, v: float) -> bool:
+	if from == to or not junctions.has(from) or not junctions.has(to):
+		return false
+	var a: Dictionary = junctions[from]
+	var b: Dictionary = junctions[to]
+	if a.control != Rule.SIGNAL or b.control != Rule.SIGNAL or a.phases.size() != b.phases.size():
+		return false
+	var g := greens_at(from)
+	greens[to] = {}
+	for i in g.size():
+		greens[to][i] = float(g[i])
+	var travel: float = Vector2(a.pos.x - b.pos.x, a.pos.z - b.pos.z).length() / maxf(v, 1.0)
+	offsets[to] = snappedf(fposmod(a.offset - travel, maxf(a.cycle, 1.0)), 0.1)
+	_rebuild()
+	return true
+
+
+func offsets_to_dict() -> Dictionary:
+	var out := {}
+	for n in offsets:
+		out[str(n)] = offsets[n]
+	return out
+
+
+func offsets_from_dict(d: Dictionary) -> void:
+	offsets.clear()
+	for k in d:
+		offsets[int(k)] = float(d[k])
+	_dirty = true
+
+
 func greens_to_dict() -> Dictionary:
 	var out := {}
 	for n in greens:
@@ -1048,7 +1099,7 @@ func _build_control(n: int, segs: Array) -> void:
 				"end": t + green + yellow + 1.5})
 			t += green + yellow + 1.5
 		j.cycle = maxf(t, 1.0)
-		j.offset = fposmod(n * 37.0, j.cycle)
+		j.offset = fposmod(float(offsets[n]) if offsets.has(n) else n * 37.0, j.cycle)
 
 
 ## How far before a junction's centre traffic stops, at the stop bar. Town

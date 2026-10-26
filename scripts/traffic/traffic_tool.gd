@@ -24,6 +24,8 @@ var _ring := MeshInstance3D.new()
 var _hover := -1
 var _hint := ""
 var _refresh := 0.0
+## The light a green wave runs from (Timing: Ctrl-click), or -1.
+var _wave_from := -1
 
 
 func setup(s: CitySim, camera: CityCamera, fv: FlowView) -> void:
@@ -50,6 +52,7 @@ func _ready() -> void:
 
 func set_mode(m: int) -> void:
 	mode = m
+	_wave_from = -1
 	flow_view.visible = m != Mode.NONE
 	_ring.visible = false
 	_hover = -1
@@ -68,6 +71,17 @@ func _unhandled_input(event: InputEvent) -> void:
 		set_mode(Mode.NONE)
 	elif mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not mb.alt_pressed \
 			and _hover != -1 and mode == Mode.TIMING:
+		# Ctrl-click: a green wave, light by light down a street.
+		if mb.ctrl_pressed or mb.meta_pressed:
+			if _wave_from != -1 and _wave_from != _hover and sim.traffic.junctions.has(_wave_from):
+				var v := 0.0
+				for seg in sim.network.segments_at(_hover):
+					v = maxf(v, float(RoadStyle.TYPES[sim.network.segments[seg].type].mph) * RoadStyle.MPH)
+				sim.apply({"type": "link_wave", "from": _wave_from, "to": _hover, "v": v})
+			_wave_from = _hover
+			_hint = ""
+			_update_hint()
+			return
 		# Click near a direction: 5 s more green for it; Shift-click: 5 s less.
 		var hit = cam.mouse_ground_point()
 		var ph := _phase_near(_hover, hit) if hit != null else -1
@@ -162,7 +176,7 @@ func _update_hint() -> void:
 	var text := "Traffic flow: green moves at the limit, red is jammed. %d%% overall, %d cars." \
 		% [roundi(sim.traffic.flow * 100.0), sim.traffic.cars.size()]
 	if mode == Mode.TIMING:
-		text = "Click near a direction at a traffic light for 5 s more green; Shift-click for 5 s less."
+		text = "Click near a direction at a traffic light for 5 s more green; Shift-click for 5 s less. Ctrl-click lights one after another down a street for a green wave."
 		if _hover != -1 and sim.traffic.junctions.has(_hover):
 			var parts := []
 			var g: Array = sim.traffic.greens_at(_hover)
@@ -170,6 +184,8 @@ func _update_hint() -> void:
 				var mine: bool = sim.traffic.greens.get(_hover, {}).has(i)
 				parts.append("%s %d s%s" % [_phase_name(_hover, i).capitalize(), roundi(float(g[i])), " (yours)" if mine else ""])
 			text += "\nGreen: " + ", ".join(parts) + "."
+		if _wave_from != -1:
+			text += "\nGreen wave: Ctrl-click the next light down the street (it will turn green as cars from the last one arrive).""
 	elif RULE_FOR.has(mode):
 		text = ["", "", "Click a junction to let the game choose its control.",
 			"Click a junction to add traffic lights.", "Click a junction to make it an all-way stop.",
