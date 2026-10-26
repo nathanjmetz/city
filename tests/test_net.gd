@@ -18,6 +18,7 @@ func _run() -> void:
 	_test_trade()
 	_test_elbow_room()
 	_test_city_lines()
+	_test_handed_roads()
 	_test_ledger()
 	_test_land_and_neighborhoods()
 
@@ -154,6 +155,61 @@ func _run() -> void:
 	await _until(func(): return sim.trade.sold("power") > 0.0)
 	_check(sim.trade.sold("power") == 50.0, "Ann is paid on hers")
 
+	# A message far bigger than the connection's buffer (a region of big
+	# towns) goes in parts and arrives whole.
+	var big_text := "x".repeat(RegionServer.BUFFER_BYTES + 3_000_000)
+	var big_heard := []
+	bob.chat_received.connect(func(l): if str(l.text).length() > 1000: big_heard.append(l))
+	var bob_peer := -1
+	for peer in server._players:
+		if server._players[peer].city == bob.my_city:
+			bob_peer = peer
+	server._send(bob_peer, {"t": "chat", "line": {"from": "", "text": big_text, "at": 0}})
+	_check(server._link.waiting_bytes(bob_peer) > 0, "a message bigger than the buffer waits its turn instead of failing")
+	await _until(func(): return not big_heard.is_empty(), 30.0)
+	_check(not big_heard.is_empty() and str(big_heard[0].text) == big_text,
+		"and arrives whole, %d MB in parts" % (big_text.length() / 1_000_000))
+
+	# A newer copy replaces an older one still waiting, and goes behind what
+	# was queued after it (never ahead of an older full copy).
+	var link := NetLink.new(WebSocketMultiplayerPeer.new())
+	link.send(5, "card1".to_utf8_buffer(), "card")
+	link.send(5, "full1".to_utf8_buffer(), "full")
+	link.send(5, "card2".to_utf8_buffer(), "card")
+	var order: Array = link._out[5].map(func(e): return e.packets[0].get_string_from_utf8())
+	_check(order == ["full1", "card2"], "a newer copy takes the older one's place at the back of the queue (%s)" % [order])
+	var parts := NetLink.split("z".repeat(NetLink.PART_BYTES * 2 + 5).to_utf8_buffer())
+	_check(parts.size() == 3 and parts[0][1] == NetLink.MORE | NetLink.FIRST and parts[1][1] == NetLink.MORE and parts[2][1] == 0,
+		"a big message's first part says it's first, so one cut short is never added onto")
+
+	# Before signing in, nobody can send the server big messages.
+	var raw := WebSocketMultiplayerPeer.new()
+	RegionServer.use_big_buffers(raw)
+	raw.create_client(url)
+	await _until(func():
+		raw.poll()
+		return raw.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED)
+	for pkt in NetLink.split("y".repeat(3 * NetLink.PART_BYTES).to_utf8_buffer()).slice(0, 2):
+		raw.put_packet(pkt)
+	for i in 20:
+		raw.poll()
+		await process_frame
+	_check(server._link._in.is_empty(), "parts from a connection that hasn't signed in are dropped")
+	raw.close()
+
+	# The save goes on another core, and writes just what saving at once does.
+	# (Compared with the region as it was when the save started: the players'
+	# games keep sending copies meanwhile.)
+	await _until(func(): return server._saving.is_empty(), 30.0)
+	var expected := _old_save(server)
+	server._start_save()
+	await _until(func(): return server._saving.is_empty(), 30.0)
+	_check(_same_save(expected, server.data_path), "a save made on another core is the same file as before")
+	expected = _old_save(server)
+	server._start_save()
+	await _until(func(): return server._saving.is_empty(), 30.0)
+	_check(_same_save(expected, server.data_path) and not server._town_text.is_empty(), "and again from the towns' kept text")
+
 	# Chat reaches everyone, with the sender's name.
 	var heard := []
 	bob.chat_received.connect(func(line): heard.append(line))
@@ -282,6 +338,7 @@ func _run() -> void:
 	_check(sixth.accounts["bob"].host, "an account under any of the host's names is a host")
 	sixth.stop()
 	DirAccess.remove_absolute(data)
+	await _test_limits()
 
 	print("SOME TESTS FAILED" if _failed else "ALL TESTS PASSED")
 	quit(1 if _failed else 0)
@@ -441,6 +498,107 @@ func _test_city_lines() -> void:
 	for p in cut[0]:
 		max_y = maxf(max_y, p.y)
 	_check(max_y < 400.0, "the line stops where a third town is nearer (reaches y=%d)" % max_y)
+	# A town right in the way: no start where the two come nearest, so it's
+	# found from where the third town's own lines stopped.
+	# Two towns with a third just off the line between them: nearer the
+	# middle than either, so it blocks there, but further up the two are
+	# neighbors again.
+	var left := PackedVector2Array()
+	var right := PackedVector2Array()
+	var mid := PackedVector2Array()
+	for x in range(-60, 61, 20):
+		for y in range(-60, 61, 20):
+			left.append(Vector2(x - 1000, y))
+			right.append(Vector2(x + 1000, y))
+			mid.append(Vector2(x, y - 600))
+	var sl := CityLines.PointSet.new(left)
+	var sr := CityLines.PointSet.new(right)
+	var sm := CityLines.PointSet.new(mid)
+	var t := CityLines.Tracer.new(sl, sr, [sm])
+	while not t.step():
+		pass
+	_check(t.blocked and t.lines.is_empty(), "a town in the way blocks the start where two towns come nearest")
+	var stops := []
+	for pair in [[sl, sm, sr], [sr, sm, sl]]:
+		var u := CityLines.Tracer.new(pair[0], pair[1], [pair[2]])
+		while not u.step():
+			pass
+		for st in u.stops:
+			if st[0] == pair[2]:
+				stops.append(st[1])
+	var seeded := CityLines.Tracer.new(sl, sr, [sm], stops)
+	while not seeded.step():
+		pass
+	_check(not stops.is_empty() and seeded.lines.size() == 1, "and the line round it starts where three towns meet (%d spots)" % stops.size())
+	# Lines are traced again only when a town's edge moves: building inside
+	# a town leaves its edge's number as it was.
+	var grid := PackedVector2Array()
+	for x in range(0, 641, 20):
+		for y in range(0, 641, 20):
+			grid.append(Vector2(x, y))
+	var edge := CityLines.PointSet.new(grid).edge_sig()
+	var inside := grid.duplicate()
+	inside.append(Vector2(321, 317))
+	var outside := grid.duplicate()
+	outside.append(Vector2(700, 300))
+	var shuffled := grid.duplicate()
+	shuffled.reverse()
+	_check(CityLines.PointSet.new(inside).edge_sig() == edge and CityLines.PointSet.new(shuffled).edge_sig() == edge
+		and CityLines.PointSet.new(outside).edge_sig() != edge, "a town's edge counts as moved only when it grows out, not in")
+	# Towns joined by county road: the road out of town doesn't count, so
+	# the line runs between the towns, not where their roads meet.
+	var r := Region.new()
+	r.add_city("p1", "Ann")
+	r.add_city("p2", "Bob")
+	for id in ["c1", "c2"]:
+		for cmd in _starter_town(r.cities[id].sim):
+			r.cities[id].sim.apply_now(cmd)
+		for i in 1500:
+			r.cities[id].sim.tick()
+	var joined := CityLines.trace(CityLines.PointSet.new(CityLines.city_points(r.cities.c1)),
+		CityLines.PointSet.new(CityLines.city_points(r.cities.c2)), [])
+	var gap: float = r.cities.c1.origin.distance_to(r.cities.c2.origin)
+	var mid_ok := false
+	if joined.size() == 1:
+		var centre: Vector2 = joined[0][joined[0].size() / 2]
+		mid_ok = absf(centre.distance_to(r.cities.c1.origin) - centre.distance_to(r.cities.c2.origin)) < gap * 0.25
+	_check(r.cities.c1.sim.buildings.size() > 0 and joined.size() == 1 and mid_ok,
+		"towns joined by county road get a city line between them (%d)" % joined.size())
+
+
+## A new town's road into a neighbor's town is handed over, not built on the
+## server, and everyone who unpacks that neighbor builds it.
+func _test_handed_roads() -> void:
+	var r := Region.new()
+	r.add_city("p1", "Ann")
+	var ann: CitySim = r.cities.c1.sim
+	for cmd in _starter_town(ann):
+		ann.apply_now(cmd)
+	for i in 500:
+		ann.tick()
+	# Ann's newest copy waits as data, as on the server.
+	r.update_city("c1", JSON.parse_string(JSON.stringify(ann.to_dict(), "", false, true)))
+	var segs := ann.network.segments.size()
+	r.add_city("p2", "Bob", true)
+	_check(r.stale_ids().has("c1") and r.pending.has("c1") and r.cities.c1.sim.network.segments.size() == segs,
+		"a new neighbor's road into a waiting town is handed over, the town not unpacked")
+	_check(r.handed.has("c1") and r.joins.size() == 1, "and it's still sent to her computer and joined")
+	var copy := Region.new()
+	copy.from_dict(RegionServer.unpack(RegionServer.pack(r.to_dict())))
+	copy.load_stale()
+	var at: Array = copy.joins[0].b_at if copy.joins[0].b == "c1" else copy.joins[0].a_at
+	_check(copy._node_at("c1", at) != -1 and copy.cities.c1.sim.network.segments.size() > segs,
+		"her full copy, unpacked (she's back), gets the road (%d roads, was %d)" % [copy.cities.c1.sim.network.segments.size(), segs])
+	var seen := Region.new()
+	seen.from_dict(RegionServer.unpack(RegionServer.pack(r.to_dict(""))))
+	_check(seen.cities.c1.sim.network.segments.size() == segs and seen.pending.has("c1"),
+		"a neighbor's postcard of her town is never planned afresh for it")
+	# Her own computer builds it; once her copy has it, it isn't handed again.
+	for cmd in r.handed.c1:
+		ann.apply_now(cmd)
+	r.update_city("c1", JSON.parse_string(JSON.stringify(ann.to_dict(), "", false, true)))
+	_check(not r.pending.has("c1"), "her copy with the road ends the hand-over")
+	_check(r.money_of("c1") == ann.economy.money, "a waiting town's money comes from its copy")
 
 
 ## Power, water and zones along a city's starter road (its county road out
@@ -592,6 +750,22 @@ func _test_metro(l: Ledger) -> void:
 		"the metro saves and loads")
 
 
+## The region as the server used to save it (all at once, as JSON), as text
+## with its keys sorted.
+func _old_save(server: RegionServer) -> String:
+	var old := server.region.to_dict()
+	old["code"] = server.invite_code
+	old["accounts"] = server.accounts
+	old["away"] = server.region.away
+	return JSON.stringify(JSON.parse_string(JSON.stringify(old, "", false, true)), "", true, true)
+
+
+## Whether the save file at `path` is that region.
+func _same_save(expected: String, path: String) -> bool:
+	var b = JSON.parse_string(FileAccess.get_file_as_string(path))
+	return b is Dictionary and JSON.stringify(b, "", true, true) == expected
+
+
 func _client() -> RegionClient:
 	var c := RegionClient.new()
 	root.add_child(c)
@@ -615,3 +789,258 @@ func _check(ok: bool, what: String) -> void:
 	print(("PASS " if ok else "FAIL ") + what)
 	if not ok:
 		_failed = true
+
+
+# --- Limits, cut-short messages, what goes out, old saves and old games ------
+
+## A part as it goes over the wire (see NetLink).
+func _part(flags: int, total: int, body: PackedByteArray) -> PackedByteArray:
+	var pkt := PackedByteArray()
+	pkt.resize(NetLink.PART_HEAD)
+	pkt[0] = NetLink.PART
+	pkt[1] = flags
+	pkt.encode_u32(2, total)
+	pkt.append_array(body)
+	return pkt
+
+
+## Sends the server a raw packet from a signed-in client's connection.
+func _raw(c: RegionClient, pkt: PackedByteArray) -> void:
+	c._peer.set_target_peer(1)
+	c._peer.put_packet(pkt)
+
+
+## A signed-in player to misbehave: added by the host, in with a PIN.
+func _signed_in(server: RegionServer, url: String, name: String) -> RegionClient:
+	server.add_player(name)
+	var c := _client()
+	c.join(url, "", "p-" + name, "", "", false, "", str(server.accounts[name.to_lower()].pin))
+	await _until(func(): return c.my_city != "" and c.is_joined)
+	await _frames(5)
+	return c
+
+
+func _peer_of(server: RegionServer, name: String) -> int:
+	for peer in server._players:
+		if server._players[peer].name == name:
+			return peer
+	return -1
+
+
+func _test_limits() -> void:
+	var data := OS.get_user_data_dir().path_join("test-limits.json")
+	DirAccess.remove_absolute(data)
+	var server := RegionServer.new()
+	root.add_child(server)
+	_check(server.start(PORT + 3, "lim123", data) == OK, "limits: server starts")
+	var url := "ws://127.0.0.1:%d" % (PORT + 3)
+	var ann := _client()
+	ann.join(url, "LIM123", "p-lim-ann", "Ann")
+	await _until(func(): return ann.my_city != "" and ann.is_joined)
+	var mal := await _signed_in(server, url, "Mal")
+	var city_start := RegionServer.CITY_START.to_utf8_buffer()
+
+	# Nothing in a welcome or a picture is account data.
+	var text := JSON.stringify(server._region_msg("welcome", [ann.my_city, mal.my_city], ann.my_city))
+	for id in [ann.my_city, mal.my_city]:
+		text += JSON.stringify(RegionServer.unpack(server.region.packed_card(id)))
+	text += JSON.stringify(RegionServer.unpack(server._region_msg("welcome", [], "").z))
+	var secrets := []
+	for a in server.accounts.values():
+		secrets.append_array([a.hash, a.salt, a.pin])
+		secrets.append_array(a.tokens)
+	secrets.append(mal.token)
+	var leaked := secrets.filter(func(x): return str(x).length() >= 4 and text.contains(str(x)))
+	_check(secrets.size() > 6 and leaked.is_empty(), "a welcome and the pictures hold no hash, salt, PIN or token (%d checked)" % secrets.size())
+
+	# An oversize message: refused at its first part, and the sender is cut off.
+	var cut := server.violations
+	_raw(mal, _part(NetLink.MORE | NetLink.FIRST, NetLink.MAX_CITY + 1, city_start))
+	await _until(func(): return server.violations > cut)
+	_check(server.violations == cut + 1 and server._link.held_bytes() == 0, "a message over the cap cuts the sender off, holding nothing")
+	mal.leave()
+
+	# A big message that isn't a town's copy.
+	mal = await _signed_in(server, url, "Mal")
+	cut = server.violations
+	_raw(mal, _part(NetLink.MORE | NetLink.FIRST, NetLink.SMALL_MAX + 10, '{"t":"chat","text":"'.to_utf8_buffer()))
+	await _until(func(): return server.violations > cut)
+	_check(server.violations == cut + 1, "a big message that isn't a town's copy cuts the sender off")
+	mal.leave()
+
+	# A part with no start, a short last part, and a wrong total.
+	mal = await _signed_in(server, url, "Mal")
+	cut = server.violations
+	_raw(mal, _part(0, 100, "x".repeat(100).to_utf8_buffer()))
+	await _until(func(): return server.violations > cut)
+	_check(server.violations == cut + 1, "a part with no first part cuts the sender off")
+	mal.leave()
+	mal = await _signed_in(server, url, "Mal")
+	cut = server.violations
+	_raw(mal, _part(NetLink.MORE | NetLink.FIRST, 5000, city_start))
+	_raw(mal, _part(0, 5000, "x".repeat(100).to_utf8_buffer()))
+	await _until(func(): return server.violations > cut)
+	_check(server.violations == cut + 1 and server._link.held_bytes() == 0, "a last part that leaves the message short cuts the sender off")
+	mal.leave()
+	mal = await _signed_in(server, url, "Mal")
+	cut = server.violations
+	_raw(mal, _part(NetLink.MORE | NetLink.FIRST, 150, city_start))
+	_raw(mal, _part(0, 150, "x".repeat(300).to_utf8_buffer()))
+	await _until(func(): return server.violations > cut)
+	_check(server.violations == cut + 1, "parts adding up to more than the total cut the sender off")
+	mal.leave()
+
+	# An abort part clears a half-sent message (no offence); a message that
+	# stops coming is dropped and its sender cut off; a disconnect half way
+	# leaves nothing held.
+	mal = await _signed_in(server, url, "Mal")
+	cut = server.violations
+	var mal_peer := _peer_of(server, "Mal")
+	_raw(mal, _part(NetLink.MORE | NetLink.FIRST, 3_000_000, city_start + "x".repeat(10000).to_utf8_buffer()))
+	await _until(func(): return server._link.held_bytes() > 0)
+	_raw(mal, NetLink._abort_packet())
+	await _until(func(): return server._link.held_bytes() == 0)
+	_check(server._link.held_bytes() == 0 and server.violations == cut, "an abort part clears a half-sent message, no offence")
+	_raw(mal, _part(NetLink.MORE | NetLink.FIRST, 3_000_000, city_start + "x".repeat(10000).to_utf8_buffer()))
+	await _until(func(): return server._link.held_bytes() > 0)
+	server._link._in_at[mal_peer] = Time.get_ticks_msec() - NetLink.PART_TIMEOUT_MS - 1000
+	await _until(func(): return server.violations > cut)
+	_check(server.violations == cut + 1 and server._link.held_bytes() == 0, "a message that stops coming is dropped and its sender cut off")
+	mal.leave()
+	mal = await _signed_in(server, url, "Mal")
+	cut = server.violations
+	_raw(mal, _part(NetLink.MORE | NetLink.FIRST, 3_000_000, city_start + "x".repeat(10000).to_utf8_buffer()))
+	await _until(func(): return server._link.held_bytes() > 0)
+	mal._peer.close()
+	await _until(func(): return server._link.held_bytes() == 0)
+	_check(server._link.held_bytes() == 0 and server.violations == cut, "a disconnect half way through a message leaves nothing held")
+	mal.leave()
+
+	# Too much half-arrived at once, from everyone together.
+	mal = await _signed_in(server, url, "Mal")
+	cut = server.violations
+	server._link.max_held = 5000
+	_raw(mal, _part(NetLink.MORE | NetLink.FIRST, 3_000_000, city_start + "x".repeat(10000).to_utf8_buffer()))
+	await _until(func(): return server.violations > cut)
+	server._link.max_held = NetLink.MAX_HELD
+	_check(server.violations == cut + 1 and server._link.held_bytes() == 0, "more half-arrived than the total cap cuts the sender off")
+	mal.leave()
+
+	# A flood of town copies: only so many wait to be unpacked, and the
+	# player sending them is cut off.
+	mal = await _signed_in(server, url, "Mal")
+	cut = server.violations
+	mal_peer = _peer_of(server, "Mal")
+	for i in 12:
+		server._take_city(mal_peer, mal.my_city, {"z": RegionServer.pack({"postcard": true, "roads": {}})})
+	_check(server.violations == cut + 1 and server._jobs.size() <= RegionServer.MAX_JOBS_PER_PEER,
+		"a flood of town copies is held to %d jobs, and the sender is cut off (%d jobs)" % [RegionServer.MAX_JOBS_PER_PEER, server._jobs.size()])
+	server._finish_jobs(true)
+	_check(server._pending_total == 0 and server._pending.is_empty(), "and what was waiting is counted back out")
+	mal.leave()
+
+	# A town copy with a picture and junk lots is cleaned: nothing breaks, and
+	# neighbors get a sane picture.
+	mal = await _signed_in(server, url, "Mal")
+	mal_peer = _peer_of(server, "Mal")
+	var junk := {"postcard": true, "roads": {}, "picture": 1, "lots": {"a": 5, "b": {"pos": "zz", "corners": [1, {}]}},
+		"parcels": {"c": {"pos": "zz"}, "d": {"pos": [1, 2, 3], "corners": [1, {}]}, "e": 7}}
+	server._take_city(mal_peer, mal.my_city, {"z": RegionServer.pack(junk)})
+	server._finish_jobs(true)
+	var kept: Dictionary = server.region.city_data(mal.my_city)
+	_check(not kept.has("picture") and not kept.has("lots"), "a client's own picture and lots keys are never kept")
+	_check(Region.from_picture(RegionServer.unpack(server.region.packed_card(mal.my_city))) is Dictionary,
+		"and the picture sent on to neighbors unpacks")
+	_check(Region.from_picture({"picture": 1, "lots": "junk"}) is Dictionary \
+		and Region.from_picture({"picture": 1, "lots": {"a": 5, "b": {"pos": PackedInt32Array([1])}}}) is Dictionary,
+		"a picture of the wrong shape unpacks without breaking")
+	mal.leave()
+
+	# A joining player gets nothing broadcast before the welcome.
+	server._players[9999] = {"id": "x", "name": "x", "city": "", "host": false, "ready": false}
+	server._open[9999] = true
+	server._broadcast({"t": "chat", "line": {"from": "", "text": "hi", "at": 0}})
+	_check(not server._link._out.has(9999), "nothing is broadcast to a player before their welcome")
+	server._players.erase(9999)
+	server._open.erase(9999)
+
+	# A welcome waits only for the player's own copies, not other towns'.
+	var done := []
+	server._job("other-town", func(): OS.delay_msec(300), func(): done.append("other"))
+	server._after_jobs(func(): done.append("welcome"), "my-town")
+	server._after_jobs(func(): done.append("all"), "")
+	_check(done == ["welcome"], "a welcome goes at once when only other towns' copies are waiting (%s)" % str(done))
+	server._finish_jobs(true)
+	_check(done == ["welcome", "other", "all"], "and a step for all jobs still waits for every one (%s)" % str(done))
+
+	# Trade state the server builds is kept until a newer copy comes.
+	var id: String = ann.my_city
+	ann.my_sim().trade.offer("power", 5.0)
+	ann.send_town(true)
+	await _until(func(): return server.region.stale_ids().has(id))
+	server.region._trade_from_copy(id)
+	server.region.cities[id].sim.trade.offer("power", 77.0)
+	var before := JSON.stringify(server.region.cities[id].sim.trade.to_dict())
+	server.region._trade_from_copy(id)
+	_check(JSON.stringify(server.region.cities[id].sim.trade.to_dict()) == before, "trade state built here isn't reset every month from the old copy")
+
+	# A neighbor's picture that fails to unpack is asked for again.
+	var bob := await _signed_in(server, url, "Bob")
+	bob.region.awaiting[id] = true
+	bob._incoming.append({"id": id, "msg": {}, "task": -1})
+	bob._finish_packing()
+	_check(int(bob._picture_tries.get(id, 0)) == 1, "a picture that won't unpack is asked for again")
+	await _until(func(): return not bob.region.awaiting.has(id))
+	_check(not bob.region.awaiting.has(id), "and the answer replaces the empty town")
+	# And a changed neighbor reaches the other computer as a picture.
+	ann.my_sim().apply({"type": "build_road", "start": [40, 60], "ctrl": [50, 80], "end": [60, 100]})
+	ann.send_town(true)
+	await _until(func(): return bob.region.stale_ids().has(id) and bob.region.city_data(id).get("roads", {}).size() > 0)
+	_check(bob.region.city_data(id).has("roads") and not bob.region.city_data(id).has("picture"), "a neighbor's changes arrive on the other computer, as a town again")
+
+	# Games too old are turned away.
+	var raw := WebSocketMultiplayerPeer.new()
+	RegionServer.use_big_buffers(raw)
+	raw.create_client(url)
+	await _until(func():
+		raw.poll()
+		return raw.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED)
+	raw.set_target_peer(1)
+	raw.put_packet(JSON.stringify({"t": "hello", "v": RegionServer.MIN_PROTOCOL - 1, "name": "Old"}).to_utf8_buffer())
+	var told := []
+	await _until(func():
+		raw.poll()
+		if raw.get_available_packet_count() > 0:
+			told.append(raw.get_packet().get_string_from_utf8())
+		return not told.is_empty())
+	_check(not told.is_empty() and JSON.parse_string(told[0]).get("t") == "reject" and _peer_of(server, "Old") == -1, "a game older than the minimum version is turned away")
+	raw.close()
+
+	# An old save (without what newer saves carry) loads, with its towns.
+	ann.send_town(true)
+	await _frames(20)
+	server._finish_jobs(true)
+	server.save()
+	var saved = JSON.parse_string(FileAccess.get_file_as_string(data))
+	for key in ["land", "pending", "joins", "awaiting", "away"]:
+		saved.erase(key)
+	for cid in saved.cities:
+		saved.cities[cid].erase("land")
+	var f := FileAccess.open(data, FileAccess.WRITE)
+	f.store_string(JSON.stringify(saved))
+	f.close()
+	var ann_token: String = ann.token
+	for c in [ann, bob]:
+		c.leave()
+	await _frames(10)
+	server.stop()
+	var old := RegionServer.new()
+	root.add_child(old)
+	_check(old.start(PORT + 3, "", data) == OK and old.region.cities.size() == 3 and old.invite_code == "LIM123", "an old save loads, with its towns and code")
+	var back := _client()
+	back.join(url, "LIM123", "p-lim-ann", "Ann", "", false, ann_token)
+	await _until(func(): return back.my_city != "")
+	_check(back.my_city == id, "and its players come back to their towns")
+	back.leave()
+	old.stop()
+	DirAccess.remove_absolute(data)

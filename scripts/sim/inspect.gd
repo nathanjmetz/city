@@ -280,6 +280,8 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 					covered += 1
 		rows.append(["Reach by road", "%.1f miles" % (float(k.reach) * sim.services.funding(id, Balance.POLICY_EFFECT) / 1609.0)])
 		rows.append(["Homes covered", "%d of %d" % [covered, homes]])
+		if b.kind == Services.Kind.CLINIC and sim.healthcare.mutual_note() != "":
+			rows.append(["Ambulances", sim.healthcare.mutual_note()])
 		if not linked:
 			problems.append("Not beside a road, so it can't respond.")
 		status = "Working: covering %d homes" % covered if ok else "Not working"
@@ -318,6 +320,7 @@ static func _hospital(sim: CitySim, id: int) -> Dictionary:
 			CitySim.money_text(hc.regional_pop(sim))]],
 		["Ambulances", "%d (%d out on calls)" % [hc.ambulances(id), hc.busy(id)]],
 		["Calls answered", "%d, %d patients brought in" % [h.calls, h.treated]],
+		["Next county", hc.mutual_note() if hc.mutual_note() != "" else "Not needed this month"],
 		["Savings", "%s$%s (%s$%s / month)" % ["" if h.savings >= 0.0 else "-", CitySim.money_text(absi(roundi(h.savings))),
 			"+" if net >= 0.0 else "-", CitySim.money_text(absi(roundi(net)))]],
 		["Built", ", ".join(built) if not built.is_empty() else "Just the county hospital"],
@@ -700,6 +703,57 @@ static func _development(sim: CitySim, hub: Dictionary, tree: Array, at: Vector3
 	return rows
 
 
+## A home or business's level and how well its needs are met (Nathan,
+## 2026-10-25: "every home and building should have a level… a clear
+## section that shows the level, what it needs"). Each need is scored 0 to
+## 100 from what the town already tracks; the weakest is what holds it back.
+static func needs(sim: CitySim, key: String) -> Dictionary:
+	var b: Dictionary = sim.buildings[key]
+	var s: Dictionary = sim.services.served.get(key, {})
+	var list := []
+	list.append(["Power", 100 if s.get("power", false) else 0, "Needs power: build a power line feed on its street."])
+	list.append(["Water", 100 if s.get("water", false) else 0, "Needs water: build a well, or have the utility lay a main."])
+	if not sim.services.water.utilities.is_empty():
+		list.append(["Sewer", 100 if s.get("sewer", false) else 50, "Needs a sewer instead of a septic tank."])
+	var have := 0
+	var missing := ""
+	for kind in Services.COVERAGE:
+		if s.get(kind, false):
+			have += 1
+		elif missing == "":
+			missing = Services.KINDS[kind].name
+	list.append(["Services nearby", roundi(100.0 * have / maxf(Services.COVERAGE.size(), 1.0)),
+		"Needs a %s within reach." % missing.to_lower()])
+	var lift: float = sim.parks.lot_value.get(key, 0.0)
+	var land := sim.land_factor(key) * sim.mail.lot_factor(sim, key) * (1.0 + lift)
+	list.append(["Land value", clampi(roundi(50.0 + (land - 1.0) * 150.0), 0, 100),
+		"Needs a nicer area: a park or landmark nearby, less noise and smoke."])
+	if not sim.mail.offices.is_empty():
+		list.append(["Mail", 100 if sim.mail.served(sim, sim.lots[key].seg) else 0, "Needs mail delivered."])
+	var total := 0
+	var worst: Array = list[0]
+	for n in list:
+		total += int(n[1])
+		if int(n[1]) < int(worst[1]):
+			worst = n
+	# Levels 1 to 100 (Nathan, 2026-10-25: "give every building 100
+	# levels. divide its major building moments up to milestone levels"):
+	# each stage the building can grow through is a milestone, the stages
+	# spread evenly over 1-100, and how well its needs are met places it
+	# between its milestone and the next.
+	var stages: int = BuildingTypes.TYPES[BuildingTypes.type_of(b)].stages.size()
+	var stage := int(b.get("level", 0))
+	var met := roundi(float(total) / list.size())
+	var span := 100.0 / stages
+	var level := clampi(1 + floori(stage * span + met / 100.0 * (span - 1.0)), 1, 100)
+	var milestone := clampi(1 + floori((stage + 1) * span), 1, 100)
+	var at_top := stage + 1 >= stages
+	return {"level": level, "top": 100, "met": met, "list": list, "milestone": milestone,
+		"next": (str(worst[2]) if int(worst[1]) < 100 else "") if at_top else
+			("Next milestone at level %d. " % milestone) + (str(worst[2]) if int(worst[1]) < 100
+				else "It grows as its owner saves up.")}
+
+
 static func _lot(sim: CitySim, key: String) -> Dictionary:
 	var lot: Dictionary = sim.lots[key]
 	var zone := sim.zones.zone_at(lot.zone_pt)
@@ -742,6 +796,13 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 	var b: Dictionary = sim.buildings[key]
 	var z := int(b.zone)
 	var status := ""
+	var lv := needs(sim, key)
+	rows.push_front(["Level", "%d of 100   ·   needs met %d%%" % [lv.level, lv.met]])
+	if lv.next != "":
+		rows.insert(1, ["To level up", lv.next])
+	var tree_needs := []
+	for n in lv.list:
+		tree_needs.append([n[0], "%d / 100" % n[1]])
 	if z == ZoneMap.Zone.RESIDENTIAL:
 		rows.push_front(["Residents", "%d of %d" % [b.occ, b.cap]])
 		status = "Lived in" if b.occ > 0 else "Waiting for residents"
@@ -820,7 +881,8 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 			who.append(sim.people.person_name(id))
 		rows.insert(1, ["Who lives here", ", ".join(who) + ("…" if sim.people.residents(key).size() > 4 else "")])
 	return {"title": title, "kind": kind, "icon": icons[z], "ok": problems.is_empty(),
-		"status": status, "rows": rows, "problems": problems, "actions": sim.heritage.actions(sim, key)}
+		"status": status, "rows": rows, "problems": problems, "actions": sim.heritage.actions(sim, key),
+		"tree": tree_needs}
 
 
 ## A business's own name if it has one ("Miller Farms"), else `plain`.

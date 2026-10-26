@@ -1,0 +1,1154 @@
+{
+ "roster": [
+  {
+   "buildings": 7711,
+   "city": "c1",
+   "name": "Bot1",
+   "people": 16328,
+   "pin": "600001"
+  },
+  {
+   "buildings": 7596,
+   "city": "c2",
+   "name": "Bot2",
+   "people": 16704,
+   "pin": "600002"
+  },
+  {
+   "buildings": 7833,
+   "city": "c3",
+   "name": "Bot3",
+   "people": 16402,
+   "pin": "600003"
+  },
+  {
+   "buildings": 7757,
+   "city": "c4",
+   "name": "Bot4",
+   "people": 17005,
+   "pin": "600004"
+  },
+  {
+   "buildings": 0,
+   "city": "",
+   "name": "Late1",
+   "people": 0,
+   "pin": "600005"
+  },
+  {
+   "buildings": 0,
+   "city": "",
+   "name": "Late2",
+   "people": 0,
+   "pin": "600006"
+  }
+ ],
+ "duration_s": 823.0,
+ "steady_window_s": [
+  98.2,
+  711.6
+ ],
+ "server": {
+  "cpu_percent_of_one_core": {
+   "whole_run": {
+    "n": 404,
+    "mean": 7.2,
+    "p50": 2.0,
+    "p95": 26.1,
+    "p99": 43.6,
+    "max": 84.7
+   },
+   "steady": {
+    "n": 304,
+    "mean": 7.4,
+    "p50": 2.0,
+    "p95": 29.9,
+    "p99": 43.6,
+    "max": 58.4
+   }
+  },
+  "cpu_busy_seconds_over_90pct": 0,
+  "memory_mb": {
+   "start": 3175.2,
+   "end": 1663.2,
+   "peak": 3449.7
+  },
+  "memory_series": [
+   [
+    0,
+    3175.2
+   ],
+   [
+    30,
+    3391.4
+   ],
+   [
+    60,
+    1876.9
+   ],
+   [
+    91,
+    1878.1
+   ],
+   [
+    121,
+    573.9
+   ],
+   [
+    151,
+    371.7
+   ],
+   [
+    181,
+    842.6
+   ],
+   [
+    211,
+    83.9
+   ],
+   [
+    242,
+    262.2
+   ],
+   [
+    272,
+    111.9
+   ],
+   [
+    302,
+    512.9
+   ],
+   [
+    333,
+    95.8
+   ],
+   [
+    363,
+    274.8
+   ],
+   [
+    393,
+    128.3
+   ],
+   [
+    424,
+    155.9
+   ],
+   [
+    454,
+    237.3
+   ],
+   [
+    484,
+    362.8
+   ],
+   [
+    514,
+    242.1
+   ],
+   [
+    545,
+    571.2
+   ],
+   [
+    575,
+    639.4
+   ],
+   [
+    605,
+    315.6
+   ],
+   [
+    635,
+    241.9
+   ],
+   [
+    666,
+    817.5
+   ],
+   [
+    696,
+    1377.6
+   ],
+   [
+    726,
+    948.7
+   ],
+   [
+    756,
+    1440.7
+   ],
+   [
+    787,
+    1487.5
+   ]
+  ],
+  "cpu_series": [
+   [
+    2,
+    1
+   ],
+   [
+    32,
+    1
+   ],
+   [
+    62,
+    1
+   ],
+   [
+    93,
+    1
+   ],
+   [
+    123,
+    1
+   ],
+   [
+    153,
+    1
+   ],
+   [
+    183,
+    2
+   ],
+   [
+    213,
+    40
+   ],
+   [
+    244,
+    2
+   ],
+   [
+    274,
+    19
+   ],
+   [
+    304,
+    2
+   ],
+   [
+    335,
+    1
+   ],
+   [
+    365,
+    2
+   ],
+   [
+    395,
+    2
+   ],
+   [
+    426,
+    1
+   ],
+   [
+    456,
+    2
+   ],
+   [
+    486,
+    2
+   ],
+   [
+    516,
+    2
+   ],
+   [
+    547,
+    1
+   ],
+   [
+    577,
+    2
+   ],
+   [
+    607,
+    2
+   ],
+   [
+    637,
+    2
+   ],
+   [
+    668,
+    1
+   ],
+   [
+    698,
+    1
+   ],
+   [
+    728,
+    1
+   ],
+   [
+    758,
+    1
+   ],
+   [
+    789,
+    8
+   ]
+  ]
+ },
+ "bytes": {
+  "per_player": {
+   "Bot1": {
+    "sent_to_server_mb": 52.3,
+    "received_from_server_mb": 68.64,
+    "steady_up_kb_per_s": 69.3,
+    "steady_down_kb_per_s": 89.1,
+    "peak_up_kb_per_s": 4065.4,
+    "peak_down_kb_per_s": 7592.0,
+    "connections": 1
+   },
+   "Bot2": {
+    "sent_to_server_mb": 50.83,
+    "received_from_server_mb": 72.98,
+    "steady_up_kb_per_s": 66.3,
+    "steady_down_kb_per_s": 91.6,
+    "peak_up_kb_per_s": 4087.0,
+    "peak_down_kb_per_s": 7624.5,
+    "connections": 1
+   },
+   "Bot3": {
+    "sent_to_server_mb": 49.3,
+    "received_from_server_mb": 78.42,
+    "steady_up_kb_per_s": 56.1,
+    "steady_down_kb_per_s": 96.3,
+    "peak_up_kb_per_s": 4062.1,
+    "peak_down_kb_per_s": 7862.6,
+    "connections": 1
+   },
+   "Bot4": {
+    "sent_to_server_mb": 47.75,
+    "received_from_server_mb": 79.31,
+    "steady_up_kb_per_s": 53.8,
+    "steady_down_kb_per_s": 97.1,
+    "peak_up_kb_per_s": 4156.8,
+    "peak_down_kb_per_s": 7707.3,
+    "connections": 1
+   },
+   "Late1": {
+    "sent_to_server_mb": 1.15,
+    "received_from_server_mb": 20.23,
+    "steady_up_kb_per_s": 1.8,
+    "steady_down_kb_per_s": 32.2,
+    "peak_up_kb_per_s": 475.7,
+    "peak_down_kb_per_s": 4168.3,
+    "connections": 1
+   },
+   "Late2": {
+    "sent_to_server_mb": 1.13,
+    "received_from_server_mb": 27.15,
+    "steady_up_kb_per_s": 1.8,
+    "steady_down_kb_per_s": 43.2,
+    "peak_up_kb_per_s": 438.4,
+    "peak_down_kb_per_s": 2343.4,
+    "connections": 1
+   }
+  },
+  "total_into_server": {
+   "total_mb": 202.5,
+   "steady_kb_per_s": 249.1,
+   "peak_kb_per_s": 7949.9
+  },
+  "total_out_of_server": {
+   "total_mb": 346.7,
+   "steady_kb_per_s": 449.6,
+   "peak_kb_per_s": 10503.0
+  },
+  "by_message": {
+   "down:city": {
+    "n": 360,
+    "mb": 324.43,
+    "biggest_mb": 1.27
+   },
+   "up:city": {
+    "n": 102,
+    "mb": 202.3,
+    "biggest_mb": 4.26
+   },
+   "down:welcome": {
+    "n": 6,
+    "mb": 20.91,
+    "biggest_mb": 5.42
+   },
+   "down:cursor": {
+    "n": 10526,
+    "mb": 0.58,
+    "biggest_mb": 0.0
+   },
+   "down:ledger": {
+    "n": 355,
+    "mb": 0.58,
+    "biggest_mb": 0.0
+   },
+   "down:region": {
+    "n": 9,
+    "mb": 0.18,
+    "biggest_mb": 0.02
+   },
+   "up:cursor": {
+    "n": 3073,
+    "mb": 0.13,
+    "biggest_mb": 0.0
+   },
+   "down:players": {
+    "n": 36,
+    "mb": 0.01,
+    "biggest_mb": 0.0
+   },
+   "down:chat": {
+    "n": 36,
+    "mb": 0.0,
+    "biggest_mb": 0.0
+   },
+   "down:trade": {
+    "n": 21,
+    "mb": 0.0,
+    "biggest_mb": 0.0
+   },
+   "down:pins": {
+    "n": 6,
+    "mb": 0.0,
+    "biggest_mb": 0.0
+   },
+   "up:hello": {
+    "n": 6,
+    "mb": 0.0,
+    "biggest_mb": 0.0
+   },
+   "down:apply": {
+    "n": 4,
+    "mb": 0.0,
+    "biggest_mb": 0.0
+   },
+   "down:requests": {
+    "n": 6,
+    "mb": 0.0,
+    "biggest_mb": 0.0
+   },
+   "down:bye": {
+    "n": 6,
+    "mb": 0.0,
+    "biggest_mb": 0.0
+   },
+   "down:?": {
+    "n": 6,
+    "mb": 0.0,
+    "biggest_mb": 0.0
+   }
+  }
+ },
+ "joins": [
+  {
+   "player": "Bot1",
+   "connection": 1,
+   "late": false,
+   "welcome_mb": 5.1,
+   "hello_to_welcome_s": 0.05,
+   "welcome_arrival_s": 0.02,
+   "at_s": 7.6,
+   "bot_load_s": 32.0
+  },
+  {
+   "player": "Bot2",
+   "connection": 1,
+   "late": false,
+   "welcome_mb": 5.14,
+   "hello_to_welcome_s": 0.05,
+   "welcome_arrival_s": 0.03,
+   "at_s": 27.5,
+   "bot_load_s": 32.92
+  },
+  {
+   "player": "Bot3",
+   "connection": 1,
+   "late": false,
+   "welcome_mb": 5.42,
+   "hello_to_welcome_s": 0.04,
+   "welcome_arrival_s": 0.02,
+   "at_s": 48.0,
+   "bot_load_s": 40.84
+  },
+  {
+   "player": "Bot4",
+   "connection": 1,
+   "late": false,
+   "welcome_mb": 5.21,
+   "hello_to_welcome_s": 0.06,
+   "welcome_arrival_s": 0.04,
+   "at_s": 68.2,
+   "bot_load_s": 42.89
+  },
+  {
+   "player": "Late1",
+   "connection": 1,
+   "late": true,
+   "welcome_mb": 0.02,
+   "hello_to_welcome_s": 0.13,
+   "welcome_arrival_s": 0.0,
+   "at_s": 237.7,
+   "bot_load_s": 7.94
+  },
+  {
+   "player": "Late2",
+   "connection": 1,
+   "late": true,
+   "welcome_mb": 0.02,
+   "hello_to_welcome_s": 0.17,
+   "welcome_arrival_s": 0.0,
+   "at_s": 358.6,
+   "bot_load_s": 8.9
+  }
+ ],
+ "sync_lag_wire_s": {
+  "all": {
+   "n": 267,
+   "mean": 0.38,
+   "p50": 0.35,
+   "p95": 0.5,
+   "p99": 1.43,
+   "max": 3.87
+  },
+  "worst_pairs": [
+   {
+    "pair": "Bot2->Bot4",
+    "max_s": 3.87,
+    "p50_s": 0.33
+   },
+   {
+    "pair": "Bot3->Bot4",
+    "max_s": 1.55,
+    "p50_s": 0.33
+   },
+   {
+    "pair": "Bot3->Bot2",
+    "max_s": 1.17,
+    "p50_s": 0.34
+   },
+   {
+    "pair": "Bot1->Bot4",
+    "max_s": 1.05,
+    "p50_s": 0.36
+   },
+   {
+    "pair": "Bot1->Bot2",
+    "max_s": 1.04,
+    "p50_s": 0.34
+   }
+  ]
+ },
+ "on_screen_at_end": {
+  "pairs": 20,
+  "behind": {
+   "n": 20,
+   "mean": 264.0,
+   "p50": 348,
+   "p95": 723,
+   "p99": 723,
+   "max": 723
+  },
+  "worst": [
+   {
+    "viewer": "Late1",
+    "owner": "Bot3",
+    "owner_buildings": 8389,
+    "seen_buildings": 7666,
+    "behind": 723
+   },
+   {
+    "viewer": "Bot1",
+    "owner": "Bot2",
+    "owner_buildings": 8201,
+    "seen_buildings": 7601,
+    "behind": 600
+   },
+   {
+    "viewer": "Bot2",
+    "owner": "Bot3",
+    "owner_buildings": 8389,
+    "seen_buildings": 7807,
+    "behind": 582
+   },
+   {
+    "viewer": "Bot3",
+    "owner": "Bot2",
+    "owner_buildings": 8201,
+    "seen_buildings": 7691,
+    "behind": 510
+   },
+   {
+    "viewer": "Late2",
+    "owner": "Bot3",
+    "owner_buildings": 8389,
+    "seen_buildings": 7928,
+    "behind": 461
+   }
+  ]
+ },
+ "server_answer_ms": {
+  "stats": {
+   "n": 404,
+   "mean": 13.0,
+   "p50": 13.0,
+   "p95": 16.0,
+   "p99": 28.0,
+   "max": 44.0
+  },
+  "failed": 0,
+  "over_1s": 0,
+  "over_5s": 0,
+  "samples": 404,
+  "worst": [
+   {
+    "at_s": 159.14,
+    "ms": 44
+   },
+   {
+    "at_s": 769.78,
+    "ms": 39
+   },
+   {
+    "at_s": 165.22,
+    "ms": 36
+   },
+   {
+    "at_s": 779.88,
+    "ms": 31
+   },
+   {
+    "at_s": 733.51,
+    "ms": 28
+   },
+   {
+    "at_s": 282.07,
+    "ms": 25
+   },
+   {
+    "at_s": 304.27,
+    "ms": 24
+   },
+   {
+    "at_s": 789.97,
+    "ms": 23
+   }
+  ]
+ },
+ "bots": {
+  "Bot1": {
+   "ok": true,
+   "error": "",
+   "people": 4351,
+   "buildings": 8271,
+   "frame_p50_ms": 302.5,
+   "frame_p95_ms": 757.0,
+   "frame_p99_ms": 2318.6,
+   "frame_max_ms": 12923.7,
+   "hitches_over_100ms": 1794,
+   "freezes_over_1s": 62,
+   "frames": 1904,
+   "dropped": 0,
+   "reconnected": 0,
+   "failed": [],
+   "memory_peak_mb": 7750.4,
+   "rss_peak_mb": 4123.4,
+   "cpu_percent_of_one_core": 96,
+   "city_lines_hitch_s": 0,
+   "run_s": 601.1,
+   "hitch_causes_ms": {
+    "frame.sim": 365111,
+    "untimed": 280140,
+    "net.client": 37385,
+    "sim.lots.plan": 12924
+   },
+   "worst_freezes": [
+    {
+     "at_s": 65.7,
+     "ms": 12923.7,
+     "stages": {
+      "frame.sim": 251.4,
+      "sim.lots": 249.7,
+      "sim.lots.plan": 11127.1,
+      "sim.lots.revalidate": 1238.7,
+      "sim.lots.warm": 249.7,
+      "sim.tick": 251.4
+     },
+     "step": "zone"
+    },
+    {
+     "at_s": 13.2,
+     "ms": 10016.7,
+     "stages": {
+      "frame.buildings": 1502.0,
+      "frame.roads": 4179.0,
+      "frame.roads_theirs": 0.1,
+      "net.client": 1677.5,
+      "net.msg.welcome": 1630.2,
+      "net.parse": 44.8
+     },
+     "step": "load"
+    },
+    {
+     "at_s": 49.9,
+     "ms": 9145.9,
+     "stages": {
+      "frame.buildings": 145.5,
+      "frame.roads": 643.3,
+      "frame.roads_theirs": 123.8,
+      "frame.terrain": 13.8,
+      "net.client": 7438.4,
+      "net.neighbor_load": 7435.9
+     },
+     "step": "join_county"
+    }
+   ],
+   "grown": 9,
+   "load_s": 32.0,
+   "actions": {
+    "county_road": true,
+    "grid": true,
+    "grow": true,
+    "join_county": true,
+    "road": true,
+    "service_0": true,
+    "service_1": true,
+    "service_2": false,
+    "service_5": false,
+    "zone_faces": 79
+   },
+   "city_lines_worst_in_a_hitch_ms": 2.8
+  },
+  "Bot2": {
+   "ok": true,
+   "error": "",
+   "people": 4398,
+   "buildings": 8201,
+   "frame_p50_ms": 312.7,
+   "frame_p95_ms": 771.1,
+   "frame_p99_ms": 2179.3,
+   "frame_max_ms": 13060.9,
+   "hitches_over_100ms": 1799,
+   "freezes_over_1s": 63,
+   "frames": 1900,
+   "dropped": 0,
+   "reconnected": 0,
+   "failed": [],
+   "memory_peak_mb": 8358.1,
+   "rss_peak_mb": 4545.4,
+   "cpu_percent_of_one_core": 96,
+   "city_lines_hitch_s": 0,
+   "run_s": 601.95,
+   "hitch_causes_ms": {
+    "frame.sim": 361186,
+    "untimed": 286608,
+    "net.client": 38828,
+    "sim.lots.plan": 13061
+   },
+   "worst_freezes": [
+    {
+     "at_s": 67.1,
+     "ms": 13060.9,
+     "stages": {
+      "frame.sim": 237.8,
+      "sim.lots": 234.7,
+      "sim.lots.plan": 11395.8,
+      "sim.lots.revalidate": 1131.3,
+      "sim.lots.warm": 234.6,
+      "sim.tick": 237.7
+     },
+     "step": "zone"
+    },
+    {
+     "at_s": 12.6,
+     "ms": 9574.3,
+     "stages": {
+      "frame.buildings": 1501.6,
+      "frame.roads": 3802.5,
+      "frame.roads_theirs": 0.1,
+      "net.client": 1607.5,
+      "net.msg.welcome": 1561.2,
+      "net.parse": 44.4
+     },
+     "step": "load"
+    },
+    {
+     "at_s": 51.1,
+     "ms": 9307.3,
+     "stages": {
+      "frame.buildings": 144.1,
+      "frame.roads": 582.8,
+      "frame.roads_theirs": 128.4,
+      "frame.terrain": 13.5,
+      "net.client": 7715.5,
+      "net.neighbor_load": 7714.7
+     },
+     "step": "join_county"
+    }
+   ],
+   "grown": 8,
+   "load_s": 32.92,
+   "actions": {
+    "county_road": true,
+    "grid": true,
+    "grow": true,
+    "join_county": true,
+    "road": true,
+    "service_0": true,
+    "service_1": true,
+    "service_2": false,
+    "service_5": false,
+    "zone_faces": 83
+   },
+   "city_lines_worst_in_a_hitch_ms": 2.2
+  },
+  "Bot3": {
+   "ok": true,
+   "error": "",
+   "people": 3280,
+   "buildings": 8389,
+   "frame_p50_ms": 348.6,
+   "frame_p95_ms": 837.2,
+   "frame_p99_ms": 2198.3,
+   "frame_max_ms": 13099.3,
+   "hitches_over_100ms": 1687,
+   "freezes_over_1s": 66,
+   "frames": 1782,
+   "dropped": 0,
+   "reconnected": 0,
+   "failed": [],
+   "memory_peak_mb": 8470.4,
+   "rss_peak_mb": 5139.2,
+   "cpu_percent_of_one_core": 97,
+   "city_lines_hitch_s": 0,
+   "run_s": 603.76,
+   "hitch_causes_ms": {
+    "frame.sim": 378638,
+    "untimed": 294553,
+    "net.client": 39870,
+    "sim.lots.plan": 13099
+   },
+   "worst_freezes": [
+    {
+     "at_s": 91.4,
+     "ms": 13099.4,
+     "stages": {
+      "frame.buildings": 51.5,
+      "frame.roads_theirs": 31.0,
+      "frame.terrain": 12.3,
+      "sim.lots.plan": 11428.8,
+      "sim.lots.revalidate": 1316.0,
+      "sim.lots.services": 51.4
+     },
+     "step": "zone"
+    },
+    {
+     "at_s": 63.6,
+     "ms": 12934.9,
+     "stages": {
+      "frame.roads": 449.5,
+      "frame.sim": 3590.6,
+      "net.client": 8382.6,
+      "net.neighbor_load": 8370.7,
+      "sim.tick": 3590.6,
+      "sim.traffic": 3182.1
+     },
+     "step": "join_county"
+    },
+    {
+     "at_s": 13.8,
+     "ms": 10547.9,
+     "stages": {
+      "frame.buildings": 1501.0,
+      "frame.roads": 4367.1,
+      "frame.roads_theirs": 0.1,
+      "net.client": 1890.6,
+      "net.msg.welcome": 1833.7,
+      "net.parse": 53.7
+     },
+     "step": "load"
+    }
+   ],
+   "grown": 9,
+   "load_s": 40.84,
+   "actions": {
+    "county_road": true,
+    "grid": true,
+    "grow": true,
+    "join_county": false,
+    "road": true,
+    "service_0": true,
+    "service_1": false,
+    "service_2": true,
+    "service_5": false,
+    "zone_faces": 88
+   },
+   "city_lines_worst_in_a_hitch_ms": 2.6
+  },
+  "Bot4": {
+   "ok": true,
+   "error": "",
+   "people": 4408,
+   "buildings": 8324,
+   "frame_p50_ms": 290.0,
+   "frame_p95_ms": 780.0,
+   "frame_p99_ms": 2207.3,
+   "frame_max_ms": 13156.1,
+   "hitches_over_100ms": 1803,
+   "freezes_over_1s": 68,
+   "frames": 1905,
+   "dropped": 0,
+   "reconnected": 0,
+   "failed": [],
+   "memory_peak_mb": 8181.8,
+   "rss_peak_mb": 5698.0,
+   "cpu_percent_of_one_core": 94,
+   "city_lines_hitch_s": 0,
+   "run_s": 600.44,
+   "hitch_causes_ms": {
+    "frame.sim": 375234,
+    "untimed": 275870,
+    "net.client": 49126,
+    "sim.lots.plan": 13156
+   },
+   "worst_freezes": [
+    {
+     "at_s": 90.9,
+     "ms": 13156.1,
+     "stages": {
+      "frame.buildings": 38.6,
+      "frame.sim": 211.5,
+      "sim.lots.plan": 11427.6,
+      "sim.lots.revalidate": 1189.6,
+      "sim.stats": 57.7,
+      "sim.tick": 211.5
+     },
+     "step": "zone"
+    },
+    {
+     "at_s": 63.5,
+     "ms": 12643.1,
+     "stages": {
+      "frame.roads": 688.4,
+      "frame.sim": 3015.1,
+      "net.client": 7754.6,
+      "net.neighbor_load": 7504.6,
+      "sim.tick": 3015.1,
+      "sim.traffic": 2825.7
+     },
+     "step": "join_county"
+    },
+    {
+     "at_s": 13.9,
+     "ms": 10572.2,
+     "stages": {
+      "frame.buildings": 1500.7,
+      "frame.roads": 4120.0,
+      "net.client": 2331.5,
+      "net.msg.city": 369.6,
+      "net.msg.welcome": 1914.1,
+      "net.parse": 45.0
+     },
+     "step": "load"
+    }
+   ],
+   "grown": 9,
+   "load_s": 42.89,
+   "actions": {
+    "county_road": true,
+    "grid": true,
+    "grow": true,
+    "join_county": true,
+    "road": true,
+    "service_0": true,
+    "service_1": true,
+    "service_2": false,
+    "service_5": false,
+    "zone_faces": 79
+   },
+   "city_lines_worst_in_a_hitch_ms": 3.0
+  },
+  "Late1": {
+   "ok": true,
+   "error": "",
+   "people": 1299,
+   "buildings": 520,
+   "frame_p50_ms": 104.5,
+   "frame_p95_ms": 200.5,
+   "frame_p99_ms": 393.0,
+   "frame_max_ms": 2454.9,
+   "hitches_over_100ms": 637,
+   "freezes_over_1s": 12,
+   "frames": 1438,
+   "dropped": 0,
+   "reconnected": 0,
+   "failed": [],
+   "memory_peak_mb": 5266.3,
+   "rss_peak_mb": 1918.3,
+   "cpu_percent_of_one_core": 93,
+   "city_lines_hitch_s": 0,
+   "run_s": 121.84,
+   "hitch_causes_ms": {
+    "untimed": 62383,
+    "frame.buildings": 23923,
+    "net.client": 13766,
+    "frame.roads_theirs": 3581
+   },
+   "worst_freezes": [
+    {
+     "at_s": 22.5,
+     "ms": 2454.9,
+     "stages": {
+      "frame.buildings": 132.1,
+      "frame.roads_theirs": 141.1,
+      "frame.terrain": 3.2,
+      "net.client": 2192.8,
+      "net.neighbor_load": 2192.6,
+      "sim.lots.plan": 60.5
+     },
+     "step": "zone"
+    },
+    {
+     "at_s": 18.1,
+     "ms": 2313.6,
+     "stages": {
+      "frame.buildings": 137.2,
+      "frame.roads": 108.8,
+      "frame.roads_theirs": 126.6,
+      "frame.terrain": 11.8,
+      "net.client": 1912.1,
+      "net.neighbor_load": 1911.8
+     },
+     "step": "join_county"
+    },
+    {
+     "at_s": 1.9,
+     "ms": 1927.4,
+     "stages": {
+      "frame.buildings": 1500.0,
+      "frame.roads": 273.0
+     },
+     "step": "load"
+    }
+   ],
+   "grown": 1,
+   "load_s": 7.94,
+   "actions": {
+    "county_road": true,
+    "grid": true,
+    "grow": true,
+    "join_county": true,
+    "road": true,
+    "service_0": true,
+    "service_1": true,
+    "service_2": false,
+    "service_5": false,
+    "zone_faces": 66
+   },
+   "city_lines_worst_in_a_hitch_ms": 4.8
+  },
+  "Late2": {
+   "ok": true,
+   "error": "",
+   "people": 1228,
+   "buildings": 442,
+   "frame_p50_ms": 92.2,
+   "frame_p95_ms": 183.4,
+   "frame_p99_ms": 291.1,
+   "frame_max_ms": 2504.7,
+   "hitches_over_100ms": 570,
+   "freezes_over_1s": 9,
+   "frames": 1567,
+   "dropped": 0,
+   "reconnected": 0,
+   "failed": [],
+   "memory_peak_mb": 6014.0,
+   "rss_peak_mb": 2602.6,
+   "cpu_percent_of_one_core": 95,
+   "city_lines_hitch_s": 0,
+   "run_s": 121.39,
+   "hitch_causes_ms": {
+    "untimed": 46511,
+    "frame.buildings": 28587,
+    "net.client": 15898,
+    "frame.terrain": 3182
+   },
+   "worst_freezes": [
+    {
+     "at_s": 27.5,
+     "ms": 2504.7,
+     "stages": {
+      "frame.buildings": 166.2,
+      "frame.roads_theirs": 156.9,
+      "frame.terrain": 3.2,
+      "net.client": 2262.0,
+      "net.neighbor_load": 2260.1,
+      "sim.lots.plan": 12.6
+     },
+     "step": "zone"
+    },
+    {
+     "at_s": 18.5,
+     "ms": 2401.1,
+     "stages": {
+      "frame.buildings": 141.0,
+      "frame.roads": 109.4,
+      "frame.roads_theirs": 155.8,
+      "frame.terrain": 12.1,
+      "net.client": 1986.3,
+      "net.neighbor_load": 1985.8
+     },
+     "step": "join_county"
+    },
+    {
+     "at_s": 22.9,
+     "ms": 2355.5,
+     "stages": {
+      "frame.buildings": 155.2,
+      "frame.roads_theirs": 152.4,
+      "frame.terrain": 11.2,
+      "net.client": 2103.9,
+      "net.neighbor_load": 2103.5,
+      "sim.lots.plan": 25.6
+     },
+     "step": "zone"
+    }
+   ],
+   "grown": 1,
+   "load_s": 8.9,
+   "actions": {
+    "county_road": true,
+    "grid": true,
+    "grow": true,
+    "join_county": true,
+    "road": true,
+    "service_0": true,
+    "service_1": true,
+    "service_2": false,
+    "service_5": false,
+    "zone_faces": 62
+   },
+   "city_lines_worst_in_a_hitch_ms": 6.9
+  }
+ },
+ "reconnects": {},
+ "server_log_problems": [],
+ "server_slow_steps": {
+  "count": 3,
+  "max_ms": 206,
+  "by_step": {
+   "msg.hello": {
+    "n": 2,
+    "max_ms": 206
+   },
+   "poll": {
+    "n": 1,
+    "max_ms": 128
+   }
+  }
+ }
+}

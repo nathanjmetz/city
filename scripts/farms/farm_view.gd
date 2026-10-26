@@ -64,7 +64,9 @@ func setup(s: CitySim) -> void:
 	sim = s
 	sim.farms_changed.connect(_rebuild)
 	sim.families.changed.connect(_sync_signs)
-	_lane_mat = RoadStyle.material(Color(0.58, 0.47, 0.33))  # tan crushed limestone and dirt
+	# The same dirt track as a dirt road: two worn wheel paths with grass
+	# between (Nathan, 2026-10-25: "make farms use them").
+	_lane_mat = Surfaces.lane(Color(0.50, 0.41, 0.30))
 	add_child(_trees)
 	_cows.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_cows)
@@ -319,6 +321,19 @@ func _end_pass() -> void:
 
 ## A finished job's mesh replaces the farm's old one, and CropPlants hears of
 ## it (a field on a borrowed county row can change with the year alone).
+## A farm's lane is laid as the farm does well (Nathan, 2026-10-25: "start
+## dirt and then upgrade to stone and then paved as they do well"): a dirt
+## track while it's small, crushed stone once it farms a third of the most
+## a farm can, and paved past two thirds.
+func lane_material(cells: int) -> Material:
+	var share := float(cells) / float(Farms.MAX_CELLS)
+	if share >= 2.0 / 3.0:
+		return Surfaces.asphalt()
+	if share >= 1.0 / 3.0:
+		return Surfaces.gravel()
+	return _lane_mat
+
+
 func _install(job: FarmFieldJob) -> void:
 	var id: Variant = job.id
 	if not sim.farms.farms.has(id):
@@ -339,7 +354,7 @@ func _install(job: FarmFieldJob) -> void:
 		if job.fields_surface >= 0:
 			mesh.surface_set_material(job.fields_surface, CropFields.material())
 		if job.lane_surface >= 0:
-			mesh.surface_set_material(job.lane_surface, _lane_mat)
+			mesh.surface_set_material(job.lane_surface, lane_material(sim.farms.farms[id].cells.size()))
 		node.mesh = mesh
 		node.visible = mesh.get_surface_count() > 0
 		_trees.set_trees("rows %s" % str(id), job.trees)
