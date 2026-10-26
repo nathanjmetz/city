@@ -5,7 +5,9 @@ extends Node3D
 ## drawn, like Cities: Skylines' pedestrians. Legs and arms swing in the
 ## vertex shader, in step with the distance walked, so feet don't slide.
 
-## Metres from the camera beyond which walkers aren't drawn.
+## Metres from the camera beyond which walkers aren't drawn on a full
+## desktop; the graphics tier sets its own (people_m), and a most-at-once
+## (people) that pulls the reach in on a crowded street.
 const FAR := 320.0
 ## Metres a person covers in one full walk cycle (two steps). A typical adult
 ## step is about 0.7 m at 1.3-1.4 m/s (Fruin, Pedestrian Planning and Design).
@@ -23,6 +25,8 @@ const SHIRTS := [Color(0.62, 0.16, 0.14), Color(0.16, 0.3, 0.55), Color(0.85, 0.
 var traffic: TrafficSim
 var tick_fraction: Callable
 var _mm: MultiMesh
+## How far walkers are drawn now (GraphicsQuality.fit_reach).
+var _reach := FAR
 ## The second figure: narrower shoulders, wider hips, longer hair.
 var _mm2: MultiMesh
 ## Every figure at every detail: index figure * 5 + detail (0 farthest to
@@ -119,6 +123,8 @@ func _draw_walkers() -> void:
 	var cam := get_viewport().get_camera_3d()
 	var eye := cam.global_position if cam else Vector3.ZERO
 	var frac: float = tick_fraction.call()
+	var full := float(GraphicsQuality.knob("people_m", FAR))
+	_reach = minf(_reach, full)
 	var counts := []
 	counts.resize(mms_count())
 	counts.fill(0)
@@ -132,7 +138,7 @@ func _draw_walkers() -> void:
 	for w in traffic.walkers:
 		var pose := traffic.walker_pose(w, frac)
 		var p: Vector3 = Terrain.stand(pose[0])
-		if p.distance_to(eye) > FAR:
+		if p.distance_to(eye) > _reach:
 			continue
 		if NearPeople.drawn.has(int(w.id)):
 			continue  # a ready-made person stands in for this one up close
@@ -162,8 +168,11 @@ func _draw_walkers() -> void:
 		shirt.a = fposmod(float(pose[2]), stride) / stride
 		mm.set_instance_custom_data(n, shirt)
 		counts[kind] = n + 1
+	var total := 0
 	for i in mms.size():
 		(mms[i] as MultiMesh).visible_instance_count = counts[i]
+		total += int(counts[i])
+	_reach = GraphicsQuality.fit_reach(_reach, total, int(GraphicsQuality.knob("people", GraphicsQuality.NO_CAP)), full)
 
 
 ## Skin tones as a tint on the figure (it darkens or lightens the skin; the
