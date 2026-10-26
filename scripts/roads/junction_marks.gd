@@ -31,10 +31,65 @@ const TOOTH := 0.6  # yield triangle base
 const TOOTH_GAP := 0.3
 
 
-## True when the plan is a junction of three or more legs (a plain corner
-## or a bend has no crosswalks).
+## True when the plan is a town junction of three or more legs (a plain
+## corner, a bend or a country junction has no crosswalks).
 static func marked(j: Dictionary) -> bool:
-	return not j.is_empty() and not j.has("bend") and j.arms.size() >= 3
+	return not j.is_empty() and not j.has("bend") and j.arms.size() >= 3 and not j.get("country", false) \
+		and not j.get("unmarked", false)
+
+
+## Country junctions have no crosswalks: a leg's stop line stands 4 ft
+## before the edge line of the road it meets (MUTCD 3B.16: 4 to 30 ft from
+## the edge of the traveled way), and never out on that road's pavement or
+## shoulder; on a skewed leg, far enough back that its nearer end keeps the
+## 4 ft. `j` needs only "arms" (Junction.arms_at, or a plan's). Metres from
+## the node to the junction side of the stop line.
+static func country_near(j: Dictionary, arm: Dictionary) -> float:
+	var best := INF
+	var lanes := country_lanes(arm)
+	var span: float = lanes[1] - lanes[0]
+	for o in j.arms:
+		if o.seg == arm.seg:
+			continue
+		var s := absf((arm.u as Vector2).cross(o.u))
+		if s < 0.35:
+			continue  # running on the same way, not across it
+		var need := maxf(RoadMesh.edge_line(o.type, o.get("country", true)) + BAR_GAP, o.hw + 0.3)
+		var c := absf((arm.u as Vector2).dot(o.u))
+		best = minf(best, (need + span * c) / s)
+	if best == INF:
+		best = arm.hw + BAR_GAP
+	return best
+
+
+## A country leg's approach lanes, [inner, outer] metres from its centre
+## line: from beside the centre line out to its edge line.
+static func country_lanes(arm: Dictionary) -> Array:
+	var lanes := approach(arm.type)
+	if arm.get("country", true):
+		lanes[1] = maxf(minf(lanes[1], RoadMesh.edge_line(arm.type, true) - 0.15), lanes[0] + 1.0)
+	return lanes
+
+
+## Paints a country leg's stop line, square across its approach lanes.
+static func country_bar(j: Dictionary, arm: Dictionary, st: SurfaceTool, y: float) -> void:
+	var at := country_near(j, arm)
+	var lanes := country_lanes(arm)
+	Junction._band(st, j.center, arm, -1.0, lanes[0], lanes[1], at, at + BAR, y)
+
+
+## How far out from a country leg's centre line its pavement reaches,
+## `s` metres from the node, on its approach side (where its radius flares
+## out to the road it meets), for standing a sign clear of it.
+static func country_edge(j: Dictionary, arm: Dictionary, s: float) -> float:
+	var e: float = arm.hw
+	for c in j.get("corners", []):
+		if not c.fillet or j.arms[c.b].seg != arm.seg or s >= c.tb:
+			continue
+		var r: float = c.r
+		var k: float = c.tb - s
+		e = maxf(e, arm.hw + r - sqrt(maxf(r * r - k * k, 0.0)) if k < r else arm.hw + r)
+	return e
 
 
 ## What fits on a leg before the half-way point of its road: 0 nothing,

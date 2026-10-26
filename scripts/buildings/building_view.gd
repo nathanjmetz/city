@@ -55,6 +55,11 @@ var _first := true  # the town as it loads: nearest the camera first, for up to 
 ## then the rest FILL_MS a frame while you play (far versions once it's all in).
 const LOAD_MS := 1500
 const FILL_MS := 8
+## Behind the loading screen (LoadGate): milliseconds a frame, so the bar still moves.
+const LOAD_BOOST_MS := 150.0
+## The loading screen waits for buildings this near the camera (metres): the
+## ground out to where far boxes take over (FAR_FROM).
+const LOAD_RANGE := 900.0
 var _filling := false
 ## A neighbor's whole town lands at once, while you play: drawn a few
 ## buildings a frame even then, its far versions once it's all in (RegionView).
@@ -126,6 +131,13 @@ func _mark() -> void:
 	_dirty = true
 
 
+## True once nothing near the camera waits to be drawn or merged (the
+## loading screen waits for this; LoadGate). Far squares keep filling in.
+func is_drawn() -> bool:
+	return not _dirty and _recheck.is_empty() and _pending.is_empty() and not _filling \
+		and _fill.is_empty() and _merge_due.is_empty() and _merging.is_empty()
+
+
 func _process(delta: float) -> void:
 	_look_from()
 	if _dirty or not _pending.is_empty() or not _recheck.is_empty() or not _fill.is_empty():
@@ -175,7 +187,7 @@ func _sync_all() -> void:
 			_recheck_again = true
 	# Look the rest over for a moved lot (a road widened), a new look or a
 	# new sign, a slice at a time.
-	while not _recheck.is_empty() and Time.get_ticks_usec() - start < RECHECK_MS * 1000:
+	while not _recheck.is_empty() and Time.get_ticks_usec() - start < LoadGate.ms(RECHECK_MS) * 1000:
 		var key: String = _recheck.pop_back()
 		if _recs.has(key) and _stale(key):
 			_unspawn(key)
@@ -191,6 +203,9 @@ func _sync_all() -> void:
 		_first = false
 		_filling = true
 		budget = LOAD_MS
+	# Behind the loading screen: a bigger share each frame, so the bar moves.
+	if LoadGate.loading:
+		budget = int(LoadGate.ms(0.0, LOAD_BOOST_MS))
 	while not _pending.is_empty():
 		var key: String = _pending.pop_back()
 		# Swapped in the same frame, so it never blinks out.
@@ -452,11 +467,17 @@ func _plant(key: String, frame: Transform3D, planted: Array) -> void:
 	var was := Terrain.shift
 	Terrain.shift = Terrain.shift_for(self)
 	var trees := []
+	# Yard trees go in as saplings when the building is finished and grow
+	# with the game's years (TreeField, TreeKinds): the planting date is the
+	# building's own build date, so nothing new is saved.
+	var b: Dictionary = sim.buildings.get(key, {})
+	var when := {"planted": int(b.get("built", sim.tick_count)) + Construction.duration(
+		CitySim.PROFILE_OF_ZONE.get(int(b.get("zone", 0)), "house"))}
 	for t in planted:
 		var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
 		var at := frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0])
 		at.origin.y = Terrain.ground_y(at.origin.x, at.origin.z) + t[0].y
-		trees.append([at, t[1], t[2]])
+		trees.append([at, t[1], t[2], when])
 	Terrain.shift = was
 	_trees.set_trees(key, trees)
 

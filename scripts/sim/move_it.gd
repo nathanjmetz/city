@@ -52,7 +52,7 @@ static func pick(sim: CitySim, p: Vector3) -> Dictionary:
 	if node != -1 and _flat(sim.network.nodes[node]).distance_to(_flat(p)) \
 			<= RoadStyle.half_width(sim.network.widest_at(node)) + NODE_GRAB:
 		return {"type": "node", "id": node}
-	var near := sim.network.find_segment_near(p, 20.0)
+	var near := RoadIndex.segment_near(sim.network, p, 20.0)
 	if not near.is_empty() and near.dist <= RoadStyle.half_width(sim.network.segments[near.seg].type) + 1.5:
 		return {"type": "road", "id": near.seg}
 	return {}
@@ -285,6 +285,7 @@ static func apply(sim: CitySim, cmd: Dictionary) -> bool:
 	for key in p.parcels:
 		if sim.lots.has(key):
 			_carry_lot(sim.lots[key], p.xf, p.turn)
+	sim.touched_lots(p.parcels)
 	for id in p.services:
 		var b: Dictionary = sim.services.buildings[id]
 		b.pos = p.services[id][0]

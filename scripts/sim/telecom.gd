@@ -134,7 +134,7 @@ static func yard_tower(c: Dictionary) -> Vector2:
 ## Where the office goes beside the road nearest `hit`: [centre, dir toward
 ## the road], or [] if no road is near.
 static func site_near(network: RoadNetwork, hit: Vector3) -> Array:
-	var near := network.find_segment_near(hit, 60.0, 1.0)
+	var near := RoadIndex.segment_near(network, hit, 60.0, 1.0)
 	if near.is_empty() or not RoadStyle.TYPES[network.segments[near.seg].type].lots:
 		return []
 	var c := network.curve_of(near.seg)
@@ -428,7 +428,7 @@ func lot_lift(key: String) -> float:
 func lift_at(sim: CitySim, p: Vector3) -> float:
 	if companies.is_empty():
 		return 0.0
-	var near := sim.network.find_segment_near(p, 60.0) if not sim.network.segments.is_empty() else {}
+	var near := RoadIndex.segment_near(sim.network, p, 60.0) if not sim.network.segments.is_empty() else {}
 	var fib := false
 	if not near.is_empty():
 		for id in companies:
@@ -651,7 +651,7 @@ func _string_fiber(sim: CitySim, id: int, c: Dictionary, h: float) -> float:
 			nodes[int(s.a)] = true
 			nodes[int(s.b)] = true
 	if have.is_empty():
-		var near := sim.network.find_segment_near(c.pos + c.dir * (CELL * 0.5), 120.0)
+		var near := RoadIndex.segment_near(sim.network, c.pos + c.dir * (CELL * 0.5), 120.0)
 		if near.is_empty():
 			return 0.0
 		nodes[int(sim.network.segments[near.seg].a)] = true
@@ -890,7 +890,7 @@ func tower_problem(sim: CitySim, id: int, p: Vector2, corr: Array) -> String:
 	var poly := compound(p)
 	if RoadWins.hits(corr, poly):
 		return "On a road."
-	if sim.network.find_segment_near(Vector3(p.x, 0.0, p.y), Balance.TELECOM_TOWER_ROAD).is_empty():
+	if RoadIndex.segment_near(sim.network, Vector3(p.x, 0.0, p.y), Balance.TELECOM_TOWER_ROAD).is_empty():
 		return "No road near for its drive."
 	for oid in companies:
 		for t in companies[oid].towers:

@@ -83,6 +83,7 @@ jobs:
           ~/godot-cache/godot --headless --import
           run_test tests/test_roads.gd
           run_test tests/test_junction_marks.gd
+          run_test tests/test_country_roads.gd
           run_test tests/test_sim.gd
           run_test tests/test_water.gd
           run_test tests/test_advisor.gd
@@ -94,6 +95,7 @@ jobs:
           run_test tests/test_hud_quick.gd
           run_test tests/test_connections.gd
           run_test tests/test_road_tools.gd
+          run_test tests/test_detail_floor.gd
           run_test tests/test_grid_fill.gd
           run_test tests/test_move_it.gd
           run_test tests/test_road_variants.gd
@@ -105,8 +107,10 @@ jobs:
           run_test tests/test_vehicles.gd
           run_test tests/test_seasons.gd
           run_test tests/test_sun_path.gd
+          run_test tests/test_menu_life.gd
           run_test tests/test_balance.gd
           run_test tests/test_audio.gd
+          run_test tests/test_sound_mix.gd
           run_test tests/test_transit.gd
           run_test tests/test_loading.gd
           run_test tests/test_terrain.gd
@@ -123,6 +127,7 @@ jobs:
           run_test tests/test_families.gd
           run_test tests/test_streets.gd
           run_test tests/test_lots.gd
+          run_test tests/test_lot_sync.gd
           run_test tests/test_building_types.gd
           run_test tests/test_market.gd
           run_test tests/test_hubs.gd
@@ -133,6 +138,7 @@ jobs:
           run_test tests/test_trails.gd
           run_test tests/test_power.gd
           run_test tests/test_vegetation.gd
+          run_test tests/test_tree_growth.gd
           run_test tests/test_education.gd
           run_test tests/test_telecom.gd
           run_test tests/test_banks.gd
@@ -146,6 +152,7 @@ jobs:
           run_test tests/test_road_warning.gd
           run_test tests/test_resource_bands.gd
           run_test tests/test_health.gd
+          run_test tests/test_town_life.gd
           run_test tests/test_interlocal.gd
           run_test tests/test_regional.gd
           run_test tests/test_desktop.gd
@@ -153,6 +160,8 @@ jobs:
           run_test tests/test_charter.gd
           run_test tests/test_crops.gd
           run_test tests/test_crop_calendar.gd
+          run_test tests/test_farmsteads.gd
+          run_test tests/test_farm_view.gd
           run_test tests/test_stats.gd
           run_test tests/test_upgrade_art.gd
           run_test tests/test_house_drawing.gd

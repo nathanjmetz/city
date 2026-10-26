@@ -149,6 +149,15 @@ const UTILITY_LOAD := {ZoneMap.Zone.RESIDENTIAL: 1, ZoneMap.Zone.COMMERCIAL: 4, 
 
 ## A new building can start every this many ticks (10 ticks = 1 real second).
 const GROW_EVERY := 4
+## The minute within its round each of the town's background jobs runs
+## on, so that no one tick carries them all (a 69,000-person town's moving
+## in, stats and budget run on every tenth minute, the 0th; the half-hour
+## garbage and freight rounds and the ambulance calls come between, and
+## the six-hourly leaders each take a minute of their own, all on a 7;
+## the farms keep the hour, as their year starts on it).
+## Only when things happen within the round, never how often or what.
+const ROUND_AT := {"hub_round": 14, "freight_round": 22, "ems_calls": 3, "industry": 47, "power": 87,
+	"warehouses": 127, "parks": 167, "hubs": 207, "water": 247, "hospitals": 287, "mail": 327}
 ## People move in and stats update every this many ticks.
 const MOVE_EVERY := 10
 ## Game ticks per real week of construction (see Construction). A real week
@@ -2244,6 +2253,19 @@ const HOSPITAL_TENURE_DAYS := 120
 ## ambulance crew spends with the patient before heading back.
 const EMS_CALLS_PER_PERSON_YEAR := 0.12
 const EMS_ON_SCENE_MINUTES := 15
+## Ambulances the county's EMS station has for a town without a hospital
+## (or when all of ours are out): a small Indiana county runs two or three
+## rigs. A call while they're all out goes to mutual aid from the next
+## county, off the map, so the highway never fills with ambulances (a
+## 1,600-person playtest town had 40 to 80 of them queued nose to tail,
+## look check, 2026-10-25).
+const EMS_COUNTY_RIGS := 2
+## A rig still out after this many ticks (each 0.1 s of driving: 25 minutes
+## at the wheel, several times a county run) has been lost: it's let go.
+const EMS_TRIP_MAX_TICKS := 15000
+## Next-county help takes this many ticks to arrive (a county rig from the
+## highway takes about 1,400; the next county is farther).
+const EMS_MUTUAL_DELAY := 900
 ## How much better care lifts the want to live here, at most (people stay,
 ## and families move in), and what the maternity ward adds to that.
 const CARE_DEMAND := 0.15

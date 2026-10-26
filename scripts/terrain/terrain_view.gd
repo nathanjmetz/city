@@ -64,7 +64,7 @@ const PRELOAD_BIG_GB := 30.0
 ## A guard on how many chunks are kept (the county is 72 x 72 chunks).
 const CACHE_MAX := 16384
 ## Milliseconds of a settled frame spent preloading: small, so the quality
-## governor never mistakes it for a slow machine (SLOW_MS).
+## governor never mistakes it for a slow machine (MACHINES slow_ms).
 const PRELOAD_MS := 3
 ## How far the camera moves (metres, height counted) before the chunks'
 ## detail levels are worked out again; far smaller than any level's reach.
@@ -84,7 +84,7 @@ uniform vec4 dark : source_color = vec4(0.20, 0.28, 0.12, 1.0);
 uniform vec4 soil : source_color = vec4(0.46, 0.40, 0.29, 1.0);
 uniform vec4 litter : source_color = vec4(0.22, 0.20, 0.12, 1.0);
 uniform vec4 canopy : source_color = vec4(0.13, 0.22, 0.09, 1.0);
-uniform vec4 gravel : source_color = vec4(0.58, 0.55, 0.49, 1.0);
+uniform vec4 gravel : source_color = vec4(0.45, 0.43, 0.38, 1.0);
 uniform vec4 spoil : source_color = vec4(0.52, 0.49, 0.43, 1.0);
 uniform vec4 mud : source_color = vec4(0.42, 0.37, 0.27, 1.0);
 // Where wild trees are drawn (WildView): centre x, z and reach. Past them
@@ -188,20 +188,25 @@ float highway_d(vec2 r) {
 	return min(v.r, min(v.g, v.b));
 }
 
-float county_road(vec2 r, float half_w, float px) {
-	float w = max(half_w, px * 0.5);
-	float soft = max(0.5, px * 0.5);
+// `px`: the pixel footprint across a north-south road (x) and across an
+// east-west one (y). Only the footprint across a road blurs its edges: a
+// road seen at a low angle is long in the pixel along it, not across, and
+// summing both smeared it into a pale streak that faded out (look check
+// 2026-10-25).
+float county_road(vec2 r, float half_w, vec2 px) {
+	vec2 w = max(vec2(half_w), px * 0.5);
+	vec2 soft = max(vec2(0.35), px * 0.5);
 	float ns_line = floor(r.x / 1608.0 + 0.5);
 	float ew_line = floor(r.y / 1608.0 + 0.5);
 	int ns_seg = int(floor(r.y / 1608.0));
 	int ew_seg = int(floor(r.x / 1608.0));
 	float ns = texelFetch(county_miles, ivec2(int(ns_line) & 63, ns_seg & 63), 0).r
 		* (1.0 - texelFetch(county_hidden, ivec2(int(ns_line) & 63, ns_seg & 63), 0).r)
-		* (1.0 - smoothstep(w - soft, w + soft, abs(r.x - ns_line * 1608.0)));
+		* (1.0 - smoothstep(w.x - soft.x, w.x + soft.x, abs(r.x - ns_line * 1608.0))) * clamp(half_w / w.x, 0.0, 1.0);
 	float ew = texelFetch(county_miles, ivec2(int(ew_line) & 63, ew_seg & 63), 0).g
 		* (1.0 - texelFetch(county_hidden, ivec2(int(ew_line) & 63, ew_seg & 63), 0).g)
-		* (1.0 - smoothstep(w - soft, w + soft, abs(r.y - ew_line * 1608.0)));
-	return max(ns, ew) * clamp(half_w / w, 0.0, 1.0);
+		* (1.0 - smoothstep(w.y - soft.y, w.y + soft.y, abs(r.y - ew_line * 1608.0))) * clamp(half_w / w.y, 0.0, 1.0);
+	return max(ns, ew);
 }
 
 void fragment() {
@@ -304,7 +309,14 @@ void fragment() {
 	// lawn (TerrainView.YARD_THIN), not the woods' brown leaf litter, which
 	// read as patches of bare dirt across every lot.
 	float yard = clamp(town.y - town.x, 0.0, 1.0);
-	vec3 yard_floor = mix(litter.rgb * (0.8 + 0.4 * clump), col * vec3(0.82, 0.86, 0.76), yard);
+	// Under a woodlot's edge the floor is the shaded grass it grew out of
+	// with leaf litter on it, not bare brown earth: a dark brown ring round
+	// every wood read as a ditch or a burn scar from the air. Deep in the
+	// wood (cover.r near 1) it is mostly litter, as photos of Indiana
+	// hardwoods show.
+	vec3 shade_grass = col * vec3(0.62, 0.7, 0.55);
+	vec3 litter_floor = mix(shade_grass, litter.rgb * (0.8 + 0.4 * clump), 0.25 + 0.5 * smoothstep(0.55, 0.95, cover.r));
+	vec3 yard_floor = mix(litter_floor, col * vec3(0.82, 0.86, 0.76), yard);
 	vec3 woods = mix(yard_floor, tops, painted);
 	// A ragged edge, as real woods have, not the straight line between samples.
 	float in_woods = smoothstep(0.3, 0.65, cover.r + (clump - 0.5) * 0.45 + (mid - 0.5) * 0.25);
@@ -330,9 +342,10 @@ void fragment() {
 	// it hasn't joined, as at a crossroads, rather than running under it
 	// (UV.x: mowed). Its mowed ditches give way to the town's yards (UV.y).
 	float px = fwidth(r.x) + fwidth(r.y);
+	vec2 cross_px = vec2(length(vec2(dFdx(r.x), dFdy(r.x))), length(vec2(dFdx(r.y), dFdy(r.y))));
 	float open_land = (1.0 - smoothstep(0.06, 0.12, cover.g)) * (1.0 - smoothstep(0.012, 0.02, steep));
-	float verge = county_road(r, 8.0, px) * open_land * (1.0 - smoothstep(0.2, 0.6, max(town.x, town.y)));
-	float county = county_road(r, 3.5, px) * open_land * (1.0 - smoothstep(0.3, 0.7, town.x));
+	float verge = county_road(r, 8.0, cross_px) * open_land * (1.0 - smoothstep(0.2, 0.6, max(town.x, town.y)));
+	float county = county_road(r, 3.5, cross_px) * open_land * (1.0 - smoothstep(0.3, 0.7, town.x));
 	vec3 ditch = mix(lush.rgb, dry.rgb, 0.3);
 	ditch = mix(ditch, dormant.rgb, brown);
 	col = mix(col, ditch * (0.92 + 0.16 * clump), verge * 0.65);
@@ -504,6 +517,13 @@ func setup(cam: Camera3D, net: RoadNetwork = null) -> void:
 		_regrade()
 
 
+## True once the land round the camera stands at its final level of detail
+## (the loading screen waits for this; LoadGate).
+func is_drawn() -> bool:
+	return not _first and _dirty.is_empty() and _job.is_empty() and _settled_eye.x < INF \
+		and _far_job.is_empty() and _far != null
+
+
 ## Where the chunks centre: the ground the camera looks at.
 func focus() -> Vector2:
 	if camera == null or not camera.is_inside_tree():
@@ -585,7 +605,8 @@ func _process(_delta: float) -> void:
 				_job = {"key": key, "lod": lod, "data": chunk_job(Vector2(key) * CHUNK, CHUNK, STEPS[lod],
 					REACH[lod] if lod < STEPS.size() - 1 else 0.0)}
 			var finished := false
-			while not finished and Time.get_ticks_usec() - start * 1000 < _budget_ms * 1000:
+			var budget := LoadGate.ms(_budget_ms)
+			while not finished and Time.get_ticks_usec() - start * 1000 < budget * 1000:
 				finished = chunk_step(_job.data, JOB_ROWS)
 			if not finished:
 				done = false
@@ -595,7 +616,7 @@ func _process(_delta: float) -> void:
 		_dirty.erase(key)
 		# Build everything at once the first time, so the land is there
 		# when the game opens; then a little each frame.
-		if not _first and Time.get_ticks_msec() - start > _budget_ms:
+		if not _first and Time.get_ticks_msec() - start > LoadGate.ms(_budget_ms):
 			done = false
 			break
 	_settled_eye = eye if done else Vector3(INF, INF, INF)
@@ -617,7 +638,7 @@ func _update_far(flat_eye: Vector2, all_now := false) -> void:
 		var c := (flat_eye / CHUNK).round()
 		_far_job = far_job(c * CHUNK, ceili((FAR_REACH + FAR_MOVE) / CHUNK))
 	while not far_step(_far_job):
-		if not all_now and Time.get_ticks_msec() - start > FAR_BUDGET_MS:
+		if not all_now and Time.get_ticks_msec() - start > LoadGate.ms(FAR_BUDGET_MS):
 			return
 	if _far == null:
 		_far = MeshInstance3D.new()
@@ -742,7 +763,15 @@ func _build(key: Vector2i, lod: int, data := {}) -> void:
 	var g := MeshInstance3D.new()
 	g.mesh = meshes[0]
 	g.material_override = ground_material()
-	g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if lod > 1 else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	# The land never casts: every pixel of it is also a receiver, and a
+	# surface lit by a shadow map of itself shows the map's texels as faint
+	# parallel diagonal stripes over every lawn and road ("shadow acne": no
+	# bias value clears it at every sun height and quality tier, and the
+	# roads, lots and trees standing on it get shaded all the same). Half
+	# the county's chunks have under 4 m of relief and three in four under
+	# 8, so what is lost is a hillside shading the valley below it, at a
+	# low sun. It also drops the ground's triangles from every shadow pass.
+	g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(g)
 	entry.ground = g
 	if meshes[1] != null:

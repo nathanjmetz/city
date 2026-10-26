@@ -55,6 +55,11 @@ const HEADWAY := 1.4
 const ACCEL := 2.0
 const BRAKE := 3.0
 const MAX_BRAKE := 8.0
+## How far back (m) a driver on a green commits to going through.
+const GREEN_REACH := 25.0
+## Seconds at the line that count as a full stop (stop signs, all-way
+## stops, right on red): drivers stop for about half a second to a second.
+const FULL_STOP_S := 0.5
 ## Where cars stop for a railroad crossing, metres before the track's centre:
 ## 15 ft from the nearest rail plus half the gauge.
 const XING_STOP := 5.4
@@ -83,6 +88,12 @@ const CROSS_PEN := 6.0
 ## MUTCD design walking speed is 3.5 ft/s for crossings, people stroll faster).
 const MAX_WALKERS := 800
 const WALK_V := 1.4
+## The limits a view can lower (the title screen's town on a weak computer):
+## no new trips start past them. The simulation never changes them itself.
+var max_cars := MAX_CARS
+var max_walkers := MAX_WALKERS
+## Share (percent) of short trips walked by people with a car at home.
+const SHORT_WALK_PCT := 25
 ## Big towns (Brawn, 2026-10-23): past this many residents, people's own
 ## cars drive as traffic flows, not one by one: each trip is timed over its
 ## route with the FHWA's BPR curve, t = t0 (1 + 0.15 (v/c)^4), and loads
@@ -168,6 +179,12 @@ var _committed := {} # node -> cars about to cross it
 var _approach := {}  # node -> [{car, conn, ds}] for the first car in each lane
 var _xings := {}     # way -> [[s along the way, rail crossing]] (_find_xings)
 var _by_vid := {}    # vehicle id -> its record in `parked`
+## The parked vehicles at each place (by at_place), in `parked` order, and
+## the parked ones holding a spot somewhere else (a to_place), so a place
+## laid out afresh finds who holds its spots without looking through every
+## parked car in town (_claim_spots). Kept by _park and _unpark.
+var _parked_at := {}  # place ref -> [vehicles]
+var _parked_to := {}  # vehicle id -> parked vehicle with a to_place
 var _due := {}       # tick -> parked vehicles due to head off then (_due_at)
 var _outs := {}      # vehicle id -> [key, path out of its spot] while it waits to pull out
 var _due_done := -1  # the last tick _rest took its due vehicles for (-1: look through all)
@@ -609,6 +626,8 @@ func from_dict(d: Dictionary) -> void:
 	_waiting.clear()
 	parked.clear()
 	_by_vid.clear()
+	_parked_at.clear()
+	_parked_to.clear()
 	_due.clear()
 	_due_done = -1
 	_pend.clear()
@@ -1140,8 +1159,29 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 			if cost < best:
 				best = cost
 				best_route = [s[0]]
-	var dist := {}
-	var prev := {}
+	# Costs so far, the way each came from and the estimates, by way id in
+	# packed arrays (INF, -1 and -1 when not reached yet): the same numbers
+	# the search kept in dictionaries, read faster. The arrays are kept
+	# between searches (packed arrays are shared, not copied, so these
+	# names write into them), and only the entries the last search reached
+	# are set back, not every way in town.
+	var n := _way_count()
+	if _pl_dist.size() != n:
+		_pl_dist.resize(n)
+		_pl_dist.fill(INF)
+		_pl_prev.resize(n)
+		_pl_prev.fill(-1)
+		_pl_h.resize(n)
+		_pl_h.fill(-1.0)
+		_pl_seen.clear()
+	else:
+		for i in _pl_seen:
+			_pl_dist[i] = INF
+			_pl_prev[i] = -1
+			_pl_h[i] = -1.0
+		_pl_seen.clear()
+	var dist := _pl_dist
+	var prev := _pl_prev
 	# A*: the estimate is the straight line from the end of a way to the
 	# nearest target at the fastest limit in town, which no real route
 	# beats, so the route found is still the fastest.
@@ -1151,7 +1191,7 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 			var p0: Vector3 = ways[t].pts[0]
 			goals.append(Vector2(p0.x, p0.z))
 	var inv_v := 1.0 / _vtop
-	var hcache := {}
+	var hcache := _pl_h
 	# A binary heap of (cost + estimate, way) in two packed arrays, kept
 	# inline: ties go to the lower way id, so every copy picks the same route.
 	var hg := PackedFloat64Array()
@@ -1159,9 +1199,11 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 	for s in starts:
 		var w: Dictionary = ways[s[0]]
 		var g: float = maxf(w.len - s[1], 0.0) / w.vmax + (s[2] if s.size() > 2 else 0.0)
-		if g < dist.get(s[0], INF):
+		if g < dist[s[0]]:
+			if dist[s[0]] == INF:
+				_pl_seen.append(s[0])
 			dist[s[0]] = g
-			_hpush(hg, hu, g + _h_est(s[0], goals, inv_v, hcache), s[0])
+			_hpush(hg, hu, g + _h_at(s[0], goals, inv_v, hcache), s[0])
 	var end := -1
 	var end_prev := -1
 	var first := lane >= 0
@@ -1192,10 +1234,12 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 					end_prev = u
 					best_route = []
 			var ng: float = e + _wcost.get(nx, INF)
-			if ng < dist.get(nx, INF):
+			if ng < dist[nx]:
+				if dist[nx] == INF:
+					_pl_seen.append(nx)
 				dist[nx] = ng
 				prev[nx] = u
-				_hpush(hg, hu, ng + _h_est(nx, goals, inv_v, hcache), nx)
+				_hpush(hg, hu, ng + _h_at(nx, goals, inv_v, hcache), nx)
 		first = false
 	if best_route.is_empty() and end != -1:
 		var route := [end]
@@ -1203,12 +1247,49 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 		var guard := 0
 		while guard < 10000:
 			route.push_front(x)
-			if not prev.has(x):
+			if prev[x] == -1:
 				break
 			x = prev[x]
 			guard += 1
 		return route
 	return best_route
+
+
+## One more than the highest way id, kept until the ways are rebuilt.
+func _way_count() -> int:
+	if _way_n_key != [version, ways.size()]:
+		_way_n_key = [version, ways.size()]
+		_way_n = 0
+		for id in ways:
+			_way_n = maxi(_way_n, int(id) + 1)
+		for id in _turns:
+			_way_n = maxi(_way_n, int(id) + 1)
+			for nx in _turns[id]:
+				_way_n = maxi(_way_n, int(nx) + 1)
+	return _way_n
+
+
+var _way_n := 0
+var _way_n_key := []
+## _plan's search arrays, by way id (see there), and the ids it reached.
+var _pl_dist := PackedFloat64Array()
+var _pl_prev := PackedInt32Array()
+var _pl_h := PackedFloat64Array()
+var _pl_seen := PackedInt32Array()
+
+
+## _h_est with its answers kept by way id in a packed array (-1: not yet).
+func _h_at(u: int, goals: PackedVector2Array, inv_v: float, hcache: PackedFloat64Array) -> float:
+	var h: float = hcache[u]
+	if h >= 0.0:
+		return h
+	var e: Vector2 = _wend.get(u, Vector2.ZERO)
+	var best := INF
+	for q in goals:
+		best = minf(best, e.distance_to(q))
+	h = 0.0 if best == INF else best * inv_v
+	hcache[u] = h
+	return h
 
 
 ## The planner's estimate of seconds left from the end of way `u`.
@@ -1352,7 +1433,7 @@ func _replan(car: Dictionary, lane := -1) -> bool:
 func _locate(at, facing: Vector3) -> Array:
 	if at == null:
 		return []
-	var near := network.find_segment_near(at, 25.0, 3.0)
+	var near := RoadIndex.segment_near(network, at, 25.0, 3.0)
 	if near.is_empty():
 		return []
 	var best := []
@@ -1435,7 +1516,7 @@ func _reroute_all() -> void:
 		car.lc_t = 1.0
 		car.d = clampf(car.d, 0.0, w.len)
 		if not network.segments.has(car.goal.seg):
-			var near := network.find_segment_near(car.dest, 60.0)
+			var near := RoadIndex.segment_near(network, car.dest, 60.0)
 			if near.is_empty():
 				continue
 			var fw: int = near.seg * 2 + 1
@@ -1512,6 +1593,7 @@ func _cancel(car: Dictionary) -> void:
 	for k in ["route", "leg", "d", "end_d", "goal", "dest", "park", "home", "to_place", "to_spot", "lane",
 			"to_stop", "after"]:
 		car.erase(k)
+	_parked_to.erase(car.id)
 	var pid: int = car.get("driver", -1)
 	car.driver = -1
 	if pid != -1 and _sim != null and _sim.people.people.has(pid):
@@ -1525,7 +1607,7 @@ func _cancel(car: Dictionary) -> void:
 ## Trips follow the time of day: to work in the morning, home in the evening,
 ## to the shops in between. Factories send box trucks to the shops by day.
 func _spawn(sim: CitySim, rng: RandomNumberGenerator) -> void:
-	if cars.size() >= MAX_CARS or sim.stats.population == 0:
+	if cars.size() >= max_cars or sim.stats.population == 0:
 		return
 	var hour: int = sim.clock().hour
 	var rate := 0.15
@@ -1569,7 +1651,7 @@ func _spawn(sim: CitySim, rng: RandomNumberGenerator) -> void:
 ## again. Returns false if there's no route.
 func add_trip(a: Dictionary, b: Dictionary, rng: RandomNumberGenerator, kind := "",
 		purpose := "", cargo := {}) -> bool:
-	if cars.size() >= MAX_CARS:
+	if cars.size() >= max_cars:
 		return false
 	if purpose == "":
 		purpose = "commute"
@@ -1705,7 +1787,7 @@ func drive_ticks(from: Dictionary, to: Dictionary, truck := false) -> float:
 ## arrived or given up (handled by its caller next tick).
 func trip_ids() -> Array:
 	var out := []
-	for c in cars + _waiting:
+	for c in cars + _waiting + flowing:
 		out.append(c.get("trip", c.id))
 	for p in parked:
 		if p.get("pending", false):
@@ -1810,7 +1892,7 @@ func _endpoint(e: Dictionary) -> Dictionary:
 func _endpoint_x(at: Vector2) -> Dictionary:
 	var e := {"ref": ""}
 	var pos := Vector3(at.x, 0.0, at.y)
-	var near := network.find_segment_near(pos, 80.0)
+	var near := RoadIndex.segment_near(network, pos, 80.0)
 	if near.is_empty():
 		return {}
 	var wid: int = near.seg * 2 + 1
@@ -2264,13 +2346,31 @@ func _add_spot(pl: Dictionary, s: Dictionary, vid := -1) -> int:
 	return pl.spots.size() - 1
 
 
+## Files a vehicle just parked (or found parked on a load) for _claim_spots.
+func _file_parked(car: Dictionary) -> void:
+	var at: String = car.at_place
+	if not _parked_at.has(at):
+		_parked_at[at] = []
+	_parked_at[at].append(car)
+	if car.has("to_place"):
+		_parked_to[car.id] = car
+
+
 func _claim_spots(pl: Dictionary) -> void:
-	for car in parked:
+	for car in _parked_at.get(pl.ref, []):
 		if car.at_place == pl.ref and car.spot >= 0 and car.spot < pl.taken.size():
 			pl.taken[car.spot] = car.id
 	# Where vehicles are headed, whether driving already or parked waiting
-	# for a gap to pull out with a spot held at the other end.
-	for list in [parked, cars, _waiting, flowing]:
+	# for a gap to pull out with a spot held at the other end (the parked
+	# ones in `parked` order, as if looking through them all).
+	var holding := []
+	for vid in _parked_to:
+		var car: Dictionary = _parked_to[vid]
+		if car.get("to_place", "") == pl.ref:
+			holding.append(car)
+	if holding.size() > 1:
+		holding.sort_custom(func(a, b): return _pseq[a.id] < _pseq[b.id])
+	for list in [holding, cars, _waiting, flowing]:
 		for car in list:
 			if car.get("to_place", "") == pl.ref and car.get("to_spot", -1) >= 0 and car.to_spot < pl.taken.size():
 				pl.taken[car.to_spot] = car.id
@@ -2427,11 +2527,12 @@ func new_vehicle(kind: String, at_ref: String, owner: int, owner_place := "") ->
 
 ## Takes a vehicle out of the town for good: it was sold, or its owner left.
 func retire_vehicle(vid: int) -> void:
-	for car in parked:
-		if car.id == vid:
-			_release(car.at_place, car.spot, vid)
-			_unpark(car)
-			return
+	# (_by_vid is every parked vehicle, by id.)
+	if _by_vid.has(vid):
+		var car: Dictionary = _by_vid[vid]
+		_release(car.at_place, car.spot, vid)
+		_unpark(car)
+		return
 	for car in cars + _waiting + flowing:
 		if car.id == vid:
 			car.owner = -1
@@ -2467,6 +2568,8 @@ func _due_at(car: Dictionary, tick: int) -> void:
 ## Rebuilds the due list from the parked vehicles (after a load).
 func _index_parked() -> void:
 	_by_vid.clear()
+	_parked_at.clear()
+	_parked_to.clear()
 	_due.clear()
 	_due_done = -1
 	_pend.clear()
@@ -2474,6 +2577,7 @@ func _index_parked() -> void:
 	_next_pseq = 0
 	for car in parked:
 		_by_vid[car.id] = car
+		_file_parked(car)
 		_pseq[car.id] = _next_pseq
 		_next_pseq += 1
 		if car.has("pending"):
@@ -2485,6 +2589,14 @@ func _index_parked() -> void:
 func _unpark(car: Dictionary) -> void:
 	parked.erase(car)
 	_by_vid.erase(car.id)
+	var here: Array = _parked_at.get(car.get("at_place", ""), [])
+	for i in here.size():
+		if is_same(here[i], car):
+			here.remove_at(i)
+			break
+	if here.is_empty():
+		_parked_at.erase(car.get("at_place", ""))
+	_parked_to.erase(car.id)
 	_pend.erase(car.id)
 	_pseq.erase(car.id)
 	parked_version += 1
@@ -2510,6 +2622,7 @@ func _park(car: Dictionary, pl: Dictionary, spot: int) -> void:
 		car.until = -1
 	parked.append(car)
 	_by_vid[car.id] = car
+	_file_parked(car)
 	_pseq[car.id] = _next_pseq
 	_next_pseq += 1
 	parked_version += 1
@@ -2584,6 +2697,8 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 		"stuck": 0.0, "lc_from": 0.0, "lc_t": 1.0, "lc_cool": 2.0, "a": 0.0, "held": false,
 		"from_place": car.get("at_place", ""), "from_spot": car.get("spot", -1), "until": -1}, true)
 	_next_trip += 1
+	if car.has("at_place") and is_same(_by_vid.get(car.id), car):
+		_parked_to[car.id] = car
 	if car.has("at_place") and after.get("driver", -1) != -1 and _flows_on():
 		_flow_start(car)
 		return true
@@ -2599,7 +2714,7 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 
 ## A parked vehicle with a trip pulls out if there's a gap in traffic.
 func _try_launch(car: Dictionary, lanes := {}) -> bool:
-	if cars.size() >= MAX_CARS or not _launch(car, lanes):
+	if cars.size() >= max_cars or not _launch(car, lanes):
 		return false
 	if not lanes.is_empty():
 		_lane_add(lanes, car)
@@ -3073,7 +3188,7 @@ func _rest() -> void:
 		car.erase("next_stop")
 		if back == "":
 			continue
-		if cars.size() >= MAX_CARS or not _send(car, back, "return", {}, {"report": false}, stop):
+		if cars.size() >= max_cars or not _send(car, back, "return", {}, {"report": false}, stop):
 			_due_at(car, _tick + 20)  # try again shortly
 			car.next = back
 			car.next_stop = stop
@@ -3088,6 +3203,8 @@ func _rest() -> void:
 func go(pid: int, to_ref: String, purpose: String, stay: int) -> bool:
 	if _sim == null or not _sim.people.people.has(pid):
 		return false
+	if _dirty:
+		_rebuild()  # a road built this tick: walks must not follow the old sidewalks
 	var p: Dictionary = _sim.people.people[pid]
 	var home_ref: String = "lot:" + p.home
 	var from_ref: String = home_ref if p.at == "" else p.at
@@ -3107,15 +3224,20 @@ func go(pid: int, to_ref: String, purpose: String, stay: int) -> bool:
 	if away and not fetch and not place(car.at_place).is_empty() \
 			and place(car.at_place).door.distance_to(to_pl.door) < PARK_WALK:
 		far = false  # the car is already parked by the destination: walk on past it
-	if not car.is_empty() and (far or fetch) and cars.size() < MAX_CARS:
+	# Most Americans with a car at home drive even short hops: about a
+	# quarter of trips under a mile are walked (NHTS), fewer in small towns.
+	if not far and not away and not car.is_empty() \
+			and hash([pid, _sim.tick_count]) % 100 >= SHORT_WALK_PCT:
+		far = true
+	if not car.is_empty() and (far or fetch) and cars.size() < max_cars:
 		var path := _walk_to_car(from_pl, car)
-		if path.is_empty():
+		if path.is_empty() or walkers.size() >= max_walkers:
 			return false
 		car.driver = pid
 		_walk(pid, path, {"drive": car.id, "to": to_ref, "purpose": purpose, "stay": stay})
 	else:
 		var path := _walk_between(from_pl, to_pl)
-		if path.is_empty() or walkers.size() >= MAX_WALKERS:
+		if path.is_empty() or walkers.size() >= max_walkers:
 			return false
 		_walk(pid, path, {"enter": to_ref, "stay": stay})
 	p.at = "travel"
@@ -3403,12 +3525,14 @@ func _kerb_stop(pos: Vector3) -> Dictionary:
 ## if no street with sidewalks runs by. With `kerb`, only for a spot out on
 ## the street itself (a car parked at the kerb).
 func _walk_stop(pos: Vector3, kerb := false) -> Dictionary:
-	var near := network.find_segment_near(pos, 20.0 if kerb else 40.0)
+	var near := RoadIndex.segment_near(network, pos, 20.0 if kerb else 40.0)
 	if near.is_empty():
 		return {}
 	var seg: int = near.seg
 	var type: int = network.segments[seg].type
-	if RoadStyle.is_freeway(type) or not RoadStyle.TYPES[type].get("walk", true) \
+	# A road with lots but no sidewalks (a county road, the state highway) is
+	# walked along its shoulder (_walk_line); one with no lots at all is not.
+	if RoadStyle.is_freeway(type) or not RoadStyle.TYPES[type].lots \
 			or kerb and float(near.dist) > RoadStyle.half_width(type) + RoadStyle.CURB_WIDTH:
 		return {}  # in a lot or driveway, or a road with no sidewalks
 	var c := network.curve_of(seg)
@@ -3443,11 +3567,13 @@ func _door_out(pl: Dictionary) -> PackedVector3Array:
 ## the sidewalk to where the trail meets the street, along the trail for a
 ## stretch and back the same way. False if the trail doesn't come by.
 func stroll(pid: int) -> bool:
-	if _sim == null or not _sim.people.people.has(pid) or walkers.size() >= MAX_WALKERS:
+	if _sim == null or not _sim.people.people.has(pid) or walkers.size() >= max_walkers:
 		return false
 	var p: Dictionary = _sim.people.people[pid]
 	if p.at != "":
 		return false
+	if _dirty:
+		_rebuild()
 	var trails: Array = _sim.parks.trails.paths
 	if trails.is_empty():
 		return false
@@ -3564,22 +3690,26 @@ func _sidewalks(la: Dictionary, lb: Dictionary) -> PackedVector3Array:
 	var goal_f := _frac(lb)
 	var dist := {}
 	var prev := {}
-	var open := []
+	var starts := []
 	for end in [0, 1]:
 		var st := Vector3i(_seg_node(la.seg, end), la.seg, la.side)
 		var f := _walk_end(la.seg, end)
 		dist[st] = absf(f - start_f) * _seg_len(la.seg)
 		prev[st] = null
-		open.append(st)
+		starts.append(st)
+	# The nearest open corner next, ties to the lowest (x, y, z): a heap of
+	# [distance when filed, corner]. A corner filed again nearer comes out
+	# first; its older, farther filings come out later and are passed over.
+	var hd := PackedFloat64Array()
+	var hn := []
+	for st in starts:
+		_wpush(hd, hn, dist[st], st)
 	var seen := {}
 	var best := People.WALK_MAX * 2.0
 	var best_end = null
-	while not open.is_empty():
-		var u: Vector3i = open[0]
-		for m in open:
-			if dist[m] < dist[u] or (dist[m] == dist[u] and (m.x < u.x or m.x == u.x and (m.y < u.y or m.y == u.y and m.z < u.z))):
-				u = m
-		open.erase(u)
+	while not hd.is_empty():
+		var u: Vector3i = hn[0]
+		_wpop(hd, hn)
 		if seen.has(u):
 			continue
 		seen[u] = true
@@ -3598,7 +3728,7 @@ func _sidewalks(la: Dictionary, lb: Dictionary) -> PackedVector3Array:
 			if nd < dist.get(v, INF):
 				dist[v] = nd
 				prev[v] = [u, step[2]]
-				open.append(v)
+				_wpush(hd, hn, nd, v)
 	if best_end == null:
 		return out
 	var chain := []
@@ -3628,6 +3758,51 @@ func _sidewalks(la: Dictionary, lb: Dictionary) -> PackedVector3Array:
 	var last: Vector3i = best_end
 	_append_span(out, _walk_line(lb.seg, lb.side), _walk_end(last.y, 0 if last.x == _seg_node(last.y, 0) else 1), goal_f)
 	return out
+
+
+## (_sidewalks' heap) True when [d, a] comes out before [e, b].
+static func _wless(d: float, a: Vector3i, e: float, b: Vector3i) -> bool:
+	return d < e or (d == e and (a.x < b.x or a.x == b.x and (a.y < b.y or a.y == b.y and a.z < b.z)))
+
+
+static func _wpush(hd: PackedFloat64Array, hn: Array, d: float, n: Vector3i) -> void:
+	hd.append(d)
+	hn.append(n)
+	var i := hd.size() - 1
+	while i > 0:
+		var p := (i - 1) >> 1
+		if not _wless(d, n, hd[p], hn[p]):
+			break
+		hd[i] = hd[p]
+		hn[i] = hn[p]
+		i = p
+	hd[i] = d
+	hn[i] = n
+
+
+static func _wpop(hd: PackedFloat64Array, hn: Array) -> void:
+	var last := hd.size() - 1
+	var d: float = hd[last]
+	var n: Vector3i = hn[last]
+	hd.resize(last)
+	hn.resize(last)
+	if last == 0:
+		return
+	var i := 0
+	while true:
+		var l := i * 2 + 1
+		if l >= last:
+			break
+		var m := l
+		if l + 1 < last and _wless(hd[l + 1], hn[l + 1], hd[l], hn[l]):
+			m = l + 1
+		if not _wless(hd[m], hn[m], d, n):
+			break
+		hd[i] = hd[m]
+		hn[i] = hn[m]
+		i = m
+	hd[i] = d
+	hn[i] = n
 
 
 ## A segment's node at one end (0: a, 1: b).
@@ -3722,13 +3897,14 @@ func _seg_len(sid: int) -> float:
 
 
 ## The middle of the sidewalk along a road, on one side (seen from a to b).
+## A country road has none: people walk its shoulder (FHWA: on the
+## shoulder, where there's no sidewalk), never out in the lawns beside it.
 func _walk_line(sid: int, side: int) -> PackedVector3Array:
 	var key := sid * 2 + (1 if side > 0 else 0)
 	if _walk_lines.has(key):
 		return _walk_lines[key]
 	var pts := network.sample_segment(sid, 16)
-	var off := RoadStyle.half_width(network.segments[sid].type) + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH \
-		+ RoadStyle.SIDEWALK_WIDTH * 0.5
+	var off := walk_offset(network.segments[sid].type)
 	var out := PackedVector3Array()
 	for i in pts.size():
 		var a := pts[maxi(i - 1, 0)]
@@ -3737,6 +3913,23 @@ func _walk_line(sid: int, side: int) -> PackedVector3Array:
 		out.append(Vector3(pts[i].x, 0.0, pts[i].z) + Vector3(-dir.z, 0.0, dir.x) * off * side)
 	_walk_lines[key] = out
 	return out
+
+
+## How far from a road's centre line people walk beside it: the middle of
+## the sidewalk; on a road without sidewalks the middle of a paved shoulder
+## (the state highway's 8 ft), the gravel shoulder of a paved county road,
+## or the edge of a gravel or dirt road itself.
+static func walk_offset(type: int) -> float:
+	var spec: Dictionary = RoadStyle.TYPES[type]
+	var hw := RoadStyle.half_width(type)
+	if spec.get("walk", true):
+		return hw + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH * 0.5
+	var shoulder: float = spec.get("shoulder", 0.0)
+	if shoulder > 0.0:
+		return hw - shoulder * 0.5
+	if spec.get("surface", "asphalt") == "asphalt":
+		return hw + 0.9  # the gravel strip RoadMesh lays along a country road
+	return maxf(hw - 0.6, 1.2)
 
 
 ## The part of a line between two shares of its length, in that order.
@@ -3875,7 +4068,7 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 			# Its road went, or was rebuilt and there's no way through now.
 			_waiting.erase(car)
 			_report(car, failed)
-		elif cars.size() < MAX_CARS:
+		elif cars.size() < max_cars:
 			if lanes.is_empty():
 				for other in cars:
 					_lane_add(lanes, other)
@@ -4181,9 +4374,21 @@ func _accel_on_way(car: Dictionary, list: Array, i: int) -> float:
 		return acc
 	var c := _conn_for(car)
 	if not car.commit:
-		if ds < 4.0 and car.v < 0.5 and car.arrive < 0.0:
+		if ds < 4.0 and car.v < 1.0 and car.arrive < 0.0:
 			car.arrive = time
-		if _may_enter(car, c, ds) and ds <= car.v * car.v / (2.0 * BRAKE) + 4.0:
+		# On a green, drivers carry on through rather than creeping up to
+		# the line as if it were red: they decide from well back (HCM
+		# saturation flow, about 2 s a car).
+		# Decide before the line starts to brake them: the car-following
+		# model feels a closed line from its safe gap ahead (jam gap, time
+		# gap and braking room), so deciding only at the braking distance
+		# meant slowing for every clear junction and never reaching the
+		# limit between them (55 mph roads driven at about 20).
+		var reach: float = maxf(car.v * car.v / (2.0 * BRAKE) + 4.0,
+			JAM_GAP + car.v * HEADWAY + car.v * car.v / (2.0 * sqrt(car.acc * BRAKE)) + 4.0)
+		if junctions[c.node].control == Rule.SIGNAL and light(c.node, c.wi) == Light.GREEN:
+			reach = maxf(reach, GREEN_REACH)
+		if ds <= reach and _may_enter(car, c, ds):
 			car.commit = true
 			car.conn = c
 			if not _committed.has(c.node):
@@ -4284,7 +4489,7 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 		var bc: Dictionary = b.j if b.j != null else b.conn
 		if _conflicts(c, bc):
 			return false
-	var stopped: bool = car.arrive >= 0.0 and time - car.arrive >= 1.0
+	var stopped: bool = car.arrive >= 0.0 and time - car.arrive >= FULL_STOP_S
 	var mine_minor_turn: bool = c.turn == Turn.LEFT or c.turn == Turn.UTURN
 	match j.control:
 		Rule.SIGNAL:

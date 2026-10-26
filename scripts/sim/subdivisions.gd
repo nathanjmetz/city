@@ -457,7 +457,7 @@ func _clear(sim, site: Dictionary, depth: float, roads: Dictionary) -> String:
 func _entrances_ok(sim, site: Dictionary) -> bool:
 	for s in [-1.0, 1.0]:
 		var e := local(site, s * (Balance.SUBDIV_WIDTH * 0.5 - Balance.SUBDIV_SPINE_IN), -float(site.hw))
-		if sim.network.find_segment_near(e, 6.0, 4.0).is_empty():
+		if RoadIndex.segment_near(sim.network, e, 6.0, 4.0).is_empty():
 			return false
 	return true
 

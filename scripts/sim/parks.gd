@@ -122,7 +122,7 @@ static func corners(pos: Vector3, dir: Vector3, size: Vector2) -> PackedVector2A
 ## Where a park or landmark goes when placed beside the road nearest `hit`:
 ## [centre, dir toward the road], or [] if no road is near.
 static func site_near(network: RoadNetwork, kind: String, hit: Vector3, size_class := 0) -> Array:
-	var near := network.find_segment_near(hit, 90.0, 1.0)
+	var near := RoadIndex.segment_near(network, hit, 90.0, 1.0)
 	if near.is_empty() or not RoadStyle.TYPES[network.segments[near.seg].type].lots:
 		return []
 	var c := network.curve_of(near.seg)
@@ -361,6 +361,10 @@ func lift_at(p: Vector3, effect: String, skip := -1) -> float:
 
 
 ## Works out the lift each building's lot gets (after stats update).
+var _lift_of := []  # [the parks' places, coefs] the rows were worked out for
+var _lift_rows := {}  # lot key -> [lot, its pos, value, happy]
+
+
 func update_effects(sim: CitySim) -> void:
 	# Each site's full-strength lift, worked out once (quality and its tree
 	# are the same for every lot). The lots' lifts only change when these,
@@ -377,12 +381,30 @@ func update_effects(sim: CitySim) -> void:
 		return
 	_effects_key = sig
 	_effects_lots = sim.lots
+	# A lot's lift only depends on where it is, the parks (their lifts) and
+	# the trails: with no trails or plazas (trails.lift reads nothing then),
+	# a lot that hasn't moved since keeps the lift it was given.
+	# (A lot's lift reads each park's lift numbers, coefs, and where it is.)
+	var shape := []
+	for id in sites:
+		shape.append([id, sites[id].pos, sites[id].dir, sites[id].size])
+	var keep := trails.paths.is_empty() and trails.plazas.is_empty() and _lift_of == [shape, coefs]
+	var was := _lift_rows if keep else {}
+	_lift_of = [shape, coefs]
+	_lift_rows = {}
 	lot_value.clear()
 	lot_happy.clear()
 	if sites.is_empty() and trails.paths.is_empty():
 		return
 	for key in sim.buildings:
 		if not sim.lots.has(key):
+			continue
+		var lot: Dictionary = sim.lots[key]
+		var row: Array = was.get(key, [])
+		if not row.is_empty() and is_same(row[0], lot) and row[1] == lot.pos:
+			lot_value[key] = row[2]
+			lot_happy[key] = row[3]
+			_lift_rows[key] = row
 			continue
 		var p: Vector3 = sim.lots[key].pos
 		var value := 0.0
@@ -397,6 +419,7 @@ func update_effects(sim: CitySim) -> void:
 		# As lift_at, plus homes along a trail are worth a little more, too.
 		lot_value[key] = minf(minf(value, Balance.AMENITY_VALUE_CAP) + trails.lift(sim, key, "value"), Balance.AMENITY_VALUE_CAP)
 		lot_happy[key] = minf(minf(happy, Balance.AMENITY_HAPPY_CAP) + trails.lift(sim, key, "happy"), Balance.AMENITY_HAPPY_CAP)
+		_lift_rows[key] = [lot, lot.pos, lot_value[key], lot_happy[key]]
 
 
 ## Average happiness lift across the town's homes, 0 to AMENITY_HAPPY_CAP.

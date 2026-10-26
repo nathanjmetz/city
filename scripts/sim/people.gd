@@ -26,6 +26,9 @@ var people := {}
 ## Place ref ("lot:key", "farm:3"...) -> its name. Unique across the town.
 var names := {}
 var _taken := {}   # name -> true
+## The refs in `names` that aren't lots ("farm:3", "service:12"), so sync
+## looks through just those for ones gone, not every place's name.
+var _other_names := {}
 var _homes := {}   # lot key -> [person ids], oldest first
 var _staff := {}   # job ref -> number of people working there
 var _next := 1
@@ -54,9 +57,17 @@ func sync(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void
 		return
 	var ledger := sim.ledger()
 	var keys: Array = ledger.sorted
-	for key in keys:
+	var lot_refs: Array = ledger.refs  # "lot:" + each key
+	for i in keys.size():
+		var key: String = keys[i]
 		var b: Dictionary = sim.buildings[key]
-		var ref: String = "lot:" + key
+		if b.zone == ZoneMap.Zone.RESIDENTIAL:
+			# A home whose people are all here and that has its name: nothing
+			# to do (most homes, most of the time).
+			var here = _homes.get(key)
+			if here != null and (here as Array).size() == b.occ and (b.occ == 0 or names.has(lot_refs[i])):
+				continue
+		var ref: String = lot_refs[i]
 		if b.zone == ZoneMap.Zone.RESIDENTIAL:
 			var list: Array = _homes.get(key, [])
 			while list.size() < b.occ:
@@ -83,14 +94,15 @@ func sync(sim: CitySim, traffic: TrafficSim, rng: RandomNumberGenerator) -> void
 			var n := PersonNames.other(others[ref], rng, _taken)
 			names[ref] = n
 			_taken[n] = true
-	for ref in names.keys():
-		if not ref.begins_with("lot:") and not others.has(ref):
+			_other_names[ref] = true
+	for ref in _other_names.keys():
+		if not others.has(ref):
 			_forget(0, ref)
 	if ledger.sig != _gone_sig:
 		_gone_sig = ledger.sig
 		_gone(sim, traffic)
 	if sim.tick_count % (SYNC_EVERY * 3) == SYNC_AT:
-		_hire(sim, keys, rng)
+		_hire(sim, keys, rng, lot_refs)
 
 
 ## Homes, names and jobs at buildings that are gone.
@@ -191,15 +203,32 @@ func _shop_for(sim: CitySim, p: Dictionary, rng: RandomNumberGenerator) -> Strin
 	var home: Dictionary = sim.lots.get(p.home, {})
 	if home.is_empty():
 		return ""
-	var best := ""
+	# The shops' middles, kept until the shops or the lots change.
+	var shops: Array = sim.zone_keys(ZoneMap.Zone.COMMERCIAL)
+	if not is_same(shops, _shops_of) or not is_same(sim.lots, _shops_lots) or _shops_rev != sim._lot_rev \
+			or _shops_pos.size() != shops.size():
+		_shops_of = shops
+		_shops_lots = sim.lots
+		_shops_rev = sim._lot_rev
+		_shops_pos = PackedVector3Array()
+		for key in shops:
+			_shops_pos.append(sim.lots[key].pos)
+	var at: Vector3 = home.pos
+	var best := -1
 	var best_score := INF
-	for key in sim.zone_keys(ZoneMap.Zone.COMMERCIAL):
-		var d: float = home.pos.distance_to(sim.lots[key].pos)
+	for i in _shops_pos.size():
+		var d: float = at.distance_to(_shops_pos[i])
 		var score := d * (0.5 + rng.randf())
 		if score < best_score:
 			best_score = score
-			best = key
-	return "" if best == "" else "lot:" + best
+			best = i
+	return "" if best == -1 else "lot:" + shops[best]
+
+
+var _shops_of := []
+var _shops_lots := {}
+var _shops_rev := -1
+var _shops_pos := PackedVector3Array()
 
 
 func person_name(id: int) -> String:
@@ -282,9 +311,12 @@ func _name(ref: String, zone: int, rng: RandomNumberGenerator, family := "") -> 
 	var n := PersonNames.place(zone, rng, _taken, family)
 	names[ref] = n
 	_taken[n] = true
+	if not ref.begins_with("lot:"):
+		_other_names[ref] = true
 
 
 func _forget(_zone: int, ref: String) -> void:
+	_other_names.erase(ref)
 	if names.has(ref):
 		_taken.erase(names[ref])
 		names.erase(ref)
@@ -300,12 +332,14 @@ func _job_open(sim: CitySim, ref: String) -> bool:
 
 
 ## Working-age people without a job take one where there are openings.
-func _hire(sim: CitySim, keys: Array, rng: RandomNumberGenerator) -> void:
+func _hire(sim: CitySim, keys: Array, rng: RandomNumberGenerator, refs := []) -> void:
 	var open := []
-	for key in keys:
-		var b: Dictionary = sim.buildings[key]
-		if b.zone != ZoneMap.Zone.RESIDENTIAL and staff("lot:" + key) < b.cap:
-			open.append("lot:" + key)
+	for i in keys.size():
+		var b: Dictionary = sim.buildings[keys[i]]
+		if b.zone != ZoneMap.Zone.RESIDENTIAL:
+			var ref: String = refs[i] if not refs.is_empty() else "lot:" + keys[i]
+			if staff(ref) < b.cap:
+				open.append(ref)
 	if open.is_empty():
 		return
 	if not _seekers_ok:
@@ -338,6 +372,7 @@ func to_dict() -> Dictionary:
 func from_dict(d: Dictionary) -> void:
 	people.clear()
 	names.clear()
+	_other_names.clear()
 	_taken.clear()
 	_homes.clear()
 	_staff.clear()
@@ -361,3 +396,5 @@ func from_dict(d: Dictionary) -> void:
 			set_until(people[id], people[id].until)
 	for ref in names:
 		_taken[names[ref]] = true
+		if not ref.begins_with("lot:"):
+			_other_names[ref] = true

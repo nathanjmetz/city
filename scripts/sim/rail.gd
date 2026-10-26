@@ -160,6 +160,9 @@ var _next := {"depot": 1, "line": 1, "node": 1, "piece": 1, "train": 1}
 var _cum := {}        # piece -> [cumulative metres at each point]
 var _lim := {}        # piece -> [speed limit at each point, m/s]
 var _cover := {}      # 10 m cell -> true where built track lies
+## A hash of _cover's cells (made with it in _rebuild): changes whenever
+## they do, even to as many cells elsewhere (LotGround).
+var cover_hash := 0
 var _dirty := true    # pieces changed: rebuild lengths, cover and crossings
 var _roads_dirty := true
 var _filing_kind := "spur"
@@ -170,7 +173,7 @@ var _filing_kind := "spur"
 ## Where a depot goes when placed beside the road nearest `hit`: [centre,
 ## dir toward the road, axis along the road], or [] if no road is near.
 static func site_near(network: RoadNetwork, hit: Vector3) -> Array:
-	var near := network.find_segment_near(hit, 120.0, 1.0)
+	var near := RoadIndex.segment_near(network, hit, 120.0, 1.0)
 	if near.is_empty() or not RoadStyle.TYPES[network.segments[near.seg].type].lots:
 		return []
 	var c := network.curve_of(near.seg)
@@ -1796,6 +1799,7 @@ func _rebuild(sim: CitySim) -> void:
 			for dx in [-1, 0, 1]:
 				for dz in [-1, 0, 1]:
 					_cover[Vector2i(floori(p.x / 10.0) + dx, floori(p.z / 10.0) + dz)] = true
+	cover_hash = hash(_cover.keys())
 	_find_crossings(sim)
 	sim.mark_lots_dirty()
 

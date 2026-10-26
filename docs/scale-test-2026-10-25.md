@@ -129,13 +129,48 @@ The bots' towns lost most of their people during the runs (from about 16,000 to 
 - The towns were made by the test builder, not played; the bots then added a street a minute. Real players edit more, in bigger bursts.
 - The server and all the players shared one machine that other programs were also using. The server's CPU numbers are low because it mostly waited. Its stalls come from one thread doing too much, so a weaker machine makes them longer.
 - Sync lag "on the wire" is when the go-between saw the bytes, which includes time the receiving game was frozen and not reading. The "on screen" figure is only a comparison at the end of each run, not a continuous measurement; the one-neighbor-a-minute rule comes from reading the code, not from a measurement.
-- The city-line cost is measured (stage timers in the live runs and a separate timing of that code), but why it jumps from 0.34 s to 14 s at four towns is not explained.
+- The city-line cost is measured (stage timers in the live runs and a separate timing of that code). Why it jumps from 0.34 s to 14 s at four towns is explained below, under "After the fixes".
 - Why the people in the bots' towns fell so far was not investigated.
 - No browser player was in these runs. The tools support one (`tools/playtest/soak.sh` with a web export), but the browser's cost for unpacking a 10 to 12 MB welcome on its one thread was not measured here.
 
 ### Questions for Nathan
 
 None. Nothing here touches sign-in, paid services or data; everything ran on this machine.
+
+### After the fixes (2026-10-25, branch `claude/region-load-fixes`)
+
+The three problems above were fixed and the test run again on the same machine, the same day, with the same tools and towns. The runs were shorter than before (10 minutes of play instead of 15 to 20, late joiners at 4 and 6 minutes), and the machine was again shared with other helpers' programs. The numbers come from commit `67783f8`; a reviewer's fixes after it (catch-up waits for the neighbors to arrive, the order of queued copies, a cap on a stalled player's queue, a "first part" mark) touch only rare cases and were checked with the tests, not run again under load.
+
+**What changed:**
+1. **City lines no longer freeze the game.** They are traced a little each frame (2 ms of work), only for pairs of towns near a town whose edge really moved (building inside a town doesn't count), and the old lines stay up until the new ones are ready. *Why four towns took 14 s:* the line starts where two towns come nearest, but only at a spot no third town is nearer. In the 4-town region two towns sat 13 km apart with the other two between them, so no such spot existed. The search had no way to give up, so it checked every one of the first town's 18,000 points, each needing a slow far-off lookup into the other town and the two in between: 11 s for that pair alone. With three towns no pair was blocked like that. Now a pair too far apart is skipped, and a blocked pair gives up after 48 tries and starts instead from where three towns meet. A second bug: county roads count as part of a town, and two joined towns' roads meet in the middle, so the gap between them was 0 m and no line was ever drawn. The roads out of town no longer count.
+2. **Joiners get in, however many towns there are.** The welcome is now the region and the player's own town only; each neighbor follows in its own message as a *picture*: a postcard with its lots packed to the centimetre, about half the size (0.8 to 1.0 MB for a 16,000-person town, was 1.6 to 2.0 MB). Big messages also go in 1 MB parts, so nothing can outgrow the connection's buffer again. If a message still can't be sent, the server writes it in its log, and a player still joining is told *"The region couldn't send you your town. Try again in a minute"* instead of waiting. A game that hears nothing for 90 seconds after saying hello gives up and says so too.
+3. **The server no longer stalls.** The save is written on another core from the copies as they came in (same file format; old saves load). Incoming copies are unpacked and made into pictures on other cores, and old copies are freed there too. A new town is placed without unpacking any neighbor: its neighbors' halves of the county roads are built by their owners' own games (at once if they're playing, else when they come back).
+
+**Before and after** (before: the runs above; after: `tools/scale/results/region-stress-2026-10-25-after/`):
+
+| | 4 players, 20-block towns | 8 players, 16-block towns | 8 players, 20-block towns |
+| --- | --- | --- | --- |
+| Could they join? | yes / yes | yes / yes | **no / yes** |
+| Welcome a player is sent | 10 MB / 5.1 to 5.4 MB (then 3 pictures) | 12 MB / 3.4 to 4.6 MB (then 7 pictures) | 17.3 MB, too big / 5.1 to 6.3 MB (then 7 pictures, 6.5 MB) |
+| Server answer time, median / 95% / worst | 13 ms / 0.7 s / 7.6 s → 13 ms / 16 ms / 44 ms | 13 ms / 1.1 s / 5.3 s → 13 ms / 17 ms / 140 ms | – / 13 ms / 17 ms / 0.6 s |
+| Server loop steps over 0.1 s (worst) | not measured → 3 (0.2 s) | not measured → 6 (0.4 s) | – / 18 (0.7 s, a new player's join) |
+| New player: hello to welcome / game's load | 6 to 8 s / 14 to 16 s → 0.13 to 0.17 s / 8 to 9 s | 5 s / 13 s → 0.27 to 0.35 s / 8 s | – / 0.3 to 0.6 s / 8 to 11 s |
+| Most city lines added to any slow frame | 107 to 131 s → 3 ms (7 ms for the late joiners) | 4 minutes → 4 ms (8 ms for the late joiners) | – / 3 ms |
+| Each bot's worst frame | 107 to 131 s → 13 s | 244 to 256 s → 8 to 10 s | – / 11 to 16 s |
+| Sync on the wire, median / 95% | 0.15 s / 5.9 s → 0.35 s / 0.5 s | 48 s / 214 s → 0.28 s / 0.43 s | – / 0.4 s / 0.64 s |
+| Server memory, start / peak | 2.9 / 3.9 GB → 3.2 / 3.4 GB | 3.9 / 6.7 GB → 4.1 / 4.4 GB | – / 6.0 / 6.3 GB |
+| Out of the server, steady | 505 KB/s → 450 KB/s | 480 KB/s → 1.2 MB/s | – / 1.2 MB/s |
+| Reconnects or failures | none → none | none → none | – / none |
+
+The city lines timed on their own (`region_stress_lines.gd`): four towns took 14 s in one go; now 0.2 s of work spread over 82 frames, at most 4 ms in a frame. Eight 20-block towns: 1.7 s of work over 631 frames, at most 12 to 18 ms in a frame on the busy machine (the slowest single step is under 5 ms; the rest is the machine being shared).
+
+**What this means:** nothing in the region freezes for minutes any more, and nobody is locked out. The bots' remaining freezes (8 to 16 s at worst) are their own towns' thinking at top speed (laying out lots and moving people, `sim.lots.plan` and `sim.people`), and drawing a neighbor's town when it arrives (`net.neighbor_load`, up to 8 s with four players and 15 s with eight 20-block towns on this busy machine). Traffic out of the server went *up* with 8 players (480 KB/s to 1.2 MB/s): the games aren't frozen any more, so they send and receive what they always meant to. That is the "traffic grows with the square of the players" risk above, now visible.
+
+**Still to do, in order of risk:**
+1. **A neighbor's town is still a whole running town in your game** (3 to 8 GB per bot here). The next job, Nathan's decision (2026-10-25): "Neighbors show as a living picture, with full detail only when I fly there." The picture is built for it (see `Region.picture_of`): it already holds what's needed to draw a neighbor (roads, buildings, the lots they stand on, how they look), it goes to each player on its own, the server keeps it packed and ready, and a newer one replaces an older one still waiting to go. That job adds night lights and a sample of traffic to it, draws from it without making a town, and sends it about once a minute.
+2. **Drawing a neighbor's town as it arrives** took up to 15 s on this machine (8 big towns). It's part of the same job.
+3. **Traffic grows with the square of the players.** Pictures halve it; sending a neighbor's picture once a minute instead of on every change would cut it much further.
+4. **A brand-new town's half of a county road into a neighbor waits for that neighbor's player.** Until they come back, others don't see that half of the road. It's in the region's save (`pending`), but a server from before this change reading a newer save drops it.
 
 ## The new drawing style, measured
 

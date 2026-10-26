@@ -47,7 +47,7 @@ static func reach(sim, far_end: Vector3, toward: Vector3, max_len: float) -> Vec
 	var tried := {}
 	while t <= max_len:
 		var p := far_end + d * t
-		var hit: Dictionary = sim.network.find_segment_near(p, 5.0, 2.0)
+		var hit: Dictionary = RoadIndex.segment_near(sim.network, p, 5.0, 2.0)
 		if not hit.is_empty():
 			return hit.point
 		var mile := _county(sim, p, tried)
@@ -77,14 +77,14 @@ static func _county_meets_town(sim, mile: Dictionary) -> bool:
 	var n := maxi(1, ceili(a.distance_to(b) / 16.0))
 	for i in n + 1:
 		var q := a.lerp(b, float(i) / n)
-		if not sim.network.find_segment_near(Vector3(q.x, 0.0, q.y), 10.0, 2.0).is_empty():
+		if not RoadIndex.segment_near(sim.network, Vector3(q.x, 0.0, q.y), 10.0, 2.0).is_empty():
 			return true
 	return false
 
 
 ## The point on a public road within SNAP of p, or Vector3.INF.
 static func on_road(sim, p: Vector3) -> Vector3:
-	var hit: Dictionary = sim.network.find_segment_near(p, SNAP, 2.0)
+	var hit: Dictionary = RoadIndex.segment_near(sim.network, p, SNAP, 2.0)
 	return Vector3.INF if hit.is_empty() else hit.point
 
 

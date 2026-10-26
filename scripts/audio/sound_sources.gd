@@ -58,13 +58,14 @@ static func gather(sim: CitySim, hour: int) -> Array:
 
 
 ## The sources to play: nearest first, within `max_dist` of the listener,
-## at most `slots` in all and at most CAPS[sound] of each sound.
+## at most `slots` in all and at most CAPS[sound] (or the mix's number) of each sound.
 static func pick(sources: Array, listener: Vector3, slots: int, max_dist: float) -> Array:
 	var near := []
-	var max2 := max_dist * max_dist
 	for s in sources:
+		# The mix can shorten or stretch how far each sound carries.
+		var reach: float = max_dist * SoundMix.range_scale("world/" + s.sound)
 		var d2: float = listener.distance_squared_to(s.pos)
-		if d2 <= max2:
+		if d2 <= reach * reach:
 			near.append([d2, s])
 	near.sort_custom(func(a, b): return a[0] < b[0])
 	var used := {}
@@ -72,7 +73,9 @@ static func pick(sources: Array, listener: Vector3, slots: int, max_dist: float)
 	for e in near:
 		var s: Dictionary = e[1]
 		var n: int = used.get(s.sound, 0)
-		if n >= CAPS.get(s.sound, 2):
+		# CAPS are the game's own numbers; the mix (SoundMix) can change them.
+		# A muted sound, or one left out by Solo, takes no slot from the others.
+		if n >= SoundMix.cap("world/" + s.sound, slots) or SoundMix.is_silenced("world/" + s.sound):
 			continue
 		used[s.sound] = n + 1
 		out.append(s)

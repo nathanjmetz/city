@@ -24,6 +24,8 @@ const TOWN_SEND_EVERY := 10.0
 const SAVE_EVERY := 30.0
 ## True until the whole town is built and drawn; the clock waits for it.
 var loading := true
+## The views the loading screen waits on (see LoadGate).
+var _gate := LoadGate.new()
 
 
 # A static Callable that outlives this script crashes the engine at quit
@@ -146,10 +148,26 @@ func _ready() -> void:
 	var walkers := WalkerView.new()
 	walkers.setup(sim.traffic, _tick_fraction)
 	add_child(walkers)
+	# Ready-made people for the walkers nearest the camera (desktop only).
+	if NearPeople.available():
+		var near_people := NearPeople.new()
+		near_people.setup(sim.traffic, _tick_fraction)
+		add_child(near_people)
+	# Life round the homes, parks and shops near the camera (drawn only).
+	var ambient := AmbientLife.new()
+	ambient.setup(sim, (walkers.get_child(0) as MultiMeshInstance3D).material_override)
+	add_child(ambient)
 
 	var look := DayNight.new()
 	look.setup(sim, sky, _tick_fraction)
 	add_child(look)
+	# Streets drawn as country roads go unlit; their pole line is the only one.
+	look.set_country(roads._rural)
+	roads.country_changed.connect(look.set_country)
+
+	var arrows := LevelArrows.new()
+	arrows.setup(sim)
+	add_child(arrows)
 
 	var signals := JunctionView.new()
 	signals.setup(sim.traffic)
@@ -167,6 +185,7 @@ func _ready() -> void:
 	terrain.graded.connect(buildings.regraded)
 	terrain.graded.connect(service_view.regraded)
 	terrain.graded.connect(roads.regraded)
+	terrain.graded.connect(farm_view.regraded)
 	# The county highways run on past the town's links to the horizon.
 	var exits := ExitRoads.new()
 	add_child(exits)
@@ -365,6 +384,14 @@ func _ready() -> void:
 	menu.game = self
 	hud.nothing_to_close.connect(menu.toggle)
 	add_child(menu)
+	# The loading screen stays up until these have drawn what the starting
+	# camera sees (far, haze-distance things keep streaming after).
+	_gate.watch("land", terrain.is_drawn)
+	_gate.watch("streets", roads.is_drawn)
+	_gate.watch("buildings", buildings.is_drawn)
+	_gate.watch("trees", wild.is_drawn)
+	_gate.watch("fields", farm_view.settled)
+	_gate.watch("farmsteads", farmsteads.is_drawn)
 	_progress(0.35, "Laying out the land")
 	await get_tree().process_frame
 	if Session.online():
@@ -373,6 +400,7 @@ func _ready() -> void:
 		region.terrain = terrain
 		region.exits = exits
 		add_child(region)
+		_gate.watch("neighbors", region.is_drawn)
 		var chat := ChatPanel.new()
 		chat.setup(cam, region)
 		add_child(chat)
@@ -454,14 +482,15 @@ func _progress(fraction: float, status := "") -> void:
 		screen.set_progress(fraction, status)
 
 
-## Gives every view a few frames to finish drawing the town (houses, farms,
-## industry, trees), then lifts the loading screen and starts the clock.
+## Waits until every view has drawn what the starting camera sees (houses,
+## farms, trees, streets, land; at most LoadGate.CAP_S), then lifts the
+## loading screen and starts the clock.
 func _settle() -> void:
 	_progress(0.75, "Building the town")
-	await get_tree().process_frame
-	_progress(0.9, "Planting trees")
-	await get_tree().process_frame
-	await get_tree().process_frame
+	# Wait for every view to draw what the starting camera sees; the bar
+	# follows the share of views that are ready.
+	await _gate.wait(get_tree(), func(share: float, status: String) -> void:
+		_progress(0.75 + 0.24 * share, status))
 	var screen := get_tree().root.get_node_or_null("LoadingScreen")
 	if screen != null and screen.has_method("finish"):
 		screen.finish()

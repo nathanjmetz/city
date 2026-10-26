@@ -328,6 +328,27 @@ func covers(p: Vector3) -> bool:
 	return farm_at(p) != -1
 
 
+## Each farm's ground, as farm_at and field_at see it (yard, lane, fields
+## and barns): id -> [a hash of its shape, a box around all of it]. When a
+## farm's hash changes, only lots inside its old and new boxes can have
+## gained or lost a farm under them (CitySim.lots_changed_near).
+func ground_boxes() -> Dictionary:
+	var out := {}
+	for id in farms:
+		var f: Dictionary = farms[id]
+		var barns := Livestock.site_cells(f)
+		var box := Rect2(Vector2(f.pos.x, f.pos.z), Vector2.ZERO)
+		for q in _yard(f):
+			box = box.expand(q)
+		for p in f.drive:
+			box = box.expand(Vector2(p.x, p.z))
+		for c in f.cells + barns:
+			for q in cell_corners(f, c):
+				box = box.expand(q)
+		out[id] = [hash([f.pos, f.dir, f.drive, f.cells, barns]), box.grow(DRIVE_WIDTH + 4.0)]
+	return out
+
+
 ## The farm whose field holds this point, or -1.
 func field_at(p: Vector3) -> int:
 	var q := Vector2(p.x, p.z)
@@ -560,7 +581,10 @@ func decide(usable: Callable) -> bool:
 				# Rented ground it no longer works goes back to its owner.
 				if f.has("rent") and worst[0] in f.rent and not f.cells.any(func(c): return field_of(c) == worst[0]):
 					f.rent.erase(worst[0])
-		elif best != Vector2i.MAX and (f.cells.is_empty() or profit >= 0.0):
+		elif best != Vector2i.MAX and (f.cells.is_empty() or profit >= 0.0 and int(day) % 2 == 0):
+			# A going farm buys more ground only every other day, half the
+			# pace it once did (Nathan, 2026-10-25: "the hub leader growth
+			# should be slower by 50%"); a farm with no fields still starts.
 			# Ground it doesn't own yet is bought first, out of savings.
 			if _buy(f, field_of(best), profit):
 				f.cells.append(best)

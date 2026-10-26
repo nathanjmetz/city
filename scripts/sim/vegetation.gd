@@ -160,21 +160,46 @@ static func cell_of(p: Vector3) -> Vector2i:
 ## their sidewalks and verges, built lots, service buildings, warehouses,
 ## parks, landfills and cemeteries, farmyards and fields, industry pads and
 ## lanes. Empty zoned lots keep their trees until something is built there.
+static var _road_keys := {}  # network instance id -> [revision, segment count, {key: Callable}]
+static var _lot_keys := {}  # lot key -> [lot, its corners, key, Callable]
+
+
 static func sources(sim: Object) -> Dictionary:
 	var out := {}
 	var net: RoadNetwork = sim.network
-	for id in net.segments:
-		var c := net.curve_of(id)
-		var reach := RoadStyle.right_of_way_half(net.segments[id].type) + 1.0
-		var key := "r%d %s %s %s %.1f" % [id, c[0].snapped(Vector3.ONE * 0.1), c[1].snapped(Vector3.ONE * 0.1),
-			c[2].snapped(Vector3.ONE * 0.1), reach]
-		out[key] = func() -> Array:
-			var n := maxi(2, int((c[0].distance_to(c[1]) + c[1].distance_to(c[2])) * 0.5))
-			return _line_cells(RoadNetwork.sample_curve(c[0], c[1], c[2], n), reach)
+	# The roads' keys and cell lists only change with the roads (their
+	# revision moves on with every edit, once a batch of edits is done).
+	var settled: bool = net._batch == 0 and not net._batch_dirty
+	var rc: Array = _road_keys.get(net.get_instance_id(), [])
+	if not settled or rc.is_empty() or rc[0] != net.revision or rc[1] != net.segments.size():
+		var roads := {}
+		for id in net.segments:
+			var c := net.curve_of(id)
+			var reach := RoadStyle.right_of_way_half(net.segments[id].type) + 1.0
+			var key := "r%d %s %s %s %.1f" % [id, c[0].snapped(Vector3.ONE * 0.1), c[1].snapped(Vector3.ONE * 0.1),
+				c[2].snapped(Vector3.ONE * 0.1), reach]
+			roads[key] = func() -> Array:
+				var n := maxi(2, int((c[0].distance_to(c[1]) + c[1].distance_to(c[2])) * 0.5))
+				return _line_cells(RoadNetwork.sample_curve(c[0], c[1], c[2], n), reach)
+		rc = [net.revision, net.segments.size(), roads]
+		if settled:
+			if _road_keys.size() > 8:
+				_road_keys.clear()  # networks from tests come and go
+			_road_keys[net.get_instance_id()] = rc
+	out.merge(rc[2])
+	# A built lot's key and cell list, kept while the lot is the same one,
+	# the same shape.
 	for key in sim.buildings:
 		if sim.lots.has(key):
-			var poly: PackedVector2Array = sim.lots[key].corners
-			out["b%s %s" % [key, poly[0].snapped(Vector2.ONE * 0.1)]] = _poly_cells.bind(poly, true)
+			var lot: Dictionary = sim.lots[key]
+			var poly: PackedVector2Array = lot.corners
+			var e: Array = _lot_keys.get(key, [])
+			if e.is_empty() or not is_same(e[0], lot) or e[1] != poly:
+				e = [lot, poly, "b%s %s" % [key, poly[0].snapped(Vector2.ONE * 0.1)], _poly_cells.bind(poly, true)]
+				_lot_keys[key] = e
+			out[e[2]] = e[3]
+	if _lot_keys.size() > sim.buildings.size() * 2 + 1000:
+		_lot_keys.clear()
 	for id in sim.services.buildings:
 		out["s%d" % id] = _poly_cells.bind(sim.services.footprint(id))
 	# The water utility's yard (wells, tower, plants) as it grows.
@@ -253,7 +278,10 @@ static func sources(sim: Object) -> Dictionary:
 			# The lease road or skid trail to it, cut through the woods with
 			# a few metres cleared each side (the strip mine's is its own).
 			if s.kind != "ore":
-				out["it%d %s %s" % [id, pad, s.pos]] = _line_cells.bind(Industry.track(s, pad), 4.0)
+				# Keyed by where the track ends, so a road built beside it
+				# clears the new line on every copy alike.
+				var trk := Industry.track(s, pad, sim.network)
+				out["it%d %s %s %s" % [id, pad, s.pos, trk[trk.size() - 1].round()]] = _line_cells.bind(trk, 4.0)
 	# Rail yards and the track laid so far, with its cleared right of way.
 	for id in sim.rail.depots:
 		var poly: PackedVector2Array = sim.rail.yard_poly(id)
