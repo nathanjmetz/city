@@ -22,6 +22,15 @@ const CALM_FRAMES := 2
 
 ## True while a gate is waiting; views widen their budgets.
 static var loading := false
+## While above 0, the views share this many milliseconds a frame between
+## them, whoever draws first in the frame taking what's left (the home
+## screen draws its town behind a picture while its menu has to stay smooth:
+## BackdropReveal). 0 for the loading screen: each view its own wide share.
+static var share_ms := 0.0
+## The least a view gets when the frame's share is used up, so each still
+## moves along.
+const SHARE_FLOOR_MS := 0.5
+static var _frame_start := 0
 ## How long the last wait took (ms), whether it ended ready or on the cap, and
 ## the names of the views still not ready then (for tests and the log).
 static var last_ms := 0
@@ -33,7 +42,18 @@ var _watched: Array = []  # [name, Callable]
 ## `ms` for a view's per-frame budget: the bigger share while loading
 ## (`boosted` for a view with a lot to draw, such as the buildings).
 static func ms(normal: float, boosted := FRAME_MS) -> float:
-	return maxf(normal, boosted) if loading else normal
+	if not loading:
+		return normal
+	var wide := maxf(normal, boosted)
+	if share_ms <= 0.0:
+		return wide
+	var left := share_ms - (Time.get_ticks_usec() - _frame_start) / 1000.0
+	return clampf(left, SHARE_FLOOR_MS, wide)
+
+
+## A new frame for share_ms (called first thing each frame while sharing).
+static func frame_begins() -> void:
+	_frame_start = Time.get_ticks_usec()
 
 
 ## Adds a view's readiness check (a Callable returning bool).

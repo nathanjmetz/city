@@ -23,6 +23,33 @@ const TURN_SECONDS := 150.0
 
 var _angle := 0.4
 var _life: MenuLife
+## The backdrop is built a piece a frame (_steps, a few milliseconds each),
+## so the menu shows and answers at once; a picture of the town covers it
+## meanwhile (BackdropReveal) and fades into the live one once it's drawn
+## (the critic, 2026-10-26: blank and sluggish for 10-16 s while the whole
+## town was built in one go). A step that returns false runs again next
+## frame.
+var _steps: Array = []
+## The cars and people go on the streets just before the picture fades:
+## too small to see in it, and drawing them slows the town's drawing.
+var _people_in := false
+var _reveal: BackdropReveal
+## Most milliseconds of build steps a frame (a step is never split, so one
+## can run over).
+const STEP_MS := 6.0
+## The backdrop being built, kept between the steps.
+var _sim: MenuSim
+var _town := {}
+var _sky: SkyLight
+var _land: TerrainView
+var _roads: RoadView
+var _buildings: BuildingView
+var _wild: WildView
+var _farmsteads: FarmsteadView
+var _look: DayNight
+var _forced := ""
+## Tools taking the picture hold the camera where it starts (tools/menu_still.gd).
+var hold_camera := false
 var _boost := Callable()
 ## The look switches as the game had them, put back when the menu closes
 ## (the menu turns day and night and the seasons on for itself, unsaved).
@@ -56,6 +83,7 @@ var _retrying := false
 # its script crashes the engine at quit).
 func _exit_tree() -> void:
 	Vegetation.cover_source = Callable()
+	TrafficView.premade.clear()
 	DayNight.cycle_on = _was_cycle
 	DayNight.seasons_on = _was_seasons
 	if _boost.is_valid() and RenderingServer.frame_pre_draw.is_connected(_boost):
@@ -64,7 +92,7 @@ func _exit_tree() -> void:
 
 func _ready() -> void:
 	GameMusic.play(get_tree(), GameMusic.Mode.MENU)
-	_build_backdrop()
+	_start_backdrop()
 	var ui := CanvasLayer.new()
 	add_child(ui)
 	var root := Control.new()
@@ -128,13 +156,20 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	_angle = fposmod(_angle + delta * TAU / TURN_SECONDS, TAU)
-	var ground := Terrain.ground_y(0.0, 0.0)
-	# Low over the rooftops, like a drone circling the square, with the
-	# woods and fields running out to the haze behind.
-	_cam.position = Vector3(cos(_angle) * ORBIT, ground + ORBIT_HEIGHT, sin(_angle) * ORBIT)
-	_cam.look_at(Vector3(0, ground + 8.0, 0))
-	if _shot_path != "":
+	if not _steps.is_empty():
+		var t0 := Time.get_ticks_usec()
+		while not _steps.is_empty() and Time.get_ticks_usec() - t0 < STEP_MS * 1000.0:
+			var step: Callable = _steps.pop_front()
+			if step.call() == false:
+				_steps.push_front(step)
+				break
+	if not _cam.is_inside_tree():
+		return
+	# Still while the picture is up, so it fades into the same view.
+	if not hold_camera and (_reveal == null or not is_instance_valid(_reveal) or _reveal.fading()):
+		_angle = fposmod(_angle + delta * TAU / TURN_SECONDS, TAU)
+	_place_camera()
+	if _shot_path != "" and _life != null:
 		_shot_time += delta
 		if _shot_time >= _shot_at:
 			var image := get_viewport().get_texture().get_image()
@@ -143,6 +178,14 @@ func _process(delta: float) -> void:
 				_life.wall.get("minute", -1), " cars ", _life.sim.traffic.cars.size(), " walkers ",
 				_life.sim.traffic.walkers.size())
 			get_tree().quit()
+
+
+## Low over the rooftops, like a drone circling the square, with the
+## woods and fields running out to the haze behind.
+func _place_camera() -> void:
+	var ground := Terrain.ground_y(0.0, 0.0)
+	_cam.position = Vector3(cos(_angle) * ORBIT, ground + ORBIT_HEIGHT, sin(_angle) * ORBIT)
+	_cam.look_at(Vector3(0, ground + 8.0, 0))
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -483,25 +526,18 @@ func _gap(h: int) -> Control:
 	return c
 
 
-## The town as it is in Marion right now, circled slowly behind the menu.
-func _build_backdrop() -> void:
-	var sky := SkyLight.new()
-	add_child(sky)
-	_cam.fov = 45.0
-	_cam.h_offset = -70.0  # keeps the town clear of the menu
-	# As in play (CityCamera): out past the far land, so the county runs on
-	# into the haze instead of stopping at a line 4 km out.
-	_cam.near = 1.0
-	_cam.far = 24000.0
-	add_child(_cam)
-	var land := TerrainView.new()
-	# The menu's camera stays near the town: no preloading the county.
-	land.keep_land = false
-	add_child(land)
-	# A grown town, made once by tools/menu_town.gd: a player's own early
-	# town is mostly bare lots and half-built shops. Its clock is Marion's.
-	var sim := MenuSim.new()
-	sim.from_dict(Session._read(MENU_TOWN))
+## The town as it is in Marion right now, circled slowly behind the menu:
+## the picture first (cheap), then the town a piece a frame (_steps).
+func _start_backdrop() -> void:
+	for a in OS.get_cmdline_user_args() + OS.get_cmdline_args():
+		if a.begins_with("--menu-time="):
+			_forced = a.trim_prefix("--menu-time=")
+		elif a.begins_with("--menu-angle="):
+			_angle = float(a.trim_prefix("--menu-angle="))
+		elif a.begins_with("--menu-shot="):
+			_shot_path = a.trim_prefix("--menu-shot=")
+		elif a.begins_with("--menu-shot-after="):
+			_shot_at = float(a.trim_prefix("--menu-shot-after="))
 	# The day and the season are the real ones (and the sun, the haze, the
 	# leaves, the snow and the crop calendar follow them: DayNight, as in
 	# the game with day and night and seasons on). Not saved: the choice in
@@ -511,77 +547,183 @@ func _build_backdrop() -> void:
 	_was_seasons = DayNight.seasons_on
 	DayNight.cycle_on = true
 	DayNight.seasons_on = true
-	var look := DayNight.new()
+	_reveal = BackdropReveal.cover(self, MenuStill.texture_for(_marion_now()))
+	# The streets first, then the land under them, then the rest: drawn
+	# side by side, the streets and the land each took two to three times
+	# longer (measured 2026-10-26; why wasn't pinned down).
+	_steps = [_bd_sky, _bd_camera, _bd_read, _bd_sim, _bd_life, _bd_roads, func(): return _roads.is_drawn(),
+		_bd_land, func(): return _land.is_drawn(), _bd_buildings, _bd_wild, _bd_farmsteads, _bd_farms, _bd_exits]
+	# The cars' models a few a frame (all at once they stall a frame).
+	for key in VehicleModels.mesh_keys():
+		_steps.append(func():
+			for lod in 2:
+				TrafficView.premade["%s/%d" % [key, lod]] = VehicleModels.build(key, lod))
+	_steps.append_array([_bd_lights, _bd_signals, _bd_done, _bd_drawn, _bd_cars, _bd_walkers])
+
+
+## Marion's clock now (or the debug time), for picking the picture.
+func _marion_now() -> Dictionary:
+	var unix := Time.get_unix_time_from_system()
+	if _forced != "":
+		var f := MenuLife.parse(_forced)
+		if f > 0.0:
+			unix = f
+	return MarionTime.at(unix)
+
+
+func _bd_sky() -> void:
+	_sky = SkyLight.new()
+	add_child(_sky)
+
+
+func _bd_camera() -> void:
+	_cam.fov = 45.0
+	_cam.h_offset = -70.0  # keeps the town clear of the menu
+	# As in play (CityCamera): out past the far land, so the county runs on
+	# into the haze instead of stopping at a line 4 km out.
+	_cam.near = 1.0
+	_cam.far = 24000.0
+	add_child(_cam)
+	_place_camera()
+
+
+## A grown town, made once by tools/menu_town.gd: a player's own early
+## town is mostly bare lots and half-built shops. Its clock is Marion's.
+func _bd_read() -> void:
+	_town = Session._read(MENU_TOWN)
+
+
+func _bd_sim() -> void:
+	_sim = MenuSim.new()
+	_sim.from_dict(_town)
+	_town = {}
+
+
+func _bd_life() -> void:
+	_look = DayNight.new()
 	_life = MenuLife.new()
-	var forced := ""
-	for a in OS.get_cmdline_user_args() + OS.get_cmdline_args():
-		if a.begins_with("--menu-time="):
-			forced = a.trim_prefix("--menu-time=")
-		elif a.begins_with("--menu-angle="):
-			_angle = float(a.trim_prefix("--menu-angle="))
-		elif a.begins_with("--menu-shot="):
-			_shot_path = a.trim_prefix("--menu-shot=")
-		elif a.begins_with("--menu-shot-after="):
-			_shot_at = float(a.trim_prefix("--menu-shot-after="))
-	_life.setup(sim, look, forced)
+	_life.setup(_sim, _look, _forced)
 	add_child(_life)
 	# Marion's real rain and cloud (MarionWeather), else the same odds as in
 	# play; off if switched off there.
 	var weather := Weather.new()
-	weather.setup(sim, sky)
+	weather.setup(_sim, _sky)
 	add_child(weather)
-	if forced == "":
+	if _forced == "":
 		var report := MarionWeather.new()
 		report.setup(weather)
 		add_child(report)
-	var roads := RoadView.new()
-	add_child(roads)
-	roads.setup(sim.network, sim)
-	land.setup(_cam, sim.network)
-	TerrainView.set_county_hidden(sim.county_removed.keys())
-	var buildings := BuildingView.new()
-	add_child(buildings)
-	buildings.setup(sim)
-	# The same wild woods, brush and county highways as the game.
-	var wild := WildView.new()
-	add_child(wild)
-	wild.setup(sim)
-	land.graded.connect(wild.regraded)
-	# Farmsteads and country homes out in the county.
-	var farmsteads := FarmsteadView.new()
-	add_child(farmsteads)
-	farmsteads.setup(sim)
-	# The farms' own fields, and the crop calendar for the county's.
+
+
+func _bd_roads() -> void:
+	_roads = RoadView.new()
+	# Drawn a few streets a frame, as a neighbor's town is.
+	_roads.sliced = true
+	add_child(_roads)
+	_roads.setup(_sim.network, _sim)
+
+
+func _bd_land() -> void:
+	_land = TerrainView.new()
+	# The menu's camera stays near the town: no preloading the county.
+	_land.keep_land = false
+	_land.gradual = true
+	add_child(_land)
+	_land.setup(_cam, _sim.network)
+	TerrainView.set_county_hidden(_sim.county_removed.keys())
+
+
+func _bd_buildings() -> void:
+	_buildings = BuildingView.new()
+	_buildings.sliced = true
+	add_child(_buildings)
+	_buildings.setup(_sim)
+
+
+## The same wild woods, brush and county highways as the game.
+func _bd_wild() -> void:
+	_wild = WildView.new()
+	add_child(_wild)
+	_wild.setup(_sim)
+	_land.graded.connect(_wild.regraded)
+
+
+## Farmsteads and country homes out in the county.
+func _bd_farmsteads() -> void:
+	_farmsteads = FarmsteadView.new()
+	add_child(_farmsteads)
+	_farmsteads.setup(_sim)
+
+
+## The farms' own fields, and the crop calendar for the county's.
+func _bd_farms() -> void:
 	var farms := FarmView.new()
 	add_child(farms)
-	farms.setup(sim)
+	farms.setup(_sim)
+
+
+func _bd_exits() -> void:
 	var exits := ExitRoads.new()
 	add_child(exits)
-	exits.setup(sim, land, "exits")
-	# The town's people and cars, as in the game.
+	exits.setup(_sim, _land, "exits")
+
+
+## The town's people and cars, as in the game.
+func _bd_cars() -> void:
 	var cars := TrafficView.new()
-	cars.setup(sim.traffic, _life.tick_fraction)
+	cars.setup(_sim.traffic, _life.tick_fraction)
 	add_child(cars)
+	TrafficView.premade.clear()
+
+
+func _bd_walkers() -> void:
 	var walkers := WalkerView.new()
-	walkers.setup(sim.traffic, _life.tick_fraction)
+	walkers.setup(_sim.traffic, _life.tick_fraction)
 	add_child(walkers)
-	look.setup(sim, sky, _life.tick_fraction)
-	add_child(look)  # street lights, headlights, windows at night
+	_people_in = true
+
+
+func _bd_signals() -> void:
 	var signals := JunctionView.new()
-	signals.setup(sim.traffic)
-	signals.roads = roads
+	signals.setup(_sim.traffic)
+	signals.roads = _roads
 	add_child(signals)
+
+
+func _bd_lights() -> void:
+	_look.setup(_sim, _sky, _life.tick_fraction)
+	add_child(_look)  # street lights, headlights, windows at night
 	if RenderingServer.get_current_rendering_method() == "gl_compatibility":
 		# The browser's renderer has no sky bounce light, and a low sun
 		# alone leaves the town flat and grey there: lift sun and shade,
 		# after DayNight has set them for the frame.
+		var sky := _sky
 		_boost = func():
 			sky.sun.light_energy *= 2.0
 			sky.env.ambient_light_energy *= 2.2
 		RenderingServer.frame_pre_draw.connect(_boost)
+	var sim := _sim
 	Vegetation.cover_source = func(p: Vector3) -> Array:
 		var x := p.x + sim.terrain_offset.x
 		var z := p.z + sim.terrain_offset.y
 		return Terrain.wild_cover(x, z) + [Terrain.crops(x, z)]
-	# Hidden behind a fade until the backdrop is drawn (BackdropReveal).
-	BackdropReveal.cover(self, [land.is_drawn, roads.is_drawn, buildings.is_drawn, wild.is_drawn, farmsteads.is_drawn])
+
+
+## The picture fades into the town once it's drawn (BackdropReveal).
+func _bd_done() -> void:
+	_reveal.watch(_drawn_checks() + [func(): return _people_in])
+
+
+func _drawn_checks() -> Array:
+	return [_land.is_drawn, _roads.is_drawn, _buildings.is_drawn, _wild.is_drawn, _farmsteads.is_drawn]
+
+
+## Waits (false: again next frame) until the town is drawn, or the picture
+## gave up waiting.
+func _bd_drawn() -> bool:
+	if not is_instance_valid(_reveal) or _reveal.fading():
+		return true
+	for check in _drawn_checks():
+		if not check.call():
+			return false
+	return true

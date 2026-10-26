@@ -467,6 +467,10 @@ var _chunks := {}
 var _dirty := {}  # Vector2i chunk -> [Rect2] graded since it was built
 var _graded := {}  # segment id -> [points, inner, outer, bounds]
 var _first := true
+## The first drawing comes all at once, so the land is there when the game
+## opens behind its loading screen; `gradual` draws it a slice a frame like
+## any later change (the home screen, which shows a picture meanwhile).
+var gradual := false
 var _far: MeshInstance3D
 static var _far_mat: ShaderMaterial
 var _far_centre := Vector2(INF, INF)
@@ -604,7 +608,7 @@ func _process(_delta: float) -> void:
 			# Graded under a new road: redo just that strip of the chunk.
 			patch_chunk(have.data, _dirty[key])
 			have.ground.mesh = have.data.ground
-		elif _first or _cache.get(key, {}).has(want[key]):
+		elif (_first and not gradual) or _cache.get(key, {}).has(want[key]):
 			_build(key, want[key])
 		else:
 			# A few rows at a time; the old chunk shows until it's done.
@@ -624,11 +628,11 @@ func _process(_delta: float) -> void:
 		_dirty.erase(key)
 		# Build everything at once the first time, so the land is there
 		# when the game opens; then a little each frame.
-		if not _first and Time.get_ticks_msec() - start > LoadGate.ms(_budget_ms):
+		if (not _first or gradual) and Time.get_ticks_msec() - start > LoadGate.ms(_budget_ms):
 			done = false
 			break
 	_settled_eye = eye if done else Vector3(INF, INF, INF)
-	_update_far(flat_eye, _first)
+	_update_far(flat_eye, _first and not gradual)
 	_update_mask()
 	_first = false
 	Perf.add("frame.terrain", t0)

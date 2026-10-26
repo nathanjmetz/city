@@ -113,6 +113,12 @@ class Motion:
 	var roll := 0.0
 
 
+## Car meshes built ahead, a few a frame, by a screen that can't stall on
+## them all at once (the home screen: about 60 ms for every model):
+## "key/lod" -> ArrayMesh. Built here if missing.
+static var premade := {}
+
+
 func setup(t: TrafficSim, fraction: Callable) -> void:
 	traffic = t
 	tick_fraction = fraction
@@ -127,7 +133,9 @@ func _ready() -> void:
 			mm.transform_format = MultiMesh.TRANSFORM_3D
 			mm.use_custom_data = true
 			mm.use_colors = true
-			mm.mesh = VehicleModels.build(key, lod)
+			mm.mesh = premade.get("%s/%d" % [key, lod], null)
+			if mm.mesh == null:
+				mm.mesh = VehicleModels.build(key, lod)
 			var mi := MultiMeshInstance3D.new()
 			mi.multimesh = mm
 			mi.material_override = mat
