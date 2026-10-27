@@ -157,6 +157,16 @@ func _own(ref: String, fam_id: int, what: String, name: String, year: int, forme
 	_stale = true
 
 
+## A business back as it was, with its family and name (an undo put back
+## the farm or company a road had taken). Not if its name is in use again.
+func put_back(ref: String, b: Dictionary) -> void:
+	if owned.has(ref) or _used.has(str(b.name)):
+		return
+	owned[ref] = b
+	_used[str(b.name)] = ref
+	_stale = true
+
+
 # ------------------------------------------------------------- reading
 
 func name_of(ref: String) -> String:
