@@ -2121,6 +2121,16 @@ func _fill_traffic_row(row: HBoxContainer) -> void:
 		b.pressed.connect(func(): traffic_tool.set_mode(m))
 		(entry[4] as HBoxContainer).add_child(b)
 		_traffic_cards[m] = b
+	# No-turn signs (CS2's turn rules): click a junction to put one up.
+	var turns := _section(row, "Turns  ·  click a junction to ban a turn there")
+	for entry in [[TrafficTool.Mode.NO_LEFT, "noleft", "No left", "No left turns at a junction (click again to allow them)"],
+			[TrafficTool.Mode.NO_RIGHT, "noright", "No right", "No right turns at a junction (click again to allow them)"]]:
+		var m: int = entry[0]
+		var b := _card(entry[1], entry[2], "")
+		b.tooltip_text = entry[3]
+		b.pressed.connect(func(): traffic_tool.set_mode(m))
+		turns.add_child(b)
+		_traffic_cards[m] = b
 	# Street rules (CS2's pedestrian streets): click a town street to make
 	# it car-free. Here with the junction rules, so the Roads menu keeps to
 	# its 1000 px (tests/test_build_menus.gd).

@@ -5,16 +5,18 @@ extends Node3D
 ## coloured by traffic flow; pick a control and click junctions to set it.
 ## Car-free: click a town street to close it to cars as a walking plaza
 ## (CS2's pedestrian streets), or click a car-free one to open it again.
+## No left / No right put up (or take down) a no-turn sign at a junction.
 
 signal mode_changed(mode: int)
 signal hint_changed(text: String)
 
-enum Mode { NONE, VIEW, AUTO, SIGNAL, ALL_STOP, STOP, NO_CONTROL, TIMING, SMART, CAR_FREE }
+enum Mode { NONE, VIEW, AUTO, SIGNAL, ALL_STOP, STOP, NO_CONTROL, TIMING, SMART, CAR_FREE, NO_LEFT, NO_RIGHT }
 
 const RULE_FOR := {
 	Mode.AUTO: -1, Mode.SIGNAL: TrafficSim.Rule.SIGNAL, Mode.ALL_STOP: TrafficSim.Rule.ALL_STOP,
 	Mode.STOP: TrafficSim.Rule.PRIORITY, Mode.NO_CONTROL: TrafficSim.Rule.NONE,
 }
+const BAN_FOR := {Mode.NO_LEFT: "left", Mode.NO_RIGHT: "right"}
 const RULE_NAME := ["no signs or lights", "traffic lights", "an all-way stop", "stop signs on the side road"]
 
 var sim: CitySim
@@ -108,6 +110,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			_hint = ""
 			_update_hint()
 	elif mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not mb.alt_pressed \
+			and _hover != -1 and BAN_FOR.has(mode):
+		# A no-turn sign up, or down again if it's there.
+		var turn: String = BAN_FOR[mode]
+		sim.apply({"type": "turn_ban", "node": _hover, "turn": turn,
+			"on": not sim.traffic.turn_bans.get(_hover, {}).has(turn)})
+		_hint = ""
+		_update_hint()
+	elif mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not mb.alt_pressed \
 			and _hover != -1 and RULE_FOR.has(mode):
 		sim.apply({"type": "set_junction", "node": _hover, "rule": RULE_FOR[mode]})
 		_hint = ""
@@ -134,7 +144,7 @@ func _process(delta: float) -> void:
 		_street_pick(hit)
 		return
 	var node := -1
-	if hit != null and RULE_FOR.has(mode):
+	if hit != null and (RULE_FOR.has(mode) or BAN_FOR.has(mode)):
 		node = _junction_near(hit)
 	elif hit != null and (mode == Mode.TIMING or mode == Mode.SMART):
 		node = _junction_near(hit)
@@ -243,6 +253,12 @@ func _update_hint() -> void:
 					"this hour" if ago < 1 else ("an hour ago" if ago == 1 else "%d hours ago" % ago))
 		if _wave_from != -1:
 			text += "\nGreen wave: Ctrl-click the next light down the street (it will turn green as cars from the last one arrive)."
+	elif BAN_FOR.has(mode):
+		var turn: String = BAN_FOR[mode]
+		text = "Click a junction to put up a no %s turn sign: drivers go another way. Click again to take it down." % turn
+		if _hover != -1:
+			var banned: bool = sim.traffic.turn_bans.get(_hover, {}).has(turn)
+			text += "\nThis junction %s." % ("has no %s turns" % turn if banned else "allows %s turns" % turn)
 	elif RULE_FOR.has(mode):
 		text = ["", "", "Click a junction to let the game choose its control.",
 			"Click a junction to add traffic lights.", "Click a junction to make it an all-way stop.",

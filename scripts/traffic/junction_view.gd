@@ -6,7 +6,9 @@ extends Node3D
 ## galvanised post, 7 ft to the bottom of the sign, green street-name blades
 ## on top. Shaped town junctions are painted by JunctionMarks' rules
 ## (crosswalks on every leg, stop and yield lines); other junctions get a
-## stop bar and crosswalk across each controlled approach.
+## stop bar and crosswalk across each controlled approach. A no-turn sign
+## the player put up (MUTCD R3-1 / R3-2, 24 in square) stands on its own
+## post on each approach it applies to.
 
 const POLE_H := 5.8
 const RED := Color(1.0, 0.12, 0.08)
@@ -18,6 +20,8 @@ const LENS_DARK := 0.12
 const HEAD_W := 0.36
 const HEAD_H := 1.05
 const HEAD_D := 0.3
+## A no-turn sign is 24 in square (MUTCD R3-1, R3-2 on conventional roads).
+const NO_TURN := 0.61
 
 var traffic: TrafficSim
 ## The road view, for where shaped town junctions make each road stop short.
@@ -37,6 +41,9 @@ var _plates: MultiMeshInstance3D
 var _stops: MultiMeshInstance3D
 var _yields: MultiMeshInstance3D
 var _blades: MultiMeshInstance3D
+var _no_left: MultiMeshInstance3D
+var _no_right: MultiMeshInstance3D
+var _sign_backs: MultiMeshInstance3D
 var _paint := MeshInstance3D.new()
 ## [node, way] for each signal head, in instance order.
 var _head_ways := []
@@ -78,6 +85,18 @@ func _ready() -> void:
 	_yields = _batch(_plate(0.5, 3), red_sign)
 	var green := RoadStyle.material(Color(0.05, 0.36, 0.2))
 	_blades = _batch(_box(Vector3(0.9, 0.16, 0.03)), green)
+	var quad := QuadMesh.new()
+	quad.size = Vector2(NO_TURN, NO_TURN)
+	for side in ["left", "right"]:
+		var face := StandardMaterial3D.new()
+		face.albedo_texture = _no_turn_texture(side == "left")
+		face.roughness = 0.5
+		var inst := _batch(quad, face)
+		if side == "left":
+			_no_left = inst
+		else:
+			_no_right = inst
+	_sign_backs = _batch(_box(Vector3(NO_TURN, NO_TURN, 0.012)), back)
 	_paint.material_override = Surfaces.paint(RoadStyle.MARKING_WHITE)
 	_paint.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_paint)
@@ -119,6 +138,8 @@ func _rebuild_all() -> void:
 	var stops := []
 	var yields := []
 	var blades := []
+	var no_turn := {"left": [], "right": []}
+	var backs := []
 	var paint := SurfaceTool.new()
 	paint.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var any_paint := false
@@ -260,6 +281,30 @@ func _rebuild_all() -> void:
 					yields.append(sign_t)
 				else:
 					stops.append(sign_t)
+	# No-turn signs: on the right of each approach a ban applies to, a
+	# little before the stop line, the left sign above the right one.
+	for n in nodes:
+		for wid in traffic.ways_into(n):
+			var gone: Array = traffic.banned_from(wid)
+			if gone.is_empty():
+				continue
+			var sl := traffic.stop_line(wid)
+			var half: float = RoadStyle.TYPES[traffic.ways[wid].type].width * 0.5
+			var base := Terrain.lift(sl.pos + sl.right * (half + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH * 0.5)
+				- sl.dir * 7.0)
+			var top := 2.13 + NO_TURN * gone.size()  # 7 ft to the bottom of the lowest sign
+			poles.append(Transform3D(Basis().scaled(Vector3(0.45, top, 0.45)), base + Vector3(0, top * 0.5, 0)))
+			var face := Basis.looking_at(sl.dir, Vector3.UP)  # facing the drivers
+			var y := top - NO_TURN * 0.5
+			for turn in ["left", "right"]:
+				if turn in gone:
+					var t := Transform3D(face, base + Vector3(0, y, 0) - sl.dir * 0.06)
+					no_turn[turn].append(t)
+					backs.append(t * Transform3D(Basis(), Vector3(0, 0, -0.01)))
+					y -= NO_TURN + 0.02
+	_fill(_no_left, no_turn.left)
+	_fill(_no_right, no_turn.right)
+	_fill(_sign_backs, backs)
 	_fill(_poles, poles)
 	_fill(_arms, arms)
 	_fill(_heads, heads)
@@ -403,6 +448,35 @@ static func _sign_mesh(r: float, face: Material, back: Material) -> ArrayMesh:
 		st.commit(mesh)
 		mesh.surface_set_material(side, face if side == 0 else back)
 	return mesh
+
+
+## A 64 px no-turn face (MUTCD R3-1 / R3-2): white square, black border,
+## a black arrow turning left (or right) under a red ring and slash.
+static func _no_turn_texture(left: bool) -> ImageTexture:
+	var n := 64
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var white := Color(0.95, 0.95, 0.93)
+	var black := Color(0.05, 0.05, 0.05)
+	var red := Color(0.75, 0.06, 0.06)
+	for y in n:
+		for xx in n:
+			var x := xx if left else n - 1 - xx  # drawn turning left, mirrored for right
+			var c := white
+			if xx < 3 or xx > n - 4 or y < 3 or y > n - 4:
+				c = black
+			elif (x >= 35 and x <= 40 and y >= 27 and y <= 52) or (x >= 21 and x <= 40 and y >= 27 and y <= 32):
+				c = black  # the stem and the turn
+			elif x >= 11 and x <= 22 and absf(y - 29.5) <= (x - 11) * 0.8:
+				c = black  # the arrowhead
+			var q := Vector2(xx - 31.5, y - 31.5)
+			var r := q.length()
+			if r >= 23.0 and r <= 28.0:
+				c = red
+			elif r < 23.0 and absf(q.x - q.y) * 0.7071 < 2.6:
+				c = red  # the slash, top left to bottom right
+			img.set_pixel(xx, y, c)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
 
 
 ## A 64 px STOP face: red octagon field, white border, white letters.

@@ -166,6 +166,7 @@ var _out := {}    # node -> [way ids leaving]
 var _turns := {}  # way -> [ways it may turn into]
 var _arrows := {} # way -> {next way: [lanes that may take it]}
 var _kind := {}   # Vector2i(way, next) -> Turn
+var _banned := {} # way -> ["left" and/or "right"]: turns a no-turn sign took away
 var _tcost := {}  # way -> PackedFloat64Array, _turn_cost for each of _turns[way]
 var _wend := {}   # way -> where it ends (x, z), for the route planner's estimate
 var _vtop := 1.0  # the fastest limit on any way, m/s
@@ -495,6 +496,56 @@ func _way_pose(w: Dictionary, lane: int, d: float) -> Array:
 
 
 ## Sets how a junction is controlled (a Rule, or -1 for automatic).
+## No left turn and no right turn signs the player put up at a junction
+## (MUTCD R3-1 and R3-2, CS2's turn rules): node -> {"left": true, ...}.
+## U-turns are never made at a junction anyway, only at a dead end.
+var turn_bans := {}
+const BAN_TURN := {"left": Turn.LEFT, "right": Turn.RIGHT}
+
+
+## Puts up or takes down a no-turn sign ("left" or "right") at a junction.
+func set_turn_ban(node: int, turn: String, on: bool) -> bool:
+	if not BAN_TURN.has(turn) or not network.nodes.has(node) or network.segments_at(node).size() < 3:
+		return false
+	var bans: Dictionary = turn_bans.get(node, {})
+	if bans.has(turn) == on:
+		return false
+	if on:
+		bans[turn] = true
+	else:
+		bans.erase(turn)
+	if bans.is_empty():
+		turn_bans.erase(node)
+	else:
+		turn_bans[node] = bans
+	_rebuild()
+	return true
+
+
+## The turns a no-turn sign takes away from cars arriving on a way.
+func banned_from(way: int) -> Array:
+	return _banned.get(way, [])
+
+
+func bans_to_dict() -> Dictionary:
+	var out := {}
+	for n in turn_bans:
+		out[str(n)] = turn_bans[n].keys()
+	return out
+
+
+func bans_from_dict(d: Dictionary) -> void:
+	turn_bans.clear()
+	for k in d:
+		var bans := {}
+		for t in d[k]:
+			if BAN_TURN.has(str(t)):
+				bans[str(t)] = true
+		if not bans.is_empty():
+			turn_bans[int(k)] = bans
+	_dirty = true
+
+
 func set_rule(node: int, rule: int) -> bool:
 	if not network.nodes.has(node) or network.segments_at(node).size() < 3:
 		return false
@@ -1134,6 +1185,7 @@ func _rebuild() -> void:
 	_turns.clear()
 	_arrows.clear()
 	_kind.clear()
+	_banned.clear()
 	_conns.clear()
 	_cfor.clear()
 	_conflict.clear()
@@ -1208,6 +1260,9 @@ func _rebuild() -> void:
 	for n in overrides.keys():
 		if not at_node.has(n) or at_node[n].size() < 3:
 			overrides.erase(n)
+	for n in turn_bans.keys():
+		if not at_node.has(n) or at_node[n].size() < 3:
+			turn_bans.erase(n)
 	for n in node_ids:
 		_build_turns(n)
 		_build_control(n, at_node[n])
@@ -1249,6 +1304,24 @@ func _build_turns(n: int) -> void:
 		if outs.is_empty() and uturn != -1:
 			outs.append([PI, uturn])  # dead end: turn around
 		outs.sort()
+		var bans: Dictionary = turn_bans.get(n, {})
+		if not bans.is_empty():
+			# No-turn signs take those turns away, unless that would leave
+			# a car nowhere to go.
+			var kept := []
+			var gone := []
+			for o in outs:
+				var word := ""
+				for t in bans:
+					if _turn_kind(o[0], o[1] == uturn) == BAN_TURN[t]:
+						word = t
+				if word == "":
+					kept.append(o)
+				elif not word in gone:
+					gone.append(word)
+			if not kept.is_empty() and not gone.is_empty():
+				outs = kept
+				_banned[wi] = gone
 		var m := outs.size()
 		var nl: int = w.lanes
 		_turns[wi] = []
@@ -1256,14 +1329,7 @@ func _build_turns(n: int) -> void:
 		for j in m:
 			var wo: int = outs[j][1]
 			var ang: float = outs[j][0]
-			var kind := Turn.STRAIGHT
-			if wo == uturn:
-				kind = Turn.UTURN
-			elif ang > deg_to_rad(35.0):
-				kind = Turn.RIGHT
-			elif ang < deg_to_rad(-35.0):
-				kind = Turn.LEFT
-			_kind[Vector2i(wi, wo)] = kind
+			_kind[Vector2i(wi, wo)] = _turn_kind(ang, wo == uturn)
 			# Lanes share the turns left to right, like auto lane arrows.
 			var lanes := []
 			for i in nl:
@@ -1271,6 +1337,17 @@ func _build_turns(n: int) -> void:
 					lanes.append(i)
 			_turns[wi].append(wo)
 			_arrows[wi][wo] = lanes
+
+
+## Straight on, right, left or a U-turn, by the angle between the ways.
+static func _turn_kind(ang: float, uturn: bool) -> int:
+	if uturn:
+		return Turn.UTURN
+	if ang > deg_to_rad(35.0):
+		return Turn.RIGHT
+	if ang < deg_to_rad(-35.0):
+		return Turn.LEFT
+	return Turn.STRAIGHT
 
 
 ## The lane a car lands in after a turn: lefts keep left, rights keep right,

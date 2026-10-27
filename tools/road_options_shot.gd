@@ -4,7 +4,8 @@ extends SceneTree
 ## Run: godot -s tools/road_options_shot.gd -- <step> <out_prefix>
 ## Steps: oneway (the one-way boulevard and the Boulevard menu), scurve (an
 ## S-curve built, and the Draw tools), snap (the snap switches, Roads off),
-## carfree (a street made car-free, close up and with the tool).
+## carfree (a street made car-free, close up and with the tool), turns (no
+## left and no right turn signs at a junction, and the Traffic tools).
 
 var _main: Node
 var _hud: Hud
@@ -40,6 +41,7 @@ func _process(_delta: float) -> bool:
 			"scurve": _scurve(sim)
 			"snap": _snap(sim)
 			"carfree": _car_free(sim)
+			"turns": _turns(sim)
 		if not _shots.is_empty():
 			_shots[0][1].call()
 	# Each shot gets 90 frames to settle, then is saved and the next set up.
@@ -127,6 +129,38 @@ func _car_free(sim: CitySim) -> void:
 			traffic.set_mode(TrafficTool.Mode.NONE)
 			_hud.close_all()
 			_aim(Vector3(0, 0, -60), 30.0, 28.0, 45.0)],
+	]
+
+
+func _turns(sim: CitySim) -> void:
+	# An avenue crossing a street, with no left and no right turn signs, on
+	# open ground clear of the state highway.
+	var o := Vector3(0, 0, -320)
+	sim.apply({"type": "build_road", "start": [o.x - 200, o.z], "ctrl": [o.x, o.z], "end": [o.x + 200, o.z],
+		"road": RoadStyle.Type.AVENUE})
+	sim.apply({"type": "build_road", "start": [o.x, o.z - 150], "ctrl": [o.x, o.z], "end": [o.x, o.z + 150]})
+	sim.tick()
+	var c := sim.network.find_node_near(o, 1.0)
+	sim.apply({"type": "turn_ban", "node": c, "turn": "left", "on": true})
+	sim.apply({"type": "turn_ban", "node": c, "turn": "right", "on": true})
+	var traffic: TrafficTool = _main.find_children("*", "TrafficTool", false, false)[0]
+	# The signs facing the drivers coming in from the west.
+	var west := -1
+	for wi in sim.traffic.ways_into(c):
+		if sim.traffic.ways[wi].pts[0].x < o.x - 1.0:
+			west = wi
+	var sl := sim.traffic.stop_line(west)
+	var sign_at: Vector3 = sl.pos + sl.right * (RoadStyle.half_width(RoadStyle.Type.AVENUE) + 1.2) - sl.dir * 7.0
+	_shots = [
+		["menu", func():
+			_aim(o, 0.0, 55.0, 160.0)
+			_hud._open("roads")
+			traffic.set_mode(TrafficTool.Mode.NO_LEFT)],
+		["close", func():
+			traffic.set_mode(TrafficTool.Mode.NONE)
+			_hud.close_all()
+			# From up the road the drivers come in on, just past the sign.
+			_aim(sign_at + Vector3(2.0, 0, 0), 250.0, 30.0, 16.0)],
 	]
 
 

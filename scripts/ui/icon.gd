@@ -124,6 +124,19 @@ func _draw() -> void:
 			draw_arc(P.call(0.95, 0.95), s * 0.62, PI, PI * 1.5, 24, color, w, true)
 			draw_arc(P.call(0.95, 0.95), s * 0.32, PI, PI * 1.5, 24, color, w, true)
 			draw_arc(P.call(0.95, 0.95), s * 0.47, PI * 1.05, PI * 1.45, 12, Color(color, 0.6), w * 0.6, true)
+		"noleft", "noright":
+			# The no-turn sign: a turn arrow under a red ring and slash.
+			var k := -1.0 if kind == "noleft" else 1.0
+			var c: Vector2 = P.call(0.5, 0.5)
+			var x0 := 0.5 - 0.08 * k
+			line.call(P.call(x0, 0.82), P.call(x0, 0.45))
+			draw_arc(P.call(x0 + 0.12 * k, 0.45), s * 0.12, PI if k > 0 else 0.0, PI * 1.5 if k > 0 else -PI * 0.5,
+				10, color, w, true)
+			var tip: Vector2 = P.call(x0 + 0.12 * k + 0.12 * k, 0.33)
+			_poly([tip + Vector2(0.0, -0.09) * s, tip + Vector2(0.0, 0.09) * s, tip + Vector2(0.11 * k, 0.0) * s], color)
+			var red := Color(0.86, 0.2, 0.18)
+			draw_arc(c, s * 0.42, 0.0, TAU, 32, red, w, true)
+			draw_line(c + Vector2(-0.3, -0.3) * s, c + Vector2(0.3, 0.3) * s, red, w, true)
 		"scurve":
 			# A road that bends one way then back: two S-shaped edges and a
 			# dashed centre line.
