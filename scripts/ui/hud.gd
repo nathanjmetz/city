@@ -1566,9 +1566,6 @@ func _roads_drawer() -> PanelContainer:
 		_type_cards[g] = b
 
 	var opts := _section(row, "Options")
-	_parallel_card = _card("parallel", "Parallel", "P")
-	_parallel_card.pressed.connect(func(): road_tool.set_parallel(not road_tool.parallel))
-	opts.add_child(_parallel_card)
 	# Height: a three-way pill, Bridge over Ground over Tunnel, in one card's
 	# space (it was a word between two arrows, which looked broken). Bridge
 	# and Tunnel step up or down; the middle shows the height and resets it.
@@ -1588,11 +1585,18 @@ func _roads_drawer() -> PanelContainer:
 		elev.add_child(seg)
 		_elevation_segs.append(seg)
 
-	# Snap switches, two pills like the height one (CS2's snapping options).
+	# Parallel and the snap switches (CS2's snapping options), three pills
+	# in one card's space like the height ones, so the Roads menu keeps to
+	# its 1000 px (tests/test_build_menus.gd).
 	var snap := VBoxContainer.new()
 	snap.add_theme_constant_override("separation", 1)
 	snap.custom_minimum_size = Vector2(60, 50)
 	opts.add_child(snap)
+	_parallel_card = _segment(60)
+	_parallel_card.text = "Parallel"
+	_parallel_card.tooltip_text = "Parallel: a second road alongside, [ ] set the gap  (P)"
+	_parallel_card.toggled.connect(func(on: bool): road_tool.set_parallel(on))
+	snap.add_child(_parallel_card)
 	for entry in [["roads", "Snap roads", "Snap onto roads and junctions. Off: points go just where you click"],
 			["guides", "Guides", "Guide lines, right angles and straight on. Off: draw at any angle"]]:
 		var seg := _segment(60)
