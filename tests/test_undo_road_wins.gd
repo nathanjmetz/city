@@ -14,7 +14,9 @@ func _init() -> void:
 	_water_tower()
 	_water_utility()
 	_farm()
+	_farm_family_gone()
 	_farm_fields()
+	_stacked()
 	_industry()
 	_warehouse()
 	_big_factory()
@@ -117,6 +119,35 @@ func _farm() -> void:
 		"farm: its farmhouse is still going up where it was")
 
 
+## A family that owns nothing leaves town on its daily look. A street takes
+## its farm 20 ticks before that look, the undo comes 40 ticks later: the
+## family comes back with the farm (reviewer 2026-10-27: it came back run
+## by a family that was gone, and its info panel hit a script error).
+func _farm_family_gone() -> void:
+	var sim := _town()
+	sim.apply({"type": "place_farmhouse", "pos": [0, 60], "dir": [0, -1], "crop": "corn"})
+	var id: int = sim.farms.farms.keys()[0]
+	var ref := "farm:%d" % id
+	var day := 24 * CitySim.TICKS_PER_HOUR
+	var look := 13 * CitySim.TICKS_PER_HOUR
+	while posmod(sim.tick_count + 1, day) != posmod(look - 20, day):
+		sim.tick()
+	var fam_id := int(sim.families.owned[ref].family)
+	var fam: Dictionary = sim.families.families[fam_id].duplicate(true)
+	sim.apply({"type": "build_road", "start": [-300, 60], "ctrl": [0, 60], "end": [300, 60]})
+	_check(not sim.farms.farms.has(id), "farm family: the street takes the farm")
+	for i in 40:
+		sim.tick()
+	_check(not sim.families.families.has(fam_id), "farm family: the family, owning nothing, leaves town meanwhile")
+	_check(sim.apply({"type": "undo"}), "farm family: undo goes through")
+	_check(sim.farms.farms.has(id), "farm family: the farm is back")
+	_check(sim.families.families.has(fam_id) and int(sim.families.owned.get(ref, {}).get("family", -1)) == fam_id,
+		"farm family: the same family runs it again")
+	_check(str(sim.families.family_of(ref).get("surname", "")) == str(fam.surname), "farm family: by name (%s)" % fam.surname)
+	_check(not sim.families.rows(sim, ref).is_empty(), "farm family: its info panel reads")
+	sim.tick()
+
+
 ## A street through a farm's fields, not its yard: the fields cut back to the
 ## road come back whole.
 func _farm_fields() -> void:
@@ -144,11 +175,53 @@ func _farm_fields() -> void:
 	f = sim.farms.farms.get(id, {})
 	_check(not f.is_empty() and f.cells.size() < was.cells.size(), "farm fields: the road takes some (%d of %d cells left)"
 		% [f.get("cells", []).size(), was.cells.size()])
+	# The farm plants more while the undo waits: that stays (reviewer
+	# 2026-10-27).
+	var cut: int = f.cells.size()
+	for i in 40:
+		if f.cells.size() > cut:
+			break
+		sim.farms.decide(sim.field_usable)
+	var grown: Array = f.cells.filter(func(c): return not c in was.cells)
+	_check(not grown.is_empty(), "farm fields: the farm plants a new field meanwhile (%d)" % grown.size())
 	_check(sim.apply({"type": "undo"}), "farm fields: undo goes through")
 	f = sim.farms.farms.get(id, {})
-	_check(not f.is_empty() and f.cells == was.cells and not sim.farms.trim.has(id), "farm fields: they come back whole (%d of %d cells)"
-		% [f.get("cells", []).size(), was.cells.size()])
+	_check(not f.is_empty() and was.cells.all(func(c): return c in f.cells) and not sim.farms.trim.has(id),
+		"farm fields: they come back whole (%d cells, %d before the street)" % [f.get("cells", []).size(), was.cells.size()])
+	_check(not f.is_empty() and grown.all(func(c): return c in f.cells), "farm fields: the field planted meanwhile stays")
+	_check(f.get("cells", []).size() == was.cells.size() + grown.size(), "farm fields: no field twice")
 	_check(sim.economy.money == money, "farm fields: the money is where it was")
+
+
+## Undos in a row with something placed between two streets: each street
+## comes back out in turn, and both towers they took come back (reviewer
+## 2026-10-27: the third undo took tower B's placing back instead, and the
+## first street stayed with both towers gone).
+func _stacked() -> void:
+	var sim := _town()
+	var ids := []
+	for x in [-300.0, 300.0]:
+		var site := Services.site_near(sim.network, Services.Kind.WATER_TOWER, Vector3(x, 0, 40))
+		sim.apply({"type": "place_service", "kind": Services.Kind.WATER_TOWER, "pos": [site[0].x, site[0].z],
+			"dir": [site[1].x, site[1].z]})
+		ids.append(sim.services.buildings.keys()[-1])
+	_check(ids.size() == 2 and ids[0] != ids[1], "stacked: two towers")
+	var segs := sim.network.segments.size()
+	var money := sim.economy.money
+	var a: Vector3 = sim.services.buildings[ids[0]].pos
+	var b: Vector3 = sim.services.buildings[ids[1]].pos
+	sim.apply({"type": "build_road", "start": [a.x - 100, a.z], "ctrl": [a.x, a.z], "end": [a.x + 100, a.z]})
+	var spot := Parks.site_near(sim.network, "park", Vector3(0, 0, -40))
+	_check(sim.apply({"type": "place_park", "kind": "park", "pos": [spot[0].x, spot[0].z], "dir": [spot[1].x, spot[1].z]}),
+		"stacked: a park between the streets")
+	sim.apply({"type": "build_road", "start": [b.x - 100, b.z], "ctrl": [b.x, b.z], "end": [b.x + 100, b.z]})
+	_check(not sim.services.buildings.has(ids[0]) and not sim.services.buildings.has(ids[1]), "stacked: the streets take both towers")
+	for i in 3:
+		_check(sim.apply({"type": "undo"}), "stacked: undo %d goes through" % (i + 1))
+	_check(sim.services.buildings.has(ids[0]) and sim.services.buildings.has(ids[1]), "stacked: both towers are back")
+	_check(sim.parks.sites.is_empty(), "stacked: the park is gone again")
+	_check(sim.network.segments.size() == segs, "stacked: both streets are gone (%d of %d segments)" % [sim.network.segments.size(), segs])
+	_check(sim.economy.money == money, "stacked: the money is where it was ($%d off)" % (sim.economy.money - money))
 
 
 func _industry() -> void:

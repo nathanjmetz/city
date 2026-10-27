@@ -31,6 +31,11 @@ const PLACE_TYPES := {
 ## (see things()).
 const ROAD_WINS := ["place_service", "place_farmhouse", "place_industry", "place_warehouse", "place_big_factory",
 	"place_park", "place_power", "place_campus", "place_telecom", "place_bank"]
+## Lists of pieces a road can cut out of something it only cuts back (a
+## farm's fields, a company's pads, a plant's units, a campus's blocks):
+## undo adds back the pieces it lost and keeps any grown since, where every
+## other field goes back to how it was before the street.
+const PIECES := ["cells", "pads", "blocks"]
 
 ## [{type, money, at_ms, ...}], newest last.
 var entries: Array = []
@@ -90,11 +95,14 @@ func undo(sim: CitySim) -> bool:
 	if e.has("roads"):
 		sim.network.restore(e.roads)
 		put_back(sim, e.took)
-		# The build before this one is current again if nothing came between.
-		if not entries.is_empty() and entries.back().has("roads"):
-			var prev: Dictionary = entries.back()
-			if prev.rev == e.rev_before:
-				prev.rev = sim.network.revision
+		# The road built before this one is current again if no road change
+		# came between; something placed between (a park, a tower) doesn't
+		# count (reviewer 2026-10-27: three undos left the first street in).
+		for i in range(entries.size() - 1, -1, -1):
+			if entries[i].has("roads"):
+				if entries[i].rev == e.rev_before:
+					entries[i].rev = sim.network.revision
+				break
 	elif not sim.apply_now({"type": PLACE_TYPES[e.type], "id": e.id}):
 		return false
 	sim.economy.money += int(e.refund)
@@ -112,7 +120,10 @@ static func held(sim: CitySim) -> Dictionary:
 			var hung := {}  # its place in sides() -> that table's entry
 			var at := sides(sim, type, id)
 			for i in at.size():
-				if at[i][0].has(at[i][1]):
+				if is_same(at[i][0], sim.families.owned):
+					if at[i][0].has(at[i][1]):
+						hung[i] = sim.families.keep(at[i][1])  # with its family
+				elif at[i][0].has(at[i][1]):
 					hung[i] = at[i][0][at[i][1]].duplicate(true)
 			copy[id] = [all[id].duplicate(true), hung]
 		out[type] = copy
@@ -121,7 +132,8 @@ static func held(sim: CitySim) -> Dictionary:
 
 ## What a road command took, from held() before it: type -> id -> {"was":
 ## [record, what hung off it]} for one it bulldozed, or {"fields": {key: as
-## it was}, "added": [keys]} for one it cut back.
+## it was}, "added": [keys], "lost": {PIECES key: [pieces]}} for one it cut
+## back.
 static func took(sim: CitySim, was: Dictionary) -> Dictionary:
 	var out := {}
 	for type in was:
@@ -135,13 +147,18 @@ static func took(sim: CitySim, was: Dictionary) -> Dictionary:
 				t = {"was": was[type][id]}
 			elif hash(now[id]) != hash(before):
 				var fields := {}
+				var lost := {}
 				for k in before:
-					if not now[id].has(k) or now[id][k] != before[k]:
+					if k in PIECES and now[id].get(k) is Array and before[k] is Array:
+						var gone: Array = before[k].filter(func(p): return not p in now[id][k])
+						if not gone.is_empty():
+							lost[k] = gone
+					elif not now[id].has(k) or now[id][k] != before[k]:
 						fields[k] = before[k]
 				var added: Array = now[id].keys().filter(func(k): return not before.has(k))
-				if fields.is_empty() and added.is_empty():
+				if fields.is_empty() and added.is_empty() and lost.is_empty():
 					continue
-				t = {"fields": fields, "added": added}
+				t = {"fields": fields, "added": added, "lost": lost}
 			else:
 				continue
 			if not out.has(type):
@@ -177,6 +194,11 @@ static func put_back(sim: CitySim, taken: Dictionary) -> void:
 					now[id][k] = t.fields[k]
 				for k in t.added:
 					now[id].erase(k)
+				# The pieces it lost come back beside any it gained since.
+				for k in t.lost:
+					for p in t.lost[k]:
+						if not p in now[id][k]:
+							now[id][k].append(p)
 	# The lots make way for them again, and whatever draws or counts them
 	# catches up.
 	sim._lots_dirty = true
