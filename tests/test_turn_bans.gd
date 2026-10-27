@@ -135,6 +135,31 @@ func _second_reader() -> void:
 	u.apply({"type": "build_road", "start": [100, 0], "ctrl": [100, -100], "end": [100, -200]})
 	_check(u.traffic.turn_bans.is_empty(), "a new junction starts with no sign")
 
+	# A roundabout's lanes changed: the no-turn sign at a junction beside it
+	# stays (third reader, 2026-10-26: the resize takes the ring out first).
+	var r := CitySim.new()
+	r.economy.money = 10_000_000
+	r.apply({"type": "build_road", "start": [-300, 0], "ctrl": [0, 0], "end": [300, 0]})
+	r.apply({"type": "build_road", "start": [-200, -150], "ctrl": [-200, 0], "end": [-200, 150]})
+	r.apply({"type": "build_roundabout", "center": [100, 0], "radius": 20.0, "lanes": 1, "road": 0})
+	r.tick()
+	var ring := -1
+	for seg in r.network.segments:
+		if RoadStyle.is_ring(r.network.segments[seg].type):
+			ring = seg
+	# Where the street enters the ring: a ring piece each way and the street.
+	var cross := -1
+	for n in r.network.nodes:
+		var segs := r.network.segments_at(n)
+		if segs.size() == 3 and segs.any(func(x): return RoadStyle.is_ring(r.network.segments[x].type)) and cross == -1:
+			cross = n
+	_check(cross != -1 and r.apply({"type": "turn_ban", "node": cross, "turn": "right", "on": true}),
+		"a sign where a street enters the roundabout")
+	_check(ring != -1 and r.apply({"type": "resize_roundabout", "seg": ring, "lanes": 2}), "the roundabout gets two lanes")
+	r.tick()
+	_check(r.network.nodes.has(cross) and r.traffic.turn_bans.get(cross, {}).has("right"),
+		"the sign at the entry is still up (%s)" % [r.traffic.turn_bans])
+
 
 ## How many turns of one kind cars may take at a junction.
 func _count(t: TrafficSim, n: int, kind: int) -> int:

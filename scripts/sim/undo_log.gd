@@ -94,6 +94,11 @@ func undo(sim: CitySim) -> bool:
 	entries.pop_back()
 	if e.has("roads"):
 		sim.network.restore(e.roads)
+		# At once, not at the next traffic rebuild: undo hands out junction
+		# ids again, and a new junction mustn't start with an old one's signs
+		# (second reader, 2026-10-26). Not on every road change, though: a
+		# roundabout resize takes its ring out and puts it back in two steps.
+		sim.traffic.prune_junction_settings()
 		for seg in e.get("closed", {}):
 			sim.traffic.close_segment(int(seg), true, str(e.closed[seg]))
 		for seg in e.get("plazas", []):

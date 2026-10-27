@@ -249,10 +249,7 @@ func _init(net: RoadNetwork) -> void:
 	# A road change before a loaded city has run a tick drops the saved plans.
 	network.changed.connect(func():
 		_dirty = true
-		_keep_routes = false
-		# At once, not at the next rebuild: undo hands out old junction ids
-		# again (second reader, 2026-10-26).
-		prune_junction_settings())
+		_keep_routes = false)
 
 
 func step(sim: CitySim, rng: RandomNumberGenerator) -> void:
