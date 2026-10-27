@@ -312,8 +312,10 @@ static func apply(sim: CitySim, cmd: Dictionary) -> bool:
 			for nid in net.segments:
 				if nid in had:
 					continue
-				var mid: Vector3 = net.sample_segment(nid, 2)[1]
-				if _near_line(mid, line, 1.0):
+				# Along the old street all the way (a quarter, half and three
+				# quarters along), not a crossing road's piece that dips near it.
+				var at := net.sample_segment(nid, 4)
+				if _near_line(at[1], line, 1.0) and _near_line(at[2], line, 1.0) and _near_line(at[3], line, 1.0):
 					if sim.traffic.closed.has(id):
 						sim.traffic.close_segment(nid, true, str(sim.traffic.closed[id]))
 					if id in sim.parks.trails.plazas and not nid in sim.parks.trails.plazas:

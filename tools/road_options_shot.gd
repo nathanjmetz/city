@@ -117,13 +117,14 @@ func _car_free(sim: CitySim) -> void:
 		sim.apply({"type": "build_road", "start": [x, 0], "ctrl": [x, -60], "end": [x, -120]})
 	var seg: int = sim.network.find_segment_near(Vector3(0, 0, -60), 1.0).seg
 	sim.apply({"type": "car_free", "seg": seg, "on": true})
-	var tool: RoadTool = _main.find_children("*", "RoadTool", false, false)[0]
+	var traffic: TrafficTool = _main.find_children("*", "TrafficTool", false, false)[0]
 	_shots = [
 		["menu", func():
 			_aim(Vector3(0, 0, -60), 0.0, 55.0, 230.0)
 			_hud._open("roads")
-			tool.set_mode(RoadTool.Mode.CAR_FREE)],
+			traffic.set_mode(TrafficTool.Mode.CAR_FREE)],
 		["close", func():
+			traffic.set_mode(TrafficTool.Mode.NONE)
 			_hud.close_all()
 			_aim(Vector3(0, 0, -60), 30.0, 28.0, 45.0)],
 	]

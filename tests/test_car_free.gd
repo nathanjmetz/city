@@ -80,6 +80,7 @@ func _second_reader() -> void:
 	sim.tick()
 	var rung: int = sim.network.find_segment_near(Vector3(100, 0, -75), 1.0).seg
 	sim.apply({"type": "car_free", "seg": rung, "on": true})
+	var money_before := sim.economy.money
 	sim.apply({"type": "build_road", "start": [100, -75], "ctrl": [150, -75], "end": [200, -75]})
 	var top: int = sim.network.find_segment_near(Vector3(100, 0, -30), 1.0).seg
 	var bottom: int = sim.network.find_segment_near(Vector3(100, 0, -120), 1.0).seg
@@ -93,6 +94,8 @@ func _second_reader() -> void:
 	_check(sim.network.segments.has(rung) and rung in sim.parks.trails.plazas and not sim.traffic.may_enter(rung, false),
 		"the street is whole and car-free again")
 	_check(not sim.traffic.closed.has(top) and not top in sim.parks.trails.plazas, "and the pieces' ids are cleared")
+	_check(is_equal_approx(sim.economy.money, money_before),
+		"undo gives back the road's cost only, not the old plaza's pavers ($%d, was $%d)" % [sim.economy.money, money_before])
 
 	# Build a street, make it car-free, undo the street: the next road
 	# built (which gets the same id) is open to cars.
