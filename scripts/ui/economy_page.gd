@@ -397,7 +397,7 @@ func hub_name(key: String) -> String:
 			return "%s farm %d  ·  %d acres" % [str(f.crop).capitalize(), id, roundi(f.cells.size() * Farms.ACRES_PER_CELL)]
 		"industry":
 			var s: Dictionary = sim.industry.sites[id]
-			return "%s %d  ·  %d %ss" % [Industry.KINDS[s.kind].name, id, s.pads.size(), Industry.KINDS[s.kind].pad]
+			return "%s %d  ·  %s" % [Industry.KINDS[s.kind].name, id, Words.count(s.pads.size(), Industry.KINDS[s.kind].pad)]
 		"service":
 			return "%s %d  ·  $%s a day" % [Services.KINDS[sim.services.buildings[id].kind].name, id,
 				CitySim.money_text(sim.services.upkeep_of(id))]

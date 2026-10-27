@@ -506,7 +506,7 @@ func gate_problem(id: int, node: Dictionary, ctx: Dictionary) -> String:
 	var s: Dictionary = sites[id]
 	var plants: Array = node.get("plants", [])
 	if not plants.is_empty() and not s.plant in plants:
-		return "Only for a %s." % " or ".join(plants.map(func(p): return PLANTS[p].name.to_lower()))
+		return "Only for %s." % Words.a(" or ".join(plants.map(func(p): return Words.mid(PLANTS[p].name))))
 	match str(node.get("gate", "")):
 		"oil":
 			if gas(s.pos) <= 0.0 or s.cells.is_empty():

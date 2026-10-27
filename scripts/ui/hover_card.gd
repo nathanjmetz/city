@@ -3,7 +3,8 @@ extends PanelContainer
 ## Rest the cursor on a building for a moment and a small card says what it
 ## is, and its problem if it has one, without a click (SimCity 4's query
 ## tool). Just the name and the problem: the info panel has the rest.
-## Only with no tool in hand, and never over the menus or for roads.
+## Only with no tool in hand, and never over the menus or for roads; the card
+## flips above or beside the cursor rather than cover a bar or panel.
 
 const WAIT := 0.6
 ## Moving the pointer this far, in pixels, starts the wait over.
@@ -75,10 +76,15 @@ func _process(delta: float) -> void:
 	var problems: Array = d.get("problems", [])
 	_problem.text = str(problems[0]) if not problems.is_empty() else ""
 	_problem.visible = _problem.text != ""
-	reset_size()
-	var vp := get_viewport_rect().size
-	position = Vector2(clampf(p.x + 18.0, 0.0, vp.x - size.x), clampf(p.y + 18.0, 0.0, vp.y - size.y))
+	place(p)
 	visible = true
+
+
+## Sets the card beside the pointer at `p`, clear of the bars and any open
+## panel (UiStyle.beside_cursor).
+func place(p: Vector2) -> void:
+	reset_size()
+	position = UiStyle.beside_cursor(size, p, get_viewport_rect(), UiStyle.keep_clear_rects(get_tree()))
 
 
 func _hide() -> void:

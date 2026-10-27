@@ -250,14 +250,14 @@ func has_kind(kind: String) -> bool:
 ## street, on clear ground.
 func site_problem(sim: CitySim, kind: String, pos: Vector3, dir: Vector3) -> String:
 	if has_kind(kind):
-		return "The town already has its %s. There's one of each." % KINDS[kind].name.to_lower()
+		return "The town already has its %s. There's one of each." % Words.mid(KINDS[kind].name)
 	var f := {"kind": kind, "pos": pos, "dir": dir, "bays": 0}
 	var poly := corners(f)
 	var mid := center(f)
 	if sim.reserves.kind_at(mid) != "":
 		return "That land is reserved for %s." % Reserves.KINDS[sim.reserves.kind_at(mid)]
 	if Services.road_clash(sim.network, poly):
-		return "Too close to a road. A %s needs %d × %d m." % [KINDS[kind].name.to_lower(),
+		return "Too close to a road. %s needs %d × %d m." % [Words.a_first(Words.mid(KINDS[kind].name)),
 			roundi(site_width(f)), roundi(site_depth(f))]
 	if overlaps(poly):
 		return "Overlaps another big factory."

@@ -189,7 +189,7 @@ static func _ideas(sim: CitySim, out: Array) -> void:
 	var c := sim.culture
 	var day := sim.tick_count / (24 * CitySim.TICKS_PER_HOUR)
 	if c.identity != "" and day - c.since < Balance.CULTURE_NEWS_DAYS:
-		_add(out, "identity_" + c.identity, Kind.HEADS_UP, "Folks around the county have started calling us a %s. Leaders in that line of work find it a little easier to grow here now. The Economy page shows what's rising." % c.title().to_lower())
+		_add(out, "identity_" + c.identity, Kind.HEADS_UP, "Folks around the county have started calling us %s. Leaders in that line of work find it a little easier to grow here now. The Economy page shows what's rising." % Words.a(c.title().to_lower()))
 	if sim.network.segments.size() <= 2:
 		_add(out, "first_streets", Kind.IDEA, "That road in from the highway is all yours. Towns tend to start with a few streets off it.")
 	elif sim.zones.cells.is_empty():

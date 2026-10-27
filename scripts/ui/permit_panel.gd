@@ -538,7 +538,7 @@ static func _names(list: Array) -> String:
 			counts[b.name] = 0
 			order.append(b.name)
 		counts[b.name] += 1
-	var parts := order.map(func(n): return n if counts[n] == 1 else "%d %ss" % [counts[n], n])
+	var parts := order.map(func(n): return n if counts[n] == 1 else Words.count(counts[n], n))
 	if parts.size() == 1:
 		return parts[0]
 	return ", ".join(parts.slice(0, -1)) + " and " + parts[-1]

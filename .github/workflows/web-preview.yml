@@ -115,6 +115,7 @@ jobs:
           run_test tests/test_vehicles.gd
           run_test tests/test_seasons.gd
           run_test tests/test_month_words.gd
+          run_test tests/test_words.gd
           run_test tests/test_sun_path.gd
           run_test tests/test_menu_life.gd
           run_test tests/test_home_screen.gd
@@ -166,6 +167,7 @@ jobs:
           run_test tests/test_telemetry.gd
           run_test tests/test_pollution.gd
           run_test tests/test_placement_hints.gd
+          run_test tests/test_cursor_cards.gd
           run_test tests/test_road_warning.gd
           run_test tests/test_resource_bands.gd
           run_test tests/test_health.gd

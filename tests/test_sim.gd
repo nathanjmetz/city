@@ -245,7 +245,7 @@ func _init() -> void:
 	ws.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
 	ws.apply({"type": "paint_zone", "center": [0, 20], "radius": 40, "zone": ZoneMap.Zone.RESIDENTIAL})
 	ws.economy.money = 400_000
-	_check(ws.utility_problem().begins_with("No power: build a Power line feed"), "warning names power first: " + ws.utility_problem())
+	_check(ws.utility_problem().begins_with("No power: build a power line feed"), "warning names power first: " + ws.utility_problem())
 	var well_site := Services.site_near(ws.network, Services.Kind.WELL, Vector3(120, 0, -30))
 	ws.apply({"type": "place_service", "kind": Services.Kind.WELL, "pos": [well_site[0].x, well_site[0].z],
 		"dir": [well_site[1].x, well_site[1].z]})

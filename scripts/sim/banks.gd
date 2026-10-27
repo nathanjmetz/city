@@ -746,14 +746,14 @@ static func locked_by(sim: CitySim, b: Dictionary, use: String, facts: Dictionar
 		return "built"
 	for r in d.get("requires", []):
 		if not r in b.get("built", []):
-			return "needs a %s first" % dev(b.kind, r).name.to_lower()
+			return "needs %s first" % Words.a(Words.mid(dev(b.kind, r).name))
 	var n: Dictionary = d.get("needs", {})
 	for cond in n:
 		if holds(sim, b, facts, cond, n[cond]):
 			continue
 		var v = n[cond]
 		match cond:
-			"leader_edu": return "needs a %s with a %s" % [KINDS[b.kind].head.to_lower(), Education.degree_name(float(v))]
+			"leader_edu": return "needs %s with %s" % [Words.a(KINDS[b.kind].head.to_lower()), Words.a(Education.degree_name(float(v)))]
 			"population": return "needs a town of %s" % CitySim.money_text(int(v))
 			"local:farm": return "needs %d farms nearby" % int(v)
 			"local:forest": return "needs a forestry company nearby"
@@ -809,12 +809,12 @@ func _grow(sim: CitySim, id: int, b: Dictionary, facts: Dictionary) -> String:
 		return ""
 	var cell := _best_block(sim, id, b)
 	if cell == Vector2i.MAX:
-		return "Boxed in: no free land next to it for its %s." % dev(b.kind, use).name.to_lower()
+		return "Boxed in: no free land next to it for its %s." % Words.mid(dev(b.kind, use).name)
 	b.blocks.append({"c": cell, "use": use})
 	# An edge piece a road has since let go of becomes a whole block.
 	b.get("edge", {}).erase(cell)
 	b.built.append(use)
-	b.why = "%s built %s." % [str(b.leader.name), dev(b.kind, use).name.to_lower()]
+	b.why = "%s built %s." % [str(b.leader.name), Words.a(Words.mid(dev(b.kind, use).name))]
 	b.capital -= float(s.block_cost)
 	return "changed"
 

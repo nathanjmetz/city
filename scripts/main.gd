@@ -479,14 +479,13 @@ func _already_built(service_tool: ServiceTool, industry_tool: IndustryTool, camp
 				at = PlacementHints.built_of(t[2], [t[0]])
 				break
 		if name == "" and telecom_tool.kind != "":
-			name = "Telecom company"
+			name = "Phone company"
 			at = PlacementHints.built_of(sim.telecom.companies)
 	if name == "":
 		return {}
-	var one := name.to_lower()
-	var many := one.substr(0, one.length() - 1) + "ies" if one.ends_with("y") and not one.ends_with("ay") \
-		else one + ("es" if one.ends_with("s") or one.ends_with("ch") else "s")
-	return {"what": many, "one": one, "at": at}
+	# "county fairgrounds", "RV plants" (Words keeps their plurals and capitals).
+	var one := Words.mid(name)
+	return {"what": Words.plural(one), "one": one, "at": at}
 
 
 func _progress(fraction: float, status := "") -> void:

@@ -174,7 +174,7 @@ func _process(_delta: float) -> void:
 	var fert := "Soil here: %d%% fertile." % roundi(Farms.fertility_at(_hover) * 100.0)
 	if reserve_kind != "farm":
 		var res: int = Industry.KINDS[reserve_kind].resource
-		fert = "%s here: %d%%." % [Industry.KINDS[reserve_kind].cargo.capitalize(), roundi(Resources.at(res, _hover) * 100.0)]
+		fert = "%s here: %d%%." % [Words.first_up(Industry.KINDS[reserve_kind].cargo), roundi(Resources.at(res, _hover) * 100.0)]
 	if fert != _problem and _nodes.is_empty() and mode != Mode.CORN and mode != Mode.SOYBEANS:
 		_problem = fert
 		_update_hint()

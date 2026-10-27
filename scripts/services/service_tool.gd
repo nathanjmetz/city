@@ -223,12 +223,15 @@ func _update_hint() -> void:
 			text += " Too narrow for one-way angled aisles, so its stalls are at 90°."
 		if not _site.is_empty() and not _need.is_empty():
 			text += "\n" + need_words(_need, lay.spots.size())
+	elif kind == Services.Kind.TAXI_COMPANY:
+		# Cabs, run on fares (the bottom bar card says the same).
+		text = "%s: $%s to bring one to town, with two cabs. Its owner runs it on fares: the fleet, the meter and the lot." % [s.name, CitySim.money_text(s.cost)]
 	elif s.has("transit"):
 		text = "%s: $%s to build, with two buses. You set how much the city funds it (click it); it plans its own stops, routes, fleet and fare, and buys the land next door as it grows." % [s.name, CitySim.money_text(s.cost)]
 	elif s.get("hub", false):
 		text += " Its superintendent lays mains and sewers, drills wells and builds plants on their own. You set its subsidy."
 	elif s.has("reach"):
-		text += " Covers homes within %.1f road miles: green roads are covered, yellow is the edge of a station's reach." % (s.reach / 1609.0)
+		text += " Covers homes within %.1f road miles: green roads are covered, yellow is the edge of its reach." % (s.reach / 1609.0)
 	else:
 		text += " Serves about %s homes along connected roads." % CitySim.money_text(s.capacity)
 	if _problem != "":

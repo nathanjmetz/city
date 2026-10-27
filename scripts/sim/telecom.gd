@@ -538,7 +538,7 @@ func decide(sim: CitySim) -> bool:
 						# Boxed in: no free land next door, so it waits.
 						c.built.erase(node.id)
 						c.why = ""
-						idle = "Boxed in: no free land next to the office for a %s." % str(node.name).to_lower()
+						idle = "Boxed in: no free land next to the office for %s." % Words.a(Words.mid(str(node.name)))
 					else:
 						c.savings -= float(node.cost)
 						changed = true

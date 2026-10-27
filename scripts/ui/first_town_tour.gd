@@ -71,6 +71,7 @@ func _ready() -> void:
 	_card.add_theme_stylebox_override("panel", b)
 	_card.custom_minimum_size.x = WIDTH
 	_card.mouse_filter = Control.MOUSE_FILTER_STOP
+	_card.add_to_group(UiStyle.KEEP_CLEAR)
 	add_child(_card)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 6)

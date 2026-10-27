@@ -349,10 +349,10 @@ func allow(sim, key: String, type: String, level: int) -> bool:
 	for p in sim.lots[key].corners:
 		area.append([p.x, p.y])
 	var req: int = sim.permits.file(sim, {"hub": OWNER, "hub_id": hub_id, "leader": who,
-		"title": "Tear down %s (built %d) for a %s" % [name, built, str(new_stage.name).to_lower()],
+		"title": "Tear down %s (built %d) for %s" % [name, built, Words.a(str(new_stage.name).to_lower())],
 		"why": "It's one of the town's old buildings, so it can't come down without a word to the town.",
 		"area": area, "change": "Old building replaced", "ask": "demolish",
-		"yes": "It comes down for a %s%s. Its charm is gone for good." % [str(new_stage.name).to_lower(),
+		"yes": "It comes down for %s%s. Its charm is gone for good." % [Words.a(str(new_stage.name).to_lower()),
 			(", " + gain) if gain != "" else ""],
 		"no": "The town buys a preservation easement for $%s, and it stays as it is for good." % CitySim.money_text(cost)})
 	if req > 0:

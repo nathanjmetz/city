@@ -123,10 +123,10 @@ func _process(_delta: float) -> void:
 	if power:
 		var guess := sim.power.choose({"name": "A leader hired here", "education": sim.town_education()}, _hover)
 		likely = str(guess[0])
-		here = "Likely: %s. Wind %d%%, oil gas %d%%." % [Power.PLANTS[guess[0]].name.to_lower(),
+		here = "Likely: %s. Wind %d%%, oil-field gas %d%%." % [Words.mid(Power.PLANTS[guess[0]].name),
 			roundi(sim.power.reach_quality("wind", _hover) * 100.0), roundi(sim.power.gas(_hover) * 100.0)]
 	else:
-		here = "%s within reach: %d%%." % [Industry.KINDS[kind].cargo.capitalize(),
+		here = "%s within reach: %d%%." % [Words.first_up(Industry.KINDS[kind].cargo),
 			roundi(sim.industry_reach(kind, _hover) * 100.0)]
 	problem = here if problem == "" else here + " " + problem
 	if problem != _problem:
@@ -143,8 +143,8 @@ func _update_hint() -> void:
 		hint_changed.emit(t if _problem == "" else t + "\n" + _problem)
 		return
 	var k: Dictionary = Industry.KINDS[kind]
-	var text := "%s ($%s): place it near rich ground and a road. Its %ss spread over time to where the %s is." \
-		% [k.name, CitySim.money_text(int(k.cost)), k.pad, k.cargo]
+	var text := "%s ($%s): place it near rich ground and a road. Its %s spread over time to where the %s %s." \
+		% [k.name, CitySim.money_text(int(k.cost)), Words.plural(k.pad), k.cargo, "are" if Words.plural(k.cargo) == k.cargo else "is"]
 	if _problem != "":
 		text += "\n" + _problem
 	hint_changed.emit(text)
