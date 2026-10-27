@@ -60,10 +60,12 @@ const START_UNIX := 1799042400
 ## Share of residents who work (US labour force is about half of everyone).
 const WORKER_SHARE := Balance.WORKER_SHARE
 const TICKS_PER_HOUR := 60 / MINUTES_PER_TICK
-## Ticks added to tick_count to get the calendar's tick (calendar_of): 0
-## for a town begun on today's calendar; a town saved on the old one (a
-## month a sim day) gets the offset that keeps its date.
-var calendar_offset := 0
+## Ticks added to tick_count to get the calendar's tick (calendar_of): a
+## new town starts on May 7 in mid-morning (Seasons.NEW_TOWN_OFFSET); a
+## loaded town keeps the offset it was saved with (0 for one begun May 1 on
+## this calendar), and a town saved on the old one (a month a sim day) gets
+## the offset that keeps its date.
+var calendar_offset := Seasons.NEW_TOWN_OFFSET
 ## The sim tick a town saved on the old calendar was first loaded on this
 ## one (0 for a town begun on it): ticks before it read on the old calendar,
 ## so a building put up back then keeps the year it was put up in.
