@@ -27,7 +27,10 @@ When a helper hits a wall it writes its question here and stops. That task waits
   - The clock hour jumps at dawn on March 1 and November 1.
   - The Day and night switch is now on for everyone.
 - #614 grown trees' shadows cost a third: 26M to 11M triangles from the street on Cinematic.
-- #618 Roads, step 1 of 6: a big one-way boulevard, plus the CS2 road options chart (`docs/road-options.md`). Steps 2-6 (car-free street, turn bans, S-curve, snapping switches, removing a crosswalk) are built and reviewed on the road session's branches. They merge one at a time once their full test runs pass.
+- #618 Roads, step 1 of 6: a big one-way boulevard, plus the CS2 road options chart (`docs/road-options.md`). Steps 2-6 (car-free street, turn bans, S-curve, snapping switches, removing a crosswalk) are built and reviewed on the road session's branches. **Next session (Nathan, 2026-10-27): "Yes. Next session, run the full tests, web build and last review, then merge the five road options in order."** The branches, in order, each built on the one before: `road-scurve`, `road-snap`, `road-carfree`, `road-turnbans2`, `road-crosswalks2` (pictures in `docs/road-options/`). The last review round was cut off, so run it again on the final code. Small follow-ups:
+  - A car-free street cut in two counts as two plazas.
+  - Curb ramps stay after a crosswalk is removed.
+  - A thin blue strip shows along some curbs up close (it was already in the game).
 
 **Walkers (the question below) may be settled by #619:** a sky hour is now about a minute, not 6 seconds, so a 150 m walk lasts about 2 sky hours on screen, not 19. Not checked in the game yet. Look before asking Nathan again.
 
