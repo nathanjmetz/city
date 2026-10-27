@@ -1864,6 +1864,12 @@ static func _report(car: Dictionary, into: Array) -> void:
 ## After the roads change, every car finds its way again (or gives up).
 func _reroute_all() -> void:
 	# Spots added out front were for the old roads: curb cars find new ones.
+	# Each lets go of its old space's number first, as the numbers are given
+	# out again: a car parked in curb space 12 kept its 12 once a newcomer
+	# was given the new 12, so two held one space, and a loaded copy (which
+	# works out who holds what from the saved vehicles) gave it to the other
+	# one, and the copies parked their next shoppers apart (2026-10-27).
+	var kerb := _let_go_of_extras()
 	_extra.clear()
 	_places.clear()
 	var kept := []
@@ -1933,9 +1939,15 @@ func _reroute_all() -> void:
 			ok = (s.pos + s.face * car.len * 0.5).distance_to(car.pos) < 0.5
 		if ok:
 			continue
+		# It gives up the space it was counted in (a garage its house laid
+		# out afresh around it), or it held two and a loaded copy held one.
+		_release(pl.ref, car.spot, car.id)
 		var at := _reserve(pl, car.id, car.len > 6.5)
 		if at < 0:
 			at = _new_curb(pl, pl.stop, car.id, car.len)
+		if at < 0 and kerb.has(car.id):
+			# No kerb to move to: it stays in the space it's in, kept for it.
+			at = _add_spot(pl, kerb[car.id], car.id)
 		if at >= 0:
 			var s: Dictionary = pl.spots[at]
 			car.spot = at
@@ -1951,6 +1963,27 @@ func _reroute_all() -> void:
 		if not _replan_start(car, car.get("start_stop", {})):
 			_waiting.erase(car)
 			_report(car, failed)
+
+
+## Before the spots added beyond the places' layouts are cleared: every
+## vehicle heading for one forgets it (it picks again when it plans or
+## arrives), and every one parked in one is left without a number, to be
+## given a new space. Returns vehicle id -> the space it is parked in, for
+## one that finds no new space to stay put in.
+func _let_go_of_extras() -> Dictionary:
+	var first := {}  # place ref -> the number of its first added spot
+	for ref in _extra:
+		first[ref] = place(ref).get("spots", []).size() - _extra[ref].size()
+	var kerb := {}
+	for car in cars + _waiting + flowing + parked:
+		if first.has(car.get("to_place", "")) and car.get("to_spot", -1) >= int(first[car.to_place]):
+			car.to_spot = -1
+		if first.has(car.get("at_place", "")) and car.get("spot", -1) >= int(first[car.at_place]):
+			var pl := place(car.at_place)
+			if car.spot < pl.spots.size():
+				kerb[car.id] = pl.spots[car.spot]
+				car.spot = -1
+	return kerb
 
 
 ## Plans a not-yet-started trip again from its start; false if it can't go.
