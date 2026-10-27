@@ -1923,6 +1923,7 @@ func _reroute_all() -> void:
 		kept.append(car)
 	for car in cars:
 		if not kept.has(car) and not (car.j != null and car.j.wo < 0):
+			_drop_hold(car)
 			_report(car, failed)
 	cars = kept
 	# Vehicles on a lot that was cleared away go with it.
@@ -1941,6 +1942,7 @@ func _reroute_all() -> void:
 			continue
 		# It gives up the space it was counted in (a garage its house laid
 		# out afresh around it), or it held two and a loaded copy held one.
+		var held: bool = car.spot >= 0 and car.spot < pl.taken.size() and pl.taken[car.spot] == car.id
 		_release(pl.ref, car.spot, car.id)
 		var at := _reserve(pl, car.id, car.len > 6.5)
 		if at < 0:
@@ -1948,12 +1950,21 @@ func _reroute_all() -> void:
 		if at < 0 and kerb.has(car.id):
 			# No kerb to move to: it stays in the space it's in, kept for it.
 			at = _add_spot(pl, kerb[car.id], car.id)
+		if at < 0 and held:
+			# Nowhere to move to at all: it stays put and keeps the space it
+			# is counted in, as a loaded copy (which only sees its number)
+			# keeps it for it. Freed, it was free here and held there: a box
+			# truck in a dock laid out again as a stall, on a street with no
+			# kerb (2026-10-27).
+			pl.taken[car.spot] = car.id
 		if at >= 0:
 			var s: Dictionary = pl.spots[at]
 			car.spot = at
 			car.pos = s.pos + s.face * car.len * 0.5
 			car.face = s.face
 			car.hidden = s.hidden
+			if car.get("pending", false):
+				car.from_spot = at  # it pulls out of the space it's in now
 			parked_version += 1
 	# Vehicles about to pull out plan again on the new roads.
 	for car in parked:
@@ -1962,7 +1973,20 @@ func _reroute_all() -> void:
 	for car in _waiting.duplicate():
 		if not _replan_start(car, car.get("start_stop", {})):
 			_waiting.erase(car)
+			_drop_hold(car)
 			_report(car, failed)
+
+
+## A vehicle that gives up its trip lets go of the space held for it at the
+## other end and forgets its number, so a place built afresh before it is
+## gone doesn't count it again. A loaded copy, without the vehicle, holds
+## nothing there: cars that couldn't find their way after a road was
+## bulldozed kept their stalls at the lot they were bound for, live, until
+## the next road change (2026-10-27).
+func _drop_hold(car: Dictionary) -> void:
+	_release(car.get("to_place", ""), car.get("to_spot", -1), car.id)
+	if car.has("to_spot"):
+		car.to_spot = -1
 
 
 ## Before the spots added beyond the places' layouts are cleared: every
@@ -4507,6 +4531,7 @@ func _drive(_rng: RandomNumberGenerator) -> void:
 				or car.route.any(func(w): return not ways.has(w)) and not _replan(car)):
 			# Its road went, or was rebuilt and there's no way through now.
 			_waiting.erase(car)
+			_drop_hold(car)
 			_report(car, failed)
 		elif cars.size() < max_cars:
 			if lanes.is_empty():
@@ -4565,6 +4590,7 @@ func _drive_move(tally: bool) -> void:
 		if car.stuck > STUCK_LIMIT:
 			gave_up += 1
 			done.append(car)
+			_drop_hold(car)
 			_report(car, failed)
 			continue
 		if car.j != null:

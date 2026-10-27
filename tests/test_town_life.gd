@@ -189,11 +189,14 @@ func _grow(sim: CitySim) -> void:
 	for f in flows:
 		avg += f
 	avg /= maxf(flows.size(), 1.0)
-	# 92% was set on a town grown from sunrise on May 1 (97% there). A new
-	# town now starts mid-morning, with more cars out from the first hour:
-	# there main's own traffic ran 91.6 to 92.8% as the start moved by a few
-	# hundred ticks (2026-10-27), so 91% is the bar, still well clear of the
-	# 79-89% it was when traffic jammed.
+	# 92% was set on a town grown from sunrise on May 1 (97% there). Started
+	# mid-morning on May 7, as a new town is, it still made 92.8%. The
+	# point it lost (91.8%, 2026-10-27) came with the second car out of a
+	# home's drive or garage waiting for the first to back out
+	# (TrafficSim._launch), and is about what the figure moves from run to
+	# run as the start shifts by a few hundred ticks (91.6 to 92.8%). So
+	# 91% is the bar, still well clear of the 79-89% it was when traffic
+	# jammed.
 	_check(avg >= 0.91, "traffic flows freely in a town this size (%.1f%% flow; it was 79-89%%)" % (avg * 100.0))
 	_check(_tried > 0 and _stale == 0, "walks planned right after each new street use the new sidewalks (%d walks, %d stale corners)" % [_tried, _stale])
 
@@ -309,6 +312,15 @@ func _check_shoulder(sim: CitySim) -> void:
 ## its shoppers elsewhere than the live town did.
 func _check_holds(sim: CitySim) -> void:
 	var t: TrafficSim = sim.traffic
+	var bad := hold_gaps(t)
+	_check(not t._places.is_empty() and bad.is_empty(),
+		"after a road is built every parking space is held as a loaded copy would hold it (%d of %d places differ%s)" % [
+			bad.size(), t._places.size(), (": " + bad[0]) if not bad.is_empty() else ""])
+
+
+## The places whose held spaces differ from the same place built afresh from
+## the vehicles, as a loaded copy builds it (test_parking_holds reads it too).
+static func hold_gaps(t: TrafficSim) -> Array:
 	var bad := []
 	for ref in t._places.keys():
 		var live: Dictionary = t._places[ref]
@@ -317,9 +329,7 @@ func _check_holds(sim: CitySim) -> void:
 		t._places[ref] = live
 		if not fresh.is_empty() and var_to_str(fresh.taken) != var_to_str(live.taken):
 			bad.append("%s holds %s, a loaded copy %s" % [ref, str(live.taken), str(fresh.taken)])
-	_check(not t._places.is_empty() and bad.is_empty(),
-		"after a road is built every parking space is held as a loaded copy would hold it (%d of %d places differ%s)" % [
-			bad.size(), t._places.size(), (": " + bad[0]) if not bad.is_empty() else ""])
+	return bad
 
 
 ## Two copies of the town, saved and loaded, agree tick for tick, walkers,

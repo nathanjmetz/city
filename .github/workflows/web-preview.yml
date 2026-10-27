@@ -108,6 +108,7 @@ jobs:
           run_test tests/test_level_needs.gd
           run_test tests/test_weather.gd
           run_test tests/test_parking.gd
+          run_test tests/test_parking_holds.gd
           run_test tests/test_net.gd
           run_test tests/test_catch_up.gd
           run_test tests/test_postcard.gd
