@@ -930,6 +930,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 				if car_free_problem(seg) != "" or cost > economy.money:
 					return false
 				economy.money -= cost
+				undo.note_car_free(self, seg, cost)
 				traffic.close_segment(seg, true, "night")
 				if not seg in parks.trails.plazas:
 					parks.trails.plazas.append(seg)
