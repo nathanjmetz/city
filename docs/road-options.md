@@ -23,7 +23,7 @@ Marks: ✅ already have · 🟢 easy to add · 🟠 big job
 | Highway, one direction | Highway, 2, 3 or 4 lanes | ✅ |
 | Two-way highway | Divided highway, state highway | ✅ |
 | Highway ramps | Ramp, 1 or 2 lanes, with merges | ✅ |
-| Car-free street (people walk, trucks deliver) | Town tools > Car-free: click a town street (added 2026-10-26) | ✅ |
+| Car-free street (people walk, trucks deliver) | Roads > Traffic > Streets > Car-free: click a town street (added 2026-10-26) | ✅ |
 | Footpaths and bike paths you draw | Trails exist, but the trail director grows them. You can't draw one | 🟠 |
 | Tram tracks, and roads with tram tracks | None. Needs trams, stops, a depot and routes | 🟠 |
 
@@ -50,8 +50,8 @@ Marks: ✅ already have · 🟢 easy to add · 🟠 big job
 | Stop signs | Stop signs on the side road, or all-way stops | ✅ |
 | Roundabouts | Several real sizes, 1 or 2 lanes | ✅ |
 | Bridges, overpasses and tunnels | Raise or lower a road as you draw | ✅ |
-| No left turn, no right turn, no U-turn at a corner | Traffic > Turns > No left / No right (added 2026-10-26). Cars already never U-turn at a corner | ✅ |
-| Take away a crosswalk | Traffic > Turns > Crosswalk: click a road at a corner (added 2026-10-26) | ✅ |
+| No left turn, no right turn, no U-turn at a corner | Roads > Traffic > Turns > No left / No right (added 2026-10-26). Cars already never U-turn at a corner | ✅ |
+| Take away a crosswalk | Roads > Traffic > Turns > Crosswalk: click a road at a corner (added 2026-10-26) | ✅ |
 
 ## Drawing tools
 
@@ -59,12 +59,12 @@ Marks: ✅ already have · 🟢 easy to add · 🟠 big job
 |---|---|---|
 | Straight | Yes, keeps going from the end | ✅ |
 | Simple curve | Yes (start, bend, end) | ✅ |
-| S-curve (two bends in one go) | Draw > S-curve (added 2026-10-26) | ✅ |
+| S-curve (two bends in one go) | Draw > Curve, then click Curve again (added 2026-10-26) | ✅ |
 | Grid | Yes, rectangle or any shape, real block sizes | ✅ |
 | Parallel roads | Yes, with the gap you choose | ✅ |
 | Upgrade (swap a road for another kind) | Yes, click a road | ✅ |
 | Lines that help you line up roads | Yes, guide lines and right angles | ✅ |
-| Switches to turn each kind of snapping on or off | Options > Snap roads and Guides (added 2026-10-26) | ✅ |
+| Switches to turn each kind of snapping on or off | Options > Snap roads and Guides, under Parallel (added 2026-10-26) | ✅ |
 | Remove roads | Bulldoze | ✅ |
 
 ## Tally
@@ -88,6 +88,10 @@ The six easy ones didn't change how roads are saved. Turn bans and crosswalks ea
 4. Car-free street: ![menu](road-options/step4_menu.jpg) ![close](road-options/step4_close.jpg)
 5. No left and no right turn signs: ![menu](road-options/step5_menu.jpg) ![signs](road-options/step5_zoom.jpg)
 6. A crosswalk taken away (the west one): ![menu](road-options/step6_menu.jpg) ![close](road-options/step6_close.jpg)
+
+To keep the Roads menu at its 1000 px, the S-curve shares the Curve
+button, Parallel sits above the snap switches, and Car-free is in the
+Traffic row.
 
 Corners cut:
 - When a crosswalk is taken away, that leg's curb ramps stay.
