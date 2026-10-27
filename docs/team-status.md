@@ -17,6 +17,27 @@ When a helper hits a wall it writes its question here and stops. That task waits
 - **Month is a day, the pace calendar (from the second review of #619):** the county fair, banks' new year and trails run on the old pace calendar (a "year" is about 29 minutes). So a fair's "July" can land in calendar winter, under snow. Festival asks follow the calendar, so they only come in September and October. "Since 2027" signs read 2027 for the town's whole first calendar year. Should fairs and festivals follow the calendar's real months instead? Until you answer, it stays as built.
 - **Day and night off (from the daylight work, PR #541):** when the day-and-night cycle is turned off, should the game show a real summer moment (for example June 21 at 1:40 pm), or keep today's tuned sun from the southwest, which a real summer day never has? Until you answer, it keeps today's look.
 
+## Critic and fixer loop (2026-10-27)
+
+Nathan: "send an agent to play the game ... take a screenshot of errors or the "worst thing it sees" ... give that error to an agent to fix ... only run two of these at the same time ... stop when i reach 23% of my weekly tokens." Each fix had a second reviewer before it merged. The critic's playtests and drivers are in the session scratchpad (`loop/critic1-3`).
+
+**Merged:**
+- #622 a new town opens at mid-morning on May 7, not a dark dawn
+- #623, #625, #627 a saved and reloaded town parks its cars exactly like the live one: curb spaces, dropped trips, cars of people who left town; two cars no longer back out of one drive at once
+- #624, #626 drawing a street over the same street no longer secretly cuts it (thousands of errors), and any road cut now refreshes lots
+- #628 hover cards stay off the toolbar and panels; a/an, plurals and capitals fixed in tooltips
+- #629 undo brings back what a new road bulldozed (a water tower, farm, company, park), its family and its money
+
+**Found, not fixed yet (most serious first):**
+- Undo doesn't bring back zoned homes and shops a road ran through, nor rail lines, bank loans, leader asks or markers (#629 notes).
+- Console error flood with a mini roundabout built after a normal one (road_view.gd `_build_roundabouts`, `_add_ring` apron has no UV; repro `loop/critic3/mini_repro.gd`).
+- Traffic jams at T-junction stop signs, and a left turn that blocks a one-lane highway (traffic_sim.gd `_may_enter`).
+- A school won't fit in the game's own 120 m blocks (services.gd SCHOOL 80x100, `site_problem`).
+- White wind arrows show when the plain Homes zone is picked (placement_hints.gd).
+- A gap in the Economy panel; a hard-edged green rectangle under the town at about 1 km.
+- Words: "Town age 0 years, 1 months"; a county road named "West North 00 S"; heritage.gd "a row homes".
+- No redo (Ctrl+Shift+Z does nothing).
+
 ## Where everything stands (2026-10-26, night)
 
 **Merged 2026-10-26, night:**
