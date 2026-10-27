@@ -9,7 +9,7 @@ func _init() -> void:
 	# a calendar day is 2 real minutes, months have their real lengths.
 	var day := Seasons.TICKS_PER_DAY
 	_check(day == 2 * 60 * CitySim.TICKS_PER_SECOND, "a calendar day is 2 real minutes")
-	_check(Seasons.month(0) == 5 and Seasons.day(0) == 1, "a new city starts on May 1")
+	_check(Seasons.month(0) == 5 and Seasons.day(0) == 1, "calendar tick 0 is May 1")
 	_check(Seasons.weekday(0) == 6, "May 1, 2027 is a Saturday")
 	_check(Seasons.month(day * 30) == 5 and Seasons.month(day * 31) == 6 and Seasons.day(day * 31) == 1,
 		"May has 31 days, then June 1")
@@ -24,10 +24,24 @@ func _init() -> void:
 	var off := Seasons.offset_from_old(old_tick)
 	_check(absf(Seasons.months(old_tick + off) - (Seasons.START_MONTH + 50.5)) < 0.01, "an old town's date carries over")
 	_check(Seasons.pace_year(old_tick) == 5 and Seasons.pace_month(old_tick) == 7, "pace years keep the old calendar's count")
+	# A new town opens on Friday May 7 in a bright mid-morning, not at
+	# sunrise on the 1st (the critic, 2026-10-27: a dark purple first map),
+	# with its own clock still at 0 so it earns and builds at the same pace.
+	var fresh := CitySim.new()
+	_check(fresh.tick_count == 0 and Seasons.month(fresh.calendar_tick()) == 5
+		and Seasons.day(fresh.calendar_tick()) == 7 and Seasons.weekday(fresh.calendar_tick()) == 5,
+		"a new town starts on Friday May 7 (%d/%d)" % [Seasons.month(fresh.calendar_tick()), Seasons.day(fresh.calendar_tick())])
+	_check(fresh.sky_hour() >= 9.0 and fresh.sky_hour() <= 10.5,
+		"a new town opens in mid-morning (sky hour %.2f)" % fresh.sky_hour())
+	var fresh_back := CitySim.new()
+	fresh_back.from_dict(JSON.parse_string(JSON.stringify(fresh.to_dict())))
+	_check(fresh_back.calendar_tick() == fresh.calendar_tick() and fresh_back.calendar_from == 0,
+		"and saves and reloads on the same date")
 	var sim := CitySim.new()
 	sim.tick_count = day * 40 + 30
 	var t := sim.clock()
-	_check(t.month == 6 and t.year == 1 and Seasons.day(sim.calendar_tick()) == 10 and Seasons.weekday(sim.calendar_tick()) == 4,
+	# 40 days after May 7 is June 16, a Wednesday.
+	_check(t.month == 6 and t.year == 1 and Seasons.day(sim.calendar_tick()) == 16 and Seasons.weekday(sim.calendar_tick()) == 3,
 		"the clock shows the calendar's month and year (%s)" % str(t))
 	# The sky: sunrise on the 1st, sunset 50 minutes into a 60-minute month.
 	var rise := SunPath.crossings(SunPath.day_of_year(5.0), SunPath.dst_game(5.0))
@@ -67,6 +81,23 @@ func _init() -> void:
 		and Seasons.month(built) == 7 and Seasons.year(built) == 2,
 		"an old save's past dates keep the old calendar (founded %d/%d, built %d/%d)"
 		% [Seasons.month(founded), Seasons.year(founded), Seasons.month(built), Seasons.year(built)])
+	# An old save from before the calendar key also keeps its date when it
+	# is young: a town saved on its first day reads May 1, not May 7.
+	var young := CitySim.new().to_dict()
+	young.erase("calendar")
+	young.erase("calendar_from")
+	var young_back := CitySim.new()
+	young_back.from_dict(JSON.parse_string(JSON.stringify(young)))
+	_check(young_back.calendar_tick() == 0 and Seasons.day(young_back.calendar_tick()) == 1,
+		"an old save without a calendar still opens on its old date (May %d)" % Seasons.day(young_back.calendar_tick()))
+	# A town begun on May 1 before new towns moved to May 7 (saved with a
+	# calendar offset of 0) keeps May 1.
+	var may1 := CitySim.new().to_dict()
+	may1["calendar"] = 0
+	var may1_back := CitySim.new()
+	may1_back.from_dict(JSON.parse_string(JSON.stringify(may1)))
+	_check(may1_back.calendar_offset == 0 and Seasons.day(may1_back.calendar_tick()) == 1,
+		"a town begun on May 1 keeps May 1")
 	var again := CitySim.new()
 	again.from_dict(JSON.parse_string(JSON.stringify(loaded.to_dict())))
 	_check(again.calendar_offset == off and again.calendar_from == old_tick

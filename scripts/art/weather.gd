@@ -191,7 +191,8 @@ static func sky_clock(sim: CitySim) -> Dictionary:
 
 
 ## The sky over a town in play: the date's odds (conditions), except that a
-## new town's first month (its first hour) is always fair, and
+## new town's first 30 days (its first hour, counted on its own clock from
+## when it was begun, May 7 for a new town) are always fair, and
 ## there's no fog while Day and night is off (`cycle` false): the light is
 ## held at late morning then, and dawn fog under it read as a fault (the
 ## critic, 2026-10-26).

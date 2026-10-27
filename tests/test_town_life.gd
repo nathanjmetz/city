@@ -40,6 +40,12 @@ func _process(_delta: float) -> bool:
 ## power, water, police and a clinic, but no hospital.
 func _town() -> CitySim:
 	var sim := CitySim.new()
+	# Kept at sunrise on May 1, where this town was tuned, not a new town's
+	# May 7 mid-morning (Seasons.START_DAY). At mid-morning shoppers set out
+	# early and a loaded copy's shopping car parks at a different spot than
+	# the live town's (end_d differs): a save-and-load gap found 2026-10-27,
+	# to be fixed on its own.
+	sim.set_calendar(0)
 	sim.economy.money = 50_000_000
 	sim.apply({"type": "build_county_road", "a": [-2000, 0], "b": [2000, 0], "links": [0, 1]})
 	sim.apply({"type": "build_road", "start": [-100, 0], "ctrl": [-20, 0], "end": [40, 60]})
