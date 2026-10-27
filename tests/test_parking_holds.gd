@@ -4,6 +4,8 @@ extends SceneTree
 ## is bulldozed or built: cars that can't find their way to a lot any more
 ## let go of the stalls held for them there, and a vehicle that has nowhere
 ## to move to when its lot is laid out afresh keeps the stall it is in.
+## A car whose owner left town lets go of its stall when it gets there, and
+## one that finishes pulling in as the roads are rebuilt has arrived.
 ## Run: godot --headless -s tests/test_parking_holds.gd
 
 const TownLife := preload("res://tests/test_town_life.gd")
@@ -26,6 +28,8 @@ func _init() -> void:
 	if lot != "":
 		_cut_off(sim, lot)
 		_stuck_in_place(sim, lot)
+	_gone_on_arrival(sim)
+	_parks_in_rebuild(sim)
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
 
@@ -128,6 +132,113 @@ func _stuck_in_place(sim: CitySim, lot: String) -> void:
 	t._rebuild()
 	_check(truck.spot == k and truck.pos == pos, "the truck stays where it is (stall %d, it was %d)" % [truck.spot, k])
 	_holds(t, "after a road is built")
+
+
+## A car on its way to a shop when its owner leaves town drives on, gets
+## there and is gone, and lets go of the stall held for it there. Found
+## 2026-10-27 (review of #625): it kept it, live, while a loaded copy,
+## without the car, had it free, so the next shopper parked in different
+## stalls in the two.
+func _gone_on_arrival(sim: CitySim) -> void:
+	var t: TrafficSim = sim.traffic
+	var shop := _shop(sim)
+	var vid := -1
+	for car in t.parked.duplicate():
+		if shop == "" or car.len > 6.5 or car.has("pending") or not str(car.at_place).begins_with("lot:") \
+				or t.place(car.at_place).is_empty() \
+				or t.place(car.at_place).door.distance_to(t.place(shop).door) < 200.0:
+			continue
+		if t._send(car, shop, "shopping", {}, {"stay": 3000}):
+			vid = car.id
+			break
+	_check(vid != -1, "a car sets off for a shop (%s)" % shop)
+	if vid == -1:
+		return
+	var car := {}
+	for i in 600:
+		car = _on_road(t, vid)
+		if not car.is_empty():
+			break
+		sim.tick()
+	_check(not car.is_empty() and car.get("to_spot", -1) >= 0, "it is out on the road, a stall held for it")
+	if car.is_empty():
+		return
+	var ref: String = car.to_place
+	t.retire_vehicle(vid)  # its owner moved away
+	var turned_in := false
+	for i in 4000:
+		sim.tick()
+		car = _on_road(t, vid)
+		if car.is_empty():
+			break
+		if car.j != null and car.j.wo < 0:
+			turned_in = true
+	_check(turned_in and car.is_empty() and t._vehicle_parked(vid).is_empty(),
+		"it turns in at the shop and is gone (turned in: %s)" % turned_in)
+	_check(not t.place(ref).taken.has(vid), "no stall at %s is held for it" % ref)
+	_holds(t, "after a car whose owner left town gets to a shop")
+
+
+## A road is built while a car is turning into a stall: it parks, and its
+## trip is reported as arrived, not also as failed. Found 2026-10-27
+## (review of #625): it was in both, as parking clears the turn the check
+## for a failed car looked at.
+func _parks_in_rebuild(sim: CitySim) -> void:
+	var t: TrafficSim = sim.traffic
+	var shop := _shop(sim)
+	var sent := 0
+	for car in t.parked.duplicate():
+		if shop == "" or sent >= 12 or car.len > 6.5 or car.has("pending") \
+				or not str(car.at_place).begins_with("lot:") or car.at_place == shop:
+			continue
+		if t._send(car, shop, "shopping", {}, {"stay": 3000}):
+			sent += 1
+	var car := {}
+	for i in 4000:
+		sim.tick()
+		for c in t.cars:
+			if c.get("to_ref", "") == shop and c.j != null and c.j.wo < 0:
+				car = c
+				break
+		if not car.is_empty():
+			break
+	_check(not car.is_empty(), "a car is turning into a stall at %s (%d sent)" % [shop, sent])
+	if car.is_empty():
+		return
+	var trip: int = car.trip
+	var a0 := t.arrivals.size()
+	var f0 := t.failed.size()
+	_check(sim.apply({"type": "build_road", "start": [-280, 280], "ctrl": [-330, 280], "end": [-380, 280]}),
+		"a road is built across town")
+	t._rebuild()
+	var arrived := []
+	for r in t.arrivals.slice(a0):
+		arrived.append(r.id)
+	var failed := []
+	for r in t.failed.slice(f0):
+		failed.append(r.id)
+	_check(not t._vehicle_parked(car.id).is_empty(), "the car is parked")
+	_check(arrived.has(trip) and not failed.has(trip),
+		"its trip has arrived and not failed (arrived: %s, failed: %s)" % [arrived.has(trip), failed.has(trip)])
+	_holds(t, "after a road is built as a car pulls in")
+
+
+## A shop with a free stall.
+func _shop(sim: CitySim) -> String:
+	var t: TrafficSim = sim.traffic
+	for key in sim.lots:
+		if sim.buildings.has(key) and sim.buildings[key].zone == ZoneMap.Zone.COMMERCIAL \
+				and t.place("lot:" + key).get("taken", []).has(-1):
+			return "lot:" + key
+	return ""
+
+
+## The vehicle `vid` if it is on the road (or waiting to get on it).
+func _on_road(t: TrafficSim, vid: int) -> Dictionary:
+	for c in t.cars + t._waiting + t.flowing:
+		if c.id == vid:
+			return c
+	return {}
 
 
 func _holds(t: TrafficSim, when: String) -> void:
