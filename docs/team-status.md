@@ -1,6 +1,6 @@
 # Team status (start here)
 
-Updated 2026-10-26 (evening) by the coordinating session ("Desktop photoreal handoff"). This file is the state, not a diary: rewrite it at each stop.
+Updated 2026-10-26 (night) by the month-is-a-day session. This file is the state, not a diary: rewrite it at each stop.
 
 ## Standing orders from Nathan (2026-10-25)
 
@@ -14,9 +14,24 @@ Updated 2026-10-26 (evening) by the coordinating session ("Desktop photoreal han
 
 When a helper hits a wall it writes its question here and stops. That task waits, and the next task in the queue starts. Answer any time; the task picks up from the answer.
 
+- **Month is a day, the pace calendar (from the second review of #619):** the county fair, banks' new year and trails run on the old pace calendar (a "year" is about 29 minutes). So a fair's "July" can land in calendar winter, under snow. Festival asks follow the calendar, so they only come in September and October. "Since 2027" signs read 2027 for the town's whole first calendar year. Should fairs and festivals follow the calendar's real months instead? Until you answer, it stays as built.
 - **Day and night off (from the daylight work, PR #541):** when the day-and-night cycle is turned off, should the game show a real summer moment (for example June 21 at 1:40 pm), or keep today's tuned sun from the southwest, which a real summer day never has? Until you answer, it keeps today's look.
 
-## Where everything stands (2026-10-26, evening)
+## Where everything stands (2026-10-26, night)
+
+**Merged 2026-10-26, night:**
+- #619 A month is a day (`docs/spec-month-is-a-day.md`). The sky runs one day and night per calendar month: a 50-minute day, then a 10-minute night. The top bar shows weekday, month and year. There's one speed plus Pause. Money and timers read in days, and `tests/test_month_words.gd` catches leftover "month" words. Old towns keep their past dates (save keys `calendar`, `calendar_from`). There were two second reviews, and all medium-or-worse findings were fixed. Named corners:
+  - No leap years.
+  - The pace calendar runs fairs, the census and families (see Waiting on Nathan).
+  - School buses and weekends use the sim clock's weekday, so the top bar can say "Sat" while school buses run.
+  - The clock hour jumps at dawn on March 1 and November 1.
+  - The Day and night switch is now on for everyone.
+- #614 grown trees' shadows cost a third: 26M to 11M triangles from the street on Cinematic.
+- #618 Roads, step 1 of 6: a big one-way boulevard, plus the CS2 road options chart (`docs/road-options.md`). Steps 2-6 (car-free street, turn bans, S-curve, snapping switches, removing a crosswalk) are built and reviewed on the road session's branches. They merge one at a time once their full test runs pass.
+
+**Walkers (the question below) may be settled by #619:** a sky hour is now about a minute, not 6 seconds, so a 150 m walk lasts about 2 sky hours on screen, not 19. Not checked in the game yet. Look before asking Nathan again.
+
+## Earlier (2026-10-26, evening)
 
 **Admin (Nathan, 2026-10-26):** a crown button in the top bar, seen only by the host, opens Admin: people waiting to join, every player and their PIN, and the Sound mixer (desktop app; Cmd/Ctrl+Shift+F12 still opens it). New admin tools go in as sections of `scripts/ui/admin_panel.gd`. No sign-in: the region server decides who is host and refuses host actions from anyone else (#615).
 
@@ -49,7 +64,6 @@ When a helper hits a wall it writes its question here and stops. That task waits
 **Earlier (2026-10-25/26):** #567 cars drive the limit, #568 roundabouts as a whole, #569-#578 people (skins, figures, five detail levels, ready-made desktop people), #579 faster four-way stops, #580 load until drawn, #581 admin sound mixer, #582 detail floor, #552 live home screen, #555 automatic quality, #551 new building drawing (minor items listed on #551), #557-#566 green lights, signal heads, people sizes, fewer walkers, solid county roads, strides, dirt farm lanes, slower farms, levels 1-100.
 
 **Ready but waiting:**
-- #614 tree shadows cost a third (26M to 11M triangles from the street on Cinematic). Not merged: the second review found browser tree shadows would turn into card shapes. Fix that (notes on the PR), re-measure, merge.
 - #556 roads age: profile in real Chrome first.
 - `wip/price-list` and `wip/browser-measure`: paused.
 
