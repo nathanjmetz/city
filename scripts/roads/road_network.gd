@@ -7,6 +7,9 @@ extends RefCounted
 ## later receive the same commands from players and replay them.
 
 signal changed
+## A road piece was cut in two (a road joined it mid-block): what was on
+## `seg` (a car-free closure, say) can carry on to `first` and `second`.
+signal split(seg: int, first: int, second: int)
 ## Goes up on every change, so caches can tell when to work things out again.
 var revision := 0
 ## Segments meeting at each node, kept until the roads change (segments_at).
@@ -283,6 +286,7 @@ func split_segment(seg_id: int, t: float) -> int:
 	if s.has("built_by"):
 		segments[p].built_by = s.built_by
 		segments[q].built_by = s.built_by
+	split.emit(seg_id, p, q)  # closures move onto the halves before anything hears of the change
 	_changed()
 	return m
 

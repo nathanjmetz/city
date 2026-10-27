@@ -356,6 +356,12 @@ func _init() -> void:
 	# The county seat: county roads count from the courthouse once it stands.
 	parks_changed.connect(func(): streets.seat(self))
 	_hook_pollution()
+	# Car-free streets and other closures follow their road: on to both
+	# pieces when it's cut in two, gone when it's removed or undone (so a
+	# new road given the old id isn't born closed: second reader,
+	# 2026-10-26).
+	network.split.connect(_carry_closure)
+	network.changed.connect(_drop_stale_closures)
 	network.changed.connect(func():
 		_lots_light = true
 		_roads_moved = true
@@ -4054,7 +4060,8 @@ const OVERLAY_STEP := 4.0
 
 
 ## Why a street can't be made car-free, or "" if it can: a town street
-## (not an avenue, a highway or a country road) that isn't car-free yet.
+## (not an avenue, a highway or a country road) on the ground, not a bridge
+## or a tunnel, that isn't car-free yet.
 func car_free_problem(seg: int) -> String:
 	if not network.segments.has(seg):
 		return "Click a street."
@@ -4062,7 +4069,46 @@ func car_free_problem(seg: int) -> String:
 		return "Already car-free."
 	if not network.segments[seg].type in Balance.PLAZA_TYPES:
 		return "Only town streets can be car-free, not %ss." % RoadStyle.TYPES[network.segments[seg].type].name.to_lower()
+	for p in network.curve_of(seg):
+		if absf(p.y) > 0.5:
+			return "Bridges and tunnels can't be car-free."
 	return ""
+
+
+var _plazas_moved := false
+
+
+## A road cut in two: a closure on it (car-free, or local traffic only)
+## stays on both pieces, and a plaza stays a plaza.
+func _carry_closure(seg: int, first: int, second: int) -> void:
+	if traffic.closed.has(seg):
+		var deliveries: String = str(traffic.closed[seg])
+		traffic.close_segment(seg, false)
+		traffic.close_segment(first, true, deliveries)
+		traffic.close_segment(second, true, deliveries)
+	var plazas: Array = parks.trails.plazas
+	var at := plazas.find(seg)
+	if at != -1:
+		plazas[at] = first
+		plazas.insert(at + 1, second)
+		_plazas_moved = true
+
+
+## Closures and plazas on roads that are gone; and the plazas redrawn if
+## any moved or went.
+func _drop_stale_closures() -> void:
+	for seg in traffic.closed.keys():
+		if not network.segments.has(int(seg)):
+			traffic.close_segment(int(seg), false)
+	var plazas: Array = parks.trails.plazas
+	for seg in plazas.duplicate():
+		if not network.segments.has(int(seg)):
+			plazas.erase(seg)
+			_plazas_moved = true
+	if _plazas_moved:
+		_plazas_moved = false
+		parks.trails._rev = ""
+		parks_changed.emit()
 
 
 ## Pavers, benches and planters, curb to curb, for a car-free street.

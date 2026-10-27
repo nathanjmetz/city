@@ -65,7 +65,59 @@ func _init() -> void:
 	sim.economy.money = 10
 	_check(not sim.apply({"type": "car_free", "seg": rung, "on": true}), "not without the money")
 	_check(not rung in sim.parks.trails.plazas, "and the street stays open")
+	_second_reader()
 	quit(1 if _failed else 0)
+
+
+## Cases the second reader found (2026-10-26).
+func _second_reader() -> void:
+	# A road joining a car-free street mid-block: both pieces stay car-free.
+	var sim := CitySim.new()
+	sim.economy.money = 10_000_000
+	sim.apply({"type": "build_road", "start": [0, 0], "ctrl": [100, 0], "end": [200, 0]})
+	sim.apply({"type": "build_road", "start": [0, -150], "ctrl": [100, -150], "end": [200, -150]})
+	sim.apply({"type": "build_road", "start": [100, 0], "ctrl": [100, -75], "end": [100, -150]})
+	sim.tick()
+	var rung: int = sim.network.find_segment_near(Vector3(100, 0, -75), 1.0).seg
+	sim.apply({"type": "car_free", "seg": rung, "on": true})
+	sim.apply({"type": "build_road", "start": [100, -75], "ctrl": [150, -75], "end": [200, -75]})
+	var top: int = sim.network.find_segment_near(Vector3(100, 0, -30), 1.0).seg
+	var bottom: int = sim.network.find_segment_near(Vector3(100, 0, -120), 1.0).seg
+	_check(top != rung and bottom != rung and top != bottom, "the joining road cut the car-free street in two")
+	_check(top in sim.parks.trails.plazas and bottom in sim.parks.trails.plazas and not rung in sim.parks.trails.plazas,
+		"both pieces are still a plaza")
+	_check(not sim.traffic.may_enter(top, false) and not sim.traffic.may_enter(bottom, false), "and both are still car-free")
+	_check(not sim.traffic.closed.has(rung), "nothing left on the old piece's id")
+	# Undo the joining road: the street is whole and car-free again.
+	_check(sim.apply({"type": "undo"}), "the joining road is undone")
+	_check(sim.network.segments.has(rung) and rung in sim.parks.trails.plazas and not sim.traffic.may_enter(rung, false),
+		"the street is whole and car-free again")
+	_check(not sim.traffic.closed.has(top) and not top in sim.parks.trails.plazas, "and the pieces' ids are cleared")
+
+	# Build a street, make it car-free, undo the street: the next road
+	# built (which gets the same id) is open to cars.
+	var u := CitySim.new()
+	u.economy.money = 10_000_000
+	u.apply({"type": "build_road", "start": [0, 0], "ctrl": [100, 0], "end": [200, 0]})
+	u.apply({"type": "build_road", "start": [0, -100], "ctrl": [100, -100], "end": [200, -100]})
+	var seg: int = u.network.find_segment_near(Vector3(100, 0, -100), 1.0).seg
+	u.apply({"type": "car_free", "seg": seg, "on": true})
+	_check(u.apply({"type": "undo"}), "the car-free street is undone")
+	_check(not u.network.segments.has(seg), "the street is gone")
+	_check(not u.traffic.closed.has(seg) and not seg in u.parks.trails.plazas, "and so is its closure")
+	u.apply({"type": "build_road", "start": [0, -100], "ctrl": [100, -100], "end": [200, -100]})
+	var again: int = u.network.find_segment_near(Vector3(100, 0, -100), 1.0).seg
+	_check(u.traffic.may_enter(again, false) and not again in u.parks.trails.plazas,
+		"the next road built there is open to cars (id %d, was %d)" % [again, seg])
+
+	# Bridges and tunnels stay open to cars.
+	var b := CitySim.new()
+	b.economy.money = 10_000_000
+	b.apply({"type": "build_road", "start": [0, 0], "ctrl": [0, -60], "end": [0, -120, 7.5]})
+	b.apply({"type": "build_road", "start": [0, -120, 7.5], "ctrl": [0, -180, 7.5], "end": [0, -240, 7.5]})
+	var deck: int = b.network.find_segment_near(Vector3(0, 7.5, -180), 1.0).seg
+	_check(b.car_free_problem(deck) == "Bridges and tunnels can't be car-free.", "a bridge can't be car-free (%s)" % b.car_free_problem(deck))
+	_check(not b.apply({"type": "car_free", "seg": deck, "on": true}), "and the command says no")
 
 
 func _check(ok: bool, what: String) -> void:
