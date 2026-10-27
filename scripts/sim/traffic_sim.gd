@@ -369,9 +369,7 @@ func _step_flows() -> void:
 		car.erase("flow_end")
 		car.erase("flow_in")
 		car.erase("flow_v")
-		if car.get("retire", false):
-			_release(car.get("to_place", ""), car.get("to_spot", -1), car.id)
-		elif place(car.get("to_place", "")).is_empty():
+		if not car.get("retire", false) and place(car.get("to_place", "")).is_empty():
 			# Where it was going was cleared away on the way: it goes home
 			# instead (vehicles never vanish).
 			var home := place(str(car.get("base", "")))
@@ -1873,9 +1871,11 @@ func _reroute_all() -> void:
 	_extra.clear()
 	_places.clear()
 	var kept := []
+	var pulled_in := {}  # car id -> true, for the cars that finished parking
 	for car in cars:
 		var wid: int = car.route[car.leg]
 		if car.j != null and car.j.wo < 0:
+			pulled_in[car.id] = true
 			if car.has("to_place"):
 				_arrive(car)
 			else:
@@ -1922,7 +1922,9 @@ func _reroute_all() -> void:
 			continue
 		kept.append(car)
 	for car in cars:
-		if not kept.has(car) and not (car.j != null and car.j.wo < 0):
+		# One that parked has arrived. (Parking clears its turn in, so it
+		# can't be told by that: it was reported as failed too, 2026-10-27.)
+		if not kept.has(car) and not pulled_in.has(car.id):
 			_drop_hold(car)
 			_report(car, failed)
 	cars = kept
@@ -3558,8 +3560,14 @@ func _poly_pose(c: Dictionary, jd: float) -> Array:
 func _arrive(car: Dictionary) -> void:
 	if car.get("to_ref", "") != "" and car.get("trip", -1) >= 0 and car.get("after", {}).get("report", true):
 		_report(car, arrivals)
-	if car.get("retire", false) or car.to_place == "edge":
-		return  # off the map, or gone for good
+	if car.get("retire", false):
+		# Gone for good, it lets go of the space held for it: a loaded copy,
+		# without the car, has it free. It kept it, so the next shopper
+		# parked in different stalls in the two (2026-10-27).
+		_drop_hold(car)
+		return
+	if car.to_place == "edge":
+		return  # off the map
 	var pl := place(car.to_place)
 	if pl.is_empty():
 		return
