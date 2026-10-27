@@ -95,7 +95,45 @@ func _init() -> void:
 		"both banned would trap it, so the stem keeps both turns and shows no sign")
 	_check(not sim.apply({"type": "turn_ban", "node": sim.network.find_node_near(Vector3(-200, 0, 0), 1.0), "turn": "left", "on": true}),
 		"no sign at a road end")
+	_second_reader()
 	quit(1 if _failed else 0)
+
+
+## Cases the second reader found (2026-10-26).
+func _second_reader() -> void:
+	# A T whose crossbar's right arm is car-free: no left turn from the stem
+	# would leave only the turn into the plaza, so the sign doesn't apply.
+	var sim := CitySim.new()
+	sim.economy.money = 10_000_000
+	sim.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
+	sim.apply({"type": "build_road", "start": [0, 0], "ctrl": [0, 100], "end": [0, 200]})
+	sim.tick()
+	var tn := sim.network.find_node_near(Vector3.ZERO, 1.0)
+	var stem := -1
+	for wi in sim.traffic.ways_into(tn):
+		if sim.traffic.ways[wi].pts[0].z > 1.0:
+			stem = wi
+	var turns_before: Array = sim.traffic._turns[stem].duplicate()
+	for wo in turns_before:
+		if sim.traffic._kind[Vector2i(stem, wo)] == TrafficSim.Turn.RIGHT:
+			sim.apply({"type": "car_free", "seg": sim.traffic.ways[wo].seg, "on": true})
+	sim.apply({"type": "turn_ban", "node": tn, "turn": "left", "on": true})
+	sim.tick()
+	_check(sim.traffic._turns[stem].size() == 2 and sim.traffic.banned_from(stem).is_empty(),
+		"a sign that would leave only a car-free street keeps both turns")
+
+	# A sign at a junction that an undo took away is gone at once, so a
+	# new junction given the same id doesn't start with it.
+	var u := CitySim.new()
+	u.economy.money = 10_000_000
+	u.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
+	u.apply({"type": "build_road", "start": [0, 0], "ctrl": [0, 100], "end": [0, 200]})
+	var j := u.network.find_node_near(Vector3.ZERO, 1.0)
+	_check(u.apply({"type": "turn_ban", "node": j, "turn": "left", "on": true}), "a sign at the new T")
+	_check(u.apply({"type": "undo"}), "the side street is undone")
+	_check(u.traffic.turn_bans.is_empty(), "and its sign goes with it, before any tick")
+	u.apply({"type": "build_road", "start": [100, 0], "ctrl": [100, -100], "end": [100, -200]})
+	_check(u.traffic.turn_bans.is_empty(), "a new junction starts with no sign")
 
 
 ## How many turns of one kind cars may take at a junction.

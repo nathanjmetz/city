@@ -249,7 +249,10 @@ func _init(net: RoadNetwork) -> void:
 	# A road change before a loaded city has run a tick drops the saved plans.
 	network.changed.connect(func():
 		_dirty = true
-		_keep_routes = false)
+		_keep_routes = false
+		# At once, not at the next rebuild: undo hands out old junction ids
+		# again (second reader, 2026-10-26).
+		prune_junction_settings())
 
 
 func step(sim: CitySim, rng: RandomNumberGenerator) -> void:
@@ -525,6 +528,17 @@ func set_turn_ban(node: int, turn: String, on: bool) -> bool:
 ## The turns a no-turn sign takes away from cars arriving on a way.
 func banned_from(way: int) -> Array:
 	return _banned.get(way, [])
+
+
+## Drops lights, signs and no-turn signs the player set at junctions that
+## are gone or no longer have three roads.
+func prune_junction_settings() -> void:
+	for n in overrides.keys():
+		if not network.nodes.has(n) or network.segments_at(n).size() < 3:
+			overrides.erase(n)
+	for n in turn_bans.keys():
+		if not network.nodes.has(n) or network.segments_at(n).size() < 3:
+			turn_bans.erase(n)
 
 
 func bans_to_dict() -> Dictionary:
@@ -1260,9 +1274,7 @@ func _rebuild() -> void:
 	for n in overrides.keys():
 		if not at_node.has(n) or at_node[n].size() < 3:
 			overrides.erase(n)
-	for n in turn_bans.keys():
-		if not at_node.has(n) or at_node[n].size() < 3:
-			turn_bans.erase(n)
+	prune_junction_settings()
 	for n in node_ids:
 		_build_turns(n)
 		_build_control(n, at_node[n])
@@ -1319,7 +1331,8 @@ func _build_turns(n: int) -> void:
 					kept.append(o)
 				elif not word in gone:
 					gone.append(word)
-			if not kept.is_empty() and not gone.is_empty():
+			# Kept turns into car-free streets don't count: cars can't take them.
+			if kept.any(func(o): return may_enter(ways[o[1]].seg, false)) and not gone.is_empty():
 				outs = kept
 				_banned[wi] = gone
 		var m := outs.size()
