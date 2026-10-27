@@ -377,6 +377,7 @@ func apply_now(cmd: Dictionary) -> bool:
 
 func _apply_cmd(cmd: Dictionary) -> bool:
 	var ok := false
+	var roads_were := network.revision
 	match cmd.get("type", ""):
 		"build_road":
 			var c := [_v(cmd.start), _v(cmd.ctrl), _v(cmd.end)]
@@ -1022,6 +1023,12 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 				_county_road(road[0], road[1], road[2])
 			_start_crossroads()
 			ok = true
+	# A command that changed the roads changed the town, whatever it says,
+	# so everything built on the roads (lots, traffic, services) catches up
+	# below and it can be undone. Otherwise they keep pieces of road that
+	# are gone (critic 2026-10-27: a street drawn along itself).
+	if not ok and network.revision != roads_were:
+		ok = true
 	if ok:
 		if cmd.type in ["place_campus", "place_park", "place_bank", "place_hub", "place_service", "place_farmhouse",
 				"place_industry", "place_post_office", "place_warehouse", "place_power", "place_telecom", "clear"]:
@@ -3827,12 +3834,18 @@ func _build_over(c: Array, type: int, retype := true) -> bool:
 		network.end_batch()
 		return ok
 	# Where the new road starts or ends partway along an old one, the old
-	# one is cut there, so only the stretch it covers changes.
+	# one is cut there, so only the stretch it covers changes. Only a road
+	# that will change is cut: a street drawn again along a street is left
+	# whole. The cut alone used to change the roads while the command said
+	# nothing changed, so lots, walkers and services kept the piece of road
+	# that was gone (critic 2026-10-27: thousands of script errors).
+	var cut := false
 	for k in [0, n]:
 		if along[k] != -1:
 			var end := RoadIndex.segment_near(network, c[0] if k == 0 else c[2], OVERLAY_NEAR, RoadNetwork.SAME_LEVEL)
-			if not end.is_empty() and end.t > 0.02 and end.t < 0.98:
+			if not end.is_empty() and end.t > 0.02 and end.t < 0.98 and _retypes(end.seg, type):
 				network.split_segment(end.seg, end.t)
+				cut = cut or not network.segments.has(end.seg)
 	network.end_batch()
 	# The stretches along old roads: those roads take the new type.
 	var seen := {}
@@ -3853,7 +3866,15 @@ func _build_over(c: Array, type: int, retype := true) -> bool:
 		if cost >= 0 and cost <= economy.money and network.set_type(hit.seg, type):
 			economy.money -= cost
 			ok = true
-	return ok
+	# A cut road is a change even if the money ran out before the retype.
+	return ok or cut
+
+
+## Whether _build_over turns this road into `type` (rings change only by
+## rebuilding the roundabout).
+func _retypes(seg: int, type: int) -> bool:
+	var was := int(network.segments[seg].type)
+	return was != type and not RoadStyle.is_ring(was) and not RoadStyle.is_ring(type)
 
 
 ## How far a point is from a polyline, across the ground.
