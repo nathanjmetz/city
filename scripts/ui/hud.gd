@@ -1535,7 +1535,6 @@ func _roads_drawer() -> PanelContainer:
 	for entry in [
 		[RoadTool.Mode.STRAIGHT, "road", "Straight", _key_hint("road")],
 		[RoadTool.Mode.CURVED, "curve", "Curve", _key_hint("curve")],
-		[RoadTool.Mode.SCURVE, "scurve", "S-curve", _key_hint("scurve")],
 		[RoadTool.Mode.GRID, "grid", "Grid", _key_hint("grid")],
 		[RoadTool.Mode.ROUNDABOUT, "roundabout", "Roundabout", _key_hint("roundabout")],
 		[RoadTool.Mode.UPGRADE, "upgrade", "Upgrade", "U"],
@@ -1544,9 +1543,15 @@ func _roads_drawer() -> PanelContainer:
 		var b := _card(entry[1], entry[2], entry[3])
 		b.pressed.connect(func():
 			_kinds_open = false
-			road_tool.set_mode(m))
+			# Curve again: an S-curve (and back). One card for both keeps
+			# the Roads menu in its 1000 px (tests/test_build_menus.gd).
+			if m == RoadTool.Mode.CURVED and road_tool.mode == RoadTool.Mode.CURVED:
+				road_tool.set_mode(RoadTool.Mode.SCURVE)
+			else:
+				road_tool.set_mode(m))
 		tools.add_child(b)
 		_tool_cards[m] = b
+	_tool_cards[RoadTool.Mode.CURVED].tooltip_text = "Curve; click again for an S-curve, which bends one way and back"
 
 	var types := _section(row, "Road type  ·  click one for its kinds")
 	for g in RoadStyle.GROUPS:
@@ -2351,6 +2356,13 @@ func _sync() -> void:
 	_fit_bottom.call_deferred()
 	for m in _tool_cards:
 		_tool_cards[m].set_pressed_no_signal(m == road_tool.mode)
+	# The Curve card stands for the S-curve too, and says which it is.
+	var s_curve := road_tool.mode == RoadTool.Mode.SCURVE
+	var curve_card: Button = _tool_cards[RoadTool.Mode.CURVED]
+	if s_curve:
+		curve_card.set_pressed_no_signal(true)
+	(curve_card.get_meta("icon") as Icon).kind = "scurve" if s_curve else "curve"
+	(curve_card.get_meta("title") as Label).text = "S-curve" if s_curve else "Curve"
 	var menu := RoadStyle.group(road_tool.road_type)
 	_variant_of[menu] = road_tool.road_type
 	var in_traffic := traffic_tool.mode != TrafficTool.Mode.NONE

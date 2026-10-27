@@ -57,6 +57,20 @@ func _process(_delta: float) -> bool:
 	hud._park_cards["courthouse"].pressed.emit()
 	_check(hud._category == "civic", "the courthouse is under Civic (%s)" % hud._category)
 	hud.close_all()
+	# One card for both curves: Curve, then Curve again for an S-curve,
+	# and its name says which (Nathan 2026-10-26: CS2's road options).
+	hud._open("roads")
+	var curve: Button = hud._tool_cards[RoadTool.Mode.CURVED]
+	curve.pressed.emit()
+	_check(hud.road_tool.mode == RoadTool.Mode.CURVED, "the Curve card draws a curve")
+	curve.pressed.emit()
+	hud._sync()
+	_check(hud.road_tool.mode == RoadTool.Mode.SCURVE and (curve.get_meta("title") as Label).text == "S-curve",
+		"clicked again it draws an S-curve, and says so")
+	curve.pressed.emit()
+	_check(hud.road_tool.mode == RoadTool.Mode.CURVED, "and again, back to a simple curve")
+	hud.close_all()
+	hud.close_all()
 	print("FAILED" if _failed else "ALL PASSED")
 	quit(1 if _failed else 0)
 	return true
