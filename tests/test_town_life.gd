@@ -2,8 +2,9 @@ extends SceneTree
 ## A town of about 1,500 people, as a playtester grew one (look check,
 ## 2026-10-25): traffic keeps moving, the county's ambulances come in ones
 ## and twos, people walk on sidewalks and shoulders (never stale ones),
-## problem badges merge instead of piling up, and two copies of the town
-## agree after a save and load.
+## problem badges merge instead of piling up, every parking space is held
+## by the vehicles a loaded copy would say hold it, and two copies of the
+## town agree after a save and load.
 ## Run: godot --headless -s tests/test_town_life.gd
 
 ## No vehicle on the road stands still longer than this, in ticks (each is
@@ -29,6 +30,7 @@ func _process(_delta: float) -> bool:
 		return false
 	_check_alerts(_sim)
 	_check_shoulder(_sim)
+	_check_holds(_sim)
 	_check_copies(_sim)
 	print("ALL TESTS PASSED" if not _failed else "TESTS FAILED")
 	quit(1 if _failed else 0)
@@ -40,12 +42,6 @@ func _process(_delta: float) -> bool:
 ## power, water, police and a clinic, but no hospital.
 func _town() -> CitySim:
 	var sim := CitySim.new()
-	# Kept at sunrise on May 1, where this town was tuned, not a new town's
-	# May 7 mid-morning (Seasons.START_DAY). At mid-morning shoppers set out
-	# early and a loaded copy's shopping car parks at a different spot than
-	# the live town's (end_d differs): a save-and-load gap found 2026-10-27,
-	# to be fixed on its own.
-	sim.set_calendar(0)
 	sim.economy.money = 50_000_000
 	sim.apply({"type": "build_county_road", "a": [-2000, 0], "b": [2000, 0], "links": [0, 1]})
 	sim.apply({"type": "build_road", "start": [-100, 0], "ctrl": [-20, 0], "end": [40, 60]})
@@ -193,7 +189,12 @@ func _grow(sim: CitySim) -> void:
 	for f in flows:
 		avg += f
 	avg /= maxf(flows.size(), 1.0)
-	_check(avg >= 0.92, "traffic flows freely in a town this size (%d%% flow; it was 79-89%%)" % roundi(avg * 100.0))
+	# 92% was set on a town grown from sunrise on May 1 (97% there). A new
+	# town now starts mid-morning, with more cars out from the first hour:
+	# there main's own traffic ran 91.6 to 92.8% as the start moved by a few
+	# hundred ticks (2026-10-27), so 91% is the bar, still well clear of the
+	# 79-89% it was when traffic jammed.
+	_check(avg >= 0.91, "traffic flows freely in a town this size (%.1f%% flow; it was 79-89%%)" % (avg * 100.0))
 	_check(_tried > 0 and _stale == 0, "walks planned right after each new street use the new sidewalks (%d walks, %d stale corners)" % [_tried, _stale])
 
 
@@ -297,6 +298,28 @@ func _check_shoulder(sim: CitySim) -> void:
 		"the walker keeps to the shoulder, %.1f m from the centre line (off by at most %.2f m)" % [TrafficSim.walk_offset(rt), worst])
 	for i in 50:
 		sim.tick()
+
+
+## Just after a road is built (_check_shoulder), every parking space is held
+## by the vehicle a loaded copy works out holds it from the saved ones: a
+## place built afresh agrees with the live one. Found 2026-10-27: a road
+## anywhere handed out the curb spaces' numbers again while parked cars kept
+## their old ones (two held space 12), and a car moved out of a garage its
+## house had laid out afresh still held the garage, so a loaded copy parked
+## its shoppers elsewhere than the live town did.
+func _check_holds(sim: CitySim) -> void:
+	var t: TrafficSim = sim.traffic
+	var bad := []
+	for ref in t._places.keys():
+		var live: Dictionary = t._places[ref]
+		t._places.erase(ref)
+		var fresh: Dictionary = t.place(ref)
+		t._places[ref] = live
+		if not fresh.is_empty() and var_to_str(fresh.taken) != var_to_str(live.taken):
+			bad.append("%s holds %s, a loaded copy %s" % [ref, str(live.taken), str(fresh.taken)])
+	_check(not t._places.is_empty() and bad.is_empty(),
+		"after a road is built every parking space is held as a loaded copy would hold it (%d of %d places differ%s)" % [
+			bad.size(), t._places.size(), (": " + bad[0]) if not bad.is_empty() else ""])
 
 
 ## Two copies of the town, saved and loaded, agree tick for tick, walkers,

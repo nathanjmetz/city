@@ -63,12 +63,6 @@ func _layouts() -> void:
 
 func _drivers() -> void:
 	var sim := CitySim.new()
-	# Kept at sunrise on May 1, where this town was tuned, not a new town's
-	# May 7 mid-morning (Seasons.START_DAY). At mid-morning two cars of one
-	# household pull out of their home's drive at once (no stall, so the
-	# wait-for-the-aisle rule in TrafficSim._launch skips them): found
-	# 2026-10-27, to be fixed on its own.
-	sim.set_calendar(0)
 	# On dry, open farmland south of Sweetser: at the crossroads itself a
 	# real pond takes the south-west blocks, leaving every home a short
 	# walk from the shops.
