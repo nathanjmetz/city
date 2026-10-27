@@ -51,12 +51,83 @@ func _init() -> void:
 	for i in 400:
 		sim.tick()
 	_check(_lots_on_roads(sim), "every lot still fronts a road that is there, after the upgrade")
+	_undo_retype(sim)
+	_cut_only(sim)
 	if _failed:
 		print("FAILED")
 		quit(1)
 	else:
 		print("ALL PASSED")
 		quit(0)
+
+
+## Undone right after a partial retype, the street is whole again, and no
+## lot is left on a piece of it before the town runs another tick
+## (reviewer 2026-10-27: the undo left that to the next tick).
+func _undo_retype(sim: CitySim) -> void:
+	var seg := _straight(sim)
+	_check(seg != -1, "found another straight street, to upgrade and undo")
+	if seg == -1:
+		return
+	var c := sim.network.curve_of(seg)
+	var a := RoadNetwork.bezier(c[0], c[1], c[2], 0.25)
+	var b := RoadNetwork.bezier(c[0], c[1], c[2], 0.75)
+	var big := _other(int(sim.network.segments[seg].type))
+	var before := sim.network.segments.keys()
+	var ok := sim.apply({"type": "build_road", "start": [a.x, a.z], "ctrl": [(a.x + b.x) * 0.5, (a.z + b.z) * 0.5],
+		"end": [b.x, b.z], "road": big, "join": true})
+	_check(ok and not sim.network.segments.has(seg), "a stretch of it drawn as another type cuts it")
+	var on_piece := 0
+	for key in sim.lots:
+		if sim.lots[key].has("seg") and not before.has(int(sim.lots[key].seg)):
+			on_piece += 1
+	_check(on_piece > 0, "and lots front its new pieces (%d)" % on_piece)
+	ok = sim.apply({"type": "undo"})
+	_check(ok and sim.network.segments.has(seg) and sim.network.segments.size() == before.size(),
+		"undone, the street is whole again")
+	_check(_lots_on_roads(sim), "and every lot fronts a road that is there, before another tick")
+
+
+## A cut alone is a change: with no money for the retype, drawing over the
+## middle of a street still cuts it at both ends, and the roads say they
+## changed, so everything on them catches up (reviewer 2026-10-27: the cut
+## never moved `revision` or fired `changed`, so lots kept the gone piece).
+## Play can't reach this today (road_problem wants the whole road's money).
+func _cut_only(sim: CitySim) -> void:
+	var seg := _straight(sim)
+	_check(seg != -1, "found a third straight street, to cut")
+	if seg == -1:
+		return
+	var c := sim.network.curve_of(seg)
+	var a := RoadNetwork.bezier(c[0], c[1], c[2], 0.25)
+	var b := RoadNetwork.bezier(c[0], c[1], c[2], 0.75)
+	var big := _other(int(sim.network.segments[seg].type))
+	# The town has caught up with everything before, so what's checked
+	# below comes from the cut alone.
+	sim.tick()
+	_check(not sim._roads_moved and not sim._lots_light, "the town has caught up first")
+	var segs := sim.network.segments.size()
+	var rev := sim.network.revision
+	var fired := [0]
+	var count := func(): fired[0] += 1
+	sim.network.changed.connect(count)
+	var money := sim.economy.money
+	sim.economy.money = 0
+	var ok := sim._build_over([a, a.lerp(b, 0.5), b], big)
+	sim.economy.money = money
+	sim.network.changed.disconnect(count)
+	_check(ok and sim.network.segments.size() == segs + 2 and not sim.network.segments.has(seg),
+		"with no money, the street is still cut in three (%d pieces, were %d)" % [sim.network.segments.size(), segs])
+	_check(sim.network.revision != rev, "and the roads' revision moves")
+	_check(fired[0] == 1, "and `changed` fires once (%d)" % fired[0])
+	_check(sim._roads_moved, "so the world will make way for the cut roads")
+	sim._refresh()
+	_check(_lots_on_roads(sim), "and after the refresh every lot fronts a road that is there")
+
+
+## A type to draw over a street of this type.
+func _other(type: int) -> int:
+	return RoadStyle.Type.AVENUE if type != RoadStyle.Type.AVENUE else RoadStyle.Type.STREET
 
 
 ## A grid of streets, zoned, with power and water, grown for a while.
