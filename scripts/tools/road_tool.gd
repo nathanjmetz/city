@@ -1676,7 +1676,7 @@ func _update_hint() -> void:
 				text = _shown_problem
 		Mode.CURVED:
 			if _points.is_empty():
-				text = "Click to start a curved road."
+				text = "Click to start a curved road. Click Curve again for an S-curve."
 			elif _points.size() == 1:
 				text = "Click where the road should bend."
 			else:
@@ -1685,7 +1685,7 @@ func _update_hint() -> void:
 				text = _shown_problem
 		Mode.SCURVE:
 			match _points.size():
-				0: text = "Click to start an S-curve."
+				0: text = "Click to start an S-curve. Click it again for a simple curve."
 				1: text = "Click where the road should first bend."
 				2: text = "Click where it should bend back the other way."
 				_: text = "Click to finish. Right click to stop."
