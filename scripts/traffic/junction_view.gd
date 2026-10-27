@@ -169,12 +169,13 @@ func _rebuild_all() -> void:
 			else:
 				rule = "stop"
 			rules[traffic.ways[wid].seg] = rule
-		var key := [plan, rules, Terrain.shift]
+		var no_cross: Dictionary = traffic.no_crosswalks.get(n, {})
+		var key := [plan, rules, Terrain.shift, no_cross]
 		var hit: Array = _paint_cache.get(n, [])
 		if hit.is_empty() or hit[0] != key:
 			var st := SurfaceTool.new()
 			st.begin(Mesh.PRIMITIVE_TRIANGLES)
-			JunctionMarks.paint(plan, rules, st, RoadStyle.Y_JUNCTION + 0.02)
+			JunctionMarks.paint(plan, rules, st, RoadStyle.Y_JUNCTION + 0.02, no_cross)
 			hit = [key, Terrain.drape(st.commit(), false, 4.0)]
 		cache[n] = hit
 		pieces.append(hit[1])
@@ -245,7 +246,7 @@ func _rebuild_all() -> void:
 					# A crosswalk only where there are sidewalks to join.
 					var spec: Dictionary = RoadStyle.TYPES[traffic.ways[wid].type]
 					var walks: bool = spec.get("walk", true) and not spec.get("rural", false) \
-						and not (roads != null and roads._rural.has(seg))
+						and not (roads != null and roads._rural.has(seg)) and traffic.has_crosswalk(n, seg)
 					_markings(paint, sl, half, walk, walks)
 					any_paint = true
 			var face := Basis.looking_at(-dir, Vector3.UP)  # facing the drivers

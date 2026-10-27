@@ -137,6 +137,12 @@ func _draw() -> void:
 			var red := Color(0.86, 0.2, 0.18)
 			draw_arc(c, s * 0.42, 0.0, TAU, 32, red, w, true)
 			draw_line(c + Vector2(-0.3, -0.3) * s, c + Vector2(0.3, 0.3) * s, red, w, true)
+		"nocrosswalk":
+			# Crosswalk stripes under a red slash.
+			for i in 4:
+				var x := 0.2 + i * 0.18
+				_poly([P.call(x, 0.25), P.call(x + 0.1, 0.25), P.call(x + 0.1, 0.75), P.call(x, 0.75)], color)
+			draw_line(P.call(0.12, 0.12), P.call(0.88, 0.88), Color(0.86, 0.2, 0.18), w * 1.2, true)
 		"scurve":
 			# A road that bends one way then back: two S-shaped edges and a
 			# dashed centre line.

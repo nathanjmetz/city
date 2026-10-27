@@ -2122,9 +2122,10 @@ func _fill_traffic_row(row: HBoxContainer) -> void:
 		(entry[4] as HBoxContainer).add_child(b)
 		_traffic_cards[m] = b
 	# No-turn signs (CS2's turn rules): click a junction to put one up.
-	var turns := _section(row, "Turns  ·  click a junction to ban a turn there")
+	var turns := _section(row, "Turns  ·  click a junction to ban a turn there, or a road at a junction for its crosswalk")
 	for entry in [[TrafficTool.Mode.NO_LEFT, "noleft", "No left", "No left turns at a junction (click again to allow them)"],
-			[TrafficTool.Mode.NO_RIGHT, "noright", "No right", "No right turns at a junction (click again to allow them)"]]:
+			[TrafficTool.Mode.NO_RIGHT, "noright", "No right", "No right turns at a junction (click again to allow them)"],
+			[TrafficTool.Mode.CROSSWALK, "nocrosswalk", "Crosswalk", "Take away a crosswalk: click a road where it meets a junction (click again to put it back)"]]:
 		var m: int = entry[0]
 		var b := _card(entry[1], entry[2], "")
 		b.tooltip_text = entry[3]

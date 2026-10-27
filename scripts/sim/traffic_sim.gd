@@ -250,6 +250,7 @@ func _init(net: RoadNetwork) -> void:
 	network.changed.connect(func():
 		_dirty = true
 		_keep_routes = false)
+	network.split.connect(_split_crosswalks)
 
 
 func step(sim: CitySim, rng: RandomNumberGenerator) -> void:
@@ -527,8 +528,9 @@ func banned_from(way: int) -> Array:
 	return _banned.get(way, [])
 
 
-## Drops lights, signs and no-turn signs the player set at junctions that
-## are gone or no longer have three roads.
+## Drops lights, signs, no-turn signs and missing crosswalks the player
+## set at junctions that are gone or no longer have three roads, and
+## missing crosswalks on legs that no longer meet them.
 func prune_junction_settings() -> void:
 	for n in overrides.keys():
 		if not network.nodes.has(n) or network.segments_at(n).size() < 3:
@@ -536,6 +538,73 @@ func prune_junction_settings() -> void:
 	for n in turn_bans.keys():
 		if not network.nodes.has(n) or network.segments_at(n).size() < 3:
 			turn_bans.erase(n)
+	for n in no_crosswalks.keys():
+		var at: Array = network.segments_at(n) if network.nodes.has(n) else []
+		var kept := {}
+		if at.size() >= 3:
+			for seg in no_crosswalks[n]:
+				if seg in at:
+					kept[seg] = true
+		if kept.is_empty():
+			no_crosswalks.erase(n)
+		else:
+			no_crosswalks[n] = kept
+
+
+## Crosswalks the player took away (CS2's remove crosswalk): node ->
+## {segment: true}, one per leg. Nobody crosses that road at that corner,
+## and no crosswalk is painted there.
+var no_crosswalks := {}
+
+
+## Takes a leg's crosswalk away (on = false puts it back).
+func set_crosswalk(node: int, seg: int, on: bool) -> bool:
+	if not network.nodes.has(node) or not seg in network.segments_at(node) or network.segments_at(node).size() < 3:
+		return false
+	var gone: Dictionary = no_crosswalks.get(node, {})
+	if gone.has(seg) != on:
+		return false
+	if on:
+		gone.erase(seg)
+	else:
+		gone[seg] = true
+	if gone.is_empty():
+		no_crosswalks.erase(node)
+	else:
+		no_crosswalks[node] = gone
+	version += 1  # the paint is redrawn
+	return true
+
+
+func has_crosswalk(node: int, seg: int) -> bool:
+	return not no_crosswalks.get(node, {}).has(seg)
+
+
+## A leg cut in two away from the junction: the piece still touching it
+## keeps the missing crosswalk.
+func _split_crosswalks(seg: int, first: int, second: int) -> void:
+	for n in no_crosswalks:
+		if no_crosswalks[n].has(seg):
+			no_crosswalks[n].erase(seg)
+			var near := first if network.segments[first].a == n or network.segments[first].b == n else second
+			no_crosswalks[n][near] = true
+
+
+func crosswalks_to_dict() -> Dictionary:
+	var out := {}
+	for n in no_crosswalks:
+		out[str(n)] = no_crosswalks[n].keys()
+	return out
+
+
+func crosswalks_from_dict(d: Dictionary) -> void:
+	no_crosswalks.clear()
+	for k in d:
+		var gone := {}
+		for seg in d[k]:
+			gone[int(seg)] = true
+		if not gone.is_empty():
+			no_crosswalks[int(k)] = gone
 
 
 func bans_to_dict() -> Dictionary:
@@ -4344,7 +4413,8 @@ func _walk_steps(u: Vector3i) -> Array:
 		var here: Vector3 = ring[k][2]
 		var d: float = here.distance_to(nb[2])
 		if nb[0] == sid:
-			outs.append([Vector3i(n, sid, nb[1]), d + 10.0, "cross"])
+			if has_crosswalk(n, sid):
+				outs.append([Vector3i(n, sid, nb[1]), d + 10.0, "cross"])
 		else:
 			outs.append([Vector3i(n, nb[0], nb[1]), d, "corner"])
 	return outs

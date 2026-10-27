@@ -945,6 +945,9 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 		"set_junction":
 			# Traffic lights, stop signs or none at a junction (-1 = automatic).
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
+		"crosswalk":
+			# A leg's crosswalk taken away (on = false) or put back.
+			ok = traffic.set_crosswalk(int(cmd.node), int(cmd.seg), bool(cmd.get("on", true)))
 		"turn_ban":
 			# A no left turn or no right turn sign at a junction, up or down.
 			ok = traffic.set_turn_ban(int(cmd.node), str(cmd.turn), bool(cmd.get("on", true)))
@@ -4950,6 +4953,7 @@ func save_steps(postcard := false) -> Array:
 		["engineer", func(): return engineer.to_dict()],
 		["junctions", func(): return traffic.rules_to_dict()],
 		["turn_bans", func(): return traffic.bans_to_dict()],
+		["no_crosswalks", func(): return traffic.crosswalks_to_dict()],
 		["greens", func(): return traffic.greens_to_dict()],
 		["offsets", func(): return traffic.offsets_to_dict()],
 		["actuated", func(): return traffic.actuated_to_dict()],
@@ -5061,6 +5065,7 @@ func from_dict(d: Dictionary) -> void:
 			f.drive = farm_drive(f.pos, f.dir)
 	traffic.rules_from_dict(d.get("junctions", {}))
 	traffic.bans_from_dict(d.get("turn_bans", {}))
+	traffic.crosswalks_from_dict(d.get("no_crosswalks", {}))
 	traffic.greens_from_dict(d.get("greens", {}))
 	traffic.offsets_from_dict(d.get("offsets", {}))
 	traffic.actuated_from_dict(d.get("actuated", {}))

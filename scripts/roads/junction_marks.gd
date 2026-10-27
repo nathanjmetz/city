@@ -127,8 +127,9 @@ static func stop_back(j: Dictionary, seg: int) -> float:
 
 
 ## Paints one junction into `st`. `rules`: seg -> "stop", "yield" or ""
-## (no line, traffic goes on through).
-static func paint(j: Dictionary, rules: Dictionary, st: SurfaceTool, y: float) -> void:
+## (no line, traffic goes on through). `no_cross`: legs (seg -> true) whose
+## crosswalk the player took away.
+static func paint(j: Dictionary, rules: Dictionary, st: SurfaceTool, y: float, no_cross := {}) -> void:
 	if not marked(j):
 		return
 	var center: Vector3 = j.center
@@ -138,8 +139,9 @@ static func paint(j: Dictionary, rules: Dictionary, st: SurfaceTool, y: float) -
 			continue
 		var hw: float = arm.hw
 		var d: float = arm.d
-		for at in [d + CROSS_NEAR, d + CROSS_FAR - CROSS_LINE]:
-			Junction._band(st, center, arm, 1.0, -hw, hw, at, at + CROSS_LINE, y)
+		if not no_cross.has(arm.seg):
+			for at in [d + CROSS_NEAR, d + CROSS_FAR - CROSS_LINE]:
+				Junction._band(st, center, arm, 1.0, -hw, hw, at, at + CROSS_LINE, y)
 		var rule: String = rules.get(arm.seg, "")
 		if fits < 2 or rule == "":
 			continue

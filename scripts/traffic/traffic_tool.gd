@@ -6,11 +6,13 @@ extends Node3D
 ## Car-free: click a town street to close it to cars as a walking plaza
 ## (CS2's pedestrian streets), or click a car-free one to open it again.
 ## No left / No right put up (or take down) a no-turn sign at a junction.
+## Crosswalk takes away (or puts back) the crosswalk over the road clicked
+## near, at its junction.
 
 signal mode_changed(mode: int)
 signal hint_changed(text: String)
 
-enum Mode { NONE, VIEW, AUTO, SIGNAL, ALL_STOP, STOP, NO_CONTROL, TIMING, SMART, CAR_FREE, NO_LEFT, NO_RIGHT }
+enum Mode { NONE, VIEW, AUTO, SIGNAL, ALL_STOP, STOP, NO_CONTROL, TIMING, SMART, CAR_FREE, NO_LEFT, NO_RIGHT, CROSSWALK }
 
 const RULE_FOR := {
 	Mode.AUTO: -1, Mode.SIGNAL: TrafficSim.Rule.SIGNAL, Mode.ALL_STOP: TrafficSim.Rule.ALL_STOP,
@@ -110,6 +112,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			_hint = ""
 			_update_hint()
 	elif mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not mb.alt_pressed \
+			and _hover != -1 and mode == Mode.CROSSWALK:
+		var hit = cam.mouse_ground_point()
+		var leg := leg_near(_hover, hit) if hit != null else -1
+		if leg != -1:
+			sim.apply({"type": "crosswalk", "node": _hover, "seg": leg, "on": not sim.traffic.has_crosswalk(_hover, leg)})
+		_hint = ""
+		_update_hint()
+	elif mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not mb.alt_pressed \
 			and _hover != -1 and BAN_FOR.has(mode):
 		# A no-turn sign up, or down again if it's there.
 		var turn: String = BAN_FOR[mode]
@@ -144,7 +154,7 @@ func _process(delta: float) -> void:
 		_street_pick(hit)
 		return
 	var node := -1
-	if hit != null and (RULE_FOR.has(mode) or BAN_FOR.has(mode)):
+	if hit != null and (RULE_FOR.has(mode) or BAN_FOR.has(mode) or mode == Mode.CROSSWALK):
 		node = _junction_near(hit)
 	elif hit != null and (mode == Mode.TIMING or mode == Mode.SMART):
 		node = _junction_near(hit)
@@ -176,6 +186,29 @@ func _street_pick(hit) -> void:
 		var r := RoadStyle.half_width(sim.network.segments[seg].type) + 3.0
 		_ring.position = Terrain.lift(pts[1]) + Vector3(0, 0.4, 0)
 		_ring.scale = Vector3(r, 1.0, r)
+
+
+## The road meeting a junction whose first stretch is nearest the point
+## (the leg whose crosswalk a click means), or -1.
+func leg_near(node: int, p: Vector3) -> int:
+	var best := -1
+	var best_d := INF
+	var c: Vector3 = sim.network.nodes[node]
+	for seg in sim.network.segments_at(node):
+		var pts := sim.network.sample_segment(seg, 24)
+		if sim.network.segments[seg].b == node:
+			pts.reverse()
+		# A point on the leg about where its crosswalk is.
+		var q: Vector3 = pts[0]
+		for pt in pts:
+			q = pt
+			if pt.distance_to(c) >= 10.0:
+				break
+		var d := Vector2(q.x - p.x, q.z - p.z).length()
+		if d < best_d:
+			best_d = d
+			best = seg
+	return best
 
 
 ## The light's phase whose approach is nearest the point, or -1.
@@ -253,6 +286,11 @@ func _update_hint() -> void:
 					"this hour" if ago < 1 else ("an hour ago" if ago == 1 else "%d hours ago" % ago))
 		if _wave_from != -1:
 			text += "\nGreen wave: Ctrl-click the next light down the street (it will turn green as cars from the last one arrive)."
+	elif mode == Mode.CROSSWALK:
+		text = "Click a road at a junction to take away its crosswalk. Click again to put it back."
+		if _hover != -1:
+			var gone: int = sim.traffic.no_crosswalks.get(_hover, {}).size()
+			text += "\nThis junction has %s." % ("every crosswalk" if gone == 0 else "%d crosswalk%s taken away" % [gone, "" if gone == 1 else "s"])
 	elif BAN_FOR.has(mode):
 		var turn: String = BAN_FOR[mode]
 		text = "Click a junction to put up a no %s turn sign: drivers go another way. Click again to take it down." % turn

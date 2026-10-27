@@ -5,7 +5,8 @@ extends SceneTree
 ## Steps: oneway (the one-way boulevard and the Boulevard menu), scurve (an
 ## S-curve built, and the Draw tools), snap (the snap switches, Roads off),
 ## carfree (a street made car-free, close up and with the tool), turns (no
-## left and no right turn signs at a junction, and the Traffic tools).
+## left and no right turn signs at a junction, and the Traffic tools),
+## crosswalk (a junction with one crosswalk taken away).
 
 var _main: Node
 var _hud: Hud
@@ -42,6 +43,7 @@ func _process(_delta: float) -> bool:
 			"snap": _snap(sim)
 			"carfree": _car_free(sim)
 			"turns": _turns(sim)
+			"crosswalk": _crosswalk(sim)
 		if not _shots.is_empty():
 			_shots[0][1].call()
 	# Each shot gets 90 frames to settle, then is saved and the next set up.
@@ -161,6 +163,35 @@ func _turns(sim: CitySim) -> void:
 			_hud.close_all()
 			# From up the road the drivers come in on, just past the sign.
 			_aim(sign_at + Vector3(2.0, 0, 0), 250.0, 30.0, 16.0)],
+	]
+
+
+func _crosswalk(sim: CitySim) -> void:
+	# Two town streets crossing, the west leg's crosswalk taken away.
+	var o := Vector3(0, 0, -320)
+	sim.apply({"type": "build_road", "start": [o.x - 150, o.z], "ctrl": [o.x, o.z], "end": [o.x + 150, o.z]})
+	sim.apply({"type": "build_road", "start": [o.x, o.z - 150], "ctrl": [o.x, o.z], "end": [o.x, o.z + 150]})
+	# Homes zoned along them, so they're town streets with sidewalks.
+	for d in range(30, 150, 12):
+		for side in [-22, 22]:
+			sim.apply({"type": "paint_zone", "center": [o.x - d, o.z + side], "radius": 10, "zone": ZoneMap.Zone.RESIDENTIAL})
+			sim.apply({"type": "paint_zone", "center": [o.x + d, o.z + side], "radius": 10, "zone": ZoneMap.Zone.RESIDENTIAL})
+			sim.apply({"type": "paint_zone", "center": [o.x + side, o.z - d], "radius": 10, "zone": ZoneMap.Zone.RESIDENTIAL})
+			sim.apply({"type": "paint_zone", "center": [o.x + side, o.z + d], "radius": 10, "zone": ZoneMap.Zone.RESIDENTIAL})
+	sim.tick()
+	var c := sim.network.find_node_near(o, 1.0)
+	var west: int = sim.network.find_segment_near(o + Vector3(-50, 0, 0), 1.0).seg
+	sim.apply({"type": "crosswalk", "node": c, "seg": west, "on": false})
+	var traffic: TrafficTool = _main.find_children("*", "TrafficTool", false, false)[0]
+	_shots = [
+		["menu", func():
+			_aim(o, 0.0, 60.0, 90.0)
+			_hud._open("roads")
+			traffic.set_mode(TrafficTool.Mode.CROSSWALK)],
+		["close", func():
+			traffic.set_mode(TrafficTool.Mode.NONE)
+			_hud.close_all()
+			_aim(o, 0.0, 70.0, 45.0)],
 	]
 
 
