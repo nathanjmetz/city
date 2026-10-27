@@ -55,9 +55,19 @@ func after(sim: CitySim, snap: Dictionary) -> void:
 			if not sim.network.segments.has(int(seg)):
 				e.closed[seg] = snap.closed[seg]
 		e.plazas = snap.plazas.filter(func(seg): return not sim.network.segments.has(int(seg)))
-		# And no-turn signs and missing crosswalks it took off a junction.
-		e.bans = snap.bans
-		e.no_cross = snap.no_cross
+		# And no-turn signs and missing crosswalks at the junctions it
+		# changed, only those: one the player clears later elsewhere stays
+		# cleared (third reader, 2026-10-26).
+		var changed := func(n) -> bool:
+			return not sim.network.nodes.has(int(n)) or _roads_at(snap.roads, int(n)) != _sorted(sim.network.segments_at(int(n)))
+		e.bans = {}
+		for n in snap.bans:
+			if changed.call(n):
+				e.bans[n] = snap.bans[n]
+		e.no_cross = {}
+		for n in snap.no_cross:
+			if changed.call(n):
+				e.no_cross[n] = snap.no_cross[n]
 	else:
 		var added: Array = things(sim, snap.type).keys().filter(func(k): return not k in snap.ids)
 		if added.size() != 1:
@@ -66,6 +76,21 @@ func after(sim: CitySim, snap: Dictionary) -> void:
 	entries.append(e)
 	if entries.size() > KEEP:
 		entries.pop_front()
+
+
+## The roads meeting node `n` in a network snapshot, sorted.
+static func _roads_at(roads: Dictionary, n: int) -> Array:
+	var out := []
+	for id in roads.segments:
+		if roads.segments[id].a == n or roads.segments[id].b == n:
+			out.append(id)
+	return _sorted(out)
+
+
+static func _sorted(a: Array) -> Array:
+	var out := a.duplicate()
+	out.sort()
+	return out
 
 
 ## A street made car-free: when the newest road build made that street,

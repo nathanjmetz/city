@@ -93,6 +93,21 @@ func _undo_keeps_it() -> void:
 	_check(sim.apply({"type": "undo"}), "the cutting road is undone")
 	_check(sim.network.segments.has(west) and not sim.traffic.has_crosswalk(c, west), "undone: the leg's crosswalk is still taken away")
 	_check(sim.traffic.turn_bans.get(c, {}).has("left"), "and the no left turn sign is still up")
+	# A crosswalk put back at another junction after a build stays put back
+	# when the build is undone (third reader, 2026-10-26).
+	var other := CitySim.new()
+	other.economy.money = 10_000_000
+	other.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
+	other.apply({"type": "build_road", "start": [0, -200], "ctrl": [0, 0], "end": [0, 200]})
+	other.tick()
+	var x := other.network.find_node_near(Vector3.ZERO, 1.0)
+	var leg: int = other.network.find_segment_near(Vector3(-50, 0, 0), 1.0).seg
+	other.apply({"type": "crosswalk", "node": x, "seg": leg, "on": false})
+	other.apply({"type": "build_road", "start": [400, -100], "ctrl": [400, 0], "end": [400, 100]})
+	other.apply({"type": "crosswalk", "node": x, "seg": leg, "on": true})
+	_check(other.apply({"type": "undo"}), "an unrelated road is undone")
+	_check(other.traffic.has_crosswalk(x, leg), "the crosswalk put back since stays back")
+
 	# Two legs gone: no junction, no settings.
 	var north: int = sim.network.find_segment_near(Vector3(0, 0, -50), 1.0).seg
 	var south: int = sim.network.find_segment_near(Vector3(0, 0, 50), 1.0).seg
