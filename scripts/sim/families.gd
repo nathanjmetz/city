@@ -157,6 +157,30 @@ func _own(ref: String, fam_id: int, what: String, name: String, year: int, forme
 	_stale = true
 
 
+## A business and the family that runs it, copied, for put_back() (an undo
+## keeps them while a road has the farm or company).
+func keep(ref: String) -> Dictionary:
+	var b: Dictionary = owned[ref]
+	return {"business": b.duplicate(true), "family": families.get(int(b.family), {}).duplicate(true)}
+
+
+## A business back as it was (keep()), with its name and its family: the
+## family comes back too if it left town meanwhile, as one that owns
+## nothing does on its daily look (reviewer 2026-10-27: the farm came back
+## run by a family that was gone). Not if its name is in use again.
+func put_back(ref: String, kept: Dictionary) -> void:
+	var b: Dictionary = kept.business
+	if owned.has(ref) or _used.has(str(b.name)):
+		return
+	if not families.has(int(b.family)):
+		if kept.family.is_empty():
+			return  # sync() names it afresh
+		families[int(b.family)] = kept.family
+	owned[ref] = b
+	_used[str(b.name)] = ref
+	_stale = true
+
+
 # ------------------------------------------------------------- reading
 
 func name_of(ref: String) -> String:
