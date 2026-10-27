@@ -54,6 +54,8 @@ const ROAD_BUILD_PER_M := {
 	# about twice asphalt to lay.
 	RoadStyle.Type.DIRT: 15, RoadStyle.Type.CHIP_SEAL: 70, RoadStyle.Type.STREET_ONEWAY1: 200,
 	RoadStyle.Type.BRICK: 450, RoadStyle.Type.STREET_DIVIDED: 330,
+	# Four lanes and two parking lanes, a little wider than a divided avenue.
+	RoadStyle.Type.BOULEVARD_ONEWAY: 560,
 }
 ## Road upkeep, dollars per lane-metre per month (about $10,000 a lane-mile
 ## a year, typical of US city budgets).

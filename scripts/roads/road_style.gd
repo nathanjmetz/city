@@ -9,7 +9,8 @@ enum Type { STREET, AVENUE, BOULEVARD, HIGHWAY, RAMP, RING, RING2,
 	STRIP, PARKWAY,
 	FREEWAY2, FREEWAY4, DIVIDED_HWY, STATE_HWY,
 	RAMP2, AVENUE_BUS,
-	DIRT, CHIP_SEAL, STREET_ONEWAY1, BRICK, STREET_DIVIDED }
+	DIRT, CHIP_SEAL, STREET_ONEWAY1, BRICK, STREET_DIVIDED,
+	BOULEVARD_ONEWAY }
 
 ## The five road menus. Each variant names its menu with "group"; a type
 ## without one is the menu's own first road.
@@ -148,6 +149,11 @@ const TYPES := [
 	# planted median with trees.
 	{"name": "Divided street", "short": "Divided", "group": Type.STREET, "lanes": 2, "width": 13.2, "median": 4.8,
 		"oneway": false, "lots": true, "grade": 0.12, "mph": 25, "trees": true},
+	# Downtown one-way arterial: four lanes one way with parking both sides,
+	# half of a one-way pair (Indianapolis's Meridian and Illinois, Fort
+	# Wayne's Clinton and Lafayette). The big one-way a growing city needs.
+	{"name": "One-way boulevard", "short": "One-way", "group": Type.BOULEVARD, "lanes": 4, "width": 19.2,
+		"median": 0.0, "oneway": true, "lots": true, "grade": 0.08, "mph": 35, "parking": 2},
 ]
 ## Raised concrete ring inside a roundabout that long trucks can ride over
 ## with their back wheels (FHWA: typically 10-15 ft).

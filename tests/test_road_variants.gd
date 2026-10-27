@@ -80,6 +80,24 @@ func _init() -> void:
 	var a1 := {"seg": o1.network.segments.keys()[0], "at_frac": 0.8}
 	var b1 := {"seg": a1.seg, "at_frac": 0.2}
 	_check(o1.traffic._route(b1, a1).size() > 0 and o1.traffic._route(a1, b1).is_empty(), "one-lane one-way drives one way")
+	# The big one-way (Nathan 2026-10-26: "all the same street and road
+	# options as CS2"): four lanes one way, parking both sides, in the
+	# Boulevard menu.
+	var big := RoadStyle.Type.BOULEVARD_ONEWAY
+	_check(RoadStyle.TYPES[big].oneway and RoadStyle.TYPES[big].lanes == 4 and RoadStyle.TYPES[big].lots,
+		"one-way boulevard: four lanes one way that homes and shops can face")
+	_check(big in RoadStyle.variants(RoadStyle.Type.BOULEVARD), "one-way boulevard is in the Boulevard menu")
+	_check(TrafficSim.lane_offsets(big, true) == PackedFloat32Array([-5.4, -1.8, 1.8, 5.4]),
+		"one-way boulevard lanes are centred between the parking lanes")
+	_check(is_equal_approx(RoadStyle.TYPES[big].width, 4 * 3.6 + 2 * RoadStyle.PARKING_WIDTH),
+		"one-way boulevard is four lanes and two parking lanes wide")
+	var ob := CitySim.new()
+	ob.apply({"type": "build_road", "start": [0, 0], "ctrl": [100, 0], "end": [200, 0], "road": big})
+	ob.tick()
+	var ab := {"seg": ob.network.segments.keys()[0], "at_frac": 0.8}
+	var bb := {"seg": ab.seg, "at_frac": 0.2}
+	_check(ob.traffic._route(bb, ab).size() > 0 and ob.traffic._route(ab, bb).is_empty(), "one-way boulevard drives one way")
+	_check(Balance.ROAD_BUILD_PER_M.has(big), "one-way boulevard has a price")
 	_check(RoadStyle.unpaved(RoadStyle.Type.DIRT) and RoadStyle.unpaved(RoadStyle.Type.GRAVEL)
 		and not RoadStyle.unpaved(RoadStyle.Type.CHIP_SEAL) and not RoadStyle.unpaved(RoadStyle.Type.BRICK),
 		"dirt and gravel are unpaved; chip seal and brick are paved")
