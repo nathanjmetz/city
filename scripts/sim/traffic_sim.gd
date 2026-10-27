@@ -590,6 +590,41 @@ func _split_crosswalks(seg: int, first: int, second: int) -> void:
 			no_crosswalks[n][near] = true
 
 
+## Drops no-turn signs and missing crosswalks at junctions that are gone
+## (or no longer have three roads), and on legs that no longer meet them.
+func prune_junction_settings() -> void:
+	for n in turn_bans.keys():
+		if not network.nodes.has(n) or network.segments_at(n).size() < 3:
+			turn_bans.erase(n)
+	for n in no_crosswalks.keys():
+		var at: Array = network.segments_at(n) if network.nodes.has(n) else []
+		var kept := {}
+		if at.size() >= 3:
+			for seg in no_crosswalks[n]:
+				if seg in at:
+					kept[seg] = true
+		if kept.is_empty():
+			no_crosswalks.erase(n)
+		else:
+			no_crosswalks[n] = kept
+
+
+## Undo put the roads back as they were before a build: junctions that
+## lost their signs or missing crosswalks to it get them back (second
+## reader, 2026-10-26). Junctions with settings of their own now keep them.
+func restore_junction_settings(bans: Dictionary, no_cross: Dictionary) -> void:
+	prune_junction_settings()
+	for n in bans:
+		if not turn_bans.has(n):
+			turn_bans[n] = bans[n].duplicate()
+	for n in no_cross:
+		if not no_crosswalks.has(n):
+			no_crosswalks[n] = no_cross[n].duplicate()
+	prune_junction_settings()
+	_dirty = true
+	version += 1
+
+
 func crosswalks_to_dict() -> Dictionary:
 	var out := {}
 	for n in no_crosswalks:

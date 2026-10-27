@@ -31,7 +31,8 @@ func before(sim: CitySim, cmd: Dictionary) -> Variant:
 	if type in ROAD_TYPES:
 		return {"type": type, "money": sim.economy.money, "roads": sim.network.snapshot(), "rev": sim.network.revision,
 			"county": sim.county_joined.size(), "links": sim.region_links.size(),
-			"closed": sim.traffic.closed.duplicate(), "plazas": sim.parks.trails.plazas.duplicate()}
+			"closed": sim.traffic.closed.duplicate(), "plazas": sim.parks.trails.plazas.duplicate(),
+			"bans": sim.traffic.turn_bans.duplicate(true), "no_cross": sim.traffic.no_crosswalks.duplicate(true)}
 	if PLACE_TYPES.has(type):
 		return {"type": type, "money": sim.economy.money, "ids": things(sim, type).keys()}
 	return null
@@ -54,6 +55,9 @@ func after(sim: CitySim, snap: Dictionary) -> void:
 			if not sim.network.segments.has(int(seg)):
 				e.closed[seg] = snap.closed[seg]
 		e.plazas = snap.plazas.filter(func(seg): return not sim.network.segments.has(int(seg)))
+		# And no-turn signs and missing crosswalks it took off a junction.
+		e.bans = snap.bans
+		e.no_cross = snap.no_cross
 	else:
 		var added: Array = things(sim, snap.type).keys().filter(func(k): return not k in snap.ids)
 		if added.size() != 1:
@@ -98,7 +102,9 @@ func undo(sim: CitySim) -> bool:
 		# ids again, and a new junction mustn't start with an old one's signs
 		# (second reader, 2026-10-26). Not on every road change, though: a
 		# roundabout resize takes its ring out and puts it back in two steps.
-		sim.traffic.prune_junction_settings()
+		# restore_junction_settings prunes first, then gives back what the
+		# build took.
+		sim.traffic.restore_junction_settings(e.get("bans", {}), e.get("no_cross", {}))
 		for seg in e.get("closed", {}):
 			sim.traffic.close_segment(int(seg), true, str(e.closed[seg]))
 		for seg in e.get("plazas", []):

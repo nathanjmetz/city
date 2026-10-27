@@ -72,7 +72,34 @@ func _init() -> void:
 	_check(sim.apply({"type": "crosswalk", "node": c, "seg": near_piece, "on": true}), "the crosswalk is put back")
 	_check(t.no_crosswalks.is_empty(), "every crosswalk is back")
 	_check(not sim.apply({"type": "crosswalk", "node": c, "seg": north + 999, "on": false}), "only a road that meets the junction")
+	_undo_keeps_it()
 	quit(1 if _failed else 0)
+
+
+## Second reader (2026-10-26): a road that cut the leg, undone, leaves the
+## leg's crosswalk still taken away.
+func _undo_keeps_it() -> void:
+	var sim := CitySim.new()
+	sim.economy.money = 10_000_000
+	sim.apply({"type": "build_road", "start": [-200, 0], "ctrl": [0, 0], "end": [200, 0]})
+	sim.apply({"type": "build_road", "start": [0, -200], "ctrl": [0, 0], "end": [0, 200]})
+	sim.tick()
+	var c := sim.network.find_node_near(Vector3.ZERO, 1.0)
+	var west: int = sim.network.find_segment_near(Vector3(-50, 0, 0), 1.0).seg
+	sim.apply({"type": "crosswalk", "node": c, "seg": west, "on": false})
+	sim.apply({"type": "turn_ban", "node": c, "turn": "left", "on": true})
+	sim.apply({"type": "build_road", "start": [-100, 0], "ctrl": [-100, 50], "end": [-100, 100]})
+	_check(not sim.traffic.has_crosswalk(c, sim.network.find_segment_near(Vector3(-30, 0, 0), 1.0).seg), "cut: the corner piece has it")
+	_check(sim.apply({"type": "undo"}), "the cutting road is undone")
+	_check(sim.network.segments.has(west) and not sim.traffic.has_crosswalk(c, west), "undone: the leg's crosswalk is still taken away")
+	_check(sim.traffic.turn_bans.get(c, {}).has("left"), "and the no left turn sign is still up")
+	# Two legs gone: no junction, no settings.
+	var north: int = sim.network.find_segment_near(Vector3(0, 0, -50), 1.0).seg
+	var south: int = sim.network.find_segment_near(Vector3(0, 0, 50), 1.0).seg
+	sim.apply({"type": "remove_road", "seg": north})
+	sim.apply({"type": "remove_road", "seg": south})
+	sim.tick()
+	_check(sim.traffic.turn_bans.is_empty() and sim.traffic.no_crosswalks.is_empty(), "a plain bend keeps no settings once two legs go")
 
 
 ## Whether the walk just planned crossed road `seg` at junction `n`.

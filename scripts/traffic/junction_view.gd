@@ -169,7 +169,8 @@ func _rebuild_all() -> void:
 			else:
 				rule = "stop"
 			rules[traffic.ways[wid].seg] = rule
-		var no_cross: Dictionary = traffic.no_crosswalks.get(n, {})
+		# A copy: the live one is changed in place, and the cached key with it.
+		var no_cross: Dictionary = traffic.no_crosswalks.get(n, {}).duplicate()
 		var key := [plan, rules, Terrain.shift, no_cross]
 		var hit: Array = _paint_cache.get(n, [])
 		if hit.is_empty() or hit[0] != key:
