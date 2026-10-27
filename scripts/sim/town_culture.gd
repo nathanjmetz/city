@@ -180,7 +180,7 @@ func develop(sim) -> bool:
 	var owner: String = sim.families.name_of("farm:%d" % int(site.farm))
 	var why := "%s is %s now, and there's no %s land left to build on. %s along %s is for sale." % [
 		"Town" if identity == "" else "The town", _known_as(best), ZoneMap.NAMES[CONVERTS[best][0]].to_lower(),
-		owner if owner != "" else "A %s farm" % str(farm.crop), site.road]
+		owner if owner != "" else Words.a_first("%s farm" % str(farm.crop)), site.road]
 	sim.permits.file(sim, {"hub": HUB, "hub_id": 1, "leader": Names.person(hash([since, site.farm]), Names.surname(hash(site.farm))),
 		"title": "A developer wants to build %s" % CONVERTS[best][2], "why": why,
 		"change": CONVERTS[best][1], "area": outline, "per_m2": Balance.CULTURE_FARMLAND_PER_M2,

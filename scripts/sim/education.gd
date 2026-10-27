@@ -337,7 +337,7 @@ static func locked_by(sim: CitySim, c: Dictionary, use: String, facts: Dictionar
 		return "built"
 	for h in d.get("requires", []):
 		if not h in c.get("built", []):
-			return "needs a %s first" % dev(c.kind, h).name.to_lower()
+			return "needs %s first" % Words.a(Words.mid(dev(c.kind, h).name))
 	var n: Dictionary = d.get("needs", {})
 	for cond in n:
 		var v = n[cond]
@@ -356,7 +356,7 @@ static func locked_by(sim: CitySim, c: Dictionary, use: String, facts: Dictionar
 ## "needs a head with a doctorate" and so on, for the info panel.
 static func _need_text(cond: String, v) -> String:
 	match cond:
-		"leader_edu": return "needs a head with a %s" % degree_name(float(v))
+		"leader_edu": return "needs a head with %s" % Words.a(degree_name(float(v)))
 		"rep": return "needs a %d%% reputation" % roundi(float(v) * 100.0)
 		"enrolled": return "needs %s students" % CitySim.money_text(int(v))
 		"funding": return "needs full funding"
@@ -369,7 +369,7 @@ static func _need_text(cond: String, v) -> String:
 	if cond == "local:farm":
 		return "needs %d farms nearby" % int(v)
 	if cond.begins_with("local:"):
-		return "needs a %s nearby" % cond.substr(6)
+		return "needs %s nearby" % Words.a(cond.substr(6))
 	if cond.begins_with("region_makes:"):
 		return "needs a neighbouring town that sells %s" % cond.substr(13)
 	if cond.begins_with("region_buys:"):
@@ -660,8 +660,8 @@ func _ask_for_land(sim: CitySim, id: int, c: Dictionary, use: String, corr: Arra
 		var name := str(dev(c.kind, use).get("name", use))
 		var req := sim.permits.file(sim, {"hub": "campus", "hub_id": id, "leader": leader_name(c.leader),
 			"title": "%s wants the block next door" % KINDS[c.kind].name,
-			"why": "It is full and boxed in. It would buy out %d %s there for a %s." % [homes,
-				"property" if homes == 1 else "properties", name.to_lower()],
+			"why": "It is full and boxed in. It would buy out %d %s there for %s." % [homes,
+				"property" if homes == 1 else "properties", Words.a(Words.mid(name))],
 			"change": "Homes and shops to campus", "area": outline,
 			"per_m2": Balance.EDUCATION_LAND_PER_M2, "budget": maxi(roundi(c.savings), 0)})
 		if req != -1:

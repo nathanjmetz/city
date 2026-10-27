@@ -594,7 +594,7 @@ func tree_problem(sim: CitySim, id: int, key: String) -> String:
 		if not has_feature(id, r):
 			return "needs the %s first" % str(node(r).get("name", FEATURE_NAMES.get(r, r))).to_lower()
 	if n.has("tier") and maxi(s.tier, 0) < int(n.tier):
-		return "needs a %s neighborhood" % str(Neighborhood.TIERS[int(n.tier)].name).to_lower()
+		return "needs %s neighborhood" % Words.a(str(Neighborhood.TIERS[int(n.tier)].name).to_lower())
 	if n.has("population") and not Agency.holds(sim, s, s.pos, 0.0, "population", n.population):
 		return "needs %s people in town" % CitySim.money_text(int(n.population))
 	if n.has("water") and not _has_service(sim, [Services.Kind.WATER_TOWER, Services.Kind.WELL]):

@@ -238,7 +238,7 @@ func _shortcut(sim, by: String, cars: int) -> Dictionary:
 	local.cost = Balance.ENGINEER_SIGN_COST
 	local.lines = ["Signs and a gate arm: %s's trucks only. Through drivers go back to the town's roads." % (whose if whose != "" else owner),
 		"Cheap, but that traffic lands on your other roads."]
-	return {"title": ("%s's %s has become a shortcut" % [whose, what]) if whose != "" else "A %s has become a shortcut" % what,
+	return {"title": ("%s's %s has become a shortcut" % [whose, what]) if whose != "" else "%s has become a shortcut" % Words.a_first(what),
 		"why": "At rush hour I counted %d cars on %s with no business there. It was built for %s's own trucks, not through traffic, and the neighbors are noticing the dust and the speed." % [
 			cars, road, owner],
 		"change": "Fix a shortcut", "options": [pave, local]}

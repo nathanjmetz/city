@@ -103,6 +103,81 @@ static func _wrap_tooltip(n: Node) -> void:
 		l.custom_minimum_size.x = TOOLTIP_WIDTH
 
 
+## Cards that follow the cursor (HoverCard's building name, PlacementHints'
+## wind and "You have no ... yet") keep off everything in this group: the top
+## bar, the bottom toolbar and its open menu, the hint under the top bar and
+## any open panel. The critic (2026-10-27): "Hiatt home" sat on the Zoning
+## button, and the wind card on Utilities and Civic.
+const KEEP_CLEAR := "cursor_card_keep_clear"
+## Space between the cursor and its card, and between the card and a bar.
+const CURSOR_GAP := 18.0
+const CLEAR_GAP := 4.0
+
+
+## The screen rects a cursor card keeps off: each visible member of
+## KEEP_CLEAR, in canvas units (the same as the mouse position).
+static func keep_clear_rects(tree: SceneTree) -> Array[Rect2]:
+	var out: Array[Rect2] = []
+	for n in tree.get_nodes_in_group(KEEP_CLEAR):
+		var c := n as Control
+		if c != null and c.is_visible_in_tree() and c.size.x > 0.0 and c.size.y > 0.0:
+			out.append(c.get_global_rect())
+	return out
+
+
+## Where a card `card` big goes beside the cursor at `at`: below and right of
+## it as usual, flipped above or to the left near an edge or a bar, never over
+## a rect in `avoid` or under the cursor itself. If no corner is clear it
+## slides just above or below what it would cover; failing that, it takes the
+## spot that covers the least. Returns the card's top left, inside `screen`.
+static func beside_cursor(card: Vector2, at: Vector2, screen: Rect2, avoid: Array[Rect2], gap := CURSOR_GAP) -> Vector2:
+	var corners: Array[Vector2] = []
+	for off in [Vector2(gap, gap), Vector2(gap, -gap - card.y), Vector2(-gap - card.x, gap), Vector2(-gap - card.x, -gap - card.y)]:
+		corners.append(_on_screen(at + off, card, screen))
+	for p in corners:
+		if _clear(Rect2(p, card), at, avoid):
+			return p
+	# Every corner is blocked (a bar right under the cursor and an edge
+	# beside it): slide each one up, then down, past whatever it covers.
+	for p in corners:
+		for up in [true, false]:
+			var q: Vector2 = p
+			for i in avoid.size():
+				var hit := _first_hit(Rect2(q, card), avoid)
+				if hit.size == Vector2.ZERO:
+					break
+				q = _on_screen(Vector2(q.x, hit.position.y - card.y - CLEAR_GAP if up else hit.end.y + CLEAR_GAP), card, screen)
+			if _clear(Rect2(q, card), at, avoid):
+				return q
+	var best := corners[0]
+	var least := INF
+	for p in corners:
+		var covered := 0.0
+		for r in avoid:
+			covered += Rect2(p, card).intersection(r).get_area()
+		if covered < least:
+			least = covered
+			best = p
+	return best
+
+
+static func _on_screen(p: Vector2, card: Vector2, screen: Rect2) -> Vector2:
+	return Vector2(clampf(p.x, screen.position.x, maxf(screen.position.x, screen.end.x - card.x)),
+		clampf(p.y, screen.position.y, maxf(screen.position.y, screen.end.y - card.y)))
+
+
+static func _clear(r: Rect2, cursor: Vector2, avoid: Array[Rect2]) -> bool:
+	return not r.has_point(cursor) and _first_hit(r, avoid).size == Vector2.ZERO
+
+
+## The first rect in `avoid` that `r` overlaps, or an empty one.
+static func _first_hit(r: Rect2, avoid: Array[Rect2]) -> Rect2:
+	for a in avoid:
+		if r.intersects(a):
+			return a
+	return Rect2()
+
+
 static func panel(radius := RADIUS_MD) -> StyleBoxFlat:
 	var b := _box(PANEL, radius, LINE, 1)
 	b.shadow_color = Color(0, 0, 0, 0.35)

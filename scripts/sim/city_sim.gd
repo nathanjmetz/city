@@ -2041,7 +2041,7 @@ func warehouse_problem(kind: String, pos: Vector3, dir: Vector3) -> String:
 	if reserves.kind_at(Warehouses.center(w)) != "":
 		return "That land is reserved for %s." % Reserves.KINDS[reserves.kind_at(Warehouses.center(w))]
 	if Services.road_clash(network, poly):
-		return "Too close to a road. A %s needs %d × %d m." % [Warehouses.KINDS[kind].name.to_lower(),
+		return "Too close to a road. %s needs %d × %d m." % [Words.a_first(Words.mid(Warehouses.KINDS[kind].name)),
 			roundi(Warehouses.site_width(w)), roundi(Warehouses.site_depth(w))]
 	for id in services.buildings:
 		if not Geometry2D.intersect_polygons(poly, services.footprint(id)).is_empty():
@@ -3014,7 +3014,7 @@ func _utility_report() -> Array:
 		if not has_source:
 			var starter: int = Services.Kind.POWER_FEED if u == "power" else Services.Kind.WELL
 			var cost: int = Services.KINDS[starter].cost
-			var full := "No %s: build a %s, under Utilities ($%s)" % [u, Services.KINDS[starter].name, money_text(cost)]
+			var full := "No %s: build %s, under Utilities ($%s)" % [u, Words.a(Words.mid(Services.KINDS[starter].name)), money_text(cost)]
 			var short := "No %s" % u
 			if cost > economy.money:
 				full += ". You need $%s more" % money_text(cost - economy.money)
@@ -3048,7 +3048,7 @@ func _utility_report() -> Array:
 		else:
 			var use: Array = services.utility_use[u]
 			text += ": %s is full (%s of %s homes), build a %s" % [u, money_text(use[0]), money_text(use[1]),
-				"Substation" if u == "power" else "Water tower"]
+				"substation" if u == "power" else "water tower"]
 		fulls.append(text)
 	return [" · ".join(shorts), ". ".join(fulls)]
 
@@ -3678,8 +3678,8 @@ func road_problem(c: Array, type: int) -> String:
 	var spec: Dictionary = RoadStyle.TYPES[type]
 	var grade := absf(c[2].y - c[0].y) / flat
 	if grade > spec.grade + 0.0001:
-		return "Too steep: %d%% grade. A %s can climb at most %d%% (AASHTO)." \
-			% [roundi(grade * 100.0), spec.name, roundi(spec.grade * 100.0)]
+		return "Too steep: %d%% grade. %s can climb at most %d%% (AASHTO)." \
+			% [roundi(grade * 100.0), Words.a_first(Words.mid(spec.name)), roundi(spec.grade * 100.0)]
 	var problem := network.crossing_problem(c[0], c[1], c[2])
 	if problem == "":
 		problem = land_problem([c])

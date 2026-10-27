@@ -245,6 +245,10 @@ func _ready() -> void:
 	_root.add_child(tour)
 	level_up.setup(sim, town._town_name("Your town"))
 	_root.add_child(level_up)
+	# The cards that follow the cursor keep off the bars and panels.
+	for c in [_top_bar, _drawer_dock, _hint_panel, _smart_panel, _quick, _search_panel, _views_panel, _display_panel,
+			_towns_panel, _help, _info_panel, advisor, permits, region_panel, town, stats_panel, music]:
+		c.add_to_group(UiStyle.KEEP_CLEAR)
 	sim.charter.step_reached.connect(func(id: String):
 		level_up.town_name = town._town_name("Your town")
 		level_up.celebrate(id)
@@ -1393,6 +1397,7 @@ func _build_bottom_bar() -> void:
 
 	var bar := PanelContainer.new()
 	bar.add_theme_stylebox_override("panel", UiStyle.dock(false))
+	bar.add_to_group(UiStyle.KEEP_CLEAR)
 	dock.add_child(bar)
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -1414,6 +1419,12 @@ func _build_bottom_bar() -> void:
 ## Acres for a card: "3/4" under one, whole acres above.
 static func _acres_text(acres: float) -> String:
 	return "3/4" if acres < 1.0 else str(roundi(acres))
+
+
+## The same with its word: "3/4 acre", "1 acre", "5 acres".
+static func _acres_words(acres: float) -> String:
+	var n := _acres_text(acres)
+	return n + (" acre" if n == "3/4" or n == "1" else " acres")
 
 
 ## Keeps the bottom dock flush with the screen edge as its height changes.
@@ -1930,7 +1941,7 @@ func _parks_drawer() -> PanelContainer:
 	for i in Balance.PARK_SIZES.size():
 		var ps: Dictionary = Balance.PARK_SIZES[i]
 		var b := _segment(128)
-		b.tooltip_text = "%s park: %s acres, $%s. %s" % [ps.name, _acres_text(ps.size.x * ps.size.y / 4046.86),
+		b.tooltip_text = "%s park: %s, $%s. %s" % [ps.name, _acres_words(ps.size.x * ps.size.y / 4046.86),
 			CitySim.money_text(int(ps.cost)), ps.about]
 		var inner := HBoxContainer.new()
 		inner.add_theme_constant_override("separation", 0)

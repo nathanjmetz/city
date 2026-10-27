@@ -1584,7 +1584,7 @@ func _update_hint() -> void:
 		Mode.BULLDOZE:
 			text = "Click a road, service building or farmhouse to remove it."
 		Mode.UPGRADE:
-			text = "Click a road to make it a %s." % RoadStyle.TYPES[road_type].name
+			text = "Click a road to make it %s." % Words.a(Words.mid(RoadStyle.TYPES[road_type].name))
 	if elevation != 0.0 and mode != Mode.BULLDOZE and mode != Mode.UPGRADE:
 		text += "\n%s: new roads at %+d ft  (Page Up / Page Down)" \
 			% ["Bridge" if elevation > 0.0 else "Tunnel", roundi(elevation * FT)]

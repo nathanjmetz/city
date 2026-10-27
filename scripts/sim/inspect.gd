@@ -273,8 +273,8 @@ static func _service(sim: CitySim, id: int) -> Dictionary:
 		# The town also needs the other utility before anything grows.
 		var other := "water" if u == "power" else "power"
 		if sim.services.utility_use[other][1] == 0:
-			problems.append("The town has no %s yet, so no buildings can grow. Build a %s." % [other,
-				Services.KINDS[Services.Kind.WELL if other == "water" else Services.Kind.POWER_FEED].name])
+			problems.append("The town has no %s yet, so no buildings can grow. Build %s." % [other,
+				Words.a(Words.mid(Services.KINDS[Services.Kind.WELL if other == "water" else Services.Kind.POWER_FEED].name))])
 	else:
 		var homes := 0
 		var covered := 0
@@ -397,7 +397,7 @@ static func _farm(sim: CitySim, id: int, at := []) -> Dictionary:
 	var stock := Livestock.kind(f)
 	if stock != "":
 		var n := Livestock.head(f)
-		var what := "%s %s" % [CitySim.money_text(n), Livestock.head_name(stock)] if n > 0 else "Planning a %s" % (
+		var what := "%s %s" % [CitySim.money_text(n), Livestock.head_name(stock)] if n > 0 else "Planning %s" % Words.a(
 			"beef herd" if stock == "cattle" else str(Balance.LIVESTOCK[stock].name).to_lower())
 		if Balance.LIVESTOCK.has(stock) and n > 0:
 			what += " (%s, $%s every 12 days with manure)" % [str(Balance.LIVESTOCK[stock].name).to_lower(),
@@ -458,7 +458,7 @@ static func _industry(sim: CitySim, id: int) -> Dictionary:
 	var profit := sim.industry.yearly_profit(id)
 	var ref := "site:%d" % id
 	var rows := [
-		["%s%ss" % [k.pad.substr(0, 1).to_upper(), k.pad.substr(1)], str(s.pads.size())],
+		[Words.first_up(Words.plural(k.pad)), str(s.pads.size())],
 		["Output", "%.1f truckloads of %s / day" % [rate, k.cargo]],
 		["Waiting in the yard", "%d loads" % floori(s.stock)],
 		["Trucks on the road", str(sim.logistics.trucks_for(ref))],
@@ -468,11 +468,11 @@ static func _industry(sim: CitySim, id: int) -> Dictionary:
 			* sim.economy.tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0))],
 	]
 	var problems := []
-	var status := "Working: opens %ss where the ground is richest" % k.pad
+	var status := "Working: opens %s where the ground is richest" % Words.plural(k.pad)
 	if s.pads.is_empty():
 		status = "Surveying for its first %s" % k.pad
 		if s.get("idle", "") != "":
-			status = "Idle: no ground worth a %s" % k.pad
+			status = "Idle: no ground worth %s" % Words.a(k.pad)
 			problems.append(s.idle)
 	if sim.logistics.stuck.has(ref):
 		problems.append("Its trucks can't reach a buyer or the highway. Connect its road to the rest of town.")
@@ -641,7 +641,7 @@ static func _power(sim: CitySim, id: int) -> Dictionary:
 	var profit: float = sold.get("profit", 0.0)
 	var rows := [
 		["Leader", "%s (%s)" % [s.leader.name, Power.schooling(s.leader)]],
-		["%s%ss" % [k.unit.substr(0, 1).to_upper(), k.unit.substr(1)], "%d of %d" % [s.cells.size(), int(k.max_cells)]],
+		[Words.first_up(Words.plural(k.unit)), "%d of %d" % [s.cells.size(), int(k.max_cells)]],
 		["Makes", "power for %s homes" % CitySim.money_text(sim.power.capacity(id))],
 		["Sold in town", "%s homes" % CitySim.money_text(int(sold.get("town", 0)))],
 		["Sold to the region", "%s homes" % CitySim.money_text(int(sold.get("export", 0)) + int(sold.get("neighbor", 0)))],
@@ -698,7 +698,7 @@ static func _development(sim: CitySim, hub: Dictionary, tree: Array, at: Vector3
 	if not lead.is_empty():
 		var school := "college" if float(lead.edu) >= 0.6 else ("some college" if float(lead.edu) >= 0.4 else "high school")
 		var style := "careful" if float(lead.caution) > 0.6 else ("ambitious" if float(lead.ambition) > 0.6 else "steady")
-		rows.append(["Run by", "a %s owner, %s" % [style, school]])
+		rows.append(["Run by", "%s, %s" % [Words.a(style + " owner"), school]])
 	var built := []
 	for node in tree:
 		if node.id in hub.get("built", []):
@@ -733,7 +733,7 @@ static func needs(sim: CitySim, key: String) -> Dictionary:
 		elif missing == "":
 			missing = Services.KINDS[kind].name
 	list.append(["Services nearby", roundi(100.0 * have / maxf(Services.COVERAGE.size(), 1.0)),
-		"Needs a %s within reach." % missing.to_lower()])
+		"Needs %s within reach." % Words.a(Words.mid(missing))])
 	var lift: float = sim.parks.lot_value.get(key, 0.0)
 	var land := sim.land_factor(key) * sim.mail.lot_factor(sim, key) * (1.0 + lift)
 	list.append(["Land value", clampi(roundi(50.0 + (land - 1.0) * 150.0), 0, 100),
@@ -833,8 +833,8 @@ static func _lot(sim: CitySim, key: String) -> Dictionary:
 		rows.push_front(["Jobs", str(b.cap)])
 		if z == ZoneMap.Zone.INDUSTRIAL:
 			var chain: Dictionary = Balance.FACTORY_CHAINS[b.get("chain", "general")]
-			rows.push_front(["Makes", "%s from %s" % [chain.makes.capitalize(), chain.input]])
-			rows.append(["%s in the yard" % chain.input.capitalize(), "%d loads" % floori(sim.logistics.stock.get(key, 0.0)), "Business"])
+			rows.push_front(["Makes", "%s from %s" % [Words.first_up(chain.makes), chain.input]])
+			rows.append(["%s in the yard" % Words.first_up(chain.input), "%d loads" % floori(sim.logistics.stock.get(key, 0.0)), "Business"])
 		rows.append(["Trucks on the road", str(sim.logistics.trucks_for("lot:" + key)), "Business"])
 		status = "Open for business" if problems.is_empty() else "Closed: no power or water"
 	# The status's colour says what its words say: problems found below

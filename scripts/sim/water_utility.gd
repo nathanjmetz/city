@@ -685,7 +685,7 @@ func _build(sim: CitySim, id: int, key: String, usable: Callable) -> bool:
 			if tree:
 				u.built.append(key)
 			return true
-	u.last = "Boxed in: no free land next to its yard for a %s" % NAMES[key].name.to_lower()
+	u.last = "Boxed in: no free land next to its yard for %s" % Words.a(Words.mid(NAMES[key].name))
 	return false
 
 

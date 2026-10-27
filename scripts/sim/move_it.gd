@@ -444,8 +444,8 @@ static func _road_problem(sim: CitySim, id: int, c: Array, rigid: bool) -> Strin
 		var spec: Dictionary = RoadStyle.TYPES[type]
 		var grade := absf(c[2].y - c[0].y) / flat
 		if grade > spec.grade + 0.0001:
-			return "Too steep: %d%% grade. A %s can climb at most %d%% (AASHTO)." \
-				% [roundi(grade * 100.0), spec.name, roundi(spec.grade * 100.0)]
+			return "Too steep: %d%% grade. %s can climb at most %d%% (AASHTO)." \
+				% [roundi(grade * 100.0), Words.a_first(Words.mid(spec.name)), roundi(spec.grade * 100.0)]
 	var saved := sim.reserves.crosses(RoadNetwork.sample_curve(c[0], c[1], c[2], 24))
 	if saved != "":
 		return "That land is reserved for %s. Clear the reserve first." % Reserves.KINDS[saved]

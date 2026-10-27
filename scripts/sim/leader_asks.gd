@@ -145,10 +145,10 @@ func _plan_abatement(sim) -> Dictionary:
 		var monthly := roundi(float(want.cost) * Balance.ASK_ABATE_RATE / 12.0)
 		var jobs := int(want.get("effects", {}).get("jobs+", 0))
 		return {"kind": "abatement", "hub_id": id,
-			"leader": "%s, %s" % [fam.head, company] if not fam.is_empty() else company.capitalize(),
-			"title": "A tax abatement for a %s" % str(want.name).to_lower(),
-			"why": "%s would build a %s%s at its own yard now if the new investment's taxes phase in over %d years. It needs no new land." % [
-				company.capitalize(), str(want.name).to_lower(), (" (%s)" % want.note) if want.has("note") else "",
+			"leader": "%s, %s" % [fam.head, company] if not fam.is_empty() else Words.first_up(company),
+			"title": "A tax abatement for %s" % Words.a(Words.mid(str(want.name))),
+			"why": "%s would build %s%s at its own yard now if the new investment's taxes phase in over %d years. It needs no new land." % [
+				Words.first_up(company), Words.a(Words.mid(str(want.name))), (" (%s)" % want.note) if want.has("note") else "",
 				Balance.ASK_ABATE_YEARS],
 			"area": _square(s.pos, 60.0),
 			"yes": "They build it now%s. The town forgoes about $%s a day for %d years." % [
@@ -376,7 +376,7 @@ func _yes(sim, a: Dictionary) -> bool:
 			for n in Agency.TREES[s.kind]:
 				if n.id == str(a.node):
 					node = n
-			s.why = "Built a %s with a tax abatement from the town." % str(node.get("name", "it")).to_lower()
+			s.why = "Built %s with a tax abatement from the town." % Words.a(Words.mid(str(node.get("name", "it"))))
 			var who := "site:%d" % int(a.site)
 			sim.industry.place_addon(int(a.site), str(a.node), func(p: Vector3) -> bool: return sim._addon_free(p, who))
 			abatements.append({"who": "site:%d" % int(a.site), "monthly": int(a.monthly),
@@ -401,7 +401,7 @@ func _yes(sim, a: Dictionary) -> bool:
 				return false
 			if not w._build(sim, id, str(a.key), sim.yard_usable):
 				return false
-			w.utilities[id].last = "Built a %s the town paid for" % str(WaterUtility.NAMES[str(a.key)].name).to_lower()
+			w.utilities[id].last = "Built %s the town paid for" % Words.a(Words.mid(str(WaterUtility.NAMES[str(a.key)].name)))
 			sim.economy.money -= int(a.cost)
 			sim._lots_dirty = true
 			sim.water_changed.emit()

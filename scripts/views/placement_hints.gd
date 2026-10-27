@@ -167,10 +167,9 @@ func _process(delta: float) -> void:
 	if not _mark_at.is_empty():
 		_place_marks()
 	if w.is_empty():
-		_card.visible = _marks_line != ""
-		if _card.visible:
+		if _marks_line != "":
 			_set_base("")
-			_place_card()
+		_show_card(_marks_line != "")
 		return
 	_place_arrows()
 	var hit = cam.mouse_ground_point()
@@ -182,12 +181,11 @@ func _process(delta: float) -> void:
 		if _index_age > INDEX_EVERY and _index_i < 0:
 			_start_index()
 		_build_index()
-	_place_card()
 	if _hover == Vector3.INF or not (_source != "" or _spot):
-		_card.visible = _hover != Vector3.INF
 		_set_base(_wind_line())
+		_show_card(_hover != Vector3.INF)
 		return
-	_card.visible = true
+	_show_card(true)
 	if _source != "":
 		_follow()
 	_count_wait -= delta
@@ -224,13 +222,21 @@ func _set_base(text: String) -> void:
 		_card.reset_size()
 
 
-## Keeps the card just below and right of the mouse, on screen.
-func _place_card() -> void:
-	var vp := get_viewport()
-	var m := vp.get_mouse_position()
-	var size := vp.get_visible_rect().size
-	var c := _card.size
-	_card.position = Vector2(clampf(m.x + 22.0, 0.0, size.x - c.x), clampf(m.y + 22.0, 0.0, size.y - c.y))
+## Shows the card beside the mouse, or hides it. It's about the ground under
+## the cursor, so it hides while the cursor is on a button or panel (the
+## button's own tooltip says what it does there).
+func _show_card(on: bool) -> void:
+	_card.visible = on and get_viewport().gui_get_hovered_control() == null
+	if _card.visible:
+		_place_card(get_viewport().get_mouse_position())
+
+
+## Keeps the card just below and right of the mouse at `at`, flipped above or
+## to the left rather than cover a bar or panel (UiStyle.beside_cursor).
+func _place_card(at: Vector2) -> void:
+	_card.reset_size()
+	_card.position = UiStyle.beside_cursor(_card.size, at, get_viewport().get_visible_rect(),
+		UiStyle.keep_clear_rects(get_tree()), 22.0)
 
 
 # --- What's already built --------------------------------------------------------

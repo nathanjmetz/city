@@ -88,7 +88,7 @@ static func loss_text(losses: Array) -> String:
 		counts[l.what] += 1
 	for w in order:
 		var n: int = counts[w]
-		named.append(("a %s" % w.to_lower()) if n == 1 else "%d %ss" % [n, w.to_lower()])
+		named.append(Words.a(w.to_lower()) if n == 1 else Words.count(n, w.to_lower()))
 	if named.size() <= 1:
 		return "".join(named)
 	return ", ".join(named.slice(0, named.size() - 1)) + " and " + named[-1]

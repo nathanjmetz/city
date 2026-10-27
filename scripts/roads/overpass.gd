@@ -72,8 +72,8 @@ static func plan(sim, c: Array, type: int) -> Dictionary:
 		var worst: Dictionary = hits[0]
 		var run := float(worst.pad) + (float(worst.y) - minf(p0.y, p2.y)) / grade
 		return {"ok": false, "pieces": [], "crossed": hits.size(), "why":
-			"Too short to climb over: a %s needs about %d ft each side to clear it at %d%% grade." \
-			% [RoadStyle.TYPES[type].name, roundi(run * 3.28084), roundi(grade / 0.98 * 100.0)]}
+			"Too short to climb over: %s needs about %d ft each side to clear it at %d%% grade." \
+			% [Words.a(Words.mid(RoadStyle.TYPES[type].name)), roundi(run * 3.28084), roundi(grade / 0.98 * 100.0)]}
 	# Pieces end where the climb changes: the foot of each approach and each
 	# end of the level deck.
 	var keep := _corners(along, ys)
