@@ -147,7 +147,7 @@ func mutual_note() -> String:
 	var n := mutual_log.size() + mutual_pending.size()
 	if n == 0:
 		return ""
-	return "%d call%s answered by the next county this month, and later than ours. Build a hospital." % [n, "" if n == 1 else "s"]
+	return "%d call%s answered by the next county today, and later than ours. Build a hospital." % [n, "" if n == 1 else "s"]
 
 
 ## Every administrator takes a step: retire, save, then build the next

@@ -87,7 +87,7 @@ func decide(sim: CitySim) -> bool:
 	var changed := _carry_out(sim)
 	if _open_plazas(sim):
 		changed = true
-	var m := Seasons.month(sim.tick_count)
+	var m := Seasons.pace_month(sim.tick_count)  # once a sim day ("a month")
 	if m == _month:
 		return changed
 	_month = m

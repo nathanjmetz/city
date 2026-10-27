@@ -37,8 +37,8 @@ func _demo_town() -> void:
 	sim.economy.money = 20_000_000  # a demo town, built in one go
 	if OS.get_environment("SHOT_MONTH") != "":
 		# Months from January, e.g. 0.5 for mid-January snow.
-		var m := float(OS.get_environment("SHOT_MONTH")) - Seasons.START_MONTH
-		sim.tick_count = int(fposmod(m, 12.0) * Seasons.TICKS_PER_DAY)
+		var m := float(OS.get_environment("SHOT_MONTH"))
+		sim.set_calendar(Seasons.tick_at(m + (12.0 if m < Seasons.START_MONTH else 0.0)))
 	var args0 := OS.get_cmdline_user_args()
 	if args0.size() >= 5 and args0[4] == "warehouses":
 		# Every warehouse size along an industrial avenue; the big one has grown.

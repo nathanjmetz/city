@@ -2,23 +2,26 @@ class_name DayNight
 extends Node3D
 ## The two look switches Brawn asked for, kept apart like in Cities:
 ## Skylines 2's settings:
-##   - Day and night: off by default, so the town stays in late-morning sun.
-##     On, the sun follows the clock and the date over real Grant County
-##     (SkyLight.set_time, docs/daylight.md), then dusk, moonlight and
-##     stars, with streetlights, lit windows and headlights coming on.
+##   - Day and night: on by default (Nathan 2026-10-26: the night is "a
+##     natural point for the user to get up"). The sky runs one day and
+##     night per calendar month, about an hour (SkyClock): a 50-minute day
+##     over real Grant County (SkyLight.set_time, docs/daylight.md), then
+##     dusk, moonlight and stars for 10 minutes, with streetlights, lit
+##     windows and headlights coming on. Off, the town stays in late-morning
+##     sun.
 ##   - Seasons: spring, summer, fall colour and harvest, and winter with snow
 ##     on the ground (never falling: there is no weather). Off, it's always
 ##     summer.
-## Both only change how the town looks. The clock and the year come from the
-## simulation's tick count (see Seasons), so they stay in step for everyone
-## in a region; each player picks for themselves whether to see them.
+## Both only change how the town looks. The sky and the year come from the
+## town's calendar tick (see Seasons), so they stay in step for everyone in
+## a region; each player picks for themselves whether to see them.
 ##
 ## Everything that changes with the hour or the season reads a few global
 ## shader values set here: night, snow, season_look and windows_lit.
 
 const SETTINGS_PATH := "user://look.json"
 
-static var cycle_on := false
+static var cycle_on := true
 static var seasons_on := true
 static var _loaded := false
 
@@ -26,10 +29,11 @@ var sim: CitySim
 var sky: SkyLight
 ## Returns how far through the current tick the clock is, 0 to 1.
 var tick_fraction := Callable()
-## Pins the light's date (a Seasons.months value, 0 = January 1) for
-## pictures of a real day: a game day runs through a whole month, so the
-## clock alone can't show June 21 at 1:40 pm. Below 0, the clock decides.
+## Pins the light's date (a Seasons.months value, 0 = January 1) and hour
+## (0 to 24) for pictures of a real moment, June 21 at 1:40 pm. Below 0, the
+## calendar decides.
 var date_override := -1.0
+var hour_override := -1.0
 var _lamps: StreetLights
 var _beams: Headlights
 var _was_cycle := false
@@ -60,7 +64,7 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	var t := Perf.now()
 	var frac: float = tick_fraction.call() if tick_fraction.is_valid() else 0.0
-	var months: float = Seasons.months(sim.tick_count) + frac / Seasons.TICKS_PER_DAY
+	var months: float = Seasons.months_at(sim.calendar_tick() + frac)
 	if date_override >= 0.0:
 		months = date_override
 	var look := Seasons.look(months) if seasons_on else Seasons.summer()
@@ -72,8 +76,7 @@ func _process(_delta: float) -> void:
 	var lit := 0.0
 	sky.set_season(months if seasons_on else 6.5)
 	if cycle_on:
-		var clock := sim.clock()
-		var hour: float = clock.hour + (clock.minute + frac) / 60.0
+		var hour: float = hour_override if hour_override >= 0.0 else sim.sky_hour(frac)
 		sky.set_time(hour, months if seasons_on else 6.5)
 		night = sky.darkness
 		lit = window_share(hour)
@@ -132,7 +135,10 @@ static func load_settings() -> void:
 		return
 	var data = JSON.parse_string(f.get_as_text())
 	if data is Dictionary:
-		cycle_on = bool(data.get("day_night", false))
+		# "sky_cycle" replaced "day_night" (2026-10-27) when the sky slowed to
+		# an hour a day and came on by default; the old switch was off for
+		# nearly everyone because that was its default.
+		cycle_on = bool(data.get("sky_cycle", true))
 		seasons_on = bool(data.get("seasons", true))
 		Weather.on = bool(data.get("weather", true))
 
@@ -144,7 +150,7 @@ static func save_settings() -> void:
 		var old = JSON.parse_string(FileAccess.get_file_as_string(SETTINGS_PATH))
 		if old is Dictionary:
 			data = old
-	data.merge({"day_night": cycle_on, "seasons": seasons_on, "weather": Weather.on}, true)
+	data.merge({"sky_cycle": cycle_on, "seasons": seasons_on, "weather": Weather.on}, true)
 	var f := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify(data))

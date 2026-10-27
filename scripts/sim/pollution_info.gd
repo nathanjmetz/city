@@ -247,7 +247,7 @@ static func fixes(sim: CitySim, s: Dictionary) -> Array:
 			var saving := p.monthly_saving(sim, s)
 			var left := maxf(float(next.cost) - float(plan.saved), 0.0)
 			if p.educated(sim, s):
-				out.append("The owner is saving for %s: %d%% there, about %d months to go." % [next.name,
+				out.append("The owner is saving for %s: %d%% there, about %d days to go." % [next.name,
 					roundi(100.0 * float(plan.saved) / float(next.cost)), ceili(left / maxf(saving, 1.0))])
 			else:
 				out.append("The owner is barely saving for %s (%d%% there): few educated leaders in town. A school within %.0f miles, or local graduates, gets owners investing in cleaner ways." % [

@@ -178,13 +178,25 @@ static func conditions(clock: Dictionary) -> Array:
 	return [float((h >> 6) % 30) / 100.0, 0.0, fog, 0.0]
 
 
+## The date conditions() reads for a town in play: the sky's day is a whole
+## month (SkyClock), so the weather is rolled once a month and its hours are
+## the sky's: a wet spell of a few sky hours lasts 10 to 25 real minutes.
+static func sky_clock(sim: CitySim) -> Dictionary:
+	var t := sim.clock()
+	var h := sim.sky_hour()
+	t.day = 1  # the sky's whole day is the month
+	t.hour = int(h)
+	t.minute = (h - floorf(h)) * 60.0
+	return t
+
+
 ## The sky over a town in play: the date's odds (conditions), except that a
-## new town's first game day (tick under a game day) is always fair, and
+## new town's first month (its first hour) is always fair, and
 ## there's no fog while Day and night is off (`cycle` false): the light is
 ## held at late morning then, and dawn fog under it read as a fault (the
 ## critic, 2026-10-26).
 static func for_town(clock: Dictionary, tick: int, cycle: bool) -> Array:
-	if tick < Seasons.TICKS_PER_DAY:
+	if tick < 30 * Seasons.TICKS_PER_DAY:
 		return [FIRST_DAY_COVER, 0.0, 0.0, 0.0]
 	var c := conditions(clock)
 	if not cycle:
@@ -203,7 +215,7 @@ func _process(_delta: float) -> void:
 			# The home screen's real date (its tick is pinned to the season).
 			c = conditions(sim.clock())
 		else:
-			c = for_town(sim.clock(), sim.tick_count, DayNight.cycle_on)
+			c = for_town(sky_clock(sim), sim.tick_count, DayNight.cycle_on)
 	var snowing := float(c[3]) > 0.5
 	cover = lerpf(cover, float(c[0]), 0.02)
 	rain = lerpf(rain, 0.0 if snowing else float(c[1]), 0.03)

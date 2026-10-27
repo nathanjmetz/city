@@ -87,7 +87,7 @@ func _process(_delta: float) -> void:
 	# The crops in the fields change each January when the farms plan, and
 	# that redraws them (farms_changed); the table itself follows the date.
 	# Only a field on a borrowed county row needs redrawing as the year turns.
-	var year := Seasons.year(sim.tick_count)
+	var year := Seasons.year(sim.calendar_tick())
 	if year != _year:
 		_year = year
 		for id in _drawn:
@@ -108,9 +108,9 @@ func _process(_delta: float) -> void:
 ## The crop table shows today (mid July while seasons are off).
 func _sync_date() -> void:
 	if DayNight.seasons_on:
-		CropCalendar.set_date(Seasons.months(sim.tick_count), Seasons.year(sim.tick_count))
+		CropCalendar.set_date(Seasons.months(sim.calendar_tick()), Seasons.year(sim.calendar_tick()))
 	else:
-		CropCalendar.set_date(6.5, Seasons.year(sim.tick_count))
+		CropCalendar.set_date(6.5, Seasons.year(sim.calendar_tick()))
 
 
 func _rebuild() -> void:
@@ -293,7 +293,7 @@ func _draw_some(budget_ms: float) -> void:
 ## A pass starts with every farm to check.
 func _begin_pass() -> void:
 	_rows_due = true
-	_year = Seasons.year(sim.tick_count)
+	_year = Seasons.year(sim.calendar_tick())
 	_forget_gone()
 	_queue = sim.farms.farms.keys()
 

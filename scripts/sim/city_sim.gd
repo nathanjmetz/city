@@ -60,6 +60,14 @@ const START_UNIX := 1799042400
 ## Share of residents who work (US labour force is about half of everyone).
 const WORKER_SHARE := Balance.WORKER_SHARE
 const TICKS_PER_HOUR := 60 / MINUTES_PER_TICK
+## Ticks added to tick_count to get the calendar's tick (calendar_of): 0
+## for a town begun on today's calendar; a town saved on the old one (a
+## month a sim day) gets the offset that keeps its date.
+var calendar_offset := 0
+## The sim tick a town saved on the old calendar was first loaded on this
+## one (0 for a town begun on it): ticks before it read on the old calendar,
+## so a building put up back then keeps the year it was put up in.
+var calendar_from := 0
 
 var network := RoadNetwork.new()
 ## The last builds, for Ctrl+Z (not saved).
@@ -1285,7 +1293,7 @@ func tick() -> void:
 		farms.price = Farms.price_on(tick_count / (24.0 * TICKS_PER_HOUR))
 		farms.day = game_day()
 		# Each January the farm leaders plan the year's crops (CropPlan).
-		var crop_year := Seasons.year(tick_count)
+		var crop_year := Seasons.year(calendar_tick())
 		if crop_year != farms.year:
 			farms.demand = CropPlan.demand(self)
 			if not farms.slope_of.is_valid():
@@ -1573,12 +1581,51 @@ func town_month() -> void:
 
 
 ## Game time as a Dictionary (year, month, day, weekday, hour, minute).
-## A game day settles a month, so the month and year follow Seasons.
+## The month and year are the calendar's (Seasons: a month about an hour).
+## The day, weekday, hour and minute are the sim clock's, a sim day every
+## 2.4 real minutes, which the town's schedules run on (school days, crews,
+## the budget at noon). What the player sees is the calendar's own day and
+## weekday (Seasons.day, Seasons.weekday) and the sky's hour (sky_hour).
 func clock() -> Dictionary:
 	var t := Time.get_datetime_dict_from_unix_time(START_UNIX + tick_count * MINUTES_PER_TICK * 60)
-	t.month = Seasons.month(tick_count)
-	t.year = Seasons.year(tick_count)
+	var cal := calendar_tick()
+	t.month = Seasons.month(cal)
+	t.year = Seasons.year(cal)
 	return t
+
+
+## The calendar's tick now (see calendar_of).
+func calendar_tick() -> int:
+	return calendar_of(tick_count)
+
+
+## The calendar's tick for a sim tick `t`, now or in the town's past: moved
+## on by calendar_offset, or for a tick before calendar_from (an old town's
+## past) read on the old calendar, a month a sim day.
+func calendar_of(t: int) -> int:
+	if t < calendar_from:
+		return Seasons.tick_at(Seasons.START_MONTH + float(t) / Seasons.OLD_TICKS_PER_MONTH)
+	return t + calendar_offset
+
+
+## Puts the town on a calendar tick without moving its own clock (pictures
+## and tests that want a date: buildings keep their ages).
+func set_calendar(cal: int) -> void:
+	calendar_offset = cal - tick_count
+	calendar_from = 0
+
+
+## The sky's hour (0 to 24, fractional): one day and night per calendar
+## month (SkyClock). `frac` is how far through the current tick the clock
+## is, for a smooth sun. Rush hour, lit windows, lights and the night's quiet
+## follow this.
+func sky_hour(frac := 0.0) -> float:
+	return SkyClock.hour(Seasons.months_at(calendar_tick() + frac))
+
+
+## Ticks a daylight hour of the sky lasts now (SkyClock.ticks_per_hour).
+func sky_ticks_per_hour() -> float:
+	return SkyClock.ticks_per_hour(Seasons.months(calendar_tick()))
 
 
 ## Recounts people and jobs, then works out demand the way Cities: Skylines
@@ -4766,6 +4813,8 @@ func save_steps(postcard := false) -> Array:
 		["county_removed", func(): return county_removed.keys()],
 		["trade", func(): return trade.to_dict()],
 		["tick", func(): return tick_count],
+		["calendar", func(): return calendar_offset],
+		["calendar_from", func(): return calendar_from],
 		["seed", func(): return city_seed],
 		["roads", func(): return network.to_dict()],
 		["buildings", func(): return buildings],
@@ -4927,6 +4976,12 @@ func from_dict(d: Dictionary) -> void:
 	traffic.from_dict(d.get("traffic", {}))
 	people.from_dict(d.get("people", {}))
 	tick_count = int(d.get("tick", 0))
+	if d.has("calendar"):
+		calendar_offset = int(d.calendar)
+		calendar_from = int(d.get("calendar_from", 0))
+	else:
+		calendar_offset = Seasons.offset_from_old(tick_count)
+		calendar_from = tick_count
 	city_seed = int(d.get("seed", 1))
 	var postcard := bool(d.get("postcard", false))
 	# Parcels: the lots buildings stand on. (A neighbor's postcard has no

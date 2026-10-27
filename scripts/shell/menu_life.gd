@@ -135,11 +135,16 @@ func _update_clock() -> void:
 	look.date_override = MarionTime.months_for_sky(wall)
 
 
-## The tick count the views see: the date as the game's calendar has it
-## (Seasons.months), years on so every building is grown. The town's own
-## counter (_tick) runs separately, one step per traffic step.
+## The tick count the views see: two pace years on (Seasons.pace_year) so
+## every building is grown and the trees and signs keep the age they always
+## had, with the calendar put on Marion's date (Seasons.months). The town's
+## own counter (_tick) runs separately, one step per traffic step.
 func _pinned() -> int:
-	return int((MarionTime.months_of(wall) + 24.0 - Seasons.START_MONTH) * Seasons.TICKS_PER_DAY)
+	var m := MarionTime.months_of(wall) + 24.0
+	var tick := int((m - Seasons.START_MONTH) * Seasons.OLD_TICKS_PER_MONTH)
+	sim.calendar_offset = Seasons.tick_at(m) - tick
+	sim.calendar_from = 0
+	return tick
 
 
 ## One tenth of a second of the town: people decide, cars drive.

@@ -89,18 +89,21 @@ func _init() -> void:
 	_check(float(partly_days) / all > 0.18, "partly cloudy days come between (%.2f)" % (float(partly_days) / all))
 	var grey_hour_share := float(grey_hours) / day_hours
 	_check(grey_hour_share < 0.47, "under half the daytime hours are overcast (%.2f)" % grey_hour_share)
-	# A brand-new town's first game day is fair all day: every new town
-	# starts on the same date, and it rolled fog and overcast (critic).
+	# A brand-new town's first month (its first hour of sky) is fair: every
+	# new town starts on the same date, and it rolled fog and overcast
+	# (critic).
 	var calm := true
 	var start_sim := CitySim.new()
-	for t in range(0, Seasons.TICKS_PER_DAY, 30):
+	for t in range(0, 30 * Seasons.TICKS_PER_DAY, 300):
 		start_sim.tick_count = t
-		var w := Weather.for_town(start_sim.clock(), t, true)
+		var w := Weather.for_town(Weather.sky_clock(start_sim), t, true)
 		calm = calm and float(w[0]) < 0.3 and float(w[1]) == 0.0 and float(w[2]) == 0.0
-	_check(calm, "a new town's first day is fair, with no fog or rain")
-	start_sim.tick_count = Seasons.TICKS_PER_DAY + 600
-	var later := start_sim.clock()
-	_check(Weather.for_town(later, start_sim.tick_count, true) == Weather.conditions(later), "after the first day, the date's own sky")
+	_check(calm, "a new town's first month is fair, with no fog or rain")
+	start_sim.tick_count = 31 * Seasons.TICKS_PER_DAY + 600
+	var later := Weather.sky_clock(start_sim)
+	_check(Weather.for_town(later, start_sim.tick_count, true) == Weather.conditions(later), "after the first month, the date's own sky")
+	_check(later.day == 1 and absf(later.hour + later.minute / 60.0 - start_sim.sky_hour()) < 0.01,
+		"a town's weather keys on the month and the sky's hour")
 	# Fog only with Day and night on: with it off the light stays at late
 	# morning, and dawn fog under it read as a fault.
 	_check(not a_fog.is_empty() and float(Weather.for_town(a_fog, 99999, true)[2]) > 0.0, "a foggy morning has fog with Day and night on")

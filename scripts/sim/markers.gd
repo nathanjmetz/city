@@ -73,14 +73,14 @@ func month(sim) -> void:
 		if not str(ref).begins_with("farm:") or seen.has("homestead:" + ref):
 			continue
 		var o: Dictionary = sim.families.owned[ref]
-		if Seasons.year(sim.tick_count) - int(o.since) < Balance.FAMILY_GENERATION_YEARS:
+		if Seasons.pace_year(sim.tick_count) - int(o.since) < Balance.FAMILY_GENERATION_YEARS:
 			continue
 		var id := int(str(ref).substr(5))
 		if not sim.farms.farms.has(id):
 			continue
 		var fam: Dictionary = sim.families.family_of(ref)
 		_add(sim, "homestead:" + ref, "Hoosier Homestead",
-			"The %s family has farmed this land since %d." % [fam.get("surname", "same"), Families.calendar(int(o.since))],
+			"The %s family has farmed this land since %d." % [fam.get("surname", "same"), Families.since_year(sim, int(o.since))],
 			_farm_spot(sim.farms.farms[id]), "homestead")
 	_oldest_of = null
 	if markers.size() != before:
@@ -101,7 +101,7 @@ func district(sim, d: Dictionary, outline: Array) -> void:
 			break
 	if spot.is_empty():
 		return
-	spot.year = Families.calendar(Seasons.year(sim.tick_count))
+	spot.year = Families.calendar(Seasons.year(sim.calendar_tick()))
 	_add(sim, key, str(d.name), "Its buildings from the town's early years are protected as a local historic district, designated in {year}.",
 		spot, "district")
 	version += 1
@@ -139,14 +139,14 @@ func charter(sim, step: String, words: Array) -> void:
 
 
 func _add(sim, key: String, title: String, text: String, found: Dictionary, kind: String) -> void:
-	var year := int(found.get("year", Families.calendar(Seasons.year(sim.tick_count))))
+	var year := int(found.get("year", Families.calendar(Seasons.year(sim.calendar_tick()))))
 	var fill := {"{name}": str(found.get("name", "")), "{year}": str(year), "{street}": str(found.get("street", "this street")),
 		"{makes}": str(found.get("makes", "goods")), "{since}": str(found.get("since", year))}
 	for k in fill:
 		title = title.replace(k, fill[k])
 		text = text.replace(k, fill[k])
 	var m := {"id": next_id, "key": key, "title": title, "text": text,
-		"year": Families.calendar(Seasons.year(sim.tick_count)), "pos": found.pos, "face": found.face, "kind": kind}
+		"year": Families.calendar(Seasons.year(sim.calendar_tick())), "pos": found.pos, "face": found.face, "kind": kind}
 	next_id += 1
 	markers.append(m)
 	seen[key] = m.id
@@ -221,11 +221,11 @@ func _find(sim, key: String) -> Dictionary:
 				if str(ref).begins_with("lot:") and sim.lots.has(str(ref).substr(4)) \
 						and (best == "" or int(sim.families.owned[ref].since) < int(sim.families.owned[best].since)):
 					best = ref
-			if best == "" or Seasons.year(sim.tick_count) - int(sim.families.owned[best].since) < Balance.FAMILY_GENERATION_YEARS:
+			if best == "" or Seasons.pace_year(sim.tick_count) - int(sim.families.owned[best].since) < Balance.FAMILY_GENERATION_YEARS:
 				return {}
 			var out := _lot_spot(sim, str(best).substr(4))
 			out.name = sim.families.name_of(best)
-			out.since = Families.calendar(int(sim.families.owned[best].since))
+			out.since = Families.since_year(sim, int(sim.families.owned[best].since))
 			return out
 	return {}
 
@@ -282,7 +282,7 @@ func _lot_first(sim, kind: String) -> Dictionary:
 	var out := _lot_spot(sim, k)
 	var b: Dictionary = sim.buildings[k]
 	out.key = k
-	out.year = Families.calendar(Seasons.year(int(b.built)))
+	out.year = Families.calendar(Seasons.year(sim.calendar_of(int(b.built))))
 	out.name = _named(sim, "lot:" + k, Families.home_name(b) if int(b.zone) == ZoneMap.Zone.RESIDENTIAL
 		else "The " + BuildingTypes.name_of(b).to_lower())
 	return out

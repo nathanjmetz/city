@@ -1997,7 +1997,7 @@ func _cancel(car: Dictionary) -> void:
 func _spawn(sim: CitySim, rng: RandomNumberGenerator) -> void:
 	if cars.size() >= max_cars or sim.stats.population == 0:
 		return
-	var hour: int = sim.clock().hour
+	var hour: int = int(sim.sky_hour())  # what the sky shows (SkyClock)
 	var rate := 0.15
 	if hour >= 6 and hour < 9 or hour >= 16 and hour < 19:
 		rate = 0.6
@@ -2225,7 +2225,7 @@ func may_enter(seg: int, truck: bool) -> bool:
 		"always":
 			return true
 		"night":
-			var hour: int = _sim.clock().hour if _sim != null else 12
+			var hour: int = _sim.clock().hour if _sim != null else 12  # a rule on the sim clock
 			return hour >= 22 or hour < 6
 	return false
 

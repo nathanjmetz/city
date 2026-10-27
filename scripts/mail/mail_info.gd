@@ -27,9 +27,9 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 	var nb := mail.neighbors()
 	if int(nb.towns) > 0:
 		rows.append(["Towns around", "%d, about %s people" % [int(nb.towns), CitySim.money_text(int(nb.population))]])
-	rows.append(["Postmaster's fund", "$%s (+$%s / month)" % [CitySim.money_text(roundi(h.fund)),
+	rows.append(["Postmaster's fund", "$%s (+$%s / day)" % [CitySim.money_text(roundi(h.fund)),
 		CitySim.money_text(roundi(mail.monthly_income(id)))]])
-	rows.append(["City funding", "%s, $%s / month" % [Balance.MAIL_FUNDING[h.funding].name,
+	rows.append(["City funding", "%s, $%s / day" % [Balance.MAIL_FUNDING[h.funding].name,
 		CitySim.money_text(int(Balance.MAIL_FUNDING[h.funding].monthly))]])
 	var acres: float = CivicHubs.land_area(h) / 4046.86
 	rows.append(["Land", "%.1f acres (%d pieces)" % [acres, h.cells.size()]])

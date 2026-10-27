@@ -64,7 +64,7 @@ func lean_historic(amount: float) -> void:
 func _rename(sim, text: String, sector: String) -> void:
 	if text == "" or text == str(current.get("text", "")):
 		return
-	var year := Families.calendar(Seasons.year(sim.tick_count))
+	var year := Families.calendar(Seasons.year(sim.calendar_tick()))
 	if not current.is_empty():
 		past.append({"text": str(current.text), "from": int(current.since), "to": year})
 	current = {"text": text, "sector": sector, "since": year}

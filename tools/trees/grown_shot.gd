@@ -44,7 +44,7 @@ func _process(delta: float) -> bool:
 		Engine.max_fps = 0
 		if a.size() > 1:
 			var sim: CitySim = _main.sim
-			sim.tick_count = int((float(a[1]) - Seasons.START_MONTH) * Seasons.TICKS_PER_DAY)
+			sim.set_calendar(Seasons.tick_at(float(a[1])))
 			DayNight.seasons_on = true  # whatever this computer's settings say
 		_main.set_speed(0)
 		return false

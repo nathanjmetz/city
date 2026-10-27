@@ -23,7 +23,9 @@ const WIDTH := 380
 const HOUR := CitySim.TICKS_PER_HOUR
 const YEAR := 12 * 24 * CitySim.TICKS_PER_HOUR
 const KEYS := ["population", "jobs", "traffic", "demand", "money", "date", "problems"]
-const SPANS := [["month", "Month"], ["year", "Year"], ["decade", "10 years"], ["all", "All"]]
+## On the calendar (a day is 2 real minutes, a month about an hour), the
+## spans StatHistory keeps: a day, two weeks and five months.
+const SPANS := [["month", "Day"], ["year", "2 weeks"], ["decade", "5 months"], ["all", "All"]]
 const TITLES := {"population": "POPULATION", "jobs": "JOBS AND WORK", "traffic": "TRAFFIC",
 	"demand": "DEMAND", "money": "MONEY", "date": "CALENDAR", "problems": "PROBLEMS"}
 const ICONS := {"population": "people", "jobs": "jobs", "traffic": "car", "demand": "zones",
@@ -102,8 +104,8 @@ func _ready() -> void:
 	_spans.add_theme_constant_override("separation", 4)
 	col.add_child(_spans)
 	for s in SPANS:
-		var b := _chip(s[1], "Show " + {"month": "the last game month, hour by hour", "year": "the last game year, hour by hour",
-			"decade": "the last ten years, month by month", "all": "the town's whole life, month by month"}[s[0]])
+		var b := _chip(s[1], "Show " + {"month": "the last day", "year": "the last two weeks",
+			"decade": "the last five months", "all": "the town's whole life"}[s[0]])
 		var which: String = s[0]
 		b.pressed.connect(func():
 			span = which
@@ -206,6 +208,7 @@ func _refresh(full: bool) -> void:
 		return _short(v, st)
 	_chart.bars = m.get("bars", false)
 	_chart.hourly = span in ["month", "year"] and not _chart.bars
+	_chart.calendar_of = sim.calendar_of
 	_chart.from_zero = m.get("from_zero", true)
 	_chart.set_series(series)
 	if full:
@@ -289,10 +292,10 @@ func _metrics() -> Array:
 			return [
 				{"name": "Cash", "fmt": dollars, "from_zero": false, "series": [
 					{"name": "Cash", "color": Brand.POSITIVE, "f": func(r): return r[c.call("money")]}]},
-				{"name": "Each month", "fmt": dollars, "from_zero": false, "tip": "What the town takes in less what it spends, a month", "series": [
-					{"name": "Up or down a month", "color": Brand.BRAND_MINT, "f": func(r): return r[c.call("net")]}]}]
+				{"name": "Each day", "fmt": dollars, "from_zero": false, "tip": "What the town takes in less what it spends, a day", "series": [
+					{"name": "Up or down a day", "color": Brand.BRAND_MINT, "f": func(r): return r[c.call("net")]}]}]
 		"date":
-			return [{"name": "Month by month" if sim.tick_count / (24 * HOUR) < 36 else "Year by year", "fmt": count, "bars": true, "series": [
+			return [{"name": "Month by month" if _age_months() < 36 else "Year by year", "fmt": count, "bars": true, "series": [
 				{"name": "People", "color": Brand.ZONE_RES_LOW, "f": func(r): return r[c.call("pop")]},
 				{"name": "Jobs", "color": Brand.BRAND_TEAL, "f": func(r): return r[c.call("jobs")]}]}]
 	# "problems": buildings without power or water.
@@ -305,7 +308,7 @@ func _headline() -> Array:
 	var s := sim.stats
 	match key:
 		"population":
-			return [_thousands(s.population), _since("pop", s.population, YEAR, "this year")]
+			return [_thousands(s.population), _since("pop", s.population, YEAR, "in 2 weeks")]
 		"jobs":
 			var w := int(s.workers)
 			var un := 0.0 if w == 0 else 100.0 * (w - int(s.employed)) / w
@@ -322,12 +325,12 @@ func _headline() -> Array:
 		"money":
 			var net := sim.economy.monthly_net()
 			return [("–$" if sim.economy.money < 0 else "$") + _thousands(absi(sim.economy.money)),
-				"%s$%s a month" % ["+" if net >= 0 else "–", _thousands(absi(net))]]
+				"%s$%s a day" % ["+" if net >= 0 else "–", _thousands(absi(net))]]
 		"date":
 			var t := sim.clock()
 			return ["%s %d" % [["January", "February", "March", "April", "May", "June", "July", "August", "September",
 				"October", "November", "December"][t.month - 1], Families.calendar(t.year)],
-				["Winter", "Spring", "Summer", "Fall"][Seasons.season(Seasons.months(sim.tick_count))]]
+				["Winter", "Spring", "Summer", "Fall"][Seasons.season(Seasons.months(sim.calendar_tick()))]]
 	var n := _unserved().size()
 	return ["%d buildings" % n if n > 0 else "All clear", "without power or water" if n > 0 else "Everything has power and water"]
 
@@ -343,19 +346,20 @@ func _since(field: String, now: int, ticks: int, words: String) -> String:
 ## The last sample of each year, for the bar charts: [[tick, value, "2031"], ...]
 ## (month by month until the town is three years old).
 func _by_year(rows: Array, f: Callable) -> Array:
-	var months := sim.tick_count / (24 * HOUR) < 36
+	var months := _age_months() < 36
 	var last := {}
 	var order := []
 	for r in rows:
 		var t := int(r[0])
-		var k := Seasons.year(t) * 12 + Seasons.month(t) if months else Seasons.year(t)
+		var c := sim.calendar_of(t)
+		var k := Seasons.year(c) * 12 + Seasons.month(c) if months else Seasons.year(c)
 		if not last.has(k):
 			order.append(k)
 		last[k] = r
 	var out := []
 	for k in order.slice(maxi(order.size() - (12 if months else 20), 0)):
 		var t := int(last[k][0])
-		out.append([t, float(f.call(last[k])), StatChart.when(t) if months else str(Families.calendar(k))])
+		out.append([t, float(f.call(last[k])), StatChart.when(sim.calendar_of(t)) if months else str(Families.calendar(k))])
 	return out
 
 
@@ -373,7 +377,7 @@ func _details_key() -> String:
 		"money":
 			return str(sim.economy.budget.hash())
 		"date":
-			return str(Seasons.month(sim.tick_count))
+			return str(Seasons.month(sim.calendar_tick()))
 	return str(_unserved().size())
 
 
@@ -401,7 +405,7 @@ func _details_population() -> void:
 		_note("Nobody yet. Zone homes along a road with power and water.")
 	_section("ROOM")
 	_line("Empty homes", _thousands(maxi(int(sim.stats.homes_free), 0)))
-	_line("Grown in the last month", _since("pop", sim.stats.population, 24 * HOUR, "").strip_edges())
+	_line("Grown in the last day", _since("pop", sim.stats.population, 24 * HOUR, "").strip_edges())
 	_link("Zone more homes", "Pick up the homes brush", func(): pick_zone.emit(ZoneMap.Zone.RESIDENTIAL))
 
 
@@ -492,14 +496,14 @@ func _details_demand() -> void:
 func _details_money() -> void:
 	_link("Open the Economy page", "Funding and growth for the town, its areas and hubs", func(): open_economy.emit())
 	var b: Dictionary = sim.economy.budget
-	_section("THIS MONTH IN")
+	_section("TODAY IN")
 	var inc: Dictionary = b.get("income", {})
 	for z in [ZoneMap.Zone.RESIDENTIAL, ZoneMap.Zone.COMMERCIAL, ZoneMap.Zone.INDUSTRIAL]:
 		_line(ZONE_WORD[z] + " taxes", "$" + _thousands(int(inc.get(z, 0))), Brand.POSITIVE)
 	for k in [["fees", "Fees and fares"], ["deals", "Deals with neighbors"], ["region", "Region projects"]]:
 		if int(b.get(k[0], 0)) > 0:
 			_line(k[1], "$" + _thousands(int(b[k[0]])), Brand.POSITIVE)
-	_section("THIS MONTH OUT")
+	_section("TODAY OUT")
 	for k in [["upkeep", "Roads"], ["services", "Services"], ["education", "Schools and colleges"],
 			["care", "Street care"], ["support", "Farm and company aid"], ["telecom", "Phone and internet"]]:
 		var v := int(b.get(k[0], 0))
@@ -508,17 +512,23 @@ func _details_money() -> void:
 	if int(b.get("deals", 0)) < 0:
 		_line("Deals with neighbors", "–$" + _thousands(absi(int(b.deals))), Brand.CRITICAL)
 	var net := sim.economy.monthly_net()
-	_line("Up or down a month", "%s$%s" % ["+" if net >= 0 else "–", _thousands(absi(net))], Brand.POSITIVE if net >= 0 else Brand.CRITICAL)
+	_line("Up or down a day", "%s$%s" % ["+" if net >= 0 else "–", _thousands(absi(net))], Brand.POSITIVE if net >= 0 else Brand.CRITICAL)
 
 
 func _details_date() -> void:
-	var founded := Families.calendar(Seasons.year(0))
-	var months := sim.tick_count / (24 * HOUR)
+	var founded := Families.calendar(Seasons.year(sim.calendar_of(0)))
+	var months := _age_months()
 	_line("Founded", str(founded))
 	_line("Town age", "%d years, %d months" % [months / 12, months % 12])
-	_line("Season", ["Winter", "Spring", "Summer", "Fall"][Seasons.season(Seasons.months(sim.tick_count))])
-	_line("A month passes in", "one game day, about 2½ minutes at 1×")
+	_line("Season", ["Winter", "Spring", "Summer", "Fall"][Seasons.season(Seasons.months(sim.calendar_tick()))])
+	_line("A day passes in", "about 2 minutes")
+	_line("A month passes in", "about an hour: one day and night in the sky")
 	_note("Each bar is the end of a month (a year once the town is three), the last one so far. Hover for the numbers.")
+
+
+## Whole calendar months since the town began.
+func _age_months() -> int:
+	return int(Seasons.months(sim.calendar_tick()) - Seasons.months(sim.calendar_of(0)))
 
 
 func _details_problems() -> void:

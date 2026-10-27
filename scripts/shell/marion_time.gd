@@ -83,6 +83,7 @@ static func months_for_sky(t: Dictionary) -> float:
 	if SunPath.dst_game(m) == bool(t.dst):
 		return m
 	# Marion still on daylight time after the game's clocks went back
-	# (October 27 to November 1), or still on standard time after the
-	# game's went forward (February 26 to March 8).
+	# (November 1 to the first Sunday), or still on standard time after the
+	# game's went forward (March 1 to the second Sunday): the end of the
+	# month before.
 	return (SunPath.DST_OFF if bool(t.dst) else SunPath.DST_ON) - 0.001

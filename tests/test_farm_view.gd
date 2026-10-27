@@ -285,7 +285,7 @@ func _run() -> void:
 	sim.farms_changed.emit()
 	_step_until(func(): return fv._job != null and fv._job.id == turn and fv._job.phase == FarmFieldJob.Phase.CELLS)
 	var tick_was := sim.tick_count
-	sim.tick_count += Seasons.TICKS_PER_DAY * 12
+	sim.tick_count += Seasons.TICKS_PER_DAY * Seasons.YEAR_DAYS
 	fv._process(0.0)
 	fv.finish_now()
 	_check(Seasons.year(sim.tick_count) == year_now + 1, "(the year has turned)")
@@ -299,7 +299,7 @@ func _run() -> void:
 	var sigs_mid := {}
 	for o in ids:
 		sigs_mid[o] = fv._plants._farm_sigs[o][1]
-	sim.tick_count += Seasons.TICKS_PER_DAY * 12
+	sim.tick_count += Seasons.TICKS_PER_DAY * Seasons.YEAR_DAYS
 	fv._process(0.0)
 	fv.finish_now()
 	_same_as_old(ids, "after a year turned with nothing drawing")

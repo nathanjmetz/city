@@ -334,7 +334,7 @@ func allow(sim, key: String, type: String, level: int) -> bool:
 		name = Families.home_name(b) if int(b.zone) == ZoneMap.Zone.RESIDENTIAL else "old " + BuildingTypes.name_of(b).to_lower()
 	var fam: Dictionary = sim.families.family_of(ref)
 	var who := str(fam.head) if not fam.is_empty() else "The owner"
-	var built := Families.calendar(Seasons.year(int(b.get("fabric", b.built))))
+	var built := Families.calendar(Seasons.year(sim.calendar_of(int(b.get("fabric", b.built)))))
 	var new_stage: Dictionary = BuildingTypes.TYPES[type].stages[level]
 	var gain := ""
 	var st_cap: Array = new_stage.get("cap", [0, 0])
@@ -403,7 +403,7 @@ func _ask_districts(sim) -> void:
 			"title": "Protect the %s" % d.name,
 			"why": "%d of its buildings date from the town's early years and still stand together." % old,
 			"area": hull, "change": "Local historic district", "ask": "district",
-			"yes": "Nothing there is torn down or built up. Land there is worth up to %d%% more, visitors come to walk it, and the commission costs $%s a month." % [
+			"yes": "Nothing there is torn down or built up. Land there is worth up to %d%% more, visitors come to walk it, and the commission costs $%s a day." % [
 				roundi(Balance.HERITAGE_DISTRICT_LIFT * 100.0), CitySim.money_text(Balance.HERITAGE_COMMISSION_MONTHLY)],
 			"no": "Owners may rebuild as the town grows. The society may ask again in %d years." % Balance.HERITAGE_REASK_YEARS})
 		if req > 0:
@@ -462,7 +462,7 @@ func carry_out(sim) -> void:
 						sim.culture.nudge(_axis_of(str(a.type)), Balance.CULTURE_YES_LEAN)
 				elif st == Permits.State.DENIED and sim.buildings.has(key):
 					sim.economy.money -= int(a.cost)
-					easements[key] = Families.calendar(Seasons.year(sim.tick_count))
+					easements[key] = Families.calendar(Seasons.year(sim.calendar_tick()))
 					sim.nicknames.lean_historic(Balance.NICKNAME_HISTORIC_LEAN)
 		changed.emit()
 
@@ -518,7 +518,7 @@ func _members(id: int) -> Array:
 func rows(sim, key: String) -> Array:
 	var b: Dictionary = sim.buildings[key]
 	var out := []
-	var year := Families.calendar(Seasons.year(int(b.get("fabric", b.built))))
+	var year := Families.calendar(Seasons.year(sim.calendar_of(int(b.get("fabric", b.built)))))
 	out.append(["Built", ("%d, historic" % year) if is_historic(sim, b) else str(year)])
 	var c := float(charm.get(key, 0.0))
 	if c > 0.0:
@@ -526,7 +526,7 @@ func rows(sim, key: String) -> Array:
 	if district_of.has(key) and districts.has(district_of[key]):
 		var d: Dictionary = districts[district_of[key]]
 		out.append(["Historic district", "%s (%s)" % [d.name,
-			"protected since %d" % Families.calendar(Seasons.year(int(d.since))) if d.state == "protected"
+			"protected since %d" % Families.calendar(Seasons.year(sim.calendar_of(int(d.since)))) if d.state == "protected"
 			else "eligible, not protected"]])
 	if easements.has(key):
 		out.append(["Preservation easement", "Since %d" % int(easements[key])])

@@ -5,14 +5,82 @@ var _failed := false
 
 
 func _init() -> void:
+	# A month is a day and a day is an hour (docs/spec-month-is-a-day.md):
+	# a calendar day is 2 real minutes, months have their real lengths.
 	var day := Seasons.TICKS_PER_DAY
-	_check(Seasons.month(0) == 5, "a new city starts in May")
-	_check(Seasons.month(day * 12) == 5 and Seasons.year(day * 12) == 2, "a year is 12 game days")
-	_check(Seasons.month(day * 8) == 1, "January comes 8 days in")
+	_check(day == 2 * 60 * CitySim.TICKS_PER_SECOND, "a calendar day is 2 real minutes")
+	_check(Seasons.month(0) == 5 and Seasons.day(0) == 1, "a new city starts on May 1")
+	_check(Seasons.weekday(0) == 6, "May 1, 2027 is a Saturday")
+	_check(Seasons.month(day * 30) == 5 and Seasons.month(day * 31) == 6 and Seasons.day(day * 31) == 1,
+		"May has 31 days, then June 1")
+	_check(Seasons.month(day * 365) == 5 and Seasons.year(day * 365) == 2, "a year is 365 days")
+	_check(Seasons.month(day * (31 + 30 + 31 + 31 + 30 + 31 + 30 + 31)) == 1, "January comes 245 days in")
+	var june := Seasons.tick_at(5.0)
+	_check(Seasons.month(june) == 6 and Seasons.day(june) == 1 and absf(Seasons.months(june) - 5.0) < 0.001,
+		"tick_at finds June 1")
+	_check(absf(30.0 * day / CitySim.TICKS_PER_SECOND / 60.0 - 60.0) < 0.01, "a 30-day month takes an hour")
+	# A town from the old calendar (a month a sim day) keeps its date.
+	var old_tick := 50 * Seasons.OLD_TICKS_PER_MONTH + 720  # mid-July of year 5 on the old calendar
+	var off := Seasons.offset_from_old(old_tick)
+	_check(absf(Seasons.months(old_tick + off) - (Seasons.START_MONTH + 50.5)) < 0.01, "an old town's date carries over")
+	_check(Seasons.pace_year(old_tick) == 5 and Seasons.pace_month(old_tick) == 7, "pace years keep the old calendar's count")
 	var sim := CitySim.new()
-	sim.tick_count = day * 3 + 60 * 4
+	sim.tick_count = day * 40 + 30
 	var t := sim.clock()
-	_check(t.month == 8 and t.year == 1 and t.hour == 10, "the clock shows the season's month (%s)" % str(t))
+	_check(t.month == 6 and t.year == 1 and Seasons.day(sim.calendar_tick()) == 10 and Seasons.weekday(sim.calendar_tick()) == 4,
+		"the clock shows the calendar's month and year (%s)" % str(t))
+	# The sky: sunrise on the 1st, sunset 50 minutes into a 60-minute month.
+	var rise := SunPath.crossings(SunPath.day_of_year(5.0), SunPath.dst_game(5.0))
+	_check(absf(SkyClock.hour(5.0) - rise.x) < 0.01, "the sun rises on the 1st")
+	var at_sunset := 5.0 + SkyClock.DAY_SHARE
+	_check(absf(SkyClock.hour(at_sunset) - SunPath.crossings(SunPath.day_of_year(at_sunset), true).y) < 0.01,
+		"and sets five-sixths of the way through the month")
+	_check(SkyLight.sun_position(SkyClock.hour(5.4), 5.4).x > 30.0, "the sun is high mid-month")
+	_check(SkyLight.sun_position(SkyClock.hour(5.92), 5.92).x < -12.0, "dark in the month's last days")
+	var last := 0.0
+	var steady := true
+	for i in 600:
+		var m := 5.0 + i / 600.0
+		var h := fposmod(SkyClock.hour(m) - SkyClock.hour(5.0), 24.0)
+		if h + 0.0001 < last:
+			steady = false
+		last = h
+	_check(steady, "the sky's hour only moves forward through the month")
+	_check(absf(SkyClock.ticks_per_hour(5.4) * (SunPath.crossings(SunPath.day_of_year(5.4), true).y
+		- SunPath.crossings(SunPath.day_of_year(5.4), true).x) - SkyClock.DAY_SHARE * 30 * day) < 1.0,
+		"a sky hour's ticks fill the daylight")
+	# Saves: the offset keeps; a town saved before it carries its old date.
+	var town := CitySim.new()
+	town.tick_count = old_tick
+	var saved := town.to_dict()
+	saved.erase("calendar")
+	saved.erase("calendar_from")
+	var loaded := CitySim.new()
+	loaded.from_dict(JSON.parse_string(JSON.stringify(saved)))
+	_check(loaded.calendar_offset == off and Seasons.month(loaded.calendar_tick()) == 7,
+		"an old save keeps its month (%d)" % Seasons.month(loaded.calendar_tick()))
+	# Its past keeps the old calendar: the founding reads May of year 1, and
+	# something built at the old July of year 2 still reads July of year 2.
+	var founded := loaded.calendar_of(0)
+	var built := loaded.calendar_of(14 * Seasons.OLD_TICKS_PER_MONTH)
+	_check(Seasons.month(founded) == 5 and Seasons.year(founded) == 1
+		and Seasons.month(built) == 7 and Seasons.year(built) == 2,
+		"an old save's past dates keep the old calendar (founded %d/%d, built %d/%d)"
+		% [Seasons.month(founded), Seasons.year(founded), Seasons.month(built), Seasons.year(built)])
+	var again := CitySim.new()
+	again.from_dict(JSON.parse_string(JSON.stringify(loaded.to_dict())))
+	_check(again.calendar_offset == off and again.calendar_from == old_tick
+		and again.calendar_of(14 * Seasons.OLD_TICKS_PER_MONTH) == built,
+		"and the offset and the switch-over tick are saved from then on")
+	# A family business ages on pace years; its sign reads the calendar.
+	var pace_sim := CitySim.new()
+	_check(Families.since_year(pace_sim, 1) == 2027 and Families.since_year(pace_sim, 3) == 2027,
+		"a business begun in pace year 3 says Since 2027 on the calendar (%d)" % Families.since_year(pace_sim, 3))
+	# One play speed: pause and play.
+	var main_src := FileAccess.get_file_as_string("res://scripts/main.gd")
+	_check(main_src.contains("const SPEEDS := [0.0, 1.0]"), "one play speed, and pause")
+	var hud_src := FileAccess.get_file_as_string("res://scripts/ui/hud.gd")
+	_check(not hud_src.contains("4x speed") and not hud_src.contains("2x speed"), "no 2x or 4x buttons")
 	# What the land looks like through the year.
 	var winter := Seasons.look(Seasons.START_MONTH + 8.5)  # mid January
 	_check(winter.snow == 1.0 and winter.bare == 1.0, "snow and bare trees in January")

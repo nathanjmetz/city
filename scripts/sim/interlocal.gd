@@ -539,7 +539,7 @@ func _ask(region, sim, a: Dictionary, other: String, mine: Dictionary, acts: Arr
 		sim.permits.file(sim, {"hub": "interlocal", "hub_id": _hub_id("agreement:" + a.id),
 			"leader": "%s %s (%s)" % [info.title, _name(hash([other, a.service])), host_name],
 			"title": "%s offers us %s" % [host_name, info.name],
-			"why": "We'd serve your town from %s over the county road, for $%s a month: your share of our cost, by homes." % [
+			"why": "We'd serve your town from %s over the county road, for $%s a day: your share of our cost, by homes." % [
 				host_name, money],
 			"route": at, "deal": {"kind": a.service, "fee": roundi(float(a.price_per_month)), "other": other,
 				"pays": true, "agreement": a.id}})
@@ -576,7 +576,7 @@ func _new_offers(region, me: String, sim, links: Dictionary, acts: Array) -> voi
 			sim.permits.file(sim, {"hub": "interlocal", "hub_id": _hub_id("offer:%s:%s" % [kind, other]),
 				"leader": "%s %s" % [info.title, _name(hash([me, kind]))],
 				"title": "Offer %s to %s" % [info.name, region.cities[other].name],
-				"why": "%s has no %s of its own. We can cover it over the county road for $%s a month, our cost shared by homes." % [
+				"why": "%s has no %s of its own. We can cover it over the county road for $%s a day, our cost shared by homes." % [
 					region.cities[other].name, _lacks(kind), CitySim.money_text(f)],
 				"route": [_xz(sim.network.nodes[link])],
 				"deal": {"kind": kind, "fee": f, "other": other, "key": "%s:%s" % [kind, other], "homes": homes(them)}})

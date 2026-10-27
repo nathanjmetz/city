@@ -516,7 +516,7 @@ func _next_project(sim: CitySim, id: int) -> bool:
 		d.why = "Saving up for a spur to the %s ($%s)." % [best.target.name.to_lower(), CitySim.money_text(cost)]
 		return false
 	_propose(sim, id, "spur", best.target, best.plan,
-		"A spur to the %s: about %d carloads a year, paying for itself in %s" % [
+		"A spur to the %s: about %d carloads every 12 days, paying for itself in %s" % [
 			best.target.name.to_lower(), roundi(best.cars), "about a year" if best.years < 1.5 else "%d years" % roundi(best.years)])
 	return true
 
@@ -538,16 +538,16 @@ func _passengers(sim: CitySim, id: int) -> bool:
 		if pop >= Balance.RAIL_PASSENGER_MIN_POP and gain > 0.0 and d.money > cushion(d.leader):
 			d.pax = true
 			d.pax_train = _new_train(id, "passenger")
-			d.why = "Started passenger trains to the next town: about %s riders a month." % CitySim.money_text(
+			d.why = "Started passenger trains to the next town: about %s riders a day." % CitySim.money_text(
 				roundi(pop * Balance.RAIL_RIDES_PER_RESIDENT))
 			return true
 		if pop >= Balance.RAIL_PASSENGER_MIN_POP and gain <= 0.0 and d.why.begins_with("Main line open"):
-			d.why = "Passenger trains would lose about $%s a month here. A town subsidy that size would start them." \
+			d.why = "Passenger trains would lose about $%s a day here. A town subsidy that size would start them." \
 				% CitySim.money_text(roundi(-gain))
 		return false
 	if gain < -Balance.RAIL_TRAINSET_LEASE * 0.5 and d.money < cushion(d.leader):
 		d.pax = false
-		d.why = "Stopped passenger trains: they lost money every month."
+		d.why = "Stopped passenger trains: they lost money every day."
 		return true
 	return false
 

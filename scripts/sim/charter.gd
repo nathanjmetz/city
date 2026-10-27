@@ -11,7 +11,9 @@ extends RefCounted
 ##               services the law lists (36-5-1-8) at a reasonable tax rate.
 ##   city        Third-class city (IC 36-4-1.5): at least 2,000 people, a
 ##               voters' petition and a referendum, "Shall the town of ___
-##               change into a city?" It takes effect on January 1.
+##               change into a city?" The law has it take effect on
+##               January 1; a game year is 12 real hours (Seasons), so
+##               here it takes effect on the 1st of the next month.
 ##   city2       Second-class city (IC 36-4-1-1, 1-1.1): 35,000 people at a
 ##               federal decennial census, adopted by ordinance. Optional:
 ##               a city may stay third class (Carmel did for years).
@@ -220,14 +222,14 @@ func next_line(sim) -> String:
 		return "Town: waiting on the %s to consent." % " and ".join(consent.cities.values().map(func(n): return "City of " + str(n)))
 	if not reached.has("city"):
 		if coming.has("city"):
-			return "City: voters said yes. The town becomes a city on January 1."
+			return "City: voters said yes. The town becomes a city on the 1st of next month."
 		return "City: %s people, then a vote." % _n(Balance.CHARTER_CITY_PEOPLE)
 	if not reached.has("urban"):
 		return "Urban area: %s people or %s homes at a census." % [_n(Balance.CHARTER_URBAN_PEOPLE), _n(Balance.CHARTER_URBAN_HOMES)]
 	if not reached.has("micro"):
 		return "Micropolitan area: %s people in your area." % _n(Balance.METRO_MICRO_MIN)
 	if not reached.has("city2") and not declined.has("city2") and not coming.has("city2"):
-		return "Second-class city: %s people at the next census (%d)." % [_n(Balance.CHARTER_CITY2_PEOPLE), next_census_year(sim)]
+		return "Second-class city: %s people at the next census (in about %d minutes)." % [_n(Balance.CHARTER_CITY2_PEOPLE), next_census_minutes(sim)]
 	if not reached.has("metro"):
 		return "Metropolitan area: %s people in your area." % _n(Balance.METRO_METRO_MIN)
 	if not reached.has("medium"):
@@ -285,13 +287,16 @@ func services_given(sim) -> Array:
 	return SERVICES.filter(func(k): return have.has(k))
 
 
-## Once a game month: a census in April of a census year, and anything new
-## on the ladder.
+## Once a sim day: a census in April of a census year, and anything new
+## on the ladder. The decennial census counts pace years (Seasons.pace_year,
+## about 29 real minutes), so one comes about every five hours of play, as
+## it always did; on the calendar (a year 12 hours) it would be days apart.
+## It is named for the calendar's month and year it falls in.
 func month(sim) -> void:
 	var before := JSON.stringify([reached, coming, census])
 	var people := int(sim.stats.get("population", 0))
-	var year := Families.calendar(Seasons.year(sim.tick_count))
-	if Seasons.month(sim.tick_count) == 4 and year % 10 == 0 and int(census.get("year", 0)) != year:
+	var year := Families.calendar(Seasons.pace_year(sim.tick_count))
+	if Seasons.pace_month(sim.tick_count) == 4 and year % 10 == 0 and int(census.get("year", 0)) != year:
 		_count(sim, year, false)
 	_in_force(sim)
 	_consent_month(sim)
@@ -314,10 +319,23 @@ func month(sim) -> void:
 		changed.emit()
 
 
-## The next decennial census year.
+## The next decennial census's pace year (see month()).
 func next_census_year(sim) -> int:
-	var year := Families.calendar(Seasons.year(sim.tick_count))
+	var year := Families.calendar(Seasons.pace_year(sim.tick_count))
 	return (year / 10 + 1) * 10 if year % 10 != 0 or int(census.get("year", 0)) == year else year
+
+
+## Real minutes until the next decennial census, roughly.
+func next_census_minutes(sim) -> int:
+	var pace := next_census_year(sim) - 2026
+	var at := Seasons.pace_tick(pace) + 3 * Seasons.OLD_TICKS_PER_MONTH
+	return maxi(1, roundi(float(at - sim.tick_count) / CitySim.TICKS_PER_SECOND / 60.0))
+
+
+## What a census is called: the calendar's month and year it was taken in
+## ("the May 2027 census").
+func census_name() -> String:
+	return str(census.get("when", str(census.get("year", ""))))
 
 
 ## The census counts the town: the urban area, and second-class status.
@@ -326,7 +344,10 @@ func _count(sim, year: int, special: bool) -> void:
 	var homes := 0
 	for slice in sim.ledger().home_slices:
 		homes += slice.size()
-	census = {"year": year, "people": people, "homes": homes, "special": special}
+	var cal: int = sim.calendar_tick()
+	census = {"year": year, "people": people, "homes": homes, "special": special,
+		"when": "%s %d" % [["January", "February", "March", "April", "May", "June", "July", "August", "September",
+			"October", "November", "December"][Seasons.month(cal) - 1], Families.calendar(Seasons.year(cal))]}
 	if not reached.has("urban") and (people >= Balance.CHARTER_URBAN_PEOPLE or homes >= Balance.CHARTER_URBAN_HOMES):
 		_reach(sim, "urban")
 	# Only a federal decennial census counts for the class of a city.
@@ -373,17 +394,17 @@ func _reach(sim, id: String) -> void:
 
 ## A marker's title and text for a step.
 func _marker(sim, id: String) -> Array:
-	var year := Families.calendar(Seasons.year(sim.tick_count))
+	var year := Families.calendar(Seasons.year(sim.calendar_tick()))
 	match id:
 		"town":
 			return ["Incorporated %d" % year, "{town} was incorporated as a town in %d, with its own council, clerk-treasurer and town marshal." % year]
 		"city":
 			var share := roundi(float(vote.get("yes", 0.0)) * 100.0)
-			return ["City of {town}", "Voters chose %d%% to %d%% to make {town} a city. It became one on January 1, %d." % [share, 100 - share, year]]
+			return ["City of {town}", "Voters chose %d%% to %d%% to make {town} a city. It became one in %d." % [share, 100 - share, year]]
 		"city2":
-			return ["Second-Class City", "With %s people at the %d census, {town} became a second-class city." % [_n(int(census.get("people", 0))), int(census.get("year", year))]]
+			return ["Second-Class City", "With %s people at the %s census, {town} became a second-class city." % [_n(int(census.get("people", 0))), census_name()]]
 		"urban":
-			return ["Urban Area", "The %d census counted %s people here, and {town} became an urban area." % [int(census.get("year", year)), _n(int(census.get("people", 0)))]]
+			return ["Urban Area", "The %s census counted %s people here, and {town} became an urban area." % [census_name(), _n(int(census.get("people", 0)))]]
 		"micro":
 			return ["Micropolitan Area", "By %d, %s people lived in the area around {town}, a micropolitan area." % [year, _n(maxi(metro_people, int(sim.stats.get("population", 0))))]]
 		"metro":
@@ -424,23 +445,23 @@ func _plan(sim, kind: String) -> Dictionary:
 			return {"leader": "Landowners' petition", "title": "Incorporate as a town",
 				"why": "%s landowners signed a petition to make this settlement a town. It already gives %d of the 11 town services: %s." % [
 					_n(maxi(people / 10, 5)), given.size(), ", ".join(given)],
-				"yes": "The county commissioners review it. In a month it's a town, with a council, a marshal and a plan commission.",
+				"yes": "The county commissioners review it. In a day it's a town, with a council, a marshal and a plan commission.",
 				"no": "It stays a county settlement. Residents can ask again in a few years."}
 		"city_vote":
 			return {"leader": "Voters' petition", "title": "Hold a vote to become a city",
 				"why": "With %s people, voters petitioned to put it on the ballot: \"Shall the town change into a city?\"" % _n(people),
-				"yes": "The town votes next month. If most say yes, it becomes a city on January 1, with a mayor and a city council.",
+				"yes": "The town votes next month. If most say yes, it becomes a city on the 1st of the next month, with a mayor and a city council.",
 				"no": "It stays a town. Voters can petition again in a few years."}
 		"special_census":
 			return {"leader": "Clerk-treasurer", "title": "Pay for a special census",
 				"why": "The town has grown well past the last count. The Census Bureau will count it again for a fee.",
 				"yes": "The town pays $%s and gets an official count now." % CitySim.money_text(special_cost(sim)),
-				"no": "The town waits for the next census, in %d." % next_census_year(sim)}
+				"no": "The town waits for the next census, in about %d minutes." % next_census_minutes(sim)}
 		"second_class":
 			return {"leader": "City council", "title": "Adopt second-class city status",
-				"why": "The %d census counted %s people. The council can adopt second-class status by ordinance." % [
-					int(census.year), _n(int(census.people))],
-				"yes": "On January 1 the city gets a nine-member council, a city clerk and a controller who can sell city bonds.",
+				"why": "The %s census counted %s people. The council can adopt second-class status by ordinance." % [
+					census_name(), _n(int(census.people))],
+				"yes": "On the 1st of next month the city gets a nine-member council, a city clerk and a controller who can sell city bonds.",
 				"no": "It stays a third-class city. The council can take it up again after the next census."}
 	return {}
 
@@ -488,19 +509,20 @@ func _yes(sim, kind: String) -> String:
 			return "The county commissioners approved it."
 		"city_vote":
 			var share := vote_share(sim)
-			var year := Families.calendar(Seasons.year(sim.tick_count))
+			var year := Families.calendar(Seasons.year(sim.calendar_tick()))
 			vote = {"year": year, "yes": share, "passed": share > 0.5}
 			if share > 0.5:
-				coming["city"] = next_january(sim.tick_count)
-				return "Voters said yes, %d%% to %d%%. It becomes a city on January 1." % [roundi(share * 100.0), 100 - roundi(share * 100.0)]
+				coming["city"] = next_month(sim)
+				return "Voters said yes, %d%% to %d%%. It becomes a city on the 1st of next month." % [roundi(share * 100.0), 100 - roundi(share * 100.0)]
 			return "Voters said no, %d%% to %d%%. It stays a town for now." % [roundi(share * 100.0), 100 - roundi(share * 100.0)]
 		"special_census":
 			sim.economy.money -= special_cost(sim)
-			_count(sim, Families.calendar(Seasons.year(sim.tick_count)), true)
+			# Census years are pace years, like the ten-year count (month()).
+			_count(sim, Families.calendar(Seasons.pace_year(sim.tick_count)), true)
 			return "Counted: %s people." % _n(int(census.people))
 		"second_class":
-			coming["city2"] = next_january(sim.tick_count)
-			return "Adopted. It takes effect on January 1."
+			coming["city2"] = next_month(sim)
+			return "Adopted. It takes effect on the 1st of next month."
 	return "Done."
 
 
@@ -516,11 +538,9 @@ func vote_share(sim) -> float:
 		- Balance.CHARTER_VOTE_BOIL * float(homes.boil) + rng.randf_range(-0.05, 0.05), 0.0, 1.0)
 
 
-## The first tick of the next January.
-static func next_january(tick: int) -> int:
-	var m := Seasons.months(tick)
-	var jan := (floorf(m / 12.0) + 1.0) * 12.0
-	return int(ceilf((jan - Seasons.START_MONTH) * Seasons.TICKS_PER_DAY))
+## The sim tick the calendar's next month begins on.
+static func next_month(sim) -> int:
+	return Seasons.tick_at(floorf(Seasons.months(sim.calendar_tick())) + 1.0) - int(sim.calendar_offset)
 
 
 ## Reads the metro this town is in (called with the town's region view,
@@ -628,6 +648,8 @@ func from_dict(d: Dictionary) -> void:
 	var c: Dictionary = d.get("census", {})
 	census = {} if c.is_empty() else {"year": int(c.year), "people": int(c.people), "homes": int(c.get("homes", 0)),
 		"special": bool(c.get("special", false))}
+	if c.has("when"):
+		census.when = str(c.when)
 	metro_people = int(d.get("metro", 0))
 	var v: Dictionary = d.get("vote", {})
 	vote = {} if v.is_empty() else {"year": int(v.year), "yes": float(v.yes), "passed": bool(v.passed)}

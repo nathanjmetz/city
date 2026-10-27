@@ -12,8 +12,7 @@ func _process(delta: float) -> bool:
 		AmbientLife.force = OS.get_environment("AMB_SCENE")
 		var month := int(OS.get_environment("AMB_MONTH")) if OS.get_environment("AMB_MONTH") != "" else 7
 		var hour := float(OS.get_environment("AMB_HOUR")) if OS.get_environment("AMB_HOUR") != "" else 14.0
-		var day := 12.0 + fposmod(month - 1.0 - Seasons.START_MONTH, 12.0)
-		sim.tick_count = int(floorf(day)) * Seasons.TICKS_PER_DAY + roundi((hour - 6.0) * 60.0)
+		sim.set_calendar(Seasons.tick_at(SkyClock.at(month, hour)))
 		Weather.on = false
 		_main.speed = 0
 	return super(delta)

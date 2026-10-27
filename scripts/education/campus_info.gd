@@ -25,8 +25,8 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 		["Campus", "%d block%s (%.0f acres)" % [c.blocks.size() + 1, "" if c.blocks.is_empty() else "s",
 			(c.blocks.size() + 1) * Education.CELL * Education.CELL / 4046.86]],
 		["Graduates so far", CitySim.money_text(floori(c.grads))],
-		["City funding", "$%s / month (%d%%)" % [CitySim.money_text(Education.monthly_funding(c)), roundi(levels[level] * 100.0)]],
-		["Surplus", "%s$%s / year" % ["" if net >= 0.0 else "-", CitySim.money_text(absi(roundi(net)))]],
+		["City funding", "$%s / day (%d%%)" % [CitySim.money_text(Education.monthly_funding(c)), roundi(levels[level] * 100.0)]],
+		["Surplus", "%s$%s every 12 days" % ["" if net >= 0.0 else "-", CitySim.money_text(absi(roundi(net)))]],
 		["Savings", "%s$%s" % ["" if c.savings >= 0.0 else "-", CitySim.money_text(absi(roundi(c.savings)))]],
 	]
 	if c.kind != "high_school":

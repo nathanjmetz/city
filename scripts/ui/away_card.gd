@@ -115,7 +115,7 @@ func _process(delta: float) -> void:
 				catch_up.step(CatchUp.WEB_BUDGET_MS if OS.has_feature("web") else CatchUp.BUDGET_MS)
 				Perf.add("net.catch_up", t)
 			_bar.value = catch_up.progress()
-			_sub.text = "MONTH %d OF %d" % [clampi(catch_up.months_done(), 1, catch_up.months()), catch_up.months()]
+			_sub.text = "DAY %d OF %d" % [clampi(catch_up.months_done(), 1, catch_up.months()), catch_up.months()]
 			if catch_up.done():
 				_finish()
 		"summary":
@@ -140,7 +140,7 @@ func _finish() -> void:
 	_phase = "summary"
 	_bar.visible = false
 	var m := catch_up.months()
-	_sub.text = "%d MONTH%s CAUGHT UP" % [m, "" if m == 1 else "S"]
+	_sub.text = "%d DAY%s CAUGHT UP" % [m, "" if m == 1 else "S"]
 	_title.text = "While you were away, your neighbors were at work"
 	for line in lines:
 		var l := UiStyle.label(line, 13)

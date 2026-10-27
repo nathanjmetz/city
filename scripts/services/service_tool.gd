@@ -183,7 +183,7 @@ func _update_hint() -> void:
 		hint_changed.emit(rt)
 		return
 	if kind == Mail.TOOL_KIND:
-		var pt := "Post office: $%s to build, $%s a month. " % [CitySim.money_text(Balance.MAIL_COST),
+		var pt := "Post office: $%s to build, $%s a day. " % [CitySim.money_text(Balance.MAIL_COST),
 			CitySim.money_text(Balance.MAIL_UPKEEP)]
 		pt += "Its postmaster plans the routes and sends carriers to every street's mailboxes. Good mail makes" \
 			+ " homes and shops a little happier, and the office grows next door as the town gets busy."
@@ -194,7 +194,7 @@ func _update_hint() -> void:
 	if CivicHubs.TOOL_KINDS.has(kind):
 		var hk: String = CivicHubs.TOOL_KINDS[kind]
 		var w: Dictionary = Balance.WASTE_SITES[hk]
-		var t := "%s: $%s to build, $%s a month. " % [CivicHubs.KINDS[hk].name, CitySim.money_text(int(w.cost)),
+		var t := "%s: $%s to build, $%s a day. " % [CivicHubs.KINDS[hk].name, CitySim.money_text(int(w.cost)),
 			CitySim.money_text(int(w.upkeep))]
 		t += {"landfill": "Never fills up. Its trucks collect the town's trash. Land within half a mile is worth up to 15% less.",
 			"recycling_1": "Never fills up. Its trucks collect the town's trash; it hurts land value far less than a landfill.",
@@ -205,7 +205,7 @@ func _update_hint() -> void:
 		hint_changed.emit(t)
 		return
 	var s: Dictionary = Services.KINDS[kind]
-	var text := "%s: $%s to build, $%s a month." % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
+	var text := "%s: $%s to build, $%s a day." % [s.name, CitySim.money_text(s.cost), CitySim.money_text(s.upkeep)]
 	if kind == Services.Kind.BUILDER_YARD:
 		var cost := sim.services.cost_of(kind)
 		text = "%s: %s. Its crews (pickups with a ladder on top) and concrete trucks build the town's houses, coming from here; its owner buys more trucks as the town grows. Green roads are close enough for a crew to get to a new house while it's still going up." % [
@@ -216,7 +216,7 @@ func _update_hint() -> void:
 		return
 	if s.get("parking", false):
 		var lay: Dictionary = ParkingLots.layout(s.size, angled, kind == Services.Kind.PARKING_GARAGE)
-		text = "%s: %d stalls%s, $%s to build, $%s a month. Shoppers and workers park here when their own stop is full, then walk up to 800 ft." % [
+		text = "%s: %d stalls%s, $%s to build, $%s a day. Shoppers and workers park here when their own stop is full, then walk up to 800 ft." % [
 			s.name, lay.spots.size(), ", 60° angled" if lay.angled else "", CitySim.money_text(s.cost),
 			CitySim.money_text(s.upkeep)]
 		if angled and not lay.angled:

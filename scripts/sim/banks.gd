@@ -573,7 +573,9 @@ func decide(sim: CitySim) -> Dictionary:
 	ids.sort()
 	_share_deposits(sim, ids)
 	var facts := town_facts(sim)
-	var new_year: bool = sim.clock().month == 1
+	# The books turn over on the pace year (12 sim days, Seasons.pace_year),
+	# so a bank's year of business is seen in a session.
+	var new_year: bool = Seasons.pace_month(sim.tick_count) == 1
 	for id in ids:
 		var b: Dictionary = banks[id]
 		var s: Dictionary = spec(b.kind)

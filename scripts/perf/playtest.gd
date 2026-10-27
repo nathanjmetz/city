@@ -308,9 +308,11 @@ func _play() -> void:
 			_act("service_%d" % kind, {"type": "place_service", "kind": kind, "pos": [site[0].x, site[0].z], "dir": [site[1].x, site[1].z]})
 	await _seconds_wait(3.0)
 
-	# Top speed with the camera touring the town, like a player watching it grow.
+	# Four times the play speed (the old top speed) with the camera touring
+	# the town, like a player watching it grow.
 	_begin("run")
-	_main.set_speed(_main.SPEEDS.size() - 1)
+	_main.set_speed(1)
+	_main.fast_forward = 4.0
 	var end := Time.get_ticks_usec() + int(run_seconds * 1e6)
 	var stop := 0
 	var mid_town := g0 + (along + out) * BLOCK * BLOCKS * 0.5

@@ -44,9 +44,10 @@ const NEAR := 380.0
 ## How far the camera moves before the chunks' versions are looked at again
 ## (each look allows for the camera moving this far).
 const SHOW_MOVE := 24.0
-## Trees with a planting date are re-sized this often (a game day, which
-## is a month of growth): slow things update once a day.
-const REGROW_TICKS := Seasons.TICKS_PER_DAY
+## Trees with a planting date are re-sized this often (a sim day, a month
+## of growth: trees grow on pace years, Seasons.pace_year, so a planted
+## street fills out within a session): slow things update once a day.
+const REGROW_TICKS := Seasons.OLD_TICKS_PER_MONTH
 ## Milliseconds a frame may spend re-sizing grown-on trees.
 const REGROW_MS := 1.5
 

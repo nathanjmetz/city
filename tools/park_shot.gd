@@ -36,8 +36,8 @@ func _build() -> void:
 	sim.economy.money = 50_000_000
 	if OS.get_environment("SHOT_MONTH") != "":
 		# Months from January, as in screenshot.gd (0.5 is mid-January snow).
-		var m := float(OS.get_environment("SHOT_MONTH")) - Seasons.START_MONTH
-		sim.tick_count = int(fposmod(m, 12.0) * Seasons.TICKS_PER_DAY)
+		var m := float(OS.get_environment("SHOT_MONTH"))
+		sim.set_calendar(Seasons.tick_at(m + (12.0 if m < Seasons.START_MONTH else 0.0)))
 	root.get_node("Session").set("current_name", "Petersburg")
 	var look := Vector3.ZERO
 	if scene == "trails":
@@ -67,7 +67,8 @@ func _build() -> void:
 		for i in 2500:
 			sim.tick()
 		if OS.get_environment("SHOT_MONTH") != "":
-			sim.tick_count = int(fposmod(float(OS.get_environment("SHOT_MONTH")) - Seasons.START_MONTH, 12.0) * Seasons.TICKS_PER_DAY)
+			var m := float(OS.get_environment("SHOT_MONTH"))
+			sim.set_calendar(Seasons.tick_at(m + (12.0 if m < Seasons.START_MONTH else 0.0)))
 		var best := -1
 		for seg in sim.network.segments:
 			var mid: Vector3 = sim.network.sample_segment(seg, 3)[1]

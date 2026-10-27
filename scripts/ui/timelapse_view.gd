@@ -128,10 +128,11 @@ func _refresh() -> void:
 		return
 	_drawn = m
 	_snap = sim.timelapse.at(m)
-	var tick := m * 24 * CitySim.TICKS_PER_HOUR
+	# A frame a sim day; its date on the calendar (a month an hour).
+	var tick := sim.calendar_of(m * 24 * CitySim.TICKS_PER_HOUR)
 	var names := ["January", "February", "March", "April", "May", "June", "July", "August", "September",
 		"October", "November", "December"]
-	_when.text = "%s %d  ·  %s people" % [names[Seasons.month(tick) - 1], Families.calendar(Seasons.year(tick)),
+	_when.text = "%s %d, %d  ·  %s people" % [names[Seasons.month(tick) - 1], Seasons.day(tick), Families.calendar(Seasons.year(tick)),
 		CitySim.money_text(int(_snap.pop))]
 	_nick.text = ("“%s”" % _snap.nick) if str(_snap.nick) != "" else ""
 	queue_redraw()

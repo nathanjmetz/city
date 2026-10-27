@@ -107,7 +107,7 @@ func _rebuild() -> void:
 	if sim == null:
 		return
 	var key := "%s|%s|%d|%s|%d|%d|%s" % [sim.nicknames.current, sim.nicknames.past.size(), sim.markers.version,
-		sim.heritage.listed(), Seasons.month(sim.tick_count), sim.timelapse.months, sim.charter.reached.keys()]
+		sim.heritage.listed(), Seasons.month(sim.calendar_tick()), sim.timelapse.months, sim.charter.reached.keys()]
 	if key == _shown_key:
 		return
 	_shown_key = key
@@ -156,7 +156,7 @@ func _rebuild() -> void:
 		row.add_theme_constant_override("separation", 2)
 		_body.add_child(row)
 		row.add_child(_text(str(d.name), UiStyle.TEXT, 600, 13))
-		var st := "Protected since %d" % Families.calendar(Seasons.year(int(d.since))) if d.state == "protected" \
+		var st := "Protected since %d" % Families.calendar(Seasons.year(sim.calendar_of(int(d.since)))) if d.state == "protected" \
 			else "Eligible, not protected"
 		row.add_child(_text("%s · %d buildings" % [st, int(d.buildings)], UiStyle.MUTED, 500, 12))
 		var b := Button.new()
@@ -164,7 +164,7 @@ func _rebuild() -> void:
 		b.add_theme_font_size_override("font_size", 12)
 		b.text = "Lift protection" if d.state == "protected" else "Protect it"
 		b.tooltip_text = ("Owners may rebuild again." if d.state == "protected" else
-			"Nothing there is torn down or built up. Land is worth more, visitors come, and the commission costs $%s a month." %
+			"Nothing there is torn down or built up. Land is worth more, visitors come, and the commission costs $%s a day." %
 			CitySim.money_text(Balance.HERITAGE_COMMISSION_MONTHLY))
 		var id := int(d.id)
 		var on: bool = d.state != "protected"

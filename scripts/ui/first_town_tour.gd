@@ -36,7 +36,6 @@ var _work := VBoxContainer.new()
 var _words := UiStyle.label("", 12, UiStyle.MUTED)
 var _bar := ProgressBar.new()
 var _go := Button.new()
-var _fast := Button.new()
 var _skip := Button.new()
 var _step := ""
 var _intro := false
@@ -120,11 +119,6 @@ func _ready() -> void:
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(gap)
-	_fast.focus_mode = Control.FOCUS_NONE
-	_fast.add_theme_font_size_override("font_size", 12)
-	_fast.pressed.connect(func():
-		game.set_speed(1 if game.speed == 3 else 3))
-	row.add_child(_fast)
 	_go.focus_mode = Control.FOCUS_NONE
 	_go.pressed.connect(_on_go)
 	row.add_child(_go)
@@ -260,8 +254,6 @@ func _fill() -> void:
 	_skip.visible = _step != "done"
 	_list.visible = _step == "plan"
 	_work.visible = false
-	_fast.visible = step.get("wait", false)
-	_fast.text = "Normal speed" if game.speed == 3 else "Fast forward"
 	var rt: RoadTool = hud.road_tool
 	var st: ServiceTool = hud.service_tool
 	var zt: ZoneTool = hud.zone_tool
