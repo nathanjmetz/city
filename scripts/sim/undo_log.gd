@@ -30,7 +30,8 @@ func before(sim: CitySim, cmd: Dictionary) -> Variant:
 	var type := str(cmd.get("type", ""))
 	if type in ROAD_TYPES:
 		return {"type": type, "money": sim.economy.money, "roads": sim.network.snapshot(), "rev": sim.network.revision,
-			"county": sim.county_joined.size(), "links": sim.region_links.size()}
+			"county": sim.county_joined.size(), "links": sim.region_links.size(),
+			"closed": sim.traffic.closed.duplicate(), "plazas": sim.parks.trails.plazas.duplicate()}
 	if PLACE_TYPES.has(type):
 		return {"type": type, "money": sim.economy.money, "ids": things(sim, type).keys()}
 	return null
@@ -47,6 +48,12 @@ func after(sim: CitySim, snap: Dictionary) -> void:
 		e.roads = snap.roads
 		e.rev_before = snap.rev
 		e.rev = sim.network.revision
+		# Car-free streets the build cut in two: whole again on undo.
+		e.closed = {}
+		for seg in snap.closed:
+			if not sim.network.segments.has(int(seg)):
+				e.closed[seg] = snap.closed[seg]
+		e.plazas = snap.plazas.filter(func(seg): return not sim.network.segments.has(int(seg)))
 	else:
 		var added: Array = things(sim, snap.type).keys().filter(func(k): return not k in snap.ids)
 		if added.size() != 1:
@@ -77,6 +84,14 @@ func undo(sim: CitySim) -> bool:
 	entries.pop_back()
 	if e.has("roads"):
 		sim.network.restore(e.roads)
+		for seg in e.get("closed", {}):
+			sim.traffic.close_segment(int(seg), true, str(e.closed[seg]))
+		for seg in e.get("plazas", []):
+			if not seg in sim.parks.trails.plazas:
+				sim.parks.trails.plazas.append(seg)
+				sim.parks.trails._rev = ""
+		if not e.get("plazas", []).is_empty():
+			sim.parks_changed.emit()
 		# The build before this one is current again if nothing came between.
 		if not entries.is_empty() and entries.back().has("roads"):
 			var prev: Dictionary = entries.back()
