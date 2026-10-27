@@ -24,9 +24,9 @@ const CIVIL := -6.0
 ## Daylight saving on the game's calendar, in months from January (see
 ## Seasons.months): US clocks change in the second week of March and the
 ## first of November. A month is one day and night of the sky (SkyClock),
-## so the game changes its clocks between months, in the night: on for
-## March through October. A real date would move the sun an hour in
-## mid-morning.
+## so the game changes its clocks between months: on for March through
+## October. A month starts at sunrise, so the clock hour jumps at that dawn
+## (the sun itself doesn't move); a real date would move it mid-morning.
 const DST_ON := 2.0
 const DST_OFF := 10.0
 ## On a real calendar: March 10 and November 3, the middle of the weeks the

@@ -517,7 +517,8 @@ func _yes(sim, kind: String) -> String:
 			return "Voters said no, %d%% to %d%%. It stays a town for now." % [roundi(share * 100.0), 100 - roundi(share * 100.0)]
 		"special_census":
 			sim.economy.money -= special_cost(sim)
-			_count(sim, Families.calendar(Seasons.year(sim.calendar_tick())), true)
+			# Census years are pace years, like the ten-year count (month()).
+			_count(sim, Families.calendar(Seasons.pace_year(sim.tick_count)), true)
 			return "Counted: %s people." % _n(int(census.people))
 		"second_class":
 			coming["city2"] = next_month(sim)
