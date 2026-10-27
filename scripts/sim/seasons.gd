@@ -8,8 +8,9 @@ extends RefCounted
 ## a calendar day is TICKS_PER_DAY ticks (2 real minutes), months have their
 ## real 28 to 31 days, and each month is one sunrise-to-sunrise in the sky
 ## (SkyClock), about an hour. A year is 365
-## game days, about 12 real hours, and each season about 3. A new city
-## starts on May 1. There are no leap years: February always has 28 days, so
+## game days, about 12 real hours, and each season about 3. Calendar tick 0
+## is May 1, 2027, but a new city starts on May 7 (START_DAY), in a bright
+## mid-morning. There are no leap years: February always has 28 days, so
 ## weekdays drift from a real calendar by a day after each February 29.
 ##
 ## The town itself runs on its own clock, untouched: a sim day is still
@@ -26,8 +27,18 @@ extends RefCounted
 
 ## A calendar day: 2 real minutes, so a 30-day month is an hour.
 const TICKS_PER_DAY := 1200
-## Month a new city starts in, counted from 0 (January).
+## Month a new city starts in, counted from 0 (January). Calendar tick 0 is
+## its 1st, so sunrise falls on the 1st (SkyClock).
 const START_MONTH := 4
+## Day of START_MONTH a new city starts on. Starting on the 1st opened a new
+## town at sunrise, a dark purple map for its first minutes (the critic,
+## 2026-10-27); the 7th puts the sky near 9:50 am. Only the calendar moves
+## (CitySim.calendar_offset): the town's own clock still starts at tick 0,
+## so it builds and earns at the same pace, and towns begun before this keep
+## their date.
+const START_DAY := 7
+## The calendar offset a new city starts with: START_DAY's first tick.
+const NEW_TOWN_OFFSET := (START_DAY - 1) * TICKS_PER_DAY
 const NAMES := ["Winter", "Spring", "Summer", "Fall"]
 ## Days in each month, and days from January 1 to the start of each.
 const DAYS_IN := [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]

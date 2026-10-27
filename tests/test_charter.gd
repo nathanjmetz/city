@@ -100,7 +100,7 @@ func _init() -> void:
 				_month(sim)
 			_check(sim.charter.status() == "city", "a passed vote makes it the City of Lyons next month")
 	var fresh := CitySim.new()
-	_check(Charter.next_month(fresh) == Seasons.TICKS_PER_DAY * 31, "a town begun May 1 is next on June 1")
+	_check(Charter.next_month(fresh) == Seasons.TICKS_PER_DAY * 25, "a town begun May 7 is next on June 1")
 
 	# --- Vote mood: a boil notice sinks it.
 	_check(sim.charter.vote_share(sim) >= 0.0 and sim.charter.vote_share(sim) <= 1.0, "a vote share is a share")

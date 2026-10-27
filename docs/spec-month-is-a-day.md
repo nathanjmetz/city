@@ -27,9 +27,10 @@
 - Named exceptions: building is shown sped up on purpose (a house in about 84 seconds). The town's own sim clock is unchanged (a sim day every 2.4 real minutes settles the budget), so the town builds and earns at the pace it always did. Lifecycles that should be seen in a session (family businesses and their signs, markers, tree growth, bank years, county fairs and other venues) count "pace years" (Seasons.pace_year: the old 29-minute year). A county fair's "July" is therefore not the calendar's July.
 - Seasons, crops, school terms, winter work holds and the charter's census follow the calendar. A city charter takes effect on the 1st of the next month (the law says January 1, which could be 12 hours away).
 - Towns saved before this change keep their date (CitySim.calendar_offset).
+- A new town starts on May 7, not the 1st, so it opens in a bright mid-morning (about 9:50 on the sky clock) instead of at sunrise (the critic, 2026-10-27: the first map was murky purple-black for minutes). Only the calendar moves (Seasons.START_DAY); the town's own clock still starts at 0, and towns begun before keep their date.
 
 ## Done when (Nathan can click through this himself)
-1. Start a town on the 1st: the sun rises. Play about 50 minutes: the sun sets near the end of the month.
+1. Start a new town: it opens on Fri May 7 in bright mid-morning. Play about 40 minutes: the sun sets near the end of the month.
 2. About 10 minutes of dusky, quiet night, then sunrise on the next month's 1st.
 3. The top bar shows the weekday, month and year, with no clock time and no 2x/4x buttons.
 4. A house takes no longer in real time than it does today.
