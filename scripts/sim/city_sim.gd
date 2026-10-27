@@ -367,7 +367,15 @@ func zone_keys(zone: int) -> Array:
 
 func apply_now(cmd: Dictionary) -> bool:
 	if cmd.get("type", "") == "undo":
-		return undo.undo(self)
+		var undone := undo.undo(self)
+		# Roads put back: the world makes way and the lots catch up now, as
+		# after a road command, so no view drawn before the next tick finds a
+		# lot on a road that is gone (reviewer 2026-10-27). A big town's
+		# replan still waits for its turn (_refresh).
+		if undone and _roads_moved:
+			_road_wins()
+			_refresh()
+		return undone
 	var snap: Variant = undo.before(self, cmd)
 	var ok := _apply_cmd(cmd)
 	if ok and snap != null:

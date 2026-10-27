@@ -192,6 +192,15 @@ func total_length() -> float:
 ## Builds a road from start to end bent toward ctrl. Joins existing junctions
 ## and roads it starts on, ends on, or crosses.
 func build_road(start: Vector3, ctrl: Vector3, end: Vector3, type := 0, oneway := false) -> bool:
+	# The roads it cuts on the way (where it starts, ends or crosses) and the
+	# road itself are one change, so `changed` fires once.
+	begin_batch()
+	var built := _build_road(start, ctrl, end, type, oneway)
+	end_batch()
+	return built
+
+
+func _build_road(start: Vector3, ctrl: Vector3, end: Vector3, type: int, oneway: bool) -> bool:
 	if _flat(start).distance_to(_flat(end)) < MIN_LENGTH:
 		return false
 	var a := _resolve_endpoint(start)
@@ -256,7 +265,10 @@ func clear() -> void:
 	_changed()
 
 
-## Splits a segment at t and returns the new junction's id.
+## Splits a segment at t and returns the new junction's id. The cut is a
+## change: the segment's id is gone, so whatever pointed at it (lots,
+## walkers, services) must catch up (reviewer 2026-10-27: a cut alone never
+## moved `revision`, so nothing refreshed).
 func split_segment(seg_id: int, t: float) -> int:
 	var s: Dictionary = segments[seg_id]
 	var c := curve_of(seg_id)
@@ -271,6 +283,7 @@ func split_segment(seg_id: int, t: float) -> int:
 	if s.has("built_by"):
 		segments[p].built_by = s.built_by
 		segments[q].built_by = s.built_by
+	_changed()
 	return m
 
 
