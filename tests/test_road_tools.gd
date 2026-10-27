@@ -377,6 +377,13 @@ func _s_curve() -> void:
 	_check(not t._placing_bend(), "the fourth point is the end, not a bend")
 	var drawn := t._pending_curves(e)
 	_check(drawn.size() == 2, "with both bends placed the preview is the S-curve")
+	# Money for one half but not both: nothing is built (second reader,
+	# 2026-10-26: half an S-curve got built and couldn't be undone).
+	var half := CitySim.shapes_cost([drawn[0]], RoadStyle.Type.STREET)
+	sim.economy.money = half + 10
+	_check(t._is_valid(drawn[0]) and not t._can_build(drawn), "money for one half only: the S-curve can't be built")
+	sim.economy.money = 10_000_000
+	_check(t._can_build(drawn), "with the money for both, it can")
 	var before := sim.network.segments.size()
 	for curve in drawn:
 		_check(t._is_valid(curve), "each half can be built")

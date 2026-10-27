@@ -86,7 +86,8 @@ var parallel := false
 var parallel_gap := RoadShapes.GRID_ACROSS
 ## Height new road points are placed at, in metres above the ground.
 var elevation := 0.0
-var _plan_key := []
+## Bridge plans by [curve, type, revisions], kept a few at a time so an
+## S-curve's two halves don't push each other out every frame.
 var _plan_memo := {}
 
 var _points: Array[Vector3] = []
@@ -395,6 +396,9 @@ func _process(_delta: float) -> void:
 				curves.append(RoadShapes.offset(curve, parallel_gap))
 			if problem == "":
 				problem = _problem(curve)
+		if problem == "" and _drawn_cost(drawn) > sim.economy.money:
+			# Each half fits the money, but not both.
+			problem = "Not enough money: this road costs $%s." % CitySim.money_text(_drawn_cost(drawn))
 		_show_length(drawn)
 		ok = problem == ""
 		if problem != _shown_problem:
@@ -478,7 +482,7 @@ func _click() -> void:
 				_points.append(p)
 			else:
 				var drawn := _pending_curves(p)
-				if drawn.all(_is_valid):
+				if _can_build(drawn):
 					var curves := drawn.duplicate()
 					if parallel:
 						for curve in drawn:
@@ -957,10 +961,11 @@ func _plan(curve: Array) -> Dictionary:
 	if elevation <= 0.0:
 		return {"ok": true, "pieces": [curve], "crossed": 0, "why": ""}
 	var key := [curve, road_type, sim.network.revision, sim.rail.version]
-	if _plan_key != key:
-		_plan_key = key
-		_plan_memo = Overpass.plan(sim, curve, road_type)
-	return _plan_memo
+	if not _plan_memo.has(key):
+		if _plan_memo.size() >= 8:
+			_plan_memo.clear()
+		_plan_memo[key] = Overpass.plan(sim, curve, road_type)
+	return _plan_memo[key]
 
 
 ## The county road (CountyGrid.mile_at) a point is on, or {}: in town too,
@@ -1318,20 +1323,34 @@ func _corner_angle(i: int, at: Vector3, a: Vector3, b: Vector3) -> void:
 	l.visible = true
 
 
+## Whether the whole road being drawn can be built: all of it or none,
+## never half an S-curve for want of money.
+func _can_build(drawn: Array) -> bool:
+	return drawn.all(_is_valid) and _drawn_cost(drawn) <= sim.economy.money
+
+
+## What the road being drawn costs in all: every curve (both halves of an
+## S-curve), as built (bridged where it's raised), twice with Parallel on.
+func _drawn_cost(curves: Array) -> int:
+	var cost := 0
+	for curve in curves:
+		var plan := _plan(curve)
+		cost += CitySim.shapes_cost(plan.pieces if plan.ok else [curve], road_type)
+	return cost * (2 if parallel else 1)
+
+
 ## Shows the road's length by the cursor, and the guide line it snapped to.
 ## `curves` is the road being drawn: one curve, or an S-curve's two halves.
 func _show_length(curves: Array) -> void:
 	var first: Array = curves[0]
 	var last: Array = curves[curves.size() - 1]
 	var m := 0.0
-	var cost := 0
 	var r := INF
 	for curve in curves:
 		m += RoadNetwork.polyline_length(RoadNetwork.sample_curve(curve[0], curve[1], curve[2]))
-		cost += CitySim.shapes_cost(_plan(curve).pieces if _plan(curve).ok else [curve], road_type)
 		r = minf(r, RoadNetwork.min_radius(curve[0], curve[1], curve[2]))
 	_label.text = "%s ft  ·  $%s" % [CitySim.money_text(roundi(m * FT)),
-		CitySim.money_text(cost * (2 if parallel else 1))]
+		CitySim.money_text(_drawn_cost(curves))]
 	if r < 2000.0:
 		_label.text += "\nCurve safe at %d mph" % RoadStyle.safe_speed_mph(r)
 	if absf(last[2].y) > 0.1 or absf(first[0].y) > 0.1:
