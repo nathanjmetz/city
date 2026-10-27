@@ -100,6 +100,11 @@ func undo(sim: CitySim) -> bool:
 		return false
 	entries.pop_back()
 	if e.has("roads"):
+		# A street made car-free since it was built goes with it, pavers and
+		# all: they're refunded too (second reader, 2026-10-26).
+		for seg in sim.parks.trails.plazas:
+			if not e.roads.segments.has(seg):
+				e.refund = int(e.refund) + maxi(0, sim.car_free_cost(seg))
 		sim.network.restore(e.roads)
 		put_back(sim, e.took)
 		for seg in e.get("closed", {}):
