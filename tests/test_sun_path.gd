@@ -119,10 +119,8 @@ func _game_calendar() -> void:
 	_check(absf(SunPath.day_of_year(2.0) - 60.0) < 0.001, "March 1 is day 60 (February has 28 days)")
 	_check(SunPath.dst_game(5.6) and not SunPath.dst_game(11.6) and not SunPath.dst_game(1.5),
 		"summer clocks on daylight saving, winter ones not")
-	_check(not SunPath.dst_game(SunPath.months_of(68.9)) and SunPath.dst_game(SunPath.months_of(69.1)),
-		"spring forward on March 10")
-	_check(SunPath.dst_game(SunPath.months_of(306.9)) and not SunPath.dst_game(SunPath.months_of(307.1)),
-		"fall back on November 3")
+	_check(not SunPath.dst_game(1.999) and SunPath.dst_game(2.0), "spring forward as March begins (in the sky's night)")
+	_check(SunPath.dst_game(9.999) and not SunPath.dst_game(10.0), "fall back as November begins")
 	_check(SunPath.dst_day(JUNE_21) and not SunPath.dst_day(DEC_21), "real dates: June on daylight saving")
 	# Seasons' own sun check uses the same path.
 	var june := SunPath.months_of(JUNE_21)

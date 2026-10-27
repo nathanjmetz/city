@@ -56,5 +56,5 @@ func _process(_delta: float) -> bool:
 	var month := float(int(args[2]) - 1)
 	if month < Seasons.START_MONTH:
 		month += 12.0
-	sim.tick_count = Seasons.tick_at(month + AT[_step]) - sim.calendar_offset
+	sim.set_calendar(Seasons.tick_at(month + AT[_step]))
 	return false

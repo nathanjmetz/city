@@ -77,7 +77,7 @@ func _setup() -> void:
 	sim.economy.money = 50_000_000
 	sim.require_utilities = false
 	# July, late morning.
-	sim.tick_count = Seasons.tick_at(SkyClock.at(7, 11.0)) - sim.calendar_offset
+	sim.set_calendar(Seasons.tick_at(SkyClock.at(7, 11.0)))
 	# Clear of the crossroads a new town starts from (CitySim "clear").
 	sim.apply({"type": "build_road", "start": [-200, 600], "ctrl": [600, 600], "end": [1400, 600],
 		"road": RoadStyle.Type.STATE_HWY})

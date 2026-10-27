@@ -50,7 +50,7 @@ func _process(_delta: float) -> bool:
 		var month := float(OS.get_environment("LINES_MONTH")) if OS.get_environment("LINES_MONTH") != "" else 7.0
 		var hour := float(OS.get_environment("LINES_HOUR")) if OS.get_environment("LINES_HOUR") != "" else 11.0
 		DayNight.cycle_on = OS.get_environment("LINES_HOUR") != ""
-		_main.sim.tick_count = Seasons.tick_at(SkyClock.at(int(month), hour)) - _main.sim.calendar_offset
+		_main.sim.set_calendar(Seasons.tick_at(SkyClock.at(int(month), hour)))
 		if OS.get_environment("LINES_PATCHES") != "":
 			_patches = []
 			for p in OS.get_environment("LINES_PATCHES").split(";"):

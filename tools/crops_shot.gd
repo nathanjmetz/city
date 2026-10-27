@@ -27,6 +27,6 @@ func _demo_town() -> void:
 			print("  ", k, " ", f.fields[k].crop, ": ", f.fields[k].why)
 	DayNight.seasons_on = OS.get_environment("CROPS_MONTH") != ""
 	if DayNight.seasons_on:
-		sim.tick_count = Seasons.tick_at(SkyClock.at(int(OS.get_environment("CROPS_MONTH")), 12.0, 5)) - sim.calendar_offset
+		sim.set_calendar(Seasons.tick_at(SkyClock.at(int(OS.get_environment("CROPS_MONTH")), 12.0, 5)))
 	sim.farms_changed.emit()
 	_aim_camera()

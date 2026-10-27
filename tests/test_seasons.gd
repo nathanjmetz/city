@@ -27,9 +27,10 @@ func _init() -> void:
 	var sim := CitySim.new()
 	sim.tick_count = day * 40 + 30
 	var t := sim.clock()
-	_check(t.month == 6 and t.day == 10 and t.year == 1 and t.weekday == 4, "the clock shows the calendar date (%s)" % str(t))
+	_check(t.month == 6 and t.year == 1 and Seasons.day(sim.calendar_tick()) == 10 and Seasons.weekday(sim.calendar_tick()) == 4,
+		"the clock shows the calendar's month and year (%s)" % str(t))
 	# The sky: sunrise on the 1st, sunset 50 minutes into a 60-minute month.
-	var rise := SunPath.crossings(SunPath.day_of_year(5.0), true)
+	var rise := SunPath.crossings(SunPath.day_of_year(5.0), SunPath.dst_game(5.0))
 	_check(absf(SkyClock.hour(5.0) - rise.x) < 0.01, "the sun rises on the 1st")
 	var at_sunset := 5.0 + SkyClock.DAY_SHARE
 	_check(absf(SkyClock.hour(at_sunset) - SunPath.crossings(SunPath.day_of_year(at_sunset), true).y) < 0.01,
@@ -53,13 +54,24 @@ func _init() -> void:
 	town.tick_count = old_tick
 	var saved := town.to_dict()
 	saved.erase("calendar")
+	saved.erase("calendar_from")
 	var loaded := CitySim.new()
 	loaded.from_dict(JSON.parse_string(JSON.stringify(saved)))
 	_check(loaded.calendar_offset == off and Seasons.month(loaded.calendar_tick()) == 7,
 		"an old save keeps its month (%d)" % Seasons.month(loaded.calendar_tick()))
+	# Its past keeps the old calendar: the founding reads May of year 1, and
+	# something built at the old July of year 2 still reads July of year 2.
+	var founded := loaded.calendar_of(0)
+	var built := loaded.calendar_of(14 * Seasons.OLD_TICKS_PER_MONTH)
+	_check(Seasons.month(founded) == 5 and Seasons.year(founded) == 1
+		and Seasons.month(built) == 7 and Seasons.year(built) == 2,
+		"an old save's past dates keep the old calendar (founded %d/%d, built %d/%d)"
+		% [Seasons.month(founded), Seasons.year(founded), Seasons.month(built), Seasons.year(built)])
 	var again := CitySim.new()
 	again.from_dict(JSON.parse_string(JSON.stringify(loaded.to_dict())))
-	_check(again.calendar_offset == off, "and the offset is saved from then on")
+	_check(again.calendar_offset == off and again.calendar_from == old_tick
+		and again.calendar_of(14 * Seasons.OLD_TICKS_PER_MONTH) == built,
+		"and the offset and the switch-over tick are saved from then on")
 	# A family business ages on pace years; its sign reads the calendar.
 	var pace_sim := CitySim.new()
 	_check(Families.since_year(pace_sim, 1) == 2027 and Families.since_year(pace_sim, 3) == 2027,

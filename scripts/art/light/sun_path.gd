@@ -22,12 +22,15 @@ const HORIZON := -0.833
 ## Civil twilight ends with the sun 6 degrees down: blue hour, then dark.
 const CIVIL := -6.0
 ## Daylight saving on the game's calendar, in months from January (see
-## Seasons.months): US clocks change on the second Sunday of March and the
-## first Sunday of November; the game's calendar keeps the middle of the
-## weeks they can fall in, March 10 and November 3.
-const DST_ON := 2.0 + 9.0 / 31.0
-const DST_OFF := 10.0 + 2.0 / 30.0
-## The same dates as days of the year (1 = January 1).
+## Seasons.months): US clocks change in the second week of March and the
+## first of November. A month is one day and night of the sky (SkyClock),
+## so the game changes its clocks between months, in the night: on for
+## March through October. A real date would move the sun an hour in
+## mid-morning.
+const DST_ON := 2.0
+const DST_OFF := 10.0
+## On a real calendar: March 10 and November 3, the middle of the weeks the
+## clocks can change in (day of the year, 1 = January 1).
 const DST_ON_DAY := 69
 const DST_OFF_DAY := 307
 

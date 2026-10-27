@@ -199,7 +199,7 @@ func sign_of(sim, ref: String) -> Dictionary:
 ## pace years (Seasons.pace_year, about 29 real minutes each) so a business
 ## gets its history in a session, but a sign reads the calendar's year.
 static func since_year(sim, pace_y: int) -> int:
-	return calendar(Seasons.year(Seasons.pace_tick(pace_y) + int(sim.calendar_offset)))
+	return calendar(Seasons.year(sim.calendar_of(Seasons.pace_tick(pace_y))))
 
 
 ## The calendar year a game year falls in: Year 1 is 2027, when the game's

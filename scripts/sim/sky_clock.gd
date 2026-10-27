@@ -29,7 +29,7 @@ const NIGHT_EASE := 0.8
 static func hour(months: float) -> float:
 	var f := months - floorf(months)
 	var day := SunPath.day_of_year(months)
-	var c := SunPath.crossings(day, SunPath.dst_day(day))
+	var c := SunPath.crossings(day, SunPath.dst_game(months))
 	var light := c.y - c.x
 	if f < DAY_SHARE:
 		return c.x + f / DAY_SHARE * light
@@ -43,7 +43,7 @@ static func hour(months: float) -> float:
 ## sky hour (back from work at 5 pm) lasts.
 static func ticks_per_hour(months: float) -> float:
 	var day := SunPath.day_of_year(months)
-	var c := SunPath.crossings(day, SunPath.dst_day(day))
+	var c := SunPath.crossings(day, SunPath.dst_game(months))
 	var m := mini(int(fposmod(months, 12.0)), 11)
 	return DAY_SHARE * Seasons.DAYS_IN[m] * Seasons.TICKS_PER_DAY / (c.y - c.x)
 

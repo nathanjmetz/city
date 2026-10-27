@@ -16,8 +16,8 @@ var fine: Callable
 var bars := false
 ## Dates under the chart show the day too (short spans).
 var hourly := false
-## The town's CitySim.calendar_offset, so sample ticks read as its dates.
-var calendar_offset := 0
+## The town's CitySim.calendar_of, so sample ticks read as its dates.
+var calendar_of: Callable = func(t: int) -> int: return t
 ## Always show 0 at the bottom (counts); off lets money go negative.
 var from_zero := true
 
@@ -48,10 +48,9 @@ func _gui_input(event: InputEvent) -> void:
 		queue_redraw()
 
 
-## "Mar 2029", or "Mar 5, 2029" for short spans, for a sim tick (`offset`
-## is the town's CitySim.calendar_offset).
-static func when(tick: int, with_day := false, offset := 0) -> String:
-	var cal := tick + offset
+## "Mar 2029", or "Mar 5, 2029" for short spans, for a calendar tick
+## (CitySim.calendar_of).
+static func when(cal: int, with_day := false) -> String:
 	var m: String = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Seasons.month(cal) - 1]
 	if with_day:
 		return "%s %d, %d" % [m, Seasons.day(cal), Families.calendar(Seasons.year(cal))]
@@ -112,7 +111,7 @@ func _draw() -> void:
 	if lo < 0.0 and hi > 0.0:
 		var yz: float = Y.call(0.0)
 		draw_line(Vector2(plot.position.x, yz), Vector2(plot.end.x, yz), Brand.LINE_STRONG, 1.0)
-	_text(Vector2(plot.position.x, size.y - 3.0), when(int(t0), hourly, calendar_offset), Brand.INK_MUTED, 11)
+	_text(Vector2(plot.position.x, size.y - 3.0), when(calendar_of.call(int(t0)), hourly), Brand.INK_MUTED, 11)
 	_text(Vector2(plot.end.x, size.y - 3.0), "Now", Brand.INK_MUTED, 11, false, true)
 	# The lines (or bars).
 	for si in shown.size():
@@ -200,7 +199,7 @@ func _label_of(s: Dictionary, idx: int) -> String:
 	var p: Array = s.pts[idx]
 	if p.size() > 2:
 		return str(p[2])
-	return when(int(p[0]), hourly, calendar_offset)
+	return when(calendar_of.call(int(p[0])), hourly)
 
 
 func _text(at: Vector2, s: String, col: Color, px: int, center := false, right := false) -> void:

@@ -184,7 +184,7 @@ static func conditions(clock: Dictionary) -> Array:
 static func sky_clock(sim: CitySim) -> Dictionary:
 	var t := sim.clock()
 	var h := sim.sky_hour()
-	t.day = 1
+	t.day = 1  # the sky's whole day is the month
 	t.hour = int(h)
 	t.minute = (h - floorf(h)) * 60.0
 	return t

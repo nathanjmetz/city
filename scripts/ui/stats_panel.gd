@@ -208,7 +208,7 @@ func _refresh(full: bool) -> void:
 		return _short(v, st)
 	_chart.bars = m.get("bars", false)
 	_chart.hourly = span in ["month", "year"] and not _chart.bars
-	_chart.calendar_offset = sim.calendar_offset
+	_chart.calendar_of = sim.calendar_of
 	_chart.from_zero = m.get("from_zero", true)
 	_chart.set_series(series)
 	if full:
@@ -308,7 +308,7 @@ func _headline() -> Array:
 	var s := sim.stats
 	match key:
 		"population":
-			return [_thousands(s.population), _since("pop", s.population, YEAR, "this year")]
+			return [_thousands(s.population), _since("pop", s.population, YEAR, "in 2 weeks")]
 		"jobs":
 			var w := int(s.workers)
 			var un := 0.0 if w == 0 else 100.0 * (w - int(s.employed)) / w
@@ -351,7 +351,7 @@ func _by_year(rows: Array, f: Callable) -> Array:
 	var order := []
 	for r in rows:
 		var t := int(r[0])
-		var c := t + sim.calendar_offset
+		var c := sim.calendar_of(t)
 		var k := Seasons.year(c) * 12 + Seasons.month(c) if months else Seasons.year(c)
 		if not last.has(k):
 			order.append(k)
@@ -359,7 +359,7 @@ func _by_year(rows: Array, f: Callable) -> Array:
 	var out := []
 	for k in order.slice(maxi(order.size() - (12 if months else 20), 0)):
 		var t := int(last[k][0])
-		out.append([t, float(f.call(last[k])), StatChart.when(t, false, sim.calendar_offset) if months else str(Families.calendar(k))])
+		out.append([t, float(f.call(last[k])), StatChart.when(sim.calendar_of(t)) if months else str(Families.calendar(k))])
 	return out
 
 
@@ -516,7 +516,7 @@ func _details_money() -> void:
 
 
 func _details_date() -> void:
-	var founded := Families.calendar(Seasons.year(sim.calendar_offset))
+	var founded := Families.calendar(Seasons.year(sim.calendar_of(0)))
 	var months := _age_months()
 	_line("Founded", str(founded))
 	_line("Town age", "%d years, %d months" % [months / 12, months % 12])
@@ -528,7 +528,7 @@ func _details_date() -> void:
 
 ## Whole calendar months since the town began.
 func _age_months() -> int:
-	return int(Seasons.months(sim.calendar_tick()) - Seasons.months(sim.calendar_offset))
+	return int(Seasons.months(sim.calendar_tick()) - Seasons.months(sim.calendar_of(0)))
 
 
 func _details_problems() -> void:

@@ -109,7 +109,7 @@ func _shots(dir: String) -> bool:
 func _set_moment(month: int, day: int, hour: float) -> void:
 	var sim: CitySim = _main.sim
 	var date := float(month - 1) + float(day - 1) / Seasons.DAYS_IN[month - 1]
-	sim.tick_count = Seasons.tick_at(12.0 + date) - sim.calendar_offset
+	sim.set_calendar(Seasons.tick_at(12.0 + date))
 	_hour = hour
 	for n in _main.find_children("*", "DayNight", true, false):
 		n.set("date_override", date)

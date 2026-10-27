@@ -229,7 +229,7 @@ func next_line(sim) -> String:
 	if not reached.has("micro"):
 		return "Micropolitan area: %s people in your area." % _n(Balance.METRO_MICRO_MIN)
 	if not reached.has("city2") and not declined.has("city2") and not coming.has("city2"):
-		return "Second-class city: %s people at the next census (%d)." % [_n(Balance.CHARTER_CITY2_PEOPLE), next_census_year(sim)]
+		return "Second-class city: %s people at the next census (in about %d minutes)." % [_n(Balance.CHARTER_CITY2_PEOPLE), next_census_minutes(sim)]
 	if not reached.has("metro"):
 		return "Metropolitan area: %s people in your area." % _n(Balance.METRO_METRO_MIN)
 	if not reached.has("medium"):
@@ -288,12 +288,15 @@ func services_given(sim) -> Array:
 
 
 ## Once a sim day: a census in April of a census year, and anything new
-## on the ladder.
+## on the ladder. The decennial census counts pace years (Seasons.pace_year,
+## about 29 real minutes), so one comes about every five hours of play, as
+## it always did; on the calendar (a year 12 hours) it would be days apart.
+## It is named for the calendar's month and year it falls in.
 func month(sim) -> void:
 	var before := JSON.stringify([reached, coming, census])
 	var people := int(sim.stats.get("population", 0))
-	var year := Families.calendar(Seasons.year(sim.calendar_tick()))
-	if Seasons.month(sim.calendar_tick()) == 4 and year % 10 == 0 and int(census.get("year", 0)) != year:
+	var year := Families.calendar(Seasons.pace_year(sim.tick_count))
+	if Seasons.pace_month(sim.tick_count) == 4 and year % 10 == 0 and int(census.get("year", 0)) != year:
 		_count(sim, year, false)
 	_in_force(sim)
 	_consent_month(sim)
@@ -316,10 +319,23 @@ func month(sim) -> void:
 		changed.emit()
 
 
-## The next decennial census year.
+## The next decennial census's pace year (see month()).
 func next_census_year(sim) -> int:
-	var year := Families.calendar(Seasons.year(sim.calendar_tick()))
+	var year := Families.calendar(Seasons.pace_year(sim.tick_count))
 	return (year / 10 + 1) * 10 if year % 10 != 0 or int(census.get("year", 0)) == year else year
+
+
+## Real minutes until the next decennial census, roughly.
+func next_census_minutes(sim) -> int:
+	var pace := next_census_year(sim) - 2026
+	var at := Seasons.pace_tick(pace) + 3 * Seasons.OLD_TICKS_PER_MONTH
+	return maxi(1, roundi(float(at - sim.tick_count) / CitySim.TICKS_PER_SECOND / 60.0))
+
+
+## What a census is called: the calendar's month and year it was taken in
+## ("the May 2027 census").
+func census_name() -> String:
+	return str(census.get("when", str(census.get("year", ""))))
 
 
 ## The census counts the town: the urban area, and second-class status.
@@ -328,7 +344,10 @@ func _count(sim, year: int, special: bool) -> void:
 	var homes := 0
 	for slice in sim.ledger().home_slices:
 		homes += slice.size()
-	census = {"year": year, "people": people, "homes": homes, "special": special}
+	var cal: int = sim.calendar_tick()
+	census = {"year": year, "people": people, "homes": homes, "special": special,
+		"when": "%s %d" % [["January", "February", "March", "April", "May", "June", "July", "August", "September",
+			"October", "November", "December"][Seasons.month(cal) - 1], Families.calendar(Seasons.year(cal))]}
 	if not reached.has("urban") and (people >= Balance.CHARTER_URBAN_PEOPLE or homes >= Balance.CHARTER_URBAN_HOMES):
 		_reach(sim, "urban")
 	# Only a federal decennial census counts for the class of a city.
@@ -383,9 +402,9 @@ func _marker(sim, id: String) -> Array:
 			var share := roundi(float(vote.get("yes", 0.0)) * 100.0)
 			return ["City of {town}", "Voters chose %d%% to %d%% to make {town} a city. It became one in %d." % [share, 100 - share, year]]
 		"city2":
-			return ["Second-Class City", "With %s people at the %d census, {town} became a second-class city." % [_n(int(census.get("people", 0))), int(census.get("year", year))]]
+			return ["Second-Class City", "With %s people at the %s census, {town} became a second-class city." % [_n(int(census.get("people", 0))), census_name()]]
 		"urban":
-			return ["Urban Area", "The %d census counted %s people here, and {town} became an urban area." % [int(census.get("year", year)), _n(int(census.get("people", 0)))]]
+			return ["Urban Area", "The %s census counted %s people here, and {town} became an urban area." % [census_name(), _n(int(census.get("people", 0)))]]
 		"micro":
 			return ["Micropolitan Area", "By %d, %s people lived in the area around {town}, a micropolitan area." % [year, _n(maxi(metro_people, int(sim.stats.get("population", 0))))]]
 		"metro":
@@ -437,11 +456,11 @@ func _plan(sim, kind: String) -> Dictionary:
 			return {"leader": "Clerk-treasurer", "title": "Pay for a special census",
 				"why": "The town has grown well past the last count. The Census Bureau will count it again for a fee.",
 				"yes": "The town pays $%s and gets an official count now." % CitySim.money_text(special_cost(sim)),
-				"no": "The town waits for the next census, in %d." % next_census_year(sim)}
+				"no": "The town waits for the next census, in about %d minutes." % next_census_minutes(sim)}
 		"second_class":
 			return {"leader": "City council", "title": "Adopt second-class city status",
-				"why": "The %d census counted %s people. The council can adopt second-class status by ordinance." % [
-					int(census.year), _n(int(census.people))],
+				"why": "The %s census counted %s people. The council can adopt second-class status by ordinance." % [
+					census_name(), _n(int(census.people))],
 				"yes": "On the 1st of next month the city gets a nine-member council, a city clerk and a controller who can sell city bonds.",
 				"no": "It stays a third-class city. The council can take it up again after the next census."}
 	return {}
@@ -628,6 +647,8 @@ func from_dict(d: Dictionary) -> void:
 	var c: Dictionary = d.get("census", {})
 	census = {} if c.is_empty() else {"year": int(c.year), "people": int(c.people), "homes": int(c.get("homes", 0)),
 		"special": bool(c.get("special", false))}
+	if c.has("when"):
+		census.when = str(c.when)
 	metro_people = int(d.get("metro", 0))
 	var v: Dictionary = d.get("vote", {})
 	vote = {} if v.is_empty() else {"year": int(v.year), "yes": float(v.yes), "passed": bool(v.passed)}

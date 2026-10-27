@@ -2225,7 +2225,7 @@ func may_enter(seg: int, truck: bool) -> bool:
 		"always":
 			return true
 		"night":
-			var hour: int = int(_sim.sky_hour()) if _sim != null else 12
+			var hour: int = _sim.clock().hour if _sim != null else 12  # a rule on the sim clock
 			return hour >= 22 or hour < 6
 	return false
 

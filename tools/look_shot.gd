@@ -14,6 +14,6 @@ func _process(delta: float) -> bool:
 		var hour := float(OS.get_environment("LOOK_HOUR")) if OS.get_environment("LOOK_HOUR") != "" else 11.0
 		var sim: CitySim = _main.sim
 		# The tick in year 2 with that month and the sky at that hour.
-		sim.tick_count = Seasons.tick_at(SkyClock.at(int(month), hour)) - sim.calendar_offset
+		sim.set_calendar(Seasons.tick_at(SkyClock.at(int(month), hour)))
 		_main.speed = 0
 	return super(delta)

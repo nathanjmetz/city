@@ -334,7 +334,7 @@ func allow(sim, key: String, type: String, level: int) -> bool:
 		name = Families.home_name(b) if int(b.zone) == ZoneMap.Zone.RESIDENTIAL else "old " + BuildingTypes.name_of(b).to_lower()
 	var fam: Dictionary = sim.families.family_of(ref)
 	var who := str(fam.head) if not fam.is_empty() else "The owner"
-	var built := Families.calendar(Seasons.year(int(b.get("fabric", b.built)) + sim.calendar_offset))
+	var built := Families.calendar(Seasons.year(sim.calendar_of(int(b.get("fabric", b.built)))))
 	var new_stage: Dictionary = BuildingTypes.TYPES[type].stages[level]
 	var gain := ""
 	var st_cap: Array = new_stage.get("cap", [0, 0])
@@ -518,7 +518,7 @@ func _members(id: int) -> Array:
 func rows(sim, key: String) -> Array:
 	var b: Dictionary = sim.buildings[key]
 	var out := []
-	var year := Families.calendar(Seasons.year(int(b.get("fabric", b.built)) + sim.calendar_offset))
+	var year := Families.calendar(Seasons.year(sim.calendar_of(int(b.get("fabric", b.built)))))
 	out.append(["Built", ("%d, historic" % year) if is_historic(sim, b) else str(year)])
 	var c := float(charm.get(key, 0.0))
 	if c > 0.0:
@@ -526,7 +526,7 @@ func rows(sim, key: String) -> Array:
 	if district_of.has(key) and districts.has(district_of[key]):
 		var d: Dictionary = districts[district_of[key]]
 		out.append(["Historic district", "%s (%s)" % [d.name,
-			"protected since %d" % Families.calendar(Seasons.year(int(d.since) + sim.calendar_offset)) if d.state == "protected"
+			"protected since %d" % Families.calendar(Seasons.year(sim.calendar_of(int(d.since)))) if d.state == "protected"
 			else "eligible, not protected"]])
 	if easements.has(key):
 		out.append(["Preservation easement", "Since %d" % int(easements[key])])

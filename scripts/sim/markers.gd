@@ -282,7 +282,7 @@ func _lot_first(sim, kind: String) -> Dictionary:
 	var out := _lot_spot(sim, k)
 	var b: Dictionary = sim.buildings[k]
 	out.key = k
-	out.year = Families.calendar(Seasons.year(int(b.built) + sim.calendar_offset))
+	out.year = Families.calendar(Seasons.year(sim.calendar_of(int(b.built))))
 	out.name = _named(sim, "lot:" + k, Families.home_name(b) if int(b.zone) == ZoneMap.Zone.RESIDENTIAL
 		else "The " + BuildingTypes.name_of(b).to_lower())
 	return out

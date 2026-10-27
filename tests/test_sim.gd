@@ -68,7 +68,7 @@ func _init() -> void:
 	for i in 6000:
 		d.tick()
 	_check(d.stats.population > stalled, "jobs bring more people (%d -> %d)" % [stalled, d.stats.population])
-	_check(CitySim.new().clock().weekday == 6 and CitySim.new().clock().hour == 6, "clock starts on Saturday, May 1, at 6 AM")
+	_check(CitySim.new().clock().weekday == 1 and CitySim.new().clock().hour == 6, "the sim clock starts Monday 6 AM")
 	# Money: roads cost real prices, taxes come in, upkeep goes out.
 	var m := CitySim.new()
 	var start: int = m.economy.money

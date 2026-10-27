@@ -423,8 +423,11 @@ const NEEDS_LABOR_PER_HOME := 15_000
 ## Utilities: warn past 90% of what the town has (Texas 75/90 rule); at
 ## 100% no new hookups (a moratorium) and the next phase waits.
 const NEEDS_WARN_PCT := 90
-## Winter: Indiana's paving season closes about December through February.
-const NEEDS_WINTER_MONTHS := [12, 1, 2]
+## Winter: Indiana's paving season closes about December through February,
+## but a calendar month is an hour now (Seasons), and three hours of no new
+## subdivision phases stalls a town's growth; the hold keeps to January, the
+## deepest frost, about an hour a year.
+const NEEDS_WINTER_MONTHS := [1]
 
 ## Floor-area ratio (floor space ÷ lot area) zoning allows, the way US codes
 ## cap a building's bulk. The steps are Chicago Zoning Ordinance districts:

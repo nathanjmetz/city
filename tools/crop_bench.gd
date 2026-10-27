@@ -148,7 +148,7 @@ func _setup() -> void:
 		if OS.get_cmdline_user_args().has("--without-view"):
 			# What the rest of the game spends on a farm change, FarmView aside.
 			sim.farms_changed.disconnect(_fz_view._rebuild)
-		sim.tick_count = Seasons.tick_at(24.0 + 8.5) - sim.calendar_offset
+		sim.set_calendar(Seasons.tick_at(24.0 + 8.5))
 		_cam.look_at_point(_farm)
 		_cam.set_view(deg_to_rad(20.0), deg_to_rad(40.0), 900.0)
 		_step = 0
@@ -330,7 +330,7 @@ func _next() -> void:
 	var sim: CitySim = _main.sim
 	var month: float = s[1]
 	# Year 3, so the farm's rotation has turned.
-	sim.tick_count = Seasons.tick_at(24.0 + month) - sim.calendar_offset
+	sim.set_calendar(Seasons.tick_at(24.0 + month))
 	_cam.look_at_point(s[5])
 	_cam.set_view(deg_to_rad(s[2]), deg_to_rad(s[3]), s[4])
 

@@ -129,7 +129,7 @@ func _refresh() -> void:
 	_drawn = m
 	_snap = sim.timelapse.at(m)
 	# A frame a sim day; its date on the calendar (a month an hour).
-	var tick := m * 24 * CitySim.TICKS_PER_HOUR + sim.calendar_offset
+	var tick := sim.calendar_of(m * 24 * CitySim.TICKS_PER_HOUR)
 	var names := ["January", "February", "March", "April", "May", "June", "July", "August", "September",
 		"October", "November", "December"]
 	_when.text = "%s %d, %d  ·  %s people" % [names[Seasons.month(tick) - 1], Seasons.day(tick), Families.calendar(Seasons.year(tick)),

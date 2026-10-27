@@ -49,7 +49,7 @@ func _process(_delta: float) -> bool:
 		Weather.on = false
 		DayNight.cycle_on = false
 		# Mid-July of the first year.
-		sim.tick_count = Seasons.tick_at(6.5) - sim.calendar_offset
+		sim.set_calendar(Seasons.tick_at(6.5))
 		TreeField.extra_years = float(_arg("years", "0"))
 		PerfTown.build(sim, _arg("blocks", "5"))
 		# Built as the clock reads, so the yard trees are just planted.

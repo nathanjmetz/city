@@ -110,7 +110,7 @@ func _init() -> void:
 	sim3.charter.reached["town"] = 0
 	sim3.charter.reached["city"] = 0
 	sim3.stats.population = 5200
-	while not (Seasons.month(sim3.tick_count) == 4 and Families.calendar(Seasons.year(sim3.tick_count)) % 10 == 0):
+	while not (Seasons.pace_month(sim3.tick_count) == 4 and Families.calendar(Seasons.pace_year(sim3.tick_count)) % 10 == 0):
 		sim3.tick_count += MONTH
 	sim3.charter.month(sim3)
 	_check(int(sim3.charter.census.get("people", 0)) == 5200, "the census counts the town")
@@ -127,9 +127,10 @@ func _init() -> void:
 	_check(sim3.charter.reached.has("metro"), "and 60,000 a metropolitan area")
 	# Second class: only at a decennial census, and only if adopted.
 	sim3.stats.population = 36_000
-	# The next census year's April (a sim day is about 1.2 calendar days).
-	while not (Seasons.month(sim3.tick_count) == 4 and Families.calendar(Seasons.year(sim3.tick_count)) % 10 == 0
-			and Families.calendar(Seasons.year(sim3.tick_count)) != int(sim3.charter.census.get("year", 0))):
+	_check(sim3.tick_count < 6 * 3600 * CitySim.TICKS_PER_SECOND, "the first census comes within a few hours of play")
+	_check(sim3.charter.census_name().length() > 5, "a census is named for the calendar's month and year (%s)" % sim3.charter.census_name())
+	while not (Seasons.pace_month(sim3.tick_count) == 4 and Families.calendar(Seasons.pace_year(sim3.tick_count)) % 10 == 0
+			and Families.calendar(Seasons.pace_year(sim3.tick_count)) != int(sim3.charter.census.get("year", 0))):
 		sim3.tick_count += MONTH
 	sim3.permits.wait_until.clear()
 	sim3.charter.month(sim3)

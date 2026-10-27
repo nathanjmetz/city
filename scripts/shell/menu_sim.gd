@@ -29,5 +29,7 @@ func sky_ticks_per_hour() -> float:
 func sky_hour(_frac := 0.0) -> float:
 	if wall.is_empty():
 		return super.sky_hour(_frac)
+	# The wall clock is exact: put back the bit of the step clock() takes off
+	# (minute_bias) as DayNight's fraction comes in, as it always did.
 	var t := clock()
-	return float(t.hour) + float(t.minute) / 60.0
+	return float(t.hour) + (float(t.minute) + _frac) / 60.0

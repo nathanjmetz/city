@@ -810,7 +810,7 @@ func _process(_delta: float) -> void:
 	# The weekday, month and year, no time of day (Nathan 2026-10-26): the
 	# sky shows the time, one day and night a month (Seasons, SkyClock).
 	# Calendar years, matching the "since" on business signs.
-	_clock.text = "%s · %s %d" % [["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][int(t.weekday)],
+	_clock.text = "%s · %s %d" % [["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][Seasons.weekday(sim.calendar_tick())],
 		["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][t.month - 1],
 		Families.calendar(t.year)]
 	_money.text = "$" + _thousands(sim.economy.money)
