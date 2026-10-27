@@ -272,6 +272,16 @@ static func plan(sim: CitySim, cmd: Dictionary) -> Dictionary:
 	return out
 
 
+## Whether a point is within `reach` of a polyline (across the ground).
+static func _near_line(p: Vector3, line: PackedVector3Array, reach: float) -> bool:
+	for i in range(1, line.size()):
+		var q := Geometry3D.get_closest_point_to_segment(Vector3(p.x, 0, p.z), Vector3(line[i - 1].x, 0, line[i - 1].z),
+			Vector3(line[i].x, 0, line[i].z))
+		if q.distance_to(Vector3(p.x, 0, p.z)) < reach:
+			return true
+	return false
+
+
 ## Carries a move out. True if it went through.
 static func apply(sim: CitySim, cmd: Dictionary) -> bool:
 	var p := plan(sim, cmd)
@@ -292,8 +302,22 @@ static func apply(sim: CitySim, cmd: Dictionary) -> bool:
 			continue
 		var s: Dictionary = net.segments[id]
 		var c := net.curve_of(id)
+		var had := net.segments.keys()
 		net.remove_segment(id)
 		net.build_road(c[0], c[1], c[2], s.type, s.oneway)
+		# A car-free street (or one closed to through traffic) stays so on
+		# the pieces it's rebuilt as (second reader, 2026-10-26).
+		if sim.traffic.closed.has(id) or id in sim.parks.trails.plazas:
+			var line := RoadNetwork.sample_curve(c[0], c[1], c[2])
+			for nid in net.segments:
+				if nid in had:
+					continue
+				var mid: Vector3 = net.sample_segment(nid, 2)[1]
+				if _near_line(mid, line, 1.0):
+					if sim.traffic.closed.has(id):
+						sim.traffic.close_segment(nid, true, str(sim.traffic.closed[id]))
+					if id in sim.parks.trails.plazas and not nid in sim.parks.trails.plazas:
+						sim.parks.trails.plazas.append(nid)
 	net._changed()
 	net.end_batch()
 	# Homes and their zoning ride along with the street.

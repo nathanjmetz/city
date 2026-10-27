@@ -102,13 +102,36 @@ func _second_reader() -> void:
 	u.apply({"type": "build_road", "start": [0, -100], "ctrl": [100, -100], "end": [200, -100]})
 	var seg: int = u.network.find_segment_near(Vector3(100, 0, -100), 1.0).seg
 	u.apply({"type": "car_free", "seg": seg, "on": true})
+	var paid := u.economy.money
+	var pavers := 0
 	_check(u.apply({"type": "undo"}), "the car-free street is undone")
+	pavers = int(u.economy.money - paid)
 	_check(not u.network.segments.has(seg), "the street is gone")
 	_check(not u.traffic.closed.has(seg) and not seg in u.parks.trails.plazas, "and so is its closure")
+	_check(pavers > u.car_free_cost(-1) and pavers >= 30000, "the pavers come back with the road's refund ($%d)" % pavers)
 	u.apply({"type": "build_road", "start": [0, -100], "ctrl": [100, -100], "end": [200, -100]})
 	var again: int = u.network.find_segment_near(Vector3(100, 0, -100), 1.0).seg
 	_check(u.traffic.may_enter(again, false) and not again in u.parks.trails.plazas,
 		"the next road built there is open to cars (id %d, was %d)" % [again, seg])
+
+	# Move It: a car-free dead end dragged across a street is rebuilt to
+	# meet it, and stays car-free.
+	var m := CitySim.new()
+	m.economy.money = 10_000_000
+	m.apply({"type": "build_road", "start": [-100, 0], "ctrl": [0, 0], "end": [100, 0]})
+	m.apply({"type": "build_road", "start": [0, 200], "ctrl": [0, 150], "end": [0, 100]})
+	m.apply({"type": "build_road", "start": [-100, 200], "ctrl": [0, 200], "end": [100, 200]})
+	var spur: int = m.network.find_segment_near(Vector3(0, 0, 150), 1.0).seg
+	_check(m.apply({"type": "car_free", "seg": spur, "on": true}), "a dead-end street made car-free")
+	var end_node := m.network.find_node_near(Vector3(0, 0, 100), 1.0)
+	_check(m.apply(MoveIt.command([{"type": "node", "id": end_node}], Vector3(0, 0, 100), Vector3(0, 0, -140))),
+		"its end drags across the street")
+	var pieces := [m.network.find_segment_near(Vector3(0, 0, 100), 1.0).seg, m.network.find_segment_near(Vector3(0, 0, -20), 1.0).seg]
+	var all_closed := true
+	for piece in pieces:
+		if m.traffic.may_enter(int(piece), false) or not int(piece) in m.parks.trails.plazas:
+			all_closed = false
+	_check(all_closed, "moved and rebuilt, it's still car-free (pieces %s)" % [pieces])
 
 	# Bridges and tunnels stay open to cars.
 	var b := CitySim.new()
