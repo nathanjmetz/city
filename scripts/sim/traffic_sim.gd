@@ -1979,9 +1979,9 @@ func _let_go_of_extras() -> Dictionary:
 		if first.has(car.get("to_place", "")) and car.get("to_spot", -1) >= int(first[car.to_place]):
 			car.to_spot = -1
 		if first.has(car.get("at_place", "")) and car.get("spot", -1) >= int(first[car.at_place]):
-			var pl := place(car.at_place)
-			if car.spot < pl.spots.size():
-				kerb[car.id] = pl.spots[car.spot]
+			var spots: Array = place(car.at_place).get("spots", [])
+			if car.spot < spots.size():
+				kerb[car.id] = spots[car.spot]
 				car.spot = -1
 	return kerb
 
@@ -2364,15 +2364,19 @@ func _launch(car: Dictionary, lanes := {}) -> bool:
 	elif exit_d <= car.d + 1.0 and last:
 		return false  # next door: walk
 	# Nor while another car is backing out of or turning into the same lot:
-	# drivers wait for the one already moving in the aisle.
-	# (Stalls only: buses and trucks leave their bays and depots in turn.)
-	if from_ref != "" and not from_pl.is_empty() and car.get("from_spot", -1) >= 0 \
-			and car.from_spot < from_pl.spots.size() and from_pl.spots[car.from_spot].kind == "stall":
+	# drivers wait for the one already moving in the aisle. Out of a home's
+	# drive or garage, the second car waits for the first to back out (two
+	# cars of one household pulled out at once, through each other,
+	# 2026-10-27). (Not docks and bays: buses and trucks leave their bays and
+	# depots in turn. Nor the curb, where each car pulls out of its own space.)
+	var kind: String = from_pl.spots[car.from_spot].kind if not from_pl.is_empty() \
+			and car.get("from_spot", -1) >= 0 and car.from_spot < from_pl.spots.size() else ""
+	if from_ref != "" and kind in ["stall", "drive", "garage"]:
 		for other in cars:
 			if other.j == null or int(other.j.get("node", 0)) != -1 or other.id == car.id:
 				continue
 			var leaving: bool = int(other.j.wi) == -1 and other.get("from_place", "") == from_ref
-			var arriving: bool = int(other.j.wo) == -1 and other.get("to_place", "") == from_ref
+			var arriving: bool = kind == "stall" and int(other.j.wo) == -1 and other.get("to_place", "") == from_ref
 			if leaving or arriving:
 				return false
 	# Pull out only when there's a gap in the traffic.
