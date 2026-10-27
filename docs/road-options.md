@@ -19,11 +19,11 @@ Marks: ✅ already have · 🟢 easy to add · 🟠 big job
 | Medium road with a middle strip | Divided avenue (with trees), center turn lane | ✅ |
 | Medium one-way road | One-way avenue (3 lanes) | ✅ |
 | Large six-lane road | Boulevard, five-lane strip, parkway | ✅ |
-| Large one-way road | Not yet. Our biggest one-way is 3 lanes | 🟢 |
+| Large one-way road | One-way boulevard, 4 lanes with parking (added 2026-10-26) | ✅ |
 | Highway, one direction | Highway, 2, 3 or 4 lanes | ✅ |
 | Two-way highway | Divided highway, state highway | ✅ |
 | Highway ramps | Ramp, 1 or 2 lanes, with merges | ✅ |
-| Car-free street (people walk, trucks deliver) | The game can close a street to cars, but only the town's engineers and trail director do it. You have no button for it | 🟢 |
+| Car-free street (people walk, trucks deliver) | Town tools > Car-free: click a town street (added 2026-10-26) | ✅ |
 | Footpaths and bike paths you draw | Trails exist, but the trail director grows them. You can't draw one | 🟠 |
 | Tram tracks, and roads with tram tracks | None. Needs trams, stops, a depot and routes | 🟠 |
 
@@ -50,8 +50,8 @@ Marks: ✅ already have · 🟢 easy to add · 🟠 big job
 | Stop signs | Stop signs on the side road, or all-way stops | ✅ |
 | Roundabouts | Several real sizes, 1 or 2 lanes | ✅ |
 | Bridges, overpasses and tunnels | Raise or lower a road as you draw | ✅ |
-| No left turn, no right turn, no U-turn at a corner | Not yet. Cars pick lanes on their own | 🟢 |
-| Take away a crosswalk | Not yet. Every corner has them | 🟢 |
+| No left turn, no right turn, no U-turn at a corner | Traffic > Turns > No left / No right (added 2026-10-26). Cars already never U-turn at a corner | ✅ |
+| Take away a crosswalk | Traffic > Turns > Crosswalk: click a road at a corner (added 2026-10-26) | ✅ |
 
 ## Drawing tools
 
@@ -59,18 +59,17 @@ Marks: ✅ already have · 🟢 easy to add · 🟠 big job
 |---|---|---|
 | Straight | Yes, keeps going from the end | ✅ |
 | Simple curve | Yes (start, bend, end) | ✅ |
-| S-curve (two bends in one go) | Not yet | 🟢 |
+| S-curve (two bends in one go) | Draw > S-curve (added 2026-10-26) | ✅ |
 | Grid | Yes, rectangle or any shape, real block sizes | ✅ |
 | Parallel roads | Yes, with the gap you choose | ✅ |
 | Upgrade (swap a road for another kind) | Yes, click a road | ✅ |
 | Lines that help you line up roads | Yes, guide lines and right angles | ✅ |
-| Switches to turn each kind of snapping on or off | Not yet. Snapping is always on (Shift gives angle steps) | 🟢 |
+| Switches to turn each kind of snapping on or off | Options > Snap roads and Guides (added 2026-10-26) | ✅ |
 | Remove roads | Bulldoze | ✅ |
 
 ## Tally
 
-- ✅ Already have: 30
-- 🟢 Easy to add: 6 (large one-way road, car-free street button, turn bans, take away a crosswalk, S-curve, snapping switches)
+- ✅ Have now: 36 (30 before, plus the 6 easy ones built 2026-10-26)
 - 🟠 Big job: 5 (draw your own paths, trams, add trees or grass to any road, sound walls, hill walls and waterfront roads)
 
 ## The one that can break old towns
@@ -79,4 +78,17 @@ Marks: ✅ already have · 🟢 easy to add · 🟠 big job
 
 How we'd keep it safe: add the new facts at the end of each road's saved line, so old towns that don't have them still load the old way. A test loads an old town file and checks every road is still there. If it goes wrong, we undo the one merge on main, and towns saved before it still open.
 
-The 🟢 items don't change how roads are saved. Turn bans and crosswalks add a new item to the save that old towns just don't have.
+The six easy ones didn't change how roads are saved. Turn bans and crosswalks each add a new item to the save, and old towns simply don't have it.
+
+## The six easy ones, in the game (2026-10-26)
+
+1. One-way boulevard: ![menu](road-options/step1_menu.jpg) ![close](road-options/step1_close.jpg)
+2. S-curve: ![menu](road-options/step2_menu.jpg) ![close](road-options/step2_close.jpg)
+3. Snap switches (Snap roads off here): ![menu](road-options/step3_menu.jpg)
+4. Car-free street: ![menu](road-options/step4_menu.jpg) ![close](road-options/step4_close.jpg)
+5. No left and no right turn signs: ![menu](road-options/step5_menu.jpg) ![signs](road-options/step5_zoom.jpg)
+6. A crosswalk taken away (the west one): ![menu](road-options/step6_menu.jpg) ![close](road-options/step6_close.jpg)
+
+Corners cut:
+- When a crosswalk is taken away, that leg's curb ramps stay.
+- Car-free streets count toward the trail director's plaza limit.
