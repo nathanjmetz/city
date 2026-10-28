@@ -83,6 +83,12 @@ void fragment() {
 	float tint = mix(0.84 + hash(vec2(row, floor(x))) * 0.3, 1.0, aa);
 	vec3 col = mix(vcol(COLOR.rgb) * tint, mortar.rgb, joint);
 	col *= 0.93 + texture(noise_grain, UV * 2.0).r * 0.14;
+	// Weathering that still reads from across the street: soft patches of
+	// older and newer brick and repointing, and rain-washed streaks run
+	// down from sills and the coping (photos of 1890s Main Street walls).
+	float patch = texture(noise_soft, (world_pos.xz + world_pos.y * 0.7) / 9.0).r;
+	float streak = smoothstep(0.68, 0.9, texture(noise_soft, vec2((world_pos.x + world_pos.z) / 2.3, world_pos.y / 38.0)).r);
+	col *= (0.9 + patch * 0.2) * (1.0 - streak * 0.1);
 	ALBEDO = col;
 	ROUGHNESS = 0.85;
 	SPECULAR = 0.25;

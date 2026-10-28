@@ -221,14 +221,15 @@ func _flat_roofed(mat: String, w: float, d: float, cz: float, deck: float, top: 
 	_box(mat, Vector3(w, deck, d), Vector3(0, deck * 0.5, cz), wall)
 	var y := deck + 0.02
 	_quad("membrane", Vector3(-w * 0.5, y, cz - d * 0.5), Vector3(w * 0.5, y, cz - d * 0.5),
-		Vector3(w * 0.5, y, cz + d * 0.5), Vector3(-w * 0.5, y, cz + d * 0.5), _low_slope(w, d, cz), [], Vector3.UP)
+		Vector3(w * 0.5, y, cz + d * 0.5), Vector3(-w * 0.5, y, cz + d * 0.5), _low_slope(w, d, cz, mat == "brick"), [], Vector3.UP)
+	_roof_bits(0.0, w, d, cz, y, mat == "brick")
 	var ph := top - deck
 	var t := 0.25
 	_box(mat, Vector3(w, ph, t), Vector3(0, deck + ph * 0.5, cz - d * 0.5 + t * 0.5), wall)
 	_box(mat, Vector3(w, ph, t), Vector3(0, deck + ph * 0.5, cz + d * 0.5 - t * 0.5), wall)
 	_box(mat, Vector3(t, ph, d), Vector3(-w * 0.5 + t * 0.5, deck + ph * 0.5, cz), wall)
 	_box(mat, Vector3(t, ph, d), Vector3(w * 0.5 - t * 0.5, deck + ph * 0.5, cz), wall)
-	_coping(w, d, cz, top)
+	_coping(w, d, cz, top, mat == "brick")
 
 
 ## Paves the lot behind the building, the way a shop's alley side or a
@@ -286,20 +287,62 @@ func _flat_ground(kind: String, poly: PackedVector2Array, y: float, col: Color) 
 			_flat.add_vertex(Vector3(q.x, y, q.y))
 
 
-## What a flat roof is covered with, picked from the building's size so it
-## doesn't move the builder's random sequence: weathered white TPO (most
-## re-roofs since 2000), black EPDM rubber, or tar and gravel on older ones.
-static func _low_slope(w: float, d: float, cz: float) -> Color:
-	var k := int(absf(w * 13.0 + d * 7.0 + cz * 3.0)) % 20
-	if k < 9:
+## What a flat roof is covered with, picked from the building's seed and
+## size so it doesn't move the builder's random sequence. Aerials of Indiana
+## Main Street blocks: old masonry blocks are mostly dark (black EPDM,
+## modified bitumen, tar and gravel) with some silver-coated and white
+## re-roofs; newer strip centres and boxes are mostly white TPO.
+func _low_slope(w: float, d: float, cz: float, old := false) -> Color:
+	var k := absi(hash([rng.seed, snappedf(w, 0.01), snappedf(d, 0.01), snappedf(cz, 0.01)])) % 20
+	if old:
+		if k < 6:
+			return Color("#3e3e3c")  # modified bitumen
+		if k < 10:
+			return Color("#4a4a47")  # black EPDM
+		if k < 14:
+			return Color("#7d786f", 0.5)  # tar and gravel
+		if k < 17:
+			return Color("#9a9b99")  # aluminium roof coating
 		return Color("#b1afa8")
-	if k < 15:
+	if k < 10:
+		return Color("#b1afa8")
+	if k < 13:
+		return Color("#8f8e89")
+	if k < 17:
 		return Color("#4a4a47")
 	return Color("#8a847a", 0.5)
 
 
-func _coping(w: float, d: float, cz: float, top: float) -> void:
-	var col := Color("#cfcbc2")
+## The cap on a parapet: limestone or terra cotta on old brick, prefinished
+## metal (bronze, grey or white) on newer walls.
+func _coping_color(old: bool) -> Color:
+	var k := absi(hash([rng.seed, 7])) % 6
+	if old:
+		return [Color("#b9b09f"), Color("#a89f8c"), Color("#9c6a4e"), Color("#5a4a3c"), Color("#8e8c86"), Color("#b9b09f")][k]
+	return [Color("#cfcbc2"), Color("#4b4239"), Color("#8e8c86"), Color("#cfcbc2"), Color("#d9d6cd"), Color("#4b4239")][k]
+
+
+## A flat roof's own clutter (Main Street aerials): a roof hatch, plumbing
+## vent stacks, a drain scupper's dark stain and, on older blocks, a brick
+## chimney at the back. Its own random numbers, so the builder's don't move.
+func _roof_bits(cx: float, w: float, d: float, cz: float, y: float, old: bool) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, snappedf(cx, 0.01), snappedf(cz, 0.01), 3])
+	var span := Vector2(maxf(w * 0.5 - 1.2, 0.3), maxf(d * 0.5 - 1.2, 0.3))
+	if w * d > 60.0:
+		var hp := Vector3(cx + r.randf_range(-span.x, span.x), y, cz + r.randf_range(-span.y, span.y))
+		_box("metal", Vector3(0.95, 0.45, 0.95), hp + Vector3(0, 0.22, 0), Color("#8d8f8e"))
+	for i in r.randi_range(1, 3):
+		var vp := Vector3(cx + r.randf_range(-span.x, span.x), y, cz + r.randf_range(-span.y, span.y))
+		_box("paint", Vector3(0.12, 0.45, 0.12), vp + Vector3(0, 0.22, 0), Color("#2e2e2e"))
+	if old and d > 8.0 and r.randf() < 0.6:
+		var cxp := cx + r.randf_range(-span.x, span.x)
+		_box("brick", Vector3(0.9, 1.6, 0.6), Vector3(cxp, y + 0.8, cz + d * 0.5 - 0.6), Color("#8a4b36"))
+		_box("paint", Vector3(1.0, 0.08, 0.7), Vector3(cxp, y + 1.64, cz + d * 0.5 - 0.6), Color("#6f6a62"))
+
+
+func _coping(w: float, d: float, cz: float, top: float, old := false) -> void:
+	var col := _coping_color(old)
 	_box("paint", Vector3(w + 0.1, 0.1, 0.35), Vector3(0, top, cz - d * 0.5), col)
 	_box("paint", Vector3(w + 0.1, 0.1, 0.35), Vector3(0, top, cz + d * 0.5), col)
 	_box("paint", Vector3(0.35, 0.1, d), Vector3(-w * 0.5, top, cz), col)
