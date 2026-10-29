@@ -273,6 +273,11 @@ func _send(sim: CitySim, from: Dictionary, to: Dictionary, purpose: String, carg
 
 func _arrive(sim: CitySim, t: Dictionary) -> void:
 	stuck.erase(t.from.ref)
+	# The production chain page counts every load that got where it was going.
+	var good := str(t.cargo.get("good", ""))
+	if good != "" and t.kind != "parcels":
+		sim.chains.count(sim.calendar_tick(), ProductionChains.node_of(sim, str(t.from.ref)),
+			ProductionChains.node_of(sim, str(t.to.ref)), good)
 	var to: String = t.to.ref
 	if to.begins_with("big:") or str(t.from.ref).begins_with("big:"):
 		sim.big.arrive(sim, t)

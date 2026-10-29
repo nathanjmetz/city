@@ -616,6 +616,7 @@ func _arrive(sim: CitySim, t: Dictionary, vid := -1) -> void:
 		if t.has("src"):
 			s.parked[-1].src = t.src
 			LocalSupply.delivered(sim, t.src, t.cargo)
+			sim.chains.count(sim.calendar_tick(), ProductionChains.node_of(sim, str(t.src.ref)), "build", t.cargo)
 		if t.job == "crew" and int(t.get("yard", -1)) != -1 and int(s.get("yard", -1)) == -1:
 			# The builder's first draw now, the rest when the house is done.
 			s.yard = int(t.yard)
