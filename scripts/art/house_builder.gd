@@ -646,23 +646,24 @@ func _plan(storeys: int, info_only := false) -> Dictionary:
 	return _placed(body, gs, zf, paint, dx)
 
 
-## A foursquare's front porch closed in as a sun porch, the way so many of
-## Indiana's 1900s-1920s foursquares (Marion, Muncie, Kokomo) gained a room:
+## A foursquare's front porch (or an ell farmhouse's, in the crook of the L)
+## closed in as a sun porch, the way so many of Indiana's 1900s-1920s
+## foursquares and farmhouses (Marion, Muncie, Kokomo) gained a room:
 ## a sided knee wall where the rail was, a band of windows between the
 ## posts up to the porch beam, and a door at the top of the steps.
 func _sun_porch(h: Dictionary, paint: Dictionary) -> void:
-	if h.get("kind", "") != "foursquare" or not h.has("porch") or outline.size() >= 3:
+	if not h.get("kind", "") in ["foursquare", "farmhouse"] or not h.has("porch") or outline.size() >= 3:
 		return
 	var pr: Rect2 = h.porch
-	var fz := pr.position.y + 0.3  # the post line
+	var fz: float = pr.position.y + float(h.get("porch_post", 0.3))  # the post line
 	var px0 := pr.position.x + 0.25
 	var px1 := pr.end.x - 0.25
 	var zb := pr.end.y
-	var floor_y := 0.65
+	var floor_y: float = h.get("porch_floor", 0.65)
 	var knee := 0.9
 	var gy0 := floor_y + knee + 0.05
-	var gh := 3.45 - gy0 - 0.05
-	var door_x: float = h.door_x
+	var gh: float = float(h.get("porch_beam", 3.45)) - gy0 - 0.05
+	var door_x: float = h.get("porch_door_x", h.door_x)  # at the head of the steps
 	var siding: Color = paint.siding
 	# The knee wall, broken for the door.
 	for span in [[px0, door_x - 0.6], [door_x + 0.6, px1]]:
@@ -689,7 +690,7 @@ func _sun_porch(h: Dictionary, paint: Dictionary) -> void:
 	# The door: a half-glass storm door at the head of the steps.
 	_box("paint", Vector3(0.95, 2.05, 0.06), Vector3(door_x, floor_y + 1.03, fz), TRIM)
 	_glass(Vector3(door_x, floor_y + 1.45, fz - 0.04), Vector3(-1, 0, 0), 0.7, 0.9, 0.0)
-	_box("paint", Vector3(1.2, 2.75, 0.06), Vector3(door_x, floor_y + 1.38, fz + 0.02), TRIM)
+	_box("paint", Vector3(1.2, gh + knee, 0.06), Vector3(door_x, floor_y + (gh + knee) * 0.5, fz + 0.02), TRIM)
 
 
 ## A colonial's "bonus room" over its attached garage, how owners of the
@@ -1614,7 +1615,8 @@ func _ell_farmhouse(zf: float, gs: float, roof: Color, door: Color) -> Dictionar
 	var x0 := cx - total * 0.5
 	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": door_x,
 		"walk_z": wz0 - 2.8, "front_z": zf, "x0": x0, "x1": x0 + total, "gs": gs,
-		"bed": [ux - uw * 0.5 + 0.3, ux + uw * 0.5 - 0.3], "keep_out": g.keep_out, "garage_x": g.garage_x, "garage_w": g.garage_w}
+		"bed": [ux - uw * 0.5 + 0.3, ux + uw * 0.5 - 0.3], "keep_out": g.keep_out, "garage_x": g.garage_x, "garage_w": g.garage_w,
+		"porch": Rect2(wx - ww * 0.5, wz0 - 2.0, ww, 2.0), "porch_post": 0.2, "porch_floor": 0.6, "porch_beam": 3.33, "porch_door_x": wx}
 
 
 ## Cape Cod, 1935-1955: one and a half storeys, steep side gables, two gabled

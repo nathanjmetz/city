@@ -109,7 +109,7 @@ func _init() -> void:
 			# (A colonial adds a room over its garage, a foursquare closes in
 			# its porch: no new footprint either way.)
 			var same: bool = m2.slice(0, m0.size()) == m0 and first.door_x == grown.door_x and first.drive_x == grown.drive_x
-			if kind in ["colonial", "foursquare"] and (out2[0] as ArrayMesh).get_faces().size() > (out0[0] as ArrayMesh).get_faces().size():
+			if kind in ["colonial", "foursquare", "farmhouse"] and (out2[0] as ArrayMesh).get_faces().size() > (out0[0] as ArrayMesh).get_faces().size():
 				bonus += 1
 			_check(same, "a %s %s grown to two storeys keeps its walls and drive (%d)" % [era, kind, s])
 			if kind in ["cape", "bungalow"]:
