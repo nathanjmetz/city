@@ -93,6 +93,12 @@ func _process(_delta: float) -> void:
 	if _scan.is_empty():
 		_check_trees()
 	var painted := false
+	# Room for every tile about to be painted at once, not doubled tile by tile.
+	var need := _tiles.size()
+	for c in _dirty:
+		need += 0 if _tiles.has(c) else 1
+	if need > _cap and _cap < MAX_LAYERS:
+		_grow(need)
 	while not _dirty.is_empty() and Time.get_ticks_usec() - start < budget:
 		var keys := _dirty.keys()
 		keys.sort()
