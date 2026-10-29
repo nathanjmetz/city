@@ -217,6 +217,8 @@ const MARKET_MIN := {
 	# ACS: a few doubles in towns of 1,500 or so; fourplexes once a market
 	# reaches a county-seat town's size.
 	"duplex": [1500, 5000],
+	# A house cut into flats wants renters, as a double does.
+	"house": [0, 0, 0, 0, 1500],
 	"apartments": [10_000, 25_000, 100_000, 150_000, 400_000],
 	"mixed_use": [0, 5000, 15_000],
 	# Commercial blocks over two storefronts: county-seat downtowns
