@@ -78,22 +78,32 @@ static func relative_price(crop: String, day: float) -> float:
 ## Net an acre a year for a crop on ground of this fertility, after last
 ## year's crop and at this soil health, before land costs and tax.
 ## `boost` multiplies the gross (what the farm has built, see Agency).
+## `till` is how the farm works the ground (Balance.TILLAGE).
 static func net_per_acre(crop: String, prev: String, health: float, fertility: float, price: float,
-		boost := 1.0) -> float:
+		boost := 1.0, till := "chisel") -> float:
 	if crop == "pasture":
 		fertility = Balance.PASTURE_SOIL_FLOOR + (1.0 - Balance.PASTURE_SOIL_FLOOR) * fertility
+	var t: Dictionary = Balance.TILLAGE.get(till, Balance.TILLAGE.chisel)
 	var gross: float = Balance.FARM_GROSS_PER_ACRE[crop] * fertility * price * boost \
-		* rotation(crop, prev) * (1.0 + (health - 0.5) * Balance.CROP_HEALTH_YIELD)
+		* rotation(crop, prev) * (1.0 + (health - 0.5) * Balance.CROP_HEALTH_YIELD) * float(t.yield.get(crop, 1.0))
 	var second := Balance.CROP_DOUBLE_CROP * fertility if crop == "wheat" else 0.0
-	return gross + second - Balance.FARM_COST_PER_ACRE[crop] + credit(crop, prev)
+	var save := float(Balance.TILLAGE_SAVE.get(prev, Balance.TILLAGE_SAVE_OTHER)) if crop in t.crops else 0.0
+	return gross + second - Balance.FARM_COST_PER_ACRE[crop] + credit(crop, prev) + save
+
+
+## How farm f tills (Balance.TILLAGE key); "chisel" until its leader picks.
+static func till_of(f: Dictionary) -> String:
+	return str(f.get("till", "chisel"))
 
 
 ## Soil health after a year of `crop` following `prev` (0..1): the same
 ## crop again wears it down, a change builds it, hay and cover crops most.
-static func next_health(health: float, crop: String, prev: String, cover: bool) -> float:
+static func next_health(health: float, crop: String, prev: String, cover: bool, till := "chisel") -> float:
 	var d := -0.1 if crop == prev and crop != "pasture" else 0.05
 	if crop in ["hay", "pasture"]:
 		d += 0.05
+	elif crop in GRAIN:
+		d += float(Balance.TILLAGE.get(till, Balance.TILLAGE.chisel).health)
 	if cover:
 		d += 0.05
 	return clampf(health + d, 0.0, 1.0)
@@ -158,6 +168,10 @@ static func plan(f: Dictionary, demand: Dictionary, price: float, day: float, fe
 	keys.sort()
 	var lead: Dictionary = f.get("leader", {"edu": 0.5, "caution": 0.5, "ambition": 0.5})
 	var crops := crops_for(f)
+	# Last year's tillage built this year's soil; then the leader picks how
+	# to work the ground this year, and plans the crops with it.
+	var was := till_of(f)
+	var till := plan_till(f, lead, cells_of, keys, price, fert, slope)
 	var planned := {}
 	var total := 0
 	var changed := 0
@@ -176,7 +190,7 @@ static func plan(f: Dictionary, demand: Dictionary, price: float, day: float, fe
 		var options := []
 		for crop in crops:
 			options.append(_option(crop, prev, health, int(old.years), fertility, steep, price, day, demand,
-				float(planned.get(crop, 0) + cells.size()) / maxf(f.cells.size(), 1.0), crops))
+				float(planned.get(crop, 0) + cells.size()) / maxf(f.cells.size(), 1.0), crops, till))
 		var pick := Agency.choose(lead, options)
 		var crop: String = pick.id
 		# Cover crops: rye after a corn or soybean harvest, kept by leaders
@@ -189,7 +203,7 @@ static func plan(f: Dictionary, demand: Dictionary, price: float, day: float, fe
 		if crop != prev:
 			changed += 1
 		f.fields[k] = {"crop": crop, "prev": prev, "years": int(old.years) + 1 if crop == prev else 1,
-			"health": snappedf(next_health(health, crop, prev, bool(old.cover)), 0.01), "cover": cover,
+			"health": snappedf(next_health(health, crop, prev, bool(old.cover), was), 0.01), "cover": cover,
 			"cover_prev": bool(old.cover), "why": why}
 		planned[crop] = planned.get(crop, 0) + cells.size()
 		total += cells.size()
@@ -204,9 +218,9 @@ static func plan(f: Dictionary, demand: Dictionary, price: float, day: float, fe
 
 ## One crop as a choice for a field, with the reasons a leader weighs.
 static func _option(crop: String, prev: String, health: float, years: int, fertility: float, steep: float,
-		price: float, day: float, demand: Dictionary, share: float, crops := CROPS) -> Dictionary:
+		price: float, day: float, demand: Dictionary, share: float, crops := CROPS, till := "chisel") -> Dictionary:
 	var p := price * relative_price(crop, day)
-	var now := net_per_acre(crop, prev, health, fertility, p)
+	var now := net_per_acre(crop, prev, health, fertility, p, 1.0, till)
 	var factors := {}
 	var said := "pays about $%d an acre this year" % roundi(now)
 	if rotation(crop, prev) > 1.0 or credit(crop, prev) > 0.0:
@@ -216,12 +230,14 @@ static func _option(crop: String, prev: String, health: float, years: int, ferti
 	factors["money"] = [now, said]
 	# Next year: the best crop to follow this one, at half weight (row
 	# crops on steep ground lose what washes away, as below).
+	# (NRCS highly erodible land rules keep row crops off steep ground however
+	# it's tilled; what no-till saves of the soil counts in plan_till.)
 	var wash := maxf(steep - Balance.CROP_ERODIBLE_SLOPE, 0.0) * Balance.CROP_EROSION_PER_ACRE
-	var h2 := next_health(health, crop, prev, false)
+	var h2 := next_health(health, crop, prev, false, till)
 	var then := -INF
 	var follow := ""
 	for c2 in crops:
-		var v := net_per_acre(c2, crop, h2, fertility, price) - (0.0 if c2 in ["hay", "pasture"] else wash)
+		var v := net_per_acre(c2, crop, h2, fertility, price, 1.0, till) - (0.0 if c2 in ["hay", "pasture"] else wash)
 		if v > then:
 			then = v
 			follow = c2
@@ -231,6 +247,8 @@ static func _option(crop: String, prev: String, health: float, years: int, ferti
 		factors["demand"] = [float(demand[crop][0]), demand[crop][1]]
 	# Seed, fertiliser and fuel at stake up front: corn costs the most.
 	factors["risk"] = [-0.1 * Balance.FARM_COST_PER_ACRE[crop], "costs less to put in"]
+	if crop == prev and crop in ["corn", "soybeans"]:
+		factors["risk"][0] -= Balance.CROP_REPEAT_RISK
 	# Splitting the farm spreads work at planting and harvest, and price
 	# risk: past half the farm in one crop, more of it counts against it.
 	# (Pasture is the herd's ground, not a crop to balance.)
@@ -254,6 +272,64 @@ static func _option(crop: String, prev: String, health: float, years: int, ferti
 	else:
 		factors["land"] = [-wash, "keeps off steep ground"]
 	return {"id": crop, "name": crop.capitalize(), "factors": factors}
+
+
+## The leader's pick of how to work the ground this year (Agency.choose):
+## what each way saves or costs an acre over the fields' rotations,
+## what it does for the soil and against washing on steep ground, and the
+## cost of changing the farm's habit. Sets f.till and f.till_why.
+static func plan_till(f: Dictionary, lead: Dictionary, cells_of: Dictionary, keys: Array, price: float,
+		fert: Callable, slope: Callable) -> String:
+	# A farm's first pick carries no cost of changing.
+	var was := str(f.get("till", ""))
+	var options := []
+	var ids: Array = Balance.TILLAGE.keys()
+	ids.sort()
+	for t in ids:
+		var money := 0.0
+		var future := 0.0
+		var acres := 0.0
+		for k in keys:
+			var cells: Array = cells_of[k]
+			var fl := field(f, cells[0])
+			if not str(fl.crop) in GRAIN:
+				continue
+			var fertility := 0.0
+			var steep := 0.0
+			for c in cells:
+				fertility += fert.call(c)
+				steep += slope.call(c)
+			fertility /= cells.size()
+			steep /= cells.size()
+			var n := float(cells.size())
+			acres += n
+			# Over the field's rotation (last year's crop and the one before
+			# it, which usually comes round again), not one year of it.
+			var turns := [[str(fl.crop), str(fl.prev)]]
+			if str(fl.prev) in GRAIN and fl.prev != fl.crop:
+				turns.append([str(fl.prev), str(fl.crop)])
+			for turn in turns:
+				money += n / turns.size() * (net_per_acre(turn[0], turn[1], fl.health, fertility, price, 1.0, t)
+					- net_per_acre(turn[0], turn[1], fl.health, fertility, price))
+			# Soil it builds, counted a few years ahead, and soil it keeps from
+			# washing off steep ground.
+			future += n * float(Balance.TILLAGE[t].health) * 3.0 * Balance.CROP_HEALTH_YIELD \
+				* Balance.FARM_GROSS_PER_ACRE[fl.crop] * fertility
+			future += n * maxf(steep - Balance.CROP_ERODIBLE_SLOPE, 0.0) * Balance.CROP_EROSION_PER_ACRE \
+				* (1.0 - float(Balance.TILLAGE[t].wash))
+		if acres <= 0.0:
+			return till_of(f)  # all hay or pasture: nothing to till
+		var said: String = {"chisel": "keeps corn yields up on wet, dark ground",
+			"beans_no_till": "saves the tillage passes before soybeans",
+			"no_till": "saves the tillage passes"}[t]
+		options.append({"id": t, "name": str(Balance.TILLAGE[t].name), "factors": {
+			"money": [money / acres, said],
+			"future": [future / acres, "leaves the residue to hold and build the soil"],
+			"risk": [0.0 if t == was or was == "" else -Balance.TILLAGE_SWITCH, "sticks with how the farm already works"]}})
+	var pick := Agency.choose(lead, options)
+	f.till = str(pick.id)
+	f.till_why = str(pick.why)
+	return f.till
 
 
 static func _after(prev: String) -> String:
