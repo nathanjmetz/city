@@ -407,7 +407,7 @@ func _county_crop(c: Vector2) -> bool:
 		return false
 	if Terrain.mow_weight(c.x, c.y) > 0.05 or Terrain.flat_weight(c.x, c.y) > 0.05:
 		return false
-	if CountyGrid.distance(r.x, r.y) < 9.5 or Highways.distance(r.x, r.y) < 17.0:
+	if CountyGrid.distance(r.x, r.y) < 9.5 or Highways.distance(r.x, r.y) < 17.0 or CountyRail.clears(r.x, r.y, CountyRail.CROP_CLEAR):
 		return false
 	if Backdrop.inside(r, 40.0) or _near_farmstead(r, 55.0) or FarmsteadPlan.covers(r):
 		return false

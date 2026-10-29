@@ -93,6 +93,10 @@ func _ready() -> void:
 	var farmsteads := FarmsteadView.new()
 	add_child(farmsteads)
 	farmsteads.setup(sim)
+	# The county's real railroads, out in the country (desktop).
+	var county_rail := CountyRailView.new()
+	add_child(county_rail)
+	county_rail.setup(sim)
 
 	var lot_alerts := LotAlerts.new()
 	lot_alerts.setup(sim)
