@@ -1585,9 +1585,21 @@ func _tw_crown(kind: String, w: float, d: float, cz: float, y: float, stone: Col
 				cw -= 3.0
 				cd -= 3.0
 				_box("brick", Vector3(cw, 3.0, cd), Vector3(0, yy + 1.5, cz), stone)
+				if fine_parts and k == 0:
+					# Stone urns on the corners of the setback (the 1980s
+					# borrowing of the 1920s cornice finial).
+					for sx in [-1.0, 1.0]:
+						for sz in [-1.0, 1.0]:
+							var u := Vector3(sx * (w * 0.5 - 0.9), yy, cz + sz * (d * 0.5 - 0.9))
+							_box("brick", Vector3(1.1, 0.5, 1.1), u + Vector3(0, 0.25, 0), stone.lightened(0.08))
+							_tw_pyramid(u + Vector3(0, 0.5, 0), 0.8, 0.8, 1.6, stone.lightened(0.12))
+				elif k == 1:
+					# The top step hides the cooling towers behind louvres.
+					_tw_louvres(cw, cd, cz, yy, 3.0)
 				yy += 3.0
 			var top_col := TW_COPPER if rng.randf() < 0.6 else glass_col.lightened(0.15)
 			_tw_pyramid(Vector3(0, yy, cz), cw, cd, minf(cw, cd) * 0.75, top_col)
+			_tw_pyramid_trim(Vector3(0, yy, cz), cw, cd, minf(cw, cd) * 0.75, top_col)
 		"spires":
 			_box("brick", Vector3(w - 2.0, 4.0, d - 2.0), Vector3(0, y + 2.0, cz), stone)
 			for sx in [-1.0, 1.0]:
@@ -1607,6 +1619,29 @@ func _tw_crown(kind: String, w: float, d: float, cz: float, y: float, stone: Col
 					_glass(face[0] + Vector3(0, yy + 1.8, 0), face[1], face[2] * 0.6, 1.6, 0.0)
 				yy += 3.2
 			_tw_pyramid(Vector3(0, yy, cz), cw, cd, cw * 0.6, TW_COPPER)
+			_tw_pyramid_trim(Vector3(0, yy, cz), cw, cd, cw * 0.6, TW_COPPER)
+
+
+## Up close, a metal roof pyramid's hips are capped with a raised ridge
+## roll, its eaves have a gutter fascia, and a ball and spire finial tops
+## it (as on the copper roofs of the 1980s towers in Indianapolis).
+func _tw_pyramid_trim(base: Vector3, w: float, d: float, h: float, col: Color) -> void:
+	if not fine_parts:
+		return
+	var apex := base + Vector3(0, h, 0)
+	var cap := col.darkened(0.18)
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var hip: Vector3 = apex - (base + Vector3(sx * w * 0.5, 0, sz * d * 0.5))
+			var up := hip.normalized()
+			var side := up.cross(Vector3(sz, 0, -sx).normalized()).normalized()
+			var bs := Basis(side, up, side.cross(up)).orthonormalized()
+			_box("metal", Vector3(0.32, hip.length(), 0.32), apex - hip * 0.5 + Vector3(0, 0.1, 0), cap, bs)
+	for face in _tw_faces(w, d, base.z, base.x):
+		var out: Vector3 = face[1].cross(Vector3.UP)
+		_box("metal", Vector3(face[2] + 0.5, 0.35, 0.2), face[0] + out * 0.1 + Vector3(0, base.y + 0.1, 0), cap, _tw_yaw(face[1]))
+	_box("metal", Vector3(0.6, 0.6, 0.6), apex + Vector3(0, 0.3, 0), Color("#b8963e"))
+	_box("metal", Vector3(0.14, 3.2, 0.14), apex + Vector3(0, 2.2, 0), Color("#b8963e"))
 
 
 ## A four-sided pyramid of base w by d rising h from `base`.
