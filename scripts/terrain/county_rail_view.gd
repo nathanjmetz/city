@@ -144,6 +144,14 @@ func _build(b: Vector2i) -> Array:
 				RailView._quad(st, c0 - n0 * 1.6 + y, c0 + n0 * 1.6 + y, c1 + n1 * 1.6 + y, c1 - n1 * 1.6 + y, RUBBER)
 			else:
 				RailView._ballast(st, c0, c1, n0, n1)
+				# Double track: one crown of ballast across both, not two
+				# prisms with a ditch between.
+				var pair: Dictionary = prof.get("pair", {})
+				if pair.has(i) and pair.has(i + 1):
+					var y := Vector3(0, RailView.BALLAST_Y, 0)
+					var q0: Vector2 = pair[i] - o
+					var q1: Vector2 = pair[i + 1] - o
+					RailView._quad(st, c0 + y, Vector3(q0.x, c0.y, q0.y) + y, Vector3(q1.x, c1.y, q1.y) + y, c1 + y, RailView.BALLAST)
 			for side: float in [-1.0, 1.0]:
 				RailView._rail(rails, c0 + n0 * side * RailModels.GAUGE * 0.5, c1 + n1 * side * RailModels.GAUGE * 0.5, n0, n1)
 			if kind[i] == 1 and kind[i + 1] == 1:

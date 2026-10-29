@@ -410,15 +410,16 @@ func _step_flows() -> void:
 ## Where the railroad crosses each way, refreshed when track or roads change.
 func _find_xings() -> void:
 	var rail: Rail = _sim.rail
-	if rail.crossings.is_empty():
+	var county: Array = _sim.county_trains.crossings if _sim.county_rail else []
+	if rail.crossings.is_empty() and county.is_empty():
 		_xings = {}
 		return
-	var key := [rail.version, version, rail.crossings.size()]
+	var key := [rail.version, version, rail.crossings.size(), _sim.county_trains.version, county.size()]
 	if key == _xing_key:
 		return
 	_xing_key = key
 	_xings = {}
-	for c in rail.crossings:
+	for c in rail.crossings + county:
 		for wid in [int(c.seg) * 2, int(c.seg) * 2 + 1]:
 			if not ways.has(wid):
 				continue
@@ -3141,22 +3142,22 @@ func _curb_at(line: Array, d: float) -> Dictionary:
 ## The space is only somewhere to stop: no new vehicle is based in it, as it
 ## may face away from where that vehicle's trips go (a truck there would
 ## have to drive on to find room to turn round).
-func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1, vlen := 4.8) -> int:
+## `held` is the list _curb_taken gives, for a caller placing many at once
+## (it is added to); with none, the curb spaces are looked over afresh.
+func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1, vlen := 4.8, held = null) -> int:
 	var line := _curb_line(stop)
 	if line.is_empty():
 		return -1
-	# Curb spaces with a vehicle in them or on its way (a free one marked
-	# earlier is just kerb again).
-	var taken := []
-	for ref in _extra:
-		var other := place(ref)
-		var list: Array = _extra[ref]
-		var first: int = other.get("spots", []).size() - list.size()
-		for k in list.size():
-			if list[k].get("kind", "") == "curb" and (first < 0 or other.taken[first + k] != -1):
-				taken.append([list[k].pos, float(list[k].get("len", 4.8))])
 	var w: Dictionary = line[0]
 	var tries := mini(int((w.s1 - w.s0 - 24.0) / (CURB_STALL * 0.5)) * 2 + 1, CURB_TRIES)
+	# Only the spaces near enough to be in the way (the tries reach about
+	# tries / 4 stalls each way; a semi's gap is under 30 m).
+	var mid_pos: Vector3 = _curb_at(line, float(line[1])).pos
+	var reach := tries * CURB_STALL * 0.25 + 40.0
+	var taken := []
+	for q in (_curb_taken() if held == null else held):
+		if mid_pos.distance_squared_to(q[0]) < reach * reach:
+			taken.append(q)
 	var aprons := _aprons(stop)
 	for k in tries:
 		var off := ceilf(k * 0.5) * (1.0 if k % 2 == 1 else -1.0) * CURB_STALL * 0.5
@@ -3176,11 +3177,35 @@ func _new_curb(pl: Dictionary, stop: Dictionary, vid := -1, vlen := 4.8) -> int:
 		if ok:
 			c.stop_only = true
 			c.len = vlen
+			if held != null:
+				held.append([c.pos, vlen])
 			return _add_spot(pl, c, vid)
 	var last := _curb_at(line, float(line[1]))
 	last.stop_only = true
 	last.len = vlen
+	if held != null:
+		held.append([last.pos, vlen])
 	return _add_spot(pl, last, vid)
+
+
+## Shared by a run of arrive_now calls: the curb spaces taken (added to as
+## cars park) and the lots found full, so each isn't looked over again.
+func arrive_batch() -> Dictionary:
+	return {"curbs": _curb_taken(), "full": {}}
+
+
+## Curb spaces with a vehicle in them or on its way, [position, length]
+## (a free one marked earlier is just kerb again).
+func _curb_taken() -> Array:
+	var taken := []
+	for ref in _extra:
+		var other := place(ref)
+		var list: Array = _extra[ref]
+		var first: int = other.get("spots", []).size() - list.size()
+		for k in list.size():
+			if list[k].get("kind", "") == "curb" and (first < 0 or other.taken[first + k] != -1):
+				taken.append([list[k].pos, float(list[k].get("len", 4.8))])
+	return taken
 
 
 ## Where the driveways of the built lots on a stop's side of its street meet
@@ -3353,7 +3378,9 @@ func parking_need(at: Vector3) -> Dictionary:
 
 ## Where a car parks when its own destination is full: the nearest lot with
 ## a free stall within a short walk, like CS2 drivers looking for parking.
-func _parking_near(pl: Dictionary, vid: int) -> Array:
+## `full` (for a batch of arrivals) skips places found full earlier in it
+## and notes the ones found full now.
+func _parking_near(pl: Dictionary, vid: int, full = null) -> Array:
 	if _sim == null:
 		return []
 	_index_lots()
@@ -3382,14 +3409,20 @@ func _parking_near(pl: Dictionary, vid: int) -> Array:
 	near.sort_custom(func(a, b): return _park_before(a, b))
 	var placard := has_placard(vid)
 	for n in near:
+		if full != null and full.has(n[1]):
+			continue
 		var other := place(n[1])
 		if other.is_empty() or other.ref == pl.ref or closed.has(int(other.stop.get("seg", -1))):
 			continue
+		var any_ada := false
 		for i in other.spots.size():
-			if other.taken[i] == -1 and other.spots[i].kind == "stall" \
-					and (placard or not other.spots[i].get("ada", false)):
-				other.taken[i] = vid
-				return [other.ref, i]
+			if other.taken[i] == -1 and other.spots[i].kind == "stall":
+				if placard or not other.spots[i].get("ada", false):
+					other.taken[i] = vid
+					return [other.ref, i]
+				any_ada = true
+		if full != null and not any_ada:
+			full[n[1]] = true
 	return []
 
 
@@ -4163,6 +4196,57 @@ func go(pid: int, to_ref: String, purpose: String, stay: int) -> bool:
 		_walk(pid, path, {"enter": to_ref, "stay": stay})
 	p.at = "travel"
 	_sim.people.set_until(p, -1)
+	return true
+
+
+## Puts someone straight where a trip to `to_ref` would have left them, with
+## their car parked where that drive would have ended (the place's own lot,
+## a public lot within a walk or the curb out front, as _send picks). For a
+## clock that jumps, like the title screen opening at Marion's real hour:
+## the town shows the hour's parked cars at once, not a downtown that sits
+## empty while the morning's commute plays out. False if they can't go.
+## `batch` (from arrive_batch) carries what a run of calls learns.
+func arrive_now(sim: CitySim, pid: int, to_ref: String, stay: int, batch := {}) -> bool:
+	_sim = sim
+	_tick = sim.tick_count
+	if _dirty:
+		_rebuild()
+	if not sim.people.people.has(pid):
+		return false
+	var p: Dictionary = sim.people.people[pid]
+	var home_ref: String = "lot:" + p.home
+	if p.at != "" or to_ref == home_ref:
+		return false
+	var home_pl := place(home_ref)
+	var to_pl := place(to_ref)
+	if home_pl.is_empty() or to_pl.is_empty():
+		return false
+	var car := _vehicle_parked(p.car)
+	# Drives as go() would: anything past a walk, and most short hops too.
+	var drive: bool = not car.is_empty() and car.at_place == home_ref \
+		and (home_pl.door.distance_to(to_pl.door) > People.WALK_MAX or absi(hash([pid, "arrive"])) % 100 >= SHORT_WALK_PCT)
+	if drive and to_pl.stop.has("seg") and not may_enter(int(to_pl.stop.seg), false):
+		drive = false  # a plaza: walked from home instead
+	if drive:
+		var park_ref: String = to_pl.ref
+		var spot := _reserve(to_pl, car.id, false)
+		if spot < 0 and int(to_pl.get("zone", -1)) != ZoneMap.Zone.RESIDENTIAL:
+			var alt := _parking_near(to_pl, car.id, batch.get("full", null))
+			if not alt.is_empty():
+				park_ref = alt[0]
+				spot = alt[1]
+		if spot < 0:
+			# Lots full: a space at the curb out front.
+			spot = _new_curb(to_pl, to_pl.stop, car.id, car.len, batch.get("curbs", null))
+		if spot < 0:
+			return false
+		_release(car.at_place, car.spot, car.id)
+		_unpark(car)
+		_park(car, place(park_ref), spot)
+		car.until = -1
+		car.driver = pid  # waits for them, as after a real drive
+	p.at = to_ref
+	sim.people.set_until(p, _tick + maxi(stay, 1))
 	return true
 
 
