@@ -590,6 +590,11 @@ func _street_furniture(width: float, tz: float) -> void:
 
 static func build_office(seed: int, to_curb: float, lot: Dictionary, storeys: int, spec := {}) -> Array:
 	var b := _start(seed, lot, spec)
+	# On an old street an office is a Chicago School commercial block at the
+	# sidewalk from the start (the 1900s-20s office blocks of Indianapolis
+	# and Marion), the same look its tower grows into.
+	if b.era == "prewar":
+		return TowerBuilder.build_tower(seed, to_curb, lot, storeys, spec, "chicago")
 	b._office(to_curb, b.half * 2.0, storeys)
 	b._service_yard(false)
 	return b._done()
