@@ -102,6 +102,9 @@ const CROSS_PEN := 6.0
 ## MUTCD design walking speed is 3.5 ft/s for crossings, people stroll faster).
 const MAX_WALKERS := 800
 const WALK_V := 1.4
+## Metres right of the walk's middle that walkers keep to (a sidewalk is
+## 1.5 m wide): see walker_pose.
+const WALK_LANES := [0.15, 0.4, 0.62]
 ## The limits a view can lower (the title screen's town on a weak computer):
 ## no new trips start past them. The simulation never changes them itself.
 var max_cars := MAX_CARS
@@ -4987,7 +4990,13 @@ func walker_pose(w: Dictionary, frac := 0.0) -> Array:
 	var q := _poly_point(w.pts, w.cum, minf(d + 0.5, w.len))
 	if q.distance_to(p) < 0.01:
 		q = p + _flat_dir(w.pts[w.pts.size() - 1] - w.pts[maxi(w.pts.size() - 2, 0)]) * 0.5
-	return [p, _flat_dir(q - p), d]
+	var dir := _flat_dir(q - p)
+	# Each keeps to the right of the walk (as Americans do), in a lane of
+	# their own across it: two coming the other way pass each other, and a
+	# household out together (people ids run in a row) walks side by side.
+	# Drawn only: the sim's walkers stay on the line.
+	var lane: float = WALK_LANES[posmod(int(w.person), WALK_LANES.size())]
+	return [p + dir.cross(Vector3.UP) * lane, dir, d]
 
 
 ## A vehicle by id, wherever it is: {"car", "state": "driving"|"waiting"|

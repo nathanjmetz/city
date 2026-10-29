@@ -168,6 +168,7 @@ func _show(st: Dictionary) -> void:
 		return
 	var near := _near()
 	_final.visible = stage in ["exterior", "interior", "landscape"]
+	_unplanted(_final.visible and stage != "landscape")
 	_ground.visible = stage == "landscape"
 	_pad.visible = stage != "landscape"
 	# The stone comes up with the topsoil when the drive is poured.
@@ -307,6 +308,7 @@ func _finish() -> void:
 	_done = true
 	set_process(false)
 	_final.visible = true
+	_unplanted(false)
 	_ground.visible = true
 	if _footing != null:
 		_footing.visible = true
@@ -358,6 +360,35 @@ func _clipped(wall: Color, roof: Color) -> MeshInstance3D:
 	mi.set_meta("mats", [mat, glazed])
 	add_child(mi)
 	return mi
+
+
+## Leaves the foundation shrubs (foliage riding in the paint surface) out
+## of the finished building until the yard is planted, and the signs (the
+## sign surface: lit letters, panels, lenses) until it's ready to open:
+## a sign goes up on its own permit at the very end.
+func _unplanted(on: bool) -> void:
+	if on == _shrubs_out:
+		return
+	_shrubs_out = on
+	var paint := HouseMaterials.get_mat("paint")
+	var sign := HouseMaterials.get_mat("sign")
+	for i in _final.mesh.get_surface_count():
+		var m := _final.mesh.surface_get_material(i)
+		if m == paint:
+			_final.set_surface_override_material(i, HouseMaterials.get_mat("paint_unplanted") if on else null)
+		elif m == sign:
+			_final.set_surface_override_material(i, _unhung() if on else null)
+var _shrubs_out := false
+
+
+static func _unhung() -> ShaderMaterial:
+	if _unhung_mat == null:
+		var sh := Shader.new()
+		sh.code = "shader_type spatial;\nrender_mode unshaded, shadows_disabled;\nvoid fragment() {\n\tdiscard;\n}\n"
+		_unhung_mat = ShaderMaterial.new()
+		_unhung_mat.shader = sh
+	return _unhung_mat
+static var _unhung_mat: ShaderMaterial
 
 
 ## New windows in a wrapped wall, seen from outside: dark glass.
@@ -631,7 +662,7 @@ void fragment() {
 	} else {
 		// Damp low spots go dark and shiny; the high ground dries pale.
 		float wet = smoothstep(0.7, 0.9, big);
-		base *= mix(0.9 + 0.2 * fine, 0.58, wet);
+		base *= mix(0.9 + 0.2 * fine, 0.68, wet);
 		rough = mix(0.95, 0.7, wet);
 		float rut = sg_ruts(dr, 26.0);
 		base *= 1.0 - 0.32 * rut;
@@ -1223,7 +1254,7 @@ func _cs_trusses(st: SurfaceTool, at: Vector3, span: float, fine: bool) -> void:
 
 
 ## A heaped pile of dirt: a lumpy dome, `rx` by `rz` across and `h` high.
-func _cs_mound(st: SurfaceTool, c: Vector3, rx: float, rz: float, h: float, col: Color, k: int) -> void:
+static func _cs_mound(st: SurfaceTool, c: Vector3, rx: float, rz: float, h: float, col: Color, k: int) -> void:
 	var rings := 8
 	var segs := 20
 	var pt := func(i: int, j: int) -> Vector3:
@@ -1240,7 +1271,7 @@ func _cs_mound(st: SurfaceTool, c: Vector3, rx: float, rz: float, h: float, col:
 				n = -n
 			st.set_color(col.darkened(0.05 * (i % 2)))
 			st.set_normal(n)
-			for v in [q[0], q[1], q[2], q[0], q[2], q[3]]:
+			for v in [q[0], q[2], q[1], q[0], q[3], q[2]]:
 				st.add_vertex(v)
 
 

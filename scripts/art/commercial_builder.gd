@@ -668,7 +668,7 @@ func _coping(w: float, d: float, cz: float, top: float, old := false) -> void:
 	_box("paint", Vector3(0.35, 0.1, d), Vector3(w * 0.5, top, cz), col)
 
 
-func _sign(c: Vector3, w: float, h: float) -> void:
+func _sign(c: Vector3, w: float, h: float, word := -1) -> void:
 	var col := Color(_pick(SIGNS))
 	col.a = minf(w / 60.0, 0.49)
 	if not sign_spec.is_empty():
@@ -679,7 +679,7 @@ func _sign(c: Vector3, w: float, h: float) -> void:
 		labels.append_array(SignText.on_panel(sign_spec, c + Vector3(0, 0, -0.01), w, h, Vector3.FORWARD, true))
 	var r := Vector3(-w * 0.5, 0, 0)
 	var u := Vector3(0, h, 0)
-	var v0 := _word_slot(c.x) if sign_spec.is_empty() else 0.0
+	var v0 := (_word_slot(c.x) if word < 0 else 2.0 * (word + 1)) if sign_spec.is_empty() else 0.0
 	# Faces the street (-z); x runs right to left as seen from the street.
 	_quad("sign", c + r, c - r, c - r + u, c + r + u, col,
 		[Vector2(0, v0), Vector2(w, v0), Vector2(w, v0 + 1.0), Vector2(0, v0 + 1.0)], Vector3.FORWARD)
@@ -697,6 +697,20 @@ const TRADE_WORDS := [
 	# Big stores' departments, named by the builders, never drawn at random.
 	"GROCERY", "FOODS", "DISCOUNT", "PHARMACY", "SUPERCENTER", "OUTLET",
 ]
+
+
+## What a family restaurant's reader board says this week (two lines, at
+## most 13 letters each: what fits a 10 ft board in 8 in letters).
+const READER_BOARDS := [
+	["HOMEMADE PIE", "DAILY"], ["FISH FRY", "FRIDAY"], ["BISCUITS", "& GRAVY"], ["GO GIANTS"],
+	["TENDERLOIN", "SPECIAL"], ["BREAKFAST", "ALL DAY"], ["NOW HIRING", "COOKS"], ["SOUP & CHILI"],
+	["SUGAR CREAM", "PIE"], ["CHICKEN", "& NOODLES"], ["WELCOME", "BACK"], ["STEAK & EGGS"],
+]
+
+
+## The stand-in trades that serve food at tables (DINER, CAFE, PIZZA, DELI,
+## SUBS, TACOS, GRILL, DONUTS, TAVERN): their windows show booths.
+const EATERIES := [0, 1, 2, 7, 8, 11, 28, 29, 35]
 
 
 ## Which stand-in trade word a shop at `x` letters, as the sign shader reads
@@ -728,22 +742,28 @@ func _channel_letters(c: Vector3, w: float, h: float, named := "") -> void:
 	var z := c.z - 0.08
 	# The raceway the letters hang on, painted to match the fascia.
 	_box("paint", Vector3(span + px * 2.0, 0.12, 0.1), Vector3(c.x, y0 + lh * 0.45, c.z - 0.03), Color("#5b5d5f"))
-	var x0 := c.x + span * 0.5  # +x is the viewer's left
+	_pixel_text(word, c.x, y0, z, px, 0.13, col, "sign")
+
+
+## Block capitals from the 3x5 pixel font, centred on `cx`, facing the street
+## (-z, so letters run toward -x), bottom at `y0`, in `px`-square strokes.
+func _pixel_text(word: String, cx: float, y0: float, z: float, px: float, depth: float, col: Color, mat: String) -> void:
+	var x0 := cx + (word.length() * 4.0 * px - px) * 0.5  # +x is the viewer's left
 	for i in word.length():
 		var rows: Array = DenseBuilder.PIXEL_FONT.get(word[i], [])
 		for ry in rows.size():
 			var row: String = rows[ry]
-			var cx := 0
-			while cx < 3:
-				if row[cx] != "#":
-					cx += 1
+			var k := 0
+			while k < 3:
+				if row[k] != "#":
+					k += 1
 					continue
 				var run := 0
-				while cx + run < 3 and row[cx + run] == "#":
+				while k + run < 3 and row[k + run] == "#":
 					run += 1
-				var lx := x0 - i * 4.0 * px - (cx + run * 0.5) * px
-				_box("sign", Vector3(run * px, px, 0.13), Vector3(lx, y0 + (4.5 - ry) * px, z), col)
-				cx += run
+				var lx := x0 - i * 4.0 * px - (k + run * 0.5) * px
+				_box(mat, Vector3(run * px, px, depth), Vector3(lx, y0 + (4.5 - ry) * px, z), col)
+				k += run
 
 
 func _awning(cx: float, w: float, zf: float, y: float, col: Color) -> void:
@@ -1816,8 +1836,10 @@ func _shop_diner(to_curb: float) -> void:
 	_box("metal", Vector3(w + 0.1, 0.45, 0.12), Vector3(0, 1.0, zf - 0.06), Color("#c9cbc8"))
 	_box("paint", Vector3(w + 0.1, 0.55, 0.14), Vector3(0, 3.3, zf - 0.07), band)
 	var n := int((w - 3.0) / 1.5)
+	diner_room = 6.0 if fine_parts else 0.0
 	for i in n:
 		_glass(Vector3(-w * 0.5 + 2.6 + i * 1.5, 2.15, zf - 0.03), Vector3(-1, 0, 0), 1.4, 1.6, 0.05)
+	diner_room = 0.0
 	# Entry vestibule.
 	site.door = Vector2(-w * 0.5 + 1.0, zf - 2.0)
 	_box("paint", Vector3(2.6, 3.0, 2.0), Vector3(-w * 0.5 + 1.0, 1.8, zf - 1.0), band)
@@ -1832,14 +1854,21 @@ func _shop_diner(to_curb: float) -> void:
 	# Pole sign, with a changeable-letter reader board under it.
 	var px := half - 2.0
 	_box("paint", Vector3(0.35, 7.5, 0.35), Vector3(px, 3.75, 1.5), Color("#5a5e60"))
-	_sign(Vector3(px, 6.8, 1.3), 3.4, 1.6)
+	_sign(Vector3(px, 6.8, 1.3), 3.4, 1.6, [0, 1, 28][posmod(hash([rng.seed, 41]), 3)])  # DINER, CAFE, GRILL
 	_box("paint", Vector3(3.0, 1.1, 0.3), Vector3(px, 5.3, 1.5), Color("#f4f2ea"))
 	_box("paint", Vector3(3.1, 0.08, 0.32), Vector3(px, 5.88, 1.5), Color("#2b2b2b"))
 	_box("paint", Vector3(3.1, 0.08, 0.32), Vector3(px, 4.72, 1.5), Color("#2b2b2b"))
 	if fine_parts:
-		for line in 3:
-			var lw := r.randf_range(1.2, 2.6)
-			_box("paint", Vector3(lw * 0.8, 0.1, 0.02), Vector3(px + r.randf_range(-0.2, 0.2), 5.6 - line * 0.3, 1.34), Color("#2a2622"))
+		# Backlit, with the week's message in black plastic letters (the
+		# owner's ladder-and-pole job): the specials, the Friday fish fry,
+		# the county's own breaded tenderloin, the Marion Giants.
+		var lens := Color("#f4f2ea")
+		lens.a = 0.02  # a sign panel with no word on it: a soft glow after dark
+		_quad("sign", Vector3(px + 1.45, 4.8, 1.31), Vector3(px - 1.45, 4.8, 1.31), Vector3(px - 1.45, 5.8, 1.31), Vector3(px + 1.45, 5.8, 1.31), lens, [], Vector3.FORWARD)
+		var msg: Array = READER_BOARDS[r.randi() % READER_BOARDS.size()]
+		for line in msg.size():
+			var y := 5.3 - 0.15 + (msg.size() - 1) * 0.17 - line * 0.34
+			_pixel_text(msg[line], px, y, 1.29, 0.05, 0.02, Color("#1c1a18"), "paint")
 	_rooftop(w, d, cz, 4.0, 2)
 	_shop_parking(to_curb, w, zf, 0.0)
 	# Grown (shop level 1): a party room on the back, as family restaurants

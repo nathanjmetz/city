@@ -6,7 +6,9 @@ extends SceneTree
 ##   kind: grain, hog, dairy, retired or home; n: the n-th farmstead of that
 ##   kind (with a dryer, for grain) going through seeds; yaw, pitch in
 ##   degrees and dist in metres about the yard's middle. "photo" turns on
-##   the desktop High+ photo ground.
+##   the desktop High+ photo ground; a month (1-12) after it parks the
+##   machines for that month (FarmsteadParked); "house" after that looks
+##   at the farmhouse instead of the yard.
 
 var _frames := 0
 
@@ -54,6 +56,8 @@ func _build() -> void:
 			var mi := MeshInstance3D.new()
 			mi.mesh = meshes[i]
 			node.add_child(mi)
+	var month := int(args[7]) if args.size() > 7 else 7
+	FarmsteadParked.add_to(node, plan, month, func(_q): return 0.0)
 	var cam := Camera3D.new()
 	cam.fov = 50.0
 	cam.near = 0.5
@@ -63,6 +67,8 @@ func _build() -> void:
 	var dist := float(args[5]) if args.size() > 5 else 70.0
 	var ext: Rect2 = plan.extent
 	var target := Vector3(ext.get_center().x, 3.0, ext.get_center().y)
+	if args.size() > 8 and args[8] == "house":
+		target = Vector3(plan.house.x, 3.0, plan.house.d * 0.5)
 	cam.position = target + Vector3(sin(yaw) * cos(pitch), sin(pitch), -cos(yaw) * cos(pitch)) * dist
 	cam.basis = Basis.looking_at(target - cam.position)
 	cam.current = true

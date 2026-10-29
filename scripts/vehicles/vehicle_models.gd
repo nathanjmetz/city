@@ -97,6 +97,11 @@ var _lo := false
 var _hi := false
 ## Set by a model that wants its pickup bed under a soft tonneau cover.
 var _tonneau := false
+## Set by a model built on a cab and chassis (wrecker, utility body): at
+## Ultra _truck stops at the cab and leaves the frame bare.
+var _chassis := false
+## A cab and chassis whose body keeps the rear step bumper.
+var _bumper := false
 
 ## Levels of detail build() takes: normal close range, far, and Ultra close-up.
 const LOD_NEAR := 0
@@ -695,7 +700,14 @@ func _truck(L: float, cab_end: float, wb: Array, work: bool, W := 2.03, H := 1.9
 	# Ultra: the bed is really open, its floor a bed depth (about 0.53 m,
 	# F-150 and Silverado) under the rails.
 	var fl := belt - 0.53
-	if _hi:
+	var chassis := _chassis and _hi
+	if chassis:
+		# A cab and chassis (F-550): the cab's back closes, frame rails run
+		# on under whatever body the model fits.
+		body = body.slice(0, 3) + [[cab_end, c, belt - 0.08, belt, hw - 0.03, hw, hw - 0.05]]
+		for x in [-0.45, 0.45]:
+			_box(Vector3(x, c + 0.28, (cab_end + L) * 0.5), Vector3(0.1, 0.24, L - cab_end - 0.05), TRIM)
+	elif _hi:
 		body = body.slice(0, 3) + [
 			[cab_end + 0.06, c, belt - 0.08, belt, hw - 0.03, hw, hw - 0.05],
 			[cab_end + 0.07, c, fl - 0.05, fl, hw - 0.03, hw, hw - 0.04],
@@ -713,24 +725,33 @@ func _truck(L: float, cab_end: float, wb: Array, work: bool, W := 2.03, H := 1.9
 	]
 	_loft(gh, [_edges(GLASS, PAINT, PAINT, GLASS), _edges(GLASS, PAINT, GLASS, PAINT),
 		_edges(PAINT, PAINT, PAINT, PAINT)], PAINT, PAINT)
-	if _hi:
+	if _hi and not chassis:
 		_open_bed(L, cab_end, wb[1], hw, belt, fl)
-	if not _hi or _tonneau:
+	if not chassis and (not _hi or _tonneau):
 		# A soft tonneau cover over the bed (the open bed's dark floor below
 		# Ultra).
 		_box(Vector3(0, belt + 0.008, (cab_end + 0.08 + L - 0.08) * 0.5), Vector3(W - 0.18, 0.004, L - cab_end - 0.2), DARK)
-	_wheels(wb, 0.42, hw, 0.28)
+	if chassis:
+		# Dual rear wheels, no fender over them: the body brings its own.
+		_wheels([wb[0]], 0.42, hw, 0.28)
+		for s in [-1.0, 1.0]:
+			_wheel(Vector3(s * (hw - 0.11), 0.0, wb[1]), 0.42, 0.22, RIM)
+			_wheel(Vector3(s * (hw - 0.35), 0.0, wb[1]), 0.42, 0.22, RIM)
+	else:
+		_wheels(wb, 0.42, hw, 0.28)
 	if _hi:
 		_truck_face(hw, c, work)
 	else:
 		_box(Vector3(hw - 0.28, 1.08, 0.05), Vector3(0.36, 0.16, 0.12), HEAD, true)
-	_box(Vector3(hw - 0.07, 1.05, L - 0.03), Vector3(0.12, 0.34, 0.08), TAIL, true)
+	if not chassis:
+		_box(Vector3(hw - 0.07, 1.05, L - 0.03), Vector3(0.12, 0.34, 0.08), TAIL, true)
 	if _lo:
 		return
 	if not _hi:
 		_box(Vector3(0, 0.9, 0.03), Vector3(1.3, 0.34, 0.08), CHROME if work else TRIM)
 	_box(Vector3(0, c + 0.12, 0.05), Vector3(W - 0.1, 0.2, 0.14), CHROME if work else TRIM)
-	_box(Vector3(0, c + 0.12, L - 0.02), Vector3(W - 0.1, 0.18, 0.12), CHROME)
+	if not chassis or _bumper:
+		_box(Vector3(0, c + 0.12, L - 0.02), Vector3(W - 0.1, 0.18, 0.12), CHROME)
 	_box(Vector3(hw + 0.1, belt + 0.12, 1.95), Vector3(0.16, 0.2, 0.1), TRIM, true)
 	if _hi:
 		# Cab door seams and handles, the bed's tailgate seam, plates.
@@ -742,8 +763,9 @@ func _truck(L: float, cab_end: float, wb: Array, work: bool, W := 2.03, H := 1.9
 				_box(Vector3(x, (c + belt) * 0.5 + 0.12, z), Vector3(0.004, belt - c - 0.2, 0.012), seam)
 			for i in doors.size() - 1:
 				_box(Vector3(s * (hw + 0.012), belt - 0.15, doors[i + 1] - 0.25), Vector3(0.02, 0.035, 0.16), CHROME)
-		_box(Vector3(0, belt - 0.1, L + 0.004), Vector3(W - 0.3, 0.012, 0.004), seam)
-		_box(Vector3(0, 0.62, L + 0.005), Vector3(0.3, 0.15, 0.02), WHITE)
+		if not chassis:
+			_box(Vector3(0, belt - 0.1, L + 0.004), Vector3(W - 0.3, 0.012, 0.004), seam)
+			_box(Vector3(0, 0.62, L + 0.005), Vector3(0.3, 0.15, 0.02), WHITE)
 		_box(Vector3(0, 0.62, -0.01), Vector3(0.3, 0.15, 0.02), WHITE)
 		for x in [-0.4, 0.35]:
 			_box(Vector3(x, belt + 0.03, 1.85), Vector3(0.55, 0.015, 0.02), seam)
@@ -830,12 +852,83 @@ func _work_pickup() -> void:  # Ford F-250 regular cab, 8 ft bed
 
 func _tow_truck() -> void:  # wrecker on a Ford F-550
 	var L := 7.0
+	_chassis = true
 	_truck(L, 3.3, [1.2, 5.2], false)
-	_box(Vector3(0, 1.45, 5.15), Vector3(2.2, 0.25, 3.6), TRIM)
+	_chassis = false
 	_box(Vector3(0, 2.0, 2.98), Vector3(1.5, 0.12, 0.22), BEACON_AMBER)
+	if _hi:
+		_wrecker_body(L)
+		return
+	_box(Vector3(0, 1.45, 5.15), Vector3(2.2, 0.25, 3.6), TRIM)
 	if not _lo:
 		_beam(Vector3(0, 1.6, 4.0), Vector3(0, 2.3, 6.4), 0.18, PAINT)
 		_box(Vector3(0, 0.75, 6.9), Vector3(1.6, 0.12, 0.3), TRIM)
+
+
+## Ultra: a utility service body (Knapheide, Reading) on the cab and
+## chassis: tall compartments down each side from the frame up, split by
+## the rear wheel's fender, each door with its seam and a chrome T-handle,
+## the open well floor between them, lamps and plate on the rear faces.
+func _service_body(L: float) -> void:
+	var seam := Color(0.04, 0.04, 0.04, 0.3)
+	var e := L - 0.1
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * 0.95, 1.3, (3.4 + 5.0) * 0.5), Vector3(0.5, 1.4, 1.6), WHITE)
+		_box(Vector3(s * 0.95, 1.3, (6.2 + e) * 0.5), Vector3(0.5, 1.4, e - 6.2), WHITE)
+		_box(Vector3(s * 0.95, 1.6, 5.6), Vector3(0.5, 0.8, 1.2), WHITE)
+		_fender(Vector3(s * 0.95, 0.42, 5.6), 0.55, 0.5)
+		var x: float = s * 1.203
+		for z in [4.2, 6.9, 7.5]:
+			_box(Vector3(x, 1.3, z), Vector3(0.006, 1.3, 0.012), seam)
+		for z in [3.8, 4.6, 6.55, 7.2, 7.8]:
+			_box(Vector3(s * 1.208, 1.55, z), Vector3(0.012, 0.04, 0.12), CHROME)
+		_box(Vector3(s * 0.95, 1.3, e + 0.008), Vector3(0.5, 1.4, 0.006), Color(0.86, 0.86, 0.84, 0.4))
+		_box(Vector3(s * 1.08, 0.82, e + 0.018), Vector3(0.14, 0.24, 0.024), TAIL)
+	_box(Vector3(0, 0.8, (3.45 + e - 0.02) * 0.5), Vector3(1.38, 0.4, e - 0.02 - 3.45), TRIM)
+	_box(Vector3(0, 0.62, e - 0.01), Vector3(0.3, 0.15, 0.02), WHITE)
+
+
+## Ultra: a light-duty wrecker body (Jerr-Dan MPL, Century 212): painted
+## toolboxes down both sides with their doors and latches over the dual
+## rear wheels' fenders, the boom housing between them rising to the boom
+## and its winch cable, and the wheel-lift folded up at the tail with its
+## crossbar and grid arms, tow lights on top.
+func _wrecker_body(L: float) -> void:
+	var z0 := 3.42
+	var seam := Color(0.04, 0.04, 0.04, 0.3)
+	for s in [-1.0, 1.0]:
+		# Toolbox ahead of the wheels, a fender over them, a box behind.
+		_box(Vector3(s * 0.83, 1.12, (z0 + 4.55) * 0.5), Vector3(0.44, 0.9, 4.55 - z0), PAINT)
+		_box(Vector3(s * 0.83, 1.12, (5.85 + 6.55) * 0.5), Vector3(0.44, 0.9, 0.7), PAINT)
+		_box(Vector3(s * 0.83, 1.5, 5.2), Vector3(0.44, 0.14, 1.3), PAINT)
+		_fender(Vector3(s * 0.83, 0.42, 5.2), 0.52, 0.44)
+		var x: float = s * 1.053
+		for z in [z0 + 0.05, 4.0, 4.5]:
+			_box(Vector3(x, 1.12, z), Vector3(0.004, 0.84, 0.012), seam)
+		_box(Vector3(x, 1.12, 5.9), Vector3(0.004, 0.84, 0.012), seam)
+		_box(Vector3(s * 1.058, 1.3, 3.72), Vector3(0.012, 0.05, 0.14), CHROME)
+		_box(Vector3(s * 1.058, 1.3, 4.25), Vector3(0.012, 0.05, 0.14), CHROME)
+		_box(Vector3(s * 1.058, 1.3, 6.2), Vector3(0.012, 0.05, 0.14), CHROME)
+		_box(Vector3(s * 0.83, 1.578, (z0 + 6.55) * 0.5), Vector3(0.46, 0.016, 6.55 - z0), STEEL)
+		_box(Vector3(s * 0.83, 0.85, 6.565), Vector3(0.3, 0.12, 0.03), TAIL)
+	# Boom housing, the boom and its cable down to the hook.
+	_box(Vector3(0, 1.25, (z0 + 6.5) * 0.5), Vector3(0.7, 1.1, 6.5 - z0), Color(0.18, 0.18, 0.19, 0.4))
+	_box(Vector3(0, 1.85, 4.0), Vector3(0.6, 0.12, 0.6), STEEL)
+	_beam(Vector3(0, 1.95, 4.0), Vector3(0, 2.55, 6.6), 0.22, PAINT)
+	_beam(Vector3(0, 2.25, 5.0), Vector3(0, 2.55, 6.6), 0.15, STEEL)
+	_cyl(Vector3(0, 2.5, 6.72), Vector3(0, 1.25, 6.76), 0.012, DARK, 4)
+	_box(Vector3(0, 1.22, 6.76), Vector3(0.06, 0.1, 0.04), CHROME)
+	# The wheel-lift tucked up under the tail: uprights, the crossbar,
+	# the L-arms (yellow grid ends) and the tow-light bar on top of it.
+	for x in [-0.3, 0.3]:
+		_box(Vector3(x, 0.8, 6.62), Vector3(0.12, 0.7, 0.12), DARK)
+	_box(Vector3(0, 0.48, 6.78), Vector3(1.5, 0.12, 0.14), DARK)
+	for x in [-0.6, 0.6]:
+		_box(Vector3(x, 0.48, 6.95), Vector3(0.1, 0.1, 0.36), Color(0.92, 0.72, 0.05, 0.4))
+	_box(Vector3(0, 0.62, 6.86), Vector3(0.3, 0.15, 0.02), WHITE)
+	_box(Vector3(0, 1.75, 6.6), Vector3(1.5, 0.06, 0.06), DARK)
+	for x in [-0.6, 0.6]:
+		_box(Vector3(x, 1.75, 6.635), Vector3(0.14, 0.07, 0.02), TAIL)
 
 
 ## An insulated aerial lift (Altec AT40G) on a Ford F-550 with a utility
@@ -843,9 +936,15 @@ func _tow_truck() -> void:  # wrecker on a Ford F-550
 ## stowed toward the back and the fiberglass bucket at the tail.
 func _bucket_truck() -> void:
 	var L := 8.2
+	_chassis = true
+	_bumper = true
 	_truck(L, 3.3, [1.2, 5.6], false, 2.2, 2.05)
+	_chassis = false
+	_bumper = false
+	if _hi:
+		_service_body(L)
 	# Service body: compartments down each side, open well in the middle.
-	for s in [-1.0, 1.0]:
+	for s in ([] if _hi else [-1.0, 1.0]):
 		_box(Vector3(s * 0.95, 1.45, 5.75), Vector3(0.5, 1.1, 4.7), WHITE)
 		if not _lo:
 			for z in [4.2, 5.4, 6.6, 7.6]:

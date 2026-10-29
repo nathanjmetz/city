@@ -12,7 +12,7 @@ extends Node3D
 ## stage (checked twice a second), so it costs nothing per frame.
 
 var sim: CitySim
-var _nodes := {}  # subdivision id -> MeshInstance3D
+var _nodes := {}  # subdivision id -> [ground MeshInstance3D, things MeshInstance3D]
 var _stamps := {}  # subdivision id -> what it was drawn from
 var _wait := 0.0
 
@@ -26,6 +26,7 @@ const SEWER_PIPE := Color("#3f7a46")  # green PVC sanitary sewer (SDR-35)
 const STORM_PIPE := Color("#a8a49b")  # reinforced concrete pipe
 const WATER_PIPE := Color("#2e3236")  # ductile iron
 const MACHINE := Color("#e0b21c")
+const TOPSOIL := Color("#3e3024")  # stripped black loam, darker than the clay under it
 const STAKE := Color("#e83e8c")  # survey flagging
 const LIFT := 0.09
 
@@ -48,7 +49,8 @@ func _sync() -> void:
 	var subs: Dictionary = sim.subdivisions.active
 	for id in _nodes.keys():
 		if not subs.has(id):
-			_nodes[id].queue_free()
+			for mi in _nodes[id]:
+				mi.queue_free()
 			_nodes.erase(id)
 			_stamps.erase(id)
 	for id in subs:
@@ -59,12 +61,20 @@ func _sync() -> void:
 			continue
 		_stamps[id] = stamp
 		if not _nodes.has(id):
-			var mi := MeshInstance3D.new()
-			mi.material_override = _material()
-			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			add_child(mi)
-			_nodes[id] = mi
-		_nodes[id].mesh = _draw(a, stage)
+			# The ground in the job site's own dirt (ConstructionSite's
+			# shader: damp spots, photographed mud on the desktop), the
+			# fence, piles, pipe and machines in plain colours.
+			var ground := MeshInstance3D.new()
+			ground.material_override = ConstructionSite._site_mat(false)
+			ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var things := MeshInstance3D.new()
+			things.material_override = _material()
+			add_child(ground)
+			add_child(things)
+			_nodes[id] = [ground, things]
+		var meshes := _draw(a, stage)
+		_nodes[id][0].mesh = meshes[0]
+		_nodes[id][1].mesh = meshes[1]
 
 
 static var _mat: StandardMaterial3D
@@ -75,42 +85,44 @@ static func _material() -> StandardMaterial3D:
 	if _mat == null:
 		_mat = StandardMaterial3D.new()
 		_mat.vertex_color_use_as_albedo = true
+		_mat.vertex_color_is_srgb = true
 		_mat.roughness = 1.0
 	return _mat
 
 
-func _draw(a: Dictionary, stage: int) -> Mesh:
+## [ground, things] for one subdivision at `stage`, or [null, null].
+func _draw(a: Dictionary, stage: int) -> Array:
 	var site: Dictionary = a.site
+	if not a.has("works") or stage < 0 or stage >= Construction.STAGES.size():
+		return [null, null]
+	var gst := SurfaceTool.new()
+	gst.begin(Mesh.PRIMITIVE_TRIANGLES)
+	gst.set_normal(Vector3.UP)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	st.set_normal(Vector3.UP)
-	var any := false
-	if a.has("works") and stage >= 0 and stage < Construction.STAGES.size():
-		_works(st, site, int(a.works.k), stage)
-		any = true
-	if not any:
-		return null
-	return Terrain.drape_local(st.commit(), Transform3D.IDENTITY)
+	_works(gst, st, site, int(a.works.k), stage)
+	return [Terrain.drape_local(gst.commit(), Transform3D.IDENTITY), Terrain.drape_local(st.commit(), Transform3D.IDENTITY)]
 
 
-## One phase's site work at `stage` (Construction.STAGES index).
-func _works(st: SurfaceTool, site: Dictionary, k: int, stage: int) -> void:
+## One phase's site work at `stage` (Construction.STAGES index): the ground
+## into `gst`, everything standing on it into `st`.
+func _works(gst: SurfaceTool, st: SurfaceTool, site: Dictionary, k: int, stage: int) -> void:
 	var r: Array = Subdivisions.works_area(site, k).rect
 	var paved := stage >= Subdivisions.STREETS_STAGE
 	var seeded := stage >= Subdivisions.STAKE_STAGE
 	var spine := Balance.SUBDIV_WIDTH * 0.5 - Balance.SUBDIV_SPINE_IN
 	var row := Subdivisions.row_v(k)
 	var cw := RoadStyle.right_of_way_half(Subdivisions.TYPE)
+	var fine := not OS.has_feature("web")
 	var tint := func(u: float, v: float) -> Color:
 		if seeded:
 			return SEEDED
-		var h := fposmod(sin(u * 0.37 + v * 0.71) * 43758.5453, 1.0)
-		var base := DIRT.lightened(h * 0.03) if h > 0.5 else DIRT.darkened((0.5 - h) * 0.04)
 		# From rough grading on, the street beds are cut and compacted.
 		if stage >= 1 and _in_street(u, v, spine, row, cw, site, k):
 			return GRADED
-		return base
-	_ground(st, site, r, tint, k, paved)
+		return DIRT
+	_ground(gst, site, r, tint, k, paved)
 	var ang := atan2(float(site.t[1]), float(site.t[0]))
 	var at := func(u: float, v: float, y: float) -> Vector3:
 		return Subdivisions.local(site, u, v) + Vector3(0.0, y, 0.0)
@@ -122,12 +134,13 @@ func _works(st: SurfaceTool, site: Dictionary, k: int, stage: int) -> void:
 		var c := [[r[0] + 1.0, r[2] + 6.0], [r[0] + 1.0, r[3] - 1.0], [r[1] - 1.0, r[3] - 1.0], [r[1] - 1.0, r[2] + 6.0]]
 		for i in 3:
 			_fence(st, at.call(c[i][0], c[i][1], 0.0), at.call(c[i + 1][0], c[i + 1][1], 0.0))
-		box.call(Vector3(14.0, 2.2, 8.0), spine * 0.5, r[3] - 9.0, 1.1, DIRT.darkened(0.2), 0.0)
-		box.call(Vector3(9.0, 1.2, 5.0), spine * 0.5, r[3] - 9.0, 2.6, DIRT.darkened(0.15), 0.0)
+		# Six inches off a few acres is thousands of cubic yards: a long,
+		# dark heap of topsoil, kept apart to spread back on the yards.
+		ConstructionSite._cs_mound(st, at.call(spine * 0.5, r[3] - 12.0, 0.0), 18.0, 8.0, 4.0, TOPSOIL, k)
+		ConstructionSite._cs_mound(st, at.call(spine * 0.5 + 19.0, r[3] - 11.0, 0.0), 6.0, 5.0, 2.4, TOPSOIL.lightened(0.06), k + 3)
 	if stage <= 1:
 		# A dozer at work.
-		box.call(Vector3(3.4, 1.6, 4.8), -spine * 0.4, (r[2] + r[3]) * 0.5, 0.9, MACHINE, 0.0)
-		box.call(Vector3(3.8, 1.2, 0.3), -spine * 0.4, (r[2] + r[3]) * 0.5 + 2.7, 0.6, Color("#5b5b55"), 0.0)
+		SiteMachines.dozer(st, Transform3D(Basis(Vector3.UP, -ang), at.call(-spine * 0.4, (r[2] + r[3]) * 0.5, 0.0)), MACHINE, fine)
 	elif stage <= 3:
 		# Trenches down the street lines: the sewer down the middle first,
 		# then the water main off to one side, with the pipe strung out
@@ -135,8 +148,8 @@ func _works(st: SurfaceTool, site: Dictionary, k: int, stage: int) -> void:
 		var off := 0.0 if stage == 2 else 3.5
 		var v0: float = r[2] if k == 0 else float(r[2]) - 10.0
 		for s in [-1.0, 1.0]:
-			_strip(st, at.call(s * spine + off, v0, 0.0), at.call(s * spine + off, row, 0.0), 1.4, TRENCH, 0.03)
-		_strip(st, at.call(-spine, row + off, 0.0), at.call(spine, row + off, 0.0), 1.4, TRENCH, 0.03)
+			_strip(gst, at.call(s * spine + off, v0, 0.0), at.call(s * spine + off, row, 0.0), 1.4, TRENCH, 0.03)
+		_strip(gst, at.call(-spine, row + off, 0.0), at.call(spine, row + off, 0.0), 1.4, TRENCH, 0.03)
 		var pipe: Color = SEWER_PIPE if stage == 2 else WATER_PIPE
 		var vv: float = float(r[2]) + 12.0
 		while vv < row - 6.0:
@@ -151,8 +164,9 @@ func _works(st: SurfaceTool, site: Dictionary, k: int, stage: int) -> void:
 			# Hydrants set on the new main, a few hundred feet apart.
 			for u in [-spine * 0.5, spine * 0.5]:
 				box.call(Vector3(0.35, 0.9, 0.35), u, row + cw - 1.0, 0.45, Color("#c9302c"), 0.0)
-		box.call(Vector3(3.0, 2.8, 4.6), -spine + off + 4.5, (r[2] + row) * 0.5, 1.4, MACHINE, 0.0)
-		box.call(Vector3(0.6, 0.6, 6.0), -spine + off + 4.5, (r[2] + row) * 0.5 + 4.2, 3.0, MACHINE, 0.0)
+		# A full-size (20 t) excavator beside the trench, digging ahead.
+		var ex := Basis(Vector3.UP, -ang).scaled(Vector3.ONE * 1.75)
+		SiteMachines.excavator(st, Transform3D(ex, at.call(-spine + off + 4.5, (r[2] + row) * 0.5, 0.0)), MACHINE, 0.5, fine)
 	elif not seeded:
 		# Stone for the street base, heaped by the entrance.
 		box.call(Vector3(5.0, 1.4, 4.0), -spine + cw + 4.0, r[2] + 8.0, 0.7, Color("#8f8a80"), 0.0)
@@ -227,6 +241,8 @@ static func _tri(st: SurfaceTool, p0: Vector3, p1: Vector3, p2: Vector3) -> void
 	var up := Vector3(0.0, LIFT, 0.0)
 	var pts := [p0, p1, p2] if (p1 - p0).cross(p2 - p0).y < 0.0 else [p0, p2, p1]
 	for p in pts:
+		# Off the ground shader's entrance ruts (they're a lot's, not a phase's).
+		st.set_uv(Vector2(1.0e4, -1.0))
 		st.add_vertex(p + up)
 
 
