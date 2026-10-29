@@ -66,7 +66,12 @@ static func _tw_start(seed: int, to_curb: float, lot: Dictionary, storeys: int, 
 	b._flat.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var kind := era_pick
 	if kind == "":
-		if b.era == "prewar":
+		# Past 60 storeys an office is a supertall of bundled tubes; from 24
+		# most postwar offices are granite-and-glass postmodern towers.
+		# Picked from the seed, so no random draw moves.
+		if storeys >= 60 and not homes:
+			kind = "tubes"
+		elif b.era == "prewar":
 			kind = "deco" if storeys >= 14 or b.rng.randf() < 0.3 else "chicago"
 		else:
 			kind = _tw_form(seed, b.half * 2.0, homes)
@@ -75,6 +80,7 @@ static func _tw_start(seed: int, to_curb: float, lot: Dictionary, storeys: int, 
 		"deco": b._tw_deco(to_curb, b.half * 2.0, storeys)
 		"pomo": b._tw_pomo(to_curb, b.half * 2.0, storeys)
 		"podium": b._tw_podium(to_curb, b.half * 2.0, storeys)
+		"tubes": b._tw_tubes(to_curb, b.half * 2.0, storeys)
 		_:
 			if homes:
 				b._tw_slab(to_curb, b.half * 2.0, storeys)
@@ -328,6 +334,89 @@ func _tw_glass(to_curb: float, width: float, storeys: int) -> void:
 	for s in [-1.0, 1.0]:
 		var pick := TreeField.pick(rng)
 		trees.append([Vector3(s * (width * 0.5 - 3.0), 0, zf * 0.6), pick[0], pick[1], rng.randf_range(0.8, 1.0)])
+
+
+# ---------------------------------------------------------------- supertall
+
+## A supertall office of bundled tubes, past 60 storeys (Willis Tower,
+## Chicago, 108 storeys: nine 23 m square tubes on a 3 × 3 grid, two
+## stopping at the 50th floor, two at the 66th, three at the 90th and two
+## running to the top): black aluminium and bronze glass, setbacks where
+## tubes end, two masts on top.
+func _tw_tubes(to_curb: float, width: float, storeys: int) -> void:
+	var side := minf(minf(width - 2.0, depth - 8.0), 60.0)
+	if side < 30.0:
+		_tw_pomo(to_curb, width, storeys)
+		return
+	var s := side / 3.0
+	var zf := 3.0
+	var cz := zf + side * 0.5
+	var ground_h := 6.0
+	var floor_h := 3.9
+	var top := ground_h + floor_h * (storeys - 1)
+	var black := Color("#18191b")
+	var bronze := Color(0.30, 0.26, 0.20)
+	# Willis's pattern of tube heights, as shares of the full height.
+	var share := [0.46, 0.83, 0.46, 0.61, 1.0, 0.83, 0.61, 1.0, 0.83]
+	var heights := []
+	for i in 9:
+		heights.append(ground_h + floor_h * (int(storeys * share[i]) - 1))
+	if not _far:
+		_downtown_walk(to_curb, width, zf)
+		_flat_rect("drive", -width * 0.5 + 0.5, width * 0.5 - 0.5, -0.2, zf, 0.065)
+	for i in 9:
+		var gx := i % 3 - 1
+		var gz := i / 3 - 1
+		var x := gx * s
+		var z := cz + gz * s
+		var h: float = heights[i]
+		if _far:
+			_tw_far_box(Vector3(s, h, s), Vector3(x, h * 0.5, z), black, 0.85)
+			continue
+		_box("brick", Vector3(s, h, s), Vector3(x, h * 0.5, z), black)
+		# A parapet cap and the roof inset from the tube's edges, so a lower
+		# neighbour's roof never reads as this tube's top far off.
+		_box("paint", Vector3(s + 0.2, 0.6, s + 0.2), Vector3(x, h + 0.3, z), black)
+		_tw_roof(s - 1.6, s - 1.6, z, h + 0.6, x)
+		# Each face shows from the top of the neighbouring tube (or the ground).
+		for face in _tw_faces(s, s, z):
+			var o: Vector3 = Vector3(face[1].z, 0, -face[1].x) * -1.0
+			var nx := gx + int(round(o.x))
+			var nz := gz + int(round(o.z))
+			var lo := 0.0
+			if nx >= -1 and nx <= 1 and nz >= -1 and nz <= 1:
+				lo = heights[(nz + 1) * 3 + (nx + 1)]
+			if lo >= h:
+				continue
+			var c0: Vector3 = face[0] + Vector3(x, 0, 0)
+			var f0 := maxi(0, int((lo - ground_h) / floor_h) + 1) if lo > 0.0 else 0
+			for f in range(f0, storeys):
+				var y := ground_h + floor_h * (f - 1) if f > 0 else 0.0
+				var y_top := ground_h + floor_h * f if f > 0 else ground_h
+				if y_top > h + 0.01:
+					break
+				_glass(c0 + Vector3(0, (y + y_top) * 0.5, 0), face[1], s - 0.3, (y_top - y) - 0.8, rng.randf_range(0.05, 0.35) if f > 0 else 0.0)
+			# Black mullions every 4.6 m (Willis's bay), the height of the face.
+			var n := 5
+			for k in n + 1:
+				var c: Vector3 = c0 + face[1] * (-s * 0.5 + k * s / n) + o * 0.17
+				c.y = (lo + h) * 0.5
+				_box("metal", Vector3(0.3, h - lo, 0.3), c, black, _tw_yaw(face[1]))
+	# Two masts on the tallest tubes.
+	for i in [4, 7]:
+		var x: float = (i % 3 - 1) * s
+		var z: float = cz + (i / 3 - 1) * s
+		var h: float = heights[i]
+		if _far:
+			_tw_far_box(Vector3(1.2, 80.0, 1.2), Vector3(x, h + 40.0, z), Color("#d8d8d4", 0.0), 0.0)
+		else:
+			_box("metal", Vector3(1.5, 6.0, 1.5), Vector3(x, h + 3.03, z), black)
+			_box("metal", Vector3(1.0, 80.0, 1.0), Vector3(x, h + 46.0, z), Color("#d8d8d4"))
+	if not _far:
+		# The street lobby: a glass pavilion along the front.
+		_box("metal", Vector3(side * 0.6, 0.5, 4.0), Vector3(0, 6.2, zf - 2.08), black)
+		if not _homes:
+			_sign(Vector3(0, 6.7, zf - 4.02), 6.0, 0.6)
 
 
 # ---------------------------------------------------------------- postwar apartments
@@ -793,10 +882,14 @@ func _tw_yaw(along: Vector3) -> Basis:
 	return Basis(Vector3.UP, atan2(-along.z, -along.x))
 
 
-## A gravel roof inside the parapet.
-func _tw_roof(w: float, d: float, cz: float, y: float) -> void:
-	_quad("paint", Vector3(-w * 0.5, y + 0.03, cz - d * 0.5), Vector3(w * 0.5, y + 0.03, cz - d * 0.5),
-		Vector3(w * 0.5, y + 0.03, cz + d * 0.5), Vector3(-w * 0.5, y + 0.03, cz + d * 0.5), GRAVEL, [], Vector3.UP)
+## A gravel roof inside the parapet, in the membrane material, so the far
+## version knows where each mass ends (a tier's walls stop at its roof
+## instead of running up to the tower's top).
+func _tw_roof(w: float, d: float, cz: float, y: float, x := 0.0) -> void:
+	var g := GRAVEL
+	g.a = 0.5
+	_quad("membrane", Vector3(x - w * 0.5, y + 0.03, cz - d * 0.5), Vector3(x + w * 0.5, y + 0.03, cz - d * 0.5),
+		Vector3(x + w * 0.5, y + 0.03, cz + d * 0.5), Vector3(x - w * 0.5, y + 0.03, cz + d * 0.5), g, [], Vector3.UP)
 
 
 ## A timber rooftop water tank on a steel stand (Rosenwach / Isseks style):
