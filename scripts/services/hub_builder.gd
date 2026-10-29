@@ -570,17 +570,16 @@ func _recycling(h: Dictionary, to_curb: float) -> void:
 		_mound(cells.filter(func(c): return c.y >= 1), CivicHubs.mound_height(h), false, Vector2i.ZERO)
 	_gate(to_curb)
 	var yard_back := cell if capped else cell * 2.0
-	_flat_rect("asphalt", -cell * 1.5 + 3.0, cell * 1.5 - 3.0, 2.0, yard_back - 3.0, 0.06)
+	# A drop-off paves only what its traffic needs; the rest stays mowed.
+	var paved := yard_back if level > 1 else minf(yard_back, cell + 8.0)
+	_flat_rect("asphalt", -cell * 1.5 + 3.0, cell * 1.5 - 3.0, 2.0, paved - 3.0, 0.06)
+	if paved < yard_back:
+		_grass_poly(PackedVector2Array([Vector2(-cell * 1.5, paved - 3.0), Vector2(cell * 1.5, paved - 3.0),
+			Vector2(cell * 1.5, yard_back), Vector2(-cell * 1.5, yard_back)]))
 	match level:
 		1:
-			# Roll-off containers in a row, each for one material, and an
-			# attendant's booth.
-			var n := 6
-			for i in n:
-				var x := -cell * 1.2 + i * (cell * 2.4 / (n - 1))
-				var col: Color = BINS[i % BINS.size()]
-				_box("metal", Vector3(2.5, 1.9, 6.8), Vector3(x, 1.05, yard_back - 10.0), col)
-				_box("paint", Vector3(2.6, 0.12, 6.9), Vector3(x, 2.05, yard_back - 10.0), col.darkened(0.25))
+			# The attendant's booth by the gate (the roll-offs are at the
+			# drop-off dock, below).
 			_building(func():
 				_box("siding", Vector3(3.0, 2.6, 2.4), Vector3(cell * 0.9, 1.3, 8.0), Color("#d8d4c8"))
 				_box("paint", Vector3(3.4, 0.2, 2.8), Vector3(cell * 0.9, 2.7, 8.0), Color("#6f6d68")))
@@ -595,6 +594,8 @@ func _recycling(h: Dictionary, to_curb: float) -> void:
 			var mid := (a + b) * 0.5
 			_box("metal", Vector3(1.6, 0.6, a.distance_to(b)), mid, Color("#6f7476"),
 				Basis.looking_at(b - a, Vector3.UP))
+	_drop_off(Vector3(cell * 0.92, 0, 14.0))
+	_recycling_yard(level, paved)
 	# Bales stacked in the yard and on the land it has grown into.
 	_bale_row(-cell * 1.2, 6.0, level)
 	for c in cells:
@@ -648,6 +649,91 @@ func _recycling(h: Dictionary, to_curb: float) -> void:
 		# Transfer trailers waiting to haul a neighbor's sorted loads.
 		for k in 3:
 			_box("metal", Vector3(2.6, 3.6, 14.0), Vector3(-22.0 + k * 3.6, 2.2, 28.0), Color("#c9cbc6"))
+
+
+## The public drop-off, as at county solid waste district sites: residents
+## drive up a ramp onto a raised concrete dock and tip into open-top
+## roll-offs set below its wall, one per material, each under its own
+## sign; bollards along the edge and a guard rail behind them. `c` is the
+## middle of the dock's front edge.
+func _drop_off(c: Vector3) -> void:
+	var deck := 1.4
+	var len := 28.0
+	var ramp := 7.0
+	var dz := 8.0
+	_box("paint", Vector3(len, deck, dz), c + Vector3(0, deck * 0.5, dz * 0.5), CONCRETE)
+	for sx in [-1.0, 1.0]:
+		var e: float = c.x + sx * len * 0.5
+		var f: float = e + sx * ramp
+		_quad("paint", Vector3(e, deck, c.z), Vector3(f, 0.06, c.z), Vector3(f, 0.06, c.z + dz), Vector3(e, deck, c.z + dz),
+			CONCRETE.darkened(0.04), [], Vector3(sx * 0.2, 1, 0))
+		for z in [c.z, c.z + dz]:
+			_tri("paint", Vector3(e, deck, z), Vector3(f, 0.06, z), Vector3(e, 0.06, z), CONCRETE.darkened(0.1), [],
+				Vector3(0, 0, -1 if z == c.z else 1))
+	# Bollards along the tipping edge and a rail along the front.
+	var back := c.z + dz
+	var x := c.x - len * 0.5 + 1.0
+	while x < c.x + len * 0.5 - 0.5:
+		_dr_bollard(Vector3(x, deck, back - 0.4))
+		x += 2.3
+	_box("paint", Vector3(len, 0.08, 0.08), c + Vector3(0, deck + 1.0, 0.3), Color("#e0b81e"))
+	for k in 8:
+		_box("paint", Vector3(0.08, 1.0, 0.08), c + Vector3(-len * 0.5 + 0.2 + k * (len - 0.4) / 7.0, deck + 0.5, 0.3), Color("#e0b81e"))
+	# The roll-offs below the wall: open tops, side ribs, what's in them.
+	var stuff := [["CARDBOARD", Color("#a8865a"), BINS[0]], ["PAPER", Color("#cfcbc0"), BINS[1]],
+		["PLASTIC 1-2", Color("#d9dcdc"), BINS[0]], ["CANS", Color("#b8bcbe"), BINS[2]],
+		["GLASS", Color("#4f6f4a"), BINS[1]], ["OIL", Color("#2a2b2d"), BINS[3]]]
+	for i in stuff.size():
+		var rx: float = c.x - len * 0.5 + 2.3 + i * (len - 4.6) / (stuff.size() - 1)
+		var rz := back + 3.9
+		var col: Color = stuff[i][2]
+		_box("metal", Vector3(2.4, 1.6, 6.8), Vector3(rx, 0.95, rz), col)
+		_box("paint", Vector3(2.0, 0.1, 6.4), Vector3(rx, 1.62, rz), stuff[i][1])
+		for sx in [-1.0, 1.0]:
+			_box("paint", Vector3(0.1, 0.12, 6.9), Vector3(rx + sx * 1.22, 1.8, rz), col.darkened(0.2))
+			var z := rz - 2.8
+			while z < rz + 3.0:
+				_box("paint", Vector3(0.08, 1.5, 0.12), Vector3(rx + sx * 1.25, 0.95, z), col.darkened(0.12))
+				z += 1.4
+		for sz in [-1.0, 1.0]:
+			_box("paint", Vector3(2.5, 0.12, 0.1), Vector3(rx, 1.8, rz + sz * 3.45), col.darkened(0.2))
+		# The material's sign on two posts at the back.
+		for sx in [-0.7, 0.7]:
+			_box("paint", Vector3(0.08, 3.2, 0.08), Vector3(rx + sx, 1.6, rz + 3.9), GALV)
+		_box("paint", Vector3(2.0, 0.8, 0.05), Vector3(rx, 2.9, rz + 3.85), col.lightened(0.15))
+		_box("paint", Vector3(1.7, 0.18, 0.06), Vector3(rx, 2.95, rz + 3.82), Color("#f2f0ea"))
+
+
+## The working yard behind the gate: baled material stacked in blocks,
+## empty roll-offs waiting, trucks at the plant, light poles.
+func _recycling_yard(level: int, yard_back: float) -> void:
+	# Bale blocks, three high, on the left behind the bale row at the gate.
+	var z := 22.0
+	while z < minf(yard_back - 8.0, 62.0):
+		_bale_row(-cell * 1.35, z, level)
+		_bale_row(-cell * 1.35, z + 1.6, level)
+		z += 9.0
+	# Empty roll-offs lined up on the right, waiting for a truck.
+	for i in 4:
+		var col: Color = BINS[(i + 1) % BINS.size()]
+		var q := Vector3(cell * 1.3, 0, minf(46.0, yard_back - 20.0) + i * 3.4)
+		_box("metal", Vector3(6.8, 1.6, 2.4), q + Vector3(0, 0.95, 0), col)
+		_box("paint", Vector3(6.4, 0.1, 2.0), q + Vector3(0, 1.62, 0), col.darkened(0.45))
+	# The plant's trucks: a tractor-trailer at the dock and a front-loader.
+	if level >= 2:
+		var front := yard_back - (28.0 if level == 2 else 34.0)
+		_dr_trailer(Vector3(-8.0, 0, front - 8.5))
+		_dr_trailer(Vector3(-2.0 if level == 2 else 4.0, 0, front - 8.5))
+		var t := Vector3(12.0, 0, front - 12.0)
+		_box("paint", Vector3(2.5, 2.6, 2.4), t + Vector3(0, 1.75, -3.2), Color("#e9e7e0"))
+		_box("paint", Vector3(2.5, 3.0, 5.2), t + Vector3(0, 2.0, 0.9), Color("#3f6d3a"))
+		_box("paint", Vector3(0.9, 0.5, 6.8), t + Vector3(0, 0.6, -0.3), Color("#1c1d1f"))
+		_box("paint", Vector3(2.2, 0.15, 2.0), t + Vector3(0, 3.9, -2.6), Color("#5a5e60"))
+	# Light poles round the yard.
+	for p in [Vector3(-cell * 0.6, 0, 4.0), Vector3(cell * 0.4, 0, 40.0), Vector3(-cell * 1.4, 0, yard_back - 6.0),
+			Vector3(cell * 1.4, 0, yard_back - 6.0)]:
+		_cyl_y(p + Vector3(0, 5.5, 0), 0.12, 11.0, GALV)
+		_box("paint", Vector3(0.7, 0.3, 0.55), p + Vector3(0, 11.1, 0.3), Color("#4a4e52"))
 
 
 ## A steel sorting building with overhead doors facing the yard.
