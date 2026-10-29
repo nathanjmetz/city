@@ -34,6 +34,8 @@ const NEAR := 170.0
 ## Seconds between looks at the clock.
 const POLL := 0.25
 const DIRT := Color("#6e5a43")
+## Buildings taller than this (metres, about six storeys) go up under a tower crane.
+const CRANE_FROM := 24.0
 const CONCRETE := Color("#b3afa6")
 ## Wall and roof colours of each method's shell while it's being closed in.
 const SHELL := {
@@ -67,6 +69,8 @@ var _frame_kind := "wood"
 var _height := 6.0
 var _found_h := 0.45
 var _box := AABB()
+var _bldg := AABB()  # the finished building's own bounds (not its lot)
+var _crane_on := false  # a high-rise: it goes up under a tower crane
 var _props_for := ""
 var _paving := false
 var _stone: MeshInstance3D
@@ -115,6 +119,8 @@ func setup(built: Array, profile: String, state: Callable) -> void:
 	_found_h = FrameBuilder.slab_top(built[0], st.found)
 	var aabb: AABB = built[0].get_aabb()
 	_height = aabb.end.y
+	_bldg = aabb
+	_crane_on = not _paving and _height > CRANE_FROM and _mostly_tall(built[0])
 	_box = aabb
 	if built[1] != null and built[1].get_surface_count() > 0:
 		_box = _box.merge(built[1].get_aabb())
@@ -462,10 +468,99 @@ func _props_look(stage: String) -> void:
 		var col: Color = FRAME_FAR[_frame_kind] if _frame_kind != "tilt_up" else FrameBuilder.GALV
 		for k in 2:
 			_prop(st, Vector3(1.2, 0.6, 4.9), Vector3(left + 1.0 + k * 1.6, 0.42, front + 5.0), col)
+	if _crane_on and stage in ["frame", "dry_in", "exterior"]:
+		_crane(st)
 	_props = MeshInstance3D.new()
 	_props.mesh = st.commit()
 	_props.material_override = FrameBuilder.material()
 	add_child(_props)
+
+
+## True when a good share of the drawing stands above CRANE_FROM: a tower
+## or a mid-rise, not a church whose steeple alone is tall.
+static func _mostly_tall(mesh: Mesh) -> bool:
+	var high := 0
+	var all := 0
+	for i in mesh.get_surface_count():
+		var v: PackedVector3Array = mesh.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]
+		all += v.size()
+		for p in v:
+			if p.y > CRANE_FROM:
+				high += 1
+	return all > 0 and high > all / 4
+
+
+## A hammerhead tower crane over a building of more than about six storeys,
+## from the frame until the outside is done (Liebherr and Potain flat-top
+## and hammerhead cranes on Indianapolis and Chicago high-rises): a square
+## lattice mast about 2 m across standing behind the building where the lot
+## has room (or climbing inside its core where it doesn't), 12 m clear over
+## the roof, the operator's cab, a jib reaching over the building, the
+## counter-jib with its concrete counterweights, the A-frame and its
+## pendants, and a bundle of steel on the hook. Picked from the building's
+## size, so every player sees the same crane.
+func _crane(st: SurfaceTool) -> void:
+	var c := _bldg.get_center()
+	var k := absi(hash([snappedf(_bldg.size.x, 0.1), snappedf(_bldg.size.z, 0.1), snappedf(_height, 0.1)]))
+	var col: Color = [Color("#e8b712"), Color("#e8b712"), Color("#e9e7e1"), Color("#c8432b")][k % 4]
+	var behind := _box.end.z - _bldg.end.z >= 5.0
+	var base := Vector3(c.x + _bldg.size.x * 0.25, 0.0, _bldg.end.z + 3.0) if behind else Vector3(c.x, 0.0, c.z)
+	var mast_h := _height + 12.0
+	var m := 1.0  # half the mast's width
+	# The mast: four chords and a ring every 2.5 m; a concrete pad under it.
+	_prop(st, Vector3(4.5, 0.6, 4.5), base + Vector3(0, 0.3, 0), CONCRETE)
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			_prop(st, Vector3(0.16, mast_h, 0.16), base + Vector3(sx * m, mast_h * 0.5, sz * m), col)
+	var y := 2.5
+	while y < mast_h:
+		for sx in [-1.0, 1.0]:
+			_prop(st, Vector3(0.1, 0.1, m * 2.0), base + Vector3(sx * m, y, 0), col)
+			_prop(st, Vector3(m * 2.0, 0.1, 0.1), base + Vector3(0, y, sx * m), col)
+		# One diagonal a side per section, as the lattice reads from afar.
+		_prop(st, Vector3(0.08, 3.2, 0.08), base + Vector3(0, y - 1.25, -m), col, Basis(Vector3.BACK, 0.68))
+		_prop(st, Vector3(0.08, 3.2, 0.08), base + Vector3(0, y - 1.25, m), col, Basis(Vector3.BACK, -0.68))
+		y += 2.5
+	# Slew: the jib swings out over the building, at an angle from the size.
+	var to_bldg := Vector2(c.x - base.x, c.z - base.z)
+	var yaw := (atan2(to_bldg.y, to_bldg.x) if to_bldg.length() > 1.0 else 0.0) + deg_to_rad(float(k % 70) - 35.0)
+	var along := Vector3(cos(yaw), 0, sin(yaw))
+	var side := along.cross(Vector3.UP)
+	var rot := Basis(along, Vector3.UP, side)
+	var top := base + Vector3(0, mast_h, 0)
+	var jib := clampf(maxf(_bldg.size.x, _bldg.size.z) * 1.1, 40.0, 65.0)
+	var counter := jib * 0.3
+	_prop(st, Vector3(2.6, 1.0, 2.6), top + Vector3(0, 0.5, 0), col)  # slewing ring
+	# The jib: a triangular lattice, two bottom chords and a top one.
+	var mid := top + along * (jib * 0.5) + Vector3(0, 1.0, 0)
+	for sd in [-0.7, 0.7]:
+		_prop(st, Vector3(jib, 0.14, 0.14), mid + side * sd, col, rot)
+	_prop(st, Vector3(jib, 0.14, 0.14), mid + Vector3(0, 1.5, 0), col, rot)
+	var t := 2.0
+	while t < jib:
+		_prop(st, Vector3(0.08, 1.6, 1.4), top + along * t + Vector3(0, 1.75, 0), col, rot)
+		t += 2.5
+	# The counter-jib with its counterweights, and the A-frame and pendants.
+	_prop(st, Vector3(counter, 0.5, 2.0), top - along * (counter * 0.5) + Vector3(0, 1.0, 0), col, rot)
+	_prop(st, Vector3(3.0, 2.4, 2.2), top - along * (counter - 2.0) + Vector3(0, 2.4, 0), CONCRETE.darkened(0.1), rot)
+	var apex := top + Vector3(0, 7.0, 0)
+	_prop(st, Vector3(0.3, 7.0, 0.3), top + Vector3(0, 3.5, 0), col)
+	for end in [top + along * jib * 0.7 + Vector3(0, 2.5, 0), top - along * counter + Vector3(0, 1.2, 0)]:
+		var span: Vector3 = end - apex
+		var axis := span.normalized()
+		var bx := axis.cross(Vector3.UP).normalized()
+		_prop(st, Vector3(0.06, span.length(), 0.06), apex + span * 0.5, Color("#3a3a3a"), Basis(bx, axis, bx.cross(axis)))
+	# The cab, glazed toward the jib, just under it.
+	_prop(st, Vector3(1.6, 2.2, 1.8), top + along * 1.6 - side * 1.6 + Vector3(0, -0.4, 0), col.darkened(0.1), rot)
+	_prop(st, Vector3(0.05, 1.2, 1.5), top + along * 2.42 - side * 1.6 + Vector3(0, -0.1, 0), Color("#2b3a44"), rot)
+	# The trolley partway out, the hoist line and a bundle of steel beams.
+	var reach := jib * (0.45 + float(k % 30) / 100.0)
+	var hook := top + along * reach
+	var drop := clampf(_height * 0.35, 8.0, 30.0)
+	_prop(st, Vector3(1.6, 0.5, 1.8), hook + Vector3(0, 0.4, 0), Color("#3a3a3a"), rot)
+	_prop(st, Vector3(0.05, drop, 0.05), hook - Vector3(0, drop * 0.5 - 0.2, 0), Color("#222222"))
+	_prop(st, Vector3(0.5, 0.6, 0.4), hook - Vector3(0, drop, 0), Color("#e8b712"))
+	_prop(st, Vector3(6.0, 0.6, 0.9), hook - Vector3(0, drop + 2.4, 0), FrameBuilder.PRIMER, rot)
 
 
 ## A paving job's site: orange barrels across the entrance while it's dug

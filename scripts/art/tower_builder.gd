@@ -198,6 +198,8 @@ func _tw_chicago(to_curb: float, width: float, storeys: int) -> void:
 	if storeys >= 6:  # city water pressure reaches about six floors
 		_tw_tank(tank_at)
 	_box("brick", Vector3(5.0, 3.6, 6.0), Vector3(-w * 0.3, top + 3.7, cz + d * 0.25), shaft.darkened(0.1))  # elevator penthouse
+	if storeys >= 8:
+		_tw_roof_sign(Vector3(0, top + 1.9, zf + 1.6), minf(w * 0.6, 20.0))
 
 
 # ---------------------------------------------------------------- Art Deco setbacks
@@ -378,6 +380,7 @@ func _tw_glass_box(w: float, d: float, cz: float, ground_h: float, floor_h: floa
 	# The louvred mechanical floor and a flat roof.
 	_box("metal", Vector3(w, mech, d), Vector3(0, top + mech * 0.5, cz), Color("#2b2d2f"))
 	_tw_roof(w, d, cz, top + mech)
+	_tw_name(Vector3(0, top + mech * 0.2, cz - d * 0.5), w * 0.7, mech * 0.6)
 
 
 ## The glass tower as a prism: corners cut by `chamfer`, and the top
@@ -435,6 +438,7 @@ func _tw_glass_shaped(w: float, d: float, cz: float, ground_h: float, floor_h: f
 	var c := minf(chamfer, minf(tw, td) * 0.25)
 	_box("metal", Vector3(tw - c * 1.2, mech, td - c * 1.2), Vector3(0, y1 + mech * 0.5, cz), Color("#2b2d2f"))
 	_tw_roof(tw - c * 1.2, td - c * 1.2, cz, y1 + mech)
+	_tw_name(Vector3(0, y1 + mech * 0.2, cz - (td - c * 1.2) * 0.5), (tw - c * 1.2) * 0.75, mech * 0.6)
 
 
 ## The outline of a w by d footprint with corners cut by c, as edges
@@ -520,6 +524,8 @@ func _tw_tubes(to_curb: float, width: float, storeys: int) -> void:
 				var c: Vector3 = c0 + face[1] * (-s * 0.5 + k * s / n) + o * 0.17
 				c.y = (lo + h) * 0.5
 				_box("metal", Vector3(0.3, h - lo, 0.3), c, black, _tw_yaw(face[1]))
+	if not _far:
+		_tw_name(Vector3(0, float(heights[1]) - floor_h * 1.6, cz - s * 1.5), s * 0.9, floor_h * 1.1)
 	# Two masts on the tallest tubes.
 	for i in [4, 7]:
 		var x: float = (i % 3 - 1) * s
@@ -629,6 +635,8 @@ func _tw_slab(to_curb: float, width: float, storeys: int) -> void:
 const TW_GRANITE := ["#b48f80", "#a3897a", "#c4b29c", "#8c7b70", "#d0c4b4"]  # rose, buff and grey granite
 const TW_MIRROR := ["#2e3b44", "#33443c", "#463b33", "#2b3440"]  # reflective blue, green, bronze, grey glass
 const TW_COPPER := Color("#6f9a86")  # weathered copper
+## How far off a tower's name reads: 3-4 m letters, about a kilometre.
+const TW_NAME_RANGE := 1200.0
 
 
 ## A 1980s-90s postmodern office tower: built to the sidewalk on a tall
@@ -710,6 +718,7 @@ func _tw_pomo(to_curb: float, width: float, storeys: int) -> void:
 		y0 = y1
 		f0 = f1
 	_tw_crown(crown, cw, cd, cz, y0 + 0.5, granite, mirror)
+	_tw_name(Vector3(0, y0 - floor_h + 0.6, cz - cd * 0.5), (cw - minf(cw, cd) * 0.28) * 0.8, floor_h * 0.6)
 
 
 ## A box with its four corners notched in by `n` (a cross in plan).
@@ -961,6 +970,7 @@ func _tw_podium(to_curb: float, width: float, storeys: int) -> void:
 			if fine:
 				_box("metal", Vector3(0.08, mech - 0.4, 0.2), c, Color("#5b6166"), _tw_yaw(face[1]))
 	_tw_roof(mw, md, tz, top + mech, tx)
+	_tw_name(Vector3(tx, top + mech * 0.2, tz - md * 0.5), mw * 0.9, mech * 0.55)
 	if blade:
 		var bx := tx + (tw * 0.5 - 0.6) * (1.0 if rng.randf() < 0.5 else -1.0)
 		_box("paint", Vector3(0.8, mech + 12.0, td * 0.8), Vector3(bx, top + (mech + 12.0) * 0.5 - 2.0, tz), Color("#d9dde0"))
@@ -1136,6 +1146,46 @@ func _tw_roof(w: float, d: float, cz: float, y: float, x := 0.0) -> void:
 
 ## A timber rooftop water tank on a steel stand (Rosenwach / Isseks style):
 ## staves bound with hoops under a conical cap.
+## The owner's name near the top of the street face, in channel letters
+## (Indianapolis's Salesforce and OneAmerica towers, Des Moines's
+## Principal, Fort Wayne's Indiana Michigan Power Center): a company that
+## grew into a tower puts its name where the whole town can read it. `c`
+## is the letters' bottom middle on the face; read from well past the
+## usual sign range. Nothing when no family owns the lot.
+func _tw_name(c: Vector3, w: float, h: float) -> void:
+	if sign_spec.is_empty() or _far or _homes:
+		return
+	var col: Color = sign_spec.panel
+	if col.get_luminance() < 0.35:
+		col = Color("#f3efe4")  # lit white letters on a dark brand
+	labels.append({"pos": c + Vector3(0, h * 0.5, -0.15), "normal": Vector3.FORWARD, "text": sign_spec.text,
+		"height": h, "width": w, "color": col, "style": sign_spec.style, "range": TW_NAME_RANGE})
+
+
+## A rooftop sign on a steel frame along the front of an old office
+## block's roof (the lettered frames over Chicago's Loop and Indianapolis's
+## old hotels and office blocks): angle posts and rails, the name on top
+## facing the street. `c` is the middle of its foot on the roof.
+func _tw_roof_sign(c: Vector3, w: float) -> void:
+	if sign_spec.is_empty() or _far or _homes:
+		return
+	var steel := Color("#3b3a38")
+	var h := 3.4
+	var n := maxi(2, roundi(w / 2.5))
+	for i in n + 1:
+		var x := c.x - w * 0.5 + i * w / n
+		_box("metal", Vector3(0.12, h, 0.12), Vector3(x, c.y + h * 0.5, c.z), steel)
+		_box("metal", Vector3(0.1, h * 0.8, 0.1), Vector3(x, c.y + h * 0.4, c.z + 1.2), steel, Basis(Vector3.RIGHT, -0.4))  # brace
+	for y in [0.4, h * 0.5, h - 0.1]:
+		_box("metal", Vector3(w, 0.1, 0.1), Vector3(c.x, c.y + y, c.z), steel)
+	# Against the sky the brand's own colour reads; a near-black one goes red.
+	var col: Color = sign_spec.panel
+	if col.get_luminance() < 0.08:
+		col = Color("#c8302a")
+	labels.append({"pos": c + Vector3(0, h * 0.5 + 0.3, -0.12), "normal": Vector3.FORWARD, "text": sign_spec.text,
+		"height": h * 0.8, "width": w, "color": col, "style": sign_spec.style, "range": TW_NAME_RANGE})
+
+
 func _tw_tank(at: Vector3) -> void:
 	var r := 2.3
 	var h := 4.2

@@ -30,9 +30,8 @@ extends Node
 ## with a wide gap between the two; and a tier that proved too slow stays
 ## out of reach for a while (longer each time), remembered across runs.
 ##
-## Cinematic is as close to real life as the engine gets: global
-## illumination (SDFGI), volumetric light in the air, screen-space
-## reflections, the biggest shadow maps and the longest detail. Ultra and
+## Cinematic is as close to real life as the engine gets: volumetric
+## light in the air, screen-space reflections, the biggest shadow maps and the longest detail. Ultra and
 ## below drop those one by one.
 ##
 ## Every device scales to what it can do (Brawn, 2026-10-23): the desktop
@@ -73,7 +72,10 @@ const GUESS_VERSION := 3
 ## wild woods cast sun shadows (thousands of trees, drawn again for every
 ## shadow split: the biggest single cost in a wooded town). ssao: ambient occlusion,
 ## ssil: bounced light between nearby surfaces, ssr: reflections in water
-## and glass, sdfgi: sunlight bouncing around the whole town, fog: light
+## and glass, sdfgi: sunlight bouncing around the whole town (off on every
+## tier since 2026-10-29: at town scale its sky light turned the shade on
+## roads and sidewalks cobalt blue, 40,82,141 where photos and the other
+## tiers give a grey-blue 115,128,154; SSIL does the near bounce), fog: light
 ## shafts and haze in the air (volumetric fog).
 const TIERS := [
 	{"msaa": 0, "fxaa": true, "ssao": false, "ssil": false, "ssr": false, "sdfgi": false, "fog": false,
@@ -88,7 +90,7 @@ const TIERS := [
 	{"msaa": 2, "fxaa": false, "ssao": true, "ssil": true, "ssr": true, "sdfgi": false, "fog": false,
 		"shadow_size": 8192, "soft": 5, "splits": 4, "detail": 1.8, "lod": 0.5, "shadow_reach": 2000.0,
 		"tree_shadows": true},
-	{"msaa": 2, "fxaa": false, "ssao": true, "ssil": true, "ssr": true, "sdfgi": true, "fog": true,
+	{"msaa": 2, "fxaa": false, "ssao": true, "ssil": true, "ssr": true, "sdfgi": false, "fog": true,
 		"shadow_size": 8192, "soft": 5, "splits": 4, "detail": 2.5, "lod": 0.25, "shadow_reach": 2000.0,
 		"tree_shadows": true},
 ]

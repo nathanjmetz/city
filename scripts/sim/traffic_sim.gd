@@ -231,6 +231,11 @@ var _extra := {}      # place ref -> spots added beyond its layout, in order (_a
 ## drive in to deliver: "never", "night" (10 pm to 6 am) or "always".
 var closed := {}
 var _truck_plan := false  # the route being planned is for a truck (close_segment)
+## The town's truck routes law (TownLaws): a truck passing through counts a
+## neighborhood street as Balance.LAW_TRUCK_STREET_MULT times its drive.
+var truck_routes := false
+var _tpen := {}       # way -> extra seconds for a truck under truck_routes
+var _tpen_key := []
 var _walk_lines := {} # segment * 2 + side -> sidewalk line
 var _rings := {}      # node -> sidewalk ends around it (_corner_ring)
 var _marks := []      # crosswalks on the walk just planned: [point, node, way in]
@@ -1594,6 +1599,7 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 	var end_prev := -1
 	var first := lane >= 0
 	var none := PackedFloat64Array()
+	var tpen: Dictionary = _truck_pen() if _truck_plan and truck_routes else {}
 	while not hg.is_empty():
 		var f: float = hg[0]
 		var u: int = hu[0]
@@ -1620,6 +1626,8 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 					end_prev = u
 					best_route = []
 			var ng: float = e + _wcost.get(nx, INF)
+			if not tpen.is_empty():
+				ng += tpen.get(nx, 0.0)
 			if ng < dist[nx]:
 				if dist[nx] == INF:
 					_pl_seen.append(nx)
@@ -1639,6 +1647,20 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 			guard += 1
 		return route
 	return best_route
+
+
+## The extra a truck passing through pays on each neighborhood street way
+## (truck_routes), kept until the ways are rebuilt.
+func _truck_pen() -> Dictionary:
+	if _tpen_key != [version, ways.size()]:
+		_tpen_key = [version, ways.size()]
+		_tpen.clear()
+		for wid in ways:
+			var seg: int = int(wid) >> 1
+			if network.segments.has(seg) and int(network.segments[seg].type) in TownLaws.LOCAL_STREETS:
+				var w: Dictionary = ways[wid]
+				_tpen[wid] = w.len / w.vmax * (Balance.LAW_TRUCK_STREET_MULT - 1.0)
+	return _tpen
 
 
 ## One more than the highest way id, kept until the ways are rebuilt.
@@ -2505,6 +2527,10 @@ func place(ref: String) -> Dictionary:
 		pl = _lot_place(ref)
 	elif ref.begins_with("svc:"):
 		pl = _park_place(ref)
+		# Any other service is a stop on the street out front (crews and
+		# deliveries while it goes up), as for any site.
+		if pl.is_empty() and _sites.has(ref):
+			pl = _site_place(_sites[ref])
 	elif _sites.has(ref):
 		pl = _site_place(_sites[ref])
 	if pl.is_empty():
@@ -5015,7 +5041,10 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 			if not stopped:
 				return false
 			for ap in _approach.get(n, []):
-				if ap.car.id != car.id and ap.conn.wi != c.wi and _first(ap.car, car) and _conflicts(c, ap.conn):
+				# First come, first served, but not behind someone who can't go
+				# yet for a full street beyond: drivers wave each other on.
+				if ap.car.id != car.id and ap.conn.wi != c.wi and _first(ap.car, car) and _conflicts(c, ap.conn) \
+						and _room_past(ap.car, ap.conn):
 					return false
 		Rule.PRIORITY:
 			if not j.major.has(c.wi):
@@ -5027,7 +5056,7 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 					if j.major.has(ap.conn.wi):
 						if _soon(ap) and _conflicts(c, ap.conn):
 							return false
-					elif _first(ap.car, car) and _conflicts(c, ap.conn):
+					elif _first(ap.car, car) and _conflicts(c, ap.conn) and _room_past(ap.car, ap.conn):
 						return false
 			elif mine_minor_turn:
 				for ap in _approach.get(n, []):
@@ -5044,6 +5073,15 @@ func _soon(ap: Dictionary) -> bool:
 	# A car standing at its line (waiting on a gap itself) isn't about to
 	# come through: only moving ones within 5 s are (HCM ch. 20 critical gap).
 	return ap.car.commit or ap.car.v > 0.5 and ap.ds / ap.car.v < 5.0
+
+
+## Whether there's a car's length of room for `car` on the far side of
+## the junction (if not, it isn't going anywhere yet).
+func _room_past(car: Dictionary, c: Dictionary) -> bool:
+	if c.wo < 0:
+		return true
+	var list: Array = _lanes.get(c.wo * 8 + c.lo, [])
+	return list.is_empty() or list[list.size() - 1].d - ways[c.wo].s0 >= car.len + JAM_GAP
 
 
 ## Whether `a` stopped at its line before `b` (first come, first served).
