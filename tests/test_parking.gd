@@ -261,6 +261,7 @@ func _shops() -> void:
 			var lot := {"width": w, "depth": 40.0, "corner": seed % 4 == 0}
 			var plan := DenseBuilder.site_plan(seed * 7919 + 13, lot)
 			var b := DenseBuilder._start(seed * 7919 + 13, lot)
+			b.grow_shop = true  # site_plan's default, a shop's second stage
 			b._shop(3.9, lot, false)
 			b._commit_house()
 			if str(b.site) != str(plan):

@@ -38,9 +38,6 @@ const TW_TANK := Color("#6b4f36")
 
 var _far := false  # only the massing, for far away (build_far)
 var _homes := false  # an apartment tower: balconies, no business sign
-## Storeys the building had before floors were added on top (BuildingTypes
-## added_from), or 0 when it was built as it stands.
-var _added := 0
 
 
 ## The era follows the street's (prewar streets get masonry towers; a tall
@@ -607,9 +604,13 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 				c.y = y
 				_glass(c, face[1], face[2] - 0.6, 2.0, rng.randf_range(0.0, 0.5))
 				var r: Vector3 = face[1] * (face[2] - 0.6) * 0.5
-				var o: Vector3 = face[1].cross(Vector3.UP) * 0.02 + Vector3(0, -1.65, 0)
-				_quad("paint", c + o - r - Vector3(0, 0.55, 0), c + o + r - Vector3(0, 0.55, 0), c + o + r + Vector3(0, 0.55, 0),
-					c + o - r + Vector3(0, 0.55, 0), spandrel, [], face[1].cross(Vector3.UP))
+				# The spandrel fills the wall from this window down to the one
+				# below, so between the piers the window bays read as
+				# unbroken dark strips (the deco skyscraper's verticality:
+				# Chicago's Board of Trade, Indianapolis's Indiana Bell).
+				var o: Vector3 = face[1].cross(Vector3.UP) * 0.02 + Vector3(0, -1.85, 0)
+				_quad("paint", c + o - r - Vector3(0, 0.85, 0), c + o + r - Vector3(0, 0.85, 0), c + o + r + Vector3(0, 0.85, 0),
+					c + o - r + Vector3(0, 0.85, 0), spandrel, [], face[1].cross(Vector3.UP))
 		# Piers run unbroken to the top of each tier and stand above it.
 		for face in _tw_faces(tw, td, cz):
 			var n := maxi(3, roundi(face[2] / 2.4))
@@ -619,7 +620,9 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 				var c: Vector3 = face[0] + face[1] * (-face[2] * 0.5 + i * len_b) + out * 0.15
 				var ph := (y1 - maxf(y0, ground_h)) + (1.2 if i % 2 == 0 else 0.6)
 				c.y = maxf(y0, ground_h) + ph * 0.5
-				_box("brick", Vector3(0.6, ph, 0.6), c, stone.lightened(0.05), _tw_yaw(face[1]))
+				# Major piers at the bay lines, slimmer minor ones between.
+				var pw := 0.85 if i % 2 == 0 else 0.4
+				_box("brick", Vector3(pw, ph, 0.6 if i % 2 == 0 else 0.45), c, stone.lightened(0.05), _tw_yaw(face[1]))
 		_box("paint", Vector3(tw + 0.2, 0.6, td + 0.2), Vector3(0, y1 + 0.3, cz), stone.darkened(0.08))  # coping
 		_tw_roof(tw, td, cz, y1)  # each setback's roof (the far version steps with them)
 		y0 = y1
@@ -714,6 +717,8 @@ func _tw_glass(to_curb: float, width: float, storeys: int) -> void:
 	_box("paint", Vector3(w - 6.0, ground_h, d - 6.0), Vector3(0, ground_h * 0.5, cz), Color("#2a2c2e"))
 	for face in _tw_faces(w - 6.0, d - 6.0, cz):
 		_glass(face[0] + Vector3(0, ground_h * 0.5, 0), face[1], face[2] - 0.6, ground_h - 0.6, 0.0)
+	if fine_parts:
+		_tw_glass_lobby(w, d, cz, ground_h)
 	var cols := maxi(3, roundi(w / 9.0))
 	for i in cols + 1:
 		for zz in [zf + 0.5, zf + d - 0.5]:
@@ -829,6 +834,57 @@ func _tw_glass_box(w: float, d: float, cz: float, ground_h: float, floor_h: floa
 
 ## Desktop: a mechanical floor's louvre blades, horizontal fins about
 ## 45 cm apart round a w by d band from `y`, `h` tall.
+## Desktop: a glass tower's lobby as you walk up to it (Mies's IBM
+## Building in Chicago, Indianapolis's Chase Tower and One America lobbies):
+## the glass wall hung on slim steel mullions with a head rail, a pair of
+## stainless revolving doors in the middle of the street face with a swing
+## door between, downlights in the soffit under the overhang, and a steel
+## service door at the back. Draws no random numbers.
+func _tw_glass_lobby(w: float, d: float, cz: float, ground_h: float) -> void:
+	var lw := w - 6.0
+	var ld := d - 6.0
+	var steel := Color("#3a3d40")
+	var stainless := Color("#b8bcbf")
+	for face in _tw_faces(lw, ld, cz):
+		var along: Vector3 = face[1]
+		var out := along.cross(Vector3.UP)
+		var len: float = face[2]
+		var n := maxi(2, roundi(len / 1.6))
+		for i in range(1, n):
+			var c: Vector3 = face[0] + along * (-len * 0.5 + i * len / n) + out * 0.04
+			_box("metal", Vector3(0.07, ground_h - 0.3, 0.1), c + Vector3(0, (ground_h - 0.3) * 0.5, 0), steel, _tw_yaw(along))
+		_box("metal", Vector3(len - 0.6, 0.12, 0.1), face[0] + out * 0.04 + Vector3(0, 3.0, 0), steel, _tw_yaw(along))
+	var fz := cz - ld * 0.5 - 0.03
+	for sx in [-2.6, 2.6]:
+		var dc := Vector3(sx, 0, fz)
+		_cylinder("metal", dc + Vector3(0, 2.4, 0), 1.3, 0.35, stainless)
+		_cylinder("metal", dc, 1.3, 0.05, stainless)
+		_box("metal", Vector3(0.08, 2.4, 0.08), dc + Vector3(0, 1.2, 0), stainless)
+		for k in 7:  # the drum's posts round its curved glass
+			var a := TAU * (k + 0.5) / 7.0
+			_box("metal", Vector3(0.06, 2.4, 0.06), dc + Vector3(cos(a) * 1.27, 1.2, sin(a) * 1.27), stainless)
+		for k in 4:
+			var a := TAU * k / 4.0 + 0.3
+			_box("metal", Vector3(1.1, 2.3, 0.05), dc + Vector3(cos(a) * 0.55, 1.2, sin(a) * 0.55), Color("#9fb3bd"),
+				Basis(Vector3.UP, -a))
+	_box("metal", Vector3(1.0, 2.4, 0.06), Vector3(0, 1.2, fz - 0.05), stainless)  # the swing door's frame
+	_box("metal", Vector3(0.9, 0.06, 0.08), Vector3(0, 1.0, fz - 0.1), stainless)  # its push bar
+	# Downlights in the soffit round the overhang.
+	var lamp := Color("#f4f0e2")
+	var y := ground_h - 0.03
+	var nx := maxi(2, roundi(w / 3.0))
+	for i in nx:
+		var x := -w * 0.5 + (i + 0.5) * w / nx
+		for z in [cz - d * 0.5 + 1.5, cz + d * 0.5 - 1.5]:
+			_box("paint", Vector3(0.35, 0.03, 0.35), Vector3(x, y, z), lamp)
+	var nz := maxi(1, roundi((ld - 0.0) / 3.0))
+	for i in nz:
+		var z := cz - ld * 0.5 + (i + 0.5) * ld / nz
+		for x in [-w * 0.5 + 1.5, w * 0.5 - 1.5]:
+			_box("paint", Vector3(0.35, 0.03, 0.35), Vector3(x, y, z), lamp)
+	_box("metal", Vector3(1.0, 2.2, 0.08), Vector3(lw * 0.3, 1.1, cz + ld * 0.5 + 0.06), Color("#6d7174"))  # service door
+
+
 func _tw_louvres(w: float, d: float, cz: float, y: float, h: float, x := 0.0) -> void:
 	if not fine_parts:
 		return
@@ -1272,7 +1328,7 @@ func _tw_pomo(to_curb: float, width: float, storeys: int) -> void:
 		_glass(Vector3(x, 2.6, zf - 0.03), Vector3(-1, 0, 0), w / bays - 1.8, 4.2, rng.randf_range(0.0, 0.2))
 		for f in range(1, base_f):
 			_glass(Vector3(x, ground_h + floor_h * (f - 1) + 1.8, zf - 0.03), Vector3(-1, 0, 0), w / bays - 2.2, 2.2, rng.randf_range(0.1, 0.5))
-	_tw_arch(Vector3(0, 0, zf), 7.0, minf(y_base - 1.0, 10.0), granite.lightened(0.08), mirror)
+	_tw_arch(Vector3(0, 0, zf), 7.0, minf(y_base - 1.0, 10.0), granite.lightened(0.08), mirror, true)
 	_sign(Vector3(0, minf(y_base - 1.0, 10.0) + 0.6, zf - 0.7), 6.0, 0.7)
 	# The shaft, tier by tier: granite with a band of glass on every floor,
 	# on the notches too, and the glass slot up the street faces.
@@ -1334,7 +1390,7 @@ func _tw_notch_faces(w: float, d: float, cz: float, n: float) -> Array:
 
 
 ## A round-arched entry: a granite surround, glass doors and a fanlight.
-func _tw_arch(at: Vector3, w: float, h: float, stone: Color, glass_col: Color) -> void:
+func _tw_arch(at: Vector3, w: float, h: float, stone: Color, glass_col: Color, door := false) -> void:
 	var r := w * 0.5 - 0.8
 	var spring := h - r - 0.6
 	_box("brick", Vector3(w, h, 0.7), at + Vector3(0, h * 0.5, -0.35), stone)
@@ -1347,6 +1403,39 @@ func _tw_arch(at: Vector3, w: float, h: float, stone: Color, glass_col: Color) -
 		_tri("paint", c, c + Vector3(cos(a1) * r, sin(a1) * r, 0), c + Vector3(cos(a0) * r, sin(a0) * r, 0),
 			glass_col.darkened(0.2), [], Vector3(0, 0, -1))
 	_box("paint", Vector3(r * 2.0 + 0.2, 0.15, 0.1), c + Vector3(0, 0, -0.03), stone.darkened(0.3))  # transom bar
+	if not fine_parts:
+		return
+	# Desktop: the fanlight's bronze radial bars, a ring of voussoirs with
+	# a keystone, the glass wall's mullions, and on a tower's entry a
+	# revolving door in a bronze drum (the 1980s-90s postmodern lobby:
+	# Indianapolis's Bank One Tower, Chicago's 190 South LaSalle).
+	var bronze := Color("#5a4632")
+	for i in range(1, 6):
+		var a := PI * i / 6.0
+		var mid := c + Vector3(cos(a) * r * 0.5, sin(a) * r * 0.5, -0.04)
+		_box("metal", Vector3(r, 0.08, 0.06), mid, bronze, Basis(Vector3(0, 0, 1), a))
+	for i in segs:
+		var a := PI * (i + 0.5) / segs
+		var k := i == segs / 2 or i == segs / 2 - 1
+		_box("brick", Vector3(0.75 if k else 0.6, r * PI / segs + 0.05, 0.12),
+			c + Vector3(cos(a) * (r + 0.35), sin(a) * (r + 0.35), -0.05), stone.lightened(0.12 if k else 0.05),
+			Basis(Vector3(0, 0, 1), a))
+	var n := maxi(2, roundi(r * 2.0 / 1.2))
+	for i in range(1, n):
+		_box("metal", Vector3(0.07, spring, 0.06), at + Vector3(-r + i * r * 2.0 / n, spring * 0.5, -0.76), bronze)
+	_box("metal", Vector3(r * 2.0, 0.08, 0.06), at + Vector3(0, minf(2.4, spring - 0.3), -0.76), bronze)
+	if door:
+		var dc := at + Vector3(0, 0, -0.73)
+		_cylinder("metal", dc + Vector3(0, 2.3, 0), 1.25, 0.4, bronze)
+		_cylinder("metal", dc, 1.25, 0.06, bronze)
+		_box("metal", Vector3(0.08, 2.3, 0.08), dc + Vector3(0, 1.15, 0), bronze)
+		for k in 5:  # the drum's posts round its outer half
+			var a := PI + PI * (k + 0.5) / 5.0
+			_box("metal", Vector3(0.07, 2.3, 0.07), dc + Vector3(cos(a) * 1.22, 1.15, sin(a) * 1.22), bronze)
+		for k in 3:
+			var a := TAU * k / 3.0 + 0.4
+			_box("metal", Vector3(1.0, 2.2, 0.05), dc + Vector3(cos(a) * 0.5, 1.15, sin(a) * 0.5), Color("#9fb3bd"),
+				Basis(Vector3.UP, -a))
 
 
 ## The top of a postmodern tower over a w by d roof at height y:
@@ -1471,8 +1560,10 @@ func _tw_podium(to_curb: float, width: float, storeys: int) -> void:
 	_box("paint", Vector3(6.0, 3.8, 0.1), Vector3(ramp_x, 1.9, zf - 0.05), Color("#1c1d1e"))  # the garage door
 	for lv in range(1, levels):
 		var y := ground_h + park_h * (lv - 1)
+		# Open decks on every side (a garage needs open walls on at least
+		# two to vent without fans; most podium garages are open all round).
 		for face in [[Vector3(0, 0, zf - 0.03), Vector3(-1, 0, 0), pw], [Vector3(-pw * 0.5 - 0.03, 0, pcz), Vector3(0, 0, 1), pd],
-				[Vector3(pw * 0.5 + 0.03, 0, pcz), Vector3(0, 0, -1), pd]]:
+				[Vector3(pw * 0.5 + 0.03, 0, pcz), Vector3(0, 0, -1), pd], [Vector3(0, 0, zf + pd + 0.03), Vector3(1, 0, 0), pw]]:
 			var out: Vector3 = face[1].cross(Vector3.UP)
 			var c: Vector3 = face[0] + Vector3(0, y + park_h * 0.55, 0)
 			var r: Vector3 = face[1] * (face[2] - 1.2) * 0.5

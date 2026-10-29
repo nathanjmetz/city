@@ -52,6 +52,12 @@ static func glsl() -> String:
 	return code + HELPERS
 
 
+## "#define DESKTOP_DETAIL" where the desktop's extra ground detail is
+## drawn (the crop table's soil look), before any code that asks.
+static func defines() -> String:
+	return "#define DESKTOP_DETAIL\n" if drawable() else ""
+
+
 ## One texture's two helpers. The second, larger, turned copy multiplied in
 ## keeps the tile from showing its repeat; the last mip is the average.
 const PER := """

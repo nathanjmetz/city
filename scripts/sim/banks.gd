@@ -680,12 +680,18 @@ func _foreclose(sim: CitySim, who: String, l: Dictionary) -> String:
 	var lost := false
 	match parts[0]:
 		"farm":
+			# The pledge is the whole field (forty) the loan bought or rented,
+			# not the one cell the farm first planted there: the farm may
+			# have replanted its rows since.
 			var f: Dictionary = sim.farms.farms[int(parts[1])]
 			for c in l.cells:
-				var cell := Vector2i(int(c[0]), int(c[1]))
-				if cell in f.cells:
-					f.cells.erase(cell)
-					lost = true
+				var k := Farms.field_of(Vector2i(int(c[0]), int(c[1])))
+				for cell in f.cells.duplicate():
+					if Farms.field_of(cell) == k:
+						f.cells.erase(cell)
+						lost = true
+				f.get("own", []).erase(k)
+				f.get("rent", []).erase(k)
 			return "farm" if lost else ""
 		"site":
 			var s: Dictionary = sim.industry.sites[int(parts[1])]

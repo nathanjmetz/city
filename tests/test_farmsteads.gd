@@ -230,7 +230,9 @@ func _pinned(places: Array, plans: Array, kinds: Dictionary) -> void:
 	for p in plans:
 		parts += p.parts.size()
 		trees += p.trees.size()
-	_check(kinds == {"home": 3406, "hog": 129, "grain": 626, "retired": 926, "dairy": 11} and parts == 12257 and trees == 121780,  # 696 fewer since windbreaks keep out of ponds
+	# 696 fewer trees since windbreaks keep out of ponds; then the places
+	# moved back off the county railroads (FarmsteadPlan.off_rail) grew anew.
+	_check(kinds == {"home": 3406, "hog": 130, "grain": 623, "retired": 929, "dairy": 10} and parts == 12282 and trees == 122052,
 		"and so do all %d together (%s, %d buildings, %d trees)" % [places.size(), kinds, parts, trees])
 	_check(CropCalendar.hash32(0, 0, 0) == 946720379 and CropCalendar.hash32(123, -456, 789) == 1989847715,
 		"the hash behind them is the crops' own")
@@ -583,7 +585,7 @@ func _places() -> Array:
 		return out
 	for i in data.decode_u32(4):
 		var at := 8 + i * 7
-		out.append([Vector2(data.decode_s16(at), data.decode_s16(at + 2)), data.decode_u8(at + 4) == 1,
+		out.append([FarmsteadPlan.off_rail(Vector2(data.decode_s16(at), data.decode_s16(at + 2))), data.decode_u8(at + 4) == 1,
 			data.decode_u8(at + 5) / 256.0 * TAU, data.decode_u8(at + 6)])
 	return out
 

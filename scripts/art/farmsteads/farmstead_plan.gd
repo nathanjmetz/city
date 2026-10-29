@@ -560,11 +560,40 @@ static func load_places() -> void:
 	if data.size() >= 8 and data.slice(0, 4).get_string_from_ascii() == "FST1":
 		for i in data.decode_u32(4):
 			var at := 8 + i * 7
-			var q := Vector2(data.decode_s16(at), data.decode_s16(at + 2))
+			var q := off_rail(Vector2(data.decode_s16(at), data.decode_s16(at + 2)))
 			var b := Vector2i(floori(q.x / 256.0), floori(q.y / 256.0))
 			if not _bins.has(b):
 				_bins[b] = []
 			_bins[b].append([q, data.decode_u8(at + 4) == 1, data.decode_u8(at + 5) / 256.0 * TAU, data.decode_u8(at + 6)])
+
+
+## A farmstead's place moved back from a county railroad (CountyRail, where
+## it is drawn) to RAIL_BACK metres off the track: the land cover's 10 m
+## pixels put a few houses on the right of way itself, and real farmhouses
+## stand back past its 100 ft and the fence.
+const RAIL_BACK := 45.0
+static func off_rail(q: Vector2) -> Vector2:
+	if not CountyRail.drawn():
+		return q
+	# Again, where moving off one track brings it near another (a junction).
+	for k in 4:
+		var n := CountyRail.near(q.x, q.y, RAIL_BACK - 0.5)
+		if n.is_empty():
+			return q
+		var away: Vector2 = q - n.on
+		if away.length() < 0.5:
+			var r: Dictionary = CountyRail.all()[n.route]
+			var t: Vector2 = (r.pts[n.seg + 1] - r.pts[n.seg]).normalized()
+			away = Vector2(-t.y, t.x)
+		q = n.on + away.normalized() * RAIL_BACK
+	# Hemmed in between tracks: the nearest clear spot round about.
+	if not CountyRail.near(q.x, q.y, RAIL_BACK - 0.5).is_empty():
+		for ring in range(1, 6):
+			for k in 8:
+				var c := q + Vector2.from_angle(k * TAU / 8.0) * RAIL_BACK * ring
+				if CountyRail.near(c.x, c.y, RAIL_BACK - 0.5).is_empty():
+					return c
+	return q
 
 
 ## The places whose grounds can reach into a 256 m square.

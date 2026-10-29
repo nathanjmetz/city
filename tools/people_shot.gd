@@ -4,6 +4,7 @@ extends SceneTree
 var _frames := 0
 var _mi: MultiMeshInstance3D
 var _wv: Node
+var _dogs: MultiMeshInstance3D
 
 func _init() -> void:
 	var env := WorldEnvironment.new()
@@ -38,9 +39,31 @@ func _init() -> void:
 		var face := Vector3(0.6 * (i - 2) * 0.3, 0, 1).normalized()
 		mm.set_instance_transform(i, Transform3D(Basis.looking_at(face, Vector3.UP).scaled(b), Vector3((i - 2) * 0.9, 0, 0)))
 		mm.set_instance_color(i, Color.WHITE)
-		var c: Color = WalkerView.SHIRTS[i * 3 % WalkerView.SHIRTS.size()]
-		c.a = [0.0, 0.25, 0.5, 0.75, 0.1][i]
+		# Dressed for MONTH (1-12), as WalkerView dresses the town's walkers.
+		var month := int(OS.get_environment("MONTH")) if OS.get_environment("MONTH") != "" else 7
+		var worn := WalkerView.dress(i * 7 + 3 + int(OS.get_environment("SEED")), month, 30 + i * 9)
+		var c: Color = worn[0]
+		c.a = [0.0, 0.25, 0.5, 0.75, 0.1][i] + float(worn[1])
 		mm.set_instance_custom_data(i, c)
+	if OS.get_environment("DOG") != "":
+		# A dog by each person (WalkerView._dog_mesh), mid-trot.
+		var dm := MultiMesh.new()
+		dm.transform_format = MultiMesh.TRANSFORM_3D
+		dm.use_colors = true
+		dm.use_custom_data = true
+		dm.mesh = WalkerView._dog_mesh()
+		dm.instance_count = 5
+		for i in 5:
+			var dog := WalkerView.dog_of(i * 13 + int(OS.get_environment("SEED")))
+			var coat: Color = dog[0]
+			coat.a = [0.0, 0.25, 0.5, 0.75, 0.1][i]
+			dm.set_instance_transform(i, Transform3D(Basis(Vector3.UP, deg_to_rad(-90.0 + i * 25.0)).scaled(Vector3.ONE * dog[1]),
+				Vector3((i - 2) * 0.9 + 0.35, 0, 0.6)))
+			dm.set_instance_color(i, Color.WHITE)
+			dm.set_instance_custom_data(i, coat)
+		_dogs = MultiMeshInstance3D.new()
+		_dogs.multimesh = dm
+		root.add_child(_dogs)
 	_mi = MultiMeshInstance3D.new()
 	_mi.multimesh = mm
 	_wv = wv
@@ -55,6 +78,8 @@ func _process(_d: float) -> bool:
 	_frames += 1
 	if _frames == 2:
 		_mi.material_override = (_wv.get_child(0) as MultiMeshInstance3D).material_override
+		if _dogs:
+			_dogs.material_override = _mi.material_override
 	if _frames == 20:
 		var a := OS.get_cmdline_user_args()
 		root.get_viewport().get_texture().get_image().save_png(a[0] if a.size() > 0 else "people.png")

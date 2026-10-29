@@ -220,10 +220,12 @@ func _shop_for(sim: CitySim, p: Dictionary, rng: RandomNumberGenerator) -> Strin
 	var at: Vector3 = home.pos
 	var best := -1
 	var best_score := INF
+	var hour := int(sim.sky_hour())
 	for i in _shops_pos.size():
 		var d: float = at.distance_to(_shops_pos[i])
 		var score := d * (0.5 + rng.randf())
-		if score < best_score:
+		# After six, only the shops open late (and supper places).
+		if score < best_score and (hour < Balance.SHOP_CLOSE or sim.families.open_at("lot:" + shops[i], hour)):
 			best_score = score
 			best = i
 	return "" if best == -1 else "lot:" + shops[best]
@@ -337,6 +339,8 @@ func _move_out(id: int, traffic: TrafficSim) -> void:
 		_staff[p.job] = _staff.get(p.job, 1) - 1
 	if p.car != -1 and traffic != null:
 		traffic.retire_vehicle(p.car)
+	if int(p.get("cart", -1)) != -1 and traffic != null:
+		traffic.retire_vehicle(int(p.cart))
 	if traffic != null:
 		traffic.forget_person(id)
 	people.erase(id)
