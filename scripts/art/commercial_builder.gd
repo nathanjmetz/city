@@ -166,7 +166,7 @@ func _retail(to_curb: float) -> void:
 	var lot0 := -half + 0.6
 	var lot1 := half - 0.6
 	_flat_rect("asphalt", lot0, lot1, 0.0, zf - 2.2, 0.06)
-	_flat_rect("asphalt", -3.6, 3.6, -to_curb, 0.0, 0.1)
+	_curb_cut(0.0, 3.6, -to_curb, 0.0)
 	var stall := 2.75  # 9 ft
 	var x := lot0
 	while x <= lot1 + 0.01:
@@ -859,21 +859,42 @@ func _community_center(to_curb: float) -> void:
 	var gw := 13.0  # garden center along its outer end
 	var hd := cr.randf_range(8.4, 9.4)
 	var sx0 := xd0 + gw
+	# The 2000s supercenter front (own random numbers): tan EIFS over a
+	# stone wainscot, a tower over each of its two entries (grocery at one,
+	# general merchandise at the other) and the name on the wall between.
+	var sp := RandomNumberGenerator.new()
+	sp.seed = hash([rng.seed, "supercenter"])
+	var sup := sp.randf() < (0.7 if era == "recent" else 0.25)
+	if sup:
+		wall = Color(["#d6c4a0", "#cdb894", "#e0d2b4"][sp.randi() % 3])
 	_cc_box("paint", sx0, xd1, zf, zf + dd, hd, hd + 0.9, wall)
 	_box("paint", Vector3(xd1 - sx0 + 0.1, 1.5, 0.3), Vector3((sx0 + xd1) * 0.5, hd - 0.4, zf - 0.12), wall.lightened(0.1))
 	_box("paint", Vector3(xd1 - sx0 + 0.12, 0.45, 0.34), Vector3((sx0 + xd1) * 0.5, hd - 1.35, zf - 0.13), band)
 	# Split-face block wainscot a shade darker, as the chains built them.
-	_box("paint", Vector3(xd1 - sx0 + 0.08, 1.3, 0.2), Vector3((sx0 + xd1) * 0.5, 0.65, zf - 0.08), wall.darkened(0.22))
+	_box("paint", Vector3(xd1 - sx0 + 0.08, 1.3, 0.2), Vector3((sx0 + xd1) * 0.5, 0.65, zf - 0.08),
+		Color("#8a7d6b") if sup else wall.darkened(0.22))
 	var ex := (sx0 + xd1) * 0.5
 	var ew := minf((xd1 - sx0) * 0.5, 22.0)
 	var eh := hd + 2.4
-	_box("paint", Vector3(ew, eh, 1.4), Vector3(ex, eh * 0.5, zf - 0.7), wall.lightened(0.06))
-	_box("paint", Vector3(ew + 0.4, 0.4, 1.7), Vector3(ex, eh + 0.2, zf - 0.7), band)
 	var spec := sign_spec
-	_sign(Vector3(ex, eh - 2.3, zf - 1.42), ew * 0.75, 1.7)
+	var vxs := [ex - ew * 0.3, ex + ew * 0.3]
+	if sup:
+		vxs = [ex - ew * 0.55, ex + ew * 0.55]
+		for vx in vxs:
+			var th := hd + 3.6
+			_box("paint", Vector3(10.0, th, 1.6), Vector3(vx, th * 0.5, zf - 0.8), wall.lightened(0.08))
+			_box("paint", Vector3(10.6, 0.5, 2.0), Vector3(vx, th + 0.1, zf - 0.8), band)  # cornice
+			_box("paint", Vector3(10.2, 0.9, 1.7), Vector3(vx, 0.45, zf - 0.8), Color("#8a7d6b"))  # stone base
+			sign_spec = {}
+			_sign(Vector3(vx, th - 2.4, zf - 1.62), 6.5, 1.0)  # "Grocery" / "Home & Pharmacy"
+		sign_spec = spec
+		_sign(Vector3(ex, hd - 2.6, zf - 0.33), minf(ew * 0.7, 16.0), 1.8)
+	else:
+		_box("paint", Vector3(ew, eh, 1.4), Vector3(ex, eh * 0.5, zf - 0.7), wall.lightened(0.06))
+		_box("paint", Vector3(ew + 0.4, 0.4, 1.7), Vector3(ex, eh + 0.2, zf - 0.7), band)
+		_sign(Vector3(ex, eh - 2.3, zf - 1.42), ew * 0.75, 1.7)
 	sign_spec = {}
-	for s in [-1.0, 1.0]:
-		var vx: float = ex + s * ew * 0.3
+	for vx: float in vxs:
 		_box("paint", Vector3(5.0, 3.4, 3.0), Vector3(vx, 1.7, zf - 2.9), wall.lightened(0.03))  # vestibule
 		_box("paint", Vector3(5.4, 0.3, 3.4), Vector3(vx, 3.5, zf - 2.9), band)
 		_glass(Vector3(vx, 1.35, zf - 4.42), Vector3(-1, 0, 0), 4.2, 2.5, 0.0)
@@ -924,7 +945,7 @@ func _community_center(to_curb: float) -> void:
 		px += bay
 	_grocery_anchor(xg0, w * 0.5, zf, zf + ds * 0.5, ds, wall, mull)
 	sign_spec = spec
-	site.door = Vector2(ex, zf - 4.5)
+	site.door = Vector2(vxs[0], zf - 4.5)
 	# The truck court: the discount store's docks and trailers at the back.
 	var dz := zf + dd
 	if depth - dz > 5.0:
@@ -976,7 +997,7 @@ func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumb
 	_flat_rect("drive", -w * 0.5 - 0.5, w * 0.5 + 0.5, zw - 2.0, zw, 0.08)
 	_flat_rect("asphalt", lot0, lot1, 0.0, zw - 2.0, 0.06)
 	var cut_x := clampf((-w * 0.5 + xg0) * 0.5, lot0 + 6.0, lot1 - 26.0)
-	_flat_rect("asphalt", cut_x - 4.2, cut_x + 4.2, -to_curb, 0.0, 0.1)
+	_curb_cut(cut_x, 4.2, -to_curb, 0.0)
 	site.cut_x = cut_x
 	site.main_street = false
 	# The pad: a small brick box by the road with its drive-through lane.
@@ -1284,7 +1305,7 @@ func _shop_gas_station(to_curb: float) -> void:
 	_flat_rect("drive", -cw * 0.5 - 1.0, cw * 0.5 + 1.0, ccz - cd * 0.5 - 1.0, ccz + cd * 0.5 + 1.0, 0.09)
 	_flat_rect("asphalt", -half + 0.6, half - 0.6, 0.0, zf, 0.06)
 	for x in [-half * 0.55, half * 0.55]:
-		_flat_rect("asphalt", x - 3.6, x + 3.6, -to_curb, 0.0, 0.1)
+		_curb_cut(x, 3.6, -to_curb, 0.0)
 	_steel_door(Vector3(sw * 0.3, 1.35, zf + sd + 0.03), 1.0)
 	# By the front door: the ice chest and the propane exchange cage.
 	_box("paint", Vector3(1.8, 1.7, 0.8), Vector3(sw * 0.5 - 1.4, 1.15, zf - 0.6), Color("#eef2f4"))
@@ -1529,7 +1550,7 @@ func _shop_parking(to_curb: float, w: float, zw: float, cut_x: float) -> void:
 	var lot0 := -half + 0.6
 	var lot1 := half - 0.6
 	_flat_rect("asphalt", lot0, lot1, 0.0, zw - 2.0, 0.06)
-	_flat_rect("asphalt", cut_x - 3.6, cut_x + 3.6, -to_curb, 0.0, 0.1)
+	_curb_cut(cut_x, 3.6, -to_curb, 0.0)
 	site.cut_x = cut_x
 	site.main_street = false
 	if zw - 2.0 > 6.0:
@@ -1605,7 +1626,7 @@ func _factory(to_curb: float) -> void:
 	_flat_rect("asphalt", -half + 0.6, -w * 0.5 + ow + 0.5, 0.0, zf - od - 0.5, 0.06)
 	if depth > zf + d + 1.0:
 		_flat_rect("gravel", -half + 0.4, half - 0.4, zf + d, depth - 0.5, 0.04, GRAVEL)
-	_flat_rect("asphalt", w * 0.12 - 3.6, w * 0.12 + 3.6, -to_curb, zf - 6.0, 0.1)
+	_curb_cut(w * 0.12, 3.6, -to_curb, zf - 6.0)
 	var x := -half + 0.6
 	while x <= -w * 0.5 + ow + 0.51:
 		_flat_rect("line", x - 0.06, x + 0.06, 0.0, 5.5, 0.07, LINE)

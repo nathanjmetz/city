@@ -406,7 +406,7 @@ static func _cs_market(b: CommercialBuilder, r: RandomNumberGenerator, to_curb: 
 	var lot1 := b.half - 0.6
 	b._flat_rect("asphalt", lot0, lot1, 0.0, zf - 2.2, 0.06)
 	var cut := -px * 0.4
-	b._flat_rect("asphalt", cut - 3.6, cut + 3.6, -to_curb, 0.0, 0.1)
+	b._curb_cut(cut, 3.6, -to_curb, 0.0)
 	if zf - 2.2 >= 11.0:
 		var x := lot0
 		while x <= lot1 + 0.01:

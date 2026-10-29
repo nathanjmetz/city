@@ -115,20 +115,6 @@ func _walk_out(lay: Dictionary, front: float) -> void:
 		z += 1.2
 
 
-## A flat triangle of driveway concrete.
-func _flat_tri(pts: Array, y: float) -> void:
-	var p := pts.map(func(q): return Vector3(q.x, y, q.z))
-	if (p[1] - p[0]).cross(p[2] - p[0]).y > 0.0:
-		p = [p[0], p[2], p[1]]
-	var col := MULCH
-	col.a = 0.0  # concrete (see HouseBuilder._flat_rect)
-	for q in p:
-		_flat.set_normal(Vector3.UP)
-		_flat.set_color(col)
-		_flat.set_uv(Vector2(q.x, q.z) * 0.25)
-		_flat.add_vertex(q)
-
-
 ## White stall lines, blue accessible stalls with hatched aisles, and
 ## arrows down one-way aisles.
 func _stripes(lay: Dictionary, y: float) -> void:

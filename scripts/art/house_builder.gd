@@ -2847,6 +2847,40 @@ func _flat_rect(kind: String, x0: float, x1: float, z0: float, z1: float, y: flo
 		_flat.add_vertex(pts[i])
 
 
+## A flat triangle of driveway concrete.
+func _flat_tri(pts: Array, y: float) -> void:
+	var p := pts.map(func(q): return Vector3(q.x, y, q.z))
+	if (p[1] - p[0]).cross(p[2] - p[0]).y > 0.0:
+		p = [p[0], p[2], p[1]]
+	if _dry:
+		return
+	var col := MULCH
+	col.a = 0.0  # concrete (see HouseBuilder._flat_rect)
+	for q in p:
+		_flat.set_normal(Vector3.UP)
+		_flat.set_color(col)
+		_flat.set_uv(Vector2(q.x, q.z) * 0.25)
+		_flat.add_vertex(q)
+
+
+## A shop's or plant's driveway where it meets the street, as city and
+## INDOT standard drawings build a commercial entrance: the lot's asphalt
+## stops at the back of the sidewalk, the public walk carries on across in
+## concrete, and a concrete apron crosses the parkway to the curb, flared
+## 5 ft each side so cars swing in. `x` is the drive's centre, `half` its
+## half width, `curb_z` where the curb is; asphalt runs on from the
+## sidewalk to `z1`.
+func _curb_cut(x: float, half: float, curb_z: float, z1: float, y := 0.1) -> void:
+	var walk1 := curb_z + RoadStyle.CURB_WIDTH + RoadStyle.PARKWAY_WIDTH + RoadStyle.SIDEWALK_WIDTH
+	var walk0 := walk1 - RoadStyle.SIDEWALK_WIDTH
+	if z1 > walk1:
+		_flat_rect("asphalt", x - half, x + half, walk1, z1, y)
+	_flat_rect("drive", x - half, x + half, curb_z, walk1, y)
+	for s in [-1.0, 1.0]:
+		_flat_tri([Vector3(x + s * half, 0, walk0), Vector3(x + s * half, 0, curb_z),
+			Vector3(x + s * (half + 1.5), 0, curb_z)], y)
+
+
 func _commit_house() -> ArrayMesh:
 	if owner_care < 0:
 		_weeds()
