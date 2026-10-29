@@ -33,6 +33,7 @@ fully in favour at twice that:
 | Duplex | 1.5k, fourplex 5k |
 | Row homes | 50k, three-storey 100k |
 | Shop with flats | two-storey any, three 5k, four 15k |
+| Commercial block | three storeys 5k, four 15k |
 | Offices | three storeys 10k, five 25k, eight 50k, 16 150k, 30 1M |
 | Shopping center | strip 5k, neighborhood center 10k |
 
@@ -67,7 +68,11 @@ type at the top of theirs:
 - Apartments: walk-up, three storeys, mid-rise (5).
 - Shop: corner store, then retail store. On a Main Street it gains flats
   upstairs and becomes a Main Street block.
-- Shop with flats: two, three and four storeys.
+- Shop with flats: two, three, then four storeys. On a busy Main Street its
+  owner can buy the lot next door along the street (an empty lot, a vacant
+  building or a one-storey shop, never a protected or charming one) and
+  build a Commercial block across both, three then four storeys
+  (`BuildingTypes.wider_stage`, `assemble`).
 - Offices: three storeys, five, then an office tower (8), as graduates allow.
 
 A building can move up once it has stood a season (`DEVELOP_AGE`), is full

@@ -219,6 +219,9 @@ const MARKET_MIN := {
 	"duplex": [1500, 5000],
 	"apartments": [10_000, 25_000, 100_000, 150_000, 400_000],
 	"mixed_use": [0, 5000, 15_000],
+	# Commercial blocks over two storefronts: county-seat downtowns
+	# (Wabash ~10,000, Huntington ~17,000; a town of 3,000 has a few).
+	"commercial_block": [5000, 15_000],
 	"office": [10_000, 25_000, 50_000, 150_000, 1_000_000],
 	"shopping_center": [5000, 10_000],
 	# A town of 1,500-2,000 (Upland, Fairmount) keeps a few 30-60 job shops;
@@ -463,6 +466,9 @@ const DOWNTOWN_TOWNS := [25_000, 50_000, 100_000]
 ## Where zoning allows at least this FAR, an owner may buy out a low
 ## neighbour (not just an empty or vacant lot) to assemble a tower site.
 const ASSEMBLE_FAR := 4.0
+## Chance a keen Main Street owner whose next stage needs a wider front
+## (a commercial block) sets out to buy the lot next door this time.
+const ASSEMBLE_MAIN_CHANCE := 0.35
 
 # --- Farms -------------------------------------------------------------------
 
@@ -2949,7 +2955,7 @@ const HERITAGE_FULL_YEARS := 25
 ## How much character each kind of building carries when it is old. Real
 ## county surveys (Indiana's Historic Sites and Structures Inventory) rate
 ## Main Street commercial blocks and old homes highest, plain offices lowest.
-const HERITAGE_TYPE_WEIGHT := {"house": 1.0, "duplex": 1.0, "row_home": 1.0, "mixed_use": 1.2, "shop": 0.8,
+const HERITAGE_TYPE_WEIGHT := {"house": 1.0, "duplex": 1.0, "row_home": 1.0, "mixed_use": 1.2, "commercial_block": 1.3, "shop": 0.8,
 	"apartments": 0.6, "office": 0.4, "factory": 0.7}
 ## Land value lift at full charm for an old building on its own, and for one
 ## inside a protected local historic district. Studies of US local districts
