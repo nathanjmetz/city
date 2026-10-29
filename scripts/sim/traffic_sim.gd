@@ -1490,7 +1490,13 @@ func _build_turns(n: int) -> void:
 				banned.append(Turn.LEFT)
 			if rule.get("no_right", false):
 				banned.append(Turn.RIGHT)
-		if not banned.is_empty() and kinds.any(func(k): return not k in banned):
+		var open_way := false
+		for j in outs.size():
+			# A turn into a car-free street doesn't count: cars can't take
+			# it (the turn-ban branch's second reader, 2026-10-26).
+			if not kinds[j] in banned and may_enter(ways[outs[j][1]].seg, false):
+				open_way = true
+		if not banned.is_empty() and open_way:
 			# No Left and No Right Turn signs: those turns go, unless they
 			# are the only ways on.
 			for j in range(outs.size() - 1, -1, -1):

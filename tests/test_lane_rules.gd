@@ -186,6 +186,13 @@ func _init() -> void:
 		"both signs at the foot of a T leave its turns open")
 	rt.apply({"type": "set_lanes", "node": rn, "seg": rt.traffic.ways[stem].seg, "no_right": true, "lanes": []})
 	_check(_turns_by_kind(rt.traffic, stem).keys() == [TrafficSim.Turn.LEFT], "No Right alone there leaves the left")
+	# A sign never leaves only a car-free street: with the way on east
+	# closed to cars, the banned right from the west opens again.
+	_check(not rt.traffic._turns[rwi].has(south[TrafficSim.Turn.RIGHT]), "(the west's right is still banned)")
+	rt.traffic.close_segment(_seg_toward(rt, rn, Vector3(1, 0, 0)), true)
+	rt.traffic._rebuild()
+	_check(rt.traffic._turns[rwi].has(south[TrafficSim.Turn.RIGHT]),
+		"with only a car-free street left, the banned right stays open")
 
 	# No turn signs on a roundabout's ring (reviewer 2026-10-29): leaving
 	# for a side street counts as a right off the ring, and the ring only
