@@ -115,6 +115,27 @@ func _init() -> void:
 		_check(dev.buildings.has(site) and BuildingTypes.type_of(dev.buildings[site]) == "apartments", "on a yes the apartments go up")
 		_check(not dev.lots.has(gone), "on one assembled lot (%.0f m wide)" % dev.lots[site].width)
 		_check(not dev.construction.is_done("lot:" + site, dev.tick_count), "with a crew building it")
+
+	# Office parks: at a small city's edge, once the market is big enough.
+	var op := _town(5, RoadStyle.Type.AVENUE, 300)
+	_care_month(op)
+	op.stats.population = 6000
+	op.demand[ZoneMap.Zone.COMMERCIAL] = 1.0
+	op.market.regional = 0
+	_check(op.redevelopment._plan_officepark(op, Redevelopment._faces(op)).is_empty(), "a lone town of 6,000 gets no office park ask")
+	op.market.regional = 8000
+	plan = op.redevelopment._plan_officepark(op, Redevelopment._faces(op))
+	print("  office park ask: ", plan.get("title", "(none)"), " / ", plan.get("yes", ""))
+	if not plan.is_empty():
+		_check(op.redevelopment.build(op, {"kind": "officepark", "keys": plan.keys, "type": plan.type,
+			"level": plan.level, "was": plan.was}), "a yes rezones the run for an office park")
+		var site: String = plan.keys[0]
+		_check(BuildingTypes.type_of(op.buildings[site]) == "office_park" and int(op.buildings[site].level) == 0,
+			"its first building goes up (%s)" % BuildingTypes.name_of(op.buildings[site]))
+		var lay := SiteLayout.for_building(ZoneMap.Zone.COMMERCIAL, int(op.buildings[site].seed), op.lots[site], 2, "office_park", 0)
+		_check(lay.spots.size() >= 20 and not lay.main_street, "with its own parking lot (%d stalls)" % lay.spots.size())
+	else:
+		_check(false, "a developer finds land on the avenue for an office park")
 	print("ALL TESTS PASSED" if not _failed else "SOME TESTS FAILED")
 	quit(1 if _failed else 0)
 

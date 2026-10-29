@@ -44,6 +44,8 @@ static func for_building(zone: int, bseed: int, lot := {}, storeys := 0, type :=
 		ZoneMap.Zone.COMMERCIAL:
 			if type == "office" and storeys < 8:
 				return office(art_seed, fit, storeys)
+			if type == "office_park":
+				return office_park(art_seed, fit, level)
 			if type in ["mixed_use", "commercial_block", "office"]:
 				return main_street()  # built to the sidewalk; its lot (if any) is out back
 			return shop(art_seed, fit, type == "shopping_center", level if type == "shop" else 1)
@@ -135,6 +137,16 @@ static func office(art_seed: int, fit: Dictionary, storeys: int) -> Dictionary:
 		var out := main_street()
 		out.door = plan.door
 		return out
+	var spots := []
+	for st in plan.stalls:
+		spots.append({"pos": st[0], "face": st[1], "kind": "stall"})
+	return {"spots": spots, "door": plan.door, "cut_x": plan.cut_x, "aisle_z": plan.aisle_z,
+		"walk_z": plan.door.y - 1.1, "main_street": false}
+
+
+## DenseBuilder.build_office_park: the stalls of its shared lot, its drive.
+static func office_park(art_seed: int, fit: Dictionary, level: int) -> Dictionary:
+	var plan := DenseBuilder.office_park_plan(art_seed, fit.get("art", {"width": float(fit.half) * 2.0, "depth": fit.depth}), level)
 	var spots := []
 	for st in plan.stalls:
 		spots.append({"pos": st[0], "face": st[1], "kind": "stall"})

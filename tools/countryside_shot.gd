@@ -1,7 +1,7 @@
 extends "res://tools/screenshot.gd"
 ## The countryside critic's views: the farm demo (screenshot.gd "farms") in
 ## July at 11 am, with no panels, from a field, a pond, a woods edge and
-## the open county, near and far, saved as OUT_DIR/<view>.png in one run.
+## the open county, a creek and the railroad, near and far, saved as OUT_DIR/<view>.png in one run.
 ## Run: xvfb-run godot --rendering-driver vulkan --resolution 1600x900 -s tools/countryside_shot.gd -- OUT_DIR 0 0 0 farms [view ...] --quality=ultra
 ## Env: LOOK_MONTH (1-12, default 7), LOOK_HOUR (default 11), VIEW_FRAMES (frames each view settles, default 30).
 
@@ -15,6 +15,10 @@ const VIEWS := [
 	["woods_mid", "woods", 120.0, 30.0, 300.0],
 	["county_wide", "field", 30.0, 30.0, 1300.0],
 	["horizon", "field", 30.0, 9.0, 450.0],
+	["rail_close", "rail", 60.0, 16.0, 60.0],
+	["rail_mid", "rail", 60.0, 30.0, 260.0],
+	["rail_low", "rail", 75.0, 9.0, 30.0],
+	["creek_close", "creek", 150.0, 22.0, 70.0],
 ]
 
 var _view := -1
@@ -99,4 +103,26 @@ func _find_aims() -> void:
 					and Terrain.water(x + o.x, z + 40 + o.y) < 0.1:
 				best_t = d
 				_aims.woods = Vector3(x, 0, z + 20)
+	# A creek: a thin wet line, not a pond (pond water reads 0.6 and up).
+	_aims.creek = _aims.pond
+	var best_c := INF
+	for x in range(-4000, 4001, 20):
+		for z in range(-4000, 4001, 20):
+			var w := Terrain.water(x + o.x, z + o.y)
+			var d := Vector2(x + 250, z - 200).length()
+			if d < best_c and w > 0.25 and w < 0.6 and not (absf(x) < 900.0 and absf(z) < 700.0):
+				best_c = d
+				_aims.creek = Vector3(x, 0, z)
+	# The railroad: the point of the county's track nearest the demo
+	# farms, off a crossing or bridge.
+	_aims.rail = _aims.field
+	var best_r := INF
+	for r in CountyRail.all().size():
+		var prof := CountyRail.profile(r)
+		for i in prof.at.size():
+			var q: Vector2 = prof.at[i] - o
+			var d := Vector2(q.x + 250, q.y - 200).length()
+			if d < best_r and prof.kind[i] == 0 and not (absf(q.x) < 900.0 and absf(q.y) < 700.0):
+				best_r = d
+				_aims.rail = Vector3(q.x, 0, q.y)
 	print("aims ", _aims)

@@ -66,6 +66,23 @@ func _demo_town() -> void:
 	if args0.size() >= 5 and args0[4] == "highway":
 		_demo_interchange(sim)
 		return
+	if args0.size() >= 5 and args0[4] == "bridges":
+		# A street across the nearest creek or river (BridgeMesh), and an
+		# avenue over a street on an overpass beside the first town.
+		var at := _water_crossing(sim)
+		if at != Vector3.INF:
+			var o := sim.terrain_offset
+			var p := Vector3(at.x - o.x, 0.0, at.z - o.y)
+			sim.apply({"type": "build_road", "start": [p.x - 200, p.z], "ctrl": [p.x, p.z], "end": [p.x + 200, p.z],
+				"road": int(OS.get_environment("BRIDGE_ROAD")) if OS.get_environment("BRIDGE_ROAD") != "" else 0})
+			print("bridge at ", p)
+		for c in _main.get_children():
+			if c is CityCamera:
+				var args := OS.get_cmdline_user_args()
+				c.look_at_point(Vector3(at.x - sim.terrain_offset.x + float(args[5]), 0, at.z - sim.terrain_offset.y + float(args[6]))
+					if args.size() >= 7 else Vector3.ZERO)
+				c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
+		return
 	if args0.size() >= 5 and args0[4] == "ramp":
 		# The Critic's repro: a straight exit ramp off a one-way highway.
 		sim.apply({"type": "build_road", "start": [-250, 200], "ctrl": [0, 200], "end": [250, 200], "road": 3})
@@ -614,6 +631,29 @@ func _demo_hubs(sim: CitySim) -> void:
 ## five-leg junctions, a street crossing an avenue, two avenues under
 ## lights and a street with a gentle bend, zoned so they get curbs.
 ## North of the starting highway; look at about (0, -250).
+## The nearest place (region metres) where an east-west line crosses 15 to
+## 90 m of water, the middle of the crossing, or INF.
+func _water_crossing(sim: CitySim) -> Vector3:
+	var o := sim.terrain_offset
+	var best := Vector3.INF
+	var best_d := INF
+	for r in range(0, 4000, 25):
+		for z in [o.y - r, o.y + r]:
+			for x in range(int(o.x) - 4000, int(o.x) + 4000, 5):
+				if not Terrain.is_water(x, z) or Terrain.is_water(x - 5, z):
+					continue
+				var w := 5
+				while w < 120 and Terrain.is_water(x + w, z):
+					w += 5
+				var d := Vector2(x - o.x, z - o.y).length()
+				if w >= 15 and w <= 90 and d < best_d:
+					best_d = d
+					best = Vector3(x + w * 0.5, 0.0, z)
+		if best != Vector3.INF:
+			return best
+	return best
+
+
 func _demo_markings(sim: CitySim) -> void:
 	var before := sim.network.segments.keys()
 	var roads := [
