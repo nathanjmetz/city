@@ -280,7 +280,16 @@ void fragment() {
 	vec3 crop = crop_look_bare(slot, p, across, aw, tilt, mid, bare);
 	// Each field a shade different (soil, variety, how it was sprayed).
 	crop *= (0.93 + 0.14 * pick) * (0.92 + 0.16 * mid);
+#ifdef DESKTOP_DETAIL
+	// A field ends at its edge, not in a 30 m blur of crop into pasture
+	// (aerial photos of Grant County: the plow line is sharp, the fencerow
+	// or grass headland beside it): the land cover's crop share cut at half,
+	// a pixel or two wide, wandering a little as a headland does.
+	float cut = 0.5 + (clump - 0.5) * 0.12;
+	float in_crop = smoothstep(cut - 0.03 - fwidth(cover.b), cut + 0.03 + fwidth(cover.b), cover.b) * 0.92;
+#else
 	float in_crop = smoothstep(0.3, 0.7, cover.b) * 0.92;
+#endif
 	col = mix(col, crop, in_crop);
 	if (pk > 0.0 && in_crop > 0.0) {
 		// Worked soil between the rows; the crop's own leaves over it.
