@@ -1,7 +1,7 @@
 extends SceneTree
 ## The sky alone over a flat field with a few boxes, to judge the sky,
 ## clouds, sun and haze fast (no town to load).
-## Run: xvfb-run godot --rendering-driver vulkan --resolution 1600x900 -s tools/sky_shot.gd -- out.png [pitch_deg] [cover] [hour]
+## Run: xvfb-run godot --rendering-driver vulkan --resolution 1600x900 -s tools/sky_shot.gd -- out.png [pitch_deg] [cover] [hour] [yaw_deg]
 
 var _sky: SkyLight
 var _frames := 0
@@ -32,7 +32,7 @@ func _initialize() -> void:
 		root.add_child(b)
 	var cam := Camera3D.new()
 	cam.position = Vector3(0, 30, 20)
-	cam.rotation_degrees = Vector3(float(a[1]) if a.size() > 1 else 5.0, 0, 0)
+	cam.rotation_degrees = Vector3(float(a[1]) if a.size() > 1 else 5.0, float(a[4]) if a.size() > 4 else 0.0, 0)
 	cam.far = 30000
 	root.add_child(cam)
 	cam.make_current()

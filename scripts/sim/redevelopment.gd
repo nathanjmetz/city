@@ -34,7 +34,7 @@ extends RefCounted
 signal changed
 
 const HUB := "developer"
-const KINDS := ["apartments", "highrise", "shopping", "officepark", "community", "power"]
+const KINDS := ["apartments", "highrise", "shopping", "officepark", "community", "power", "hotel"]
 
 ## permit id -> {"kind", "keys", "type", "level", ...}
 var asks := {}
@@ -234,6 +234,41 @@ func _plan_officepark(sim, faces: Dictionary) -> Dictionary:
 		"Homes and open land to commercial (office park)")
 
 
+## A run of three or more houses or empty lots on a busy road out toward
+## the edge of town, in a market big enough to fill a hotel: a chain wants
+## a highway hotel by the road (any Indiana interstate exit or bypass).
+func _plan_hotel(sim, faces: Dictionary) -> Dictionary:
+	var market: int = sim.market.people(sim)
+	if not Market.supports(market, "hotel") or float(sim.demand.get(ZoneMap.Zone.COMMERCIAL, 0.0)) < Balance.REDEV_DEMAND:
+		return {}
+	for k in sim.buildings:
+		if BuildingTypes.type_of(sim.buildings[k]) == "hotel":
+			return {}  # one at a time: the next waits until the town can fill two
+	var best := []
+	var best_score := -INF
+	for f in _sorted(faces):
+		var face: Array = faces[f]
+		if face.size() < Balance.REDEV_HOTEL_LOTS or _zone(sim, face[0]) == ZoneMap.Zone.INDUSTRIAL or not _arterial(sim, face[0]):
+			continue
+		for run in _runs(sim, face, ["house", ""], Balance.REDEV_HOTEL_LOTS, 8, LotPlanner.MAX_LOT.highway_shop):
+			var empty: int = run.filter(func(k): return not sim.buildings.has(k)).size()
+			var area := 0.0
+			for k in run:
+				area += float(sim.lots[k].area)
+			if area < float(BuildingTypes.TYPES.hotel.stages[0].lot):
+				continue  # over an acre: the building, its pool and most of a car a room
+			var score: float = area / 1000.0 + empty * 3.0 - _density(sim, sim.lots[run[0]].pos) * 0.25
+			if score > best_score:
+				best_score = score
+				best = run
+	if best.is_empty():
+		return {}
+	return _plan(sim, "hotel", best, "hotel", 0,
+		"Rezone %d lots on %s for a hotel" % [best.size(), _street(sim, best[0])],
+		"Travelers on %s and people visiting town have nowhere to stay. A hotel chain would buy the lots by the road." % _street(sim, best[0]),
+		"Homes and open land to commercial (hotel)")
+
+
 ## A neighborhood center that a discount store would come to, in a market
 ## big enough for one: it buys the houses on the lots behind (or beside)
 ## it, rezoned, until the site is big enough.
@@ -354,6 +389,9 @@ func _plan(sim, kind: String, keys: Array, type: String, level: int, title: Stri
 		trips = roundi(sqft / 1000.0 * (Balance.REDEV_TRIPS_PER_KSQFT_OFFICE if type == "office_park" else Balance.REDEV_TRIPS_PER_KSQFT))
 		what = "%s of about %s sq ft and %d to %d jobs" % [str(st.name).to_lower(), CitySim.money_text(roundi(sqft / 1000.0) * 1000),
 			int(st.cap[0]), int(st.cap[1])]
+		if st.has("rooms"):
+			trips = roundi(float(st.rooms) * Balance.REDEV_TRIPS_PER_ROOM)
+			what = "%s of about %d rooms and %d to %d jobs" % [str(st.name).to_lower(), int(st.rooms), int(st.cap[0]), int(st.cap[1])]
 	var strain := []
 	for u in ["power", "water"]:
 		var use: Array = sim.services.utility_use[u]
@@ -373,7 +411,7 @@ func _plan(sim, kind: String, keys: Array, type: String, level: int, title: Stri
 		if not fam.is_empty():
 			who = str(fam.head)
 	return {"kind": kind, "keys": keys, "type": type, "level": level, "leader": who, "title": title,
-		"why": why, "change": change, "yes": yes, "no": "It stays mid-rise." if kind == "highrise" else ("The land stays as it is." if kind == "officepark" else "The houses stay as they are."),
+		"why": why, "change": change, "yes": yes, "no": "It stays mid-rise." if kind == "highrise" else ("The land stays as it is." if kind in ["officepark", "hotel"] else "The houses stay as they are."),
 		"was": was}
 
 
@@ -393,7 +431,7 @@ func carry_out(sim) -> void:
 		asks.erase(id)
 		if st == Permits.State.APPROVED:
 			sim.permits.done(id)
-			if build(sim, a) and a.kind in ["shopping", "community", "power"]:
+			if build(sim, a) and a.kind in ["shopping", "community", "power", "hotel"]:
 				sim.culture.nudge("trade", Balance.CULTURE_YES_LEAN)
 		changed.emit()
 
@@ -410,7 +448,7 @@ func build(sim, a: Dictionary) -> bool:
 	var zone := int(BuildingTypes.TYPES[type].zone)
 	var site: String = keys[0]
 	var cap_kind: String = {"apartments": "apartments", "highrise": "downtown", "shopping": "highway_shop",
-		"officepark": "highway_shop", "community": "highway_shop", "power": "power_center"}[str(a.kind)]
+		"officepark": "highway_shop", "community": "highway_shop", "power": "power_center", "hotel": "highway_shop"}[str(a.kind)]
 	# The rezoning: the whole frontage of every lot not zoned for it yet.
 	var rezoned := false
 	for k in keys:
@@ -437,7 +475,8 @@ func build(sim, a: Dictionary) -> bool:
 		"highrise": "The town approved a high-rise here", "shopping": "The town rezoned this row for shopping",
 		"officepark": "The town rezoned this land for an office park",
 		"community": "The town let this shopping center grow",
-		"power": "The town let this shopping center grow into a power center"}[str(a.kind)]
+		"power": "The town let this shopping center grow into a power center",
+		"hotel": "The town rezoned this land for a hotel"}[str(a.kind)]
 	sim.buildings[site] = b
 	sim.care.forget(site)
 	var lot: Dictionary = sim.lots[site]

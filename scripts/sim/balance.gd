@@ -231,6 +231,10 @@ const MARKET_MIN := {
 	# A headquarters campus wants a metro's worth of workers (Columbus, Indiana's
 	# Cummins in a metro of about 80,000).
 	"office_park": [10_000, 15_000, 25_000, 75_000],
+	# A highway hotel wants a small city's trade and traffic (Marion, Wabash,
+	# Peru each have a few); a full-service hotel with a ballroom a metro's
+	# (Muncie, about 110,000; Kokomo, about 85,000).
+	"hotel": [10_000, 80_000],
 	"shopping_center": [5000, 10_000, 20_000, 50_000],  # a discount store wants a trade area of about 20,000 (1980s Walmart/Kmart small-town siting)
 	# ...and a power center's category killers (Lowe's, Best Buy, Dick's) a trade
 	# area of about 50,000 (Marion and Grant County, 66,000, has its cluster).
@@ -343,6 +347,10 @@ const REDEV_TRIPS_PER_KSQFT := 37.75
 ## road, as far out of the built-up core as it can.
 const REDEV_TRIPS_PER_KSQFT_OFFICE := 9.74
 const REDEV_PARK_LOTS := 3
+## A hotel chain buys at least this many lots side by side on a busy road.
+const REDEV_HOTEL_LOTS := 3
+## ITE Trip Generation, hotel (310): about 8.4 car trips a day per room.
+const REDEV_TRIPS_PER_ROOM := 8.36
 
 ## Home builders and their subdivisions (Subdivisions, Brawn 2026-10-23).
 ## Who comes at each size: [population, phases, who]. A local builder does a

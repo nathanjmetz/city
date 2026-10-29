@@ -846,6 +846,7 @@ static func get_mat(key: String) -> Material:
 		"farm_gravel": mat = _gravel()
 		"pool": mat = _pool()
 		"foliage": mat = _plain(1.0)
+		"paint_unplanted": mat = _unplanted()
 		_: mat = _plain(0.55)  # paint, shutters, trim
 	_cache[key] = mat
 	return mat
@@ -917,4 +918,12 @@ static func _pool() -> ShaderMaterial:
 static func _plain(roughness: float) -> ShaderMaterial:
 	var m := _shader(PLAIN)
 	m.set_shader_parameter("rough", roughness)
+	return m
+
+
+## Paint with its foliage left out: a house still going up, whose
+## foundation shrubs aren't planted until the yard goes in.
+static func _unplanted() -> ShaderMaterial:
+	var m := _shader(PLAIN.replace("void fragment() {", "void fragment() {\n\tif (COLOR.a < 0.5) {\n\t\tdiscard;\n\t}"))
+	m.set_shader_parameter("rough", 0.55)
 	return m

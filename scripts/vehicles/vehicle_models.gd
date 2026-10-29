@@ -1074,12 +1074,35 @@ func _van_body(L: float, W: float, H: float, box_from: float, box_h: float, box_
 		[box_from, c, box_h - 0.12, box_h, hw, hw, hw - 0.06],
 		[L, c, box_h - 0.12, box_h, hw, hw, hw - 0.06],
 	], [_edges(box_code, TRIM)], box_code, box_code)
-	_box(Vector3(hw - 0.25, 0.92, 0.07), Vector3(0.34, 0.14, 0.12), HEAD, true)
 	_box(Vector3(hw - 0.06, 1.2, L - 0.02), Vector3(0.1, 0.4, 0.06), TAIL, true)
-	if not _lo:
+	if _hi:
+		_van_face(hw, c)
+	else:
+		# The headlamps stand just proud of the nose (behind it they hid).
+		_box(Vector3(hw - 0.3, 0.86, 0.0), Vector3(0.32, 0.14, 0.04), HEAD, true)
+	if not _lo and not _hi:
 		_box(Vector3(0, 0.75, 0.03), Vector3(1.2, 0.3, 0.08), TRIM)
+	if not _lo:
 		_box(Vector3(0, c + 0.1, 0.06), Vector3(W - 0.15, 0.18, 0.14), TRIM)
 		_box(Vector3(hw + 0.12, 1.45, 1.05), Vector3(0.1, 0.32, 0.18), TRIM, true)
+
+
+## Ultra: a Ford Transit / E-Series cutaway face: swept headlamps in dark
+## housings at the corners with an amber side marker, the big trapezoid
+## grille in black with three silver bars and the badge, a plate on the
+## bumper and fog lamps low in it.
+func _van_face(hw: float, c: float) -> void:
+	var lx := hw - 0.3
+	_box(Vector3(lx, 0.86, -0.004), Vector3(0.36, 0.17, 0.04), TRIM, true)
+	_box(Vector3(lx + 0.02, 0.87, -0.012), Vector3(0.26, 0.1, 0.04), HEAD, true)
+	_box(Vector3(lx - 0.13, 0.83, -0.012), Vector3(0.05, 0.05, 0.04), HEAD, true)
+	_box(Vector3(hw - 0.1, 0.84, 0.12), Vector3(0.04, 0.06, 0.12), Color(1.0, 0.55, 0.05, 0.5), true)
+	_box(Vector3(0, 0.7, -0.004), Vector3(1.0, 0.36, 0.04), Color(0.03, 0.03, 0.03, 0.3))
+	for y in [0.6, 0.7, 0.8]:
+		_box(Vector3(0, y, -0.012), Vector3(0.94, 0.025, 0.04), STEEL)
+	_box(Vector3(0, 0.82, -0.02), Vector3(0.2, 0.08, 0.04), Color(0.1, 0.2, 0.45, 0.4))
+	_box(Vector3(0, c + 0.1, -0.024), Vector3(0.3, 0.15, 0.02), WHITE)
+	_box(Vector3(hw - 0.3, c + 0.1, -0.016), Vector3(0.12, 0.06, 0.04), HEAD, true)
 
 
 func _van() -> void:  # Ford Transit high roof
@@ -1672,7 +1695,10 @@ func _coach() -> void:
 		[L, 0.45, 3.15, 3.35, hw - 0.1, hw - 0.08, hw - 0.22],
 	], [_edges(PAINT, TRIM)], PAINT, PAINT)
 	# A tall two-piece windshield raked back over the driver.
-	_box(Vector3(0, 2.15, 0.02), Vector3(2.3, 1.75, 0.02), GLASS)
+	# (Proud of the nose: behind its front face it never showed.)
+	_box(Vector3(0, 2.15, -0.012), Vector3(2.3, 1.75, 0.02), GLASS)
+	if _hi:
+		_coach_face(hw)
 	for s in [-1.0, 1.0]:
 		# Passenger windows sit high, above the luggage bays.
 		_box(Vector3(s * (hw + 0.004), 2.45, 7.6), Vector3(0.006, 1.05, 10.6), GLASS)
@@ -1680,7 +1706,7 @@ func _coach() -> void:
 		if not _lo:
 			for i in 5:  # luggage bay doors between the axles
 				_box(Vector3(s * (hw + 0.006), 0.95, 3.6 + i * 1.25), Vector3(0.006, 0.8, 0.03), TRIM)
-	_box(Vector3(hw + 0.006, 1.75, 1.3), Vector3(0.006, 2.4, 0.9), GLASS)  # curb-side door
+	_box(Vector3(hw + 0.013, 1.75, 1.3), Vector3(0.006, 2.4, 0.9), GLASS)  # curb-side door
 	_wheels([2.2, 10.2, 11.6], 0.52, hw, 0.3)
 	for x in [-1.0, 1.0]:
 		_box(Vector3(x * (hw - 0.3), 0.85, -0.02), Vector3(0.36, 0.16, 0.06), HEAD, true)
@@ -1689,6 +1715,26 @@ func _coach() -> void:
 	if not _lo:
 		for x in [-1.0, 1.0]:
 			_box(Vector3(x * (hw + 0.25), 2.3, 0.4), Vector3(0.08, 0.45, 0.2), TRIM)  # mirrors on long arms
+
+
+## Ultra: a motorcoach's face (MCI J4500): a black surround round the
+## two-piece windshield with its centre post and long wipers, the lamp
+## clusters in dark housings, a black grille band, the badge, the plate
+## and a deep wraparound bumper.
+func _coach_face(hw: float) -> void:
+	var dark := Color(0.05, 0.05, 0.05, 0.3)
+	_box(Vector3(0, 2.15, -0.004), Vector3(2.42, 1.87, 0.01), dark)
+	_box(Vector3(0, 2.15, -0.028), Vector3(0.06, 1.75, 0.02), dark)
+	for x in [-0.55, 0.55]:
+		_beam(Vector3(x - 0.45, 1.36, -0.03), Vector3(x + 0.35, 1.62, -0.03), 0.025, dark)
+	for x in [-1.0, 1.0]:
+		_box(Vector3(x * (hw - 0.32), 0.85, -0.008), Vector3(0.48, 0.24, 0.02), dark)
+	_box(Vector3(0, 1.09, -0.008), Vector3(1.4, 0.22, 0.02), dark)
+	for y in [1.04, 1.14]:
+		_box(Vector3(0, y, -0.02), Vector3(1.34, 0.02, 0.02), STEEL)
+	_box(Vector3(0, 1.3, -0.012), Vector3(0.36, 0.08, 0.02), CHROME)
+	_box(Vector3(0, 0.82, -0.012), Vector3(0.3, 0.15, 0.02), WHITE)
+	_box(Vector3(0, 0.55, -0.08), Vector3(hw * 2.0 - 0.1, 0.3, 0.14), dark)
 
 
 # --- Semis ------------------------------------------------------------------

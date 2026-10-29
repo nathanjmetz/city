@@ -49,21 +49,47 @@ const LOT_AREA := 1500.0
 const LOT_SHARE := 1.3
 const LOT_ASPHALT := Color(0.33, 0.33, 0.33)
 const ASPHALT := Color(0.27, 0.27, 0.28)
+## Yard trees, desktop only. Marion's older neighbourhoods sit under
+## mature maples, oaks and ashes (Indiana's urban canopy is about a third
+## of residential land; aerial photos show a crown or two in most yards),
+## so bare houses on lawns read as a model town. Trees per house by
+## quality tier (Low, Medium, High, Ultra, Cinematic): a domed crown of
+## 28 triangles each.
+const TREES_PER_HOUSE := [0.0, 0.6, 1.1, 1.5, 1.8]
+## Summer crowns, dark to light (vertex alpha under 0.5 marks foliage
+## for the plain material: matte and broken into leaf clumps).
+const CROWNS := [Color(0.29, 0.39, 0.19, 0.3), Color(0.33, 0.43, 0.21, 0.3), Color(0.26, 0.35, 0.17, 0.3),
+	Color(0.36, 0.44, 0.23, 0.3), Color(0.30, 0.37, 0.21, 0.3)]
 
 ## Region square -> [buildings [Array of 6 numbers]], [streets [class, PackedVector2Array]]
 var _todo := {}
 var _origin := Vector2.INF
 ## Squares still to build, a block's together.
 var _queue: Array = []
-## Block -> [squares left, vertices, normals, colours, uvs]
+## Block -> [squares left, vertices, normals, colours, uvs, tree vertices, normals, colours]
 var _blocks := {}
 ## The player town's far-building look (sRGB colours, windows, snow).
 var _material: Material
+## Yard trees per house for the current quality tier (TREES_PER_HOUSE).
+var _trees := 0.0
 
 
 func _ready() -> void:
 	_material = HouseMaterials.get_mat("far")
 	_load()
+	var q := GraphicsQuality.current
+	if q != null:
+		q.changed.connect(func() -> void:
+			if _tree_share() != _trees:
+				_origin = Vector2.INF)
+
+
+## Yard trees per house now: none in the browser or on Low.
+func _tree_share() -> float:
+	var q := GraphicsQuality.current
+	if q == null or not q.active or q.browser:
+		return 0.0
+	return TREES_PER_HOUSE[clampi(q.tier, 0, TREES_PER_HOUSE.size() - 1)]
 
 
 ## Reads the town and files it by square, to be built over the next frames.
@@ -108,6 +134,7 @@ func _process(_delta: float) -> void:
 	# Built where your own town sits in the region; rebuilt if that moves.
 	if Terrain.view_origin != _origin:
 		_origin = Terrain.view_origin
+		_trees = _tree_share()
 		for child in get_children():
 			child.queue_free()
 		_queue = _todo.keys()
@@ -119,7 +146,8 @@ func _process(_delta: float) -> void:
 		for c in _queue:
 			var k := _block(c)
 			if not _blocks.has(k):
-				_blocks[k] = [0, PackedVector3Array(), PackedVector3Array(), PackedColorArray(), PackedVector2Array()]
+				_blocks[k] = [0, PackedVector3Array(), PackedVector3Array(), PackedColorArray(), PackedVector2Array(),
+					PackedVector3Array(), PackedVector3Array(), PackedColorArray()]
 			_blocks[k][0] += 1
 	if _queue.is_empty():
 		return
@@ -145,6 +173,8 @@ func _build(c: Vector2i) -> void:
 		_street(v, nrm, col, s[1], WIDTHS[s[0]], o)
 	for b in sq[0]:
 		_building(v, nrm, col, uv, b, o)
+		if _trees > 0.0:
+			_yard_trees(blk[5], blk[6], blk[7], b, o)
 	blk[0] -= 1
 	if blk[0] > 0 or v.is_empty():
 		return
@@ -158,6 +188,14 @@ func _build(c: Vector2i) -> void:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	mesh.surface_set_material(0, _material)
+	if not blk[5].is_empty():
+		var ta := []
+		ta.resize(Mesh.ARRAY_MAX)
+		ta[Mesh.ARRAY_VERTEX] = blk[5]
+		ta[Mesh.ARRAY_NORMAL] = blk[6]
+		ta[Mesh.ARRAY_COLOR] = blk[7]
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, ta)
+		mesh.surface_set_material(1, HouseMaterials.get_mat("plain"))
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	add_child(mi)
@@ -254,6 +292,60 @@ func _building(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorA
 	var e1 := r1 - mid
 	_tri(v, nrm, col, Vector3(p3.x, y1, p3.y), Vector3(p0.x, y1, p0.y), R0, wall, Vector3(e0.x, 0.0, e0.y))
 	_tri(v, nrm, col, Vector3(p1.x, y1, p1.y), Vector3(p2.x, y1, p2.y), R1, wall, Vector3(e1.x, 0.0, e1.y))
+
+
+## A house's yard trees (_trees per house on average): crowns in the front
+## and back yards, off the short sides of the house, 10-14 m across and
+## 12-17 m tall like a grown silver maple or pin oak, sitting on the trunk
+## (too thin to see from the 450 m the camera keeps from the backdrop).
+func _yard_trees(v: PackedVector3Array, nrm: PackedVector3Array, col: PackedColorArray, b: Array, o: Vector2) -> void:
+	if b[2] * b[3] >= HOUSE_AREA or b[4] >= HOUSE_HEIGHT:
+		return
+	var pick := absi(hash(Vector2i(b[0] * 3 + 1, b[1] * 5 + 2)))
+	var n := int(_trees) + (1 if float(pick % 1000) / 1000.0 < fposmod(_trees, 1.0) else 0)
+	var ang := deg_to_rad(b[5])
+	var u := Vector2(cos(ang), sin(ang))
+	var w := Vector2(-sin(ang), cos(ang))
+	for i in n:
+		var h := absi(hash(pick + i * 7919))
+		var f := float(h % 997) / 997.0
+		var g := float((h / 997) % 991) / 991.0
+		# Front or back yard, 5-9 m off the wall, anywhere along the house.
+		var side := 1.0 if (h / 13) % 2 == 0 else -1.0
+		if i == 1:
+			side = -side
+		var p: Vector2 = Vector2(b[0], b[1]) + w * side * (b[3] * 0.5 + 5.0 + f * 4.0) + u * (g - 0.5) * (b[2] + 6.0)
+		var r := 5.0 + f * 2.0
+		var ground := Terrain.height(p.x, p.y)
+		var base := ground + 3.0 + g * 1.5
+		var mid := base + r * 0.8
+		var c: Color = CROWNS[h % CROWNS.size()]
+		var x: float = p.x - o.x
+		var z: float = p.y - o.y
+		# A dome: the widest ring, a narrower one above it, a low apex; and
+		# a shallow underside down to the trunk.
+		var rings := [[mid, r], [mid + r * 0.55, r * 0.72]]
+		var pts := []
+		for ring in rings:
+			var row := []
+			for k in 7:
+				var a := TAU * (k + f) / 7.0
+				row.append(Vector3(x + cos(a) * ring[1], ring[0], z + sin(a) * ring[1]))
+			pts.append(row)
+		var t := Vector3(x, mid + r * (0.85 + g * 0.2), z)
+		var bt := Vector3(x, base, z)
+		var cen := Vector3(x, mid, z)
+		var under := c * Color(0.75, 0.75, 0.75, 1.0)
+		for k in 7:
+			var k1 := (k + 1) % 7
+			var a: Vector3 = pts[0][k]
+			var d: Vector3 = pts[0][k1]
+			var a2: Vector3 = pts[1][k]
+			var d2: Vector3 = pts[1][k1]
+			var out := (a + d) * 0.5 - cen
+			_quad(v, nrm, col, a, d, d2, a2, c, out + Vector3(0, r * 0.6, 0))
+			_tri(v, nrm, col, a2, d2, t, c, out * 0.5 + Vector3(0, r, 0))
+			_tri(v, nrm, col, a, d, bt, under, out - Vector3(0, r * 0.5, 0))
 
 
 ## The parking lot round a store or plant: its footprint grown on every side
