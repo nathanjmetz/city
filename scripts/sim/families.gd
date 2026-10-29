@@ -102,7 +102,13 @@ func _found(sim, ref: String, trades: Dictionary) -> void:
 			# An office building's tenant is an office: an agent, a lawyer,
 			# an accountant, a realtor.
 			var office := ref.begins_with("lot:") and BuildingTypes.type_of(sim.buildings[ref.substr(4)]) == "office"
-			for pick in 8:
+			# Owners lean toward their own kind's cluster (Clusters), where a
+			# town carries a few more of one trade than it otherwise would.
+			var pulled := Clusters.pull(sim, ref.substr(4), seed, office) if ref.begins_with("lot:") else ""
+			if pulled != "" and int(trades.get(pulled, 0)) < 1 + Balance.CLUSTER_EXTRA \
+					+ shops * int(Names.patterns(pulled).w) / 60:
+				what = pulled
+			for pick in (0 if what == pulled and pulled != "" else 8):
 				var t: Dictionary = Names.trade(hash([seed, pick]), office)
 				what = t.trade
 				if int(trades.get(what, 0)) < 1 + shops * int(t.w) / 60:

@@ -4174,6 +4174,7 @@ func _sidewalks(la: Dictionary, lb: Dictionary) -> PackedVector3Array:
 	if la.seg == lb.seg and la.side == lb.side:
 		var line := _walk_line(la.seg, la.side)
 		_append_span(out, line, _frac(la), _frac(lb))
+		_worn(la.seg, la.side)
 		return out
 	# Shortest way over the sidewalks: along the blocks, around corners and
 	# over the crosswalks at junctions (never mid-block), with a wait for
@@ -4232,6 +4233,7 @@ func _sidewalks(la: Dictionary, lb: Dictionary) -> PackedVector3Array:
 		x = prev[x][0]
 	var first: Vector3i = x
 	_append_span(out, _walk_line(la.seg, la.side), start_f, _walk_end(first.y, 0 if first.x == _seg_node(first.y, 0) else 1))
+	_worn(la.seg, la.side)
 	for c in chain:
 		var from: Vector3i = c[0]
 		var to: Vector3i = c[1]
@@ -4240,6 +4242,7 @@ func _sidewalks(la: Dictionary, lb: Dictionary) -> PackedVector3Array:
 		match c[2]:
 			"along":
 				_append_span(out, _walk_line(to.y, to.z), f0, f1)
+				_worn(to.y, to.z)
 			"cross":
 				# Wait at the kerb for the light, then over.
 				var at := _line_at(_walk_line(from.y, from.z), f0 * (_walk_line(from.y, from.z).size() - 1))
@@ -4251,7 +4254,16 @@ func _sidewalks(la: Dictionary, lb: Dictionary) -> PackedVector3Array:
 				out.append(_line_at(_walk_line(to.y, to.z), f1 * (_walk_line(to.y, to.z).size() - 1)))
 	var last: Vector3i = best_end
 	_append_span(out, _walk_line(lb.seg, lb.side), _walk_end(last.y, 0 if last.x == _seg_node(last.y, 0) else 1), goal_f)
+	if lb.seg != la.seg or lb.side != la.side:
+		_worn(lb.seg, lb.side)
 	return out
+
+
+## A walk along one side of a road, for the paths it wears where there's
+## no sidewalk (WornPaths).
+func _worn(seg: int, side: int) -> void:
+	if _sim != null:
+		_sim.worn.note(network, seg, side)
 
 
 ## (_sidewalks' heap) True when [d, a] comes out before [e, b].
