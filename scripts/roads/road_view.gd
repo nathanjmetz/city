@@ -84,6 +84,8 @@ var _mats := {
 	"apron": RoadStyle.material(Color(0.5, 0.44, 0.38)),  # tinted, textured-look concrete
 	"tunnel": RoadStyle.material(Color(0.1, 0.1, 0.12, 0.45), true),
 	"domes": Surfaces.concrete(Junction.DOMES_COLOR),
+	"iron": _iron(Color(0.17, 0.16, 0.15)),  # grates and manhole covers
+	"drain": RoadStyle.material(Color(0.03, 0.03, 0.03)),  # the dark under them
 	"barricade": _vertex_colour(),
 	"galvanized": _galvanized(),
 	"marker": RoadStyle.material(Color(0.95, 0.76, 0.1)),  # end terminal object marker
@@ -920,9 +922,16 @@ func _rebuild_drops() -> void:
 	_drops = MeshInstance3D.new()
 	_drops.mesh = st.commit()
 	_drops.material_override = _mats.wire
+	_drops.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # see _add_poles
 	add_child(_drops)
 
 
+## Wires cast no sun shadow. A conductor is 1-2 cm thick and the sun half
+## a degree across, so its full shadow ends under 2 m below it; from a
+## pole top 9 m up a real wire leaves only a faint grey blur on the road.
+## In the shadow map a wire is thinner than a texel, and it came out as a
+## dashed dark line across roads and along truck sides (vehicles loop,
+## 2026-10-29).
 func _add_poles(wood: Array, wire: Array) -> void:
 	if wood.is_empty():
 		return
@@ -930,6 +939,8 @@ func _add_poles(wood: Array, wire: Array) -> void:
 		var pm := MeshInstance3D.new()
 		pm.mesh = _merge(entry[0])
 		pm.material_override = entry[1]
+		if entry[1] == _mats.wire:
+			pm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(pm)
 		_merged.append(pm)
 
@@ -1073,6 +1084,14 @@ func _median_trees(id: int, pts: PackedVector3Array, type: int) -> Array:
 
 ## Post, white rail and orange rail of a Type III barricade.
 const BARRICADE := [Color(0.52, 0.53, 0.52), Color(0.9, 0.9, 0.88), Color(0.93, 0.42, 0.08)]
+
+
+## Cast iron worn smooth by tyres: dark, a little metallic, with a dull sheen.
+static func _iron(color: Color) -> StandardMaterial3D:
+	var m := RoadStyle.material(color)
+	m.metallic = 0.45
+	m.roughness = 0.55
+	return m
 
 
 static func _vertex_colour() -> StandardMaterial3D:
