@@ -408,7 +408,7 @@ func _coping_color(old: bool) -> Color:
 ## A flat roof's own clutter (Main Street aerials): a roof hatch, plumbing
 ## vent stacks, a drain scupper's dark stain and, on older blocks, a brick
 ## chimney at the back. Its own random numbers, so the builder's don't move.
-func _roof_bits(cx: float, w: float, d: float, cz: float, y: float, old: bool) -> void:
+func _roof_bits(cx: float, w: float, d: float, cz: float, y: float, old: bool, services := true) -> void:
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([rng.seed, snappedf(cx, 0.01), snappedf(cz, 0.01), 3])
 	var span := Vector2(maxf(w * 0.5 - 1.2, 0.3), maxf(d * 0.5 - 1.2, 0.3))
@@ -422,6 +422,70 @@ func _roof_bits(cx: float, w: float, d: float, cz: float, y: float, old: bool) -
 		var cxp := cx + r.randf_range(-span.x, span.x)
 		_box("brick", Vector3(0.9, 1.6, 0.6), Vector3(cxp, y + 0.8, cz + d * 0.5 - 0.6), Color("#8a4b36"))
 		_box("paint", Vector3(1.0, 0.08, 0.7), Vector3(cxp, y + 1.64, cz + d * 0.5 - 0.6), Color("#6f6a62"))
+	if fine_parts and services and w * d > 120.0:
+		_roof_services(r, cx, w, d, cz, y, span)
+
+
+## Desktop: what a commercial flat roof really carries, seen from above.
+## Packaged rooftop units sized to the floor area (about one per 120 m2,
+## as a shop or office needs roughly a ton of cooling per 30 m2), each fed
+## by yellow-painted gas pipe on rubber blocks from the back parapet, with
+## a walkway pad of pavers to it; cast-iron roof drains, and on a big roof
+## domed skylights in rows.
+func _roof_services(r: RandomNumberGenerator, cx: float, w: float, d: float, cz: float, y: float, span: Vector2) -> void:
+	var units := clampi(int(w * d / 120.0), 1, 8)
+	var gas := Color("#e3bd2a")
+	var back := cz + d * 0.5 - 0.7
+	var main_x := cx + r.randf_range(-span.x, span.x) * 0.8
+	# The main gas line along the back, on blocks every 2.5 m.
+	var placed: Array[Vector3] = []
+	for i in units:
+		var p := Vector3(cx + r.randf_range(-span.x, span.x) * 0.85, y, cz + r.randf_range(-span.y, span.y) * 0.7)
+		var clash := false
+		for q in placed:
+			if absf(q.x - p.x) < 3.0 and absf(q.z - p.z) < 2.4:
+				clash = true
+		if clash:
+			continue
+		placed.append(p)
+		var big := r.randf() < 0.4
+		var sz := Vector3(2.6, 1.3, 1.5) if big else Vector3(2.0, 1.1, 1.25)
+		_box("concrete", Vector3(sz.x + 0.3, 0.2, sz.z + 0.3), p + Vector3(0, 0.1, 0), Color("#9a9790"))  # curb
+		_box("metal", sz, p + Vector3(0, 0.2 + sz.y * 0.5 + 0.01, 0), Color("#c4c6c4"))
+		var fans := 2 if big else 1
+		for f in fans:
+			var fx := p.x + (f - (fans - 1) * 0.5) * sz.x * 0.45
+			_box("paint", Vector3(0.75, 0.04, 0.75), Vector3(fx, y + 0.2 + sz.y + 0.03, p.z + sz.z * 0.15), Color("#2f3132"))
+		# Its gas drop: up from the line, across, down into the unit.
+		var gz := back - 0.3 * i
+		# (It runs 5 cm into the cabinet, so no end face lies on the cabinet's.)
+		_box("paint", Vector3(0.06, 0.06, absf(gz - p.z) - sz.z * 0.5 + 0.05), Vector3(p.x + sz.x * 0.35, y + 0.28, (gz + p.z + sz.z * 0.5 - 0.05) * 0.5), gas)
+		_box("paint", Vector3(absf(p.x + sz.x * 0.35 - main_x) + 0.06, 0.06, 0.06), Vector3((p.x + sz.x * 0.35 + main_x) * 0.5, y + 0.28, gz), gas)
+		var k := minf(main_x, p.x + sz.x * 0.35)
+		while k < maxf(main_x, p.x + sz.x * 0.35):
+			_box("paint", Vector3(0.2, 0.22, 0.2), Vector3(k, y + 0.11, gz), Color("#3a3a3a"))
+			k += 2.5
+		# Walk pads (concrete pavers) from the hatch side to the unit.
+		var wz := p.z - sz.z * 0.5 - 0.8
+		_box("paint", Vector3(0.6, 0.04, 0.6), Vector3(p.x - 0.5, y + 0.02, wz), Color("#b3b0a8"))
+		_box("paint", Vector3(0.6, 0.04, 0.6), Vector3(p.x + 0.3, y + 0.02, wz - 0.03), Color("#aeaba3"))
+	# Gas meter riser where the line comes up the back wall.
+	_box("paint", Vector3(0.08, 0.6, 0.08), Vector3(main_x, y + 0.3, back), gas)
+	# Roof drains in the low spots, with their strainer domes.
+	for i in clampi(int(w * d / 200.0), 1, 4):
+		var dp := Vector3(cx + r.randf_range(-span.x, span.x) * 0.6, y, cz + r.randf_range(-span.y, span.y) * 0.6)
+		_box("paint", Vector3(0.45, 0.03, 0.45), dp + Vector3(0, 0.015, 0), Color("#4a4846"))
+		_box("paint", Vector3(0.2, 0.1, 0.2), dp + Vector3(0, 0.05, 0), Color("#2a2a2a"))
+	# Domed acrylic skylights over a big sales floor.
+	if w * d > 700.0 and r.randf() < 0.7:
+		var cols := maxi(2, int(w / 9.0))
+		var rows := maxi(1, int(d / 12.0))
+		for i in cols:
+			for j in rows:
+				var sx := cx - span.x * 0.7 + (i + 0.5) * span.x * 1.4 / cols
+				var sz2 := cz - span.y * 0.5 + (j + 0.5) * span.y / rows
+				_box("paint", Vector3(1.4, 0.3, 1.4), Vector3(sx, y + 0.15, sz2), Color("#d9d6cf"))
+				_box("paint", Vector3(1.1, 0.16, 1.1), Vector3(sx, y + 0.38, sz2), Color("#e9eef2"))
 
 
 func _coping(w: float, d: float, cz: float, top: float, old := false) -> void:
@@ -1126,6 +1190,8 @@ func _church(to_curb: float) -> void:
 func _rooftop(w: float, d: float, cz: float, h: float, n: int) -> void:
 	for i in n:
 		var p := Vector3(rng.randf_range(-w * 0.35, w * 0.35), h, cz + rng.randf_range(-d * 0.2, d * 0.3))
+		if fine_parts:
+			continue  # the desktop's _roof_services places the units, piped
 		_box("metal", Vector3(1.8, 1.1, 1.2), p + Vector3(0, 0.55, 0), Color("#b9bcbc"))
 		_box("paint", Vector3(1.0, 0.08, 0.8), p + Vector3(0, 1.14, 0), Color("#3a3c3e"))
 

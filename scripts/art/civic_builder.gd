@@ -1351,7 +1351,7 @@ func _flat_roofed_at(mat: String, cx: float, w: float, d: float, cz: float, deck
 	var y := deck + 0.02
 	_quad("membrane", Vector3(cx - w * 0.5, y, cz - d * 0.5), Vector3(cx + w * 0.5, y, cz - d * 0.5),
 		Vector3(cx + w * 0.5, y, cz + d * 0.5), Vector3(cx - w * 0.5, y, cz + d * 0.5), _low_slope(w, d, cx + cz, mat == "brick"), [], Vector3.UP)
-	_roof_bits(cx, w, d, cz, y, mat == "brick")
+	_roof_bits(cx, w, d, cz, y, mat == "brick", false)  # civic roofs carry their own _rooftop_units
 	_box(mat, Vector3(w, ph, t), Vector3(cx, deck + ph * 0.5, cz - d * 0.5 + t * 0.5), wall)
 	_box(mat, Vector3(w, ph, t), Vector3(cx, deck + ph * 0.5, cz + d * 0.5 - t * 0.5), wall)
 	_box(mat, Vector3(t, ph, d), Vector3(cx - w * 0.5 + t * 0.5, deck + ph * 0.5, cz), wall)
