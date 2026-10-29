@@ -287,12 +287,14 @@ func _mill(to_curb: float) -> void:
 	_foot.append([sx0 + (n - 1) * 3.3, sz - 4.0, (n - 1) * 6.6 + 2.0 * r, 2.0 * r + 8.0, 10.0])
 	# Steel bins behind, cone roofs.
 	var bins := rng.randi_range(1, 3)
+	var placed := []
 	for i in bins:
 		var c := Vector3(sx0 + i * 13.0, 0, sz + 15.0)
 		if _in_lot(c, 7.0):
 			_cylinder("metal", c, 6.0, 11.0, STEEL_BIN, 24)
 			_cone_top(c + Vector3(0, 11.0, 0), 6.2, 3.2, STEEL_BIN.lightened(0.08))
 			_foot.append([c.x, c.z, 12.0, 12.0, 10.0])
+			placed.append(c)
 	# The mill building beside the silos, the dump shed in front of them.
 	var mw := rng.randf_range(16.0, 20.0)
 	_hall(sx0 - r - 3.0 - mw * 0.5, sz + 2.0, mw, 18.0, 10.0, Color(_pick(METAL_WALL)))
@@ -303,6 +305,80 @@ func _mill(to_curb: float) -> void:
 	_box("metal", Vector3(10.0, 0.3, 7.0), Vector3(dx, 6.1, sz - 8.0), STEEL_BIN.darkened(0.15))
 	# Truck scale on the way in.
 	_flat_rect("drive", dx - 1.8, dx + 1.8, zf - 2.0, zf + 20.0 - 14.0, 0.09)
+	_mill_works(sx0, n, r, sh, sz, placed, dx)
+
+
+## What makes a country elevator read as one, from Indiana co-op
+## elevators: the bucket elevator leg climbing from the dump pit past the
+## headhouse, the distributor spouts falling from its head to every silo
+## and bin, a conveyor gallery out to the steel bins, aeration fans at the
+## bins' feet, a caged ladder up the end silo, and a tall column grain
+## dryer with its wet bin and burner where there's room.
+func _mill_works(sx0: float, n: int, r: float, sh: float, sz: float, bins: Array, dx: float) -> void:
+	var g := RandomNumberGenerator.new()
+	g.seed = hash([rng.seed, "mill_works"])
+	var hx := sx0 + (n - 1) * 6.6
+	var leg_x := hx + 4.4
+	var leg_top := sh + 17.0
+	# The leg: a twin casing from the pit to its head above the headhouse.
+	var leg := Color("#9ea3a4")
+	_box("metal", Vector3(1.0, leg_top, 1.7), Vector3(leg_x, leg_top * 0.5, sz - 2.0), leg)
+	_box("metal", Vector3(2.0, 2.4, 2.6), Vector3(leg_x, leg_top + 1.2, sz - 2.0), leg.darkened(0.08))
+	_box("paint", Vector3(2.2, 0.15, 2.8), Vector3(leg_x, leg_top + 2.45, sz - 2.0), PIPE.darkened(0.2))
+	# A guyed lightning mast on the head.
+	UpgradeKits._strut(self, Vector3(leg_x, leg_top + 2.5, sz - 2.0), Vector3(leg_x, leg_top + 6.0, sz - 2.0), 0.08, PIPE)
+	# The boot down in the pit under the dump shed, fed by a drag conveyor.
+	UpgradeKits._strut(self, Vector3(dx, 0.3, sz - 8.0), Vector3(leg_x, 0.3, sz - 2.0), 0.7, leg.darkened(0.15))
+	# Distributor spouts from the head to each silo top and bin roof.
+	var head := Vector3(leg_x - 0.8, leg_top - 0.5, sz - 2.0)
+	for i in n:
+		UpgradeKits._strut(self, head, Vector3(sx0 + i * 6.6, sh + 0.4, sz), 0.32, PIPE.lightened(0.1))
+	for c in bins:
+		UpgradeKits._strut(self, head, c + Vector3(0, 14.4, 0), 0.32, PIPE.lightened(0.1))
+	# A conveyor gallery from the headhouse to the first bin's peak, on a bent.
+	if not bins.is_empty():
+		var c0: Vector3 = bins[0]
+		var a := Vector3(hx, sh + 3.5, sz + 3.0)
+		var b := c0 + Vector3(0, 14.6, 0)
+		UpgradeKits._strut(self, a, b, 1.3, Color("#b7bbbb"))
+		var mid := (a + b) * 0.5
+		for e in [-0.6, 0.6]:
+			UpgradeKits._strut(self, Vector3(mid.x + e, 0, mid.z), Vector3(mid.x + e, mid.y - 0.7, mid.z), 0.25, PIPE)
+	# Aeration fans and roof vents on the bins.
+	for c in bins:
+		var out := Vector3(-1, 0, 0).rotated(Vector3.UP, g.randf_range(-0.6, 0.6))
+		var f: Vector3 = c + out * 6.6
+		_box("metal", Vector3(1.4, 1.2, 1.4), f + Vector3(0, 0.6, 0), Color("#d8d9d6"), Basis(Vector3.UP, atan2(out.x, out.z)))
+		_cylinder("paint", f + out * 0.9 + Vector3(0, 0.0, 0), 0.6, 1.2, Color("#5b6064"), 12)
+		for k in 3:
+			var a := g.randf() * TAU
+			_box("metal", Vector3(0.6, 0.5, 0.6), c + Vector3(cos(a) * 3.2, 12.8, sin(a) * 3.2), Color("#d8d9d6"))
+	# The caged ladder up the end silo.
+	var lx := sx0 - r - 0.25
+	_box("paint", Vector3(0.08, sh, 0.5), Vector3(lx, sh * 0.5, sz), PIPE)
+	var y := 2.4
+	while y < sh:
+		_box("paint", Vector3(0.7, 0.06, 0.06), Vector3(lx - 0.35, y, sz - 0.35), PIPE)
+		_box("paint", Vector3(0.7, 0.06, 0.06), Vector3(lx - 0.35, y, sz + 0.35), PIPE)
+		_box("paint", Vector3(0.06, 0.06, 0.76), Vector3(lx - 0.7, y, sz), PIPE)
+		y += 1.2
+	# The column dryer beside the last bin, if the lot has room.
+	var d := Vector3(sx0 + bins.size() * 13.0 + 2.0, 0, sz + 15.0)
+	if bins.size() < 3 and _in_lot(d, 6.0):
+		var dh := g.randf_range(18.0, 22.0)
+		_box("paint", Vector3(5.0, 0.4, 7.0), d + Vector3(0, 0.2, 0), Color("#b9b5ab"))
+		_box("metal", Vector3(2.6, dh, 4.4), d + Vector3(0, dh * 0.5 + 0.4, 0), Color("#3e4447"))  # screen columns
+		for k in int(dh / 3.0):
+			_box("paint", Vector3(2.7, 0.12, 4.5), d + Vector3(0, 1.4 + k * 3.0, 0), Color("#c9cbc8"))
+		_box("metal", Vector3(3.0, 2.6, 4.8), d + Vector3(0, dh + 1.7, 0), Color("#c9cbc8"))  # garner bin on top
+		_box("metal", Vector3(1.8, 2.2, 2.2), d + Vector3(2.4, 1.5, 1.0), Color("#c9cbc8"))  # fan and burner
+		_cylinder("paint", d + Vector3(3.4, 0.4, 1.0), 0.9, 2.2, Color("#5b6064"), 12)
+		UpgradeKits._strut(self, head, d + Vector3(0, dh + 3.0, 0), 0.32, PIPE.lightened(0.1))
+		# The LP tank that fires it, on two concrete saddles.
+		for e in [-2.2, 2.2]:
+			_box("paint", Vector3(1.6, 0.6, 0.5), d + Vector3(-5.0, 0.3, e), Color("#b9b5ab"))
+		UpgradeKits._drum(self, d + Vector3(-5.0, 1.55, 0), 1.0, 6.4, Color("#efede6"), false)
+		_foot.append([d.x - 1.5, d.z, 11.0, 8.0, 22.0])
 
 
 ## Hardwood sawmill.
