@@ -331,6 +331,8 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 		# A bronze plaque on the end pier by the stair door: the district's listing.
 		_box("metal", Vector3(0.45, 0.32, 0.04), Vector3(sx + signf(sx) * 0.62, 1.55, zf - 0.23), Color("#6b5428"))
 	_alley_side(w, zf + d, fronts, fw, storeys, shop_h, floor_h, wall)
+	if fine and storeys >= 2:
+		_party_wall(w, d, zf, shop_h, floor_h, storeys, wall)
 	if depth > zf + d + 3.0:
 		_flat_rect("asphalt", -width * 0.5, width * 0.5, zf + d, minf(depth, zf + d + 10.0), 0.06)
 	_downtown_walk(to_curb, width, zf)
@@ -394,6 +396,57 @@ func _alley_side(w: float, zb: float, fronts: int, fw: float, storeys: int, shop
 			_box("paint", Vector3(1.1, 0.08, 0.14), Vector3(x, y - wh * 0.5 - 0.04, zb + 0.07), FOUNDATION)
 	if fine:
 		_alley_services(w, zb, fronts, fw, storeys, shop_h, floor_h, n)
+
+
+## The side walls of a Main Street block, which show wherever the
+## neighbour is lower or gone (Marion, Wabash, Anderson): windows bricked
+## up in a slightly different brick, and on a tall block now and then a
+## faded painted advertisement, a "ghost sign" for a flour, tobacco or soft
+## drink brand, its lettering worn to pale bands. Desktop only, with its own
+## random numbers so the builder's don't move.
+func _party_wall(w: float, d: float, zf: float, shop_h: float, floor_h: float, storeys: int, wall: Color) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 4421])
+	for s in [-1.0, 1.0]:
+		var x: float = s * (w * 0.5 + 0.012)
+		var n := int((d - 4.0) / 4.5)
+		for f in range(1, storeys):
+			var y := shop_h + (f - 1) * floor_h + 1.6
+			for i in n:
+				if r.randf() < 0.5:
+					var z := zf + 2.5 + i * 4.5
+					var infill := wall.darkened(r.randf_range(0.04, 0.12)).lerp(Color("#8a5a44"), 0.15)
+					_box("brick", Vector3(0.02, 1.7, 0.95), Vector3(x, y, z), infill)
+					_box("paint", Vector3(0.03, 0.08, 1.05), Vector3(x + s * 0.005, y - 0.9, z), Color("#b9b2a2"))  # the old sill
+		if storeys >= 3 and r.randf() < 0.55:
+			var y0 := shop_h + 0.8
+			var y1 := shop_h + (storeys - 1) * floor_h - 0.6
+			var len := minf(d - 4.0, r.randf_range(8.0, 14.0))
+			var zc := zf + 2.0 + len * 0.5
+			var grounds := [Color("#7a3a30"), Color("#2f4a6a"), Color("#e2d6b4"), Color("#3c4a36")]
+			var ground: Color = grounds[r.randi() % grounds.size()].lerp(wall, 0.45)
+			# Painted straight on the brick, so the bricks still show through.
+			_box("brick", Vector3(0.02, y1 - y0, len), Vector3(x + s * 0.008, (y0 + y1) * 0.5, zc), ground)
+			var ink := Color("#efe6cc").lerp(wall, 0.35)
+			var rows := 2 + r.randi() % 2
+			for k in rows:
+				var ry := lerpf(y1 - 0.9, y0 + 0.7, float(k) / (rows - 1))
+				var rh := 0.9 if k == 0 else 0.5
+				var rl := len * r.randf_range(0.55, 0.85)
+				# Words: runs of letters with gaps between them, a few worn away.
+				var words := 1 + r.randi() % 3
+				var gap := 0.6
+				var wl := (rl - gap * (words - 1)) / words
+				for q in words:
+					var wz := zc - rl * 0.5 + q * (wl + gap) + wl * 0.5
+					var letters := maxi(2, int(wl / (rh * 0.8)))
+					var lw := wl / letters
+					for c in letters:
+						if r.randf() < 0.15:
+							continue
+						var lz := wz - wl * 0.5 + (c + 0.5) * lw
+						_box("brick", Vector3(0.02, rh * r.randf_range(0.8, 1.0), lw * 0.72), Vector3(x + s * 0.02, ry, lz),
+							ink.lerp(wall, r.randf_range(0.0, 0.3)))
 
 
 ## What hangs on a real alley wall downtown (Marion, Wabash, Muncie): each
