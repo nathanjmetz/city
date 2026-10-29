@@ -12,10 +12,12 @@ const SHADER := """
 shader_type spatial;
 render_mode cull_back;
 global uniform float night;
+global uniform float snow;
 uniform bool ultra = false;
 varying vec4 v_custom;
 varying float v_side;
 varying float v_y;
+varying vec3 v_local;
 vec3 lin(vec3 c) { return pow(c, vec3(2.2)); }
 // The Compatibility renderer (the browser) hands INSTANCE_CUSTOM's rgb
 // over as if it were an sRGB colour, already turned linear (alpha comes
@@ -30,8 +32,17 @@ void vertex() {
 	v_custom = custom_data(INSTANCE_CUSTOM);
 	v_side = VERTEX.x;
 	v_y = VERTEX.y;
+	v_local = VERTEX;
 }
 float hash(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+// Smooth value noise (0 to 1), for soft-edged patches.
+float vnoise(vec3 p) {
+	vec3 i = floor(p);
+	vec3 f = p - i;
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(mix(hash(i), hash(i + vec3(1, 0, 0)), f.x), mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), f.x), f.y),
+		mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)), f.x), mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
 void fragment() {
 	float code = COLOR.a;
 	// Flags, rounded first: custom data comes through a hair under a whole
@@ -45,6 +56,7 @@ void fragment() {
 	float metal = 0.0;
 	float spec = 0.5;
 	vec3 emit = vec3(0.0);
+	float snowed = 0.0;
 	if (code < 0.05) {          // body paint
 		col = lin(v_custom.rgb);
 		rough = 0.28;
@@ -86,8 +98,6 @@ void fragment() {
 			float flake = step(0.12, sat) + step(0.25, lum) * step(lum, 0.8);
 			metal = mix(0.1, 0.55, clamp(flake, 0.0, 1.0));
 			rough = 0.32;
-			CLEARCOAT = 1.0;
-			CLEARCOAT_ROUGHNESS = 0.06;
 		} else if (code < 0.15) {
 			// Glass mirrors what is around it, not just the sky: the road
 			// and verges below the horizon, a dark tree line along it, pale
@@ -116,7 +126,45 @@ void fragment() {
 		if (code < 0.45 && code > 0.15 || code < 0.05) {
 			col = mix(col, vec3(0.16, 0.13, 0.10), grime * 0.35);
 			rough = mix(rough, 0.85, grime * 0.6);
+			// In winter the spray is road salt: a dull grey-white crust up
+			// the doors and fenders of everything that drives (INDOT salts
+			// state roads all winter; every car in Indiana wears it by
+			// January).
+			col = mix(col, vec3(0.42, 0.41, 0.39), grime * grime * smoothstep(0.2, 0.7, snow) * 0.75);
 		}
+	}
+#if CURRENT_RENDERER != RENDERER_COMPATIBILITY
+	// Snow on the desktop: while snow lies on the ground it lies on what
+	// faces up too. A car parked with its engine off is under a full blanket
+	// on roof, hood, trunk and windshield; one being driven has had its
+	// glass scraped and keeps only patches on the roof and trunk lid, as
+	// people leave it (benchmark: Indiana street and lot photos after a
+	// snowfall, January). Lamps on a moving car are brushed clear.
+	if (snow > 0.05) {
+		float up = (INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).y;
+		float lay = smoothstep(0.45, 0.8, up);
+		float n = vnoise(v_local * 1.3 + v_custom.rgb * 17.0) * 0.7 + vnoise(v_local * 5.0) * 0.3;
+		float parked = 1.0 - running;
+		// Parked: the whole top, broken only where it curves away. Driven:
+		// a few soft patches left on the roof, none on the glass.
+		float s = parked * smoothstep(0.15, 0.6, snow) * smoothstep(0.35, 0.6, lay * (0.7 + 0.6 * n));
+		s += running * smoothstep(0.5, 0.9, snow) * lay * smoothstep(0.58, 0.68, n) * step(0.9, v_y)
+			* (code > 0.05 && code < 0.15 ? 0.0 : 0.9);
+		s = clamp(s, 0.0, 1.0);
+		if (code < 0.45 || parked > 0.5) {
+			col = mix(col, vec3(0.78, 0.8, 0.84), s);
+			rough = mix(rough, 0.75, s);
+			metal = mix(metal, 0.0, s);
+			spec = mix(spec, 0.35, s);
+			emit *= 1.0 - s;
+			snowed = s;
+		}
+	}
+#endif
+	if (ultra && code < 0.05) {
+		// A glossy clear coat, except under snow.
+		CLEARCOAT = 1.0 - snowed;
+		CLEARCOAT_ROUGHNESS = 0.06;
 	}
 	ALBEDO = col;
 	ROUGHNESS = rough;
