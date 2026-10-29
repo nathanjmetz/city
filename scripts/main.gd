@@ -102,6 +102,10 @@ func _ready() -> void:
 	var county_trains := CountyTrainView.new()
 	add_child(county_trains)
 	county_trains.setup(sim, _tick_fraction)
+	# Where the county roads and highways cross the creeks and the river.
+	var crossings := WaterCrossingView.new()
+	add_child(crossings)
+	crossings.setup(sim)
 
 	var lot_alerts := LotAlerts.new()
 	lot_alerts.setup(sim)

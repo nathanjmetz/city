@@ -465,6 +465,7 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 	# One storefront every 7-8 m, each with its own sign and maybe an awning.
 	var fronts := maxi(1, roundi(w / 7.5))
 	var fw := w / fronts
+	var shop_wins := []
 	for k in fronts:
 		var fx := -w * 0.5 + (k + 0.5) * fw
 		var sw := fw - 1.0
@@ -484,6 +485,7 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 				shopfront = false
 				_box("paint", Vector3(bw - 0.02, 0.6, 0.16), Vector3(x, 0.4, zf - 0.08), trim)
 				if fine:
+					shop_wins.append(Vector2(x, bw))
 					# Raised panels on the bulkhead.
 					_box("paint", Vector3(bw * 0.38, 0.32, 0.04), Vector3(x - bw * 0.22, 0.4, zf - 0.17), trim.darkened(0.1))
 					_box("paint", Vector3(bw * 0.38, 0.32, 0.04), Vector3(x + bw * 0.22, 0.4, zf - 0.17), trim.darkened(0.1))
@@ -523,6 +525,7 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 				shop_h + 0.2 + ph * 0.5, zf - 0.21), panel.darkened(0.12))
 	# Flats above: tall windows with sills and lintels.
 	var n := maxi(2, int(w / 2.6))
+	var uppers := []
 	for f in range(1, storeys if not slipcover else 1):
 		var y := shop_h + (f - 1) * floor_h + 1.6
 		for i in n:
@@ -532,6 +535,7 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 			_box("paint", Vector3(1.3, 0.1, 0.16), Vector3(x, y - wh * 0.5 - 0.05, zf - 0.08), trim)
 			if fine:
 				_sash(x, y, 1.0, wh, zf, trim)
+				uppers.append(Vector3(x, y, wh))
 			if italianate:
 				# A hood mould: a wider cap with a raised crown.
 				_box("paint", Vector3(1.5, 0.3, 0.16), Vector3(x, y + wh * 0.5 + 0.15, zf - 0.08), trim)
@@ -565,6 +569,8 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 		_party_wall(w, d, zf, shop_h, floor_h, storeys, wall)
 	if fine:
 		_front_signs(w, zf, fronts, fw, shop_h, storeys)
+		_shop_stoops(w, zf, fronts, fw)
+		_window_life(zf, uppers, shop_wins, n)
 	if depth > zf + d + 3.0:
 		_flat_rect("asphalt", -width * 0.5, width * 0.5, zf + d, minf(depth, zf + d + 10.0), 0.06)
 	_downtown_walk(to_curb, width, zf)
@@ -630,12 +636,176 @@ func _alley_side(w: float, zb: float, fronts: int, fw: float, storeys: int, shop
 		_alley_services(w, zb, fronts, fw, storeys, shop_h, floor_h, n)
 
 
-## The side walls of a Main Street block, which show wherever the
-## neighbour is lower or gone (Marion, Wabash, Anderson): windows bricked
-## up in a slightly different brick, and on a tall block now and then a
-## faded painted advertisement, a "ghost sign" for a flour, tobacco or soft
-## drink brand, its lettering worn to pale bands. Desktop only, with its own
-## random numbers so the builder's don't move.
+## Desktop: signs of life in a Main Street block's windows. Downstairs, a
+## red-and-blue neon OPEN sign hung in some display windows (lit after dark).
+## Upstairs, now and then gold-leaf lettering across a second-floor office's
+## windows (the lawyer, the insurance man, the dentist, as still seen in
+## Wabash, Peru or Marion), a window air conditioner on its sill in the flats,
+## or a flower box. Its own random numbers.
+func _window_life(zf: float, uppers: Array, shop_wins: Array, per_floor: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 31])
+	for sw: Vector2 in shop_wins:
+		if r.randf() < 0.3:
+			_open_sign(Vector3(sw.x + r.randf_range(-0.2, 0.2) * sw.y, r.randf_range(1.85, 2.2), zf - 0.05))
+	# Gold leaf across a run of second-floor windows.
+	if uppers.size() >= 2 and r.randf() < 0.35:
+		var first := r.randi() % maxi(1, mini(per_floor, uppers.size()) - 1)
+		var words: Array = GOLD_WORDS[r.randi() % GOLD_WORDS.size()]
+		var run := mini(words.size(), mini(per_floor, uppers.size()) - first)
+		var gold := Color("#d9b257")
+		for i in run:
+			var u: Vector3 = uppers[first + i]
+			# Windows run right to left as seen from the street.
+			_gold_word(words[run - 1 - i], Vector3(u.x, u.y - u.z * 0.5 + 0.5, zf - 0.04), gold)
+	for u: Vector3 in uppers:
+		var sill: float = u.y - u.z * 0.5
+		var roll := r.randf()
+		if roll < 0.07:
+			# A window unit in the bottom sash, its cabinet hanging out over the sill.
+			var ac := Color("#d6d2c6")
+			_box("metal", Vector3(0.62, 0.38, 0.55), Vector3(u.x, sill + 0.2, zf - 0.22), ac)
+			_box("metal", Vector3(0.5, 0.26, 0.02), Vector3(u.x, sill + 0.2, zf - 0.5), ac.darkened(0.25))
+			for q in 4:
+				_box("metal", Vector3(0.5, 0.015, 0.025), Vector3(u.x, sill + 0.1 + q * 0.065, zf - 0.51), ac.darkened(0.4))
+			_box("paint", Vector3(0.36, 0.38, 0.03), Vector3(u.x, sill + 0.2, zf - 0.02), Color("#8c8a82"))  # accordion side panels
+			_box("metal", Vector3(0.03, 0.03, 0.4), Vector3(u.x - 0.25, sill - 0.12, zf - 0.22), Color("#3a3a3a"),
+				Basis(Vector3.RIGHT, deg_to_rad(-35.0)))
+		elif roll < 0.15:
+			# A flower box on brackets under the sill, geraniums and trailing green.
+			var bx := Color(["#2f3a2c", "#e8e4da", "#5a2626"][r.randi() % 3])
+			_box("paint", Vector3(1.0, 0.2, 0.24), Vector3(u.x, sill - 0.2, zf - 0.2), bx)
+			var keep := rng
+			rng = r
+			for q in 3:
+				var px := u.x - 0.32 + q * 0.32
+				_shrub(Vector3(px, sill - 0.1, zf - 0.2), 0.14)
+				for b in 3:
+					_box("paint", Vector3(0.07, 0.07, 0.07), Vector3(px + r.randf_range(-0.1, 0.1), sill + r.randf_range(0.02, 0.14),
+						zf - 0.2 + r.randf_range(-0.08, 0.08)), Color(["#c8242e", "#e0485a", "#f2f0ea"][r.randi() % 3]))
+			rng = keep
+
+
+const GOLD_WORDS := [["ATTORNEY", "AT LAW"], ["INSURE", "REALTY"], ["ABSTRACT", "TITLE"], ["DENTIST", "OFFICE"],
+	["ACCOUNTS", "TAX"]]
+const PIXEL_FONT := {
+	"A": [".#.", "#.#", "###", "#.#", "#.#"], "B": ["##.", "#.#", "##.", "#.#", "##."], "C": ["###", "#..", "#..", "#..", "###"],
+	"D": ["##.", "#.#", "#.#", "#.#", "##."], "E": ["###", "#..", "##.", "#..", "###"], "F": ["###", "#..", "##.", "#..", "#.."],
+	"I": ["###", ".#.", ".#.", ".#.", "###"], "L": ["#..", "#..", "#..", "#..", "###"], "N": ["##.", "#.#", "#.#", "#.#", "#.#"],
+	"O": ["###", "#.#", "#.#", "#.#", "###"], "R": ["##.", "#.#", "##.", "#.#", "#.#"], "S": ["###", "#..", "###", "..#", "###"],
+	"T": ["###", ".#.", ".#.", ".#.", ".#."], "U": ["#.#", "#.#", "#.#", "#.#", "###"], "W": ["#.#", "#.#", "#.#", "###", "#.#"],
+	"X": ["#.#", "#.#", ".#.", "#.#", "#.#"], "Y": ["#.#", "#.#", ".#.", ".#.", ".#."],
+}
+
+
+## One word in gold leaf on a window, centred on `c`, in small block
+## capitals (each row of a letter's pixels drawn as one strip).
+func _gold_word(word: String, c: Vector3, col: Color) -> void:
+	var px := 0.026
+	var adv := px * 4.0
+	var x0 := c.x + (word.length() * adv - px) * 0.5  # +x is the viewer's left
+	for i in word.length():
+		var rows: Array = PIXEL_FONT.get(word[i], [])
+		for ry in rows.size():
+			var row: String = rows[ry]
+			var cx := 0
+			while cx < 3:
+				if row[cx] != "#":
+					cx += 1
+					continue
+				var run := 0
+				while cx + run < 3 and row[cx + run] == "#":
+					run += 1
+				var lx := x0 - i * adv - (cx + run * 0.5) * px
+				_box("metal", Vector3(run * px, px, 0.006), Vector3(lx, c.y + (2 - ry) * px, c.z), col)
+				cx += run
+
+
+## A shop's neon OPEN sign in the window: red tube letters in a blue tube
+## border, on a clear hanger. Glows after dark ("sign" alpha 1).
+func _open_sign(c: Vector3) -> void:
+	var red := Color("#ff3446")
+	var blue := Color("#3a7bff")
+	var t := 0.022
+	var w := 0.62
+	var h := 0.26
+	for e in [[Vector3(w, t, t), Vector3(0, h * 0.5, 0)], [Vector3(w, t, t), Vector3(0, -h * 0.5, 0)],
+			[Vector3(t, h, t), Vector3(-w * 0.5, 0, 0)], [Vector3(t, h, t), Vector3(w * 0.5, 0, 0)]]:
+		_box("sign", e[0], c + e[1], blue)
+	var lh := 0.15
+	var lw := 0.1
+	for i in 4:
+		var x := c.x + 0.21 - i * 0.14  # +x is the viewer's left
+		var lc := Vector3(x, c.y, c.z)
+		var strokes := []
+		match i:
+			0:  # O
+				strokes = [[lw, 0, 0, lh * 0.5], [lw, 0, 0, -lh * 0.5], [0, lh, -lw * 0.5, 0], [0, lh, lw * 0.5, 0]]
+			1:  # P
+				strokes = [[0, lh, -lw * 0.5, 0], [lw, 0, 0, lh * 0.5], [lw, 0, 0, 0], [0, lh * 0.5, lw * 0.5, lh * 0.25]]
+			2:  # E
+				strokes = [[0, lh, -lw * 0.5, 0], [lw, 0, 0, lh * 0.5], [lw * 0.8, 0, -lw * 0.1, 0], [lw, 0, 0, -lh * 0.5]]
+			3:  # N
+				strokes = [[0, lh, -lw * 0.5, 0], [0, lh, lw * 0.5, 0]]
+		for s in strokes:
+			_box("sign", Vector3(maxf(s[0], t), maxf(s[1], t), t), lc + Vector3(-s[2], s[3], 0), red)
+		if i == 3:
+			_box("sign", Vector3(t, Vector2(lw, lh).length(), t), lc, red, Basis(Vector3.BACK, -atan2(lw, lh)))
+	# The hanging chain.
+	for sx in [-0.25, 0.25]:
+		_box("metal", Vector3(0.008, 0.3, 0.008), c + Vector3(sx, h * 0.5 + 0.15, 0.01), Color("#9a9a9a"))
+
+
+## Desktop: what shopkeepers set out against their own fronts on a Main
+## Street walk (the building side, clear of the door and the walking lane
+## the ADA asks for): potted plants by the door, a chalkboard A-frame, a
+## cafe's bistro table and chairs. Its own random numbers.
+func _shop_stoops(w: float, zf: float, fronts: int, fw: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 29])
+	var black := Color("#1f2224")
+	for k in fronts:
+		var fx := -w * 0.5 + (k + 0.5) * fw
+		var sw := fw - 1.0
+		if r.randf() < 0.45:
+			# A pair of planters flanking the door.
+			var pot := Color(["#9a5a3c", "#3b3f42", "#d8d2c4"][r.randi() % 3])
+			for sx in [-1.0, 1.0]:
+				var px: float = fx + sx * 1.15
+				_box("paint", Vector3(0.5, 0.5, 0.5), Vector3(px, 0.25, zf - 0.45), pot)
+				var keep := rng
+				rng = r
+				_shrub(Vector3(px, 0.5, zf - 0.45), 0.32)
+				rng = keep
+		var pick := r.randf()
+		if pick < 0.3:
+			# A sandwich board, two chalkboards leaning together.
+			var ax := fx + sw * r.randf_range(0.22, 0.38) * (1.0 if r.randf() < 0.5 else -1.0)
+			for sz in [-1.0, 1.0]:
+				var tilt := Basis(Vector3.RIGHT, deg_to_rad(-12.0 * sz))  # tops lean together
+				_box("paint", Vector3(0.62, 0.95, 0.03), Vector3(ax, 0.47, zf - 0.95 + sz * 0.1), Color("#2b2f2c"), tilt)
+				_box("paint", Vector3(0.66, 0.06, 0.04), Vector3(ax, 0.93, zf - 0.95 + sz * 0.02), Color("#6b5038"), tilt)
+				# Chalked specials on the face toward the walk.
+				var c := Vector3(ax, 0.47, zf - 0.95 + sz * 0.1)
+				for line in 4:
+					var lw := r.randf_range(0.22, 0.48)
+					_box("paint", Vector3(lw, 0.035, 0.01), c + tilt * Vector3(0, 0.3 - line * 0.17, 0.025 * sz), Color("#e8e6df"), tilt)
+		elif pick < 0.5:
+			# A cafe's bistro set: a round-ish table and two chairs.
+			var tx := fx + sw * 0.3 * (1.0 if r.randf() < 0.5 else -1.0)
+			var tz := zf - 0.85
+			_box("paint", Vector3(0.06, 0.72, 0.06), Vector3(tx, 0.36, tz), black)
+			_box("paint", Vector3(0.62, 0.04, 0.62), Vector3(tx, 0.74, tz), black)
+			_box("paint", Vector3(0.44, 0.04, 0.62), Vector3(tx, 0.741, tz), black.lightened(0.05), Basis(Vector3.UP, PI * 0.25))
+			for sx in [-1.0, 1.0]:
+				var cx: float = tx + sx * 0.58
+				_box("paint", Vector3(0.42, 0.04, 0.42), Vector3(cx, 0.45, tz), black)
+				_box("paint", Vector3(0.04, 0.45, 0.42), Vector3(cx + sx * 0.2, 0.7, tz), black)
+				for lx in [-0.18, 0.18]:
+					_box("paint", Vector3(0.03, 0.43, 0.03), Vector3(cx + lx, 0.22, tz - 0.18), black)
+					_box("paint", Vector3(0.03, 0.43, 0.03), Vector3(cx + lx, 0.22, tz + 0.18), black)
+
+
 ## Main Street signs that stick out over the walk, desktop only: double-faced
 ## blade signs on wrought-iron brackets between the shopfronts (a few of them
 ## outlined in neon, the 1940s way) and gooseneck lamps that light the flat
@@ -700,6 +870,12 @@ func _front_signs(w: float, zf: float, fronts: int, fw: float, shop_h: float, st
 					_box("sign", e[0], e[1], neon)
 
 
+## The side walls of a Main Street block, which show wherever the
+## neighbour is lower or gone (Marion, Wabash, Anderson): windows bricked
+## up in a slightly different brick, and on a tall block now and then a
+## faded painted advertisement, a "ghost sign" for a flour, tobacco or soft
+## drink brand, its lettering worn to pale bands. Desktop only, with its own
+## random numbers so the builder's don't move.
 func _party_wall(w: float, d: float, zf: float, shop_h: float, floor_h: float, storeys: int, wall: Color) -> void:
 	var r := RandomNumberGenerator.new()
 	r.seed = hash([rng.seed, 4421])

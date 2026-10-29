@@ -188,11 +188,15 @@ func _apply_quality() -> void:
 		_use_clouds(q.tier >= GraphicsQuality.HIGH)
 	# Low's coarse 2-split map stripes lawns even at 3.0; it needs more.
 	sun.shadow_normal_bias = 4.5 if t.splits == 2 else 3.0
-	# The real sun is a disc half a degree across, so a shadow is crisp
-	# where it touches what casts it and softens the farther it falls: a
-	# pole's shadow blurs toward its tip, a house's along its far edge.
-	# Ultra and up (soft shadows of this kind cost more to draw).
-	sun.light_angular_distance = 0.53 if q.tier >= GraphicsQuality.ULTRA else 0.0
+	# The real sun is a disc half a degree across, so a car's shadow is
+	# crisp (a penumbra of a centimetre or two from a 1.5 m roof). Godot's
+	# own sun-size shadows (light_angular_distance) came out stair-stepped,
+	# a shadow-map texel per step, along car roofs and the ground under
+	# them (vehicles loop, 2026-10-29), so they stay off. Instead Ultra and
+	# up, with their 8192 shadow map, blur less than the rest: a crisper
+	# edge with no steps (0.6 still showed them).
+	sun.light_angular_distance = 0.0
+	sun.shadow_blur = 0.8 if q.tier >= GraphicsQuality.ULTRA else 1.2
 	env.ssao_enabled = t.ssao
 	env.ssao_radius = 1.5
 	env.ssao_intensity = 1.6
