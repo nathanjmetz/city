@@ -8,7 +8,9 @@ extends SceneTree
 ## Opens the real game, clears it and builds the big test town (PerfTown
 ## "big": homes, shops, factories, services, parks, a farm past the edge),
 ## runs it a fixed number of ticks so there is traffic, then pauses it and
-## hides the panels and lot badges. Then takes 10 pictures from fixed camera
+## hides the panels and lot badges. Before each picture the sim is run
+## through the day to that picture's hour (from sunrise: WARM below), so
+## commuters are at work, shoppers at the shops and cars in the lots. Then takes 10 pictures from fixed camera
 ## spots (SHOTS): street level, 40 m, 100 m, 300 m and 1 km on a fair
 ## mid-July morning; the 100 m view again at dusk, at night, in rain and in
 ## snow (mid-January); and a 300 m view over the fields at the town's edge.
@@ -35,6 +37,10 @@ extends SceneTree
 ## no graphics-chip timer, so this stands in for it), render_cpu_ms, draw
 ## calls, triangles and video memory. The times move a few ms between runs
 ## when other programs share the Mac; draw calls and triangles don't.
+## --dry does the warm-ups with no drawing and prints, per shot, the cars
+## parked at shops, factories and homes (run it with --headless: it opens no
+## window). --legacy-warm does the old warm-up (150 ticks, then the clock
+## jumps to the hour) for a before-and-after count.
 ## Never change a shot here between rounds without saying so in the round's
 ## notes: the point is that round N and round N+1 compare like with like.
 
@@ -61,22 +67,42 @@ const MID_PITCH := 22.0
 ## [file name, aim point, yaw deg, pitch deg, distance m, when, weather].
 ## 01 aims down the residential street nearest its point instead (_street_aim),
 ## 02 at the front of the shop nearest its point (_shop_aim).
-## Shot in this order (snow last: January redraws every field and tree).
+## Shot in this order: by the hour of the day, so the sim runs forward through
+## one day and the warm-ups add up (the day's views and the rain, then dusk
+## and night), snow last: January redraws every field and tree.
 var SHOTS := [
 	["01_street", Vector3(-280.0, 0.0, -250.0), 0.0, 10.0, 40.0, "day", FAIR],
 	["02_40m", Vector3(-260.0, 0.0, -60.0), 0.0, 25.0, 40.0, "day", FAIR],
 	["03_100m", MID, 35.0, MID_PITCH, 100.0, "day", FAIR],
 	["04_300m", Vector3(-150.0, 0.0, -150.0), 35.0, 40.0, 300.0, "day", FAIR],
 	["05_1km", Vector3(0.0, 0.0, 0.0), 35.0, 45.0, 1000.0, "day", FAIR],
-	["06_dusk_100m", MID, 35.0, MID_PITCH, 100.0, "dusk", FAIR],
-	["07_night_100m", MID, 35.0, MID_PITCH, 100.0, "night", FAIR],
 	["08_rain_100m", MID, 35.0, MID_PITCH, 100.0, "day", RAIN],
 	["10_farm_edge_300m", Vector3(1400.0, 0.0, -900.0), 80.0, 25.0, 300.0, "day", FAIR],
+	["06_dusk_100m", MID, 35.0, MID_PITCH, 100.0, "dusk", FAIR],
+	["07_night_100m", MID, 35.0, MID_PITCH, 100.0, "night", FAIR],
 	["09_snow_100m", MID, 35.0, MID_PITCH, 100.0, "winter", SNOW],
 ]
-## Sim ticks run before the pictures (a sim minute each), so cars and
-## walkers are out; always the same number, so the town is the same.
+## Sim ticks run right after the town is built (a sim minute each), so cars
+## and walkers are out; always the same number, so the town is the same.
 const WARM_TICKS := 150
+## The sky hour and the day of the month are one clock (a month is a sky
+## day), so a shot's month and hour fix the calendar; the sim is run from
+## the start of its day to the shot's hour. Same town, same seed, same
+## ticks: the same result every run.
+const WARM_CAP := 80000
+## The first day runs from sunrise (the daytime shots: the whole morning
+## commute and the shops filling). Any later day (the evening, January) would
+## cost as much again, so it starts this many sky hours before its shot, with
+## everyone sent home and the people whose shift covers that hour put at
+## work (People.settle, the game's own jump-the-clock helper).
+const LEAD := 2.0
+## Ticks, at the start of such a day, the walker and car limits are lifted
+## so everyone still out can get home (the game's limits, 800 walkers and
+## 400 cars, hold a big town's whole evening rush up for hours).
+const HOME_TICKS := 600
+## Milliseconds of ticking per frame while a window is open (the rest is the
+## frame), so the window keeps answering.
+const WARM_MS := 30
 ## Frames to wait after a move before checking the views, the calm frames
 ## in a row everything must read drawn, the most frames to wait, and the
 ## frames timed.
@@ -100,6 +126,13 @@ var _row := {}
 var _rows := []
 var _dusk_hour := 21.0
 var _refused := false
+var _dry := false
+var _legacy := false
+var _month := 0       # the month the sim's day is running in (0: none yet)
+var _target := 0.0    # the sky hour the sim is being run to
+var _home_left := 0   # ticks of lifted limits to go (HOME_TICKS)
+var _caps := Vector2i.ZERO  # the car and walker limits to put back
+var _ticks := 0       # sim ticks run for the warm-ups so far
 
 
 func _initialize() -> void:
@@ -113,6 +146,11 @@ func _initialize() -> void:
 		for c in root.get_children():
 			root.remove_child(c)
 			c.free()
+		quit(1)
+		return
+	if "--dry" in OS.get_cmdline_user_args() and DisplayServer.get_name() != "headless":
+		printerr("look_round: --dry opens no picture, so run it with --headless (no window should open).")
+		_refused = true
 		quit(1)
 
 
@@ -144,8 +182,10 @@ func _process(_delta: float) -> bool:
 		var args := OS.get_cmdline_user_args()
 		_out = args[0] if args.size() > 0 and not args[0].begins_with("--") else "."
 		DirAccess.make_dir_recursive_absolute(_out)
+		_dry = "--dry" in args
+		_legacy = "--legacy-warm" in args
 		var win := DisplayServer.window_get_size()
-		if (win.x < 1920 or win.y < 1080) and not "--windowed" in args:
+		if not _dry and (win.x < 1920 or win.y < 1080) and not "--windowed" in args:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 		# A throwaway save, so the test town never lands on a real town.
 		root.get_node("/root/Session").save_path = SAVE
@@ -157,10 +197,21 @@ func _process(_delta: float) -> bool:
 		return false
 	if _stage == 0:
 		_build()
+		if _dry:
+			_dry_run()
+			return true
 		_stage = 1
 		return false
+	if _stage == 4:
+		if _warm(WARM_MS):
+			_wait = 0
+			_stage = 2
+		return false
 	if _stage == 1:
-		# The whole town drawn in once, from the first spot.
+		# The whole town drawn in once, from the first spot (the first
+		# warm-up runs while it draws in).
+		if not _warm(WARM_MS):
+			return false
 		_wait += 1
 		if _wait < 300 or (not _drawn() and _wait < MAX_WAIT * 2):
 			return false
@@ -268,7 +319,7 @@ func _next() -> void:
 	_row = {"name": s[0], "frame_ms": 0.0, "render_cpu_ms": 0.0, "draw_calls": 0.0,
 		"triangles": 0.0, "when": s[5], "weather": s[6]}
 	_set_shot(s)
-	_stage = 2
+	_stage = 4
 
 
 func _set_shot(s: Array) -> void:
@@ -287,14 +338,81 @@ func _set_shot(s: Array) -> void:
 	_weather.fog = s[6][2]
 
 
-## The town's calendar on that day, with the light pinned to that day and
-## hour (as tools/daylight_shot.gd does).
+## The light pinned to that day and hour (as tools/daylight_shot.gd does),
+## and the town's clock brought to that hour: run through the day by _warm
+## (the sim is run to `hour` of `month`'s sky day), or, with --legacy-warm,
+## jumped to the date as this tool first did (the people never had the
+## morning: nobody at work, nobody shopping).
 func _set_moment(month: int, day: int, hour: float) -> void:
 	var date: float = float(month - 1) + float(day - 1) / Seasons.DAYS_IN[month - 1]
-	_main.sim.set_calendar(Seasons.tick_at(12.0 + date))
 	for n in _main.find_children("*", "DayNight", true, false):
 		n.set("date_override", date)
 		n.set("hour_override", hour)
+	if _legacy:
+		_main.sim.set_calendar(Seasons.tick_at(12.0 + date))
+		return
+	var sim: CitySim = _main.sim
+	if _month == 0:
+		# The first day: all of it, from sunrise on the 1st.
+		_new_day(Seasons.tick_at(12.0 + float(month - 1)), false)
+		_month = month
+	elif month != _month or hour < _target - 0.01 or hour > _target + LEAD + 0.01:
+		# Another day, or too far on from the last shot to run through:
+		# LEAD hours before this one.
+		_new_day(Seasons.tick_at(SkyClock.at(month, maxf(hour - LEAD, 0.0))), true)
+		_month = month
+	_target = hour
+
+
+## The calendar jumps to `cal` (a calendar tick): whoever is out is due home
+## now (the game's own timer, People.plan: they set off in the first
+## minutes of the new day, a few at a time while the sidewalks have room),
+## and with `settle` the people whose shift covers the new hour are at work.
+func _new_day(cal: int, settle: bool) -> void:
+	var sim: CitySim = _main.sim
+	var ids: Array = sim.people.people.keys()
+	ids.sort()
+	var out := 0
+	for id in ids:
+		var p: Dictionary = sim.people.people[id]
+		if p.at != "" and p.at != "travel":
+			out += 1
+			sim.people.set_until(p, sim.tick_count)
+	print("look_round: a new day: %d people out, all due home" % out)
+	if out > 0:
+		_caps = Vector2i(sim.traffic.max_cars, sim.traffic.max_walkers)
+		sim.traffic.max_cars = 4 * _caps.x
+		sim.traffic.max_walkers = 8 * _caps.y
+		_home_left = HOME_TICKS
+	sim.set_calendar(cal)
+	if settle:
+		sim.people.settle(sim, sim.traffic)
+
+
+## Runs the sim on to the sky hour asked for (_target), a few milliseconds
+## of ticks at a time with a window open (budget_ms; 0: all of it at once).
+## True once it is there.
+func _warm(budget_ms := 0) -> bool:
+	if _legacy or _month == 0:
+		return true
+	var sim: CitySim = _main.sim
+	var t0 := Time.get_ticks_msec()
+	var n := 0
+	while sim.sky_hour() < _target:
+		sim.tick()
+		_ticks += 1
+		n += 1
+		if _home_left > 0:
+			_home_left -= 1
+			if _home_left == 0:
+				sim.traffic.max_cars = _caps.x
+				sim.traffic.max_walkers = _caps.y
+		if _ticks > WARM_CAP * 4:
+			printerr("look_round: the sky hour never reached %.2f (stopped at %.2f)" % [_target, sim.sky_hour()])
+			return true
+		if budget_ms > 0 and n % 20 == 0 and Time.get_ticks_msec() - t0 > budget_ms:
+			return false
+	return true
 
 
 ## The evening hour the sun is DUSK_SUN degrees under the horizon.
@@ -342,6 +460,62 @@ func _shop_aim(sim: CitySim) -> void:
 			SHOTS[1][2] = rad_to_deg(atan2(-n.x, -n.z)) + 30.0
 
 
+## --dry: every shot's warm-up, no drawing, and a count of where the cars
+## are at that moment. "shops" and "factories" are cars parked on commercial
+## and industrial lots (or at the curb of one), "homes" on residential ones.
+func _dry_run() -> void:
+	var sim: CitySim = _main.sim
+	var t0 := Time.get_ticks_msec()
+	print("look_round: dry run (%s warm-up)" % ("legacy: %d ticks, clock jumped" % WARM_TICKS if _legacy else "through the day"))
+	for i in SHOTS.size():
+		var s: Array = SHOTS[i]
+		var t1 := Time.get_ticks_msec()
+		var before := _ticks
+		_shot = i
+		_set_shot(s)
+		_warm()
+		var c := _census(sim)
+		var line := "look_round: %-18s %s hour %5.2f  parked: shops %3d  factories %3d  homes %4d  other %3d | people at work %4d, at errands %3d, in transit %4d, home %4d of %d | driving %3d, walking %3d | +%d ticks %.1fs" % [
+			s[0], "legacy" if _legacy else "warm  ", sim.sky_hour(), c.shops, c.factories, c.homes, c.other,
+			c.at_job, c.errands, c.travel, c.home, c.people, sim.traffic.cars.size(), sim.traffic.walkers.size(),
+			_ticks - before, (Time.get_ticks_msec() - t1) / 1000.0]
+		print(line)
+	if "--perf" in OS.get_cmdline_user_args():
+		var keys := Perf.stats.keys()
+		keys.sort_custom(func(a, b): return Perf.stats[a].sum > Perf.stats[b].sum)
+		for k in keys.slice(0, 14):
+			print("look_round: perf %-28s %8.0f ms total, %6.2f ms/tick" % [k, Perf.stats[k].sum, Perf.stats[k].sum / maxi(_ticks, 1)])
+	print("look_round: dry run took %.1f s, %d warm-up ticks" % [(Time.get_ticks_msec() - t0) / 1000.0, _ticks])
+	quit()
+
+
+## Parked cars by the kind of lot they are on, and where the people are.
+func _census(sim: CitySim) -> Dictionary:
+	var c := {"shops": 0, "factories": 0, "homes": 0, "other": 0, "people": sim.people.people.size(),
+		"at_job": 0, "errands": 0, "home": 0, "travel": 0}
+	for car in sim.traffic.parked:
+		var ref: String = car.get("at_place", "")
+		var z := -1
+		if ref.begins_with("lot:") and sim.buildings.has(ref.trim_prefix("lot:")):
+			z = int(sim.buildings[ref.trim_prefix("lot:")].zone)
+		match z:
+			ZoneMap.Zone.COMMERCIAL: c.shops += 1
+			ZoneMap.Zone.INDUSTRIAL: c.factories += 1
+			ZoneMap.Zone.RESIDENTIAL: c.homes += 1
+			_: c.other += 1
+	for id in sim.people.people:
+		var p: Dictionary = sim.people.people[id]
+		if p.at == "":
+			c.home += 1
+		elif p.at == "travel":
+			c.travel += 1
+		elif p.at == p.job:
+			c.at_job += 1
+		else:
+			c.errands += 1
+	return c
+
+
 func _save_shot() -> void:
 	var img := root.get_texture().get_image()
 	_row.picture_size = [img.get_width(), img.get_height()]
@@ -379,7 +553,7 @@ func _finish() -> void:
 	var q := GraphicsQuality.current
 	var report := {"tier": GraphicsQuality.NAMES[q.tier] if q else "?", "renderer": RenderingServer.get_current_rendering_method(),
 		"adapter": RenderingServer.get_video_adapter_name(), "window": [root.size.x, root.size.y],
-		"town": "PerfTown big", "warm_ticks": WARM_TICKS, "buildings": _main.sim.buildings.size(),
+		"town": "PerfTown big", "warm_ticks": WARM_TICKS, "day_ticks": _ticks, "warm": "legacy" if _legacy else "through the day", "buildings": _main.sim.buildings.size(),
 		"day": DAY, "dusk_hour": snappedf(_dusk_hour, 0.01), "night_hour": NIGHT_HOUR, "winter": WINTER,
 		"date": Time.get_date_string_from_system(), "shots": _rows}
 	var f := FileAccess.open(_out.path_join("frames.json"), FileAccess.WRITE)
