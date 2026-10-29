@@ -1789,12 +1789,92 @@ func _tractor() -> void:  # John Deere 8R row-crop tractor
 	_box(Vector3(0, 3.48, 4.0), Vector3(0.12, 0.1, 0.12), BEACON_AMBER)
 	_cyl(Vector3(0.35, 2.0, 1.9), Vector3(0.35, 3.4, 1.9), 0.07, TRIM)
 	var rim := Color(0.95, 0.75, 0.05, 0.4)
-	_wheel(Vector3(-hw, 0.0, 1.0), 0.62, 0.45, rim)
-	_wheel(Vector3(hw, 0.0, 1.0), 0.62, 0.45, rim)
-	_wheel(Vector3(-hw - 0.15, 0.0, 4.2), 1.0, 0.6, rim)
-	_wheel(Vector3(hw + 0.15, 0.0, 4.2), 1.0, 0.6, rim)
-	_box(Vector3(0, 1.4, 0.04), Vector3(0.6, 0.12, 0.1), HEAD, true)
+	if _hi:
+		_tractor_hi(hw, rim)
+	else:
+		_wheel(Vector3(-hw, 0.0, 1.0), 0.62, 0.45, rim)
+		_wheel(Vector3(hw, 0.0, 1.0), 0.62, 0.45, rim)
+		_wheel(Vector3(-hw - 0.15, 0.0, 4.2), 1.0, 0.6, rim)
+		_wheel(Vector3(hw + 0.15, 0.0, 4.2), 1.0, 0.6, rim)
+		_box(Vector3(0, 1.4, 0.04), Vector3(0.6, 0.12, 0.1), HEAD, true)
 	_box(Vector3(0, 0.75, 5.4), Vector3(0.6, 0.15, 0.4), TRIM)
+
+
+## Ultra: what makes a row-crop tractor read as one (JD 8R, Case IH
+## Magnum): lugged ag tyres on dished rims instead of car wheels, fenders
+## arching over the rears, a four-post cab, the grille and lamps on the
+## nose, a stack of suitcase weights out front, steps and a grab rail up to
+## the door, and the orange slow-moving-vehicle triangle every tractor on
+## an Indiana road must carry (IC 9-21-9, ASABE S276).
+func _tractor_hi(hw: float, rim: Color) -> void:
+	for s in [-1.0, 1.0]:
+		_ag_wheel(Vector3(s * hw, 0.0, 1.0), 0.62, 0.45, rim)
+		_ag_wheel(Vector3(s * (hw + 0.15), 0.0, 4.2), 1.0, 0.6, rim)
+		_fender(Vector3(s * (hw + 0.15), 1.0, 4.2), 1.1, 0.72)
+		# Cab posts at the four corners.
+		for z in [2.8, 4.4]:
+			_box(Vector3(s * 0.75, 2.7, z), Vector3(0.08, 1.3, 0.08), TRIM)
+	_box(Vector3(0, 1.4, -0.006), Vector3(0.72, 0.8, 0.012), TRIM)
+	for i in 6:
+		_box(Vector3(0, 1.08 + i * 0.12, -0.012), Vector3(0.66, 0.025, 0.012), PAINT)
+	for x in [-0.24, 0.24]:
+		_box(Vector3(x, 1.68, -0.018), Vector3(0.18, 0.08, 0.012), HEAD)
+	# Suitcase weights on the front bracket.
+	_box(Vector3(0, 0.62, -0.08), Vector3(0.5, 0.18, 0.16), TRIM)
+	for i in 6:
+		_box(Vector3(-0.42 + i * 0.168, 0.7, -0.3), Vector3(0.15, 0.42, 0.3), TRIM)
+	# Steps and the grab rail on the left, up to the door.
+	for y in [0.75, 1.15, 1.55]:
+		_box(Vector3(-0.85, y, 2.85), Vector3(0.3, 0.04, 0.22), STEEL)
+	_beam(Vector3(-0.8, 1.2, 2.72), Vector3(-0.8, 2.9, 2.72), 0.04, STEEL)
+	# Slow-moving-vehicle emblem on the back of the cab: a red-bordered
+	# fluorescent orange triangle, point up.
+	var o := Vector3(0, 2.35, 4.45)
+	_tri(o + Vector3(-0.21, -0.18, 0), o + Vector3(0.21, -0.18, 0), o + Vector3(0, 0.18, 0), TAPE_RED, o - Vector3(0, 0, 1))
+	o.z += 0.006
+	_tri(o + Vector3(-0.15, -0.14, 0), o + Vector3(0.15, -0.14, 0), o + Vector3(0, 0.12, 0), Color(1.0, 0.38, 0.04, 0.4), o - Vector3(0, 0, 1))
+
+
+## A farm tyre on a dished steel rim: deep sidewall, the rim as a plain
+## dish with its hub, and chevron lugs round the tread.
+func _ag_wheel(c: Vector3, r: float, w: float, rim: Color) -> void:
+	var ax := Vector3(1, 0, 0)
+	var mid := Vector3(c.x, r, c.z)
+	_cyl(mid - ax * w * 0.5, mid + ax * w * 0.5, r - 0.03, TIRE, 24)
+	for side in [-1.0, 1.0]:
+		var face: Vector3 = mid + ax * side * (w * 0.5 + 0.008)
+		_disc(face, ax * side, r * 0.62, rim)
+		_disc(face + ax * side * 0.006, ax * side, r * 0.2, Color(0.2, 0.2, 0.2, 0.2))
+		_disc(face + ax * side * 0.012, ax * side, r * 0.08, rim)
+	# Lugs: bars from each shoulder in toward the middle, offset round the
+	# tyre so they meet in a chevron.
+	var n := 22
+	for k in n:
+		var a1 := TAU * k / n
+		for side in [-1.0, 1.0]:
+			var a2: float = a1 + side * 0.12
+			var p1: Vector3 = mid + ax * side * w * 0.48 + Vector3(0, sin(a1), cos(a1)) * (r - 0.01)
+			var p2: Vector3 = mid + ax * side * w * 0.05 + Vector3(0, sin(a2), cos(a2)) * (r - 0.01)
+			_beam(p1, p2, 0.07, TIRE)
+
+
+## A fender arching over a big rear tyre: a strip of painted steel round
+## `c` (the axle) at radius r, w wide, from behind the wheel up and over to
+## the front.
+func _fender(c: Vector3, r: float, w: float) -> void:
+	var n := 8
+	for i in n:
+		var a1 := lerpf(0.35, PI - 0.35, float(i) / n)
+		var a2 := lerpf(0.35, PI - 0.35, float(i + 1) / n)
+		var d1 := Vector3(0, sin(a1), cos(a1))
+		var d2 := Vector3(0, sin(a2), cos(a2))
+		var hx := Vector3(w * 0.5, 0, 0)
+		var p1 := c + d1 * r
+		var p2 := c + d2 * r
+		_quad(p1 - hx, p1 + hx, p2 + hx, p2 - hx, PAINT, c)
+		var q1 := c + d1 * (r + 0.02)
+		var q2 := c + d2 * (r + 0.02)
+		_quad(q1 - hx, q1 + hx, q2 + hx, q2 - hx, PAINT, c + d1 * 5.0)
 
 
 ## A 500 bu gravity wagon (Parker, Brent) on a four-wheel running gear:

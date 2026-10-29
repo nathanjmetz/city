@@ -226,7 +226,9 @@ const MARKET_MIN := {
 	# A small city's office park (micropolitan towns, OMB 10,000-50,000:
 	# Kokomo, Marion and Wabash each have one on a bypass road); fully
 	# built out once the market is a county's worth of people.
-	"office_park": [10_000, 15_000, 25_000],
+	# A headquarters campus wants a metro's worth of workers (Columbus, Indiana's
+	# Cummins in a metro of about 80,000).
+	"office_park": [10_000, 15_000, 25_000, 75_000],
 	"shopping_center": [5000, 10_000, 20_000, 50_000],  # a discount store wants a trade area of about 20,000 (1980s Walmart/Kmart small-town siting)
 	# ...and a power center's category killers (Lowe's, Best Buy, Dick's) a trade
 	# area of about 50,000 (Marion and Grant County, 66,000, has its cluster).
