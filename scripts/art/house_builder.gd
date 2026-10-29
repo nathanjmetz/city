@@ -385,6 +385,10 @@ func _cottage(h: Dictionary, paint: Dictionary) -> void:
 		rng = was
 		return
 	_cottage_at = spot
+	# The house's back stays where it was: the yard (its fence, the walk out
+	# here) runs from the house, not from the back of the cottage.
+	var house_back := _back_z
+	var house_mass_back := _mass_back_z
 	var cx := spot.get_center().x
 	var cz := spot.get_center().y
 	var siding: Color = paint.siding
@@ -413,9 +417,12 @@ func _cottage(h: Dictionary, paint: Dictionary) -> void:
 	var mx := cx + (cw * 0.5 + 0.05) * (1.0 if cx < 0.0 else -1.0)
 	_box("paint", Vector3(0.1, 0.4, 0.3), Vector3(mx, 1.4, z1 - 1.0), Color("#8a8c8e"))
 	# A paver walk from its door up to the back of the house.
-	var zw := _back_z + 0.2
+	var zw := house_back + 0.2
 	if z0 - 1.4 > zw:
 		_flat_rect("drive", dx - 0.45, dx + 0.45, zw, z0 - 1.4, 0.07)
+		_cottage_at = _cottage_at.merge(Rect2(dx - 0.5, zw, 1.0, z0 - zw))  # keep the walk clear too
+	_back_z = house_back
+	_mass_back_z = house_mass_back
 	rng = was
 
 
@@ -2212,7 +2219,7 @@ func _back_yard(h: Dictionary) -> void:
 		return
 	if h.has("keep_out") and (h.keep_out as Rect2).grow(2.5).has_point(Vector2(spot.x, spot.z)):
 		return
-	if _cottage_at.grow(2.5).has_point(Vector2(spot.x, spot.z)):
+	if _cottage_at.grow(1.0).intersects(Rect2(spot.x - 2.5, spot.z - 2.5, 5.0, 5.0)):
 		return
 	for tr in trees:
 		if Vector2(tr[0].x, tr[0].z).distance_to(Vector2(spot.x, spot.z)) < 3.5:
