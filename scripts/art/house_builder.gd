@@ -2008,13 +2008,17 @@ func _yard(h: Dictionary, to_curb: float) -> void:
 
 
 ## Back wall: a patio door and windows on each floor.
-func _back(x0: float, x1: float, zb: float, floors: Array, sill: float) -> void:
+func _back(x0: float, x1: float, zb: float, floors: Array, sill: float, doors := []) -> void:
 	var w := x1 - x0
 	var n := 3 if w < 11.0 else 4
 	var slider := rng.randi_range(0, n - 1)
+	if not doors.is_empty():
+		slider = -1  # the caller's own back doors instead (still drawn above, so the dice stay)
 	for f in floors.size():
 		for i in n:
 			var x := lerpf(x0 + 1.4, x1 - 1.4, float(i) / (n - 1))
+			if f == 0 and doors.any(func(dx: float): return absf(dx - x) < 1.0):
+				continue
 			if f == 0 and i == slider:
 				_box("paint", Vector3(1.95, 2.25, 0.04), Vector3(x, sill + 1.1, zb), TRIM)
 				_glass(Vector3(x, sill + 1.05, zb + 0.03), Vector3(1, 0, 0), 1.8, 2.1, rng.randf_range(0.0, 0.3))
