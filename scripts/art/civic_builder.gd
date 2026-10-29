@@ -55,6 +55,9 @@ static func build_service(kind: int, seed: int, size: Vector2, to_curb: float, b
 		Services.Kind.BUILDER_YARD:
 			b._builder_yard(size, front, to_curb)
 		Services.Kind.TRAFFIC_CENTER: b._traffic_center(front, to_curb)
+	b.half = size.x * 0.5
+	b.depth = size.y * 0.5
+	b._dress(false, true)
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 
@@ -81,7 +84,9 @@ func _fire(front: float, to_curb: float) -> void:
 	# Stone band, sign and lights over the doors.
 	_box("paint", Vector3(aw + 0.1, 0.3, 0.18), Vector3(ax, 5.15, zf - 0.09), trim)
 	_sign(Vector3(ax, 5.55, zf - 0.12), aw * 0.6, 0.75)
-	# Office and day room: a lower wing beside the bays.
+	# Office and day room: a lower wing beside the bays. Its back wall takes
+	# the meters and transformer, clear of the drive-through apron.
+	_dr_main = _dr_halls.size()
 	var ow := 30.0 - aw - 2.4
 	var od := rng.randf_range(12.0, 15.0)
 	var ox := ax - aw * 0.5 - ow * 0.5
@@ -881,9 +886,11 @@ func _flat_roofed_at(mat: String, cx: float, w: float, d: float, cz: float, deck
 	var t := 0.25
 	var ph := top - deck
 	_box(mat, Vector3(w, deck, d), Vector3(cx, deck * 0.5, cz), wall)
+	_dr_note(cx, cz, w, d, deck, "none")
 	var y := deck + 0.02
 	_quad("membrane", Vector3(cx - w * 0.5, y, cz - d * 0.5), Vector3(cx + w * 0.5, y, cz - d * 0.5),
-		Vector3(cx + w * 0.5, y, cz + d * 0.5), Vector3(cx - w * 0.5, y, cz + d * 0.5), _low_slope(w, d, cx + cz), [], Vector3.UP)
+		Vector3(cx + w * 0.5, y, cz + d * 0.5), Vector3(cx - w * 0.5, y, cz + d * 0.5), _low_slope(w, d, cx + cz, mat == "brick"), [], Vector3.UP)
+	_roof_bits(cx, w, d, cz, y, mat == "brick")
 	_box(mat, Vector3(w, ph, t), Vector3(cx, deck + ph * 0.5, cz - d * 0.5 + t * 0.5), wall)
 	_box(mat, Vector3(w, ph, t), Vector3(cx, deck + ph * 0.5, cz + d * 0.5 - t * 0.5), wall)
 	_box(mat, Vector3(t, ph, d), Vector3(cx - w * 0.5 + t * 0.5, deck + ph * 0.5, cz), wall)

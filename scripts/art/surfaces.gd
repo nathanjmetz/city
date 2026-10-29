@@ -39,6 +39,45 @@ void vertex() {
 }
 """
 
+## Photo detail for the desktop's High tier and up: a CC0 photo scan of real
+## pavement (art/textures/roads, see art/LICENSES.md) laid over the drawn
+## colours as grain, bumps and roughness. It only changes the brightness
+## around the photo's own average, so the age, patches, cracks and paint
+## drawn above it still decide the look; two samples at different sizes and
+## angles, blended by soft noise, hide the photo's repeat. `photo` is 0 in
+## the browser and on Low and Medium (Surfaces.photo_level), which skips it.
+const PHOTO := """
+uniform float photo = 0.0;
+uniform float photo_size = 2.1;
+uniform float photo_bump = 1.0;
+uniform sampler2D photo_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D photo_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D photo_rough : filter_linear_mipmap_anisotropic, repeat_enable;
+// [brightness factor, roughness, normal x, normal y] from the photo at p.
+vec4 photo_at(vec2 p, float near) {
+	vec2 u0 = p / photo_size;
+	vec2 u1 = turn(p, 1.13) / (photo_size * 1.37) + 0.31;
+	float w = smoothstep(0.35, 0.65, texture(noise_soft, p / 23.0 + 0.17).r);
+	vec3 a = mix(texture(photo_albedo, u0).rgb, texture(photo_albedo, u1).rgb, w);
+	vec3 mean = textureLod(photo_albedo, vec2(0.5), 12.0).rgb;
+	float lum = dot(a, vec3(0.3, 0.59, 0.11)) / max(dot(mean, vec3(0.3, 0.59, 0.11)), 1e-3);
+	float r = mix(texture(photo_rough, u0).g, texture(photo_rough, u1).g, w);
+	vec2 n0 = texture(photo_normal, u0).rg * 2.0 - 1.0;
+	// The second sample is turned, so its bumps are turned back to match.
+	vec2 n1 = texture(photo_normal, u1).rg * 2.0 - 1.0;
+	n1 = turn(n1, -1.13);
+	vec2 n = mix(n0, n1, w) * photo_bump * near;
+	return vec4(mix(1.0, lum, near), r, n);
+}
+// Tilts the flat, upward surface by the photo's bumps (OpenGL normal maps:
+// green points up the image, which is -z here since the photo lies on x/z).
+vec3 photo_normal_view(vec2 n, mat4 view) {
+	vec3 world = normalize(vec3(n.x, 1.0, -n.y));
+	return normalize((view * vec4(world, 0.0)).xyz);
+}
+"""
+
+
 ## Fields lie on the land like a sheet of paint, hundreds of metres across.
 ## The land under them is drawn from a grid (8 m near, coarser and morphing
 ## farther off, see TerrainView) while the field follows the true ground, so
@@ -65,7 +104,7 @@ void vertex() {
 }
 """
 
-const ASPHALT := """
+const ASPHALT := PHOTO + """
 uniform vec4 fresh : source_color = vec4(0.28, 0.27, 0.27, 1.0);
 uniform vec4 faded : source_color = vec4(0.42, 0.41, 0.39, 1.0);
 uniform vec4 tar : source_color = vec4(0.13, 0.13, 0.13, 1.0);
@@ -146,13 +185,23 @@ void fragment() {
 	col = mix(col, vec3(0.50, 0.50, 0.49) * (0.95 + g * 0.1), salt * 0.55);
 	float packed = smoothstep(0.72, 0.9, texture(noise_soft, turn(p, 1.2) / 11.0 + 0.7).r) * snow;
 	col = mix(col, vec3(0.72, 0.74, 0.77) * (0.92 + g * 0.1), packed * 0.45);
+	float rough = 0.9;
+	if (photo > 0.0) {
+		// Up close the photo's own stones take over from the drawn speckle.
+		float near = photo * clamp(1.0 - length(VERTEX) / 260.0, 0.0, 1.0);
+		vec4 ph = photo_at(p, near);
+		col /= mix(1.0, 1.0 + (g - 0.5) * 0.28 * close, near);
+		col *= mix(1.0, ph.x, 1.0 - crack * 0.8);
+		rough = mix(rough, 0.7 + ph.y * 0.3, near);
+		NORMAL = photo_normal_view(ph.zw * (1.0 - packed) * (1.0 - crack), VIEW_MATRIX);
+	}
 	ALBEDO = col;
-	ROUGHNESS = 0.9 - crack * 0.4 - packed * 0.15;
+	ROUGHNESS = rough - crack * 0.4 - packed * 0.15;
 	SPECULAR = 0.3;
 }
 """
 
-const CONCRETE := """
+const CONCRETE := PHOTO + """
 uniform vec4 base : source_color = vec4(0.70, 0.69, 0.65, 1.0);
 uniform float joints = 1.0;
 global uniform float snow;
@@ -180,8 +229,17 @@ void fragment() {
 	float unshoveled = step(0.5, texture(noise_soft, p / 30.0 + 0.4).r);
 	float cover = snow * mix(0.25 * smoothstep(0.5, 0.8, texture(noise_soft, p / 2.0).r), 0.95, unshoveled);
 	col = mix(col, vec3(0.80, 0.83, 0.88) * (0.95 + tint * 0.05), cover);
+	float rough = 0.88;
+	if (photo > 0.0) {
+		// The broom finish and the odd chip, in the slab's own colour.
+		float near = photo * close;
+		vec4 ph = photo_at(p, near);
+		col *= mix(1.0, ph.x, 1.0 - cover);
+		rough = mix(rough, 0.75 + ph.y * 0.25, near);
+		NORMAL = photo_normal_view(ph.zw * (1.0 - cover), VIEW_MATRIX);
+	}
 	ALBEDO = col;
-	ROUGHNESS = 0.88;
+	ROUGHNESS = rough;
 	SPECULAR = 0.3;
 }
 """ % [SLAB, SLAB, SLAB, SLAB]
@@ -472,14 +530,63 @@ static var _soft: Texture2D
 static var _grain: Texture2D
 
 
+## The photo scans and their real size across in metres (Poly Haven).
+const PHOTO_DIR := "res://art/textures/roads/"
+const PHOTOS := {
+	"asphalt": ["clean_asphalt", 2.1, 1.6],
+	"concrete": ["brushed_concrete", 2.5, 0.6],
+}
+static var _photo_mats := {}  # material -> photo key
+static var _photo_hooked := false
+
+
 static func asphalt() -> ShaderMaterial:
-	return _make("asphalt", ASPHALT, {})
+	return _photo(_make("asphalt", ASPHALT, {}), "asphalt")
 
 
 ## Sidewalk slabs with joints, or plain cast concrete (curbs, bridges).
 static func concrete(color: Color, slabs := false) -> ShaderMaterial:
-	return _make("concrete %s %s" % [color, slabs], CONCRETE,
-			{"base": color, "joints": 1.0 if slabs else 0.0})
+	return _photo(_make("concrete %s %s" % [color, slabs], CONCRETE,
+			{"base": color, "joints": 1.0 if slabs else 0.0}), "concrete")
+
+
+## How strongly the photo scans show: on the desktop's High tier and up
+## only. The browser leaves art/textures out of its download.
+static func photo_level() -> float:
+	var q := GraphicsQuality.current
+	if q == null or not q.active or q.browser or q.tier < GraphicsQuality.HIGH:
+		return 0.0
+	return 1.0
+
+
+static func _photo(mat: ShaderMaterial, key: String) -> ShaderMaterial:
+	if _photo_mats.has(mat):
+		return mat
+	_photo_mats[mat] = key
+	_photo_apply(mat, key, photo_level())
+	if not _photo_hooked and GraphicsQuality.current:
+		_photo_hooked = true
+		GraphicsQuality.current.changed.connect(func():
+			var level := photo_level()
+			for m in _photo_mats:
+				_photo_apply(m, _photo_mats[m], level))
+	return mat
+
+
+## The scans load the first time a tier shows them, so Low and Medium
+## machines never hold them in memory.
+static func _photo_apply(mat: ShaderMaterial, key: String, level: float) -> void:
+	var spec: Array = PHOTOS[key]
+	var base: String = PHOTO_DIR + spec[0]
+	if level > 0.0 and mat.get_shader_parameter("photo_albedo") == null:
+		if not ResourceLoader.exists(base + "_diff.jpg"):
+			return
+		mat.set_shader_parameter("photo_albedo", load(base + "_diff.jpg"))
+		mat.set_shader_parameter("photo_normal", load(base + "_nor_gl.jpg"))
+		mat.set_shader_parameter("photo_rough", load(base + "_rough.jpg"))
+		mat.set_shader_parameter("photo_size", spec[1])
+		mat.set_shader_parameter("photo_bump", spec[2])
+	mat.set_shader_parameter("photo", level if mat.get_shader_parameter("photo_albedo") != null else 0.0)
 
 
 static func gravel() -> ShaderMaterial:

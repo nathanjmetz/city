@@ -83,6 +83,12 @@ void fragment() {
 	float tint = mix(0.84 + hash(vec2(row, floor(x))) * 0.3, 1.0, aa);
 	vec3 col = mix(vcol(COLOR.rgb) * tint, mortar.rgb, joint);
 	col *= 0.93 + texture(noise_grain, UV * 2.0).r * 0.14;
+	// Weathering that still reads from across the street: soft patches of
+	// older and newer brick and repointing, and rain-washed streaks run
+	// down from sills and the coping (photos of 1890s Main Street walls).
+	float patch = texture(noise_soft, (world_pos.xz + world_pos.y * 0.7) / 9.0).r;
+	float streak = smoothstep(0.68, 0.9, texture(noise_soft, vec2((world_pos.x + world_pos.z) / 2.3, world_pos.y / 38.0)).r);
+	col *= (0.9 + patch * 0.2) * (1.0 - streak * 0.1);
 	ALBEDO = col;
 	ROUGHNESS = 0.85;
 	SPECULAR = 0.25;
@@ -103,10 +109,15 @@ void fragment() {
 	float edge = mix(0.62, 1.0, smoothstep(0.0, 0.16, fy));
 	float slot = 1.0 - (1.0 - smoothstep(0.0, 0.025, min(fx, 1.0 - fx))) * 0.35;
 	float s = mix(tint * edge * slot, 0.93, aa);
-	// Weathering: big soft patches and the odd dark algae streak.
+	// Weathering: big soft patches and the odd dark algae streak. Streaks
+	// run down the slope (UV.y climbs from the eave), wander a little, and
+	// only show on some stretches of roof, as real ones do; drawn in world
+	// x/y they read as metal-roof seams or bands along the ridge.
 	float w = texture(noise_soft, world_pos.xz / 14.0).r;
-	float streak = smoothstep(0.62, 0.8, texture(noise_soft, vec2(world_pos.x / 2.0, world_pos.y / 30.0)).r);
-	vec3 col = vcol(COLOR.rgb) * s * (0.9 + w * 0.2) * (1.0 - streak * 0.18);
+	float wander = texture(noise_soft, vec2(UV.y / 9.0, UV.x / 23.0)).r;
+	float streak = smoothstep(0.66, 0.86, texture(noise_soft, vec2(UV.x / 1.4 + wander * 0.6, UV.y / 22.0)).r);
+	streak *= smoothstep(0.45, 0.7, texture(noise_soft, world_pos.xz / 31.0 + 0.37).r);
+	vec3 col = vcol(COLOR.rgb) * s * (0.9 + w * 0.2) * (1.0 - streak * 0.14);
 	col *= 0.94 + texture(noise_grain, UV * 3.0).r * 0.12 * (1.0 - aa);
 	// Winter: snow on the roof, with the tab lines showing faintly through.
 	float cover = snow_cover(0.35, 0.6);

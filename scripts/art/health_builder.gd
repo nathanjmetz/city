@@ -27,6 +27,9 @@ static func build_care(kind: int, seed: int, size: Vector2, to_curb: float, hub 
 		Services.Kind.HOSPITAL: b._hospital(size, to_curb, hub)
 		Services.Kind.NURSING_HOME: b._nursing_home(front, to_curb)
 		Services.Kind.DAYCARE: b._daycare(front, to_curb)
+	b.half = size.x * 0.5
+	b.depth = size.y * 0.5
+	b._dress(false, true)
 	return [b._commit_house(), b._commit_flat(), b.trees]
 
 

@@ -276,8 +276,10 @@ func _mb_walkup(to_curb: float, width: float, storeys: int) -> void:
 
 ## A flat tar-and-gravel roof just above a block's top.
 func _mb_roof(cx: float, w: float, cz: float, d: float, y: float) -> void:
-	_quad("paint", Vector3(cx - w * 0.5, y + 0.03, cz - d * 0.5), Vector3(cx + w * 0.5, y + 0.03, cz - d * 0.5),
-		Vector3(cx + w * 0.5, y + 0.03, cz + d * 0.5), Vector3(cx - w * 0.5, y + 0.03, cz + d * 0.5), MB_ROOF, [], Vector3.UP)
+	var roof := MB_ROOF
+	roof.a = 0.5  # gravel ballast in the membrane shader
+	_quad("membrane", Vector3(cx - w * 0.5, y + 0.03, cz - d * 0.5), Vector3(cx + w * 0.5, y + 0.03, cz - d * 0.5),
+		Vector3(cx + w * 0.5, y + 0.03, cz + d * 0.5), Vector3(cx - w * 0.5, y + 0.03, cz + d * 0.5), roof, [], Vector3.UP)
 
 
 # ---------------------------------------------------------------- parking garages
