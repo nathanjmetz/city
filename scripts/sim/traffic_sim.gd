@@ -5035,7 +5035,10 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 			if not stopped:
 				return false
 			for ap in _approach.get(n, []):
-				if ap.car.id != car.id and ap.conn.wi != c.wi and _first(ap.car, car) and _conflicts(c, ap.conn):
+				# First come, first served, but not behind someone who can't go
+				# yet for a full street beyond: drivers wave each other on.
+				if ap.car.id != car.id and ap.conn.wi != c.wi and _first(ap.car, car) and _conflicts(c, ap.conn) \
+						and _room_past(ap.car, ap.conn):
 					return false
 		Rule.PRIORITY:
 			if not j.major.has(c.wi):
@@ -5047,7 +5050,7 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 					if j.major.has(ap.conn.wi):
 						if _soon(ap) and _conflicts(c, ap.conn):
 							return false
-					elif _first(ap.car, car) and _conflicts(c, ap.conn):
+					elif _first(ap.car, car) and _conflicts(c, ap.conn) and _room_past(ap.car, ap.conn):
 						return false
 			elif mine_minor_turn:
 				for ap in _approach.get(n, []):
@@ -5064,6 +5067,15 @@ func _soon(ap: Dictionary) -> bool:
 	# A car standing at its line (waiting on a gap itself) isn't about to
 	# come through: only moving ones within 5 s are (HCM ch. 20 critical gap).
 	return ap.car.commit or ap.car.v > 0.5 and ap.ds / ap.car.v < 5.0
+
+
+## Whether there's a car's length of room for `car` on the far side of
+## the junction (if not, it isn't going anywhere yet).
+func _room_past(car: Dictionary, c: Dictionary) -> bool:
+	if c.wo < 0:
+		return true
+	var list: Array = _lanes.get(c.wo * 8 + c.lo, [])
+	return list.is_empty() or list[list.size() - 1].d - ways[c.wo].s0 >= car.len + JAM_GAP
 
 
 ## Whether `a` stopped at its line before `b` (first come, first served).
