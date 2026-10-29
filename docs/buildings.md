@@ -60,7 +60,11 @@ type at the top of theirs:
   bungalow raises a full shed dormer, and only a ranch is rebuilt), then
   home with addition (a family room, sunroom or two-storey wing built on
   out back, where the area is well-off enough), then, close to town, home
-  with backyard cottage (an accessory dwelling at the back of the lot).
+  with backyard cottage (an accessory dwelling at the back of the lot; on
+  older streets a flat over the two-car garage out back), then, where
+  owners have moved out and landlords bought in, a house cut into flats
+  (an outside stair to the upstairs door, or a side door on a cape or
+  bungalow, and a mailbox, meter and trash carts for each flat).
   Near the middle of town it can become a duplex; in a very built-up area
   it can make way for row homes.
 - Shop: a corner store first (a brick corner grocery on older streets, a
@@ -70,14 +74,21 @@ type at the top of theirs:
   with a two-deck porch or an Indianapolis double before the war, a ranch
   duplex after it, a two-storey one lately), then a fourplex. It can make
   way for row homes or apartments.
-- Row homes: two storeys, then three.
+- Row homes: two storeys, then three. Old two- and three-flats have
+  wooden back porches and fenced yards out to the alley. Where no alley or
+  lane runs behind (`SiteLayout.back_lane`), rows and walk-ups have a
+  shared back yard instead of garages or a lot out back, and today's rows
+  load their garages from the front.
 - Apartments: walk-up, three storeys, mid-rise (5). Postwar walk-ups are garden apartments, the plain brick block, the split-entry eight-plex or the 1970s mansard walk-up, and keep their kind as they grow a floor.
 - Shop: corner store, then retail store. On a Main Street it gains flats
   upstairs and becomes a Main Street block.
 - Shop with flats: two, three, then four storeys. Prewar streets draw 1880s-1920s
   fronts; about half on postwar streets are 1950s-60s infill (Roman brick,
   canopy, ribbon windows) and three in four on recent streets are 2010s
-  mixed-use (brick and panel bays, steel canopies). On a busy Main Street its
+  mixed-use (brick and panel bays, steel canopies). About half of the
+  owners growing an old block in place add the storey on top (a brick that
+  doesn't quite match, a stone belt where the old cornice was) rather than
+  rebuild (`Balance.ADD_ON_TYPES`). On a busy Main Street its
   owner can buy the lot next door along the street (an empty lot, a vacant
   building or a one-storey shop, never a protected or charming one) and
   build a Commercial block across both, three then four storeys

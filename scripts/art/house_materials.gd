@@ -138,6 +138,9 @@ const GLASS := """
 // bulkhead to a ceiling above the head, 6 m deep. Shelves of stock or racks
 // of clothes on the walls, tile floor, lay-in ceiling with light panels;
 // after dark most stay lit, as Main Street windows do.
+const vec3 CLOTH[12] = vec3[](vec3(0.06, 0.08, 0.16), vec3(0.03, 0.03, 0.035), vec3(0.16, 0.16, 0.17),
+	vec3(0.42, 0.42, 0.42), vec3(0.12, 0.2, 0.34), vec3(0.45, 0.38, 0.25), vec3(0.75, 0.74, 0.7),
+	vec3(0.2, 0.24, 0.14), vec3(0.3, 0.06, 0.08), vec3(0.06, 0.08, 0.16), vec3(0.55, 0.08, 0.08), vec3(0.75, 0.6, 0.15));
 bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 	vec3 n = normalize(world_normal);
 	vec3 inw = dot(vw, n) > 0.0 ? n : -n;
@@ -186,8 +189,9 @@ bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 			if (hy > 0.75 && hy < 1.75) {
 				float g = floor(u / 0.09);
 				float c = hash(vec2(g, sid));
-				vec3 cloth = vec3(c, hash(vec2(g, 5.0)), hash(vec2(g, 7.0)));
-				cloth = cloth * cloth * 0.7;
+				// What a real rack holds: mostly navy, black, greys, denim,
+				// khaki and white, with the odd bright piece.
+				vec3 cloth = CLOTH[clamp(int(hash(vec2(g, 5.0 + sid)) * 12.0), 0, 11)];
 				float len = 0.75 + 0.5 * hash(vec2(g, 11.0));
 				col = mix(col, cloth, step(1.75 - len, hy) * step(0.12, c));
 			}
@@ -201,6 +205,31 @@ bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 			vec3 c = mix(wallc * 0.8, stock, step(0.18, p) * step(fy, 0.1 + 0.75 * hash(vec2(g, row + 9.0))));
 			col = mix(c, vec3(0.30, 0.27, 0.24), step(fy, 0.07));
 		}
+	}
+	// A display table in the middle of the floor (or a low gondola), stock
+	// on its top: the slab test of the ray against its box.
+	vec3 o = vec3(px, world_pos.y, 0.0);
+	vec3 bmin = vec3((xl + xr) * 0.5 - 0.8, yf, 2.0);
+	vec3 bmax = vec3((xl + xr) * 0.5 + 0.8, yf + mix(0.8, 1.4, step(0.5, hash(vec2(sid, 4.0)))), 3.4);
+	vec3 inv = 1.0 / rd;
+	vec3 t0 = (bmin - o) * inv;
+	vec3 t1 = (bmax - o) * inv;
+	vec3 tn = min(t0, t1);
+	vec3 tf = max(t0, t1);
+	float tin = max(max(tn.x, tn.y), tn.z);
+	float tout = min(min(tf.x, tf.y), tf.z);
+	if (tin > 0.0 && tin < tout && tin < t) {
+		vec3 b = o + rd * tin;
+		vec3 fix = mix(vec3(0.42, 0.30, 0.20), vec3(0.85, 0.84, 0.8), step(0.5, hash(vec2(sid, 6.0))));
+		if (tin == tn.y) {
+			// The top: folded stock in rows.
+			float g = floor(b.x / 0.3) + floor(b.z / 0.35) * 7.0;
+			col = mix(fix, CLOTH[clamp(int(hash(vec2(g, sid)) * 12.0), 0, 11)] + 0.08, step(0.3, hash(vec2(g, 2.0 + sid))));
+		} else {
+			col = fix * 0.7;
+		}
+		t = tin;
+		glow = 0.0;
 	}
 	// Further in, a little dimmer; and the corners darker.
 	col *= mix(1.0, 0.72, clamp(t * rd.z / 6.0, 0.0, 1.0));
@@ -555,9 +584,9 @@ const SIGN := """
 // Stand-in lettering: a trade word (no names) in 3x5 block capitals, so a
 // sign with no business name yet still reads as lettering, not noise.
 const int GLYPHS[27] = int[](27306, 23530, 15083, 25166, 15211, 29391, 4815, 27470, 23533, 29847, 11044, 23277, 29257, 23549, 23407, 11114, 4843, 26474, 23275, 14478, 9367, 31597, 11117, 24557, 23213, 9389, 29351);
-const int LETTERS[286] = int[](4, 9, 14, 5, 18, 3, 1, 6, 5, 16, 9, 26, 26, 1, 2, 1, 14, 11, 19, 1, 12, 15, 14, 14, 1, 9, 12, 19, 20, 1, 24, 4, 5, 12, 9, 19, 21, 2, 19, 12, 9, 17, 21, 15, 18, 16, 1, 23, 14, 20, 1, 3, 15, 19, 4, 18, 21, 7, 19, 8, 1, 18, 4, 23, 1, 18, 5, 22, 9, 4, 5, 15, 19, 8, 15, 5, 19, 6, 12, 15, 23, 5, 18, 19, 2, 1, 11, 5, 18, 25, 2, 15, 15, 11, 19, 20, 15, 25, 19, 7, 9, 6, 20, 19, 13, 21, 19, 9, 3, 16, 5, 20, 19, 20, 9, 18, 5, 19, 12, 15, 1, 14, 19, 4, 5, 14, 20, 1, 12, 9, 14, 19, 21, 18, 1, 14, 3, 5, 13, 1, 18, 11, 5, 20, 7, 18, 9, 12, 12, 4, 15, 14, 21, 20, 19, 6, 21, 18, 14, 9, 20, 21, 18, 5, 15, 16, 20, 9, 3, 1, 12, 3, 12, 5, 1, 14, 5, 18, 19, 2, 1, 18, 2, 5, 18, 20, 8, 18, 9, 6, 20, 20, 1, 22, 5, 18, 14, 1, 14, 20, 9, 17, 21, 5, 19, 2, 9, 11, 5, 19, 3, 1, 14, 4, 25, 19, 16, 15, 18, 20, 19, 8, 15, 2, 2, 25, 18, 5, 1, 12, 20, 25, 16, 1, 9, 14, 20, 17, 21, 9, 12, 20, 19, 1, 16, 16, 12, 9, 1, 14, 3, 5, 10, 5, 23, 5, 12, 18, 25, 6, 1, 2, 18, 9, 3, 3, 5, 12, 12, 21, 12, 1, 18, 6, 9, 20, 14, 5, 19, 19, 19, 5, 23, 9, 14, 7);
-const int WSTART[50] = int[](0, 5, 9, 14, 18, 23, 28, 31, 35, 39, 45, 49, 54, 59, 67, 72, 77, 84, 90, 95, 99, 104, 109, 113, 118, 123, 129, 138, 144, 149, 155, 164, 171, 179, 185, 191, 197, 205, 210, 215, 221, 226, 232, 237, 243, 252, 259, 265, 273, 280);
-const int WLEN[50] = int[](5, 4, 5, 4, 5, 5, 3, 4, 4, 6, 4, 5, 5, 8, 5, 5, 7, 6, 5, 4, 5, 5, 4, 5, 5, 6, 9, 6, 5, 6, 9, 7, 8, 6, 6, 6, 8, 5, 5, 6, 5, 6, 5, 6, 9, 7, 6, 8, 7, 6);
+const int LETTERS[331] = int[](4, 9, 14, 5, 18, 3, 1, 6, 5, 16, 9, 26, 26, 1, 2, 1, 14, 11, 19, 1, 12, 15, 14, 14, 1, 9, 12, 19, 20, 1, 24, 4, 5, 12, 9, 19, 21, 2, 19, 12, 9, 17, 21, 15, 18, 16, 1, 23, 14, 20, 1, 3, 15, 19, 4, 18, 21, 7, 19, 8, 1, 18, 4, 23, 1, 18, 5, 22, 9, 4, 5, 15, 19, 8, 15, 5, 19, 6, 12, 15, 23, 5, 18, 19, 2, 1, 11, 5, 18, 25, 2, 15, 15, 11, 19, 20, 15, 25, 19, 7, 9, 6, 20, 19, 13, 21, 19, 9, 3, 16, 5, 20, 19, 20, 9, 18, 5, 19, 12, 15, 1, 14, 19, 4, 5, 14, 20, 1, 12, 9, 14, 19, 21, 18, 1, 14, 3, 5, 13, 1, 18, 11, 5, 20, 7, 18, 9, 12, 12, 4, 15, 14, 21, 20, 19, 6, 21, 18, 14, 9, 20, 21, 18, 5, 15, 16, 20, 9, 3, 1, 12, 3, 12, 5, 1, 14, 5, 18, 19, 2, 1, 18, 2, 5, 18, 20, 8, 18, 9, 6, 20, 20, 1, 22, 5, 18, 14, 1, 14, 20, 9, 17, 21, 5, 19, 2, 9, 11, 5, 19, 3, 1, 14, 4, 25, 19, 16, 15, 18, 20, 19, 8, 15, 2, 2, 25, 18, 5, 1, 12, 20, 25, 16, 1, 9, 14, 20, 17, 21, 9, 12, 20, 19, 1, 16, 16, 12, 9, 1, 14, 3, 5, 10, 5, 23, 5, 12, 18, 25, 6, 1, 2, 18, 9, 3, 3, 5, 12, 12, 21, 12, 1, 18, 6, 9, 20, 14, 5, 19, 19, 19, 5, 23, 9, 14, 7, 7, 18, 15, 3, 5, 18, 25, 6, 15, 15, 4, 19, 4, 9, 19, 3, 15, 21, 14, 20, 16, 8, 1, 18, 13, 1, 3, 25, 19, 21, 16, 5, 18, 3, 5, 14, 20, 5, 18, 15, 21, 20, 12, 5, 20);
+const int WSTART[56] = int[](0, 5, 9, 14, 18, 23, 28, 31, 35, 39, 45, 49, 54, 59, 67, 72, 77, 84, 90, 95, 99, 104, 109, 113, 118, 123, 129, 138, 144, 149, 155, 164, 171, 179, 185, 191, 197, 205, 210, 215, 221, 226, 232, 237, 243, 252, 259, 265, 273, 280, 286, 293, 298, 306, 314, 325);
+const int WLEN[56] = int[](5, 4, 5, 4, 5, 5, 3, 4, 4, 6, 4, 5, 5, 8, 5, 5, 7, 6, 5, 4, 5, 5, 4, 5, 5, 6, 9, 6, 5, 6, 9, 7, 8, 6, 6, 6, 8, 5, 5, 6, 5, 6, 5, 6, 9, 7, 6, 8, 7, 6, 7, 5, 8, 8, 11, 6);
 void fragment() {
 	// Alpha 1: neon tubing or a lamp lens, bright after dark, a little by day.
 	float neon = step(0.99, COLOR.a);
@@ -569,12 +598,12 @@ void fragment() {
 	// into a different word from one pixel to the next.)
 	vec4 qc = floor(COLOR * 255.0 + 0.5);
 	vec2 at = floor(MODEL_MATRIX[3].xz);
-	int wi = clamp(int(hash(vec2(qc.r * 0.97 + qc.a * 4.13 + at.x * 0.013, qc.g * 0.31 + qc.b * 0.57 + at.y * 0.017)) * 50.0), 0, 49);
+	int wi = clamp(int(hash(vec2(qc.r * 0.97 + qc.a * 4.13 + at.x * 0.013, qc.g * 0.31 + qc.b * 0.57 + at.y * 0.017)) * 50.0), 0, 49);  // the first 50: trades
 	// A builder can name the word instead, so a shop's board and awning
 	// agree: UV.y then runs from 2 * (word + 1), and vy is its 0..1.
 	float slot = floor(UV.y * 0.5);
 	float vy = UV.y - 2.0 * slot;
-	wi = slot > 0.5 ? clamp(int(slot) - 1, 0, 49) : wi;
+	wi = slot > 0.5 ? clamp(int(slot) - 1, 0, 55) : wi;
 	int len = WLEN[wi];
 	float pitch = min(0.42, wdt * 0.78 / float(len));
 	// Read left to right on screen whichever way the sign's UVs run.

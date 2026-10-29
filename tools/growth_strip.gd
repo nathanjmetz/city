@@ -7,6 +7,7 @@ extends SceneTree
 ## Ladders: office, apartments, main (shop to Main Street block), homes
 ## (house to row homes to walk-up), house (a house building on, then a
 ## duplex and a fourplex). Era: postwar (default), prewar or recent.
+## ALLEY=0 draws every lot with no road behind it.
 
 const LADDERS := {
 	# [type, level, FAR it's built under]
@@ -36,6 +37,8 @@ const LADDERS := {
 	# block behind it (a block's depth, and a deeper one).
 	"community": [["shopping_center", 1, 2.2, "", 120.0], ["shopping_center", 2, 2.2, "", 120.0, 0, 62.0], ["shopping_center", 2, 2.2, "", 120.0, 0, 85.0]],
 	"power": [["shopping_center", 3, 2.2, "", 200.0, 0, 60.0], ["shopping_center", 3, 2.2, "", 150.0, 0, 90.0], ["shopping_center", 3, 2.2, "", 120.0, 0, 105.0]],
+	# A Main Street block with storeys added on top (the same block each time).
+	"mainadded": [["mixed_use", 0, 3.0, "", 20.0], ["mixed_use", 1, 5.0, "", 20.0, 2], ["mixed_use", 2, 5.0, "", 20.0, 3], ["mixed_use", 2, 5.0, "", 20.0, 2]],
 	"homes": [["house", 0, 0.9], ["house", 1, 0.9], ["row_home", 0, 1.2], ["row_home", 1, 1.2], ["apartments", 0, 2.0]],
 	# A house building on, then turned into a duplex and a fourplex.
 	# A corner store to shop with flats, then bought out next door: a
@@ -96,6 +99,8 @@ func _init() -> void:
 		if OS.get_environment("SIGN") == "1":
 			spec = {"text": "Overman Mutual", "style": "franklin", "panel": Color("#1f4e8a"), "letter": Color("#f3efe4"), "since": -1}
 		var fit := {"width": w, "depth": st[6] if st.size() > 6 else DEPTH, "era": era}
+		if OS.get_environment("ALLEY") == "0":
+			fit.alley = false  # no road behind: back yards, not lots
 		if st.size() > 5 and st[5] > 0:
 			fit.added_from = st[5]  # floors added on top of a block this tall
 		if st.size() > 3 and st[3] != "":
@@ -122,7 +127,8 @@ func _init() -> void:
 		var planted := []
 		for t in meshes[2]:
 			planted.append([Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * t[3]), at + t[0]), t[1], t[2]])
-		trees.set_trees(str(i), planted)
+		if OS.get_environment("NOTREES") != "1":  # NOTREES=1 for close looks
+			trees.set_trees(str(i), planted)
 		print(st[0], " ", st[1], " storeys ", storeys, " lot ", snappedf(w, 0.1), " m")
 	var cam := Camera3D.new()
 	cam.fov = 45.0

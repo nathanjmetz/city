@@ -501,7 +501,7 @@ func _row(to_curb: float, width: float, units: int, storeys: int) -> void:
 		_gable_roof(0.0, zf + d * 0.5, deck, d, d * 0.5 * rng.randf_range(0.33, 0.5), x1 - x0, true,
 			Color(_pick(ROOF)), siding)
 	# The alley garage pad at the back.
-	if depth - 1.0 > zf + d + 8.0:
+	if alley and depth - 1.0 > zf + d + 8.0:
 		_flat_rect("drive", -width * 0.5 + 0.5, width * 0.5 - 0.5, depth - 7.0, depth - 1.0, 0.06)
 	if rng.randf() < 0.7:
 		var pick := TreeField.pick(rng)
@@ -559,7 +559,7 @@ func _apartments(to_curb: float, width: float, storeys: int) -> void:
 	for i in rng.randi_range(1, 3):
 		_box("metal", Vector3(1.6, 1.0, 1.1), Vector3(rng.randf_range(-w * 0.35, w * 0.35), deck + 0.5, cz),
 			Color("#b9bcbc"))
-	_parking(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 1.5, zf + d + 14.0, width)
+	_rl_back(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 1.5, zf + d + 14.0, width)
 	# Foundation shrubs and a street tree.
 	var x := -w * 0.5 + 0.6
 	while x < w * 0.5 - 0.5:
@@ -574,6 +574,9 @@ func _apartments(to_curb: float, width: float, storeys: int) -> void:
 
 static func build_mixed(seed: int, to_curb: float, lot: Dictionary, storeys: int, spec := {}) -> Array:
 	var b := _start(seed, lot, spec)
+	b._added = int(lot.get("added_from", 0))
+	if b._added >= storeys:
+		b._added = 0
 	if MainInfill.wanted(b, storeys):
 		MainInfill.draw(b, to_curb, storeys)
 	else:
@@ -705,6 +708,8 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 		_box("paint", Vector3(w + 0.1, 0.25, 0.4), Vector3(0, top - 0.15, zf - 0.15), trim)
 	_box("metal", Vector3(1.8, 1.1, 1.2), Vector3(rng.randf_range(-w * 0.3, w * 0.3), deck + 0.55, cz + 2.0),
 		Color("#b9bcbc"))
+	if _added > 0 and not slipcover:
+		_ma_added(w, d, zf, cz, shop_h, floor_h, top, wall, trim, italianate)
 	# The flats' stair door at one end, and the alley at the back.
 	var sx := (w * 0.5 - 0.9) * (-1.0 if rng.randf() < 0.5 else 1.0)
 	_box("paint", Vector3(1.0, 2.2, 0.06), Vector3(sx, 1.1, zf - 0.05), Color(_pick(DOOR)))
@@ -721,6 +726,38 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 	if depth > zf + d + 3.0:
 		_flat_rect("asphalt", -width * 0.5, width * 0.5, zf + d, minf(depth, zf + d + 10.0), 0.06)
 	_downtown_walk(to_curb, width, zf)
+
+
+## Floors an owner added on top of a Main Street block (BuildingTypes
+## added_from): the new storeys in a brick that never quite matches (a
+## different kiln, decades later), the old cornice taken down and its
+## line kept as a plain stone belt course, and the new top a simple
+## corbelled parapet, as on the blocks round Indiana's courthouse squares
+## that went from two storeys to three (Wabash, Peru, Hartford City).
+## The skin sits just behind the windows. Its own random numbers.
+func _ma_added(w: float, d: float, zf: float, cz: float, shop_h: float, floor_h: float, top: float, wall: Color,
+		trim: Color, italianate: bool) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "added storey"])
+	var y0 := shop_h + floor_h * (_added - 1) + 0.15
+	var h := top - y0
+	var skin := Color(FACADE_BRICK[r.randi() % FACADE_BRICK.size()])
+	if absf(skin.get_luminance() - wall.get_luminance()) < 0.03:
+		skin = skin.lightened(0.12) if r.randf() < 0.5 else skin.darkened(0.12)
+	# Front (behind the glass, 2 cm out), back and the party walls.
+	_box("brick", Vector3(w, h, 0.012), Vector3(0, y0 + h * 0.5, zf - 0.008), skin)
+	_box("brick", Vector3(w, h, 0.012), Vector3(0, y0 + h * 0.5, zf + d + 0.008), skin)
+	for sx in [-1.0, 1.0]:
+		_box("brick", Vector3(0.012, h, d), Vector3(sx * (w * 0.5 + 0.008), y0 + h * 0.5, cz), skin)
+	# The old roofline: a limestone belt course where the cornice was.
+	var stone := Color("#cfc6b2")
+	_box("paint", Vector3(w + 0.06, 0.32, 0.22), Vector3(0, y0 - 0.02, zf - 0.11), stone)
+	_box("paint", Vector3(w + 0.06, 0.2, 0.1), Vector3(0, y0 - 0.02, zf + d + 0.05), stone)
+	# The new top: corbelled brick in the new skin under a stone coping,
+	# over (and hiding) the cornice the builder drew there.
+	_box("brick", Vector3(w + 0.04, 1.0, 0.95 if italianate else 0.5), Vector3(0, top - 0.5, zf - 0.02 - (0.45 if italianate else 0.22)), skin)
+	_box("brick", Vector3(w + 0.04, 0.22, 0.25), Vector3(0, top - 0.95, zf - 0.12 - (0.9 if italianate else 0.45)), skin.darkened(0.1))
+	_box("paint", Vector3(w + 0.14, 0.18, (1.05 if italianate else 0.6)), Vector3(0, top + 0.05, zf - 0.02 - (0.45 if italianate else 0.22)), stone)
 
 
 ## A storefront's entry in the middle bay: a wood or aluminium door with a
@@ -1622,6 +1659,41 @@ func _block(mat: String, cx: float, w: float, d: float, cz: float, deck: float, 
 	_box(mat, Vector3(w, ph, t), Vector3(cx, deck + ph * 0.5, cz + d * 0.5 - t * 0.5), wall)
 	_box(mat, Vector3(t, ph, d), Vector3(cx - w * 0.5 + t * 0.5, deck + ph * 0.5, cz), wall)
 	_box(mat, Vector3(t, ph, d), Vector3(cx + w * 0.5 - t * 0.5, deck + ph * 0.5, cz), wall)
+
+
+## The ground behind a residential building: its parking lot when a road
+## runs behind to reach it (`alley`), otherwise the tenants' shared back
+## yard (they park on the street, as SiteLayout has them): lawn, a
+## concrete patio with a picnic table and a kettle grill, and a
+## clothesline on older streets. Its own random numbers.
+func _rl_back(x0: float, x1: float, z0: float, z1: float, width: float) -> void:
+	if alley:
+		_parking(x0, x1, z0, z1, width)
+		return
+	z1 = minf(z1, depth - 1.0)
+	if z1 - z0 < 4.0:
+		return
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "back yard"])
+	var px := lerpf(x0 + 3.0, x1 - 3.0, r.randf())
+	var pz := z0 + 2.2
+	_flat_rect("drive", px - 2.4, px + 2.4, z0 + 0.4, z0 + 4.0, 0.06)
+	var wood := Color("#8d7b5f")
+	_box("paint", Vector3(1.8, 0.05, 0.75), Vector3(px, 0.74, pz), wood)
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(1.8, 0.04, 0.25), Vector3(px, 0.45, pz + s * 0.62), wood)
+		_box("paint", Vector3(0.06, 0.72, 1.5), Vector3(px + s * 0.7, 0.36, pz), wood.darkened(0.15))
+	var gx := px + (1.7 if px < (x0 + x1) * 0.5 else -1.7)
+	_box("metal", Vector3(0.05, 0.6, 0.05), Vector3(gx, 0.3, pz + 0.9), Color("#2a2b2c"))
+	_box("metal", Vector3(0.55, 0.45, 0.55), Vector3(gx, 0.82, pz + 0.9), Color("#1f2021"))
+	if era != "recent" and z1 - z0 > 9.0:
+		var cx := lerpf(x0 + 2.0, x1 - 2.0, 1.0 - r.randf())
+		for s in [-1.0, 1.0]:
+			var post := Vector3(cx, 0.0, (z0 + z1) * 0.5 + 2.0 + s * 3.0)
+			_box("metal", Vector3(0.06, 2.0, 0.06), post + Vector3(0, 1.0, 0), Color("#9a9c9e"))
+			_box("metal", Vector3(1.2, 0.05, 0.05), post + Vector3(0, 1.95, 0), Color("#9a9c9e"))
+		for k in 3:
+			_box("metal", Vector3(0.012, 0.012, 6.0), Vector3(cx - 0.5 + k * 0.5, 1.93, (z0 + z1) * 0.5 + 2.0), Color("#d8d6d0"))
 
 
 ## An asphalt lot with 9 ft stalls along both long edges, cut short at the

@@ -283,6 +283,18 @@ func _init() -> void:
 							break
 					prev = m
 			_check(moved == 0, "a %s %s keeps its walls at every stage (%d moved)" % [era, t, moved])
+	# A Main Street block grown by floors added on top is the block it was,
+	# with the new storey's own brick and a belt course (most seeds).
+	var added := 0
+	for s in 20:
+		var lot := {"width": 20.0, "depth": 40.0, "era": "prewar"}
+		var plain := DenseBuilder.build_mixed(300 + s, 3.9, lot, 3)
+		var m_plain: Array = HouseBuilder.last_masses.duplicate()
+		lot.added_from = 2
+		var grown := DenseBuilder.build_mixed(300 + s, 3.9, lot, 3)
+		if HouseBuilder.last_masses == m_plain and _verts(grown) > _verts(plain):
+			added += 1
+	_check(added >= 10, "Main Street blocks show floors added on top (%d of 20)" % added)
 	# A house cut into flats shows it: an outside stair or a side door,
 	# mailboxes and meters, on most lots.
 	var cut := 0
@@ -293,6 +305,27 @@ func _init() -> void:
 		if _verts(b) > _verts(a) + 100:
 			cut += 1
 	_check(cut >= 20, "a house cut into flats shows its new doors (%d of 30)" % cut)
+	# With no alley behind, rows and walk-ups draw back yards in place of
+	# garages and lots no road reaches, all inside the lot, and differ
+	# from the same building with an alley.
+	var yards := 0
+	var out_pts := 0
+	for era in ["prewar", "postwar", "recent"]:
+		for s in 8:
+			for kind in ["row", "apartments"]:
+				var lots := [{"width": 24.0, "depth": 45.0, "era": era, "alley": true}, {"width": 24.0, "depth": 45.0, "era": era, "alley": false}]
+				var drawn := []
+				for lot in lots:
+					drawn.append(MetroBuilder.build_row(800 + s, 3.9, lot, 3, 2) if kind == "row" else MetroBuilder.build_apartments(800 + s, 3.9, lot, 2 + s % 2))
+				if _verts(drawn[0]) != _verts(drawn[1]):
+					yards += 1
+				for m: ArrayMesh in drawn[1].slice(0, 2):
+					for i in m.get_surface_count():
+						for v: Vector3 in m.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]:
+							if (v.z > 8.0 and absf(v.x) > 12.1) or v.z > 45.0:  # past the side or back lines (a street lamp's light pool spills over the front yard)
+								out_pts += 1
+	_check(yards >= 30, "no alley behind: back yards in place of garages and lots (%d of 48 differ)" % yards)
+	_check(out_pts == 0, "back yards stay inside the lot (%d points out)" % out_pts)
 	# Two- and three-flats with a yard behind get back porches and a
 	# fenced yard, all inside their lot; on a shallow lot, the stoop.
 	MetroBuilder.force_row = "flats"
@@ -306,13 +339,13 @@ func _init() -> void:
 		for m: ArrayMesh in deep.slice(0, 2):
 			for i in m.get_surface_count():
 				for v: Vector3 in m.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]:
-					if absf(v.x) > 12.1 or v.z > 45.0:
+					if (v.z > 8.0 and absf(v.x) > 12.1) or v.z > 45.0:  # past the side or back lines (a street lamp's light pool spills over the front yard)
 						spill += 1
 		var walkup := MetroBuilder.build_apartments(700 + s, 3.9, {"width": 24.0, "depth": 45.0, "era": "prewar"}, 3)
 		for m: ArrayMesh in walkup.slice(0, 2):
 			for i in m.get_surface_count():
 				for v: Vector3 in m.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]:
-					if absf(v.x) > 12.1 or v.z > 45.0:
+					if (v.z > 8.0 and absf(v.x) > 12.1) or v.z > 45.0:  # past the side or back lines (a street lamp's light pool spills over the front yard)
 						spill += 1
 	MetroBuilder.force_row = ""
 	_check(porches == 20, "flats with a back yard get back porches (%d of 20)" % porches)
