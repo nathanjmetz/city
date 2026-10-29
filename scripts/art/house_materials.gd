@@ -282,7 +282,8 @@ void fragment() {
 	float wear = smoothstep(0.4, 0.7, texture(noise_grain, p / 1.1).r);
 	vec3 line = mix(vcol(COLOR.rgb), asphalt.rgb, wear * 0.45);
 	float chips = texture(noise_grain, p / 0.12).r;
-	vec3 loose = vcol(COLOR.rgb) * (0.6 + chips * 0.8);
+	// Wheel-worn and fresh-spread patches, so a big lot isn't one flat colour.
+	vec3 loose = vcol(COLOR.rgb) * (0.6 + chips * 0.8) * (0.84 + texture(noise_soft, p / 14.0).r * 0.3);
 	vec3 col = drive;
 	col = mix(col, lot, step(0.2, COLOR.a));
 	col = mix(col, line, step(0.6, COLOR.a));
