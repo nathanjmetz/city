@@ -349,11 +349,12 @@ func _draw() -> void:
 			_poly([P.call(0.58, 0.24), P.call(0.7, 0.04), P.call(0.82, 0.24)], color)
 			line.call(P.call(0.7, 0.56), P.call(0.86, 0.42), w * 1.3)
 			_poly([P.call(0.8, 0.32), P.call(0.98, 0.32), P.call(0.94, 0.5)], color)
-		"noleft":
-			# MUTCD R3-2: a left-turn arrow under a red circle and slash.
-			line.call(P.call(0.58, 0.82), P.call(0.58, 0.42), w * 1.3)
-			line.call(P.call(0.58, 0.42), P.call(0.36, 0.42), w * 1.3)
-			_poly([P.call(0.38, 0.28), P.call(0.18, 0.42), P.call(0.38, 0.56)], color)
+		"noleft", "noright":
+			# MUTCD R3-2 / R3-1: a turn arrow under a red circle and slash.
+			var x := (func(v: float) -> float: return v if kind == "noleft" else 1.0 - v)
+			line.call(P.call(x.call(0.58), 0.82), P.call(x.call(0.58), 0.42), w * 1.3)
+			line.call(P.call(x.call(0.58), 0.42), P.call(x.call(0.36), 0.42), w * 1.3)
+			_poly([P.call(x.call(0.38), 0.28), P.call(x.call(0.18), 0.42), P.call(x.call(0.38), 0.56)], color)
 			var red := Color(0.92, 0.25, 0.2)
 			draw_arc(P.call(0.5, 0.5), s * 0.42, 0.0, TAU, 32, red, w * 1.3, true)
 			line.call(P.call(0.2, 0.2), P.call(0.8, 0.8), w * 1.3, red)

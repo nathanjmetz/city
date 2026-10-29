@@ -4,7 +4,8 @@ extends SceneTree
 ## Run: godot -s tools/road_options_shot.gd -- <step> <out_prefix>
 ## Steps: oneway (the one-way boulevard and the Boulevard menu), scurve (an
 ## S-curve built, and the Draw tools), snap (the snap switches, Roads off),
-## carfree (a street made car-free, close up and with the tool).
+## carfree (a street made car-free, close up and with the tool), noright
+## (a No Right Turn sign at a junction, close up and with the Traffic tools).
 
 var _main: Node
 var _hud: Hud
@@ -40,6 +41,7 @@ func _process(_delta: float) -> bool:
 			"scurve": _scurve(sim)
 			"snap": _snap(sim)
 			"carfree": _car_free(sim)
+			"noright": _no_right(sim)
 		if not _shots.is_empty():
 			_shots[0][1].call()
 	# Each shot gets 90 frames to settle, then is saved and the next set up.
@@ -127,6 +129,36 @@ func _car_free(sim: CitySim) -> void:
 			traffic.set_mode(TrafficTool.Mode.NONE)
 			_hud.close_all()
 			_aim(Vector3(0, 0, -60), 30.0, 28.0, 45.0)],
+func _no_right(sim: CitySim) -> void:
+	# An avenue crossing a street on open ground, No Right Turn for drivers
+	# coming in from the west on the avenue.
+	var o := Vector3(0, 0, -320)
+	sim.apply({"type": "build_road", "start": [o.x - 200, o.z], "ctrl": [o.x, o.z], "end": [o.x + 200, o.z],
+		"road": RoadStyle.Type.AVENUE})
+	sim.apply({"type": "build_road", "start": [o.x, o.z - 150], "ctrl": [o.x, o.z], "end": [o.x, o.z + 150]})
+	sim.tick()
+	var c := sim.network.find_node_near(o, 1.0)
+	var west := -1
+	for wi in sim.traffic.ways_into(c):
+		if sim.traffic.ways[wi].pts[0].x < o.x - 1.0:
+			west = wi
+	sim.apply({"type": "set_lanes", "node": c, "seg": sim.traffic.ways[west].seg, "no_right": true, "lanes": []})
+	var traffic: TrafficTool = _main.find_children("*", "TrafficTool", false, false)[0]
+	var sl := sim.traffic.stop_line(west)
+	var post: Vector3 = sl.pos + sl.right * (sl.curb + 0.9) - sl.dir * 1.5
+	_shots = [
+		["close", func():
+			# From up the road the drivers come in on, just short of the sign
+			# (closer than the game lets a player zoom).
+			for cam in _main.find_children("*", "CityCamera", false, false):
+				cam.ignore_floor = true
+			_aim(post + sl.dir * 10.0 - sl.right * 2.0, 248.0, 5.0, 20.0)],
+		["menu", func():
+			for cam in _main.find_children("*", "CityCamera", false, false):
+				cam.ignore_floor = false
+			_aim(o, 0.0, 55.0, 160.0)
+			_hud._open("roads")
+			traffic.set_mode(TrafficTool.Mode.NO_RIGHT)],
 	]
 
 

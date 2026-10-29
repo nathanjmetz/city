@@ -40,6 +40,7 @@ var _stops: MultiMeshInstance3D
 var _yields: MultiMeshInstance3D
 var _blades: MultiMeshInstance3D
 var _no_lefts: MultiMeshInstance3D
+var _no_rights: MultiMeshInstance3D
 var _paint := MeshInstance3D.new()
 ## [node, way] for each signal head, in instance order.
 var _head_ways := []
@@ -81,12 +82,17 @@ func _ready() -> void:
 	_yields = _batch(_plate(0.5, 3), red_sign)
 	var green := RoadStyle.material(Color(0.05, 0.36, 0.2))
 	_blades = _batch(_box(Vector3(0.9, 0.16, 0.03)), green)
-	# No Left Turn, 30 x 30 in (MUTCD R3-2).
-	var no_left := StandardMaterial3D.new()
-	no_left.albedo_texture = _no_left_texture()
-	no_left.roughness = 0.5
-	no_left.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_no_lefts = _batch(_square_sign(0.38, no_left, back), null)
+	# No Left Turn and No Right Turn, 30 x 30 in (MUTCD R3-2, R3-1).
+	for left in [true, false]:
+		var face := StandardMaterial3D.new()
+		face.albedo_texture = _no_turn_texture(left)
+		face.roughness = 0.5
+		face.cull_mode = BaseMaterial3D.CULL_DISABLED
+		var signs := _batch(_square_sign(0.38, face, back), null)
+		if left:
+			_no_lefts = signs
+		else:
+			_no_rights = signs
 	_paint.material_override = Surfaces.paint(RoadStyle.MARKING_WHITE)
 	_paint.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_paint)
@@ -273,10 +279,12 @@ func _rebuild_all() -> void:
 					stops.append(sign_t)
 	# The player's turn rules: lane-use arrows painted in each lane behind
 	# the stop line (MUTCD 3B.20: one set near the line, one 50 ft or so
-	# before), and No Left Turn signs on a post at the near right corner.
+	# before), and No Left and No Right Turn signs on a post at the near
+	# right corner, No Left on top when there are both.
 	var rule_keys := traffic.lane_rules.keys()
 	rule_keys.sort()
 	var no_lefts := []
+	var no_rights := []
 	for k in rule_keys:
 		var rule: Dictionary = traffic.lane_rules[k]
 		var wid := _way_in(int(k.get_slice(":", 0)), int(k.get_slice(":", 1)))
@@ -293,7 +301,12 @@ func _rebuild_all() -> void:
 					var at: Vector3 = sl.pos + sl.right * float(w.offs[i]) - sl.dir * (back + 2.4)
 					lane_arrow(paint, at, sl.dir, int(masks[i]), RoadStyle.Y_JUNCTION + 0.02)
 					any_paint = true
+		var faces := []
 		if rule.no_left:
+			faces.append(no_lefts)
+		if rule.get("no_right", false):
+			faces.append(no_rights)
+		if not faces.is_empty():
 			# On its own post at the near right corner, a little before the
 			# stop sign or signal pole where there is one.
 			var dir: Vector3 = sl.dir
@@ -301,9 +314,13 @@ func _rebuild_all() -> void:
 			if sign_at.has(wid):
 				dir = sign_at[wid][1]
 				post = sign_at[wid][0] - dir * 2.5
-			poles.append(Transform3D(Basis().scaled(Vector3(0.45, 2.51, 0.45)), post + Vector3(0, 1.25, 0)))
-			no_lefts.append(Transform3D(Basis.looking_at(-dir, Vector3.UP), post + Vector3(0, 2.51, 0) - dir * 0.05))
+			var top := 2.51 + 0.8 * (faces.size() - 1)
+			poles.append(Transform3D(Basis().scaled(Vector3(0.45, top, 0.45)), post + Vector3(0, top * 0.5, 0)))
+			for i in faces.size():
+				(faces[i] as Array).append(Transform3D(Basis.looking_at(-dir, Vector3.UP),
+					post + Vector3(0, top - 0.8 * i, 0) - dir * 0.05))
 	_fill(_no_lefts, no_lefts)
+	_fill(_no_rights, no_rights)
 	_fill(_poles, poles)
 	_fill(_arms, arms)
 	_fill(_heads, heads)
@@ -516,9 +533,11 @@ static func _square_sign(h: float, face: Material, back: Material) -> ArrayMesh:
 	return mesh
 
 
-## A 64 px No Left Turn face (R3-2): white with a black border, a black
-## left-turn arrow, and a red circle and slash over it.
-static func _no_left_texture() -> ImageTexture:
+## A 64 px No Left Turn face (R3-2), or No Right Turn (R3-1): white with a
+## black border, a black turn arrow, and a red circle and slash over it.
+## The arrow is mirrored for right; the slash runs top left to bottom right
+## on both, as MUTCD draws it.
+static func _no_turn_texture(left: bool) -> ImageTexture:
 	var n := 64
 	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
 	var white := Color(0.95, 0.95, 0.93)
@@ -528,17 +547,18 @@ static func _no_left_texture() -> ImageTexture:
 		for x in n:
 			var edge := mini(mini(x, y), mini(n - 1 - x, n - 1 - y))
 			img.set_pixel(x, y, black if edge < 2 else white)
-	# The arrow: up from the bottom, then left, with a head.
+	# The arrow: up from the bottom, then left (or right), with a head.
+	var flip := func(x: int) -> int: return x if left else n - 1 - x
 	for y in range(22, 50):
 		for x in range(34, 40):
-			img.set_pixel(x, y, black)
+			img.set_pixel(flip.call(x), y, black)
 	for y in range(22, 28):
 		for x in range(22, 40):
-			img.set_pixel(x, y, black)
+			img.set_pixel(flip.call(x), y, black)
 	for y in range(14, 36):
 		for x in range(12, 23):
 			if x - 12 >= absf(y - 24.5) * 0.9:
-				img.set_pixel(x, y, black)
+				img.set_pixel(flip.call(x), y, black)
 	# The red ring and slash, top left to bottom right.
 	var c := Vector2(31.5, 31.5)
 	for y in n:

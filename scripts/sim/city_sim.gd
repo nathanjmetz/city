@@ -998,9 +998,9 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			# Traffic lights, stop signs or none at a junction (-1 = automatic).
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
 		"set_lanes":
-			# A No Left Turn sign and lane arrows where a road meets a junction.
+			# No Left and No Right Turn signs and lane arrows where a road meets a junction.
 			ok = traffic.set_lane_rule(int(cmd.node), int(cmd.seg), bool(cmd.get("no_left", false)),
-				cmd.get("lanes", []))
+				cmd.get("lanes", []), bool(cmd.get("no_right", false)))
 		"link_wave":
 			# A green wave: light `to` timed behind light `from` at the limit.
 			ok = traffic.link_wave(int(cmd.from), int(cmd.to), float(cmd.get("v", 15.6)))
