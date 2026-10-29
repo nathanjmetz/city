@@ -1027,11 +1027,27 @@ func _md_cab(W: float, paint := PAINT) -> float:
 	], [_edges(GLASS, paint, paint, GLASS), _edges(paint, paint, GLASS, paint)], paint, paint)
 	_box(Vector3(0, 1.0, 0.02), Vector3(1.0, 0.65, 0.06), CHROME)
 	_box(Vector3(0, 0.65, -0.05), Vector3(W - 0.2, 0.22, 0.2), CHROME if not _lo else TRIM)
-	_box(Vector3(hw - 0.4, 1.15, 0.12), Vector3(0.3, 0.16, 0.12), HEAD, true)
+	if _hi:
+		_heavy_face(hw - 0.42, 1.05, 1.0, 1.0, 0.65)
+	else:
+		_box(Vector3(hw - 0.4, 1.15, 0.12), Vector3(0.3, 0.16, 0.12), HEAD, true)
 	if not _lo:
 		for s in [-1.0, 1.0]:
 			_box(Vector3(s * (hw + 0.12), 2.1, 1.75), Vector3(0.06, 0.45, 0.14), TRIM)
 	return 3.0
+
+
+## Ultra: a truck cab's face (Freightliner M2 and Cascadia, Peterbilt): the
+## headlamps on the nose in dark housings with an amber marker, and dark
+## bars across the chrome grille (gw wide, gh high, centred at gy), each
+## layer 6 mm proud of the one behind.
+func _heavy_face(lx: float, ly: float, gw: float, gy: float, gh: float) -> void:
+	_box(Vector3(lx, ly, 0.044), Vector3(0.36, 0.2, 0.1), TRIM, true)
+	_box(Vector3(lx + 0.03, ly + 0.02, 0.038), Vector3(0.24, 0.12, 0.1), HEAD, true)
+	_box(Vector3(lx + 0.14, ly - 0.07, 0.038), Vector3(0.06, 0.04, 0.1), Color(1.0, 0.55, 0.05, 0.5), true)
+	var n := int(gh / 0.11)
+	for i in range(1, n):  # the lowest slot is behind the bumper
+		_box(Vector3(0, gy - gh * 0.5 + (i + 0.5) * gh / n, 0.034), Vector3(gw - 0.08, 0.035, 0.1), Color(0.05, 0.05, 0.05, 0.3))
 
 
 ## A 26 ft box truck on a Freightliner M2: the box takes the fleet's colour
@@ -1369,7 +1385,10 @@ func _tractor_unit(sleeper: bool) -> void:
 	_wheels([back + 1.0, back + 2.3], 0.52, hw, 0.6)
 	_box(Vector3(0, 1.2, 0.02), Vector3(1.1, 0.75, 0.06), CHROME)
 	_box(Vector3(0, 0.75, -0.06), Vector3(2.4, 0.25, 0.2), CHROME if not _lo else TRIM)
-	_box(Vector3(hw - 0.45, 1.25, 0.1), Vector3(0.36, 0.16, 0.12), HEAD, true)
+	if _hi:
+		_heavy_face(hw - 0.42, 1.2, 1.1, 1.2, 0.75)
+	else:
+		_box(Vector3(hw - 0.45, 1.25, 0.1), Vector3(0.36, 0.16, 0.12), HEAD, true)
 	if not _lo:
 		for s in [-1.0, 1.0]:
 			_box(Vector3(s * (hw + 0.14), 2.35, 2.0), Vector3(0.06, 0.5, 0.14), TRIM)
