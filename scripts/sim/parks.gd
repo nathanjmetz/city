@@ -771,6 +771,7 @@ func _grow(sim: CitySim, id: int, need := Vector2.ZERO, extra := 0.0) -> bool:
 	elif wide and not deep:
 		order.sort_custom(func(a, b): return a[0] != "back" and b[0] == "back")
 	var homes := []
+	var street := []
 	for o in order:
 		var strip: Vector2 = o[2]
 		var area: float = strip.x * strip.y
@@ -782,6 +783,10 @@ func _grow(sim: CitySim, id: int, need := Vector2.ZERO, extra := 0.0) -> bool:
 		var why := ground_problem(sim, corners(o[1], s.dir, strip), id)
 		if why == "Buildings stand there." and homes.is_empty() and _homes_only(sim, corners(o[1], s.dir, strip), id):
 			homes = [o[0], o[1], strip, cost]
+		if why == "Too close to a road." and street.is_empty():
+			var seg := closable_street(sim, id, corners(o[1], s.dir, strip))
+			if seg != -1:
+				street = [o[0], o[1], strip, cost, seg]
 		if why != "":
 			continue
 		_take(sim, id, o[0], cost)
@@ -791,7 +796,105 @@ func _grow(sim: CitySim, id: int, need := Vector2.ZERO, extra := 0.0) -> bool:
 	# buy the houses next door and tear them down to grow a park.
 	if not homes.is_empty():
 		_ask(sim, id, homes)
+	elif not street.is_empty():
+		_ask_street(sim, id, street)
 	return false
+
+
+## The one quiet street in the way of a park's next strip that the town
+## could close and give to the park, or -1: the way Indiana towns vacate a
+## street to a park that owns both sides (IC 36-7-3-12, an ordinance after
+## a hearing; the land goes to the owners on either side). Only a plain
+## local street or alley (Balance.PARK_CLOSABLE_STREETS) no longer than a
+## block, with no home, shop or service on it, that the town can still get
+## round once it is gone: a dead end, or both ends still joined by other
+## streets.
+func closable_street(sim: CitySim, id: int, poly: PackedVector2Array) -> int:
+	var net := sim.network
+	var hits := []
+	for seg in net.segments:
+		if Services._clashes(poly, net.sample_segment(seg, RoadIndex.SAMPLES), RoadStyle.right_of_way_half(net.segments[seg].type)):
+			hits.append(seg)
+			if hits.size() > 1:
+				return -1
+	if hits.size() != 1:
+		return -1
+	var seg: int = hits[0]
+	var road: Dictionary = net.segments[seg]
+	if int(road.type) not in Balance.PARK_CLOSABLE_STREETS or sim.is_link_segment(seg):
+		return -1
+	var pts := net.sample_segment(seg, RoadIndex.SAMPLES)
+	var length := 0.0
+	for i in pts.size() - 1:
+		length += pts[i].distance_to(pts[i + 1])
+	if length > Balance.PARK_CLOSE_MAX_M:
+		return -1
+	# Nothing else lives on it: no building on a lot facing it, no service
+	# or other park beside it.
+	for key in sim.buildings:
+		if sim.lots.has(key) and int(sim.lots[key].get("seg", -1)) == seg:
+			return -1
+	var band := PackedVector2Array()
+	for p in pts:
+		band.append(Vector2(p.x, p.z))
+	var reach := RoadStyle.right_of_way_half(road.type) + 6.0
+	for b in sim.services.buildings:
+		for q in sim.services.footprint(b):
+			if _near_line(q, band, reach):
+				return -1
+	for other in sites:
+		if other != id:
+			for q in footprint(other):
+				if _near_line(q, band, reach):
+					return -1
+	# The town can still get round: a dead end, or another way between its ends.
+	if net.segments_at(road.a).size() == 1 or net.segments_at(road.b).size() == 1:
+		return seg
+	return seg if _joined_without(net, road.a, road.b, seg) else -1
+
+
+static func _near_line(q: Vector2, line: PackedVector2Array, d: float) -> bool:
+	for i in line.size() - 1:
+		if Geometry2D.get_closest_point_to_segment(q, line[i], line[i + 1]).distance_to(q) < d:
+			return true
+	return false
+
+
+## True when nodes a and b are joined by streets other than `skip`.
+static func _joined_without(net: RoadNetwork, a: int, b: int, skip: int) -> bool:
+	var seen := {a: true}
+	var todo := [a]
+	while not todo.is_empty():
+		var n: int = todo.pop_back()
+		for seg in net.segments_at(n):
+			if seg == skip:
+				continue
+			var r: Dictionary = net.segments[seg]
+			var m: int = r.b if r.a == n else r.a
+			if m == b:
+				return true
+			if not seen.has(m):
+				seen[m] = true
+				todo.append(m)
+	return false
+
+
+## Files the park board's request to have the town close the street beside
+## it and give the park the land.
+func _ask_street(sim: CitySim, id: int, street: Array) -> void:
+	var s: Dictionary = sites[id]
+	if not sim.permits.can_file(sim, "park", id):
+		return
+	var area := []
+	for q in corners(street[1], s.dir, street[2]):
+		area.append([q.x, q.y])
+	var req: int = sim.permits.file(sim, {"hub": "park", "hub_id": id, "leader": str(s.leader.get("name", "The park board")),
+		"title": "Close the street beside %s" % s.name,
+		"why": "The park fills both sides of a quiet street; the board asks the town to close it and join the park across it.",
+		"area": area, "change": "Street to park", "base": int(street[3]), "budget": maxi(0, int(sim.economy.money))})
+	if req != -1:
+		s.ask = {"req": req, "side": street[0], "seg": int(street[4])}
+		s.why = "The park board asked the town to close the street beside it."
 
 
 ## Grows the park one strip to `which` side, paying `cost`.
@@ -855,14 +958,17 @@ func _answer(sim: CitySim, id: int) -> bool:
 		return false
 	var which := str(s.ask.side)
 	var req_id := int(s.ask.req)
+	var seg := int(s.ask.get("seg", -1))
 	s.ask = {}
 	if state != Permits.State.APPROVED:
 		if state == Permits.State.DENIED:
-			s.why = "Was told no on the homes next door."
+			s.why = "Was told no on the %s." % ("street beside it" if seg != -1 else "homes next door")
 		return false
 	var outline := PackedVector2Array()
 	for p in sim.permits.requests[req_id].route:
 		outline.append(Vector2(float(p[0]), float(p[1])))
+	if seg != -1:
+		return _close_street(sim, id, req_id, which, seg)
 	var price := 0.0
 	for key in sim.buildings.keys():
 		if sim.parcel_under(key, outline):
@@ -880,6 +986,35 @@ func _answer(sim: CitySim, id: int) -> bool:
 		return true
 	_take(sim, id, which, roundi(price))
 	s.why = "The park board bought the homes next door and grew the park."
+	return true
+
+
+## A yes on closing the street: the town takes it up (if nothing has moved
+## onto it since), and the park grows across where it ran.
+func _close_street(sim: CitySim, id: int, req_id: int, which: String, seg: int) -> bool:
+	var s: Dictionary = sites[id]
+	sim.permits.done(req_id)
+	var step := Balance.PARK_GROW_STEP
+	var side := Vector3(-s.dir.z, 0.0, s.dir.x)
+	var to: Array = {"left": [s.pos - side * (s.size.x + step) * 0.5, Vector2(step, s.size.y)],
+		"right": [s.pos + side * (s.size.x + step) * 0.5, Vector2(step, s.size.y)],
+		"back": [s.pos - s.dir * (s.size.y + step) * 0.5, Vector2(s.size.x, step)]}[which]
+	var poly := corners(to[0], s.dir, to[1])
+	if closable_street(sim, id, poly) != seg:
+		s.why = "The street beside it changed; the park board let the closing drop."
+		return true
+	# Part of the simulation, so every copy of the town takes it up on the
+	# same tick (not a player command); lots and traffic catch up as after
+	# any road change.
+	var keep := sim.network.snapshot()
+	sim.network.remove_segment(seg)
+	if ground_problem(sim, poly, id) != "":
+		# Something else still stands in the way: the street goes back.
+		sim.network.restore(keep)
+		s.why = "Closing the street wasn't enough to grow the park."
+		return true
+	_take(sim, id, which, roundi(to[1].x * to[1].y / 4046.86 * Balance.PARK_LAND_PER_ACRE))
+	s.why = "The town closed the street and the park grew across it."
 	return true
 
 

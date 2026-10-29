@@ -113,6 +113,14 @@ void vertex() {
 	} else if (part > 0.85 && part < 0.99) {
 		tint = HAIRS[(o >> 9) & 3];
 	}
+	// A school backpack (0.62), folded away inside the body unless worn.
+	if (part > 0.6 && part < 0.65) {
+		if ((o & 8192) != 0) {
+			tint = HATS[(o >> 6) & 7] * 1.4 + vec3(0.02);
+		} else {
+			VERTEX = vec3(0.0, 1.2, 0.0);
+		}
+	}
 	float ph = (custom.a - worn) * 6.2831853;
 	float a = UV.x * 0.42 * sin(ph);
 	float c = cos(a);
@@ -248,7 +256,8 @@ func _draw_walkers() -> void:
 		var stride: float = STRIDE * body.y * (0.92 + float((hash(int(w.person)) >> 12) & 15) / 15.0 * 0.16)
 		shirt.a = fposmod(float(pose[2]), stride) / stride
 		if desktop:
-			shirt.a = minf(shirt.a, 0.999) + float(worn[1])
+			var age := int(who.get("age", -1))
+			shirt.a = minf(shirt.a, 0.999) + float(int(worn[1]) | (BACKPACK if age >= 5 and age <= 11 else 0))
 		mm.set_instance_custom_data(n, shirt)
 		counts[kind] = n + 1
 	# On a full desktop (High and up) the nearer figures cast a shadow, as
@@ -390,6 +399,9 @@ static func figure(person: int, who := {}) -> int:
 ## a mix of adults and about one in eight a child, as before.
 ## Outfit bit for a seated person (the shader bends them into a chair).
 const SEATED := 4096
+## Outfit bit for a school backpack: children 5 to 11 out walking are on the
+## way to or from school (BusNet._school_walks), the only walks they make.
+const BACKPACK := 8192
 
 ## Median heights by age, 0 to 17, in cm (CDC 2000 growth charts).
 const BOY_CM := [50, 76, 87, 96, 103, 110, 116, 122, 128, 133, 138, 143, 149, 156, 164, 170, 173, 175]
@@ -464,6 +476,10 @@ static func _person_mesh(kind := 0, lod := 2) -> Mesh:
 	_limb(st, Vector3(0.0, 1.27, 0.0), Vector3(0.0, 1.41, 0.0), Vector2(0.19 * chest, 0.115), Vector2(0.215 * chest, 0.105), shirt, Vector2.ZERO, 8)
 	_limb(st, Vector3(0.0, 1.41, 0.0), Vector3(0.0, 1.46, 0.0), Vector2(0.215 * chest, 0.105), Vector2(0.09, 0.07), shirt, Vector2.ZERO, 8)  # shoulders slope in to the neck
 	_limb(st, Vector3(0.0, 1.45, 0.0), Vector3(0.0, 1.54, 0.0), Vector2(0.05, 0.052), Vector2(0.046, 0.048), skin)
+	# A backpack on the back, shown only for a child on the school walk
+	# (BACKPACK); the shader folds it away for everyone else.
+	if lod >= 1:
+		_blob(st, Vector3(0.0, 1.2, 0.17), Vector3(0.14 * chest, 0.16, 0.075), Color(0.3, 0.3, 0.3, 0.62), Vector2.ZERO, 6, 4)
 	_blob(st, Vector3(0.0, 1.625, -0.005), Vector3(0.082, 0.108, 0.098), skin, Vector2.ZERO, 8, 6)
 	# Hair over the crown and back of the head; the face stays bare.
 	_blob(st, Vector3(0.0, 1.665, 0.022), Vector3(0.091, 0.092, 0.1), hair, Vector2.ZERO, 8, 6)

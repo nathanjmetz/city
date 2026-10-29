@@ -3,7 +3,7 @@ extends SceneTree
 ## the desktop) NearPeople, without loading a whole town: for judging how
 ## people look and walk at play distance against street photos.
 ## Run (in a window): godot -s tools/street_people_shot.gd -- OUT_DIR
-## DISTS=40,25,12 camera distances; MONTH=1-12; N walkers (default 60);
+## DISTS=40,25,12 camera distances; YAW camera bearing (default -55); MONTH=1-12; N walkers (default 60);
 ## KIDS=1 makes them families on the school walk: children with a parent or
 ## an older brother or sister.
 ## People stand on the county's real ground (Terrain), so the street is
@@ -115,7 +115,7 @@ func _process(delta: float) -> bool:
 		var d: float = _dists[_spot]
 		# From across the street, looking along the near sidewalk.
 		var pitch := deg_to_rad(clampf(d * 0.75, 10.0, 32.0))
-		var yaw := deg_to_rad(-55.0)
+		var yaw := deg_to_rad(float(OS.get_environment("YAW")) if OS.get_environment("YAW") != "" else -55.0)
 		var at := Terrain.stand(Vector3(7.3, 0.9, 0.0))
 		_cam.look_at_from_position(at + Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch)) * d, at, Vector3.UP)
 	if _frames % 40 == 0:
