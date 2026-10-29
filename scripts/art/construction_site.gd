@@ -200,7 +200,7 @@ func _show(st: Dictionary) -> void:
 	elif stage == "dry_in":
 		frame_chunks = FrameBuilder.CHUNKS
 	if frame_chunks > 0 and near and _frame.is_empty():
-		for m in FrameBuilder.build(_built[0], _frame_kind):
+		for m in FrameBuilder.build(_plan_only(_built[0]), _frame_kind):
 			var mi := MeshInstance3D.new()
 			mi.mesh = m
 			add_child(mi)
@@ -212,6 +212,7 @@ func _show(st: Dictionary) -> void:
 	var shell_on := stage == "dry_in" or stage == "exterior" or stage == "frame" and not near
 	if shell_on and _shell == null:
 		_shell = _clipped(Color.WHITE, Color.WHITE)
+		_param(_shell, "keep", _plan_keep())
 	if _shell != null:
 		_shell.visible = shell_on
 		if shell_on:
@@ -359,6 +360,36 @@ func _shell_look(wall: Color, roof: Color, inflate: float) -> void:
 		mat.set_shader_parameter("inflate", inflate)
 	mats[0].set_shader_parameter("wall_color", wall)
 	mats[0].set_shader_parameter("roof_color", roof)
+
+
+## The finished drawing cut to the building's plan (_plan_keep), as bare
+## triangles for FrameBuilder: the lot's light poles, bollards and yard
+## fence aren't framed as if they were part of the building.
+func _plan_only(mesh: Mesh) -> Mesh:
+	var k := _plan_keep()
+	var out := ArrayMesh.new()
+	for si in mesh.get_surface_count():
+		var arr := mesh.surface_get_arrays(si)
+		var v: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		var idx = arr[Mesh.ARRAY_INDEX]
+		var indexed: bool = idx != null and idx.size() > 0
+		var count: int = idx.size() if indexed else v.size()
+		var kept := PackedInt32Array()
+		for i in range(0, count - 2, 3):
+			var a: int = idx[i] if indexed else i
+			var b: int = idx[i + 1] if indexed else i + 1
+			var c: int = idx[i + 2] if indexed else i + 2
+			var m := (v[a] + v[b] + v[c]) / 3.0
+			if m.x >= k.x and m.z >= k.y and m.x <= k.z and m.z <= k.w:
+				kept.append_array([a, b, c])
+		if kept.is_empty():
+			continue
+		var na := []
+		na.resize(Mesh.ARRAY_MAX)
+		na[Mesh.ARRAY_VERTEX] = v
+		na[Mesh.ARRAY_INDEX] = kept
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, na)
+	return out if out.get_surface_count() > 0 else mesh
 
 
 ## The building's plan with a little room for porches and stoops.
