@@ -1186,10 +1186,13 @@ func _office_mirror(to_curb: float, width: float, storeys: int) -> void:
 			var fx := -bw * 0.5 - 3.0 - k * 1.6
 			_box("metal", Vector3(0.12, 10.0, 0.12), Vector3(fx, 5.0, zf - 6.5), Color("#c9cccd"))
 			var flag: Color = [Color("#3c3b6e"), Color("#1f3a8a"), Color(_pick(SPANDREL)).darkened(0.3)][k]
-			_box("paint", Vector3(1.5, 0.95, 0.03), Vector3(fx - 0.8, 9.4, zf - 6.5), flag)
+			var at := Vector3(fx - 0.06, 9.85, zf - 6.5)
 			if k == 0:
-				for st in 3:
-					_box("paint", Vector3(0.9, 0.12, 0.035), Vector3(fx - 1.1, 9.05 + st * 0.3, zf - 6.5), Color("#b22234"))
+				_us_flag(at, 1.5, 0.95, k * 1.7)
+			elif k == 1:
+				_indiana_flag(at, 1.5, 0.95, k * 1.7)
+			else:
+				_house_flag(at, 1.5, 0.95, k * 1.7, flag)
 		_flat_rect("line", -hw + 1.0, -bw * 0.5 - 1.5, zf - 1.8, zf - 0.3, 0.065, Color("#4a3426"))
 		_flat_rect("line", bw * 0.5 + 1.5, hw - 1.0, zf - 1.8, zf - 0.3, 0.065, Color("#4a3426"))
 		var keep := rng

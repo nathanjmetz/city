@@ -1867,37 +1867,66 @@ func _bank_dress(w: float, zf: float, cz: float, lx: float) -> void:
 	_light_pool(Vector3(lx, 0.12, cz), 4.0, 7.0, Color(0.95, 0.96, 1.0))
 
 
-## The US flag flying from a pole at `c` (its hoist), out toward -x, in
-## four panels that ripple a little; stripes and the blue canton on both faces.
-func _us_flag(c: Vector3, fl: float, fh: float, phase: float) -> void:
+## The US flag flying from a pole at `c` (its hoist), out along `dir` x,
+## in four panels that ripple a little; stripes and the blue canton on both
+## faces.
+func _us_flag(c: Vector3, fl: float, fh: float, phase: float, dir := -1.0) -> void:
 	var red := Color("#b22234")
 	var white := Color("#f2f0ea")
 	var blue := Color("#3c3b6e")
-	var panels := 4
 	var sh := fh / 13.0
-	for p in panels:
-		var x0 := c.x - fl * p / panels
-		var x1 := c.x - fl * (p + 1) / panels
-		var z0 := c.z + sin(phase + p * 1.3) * 0.08 * p / panels
-		var z1 := c.z + sin(phase + (p + 1) * 1.3) * 0.08 * (p + 1) / panels
-		for k in 13:
-			var y0 := c.y - k * sh
-			var col := red if k % 2 == 0 else white
-			if k < 7 and p < 2:
-				col = blue  # the canton: the top seven stripes, two-fifths out
-			var a := Vector3(x0, y0, z0)
-			var b := Vector3(x1, y0, z1)
-			var cc := Vector3(x1, y0 - sh, z1)
-			var d := Vector3(x0, y0 - sh, z0)
-			_quad("paint", a, b, cc, d, col, [], Vector3.FORWARD)
-			_quad("paint", a, b, cc, d, col, [], Vector3.BACK)
+	for k in 13:
+		var c0 := red if k % 2 == 0 else white
+		# The canton covers the top seven stripes, two-fifths out.
+		var cols := [blue, blue, c0, c0] if k < 7 else [c0, c0, c0, c0]
+		_flag_strip(c + Vector3(0, -k * sh, 0), fl, sh, phase, dir, cols)
 	# A scatter of stars on the canton (both faces).
 	for i in 5:
 		for j in 4:
-			var sx := c.x - fl * 0.5 * (i + 0.6) / 5.4
-			var sy := c.y - sh * 7.0 * (j + 0.6) / 4.4
-			var sz := c.z + sin(phase + (c.x - sx) / fl * panels * 1.3) * 0.08 * (c.x - sx) / fl
-			_box("paint", Vector3(0.045, 0.045, 0.012), Vector3(sx, sy, sz), white)
+			var t := 0.5 * (i + 0.6) / 5.4
+			_box("paint", Vector3(0.045, 0.045, 0.012), Vector3(c.x + dir * fl * t, c.y - sh * 7.0 * (j + 0.6) / 4.4,
+				c.z + _flag_wave(t, phase)), white)
+
+
+## Indiana's flag: gold torch and a ring of stars on blue (simplified).
+func _indiana_flag(c: Vector3, fl: float, fh: float, phase: float, dir := -1.0) -> void:
+	var blue := Color("#1f3a8a")
+	var gold := Color("#d4ab3a")
+	_flag_strip(c, fl, fh, phase, dir, [blue, blue, blue, blue])
+	var m := Vector3(c.x + dir * fl * 0.5, c.y - fh * 0.5, c.z + _flag_wave(0.5, phase))
+	_box("paint", Vector3(0.05, 0.36, 0.012), m + Vector3(0, -0.04, 0), gold)  # the torch
+	_box("paint", Vector3(0.12, 0.1, 0.012), m + Vector3(0, 0.2, 0), gold)
+	for i in 12:
+		var a := PI * (0.15 + 0.7 * i / 11.0)
+		var t := 0.5 - cos(a) * 0.28
+		_box("paint", Vector3(0.04, 0.04, 0.012), Vector3(c.x + dir * fl * t, m.y + sin(a) * fh * 0.36 - fh * 0.05,
+			c.z + _flag_wave(t, phase)), gold)
+
+
+## A plain flag in one colour with a pale square device: a company's.
+func _house_flag(c: Vector3, fl: float, fh: float, phase: float, col: Color, dir := -1.0) -> void:
+	_flag_strip(c, fl, fh, phase, dir, [col, col, col, col])
+	var m := Vector3(c.x + dir * fl * 0.5, c.y - fh * 0.5, c.z + _flag_wave(0.5, phase))
+	_box("paint", Vector3(fh * 0.4, fh * 0.4, 0.012), m, Color("#f2f0ea"))
+	_box("paint", Vector3(fh * 0.22, fh * 0.22, 0.014), m, col)
+
+
+## How far a flag ripples out of its plane at fraction `t` of its length.
+func _flag_wave(t: float, phase: float) -> float:
+	return sin(phase + t * 4.0 * 1.3) * 0.08 * t
+
+
+## One horizontal band of a flag, `h` deep below `c`, in four rippled
+## panels coloured `cols` from the hoist out, seen from both faces.
+func _flag_strip(c: Vector3, fl: float, h: float, phase: float, dir: float, cols: Array) -> void:
+	for p in 4:
+		var t0 := p / 4.0
+		var t1 := (p + 1) / 4.0
+		var a := Vector3(c.x + dir * fl * t0, c.y, c.z + _flag_wave(t0, phase))
+		var b := Vector3(c.x + dir * fl * t1, c.y, c.z + _flag_wave(t1, phase))
+		var dn := Vector3(0, -h, 0)
+		_quad("paint", a, b, b + dn, a + dn, cols[p], [], Vector3.FORWARD)
+		_quad("paint", a, b, b + dn, a + dn, cols[p], [], Vector3.BACK)
 
 
 ## A small brick church on the main street: a steep gable to the street,
