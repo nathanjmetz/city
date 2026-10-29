@@ -436,7 +436,8 @@ func field_profit(f: Dictionary, c: Vector2i, crop := "") -> float:
 	var fl := CropPlan.field(f, c) if crop == "" else {"crop": crop, "prev": "", "health": 0.5}
 	var net := CropPlan.net_per_acre(fl.crop, fl.prev, fl.health, fertility_at(mid),
 		price * CropPlan.relative_price(fl.crop, day),
-		Agency.effect(f, Agency.TREES.farm, "output*") * Agency.effect(f, Agency.TREES.farm, "price*"))
+		Agency.effect(f, Agency.TREES.farm, "output*") * Agency.effect(f, Agency.TREES.farm, "price*"),
+		CropPlan.till_of(f) if crop == "" else "chisel")
 	var tax := LAND_PER_ACRE * AG_ASSESSMENT * tax_rate / 100.0
 	var lease := 0.0
 	if lease_of.is_valid():
@@ -507,6 +508,9 @@ func decide(usable: Callable) -> bool:
 		# Each new year the leader picks every field's crop (CropPlan).
 		if year > int(f.get("plan_year", 0)):
 			f.plan_year = year
+			if not f.has("till"):
+				# The habit the farm had before its leader weighed it.
+				f.till = CropPlan.TILL_IDS[CropCalendar.farm_practice(id, f)]
 			if not f.cells.is_empty():
 				CropPlan.plan(f, demand, price, day, func(c): return fertility_at(cell_center(f, c)),
 					func(c): return slope_of.call(cell_center(f, c)) if slope_of.is_valid() else 0.0)
@@ -1006,6 +1010,8 @@ func to_dict() -> Dictionary:
 			"own": f.get("own", start_fields()).map(func(k): return [k.x, k.y]),
 			"rent": f.get("rent", []).map(func(k): return [k.x, k.y]), "capital": Capital.save(f),
 			"sale": f.get("sale", {}), "sale_year": f.get("sale_year", 0)}
+		if f.has("till"):
+			fs[str(id)]["till"] = [f.till, f.get("till_why", "")]
 	return {"farms": fs, "next_id": _next_id}
 
 
@@ -1064,6 +1070,9 @@ func from_dict(d: Dictionary) -> void:
 		farms[int(k)].blocks = blocks
 		if not f.get("leader", {}).is_empty():
 			farms[int(k)].leader = f.leader
+		if f.has("till") and Balance.TILLAGE.has(str(f.till[0])):
+			farms[int(k)].till = str(f.till[0])
+			farms[int(k)].till_why = str(f.till[1])
 		if not f.get("stock", {}).is_empty():
 			farms[int(k)].stock = Livestock.from_save(f.stock)
 		# Older saves: the farm owns what it works, and starts saving now.

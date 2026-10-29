@@ -652,6 +652,32 @@ const CROP_EROSION_PER_ACRE := 3000.0
 ## roughly one Indiana farmer in six who does).
 const CROP_COVER_COST := 37.0
 const CROP_COVER_SOIL_VALUE := 45.0
+## Tillage, a farm's work mode (Brawn's pick #17): each January the leader
+## picks how the farm works its corn and soybean ground (CropPlan). Indiana
+## tillage transect: about 60% of soybeans and 35-40% of corn are no-tilled.
+## Purdue / Indiana custom rates: a chisel plow pass about $22 an acre and a
+## field cultivator pass about $17. A tilled farm chisels corn stalks in the
+## fall and runs the cultivator each spring; no-till skips them for a
+## burndown herbicide pass of about $15. So no-tilling into corn stalks
+## saves about $24 an acre and into bean stubble or wheat about $2
+## (TILLAGE_SAVE, by last year's crop). Purdue's long-term tillage plots on
+## dark, poorly drained ground like most of Grant County yield about 5% less
+## corn no-tilled and the same soybeans. Residue left on top cuts erosion
+## by most of it (NRCS: 60-90%) and builds organic matter. "crops" are the
+## crops it no-tills, "yield" a multiplier by crop, "wash" the share of
+## erosion left, "health" soil health gained a year.
+const TILLAGE := {
+	"chisel": {"name": "Chisel plow", "crops": [], "yield": {}, "wash": 1.0, "health": 0.0},
+	"beans_no_till": {"name": "No-till soybeans", "crops": ["soybeans"], "yield": {}, "wash": 0.6, "health": 0.01},
+	"no_till": {"name": "No-till", "crops": ["corn", "soybeans", "wheat"], "yield": {"corn": 0.95}, "wash": 0.25,
+		"health": 0.03},
+}
+const TILLAGE_SAVE := {"corn": 24.0}
+const TILLAGE_SAVE_OTHER := 2.0
+## Changing how a farm tills means fitting the planter (row cleaners, more
+## down-pressure: about $2,000 a row on a 16-row planter) and learning it:
+## about $8 an acre a year over ten years.
+const TILLAGE_SWITCH := 8.0
 ## An alfalfa stand is kept this many years, and keeping it saves the
 ## establishment cost (dollars an acre).
 const CROP_HAY_STAND_YEARS := 4
