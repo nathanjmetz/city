@@ -554,6 +554,24 @@ func _shop_gas_station(to_curb: float) -> void:
 			site.stalls.append([Vector2(x + s * 2.0, ccz), Vector2(0, 1)])
 
 
+## A mansard band round a flat-roofed box from `y0` up to `y1`, sloping in
+## from `out` beyond the walls: four shingled faces meeting at the corners.
+func _mansard(w: float, d: float, cz: float, zf: float, y0: float, y1: float, out: float, col: Color) -> void:
+	var x0 := -w * 0.5
+	var x1 := w * 0.5
+	var z0 := cz - d * 0.5
+	var z1 := cz + d * 0.5
+	var lo := [Vector3(x0 - out, y0, z0 - out), Vector3(x1 + out, y0, z0 - out), Vector3(x1 + out, y0, z1 + out), Vector3(x0 - out, y0, z1 + out)]
+	var hi := [Vector3(x0, y1, z0), Vector3(x1, y1, z0), Vector3(x1, y1, z1), Vector3(x0, y1, z1)]
+	for i in 4:
+		var j := (i + 1) % 4
+		var mid: Vector3 = (lo[i] + lo[j]) * 0.5
+		var outward := Vector3(mid.x - 0.0, 0.0, mid.z - cz).normalized() + Vector3(0, 1.2, 0)
+		_quad("roof", lo[i], lo[j], hi[j], hi[i], col, [], outward)
+	# The soffit under the overhang.
+	_quad("paint", lo[0], lo[1], lo[2], lo[3], SOFFIT, [], Vector3.DOWN)
+
+
 ## One LED digit on a price board, as seven segments in a 0.15 x 0.28 m cell,
 ## drawn on the face toward the street (-z).
 const SEGS := [0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F]
@@ -606,10 +624,24 @@ func _shop_diner(to_curb: float) -> void:
 	site.door = Vector2(-w * 0.5 + 1.0, zf - 2.0)
 	_box("paint", Vector3(2.6, 3.0, 2.0), Vector3(-w * 0.5 + 1.0, 1.8, zf - 1.0), band)
 	_glass(Vector3(-w * 0.5 + 1.0, 1.4, zf - 2.02), Vector3(-1, 0, 0), 1.6, 2.2, 0.0)
-	# Pole sign.
+	# Half of them wear the 1970s family-restaurant mansard: a shingled
+	# slope all the way round the top of the walls (Frisch's, Ponderosa and
+	# the local diners built off US 35 and SR 9 in Marion).
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 31])
+	if r.randf() < 0.5:
+		_mansard(w, d, cz, zf, 3.0, 4.75, 0.9, Color(["#4a3b30", "#3a3a3c", "#5b4636", "#7a3a2a"][r.randi() % 4]))
+	# Pole sign, with a changeable-letter reader board under it.
 	var px := half - 2.0
 	_box("paint", Vector3(0.35, 7.5, 0.35), Vector3(px, 3.75, 1.5), Color("#5a5e60"))
 	_sign(Vector3(px, 6.8, 1.3), 3.4, 1.6)
+	_box("paint", Vector3(3.0, 1.1, 0.3), Vector3(px, 5.3, 1.5), Color("#f4f2ea"))
+	_box("paint", Vector3(3.1, 0.08, 0.32), Vector3(px, 5.88, 1.5), Color("#2b2b2b"))
+	_box("paint", Vector3(3.1, 0.08, 0.32), Vector3(px, 4.72, 1.5), Color("#2b2b2b"))
+	if fine_parts:
+		for line in 3:
+			var lw := r.randf_range(1.2, 2.6)
+			_box("paint", Vector3(lw * 0.8, 0.1, 0.02), Vector3(px + r.randf_range(-0.2, 0.2), 5.6 - line * 0.3, 1.34), Color("#2a2622"))
 	_rooftop(w, d, cz, 4.0, 2)
 	_shop_parking(to_curb, w, zf, 0.0)
 
