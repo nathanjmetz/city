@@ -705,6 +705,19 @@ func _tw_podium(to_curb: float, width: float, storeys: int) -> void:
 		for face in _tw_faces(tw, td, tz, tx):
 			_glass(face[0] + Vector3(0, y0 + 0.32 + (floor_h - 0.32) * 0.5, 0), face[1], face[2] - 0.2, floor_h - 0.4, rng.randf_range(0.05, 0.5))
 	if _homes:
+		# Solid panel piers between the window walls (flats need walls for
+		# kitchens and closets; 2010s towers clad them in metal or
+		# fibre-cement panel, often a second colour).
+		var pier := Color(_pick(["#e8e6e0", "#3b3d40", "#b9b2a4", "#8f9599"]))
+		for face in _tw_faces(tw, td, tz, tx):
+			var n := maxi(3, roundi(face[2] / 3.4))
+			var outv: Vector3 = face[1].cross(Vector3.UP)
+			for i in range(1, n):
+				if i % 3 != 1:
+					continue
+				var c: Vector3 = face[0] + face[1] * (-face[2] * 0.5 + i * face[2] / n) + outv * 0.1
+				c.y = (ph + top) * 0.5
+				_box("paint", Vector3(2.4, top - ph, 0.3), c, pier, _tw_yaw(face[1]))
 		# Glass balconies stacked at the four corners.
 		for f in range(1, floors):
 			var y0 := ph + f * floor_h
