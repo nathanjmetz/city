@@ -978,6 +978,8 @@ func _community_center(to_curb: float) -> void:
 		_box("paint", Vector3(5.4, 0.3, 3.4), Vector3(vx, 3.5, zf - 2.9), band)
 		_glass(Vector3(vx, 1.35, zf - 4.42), Vector3(-1, 0, 0), 4.2, 2.5, 0.0)
 		_box("paint", Vector3(2.4, 2.2, 0.06), Vector3(vx, 1.1, zf - 4.46), Color("#2b2d2f"))
+		if fine_parts:
+			_cc_entry(vx, zf - 4.4, band, vx == vxs[0], 6, 1.0 if vx == vxs[0] else -1.0, true, 1.5)
 	# The garden center: a fenced yard in front of the end wall (black
 	# picket panels on a block knee wall), a shade roof over its back half.
 	var gz1 := zf + minf(dd * 0.6, 24.0)
@@ -1070,6 +1072,47 @@ func _cc_box(mat: String, x0: float, x1: float, z0: float, z1: float, deck: floa
 ## aisle, head to head between modules) down to the street, off a main
 ## drive from the curb cut; the pad building in the front corner by the
 ## supermarket. Notes every stall with the aisle it's reached from.
+## Desktop: a big-box entry up close (any Target, Walmart or Kroger built
+## since the 1990s): automatic sliding doors in aluminium frames under a
+## sensor header, side lights in the vestibule, a row of concrete-filled
+## bollards painted the chain's colour to stop cars, a nest of carts by the
+## door, and at the first entry the ice merchandiser and the propane
+## exchange cage. `fz` is the vestibule's glass face; `cart_side` which
+## side of the doors the carts stand and `back` how far behind the glass
+## (negative: out in front of a flush entry). No random draws.
+func _cc_entry(vx: float, fz: float, band: Color, first: bool, bollards: int, cart_side: float, side_lights: bool, back: float) -> void:
+	var alu := Color("#a7abae")
+	for sx in [-1.0, 1.0]:
+		var lx: float = vx + sx * 0.75  # each leaf slid part-way open
+		_box("metal", Vector3(1.25, 2.25, 0.06), Vector3(lx, 1.12, fz - 0.08), alu)
+		_glass(Vector3(lx, 1.15, fz - 0.12), Vector3(-1, 0, 0), 1.05, 2.0, 0.0)
+		_box("metal", Vector3(0.08, 2.4, 0.1), Vector3(vx + sx * 2.1, 1.2, fz - 0.05), alu)  # jamb
+	_box("metal", Vector3(4.4, 0.35, 0.3), Vector3(vx, 2.45, fz - 0.15), alu)  # operator header
+	_box("paint", Vector3(0.3, 0.1, 0.12), Vector3(vx, 2.22, fz - 0.28), Color("#1b1c1d"))  # motion sensor
+	if side_lights:
+		for sx in [-1.0, 1.0]:
+			_glass(Vector3(vx + sx * 2.53, 1.35, fz + 1.5), Vector3(0, 0, sx), 2.4, 2.4, 0.0)  # vestibule side lights
+	# Bollards in a row before the doors.
+	for i in bollards:
+		var bx: float = vx - (bollards - 1) * 0.75 + i * 1.5
+		_cylinder("concrete", Vector3(bx, 0, fz - 1.6), 0.2, 0.95, band)
+		_cylinder("concrete", Vector3(bx, 0.95, fz - 1.6), 0.17, 0.06, band.lightened(0.15), 8)
+	# A nest of carts along the wall beside the vestibule.
+	var cx := vx + cart_side * 3.6
+	var cl := 3.2 if back > 0.0 else 1.2  # a short nest against a flush front
+	_box("metal", Vector3(0.62, 0.85, cl), Vector3(cx, 0.6, fz + back), Color("#b9bcbf"))
+	_box("metal", Vector3(0.64, 0.06, cl), Vector3(cx, 1.05, fz + back), band)  # the handles
+	_box("metal", Vector3(0.6, 0.15, cl), Vector3(cx, 0.08, fz + back), Color("#2a2a2a"))  # wheels
+	if first:
+		var ix := vx - 4.6 if back > 0.0 else vx - 5.8
+		var iz := fz + back + 0.8 if back > 0.0 else fz - 0.55
+		_box("paint", Vector3(2.0, 1.6, 0.85), Vector3(ix, 0.8, iz), Color("#eef1f3"))  # ice merchandiser
+		_box("paint", Vector3(1.6, 0.4, 0.04), Vector3(ix, 1.2, iz - 0.44), Color("#2c6fb7"))
+		_box("metal", Vector3(1.8, 1.7, 0.9), Vector3(ix - 2.3, 0.85, iz), Color("#3a5d8c"))  # propane cage
+		for k in 5:
+			_cylinder("metal", Vector3(ix - 3.0 + k * 0.35, 0.1, iz - 0.65), 0.15, 0.55, Color("#e9ecee"), 8)
+
+
 func _cc_parking(to_curb: float, w: float, zw: float, xg0: float, cr: RandomNumberGenerator) -> void:
 	var lot0 := -half + 0.6
 	var lot1 := half - 0.6
@@ -1209,6 +1252,8 @@ func _grocery_anchor(x0: float, x1: float, zf: float, cz: float, d: float, wall:
 	_glass(Vector3(tx, 1.7, zfa - 1.23), Vector3(-1, 0, 0), tw - 1.2, 3.0, 0.0)
 	for k in [-1.0, 1.0]:
 		_box("paint", Vector3(2.0, 2.3, 0.06), Vector3(tx + k * tw * 0.22, 1.15, zfa - 1.28), Color("#2b2d2f"))
+		if fine_parts:
+			_cc_entry(tx + k * tw * 0.22, zfa - 1.25, accent, k < 0.0, 3, k, false, -0.9)
 	_box("paint", Vector3(tw + 1.0, 0.25, 2.6), Vector3(tx, 3.6, zfa - 2.4), accent)  # entry canopy
 	# Windows along the front either side, high, with the store's banners.
 	for sx in [-1.0, 1.0]:
