@@ -293,6 +293,27 @@ func _init() -> void:
 		if _verts(b) > _verts(a) + 100:
 			cut += 1
 	_check(cut >= 20, "a house cut into flats shows its new doors (%d of 30)" % cut)
+	# With no alley behind, rows and walk-ups draw back yards in place of
+	# garages and lots no road reaches, all inside the lot, and differ
+	# from the same building with an alley.
+	var yards := 0
+	var out_pts := 0
+	for era in ["prewar", "postwar", "recent"]:
+		for s in 8:
+			for kind in ["row", "apartments"]:
+				var lots := [{"width": 24.0, "depth": 45.0, "era": era, "alley": true}, {"width": 24.0, "depth": 45.0, "era": era, "alley": false}]
+				var drawn := []
+				for lot in lots:
+					drawn.append(MetroBuilder.build_row(800 + s, 3.9, lot, 3, 2) if kind == "row" else MetroBuilder.build_apartments(800 + s, 3.9, lot, 2 + s % 2))
+				if _verts(drawn[0]) != _verts(drawn[1]):
+					yards += 1
+				for m: ArrayMesh in drawn[1].slice(0, 2):
+					for i in m.get_surface_count():
+						for v: Vector3 in m.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]:
+							if absf(v.x) > 12.1 or v.z > 45.0:
+								out_pts += 1
+	_check(yards >= 30, "no alley behind: back yards in place of garages and lots (%d of 48 differ)" % yards)
+	_check(out_pts == 0, "back yards stay inside the lot (%d points out)" % out_pts)
 	# Two- and three-flats with a yard behind get back porches and a
 	# fenced yard, all inside their lot; on a shallow lot, the stoop.
 	MetroBuilder.force_row = "flats"

@@ -215,6 +215,17 @@ static func corner_side(net: RoadNetwork, lot: Dictionary) -> float:
 	return best
 
 
+## Whether a road runs along the lot's back line (an alley, a gravel lane,
+## or a street behind a through lot), so a row's garages and lot out back
+## have a way in. True when there is no network to ask.
+static func back_lane(net: RoadNetwork, lot: Dictionary) -> bool:
+	if net == null or not lot.has("front") or not lot.has("normal"):
+		return true
+	var z := float(_fit(lot).depth) + 1.0
+	var hit := net.find_segment_near(world(lot, Vector2(0.0, z)), 7.0)
+	return not hit.is_empty() and int(hit.seg) != int(lot.get("seg", -1))
+
+
 static func frame(lot: Dictionary) -> Transform3D:
 	return Transform3D(Basis.looking_at(-lot.normal, Vector3.UP), lot.front)
 

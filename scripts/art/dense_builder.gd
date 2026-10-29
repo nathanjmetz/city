@@ -417,7 +417,7 @@ func _row(to_curb: float, width: float, units: int, storeys: int) -> void:
 		_gable_roof(0.0, zf + d * 0.5, deck, d, d * 0.5 * rng.randf_range(0.33, 0.5), x1 - x0, true,
 			Color(_pick(ROOF)), siding)
 	# The alley garage pad at the back.
-	if depth - 1.0 > zf + d + 8.0:
+	if alley and depth - 1.0 > zf + d + 8.0:
 		_flat_rect("drive", -width * 0.5 + 0.5, width * 0.5 - 0.5, depth - 7.0, depth - 1.0, 0.06)
 	if rng.randf() < 0.7:
 		var pick := TreeField.pick(rng)
@@ -475,7 +475,7 @@ func _apartments(to_curb: float, width: float, storeys: int) -> void:
 	for i in rng.randi_range(1, 3):
 		_box("metal", Vector3(1.6, 1.0, 1.1), Vector3(rng.randf_range(-w * 0.35, w * 0.35), deck + 0.5, cz),
 			Color("#b9bcbc"))
-	_parking(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 1.5, zf + d + 14.0, width)
+	_rl_back(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 1.5, zf + d + 14.0, width)
 	# Foundation shrubs and a street tree.
 	var x := -w * 0.5 + 0.6
 	while x < w * 0.5 - 0.5:
@@ -1524,6 +1524,41 @@ func _block(mat: String, cx: float, w: float, d: float, cz: float, deck: float, 
 	_box(mat, Vector3(w, ph, t), Vector3(cx, deck + ph * 0.5, cz + d * 0.5 - t * 0.5), wall)
 	_box(mat, Vector3(t, ph, d), Vector3(cx - w * 0.5 + t * 0.5, deck + ph * 0.5, cz), wall)
 	_box(mat, Vector3(t, ph, d), Vector3(cx + w * 0.5 - t * 0.5, deck + ph * 0.5, cz), wall)
+
+
+## The ground behind a residential building: its parking lot when a road
+## runs behind to reach it (`alley`), otherwise the tenants' shared back
+## yard (they park on the street, as SiteLayout has them): lawn, a
+## concrete patio with a picnic table and a kettle grill, and a
+## clothesline on older streets. Its own random numbers.
+func _rl_back(x0: float, x1: float, z0: float, z1: float, width: float) -> void:
+	if alley:
+		_parking(x0, x1, z0, z1, width)
+		return
+	z1 = minf(z1, depth - 1.0)
+	if z1 - z0 < 4.0:
+		return
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "back yard"])
+	var px := lerpf(x0 + 3.0, x1 - 3.0, r.randf())
+	var pz := z0 + 2.2
+	_flat_rect("drive", px - 2.4, px + 2.4, z0 + 0.4, z0 + 4.0, 0.06)
+	var wood := Color("#8d7b5f")
+	_box("paint", Vector3(1.8, 0.05, 0.75), Vector3(px, 0.74, pz), wood)
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(1.8, 0.04, 0.25), Vector3(px, 0.45, pz + s * 0.62), wood)
+		_box("paint", Vector3(0.06, 0.72, 1.5), Vector3(px + s * 0.7, 0.36, pz), wood.darkened(0.15))
+	var gx := px + (1.7 if px < (x0 + x1) * 0.5 else -1.7)
+	_box("metal", Vector3(0.05, 0.6, 0.05), Vector3(gx, 0.3, pz + 0.9), Color("#2a2b2c"))
+	_box("metal", Vector3(0.55, 0.45, 0.55), Vector3(gx, 0.82, pz + 0.9), Color("#1f2021"))
+	if era != "recent" and z1 - z0 > 9.0:
+		var cx := lerpf(x0 + 2.0, x1 - 2.0, 1.0 - r.randf())
+		for s in [-1.0, 1.0]:
+			var post := Vector3(cx, 0.0, (z0 + z1) * 0.5 + 2.0 + s * 3.0)
+			_box("metal", Vector3(0.06, 2.0, 0.06), post + Vector3(0, 1.0, 0), Color("#9a9c9e"))
+			_box("metal", Vector3(1.2, 0.05, 0.05), post + Vector3(0, 1.95, 0), Color("#9a9c9e"))
+		for k in 3:
+			_box("metal", Vector3(0.012, 0.012, 6.0), Vector3(cx - 0.5 + k * 0.5, 1.93, (z0 + z1) * 0.5 + 2.0), Color("#d8d6d0"))
 
 
 ## An asphalt lot with 9 ft stalls along both long edges, cut short at the
