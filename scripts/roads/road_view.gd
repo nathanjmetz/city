@@ -109,10 +109,6 @@ func setup(net: RoadNetwork, s: CitySim = null) -> void:
 	rebuild()
 
 
-## True once every street, pole and corner is drawn and no restyle waits
-## (the loading screen waits for this; LoadGate).
-## Curbs stand up off the street on the desktop's High tier and up (the
-## same tiers that show the pavement's photo grain).
 ## Weathered galvanized steel: guardrail and its posts.
 static func _galvanized() -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -123,10 +119,14 @@ static func _galvanized() -> StandardMaterial3D:
 	return m
 
 
+## Curbs stand up off the street on the desktop's High tier and up (the
+## same tiers that show the pavement's photo grain).
 static func curbs_wanted() -> bool:
 	return Surfaces.photo_level() > 0.0
 
 
+## True once every street, pole and corner is drawn and no restyle waits
+## (the loading screen waits for this; LoadGate).
 func is_drawn() -> bool:
 	return not _building and _recheck < 0.0 and _later.is_empty() and _poles_later.is_empty() \
 		and _corners_later.is_empty()
