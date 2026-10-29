@@ -50,6 +50,7 @@ static func build_chain(chain: String, seed: int, to_curb: float, lot := {}, spe
 				3: b._sawtooth(to_curb)
 				_: b._quonset_shop(to_curb)
 	b._service_yard(true, false, INF)
+	b._dress()
 	return [b._commit_house(), b._commit_flat(), b.trees, b.labels]
 
 
@@ -88,6 +89,7 @@ func _hall(cx: float, cz: float, w: float, d: float, h: float, wall: Color) -> v
 	_box("metal", Vector3(w, h - 0.3, d), Vector3(cx, 0.3 + (h - 0.3) * 0.5, cz), wall)
 	_box("metal", Vector3(w + 0.04, 1.1, d + 0.04), Vector3(cx, 0.85, cz), band)
 	_metal_roof(cx, cz, h, w, d, wall.darkened(0.1))
+	_dr_note(cx, cz, w, d, h, "gable")
 
 
 ## An overhead door on a wall facing -z at (x, z).
@@ -280,6 +282,7 @@ func _tilt_up(to_curb: float) -> void:
 		_box("paint", Vector3(0.05, h - 0.2, 0.12), Vector3(x, h * 0.5 - 0.1, zf - 0.06), panel.darkened(0.25))
 		x += 7.5
 	_box("paint", Vector3(w + 0.24, 0.6, d + 0.24), Vector3(cx, h - 1.2, cz), Color(_pick(WAINSCOT)))
+	_dr_note(cx, cz, w, d, h, "flat", 1.0)
 	# Dock doors with dark seals down the side.
 	var docks := clampi(int(d / 5.0), 2, 6)
 	for i in docks:
@@ -304,6 +307,7 @@ func _brick_works(to_curb: float) -> void:
 	_box("brick", Vector3(w, h, d), Vector3(0, h * 0.5, cz), brick)
 	_box("paint", Vector3(w + 0.3, 0.5, d + 0.3), Vector3(0, h + 0.25, cz), brick.darkened(0.2))
 	_box("paint", Vector3(w - 0.4, 0.1, d - 0.4), Vector3(0, h + 0.05, cz), Color("#3a3a3c"))  # tar roof inside the parapet
+	_dr_note(0.0, cz, w, d, h + 0.1, "flat")
 	var n := int(w / 3.2)
 	for f in floors:
 		for i in n:
@@ -338,6 +342,7 @@ func _sawtooth(to_curb: float) -> void:
 	var brick := Color(_pick(FACADE_BRICK))
 	_box("brick", Vector3(w, h, d), Vector3(cx, h * 0.5, cz), brick)
 	_box("paint", Vector3(w + 0.2, 0.4, d + 0.2), Vector3(cx, h + 0.2, cz), brick.darkened(0.2))
+	_dr_note(cx, cz, w, d, h, "none")
 	var teeth := int(d / 6.0)
 	var roof := Color("#5a5e60")
 	for t in teeth:
