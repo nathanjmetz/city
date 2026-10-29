@@ -2030,7 +2030,7 @@ func _gas_station(size: Vector2, to_curb: float, name: String) -> void:
 	var hz := size.y * 0.5
 	_flat_rect("asphalt", -hx + 1.0, hx - 1.0, -hz, hz - 1.0, 0.05)
 	for x in [-hx + 7.0, hx - 7.0]:
-		_flat_rect("asphalt", x - 4.0, x + 4.0, -hz - to_curb, -hz, 0.06)
+		_curb_cut(x, 4.0, -hz - to_curb, -hz, 0.06)
 	var cz := -hz + 13.0
 	for i in 2:
 		var ix := -6.0 + i * 12.0
