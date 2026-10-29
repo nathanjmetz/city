@@ -34,8 +34,12 @@ func _lineup() -> void:
 	var sim: CitySim = _main.sim
 	sim.apply({"type": "clear"})
 	sim.traffic.cars.clear()
-	# Late morning sun.
+	# Late morning sun, or the sky hour in SHOT_HOUR (21.5 for night).
 	sim.tick_count = int(8.0 * 60.0 / CitySim.MINUTES_PER_TICK)
+	if OS.get_environment("SHOT_HOUR") != "":
+		DayNight.cycle_on = true
+		DayNight.seasons_on = false
+		sim.set_calendar(Seasons.tick_at(SkyClock.at(7, float(OS.get_environment("SHOT_HOUR")))))
 	var x := 0.0
 	var row := 0
 	var i := 0
@@ -54,7 +58,9 @@ func _lineup() -> void:
 		if not VehicleTypes.LIVERY.has(kind):
 			paint = VehicleTypes.CAR_COLORS[[0, 5, 9, 7, 3, 1, 10, 6, 2, 11][i % 10]][0]
 		mm.set_instance_color(0, Color.WHITE)
-		mm.set_instance_custom_data(0, Color(paint.r, paint.g, paint.b, 2.0))
+		# Lights and sirens on; SHOT_PARKED=1 parks every other one, engine off.
+		var flags := VehicleMaterial.OFF if OS.get_environment("SHOT_PARKED") == "1" and i % 2 == 1 else 2.0
+		mm.set_instance_custom_data(0, Color(paint.r, paint.g, paint.b, flags))
 		var w: float = VehicleTypes.spec(kind).width if VehicleTypes.SPECS.has(kind) else 2.6
 		mm.set_instance_transform(0, Transform3D(Basis.IDENTITY, Vector3(x, Terrain.ground_y(x, row * 26.0), row * 26.0)))
 		var mi := MultiMeshInstance3D.new()
