@@ -3,7 +3,9 @@ extends SceneTree
 ## the desktop) NearPeople, without loading a whole town: for judging how
 ## people look and walk at play distance against street photos.
 ## Run (in a window): godot -s tools/street_people_shot.gd -- OUT_DIR
-## DISTS=40,25,12 camera distances; MONTH=1-12; N walkers (default 60).
+## DISTS=40,25,12 camera distances; MONTH=1-12; N walkers (default 60);
+## KIDS=1 makes them families on the school walk: children with a parent or
+## an older brother or sister.
 ## People stand on the county's real ground (Terrain), so the street is
 ## laid on it too.
 
@@ -60,6 +62,20 @@ func _init() -> void:
 		_traffic.walkers.append({"id": i + 1, "person": 1000 + i * 7919, "side": side,
 			"x": side * (7.35 + 0.5 * float(i % 3 == 0)), "start": float(i) * 120.0 / n * 2.3,
 			"v": 1.15 + 0.35 * float((i * 37) % 11) / 10.0})
+	if OS.get_environment("KIDS") != "":
+		var sim := CitySim.new()
+		for i in n:
+			var pid := 1000 + i * 7919
+			var age := 25 + (i * 13) % 30 if i % 3 == 0 else 5 + (i * 7) % 7
+			sim.people.people[pid] = {"id": pid, "first": PersonNames.FIRST[(i * 31) % PersonNames.FIRST.size()],
+				"last": "Smith", "age": age, "home": "", "job": "", "car": -1, "at": "travel", "until": -1}
+			# Walking together: the family's children just behind the grown-up.
+			var lead: Dictionary = _traffic.walkers[i - i % 3]
+			_traffic.walkers[i].start = float(lead.start) - float(i % 3) * 0.9
+			_traffic.walkers[i].x = float(lead.x) + (0.0 if i % 3 == 0 else (0.45 if i % 3 == 1 else -0.2))
+			_traffic.walkers[i].side = lead.side
+			_traffic.walkers[i].v = lead.v
+		_traffic._sim = sim
 	var frac := func() -> float: return 0.0
 	var wv := WalkerView.new()
 	wv.setup(_traffic, frac)

@@ -318,6 +318,30 @@ func _schools() -> void:
 	_check(left, "school buses set off on their run at bell time")
 	var t := sim.clock()
 	_check(BusNet.school_day(t) and t.hour >= 6 and t.hour <= 16, "they run on school days (%s)" % str(t))
+	# Pupils who live close by walk instead, on a school morning by the sky,
+	# and are home again after school.
+	sim.set_calendar(Seasons.tick_at(SkyClock.at(9, 6.6)))
+	var walking := {}
+	var there := {}
+	var home := {}
+	for i in 30000:
+		sim.tick()
+		for w in sim.traffic.walkers:
+			var p: Dictionary = sim.people.people.get(int(w.person), {})
+			if str(w.then.get("enter", "")).begins_with("school:") and p.age <= 11 and not walking.has(int(w.person)):
+				walking[int(w.person)] = sim.sky_hour()
+		for pid in walking:
+			if str(sim.people.people[pid].at).begins_with("school:"):
+				there[pid] = true
+			elif there.has(pid) and sim.people.people[pid].at == "":
+				home[pid] = true
+		if not home.is_empty() and home.size() == walking.size():
+			break
+	_check(not sim.buses.schools[sid].walk.is_empty(), "homes near the school are in its walk zone (%d)" % sim.buses.schools[sid].walk.size())
+	_check(not walking.is_empty() and walking.values().all(func(h): return h >= 6.7 and h < 7.6),
+		"children walk to school on a school morning (%d, %s)" % [walking.size(), str(walking.values().slice(0, 4))])
+	_check(there.size() == walking.size() and home.size() == walking.size(),
+		"they get there and walk home after school (%d, %d, sky %.1f)" % [there.size(), home.size(), sim.sky_hour()])
 
 
 ## A grid town with homes, shops and jobs already built (as if grown).
