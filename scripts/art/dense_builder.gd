@@ -1409,18 +1409,25 @@ func _office_lot(to_curb: float, w: float, zf: float, zb: float, width: float) -
 ## down concrete steps to the yard. The steps stand on a footing that runs
 ## below grade, so on a lot that falls away behind they still reach the
 ## ground instead of hanging in the air.
-func _rear_wall(x0: float, x1: float, zb: float, base: float, floor_h: float, storeys: int, trim: Color) -> void:
+## `porch`: each floor has its own back door in the middle, out onto a
+## back porch (drawn by the caller), so no stoop.
+func _rear_wall(x0: float, x1: float, zb: float, base: float, floor_h: float, storeys: int, trim: Color,
+		porch := false) -> void:
 	var n := maxi(2, int((x1 - x0) / 3.2))
 	var door_x := (x0 + x1) * 0.5
 	for f in storeys:
 		var y := base + f * floor_h + 1.5
 		for i in n:
 			var x := lerpf(x0, x1, (i + 0.5) / n)
-			if f == 0 and absf(x - door_x) < 1.4:
+			if (f == 0 or porch) and absf(x - door_x) < 1.4:
 				continue
 			_window(Vector3(x, y, zb), Vector3(1, 0, 0), 1.0, 1.5, false, false, trim)
-	_box("paint", Vector3(0.95, 2.1, 0.06), Vector3(door_x, base + 1.05, zb + 0.03), Color("#4d5254"))
-	_box("paint", Vector3(1.25, 0.14, 0.1), Vector3(door_x, base + 2.17, zb + 0.05), trim)
+	for f in (storeys if porch else 1):
+		var y0 := base + f * floor_h
+		_box("paint", Vector3(0.95, 2.1, 0.06), Vector3(door_x, y0 + 1.05, zb + 0.03), Color("#4d5254"))
+		_box("paint", Vector3(1.25, 0.14, 0.1), Vector3(door_x, y0 + 2.17, zb + 0.05), trim)
+	if porch:
+		return
 	var footing := 1.6  # below grade: hidden on level ground, showing where the yard falls away
 	_box("concrete", Vector3(1.6, base + footing, 1.2), Vector3(door_x, (base - footing) * 0.5, zb + 0.6), FOUNDATION)
 	var steps := ceili(base / 0.19)

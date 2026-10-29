@@ -283,6 +283,24 @@ func _init() -> void:
 							break
 					prev = m
 			_check(moved == 0, "a %s %s keeps its walls at every stage (%d moved)" % [era, t, moved])
+	# Two- and three-flats with a yard behind get back porches and a
+	# fenced yard, all inside their lot; on a shallow lot, the stoop.
+	MetroBuilder.force_row = "flats"
+	var porches := 0
+	var spill := 0
+	for s in 20:
+		var shallow := MetroBuilder.build_row(700 + s, 3.9, {"width": 24.0, "depth": 24.0, "era": "prewar"}, 3, 2 + s % 2)
+		var deep := MetroBuilder.build_row(700 + s, 3.9, {"width": 24.0, "depth": 45.0, "era": "prewar"}, 3, 2 + s % 2)
+		if _verts(deep) > _verts(shallow) + 2000:
+			porches += 1
+		for m: ArrayMesh in deep.slice(0, 2):
+			for i in m.get_surface_count():
+				for v: Vector3 in m.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]:
+					if absf(v.x) > 12.1 or v.z > 45.0:
+						spill += 1
+	MetroBuilder.force_row = ""
+	_check(porches == 20, "flats with a back yard get back porches (%d of 20)" % porches)
+	_check(spill == 0, "back porches and yards stay inside the lot (%d points out)" % spill)
 	print("FAILED" if failed else "ALL PASSED")
 	quit(1 if failed else 0)
 
