@@ -52,14 +52,14 @@ func _init() -> void:
 				mi.position = part[1]
 				world.add_child(mi)
 	var x := -50.0
-	for i in (0 if kind in ["oil", "ore"] else (8 if kind.begins_with("tract") else 5)):
+	for i in (0 if kind in ["oil", "ore"] else (8 if kind.begins_with("tract") else (7 if kind == "growth" else 5))):
 		var meshes: Array
 		var k := kind
 		if kind == "types":
 			k = ["house", "row", "apartments", "mixed", "office"][i]
 		if kind in ["care", "careshop"]:
 			HouseBuilder.owner_care = i - 2
-		var w: float = {"care": 24.0, "careshop": 26.0, "row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "mainold": 16.0 + 4.0 * (i % 3), "mainrestored": 16.0 + 4.0 * (i % 3), "office": 40.0, "towers": 44.0, "hometowers": 54.0, "towerfar": 44.0, "flats": 24.0, "courtyard": 48.0, "walkup": 26.0, "garage": 44.0, "oddlots": [26.0, 22.0, 20.0, 26.0, 18.0][i % 5]}.get(k, 20.0)
+		var w: float = {"care": 24.0, "careshop": 26.0, "row": 22.0, "apartments": 36.0, "mixed": 22.0, "main": 16.0 + 4.0 * (i % 3), "mainold": 16.0 + 4.0 * (i % 3), "mainrestored": 16.0 + 4.0 * (i % 3), "office": 40.0, "towers": 44.0, "hometowers": 54.0, "towerfar": 44.0, "flats": 24.0, "courtyard": 48.0, "walkup": 26.0, "garage": 44.0, "growth": [40.0, 40.0, 44.0, 56.0, 64.0, 64.0, 72.0][i % 7], "oddlots": [26.0, 22.0, 20.0, 26.0, 18.0][i % 5]}.get(k, 20.0)
 		var sd := seed * 100 + i
 		match k:
 			"shop": meshes = CommercialBuilder.build_shop(sd, 3.9)
@@ -72,6 +72,13 @@ func _init() -> void:
 				meshes = DenseBuilder.build_mixed(sd, 3.9, {"width": w, "depth": 45.0, "era": "prewar"}, 2 + i % 3)
 				HouseBuilder.restored = false
 			"office": meshes = DenseBuilder.build_office(sd, 3.9, {"width": w, "depth": 55.0}, [3, 5, 8][i % 3])
+			"growth":
+				# One office's stages left to right, drawn as BuildingView does.
+				var st: int = [3, 5, 8, 16, 30, 48, 100][i % 7]
+				if st >= 8:
+					meshes = TowerBuilder.build_tower(seed * 100, 3.9, {"width": w, "depth": 60.0}, st)
+				else:
+					meshes = DenseBuilder.build_office(seed * 100, 3.9, {"width": w, "depth": 60.0}, st)
 			"towers": meshes = TowerBuilder.build_tower(sd, 3.9, {"width": w, "depth": 55.0}, [12, 22, 24, 10, 16][i],
 				{}, ["chicago", "deco", "glass", "chicago", "glass"][i])
 			"hometowers": meshes = TowerBuilder.build_tower(sd, 3.9, {"width": w, "depth": 55.0}, [12, 22, 24, 10, 16][i],
