@@ -1,7 +1,7 @@
 extends SceneTree
 ## Renders one building of a kind at every stage of going up, side by side,
 ## for checking ConstructionSite against photos of real job sites.
-## Run: godot -s tools/construction_shot.gd -- out.png [house|shop|factory|civic|warehouse|barn|paving|landfill|cemetery]
+## Run: godot -s tools/construction_shot.gd -- out.png [house|shop|tower|factory|civic|warehouse|barn|paving|landfill|cemetery]
 ##      [seed] [t] [yaw pitch dist] [only stage]
 
 var _frames := 0
@@ -17,7 +17,7 @@ func _init() -> void:
 	root.add_child(world)
 	world.add_child(SkyLight.new())
 	world.add_child(Ground.new())
-	var gap := 20.0 if kind == "house" or kind == "shop" else (30.0 if kind == "paving" else 60.0)
+	var gap := 20.0 if kind == "house" or kind == "shop" else (30.0 if kind == "paving" else (75.0 if kind == "tower" else 60.0))
 	var stages := range(Construction.STAGES.size()) if only < 0 else [only]
 	var road := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
@@ -26,12 +26,13 @@ func _init() -> void:
 	road.material_override = Surfaces.asphalt()
 	road.position = Vector3(0, 0.09, -8.4)
 	world.add_child(road)
-	var profile := "shop" if kind in ["landfill", "cemetery", "recycling"] else kind
+	var profile := "shop" if kind in ["landfill", "cemetery", "recycling", "tower"] else kind
 	for n in stages.size():
 		var i: int = stages[n]
 		var built: Array
 		match kind:
 			"shop": built = CommercialBuilder.build_shop(seed * 100 + i, 3.9)
+			"tower": built = TowerBuilder.build_tower(seed * 100, 3.9, {"width": 44.0, "depth": 60.0, "era": "recent"}, 16)
 			"factory": built = CommercialBuilder.build_factory(seed * 100 + i, 3.9)
 			"civic": built = CivicBuilder.build_service(Services.KINDS.keys()[seed % Services.KINDS.size()],
 				seed, Services.KINDS[Services.KINDS.keys()[seed % Services.KINDS.size()]].size, 3.9)
