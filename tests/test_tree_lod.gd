@@ -16,6 +16,7 @@ func _init() -> void:
 	_light_fits_full()
 	_far_matches_cards()
 	_grown_matches_cards()
+	_lit_alike()
 	_no_swelling()
 	_shares()
 	_jitter()
@@ -112,6 +113,47 @@ func _grown_matches_cards() -> void:
 				worst = off
 				worst_kind = "%s at %d" % [TreeKinds.kind(sp).name, age]
 	_check(worst < 0.2, "grown trees and their cards stand within 20%% of the same height (worst %.0f%%, %s)" % [worst * 100.0, worst_kind])
+
+
+## A grown tree and the cards standing in for it are shaded alike: the
+## cards carry the same height up the crown and cluster hue as the grown
+## tree's (the leaf shader lights a crown's top and drifts its clusters'
+## hue by them), so a near tree is not brighter and yellower than the same
+## tree farther off. The look critic (2026-10-29): "near trees are acid
+## yellow-green and look lit from inside."
+func _lit_alike() -> void:
+	var worst := 0.0
+	var worst_kind := ""
+	for sp in TreeKinds.count():
+		var g := TreeGrower.grown(sp, 1)
+		var grown: PackedColorArray = TreeMesher.build(sp, g.at_age(GrownTrees.BUCKETS[7]), TreeMesher.Lod.FULL, 1)[1][Mesh.ARRAY_COLOR]
+		for far in [false, true]:
+			var a: Array = TreeField.tree_mesh(sp, far).surface_get_arrays(0)
+			var uv: PackedVector2Array = a[Mesh.ARRAY_TEX_UV]
+			var cards := PackedColorArray()
+			for i in uv.size():
+				if uv[i].x > -0.5:  # not the trunk riding in the leaf surface
+					cards.append(a[Mesh.ARRAY_COLOR][i])
+			var gm := _mean_colour(grown)
+			var cm := _mean_colour(cards)
+			# A conifer's grown cards crowd its wide lower tiers more than
+			# the cards' even tiers do: its height up the crown may differ more.
+			var off := maxf(absf(gm.g - cm.g) * (0.8 if TreeKinds.kind(sp).evergreen else 1.0), absf(gm.b - cm.b))
+			if off > worst:
+				worst = off
+				worst_kind = "%s%s: grown top %.2f hue %.2f, cards %.2f, %.2f" % [TreeKinds.kind(sp).name, " (light)" if far else "",
+					gm.g, gm.b, cm.g, cm.b]
+	_check(worst < 0.2, "each kind's cards are lit like its grown tree: the same height up the crown and hue drift (worst %.2f, %s)" % [
+		worst, worst_kind])
+	_check("LEAF_INNER" in TreeLook.LEAF_SHADER and not "* mix(0.85, 1.2, tp) * 2.0" in TreeLook.LEAF_SHADER,
+		"the leaf shader shades the crown's inside and underside, not a glow from within")
+
+
+static func _mean_colour(cols: PackedColorArray) -> Color:
+	var s := Color(0, 0, 0, 0)
+	for c in cols:
+		s += c
+	return s / maxf(cols.size(), 1.0)
 
 
 ## Nothing scales a tree up out of the ground any more: the old fade shrank

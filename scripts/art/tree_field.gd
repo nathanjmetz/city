@@ -596,7 +596,7 @@ static func _broadleaf(sp: int, rng: RandomNumberGenerator, leaves: SurfaceTool,
 		var hue := rng.randf()
 		for i in cards_per:
 			var q := cc + Vector3(rng.randf_range(-1, 1), rng.randf_range(-0.7, 0.7), rng.randf_range(-1, 1)) * card * 0.6
-			_card(leaves, rng, q, center, rad, card * rng.randf_range(0.8, 1.2), hue, far)
+			_card(leaves, rng, q, center, rad, card * rng.randf_range(0.8, 1.2), hue, Vector2(base, h), far)
 
 
 ## A conifer: tiers of cards round a straight stem, wide at the bottom
@@ -618,12 +618,16 @@ static func _conifer(sp: int, rng: RandomNumberGenerator, leaves: SurfaceTool, w
 			var a := TAU * (i + rng.randf()) / n
 			var p := Vector3(cos(a) * r * rng.randf_range(0.45, 0.8), y, sin(a) * r * rng.randf_range(0.45, 0.8))
 			var size := (1.6 + r * 0.45) * (1.5 if far else 1.0)
-			_card(leaves, rng, p, Vector3(0, y + 0.8, 0), Vector3(r + 0.5, 1.5, r + 0.5), size, hue, far)
+			_card(leaves, rng, p, Vector3(0, y + 0.8, 0), Vector3(r + 0.5, 1.5, r + 0.5), size, hue, Vector2(low, h), far)
 
 
 ## One leaf card, randomly turned, with normals out from the crown centre.
+## Its colour carries what the leaf shader shades it by, as a grown tree's
+## cards do (TreeMesher): how far out in the crown (r), how high up the
+## crown, `span` its bottom and top (g), and the cluster's own hue (b), so
+## the cards and the grown tree at the same spot are lit alike.
 static func _card(st: SurfaceTool, rng: RandomNumberGenerator, p: Vector3, center: Vector3, rad: Vector3, size: float, hue: float,
-		far := false) -> void:
+		span: Vector2, far := false) -> void:
 	var basis := Basis.from_euler(Vector3(rng.randf_range(-PI, PI), rng.randf_range(-PI, PI), rng.randf_range(-PI, PI)))
 	var u := basis.x * size * 0.5
 	var v := basis.y * size * 0.5
@@ -635,7 +639,8 @@ static func _card(st: SurfaceTool, rng: RandomNumberGenerator, p: Vector3, cente
 		var out := (rel + Vector3(0, 0.35, 0)).normalized()
 		st.set_normal(out)
 		# How far out in the crown: inner leaves are shaded by outer ones.
-		st.set_color(Color(clampf(rel.length(), 0.0, 1.0), 0, 0, 0.5 if far else 1.0))
+		var up := clampf((q.y - span.x) / maxf(span.y - span.x, 0.1), 0.0, 1.0)
+		st.set_color(Color(clampf(rel.length(), 0.0, 1.0), up, hue, 0.5 if far else 1.0))
 		st.set_uv(uvs[i])
 		st.add_vertex(q)
 

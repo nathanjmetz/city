@@ -302,7 +302,9 @@ func _cards_slice() -> void:
 			cards = 3
 		elif not conifer and k.leaf != TreeKinds.Leaf.COMPOUND:
 			cards = 2 if _rng.randf() < 0.5 else 1
-		var hue := _rng.randf()
+		# Each cluster's hue drift, as TreeField's cards draw it: a conifer's
+		# only toward blue-green.
+		var hue := _rng.randf() * (0.4 if conifer else 1.0)
 		for c in cards:
 			var q := at + Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-0.6, 0.6), _rng.randf_range(-1, 1)) * card * 0.3
 			_card(_verts, _norms, _uvs, _cols, _idx, q, _centre, _radii, card * _rng.randf_range(0.8, 1.2), hue, far)

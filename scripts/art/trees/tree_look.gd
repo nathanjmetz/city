@@ -167,6 +167,12 @@ uniform bool kind_seasons = false;
 // cards shades itself: its inner leaves and the side away from the sun).
 uniform vec4 crown_box[16];
 uniform float far_shade = 0.75;
+// Summer green (see vertex) and the crown's own shade (see fragment).
+const float LEAF_RED = 0.66;
+const float LEAF_GREEN = 0.75;
+const float LEAF_BLUE = 0.12;
+const float LEAF_INNER = 0.38;
+const float LEAF_UNDER = 0.72;
 #ifdef FAR_WOODS
 // Where on the quad the crown begins (below it, the trunk) and how wide
 // the trunk is, as a share of the quad's half width.
@@ -239,8 +245,14 @@ void vertex() {
 	// Keep the crown normal on both sides of each card (no back-face flip),
 	// so the whole crown shades like one soft volume.
 	crown_normal = normalize((MODELVIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
+	// Summer leaves as photos show them, not a paint-chip green: a deep,
+	// slightly blue-grey green (a July maple or oak crown in sun is about
+	// 70, 85, 50, darker in its shade), so less red and yellow and more
+	// blue than the kinds' leaf colours (TreeField.LEAF) carry.
+	vec3 green = lin(custom.rgb);
+	green = vec3(green.r * LEAF_RED, green.g * LEAF_GREEN, green.b + green.g * LEAF_BLUE);
 	// Each leaf cluster drifts a little toward yellow or blue-green.
-	tint = lin(custom.rgb) * mix(vec3(0.9, 0.98, 1.08), vec3(1.1, 1.04, 0.86), COLOR.b);
+	tint = green * mix(vec3(0.93, 0.98, 1.06), vec3(1.07, 1.02, 0.9), COLOR.b);
 }
 void fragment() {
 	// The sun's shadow map is drawn square-on (orthographic): there each
@@ -315,7 +327,7 @@ void fragment() {
 		leaf = mix(leaf, vec3(0.32, 0.3, 0.03), smoothstep(0.0, 0.5, turn) * (1.0 - smoothstep(0.5, 1.0, turn)));
 		leaf = mix(leaf, fall, smoothstep(0.35, 1.0, turn));
 		// New leaves are a pale yellow-green; crabapples bloom pink first.
-		vec3 fresh = leaf * vec3(1.25, 1.3, 0.7);
+		vec3 fresh = leaf * vec3(1.55, 1.45, 0.45);
 		if (kind_seasons && kind_bloom[sp].a > 0.5) fresh = kind_bloom[sp].rgb;
 		leaf = mix(leaf, fresh, look.z);
 		// Leaves fall and the crown becomes a lace of fine grey-brown twigs:
@@ -348,7 +360,12 @@ void fragment() {
 	}
 	// Snow resting on the tops of the crowns.
 	leaf = mix(leaf, vec3(0.4, 0.42, 0.45), snow * smoothstep(0.35, 0.95, tp) * 0.75);
-	ALBEDO = leaf * t.rgb * mix(0.6, 1.15, inn) * mix(0.85, 1.2, tp) * 2.0;
+	// A crown holds real shade: the leaves deep inside and on its underside
+	// see only a little of the sky, so it reads as a solid with dark gaps,
+	// not lit from within. Every version of a tree (grown, cards, far quad)
+	// carries the same inn and tp, so they are shaded alike.
+	float crown = mix(LEAF_INNER, 1.1, smoothstep(0.1, 0.95, inn)) * mix(LEAF_UNDER, 1.12, tp);
+	ALBEDO = leaf * t.rgb * crown * 2.0;
 #ifdef FAR_WOODS
 	ALBEDO *= far_shade;
 #endif
