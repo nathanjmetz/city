@@ -933,6 +933,10 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 		"set_junction":
 			# Traffic lights, stop signs or none at a junction (-1 = automatic).
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
+		"set_lanes":
+			# A No Left Turn sign and lane arrows where a road meets a junction.
+			ok = traffic.set_lane_rule(int(cmd.node), int(cmd.seg), bool(cmd.get("no_left", false)),
+				cmd.get("lanes", []))
 		"link_wave":
 			# A green wave: light `to` timed behind light `from` at the limit.
 			ok = traffic.link_wave(int(cmd.from), int(cmd.to), float(cmd.get("v", 15.6)))
@@ -959,6 +963,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			region_links.clear()
 			trade = Trade.new()
 			traffic.overrides.clear()
+			traffic.lane_rules.clear()
 			traffic.from_dict({})
 			people = People.new()
 			network.clear()
@@ -4910,6 +4915,7 @@ func save_steps(postcard := false) -> Array:
 		["engineer", func(): return engineer.to_dict()],
 		["laws", func(): return laws.to_dict()],
 		["junctions", func(): return traffic.rules_to_dict()],
+		["lane_rules", func(): return traffic.lane_rules_to_dict()],
 		["greens", func(): return traffic.greens_to_dict()],
 		["offsets", func(): return traffic.offsets_to_dict()],
 		["actuated", func(): return traffic.actuated_to_dict()],
@@ -5022,6 +5028,7 @@ func from_dict(d: Dictionary) -> void:
 		if f.drive.is_empty():
 			f.drive = farm_drive(f.pos, f.dir)
 	traffic.rules_from_dict(d.get("junctions", {}))
+	traffic.lane_rules_from_dict(d.get("lane_rules", {}))
 	traffic.greens_from_dict(d.get("greens", {}))
 	traffic.offsets_from_dict(d.get("offsets", {}))
 	traffic.actuated_from_dict(d.get("actuated", {}))

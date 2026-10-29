@@ -18,6 +18,8 @@ const LENS_DARK := 0.12
 const HEAD_W := 0.36
 const HEAD_H := 1.05
 const HEAD_D := 0.3
+## Where lane arrows' heads sit behind the stop line, metres.
+const ARROW_BACK := 4.0
 
 var traffic: TrafficSim
 ## The road view, for where shaped town junctions make each road stop short.
@@ -37,6 +39,7 @@ var _plates: MultiMeshInstance3D
 var _stops: MultiMeshInstance3D
 var _yields: MultiMeshInstance3D
 var _blades: MultiMeshInstance3D
+var _no_lefts: MultiMeshInstance3D
 var _paint := MeshInstance3D.new()
 ## [node, way] for each signal head, in instance order.
 var _head_ways := []
@@ -78,6 +81,12 @@ func _ready() -> void:
 	_yields = _batch(_plate(0.5, 3), red_sign)
 	var green := RoadStyle.material(Color(0.05, 0.36, 0.2))
 	_blades = _batch(_box(Vector3(0.9, 0.16, 0.03)), green)
+	# No Left Turn, 30 x 30 in (MUTCD R3-2).
+	var no_left := StandardMaterial3D.new()
+	no_left.albedo_texture = _no_left_texture()
+	no_left.roughness = 0.5
+	no_left.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_no_lefts = _batch(_square_sign(0.38, no_left, back), null)
 	_paint.material_override = Surfaces.paint(RoadStyle.MARKING_WHITE)
 	_paint.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_paint)
@@ -158,6 +167,7 @@ func _rebuild_all() -> void:
 		cache[n] = hit
 		pieces.append(hit[1])
 	_paint_cache = cache
+	var sign_at := {}  # way -> [post, facing back, right] of its stop sign or signal pole
 	for n in nodes:
 		var j: Dictionary = traffic.junctions[n]
 		if j.control == TrafficSim.Rule.NONE:
@@ -228,6 +238,7 @@ func _rebuild_all() -> void:
 					_markings(paint, sl, half, walk, walks)
 					any_paint = true
 			var face := Basis.looking_at(-dir, Vector3.UP)  # facing the drivers
+			sign_at[wid] = [base, dir, right]
 			if j.control == TrafficSim.Rule.SIGNAL:
 				poles.append(Transform3D(Basis().scaled(Vector3(1, POLE_H, 1)), base + Vector3(0, POLE_H * 0.5, 0)))
 				# Mast arm out over the lanes, head above the middle lane.
@@ -260,6 +271,39 @@ func _rebuild_all() -> void:
 					yields.append(sign_t)
 				else:
 					stops.append(sign_t)
+	# The player's turn rules: lane-use arrows painted in each lane behind
+	# the stop line (MUTCD 3B.20: one set near the line, one 50 ft or so
+	# before), and No Left Turn signs on a post at the near right corner.
+	var rule_keys := traffic.lane_rules.keys()
+	rule_keys.sort()
+	var no_lefts := []
+	for k in rule_keys:
+		var rule: Dictionary = traffic.lane_rules[k]
+		var wid := _way_in(int(k.get_slice(":", 0)), int(k.get_slice(":", 1)))
+		if wid == -1:
+			continue
+		var sl := traffic.stop_line(wid)
+		var w: Dictionary = traffic.ways[wid]
+		var masks := traffic.lane_masks(wid)
+		if not rule.lanes.is_empty() and not RoadStyle.unpaved(w.type):
+			for back in [ARROW_BACK, ARROW_BACK + 15.0]:
+				if back + 2.4 > w.len * 0.45:
+					continue  # a short block: the near set only
+				for i in masks.size():
+					var at: Vector3 = sl.pos + sl.right * float(w.offs[i]) - sl.dir * (back + 2.4)
+					lane_arrow(paint, at, sl.dir, int(masks[i]), RoadStyle.Y_JUNCTION + 0.02)
+					any_paint = true
+		if rule.no_left:
+			# On its own post at the near right corner, a little before the
+			# stop sign or signal pole where there is one.
+			var dir: Vector3 = sl.dir
+			var post := Terrain.lift(sl.pos + sl.right * (sl.curb + 0.9) - dir * 1.5)
+			if sign_at.has(wid):
+				dir = sign_at[wid][1]
+				post = sign_at[wid][0] - dir * 2.5
+			poles.append(Transform3D(Basis().scaled(Vector3(0.45, 2.51, 0.45)), post + Vector3(0, 1.25, 0)))
+			no_lefts.append(Transform3D(Basis.looking_at(-dir, Vector3.UP), post + Vector3(0, 2.51, 0) - dir * 0.05))
+	_fill(_no_lefts, no_lefts)
 	_fill(_poles, poles)
 	_fill(_arms, arms)
 	_fill(_heads, heads)
@@ -272,6 +316,52 @@ func _rebuild_all() -> void:
 	if any_paint:
 		pieces.append(Terrain.drape(paint.commit(), false, 4.0))
 	_paint.mesh = RoadView._merge(pieces) if not pieces.is_empty() else null
+
+
+## The way along road `seg` into junction `node`, or -1.
+func _way_in(node: int, seg: int) -> int:
+	for wid in traffic.ways_into(node):
+		if traffic.ways[wid].seg == seg:
+			return wid
+	return -1
+
+
+## A white lane-use arrow (MUTCD 3B.20, Figure 3B-24: an 8 ft arrow on a
+## town street) with its head at `at`, pointing along `dir`: straight, a
+## left or right turn, or a shaft with turn branches for a shared lane.
+static func lane_arrow(st: SurfaceTool, at: Vector3, dir: Vector3, mask: int, y: float) -> void:
+	dir.y = 0.0
+	dir = dir.normalized()
+	var right := Vector3(-dir.z, 0.0, dir.x)
+	var lift := Vector3(0, y, 0)
+	var straight := (mask & TrafficSim.ARROW_S) != 0
+	var tail := at - dir * 2.4 + lift
+	# The shaft: up to the head, or to where it bends for a turn only.
+	var top := at - dir * (0.9 if straight else 1.1) + lift
+	_bar(st, tail, top)
+	if straight:
+		_head(st, top, dir)
+	for side: float in [-1.0, 1.0]:
+		if not (mask & (TrafficSim.ARROW_L if side < 0.0 else TrafficSim.ARROW_R)):
+			continue
+		# A branch from the shaft bending out to the side, then its head.
+		var from := at - dir * (1.6 if straight else 1.1) + lift
+		var neck := from + dir * 0.3 + right * side * 0.5
+		_bar(st, from, neck)
+		_head(st, neck, right * side)
+
+
+## A painted bar 0.16 m wide from a to b.
+static func _bar(st: SurfaceTool, a: Vector3, b: Vector3) -> void:
+	var along := Vector3(b.x - a.x, 0.0, b.z - a.z).normalized()
+	var r := Vector3(-along.z, 0.0, along.x) * 0.08
+	RoadMesh._quad(st, a - r, a + r, b - r, b + r, 0.0, 0.0)
+
+
+## An arrowhead 0.6 m across and 0.9 m long from `base`, pointing `fwd`.
+static func _head(st: SurfaceTool, base: Vector3, fwd: Vector3) -> void:
+	var r := Vector3(-fwd.z, 0.0, fwd.x) * 0.3
+	RoadMesh._tri(st, [base - r, Vector2.ZERO], [base + r, Vector2.ZERO], [base + fwd * 0.9, Vector2.ZERO])
 
 
 ## True when the road `seg` meets node `n` as a country road (no curbs or
@@ -403,6 +493,64 @@ static func _sign_mesh(r: float, face: Material, back: Material) -> ArrayMesh:
 		st.commit(mesh)
 		mesh.surface_set_material(side, face if side == 0 else back)
 	return mesh
+
+
+## A square sign plate facing -Z, `h` metres half across, textured face and
+## grey back.
+static func _square_sign(h: float, face: Material, back: Material) -> ArrayMesh:
+	var mesh := ArrayMesh.new()
+	for side in [0, 1]:
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var z := 0.0 if side == 0 else 0.015
+		var c := [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]
+		var tris := [[0, 2, 1], [0, 3, 2]] if side == 0 else [[0, 1, 2], [0, 2, 3]]
+		for tri in tris:
+			for k in tri:
+				var v: Vector2 = c[k]
+				st.set_normal(Vector3(0, 0, -1) if side == 0 else Vector3(0, 0, 1))
+				st.set_uv(Vector2(0.5 - v.x * 0.5, 0.5 - v.y * 0.5))
+				st.add_vertex(Vector3(v.x * h, v.y * h, z))
+		st.commit(mesh)
+		mesh.surface_set_material(side, face if side == 0 else back)
+	return mesh
+
+
+## A 64 px No Left Turn face (R3-2): white with a black border, a black
+## left-turn arrow, and a red circle and slash over it.
+static func _no_left_texture() -> ImageTexture:
+	var n := 64
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var white := Color(0.95, 0.95, 0.93)
+	var black := Color(0.06, 0.06, 0.06)
+	var red := Color(0.75, 0.06, 0.06)
+	for y in n:
+		for x in n:
+			var edge := mini(mini(x, y), mini(n - 1 - x, n - 1 - y))
+			img.set_pixel(x, y, black if edge < 2 else white)
+	# The arrow: up from the bottom, then left, with a head.
+	for y in range(22, 50):
+		for x in range(34, 40):
+			img.set_pixel(x, y, black)
+	for y in range(22, 28):
+		for x in range(22, 40):
+			img.set_pixel(x, y, black)
+	for y in range(14, 36):
+		for x in range(12, 23):
+			if x - 12 >= absf(y - 24.5) * 0.9:
+				img.set_pixel(x, y, black)
+	# The red ring and slash, top left to bottom right.
+	var c := Vector2(31.5, 31.5)
+	for y in n:
+		for x in n:
+			var q := Vector2(x, y) - c
+			var r := q.length()
+			var on_ring := r > 23.0 and r < 28.0
+			var on_slash := r < 25.0 and absf(q.x - q.y) < 4.0
+			if on_ring or on_slash:
+				img.set_pixel(x, y, red)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
 
 
 ## A 64 px STOP face: red octagon field, white border, white letters.

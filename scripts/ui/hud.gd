@@ -2106,6 +2106,15 @@ func _fill_traffic_row(row: HBoxContainer) -> void:
 		b.pressed.connect(func(): traffic_tool.set_mode(m))
 		(entry[4] as HBoxContainer).add_child(b)
 		_traffic_cards[m] = b
+	var turns := _section(row, "Turns  ·  click where a road meets a junction")
+	for entry in [[TrafficTool.Mode.LANES, "lanes", "Lanes", "Lane arrows: click a lane at a junction to change which ways it may go; Shift-click to let the game choose"],
+			[TrafficTool.Mode.NO_LEFT, "noleft", "No left", "No Left Turn sign: click a road where it meets a junction"]]:
+		var m: int = entry[0]
+		var b := _card(entry[1], entry[2], "")
+		b.tooltip_text = entry[3]
+		b.pressed.connect(func(): traffic_tool.set_mode(m))
+		turns.add_child(b)
+		_traffic_cards[m] = b
 
 
 ## A tool's own key for its tooltip, or "" when it has none (the pies reach it).

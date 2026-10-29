@@ -541,6 +541,86 @@ func set_green(node: int, phase: int, seconds: float) -> bool:
 	return true
 
 
+## The player's turn rules at a junction approach, like TM:PE's lane arrows
+## and junction restrictions: "node:seg" (the road arriving there) ->
+## {no_left: a No Left Turn sign (MUTCD R3-2), lanes: lane-use arrows for
+## each lane, left to right, as ARROW_* bits (MUTCD 3B.20), or [] for the
+## game's own}. Kept in a table of their own, apart from `overrides`.
+var lane_rules := {}
+const ARROW_L := 1
+const ARROW_S := 2
+const ARROW_R := 4
+
+
+static func lane_key(node: int, seg: int) -> String:
+	return "%d:%d" % [node, seg]
+
+
+func lane_rule(node: int, seg: int) -> Dictionary:
+	return lane_rules.get(lane_key(node, seg), {})
+
+
+## Sets the turn rules for road `seg` arriving at junction `node`: a No Left
+## Turn sign, and lane arrows (one ARROW_* mask per lane, left to right, or
+## [] for the game's own). Both off clears the approach.
+func set_lane_rule(node: int, seg: int, no_left: bool, lanes: Array) -> bool:
+	if not network.nodes.has(node) or network.segments_at(node).size() < 3 \
+			or not network.segments_at(node).has(seg):
+		return false
+	var masks := []
+	for m in lanes:
+		masks.append(clampi(int(m), 1, ARROW_L | ARROW_S | ARROW_R))
+	var key := lane_key(node, seg)
+	var rule := {"no_left": no_left, "lanes": masks}
+	if not no_left and masks.is_empty():
+		if not lane_rules.has(key):
+			return false
+		lane_rules.erase(key)
+	else:
+		if lane_rules.get(key, {}) == rule:
+			return false
+		lane_rules[key] = rule
+	_rebuild()
+	return true
+
+
+## The arrows each lane of a way into a junction shows now, left to right
+## (ARROW_* bits): the player's, or the game's own lanes.
+func lane_masks(way: int) -> Array:
+	var out := []
+	if not ways.has(way):
+		return out
+	out.resize(ways[way].lanes)
+	out.fill(0)
+	for wo in _turns.get(way, []):
+		var bit := ARROW_S
+		match _kind.get(Vector2i(way, wo), Turn.STRAIGHT):
+			Turn.LEFT, Turn.UTURN: bit = ARROW_L
+			Turn.RIGHT: bit = ARROW_R
+		for i in _arrows[way][wo]:
+			out[i] |= bit
+	return out
+
+
+func lane_rules_to_dict() -> Dictionary:
+	var out := {}
+	var keys := lane_rules.keys()
+	keys.sort()
+	for k in keys:
+		out[k] = {"no_left": lane_rules[k].no_left, "lanes": lane_rules[k].lanes.duplicate()}
+	return out
+
+
+func lane_rules_from_dict(d: Dictionary) -> void:
+	lane_rules.clear()
+	for k in d:
+		var lanes := []
+		for m in d[k].get("lanes", []):
+			lanes.append(int(m))
+		lane_rules[str(k)] = {"no_left": bool(d[k].get("no_left", false)), "lanes": lanes}
+	_dirty = true
+
+
 ## The green time each phase of a light has now, in seconds.
 func greens_at(node: int) -> Array:
 	var out := []
@@ -1283,6 +1363,10 @@ func _rebuild() -> void:
 	for n in overrides.keys():
 		if not at_node.has(n) or at_node[n].size() < 3:
 			overrides.erase(n)
+	for k in lane_rules.keys():
+		var n := int(k.get_slice(":", 0))
+		if not at_node.has(n) or at_node[n].size() < 3 or not at_node[n].has(int(k.get_slice(":", 1))):
+			lane_rules.erase(k)
 	for n in node_ids:
 		_build_turns(n)
 		_build_control(n, at_node[n])
@@ -1324,28 +1408,75 @@ func _build_turns(n: int) -> void:
 		if outs.is_empty() and uturn != -1:
 			outs.append([PI, uturn])  # dead end: turn around
 		outs.sort()
+		var kinds := []
+		for o in outs:
+			var kind := Turn.STRAIGHT
+			if o[1] == uturn:
+				kind = Turn.UTURN
+			elif o[0] > deg_to_rad(35.0):
+				kind = Turn.RIGHT
+			elif o[0] < deg_to_rad(-35.0):
+				kind = Turn.LEFT
+			kinds.append(kind)
+		var rule: Dictionary = lane_rules.get(lane_key(n, w.seg), {})
+		if rule.get("no_left", false) and (kinds.has(Turn.STRAIGHT) or kinds.has(Turn.RIGHT)):
+			# A No Left Turn sign: lefts go, unless left is the only way on.
+			for j in range(outs.size() - 1, -1, -1):
+				if kinds[j] == Turn.LEFT:
+					outs.remove_at(j)
+					kinds.remove_at(j)
 		var m := outs.size()
 		var nl: int = w.lanes
-		_turns[wi] = []
-		_arrows[wi] = {}
+		var auto := []
 		for j in m:
-			var wo: int = outs[j][1]
-			var ang: float = outs[j][0]
-			var kind := Turn.STRAIGHT
-			if wo == uturn:
-				kind = Turn.UTURN
-			elif ang > deg_to_rad(35.0):
-				kind = Turn.RIGHT
-			elif ang < deg_to_rad(-35.0):
-				kind = Turn.LEFT
-			_kind[Vector2i(wi, wo)] = kind
 			# Lanes share the turns left to right, like auto lane arrows.
 			var lanes := []
 			for i in nl:
 				if float(i + 1) / nl > float(j) / m + 0.0001 and float(i) / nl < float(j + 1) / m - 0.0001:
 					lanes.append(i)
-			_turns[wi].append(wo)
-			_arrows[wi][wo] = lanes
+			auto.append(lanes)
+		var marked := _marked_lanes(rule.get("lanes", []), nl, kinds, auto)
+		_turns[wi] = []
+		_arrows[wi] = {}
+		for j in m:
+			if marked[j].is_empty():
+				continue  # no lane is marked for it: that turn is closed
+			_kind[Vector2i(wi, outs[j][1])] = kinds[j]
+			_turns[wi].append(outs[j][1])
+			_arrows[wi][outs[j][1]] = marked[j]
+
+
+## The lanes for each way out under the player's lane arrows (`masks`, one
+## per lane, left to right): a lane takes the turns its arrows show. With
+## no arrows, or arrows for another number of lanes, or arrows that would
+## close every way out, the game's own lanes (`auto`). A lane whose arrows
+## match no way out here keeps the game's turns for it, so no lane leads
+## nowhere.
+static func _marked_lanes(masks: Array, nl: int, kinds: Array, auto: Array) -> Array:
+	if masks.size() != nl or nl == 0:
+		return auto
+	var out := []
+	var used := {}
+	for j in kinds.size():
+		var bit := ARROW_S
+		match kinds[j]:
+			Turn.LEFT, Turn.UTURN: bit = ARROW_L
+			Turn.RIGHT: bit = ARROW_R
+		var lanes := []
+		for i in nl:
+			if int(masks[i]) & bit:
+				lanes.append(i)
+				used[i] = true
+		out.append(lanes)
+	if used.is_empty():
+		return auto
+	for i in nl:
+		if not used.has(i):
+			for j in kinds.size():
+				if auto[j].has(i) and not out[j].has(i):
+					out[j].append(i)
+					out[j].sort()
+	return out
 
 
 ## The lane a car lands in after a turn: lefts keep left, rights keep right,
