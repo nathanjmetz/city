@@ -70,6 +70,7 @@ var _height := 6.0
 var _found_h := 0.45
 var _box := AABB()
 var _bldg := AABB()  # the finished building's own bounds (not its lot)
+var _core := AABB()  # the walls and roof alone, without the walks, fences and yard things
 var _crane_on := false  # a high-rise: it goes up under a tower crane
 var _props_for := ""
 var _paving := false
@@ -124,6 +125,7 @@ func setup(built: Array, profile: String, state: Callable) -> void:
 	var aabb: AABB = built[0].get_aabb()
 	_height = aabb.end.y
 	_bldg = aabb
+	_core = _core_box(built[0], aabb)
 	_crane_on = not _paving and _height > CRANE_FROM and _mostly_tall(built[0])
 	_box = aabb
 	if built[1] != null and built[1].get_surface_count() > 0:
@@ -588,9 +590,9 @@ func _props_look(stage: String) -> void:
 			_cs_lumber(st, Vector3(left + 1.0, 0.0, front + 5.0), fine)
 			_cs_lumber(st, Vector3(left + 2.6, 0.0, front + 5.0), fine)
 			_cs_osb(st, Vector3(left + 1.6, 0.0, front + 9.0), k)
-			var span := minf(minf(_bldg.size.x, _bldg.size.z), 12.0)
-			if b.end.z - _bldg.end.z > 4.5:
-				_cs_trusses(st, Vector3(_bldg.get_center().x, 0.0, _bldg.end.z + 1.2), span, fine)
+			var span := minf(minf(_core.size.x, _core.size.z), 12.0)
+			if b.end.z - _core.end.z > 4.5:
+				_cs_trusses(st, Vector3(_core.get_center().x, 0.0, _core.end.z + 1.2), span, fine)
 		else:
 			# Bundled steel (or panels) on dunnage.
 			var col: Color = FRAME_FAR[_frame_kind] if _frame_kind != "tilt_up" else FrameBuilder.GALV
@@ -599,12 +601,29 @@ func _props_look(stage: String) -> void:
 					_cs_steel(st, Vector3(left + 1.0 + n * 1.6, 0.0, front + 5.0), col)
 				else:
 					_prop(st, Vector3(1.2, 0.6, 4.9), Vector3(left + 1.0 + n * 1.6, 0.42, front + 5.0), col)
+	_cs_machines(st, stage, k, fine)
 	if _crane_on and stage in ["frame", "dry_in", "exterior"]:
 		_crane(st)
 	_props = MeshInstance3D.new()
 	_props.mesh = st.commit()
 	_props.material_override = _prop_mat()
 	add_child(_props)
+
+
+## The building's own walls and roof: everything drawn above head height
+## (fences, walks, AC units and the porch steps stay below it), so the
+## machines and stacks are set beside the building, not the whole lot.
+static func _core_box(mesh: Mesh, fallback: AABB) -> AABB:
+	var lo := Vector3(INF, INF, INF)
+	var hi := Vector3(-INF, -INF, -INF)
+	for i in mesh.get_surface_count():
+		for p: Vector3 in mesh.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]:
+			if p.y > 2.4:
+				lo = lo.min(p)
+				hi = hi.max(p)
+	if lo.x > hi.x:
+		return fallback
+	return AABB(Vector3(lo.x, 0.0, lo.z), Vector3(hi.x - lo.x, hi.y, hi.z - lo.z))
 
 
 ## True when a good share of the drawing stands above CRANE_FROM: a tower
@@ -720,6 +739,51 @@ func _paving_props(st: SurfaceTool, stage: String, b: AABB, front: float) -> voi
 
 
 # ---------------------------------------------------------------- site things
+
+## The machines on the lot at each stage (SiteMachines), each where the
+## work is: the excavator digging the footings where the building will
+## stand, a skid steer at the spoil pile and then backfilling, the
+## telehandler on the stone setting lumber up on a house's walls, a boom
+## lift along the front of a bigger building while it's framed and closed in.
+func _cs_machines(st: SurfaceTool, stage: String, k: int, fine: bool) -> void:
+	if _crane_on:
+		return
+	var col := SiteMachines.paint(k)
+	var b := _box
+	match stage:
+		"clear":
+			var at := Vector3(_core.position.x + 2.2, 0.0, _core.position.z + 1.2)
+			SiteMachines.excavator(st, Transform3D(Basis(Vector3.UP, 0.25), at), col, -0.35, fine)
+			if b.size.z > 22.0:
+				SiteMachines.skid_steer(st, Transform3D(Basis(Vector3.UP, 0.4), Vector3(b.end.x - 4.0, 0.0, b.end.z - 8.5)),
+					SiteMachines.paint(k + 1), fine)
+		"foundation":
+			var z := minf(b.position.z + _drive_len + 1.6, _core.position.z - 2.4)
+			if z > b.position.z + 1.6:
+				SiteMachines.skid_steer(st, Transform3D(Basis(Vector3.UP, 0.5), Vector3(_drive_x, 0.0, z)),
+					SiteMachines.paint(k + 1), fine)
+		"frame", "dry_in":
+			if _frame_kind == "wood":
+				# Lumber up to the walls, then shingles up to the roof: on the
+				# stone clear of the walls (the forks reach 4.3 m ahead), or
+				# else alongside the house where the side yard has room.
+				var tcol := Color("#d9661f") if k % 2 == 0 else Color("#e6e4dc")
+				var z := minf(b.position.z + _drive_len * 0.5, _core.position.z - 4.6)
+				var left_gap := _core.position.x - b.position.x
+				var right_gap := b.end.x - _core.end.x
+				if z > b.position.z + 2.2:
+					SiteMachines.telehandler(st, Transform3D(Basis.IDENTITY, Vector3(_drive_x, 0.0, z)), tcol, fine)
+				elif maxf(left_gap, right_gap) > 3.0:
+					var x := _core.position.x - left_gap * 0.5 if left_gap >= right_gap else _core.end.x + right_gap * 0.5
+					# Past the lumber and OSB stacked at the front corner.
+					var tz := maxf(_core.position.z + 2.2, b.position.z + 13.2)
+					if tz + 4.4 < b.end.z:
+						SiteMachines.telehandler(st, Transform3D(Basis.IDENTITY, Vector3(x, 0.0, tz)), tcol, fine)
+	if _profile != "house" and stage in ["frame", "dry_in", "exterior"] and _core.position.z - b.position.z > 4.6:
+		var at := Vector3(_core.get_center().x - _core.size.x * 0.2, 0.0, _core.position.z - 2.0)
+		SiteMachines.boom_lift(st, Transform3D(Basis(Vector3.UP, PI * 0.5), at),
+			Color("#d9661f") if k % 3 == 0 else Color("#3d6fb0"), fine)
+
 
 ## A molded-plastic portable toilet (about 44 x 44 in, 7.5 ft tall): skid
 ## base, body, the pale translucent roof and its dome, a vent stack, and
