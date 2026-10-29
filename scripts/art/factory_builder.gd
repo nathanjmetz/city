@@ -850,6 +850,58 @@ func _tilt_up(to_curb: float) -> void:
 		_box("siding", Vector3(0.08, 3.0, 2.8), Vector3(cx + w * 0.5 + 0.36, 2.4, z), Color(TRIM, 0.0))
 		_box("paint", Vector3(0.3, 3.4, 3.2), Vector3(cx + w * 0.5 + 0.16, 2.4, z), Color("#2a2a2c"))
 	_flat_rect("drive", cx + w * 0.5, minf(cx + w * 0.5 + 20.0, half - 0.5), zf, zf + d, 0.08)
+	_tilt_up_face(cx, cz, w, d, h, zf, panel, docks)
+
+
+## What a 1990s tilt-up plant shows, from Midwest industrial-park photos:
+## two reveals cut across every panel, a ribbon of high clerestory glass on
+## the street face, the glazed entry with its aluminium storefront under a
+## steel canopy and an accent-painted panel round it, rows of skylights on
+## the roof, and at each dock the black rubber bumpers, a dock light on its
+## arm and a yellow bollard pair; a man door with a concrete stoop.
+func _tilt_up_face(cx: float, cz: float, w: float, d: float, h: float, zf: float, panel: Color, docks: int) -> void:
+	var g := RandomNumberGenerator.new()
+	g.seed = hash([rng.seed, "tilt_up_face"])
+	var reveal := panel.darkened(0.3)
+	for y in [h * 0.3, h * 0.62]:
+		_box("paint", Vector3(w + 0.02, 0.06, 0.05), Vector3(cx, y, zf - 0.04), reveal)
+		_box("paint", Vector3(0.05, 0.06, d + 0.02), Vector3(cx - w * 0.5 - 0.04, y, cz), reveal)
+	# Clerestory glass high on the street face, between the panel joints.
+	var x := cx - w * 0.5 + 1.5
+	while x < cx + w * 0.5 - 2.0:
+		_glass(Vector3(x + 2.25, h - 2.6, zf - 0.04), Vector3(-1, 0, 0), 4.2, 0.9, 0.0)
+		x += 7.5
+	# The entry: accent panel, storefront glass and a canopy, at one end.
+	var ex := cx - w * 0.5 + 5.0 if g.randf() < 0.5 else cx + w * 0.5 - 5.0
+	var accent := Color(["#2f5d8a", "#7a1f2b", "#3f6d4a", "#4a4e52"][g.randi() % 4])
+	_box("paint", Vector3(7.4, h - 0.6, 0.06), Vector3(ex, (h - 0.6) * 0.5, zf - 0.05), accent)
+	_glass(Vector3(ex, 1.6, zf - 0.1), Vector3(-1, 0, 0), 5.0, 2.8, 0.0)
+	for k in 5:
+		_box("paint", Vector3(0.08, 2.9, 0.08), Vector3(ex - 2.5 + k * 1.25, 1.55, zf - 0.13), MULLION[0])
+	_box("paint", Vector3(7.0, 0.25, 2.4), Vector3(ex, 3.4, zf - 1.2), Color("#3a3c3e"))
+	for e in [-1.0, 1.0]:  # the canopy's tie rods back to the wall
+		UpgradeKits._strut(self, Vector3(ex + e * 3.2, 3.5, zf - 2.3), Vector3(ex + e * 3.2, 5.2, zf - 0.1), 0.05, Color("#3a3c3e"))
+	_box("paint", Vector3(7.2, 0.15, 3.0), Vector3(ex, 0.08, zf - 1.5), CONCRETE)
+	# Skylights in rows on the roof.
+	for row in 2:
+		var z := cz - d * 0.2 + row * d * 0.4
+		var sx := cx - w * 0.5 + 6.0
+		while sx < cx + w * 0.5 - 4.0:
+			_box("paint", Vector3(1.4, 0.35, 2.2), Vector3(sx, h + 0.2, z), Color("#dfe4e4"))
+			sx += 7.5
+	# At each dock: bumpers, a light on its arm, a pair of bollards.
+	var wx := cx + w * 0.5
+	for i in docks:
+		var z := zf + 3.0 + i * (d - 6.0) / maxf(docks - 1, 1)
+		for e in [-1.0, 1.0]:
+			_box("paint", Vector3(0.3, 0.6, 0.3), Vector3(wx + 0.35, 1.1, z + e * 1.1), Color("#1c1c1e"))
+		_box("paint", Vector3(0.9, 0.08, 0.08), Vector3(wx + 0.45, 4.4, z - 1.9), Color("#3a3c3e"))
+		_box("paint", Vector3(0.25, 0.25, 0.3), Vector3(wx + 0.9, 4.3, z - 1.9), Color("#d8d9d6"))
+	# A man door near the docks with its stoop and a light.
+	var mz := zf + d - 1.5
+	_box("paint", Vector3(0.06, 2.1, 0.95), Vector3(wx + 0.04, 1.05, mz), Color("#6a6e70"))
+	_box("paint", Vector3(1.6, 0.15, 1.6), Vector3(wx + 0.8, 0.08, mz), CONCRETE)
+	_box("paint", Vector3(0.25, 0.25, 0.3), Vector3(wx + 0.15, 2.7, mz), Color("#3a3c3e"))
 
 
 ## The old brick works near the tracks: three or four storeys of red brick,
