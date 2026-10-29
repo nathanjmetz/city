@@ -18,7 +18,7 @@ extends RefCounted
 ## The chief looks at the fund and the town once a game day (a month).
 const DECIDE_EVERY := 1440
 const TREE_OF := {Services.Kind.FIRE: "fire", Services.Kind.POLICE: "police", Services.Kind.CLINIC: "clinic",
-	Services.Kind.SCHOOL: "school"}
+	Services.Kind.SCHOOL: "school", Services.Kind.NURSING_HOME: "nursing", Services.Kind.DAYCARE: "daycare"}
 
 var depts := {}  # service id -> {built: [ids, in the order built], fund, why}
 

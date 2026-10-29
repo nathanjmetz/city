@@ -91,7 +91,10 @@ func _init() -> void:
 			built = HealthBuilder.build_care(Services.Kind.HOSPITAL, sd, size, to_curb, hub)
 		elif CARE.has(name):
 			size = Services.KINDS[CARE[name]].size
-			built = HealthBuilder.build_care(CARE[name], sd, size, to_curb)
+			var dev := Array(OS.get_environment("DEV").split(",", false))
+			for key in dev:
+				size.y += float(Stations.node(CARE[name], key).get("grow", 0.0))
+			built = HealthBuilder.build_care(CARE[name], sd, size, to_curb, {}, dev)
 		elif SITE.has(name):
 			var k: String = SITE[name]
 			size = Balance.AMENITIES[k].get("size", Vector2(70, 60))

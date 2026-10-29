@@ -24,7 +24,8 @@ var _rects := []
 
 
 ## `hub` is the hospital's record from Healthcare (empty for other kinds).
-static func build_care(kind: int, seed: int, size: Vector2, to_curb: float, hub := {}) -> Array:
+## `built` holds a nursing home's or daycare's added pieces (Stations).
+static func build_care(kind: int, seed: int, size: Vector2, to_curb: float, hub := {}, built := []) -> Array:
 	var b := HealthBuilder.new()
 	b.rng = RandomNumberGenerator.new()
 	b.rng.seed = seed
@@ -32,8 +33,12 @@ static func build_care(kind: int, seed: int, size: Vector2, to_curb: float, hub 
 	var front := -size.y * 0.5
 	match kind:
 		Services.Kind.HOSPITAL: b._hospital(size, to_curb, hub)
-		Services.Kind.NURSING_HOME: b._nursing_home(front, to_curb)
-		Services.Kind.DAYCARE: b._daycare(front, to_curb)
+		Services.Kind.NURSING_HOME:
+			b._nursing_home(front, to_curb)
+			b._station_upgrades(kind, size, front, built)
+		Services.Kind.DAYCARE:
+			b._daycare(front, to_curb)
+			b._station_upgrades(kind, size, front, built)
 	b.half = size.x * 0.5
 	b.depth = size.y * 0.5
 	b._dress(false, true)
@@ -643,8 +648,134 @@ func _daycare(front: float, to_curb: float) -> void:
 	_flat_rect("drive", -8.0, -4.0, zf - 2.0, zf, 0.08)
 	# The fenced play yard beside and behind it.
 	var y0 := zf + d + 0.5
-	_flat_rect("mulch", -12.0, 14.0, y0, 15.5, 0.05, Color("#8a6a48"))
-	_fence(Vector2(-12.5, y0 - 0.2), Vector2(14.5, 15.8), 1.4)
+	_flat_rect("mulch", -12.0, 14.0, y0, front + 31.5, 0.05, Color("#8a6a48"))
+	_fence(Vector2(-12.5, y0 - 0.2), Vector2(14.5, front + 31.8), 1.4)
 	_play_set(Vector3(-4.0, 0, y0 + 4.5))
 	var pick := TreeField.pick(rng, true)
 	trees.append([Vector3(11.0, 0, y0 + 3.0), pick[0], pick[1], 0.8])
+
+
+# ---------------------------------------------------------------- growth
+
+## A nursing home's or daycare's added pieces (Stations), each on its strip
+## behind the first lot (CivicBuilder._station_upgrades calls this).
+func _care_piece(key: String, w: float, z: float, g: float) -> void:
+	var brick := Color(_pick(["#a8775c", "#b59a7c", "#8a4a38", "#c9c1ae"]))
+	var siding := Color(_pick(["#c9c3b3", "#d8d2c2", "#e9e6dc", "#9aa3a8"]))
+	var trim := Color(_pick(["#efede6", "#d9d3c3"]))
+	var roof := Color(_pick(["#4a4a4c", "#5a4a3e", "#3e4448"]))
+	match key:
+		"therapy_gym":
+			# A one-storey therapy wing with tall windows, and the outdoor
+			# practice course rehab patients walk before going home: a
+			# ramp, three steps and a curb.
+			var ww := 24.0
+			var x := -w * 0.5 + 4.0 + ww * 0.5
+			var wd := g - 4.0
+			_slab(x, ww, z + 1.0, wd)
+			_flat_roofed_at("brick", x, ww, wd, z + 1.0 + wd * 0.5, 4.2, 4.8, brick)
+			_window_row(x + ww * 0.5, z + 1.0 + wd * 0.5, wd - 2.0, 1.0, 2.2, 3, trim, Vector3.RIGHT)
+			_rooftop_units(x, ww, z + 1.0, wd, 4.8, 1)
+			var c := Vector3(x + ww * 0.5 + 7.0, 0, z + g * 0.5)
+			_flat_rect("drive", c.x - 4.0, c.x + 4.0, c.z - 4.0, c.z + 4.0, 0.07)
+			_box("paint", Vector3(1.2, 0.45, 3.0), c + Vector3(-2.0, 0.22, 0), CONCRETE)
+			for k in 3:
+				_box("paint", Vector3(1.2, 0.15 * (k + 1), 0.3), c + Vector3(1.6, 0.075 * (k + 1), -0.9 + k * 0.3), CONCRETE)
+			for e in [-1.0, 1.0]:
+				_box("paint", Vector3(0.05, 0.05, 3.2), c + Vector3(-2.0 + e * 0.65, 1.1, 0), GALV)
+		"assisted":
+			# Assisted living: two storeys under a gable roof, residential
+			# windows, small balconies, its own entry canopy.
+			var ww := w - 8.0
+			var wd := minf(g - 6.0, 16.0)
+			var zf := z + 3.0
+			_slab(0.0, ww, zf, wd)
+			_box("paint", Vector3(ww, 6.2, wd), Vector3(0, 3.1, zf + wd * 0.5), siding)
+			_box("paint", Vector3(ww + 0.06, 1.0, wd + 0.06), Vector3(0, 0.5, zf + wd * 0.5), brick)
+			_gable_roof(0.0, zf + wd * 0.5, 6.2, wd, 3.0, ww, true, roof, siding)
+			for f in 2:
+				_window_row(0.0, zf, ww - 4.0, 1.0 + f * 3.0, 1.4, int(ww / 4.0), trim)
+				_window_row(0.0, zf + wd, ww - 4.0, 1.0 + f * 3.0, 1.4, int(ww / 4.0), trim, Vector3.BACK)
+			for k in int(ww / 8.0):
+				var bx := -ww * 0.5 + 4.0 + k * 8.0
+				_box("paint", Vector3(2.6, 0.15, 1.2), Vector3(bx, 3.1, zf + wd + 0.6), trim)
+				_box("paint", Vector3(2.6, 0.9, 0.05), Vector3(bx, 3.6, zf + wd + 1.2), Color("#3a3c3e"))
+			_box("paint", Vector3(5.0, 0.35, 3.0), Vector3(ww * 0.25, 3.0, zf - 1.5), trim)
+			_flat_rect("drive", ww * 0.25 - 1.5, ww * 0.25 + 1.5, z, zf, 0.08)
+		"memory_care":
+			# Memory care: a one-storey wing round a secure courtyard
+			# garden with a looping path (no dead ends, by design).
+			var ww := w - 10.0
+			var wd := 9.0
+			_slab(0.0, ww, z + 1.0, wd)
+			_flat_roofed_at("brick", 0.0, ww, wd, z + 1.0 + wd * 0.5, 3.6, 4.2, brick)
+			_window_row(0.0, z + 1.0 + wd, ww - 4.0, 1.0, 1.3, int(ww / 3.5), trim, Vector3.BACK)
+			var g0 := z + 1.0 + wd
+			var g1 := z + g - 1.0
+			for e in [[Vector3(-ww * 0.5, 0, g0), Vector3(-ww * 0.5, 0, g1)], [Vector3(ww * 0.5, 0, g0), Vector3(ww * 0.5, 0, g1)],
+					[Vector3(-ww * 0.5, 0, g1), Vector3(ww * 0.5, 0, g1)]]:
+				_fence_run(e[0], e[1], 1.8)
+			var cz := (g0 + g1) * 0.5
+			var rx := ww * 0.5 - 3.0
+			var rz := (g1 - g0) * 0.5 - 1.6
+			for i in 16:
+				var a := TAU * i / 16.0
+				var b := TAU * (i + 1) / 16.0
+				var p := Vector3(cos(a) * rx, 0, cz + sin(a) * rz)
+				var q := Vector3(cos(b) * rx, 0, cz + sin(b) * rz)
+				_flat_rect("drive", minf(p.x, q.x) - 0.6, maxf(p.x, q.x) + 0.6, minf(p.z, q.z) - 0.6, maxf(p.z, q.z) + 0.6, 0.06 + (i % 2) * 0.004)
+			_bed(0.0, cz, 4.0)
+			_box("paint", Vector3(3.0, 2.6, 3.0), Vector3(rx * 0.4, 1.3, cz), Color(trim), Basis.IDENTITY)
+			_box("paint", Vector3(3.6, 0.2, 3.6), Vector3(rx * 0.4, 2.7, cz), roof)
+		"cottages":
+			# Independent living: brick duplex cottages with a garage each
+			# and a front porch, along a private drive.
+			_flat_rect("asphalt", -w * 0.5 + 1.0, w * 0.5 - 1.0, z + 0.5, z + 6.0, 0.06)
+			var n := maxi(1, int((w - 4.0) / 22.0))
+			for k in n:
+				var cx := -w * 0.5 + 2.0 + (k + 0.5) * (w - 4.0) / n
+				var cd := 10.0
+				var cw := 18.0
+				var zf := z + 8.0
+				_slab(cx, cw, zf, cd)
+				_box("paint", Vector3(cw, 2.8, cd), Vector3(cx, 1.4, zf + cd * 0.5), brick)
+				_gable_roof(cx, zf + cd * 0.5, 2.8, cd, 2.2, cw, true, roof, siding)
+				for e in [-1.0, 1.0]:
+					_box("paint", Vector3(2.7, 2.2, 0.06), Vector3(cx + e * 6.0, 1.1, zf - 0.03), Color("#e6e3da"))
+					_flat_rect("drive", cx + e * 6.0 - 1.6, cx + e * 6.0 + 1.6, z + 6.0, zf, 0.08)
+					_glass(Vector3(cx + e * 2.0, 1.5, zf - 0.03), Vector3(-1, 0, 0), 1.2, 1.2, 0.3)
+				var pick := TreeField.pick(rng, true)
+				trees.append([Vector3(cx, 0, zf + cd + 3.0), pick[0], pick[1], rng.randf_range(0.6, 0.8)])
+		"infant_room":
+			# An infant and toddler room, and its own small fenced yard of
+			# rubber tiles (Indiana licensing keeps under-threes apart).
+			var ww := 12.0
+			var x := -w * 0.5 + 2.0 + ww * 0.5
+			var wd := g - 3.0
+			_slab(x, ww, z + 1.0, wd)
+			_flat_roofed_at("siding", x, ww, wd, z + 1.0 + wd * 0.5, 3.2, 3.7, siding)
+			_window_row(x + ww * 0.5, z + 1.0 + wd * 0.5, wd - 2.0, 0.9, 1.2, 2, trim, Vector3.RIGHT)
+			var y0 := x + ww * 0.5 + 1.0
+			_flat_rect("mulch", y0, w * 0.5 - 1.0, z + 1.0, z + g - 1.0, 0.05, Color("#4a6a8a"))
+			_fence(Vector2(y0 - 0.2, z + 0.8), Vector2(w * 0.5 - 0.8, z + g - 0.8), 1.2)
+			_box("paint", Vector3(1.6, 0.5, 1.6), Vector3(y0 + 3.0, 0.25, z + g * 0.5), Color("#d9a92a"))
+		"school_age":
+			# A before- and after-school room and a half-court.
+			var ww := 14.0
+			var x := w * 0.5 - 2.0 - ww * 0.5
+			var wd := g - 3.0
+			_slab(x, ww, z + 1.0, wd)
+			_flat_roofed_at("siding", x, ww, wd, z + 1.0 + wd * 0.5, 3.4, 3.9, siding)
+			_window_row(x - ww * 0.5, z + 1.0 + wd * 0.5, wd - 2.0, 1.0, 1.2, 2, trim, Vector3.LEFT)
+			var c0 := -w * 0.5 + 1.0
+			var c1 := x - ww * 0.5 - 1.0
+			_flat_rect("asphalt", c0, c1, z + 1.0, z + g - 1.0, 0.06)
+			_hoop(Vector3((c0 + c1) * 0.5, 0, z + 1.8))
+		"garden":
+			# An outdoor classroom: raised beds under a shade sail.
+			for k in 4:
+				_box("wood", Vector3(3.0, 0.45, 1.2), Vector3(-w * 0.5 + 4.0 + k * 3.8, 0.22, z + 2.5), Color("#8a6a48"))
+				_box("paint", Vector3(2.8, 0.06, 1.0), Vector3(-w * 0.5 + 4.0 + k * 3.8, 0.47, z + 2.5), Color("#4a6a2a"))
+			for e in [-1.0, 1.0]:
+				_box("paint", Vector3(0.12, 3.2, 0.12), Vector3(e * 6.0, 1.6, z + g - 1.5), GALV)
+			_box("paint", Vector3(12.0, 0.04, 4.0), Vector3(0, 2.9, z + g - 3.0), Color("#e6e1d0"), Basis(Vector3.RIGHT, 0.12))
