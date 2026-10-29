@@ -173,6 +173,9 @@ var rng: RandomNumberGenerator
 var shopfront := false
 ## Desktop: office windows (GLASS shader UV.x 4..5) go dark a floor at a time.
 var office_glass := false
+## Desktop: glass in front of a diner's booths and lunch counter: UV.x 6..7
+## (a roadside diner's high windows) or 7..8 (a Main Street cafe's low ones).
+var diner_room := 0.0
 
 
 ## `lot` (optional): width, depth, outline (local x/z points) and pad.
@@ -2008,13 +2011,17 @@ func _yard(h: Dictionary, to_curb: float) -> void:
 
 
 ## Back wall: a patio door and windows on each floor.
-func _back(x0: float, x1: float, zb: float, floors: Array, sill: float) -> void:
+func _back(x0: float, x1: float, zb: float, floors: Array, sill: float, doors := []) -> void:
 	var w := x1 - x0
 	var n := 3 if w < 11.0 else 4
 	var slider := rng.randi_range(0, n - 1)
+	if not doors.is_empty():
+		slider = -1  # the caller's own back doors instead (still drawn above, so the dice stay)
 	for f in floors.size():
 		for i in n:
 			var x := lerpf(x0 + 1.4, x1 - 1.4, float(i) / (n - 1))
+			if f == 0 and doors.any(func(dx: float): return absf(dx - x) < 1.0):
+				continue
 			if f == 0 and i == slider:
 				_box("paint", Vector3(1.95, 2.25, 0.04), Vector3(x, sill + 1.1, zb), TRIM)
 				_glass(Vector3(x, sill + 1.05, zb + 0.03), Vector3(1, 0, 0), 1.8, 2.1, rng.randf_range(0.0, 0.3))
@@ -2984,7 +2991,7 @@ func _glass(c: Vector3, right: Vector3, w: float, h: float, blinds: float) -> vo
 	if owner_care <= -2 and c.y < 3.6:
 		var out := right.cross(Vector3.UP).normalized()
 		_box("paint", Vector3(w + 0.12, h + 0.12, 0.05), c + out * 0.07, PLYWOOD, Basis(right.normalized(), Vector3.UP, out))
-	var o := 2.0 if shopfront else (4.0 if office_glass else 0.0)
+	var o := diner_room if diner_room > 0.0 else (2.0 if shopfront else (4.0 if office_glass else 0.0))
 	_quad("glass", c - r - u, c + r - u, c + r + u, c - r + u, Color(0.85, 0.82, 0.74, blinds),
 		[Vector2(o, 0), Vector2(o + 1, 0), Vector2(o + 1, 1), Vector2(o, 1)])
 

@@ -337,7 +337,7 @@ func _pick() -> void:
 
 ## One person: where, facing, shirt, walk phase (0 standing), size.
 func _person(list: Array, at: Vector3, face: Vector3, seed: int, walked: float, size := 1.0, sit := false,
-		lift := 0.0) -> void:
+		lift := 0.0, talk := false) -> void:
 	# Age by size: a small one is a child, a bit bigger a teenager. Each
 	# one's figure and build as the town's walkers have theirs (CDC and
 	# NHANES heights), dressed for the month like them.
@@ -353,7 +353,10 @@ func _person(list: Array, at: Vector3, face: Vector3, seed: int, walked: float, 
 	shirt.a = fposmod(walked, stride) / stride if walked >= 0.0 else 0.0
 	if _desktop:
 		# Seated people bend into the chair (WalkerView.SEATED).
-		shirt.a = minf(shirt.a, 0.999) + float(int(worn[1]) | (WalkerView.SEATED if sit else 0))
+		# Standing about, they shift their weight (WalkerView.STANDING) and,
+		# talking, talk with their hands.
+		var still := 0 if sit or walked >= 0.0 else WalkerView.STANDING | (WalkerView.TALKING if talk else 0)
+		shirt.a = minf(shirt.a, 0.999) + float(int(worn[1]) | (WalkerView.SEATED if sit else 0) | still)
 	elif sit:
 		body.y *= 0.62  # the browser can't bend them: drawn short instead
 		lift = 0.0
@@ -400,8 +403,8 @@ func _draw() -> void:
 		match s.kind:
 			"talk":
 				var mid := walk + along * (float(seed % 9) - 4.0)
-				_person(people, mid - along * 0.45, along, seed, -1.0)
-				_person(people, mid + along * 0.45, -along, seed >> 5, -1.0)
+				_person(people, mid - along * 0.45, along, seed, -1.0, 1.0, false, 0.0, true)
+				_person(people, mid + along * 0.45, -along, seed >> 5, -1.0, 1.0, false, 0.0, true)
 			"grill":
 				var g := back + along * width * 0.15
 				props.grill.append(Transform3D(Basis(), Terrain.stand(g) + Vector3(0, 0.45, 0)))
@@ -529,10 +532,10 @@ func _draw() -> void:
 				for i in 2:
 					var p := lawn + along * (i * 2.4 - 1.2)
 					props.table.append(Transform3D(Basis.looking_at(-into, Vector3.UP), Terrain.stand(p) + Vector3(0, 0.38, 0)))
-				_person(people, lawn + into * 1.0, -into, seed, -1.0)
+				_person(people, lawn + into * 1.0, -into, seed, -1.0, 1.0, false, 0.0, true)
 				var k := fposmod(t * 0.3, 8.0)
 				_person(people, lawn - into * 1.0 + along * (k - 4.0) * 0.6, along, seed >> 3, t * 0.3)
-				_person(people, lawn - into * 1.1 - along * 1.5, into, seed >> 6, -1.0)
+				_person(people, lawn - into * 1.1 - along * 1.5, into, seed >> 6, -1.0, 1.0, false, 0.0, true)
 			"costumes":
 				# Little ones in costumes going door to door, a parent behind.
 				var u := fposmod(t * 1.0, 60.0)

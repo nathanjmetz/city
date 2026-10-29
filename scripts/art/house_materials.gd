@@ -141,7 +141,21 @@ const GLASS := """
 const vec3 CLOTH[12] = vec3[](vec3(0.06, 0.08, 0.16), vec3(0.03, 0.03, 0.035), vec3(0.16, 0.16, 0.17),
 	vec3(0.42, 0.42, 0.42), vec3(0.12, 0.2, 0.34), vec3(0.45, 0.38, 0.25), vec3(0.75, 0.74, 0.7),
 	vec3(0.2, 0.24, 0.14), vec3(0.3, 0.06, 0.08), vec3(0.06, 0.08, 0.16), vec3(0.55, 0.08, 0.08), vec3(0.75, 0.6, 0.15));
-bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
+// The ray's entry into a box (1e9 if it misses), and which slab it came
+// through (the top when `top` is 1).
+float box_t(vec3 o, vec3 rd, vec3 bmin, vec3 bmax, out float top) {
+	vec3 inv = 1.0 / rd;
+	vec3 t0 = (bmin - o) * inv;
+	vec3 t1 = (bmax - o) * inv;
+	vec3 tn = min(t0, t1);
+	vec3 tf = max(t0, t1);
+	float tin = max(max(tn.x, tn.y), tn.z);
+	float tout = min(min(tf.x, tf.y), tf.z);
+	top = step(max(tn.x, tn.z), tn.y);
+	return (tin > 0.0 && tin < tout) ? tin : 1e9;
+}
+
+bool shop_room(vec2 uv, vec3 vw, bool diner, float sill, out vec3 col, out float glow) {
 	vec3 n = normalize(world_normal);
 	vec3 inw = dot(vw, n) > 0.0 ? n : -n;
 	vec3 rt = normalize(cross(vec3(0.0, 1.0, 0.0), inw));
@@ -157,7 +171,7 @@ bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 	float xl = min(a, a + sx) - 1.2;
 	float xr = max(a, a + sx) + 1.2;
 	float yb = world_pos.y - uv.y * sy;
-	float yf = yb - 0.45;
+	float yf = yb - sill;
 	float yc = yb + abs(sy) + 0.5;
 	vec3 rd = vec3(dot(vw, rt), vw.y, max(dot(vw, inw), 0.02));
 	float tx = abs(rd.x) < 1e-4 ? 1e9 : ((rd.x > 0.0 ? xr : xl) - px) / rd.x;
@@ -175,6 +189,11 @@ bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 		vec3 tile = mix(vec3(0.50, 0.48, 0.45), vec3(0.58, 0.56, 0.52), chk);
 		vec3 wood = vec3(0.42, 0.30, 0.20) * (0.85 + 0.3 * hash(vec2(floor(h.x / 0.15), floor(h.z / 1.2))));
 		col = mix(tile, wood, step(0.55, hash(vec2(sid, 2.0))));
+		if (diner) {
+			// Black and white checkerboard tile, 30 cm squares.
+			vec2 q = floor(vec2(h.x, h.z) / 0.3);
+			col = mix(vec3(0.06), vec3(0.78, 0.77, 0.74), mod(q.x + q.y, 2.0));
+		}
 	} else if (t == ty) {
 		vec2 f = fract(vec2(h.x, h.z) / 1.2);
 		float panel = step(0.25, f.x) * step(f.x, 0.75) * step(0.05, f.y) * step(f.y, 0.95);
@@ -185,7 +204,28 @@ bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 		float u = t == tz ? h.x : h.z;
 		col = wallc;
 		bool racks = hash(vec2(sid, 3.0)) > 0.72;
-		if (racks) {
+		if (diner) {
+			// The lunch counter along the back: formica front, a chrome
+			// edge, the pie case on it; a menu board on the wall above.
+			// Side walls get a wood wainscot.
+			vec3 fronts[3] = vec3[3](vec3(0.45, 0.06, 0.07), vec3(0.08, 0.36, 0.36), vec3(0.72, 0.66, 0.52));
+			vec3 front = fronts[clamp(int(hash(vec2(sid, 8.0)) * 3.0), 0, 2)];
+			if (t == tz) {
+				col = mix(col, front, step(hy, 1.0));
+				col = mix(col, vec3(0.8, 0.81, 0.82), step(abs(hy - 1.03), 0.03));
+				float pie = step(1.06, hy) * step(hy, 1.45) * step(0.6, fract(u / 3.1));
+				col = mix(col, vec3(0.55, 0.5, 0.42) + 0.25 * step(0.5, fract(hy * 8.0)), pie);
+				float board = step(1.75, hy) * step(hy, 2.45) * step(0.15, fract(u / 4.0)) * step(fract(u / 4.0), 0.85);
+				// Rows of white letters on the dark board, short items and prices.
+				float row = floor((hy - 1.75) / 0.14);
+				float fu = fract(u / 4.0);
+				float line = step(0.6, fract((hy - 1.75) / 0.14)) * step(0.5, row) * step(row, 3.5)
+					* step(fu, 0.25 + 0.4 * hash(vec2(row, sid)) + 0.15 * step(0.78, fu) * 2.0) * step(0.2, fu);
+				col = mix(col, mix(vec3(0.12, 0.1, 0.09), vec3(0.75, 0.72, 0.62), line * 0.8), board);
+			} else {
+				col = mix(col, vec3(0.36, 0.24, 0.15), step(hy, 1.0));
+			}
+		} else if (racks) {
 			if (hy > 0.75 && hy < 1.75) {
 				float g = floor(u / 0.09);
 				float c = hash(vec2(g, sid));
@@ -209,6 +249,51 @@ bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 	// A display table in the middle of the floor (or a low gondola), stock
 	// on its top: the slab test of the ray against its box.
 	vec3 o = vec3(px, world_pos.y, 0.0);
+	vec3 o0 = o;
+	if (diner) {
+		// Window booths, a table between two high-backed vinyl benches every
+		// 1.9 m (the classic 24 in bench, 30 in table), walked along the
+		// ray's way across the room.
+		vec3 vinyls[4] = vec3[4](vec3(0.42, 0.05, 0.06), vec3(0.05, 0.28, 0.28), vec3(0.28, 0.15, 0.09), vec3(0.3, 0.04, 0.1));
+		vec3 vinyl = vinyls[clamp(int(hash(vec2(sid, 9.0)) * 4.0), 0, 3)];
+		float c0 = floor(px / 1.9);
+		float dir = rd.x >= 0.0 ? 1.0 : -1.0;
+		for (int k = 0; k < 5; k++) {
+			float xc = (c0 + dir * float(k) + 0.5) * 1.9;
+			if (xc < xl - 1.0 || xc > xr + 1.0) {
+				continue;
+			}
+			float top;
+			for (int b = 0; b < 5; b++) {
+				vec3 lo;
+				vec3 hi;
+				vec3 bc = vinyl;
+				if (b < 2) {
+					float sgn = b == 0 ? -1.0 : 1.0;
+					lo = vec3(xc + sgn * 0.95, yf, 0.25);
+					hi = vec3(xc + sgn * 0.8, yf + 1.22, 1.85);
+				} else if (b < 4) {
+					float sgn = b == 2 ? -1.0 : 1.0;
+					lo = vec3(xc + sgn * 0.8, yf, 0.25);
+					hi = vec3(xc + sgn * 0.38, yf + 0.46, 1.85);
+				} else {
+					lo = vec3(xc - 0.35, yf + 0.71, 0.3);
+					hi = vec3(xc + 0.35, yf + 0.76, 1.5);
+					bc = vec3(0.8, 0.77, 0.68);
+				}
+				float tb = box_t(o0, rd, min(lo, hi), max(lo, hi), top);
+				if (tb < t) {
+					t = tb;
+					glow = 0.0;
+					// Tops catch the light; the tufted backs read in rows.
+					vec3 bp = o0 + rd * tb;
+					col = bc * mix(0.75 + 0.1 * step(0.5, fract(bp.z / 0.4)), 1.15, top);
+				}
+			}
+		}
+		col *= mix(1.0, 0.72, clamp(t * rd.z / 6.0, 0.0, 1.0));
+		return true;
+	}
 	vec3 bmin = vec3((xl + xr) * 0.5 - 0.8, yf, 2.0);
 	vec3 bmax = vec3((xl + xr) * 0.5 + 0.8, yf + mix(0.8, 1.4, step(0.5, hash(vec2(sid, 4.0)))), 3.4);
 	vec3 inv = 1.0 / rd;
@@ -238,11 +323,15 @@ bool shop_room(vec2 uv, vec3 vw, out vec3 col, out float glow) {
 
 void fragment() {
 	bool shop = false;
-	if (UV.x >= 2.0 && UV.x < 4.0) {
+	// UV.x in 2..4: a shop's room behind its glass; 6..8: a diner's, its
+	// windows high over the booths (6..7) or low on Main Street (7..8).
+	bool diner = UV.x >= 6.0 && UV.x < 8.0;
+	if ((UV.x >= 2.0 && UV.x < 4.0) || diner) {
 		vec3 vw = normalize((INV_VIEW_MATRIX * vec4(-VIEW, 0.0)).xyz);
 		vec3 inside;
 		float glow;
-		if (shop_room(UV, vw, inside, glow)) {
+		float low = step(7.0, UV.x);
+		if (shop_room(UV - vec2(diner ? 4.0 + low : 0.0, 0.0), vw, diner, diner ? 0.9 - 0.45 * low : 0.45, inside, glow)) {
 			float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
 			vec3 sky = mix(vec3(0.20, 0.26, 0.34), vec3(0.45, 0.52, 0.60), UV.y) * (1.0 - night * 0.85);
 			float blinds = step(1.0 - COLOR.a, UV.y);
@@ -258,8 +347,8 @@ void fragment() {
 	}
 	if (!shop) {
 	// UV.x in 4..5: office glass (the builders' `office_glass`, desktop).
-	float office = step(4.0, UV.x);
-	float ux = UV.x - 4.0 * office;
+	float office = step(4.0, UV.x) * step(UV.x, 5.0);
+	float ux = fract(UV.x);
 	vec3 room = vec3(0.018, 0.02, 0.022);
 	float blinds = step(1.0 - COLOR.a, UV.y);
 	float slat = 0.85 + 0.15 * smoothstep(0.3, 0.5, fract(UV.y * 28.0));
