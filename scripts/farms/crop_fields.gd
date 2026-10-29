@@ -20,7 +20,7 @@ static var _mat: ShaderMaterial
 static func material() -> ShaderMaterial:
 	if _mat == null:
 		var sh := Shader.new()
-		sh.code = Surfaces.FIELD_COMMON + CropCalendar.GLSL + PhotoGround.glsl() + SHADER
+		sh.code = Surfaces.FIELD_COMMON + PhotoGround.defines() + CropCalendar.GLSL + PhotoGround.glsl() + SHADER
 		_mat = ShaderMaterial.new()
 		_mat.shader = sh
 		_mat.set_shader_parameter("noise_soft", Ground.noise(512, 0.012, 4, 41))
@@ -50,13 +50,16 @@ void fragment() {
 	// A faint sprayer tramline every 36 m.
 	float t = abs(mod(m.x, 36.0) - 18.0);
 	float tram = (1.0 - smoothstep(0.25, 0.45, t)) * clamp(0.5 / max(fwidth(m.x), 0.001), 0.0, 1.0);
+	float growing = crop_texel(slot, 0).a;
+#ifndef DESKTOP_DETAIL
 	// Soil shows through the crop the way it does from the air: thinner,
-	// yellower growth on eroded knobs and darker, lusher crop down the swales.
+	// yellower growth on eroded knobs and darker, lusher crop down the
+	// swales (on the desktop, crop_look_bare's soil look does this).
 	float knob = smoothstep(0.55, 0.85, texture(noise_soft, turn(p, 0.4) / 95.0 + 0.17).r);
 	float swale = smoothstep(0.6, 0.9, texture(noise_soft, turn(p, 2.0) / 140.0 + 0.71).r);
-	float growing = crop_texel(slot, 0).a;
 	crop = mix(crop, crop * vec3(1.2, 1.1, 0.82), knob * 0.5 * growing);
 	crop *= 1.0 - swale * 0.16;
+#endif
 	crop *= 1.0 - tram * 0.1 * growing;
 	crop *= (0.96 + grain * 0.08) * vc.b;
 	// Fencerow verge: rough grass with brushy darker clumps, tan when dormant.
