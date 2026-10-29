@@ -153,6 +153,10 @@ var _flat := SurfaceTool.new()
 var _reach := 0.0
 ## Ground an improvement took, so trees keep off it.
 var _improved := Rect2()
+## Whether a road (an alley, a lane or a street) runs along the back lot
+## line (BuildingView sets it for rows and walk-ups; true when unknown), so
+## garages and parking out back have a way in.
+var alley := true
 ## A backyard cottage (_cottage), once built: yard things keep off it.
 var _cottage_at := Rect2()
 ## The outside stair of a house cut into flats (_cf_flats), and how many
@@ -186,6 +190,7 @@ func _fit(lot: Dictionary) -> void:
 	half = float(lot.get("width", LOT_HALF * 2.0)) * 0.5
 	pad = float(lot.get("pad", 0.0))
 	mail_x = float(lot.get("mail_x", INF))
+	alley = bool(lot.get("alley", true))
 	outline = lot.get("outline", PackedVector2Array())
 	depth = float(lot.get("depth", 32.0)) - pad
 	# The era comes from where the lot is, in blocks of about a quarter mile.
@@ -714,6 +719,18 @@ func _utilities(h: Dictionary) -> void:
 			var lid: Color = Color("#d9b02a") if k == 1 and rng.randf() < 0.4 else lids[k]
 			_box("paint", Vector3(0.66, 1.0, 0.72), c + Vector3(0, 0.5, 0), body)
 			_box("paint", Vector3(0.72, 0.06, 0.8), c + Vector3(0, 1.04, 0.02), lid)
+		# Every home in a building cut into flats (or a duplex or fourplex)
+		# has its own pair, lined up behind (their own dice).
+		var cr := RandomNumberGenerator.new()
+		cr.seed = hash([rng.seed, "more carts"])
+		for u in range(1, _cf_units):
+			for k in 2:
+				var c := Vector3(dx + s * (dw * 0.5 + 0.55 + k * 0.82), 0.0, gz - 0.6 + u * 0.95)
+				if not _in_lot(c, 0.4) or _hits_mass(c, 0.45) or _cf_stair.grow(0.4).has_point(Vector2(c.x, c.z)):
+					continue
+				var lid: Color = lids[k] if cr.randf() < 0.7 else Color(["#2a2b2c", "#2f4f8a", "#2f4a35"][cr.randi() % 3])
+				_box("paint", Vector3(0.66, 1.0, 0.72), c + Vector3(0, 0.5, 0), lid.darkened(0.08))
+				_box("paint", Vector3(0.72, 0.06, 0.8), c + Vector3(0, 1.04, 0.02), lid)
 
 
 ## Whether a part at `p` (radius `r`) would stand in one of the building's masses.

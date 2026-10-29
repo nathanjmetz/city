@@ -7,6 +7,7 @@ extends SceneTree
 ## Ladders: office, apartments, main (shop to Main Street block), homes
 ## (house to row homes to walk-up), house (a house building on, then a
 ## duplex and a fourplex). Era: postwar (default), prewar or recent.
+## ALLEY=0 draws every lot with no road behind it.
 
 const LADDERS := {
 	# [type, level, FAR it's built under]
@@ -96,6 +97,8 @@ func _init() -> void:
 		if OS.get_environment("SIGN") == "1":
 			spec = {"text": "Overman Mutual", "style": "franklin", "panel": Color("#1f4e8a"), "letter": Color("#f3efe4"), "since": -1}
 		var fit := {"width": w, "depth": st[6] if st.size() > 6 else DEPTH, "era": era}
+		if OS.get_environment("ALLEY") == "0":
+			fit.alley = false  # no road behind: back yards, not lots
 		if st.size() > 5 and st[5] > 0:
 			fit.added_from = st[5]  # floors added on top of a block this tall
 		if st.size() > 3 and st[3] != "":
@@ -122,7 +125,8 @@ func _init() -> void:
 		var planted := []
 		for t in meshes[2]:
 			planted.append([Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * t[3]), at + t[0]), t[1], t[2]])
-		trees.set_trees(str(i), planted)
+		if OS.get_environment("NOTREES") != "1":  # NOTREES=1 for close looks
+			trees.set_trees(str(i), planted)
 		print(st[0], " ", st[1], " storeys ", storeys, " lot ", snappedf(w, 0.1), " m")
 	var cam := Camera3D.new()
 	cam.fov = 45.0

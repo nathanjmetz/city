@@ -26,6 +26,37 @@ const GUARD_H := 0.79  # 31 in to the top of the W-beam (MASH)
 const POST_SPACING := 1.905  # 6 ft 3 in
 
 
+static var _concrete: StandardMaterial3D
+
+
+## Cast concrete for the structure: piers, barrier, deck edges. The
+## pavement shaders tile by ground position (x and z), which smears into
+## vertical streaks on a wall, so this one maps its weathering triplanar.
+static func concrete() -> StandardMaterial3D:
+	if _concrete != null:
+		return _concrete
+	var noise := FastNoiseLite.new()
+	noise.frequency = 0.05
+	noise.fractal_octaves = 4
+	var ramp := Gradient.new()
+	ramp.set_color(0, Color(0.86, 0.86, 0.85))
+	ramp.set_color(1, Color(1.0, 1.0, 0.99))
+	var tex := NoiseTexture2D.new()
+	tex.noise = noise
+	tex.color_ramp = ramp
+	tex.seamless = true
+	tex.width = 256
+	tex.height = 256
+	_concrete = StandardMaterial3D.new()
+	_concrete.albedo_color = Color(0.70, 0.69, 0.66)
+	_concrete.albedo_texture = tex
+	_concrete.uv1_triplanar = true
+	_concrete.uv1_scale = Vector3(0.12, 0.12, 0.12)
+	_concrete.roughness = 0.88
+	_concrete.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return _concrete
+
+
 ## Draws every bridge along a road's points (lifted to their drawn height).
 ## Returns true if any part of the road was on a bridge.
 ## `blocked` (optional, a point -> bool): where a pier can't stand, such as
