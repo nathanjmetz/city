@@ -44,6 +44,11 @@ const TYPES := {
 		# two-storey rear wing (NAHB: additions are about a third of
 		# remodeling jobs on Midwestern homes over 30 years old).
 		{"name": "Home with addition", "storeys": 2, "cap": [5, 6]},
+		# A backyard cottage for a grown child, a parent or a renter: the
+		# accessory dwelling unit Indianapolis (2023), Fort Wayne and
+		# Bloomington now allow on any single-family lot, a one-storey
+		# cottage of 400-800 sq ft behind the house.
+		{"name": "Home with backyard cottage", "storeys": 2, "cap": [6, 8]},
 	]},
 	# A two-family house: a postwar side-by-side ranch duplex, a recent
 	# two-storey one, or on prewar streets an up-and-down two-family
@@ -72,10 +77,20 @@ const TYPES := {
 		{"name": "Corner store", "storeys": 1, "cap": [6, 10]},
 		{"name": "Retail store", "storeys": 1, "cap": [11, 16]},
 	]},
-	"mixed_use": {"zone": COM, "name": "Shop with flats", "cover": 0.85, "stages": [
+	"mixed_use": {"zone": COM, "name": "Shop with flats", "becomes": ["commercial_block"], "cover": 0.85, "stages": [
 		{"name": "Main Street block", "storeys": 2, "cap": [6, 10], "flats": [3, 5]},
 		{"name": "Three-storey Main Street block", "storeys": 3, "cap": [8, 12], "flats": [8, 12], "load": 2},
 		{"name": "Four-storey Main Street block", "storeys": 4, "cap": [10, 14], "flats": [14, 20], "load": 3},
+	]},
+	# A storefront owner buys out the shop next door and builds across both
+	# lots: one front of three to five bays over the shops, flats or a lodge
+	# hall upstairs, its name and year in the parapet (the 1880s-1910s
+	# Italianate and Romanesque blocks on Indiana's courthouse squares:
+	# Wabash, Huntington, Marion, 50-100 ft fronts). `min_width`: the lot
+	# frontage it needs (m), bought up along the street (assemble()).
+	"commercial_block": {"zone": COM, "name": "Commercial block", "cover": 0.85, "stages": [
+		{"name": "Commercial block", "storeys": 3, "cap": [16, 24], "flats": [8, 14], "load": 3, "min_width": 24.0},
+		{"name": "Four-storey commercial block", "storeys": 4, "cap": [22, 30], "flats": [14, 22], "load": 4, "min_width": 24.0},
 	]},
 	# Plates: a postwar 16-storey slab about 1,200 m², a 30-storey downtown
 	# tower about 1,400 (Salesforce Tower, Indianapolis: 48 storeys on
@@ -95,8 +110,18 @@ const TYPES := {
 		{"name": "Strip shopping center", "storeys": 1, "cap": [25, 45], "load": 3},
 		{"name": "Neighborhood shopping center", "storeys": 1, "cap": [80, 140], "load": 8},
 	]},
+	# A small plant that does well buys the empty parcel next door and adds
+	# a wing and more truck docks, the way Indiana's small-town plants grew
+	# (a 10,000 sq ft shop to a 40,000-80,000 sq ft plant). "lot" is the
+	# land (m²) each stage needs. Jobs at about 500-700 sq ft of plant each
+	# (ULI/NAIOP employment densities for light manufacturing): ~1.5 acres
+	# for a 30-60 job plant, ~3 acres for 70-110 (the most one 60 m deep
+	# industrial frontage holds, 200 m along the street) (Census County Business
+	# Patterns: most Indiana manufacturing plants have 20-99 workers).
 	"factory": {"zone": IND, "name": "Factory", "cover": 0.5, "stages": [
 		{"name": "Factory", "storeys": 1, "cap": [18, 36]},
+		{"name": "Factory with an addition", "storeys": 1, "cap": [32, 60], "lot": 6000.0},
+		{"name": "Plant", "storeys": 1, "cap": [70, 110], "lot": 12000.0},
 	]},
 }
 
@@ -236,6 +261,8 @@ static func far_of(type: String, level: int, area: float) -> float:
 	if st.has("plate"):
 		# A tower may cover its whole lot (the Loop's do), but not more.
 		return float(st.storeys) * float(st.plate) / area if area >= float(st.plate) else INF
+	if st.has("lot") and area < float(st.lot):
+		return INF
 	return float(st.storeys) * float(TYPES[type].cover)
 
 
@@ -245,6 +272,8 @@ static func area_for(type: String, level: int, far: float) -> float:
 	var st: Dictionary = TYPES[type].stages[level]
 	if st.has("plate"):
 		return maxf(float(st.plate), float(st.storeys) * float(st.plate) / far)
+	if st.has("lot"):
+		return float(st.lot) if float(st.storeys) * float(TYPES[type].cover) <= far else INF
 	return 0.0 if float(st.storeys) * float(TYPES[type].cover) <= far else INF
 
 
@@ -327,13 +356,45 @@ static func options(sim, key: String) -> Array:
 	var c := context(sim, key)
 	var area: float = sim.lots[key].area
 	var out := []
+	var wide: float = sim.lots[key].get("width", 0.0)
 	if lvl + 1 < TYPES[t].stages.size() and _stage_ok(sim, b, t, lvl + 1, c) \
-			and far_of(t, lvl + 1, area) <= c.far:
+			and far_of(t, lvl + 1, area) <= c.far and wide >= float(TYPES[t].stages[lvl + 1].get("min_width", 0.0)):
 		out.append([t, lvl + 1])
 	for nt in TYPES[t].get("becomes", []):
-		if _stage_ok(sim, b, nt, 0, c) and far_of(nt, 0, area) <= c.far:
+		if _stage_ok(sim, b, nt, 0, c) and far_of(nt, 0, area) <= c.far \
+				and wide >= float(TYPES[nt].stages[0].get("min_width", 0.0)):
 			out.append([nt, 0])
 	return out
+
+
+## The stage an owner would build next that needs a wider frontage than
+## its lot has (a commercial block over two storefronts): [type, level],
+## or [] if none the area supports.
+static func wider_stage(sim, key: String) -> Array:
+	var b: Dictionary = sim.buildings[key]
+	var t := type_of(b)
+	var lvl := int(b.get("level", 0))
+	var c := context(sim, key)
+	var wide: float = sim.lots[key].get("width", 0.0)
+	var cands := []
+	if lvl + 1 < TYPES[t].stages.size():
+		cands.append([t, lvl + 1])
+	for nt in TYPES[t].get("becomes", []):
+		cands.append([nt, 0])
+	for o in cands:
+		var st: Dictionary = TYPES[o[0]].stages[o[1]]
+		if st.has("min_width") and wide < float(st.min_width) and _stage_ok(sim, b, o[0], o[1], c) \
+				and far_of(o[0], o[1], sim.lots[key].area) <= c.far:
+			return o
+	return []
+
+
+## Whether an owner here sets out to buy the lot next door this time (its
+## own dice): about one in three keen owners whose next stage needs a wider
+## lot, so most still grow in place.
+static func wants_site(sim, key: String) -> bool:
+	var roll := float(absi(hash([key, sim.tick_count, "site"])) % 1000) / 1000.0
+	return roll < Balance.ASSEMBLE_MAIN_CHANCE and not wider_stage(sim, key).is_empty()
 
 
 # ----------------------------------------------------------------- assembly
@@ -351,10 +412,12 @@ const ASSEMBLE_REACH := 120.0
 ## building is bought; protected and charming old buildings are not.
 ## Returns the lot bought (now part of `key`'s lot), or "".
 static func assemble(sim, key: String) -> String:
+	if not wider_stage(sim, key).is_empty():
+		return _assemble_front(sim, key)
 	var b: Dictionary = sim.buildings[key]
 	var t := type_of(b)
 	var lvl := int(b.get("level", 0)) + 1
-	if lvl >= TYPES[t].stages.size() or not TYPES[t].stages[lvl].has("plate"):
+	if lvl >= TYPES[t].stages.size() or not (TYPES[t].stages[lvl].has("plate") or TYPES[t].stages[lvl].has("lot")):
 		return ""
 	var c := context(sim, key)
 	if not _stage_ok(sim, b, t, lvl, c):
@@ -383,6 +446,47 @@ static func assemble(sim, key: String) -> String:
 	return best if LotPlanner.merge_lots(sim, key, best, c.far) == key else ""
 
 
+## A storefront owner buys the lot next door along its own street side, so
+## the block it builds has one front across both: an empty lot first, then
+## a vacant building, then a one-storey shop (bought out, as Main Street
+## owners did). Protected and charming old buildings are not for sale.
+## Returns the lot bought (now part of `key`'s lot), or "".
+static func _assemble_front(sim, key: String) -> String:
+	var lot: Dictionary = sim.lots[key]
+	var c := context(sim, key)
+	var near := []
+	for k in sim.lots:
+		var o: Dictionary = sim.lots[k]
+		if k != key and o.seg == lot.seg and o.side == lot.side and o.pos.distance_to(lot.pos) < ASSEMBLE_REACH:
+			near.append(k)
+	near.sort()
+	var best := ""
+	var best_rank := INF
+	for k in near:
+		var rank := _front_rank(sim, k)
+		if rank < best_rank and LotPlanner.can_merge(sim, key, k, c.far):
+			best_rank = rank
+			best = k
+	if best == "":
+		return ""
+	return best if LotPlanner.merge_lots(sim, key, best, c.far) == key else ""
+
+
+static func _front_rank(sim, k: String) -> float:
+	if not sim.buildings.has(k):
+		return 0.0
+	if sim.heritage.protected(k) or float(sim.heritage.charm.get(k, 0.0)) >= Balance.HERITAGE_DELAY_CHARM:
+		return INF
+	var o: Dictionary = sim.buildings[k]
+	if int(o.zone) != COM:
+		return INF
+	if int(o.get("occ", 0)) == 0 and int(o.get("focc", 0)) == 0:
+		return 1.0
+	if type_of(o) == "shop":
+		return 2.0 + float(o.cap) / 1000.0
+	return INF
+
+
 ## How readily a lot is bought for a tower site: an empty lot first, then a
 ## vacant building, then a small low one. INF if it isn't for sale.
 static func _buy_rank(sim, k: String, far: float) -> float:
@@ -407,6 +511,7 @@ static func _stage_ok(sim, b: Dictionary, type: String, level: int, c: Dictionar
 	match [type, level]:
 		["house", 1]: return true
 		["house", 2]: return c.wealth >= Balance.ADDITION_WEALTH
+		["house", 3]: return c.density >= Balance.DUPLEX_DENSITY and c.wealth >= Balance.ADDITION_WEALTH
 		["duplex", 0]: return c.density >= Balance.DUPLEX_DENSITY and c.wealth < 0.75
 		["duplex", 1]: return c.density >= Balance.ROW_HOME_DENSITY
 		["row_home", 0]: return c.density >= Balance.ROW_HOME_DENSITY * 2 and c.wealth < 0.7
@@ -417,12 +522,19 @@ static func _stage_ok(sim, b: Dictionary, type: String, level: int, c: Dictionar
 		["apartments", 4]: return c.downtown
 		["shop", 1]: return true
 		["mixed_use", 0]: return c.main_street
+		["commercial_block", 0]: return c.main_street and c.density >= Balance.DENSE_CORE * 2
+		["commercial_block", 1]: return c.main_street and c.density >= Balance.DENSE_CORE * 3
 		["mixed_use", _]: return c.main_street and c.density >= Balance.DENSE_CORE * level
 		["office", _]:
 			if level >= 3 and not c.downtown:
 				return false
 			var more := int(TYPES.office.stages[level].cap[1]) - (int(b.cap) if type_of(b) == "office" else 0)
 			return c.graduates_free >= more
+		["factory", _]:
+			# Hiring needs people to hire: the town's workers not yet in a
+			# job here or in Marion.
+			var more := int(TYPES.factory.stages[level].cap[1]) - int(b.cap)
+			return int(sim.stats.workers) - int(sim.stats.employed) - int(sim.stats.get("commuting", 0)) >= more
 	return false
 
 

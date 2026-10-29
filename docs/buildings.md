@@ -33,6 +33,7 @@ fully in favour at twice that:
 | Duplex | 1.5k, fourplex 5k |
 | Row homes | 50k, three-storey 100k |
 | Shop with flats | two-storey any, three 5k, four 15k |
+| Commercial block | three storeys 5k, four 15k |
 | Offices | three storeys 10k, five 25k, eight 50k, 16 150k, 30 1M |
 | Shopping center | strip 5k, neighborhood center 10k |
 
@@ -55,19 +56,32 @@ with a shopfront every 7-8 m. No re-platting is needed.
 Each type has stages (`BuildingTypes.TYPES`), and some turn into another
 type at the top of theirs:
 
-- House: family home, then two-storey home, then home with addition (a
-  family room, sunroom or two-storey wing built on out back, where the area
-  is well-off enough). Near the middle of town it can become a duplex; in a
-  very built-up area it can make way for row homes.
+- House: family home, then two-storey home (the same house: a cape or
+  bungalow raises a full shed dormer, and only a ranch is rebuilt), then
+  home with addition (a family room, sunroom or two-storey wing built on
+  out back, where the area is well-off enough), then, close to town, home
+  with backyard cottage (an accessory dwelling at the back of the lot).
+  Near the middle of town it can become a duplex; in a very built-up area
+  it can make way for row homes.
+- Shop: a corner store first (a brick corner grocery on older streets, a
+  1950s neighborhood market on postwar ones), then a retail store with its
+  own lot, then a shop with flats and a commercial block.
 - Duplex: a two-family house drawn for its street's era (an up-and-down
   with a two-deck porch or an Indianapolis double before the war, a ranch
   duplex after it, a two-storey one lately), then a fourplex. It can make
   way for row homes or apartments.
 - Row homes: two storeys, then three.
-- Apartments: walk-up, three storeys, mid-rise (5).
+- Apartments: walk-up, three storeys, mid-rise (5). Postwar walk-ups are garden apartments, the plain brick block, the split-entry eight-plex or the 1970s mansard walk-up, and keep their kind as they grow a floor.
 - Shop: corner store, then retail store. On a Main Street it gains flats
   upstairs and becomes a Main Street block.
-- Shop with flats: two, three and four storeys.
+- Shop with flats: two, three, then four storeys. Prewar streets draw 1880s-1920s
+  fronts; about half on postwar streets are 1950s-60s infill (Roman brick,
+  canopy, ribbon windows) and three in four on recent streets are 2010s
+  mixed-use (brick and panel bays, steel canopies). On a busy Main Street its
+  owner can buy the lot next door along the street (an empty lot, a vacant
+  building or a one-storey shop, never a protected or charming one) and
+  build a Commercial block across both, three then four storeys
+  (`BuildingTypes.wider_stage`, `assemble`).
 - Offices: three storeys, five, then an office tower (8), as graduates allow.
 
 A building can move up once it has stood a season (`DEVELOP_AGE`), is full

@@ -53,6 +53,15 @@ const MOVE_EVERY := Balance.MOVE_EVERY
 ## How each zone's buildings go up (see Construction).
 const PROFILE_OF_ZONE := {ZoneMap.Zone.RESIDENTIAL: "house", ZoneMap.Zone.COMMERCIAL: "shop",
 	ZoneMap.Zone.INDUSTRIAL: "factory"}
+## Buildings this tall go up as a high-rise, whatever their zone.
+const HIGHRISE_STOREYS := 7
+
+
+## How a building goes up: its zone's profile, or a high-rise's.
+static func profile_of(b: Dictionary) -> String:
+	if b.has("type") and BuildingTypes.storeys(b) >= HIGHRISE_STOREYS:
+		return "highrise"
+	return PROFILE_OF_ZONE.get(int(b.get("zone", 0)), "house")
 ## Game minutes per tick: at normal speed a day takes 2.4 real minutes.
 const MINUTES_PER_TICK := 1
 ## Tick 0 is 6:00 AM on Monday, January 4, 2027.
@@ -103,6 +112,8 @@ var land_plan := LandPlan.new()
 var buses := BusNet.new()
 ## Cab companies, which run themselves too.
 var taxis := TaxiCo.new()
+## Fire and police departments, which grow their stations (Stations).
+var stations := Stations.new()
 var builders := Builders.new()
 ## Where this city sits in the shared region (its own coordinates start at
 ## 0): the land under it is read there. 0 in solo play.
@@ -134,6 +145,8 @@ var hubs := CivicHubs.new()
 var parks := Parks.new()
 ## The post office, its postmaster, and the carriers on their routes.
 var mail := Mail.new()
+## Police cruisers on patrol and the streets they drove (Patrols).
+var patrols := Patrols.new()
 ## Services shared with neighbor towns under signed deals (Interlocal).
 var interlocal := Interlocal.new()
 ## What the region's shared projects do in this town (Regional).
@@ -161,6 +174,12 @@ var policies := Policies.new()
 var culture := TownCulture.new()
 ## Buildings going up, stage by stage, with their crews and deliveries.
 var construction := Construction.new()
+## Where the last year's loads went, link by link (the production chain page).
+var chains := ProductionChains.new()
+## The Saturday farmers' market.
+var farmers_market := FarmersMarket.new()
+## Surplus sold to friends' towns, hauled by truck on the road toward them.
+var trade_haul := TradeHaul.new()
 ## Smoke, noise and dirty ground, each traced to the source that makes it.
 var pollution := Pollution.new()
 ## Hospitals run by their administrators, ambulances, nursing homes, daycare.
@@ -187,6 +206,8 @@ var subdivisions := Subdivisions.new()
 var street_age := StreetAge.new()
 ## The city engineer: counts rush-hour traffic and proposes fixes (CityEngineer).
 var engineer := CityEngineer.new()
+## The ordinances the town council has passed (TownLaws).
+var laws := TownLaws.new()
 ## The town's numbers over time, for the top bar's charts (StatHistory).
 var history := StatHistory.new()
 ## Buildings only grow and fill with power and water, as in Cities: Skylines.
@@ -922,12 +943,19 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			if ok:
 				_sync_stances()
 				_sync_levers()
+		"law":
+			# The council adopts or repeals a town law.
+			ok = laws.set_law(self, str(cmd.get("law", "")), bool(cmd.get("on", true)))
 		"heritage":
 			# Protect a historic district, or lift its protection.
 			ok = heritage.set_protected(self, int(cmd.get("district", -1)), bool(cmd.get("protect", true)))
 		"set_junction":
 			# Traffic lights, stop signs or none at a junction (-1 = automatic).
 			ok = traffic.set_rule(int(cmd.node), int(cmd.rule))
+		"set_lanes":
+			# A No Left Turn sign and lane arrows where a road meets a junction.
+			ok = traffic.set_lane_rule(int(cmd.node), int(cmd.seg), bool(cmd.get("no_left", false)),
+				cmd.get("lanes", []))
 		"link_wave":
 			# A green wave: light `to` timed behind light `from` at the limit.
 			ok = traffic.link_wave(int(cmd.from), int(cmd.to), float(cmd.get("v", 15.6)))
@@ -954,6 +982,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			region_links.clear()
 			trade = Trade.new()
 			traffic.overrides.clear()
+			traffic.lane_rules.clear()
 			traffic.from_dict({})
 			people = People.new()
 			network.clear()
@@ -976,6 +1005,9 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			power.offset = terrain_offset
 			logistics = Logistics.new()
 			construction = Construction.new()
+			chains = ProductionChains.new()
+			farmers_market = FarmersMarket.new()
+			trade_haul = TradeHaul.new()
 			warehouses = Warehouses.new()
 			big = BigFactories.new()
 			big_factories_changed.emit()
@@ -983,6 +1015,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			land_plan = LandPlan.new()
 			buses = BusNet.new()
 			taxis = TaxiCo.new()
+			stations = Stations.new()
 			builders = Builders.new()
 			education = Education.new()
 			telecom = Telecom.new()
@@ -998,6 +1031,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			parks = Parks.new()
 			parks_changed.emit()
 			mail = Mail.new()
+			patrols = Patrols.new()
 			neighborhoods = Neighborhoods.new()
 			neighborhoods_changed.emit()
 			policies.from_dict({})
@@ -1011,6 +1045,8 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			subdivisions.from_dict({})
 			street_age.from_dict({})
 			engineer.from_dict({})
+			laws.from_dict({})
+			laws.sync(self)
 			timelapse.from_dict(self, {})
 			history.from_dict({})
 			_lever_steps.clear()
@@ -1449,11 +1485,17 @@ func tick() -> void:
 	elif hour == 18 * TICKS_PER_HOUR:
 		charter.month(self)
 		timelapse.month(self)
+	elif hour == 19 * TICKS_PER_HOUR:
+		laws.month(self)
+	if hour % TICKS_PER_HOUR == 25 and hour / TICKS_PER_HOUR in Balance.LAW_COUNT_HOURS:
+		# The council's count of trucks cutting through neighborhoods.
+		laws.count(self)
 	if tick_count % TICKS_PER_HOUR == 0:
 		history.hour(self)
 	if tick_count % TICKS_PER_HOUR == 30:
 		heritage.carry_out(self)
 		leaders.carry_out(self)
+		laws.carry_out(self)
 		charter.carry_out(self)
 		redevelopment.carry_out(self)
 		if subdivisions.carry_out(self):
@@ -1531,9 +1573,11 @@ func tick() -> void:
 	t = Perf.now()
 	hubs.tick(self)
 	construction.tick(self)
+	farmers_market.tick(self)
 	if simulate_traffic:
 		power.crew_tick(self)
 	Perf.add("sim.civic_hubs", t)
+	trade_haul.tick(self)
 	if not in_region and tick_count % (24 * TICKS_PER_HOUR) == 0:
 		t = Perf.now()
 		Trade.settle({"me": self}, {})
@@ -1541,6 +1585,9 @@ func tick() -> void:
 	t = Perf.now()
 	mail.tick(self)
 	Perf.add("sim.mail", t)
+	t = Perf.now()
+	patrols.tick(self)
+	Perf.add("sim.patrols", t)
 	t = Perf.now()
 	interlocal.tick(self)
 	Perf.add("sim.interlocal", t)
@@ -1554,6 +1601,9 @@ func tick() -> void:
 	t = Perf.now()
 	healthcare.tick(self)
 	Perf.add("sim.healthcare", t)
+	for id in stations.tick(self):
+		_clear_zones_under(services.footprint(id))
+		_lots_dirty = true
 	if not simulate_traffic:
 		Perf.add("sim.tick", t0)
 		return
@@ -1595,6 +1645,7 @@ func town_month() -> void:
 	leaders.month(self)
 	charter.month(self)
 	timelapse.month(self)
+	laws.month(self)
 
 
 ## Game time as a Dictionary (year, month, day, weekday, hour, minute).
@@ -3974,6 +4025,8 @@ func _grow_one(salt := 0) -> String:
 	for z in zone_order:
 		# Growth on the Economy page: Hold builds nothing new, Expand more.
 		var pace := policies.pick(Balance.POLICY_BUILD_PACE, "growth", Economy.ZONE_AREA.get(z, "homes"))
+		if z == ZoneMap.Zone.RESIDENTIAL:
+			pace *= laws.home_pace()  # an impact fee: builders pass it on
 		if rng.randf() >= demand[z] * pace:
 			continue
 		var list: Array = by_zone[z]
@@ -3991,8 +4044,10 @@ func _grow_one(salt := 0) -> String:
 		buildings[key] = b
 		if z == ZoneMap.Zone.INDUSTRIAL:
 			buildings[key].chain = factory_chain(lots[key].pos)
+		elif z == ZoneMap.Zone.RESIDENTIAL:
+			economy.money += laws.home_fee()
 		var lot: Dictionary = lots[key]
-		construction.start("lot:" + key, PROFILE_OF_ZONE[z], tick_count, lot.front, -lot.normal, lot.to_curb)
+		construction.start("lot:" + key, profile_of(b), tick_count, lot.front, -lot.normal, lot.to_curb)
 		buildings_changed.emit()
 		return key
 	return ""
@@ -4022,7 +4077,7 @@ func found_business(key: String, zone: int, chain := "") -> bool:
 		buildings[key].chain = chain if Balance.FACTORY_CHAINS.has(chain) else factory_chain(lots[key].pos)
 	# It goes up like any other building, crew and all.
 	var lot: Dictionary = lots[key]
-	construction.start("lot:" + key, PROFILE_OF_ZONE[zone], tick_count, lot.front, -lot.normal, lot.to_curb)
+	construction.start("lot:" + key, profile_of(buildings[key]), tick_count, lot.front, -lot.normal, lot.to_curb)
 	buildings_changed.emit()
 	return true
 
@@ -4137,11 +4192,12 @@ func _develop_one() -> void:
 	for i in mini(keys.size(), 6):
 		var key: String = keys[rng.randi() % keys.size()]
 		var opts := BuildingTypes.options(self, key)
-		if opts.is_empty():
+		if opts.is_empty() or BuildingTypes.wants_site(self, key):
 			# Room to go up but not on this lot: buy the lot next door.
 			if BuildingTypes.assemble(self, key) != "":
 				return
-			continue
+			if opts.is_empty():
+				continue
 		var o: Array = opts[rng.randi() % opts.size()]
 		# Up a level only with its needs mostly met (Nathan, 2026-10-25:
 		# "the level goes up or down based on whether it has what it needs").
@@ -4871,6 +4927,7 @@ func save_steps(postcard := false) -> Array:
 		["parks", func(): return parks.to_dict()],
 		["neighborhoods", func(): return neighborhoods.to_dict()],
 		["mail", func(): return mail.to_dict()],
+		["patrols", func(): return patrols.to_dict()],
 		["interlocal", func(): return interlocal.to_dict()],
 		["regional", func(): return regional.to_dict()],
 		["market", func(): return market.to_dict()],
@@ -4879,6 +4936,7 @@ func save_steps(postcard := false) -> Array:
 		["culture", func(): return culture.to_dict()],
 		["pollution", func(): return pollution.to_dict()],
 		["healthcare", func(): return healthcare.to_dict()],
+		["stations", func(): return stations.to_dict()],
 		["nicknames", func(): return nicknames.to_dict()],
 		["heritage", func(): return heritage.to_dict()],
 		["markers", func(): return markers.to_dict()],
@@ -4889,7 +4947,9 @@ func save_steps(postcard := false) -> Array:
 		["subdivisions", func(): return subdivisions.to_dict()],
 		["street_age", func(): return street_age.to_dict()],
 		["engineer", func(): return engineer.to_dict()],
+		["laws", func(): return laws.to_dict()],
 		["junctions", func(): return traffic.rules_to_dict()],
+		["lane_rules", func(): return traffic.lane_rules_to_dict()],
 		["greens", func(): return traffic.greens_to_dict()],
 		["offsets", func(): return traffic.offsets_to_dict()],
 		["actuated", func(): return traffic.actuated_to_dict()],
@@ -4907,6 +4967,9 @@ func save_steps(postcard := false) -> Array:
 			["buses", func(): return buses.to_dict()],
 			["taxis", func(): return taxis.to_dict()],
 			["builders", func(): return builders.to_dict()],
+			["chains", func(): return chains.to_dict()],
+			["farmers_market", func(): return farmers_market.to_dict()],
+			["trade_haul", func(): return trade_haul.to_dict()],
 			["people", func(): return people.to_dict()],
 		])
 	return steps
@@ -4964,6 +5027,9 @@ func from_dict(d: Dictionary) -> void:
 	banks.from_dict(d.get("banks", {}))
 	logistics.from_dict(d.get("logistics", {}))
 	construction.from_dict(d.get("construction", {}))
+	chains.from_dict(d.get("chains", {}))
+	farmers_market.from_dict(d.get("farmers_market", {}))
+	trade_haul.from_dict(d.get("trade_haul", {}))
 	warehouses.from_dict(d.get("warehouses", {}))
 	big.from_dict(d.get("big_factories", {}))
 	reserves.from_list(d.get("reserves", []))
@@ -4975,6 +5041,7 @@ func from_dict(d: Dictionary) -> void:
 	parks.from_dict(d.get("parks", {}))
 	neighborhoods.from_dict(d.get("neighborhoods", {}))
 	mail.from_dict(d.get("mail", {}))
+	patrols.from_dict(d.get("patrols", {}))
 	interlocal.from_dict(d.get("interlocal", {}))
 	regional.from_dict(d.get("regional", {}))
 	market.from_dict(d.get("market", {}))
@@ -4983,6 +5050,8 @@ func from_dict(d: Dictionary) -> void:
 	culture.from_dict(d.get("culture", {}))
 	pollution.from_dict(d.get("pollution", {}))
 	healthcare.from_dict(d.get("healthcare", {}))
+	stations = Stations.new()
+	stations.from_dict(self, d.get("stations", {}))
 	nicknames.from_dict(d.get("nicknames", {}))
 	heritage.from_dict(d.get("heritage", {}))
 	markers.from_dict(d.get("markers", {}))
@@ -4993,6 +5062,8 @@ func from_dict(d: Dictionary) -> void:
 	subdivisions.from_dict(d.get("subdivisions", {}))
 	street_age.from_dict(d.get("street_age", {}))
 	engineer.from_dict(d.get("engineer", {}))
+	laws.from_dict(d.get("laws", {}))
+	laws.sync(self)
 	for legacy in farms.legacy_outlines:
 		reserves.paint(legacy[0], legacy[1])
 	for id in farms.farms:
@@ -5000,6 +5071,7 @@ func from_dict(d: Dictionary) -> void:
 		if f.drive.is_empty():
 			f.drive = farm_drive(f.pos, f.dir)
 	traffic.rules_from_dict(d.get("junctions", {}))
+	traffic.lane_rules_from_dict(d.get("lane_rules", {}))
 	traffic.greens_from_dict(d.get("greens", {}))
 	traffic.offsets_from_dict(d.get("offsets", {}))
 	traffic.actuated_from_dict(d.get("actuated", {}))

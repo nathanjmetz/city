@@ -1,20 +1,49 @@
 class_name ServiceView
 extends Node3D
-## Draws service buildings (built by the art library's CivicBuilder) and,
-## while placing one, which roads it would cover.
+## Draws service buildings (built by the art library's CivicBuilder) and
+## what they reach on the streets, like Cities: Skylines: while placing one
+## (with the new one's reach added), in a view, or for the one clicked.
 
 var sim: CitySim
-## The kind whose coverage to show on the roads, or -1 for none.
+## The kind whose coverage to show on the roads, or -1 for none. Mail's and
+## the civic hubs' place-tool kinds (Mail.TOOL_KIND, CivicHubs.TOOL_KINDS)
+## show the streets the mail reaches and the land the hubs lift or drag.
 var show_kind := -1:
 	set(v):
 		show_kind = v
 		_draw_coverage()
 
 ## Road distances from where a service is about to go (Services.reach_from),
-## shown instead of the built ones' while it's being placed; {} for none.
+## shown on top of the built ones' while it's being placed; {} for none.
 var preview := {}:
 	set(v):
 		preview = v
+		_draw_coverage()
+
+## A whole view of area effects on the streets: "parks" or "hubs" (landfill,
+## recycling and cemetery), "" for none.
+var show_area := "":
+	set(v):
+		show_area = v
+		_draw_coverage()
+
+## The Police view: the streets cruisers drove lately (Patrols), not reach.
+var show_patrols := false:
+	set(v):
+		show_patrols = v
+		_draw_coverage()
+
+## The same, for the parks tool in hand: "parks" or "".
+var tool_area := "":
+	set(v):
+		tool_area = v
+		_draw_coverage()
+
+## The one thing clicked whose reach shows instead (SelectTool's selection:
+## a service, park, civic hub or post office), {} for none.
+var focus := {}:
+	set(v):
+		focus = v
 		_draw_coverage()
 
 var _nodes := {}  # service id -> Node3D
@@ -31,6 +60,16 @@ const EDGE_SHARE := 0.25
 const COVER_STEP := 40.0
 const COVER_COLOR := Color(0.3, 0.9, 0.45, 0.75)
 const EDGE_COLOR := Color(1.0, 0.82, 0.2, 0.8)
+## Streets with homes or businesses on them that no station of the kind
+## shown reaches, so a gap reads at a glance.
+const GAP_COLOR := Color(0.92, 0.22, 0.2, 0.75)
+## Area effects: land a park or cemetery lifts (green), land a landfill
+## drags down (brown), strongest near it and fading out.
+const LIFT_COLOR := Color(0.3, 0.9, 0.45, 0.85)
+const DRAG_COLOR := Color(0.72, 0.4, 0.12, 0.9)
+## Kinds that count toward another's coverage: a hospital serves as the
+## town's clinic too.
+const ALSO := {Services.Kind.CLINIC: [Services.Kind.HOSPITAL]}
 
 
 func setup(s: CitySim) -> void:
@@ -69,11 +108,6 @@ func _sync() -> void:
 	_draw_coverage()
 
 
-## Roads within reach of the shown kind light up, like Cities: Skylines 2's
-## coverage: green well inside it, yellow in its last stretch
-## (EDGE_SHARE of the reach, where response times run long), nothing past
-## it. So a player sees where another station would fill a gap rather than
-## double up.
 ## The ground was regraded inside `box` (view coordinates): sites reaching
 ## into it are drawn again on the new grade, their lots and drives with them.
 func regraded(box: Rect2) -> void:
@@ -91,22 +125,75 @@ func regraded(box: Rect2) -> void:
 
 
 func _draw_coverage() -> void:
-	_coverage.visible = show_kind != -1 and (sim.services.reach_by_kind.has(show_kind) or not preview.is_empty())
-	if not _coverage.visible:
-		return
-	var dist: Dictionary = preview if not preview.is_empty() else sim.services.reach_by_kind[show_kind]
-	var reach: float = Services.KINDS[show_kind].get("reach", INF)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var any := false
+	if not focus.is_empty():
+		any = _draw_focus(st)
+	elif show_patrols and show_kind == Services.Kind.POLICE and preview.is_empty():
+		any = _draw_patrols(st)
+	elif show_kind == Mail.TOOL_KIND:
+		any = _draw_mail(st, true)
+	elif CivicHubs.TOOL_KINDS.has(show_kind) or show_area == "hubs":
+		any = _draw_areas(st, _hub_effects(sim.hubs.hubs.keys()))
+	elif tool_area == "parks" or show_area == "parks":
+		any = _draw_areas(st, _park_effects(sim.parks.sites.keys()))
+	elif show_area == "mail":
+		any = _draw_mail(st, true)
+	elif show_kind != -1 and Services.KINDS.has(show_kind):
+		var sources := []
+		for kind in [show_kind] + ALSO.get(show_kind, []):
+			if sim.services.reach_by_kind.has(kind):
+				sources.append([sim.services.reach_by_kind[kind], float(Services.KINDS[kind].get("reach", INF))])
+		if not preview.is_empty():
+			sources.append([preview, float(Services.KINDS[show_kind].get("reach", INF))])
+		any = _draw_reach(st, sources, Services.KINDS[show_kind].has("reach"))
+	_coverage.visible = any
+	if any:
+		_coverage.mesh = Terrain.drape(st.commit())
+
+
+## The clicked thing's own reach.
+func _draw_focus(st: SurfaceTool) -> bool:
+	var id = focus.get("id")
+	match focus.get("type", ""):
+		"service":
+			if not sim.services.buildings.has(id):
+				return false
+			var spec: Dictionary = Services.KINDS[int(sim.services.buildings[id].kind)]
+			if not spec.has("reach"):
+				return false
+			var reach := float(spec.reach)
+			return _draw_reach(st, [[sim.services.reach_of(sim.network, id, reach), reach]], false)
+		"hub":
+			return sim.hubs.hubs.has(id) and _draw_areas(st, _hub_effects([id]))
+		"park":
+			return sim.parks.sites.has(id) and _draw_areas(st, _park_effects([id]))
+		"post_office":
+			return _draw_mail(st, false)
+	return false
+
+
+## Roads within reach light up, like Cities: Skylines 2's coverage: green
+## well inside it, yellow in its last stretch (EDGE_SHARE of the reach,
+## where response times run long), nothing past it. `sources` are [road
+## distances (node -> metres), reach]; each piece takes the best of them.
+## With `gaps`, streets with homes or businesses past every reach are red,
+## so a player sees where another station would fill a gap rather than
+## double up.
+func _draw_reach(st: SurfaceTool, sources: Array, gaps: bool) -> bool:
+	if sources.is_empty() and not gaps:
+		return false
+	var lined := _lined_streets() if gaps else {}
+	var any := false
 	for id in sim.network.segments:
 		var s: Dictionary = sim.network.segments[id]
-		var da: float = dist.get(s.a, INF)
-		var db: float = dist.get(s.b, INF)
-		if minf(da, db) > reach:
+		# The ends' share of each reach (1.0 is its edge).
+		var near := INF
+		for src in sources:
+			near = minf(near, minf(src[0].get(s.a, INF), src[0].get(s.b, INF)) / src[1])
+		if near > 1.0 and not lined.has(id):
 			continue
-		# Wider than the road, so it reads from high up.
-		var hw := maxf(RoadStyle.half_width(s.type) * 1.6, 9.0)
 		# Coloured piece by piece: the distance along a long road grows from
 		# whichever end is nearer a station, so its far part can be the edge
 		# or past it.
@@ -119,15 +206,150 @@ func _draw_coverage() -> void:
 			var piece := pts[i - 1].distance_to(pts[i])
 			var mid := run + piece * 0.5
 			run += piece
-			var d := minf(da + mid, db + total - mid)
-			if d > reach:
+			var share := INF
+			for src in sources:
+				var d := minf(src[0].get(s.a, INF) + mid, src[0].get(s.b, INF) + total - mid)
+				share = minf(share, d / src[1])
+			var color := GAP_COLOR
+			if share <= 1.0:
+				color = edge_color(share, 1.0)
+			elif not lined.has(id):
 				continue
-			st.set_color(edge_color(d, reach))
-			RoadMesh.add_strip(st, PackedVector3Array([pts[i - 1], pts[i]]), -hw, hw, 0.35)
+			_piece(st, s, pts[i - 1], pts[i], color)
 			any = true
-	_coverage.visible = any
-	if any:
-		_coverage.mesh = Terrain.drape(st.commit())
+	return any
+
+
+## Area effects on the streets: `effects` are [centre, how far it reaches
+## (metres, from the centre), Callable(Vector3) -> -1..1]. Each piece is
+## tinted by their sum, green for a lift and brown for a drag, fading out.
+func _draw_areas(st: SurfaceTool, effects: Array) -> bool:
+	if effects.is_empty():
+		return false
+	var any := false
+	for id in sim.network.segments:
+		var s: Dictionary = sim.network.segments[id]
+		# Quick out: the curve lies within its ends' and control point's
+		# reach of the middle.
+		var a: Vector3 = sim.network.nodes[s.a]
+		var b: Vector3 = sim.network.nodes[s.b]
+		var mid := (a + b) * 0.5
+		var r := maxf(mid.distance_to(a), mid.distance_to(s.ctrl))
+		var near := []
+		for e in effects:
+			if Vector2(mid.x - e[0].x, mid.z - e[0].z).length() <= r + float(e[1]):
+				near.append(e)
+		if near.is_empty():
+			continue
+		var pts := Terrain.densify(sim.network.sample_segment(id), COVER_STEP)
+		for i in range(1, pts.size()):
+			var p := (pts[i - 1] + pts[i]) * 0.5
+			var v := 0.0
+			for e in near:
+				v += float(e[2].call(p))
+			var color := area_color(v)
+			if color.a <= 0.0:
+				continue
+			_piece(st, s, pts[i - 1], pts[i], color)
+			any = true
+	return any
+
+
+## Green for a lift, brown for a drag, fading out with its strength (-1..1).
+static func area_color(v: float) -> Color:
+	var k := clampf(absf(v), 0.0, 1.0)
+	if k < 0.04:
+		return Color(0, 0, 0, 0)
+	var c := LIFT_COLOR if v > 0.0 else DRAG_COLOR
+	return Color(c, c.a * (0.25 + 0.75 * k))
+
+
+## The landfill, recycling and cemetery hubs' pull on land value, as a share
+## of a landfill's full drag.
+func _hub_effects(ids: Array) -> Array:
+	var out := []
+	var full := absf(float(Balance.WASTE_SITES.landfill.value))
+	for id in ids:
+		var h: Dictionary = sim.hubs.hubs[id]
+		if not Balance.WASTE_SITES.has(h.kind):
+			continue
+		var reach: float = sim.hubs.lift_reach(id)
+		if reach <= 0.0:
+			continue
+		var size := 0.0
+		for c in h.cells:
+			size = maxf(size, (Vector2(c) + Vector2.ONE).length() * float(h.cell))
+		out.append([h.pos, reach + size, func(p: Vector3) -> float: return sim.hubs.lift_from(id, p) / full])
+	return out
+
+
+## Parks' and landmarks' lift on land value, as a share of the most land can
+## get from them.
+func _park_effects(ids: Array) -> Array:
+	var out := []
+	for id in ids:
+		var site: Dictionary = sim.parks.sites[id]
+		var a: Dictionary = Balance.AMENITIES[site.kind]
+		var reach: float = float(a.value_reach) * sim.parks.reach_of(id)
+		var full: float = float(a.value) * sim.parks.quality(id) + sim.parks.tree_lift(id, "value")
+		var k := full / Balance.AMENITY_VALUE_CAP
+		out.append([site.pos, reach + Vector2(site.size).length() * 0.5,
+			func(p: Vector3) -> float: return k * maxf(0.0, 1.0 - sim.parks.distance_to(id, p) / reach)])
+	return out
+
+
+## The streets the mail reached lately (green); with `gaps`, those with
+## homes or businesses it hasn't reached are red.
+func _draw_mail(st: SurfaceTool, gaps: bool) -> bool:
+	var lined := _lined_streets()
+	var any := false
+	for id in sim.network.segments:
+		var served := sim.mail.served(sim, id)
+		if not served and not (gaps and lined.has(id) and not sim.mail.offices.is_empty()):
+			continue
+		var s: Dictionary = sim.network.segments[id]
+		var pts := Terrain.densify(sim.network.sample_segment(id), COVER_STEP)
+		for i in range(1, pts.size()):
+			_piece(st, s, pts[i - 1], pts[i], COVER_COLOR if served else GAP_COLOR)
+			any = true
+	return any
+
+
+## The streets police cruisers drove lately, brightest where one just went
+## by and fading over a week; lined streets none has driven that long are red.
+func _draw_patrols(st: SurfaceTool) -> bool:
+	var lined := _lined_streets()
+	var police := false
+	for b in sim.services.buildings.values():
+		police = police or int(b.kind) == Services.Kind.POLICE
+	var any := false
+	for id in sim.network.segments:
+		var f := sim.patrols.freshness(sim, id)
+		if f < 0.0 and not (police and lined.has(id)):
+			continue
+		var color := GAP_COLOR if f < 0.0 else Color(COVER_COLOR, COVER_COLOR.a * (0.3 + 0.7 * f))
+		var s: Dictionary = sim.network.segments[id]
+		var pts := Terrain.densify(sim.network.sample_segment(id), COVER_STEP)
+		for i in range(1, pts.size()):
+			_piece(st, s, pts[i - 1], pts[i], color)
+			any = true
+	return any
+
+
+## Streets with lots on them (seg -> true): homes and businesses that need
+## the service.
+func _lined_streets() -> Dictionary:
+	var out := {}
+	for key in sim.lots:
+		out[int(sim.lots[key].seg)] = true
+	return out
+
+
+## One piece of a street's tint, wider than the road so it reads from high up.
+func _piece(st: SurfaceTool, s: Dictionary, a: Vector3, b: Vector3, color: Color) -> void:
+	var hw := maxf(RoadStyle.half_width(s.type) * 1.6, 9.0)
+	st.set_color(color)
+	RoadMesh.add_strip(st, PackedVector3Array([a, b]), -hw, hw, 0.35)
 
 
 ## Green well within reach, yellow at its edge.
@@ -149,7 +371,7 @@ func _dev(id: int) -> Array:
 		return sim.buses.depots[id].get("built", [])
 	if sim.taxis.companies.has(id):
 		return sim.taxis.companies[id].get("built", [])
-	return []
+	return sim.stations.built_of(id)
 
 
 func _spawn(id: int, b: Dictionary) -> Node3D:

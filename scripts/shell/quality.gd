@@ -30,9 +30,8 @@ extends Node
 ## with a wide gap between the two; and a tier that proved too slow stays
 ## out of reach for a while (longer each time), remembered across runs.
 ##
-## Cinematic is as close to real life as the engine gets: global
-## illumination (SDFGI), volumetric light in the air, screen-space
-## reflections, the biggest shadow maps and the longest detail. Ultra and
+## Cinematic is as close to real life as the engine gets: volumetric
+## light in the air, screen-space reflections, the biggest shadow maps and the longest detail. Ultra and
 ## below drop those one by one.
 ##
 ## Every device scales to what it can do (Brawn, 2026-10-23): the desktop
@@ -73,7 +72,10 @@ const GUESS_VERSION := 3
 ## wild woods cast sun shadows (thousands of trees, drawn again for every
 ## shadow split: the biggest single cost in a wooded town). ssao: ambient occlusion,
 ## ssil: bounced light between nearby surfaces, ssr: reflections in water
-## and glass, sdfgi: sunlight bouncing around the whole town, fog: light
+## and glass, sdfgi: sunlight bouncing around the whole town (off on every
+## tier since 2026-10-29: at town scale its sky light turned the shade on
+## roads and sidewalks cobalt blue, 40,82,141 where photos and the other
+## tiers give a grey-blue 115,128,154; SSIL does the near bounce), fog: light
 ## shafts and haze in the air (volumetric fog).
 const TIERS := [
 	{"msaa": 0, "fxaa": true, "ssao": false, "ssil": false, "ssr": false, "sdfgi": false, "fog": false,
@@ -88,7 +90,7 @@ const TIERS := [
 	{"msaa": 2, "fxaa": false, "ssao": true, "ssil": true, "ssr": true, "sdfgi": false, "fog": false,
 		"shadow_size": 8192, "soft": 5, "splits": 4, "detail": 1.8, "lod": 0.5, "shadow_reach": 2000.0,
 		"tree_shadows": true},
-	{"msaa": 2, "fxaa": false, "ssao": true, "ssil": true, "ssr": true, "sdfgi": true, "fog": true,
+	{"msaa": 2, "fxaa": false, "ssao": true, "ssil": true, "ssr": true, "sdfgi": false, "fog": true,
 		"shadow_size": 8192, "soft": 5, "splits": 4, "detail": 2.5, "lod": 0.25, "shadow_reach": 2000.0,
 		"tree_shadows": true},
 ]
@@ -118,6 +120,7 @@ const DETAIL_FLOOR := [
 ##   far_from: share of BuildingView's far-box swap distance.
 ##   crops / crop_m / crop_shadows: field plants on or off, how far round
 ##     the look spot, and whether corn casts shadows.
+##   photo: the real-life photographed ground (PhotoGround; desktop only).
 ##   cars_m: how far cars and trucks are drawn; car_near_m: inside it the
 ##     full model, past it the light one; car_detail: the close-up model
 ##     inside TrafficView.ULTRA_NEAR.
@@ -129,19 +132,19 @@ const DETAIL_FLOOR := [
 ## tree_shadows. High is the look the game had before budgets, so a
 ## full-strength desktop (High and up) is never drawn with less than that.
 const BUDGETS := [
-	{"grow_ms": 3.0, "woods": 0.6, "far_woods": 2000.0, "far_from": 0.6, "crops": false, "crop_m": 51.0, "crop_shadows": false,
+	{"grow_ms": 3.0, "woods": 0.6, "far_woods": 2000.0, "far_from": 0.6, "photo": false, "crops": false, "crop_m": 51.0, "crop_shadows": false,
 		"cars_m": 1400.0, "car_near_m": 160.0, "car_detail": false, "cars": 600,
 		"people_m": 180.0, "people": 400},
-	{"grow_ms": 3.0, "woods": 0.7, "far_woods": 2600.0, "far_from": 0.7, "crops": false, "crop_m": 51.0, "crop_shadows": false,
+	{"grow_ms": 3.0, "woods": 0.7, "far_woods": 2600.0, "far_from": 0.7, "photo": false, "crops": false, "crop_m": 51.0, "crop_shadows": false,
 		"cars_m": 1900.0, "car_near_m": 200.0, "car_detail": false, "cars": 1200,
 		"people_m": 250.0, "people": 1000},
-	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 3500.0, "far_from": 1.2, "crops": true, "crop_m": 60.0, "crop_shadows": false,
+	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 3500.0, "far_from": 1.2, "photo": true, "crops": true, "crop_m": 60.0, "crop_shadows": false,
 		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": false, "cars": 4000,
 		"people_m": 320.0, "people": 4000},
-	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4000.0, "far_from": 1.2, "crops": true, "crop_m": 77.0, "crop_shadows": false,
+	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4000.0, "far_from": 1.2, "photo": true, "crops": true, "crop_m": 77.0, "crop_shadows": false,
 		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "cars": 8000,
 		"people_m": 320.0, "people": 8000},
-	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4500.0, "far_from": 1.2, "crops": true, "crop_m": 81.0, "crop_shadows": true,
+	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4500.0, "far_from": 1.2, "photo": true, "crops": true, "crop_m": 81.0, "crop_shadows": true,
 		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "cars": 16000,
 		"people_m": 320.0, "people": 16000},
 ]
@@ -151,7 +154,7 @@ const BUDGETS := [
 ## no count caps.
 const NO_CAP := 1 << 30
 const INACTIVE := {"detail": 1.0, "shadow_m": 2000.0, "tree_shadows": true, "grow_ms": 4.0, "woods": 1.0, "far_woods": 3500.0,
-	"far_from": 1.0, "crops": false, "crop_m": 51.0, "crop_shadows": false, "cars_m": 2600.0,
+	"far_from": 1.0, "photo": false, "crops": false, "crop_m": 51.0, "crop_shadows": false, "cars_m": 2600.0,
 	"car_near_m": 240.0, "car_detail": false, "cars": NO_CAP, "people_m": 320.0, "people": NO_CAP}
 ## The browser caps how long a frame may spend growing detail (its one
 ## thread also runs the town).

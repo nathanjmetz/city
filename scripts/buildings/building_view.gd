@@ -328,13 +328,18 @@ static func build_for(type: String, storeys: int, s: int, to_curb: float, fit: D
 				built = TowerBuilder.build_tower(s, to_curb, fit, storeys, {}, "", true)
 			else:
 				built = MetroBuilder.build_apartments(s, to_curb, fit, storeys)
-		"shop": built = DenseBuilder.build_retail(s, to_curb, fit, spec)
+		"shop": built = DenseBuilder.build_retail(s, to_curb, fit, spec, level)
 		"shopping_center":
 			# A neighborhood center (the second stage) has a grocer anchor.
 			CommercialBuilder.force_shop = "center" if level >= 1 else "strip"
 			built = DenseBuilder.build_retail(s, to_curb, fit, spec)
 			CommercialBuilder.force_shop = ""
-		"mixed_use": built = DenseBuilder.build_mixed(s, to_curb, fit, storeys, spec)
+		"mixed_use":
+			# On a corner, an old corner store that grew a storey of flats.
+			built = CornerStore.build_grown(s, to_curb, fit, storeys, spec)
+			if built.is_empty():
+				built = DenseBuilder.build_mixed(s, to_curb, fit, storeys, spec)
+		"commercial_block": built = MainBlock.build(s, to_curb, fit, storeys, spec)
 		"office":
 			# Eight storeys and up is a downtown tower, built for its era.
 			if storeys >= 8:
@@ -360,6 +365,8 @@ func _spawn(key: String, refill := false) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = b.seed
 	var fit := _local_lot(lot, xf)
+	if fit.corner and int(b.zone) == ZoneMap.Zone.COMMERCIAL:
+		fit.side = SiteLayout.corner_side(sim.network, lot)
 	var drawn := _draw(key, lot, b, fit, rng.randi())
 	if drawn.is_empty():
 		return
@@ -424,7 +431,7 @@ func _spawn(key: String, refill := false) -> void:
 		foot.mesh = MeshParts.to_mesh(footing)
 		foot.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	ConstructionSite.add_to(root, [MeshParts.to_mesh(solid), MeshParts.to_mesh(draped), []],
-		CitySim.PROFILE_OF_ZONE.get(int(b.zone), "house"), func(): return sim.construction.state(ref, sim.tick_count),
+		str(sim.construction.sites[ref].profile), func(): return sim.construction.state(ref, sim.tick_count),
 		_site_done.bind(key, root, parts), foot)
 
 
@@ -507,7 +514,7 @@ func _set_trees(key: String, always := true) -> int:
 	# the building's own build date, so nothing new is saved.
 	var b: Dictionary = sim.buildings.get(key, {})
 	var when := {"planted": int(b.get("built", sim.tick_count)) + Construction.duration(
-		CitySim.PROFILE_OF_ZONE.get(int(b.get("zone", 0)), "house"))}
+		CitySim.profile_of(b))}
 	var mailbox := _mailbox_at(key)
 	# Which trees stand (by number), to tell whether anything changed.
 	var kept := PackedInt32Array()

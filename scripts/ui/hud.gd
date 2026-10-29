@@ -838,9 +838,12 @@ const VIEWS := [
 	["ore", "ore", "Ore", "Ore deposits. They never run out."],
 	["forest", "forest", "Forest", "Woodland for forestry. It grows back."],
 	["fire", "fire", "Fire", "Roads a fire station reaches"],
-	["police", "police", "Police", "Roads police patrol"],
-	["health", "health", "Health", "Roads a clinic reaches"],
+	["police", "police", "Police", "Streets police cruisers drove lately. Red: none has been by in a week."],
+	["health", "health", "Health", "Roads a clinic or hospital reaches"],
 	["school", "school", "Schools", "Roads within reach of a school"],
+	["mail", "mail", "Mail", "Streets the mail reached lately"],
+	["parks", "parks", "Parks", "How far each park lifts the land around it"],
+	["landfill", "landfill", "Landfill", "How far a landfill drags land values down, and a cemetery lifts them"],
 	["traffic", "flow", "Traffic", "How freely traffic moves"],
 	["bus", "bus", "Buses", "Bus routes and stops the depots planned, and how full the buses are"],
 	["network", "tower", "Cell and fiber", "Cell signal across the map, and the streets with fiber"],
@@ -904,6 +907,8 @@ func _show_view(key: String) -> void:
 		service_view.show_kind = cover[key]
 	elif service_tool.kind == ServiceTool.OFF:
 		service_view.show_kind = -1
+	service_view.show_area = {"mail": "mail", "parks": "parks", "landfill": "hubs"}.get(key, "")
+	service_view.show_patrols = key == "police"
 	if bus_view:
 		bus_view.show_routes = key == "bus"
 	if rail_view:
@@ -2105,6 +2110,15 @@ func _fill_traffic_row(row: HBoxContainer) -> void:
 		b.tooltip_text = entry[3]
 		b.pressed.connect(func(): traffic_tool.set_mode(m))
 		(entry[4] as HBoxContainer).add_child(b)
+		_traffic_cards[m] = b
+	var turns := _section(row, "Turns  ·  click where a road meets a junction")
+	for entry in [[TrafficTool.Mode.LANES, "lanes", "Lanes", "Lane arrows: click a lane at a junction to change which ways it may go; Shift-click to let the game choose"],
+			[TrafficTool.Mode.NO_LEFT, "noleft", "No left", "No Left Turn sign: click a road where it meets a junction"]]:
+		var m: int = entry[0]
+		var b := _card(entry[1], entry[2], "")
+		b.tooltip_text = entry[3]
+		b.pressed.connect(func(): traffic_tool.set_mode(m))
+		turns.add_child(b)
 		_traffic_cards[m] = b
 
 

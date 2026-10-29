@@ -11,3 +11,6 @@ From Poly Haven (https://polyhaven.com), CC0: "Clean Asphalt" by Dimitrios Savva
 (https://polyhaven.com/a/brushed_concrete), 2k colour, normal (OpenGL) and roughness maps. Used as
 close-up grain on streets, curbs and sidewalks on the desktop's High tier and up (Surfaces.PHOTOS).
 Desktop app only: the Web export leaves art/textures out.
+
+## Ground textures (art/pbr/)
+Photographed CC0 textures from Poly Haven for the desktop app's ground at High and up; each one's author, size and use are in art/pbr/SOURCES.md. Fetched by tools/textures/fetch.py. Desktop app only: the Web export leaves art/pbr out.

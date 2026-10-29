@@ -202,17 +202,50 @@ func _car(p: Dictionary) -> void:
 	_loft(gh, codes, PAINT, PAINT)
 	_wheels(p.axles, p.wr, hw, 0.24)
 	# Lights, grille, bumpers, mirrors, plate.
-	_box(Vector3(hw - 0.3, hood - 0.13, 0.08), Vector3(0.36, 0.1, 0.12), HEAD, true)
-	_box(Vector3(hw - 0.2, tail - 0.13, L - 0.06), Vector3(0.3, 0.12, 0.1), TAIL, true)
+	if _hi:
+		_car_face(p)
+		_car_rear(p)
+	else:
+		_box(Vector3(hw - 0.3, hood - 0.13, 0.08), Vector3(0.36, 0.1, 0.12), HEAD, true)
+		_box(Vector3(hw - 0.2, tail - 0.13, L - 0.06), Vector3(0.3, 0.12, 0.1), TAIL, true)
 	if _lo:
 		return
-	_box(Vector3(0, hood - 0.24, 0.04), Vector3(p.W * 0.42, 0.16, 0.08), p.get("grille", TRIM))
+	if not _hi:
+		_box(Vector3(0, hood - 0.24, 0.03), Vector3(p.W * 0.42, 0.16, 0.08), p.get("grille", TRIM))
 	_box(Vector3(0, c + 0.1, 0.1), Vector3(p.W - 0.3, 0.14, 0.16), TRIM)
 	_box(Vector3(0, c + 0.12, L - 0.1), Vector3(p.W - 0.3, 0.14, 0.16), TRIM)
 	_box(Vector3(0, tail - 0.3, L + 0.005), Vector3(0.3, 0.15, 0.02), WHITE)
 	_box(Vector3(hw + 0.07, belt + 0.07, p.a + 0.2), Vector3(0.14, 0.11, 0.08), PAINT, true)
 	if _hi:
 		_car_detail(p)
+
+
+## Ultra: a modern car's face on the nose itself, not tucked behind it:
+## slim headlamps in dark housings with an LED running-light strip, the
+## upper grille between them and the wide lower intake in the bumper.
+## Layers stand 6 mm apart so none of them fight.
+func _car_face(p: Dictionary) -> void:
+	var hw: float = p.W * 0.5
+	var y: float = p.hood - 0.15
+	var lx := hw - 0.33
+	_box(Vector3(lx, y, 0.044), Vector3(0.34, 0.1, 0.1), TRIM, true)
+	_box(Vector3(lx + 0.02, y + 0.01, 0.038), Vector3(0.26, 0.06, 0.1), HEAD, true)
+	_box(Vector3(lx, y - 0.04, 0.038), Vector3(0.32, 0.018, 0.1), HEAD, true)
+	_box(Vector3(0, y - 0.02, 0.044), Vector3(2.0 * (lx - 0.19), 0.12, 0.1), p.get("grille", TRIM))
+	_box(Vector3(0, p.clear + 0.3, 0.044), Vector3(p.W * 0.55, 0.16, 0.1), Color(0.03, 0.03, 0.03, 0.3))
+
+
+## Ultra: the back of a car on its tail, as the face is on its nose: tail
+## lamps across the corners with a clear reversing lamp in each, and the
+## dark lower fascia of the bumper.
+func _car_rear(p: Dictionary) -> void:
+	var hw: float = p.W * 0.5
+	var L: float = p.L
+	var y: float = p.tail - 0.14
+	var lx := hw - 0.33
+	_box(Vector3(lx, y, L - 0.044), Vector3(0.36, 0.12, 0.1), TAIL, true)
+	_box(Vector3(lx - 0.08, y - 0.02, L - 0.038), Vector3(0.1, 0.04, 0.1), Color(0.85, 0.85, 0.84, 0.4), true)
+	_box(Vector3(0, p.clear + 0.22, L - 0.044), Vector3(p.W * 0.7, 0.12, 0.1), Color(0.04, 0.04, 0.04, 0.3))
 
 
 func _sedan() -> void:  # Toyota Camry
@@ -522,8 +555,8 @@ func _pickup_ext() -> void:  # Chevrolet Silverado double cab, 6.5 ft bed
 func _pickup_old() -> void:
 	_truck(5.55, 3.05, [1.1, 4.45], false, 1.95, 1.82)
 	if not _lo:
-		_box(Vector3(0, 0.92, 0.035), Vector3(1.5, 0.3, 0.07), CHROME)
-		_box(Vector3(0, 0.45, 0.04), Vector3(1.9, 0.18, 0.12), CHROME)
+		_box(Vector3(0, 0.92, 0.01), Vector3(1.5, 0.3, 0.07), CHROME)
+		_box(Vector3(0, 0.46, 0.03), Vector3(1.9, 0.2, 0.12), CHROME)
 
 
 func _pickup_mid() -> void:  # Toyota Tacoma double cab, 5 ft bed
@@ -598,7 +631,7 @@ func _car_detail(p: Dictionary) -> void:
 	for x in [-0.35, 0.3]:
 		_box(Vector3(x, belt + 0.03, p.a + 0.1), Vector3(0.5, 0.015, 0.02), seam)
 	_box(Vector3(0, p.hood - 0.42, -0.005), Vector3(0.3, 0.15, 0.02), WHITE)
-	_box(Vector3(0, p.hood - 0.24, -0.005), Vector3(0.09, 0.06, 0.02), CHROME)
+	_box(Vector3(0, p.hood - 0.17, -0.008), Vector3(0.1, 0.06, 0.02), CHROME)
 
 
 # --- Pickups ----------------------------------------------------------------
@@ -627,13 +660,17 @@ func _truck(L: float, cab_end: float, wb: Array, work: bool, W := 2.03, H := 1.9
 	_loft(gh, [_edges(GLASS, PAINT, PAINT, GLASS), _edges(GLASS, PAINT, GLASS, PAINT),
 		_edges(PAINT, PAINT, PAINT, PAINT)], PAINT, PAINT)
 	# The open bed: dark floor between the bed rails.
-	_box(Vector3(0, belt + 0.002, (cab_end + 0.08 + L - 0.08) * 0.5), Vector3(W - 0.18, 0.004, L - cab_end - 0.2), DARK)
+	_box(Vector3(0, belt + 0.008, (cab_end + 0.08 + L - 0.08) * 0.5), Vector3(W - 0.18, 0.004, L - cab_end - 0.2), DARK)
 	_wheels(wb, 0.42, hw, 0.28)
-	_box(Vector3(hw - 0.28, 1.08, 0.06), Vector3(0.36, 0.16, 0.12), HEAD, true)
-	_box(Vector3(hw - 0.07, 1.05, L - 0.04), Vector3(0.12, 0.34, 0.08), TAIL, true)
+	if _hi:
+		_truck_face(hw, c, work)
+	else:
+		_box(Vector3(hw - 0.28, 1.08, 0.05), Vector3(0.36, 0.16, 0.12), HEAD, true)
+	_box(Vector3(hw - 0.07, 1.05, L - 0.03), Vector3(0.12, 0.34, 0.08), TAIL, true)
 	if _lo:
 		return
-	_box(Vector3(0, 0.9, 0.04), Vector3(1.3, 0.34, 0.08), CHROME if work else TRIM)
+	if not _hi:
+		_box(Vector3(0, 0.9, 0.03), Vector3(1.3, 0.34, 0.08), CHROME if work else TRIM)
 	_box(Vector3(0, c + 0.12, 0.05), Vector3(W - 0.1, 0.2, 0.14), CHROME if work else TRIM)
 	_box(Vector3(0, c + 0.12, L - 0.02), Vector3(W - 0.1, 0.18, 0.12), CHROME)
 	_box(Vector3(hw + 0.1, belt + 0.12, 1.95), Vector3(0.16, 0.2, 0.1), TRIM, true)
@@ -672,6 +709,31 @@ func _truck(L: float, cab_end: float, wb: Array, work: bool, W := 2.03, H := 1.9
 		if _hi:
 			for i in int(ll / 0.3):
 				_box(Vector3(0, 2.17, lz - ll * 0.5 + 0.15 + i * 0.3), Vector3(0.44, 0.03, 0.03), CHROME)
+
+
+## Ultra: a full-size pickup's face, after the F-150 / Silverado: a tall
+## grille between the headlamps with a chrome frame and two bars, lamp
+## housings with an LED running-light strip under and inside the lens, a
+## badge, and fog lamps in the bumper. Nothing stands out past 1.2 cm, so
+## an older truck's chrome grille still covers it.
+func _truck_face(hw: float, c: float, work: bool) -> void:
+	var gx := hw - 0.53
+	_box(Vector3(0, 0.94, 0.034), Vector3(gx * 2.0, 0.44, 0.08), Color(0.03, 0.03, 0.03, 0.3))
+	var trim := STEEL if work else CHROME
+	for y in [0.735, 1.145]:
+		_box(Vector3(0, y, 0.028), Vector3(gx * 2.0 + 0.04, 0.05, 0.084), trim)
+	_box(Vector3(gx, 0.94, 0.028), Vector3(0.04, 0.45, 0.084), trim, true)
+	for y in [0.87, 1.01]:
+		_box(Vector3(0, y, 0.028), Vector3(gx * 2.0, 0.055, 0.084), trim)
+	_box(Vector3(0, 0.94, 0.022), Vector3(0.2, 0.09, 0.084), Color(0.1, 0.2, 0.45, 0.4))
+	# Headlamps: dark housing, clear lens, C-shaped running light.
+	var lx := hw - 0.27
+	_box(Vector3(lx, 1.07, 0.044), Vector3(0.44, 0.22, 0.1), TRIM, true)
+	_box(Vector3(lx + 0.02, 1.095, 0.038), Vector3(0.34, 0.11, 0.1), HEAD, true)
+	_box(Vector3(lx, 0.98, 0.038), Vector3(0.42, 0.025, 0.1), HEAD, true)
+	_box(Vector3(lx - 0.2, 1.06, 0.038), Vector3(0.025, 0.18, 0.1), HEAD, true)
+	# Fog lamps in the bumper.
+	_box(Vector3(hw - 0.3, c + 0.12, -0.005), Vector3(0.14, 0.07, 0.05), HEAD, true)
 
 
 func _pickup() -> void:  # Ford F-150 SuperCrew, 5.5 ft bed
@@ -714,7 +776,7 @@ func _bucket_truck() -> void:
 	_beam(Vector3(0, 2.4, 6.2), Vector3(0, 2.45, 7.9), 0.24, Color(0.85, 0.85, 0.82, 0.4))
 	# Yellow fiberglass bucket hanging off the tail.
 	_box(Vector3(0, 2.25, 8.3), Vector3(0.75, 1.05, 0.75), Color(0.90, 0.72, 0.08, 0.4))
-	_box(Vector3(0, 2.0, 2.98), Vector3(1.2, 0.1, 0.2), BEACON_AMBER)
+	_box(Vector3(0, 2.04, 2.98), Vector3(1.2, 0.1, 0.2), BEACON_AMBER)
 	if not _lo:
 		_box(Vector3(0, 2.78, 8.3), Vector3(0.7, 0.02, 0.7), DARK)
 		_cyl(Vector3(0, 1.6, 3.95), Vector3(0, 2.5, 6.9), 0.07, CHROME, 6)
@@ -779,7 +841,7 @@ func _motorhome() -> void:
 			_box(Vector3(s * (hw + 0.005), 2.3, z), Vector3(0.006, 0.7, 1.4), GLASS)
 		_box(Vector3(s * (hw + 0.12), 2.6, 0.5), Vector3(0.06, 0.4, 0.12), TRIM)
 	if not _lo:
-		_box(Vector3(0, 0.75, 0.03), Vector3(1.4, 0.35, 0.06), CHROME)
+		_box(Vector3(0, 0.75, 0.02), Vector3(1.4, 0.35, 0.06), CHROME)
 		for z in [3.5, 8.0]:
 			_box(Vector3(0, 3.85, z), Vector3(0.75, 0.22, 0.9), WHITE)
 
@@ -830,7 +892,7 @@ func _van_body(L: float, W: float, H: float, box_from: float, box_h: float, box_
 	_box(Vector3(hw - 0.25, 0.92, 0.07), Vector3(0.34, 0.14, 0.12), HEAD, true)
 	_box(Vector3(hw - 0.06, 1.2, L - 0.02), Vector3(0.1, 0.4, 0.06), TAIL, true)
 	if not _lo:
-		_box(Vector3(0, 0.75, 0.04), Vector3(1.2, 0.3, 0.08), TRIM)
+		_box(Vector3(0, 0.75, 0.03), Vector3(1.2, 0.3, 0.08), TRIM)
 		_box(Vector3(0, c + 0.1, 0.06), Vector3(W - 0.15, 0.18, 0.14), TRIM)
 		_box(Vector3(hw + 0.12, 1.45, 1.05), Vector3(0.1, 0.32, 0.18), TRIM, true)
 
@@ -848,12 +910,12 @@ func _mail_truck() -> void:
 	_van_body(5.4, 2.05, 2.35, 1.9, 2.9, PAINT)
 	_wheels([0.95, 4.3], 0.38, 1.025, 0.26)
 	for s in [-1.0, 1.0]:
-		_box(Vector3(s * 1.027, 1.05, 3.6), Vector3(0.004, 0.12, 3.4), USPS_RED)
-		_box(Vector3(s * 1.027, 0.92, 3.6), Vector3(0.004, 0.12, 3.4), USPS_BLUE)
+		_box(Vector3(s * 1.029, 1.05, 3.6), Vector3(0.004, 0.12, 3.4), USPS_RED)
+		_box(Vector3(s * 1.029, 0.92, 3.6), Vector3(0.004, 0.12, 3.4), USPS_BLUE)
 	if not _lo:
 		# Eagle badge on the side and the sliding door's window.
-		_box(Vector3(1.028, 2.1, 3.2), Vector3(0.004, 0.45, 0.6), USPS_BLUE, true)
-		_box(Vector3(1.028, 1.75, 1.5), Vector3(0.004, 0.5, 0.5), GLASS, true)
+		_box(Vector3(1.031, 2.1, 3.2), Vector3(0.004, 0.45, 0.6), USPS_BLUE, true)
+		_box(Vector3(1.031, 1.75, 1.5), Vector3(0.004, 0.5, 0.5), GLASS, true)
 
 
 ## A rural carrier's own right-hand-drive Jeep Wrangler, with the roof
@@ -879,18 +941,18 @@ func _ambulance() -> void:
 	_wheels([1.1, 5.1], 0.4, 1.2, 0.3)
 	for s in [-1.0, 1.0]:
 		# The red band down the module and the cab doors, a pinstripe above.
-		_box(Vector3(s * 1.203, 1.12, 4.7), Vector3(0.004, 0.42, 4.6), EMS_RED)
-		_box(Vector3(s * 1.203, 2.74, 4.7), Vector3(0.004, 0.12, 4.6), EMS_RED)
-		_box(Vector3(s * 1.203, 0.98, 1.55), Vector3(0.004, 0.26, 1.5), EMS_RED)
-		_star(Vector3(s * 1.205, 2.0, 5.75), Vector3(s, 0, 0), 0.62)
+		_box(Vector3(s * 1.205, 1.12, 4.7), Vector3(0.004, 0.42, 4.6), EMS_RED)
+		_box(Vector3(s * 1.205, 2.74, 4.7), Vector3(0.004, 0.12, 4.6), EMS_RED)
+		_box(Vector3(s * 1.205, 0.98, 1.55), Vector3(0.004, 0.26, 1.5), EMS_RED)
+		_star(Vector3(s * 1.208, 2.0, 5.75), Vector3(s, 0, 0), 0.62)
 		if not _lo:
 			# Side entry door and its window, ahead of the star.
-			_box(Vector3(s * 1.204, 1.75, 3.2), Vector3(0.004, 1.9, 0.04), DARK)
-			_box(Vector3(s * 1.205, 2.25, 3.65), Vector3(0.004, 0.45, 0.6), GLASS)
+			_box(Vector3(s * 1.211, 1.75, 3.2), Vector3(0.004, 1.9, 0.04), DARK)
+			_box(Vector3(s * 1.211, 2.25, 3.65), Vector3(0.004, 0.45, 0.6), GLASS)
 	_star(Vector3(0, 3.004, 4.9), Vector3.UP, 1.5)  # on the roof
 	_star(Vector3(0, 2.15, 7.004), Vector3.BACK, 0.5)  # on the back doors
 	# A red band across the back, and the word over the cab in red.
-	_box(Vector3(0, 1.12, 7.003), Vector3(2.3, 0.42, 0.004), EMS_RED)
+	_box(Vector3(0, 1.12, 7.006), Vector3(2.3, 0.42, 0.004), EMS_RED)
 	_box(Vector3(0, 2.72, 2.396), Vector3(1.6, 0.22, 0.004), EMS_RED)
 	# Cab light bar: red, clear, red.
 	_box(Vector3(0, 2.42, 1.95), Vector3(1.7, 0.12, 0.26), TRIM)
@@ -915,8 +977,8 @@ func _star(c: Vector3, n: Vector3, size: float) -> void:
 	for k in 3:
 		var ang := PI / 3.0 * k
 		var a := u * cos(ang) + v * sin(ang)
-		_flat(c + n * 0.001, a, n, size, size * 0.3, PAINT)
-		_flat(c + n * 0.002, a, n, size * 0.86, size * 0.2, EMS_BLUE)
+		_flat(c + n * 0.002, a, n, size, size * 0.3, PAINT)
+		_flat(c + n * 0.008, a, n, size * 0.86, size * 0.2, EMS_BLUE)
 
 
 ## A flat strip on a face: centre, direction along it, the face's normal,
@@ -963,13 +1025,29 @@ func _md_cab(W: float, paint := PAINT) -> float:
 		[2.15, 1.7, 1.78, 2.75, hw - 0.12, hw - 0.12, hw - 0.2],
 		[3.0, 1.7, 1.78, 2.75, hw - 0.12, hw - 0.12, hw - 0.2],
 	], [_edges(GLASS, paint, paint, GLASS), _edges(paint, paint, GLASS, paint)], paint, paint)
-	_box(Vector3(0, 1.0, 0.03), Vector3(1.0, 0.65, 0.06), CHROME)
+	_box(Vector3(0, 1.0, 0.02), Vector3(1.0, 0.65, 0.06), CHROME)
 	_box(Vector3(0, 0.65, -0.05), Vector3(W - 0.2, 0.22, 0.2), CHROME if not _lo else TRIM)
-	_box(Vector3(hw - 0.4, 1.15, 0.12), Vector3(0.3, 0.16, 0.12), HEAD, true)
+	if _hi:
+		_heavy_face(hw - 0.42, 1.05, 1.0, 1.0, 0.65)
+	else:
+		_box(Vector3(hw - 0.4, 1.15, 0.12), Vector3(0.3, 0.16, 0.12), HEAD, true)
 	if not _lo:
 		for s in [-1.0, 1.0]:
 			_box(Vector3(s * (hw + 0.12), 2.1, 1.75), Vector3(0.06, 0.45, 0.14), TRIM)
 	return 3.0
+
+
+## Ultra: a truck cab's face (Freightliner M2 and Cascadia, Peterbilt): the
+## headlamps on the nose in dark housings with an amber marker, and dark
+## bars across the chrome grille (gw wide, gh high, centred at gy), each
+## layer 6 mm proud of the one behind.
+func _heavy_face(lx: float, ly: float, gw: float, gy: float, gh: float) -> void:
+	_box(Vector3(lx, ly, 0.044), Vector3(0.36, 0.2, 0.1), TRIM, true)
+	_box(Vector3(lx + 0.03, ly + 0.02, 0.038), Vector3(0.24, 0.12, 0.1), HEAD, true)
+	_box(Vector3(lx + 0.14, ly - 0.07, 0.038), Vector3(0.06, 0.04, 0.1), Color(1.0, 0.55, 0.05, 0.5), true)
+	var n := int(gh / 0.11)
+	for i in range(1, n):  # the lowest slot is behind the bumper
+		_box(Vector3(0, gy - gh * 0.5 + (i + 0.5) * gh / n, 0.034), Vector3(gw - 0.08, 0.035, 0.1), Color(0.05, 0.05, 0.05, 0.3))
 
 
 ## A 26 ft box truck on a Freightliner M2: the box takes the fleet's colour
@@ -1189,7 +1267,7 @@ func _school_bus() -> void:  # Type C conventional (Blue Bird Vision, IC CE)
 			_box(Vector3(s * (hw + 0.006), y, 6.9), Vector3(0.006, 0.07, 10.6), TRIM)
 		if not _lo:
 			for i in 12:
-				_box(Vector3(s * (hw + 0.008), 2.15, 2.25 + i * 0.85), Vector3(0.006, 0.72, 0.09), PAINT)
+				_box(Vector3(s * (hw + 0.012), 2.15, 2.25 + i * 0.85), Vector3(0.006, 0.72, 0.09), PAINT)
 	_wheels([1.0, 8.9], 0.5, hw, 0.3)
 	for x in [-0.9, 0.9]:
 		_box(Vector3(x, 2.85, 1.58), Vector3(0.16, 0.16, 0.06), BEACON_AMBER)
@@ -1219,6 +1297,23 @@ func _city_bus() -> void:  # 40 ft low-floor transit bus (Gillig, New Flyer)
 	_box(Vector3(hw - 0.25, 0.75, -0.02), Vector3(0.3, 0.16, 0.06), HEAD, true)
 	_box(Vector3(hw - 0.15, 1.1, L + 0.01), Vector3(0.14, 0.3, 0.04), TAIL, true)
 	_box(Vector3(0, 2.85, -0.03), Vector3(1.8, 0.22, 0.03), Color(1.0, 0.6, 0.1, 0.5))
+	if _lo:
+		return
+	# Window pillars down both sides, the two curb-side doors (glass leaves
+	# in dark frames) and a folded bike rack on the front, as on most US
+	# transit buses.
+	for s in [-1.0, 1.0]:
+		for i in 8:
+			if s > 0.0 and i == 4:
+				continue  # the back door
+			_box(Vector3(s * (hw + 0.012), 1.9, 1.8 + i * 1.3), Vector3(0.006, 1.0, 0.1), PAINT)
+	for z in [0.95, 6.9]:
+		_box(Vector3(hw + 0.016, 1.45, z), Vector3(0.006, 2.3, 1.2), DARK)
+		_box(Vector3(hw + 0.022, 1.5, z - 0.28), Vector3(0.006, 2.0, 0.5), GLASS)
+		_box(Vector3(hw + 0.022, 1.5, z + 0.28), Vector3(0.006, 2.0, 0.5), GLASS)
+	for x in [-0.6, 0.6]:
+		_box(Vector3(x, 0.75, -0.12), Vector3(0.05, 0.5, 0.05), STEEL)
+	_box(Vector3(0, 0.98, -0.16), Vector3(1.3, 0.05, 0.12), STEEL)
 
 
 ## A 45 ft intercity motorcoach (MCI J4500, Prevost H3-45): high deck over
@@ -1288,9 +1383,12 @@ func _tractor_unit(sleeper: bool) -> void:
 			_cyl(Vector3(s * 1.15, 1.7, back + 0.05), Vector3(s * 1.15, 4.0, back + 0.05), 0.09, CHROME)
 	_wheels([1.3], 0.52, hw, 0.32)
 	_wheels([back + 1.0, back + 2.3], 0.52, hw, 0.6)
-	_box(Vector3(0, 1.2, 0.03), Vector3(1.1, 0.75, 0.06), CHROME)
+	_box(Vector3(0, 1.2, 0.02), Vector3(1.1, 0.75, 0.06), CHROME)
 	_box(Vector3(0, 0.75, -0.06), Vector3(2.4, 0.25, 0.2), CHROME if not _lo else TRIM)
-	_box(Vector3(hw - 0.45, 1.25, 0.1), Vector3(0.36, 0.16, 0.12), HEAD, true)
+	if _hi:
+		_heavy_face(hw - 0.42, 1.2, 1.1, 1.2, 0.75)
+	else:
+		_box(Vector3(hw - 0.45, 1.25, 0.1), Vector3(0.36, 0.16, 0.12), HEAD, true)
 	if not _lo:
 		for s in [-1.0, 1.0]:
 			_box(Vector3(s * (hw + 0.14), 2.35, 2.0), Vector3(0.06, 0.5, 0.14), TRIM)
@@ -1946,16 +2044,16 @@ func _wheel(c: Vector3, r: float, w: float, rim: Color, upright := false) -> voi
 		# Sidewall, the rim lip, a dark barrel behind open spokes, the brake
 		# disc, five spokes and the centre cap.
 		_disc(face, ax * side, r * 0.66, Color(0.06, 0.06, 0.06, 0.3))
-		_disc(face + ax * side * 0.002, ax * side, r * 0.6, rim)
-		_disc(face + ax * side * 0.003, ax * side, r * 0.53, Color(0.03, 0.03, 0.03, 0.4))
-		_disc(face + ax * side * 0.004, ax * side, r * 0.36, STEEL)
+		_disc(face + ax * side * 0.006, ax * side, r * 0.6, rim)
+		_disc(face + ax * side * 0.012, ax * side, r * 0.53, Color(0.03, 0.03, 0.03, 0.4))
+		_disc(face + ax * side * 0.018, ax * side, r * 0.36, STEEL)
 		var u := ax.cross(Vector3.UP).normalized() if absf(ax.y) < 0.9 else Vector3.RIGHT
 		var v := ax.cross(u)
 		for k in 5:
 			var ang := TAU * k / 5.0
 			var dir := u * cos(ang) + v * sin(ang)
-			_beam(face + ax * side * 0.012 + dir * r * 0.12, face + ax * side * 0.012 + dir * r * 0.56, 0.09, rim)
-		_disc(face + ax * side * 0.016, ax * side, r * 0.14, rim)
+			_beam(face + ax * side * 0.026 + dir * r * 0.12, face + ax * side * 0.026 + dir * r * 0.56, 0.09, rim)
+		_disc(face + ax * side * 0.034, ax * side, r * 0.14, rim)
 
 
 func _disc(c: Vector3, normal: Vector3, r: float, col: Color) -> void:

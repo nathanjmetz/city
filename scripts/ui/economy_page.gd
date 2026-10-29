@@ -26,6 +26,10 @@ var _identity := UiStyle.label("", 15, UiStyle.TEXT, 600)
 var _sectors := UiStyle.label("", 11, UiStyle.MUTED)
 var _repaved := UiStyle.label("", 11, UiStyle.MUTED)
 var _due := DueBars.new()
+var _laws := {}         # law -> {"name": Label, "button": Button}
+var _no_council := UiStyle.label("The county makes the rules until the town incorporates.", 11, UiStyle.MUTED)
+var _chains := ProductionView.new()
+var _chains_arrow := Button.new()
 var _town := {}         # slider -> StepSlider
 var _areas := VBoxContainer.new()
 var _open_areas := {}   # area -> true while expanded
@@ -121,6 +125,49 @@ func _ready() -> void:
 	_sectors.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.add_child(_sectors)
 
+	# The council's ordinances (TownLaws), each with its trade-off on hover.
+	body.add_child(HSeparator.new())
+	body.add_child(UiStyle.label("TOWN LAWS", 10, UiStyle.MUTED))
+	_no_council.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.add_child(_no_council)
+	for law in TownLaws.LAWS:
+		var row := HBoxContainer.new()
+		body.add_child(row)
+		var name := UiStyle.label(str(TownLaws.LAWS[law].name), 12)
+		name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name.tooltip_text = str(TownLaws.LAWS[law].does)
+		name.mouse_filter = Control.MOUSE_FILTER_STOP
+		row.add_child(name)
+		var b := Button.new()
+		b.focus_mode = Control.FOCUS_NONE
+		b.add_theme_font_size_override("font_size", 11)
+		b.tooltip_text = name.tooltip_text
+		b.pressed.connect(func(): sim.apply({"type": "law", "law": law, "on": not sim.laws.has(law)}))
+		row.add_child(b)
+		_laws[law] = {"name": name, "button": b}
+	# Production chains (ProductionView): where the town's loads went, shut
+	# until opened.
+	body.add_child(HSeparator.new())
+	var chain_head := HBoxContainer.new()
+	chain_head.add_theme_constant_override("separation", 6)
+	body.add_child(chain_head)
+	_chains_arrow.flat = true
+	_chains_arrow.focus_mode = Control.FOCUS_NONE
+	_chains_arrow.custom_minimum_size = Vector2(20, 20)
+	_chains_arrow.text = "▸"
+	_chains_arrow.tooltip_text = "Show where the town's goods go"
+	chain_head.add_child(_chains_arrow)
+	var ch := UiStyle.label("PRODUCTION CHAINS", 10, UiStyle.MUTED)
+	ch.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	chain_head.add_child(ch)
+	_chains.setup(sim)
+	_chains.visible = false
+	body.add_child(_chains)
+	_chains_arrow.pressed.connect(func():
+		_chains.visible = not _chains.visible
+		_chains_arrow.text = "▾" if _chains.visible else "▸"
+		_chains.refresh())
+
 	# The whole town: the default every area follows.
 	body.add_child(HSeparator.new())
 	var town_head := HBoxContainer.new()
@@ -197,6 +244,16 @@ func refresh() -> void:
 	var who := character(sim.culture)
 	_identity.text = who[0]
 	_sectors.text = who[1]
+	var council := TownLaws.can_pass(sim)
+	_no_council.visible = not council
+	for law in _laws:
+		var on := sim.laws.has(law)
+		var b: Button = _laws[law].button
+		b.text = "Repeal" if on else ("Adopt · $%s" % CitySim.money_text(TownLaws.cost(law)) if TownLaws.cost(law) > 0 else "Adopt")
+		b.disabled = not council and not on
+		_laws[law].name.add_theme_color_override("font_color", UiStyle.TEXT if on else UiStyle.MUTED)
+	if _chains.visible:
+		_chains.refresh()
 	for area in _area_rows:
 		_area_rows[area].sum.text = _summary(area)
 		if _open_areas.has(area) and _hub_sig.get(area, []) != hubs_in(area):

@@ -1047,7 +1047,9 @@ vec3 crop_lin(vec3 c) {
 // it the plants are drawn for real, so the stripe under them is the shaded
 // ground between their leaves, not painted leaves.
 uniform vec4 plants_near = vec4(0.0);
-vec3 crop_look(ivec2 slot, vec2 at, float across, float aw, float tilt, float noise) {
+// `bare`: the share of the pixel that is soil, not plant (for the desktop's
+// real soil texture under TerrainView's photo detail).
+vec3 crop_look_bare(ivec2 slot, vec2 at, float across, float aw, float tilt, float noise, out float bare) {
 	vec4 t0 = crop_texel(slot, 0);
 	vec4 t1 = crop_texel(slot, 1);
 	vec4 t2 = crop_texel(slot, 2);
@@ -1081,6 +1083,24 @@ vec3 crop_look(ivec2 slot, vec2 at, float across, float aw, float tilt, float no
 	// Standing stalk rows in the stubble, a little lighter than the soil.
 	float stalks = (1.0 - smoothstep(0.25 - w, 0.25 + w, d)) * (1.0 - fade);
 	ground *= 1.0 + t1.a * mix(0.05, stalks * 0.25, 1.0 - fade) * step(0.25, t2.b);
+	// Planter and combine passes: a 12-row planter or a 30 ft drill or
+	// header covers 9.1 m a pass, and each pass seeds and grows a shade
+	// apart (aerial photos of Indiana fields show the bands well past where
+	// single rows blur). Cut small grain lies in a pale straw windrow down
+	// the middle of each pass until it is baled.
+	float pass_at = across / 9.144;
+	float pass_tone = fract(sin(floor(pass_at) * 91.7 + float(slot.x) * 7.3) * 43758.5453);
+	plant *= 0.93 + 0.14 * pass_tone;
+	ground *= 0.955 + 0.09 * pass_tone;
+	float windrow = 1.0 - smoothstep(0.07, 0.12 + aw / 9.144, abs(fract(pass_at) - 0.5));
+	vec4 t3 = crop_texel(slot, 3);
+	ground = mix(ground, ground * 1.3 + vec3(0.025, 0.022, 0.012), windrow * step(0.5, t3.b) * (1.0 - rowed) * (1.0 - cover));
+	bare = 1.0 - share;
 	return mix(ground, plant, share);
+}
+
+vec3 crop_look(ivec2 slot, vec2 at, float across, float aw, float tilt, float noise) {
+	float bare;
+	return crop_look_bare(slot, at, across, aw, tilt, noise, bare);
 }
 """

@@ -236,7 +236,10 @@ void fragment() {
 		vec4 ph = photo_at(p, near);
 		col *= mix(1.0, ph.x, 1.0 - cover);
 		rough = mix(rough, 0.75 + ph.y * 0.25, near);
-		NORMAL = photo_normal_view(ph.zw * (1.0 - cover), VIEW_MATRIX);
+		// Flat tops only: a curb's face and back keep their own slope.
+		if (dot(NORMAL, (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz) > 0.95) {
+			NORMAL = photo_normal_view(ph.zw * (1.0 - cover), VIEW_MATRIX);
+		}
 	}
 	ALBEDO = col;
 	ROUGHNESS = rough;

@@ -470,7 +470,7 @@ func carry_out(sim) -> void:
 static func _axis_of(type: String) -> String:
 	match type:
 		"office": return "office"
-		"shop", "mixed_use": return "trade"
+		"shop", "mixed_use", "commercial_block": return "trade"
 		"factory": return "manufacturing"
 	return "trade"
 

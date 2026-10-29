@@ -22,11 +22,14 @@ const WALK_Z := -1.05
 ## "aisle_z": float (z of the lane inside the lot cars drive along),
 ## "walk_z": float (front walk), "main_street": bool}. `lot` is the sim's
 ## lot, which the builders are fitted to (width, depth, outline).
-static func for_building(zone: int, bseed: int, lot := {}, storeys := 0, type := "", level := 0) -> Dictionary:
+static func for_building(zone: int, bseed: int, lot := {}, storeys := 0, type := "", level := 0,
+		net: RoadNetwork = null) -> Dictionary:
 	var r := RandomNumberGenerator.new()
 	r.seed = bseed
 	var art_seed := r.randi()  # BuildingView passes this to the builder
 	var fit := _fit(lot)
+	if zone == ZoneMap.Zone.COMMERCIAL and fit.has("art") and fit.art.corner:
+		fit.art.side = corner_side(net, lot)  # as BuildingView._spawn adds it
 	match zone:
 		ZoneMap.Zone.RESIDENTIAL:
 			if type == "duplex":
@@ -41,9 +44,9 @@ static func for_building(zone: int, bseed: int, lot := {}, storeys := 0, type :=
 		ZoneMap.Zone.COMMERCIAL:
 			if type == "office" and storeys < 8:
 				return office(art_seed, fit, storeys)
-			if type in ["mixed_use", "office"]:
+			if type in ["mixed_use", "commercial_block", "office"]:
 				return main_street()  # built to the sidewalk; its lot (if any) is out back
-			return shop(art_seed, fit, type == "shopping_center")
+			return shop(art_seed, fit, type == "shopping_center", level if type == "shop" else 1)
 		ZoneMap.Zone.INDUSTRIAL:
 			return factory(art_seed, fit)
 	return empty_lot()
@@ -109,9 +112,9 @@ static func house(art_seed: int, fit := {"half": LOT_HALF, "depth": 32.0}, store
 ## bank, gas station, strip center or church): its own painted stalls,
 ## pumps, curb cut and door, read from a dry run of the very same builder
 ## (DenseBuilder.site_plan), so cars never park where nothing is painted.
-static func shop(art_seed: int, fit := {"half": LOT_HALF, "depth": 32.0}, strip := false) -> Dictionary:
+static func shop(art_seed: int, fit := {"half": LOT_HALF, "depth": 32.0}, strip := false, level := 1) -> Dictionary:
 	var plan := DenseBuilder.site_plan(art_seed, fit.get("art", {"width": float(fit.half) * 2.0, "depth": fit.depth}),
-		strip)
+		strip, level)
 	if plan.main_street and plan.stalls.is_empty():
 		var out := main_street()
 		out.door = plan.door
@@ -176,6 +179,25 @@ static func factory(art_seed: int, fit := {"half": LOT_HALF, "depth": 32.0}) -> 
 
 
 ## The lot's frame in the world, as BuildingView places a building.
+## Which way (the lot's local x, +1 or -1) a corner lot's side street
+## lies: the street, not its own, beside one of its side lot lines. 0 when
+## it is not a corner lot or no network is given.
+static func corner_side(net: RoadNetwork, lot: Dictionary) -> float:
+	if net == null or not lot.get("corner", false) or not lot.has("front") or not lot.has("normal"):
+		return 0.0
+	var half := float(lot.get("width", LOT_HALF * 2.0)) * 0.5
+	# Far enough back that the lot's own street is out of reach.
+	var z := maxf(float(lot.get("depth", 32.0)) * 0.5, 14.0)
+	var best := 0.0
+	var best_d := INF
+	for s in [-1.0, 1.0]:
+		var hit := net.find_segment_near(world(lot, Vector2(s * half, z)), 13.0)
+		if not hit.is_empty() and int(hit.seg) != int(lot.get("seg", -1)) and float(hit.dist) < best_d:
+			best_d = float(hit.dist)
+			best = s
+	return best
+
+
 static func frame(lot: Dictionary) -> Transform3D:
 	return Transform3D(Basis.looking_at(-lot.normal, Vector3.UP), lot.front)
 

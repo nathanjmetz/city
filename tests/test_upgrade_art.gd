@@ -142,6 +142,18 @@ func _services() -> void:
 				missing.append(node.id)
 		_check(missing.is_empty(), "every %s upgrade draws something%s" % [Services.KINDS[pair[0]].name,
 			"" if missing.is_empty() else ": missing " + str(missing)])
+	# Fire and police stations (Stations): each piece on its own strip of
+	# land behind the first lot, or on the lot.
+	for kind in [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.CLINIC, Services.Kind.SCHOOL]:
+		var tree := Stations.tree(kind)
+		var missing := []
+		for node in tree:
+			var built := _with_requires(tree, node.id)
+			var without := built.filter(func(n): return n != node.id)
+			if _svc_verts(kind, _station_size(kind, built), built) == _svc_verts(kind, _station_size(kind, without), without):
+				missing.append(node.id)
+		_check(missing.is_empty(), "every %s upgrade draws something%s" % [Services.KINDS[kind].name,
+			"" if missing.is_empty() else ": missing " + str(missing)])
 	# Hybrids: the company's cabs change from old Crown Victorias.
 	var taxis := TaxiCo.new()
 	taxis.companies[5] = {"built": ["radio"]}
@@ -165,6 +177,13 @@ func _services() -> void:
 		counts.append(view._stops.mesh.surface_get_array_len(0))
 	view.free()
 	_check(counts[1] > counts[0] and counts[2] > counts[1], "the transfer center and park-and-ride show at the stops %s" % [counts])
+
+
+func _station_size(kind: int, built: Array) -> Vector2:
+	var size: Vector2 = Services.KINDS[kind].size
+	for key in built:
+		size.y += float(Stations.node(kind, key).get("grow", 0.0))
+	return size
 
 
 ## The phone company: middle-mile hut at the office, fixed wireless on the

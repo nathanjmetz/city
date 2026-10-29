@@ -206,7 +206,8 @@ func _apply_quality() -> void:
 	env.ssr_max_steps = 48
 	env.ssr_fade_out = 2.0
 	# Sunlight bouncing off lawns, walls and streets into the shade, the
-	# way a real street's shadows are never black (Cinematic only).
+	# way a real street's shadows are never black. No tier turns it on now
+	# (see GraphicsQuality.TIERS): its sky light made shade cobalt.
 	env.sdfgi_enabled = t.sdfgi
 	env.sdfgi_use_occlusion = true
 	env.sdfgi_cascades = 6

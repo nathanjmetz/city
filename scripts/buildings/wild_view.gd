@@ -297,7 +297,14 @@ func _wild_trees_in(area: Rect2, detail: bool) -> Array:
 		# and buildings BackdropView draws.
 		if in_town and Backdrop.inside(Vector2(p.pos.x + o.x, p.pos.z + o.y)):
 			continue
-		trees.append(facts(p, bottomland(wet, p.pos)))
+		var low := bottomland(wet, p.pos)
+		# ...nor out in a pond or river: where the ground lies under the
+		# water's level the water sheet is drawn (TerrainView), and the
+		# land cover's 10 m pixels let a tree stand out in it. Willows and
+		# silver maples still stand right at the edge.
+		if low and FarmsteadPlan.under_water(Vector2(p.pos.x + o.x, p.pos.z + o.y)):
+			continue
+		trees.append(facts(p, low))
 	return trees
 
 

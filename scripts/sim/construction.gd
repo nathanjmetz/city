@@ -93,6 +93,16 @@ const PROFILES := {
 		"words": ["Clearing the site", "Footings and the ground slab", "Setting the precast tees",
 			"Topping the decks and ramps", "Spandrels, stairs and the elevator", "Lighting and striping", "Planting"],
 		"deliveries": {"frame": [["flatbed", "precast double tees"]]}},
+	# A high-rise (7 storeys and up): deep foundations (piles or caissons and
+	# a mat), a structural frame topped out floor by floor under a tower
+	# crane, the curtain wall closing it in, then a long fit-out. Mid-size
+	# US apartment and office towers take about 18 to 24 months.
+	"highrise": {"frame": "steel", "weeks": [3, 8, 30, 14, 10, 22, 3], "found": 0.3,
+		"words": ["Clearing and excavating", "Piles and the foundation mat", "Topping out the frame floor by floor",
+			"Closing in the curtain wall", "Facade, roof and elevators", "Finishing the floors inside", "Paving and planting"],
+		"deliveries": {"foundation": [["concrete_mixer", "foundation concrete"]],
+			"frame": [["flatbed", "structural steel"], ["concrete_mixer", "floor deck concrete"]],
+			"dry_in": [["flatbed", "curtain wall panels"]]}},
 	# A phase of a subdivision, before any house (Subdivisions): the land is
 	# cleared and its topsoil stripped and stockpiled, rough graded, the
 	# sanitary sewer and storm drains laid deepest first, then the water
@@ -161,8 +171,12 @@ const STREET_SPEED := 11.0
 ## ref -> {profile, start (tick), front [x, z], out [x, z] (toward the street),
 ## to_curb, stage (last stage it sent trucks for), parked: [{kind, job, cargo}]}
 var sites := {}
-## Traffic trip id -> {ref, kind, job, cargo, inbound}
+## Traffic trip id -> {ref, kind, job, cargo, inbound, src (the town source
+## it came from, LocalSupply: {} for the highway)}
 var trips := {}
+## Loads that came from the town's own quarry, sawmill or metal works
+## (cargo -> loads), for the production chain page.
+var local_loads := {}
 ## [site ref, where the trip starts, road revision] -> Traffic.drive_ticks
 ## (not saved: worked out again the same way after a load).
 var _eta := {}
@@ -321,20 +335,19 @@ func _tick(sim: CitySim) -> void:
 					if not _has_crew(ref):
 						_send(sim, ref, "work_pickup", "crew", "building crew", _crew_base(sim, s),
 							int(s.start) + duration(s.profile))
-					if stage == 0:
-						for b in PROFILES[s.profile].get("brings", []):
-							_send(sim, ref, b[0], "delivery", b[1], sim.logistics._edge(sim, _pos(s)),
-								_deadline(s, [b[0], b[1], "delivery", int(b[2])]), int(b[2]), true)
 				var mid := (stage_start(s.profile, int(s.start), stage) + stage_start(s.profile, int(s.start), stage + 1)) / 2
 				for d in PROFILES[s.profile].get("deliveries", DELIVERIES).get(STAGES[stage], []):
 					var cargo: String = d[1]
 					if STAGES[stage] == "frame" and d[0] == "flatbed":
 						cargo = FRAME_CARGO[PROFILES[s.profile].frame]
-					_send(sim, ref, d[0], "delivery", cargo, sim.logistics._edge(sim, _pos(s)), mid, stage)
+					_deliver(sim, ref, s, d[0], cargo, mid, stage)
 		elif s.parked.size() > 0 and st.get("t", 0.0) > 0.5:
 			_leave(sim, ref, "delivery", stage)  # dropped off: back out halfway through
-		if stage < STAGES.size() and int(s.stage) >= 0 and sim.simulate_traffic and _yard_house(sim, s):
-			_from_yard(sim, ref, s)
+		if stage < STAGES.size() and int(s.stage) >= 0 and sim.simulate_traffic:
+			if _yard_house(sim, s):
+				_from_yard(sim, ref, s)
+			else:
+				_bring(sim, ref, s)
 		if stage >= STAGES.size():
 			_leave_all(sim, ref)
 			if s.parked.is_empty() and not _coming.has(ref):
@@ -366,6 +379,23 @@ func _from_yard(sim: CitySim, ref: String, s: Dictionary) -> void:
 			var sent := _send(sim, ref, n[0], n[2], n[1], y[0], _deadline(s, n), n[3], true, int(y[1]), false,
 				stage_start(s.profile, int(s.start), int(at)))
 			if sent >= 0:
+				break  # on its way, or it leaves in time for this pour
+
+
+## What a site with no builder's yard in town brings ("brings"), sent each
+## round until it's on its way: timed for the first of its pours it can
+## still make (the foundation, else the driveway), from the town's own
+## supplier when it has one (_deliver).
+func _bring(sim: CitySim, ref: String, s: Dictionary) -> void:
+	for b in PROFILES[s.profile].get("brings", []):
+		if b[1] in s.get("got", []) or _has(ref, s, b[1]):
+			continue
+		for at in b.slice(2):
+			var n := [b[0], b[1], "delivery", int(at)]
+			if sim.tick_count >= _deadline(s, n):
+				continue
+			if _deliver(sim, ref, s, n[0], n[1], _deadline(s, n), n[3], true,
+					stage_start(s.profile, int(s.start), int(at))) >= 0:
 				break  # on its way, or it leaves in time for this pour
 
 
@@ -566,6 +596,8 @@ func _send(sim: CitySim, ref: String, kind: String, job: String, cargo: String, 
 	_heading_in += 1
 	trips[id] = {"ref": ref, "kind": kind, "job": job, "cargo": cargo, "inbound": true, "until": until,
 		"brought": brought, "yard": yard}
+	if job == "delivery" and yard == -1 and str(base.get("ref", "edge")) != "edge":
+		trips[id].src = base
 	_coming[ref] = true
 	if job == "crew":
 		_crew_coming[ref] = true
@@ -591,6 +623,10 @@ func _arrive(sim: CitySim, t: Dictionary, vid := -1) -> void:
 			s.got.append(t.cargo)
 		s.parked.append({"kind": t.kind, "job": t.job, "cargo": t.cargo, "until": int(t.get("until", -1)),
 			"brought": bool(t.get("brought", false)), "yard": int(t.get("yard", -1))})
+		if t.has("src"):
+			s.parked[-1].src = t.src
+			LocalSupply.delivered(sim, t.src, t.cargo)
+			sim.chains.count(sim.calendar_tick(), ProductionChains.node_of(sim, str(t.src.ref)), "build", t.cargo)
 		if t.job == "crew" and int(t.get("yard", -1)) != -1 and int(s.get("yard", -1)) == -1:
 			# The builder's first draw now, the rest when the house is done.
 			s.yard = int(t.yard)
@@ -641,6 +677,11 @@ func _leave(sim: CitySim, ref: String, job: String, upto := 1 << 30) -> void:
 			else:
 				continue
 		var dest := _crew_base(sim, s) if job == "crew" else _edge_ahead(sim, s)
+		if p.has("src"):
+			# A local truck goes back to its quarry or mill.
+			var back := LocalSupply.home(sim, p.src)
+			if not back.is_empty():
+				dest = back
 		var id := -1
 		if not dest.is_empty() and sim.simulate_traffic:
 			_budget -= 1
@@ -720,6 +761,20 @@ func _find_yard(sim: CitySim) -> Dictionary:
 	return {}
 
 
+## Sends a site's load of `cargo`: from the town's own quarry, sawmill or
+## metal works when it has one in reach that can get it there in time
+## (LocalSupply), else in off the highway. As _send.
+func _deliver(sim: CitySim, ref: String, s: Dictionary, kind: String, cargo: String, by: int, until := -1,
+		brought := false, not_before := -1) -> int:
+	var src := LocalSupply.source(sim, cargo, _pos(s))
+	if not src.is_empty():
+		var went := _send(sim, ref, kind, "delivery", cargo, src, by, until, brought, -1, false, not_before)
+		if went != -1:
+			return went
+	return _send(sim, ref, kind, "delivery", cargo, sim.logistics._edge(sim, _pos(s)), by, until, brought, -1,
+		false, not_before)
+
+
 ## Where trucks stop: the site's own lot.
 static func _curb(ref: String, s: Dictionary) -> Dictionary:
 	return {"ref": ref, "pos": s.front}
@@ -757,12 +812,16 @@ func to_dict() -> Dictionary:
 	var t := {}
 	for id in trips:
 		t[str(id)] = trips[id]
-	return {"sites": sites.duplicate(true), "trips": t}
+	return {"sites": sites.duplicate(true), "trips": t, "local_loads": local_loads.duplicate()}
 
 
 func from_dict(d: Dictionary) -> void:
 	sites.clear()
 	trips.clear()
+	local_loads.clear()
+	var ll: Dictionary = d.get("local_loads", {})
+	for c in ll:
+		local_loads[str(c)] = int(ll[c])
 	var ss: Dictionary = d.get("sites", {})
 	for ref in ss:
 		var s: Dictionary = ss[ref]
