@@ -446,11 +446,61 @@ func _tw_glass(to_curb: float, width: float, storeys: int) -> void:
 		_shrub(Vector3(s * w * 0.3, 0.6, zf * 0.45), 0.6)
 	_box("concrete", Vector3(6.0, 0.9, 0.5), Vector3(0, 0.45, zf * 0.25), Color("#8f8b84"))
 	_sign(Vector3(0, 0.95, zf * 0.25 - 0.27), 5.0, 0.5)
+	_tw_plaza(width, zf, w)
 	if depth - (zf + d) > 12.0:
 		_parking(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 2.0, depth - 1.0, width)
 	for s in [-1.0, 1.0]:
 		var pick := TreeField.pick(rng)
 		trees.append([Vector3(s * (width * 0.5 - 3.0), 0, zf * 0.6), pick[0], pick[1], rng.randf_range(0.8, 1.0)])
+
+
+## A modernist tower's plaza (Mies's Federal Center and IBM plazas in
+## Chicago, the bank plazas of downtown Indianapolis): granite paving on a
+## grid of joints, honey locusts in square grates, long granite benches,
+## and on most a public sculpture of painted steel or weathering Cor-ten
+## plates (Calder's Flamingo, Chicago's percent-for-art pieces). Its own
+## random numbers, so the builder's don't move.
+func _tw_plaza(width: float, zf: float, w: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "plaza"])
+	var x0 := -width * 0.5 + 0.5
+	var x1 := width * 0.5 - 0.5
+	var joint := Color("#7d7a74")
+	if fine:
+		var x := x0 + 3.0
+		while x < x1:
+			_flat_rect("line", x - 0.04, x + 0.04, 0.2, zf - 0.2, 0.065, joint)
+			x += 3.0
+		var z := 3.0
+		while z < zf - 0.5:
+			_flat_rect("line", x0, x1, z - 0.04, z + 0.04, 0.065, joint)
+			z += 3.0
+	# Honey locusts in grates along the street side, clear of the planters.
+	var n := maxi(2, int((width - 4.0) / 12.0)) if r.randf() < 0.65 else 0
+	for i in n:
+		var tx := lerpf(x0 + 3.0, x1 - 3.0, (i + 0.5) / n)
+		if absf(absf(tx) - w * 0.3) < 2.5 or absf(tx) < 4.0:
+			continue
+		_flat_rect("line", tx - 0.9, tx + 0.9, 1.4, 3.2, 0.068, Color("#3a3836"))
+		var tint: Color = TreeField.LEAF[TreeField.Species.LOCUST]
+		trees.append([Vector3(tx, 0, 2.3), TreeField.Species.LOCUST, tint.lightened(r.randf_range(-0.05, 0.08)), r.randf_range(0.65, 0.8)])
+	# Long granite benches facing the street.
+	for sx in [-1.0, 1.0]:
+		_box("concrete", Vector3(3.2, 0.45, 0.7), Vector3(sx * (w * 0.3), 0.225, zf * 0.72), Color("#9a958c"))
+	# The sculpture, beside the tower where the plaza is wide enough.
+	if r.randf() < 0.7 and (width - w) * 0.5 >= 9.0:
+		var red := r.randf() < 0.5
+		var col := Color("#c23a2b") if red else Color("#6e4126")
+		var at := Vector3((w * 0.5 + (width - w) * 0.25) * (1.0 if r.randf() < 0.5 else -1.0), 0, zf + 5.0)
+		var h := r.randf_range(6.0, 9.0)
+		# Three bent plates leaning in on each other, and a low arch between.
+		for k in 3:
+			var a := TAU * k / 3.0 + r.randf_range(-0.3, 0.3)
+			var foot := at + Vector3(cos(a), 0, sin(a)) * 2.4
+			var lean := Basis(Vector3(-sin(a), 0, cos(a)), 0.32) * Basis(Vector3.UP, -a)
+			_box("metal", Vector3(0.12, h, 1.4), foot + Vector3(0, h * 0.5, 0) + (at - foot) * 0.35, col, lean)
+		_box("metal", Vector3(3.6, 0.5, 0.12), at + Vector3(0, h * 0.62, 0), col, Basis(Vector3.UP, r.randf_range(0.0, PI)))
+		_box("concrete", Vector3(6.0, 0.1, 6.0), at + Vector3(0, 0.05, 0), Color("#8f8b84"))
 
 
 ## The International Style box: a dark core wrapped in glass floor by
