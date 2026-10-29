@@ -55,6 +55,7 @@ var want := Callable()
 var _key := ""
 var _source := ""
 var _spot := false
+var _shops := false
 var _hover := Vector3.INF
 var _arrows := MultiMeshInstance3D.new()
 var _arrow_y := {}
@@ -201,6 +202,7 @@ func _use(w: Dictionary) -> void:
 	if not Balance.POLLUTION_SOURCES.has(_source):
 		_source = ""
 	_spot = bool(w.get("spot", false))
+	_shops = bool(w.get("shops", false))
 	_arrows.visible = not w.is_empty()
 	_card.visible = false
 	_set_base(_wind_line())
@@ -601,6 +603,12 @@ func _spot_text() -> String:
 	lines.append("Here: " + (", ".join(parts) if not parts.is_empty() else "clean air and quiet") + ".")
 	if s.smoke >= Balance.HURT_SMOKE or s.noise >= Balance.HURT_NOISE_DB:
 		lines.append("Homes here would be hurt by it.")
+	if _shops:
+		# Like businesses gathered here (Clusters): what new shops lean to.
+		var near := RoadIndex.segment_near(sim.network, _hover, 40.0)
+		var c := Clusters.hint(sim, _hover, int(near.seg) if not near.is_empty() else -1)
+		if c != "":
+			lines.append(c)
 	return "\n".join(lines)
 
 

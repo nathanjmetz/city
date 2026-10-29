@@ -126,7 +126,7 @@ func _init() -> void:
 			"care": meshes = HouseBuilder.build(seed * 100, 3.9, {"width": w, "depth": 48.0}, 1)
 			"rows":
 				# Row homes of each kind, two storeys and three.
-				MetroBuilder.force_row = ["townhomes", "urban", "mansard", "urban", "row"][i]
+				MetroBuilder.force_row = ["colonial", "urban", "mansard", "colonial", "row"][i]
 				meshes = MetroBuilder.build_row(sd, 3.9, {"width": w, "depth": 45.0}, 3, 2 + i % 2)
 				MetroBuilder.force_row = ""
 			"infill":
@@ -140,8 +140,8 @@ func _init() -> void:
 				meshes = DenseBuilder.build_mixed(sd, 3.9, {"width": w, "depth": 40.0, "era": era}, [2, 3, 2, 3, 4][i])
 			"walkups":
 				# Postwar walk-ups: split-entry, mansard and the plain block.
-				MetroBuilder.force_row = ["split", "split", "walkmansard", "walkmansard", "plain"][i]
-				meshes = MetroBuilder.build_apartments(sd, 3.9, {"width": w, "depth": 50.0, "era": "postwar"}, [2, 3, 2, 3, 3][i])
+				MetroBuilder.force_row = ["split", "walkmodern", "walkmansard", "walkmodern", "plain"][i]
+				meshes = MetroBuilder.build_apartments(sd, 3.9, {"width": w, "depth": 50.0, "era": ["postwar", "recent", "postwar", "recent", "postwar"][i]}, [2, 3, 2, 2, 3][i])
 				MetroBuilder.force_row = ""
 			"garden":
 				MetroBuilder.force_row = "garden"
