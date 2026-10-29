@@ -236,6 +236,7 @@ func _house(to_curb: float, storeys := 0) -> Array:
 		_board_up(body.arrays.get("glass", []))
 	if _kept:
 		_bonus_room(info, body.paint)
+		_sun_porch(info, body.paint)
 	if grown >= 1:
 		_addition(info, body.paint)
 	if grown >= 2:
@@ -645,6 +646,52 @@ func _plan(storeys: int, info_only := false) -> Dictionary:
 	return _placed(body, gs, zf, paint, dx)
 
 
+## A foursquare's front porch closed in as a sun porch, the way so many of
+## Indiana's 1900s-1920s foursquares (Marion, Muncie, Kokomo) gained a room:
+## a sided knee wall where the rail was, a band of windows between the
+## posts up to the porch beam, and a door at the top of the steps.
+func _sun_porch(h: Dictionary, paint: Dictionary) -> void:
+	if h.get("kind", "") != "foursquare" or not h.has("porch") or outline.size() >= 3:
+		return
+	var pr: Rect2 = h.porch
+	var fz := pr.position.y + 0.3  # the post line
+	var px0 := pr.position.x + 0.25
+	var px1 := pr.end.x - 0.25
+	var zb := pr.end.y
+	var floor_y := 0.65
+	var knee := 0.9
+	var gy0 := floor_y + knee + 0.05
+	var gh := 3.45 - gy0 - 0.05
+	var door_x: float = h.door_x
+	var siding: Color = paint.siding
+	# The knee wall, broken for the door.
+	for span in [[px0, door_x - 0.6], [door_x + 0.6, px1]]:
+		if span[1] - span[0] > 0.2:
+			_box("siding", Vector3(span[1] - span[0], knee, 0.14), Vector3((span[0] + span[1]) * 0.5, floor_y + knee * 0.5, fz), siding)
+			_box("paint", Vector3(span[1] - span[0] + 0.04, 0.07, 0.24), Vector3((span[0] + span[1]) * 0.5, floor_y + knee + 0.03, fz), TRIM)
+	for x in [px0, px1]:
+		_box("siding", Vector3(0.14, knee, zb - fz), Vector3(x, floor_y + knee * 0.5, (fz + zb) * 0.5), siding)
+		_box("paint", Vector3(0.24, 0.07, zb - fz), Vector3(x, floor_y + knee + 0.03, (fz + zb) * 0.5), TRIM)
+	# Windows all round between the posts.
+	var n := maxi(3, roundi((px1 - px0) / 1.0))
+	var pw := (px1 - px0) / n
+	for i in n:
+		var x := px0 + (i + 0.5) * pw
+		if absf(x - door_x) < 0.7:
+			continue
+		_glass(Vector3(x, gy0 + gh * 0.5, fz - 0.02), Vector3(-1, 0, 0), pw - 0.1, gh - 0.08, 0.0)
+		_box("paint", Vector3(0.07, gh, 0.08), Vector3(x - pw * 0.5, gy0 + gh * 0.5, fz - 0.03), TRIM)
+	for x in [px0, px1]:
+		var sn := maxi(1, roundi((zb - fz) / 1.0))
+		for i in sn:
+			var z := fz + (i + 0.5) * (zb - fz) / sn
+			_glass(Vector3(x, gy0 + gh * 0.5, z), Vector3(0, 0, 1.0 if x < door_x else -1.0), (zb - fz) / sn - 0.1, gh - 0.08, 0.0)
+	# The door: a half-glass storm door at the head of the steps.
+	_box("paint", Vector3(0.95, 2.05, 0.06), Vector3(door_x, floor_y + 1.03, fz), TRIM)
+	_glass(Vector3(door_x, floor_y + 1.45, fz - 0.04), Vector3(-1, 0, 0), 0.7, 0.9, 0.0)
+	_box("paint", Vector3(1.2, 2.75, 0.06), Vector3(door_x, floor_y + 1.38, fz + 0.02), TRIM)
+
+
 ## A colonial's "bonus room" over its attached garage, how owners of the
 ## 1990s-2010s two-storey colonials in Indiana subdivisions (Fishers,
 ## Carmel, Avon) finish more space when they grow: the garage wing's walls
@@ -886,7 +933,7 @@ static func _placed_info(info: Dictionary, gs: float, zf: float, dx := 0.0) -> D
 			"x0": v = (-info.x1 if gs < 0.0 else v) + dx
 			"x1": v = (-info.x0 if gs < 0.0 else v) + dx
 			"bed": v = [-v[1] + dx, -v[0] + dx] if gs < 0.0 else [v[0] + dx, v[1] + dx]
-			"keep_out", "deck":
+			"keep_out", "deck", "porch":
 				var r: Rect2 = v
 				v = Rect2((-r.end.x if gs < 0.0 else r.position.x) + dx, r.position.y + zf, r.size.x, r.size.y)
 		out[k] = v
@@ -1417,7 +1464,8 @@ func _foursquare(zf: float, gs: float, siding: Color, roof: Color, shutter: Colo
 	var g := _back_garage(at[1], zf + d, siding, roof)
 	return {"drive_x": at[1], "drive_w": 2.8, "garage_z": g.garage_z, "door_x": door_x,
 		"walk_z": zf - pd - 0.9, "front_z": zf - pd, "x0": x0, "x1": x1, "gs": gs,
-		"bed": [x0 + 0.3, x1 - 0.3], "keep_out": g.keep_out, "garage_x": g.garage_x, "garage_w": g.garage_w}
+		"bed": [x0 + 0.3, x1 - 0.3], "keep_out": g.keep_out, "garage_x": g.garage_x, "garage_w": g.garage_w,
+		"porch": Rect2(x0, zf - pd, w, pd)}
 
 
 ## Craftsman bungalow, 1910-1930: one and a half storeys with the gable to
