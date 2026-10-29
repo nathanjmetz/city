@@ -78,6 +78,16 @@ enum Rule { NONE, SIGNAL, ALL_STOP, PRIORITY }
 enum Turn { STRAIGHT, RIGHT, LEFT, UTURN }
 enum Light { GREEN, YELLOW, RED }
 
+## Metres along the new street a long vehicle takes to ease back into its
+## own lane after swinging wide round a corner.
+const WIDE_BLEND := 15.0
+## Metres between a lane's centre and a wide-turning truck's path that a
+## waiting car needs: half a truck, half a car and a little room.
+const SWEEP_CLEAR := 2.8
+## Metres before its stop line a long vehicle claims the corner it will
+## swing across, so oncoming drivers wait back for it.
+const SWEEP_CALL := 40.0
+
 ## Metres along the street a car takes to swing into or out of a driveway.
 const DRIVEWAY_LEAD := 6.0
 ## Metres before a lot's entrance a car starts its turn into it.
@@ -170,8 +180,10 @@ var _tcost := {}  # way -> PackedFloat64Array, _turn_cost for each of _turns[way
 var _wend := {}   # way -> where it ends (x, z), for the route planner's estimate
 var _vtop := 1.0  # the fastest limit on any way, m/s
 var _wcost := {}  # way -> _way_cost now (_refresh_wcost)
-var _cfor := {}   # Vector3i(way, lane, next) -> _conn_for's answer
+var _cfor := {}   # Vector4i(way, lane, next, wide radius) -> _conn_for's answer
 var _conns := {}  # Vector4i(way, lane, next, lane) -> junction path
+var _wide := {}   # [way, lane, next, lane, radius] -> a long vehicle's wide turn
+var _hold := {}   # way * 8 + lane -> [where its front car waits, the truck swinging wide]
 var _conflict := {}
 var _next_conn := 1
 var _speed := {}  # way -> smoothed share of the limit cars manage there
@@ -182,6 +194,7 @@ var _tick := 0
 # Rebuilt every tick.
 var _lanes := {}     # way * 8 + lane -> cars, front first
 var _box := {}       # node -> cars crossing it
+var _tails := {}     # node -> paths a vehicle's back end is still on, its front out
 var _committed := {} # node -> cars about to cross it
 var _approach := {}  # node -> [{car, conn, ds}] for the first car in each lane
 var _xings := {}     # way -> [[s along the way, rail crossing]] (_find_xings)
@@ -1165,7 +1178,7 @@ static func _conn_key(c):
 	if c == null or c is Array or c.has("drive") or c.has("poly"):
 		return c  # still saved form (loaded, roads not rebuilt yet)
 	if c.id >= 0:
-		return [c.wi, c.li, c.wo, c.lo]
+		return [c.wi, c.li, c.wo, c.lo, c.wide] if c.has("wide") else [c.wi, c.li, c.wo, c.lo]
 	if c.has("rev"):
 		return {"poly": c.pts, "rev": c.rev, "wi": c.wi, "li": c.li, "wo": c.wo, "lo": c.lo,
 			"exit_d": c.exit_d, "vt": c.vt}
@@ -1179,6 +1192,8 @@ func _from_key(k):
 	if k is Array:
 		if not ways.has(k[0]) or not ways.has(k[2]):
 			return null
+		if k.size() > 4:
+			return _wide_connector(k[0], k[1], k[2], k[3], k[4])
 		return _connector(k[0], k[1], k[2], k[3])
 	if k.has("poly"):
 		return _poly_path({"node": -1, "wi": k.wi, "li": k.li, "wo": k.wo, "lo": k.lo, "turn": Turn.RIGHT,
@@ -1210,6 +1225,7 @@ func _rebuild() -> void:
 	_arrows.clear()
 	_kind.clear()
 	_conns.clear()
+	_wide.clear()
 	_cfor.clear()
 	_conflict.clear()
 	var seg_ids := network.segments.keys()
@@ -1272,6 +1288,10 @@ func _rebuild() -> void:
 			var s2: Dictionary = network.segments[segs[1]]
 			if s1.type != s2.type or network.is_oneway(segs[0]) != network.is_oneway(segs[1]):
 				sb = 5.0
+			elif _bend(n, segs) > deg_to_rad(35.0):
+				# A street turning a corner: traffic rounds the curb rather
+				# than pivoting on the spot, and a truck has room to swing.
+				sb = _stop_back_plain(segs)
 		setback[n] = sb
 		# People cross at the crosswalk, just ahead of the stop bar.
 		_walk_back[n] = sb - CROSSWALK_AHEAD if sb > CROSSWALK_AHEAD + 1.0 and segs.size() >= 3 \
@@ -1474,6 +1494,20 @@ func _stop_back(segs: Array) -> float:
 	return hw + r + STOP_PAST_RETURN
 
 
+## How sharply the road turns at a node where two segments meet (0 when
+## one runs straight on into the other).
+func _bend(n: int, segs: Array) -> float:
+	var outs := []
+	for id in segs:
+		var cv: Array = network.curve_of(id)
+		var at_a: bool = network.segments[id].a == n
+		var d: Vector3 = (cv[1] - cv[0]) if at_a else (cv[1] - cv[2])
+		if Vector2(d.x, d.z).length() < 0.01:
+			d = (cv[2] - cv[0]) if at_a else (cv[0] - cv[2])
+		outs.append(Vector2(d.x, d.z).normalized())
+	return PI - absf(outs[0].angle_to(outs[1]))
+
+
 func _stop_back_plain(segs: Array) -> float:
 	var hw := 0.0
 	for id in segs:
@@ -1538,6 +1572,126 @@ func _connector(wi: int, li: int, wo: int, lo: int) -> Dictionary:
 	_next_conn += 1
 	_conns[key] = c
 	return c
+
+
+## Long vehicles can't turn right inside a town corner: AASHTO's design
+## turning radius is 42 ft for a single-unit truck or bus (SU-30) and 45 ft
+## for a tractor-trailer (WB-67), against about 15 ft for a town curb. So
+## they pull well into the junction, swing out across the far lane of the
+## street they turn into and ease back into their own lane (FHWA truck
+## turning templates). Metres, for the path of the vehicle's front.
+static func wide_radius(vlen: float) -> float:
+	if vlen >= 15.0:
+		return 13.0
+	if vlen >= 9.0:
+		return 12.0
+	return 0.0
+
+
+## The wide right turn a long vehicle takes, or the usual path where the
+## corner is roomy enough. It carries "sweep": for each lane coming into
+## the junction that the swing crosses short of its stop line, where cars
+## there must hold back while the truck turns.
+func _wide_connector(wi: int, li: int, wo: int, lo: int, r: float) -> Dictionary:
+	var c0 := _connector(wi, li, wo, lo)
+	if c0.turn != Turn.RIGHT or r <= 0.0:
+		return c0
+	var key := [wi, li, wo, lo, int(r)]
+	if _wide.has(key):
+		return _wide[key]
+	var a: Dictionary = ways[wi]
+	var b: Dictionary = ways[wo]
+	var da: Vector3 = c0.d0
+	var db: Vector3 = c0.d1
+	var p0: Vector3 = c0.pts[0]
+	var p2: Vector3 = c0.pts[c0.pts.size() - 1]
+	var ang := atan2(da.x * db.z - da.z * db.x, da.dot(db))
+	var th := absf(ang)
+	var half := tan(th * 0.5)
+	var out := Vector3(da.x, 0.0, da.z) - db * da.dot(db)  # along the old heading, across the new road
+	if half < 0.05 or out.length() < 0.2:
+		_wide[key] = c0
+		return c0
+	out = out.normalized()
+	# One lane over: the next lane, or on a two-way street the oncoming one.
+	var lat := 3.6
+	if b.lanes > 1:
+		lat = absf(float(b.offs[1]) - float(b.offs[0]))
+	elif absf(float(b.offs[lo])) > 0.5:
+		lat = absf(float(b.offs[lo])) * 2.0
+	# Where the old lane line meets the new one, shifted a lane over.
+	var shifted := p2 + out * lat
+	var den := da.x * db.z - da.z * db.x
+	var t := ((shifted.x - p0.x) * db.z - (shifted.z - p0.z) * db.x) / den
+	var t_nat := ((p2.x - p0.x) * db.z - (p2.z - p0.z) * db.x) / den
+	if t_nat / half >= r or t <= 0.0:
+		_wide[key] = c0  # a roomy corner: the usual turn will do
+		return c0
+	var rr := minf(r, t / half)  # as wide as one lane over allows
+	var tl := rr * half
+	var corner := p0 + da * t
+	var a0 := corner - da * tl
+	var a1 := corner + db * tl
+	var d_a1: float = b.s0 + (a1 - p2).dot(db)
+	var d_end := minf(d_a1 + WIDE_BLEND, b.s1 - 1.0)
+	if d_end - d_a1 < 4.0:
+		_wide[key] = c0  # too short a street to straighten out on
+		return c0
+	var pts := PackedVector3Array([p0])
+	if a0.distance_to(p0) > 0.5:
+		pts.append(a0)
+	var nrm := Vector3(-da.z, 0.0, da.x) * signf(ang)
+	var centre := a0 + nrm * rr
+	var rel := a0 - centre
+	for i in range(1, 11):
+		var phi := ang * i / 10.0
+		pts.append(centre + Vector3(rel.x * cos(phi) - rel.z * sin(phi), 0.0, rel.x * sin(phi) + rel.z * cos(phi)))
+	var f0 := _way_dir(b, d_a1)
+	var side := signf(out.dot(Vector3(-f0.z, 0.0, f0.x)))
+	for i in range(1, 7):
+		var d := lerpf(d_a1, d_end, i / 6.0)
+		var f := _way_dir(b, d)
+		pts.append(_lane_point(b, lo, d) + Vector3(-f.z, 0.0, f.x) * side * lat * (1.0 - smoothstep(0.0, 1.0, i / 6.0)))
+	for i in pts.size():
+		pts[i].y = lerpf(p0.y, p2.y, clampf(float(i) / (pts.size() - 1), 0.0, 1.0))
+	var cum := PackedFloat32Array([0.0])
+	for i in range(1, pts.size()):
+		cum.append(cum[i - 1] + pts[i].distance_to(pts[i - 1]))
+	var c := {"id": _next_conn, "node": a.to, "wi": wi, "li": li, "wo": wo, "lo": lo, "wide": int(r),
+		"turn": Turn.RIGHT, "pts": pts, "cum": cum, "len": cum[cum.size() - 1], "vt": c0.vt,
+		"exit_d": d_end, "ctrl": corner, "d0": da, "d1": _way_dir(b, d_end), "rev": 0.0,
+		"sweep": _sweep(a.to, wi, pts)}
+	_next_conn += 1
+	_wide[key] = c
+	return c
+
+
+## Lanes into node `n` (other than `wi`) that a path crosses before their
+## stop line: way * 8 + lane -> where a car there must stop short of it.
+func _sweep(n: int, wi: int, pts: PackedVector3Array) -> Dictionary:
+	var out := {}
+	for wk in _in.get(n, []):
+		if wk == wi:
+			continue
+		var w: Dictionary = ways[wk]
+		for l in w.lanes:
+			var hold := INF
+			var d: float = w.s1 - 0.5
+			while d > maxf(w.s1 - 30.0, 0.0):
+				var p := _lane_point(w, l, d)
+				var near := false
+				for i in pts.size() - 1:
+					var q := Geometry2D.get_closest_point_to_segment(Vector2(p.x, p.z),
+						Vector2(pts[i].x, pts[i].z), Vector2(pts[i + 1].x, pts[i + 1].z))
+					if q.distance_to(Vector2(p.x, p.z)) < SWEEP_CLEAR:
+						near = true
+						break
+				if near:
+					hold = d - 1.0
+				d -= 0.5
+			if hold < INF:
+				out[wk * 8 + l] = maxf(hold, 0.0)
+	return out
 
 
 ## Whether two junction paths cross or merge.
@@ -4816,6 +4970,7 @@ func _tally_speeds(way_sum: Dictionary, speed_sum: float, limit_sum: float) -> v
 func _snapshot() -> void:
 	_lanes.clear()
 	_box.clear()
+	_tails.clear()
 	_committed.clear()
 	_approach.clear()
 	_merging.clear()
@@ -4834,6 +4989,14 @@ func _snapshot() -> void:
 		if not _lanes.has(key):
 			_lanes[key] = []
 		_lanes[key].append(car)
+		# Out of the junction at the front but not yet at the back: a semi's
+		# trailer still sweeps the box for a good 20 m after its cab leaves.
+		var pj = car.get("pj")
+		if pj != null and pj is Dictionary and pj.get("node", -1) >= 0 and pj.wo == car.route[car.leg] \
+				and car.d - car.len < pj.exit_d:
+			if not _tails.has(pj.node):
+				_tails[pj.node] = []
+			_tails[pj.node].append(pj)
 		if car.commit:
 			if not _committed.has(car.conn.node):
 				_committed[car.conn.node] = []
@@ -4868,6 +5031,25 @@ func _snapshot() -> void:
 		if not _approach.has(c.node):
 			_approach[c.node] = []
 		_approach[c.node].append({"car": front, "conn": c, "ds": ds})
+	# Oncoming drivers wait back where a long vehicle is about to swing
+	# across their lane, or is swinging across it now (and only while it
+	# can go: not for one stuck in a queue itself).
+	_hold.clear()
+	for car in cars:
+		var c = car.j if car.j != null else (car.conn if car.commit else null)
+		if c != null and c.has("sweep") and not (car.j != null and car.jd > c.len - WIDE_BLEND):
+			_claim_sweep(car, c.sweep)
+	for n in _approach:
+		for ap in _approach[n]:
+			if ap.conn.has("sweep") and not ap.car.commit and ap.ds < SWEEP_CALL and _room_past(ap.car, ap.conn):
+				_claim_sweep(ap.car, ap.conn.sweep)
+
+
+func _claim_sweep(car: Dictionary, sweep: Dictionary) -> void:
+	for key in sweep:
+		var hd: float = sweep[key]
+		if not _hold.has(key) or hd < _hold[key][0]:
+			_hold[key] = [hd, car.id]
 
 
 ## The junction path a car will take at the end of its way, or {} if its
@@ -4875,10 +5057,16 @@ func _snapshot() -> void:
 func _conn_for(car: Dictionary) -> Dictionary:
 	var wi: int = car.route[car.leg]
 	var wo: int = car.route[car.leg + 1]
-	var key := Vector3i(wi, car.lane, wo)
+	var r := wide_radius(car.len)
+	var key := Vector4i(wi, car.lane, wo, int(r))
 	var c = _cfor.get(key)
 	if c == null:
-		c = {} if not lanes_for(wi, wo).has(car.lane) else _connector(wi, car.lane, wo, _out_lane(wi, car.lane, wo))
+		if not lanes_for(wi, wo).has(car.lane):
+			c = {}
+		elif r > 0.0:
+			c = _wide_connector(wi, car.lane, wo, _out_lane(wi, car.lane, wo), r)
+		else:
+			c = _connector(wi, car.lane, wo, _out_lane(wi, car.lane, wo))
 		_cfor[key] = c
 	return c
 
@@ -4959,6 +5147,14 @@ func _accel_on_way(car: Dictionary, list: Array, i: int) -> float:
 	if i > 0 or ds > LOOK:
 		return acc
 	var c := _conn_for(car)
+	var hold = _hold.get(w.id * 8 + car.lane)
+	if hold != null and (hold[1] == car.id or car.d > hold[0] + 0.5):
+		hold = null
+	if hold != null and car.commit and car.d + car.v * car.v / (2.0 * BRAKE) <= hold[0]:
+		# A truck has started to swing across this lane: think again.
+		car.commit = false
+		car.conn = null
+		_committed.get(c.node, []).erase(car)
 	if not car.commit:
 		if ds < 4.0 and car.v < 1.0 and car.arrive < 0.0:
 			car.arrive = time
@@ -4974,7 +5170,7 @@ func _accel_on_way(car: Dictionary, list: Array, i: int) -> float:
 			JAM_GAP + car.v * HEADWAY + car.v * car.v / (2.0 * sqrt(car.acc * BRAKE)) + 4.0)
 		if junctions[c.node].control == Rule.SIGNAL and light(c.node, c.wi) == Light.GREEN:
 			reach = maxf(reach, GREEN_REACH)
-		if ds <= reach and _may_enter(car, c, ds):
+		if ds <= reach and hold == null and _may_enter(car, c, ds):
 			car.commit = true
 			car.conn = c
 			if not _committed.has(c.node):
@@ -4995,6 +5191,10 @@ func _accel_on_way(car: Dictionary, list: Array, i: int) -> float:
 		# Stop with the nose at the line: the line is not a car ahead, so
 		# no jam gap behind it (it left cars about 2.5 m short).
 		acc = minf(acc, _idm(car.v, v0, ds + JAM_GAP - 0.5, 0.0))
+		# A truck swinging wide across this lane: wait back out of its way
+		# (unless already past that point).
+		if hold != null:
+			acc = minf(acc, _idm(car.v, v0, hold[0] - car.d + JAM_GAP - 0.5, 0.0))
 	return acc
 
 
@@ -5082,12 +5282,23 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 	# Someone on the crosswalk over the road we're turning onto.
 	if c.wo >= 0 and crosswalk_busy(n, c.wo >> 1):
 		return false
+	# A long vehicle swinging wide needs the oncoming lanes it crosses
+	# clear, short of their stop lines, and no one there unable to stop.
+	for key in c.get("sweep", {}):
+		var lane: Array = _lanes.get(key, [])
+		if not lane.is_empty():
+			var o: Dictionary = lane[0]
+			if o.d > c.sweep[key] - 0.5 or o.d + o.v * o.v / (2.0 * BRAKE) > c.sweep[key] + 0.5:
+				return false
 	# Nothing crossing our path in the junction.
 	for b in occupants:
 		if b.id == car.id or b.j == null and b.get("conn") == null:
 			continue
 		var bc: Dictionary = b.j if b.j != null else b.conn
 		if _conflicts(c, bc):
+			return false
+	for tail in _tails.get(n, []):
+		if _conflicts(c, tail):
 			return false
 	var stopped: bool = car.arrive >= 0.0 and time - car.arrive >= FULL_STOP_S
 	var mine_minor_turn: bool = c.turn == Turn.LEFT or c.turn == Turn.UTURN
@@ -5116,7 +5327,7 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 				# First come, first served, but not behind someone who can't go
 				# yet for a full street beyond: drivers wave each other on.
 				if ap.car.id != car.id and ap.conn.wi != c.wi and _first(ap.car, car) and _conflicts(c, ap.conn) \
-						and _room_past(ap.car, ap.conn):
+						and _room_past(ap.car, ap.conn) and not _in_sweep(car, ap.conn):
 					return false
 		Rule.PRIORITY:
 			if not j.major.has(c.wi):
@@ -5128,7 +5339,8 @@ func _may_enter(car: Dictionary, c: Dictionary, ds: float) -> bool:
 					if j.major.has(ap.conn.wi):
 						if _soon(ap) and _conflicts(c, ap.conn):
 							return false
-					elif _first(ap.car, car) and _conflicts(c, ap.conn) and _room_past(ap.car, ap.conn):
+					elif _first(ap.car, car) and _conflicts(c, ap.conn) and _room_past(ap.car, ap.conn) \
+							and not _in_sweep(car, ap.conn):
 						return false
 			elif mine_minor_turn:
 				for ap in _approach.get(n, []):
@@ -5154,6 +5366,15 @@ func _room_past(car: Dictionary, c: Dictionary) -> bool:
 		return true
 	var list: Array = _lanes.get(c.wo * 8 + c.lo, [])
 	return list.is_empty() or list[list.size() - 1].d - ways[c.wo].s0 >= car.len + JAM_GAP
+
+
+## Whether `car` stands where path `c` swings wide: that truck can't go
+## until it does, so it doesn't wait its turn behind the truck.
+func _in_sweep(car: Dictionary, c: Dictionary) -> bool:
+	if not c.has("sweep") or car.j != null:
+		return false
+	var key: int = car.route[car.leg] * 8 + car.lane
+	return c.sweep.has(key) and car.d > c.sweep[key] - 0.5
 
 
 ## Whether `a` stopped at its line before `b` (first come, first served).
