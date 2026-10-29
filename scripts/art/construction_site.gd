@@ -579,7 +579,7 @@ void fragment() {
 		n = ph_lean(n, ph_gravel_s(wp.xz), pk * 0.8);
 	} else {
 		// Damp low spots go dark and shiny; the high ground dries pale.
-		float wet = smoothstep(0.62, 0.85, big);
+		float wet = smoothstep(0.7, 0.9, big);
 		base *= mix(0.9 + 0.2 * fine, 0.58, wet);
 		rough = mix(0.95, 0.7, wet);
 		float rut = sg_ruts(dr, 26.0);
@@ -838,6 +838,11 @@ func _cs_machines(st: SurfaceTool, stage: String, k: int, fine: bool) -> void:
 					var tz := maxf(_core.position.z + 2.2, b.position.z + 13.2)
 					if tz + 4.4 < b.end.z:
 						SiteMachines.telehandler(st, Transform3D(Basis.IDENTITY, Vector3(x, 0.0, tz)), tcol, fine)
+	if _frame_kind == "tilt_up" and stage == "frame" and minf(_core.size.x, _core.size.z) > 36.0:
+		# Standing the panels from the slab, boom toward the wall going up.
+		var cc := _core.get_center()
+		SiteMachines.crawler_crane(st, Transform3D(Basis(Vector3.UP, PI * (0.15 + 0.1 * (k % 5))), Vector3(cc.x, 0.0, cc.z)),
+			Color("#b8322a") if k % 2 == 0 else Color("#e0a81a"), fine)
 	if _profile != "house" and stage in ["frame", "dry_in", "exterior"] and _core.position.z - b.position.z > 4.6:
 		var at := Vector3(_core.get_center().x - _core.size.x * 0.2, 0.0, _core.position.z - 2.0)
 		SiteMachines.boom_lift(st, Transform3D(Basis(Vector3.UP, PI * 0.5), at),
