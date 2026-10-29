@@ -89,7 +89,8 @@ static func build_row(seed: int, to_curb: float, lot: Dictionary, units: int, st
 			_: b._row(to_curb, b.half * 2.0, units, storeys)
 	elif b.era == "prewar" and prewar:
 		b._mb_flats(to_curb, b.half * 2.0, units, storeys)
-	elif b.era == "recent" and kind < 70 and b.half * 2.0 / units >= 6.0:
+	elif b.era == "recent" and (kind < 70 or not b.alley) and b.half * 2.0 / units >= 6.0:
+		# (With no alley behind, a builder loads the garages from the front.)
 		b._th_townhomes(to_curb, b.half * 2.0, units, storeys)
 	elif b.era == "recent":
 		b._th_urban(to_curb, b.half * 2.0, units, storeys)
@@ -820,7 +821,7 @@ func _th_mansard(to_curb: float, width: float, units: int, storeys: int) -> void
 			_box("brick", Vector3(0.3, 1.0, 0.3), Vector3(x0 + i * uw, top + 0.6, cz), brick)  # party wall chimney cap
 	_rear_wall(x0, x1, zf + d, base, floor_h, storeys - 1, TRIM)
 	# A shared lot out back, off the alley or a drive.
-	_parking(x0, x1, zf + d + 1.5, zf + d + 14.0, width)
+	_rl_back(x0, x1, zf + d + 1.5, zf + d + 14.0, width)
 	if r.randf() < 0.6:
 		var pick := TreeField.pick(r)
 		trees.append([Vector3(r.randf_range(-width * 0.3, width * 0.3), 0, -to_curb + 1.0), pick[0], pick[1],
@@ -905,8 +906,16 @@ func _th_urban(to_curb: float, width: float, units: int, storeys: int) -> void:
 		for q in maxi(4, int(uw / 0.4)):
 			_box("metal", Vector3(0.025, 1.0, 0.025), Vector3(lerpf(cx - uw * 0.5 + 0.3, cx + uw * 0.5 - 0.3, q / float(maxi(3, int(uw / 0.4) - 1))), top + 0.5, rz), black)
 		_box("siding", Vector3(2.2, 2.5, 2.8), Vector3(cx + side * (uw * 0.5 - 1.4), deck + 1.25, zf + d - 2.2), wall.darkened(0.1))
-		# Rear-loaded: a garage door on the alley side of each unit.
-		_box("paint", Vector3(minf(uw - 1.2, 4.9), 2.2, 0.06), Vector3(cx, 1.1, zf + d + 0.03), Color("#e8e4d8") if r.randf() < 0.6 else black)
+		# Rear-loaded: a garage door on the alley side of each unit; with no
+		# alley, a sliding door onto a patio behind a privacy screen.
+		var gd := Color("#e8e4d8") if r.randf() < 0.6 else black
+		if alley:
+			_box("paint", Vector3(minf(uw - 1.2, 4.9), 2.2, 0.06), Vector3(cx, 1.1, zf + d + 0.03), gd)
+		else:
+			_glass(Vector3(cx, base + 1.05, zf + d + 0.03), Vector3(1, 0, 0), 1.8, 2.1, 0.2)
+			_flat_rect("drive", cx - uw * 0.5 + 0.2, cx + uw * 0.5 - 0.2, zf + d, zf + d + 3.2, 0.06)
+			if i > 0:
+				_box("paint", Vector3(0.08, 1.8, 3.0), Vector3(cx - uw * 0.5, 0.9, zf + d + 1.5), Color("#6f6a62"))
 		for f in range(1, storeys):
 			for e in [-1.0, 1.0]:
 				_window(Vector3(cx + e * uw * 0.25, base + f * floor_h + 1.4, zf + d), Vector3(1, 0, 0), 1.0, 1.5, false, false, black)
@@ -923,7 +932,8 @@ func _th_urban(to_curb: float, width: float, units: int, storeys: int) -> void:
 	for e in [-width * 0.5 + 0.5, width * 0.5 - 0.5]:
 		_box("concrete", Vector3(0.08, base, d), Vector3(e + signf(e) * 0.02, base * 0.5, cz), FOUNDATION)
 	# Each garage's apron (the alley runs behind; deeper lots keep a yard).
-	_flat_rect("drive", -width * 0.5 + 0.5, width * 0.5 - 0.5, zf + d, minf(depth - 1.0, zf + d + 6.5), 0.06)
+	if alley:
+		_flat_rect("drive", -width * 0.5 + 0.5, width * 0.5 - 0.5, zf + d, minf(depth - 1.0, zf + d + 6.5), 0.06)
 	var pick := TreeField.pick(r)
 	trees.append([Vector3(r.randf_range(-width * 0.3, width * 0.3), 0, -to_curb + 1.2), pick[0], pick[1], r.randf_range(0.6, 0.9)])
 
@@ -990,7 +1000,7 @@ func _th_colonial(to_curb: float, width: float, units: int, storeys: int) -> voi
 			var mid := Vector3(fx, deck + rise * 0.5 + 0.22, cz + e * d * 0.25)
 			_box("brick", Vector3(0.35, 0.3, run), mid, brick.darkened(0.05), Basis(Vector3.RIGHT, e * slope))
 	# Parking in a court behind, as the co-ops built it.
-	_parking(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 5.0, zf + d + 18.0, width)
+	_rl_back(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 5.0, zf + d + 18.0, width)
 	var pick := TreeField.pick(r)
 	trees.append([Vector3(r.randf_range(-width * 0.3, width * 0.3), 0, -to_curb + 1.2), pick[0], pick[1], r.randf_range(0.7, 1.0)])
 
@@ -1058,7 +1068,7 @@ func _wu_split(to_curb: float, width: float, storeys: int) -> void:
 			_window(Vector3(s * w * 0.5, y, cz), Vector3(0, 0, -s), 1.0, 0.75 if f == 0 else 1.4, false, false, trim)
 	_gable_roof(0.0, cz, top, d, d * 0.5 * 0.33, w, true, roof, siding)
 	_rear_wall(-w * 0.5, w * 0.5, zf + d, 0.0, floor_h, storeys, trim)
-	_parking(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 1.5, zf + d + 14.0, width)
+	_rl_back(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 1.5, zf + d + 14.0, width)
 	var x := -w * 0.5 + 0.5
 	while x < w * 0.5 - 0.4:
 		if absf(x) > hw * 0.5 + 0.5:
@@ -1131,7 +1141,7 @@ func _wu_modern(to_curb: float, width: float, storeys: int) -> void:
 	_rear_wall(-w * 0.5, w * 0.5, zf + d, base, floor_h, storeys, black)
 	for i in r.randi_range(2, 4):
 		_box("metal", Vector3(1.2, 0.8, 0.9), Vector3(r.randf_range(-w * 0.4, w * 0.4), deck + 0.4, cz + r.randf_range(-3.0, 3.0)), Color("#b9bcbc"))
-	_parking(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 1.5, zf + d + 16.0, width)
+	_rl_back(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 1.5, zf + d + 16.0, width)
 	var x := -w * 0.5 + 0.6
 	while x < w * 0.5 - 0.5:
 		if absf(x) > tw * 0.5 + 1.0:
@@ -1210,7 +1220,7 @@ func _wu_mansard(to_curb: float, width: float, storeys: int) -> void:
 	_rear_wall(-w * 0.5, w * 0.5, zf + d, base, floor_h, storeys - 1, trim)
 	for i in r.randi_range(1, 2):
 		_box("metal", Vector3(1.4, 0.9, 1.0), Vector3(r.randf_range(-w * 0.3, w * 0.3), top + 0.45, cz), Color("#b9bcbc"))
-	_parking(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 1.5, zf + d + 14.0, width)
+	_rl_back(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 1.5, zf + d + 14.0, width)
 	var x := -w * 0.5 + 0.6
 	while x < w * 0.5 - 0.5:
 		if absf(x) > 2.0:
@@ -1302,7 +1312,7 @@ func _th_garden(to_curb: float, width: float, storeys: int, modern: bool) -> voi
 	else:
 		_hip_roof(0.0, cz, top, w, d, r.randf_range(1.3, 1.8), roof)
 	_rear_wall(-w * 0.5, w * 0.5, zf + d, base, floor_h, storeys, trim)
-	_parking(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 1.5, zf + d + 16.0, width)
+	_rl_back(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 1.5, zf + d + 16.0, width)
 	var x := -w * 0.5 + 0.6
 	while x < w * 0.5 - 0.5:
 		var clear := true
