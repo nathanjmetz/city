@@ -38,6 +38,9 @@ var _clear := []
 ## chapel), kept apart from the rest of the site so it can go up stage by
 ## stage (ConstructionSite): material key -> SurfaceTool.
 var _own := {}
+## Level ground the mound's side slopes rise from: the gate yard and the
+## pads its development tree's buildings stand on (local Rect2 in x, z).
+var _pads := []
 
 
 static func build_hub(h: Dictionary, seed: int, to_curb: float) -> Array:
@@ -251,6 +254,7 @@ func _bales_in(poly: PackedVector2Array, level: int) -> void:
 
 func _landfill(h: Dictionary, to_curb: float) -> void:
 	var top := CivicHubs.mound_height(h)
+	_pads = _dev_pads(0.0)
 	_mound(cells, top, true, cells[-1])
 	_gate(to_curb)
 	# Scale house and truck scale by the gate.
@@ -266,6 +270,23 @@ func _landfill(h: Dictionary, to_curb: float) -> void:
 		_grass_poly(edge_land[c])
 	_fence_edges(_outline(cells, edge_land), 2.2, GALV, 4.0, 5.0)
 	_landfill_devs(0.0)
+	if "screen" in dev:
+		_tree_screen(_outline(cells, edge_land))
+
+
+## The level pads under the front-row buildings of the tree, so the mound
+## rises behind them instead of burying them.
+func _dev_pads(back: float) -> Array:
+	var out := []
+	if "gas_plant" in dev:
+		out.append(Rect2(-cell * 1.1 - 9.0, 4.0 + back, 18.0, 30.0))
+	if "compost" in dev:
+		out.append(Rect2(cell * 0.75 - 1.0, 3.0 + back, 28.0, 29.0))
+	if "transfer" in dev:
+		out.append(Rect2(-cell * 0.45 - 10.0, 4.0 + back, 20.0, 20.0))
+	if "leachate" in dev:
+		out.append(Rect2(18.5, 3.0 + back, 17.0, 24.0))
+	return out
 
 
 ## Gas plant, compost yard and transfer station, along the front of the site
@@ -299,6 +320,74 @@ func _landfill_devs(back: float) -> void:
 		_box("metal", Vector3(16.0, 8.0, 14.0), p + Vector3(0, 4.3, 0), Color("#b8b9b4"))
 		_metal_roof(p.x, p.z, 8.3, 16.0, 14.0, Color("#8e9496"))
 		_box("paint", Vector3(6.0, 5.5, 0.1), p + Vector3(0, 3.05, -7.05), Color("#2a2b2d"))
+	if "leachate" in dev:
+		_leachate(Vector3(27.0, 0, 6.0 + back))
+
+
+## A screen of evergreens just inside the fence, staggered two deep the way
+## landfill permits ask, with a gap at the gate.
+func _tree_screen(outline: Array) -> void:
+	for e in outline:
+		var a: Vector2 = e[0]
+		var b: Vector2 = e[1]
+		var n := int(a.distance_to(b) / 7.0)
+		var inward := _inward(a, b)
+		for k in n:
+			var p := a.lerp(b, (k + 0.5) / n)
+			if absf(p.y) < 0.5 and absf(p.x) < 24.0:
+				continue
+			var sp := TreeField.Species.SPRUCE if k % 3 != 2 else TreeField.Species.RED_CEDAR
+			var row := 3.0 if k % 2 == 0 else 6.5
+			var at := Vector3(p.x, 0, p.y) + inward * row
+			var busy := false
+			for r in _pads:
+				if (r as Rect2).grow(3.0).has_point(Vector2(at.x, at.z)):
+					busy = true
+			if busy:
+				continue
+			trees.append([Vector3(p.x, 0, p.y) + inward * row, sp, TreeField.LEAF[sp], rng.randf_range(0.8, 1.05)])
+
+
+## Leachate storage and pretreatment, after Indiana county landfills: two
+## glass-lined bolted steel tanks in a concrete containment wall, a pump
+## house, a small aeration basin and the force main to the sewer.
+func _leachate(p: Vector3) -> void:
+	_box("paint", Vector3(16.0, 0.3, 11.0), p + Vector3(0, 0.15, 5.5), CONCRETE)
+	for s in [-1.0, 1.0]:
+		var c := p + Vector3(s * 3.8, 0.3, 5.0)
+		_cylinder("metal", c, 3.2, 6.5, Color("#5f7f8f"), 20)
+		_cylinder("paint", c + Vector3(0, 6.5, 0), 3.3, 0.25, Color("#d6d8d6"), 20)
+		_caged_ladder(c + Vector3(0, 0, -3.25), 6.8, Vector3(0, 0, -1))
+	# The containment wall round the tank pad.
+	for z in [p.z + 0.2, p.z + 10.8]:
+		_box("paint", Vector3(16.0, 1.0, 0.3), Vector3(p.x, 0.8, z), CONCRETE.darkened(0.06))
+	for x in [p.x - 7.85, p.x + 7.85]:
+		_box("paint", Vector3(0.3, 1.0, 10.6), Vector3(x, 0.8, p.z + 5.5), CONCRETE.darkened(0.06))
+	# Pump house and the aeration basin behind.
+	var hq := p + Vector3(0, 0, 15.0)
+	_box("brick", Vector3(6.0, 3.2, 4.5), hq + Vector3(-4.0, 1.6, 0), Color("#a49d8f"))
+	_box("paint", Vector3(6.4, 0.25, 4.9), hq + Vector3(-4.0, 3.3, 0), Color("#6f6d68"))
+	_overhead_door(hq.x - 4.0, hq.z - 2.25, 2.4, 2.4, Color("#e9e7e0"))
+	_box("paint", Vector3(7.0, 1.2, 6.0), hq + Vector3(4.0, 0.6, 0), CONCRETE)
+	_box("paint", Vector3(6.2, 0.05, 5.2), hq + Vector3(4.0, 1.1, 0), Color("#5d5a3e"))
+	for k in 3:
+		_box("paint", Vector3(0.5, 0.06, 0.5), hq + Vector3(2.4 + k * 1.6, 1.14, rng.randf_range(-1.5, 1.5)), Color("#c8c4a8"))
+	_box("paint", Vector3(0.25, 0.25, 9.0), p + Vector3(-7.6, 0.6, 15.0), Color("#3a5a8a"))
+
+
+## A caged steel ladder up a tank or silo, cage hoops every 1.2 m.
+func _caged_ladder(foot: Vector3, h: float, out: Vector3) -> void:
+	var side := Vector3(-out.z, 0, out.x)
+	for s in [-0.25, 0.25]:
+		_box("paint", Vector3(0.05, h, 0.05), foot + side * s + out * 0.15 + Vector3(0, h * 0.5, 0), GALV)
+	var y := 2.4
+	while y < h:
+		for s in [-0.4, 0.4]:
+			_box("paint", Vector3(0.04, 0.04, 0.7), foot + side * s + out * 0.5 + Vector3(0, y, 0), GALV,
+				Basis.looking_at(out, Vector3.UP))
+		_box("paint", Vector3(0.84, 0.04, 0.04), foot + out * 0.85 + Vector3(0, y, 0), GALV,
+			Basis.looking_at(out, Vector3.UP))
+		y += 1.2
 
 
 ## A grassed mound over `set`, rising to `top` metres with 3:1 side slopes.
@@ -334,6 +423,10 @@ func _mound(set: Array, top: float, working: bool, face: Vector2i) -> void:
 			# The flat yard at the gate (the scale and the scale house) is
 			# an edge too: the 3:1 side slope rises from it.
 			d = minf(d, Vector2(maxf(absf(x) - 18.0, 0.0), maxf(z - 26.0, 0.0)).length())
+			for r in _pads:
+				var rect: Rect2 = r
+				d = minf(d, Vector2(maxf(maxf(rect.position.x - x, x - rect.end.x), 0.0),
+					maxf(maxf(rect.position.y - z, z - rect.end.y), 0.0)).length())
 			height[Vector2i(i, j)] = top * smoothstep(0.0, ramp, d)
 	# Smooth shading: each corner's normal from the slope around it, and the
 	# grass varies in broad patches, as on a real cap.
@@ -385,6 +478,8 @@ func _mound(set: Array, top: float, working: bool, face: Vector2i) -> void:
 	if working:
 		_working_face(height, minx, minz, step, face_at, top)
 	_downchutes(set, height, minx, minz, step, ramp, face_at if working else Vector2(INF, INF))
+	if "solar" in dev:
+		_cap_solar(height, minx, minz, step, maxx, maxz, top, face_at if working else Vector2(INF, INF))
 	var k := 0
 	for q in height:
 		k += 1
@@ -395,6 +490,55 @@ func _mound(set: Array, top: float, working: bool, face: Vector2i) -> void:
 			continue
 		_box("paint", Vector3(0.25, 1.4, 0.25), at + Vector3(0, 0.7, 0), Color("#e6e4dc"))
 		_box("paint", Vector3(0.5, 0.15, 0.5), at + Vector3(0, 1.45, 0), Color("#e6e4dc"))
+
+
+## Solar on the closed cap: rows of ground-mount tables on ballasted
+## footings (no posts may pierce the cap), tilted 25 degrees to the south
+## (here the road side), on the flat top away from the working face; after
+## landfill solar farms in the EPA's RE-Powering inventory.
+func _cap_solar(height: Dictionary, minx: float, minz: float, step: float, maxx: float, maxz: float, top: float,
+		face_at: Vector2) -> void:
+	var panel := Color("#1e2a3a")
+	var frame := Color("#9a9c98")
+	var tilt := deg_to_rad(25.0)
+	var depth := 4.0
+	var rise := depth * sin(tilt)
+	var run := depth * cos(tilt)
+	var z := minz + 8.0
+	while z < maxz - 8.0:
+		var x := minx + 8.0
+		while x < maxx - 8.0:
+			var a := Vector2(x, z)
+			var b := Vector2(x + 11.0, z + run)
+			var ok := a.distance_to(face_at) > cell * 0.8 and b.distance_to(face_at) > cell * 0.8
+			# Each corner's ground, so a table follows the cap's slope
+			# (front-left, front-right, back-right, back-left).
+			var g := []
+			for q in [a, Vector2(b.x, a.y), b, Vector2(a.x, b.y)]:
+				g.append(_height_at(height, minx, minz, step, q))
+			if ok and (g.min() < top * 0.45 or g.max() - g.min() > 2.5):
+				ok = false
+			if ok:
+				var c0 := Vector3(a.x, g[0] + 0.7, a.y)
+				var c1 := Vector3(b.x, g[1] + 0.7, a.y)
+				var c2 := Vector3(b.x, g[2] + 0.7 + rise, b.y)
+				var c3 := Vector3(a.x, g[3] + 0.7 + rise, b.y)
+				_quad("glass", c0, c1, c2, c3, Color(panel, 0.0), [Vector2(0, 0), Vector2(11, 0), Vector2(11, 1), Vector2(0, 1)],
+					Vector3(0, cos(tilt), -sin(tilt)))
+				_strut(c0 - Vector3(0, 0.05, 0), c1 - Vector3(0, 0.05, 0), 0.08, frame)
+				for k in 3:
+					var t := (1.0 + k * 4.5) / 11.0
+					var lo := c0.lerp(c1, t)
+					var hi := c3.lerp(c2, t)
+					_box("paint", Vector3(0.6, 0.35, run + 0.6), Vector3(lo.x, (lo.y + hi.y - rise) * 0.5 - 0.6, a.y + run * 0.5), CONCRETE)
+					_strut(hi - Vector3(0, rise + 0.75, 0), hi - Vector3(0, 0.05, 0), 0.08, frame)
+			x += 12.0
+		z += run + 3.2
+	# The inverter pads and a transformer by the haul road.
+	var at := Vector2(minx + 10.0, minz + 30.0)
+	var y := _height_at(height, minx, minz, step, at)
+	_box("paint", Vector3(4.0, 0.3, 3.0), Vector3(at.x, y + 0.15, at.y), CONCRETE)
+	_box("metal", Vector3(2.2, 2.0, 1.6), Vector3(at.x, y + 1.3, at.y), Color("#7f8a7c"))
 
 
 ## What a working face looks like from the road: the day's trash spread
@@ -649,6 +793,99 @@ func _recycling(h: Dictionary, to_curb: float) -> void:
 		# Transfer trailers waiting to haul a neighbor's sorted loads.
 		for k in 3:
 			_box("metal", Vector3(2.6, 3.6, 14.0), Vector3(-22.0 + k * 3.6, 2.2, 28.0), Color("#c9cbc6"))
+	var back_z := minf(yard_back, cell * 2.0) - 30.0
+	if "crusher" in dev:
+		_crusher(Vector3(cell * 1.12, 0, maxf(back_z + 2.0, 40.0)))
+	if "tire_shred" in dev:
+		_tire_shred(Vector3(-cell * 1.16, 0, maxf(back_z, 34.0) + 4.0))
+	if "reuse" in dev:
+		_reuse_store(Vector3(19.0, 0, 29.0))
+
+
+## A C&D recycling yard: a tracked jaw crusher fed by an excavator from a
+## pile of broken concrete and asphalt, a stacker conveyor throwing the
+## crushed stone onto a cone, and the stockpiles of road base.
+func _crusher(p: Vector3) -> void:
+	_flat_rect("gravel", p.x - 16.0, p.x + 16.0, p.z - 12.0, p.z + 24.0, 0.07, Color("#8a8680"))
+	# Rubble: slabs and chunks heaped up.
+	var rubble := p + Vector3(-8.0, 0, 15.0)
+	_aggregate_pile(rubble, 7.0, 3.6, Color("#9a958a"))
+	for k in 18:
+		var q := rubble + Vector3(rng.randf_range(-5.0, 5.0), 0, rng.randf_range(-5.0, 5.0))
+		var y := 3.6 * (1.0 - clampf(Vector2(q.x - rubble.x, q.z - rubble.z).length() / 7.0, 0.0, 1.0))
+		_box("paint", Vector3(rng.randf_range(0.8, 2.2), 0.25, rng.randf_range(0.6, 1.6)), q + Vector3(0, y, 0),
+			Color("#b9b5ab").darkened(rng.randf() * 0.2), Basis(Vector3.UP, rng.randf() * TAU) * Basis(Vector3.RIGHT, rng.randf_range(-0.5, 0.5)))
+	# The crusher on its tracks, its hopper, and the excavator feeding it.
+	var c := p + Vector3(2.0, 0, 8.0)
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(0.7, 0.9, 12.0), c + Vector3(s * 1.4, 0.45, 0), Color("#2a2b2d"))
+	_box("paint", Vector3(2.6, 1.4, 12.0), c + Vector3(0, 1.6, 0), Color("#d9a21b"))
+	_box("paint", Vector3(3.4, 2.0, 3.6), c + Vector3(0, 3.3, 4.0), Color("#d9a21b"))
+	_box("paint", Vector3(2.0, 1.6, 2.2), c + Vector3(0, 3.1, -1.0), Color("#5a5e60"))
+	var ex := p + Vector3(-1.5, 0, 17.0)
+	_box("paint", Vector3(2.6, 0.9, 4.4), ex + Vector3(0, 0.45, 0), Color("#2a2b2d"))
+	_box("paint", Vector3(2.8, 1.6, 3.2), ex + Vector3(0, 1.8, 0), Color("#d9a21b"))
+	_strut(ex + Vector3(0.6, 2.4, -1.0), ex + Vector3(1.6, 5.2, -4.0), 0.5, Color("#d9a21b"))
+	_strut(ex + Vector3(1.6, 5.2, -4.0), c + Vector3(0.5, 4.6, 4.4), 0.4, Color("#d9a21b"))
+	# Stacker conveyor off the back onto the cone of crushed stone.
+	var a := c + Vector3(0, 1.6, -6.0)
+	var b := c + Vector3(0, 5.5, -13.0)
+	_strut(a, b, 0.9, Color("#5a5e60"))
+	_strut(b + Vector3(0, -5.5, 1.0), b + Vector3(0, -0.4, 1.0), 0.25, Color("#5a5e60"))
+	_aggregate_pile(Vector3(b.x, 0, b.z - 1.5), 6.5, 4.8, Color("#a7a399"))
+	_aggregate_pile(p + Vector3(11.0, 0, 2.0), 5.0, 3.2, Color("#77736b"))
+
+
+## A tire processor: whole tires stacked in rows and racks, a shredder on
+## a raised steel platform with its conveyor, and chips in a bunker, as at
+## Indiana's registered scrap tire processors (IDEM 329 IAC 15).
+func _tire_shred(p: Vector3) -> void:
+	_flat_rect("drive", p.x - 14.0, p.x + 14.0, p.z - 4.0, p.z + 22.0, 0.07)
+	var black := Color("#1c1c1e")
+	# Rows of laced tires, four high.
+	for r in 3:
+		var z := p.z + 12.0 + r * 3.2
+		var x := p.x - 12.0
+		while x < p.x - 1.0:
+			for k in 4:
+				var t := Vector3(x, 0.18 + k * 0.32, z)
+				_cylinder("paint", t - Vector3(0, 0.16, 0), 0.42, 0.3, black, 10)
+			x += 0.95
+	# The shredder on its platform, a conveyor up to the chip bunker.
+	var s := p + Vector3(6.0, 0, 12.0)
+	for e in [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5]]:
+		_box("paint", Vector3(0.25, 3.0, 0.25), s + Vector3(e[0], 1.5, e[1]), Color("#2f5d8a"))
+	_box("paint", Vector3(3.6, 0.3, 3.6), s + Vector3(0, 3.1, 0), Color("#2f5d8a"))
+	_box("paint", Vector3(2.6, 2.0, 2.6), s + Vector3(0, 4.2, 0), Color("#2f5d8a"))
+	_box("paint", Vector3(3.2, 1.0, 3.2), s + Vector3(0, 5.7, 0), Color("#3a3c3e"))
+	_strut(s + Vector3(0, 2.4, -1.6), s + Vector3(0, 4.6, -9.0), 0.8, Color("#5a5e60"))
+	var bunker := s + Vector3(0, 0, -11.0)
+	for side in [-3.2, 3.2]:
+		_box("paint", Vector3(0.4, 2.2, 6.0), bunker + Vector3(side, 1.1, 0), CONCRETE)
+	_box("paint", Vector3(6.8, 2.2, 0.4), bunker + Vector3(0, 1.1, 3.0), CONCRETE)
+	_aggregate_pile(bunker + Vector3(0, 0, 0.5), 3.0, 2.0, Color("#2e2d2c"))
+
+
+## A reuse store by the gate: a pole barn with a shopfront, salvaged doors
+## and cabinets out front under a lean-to, like a Habitat ReStore in a
+## small county seat.
+func _reuse_store(p: Vector3) -> void:
+	var wall := Color("#7d8f70")
+	_box("paint", Vector3(16.0, 0.3, 11.0), p + Vector3(0, 0.15, 0), CONCRETE)
+	_box("metal", Vector3(15.0, 4.6, 10.0), p + Vector3(0, 2.6, 0), wall)
+	_metal_roof(p.x, p.z, 4.9, 15.0, 10.0, Color("#8e9496"))
+	_glass(Vector3(p.x - 3.0, 1.6, p.z - 5.03), Vector3(-1, 0, 0), 5.0, 2.2, 0.0)
+	_box("paint", Vector3(2.0, 2.4, 0.08), Vector3(p.x + 1.4, 1.5, p.z - 5.04), Color("#e9e7e0"))
+	_sign(Vector3(p.x - 3.0, 3.4, p.z - 5.12), 6.0, 0.8)
+	# The lean-to and what is out under it.
+	_box("paint", Vector3(5.0, 0.2, 10.0), p + Vector3(10.0, 3.0, 0), Color("#8e9496"))
+	for z in [-4.6, 4.6]:
+		_box("paint", Vector3(0.15, 3.0, 0.15), p + Vector3(12.3, 1.5, z), GALV)
+	for k in 6:
+		var q := p + Vector3(8.6 + (k % 2) * 1.8, 0, -3.5 + int(k / 2) * 2.8)
+		_box("paint", Vector3(0.9, 2.0, 0.06), q + Vector3(0, 1.0, 0), [Color("#e9e7e0"), Color("#8a5a3a"), Color("#6a4a32")][k % 3],
+			Basis(Vector3.UP, rng.randf_range(-0.3, 0.3)) * Basis(Vector3.RIGHT, -0.12))
+	_box("paint", Vector3(2.4, 0.9, 0.6), p + Vector3(9.6, 0.45, 3.8), Color("#a87a4e"))
 
 
 ## The public drop-off, as at county solid waste district sites: residents
@@ -767,6 +1004,8 @@ func _cemetery(to_curb: float) -> void:
 		_clear.append(Rect2(-cell * 0.6 - 8.0, 8.0, 16.0, 14.0))
 	if "veterans" in dev:
 		_clear.append(Rect2(cell * 0.6 - 8.0, 6.0, 16.0, 12.0))
+	if "columbarium" in dev:
+		_clear.append(Rect2(4.0, cell * 1.5 - 7.0, 18.0, 14.0))
 	var lane := Color("#b9b2a2")
 	_flat_rect("gravel", -2.0, 2.0, -to_curb, 2.0, 0.08, lane)
 	for i in cells.size():
@@ -822,9 +1061,14 @@ func _cemetery(to_curb: float) -> void:
 			var sp := TreeField.Species.SPRUCE if k % 2 == 0 else TreeField.Species.MAPLE
 			trees.append([Vector3(p.x, 0, p.y) + inward * 3.0, sp, TreeField.LEAF[sp], rng.randf_range(0.8, 1.1)])
 	_fence_edges(outline, 1.5, IRON, 2.4, 3.0)
-	for x in [-3.2, 3.2]:
-		_box("brick", Vector3(0.7, 2.2, 0.7), Vector3(x, 1.1, 0.0), Color("#8a4a38"))
-		_box("paint", Vector3(0.85, 0.15, 0.85), Vector3(x, 2.27, 0.0), CONCRETE)
+	if "gates" in dev:
+		_gates()
+	else:
+		for x in [-3.2, 3.2]:
+			_box("brick", Vector3(0.7, 2.2, 0.7), Vector3(x, 1.1, 0.0), Color("#8a4a38"))
+			_box("paint", Vector3(0.85, 0.15, 0.85), Vector3(x, 2.27, 0.0), CONCRETE)
+	if "columbarium" in dev:
+		_columbarium(Vector3(13.0, 0, cell * 1.5))
 	_flagpole(Vector3(7.0, 0, 5.0))
 	_building(func():
 		_mausoleum(Vector3(-cell * 0.6, 0, cell * 1.4))
@@ -883,6 +1127,58 @@ func _stone(p: Vector3, old: bool) -> void:
 	else:
 		_box("paint", Vector3(0.45, 0.4, 0.45), p + Vector3(0, 0.3, 0), col)
 		_box("paint", Vector3(0.3, 1.9, 0.3), p + Vector3(0, 1.45, 0), col)
+
+
+## Entrance gates as at old Indiana town cemeteries: rusticated limestone
+## piers with caps and urns, a wrought iron arch with the cemetery's name
+## over the lane, and short curved wing walls.
+func _gates() -> void:
+	var stone := Color("#cfc6b0")
+	for s in [-1.0, 1.0]:
+		var x: float = s * 3.4
+		_box("paint", Vector3(1.3, 0.4, 1.3), Vector3(x, 0.2, 0.0), stone.darkened(0.08))
+		_box("paint", Vector3(1.1, 3.4, 1.1), Vector3(x, 2.1, 0.0), stone)
+		for k in 6:
+			_box("paint", Vector3(1.14, 0.05, 1.14), Vector3(x, 0.8 + k * 0.5, 0.0), stone.darkened(0.12))
+		_box("paint", Vector3(1.4, 0.3, 1.4), Vector3(x, 3.95, 0.0), stone.darkened(0.05))
+		_lathe(Vector3(x, 4.1, 0.0), [Vector2(0.0, 0.0), Vector2(0.3, 0.05), Vector2(0.18, 0.25), Vector2(0.35, 0.5), Vector2(0.25, 0.75), Vector2(0.0, 0.8)], stone, 10)
+		# Wing walls stepping down to the fence.
+		_box("paint", Vector3(3.0, 1.2, 0.5), Vector3(x + s * 2.1, 0.6, 0.3), stone)
+		_box("paint", Vector3(3.1, 0.12, 0.6), Vector3(x + s * 2.1, 1.26, 0.3), stone.darkened(0.08))
+	# The arch: an iron curve on the piers with the name plate under it.
+	var n := 10
+	for k in n:
+		var a0 := PI * k / n
+		var a1 := PI * (k + 1) / n
+		var p0 := Vector3(-cos(a0) * 2.85, 3.9 + sin(a0) * 1.1, 0.0)
+		var p1 := Vector3(-cos(a1) * 2.85, 3.9 + sin(a1) * 1.1, 0.0)
+		_strut(p0, p1, 0.08, IRON)
+		_strut(p0 * Vector3(1, 0, 1) + Vector3(0, 3.6 + sin(a0) * 0.6, 0), p1 * Vector3(1, 0, 1) + Vector3(0, 3.6 + sin(a1) * 0.6, 0), 0.05, IRON)
+		if k > 0:
+			_strut(p0, p0 * Vector3(1, 0, 1) + Vector3(0, 3.6 + sin(a0) * 0.6, 0), 0.03, IRON)
+	_box("paint", Vector3(3.4, 0.5, 0.06), Vector3(0, 4.45, -0.05), IRON)
+	_box("paint", Vector3(3.2, 0.36, 0.07), Vector3(0, 4.45, -0.06), Color("#c9b47a"))
+
+
+## A columbarium court: three granite walls of urn niches (each a bronze-
+## faced square), capped, around a gravel court with a bench.
+func _columbarium(p: Vector3) -> void:
+	var granite := Color("#8d8a86")
+	_flat_rect("gravel", p.x - 8.0, p.x + 8.0, p.z - 6.0, p.z + 6.0, 0.07, Color("#b9b2a2"))
+	for r in 3:
+		var z := p.z - 4.0 + r * 4.0
+		_box("paint", Vector3(12.0, 0.25, 1.1), Vector3(p.x, 0.12, z), CONCRETE)
+		_box("paint", Vector3(11.6, 2.1, 0.8), Vector3(p.x, 1.3, z), granite)
+		_box("paint", Vector3(12.0, 0.18, 1.0), Vector3(p.x, 2.44, z), granite.darkened(0.15))
+		for side in [-1.0, 1.0]:
+			for i in 14:
+				for j in 4:
+					var q := Vector3(p.x - 5.2 + i * 0.8, 0.6 + j * 0.45, z + side * 0.41)
+					if rng.randf() < 0.55:
+						_box("paint", Vector3(0.66, 0.36, 0.02), q, Color("#7a5f3a") if rng.randf() < 0.8 else Color("#b5b0a6"))
+					else:
+						_box("paint", Vector3(0.68, 0.02, 0.02), q + Vector3(0, -0.2, 0), granite.darkened(0.25))
+	_box("paint", Vector3(1.8, 0.45, 0.5), Vector3(p.x - 6.8, 0.45, p.z), Color("#bdb6a8"))
 
 
 ## A small stone mausoleum with a pediment.
