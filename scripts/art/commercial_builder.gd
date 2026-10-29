@@ -684,6 +684,17 @@ func _sign(c: Vector3, w: float, h: float) -> void:
 	_box("paint", Vector3(w + 0.1, h + 0.1, 0.06), c + Vector3(0, h * 0.5, 0.04), col.darkened(0.3))
 
 
+## Trades lettered on signs with no business name yet (the sign shader's
+## stand-in words are the same list).
+const TRADE_WORDS := [
+	"DINER", "CAFE", "PIZZA", "BANK", "SALON", "NAILS", "TAX", "DELI", "SUBS", "LIQUOR", "PAWN", "TACOS", "DRUGS",
+	"HARDWARE", "VIDEO", "SHOES", "FLOWERS", "BAKERY", "BOOKS", "TOYS", "GIFTS", "MUSIC", "PETS", "TIRES", "LOANS",
+	"DENTAL", "INSURANCE", "MARKET", "GRILL", "DONUTS", "FURNITURE", "OPTICAL", "CLEANERS", "BARBER", "THRIFT", "TAVERN",
+	"ANTIQUES", "BIKES", "CANDY", "SPORTS", "HOBBY", "REALTY", "PAINT", "QUILTS", "APPLIANCE", "JEWELRY", "FABRIC",
+	"CELLULAR", "FITNESS", "SEWING",
+]
+
+
 ## Desktop: a strip tenant's name in channel letters, the way strip-centre
 ## leases require them: separate lit letters about 13 cm deep on a raceway
 ## along the fascia, red most often, then white, blue or green; they glow
@@ -696,29 +707,31 @@ func _channel_letters(c: Vector3, w: float, h: float) -> void:
 	var col: Color = tints[r.randi() % tints.size()]
 	col.a = 1.0
 	var lh := h * r.randf_range(0.7, 0.95)
-	var lw := lh * 0.62
-	var gap := lh * 0.14
-	var n := maxi(3, int(w / (lw + gap)))
-	var x0 := c.x - (n * (lw + gap) - gap) * 0.5
+	# A trade word (no names) in block capitals built up from strokes.
+	var word: String = TRADE_WORDS[r.randi() % TRADE_WORDS.size()]
+	var px := minf(lh / 5.0, w * 0.85 / (word.length() * 4.0 - 1.0))
+	lh = px * 5.0
+	var span := word.length() * 4.0 * px - px
 	var y0 := c.y + (h - lh) * 0.5
 	var z := c.z - 0.08
 	# The raceway the letters hang on, painted to match the fascia.
-	_box("paint", Vector3(n * (lw + gap), 0.12, 0.1), Vector3(c.x, y0 + lh * 0.45, c.z - 0.03), Color("#5b5d5f"))
-	var t := lh * 0.18
-	for i in n:
-		if r.randf() < 0.1 and i > 0 and i < n - 1:
-			continue  # a space between words
-		var lx := x0 + i * (lw + gap) + lw * 0.5
-		# A block letter from a few strokes: stems, then bars across.
-		var stems := r.randi_range(1, 2)
-		if stems == 1:
-			_box("sign", Vector3(t, lh, 0.13), Vector3(lx + r.randf_range(-0.3, 0.3) * lw, y0 + lh * 0.5, z), col)
-		else:
-			for sx in [-1.0, 1.0]:
-				_box("sign", Vector3(t, lh, 0.13), Vector3(lx + sx * (lw - t) * 0.5, y0 + lh * 0.5, z), col)
-		for k in 3:
-			if r.randf() < 0.55:
-				_box("sign", Vector3(lw, t, 0.13), Vector3(lx, y0 + t * 0.5 + k * (lh - t) * 0.5, z - 0.005), col)
+	_box("paint", Vector3(span + px * 2.0, 0.12, 0.1), Vector3(c.x, y0 + lh * 0.45, c.z - 0.03), Color("#5b5d5f"))
+	var x0 := c.x + span * 0.5  # +x is the viewer's left
+	for i in word.length():
+		var rows: Array = DenseBuilder.PIXEL_FONT.get(word[i], [])
+		for ry in rows.size():
+			var row: String = rows[ry]
+			var cx := 0
+			while cx < 3:
+				if row[cx] != "#":
+					cx += 1
+					continue
+				var run := 0
+				while cx + run < 3 and row[cx + run] == "#":
+					run += 1
+				var lx := x0 - i * 4.0 * px - (cx + run * 0.5) * px
+				_box("sign", Vector3(run * px, px, 0.13), Vector3(lx, y0 + (4.5 - ry) * px, z), col)
+				cx += run
 
 
 func _awning(cx: float, w: float, zf: float, y: float, col: Color) -> void:
