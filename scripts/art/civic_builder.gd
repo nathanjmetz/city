@@ -695,8 +695,8 @@ func _school(front: float, to_curb: float) -> void:
 	_rooftop_units(gx, 18.0, gz, 24.0, 8.2, 2)
 	# Bus loop and staff parking in front, the walk to the doors.
 	_flat_rect("asphalt", -38.0, 38.0, front + 3.0, front + 10.0, 0.06)
-	_flat_rect("asphalt", -38.0, -31.0, front - to_curb, front + 3.0, 0.1)
-	_flat_rect("asphalt", 31.0, 38.0, front - to_curb, front + 3.0, 0.1)
+	_curb_cut(-34.5, 3.5, front - to_curb, front + 3.0)
+	_curb_cut(34.5, 3.5, front - to_curb, front + 3.0)
 	_flat_rect("drive", -38.0, 38.0, front + 10.0, front + 12.0, 0.08)
 	_flat_rect("drive", ex - 4.0, ex + 4.0, front + 12.0, z0, 0.08)
 	var x := 12.0
@@ -1033,7 +1033,7 @@ func _bus_depot(size: Vector2, front: float, to_curb: float) -> void:
 	var drive_x := w * 0.5 - 5.0
 	# The driveway in along one side, the yard behind the garage.
 	var yard_z := front + BusNet.GARAGE_D
-	_flat_rect("asphalt", drive_x - 4.0, drive_x + 4.0, front - to_curb, yard_z, 0.1)
+	_curb_cut(drive_x, 4.0, front - to_curb, yard_z)
 	_flat_rect("asphalt", -w * 0.5 + 0.5, w * 0.5 - 0.5, yard_z, back - 0.5, 0.07)
 	for slot in BusNet.bay_slots(size):
 		var p: Vector3 = slot[0]
@@ -1228,7 +1228,7 @@ func _taxi_company(size: Vector2, front: float, to_curb: float) -> void:
 	var brick := Color(_pick(["#8a4a38", "#9b5a42", "#a8775c", "#b59a7c"]))
 	var drive_x := w * 0.5 - 4.0
 	var lot_z := front + TaxiCo.OFFICE_D
-	_flat_rect("asphalt", drive_x - 3.2, drive_x + 3.2, front - to_curb, lot_z, 0.1)
+	_curb_cut(drive_x, 3.2, front - to_curb, lot_z)
 	_flat_rect("asphalt", -w * 0.5 + 0.5, w * 0.5 - 0.5, lot_z, back - 0.5, 0.07)
 	for slot in TaxiCo.stall_slots(size):
 		var p: Vector3 = slot[0]
@@ -1262,7 +1262,7 @@ func _builder_yard(size: Vector2, front: float, to_curb: float) -> void:
 	var drive_x := w * 0.5 - 4.5
 	var lot_z := front + Builders.OFFICE_D
 	var gravel := Color("#a49c8d")
-	_flat_rect("asphalt", drive_x - 3.6, drive_x + 3.6, front - to_curb, lot_z, 0.1)
+	_curb_cut(drive_x, 3.6, front - to_curb, lot_z)
 	_flat_rect("gravel", -w * 0.5 + 0.5, w * 0.5 - 0.5, lot_z, back - 0.5, 0.06, gravel)
 	for slot in Builders.stall_slots(size):
 		var p: Vector3 = slot[0]
@@ -1424,7 +1424,7 @@ func _window_row(cx: float, cz: float, span: float, y: float, h: float, n: int, 
 ## facing the building, with the drive out to the street at `drive_x`.
 func _parking(x0: float, x1: float, z0: float, z1: float, to_curb: float, drive_x: float) -> void:
 	_flat_rect("asphalt", x0, x1, z0, z1, 0.06)
-	_flat_rect("asphalt", drive_x - 3.6, drive_x + 3.6, z0 - to_curb, z0, 0.1)
+	_curb_cut(drive_x, 3.6, z0 - to_curb, z0)
 	if z1 - z0 < 6.0:
 		return
 	var x := x0 + 0.3
