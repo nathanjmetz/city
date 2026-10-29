@@ -308,6 +308,20 @@ void fragment() {
 	// Weeds: light clover and crabgrass patches, dark clumps of coarse fescue.
 	col = mix(col, col * vec3(1.16, 1.1, 0.8), smoothstep(0.5, 0.78, blot) * la.g * 0.75);
 	col = mix(col, dark.rgb * 1.05, smoothstep(0.55, 0.82, 1.0 - patchy) * la.g * 0.45);
+	// Let go (run-down and derelict yards): unmown for weeks, the grass
+	// tall and coarse and gone to seed, tan-olive heads over green in
+	// uneven drifts, with yellow-green crabgrass and dandelion clumps.
+	// Every edge soft and mixed, from the noise: never a flat patch.
+	float unmown = smoothstep(0.45, 0.9, la.g);
+	float drift = smoothstep(0.25, 0.85, patchy * 0.6 + clump * 0.4);
+	col = mix(col, mix(col, straw * vec3(1.05, 1.0, 0.85), 0.55), unmown * mix(0.2, 0.7, drift));
+	col = mix(col, col * vec3(1.22, 1.12, 0.62), smoothstep(0.62, 0.85, blot * 0.7 + grain * 0.3) * unmown * 0.35);
+	col *= 1.0 + ((grain - 0.5) * 0.45 * fade + (blades - 0.5) * 0.35 * fade * fade) * unmown;
+	if (pk > 0.0 && unmown > 0.0) {
+		// Coarser, longer blades than a mown lawn's.
+		pr = mix(pr, ph_grass(turn(p, 0.6) * 0.55), unmown * 0.6);
+		ps = mix(ps, ph_grass_s(turn(p, 0.6) * 0.55) * 1.3, unmown * 0.6);
+	}
 	// Under a big tree: thinner, darker grass with soil showing.
 	col = mix(col, col * vec3(0.74, 0.8, 0.72), lb.a * 0.8);
 	col = mix(col, soil.rgb * 0.7, lb.a * smoothstep(0.45, 0.8, blot) * 0.3);

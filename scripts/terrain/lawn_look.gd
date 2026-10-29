@@ -88,7 +88,9 @@ static func _wear(seed: int, key: String, t: int, home: bool) -> Array:
 	var out := []
 	# Ragged edge along the walk: thin, browned grass, not bare dirt.
 	if roll(seed, key, "ragged") < RAGGED[t]:
-		out.append(["edge", 0.0, 0.0, 1.2, 0.32 + 0.1 * roll(seed, key, "ragged_k")])
+		# Let go, it wears to bare dirt along the walk.
+		var bare := t <= 1
+		out.append(["edge", 0.0, 0.0, 1.5 if bare else 1.2, (0.55 if bare else 0.32) + 0.1 * roll(seed, key, "ragged_k")])
 	if not home:
 		return out
 	# The back door: about the middle of the house, which stands 7 to 9.5 m

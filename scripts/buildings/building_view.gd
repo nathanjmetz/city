@@ -302,8 +302,10 @@ func _draw(key: String, lot: Dictionary, b: Dictionary, fit: Dictionary, s: int)
 		fit = fit.duplicate()
 		fit.added_from = int(b.added_from)  # floors added on top of a block this tall
 	HouseBuilder.keep_arrays = true
+	HouseBuilder.flat_weeds = not LawnMap.paints(sim)
 	var built := build_for(BuildingTypes.type_of(b), storeys, s, lot.to_curb, fit, spec, int(b.get("units", 2)), b.get("chain", "general"), int(b.get("level", 0)))
 	HouseBuilder.keep_arrays = false
+	HouseBuilder.flat_weeds = true
 	HouseBuilder.owner_care = 0
 	HouseBuilder.restored = false
 	if built.size() < 2:

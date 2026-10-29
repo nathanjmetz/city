@@ -109,6 +109,18 @@ func _painted() -> void:
 	var now := map.texel(Vector2(lp.x, lp.z))
 	_check(now[0].g > 0.5, "a run-down yard goes weedy (%.2f)" % now[0].g)
 	_check(map.texel(Vector2(op.x, op.z)) == other_was, "the neighbours' lawns stay as they were")
+	# Where the map paints a town's lawns, the builders leave out their flat
+	# weed patches (hard-edged blobs); elsewhere (the browser) they stay.
+	_check(LawnMap.paints(sim) and not LawnMap.paints(CitySim.new()), "the map knows which town it paints")
+	var lot := {"width": 22.0, "depth": 45.0}
+	HouseBuilder.owner_care = -2
+	var blobs := _ground_tris(HouseBuilder.build(4242, 6.0, lot, 1)[1])
+	HouseBuilder.flat_weeds = false
+	var soft := _ground_tris(HouseBuilder.build(4242, 6.0, lot, 1)[1])
+	HouseBuilder.flat_weeds = true
+	HouseBuilder.owner_care = 0
+	var kept := _ground_tris(HouseBuilder.build(4242, 6.0, lot, 1)[1])
+	_check(blobs > soft + 100 and soft == kept, "no flat weed blobs where the ground draws the weeds (%d, %d, kept %d)" % [blobs, soft, kept])
 	map.free()
 	again.free()
 
@@ -133,6 +145,13 @@ func _paint(sim: CitySim) -> LawnMap:
 		if map.is_drawn():
 			break
 	return map
+
+
+func _ground_tris(m: ArrayMesh) -> int:
+	var n := 0
+	for i in m.get_surface_count():
+		n += m.surface_get_array_len(i) / 3
+	return n
 
 
 func _near(a: Color, b: Color) -> bool:

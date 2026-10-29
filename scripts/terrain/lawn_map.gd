@@ -48,6 +48,15 @@ var _tree_records := {}  # Vector2i tile -> the tree field's record array it was
 var _first := true
 
 
+## The towns whose lawns a lawn map paints (BuildingView then leaves out
+## the builders' flat weed patches): CitySim -> its map.
+static var _painting := {}
+
+
+static func paints(s: CitySim) -> bool:
+	return s != null and _painting.has(s) and is_instance_valid(_painting[s])
+
+
 ## Whether this machine draws per-lot lawns: the desktop app (Forward+),
 ## where the ground shader has DESKTOP_DETAIL.
 static func wanted() -> bool:
@@ -56,6 +65,7 @@ static func wanted() -> bool:
 
 func setup(s: CitySim) -> void:
 	sim = s
+	_painting[s] = self
 	_pages.fill(Color(0, 0, 0))
 	_pages_tex = ImageTexture.create_from_image(_pages)
 	_blank = [_tile_image(LawnLook.NEUTRAL_A), _tile_image(LawnLook.NEUTRAL_B)]
@@ -65,6 +75,11 @@ func setup(s: CitySim) -> void:
 	sim.lots_changed.connect(func(): _replat = true; _mark())
 	var mat := TerrainView.ground_material()
 	mat.set_shader_parameter("lawn_pages", _pages_tex)
+
+
+func _exit_tree() -> void:
+	if sim != null and _painting.get(sim) == self:
+		_painting.erase(sim)
 
 
 func _mark() -> void:
