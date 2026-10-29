@@ -16,6 +16,7 @@ extends DenseBuilder
 ##     stone-trimmed stoop, a pressed-metal cornice on brackets and iron
 ##     fire escapes across the front (New York old-law and new-law
 ##     tenements, Cincinnati's Over-the-Rhine)
+## On newer streets a mid-rise is a 2010s five-over-one (_mb_five_over_one).
 ## Other eras fall back to DenseBuilder's own looks.
 
 const MB_GREYSTONE := ["#bdb5a3", "#c4bcaa", "#b3ab98", "#a9a294"]
@@ -37,7 +38,10 @@ static func build_apartments(seed: int, to_curb: float, lot: Dictionary, storeys
 	var b := _mb_start(seed, lot)
 	var width := b.half * 2.0
 	if b.era != "prewar":
-		b._apartments(to_curb, width, storeys)
+		if storeys >= 4 and width >= 28.0 and b.depth >= 30.0:
+			b._mb_five_over_one(to_curb, width, storeys)
+		else:
+			b._apartments(to_curb, width, storeys)
 	elif width >= 34.0 and storeys <= 3 and b.depth >= 34.0:
 		b._mb_courtyard(to_curb, width, 3)
 	else:
@@ -280,6 +284,89 @@ func _mb_roof(cx: float, w: float, cz: float, d: float, y: float) -> void:
 	roof.a = 0.5  # gravel ballast in the membrane shader
 	_quad("membrane", Vector3(cx - w * 0.5, y + 0.03, cz - d * 0.5), Vector3(cx + w * 0.5, y + 0.03, cz - d * 0.5),
 		Vector3(cx + w * 0.5, y + 0.03, cz + d * 0.5), Vector3(cx - w * 0.5, y + 0.03, cz + d * 0.5), roof, [], Vector3.UP)
+
+
+# ---------------------------------------------------------------- 5-over-1 mid-rise
+
+const MB_PANEL := ["#3b3d40", "#e6e3dc", "#9a7b5c", "#7d8a8f", "#b4a48a", "#5b6b5e"]  # fibre-cement: charcoal, white, cedar-look, slate, khaki, sage
+
+
+## A 2010s-20s "five-over-one" mid-rise (Carmel City Center, Indiana;
+## Indianapolis's Mass Ave and Fort Wayne's riverfront apartments): four
+## wood-frame floors (IBC Type V-A) over a one-storey concrete podium of
+## shops, a lobby and amenity room, built near the sidewalk. The front is
+## broken into bays of fibre-cement panel in two or three colours, every
+## other one stepped out, with a brick-veneered corner bay that rises above
+## the parapet, Juliet and stacked metal balconies, and a flat roof with
+## condensers.
+func _mb_five_over_one(to_curb: float, width: float, storeys: int) -> void:
+	var w := minf(width - 2.0, rng.randf_range(30.0, 70.0))
+	var d := minf(depth - 8.0, rng.randf_range(18.0, 22.0))
+	var zf := rng.randf_range(1.5, 3.5)
+	var cz := zf + d * 0.5
+	var ground_h := 4.6
+	var floor_h := 3.05
+	var top := ground_h + floor_h * (storeys - 1)
+	var podium := Color(_pick(["#8d8a84", "#5a5753", "#b3ada2"]))
+	var cols := [Color(_pick(MB_PANEL)), Color(_pick(MB_PANEL)), Color(_pick(MB_PANEL))]
+	var brick := Color(_pick(FACADE_BRICK))
+	var frame := Color("#2a2b2c") if rng.randf() < 0.7 else Color("#efede6")
+	var corner := 1.0 if rng.randf() < 0.5 else -1.0
+	_downtown_walk(to_curb, width, zf)
+	# The podium: storefronts and the lobby under a steel canopy.
+	_box("concrete", Vector3(w, ground_h, d), Vector3(0, ground_h * 0.5, cz), podium)
+	var shops := maxi(2, roundi(w / 8.0))
+	for i in shops:
+		var x := -w * 0.5 + (i + 0.5) * w / shops
+		_glass(Vector3(x, 2.2, zf - 0.03), Vector3(-1, 0, 0), w / shops - 1.0, 3.4, rng.randf_range(0.0, 0.2))
+	_box("metal", Vector3(w * 0.5, 0.2, 1.6), Vector3(-corner * w * 0.2, ground_h - 0.5, zf - 0.8), frame)
+	_sign(Vector3(-corner * w * 0.2, ground_h - 0.25, zf - 1.62), 4.0, 0.5)
+	# The wood floors: bays of panel, every other one stepped out.
+	var bays := maxi(3, roundi(w / 7.5))
+	var bw := w / bays
+	for i in bays:
+		var x := -w * 0.5 + (i + 0.5) * bw
+		var is_corner := (corner > 0.0 and i == bays - 1) or (corner < 0.0 and i == 0)
+		var out := 0.6 if i % 2 == 1 else 0.0
+		var col: Color = brick if is_corner else cols[i % 2 if bays > 3 else 0]
+		if i % 4 == 3 and not is_corner:
+			col = cols[2]
+		var bt := top + (2.0 if is_corner else (0.6 if i % 2 == 1 else 0.0))
+		_box("brick" if is_corner else "siding", Vector3(bw, bt - ground_h, d + out * 2.0), Vector3(x, (ground_h + bt) * 0.5, cz), col)
+		_box("paint", Vector3(bw + 0.05, 0.25, d + out * 2.0 + 0.1), Vector3(x, bt + 0.12, cz), col.darkened(0.2))  # parapet cap
+		var face_z := zf - out
+		for f in range(1, storeys):
+			var y := ground_h + floor_h * (f - 1) + 1.55
+			var balcony := not is_corner and i % 2 == 0 and i % 4 != 0
+			for k in [-1.0, 1.0]:
+				var wx: float = x + k * bw * 0.24
+				if balcony and k > 0.0:
+					# A sliding door out to a stacked metal balcony.
+					_glass(Vector3(wx, y - 0.25, face_z - 0.03), Vector3(-1, 0, 0), 1.8, 2.2, rng.randf_range(0.1, 0.6))
+					_box("metal", Vector3(2.6, 0.12, 1.5), Vector3(wx, y - 1.4, face_z - 0.75), frame)
+					_box("metal", Vector3(2.6, 1.0, 0.04), Vector3(wx, y - 0.85, face_z - 1.48), frame)
+				else:
+					_window(Vector3(wx, y, face_z), Vector3(-1, 0, 0), 1.3 if is_corner else 1.6, 1.6, false, false, frame)
+					if fine and rng.randf() < 0.25:
+						_box("metal", Vector3(1.6, 0.04, 0.04), Vector3(wx, y - 0.25, face_z - 0.18), frame)  # Juliet rail
+		# Side windows on the end bays.
+		if i == 0 or i == bays - 1:
+			var s := -1.0 if i == 0 else 1.0
+			var nside := maxi(3, int(d / 3.4))
+			for f in range(1, storeys):
+				var y := ground_h + floor_h * (f - 1) + 1.55
+				for k in nside:
+					_window(Vector3(s * w * 0.5, y, zf + (k + 0.5) * d / nside), Vector3(0, 0, -s), 1.2, 1.5, false, false, frame)
+	# The back: a window grid over the parking lot.
+	for f in range(1, storeys):
+		var y := ground_h + floor_h * (f - 1) + 1.55
+		for i in bays * 2:
+			_window(Vector3(-w * 0.5 + (i + 0.5) * w / (bays * 2), y, zf + d), Vector3(1, 0, 0), 1.3, 1.5, false, false, frame)
+	_mb_roof(0.0, w, cz, d, top)
+	for i in rng.randi_range(4, 8):
+		_box("metal", Vector3(1.0, 0.9, 1.0), Vector3(rng.randf_range(-w * 0.4, w * 0.4), top + 0.45, cz + rng.randf_range(-d * 0.3, d * 0.3)), Color("#c4c6c4"))
+	if depth - (zf + d) > 12.0:
+		_parking(-width * 0.5 + 0.6, width * 0.5 - 0.6, zf + d + 2.0, depth - 1.0, width)
 
 
 # ---------------------------------------------------------------- parking garages
