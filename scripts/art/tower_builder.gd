@@ -260,6 +260,7 @@ func _tw_deco(to_curb: float, width: float, storeys: int) -> void:
 				c.y = maxf(y0, ground_h) + ph * 0.5
 				_box("brick", Vector3(0.6, ph, 0.6), c, stone.lightened(0.05), _tw_yaw(face[1]))
 		_box("paint", Vector3(tw + 0.2, 0.6, td + 0.2), Vector3(0, y1 + 0.3, cz), stone.darkened(0.08))  # coping
+		_tw_roof(tw, td, cz, y1)  # each setback's roof (the far version steps with them)
 		y0 = y1
 		f0 = f1
 	# The ground floor: bronze shopfronts and a tall lobby portal.
@@ -705,6 +706,7 @@ func _tw_pomo(to_curb: float, width: float, storeys: int) -> void:
 		_box("paint", Vector3(cw - notch * 2.0 + 0.4, 0.5, cd + 0.4), Vector3(0, y1 + 0.25, cz), granite.lightened(0.1))  # coping
 		_box("paint", Vector3(cw + 0.4, 0.5, cd - notch * 2.0 + 0.4), Vector3(0, y1 + 0.25, cz), granite.lightened(0.1))
 		_tw_roof(cw - notch * 2.0, cd, cz, y1 + 0.5)
+		_tw_roof(cw, cd - notch * 2.0, cz, y1 + 0.49)
 		y0 = y1
 		f0 = f1
 	_tw_crown(crown, cw, cd, cz, y0 + 0.5, granite, mirror)
@@ -885,6 +887,7 @@ func _tw_podium(to_curb: float, width: float, storeys: int) -> void:
 					var p: Vector3 = c - r + face[1] * (i + 0.5) * (face[2] - 1.2) / n + out * 0.15
 					_box("metal", Vector3(0.12, park_h * 0.62, 0.3), p, panel.lightened(0.12), _tw_yaw(face[1]))
 	_box("paint", Vector3(pw + 0.2, 0.9, pd + 0.2), Vector3(0, ph + 0.45, pcz), panel.darkened(0.1))  # parapet
+	_tw_roof(pw, pd, pcz, ph + 0.84)  # under the deck: the far version's podium top
 	# The roof deck around the tower.
 	_quad("paint", Vector3(-pw * 0.5 + 0.4, ph + 0.92, zf + 0.4), Vector3(pw * 0.5 - 0.4, ph + 0.92, zf + 0.4),
 		Vector3(pw * 0.5 - 0.4, ph + 0.92, zf + pd - 0.4), Vector3(-pw * 0.5 + 0.4, ph + 0.92, zf + pd - 0.4), Color("#a39e94"), [], Vector3.UP)

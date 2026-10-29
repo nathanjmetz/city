@@ -1,0 +1,8 @@
+{
+ "leafy_grass": {"res": "2k", "use": "pasture, lawn and ditch grass (TerrainView)"},
+ "farm_soil": {"res": "2k", "use": "worked field soil between the crop rows (TerrainView)"},
+ "leaves_forest_ground": {"res": "2k", "use": "woods floor leaf litter (TerrainView)"},
+ "brown_mud": {"res": "2k", "use": "muddy creek and pond banks (TerrainView)"},
+ "gravel_floor_02": {"res": "2k", "use": "crushed limestone county roads painted on the land (TerrainView)"},
+ "snow_02": {"res": "2k", "use": "snow on open ground (TerrainView)"}
+}
