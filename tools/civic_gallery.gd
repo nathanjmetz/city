@@ -6,13 +6,14 @@ extends SceneTree
 ## Items: fire police clinic school substation water_tower well bus taxi
 ## builder traffic hospital nursing daycare courthouse town_tower elevator
 ## football fairgrounds trailhead park high_school college university
-## mill sawmill refinery metal general warehouse. No items: all of them.
+## mill sawmill refinery metal general warehouse cemetery landfill recycling.
+## No items: all of them.
 ## "item@yaw,pitch,dist" sets the camera; --quality=ultra picks the tier.
 
 const ALL := ["fire", "police", "clinic", "school", "substation", "water_tower", "well", "bus", "taxi",
 	"builder", "traffic", "hospital", "nursing", "daycare", "courthouse", "town_tower", "elevator",
 	"football", "fairgrounds", "trailhead", "park", "high_school", "college", "university",
-	"mill", "sawmill", "refinery", "metal", "general", "warehouse"]
+	"mill", "sawmill", "refinery", "metal", "general", "warehouse", "cemetery", "landfill", "recycling"]
 const SVC := {"fire": Services.Kind.FIRE, "police": Services.Kind.POLICE, "clinic": Services.Kind.CLINIC,
 	"school": Services.Kind.SCHOOL, "substation": Services.Kind.SUBSTATION, "water_tower": Services.Kind.WATER_TOWER,
 	"well": Services.Kind.WELL, "bus": Services.Kind.BUS_DEPOT, "taxi": Services.Kind.TAXI_COMPANY,
@@ -81,6 +82,17 @@ func _init() -> void:
 		elif name in ["high_school", "college", "university"]:
 			size = Vector2(120, 120)
 			built = CampusBuilder.build_main(name, sd, to_curb)
+		elif name in ["cemetery", "landfill", "recycling"]:
+			# A hub grown over three pieces across and two back.
+			var cells := []
+			for x in [-1, 0, 1]:
+				for y in [0, 1]:
+					cells.append(Vector2i(x, y))
+			size = Vector2(150, 100)
+			lot_front = true
+			var hub := HubBuilder.build_hub({"kind": "recycling_1" if name == "recycling" else name, "cells": cells,
+				"cell": 50.0, "built": [], "received": 40_000_000}, sd, to_curb)
+			built = [hub[0], hub[1], hub[2], [], hub[3]]
 		elif name == "warehouse":
 			size = Vector2(80, 90)
 			built = WarehouseBuilder.build_warehouse({"kind": "medium", "bays": 0, "level": 1, "built": []}, sd, to_curb)
