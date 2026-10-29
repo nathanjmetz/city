@@ -26,6 +26,7 @@ const LADDERS := {
 	"added": [["office", 0, 7.0, "", 30.0], ["office", 1, 7.0, "", 30.0, 3], ["office", 2, 7.0, "", 30.0, 5], ["office", 2, 7.0, "", 30.0, 3]],
 	# A small city's office park, phase by phase, on a run of lots.
 	"park": [["office_park", 0, 1.0, "", 110.0], ["office_park", 1, 1.0, "", 110.0], ["office_park", 2, 1.0, "", 110.0]],
+	"campus": [["office_park", 2, 1.0, "", 110.0], ["office_park", 3, 1.0, "", 170.0], ["office_park", 3, 1.0, "", 130.0, 0, 80.0]],
 	# Modernist glass towers on bought-up sites (their plazas).
 	"plazas": [["office", 3, 12.0, "glass", 50.0], ["office", 4, 16.0, "glass", 64.0], ["office", 4, 16.0, "glass", 72.0]],
 	"sites": [["office", 3, 12.0, "chicago", 30.0], ["office", 3, 12.0, "chicago", 62.0], ["office", 4, 16.0, "deco", 36.0], ["office", 4, 16.0, "deco", 66.0]],

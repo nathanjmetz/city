@@ -118,11 +118,16 @@ func _office_park(to_curb: float, width: float, level: int) -> void:
 	var glass_dark := r.randf() < 0.6
 	var x0 := -width * 0.5 + 0.6
 	var x1 := width * 0.5 - 0.6
-	var n := clampi(int((width - 4.0) / 34.0), 1, 3)
+	# The corporate campus keeps the drive's end of the site for its
+	# headquarters; the low buildings fill the rest.
+	var hq := level >= 3
+	var hq_w := clampf(width * 0.28, 34.0, 50.0) if hq else 0.0
+	var x1b := x1 - (hq_w + 8.0 if hq else 0.0)
+	var n := clampi(int((x1b - x0 - 3.4) / 34.0), 1, 3)
 	var bd := clampf(depth - 30.0, 14.0, 20.0)
 	var zb := depth - 3.0
 	var zfb := zb - bd
-	var slot := (x1 - x0) / n
+	var slot := (x1b - x0) / n
 	var bw := minf(34.0, slot - 8.0)
 	# The order the slots fill: the middle (or left) first.
 	var order := [0] if n == 1 else ([0, 1] if n == 2 else [1, 0, 2])
@@ -175,6 +180,8 @@ func _office_park(to_curb: float, width: float, level: int) -> void:
 	site.door = door
 	if _dry:
 		return
+	if hq:
+		_park_hq(x1 - 4.0 - hq_w * 0.5, hq_w, zfb, bd, band, r)
 	# The monument sign by the drive, on a brick base in a planting bed.
 	var sx := cut_x - 7.0
 	_flat_rect("mulch", sx - 3.0, sx + 3.0, 0.8, 3.6, 0.075)
@@ -184,6 +191,62 @@ func _office_park(to_curb: float, width: float, level: int) -> void:
 		_shrub(Vector3(sx - 2.2 + i * 2.2, 0.1, 3.2), 0.45)
 	if pond:
 		_park_pond(Vector3(px, 0, rowa * 0.5 + 2.0), Vector2(pw, maxf(rowa + 1.0, 9.0)), r)
+
+
+## The headquarters a company builds on its office park once it has done
+## well there (Cummins's Corporate Office Building in Columbus, Lincoln
+## Financial's and Steel Dynamics' Fort Wayne campuses): six storeys of
+## glass curtain wall on a stone base, vertical aluminium fins, a two-storey
+## glass lobby pavilion facing the lot, the company's name along the top,
+## a screened penthouse, and three flagpoles beside the lobby.
+func _park_hq(cx: float, w: float, zf: float, d: float, band: Color, r: RandomNumberGenerator) -> void:
+	var fh := 4.0
+	var storeys := 6
+	var top := fh * storeys + 0.6
+	var cz := zf + d * 0.5
+	var stone := Color(["#cfc8ba", "#b9b2a4", "#d8d2c4"][r.randi() % 3])
+	var tint := Color(["#3f5560", "#4a5a52", "#2f3a44", "#5b6870"][r.randi() % 4])
+	_block("paint", cx, w, d, cz, top, top + 1.2, tint.darkened(0.2))
+	_box("brick", Vector3(w + 0.2, 4.6, d + 0.2), Vector3(cx, 2.3, cz), stone)  # stone base
+	for f in range(1, storeys):
+		var y := f * fh + 0.6 + fh * 0.5
+		for face in [[Vector3(cx, 0, zf - 0.03), Vector3(-1, 0, 0), w], [Vector3(cx, 0, zf + d + 0.03), Vector3(1, 0, 0), w],
+				[Vector3(cx - w * 0.5 - 0.03, 0, cz), Vector3(0, 0, 1), d], [Vector3(cx + w * 0.5 + 0.03, 0, cz), Vector3(0, 0, -1), d]]:
+			var c: Vector3 = face[0]
+			c.y = y
+			_glass(c, face[1], face[2] - 0.4, fh - 0.3, r.randf_range(0.1, 0.5))
+	for face in [[Vector3(cx, 0, zf - 0.03), Vector3(-1, 0, 0), w], [Vector3(cx, 0, zf + d + 0.03), Vector3(1, 0, 0), w],
+			[Vector3(cx - w * 0.5 - 0.03, 0, cz), Vector3(0, 0, 1), d], [Vector3(cx + w * 0.5 + 0.03, 0, cz), Vector3(0, 0, -1), d]]:
+		var along: Vector3 = face[1]
+		var out := along.cross(Vector3.UP)
+		var len: float = face[2]
+		var nf := maxi(2, roundi(len / (3.0 if fine_parts else 6.0)))
+		for i in range(1, nf):
+			var p: Vector3 = face[0] + along * (-len * 0.5 + i * len / nf) + out * 0.2
+			p.y = 4.6 + (top - 4.6) * 0.5
+			_box("metal", Vector3(0.12, top - 4.6, 0.45), p, Color("#b9bcbe"), Basis(Vector3.UP, atan2(-along.z, -along.x)))
+	# The glass lobby pavilion: two storeys under a thin flat roof.
+	var lw := minf(w * 0.4, 16.0)
+	var lz := zf - 2.4
+	_glass(Vector3(cx, 3.6, lz - 0.02), Vector3(-1, 0, 0), lw, 7.0, 0.0)
+	for sx in [-1.0, 1.0]:
+		_glass(Vector3(cx + sx * lw * 0.5, 3.6, lz + 1.5), Vector3(0, 0, sx), 3.0, 7.0, 0.0)
+	_box("paint", Vector3(lw + 2.4, 0.4, 3.6), Vector3(cx, 7.3, lz + 1.0), Color("#e6e4de"))
+	for i in range(0, 5):
+		_box("metal", Vector3(0.1, 7.0, 0.12), Vector3(cx - lw * 0.5 + i * lw / 4.0, 3.6, lz - 0.08), Color("#b9bcbe"))
+	_box("metal", Vector3(lw, 0.12, 0.12), Vector3(cx, 3.9, lz - 0.08), Color("#b9bcbe"))  # mid rail
+	_glass(Vector3(cx, 1.3, lz - 0.1), Vector3(-1, 0, 0), 2.4, 2.4, 0.0)
+	# The name along the top, the screened penthouse.
+	_sign(Vector3(cx, top - 2.3, zf - 0.08), minf(w * 0.5, 18.0), 1.6)
+	_box("paint", Vector3(w * 0.5, 3.6, d * 0.5), Vector3(cx, top + 1.8, cz), Color("#9a9c9e"))
+	_quad("membrane", Vector3(cx - w * 0.25, top + 3.62, cz - d * 0.25), Vector3(cx + w * 0.25, top + 3.62, cz - d * 0.25),
+		Vector3(cx + w * 0.25, top + 3.62, cz + d * 0.25), Vector3(cx - w * 0.25, top + 3.62, cz + d * 0.25), Color("#9a9790"), [], Vector3.UP)
+	# Three flagpoles along the walk beside the lobby.
+	for i in 3:
+		var fx := cx + lw * 0.5 + 3.0 + i * 2.4
+		_box("metal", Vector3(0.14, 10.0, 0.14), Vector3(fx, 5.0, zf - 1.4), Color("#cfd2d4"))
+		_box("paint", Vector3(1.8, 1.1, 0.04), Vector3(fx + 0.95, 9.3, zf - 1.4),
+			[Color("#3c3b6e"), Color("#1f3b6e"), band.lightened(0.2)][i])
 
 
 ## One office building of the park: a flat-roofed box with ribbon windows
