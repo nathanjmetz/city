@@ -1644,6 +1644,25 @@ const PARK_TREE := [
 		"effects": {"upkeep+": 1_500, "value+": 0.02, "happy+": 0.02}},
 	{"id": "nature_trail", "branch": "Nature", "name": "Nature trail", "size": Vector2.ZERO, "cost": 150_000,
 		"requires": ["walking_loop"], "needs": {"forest": 0.3}, "effects": {"upkeep+": 600, "value+": 0.01, "happy+": 0.02}},
+	# Growth-stage items (Brawn 2026-10-29: a park needs many options to grow
+	# from a lawn into a major park). Sizes are the real layouts: USA
+	# Pickleball's 30 x 60 ft pad per court, ITF tennis courts with runoff,
+	# FIVB beach courts with their free zone; costs from Indiana park
+	# board projects of the 2020s.
+	{"id": "pickleball", "branch": "Sports", "name": "Pickleball courts", "size": Vector2(40, 22), "cost": 350_000,
+		"requires": ["court"], "needs": {"tier": 1, "population": 1_000},
+		"effects": {"upkeep+": 1_200, "value+": 0.01, "happy+": 0.03}},
+	{"id": "tennis", "branch": "Sports", "name": "Tennis courts", "size": Vector2(38, 38), "cost": 600_000,
+		"requires": ["pickleball"], "needs": {"tier": 2, "population": 2_500},
+		"effects": {"upkeep+": 2_000, "value+": 0.01, "happy+": 0.02}},
+	{"id": "volleyball", "branch": "Sports", "name": "Sand volleyball", "size": Vector2(24, 30), "cost": 80_000,
+		"requires": ["pavilion"], "needs": {"population": 600}, "effects": {"upkeep+": 400, "happy+": 0.02}},
+	{"id": "dog_park", "branch": "Play", "name": "Dog park", "size": Vector2(40, 30), "cost": 150_000,
+		"requires": ["paths"], "needs": {"tier": 1, "population": 2_000},
+		"effects": {"upkeep+": 900, "value+": 0.01, "happy+": 0.03}},
+	{"id": "skate_park", "branch": "Play", "name": "Skate park", "size": Vector2(30, 24), "cost": 450_000,
+		"requires": ["playground"], "needs": {"tier": 1, "population": 2_000},
+		"effects": {"upkeep+": 1_500, "happy+": 0.03}},
 	{"id": "pool", "branch": "Water", "name": "Swimming pool", "size": Vector2(50, 36), "cost": 2_500_000,
 		"needs": {"tier": 1, "population": 1_500, "water": 1}, "effects": {"upkeep+": 9_000, "happy+": 0.05}},
 	{"id": "aquatic_center", "branch": "Water", "name": "Aquatic center", "size": Vector2(80, 60), "cost": 8_000_000,

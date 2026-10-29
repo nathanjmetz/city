@@ -19,7 +19,7 @@ const SVC := {"fire": Services.Kind.FIRE, "police": Services.Kind.POLICE, "clini
 	"well": Services.Kind.WELL, "bus": Services.Kind.BUS_DEPOT, "taxi": Services.Kind.TAXI_COMPANY,
 	"builder": Services.Kind.BUILDER_YARD, "traffic": Services.Kind.TRAFFIC_CENTER}
 const CARE := {"hospital": Services.Kind.HOSPITAL, "nursing": Services.Kind.NURSING_HOME, "daycare": Services.Kind.DAYCARE}
-const SITE := {"courthouse": "courthouse", "town_tower": "water_tower", "elevator": "grain_elevator",
+const SITE := {"bigpark": "park", "courthouse": "courthouse", "town_tower": "water_tower", "elevator": "grain_elevator",
 	"football": "football", "fairgrounds": "fairgrounds", "trailhead": "trailhead", "park": "park"}
 
 var _items := []  # [name, centre, size, yaw, pitch, dist]
@@ -72,7 +72,23 @@ func _init() -> void:
 			size = Balance.AMENITIES[k].get("size", Vector2(70, 60))
 			var site := {"kind": k, "tier": 2, "size": size, "name": Parks.LANDMARK_NAMES.get(k, "Lincoln Park"),
 				"pos": Vector3.ZERO, "dir": Vector3(0, 0, -1), "features": []}
-			if k == "park":
+			if name == "bigpark":
+				# A park grown over the years, every growth item placed.
+				size = Vector2(150, 110)
+				site.size = size
+				site.tier = 3
+				site.name = "Matter Park"
+				site.features = [{"type": "paths", "pos": Vector3.ZERO, "size": Vector2.ZERO},
+					{"type": "playground", "pos": Vector3(-55, 0, -38), "size": Vector2(18, 14)},
+					{"type": "pavilion", "pos": Vector3(-30, 0, -40), "size": Vector2(14, 11)},
+					{"type": "court", "pos": Vector3(-55, 0, -14), "size": Vector2(16, 15)},
+					{"type": "pickleball", "pos": Vector3(-38, 0, 14), "size": Vector2(40, 22)},
+					{"type": "tennis", "pos": Vector3(-46, 0, 42), "size": Vector2(38, 38)},
+					{"type": "volleyball", "pos": Vector3(14, 0, -36), "size": Vector2(24, 30)},
+					{"type": "dog_park", "pos": Vector3(48, 0, -30), "size": Vector2(40, 30)},
+					{"type": "skate_park", "pos": Vector3(14, 0, 4), "size": Vector2(30, 24)},
+					{"type": "walking_loop", "pos": Vector3.ZERO, "size": Vector2.ZERO}]
+			elif k == "park":
 				site.name = "Lincoln Park"
 				site.features = [{"type": "paths", "pos": Vector3.ZERO, "size": Vector2.ZERO},
 					{"type": "playground", "pos": Vector3(-18, 0, -8), "size": Vector2(16, 14)},
