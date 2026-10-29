@@ -43,6 +43,24 @@ func _init() -> void:
 					_check(ok, "%s on a %d m %s lot parks inside it" % [plan.style, w, era])
 					var lay := SiteLayout.for_building(ZoneMap.Zone.RESIDENTIAL, 9, {"width": w, "depth": 40.0}, 0, "duplex", level)
 					_check(lay.has("spots") and lay.has("door"), "SiteLayout lays out a duplex")
+	# Row homes of each kind fit their lots, two storeys and three.
+	for kind in ["townhomes", "mansard", "flats", "row"]:
+		MetroBuilder.force_row = kind
+		for w in [15.0, 22.0, 30.0, 45.0]:
+			for storeys in [2, 3]:
+				var units := maxi(2, floori(w / 7.5))
+				var out := MetroBuilder.build_row(5, 3.9, {"width": w, "depth": 40.0}, units, storeys)
+				_check(out.size() >= 3 and _inside(HouseBuilder.last_masses, w * 0.5, 40.0),
+					"%s row of %d on a %d m lot fits it" % [kind, units, w])
+		MetroBuilder.force_row = ""
+	MetroBuilder.force_row = "garden"
+	for era in ["postwar", "recent"]:
+		for w in [24.0, 30.0, 40.0, 60.0]:
+			for storeys in [2, 3]:
+				var out := MetroBuilder.build_apartments(3, 3.9, {"width": w, "depth": 50.0, "era": era}, storeys)
+				_check(out.size() >= 3 and _inside(HouseBuilder.last_masses, w * 0.5, 50.0),
+					"%s garden apartments on a %d m lot fit it" % [era, w])
+	MetroBuilder.force_row = ""
 	_check(styles.size() == 5, "every kind of duplex and the fourplex come up (%s)" % str(styles.keys()))
 	print("FAILED" if failed else "ALL PASSED")
 	quit(1 if failed else 0)
