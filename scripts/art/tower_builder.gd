@@ -1275,7 +1275,7 @@ func _tw_pomo(to_curb: float, width: float, storeys: int) -> void:
 		_glass(Vector3(x, 2.6, zf - 0.03), Vector3(-1, 0, 0), w / bays - 1.8, 4.2, rng.randf_range(0.0, 0.2))
 		for f in range(1, base_f):
 			_glass(Vector3(x, ground_h + floor_h * (f - 1) + 1.8, zf - 0.03), Vector3(-1, 0, 0), w / bays - 2.2, 2.2, rng.randf_range(0.1, 0.5))
-	_tw_arch(Vector3(0, 0, zf), 7.0, minf(y_base - 1.0, 10.0), granite.lightened(0.08), mirror)
+	_tw_arch(Vector3(0, 0, zf), 7.0, minf(y_base - 1.0, 10.0), granite.lightened(0.08), mirror, true)
 	_sign(Vector3(0, minf(y_base - 1.0, 10.0) + 0.6, zf - 0.7), 6.0, 0.7)
 	# The shaft, tier by tier: granite with a band of glass on every floor,
 	# on the notches too, and the glass slot up the street faces.
@@ -1337,7 +1337,7 @@ func _tw_notch_faces(w: float, d: float, cz: float, n: float) -> Array:
 
 
 ## A round-arched entry: a granite surround, glass doors and a fanlight.
-func _tw_arch(at: Vector3, w: float, h: float, stone: Color, glass_col: Color) -> void:
+func _tw_arch(at: Vector3, w: float, h: float, stone: Color, glass_col: Color, door := false) -> void:
 	var r := w * 0.5 - 0.8
 	var spring := h - r - 0.6
 	_box("brick", Vector3(w, h, 0.7), at + Vector3(0, h * 0.5, -0.35), stone)
@@ -1350,6 +1350,39 @@ func _tw_arch(at: Vector3, w: float, h: float, stone: Color, glass_col: Color) -
 		_tri("paint", c, c + Vector3(cos(a1) * r, sin(a1) * r, 0), c + Vector3(cos(a0) * r, sin(a0) * r, 0),
 			glass_col.darkened(0.2), [], Vector3(0, 0, -1))
 	_box("paint", Vector3(r * 2.0 + 0.2, 0.15, 0.1), c + Vector3(0, 0, -0.03), stone.darkened(0.3))  # transom bar
+	if not fine_parts:
+		return
+	# Desktop: the fanlight's bronze radial bars, a ring of voussoirs with
+	# a keystone, the glass wall's mullions, and on a tower's entry a
+	# revolving door in a bronze drum (the 1980s-90s postmodern lobby:
+	# Indianapolis's Bank One Tower, Chicago's 190 South LaSalle).
+	var bronze := Color("#5a4632")
+	for i in range(1, 6):
+		var a := PI * i / 6.0
+		var mid := c + Vector3(cos(a) * r * 0.5, sin(a) * r * 0.5, -0.04)
+		_box("metal", Vector3(r, 0.08, 0.06), mid, bronze, Basis(Vector3(0, 0, 1), a))
+	for i in segs:
+		var a := PI * (i + 0.5) / segs
+		var k := i == segs / 2 or i == segs / 2 - 1
+		_box("brick", Vector3(0.75 if k else 0.6, r * PI / segs + 0.05, 0.12),
+			c + Vector3(cos(a) * (r + 0.35), sin(a) * (r + 0.35), -0.05), stone.lightened(0.12 if k else 0.05),
+			Basis(Vector3(0, 0, 1), a))
+	var n := maxi(2, roundi(r * 2.0 / 1.2))
+	for i in range(1, n):
+		_box("metal", Vector3(0.07, spring, 0.06), at + Vector3(-r + i * r * 2.0 / n, spring * 0.5, -0.76), bronze)
+	_box("metal", Vector3(r * 2.0, 0.08, 0.06), at + Vector3(0, minf(2.4, spring - 0.3), -0.76), bronze)
+	if door:
+		var dc := at + Vector3(0, 0, -0.73)
+		_cylinder("metal", dc + Vector3(0, 2.3, 0), 1.25, 0.4, bronze)
+		_cylinder("metal", dc, 1.25, 0.06, bronze)
+		_box("metal", Vector3(0.08, 2.3, 0.08), dc + Vector3(0, 1.15, 0), bronze)
+		for k in 5:  # the drum's posts round its outer half
+			var a := PI + PI * (k + 0.5) / 5.0
+			_box("metal", Vector3(0.07, 2.3, 0.07), dc + Vector3(cos(a) * 1.22, 1.15, sin(a) * 1.22), bronze)
+		for k in 3:
+			var a := TAU * k / 3.0 + 0.4
+			_box("metal", Vector3(1.0, 2.2, 0.05), dc + Vector3(cos(a) * 0.5, 1.15, sin(a) * 0.5), Color("#9fb3bd"),
+				Basis(Vector3.UP, -a))
 
 
 ## The top of a postmodern tower over a w by d roof at height y:
@@ -1474,8 +1507,10 @@ func _tw_podium(to_curb: float, width: float, storeys: int) -> void:
 	_box("paint", Vector3(6.0, 3.8, 0.1), Vector3(ramp_x, 1.9, zf - 0.05), Color("#1c1d1e"))  # the garage door
 	for lv in range(1, levels):
 		var y := ground_h + park_h * (lv - 1)
+		# Open decks on every side (a garage needs open walls on at least
+		# two to vent without fans; most podium garages are open all round).
 		for face in [[Vector3(0, 0, zf - 0.03), Vector3(-1, 0, 0), pw], [Vector3(-pw * 0.5 - 0.03, 0, pcz), Vector3(0, 0, 1), pd],
-				[Vector3(pw * 0.5 + 0.03, 0, pcz), Vector3(0, 0, -1), pd]]:
+				[Vector3(pw * 0.5 + 0.03, 0, pcz), Vector3(0, 0, -1), pd], [Vector3(0, 0, zf + pd + 0.03), Vector3(1, 0, 0), pw]]:
 			var out: Vector3 = face[1].cross(Vector3.UP)
 			var c: Vector3 = face[0] + Vector3(0, y + park_h * 0.55, 0)
 			var r: Vector3 = face[1] * (face[2] - 1.2) * 0.5
