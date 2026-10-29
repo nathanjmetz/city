@@ -288,6 +288,61 @@ func _rt_wing(w: float, back: float, h: float, wall: Color, mat: String, band: C
 	_box("concrete", Vector3(1.8, 0.15, 1.4), Vector3(ax + aw * 0.25, 0.08, back + ad + 0.7), FOUNDATION)
 
 
+## A gas station grown into its second stage: an in-bay automatic car
+## wash built on beside the store where the lot is wide enough (most
+## Indiana stations that add one do it there, entering from the
+## forecourt and leaving out the back), and an air and vacuum stand at
+## the lot's edge. Its own dice.
+func _rt_gas_grown(sw: float, sd: float, zf: float, cw: float, canopy_z: float, wall: Color, brand: Color) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, "gas grown"])
+	var side := 1.0 if r.randf() < 0.5 else -1.0
+	var bw := 6.0
+	var room := half - 0.8 - maxf(sw * 0.5, cw * 0.5)
+	if room >= bw + 0.6:
+		var bx := side * (maxf(sw * 0.5, cw * 0.5) + 0.6 + bw * 0.5)
+		var bd := minf(13.0, depth - 1.5 - (zf - 3.0))
+		var z0 := zf + sd - bd
+		var cz := z0 + bd * 0.5
+		var h := 4.6
+		_box("paint", Vector3(bw + 0.1, 0.3, bd + 0.1), Vector3(bx, 0.15, cz), FOUNDATION)
+		# Two block walls with the brand band along the top; open at both
+		# ends behind tall glass overhead doors.
+		for s in [-1.0, 1.0]:
+			_box("paint", Vector3(0.3, h, bd), Vector3(bx + s * (bw * 0.5 - 0.15), h * 0.5, cz), wall)
+		_box("paint", Vector3(bw, 0.6, bd), Vector3(bx, h - 0.3, cz), wall)
+		# Its walls are thin, so the bay's footprint is noted by hand.
+		_masses.append(Rect2(bx - bw * 0.5, z0, bw, bd))
+		_mass_back_z = maxf(_mass_back_z, z0 + bd)
+		_box("paint", Vector3(bw + 0.1, 0.6, bd + 0.1), Vector3(bx, h + 0.1, cz), brand)
+		var y := h + 0.42
+		_quad("membrane", Vector3(bx - bw * 0.5, y, z0), Vector3(bx + bw * 0.5, y, z0),
+			Vector3(bx + bw * 0.5, y, z0 + bd), Vector3(bx - bw * 0.5, y, z0 + bd), Color("#d9d8d2"), [], Vector3.UP)
+		for ez in [z0, z0 + bd]:
+			_glass(Vector3(bx, 2.0, ez - 0.03 if ez == z0 else ez + 0.03), Vector3(-1, 0, 0), bw - 0.8, 3.6, 0.1)
+			for k in 4:
+				_box("paint", Vector3(bw - 0.7, 0.06, 0.08), Vector3(bx, 0.4 + k * 0.95, ez), Color("#d8dadb"))
+		# The wash gantry and brushes seen through the glass.
+		_box("metal", Vector3(bw - 1.0, 0.3, 0.6), Vector3(bx, 3.6, cz), Color("#8d9093"))
+		for s in [-1.0, 1.0]:
+			_cylinder("paint", Vector3(bx + s * (bw * 0.5 - 1.0), 0.3, cz + 1.5), 0.45, 2.6, Color("#2a6db5"), 10)
+		_flat_rect("drive", bx - bw * 0.5, bx + bw * 0.5, z0 - 6.0, z0, 0.085)
+		_flat_rect("asphalt", bx - bw * 0.5, bx + bw * 0.5, z0 + bd, minf(z0 + bd + 4.0, depth - 0.5), 0.07)
+		# The pay station at the bay's entrance.
+		_box("paint", Vector3(0.6, 1.5, 0.5), Vector3(bx - side * (bw * 0.5 - 0.4), 0.95, z0 - 4.5), Color("#3a3c3e"))
+		_box("paint", Vector3(0.5, 0.3, 0.02), Vector3(bx - side * (bw * 0.5 - 0.4), 1.3, z0 - 4.76), brand)
+	# Air and vacuum: a post with a coiled hose and a vacuum can with its
+	# boom, at the edge of the forecourt opposite the wash.
+	var vx := -side * (half - 1.2)
+	var vz := clampf(canopy_z - 2.0, 3.0, zf - 1.0)
+	_box("concrete", Vector3(1.4, 0.15, 2.6), Vector3(vx, 0.08, vz), FOUNDATION)
+	_box("paint", Vector3(0.5, 1.3, 0.4), Vector3(vx, 0.8, vz - 0.7), Color("#c8102e"))
+	_box("paint", Vector3(0.45, 0.45, 0.02), Vector3(vx, 1.15, vz - 0.91), Color("#f2f4f5"))
+	_cylinder("metal", Vector3(vx, 0.15, vz + 0.6), 0.35, 1.2, Color("#d9dcdd"), 10)
+	_box("paint", Vector3(0.08, 2.4, 0.08), Vector3(vx, 1.35, vz + 0.6), Color("#5a5e60"))
+	_box("paint", Vector3(1.2, 0.06, 0.06), Vector3(vx + side * 0.6, 2.55, vz + 0.6), Color("#5a5e60"))
+
+
 func _main_street(to_curb: float) -> void:
 	var w := 2.0 * half - 0.4  # wall to wall with its neighbours
 	var d := rng.randf_range(16.0, minf(22.0, maxf(depth - 6.0, 16.0)))
@@ -1237,6 +1292,8 @@ func _shop_gas_station(to_curb: float) -> void:
 	_box("metal", Vector3(1.5, 1.6, 0.8), Vector3(sw * 0.5 - 3.4, 1.1, zf - 0.6), Color("#8d9093"))
 	# Cars pull up beside the pumps, one each side of an island, and the
 	# driver walks in to pay.
+	if not small_store:
+		_rt_gas_grown(sw, sd, zf, cw, ccz - cd * 0.5, wall, brand)
 	site.main_street = false
 	site.door = Vector2(-sw * 0.3 + 2.4, zf)
 	site.cut_x = -half * 0.55
