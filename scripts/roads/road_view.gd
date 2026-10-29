@@ -922,9 +922,16 @@ func _rebuild_drops() -> void:
 	_drops = MeshInstance3D.new()
 	_drops.mesh = st.commit()
 	_drops.material_override = _mats.wire
+	_drops.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # see _add_poles
 	add_child(_drops)
 
 
+## Wires cast no sun shadow. A conductor is 1-2 cm thick and the sun half
+## a degree across, so its full shadow ends under 2 m below it; from a
+## pole top 9 m up a real wire leaves only a faint grey blur on the road.
+## In the shadow map a wire is thinner than a texel, and it came out as a
+## dashed dark line across roads and along truck sides (vehicles loop,
+## 2026-10-29).
 func _add_poles(wood: Array, wire: Array) -> void:
 	if wood.is_empty():
 		return
@@ -932,6 +939,8 @@ func _add_poles(wood: Array, wire: Array) -> void:
 		var pm := MeshInstance3D.new()
 		pm.mesh = _merge(entry[0])
 		pm.material_override = entry[1]
+		if entry[1] == _mats.wire:
+			pm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(pm)
 		_merged.append(pm)
 
