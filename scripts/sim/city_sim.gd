@@ -178,6 +178,8 @@ var construction := Construction.new()
 var chains := ProductionChains.new()
 ## The Saturday farmers' market.
 var farmers_market := FarmersMarket.new()
+## Surplus sold to friends' towns, hauled by truck on the road toward them.
+var trade_haul := TradeHaul.new()
 ## Smoke, noise and dirty ground, each traced to the source that makes it.
 var pollution := Pollution.new()
 ## Hospitals run by their administrators, ambulances, nursing homes, daycare.
@@ -1000,6 +1002,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			construction = Construction.new()
 			chains = ProductionChains.new()
 			farmers_market = FarmersMarket.new()
+			trade_haul = TradeHaul.new()
 			warehouses = Warehouses.new()
 			big = BigFactories.new()
 			big_factories_changed.emit()
@@ -1569,6 +1572,7 @@ func tick() -> void:
 	if simulate_traffic:
 		power.crew_tick(self)
 	Perf.add("sim.civic_hubs", t)
+	trade_haul.tick(self)
 	if not in_region and tick_count % (24 * TICKS_PER_HOUR) == 0:
 		t = Perf.now()
 		Trade.settle({"me": self}, {})
@@ -4959,6 +4963,7 @@ func save_steps(postcard := false) -> Array:
 			["builders", func(): return builders.to_dict()],
 			["chains", func(): return chains.to_dict()],
 			["farmers_market", func(): return farmers_market.to_dict()],
+			["trade_haul", func(): return trade_haul.to_dict()],
 			["people", func(): return people.to_dict()],
 		])
 	return steps
@@ -5018,6 +5023,7 @@ func from_dict(d: Dictionary) -> void:
 	construction.from_dict(d.get("construction", {}))
 	chains.from_dict(d.get("chains", {}))
 	farmers_market.from_dict(d.get("farmers_market", {}))
+	trade_haul.from_dict(d.get("trade_haul", {}))
 	warehouses.from_dict(d.get("warehouses", {}))
 	big.from_dict(d.get("big_factories", {}))
 	reserves.from_list(d.get("reserves", []))

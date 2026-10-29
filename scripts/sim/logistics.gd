@@ -219,7 +219,8 @@ func _buyer(sim: CitySim, from: Vector3, what: String, good := "") -> Dictionary
 		if zone == ZoneMap.Zone.INDUSTRIAL:
 			need[best] -= 1.0  # spoken for
 		return {"ref": "lot:" + best, "pos": _xz(sim.lots[best].front)}
-	return _edge(sim, from)
+	# Out of town: toward a friend's town that bought it, else the highway.
+	return sim.trade_haul.export_edge(sim, from, good)
 
 
 ## A factory's next raw load from the nearest warehouse holding one.
@@ -277,7 +278,9 @@ func _arrive(sim: CitySim, t: Dictionary) -> void:
 	var good := str(t.cargo.get("good", ""))
 	if good != "" and t.kind != "parcels":
 		sim.chains.count(sim.calendar_tick(), ProductionChains.node_of(sim, str(t.from.ref)),
-			ProductionChains.node_of(sim, str(t.to.ref)), good)
+			"friend" if t.to.get("friend", false) else ProductionChains.node_of(sim, str(t.to.ref)), good)
+		if str(t.to.ref) == "edge":
+			sim.trade_haul.counted(good)
 	var to: String = t.to.ref
 	if to.begins_with("big:") or str(t.from.ref).begins_with("big:"):
 		sim.big.arrive(sim, t)

@@ -1424,6 +1424,12 @@ const TRADE_PRICE := {
 	"steel": 19_000.0,
 	"rv": 44_000.0,
 	"co2": 1_200.0,
+	# Raw loads a town ships (TradeHaul): a 1,000 bu hopper of soft red
+	# winter wheat at $5.50; a 20 ton tandem of crushed stone at the quarry's
+	# $16 a ton (USGS 2023); a 180 barrel crude tanker at $70.
+	"wheat": 5_500.0,
+	"ore": 320.0,
+	"crude oil": 12_600.0,
 }
 ## Price for a good with no entry above.
 const TRADE_PRICE_DEFAULT := 100.0
