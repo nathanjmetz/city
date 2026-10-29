@@ -165,6 +165,8 @@ var policies := Policies.new()
 var culture := TownCulture.new()
 ## Buildings going up, stage by stage, with their crews and deliveries.
 var construction := Construction.new()
+## Where the last year's loads went, link by link (the production chain page).
+var chains := ProductionChains.new()
 ## Smoke, noise and dirty ground, each traced to the source that makes it.
 var pollution := Pollution.new()
 ## Hospitals run by their administrators, ambulances, nursing homes, daycare.
@@ -985,6 +987,7 @@ func _apply_cmd(cmd: Dictionary) -> bool:
 			power.offset = terrain_offset
 			logistics = Logistics.new()
 			construction = Construction.new()
+			chains = ProductionChains.new()
 			warehouses = Warehouses.new()
 			big = BigFactories.new()
 			big_factories_changed.emit()
@@ -4941,6 +4944,7 @@ func save_steps(postcard := false) -> Array:
 			["buses", func(): return buses.to_dict()],
 			["taxis", func(): return taxis.to_dict()],
 			["builders", func(): return builders.to_dict()],
+			["chains", func(): return chains.to_dict()],
 			["people", func(): return people.to_dict()],
 		])
 	return steps
@@ -4998,6 +5002,7 @@ func from_dict(d: Dictionary) -> void:
 	banks.from_dict(d.get("banks", {}))
 	logistics.from_dict(d.get("logistics", {}))
 	construction.from_dict(d.get("construction", {}))
+	chains.from_dict(d.get("chains", {}))
 	warehouses.from_dict(d.get("warehouses", {}))
 	big.from_dict(d.get("big_factories", {}))
 	reserves.from_list(d.get("reserves", []))

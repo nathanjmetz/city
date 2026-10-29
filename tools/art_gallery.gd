@@ -143,6 +143,12 @@ func _init() -> void:
 				meshes = DuplexBuilder.build(sd, 3.9, {"width": w, "depth": 45.0, "era": ["prewar", "prewar", "postwar", "recent", "postwar"][i]},
 					1 if i == 4 else 0)
 				DuplexBuilder.force_style = ""
+			"raised":
+				# A cape and a bungalow as built, then grown to two storeys.
+				HouseBuilder.force_kind = ["cape", "cape", "bungalow", "bungalow", "foursquare"][i]
+				meshes = HouseBuilder.build(seed * 100 + (i / 2) * 7, 3.9, {"width": w, "depth": 45.0, "era": "prewar"},
+					[0, 2, 0, 2, 2][i])
+				HouseBuilder.force_kind = ""
 			"corner":
 				# Corner stores: prewar on a corner (side street right, then
 				# left), mid-block, then postwar ones.

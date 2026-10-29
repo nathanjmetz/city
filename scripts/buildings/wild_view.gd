@@ -302,8 +302,7 @@ func _wild_trees_in(area: Rect2, detail: bool) -> Array:
 		# water's level the water sheet is drawn (TerrainView), and the
 		# land cover's 10 m pixels let a tree stand out in it. Willows and
 		# silver maples still stand right at the edge.
-		if low and Terrain.water(p.pos.x + o.x, p.pos.z + o.y) > 0.02 \
-				and Terrain.height(p.pos.x + o.x, p.pos.z + o.y) < Terrain.water_level(p.pos.x + o.x, p.pos.z + o.y) + 0.15:
+		if low and FarmsteadPlan.under_water(Vector2(p.pos.x + o.x, p.pos.z + o.y)):
 			continue
 		trees.append(facts(p, low))
 	return trees
