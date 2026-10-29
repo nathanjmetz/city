@@ -1492,6 +1492,7 @@ func tick() -> void:
 		timelapse.month(self)
 	elif hour == 19 * TICKS_PER_HOUR:
 		laws.month(self)
+		laws.carts(self)
 		worn.month(self)
 	if hour % TICKS_PER_HOUR == 25 and hour / TICKS_PER_HOUR in Balance.LAW_COUNT_HOURS:
 		# The council's count of trucks cutting through neighborhoods.

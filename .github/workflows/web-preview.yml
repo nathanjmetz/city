@@ -90,6 +90,7 @@ jobs:
           run_test tests/test_town_laws.gd
           run_test tests/test_clusters.gd
           run_test tests/test_worn_paths.gd
+          run_test tests/test_golf_carts.gd
           run_test tests/test_water.gd
           run_test tests/test_advisor.gd
           run_test tests/test_build_menus.gd

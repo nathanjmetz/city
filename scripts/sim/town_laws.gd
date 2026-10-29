@@ -23,6 +23,12 @@ extends RefCounted
 ##                 Asked by the plan commission after a year of fast home
 ##                 building. Trade-off: builders pass it on, so fewer homes
 ##                 start.
+##   golf_carts    Golf carts may drive on town streets (Indiana lets a town
+##                 allow them by ordinance; never along a state highway).
+##                 Asked by a petition once the town has a good number of
+##                 retirees. Trade-off: carts at 20 mph on the streets, and
+##                 cars wait behind them; owners take short hops by cart
+##                 instead of by car.
 ##
 ## Monthly and light: a few counts of trucks already on the road (the
 ## council's month) and one pass over the buildings. Deterministic.
@@ -37,6 +43,8 @@ const LAWS := {
 		"does": "Through trucks keep to the highways, county roads, avenues and Main Street. Neighborhood streets are for deliveries only. Trucks take longer to get across town."},
 	"impact_fee": {"name": "Impact fee on new homes",
 		"does": "Every new home pays the town a fee for the parks and roads it will need. Builders pass it on, so homes go up a little slower."},
+	"golf_carts": {"name": "Golf carts on town streets",
+		"does": "Golf carts may use town streets, but not the highways. Some older residents buy one for short trips round town, and drivers wait behind them at 20 mph."},
 }
 ## Road types a through truck stays off under truck_routes.
 const LOCAL_STREETS := [RoadStyle.Type.STREET, RoadStyle.Type.STREET_NARROW, RoadStyle.Type.STREET_BIKE,
@@ -74,6 +82,8 @@ func set_law(sim, law: String, on: bool) -> bool:
 		sim.economy.money -= cost(law)
 	else:
 		adopted.erase(law)
+		if law == "golf_carts":
+			_sell_carts(sim)
 	if law == "truck_routes":
 		sim.traffic.truck_routes = on
 	changed.emit()
@@ -120,7 +130,7 @@ func count(sim) -> void:
 func month(sim) -> void:
 	var plans := []
 	if can_pass(sim):
-		for law in ["truck_routes", "impact_fee"]:
+		for law in ["truck_routes", "impact_fee", "golf_carts"]:
 			if has(law) or sim.tick_count - int(last.get(law, -1_000_000_000)) < Balance.LAW_ASK_COOLDOWN * TICKS_PER_MONTH:
 				continue
 			var plan: Dictionary = call("_plan_" + law, sim)
@@ -181,6 +191,62 @@ func _plan_impact_fee(sim) -> Dictionary:
 		"yes": "Every new home pays the town $%s. Builders pass it on, so homes go up a little slower." \
 			% CitySim.money_text(Balance.LAW_IMPACT_FEE),
 		"no": "New homes pay no fee."}
+
+
+## A petition from the town's older residents.
+func _plan_golf_carts(sim) -> Dictionary:
+	if int(sim.stats.get("population", 0)) < Balance.CART_ASK_POP:
+		return {}
+	var older := 0
+	var sum := Vector3.ZERO
+	for id in sim.people.people:
+		var p: Dictionary = sim.people.people[id]
+		if int(p.age) >= Balance.CART_OWNER_AGE and sim.lots.has(str(p.home)):
+			older += 1
+			sum += sim.lots[str(p.home)].pos
+	if older < Balance.CART_ASK_OLDER:
+		return {}
+	return {"law": "golf_carts", "leader": "A petition from %d residents" % older, "title": "Golf carts on town streets",
+		"why": "Plenty of folks here would rather take a golf cart to the post office, the diner or a neighbor's than get the car out.",
+		"area": LeaderAsks._square(sum / float(older), 150.0),
+		"yes": "Golf carts may use town streets, never the highways. Some homes buy one, and drivers wait behind them now and then.",
+		"no": "Golf carts stay off the streets."}
+
+
+## Under golf_carts, a few more homes buy a cart each month, up to about
+## one in Balance.CART_SHARE of those with someone old enough to want one.
+func carts(sim) -> void:
+	if not has("golf_carts"):
+		return
+	var have := {}
+	var ids: Array = sim.people.people.keys()
+	ids.sort()
+	for id in ids:
+		if int(sim.people.people[id].get("cart", -1)) != -1:
+			have[str(sim.people.people[id].home)] = true
+	var bought := 0
+	for id in ids:
+		if bought >= Balance.CART_PER_MONTH:
+			break
+		var p: Dictionary = sim.people.people[id]
+		var home := str(p.home)
+		if int(p.age) < Balance.CART_OWNER_AGE or have.has(home) \
+				or absi(hash([home, "cart"])) % 1000 >= roundi(Balance.CART_SHARE * 1000.0):
+			continue
+		have[home] = true  # one try a home a month
+		var vid: int = sim.traffic.new_vehicle("golf_cart", "lot:" + home, int(id))
+		if vid != -1:
+			p.cart = vid
+			bought += 1
+
+
+## The law's repealed: the carts go back in the garage for good.
+func _sell_carts(sim) -> void:
+	for id in sim.people.people:
+		var p: Dictionary = sim.people.people[id]
+		if int(p.get("cart", -1)) != -1:
+			sim.traffic.retire_vehicle(int(p.cart))
+			p.cart = -1
 
 
 ## Carries out the player's answers (CitySim, every game hour).
