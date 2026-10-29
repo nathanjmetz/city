@@ -365,11 +365,16 @@ void fragment() {
 
 ## Store signs: a coloured panel (vertex colour) with a line of pale block
 ## letters that reads as a name from the street. UV.x is metres along the
-## sign, UV.y runs 0..1 up it, and vertex alpha carries the width / 30
-## (0: real lettering by SignText; 1: neon tubing or a lamp lens).
+## sign, UV.y runs 0..1 up it, and vertex alpha carries the width / 60
+## (0: real lettering by SignText; 0.5-0.99: unlit letters painted on an
+## awning, width (a - 0.5) * 60; 1: neon tubing or a lamp lens).
 const SIGN := """
 void fragment() {
-	float nx = UV.x / max(COLOR.a * 30.0, 0.1);
+	// Alpha 1: neon tubing or a lamp lens, bright after dark, a little by day.
+	float neon = step(0.99, COLOR.a);
+	// Alpha 0.5-0.99: letters painted on canvas (awnings), never lit.
+	float painted = step(0.5, COLOR.a) * (1.0 - neon);
+	float nx = UV.x / max(mix(COLOR.a * 60.0, (COLOR.a - 0.5) * 60.0, painted), 0.1);
 	float pitch = 0.42;
 	float i = floor(UV.x / pitch);
 	vec2 q = (vec2(fract(UV.x / pitch), UV.y) - vec2(0.15, 0.25)) / vec2(0.7, 0.53);
@@ -379,8 +384,6 @@ void fragment() {
 	float gap = step(0.12, hash(vec2(i, 3.3 + COLOR.g * 31.0)));
 	float band = step(0.12, nx) * step(nx, 0.88);
 	// Alpha 0: the business's real name is lettered on (SignText).
-	// Alpha 1: neon tubing or a lamp lens, bright after dark, a little by day.
-	float neon = step(0.99, COLOR.a);
 	float text = inside * on * gap * band * step(0.0001, COLOR.a) * (1.0 - neon);
 	float aa = smoothstep(0.08, 0.3, fwidth(UV.x / pitch));
 	text = mix(text, 0.3 * band * step(0.25, UV.y) * step(UV.y, 0.78) * step(0.0001, COLOR.a), aa);
@@ -389,7 +392,8 @@ void fragment() {
 	SPECULAR = 0.5;
 	// Lit signs after dark: bright letters on a softly glowing panel.
 	EMISSION = mix(vcol(COLOR.rgb) * 0.5, vec3(1.0, 0.95, 0.85) * 2.0, text) * smoothstep(0.3, 0.6, night);
-	EMISSION = mix(EMISSION, vcol(COLOR.rgb) * (0.25 + 3.5 * smoothstep(0.2, 0.6, night)), neon);
+	EMISSION = mix(EMISSION, vcol(COLOR.rgb) * (0.25 + 3.5 * smoothstep(0.2, 0.6, night)), neon) * (1.0 - painted);
+	ROUGHNESS = mix(0.4, 0.85, painted);
 }
 """
 

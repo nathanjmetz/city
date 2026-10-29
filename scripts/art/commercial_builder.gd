@@ -427,7 +427,7 @@ func _coping(w: float, d: float, cz: float, top: float, old := false) -> void:
 
 func _sign(c: Vector3, w: float, h: float) -> void:
 	var col := Color(_pick(SIGNS))
-	col.a = w / 30.0
+	col.a = minf(w / 60.0, 0.49)
 	if not sign_spec.is_empty():
 		# The business's own name in its family's colours; alpha 0 tells the
 		# sign shader there's real lettering, so it paints no stand-in.
@@ -448,7 +448,36 @@ func _awning(cx: float, w: float, zf: float, y: float, col: Color) -> void:
 	var c := Vector3(cx + w * 0.5, y, zf - 1.3)
 	var d := Vector3(cx - w * 0.5, y, zf - 1.3)
 	_quad("paint", d, c, b, a, col, [], Vector3.UP)
-	_quad("paint", d, c, c + Vector3(0, -0.3, 0), d + Vector3(0, -0.3, 0), col.darkened(0.15), [], Vector3.FORWARD)
+	if not fine_parts:
+		_quad("paint", d, c, c + Vector3(0, -0.3, 0), d + Vector3(0, -0.3, 0), col.darkened(0.15), [], Vector3.FORWARD)
+		return
+	# Desktop: a fixed canvas awning as Main Street sign shops make them,
+	# closed at the ends, either the shop's name lettered on the valance
+	# or the canvas in wide stripes.
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 31, snappedf(cx, 0.1)])
+	for e in [a, b]:
+		_tri("paint", e, Vector3(e.x, y, zf - 1.3), Vector3(e.x, y, zf - 0.01), col.darkened(0.08), [], Vector3(signf(e.x - cx), 0, 0))
+	var drop := Vector3(0, -0.3, 0)
+	var pick := r.randf()
+	if pick < 0.45:
+		# Painted letters (sign alpha 0.5-0.99: unlit, width (a - 0.5) * 60).
+		var v := col.darkened(0.15)
+		v.a = 0.5 + w / 60.0
+		_quad("sign", d, c, c + drop, d + drop, v, [Vector2(0, 1), Vector2(w, 1), Vector2(w, 0), Vector2(0, 0)], Vector3.FORWARD)
+	else:
+		_quad("paint", d, c, c + drop, d + drop, col.darkened(0.15), [], Vector3.FORWARD)
+	if pick > 0.7:
+		var stripe := Color("#efe9da") if r.randf() < 0.75 else Color("#c9a43a")
+		var n := Vector3(0, 1.3, 0.6).normalized() * 0.012
+		var sw := 0.16
+		var x := cx - w * 0.5 + sw
+		while x + sw < cx + w * 0.5:
+			_quad("paint", Vector3(x, y, zf - 1.3) + n, Vector3(x + sw, y, zf - 1.3) + n,
+				Vector3(x + sw, y + 0.6, zf) + n, Vector3(x, y + 0.6, zf) + n, stripe, [], Vector3.UP)
+			_quad("paint", Vector3(x, y, zf - 1.312), Vector3(x + sw, y, zf - 1.312),
+				Vector3(x + sw, y - 0.3, zf - 1.312), Vector3(x, y - 0.3, zf - 1.312), stripe.darkened(0.1), [], Vector3.FORWARD)
+			x += sw * 2.0
 
 
 # ---------------------------------------------------------------- more shops
@@ -573,7 +602,7 @@ func _strip_lot_dress(to_curb: float, back: float, n: int, wall: Color) -> void:
 			var y := base + 0.3 + t * ph
 			var col := Color(AWNING[r.randi() % AWNING.size()]).lightened(r.randf_range(0.0, 0.15))
 			# Backlit tenant panels, as on a real centre's pylon.
-			col.a = 2.3 / 30.0
+			col.a = 2.3 / 60.0
 			var pz: float = sz + side * 0.215
 			_quad("sign", Vector3(sx - 1.15, y - ph * 0.5 + 0.04, pz), Vector3(sx + 1.15, y - ph * 0.5 + 0.04, pz),
 				Vector3(sx + 1.15, y + ph * 0.5 - 0.04, pz), Vector3(sx - 1.15, y + ph * 0.5 - 0.04, pz), col,
