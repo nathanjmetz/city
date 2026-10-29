@@ -50,6 +50,11 @@ static func build_apartments(seed: int, to_curb: float, lot: Dictionary, storeys
 			b._mb_five_over_one(to_curb, width, storeys)
 		else:
 			b._apartments(to_curb, width, storeys)
+	elif storeys >= 4 and width >= 26.0 and absi(hash([seed, "elevator flats"])) % 100 < 55:
+		# Five storeys on an old street: about half are a 1920s elevator
+		# apartment building (limestone base, brick, canopy to the curb),
+		# the walk-up's bigger sibling, as TowerBuilder draws its flats.
+		return TowerBuilder.build_tower(seed, to_curb, lot, storeys, {}, "flats", true)
 	elif width >= 34.0 and storeys <= 3 and b.depth >= 34.0:
 		b._mb_courtyard(to_curb, width, 3)
 	else:
