@@ -1221,7 +1221,10 @@ func _garbage_truck() -> void:  # rear loader on a Mack LR cab-over
 	], [_edges(PAINT, TRIM)], PAINT, DARK)
 	_wheels([1.0, 6.6, 7.9], 0.52, hw, 0.3)
 	_box(Vector3(0, 0.9, 0.0), Vector3(2.2, 0.3, 0.1), TRIM)
-	_box(Vector3(hw - 0.25, 1.1, -0.02), Vector3(0.3, 0.16, 0.06), HEAD, true)
+	if _hi:
+		_refuse_face(hw)
+	else:
+		_box(Vector3(hw - 0.25, 1.1, -0.02), Vector3(0.3, 0.16, 0.06), HEAD, true)
 	_box(Vector3(hw - 0.15, 2.4, L + 0.01), Vector3(0.14, 0.14, 0.04), TAIL, true)
 	_box(Vector3(0, 2.86, 1.2), Vector3(0.9, 0.1, 0.2), BEACON_AMBER)
 
@@ -1258,7 +1261,10 @@ func _garbage_side() -> void:
 	_box(Vector3(hw + 0.2, 1.1, 3.2), Vector3(0.08, 0.5, 0.9), STEEL)
 	_wheels([1.0, 6.6, 7.9], 0.52, hw, 0.3)
 	_box(Vector3(0, 0.9, 0.0), Vector3(2.2, 0.3, 0.1), TRIM)
-	_box(Vector3(hw - 0.25, 1.1, -0.02), Vector3(0.3, 0.16, 0.06), HEAD, true)
+	if _hi:
+		_refuse_face(hw)
+	else:
+		_box(Vector3(hw - 0.25, 1.1, -0.02), Vector3(0.3, 0.16, 0.06), HEAD, true)
 	_box(Vector3(hw - 0.2, 2.2, L - 0.15), Vector3(0.14, 0.14, 0.04), TAIL, true)
 	_box(Vector3(0, 2.86, 1.2), Vector3(0.9, 0.1, 0.2), BEACON_AMBER)
 
@@ -1282,7 +1288,10 @@ func _fire_engine() -> void:  # custom-cab pumper (Pierce Enforcer)
 	_wheels([1.3, 7.4], 0.55, hw, 0.32)
 	_box(Vector3(0, 3.06, 1.7), Vector3(2.2, 0.12, 0.3), BEACON_RED)
 	_box(Vector3(0, 1.0, -0.06), Vector3(2.4, 0.4, 0.14), CHROME)
-	_box(Vector3(hw - 0.3, 1.25, -0.02), Vector3(0.36, 0.18, 0.06), HEAD, true)
+	if _hi:
+		_pumper_face(hw)
+	else:
+		_box(Vector3(hw - 0.3, 1.25, -0.02), Vector3(0.36, 0.18, 0.06), HEAD, true)
 	_box(Vector3(hw - 0.1, 1.1, L + 0.01), Vector3(0.14, 0.2, 0.04), TAIL, true)
 	if _lo:
 		return
@@ -1294,6 +1303,59 @@ func _fire_engine() -> void:  # custom-cab pumper (Pierce Enforcer)
 			_box(Vector3(s * (hw + 0.004), 1.65, 4.0 + i * 0.85 + (1.6 if i > 2 else 0.0)), Vector3(0.006, 1.6, 0.04), CHROME)
 	for x in [-1.2, 1.2]:
 		_box(Vector3(x, 2.9, L - 0.05), Vector3(0.12, 0.14, 0.08), BEACON_RED)
+
+
+## Ultra: a low-cab-forward refuse truck's face (Mack LR, Peterbilt 520):
+## the black grille with its chrome bars under the split windshield,
+## headlamps in dark housings at the corners with amber markers above,
+## west-coast mirrors on arms and the convex corner mirrors drivers use to
+## see the curb right below the nose. Layers stand 6 mm apart.
+func _refuse_face(hw: float) -> void:
+	_box(Vector3(0, 1.22, -0.006), Vector3(1.1, 0.42, 0.012), TRIM)
+	for i in 4:
+		_box(Vector3(0, 1.07 + i * 0.1, -0.012), Vector3(1.0, 0.03, 0.012), CHROME)
+	_box(Vector3(hw - 0.3, 1.2, -0.006), Vector3(0.34, 0.2, 0.012), TRIM, true)
+	_box(Vector3(hw - 0.3, 1.2, -0.012), Vector3(0.28, 0.13, 0.012), HEAD, true)
+	_box(Vector3(hw - 0.3, 1.36, -0.006), Vector3(0.22, 0.06, 0.012), Color(0.95, 0.55, 0.05, 0.5), true)
+	_lcf_glass(Vector3(0, 1.52, 0.0), Vector3(0, 2.8, 0.25), hw - 0.1)
+	_lcf_mirrors(hw, 2.15, 0.45)
+
+
+## Ultra: a custom fire cab's face (Pierce Enforcer, E-One): a chrome
+## grille with dark slots, quad headlamps in black housings either side,
+## red warning lights above them that flash with the siren, and mirrors.
+func _pumper_face(hw: float) -> void:
+	_box(Vector3(0, 1.36, -0.006), Vector3(1.0, 0.44, 0.012), CHROME)
+	for i in 5:
+		_box(Vector3(0, 1.2 + i * 0.08, -0.012), Vector3(0.9, 0.035, 0.012), TRIM)
+	_box(Vector3(hw - 0.32, 1.38, -0.006), Vector3(0.44, 0.22, 0.012), TRIM, true)
+	for dx in [-0.1, 0.1]:
+		_box(Vector3(hw - 0.32 + dx, 1.38, -0.012), Vector3(0.16, 0.15, 0.012), HEAD, true)
+	_box(Vector3(hw - 0.32, 1.56, -0.006), Vector3(0.3, 0.07, 0.012), BEACON_RED, true)
+	_lcf_glass(Vector3(0, 1.66, 0.05), Vector3(0, 3.0, 0.35), hw - 0.08)
+	_lcf_mirrors(hw, 2.45, 0.6)
+
+
+## The split windshield's centre post and a pair of parked wipers on a
+## cab-over's face, from its foot `a` to its top `b`, 8 mm out from the
+## glass.
+func _lcf_glass(a: Vector3, b: Vector3, half: float) -> void:
+	var up := (b - a).normalized()
+	var out := Vector3(0, up.z, -up.y) * 0.008
+	_beam(a + out, b + out, 0.06, TRIM)
+	for x in [-half * 0.5, half * 0.5]:
+		_beam(a + out + up * 0.06 + Vector3(x - half * 0.4, 0, 0),
+			a + out + up * 0.06 + Vector3(x + half * 0.4, 0, 0), 0.025, TRIM)
+
+
+## West-coast mirrors on arms out from both doors, and a convex mirror
+## on a stalk at each front corner.
+func _lcf_mirrors(hw: float, y: float, z: float) -> void:
+	for s in [-1.0, 1.0]:
+		_box(Vector3(s * (hw + 0.14), y + 0.2, z), Vector3(0.28, 0.04, 0.04), TRIM)
+		_box(Vector3(s * (hw + 0.3), y, z), Vector3(0.07, 0.5, 0.2), TRIM)
+		_beam(Vector3(s * (hw - 0.12), y - 0.35, 0.02), Vector3(s * (hw - 0.05), y - 0.3, -0.25), 0.03, TRIM)
+		_cyl(Vector3(s * (hw - 0.05), y - 0.3, -0.25), Vector3(s * (hw - 0.05), y - 0.3, -0.3), 0.09, TRIM, 10)
 
 
 ## A rural water tender (Pierce or KME on a commercial chassis): a 3,000
