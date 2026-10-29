@@ -324,12 +324,21 @@ func _schools() -> void:
 	var walking := {}
 	var there := {}
 	var home := {}
+	var little := {}  # [home, pace] of children too young to walk alone
+	var grown := {}   # [home, pace] of grown-ups walking to the school
+	var walked_them := {}
 	for i in 30000:
 		sim.tick()
 		for w in sim.traffic.walkers:
 			var p: Dictionary = sim.people.people.get(int(w.person), {})
 			if str(w.then.get("enter", "")).begins_with("school:") and p.age <= 11 and not walking.has(int(w.person)):
 				walking[int(w.person)] = sim.sky_hour()
+			if str(w.then.get("enter", "")).begins_with("school:"):
+				if p.age < Balance.SCHOOL_WALK_ALONE:
+					little[[p.home, w.v]] = true
+				elif p.age >= 18:
+					grown[[p.home, w.v]] = true
+					walked_them[int(w.person)] = true
 		for pid in walking:
 			if str(sim.people.people[pid].at).begins_with("school:"):
 				there[pid] = true
@@ -342,6 +351,12 @@ func _schools() -> void:
 		"children walk to school on a school morning (%d, %s)" % [walking.size(), str(walking.values().slice(0, 4))])
 	_check(there.size() == walking.size() and home.size() == walking.size(),
 		"they get there and walk home after school (%d, %d, sky %.1f)" % [there.size(), home.size(), sim.sky_hour()])
+	# The little ones go with a grown-up from home, all at the children's
+	# pace, and the grown-up walks back home.
+	_check(not little.is_empty() and little.keys().all(func(k): return grown.has(k)),
+		"children under %d walk with a grown-up from home at their pace (%d)" % [Balance.SCHOOL_WALK_ALONE, little.size()])
+	_check(walked_them.keys().all(func(pid): return sim.people.people[pid].at != "school:%d" % sid),
+		"and the grown-ups don't stay at school (%d)" % walked_them.size())
 
 
 ## A grid town with homes, shops and jobs already built (as if grown).
