@@ -339,6 +339,7 @@ func _run() -> void:
 	sixth.stop()
 	DirAccess.remove_absolute(data)
 	await _test_limits()
+	await _test_test_pin()
 
 	print("SOME TESTS FAILED" if _failed else "ALL TESTS PASSED")
 	quit(1 if _failed else 0)
@@ -808,6 +809,113 @@ func _part(flags: int, total: int, body: PackedByteArray) -> PackedByteArray:
 func _raw(c: RegionClient, pkt: PackedByteArray) -> void:
 	c._peer.set_target_peer(1)
 	c._peer.put_packet(pkt)
+
+
+## The playtest PIN: off unless the server turns it on; on, anyone comes in
+## with it as the name they give (host too), a removed player stays out, and
+## what it let in stops working once the server runs without it.
+func _test_test_pin() -> void:
+	var data := OS.get_user_data_dir().path_join("test-pin-region.json")
+	DirAccess.remove_absolute(data)
+	var server := RegionServer.new()
+	root.add_child(server)
+	_check(server.start(PORT + 4, "pin123", data) == OK and server.test_pin == "", "test PIN: server starts, with it off")
+	var url := "ws://127.0.0.1:%d" % (PORT + 4)
+	var pin := "%06d" % randi_range(0, 999999)
+
+	# Even with it on, the region's first player comes in with the invite code.
+	server.test_pin = pin
+	var early := _client()
+	var early_told := []
+	early.failed.connect(func(r): early_told.append(r))
+	early.join(url, "", "p-tp-early", "Mallory", "", false, "", pin)
+	await _until(func(): return not early_told.is_empty())
+	_check(early.my_city == "" and server.accounts.is_empty() and not early_told.is_empty() and "invite code" in early_told[0],
+		"test PIN: nobody makes themselves host of a new region with it (%s)" % str(early_told))
+	server.test_pin = ""
+
+	var nathan := _client()
+	var nathan_told := []
+	nathan.failed.connect(func(r): nathan_told.append(r))
+	nathan.join(url, "PIN123", "p-tp-nathan", "Nathan")
+	await _until(func(): return nathan.my_city != "" and nathan.is_joined)
+	server.add_player("Sam")
+	server.add_player("Eve")
+	server.remove_pin("Eve")
+	while not server._account_by_pin(pin).is_empty():
+		pin = "%06d" % randi_range(0, 999999)
+
+	var off := _client()
+	var off_told := []
+	off.failed.connect(func(r): off_told.append(r))
+	off.join(url, "", "p-tp-off", "Sam", "", false, "", pin)
+	await _until(func(): return not off_told.is_empty())
+	_check(off.my_city == "" and not off_told.is_empty() and "isn't right" in off_told[0],
+		"test PIN: off, it's just a wrong PIN")
+
+	server.test_pin = pin
+	var nameless := _client()
+	var nameless_told := []
+	nameless.failed.connect(func(r): nameless_told.append(r))
+	nameless.join(url, "", "p-tp-nameless", "", "", false, "", pin)
+	await _until(func(): return not nameless_told.is_empty())
+	_check(nameless.my_city == "" and not nameless_told.is_empty() and "Profile" in nameless_told[0],
+		"test PIN: with no name, you're asked to put one in your Profile")
+	var laptop := _client()
+	laptop.join(url, "", "p-tp-laptop", "Nathan", "", false, "", pin.left(3) + " " + pin.substr(3))
+	await _until(func(): return laptop.my_city != "" and laptop.is_joined and not nathan_told.is_empty())
+	_check(laptop.my_city == nathan.my_city and laptop.is_host and laptop.player_name == "Nathan",
+		"test PIN: Nathan on another computer is Nathan, host, with his town")
+	_check(not nathan_told.is_empty() and "another computer" in nathan_told[0], "test PIN: and his old window is told and stops")
+	var sam := _client()
+	sam.join(url, "", "p-tp-sam", "sam", "", false, "", pin)
+	await _until(func(): return sam.my_city != "" and sam.is_joined)
+	_check(sam.player_name == "Sam" and not sam.is_host and sam.my_city != nathan.my_city,
+		"test PIN: Sam comes in as Sam, not host")
+	var zed := _client()
+	zed.join(url, "", "p-tp-zed", "Zed", "", false, "", pin)
+	await _until(func(): return zed.my_city != "" and zed.is_joined)
+	_check(server.accounts.has("zed") and zed.my_city != "" and not zed.is_host,
+		"test PIN: a new name gets a new player and town")
+	var eve := _client()
+	var eve_told := []
+	eve.failed.connect(func(r): eve_told.append(r))
+	eve.join(url, "", "p-tp-eve", "Eve", "", false, "", pin)
+	await _until(func(): return not eve_told.is_empty())
+	_check(eve.my_city == "" and not eve_told.is_empty() and "hasn't let" in eve_told[0],
+		"test PIN: a player the host removed stays out (%s)" % str(eve_told))
+
+	# Run without it: the test PIN's sign-ins stop working, the others don't.
+	var laptop_token := laptop.token
+	var sam_token := sam.token
+	for c in [nathan, laptop, sam, zed, eve, off, nameless, early]:
+		c.leave()
+	await _frames(30)
+	server.stop()
+	var after := RegionServer.new()
+	root.add_child(after)
+	_check(after.start(PORT + 5, "", data) == OK, "test PIN: the server starts again without it")
+	var url2 := "ws://127.0.0.1:%d" % (PORT + 5)
+	var laptop2 := _client()
+	var laptop2_told := []
+	laptop2.failed.connect(func(r): laptop2_told.append(r))
+	laptop2.join(url2, "PIN123", "p-tp-laptop", "Nathan", "", false, laptop_token)
+	var sam2 := _client()
+	var sam2_told := []
+	sam2.failed.connect(func(r): sam2_told.append(r))
+	sam2.join(url2, "", "p-tp-sam", "Sam", "", false, sam_token)
+	await _until(func(): return not laptop2_told.is_empty() and not sam2_told.is_empty())
+	_check(laptop2.my_city == "" and sam2.my_city == "" and not laptop2_told.is_empty() and "PIN" in laptop2_told[0],
+		"test PIN: its sign-ins stop working, the host's too (%s)" % str(laptop2_told))
+	var nathan2 := _client()
+	nathan2.join(url2, "PIN123", "p-tp-nathan", "Nathan", "", false, nathan.token)
+	await _until(func(): return nathan2.my_city != "" and nathan2.is_joined)
+	_check(nathan2.is_host and nathan2.my_city == nathan.my_city, "test PIN: a sign-in made without it still works")
+	for c in [laptop2, sam2, nathan2]:
+		c.leave()
+	await _frames(10)
+	after.stop()
+	DirAccess.remove_absolute(data)
 
 
 ## A signed-in player to misbehave: added by the host, in with a PIN.
