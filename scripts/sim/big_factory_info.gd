@@ -43,6 +43,10 @@ static func describe(sim: CitySim, id: int) -> Dictionary:
 		rows.append(["Owes on land", "$%s" % CitySim.money_text(roundi(float(f.debt)))])
 	rows.append(["Land here", "$%s an acre" % CitySim.money_text(roundi(Capital.land_price(sim, BigFactories.center(f))))])
 	rows.append(["Jobs", str(big.jobs_at(f))])
+	if str(f.kind) in Balance.SECOND_SHIFT_KINDS:
+		rows.append(["Shifts", "Day and night" if int(f.get("shifts", 1)) == 2 else "Day shift"])
+	else:
+		rows.append(["Shifts", "Around the clock"])
 	rows.append(["Property tax to town", "$%s / day" % CitySim.money_text(roundi(BigFactories.value(f)
 		* sim.economy.tax[ZoneMap.Zone.INDUSTRIAL] / 100.0 / 12.0))])
 	rows.append(["Size", "%d × %d m, %d line%s" % [roundi(BigFactories.site_width(f)), roundi(BigFactories.site_depth(f)),

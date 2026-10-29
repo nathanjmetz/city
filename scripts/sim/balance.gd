@@ -2130,6 +2130,19 @@ const BIG_FACTORY_LAND_PER_M2 := 220
 ## hogs (the plant owns the pigs and feed; the grower is paid for the barn
 ## space and work).
 const BIG_FACTORY_CONTRACT_SHARE := 0.85
+## Work modes (Brawn's pick #17): an owner whose orders back up can run a
+## second shift before building another line, as real plants do. A second
+## shift adds about 80-90% of the day shift's output (fewer supervisors,
+## maintenance in the gaps; BLS: about one full-time factory worker in six
+## works evenings or nights), pays a shift differential of about 5-10% on
+## its work, and carries night overhead (supervisors, lights, security).
+## Ethanol plants already run around the clock (a continuous process), so
+## only these kinds can add one.
+const SECOND_SHIFT_KINDS := ["meatpacker", "furniture", "rv"]
+const SECOND_SHIFT_OUTPUT := 0.85
+const SECOND_SHIFT_PAY := 0.08
+## Night overhead as a share of the plant's fixed costs a month.
+const SECOND_SHIFT_FIXED := 0.3
 # --- Schools and universities -------------------------------------------------
 # Brawn's model (2026-10-22): the player places a high school, community
 # college or university and sets its funding. Its principal or president
