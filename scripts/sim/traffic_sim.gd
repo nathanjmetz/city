@@ -231,6 +231,11 @@ var _extra := {}      # place ref -> spots added beyond its layout, in order (_a
 ## drive in to deliver: "never", "night" (10 pm to 6 am) or "always".
 var closed := {}
 var _truck_plan := false  # the route being planned is for a truck (close_segment)
+## The town's truck routes law (TownLaws): a truck passing through counts a
+## neighborhood street as Balance.LAW_TRUCK_STREET_MULT times its drive.
+var truck_routes := false
+var _tpen := {}       # way -> extra seconds for a truck under truck_routes
+var _tpen_key := []
 var _walk_lines := {} # segment * 2 + side -> sidewalk line
 var _rings := {}      # node -> sidewalk ends around it (_corner_ring)
 var _marks := []      # crosswalks on the walk just planned: [point, node, way in]
@@ -1594,6 +1599,7 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 	var end_prev := -1
 	var first := lane >= 0
 	var none := PackedFloat64Array()
+	var tpen: Dictionary = _truck_pen() if _truck_plan and truck_routes else {}
 	while not hg.is_empty():
 		var f: float = hg[0]
 		var u: int = hu[0]
@@ -1620,6 +1626,8 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 					end_prev = u
 					best_route = []
 			var ng: float = e + _wcost.get(nx, INF)
+			if not tpen.is_empty():
+				ng += tpen.get(nx, 0.0)
 			if ng < dist[nx]:
 				if dist[nx] == INF:
 					_pl_seen.append(nx)
@@ -1639,6 +1647,20 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 			guard += 1
 		return route
 	return best_route
+
+
+## The extra a truck passing through pays on each neighborhood street way
+## (truck_routes), kept until the ways are rebuilt.
+func _truck_pen() -> Dictionary:
+	if _tpen_key != [version, ways.size()]:
+		_tpen_key = [version, ways.size()]
+		_tpen.clear()
+		for wid in ways:
+			var seg: int = int(wid) >> 1
+			if network.segments.has(seg) and int(network.segments[seg].type) in TownLaws.LOCAL_STREETS:
+				var w: Dictionary = ways[wid]
+				_tpen[wid] = w.len / w.vmax * (Balance.LAW_TRUCK_STREET_MULT - 1.0)
+	return _tpen
 
 
 ## One more than the highest way id, kept until the ways are rebuilt.
