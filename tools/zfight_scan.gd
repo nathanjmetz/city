@@ -11,15 +11,26 @@ extends SceneTree
 ## count: look first at the biggest areas.
 ##
 ##   godot --headless -s tools/zfight_scan.gd [-- seeds]
+##   godot --headless -s tools/zfight_scan.gd -- vehicles   (Ultra vehicle models)
 
 const TOL := 0.005  # metres between planes that still fight
 const MIN_AREA := 0.02  # m² of overlap worth reporting
 
 var _mat_names := {}
+## Vehicle paint culls back faces, so only faces turned the same way fight.
+var _culled := false
 
 
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
+	if args.size() > 0 and args[0] == "vehicles":
+		_culled = true
+		var n := 0
+		for key in VehicleModels.mesh_keys():
+			n += _scan(key, [VehicleModels.build(key, VehicleModels.LOD_ULTRA)])
+		print("z-fight scan: %d visible overlaps" % n)
+		quit()
+		return
 	var seeds := int(args[0]) if args.size() > 0 else 12
 	for k in ["paint", "siding", "brick", "roof", "glass", "yard", "metal", "sign"]:
 		_mat_names[HouseMaterials.get_mat(k)] = k
@@ -45,7 +56,7 @@ func _init() -> void:
 
 func _scan(label: String, built: Array) -> int:
 	var tris := []  # [a, b, c, normal, material, colour]
-	for k in 2:
+	for k in mini(2, built.size()):
 		if not built[k] is ArrayMesh:
 			continue
 		var mesh: ArrayMesh = built[k]
@@ -93,6 +104,8 @@ func _scan(label: String, built: Array) -> int:
 				seen[pk] = true
 				var a = tris[list[x]]
 				var b = tris[list[y]]
+				if _culled and a[3].dot(b[3]) < 0.0:
+					continue
 				if absf(a[3].dot(b[3])) < 0.9995 or absf(a[3].dot(a[0]) - a[3].dot(b[0])) > TOL:
 					continue
 				# Same material and colour shade the same, so a fight can't show.
