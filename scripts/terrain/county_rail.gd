@@ -42,6 +42,8 @@ const RAMP := 24.0
 ## Two lines nearer than this (metres) share one bed (track centres are
 ## 14 ft apart on double track).
 const PAIRED := 6.0
+## The longest gap between two mapped lines that is joined (metres).
+const GAP := 320.0
 ## Size of the bins the lines are filed in for lookups, metres.
 const BIN := 256.0
 
@@ -76,6 +78,7 @@ static func _load() -> void:
 		return
 	var lo := Terrain.CENTRE - Vector2.ONE * Terrain.SIZE * 0.5
 	var area := Rect2(lo, Vector2.ONE * Terrain.SIZE)
+	var runs := []
 	for line in json.lines:
 		var pts := PackedVector2Array()
 		for q in line:
@@ -90,10 +93,45 @@ static func _load() -> void:
 				run.append(pts[i])
 			elif not run.is_empty():
 				run.append(pts[i].clamp(area.position, area.end))
-				_add(run)
+				runs.append(run)
 				run = PackedVector2Array()
 		if not run.is_empty():
-			_add(run)
+			runs.append(run)
+	_join(runs)
+	for r in runs:
+		_add(r)
+
+
+## The mapped lines stop short of each other in places (up to a few
+## hundred metres where a way was left out): a line's end that heads
+## straight at another line within GAP metres carries on to it.
+static func _join(runs: Array) -> void:
+	for a in runs.size():
+		for end in [0, 1]:
+			var pts: PackedVector2Array = runs[a]
+			if pts.size() < 2:
+				continue
+			var e := pts[pts.size() - 1] if end == 1 else pts[0]
+			var before := pts[pts.size() - 2] if end == 1 else pts[1]
+			var dir := (e - before).normalized()
+			var best := Vector2.INF
+			var best_d := GAP
+			var joined := false  # already meets a line
+			for b in runs.size():
+				if b == a:
+					continue
+				for q: Vector2 in runs[b]:
+					var d := e.distance_to(q)
+					joined = joined or d <= 3.0
+					if d > 3.0 and d < best_d and dir.dot((q - e) / d) > cos(deg_to_rad(30.0)):
+						best_d = d
+						best = q
+			if best != Vector2.INF and not joined:
+				if end == 1:
+					pts.append(best)
+				else:
+					pts.insert(0, best)
+				runs[a] = pts
 
 
 static func _add(pts: PackedVector2Array) -> void:
