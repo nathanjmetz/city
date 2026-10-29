@@ -51,15 +51,20 @@ func _spawn(id: int, h: Dictionary) -> Node3D:
 	var ref := "hub:%d" % id
 	site.visible = sim.construction.state(ref, sim.tick_count).is_empty()
 	ConstructionSite.add_to(root, [built[0], built[1], built[2]], "shop",
-		func(): return sim.construction.state(ref, sim.tick_count), _open.bind(id, root, site, built[2]))
+		func(): return sim.construction.state(ref, sim.tick_count), _open.bind(id, root, site, built[2], built[4]))
 	return root
 
 
 ## The finished hub: its site shows and its trees go in.
-func _open(id: int, root: Node3D, site: MeshInstance3D, planted: Array) -> void:
+func _open(id: int, root: Node3D, site: MeshInstance3D, planted: Array, labels: Array) -> void:
 	if not is_instance_valid(root) or _nodes.get(id, root) != root:
 		return
 	site.visible = true
+	if not labels.is_empty() and not root.has_node("Signs"):
+		var signs := Node3D.new()
+		signs.name = "Signs"
+		SignText.add(signs, labels)
+		root.add_child(signs)
 	var frame := Transform3D(root.basis, root.position)
 	var trees := []
 	for t in planted:

@@ -413,7 +413,13 @@ func _spawn(id: int, b: Dictionary) -> Node3D:
 			for t in built[2]:
 				var yaw := Basis(Vector3.UP, fposmod(t[0].x * 7.3 + t[0].z * 3.1, TAU))
 				trees.append([frame * Transform3D(yaw.scaled(Vector3.ONE * t[3]), t[0]), t[1], t[2]])
-			_trees.set_trees(str(b.pos), trees))
+			_trees.set_trees(str(b.pos), trees)
+			# Its sign lettering goes up with the finished building.
+			if built.size() > 3 and not built[3].is_empty() and not root.has_node("Signs"):
+				var signs := Node3D.new()
+				signs.name = "Signs"
+				SignText.add(signs, built[3])
+				root.add_child(signs))
 	return root
 
 

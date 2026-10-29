@@ -62,7 +62,7 @@ static func build_hub(h: Dictionary, seed: int, to_curb: float) -> Array:
 	var site := b._commit_house()
 	b._st = b._own
 	# [building, ground, trees, the rest of the site: mound, yard, fences, stones].
-	return [b._commit_house(), b._commit_flat(), b.trees, site]
+	return [b._commit_house(), b._commit_flat(), b.trees, site, b.labels]
 
 
 ## Draws `draw` into the hub's own building instead of the site.
@@ -879,7 +879,7 @@ func _reuse_store(p: Vector3) -> void:
 	_metal_roof(p.x, p.z, 4.9, 15.0, 10.0, Color("#8e9496"))
 	_glass(Vector3(p.x - 3.0, 1.6, p.z - 5.03), Vector3(-1, 0, 0), 5.0, 2.2, 0.0)
 	_box("paint", Vector3(2.0, 2.4, 0.08), Vector3(p.x + 1.4, 1.5, p.z - 5.04), Color("#e9e7e0"))
-	_sign(Vector3(p.x - 3.0, 3.4, p.z - 5.12), 6.0, 0.8)
+	_civic_sign(Vector3(p.x - 3.0, 3.4, p.z - 5.12), 6.0, 0.8, "REUSE STORE", "#1d4d2c", "#f2efe6", "franklin")
 	# The lean-to and what is out under it.
 	_box("paint", Vector3(5.0, 0.2, 10.0), p + Vector3(10.0, 3.0, 0), Color("#8e9496"))
 	for z in [-4.6, 4.6]:
@@ -1075,7 +1075,7 @@ func _plant(cx: float, cz: float, w: float, d: float, h: float, wall: Color) -> 
 	var doors := int(w / 12.0)
 	for i in doors:
 		_overhead_door(cx - w * 0.5 + (i + 0.5) * w / doors, cz - d * 0.5, 4.2, 4.8, Color("#e9e7e0"))
-	_sign(Vector3(cx + w * 0.3, h - 1.5, cz - d * 0.5 - 0.1), 4.0, 1.0)
+	_civic_sign(Vector3(cx + w * 0.3, h - 1.5, cz - d * 0.5 - 0.1), 4.0, 1.0, "RECYCLING", "#1d4d2c", "#f2efe6", "franklin")
 
 
 ## A row of bales: cardboard, paper, plastic and cans, two or three high.

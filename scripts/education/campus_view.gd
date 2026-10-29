@@ -75,6 +75,8 @@ func _spawn(key: String, c: Dictionary, blk) -> Node3D:
 		at.origin.y = Terrain.ground_y(at.origin.x, at.origin.z)
 		trees.append([at, t[1], t[2]])
 	_trees.set_trees(key, trees)
+	if built.size() > 3 and not built[3].is_empty():
+		SignText.add(root, built[3])
 	root.scale = Vector3(1.0, 0.01, 1.0)
 	create_tween().tween_property(root, "scale", Vector3.ONE, 0.45) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)

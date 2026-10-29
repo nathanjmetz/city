@@ -25,6 +25,11 @@ var _rects := []
 
 ## `hub` is the hospital's record from Healthcare (empty for other kinds).
 ## `built` holds a nursing home's or daycare's added pieces (Stations).
+## What each campus piece's sign says (as Indiana regional hospitals letter
+## their wings: Parkview, IU Health Ball).
+const PIECE_SIGNS := {"er": "EMERGENCY", "maternity": "BIRTHING CENTER", "surgery": "SURGERY CENTER",
+	"rehab": "REHABILITATION", "cancer": "CANCER CENTER", "teaching": "HOSPITAL", "community": "COMMUNITY HEALTH"}
+
 static func build_care(kind: int, seed: int, size: Vector2, to_curb: float, hub := {}, built := []) -> Array:
 	var b := HealthBuilder.new()
 	b.rng = RandomNumberGenerator.new()
@@ -42,7 +47,7 @@ static func build_care(kind: int, seed: int, size: Vector2, to_curb: float, hub 
 	b.half = size.x * 0.5
 	b.depth = size.y * 0.5
 	b._dress(false, true)
-	return [b._commit_house(), b._commit_flat(), b.trees]
+	return [b._commit_house(), b._commit_flat(), b.trees, b.labels]
 
 
 # ---------------------------------------------------------------- hospital
@@ -89,7 +94,7 @@ func _hospital(size: Vector2, to_curb: float, hub: Dictionary) -> void:
 	for s in [-1.0, 1.0]:
 		_box("paint", Vector3(0.45, 4.1, 0.45), Vector3(mx + s * 4.0, 2.05, zf - 8.6), eifs)
 	_flat_rect("drive", mx - 4.5, mx + 4.5, zf - 9.0, zf, 0.09)
-	_sign(Vector3(mx, h - 2.2, zf - 0.14), minf(w * 0.4, 14.0), 0.9)
+	_civic_sign(Vector3(mx, h - 2.2, zf - 0.14), minf(w * 0.4, 14.0), 0.9, "HOSPITAL", "#1f3b6e", "#f2efe6", "franklin")
 	_rooftop_units(mx, w, zf, d, h, 3)
 	# The front lot, or a parking garage over it.
 	if garage:
@@ -255,7 +260,7 @@ func _piece(key: String, x0: float, x1: float, z0: float, z1: float, brick: Colo
 		_flat_roofed_at("paint", cx, tw, td, tz, tower, tower + 1.0, eifs)
 		_faces("tower", cx, tw, tz - td * 0.5, td, tower, false, trim, h)
 		_rooftop_units(cx, tw, tz - td * 0.5, td, tower + 0.2, 2)
-		_sign(Vector3(cx, tower - 1.8, tz - td * 0.5 - 0.14), minf(tw * 0.5, 12.0), 1.0)
+		_civic_sign(Vector3(cx, tower - 1.8, tz - td * 0.5 - 0.14), minf(tw * 0.5, 12.0), 1.0, "HOSPITAL", "#1f3b6e", "#f2efe6", "franklin")
 	_rooftop_units(cx, w, bz0, d, h, 1 + int(w * d / 900.0))
 	match key:
 		"er":
@@ -275,7 +280,7 @@ func _piece(key: String, x0: float, x1: float, z0: float, z1: float, brick: Colo
 		"offices":
 			_canopy(cx - w * 0.2, bz0, 9.0, 4.5, 3.8, trim)
 			_stair_tower(cx + w * 0.5 - 2.5, bz0, h)
-			_sign(Vector3(cx + 2.0, h - 1.6, bz0 - 0.14), minf(w * 0.4, 10.0), 0.8)
+			_civic_sign(Vector3(cx + 2.0, h - 1.6, bz0 - 0.14), minf(w * 0.4, 10.0), 0.8, "MEDICAL OFFICES", "#1f3b6e", "#f2efe6", "franklin")
 		"maternity":
 			_canopy(cx - w * 0.3, bz0, 7.0, 4.0, 3.4, Color("#6fa8a2"))
 			_bed(cx + w * 0.1, bz0 - 1.4, minf(10.0, w * 0.3))
@@ -299,12 +304,12 @@ func _piece(key: String, x0: float, x1: float, z0: float, z1: float, brick: Colo
 			_limestone(cx, w, bz0, d, h)
 			_stair_tower(cx - w * 0.5 + 3.0, bz0, h)
 			_portal(cx, bz0, trim)
-			_sign(Vector3(cx, h - 1.7, bz0 - 0.14), minf(w * 0.45, 11.0), 0.8)
+			_civic_sign(Vector3(cx, h - 1.7, bz0 - 0.14), minf(w * 0.45, 11.0), 0.8, "SCHOOL OF NURSING", "#5a1f24", "#f2efe6", "serif")
 			for i in 6:
 				_box("metal", Vector3(0.05, 0.8, 0.7), Vector3(cx + 4.0 + i * 0.7, 0.4, bz0 - 2.0), Color("#5a5e60"))
 		"heart":
 			_rotunda(cx, bz0, minf(7.0, w * 0.2), minf(h, 9.5), eifs)
-			_sign(Vector3(cx + w * 0.3, h - 1.8, bz0 - 0.14), minf(w * 0.3, 10.0), 0.9)
+			_civic_sign(Vector3(cx + w * 0.3, h - 1.8, bz0 - 0.14), minf(w * 0.3, 10.0), 0.9, "HEART CENTER", "#1f3b6e", "#f2efe6", "franklin")
 		"cancer":
 			_vestibule(cx, bz0, 6.0, 2.6, 3.8)
 			_box("paint", Vector3(w + 0.1, 1.2, d + 0.1), Vector3(cx, 0.6, cz), Color("#cfc6b0"))  # limestone base
@@ -318,7 +323,7 @@ func _piece(key: String, x0: float, x1: float, z0: float, z1: float, brick: Colo
 			_entry(cx, bz0, trim)
 			_flat_rect("drive", cx - 2.0, cx + 2.0, z0, bz0, 0.09)
 	if h >= 12.0 and key not in ["offices", "nursing_school", "heart"]:
-		_sign(Vector3(cx, h - 1.8, bz0 - 0.14), minf(w * 0.35, 12.0), 0.9)
+		_civic_sign(Vector3(cx, h - 1.8, bz0 - 0.14), minf(w * 0.35, 12.0), 0.9, PIECE_SIGNS.get(key, "HOSPITAL"), "#1f3b6e", "#f2efe6", "franklin")
 	_link(cx - w * 0.5, cx + w * 0.5, bz0, bz1, maxf(h, tower), eifs)
 	# A walk to the street for pieces that front it.
 	if z0 <= front + 0.5:
@@ -614,7 +619,7 @@ func _nursing_home(front: float, to_curb: float) -> void:
 	for s in [-1.0, 1.0]:
 		_box("paint", Vector3(0.35, 3.2, 0.35), Vector3(s * 3.2, 1.6, zf - 5.6), trim)
 	_flat_rect("drive", -3.6, 3.6, zf - 6.0, zf, 0.09)
-	_sign(Vector3(0, h - 0.05, zf - 2.5), 4.0, 0.45)
+	_civic_sign(Vector3(0, h - 0.05, zf - 2.5), 4.0, 0.45, "HEALTH & REHABILITATION", "#2f4a3a", "#f2efe6", "serif")
 	_parking(-23.0, 23.0, front + 0.3, zf - 6.0, to_curb, -16.0)
 	_rooftop_units(0.0, w, zf, d, h + 0.6, 3)
 	# The garden out back: a path loop and benches.
@@ -643,7 +648,7 @@ func _daycare(front: float, to_curb: float) -> void:
 	_entry(-6.0, zf, trim)
 	_window_row(2.0, zf, 8.0, 1.4, 1.2, 3, trim)
 	_window_row(-12.0, zf, 4.0, 1.4, 1.2, 1, trim)
-	_sign(Vector3(1.0, h - 0.15, zf - 0.14), 5.0, 0.55)
+	_civic_sign(Vector3(1.0, h - 0.15, zf - 0.14), 5.0, 0.55, "CHILD CARE", "#2a6a9a", "#f2efe6", "franklin")
 	_parking(-14.5, 14.5, front + 0.3, zf - 2.0, to_curb, -9.0)
 	_flat_rect("drive", -8.0, -4.0, zf - 2.0, zf, 0.08)
 	# The fenced play yard beside and behind it.
