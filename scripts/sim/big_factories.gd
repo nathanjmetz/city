@@ -320,9 +320,23 @@ func _ground(sim: CitySim, poly: PackedVector2Array, id: int, place := false) ->
 
 ## Batches a month the plant can run now.
 func capacity(f: Dictionary) -> float:
+	return day_capacity(f) * (1.0 + Balance.SECOND_SHIFT_OUTPUT if int(f.get("shifts", 1)) == 2 else 1.0)
+
+
+## Batches a month on the day shift alone.
+func day_capacity(f: Dictionary) -> float:
 	var s := spec(f)
 	var size := 1.0 + Balance.BIG_FACTORY_LEVEL_LIFT * int(f.level) + Balance.BIG_FACTORY_BAY_LIFT * int(f.bays)
 	return float(s.batches) * size * Agency.effect(f, TREES[f.kind], "output*")
+
+
+## What a batch costs to make on average across its shifts (the second
+## shift's work is paid the shift differential).
+func batch_cost(f: Dictionary) -> float:
+	var pay := 1.0
+	if int(f.get("shifts", 1)) == 2:
+		pay += Balance.SECOND_SHIFT_PAY * Balance.SECOND_SHIFT_OUTPUT / (1.0 + Balance.SECOND_SHIFT_OUTPUT)
+	return float(spec(f).process) * maxf(0.3, Agency.effect(f, TREES[f.kind], "process*")) * pay
 
 
 ## Loads of one input a batch takes.
@@ -418,7 +432,7 @@ func _produce(share: float) -> void:
 				f.out[good] = float(f.out.get(good, 0.0)) + float(s.by[good])
 			f.progress -= 1.0
 			f.month.made += 1.0
-			_spend(f, float(s.process) * maxf(0.3, Agency.effect(f, TREES[f.kind], "process*")))
+			_spend(f, batch_cost(f))
 
 
 func _spend(f: Dictionary, dollars: float) -> void:
@@ -446,7 +460,7 @@ func _month(sim: CitySim) -> void:
 	for id in ids:
 		var f: Dictionary = sites[id]
 		var s := spec(f)
-		_spend(f, float(s.fixed))
+		_spend(f, float(s.fixed) * (1.0 + Balance.SECOND_SHIFT_FIXED if int(f.get("shifts", 1)) == 2 else 1.0))
 		# Contract growers raise hogs on farms nearby for a fee, and truck them in.
 		var contract := Agency.effect(f, TREES[f.kind], "contract+")
 		if contract > 0.0:
@@ -503,6 +517,7 @@ func _decide(sim: CitySim, id: int, util: float, profit: float) -> void:
 			sim.permits.done(req.id)
 			f.why = "Bought the land behind it, with your permit."
 			f.changed = true
+	_shifts(sim, f, util, stance)
 	if stance == "hold":
 		return
 	if float(f.cash) > 0.0:
@@ -567,6 +582,52 @@ func _decide(sim: CitySim, id: int, util: float, profit: float) -> void:
 			f.level = int(f.level) - 1
 			f.why = "Losing money, so it shut a line."
 			f.changed = true
+
+
+## The work mode (Brawn's pick #17): the owner weighs running a second
+## shift (Agency.choose). It pays when orders back up past what the day
+## shift makes; it costs the night differential and night overhead, and a
+## night crew the town can't staff makes less. A plant on two
+## shifts drops back once the night shift's batches stop selling. The
+## player's "hold" keeps it from adding one.
+func _shifts(sim: CitySim, f: Dictionary, util: float, stance: String) -> void:
+	if not str(f.kind) in Balance.SECOND_SHIFT_KINDS:
+		return
+	var two := int(f.get("shifts", 1)) == 2
+	if stance == "hold" and not two:
+		return
+	var day := day_capacity(f)
+	var made := float(f.get("last", {}).get("made", 0.0))
+	# Batches the second shift sells: what went past the day shift, or, while
+	# orders back up on one shift, about half its batches at first.
+	var extra := maxf(made - day, 0.0) if two else (day * Balance.SECOND_SHIFT_OUTPUT * 0.5
+		if util >= Balance.BIG_FACTORY_BUSY else 0.0)
+	var s := spec(f)
+	var margin := price_of(f, s.out)
+	for good in s.by:
+		margin += price_of(f, good) * float(s.by[good])
+	for input in s["in"]:
+		margin -= per_batch(f, input) * Trade.base_price(Balance.BIG_FACTORY_TRADE_AS[input])
+	margin -= float(s.process) * maxf(0.3, Agency.effect(f, TREES[f.kind], "process*")) * (1.0 + Balance.SECOND_SHIFT_PAY)
+	var night := float(s.fixed) * Balance.SECOND_SHIFT_FIXED
+	var factors := {"money": [extra * margin - night, "sells what backs up past the day shift" if extra > 0.0
+		else "runs the plant around the clock"]}
+	# Night sales are less sure than the day's: a cautious owner counts that.
+	factors["risk"] = [-0.2 * extra * margin, "keeps a night crew busy"]
+	# A shift the town can't fully staff sells only what its crew can make.
+	var hires := roundi(float(s.jobs) * Balance.SECOND_SHIFT_OUTPUT)
+	var looking := maxi(int(sim.stats.workers) - int(sim.stats.employed) - int(sim.stats.commuting), 0)
+	var fill := 1.0 if two else clampf(float(looking) / maxf(hires, 1.0), 0.0, 1.0)
+	factors["workers"] = [-(1.0 - fill) * extra * margin, "finds people in town looking for work"]
+	var one := {"money": [0.0, "saves the night overhead"], "risk": [0.0, "keeps costs steady"],
+		"workers": [0.0, "needs no night crew the town can't staff"]}
+	var pick := Agency.choose(f.leader, [{"id": "one", "name": "One shift", "factors": one},
+		{"id": "two", "name": "A second shift", "factors": factors}])
+	var want := 2 if pick.id == "two" else 1
+	if want == int(f.get("shifts", 1)):
+		return
+	f.shifts = want
+	f.why = str(pick.why)
 
 
 ## What the next bay of land behind the site sells for.
@@ -978,6 +1039,8 @@ func jobs() -> int:
 
 func jobs_at(f: Dictionary) -> int:
 	var size := 1.0 + 0.35 * int(f.level) + 0.15 * int(f.bays)
+	if int(f.get("shifts", 1)) == 2:
+		size *= 1.0 + Balance.SECOND_SHIFT_OUTPUT
 	return roundi(float(spec(f).jobs) * size + Agency.effect(f, TREES[f.kind], "jobs+"))
 
 
@@ -1033,6 +1096,7 @@ func from_dict(d: Dictionary) -> void:
 		f.bays = int(s.get("bays", 0))
 		f.busy = int(s.get("busy", 0))
 		f.loss = int(s.get("loss", 0))
+		f.shifts = int(s.get("shifts", 1))
 		f.built = Array(s.get("built", [])).map(func(x): return str(x))
 		f.hist = Array(s.get("hist", [])).map(func(x): return int(x))
 		for key in ["stock", "promised", "due"]:

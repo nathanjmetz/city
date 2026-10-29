@@ -388,13 +388,13 @@ func _add_parked(kind: String, xf: Transform3D, id: int, eye: Vector3, ultra2: f
 	var paint := VehicleTypes.paint(kind, id)
 	if VehicleModels.ARTIC.has(kind):
 		var art: Dictionary = VehicleModels.ARTIC[kind]
-		_add(art.cab, lod, xf, Color(paint.r, paint.g, paint.b, 0.0))
+		_add(art.cab, lod, xf, Color(paint.r, paint.g, paint.b, VehicleMaterial.OFF))
 		# Parked straight: the trailer lines up behind the cab.
 		var fwd := -xf.basis.z
 		var origin: Vector3 = xf * Vector3(0, 0, art.hitch) + fwd * float(art.pin)
-		_add(art.trailer, lod, Transform3D(xf.basis, origin), Color(1, 1, 1, 0.0))
+		_add(art.trailer, lod, Transform3D(xf.basis, origin), Color(1, 1, 1, VehicleMaterial.OFF))
 	else:
-		_add(kind, lod, xf, Color(paint.r, paint.g, paint.b, 0.0))
+		_add(kind, lod, xf, Color(paint.r, paint.g, paint.b, VehicleMaterial.OFF))
 
 
 ## Keeps the drawing clock a step behind the simulation's, so it can glide
@@ -626,7 +626,7 @@ func _rebuild_parked() -> void:
 		var front: Vector3 = Terrain.stand(pose[0])
 		var dir: Vector3 = (front - Terrain.stand(pose[0] - flat * float(VehicleModels.AXLE.get(kind, 3.5)))).normalized()
 		var paint := VehicleTypes.paint(kind, car.id)
-		var custom := Color(paint.r, paint.g, paint.b, 0.0)
+		var custom := Color(paint.r, paint.g, paint.b, VehicleMaterial.OFF)
 		if VehicleModels.ARTIC.has(kind):
 			# A rig parked straight: the trailer lined up behind the cab.
 			var art: Dictionary = VehicleModels.ARTIC[kind]
@@ -635,7 +635,7 @@ func _rebuild_parked() -> void:
 			var hitch: Vector3 = xf * Vector3(0, 0, art.hitch)
 			var trailer := VehicleModels.trailer_for(art.trailer, car.get("cargo", {}))
 			_parked.append([front, trailer, Transform3D(xf.basis, hitch + dir * float(art.pin)),
-				Color(1, 1, 1, 0.0), trailer])
+				Color(1, 1, 1, VehicleMaterial.OFF), trailer])
 		else:
 			# Parked in the same body it drove in.
 			var model := _model(kind, car.id)
