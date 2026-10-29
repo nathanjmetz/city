@@ -236,6 +236,12 @@ var _truck_plan := false  # the route being planned is for a truck (close_segmen
 var truck_routes := false
 var _tpen := {}       # way -> extra seconds for a truck under truck_routes
 var _tpen_key := []
+## The route being planned is for a golf cart (TownLaws golf_carts): roads
+## faster than Balance.CART_MAX_MPH count Balance.CART_FAST_MULT times
+## their drive, so carts keep to town streets and only cross the highway.
+var _cart_plan := false
+var _cpen := {}
+var _cpen_key := []
 var _walk_lines := {} # segment * 2 + side -> sidewalk line
 var _rings := {}      # node -> sidewalk ends around it (_corner_ring)
 var _marks := []      # crosswalks on the walk just planned: [point, node, way in]
@@ -378,7 +384,7 @@ func _step_flows() -> void:
 			# Where it was going was cleared away on the way: it goes home
 			# instead (vehicles never vanish).
 			var home := place(str(car.get("base", "")))
-			var spot := -1 if home.is_empty() else _reserve(home, car.id, car.len > 6.5)
+			var spot := -1 if home.is_empty() else _reserve(home, car.id, car.len > 6.5, _is_cart(car))
 			if spot >= 0:
 				car.to_place = home.ref
 				car.to_ref = home.ref
@@ -1802,7 +1808,7 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 	var end_prev := -1
 	var first := lane >= 0
 	var none := PackedFloat64Array()
-	var tpen: Dictionary = _truck_pen() if _truck_plan and truck_routes else {}
+	var tpen: Dictionary = _truck_pen() if _truck_plan and truck_routes else ({} if not _cart_plan else _cart_pen())
 	while not hg.is_empty():
 		var f: float = hg[0]
 		var u: int = hu[0]
@@ -1850,6 +1856,23 @@ func _plan(starts: Array, targets: Dictionary, lane := -1, pen := {}) -> Array:
 			guard += 1
 		return route
 	return best_route
+
+
+## The extra a golf cart pays on each way faster than it should be on.
+func _cart_pen() -> Dictionary:
+	if _cpen_key != [version, ways.size()]:
+		_cpen_key = [version, ways.size()]
+		_cpen.clear()
+		for wid in ways:
+			var seg: int = int(wid) >> 1
+			if network.segments.has(seg) and int(RoadStyle.TYPES[network.segments[seg].type].get("mph", 25)) > Balance.CART_MAX_MPH:
+				var w: Dictionary = ways[wid]
+				_cpen[wid] = w.len / w.vmax * (Balance.CART_FAST_MULT - 1.0)
+	return _cpen
+
+
+static func _is_cart(car: Dictionary) -> bool:
+	return str(car.get("kind", "")) == "golf_cart"
 
 
 ## The extra a truck passing through pays on each neighborhood street way
@@ -2029,8 +2052,10 @@ func _replan(car: Dictionary, lane := -1) -> bool:
 		return false
 	var wid: int = car.route[car.leg]
 	_truck_plan = car.len > 6.5
+	_cart_plan = _is_cart(car)
 	var route := _plan([[wid, car.d]], targets, lane, _side_pen(car.goal.seg, car.goal.get("side", 1)))
 	_truck_plan = false
+	_cart_plan = false
 	if route.is_empty():
 		return false
 	car.route = route
@@ -2171,7 +2196,7 @@ func _reroute_all() -> void:
 		# out afresh around it), or it held two and a loaded copy held one.
 		var held: bool = car.spot >= 0 and car.spot < pl.taken.size() and pl.taken[car.spot] == car.id
 		_release(pl.ref, car.spot, car.id)
-		var at := _reserve(pl, car.id, car.len > 6.5)
+		var at := _reserve(pl, car.id, car.len > 6.5, _is_cart(car))
 		if at < 0:
 			at = _new_curb(pl, pl.stop, car.id, car.len)
 		if at < 0 and kerb.has(car.id):
@@ -2247,8 +2272,10 @@ func _replan_start(car: Dictionary, from_stop: Dictionary) -> bool:
 			return false
 		car.to_stop = pl.stop
 	_truck_plan = car.len > 6.5
+	_cart_plan = _is_cart(car)
 	var trip := _route(from_stop, car.to_stop)
 	_truck_plan = false
+	_cart_plan = false
 	if trip.is_empty():
 		return false
 	car.merge(trip, true)
@@ -3027,6 +3054,14 @@ func _aprons(stop: Dictionary) -> Array:
 	return out
 
 
+## A house lot with somewhere to park (a golf cart's home).
+func _home_lot(pl: Dictionary) -> bool:
+	if _sim == null or pl.spots.is_empty() or not str(pl.ref).begins_with("lot:"):
+		return false
+	var b = _sim.buildings.get(str(pl.ref).substr(4))
+	return b != null and int(b.zone) == ZoneMap.Zone.RESIDENTIAL
+
+
 static func _fill(n: int) -> Array:
 	var a := []
 	a.resize(n)
@@ -3079,11 +3114,20 @@ func _claim_spots(pl: Dictionary) -> void:
 
 ## A free spot for a vehicle: trucks take docks and bays first, cars their
 ## garage or driveway, then a stall. -1 if the place is full.
-func _reserve(pl: Dictionary, vid: int, truck: bool) -> int:
+func _reserve(pl: Dictionary, vid: int, truck: bool, cart := false) -> int:
 	# A truck never squeezes into a car's 9 x 18 ft stall or a driveway: it
 	# backs into a dock or bay, or stands at the kerb out front as delivery
 	# trucks do.
-	var order := ["dock", "bay", "curb"] if truck else ["garage", "drive", "stall", "curb"]
+	var order := ["dock", "bay", "curb"] if truck else (["cart", "drive", "stall", "curb"] if cart else ["garage", "drive", "stall", "curb"])
+	if cart and _home_lot(pl) and pl.spots.all(func(s): return s.kind != "cart"):
+		# A golf cart's corner of the garage or carport (TownLaws golf_carts),
+		# added last when a cart first needs it so the other spots keep their
+		# numbers. No car parks there.
+		var c: Dictionary = pl.spots[0].duplicate()
+		c.kind = "cart"
+		c.hidden = true
+		pl.spots.append(c)
+		pl.taken.append(-1)
 	for kind in order:
 		for i in pl.spots.size():
 			if pl.taken[i] == -1 and pl.spots[i].kind == kind and not pl.spots[i].get("stop_only", false):
@@ -3218,7 +3262,7 @@ func new_vehicle(kind: String, at_ref: String, owner: int, owner_place := "") ->
 	var pl := place(at_ref)
 	if pl.is_empty():
 		return -1
-	var spot := _reserve(pl, _next_id, VehicleTypes.spec(kind).len > 6.5)
+	var spot := _reserve(pl, _next_id, VehicleTypes.spec(kind).len > 6.5, kind == "golf_cart")
 	if spot < 0:
 		return -1
 	var car := _make_vehicle(kind, owner, owner_place if owner_place != "" else at_ref)
@@ -3356,14 +3400,16 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 	if shut and after.get("driver", -1) == -1:
 		return false
 	_truck_plan = truck
+	_cart_plan = _is_cart(car)
 	var trip := {} if shut else _route(a, to_pl.stop)
 	_truck_plan = false
+	_cart_plan = false
 	if trip.is_empty() and not shut:
 		return false
 	var spot := -1
 	var park_ref: String = to_pl.ref
 	if not to_pl.get("edge", false):
-		spot = -1 if shut else _reserve(to_pl, car.id, truck)
+		spot = -1 if shut else _reserve(to_pl, car.id, truck, _is_cart(car))
 		# A full driveway at home: the extra car goes on the street out front,
 		# as in any real neighbourhood; a town lot is for shoppers, workers
 		# and visitors (many towns, Marion among them, ban overnight parking
@@ -3372,8 +3418,10 @@ func _send(car: Dictionary, to_ref: String, purpose: String, cargo: Dictionary, 
 			var alt := _parking_near(to_pl, car.id)
 			if not alt.is_empty():
 				_truck_plan = truck
+				_cart_plan = _is_cart(car)
 				var alt_trip := _route(a, place(alt[0]).stop)
 				_truck_plan = false
+				_cart_plan = false
 				if not alt_trip.is_empty():
 					park_ref = alt[0]
 					spot = alt[1]
@@ -3436,7 +3484,7 @@ func _dest(car: Dictionary) -> Dictionary:
 		return {}
 	var i: int = car.get("to_spot", -1)
 	if i < 0 or i >= pl.spots.size() or (pl.taken[i] != car.id and pl.taken[i] != -1):
-		i = _reserve(pl, car.id, car.len > 6.5)
+		i = _reserve(pl, car.id, car.len > 6.5, _is_cart(car))
 		if i < 0:
 			i = _new_curb(pl, pl.stop, car.id, car.len)
 			if i < 0:
@@ -3923,6 +3971,14 @@ func go(pid: int, to_ref: String, purpose: String, stay: int) -> bool:
 		return false
 	var car := _vehicle_parked(p.car)
 	var far: bool = from_pl.door.distance_to(to_pl.door) > People.WALK_MAX
+	# A golf cart (TownLaws golf_carts) takes its owner on short hops round
+	# town, and home again from wherever it was left.
+	var cart := _vehicle_parked(int(p.get("cart", -1)))
+	var by_cart := false
+	if not cart.is_empty() and cart.at_place == from_ref and cars.size() < max_cars \
+			and (from_ref != home_ref or from_pl.door.distance_to(to_pl.door) <= Balance.CART_TRIP_MAX):
+		car = cart
+		by_cart = true
 	# A car left in a lot down the street is fetched to drive somewhere far,
 	# or to bring it home; a short hop is walked and the car stays put (it
 	# would only circle the block and park in the same lot again).
@@ -3936,6 +3992,8 @@ func go(pid: int, to_ref: String, purpose: String, stay: int) -> bool:
 	if not far and not away and not car.is_empty() \
 			and hash([pid, _sim.tick_count]) % 100 >= SHORT_WALK_PCT:
 		far = true
+	if by_cart:
+		far = true  # out on the cart, however short the hop
 	if not car.is_empty() and (far or fetch) and cars.size() < max_cars:
 		var path := _walk_to_car(from_pl, car)
 		if path.is_empty() or walkers.size() >= max_walkers:

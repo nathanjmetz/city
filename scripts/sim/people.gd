@@ -337,6 +337,8 @@ func _move_out(id: int, traffic: TrafficSim) -> void:
 		_staff[p.job] = _staff.get(p.job, 1) - 1
 	if p.car != -1 and traffic != null:
 		traffic.retire_vehicle(p.car)
+	if int(p.get("cart", -1)) != -1 and traffic != null:
+		traffic.retire_vehicle(int(p.cart))
 	if traffic != null:
 		traffic.forget_person(id)
 	people.erase(id)

@@ -81,7 +81,7 @@ const VARIANTS := {
 const AXLE := {
 	"sedan": 3.9, "hatchback": 3.4, "crossover": 3.6, "suv": 4.2, "pickup": 4.7, "work_pickup": 4.8,
 	"minivan": 4.0, "sports": 3.8, "motorcycle": 1.8, "van": 4.4, "delivery_van": 5.3,
-	"box_truck": 7.9, "dump_truck": 6.7, "tow_truck": 5.2, "police_charger": 3.95, "police_tahoe": 4.15, "fire_tender": 7.2, "garbage_side": 7.3, "pickup_old": 4.4, "suv_jeep": 3.9, "minivan_pacifica": 4.0, "crossover_compact": 3.5, "work_pickup_plow": 4.8, "dump_truck_plow": 6.7, "buggy": 4.9, "rv": 5.9, "motorhome": 7.1, "pickup_camper": 4.8, "bucket_truck": 5.6, "school_bus": 8.9, "city_bus": 9.2, "coach": 10.9,
+	"box_truck": 7.9, "dump_truck": 6.7, "tow_truck": 5.2, "police_charger": 3.95, "police_tahoe": 4.15, "fire_tender": 7.2, "garbage_side": 7.3, "pickup_old": 4.4, "suv_jeep": 3.9, "minivan_pacifica": 4.0, "crossover_compact": 3.5, "work_pickup_plow": 4.8, "dump_truck_plow": 6.7, "buggy": 4.9, "golf_cart": 2.2, "rv": 5.9, "motorhome": 7.1, "pickup_camper": 4.8, "bucket_truck": 5.6, "school_bus": 8.9, "city_bus": 9.2, "coach": 10.9,
 	"garbage_truck": 7.3, "fire_engine": 7.4, "police": 3.9, "taxi": 3.9, "taxi_old": 4.0, "ambulance": 5.1, "tractor": 4.2,
 	"combine": 7.0, "tractor_sleeper": 6.4, "mail_truck": 4.3, "concrete_mixer": 7.0, "sedan_compact": 3.6, "sedan_fullsize": 4.0,
 	"pickup_ext": 4.6, "pickup_mid": 4.4, "suv_mid": 3.9, "wagon": 3.7, "ev_crossover": 3.8, "hatch_box": 3.4, "van_low": 4.4,
@@ -1678,6 +1678,40 @@ func _motorcycle() -> void:  # cruiser (Harley-Davidson Street Glide) with rider
 	_box(Vector3(0, 1.55, 1.15), Vector3(0.24, 0.26, 0.26), Color(0.06, 0.06, 0.07, 0.2))
 	_box(Vector3(0, 0.95, 0.27), Vector3(0.16, 0.1, 0.06), HEAD, true)
 	_box(Vector3(0, 0.85, 2.15), Vector3(0.14, 0.06, 0.04), TAIL, true)
+
+
+## A street-legal four-seat golf cart (Club Car Onward / E-Z-GO Express
+## S4): low front cowl with headlights, a canopy roof on four posts, a fold
+## windshield, the driver on the front bench and a rear seat facing back.
+func _golf_cart() -> void:
+	var seat := Color(0.80, 0.74, 0.62, 0.4)
+	var canopy := Color(0.12, 0.12, 0.13, 0.4)
+	var shirt := Color(0.30, 0.42, 0.62, 0.4)
+	var skin := Color(0.80, 0.62, 0.50, 0.4)
+	_wheels([0.48, 2.2], 0.26, 0.62, 0.2)
+	# Front cowl and the body round the floor, rear bodywork over the motor.
+	_box(Vector3(0, 0.6, 0.36), Vector3(1.16, 0.52, 0.62), PAINT)
+	_box(Vector3(0, 0.36, 1.35), Vector3(1.18, 0.14, 1.5), TRIM)
+	_box(Vector3(0, 0.55, 2.25), Vector3(1.2, 0.4, 0.9), PAINT)
+	# Front bench and back, the rear seat facing back.
+	_box(Vector3(0, 0.74, 1.5), Vector3(1.08, 0.14, 0.5), seat)
+	_box(Vector3(0, 1.02, 1.78), Vector3(1.08, 0.46, 0.1), seat)
+	_box(Vector3(0, 0.82, 2.25), Vector3(1.08, 0.12, 0.46), seat)
+	_box(Vector3(0, 1.02, 1.95), Vector3(1.08, 0.36, 0.08), seat)
+	# Roof posts, canopy and windshield.
+	for s in [-1.0, 1.0]:
+		_beam(Vector3(s * 0.52, 0.8, 0.66), Vector3(s * 0.52, 1.86, 0.78), 0.05, TRIM)
+		_beam(Vector3(s * 0.52, 0.75, 2.6), Vector3(s * 0.52, 1.86, 2.6), 0.05, TRIM)
+	_box(Vector3(0, 1.9, 1.62), Vector3(1.24, 0.06, 2.12), canopy)
+	if not _lo:
+		_box(Vector3(0, 1.35, 0.72), Vector3(1.0, 0.9, 0.02), GLASS)
+		_beam(Vector3(0.26, 0.85, 1.0), Vector3(0.26, 1.08, 1.12), 0.04, TRIM)  # steering column
+		_box(Vector3(0.26, 1.1, 1.14), Vector3(0.34, 0.04, 0.12), TRIM)  # wheel
+		# The driver on the front bench.
+		_box(Vector3(0.26, 1.1, 1.52), Vector3(0.38, 0.5, 0.26), shirt)
+		_box(Vector3(0.26, 1.48, 1.5), Vector3(0.2, 0.22, 0.22), skin)
+		_box(Vector3(0.38, 0.62, 0.05), Vector3(0.14, 0.08, 0.04), HEAD, true)
+		_box(Vector3(0.48, 0.62, 2.71), Vector3(0.1, 0.08, 0.03), TAIL, true)
 
 
 ## An Amish black top buggy (Daviess County, Indiana) behind a bay
