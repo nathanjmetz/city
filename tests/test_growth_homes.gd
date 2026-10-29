@@ -68,6 +68,50 @@ func _init() -> void:
 				var out := MainBlock.build(7, 3.9, {"width": w, "depth": 45.0, "era": era}, storeys)
 				_check(out.size() >= 3 and _inside(HouseBuilder.last_masses, w * 0.5, 45.0),
 					"%s commercial block on a %d m lot fits it" % [era, w])
+	# Corner stores, a shop's first stage: on a corner (either side) and
+	# mid-block, prewar at the sidewalk with no lot, postwar with stalls;
+	# what SiteLayout reads from its dry run is what's drawn.
+	var corners := 0
+	for era in ["prewar", "postwar"]:
+		for w in [10.0, 13.0, 16.0, 22.0]:
+			for side in [-1.0, 0.0, 1.0]:
+				for s in 4:
+					var lot := {"width": w, "depth": 36.0, "era": era, "corner": side != 0.0, "side": side}
+					CommercialBuilder.force_shop = "corner"
+					var out := DenseBuilder.build_retail(40 + s, 3.9, lot, {}, 0)
+					var masses: Array = HouseBuilder.last_masses
+					var plan := DenseBuilder.site_plan(40 + s, lot, false, 0)
+					CommercialBuilder.force_shop = ""
+					var what := "%s corner store on a %d m lot (side %d)" % [era, w, side]
+					_check(out.size() >= 3 and _inside(masses, w * 0.5, 36.0), what + " fits it")
+					_check(plan.main_street == (era == "prewar"), what + (" parks at the curb" if era == "prewar" else " has its own stalls"))
+					var ok := true
+					for st in plan.stalls:
+						ok = ok and absf(st[0].x) < w * 0.5 and st[0].y > 0.0 and st[0].y < 36.0
+					_check(ok, what + " parks inside it")
+					_check(absf(plan.door.x) < w * 0.5 and plan.door.y >= 0.0, what + " has its door on the lot")
+	# Only the first stage, of the eras that built them, is ever one.
+	for s in 300:
+		for era in ["prewar", "postwar", "recent"]:
+			var lot := {"width": 16.0, "depth": 36.0, "era": era}
+			var b0 := DenseBuilder._start(s, lot)
+			b0.small_store = true
+			var b1 := DenseBuilder._start(s, lot)
+			_check(b1._shop_kind(lot) != "corner", "a grown shop is no corner store")
+			if b0._shop_kind(lot) == "corner":
+				corners += 1
+				_check(era != "recent", "a recent street builds no corner store")
+	_check(corners > 250 and corners < 450, "about 70%% prewar and 45%% postwar first shops are corner stores (%d of 600)" % corners)
+	# A corner lot knows which way its side street lies.
+	var net := RoadNetwork.new()
+	net.build_road(Vector3(-60, 0, 0), Vector3(0, 0, 0), Vector3(60, 0, 0))  # its own street, along x
+	net.build_road(Vector3(20, 0, -60), Vector3(20, 0, 0), Vector3(20, 0, 60))  # the side street
+	var corner_lot := {"corner": true, "width": 16.0, "depth": 36.0, "front": Vector3(4.0, 0, 9.0), "normal": Vector3(0, 0, 1),
+		"seg": net.find_segment_near(Vector3(0, 0, 0), 2.0).seg}
+	var toward := SiteLayout.corner_side(net, corner_lot)
+	_check(toward != 0.0 and (SiteLayout.world(corner_lot, Vector2(toward * 8.0, 0.0)).x > 4.0), "the side street is found on the right side")
+	corner_lot.corner = false
+	_check(SiteLayout.corner_side(net, corner_lot) == 0.0, "a lot mid-block has no side street")
 	_check(styles.size() == 5, "every kind of duplex and the fourplex come up (%s)" % str(styles.keys()))
 	print("FAILED" if failed else "ALL PASSED")
 	quit(1 if failed else 0)
