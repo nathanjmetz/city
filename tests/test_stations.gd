@@ -51,9 +51,28 @@ func _init() -> void:
 	_check(not "quarters" in sim.stations.built_of(id) or fake == "",
 		"a home behind the station isn't taken for crew quarters (%s)" % fake)
 	if fake != "":
-		sim.buildings.erase(fake)
-		_days(sim, 120)
-	_check("quarters" in sim.stations.built_of(id), "once the land is free, a paid crew moves in (%s)"
+		# The chief asks through the bell; a no leaves the home standing.
+		var ask: Dictionary = sim.stations.depts[id].ask
+		_check(not ask.is_empty() and sim.permits.state_of(int(ask.req)) == Permits.State.OPEN,
+			"the chief asks to buy the home behind the station")
+		if not ask.is_empty():
+			sim.apply({"type": "permit", "id": int(ask.req), "answer": "deny"})
+			_days(sim, 2)
+			_check(sim.buildings.has(fake) and not "quarters" in sim.stations.built_of(id),
+				"a no leaves the home where it is")
+			# Asked again later, a yes buys it out and the quarters go up.
+			var asked := false
+			for i in 80:
+				_days(sim, 1)
+				var again: Dictionary = sim.stations.depts[id].ask
+				if not again.is_empty() and sim.permits.state_of(int(again.req)) == Permits.State.OPEN:
+					sim.apply({"type": "permit", "id": int(again.req), "answer": "approve"})
+					asked = true
+					break
+			_check(asked, "the chief asks again after a while")
+			_days(sim, 2)
+			_check(not sim.buildings.has(fake), "a yes buys the home out")
+	_check("quarters" in sim.stations.built_of(id), "and a paid crew moves in (%s)"
 		% str(sim.stations.built_of(id)))
 	# A save keeps what it built and how far it reaches.
 	var copy := CitySim.new()
