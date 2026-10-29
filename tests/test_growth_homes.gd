@@ -310,7 +310,7 @@ func _init() -> void:
 				for m: ArrayMesh in drawn[1].slice(0, 2):
 					for i in m.get_surface_count():
 						for v: Vector3 in m.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]:
-							if absf(v.x) > 12.1 or v.z > 45.0:
+							if (v.z > 8.0 and absf(v.x) > 12.1) or v.z > 45.0:  # past the side or back lines (a street lamp's light pool spills over the front yard)
 								out_pts += 1
 	_check(yards >= 30, "no alley behind: back yards in place of garages and lots (%d of 48 differ)" % yards)
 	_check(out_pts == 0, "back yards stay inside the lot (%d points out)" % out_pts)
@@ -327,13 +327,13 @@ func _init() -> void:
 		for m: ArrayMesh in deep.slice(0, 2):
 			for i in m.get_surface_count():
 				for v: Vector3 in m.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]:
-					if absf(v.x) > 12.1 or v.z > 45.0:
+					if (v.z > 8.0 and absf(v.x) > 12.1) or v.z > 45.0:  # past the side or back lines (a street lamp's light pool spills over the front yard)
 						spill += 1
 		var walkup := MetroBuilder.build_apartments(700 + s, 3.9, {"width": 24.0, "depth": 45.0, "era": "prewar"}, 3)
 		for m: ArrayMesh in walkup.slice(0, 2):
 			for i in m.get_surface_count():
 				for v: Vector3 in m.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]:
-					if absf(v.x) > 12.1 or v.z > 45.0:
+					if (v.z > 8.0 and absf(v.x) > 12.1) or v.z > 45.0:  # past the side or back lines (a street lamp's light pool spills over the front yard)
 						spill += 1
 	MetroBuilder.force_row = ""
 	_check(porches == 20, "flats with a back yard get back porches (%d of 20)" % porches)
