@@ -410,6 +410,36 @@ func _downtown_walk(to_curb: float, width: float, zf: float) -> void:
 		_box("paint", Vector3(0.14, 3.6, 0.14), Vector3(lx, 2.3, tz), black)
 		_box("paint", Vector3(0.42, 0.55, 0.42), Vector3(lx, 4.35, tz), Color("#efe9d8"))  # the acorn globe
 		_box("paint", Vector3(0.3, 0.12, 0.3), Vector3(lx, 4.7, tz), black)
+	_street_furniture(width, tz)
+
+
+## What a Main Street streetscape grant puts along the curb (Fairmount,
+## Wabash and Huntington, Indiana): black steel benches facing the shops,
+## a trash can, a flower planter and the odd bike hoop, never more than a
+## couple per storefront. Its own random numbers, so the builder's don't move.
+func _street_furniture(width: float, tz: float) -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([rng.seed, 41])
+	var black := Color("#1f2224")
+	var slots := [-width * 0.35, width * 0.05, width * 0.38]
+	for x in slots:
+		var pick := r.randf()
+		if pick < 0.3:
+			# A bench, its back to the street.
+			_box("paint", Vector3(1.8, 0.06, 0.45), Vector3(x, 0.45, tz - 0.1), black)
+			_box("paint", Vector3(1.8, 0.45, 0.06), Vector3(x, 0.72, tz - 0.32), black)
+			for sx in [-0.8, 0.8]:
+				_box("paint", Vector3(0.06, 0.45, 0.5), Vector3(x + sx, 0.22, tz - 0.1), black)
+		elif pick < 0.5:
+			_box("paint", Vector3(0.6, 0.9, 0.6), Vector3(x, 0.45, tz), black)  # trash can
+			_box("paint", Vector3(0.64, 0.06, 0.64), Vector3(x, 0.93, tz), black)
+		elif pick < 0.7:
+			# A planter of annuals.
+			_box("concrete", Vector3(1.0, 0.6, 1.0), Vector3(x, 0.3, tz), Color("#b9b3a6"))
+			_shrub(Vector3(x, 0.6, tz), 0.45)
+		elif pick < 0.8 and fine:
+			for k in 2:
+				_box("paint", Vector3(0.05, 0.85, 0.6), Vector3(x + k * 0.8, 0.42, tz), black)  # bike hoops
 
 
 # ---------------------------------------------------------------- offices
