@@ -254,8 +254,9 @@ func _pick_engines(ear: Vector3) -> void:
 ## Bells ring at the nearest crossings whose gates are down.
 func _pick_bells(ear: Vector3) -> void:
 	var near := []
-	for k in sim.rail.crossings.size():
-		var c: Dictionary = sim.rail.crossings[k]
+	var xs := sim.all_crossings()
+	for k in xs.size():
+		var c: Dictionary = xs[k]
 		if not c.closed:
 			continue
 		var p: Vector3 = c.pos
@@ -283,7 +284,7 @@ func _pick_bells(ear: Vector3) -> void:
 					break
 		if slot.is_empty():
 			continue
-		var p: Vector3 = sim.rail.crossings[e[1]].pos
+		var p: Vector3 = xs[e[1]].pos
 		var y: float = ground.call(p) if ground.is_valid() else p.y
 		# The bell sits on top of the signal mast, beside the road.
 		slot.player.global_position = Vector3(p.x, y + 4.0, p.z)
