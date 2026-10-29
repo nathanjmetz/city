@@ -84,6 +84,7 @@ func _process(_delta: float) -> void:
 		sky.set_fixed()
 	_was_cycle = cycle_on
 	RenderingServer.global_shader_parameter_set("night", night)
+	SignText.set_night(get_tree(), night > 0.45)
 	RenderingServer.global_shader_parameter_set("windows_lit", lit)
 	_lamps.visible_amount = smoothstep(0.25, 0.6, night)
 	_beams.amount = smoothstep(0.3, 0.7, night)
