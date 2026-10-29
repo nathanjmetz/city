@@ -3,7 +3,7 @@ extends SceneTree
 ## would have by then (towers assemble lots under the area's FAR,
 ## BuildingTypes.area_for), through the game's own builder pick
 ## (BuildingView.build_for). For the growth-stage art loop.
-## Run: godot -s tools/growth_strip.gd -- out.png <ladder> [seed] [era] [yaw pitch dist]
+## Run: godot -s tools/growth_strip.gd -- out.png <ladder> [seed] [era] [yaw pitch dist [target_x]]
 ## Ladders: office, apartments, main (shop to Main Street block), homes
 ## (house to row homes to walk-up), house (a house building on, then a
 ## duplex and a fourplex). Era: postwar (default), prewar or recent.
@@ -18,11 +18,13 @@ const LADDERS := {
 	"homeforms": [["apartments", 4, 6.6, "glass"], ["apartments", 4, 6.6, "podium"], ["apartments", 3, 4.4, "podium"], ["apartments", 3, 4.4, "glass"]],
 	# One prewar office on a storefront lot and on sites bought up next door.
 	"sites": [["office", 3, 12.0, "chicago", 30.0], ["office", 3, 12.0, "chicago", 62.0], ["office", 4, 16.0, "deco", 36.0], ["office", 4, 16.0, "deco", 66.0]],
+	# A row of houses bought for a strip center, then a grocer-anchored one.
+	"retail": [["shop", 0, 2.2], ["shop", 1, 2.2], ["shopping_center", 0, 2.2, "", 70.0], ["shopping_center", 1, 2.2, "", 150.0]],
 	"homes": [["house", 0, 0.9], ["house", 1, 0.9], ["row_home", 0, 1.2], ["row_home", 1, 1.2], ["apartments", 0, 2.0]],
 	# A house building on, then turned into a duplex and a fourplex.
 	"house": [["house", 0, 0.9], ["house", 1, 0.9], ["house", 2, 0.9], ["duplex", 0, 0.9], ["duplex", 1, 0.9]],
 }
-const BASE_W := {"office": 30.0, "apartments": 30.0, "mixed_use": 20.0, "shop": 20.0, "house": 20.0, "duplex": 22.0, "row_home": 24.0}
+const BASE_W := {"shopping_center": 60.0, "office": 30.0, "apartments": 30.0, "mixed_use": 20.0, "shop": 20.0, "house": 20.0, "duplex": 22.0, "row_home": 24.0}
 const DEPTH := 55.0
 
 var _frames := 0
@@ -70,7 +72,7 @@ func _init() -> void:
 		var storeys := int(BuildingTypes.TYPES[st[0]].stages[st[1]].storeys)
 		var units := maxi(2, floori(w / float(BuildingTypes.TYPES.row_home.unit_w)))
 		var meshes: Array
-		if st.size() > 3:
+		if st.size() > 3 and st[3] != "":
 			meshes = TowerBuilder.build_tower(seed * 100 + i, 3.9, {"width": w, "depth": DEPTH, "era": era}, storeys, {}, st[3], st[0] == "apartments")
 		else:
 			meshes = BuildingView.build_for(st[0], storeys, seed * 100, 3.9, {"width": w, "depth": DEPTH, "era": era}, {}, units, "general", st[1])
@@ -93,7 +95,7 @@ func _init() -> void:
 	var yaw := deg_to_rad(float(args[4])) if args.size() > 6 else deg_to_rad(12.0)
 	var pitch := deg_to_rad(float(args[5])) if args.size() > 6 else deg_to_rad(14.0)
 	var dist := float(args[6]) if args.size() > 6 else total * 1.05
-	var target := Vector3(0, 18, 20)
+	var target := Vector3(float(args[7]) if args.size() > 7 else 0.0, 18, 20)
 	cam.position = target + Vector3(sin(yaw) * cos(pitch), sin(pitch), -cos(yaw) * cos(pitch)) * dist
 	cam.basis = Basis.looking_at(target - cam.position)
 	cam.current = true
