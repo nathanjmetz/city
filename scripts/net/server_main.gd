@@ -16,8 +16,10 @@ extends SceneTree
 ##                              invite code is the only key)
 ##   --test-pin PIN CITY_TEST_PIN  for playtests only: one PIN that lets
 ##                              anyone in as the name they give, host
-##                              included (default: off). What it let in
-##                              stops working once the server runs without it.
+##                              included (default: off). Its sign-ins stop
+##                              working once the server runs without it, but
+##                              PINs anyone saw as host keep working: give
+##                              players New PINs after an open playtest.
 
 var server: RegionServer
 
