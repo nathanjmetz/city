@@ -41,7 +41,7 @@ static func for_building(zone: int, bseed: int, lot := {}, storeys := 0, type :=
 		ZoneMap.Zone.COMMERCIAL:
 			if type == "office" and storeys < 8:
 				return office(art_seed, fit, storeys)
-			if type in ["mixed_use", "office"]:
+			if type in ["mixed_use", "commercial_block", "office"]:
 				return main_street()  # built to the sidewalk; its lot (if any) is out back
 			return shop(art_seed, fit, type == "shopping_center")
 		ZoneMap.Zone.INDUSTRIAL:
