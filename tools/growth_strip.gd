@@ -21,6 +21,8 @@ const LADDERS := {
 	"midrise": [["apartments", 2, 4.4, "", 20.0], ["apartments", 2, 4.4, "", 24.0], ["apartments", 2, 4.4, "", 28.0], ["apartments", 2, 4.4, "", 40.0]],
 	# A prewar office block added on to (the same block each time): built
 	# three storeys, then five and eight storeys with floors added on top.
+	# The same, on a postwar street: a ribbon-window office raised.
+	"addedpost": [["office", 0, 7.0, "", 30.0], ["office", 1, 7.0, "", 30.0, 3], ["office", 1, 7.0, "", 30.0, 2]],
 	"added": [["office", 0, 7.0, "", 30.0], ["office", 1, 7.0, "", 30.0, 3], ["office", 2, 7.0, "", 30.0, 5], ["office", 2, 7.0, "", 30.0, 3]],
 	# A small city's office park, phase by phase, on a run of lots.
 	"park": [["office_park", 0, 1.0, "", 110.0], ["office_park", 1, 1.0, "", 110.0], ["office_park", 2, 1.0, "", 110.0]],
