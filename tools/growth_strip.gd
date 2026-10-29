@@ -22,6 +22,8 @@ const LADDERS := {
 	# A prewar office block added on to (the same block each time): built
 	# three storeys, then five and eight storeys with floors added on top.
 	"added": [["office", 0, 7.0, "", 30.0], ["office", 1, 7.0, "", 30.0, 3], ["office", 2, 7.0, "", 30.0, 5], ["office", 2, 7.0, "", 30.0, 3]],
+	# A small city's office park, phase by phase, on a run of lots.
+	"park": [["office_park", 0, 1.0, "", 110.0], ["office_park", 1, 1.0, "", 110.0], ["office_park", 2, 1.0, "", 110.0]],
 	# Modernist glass towers on bought-up sites (their plazas).
 	"plazas": [["office", 3, 12.0, "glass", 50.0], ["office", 4, 16.0, "glass", 64.0], ["office", 4, 16.0, "glass", 72.0]],
 	"sites": [["office", 3, 12.0, "chicago", 30.0], ["office", 3, 12.0, "chicago", 62.0], ["office", 4, 16.0, "deco", 36.0], ["office", 4, 16.0, "deco", 66.0]],
@@ -34,7 +36,7 @@ const LADDERS := {
 	"block": [["shop", 0, 2.2], ["mixed_use", 0, 3.0], ["mixed_use", 1, 3.0], ["commercial_block", 0, 3.0], ["commercial_block", 1, 5.0]],
 	"house": [["house", 0, 0.9], ["house", 1, 0.9], ["house", 2, 0.9], ["house", 3, 0.9], ["duplex", 0, 0.9], ["duplex", 1, 0.9]],
 }
-const BASE_W := {"shopping_center": 60.0, "office": 30.0, "apartments": 30.0, "mixed_use": 20.0, "shop": 20.0, "house": 20.0, "duplex": 22.0, "commercial_block": 28.0, "row_home": 24.0}
+const BASE_W := {"office_park": 110.0, "shopping_center": 60.0, "office": 30.0, "apartments": 30.0, "mixed_use": 20.0, "shop": 20.0, "house": 20.0, "duplex": 22.0, "commercial_block": 28.0, "row_home": 24.0}
 const DEPTH := 55.0
 
 var _frames := 0

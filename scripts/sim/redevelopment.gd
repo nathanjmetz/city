@@ -31,7 +31,7 @@ extends RefCounted
 signal changed
 
 const HUB := "developer"
-const KINDS := ["apartments", "highrise", "shopping"]
+const KINDS := ["apartments", "highrise", "shopping", "officepark"]
 
 ## permit id -> {"kind", "keys", "type", "level", ...}
 var asks := {}
@@ -197,6 +197,40 @@ func _plan_shopping(sim, faces: Dictionary) -> Dictionary:
 		"Homes to commercial (shopping center)")
 
 
+## A run of houses or empty lots on a busy road toward the edge of town
+## (the less built-up the better), in a town whose market wants an office park and whose
+## shops and offices are in demand: firms that want room and parking near
+## the highway rather than a downtown floor (the small city's office park).
+func _plan_officepark(sim, faces: Dictionary) -> Dictionary:
+	var market: int = sim.market.people(sim)
+	if not Market.supports(market, "office_park") or float(sim.demand.get(ZoneMap.Zone.COMMERCIAL, 0.0)) < Balance.REDEV_DEMAND:
+		return {}
+	var best := []
+	var best_score := -INF
+	for f in _sorted(faces):
+		var face: Array = faces[f]
+		if face.size() < Balance.REDEV_PARK_LOTS or _zone(sim, face[0]) == ZoneMap.Zone.INDUSTRIAL or not _arterial(sim, face[0]):
+			continue
+		for run in _runs(sim, face, ["house", ""], Balance.REDEV_PARK_LOTS, 8, LotPlanner.MAX_LOT.highway_shop):
+			# Out toward the edge of town, open land first (a greenfield
+			# park), then the oldest houses.
+			var dens := _density(sim, sim.lots[run[0]].pos)
+			var empty: int = run.filter(func(k): return not sim.buildings.has(k)).size()
+			var area := 0.0
+			for k in run:
+				area += float(sim.lots[k].area)
+			var score: float = area / 1000.0 + empty * 3.0 + (1.0 - _avg_cond(sim, run)) * 5.0 - dens * 0.25
+			if score > best_score:
+				best_score = score
+				best = run
+	if best.is_empty():
+		return {}
+	return _plan(sim, "officepark", best, "office_park", 0,
+		"Rezone %d lots on %s for an office park" % [best.size(), _street(sim, best[0])],
+		"Firms want offices with parking near the highway, and town has no room for them. A developer would buy the run and build it in phases.",
+		"Homes and open land to commercial (office park)")
+
+
 ## The card: what's built, and what it asks of the town's power, water
 ## and street.
 func _plan(sim, kind: String, keys: Array, type: String, level: int, title: String, why: String, change: String) -> Dictionary:
@@ -226,7 +260,7 @@ func _plan(sim, kind: String, keys: Array, type: String, level: int, title: Stri
 		for k in keys:
 			area += float(sim.lots[k].area)
 		var sqft := area * float(BuildingTypes.TYPES[type].cover) * 10.764
-		trips = roundi(sqft / 1000.0 * Balance.REDEV_TRIPS_PER_KSQFT)
+		trips = roundi(sqft / 1000.0 * (Balance.REDEV_TRIPS_PER_KSQFT_OFFICE if type == "office_park" else Balance.REDEV_TRIPS_PER_KSQFT))
 		what = "%s of about %s sq ft and %d to %d jobs" % [str(st.name).to_lower(), CitySim.money_text(roundi(sqft / 1000.0) * 1000),
 			int(st.cap[0]), int(st.cap[1])]
 	var strain := []
@@ -248,7 +282,7 @@ func _plan(sim, kind: String, keys: Array, type: String, level: int, title: Stri
 		if not fam.is_empty():
 			who = str(fam.head)
 	return {"kind": kind, "keys": keys, "type": type, "level": level, "leader": who, "title": title,
-		"why": why, "change": change, "yes": yes, "no": "The houses stay as they are." if kind != "highrise" else "It stays mid-rise.",
+		"why": why, "change": change, "yes": yes, "no": "It stays mid-rise." if kind == "highrise" else ("The land stays as it is." if kind == "officepark" else "The houses stay as they are."),
 		"was": was}
 
 
@@ -284,7 +318,8 @@ func build(sim, a: Dictionary) -> bool:
 	var type := str(a.type)
 	var zone := int(BuildingTypes.TYPES[type].zone)
 	var site: String = keys[0]
-	var cap_kind: String = {"apartments": "apartments", "highrise": "downtown", "shopping": "highway_shop"}[str(a.kind)]
+	var cap_kind: String = {"apartments": "apartments", "highrise": "downtown", "shopping": "highway_shop",
+		"officepark": "highway_shop"}[str(a.kind)]
 	if zone != _zone(sim, site):
 		# The rezoning: the whole frontage of every lot changes zone.
 		for k in keys:
@@ -304,7 +339,8 @@ func build(sim, a: Dictionary) -> bool:
 	b = BuildingTypes.make(sim, site, b, type, int(a.level))
 	b.fabric = sim.tick_count
 	b.why = {"apartments": "The town rezoned these houses for apartments",
-		"highrise": "The town approved a high-rise here", "shopping": "The town rezoned this row for shopping"}[str(a.kind)]
+		"highrise": "The town approved a high-rise here", "shopping": "The town rezoned this row for shopping",
+		"officepark": "The town rezoned this land for an office park"}[str(a.kind)]
 	sim.buildings[site] = b
 	sim.care.forget(site)
 	var lot: Dictionary = sim.lots[site]

@@ -223,6 +223,10 @@ const MARKET_MIN := {
 	# (Wabash ~10,000, Huntington ~17,000; a town of 3,000 has a few).
 	"commercial_block": [5000, 15_000],
 	"office": [10_000, 25_000, 50_000, 150_000, 1_000_000],
+	# A small city's office park (micropolitan towns, OMB 10,000-50,000:
+	# Kokomo, Marion and Wabash each have one on a bypass road); fully
+	# built out once the market is a county's worth of people.
+	"office_park": [10_000, 15_000, 25_000],
 	"shopping_center": [5000, 10_000],
 	# A town of 1,500-2,000 (Upland, Fairmount) keeps a few 30-60 job shops;
 	# a 100-job plant wants a county's labor shed of 5,000 or more.
@@ -321,6 +325,11 @@ const REDEV_CENTER_AREA := 12_000.0
 ## weekday trips per unit; shopping center (820) about 37.75 per 1,000 sq ft.
 const REDEV_TRIPS_PER_FLAT := 6.7
 const REDEV_TRIPS_PER_KSQFT := 37.75
+## ITE general office building (710): about 9.74 weekday trips per 1,000
+## sq ft. An office park buys at least this many lots in a row on a busy
+## road, as far out of the built-up core as it can.
+const REDEV_TRIPS_PER_KSQFT_OFFICE := 9.74
+const REDEV_PARK_LOTS := 3
 
 ## Home builders and their subdivisions (Subdivisions, Brawn 2026-10-23).
 ## Who comes at each size: [population, phases, who]. A local builder does a

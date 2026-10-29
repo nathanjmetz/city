@@ -110,6 +110,17 @@ const TYPES := {
 		{"name": "Strip shopping center", "storeys": 1, "cap": [25, 45], "load": 3},
 		{"name": "Neighborhood shopping center", "storeys": 1, "cap": [80, 140], "load": 8},
 	]},
+	# Only a rezoning makes one (Redevelopment): a developer buys a run of
+	# lots on a busy road at the edge of town and builds it in phases, as
+	# Indiana's small-city office parks were (one low building, a second,
+	# then a third and the pond). Jobs at about 300 sq ft of office each
+	# (NAIOP/ULI suburban office densities): a 20,000 sq ft building holds
+	# about 60.
+	"office_park": {"zone": COM, "name": "Office park", "cover": 0.2, "stages": [
+		{"name": "Office park, first building", "storeys": 2, "cap": [50, 70], "load": 3},
+		{"name": "Office park, second building", "storeys": 2, "cap": [100, 140], "load": 5},
+		{"name": "Office park, built out", "storeys": 3, "cap": [190, 250], "load": 9, "lot": 5000.0},
+	]},
 	# A small plant that does well buys the empty parcel next door and adds
 	# a wing and more truck docks, the way Indiana's small-town plants grew
 	# (a 10,000 sq ft shop to a 40,000-80,000 sq ft plant). "lot" is the
@@ -535,6 +546,9 @@ static func _stage_ok(sim, b: Dictionary, type: String, level: int, c: Dictionar
 		["commercial_block", 0]: return c.main_street and c.density >= Balance.DENSE_CORE * 2
 		["commercial_block", 1]: return c.main_street and c.density >= Balance.DENSE_CORE * 3
 		["mixed_use", _]: return c.main_street and c.density >= Balance.DENSE_CORE * level
+		["office_park", _]:
+			var more := int(TYPES.office_park.stages[level].cap[1]) - int(b.cap)
+			return c.graduates_free >= more
 		["office", _]:
 			if level >= 3 and not c.downtown:
 				return false
