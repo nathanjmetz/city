@@ -27,6 +27,7 @@ var _recheck := -1.0  # seconds until the town edge is checked again, or -1
 var _redraw := false  # a new drive needs the poles moved
 var _drawn_drives := []
 var _trees := TreeField.new()  # street trees down planted medians
+var _curbs_check := false
 var _street_cache := {}  # segment id -> [what it was drawn from, its mesh]
 var _pole_cache := {}  # segment id -> [what they were drawn from, wood, wire]
 var _bridge_cache := {}  # segment id -> [what it was drawn from, piers or null]
@@ -88,6 +89,9 @@ var _mats := {
 func setup(net: RoadNetwork, s: CitySim = null) -> void:
 	network = net
 	sim = s
+	RoadMesh.raised_curbs = curbs_wanted()
+	if GraphicsQuality.current:
+		GraphicsQuality.current.changed.connect(func(): _curbs_check = true)
 	network.changed.connect(rebuild)
 	if sim != null:
 		for sig in [sim.lots_changed, sim.zones_changed, sim.buildings_changed]:
@@ -101,6 +105,12 @@ func setup(net: RoadNetwork, s: CitySim = null) -> void:
 
 ## True once every street, pole and corner is drawn and no restyle waits
 ## (the loading screen waits for this; LoadGate).
+## Curbs stand up off the street on the desktop's High tier and up (the
+## same tiers that show the pavement's photo grain).
+static func curbs_wanted() -> bool:
+	return Surfaces.photo_level() > 0.0
+
+
 func is_drawn() -> bool:
 	return not _building and _recheck < 0.0 and _later.is_empty() and _poles_later.is_empty() \
 		and _corners_later.is_empty()
@@ -109,6 +119,16 @@ func is_drawn() -> bool:
 ## Rebuilds when a road has turned from country road to town street or back
 ## (checked at most once a second while the town grows).
 func _process(delta: float) -> void:
+	# The graphics tier moved across High: curbs stand up or lie flat, all
+	# streets redrawn once nothing else is being drawn (never mid-rebuild,
+	# which would leave the town's streets half judged as country roads).
+	if _curbs_check and not _building and not LoadGate.loading:
+		_curbs_check = false
+		if curbs_wanted() != RoadMesh.raised_curbs:
+			RoadMesh.raised_curbs = curbs_wanted()
+			_street_cache.clear()
+			_junction_cache.clear()
+			rebuild()
 	# Behind the loading screen a pending look-over runs now, not in a second.
 	if LoadGate.loading and _recheck > 0.0:
 		_recheck = 0.0
