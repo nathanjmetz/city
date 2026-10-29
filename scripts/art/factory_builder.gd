@@ -427,6 +427,62 @@ func _plastics(to_curb: float) -> void:
 	_box("metal", Vector3(8.0, 0.3, 6.0), Vector3(tx, 6.0, hz - 16.0), Color("#c9cbc8"))
 	for p in [Vector3(-3.6, 0, -2.6), Vector3(3.6, 0, -2.6), Vector3(-3.6, 0, 2.6), Vector3(3.6, 0, 2.6)]:
 		_box("paint", Vector3(0.3, 6.0, 0.3), Vector3(tx, 3.0, hz - 16.0) + p, PIPE)
+	_resin_yard(hx, hz + 11.0, hw)
+
+
+## Behind a compounding plant: the resin silos (slender aluminium bins on
+## legs with cone bottoms, filled from bulk trucks and railcars by
+## pneumatic lines run up their sides and over to the hall), a baghouse
+## dust collector, and a small cooling tower for the strand water baths.
+func _resin_yard(hx: float, zb: float, hw: float) -> void:
+	var r := RandomNumberGenerator.new()  # its own, so the builder's draws don't move
+	r.seed = hash([rng.seed, "resin yard"])
+	var alu := Color("#c9ccce")
+	var z := zb + 6.0
+	if not _in_lot(Vector3(hx, 0, z + 3.0), 2.0):
+		return
+	var n := clampi(int(hw / 6.0), 2, 5)
+	var x0 := hx - (n - 1) * 3.0
+	var tall := r.randf_range(13.0, 17.0)
+	for i in n:
+		var c := Vector3(x0 + i * 6.0, 0, z)
+		var rad := 1.8
+		var leg := 4.5
+		for e in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
+			_box("paint", Vector3(0.25, leg, 0.25), c + Vector3(e.x * 1.25, leg * 0.5, e.y * 1.25), PIPE)
+		_cylinder("metal", c + Vector3(0, leg, 0), rad, tall, alu, 16)
+		_cone_top(c + Vector3(0, leg + tall, 0), rad + 0.05, 0.7, alu.darkened(0.05))
+		var segs := 12
+		for k in segs:
+			var a0 := TAU * k / segs
+			var a1 := TAU * (k + 1) / segs
+			var p0 := c + Vector3(cos(a0) * rad, leg, sin(a0) * rad)
+			var p1 := c + Vector3(cos(a1) * rad, leg, sin(a1) * rad)
+			_tri("metal", p0, p1, c + Vector3(0, leg - 2.2, 0), alu.darkened(0.12), [],
+				Vector3(cos((a0 + a1) * 0.5), -0.8, sin((a0 + a1) * 0.5)))
+		# Fill line up the side and the rotary valve under the cone.
+		_box("paint", Vector3(0.14, tall, 0.14), c + Vector3(rad + 0.2, leg + tall * 0.5, 0), PIPE.lightened(0.1))
+		_box("paint", Vector3(0.5, 0.5, 0.5), c + Vector3(0, leg - 2.4, 0), Color("#3d5a7a"))
+		# Ladder cage to the roof walkway.
+		_box("paint", Vector3(0.5, tall, 0.05), c + Vector3(0, leg + tall * 0.5, -rad - 0.3), PIPE)
+	# The roof catwalk across the silos, and the conveying line to the hall.
+	var top := 4.5 + tall + 0.3
+	_box("paint", Vector3((n - 1) * 6.0 + 2.0, 0.12, 0.9), Vector3(hx, top, z), PIPE)
+	_box("paint", Vector3(0.18, 0.18, 7.0), Vector3(hx, top - 1.0, z - 3.5 - 1.0), PIPE.lightened(0.1))
+	# Baghouse dust collector: a box on legs with a hopper, a fan and stack.
+	var bx: float = x0 - 6.0
+	if _in_lot(Vector3(bx, 0, z), 2.5):
+		_box("paint", Vector3(0.2, 3.0, 0.2), Vector3(bx - 1.0, 1.5, z - 1.0), PIPE)
+		_box("paint", Vector3(0.2, 3.0, 0.2), Vector3(bx + 1.0, 1.5, z + 1.0), PIPE)
+		_box("metal", Vector3(2.6, 4.0, 2.6), Vector3(bx, 5.0, z), Color("#9aa3a8"))
+		_box("metal", Vector3(1.6, 1.2, 1.6), Vector3(bx, 2.6, z), Color("#8a9399"))
+		_cylinder("metal", Vector3(bx + 1.6, 0, z), 0.25, 9.0, PIPE, 8)
+	# A small induced-draft cooling tower on a basin.
+	var cx: float = x0 + n * 6.0
+	if _in_lot(Vector3(cx, 0, z), 3.0):
+		_box("paint", Vector3(4.2, 0.6, 4.2), Vector3(cx, 0.3, z), CONCRETE)
+		_box("metal", Vector3(3.6, 3.4, 3.6), Vector3(cx, 2.3, z), Color("#5f7f8f"))
+		_cylinder("metal", Vector3(cx, 4.0, z), 1.3, 0.9, Color("#5f7f8f").darkened(0.15), 12)
 
 
 ## Metal fabricator.

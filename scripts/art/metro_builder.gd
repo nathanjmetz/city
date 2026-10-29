@@ -413,11 +413,42 @@ func _mb_five_over_one(to_curb: float, width: float, storeys: int) -> void:
 				var y := ground_h + floor_h * (f - 1) + 1.55
 				for k in nside:
 					_window(Vector3(s * w * 0.5, y, zf + (k + 0.5) * d / nside), Vector3(0, 0, -s), 1.2, 1.5, false, false, frame)
-	# The back: a window grid over the parking lot.
-	for f in range(1, storeys):
-		var y := ground_h + floor_h * (f - 1) + 1.55
-		for i in bays * 2:
-			_window(Vector3(-w * 0.5 + (i + 0.5) * w / (bays * 2), y, zf + d), Vector3(1, 0, 0), 1.3, 1.5, false, false, frame)
+	# The back over the parking lot: each bay's windows sit on its own face
+	# (stepped-out bays stand proud at the back too), with stacked balconies
+	# on some bays like the front.
+	var br := RandomNumberGenerator.new()
+	br.seed = hash([rng.seed, "five over one back"])
+	for i in bays:
+		var x := -w * 0.5 + (i + 0.5) * bw
+		var back_z := zf + d + (0.6 if i % 2 == 1 else 0.0)
+		var balcony := i % 2 == 0 and br.randf() < 0.5
+		for f in range(1, storeys):
+			var y := ground_h + floor_h * (f - 1) + 1.55
+			for k in [-1.0, 1.0]:
+				var wx: float = x + k * bw * 0.24
+				if balcony and k < 0.0:
+					_glass(Vector3(wx, y - 0.25, back_z + 0.03), Vector3(1, 0, 0), 1.8, 2.2, br.randf_range(0.1, 0.6))
+					_box("metal", Vector3(2.6, 0.12, 1.5), Vector3(wx, y - 1.4, back_z + 0.75), frame)
+					_box("metal", Vector3(2.6, 1.0, 0.04), Vector3(wx, y - 0.85, back_z + 1.48), frame)
+				else:
+					_window(Vector3(wx, y, back_z), Vector3(1, 0, 0), 1.3, 1.5, false, false, frame)
+	# The podium's back: the residents' rear lobby door under a canopy off
+	# the lot, the trash room's roll-up door, and the amenity room's windows.
+	var lx := br.randf_range(-w * 0.25, w * 0.25)
+	_glass(Vector3(lx, 1.4, zf + d + 0.03), Vector3(1, 0, 0), 3.0, 2.8, 0.2)
+	_box("metal", Vector3(4.2, 0.2, 1.8), Vector3(lx, 3.3, zf + d + 0.9), frame)
+	if depth - (zf + d) > 12.0:
+		_flat_rect("drive", -w * 0.5, w * 0.5, zf + d, zf + d + 2.0, 0.06)  # walk along the back to the lot
+	var rx := (w * 0.5 - 4.0) * (1.0 if lx < 0.0 else -1.0)
+	_box("metal", Vector3(3.0, 3.0, 0.08), Vector3(rx, 1.5, zf + d + 0.04), Color("#9a9c9e"))
+	if fine_parts:
+		for j in 6:
+			_box("metal", Vector3(3.0, 0.03, 0.05), Vector3(rx, 0.3 + j * 0.5, zf + d + 0.09), Color("#86888a"))
+		_box("metal", Vector3(1.2, 0.9, 0.25), Vector3(rx + (2.6 if rx < 0.0 else -2.6), 1.3, zf + d + 0.13), Color("#7d8184"))  # meter bank
+	for j in 3:
+		var ax := lx + (j + 1) * 4.5 * (1.0 if lx < 0.0 else -1.0)
+		if absf(ax) < w * 0.5 - 2.0 and absf(ax - rx) > 3.5:
+			_glass(Vector3(ax, 2.0, zf + d + 0.03), Vector3(1, 0, 0), 3.2, 2.0, br.randf_range(0.0, 0.3))
 	_mb_roof(0.0, w, cz, d, top)
 	for i in rng.randi_range(4, 8):
 		_box("metal", Vector3(1.0, 0.9, 1.0), Vector3(rng.randf_range(-w * 0.4, w * 0.4), top + 0.45, cz + rng.randf_range(-d * 0.3, d * 0.3)), Color("#c4c6c4"))
