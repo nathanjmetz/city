@@ -708,6 +708,11 @@ const READER_BOARDS := [
 ]
 
 
+## The stand-in trades that serve food at tables (DINER, CAFE, PIZZA, DELI,
+## SUBS, TACOS, GRILL, DONUTS, TAVERN): their windows show booths.
+const EATERIES := [0, 1, 2, 7, 8, 11, 28, 29, 35]
+
+
 ## Which stand-in trade word a shop at `x` letters, as the sign shader reads
 ## it from UV.y (2 * (word + 1) on): its board and awning say the same.
 func _word_slot(x: float) -> float:
@@ -1831,8 +1836,10 @@ func _shop_diner(to_curb: float) -> void:
 	_box("metal", Vector3(w + 0.1, 0.45, 0.12), Vector3(0, 1.0, zf - 0.06), Color("#c9cbc8"))
 	_box("paint", Vector3(w + 0.1, 0.55, 0.14), Vector3(0, 3.3, zf - 0.07), band)
 	var n := int((w - 3.0) / 1.5)
+	diner_room = 6.0 if fine_parts else 0.0
 	for i in n:
 		_glass(Vector3(-w * 0.5 + 2.6 + i * 1.5, 2.15, zf - 0.03), Vector3(-1, 0, 0), 1.4, 1.6, 0.05)
+	diner_room = 0.0
 	# Entry vestibule.
 	site.door = Vector2(-w * 0.5 + 1.0, zf - 2.0)
 	_box("paint", Vector3(2.6, 3.0, 2.0), Vector3(-w * 0.5 + 1.0, 1.8, zf - 1.0), band)
