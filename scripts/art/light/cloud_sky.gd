@@ -131,7 +131,10 @@ void sky() {
 			// Far clouds sink into the haze at the horizon.
 			float far = 1.0 - exp(-t / 26000.0);
 			cc = mix(cc, horizon_color, far * 0.85);
-			float a = dens * smoothstep(0.0, 0.06, up);
+			// Below about 2 degrees the sight line's distance to the cloud
+			// base is held (t above) and the clouds would smear into vertical
+			// stripes; real ones are lost in the haze there anyway.
+			float a = dens * smoothstep(0.035, 0.10, up);
 			col = mix(col, cc, a);
 		}
 	}
