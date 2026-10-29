@@ -165,6 +165,17 @@ func _painted(field: TreeField) -> void:
 	HouseBuilder.owner_care = 0
 	var kept := _ground_tris(HouseBuilder.build(4242, 6.0, lot, 1)[1])
 	_check(blobs > soft + 100 and soft == kept, "no flat weed blobs where the ground draws the weeds (%d, %d, kept %d)" % [blobs, soft, kept])
+	# A tile is painted a few lots or trees a step, never all in one frame,
+	# and comes out the same as painted at once.
+	var tc: Vector2i = map._tiles.keys()[0]
+	var whole: Image = (map._tiles[tc][1] as Image).duplicate()
+	map._job = map._start_job(tc)
+	var steps := 0
+	while not map._job.is_empty():
+		map._step_job()
+		steps += 1
+	_check(steps >= 4 and (map._tiles[tc][1] as Image).get_data() == whole.get_data(),
+		"a tile is painted in steps (%d), the same as at once" % steps)
 	# A building torn down while a scan is under way (it runs over several
 	# frames) is skipped, and its lawn goes.
 	var gone: String = keys[keys.size() / 2]

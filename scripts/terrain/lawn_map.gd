@@ -19,6 +19,10 @@ const PAGES := 64
 const MAX_LAYERS := 255
 ## Milliseconds a frame for scanning lots and painting tiles.
 const BUDGET_MS := 1.5
+## Metres a tree's shade can reach past its trunk: the widest crown
+## (TreeField.SPREAD, sycamore and cottonwood 8.5 m) grown well past its
+## reference size, and a texel to spare.
+const SHADE_REACH := 15.0
 ## Lots looked over per budget check while scanning.
 const SCAN_STEP := 64
 
@@ -88,7 +92,7 @@ func _mark() -> void:
 
 ## True once every lot's lawn is painted (the loading screen waits).
 func is_drawn() -> bool:
-	return not _first and not _rescan and _scan.is_empty() and _dirty.is_empty()
+	return not _first and not _rescan and _scan.is_empty() and _dirty.is_empty() and _job.is_empty()
 
 
 func _process(_delta: float) -> void:
@@ -114,11 +118,15 @@ func _process(_delta: float) -> void:
 		need += 0 if _tiles.has(c) else 1
 	if need > _cap and _cap < MAX_LAYERS:
 		_grow(need)
-	while not _dirty.is_empty() and Time.get_ticks_usec() - start < budget:
-		var keys := _dirty.keys()
-		keys.sort()
-		_dirty.erase(keys[0])
-		_paint(keys[0])
+	while (not _job.is_empty() or not _dirty.is_empty()) and Time.get_ticks_usec() - start < budget:
+		if _job.is_empty():
+			var keys := _dirty.keys()
+			keys.sort()
+			_dirty.erase(keys[0])
+			_job = _start_job(keys[0])
+			painted = true  # (or freed)
+			continue
+		_step_job()
 		painted = true
 	if painted:
 		_pages_tex.update(_pages)
@@ -257,31 +265,96 @@ func _tree_arrays(c: Vector2i) -> Array:
 	return out
 
 
+## Paints tile `c` at once (tests; the game paints a step at a time).
 func _paint(c: Vector2i) -> void:
+	_job = _start_job(c)
+	while not _job.is_empty():
+		_step_job()
+
+
+## A tile being painted a step a frame: [tile, a, b, a bytes, b bytes, lot
+## keys, the step, how far into it, the tree arrays, [field, chunk] pairs].
+## A dense tile with grown trees takes about 4 ms in all, so it never
+## lands in one frame: each step is a few lots or trees.
+var _job := []
+const FILL_STEP := 24
+const WEAR_STEP := 48
+const SHADE_STEP := 96
+
+
+func _start_job(c: Vector2i) -> Array:
 	var lots: Dictionary = _tile_lots.get(c, {})
 	if lots.is_empty():
 		_free_tile(c)
-		return
-	var origin := Vector2(c) * LawnLook.TILE
-	var a := _tile_image(LawnLook.NEUTRAL_A)
-	var b := _tile_image(LawnLook.NEUTRAL_B)
+		return []
 	var keys := lots.keys()
 	keys.sort()
-	for key in keys:
-		LawnLook.fill(a, b, origin, _lots[key][0], _lots[key][1])
-	var bytes := a.get_data()
-	for key in keys:
-		LawnLook.add_wear(bytes, origin, _lots[key][3])
-	a.set_data(LawnLook.TILE_PX, LawnLook.TILE_PX, false, Image.FORMAT_RGBA8, bytes)
-	bytes = b.get_data()
-	var recs := []
+	var chunks := []
 	for f in _fields():
 		for n in _near_chunks(c):
-			var trees: Array = f.chunk_trees(n)
-			recs.append(trees)
-			_shade_chunk(bytes, origin, f, n, trees.size())
+			chunks.append([f, n, f.chunk_trees(n)])
+	return [c, _tile_image(LawnLook.NEUTRAL_A), _tile_image(LawnLook.NEUTRAL_B), null, null, keys, 0, 0, chunks, 0]
+
+
+## One step of the tile being painted; the job empties when it is done.
+func _step_job() -> void:
+	var c: Vector2i = _job[0]
+	var origin := Vector2(c) * LawnLook.TILE
+	var keys: Array = _job[5]
+	var at: int = _job[7]
+	match int(_job[6]):
+		0:  # each lot's lawn over its whole shape
+			var stop := mini(at + FILL_STEP, keys.size())
+			for k in range(at, stop):
+				if _lots.has(keys[k]):
+					LawnLook.fill(_job[1], _job[2], origin, _lots[keys[k]][0], _lots[keys[k]][1])
+			_next(stop, keys.size())
+			if int(_job[6]) == 1:
+				_job[3] = (_job[1] as Image).get_data()
+				_job[4] = (_job[2] as Image).get_data()
+		1:  # worn paths and edges
+			var stop := mini(at + WEAR_STEP, keys.size())
+			for k in range(at, stop):
+				if _lots.has(keys[k]):
+					LawnLook.add_wear(_job[3], origin, _lots[keys[k]][3])
+			_next(stop, keys.size())
+		2:  # tree shade, a slice of one chunk's trees at a time
+			var chunks: Array = _job[8]
+			var ci: int = _job[9]
+			if ci >= chunks.size():
+				_job[6] = 3
+				return
+			var ch: Array = chunks[ci]
+			var stop := mini(at + SHADE_STEP, (ch[2] as Array).size())
+			_shade_chunk(_job[4], origin, ch[0], ch[1], ch[2], ch[1] != c, at, stop)
+			if stop >= (ch[2] as Array).size():
+				_job[9] = ci + 1
+				_job[7] = 0
+			else:
+				_job[7] = stop
+		3:
+			_finish_job()
+
+
+func _next(stop: int, total: int) -> void:
+	if stop >= total:
+		_job[6] = int(_job[6]) + 1
+		_job[7] = 0
+	else:
+		_job[7] = stop
+
+
+func _finish_job() -> void:
+	var c: Vector2i = _job[0]
+	var a: Image = _job[1]
+	var b: Image = _job[2]
+	var recs := []
+	for ch in _job[8]:
+		recs.append(ch[2])
+	a.set_data(LawnLook.TILE_PX, LawnLook.TILE_PX, false, Image.FORMAT_RGBA8, _job[3])
+	b.set_data(LawnLook.TILE_PX, LawnLook.TILE_PX, false, Image.FORMAT_RGBA8, _job[4])
+	_job = []
 	_tree_records[c] = recs
-	b.set_data(LawnLook.TILE_PX, LawnLook.TILE_PX, false, Image.FORMAT_RGBA8, bytes)
 	a.generate_mipmaps()
 	b.generate_mipmaps()
 	var layer: int = _tiles[c][0] if _tiles.has(c) else _free_layer()
@@ -299,8 +372,17 @@ func _paint(c: Vector2i) -> void:
 ## The grown trees of one tree chunk, as shade over a tile's `b` bytes
 ## (add_shade keeps to the tile, so a crown across its edge is cut there,
 ## and the next tile paints its other part).
-func _shade_chunk(bytes: PackedByteArray, origin: Vector2, f: TreeField, n: Vector2i, count: int) -> void:
-	for i in count:
+func _shade_chunk(bytes: PackedByteArray, origin: Vector2, f: TreeField, n: Vector2i, trees: Array, near_only: bool,
+		from := 0, to := -1) -> void:
+	# From a chunk next door only the trees standing within a crown's reach
+	# of this tile, picked before they are resolved (most are far off).
+	var lo := origin - Vector2(SHADE_REACH, SHADE_REACH)
+	var hi := origin + Vector2(LawnLook.TILE + SHADE_REACH, LawnLook.TILE + SHADE_REACH)
+	for i in range(from, trees.size() if to < 0 else to):
+		if near_only:
+			var o: Vector3 = trees[i][0].origin
+			if o.x < lo.x or o.x > hi.x or o.z < lo.y or o.z > hi.y:
+				continue
 		var t: Array = f.chunk_record(n, i)
 		if t.is_empty() or not t[5]:
 			continue
