@@ -64,11 +64,13 @@ func _init() -> void:
 	_check(Services.size_of(copy.services.buildings[id]).is_equal_approx(Services.size_of(sim.services.buildings[id])),
 		"and its lot")
 	# Every piece has a real reference's numbers and draws.
-	for kind in [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.CLINIC]:
+	for kind in [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.CLINIC, Services.Kind.SCHOOL]:
 		var all := []
+		var full: Vector2 = Services.KINDS[kind].size
 		for n in Stations.tree(kind):
 			all.append(n.id)
-		var art := CivicBuilder.build_service(kind, 7, Vector2(30, 36 + 52), 6.0, all)
+			full.y += float(n.get("grow", 0.0))
+		var art := CivicBuilder.build_service(kind, 7, full, 6.0, all)
 		_check(art[0] != null and art[0].get_surface_count() > 0, "%s with every piece draws"
 			% Services.KINDS[kind].name)
 	print("ALL TESTS PASSED" if not failed else "SOME TESTS FAILED")

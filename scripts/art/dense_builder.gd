@@ -206,7 +206,10 @@ func _apartments(to_curb: float, width: float, storeys: int) -> void:
 
 static func build_mixed(seed: int, to_curb: float, lot: Dictionary, storeys: int, spec := {}) -> Array:
 	var b := _start(seed, lot, spec)
-	b._mixed(to_curb, b.half * 2.0, storeys)
+	if MainInfill.wanted(b, storeys):
+		MainInfill.draw(b, to_curb, storeys)
+	else:
+		b._mixed(to_curb, b.half * 2.0, storeys)
 	b._service_yard(b.era == "prewar")
 	return b._done()
 
@@ -667,6 +670,7 @@ static func build_office(seed: int, to_curb: float, lot: Dictionary, storeys: in
 	# and Marion), the same look its tower grows into.
 	if b.era == "prewar":
 		return TowerBuilder.build_tower(seed, to_curb, lot, storeys, spec, "chicago")
+	b.office_glass = fine
 	b._postwar_office(to_curb, b.half * 2.0, storeys)
 	b._service_yard(false)
 	return b._done()

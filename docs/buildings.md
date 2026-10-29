@@ -74,7 +74,10 @@ type at the top of theirs:
 - Apartments: walk-up, three storeys, mid-rise (5). Postwar walk-ups are garden apartments, the plain brick block, the split-entry eight-plex or the 1970s mansard walk-up, and keep their kind as they grow a floor.
 - Shop: corner store, then retail store. On a Main Street it gains flats
   upstairs and becomes a Main Street block.
-- Shop with flats: two, three, then four storeys. On a busy Main Street its
+- Shop with flats: two, three, then four storeys. Prewar streets draw 1880s-1920s
+  fronts; about half on postwar streets are 1950s-60s infill (Roman brick,
+  canopy, ribbon windows) and three in four on recent streets are 2010s
+  mixed-use (brick and panel bays, steel canopies). On a busy Main Street its
   owner can buy the lot next door along the street (an empty lot, a vacant
   building or a one-storey shop, never a protected or charming one) and
   build a Commercial block across both, three then four storeys

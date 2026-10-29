@@ -184,6 +184,31 @@ func _init() -> void:
 				MetroBuilder.force_row = ""
 				_check(out.size() >= 3 and _inside(HouseBuilder.last_masses, w * 0.5, 45.0),
 					"a %d-storey %s walk-up fits its %d m lot" % [st, kind, w])
+	# Shops with flats built new on postwar and recent streets: their own
+	# era's fronts, wall to wall on the lot; prewar streets keep the old ones.
+	var infill := {"prewar": 0, "postwar": 0, "recent": 0}
+	for era in ["prewar", "postwar", "recent"]:
+		for s in 100:
+			var w: float = [14.0, 18.0, 24.0][s % 3]
+			var lot := {"width": w, "depth": 40.0, "era": era}
+			if MainInfill.wanted(DenseBuilder._start(s, lot), 2 + s % 3):
+				infill[era] += 1
+				var out := DenseBuilder.build_mixed(s, 3.9, lot, 2 + s % 3)
+				_check(out.size() >= 3 and _inside(HouseBuilder.last_masses, w * 0.5, 40.0),
+					"a %s shop with flats (%d) fits its %d m lot" % [era, s, w])
+	_check(infill.prewar == 0 and infill.postwar > 30 and infill.postwar < 70 and infill.recent > 60,
+		"postwar and recent streets build shops with flats of their own era (%s)" % str(infill))
+	_check(not MainInfill.wanted(DenseBuilder._start(3, {"width": 20.0, "depth": 40.0, "era": "recent"}), 5),
+		"five storeys and up stay the towers' job")
+	# Recent rows that aren't front-garage townhomes are rear-loaded urban ones.
+	for units in [2, 3, 4]:
+		for st in [2, 3]:
+			var w: float = units * 7.5 + 1.0
+			MetroBuilder.force_row = "urban"
+			var out := MetroBuilder.build_row(units * 10 + st, 3.9, {"width": w, "depth": 40.0, "era": "recent"}, units, st)
+			MetroBuilder.force_row = ""
+			_check(out.size() >= 3 and _inside(HouseBuilder.last_masses, w * 0.5, 40.0),
+				"%d urban townhomes of %d storeys fit their %d m lot" % [units, st, w])
 	var kinds := [0, 0, 0]
 	for s in 300:
 		kinds[absi(hash([s, "walkup kind"])) % 3] += 1

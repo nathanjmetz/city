@@ -144,7 +144,7 @@ func _services() -> void:
 			"" if missing.is_empty() else ": missing " + str(missing)])
 	# Fire and police stations (Stations): each piece on its own strip of
 	# land behind the first lot, or on the lot.
-	for kind in [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.CLINIC]:
+	for kind in [Services.Kind.FIRE, Services.Kind.POLICE, Services.Kind.CLINIC, Services.Kind.SCHOOL]:
 		var tree := Stations.tree(kind)
 		var missing := []
 		for node in tree:

@@ -2130,6 +2130,19 @@ const BIG_FACTORY_LAND_PER_M2 := 220
 ## hogs (the plant owns the pigs and feed; the grower is paid for the barn
 ## space and work).
 const BIG_FACTORY_CONTRACT_SHARE := 0.85
+## Work modes (Brawn's pick #17): an owner whose orders back up can run a
+## second shift before building another line, as real plants do. A second
+## shift adds about 80-90% of the day shift's output (fewer supervisors,
+## maintenance in the gaps; BLS: about one full-time factory worker in six
+## works evenings or nights), pays a shift differential of about 5-10% on
+## its work, and carries night overhead (supervisors, lights, security).
+## Ethanol plants already run around the clock (a continuous process), so
+## only these kinds can add one.
+const SECOND_SHIFT_KINDS := ["meatpacker", "furniture", "rv"]
+const SECOND_SHIFT_OUTPUT := 0.85
+const SECOND_SHIFT_PAY := 0.08
+## Night overhead as a share of the plant's fixed costs a month.
+const SECOND_SHIFT_FIXED := 0.3
 # --- Schools and universities -------------------------------------------------
 # Brawn's model (2026-10-22): the player places a high school, community
 # college or university and sets its funding. Its principal or president
@@ -2149,6 +2162,9 @@ const STATION_LEVY_PER_PERSON := 1.3
 ## a bond the levy pays back (Indiana towns bond fire stations and their
 ## additions over 10-20 years).
 const STATION_BOND_DOWN := 0.25
+## A school's capital comes from its Operations Fund (IC 20-46-8), a
+## bigger levy than a town's cumulative funds: dollars a resident a month.
+const STATION_LEVY_OF := {"school": 3.0}
 ## Each piece: `cost` dollars from the fund, `grow` metres the lot reaches
 ## further back from the street (0 builds on what it has), `needs` from the
 ## town (population; tall = buildings of 3+ storeys; city = a city charter),
@@ -2201,6 +2217,19 @@ const STATION_TREES := {
 			"needs": {"population": 4000}, "effects": {"reach*": 0.05}, "note": "a dentist and an optometrist move in"},
 		{"id": "dialysis", "name": "Dialysis center", "cost": 1_600_000, "grow": 14.0, "requires": ["urgent_care"],
 			"needs": {"population": 10_000}, "effects": {"reach*": 0.05}, "note": "no more drives to Marion three times a week"},
+	],
+	# An elementary school: Indiana schools build from their Operations
+	# Fund (IC 20-46-8) and bond big projects (IC 20-48-1), so a growing
+	# town's school leases portables first and then builds.
+	"school": [
+		{"id": "prek", "name": "Pre-K wing", "cost": 1_400_000, "grow": 16.0,
+			"needs": {"population": 2500}, "effects": {"reach*": 0.05}, "note": "On My Way Pre-K seats for four-year-olds"},
+		{"id": "portables", "name": "Portable classrooms", "cost": 240_000, "grow": 12.0,
+			"needs": {"population": 3500}, "effects": {"reach*": 0.08}, "note": "two leased modular classrooms out back"},
+		{"id": "addition", "name": "Classroom addition", "cost": 4_000_000, "grow": 24.0, "requires": ["portables"],
+			"needs": {"population": 6000}, "effects": {"reach*": 0.2}, "note": "eight classrooms on two floors, the portables go"},
+		{"id": "aux_gym", "name": "Second gym", "cost": 2_800_000, "grow": 24.0, "requires": ["addition"],
+			"needs": {"population": 8000}, "effects": {"reach*": 0.05}, "note": "practice space and community leagues"},
 	],
 	"police": [
 		{"id": "sally_port", "name": "Sally port", "cost": 300_000, "grow": 10.0,
