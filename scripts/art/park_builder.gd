@@ -759,19 +759,20 @@ func _elevator(size: Vector2, to_curb: float) -> void:
 	var hz := size.y * 0.5
 	_flat_rect("gravel", -size.x * 0.5, size.x * 0.5, -hz, hz, 0.04, GRAVEL)
 	_flat_rect("gravel", -4.0, 4.0, -hz - to_curb, -hz, 0.08, GRAVEL)
-	var concrete := Color("#cbc5b6")
+	var concrete := Color("#d2cfc6")
 	# A row of slip-formed silos, 8.5 m across and 36 m tall.
 	var n := 4
 	var r := 4.25
 	var zc := 4.0
 	for i in n:
 		var x := -12.0 + i * r * 2.0
-		_cylinder("paint", Vector3(x, 0, zc), r, 36.0, concrete.darkened(rng.randf_range(0.0, 0.06)), 20)
+		_cylinder("slipform", Vector3(x, 0, zc), r, 36.0, concrete.darkened(rng.randf_range(0.0, 0.06)), 28)
 	# The gallery on top and the tall headhouse at one end.
 	_box("metal", Vector3(n * r * 2.0, 3.0, 4.0), Vector3(-12.0 + (n - 1) * r, 37.5, zc), Color("#b9b4a6"))
 	var hx := -12.0 + n * r * 2.0 + 1.0
-	_box("paint", Vector3(9.0, 46.0, 10.0), Vector3(hx, 23.0, zc), concrete.lightened(0.04))
+	_slip_box(Vector3(9.0, 46.0, 10.0), Vector3(hx, 0, zc), concrete.lightened(0.04))
 	_box("metal", Vector3(7.0, 5.0, 8.0), Vector3(hx, 48.5, zc), Color("#b9b4a6"))
+	_elevator_detail(hx, zc, r, n)
 	labels.append({"pos": Vector3(hx, 41.0, zc - 5.06), "normal": Vector3(0, 0, -1), "text": "FARMERS CO-OP",
 		"height": 1.4, "color": Color("#7a1f1f")})
 	# Leg spouts down to the bins, and the drive-through dump pit shed.
@@ -790,6 +791,95 @@ func _elevator(size: Vector2, to_curb: float) -> void:
 	_box("siding", Vector3(4.0, 3.0, 4.0), Vector3(15.0, 1.5, -hz + 8.0), Color("#d8d2c2"))
 	_metal_roof(15.0, -hz + 8.0, 3.0, 4.0, 4.0, Color("#5a2a26"))
 	_glass(Vector3(13.0 - 0.03, 1.6, -hz + 8.0), Vector3(0, 0, 1), 1.6, 1.0, 0.1)
+
+
+## A slip-formed box standing on the ground at `foot`: UV.y is the height
+## up each wall, for the slipform shader's lift lines and grime.
+func _slip_box(size: Vector3, foot: Vector3, col: Color) -> void:
+	var h := size * 0.5
+	var c := [foot + Vector3(-h.x, 0, -h.z), foot + Vector3(h.x, 0, -h.z), foot + Vector3(h.x, 0, h.z), foot + Vector3(-h.x, 0, h.z)]
+	for i in 4:
+		var a: Vector3 = c[i]
+		var b: Vector3 = c[(i + 1) % 4]
+		var w := a.distance_to(b)
+		var out := Vector3(b.z - a.z, 0, a.x - b.x).normalized()
+		_quad("slipform", a, b, b + Vector3(0, size.y, 0), a + Vector3(0, size.y, 0), col,
+			[Vector2(0, 0), Vector2(w, 0), Vector2(w, size.y), Vector2(0, size.y)], out)
+	_quad("paint", c[0] + Vector3(0, size.y, 0), c[1] + Vector3(0, size.y, 0), c[2] + Vector3(0, size.y, 0),
+		c[3] + Vector3(0, size.y, 0), col.darkened(0.15), [], Vector3.UP)
+
+
+## What makes a country elevator read as one up close: the headhouse's
+## stair windows and lit top floor with a roof rail and radio mast, a
+## galvanised tower grain dryer, and aeration fans, caged ladders and roof
+## vents on the steel bins (benchmarked on Indiana co-op elevators).
+func _elevator_detail(hx: float, zc: float, r: float, n: int) -> void:
+	var front := zc - 5.0
+	# The stair tower's small windows, one a landing, up the front face.
+	var y := 4.0
+	while y < 44.0:
+		_glass(Vector3(hx + 3.0, y, front - 0.03), Vector3(-1, 0, 0), 0.7, 1.0, 0.0)
+		y += 4.2
+	# The head floor's window band, its roof rail and a radio mast.
+	for i in 3:
+		_glass(Vector3(hx - 2.2 + i * 2.2, 49.0, zc - 4.03), Vector3(-1, 0, 0), 1.4, 0.9, 0.0)
+	for e in [[Vector3(-3.4, 0, -3.9), Vector3(3.4, 0, -3.9)], [Vector3(3.4, 0, -3.9), Vector3(3.4, 0, 3.9)],
+			[Vector3(3.4, 0, 3.9), Vector3(-3.4, 0, 3.9)], [Vector3(-3.4, 0, 3.9), Vector3(-3.4, 0, -3.9)]]:
+		var a: Vector3 = Vector3(hx, 51.0, zc) + e[0]
+		var b: Vector3 = Vector3(hx, 51.0, zc) + e[1]
+		_strut(a + Vector3(0, 1.05, 0), b + Vector3(0, 1.05, 0), 0.05, Color("#e8c23a"))
+		for k in 4:
+			_box("paint", Vector3(0.05, 1.05, 0.05), a.lerp(b, k / 3.0) + Vector3(0, 0.52, 0), Color("#e8c23a"))
+	_box("paint", Vector3(0.12, 9.0, 0.12), Vector3(hx + 2.4, 55.5, zc + 2.4), GALV)
+	_box("paint", Vector3(0.9, 0.06, 0.06), Vector3(hx + 2.4, 58.0, zc + 2.4), GALV)
+	# Dust-stained concrete round the dump pit, where the trucks tip.
+	_flat_rect("gravel", hx - 4.0, hx + 6.0, -18.0, -2.0, 0.05, Color("#9a9384"))
+	# A galvanised tower dryer in front of the bins: the column, its
+	# burner plenum at the foot, a cone cap and a caged ladder.
+	var dc := Vector3(-8.0, 0, -11.0)
+	_cylinder("metal", dc, 2.6, 22.0, Color("#b8bcbc"), 20)
+	_lathe(dc, [Vector2(2.8, 22.0), Vector2(0.4, 23.6), Vector2(0.0, 23.7)], Color("#a9adab"), 20)
+	_box("metal", Vector3(3.2, 3.4, 2.4), dc + Vector3(3.6, 1.7, 0), Color("#c4c8c6"))
+	_box("paint", Vector3(1.0, 1.0, 1.4), dc + Vector3(5.6, 1.4, 0), Color("#3f4a52"))
+	_caged_ladder(dc + Vector3(0, 0, -2.6), 22.0, Vector3(0, 0, -1))
+	_strut(Vector3(hx - 3.5, 44.0, zc - 4.0), dc + Vector3(0, 23.2, 0), 0.3, GALV)
+	# The steel bins: aeration fans and their ducts, caged ladders, roof
+	# vents and eave rings.
+	for i in 2:
+		var c := Vector3(-22.0, 0, -10.0 + i * 12.0)
+		var face := Vector3(1, 0, 0) if i == 0 else Vector3(-1, 0, 0).rotated(Vector3.UP, 0.6)
+		var fan := c + Vector3(5.5 + 1.2, 0, 0) if i == 0 else c + Vector3(0, 0, 5.5 + 1.2)
+		_box("metal", Vector3(1.6, 1.4, 1.4), fan + Vector3(0, 0.9, 0), Color("#c4c8c6"))
+		_cyl_y(fan + Vector3(0.9 if i == 0 else 0.0, 0.9, 0.9 if i == 1 else 0.0), 0.62, 0.3, Color("#3f4a52"))
+		_caged_ladder(c + Vector3(-5.6, 0, 0), 11.0, Vector3(-1, 0, 0))
+		_box("paint", Vector3(11.6, 0.12, 0.1), c + Vector3(0, 10.95, -5.55), Color("#9a9fa2"))
+		for v in 3:
+			var a := TAU * v / 3.0 + 0.4
+			_box("metal", Vector3(0.9, 0.5, 0.9), c + Vector3(cos(a) * 3.6, 13.0, sin(a) * 3.6), Color("#a9adab"))
+	# A floodlight pole over the scale.
+	_cyl_y(Vector3(12.5, 5.0, -16.0), 0.13, 10.0, POLE)
+	_box("paint", Vector3(0.6, 0.35, 0.5), Vector3(12.5, 9.6, -15.6), Color("#4a4e52"))
+
+
+## A fixed steel ladder with a safety cage, `h` tall, standing off a wall
+## that faces `out`.
+func _caged_ladder(foot: Vector3, h: float, out: Vector3) -> void:
+	var side := Vector3(out.z, 0, -out.x) * 0.25
+	var base := foot + out * 0.25
+	for s in [-1.0, 1.0]:
+		_box("paint", Vector3(0.05, h, 0.05), base + side * s + Vector3(0, h * 0.5, 0), GALV)
+	var y := 2.4
+	while y < h:
+		for k in 4:
+			var a0 := PI * k / 4.0
+			var a1 := PI * (k + 1) / 4.0
+			_strut(base + out * (0.35 + sin(a0) * 0.35) + side * cos(a0) * 1.4 + Vector3(0, y, 0),
+				base + out * (0.35 + sin(a1) * 0.35) + side * cos(a1) * 1.4 + Vector3(0, y, 0), 0.04, GALV.darkened(0.1))
+		y += 1.0
+	for k in 3:
+		var a := PI * (k + 1) / 4.0
+		var p := base + out * (0.35 + sin(a) * 0.35) + side * cos(a) * 1.4
+		_box("paint", Vector3(0.05, h - 2.4, 0.05), p + Vector3(0, 2.4 + (h - 2.4) * 0.5, 0), GALV.darkened(0.1))
 
 
 # ---------------------------------------------------------------- football
