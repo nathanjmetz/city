@@ -3295,6 +3295,7 @@ const WORN_WIDTH := 0.7
 ## The path stops this far short of each end of a road, metres (where the
 ## junction's corner and crossing are).
 const WORN_JUNCTION_CLEAR := 12.0
+
 # --- Police patrols (Patrols) ---------------------------------------------------
 # A small-town department keeps one or two cars on the road a shift, round
 # the clock, over three 8-hour shifts (BJS Local Police Departments: towns of
