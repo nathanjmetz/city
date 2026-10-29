@@ -1030,7 +1030,7 @@ func _community_center(to_curb: float) -> void:
 	var ds := minf(18.0, dd)
 	var x0s := xd1
 	var x1s := xg0
-	_cc_box("paint", x0s, x1s, zf, zf + ds, hs, hs + 1.0, wall.darkened(0.04))
+	_cc_box("paint", x0s, x1s, zf, zf + ds, hs, hs + 1.0, wall.darkened(0.04), maxi(2, int((x1s - x0s) / 7.5)))
 	var n := maxi(2, int((x1s - x0s) / 7.5))
 	var bay := (x1s - x0s) / n
 	for i in n:
@@ -1269,11 +1269,13 @@ func _power_center(to_curb: float) -> void:
 
 ## A flat-roofed box between x0 and x1: walls, a membrane roof, a parapet
 ## and coping (_flat_roofed, off centre).
-func _cc_box(mat: String, x0: float, x1: float, z0: float, z1: float, deck: float, top: float, wall: Color) -> void:
+func _cc_box(mat: String, x0: float, x1: float, z0: float, z1: float, deck: float, top: float, wall: Color, bays := 0) -> void:
 	var w := x1 - x0
 	var d := z1 - z0
 	var cx := (x0 + x1) * 0.5
 	var cz := (z0 + z1) * 0.5
+	if fine_parts:
+		_cc_tilt_up(x0, x1, z0, z1, top, wall, bays)
 	_box(mat, Vector3(w + 0.1, 0.3, d + 0.1), Vector3(cx, 0.15, cz), FOUNDATION)
 	_box(mat, Vector3(w, deck, d), Vector3(cx, deck * 0.5, cz), wall)
 	var y := deck + 0.02
@@ -1288,6 +1290,38 @@ func _cc_box(mat: String, x0: float, x1: float, z0: float, z1: float, deck: floa
 		_box(mat, Vector3(t, ph, d), Vector3(cx + s * (w * 0.5 - t * 0.5), deck + ph * 0.5, cz), wall)
 		_box("paint", Vector3(w + 0.1, 0.1, 0.35), Vector3(cx, top, cz + s * d * 0.5), col)
 		_box("paint", Vector3(0.35, 0.1, d), Vector3(cx + s * w * 0.5, top, cz), col)
+
+
+## Up close, the back and ends of a big box as tilt-up concrete panels
+## build them (any 1990s-2010s Midwestern center): a joint every 7.6 m
+## (25 ft panels), a scupper, conductor head and downspout every other
+## panel at the back, and the rear exit doors (one a tenant on an inline
+## row of `bays`, else one near each end) under wall-pack lights.
+func _cc_tilt_up(x0: float, x1: float, z0: float, z1: float, top: float, wall: Color, bays: int) -> void:
+	var joint := wall.darkened(0.3)
+	var pipe := wall.darkened(0.18)
+	var n := maxi(1, roundi((x1 - x0) / 7.6))
+	for i in range(1, n):
+		var x := x0 + i * (x1 - x0) / n
+		_box("paint", Vector3(0.05, top, 0.04), Vector3(x, top * 0.5, z1 + 0.01), joint)
+		if i % 2 == 1:
+			_box("paint", Vector3(0.5, 0.35, 0.3), Vector3(x + 0.6, top - 0.75, z1 + 0.15), pipe)  # scupper and head
+			_box("paint", Vector3(0.2, top - 0.9, 0.2), Vector3(x + 0.6, (top - 0.9) * 0.5, z1 + 0.12), pipe)
+	var m := maxi(1, roundi((z1 - z0) / 7.6))
+	for s in [-1.0, 1.0]:
+		for i in range(1, m):
+			_box("paint", Vector3(0.04, top, 0.05), Vector3((x0 if s < 0.0 else x1) + s * 0.01, top * 0.5, z0 + i * (z1 - z0) / m), joint)
+	var doors := []
+	if bays > 0:
+		for i in bays:
+			doors.append(x0 + (i + 0.75) * (x1 - x0) / bays)
+	else:
+		doors = [x0 + 2.4, x1 - 2.4]
+	for x: float in doors:
+		_box("paint", Vector3(1.0, 2.15, 0.06), Vector3(x, 1.08, z1 + 0.03), Color("#7d8184"))
+		_box("metal", Vector3(0.12, 0.05, 0.1), Vector3(x + 0.3, 1.0, z1 + 0.09), Color("#c9cbcc"))
+		_box("paint", Vector3(0.4, 0.3, 0.2), Vector3(x, 3.1, z1 + 0.1), Color("#3b3e40"))  # wall pack
+		_box("paint", Vector3(0.3, 0.06, 0.12), Vector3(x, 2.94, z1 + 0.12), Color("#f2ead2"))
 
 
 ## The community center's parking field: a walk and fire lane along the
