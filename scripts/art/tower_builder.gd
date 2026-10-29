@@ -1507,8 +1507,10 @@ func _tw_podium(to_curb: float, width: float, storeys: int) -> void:
 	_box("paint", Vector3(6.0, 3.8, 0.1), Vector3(ramp_x, 1.9, zf - 0.05), Color("#1c1d1e"))  # the garage door
 	for lv in range(1, levels):
 		var y := ground_h + park_h * (lv - 1)
+		# Open decks on every side (a garage needs open walls on at least
+		# two to vent without fans; most podium garages are open all round).
 		for face in [[Vector3(0, 0, zf - 0.03), Vector3(-1, 0, 0), pw], [Vector3(-pw * 0.5 - 0.03, 0, pcz), Vector3(0, 0, 1), pd],
-				[Vector3(pw * 0.5 + 0.03, 0, pcz), Vector3(0, 0, -1), pd]]:
+				[Vector3(pw * 0.5 + 0.03, 0, pcz), Vector3(0, 0, -1), pd], [Vector3(0, 0, zf + pd + 0.03), Vector3(1, 0, 0), pw]]:
 			var out: Vector3 = face[1].cross(Vector3.UP)
 			var c: Vector3 = face[0] + Vector3(0, y + park_h * 0.55, 0)
 			var r: Vector3 = face[1] * (face[2] - 1.2) * 0.5
