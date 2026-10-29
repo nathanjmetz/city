@@ -201,6 +201,14 @@ func _interchange(seed: int) -> void:
 				if x.id != y.id and (x.dir != y.dir or absf(float(x.s) - float(y.s)) < CountyTrains._max_len()):
 					meets += 1
 	_check(meets == 0, "a train standing at an interchange never meets or crowds another")
+	# Gates ahead of a standing train stay up; behind it, across its cars, down.
+	var e := {"hits": [[0, 1100.0]]}
+	var t := {"corridor": 0, "s": 1000.0, "dir": 1, "length": 500.0}
+	var standing := t.duplicate()
+	standing.stopped = true
+	_check(GradeCrossingView._closed(e, [t]) and not GradeCrossingView._closed(e, [standing])
+		and GradeCrossingView._closed({"hits": [[0, 800.0]]}, [standing]),
+		"county road gates stay up ahead of a train standing at an interchange")
 
 
 ## A town near the line builds its main line to an interchange track beside
