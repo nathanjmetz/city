@@ -1675,8 +1675,10 @@ func _shop_gas_station(to_curb: float) -> void:
 	_box("paint", Vector3(sw + 0.1, 0.3, sd + 0.1), Vector3(0, 0.15, cz), FOUNDATION)
 	_flat_roofed("paint", sw, sd, cz, 4.2, 4.8, wall)
 	_box("paint", Vector3(sw + 0.1, 0.7, 0.2), Vector3(0, 4.45, zf - 0.1), brand)
+	shopfront = fine_parts  # aisles of snacks and the cooler wall inside
 	for i in 4:
 		_glass(Vector3(-sw * 0.3 + i * 1.6, 1.7, zf - 0.03), Vector3(-1, 0, 0), 1.5, 2.3, 0.0)
+	shopfront = false
 	_box("paint", Vector3(6.6, 0.1, 0.12), Vector3(-sw * 0.3 + 2.4, 2.9, zf - 0.06), MULLION[1])
 	# Canopy: a deep flat roof on columns. Its fascia is in the brand colour,
 	# or white with a brand stripe (Speedway, Marathon and Casey's canopies on
@@ -1721,6 +1723,12 @@ func _shop_gas_station(to_curb: float) -> void:
 	var px := -half + 1.5
 	_box("paint", Vector3(0.3, 6.0, 0.3), Vector3(px, 3.0, 1.0), Color("#5a5e60"))
 	_box("sign" if fine_parts else "paint", Vector3(2.2, 1.4, 0.3), Vector3(px, 6.3, 1.0), Color(brand, 0.0))  # lit from inside
+	if fine_parts:
+		# An unbranded station's cabinet says what it sells, in white
+		# letters lit with the panel.
+		var word: String = ["GAS", "FUEL", "GAS", "GAS & GO"][posmod(hash([rng.seed, 43]), 4)]
+		var gp := minf(0.16, 1.9 / (word.length() * 4.0 - 1.0))
+		_pixel_text(word, px, 6.3 - gp * 2.5, 0.83, gp, 0.02, Color(0.97, 0.96, 0.92, 0.0), "sign")
 	_box("paint", Vector3(2.0, 1.6, 0.32), Vector3(px, 4.7, 1.0), Color("#1d1d1d"))
 	var reg := 0
 	for row in 3:
@@ -1728,7 +1736,8 @@ func _shop_gas_station(to_curb: float) -> void:
 		# Seen from the street (-z), +x is on the reader's left: digits there.
 		_box("paint", Vector3(0.7, 0.28, 0.34), Vector3(px - 0.55, ry, 1.0), Color("#f1efe8"))
 		if fine_parts:
-			_box("paint", Vector3(0.5, 0.07, 0.02), Vector3(px - 0.55, ry, 1.0 - 0.18), Color("#1d2a44"))  # the grade's name
+			var grade: String = ["REG", "PLUS", "DIESEL"][row]  # the grade's name
+			_pixel_text(grade, px - 0.55, ry - 0.06, 1.0 - 0.18, 0.024, 0.02, Color("#1d2a44"), "paint")
 		var digit := Color("#ff3b1f") if row < 2 else Color("#38d04a")
 		# $3.xx9: a price in the range Indiana pumps showed in 2024-25.
 		# Regular, then mid-grade about 40 cents more, then diesel (green).

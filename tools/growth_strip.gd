@@ -36,6 +36,9 @@ const LADDERS := {
 	# A neighborhood center, then grown into a community center on the
 	# block behind it (a block's depth, and a deeper one).
 	"community": [["shopping_center", 1, 2.2, "", 120.0], ["shopping_center", 2, 2.2, "", 120.0, 0, 62.0], ["shopping_center", 2, 2.2, "", 120.0, 0, 85.0]],
+	# A highway hotel on a run of lots by the road, then the full-service
+	# hotel it grows into on more land.
+	"hotel": [["hotel", 0, 2.2, "", 115.0, 0, 40.0], ["hotel", 0, 2.2, "", 90.0, 0, 80.0], ["hotel", 1, 2.2, "", 120.0, 0, 120.0]],
 	"power": [["shopping_center", 3, 2.2, "", 200.0, 0, 60.0], ["shopping_center", 3, 2.2, "", 150.0, 0, 90.0], ["shopping_center", 3, 2.2, "", 120.0, 0, 105.0]],
 	# A Main Street block with storeys added on top (the same block each time).
 	"mainadded": [["mixed_use", 0, 3.0, "", 20.0], ["mixed_use", 1, 5.0, "", 20.0, 2], ["mixed_use", 2, 5.0, "", 20.0, 3], ["mixed_use", 2, 5.0, "", 20.0, 2]],
@@ -46,7 +49,7 @@ const LADDERS := {
 	"block": [["shop", 0, 2.2], ["mixed_use", 0, 3.0], ["mixed_use", 1, 3.0], ["commercial_block", 0, 3.0], ["commercial_block", 1, 5.0]],
 	"house": [["house", 0, 0.9], ["house", 1, 0.9], ["house", 2, 0.9], ["house", 3, 0.9], ["house", 4, 0.9], ["duplex", 0, 0.9], ["duplex", 1, 0.9]],
 }
-const BASE_W := {"office_park": 110.0, "shopping_center": 60.0, "office": 30.0, "apartments": 30.0, "mixed_use": 20.0, "shop": 20.0, "house": 20.0, "duplex": 22.0, "commercial_block": 28.0, "row_home": 24.0}
+const BASE_W := {"hotel": 80.0, "office_park": 110.0, "shopping_center": 60.0, "office": 30.0, "apartments": 30.0, "mixed_use": 20.0, "shop": 20.0, "house": 20.0, "duplex": 22.0, "commercial_block": 28.0, "row_home": 24.0}
 const DEPTH := 55.0
 
 var _frames := 0

@@ -48,6 +48,8 @@ static func for_building(zone: int, bseed: int, lot := {}, storeys := 0, type :=
 				return office(art_seed, fit, storeys)
 			if type == "office_park":
 				return office_park(art_seed, fit, level)
+			if type == "hotel":
+				return hotel(art_seed, fit, level)
 			if type in ["mixed_use", "commercial_block", "office"]:
 				return main_street()  # built to the sidewalk; its lot (if any) is out back
 			return shop(art_seed, fit, type == "shopping_center", level if type in ["shop", "shopping_center"] else 1)
@@ -161,6 +163,16 @@ static func office_park(art_seed: int, fit: Dictionary, level: int) -> Dictionar
 	# A corporate campus's parking deck: cars drive in and are out of sight.
 	for st in plan.get("deck", []):
 		spots.append({"pos": st[0], "face": st[1], "kind": "garage"})
+	return {"spots": spots, "door": plan.door, "cut_x": plan.cut_x, "aisle_z": plan.aisle_z,
+		"walk_z": plan.door.y - 1.1, "main_street": false}
+
+
+## HotelBuilder: the field out front, the lobby under the porte-cochère.
+static func hotel(art_seed: int, fit: Dictionary, level: int) -> Dictionary:
+	var plan := HotelBuilder.plan(art_seed, fit.get("art", {"width": float(fit.half) * 2.0, "depth": fit.depth}), level)
+	var spots := []
+	for st in plan.stalls:
+		spots.append({"pos": st[0], "face": st[1], "kind": "stall", "aisle": st[2]})
 	return {"spots": spots, "door": plan.door, "cut_x": plan.cut_x, "aisle_z": plan.aisle_z,
 		"walk_z": plan.door.y - 1.1, "main_street": false}
 
