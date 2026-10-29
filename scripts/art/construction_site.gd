@@ -73,6 +73,10 @@ var _bldg := AABB()  # the finished building's own bounds (not its lot)
 var _crane_on := false  # a high-rise: it goes up under a tower crane
 var _props_for := ""
 var _paving := false
+var _entrance: MeshInstance3D  # the stone construction entrance
+var _drive_x := 0.0  # where the entrance comes in off the street
+var _drive_w := 3.7
+var _drive_len := 9.0
 var _stone: MeshInstance3D
 var _mat: MeshInstance3D
 var _laid := {}  # paving layer -> how far back it was last drawn
@@ -160,6 +164,8 @@ func _show(st: Dictionary) -> void:
 	_final.visible = stage in ["exterior", "interior", "landscape"]
 	_ground.visible = stage == "landscape"
 	_pad.visible = stage != "landscape"
+	# The stone comes up with the topsoil when the drive is poured.
+	_entrance.visible = stage != "landscape"
 	if _footing != null:
 		_footing.visible = stage != "clear"
 	# Footings and slab: the finished shape clipped low, in fresh concrete.
@@ -222,6 +228,7 @@ func _show_paving(stage: String, t: float) -> void:
 	_final.visible = i >= 2  # curbs, light poles and signs go in before the paving
 	_ground.visible = i >= 4
 	_pad.visible = i <= 3
+	_entrance.visible = i <= 1
 	if _footing != null:
 		_footing.visible = i >= 2
 	# Crushed stone (#53 base, compacted), rolled in from the street back.
@@ -272,7 +279,7 @@ func _finish() -> void:
 	_ground.visible = true
 	if _footing != null:
 		_footing.visible = true
-	for n in [_found, _shell, _pad, _props, _stone, _mat]:
+	for n in [_found, _shell, _pad, _entrance, _props, _stone, _mat]:
 		if n != null:
 			n.queue_free()
 	for n in _frame:
@@ -281,6 +288,7 @@ func _finish() -> void:
 	_found = null
 	_shell = null
 	_pad = null
+	_entrance = null
 	_props = null
 	_stone = null
 	_mat = null
@@ -377,44 +385,153 @@ void fragment() {
 
 # ---------------------------------------------------------------- the lot
 
-## Bare, graded dirt over the whole site, with a little variation.
+## Bare, graded dirt over the whole site, with a little variation, and
+## the stone construction entrance every stormwater permit asks for
+## (Indiana's Rule 5 / IDEM Storm Water Quality Manual, EPA SWPPP detail):
+## a pad of 2-3" crushed stone from the street in, about 12 ft wide on a
+## house lot and 20 ft by 50 ft on a bigger job, so trucks shed their mud
+## before they reach the road. Each mesh keeps (across the drive, in from
+## the street) in UV for the ground shader's ruts.
 func _make_pad() -> void:
+	var commercial := _profile != "house" and _profile != "barn"
+	_drive_w = 6.1 if commercial else 3.7
+	_drive_len = minf(15.2 if commercial else 9.0, _box.size.z * 0.45)
+	# Along the dumpster's side, so the roll-off truck backs in off the stone.
+	_drive_x = _box.end.x - 0.8 - 2.6 - _drive_w * 0.5
+	if _drive_x - _drive_w * 0.5 < _box.position.x + 1.0:
+		_drive_x = _box.get_center().x
+	_pad = _ground_patch(Rect2(_box.position.x, _box.position.z, _box.size.x, _box.size.z), 0.1,
+		DIRT, 0.07, _site_mat(false))
+	_entrance = _ground_patch(Rect2(_drive_x - _drive_w * 0.5, _box.position.z, _drive_w, _drive_len), 0.115,
+		STONE, 0.04, _site_mat(true))
+
+
+## A flat patch of ground at height `y`, tinted in soft blotches about
+## `vary` either way, draped on the land like the yard will be.
+func _ground_patch(r: Rect2, y: float, col: Color, vary: float, mat: Material) -> MeshInstance3D:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	st.set_normal(Vector3.UP)
 	var n := 6
-	var y := 0.1  # above the lot tint (0.06) and the yard it replaces
 	var at := func(i: int, j: int) -> Vector3:
-		return Vector3(_box.position.x + _box.size.x * i / n, y, _box.position.z + _box.size.z * j / n)
-	# A soft blotch of lighter and darker dirt, smooth across the corners.
+		return Vector3(r.position.x + r.size.x * i / n, y, r.position.y + r.size.y * j / n)
 	var tint := func(i: int, j: int) -> Color:
-		var h := fposmod(sin(i * 12.9898 + j * 78.233) * 43758.5453, 1.0)
-		return DIRT.lightened(h * 0.06) if h > 0.5 else DIRT.darkened((0.5 - h) * 0.08)
+		var h := fposmod(sin(i * 12.9898 + j * 78.233 + r.position.x) * 43758.5453, 1.0)
+		return col.lightened((h - 0.5) * vary * 2.0) if h > 0.5 else col.darkened((0.5 - h) * vary * 2.0)
 	for i in n:
 		for j in n:
 			for c in [[i, j], [i + 1, j], [i + 1, j + 1], [i, j], [i + 1, j + 1], [i, j + 1]]:
+				var v: Vector3 = at.call(c[0], c[1])
 				st.set_color(tint.call(c[0], c[1]))
-				st.add_vertex(at.call(c[0], c[1]))
-	_pad = MeshInstance3D.new()
-	_pad.mesh = st.commit()
+				st.set_uv(Vector2(v.x - _drive_x, v.z - _box.position.z))
+				st.add_vertex(v)
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
 	var root := get_parent() as Node3D
 	if root != null and root.is_inside_tree():
-		# Graded dirt follows the land like the yard will.
-		_pad.mesh = Terrain.drape_local(_pad.mesh, root.transform)
-	_pad.material_override = _dirt_mat()
-	_pad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(_pad)
+		mi.mesh = Terrain.drape_local(mi.mesh, root.transform)
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+	return mi
 
 
 static var _dirt: StandardMaterial3D
+static var _props_mat: StandardMaterial3D
+
+
+## The site's things in the colours they're written in (sRGB), so black
+## silt fence reads black and a blue porta-john its own blue.
+static func _prop_mat() -> StandardMaterial3D:
+	if _props_mat == null:
+		_props_mat = FrameBuilder.material().duplicate()
+		_props_mat.vertex_color_is_srgb = true
+	return _props_mat
+static var _site_mats := {}
 
 
 static func _dirt_mat() -> StandardMaterial3D:
 	if _dirt == null:
 		_dirt = StandardMaterial3D.new()
 		_dirt.vertex_color_use_as_albedo = true
+		_dirt.vertex_color_is_srgb = true
 		_dirt.roughness = 1.0
 	return _dirt
+
+
+## The site's ground: graded clay with damp low spots and the ruts of the
+## trucks and skid steer worn in from the entrance, or the entrance's
+## crushed stone with mud tracked onto its inner end. The desktop's High
+## tier and up lays the photographed mud and gravel (PhotoGround) over it.
+static func _site_mat(stone: bool) -> ShaderMaterial:
+	if not _site_mats.has(stone):
+		var sh := Shader.new()
+		sh.code = SITE_GROUND.replace("// PHOTO_GROUND", PhotoGround.glsl())
+		var mat := ShaderMaterial.new()
+		mat.shader = sh
+		mat.set_shader_parameter("stone", stone)
+		PhotoGround.apply(mat)
+		_site_mats[stone] = mat
+	return _site_mats[stone]
+
+
+const STONE := Color("#7c776f")  # #2 crushed limestone, grey-tan, dusty
+const SITE_GROUND := """
+shader_type spatial;
+uniform bool stone = false;
+// PHOTO_GROUND
+varying vec3 wp;
+varying vec2 dr;
+float sg_hash(vec2 c) { return fract(sin(dot(c, vec2(127.1, 311.7))) * 43758.5453); }
+float sg_noise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = p - i;
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(sg_hash(i), sg_hash(i + vec2(1.0, 0.0)), f.x), mix(sg_hash(i + vec2(0.0, 1.0)), sg_hash(i + 1.0), f.x), f.y);
+}
+// Two wheel tracks 1.7 m apart (a pickup's or a skid steer's), wandering a
+// little, worn deepest near the entrance.
+float sg_ruts(vec2 d, float reach) {
+	float wob = (sg_noise(vec2(d.y * 0.12, 3.1)) - 0.5) * 1.4;
+	float off = abs(abs(d.x - wob) - 0.85);
+	float track = 1.0 - smoothstep(0.12, 0.32, off);
+	return track * (1.0 - smoothstep(reach * 0.6, reach, d.y)) * step(0.0, d.y);
+}
+void vertex() {
+	wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	dr = UV;
+}
+void fragment() {
+	vec3 base = pow(COLOR.rgb, vec3(2.2));
+	float big = sg_noise(wp.xz * 0.18);
+	float fine = sg_noise(wp.xz * 1.9);
+	float dist = length(VERTEX);
+	float pk = ph_on(dist);
+	vec3 n = vec3(0.0, 1.0, 0.0);
+	float rough = 0.95;
+	if (stone) {
+		// Stones catch light unevenly; the inner end carries the site's mud.
+		base *= 0.78 + 0.22 * fine + 0.2 * sg_noise(wp.xz * 9.0);
+		float mud = clamp(smoothstep(2.0, 11.0, dr.y) * (0.3 + 0.7 * sg_noise(wp.xz * 0.6)) + 0.5 * sg_ruts(dr, 30.0), 0.0, 1.0);
+		base = mix(base, vec3(0.09, 0.06, 0.04), mud * 0.7);
+		base *= mix(vec3(1.0), ph_gravel(wp.xz), pk);
+		n = ph_lean(n, ph_gravel_s(wp.xz), pk * 0.8);
+	} else {
+		// Damp low spots go dark and shiny; the high ground dries pale.
+		float wet = smoothstep(0.62, 0.85, big);
+		base *= mix(0.9 + 0.2 * fine, 0.58, wet);
+		rough = mix(0.95, 0.7, wet);
+		float rut = sg_ruts(dr, 26.0);
+		base *= 1.0 - 0.32 * rut;
+		rough = mix(rough, 0.6, rut * 0.6);
+		base *= mix(vec3(1.0), ph_mud(wp.xz), pk);
+		n = ph_lean(n, ph_mud_s(wp.xz) * (1.0 + rut), pk);
+	}
+	ALBEDO = base;
+	ROUGHNESS = rough;
+	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
+}
+"""
 
 
 ## What's lying around the site: silt fence early on, the builder's sign,
@@ -442,7 +559,7 @@ func _props_look(stage: String) -> void:
 		_paving_props(st, stage, b, front)
 		_props = MeshInstance3D.new()
 		_props.mesh = st.commit()
-		_props.material_override = FrameBuilder.material()
+		_props.material_override = _prop_mat()
 		add_child(_props)
 		return
 	# A porta-john by the front corner.
@@ -472,7 +589,7 @@ func _props_look(stage: String) -> void:
 		_crane(st)
 	_props = MeshInstance3D.new()
 	_props.mesh = st.commit()
-	_props.material_override = FrameBuilder.material()
+	_props.material_override = _prop_mat()
 	add_child(_props)
 
 
