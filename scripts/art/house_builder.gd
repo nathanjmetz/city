@@ -1661,12 +1661,13 @@ func _lot_fence(a: Vector2, b: Vector2, kind: String, inward := Vector2.ZERO) ->
 	# 6 ft privacy: upright boards (the siding shader's laps, turned on
 	# end) between 4x4 posts every 8 ft, three 2x4 rails on the owner's
 	# side. Wood is new cedar, or greyed after a few Indiana winters.
-	var woods := ["#9a7b5a", "#8f7a60", "#8a8378", "#a08868"]
-	var board := Color("#f0eee8") if kind == "vinyl" else Color(woods[absi(int(a.x * 7.0 + a.y * 3.0)) % woods.size()])
+	# One wood for the whole yard: weathered cedar and pine go grey-brown.
+	var woods := ["#8a7a66", "#7d7568", "#958169", "#857a6c"]
+	var board := Color("#f0eee8") if kind == "vinyl" else Color(woods[absi(hash(rng.seed)) % woods.size()])
 	var side := Vector3(inward.x, 0, inward.y)
 	var lo := Vector3(0, 0.07, 0)
 	var hi := Vector3(0, 1.88, 0)
-	var u := 2.0 + absf(a.x + a.y)  # boards don't line up from fence to fence
+	var u := 2.0 + absf(a.x + a.y)  # boards don't line up from run to run
 	# Both faces, each facing out (2.4 cm apart, so they never share a plane).
 	var face_dirs := [side, -side] if side != Vector3.ZERO else [Vector3(-dir.z, 0, dir.x), Vector3(dir.z, 0, -dir.x)]
 	for f in face_dirs:
@@ -2075,6 +2076,12 @@ func _shrub(p: Vector3, r: float, kind := 0) -> void:
 		height = r * 0.55
 		wide = r * 1.5
 		col = Color("#4d6a5a")
+	# Full to the ground, as a clipped yew or a spreading juniper is: sink
+	# the round below the mulch so its widest ring sits low, instead of
+	# standing on its tip like a mushroom.
+	var sink := height * (0.9 if kind == 2 else (0.08 if column else 0.3))
+	p.y -= sink
+	height += sink
 	var rings := 4  # same random draws as before for every species
 	var segs := 7
 	var pts := []
