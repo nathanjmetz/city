@@ -104,6 +104,8 @@ static func draw_to() -> float:
 
 
 func _process(delta: float) -> void:
+	if sim != null:
+		FarmsteadParked.month = DayNight.visible_month(sim)
 	var cam := get_viewport().get_camera_3d()
 	if Terrain.view_origin != _origin:
 		_origin = Terrain.view_origin
