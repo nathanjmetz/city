@@ -625,14 +625,18 @@ func _mixed(to_curb: float, width: float, storeys: int) -> void:
 		# Huntington): paneled bulkheads, tall display windows, a glass
 		# entry door in the middle bay and a band of transom lights above,
 		# under the sign board.
+		# A shop whose sign says it serves food shows its booths and counter.
+		var eats := fine and (sign_spec.is_empty() or k != fronts / 2) and int(_word_slot(fx) * 0.5) - 1 in EATERIES
 		for i in bays:
 			var x := fx - sw * 0.5 + (i + 0.5) * bw
 			if i == bays / 2 and bw > 1.5:
 				_shop_door(x, bw, zf, mull)
 			else:
 				shopfront = fine
+				diner_room = 7.0 if eats else 0.0
 				_glass(Vector3(x, 1.65, zf - 0.03), Vector3(-1, 0, 0), bw - 0.12, 1.9, rng.randf_range(0.0, 0.2))
 				shopfront = false
+				diner_room = 0.0
 				_box("paint", Vector3(bw - 0.02, 0.6, 0.16), Vector3(x, 0.4, zf - 0.08), trim)
 				if fine:
 					shop_wins.append(Vector2(x, bw))

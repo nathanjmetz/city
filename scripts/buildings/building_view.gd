@@ -346,6 +346,7 @@ static func build_for(type: String, storeys: int, s: int, to_curb: float, fit: D
 				built = DenseBuilder.build_mixed(s, to_curb, fit, storeys, spec)
 		"commercial_block": built = MainBlock.build(s, to_curb, fit, storeys, spec)
 		"office_park": built = DenseBuilder.build_office_park(s, to_curb, fit, level, spec)
+		"hotel": built = HotelBuilder.build(s, to_curb, fit, level, spec)
 		"office":
 			# Eight storeys and up is a downtown tower, built for its era.
 			if storeys >= 8:

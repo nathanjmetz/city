@@ -850,6 +850,58 @@ func _tilt_up(to_curb: float) -> void:
 		_box("siding", Vector3(0.08, 3.0, 2.8), Vector3(cx + w * 0.5 + 0.36, 2.4, z), Color(TRIM, 0.0))
 		_box("paint", Vector3(0.3, 3.4, 3.2), Vector3(cx + w * 0.5 + 0.16, 2.4, z), Color("#2a2a2c"))
 	_flat_rect("drive", cx + w * 0.5, minf(cx + w * 0.5 + 20.0, half - 0.5), zf, zf + d, 0.08)
+	_tilt_up_face(cx, cz, w, d, h, zf, panel, docks)
+
+
+## What a 1990s tilt-up plant shows, from Midwest industrial-park photos:
+## two reveals cut across every panel, a ribbon of high clerestory glass on
+## the street face, the glazed entry with its aluminium storefront under a
+## steel canopy and an accent-painted panel round it, rows of skylights on
+## the roof, and at each dock the black rubber bumpers, a dock light on its
+## arm and a yellow bollard pair; a man door with a concrete stoop.
+func _tilt_up_face(cx: float, cz: float, w: float, d: float, h: float, zf: float, panel: Color, docks: int) -> void:
+	var g := RandomNumberGenerator.new()
+	g.seed = hash([rng.seed, "tilt_up_face"])
+	var reveal := panel.darkened(0.3)
+	for y in [h * 0.3, h * 0.62]:
+		_box("paint", Vector3(w + 0.02, 0.06, 0.05), Vector3(cx, y, zf - 0.04), reveal)
+		_box("paint", Vector3(0.05, 0.06, d + 0.02), Vector3(cx - w * 0.5 - 0.04, y, cz), reveal)
+	# Clerestory glass high on the street face, between the panel joints.
+	var x := cx - w * 0.5 + 1.5
+	while x < cx + w * 0.5 - 2.0:
+		_glass(Vector3(x + 2.25, h - 2.6, zf - 0.04), Vector3(-1, 0, 0), 4.2, 0.9, 0.0)
+		x += 7.5
+	# The entry: accent panel, storefront glass and a canopy, at one end.
+	var ex := cx - w * 0.5 + 5.0 if g.randf() < 0.5 else cx + w * 0.5 - 5.0
+	var accent := Color(["#2f5d8a", "#7a1f2b", "#3f6d4a", "#4a4e52"][g.randi() % 4])
+	_box("paint", Vector3(7.4, h - 0.6, 0.06), Vector3(ex, (h - 0.6) * 0.5, zf - 0.05), accent)
+	_glass(Vector3(ex, 1.6, zf - 0.1), Vector3(-1, 0, 0), 5.0, 2.8, 0.0)
+	for k in 5:
+		_box("paint", Vector3(0.08, 2.9, 0.08), Vector3(ex - 2.5 + k * 1.25, 1.55, zf - 0.13), MULLION[0])
+	_box("paint", Vector3(7.0, 0.25, 2.4), Vector3(ex, 3.4, zf - 1.2), Color("#3a3c3e"))
+	for e in [-1.0, 1.0]:  # the canopy's tie rods back to the wall
+		UpgradeKits._strut(self, Vector3(ex + e * 3.2, 3.5, zf - 2.3), Vector3(ex + e * 3.2, 5.2, zf - 0.1), 0.05, Color("#3a3c3e"))
+	_box("paint", Vector3(7.2, 0.15, 3.0), Vector3(ex, 0.08, zf - 1.5), CONCRETE)
+	# Skylights in rows on the roof.
+	for row in 2:
+		var z := cz - d * 0.2 + row * d * 0.4
+		var sx := cx - w * 0.5 + 6.0
+		while sx < cx + w * 0.5 - 4.0:
+			_box("paint", Vector3(1.4, 0.35, 2.2), Vector3(sx, h + 0.2, z), Color("#dfe4e4"))
+			sx += 7.5
+	# At each dock: bumpers, a light on its arm, a pair of bollards.
+	var wx := cx + w * 0.5
+	for i in docks:
+		var z := zf + 3.0 + i * (d - 6.0) / maxf(docks - 1, 1)
+		for e in [-1.0, 1.0]:
+			_box("paint", Vector3(0.3, 0.6, 0.3), Vector3(wx + 0.35, 1.1, z + e * 1.1), Color("#1c1c1e"))
+		_box("paint", Vector3(0.9, 0.08, 0.08), Vector3(wx + 0.45, 4.4, z - 1.9), Color("#3a3c3e"))
+		_box("paint", Vector3(0.25, 0.25, 0.3), Vector3(wx + 0.9, 4.3, z - 1.9), Color("#d8d9d6"))
+	# A man door near the docks with its stoop and a light.
+	var mz := zf + d - 1.5
+	_box("paint", Vector3(0.06, 2.1, 0.95), Vector3(wx + 0.04, 1.05, mz), Color("#6a6e70"))
+	_box("paint", Vector3(1.6, 0.15, 1.6), Vector3(wx + 0.8, 0.08, mz), CONCRETE)
+	_box("paint", Vector3(0.25, 0.25, 0.3), Vector3(wx + 0.15, 2.7, mz), Color("#3a3c3e"))
 
 
 ## The old brick works near the tracks: three or four storeys of red brick,
@@ -953,3 +1005,81 @@ func _quonset_shop(to_curb: float) -> void:
 		_tri("paint", Vector3(cx, 0, zf - 0.06), p0 - Vector3(0, 0, 0.06), p1 - Vector3(0, 0, 0.06), Color(_pick(BLOCK)), [], Vector3(0, 0, -1))
 	_door(cx, zf - 0.08, 4.0, 4.4)
 	_foot.append([cx, zf + len * 0.5, 2.0 * r, len, r])
+	_quonset_life(cx, zf, r, len, steel)
+
+
+## A small rural welding and machine shop in a quonset, from Indiana
+## examples: the arch's seams standing out every few feet, a closed back
+## wall, a man door and light beside the big door, turbine vents on top, a
+## lean-to down one side over a cantilever rack of bar stock and pipe, a
+## 500-gallon propane tank on blocks, and a dumpster and scrap pile out back.
+func _quonset_life(cx: float, zf: float, r: float, len: float, steel: Color) -> void:
+	var g := RandomNumberGenerator.new()
+	g.seed = hash([rng.seed, "quonset_life"])
+	var segs := 16
+	# Arch seams.
+	var z := zf + 1.8
+	while z < zf + len - 0.5:
+		for i in segs:
+			var a0 := PI * i / segs
+			var a1 := PI * (i + 1) / segs
+			var p0 := Vector3(cx + cos(a0) * (r + 0.03), sin(a0) * (r + 0.03), z)
+			var p1 := Vector3(cx + cos(a1) * (r + 0.03), sin(a1) * (r + 0.03), z)
+			UpgradeKits._strut(self, p0, p1, 0.06, steel.darkened(0.18))
+		z += 1.8
+	# The back wall.
+	for i in segs:
+		var a0 := PI * i / segs
+		var a1 := PI * (i + 1) / segs
+		_tri("metal", Vector3(cx, 0, zf + len + 0.04), Vector3(cx + cos(a0) * r, sin(a0) * r, zf + len + 0.04),
+			Vector3(cx + cos(a1) * r, sin(a1) * r, zf + len + 0.04), steel.darkened(0.08), [], Vector3(0, 0, 1))
+	# Man door, wall light, a small window in the front wall.
+	var md := cx + 3.4
+	_box("paint", Vector3(0.95, 2.1, 0.06), Vector3(md, 1.05, zf - 0.1), Color("#6a6e70"))
+	_box("paint", Vector3(0.3, 0.25, 0.25), Vector3(cx, 5.0, zf - 0.2), Color("#3a3c3e"))
+	_glass(Vector3(cx - 3.4, 1.7, zf - 0.1), Vector3(-1, 0, 0), 1.2, 0.9, 0.0)
+	# Turbine vents along the crown.
+	for k in 2:
+		var v := Vector3(cx, r + 0.1, zf + len * (0.3 + k * 0.4))
+		_cylinder("paint", v, 0.15, 0.35, steel, 8)
+		_cylinder("metal", v + Vector3(0, 0.35, 0), 0.35, 0.45, Color("#c9cbc8"), 10)
+	# The lean-to and its rack.
+	var lx := cx + r
+	var lw := 4.5
+	if _in_lot(Vector3(lx + lw + 0.5, 0, zf + len * 0.5), 0.5):
+		var z0 := zf + 3.0
+		var z1 := zf + len - 2.0
+		var hi := r * 0.55
+		var x := z0
+		while x <= z1 + 0.1:
+			_box("paint", Vector3(0.15, 2.6, 0.15), Vector3(lx + lw, 1.3, x), PIPE)
+			x += 4.0
+		var a := Vector3(lx - 0.3, hi, z0)
+		var b := Vector3(lx + lw + 0.3, 2.7, z0)
+		_quad("metal", a, b, b + Vector3(0, 0, z1 - z0), a + Vector3(0, 0, z1 - z0), steel.darkened(0.1), [], Vector3(0.3, 1, 0))
+		# Cantilever rack: uprights with arms, bar stock and pipe on them.
+		var rz := z0 + 1.0
+		while rz < z1 - 1.0:
+			_box("paint", Vector3(0.2, 2.2, 0.2), Vector3(lx + 1.2, 1.1, rz), Color("#2f5d8a"))
+			for lvl in 3:
+				_box("paint", Vector3(1.6, 0.08, 0.12), Vector3(lx + 2.0, 0.5 + lvl * 0.7, rz), Color("#2f5d8a"))
+			rz += 3.0
+		for lvl in 3:
+			for k in 4:
+				var col := Color("#6b6e70").darkened(g.randf_range(0.0, 0.3))
+				_box("paint", Vector3(0.08, 0.08, z1 - z0 - 2.0), Vector3(lx + 1.5 + k * 0.25, 0.6 + lvl * 0.7, (z0 + z1) * 0.5), col)
+	# Propane on blocks, the meter and regulator.
+	var t := Vector3(cx - r - 2.6, 0, zf + len * 0.5)
+	if _in_lot(t, 1.2):
+		for e in [-0.9, 0.9]:
+			_box("paint", Vector3(0.6, 0.4, 0.4), t + Vector3(0, 0.2, e), CONCRETE)
+		UpgradeKits._drum(self, t + Vector3(0, 0.95, 0), 0.5, 2.9, Color("#efede6"), false)
+		_box("paint", Vector3(0.3, 0.25, 0.3), t + Vector3(0, 1.55, 0), Color("#b8bcbe"))
+	# A dumpster and a scrap pile behind.
+	var d := Vector3(cx + r - 1.5, 0, zf + len + 3.0)
+	if _in_lot(d, 2.0):
+		_box("metal", Vector3(2.0, 1.4, 1.6), d + Vector3(0, 0.7, 0), Color("#2f5a3a"))
+		for k in 8:
+			_box("paint", Vector3(g.randf_range(0.3, 2.4), 0.12, g.randf_range(0.1, 0.4)),
+				d + Vector3(-4.0 + g.randf_range(-1.0, 1.0), 0.1 + k * 0.08, g.randf_range(-0.8, 0.8)),
+				Color("#6f6a62").darkened(g.randf_range(0.0, 0.4)), Basis(Vector3.UP, g.randf() * TAU))

@@ -136,9 +136,37 @@ func _init() -> void:
 		_check(lay.spots.size() >= 20 and not lay.main_street, "with its own parking lot (%d stalls)" % lay.spots.size())
 	else:
 		_check(false, "a developer finds land on the avenue for an office park")
+	_hotel()
 	_community()
 	print("ALL TESTS PASSED" if not _failed else "SOME TESTS FAILED")
 	quit(1 if _failed else 0)
+
+
+## A hotel chain asks for lots on a busy road once the market fills a
+## highway hotel, and the hotel draws its field of parking.
+func _hotel() -> void:
+	var ho := _town(6, RoadStyle.Type.AVENUE, 300)
+	_care_month(ho)
+	ho.stats.population = 6000
+	ho.demand[ZoneMap.Zone.COMMERCIAL] = 1.0
+	ho.market.regional = 0
+	_check(ho.redevelopment._plan_hotel(ho, Redevelopment._faces(ho)).is_empty(), "a lone town of 6,000 gets no hotel ask")
+	ho.market.regional = 8000
+	var plan: Dictionary = ho.redevelopment._plan_hotel(ho, Redevelopment._faces(ho))
+	print("  hotel ask: ", plan.get("title", "(none)"), " / ", plan.get("yes", ""))
+	if plan.is_empty():
+		_check(false, "a hotel chain finds land on the avenue")
+		return
+	_check(str(plan.yes).find("rooms") != -1, "the card counts its rooms and trips")
+	_check(ho.redevelopment.build(ho, {"kind": "hotel", "keys": plan.keys, "type": plan.type,
+		"level": plan.level, "was": plan.was}), "a yes rezones the run for a hotel")
+	var site: String = plan.keys[0]
+	_check(BuildingTypes.type_of(ho.buildings[site]) == "hotel" and int(ho.buildings[site].level) == 0,
+		"a highway hotel goes up (%.0f m² lot)" % float(ho.lots[site].area))
+	var lay := SiteLayout.for_building(ZoneMap.Zone.COMMERCIAL, int(ho.buildings[site].seed), ho.lots[site], 4, "hotel", 0)
+	_check(lay.spots.size() >= 50 and not lay.main_street, "with a field of parking (%d stalls for about 90 rooms)" % lay.spots.size())
+	var art := BuildingView.build_for("hotel", 4, int(ho.buildings[site].seed), 3.9, {"width": float(ho.lots[site].width), "depth": 60.0}, {}, 2, "general", 0)
+	_check(not art.is_empty(), "it draws")
 
 
 ## A neighborhood center buys the houses behind it for a discount store,
