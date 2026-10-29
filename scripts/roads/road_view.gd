@@ -62,7 +62,7 @@ static func _remesh_ms() -> float:
 var sliced := false
 
 ## Bridge parts by material key in _mats (BridgeMesh).
-const BRIDGE_MATS := {"concrete": "concrete", "steel": "galvanized", "marker": "marker"}
+const BRIDGE_MATS := {"concrete": "bridge", "steel": "galvanized", "marker": "marker"}
 var _mats := {
 	"asphalt": Surfaces.asphalt(),
 	"curb": Surfaces.concrete(RoadStyle.CURB_COLOR),
@@ -88,6 +88,7 @@ var _mats := {
 	"drain": RoadStyle.material(Color(0.03, 0.03, 0.03)),  # the dark under them
 	"barricade": _vertex_colour(),
 	"galvanized": _galvanized(),
+	"bridge": BridgeMesh.concrete(),
 	"marker": RoadStyle.material(Color(0.95, 0.76, 0.1)),  # end terminal object marker
 }
 
