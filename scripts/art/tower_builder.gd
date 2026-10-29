@@ -285,6 +285,8 @@ func _tw_chicago(to_curb: float, width: float, storeys: int, roof := true) -> vo
 	var door_x := -w * 0.5 + (floori(bays * 0.5) + 0.5) * bw
 	_box("paint", Vector3(2.4, 2.8, 0.1), Vector3(door_x, 1.4, zf - 0.06), Color("#2c2620"))
 	_box("paint", Vector3(bw - 0.6, 0.5, 1.6), Vector3(door_x, 4.3, zf - 0.8), Color("#2a2a2a"))  # marquee
+	if fine_parts:
+		_tw_chicago_entry(door_x, zf, bw - 0.6)
 	if not _homes:
 		_sign(Vector3(door_x, 4.6, zf - 1.62), bw - 1.0, 0.8)
 	# The shaft: a Chicago window in every bay of every floor, between piers.
@@ -426,6 +428,70 @@ func _tw_added(add: int) -> void:
 	_box("brick", Vector3(5.0, 3.6, 6.0), Vector3(-aw * 0.3, top + 0.6 + 1.8, cz + ad * 0.25), col.darkened(0.1))  # elevator penthouse
 	if storeys >= 8:
 		_tw_roof_sign(Vector3(0, top + 0.6, zf + back + 1.6), minf(aw * 0.6, 20.0))
+
+
+## Desktop: a Chicago School block's lobby entrance (the Marquette and
+## Monadnock in Chicago, Indianapolis's Lemcke and Guaranty buildings): a
+## bronze revolving door with a swing door each side, a transom of
+## prism glass above, and the marquee's bronze fascia with a lit soffit.
+## `mw` is the marquee's width. Draws no random numbers.
+func _tw_chicago_entry(x: float, zf: float, mw: float) -> void:
+	var bronze := Color("#5a4632")
+	var fz := zf - 0.12
+	var dc := Vector3(x, 0, fz - 0.05)
+	_cylinder("metal", dc + Vector3(0, 2.5, 0), 1.2, 0.35, bronze)
+	_cylinder("metal", dc, 1.2, 0.05, bronze)
+	_box("metal", Vector3(0.08, 2.5, 0.08), dc + Vector3(0, 1.25, 0), bronze)
+	for k in 7:
+		var a := TAU * (k + 0.5) / 7.0
+		_box("metal", Vector3(0.06, 2.5, 0.06), dc + Vector3(cos(a) * 1.17, 1.25, sin(a) * 1.17), bronze)
+	for k in 4:
+		var a := TAU * k / 4.0 + 0.3
+		_box("metal", Vector3(1.05, 2.4, 0.05), dc + Vector3(cos(a) * 0.52, 1.25, sin(a) * 0.52), Color("#9fb3bd"),
+			Basis(Vector3.UP, -a))
+	for sx in [-1.0, 1.0]:
+		var c := Vector3(x + sx * 1.9, 0, fz)
+		_box("metal", Vector3(1.1, 2.6, 0.06), c + Vector3(0, 1.3, 0), bronze)
+		_glass(c + Vector3(0, 1.4, -0.04), Vector3(-1, 0, 0), 0.75, 2.0, 0.0)
+		_box("metal", Vector3(0.6, 0.05, 0.08), c + Vector3(0, 1.05, -0.08), Color("#b08d57"))  # push bar
+	_box("metal", Vector3(5.0, 0.15, 0.1), Vector3(x, 2.85, fz), bronze)  # transom bar
+	_box("paint", Vector3(5.0, 0.95, 0.05), Vector3(x, 3.4, fz + 0.02), Color("#9fa49a"))  # prism glass
+	for i in 9:
+		_box("metal", Vector3(0.04, 0.95, 0.06), Vector3(x - 2.0 + i * 0.5, 3.4, fz - 0.02), bronze)
+	# The marquee: a bronze fascia with a lighter band and downlights under it.
+	_box("metal", Vector3(mw + 0.06, 0.12, 0.06), Vector3(x, 4.48, zf - 1.62), Color("#8a6a3e"))
+	_box("metal", Vector3(mw + 0.06, 0.08, 0.06), Vector3(x, 4.12, zf - 1.62), Color("#8a6a3e"))
+	var n := maxi(2, roundi(mw / 1.5))
+	for i in n:
+		_box("paint", Vector3(0.25, 0.03, 0.25), Vector3(x - mw * 0.5 + (i + 0.5) * mw / n, 4.03, zf - 0.8), Color("#f4f0e2"))
+
+
+## Desktop: the mouth of a podium garage on the street (any downtown
+## Indianapolis or Columbus garage): the coiling grille rolled up in its
+## hood, a yellow-and-black clearance bar hung on chains, the ramp's lit
+## ceiling inside, and a blue "P" blade sign beside the opening.
+func _tw_garage_mouth(x: float, zf: float) -> void:
+	_box("metal", Vector3(6.4, 0.5, 0.5), Vector3(x, 4.05, zf - 0.3), Color("#6f7275"))  # grille hood
+	for sx in [-1.0, 1.0]:
+		_box("metal", Vector3(0.12, 3.8, 0.12), Vector3(x + sx * 3.05, 1.9, zf - 0.12), Color("#6f7275"))  # guides
+		_box("metal", Vector3(0.02, 0.5, 0.02), Vector3(x + sx * 2.2, 3.35, zf - 0.6), Color("#3a3a3a"))  # chains
+	for i in 6:
+		_box("paint", Vector3(0.75, 0.15, 0.08), Vector3(x - 2.6 + i * 1.04 + 0.26, 3.05, zf - 0.6),
+			Color("#e5b81e") if i % 2 == 0 else Color("#1a1a1a"))  # clearance bar
+	for i in 3:
+		_box("paint", Vector3(1.2, 0.04, 0.2), Vector3(x - 1.8 + i * 1.8, 3.75, zf - 0.11), Color("#f1eedf"))  # ceiling lights
+	var px := x + (3.9 if x < 0.0 else -3.9)
+	_box("metal", Vector3(0.1, 0.1, 0.6), Vector3(px, 4.4, zf - 0.3), Color("#3a3a3a"))
+	_box("paint", Vector3(0.12, 1.1, 0.9), Vector3(px, 3.8, zf - 0.6), Color("#1d4f9a"))
+	# A white P on each face, its bowl to the viewer's right on both.
+	for s in [-1.0, 1.0]:
+		var fx: float = px + s * 0.07
+		var bz: float = s * 0.17  # the bowl's side, toward the street on the +x face
+		var white := Color("#f5f5f2")
+		_box("paint", Vector3(0.02, 0.7, 0.14), Vector3(fx, 3.8, zf - 0.6 + bz), white)  # the stem
+		_box("paint", Vector3(0.02, 0.12, 0.34), Vector3(fx, 4.09, zf - 0.6), white)
+		_box("paint", Vector3(0.02, 0.12, 0.34), Vector3(fx, 3.79, zf - 0.6), white)
+		_box("paint", Vector3(0.02, 0.42, 0.1), Vector3(fx, 3.94, zf - 0.6 - bz), white)
 
 
 ## The back of a prewar block, on its alley: a steel service door and a
@@ -1611,6 +1677,8 @@ func _tw_podium(to_curb: float, width: float, storeys: int) -> void:
 	_sign(Vector3(tx, ground_h - 0.2, zf - 1.85), 5.0, 0.6)
 	var ramp_x := pw * 0.5 - 4.0 if tx < 0.0 else -pw * 0.5 + 4.0
 	_box("paint", Vector3(6.0, 3.8, 0.1), Vector3(ramp_x, 1.9, zf - 0.05), Color("#1c1d1e"))  # the garage door
+	if fine_parts:
+		_tw_garage_mouth(ramp_x, zf)
 	for lv in range(1, levels):
 		var y := ground_h + park_h * (lv - 1)
 		# Open decks on every side (a garage needs open walls on at least

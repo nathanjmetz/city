@@ -121,6 +121,8 @@ const DETAIL_FLOOR := [
 ##   crops / crop_m / crop_shadows: field plants on or off, how far round
 ##     the look spot, and whether corn casts shadows.
 ##   photo: the real-life photographed ground (PhotoGround; desktop only).
+##   understory: shrubs and saplings under the woods' canopy near the
+##     camera (WildView; desktop only).
 ##   cars_m: how far cars and trucks are drawn; car_near_m: inside it the
 ##     full model, past it the light one; car_detail: the close-up model
 ##     inside TrafficView.ULTRA_NEAR.
@@ -132,19 +134,19 @@ const DETAIL_FLOOR := [
 ## tree_shadows. High is the look the game had before budgets, so a
 ## full-strength desktop (High and up) is never drawn with less than that.
 const BUDGETS := [
-	{"grow_ms": 3.0, "woods": 0.6, "far_woods": 2000.0, "far_from": 0.6, "photo": false, "crops": false, "crop_m": 51.0, "crop_shadows": false,
+	{"grow_ms": 3.0, "woods": 0.6, "far_woods": 2000.0, "far_from": 0.6, "photo": false, "understory": false, "crops": false, "crop_m": 51.0, "crop_shadows": false,
 		"cars_m": 1400.0, "car_near_m": 160.0, "car_detail": false, "cars": 600,
 		"people_m": 180.0, "people": 400},
-	{"grow_ms": 3.0, "woods": 0.7, "far_woods": 2600.0, "far_from": 0.7, "photo": false, "crops": false, "crop_m": 51.0, "crop_shadows": false,
+	{"grow_ms": 3.0, "woods": 0.7, "far_woods": 2600.0, "far_from": 0.7, "photo": false, "understory": false, "crops": false, "crop_m": 51.0, "crop_shadows": false,
 		"cars_m": 1900.0, "car_near_m": 200.0, "car_detail": false, "cars": 1200,
 		"people_m": 250.0, "people": 1000},
-	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 3500.0, "far_from": 1.2, "photo": true, "crops": true, "crop_m": 60.0, "crop_shadows": false,
+	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 3500.0, "far_from": 1.2, "photo": true, "understory": true, "crops": true, "crop_m": 60.0, "crop_shadows": false,
 		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": false, "cars": 4000,
 		"people_m": 320.0, "people": 4000},
-	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4000.0, "far_from": 1.2, "photo": true, "crops": true, "crop_m": 77.0, "crop_shadows": false,
+	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4000.0, "far_from": 1.2, "photo": true, "understory": true, "crops": true, "crop_m": 77.0, "crop_shadows": false,
 		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "cars": 8000,
 		"people_m": 320.0, "people": 8000},
-	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4500.0, "far_from": 1.2, "photo": true, "crops": true, "crop_m": 81.0, "crop_shadows": true,
+	{"grow_ms": 4.0, "woods": 1.0, "far_woods": 4500.0, "far_from": 1.2, "photo": true, "understory": true, "crops": true, "crop_m": 81.0, "crop_shadows": true,
 		"cars_m": 2600.0, "car_near_m": 240.0, "car_detail": true, "cars": 16000,
 		"people_m": 320.0, "people": 16000},
 ]
@@ -154,7 +156,7 @@ const BUDGETS := [
 ## no count caps.
 const NO_CAP := 1 << 30
 const INACTIVE := {"detail": 1.0, "shadow_m": 2000.0, "tree_shadows": true, "grow_ms": 4.0, "woods": 1.0, "far_woods": 3500.0,
-	"far_from": 1.0, "photo": false, "crops": false, "crop_m": 51.0, "crop_shadows": false, "cars_m": 2600.0,
+	"far_from": 1.0, "photo": false, "understory": false, "crops": false, "crop_m": 51.0, "crop_shadows": false, "cars_m": 2600.0,
 	"car_near_m": 240.0, "car_detail": false, "cars": NO_CAP, "people_m": 320.0, "people": NO_CAP}
 ## The browser caps how long a frame may spend growing detail (its one
 ## thread also runs the town).
