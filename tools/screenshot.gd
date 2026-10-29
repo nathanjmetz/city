@@ -83,6 +83,24 @@ func _demo_town() -> void:
 					if args.size() >= 7 else Vector3.ZERO)
 				c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
 		return
+	if args0.size() >= 5 and args0[4] == "overpass":
+		# An avenue raised over a street (Overpass), its piers clear of the
+		# street under it. OVER_AT=x,z moves it.
+		var at := Vector2(-600, 300)
+		if OS.get_environment("OVER_AT") != "":
+			var xz := OS.get_environment("OVER_AT").split(",")
+			at = Vector2(float(xz[0]), float(xz[1]))
+		sim.apply({"type": "build_road", "start": [at.x - 250, at.y], "ctrl": [at.x, at.y], "end": [at.x + 250, at.y], "road": 0})
+		var ok := sim.apply({"type": "build_road", "start": [at.x, at.y - 300], "ctrl": [at.x, at.y],
+			"end": [at.x, at.y + 300], "road": 1, "over": true})
+		print("overpass built: ", ok)
+		var args := OS.get_cmdline_user_args()
+		for c in _main.get_children():
+			if c is CityCamera:
+				c.look_at_point(Vector3(at.x + (float(args[5]) if args.size() >= 7 else 0.0), 0,
+					at.y + (float(args[6]) if args.size() >= 7 else 0.0)))
+				c.set_view(deg_to_rad(float(args[1])), deg_to_rad(float(args[2])), float(args[3]))
+		return
 	if args0.size() >= 5 and args0[4] == "crossing":
 		# A county road or highway over the water (WaterCrossings), by its
 		# key in CROSSING (the nearest one if none is given).

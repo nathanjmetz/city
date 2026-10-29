@@ -167,6 +167,13 @@ func _add_ultra_batch(kind: String) -> void:
 
 ## A bus stop sign on a pole in the grass strip at each stop, and at busy
 ## stops a three-sided shelter with a bench (the usual US small-town kit).
+## Whether a stop has a shelter: its depot builds them (the "shelters"
+## step) at its busy stops.
+static func has_shelter(sim: CitySim, s: Dictionary) -> bool:
+	var kit: Array = sim.buses.depots.get(s.get("depot", -1), {}).get("built", [])
+	return "shelters" in kit and (float(s.get("riders", 0.0)) >= SHELTER_RIDERS or float(s.get("res", 0.0)) + float(s.get("jobs", 0.0)) >= 600.0)
+
+
 func _draw_stops() -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -214,7 +221,7 @@ func _draw_stops() -> void:
 			_box(st, frame, Vector3(0.9, 1.6, 0), Vector3(0.08, 3.2, 0.08), Color("#9aa0a2"))
 			_box(st, frame, Vector3(0.9, 2.75, 0.06), Vector3(0.75, 0.75, 0.04), Color("#1d4f91"))
 			_box(st, frame, Vector3(0.9, 2.75, 0.09), Vector3(0.5, 0.12, 0.02), Color("#f2f2ee"))
-		if "shelters" in kit and (float(s.get("riders", 0.0)) >= SHELTER_RIDERS or s.res + s.jobs >= 600.0):
+		if has_shelter(sim, s):
 			# On the sidewalk's far side: roof, back and end panels, bench.
 			var sh := frame * Transform3D(Basis.IDENTITY, Vector3(-3.0, 0.0, -(RoadStyle.PARKWAY_WIDTH * 0.5 + RoadStyle.SIDEWALK_WIDTH + 0.9)))
 			_box(st, sh, Vector3(0, 2.35, 0), Vector3(3.6, 0.1, 1.6), Color("#4a5357"))

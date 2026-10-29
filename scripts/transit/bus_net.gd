@@ -101,7 +101,7 @@ var depots := {}  # service id -> depot state (see _new_depot)
 var stops := {}   # stop id -> {pt, dir, side, pos, name, people, res, jobs, depot, riders}
 var routes := {}  # depot id -> [{stops: [ids], len, cycle_min, buses, headway_min, riders, pts}]
 var buses := {}   # bus id -> {depot, kind, state, route, stop, at, dir, load, until, bay}
-var schools := {} # school service id -> {riders, pickups: [Vector3], runs: [[Vector3]]}
+var schools := {} # school service id -> {riders, pickups: [Vector3], runs: [[Vector3]], walk: [home keys]}
 var trips := {}   # traffic trip id -> bus id
 ## Bumped whenever stops or routes change, so views know to redraw.
 var version := 0
@@ -161,6 +161,7 @@ func tick(sim: CitySim) -> Array:
 			if _decide(sim, id, true):
 				grown.append(id)
 	_school_bells(sim)
+	_school_walks(sim)
 	_drive(sim)
 	return grown
 
@@ -179,7 +180,7 @@ func _sync(sim: CitySim) -> void:
 			depots[id].leader = Agency.leader(sim, hash([id, "bus_depot"]))
 			changed = true
 		elif b.kind == Services.Kind.SCHOOL and not schools.has(id):
-			schools[id] = {"riders": 0, "pickups": [], "runs": []}
+			schools[id] = {"riders": 0, "pickups": [], "runs": [], "walk": []}
 			changed = true
 	for id in depots.keys():
 		if not sim.services.buildings.has(id):
@@ -1426,8 +1427,10 @@ func _plan_schools(sim: CitySim) -> void:
 	if ids.is_empty():
 		return
 	var homes := {}  # school id -> [[pos, pupils]]
+	var walks := {}  # school id -> homes in its walk zone
 	for sid in ids:
 		homes[sid] = []
+		walks[sid] = []
 	for key in sim.buildings:
 		var h: Dictionary = sim.buildings[key]
 		if h.zone != ZoneMap.Zone.RESIDENTIAL or h.occ <= 0 or not sim.lots.has(key):
@@ -1441,9 +1444,13 @@ func _plan_schools(sim: CitySim) -> void:
 				best = sid
 		if sim.services.buildings[best].pos.distance_to(p) > Balance.SCHOOL_WALK:
 			homes[best].append([p, h.occ * Balance.SCHOOL_PUPIL_SHARE])
+		else:
+			walks[best].append(key)
 	for sid in ids:
 		var school: Dictionary = schools[sid]
 		var b: Dictionary = sim.services.buildings[sid]
+		walks[sid].sort()
+		school.walk = walks[sid]
 		var pupils := 0.0
 		var picks := []  # [pos, pupils]
 		var list: Array = homes[sid]
@@ -1538,6 +1545,52 @@ func _school_bells(sim: CitySim) -> void:
 		bus.stop = -1
 		bus.until = sim.tick_count + i * 30  # buses leave one after another
 		bus.from_school = true
+
+
+## Pupils in a school's walk zone, where the bus doesn't come, walk on
+## school mornings: about a third of them (NHTS 2009: 35% of children living
+## within a mile of school walk or bike), the rest are dropped off. It goes
+## by the sky (CitySim.sky_hour), so they're out when the town looks like a
+## school morning: each household sets off at its own time between 6:45 and
+## 7:30, brothers and sisters together, and they're let out mid-afternoon.
+## Weekdays, not in June and July (summer break).
+func _school_walks(sim: CitySim) -> void:
+	if schools.is_empty():
+		return
+	var hour := sim.sky_hour()
+	var was := sim.sky_hour(-1.0)
+	var start := Balance.SCHOOL_WALK_FROM
+	if hour < start or was >= start + 0.75 or was > hour:
+		return
+	var month := Seasons.month(sim.calendar_tick())
+	var wd := Mail.weekday_of(sim.tick_count)  # as the yard's recess (AmbientLife)
+	if month == 6 or month == 7 or wd == 0 or wd == 6:
+		return
+	# Out until about 3 pm, less the walk (a sky hour is a few real minutes:
+	# a quarter-mile walk takes most of one).
+	var stay := maxi(roundi((14.0 - hour) * sim.sky_ticks_per_hour()), 60)
+	var ids := schools.keys()
+	ids.sort()
+	for sid in ids:
+		var b: Dictionary = sim.services.buildings.get(sid, {})
+		if b.is_empty() or schools[sid].get("walk", []).is_empty():
+			continue
+		var gate := _gate(b)
+		var ref := ""
+		for key in schools[sid].walk:
+			if absi(hash([key, "school walk"])) % 100 >= Balance.SCHOOL_WALK_PCT:
+				continue
+			var leave := start + float(absi(hash([key, "school leave"])) % 45) / 60.0
+			if not (was < leave and hour >= leave):
+				continue
+			if ref == "":
+				ref = sim.traffic.register({"ref": "school:%d" % sid, "pos": [gate.x, gate.z], "on_foot": true})
+				if ref == "":
+					break
+			for pid in sim.people.residents(key):
+				var p: Dictionary = sim.people.people[pid]
+				if p.age >= 5 and p.age <= 11 and p.at == "":
+					sim.traffic.go(pid, ref, "school", stay)
 
 
 func _school_next(sim: CitySim, bus: Dictionary) -> void:
