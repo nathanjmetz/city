@@ -17,7 +17,10 @@ extends SceneTree
 ## waits on), then times 60 frames.
 ##
 ## Run in a real window on the Mac (not --headless; the renderer is needed),
-## with HOME set to a throwaway folder (the game autosaves to the user folder):
+## with HOME set to a throwaway folder (the game autosaves to the user folder,
+## and closing the guided tour marks it done there). It refuses to start
+## (exit code 1) when the user folder is not under a temp or scratch folder,
+## before any of the game's own code runs:
 ##   HOME=/tmp/x godot --resolution 1920x1080 -s tools/look_round.gd -- OUT_DIR [--quality=cinematic|medium]
 ## Default cinematic (the desktop look); medium stands in for the 8 GB Mac
 ## mini. --only=02,06 retakes just those shots (frames.json then lists only
@@ -96,19 +99,47 @@ var _last_us := 0
 var _row := {}
 var _rows := []
 var _dusk_hour := 21.0
+var _refused := false
 
 
 func _initialize() -> void:
-	pass  # the game opens on the first frame, once the autoloads are up
+	# The game opens on the first frame, once the autoloads are up. Here they
+	# are added but not yet ready (nothing of theirs has run), so a refusal
+	# takes them out before they can write to a real player's folder.
+	if not _throwaway_home():
+		printerr("look_round: refusing to run: the user folder is %s, a real player's folder. " % OS.get_user_data_dir()
+			+ "Set HOME to a scratch folder, e.g. HOME=/tmp/look_round_home godot ... -s tools/look_round.gd -- OUT_DIR")
+		_refused = true
+		for c in root.get_children():
+			root.remove_child(c)
+			c.free()
+		quit(1)
+
+
+## True when the user folder sits under a temp or scratch folder (HOME set
+## to a throwaway one), never a real player's.
+func _throwaway_home() -> bool:
+	var dir := OS.get_user_data_dir().replace("\\", "/")
+	var temp := OS.get_temp_dir().replace("\\", "/")
+	for p in ["/tmp/", "/private/tmp/", "/var/folders/", "/private/var/folders/"]:
+		if dir.begins_with(p):
+			return true
+	return (temp != "" and dir.begins_with(temp)) or "/scratchpad/" in dir or "/scratch/" in dir
 
 
 func _finalize() -> void:
-	for f in [SAVE, SAVE.get_basename() + ".json"]:
+	if _refused:
+		return
+	# The quality setting's crash marker: the tier was pinned after the
+	# autoload had started, so it is never cleared on its own.
+	for f in [SAVE, SAVE.get_basename() + ".json", GraphicsQuality.RUNNING_PATH]:
 		if FileAccess.file_exists(f):
 			DirAccess.remove_absolute(f)
 
 
 func _process(_delta: float) -> bool:
+	if _refused:
+		return true
 	if _main == null:
 		var args := OS.get_cmdline_user_args()
 		_out = args[0] if args.size() > 0 and not args[0].begins_with("--") else "."
