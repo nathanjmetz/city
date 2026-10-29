@@ -28,7 +28,8 @@ func _rules() -> void:
 			["university", "a university"], ["utility", "a utility"], ["hour", "an hour"], ["RV plant", "an RV plant"],
 			["ATM vestibule", "an ATM vestibule"], ["US highway", "a US highway"], ["8-lane road", "an 8-lane road"],
 			["11-acre lot", "an 11-acre lot"], ["110-acre lot", "a 110-acre lot"], ["unincorporated town", "an unincorporated town"],
-			["oil company", "an oil company"], ["elementary school", "an elementary school"], ["European car", "a European car"]]:
+			["oil company", "an oil company"], ["elementary school", "an elementary school"], ["European car", "a European car"],
+			["S-curve", "an S-curve"], ["T-junction", "a T-junction"], ["U-turn", "a U-turn"]]:
 		_check(Words.a(pair[0]) == pair[1], "a/an: %s (%s)" % [pair[1], Words.a(pair[0])])
 	_check(Words.a_first("avenue") == "An avenue", "a sentence starts \"An avenue\"")
 	for pair in [["county fairgrounds", "county fairgrounds"], ["RV plant", "RV plants"], ["bus", "buses"],
