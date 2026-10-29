@@ -236,14 +236,28 @@ func _tw_chicago(to_curb: float, width: float, storeys: int) -> void:
 		_tw_far_box(Vector3(w, 1.1, d), Vector3(0, top + 1.35, cz), shaft, 0.0)
 		return
 	_downtown_walk(to_curb, width, zf)
-	# The stone base with its tall shop and lobby windows.
-	_box("brick", Vector3(w, y_base, d), Vector3(0, y_base * 0.5, cz), stone)
-	_box("brick", Vector3(w, top - y_base, d), Vector3(0, (y_base + top) * 0.5, cz), shaft)
-	_box("paint", Vector3(w + 0.3, 0.5, d + 0.3), Vector3(0, y_base + 0.1, cz), stone.lightened(0.08))  # belt course
 	var bays := maxi(3, roundi(w / 6.0))
 	var bw := w / bays
 	var side_bays := maxi(3, roundi(d / 6.0))
 	var sbw := d / side_bays
+	# Before air conditioning every office wanted a window, so a deep block
+	# was built as a U above its base, a light court open to the alley out
+	# back (the Fletcher Trust in Indianapolis, the Rookery and the Monadnock
+	# era in Chicago). Own random numbers, so the builder's draws don't move.
+	var lc := RandomNumberGenerator.new()
+	lc.seed = hash([rng.seed, "light court"])
+	var ck := (3 if bays >= 9 else 1) if bays % 2 == 1 else (4 if bays >= 10 else 2)
+	_court = Vector2.ZERO
+	if storeys >= 8 and d >= 22.0 and (w - ck * bw) * 0.5 >= 6.0 and lc.randf() < 0.6:
+		_court = Vector2(ck * bw, maxf(8.0, d * lc.randf_range(0.38, 0.5)))
+	var zc := zf + d - _court.y
+	_court_z = zc
+	# The stone base with its tall shop and lobby windows.
+	_box("brick", Vector3(w, y_base, d), Vector3(0, y_base * 0.5, cz), stone)
+	_tw_u(w, d, zf, y_base, top - y_base, 0.0, shaft, "brick")
+	if _court != Vector2.ZERO:
+		_tw_roof(_court.x, _court.y, zc + _court.y * 0.5, y_base)
+	_box("paint", Vector3(w + 0.3, 0.5, d + 0.3), Vector3(0, y_base + 0.1, cz), stone.lightened(0.08))  # belt course
 	# Shopfronts and the lobby arch between granite piers.
 	for i in bays:
 		var x := -w * 0.5 + (i + 0.5) * bw
@@ -268,9 +282,20 @@ func _tw_chicago(to_curb: float, width: float, storeys: int) -> void:
 				# showing between them as the mullions.
 				var gw := len_b - 1.3
 				var blinds := rng.randf_range(0.0, 0.6)
+				var sash := [rng.randf_range(0.0, 0.6), rng.randf_range(0.0, 0.6)]
+				if _in_court(c):
+					continue
 				_glass(c, face[1], gw * 0.52, 2.3, blinds)
 				for k in [-1.0, 1.0]:
-					_glass(c + face[1] * k * gw * 0.38, face[1], gw * 0.2, 2.3, rng.randf_range(0.0, 0.6))
+					_glass(c + face[1] * k * gw * 0.38, face[1], gw * 0.2, 2.3, sash[0 if k < 0.0 else 1])
+		# The light court's own walls: plain sash windows, a pair a bay.
+		if _court != Vector2.ZERO:
+			for wall in _court_walls(zc, zf + d):
+				var nb := maxi(1, roundi(float(wall[2]) / 3.2))
+				for i in nb:
+					var c: Vector3 = wall[0] + wall[1] * (-float(wall[2]) * 0.5 + (i + 0.5) * float(wall[2]) / nb)
+					c.y = y
+					_glass(c, wall[1], float(wall[2]) / nb - 1.2, 2.1, lc.randf_range(0.0, 0.6))
 	# Continuous piers up the shaft.
 	for face in _tw_faces(w, d, cz):
 		var n: int = bays if face[3] else side_bays
@@ -279,26 +304,69 @@ func _tw_chicago(to_curb: float, width: float, storeys: int) -> void:
 		for i in n + 1:
 			var c: Vector3 = face[0] + face[1] * (-face[2] * 0.5 + i * len_b) + out * 0.12
 			c.y = (y_base + top) * 0.5
+			if _in_court(c, 0.2):
+				continue
 			_box("brick", Vector3(0.9, top - y_base, 0.9), c, shaft.darkened(0.05))
 	# The attic storey under a deep cornice, then a parapet.
-	_box("paint", Vector3(w + 0.4, 0.6, d + 0.4), Vector3(0, top - floor_h + 0.3, cz), shaft.lightened(0.1))
+	_tw_u(w, d, zf, top - floor_h, 0.6, 0.4, shaft.lightened(0.1), "paint")
 	for face in _tw_faces(w, d, cz):
 		var n: int = bays * 2 if face[3] else side_bays * 2
 		var len_b: float = face[2] / n
 		for i in n:
 			var c: Vector3 = face[0] + face[1] * (-face[2] * 0.5 + (i + 0.5) * len_b)
 			c.y = top - floor_h * 0.5 + 0.2
-			_glass(c, face[1], len_b - 0.9, 1.3, 0.3)
-	_box("paint", Vector3(w + 2.4, 0.8, d + 2.4), Vector3(0, top + 0.4, cz), stone.lightened(0.12))
-	_box("brick", Vector3(w, 1.1, d), Vector3(0, top + 1.35, cz), shaft)
-	_tw_roof(w, d, cz, top + 1.9)
-	_tw_rooftop(w, d, cz, top + 1.9, 0.0, false, true)
-	var tank_at := Vector3(rng.randf_range(-w * 0.25, w * 0.25), top + 1.9, cz + rng.randf_range(-d * 0.2, d * 0.2))
+			if not _in_court(c):
+				_glass(c, face[1], len_b - 0.9, 1.3, 0.3)
+	_tw_u(w, d, zf, top, 0.8, 2.4, stone.lightened(0.12), "paint")
+	_tw_u(w, d, zf, top + 0.8, 1.1, 0.0, shaft, "brick")
+	for r in _court_rects(w, d, zf):
+		_tw_roof(r[0], r[1], r[2], top + 1.9, r[3])
+	var dz := d - _court.y
+	_tw_rooftop(w, dz, zf + dz * 0.5, top + 1.9, 0.0, false, true)
+	var tank_at := Vector3(rng.randf_range(-w * 0.25, w * 0.25), top + 1.9, zf + dz * 0.5 + rng.randf_range(-dz * 0.2, dz * 0.2))
 	if storeys >= 6:  # city water pressure reaches about six floors
 		_tw_tank(tank_at)
 	_box("brick", Vector3(5.0, 3.6, 6.0), Vector3(-w * 0.3, top + 3.7, cz + d * 0.25), shaft.darkened(0.1))  # elevator penthouse
 	if storeys >= 8:
 		_tw_roof_sign(Vector3(0, top + 1.9, zf + 1.6), minf(w * 0.6, 20.0))
+
+
+## A Chicago block's light court (width along the street, depth from the
+## back), or zero when it is built solid.
+var _court := Vector2.ZERO
+var _court_z := 0.0  # its front wall
+
+
+## The block's plan as rectangles [w, d, cz, cx]: the whole block, or, with
+## a light court, the front range and the two wings either side of it.
+func _court_rects(w: float, d: float, zf: float) -> Array:
+	if _court == Vector2.ZERO:
+		return [[w, d, zf + d * 0.5, 0.0]]
+	var dz := d - _court.y
+	var ww := (w - _court.x) * 0.5
+	return [[w, dz, zf + dz * 0.5, 0.0], [ww, _court.y, zf + dz + _court.y * 0.5, -(w - ww) * 0.5],
+		[ww, _court.y, zf + dz + _court.y * 0.5, (w - ww) * 0.5]]
+
+
+## A box over the block's plan from `y` up `h`, standing `grow` proud of
+## every wall (into the court too): the shaft, a band, the cornice.
+func _tw_u(w: float, d: float, zf: float, y: float, h: float, grow: float, col: Color, mat: String) -> void:
+	for r in _court_rects(w, d, zf):
+		_box(mat, Vector3(r[0] + grow, h, r[1] + grow), Vector3(r[3], y + h * 0.5, r[2]), col)
+
+
+## True when a spot on the block's back wall falls across its light court.
+func _in_court(c: Vector3, edge := 0.0) -> bool:
+	return _court != Vector2.ZERO and c.z > _court_z + 0.1 and absf(c.x) < _court.x * 0.5 - edge
+
+
+## The court's three walls: [centre, right, length], each facing into it.
+func _court_walls(zc: float, zb: float) -> Array:
+	var hx := _court.x * 0.5
+	var mz := (zc + zb) * 0.5
+	return [[Vector3(0, 0, zc + 0.03), Vector3(1, 0, 0), _court.x],
+		[Vector3(-hx + 0.03, 0, mz), Vector3(0, 0, -1), _court.y],
+		[Vector3(hx - 0.03, 0, mz), Vector3(0, 0, 1), _court.y]]
 
 
 # ---------------------------------------------------------------- Art Deco setbacks
